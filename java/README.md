@@ -32,19 +32,13 @@ state 中独立验证，不访问 production state。
 
 赞助页从 `/sponsor-config.json` 读取运行时配置。生产配置保存在 `/opt/wotb-tx/config/sponsor-config.json`，二维码保存在 `/opt/wotb-tx/config/sponsor/`，以只读方式挂载到前端容器；仓库仅提供 disabled 示例配置，不包含个人收款二维码。
 
-### CI/CD 自动部署
+### CI/CD 与部署所有权
 
-`push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)）：
+`ci.yml` 是唯一的 Pull Request 验证入口，并负责 `CI / Required Gate`。它按变更选择后端、前端、契约、Android、部署和 OpenTofu 验证，不读取生产凭据，也不执行生产部署。
 
-1. `push` 到 `main` 触发，按 `on.push.paths` 过滤（仅当构建/部署相关路径变化才触发；纯文档 push 不触发）。
-2. 代码质量验证与测试由 PR CI（merge gate）承担；**deploy 不再运行 backend/frontend 测试套件**。
-3. 统一构建并推送 backend/frontend/keycloak 三个 SHA 镜像到 GHCR（tag = `sha-<短 hash>`，确定性构建，无需反复运行测试）。
-4. SSH 部署前先备份 `wotb` 与 `keycloak` 两个数据库，再 `docker compose pull && up -d`。
-5. 部署等待目标服务收敛：Yecao 侧判定 `parser-worker` 容器保持存活（该服务无 HTTP 端点、无数据库凭据）；失败会输出 release/affected/service 与日志诊断并让 workflow 失败。
+推送到 `main` 后由独立 workflow 负责各自服务：`business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 和 `minio.yml` 分别构建或复用并部署一个精确镜像身份。`caddy.yml` 单独保证 TX 网关可用。RabbitMQ、两个 PostgreSQL root、COS 和 Observability 也各有独立 owner workflow。三个数据更新 workflow 继续独立运行，并为生成的精确 head 创建或更新 PR，再触发 CI 验证。
 
-线上排查可手动运行 [`.github/workflows/prod-diagnostics.yml`](../.github/workflows/prod-diagnostics.yml)，读取 VPS compose 状态与 `parser-worker`/观测日志（业务后端日志在 TX）。
-
-> Yecao 宿主现在只运行 `parser-worker`（回放解析执行面，无公网端口、无数据库凭据）+ 观测五件套（`prometheus`/`loki`/`alloy`/`grafana`/`node-exporter`，仅 Docker 内部网络）；业务 API、Keycloak、business PostgreSQL 与 frontend 已迁到 TX，由 `deploy/tx/deploy.sh` 管理。`paths` 过滤使纯文档 push 不触发部署。
+Online diagnostics remain available through prod-diagnostics.yml. Yecao runs only the parser worker and observability stack; Business API, Keycloak, Business PostgreSQL, Frontend, and Caddy run on TX.
 
 ## 本地开发
 

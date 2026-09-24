@@ -115,15 +115,15 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 ### PR CI path-aware gate
 
-`.github/workflows/ci.yml` 始终创建 `changes` 与 `CI / Required Gate`。selector 一次调用
-`deploy/release_plan.py --base <PR base> --head <PR head>`，按影响域选择 backend、frontend、
+`.github/workflows/ci.yml` 始终创建 `changes` 与 `CI / Required Gate`。CI-only selector
+`scripts/ci/ci-impact.py --base <PR base> --head <PR head>` 按影响域选择 backend、frontend、
 HTTP contract、Android、Keycloak（provider/runtime）、data、live data、deploy、observability、
-packaging、七个 Tofu roots 与 full 验证；只有相关 heavyweight jobs 执行，合法 skipped job 不阻塞
-最终 gate。docs-only 变更不运行 validation job（仅保留 selector 与 Required Gate）；CI workflow、
-全局 Maven/Node/Gradle 配置、共享构建脚本等跨切面变更触发 full CI。Branch protection / Ruleset 应
-长期只要求 `CI / Required Gate`，不应把可按路径 skipped 的单项 job 设为 required。PR 只验证；
-main push 由唯一的 `release.yml` 按同一 planner 的 release 输出调用单 component Build、单 service
-Deploy 与单 root Tofu Apply，Deploy 不重复执行 PR 测试，PR 与 main 不共享 binary plan 或镜像身份。
+七个 Tofu validation roots 与 full 验证；只有相关 jobs 执行，合法 skipped job 不阻塞最终 gate。
+docs-only 变更仍运行 selector 与 Required Gate；CI workflow、全局 Maven/Node/Gradle 配置、共享构建
+脚本等跨切面变更触发 full CI。Branch protection / Ruleset 应长期只要求 `CI / Required Gate`，
+不应把可按路径 skipped 的单项 job 设为 required。PR 只做验证，不访问生产凭据、宿主、state 或
+authenticated plan。main 的生产发布由各服务 owner workflow 按自己的路径规则独立触发；不再有
+统一 Release planner 或可复用 Build/Deploy/Tofu DAG。
 
 ---
 
@@ -573,19 +573,20 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 
 ### OpenTofu production baseline
 
-七个 production roots 汇入 `.github/workflows/tofu-apply.yml` 的单 root 调用：
-keycloak、rabbitmq、business-postgres、keycloak-postgres、minio、cos、grafana。
-main 自动 Release 与手动 dispatch 都绑定当前 main 完整 SHA，单 root workflow 使用各自
-provider/secret/state 边界、保存并校验同一个 plan 后 apply，执行 second-plan 或 readiness。
+七个 production roots 分别由服务 owner workflow 调用：keycloak、rabbitmq、business-postgres、
+keycloak-postgres、minio、cos、grafana。main push 和手动 dispatch 都绑定当前 main 完整 SHA；
+每个 owner workflow 使用自己的 provider/secret/state 边界，保存并校验同一个 plan 后 apply，
+执行 second-plan 或 readiness。TX host-local roots 在一条 SSH host-lock session 中与所属 runtime
+部署和 verify 串行完成；COS/Grafana 由各自 workflow 的 runner job 操作远端 backend/API。
 原生产 COS bucket 与 root 设计见 `docs/architecture/opentofu-production-baseline.md`。
 
 PR 侧只做 validation：selector 按 root 选择 `tofu fmt -check`、`tofu init -backend=false`、
 `tofu validate` 与该 root 已有的本地 safety fixture。PR 不 SSH 任何生产宿主、不读取生产 local
-state、也不接收 host-local 生产凭据；需要 production-local provider 的五个 root
-（keycloak、rabbitmq、business-postgres、keycloak-postgres、minio）的生产 plan 只在授权的
-main-only Tofu Apply 运行中产生。COS/Grafana 使用远端 backend / 外部 API，仍由 runner 做
-authenticated 只读 plan 并过 safety guard。PR workflow 与 main Apply 不共享 binary plan；
-main 始终重新 plan。Local state、plan、真实 tfvars 不得提交，provider lockfile 必须提交。
+state、也不接收 host-local 生产凭据；五个需要 production-local provider 的 root，其 plan 只在
+对应 main-only service workflow 运行中产生。COS/Grafana 的 PR 也仅做本地 validation；其 main-only
+workflow 才访问远端 backend / 外部 API 并运行 authenticated plan 与 safety guard。PR workflow 与
+production apply 不共享 binary plan；main 始终重新 plan。Local state、plan、真实 tfvars 不得提交，
+provider lockfile 必须提交。
 production maintenance workflows 不因新 push 取消正在执行的写入。
 
 Grafana dashboard root 仍管理 `deploy/observability/grafana/dashboards` 中的六个 dashboard；
@@ -605,7 +606,7 @@ Compose 服务 `business-api`（Tencent TCR `<TCR_REGISTRY>/<TCR_NAMESPACE>/wotb
 deployment-owned `health-probe` 访问（app `/api/health` + management
 `/actuator/health`，管理端口 8088）。因此 release plan 把 backend 镜像路由到
 `business-api`（target `tx`）；Yecao 侧的 `wotb-backend`/`wotb-frontend`/`keycloak`/`postgres`
-已随退役 PR 从 Compose、deploy 白名单与 release plan 中删除，不再是可选项。
+已随退役 PR 从 Compose 与 deploy 白名单中删除，不再是可选项。
 公开 API 路由已在 TX 内部终结：`wotb-frontend` 的 nginx upstream 固定为
 `http://business-api:8087`（`TX_BACKEND_UPSTREAM` 只接受这个 TX-internal 值，公网 host 与
 已退役的 Yecao `10.20.0.2:8087` 一律 fail-closed 拒绝），任何服务都不得发布 8087；TX deploy
@@ -634,10 +635,10 @@ tcp + udp），但没有固定容器地址：readiness surface 通过 Docker ser
 `KEYCLOAK_ADMIN_SERVER_URL` 故意指向 TX-internal `http://keycloak:8080`，避免 DNS
 cutover 前经公网访问并管理 Yecao realm。HoF 回放原件是永久内容寻址文件，挂 TX
 `replay_data` 卷到 `HOF_REPLAY_DIR`，与 MinIO dataset 工作区职责分离；Yecao 的
-MinIO 临时工作区是独立、显式手动的 Compose/OpenTofu deployment，绝不随普通 release
-启动或要求其 secrets；详见 `docs/operations/minio.md`。Release 的
-`deployServices`（由 `deploy/release_plan.py` 解释 before..head 得出）是这两个 host 的唯一发布
-路由来源，每个 service 只调用单目标 Deploy。TX PostgreSQL 只发布
+MinIO 临时工作区由独立 `.github/workflows/minio.yml` 部署，仅对自己的路径自动触发并保留手动
+入口；它绝不随 parser-worker workflow 启动或要求 worker 的 secrets，详见 `docs/operations/minio.md`。
+TX 与 Yecao 的每个服务都由自己的 workflow 路径规则及手动入口拥有，不再通过 release planner
+路由。TX PostgreSQL 只发布
 `127.0.0.1:15432:5432` 给 TX-local OpenTofu；GitHub runner 只 SSH 触发，绝不
 直连数据库、建立 SSH tunnel 或使用 Terraform `remote-exec`。详见
 `docs/architecture/opentofu-postgres-keycloak.md`。
@@ -694,34 +695,37 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 `user_profile` dependency audit、DNS cutover 与旧服务退役均是受控的外部操作，分别
 需要相应人工批准；启动细节见 `docs/auth/keycloak-tx-bootstrap.md`。
 
-生产 CI/CD 有一个 PR 验证入口和一个 main 发布入口：
+生产 CI/CD 使用唯一 PR 验证入口和独立的 service owner workflows：
 
-- `.github/workflows/ci.yml` 是唯一 PR 验证工作流，selector 一次调用 planner 的完整
+- `.github/workflows/ci.yml` 是唯一 PR 验证工作流，selector 用 `scripts/ci/ci-impact.py` 处理完整
   base..head diff；`CI / Required Gate` 只聚合本次选中的验证。普通 Java module 用
   reactor `-pl/-am`，root POM/global build 影响触发 full reactor。普通源码 PR 不构建 Docker
   镜像；Dockerfile、dockerignore、Keycloak provider/runtime 等 packaging 变更做真实构建或
   runtime smoke，且不 push 镜像。
-- `.github/workflows/release.yml` 是唯一 main push 自动发布入口。它将 before..head 整段变化
-  传给 `deploy/release_plan.py`，并分别调用单 component Build、单 service Deploy、单 root
-  Tofu Apply。Build 镜像、配置服务和基础设施按依赖关系各自运行；不相关 lane 独立，失败汇总
-  会让该 Release 失败，不自动回滚其他成功 lane。
-- Build 输出冻结的完整 source SHA、镜像引用、不可变 `sha-<12>` tag 和已验证 registry digest。
-  TX 的 business-api/frontend/keycloak 只发到 TCR；Yecao 的 parser-worker/minio 只发到 GHCR。
-  自动 Deploy 使用 Build 的精确引用与 digest；config-only 从目标 host 的 metadata v2 读取
-  已部署身份。手动 Build/Deploy 均为单 component/service，手动 Deploy 从当前 main 的 first-parent
-  历史挑选 registry 中存在的 immutable tag 并核对 digest，不能使用 `latest`。
+- `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 与
+  `minio.yml` 分别 build、push 和部署一个应用服务；TX 的前三个镜像只发到 TCR，Yecao 的
+  parser-worker/MinIO 只发到 GHCR。每个 workflow 冻结完整 source SHA，发布不可变 `sha-<12>` tag，
+  核对 registry digest 后将精确 image identity 传给所属部署步骤。没有独立 Build workflow、
+  reusable Build/Deploy DAG、latest tag 或 all selector。
+- `.github/workflows/caddy.yml` 独立负责 TX 网关：staged Caddy 配置与 assets 校验后只 reconcile
+  Caddy，并验证 trusted TLS、redirect、前端/API、Keycloak 与 auth asset 路由。它不 build 应用镜像、
+  不依赖数据库或 Keycloak admin credentials，也不写应用镜像 metadata。
+- `.github/workflows/rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、`cos.yml` 与
+  `observability.yml` 分别拥有 RabbitMQ、两个 PostgreSQL、COS 和 Yecao 观测运行时/Grafana root。
+  各 workflow 自己执行 root 专属 safety guard、apply 后 clean second-plan/readiness；observability
+  失败仍按现有契约显示为 degraded，不改变应用服务结果。
+- 三个数据更新 workflow (`update-tankopedia.yml`、`update-equipment.yml`、`update-crew-skills.yml`)
+  保持独立，生成 PR 后核对 open PR 的 main base、自动化 head branch 和精确 head SHA，再 dispatch
+  `ci.yml`；CI 通过只读 GitHub API 核对该 run 仍验证同一 PR head。它们不自动 merge。
 - TX `/opt/wotb-tx/production-release.json` 只记录 business-api/frontend/keycloak；Yecao
   `/opt/wotb/production-release.json` 只记录 parser-worker/minio。metadata 使用 schemaVersion 2、
   同目录原子替换和 0600 权限；config-only 成功只推进 configSha，固定上游服务不写入此文件。
   helper 是 `deploy/release-metadata.py`。不存在或损坏的 metadata、registry 不匹配、immutable
   tag/digest 不匹配都 fail closed，不从运行容器猜镜像身份。
-- TX Caddy、RabbitMQ、business/keycloak PostgreSQL 和 Yecao node-exporter/Prometheus/Loki/Alloy/
-  Grafana 是可由 planner 按 Compose/config 变化选出的固定上游服务。只 reconcile 受影响 service；
-  runtime Build 不因配置文件变化而触发。单服务 Deploy 保持 compose/service health checks。
-- Build、Deploy、Tofu Apply 使用不可取消的生产维护队列，并在 mutation 前检查 source 仍是当前
-  main，阻止旧 SHA rerun 覆盖新版本。失败由对应 lane 诊断；没有自动 image rollback、database
-  restore 或跨服务事务。切换 metadata v2 前仍须在合并前读取实时 host 状态、冻结旧生产写入并
-  预置经核对的实际镜像身份；本地/PR 结果不代表生产切换完成。
+- 固定上游服务的 Compose/config 变化只触发其对应 owner workflow，不构建应用镜像。生产 owner
+  workflow 使用不可取消的共享维护队列，并在关键 staging/mutation 边界拒绝过期 SHA，TX 与 Yecao
+  host mutation 由 `flock` 串行化。失败不自动回滚其他服务或数据库。切换 metadata v2 前仍须在合并前
+  读取实时 host 状态、冻结旧生产写入并预置经核对的实际镜像身份；本地/PR 结果不代表生产切换完成。
 
 Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties` 的
 `wotbVersion` 是唯一版本来源，`versionCode` 由 SemVer 确定性计算；发布工作流

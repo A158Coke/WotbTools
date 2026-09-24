@@ -1,0 +1,337 @@
+name: Keycloak
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/keycloak.yml
+      - .dockerignore
+      - docker/Dockerfile.keycloak
+      - docker/keycloak/**
+      - java/settings-docker.xml
+      - keycloak-qq-provider/**
+      - keycloak-wargaming-provider/**
+      - infra/tofu/keycloak/**
+      - deploy/test-keycloak-runtime.sh
+      - deploy/test-keycloak-tofu.sh
+      - deploy/tx/deploy.sh
+      - deploy/tx/docker-compose.yml
+      - deploy/tx/keycloak-tofu.sh
+      - deploy/dependency-readiness.sh
+      - deploy/dependency-readiness.py
+      - deploy/release-metadata.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/keycloak.yml
+    .dockerignore
+    docker/Dockerfile.keycloak
+    docker/keycloak/**
+    java/settings-docker.xml
+    keycloak-qq-provider/**
+    keycloak-wargaming-provider/**
+    infra/tofu/keycloak/**
+    deploy/test-keycloak-runtime.sh
+    deploy/test-keycloak-tofu.sh
+    deploy/tx/deploy.sh
+    deploy/tx/docker-compose.yml
+    deploy/tx/keycloak-tofu.sh
+    deploy/dependency-readiness.sh
+    deploy/dependency-readiness.py
+    deploy/release-metadata.py
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.identity.outputs.image }}
+      commit_sha: ${{ steps.identity.outputs.commit_sha }}
+      digest: ${{ steps.verify.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Freeze current main and image identity
+        id: identity
+        env:
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            [ "$REF_NAME" = refs/heads/main ] || { echo 'Manual deployment must dispatch from main.' >&2; exit 1; }
+          fi
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
+          [ -n "$TCR_NAMESPACE" ] || { echo 'TCR_NAMESPACE is required.' >&2; exit 1; }
+          image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-keycloak:sha-${SOURCE_SHA:0:12}"
+          {
+            echo "commit_sha=$SOURCE_SHA"
+            echo "image=$image"
+            echo "repository=${image%:*}"
+            echo "tag=sha-${SOURCE_SHA:0:12}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ vars.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+      - uses: imjasonh/setup-crane@v0.7
+      - name: Reuse only an existing immutable image with this source identity
+        id: immutable
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          TAG: ${{ steps.identity.outputs.tag }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tags="$(crane ls "$REPOSITORY")"
+          if grep -Fxq "$TAG" <<< "$tags"; then
+            docker pull "$IMAGE"
+            revision="$(docker image inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE" | sed -n 's/^WOTBTOOLS_BUILD_COMMIT=//p' | head -n 1)"
+            [ "$revision" = "$SOURCE_SHA" ] || { echo 'Existing immutable tag has a different Keycloak build commit.' >&2; exit 1; }
+            digest="$(crane digest "$IMAGE")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "existing_digest=$digest" >> "$GITHUB_OUTPUT"
+          else
+            echo 'existing_digest=' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-buildx-action@v4
+      - name: Build and publish this frozen image
+        id: build_image
+        if: steps.immutable.outputs.existing_digest == ''
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.keycloak
+          push: true
+          tags: ${{ steps.identity.outputs.image }}
+          build-args: BUILD_COMMIT=${{ steps.identity.outputs.commit_sha }}
+          cache-from: type=gha,scope=keycloak
+          cache-to: type=gha,mode=max,scope=keycloak
+          provenance: false
+          sbom: false
+      - name: Verify registry digest and source identity
+        id: verify
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          EXISTING_DIGEST: ${{ steps.immutable.outputs.existing_digest }}
+          BUILD_DIGEST: ${{ steps.build_image.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest="${EXISTING_DIGEST:-$BUILD_DIGEST}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Missing or invalid image digest.' >&2; exit 1; }
+          [ "$(crane digest "$IMAGE")" = "$digest" ] || { echo 'Registry digest changed after build.' >&2; exit 1; }
+          docker pull "$IMAGE@$digest" >/dev/null
+          revision="$(docker image inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE@$digest" | sed -n 's/^WOTBTOOLS_BUILD_COMMIT=//p' | head -n 1)"
+          [ "$revision" = "$SOURCE_SHA" ] || { echo 'Published Keycloak image does not contain the frozen build commit.' >&2; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+  smoke:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.build.outputs.commit_sha }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ vars.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+      - name: Pull the exact published image
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: docker pull "$IMAGE@$DIGEST"
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+      - name: Run Keycloak runtime and realm Tofu smoke against the published digest
+        env:
+          WOTB_KEYCLOAK_TEST_IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          WOTB_KEYCLOAK_SKIP_BUILD: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash deploy/test-keycloak-runtime.sh
+          bash deploy/test-keycloak-tofu.sh
+
+  deploy:
+    concurrency:
+      group: production-maintenance
+      cancel-in-progress: false
+      queue: max
+    needs: [build, smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: tx-production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.build.outputs.commit_sha }}
+      - name: Reject stale main before staging production inputs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+      - name: Prepare TX runtime and realm staging
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          script: |
+            set -eu
+            root=/opt/wotb-tx
+            mkdir -p "$root/deploy.incoming/deploy" "$root/tofu.incoming"
+            rm -rf -- "$root/deploy.incoming/deploy/tx"
+            mkdir -p "$root/deploy.incoming/deploy/tx"
+            stage="$root/tofu.incoming/${{ needs.build.outputs.commit_sha }}"
+            rm -rf -- "$stage/infra/tofu/keycloak" "$stage/deploy/tx/keycloak-tofu.sh"
+            mkdir -p "$stage"
+      - name: Stage TX runtime files
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx,deploy/release-metadata.py,deploy/dependency-readiness.sh,deploy/dependency-readiness.py
+          target: /opt/wotb-tx/deploy.incoming
+          overwrite: true
+      - name: Stage Keycloak realm root and its actual TX runner
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: infra/tofu/keycloak,deploy/tx/keycloak-tofu.sh
+          target: /opt/wotb-tx/tofu.incoming/${{ needs.build.outputs.commit_sha }}
+          overwrite: true
+      - name: Reject stale main before TX mutation
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+      - name: Reconcile Keycloak, apply realm Tofu, verify, and commit metadata under one host lock
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 55m
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,WOTB_TX_BOOTSTRAP_KEYCLOAK,WOTB_DEPLOY_DEFER_METADATA,KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
+          script: |
+            set -euo pipefail
+            exec 9>/opt/wotb-tx/.deploy.lock
+            flock -n 9 || { echo 'Another TX production deployment is running.' >&2; exit 1; }
+            export WOTB_DEPLOY_LOCK_FD=9
+            export WOTB_DEPLOY_DEFER_METADATA=1
+            export WOTB_TX_BOOTSTRAP_KEYCLOAK=1
+            export WOTB_DEPLOY_SERVICE=keycloak
+            export WOTB_DEPLOY_CONFIG_SHA='${{ needs.build.outputs.commit_sha }}'
+            export WOTB_DEPLOY_IMAGE_TAG='${{ needs.build.outputs.image }}'
+            export WOTB_DEPLOY_IMAGE_COMMIT_SHA='${{ needs.build.outputs.commit_sha }}'
+            export WOTB_DEPLOY_IMAGE_DIGEST='${{ needs.build.outputs.digest }}'
+            export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
+            stage="/opt/wotb-tx/tofu.incoming/${{ needs.build.outputs.commit_sha }}"
+            root="$stage/infra/tofu/keycloak"
+            test -d "$root" && test -f "$stage/deploy/tx/keycloak-tofu.sh"
+            for name in KEYCLOAK_ADMIN_USERNAME KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_ADMIN_CLIENT_SECRET \
+              KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION KEYCLOAK_E2E_CLIENT_SECRET \
+              KEYCLOAK_E2E_CLIENT_SECRET_VERSION WG_APPLICATION_ID TX_QQ_CLIENT_ID \
+              TX_QQ_CLIENT_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+              test -n "${!name:-}" || { echo "$name is required." >&2; exit 2; }
+            done
+            command -v tofu >/dev/null 2>&1 || { echo 'OpenTofu is required on TX.' >&2; exit 2; }
+            command -v jq >/dev/null 2>&1 || { echo 'jq is required on TX for plan safety validation.' >&2; exit 2; }
+            test -f /opt/wotb-tx/tofurc || { echo 'TX OpenTofu CLI config is missing.' >&2; exit 2; }
+
+            bash /opt/wotb-tx/deploy.incoming/deploy/dependency-readiness.sh keycloak
+            bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
+            bash "$stage/deploy/tx/keycloak-tofu.sh" "$root"
+
+            keycloak_id="$(docker ps --filter label=com.docker.compose.service=keycloak --format '{{.ID}}' | head -n 1)"
+            [ -n "$keycloak_id" ] || { echo 'Keycloak container is not running after realm apply.' >&2; exit 1; }
+            docker exec "$keycloak_id" test -f /opt/keycloak/providers/keycloak-qq-provider.jar
+            docker exec "$keycloak_id" test -f /opt/keycloak/providers/keycloak-wargaming-provider.jar
+            docker run --rm --network host curlimages/curl:8.12.1 --fail --silent --show-error \
+              --connect-timeout 3 --max-time 15 \
+              http://127.0.0.1:18080/realms/wotbtools/.well-known/openid-configuration >/dev/null
+
+            python3 /opt/wotb-tx/deploy/release-metadata.py update \
+              --host tx --file /opt/wotb-tx/production-release.json \
+              --tx-prefix "$TX_IMAGE_REGISTRY_PREFIX" --service keycloak \
+              --config-sha "$WOTB_DEPLOY_CONFIG_SHA" \
+              --image-tag "$WOTB_DEPLOY_IMAGE_TAG" \
+              --image-commit-sha "$WOTB_DEPLOY_IMAGE_COMMIT_SHA"
+        env:
+          WOTB_DEPLOY_SERVICE: keycloak
+          WOTB_DEPLOY_CONFIG_SHA: ${{ needs.build.outputs.commit_sha }}
+          WOTB_DEPLOY_IMAGE_TAG: ${{ needs.build.outputs.image }}
+          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
+          WOTB_DEPLOY_IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+          WOTB_DEPLOY_DEFER_METADATA: '1'
+          WOTB_TX_BOOTSTRAP_KEYCLOAK: '1'
+          TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
+          KC_POSTGRES_ADMIN_USER: kc_admin
+          KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
+          KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
+          KC_DB_USERNAME: keycloak
+          KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
+          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+          KEYCLOAK_ADMIN_USERNAME: admin
+          KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION || '1' }}
+          KEYCLOAK_E2E_CLIENT_SECRET: ${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}
+          KEYCLOAK_E2E_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_E2E_CLIENT_SECRET_VERSION || '1' }}
+          TX_QQ_CLIENT_ID: ${{ vars.TX_QQ_CLIENT_ID }}
+          TX_QQ_CLIENT_SECRET: ${{ secrets.TX_QQ_CLIENT_SECRET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}

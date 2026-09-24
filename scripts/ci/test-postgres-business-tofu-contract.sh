@@ -21,27 +21,45 @@ import yaml
 
 root = Path(sys.argv[1])
 tofu_root = root / "infra/tofu/postgres-business"
-workflow_text = (root / ".github/workflows/tofu-apply.yml").read_text(encoding="utf-8")
+workflow_text = (root / ".github/workflows/business-postgres.yml").read_text(encoding="utf-8")
 ci_text = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 tx_deploy = (root / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
 tofurc = (root / "deploy/tx/business-postgres.tofurc").read_text(encoding="utf-8")
 root_text = "\n".join(path.read_text(encoding="utf-8") for path in sorted(tofu_root.glob("*.tf")))
-workflow = yaml.safe_load(workflow_text)
-ci = yaml.safe_load(ci_text)
+workflow = yaml.load(workflow_text, Loader=yaml.BaseLoader)
+ci = yaml.load(ci_text, Loader=yaml.BaseLoader)
 
 
 def flat(text):
     return re.sub(r"\s+", " ", text)
 
 
-# --- PR CI validates this root; production apply happens on TX -------------
+# --- CI validates this root; only the main-only owner applies on TX --------
 assert "tofu_plans" in ci["jobs"]
 assert "infra/tofu/postgres-business" in ci_text
 assert "tofu apply" not in str(ci["jobs"]["tofu_plans"])
 assert "remote-exec" not in root_text
 
-# --- both apply paths share one serialization boundary ----------------------
-expected_concurrency = {"group": "production-maintenance", "cancel-in-progress": False, "queue": "max"}
+events = workflow.get("on", workflow.get(True, {}))
+assert events["push"]["branches"] == ["main"]
+assert "infra/tofu/postgres-business/**" in events["push"]["paths"]
+assert "workflow_dispatch" in events
+freeze_step = next(step for step in workflow["jobs"]["business_postgres"]["steps"]
+                   if step.get("name") == "Freeze current main")
+freeze_script = freeze_step["run"]
+assert '[[ "$EVENT_REF" == refs/heads/main ]]' in freeze_script
+assert '"$(git rev-parse HEAD)" == "$SOURCE_SHA"' in freeze_script
+assert '[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]' in freeze_script
+assert "deploy/check-production-freshness.sh" in freeze_script
+assert freeze_step["env"]["EVENT_SHA"] == "${{ github.sha }}"
+assert 'echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"' in freeze_script
+pre_mutation = next(step for step in workflow["jobs"]["business_postgres"]["steps"]
+                    if step.get("name") == "Reject stale main before TX mutation")
+assert "deploy/check-production-freshness.sh" in pre_mutation["run"]
+assert pre_mutation["env"]["EVENT_SHA"] == "${{ github.sha }}"
+
+# --- the production owner shares the maintenance serialization boundary -----
+expected_concurrency = {"group": "production-maintenance", "cancel-in-progress": "false", "queue": "max"}
 assert workflow["concurrency"] == expected_concurrency
 
 # --- provider, state and loopback ownership boundaries ----------------------
@@ -70,18 +88,26 @@ assert 'include = ["registry.opentofu.org/cyrilgdn/postgresql"]' in tofurc_flat
 assert 'exclude = ["registry.opentofu.org/cyrilgdn/postgresql"]' in tofurc_flat
 assert "/opt/wotb-tx/tofu-provider-mirror" in tofurc_flat
 
-# --- the TX Tofu lane keeps both plan gates and the marker owner ------------
-tofu_step = next(
-    step for step in workflow["jobs"]["tx"]["steps"]
-    if step.get("name") == "Apply Business PostgreSQL on TX localhost"
-)
+# --- the owner applies the exact guarded plan and proves convergence ---------
+owner_job = workflow["jobs"]["business_postgres"]
+tofu_step = next(step for step in owner_job["steps"]
+                 if step.get("name") == "Reconcile runtime, apply exact Business PostgreSQL plan, and verify")
 tofu_script = tofu_step["with"]["script"]
+assert "flock -n 9" in tofu_script
+assert "WOTB_DEPLOY_CONFIG_SHA" in tofu_script
+assert '"$WOTB_DEPLOY_CONFIG_SHA" == "$SOURCE_SHA"' in tofu_script
+assert "test -f /opt/wotb-tx/deploy/business-postgres.tofurc" in tofu_script
 assert "bash ./validate-plan.sh plan.tfplan" in tofu_script
 assert "bash ./validate-plan.sh second-plan.tfplan --require-no-changes" in tofu_script
-assert "TF_CLI_CONFIG_FILE=/opt/wotb-tx/deploy/business-postgres.tofurc" in tofu_script
+assert "export TF_CLI_CONFIG_FILE=/opt/wotb-tx/deploy/business-postgres.tofurc" in tofu_script
+assert "tofu plan -input=false -no-color -out=plan.tfplan" in tofu_script
+assert "tofu apply -input=false -auto-approve plan.tfplan" in tofu_script
+assert "tofu plan -input=false -no-color -out=second-plan.tfplan" in tofu_script
 assert "business-postgres.tofu-provisioned" in tofu_script
+assert "trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT" in tofu_script
 assert "tfvars" not in tx_deploy.lower()
 assert ' > "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER"' not in tx_deploy
+assert "tofu apply -input=false -auto-approve plan.tfplan" in tofu_script
 
 # --- secrets arrive as ordinary runtime names, never as TF_VAR names --------
 assert "TF_VAR_" not in tofu_step["with"]["envs"], "SSH envs must carry runtime names, not TF_VAR names"

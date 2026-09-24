@@ -4,9 +4,21 @@ run-name: "CI / PR for ${{ github.ref_name }}"
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open pull request number to validate
+        required: true
+        type: string
+      head_sha:
+        description: Exact current pull request head commit SHA
+        required: true
+        type: string
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -18,10 +30,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
+      base_sha: ${{ steps.revisions.outputs.base_sha }}
+      head_sha: ${{ steps.revisions.outputs.head_sha }}
       backend: ${{ steps.plan.outputs.backend }}
       frontend: ${{ steps.plan.outputs.frontend }}
       http_contract: ${{ steps.plan.outputs.http_contract }}
-      keycloak: ${{ steps.plan.outputs.keycloak }}
       keycloak_provider: ${{ steps.plan.outputs.keycloak_provider }}
       keycloak_runtime: ${{ steps.plan.outputs.keycloak_runtime }}
       data: ${{ steps.plan.outputs.data }}
@@ -33,7 +46,6 @@ jobs:
       java_modules: ${{ steps.plan.outputs.java_modules }}
       java_full: ${{ steps.plan.outputs.java_full }}
       browser_suites: ${{ steps.plan.outputs.browser_suites }}
-      packaging_components: ${{ steps.plan.outputs.packaging_components }}
       tofu_roots: ${{ steps.plan.outputs.tofu_roots }}
     steps:
       - uses: actions/checkout@v5
@@ -51,29 +63,127 @@ jobs:
             echo "::error::docs/current-plan.md must remain ignored." >&2
             exit 1
           }
-      - name: Select validation from the release planner
+      - name: Resolve and verify pull request range
+        id: revisions
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          EVENT_BASE_REPO: ${{ github.event.pull_request.base.repo.full_name || '' }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref || '' }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          DISPATCH_PR_NUMBER: ${{ inputs.pr_number || '' }}
+          DISPATCH_HEAD_SHA: ${{ inputs.head_sha || '' }}
+          REPOSITORY: ${{ github.repository }}
+          CURRENT_SHA: ${{ github.sha }}
+          CURRENT_REF: ${{ github.ref }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.request
+
+          sha_pattern = re.compile(r"[0-9a-f]{40}\Z")
+          event = os.environ["CI_EVENT_NAME"]
+          repository = os.environ["REPOSITORY"]
+
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(f"::error::{message}")
+
+          def valid_sha(value):
+              return bool(sha_pattern.fullmatch(value))
+
+          if event == "pull_request":
+              base_repo = os.environ["EVENT_BASE_REPO"]
+              base_ref = os.environ["EVENT_BASE_REF"]
+              base_sha = os.environ["EVENT_BASE_SHA"]
+              head_sha = os.environ["EVENT_HEAD_SHA"]
+              pr_number = os.environ["EVENT_PR_NUMBER"]
+              require(base_repo.casefold() == repository.casefold(), "PR base repository must be this repository")
+              require(base_ref == "main", "PR base branch must be main")
+          elif event == "workflow_dispatch":
+              pr_number = os.environ["DISPATCH_PR_NUMBER"]
+              requested_head = os.environ["DISPATCH_HEAD_SHA"]
+              current_sha = os.environ["CURRENT_SHA"]
+              current_ref = os.environ["CURRENT_REF"]
+              require(pr_number.isascii() and pr_number.isdecimal() and int(pr_number) > 0,
+                      "workflow_dispatch pr_number must be a positive integer")
+              require(valid_sha(requested_head), "workflow_dispatch head_sha must be a full lowercase commit SHA")
+              require(current_ref.startswith("refs/heads/") and len(current_ref) > len("refs/heads/"),
+                      "workflow_dispatch must run from a branch")
+              require(current_sha == requested_head, "workflow_dispatch head_sha is stale for this workflow run")
+              token = os.environ.get("GH_TOKEN", "")
+              require(bool(token), "read-only GitHub token is unavailable")
+              url = f"https://api.github.com/repos/{repository}/pulls/{pr_number}"
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "wotbtools-ci",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      pr = json.load(response)
+              except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+                  raise SystemExit(f"::error::Unable to read PR {pr_number} with the read-only GitHub token: {error}")
+              base = pr.get("base") or {}
+              head = pr.get("head") or {}
+              base_repository = (base.get("repo") or {}).get("full_name", "")
+              head_repository = (head.get("repo") or {}).get("full_name", "")
+              head_ref = head.get("ref", "")
+              base_ref = base.get("ref", "")
+              base_sha = base.get("sha", "")
+              head_sha = head.get("sha", "")
+              current_branch = current_ref.removeprefix("refs/heads/")
+              require(pr.get("state") == "open", f"PR {pr_number} must be open")
+              require(base_repository.casefold() == repository.casefold(), "PR base repository must be this repository")
+              require(base_ref == "main", "PR base branch must be main")
+              require(head_repository.casefold() == repository.casefold(), "workflow_dispatch only accepts same-repository PR heads")
+              require(head_ref == current_branch, "workflow_dispatch ref must match the PR head branch")
+              require(head_sha == requested_head == current_sha,
+                      "PR head, workflow_dispatch head_sha, and current workflow SHA must match")
+          else:
+              raise SystemExit(f"::error::Unsupported CI event {event!r}")
+
+          require(pr_number.isascii() and pr_number.isdecimal() and int(pr_number) > 0,
+                  "PR number must be a positive integer")
+          require(valid_sha(base_sha), "PR base SHA must be a full lowercase commit SHA")
+          require(valid_sha(head_sha), "PR head SHA must be a full lowercase commit SHA")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"base_sha={base_sha}\n")
+              output.write(f"head_sha={head_sha}\n")
+          PY
+      - name: Select validation from the CI-only impact selector
         id: plan
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ steps.revisions.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.revisions.outputs.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
           [ -n "$BASE_SHA" ] || { echo "::error::PR base SHA is required" >&2; exit 1; }
           [ -n "$HEAD_SHA" ] || { echo "::error::PR head SHA is required" >&2; exit 1; }
-          python3 deploy/release_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" > release-plan.json
-          python3 - release-plan.json <<'PY' >> "$GITHUB_OUTPUT"
+          python3 scripts/ci/ci-impact.py --base "$BASE_SHA" --head "$HEAD_SHA" > ci-impact.json
+          python3 - ci-impact.json <<'PY' >> "$GITHUB_OUTPUT"
           import json
           import sys
 
-          validation = json.load(open(sys.argv[1], encoding="utf-8"))["validation"]
-          surfaces = validation["surfaces"]
+          impact = json.load(open(sys.argv[1], encoding="utf-8"))
+          surfaces = impact["surfaces"]
           names = {
               "backend": "backend",
               "frontend": "frontend",
               "http_contract": "httpContract",
               "android": "android",
-              "keycloak": "keycloak",
               "keycloak_provider": "keycloakProvider",
               "keycloak_runtime": "keycloakRuntime",
               "data": "data",
@@ -84,11 +194,10 @@ jobs:
           }
           for output_name, surface_name in names.items():
               print(f"{output_name}={str(surfaces[surface_name]).lower()}")
-          print("java_modules=" + ",".join(validation["javaModules"]))
-          print("java_full=" + str(validation["javaFull"]).lower())
-          print("browser_suites=" + json.dumps(validation["frontendBrowserSuites"], separators=(",", ":")))
-          print("packaging_components=" + json.dumps(validation["packagingComponents"], separators=(",", ":")))
-          print("tofu_roots=" + json.dumps(validation["tofuRoots"], separators=(",", ":")))
+          print("java_modules=" + ",".join(impact["javaModules"]))
+          print("java_full=" + str(impact["javaFull"]).lower())
+          print("browser_suites=" + json.dumps(impact["frontendBrowserSuites"], separators=(",", ":")))
+          print("tofu_roots=" + json.dumps(impact["tofuRoots"], separators=(",", ":")))
           PY
 
   python_unit:
@@ -186,25 +295,21 @@ jobs:
       - name: Wargaming provider
         working-directory: keycloak-wargaming-provider
         run: mvn --batch-mode --no-transfer-progress -s ../java/settings-ci.xml -Dmaven.repo.local=../java/.m2repo test
+      - name: Validate Keycloak provider/runtime safety contract
+        run: bash scripts/ci/test-keycloak-tofu-contract.sh
 
   keycloak_runtime:
     needs: [changes]
     if: needs.changes.outputs.keycloak_runtime == 'true' || needs.changes.outputs.full == 'true'
     name: Keycloak runtime
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
-      - name: Set up OpenTofu
-        uses: opentofu/setup-opentofu@v2
-        with:
-          tofu_version: 1.12.6
-          tofu_wrapper: false
       - name: Validate Keycloak runtime inputs
         run: |
           set -euo pipefail
           bash -n docker/keycloak/wotbtools-entrypoint.sh
-          docker buildx build --check -f docker/Dockerfile.keycloak .
 
   frontend:
     needs: [changes]
@@ -242,41 +347,6 @@ jobs:
       - name: Bundle separation check
         working-directory: frontend
         run: node scripts/check-bundle-separation.mjs
-
-  packaging:
-    needs: [changes]
-    if: needs.changes.outputs.packaging_components != '[]'
-    name: Packaging / ${{ matrix.component }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 100
-    strategy:
-      fail-fast: false
-      matrix:
-        component: ${{ fromJSON(needs.changes.outputs.packaging_components) }}
-    steps:
-      - uses: actions/checkout@v5
-      - name: Set up OpenTofu for Keycloak runtime smoke
-        if: matrix.component == 'keycloak'
-        uses: opentofu/setup-opentofu@v2
-        with:
-          tofu_version: 1.12.6
-          tofu_wrapper: false
-      - name: Build production Dockerfile without pushing
-        if: matrix.component != 'keycloak'
-        env:
-          COMPONENT: ${{ matrix.component }}
-          COMMIT_SHA: ${{ github.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "$COMPONENT" in business-api|frontend|parser-worker|minio) ;; *) exit 1 ;; esac
-          docker build --build-arg "BUILD_COMMIT=ci-$COMMIT_SHA" -f "docker/Dockerfile.$COMPONENT" -t "wotbtools-$COMPONENT:pr" .
-      - name: Verify real Keycloak image and provider runtime
-        if: matrix.component == 'keycloak'
-        run: |
-          set -euo pipefail
-          bash deploy/test-keycloak-runtime.sh
-          WOTB_KEYCLOAK_SKIP_BUILD=1 bash deploy/test-keycloak-tofu.sh
 
   http_contract:
     needs: [changes]
@@ -388,10 +458,9 @@ jobs:
             --native-source android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt
           bash scripts/android-release/test-android-contract.sh
       - name: Enforce version and bridge compatibility against base
-        if: github.event_name == 'pull_request'
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ needs.changes.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.changes.outputs.head_sha }}
         run: |
           set -euo pipefail
           git show "$BASE_SHA:android/gradle.properties" > /tmp/base-gradle.properties
@@ -585,62 +654,56 @@ jobs:
   deploy_smoke:
     needs: [changes]
     if: needs.changes.outputs.deploy == 'true' || needs.changes.outputs.full == 'true'
-    name: Deploy smoke
+    name: Deployment and infrastructure contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Set up OpenTofu
-        uses: opentofu/setup-opentofu@v2
-        with:
-          tofu_version: 1.12.6
-          tofu_wrapper: false
       - name: Flyway migration immutability guard
         env:
-          FLYWAY_BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+          FLYWAY_BASE_REF: ${{ needs.changes.outputs.base_sha }}
         run: bash deploy/check-flyway-immutability.sh "$FLYWAY_BASE_REF"
       - name: Flyway migration guard fixture
         run: bash deploy/test-flyway-immutability.sh
-      - name: bash -n production scripts and CI entry points
+      - name: Read-only dependency readiness protocol unit tests
+        run: python3 deploy/test_dependency_readiness.py
+      - name: Bash syntax for deploy entrypoints and local policy fixtures
         run: >-
           bash -n deploy/deploy.sh deploy/minio-deploy.sh
           deploy/verify-observability.sh deploy/tx/deploy.sh
           deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
-          deploy/tx/runtime-check.sh
-          deploy/test-rabbitmq-tofu.sh deploy/test-business-postgres-runtime.sh
-          deploy/test-keycloak-runtime.sh deploy/test-keycloak-tofu.sh
-          deploy/test-observability-e2e.sh deploy/test-grafana-runtime.sh
-          deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
-          deploy/test-build-workflow.sh deploy/test-release-plan.sh
-          deploy/tx/publish-loaded-image-to-tcr.sh
+          deploy/tx/runtime-check.sh deploy/tx/publish-loaded-image-to-tcr.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
-          infra/tofu/minio/validate-plan.sh
-          infra/tofu/minio/test-validate-plan.sh
+          deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
+          infra/tofu/minio/validate-plan.sh infra/tofu/minio/test-validate-plan.sh
           infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
           infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
           scripts/ci/test-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-business-tofu-contract.sh
-      - name: Build workflow frozen-commit and direct-TCR publication contract
-        run: bash deploy/test-build-workflow.sh
-      - name: Build/Deploy changed-target and manifest contract
-        run: bash deploy/test-release-plan.sh
-      - name: TX runtime and user-profile reset safety contracts
+          scripts/ci/test-tofu-workflow-contract.sh
+      - name: CI selector, workflow purity, and ToFu safety fixtures
         run: |
+          set -euo pipefail
+          python3 scripts/ci/test-path-filters.py
+          bash scripts/ci/test-workflow-contract.sh
+          bash scripts/ci/test-tofu-workflow-contract.sh
+          bash scripts/ci/test-tofu-prod-plan-guard.sh
+          bash scripts/ci/test-keycloak-tofu-contract.sh
+          bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
+          bash scripts/ci/test-postgres-business-tofu-contract.sh
+      - name: TX runtime and metadata fixtures
+        run: |
+          set -euo pipefail
           bash deploy/test-tx-runtime-config.sh
           bash deploy/test-yecao-wireguard-boundary.sh
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
-          bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
-          bash scripts/ci/test-keycloak-tofu-contract.sh
-      - name: CI path filter contract
-        run: python3 scripts/ci/test-path-filters.py
-      - name: CI workflow aggregation contract
-        run: bash scripts/ci/test-workflow-contract.sh
-      - name: Production compose config validation
+          bash deploy/test-deploy-contract.sh
+      - name: Production Compose configuration contract
         env:
           TAG: sha-ci
           DB_PASSWORD: ci
@@ -653,27 +716,26 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f deploy/docker-compose.prod.yml config --format json > /tmp/compose.json
-          python - <<'PY'
+          python3 - <<'PY'
           import json
-          with open('/tmp/compose.json', encoding='utf-8') as f:
-              services = json.load(f)['services']
+          with open('/tmp/compose.json', encoding='utf-8') as compose_file:
+              services = json.load(compose_file)['services']
           endpoint = services['parser-worker']['environment']['MINIO_ENDPOINT']
           assert endpoint == 'minio:9000', endpoint
           print('parser-worker resolves MinIO through Docker service discovery')
           PY
-      - name: MinIO compose and source-image contract
+      - name: MinIO Compose configuration contract
         env:
           TAG: sha-ci
           YECAO_MINIO_ROOT_USER: ci-root-user
           YECAO_MINIO_ROOT_PASSWORD: ci-root-password
         run: |
           set -euo pipefail
-          bash infra/tofu/minio/test-validate-plan.sh
           docker compose -f deploy/docker-compose.minio.yml config --format json > /tmp/minio-compose.json
           python3 - <<'PY'
           import json
-          with open('/tmp/minio-compose.json', encoding='utf-8') as f:
-              compose = json.load(f)
+          with open('/tmp/minio-compose.json', encoding='utf-8') as compose_file:
+              compose = json.load(compose_file)
           assert set(compose['services']) == {'minio'}
           service = compose['services']['minio']
           assert service['image'] == 'ghcr.io/a158coke/wotbtools-minio:sha-ci'
@@ -684,178 +746,23 @@ jobs:
           assert service.get('healthcheck'), 'MinIO healthcheck is required'
           assert compose['volumes']['minio_data']['name'] == 'wotb_yecao_minio_data'
           assert compose['networks']['default']['external'] is True
-          print('MinIO compose network and persistence contract OK')
+          print('MinIO Compose network and persistence contract OK')
           PY
-          docker build --build-arg BUILD_COMMIT=ci-${{ github.sha }} -f docker/Dockerfile.minio -t wotbtools-minio:pr .
-          docker run --rm wotbtools-minio:pr --version | grep -F 'RELEASE.2025-10-15T17-29-55Z'
-          name=wotbtools-minio-ci
-          docker rm -f "$name" >/dev/null 2>&1 || true
-          trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
-          docker run -d --rm --name "$name" \
-            -e MINIO_ROOT_USER=ci-root-user \
-            -e MINIO_ROOT_PASSWORD=ci-root-password \
-            -p 127.0.0.1:19000:9000 \
-            wotbtools-minio:pr server --console-address :9001 /data
-          for _ in $(seq 1 30); do
-            if curl --fail --silent --show-error http://127.0.0.1:19000/minio/health/live >/dev/null; then
-              ready=true
-              break
-            fi
-            sleep 1
-          done
-          [ "${ready:-false}" = true ] || {
-            docker logs "$name"
-            exit 1
-          }
-          export TF_VAR_minio_server=127.0.0.1:19000
-          export TF_VAR_minio_root_user=ci-root-user
-          export TF_VAR_minio_root_password=ci-root-password
-          export TF_VAR_worker_access_key=ci-worker-access-key
-          export TF_VAR_worker_secret_key=ci-worker-secret-key
-          export TF_VAR_control_api_access_key=ci-control-api-access-key
-          export TF_VAR_control_api_secret_key=ci-control-api-secret-key
-          export MINIO_PROVIDER_MIRROR=/tmp/minio-provider-mirror
-          mkdir -p "$MINIO_PROVIDER_MIRROR"
-          tofu -chdir=infra/tofu/minio providers mirror "$MINIO_PROVIDER_MIRROR" >/dev/null
-          sed "s|/opt/wotb/tofu-provider-mirror|$MINIO_PROVIDER_MIRROR|" deploy/minio/tofurc \
-            > /tmp/minio-ci.tfrc
-          export TF_CLI_CONFIG_FILE=/tmp/minio-ci.tfrc
-          export TF_DATA_DIR=/tmp/minio-ci-tofu-data
-          tofu -chdir=infra/tofu/minio init -reconfigure -input=false -lockfile=readonly \
-            -backend-config=path=/tmp/minio-ci.tfstate >/dev/null
-          tofu -chdir=infra/tofu/minio validate >/dev/null
-          tofu -chdir=infra/tofu/minio plan -input=false -out=plan.tfplan >/dev/null
-          ( cd infra/tofu/minio && bash validate-plan.sh plan.tfplan )
-          tofu -chdir=infra/tofu/minio apply -input=false -auto-approve plan.tfplan >/dev/null
-          tofu -chdir=infra/tofu/minio plan -input=false -out=second-plan.tfplan >/dev/null
-          ( cd infra/tofu/minio && bash validate-plan.sh second-plan.tfplan --require-no-changes )
-          # Applied state is the authority for the two application identities:
-          # both must exist with a distinct name and the same temp/jobs/* scope.
-          tofu -chdir=infra/tofu/minio show -json > /tmp/minio-state.json
-          python3 - <<'PY'
-          import json
-          with open('/tmp/minio-state.json', encoding='utf-8') as state_file:
-              state = json.load(state_file)
-          resources = {}
-          bucket_arn = 'arn:aws:s3:::wotbtools-temp'
-
-          def collect(module):
-              for resource in module.get('resources', []):
-                  resources[resource['address']] = resource.get('values', {})
-              for child in module.get('child_modules', []):
-                  collect(child)
-
-          collect(state['values']['root_module'])
-          expected = {
-              'minio_iam_user.worker',
-              'minio_iam_user.control_api',
-              'minio_iam_policy.temporary_workspace_worker',
-              'minio_iam_policy.temporary_workspace_control_api',
-              'minio_iam_user_policy_attachment.worker',
-              'minio_iam_user_policy_attachment.control_api',
-              'minio_iam_policy.temporary_workspace_control_api_reclaim',
-              'minio_iam_user_policy_attachment.control_api_reclaim',
-              'minio_iam_policy.temporary_workspace_control_api_location',
-              'minio_iam_user_policy_attachment.control_api_location',
-              'minio_iam_policy.temporary_workspace_worker_location',
-              'minio_iam_user_policy_attachment.worker_location',
-          }
-          missing = sorted(expected - set(resources))
-          assert not missing, missing
-          identities = {
-              resources['minio_iam_user.worker']['name'],
-              resources['minio_iam_user.control_api']['name'],
-          }
-          assert len(identities) == 2, identities
-          expected_policies = {
-              'minio_iam_policy.temporary_workspace_worker': {
-                  's3:ListBucket', 's3:GetObject', 's3:PutObject',
-              },
-              'minio_iam_policy.temporary_workspace_control_api': {
-                  's3:ListBucket', 's3:GetObject', 's3:PutObject',
-              },
-              # Create rollback: the control plane may delete the inputs it wrote itself. This is the
-              # only delete grant in the root, and the prefix assertion below keeps it inside
-              # temp/jobs/*.
-              'minio_iam_policy.temporary_workspace_control_api_reclaim': {'s3:DeleteObject'},
-              # The MinIO Java SDK resolves the bucket location before every object operation, so
-              # both application identities need this one bucket-level action. It grants no object
-              # access: the bucket-resource assertion below pins each to the bucket ARN exactly.
-              'minio_iam_policy.temporary_workspace_control_api_location': {'s3:GetBucketLocation'},
-              'minio_iam_policy.temporary_workspace_worker_location': {'s3:GetBucketLocation'},
-          }
-          for address, expected_actions in expected_policies.items():
-              document = json.loads(resources[address]['policy'])
-              actions = set()
-              for statement in document['Statement']:
-                  statement_actions = set(statement['Action'])
-                  assert statement_actions <= expected_actions, (address, statement_actions)
-                  actions |= statement_actions
-                  if 's3:ListBucket' in statement_actions:
-                      assert statement['Condition']['StringLike']['s3:prefix'] == ['temp/jobs/*'], address
-                  elif 's3:GetBucketLocation' in statement_actions:
-                      assert statement['Resource'] == [bucket_arn], (address, statement['Resource'])
-                  else:
-                      for target in statement['Resource']:
-                          assert target == bucket_arn + '/temp/jobs/*', (address, target)
-              assert actions == expected_actions, (address, actions)
-          print('MinIO dual-identity temp/jobs prefix policy contract OK')
-          PY
-      - name: RabbitMQ Compose and OpenTofu ownership smoke
-        run: |
-          bash infra/tofu/rabbitmq/test-validate-plan.sh
-          bash deploy/test-rabbitmq-tofu.sh
-      - name: Business PostgreSQL Compose, OpenTofu, and backup/restore smoke
-        run: |
-          bash infra/tofu/postgres-business/test-validate-plan.sh
-          bash scripts/ci/test-postgres-business-tofu-contract.sh
-          bash deploy/test-business-postgres-runtime.sh
-      - name: Production compose must not expose Grafana MCP or a retired service
-        env:
-          TAG: sha-ci
-          GRAFANA_ADMIN_USER: ci
-          GRAFANA_ADMIN_PASSWORD: ci
-        run: |
-          set -euo pipefail
-          docker compose -f deploy/docker-compose.prod.yml config --format json > /tmp/compose.json
-          python - <<'PY'
-          import json
-          with open('/tmp/compose.json', encoding='utf-8') as f:
-              svc = json.load(f)["services"]
-          assert "mcp-grafana" not in svc, "mcp-grafana must be removed from production compose"
-          assert not svc["node-exporter"].get("ports"), "node-exporter must stay internal"
-          for retired in ("postgres", "keycloak", "wotb-backend", "wotb-frontend", "health-probe"):
-              assert retired not in svc, \
-                  f"{retired} belongs to the retired Yecao application runtime and must not be declared"
-          for name, s in svc.items():
-              assert not s.get("ports"), f"Yecao service {name} must not publish a port"
-              for p in s.get("ports", []):
-                  assert "8000" not in str(p), f"service {name} must not publish port 8000: {p}"
-          print("no Grafana MCP service / retired Yecao service / published port in production compose")
-          PY
-      - name: Selective Deploy/no-auto-recovery smoke
-        run: bash deploy/test-deploy-contract.sh
-      - name: nginx rate-limit real-IP smoke
+      - name: nginx rate-limit fixture smoke
         run: bash deploy/test-nginx-ratelimit.sh
-      - name: nginx Android download route smoke (SPA/version.json/APK/404)
+      - name: nginx Android download route fixture smoke
         run: bash deploy/test-nginx-android-route.sh
-      - name: nginx Grafana recreate smoke
+      - name: nginx Grafana recreate fixture smoke
         run: bash deploy/test-nginx-grafana-recreate.sh
-
   tofu_plans:
     needs: [changes]
     if: needs.changes.outputs.tofu_roots != '[]'
     name: OpenTofu validation / ${{ matrix.root }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    # PR OpenTofu work is validation only: fmt/init -backend=false/validate plus the
-    # root's local safety fixtures. The host-local roots (keycloak, rabbitmq,
-    # business-postgres, keycloak-postgres, minio) need a production-local provider and
-    # credentials, so their authoritative plan runs exclusively in the main-only
-    # Tofu Apply workflow — a pull request never SSHs a production host and never
-    # receives those secrets. COS and Grafana keep their runner-side authenticated
-    # plan because they use a remote backend / external API instead of a
-    # production-local execution boundary.
+    # PR OpenTofu work is local validation only: fmt, init without a backend,
+    # validate, and root-specific safety fixtures. No production plan or credentials
+    # are available to this workflow.
     strategy:
       fail-fast: false
       matrix:
@@ -863,7 +770,6 @@ jobs:
     env:
       TF_IN_AUTOMATION: "true"
       CHECKPOINT_DISABLE: "1"
-      TRUSTED_PRODUCTION_RUN: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - uses: actions/checkout@v5
       - uses: opentofu/setup-opentofu@v2
@@ -912,28 +818,6 @@ jobs:
             keycloak|keycloak-postgres|cos|grafana) ;;
             *) exit 1 ;;
           esac
-      - name: Plan against current remote state when trusted
-        if: ${{ (matrix.root == 'cos' || matrix.root == 'grafana') && env.TRUSTED_PRODUCTION_RUN == 'true' }}
-        env:
-          ROOT: ${{ matrix.root }}
-          ROOT_DIR: ${{ steps.root.outputs.path }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
-          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
-          TF_VAR_grafana_auth: ${{ secrets.GRAFANA_PAT }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$ROOT_DIR"
-          tofu init -reconfigure -input=false
-          tofu validate
-          tofu plan -input=false -no-color -out=plan.tfplan
-          case "$ROOT" in
-            cos) bash "$GITHUB_WORKSPACE/scripts/ci/validate-tofu-prod-plan.sh" plan.tfplan ;;
-            grafana) bash ./validate-plan.sh plan.tfplan ;;
-          esac
-
   required:
     needs:
       - changes
@@ -949,7 +833,6 @@ jobs:
       - android_contract
       - observability_config
       - deploy_smoke
-      - packaging
       - tofu_plans
     if: always()
     name: CI / Required Gate
@@ -982,8 +865,6 @@ jobs:
           OBSERVABILITY_CHANGED: ${{ needs.changes.outputs.observability }}
           DEPLOY_SMOKE: ${{ needs.deploy_smoke.result }}
           DEPLOY_CHANGED: ${{ needs.changes.outputs.deploy }}
-          PACKAGING: ${{ needs.packaging.result }}
-          PACKAGING_COMPONENTS: ${{ needs.changes.outputs.packaging_components }}
           TOFU_PLANS: ${{ needs.tofu_plans.result }}
           TOFU_ROOTS: ${{ needs.changes.outputs.tofu_roots }}
         shell: bash
@@ -1010,7 +891,6 @@ jobs:
           android_contract|$([ "$ANDROID_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$ANDROID_CONTRACT
           observability|$([ "$OBSERVABILITY_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$OBSERVABILITY
           deploy_smoke|$([ "$DEPLOY_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$DEPLOY_SMOKE
-          packaging|$([ "$PACKAGING_COMPONENTS" != '[]' ] && echo true || echo false)|$PACKAGING
           tofu_plans|$([ "$TOFU_ROOTS" != '[]' ] && echo true || echo false)|$TOFU_PLANS
           EOF
           [ "$failed" -eq 0 ]

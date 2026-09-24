@@ -20,12 +20,12 @@ The GitHub workflow is deliberately split:
 3. GitHub Actions injects the required COS and `TF_VAR_*` variables over the
    SSH session; TX initializes the existing COS backend, creates one saved plan
    against its local loopback PostgreSQL port, rejects destructive changes, and
-   applies that exact plan. This runs in the `tx` job of the single
-   `.github/workflows/tofu-apply.yml` (root `keycloak-postgres`).
+   applies that exact plan. This runs in one locked SSH session owned by
+   `.github/workflows/keycloak-postgres.yml` (root `keycloak-postgres`).
 
-The Deploy workflow and the Tofu Apply workflow use the same GitHub Actions
-`production-maintenance` concurrency group. This
-is the required serialization boundary for the shared
+The standalone workflow uses the shared GitHub Actions
+`production-maintenance` concurrency group and TX host `flock`. This
+is the serialization boundary for the shared
 `wotbtools/prod/postgres-keycloak.tfstate`; operator coordination is not a
 substitute for the workflow-level lock.
 

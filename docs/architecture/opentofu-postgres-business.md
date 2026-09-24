@@ -46,14 +46,14 @@ covers `CONNECT`, `CREATE`, and `TEMPORARY`; schema objects stay owned by Flyway
 3. The TX host creates one saved plan against `127.0.0.1:25432`, rejects
    destructive changes, applies that exact plan, requires a completely clean
    second plan, and only then writes the root-only
-   `/opt/wotb-tx/business-postgres.tofu-provisioned` marker. This runs in the
-   `tx` job of the single `.github/workflows/tofu-apply.yml` (root
-   `business-postgres`).
+   `/opt/wotb-tx/business-postgres.tofu-provisioned` marker. The runtime and
+   root run in one locked SSH session owned by
+   `.github/workflows/business-postgres.yml`.
 
-The Deploy workflow and the Tofu Apply workflow use the same
-`production-maintenance` GitHub Actions concurrency group. That is the required
-serialization boundary; operator coordination is not a substitute for the
-workflow-level lock. Neither workflow applies on a GitHub runner.
+The standalone workflow uses the shared `production-maintenance` GitHub Actions
+concurrency group and a TX host `flock` covering runtime, apply, second plan,
+verification, and marker update. GitHub Actions does not connect directly to
+the database; OpenTofu runs on TX.
 
 Provider installation is mirror-based and fail-closed:
 `deploy/tx/business-postgres.tofurc` allowlists only

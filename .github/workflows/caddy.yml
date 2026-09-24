@@ -1,0 +1,168 @@
+name: Caddy Gateway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/caddy.yml
+      - deploy/tx/assets/auth/.well-known/assetlinks.json
+      - deploy/release-metadata.py
+      - deploy/tx/Caddyfile
+      - deploy/tx/docker-compose.yml
+      - deploy/tx/deploy.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/caddy.yml
+    deploy/tx/assets/auth/.well-known/assetlinks.json
+    deploy/release-metadata.py
+    deploy/tx/Caddyfile
+    deploy/tx/docker-compose.yml
+    deploy/tx/deploy.sh
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: tx-production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Freeze current main and reject stale source
+        id: identity
+        env:
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            [ "$REF_NAME" = refs/heads/main ] || { echo 'Manual deployment must dispatch from main.' >&2; exit 1; }
+          fi
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          echo "commit_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Recheck main immediately before production staging
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+      - name: Prepare TX Caddy staging
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          script: |
+            set -eu
+            root=/opt/wotb-tx
+            mkdir -p "$root/deploy.incoming/deploy" "$root/deploy.incoming/deploy/tx"
+            rm -rf -- "$root/deploy.incoming/deploy/tx"
+            mkdir -p "$root/deploy.incoming/deploy/tx"
+      - name: Stage the TX Caddy configuration and shared runtime contract
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx,deploy/release-metadata.py
+          target: /opt/wotb-tx/deploy.incoming
+          overwrite: true
+      - name: Reject stale main before TX mutation
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+      - name: Reconcile and verify Caddy under one TX host lock
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 30m
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,CADDY_ACME_EMAIL
+          script: |
+            set -euo pipefail
+            exec 9>/opt/wotb-tx/.deploy.lock
+            flock -n 9 || { echo 'Another TX production deployment is running.' >&2; exit 1; }
+            export WOTB_DEPLOY_LOCK_FD=9
+            export WOTB_DEPLOY_SERVICE=caddy
+            export WOTB_DEPLOY_CONFIG_SHA='${{ steps.identity.outputs.commit_sha }}'
+            export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
+            bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
+
+            # Test the public gateway after its own local readiness and trusted-peer reload
+            # have succeeded. These checks are intentionally separate from Caddy process health:
+            # upstream failures fail this gate but never stop a repaired Caddy container.
+            public_probe() {
+              docker run --rm --network host curlimages/curl:8.12.1 "$@"
+            }
+            www_redirect="$(public_probe --silent --show-error --output /dev/null --max-time 15 \
+              --write-out '%{http_code} %{redirect_url}' --max-redirs 0 \
+              https://www.wotbtools.com/ci-gateway-check)"
+            [[ "$www_redirect" == 301\ https://wotbtools.com/ci-gateway-check ]] \
+              || { echo "www canonical redirect contract failed: $www_redirect" >&2; exit 1; }
+            http_www_redirect="$(public_probe --silent --show-error --output /dev/null --max-time 15 \
+              --write-out '%{http_code} %{redirect_url}' --max-redirs 0 \
+              http://www.wotbtools.com/ci-gateway-check)"
+            case "$http_www_redirect" in
+              301\ https://*|308\ https://*) ;;
+              *) echo "HTTP www redirect contract failed: $http_www_redirect" >&2; exit 1 ;;
+            esac
+            http_redirect="$(public_probe --silent --show-error --output /dev/null --max-time 15 \
+              --write-out '%{http_code} %{redirect_url}' --max-redirs 0 \
+              http://wotbtools.com/ci-gateway-check)"
+            [[ "$http_redirect" == 301\ https://wotbtools.com/ci-gateway-check || \
+               "$http_redirect" == 308\ https://wotbtools.com/ci-gateway-check ]] \
+              || { echo "HTTP-to-HTTPS redirect contract failed: $http_redirect" >&2; exit 1; }
+
+            ready=false
+            for attempt in $(seq 1 60); do
+              if public_probe --fail --silent --show-error --max-time 15 \
+                  https://wotbtools.com/api/health >/dev/null; then
+                ready=true
+                break
+              fi
+              [ "$attempt" -lt 60 ] && sleep 2
+            done
+            [ "$ready" = true ] || { echo 'Public frontend/API route did not become ready over trusted TLS.' >&2; exit 1; }
+            public_probe --fail --silent --show-error --max-time 15 \
+              https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration >/dev/null
+            public_probe --fail --silent --show-error --max-time 15 \
+              https://auth.wotbtools.com/.well-known/assetlinks.json | grep -F 'com.wotbtools.app'
+        env:
+          WOTB_DEPLOY_SERVICE: caddy
+          WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
+          TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
+          CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
