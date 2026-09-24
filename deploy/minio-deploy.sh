@@ -10,15 +10,24 @@ METADATA_FILE="$WOTB_DIR/production-release.json"
 CONFIG_SHA="${WOTB_DEPLOY_CONFIG_SHA:-}"
 IMAGE_TAG="${WOTB_DEPLOY_IMAGE_TAG:-}"
 IMAGE_COMMIT_SHA="${WOTB_DEPLOY_IMAGE_COMMIT_SHA:-}"
+IMAGE_DIGEST="${WOTB_DEPLOY_IMAGE_DIGEST:-}"
+DEFER_RELEASE_METADATA="${WOTB_DEPLOY_DEFER_METADATA:-0}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 require_env() { [ -n "${!1:-}" ] || die "$1 is required."; }
 
 [ -n "$ROOT" ] && [ "$ROOT" != / ] && [ "$ROOT" != . ] || die "safe staged root is required."
 [ "${WOTB_DEPLOY_SERVICE:-}" = minio ] || die "MinIO deploy requires WOTB_DEPLOY_SERVICE=minio."
+case "$DEFER_RELEASE_METADATA" in
+  0|1) ;;
+  *) die "WOTB_DEPLOY_DEFER_METADATA must be 0 or 1." ;;
+esac
 [[ "$CONFIG_SHA" =~ ^[0-9a-f]{40}$ ]] || die "WOTB_DEPLOY_CONFIG_SHA must be a full lowercase commit SHA."
-if [ -n "$IMAGE_TAG" ] || [ -n "$IMAGE_COMMIT_SHA" ]; then
-  [ -n "$IMAGE_TAG" ] && [ -n "$IMAGE_COMMIT_SHA" ] || die "image tag and source SHA must be supplied together."
+if [ -n "$IMAGE_TAG" ] || [ -n "$IMAGE_COMMIT_SHA" ] || [ -n "$IMAGE_DIGEST" ]; then
+  [ -n "$IMAGE_TAG" ] && [ -n "$IMAGE_COMMIT_SHA" ] && [ -n "$IMAGE_DIGEST" ] \
+    || die "image tag, source SHA, and registry digest must be supplied together."
+  [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] \
+    || die "WOTB_DEPLOY_IMAGE_DIGEST must be a sha256 digest."
 fi
 require_env YECAO_MINIO_ROOT_USER
 require_env YECAO_MINIO_ROOT_PASSWORD
@@ -49,14 +58,22 @@ if [ -z "$IMAGE_TAG" ]; then
     || die "MinIO config-only deployment lacks a recorded image identity."
 fi
 export TAG="${IMAGE_TAG##*:}"
+if [ -n "$IMAGE_DIGEST" ]; then
+  TAG="${TAG}@${IMAGE_DIGEST}"
+  export TAG
+fi
 docker compose -f "$COMPOSE_FILE" config --quiet
 docker compose -f "$COMPOSE_FILE" pull minio
 docker compose -f "$COMPOSE_FILE" up -d --wait --no-deps minio \
   || die "MinIO failed readiness; production metadata was not advanced."
 
-update_args=(update --host yecao --file "$METADATA_FILE" --service minio --config-sha "$CONFIG_SHA")
-if [ -n "${WOTB_DEPLOY_IMAGE_TAG:-}" ]; then
-  update_args+=(--image-tag "$IMAGE_TAG" --image-commit-sha "$IMAGE_COMMIT_SHA")
+if [ "$DEFER_RELEASE_METADATA" = 0 ]; then
+  update_args=(update --host yecao --file "$METADATA_FILE" --service minio --config-sha "$CONFIG_SHA")
+  if [ -n "${WOTB_DEPLOY_IMAGE_TAG:-}" ]; then
+    update_args+=(--image-tag "$IMAGE_TAG" --image-commit-sha "$IMAGE_COMMIT_SHA")
+  fi
+  python3 "$METADATA_TOOL" "${update_args[@]}"
+else
+  echo "MinIO release metadata update deferred until OpenTofu and final verification succeed."
 fi
-python3 "$METADATA_TOOL" "${update_args[@]}"
 echo "MinIO runtime ready: config=$CONFIG_SHA image=$IMAGE_TAG"

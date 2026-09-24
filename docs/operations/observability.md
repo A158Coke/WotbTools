@@ -131,7 +131,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
    - `GRAFANA_ADMIN_USER`：Grafana 管理员用户名（如 `admin`）
    - `GRAFANA_ADMIN_PASSWORD`：强密码
    - 生成密码示例：`openssl rand -base64 24`
-   - 部署时 CI 将凭据写入生产服务器 `/opt/wotb/.env`（`chmod 600`），compose 使用 `required` 语法引用，**Grafana 密码不落入 compose 文件本身**；密码为空时部署脚本中断（见 `deploy.yml`）。
+   - `.github/workflows/observability.yml` 将凭据写入生产服务器 `/opt/wotb/.env`（`chmod 600`），compose 使用 `required` 语法引用，**Grafana 密码不落入 compose 文件本身**；密码为空时部署脚本中断。
 
 ---
 
@@ -160,25 +160,21 @@ dashboard 与运行时链路由 CI 的独立 runtime smoke 验证；生产运行
 
 ### 生产（CI 自动）
 
-main 自动生产发布只有 `.github/workflows/release.yml`。planner 对 push 的完整
-before..head diff 选受影响服务与 Tofu roots；Release 调用 reusable Build、Deploy 和 Tofu Apply。
-Dockerfile/runtime 输入才构建对应 immutable 镜像；配置变更只 Deploy 受影响服务；Grafana
-dashboard 变更进入 Grafana Tofu root。Build output 提供精确 image/tag/source SHA/digest，
-配置 lane 从 host metadata v2 读取已部署镜像身份。手动 Build、Deploy 和 Tofu Apply 均一次只选
-一个目标，所有入口要求 main 当前完整 SHA。生产维护队列不会因新 push 取消已开始的操作；
-过期 Release rerun 在写入前 fail closed。
-
-TX 的 TCR 镜像只属于 business-api/frontend/keycloak，Yecao 的 GHCR 镜像只属于
-parser-worker/minio。planner 还可按 Compose diff 选择 TX Caddy、RabbitMQ、两个 PostgreSQL
-runtime 与 Yecao node-exporter/Prometheus/Loki/Alloy/Grafana；这些固定镜像服务不构建应用镜像。
-不相关服务不重启，lane 失败不回滚其他已成功 lane。Release summary 列出每个选中 lane 的结果。
+main push 由服务 owner workflow 按各自路径规则独立触发。应用 image owner 是
+`business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 与 `minio.yml`；固定 runtime
+与 root owner 是 `caddy.yml`、`rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、
+`cos.yml` 与本 `observability.yml`。每个 workflow 使用自己的 staging、当前 main SHA 检查、
+验证和手动入口；TX 的 TCR 镜像只属于前三个 TX 应用，Yecao 的 GHCR 镜像只属于 parser-worker/MinIO。
+不相关服务不会因统一 release planner 被选择。生产维护队列不会因新 push 取消已开始的操作，
+host mutation 另有 `flock` 串行化；过期 SHA 在 mutation 前 fail closed。
 
 ### Application gate 与 production metadata
 
-TX 业务应用 readiness 由 `deploy/tx/deploy.sh` 检查 API、frontend routing、Keycloak OIDC
-与数据库连通性；Yecao parser-worker 以容器存活判定。观测组件、datasource/dashboard 与日志
-ingestion 失败只记 `OBSERVABILITY DEGRADED`，不让健康应用回退。部署失败输出 service、release
-SHA、镜像与容器日志诊断，停止确认失败的目标服务；不自动恢复旧镜像。
+TX 应用 owner workflow 由 `deploy/tx/deploy.sh` 验证各自的 API/frontend/OIDC readiness；Business
+API 的 mutation 前检查还以只读 consumer 身份验证 PostgreSQL、Keycloak、RabbitMQ 与 MinIO，
+parser-worker 检查 RabbitMQ 与 MinIO，再由容器存活判定 worker 运行健康。观测组件、datasource/
+dashboard 与日志 ingestion 失败只记 `OBSERVABILITY DEGRADED`，不让健康应用回退。部署失败由所属
+workflow 输出该服务诊断并停止确认失败的目标服务；不自动恢复旧镜像。
 
 metadata helper `deploy/release-metadata.py` 校验 schemaVersion 2、host/service ownership、
 完整 registry image reference、SHA 和 immutable tag，并用同目录原子更新与 0600 权限：
@@ -194,9 +190,9 @@ metadata image tag/schema。
 
 ### 单目标人工操作与数据库边界
 
-事故恢复通过单目标 Deploy 手动入口完成：从当前 main 的 first-parent 历史中选取在对应 registry
-存在的 immutable SHA tag，并先核对 manifest digest。没有 `all` 或 `latest` 身份。schema 回退
-不是 Deploy 能力；数据库灾难恢复仍只通过人工核对的 `deploy/postgres-restore.sh` 执行。
+事故恢复通过对应应用 owner workflow 的单服务手动入口完成。镜像身份必须是当前 workflow 明确
+校验的 immutable SHA tag 和 registry digest；没有 `all` 或 `latest` 身份。schema 回退不是部署能力；
+数据库灾难恢复仍只通过人工核对的 `deploy/postgres-restore.sh` 执行。
 `database-backup.yml` 保持 VPS 本地双库备份边界；COS 上传、对象验证和 retention 尚未纳入该链路。
 
 ### 停止观测系统（不影响主业务）
@@ -214,7 +210,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 > **禁止**使用 `docker compose down -v` 作为普通停止/回滚命令——它会删除所有 volume（含 PostgreSQL 数据）。
 
-> **应用失败处理**不由 `deploy.yml` 自动切换旧版本：normal Deploy 先输出 release/affected/image/status/log/schema 诊断并停止确认失败的 affected service，随后 workflow FAIL。operator 通过单服务 Deploy 明确选择一个应用和 immutable SHA；它不触碰数据库 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
+> **应用失败处理**不由服务 owner workflow 自动切换旧版本：该 workflow 输出服务/image/status/log/schema 诊断并停止确认失败的目标 service，随后 workflow FAIL。operator 通过该应用 workflow 的单服务手动入口明确选择一个 immutable image identity；它不触碰数据库 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
 
 ---
 
@@ -236,8 +232,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 > dashboard 合同与端口安全；runtime smoke 会实际启动最小 Prometheus/Loki/Grafana、Alpine emitter，
 > 并验证 Alloy→Loki ownership、Grafana provisioning/auth；独立的 Keycloak runtime smoke 会真实构建并启动
 > optimized PostgreSQL Keycloak，确认应用 OIDC discovery、无 management health/metrics 配置和无启动时 augmentation。
-> CI 不替代生产 deploy gate：不验证生产 `deploy.yml`
-> heredoc 在真实主机上的渲染、真实 backend 指标采集或生产网络/DNS/TLS。
+> CI 不替代生产 deploy gate：不验证真实主机上的 staging/render、真实 backend 指标采集或生产网络/DNS/TLS。
 
 | 验证项 | 命令 | 说明 |
 |---|---|---|
@@ -273,7 +268,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 
 ### 需生产环境手动验证（CI 无法覆盖）
 
-- 生产完整整栈启动（业务 + 观测容器，含 `deploy.yml` heredoc 生成的 production Compose）
+- 生产完整整栈启动（业务 + 观测容器，含服务 owner workflow staging 的 production Compose）
 - Alloy 实际采集 Backend / Keycloak 日志并推送到 Loki、`requestId` 与认证关键词可过滤
 - `/actuator/prometheus` 与 node-exporter `:9100` 实际输出（**指标名真实存在**，与 Dashboard 面板匹配——CI 只检查配置结构，无法验证指标）
 - Volume 重启后数据持久化（7 天保留）
@@ -550,7 +545,7 @@ docker exec loki du -sh /loki/chunks
 
 ### 调整保留时间 / 资源限制
 
-- Prometheus 保留：改 `docker-compose.yml` 中 `--storage.tsdb.retention.time`（compose 与 `deploy.yml` heredoc 两处）。
+- Prometheus 保留：改 `deploy/docker-compose.prod.yml` 中 `--storage.tsdb.retention.time`，由 `observability.yml` reconcile。
 - Loki 保留：改 `deploy/observability/loki/loki-config.yml` 的 `limits_config.retention_period`（如 `336h` = 14 天）后 `docker compose up -d loki`（Loki 需要 compactor 周期生效）。
 - 内存限制：改各服务 `mem_limit`。
 

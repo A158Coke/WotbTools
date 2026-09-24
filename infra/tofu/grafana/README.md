@@ -15,9 +15,11 @@ controller.
 
 The COS backend uses the independent state key
 `wotbtools/prod/grafana.tfstate`. Import is owner-controlled and CI never runs
-import. Pull requests run the plan-only workflow; a change merged to `main`
-runs the separate apply workflow, which applies the exact saved plan after the
-dashboard-delete safety gate and verifies all managed dashboard UIDs.
+import or an authenticated production plan. Pull requests run only local
+format/init/validate checks. A change merged to `main` runs the Grafana root
+inside `.github/workflows/observability.yml`, which applies the exact saved
+plan after the dashboard-delete safety gate and verifies all managed dashboard
+UIDs.
 
 Automatic apply intentionally blocks every `grafana_dashboard` delete (and any
 future provider-managed datasource delete). Dashboard deletion therefore

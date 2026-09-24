@@ -73,7 +73,7 @@
 
 ## 11. 环境变量与密钥
 
-- 升级不得丢 `WG_APPLICATION_ID`（生产在 GitHub Secrets → deploy.yml → keycloak service env；
+- 升级不得丢 `WG_APPLICATION_ID`（生产在 GitHub Secrets → `.github/workflows/keycloak.yml` → keycloak service env；
   本地独立 smoke 使用 fake runtime 值；生产通过 Keycloak runtime env 注入。缺失时 WG 登录返回
   "Wargaming login not configured"。
 - realm keys 存在 DB，升级后旧 access token 在过期前仍有效（issuer 与签名不变）；

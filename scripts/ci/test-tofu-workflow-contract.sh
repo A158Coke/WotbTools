@@ -3,61 +3,67 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python3 - "$ROOT" <<'PY'
+import json
+import re
 import sys
 from pathlib import Path
 
 import yaml
 
 root = Path(sys.argv[1])
-workflow = yaml.safe_load((root / ".github/workflows/tofu-apply.yml").read_text())
-triggers = workflow.get("on", workflow.get(True))
-assert set(triggers) == {"workflow_call", "workflow_dispatch"}
-assert set(triggers["workflow_call"]["inputs"]) == {"root", "source_sha"}
-assert triggers["workflow_dispatch"]["inputs"]["root"]["options"] == [
-    "keycloak", "rabbitmq", "business-postgres", "keycloak-postgres",
-    "minio", "cos", "grafana",
-]
-assert workflow["concurrency"] == {
-    "group": "production-maintenance",
-    "cancel-in-progress": False,
-    "queue": "max",
+ci = yaml.load(
+    (root / ".github/workflows/ci.yml").read_text(encoding="utf-8"),
+    Loader=yaml.BaseLoader,
+)
+tofu_job = ci["jobs"]["tofu_plans"]
+steps = tofu_job["steps"]
+
+def step(name):
+    return next(item for item in steps if item.get("name") == name)
+
+assert tofu_job["if"] == "needs.changes.outputs.tofu_roots != '[]'"
+assert tofu_job["name"] == "OpenTofu validation / ${{ matrix.root }}"
+assert "${{ secrets." not in json.dumps(tofu_job)
+assert "tofu fmt -check -recursive" in step("Format, initialize without production state, and validate")["run"]
+validation = step("Format, initialize without production state, and validate")["run"]
+assert "tofu init -backend=false -input=false" in validation
+assert "tofu validate" in validation
+assert not re.search(r"(?i)\btofu(?:\s+-[^\s]+)*\s+(?:plan|apply)\b", json.dumps(tofu_job))
+assert "init -reconfigure" not in json.dumps(tofu_job)
+
+root_resolver = step("Resolve one declared root")["run"]
+root_paths = {
+    "keycloak": "infra/tofu/keycloak",
+    "rabbitmq": "infra/tofu/rabbitmq",
+    "business-postgres": "infra/tofu/postgres-business",
+    "keycloak-postgres": "infra/tofu/postgres-keycloak",
+    "minio": "infra/tofu/minio",
+    "cos": "infra/tofu/environments/prod",
+    "grafana": "infra/tofu/grafana",
 }
-assert set(workflow["jobs"]) == {"preflight", "cloud", "tx", "yecao"}
+for name, path in root_paths.items():
+    assert f"{name}) path={path}" in root_resolver, name
+fixture_step = step("Validate local-root safety policy fixtures")["run"]
+assert "rabbitmq|minio|business-postgres" in fixture_step
+assert "test-validate-plan.sh" in fixture_step
 
-def step(job, name):
-    return next(s for s in workflow["jobs"][job]["steps"] if s.get("name") == name)
+deploy_runs = "\n".join(
+    item.get("run", "")
+    for item in ci["jobs"]["deploy_smoke"]["steps"]
+)
+for fixture in (
+    "test-tofu-prod-plan-guard.sh",
+    "test-keycloak-tofu-contract.sh",
+    "test-postgres-keycloak-tofu-contract.sh",
+    "test-postgres-business-tofu-contract.sh",
+):
+    assert fixture in deploy_runs, fixture
 
-preflight = step("preflight", "Require one root at current main HEAD")["run"]
-assert "git ls-remote origin refs/heads/main" in preflight
-assert "Unknown OpenTofu root" in preflight
-assert "business-postgres) root_path=infra/tofu/postgres-business" in preflight
-assert "keycloak-postgres) root_path=infra/tofu/postgres-keycloak" in preflight
-
-cloud = step("cloud", "Apply exact cloud plan")["run"]
-assert "validate-tofu-prod-plan.sh\" plan.tfplan" in cloud
-assert "./validate-plan.sh plan.tfplan" in cloud
-assert "tofu apply -input=false -auto-approve plan.tfplan" in cloud
-assert "second-plan.tfplan" in cloud
-
-for name in ("Apply RabbitMQ on TX localhost", "Apply Business PostgreSQL on TX localhost",
-             "Apply Keycloak PostgreSQL on TX localhost"):
-    script = step("tx", name)["with"]["script"]
-    assert "tofu plan -input=false -no-color -out=plan.tfplan" in script
-    assert "bash ./validate-plan.sh plan.tfplan" in script
-    assert "tofu apply -input=false -auto-approve plan.tfplan" in script
-    assert "second-plan.tfplan" in script
-
-minio = step("yecao", "Apply MinIO on Yecao local state")["with"]["script"]
-assert "bash ./validate-plan.sh second-plan.tfplan --require-no-changes" in minio
-assert "tofu apply -input=false -auto-approve plan.tfplan" in minio
-assert (root / "infra/tofu/rabbitmq/bootstrap-provider-mirror.sh").is_file()
-for retired in ("tofu-plan.yml", "grafana-tofu-plan.yml", "grafana-tofu-apply.yml",
-                "postgres-keycloak-tofu.yml", "postgres-business-tofu.yml"):
-    assert not (root / ".github/workflows" / retired).exists(), retired
-
-print("Single OpenTofu Apply workflow safety contract OK")
+print("PR OpenTofu validation has no plan/apply or production credentials")
 PY
 
+# Exercise the Grafana plan guard with local JSON fixtures only; this test never
+# initializes a backend or contacts the Grafana API.
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin"

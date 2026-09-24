@@ -17,7 +17,7 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 - 注入：**同一个 `WG_APPLICATION_ID` 同时服务两条路径**，不引入第二个 secret：
   - Keycloak 容器环境变量 `WG_APPLICATION_ID`（自定义 SPI 通过 `System.getenv("WG_APPLICATION_ID")` 读取，运行期登录用）；
   - TX-local OpenTofu 变量 `TF_VAR_wargaming_application_id`（ASIA/EU/NA 三个 IdP representation 的 `client_id` 事实源）。
-  - 生产：GitHub Secrets `WG_APPLICATION_ID`（`deploy.yml` 既传给部署脚本写入 production compose，也注入 Keycloak OpenTofu apply step）。
+  - 生产：GitHub Secrets `WG_APPLICATION_ID`（`.github/workflows/keycloak.yml` 传给部署脚本和同一 locked Keycloak OpenTofu apply phase）。
   - 本地完整 Compose 入口已退役；本地 Keycloak 行为由独立 disposable smoke 覆盖，不要求真实 Wargaming application ID。
 - 禁止把 application ID 写进 realm JSON、Git、前端、IdP alias 或浏览器参数。
 - 缺失行为（决策 D14）：容器正常启动；玩家点击 Wargaming 登录时 provider 返回"Wargaming login not configured"；百场统一人工审核链路不受影响。
@@ -116,16 +116,14 @@ OpenTofu 为 `wotbtools-web` 声明 5 个 mapper（ID/Access/UserInfo 三个 tok
 IdP representation 的 `client_id` 由占位值 `not-used` 收敛为真实 `WG_APPLICATION_ID` 后，**不要手工改 Admin Console**；用既有 CI/CD 路径收敛：
 
 ```
-Release（main push 自动）或单目标手动入口
-  Deploy workflow, service=keycloak（或 Release 的 deploy_keycloak lane）
-    -> 依赖 keycloak-postgres root 已成功（Bootstrap TX Keycloak PostgreSQL）
-    -> 启动空 Keycloak runtime
-  Tofu Apply workflow, root=keycloak（或 Release 的 tofu_keycloak lane，needs deploy_keycloak）
-    -> deploy/tx/keycloak-tofu.sh：plan 安全门 + 二次 plan 无漂移门
-    -> 收敛 QQ + 三个 Wargaming IdP（in-place update，alias/realm 未变，不 destroy/recreate）
+`.github/workflows/keycloak.yml`（main 路径触发或单目标手动 dispatch）
+  -> Build immutable Keycloak image and run disposable provider/runtime smoke
+  -> 在 TX host lock 内检查 PostgreSQL、bootstrap/reconcile Keycloak runtime
+  -> `infra/tofu/keycloak`：plan safety gate + exact apply + clean second-plan gate
+  -> 核对 OIDC / providers / IdP 配置，成功后更新 Keycloak image metadata
 ```
 
-- 手动收敛时依次 dispatch `Deploy`（`service=keycloak`）与 `Infra / Tofu Apply`（`root=keycloak`），两者都只接受当前 main 完整 SHA；不再有 `target=tx` / `tx_services` 选择器。
+手动收敛只需 dispatch `Keycloak` workflow，且只接受当前 main 完整 SHA；PostgreSQL runtime 与独立 root 仍由 `keycloak-postgres.yml` 所有，不再有第二个 Deploy/Tofu dispatch。
 
 - 不删除/重建 realm，也不删除/重建 IdP；`infra/tofu/keycloak/validate-plan.sh` 对 `keycloak_oidc_identity_provider.*` 的 delete/replace 一律 fail-closed。
 - `WG_APPLICATION_ID` 的 runtime 注入（Keycloak 容器 env）在 apply 之后的精确 runtime 部署步骤中继续生效，无需额外操作。

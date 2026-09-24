@@ -1,0 +1,257 @@
+name: Business API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/business-api.yml
+      - .dockerignore
+      - docker/Dockerfile.business-api
+      - common/tankopedia-tier7.json
+      - common/tankopedia-tier8.json
+      - common/tankopedia-tier9.json
+      - common/tankopedia-tier10.json
+      - common/map_names.json
+      - common/tank_tactical_profiles.json
+      - common/map-semantics/**
+      - java/pom.xml
+      - java/**/pom.xml
+      - java/settings-docker.xml
+      - java/wotb-contracts/**
+      - java/wotb-object-storage-minio/**
+      - java/wotb-broker-rabbitmq/**
+      - java/wotb-core/**
+      - java/wotb-result/**
+      - java/wotb-playback/**
+      - java/wotb-replay-coordinator/**
+      - java/wotb-replay-processing/**
+      - java/wotb-ai/**
+      - java/wotb-web/**
+      - contracts/http/**
+      - contracts/mq/**
+      - deploy/dependency-readiness.sh
+      - deploy/dependency-readiness.py
+      - deploy/release-metadata.py
+      - deploy/tx/docker-compose.yml
+      - deploy/tx/deploy.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.identity.outputs.image }}
+      commit_sha: ${{ steps.identity.outputs.commit_sha }}
+      digest: ${{ steps.verify.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Freeze current main and image identity
+        id: identity
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            [ "$REF_NAME" = refs/heads/main ] || { echo 'Manual deployment must dispatch from main.' >&2; exit 1; }
+          fi
+          git fetch --no-tags origin main
+          [ "$SOURCE_SHA" = "$(git rev-parse origin/main)" ] || { echo 'Source SHA is not current main.' >&2; exit 1; }
+          case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
+          [ -n "$TCR_NAMESPACE" ] || { echo 'TCR_NAMESPACE is required.' >&2; exit 1; }
+          image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-business-api:sha-${SOURCE_SHA:0:12}"
+          {
+            echo "commit_sha=$SOURCE_SHA"
+            echo "image=$image"
+            echo "repository=${image%:*}"
+            echo "tag=sha-${SOURCE_SHA:0:12}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ vars.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+      - uses: imjasonh/setup-crane@v0.7
+      - name: Reuse only an existing immutable image with this source identity
+        id: immutable
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          TAG: ${{ steps.identity.outputs.tag }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tags="$(crane ls "$REPOSITORY")"
+          if grep -Fxq "$TAG" <<< "$tags"; then
+            docker pull "$IMAGE"
+            revision="$(docker image inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE" | sed -n 's/^BUILD_COMMIT=//p' | head -n 1)"
+            [ "$revision" = "$SOURCE_SHA" ] || { echo 'Existing immutable tag has a different BUILD_COMMIT.' >&2; exit 1; }
+            digest="$(crane digest "$IMAGE")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "existing_digest=$digest" >> "$GITHUB_OUTPUT"
+          else
+            echo 'existing_digest=' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-buildx-action@v4
+      - name: Build and publish this frozen image
+        id: build_image
+        if: steps.immutable.outputs.existing_digest == ''
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.business-api
+          push: true
+          tags: ${{ steps.identity.outputs.image }}
+          build-args: BUILD_COMMIT=${{ steps.identity.outputs.commit_sha }}
+          cache-from: type=gha,scope=business-api
+          cache-to: type=gha,mode=max,scope=business-api
+          provenance: false
+          sbom: false
+      - name: Verify registry digest and source identity
+        id: verify
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          EXISTING_DIGEST: ${{ steps.immutable.outputs.existing_digest }}
+          BUILD_DIGEST: ${{ steps.build_image.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest="${EXISTING_DIGEST:-$BUILD_DIGEST}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Missing or invalid image digest.' >&2; exit 1; }
+          [ "$(crane digest "$IMAGE")" = "$digest" ] || { echo 'Registry digest changed after build.' >&2; exit 1; }
+          docker pull "$IMAGE@$digest" >/dev/null
+          revision="$(docker image inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE@$digest" | sed -n 's/^BUILD_COMMIT=//p' | head -n 1)"
+          [ "$revision" = "$SOURCE_SHA" ] || { echo 'Published image does not contain the frozen BUILD_COMMIT.' >&2; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: tx-production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.build.outputs.commit_sha }}
+      - name: Reject stale main before staging production inputs
+        env:
+          SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA" ]] || { echo 'Main advanced before TX deployment.' >&2; exit 1; }
+      - name: Prepare TX staging directories
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          script: |
+            set -eu
+            root=/opt/wotb-tx
+            mkdir -p "$root/deploy.incoming/deploy" "$root/deploy.incoming/deploy/tx"
+            rm -rf -- "$root/deploy.incoming/deploy/tx"
+            mkdir -p "$root/deploy.incoming/deploy/tx"
+      - name: Stage TX runtime files
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx,deploy/release-metadata.py,deploy/dependency-readiness.sh,deploy/dependency-readiness.py
+          target: /opt/wotb-tx/deploy.incoming
+          overwrite: true
+      - name: Reject stale main before TX mutation
+        env:
+          SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA" ]] || { echo 'Main advanced before production mutation.' >&2; exit 1; }
+      - name: Read dependencies and deploy Business API under one host lock
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 35m
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,TX_IMAGE_REGISTRY_PREFIX,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION,TX_RABBITMQ_CONTROL_API_PASSWORD,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS
+          script: |
+            set -euo pipefail
+            exec 9>/opt/wotb-tx/.deploy.lock
+            flock -n 9 || { echo 'Another TX production deployment is running.' >&2; exit 1; }
+            export WOTB_DEPLOY_LOCK_FD=9
+            export WOTB_DEPLOY_SERVICE=business-api
+            export WOTB_DEPLOY_CONFIG_SHA='${{ needs.build.outputs.commit_sha }}'
+            export WOTB_DEPLOY_IMAGE_TAG='${{ needs.build.outputs.image }}'
+            export WOTB_DEPLOY_IMAGE_COMMIT_SHA='${{ needs.build.outputs.commit_sha }}'
+            export WOTB_DEPLOY_IMAGE_DIGEST='${{ needs.build.outputs.digest }}'
+            export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
+            bash /opt/wotb-tx/deploy.incoming/deploy/dependency-readiness.sh business-api
+            bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
+        env:
+          WOTB_DEPLOY_SERVICE: business-api
+          WOTB_DEPLOY_CONFIG_SHA: ${{ needs.build.outputs.commit_sha }}
+          WOTB_DEPLOY_IMAGE_TAG: ${{ needs.build.outputs.image }}
+          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
+          WOTB_DEPLOY_IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+          TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
+          TX_BUSINESS_DB_NAME: ${{ vars.TX_BUSINESS_DB_NAME }}
+          TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
+          TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
+          TX_BUSINESS_DB_PASSWORD_VERSION: ${{ vars.TX_BUSINESS_DB_PASSWORD_VERSION || '1' }}
+          TX_RABBITMQ_CONTROL_API_PASSWORD: ${{ secrets.TX_RABBITMQ_CONTROL_API_PASSWORD }}
+          YECAO_MINIO_CONTROL_API_ACCESS_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_ACCESS_KEY }}
+          YECAO_MINIO_CONTROL_API_SECRET_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_SECRET_KEY }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ vars.AI_BASE_URL || 'https://api.deepseek.com' }}
+          AI_MODEL: ${{ vars.AI_MODEL || 'deepseek-v4-flash' }}
+          AI_CONNECT_TIMEOUT_SEC: ${{ vars.AI_CONNECT_TIMEOUT_SEC || '10' }}
+          AI_TIMEOUT_SEC: ${{ vars.AI_TIMEOUT_SEC || '300' }}
+          AI_CALL_TIMEOUT_SEC: ${{ vars.AI_CALL_TIMEOUT_SEC || '315' }}
+          AI_RETRY_MAX_ATTEMPTS: ${{ vars.AI_RETRY_MAX_ATTEMPTS || '3' }}
+          AI_RETRY_INITIAL_BACKOFF_MS: ${{ vars.AI_RETRY_INITIAL_BACKOFF_MS || '1000' }}
+          AI_RETRY_MAX_BACKOFF_MS: ${{ vars.AI_RETRY_MAX_BACKOFF_MS || '8000' }}
+          AI_RETRY_BACKOFF_MULTIPLIER: ${{ vars.AI_RETRY_BACKOFF_MULTIPLIER || '2.0' }}
+          AI_CONTEXT_WINDOW_TOKENS: ${{ vars.AI_CONTEXT_WINDOW_TOKENS || '1000000' }}
+          AI_SINGLE_REPLAY_MAX_INPUT_TOKENS: ${{ vars.AI_SINGLE_REPLAY_MAX_INPUT_TOKENS || '940000' }}
+          AI_MAX_OUTPUT_TOKENS: ${{ vars.AI_MAX_OUTPUT_TOKENS || '32768' }}
+          AI_PROMPT_SAFETY_MARGIN_TOKENS: ${{ vars.AI_PROMPT_SAFETY_MARGIN_TOKENS || '16384' }}
+          AI_THINKING_ENABLED: ${{ vars.AI_THINKING_ENABLED || 'true' }}
+          AI_THINKING_ENABLED_CALL2: ${{ vars.AI_THINKING_ENABLED_CALL2 || 'false' }}
+          AI_REASONING_EFFORT: ${{ vars.AI_REASONING_EFFORT || 'max' }}
+          AI_REVIEW_WORKER_MAX_CONCURRENT: ${{ vars.AI_REVIEW_WORKER_MAX_CONCURRENT || '4' }}
+          AI_REVIEW_WORKER_QUEUE_CAPACITY: ${{ vars.AI_REVIEW_WORKER_QUEUE_CAPACITY || '4' }}
+          AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC: '1100'
+          REPLAY_COORDINATE_HALF_EXTENT: ${{ vars.REPLAY_COORDINATE_HALF_EXTENT || '250' }}
+          REPLAY_COORDINATE_CLAMP_TOLERANCE: ${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}
+          BOOST_AUTO_CONFIRM_HOURS: ${{ vars.BOOST_AUTO_CONFIRM_HOURS || '72' }}
+          BOOST_AUTO_CONFIRM_SCAN_MS: ${{ vars.BOOST_AUTO_CONFIRM_SCAN_MS || '300000' }}

@@ -96,8 +96,16 @@ jobs:
               --head "$BRANCH" \
               --title "chore(data): sync BlitzKit Tankopedia" \
               --body $'Automated Tankopedia sync from BlitzKit.\n\n- Generates and validates tier 7-10 data from one upstream snapshot\n- Fails closed when a vehicle has no reviewed equipment preset\n- Fails closed when a preset references unknown equipment\n- Preserves existing extraInfo\n- Runs integrity gates and Python tests\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+            pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
           else
             echo "Updated existing PR #$pr_number"
           fi
 
-          gh workflow run ci.yml --ref "$BRANCH"
+          [[ "$pr_number" =~ ^[1-9][0-9]*$ ]] || { echo "::error::Unable to resolve the open automation PR number." >&2; exit 1; }
+          head_sha="$(git rev-parse HEAD)"
+          pr_json="$(gh pr view "$pr_number" --json baseRefName,headRefName,headRefOid,state)"
+          jq -e --arg branch "$BRANCH" --arg head "$head_sha" '.state == "OPEN" and .baseRefName == "main" and .headRefName == $branch and .headRefOid == $head' <<< "$pr_json" >/dev/null || {
+            echo "::error::The automation PR does not target main at the generated branch head." >&2
+            exit 1
+          }
+          gh workflow run ci.yml --ref "$BRANCH" --field "pr_number=$pr_number" --field "head_sha=$head_sha"
