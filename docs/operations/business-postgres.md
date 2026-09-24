@@ -83,7 +83,7 @@ Deploy lane (deploy/tx/deploy.sh)
 2. start the business-postgres runtime and wait for pg_isready
 3. require the root-only /opt/wotb-tx/business-postgres.tofu-provisioned marker
 
-Tofu Apply lane (tofu-apply.yml, tx job)
+OpenTofu phase in `.github/workflows/business-postgres.yml` (same TX host-lock session)
 4. TX-local OpenTofu init -lockfile=readonly / validate / saved plan
 5. plan safety validation
 6. apply the exact saved plan
@@ -92,10 +92,10 @@ Tofu Apply lane (tofu-apply.yml, tx job)
 9. write the root-only /opt/wotb-tx/business-postgres.tofu-provisioned marker
 ```
 
-The Release orders them: `tofu_business_postgres` waits for a successful
-`deploy_business_postgres`, and `deploy_business_api` waits for the root. A
-non-clean second plan fails the deployment. Unknown resource addresses,
-destructive actions, and unexpected updates are rejected before apply. GitHub
+The standalone workflow orders the runtime and OpenTofu phases in the same
+locked host session. A non-clean second plan fails the workflow. Unknown
+resource addresses, destructive actions, and unexpected updates are rejected
+before apply. GitHub
 Actions never connects to the database: it only transfers the root over SSH and
 the TX host calls the provider on `127.0.0.1:25432`.
 

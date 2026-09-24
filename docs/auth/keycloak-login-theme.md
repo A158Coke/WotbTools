@@ -57,4 +57,4 @@ docker/keycloak/themes/wotbtools/login/
 - 背景轮换：把主题目录挂进 Keycloak 容器（`-v <themes>/wotbtools:/opt/keycloak/themes/wotbtools:ro`，`start-dev --spi-theme-default=wotbtools --spi-theme-cache-themes=false`），请求 login 页后检查注入的 `<style id="wbtb-bg-rotation" data-bg-id="…">`，并在浏览器里核对 `.wbtb-shell__bg` 的 computed `background-image`（桌面/手机各一次）。临时给某条目加一个覆盖今天的 `from`/`to` 窗口即可逐张验收，验完删掉。
 - 视觉清单：dark/light × desktop(≥1180)/tablet-portrait/mobile(≤767)——brand 尺寸、toggle 双图标与焦点环、卡片毛玻璃可读性、无左右分区。
 - CSS 守卫：`rg -n "backdrop-filter" resources/css` 应只命中 `prism.css` 的 `html[data-theme="dark"] .wbtb-card`。
-- 主题随 `docker/keycloak/themes/**` 变化被 `deploy.yml` 路径检测覆盖，触发 keycloak 镜像重建。
+- 主题随 `docker/keycloak/themes/**` 变化由 `.github/workflows/keycloak.yml` 路径检测覆盖，触发 keycloak 镜像重建。

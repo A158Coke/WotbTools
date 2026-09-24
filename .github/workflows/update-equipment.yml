@@ -60,8 +60,16 @@ jobs:
               --head "$BRANCH" \
               --title "chore(data): sync BlitzKit equipment values" \
               --body $'Automated equipment update from current BlitzKit data.\n\n- Accepts new WoTB builds and changed protobuf snapshots when existing parsers can fully understand them\n- Imports supported metadata/value changes into the generated catalog\n- Allows preset/layout changes without assuming one universal equipment grid\n- Fails closed for newly referenced equipment IDs until a complete local effect model exists\n- Fails closed when a partially modeled locked item changes\n- Calculation-source changes are accepted only while strict extraction patterns still match\n- Uses stable-snapshot reads and records upstream hashes in logs\n- Avoids rewriting the catalog when generated semantics are unchanged\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+            pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
           else
             echo "Updated existing PR #$pr_number"
           fi
 
-          gh workflow run ci.yml --ref "$BRANCH"
+          [[ "$pr_number" =~ ^[1-9][0-9]*$ ]] || { echo "::error::Unable to resolve the open automation PR number." >&2; exit 1; }
+          head_sha="$(git rev-parse HEAD)"
+          pr_json="$(gh pr view "$pr_number" --json baseRefName,headRefName,headRefOid,state)"
+          jq -e --arg branch "$BRANCH" --arg head "$head_sha" '.state == "OPEN" and .baseRefName == "main" and .headRefName == $branch and .headRefOid == $head' <<< "$pr_json" >/dev/null || {
+            echo "::error::The automation PR does not target main at the generated branch head." >&2
+            exit 1
+          }
+          gh workflow run ci.yml --ref "$BRANCH" --field "pr_number=$pr_number" --field "head_sha=$head_sha"

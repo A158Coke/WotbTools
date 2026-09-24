@@ -50,11 +50,11 @@ tofu import 'grafana_dashboard.managed["wotbtools_production_overview"]' wotbtoo
 tofu import 'grafana_dashboard.managed["wotbtools_usage"]' wotbtools-usage
 ```
 
-CI never runs import. Pull requests use `GRAFANA_PAT` only for an authenticated
-plan; fork runs never receive it. Merges to `main` run the `grafana` root of the
-single `.github/workflows/tofu-apply.yml` (called by `release.yml`), which plans,
-applies the exact saved plan, and verifies all six keeper UIDs plus 404 for the
-three retired UIDs.
+CI never runs import or an authenticated production plan. Pull requests perform
+local validation only and receive no `GRAFANA_PAT`. Main changes to the
+observability owner inputs run the `grafana` root through
+`.github/workflows/observability.yml`, which plans, applies the exact saved plan,
+and verifies all six keeper UIDs plus 404 for the three retired UIDs.
 
 The current `GRAFANA_PAT` is the existing `wotbtool` service-account token with
 the Grafana organization `Admin` role. The owner explicitly approved this
@@ -75,7 +75,8 @@ dashboard UIDs, dashboard links, the Production Overview five-target health
 contract, and authentication failure behavior. This validates the API boundary
 used by the provider without restoring the removed dashboard file controller.
 
-The PR plan and main apply workflow use the same fail-closed migration gate:
+The PR local validation and main apply workflow use the same fail-closed
+migration gate:
 datasource deletes always fail; dashboard deletes are accepted only for the
 three exact retired addresses (`wotbtools_http_errors`,
 `wotbtools_replay_parser`, `wotbtools_android_downloads`) and only when the

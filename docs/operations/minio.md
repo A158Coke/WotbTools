@@ -164,14 +164,13 @@ port, no MinIO HoF replay implementation, and no `hof-replays/` prefix in the bu
 
 ### Yecao prerequisite: provider mirror
 
-Before the first manual MinIO deployment, an operator must install OpenTofu,
-`python3`, and the exact locked `aminueza/minio` provider archive into
-`/opt/wotb/tofu-provider-mirror`. Use the committed
-`infra/tofu/minio/.terraform.lock.hcl` as the checksum authority. The staged
-`deploy/minio/tofurc` selects only that filesystem mirror and explicitly
-excludes the provider from direct installation. If either `tofu`, `python3`, or the
-mirror is absent, the deployment fails before state changes; it never downloads
-a provider on Yecao.
+Before the first automatic or manually dispatched MinIO workflow run, an
+operator must install OpenTofu, Python 3, and the exact locked aminueza/minio
+provider archive into /opt/wotb/tofu-provider-mirror. Use
+infra/tofu/minio/.terraform.lock.hcl as the checksum authority. The staged
+deploy/minio/tofurc selects only that filesystem mirror and excludes direct
+provider installation. If OpenTofu, Python 3, or the mirror is absent, the
+deployment fails before state changes.
 
 ## Credentials and explicit deployment
 
@@ -192,12 +191,13 @@ least-privilege IAM user: `worker` is reserved for the Yecao parser-worker and
 `control_api` for the TX replay control plane. No application service reads the other
 identity's credentials.
 
-Deployment is intentionally manual. From the current `main` HEAD, first ensure
-the corresponding immutable MinIO image has been built, then dispatch the
-existing **Deploy** workflow with `service=minio`. That route copies only MinIO
-files, requires only the six MinIO secrets, starts only the MinIO compose
-project, applies the exact OpenTofu plan, and rejects a non-empty second plan.
-Merging this PR only builds the source-pinned image; it does not deploy MinIO.
+`.github/workflows/minio.yml` is the standalone MinIO owner. It runs on `main`
+when its build, runtime, or `infra/tofu/minio` inputs change, and it also supports
+manual dispatch from current `main`. The workflow builds or reuses the immutable
+source-pinned image, tests that exact digest, then holds the Yecao deployment lock
+while it reconciles the MinIO runtime, applies the exact OpenTofu plan, verifies
+the result, and commits metadata only after success. It uses the six MinIO
+secrets and does not reconcile unrelated Yecao services.
 
 Do not change COS, WireGuard, DNS, RabbitMQ, PostgreSQL, Keycloak, or application
 traffic as part of this workflow.

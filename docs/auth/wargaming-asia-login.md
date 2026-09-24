@@ -55,8 +55,8 @@
 - `JwtUtil`（读 `sub` / `preferred_username` / `displayName`）
 - `V5__create_user_profile.sql` 及后续 migration（当前最高 V11；`CHECK (wotb_server IN ('CN'))`）
 - Spring Security JWT 配置（`SecurityConfig`，role 来自 `realm_access.roles`）
-- GitHub Actions 与部署路径检测（`deploy.yml`）
-- `.env.example`、生产 Compose（由 `deploy.yml` 内联生成）
+- GitHub Actions 与部署路径检测（`.github/workflows/keycloak.yml`）
+- `.env.example`、生产 Compose（`deploy/tx/docker-compose.yml`）
 - 存量 region 迁移执行记录（2026-08-06，见第四节）
 
 开始修改前，先简要说明：
@@ -507,14 +507,14 @@ keycloak-qq-provider
 
 ### 2. 部署路径检测
 
-修改 `.github/workflows/deploy.yml` 的路径检测，确保修改 `keycloak-wargaming-provider/**` 时触发 Keycloak 镜像重建与部署。
+修改 `.github/workflows/keycloak.yml` 的路径检测，确保修改 `keycloak-wargaming-provider/**` 时触发 Keycloak 镜像重建与部署。
 
 ### 3. 环境变量
 
 生产部署注入 `WG_APPLICATION_ID`，同步更新：
 
 - `.env.example`
-- 生产 Compose（`deploy.yml` 内联生成的 keycloak service environment）
+- TX 生产 Compose（`deploy/tx/docker-compose.yml` 的 keycloak service environment）
 - 必要的部署文档
 
 禁止在日志中输出环境变量值。

@@ -59,7 +59,7 @@ description: >
 - frontend：`keycloak-js` 26.2+ 独立发版、向后兼容；major 升级时同步 `package.json` + `package-lock.json`（`npm install`）。
 - 后端：`KeycloakAdminUserService` 等调用 Admin REST API 的位置，核对目标版本响应结构与弃用端点。
 - realm：`infra/tofu/keycloak/` resource schema 兼容性；realm 通过 OpenTofu reconciliation 验证，不恢复 JSON import 路径。
-- 环境变量不丢：`WG_APPLICATION_ID`、`KC_*`、`KEYCLOAK_*`（生产走 GitHub Secrets → deploy.yml）。
+- 环境变量不丢：`WG_APPLICATION_ID`、`KC_*`、`KEYCLOAK_*`（生产走 GitHub Secrets → `.github/workflows/keycloak.yml`）。
 
 ### Phase 4 — 本地构建与冒烟
 
