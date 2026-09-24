@@ -24,10 +24,25 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: production-maintenance
-  cancel-in-progress: false
-  queue: max
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/frontend.yml
+    .dockerignore
+    docker/Dockerfile.frontend
+    frontend/**
+    common/map_names.json
+    common/tankopedia-tier10.json
+    common/assets/**
+    HISTORY.md
+    docs/architecture/TECHNICAL_EVOLUTION.md
+    docs/WotBTools_League_Rating_V6.md
+    deploy/nginx/nginx.conf
+    deploy/release-metadata.py
+    deploy/tx/docker-compose.yml
+    deploy/tx/deploy.sh
+    deploy/tx/nginx/frontend.conf.template
+    deploy/check-production-freshness.sh
 
 jobs:
   build:
@@ -48,6 +63,8 @@ jobs:
       - name: Freeze current main and image identity
         id: identity
         env:
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ github.sha }}
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref }}
@@ -61,8 +78,8 @@ jobs:
           if [ "$EVENT_NAME" = workflow_dispatch ]; then
             [ "$REF_NAME" = refs/heads/main ] || { echo 'Manual deployment must dispatch from main.' >&2; exit 1; }
           fi
-          git fetch --no-tags origin main
-          [ "$SOURCE_SHA" = "$(git rev-parse origin/main)" ] || { echo 'Source SHA is not current main.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
           [ -n "$TCR_NAMESPACE" ] || { echo 'TCR_NAMESPACE is required.' >&2; exit 1; }
           image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-frontend:sha-${SOURCE_SHA:0:12}"
@@ -141,6 +158,10 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
   deploy:
+    concurrency:
+      group: production-maintenance
+      cancel-in-progress: false
+      queue: max
     needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -152,11 +173,15 @@ jobs:
           ref: ${{ needs.build.outputs.commit_sha }}
       - name: Reject stale main before staging production inputs
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA" ]] || { echo 'Main advanced before TX deployment.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
       - name: Prepare TX staging directories
         uses: appleboy/ssh-action@v1
         with:
@@ -182,11 +207,15 @@ jobs:
           overwrite: true
       - name: Reject stale main before TX mutation
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA" ]] || { echo 'Main advanced before production mutation.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
       - name: Reconcile only Frontend under the TX host lock
         uses: appleboy/ssh-action@v1
         with:

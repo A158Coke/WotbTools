@@ -17,10 +17,18 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: production-maintenance
-  cancel-in-progress: false
-  queue: max
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/minio.yml
+    .dockerignore
+    docker/Dockerfile.minio
+    deploy/docker-compose.minio.yml
+    deploy/minio-deploy.sh
+    deploy/minio/**
+    deploy/release-metadata.py
+    infra/tofu/minio/**
+    deploy/check-production-freshness.sh
 
 jobs:
   build:
@@ -41,6 +49,8 @@ jobs:
       - name: Freeze current main and image identity
         id: identity
         env:
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ github.sha }}
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref }}
@@ -52,8 +62,8 @@ jobs:
           if [ "$EVENT_NAME" = workflow_dispatch ]; then
             [ "$REF_NAME" = refs/heads/main ] || { echo 'Manual deployment must dispatch from main.' >&2; exit 1; }
           fi
-          git fetch --no-tags origin main
-          [ "$SOURCE_SHA" = "$(git rev-parse origin/main)" ] || { echo 'Source SHA is not current main.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           image="ghcr.io/a158coke/wotbtools-minio:sha-${SOURCE_SHA:0:12}"
           {
             echo "commit_sha=$SOURCE_SHA"
@@ -200,6 +210,10 @@ jobs:
           ( cd infra/tofu/minio && bash validate-plan.sh second-plan.tfplan --require-no-changes )
 
   deploy:
+    concurrency:
+      group: production-maintenance
+      cancel-in-progress: false
+      queue: max
     needs: [build, smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -210,11 +224,15 @@ jobs:
           ref: ${{ needs.build.outputs.commit_sha }}
       - name: Reject stale main before staging production inputs
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA" ]] || { echo 'Main advanced before MinIO deployment.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
       - name: Prepare one MinIO runtime and Tofu stage
         uses: appleboy/ssh-action@v1
         with:
@@ -249,11 +267,15 @@ jobs:
           overwrite: true
       - name: Reject stale main before Yecao mutation
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA" ]] || { echo 'Main advanced before production mutation.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
       - name: Reconcile MinIO, apply Tofu, verify, and commit metadata under one host lock
         uses: appleboy/ssh-action@v1
         with:

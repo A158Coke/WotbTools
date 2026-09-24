@@ -50,11 +50,13 @@ freeze_step = next(step for step in owner_job["steps"] if step.get("name") == "F
 freeze_script = freeze_step["run"]
 assert '[[ "$EVENT_REF" == refs/heads/main ]]' in freeze_script
 assert '"$(git rev-parse HEAD)" == "$SOURCE_SHA"' in freeze_script
-assert '"$(git rev-parse origin/main)" == "$SOURCE_SHA"' in freeze_script
 assert '[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]' in freeze_script
+assert "deploy/check-production-freshness.sh" in freeze_script
+assert freeze_step["env"]["EVENT_SHA"] == "${{ github.sha }}"
 pre_mutation = next(step for step in owner_job["steps"]
                     if step.get("name") == "Reject stale main before TX mutation")
-assert '"$(git rev-parse origin/main)" == "$SOURCE_SHA"' in pre_mutation["run"]
+assert "deploy/check-production-freshness.sh" in pre_mutation["run"]
+assert pre_mutation["env"]["EVENT_SHA"] == "${{ github.sha }}"
 
 # --- mirror-only fail-closed before tofu starts -----------------------------
 apply_script = next(

@@ -20,6 +20,16 @@ concurrency:
   cancel-in-progress: false
   queue: max
 
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/caddy.yml
+    deploy/tx/assets/auth/.well-known/assetlinks.json
+    deploy/release-metadata.py
+    deploy/tx/Caddyfile
+    deploy/tx/docker-compose.yml
+    deploy/tx/deploy.sh
+    deploy/check-production-freshness.sh
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -33,6 +43,8 @@ jobs:
       - name: Freeze current main and reject stale source
         id: identity
         env:
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ github.sha }}
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref }}
@@ -44,16 +56,20 @@ jobs:
           if [ "$EVENT_NAME" = workflow_dispatch ]; then
             [ "$REF_NAME" = refs/heads/main ] || { echo 'Manual deployment must dispatch from main.' >&2; exit 1; }
           fi
-          git fetch --no-tags origin main
-          [ "$SOURCE_SHA" = "$(git rev-parse origin/main)" ] || { echo 'Source SHA is not current main.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           echo "commit_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
       - name: Recheck main immediately before production staging
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA" ]] || { echo 'Main advanced before Caddy staging.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
       - name: Prepare TX Caddy staging
         uses: appleboy/ssh-action@v1
         with:
@@ -79,11 +95,15 @@ jobs:
           overwrite: true
       - name: Reject stale main before TX mutation
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA" ]] || { echo 'Main advanced before production mutation.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
       - name: Reconcile and verify Caddy under one TX host lock
         uses: appleboy/ssh-action@v1
         with:

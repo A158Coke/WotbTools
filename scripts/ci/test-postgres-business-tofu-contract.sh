@@ -48,13 +48,15 @@ freeze_step = next(step for step in workflow["jobs"]["business_postgres"]["steps
                    if step.get("name") == "Freeze current main")
 freeze_script = freeze_step["run"]
 assert '[[ "$EVENT_REF" == refs/heads/main ]]' in freeze_script
-assert '"$(git rev-parse origin/main)" == "$SOURCE_SHA"' in freeze_script
 assert '"$(git rev-parse HEAD)" == "$SOURCE_SHA"' in freeze_script
 assert '[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]' in freeze_script
+assert "deploy/check-production-freshness.sh" in freeze_script
+assert freeze_step["env"]["EVENT_SHA"] == "${{ github.sha }}"
 assert 'echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"' in freeze_script
 pre_mutation = next(step for step in workflow["jobs"]["business_postgres"]["steps"]
                     if step.get("name") == "Reject stale main before TX mutation")
-assert '"$(git rev-parse origin/main)" == "$SOURCE_SHA"' in pre_mutation["run"]
+assert "deploy/check-production-freshness.sh" in pre_mutation["run"]
+assert pre_mutation["env"]["EVENT_SHA"] == "${{ github.sha }}"
 
 # --- the production owner shares the maintenance serialization boundary -----
 expected_concurrency = {"group": "production-maintenance", "cancel-in-progress": "false", "queue": "max"}

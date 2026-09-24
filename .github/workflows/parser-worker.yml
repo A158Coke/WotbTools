@@ -36,10 +36,37 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: production-maintenance
-  cancel-in-progress: false
-  queue: max
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/parser-worker.yml
+    .dockerignore
+    docker/Dockerfile.parser-worker
+    common/tankopedia-tier7.json
+    common/tankopedia-tier8.json
+    common/tankopedia-tier9.json
+    common/tankopedia-tier10.json
+    common/map_names.json
+    common/tank_tactical_profiles.json
+    common/map-semantics/**
+    java/pom.xml
+    java/**/pom.xml
+    java/settings-docker.xml
+    java/wotb-contracts/**
+    java/wotb-object-storage-minio/**
+    java/wotb-broker-rabbitmq/**
+    java/wotb-core/**
+    java/wotb-result/**
+    java/wotb-playback/**
+    java/wotb-replay-processing/**
+    java/wotb-parser-worker/**
+    contracts/mq/**
+    deploy/dependency-readiness.sh
+    deploy/dependency-readiness.py
+    deploy/deploy.sh
+    deploy/docker-compose.prod.yml
+    deploy/release-metadata.py
+    deploy/check-production-freshness.sh
 
 jobs:
   build:
@@ -60,6 +87,8 @@ jobs:
       - name: Freeze current main and image identity
         id: identity
         env:
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ github.sha }}
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref }}
@@ -71,8 +100,8 @@ jobs:
           if [ "$EVENT_NAME" = workflow_dispatch ]; then
             [ "$REF_NAME" = refs/heads/main ] || { echo 'Manual deployment must dispatch from main.' >&2; exit 1; }
           fi
-          git fetch --no-tags origin main
-          [ "$SOURCE_SHA" = "$(git rev-parse origin/main)" ] || { echo 'Source SHA is not current main.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           image="ghcr.io/a158coke/wotbtools-parser-worker:sha-${SOURCE_SHA:0:12}"
           {
             echo "commit_sha=$SOURCE_SHA"
@@ -141,6 +170,10 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
   deploy:
+    concurrency:
+      group: production-maintenance
+      cancel-in-progress: false
+      queue: max
     needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -151,11 +184,15 @@ jobs:
           ref: ${{ needs.build.outputs.commit_sha }}
       - name: Reject stale main before staging production inputs
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA" ]] || { echo 'Main advanced before Yecao deployment.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
       - name: Prepare complete Yecao deployment input tree
         uses: appleboy/ssh-action@v1
         with:
@@ -181,11 +218,15 @@ jobs:
           overwrite: true
       - name: Reject stale main before Yecao mutation
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA" ]] || { echo 'Main advanced before production mutation.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
       - name: Read dependencies and deploy Parser Worker under one host lock
         uses: appleboy/ssh-action@v1
         with:

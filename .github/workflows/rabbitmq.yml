@@ -20,6 +20,16 @@ concurrency:
   cancel-in-progress: false
   queue: max
 
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/rabbitmq.yml
+    deploy/release-metadata.py
+    deploy/tx/deploy.sh
+    deploy/tx/docker-compose.yml
+    deploy/tx/rabbitmq.tofurc
+    infra/tofu/rabbitmq/**
+    deploy/check-production-freshness.sh
+
 jobs:
   rabbitmq:
     name: Reconcile RabbitMQ on TX
@@ -36,6 +46,8 @@ jobs:
         id: source
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ github.sha }}
           EVENT_REF: ${{ github.ref }}
         run: |
@@ -43,11 +55,8 @@ jobs:
           [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'RabbitMQ workflow requires main.' >&2; exit 1; }
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'The event SHA must be a full lowercase commit SHA.' >&2; exit 1; }
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo 'Checkout SHA differs from the event SHA.' >&2; exit 1; }
-          git fetch --no-tags origin main
-          [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]] || {
-            echo 'This run is stale; dispatch RabbitMQ again from current main.' >&2
-            exit 1
-          }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Stage TX runtime and RabbitMQ root
@@ -75,14 +84,14 @@ jobs:
       - name: Reject stale main before TX mutation
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
         run: |
           set -euo pipefail
-          git fetch --no-tags origin main
-          [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]] || {
-            echo 'Main advanced before TX production mutation.' >&2
-            exit 1
-          }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
       - name: Reconcile runtime, apply exact RabbitMQ plan, and verify
         uses: appleboy/ssh-action@v1
