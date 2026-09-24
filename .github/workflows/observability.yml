@@ -36,6 +36,19 @@ concurrency:
   cancel-in-progress: false
   queue: max
 
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/observability.yml
+    deploy/deploy.sh
+    deploy/docker-compose.prod.yml
+    deploy/grafana-api-request.sh
+    deploy/release-metadata.py
+    deploy/validate-alloy-config.sh
+    deploy/verify-observability.sh
+    deploy/observability/**
+    infra/tofu/grafana/**
+    deploy/check-production-freshness.sh
+
 jobs:
   observability:
     name: Reconcile Yecao observability and Grafana dashboards
@@ -51,6 +64,7 @@ jobs:
         id: source
         shell: bash
         env:
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ github.sha }}
           EVENT_REF: ${{ github.ref }}
           EVENT_NAME: ${{ github.event_name }}
@@ -61,11 +75,8 @@ jobs:
           [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'Observability workflow requires main.' >&2; exit 1; }
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'The event SHA must be a full lowercase commit SHA.' >&2; exit 1; }
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo 'Checkout SHA differs from the event SHA.' >&2; exit 1; }
-          git fetch --no-tags origin main
-          [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]] || {
-            echo 'This run is stale; dispatch Observability again from current main.' >&2
-            exit 1
-          }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
           declare -A selected=()
           add_service() { selected["$1"]=1; }
@@ -142,14 +153,14 @@ jobs:
       - name: Reject stale main before Yecao mutation
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
         run: |
           set -euo pipefail
-          git fetch --no-tags origin main
-          [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]] || {
-            echo 'Main advanced before Yecao production mutation.' >&2
-            exit 1
-          }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
       - name: Reconcile selected runtime, apply Grafana plan, and verify
         uses: appleboy/ssh-action@v1

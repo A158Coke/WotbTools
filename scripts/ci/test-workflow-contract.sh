@@ -5,8 +5,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python3 - "$ROOT" <<'PY'
 import fnmatch
 import json
+import os
 import re
 import shlex
+import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
 import sys
 from pathlib import Path
@@ -205,6 +208,47 @@ def matches_input(patterns, path, is_directory=False):
     candidate = path.rstrip("/") + "/__workflow_input__" if is_directory else path.rstrip("/")
     return any(fnmatch.fnmatchcase(candidate, pattern) for pattern in patterns)
 
+# Image work can build concurrently; only the host mutation job queues behind production maintenance.
+production_owners = (
+    "business-api", "frontend", "keycloak", "parser-worker", "minio",
+    "rabbitmq", "business-postgres", "keycloak-postgres", "cos", "observability", "caddy",
+)
+image_owners = {"business-api", "frontend", "keycloak", "parser-worker", "minio"}
+production_concurrency = {
+    "group": "production-maintenance", "cancel-in-progress": "false", "queue": "max",
+}
+for owner in production_owners:
+    workflow, paths = trigger_paths(owner)
+    freshness_paths = workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
+    assert freshness_paths == [*paths, "deploy/check-production-freshness.sh"], (
+        f"{owner} freshness paths must exactly cover its trigger paths and shared guard"
+    )
+    calls = [
+        step
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if "deploy/check-production-freshness.sh" in step.get("run", "")
+    ]
+    assert len(calls) >= 2, f"{owner} must check freshness at source and before production mutation"
+    assert all(
+        step.get("env", {}).get("EVENT_SHA") == "${{ github.sha }}"
+        for step in calls
+    ), f"{owner} must validate the triggering event SHA at every freshness boundary"
+    if owner in image_owners:
+        assert "concurrency" not in workflow, f"{owner} build must not hold the production queue"
+        assert workflow["jobs"]["deploy"]["concurrency"] == production_concurrency
+    else:
+        assert workflow["concurrency"] == production_concurrency, (
+            f"{owner} infrastructure changes must retain workflow-level serialization"
+        )
+
+freshness_helper = (root / "deploy/check-production-freshness.sh").read_text(encoding="utf-8")
+assert "git merge-base --is-ancestor" in freshness_helper
+assert "git diff --quiet \"$source_sha\" \"$current_main\"" in freshness_helper
+assert "workflow_dispatch" in freshness_helper and "refs/heads/main" in freshness_helper
+assert "git ls-remote" not in freshness_helper
+
+
 for owner, dockerfile in image_dockerfiles.items():
     workflow, paths = trigger_paths(owner)
     assert matches_input(paths, dockerfile), f"{owner} paths must include its Dockerfile"
@@ -271,6 +315,137 @@ for owner, path in tofu_owner_roots.items():
     _, paths = trigger_paths(owner)
     assert matches_input(paths, path, is_directory=True), f"{owner} workflow does not trigger for {path}"
 
+def git(cwd, *args):
+    result = subprocess.run(
+        ["git", *args], cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    )
+    assert result.returncode == 0, f"git {' '.join(args)} failed:\n{result.stdout}"
+    return result.stdout.strip()
+
+def write_commit(repo, relative, content, message):
+    target = repo / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    git(repo, "add", "--", relative)
+    git(repo, "commit", "-m", message)
+    return git(repo, "rev-parse", "HEAD")
+
+def run_freshness(repo, source, event_name, event_ref, input_paths, expected, message, failure_text=None):
+    git(repo, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main")
+    git(repo, "checkout", "--detach", source)
+    environment = os.environ.copy()
+    environment["PRODUCTION_INPUT_PATHS"] = input_paths
+    result = subprocess.run(
+        [bash_executable, "deploy/check-production-freshness.sh", source, event_name,
+         event_ref, source],
+        cwd=repo, env=environment, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    )
+    if expected:
+        assert result.returncode == 0, f"{message} should pass:\n{result.stdout}"
+    else:
+        assert result.returncode != 0 and failure_text in result.stdout, (
+            f"{message} should fail for the expected reason ({failure_text}):\n{result.stdout}"
+        )
+
+# Exercise the production helper against a local bare remote without network or credentials.
+with tempfile.TemporaryDirectory(prefix="wotb-freshness-") as temp_name:
+    temp = Path(temp_name)
+    remote = temp / "origin.git"
+    source_repo = temp / "source"
+    runner_repo = temp / "runner"
+    source_repo.mkdir()
+    subprocess.run(["git", "init", "--bare", str(remote)], cwd=temp, check=True,
+                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    subprocess.run(["git", "init", "--initial-branch=main"], cwd=source_repo, check=True,
+                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    git(source_repo, "config", "user.name", "Workflow Contract")
+    git(source_repo, "config", "user.email", "workflow-contract@example.invalid")
+    write_commit(source_repo, ".github/workflows/frontend.yml", "name: frontend\n", "base")
+    for relative, content in (
+        (".dockerignore", "node_modules\n"),
+        ("docker/Dockerfile.frontend", "FROM nginx\n"),
+        ("frontend/src/app.js", "export const app = 1;\n"),
+        ("docker/Dockerfile.business-api", "FROM eclipse-temurin\n"),
+        ("java/wotb-core/src/Core.java", "class Core {}\n"),
+        ("java/wotb-parser-worker/src/Parser.java", "class Parser {}\n"),
+    ):
+        target = source_repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    git(source_repo, "add", "-A")
+    git(source_repo, "commit", "-m", "production inputs")
+    base = git(source_repo, "rev-parse", "HEAD")
+    git(source_repo, "remote", "add", "origin", str(remote))
+    git(source_repo, "push", "-u", "origin", "main")
+    subprocess.run(["git", "clone", "--branch", "main", str(remote), str(runner_repo)], cwd=temp,
+                   check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    git(runner_repo, "config", "user.name", "Workflow Contract")
+    git(runner_repo, "config", "user.email", "workflow-contract@example.invalid")
+    if os.name == "nt":
+        git_exec_path = subprocess.run(
+            ["git", "--exec-path"], check=True, text=True, stdout=subprocess.PIPE,
+        ).stdout.strip()
+        git_bash = Path(git_exec_path).parents[2] / "bin" / "bash.exe"
+        assert git_bash.is_file(), f"Git Bash not found beside {git_exec_path}"
+        bash_executable = str(git_bash)
+    else:
+        bash_executable = "bash"
+    fixture_helper = runner_repo / "deploy/check-production-freshness.sh"
+    fixture_helper.parent.mkdir(parents=True, exist_ok=True)
+    fixture_helper.write_bytes((root / "deploy/check-production-freshness.sh").read_bytes())
+
+    frontend_paths = "\n".join((
+        ".github/workflows/frontend.yml", ".dockerignore", "docker/Dockerfile.frontend", "frontend/**",
+        "common/map_names.json", "deploy/check-production-freshness.sh",
+    ))
+    business_paths = "\n".join(("docker/Dockerfile.business-api", "java/wotb-core/**"))
+    parser_paths = "java/wotb-parser-worker/**"
+
+    docs = write_commit(source_repo, "docs/README.md", "docs-only\n", "docs only")
+    git(source_repo, "push", "origin", "main")
+    run_freshness(runner_repo, base, "push", "refs/heads/main", frontend_paths, True, "docs-only main advance")
+
+    frontend = write_commit(source_repo, "frontend/src/app.js", "export const app = 2;\n", "frontend change")
+    git(source_repo, "push", "origin", "main")
+    run_freshness(runner_repo, docs, "push", "refs/heads/main", frontend_paths, False, "frontend owner change",
+                  "Production-owned inputs changed after the workflow source SHA.")
+
+    workflow = write_commit(source_repo, ".github/workflows/frontend.yml", "name: frontend updated\n", "workflow change")
+    git(source_repo, "push", "origin", "main")
+    run_freshness(runner_repo, frontend, "push", "refs/heads/main", frontend_paths, False, "frontend workflow change",
+                  "Production-owned inputs changed after the workflow source SHA.")
+
+    business_dockerfile = write_commit(source_repo, "docker/Dockerfile.business-api", "FROM eclipse-temurin:25\n", "business API Dockerfile change")
+    git(source_repo, "push", "origin", "main")
+    run_freshness(runner_repo, workflow, "push", "refs/heads/main", business_paths, False, "business API Dockerfile change",
+                  "Production-owned inputs changed after the workflow source SHA.")
+
+    shared_core = write_commit(source_repo, "java/wotb-core/src/Core.java", "class Core { int version = 2; }\n", "shared core change")
+    git(source_repo, "push", "origin", "main")
+    run_freshness(runner_repo, business_dockerfile, "push", "refs/heads/main", business_paths, False, "shared Java core change",
+                  "Production-owned inputs changed after the workflow source SHA.")
+
+    parser_module = write_commit(source_repo, "java/wotb-parser-worker/src/Parser.java", "class Parser { int version = 2; }\n", "parser worker change")
+    git(source_repo, "push", "origin", "main")
+    run_freshness(runner_repo, shared_core, "push", "refs/heads/main", parser_paths, False, "parser worker owner change",
+                  "Production-owned inputs changed after the workflow source SHA.")
+
+    unrelated = write_commit(source_repo, "java/wotb-parser-worker/README.md", "parser documentation\n", "unrelated parser worker change")
+    git(source_repo, "push", "origin", "main")
+    run_freshness(runner_repo, parser_module, "push", "refs/heads/main", frontend_paths, True, "unrelated parser worker change")
+    run_freshness(runner_repo, unrelated, "workflow_dispatch", "refs/heads/main", frontend_paths, True, "current-main manual dispatch")
+    run_freshness(runner_repo, parser_module, "workflow_dispatch", "refs/heads/main", frontend_paths, False, "stale manual dispatch",
+                  "Manual deployment must use the exact current main SHA.")
+    run_freshness(runner_repo, unrelated, "workflow_dispatch", "refs/heads/feature", frontend_paths, False, "non-main manual dispatch",
+                  "Production workflows require the main ref.")
+
+    git(runner_repo, "checkout", "--orphan", "unrelated", unrelated)
+    git(runner_repo, "rm", "-r", "--cached", ".")
+    non_ancestor = write_commit(runner_repo, "unrelated.txt", "independent history\n", "non-ancestor")
+    run_freshness(runner_repo, non_ancestor, "push", "refs/heads/main", frontend_paths, False, "non-ancestor source",
+                  "Source SHA is not an ancestor of current main.")
+
+print("Service-scoped freshness contracts and production queue boundaries OK")
 print("CI-only PR workflow, dispatcher, purity, Required Gate, and workflow input contracts OK")
 PY
 

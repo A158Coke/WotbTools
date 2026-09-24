@@ -235,7 +235,8 @@ assert "second plan is invalid or not No changes" in tofu_script
 keycloak_events = keycloak_workflow.get("on", keycloak_workflow.get(True, {}))
 assert keycloak_events["push"]["branches"] == ["main"]
 assert "workflow_dispatch" in keycloak_events
-assert keycloak_workflow["concurrency"] == {
+assert "concurrency" not in keycloak_workflow
+assert keycloak_workflow["jobs"]["deploy"]["concurrency"] == {
     "group": "production-maintenance", "cancel-in-progress": "false", "queue": "max",
 }
 build_steps = keycloak_workflow["jobs"]["build"]["steps"]
@@ -243,8 +244,9 @@ identity_step = next(step for step in build_steps if step.get("name") == "Freeze
 identity_script = identity_step["run"]
 assert 'if [ "$EVENT_NAME" = workflow_dispatch ]; then' in identity_script
 assert '[ "$REF_NAME" = refs/heads/main ]' in identity_script
-assert '"$SOURCE_SHA" = "$(git rev-parse origin/main)"' in identity_script
 assert '"$(git rev-parse HEAD)" = "$SOURCE_SHA"' in identity_script
+assert 'deploy/check-production-freshness.sh' in identity_script
+assert '"$EVENT_SHA"' in identity_script
 
 smoke_steps = keycloak_workflow["jobs"]["smoke"]["steps"]
 smoke = next(step for step in smoke_steps if "Run Keycloak runtime and realm Tofu smoke" in step.get("name", ""))
@@ -270,7 +272,8 @@ assert deploy_names.index("Stage Keycloak realm root and its actual TX runner") 
 ) < deploy_names.index("Reconcile Keycloak, apply realm Tofu, verify, and commit metadata under one host lock")
 freshness = next(step for step in deploy_steps if step.get("name") == "Reject stale main before TX mutation")
 assert freshness["env"]["SOURCE_SHA"] == "${{ needs.build.outputs.commit_sha }}"
-assert '"$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"' in freshness["run"]
+assert "deploy/check-production-freshness.sh" in freshness["run"]
+assert freshness["env"]["EVENT_SHA"] == "${{ github.sha }}"
 
 apply_step = next(step for step in deploy_steps
                   if step.get("name") == "Reconcile Keycloak, apply realm Tofu, verify, and commit metadata under one host lock")
@@ -294,6 +297,7 @@ assert apply_envs == {
     "WOTB_DEPLOY_SERVICE",
     "WOTB_DEPLOY_CONFIG_SHA",
     "WOTB_DEPLOY_IMAGE_TAG",
+    "WOTB_DEPLOY_IMAGE_DIGEST",
     "WOTB_DEPLOY_IMAGE_COMMIT_SHA",
     "TX_IMAGE_REGISTRY_PREFIX",
     "KC_POSTGRES_ADMIN_USER",
