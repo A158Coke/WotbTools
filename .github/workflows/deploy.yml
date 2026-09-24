@@ -269,7 +269,7 @@ jobs:
           source: deploy/docker-compose.minio.yml,deploy/minio-deploy.sh,deploy/release-metadata.py,deploy/minio
           target: /opt/wotb/minio.incoming/${{ needs.identity.outputs.config_sha }}
           overwrite: true
-      - name: Deploy and provision MinIO via SSH
+      - name: Reconcile Yecao MinIO runtime via SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}

@@ -1,0 +1,174 @@
+name: Production Release / Foundation
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        type: string
+        required: true
+      build_components:
+        type: string
+        required: true
+      deploy_services:
+        type: string
+        required: true
+      tofu_roots:
+        type: string
+        required: true
+
+jobs:
+  build_minio:
+    if: ${{ contains(fromJSON(inputs.build_components), 'minio') }}
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      component: minio
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  deploy_rabbitmq:
+    if: ${{ contains(fromJSON(inputs.deploy_services), 'rabbitmq') }}
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      service: rabbitmq
+      source_sha: ${{ inputs.source_sha }}
+      image: ''
+      digest: ''
+    secrets: inherit
+
+  deploy_business_postgres:
+    if: ${{ contains(fromJSON(inputs.deploy_services), 'business-postgres') }}
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      service: business-postgres
+      source_sha: ${{ inputs.source_sha }}
+      image: ''
+      digest: ''
+    secrets: inherit
+
+  deploy_keycloak_postgres:
+    if: ${{ contains(fromJSON(inputs.deploy_services), 'keycloak-postgres') }}
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      service: keycloak-postgres
+      source_sha: ${{ inputs.source_sha }}
+      image: ''
+      digest: ''
+    secrets: inherit
+
+  deploy_minio:
+    needs: [build_minio]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'minio') && (contains(fromJSON(inputs.build_components), 'minio') == false || needs.build_minio.result == 'success') }}
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      service: minio
+      source_sha: ${{ inputs.source_sha }}
+      image: ${{ needs.build_minio.outputs.image }}
+      digest: ${{ needs.build_minio.outputs.digest }}
+    secrets: inherit
+
+  tofu_rabbitmq:
+    needs: [deploy_rabbitmq]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.tofu_roots), 'rabbitmq') && (contains(fromJSON(inputs.deploy_services), 'rabbitmq') == false || needs.deploy_rabbitmq.result == 'success') }}
+    uses: ./.github/workflows/tofu-apply.yml
+    permissions:
+      contents: read
+    with:
+      root: rabbitmq
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  tofu_business_postgres:
+    needs: [deploy_business_postgres]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.tofu_roots), 'business-postgres') && (contains(fromJSON(inputs.deploy_services), 'business-postgres') == false || needs.deploy_business_postgres.result == 'success') }}
+    uses: ./.github/workflows/tofu-apply.yml
+    permissions:
+      contents: read
+    with:
+      root: business-postgres
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  tofu_keycloak_postgres:
+    needs: [deploy_keycloak_postgres]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.tofu_roots), 'keycloak-postgres') && (contains(fromJSON(inputs.deploy_services), 'keycloak-postgres') == false || needs.deploy_keycloak_postgres.result == 'success') }}
+    uses: ./.github/workflows/tofu-apply.yml
+    permissions:
+      contents: read
+    with:
+      root: keycloak-postgres
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  tofu_minio:
+    needs: [deploy_minio]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.tofu_roots), 'minio') && (contains(fromJSON(inputs.deploy_services), 'minio') == false || needs.deploy_minio.result == 'success') }}
+    uses: ./.github/workflows/tofu-apply.yml
+    permissions:
+      contents: read
+    with:
+      root: minio
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  report:
+    name: Foundation result
+    needs: [build_minio, deploy_rabbitmq, deploy_business_postgres, deploy_keycloak_postgres, deploy_minio, tofu_rabbitmq, tofu_business_postgres, tofu_keycloak_postgres, tofu_minio]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+      - name: Write Foundation results
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          BUILD_COMPONENTS: ${{ inputs.build_components }}
+          DEPLOY_SERVICES: ${{ inputs.deploy_services }}
+          TOFU_ROOTS: ${{ inputs.tofu_roots }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/release_report.py write \
+            --domain foundation --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
+            --source-sha "$SOURCE_SHA" --build-components "$BUILD_COMPONENTS" \
+            --deploy-services "$DEPLOY_SERVICES" --tofu-roots "$TOFU_ROOTS" \
+            --needs-json "$NEEDS_JSON" --output release-report/release-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-release-report-foundation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-report/release-report.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Fail selected Foundation work that did not succeed
+        if: always()
+        env:
+          BUILD_COMPONENTS: ${{ inputs.build_components }}
+          DEPLOY_SERVICES: ${{ inputs.deploy_services }}
+          TOFU_ROOTS: ${{ inputs.tofu_roots }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          python3 deploy/release_report.py check-domain --domain foundation \
+            --build-components "$BUILD_COMPONENTS" --deploy-services "$DEPLOY_SERVICES" \
+            --tofu-roots "$TOFU_ROOTS" --needs-json "$NEEDS_JSON"

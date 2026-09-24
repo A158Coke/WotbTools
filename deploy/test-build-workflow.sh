@@ -17,7 +17,7 @@ assert set(deploy['on']['workflow_dispatch']['inputs']['service']['options'])==s
 assert set(build['on']['workflow_call']['inputs'])=={'component','source_sha'}
 assert set(deploy['on']['workflow_call']['inputs'])=={'service','source_sha','image','digest'}
 assert {'image','tag','commit_sha','digest'} <= set(build['on']['workflow_call']['outputs'])
-assert 'workflow_run' not in str(build) and 'workflow_run' not in str(deploy)
+assert 'workflow_run' not in build.get('on',{}) and 'workflow_run' not in deploy.get('on',{})
 assert 'workflow_dispatch' in build['on'] and 'push' not in build['on']
 assert 'workflow_dispatch' in deploy['on'] and 'push' not in deploy['on']
 assert 'sha-' in str(build) and ':latest' not in str(build)
@@ -28,18 +28,22 @@ for component in components:
     dockerfile='docker/Dockerfile.'+component
     assert (root/dockerfile).exists(), dockerfile
 assert not (root/'docker/Dockerfile.backend').exists()
+domain_files={
+    'foundation':'release-foundation.yml',
+    'cloud':'release-cloud.yml',
+    'tx':'release-tx.yml',
+    'yecao':'release-yecao.yml',
+    'observability':'release-observability.yml',
+}
 jobs=release['jobs']
-for c in components:
-    job=jobs['build_'+c.replace('-','_')]
-    assert job['uses']=='./.github/workflows/build.yml'
-    assert job['with']['component']==c
-for service in services:
-    job=jobs['deploy_'+service.replace('-','_')]
-    assert job['uses']=='./.github/workflows/deploy.yml'
-    assert job['with']['service']==service
-    if service in components:
-        assert 'needs.build_'+service.replace('-','_')+'.outputs.image' in job['with']['image']
-        assert 'needs.build_'+service.replace('-','_')+'.outputs.digest' in job['with']['digest']
+assert set(jobs)=={'plan','foundation','cloud','tx','yecao','observability','summary'}
+for domain,filename in domain_files.items():
+    assert jobs[domain]['uses']=='./.github/workflows/'+filename
+    workflow=yaml.load((wd/filename).read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+    assert set(workflow['on'])=={'workflow_call'}
+    assert {'source_sha','build_components','deploy_services','tofu_roots'} <= \
+        set(workflow['on']['workflow_call']['inputs'])
+assert 'workflow_run' not in release.get('on',{})
 
 # --- Dockerfile reactor inputs -------------------------------------------------
 # Every image pre-copies all module poms (Maven resolves the aggregator's <modules>

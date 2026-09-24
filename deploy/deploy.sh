@@ -15,6 +15,9 @@ readonly METADATA_FILE="$WOTB_DIR/production-release.json"
 readonly METADATA_TOOL="$INCOMING_DIR/deploy/release-metadata.py"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
 readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
+readonly WORKER_READINESS_ATTEMPTS="${WOTB_WORKER_READINESS_ATTEMPTS:-5}"
+readonly WORKER_READINESS_INTERVAL_SEC="${WOTB_WORKER_READINESS_INTERVAL_SEC:-2}"
+readonly WORKER_READINESS_TIMEOUT_SEC="${WOTB_WORKER_READINESS_TIMEOUT_SEC:-5}"
 readonly PULL_ATTEMPTS="${WOTB_PULL_ATTEMPTS:-3}"
 readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
 readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
@@ -81,6 +84,9 @@ validate_inputs() {
   [[ "$CONFIG_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || die "WOTB_DEPLOY_CONFIG_SHA must be a full lowercase commit SHA."
   is_positive_integer "$HEALTH_ATTEMPTS" || die "WOTB_HEALTH_ATTEMPTS must be a positive integer."
   is_positive_integer "$HEALTH_INTERVAL_SEC" || die "WOTB_HEALTH_INTERVAL_SEC must be a positive integer."
+  is_positive_integer "$WORKER_READINESS_ATTEMPTS" || die "WOTB_WORKER_READINESS_ATTEMPTS must be a positive integer."
+  is_positive_integer "$WORKER_READINESS_INTERVAL_SEC" || die "WOTB_WORKER_READINESS_INTERVAL_SEC must be a positive integer."
+  is_positive_integer "$WORKER_READINESS_TIMEOUT_SEC" || die "WOTB_WORKER_READINESS_TIMEOUT_SEC must be a positive integer."
   is_positive_integer "$PULL_ATTEMPTS" || die "WOTB_PULL_ATTEMPTS must be a positive integer."
   DEPLOY_SERVICES=("$DEPLOY_SERVICE_VALUE")
   DEPLOY_SERVICES_RAW="$DEPLOY_SERVICE_VALUE"
@@ -247,6 +253,18 @@ worker_health() {
   return 1
 }
 
+worker_dependency_readiness() {
+  is_selected parser-worker || return 0
+  local readiness_tool="$INCOMING_DIR/deploy/worker-readiness.py"
+  [ -f "$readiness_tool" ] || die "staged parser-worker readiness checker is missing."
+  if ! docker compose -f "$EFFECTIVE_COMPOSE" config --format json | python3 "$readiness_tool" \
+    --attempts "$WORKER_READINESS_ATTEMPTS" \
+    --interval "$WORKER_READINESS_INTERVAL_SEC" \
+    --timeout "$WORKER_READINESS_TIMEOUT_SEC"; then
+    die "parser-worker dependency readiness failed; pull, promotion, restart, and metadata were skipped."
+  fi
+}
+
 apply_services() {
   mapfile -t APPLY_SERVICES < <(compose_service_list | awk 'NF && !seen[$0]++')
   [ "${#APPLY_SERVICES[@]}" -gt 0 ] || die "no runtime service selected."
@@ -371,6 +389,7 @@ main() {
   cd "$WOTB_DIR"
 
   stage_and_validate
+  worker_dependency_readiness
   pull_images || {
     echo "ERROR: target image pull failed; live deployment was not changed." >&2
     exit 1
@@ -384,8 +403,8 @@ main() {
     stop_failed_service
     exit 1
   fi
-  # The worker exposes no HTTP endpoint, so its gate is the container staying up: a crash loop from
-  # a missing credential or an unreachable broker must fail the deployment, not pass silently.
+  # The pre-mutation gate authenticates the actual worker identity against RabbitMQ and MinIO.
+  # Keep this post-start liveness check too: it catches crashes after the dependency probe passed.
   if ! worker_health; then
     diagnostics
     stop_failed_service

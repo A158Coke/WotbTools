@@ -1,0 +1,211 @@
+name: Production Release / TX
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        type: string
+        required: true
+      build_components:
+        type: string
+        required: true
+      deploy_services:
+        type: string
+        required: true
+      tofu_roots:
+        type: string
+        required: true
+
+jobs:
+  build_business_api:
+    if: ${{ contains(fromJSON(inputs.build_components), 'business-api') }}
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      component: business-api
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  build_frontend:
+    if: ${{ contains(fromJSON(inputs.build_components), 'frontend') }}
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      component: frontend
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  build_keycloak:
+    if: ${{ contains(fromJSON(inputs.build_components), 'keycloak') }}
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      component: keycloak
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  dependency_gates:
+    name: Check selected upstream work
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      business_api_ready: ${{ steps.gate.outputs.business_api_ready }}
+      keycloak_ready: ${{ steps.gate.outputs.keycloak_ready }}
+      frontend_ready: ${{ steps.gate.outputs.frontend_ready }}
+      caddy_ready: ${{ steps.gate.outputs.caddy_ready }}
+      diagnostics: ${{ steps.gate.outputs.diagnostics }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: production-release-report-foundation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-reports/foundation
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: production-release-report-cloud-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-reports/cloud
+      - name: Gate consumers on their selected changed dependencies
+        id: gate
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          BUILD_COMPONENTS: ${{ inputs.build_components }}
+          DEPLOY_SERVICES: ${{ inputs.deploy_services }}
+          TOFU_ROOTS: ${{ inputs.tofu_roots }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/release_report.py gate \
+            --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" --source-sha "$SOURCE_SHA" \
+            --build "$BUILD_COMPONENTS" --deploy "$DEPLOY_SERVICES" --tofu "$TOFU_ROOTS" \
+            --foundation-report release-reports/foundation/release-report.json \
+            --cloud-report release-reports/cloud/release-report.json \
+            --gates-json '{"business_api":{"foundation":[["deploy","rabbitmq"],["tofu","rabbitmq"],["deploy","business-postgres"],["tofu","business-postgres"],["deploy","keycloak-postgres"],["tofu","keycloak-postgres"],["deploy","minio"],["tofu","minio"]],"cloud":[["tofu","cos"]]},"keycloak":{"foundation":[["deploy","keycloak-postgres"],["tofu","keycloak-postgres"]]},"frontend":{"foundation":[["deploy","keycloak-postgres"],["tofu","keycloak-postgres"]]},"caddy":{"foundation":[["deploy","keycloak-postgres"],["tofu","keycloak-postgres"]]}}' \
+            --output "$GITHUB_OUTPUT" --summary-output "$GITHUB_STEP_SUMMARY"
+
+  deploy_keycloak:
+    needs: [build_keycloak, dependency_gates]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'keycloak') && (contains(fromJSON(inputs.build_components), 'keycloak') == false || needs.build_keycloak.result == 'success') && needs.dependency_gates.outputs.keycloak_ready == 'true' }}
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      service: keycloak
+      source_sha: ${{ inputs.source_sha }}
+      image: ${{ needs.build_keycloak.outputs.image }}
+      digest: ${{ needs.build_keycloak.outputs.digest }}
+    secrets: inherit
+
+  tofu_keycloak:
+    needs: [deploy_keycloak]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.tofu_roots), 'keycloak') && (contains(fromJSON(inputs.deploy_services), 'keycloak') == false || needs.deploy_keycloak.result == 'success') }}
+    uses: ./.github/workflows/tofu-apply.yml
+    permissions:
+      contents: read
+    with:
+      root: keycloak
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  deploy_business_api:
+    needs: [build_business_api, dependency_gates, deploy_keycloak, tofu_keycloak]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'business-api') && (contains(fromJSON(inputs.build_components), 'business-api') == false || needs.build_business_api.result == 'success') && needs.dependency_gates.outputs.business_api_ready == 'true' && (contains(fromJSON(inputs.deploy_services), 'keycloak') == false || needs.deploy_keycloak.result == 'success') && (contains(fromJSON(inputs.tofu_roots), 'keycloak') == false || needs.tofu_keycloak.result == 'success') }}
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      service: business-api
+      source_sha: ${{ inputs.source_sha }}
+      image: ${{ needs.build_business_api.outputs.image }}
+      digest: ${{ needs.build_business_api.outputs.digest }}
+    secrets: inherit
+
+  deploy_frontend:
+    needs: [build_frontend, dependency_gates, deploy_keycloak, tofu_keycloak, deploy_business_api]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'frontend') && (contains(fromJSON(inputs.build_components), 'frontend') == false || needs.build_frontend.result == 'success') && needs.dependency_gates.outputs.frontend_ready == 'true' && (contains(fromJSON(inputs.deploy_services), 'keycloak') == false || needs.deploy_keycloak.result == 'success') && (contains(fromJSON(inputs.tofu_roots), 'keycloak') == false || needs.tofu_keycloak.result == 'success') && (contains(fromJSON(inputs.deploy_services), 'business-api') == false || needs.deploy_business_api.result == 'success') }}
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      service: frontend
+      source_sha: ${{ inputs.source_sha }}
+      image: ${{ needs.build_frontend.outputs.image }}
+      digest: ${{ needs.build_frontend.outputs.digest }}
+    secrets: inherit
+
+  deploy_caddy:
+    needs: [dependency_gates, deploy_keycloak, tofu_keycloak, deploy_business_api, deploy_frontend]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'caddy') && needs.dependency_gates.outputs.caddy_ready == 'true' && (contains(fromJSON(inputs.deploy_services), 'keycloak') == false || needs.deploy_keycloak.result == 'success') && (contains(fromJSON(inputs.tofu_roots), 'keycloak') == false || needs.tofu_keycloak.result == 'success') && (contains(fromJSON(inputs.deploy_services), 'business-api') == false || needs.deploy_business_api.result == 'success') && (contains(fromJSON(inputs.deploy_services), 'frontend') == false || needs.deploy_frontend.result == 'success') }}
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      service: caddy
+      source_sha: ${{ inputs.source_sha }}
+      image: ''
+      digest: ''
+    secrets: inherit
+
+  report:
+    name: TX result
+    needs: [build_business_api, build_frontend, build_keycloak, dependency_gates, deploy_keycloak, tofu_keycloak, deploy_business_api, deploy_frontend, deploy_caddy]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+      - name: Write TX results
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          BUILD_COMPONENTS: ${{ inputs.build_components }}
+          DEPLOY_SERVICES: ${{ inputs.deploy_services }}
+          TOFU_ROOTS: ${{ inputs.tofu_roots }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/release_report.py write \
+            --domain tx --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
+            --source-sha "$SOURCE_SHA" --build-components "$BUILD_COMPONENTS" \
+            --deploy-services "$DEPLOY_SERVICES" --tofu-roots "$TOFU_ROOTS" \
+            --needs-json "$NEEDS_JSON" --output release-report/release-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-release-report-tx-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-report/release-report.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Fail selected TX work that did not succeed
+        if: always()
+        env:
+          BUILD_COMPONENTS: ${{ inputs.build_components }}
+          DEPLOY_SERVICES: ${{ inputs.deploy_services }}
+          TOFU_ROOTS: ${{ inputs.tofu_roots }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          python3 deploy/release_report.py check-domain --domain tx \
+            --build-components "$BUILD_COMPONENTS" --deploy-services "$DEPLOY_SERVICES" \
+            --tofu-roots "$TOFU_ROOTS" --needs-json "$NEEDS_JSON"

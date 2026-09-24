@@ -628,6 +628,37 @@ preflight_host() {
     || die "a route to 10.20.0.2 is required."
 }
 
+# Check existing dependencies before replacing the live deployment files or
+# recreating the business service. This must never call the business E2E gate:
+# that gate creates processing/export jobs and needs the application running.
+business_dependency_preflight() {
+  is_selected business-api || return 0
+  [ -f "$LIVE_COMPOSE" ] || die "Business API dependencies require an existing TX runtime."
+  [ -f "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER" ] \
+    && grep -Fxq 'tx-local-opentofu-business-postgres' "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER" \
+    || die "Business PostgreSQL provisioning marker is missing or invalid."
+  [ -f "$RABBITMQ_TOFU_PROVISION_MARKER" ] \
+    && grep -Fxq 'tx-local-opentofu-rabbitmq' "$RABBITMQ_TOFU_PROVISION_MARKER" \
+    || die "RabbitMQ provisioning marker is missing or invalid."
+  [ "$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' business-postgres)" = healthy ] \
+    || die "Business PostgreSQL is not healthy."
+  wait_for_business_database || die "Business PostgreSQL is not ready."
+  [ "$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' rabbitmq)" = healthy ] \
+    || die "RabbitMQ is not healthy."
+  wait_for_rabbitmq || die "RabbitMQ is not ready."
+  wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration \
+    || die "Keycloak realm is not ready."
+  local minio_url
+  minio_url="$(presign_minio_url LIST temp/jobs/)" || die "MinIO readiness request could not be signed."
+  # Listing one object under the policy-owned prefix works even on an empty
+  # bucket, proves the control-api credentials, and creates no probe objects.
+  if ! wait_for_probe minio-control-api "$minio_url"; then
+    PROBE_LAST_URL=""
+    die "MinIO control-api read access is not ready."
+  fi
+  PROBE_LAST_URL=""
+}
+
 # ---------------------------------------------------------------- business E2E
 # The read-only runtime check proves the *real* business chain from inside
 # wotb_tx_internal: Keycloak token -> business runtime -> PostgreSQL job
@@ -741,6 +772,9 @@ import sys
 import urllib.parse
 
 method, key = sys.argv[1], sys.argv[2]
+list_prefix = key if method == "LIST" else None
+if list_prefix is not None:
+    method, key = "GET", ""
 endpoint = os.environ["E2E_MINIO_ENDPOINT"]
 bucket = os.environ["E2E_MINIO_BUCKET"]
 access_key = os.environ["E2E_MINIO_ACCESS_KEY"]
@@ -766,6 +800,8 @@ query = {
     "X-Amz-Expires": "900",
     "X-Amz-SignedHeaders": "host",
 }
+if list_prefix is not None:
+    query.update({"list-type": "2", "prefix": list_prefix, "max-keys": "1"})
 canonical_query = "&".join(f"{quote(name)}={quote(value)}" for name, value in sorted(query.items()))
 canonical_request = "\n".join([
     method,
@@ -1410,6 +1446,7 @@ main() {
   exec 9>"$WOTB_DIR/.deploy.lock"
   flock -n 9 || die "another TX deployment is already running."
   stage_and_validate
+  business_dependency_preflight
   pull_images || die "TX image pull failed; live TX deployment was not changed."
   promote_files || die "TX live-file promotion failed; prior TX files were restored when possible."
   if ! apply_and_check; then

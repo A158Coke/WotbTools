@@ -191,9 +191,18 @@ property objects by `ParserWorkerConfig` while the context is refreshed, i.e.
 blank` when it is explicitly emptied), so the process can never run with placeholder
 credentials.
 
-Because the worker has no HTTP endpoint, its deployment gate is container
-liveness: if it does not stay up (missing credential, unreachable broker), the
-deployment fails and the service is stopped so a crash loop cannot run away.
+Because the worker has no HTTP endpoint, deployment first validates its effective
+Compose settings and proves the configured consumer identity before pulling an
+image or promoting/recreating the live service. The preflight authenticates to the
+configured RabbitMQ vhost, opens a channel without declaring or consuming topology,
+then uses the worker's MinIO identity for bucket-location and `ListObjectsV2`
+`temp/jobs/` reads. It creates no probe objects and cannot change broker topology.
+The internal `minio` service alias is probed over HTTP through its address on the
+shared Docker network; unsupported HTTPS on that alias fails before mutation.
+
+The post-start gate remains container liveness because the worker exposes no HTTP
+endpoint. A crash after dependencies passed still fails the deployment and stops
+the service so a restart loop cannot run away.
 
 ## Operating it
 
@@ -249,7 +258,9 @@ Diagnosis order:
   Dockerfile COPY lists in lockstep, including the `-pl wotb-parser-worker -am`
   dependency closure of the worker image.
 - `deploy/test-deploy-contract.sh` pins the compose/deploy contract: no public
-  port, no database credentials, the three required secrets, the liveness gate,
+  port, no database credentials, the three required secrets, the RabbitMQ and
+  MinIO read-only preflight success/failure paths, rejection of internal MinIO
+  HTTPS before mutation, and the post-start liveness gate,
   the rejection of the retired `all` / `wotb-backend` / `keycloak` selectors, and the
   MinIO endpoint
   ownership — the worker's `minio:9000` and the control plane's `10.20.0.2:9000`

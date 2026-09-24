@@ -1,0 +1,163 @@
+name: Production Release / Observability
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Frozen source commit SHA for this release
+        type: string
+        required: true
+      build_components:
+        description: JSON array of selected build components
+        type: string
+        required: true
+      deploy_services:
+        description: JSON array of selected deployment services
+        type: string
+        required: true
+      tofu_roots:
+        description: JSON array of selected OpenTofu roots
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy_node_exporter:
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'node-exporter') }}
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      service: node-exporter
+      source_sha: ${{ inputs.source_sha }}
+      image: ''
+      digest: ''
+    secrets: inherit
+
+  deploy_prometheus:
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'prometheus') }}
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      service: prometheus
+      source_sha: ${{ inputs.source_sha }}
+      image: ''
+      digest: ''
+    secrets: inherit
+
+  deploy_loki:
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'loki') }}
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      service: loki
+      source_sha: ${{ inputs.source_sha }}
+      image: ''
+      digest: ''
+    secrets: inherit
+
+  deploy_alloy:
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'alloy') }}
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      service: alloy
+      source_sha: ${{ inputs.source_sha }}
+      image: ''
+      digest: ''
+    secrets: inherit
+
+  deploy_grafana:
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'grafana') }}
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      service: grafana
+      source_sha: ${{ inputs.source_sha }}
+      image: ''
+      digest: ''
+    secrets: inherit
+
+  tofu_grafana:
+    needs: [deploy_grafana]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.tofu_roots), 'grafana') && (contains(fromJSON(inputs.deploy_services), 'grafana') == false || needs.deploy_grafana.result == 'success') }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/tofu-apply.yml
+    with:
+      root: grafana
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  release_report:
+    if: always()
+    needs:
+      - deploy_node_exporter
+      - deploy_prometheus
+      - deploy_loki
+      - deploy_alloy
+      - deploy_grafana
+      - tofu_grafana
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+      - name: Write observability release report
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          BUILD_COMPONENTS: ${{ inputs.build_components }}
+          DEPLOY_SERVICES: ${{ inputs.deploy_services }}
+          TOFU_ROOTS: ${{ inputs.tofu_roots }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/release_report.py write \
+            --domain observability \
+            --run-id "$RUN_ID" \
+            --run-attempt "$RUN_ATTEMPT" \
+            --source-sha "$SOURCE_SHA" \
+            --build-components "$BUILD_COMPONENTS" \
+            --deploy-services "$DEPLOY_SERVICES" \
+            --tofu-roots "$TOFU_ROOTS" \
+            --needs-json "$NEEDS_JSON" \
+            --output report/release-report.json
+      - name: Upload observability release report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-release-report-observability-${{ github.run_id }}-${{ github.run_attempt }}
+          path: report/release-report.json
+          if-no-files-found: error
+      - name: Fail if selected observability work did not succeed
+        if: always()
+        env:
+          BUILD_COMPONENTS: ${{ inputs.build_components }}
+          DEPLOY_SERVICES: ${{ inputs.deploy_services }}
+          TOFU_ROOTS: ${{ inputs.tofu_roots }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/release_report.py check-domain \
+            --domain observability \
+            --build-components "$BUILD_COMPONENTS" \
+            --deploy-services "$DEPLOY_SERVICES" \
+            --tofu-roots "$TOFU_ROOTS" \
+            --needs-json "$NEEDS_JSON"

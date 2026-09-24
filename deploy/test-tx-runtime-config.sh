@@ -19,6 +19,10 @@ cat > "$WORK/host/production-release.json" <<JSON
 JSON
 chmod 600 "$WORK/host/production-release.json"
 printf 'tx-local-opentofu-keycloak\n' > "$WORK/host/keycloak.tofu-provisioned"
+printf 'tx-local-opentofu-business-postgres\n' > "$WORK/host/business-postgres.tofu-provisioned"
+printf 'tx-local-opentofu-rabbitmq\n' > "$WORK/host/rabbitmq.tofu-provisioned"
+mkdir -p "$WORK/host/deploy"
+cp "$WORK/incoming/deploy/tx/docker-compose.yml" "$WORK/host/deploy/docker-compose.yml"
 cat > "$WORK/bin/ip" <<'IP'
 #!/usr/bin/env bash
 [ "${1:-}" != -4 ] || { echo 'inet 10.20.0.1/24'; exit 0; }
@@ -35,7 +39,21 @@ verb="${1:-}"; shift || true
 printf '%s %s\n' "$verb" "$*" >> "${FAKE_DOCKER_LOG:?}"
 case "$verb" in
   up) [ "${FAKE_UP_FAILURE:-0}" != 1 ] ;;
-  run) if [ "${FAKE_PROBE_FAILURE:-0}" = 1 ]; then printf '503'; else printf '200'; fi ;;
+  ps)
+    if [ "${FAKE_DEPENDENCY_FAILURE:-}" = "${*: -1}-health" ]; then printf 'unhealthy'; else printf 'healthy'; fi ;;
+  exec)
+    case "${FAKE_DEPENDENCY_FAILURE:-}:$*" in
+      business-postgres-ready:*pg_isready*|rabbitmq-ready:*rabbitmq-diagnostics*) exit 1 ;;
+    esac ;;
+  run)
+    case "$*" in
+      *X-Amz-Signature=*)
+        [[ "$*" == *'list-type=2'* && "$*" == *'max-keys=1'* && "$*" == *'prefix=temp%2Fjobs%2F'* ]]
+        if [ "${FAKE_DEPENDENCY_FAILURE:-}" = minio ]; then printf '403'; else printf '200'; fi ;;
+      *http://keycloak:8080/realms/wotbtools/*)
+        if [ "${FAKE_DEPENDENCY_FAILURE:-}" = keycloak ]; then printf '503'; else printf '200'; fi ;;
+      *) if [ "${FAKE_PROBE_FAILURE:-0}" = 1 ]; then printf '503'; else printf '200'; fi ;;
+    esac ;;
   *) : ;;
 esac
 DOCKER
@@ -56,6 +74,7 @@ run() {
     YECAO_MINIO_CONTROL_API_ACCESS_KEY=test YECAO_MINIO_CONTROL_API_SECRET_KEY=test \
     KEYCLOAK_ADMIN_CLIENT_SECRET=test AI_API_KEY=test FAKE_DOCKER_LOG="$log" \
     FAKE_UP_FAILURE="${FAKE_UP_FAILURE:-0}" FAKE_PROBE_FAILURE="${FAKE_PROBE_FAILURE:-0}" \
+    FAKE_DEPENDENCY_FAILURE="${FAKE_DEPENDENCY_FAILURE:-}" \
     bash "$WORK/incoming/deploy/tx/deploy.sh"
 }
 metadata() { python3 "$ROOT/deploy/release-metadata.py" get --host tx --tx-prefix "$PREFIX" \
@@ -68,12 +87,52 @@ if run business-api "$SHA_B" '' '' "$WORK/route-reject.log" >/dev/null 2>&1; the
 [ ! -s "$WORK/route-reject.log" ]
 cp "$WORK/tx-compose.saved" "$WORK/incoming/deploy/tx/docker-compose.yml"
 
+# Every dependency failure leaves the current files, service and metadata intact.
+cp "$WORK/host/production-release.json" "$WORK/preflight-metadata.saved"
+cp "$WORK/host/deploy/docker-compose.yml" "$WORK/preflight-compose.saved"
+for failure in business-postgres-health business-postgres-ready rabbitmq-health rabbitmq-ready keycloak minio; do
+  log="$WORK/preflight-$failure.log"
+  if FAKE_DEPENDENCY_FAILURE="$failure" run business-api "$SHA_B" '' '' "$log" > "$WORK/preflight-output" 2>&1; then
+    echo "Dependency failure was accepted: $failure" >&2; exit 1
+  fi
+  case "$failure" in
+    business-postgres-health) message='Business PostgreSQL is not healthy.' ;;
+    business-postgres-ready) message='Business PostgreSQL is not ready.' ;;
+    rabbitmq-health) message='RabbitMQ is not healthy.' ;;
+    rabbitmq-ready) message='RabbitMQ is not ready.' ;;
+    keycloak) message='Keycloak realm is not ready.' ;;
+    minio) message='MinIO control-api read access is not ready.' ;;
+  esac
+  grep -Fq "$message" "$WORK/preflight-output"
+  cmp "$WORK/preflight-metadata.saved" "$WORK/host/production-release.json"
+  cmp "$WORK/preflight-compose.saved" "$WORK/host/deploy/docker-compose.yml"
+  ! grep -Eq '^(pull|up|stop) ' "$log"
+done
+for service in business-postgres rabbitmq; do
+  marker="$WORK/host/$service.tofu-provisioned"
+  cp "$marker" "$WORK/marker.saved"
+  for state in missing invalid; do
+    rm -f "$marker"
+    [ "$state" != invalid ] || printf 'invalid\n' > "$marker"
+    log="$WORK/preflight-$service-$state.log"
+    if run business-api "$SHA_B" '' '' "$log" > "$WORK/preflight-output" 2>&1; then
+      echo "Provisioning marker was accepted: $service $state" >&2; exit 1
+    fi
+    grep -Fq 'provisioning marker is missing or invalid.' "$WORK/preflight-output"
+    cmp "$WORK/preflight-metadata.saved" "$WORK/host/production-release.json"
+    cmp "$WORK/preflight-compose.saved" "$WORK/host/deploy/docker-compose.yml"
+    ! grep -Eq '^(pull|up|stop) ' "$log"
+  done
+  cp "$WORK/marker.saved" "$marker"
+done
+
 # Config-only business-api keeps its recorded image, updates config SHA, starts one service.
 run business-api "$SHA_B" '' '' "$WORK/config.log" >/dev/null
 [ "$(metadata business-api tag)" = "$TAG_A" ]
 [ "$(metadata business-api configSha)" = "$SHA_B" ]
 grep -q '^pull business-api$' "$WORK/config.log"
 grep -q '^up -d --no-deps --force-recreate business-api$' "$WORK/config.log"
+grep -q 'prefix=temp%2Fjobs%2F' "$WORK/config.log"
 ! grep -Eq '^up .*keycloak|^up .*wotb-frontend|^up .*caddy' "$WORK/config.log"
 grep -Fq "$TAG_A" "$WORK/host/deploy/docker-compose.yml"
 

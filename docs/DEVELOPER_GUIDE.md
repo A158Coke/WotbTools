@@ -575,8 +575,10 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 
 七个 production roots 汇入 `.github/workflows/tofu-apply.yml` 的单 root 调用：
 keycloak、rabbitmq、business-postgres、keycloak-postgres、minio、cos、grafana。
-main 自动 Release 与手动 dispatch 都绑定当前 main 完整 SHA，单 root workflow 使用各自
-provider/secret/state 边界、保存并校验同一个 plan 后 apply，执行 second-plan 或 readiness。
+自动 Release 将冻结的 head SHA 传入单 root workflow；独立手动 Tofu Apply 仍只接受当前 main
+完整 SHA。单 root workflow 使用各自 provider/secret/state 边界、保存并校验同一个 plan 后 apply，
+执行 second-plan 或 readiness。Production Release 的 `workflow_dispatch` 另以 `base_sha` 指定恢复
+范围的起点，具体规则见下文。
 原生产 COS bucket 与 root 设计见 `docs/architecture/opentofu-production-baseline.md`。
 
 PR 侧只做 validation：selector 按 root 选择 `tofu fmt -check`、`tofu init -backend=false`、
@@ -636,7 +638,7 @@ cutover 前经公网访问并管理 Yecao realm。HoF 回放原件是永久内�
 `replay_data` 卷到 `HOF_REPLAY_DIR`，与 MinIO dataset 工作区职责分离；Yecao 的
 MinIO 临时工作区是独立、显式手动的 Compose/OpenTofu deployment，绝不随普通 release
 启动或要求其 secrets；详见 `docs/operations/minio.md`。Release 的
-`deployServices`（由 `deploy/release_plan.py` 解释 before..head 得出）是这两个 host 的唯一发布
+`deployServices`（由 `deploy/release_plan.py` 解释冻结的 base..head 得出）是这两个 host 的唯一发布
 路由来源，每个 service 只调用单目标 Deploy。TX PostgreSQL 只发布
 `127.0.0.1:15432:5432` 给 TX-local OpenTofu；GitHub runner 只 SSH 触发，绝不
 直连数据库、建立 SSH tunnel 或使用 Terraform `remote-exec`。详见
@@ -663,7 +665,8 @@ Compose 服务 `parser-worker`）：它**不依赖 `wotb-web`、不持有数据�
 复用 canonical 解析与 artifact 生成（与控制面共用 `ReplayProcessingSourceRunner`，
 差异只在 `ReplayArtifactSink`）。该服务是 Yecao 宿主上**唯一**的应用服务，必须显式选中；
 选中时 `deploy/deploy.sh` fail-closed
-要求其 broker/MinIO 凭据并用容器存活 gate 判定成功。失败语义（可重试 → 经
+要求其 broker/MinIO 凭据，mutation 前从 Yecao 宿主只读验证 RabbitMQ worker 认证/vhost/channel
+和 MinIO `temp/jobs/` ListObjects 权限，启动后再用容器存活 gate 判定成功。失败语义（可重试 → 经
 `wotb.parser.retry` 回流；业务失败 → 逐源 FAILED 后 ack；无法解码 → 原字节 park
 到 DLQ）见 `docs/operations/parser-worker.md`。
 
@@ -701,13 +704,50 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
   reactor `-pl/-am`，root POM/global build 影响触发 full reactor。普通源码 PR 不构建 Docker
   镜像；Dockerfile、dockerignore、Keycloak provider/runtime 等 packaging 变更做真实构建或
   runtime smoke，且不 push 镜像。
-- `.github/workflows/release.yml` 是唯一 main push 自动发布入口。它将 before..head 整段变化
-  传给 `deploy/release_plan.py`，并分别调用单 component Build、单 service Deploy、单 root
-  Tofu Apply。Build 镜像、配置服务和基础设施按依赖关系各自运行；不相关 lane 独立，失败汇总
-  会让该 Release 失败，不自动回滚其他成功 lane。
+- `.github/workflows/release.yml` 是唯一 main push Production Release 入口，也提供 main-only
+  `workflow_dispatch` 范围恢复入口。Push 将事件的完整 `before..head` 传给
+  `deploy/release_plan.py`；手动恢复要求完整小写 40 位 `base_sha` commit，并将其与本次冻结的
+  main head 做 ancestry 校验，再用同一 planner 解释整个范围。若手动事件排队期间 main 已推进，或
+  base 无效/不是 head 的祖先，则在任何生产 mutation 前拒绝。恢复时把 `base_sha` 设为最后一个已由
+  Production Release 覆盖的提交，从而包含其后的遗漏提交；没有自动 checkpoint，也不会复用旧 run 的
+  成功状态。
+- Release 顶层收敛为七个领域节点：Plan、Foundation、Cloud、TX Release、Yecao Release、
+  Observability、Summary。Plan 将选中的 build/deploy/Tofu 操作传给各领域；Summary 汇总所有领域。
+  Foundation 负责 RabbitMQ、两套 PostgreSQL 的 runtime/Tofu 与 MinIO Build/Deploy/Tofu；Cloud 负责
+  COS Tofu；TX Release 负责 Keycloak、Business API、Frontend 的 Build/Deploy、Keycloak realm Tofu
+  与 Caddy Deploy；Yecao Release 负责 Parser Worker Build/Deploy；Observability 负责 node-exporter、
+  Prometheus、Loki、Alloy、Grafana Deploy 与 Grafana Tofu。
+
+```mermaid
+flowchart LR
+  Plan --> Foundation
+  Plan --> Cloud
+  Plan --> TX[TX Release]
+  Plan --> Yecao[Yecao Release]
+  Plan --> Obs[Observability]
+  Foundation -->|selected operation results| TX
+  Foundation -->|selected operation results| Yecao
+  Cloud -->|selected operation results| TX
+  Plan --> Summary
+  Foundation --> Summary
+  Cloud --> Summary
+  TX --> Summary
+  Yecao --> Summary
+  Obs --> Summary
+```
+
+  跨领域边表示排序及按操作传递结果，不代表上游领域整体成功才允许下游运行。下游读取绑定本次
+  run ID、attempt 与 source SHA 的领域结果报告，只等待自己选中服务的实际依赖；无关操作失败不
+  阻断可独立发布的服务。Summary 即使有领域失败或 skipped 也会生成结果，并且所选操作未全部成功时
+  最终 Release 失败；已成功的其他 lane 不自动回滚。领域没有选中操作时可跳过。
+- 各领域内部保留必要的操作依赖：需要 runtime 与 Tofu 的同一基础设施先更新 runtime，再执行其
+  Tofu；Build 成功的精确镜像才交给对应 Deploy。Business API、Parser Worker 等消费者只等待 planner
+  选中的依赖结果；例如 Grafana 故障不能仅凭 Observability 汇总失败而阻断无关的 Business API 发布。
+  Release 不把 provisioning marker 或容器 running 单独当成 readiness 证明。
 - Build 输出冻结的完整 source SHA、镜像引用、不可变 `sha-<12>` tag 和已验证 registry digest。
   TX 的 business-api/frontend/keycloak 只发到 TCR；Yecao 的 parser-worker/minio 只发到 GHCR。
-  自动 Deploy 使用 Build 的精确引用与 digest；config-only 从目标 host 的 metadata v2 读取
+  每个 Deploy 直接接收同一领域 Build 的精确引用和完整 digest，不重新解析 tag 或使用 `latest`；
+  config-only 从目标 host 的 metadata v2 读取
   已部署身份。手动 Build/Deploy 均为单 component/service，手动 Deploy 从当前 main 的 first-parent
   历史挑选 registry 中存在的 immutable tag 并核对 digest，不能使用 `latest`。
 - TX `/opt/wotb-tx/production-release.json` 只记录 business-api/frontend/keycloak；Yecao
@@ -718,10 +758,10 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 - TX Caddy、RabbitMQ、business/keycloak PostgreSQL 和 Yecao node-exporter/Prometheus/Loki/Alloy/
   Grafana 是可由 planner 按 Compose/config 变化选出的固定上游服务。只 reconcile 受影响 service；
   runtime Build 不因配置文件变化而触发。单服务 Deploy 保持 compose/service health checks。
-- Build、Deploy、Tofu Apply 使用不可取消的生产维护队列，并在 mutation 前检查 source 仍是当前
-  main，阻止旧 SHA rerun 覆盖新版本。失败由对应 lane 诊断；没有自动 image rollback、database
-  restore 或跨服务事务。切换 metadata v2 前仍须在合并前读取实时 host 状态、冻结旧生产写入并
-  预置经核对的实际镜像身份；本地/PR 结果不代表生产切换完成。
+- 任何生产写入前，Build/Deploy/Tofu Apply 都校验其冻结 source SHA 仍是允许执行的当前 main；旧 SHA
+  rerun 在 mutation 前失败，不会覆盖新版本。失败由对应操作诊断；没有自动 image rollback、database
+  restore 或跨服务事务。切换 metadata v2 前仍须在合并前读取实时 host 状态、冻结旧生产写入并预置
+  经核对的实际镜像身份；本地/PR 结果不代表生产切换完成。
 
 Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties` 的
 `wotbVersion` 是唯一版本来源，`versionCode` 由 SemVer 确定性计算；发布工作流
@@ -733,7 +773,13 @@ bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 
 
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
-Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurrency，`cancel-in-progress: false`（`queue: max` 只排队、不丢弃已开始的生产写入）；服务器脚本另用 `flock` 串行化 production mutation。Build 与 Release 不占用该队列，但每个 lane 都在 mutation 前核对 source 仍是当前 main。这不是 distributed lock。
+Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurrency group；当前 Deploy 与
+Tofu Apply 声明 `queue: max`、`cancel-in-progress: false`，database backup 也加入同组以串行化备份和
+生产写入。`queue: max` 是 GitHub Actions 支持的合法值，可让最多 100 个 run 在组内 pending；队列满后
+新增 run 会被取消，因此不保证每个 push 都能排队执行（见 [GitHub Actions concurrency queue 文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)）。
+排队只避免取消已开始的生产写入；它不是无限队列或生产事务锁。服务器脚本另用 `flock` 串行化
+production mutation。Build 与父级 Release 编排不占用该组，避免父 workflow 持锁等待其 Deploy/Tofu
+子 workflow；它们仍以冻结 SHA 与 leaf preflight 防止过期 mutation。这也不是 distributed lock。
 
 生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 备份 `wotb` 和 `keycloak`，保留现有本地边界；恢复只允许手工使用 `deploy/postgres-restore.sh` 并显式确认。COS 上传、对象验证与 retention 属于后续独立 PR，本 PR 不宣称已完成。
 

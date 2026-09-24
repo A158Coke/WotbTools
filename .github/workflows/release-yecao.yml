@@ -1,0 +1,128 @@
+name: Production Release / Yecao
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        type: string
+        required: true
+      build_components:
+        type: string
+        required: true
+      deploy_services:
+        type: string
+        required: true
+      tofu_roots:
+        type: string
+        required: true
+
+jobs:
+  build_parser_worker:
+    if: ${{ contains(fromJSON(inputs.build_components), 'parser-worker') }}
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      component: parser-worker
+      source_sha: ${{ inputs.source_sha }}
+    secrets: inherit
+
+  dependency_gates:
+    name: Check selected upstream work
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      parser_worker_ready: ${{ steps.gate.outputs.parser_worker_ready }}
+      diagnostics: ${{ steps.gate.outputs.diagnostics }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: production-release-report-foundation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-reports/foundation
+      - name: Gate on selected RabbitMQ and MinIO work
+        id: gate
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          BUILD_COMPONENTS: ${{ inputs.build_components }}
+          DEPLOY_SERVICES: ${{ inputs.deploy_services }}
+          TOFU_ROOTS: ${{ inputs.tofu_roots }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/release_report.py gate \
+            --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" --source-sha "$SOURCE_SHA" \
+            --build "$BUILD_COMPONENTS" --deploy "$DEPLOY_SERVICES" --tofu "$TOFU_ROOTS" \
+            --foundation-report release-reports/foundation/release-report.json \
+            --cloud-report release-reports/cloud/release-report.json \
+            --gates-json '{"parser_worker":{"foundation":[["deploy","rabbitmq"],["tofu","rabbitmq"],["deploy","minio"],["tofu","minio"]]}}' \
+            --output "$GITHUB_OUTPUT" --summary-output "$GITHUB_STEP_SUMMARY"
+
+  deploy_parser_worker:
+    needs: [build_parser_worker, dependency_gates]
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.deploy_services), 'parser-worker') && (contains(fromJSON(inputs.build_components), 'parser-worker') == false || needs.build_parser_worker.result == 'success') && needs.dependency_gates.outputs.parser_worker_ready == 'true' }}
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      service: parser-worker
+      source_sha: ${{ inputs.source_sha }}
+      image: ${{ needs.build_parser_worker.outputs.image }}
+      digest: ${{ needs.build_parser_worker.outputs.digest }}
+    secrets: inherit
+
+  report:
+    name: Yecao result
+    needs: [build_parser_worker, dependency_gates, deploy_parser_worker]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+      - name: Write Yecao results
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          BUILD_COMPONENTS: ${{ inputs.build_components }}
+          DEPLOY_SERVICES: ${{ inputs.deploy_services }}
+          TOFU_ROOTS: ${{ inputs.tofu_roots }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/release_report.py write \
+            --domain yecao --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
+            --source-sha "$SOURCE_SHA" --build-components "$BUILD_COMPONENTS" \
+            --deploy-services "$DEPLOY_SERVICES" --tofu-roots "$TOFU_ROOTS" \
+            --needs-json "$NEEDS_JSON" --output release-report/release-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-release-report-yecao-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-report/release-report.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Fail selected Yecao work that did not succeed
+        if: always()
+        env:
+          BUILD_COMPONENTS: ${{ inputs.build_components }}
+          DEPLOY_SERVICES: ${{ inputs.deploy_services }}
+          TOFU_ROOTS: ${{ inputs.tofu_roots }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          python3 deploy/release_report.py check-domain --domain yecao \
+            --build-components "$BUILD_COMPONENTS" --deploy-services "$DEPLOY_SERVICES" \
+            --tofu-roots "$TOFU_ROOTS" --needs-json "$NEEDS_JSON"

@@ -1,17 +1,29 @@
 name: Release
-run-name: Release ${{ github.sha }}
+run-name: Production Release · main
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Last known reconciled main commit for range recovery
+        required: true
+        type: string
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
-  select:
+  plan:
+    name: Plan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
+      source_sha: ${{ steps.plan.outputs.source_sha }}
+      base_sha: ${{ steps.plan.outputs.base_sha }}
       build_components: ${{ steps.plan.outputs.build_components }}
       deploy_services: ${{ steps.plan.outputs.deploy_services }}
       tofu_roots: ${{ steps.plan.outputs.tofu_roots }}
@@ -21,323 +33,207 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-      - id: plan
-        name: Select affected release lanes
-        env:
-          BEFORE: ${{ github.event.before }}
-          HEAD: ${{ github.sha }}
+      - name: Validate release range and select affected work
+        id: plan
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          INPUT_BASE_SHA: ${{ github.event.inputs.base_sha || '' }}
         run: |
           set -euo pipefail
-          if [[ ! "$BEFORE" =~ ^[0-9a-f]{40}$ ]] || [[ "$BEFORE" =~ ^0+$ ]]; then
-            echo 'Release requires a valid pushed base commit; refusing to guess a range.' >&2
-            exit 1
+          git fetch origin main
+          head="$EVENT_SHA"
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'Manual Release must run from main.' >&2; exit 1; }
+            [[ "$head" == "$(git rev-parse origin/main)" ]] || { echo 'Manual Release head is stale; run it again from current main.' >&2; exit 1; }
+            base="$INPUT_BASE_SHA"
+          else
+            base="$EVENT_BEFORE"
           fi
-          plan="$(python3 deploy/release_plan.py --base "$BEFORE" --head "$HEAD")"
-          python3 -c 'import json,sys; p=json.load(sys.stdin); print("build_components="+json.dumps(p["release"]["buildComponents"],separators=(",",":"))); print("deploy_services="+json.dumps(p["release"]["deployServices"],separators=(",",":"))); print("tofu_roots="+json.dumps(p["release"]["tofuRoots"],separators=(",",":"))); print("reasons="+json.dumps(p["reasons"],separators=(",",":")))' <<<"$plan" >> "$GITHUB_OUTPUT"
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]] || { echo 'Release head must be a full lowercase commit SHA.' >&2; exit 1; }
+          [[ "$base" =~ ^[0-9a-f]{40}$ ]] && [[ ! "$base" =~ ^0+$ ]] || { echo 'Release base must be a non-zero full lowercase commit SHA.' >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$head" ]] || { echo 'Checked out Release source differs from the event SHA.' >&2; exit 1; }
+          git cat-file -e "$base^{commit}" || { echo 'Release base is not an available commit.' >&2; exit 1; }
+          git cat-file -e "$head^{commit}" || { echo 'Release head is not an available commit.' >&2; exit 1; }
+          git merge-base --is-ancestor "$base" "$head" || { echo 'Release base must be an ancestor of head.' >&2; exit 1; }
+          python3 deploy/release_plan.py --base "$base" --head "$head" > release-plan.json
+          HEAD_SHA="$head" BASE_SHA="$base" python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          from pathlib import Path
+          plan = json.loads(Path('release-plan.json').read_text(encoding='utf-8'))
+          release = plan['release']
+          for key, value in (
+              ('source_sha', os.environ['HEAD_SHA']),
+              ('base_sha', os.environ['BASE_SHA']),
+              ('build_components', release['buildComponents']),
+              ('deploy_services', release['deployServices']),
+              ('tofu_roots', release['tofuRoots']),
+              ('reasons', plan['reasons']),
+          ):
+              if not isinstance(value, str):
+                  value = json.dumps(value, separators=(',', ':'))
+              print(f'{key}={value}')
+          PY
+      - name: Render selected work summary
+        shell: bash
+        env:
+          BASE_SHA: ${{ steps.plan.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.plan.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          python3 deploy/release_report.py plan-summary --plan-file release-plan.json --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA" --output release-plan-summary.md
+          cat release-plan-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-release-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-plan.json
+          if-no-files-found: error
+          retention-days: 7
 
-
-  build_business_api:
-    needs: select
-    if: ${{ contains(fromJSON(needs.select.outputs.build_components), 'business-api') }}
-    uses: ./.github/workflows/build.yml
+  foundation:
+    name: Foundation
+    needs: [plan]
+    if: ${{ needs.plan.result == 'success' && (contains(fromJSON(needs.plan.outputs.build_components), 'minio') || contains(fromJSON(needs.plan.outputs.deploy_services), 'rabbitmq') || contains(fromJSON(needs.plan.outputs.deploy_services), 'business-postgres') || contains(fromJSON(needs.plan.outputs.deploy_services), 'keycloak-postgres') || contains(fromJSON(needs.plan.outputs.deploy_services), 'minio') || contains(fromJSON(needs.plan.outputs.tofu_roots), 'rabbitmq') || contains(fromJSON(needs.plan.outputs.tofu_roots), 'business-postgres') || contains(fromJSON(needs.plan.outputs.tofu_roots), 'keycloak-postgres') || contains(fromJSON(needs.plan.outputs.tofu_roots), 'minio')) }}
+    uses: ./.github/workflows/release-foundation.yml
+    permissions:
+      contents: read
+      packages: write
     with:
-      component: business-api
-      source_sha: ${{ github.sha }}
+      source_sha: ${{ needs.plan.outputs.source_sha }}
+      build_components: ${{ needs.plan.outputs.build_components }}
+      deploy_services: ${{ needs.plan.outputs.deploy_services }}
+      tofu_roots: ${{ needs.plan.outputs.tofu_roots }}
     secrets: inherit
 
-  build_frontend:
-    needs: select
-    if: ${{ contains(fromJSON(needs.select.outputs.build_components), 'frontend') }}
-    uses: ./.github/workflows/build.yml
+  cloud:
+    name: Cloud
+    needs: [plan]
+    if: ${{ needs.plan.result == 'success' && contains(fromJSON(needs.plan.outputs.tofu_roots), 'cos') }}
+    uses: ./.github/workflows/release-cloud.yml
+    permissions:
+      contents: read
     with:
-      component: frontend
-      source_sha: ${{ github.sha }}
+      source_sha: ${{ needs.plan.outputs.source_sha }}
+      build_components: ${{ needs.plan.outputs.build_components }}
+      deploy_services: ${{ needs.plan.outputs.deploy_services }}
+      tofu_roots: ${{ needs.plan.outputs.tofu_roots }}
     secrets: inherit
 
-  build_keycloak:
-    needs: select
-    if: ${{ contains(fromJSON(needs.select.outputs.build_components), 'keycloak') }}
-    uses: ./.github/workflows/build.yml
+  tx:
+    name: TX Release
+    needs: [plan, foundation, cloud]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && (contains(fromJSON(needs.plan.outputs.build_components), 'business-api') || contains(fromJSON(needs.plan.outputs.build_components), 'frontend') || contains(fromJSON(needs.plan.outputs.build_components), 'keycloak') || contains(fromJSON(needs.plan.outputs.deploy_services), 'business-api') || contains(fromJSON(needs.plan.outputs.deploy_services), 'frontend') || contains(fromJSON(needs.plan.outputs.deploy_services), 'keycloak') || contains(fromJSON(needs.plan.outputs.deploy_services), 'caddy') || contains(fromJSON(needs.plan.outputs.tofu_roots), 'keycloak')) }}
+    uses: ./.github/workflows/release-tx.yml
+    permissions:
+      contents: read
+      packages: write
     with:
-      component: keycloak
-      source_sha: ${{ github.sha }}
+      source_sha: ${{ needs.plan.outputs.source_sha }}
+      build_components: ${{ needs.plan.outputs.build_components }}
+      deploy_services: ${{ needs.plan.outputs.deploy_services }}
+      tofu_roots: ${{ needs.plan.outputs.tofu_roots }}
     secrets: inherit
 
-  build_parser_worker:
-    needs: select
-    if: ${{ contains(fromJSON(needs.select.outputs.build_components), 'parser-worker') }}
-    uses: ./.github/workflows/build.yml
+  yecao:
+    name: Yecao Release
+    needs: [plan, foundation]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && (contains(fromJSON(needs.plan.outputs.build_components), 'parser-worker') || contains(fromJSON(needs.plan.outputs.deploy_services), 'parser-worker')) }}
+    uses: ./.github/workflows/release-yecao.yml
+    permissions:
+      contents: read
+      packages: write
     with:
-      component: parser-worker
-      source_sha: ${{ github.sha }}
+      source_sha: ${{ needs.plan.outputs.source_sha }}
+      build_components: ${{ needs.plan.outputs.build_components }}
+      deploy_services: ${{ needs.plan.outputs.deploy_services }}
+      tofu_roots: ${{ needs.plan.outputs.tofu_roots }}
     secrets: inherit
 
-  build_minio:
-    needs: select
-    if: ${{ contains(fromJSON(needs.select.outputs.build_components), 'minio') }}
-    uses: ./.github/workflows/build.yml
+  observability:
+    name: Observability
+    needs: [plan]
+    if: ${{ needs.plan.result == 'success' && (contains(fromJSON(needs.plan.outputs.deploy_services), 'node-exporter') || contains(fromJSON(needs.plan.outputs.deploy_services), 'prometheus') || contains(fromJSON(needs.plan.outputs.deploy_services), 'loki') || contains(fromJSON(needs.plan.outputs.deploy_services), 'alloy') || contains(fromJSON(needs.plan.outputs.deploy_services), 'grafana') || contains(fromJSON(needs.plan.outputs.tofu_roots), 'grafana')) }}
+    uses: ./.github/workflows/release-observability.yml
+    permissions:
+      contents: read
+      packages: read
     with:
-      component: minio
-      source_sha: ${{ github.sha }}
+      source_sha: ${{ needs.plan.outputs.source_sha }}
+      build_components: ${{ needs.plan.outputs.build_components }}
+      deploy_services: ${{ needs.plan.outputs.deploy_services }}
+      tofu_roots: ${{ needs.plan.outputs.tofu_roots }}
     secrets: inherit
 
-  tofu_keycloak:
-    needs: [select, deploy_keycloak]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.tofu_roots), 'keycloak') && (contains(fromJSON(needs.select.outputs.deploy_services), 'keycloak') == false || needs.deploy_keycloak.result == 'success') }}
-    uses: ./.github/workflows/tofu-apply.yml
-    with:
-      root: keycloak
-      source_sha: ${{ github.sha }}
-    secrets: inherit
-
-  tofu_rabbitmq:
-    needs: [select, deploy_rabbitmq]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.tofu_roots), 'rabbitmq') && (contains(fromJSON(needs.select.outputs.deploy_services), 'rabbitmq') == false || needs.deploy_rabbitmq.result == 'success') }}
-    uses: ./.github/workflows/tofu-apply.yml
-    with:
-      root: rabbitmq
-      source_sha: ${{ github.sha }}
-    secrets: inherit
-
-  tofu_business_postgres:
-    needs: [select, deploy_business_postgres]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.tofu_roots), 'business-postgres') && (contains(fromJSON(needs.select.outputs.deploy_services), 'business-postgres') == false || needs.deploy_business_postgres.result == 'success') }}
-    uses: ./.github/workflows/tofu-apply.yml
-    with:
-      root: business-postgres
-      source_sha: ${{ github.sha }}
-    secrets: inherit
-
-  tofu_keycloak_postgres:
-    needs: [select, deploy_keycloak_postgres]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.tofu_roots), 'keycloak-postgres') && (contains(fromJSON(needs.select.outputs.deploy_services), 'keycloak-postgres') == false || needs.deploy_keycloak_postgres.result == 'success') }}
-    uses: ./.github/workflows/tofu-apply.yml
-    with:
-      root: keycloak-postgres
-      source_sha: ${{ github.sha }}
-    secrets: inherit
-
-  tofu_minio:
-    needs: [select, deploy_minio]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.tofu_roots), 'minio') && (contains(fromJSON(needs.select.outputs.deploy_services), 'minio') == false || needs.deploy_minio.result == 'success') }}
-    uses: ./.github/workflows/tofu-apply.yml
-    with:
-      root: minio
-      source_sha: ${{ github.sha }}
-    secrets: inherit
-
-  tofu_cos:
-    needs: [select]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.tofu_roots), 'cos') }}
-    uses: ./.github/workflows/tofu-apply.yml
-    with:
-      root: cos
-      source_sha: ${{ github.sha }}
-    secrets: inherit
-
-  tofu_grafana:
-    needs: [select, deploy_grafana]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.tofu_roots), 'grafana') && (contains(fromJSON(needs.select.outputs.deploy_services), 'grafana') == false || needs.deploy_grafana.result == 'success') }}
-    uses: ./.github/workflows/tofu-apply.yml
-    with:
-      root: grafana
-      source_sha: ${{ github.sha }}
-    secrets: inherit
-
-  deploy_business_api:
-    needs: [select, build_business_api, tofu_rabbitmq, tofu_business_postgres, tofu_keycloak, tofu_keycloak_postgres, tofu_minio, tofu_cos]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'business-api') && (contains(fromJSON(needs.select.outputs.build_components), 'business-api') == false || needs.build_business_api.result == 'success') && (contains(fromJSON(needs.select.outputs.tofu_roots), 'rabbitmq') == false || needs.tofu_rabbitmq.result == 'success') && (contains(fromJSON(needs.select.outputs.tofu_roots), 'business-postgres') == false || needs.tofu_business_postgres.result == 'success') && (contains(fromJSON(needs.select.outputs.tofu_roots), 'keycloak') == false || needs.tofu_keycloak.result == 'success') && (contains(fromJSON(needs.select.outputs.tofu_roots), 'keycloak-postgres') == false || needs.tofu_keycloak_postgres.result == 'success') && (contains(fromJSON(needs.select.outputs.tofu_roots), 'minio') == false || needs.tofu_minio.result == 'success') && (contains(fromJSON(needs.select.outputs.tofu_roots), 'cos') == false || needs.tofu_cos.result == 'success') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: business-api
-      source_sha: ${{ github.sha }}
-      image: ${{ needs.build_business_api.outputs.image }}
-      digest: ${{ needs.build_business_api.outputs.digest }}
-    secrets: inherit
-
-  deploy_frontend:
-    needs: [select, build_frontend]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'frontend') && (contains(fromJSON(needs.select.outputs.build_components), 'frontend') == false || needs.build_frontend.result == 'success') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: frontend
-      source_sha: ${{ github.sha }}
-      image: ${{ needs.build_frontend.outputs.image }}
-      digest: ${{ needs.build_frontend.outputs.digest }}
-    secrets: inherit
-
-  deploy_keycloak:
-    needs: [select, build_keycloak, tofu_keycloak_postgres]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'keycloak') && (contains(fromJSON(needs.select.outputs.build_components), 'keycloak') == false || needs.build_keycloak.result == 'success') && (contains(fromJSON(needs.select.outputs.tofu_roots), 'keycloak-postgres') == false || needs.tofu_keycloak_postgres.result == 'success') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: keycloak
-      source_sha: ${{ github.sha }}
-      image: ${{ needs.build_keycloak.outputs.image }}
-      digest: ${{ needs.build_keycloak.outputs.digest }}
-    secrets: inherit
-
-  deploy_parser_worker:
-    needs: [select, build_parser_worker, tofu_rabbitmq, tofu_minio]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'parser-worker') && (contains(fromJSON(needs.select.outputs.build_components), 'parser-worker') == false || needs.build_parser_worker.result == 'success') && (contains(fromJSON(needs.select.outputs.tofu_roots), 'rabbitmq') == false || needs.tofu_rabbitmq.result == 'success') && (contains(fromJSON(needs.select.outputs.tofu_roots), 'minio') == false || needs.tofu_minio.result == 'success') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: parser-worker
-      source_sha: ${{ github.sha }}
-      image: ${{ needs.build_parser_worker.outputs.image }}
-      digest: ${{ needs.build_parser_worker.outputs.digest }}
-    secrets: inherit
-
-  deploy_minio:
-    needs: [select, build_minio]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'minio') && (contains(fromJSON(needs.select.outputs.build_components), 'minio') == false || needs.build_minio.result == 'success') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: minio
-      source_sha: ${{ github.sha }}
-      image: ${{ needs.build_minio.outputs.image }}
-      digest: ${{ needs.build_minio.outputs.digest }}
-    secrets: inherit
-
-  deploy_caddy:
-    needs: [select]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'caddy') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: caddy
-      source_sha: ${{ github.sha }}
-      image: ''
-      digest: ''
-    secrets: inherit
-
-  deploy_rabbitmq:
-    needs: [select]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'rabbitmq') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: rabbitmq
-      source_sha: ${{ github.sha }}
-      image: ''
-      digest: ''
-    secrets: inherit
-
-  deploy_business_postgres:
-    needs: [select]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'business-postgres') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: business-postgres
-      source_sha: ${{ github.sha }}
-      image: ''
-      digest: ''
-    secrets: inherit
-
-  deploy_keycloak_postgres:
-    needs: [select]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'keycloak-postgres') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: keycloak-postgres
-      source_sha: ${{ github.sha }}
-      image: ''
-      digest: ''
-    secrets: inherit
-
-  deploy_node_exporter:
-    needs: [select]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'node-exporter') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: node-exporter
-      source_sha: ${{ github.sha }}
-      image: ''
-      digest: ''
-    secrets: inherit
-
-  deploy_prometheus:
-    needs: [select]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'prometheus') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: prometheus
-      source_sha: ${{ github.sha }}
-      image: ''
-      digest: ''
-    secrets: inherit
-
-  deploy_loki:
-    needs: [select]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'loki') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: loki
-      source_sha: ${{ github.sha }}
-      image: ''
-      digest: ''
-    secrets: inherit
-
-  deploy_alloy:
-    needs: [select]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'alloy') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: alloy
-      source_sha: ${{ github.sha }}
-      image: ''
-      digest: ''
-    secrets: inherit
-
-  deploy_grafana:
-    needs: [select]
-    if: ${{ always() && needs.select.result == 'success' && contains(fromJSON(needs.select.outputs.deploy_services), 'grafana') }}
-    uses: ./.github/workflows/deploy.yml
-    with:
-      service: grafana
-      source_sha: ${{ github.sha }}
-      image: ''
-      digest: ''
-    secrets: inherit
-
-  release_summary:
-    needs: [select, build_business_api, build_frontend, build_keycloak, build_parser_worker, build_minio, tofu_keycloak, tofu_rabbitmq, tofu_business_postgres, tofu_keycloak_postgres, tofu_minio, tofu_cos, tofu_grafana, deploy_business_api, deploy_frontend, deploy_keycloak, deploy_parser_worker, deploy_minio, deploy_caddy, deploy_rabbitmq, deploy_business_postgres, deploy_keycloak_postgres, deploy_node_exporter, deploy_prometheus, deploy_loki, deploy_alloy, deploy_grafana]
+  summary:
+    name: Summary
+    needs: [plan, foundation, cloud, tx, yecao, observability]
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: Report selected lane results
-        env:
-          BUILD_COMPONENTS: ${{ needs.select.outputs.build_components }}
-          DEPLOY_SERVICES: ${{ needs.select.outputs.deploy_services }}
-          TOFU_ROOTS: ${{ needs.select.outputs.tofu_roots }}
-          REASONS: ${{ needs.select.outputs.reasons }}
-          RUN_SHA: ${{ github.sha }}
-          NEEDS: ${{ toJSON(needs) }}
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: production-release-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-artifacts/plan
+      - uses: actions/download-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: production-release-report-foundation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-artifacts/foundation
+      - uses: actions/download-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: production-release-report-cloud-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-artifacts/cloud
+      - uses: actions/download-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: production-release-report-tx-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-artifacts/tx
+      - uses: actions/download-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: production-release-report-yecao-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-artifacts/yecao
+      - uses: actions/download-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: production-release-report-observability-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-artifacts/observability
+      - name: Render final production release result
+        id: summary
+        if: always()
         shell: bash
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          BASE_SHA: ${{ needs.plan.outputs.base_sha || github.event.inputs.base_sha || github.event.before || 'unknown' }}
+          HEAD_SHA: ${{ needs.plan.outputs.source_sha || github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          python3 - <<'PY'
-          import json, os, sys
-          builds=json.loads(os.environ['BUILD_COMPONENTS'])
-          services=json.loads(os.environ['DEPLOY_SERVICES'])
-          roots=json.loads(os.environ['TOFU_ROOTS'])
-          needs=json.loads(os.environ['NEEDS'])
-          component_jobs={'business-api':'build_business_api','frontend':'build_frontend','keycloak':'build_keycloak','parser-worker':'build_parser_worker','minio':'build_minio'}
-          root_jobs={'business-api':['tofu_rabbitmq','tofu_business_postgres','tofu_keycloak','tofu_keycloak_postgres','tofu_minio','tofu_cos'],'parser-worker':['tofu_rabbitmq','tofu_minio']}
-          failures=[]
-          for component in builds:
-              job=component_jobs[component]
-              print(f'build/{component}: {needs[job]["result"]}')
-              if needs[job]['result']!='success': failures.append(job)
-          for service in services:
-              job='deploy_'+service.replace('-','_')
-              print(f'deploy/{service}: {needs[job]["result"]}')
-              if needs[job]['result']!='success': failures.append(job)
-          for root in roots:
-              job='tofu_'+root.replace('-','_')
-              print(f'tofu/{root}: {needs[job]["result"]}')
-              if needs[job]['result']!='success': failures.append(job)
-          print('source='+os.environ['RUN_SHA'])
-          print('reasons='+os.environ['REASONS'])
-          if failures:
-              print('Failed selected lanes: '+', '.join(failures), file=sys.stderr)
-              sys.exit(1)
-          PY
+          set -euo pipefail
+          status=0
+          python3 deploy/release_report.py summary \
+            --plan-file release-artifacts/plan/release-plan.json \
+            --needs-json "$NEEDS_JSON" --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA" \
+            --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
+            --reports-dir release-artifacts \
+            --output production-release-summary.md || status=$?
+          if [ -f production-release-summary.md ]; then cat production-release-summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+          exit "$status"
