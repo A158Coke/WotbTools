@@ -220,8 +220,8 @@ production_concurrency = {
 for owner in production_owners:
     workflow, paths = trigger_paths(owner)
     freshness_paths = workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
-    assert freshness_paths == [*paths, "deploy/check-production-freshness.sh"], (
-        f"{owner} freshness paths must exactly cover its trigger paths and shared guard"
+    assert freshness_paths == paths, (
+        f"{owner} freshness paths must exactly match its trigger paths"
     )
     calls = [
         step
@@ -372,6 +372,9 @@ with tempfile.TemporaryDirectory(prefix="wotb-freshness-") as temp_name:
         target = source_repo / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+    helper_target = source_repo / "deploy/check-production-freshness.sh"
+    helper_target.parent.mkdir(parents=True, exist_ok=True)
+    helper_target.write_text(freshness_helper, encoding="utf-8")
     git(source_repo, "add", "-A")
     git(source_repo, "commit", "-m", "production inputs")
     base = git(source_repo, "rev-parse", "HEAD")
@@ -390,13 +393,9 @@ with tempfile.TemporaryDirectory(prefix="wotb-freshness-") as temp_name:
         bash_executable = str(git_bash)
     else:
         bash_executable = "bash"
-    fixture_helper = runner_repo / "deploy/check-production-freshness.sh"
-    fixture_helper.parent.mkdir(parents=True, exist_ok=True)
-    fixture_helper.write_bytes((root / "deploy/check-production-freshness.sh").read_bytes())
-
     frontend_paths = "\n".join((
         ".github/workflows/frontend.yml", ".dockerignore", "docker/Dockerfile.frontend", "frontend/**",
-        "common/map_names.json", "deploy/check-production-freshness.sh",
+        "common/map_names.json",
     ))
     business_paths = "\n".join(("docker/Dockerfile.business-api", "java/wotb-core/**"))
     parser_paths = "java/wotb-parser-worker/**"
@@ -407,8 +406,15 @@ with tempfile.TemporaryDirectory(prefix="wotb-freshness-") as temp_name:
 
     frontend = write_commit(source_repo, "frontend/src/app.js", "export const app = 2;\n", "frontend change")
     git(source_repo, "push", "origin", "main")
+    write_commit(
+        source_repo, "deploy/check-production-freshness.sh",
+        freshness_helper + "\n# shared helper-only change fixture\n", "freshness helper change",
+    )
+    git(source_repo, "push", "origin", "main")
     run_freshness(runner_repo, docs, "push", "refs/heads/main", frontend_paths, False, "frontend owner change",
                   "Production-owned inputs changed after the workflow source SHA.")
+    run_freshness(runner_repo, frontend, "push", "refs/heads/main", frontend_paths, True,
+                  "frontend stays fresh across a shared helper-only main advance")
 
     workflow = write_commit(source_repo, ".github/workflows/frontend.yml", "name: frontend updated\n", "workflow change")
     git(source_repo, "push", "origin", "main")

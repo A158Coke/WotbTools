@@ -22,7 +22,6 @@ env:
     .github/workflows/cos.yml
     infra/tofu/environments/prod/**
     scripts/ci/validate-tofu-prod-plan.sh
-    deploy/check-production-freshness.sh
 
 jobs:
   apply:

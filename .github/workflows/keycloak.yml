@@ -44,7 +44,6 @@ env:
     deploy/dependency-readiness.sh
     deploy/dependency-readiness.py
     deploy/release-metadata.py
-    deploy/check-production-freshness.sh
 
 jobs:
   build:

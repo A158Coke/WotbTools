@@ -28,7 +28,6 @@ env:
     deploy/minio/**
     deploy/release-metadata.py
     infra/tofu/minio/**
-    deploy/check-production-freshness.sh
 
 jobs:
   build:

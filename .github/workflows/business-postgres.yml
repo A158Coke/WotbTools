@@ -28,7 +28,6 @@ env:
     deploy/tx/docker-compose.yml
     deploy/tx/business-postgres.tofurc
     infra/tofu/postgres-business/**
-    deploy/check-production-freshness.sh
 
 jobs:
   business_postgres:

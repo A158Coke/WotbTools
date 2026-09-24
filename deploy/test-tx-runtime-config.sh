@@ -86,7 +86,8 @@ run_minimal() {
     WOTB_DEPLOY_SERVICE="$service" WOTB_DEPLOY_CONFIG_SHA="$SHA_C" \
     TX_IMAGE_REGISTRY_PREFIX="$PREFIX" WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 \
     CADDY_ACME_EMAIL=test@example.com FAKE_DOCKER_LOG="$log" \
-    FAKE_UP_FAILURE=0 FAKE_PROBE_FAILURE=0 FAKE_CADDY_INVALID="${FAKE_CADDY_INVALID:-0}" \
+    FAKE_UP_FAILURE="${FAKE_UP_FAILURE:-0}" FAKE_PROBE_FAILURE="${FAKE_PROBE_FAILURE:-0}" \
+    FAKE_CADDY_INVALID="${FAKE_CADDY_INVALID:-0}" \
     bash "$WORK/incoming/deploy/tx/deploy.sh"
 }
 
@@ -129,6 +130,7 @@ grep -q '^exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter cad
 
 # A top-level Compose logging anchor is part of the Caddy runtime. Changing it
 # must recreate the service instead of taking the config-only reload path.
+cp "$WORK/host/deploy/docker-compose.yml" "$WORK/host-compose.caddy-runtime"
 cp "$WORK/incoming/deploy/tx/docker-compose.yml" "$WORK/tx-compose.caddy-runtime"
 sed -i 's/max-size: "20m"/max-size: "21m"/' "$WORK/incoming/deploy/tx/docker-compose.yml"
 run_minimal caddy "$WORK/caddy-runtime-change.log" >/dev/null
@@ -136,6 +138,7 @@ grep -q '^pull caddy$' "$WORK/caddy-runtime-change.log"
 grep -q '^up -d --no-deps --force-recreate caddy$' "$WORK/caddy-runtime-change.log"
 ! grep -q '^exec -T caddy caddy reload' "$WORK/caddy-runtime-change.log"
 cp "$WORK/tx-compose.caddy-runtime" "$WORK/incoming/deploy/tx/docker-compose.yml"
+cp "$WORK/host-compose.caddy-runtime" "$WORK/host/deploy/docker-compose.yml"
 
 before_caddy_config="$(sha256sum "$WORK/host/deploy/Caddyfile")"
 if FAKE_PROBE_FAILURE=1 run_minimal caddy "$WORK/caddy-health-fail.log" >/dev/null 2>&1; then exit 1; fi
@@ -151,7 +154,9 @@ if FAKE_CADDY_INVALID=1 run_minimal caddy "$WORK/caddy-invalid.log" >/dev/null 2
 before="$(sha256sum "$WORK/host/production-release.json")"
 exec 9>"$WORK/host/.deploy.lock"
 flock -n 9
-WOTB_DEPLOY_LOCK_FD=9 WOTB_DEPLOY_DEFER_METADATA=1 run keycloak "$SHA_C" "$PREFIX/wotbtools-keycloak:sha-bbbbbbbbbbbb" "$SHA_B" "$WORK/keycloak-deferred.log" "$DIGEST_B" >/dev/null
+WOTB_DEPLOY_LOCK_FD=9 WOTB_DEPLOY_DEFER_METADATA=1 \
+  run keycloak "$SHA_C" "$PREFIX/wotbtools-keycloak:sha-bbbbbbbbbbbb" "$SHA_B" \
+  "$WORK/keycloak-deferred.docker.log" "$DIGEST_B" >"$WORK/keycloak-deferred.log"
 [ "$before" = "$(sha256sum "$WORK/host/production-release.json")" ]
 grep -q 'release metadata update deferred' "$WORK/keycloak-deferred.log"
 flock -u 9

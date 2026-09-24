@@ -26,7 +26,6 @@ env:
     deploy/tx/deploy.sh
     deploy/tx/docker-compose.yml
     infra/tofu/postgres-keycloak/**
-    deploy/check-production-freshness.sh
 
 jobs:
   keycloak_postgres:
