@@ -202,7 +202,7 @@ or unsupported settings.
 
 ## GitHub Actions policy
 
-The PR side is `.github/workflows/ci.yml`: its selector runs `deploy/release_plan.py`
+The PR side is `.github/workflows/ci.yml`: its selector runs `scripts/ci/ci-impact.py`
 over the full pull-request range, and the `OpenTofu validation / <root>` matrix job runs
 for each selected root. Every run performs:
 
@@ -212,14 +212,13 @@ for each selected root. Every run performs:
 4. the root's local safety fixtures (`test-validate-plan.sh`) where the root has them
 
 Pull-request validation never reaches a production host and never receives
-host-local production credentials: no SSH/SCP step, no production-local state, no
-production-local provider. The five roots that need a production-local provider
-(keycloak, rabbitmq, business-postgres, keycloak-postgres, minio) therefore run their
-authoritative plan only in the main-only Tofu Apply workflow. COS and Grafana keep a
-runner-side authenticated plan because they reach a remote backend / external API
-instead of a production-local execution boundary; that path rejects artifact-bucket,
-Lighthouse instance, or Lighthouse firewall delete or replacement actions. The shared
-guard is `scripts/ci/validate-tofu-prod-plan.sh`.
+production credentials: no SSH/SCP step, production-local state, or production
+provider. All seven roots, including COS and Grafana, use only local formatting,
+backend-free initialization, validation, and existing local fixtures in PR CI.
+Authenticated production plans run only in the corresponding main-only owner
+workflow. The COS and Grafana apply paths still reject artifact-bucket,
+Lighthouse instance, or Lighthouse firewall delete or replacement actions with
+`scripts/ci/validate-tofu-prod-plan.sh`.
 
 ```text
 tofu plan -input=false -no-color -out=plan.tfplan
@@ -227,23 +226,22 @@ tofu plan -input=false -no-color -out=plan.tfplan
 
 The plan may contain normal add/change/destroy differences; it does not need to
 be a no-op. Success means the plan completed and its diff is reviewable. The
-PR path never runs `tofu apply`, `terraform apply`, or `tofu import`. PR and main
-never share a binary plan. The single `.github/workflows/tofu-apply.yml` is the only
-apply entry point: it accepts one `root` through `workflow_call` or manual dispatch and
-is called by `.github/workflows/release.yml` on `main` pushes (or dispatched manually).
-It checks out the current trusted `main` SHA, verifies `source_sha` still equals
-`origin/main` before any mutation, runs the same format/init/validate/plan sequence,
-applies the root's shared guard, and applies that exact saved `plan.tfplan` followed by
-the root's second-plan or readiness check. It never imports or uploads state/plan
-artifacts. The binary plan is job-local, is ignored by Git, and is not uploaded as an
-artifact, cache entry, PR comment, or repository file. Authoritative state is never
+PR path never runs `tofu plan`, `tofu apply`, `terraform apply`, or `tofu import`.
+PR and main never share a binary plan. Each service owner workflow checks out the
+current trusted `main` SHA and rejects a stale source before host mutation, then
+runs its own format/init/validate/plan sequence, root-specific guard, and exact
+saved-plan apply followed by its second-plan or readiness check. TX-local roots
+run under the same SSH host lock as their runtime owner; COS/Grafana use their
+scoped runner-side state/API boundary. Plans and state are not uploaded as
+artifacts, caches, PR comments, or repository files. Authoritative state is never
 uploaded to GitHub.
 
-Grafana is one of the seven roots of that single apply workflow (root `grafana`, its own
-state key and `GRAFANA_PAT` scoped to that lane). A pull request stays plan-only; the
-`grafana` root blocks any dashboard/provider-datasource delete action in
+Grafana is one of the seven roots, owned by `.github/workflows/observability.yml`
+(root `grafana`, its own state key and `GRAFANA_PAT` scoped to that job). A pull
+request performs local validation only; the `grafana` root blocks any
+dashboard/provider-datasource delete action in
 `infra/tofu/grafana/validate-plan.sh`, applies that exact plan, and verifies the managed
-dashboard UIDs. Production apply workflows share the uncancellable
+dashboard UIDs. Production owner workflows share the uncancellable
 `production-maintenance` concurrency group; this is a GitHub Actions serialization
 guard, not a distributed COS lock and not a guard against manual owner OpenTofu
 operations.

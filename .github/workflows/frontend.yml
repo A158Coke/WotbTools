@@ -1,0 +1,245 @@
+name: Frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/frontend.yml
+      - .dockerignore
+      - docker/Dockerfile.frontend
+      - frontend/**
+      - common/map_names.json
+      - common/tankopedia-tier10.json
+      - common/assets/**
+      - HISTORY.md
+      - docs/architecture/TECHNICAL_EVOLUTION.md
+      - docs/WotBTools_League_Rating_V6.md
+      - deploy/nginx/nginx.conf
+      - deploy/release-metadata.py
+      - deploy/tx/docker-compose.yml
+      - deploy/tx/deploy.sh
+      - deploy/tx/nginx/frontend.conf.template
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/frontend.yml
+    .dockerignore
+    docker/Dockerfile.frontend
+    frontend/**
+    common/map_names.json
+    common/tankopedia-tier10.json
+    common/assets/**
+    HISTORY.md
+    docs/architecture/TECHNICAL_EVOLUTION.md
+    docs/WotBTools_League_Rating_V6.md
+    deploy/nginx/nginx.conf
+    deploy/release-metadata.py
+    deploy/tx/docker-compose.yml
+    deploy/tx/deploy.sh
+    deploy/tx/nginx/frontend.conf.template
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.identity.outputs.image }}
+      commit_sha: ${{ steps.identity.outputs.commit_sha }}
+      digest: ${{ steps.verify.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Freeze current main and image identity
+        id: identity
+        env:
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            [ "$REF_NAME" = refs/heads/main ] || { echo 'Manual deployment must dispatch from main.' >&2; exit 1; }
+          fi
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
+          [ -n "$TCR_NAMESPACE" ] || { echo 'TCR_NAMESPACE is required.' >&2; exit 1; }
+          image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-frontend:sha-${SOURCE_SHA:0:12}"
+          {
+            echo "commit_sha=$SOURCE_SHA"
+            echo "image=$image"
+            echo "repository=${image%:*}"
+            echo "tag=sha-${SOURCE_SHA:0:12}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ vars.TCR_REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+      - uses: imjasonh/setup-crane@v0.7
+      - name: Reuse only an existing immutable image with this source identity
+        id: immutable
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          TAG: ${{ steps.identity.outputs.tag }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tags="$(crane ls "$REPOSITORY")"
+          if grep -Fxq "$TAG" <<< "$tags"; then
+            docker pull "$IMAGE"
+            container="$(docker create "$IMAGE")"
+            temp="$(mktemp -d)"
+            trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$temp"' EXIT
+            docker cp "$container:/usr/share/nginx/html/assets" "$temp/assets"
+            grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/assets" \
+              || { echo 'Existing immutable tag does not contain this source commit in the frontend bundle.' >&2; exit 1; }
+            digest="$(crane digest "$IMAGE")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "existing_digest=$digest" >> "$GITHUB_OUTPUT"
+          else
+            echo 'existing_digest=' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-buildx-action@v4
+      - name: Build and publish this frozen image
+        id: build_image
+        if: steps.immutable.outputs.existing_digest == ''
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.frontend
+          push: true
+          tags: ${{ steps.identity.outputs.image }}
+          build-args: BUILD_COMMIT=${{ steps.identity.outputs.commit_sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+          provenance: false
+          sbom: false
+      - name: Verify registry digest and source identity
+        id: verify
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          EXISTING_DIGEST: ${{ steps.immutable.outputs.existing_digest }}
+          BUILD_DIGEST: ${{ steps.build_image.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest="${EXISTING_DIGEST:-$BUILD_DIGEST}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Missing or invalid image digest.' >&2; exit 1; }
+          [ "$(crane digest "$IMAGE")" = "$digest" ] || { echo 'Registry digest changed after build.' >&2; exit 1; }
+          docker pull "$IMAGE@$digest" >/dev/null
+          container="$(docker create "$IMAGE@$digest")"
+          temp="$(mktemp -d)"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$temp"' EXIT
+          docker cp "$container:/usr/share/nginx/html/assets" "$temp/assets"
+          grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/assets" \
+            || { echo 'Published frontend bundle does not contain the frozen source commit.' >&2; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    concurrency:
+      group: production-maintenance
+      cancel-in-progress: false
+      queue: max
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: tx-production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.build.outputs.commit_sha }}
+      - name: Reject stale main before staging production inputs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+      - name: Prepare TX staging directories
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          script: |
+            set -eu
+            root=/opt/wotb-tx
+            mkdir -p "$root/deploy.incoming/deploy" "$root/deploy.incoming/deploy/tx"
+            rm -rf -- "$root/deploy.incoming/deploy/tx"
+            mkdir -p "$root/deploy.incoming/deploy/tx"
+      - name: Stage TX runtime files
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx,deploy/release-metadata.py
+          target: /opt/wotb-tx/deploy.incoming
+          overwrite: true
+      - name: Reject stale main before TX mutation
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+      - name: Reconcile only Frontend under the TX host lock
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 30m
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,TX_IMAGE_REGISTRY_PREFIX
+          script: |
+            set -euo pipefail
+            exec 9>/opt/wotb-tx/.deploy.lock
+            flock -n 9 || { echo 'Another TX production deployment is running.' >&2; exit 1; }
+            export WOTB_DEPLOY_LOCK_FD=9
+            export WOTB_DEPLOY_SERVICE=frontend
+            export WOTB_DEPLOY_CONFIG_SHA='${{ needs.build.outputs.commit_sha }}'
+            export WOTB_DEPLOY_IMAGE_TAG='${{ needs.build.outputs.image }}'
+            export WOTB_DEPLOY_IMAGE_COMMIT_SHA='${{ needs.build.outputs.commit_sha }}'
+            export WOTB_DEPLOY_IMAGE_DIGEST='${{ needs.build.outputs.digest }}'
+            export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
+            bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
+        env:
+          WOTB_DEPLOY_SERVICE: frontend
+          WOTB_DEPLOY_CONFIG_SHA: ${{ needs.build.outputs.commit_sha }}
+          WOTB_DEPLOY_IMAGE_TAG: ${{ needs.build.outputs.image }}
+          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
+          WOTB_DEPLOY_IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+          TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}

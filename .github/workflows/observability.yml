@@ -1,0 +1,293 @@
+name: Observability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/observability.yml
+      - deploy/deploy.sh
+      - deploy/docker-compose.prod.yml
+      - deploy/grafana-api-request.sh
+      - deploy/release-metadata.py
+      - deploy/validate-alloy-config.sh
+      - deploy/verify-observability.sh
+      - deploy/observability/**
+      - infra/tofu/grafana/**
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Runtime component to reconcile with the Grafana dashboard root
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - node-exporter
+          - prometheus
+          - loki
+          - alloy
+          - grafana
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/observability.yml
+    deploy/deploy.sh
+    deploy/docker-compose.prod.yml
+    deploy/grafana-api-request.sh
+    deploy/release-metadata.py
+    deploy/validate-alloy-config.sh
+    deploy/verify-observability.sh
+    deploy/observability/**
+    infra/tofu/grafana/**
+
+jobs:
+  observability:
+    name: Reconcile Yecao observability and Grafana dashboards
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Freeze current main and select owned runtimes
+        id: source
+        shell: bash
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          SCOPE: ${{ inputs.scope || 'all' }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'Observability workflow requires main.' >&2; exit 1; }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'The event SHA must be a full lowercase commit SHA.' >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo 'Checkout SHA differs from the event SHA.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+          declare -A selected=()
+          add_service() { selected["$1"]=1; }
+          add_all() {
+            add_service node-exporter
+            add_service prometheus
+            add_service loki
+            add_service alloy
+            add_service grafana
+          }
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            case "$SCOPE" in
+              all) add_all ;;
+              node-exporter|prometheus|loki|alloy|grafana) add_service "$SCOPE" ;;
+              *) echo "Unsupported Observability scope: $SCOPE" >&2; exit 1 ;;
+            esac
+          else
+            if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+              add_all
+            else
+              changed_paths="$(git diff --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$SOURCE_SHA")"
+              while IFS= read -r path; do
+                case "$path" in
+                  .github/workflows/observability.yml|deploy/deploy.sh|deploy/docker-compose.prod.yml|deploy/release-metadata.py|deploy/validate-alloy-config.sh|deploy/verify-observability.sh)
+                    add_all
+                    ;;
+                  deploy/observability/prometheus/*) add_service prometheus ;;
+                  deploy/observability/loki/*) add_service loki ;;
+                  deploy/observability/alloy/*) add_service alloy ;;
+                  deploy/observability/grafana/provisioning/*) add_service grafana ;;
+                  deploy/observability/grafana/dashboards/*|infra/tofu/grafana/*)
+                    ;;
+                  deploy/observability/*) add_all ;;
+                  deploy/grafana-api-request.sh) add_service grafana ;;
+                esac
+              done <<< "$changed_paths"
+            fi
+          fi
+
+          runtime_services=''
+          for service in node-exporter prometheus loki alloy grafana; do
+            if [[ -n "${selected[$service]:-}" ]]; then
+              [[ -z "$runtime_services" ]] || runtime_services+=","
+              runtime_services+="$service"
+            fi
+          done
+          {
+            echo "source_sha=$SOURCE_SHA"
+            echo "runtime_services=$runtime_services"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Stage the Yecao runtime tree and Grafana root
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: deploy/observability/grafana/dashboards,infra/tofu/grafana
+          target: /opt/wotb/observability.incoming/${{ steps.source.outputs.source_sha }}
+          overwrite: true
+
+      - name: Stage Yecao runtime inputs
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: deploy
+          target: /opt/wotb/deploy.incoming
+          overwrite: true
+
+      - name: Reject stale main before Yecao mutation
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+      - name: Reconcile selected runtime, apply Grafana plan, and verify
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 40m
+          envs: SOURCE_SHA,RUNTIME_SERVICES,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,GRAFANA_PAT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,TENCENTCLOUD_SECRET_ID,TENCENTCLOUD_SECRET_KEY
+          script: |
+            set -Eeuo pipefail
+            [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$WOTB_DEPLOY_CONFIG_SHA" == "$SOURCE_SHA" ]]
+            stage="/opt/wotb/observability.incoming/$SOURCE_SHA"
+            root="$stage/infra/tofu/grafana"
+            test -d "$root"
+            test -f "$stage/deploy/observability/grafana/dashboards/wotbtools-production-overview.json"
+            test -f /opt/wotb/deploy.incoming/deploy/deploy.sh
+            for name in GRAFANA_PAT AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY TENCENTCLOUD_SECRET_ID TENCENTCLOUD_SECRET_KEY; do
+              test -n "$(printenv "$name")" || { echo "$name is required." >&2; exit 2; }
+            done
+            command -v flock >/dev/null
+            command -v tofu >/dev/null
+            command -v jq >/dev/null
+            command -v curl >/dev/null
+            exec 9>/opt/wotb/.deploy.lock
+            flock -n 9 || { echo 'Another Yecao production mutation is running.' >&2; exit 1; }
+            export WOTB_DEPLOY_LOCK_FD=9
+
+            selected_services=()
+            if [[ -n "$RUNTIME_SERVICES" ]]; then
+              IFS=, read -r -a selected_services <<< "$RUNTIME_SERVICES"
+            fi
+            for service in "${selected_services[@]}"; do
+              case "$service" in
+                node-exporter|prometheus|loki|alloy|grafana) ;;
+                *) echo "Unexpected Observability runtime selection: $service" >&2; exit 2 ;;
+              esac
+              export WOTB_DEPLOY_SERVICE="$service"
+              export WOTB_DEPLOY_CONFIG_SHA="$SOURCE_SHA"
+              export WOTB_DEPLOY_IMAGE_TAG=''
+              export WOTB_DEPLOY_IMAGE_COMMIT_SHA=''
+              if [[ "$service" == grafana ]]; then
+                GRAFANA_PAT='' \
+                  AWS_ACCESS_KEY_ID='' \
+                  AWS_SECRET_ACCESS_KEY='' \
+                  TENCENTCLOUD_SECRET_ID='' \
+                  TENCENTCLOUD_SECRET_KEY='' \
+                  bash /opt/wotb/deploy.incoming/deploy/deploy.sh
+              else
+                GRAFANA_ADMIN_USER=not-configured \
+                  GRAFANA_ADMIN_PASSWORD=not-configured \
+                  GRAFANA_PAT='' \
+                  AWS_ACCESS_KEY_ID='' \
+                  AWS_SECRET_ACCESS_KEY='' \
+                  TENCENTCLOUD_SECRET_ID='' \
+                  TENCENTCLOUD_SECRET_KEY='' \
+                  bash /opt/wotb/deploy.incoming/deploy/deploy.sh
+              fi
+            done
+
+            unset GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD
+            for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY TENCENTCLOUD_SECRET_ID TENCENTCLOUD_SECRET_KEY; do
+              test -n "$(printenv "$name")" || { echo "$name is required." >&2; exit 2; }
+            done
+            export TF_VAR_grafana_auth="$GRAFANA_PAT"
+            export TF_IN_AUTOMATION=true
+            export CHECKPOINT_DISABLE=1
+            # Grafana uses its committed provider lockfile and the default registry install;
+            # do not inherit the Yecao MinIO root's provider-specific CLI mirror config.
+            unset TF_CLI_CONFIG_FILE
+            umask 077
+            cd "$root"
+            trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
+            tofu fmt -check -recursive
+            tofu init -reconfigure -input=false
+            tofu validate
+            tofu plan -input=false -no-color -out=plan.tfplan
+            bash ./validate-plan.sh plan.tfplan
+            tofu apply -input=false -auto-approve plan.tfplan
+            tofu plan -input=false -no-color -out=second-plan.tfplan
+            second_json="$(tofu show -json second-plan.tfplan)"
+            if ! jq -e 'type == "object" and (.resource_changes | type == "array") and all(.resource_changes[]; ((.change.actions // []) == ["no-op"]))' <<< "$second_json" >/dev/null; then
+              echo 'Grafana second plan is malformed or not clean.' >&2
+              exit 1
+            fi
+            for service in "${selected_services[@]}"; do
+              container_id="$(docker compose -f /opt/wotb/docker-compose.yml ps -q "$service")"
+              test -n "$container_id" || { echo "$service container is missing." >&2; exit 1; }
+              state="$(docker inspect --format '{{.State.Status}}' "$container_id")"
+              [[ "$state" == running ]] || { echo "$service container is not running: $state" >&2; exit 1; }
+              echo "$service container: PASS"
+            done
+            grafana_url="${GRAFANA_ROOT_URL%/}"
+            curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
+              "$grafana_url/api/health" | jq -e '.database == "ok"' >/dev/null
+            for uid in wotbtools-production-overview wotbtools-backend-overview \
+              wotbtools-error-explorer wotbtools-ai-review wotbtools-usage wotbtools-keycloak; do
+              curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
+                -H "Authorization: Bearer ${GRAFANA_PAT}" \
+                "$grafana_url/api/dashboards/uid/$uid" \
+                | jq -e --arg uid "$uid" '.dashboard.uid == $uid' >/dev/null
+            done
+            echo 'Grafana health and managed dashboard API checks: PASS'
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          RUNTIME_SERVICES: ${{ steps.source.outputs.runtime_services }}
+          WOTB_DEPLOY_CONFIG_SHA: ${{ steps.source.outputs.source_sha }}
+          WOTB_DEPLOY_IMAGE_TAG: ''
+          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ''
+          GRAFANA_ADMIN_USER: ${{ contains(steps.source.outputs.runtime_services, 'grafana') && secrets.GRAFANA_ADMIN_USER || '' }}
+          GRAFANA_ADMIN_PASSWORD: ${{ contains(steps.source.outputs.runtime_services, 'grafana') && secrets.GRAFANA_ADMIN_PASSWORD || '' }}
+          GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
+          OBSERVABILITY_ENVIRONMENT: ${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}
+          GRAFANA_PAT: ${{ secrets.GRAFANA_PAT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+
+      - name: Report the existing metrics and logs verification gap
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Observability verification limitation'
+            echo
+            echo 'Selected runtime containers and the Grafana dashboard root are checked directly. The existing metrics/log target realignment remains **degraded/unverified** because the current end-to-end verifier still targets retired Yecao application services. This workflow does not claim a metrics or logs data-chain pass.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo '::warning::Metrics/log target realignment remains degraded/unverified; no end-to-end data-chain pass is claimed.'

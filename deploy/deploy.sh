@@ -20,6 +20,7 @@ readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
 readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
 readonly IMAGE_TAG_VALUE="${WOTB_DEPLOY_IMAGE_TAG:-}"
 readonly IMAGE_COMMIT_SHA_VALUE="${WOTB_DEPLOY_IMAGE_COMMIT_SHA:-}"
+readonly IMAGE_DIGEST_VALUE="${WOTB_DEPLOY_IMAGE_DIGEST:-}"
 readonly RELEASE_SHA_VALUE="$CONFIG_SHA_VALUE"
 
 declare -a DEPLOY_SERVICES=()
@@ -91,9 +92,11 @@ validate_inputs() {
       *) die "unsupported deployment service: $service" ;;
     esac
   done
-  if [ -n "$IMAGE_TAG_VALUE" ] || [ -n "$IMAGE_COMMIT_SHA_VALUE" ]; then
-    [ -n "$IMAGE_TAG_VALUE" ] && [ -n "$IMAGE_COMMIT_SHA_VALUE" ] \
-      || die "image tag and source SHA must be supplied together."
+  if [ -n "$IMAGE_TAG_VALUE" ] || [ -n "$IMAGE_COMMIT_SHA_VALUE" ] || [ -n "$IMAGE_DIGEST_VALUE" ]; then
+    [ -n "$IMAGE_TAG_VALUE" ] && [ -n "$IMAGE_COMMIT_SHA_VALUE" ] && [ -n "$IMAGE_DIGEST_VALUE" ] \
+      || die "image tag, source SHA, and registry digest must be supplied together."
+    [[ "$IMAGE_DIGEST_VALUE" =~ ^sha256:[0-9a-f]{64}$ ]] \
+      || die "WOTB_DEPLOY_IMAGE_DIGEST must be a sha256 digest."
     [ "$DEPLOY_SERVICE_VALUE" = parser-worker ] || die "fixed upstream service cannot receive image identity."
   fi
 
@@ -120,7 +123,7 @@ validate_inputs() {
 
 worker_image_ref() {
   if [ -n "$IMAGE_TAG_VALUE" ]; then
-    printf '%s\n' "$IMAGE_TAG_VALUE"
+    printf '%s@%s\n' "$IMAGE_TAG_VALUE" "$IMAGE_DIGEST_VALUE"
   else
     python3 "$METADATA_TOOL" get --host yecao --file "$METADATA_FILE" \
       --service parser-worker --field tag
@@ -199,9 +202,37 @@ pull_images() {
 promote_files() {
   local next_deploy="$WOTB_DIR/deploy.next.$$" next_compose="$WOTB_DIR/docker-compose.next.$$"
   local old_deploy="$WOTB_DIR/deploy.old.$$" old_compose="$WOTB_DIR/docker-compose.old.$$"
+  local common_file worker_file observability_file observability_selected=false service
   rm -rf -- "$next_deploy"
   rm -f -- "$next_compose"
-  cp -a "$INCOMING_DIR/deploy/." "$next_deploy/"
+  mkdir -p "$next_deploy" || return 1
+  if [ -d "$LIVE_DEPLOY_DIR" ]; then
+    cp -a "$LIVE_DEPLOY_DIR/." "$next_deploy/" || return 1
+  fi
+  for common_file in deploy.sh release-metadata.py; do
+    [ -f "$INCOMING_DIR/deploy/$common_file" ] || die "staged deployment tree is missing $common_file."
+    cp -f "$INCOMING_DIR/deploy/$common_file" "$next_deploy/$common_file" || return 1
+  done
+  if is_selected parser-worker; then
+    for worker_file in dependency-readiness.sh dependency-readiness.py; do
+      [ -f "$INCOMING_DIR/deploy/$worker_file" ] || die "staged deployment tree is missing $worker_file."
+      cp -f "$INCOMING_DIR/deploy/$worker_file" "$next_deploy/$worker_file" || return 1
+    done
+  fi
+  for service in "${DEPLOY_SERVICES[@]}"; do
+    case "$service" in
+      prometheus|loki|alloy|grafana|node-exporter) observability_selected=true ;;
+    esac
+  done
+  if [ "$observability_selected" = true ]; then
+    for observability_file in validate-alloy-config.sh verify-observability.sh grafana-api-request.sh; do
+      [ -f "$INCOMING_DIR/deploy/$observability_file" ] || die "staged observability tree is missing $observability_file."
+      cp -f "$INCOMING_DIR/deploy/$observability_file" "$next_deploy/$observability_file" || return 1
+    done
+    rm -rf -- "$next_deploy/observability" || return 1
+    mkdir -p "$next_deploy/observability" || return 1
+    cp -a "$INCOMING_DIR/deploy/observability/." "$next_deploy/observability/" || return 1
+  fi
   cp -f "$EFFECTIVE_COMPOSE" "$next_compose"
   chmod 600 "$next_compose"
   if [ -e "$LIVE_DEPLOY_DIR" ]; then

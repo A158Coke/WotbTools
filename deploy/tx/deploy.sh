@@ -13,11 +13,13 @@ readonly TOFU_PROVISION_MARKER="${WOTB_TX_TOFU_PROVISION_MARKER:-$WOTB_DIR/keycl
 readonly RABBITMQ_TOFU_PROVISION_MARKER="${WOTB_TX_RABBITMQ_TOFU_PROVISION_MARKER:-$WOTB_DIR/rabbitmq.tofu-provisioned}"
 readonly BUSINESS_POSTGRES_TOFU_PROVISION_MARKER="${WOTB_TX_BUSINESS_POSTGRES_TOFU_PROVISION_MARKER:-$WOTB_DIR/business-postgres.tofu-provisioned}"
 readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
+readonly DEFER_RELEASE_METADATA="${WOTB_DEPLOY_DEFER_METADATA:-0}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://business-api:8087}"
 readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
 readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
 readonly IMAGE_TAG_VALUE="${WOTB_DEPLOY_IMAGE_TAG:-}"
 readonly IMAGE_COMMIT_SHA_VALUE="${WOTB_DEPLOY_IMAGE_COMMIT_SHA:-}"
+readonly IMAGE_DIGEST_VALUE="${WOTB_DEPLOY_IMAGE_DIGEST:-}"
 readonly TX_IMAGE_REGISTRY_PREFIX_VALUE="${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
 readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
@@ -29,6 +31,7 @@ declare -a DEPLOY_IMAGE_SERVICES=()
 declare -a APPLY_SERVICES=()
 DEPLOY_SERVICES_RAW=""
 FAILED_SERVICE=""
+CADDY_RELOAD_ONLY=false
 PROBE_LAST_SERVICE=""
 PROBE_LAST_URL=""
 PROBE_LAST_HTTP_STATUS="unavailable"
@@ -54,17 +57,16 @@ require_env() {
 }
 
 require_tofu_provisioning() {
-  if ! is_selected keycloak && ! is_selected wotb-frontend; then
+  if ! is_selected keycloak; then
     return
   fi
-  if [ "$BOOTSTRAP_KEYCLOAK" = 1 ] && is_selected keycloak && ! is_selected wotb-frontend \
-    && [ "${#DEPLOY_SERVICES[@]}" -eq 1 ]; then
+  if [ "$BOOTSTRAP_KEYCLOAK" = 1 ]; then
     return
   fi
   [ -f "$TOFU_PROVISION_MARKER" ] \
-    || die "TX Keycloak database is not provisioned; run TX-local OpenTofu after the PostgreSQL bootstrap before starting Keycloak or frontend."
+    || die "TX Keycloak realm is not provisioned; apply infra/tofu/keycloak before starting Keycloak runtime."
   grep -Fxq 'tx-local-opentofu-keycloak' "$TOFU_PROVISION_MARKER" \
-    || die "TX Keycloak OpenTofu provision marker is invalid; refusing to start application services."
+    || die "TX Keycloak OpenTofu provision marker is invalid; refusing to start Keycloak runtime."
 }
 
 is_selected() {
@@ -79,9 +81,12 @@ is_selected() {
 # selected. Keeping the groups explicit is what keeps RabbitMQ-only,
 # Keycloak-only, and business-postgres-only deployments isolated from each
 # other's secrets.
-is_keycloak_group_selected() {
-  is_selected keycloak-postgres || is_selected keycloak \
-    || is_selected wotb-frontend || is_selected caddy
+is_keycloak_postgres_group_selected() {
+  is_selected keycloak-postgres || is_selected keycloak
+}
+
+is_keycloak_runtime_selected() {
+  is_selected keycloak
 }
 
 is_rabbitmq_group_selected() {
@@ -136,9 +141,11 @@ validate_inputs() {
     *) die "unsupported TX deployment service: $DEPLOY_SERVICE_VALUE" ;;
   esac
   DEPLOY_SERVICES_RAW="${DEPLOY_SERVICES[0]}"
-  if [ -n "$IMAGE_TAG_VALUE" ] || [ -n "$IMAGE_COMMIT_SHA_VALUE" ]; then
-    [ -n "$IMAGE_TAG_VALUE" ] && [ -n "$IMAGE_COMMIT_SHA_VALUE" ] \
-      || die "image tag and source SHA must be supplied together."
+  if [ -n "$IMAGE_TAG_VALUE" ] || [ -n "$IMAGE_COMMIT_SHA_VALUE" ] || [ -n "$IMAGE_DIGEST_VALUE" ]; then
+    [ -n "$IMAGE_TAG_VALUE" ] && [ -n "$IMAGE_COMMIT_SHA_VALUE" ] && [ -n "$IMAGE_DIGEST_VALUE" ] \
+      || die "image tag, source SHA, and registry digest must be supplied together."
+    [[ "$IMAGE_DIGEST_VALUE" =~ ^sha256:[0-9a-f]{64}$ ]] \
+      || die "WOTB_DEPLOY_IMAGE_DIGEST must be a sha256 digest."
     is_image_service "$DEPLOY_SERVICES_RAW" || die "fixed upstream service cannot receive image identity."
     DEPLOY_IMAGE_SERVICES=("$DEPLOY_SERVICES_RAW")
   else
@@ -155,6 +162,13 @@ validate_inputs() {
     0|1) ;;
     *) die "WOTB_TX_BOOTSTRAP_KEYCLOAK must be 0 or 1." ;;
   esac
+  case "$DEFER_RELEASE_METADATA" in
+    0|1) ;;
+    *) die "WOTB_DEPLOY_DEFER_METADATA must be 0 or 1." ;;
+  esac
+  if [ "$DEFER_RELEASE_METADATA" = 1 ] && ! is_selected keycloak; then
+    die "WOTB_DEPLOY_DEFER_METADATA=1 is supported only for the Keycloak runtime/Tofu chain."
+  fi
   for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
     case "$service" in
       "") ;;
@@ -166,12 +180,18 @@ validate_inputs() {
   # Only selected runtime services may require their credentials. RabbitMQ-only
   # and business-postgres-only reconciliation must not depend on each other or
   # on Keycloak/PostgreSQL application inputs.
-  if is_keycloak_group_selected; then
-    for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
-      KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
-      WG_APPLICATION_ID CADDY_ACME_EMAIL; do
+  if is_keycloak_postgres_group_selected; then
+    for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD; do
       require_env "$required"
     done
+  fi
+  if is_keycloak_runtime_selected; then
+    for required in KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD WG_APPLICATION_ID; do
+      require_env "$required"
+    done
+  fi
+  if is_selected caddy; then
+    require_env CADDY_ACME_EMAIL
   fi
   if is_rabbitmq_group_selected; then
     for required in TX_RABBITMQ_ADMIN_USER TX_RABBITMQ_ADMIN_PASSWORD \
@@ -210,7 +230,7 @@ metadata_tag() {
 effective_image_ref() {
   local service="$1"
   if has_image_service "$service"; then
-    printf '%s\n' "$IMAGE_TAG_VALUE"
+    printf '%s@%s\n' "$IMAGE_TAG_VALUE" "$IMAGE_DIGEST_VALUE"
   else
     metadata_tag "$service"
   fi
@@ -257,12 +277,48 @@ PY
   chmod 600 "$target"
 }
 
+caddy_runtime_fingerprint() {
+  local compose_file="$1" section
+  awk '
+    /^  caddy:[[:space:]]*$/ { capture=1 }
+    capture && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ && $0 !~ /^  caddy:/ { exit }
+    capture { print }
+  ' "$compose_file"
+  for section in volumes networks configs secrets x-logging; do
+    printf '\n# top-level %s\n' "$section"
+    awk -v section="$section" '
+      $0 ~ ("^" section ":[[:space:]]*") { capture=1; print; next }
+      capture && /^[^[:space:]#][^:]*:([[:space:]]|$)/ { exit }
+      capture { print }
+    ' "$compose_file"
+  done
+}
+
+caddy_runtime_can_reload_in_place() {
+  local candidate="$1" current="$2" container_id status active_email
+  [ -f "$current" ] || return 1
+  [ -f "$LIVE_DEPLOY_DIR/Caddyfile" ] || return 1
+  [ -f "$LIVE_DEPLOY_DIR/assets/auth/.well-known/assetlinks.json" ] || return 1
+  cmp -s <(caddy_runtime_fingerprint "$candidate") <(caddy_runtime_fingerprint "$current") || return 1
+  container_id="$(docker compose -f "$current" ps -q caddy)" || return 1
+  [ -n "$container_id" ] || return 1
+  status="$(docker inspect --format '{{.State.Status}}' "$container_id")" || return 1
+  [ "$status" = running ] || return 1
+  active_email="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" |
+    sed -n 's/^CADDY_ACME_EMAIL=//p' | head -n 1)" || return 1
+  [ "$active_email" = "$CADDY_ACME_EMAIL" ]
+}
+
 stage_and_validate() {
   local source="$INCOMING_DIR/docker-compose.yml"
   readonly EFFECTIVE_COMPOSE="$INCOMING_DIR/docker-compose.effective.yml"
   [ -f "$source" ] || die "staged TX deployment tree is missing docker-compose.yml."
   [ -f "$INCOMING_DIR/Caddyfile" ] || die "staged TX deployment tree is missing Caddyfile."
   [ -f "$INCOMING_DIR/nginx/frontend.conf.template" ] || die "staged TX deployment tree is missing frontend nginx template."
+  if is_selected caddy; then
+    [ -f "$INCOMING_DIR/assets/auth/.well-known/assetlinks.json" ] \
+      || die "staged TX deployment tree is missing Caddy's assetlinks file."
+  fi
   if is_selected wotb-frontend; then
     # Sponsor assets and Android releases are optional runtime content. The
     # sponsor config itself is a file bind mount: if Docker ever created the
@@ -288,6 +344,14 @@ stage_and_validate() {
   assert_routing_boundary "$EFFECTIVE_COMPOSE"
   docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null \
     || die "staged TX compose config is invalid; live TX deployment was not changed."
+  if is_selected caddy; then
+    docker compose -f "$EFFECTIVE_COMPOSE" run --rm --no-deps caddy \
+      validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+      || die "staged Caddy configuration is invalid; the live gateway was not changed."
+    if caddy_runtime_can_reload_in_place "$source" "$LIVE_COMPOSE"; then
+      CADDY_RELOAD_ONLY=true
+    fi
+  fi
 }
 
 # Fail closed on the two production invariants this routing boundary establishes:
@@ -313,15 +377,59 @@ assert_routing_boundary() {
 }
 
 pull_images() {
+  if is_selected caddy && [ "$CADDY_RELOAD_ONLY" = true ]; then
+    echo "Caddy Compose runtime is unchanged; skipping image pull for config reload."
+    return 0
+  fi
   docker compose -f "$EFFECTIVE_COMPOSE" pull "$DEPLOY_SERVICES_RAW"
 }
 promote_files() {
+  if is_selected caddy && [ "$CADDY_RELOAD_ONLY" = true ]; then
+    [ -f "$INCOMING_DIR/Caddyfile" ] || die "staged TX Caddyfile is missing."
+    [ -f "$INCOMING_DIR/assets/auth/.well-known/assetlinks.json" ] \
+      || die "staged TX assetlinks file is missing."
+    [ -f "$METADATA_TOOL" ] || die "staged release metadata validator is missing."
+    mkdir -p "$LIVE_DEPLOY_DIR/assets/auth/.well-known" || return 1
+    cp -f "$INCOMING_DIR/deploy.sh" "$LIVE_DEPLOY_DIR/deploy.sh" || return 1
+    cp -f "$METADATA_TOOL" "$LIVE_DEPLOY_DIR/release-metadata.py" || return 1
+    cat "$INCOMING_DIR/Caddyfile" > "$LIVE_DEPLOY_DIR/Caddyfile" || return 1
+    cat "$INCOMING_DIR/assets/auth/.well-known/assetlinks.json" \
+      > "$LIVE_DEPLOY_DIR/assets/auth/.well-known/assetlinks.json" || return 1
+    return 0
+  fi
   local next_deploy="$WOTB_DIR/deploy.next.$$" old_deploy="$WOTB_DIR/deploy.old.$$"
-  rm -rf -- "$next_deploy"
-  mkdir -p "$next_deploy"
-  cp -a "$INCOMING_DIR/." "$next_deploy/"
-  cp -f "$EFFECTIVE_COMPOSE" "$next_deploy/docker-compose.yml"
-  chmod 600 "$next_deploy/docker-compose.yml"
+  rm -rf -- "$next_deploy" || return 1
+  mkdir -p "$next_deploy" || return 1
+  if [ -d "$LIVE_DEPLOY_DIR" ]; then
+    cp -a "$LIVE_DEPLOY_DIR/." "$next_deploy/" || return 1
+  fi
+  [ -f "$INCOMING_DIR/deploy.sh" ] || die "staged TX deployment script is missing."
+  [ -f "$INCOMING_DIR/docker-compose.yml" ] || die "staged TX compose file is missing."
+  cp -f "$INCOMING_DIR/deploy.sh" "$next_deploy/deploy.sh" || return 1
+  cp -f "$METADATA_TOOL" "$next_deploy/release-metadata.py" || return 1
+  cp -f "$EFFECTIVE_COMPOSE" "$next_deploy/docker-compose.yml" || return 1
+  chmod 600 "$next_deploy/docker-compose.yml" || return 1
+  case "$DEPLOY_SERVICES_RAW" in
+    wotb-frontend)
+      mkdir -p "$next_deploy/nginx" || return 1
+      cp -a "$INCOMING_DIR/nginx/." "$next_deploy/nginx/" || return 1
+      ;;
+    caddy)
+      cp -f "$INCOMING_DIR/Caddyfile" "$next_deploy/Caddyfile" || return 1
+      mkdir -p "$next_deploy/assets/auth/.well-known" || return 1
+      cp -f "$INCOMING_DIR/assets/auth/.well-known/assetlinks.json" \
+        "$next_deploy/assets/auth/.well-known/assetlinks.json" || return 1
+      ;;
+    keycloak)
+      cp -f "$INCOMING_DIR/keycloak-tofu.sh" "$next_deploy/keycloak-tofu.sh" || return 1
+      ;;
+    rabbitmq)
+      cp -f "$INCOMING_DIR/rabbitmq.tofurc" "$next_deploy/rabbitmq.tofurc" || return 1
+      ;;
+    business-postgres)
+      cp -f "$INCOMING_DIR/business-postgres.tofurc" "$next_deploy/business-postgres.tofurc" || return 1
+      ;;
+  esac
   if [ -e "$LIVE_DEPLOY_DIR" ]; then
     mv -- "$LIVE_DEPLOY_DIR" "$old_deploy" || return 1
   fi
@@ -348,6 +456,15 @@ reload_frontend_trusted_peer() {
 
 apply_services() {
   APPLY_SERVICES=("$DEPLOY_SERVICES_RAW")
+  if is_selected caddy && [ "$CADDY_RELOAD_ONLY" = true ]; then
+    if ! docker compose -f "$LIVE_COMPOSE" exec -T caddy \
+        caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile; then
+      FAILED_SERVICE="caddy-reload"
+      return 1
+    fi
+    echo "caddy-config-reload: PASS"
+    return 0
+  fi
   if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate "$DEPLOY_SERVICES_RAW"; then
     FAILED_SERVICE="$DEPLOY_SERVICES_RAW"
     return 1
@@ -467,17 +584,21 @@ set_nonselected_compose_placeholders() {
   # that this deployment does not own receive validation placeholders; a
   # selected group's real values always come from the process environment and
   # were already enforced by validate_inputs.
-  if ! is_keycloak_group_selected; then
+  if ! is_keycloak_postgres_group_selected; then
     : "${KC_POSTGRES_ADMIN_USER:=not-configured}"
     : "${KC_POSTGRES_ADMIN_PASSWORD:=not-configured}"
+    export KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD
+  fi
+  if ! is_keycloak_runtime_selected; then
     : "${KC_BOOTSTRAP_ADMIN_PASSWORD:=not-configured}"
     : "${KC_DB_USERNAME:=not-configured}"
     : "${KC_DB_PASSWORD:=not-configured}"
     : "${WG_APPLICATION_ID:=not-configured}"
+    export KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD WG_APPLICATION_ID
+  fi
+  if ! is_selected caddy; then
     : "${CADDY_ACME_EMAIL:=not-configured@example.invalid}"
-    export KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
-      KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
-      WG_APPLICATION_ID CADDY_ACME_EMAIL
+    export CADDY_ACME_EMAIL
   fi
   if ! is_rabbitmq_group_selected; then
     : "${TX_RABBITMQ_ADMIN_USER:=not-configured}"
@@ -508,7 +629,7 @@ set_nonselected_compose_placeholders() {
 }
 
 blocking_health() {
-  if is_selected keycloak-postgres || is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
+  if is_selected keycloak-postgres || is_selected keycloak; then
     wait_for_database || return 1
   fi
   if is_selected business-postgres; then
@@ -517,8 +638,8 @@ blocking_health() {
   if is_selected rabbitmq; then
     wait_for_rabbitmq || return 1
   fi
-  if is_selected keycloak || is_selected wotb-frontend || is_selected caddy; then
-    if [ "$BOOTSTRAP_KEYCLOAK" = 1 ] && is_selected keycloak && ! is_selected wotb-frontend; then
+  if is_selected keycloak; then
+    if [ "$BOOTSTRAP_KEYCLOAK" = 1 ]; then
       wait_for_probe keycloak http://keycloak:8080/realms/master/.well-known/openid-configuration || return 1
     else
       wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || return 1
@@ -531,18 +652,16 @@ blocking_health() {
     wait_for_probe tx-business-api http://business-api:8088/actuator/health || return 1
     wait_for_probe business-api-app http://business-api:8087/api/health || return 1
   fi
-  if is_selected wotb-frontend || is_selected caddy; then
-    # Public API traffic is terminated inside wotb_tx_internal now: the frontend
-    # probe proves nginx -> business-api end to end, and the retired Yecao
-    # backend path is deliberately not probed or required any more.
-    wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
-    # The formal site address intentionally redirects HTTP to HTTPS. Probe
-    # Caddy's TX-local readiness surface instead, addressed by its Docker service
-    # name: it is 2xx-only, DNS/ACME/static-IP independent, and exercises the
-    # frontend and Keycloak proxy contracts.
+  if is_selected wotb-frontend; then
+    docker compose -f "$LIVE_COMPOSE" exec -T wotb-frontend nginx -t >/dev/null \
+      || { FAILED_SERVICE=frontend-static; echo "frontend nginx config: FAIL" >&2; return 1; }
+    wait_for_probe frontend-static http://wotb-frontend/ 'Host: wotbtools.com' || return 1
+  fi
+  if is_selected caddy; then
+    # The gateway's own process/config readiness is separate from upstream routes.
     wait_for_probe caddy-ready http://caddy/_wotb/ready || return 1
-    wait_for_probe caddy-frontend http://caddy/_wotb/frontend/api/health || return 1
-    wait_for_probe caddy-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
+    wait_for_probe caddy-upstream-frontend http://caddy/_wotb/frontend/api/health || return 1
+    wait_for_probe caddy-upstream-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
   fi
 }
 
@@ -1358,9 +1477,15 @@ diagnostics() {
 stop_failed_service() {
   local service="$FAILED_SERVICE"
   case "$service" in
+    caddy|caddy-*)
+      echo "Caddy deployment or verification failed; keeping the gateway process available for diagnosis." >&2
+      return 0
+      ;;
+  esac
+  case "$service" in
     tx-business-api|business-api-app) service=business-api ;;
-    frontend) service=wotb-frontend ;;
-    caddy-ready|caddy-frontend|caddy-keycloak) service=caddy ;;
+    frontend-static) service=wotb-frontend ;;
+    caddy-ready) service=caddy ;;
   esac
   if ! is_selected "$service"; then
     echo "Not stopping unaffected TX health dependency: ${service:-unknown}" >&2
@@ -1388,6 +1513,18 @@ update_metadata() {
   python3 "$METADATA_TOOL" "${args[@]}"
 }
 
+acquire_deploy_lock() {
+  command -v flock >/dev/null 2>&1 || die "flock is required to serialize TX deployments."
+  if [ -n "${WOTB_DEPLOY_LOCK_FD:-}" ]; then
+    [ "$WOTB_DEPLOY_LOCK_FD" = 9 ] || die "unsupported inherited TX deployment lock descriptor."
+    { true >&9; } 2>/dev/null || die "inherited TX deployment lock descriptor is unavailable."
+    flock -n 9 || die "another TX deployment is already running."
+  else
+    exec 9>"$WOTB_DIR/.deploy.lock"
+    flock -n 9 || die "another TX deployment is already running."
+  fi
+}
+
 apply_and_check() {
   apply_services || return 1
   blocking_health || return 1
@@ -1395,7 +1532,6 @@ apply_and_check() {
 main() {
   validate_inputs
   preflight_host
-  command -v flock >/dev/null 2>&1 || die "flock is required to serialize TX deployments."
   command -v python3 >/dev/null 2>&1 || die "python3 is required for immutable image handling."
   [ -f "$METADATA_TOOL" ] || die "staged release metadata validator is missing."
   local -a metadata_args=(validate --host tx --file "$METADATA_FILE" --tx-prefix "$TX_IMAGE_REGISTRY_PREFIX_VALUE")
@@ -1407,8 +1543,7 @@ main() {
   python3 "$METADATA_TOOL" "${metadata_args[@]}" || die "production metadata or incoming image identity is invalid."
   require_tofu_provisioning
   mkdir -p "$WOTB_DIR" "$INCOMING_DIR"
-  exec 9>"$WOTB_DIR/.deploy.lock"
-  flock -n 9 || die "another TX deployment is already running."
+  acquire_deploy_lock
   stage_and_validate
   pull_images || die "TX image pull failed; live TX deployment was not changed."
   promote_files || die "TX live-file promotion failed; prior TX files were restored when possible."
@@ -1417,7 +1552,11 @@ main() {
     stop_failed_service
     die "TX blocking health failed; no automatic recovery, DNS action, or Yecao action was attempted."
   fi
-  update_metadata
+  if [ "$DEFER_RELEASE_METADATA" = 0 ]; then
+    update_metadata
+  else
+    echo "TX release metadata update deferred until the Keycloak realm chain is verified."
+  fi
   rm -f -- "$INCOMING_DIR/docker-compose.effective.yml"
   echo "TX deployment completed: config=$CONFIG_SHA_VALUE service=$DEPLOY_SERVICES_RAW image=$IMAGE_TAG_VALUE"
 }
