@@ -47,8 +47,10 @@ output 或日志（`TX_QQ_CLIENT_SECRET` 的 state 归属见下一节）：
 - `TX_QQ_CLIENT_SECRET`（QQ Connect application secret）。
 
 TX workflow secrets：`TX_KC_POSTGRES_ADMIN_PASSWORD`、`TX_KC_DB_PASSWORD`、
-`TX_KC_BOOTSTRAP_ADMIN_PASSWORD`、`WG_APPLICATION_ID`、`TENCENTCLOUD_SECRET_ID`、
-`TENCENTCLOUD_SECRET_KEY`。非敏感固定值 `KC_POSTGRES_ADMIN_USER=kc_admin`、
+`TX_KC_BOOTSTRAP_ADMIN_PASSWORD`、`WG_APPLICATION_ID`、
+`TX_TOFU_STATE_PASSWORD`。只有一次性 state migration workflow 还读取
+`TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY` 来访问历史 COS source state；
+普通 Keycloak owner workflow 不接收 COS 凭据。非敏感固定值 `KC_POSTGRES_ADMIN_USER=kc_admin`、
 `KC_DB_USERNAME=keycloak` 由 workflow 提供；`CADDY_ACME_EMAIL` 使用
 `vars.CADDY_ACME_EMAIL`，为空时 fail-closed。
 
@@ -79,10 +81,11 @@ Wargaming IdP representation 与 Keycloak runtime 共用**同一个**已存在�
   值相同则 no-op，因此「secret 是否变化」不需要任何版本信号来判断。provider schema 也决定了
   这一点：`client_secret_wo` 声明了 `RequiredWith = client_secret_wo_version`，且只在 version
   变化时才把写-only 值发给 Keycloak（`provider/resource_keycloak_oidc_identity_provider.go`）；
-- 代价是该 secret 作为 sensitive 属性进入 OpenTofu state（`backend.tf` 的 COS
-  `wotbtools-prod-tofu-state-1478073677` / `wotbtools/prod/keycloak.tfstate`）。这是本仓库唯一
-  允许长驻该 secret 的介质：只有持有 `TENCENTCLOUD_SECRET_ID/KEY` 的 TX OpenTofu apply 能读取；
-  Git、realm JSON、tfvars、Tofu output、日志与其它介质依然禁止。apply 期间 TX 上的
+- 代价是该 secret 作为 sensitive 属性进入 OpenTofu state。迁移后的权威 state 位于
+  Business PostgreSQL 的 `tofu_state.tofu_keycloak`；历史 COS object 保留为受保护恢复副本，
+  直到单独批准退役。两份 state 都按敏感凭据保护；普通 TX OpenTofu workflow 通过专用 PG
+  role 访问当前 state，一次性迁移 workflow 才需要 COS 凭据读取旧 state。Git、realm JSON、
+  tfvars、Tofu output、日志与其它介质依然禁止。apply 期间 TX 上的
   `plan.tfplan` / `second-plan.tfplan` 同样带有该值（写-only 字段此前不会落进 plan 文件），
   因此 `deploy/tx/keycloak-tofu.sh` 的 `trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT`
   不得删除。
@@ -176,7 +179,8 @@ TX_RUNTIME_READY
 
 Business PostgreSQL 是权威业务状态，因此检查同样要求它完全就绪才允许 `TX_RUNTIME_READY`：
 `business-postgres` 容器存在且 healthy、`pg_isready` 成功、发布端口严格为
-`127.0.0.1:25432:5432`（出现 `0.0.0.0`、`::` 或 WireGuard 地址即失败）、
+`127.0.0.1:25432:5432` 与 `10.20.0.1:25432:5432`（只允许 TX loopback
+和已认证 WireGuard 接口；出现 `0.0.0.0`、`::` 或裸端口即失败）、
 `/opt/wotb-tx/business-postgres.tofu-provisioned` 存在且内容精确为
 `tx-local-opentofu-business-postgres`。任一检查失败即输出 `TX_RUNTIME_NOT_READY`；
 这些检查全部只读，不创建、修改或删除任何数据库或数据行。详见

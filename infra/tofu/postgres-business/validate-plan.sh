@@ -32,8 +32,17 @@ allowed = {
     "postgresql_database.wotb",
     "postgresql_role.control_api",
     "postgresql_grant.control_api_database_access",
+    "postgresql_role.tofu_state",
+    "postgresql_database.tofu_state",
+    "postgresql_grant.tofu_state_database_access",
+    "postgresql_grant.tofu_state_revoke_public_database_access",
+    "postgresql_grant.tofu_state_revoke_public_schema_access",
+    "postgresql_grant.tofu_state_public_schema_access",
+    "postgresql_schema.tofu_state[\"tofu_keycloak\"]",
+    "postgresql_schema.tofu_state[\"tofu_keycloak_postgres\"]",
+    "postgresql_schema.tofu_state[\"tofu_grafana\"]",
 }
-rotatable = {"postgresql_role.control_api"}
+rotatable = {"postgresql_role.control_api", "postgresql_role.tofu_state"}
 
 changed = []
 for item in plan.get("resource_changes", []):

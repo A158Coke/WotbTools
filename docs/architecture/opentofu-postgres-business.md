@@ -14,15 +14,17 @@ application role password uses the provider write-only field, so the state holds
 no application credential attribute.
 
 Docker Compose creates and runs `business-postgres`; it exposes the
-administration port only on TX loopback as `127.0.0.1:25432:5432`. The
-PostgreSQL provider is hard-constrained to `127.0.0.1:25432`, so it cannot reach
-a public endpoint, the WireGuard network, or the Keycloak PostgreSQL runtime.
+administration port on TX loopback (`127.0.0.1:25432:5432`) and on the TX
+WireGuard address (`10.20.0.1:25432:5432`). The latter is only for Yecao's
+Grafana state backend. No wildcard/public bind is allowed. The PostgreSQL
+provider remains hard-constrained to `127.0.0.1:25432`, and Keycloak keeps its
+independent PostgreSQL runtime.
 
 ## Ownership split
 
 ```text
-Compose   runtime, image, volume, loopback admin port, healthcheck, restart, memory limit
-OpenTofu  wotb database, control_api role, database-level grant
+Compose   runtime, image, volume, loopback + WireGuard admin bindings, healthcheck, restart, memory limit
+OpenTofu  wotb and tofu_state databases, control_api and tofu_state roles, grants, state schemas
 Flyway    application schema, tables, indexes, sequences, rows
 ```
 
@@ -62,7 +64,8 @@ excludes direct installation.
 
 ## Safety behavior
 
-`prevent_destroy` protects the managed role, database, and grant, and
+`prevent_destroy` protects the managed roles, databases, grants, and backend
+schemas, and
 `infra/tofu/postgres-business/validate-plan.sh` rejects every delete and
 replacement before apply:
 
@@ -82,7 +85,7 @@ which bash disables for functions invoked in that position.
 
 Business PostgreSQL is authoritative state, so the read-only
 `deploy/tx/runtime-check.sh` check requires its container health,
-`pg_isready`, an exactly loopback `127.0.0.1:25432:5432` publication, and the
+`pg_isready`, exactly the loopback and WireGuard `25432:5432` publications, and the
 `tx-local-opentofu-business-postgres` provisioning marker before it may emit
 `TX_RUNTIME_READY`. Any failure emits `TX_RUNTIME_NOT_READY`; the check never
 creates, modifies, or deletes a database or row.
