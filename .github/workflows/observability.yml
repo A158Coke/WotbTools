@@ -47,7 +47,6 @@ env:
     deploy/verify-observability.sh
     deploy/observability/**
     infra/tofu/grafana/**
-    deploy/check-production-freshness.sh
 
 jobs:
   observability:

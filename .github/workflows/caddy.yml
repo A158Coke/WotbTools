@@ -28,7 +28,6 @@ env:
     deploy/tx/Caddyfile
     deploy/tx/docker-compose.yml
     deploy/tx/deploy.sh
-    deploy/check-production-freshness.sh
 
 jobs:
   deploy:

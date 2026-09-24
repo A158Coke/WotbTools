@@ -28,7 +28,6 @@ env:
     deploy/tx/docker-compose.yml
     deploy/tx/rabbitmq.tofurc
     infra/tofu/rabbitmq/**
-    deploy/check-production-freshness.sh
 
 jobs:
   rabbitmq:

@@ -42,7 +42,6 @@ env:
     deploy/tx/docker-compose.yml
     deploy/tx/deploy.sh
     deploy/tx/nginx/frontend.conf.template
-    deploy/check-production-freshness.sh
 
 jobs:
   build:

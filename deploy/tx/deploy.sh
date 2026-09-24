@@ -287,8 +287,8 @@ caddy_runtime_fingerprint() {
   for section in volumes networks configs secrets x-logging; do
     printf '\n# top-level %s\n' "$section"
     awk -v section="$section" '
-      $0 == section ":" { capture=1; print; next }
-      capture && /^[^[:space:]#][^:]*:[[:space:]]*$/ { exit }
+      $0 ~ ("^" section ":[[:space:]]*") { capture=1; print; next }
+      capture && /^[^[:space:]#][^:]*:([[:space:]]|$)/ { exit }
       capture { print }
     ' "$compose_file"
   done

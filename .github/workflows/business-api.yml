@@ -72,7 +72,6 @@ env:
     deploy/release-metadata.py
     deploy/tx/docker-compose.yml
     deploy/tx/deploy.sh
-    deploy/check-production-freshness.sh
 
 jobs:
   build:
