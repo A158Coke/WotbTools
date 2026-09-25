@@ -9,6 +9,7 @@ import HistoryPage from '../components/HistoryPage.vue'
 import TechnicalEvolutionPage from '../components/TechnicalEvolutionPage.vue'
 import ContactPage from '../components/ContactPage.vue'
 import AndroidDownloadPage from '../components/AndroidDownloadPage.vue'
+import SponsorPage from '../components/SponsorPage.vue'
 
 const PlaybackQaPage = defineAsyncComponent(() => import('../components/PlaybackQaPage.vue'))
 const RatingDocsPage = defineAsyncComponent(() => import('../components/RatingDocsPage.vue'))
@@ -27,6 +28,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   'technical-evolution': TechnicalEvolutionPage,
   contact: ContactPage,
   android: AndroidDownloadPage,
+  sponsor: SponsorPage,
   'playback-qa': PlaybackQaPage,
   'rating-docs': RatingDocsPage,
   'rating-v2': RatingV2AdminPage,

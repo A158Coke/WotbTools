@@ -1054,7 +1054,22 @@
     "sponsorDesc": "自愿赞助，用于服务器和维护成本。",
     "sponsorTag": "赞助",
     "footer": "WoTBTools - 社区工具，非 Wargaming 官方产品",
-    "icpFiling": "闽ICP备2026036303号-1"
+    "icpFiling": "闽ICP备2026036303号-1",
+    "publicSecurityFiling": "闽公网安备35018202000555号",
+    "wargamingDisclaimer": "WotbTools 是非官方项目，与 Wargaming 无关联，也未获其认可。"
+  },
+  "sponsor": {
+    "eyebrow": "WOTBTOOLS · SUPPORT",
+    "title": "支持 WoTBTools",
+    "intro": "如果这个项目对你有帮助，可以自愿支持服务器与维护成本。",
+    "aboutTitle": "关于赞助",
+    "description": "WoTBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。",
+    "voluntary": "赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。",
+    "note": "请勿在付款备注中填写敏感个人信息。",
+    "methodsTitle": "扫码赞助",
+    "unconfigured": "赞助方式暂未配置",
+    "alipay": "支付宝",
+    "wechat": "微信支付"
   },
   "recon": {
     "nav": "AI 复盘",
