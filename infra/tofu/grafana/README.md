@@ -13,10 +13,9 @@ from the runtime in the same change so that OpenTofu and provisioning never
 manage the same dashboard. Datasource provisioning remains the sole datasource
 controller.
 
-The PostgreSQL backend uses the dedicated `tofu_state` database and
-`tofu_grafana` schema on Business PostgreSQL, reached from Yecao through the
-private WireGuard address. Import is owner-controlled and CI never runs import
-or an authenticated production plan. Pull requests run only local
+The COS backend uses the independent state key
+`wotbtools/prod/grafana.tfstate`. Import is owner-controlled and CI never runs
+import or an authenticated production plan. Pull requests run only local
 format/init/validate checks. A change merged to `main` runs the Grafana root
 inside `.github/workflows/observability.yml`, which applies the exact saved
 plan after the dashboard-delete safety gate and verifies all managed dashboard

@@ -1319,15 +1319,13 @@ import json, sys
 data = json.load(sys.stdin)
 ports = [str(p) for p in data["services"]["business-postgres"].get("ports", [])]
 assert any("127.0.0.1" in p and "25432" in p and "5432" in p for p in ports), ports
-assert any("10.20.0.1" in p and "25432" in p and "5432" in p for p in ports), ports
-assert len(ports) == 2, ports
 assert not any(
-    "0.0.0.0" in p or "::" in p or p.startswith("25432:") for p in ports
+    "0.0.0.0" in p or "::" in p or "10.20.0.1" in p or p.startswith("25432:") for p in ports
 ), ports
 ' <<< "$compose_json"; then
-    echo "business-postgres-bindings: PASS"
+    echo "business-postgres-loopback: PASS"
   else
-    echo "business-postgres-bindings: FAIL (management ports must be loopback and the TX WireGuard address only)" >&2
+    echo "business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)" >&2
     failures=1
   fi
 

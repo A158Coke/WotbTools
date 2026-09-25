@@ -49,9 +49,7 @@ outputs_text = read("infra/tofu/keycloak/outputs.tf")
 assert 'keycloak/keycloak' in versions and 'version = "5.9.0"' in versions
 assert "~>" not in versions
 assert "tls_insecure_skip_verify = false" in providers
-assert 'backend "pg"' in root_text
-assert 'schema_name          = "tofu_keycloak"' in root_text
-assert 'skip_schema_creation = true' in root_text
+assert 'key    = "wotbtools/prod/keycloak.tfstate"' in root_text
 
 # --- no out-of-band execution path around the provider -----------------------
 for forbidden in ("remote-exec", "local-exec", "null_resource"):
@@ -319,11 +317,8 @@ assert apply_envs == {
     "WG_APPLICATION_ID",
     "TX_QQ_CLIENT_ID",
     "TX_QQ_CLIENT_SECRET",
-    "PGHOST",
-    "PGPORT",
-    "PGDATABASE",
-    "PGUSER",
-    "PGPASSWORD",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
 }
 assert apply_step["env"]["KEYCLOAK_ADMIN_PASSWORD"] == "${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}"
 assert apply_step["env"]["KEYCLOAK_ADMIN_CLIENT_SECRET"] == "${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}"

@@ -9,7 +9,7 @@ umask 077
 
 readonly COMPOSE_FILE_DEFAULT="/opt/wotb-tx/deploy/docker-compose.yml"
 readonly COMPOSE_SERVICE_DEFAULT="business-postgres"
-readonly PROTECTED_DATABASES=("wotb" "tofu_state")
+readonly SOURCE_DATABASE="wotb"
 
 compose_file="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_FILE:-$COMPOSE_FILE_DEFAULT}"
 compose_service="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_SERVICE:-$COMPOSE_SERVICE_DEFAULT}"
@@ -17,6 +17,7 @@ project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-wotb-tx-business-post
 # Optional container override, used by the disposable CI smoke.
 container_override="${WOTB_TX_BUSINESS_POSTGRES_CONTAINER:-}"
 admin_user="${TX_BUSINESS_POSTGRES_ADMIN_USER:-wotb}"
+source_database="${TX_BUSINESS_DB_NAME:-$SOURCE_DATABASE}"
 backup_file=""
 target_database=""
 confirmation=""
@@ -118,12 +119,10 @@ fi
 [ -n "$target_database" ] || { usage; exit 2; }
 [[ "$target_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
   || { echo "Unsupported target database name." >&2; exit 2; }
-for protected_database in "${PROTECTED_DATABASES[@]}" "${TX_BUSINESS_DB_NAME:-wotb}"; do
-  if [ "$target_database" = "$protected_database" ]; then
-    echo "Refusing to restore into an authoritative PostgreSQL database." >&2
-    exit 2
-  fi
-done
+if [ "$target_database" = "$source_database" ]; then
+  echo "Refusing to restore into the authoritative source database $source_database." >&2
+  exit 2
+fi
 [ "$confirmation" = "RESTORE-$target_database" ] \
   || { echo "Restore refused. Pass --confirm RESTORE-$target_database explicitly." >&2; exit 2; }
 
@@ -139,7 +138,7 @@ db_exec pg_restore -U "$admin_user" -d "$target_database" --exit-on-error --no-o
   < "$backup_file"
 
 echo "Restored $backup_file into disposable database $target_database."
-echo "Authoritative PostgreSQL databases were not modified or deleted."
+echo "The authoritative source database $source_database was not modified or deleted."
 cat <<EOF
 
 Verify before declaring the archive restorable (identity and sequence handling):

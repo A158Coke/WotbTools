@@ -5,13 +5,12 @@ dashboard API objects in organization 1 with `grafana/grafana` provider
 `4.45.2`, tested against the production Grafana `11.6.16` API.
 
 Docker Compose remains responsible for the Grafana container, image, database
-volume, network, reverse proxy, and runtime environment. Its OpenTofu state
-uses the dedicated Business PostgreSQL database and schema:
+volume, network, reverse proxy, and runtime environment. The COS backend uses
+the existing state bucket with an independent key:
 
 ```text
-database: tofu_state
-schema:   tofu_grafana
-route:    Yecao to TX over WireGuard at 10.20.0.1:25432
+bucket: wotbtools-prod-tofu-state-1478073677
+key:    wotbtools/prod/grafana.tfstate
 ```
 
 ## Ownership

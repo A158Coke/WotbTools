@@ -26,8 +26,6 @@ ADMIN_USER="wotb"
 ADMIN_PASSWORD="ci-business-admin-password"
 APP_ROLE="control_api"
 APP_PASSWORD="ci-control-api-password"
-TOFU_STATE_ROLE="tofu_state"
-TOFU_STATE_PASSWORD="ci-tofu-state-password"
 DB_NAME="wotb"
 SCRATCH_DB="wotb_restore_scratch"
 KEEP=0
@@ -88,9 +86,8 @@ service = services["business-postgres"]
 assert service["image"] == "postgres:18-alpine", service["image"]
 ports = [str(port) for port in service.get("ports", [])]
 assert any("127.0.0.1" in port and "25432" in port and "5432" in port for port in ports), ports
-assert any("10.20.0.1" in port and "25432" in port and "5432" in port for port in ports), ports
-assert len(ports) == 2, ports
-assert not any("0.0.0.0" in port or "::" in port or port.startswith("25432:") for port in ports), ports
+assert not any("0.0.0.0" in port or "::" in port for port in ports), ports
+assert not any("10.20.0.1" in port for port in ports), ports
 assert service.get("healthcheck"), "business-postgres healthcheck is required"
 assert service.get("restart") == "unless-stopped", service.get("restart")
 assert str(service.get("mem_limit")) in {"512m", "536870912"}, service.get("mem_limit")
@@ -114,15 +111,12 @@ tofurc = Path(sys.argv[2])
 text = "\n".join(path.read_text(encoding="utf-8") for path in sorted(root.glob("*.tf")))
 for address in ("postgresql_role.control_api", "postgresql_database.wotb", "postgresql_grant.control_api_database_access"):
     assert f'"{address.split(".")[1]}"' in text, address
-for forbidden in ("postgresql_table", "postgresql_extension", "postgresql_function", "postgresql_sequence"):
+for forbidden in ("postgresql_table", "postgresql_schema", "postgresql_extension", "postgresql_function", "postgresql_sequence"):
     assert forbidden not in text, f"OpenTofu must never own application objects: {forbidden}"
-assert text.count('resource "postgresql_role"') == 2
-assert text.count('resource "postgresql_database"') == 2
-assert text.count('resource "postgresql_grant"') == 5
-assert text.count('resource "postgresql_schema"') == 1
-assert text.count("prevent_destroy = true") == 10
-for name in ("tofu_keycloak", "tofu_keycloak_postgres", "tofu_grafana"):
-    assert name in text
+assert text.count('resource "postgresql_role"') == 1
+assert text.count('resource "postgresql_database"') == 1
+assert text.count('resource "postgresql_grant"') == 1
+assert text.count("prevent_destroy = true") == 3
 assert "password_wo" in text and "password_wo_version" in text
 assert 'path = "/opt/wotb-tx/postgres-business-tofu-state/terraform.tfstate"' in text
 assert 'version = "1.27.0"' in text
@@ -164,8 +158,6 @@ export TF_VAR_postgresql_admin_username="$ADMIN_USER"
 export TF_VAR_postgresql_admin_password="$ADMIN_PASSWORD"
 export TF_VAR_business_role_password="$APP_PASSWORD"
 export TF_VAR_business_role_password_version="1"
-export TF_VAR_tofu_state_role_password="$TOFU_STATE_PASSWORD"
-export TF_VAR_tofu_state_role_password_version="1"
 export TF_IN_AUTOMATION="true"
 export CHECKPOINT_DISABLE="1"
 
@@ -221,45 +213,6 @@ drop table flyway_owned_probe;
 SQL
 echo "application role is non-privileged, can create application tables, and the second plan is clean"
 
-echo "== Dedicated OpenTofu state isolation =="
-docker exec -i "$NAME" psql -U "$ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 <<SQL
-do \$\$
-begin
-  if exists (
-    select 1 from pg_roles
-     where rolname = '$TOFU_STATE_ROLE'
-       and (rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls)
-  ) then
-    raise exception 'Tofu state role must be a non-privileged login role';
-  end if;
-  if has_database_privilege('$APP_ROLE', 'tofu_state', 'CONNECT') then
-    raise exception 'Business application role must not access tofu_state';
-  end if;
-end \$\$;
-SQL
-for schema in tofu_keycloak tofu_keycloak_postgres tofu_grafana; do
-  docker exec "$NAME" psql -U "$ADMIN_USER" -d tofu_state -tAc \
-    "select count(*) from information_schema.schemata where schema_name = '$schema'" \
-    | grep -Fxq 1 || fail "missing managed state schema: $schema"
-done
-docker exec -i "$NAME" psql -U "$TOFU_STATE_ROLE" -d tofu_state -v ON_ERROR_STOP=1 <<'SQL'
-create table tofu_keycloak.backend_access_probe (id integer primary key);
-drop table tofu_keycloak.backend_access_probe;
-SQL
-docker exec -i "$NAME" psql -U "$APP_ROLE" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<'SQL'
-create table tofu_state_boundary_probe (id integer primary key);
-SQL
-docker exec -i "$NAME" psql -U "$ADMIN_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
-do \$\$
-begin
-  if has_table_privilege('$TOFU_STATE_ROLE', 'tofu_state_boundary_probe', 'SELECT') then
-    raise exception 'Tofu state role must not have Business table privileges';
-  end if;
-end \$\$;
-drop table tofu_state_boundary_probe;
-SQL
-echo "tofu_state role has no Business table privileges; the application role cannot access it"
-
 echo "== Business database shape used for the restore smoke =="
 docker exec -i "$NAME" psql -U "$ADMIN_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<'SQL'
 create table hall_of_fame_record (
@@ -294,11 +247,10 @@ echo "== Backup, SHA-256, and restore smoke =="
 export WOTB_TX_BUSINESS_POSTGRES_CONTAINER="$NAME"
 export WOTB_TX_BUSINESS_POSTGRES_BACKUP_ROOT="$WORK/backups"
 export TX_BUSINESS_DB_NAME="$DB_NAME"
-export WOTB_TX_BUSINESS_POSTGRES_BACKUP_DATABASES="$DB_NAME,tofu_state"
 
 backup_output="$(bash "$ROOT/deploy/tx/business-postgres-backup.sh")"
 printf '%s\n' "$backup_output"
-backup_file="$(find "$WORK/backups" -type f -name "$DB_NAME-*.dump" | head -n1)"
+backup_file="$(find "$WORK/backups" -type f -name '*.dump' | head -n1)"
 [ -n "$backup_file" ] || fail "backup script did not produce an archive"
 [ -f "${backup_file}.sha256" ] || fail "backup script did not produce a SHA-256 sidecar"
 [ "$(sha256sum "$backup_file" | awk '{print $1}')" = "$(tr -d '[:space:]' < "${backup_file}.sha256")" ] \
@@ -312,23 +264,11 @@ same_database_output="$(bash "$ROOT/deploy/tx/business-postgres-restore.sh" \
 same_database_rc=$?
 set -e
 [ "$same_database_rc" -ne 0 ] || fail "restore into the authoritative source database must be refused"
-grep -Fq "Refusing to restore into an authoritative PostgreSQL database" <<< "$same_database_output" \
+grep -Fq "Refusing to restore into the authoritative source database" <<< "$same_database_output" \
   || fail "restore must explain the source-database refusal"
 
 bash "$ROOT/deploy/tx/business-postgres-restore.sh" \
   --file "$backup_file" --database "$SCRATCH_DB" --confirm "RESTORE-$SCRATCH_DB" >/dev/null
-
-tofu_backup_file="$(find "$WORK/backups" -type f -name 'tofu_state-*.dump' | head -n1)"
-[ -n "$tofu_backup_file" ] || fail "backup script did not produce a tofu_state archive"
-bash "$ROOT/deploy/tx/business-postgres-restore.sh" --file "$tofu_backup_file" --verify-only >/dev/null
-set +e
-tofu_restore_output="$(bash "$ROOT/deploy/tx/business-postgres-restore.sh" \
-  --file "$tofu_backup_file" --database tofu_state --confirm RESTORE-tofu_state 2>&1)"
-tofu_restore_rc=$?
-set -e
-[ "$tofu_restore_rc" -ne 0 ] || fail "restore into tofu_state must be refused"
-grep -Fq "Refusing to restore into an authoritative PostgreSQL database" <<< "$tofu_restore_output" \
-  || fail "restore must protect tofu_state"
 
 docker exec -i "$NAME" psql -U "$ADMIN_USER" -d "$SCRATCH_DB" -v ON_ERROR_STOP=1 <<SQL
 do \$\$

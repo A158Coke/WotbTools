@@ -7,8 +7,8 @@ PostgreSQL is deliberately independent from Keycloak PostgreSQL:
 ```text
 Compose        business-postgres                        keycloak-postgres
 OpenTofu root  infra/tofu/postgres-business             infra/tofu/postgres-keycloak
-state          /opt/wotb-tx/postgres-business-tofu-state  tofu_state / isolated backend schemas
-port           127.0.0.1:25432 + 10.20.0.1:25432       127.0.0.1:15432
+state          /opt/wotb-tx/postgres-business-tofu-state  COS postgres-keycloak.tfstate
+port           127.0.0.1:25432                          127.0.0.1:15432
 volume         business_postgres_data                   keycloak_postgres_data
 marker         business-postgres.tofu-provisioned       keycloak.tofu-provisioned
 ```
@@ -21,9 +21,8 @@ created outside Flyway.
 `deploy/tx/docker-compose.yml` owns the `business-postgres` runtime only:
 
 - image `postgres:18-alpine` (never a floating tag);
-- administration port `127.0.0.1:25432:5432` for TX-local administration and
-  `10.20.0.1:25432:5432` for the authenticated Yecao WireGuard peer only;
-  wildcard/public binds are forbidden;
+- administration port `127.0.0.1:25432:5432` - loopback only, never public and
+  never over WireGuard;
 - volume `business_postgres_data`;
 - `POSTGRES_DB=postgres` so the image entrypoint never auto-creates the
   OpenTofu-owned business database when the bootstrap administrator is named
@@ -37,20 +36,15 @@ service in the Compose document: that runtime never receives it. Its only
 consumer is the TX business runtime `business-api`
 (`deploy/tx/docker-compose.yml`), which is also the process that runs Flyway.
 
-`infra/tofu/postgres-business` owns the business database and application role,
-plus the dedicated OpenTofu state database, state login, and three isolated
-backend schemas:
+`infra/tofu/postgres-business` owns exactly three logical resources:
 
 ```text
 postgresql_database.wotb                        owner = control_api, UTF8, template0
 postgresql_role.control_api                     login, no superuser/createdb/createrole/replication/bypassrls
-postgresql_grant.control_api_database_access    CONNECT, CREATE, TEMPORARY on wotb
-postgresql_database.tofu_state                  isolated state database with PUBLIC access revoked
-postgresql_role.tofu_state                      dedicated login; no business database access
-postgresql_schema.tofu_backend                  tofu_keycloak, tofu_keycloak_postgres, tofu_grafana
+postgresql_grant.control_api_database_access    CONNECT, CREATE, TEMPORARY on the database
 ```
 
-All managed resources use `prevent_destroy`. Flyway
+All three use `prevent_destroy`. Flyway
 (`java/wotb-web/src/main/resources/db/migration`) remains the single owner of
 the application schema, tables, indexes, and sequences; the OpenTofu root
 declares no schema object.
@@ -64,27 +58,19 @@ TX_BUSINESS_DB_NAME                   GitHub Actions Variable (wotb)
 TX_BUSINESS_DB_USERNAME               GitHub Actions Variable (control_api)
 TX_BUSINESS_DB_PASSWORD               GitHub Actions Secret
 TX_BUSINESS_DB_PASSWORD_VERSION       GitHub Actions Variable (rotation version)
-TX_TOFU_STATE_PASSWORD                GitHub Actions repository-level Secret
-TX_TOFU_STATE_PASSWORD_VERSION        GitHub Actions Variable (rotation version)
 ```
 
 Values are forwarded only to the TX process environment and then to OpenTofu
 `TF_VAR_*` inputs. They must never be committed, written to a server env file,
 printed in logs, or stored in tfvars. The application role password uses the
 provider write-only field (`password_wo` plus `password_wo_version`), so it is
-not persisted as a state attribute. Sensitive `postgres-business` state stays
-TX-local at `/opt/wotb-tx/postgres-business-tofu-state/terraform.tfstate` under
-a 0700 parent directory. The same Business PostgreSQL runtime hosts a separate
-`tofu_state` database for the `keycloak`, `postgres-keycloak`, and `grafana`
-remote states. Only the dedicated `tofu_state` role can connect to that
-database. TX roots use `127.0.0.1:25432`; Grafana uses `10.20.0.1:25432` over
-WireGuard. Keycloak's application database remains on the independent
-`keycloak-postgres` runtime.
+not persisted as a state attribute. Sensitive local state lives at
+`/opt/wotb-tx/postgres-business-tofu-state/terraform.tfstate` under a 0700
+parent directory, separate from the Keycloak PostgreSQL state.
 
 A `business-postgres`-only deployment requires none of the Keycloak, RabbitMQ,
 frontend image, or Caddy inputs. RabbitMQ remains reachable only through
-`10.20.0.1:5672`; Business PostgreSQL binds TX loopback plus its existing
-WireGuard interface and is never published on a wildcard/public address.
+`10.20.0.1:5672`; Business PostgreSQL publishes nothing outside loopback.
 
 ## TX provisioning sequence
 
@@ -124,8 +110,8 @@ refuses `TX_RUNTIME_READY` until Business PostgreSQL is fully ready:
 
 - the `business-postgres` container exists and reports `healthy`;
 - `pg_isready -U "$TX_BUSINESS_POSTGRES_ADMIN_USER" -d postgres` succeeds;
-- the published administration ports are exactly `127.0.0.1:25432:5432` and
-  `10.20.0.1:25432:5432`; a `0.0.0.0`, `::`, or bare `25432:5432` bind fails;
+- the published administration port is exactly `127.0.0.1:25432:5432` - a
+  `0.0.0.0`, `::`, bare `25432:5432`, or WireGuard address fails the check;
 - `/opt/wotb-tx/business-postgres.tofu-provisioned` exists and contains exactly
   `tx-local-opentofu-business-postgres`.
 
@@ -162,11 +148,11 @@ deploy/tx/business-postgres-backup.sh [--backup-root DIR] [--retention-minutes N
 ```
 
 - Runs `pg_dump --format=custom --no-owner --no-privileges` as the bootstrap
-  administrator for `wotb` and `tofu_state`, producing one archive and SHA-256
-  sidecar per database. A missing selected database fails the run.
+  administrator, so the archive carries no ownership or privilege coupling and a
+  data-only restore can be applied by the application role's owner.
 - Writes `<database>-<UTC timestamp>.dump` plus a `.dump.sha256` sidecar into
   `/opt/wotb-tx/backups/business-postgres` (0700 directory, 0600 files).
-- Validates each archive catalog (`pg_restore --list`) and every compressed data
+- Validates the archive catalog (`pg_restore --list`) and every compressed data
   block (`pg_restore --file=/dev/null`) before the file is published, and only
   then renames the temporary file into place.
 - Applies retention to older `*.dump` files (default 10080 minutes).
@@ -189,8 +175,7 @@ deploy/tx/business-postgres-restore.sh --file <dump> --verify-only
 
 - `--verify-only` checks the SHA-256 sidecar and the full archive integrity
   without creating, modifying, or deleting any database.
-- The script refuses to target either authoritative Business database (`wotb`
-  or `tofu_state`), and
+- The script refuses to target the authoritative source database (`wotb`), and
   requires the exact `--confirm RESTORE-<scratch>` opt-in token.
 - It creates the scratch database, restores with `--exit-on-error`, and prints
   the verification SQL an operator must run before declaring the archive
