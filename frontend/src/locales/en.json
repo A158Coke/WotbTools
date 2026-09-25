@@ -1058,6 +1058,19 @@
     "publicSecurityFiling": "闽公网安备35018202000555号",
     "wargamingDisclaimer": "WotbTools is an unofficial project and is not affiliated with or endorsed by Wargaming."
   },
+  "sponsor": {
+    "eyebrow": "WOTBTOOLS · SUPPORT",
+    "title": "Support WoTBTools",
+    "intro": "If this project helps you, you can voluntarily support its server and maintenance costs.",
+    "aboutTitle": "About sponsorship",
+    "description": "WoTBTools is a free tool maintained by an individual. Voluntary sponsorship helps cover server and maintenance costs.",
+    "voluntary": "Sponsorship is completely voluntary. It does not unlock features or additional services.",
+    "note": "Please do not include sensitive personal information in payment notes.",
+    "methodsTitle": "Scan to Sponsor",
+    "unconfigured": "Sponsorship methods are not configured yet",
+    "alipay": "Alipay",
+    "wechat": "WeChat Pay"
+  },
   "recon": {
     "nav": "AI Review",
     "title": "AI Review",

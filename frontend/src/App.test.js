@@ -24,6 +24,7 @@ vi.mock('./components/ReplayWorkspace.vue', () => ({
 vi.mock('./components/HomePage.vue', () => ({ default: { template: '<div data-test="view-home" />' } }))
 vi.mock('./components/HoFPage.vue', () => ({ default: { template: '<div data-test="view-hof" />' } }))
 vi.mock('./components/AndroidDownloadPage.vue', () => ({ default: { template: '<div data-test="view-android" />' } }))
+vi.mock('./components/SponsorPage.vue', () => ({ default: { template: '<main data-test="view-sponsor" />' } }))
 vi.mock('./components/HistoryPage.vue', () => ({ default: { template: '<div data-test="view-history" />' } }))
 vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ default: { template: '<div data-test="view-technical-evolution" />' } }))
 
@@ -135,6 +136,7 @@ describe('App routing', () => {
     ['replay', '/?view=replay'],
     ['hall of fame', '/?view=hof'],
     ['android download', '/download/android'],
+    ['sponsor', '/sponsor'],
   ])('renders shared filing links and Wargaming disclaimer on %s', async (_name, path) => {
     const { wrapper } = await mountApp(path)
     const footer = wrapper.get('[data-testid="app-footer"]')
@@ -154,6 +156,27 @@ describe('App routing', () => {
     expect(publicSecurityLink.get('img').attributes('alt')).toBe('')
     expect(footer.get('[data-testid="wargaming-disclaimer"]').text()).toBe('home.wargamingDisclaimer')
     expect(footer.findAll('a')).toHaveLength(2)
+  })
+
+  it('renders direct /sponsor path inside AppShell with exactly one shared Footer', async () => {
+    const { wrapper, router } = await mountApp('/sponsor')
+    expect(router.currentRoute.value.path).toBe('/sponsor')
+    expect(router.currentRoute.value.query.view).toBeUndefined()
+    expect(wrapper.find('[data-test="view-sponsor"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="app-footer"]')).toHaveLength(1)
+  })
+
+  it('supports back and forward navigation to the canonical Sponsor path', async () => {
+    const { wrapper, router } = await mountApp('/?view=home')
+    await router.push('/sponsor')
+    await flushPromises()
+    expect(wrapper.find('[data-test="view-sponsor"]').exists()).toBe(true)
+    router.back()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(router.currentRoute.value.path).toBe('/')
+    router.forward()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(router.currentRoute.value.path).toBe('/sponsor')
   })
 
   it('drops the current view query when navigating to Android', async () => {
