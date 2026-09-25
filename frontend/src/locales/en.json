@@ -1054,7 +1054,9 @@
     "sponsorDesc": "Voluntary sponsorship for server costs.",
     "sponsorTag": "Support",
     "footer": "WoTBTools - Community tool, not a Wargaming product",
-    "icpFiling": "闽ICP备2026036303号-1"
+    "icpFiling": "闽ICP备2026036303号-1",
+    "publicSecurityFiling": "闽公网安备35018202000555号",
+    "wargamingDisclaimer": "WotbTools is an unofficial project and is not affiliated with or endorsed by Wargaming."
   },
   "recon": {
     "nav": "AI Review",

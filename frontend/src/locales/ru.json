@@ -1054,7 +1054,9 @@
     "sponsorDesc": "Добровольная поддержка сервера.",
     "sponsorTag": "Донат",
     "footer": "WoTBTools - инструмент сообщества, не официальный продукт Wargaming",
-    "icpFiling": "闽ICP备2026036303号-1"
+    "icpFiling": "闽ICP备2026036303号-1",
+    "publicSecurityFiling": "闽公网安备35018202000555号",
+    "wargamingDisclaimer": "WotbTools — неофициальный проект, не связанный с Wargaming и не одобренный компанией."
   },
   "recon": {
     "nav": "AI Review",

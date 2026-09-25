@@ -135,16 +135,25 @@ describe('App routing', () => {
     ['replay', '/?view=replay'],
     ['hall of fame', '/?view=hof'],
     ['android download', '/download/android'],
-  ])('renders one shared footer with the ICP link on %s', async (_name, path) => {
+  ])('renders shared filing links and Wargaming disclaimer on %s', async (_name, path) => {
     const { wrapper } = await mountApp(path)
     const footer = wrapper.get('[data-testid="app-footer"]')
     const icpLink = footer.get('[data-testid="icp-filing-link"]')
+    const publicSecurityLink = footer.get('[data-testid="public-security-filing-link"]')
 
     expect(footer.findAll('[data-testid="icp-filing-link"]')).toHaveLength(1)
     expect(icpLink.text()).toBe('闽ICP备2026036303号-1')
     expect(icpLink.attributes('href')).toBe('https://beian.miit.gov.cn/')
     expect(icpLink.attributes('target')).toBe('_blank')
     expect(icpLink.attributes('rel')).toBe('noopener noreferrer')
+    expect(publicSecurityLink.text()).toBe('home.publicSecurityFiling')
+    expect(publicSecurityLink.attributes('href')).toBe('https://beian.mps.gov.cn/#/query/webSearch?code=35018202000555')
+    expect(publicSecurityLink.attributes('target')).toBe('_blank')
+    expect(publicSecurityLink.attributes('rel')).toBe('noopener noreferrer')
+    expect(publicSecurityLink.get('img').attributes('aria-hidden')).toBe('true')
+    expect(publicSecurityLink.get('img').attributes('alt')).toBe('')
+    expect(footer.get('[data-testid="wargaming-disclaimer"]').text()).toBe('home.wargamingDisclaimer')
+    expect(footer.findAll('a')).toHaveLength(2)
   })
 
   it('drops the current view query when navigating to Android', async () => {
