@@ -7,6 +7,7 @@ import cardBattlePlaybackImg from '../assets/showcase/home/card-battle-playback-
 import cardHofImg from '../assets/showcase/home/card-hall-of-fame-v1.png'
 import cardSponsorImg from '../assets/showcase/home/card-sponsor-v1.png'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
+import { RouterLink } from 'vue-router'
 
 const topRecord = ref(null)
 const topDamageDisplay = computed(() => {
@@ -70,10 +71,10 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <div class="feature-visual"><img :src="cardHofImg" alt="" aria-hidden="true"><span class="feature-index">04</span></div>
         <div class="feature-copy"><h2>{{ $t('hof.btn') }}</h2><p>{{ $t('home.hofDesc') }}</p><span class="feature-action">{{ $t('hof.btn') }} →</span></div>
       </a>
-      <a class="feature-card" href="/sponsor.html">
+      <RouterLink class="feature-card" to="/sponsor">
         <div class="feature-visual"><img :src="cardSponsorImg" alt="" aria-hidden="true"><span class="feature-index">05</span></div>
         <div class="feature-copy"><h2>{{ $t('home.sponsorTitle') }}</h2><p>{{ $t('home.sponsorDesc') }}</p><span class="feature-action">{{ $t('home.sponsorTag') }} →</span></div>
-      </a>
+      </RouterLink>
     </section>
 
     <section class="home-bottom">
@@ -83,7 +84,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <p class="recent-empty-desc">{{ $t('home.recentAnalysisEmptyDesc') }}</p>
         <div class="panel-actions"><a class="mini-action primary" href="/?view=replay">{{ $t('home.uploadReplay') }}</a></div>
       </div>
-      <div class="bottom-panel quick-panel"><h2>{{ $t('app.title') }}</h2><a href="/?view=history">{{ $t('history.btn') }} <span>→</span></a><a href="/?view=technical-evolution">{{ $t('technicalEvolution.btn') }} <span>→</span></a><a href="/?view=contact">{{ $t('contact.nav') }} <span>→</span></a><a v-if="!isAndroidApp()" href="/download/android">{{ $t('android.nav') }} <span>→</span></a><a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <span>→</span></a><a href="/sponsor.html">{{ $t('home.sponsorTitle') }} <span>→</span></a></div>
+      <div class="bottom-panel quick-panel"><h2>{{ $t('app.title') }}</h2><a href="/?view=history">{{ $t('history.btn') }} <span>→</span></a><a href="/?view=technical-evolution">{{ $t('technicalEvolution.btn') }} <span>→</span></a><a href="/?view=contact">{{ $t('contact.nav') }} <span>→</span></a><a v-if="!isAndroidApp()" href="/download/android">{{ $t('android.nav') }} <span>→</span></a><a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <span>→</span></a><RouterLink to="/sponsor">{{ $t('home.sponsorTitle') }} <span>→</span></RouterLink></div>
     </section>
   </main>
 </template>

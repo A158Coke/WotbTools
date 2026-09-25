@@ -87,7 +87,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 ├── common/                     # 共享车辆/地图/资产/回放 fixture
 ├── contracts/                  # FE ↔ BE HTTP OpenAPI wire contract
 ├── java/                       # Java Maven 根：contracts/core、Replay feature modules、control、web composition root
-├── frontend/                   # Vue 3 SPA + 独立 Sponsor 页
+├── frontend/                   # Vue 3 SPA（Sponsor 为 AppShell 内的 /sponsor 路由）
 │   ├── index.html
 │   ├── src/
 │   │   ├── App.vue
@@ -98,9 +98,6 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 │   │   ├── styles/             # dark-only tokens + Showcase 分层样式
 │   │   ├── locales/            # 基础 zh/en/ru + feature message composition
 │   │   └── data/
-│   └── homepage/
-│       ├── sponsor.html
-│       └── sponsor-config.js
 ├── docker/                     # backend/frontend/keycloak/parser-worker 镜像与 Keycloak 主题
 ├── deploy/                     # production compose/nginx/备份与回滚
 ├── docs/                       # 架构、功能、参考、运维文档
@@ -362,7 +359,7 @@ Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）�
 - `frontend/index.html` 首屏内联脚本按 `wotb-ui-profile` 同时设置 `data-ui-profile` 与派生的 `data-theme`（无 FOUC）；`src/styles/tokens.css :root` 仍是 dark 基础视觉 token 单一事实源，Classic 由 `styles/classic-profile.css` 的 `html[data-ui-profile="classic"]` 覆盖浅色语义 token + namespace 覆盖（该文件必须最后导入）。
 - 唯一持久化状态 `wotb-ui-profile`（只存 profile，不存主题）；不读取 `prefers-color-scheme`；不保存独立 `wotbtools-theme` cookie/localStorage；不存在独立 `useTheme` / `utils/theme.js`。
 - 当前 Showcase Topbar 高度为 **60px**，`--topbar-h` 也必须保持 60px；full-workspace viewport 依赖这个 token。
-- Sponsor 独立静态页（homepage/）固定暗色，不经 Profile 派生。
+- Sponsor 页面使用 `/sponsor` Vue Router path，在共享 AppShell 中消费主题和三语 locale。
 
 约定：`data-theme` 由 `useUiProfile.themeForProfile` 派生；禁止手工 set `data-theme` 或另立 theme 状态；Classic 只改 Presentation 层，不改 layout/density/spacing/结构/业务组件；禁止 `filter:invert` / 全局 opacity / `html *` / 双套业务组件 / `:key="uiProfile"` 触发重建。
 
@@ -741,7 +738,7 @@ Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurre
 
 生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 备份 `wotb` 和 `keycloak`，保留现有本地边界；恢复只允许手工使用 `deploy/postgres-restore.sh` 并显式确认。COS 上传、对象验证与 retention 属于后续独立 PR，本 PR 不宣称已完成。
 
-Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-config.json` 与 `/opt/wotb-tx/config/sponsor/{alipay,wechat}.png` 只读挂载。二维码加载失败时页面必须隐藏失败方式并回退到“暂未配置”，不得显示 broken image。
+Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-config.json` 与 `/opt/wotb-tx/config/sponsor/{alipay,wechat}.png` 只读挂载，Vue 页面从 `/sponsor-config.json` 按 no-store 读取运行时配置。二维码加载失败时页面必须隐藏失败方式；全部方式不可用时回退到“暂未配置”，不得显示 broken image。
 
 ---
 
