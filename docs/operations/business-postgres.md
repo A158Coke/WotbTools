@@ -7,7 +7,7 @@ PostgreSQL is deliberately independent from Keycloak PostgreSQL:
 ```text
 Compose        business-postgres                        keycloak-postgres
 OpenTofu root  infra/tofu/postgres-business             infra/tofu/postgres-keycloak
-state          /opt/wotb-tx/postgres-business-tofu-state  COS postgres-keycloak.tfstate
+state          /opt/wotb-tx/postgres-business-tofu-state  /opt/wotb-tx/postgres-keycloak-tofu-state
 port           127.0.0.1:25432                          127.0.0.1:15432
 volume         business_postgres_data                   keycloak_postgres_data
 marker         business-postgres.tofu-provisioned       keycloak.tofu-provisioned

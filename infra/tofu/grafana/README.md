@@ -13,9 +13,11 @@ from the runtime in the same change so that OpenTofu and provisioning never
 manage the same dashboard. Datasource provisioning remains the sole datasource
 controller.
 
-The COS backend uses the independent state key
-`wotbtools/prod/grafana.tfstate`. Import is owner-controlled and CI never runs
-import or an authenticated production plan. Pull requests run only local
+The Yecao owner host stores persistent local state at
+`/opt/wotb/grafana-tofu-state/terraform.tfstate`, outside the per-SHA source
+staging directory. The workflow refuses to initialize if that state is missing
+or unsafe. One-time COS migration and local backup behavior are documented in
+`docs/operations/opentofu-local-state.md`. Pull requests run only local
 format/init/validate checks. A change merged to `main` runs the Grafana root
 inside `.github/workflows/observability.yml`, which applies the exact saved
 plan after the dashboard-delete safety gate and verifies all managed dashboard

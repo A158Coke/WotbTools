@@ -14,11 +14,11 @@ SSH. The provider is constrained to `127.0.0.1:15432`; it cannot use a public
 address or the WireGuard network. This root contains no `remote-exec`, SSH
 tunnel, or provisioner.
 
-The remote state key is deliberately separate from the existing production and
-Grafana roots:
+The TX owner host stores persistent local state outside the per-SHA source
+staging directory:
 
 ```text
-wotbtools/prod/postgres-keycloak.tfstate
+/opt/wotb-tx/postgres-keycloak-tofu-state/terraform.tfstate
 ```
 
 ## GitHub Actions secret injection
@@ -28,16 +28,13 @@ over the SSH session that runs OpenTofu on TX. No operator-maintained TX env fil
 is required:
 
 ```text
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
 TF_VAR_postgresql_admin_username=kc_admin
 TF_VAR_postgresql_admin_password=...
 TF_VAR_keycloak_role_password=...
 TF_VAR_keycloak_role_password_version=1
 ```
 
-The first two values authenticate the existing COS remote state backend. The
-PostgreSQL administrator password is consumed only by provider configuration.
+The PostgreSQL administrator password is consumed only by provider configuration.
 The application role password uses the provider's `password_wo` field, so it is
 not persisted in OpenTofu state. Password rotation changes the password and
 increments `TF_VAR_keycloak_role_password_version` as a non-secret GitHub
@@ -56,9 +53,10 @@ root is therefore not a supported retirement process; make a separately
 approved, audited migration instead.
 
 The root assumes the Compose runtime is already healthy and has bound the
-loopback port. Missing injected variables, unavailable local port, invalid
-backend authentication, or unsafe plan fails closed; the workflow does not fall
-back to a runner-side database connection.
+loopback port. Missing injected variables, unavailable local port, missing
+persistent state, or unsafe plan fails closed; the workflow does not fall back
+to a runner-side database connection. See
+`docs/operations/opentofu-local-state.md` for one-time migration and backup.
 
 After the successful TX-local Keycloak OpenTofu apply in `.github/workflows/keycloak.yml`,
 the deployment writes the root-only `/opt/wotb-tx/keycloak.tofu-provisioned` marker.

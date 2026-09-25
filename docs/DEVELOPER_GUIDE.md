@@ -573,18 +573,17 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 
 ### OpenTofu production baseline
 
-七个 production roots 分别由服务 owner workflow 调用：keycloak、rabbitmq、business-postgres、
-keycloak-postgres、minio、cos、grafana。main push 和手动 dispatch 都绑定当前 main 完整 SHA；
-每个 owner workflow 使用自己的 provider/secret/state 边界，保存并校验同一个 plan 后 apply，
-执行 second-plan 或 readiness。TX host-local roots 在一条 SSH host-lock session 中与所属 runtime
-部署和 verify 串行完成；COS/Grafana 由各自 workflow 的 runner job 操作远端 backend/API。
-原生产 COS bucket 与 root 设计见 `docs/architecture/opentofu-production-baseline.md`。
+Production OpenTofu roots 按 owner 在所属主机使用固定 local-state 文件；per-SHA staging 只承载
+source，不能承载 state。TX state 位于 `/opt/wotb-tx/{postgres-business,postgres-keycloak,keycloak}-tofu-state/`，
+Yecao Grafana state 位于 `/opt/wotb/grafana-tofu-state/`。Business PostgreSQL 已使用本地路径；其余
+COS state 由 owner-host 一次性迁移命令逐 root 迁移。各正常 workflow 在 init 前要求 state 文件存在，
+缺失即停止。详见 `docs/operations/opentofu-local-state.md`。COS/Lighthouse legacy root 与其资源只在
+迁移和 zero-change 验证完成后退役；退役 IaC ownership 不执行资源 destroy。
 
 PR 侧只做 validation：selector 按 root 选择 `tofu fmt -check`、`tofu init -backend=false`、
 `tofu validate` 与该 root 已有的本地 safety fixture。PR 不 SSH 任何生产宿主、不读取生产 local
 state、也不接收 host-local 生产凭据；五个需要 production-local provider 的 root，其 plan 只在
-对应 main-only service workflow 运行中产生。COS/Grafana 的 PR 也仅做本地 validation；其 main-only
-workflow 才访问远端 backend / 外部 API 并运行 authenticated plan 与 safety guard。PR workflow 与
+对应 main-only service workflow 运行中产生。PR workflow 与
 production apply 不共享 binary plan；main 始终重新 plan。Local state、plan、真实 tfvars 不得提交，
 provider lockfile 必须提交。
 production maintenance workflows 不因新 push 取消正在执行的写入。
@@ -710,8 +709,9 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 - `.github/workflows/caddy.yml` 独立负责 TX 网关：staged Caddy 配置与 assets 校验后只 reconcile
   Caddy，并验证 trusted TLS、redirect、前端/API、Keycloak 与 auth asset 路由。它不 build 应用镜像、
   不依赖数据库或 Keycloak admin credentials，也不写应用镜像 metadata。
-- `.github/workflows/rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、`cos.yml` 与
-  `observability.yml` 分别拥有 RabbitMQ、两个 PostgreSQL、COS 和 Yecao 观测运行时/Grafana root。
+- `.github/workflows/rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml` 与
+  `observability.yml` 分别拥有 RabbitMQ、两个 PostgreSQL 和 Yecao 观测运行时/Grafana root；
+  `cos.yml` 和 legacy prod root 仅保留到已验证的 COS state cutover 完成。
   各 workflow 自己执行 root 专属 safety guard、apply 后 clean second-plan/readiness；observability
   失败仍按现有契约显示为 degraded，不改变应用服务结果。
 - 三个数据更新 workflow (`update-tankopedia.yml`、`update-equipment.yml`、`update-crew-skills.yml`)
@@ -739,7 +739,7 @@ bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 
 
 Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurrency，`cancel-in-progress: false`（`queue: max` 只排队、不丢弃已开始的生产写入）；服务器脚本另用 `flock` 串行化 production mutation。Build 与 Release 不占用该队列，但每个 lane 都在 mutation 前核对 source 仍是当前 main。这不是 distributed lock。
 
-生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 备份 `wotb` 和 `keycloak`，保留现有本地边界；恢复只允许手工使用 `deploy/postgres-restore.sh` 并显式确认。COS 上传、对象验证与 retention 属于后续独立 PR，本 PR 不宣称已完成。
+生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 备份 `wotb` 和 `keycloak`；同一维护队列随后备份 TX/Yecao owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256。PostgreSQL 恢复只允许手工使用 `deploy/postgres-restore.sh` 并显式确认。
 
 Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-config.json` 与 `/opt/wotb-tx/config/sponsor/{alipay,wechat}.png` 只读挂载。二维码加载失败时页面必须隐藏失败方式并回退到“暂未配置”，不得显示 broken image。
 

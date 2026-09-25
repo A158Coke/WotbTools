@@ -1,4 +1,13 @@
-# OpenTofu production baseline
+# Legacy COS and Lighthouse OpenTofu baseline
+
+This document records the existing COS-backed artifact, Lighthouse, and
+firewall ownership that remains only as migration source. The target operating
+model is owner-host local state for the four active service roots, documented
+in `docs/operations/opentofu-local-state.md`. After those state migrations are
+verified with zero-change plans, this legacy root and COS artifact ownership
+will be removed from code without destroying the bucket, Lighthouse instance,
+or firewall rules. No production migration or resource destruction is implied
+by this document.
 
 This root module deliberately manages one existing production artifact bucket
 and stores its authoritative OpenTofu state in a separate Tencent COS bucket.

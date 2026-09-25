@@ -5,12 +5,11 @@ dashboard API objects in organization 1 with `grafana/grafana` provider
 `4.45.2`, tested against the production Grafana `11.6.16` API.
 
 Docker Compose remains responsible for the Grafana container, image, database
-volume, network, reverse proxy, and runtime environment. The COS backend uses
-the existing state bucket with an independent key:
+volume, network, reverse proxy, and runtime environment. Persistent state is
+stored on the Yecao owner host outside per-SHA staging:
 
 ```text
-bucket: wotbtools-prod-tofu-state-1478073677
-key:    wotbtools/prod/grafana.tfstate
+/opt/wotb/grafana-tofu-state/terraform.tfstate
 ```
 
 ## Ownership
@@ -38,8 +37,10 @@ managed by this root.
 
 ## Owner import addresses
 
-The remote state was bootstrapped by owner-controlled imports. The exact
-dashboard import IDs are their Grafana UIDs:
+The existing resource identities were originally imported by the owner while
+using COS state. The one-time state migration moves those identities to the
+Yecao local backend without re-importing resources. If a future resource must
+be imported, its Grafana UID is the import ID:
 
 ```powershell
 tofu import 'grafana_dashboard.managed["wotbtools_ai_review"]' wotbtools-ai-review

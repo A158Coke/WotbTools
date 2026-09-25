@@ -105,6 +105,7 @@
 | `operations/minio.md` | Yecao 临时作业对象存储、OpenTofu ownership、密钥与手动部署前置条件时 |
 | `operations/rabbitmq.md` | TX RabbitMQ runtime/OpenTofu ownership、credentials、provider mirror 与 provisioning gate 时 |
 | `operations/business-postgres.md` | TX Business PostgreSQL runtime/OpenTofu ownership、凭据、备份/恢复与名人堂迁移前置时 |
+| `operations/opentofu-local-state.md` | OpenTofu owner-host persistent local state、一次性 COS 迁移与备份时 |
 | `operations/observability-runbook.md` | 生产观测链路排障和人工 runbook 时 |
 | `operations/ai-evaluation.md` | 运行 / 复盘 AI evaluation 运维流程时 |
 
