@@ -13,7 +13,13 @@ vi.mock('../utils/api.js', () => api)
 function mountPage() {
   return mount(HomePage, {
     global: {
-      mocks: { $t: key => key }
+      mocks: { $t: key => key },
+      stubs: {
+        RouterLink: {
+          props: ['to'],
+          template: '<a :href="typeof to === \'string\' ? to : to.path"><slot /></a>'
+        }
+      }
     }
   })
 }
@@ -120,6 +126,13 @@ describe('HomePage information architecture — single replay entry point', () =
     expect(wrapper.find('.hero-btn[href="/download/android"]').exists()).toBe(true)
     const quick = wrapper.find('.quick-panel')
     expect(quick.findAll('a').some(a => a.attributes('href') === '/download/android')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('routes both Sponsor entries to the canonical path', () => {
+    const wrapper = mountPage()
+    expect(wrapper.find('.feature-card[href="/sponsor"]').exists()).toBe(true)
+    expect(wrapper.find('.quick-panel a[href="/sponsor"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

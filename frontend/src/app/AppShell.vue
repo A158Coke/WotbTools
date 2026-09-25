@@ -8,6 +8,7 @@ import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { locationForView } from './navigation.js'
 import AppHeader from './AppHeader.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
+import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 
 const router = useRouter()
 const route = useRoute()
@@ -45,13 +46,26 @@ provide(NAVIGATE_VIEW_KEY, navigate)
     <button type="button" class="business-bootstrap-retry" @click="retry">{{ $t('bootstrap.retry') }}</button>
   </div>
   <footer class="app-footer" data-testid="app-footer">
-    <span>{{ $t('home.footer') }}</span>
-    <a
-      href="https://beian.miit.gov.cn/"
-      target="_blank"
-      rel="noopener noreferrer"
-      data-testid="icp-filing-link"
-    >{{ $t('home.icpFiling') }}</a>
+    <div class="app-footer-filings">
+      <a
+        href="https://beian.miit.gov.cn/"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="icp-filing-link"
+      >{{ $t('home.icpFiling') }}</a>
+      <span class="app-footer-separator" aria-hidden="true">|</span>
+      <a
+        class="app-footer-public-security"
+        href="https://beian.mps.gov.cn/#/query/webSearch?code=35018202000555"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="public-security-filing-link"
+      >
+        <img :src="publicSecurityFilingIcon" alt="" aria-hidden="true">
+        <span>{{ $t('home.publicSecurityFiling') }}</span>
+      </a>
+    </div>
+    <p class="app-footer-disclaimer" data-testid="wargaming-disclaimer">{{ $t('home.wargamingDisclaimer') }}</p>
   </footer>
   <GlobalErrorDialog :error="globalError" :visible="showGlobalError" @close="closeGlobalError" />
 </template>
@@ -66,5 +80,45 @@ provide(NAVIGATE_VIEW_KEY, navigate)
 
 .app-footer {
   margin-top: auto;
+}
+
+.app-footer a {
+  color: var(--text-sub);
+}
+
+.app-footer-disclaimer {
+  color: var(--text-sub);
+}
+
+.app-footer-filings {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.app-footer-public-security {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-footer-public-security img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.app-footer-disclaimer {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+@media (width < 768px) {
+  .app-footer-filings {
+    column-gap: 6px;
+  }
 }
 </style>
