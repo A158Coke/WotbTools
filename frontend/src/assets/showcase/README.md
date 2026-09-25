@@ -32,7 +32,7 @@
 | HoF Admin            | `hof-admin/hof-admin-hero-command-v1.png` | 全屏背景（强度较弱）                | 16:9；CRUD / review 数据必须保持清晰                                                                          |
 | Version / Changelog  | `version/version-hero-workshop-v1.png`    | 全屏背景                            | 16:9；工坊主题                                                                                                |
 | Contact              | `contact/contact-hero-radio-v1.png`       | 全屏背景                            | 16:9；通信塔/无线电主题                                                                                       |
-| Sponsor              | `../../../public/sponsor-bg.png`          | 独立赞助页背景                      | 用户提供的原创素材；仅作赞助页氛围背景，不承载赞助配置或二维码                                               |
+| Sponsor              | `../../../public/sponsor-bg.png`          | `/sponsor` Vue 页面背景             | 用户提供的原创素材；仅作赞助页氛围背景，不承载赞助配置或二维码                                               |
 
 隐藏的 `PlaybackQaPage` 是 QA / production-component verification 页面，不属于正式产品 Showcase，因此不创建营销背景。
 
