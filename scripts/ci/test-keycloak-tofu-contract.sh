@@ -49,7 +49,10 @@ outputs_text = read("infra/tofu/keycloak/outputs.tf")
 assert 'keycloak/keycloak' in versions and 'version = "5.9.0"' in versions
 assert "~>" not in versions
 assert "tls_insecure_skip_verify = false" in providers
-assert 'key    = "wotbtools/prod/keycloak.tfstate"' in root_text
+assert 'backend "local"' in root_text
+assert 'path = "/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate"' in root_text
+assert 'TOFU_STATE_FILE="/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate"' in tofu_script
+assert 'Migrate the existing COS state before running this deployment.' in tofu_script
 
 # --- no out-of-band execution path around the provider -----------------------
 for forbidden in ("remote-exec", "local-exec", "null_resource"):
@@ -317,8 +320,6 @@ assert apply_envs == {
     "WG_APPLICATION_ID",
     "TX_QQ_CLIENT_ID",
     "TX_QQ_CLIENT_SECRET",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
 }
 assert apply_step["env"]["KEYCLOAK_ADMIN_PASSWORD"] == "${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}"
 assert apply_step["env"]["KEYCLOAK_ADMIN_CLIENT_SECRET"] == "${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}"

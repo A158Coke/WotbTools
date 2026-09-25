@@ -74,6 +74,12 @@ export TF_VAR_qq_client_id="$TX_QQ_CLIENT_ID"
 export TF_VAR_qq_client_secret="$TX_QQ_CLIENT_SECRET"
 
 TOFU_CLI_CONFIG="${TF_CLI_CONFIG_FILE:-/opt/wotb-tx/tofurc}"
+TOFU_STATE_FILE="/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate"
+if [ ! -s "$TOFU_STATE_FILE" ] || [ -L "$TOFU_STATE_FILE" ]; then
+  echo "ERROR: persistent Keycloak OpenTofu state is missing or unsafe: $TOFU_STATE_FILE" >&2
+  echo "Migrate the existing COS state before running this deployment." >&2
+  exit 1
+fi
 [ -f "$TOFU_CLI_CONFIG" ] || {
   echo "ERROR: OpenTofu CLI config not found: $TOFU_CLI_CONFIG" >&2
   exit 2

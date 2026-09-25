@@ -265,7 +265,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 55m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,WOTB_TX_BOOTSTRAP_KEYCLOAK,WOTB_DEPLOY_DEFER_METADATA,KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,WOTB_TX_BOOTSTRAP_KEYCLOAK,WOTB_DEPLOY_DEFER_METADATA,KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -282,10 +282,15 @@ jobs:
             stage="/opt/wotb-tx/tofu.incoming/${{ needs.build.outputs.commit_sha }}"
             root="$stage/infra/tofu/keycloak"
             test -d "$root" && test -f "$stage/deploy/tx/keycloak-tofu.sh"
+            state_file=/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate
+            [[ -s "$state_file" && ! -L "$state_file" ]] || {
+              echo 'Persistent Keycloak OpenTofu state is missing or unsafe; refusing to initialize an empty state.' >&2
+              exit 1
+            }
             for name in KEYCLOAK_ADMIN_USERNAME KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_ADMIN_CLIENT_SECRET \
               KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION KEYCLOAK_E2E_CLIENT_SECRET \
               KEYCLOAK_E2E_CLIENT_SECRET_VERSION WG_APPLICATION_ID TX_QQ_CLIENT_ID \
-              TX_QQ_CLIENT_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+              TX_QQ_CLIENT_SECRET; do
               test -n "${!name:-}" || { echo "$name is required." >&2; exit 2; }
             done
             command -v tofu >/dev/null 2>&1 || { echo 'OpenTofu is required on TX.' >&2; exit 2; }
@@ -333,5 +338,3 @@ jobs:
           KEYCLOAK_E2E_CLIENT_SECRET_VERSION: ${{ vars.KEYCLOAK_E2E_CLIENT_SECRET_VERSION || '1' }}
           TX_QQ_CLIENT_ID: ${{ vars.TX_QQ_CLIENT_ID }}
           TX_QQ_CLIENT_SECRET: ${{ secrets.TX_QQ_CLIENT_SECRET }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}

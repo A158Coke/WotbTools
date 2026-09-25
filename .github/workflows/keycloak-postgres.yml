@@ -98,16 +98,21 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: SOURCE_SHA,WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,KC_DB_PASSWORD_VERSION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY
+          envs: SOURCE_SHA,WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,KC_DB_PASSWORD_VERSION
           script: |
             set -Eeuo pipefail
             [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
             [[ "$WOTB_DEPLOY_CONFIG_SHA" == "$SOURCE_SHA" ]]
             root="/opt/wotb-tx/tofu.incoming/$SOURCE_SHA/infra/tofu/postgres-keycloak"
             test -d "$root"
+            state_file=/opt/wotb-tx/postgres-keycloak-tofu-state/terraform.tfstate
+            [[ -s "$state_file" && ! -L "$state_file" ]] || {
+              echo 'Persistent Keycloak PostgreSQL OpenTofu state is missing or unsafe; refusing to initialize an empty state.' >&2
+              exit 1
+            }
             test -f /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
             test -f /opt/wotb-tx/tofurc
-            for name in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD KC_DB_PASSWORD KC_DB_PASSWORD_VERSION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+            for name in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD KC_DB_PASSWORD KC_DB_PASSWORD_VERSION; do
               test -n "$(printenv "$name")" || { echo "$name is required." >&2; exit 2; }
             done
             command -v flock >/dev/null
@@ -118,8 +123,6 @@ jobs:
             export WOTB_DEPLOY_LOCK_FD=9
             KC_DB_USERNAME=not-configured \
               KC_DB_PASSWORD=not-configured \
-              AWS_ACCESS_KEY_ID= \
-              AWS_SECRET_ACCESS_KEY= \
               bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
             export TF_CLI_CONFIG_FILE=/opt/wotb-tx/tofurc
             export TF_VAR_postgresql_admin_username=kc_admin
@@ -154,5 +157,3 @@ jobs:
           KC_DB_USERNAME: keycloak
           KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
           KC_DB_PASSWORD_VERSION: ${{ vars.TX_KC_DB_PASSWORD_VERSION || '1' }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}

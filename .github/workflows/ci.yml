@@ -674,6 +674,7 @@ jobs:
           bash -n deploy/deploy.sh deploy/minio-deploy.sh
           deploy/verify-observability.sh deploy/tx/deploy.sh
           deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
+          deploy/tofu-cos-to-local.sh deploy/tofu-local-state-backup.sh
           deploy/tx/runtime-check.sh deploy/tx/publish-loaded-image-to-tcr.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
@@ -684,6 +685,7 @@ jobs:
           scripts/ci/test-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-keycloak-tofu-contract.sh
           scripts/ci/test-postgres-business-tofu-contract.sh
+          scripts/ci/test-tofu-local-state-contract.sh
           scripts/ci/test-tofu-workflow-contract.sh
       - name: CI selector, workflow purity, and ToFu safety fixtures
         run: |
@@ -695,6 +697,7 @@ jobs:
           bash scripts/ci/test-keycloak-tofu-contract.sh
           bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
           bash scripts/ci/test-postgres-business-tofu-contract.sh
+          bash scripts/ci/test-tofu-local-state-contract.sh
       - name: TX runtime and metadata fixtures
         run: |
           set -euo pipefail
