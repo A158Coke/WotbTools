@@ -71,28 +71,16 @@ assert "var.postgresql_port == 25432" in root_text
 assert "password_wo" in root_text and "password_wo_version" in root_text
 
 # --- Flyway owns every business table; OpenTofu owns only logical objects ---
-for forbidden in ("postgresql_table", "postgresql_extension", "postgresql_sequence"):
+for forbidden in ("postgresql_table", "postgresql_schema", "postgresql_extension", "postgresql_sequence"):
     assert forbidden not in root_text, f"Flyway must own {forbidden} objects, not OpenTofu"
 for kind, resource_name in (
     ("postgresql_role", "control_api"),
     ("postgresql_database", "wotb"),
     ("postgresql_grant", "control_api_database_access"),
-    ("postgresql_role", "tofu_state"),
-    ("postgresql_database", "tofu_state"),
-    ("postgresql_grant", "tofu_state_database_access"),
-    ("postgresql_grant", "tofu_state_revoke_public_database_access"),
-    ("postgresql_grant", "tofu_state_revoke_public_schema_access"),
-    ("postgresql_grant", "tofu_state_public_schema_access"),
 ):
     marker = f'resource "{kind}" "{resource_name}"'
     assert marker in root_text, marker
-assert "prevent_destroy = true" in flat(root_text.split(marker, 1)[1].split("\n}\n", 1)[0]), resource_name
-
-assert 'resource "postgresql_schema" "tofu_state"' in root_text
-assert 'for_each = toset(var.tofu_state_schema_names)' in root_text
-for schema_name in ("tofu_keycloak", "tofu_keycloak_postgres", "tofu_grafana"):
-    assert schema_name in root_text
-assert root_text.count("prevent_destroy = true") == 10
+    assert "prevent_destroy = true" in flat(root_text.split(marker, 1)[1].split("\n}\n", 1)[0]), resource_name
 
 # --- the provider source is mirror-only -------------------------------------
 tofurc_flat = flat(tofurc)
@@ -137,11 +125,6 @@ for name in business_names:
     assert name in tofu_script, name
 for secret in ("TX_BUSINESS_POSTGRES_ADMIN_PASSWORD", "TX_BUSINESS_DB_PASSWORD"):
     assert f"{secret}: ${{{{ secrets." in workflow_text, secret
-assert "TX_TOFU_STATE_PASSWORD" in tofu_step["with"]["envs"]
-assert "TX_TOFU_STATE_PASSWORD" in tofu_step["env"]
-assert "TF_VAR_tofu_state_role_password" in tofu_script
-assert "TF_VAR_tofu_state_role_password_version" in tofu_script
-assert "TX_TOFU_STATE_PASSWORD: ${{ secrets.TX_TOFU_STATE_PASSWORD }}" in workflow_text
 
 print("TX Business PostgreSQL ownership and production-safety contract OK")
 PY

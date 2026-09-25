@@ -47,11 +47,11 @@ grep -Fq 'com.wotbtools.app' "$DEPLOY"
 ! grep -Fq 'pre-cutover' "$CHECK"
 
 # Business PostgreSQL is authoritative state: the check must own its health,
-# restricted loopback/WireGuard bindings, and provisioning marker before readiness.
+# loopback binding, and provisioning marker before it may report readiness.
 grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_USER' "$DEPLOY"
 grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_PASSWORD' "$DEPLOY"
-grep -Fq 'business-postgres-bindings: PASS' "$DEPLOY"
-grep -Fq 'business-postgres-bindings: FAIL (management ports must be loopback and the TX WireGuard address only)' "$DEPLOY"
+grep -Fq 'business-postgres-loopback: PASS' "$DEPLOY"
+grep -Fq 'business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)' "$DEPLOY"
 grep -Fq 'business-postgres: PASS' "$DEPLOY"
 grep -Fq 'business-postgres: FAIL (container is missing or not healthy)' "$DEPLOY"
 grep -Fq 'business-postgres-provisioning: PASS' "$DEPLOY"
@@ -73,9 +73,9 @@ set -Eeuo pipefail
 [ "${1:-}" = compose ] || exit 0
 shift
 while [ "${1:-}" = -f ]; do shift 2; done
-business_ports='[{"host_ip":"127.0.0.1","published":25432,"target":5432},{"host_ip":"10.20.0.1","published":25432,"target":5432}]'
+business_ports='[{"host_ip":"127.0.0.1","published":25432,"target":5432}]'
 if [ "${FAKE_BUSINESS_PORT_EXPOSED:-0}" = 1 ]; then
-  business_ports='[{"host_ip":"127.0.0.1","published":25432,"target":5432},{"host_ip":"10.20.0.1","published":25432,"target":5432},{"host_ip":"0.0.0.0","published":25432,"target":5432}]'
+  business_ports='[{"host_ip":"0.0.0.0","published":25432,"target":5432}]'
 fi
 frontend_upstream="${FAKE_FRONTEND_UPSTREAM:-http://business-api:8087}"
 # The retired replay execution-mode switch must be absent from a healthy compose; setting
@@ -284,7 +284,7 @@ grep -Fq 'qq-idp-admin-api: PASS' <<< "$ready_output"
 grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$ready_output"
 grep -Fq 'rabbitmq-provisioning: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$ready_output"
-grep -Fq 'business-postgres-bindings: PASS' <<< "$ready_output"
+grep -Fq 'business-postgres-loopback: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-provisioning: PASS' <<< "$ready_output"
 
 # Exercise the actual promoted TX layout: the wrapper and deploy helper are
@@ -419,7 +419,7 @@ run_business_failure "business-postgres-missing" 'business-postgres: FAIL (conta
   "$WORK" "$CHECK" env FAKE_BUSINESS_MISSING=1
 run_business_failure "business-postgres-not-ready" 'business-postgres: FAIL (container is missing or not healthy)' \
   "$WORK" "$CHECK" env FAKE_BUSINESS_PG_NOT_READY=1
-run_business_failure "business-postgres-port-exposed" 'business-postgres-bindings: FAIL (management ports must be loopback and the TX WireGuard address only)' \
+run_business_failure "business-postgres-port-exposed" 'business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)' \
   "$WORK" "$CHECK" env FAKE_BUSINESS_PORT_EXPOSED=1
 
 # A missing or invalid OpenTofu marker must block readiness even when the

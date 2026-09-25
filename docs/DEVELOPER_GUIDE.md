@@ -574,18 +574,10 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 ### OpenTofu production baseline
 
 七个 production roots 分别由服务 owner workflow 调用：keycloak、rabbitmq、business-postgres、
-keycloak-postgres、minio、cos、grafana。三个历史 COS state root 迁移期间，
-`.github/workflows/migrate-tofu-state.yml` 按 `postgres-keycloak → keycloak → grafana` 串行执行；
-任一步失败都会跳过后续 root。每个 root 在 owner host 的独立 0700 临时目录中从历史 COS
-backend 迁到 `business-postgres.tofu_state`，紧接着要求 zero-change plan；不输出或上传
-state/plan，不自动删除 COS source。常规三个 owner workflow 只有在 GitHub variable
-`TOFU_STATE_BACKEND_READY=true` 后才执行。该门禁必须配置为 repository-level Actions variable，
-而 `TX_TOFU_STATE_PASSWORD` 必须是 repository-level Actions secret，供 TX 与 Yecao workflows 共用。
-main push 和手动 dispatch 都绑定当前 main 完整 SHA；
+keycloak-postgres、minio、cos、grafana。main push 和手动 dispatch 都绑定当前 main 完整 SHA；
 每个 owner workflow 使用自己的 provider/secret/state 边界，保存并校验同一个 plan 后 apply，
 执行 second-plan 或 readiness。TX host-local roots 在一条 SSH host-lock session 中与所属 runtime
-部署和 verify 串行完成；Grafana state backend 通过 Yecao→TX WireGuard 私网连接 Business PG，
-COS root 在独立退役前仍由原 owner workflow 维护。
+部署和 verify 串行完成；COS/Grafana 由各自 workflow 的 runner job 操作远端 backend/API。
 原生产 COS bucket 与 root 设计见 `docs/architecture/opentofu-production-baseline.md`。
 
 PR 侧只做 validation：selector 按 root 选择 `tofu fmt -check`、`tofu init -backend=false`、

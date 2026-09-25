@@ -50,7 +50,6 @@ env:
 
 jobs:
   observability:
-    if: vars.TOFU_STATE_BACKEND_READY == 'true'
     name: Reconcile Yecao observability and Grafana dashboards
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -170,7 +169,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 40m
-          envs: SOURCE_SHA,RUNTIME_SERVICES,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,GRAFANA_PAT,PGHOST,PGPORT,PGDATABASE,PGUSER,PGPASSWORD
+          envs: SOURCE_SHA,RUNTIME_SERVICES,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,GRAFANA_PAT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,TENCENTCLOUD_SECRET_ID,TENCENTCLOUD_SECRET_KEY
           script: |
             set -Eeuo pipefail
             [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -180,7 +179,7 @@ jobs:
             test -d "$root"
             test -f "$stage/deploy/observability/grafana/dashboards/wotbtools-production-overview.json"
             test -f /opt/wotb/deploy.incoming/deploy/deploy.sh
-            for name in GRAFANA_PAT PGPASSWORD; do
+            for name in GRAFANA_PAT AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY TENCENTCLOUD_SECRET_ID TENCENTCLOUD_SECRET_KEY; do
               test -n "$(printenv "$name")" || { echo "$name is required." >&2; exit 2; }
             done
             command -v flock >/dev/null
@@ -206,18 +205,27 @@ jobs:
               export WOTB_DEPLOY_IMAGE_COMMIT_SHA=''
               if [[ "$service" == grafana ]]; then
                 GRAFANA_PAT='' \
-                  PGPASSWORD='' \
+                  AWS_ACCESS_KEY_ID='' \
+                  AWS_SECRET_ACCESS_KEY='' \
+                  TENCENTCLOUD_SECRET_ID='' \
+                  TENCENTCLOUD_SECRET_KEY='' \
                   bash /opt/wotb/deploy.incoming/deploy/deploy.sh
               else
                 GRAFANA_ADMIN_USER=not-configured \
                   GRAFANA_ADMIN_PASSWORD=not-configured \
                   GRAFANA_PAT='' \
-                  PGPASSWORD='' \
+                  AWS_ACCESS_KEY_ID='' \
+                  AWS_SECRET_ACCESS_KEY='' \
+                  TENCENTCLOUD_SECRET_ID='' \
+                  TENCENTCLOUD_SECRET_KEY='' \
                   bash /opt/wotb/deploy.incoming/deploy/deploy.sh
               fi
             done
 
             unset GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD
+            for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY TENCENTCLOUD_SECRET_ID TENCENTCLOUD_SECRET_KEY; do
+              test -n "$(printenv "$name")" || { echo "$name is required." >&2; exit 2; }
+            done
             export TF_VAR_grafana_auth="$GRAFANA_PAT"
             export TF_IN_AUTOMATION=true
             export CHECKPOINT_DISABLE=1
@@ -268,11 +276,10 @@ jobs:
           GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
           OBSERVABILITY_ENVIRONMENT: ${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}
           GRAFANA_PAT: ${{ secrets.GRAFANA_PAT }}
-          PGHOST: 10.20.0.1
-          PGPORT: '25432'
-          PGDATABASE: tofu_state
-          PGUSER: tofu_state
-          PGPASSWORD: ${{ secrets.TX_TOFU_STATE_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
 
       - name: Report the existing metrics and logs verification gap
         if: always()
