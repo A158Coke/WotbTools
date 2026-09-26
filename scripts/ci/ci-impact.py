@@ -233,6 +233,11 @@ def select(base: str, head: str) -> dict[str, object]:
             surfaces["android"] = True
         if path.startswith("infra/tofu/"):
             surfaces["deploy"] = True
+            if path.startswith("infra/tofu/environments/prod/"):
+                # The legacy COS/Lighthouse ownership root is retired. Its
+                # deleted files still require deploy-contract validation, but
+                # there is no active OpenTofu root to validate anymore.
+                continue
             for name, prefix in TOFU_ROOTS.items():
                 if path.startswith(prefix):
                     tofu.add(name)

@@ -145,6 +145,16 @@ class CiImpactSelectionTest(unittest.TestCase):
             ["grafana"],
         )
 
+    def test_retired_production_tofu_root_selects_deploy_contracts_only(self):
+        for path in (
+            "infra/tofu/environments/prod/backend.tf",
+            "infra/tofu/environments/prod/.terraform.lock.hcl",
+        ):
+            with self.subTest(path=path):
+                result = selected(path)
+                self.assertTrue(result["surfaces"]["deploy"])
+                self.assertEqual(result["tofuRoots"], [])
+
     def test_deploy_and_observability_changes_select_validation_only(self):
         deleted_planner = selected("deploy/release_plan.py")
         self.assertTrue(deleted_planner["surfaces"]["deploy"])
