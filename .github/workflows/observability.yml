@@ -179,9 +179,12 @@ jobs:
             test -d "$root"
             test -f "$stage/deploy/observability/grafana/dashboards/wotbtools-production-overview.json"
             test -f /opt/wotb/deploy.incoming/deploy/deploy.sh
-            state_file=/opt/wotb/grafana-tofu-state/terraform.tfstate
-            [[ -s "$state_file" && ! -L "$state_file" ]] || {
-              echo 'Persistent Grafana OpenTofu state is missing or unsafe; refusing to initialize an empty state.' >&2
+            state_dir=/opt/wotb/grafana-tofu-state
+            state_file="$state_dir/terraform.tfstate"
+            state_marker="$state_dir/bootstrap-complete"
+            [[ -d "$state_dir" && ! -L "$state_dir" && -f "$state_file" && -s "$state_file" && ! -L "$state_file" && -f "$state_marker" && -s "$state_marker" && ! -L "$state_marker" ]] \
+              && grep -qx 'local-tofu-state-bootstrap-v1' "$state_marker" || {
+              echo 'Local OpenTofu state is not bootstrapped or is unsafe; refusing to initialize an empty production state.' >&2
               exit 1
             }
             for name in GRAFANA_PAT; do

@@ -37,10 +37,9 @@ managed by this root.
 
 ## Owner import addresses
 
-The existing resource identities were originally imported by the owner while
-using COS state. The one-time state migration moves those identities to the
-Yecao local backend without re-importing resources. If a future resource must
-be imported, its Grafana UID is the import ID:
+The six dashboards are existing production objects and must be imported into a
+new Yecao local state before the owner workflow can run. Their Grafana UIDs are
+the import IDs:
 
 ```powershell
 tofu import 'grafana_dashboard.managed["wotbtools_ai_review"]' wotbtools-ai-review
@@ -77,11 +76,10 @@ contract, and authentication failure behavior. This validates the API boundary
 used by the provider without restoring the removed dashboard file controller.
 
 The PR local validation and main apply workflow use the same fail-closed
-migration gate:
+plan gate:
 datasource deletes always fail; dashboard deletes are accepted only for the
 three exact retired addresses (`wotbtools_http_errors`,
 `wotbtools_replay_parser`, `wotbtools_android_downloads`) and only when the
 action set is exactly `["delete"]`; replacements and every other delete fail.
 The plan step reports expected deletes, unexpected deletes, replacements, and
-datasource deletes. After the one-shot migration, future dashboard deletes
-remain fail-closed.
+datasource deletes. Future dashboard deletes remain fail-closed.

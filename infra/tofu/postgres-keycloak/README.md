@@ -56,7 +56,7 @@ The root assumes the Compose runtime is already healthy and has bound the
 loopback port. Missing injected variables, unavailable local port, missing
 persistent state, or unsafe plan fails closed; the workflow does not fall back
 to a runner-side database connection. See
-`docs/operations/opentofu-local-state.md` for one-time migration and backup.
+`docs/operations/opentofu-local-state.md` for local-state bootstrap and backup.
 
 After the successful TX-local Keycloak OpenTofu apply in `.github/workflows/keycloak.yml`,
 the deployment writes the root-only `/opt/wotb-tx/keycloak.tofu-provisioned` marker.

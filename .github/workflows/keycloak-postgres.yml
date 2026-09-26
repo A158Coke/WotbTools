@@ -105,9 +105,12 @@ jobs:
             [[ "$WOTB_DEPLOY_CONFIG_SHA" == "$SOURCE_SHA" ]]
             root="/opt/wotb-tx/tofu.incoming/$SOURCE_SHA/infra/tofu/postgres-keycloak"
             test -d "$root"
-            state_file=/opt/wotb-tx/postgres-keycloak-tofu-state/terraform.tfstate
-            [[ -s "$state_file" && ! -L "$state_file" ]] || {
-              echo 'Persistent Keycloak PostgreSQL OpenTofu state is missing or unsafe; refusing to initialize an empty state.' >&2
+            state_dir=/opt/wotb-tx/postgres-keycloak-tofu-state
+            state_file="$state_dir/terraform.tfstate"
+            state_marker="$state_dir/bootstrap-complete"
+            [[ -d "$state_dir" && ! -L "$state_dir" && -f "$state_file" && -s "$state_file" && ! -L "$state_file" && -f "$state_marker" && -s "$state_marker" && ! -L "$state_marker" ]] \
+              && grep -qx 'local-tofu-state-bootstrap-v1' "$state_marker" || {
+              echo 'Local OpenTofu state is not bootstrapped or is unsafe; refusing to initialize an empty production state.' >&2
               exit 1
             }
             test -f /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh

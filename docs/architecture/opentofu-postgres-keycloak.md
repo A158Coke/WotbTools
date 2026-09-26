@@ -1,8 +1,8 @@
 # TX Keycloak PostgreSQL OpenTofu boundary
 
 `infra/tofu/postgres-keycloak` is an isolated OpenTofu root for the TX
-Keycloak PostgreSQL application role, database, and database grant. It is not
-part of the legacy COS/Lighthouse root or the Grafana root. Its persistent
+Keycloak PostgreSQL application role, database, and database grant. It is
+independent of the Grafana root. Its persistent
 state is TX-local at
 `/opt/wotb-tx/postgres-keycloak-tofu-state/terraform.tfstate`.
 
