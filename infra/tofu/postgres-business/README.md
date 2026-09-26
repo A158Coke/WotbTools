@@ -40,7 +40,7 @@ the administrator password is consumed only by provider configuration.
 
 Before initialization, the workflow verifies that this existing persistent
 state file is present and safe; it never creates an empty replacement. All
-owner-host paths, one-time COS migration, and backup coverage are documented in
+owner-host paths, bootstrap requirements, and backup coverage are documented in
 `docs/operations/opentofu-local-state.md`.
 
 ## Credential injection

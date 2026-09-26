@@ -575,10 +575,11 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 
 Production OpenTofu roots 按 owner 在所属主机使用固定 local-state 文件；per-SHA staging 只承载
 source，不能承载 state。TX state 位于 `/opt/wotb-tx/{postgres-business,postgres-keycloak,keycloak}-tofu-state/`，
-Yecao Grafana state 位于 `/opt/wotb/grafana-tofu-state/`。Business PostgreSQL 已使用本地路径；其余
-COS state 由 owner-host 一次性迁移命令逐 root 迁移。各正常 workflow 在 init 前要求 state 文件存在，
-缺失即停止。详见 `docs/operations/opentofu-local-state.md`。COS/Lighthouse legacy root 与其资源只在
-迁移和 zero-change 验证完成后退役；退役 IaC ownership 不执行资源 destroy。
+Yecao Grafana state 位于 `/opt/wotb/grafana-tofu-state/`。Business PostgreSQL 保留现有 authoritative local
+state；postgres-keycloak、Keycloak 与 Grafana 的新 local state 需由 owner 手工 adopt 既有生产对象、
+验证 zero-change plan 并创建 bootstrap marker 后才能部署。正常 workflow 在 init 前拒绝未 bootstrap 的 state。历史 COS state 被放弃，不执行
+读取或迁移。COS state backend、legacy COS artifact root、Lighthouse 和 firewall IaC ownership 已从仓库移除，
+不会触发真实云资源 destroy。详见 `docs/operations/opentofu-local-state.md`。
 
 PR 侧只做 validation：selector 按 root 选择 `tofu fmt -check`、`tofu init -backend=false`、
 `tofu validate` 与该 root 已有的本地 safety fixture。PR 不 SSH 任何生产宿主、不读取生产 local
@@ -710,8 +711,7 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
   Caddy，并验证 trusted TLS、redirect、前端/API、Keycloak 与 auth asset 路由。它不 build 应用镜像、
   不依赖数据库或 Keycloak admin credentials，也不写应用镜像 metadata。
 - `.github/workflows/rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml` 与
-  `observability.yml` 分别拥有 RabbitMQ、两个 PostgreSQL 和 Yecao 观测运行时/Grafana root；
-  `cos.yml` 和 legacy prod root 仅保留到已验证的 COS state cutover 完成。
+  `observability.yml` 分别拥有 RabbitMQ、两个 PostgreSQL 和 Yecao 观测运行时/Grafana root。
   各 workflow 自己执行 root 专属 safety guard、apply 后 clean second-plan/readiness；observability
   失败仍按现有契约显示为 degraded，不改变应用服务结果。
 - 三个数据更新 workflow (`update-tankopedia.yml`、`update-equipment.yml`、`update-crew-skills.yml`)

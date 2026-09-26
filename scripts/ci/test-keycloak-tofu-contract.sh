@@ -51,8 +51,10 @@ assert "~>" not in versions
 assert "tls_insecure_skip_verify = false" in providers
 assert 'backend "local"' in root_text
 assert 'path = "/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate"' in root_text
-assert 'TOFU_STATE_FILE="/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate"' in tofu_script
-assert 'Migrate the existing COS state before running this deployment.' in tofu_script
+assert 'TOFU_STATE_FILE="$TOFU_STATE_DIR/terraform.tfstate"' in tofu_script
+assert 'TOFU_STATE_MARKER="$TOFU_STATE_DIR/bootstrap-complete"' in tofu_script
+assert 'local-tofu-state-bootstrap-v1' in tofu_script
+assert 'local OpenTofu state is not bootstrapped or is unsafe' in tofu_script
 
 # --- no out-of-band execution path around the provider -----------------------
 for forbidden in ("remote-exec", "local-exec", "null_resource"):

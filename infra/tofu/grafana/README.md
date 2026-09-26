@@ -16,7 +16,8 @@ controller.
 The Yecao owner host stores persistent local state at
 `/opt/wotb/grafana-tofu-state/terraform.tfstate`, outside the per-SHA source
 staging directory. The workflow refuses to initialize if that state is missing
-or unsafe. One-time COS migration and local backup behavior are documented in
+or unsafe. Existing production dashboards must be adopted into a new local
+state before the owner workflow can run; local backup behavior is documented in
 `docs/operations/opentofu-local-state.md`. Pull requests run only local
 format/init/validate checks. A change merged to `main` runs the Grafana root
 inside `.github/workflows/observability.yml`, which applies the exact saved

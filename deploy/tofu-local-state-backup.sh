@@ -11,10 +11,15 @@ case "${1:-}" in
       postgres-keycloak-tofu-state/terraform.tfstate
       keycloak-tofu-state/terraform.tfstate
     )
+    bootstrap_markers=(
+      postgres-keycloak-tofu-state/bootstrap-complete
+      keycloak-tofu-state/bootstrap-complete
+    )
     ;;
   yecao)
     host_root=/opt/wotb
     state_paths=(grafana-tofu-state/terraform.tfstate)
+    bootstrap_markers=(grafana-tofu-state/bootstrap-complete)
     ;;
   *) echo "Usage: $0 <tx|yecao>" >&2; exit 2 ;;
 esac
@@ -31,10 +36,21 @@ exec 8>"$backup_root/.backup.lock"
 flock -n 8 || { echo 'Another OpenTofu state backup is running.' >&2; exit 1; }
 for relative in "${state_paths[@]}"; do
   file="$host_root/$relative"
-  [[ -f "$file" && -s "$file" && ! -L "$file" ]] || {
+  state_dir="$host_root/${relative%/*}"
+  [[ -d "$state_dir" && ! -L "$state_dir" && -f "$file" && -s "$file" && ! -L "$file" ]] || {
     echo "Required persistent OpenTofu state is missing or unsafe: $file" >&2
     exit 1
   }
+done
+for relative in "${bootstrap_markers[@]}"; do
+  marker="$host_root/$relative"
+  state_dir="$host_root/${relative%/*}"
+  [[ -d "$state_dir" && ! -L "$state_dir" && -f "$marker" && -s "$marker" && ! -L "$marker" ]] \
+    && grep -qx 'local-tofu-state-bootstrap-v1' "$marker" || {
+    echo "Local OpenTofu state bootstrap is incomplete or unsafe: $marker" >&2
+    exit 1
+  }
+  state_paths+=("$relative")
 done
 
 timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"

@@ -104,7 +104,7 @@ assert 'source  = "cyrilgdn/postgresql"' in root_text
 assert 'version = "1.27.0"' in root_text
 assert 'backend "local"' in root_text
 assert 'path = "/opt/wotb-tx/postgres-keycloak-tofu-state/terraform.tfstate"' in root_text
-assert 'state_file=/opt/wotb-tx/postgres-keycloak-tofu-state/terraform.tfstate' in apply_script
+assert 'state_dir=/opt/wotb-tx/postgres-keycloak-tofu-state' in apply_script
 assert "password_wo" in root_text
 for kind, resource_name in (
     ("postgresql_role", "keycloak"),

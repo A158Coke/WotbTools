@@ -1,10 +1,10 @@
 # OpenTofu owner-host local state
 
-OpenTofu state is stored on the host that owns each root. Workflows may stage
-source under a per-SHA directory, but the backend path is fixed outside that
-directory and state-file checks run before OpenTofu initialization or service
-mutation. A missing or unsafe file stops the workflow; the workflow never
-creates an empty replacement state.
+OpenTofu state lives on the host that owns each active root. Per-SHA staging
+directories contain disposable source only; they never contain authoritative
+state. COS is retired specifically as an OpenTofu state backend. Historical COS
+state is abandoned and is not read, copied, migrated, or used as a recovery
+source by this repository.
 
 | Owner | Root | Persistent state |
 |---|---|---|
@@ -13,45 +13,71 @@ creates an empty replacement state.
 | TX | `infra/tofu/keycloak` | `/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate` |
 | Yecao | `infra/tofu/grafana` | `/opt/wotb/grafana-tofu-state/terraform.tfstate` |
 
-The Business PostgreSQL root already uses its listed path. The other three
-roots are migrated once on their owner host with
-`deploy/tofu-cos-to-local.sh <root> <staged-root>`. The command is not called
-by a normal workflow. It requires the expected root-specific COS credentials,
-checks the fixed COS bucket/key and default workspace, requires a non-empty
-source and an absent destination, and requires zero-change plans both before
-and after `tofu init -migrate-state`. It compares source and destination
-resource address lists, suppresses plan/state output, never runs apply, and
-never deletes the COS source. A non-zero plan or any failed check stops that
-root immediately. Run each root separately; do not continue after a failure.
+## Bootstrap boundary
 
-Inject the plan inputs into the owner-host process environment (never command
-arguments, a tfvars file, or a logged shell command). In addition to
-`TENCENTCLOUD_SECRET_ID` and `TENCENTCLOUD_SECRET_KEY` for the COS backend:
+Every owner workflow checks for a regular, non-empty, non-symlink state file
+before `tofu init`, planning, or production mutation. A missing file means local
+state has not been bootstrapped. The workflow stops with an explicit error; it
+never initializes an empty production state or applies an empty-state plan.
+The three newly adopted roots also require a non-symlink
+`bootstrap-complete` file containing `local-tofu-state-bootstrap-v1` in the
+same persistent directory. Create that marker manually only after every
+existing resource is imported and the authenticated plan reports zero add,
+change, and destroy. A partial import therefore remains blocked even when it
+has already written a non-empty state file. The existing `postgres-business`
+state does not use or require this marker.
 
-- `keycloak` requires `TF_VAR_keycloak_admin_password`,
-  `TF_VAR_keycloak_admin_client_secret`,
-  `TF_VAR_keycloak_admin_client_secret_version`, `TF_VAR_e2e_client_secret`,
-  `TF_VAR_e2e_client_secret_version`, `TF_VAR_wargaming_application_id`,
-  `TF_VAR_qq_client_id`, and `TF_VAR_qq_client_secret`.
-- `postgres-keycloak` requires `TF_VAR_postgresql_admin_password` and
-  `TF_VAR_keycloak_role_password`.
-- `grafana` requires `GRAFANA_PAT`; the migration command maps it to
-  `TF_VAR_grafana_auth`.
+After the final zero-change plan, the owner may write the marker on that host:
 
-The command checks the root-specific values before connecting to COS. It also
-clears inherited OpenTofu trace-logging variables so backend/provider traces
-cannot bypass the protected temporary log.
+```sh
+printf '%s\n' local-tofu-state-bootstrap-v1 > "$state_dir/bootstrap-complete"
+chmod 600 "$state_dir/bootstrap-complete"
+```
 
-The source directory may be removed after deploy. State remains at the table's
-fixed owner-host path. State directories are root-only; state files and backups
-use mode 0600. The existing `database-backup.yml` also archives all three TX
-states and the Yecao Grafana state to each owner's local
-`backups/opentofu-state` directory, verifies the tar archive, and writes a
-SHA-256 sidecar. The backup contains no PostgreSQL state database and requires
-no inter-host state connection.
+Do not create the marker before all imports and the zero-change verification
+complete.
 
-The historical COS backend and its bucket must remain available until the
-owner-host migration and both zero-change validations have succeeded. COS
-artifacts, the legacy `infra/tofu/environments/prod` root, and Lighthouse or
-firewall ownership are retired only in a follow-up after that cutover is
-verified. Retiring their IaC ownership must not destroy those resources.
+`postgres-business` already has authoritative local state and must keep using
+it. The other three roots need an explicit, owner-host bootstrap before normal
+deployments resume:
+
+- `postgres-keycloak`: adopt `postgresql_role.keycloak` (`keycloak`),
+  `postgresql_database.keycloak` (`keycloak`), and
+  `postgresql_grant.keycloak_database_access` (database `keycloak`, role
+  `keycloak`). Confirm the installed provider's import syntax against the live
+  objects before importing.
+- `keycloak`: adopt the existing `wotbtools` realm, its declared clients, IdPs,
+  realm roles, default role assignment, protocol mappers, and service-account
+  role assignments. Provider IDs for the realm, clients, mappers, IdPs, and
+  service accounts must be read from the live Keycloak API; repository names
+  alone do not establish all import IDs.
+- `grafana`: adopt the six existing managed dashboards using the import
+  addresses and UIDs in `docs/architecture/grafana-opentofu.md`.
+
+Bootstrap is a manual, root-by-root operation under the owner's `.deploy.lock`.
+Verify the destination state and marker are absent before initialization. Use
+the fixed local backend, import/adopt existing objects, then require a plan
+with zero add, change, or destroy before creating the marker and enabling normal
+workflows. Never apply an empty-state plan to production. This repository has no bootstrap helper or
+COS compatibility path. If any identity or import ID cannot be verified from
+the actual owner-host API, stop and resolve that inventory before importing.
+
+## Backup
+
+`database-backup.yml` invokes `deploy/tofu-local-state-backup.sh` on each owner
+host. TX archives all three TX state files; Yecao archives Grafana state. The
+script shares the host deployment lock, rejects missing, empty, non-regular, or
+symlink state files/directories, requires the three adopted-root completion
+markers, and archives those markers with the states. It writes under
+`backups/opentofu-state` with restrictive permissions, validates the tar
+archive and SHA-256 checksum, and does not print state contents or upload raw
+state to GitHub artifacts.
+
+State directories and files must remain owner-only and persistent through
+staging cleanup. Do not delete or replace the existing `postgres-business`
+state. Local-state loss recovery requires a separately reviewed restore from
+the owner-host archive; an empty backend must never be used as a substitute.
+
+Removing the legacy COS, Lighthouse, and firewall IaC ownership does not
+destroy those cloud resources. COS may have a separate future product/static
+asset use; that is outside this state-backend change.

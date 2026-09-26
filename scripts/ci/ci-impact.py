@@ -25,7 +25,6 @@ TOFU_ROOTS = {
     "business-postgres": "infra/tofu/postgres-business/",
     "keycloak-postgres": "infra/tofu/postgres-keycloak/",
     "minio": "infra/tofu/minio/",
-    "cos": "infra/tofu/environments/prod/",
     "grafana": "infra/tofu/grafana/",
 }
 SURFACES = (
