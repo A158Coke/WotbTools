@@ -17,6 +17,11 @@ export function createAppRouter(history = createWebHistory()) {
         component: AppShell,
         children: [{ path: '', name: 'android-download', component: ViewHost }],
       },
+      {
+        path: '/sponsor',
+        component: AppShell,
+        children: [{ path: '', name: 'sponsor', component: ViewHost }],
+      },
     ],
   })
 

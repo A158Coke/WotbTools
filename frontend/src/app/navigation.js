@@ -1,4 +1,5 @@
 export const ANDROID_PATH = '/download/android'
+export const SPONSOR_PATH = '/sponsor'
 
 export const LEGACY_VIEW_ALIASES = Object.freeze({
   leaderboard: 'hof',
@@ -10,11 +11,15 @@ export const ALLOWED_VIEWS = Object.freeze([
   'home', 'replay', 'hof', 'hof-admin',
   'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'playback-qa', 'rating-docs', 'rating-v2',
-  'android',
+  'android', 'sponsor',
 ])
 
 export function isAndroidPath(path) {
   return path === ANDROID_PATH || path === `${ANDROID_PATH}/`
+}
+
+export function isSponsorPath(path) {
+  return path === SPONSOR_PATH || path === `${SPONSOR_PATH}/`
 }
 
 export function isHomeHost(hostname) {
@@ -31,7 +36,9 @@ export function canonicalView(view) {
 
 /** Derive a supported product view from the router's canonical location. */
 export function viewFromRoute(route) {
-  const rawView = route.query.view ?? (isAndroidPath(route.path) ? 'android' : null)
+  const rawView = isSponsorPath(route.path)
+    ? 'sponsor'
+    : route.query.view ?? (isAndroidPath(route.path) ? 'android' : null)
   const view = canonicalView(rawView)
   return ALLOWED_VIEWS.includes(view) ? view : defaultView()
 }
@@ -39,10 +46,10 @@ export function viewFromRoute(route) {
 /** Keep legacy query URLs as the public URL contract while Vue Router owns history. */
 export function locationForView(view, route) {
   const query = { ...route.query }
-  if (view === 'home' || view === 'android') delete query.view
+  if (view === 'home' || view === 'android' || view === 'sponsor') delete query.view
   else query.view = view
   return {
-    path: view === 'android' ? ANDROID_PATH : '/',
+    path: view === 'android' ? ANDROID_PATH : view === 'sponsor' ? SPONSOR_PATH : '/',
     query,
   }
 }

@@ -24,6 +24,7 @@ vi.mock('./components/ReplayWorkspace.vue', () => ({
 vi.mock('./components/HomePage.vue', () => ({ default: { template: '<div data-test="view-home" />' } }))
 vi.mock('./components/HoFPage.vue', () => ({ default: { template: '<div data-test="view-hof" />' } }))
 vi.mock('./components/AndroidDownloadPage.vue', () => ({ default: { template: '<div data-test="view-android" />' } }))
+vi.mock('./components/SponsorPage.vue', () => ({ default: { template: '<main data-test="view-sponsor" />' } }))
 vi.mock('./components/HistoryPage.vue', () => ({ default: { template: '<div data-test="view-history" />' } }))
 vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ default: { template: '<div data-test="view-technical-evolution" />' } }))
 
@@ -135,16 +136,47 @@ describe('App routing', () => {
     ['replay', '/?view=replay'],
     ['hall of fame', '/?view=hof'],
     ['android download', '/download/android'],
-  ])('renders one shared footer with the ICP link on %s', async (_name, path) => {
+    ['sponsor', '/sponsor'],
+  ])('renders shared filing links and Wargaming disclaimer on %s', async (_name, path) => {
     const { wrapper } = await mountApp(path)
     const footer = wrapper.get('[data-testid="app-footer"]')
     const icpLink = footer.get('[data-testid="icp-filing-link"]')
+    const publicSecurityLink = footer.get('[data-testid="public-security-filing-link"]')
 
     expect(footer.findAll('[data-testid="icp-filing-link"]')).toHaveLength(1)
     expect(icpLink.text()).toBe('闽ICP备2026036303号-1')
     expect(icpLink.attributes('href')).toBe('https://beian.miit.gov.cn/')
     expect(icpLink.attributes('target')).toBe('_blank')
     expect(icpLink.attributes('rel')).toBe('noopener noreferrer')
+    expect(publicSecurityLink.text()).toBe('home.publicSecurityFiling')
+    expect(publicSecurityLink.attributes('href')).toBe('https://beian.mps.gov.cn/#/query/webSearch?code=35018202000555')
+    expect(publicSecurityLink.attributes('target')).toBe('_blank')
+    expect(publicSecurityLink.attributes('rel')).toBe('noopener noreferrer')
+    expect(publicSecurityLink.get('img').attributes('aria-hidden')).toBe('true')
+    expect(publicSecurityLink.get('img').attributes('alt')).toBe('')
+    expect(footer.get('[data-testid="wargaming-disclaimer"]').text()).toBe('home.wargamingDisclaimer')
+    expect(footer.findAll('a')).toHaveLength(2)
+  })
+
+  it('renders direct /sponsor path inside AppShell with exactly one shared Footer', async () => {
+    const { wrapper, router } = await mountApp('/sponsor')
+    expect(router.currentRoute.value.path).toBe('/sponsor')
+    expect(router.currentRoute.value.query.view).toBeUndefined()
+    expect(wrapper.find('[data-test="view-sponsor"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="app-footer"]')).toHaveLength(1)
+  })
+
+  it('supports back and forward navigation to the canonical Sponsor path', async () => {
+    const { wrapper, router } = await mountApp('/?view=home')
+    await router.push('/sponsor')
+    await flushPromises()
+    expect(wrapper.find('[data-test="view-sponsor"]').exists()).toBe(true)
+    router.back()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(router.currentRoute.value.path).toBe('/')
+    router.forward()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(router.currentRoute.value.path).toBe('/sponsor')
   })
 
   it('drops the current view query when navigating to Android', async () => {
