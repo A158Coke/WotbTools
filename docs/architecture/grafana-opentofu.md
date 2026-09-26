@@ -5,12 +5,11 @@ dashboard API objects in organization 1 with `grafana/grafana` provider
 `4.45.2`, tested against the production Grafana `11.6.16` API.
 
 Docker Compose remains responsible for the Grafana container, image, database
-volume, network, reverse proxy, and runtime environment. The COS backend uses
-the existing state bucket with an independent key:
+volume, network, reverse proxy, and runtime environment. Persistent state is
+stored on the Yecao owner host outside per-SHA staging:
 
 ```text
-bucket: wotbtools-prod-tofu-state-1478073677
-key:    wotbtools/prod/grafana.tfstate
+/opt/wotb/grafana-tofu-state/terraform.tfstate
 ```
 
 ## Ownership
@@ -38,8 +37,9 @@ managed by this root.
 
 ## Owner import addresses
 
-The remote state was bootstrapped by owner-controlled imports. The exact
-dashboard import IDs are their Grafana UIDs:
+The six dashboards are existing production objects and must be imported into a
+new Yecao local state before the owner workflow can run. Their Grafana UIDs are
+the import IDs:
 
 ```powershell
 tofu import 'grafana_dashboard.managed["wotbtools_ai_review"]' wotbtools-ai-review
@@ -76,11 +76,10 @@ contract, and authentication failure behavior. This validates the API boundary
 used by the provider without restoring the removed dashboard file controller.
 
 The PR local validation and main apply workflow use the same fail-closed
-migration gate:
+plan gate:
 datasource deletes always fail; dashboard deletes are accepted only for the
 three exact retired addresses (`wotbtools_http_errors`,
 `wotbtools_replay_parser`, `wotbtools_android_downloads`) and only when the
 action set is exactly `["delete"]`; replacements and every other delete fail.
 The plan step reports expected deletes, unexpected deletes, replacements, and
-datasource deletes. After the one-shot migration, future dashboard deletes
-remain fail-closed.
+datasource deletes. Future dashboard deletes remain fail-closed.

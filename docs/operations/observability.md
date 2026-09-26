@@ -163,7 +163,7 @@ dashboard 与运行时链路由 CI 的独立 runtime smoke 验证；生产运行
 main push 由服务 owner workflow 按各自路径规则独立触发。应用 image owner 是
 `business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 与 `minio.yml`；固定 runtime
 与 root owner 是 `caddy.yml`、`rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、
-`cos.yml` 与本 `observability.yml`。每个 workflow 使用自己的 staging、当前 main SHA 检查、
+与本 `observability.yml`。每个 workflow 使用自己的 staging、当前 main SHA 检查、
 验证和手动入口；TX 的 TCR 镜像只属于前三个 TX 应用，Yecao 的 GHCR 镜像只属于 parser-worker/MinIO。
 不相关服务不会因统一 release planner 被选择。生产维护队列不会因新 push 取消已开始的操作，
 host mutation 另有 `flock` 串行化；过期 SHA 在 mutation 前 fail closed。

@@ -10,7 +10,7 @@ Business PostgreSQL is deliberately independent from Keycloak PostgreSQL:
 ```text
 Compose        business-postgres        keycloak-postgres
 OpenTofu root  infra/tofu/postgres-business   infra/tofu/postgres-keycloak
-local state    postgres-business-tofu-state/  (COS key) postgres-keycloak.tfstate
+local state    postgres-business-tofu-state/  postgres-keycloak-tofu-state/
 marker         business-postgres.tofu-provisioned   keycloak.tofu-provisioned
 ```
 
@@ -37,6 +37,11 @@ Sensitive state is local and root-only:
 application role password uses the provider `password_wo` field together with
 `business_role_password_version`, so it is not persisted as a state attribute;
 the administrator password is consumed only by provider configuration.
+
+Before initialization, the workflow verifies that this existing persistent
+state file is present and safe; it never creates an empty replacement. All
+owner-host paths, bootstrap requirements, and backup coverage are documented in
+`docs/operations/opentofu-local-state.md`.
 
 ## Credential injection
 

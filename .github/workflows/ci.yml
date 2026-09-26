@@ -674,6 +674,7 @@ jobs:
           bash -n deploy/deploy.sh deploy/minio-deploy.sh
           deploy/verify-observability.sh deploy/tx/deploy.sh
           deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
+          deploy/tofu-local-state-backup.sh
           deploy/tx/runtime-check.sh deploy/tx/publish-loaded-image-to-tcr.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
@@ -691,7 +692,6 @@ jobs:
           python3 scripts/ci/test-path-filters.py
           bash scripts/ci/test-workflow-contract.sh
           bash scripts/ci/test-tofu-workflow-contract.sh
-          bash scripts/ci/test-tofu-prod-plan-guard.sh
           bash scripts/ci/test-keycloak-tofu-contract.sh
           bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
           bash scripts/ci/test-postgres-business-tofu-contract.sh
@@ -789,7 +789,6 @@ jobs:
             business-postgres) path=infra/tofu/postgres-business ;;
             keycloak-postgres) path=infra/tofu/postgres-keycloak ;;
             minio) path=infra/tofu/minio ;;
-            cos) path=infra/tofu/environments/prod ;;
             grafana) path=infra/tofu/grafana ;;
             *) echo "::error::unknown OpenTofu root" >&2; exit 1 ;;
           esac
@@ -815,7 +814,7 @@ jobs:
             rabbitmq|minio|business-postgres)
               bash "$ROOT_DIR/test-validate-plan.sh"
               ;;
-            keycloak|keycloak-postgres|cos|grafana) ;;
+            keycloak|keycloak-postgres|grafana) ;;
             *) exit 1 ;;
           esac
   required:
