@@ -48,7 +48,7 @@ jobs:
           [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'Keycloak PostgreSQL workflow requires main.' >&2; exit 1; }
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'The event SHA must be a full lowercase commit SHA.' >&2; exit 1; }
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo 'Checkout SHA differs from the event SHA.' >&2; exit 1; }
-          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh"             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \\n            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Stage Keycloak PostgreSQL runtime and OpenTofu root
@@ -71,7 +71,7 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
         run: |
           set -euo pipefail
-          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh"             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \\n            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
       - name: Reconcile runtime, apply exact Keycloak PostgreSQL plan, and verify
         uses: appleboy/ssh-action@v1
@@ -96,7 +96,7 @@ jobs:
             state_dir=/opt/wotb-tx/postgres-keycloak-tofu-state
             state_file="$state_dir/terraform.tfstate"
             state_marker="$state_dir/bootstrap-complete"
-            [[ -d "$state_dir" && ! -L "$state_dir" && -f "$state_file" && -s "$state_file" && ! -L "$state_file" && -f "$state_marker" && -s "$state_marker" && ! -L "$state_marker" ]]               && grep -qx 'local-tofu-state-bootstrap-v1' "$state_marker" || {
+            [[ -d "$state_dir" && ! -L "$state_dir" && -f "$state_file" && -s "$state_file" && ! -L "$state_file" \\n              && -f "$state_marker" && -s "$state_marker" && ! -L "$state_marker" ]] \\n              && grep -qx 'local-tofu-state-bootstrap-v1' "$state_marker" || {
               echo 'Local OpenTofu state is not bootstrapped or is unsafe; refusing to initialize an empty production state.' >&2
               exit 1
             }
@@ -119,7 +119,7 @@ jobs:
 
             runtime_ready=false
             for attempt in $(seq 1 30); do
-              if docker compose -f "$compose" exec -T keycloak-postgres                 pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
+              if docker compose -f "$compose" exec -T keycloak-postgres \\n                pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
                 runtime_ready=true
                 break
               fi
@@ -154,7 +154,7 @@ jobs:
               exit 1
             fi
 
-            docker compose -f "$compose" exec -T keycloak-postgres               pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d keycloak
+            docker compose -f "$compose" exec -T keycloak-postgres \\n              pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d keycloak
 
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
