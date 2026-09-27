@@ -58,7 +58,6 @@
 | `architecture/http-contracts.md` | 改 HTTP OpenAPI 契约、生成 transport 或 runtime schema 时 |
 | `architecture/async-contracts.md` | 改异步 Control / Worker 契约或 future async foundation 时 |
 | `architecture/grafana-opentofu.md` | 改 Grafana OpenTofu API 管理方式时 |
-| `architecture/opentofu-production-baseline.md` | 改生产 OpenTofu baseline / import / state 边界时 |
 | `architecture/opentofu-postgres-keycloak.md` | 改 TX Keycloak PostgreSQL OpenTofu root、state 或本地执行边界时 |
 | `architecture/tankopedia-reference-data.md` | 改 Tankopedia reference data 同步 / 单一来源时 |
 | `api/error-contract.md` | 新增/修改 API error code、Security 401/403、前端错误展示或 traceId 时 |
@@ -105,6 +104,7 @@
 | `operations/minio.md` | Yecao 临时作业对象存储、OpenTofu ownership、密钥与手动部署前置条件时 |
 | `operations/rabbitmq.md` | TX RabbitMQ runtime/OpenTofu ownership、credentials、provider mirror 与 provisioning gate 时 |
 | `operations/business-postgres.md` | TX Business PostgreSQL runtime/OpenTofu ownership、凭据、备份/恢复与名人堂迁移前置时 |
+| `operations/opentofu-local-state.md` | OpenTofu owner-host persistent local state、bootstrap/adoption 与备份时 |
 | `operations/observability-runbook.md` | 生产观测链路排障和人工 runbook 时 |
 | `operations/ai-evaluation.md` | 运行 / 复盘 AI evaluation 运维流程时 |
 
