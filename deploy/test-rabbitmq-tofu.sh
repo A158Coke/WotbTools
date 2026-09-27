@@ -47,7 +47,7 @@ grep -Fq 'path = "/opt/wotb-tx/rabbitmq-tofu-state/terraform.tfstate"' "$TOFU_RO
 if grep -Eq 'remote-exec|local-exec|null_resource|provisioner' "$TOFU_ROOT"/*.tf; then
   fail "the OpenTofu root must not use an out-of-band execution path"
 fi
-COMPOSE="$ROOT/deploy/tx/docker-compose.yml"
+COMPOSE="$ROOT/deploy/tx/rabbitmq.compose.yml"
 grep -Fq 'image: rabbitmq:4.3.6-management-alpine' "$COMPOSE" \
   || fail "Compose must keep owning the pinned RabbitMQ runtime image"
 if grep -Eq 'x-dead-letter|x-message-ttl|x-queue-type|wotb\.jobs|wotb\.parser' "$COMPOSE"; then

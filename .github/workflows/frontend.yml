@@ -3,22 +3,6 @@ name: Frontend
 on:
   push:
     branches: [main]
-    paths:
-      - .github/workflows/frontend.yml
-      - .dockerignore
-      - docker/Dockerfile.frontend
-      - frontend/**
-      - common/map_names.json
-      - common/tankopedia-tier10.json
-      - common/assets/**
-      - HISTORY.md
-      - docs/architecture/TECHNICAL_EVOLUTION.md
-      - docs/WotBTools_League_Rating_V6.md
-      - deploy/nginx/nginx.conf
-      - deploy/release-metadata.py
-      - deploy/tx/docker-compose.yml
-      - deploy/tx/deploy.sh
-      - deploy/tx/nginx/frontend.conf.template
   workflow_dispatch:
 
 permissions:
@@ -38,10 +22,12 @@ env:
     docs/architecture/TECHNICAL_EVOLUTION.md
     docs/WotBTools_League_Rating_V6.md
     deploy/nginx/nginx.conf
-    deploy/release-metadata.py
-    deploy/tx/docker-compose.yml
-    deploy/tx/deploy.sh
-    deploy/tx/nginx/frontend.conf.template
+    deploy/check-latest-main.sh
+    deploy/tx/**
+
+concurrency:
+  group: deploy-frontend
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -156,6 +142,19 @@ jobs:
             || { echo 'Published frontend bundle does not contain the frozen source commit.' >&2; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
+      - name: Publish latest only from current main
+        env:
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          IMAGE: ${{ steps.identity.outputs.image }}
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          DIGEST: ${{ steps.verify.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-latest-main.sh" "$SOURCE_SHA"
+          crane cp "$IMAGE@$DIGEST" "$REPOSITORY:latest"
+
+
   deploy:
     concurrency:
       group: production-maintenance
@@ -201,7 +200,7 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx,deploy/release-metadata.py
+          source: deploy/tx
           target: /opt/wotb-tx/deploy.incoming
           overwrite: true
       - name: Reject stale main before TX mutation
@@ -223,7 +222,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 30m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,TX_IMAGE_REGISTRY_PREFIX
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -231,15 +230,9 @@ jobs:
             export WOTB_DEPLOY_LOCK_FD=9
             export WOTB_DEPLOY_SERVICE=frontend
             export WOTB_DEPLOY_CONFIG_SHA='${{ needs.build.outputs.commit_sha }}'
-            export WOTB_DEPLOY_IMAGE_TAG='${{ needs.build.outputs.image }}'
-            export WOTB_DEPLOY_IMAGE_COMMIT_SHA='${{ needs.build.outputs.commit_sha }}'
-            export WOTB_DEPLOY_IMAGE_DIGEST='${{ needs.build.outputs.digest }}'
             export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
             bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
         env:
           WOTB_DEPLOY_SERVICE: frontend
           WOTB_DEPLOY_CONFIG_SHA: ${{ needs.build.outputs.commit_sha }}
-          WOTB_DEPLOY_IMAGE_TAG: ${{ needs.build.outputs.image }}
-          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
-          WOTB_DEPLOY_IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}

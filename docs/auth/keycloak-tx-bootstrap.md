@@ -47,8 +47,7 @@ output 或日志（`TX_QQ_CLIENT_SECRET` 的 state 归属见下一节）：
 - `TX_QQ_CLIENT_SECRET`（QQ Connect application secret）。
 
 TX workflow secrets：`TX_KC_POSTGRES_ADMIN_PASSWORD`、`TX_KC_DB_PASSWORD`、
-`TX_KC_BOOTSTRAP_ADMIN_PASSWORD`、`WG_APPLICATION_ID`、`TENCENTCLOUD_SECRET_ID`、
-`TENCENTCLOUD_SECRET_KEY`。非敏感固定值 `KC_POSTGRES_ADMIN_USER=kc_admin`、
+`TX_KC_BOOTSTRAP_ADMIN_PASSWORD`、`WG_APPLICATION_ID`。非敏感固定值 `KC_POSTGRES_ADMIN_USER=kc_admin`、
 `KC_DB_USERNAME=keycloak` 由 workflow 提供；`CADDY_ACME_EMAIL` 使用
 `vars.CADDY_ACME_EMAIL`，为空时 fail-closed。
 
@@ -79,9 +78,9 @@ Wargaming IdP representation 与 Keycloak runtime 共用**同一个**已存在�
   值相同则 no-op，因此「secret 是否变化」不需要任何版本信号来判断。provider schema 也决定了
   这一点：`client_secret_wo` 声明了 `RequiredWith = client_secret_wo_version`，且只在 version
   变化时才把写-only 值发给 Keycloak（`provider/resource_keycloak_oidc_identity_provider.go`）；
-- 代价是该 secret 作为 sensitive 属性进入 OpenTofu state（`backend.tf` 的 COS
-  `wotbtools-prod-tofu-state-1478073677` / `wotbtools/prod/keycloak.tfstate`）。这是本仓库唯一
-  允许长驻该 secret 的介质：只有持有 `TENCENTCLOUD_SECRET_ID/KEY` 的 TX OpenTofu apply 能读取；
+- 代价是该 secret 作为 sensitive 属性进入 TX owner-host 的 OpenTofu local state
+  `/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate`。State 文件只允许 host root 访问，
+  权限为 0600，父目录为 0700；state backup 同样使用 0600 权限并留在 owner host。
   Git、realm JSON、tfvars、Tofu output、日志与其它介质依然禁止。apply 期间 TX 上的
   `plan.tfplan` / `second-plan.tfplan` 同样带有该值（写-only 字段此前不会落进 plan 文件），
   因此 `deploy/tx/keycloak-tofu.sh` 的 `trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT`
@@ -261,7 +260,7 @@ TX_RUNTIME_READY
 `parser-worker` token 在 `wotb.parser.dlq` 不为空时 FAIL（非空 DLQ 意味着至少一条回放永久失败或
 无法解码）。这是**必须人工处置**的状态，不允许通过删除证据让检查变绿：
 
-1. 只读确认权威状态：`docker compose -f /opt/wotb-tx/deploy/docker-compose.yml exec -T rabbitmq
+1. 只读确认权威状态：`docker compose -p deploy -f /opt/wotb-tx/deploy/rabbitmq.compose.yml exec -T rabbitmq
    rabbitmqctl -q list_queues name messages consumers`，并确认 PostgreSQL 中没有该 job 的未终态
    投影（job 权威在 PG，不在 broker）。
 2. 在 TX loopback 的 Management UI（`http://127.0.0.1:15672/`，`wotb.parser.dlq` 队列）逐条查看
@@ -285,3 +284,22 @@ TX deploy 在修改 runtime 前只检查 Docker/Compose、`wg0` 地址与到 `10
 MinIO 与 broker 链路）；staging 阶段先 fail-closed 拒绝「引用/发布已退役 8087」或「重新启用本地
 执行面」的 staged Compose，再进入 pull/promote，因此不会出现「已切到 TX 内部路由但仍依赖
 Yecao backend」或反向的中间状态。
+
+## Keycloak PostgreSQL backup owner
+
+`deploy/tx/keycloak-postgres.compose.yml` is the sole Keycloak PostgreSQL service
+definition and is included by the TX main Compose file. The independent
+`keycloak-postgres.yml` owner stages this fragment directly and fixes Compose
+project `deploy`; its existing Docker volume remains
+`deploy_keycloak_postgres_data`. Before recreating the service, the workflow
+requires that volume, checks its Compose labels and any existing container mount,
+and refuses a different identity. It also promotes the validated fragment beside
+the main Compose file for later runtime checks.
+
+The scheduled `database-backup.yml` calls
+`deploy/tx/keycloak-postgres-backup.sh`. It only reads the existing running
+service, verifies the same project and volume identity, and publishes regular
+`keycloak-<timestamp>.dump` and `.dump.sha256` files after archive and checksum
+validation. It never starts or recreates PostgreSQL and never mutates the source
+database. Keycloak archives must not be passed to the Business PostgreSQL restore
+tool.

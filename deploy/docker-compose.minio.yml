@@ -11,7 +11,7 @@ x-logging: &default-logging
 
 services:
   minio:
-    image: ghcr.io/a158coke/wotbtools-minio:${TAG:?TAG is required}
+    image: ghcr.io/a158coke/wotbtools-minio:latest
     command: server --console-address ":9001" /data
     environment:
       MINIO_ROOT_USER: ${YECAO_MINIO_ROOT_USER:?YECAO_MINIO_ROOT_USER is required}

@@ -8,15 +8,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NETWORK="wotb-observability-e2e-${GITHUB_RUN_ID:-local}-$$"
 LOKI="wotb-observability-loki-${GITHUB_RUN_ID:-local}-$$"
 ALLOY="wotb-observability-alloy-${GITHUB_RUN_ID:-local}-$$"
+ALLOY_TX="wotb-observability-alloy-tx-${GITHUB_RUN_ID:-local}-$$"
 BACKEND="wotb-backend-smoke-${GITHUB_RUN_ID:-local}-$$"
+BACKEND_TX="business-api-tx-smoke-${GITHUB_RUN_ID:-local}-$$"
 KEYCLOAK="keycloak-smoke-${GITHUB_RUN_ID:-local}-$$"
 FRONTEND="wotb-frontend-smoke-${GITHUB_RUN_ID:-local}-$$"
 MARKER="observability-e2e-${GITHUB_RUN_ID:-local}-$$"
+MARKER_TX="tx-alloy-e2e-${GITHUB_RUN_ID:-local}-$$"
 KEYCLOAK_MARKER="keycloak-${MARKER}"
 APK="observability-canary-${MARKER}.apk"
 
 cleanup() {
-  docker rm -f "$ALLOY" "$BACKEND" "$KEYCLOAK" "$FRONTEND" "$LOKI" >/dev/null 2>&1 || true
+  docker rm -f "$ALLOY" "$ALLOY_TX" "$BACKEND" "$BACKEND_TX" "$KEYCLOAK" "$FRONTEND" "$LOKI" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -109,4 +112,82 @@ frontend_query() {
 wait_until "backend Docker stream reaches Loki" backend_query
 wait_until "Keycloak Docker stream reaches Loki" keycloak_query
 wait_until "sanitized Android frontend stream reaches Loki" frontend_query
+
+# TX lane: the production TX config matches by Compose service label (container
+# names are project-prefixed there) and must normalize the stream to the legacy
+# {container_name="wotb-backend"} identity every dashboard queries. The emitter
+# starts BEFORE the TX Alloy instance on purpose: discovery.docker snapshots the
+# container list on startup and refreshes on a 60s interval, so starting the
+# emitter first keeps target discovery deterministic inside the assertion
+# window instead of racing the refresh timer.
+docker run -d --name "$BACKEND_TX" --network "$NETWORK" \
+  --label com.docker.compose.service=business-api \
+  alpine:3.22 sh -c "while true; do echo event=backend_tx_smoke marker=$MARKER_TX; sleep 1; done" >/dev/null
+docker run -d --name "$ALLOY_TX" --network "$NETWORK" \
+  -p 127.0.0.1::12345 \
+  -e WOTB_LOKI_URL="http://loki:3100/loki/api/v1/push" \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v "$ROOT/deploy/tx/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
+  grafana/alloy:v1.4.2 run --server.http.listen-addr=0.0.0.0:12345 \
+  /etc/alloy/config.alloy >/dev/null
+ALLOY_TX_PORT="$(docker port "$ALLOY_TX" 12345/tcp | sed -E 's/.*://')"
+[[ -n "$ALLOY_TX_PORT" ]] || fail "TX Alloy HTTP port was not published"
+
+# Inspect what the label relabel actually discovered: every emitter container
+# this lane depends on must appear with the exact Compose service label. The
+# /api/v0/web/components payload carries each discovery.relabel component's
+# debug data (its processed targets); /metrics carries the discovery target
+# counters as a cross-check.
+dump_tx_relabel_targets() {
+  local raw
+  raw="$(curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/api/v0/web/components" 2>&1 || echo "CURL_FAILED")"
+  if [ "$raw" = "CURL_FAILED" ]; then
+    echo "FAIL: could not reach the TX Alloy HTTP API on ${ALLOY_TX_PORT}" >&2
+  else
+    printf '%s' "$raw" | jq -c '.. | objects | select((.id? // "") | test("^discovery\\.(docker|relabel)")) | {id: .id, health: (.health // .state // empty), debugInfo: (.debugInfo // empty), exports: (.exports // empty)}' 2>/dev/null >&2 \
+      || { echo "== raw components payload (first 20KB) ==" >&2; printf '%s' "$raw" | head -c 20000 >&2; echo >&2; }
+  fi
+  echo "== discovery counters ==" >&2
+  curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/metrics" 2>/dev/null \
+    | grep -Ei 'docker|discovery.*target|loki_source_docker|loki_write|drop' | head -60 >&2 || true
+  echo "== emitter liveness (docker logs --tail 2) ==" >&2
+  docker logs --tail 2 "$BACKEND_TX" >&2 2>&1 || true
+  local entries_first entries_second
+  entries_first="$(curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/metrics" 2>/dev/null \
+    | grep '^loki_source_docker_target_entries_total{component_id="loki.source.docker.backend"' | grep -oE '[0-9]+$')"
+  sleep 10
+  entries_second="$(curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/metrics" 2>/dev/null \
+    | grep '^loki_source_docker_target_entries_total{component_id="loki.source.docker.backend"' | grep -oE '[0-9]+$')"
+  echo "== backend entries growth over 10s: ${entries_first:-unknown} -> ${entries_second:-unknown} ==" >&2
+  echo "== Loki streams / labels ==" >&2
+  curl -sS --max-time 5 -G "http://127.0.0.1:${LOKI_PORT}/loki/api/v1/labels" 2>/dev/null | head -c 2000 >&2; echo >&2
+  curl -sS --max-time 5 -G "http://127.0.0.1:${LOKI_PORT}/loki/api/v1/series" \
+    --data-urlencode 'match[]={container_name=~".+"}' 2>/dev/null | head -c 4000 >&2; echo >&2
+}
+
+backend_tx_query() {
+  body="$(query_range '{container_name="wotb-backend"}')"
+  loki_response_has_sample "$body" && grep -Fq "$MARKER_TX" <<<"$body"
+}
+unlabeled_stream_not_collected_by_tx_lane() {
+  body="$(query_range '{container_name="keycloak"}')"
+  loki_response_has_sample "$body" && grep -Fq "$KEYCLOAK_MARKER" <<<"$body"
+}
+backend_tx_seen=0
+for attempt in $(seq 1 30); do
+  if backend_tx_query; then
+    backend_tx_seen=1
+    echo "PASS: TX Compose-label stream reaches Loki as wotb-backend"
+    break
+  fi
+  [ "$attempt" -lt 30 ] && sleep 2
+done
+if [ "$backend_tx_seen" != 1 ]; then
+  # Dump the relabel components' real discovered targets so a failing run shows
+  # whether the emitter's com.docker.compose.service label was even seen.
+  dump_tx_relabel_targets
+  fail "TX Compose-label stream reaches Loki as wotb-backend"
+fi
+wait_until "Yecao name-matched Keycloak stream still reaches Loki" unlabeled_stream_not_collected_by_tx_lane
+
 echo "OK: production Alloy Docker discovery, normalization, redaction, and Loki ingestion passed"

@@ -74,6 +74,17 @@ export TF_VAR_qq_client_id="$TX_QQ_CLIENT_ID"
 export TF_VAR_qq_client_secret="$TX_QQ_CLIENT_SECRET"
 
 TOFU_CLI_CONFIG="${TF_CLI_CONFIG_FILE:-/opt/wotb-tx/tofurc}"
+TOFU_STATE_DIR="/opt/wotb-tx/keycloak-tofu-state"
+TOFU_STATE_FILE="$TOFU_STATE_DIR/terraform.tfstate"
+TOFU_STATE_MARKER="$TOFU_STATE_DIR/bootstrap-complete"
+if [ ! -d "$TOFU_STATE_DIR" ] || [ -L "$TOFU_STATE_DIR" ] || \
+  [ ! -f "$TOFU_STATE_FILE" ] || [ ! -s "$TOFU_STATE_FILE" ] || [ -L "$TOFU_STATE_FILE" ] || \
+  [ ! -f "$TOFU_STATE_MARKER" ] || [ ! -s "$TOFU_STATE_MARKER" ] || [ -L "$TOFU_STATE_MARKER" ] || \
+  ! grep -qx 'local-tofu-state-bootstrap-v1' "$TOFU_STATE_MARKER"; then
+  echo "ERROR: local OpenTofu state is not bootstrapped or is unsafe: $TOFU_STATE_FILE" >&2
+  echo "Adopt the existing production Keycloak resources into this local state before deployment." >&2
+  exit 1
+fi
 [ -f "$TOFU_CLI_CONFIG" ] || {
   echo "ERROR: OpenTofu CLI config not found: $TOFU_CLI_CONFIG" >&2
   exit 2
