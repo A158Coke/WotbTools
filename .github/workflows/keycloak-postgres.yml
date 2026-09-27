@@ -73,7 +73,7 @@ jobs:
           set -euo pipefail
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh"             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
-      - name: Reconcile PostgreSQL runtime, apply exact plan, and verify
+      - name: Reconcile runtime, apply exact Keycloak PostgreSQL plan, and verify
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
