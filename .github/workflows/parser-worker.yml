@@ -3,34 +3,6 @@ name: Parser Worker
 on:
   push:
     branches: [main]
-    paths:
-      - .github/workflows/parser-worker.yml
-      - .dockerignore
-      - docker/Dockerfile.parser-worker
-      - common/tankopedia-tier7.json
-      - common/tankopedia-tier8.json
-      - common/tankopedia-tier9.json
-      - common/tankopedia-tier10.json
-      - common/map_names.json
-      - common/tank_tactical_profiles.json
-      - common/map-semantics/**
-      - java/pom.xml
-      - java/**/pom.xml
-      - java/settings-docker.xml
-      - java/wotb-contracts/**
-      - java/wotb-object-storage-minio/**
-      - java/wotb-broker-rabbitmq/**
-      - java/wotb-core/**
-      - java/wotb-result/**
-      - java/wotb-playback/**
-      - java/wotb-replay-processing/**
-      - java/wotb-parser-worker/**
-      - contracts/mq/**
-      - deploy/dependency-readiness.sh
-      - deploy/dependency-readiness.py
-      - deploy/deploy.sh
-      - deploy/docker-compose.prod.yml
-      - deploy/release-metadata.py
   workflow_dispatch:
 
 permissions:
@@ -65,7 +37,11 @@ env:
     deploy/dependency-readiness.py
     deploy/deploy.sh
     deploy/docker-compose.prod.yml
-    deploy/release-metadata.py
+    deploy/check-latest-main.sh
+
+concurrency:
+  group: deploy-parser-worker
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -168,6 +144,19 @@ jobs:
           [ "$revision" = "$SOURCE_SHA" ] || { echo 'Published image does not contain the frozen BUILD_COMMIT.' >&2; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
+      - name: Publish latest only from current main
+        env:
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          IMAGE: ${{ steps.identity.outputs.image }}
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          DIGEST: ${{ steps.verify.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-latest-main.sh" "$SOURCE_SHA"
+          crane cp "$IMAGE@$DIGEST" "$REPOSITORY:latest"
+
+
   deploy:
     concurrency:
       group: production-maintenance
@@ -234,7 +223,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,TX_RABBITMQ_PARSER_WORKER_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_RABBITMQ_PARSER_WORKER_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY
           script: |
             set -euo pipefail
             exec 9>/opt/wotb/.deploy.lock
@@ -242,17 +231,11 @@ jobs:
             export WOTB_DEPLOY_LOCK_FD=9
             export WOTB_DEPLOY_SERVICE=parser-worker
             export WOTB_DEPLOY_CONFIG_SHA='${{ needs.build.outputs.commit_sha }}'
-            export WOTB_DEPLOY_IMAGE_TAG='${{ needs.build.outputs.image }}'
-            export WOTB_DEPLOY_IMAGE_COMMIT_SHA='${{ needs.build.outputs.commit_sha }}'
-            export WOTB_DEPLOY_IMAGE_DIGEST='${{ needs.build.outputs.digest }}'
             bash /opt/wotb/deploy.incoming/deploy/dependency-readiness.sh parser-worker
             bash /opt/wotb/deploy.incoming/deploy/deploy.sh
         env:
           WOTB_DEPLOY_SERVICE: parser-worker
           WOTB_DEPLOY_CONFIG_SHA: ${{ needs.build.outputs.commit_sha }}
-          WOTB_DEPLOY_IMAGE_TAG: ${{ needs.build.outputs.image }}
-          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
-          WOTB_DEPLOY_IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
           TX_RABBITMQ_PARSER_WORKER_PASSWORD: ${{ secrets.TX_RABBITMQ_PARSER_WORKER_PASSWORD }}
           YECAO_MINIO_WORKER_ACCESS_KEY: ${{ secrets.YECAO_MINIO_WORKER_ACCESS_KEY }}
           YECAO_MINIO_WORKER_SECRET_KEY: ${{ secrets.YECAO_MINIO_WORKER_SECRET_KEY }}

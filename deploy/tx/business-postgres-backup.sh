@@ -6,14 +6,14 @@ set -Eeuo pipefail
 
 umask 077
 
-readonly COMPOSE_FILE_DEFAULT="/opt/wotb-tx/deploy/docker-compose.yml"
+readonly COMPOSE_FILE_DEFAULT="/opt/wotb-tx/deploy/business-postgres.compose.yml"
 readonly COMPOSE_SERVICE_DEFAULT="business-postgres"
 readonly BACKUP_ROOT_DEFAULT="/opt/wotb-tx/backups/business-postgres"
 readonly SOURCE_DATABASE="wotb"
 
 compose_file="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_FILE:-$COMPOSE_FILE_DEFAULT}"
 compose_service="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_SERVICE:-$COMPOSE_SERVICE_DEFAULT}"
-project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-wotb-tx-business-postgres}"
+project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-deploy}"
 # Optional container override. The disposable CI smoke uses this to drive the
 # real script against a throwaway container without starting a Compose project.
 container_override="${WOTB_TX_BUSINESS_POSTGRES_CONTAINER:-}"
@@ -108,7 +108,21 @@ if [ -n "$container_override" ]; then
   docker inspect "$container_override" >/dev/null 2>&1 \
     || { echo "Container is not available: $container_override" >&2; exit 1; }
 else
-  docker compose -p "$project_name" -f "$compose_file" up -d "$compose_service" >/dev/null
+  [ "$project_name" = deploy ] && [ "$compose_service" = business-postgres ] \
+    || { echo 'Refusing a non-canonical Business PostgreSQL Compose project or service.' >&2; exit 1; }
+  volume_name=deploy_business_postgres_data
+  docker volume inspect "$volume_name" >/dev/null 2>&1 \
+    || { echo "Authoritative PostgreSQL volume is missing: $volume_name" >&2; exit 1; }
+  volume_project="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.project" }}' "$volume_name")"
+  volume_key="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.volume" }}' "$volume_name")"
+  [ "$volume_project" = deploy ] && [ "$volume_key" = business_postgres_data ] \
+    || { echo "PostgreSQL volume ownership is not the expected Compose identity: $volume_name" >&2; exit 1; }
+  container_id="$(docker compose -p "$project_name" -f "$compose_file" ps --status running -q "$compose_service")"
+  [ -n "$container_id" ] \
+    || { echo 'Business PostgreSQL runtime is not running; backup will not create it.' >&2; exit 1; }
+  mounted_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql"}}{{.Name}}{{end}}{{end}}' "$container_id")"
+  [ "$mounted_volume" = "$volume_name" ] \
+    || { echo 'Business PostgreSQL runtime is not using the authoritative named volume; refusing backup.' >&2; exit 1; }
 fi
 
 ready="false"

@@ -39,7 +39,7 @@ versions = read("infra/tofu/keycloak/versions.tf")
 providers = read("infra/tofu/keycloak/providers.tf")
 identity_text = read("infra/tofu/keycloak/identity-providers.tf")
 variables_text = read("infra/tofu/keycloak/variables.tf")
-tx_compose = read("deploy/tx/docker-compose.yml")
+tx_compose = read("deploy/tx/keycloak.compose.yml")
 tofu_script = read("deploy/tx/keycloak-tofu.sh")
 keycloak_workflow_text = read(".github/workflows/keycloak.yml")
 keycloak_workflow = yaml.load(keycloak_workflow_text, Loader=yaml.BaseLoader)
@@ -49,7 +49,12 @@ outputs_text = read("infra/tofu/keycloak/outputs.tf")
 assert 'keycloak/keycloak' in versions and 'version = "5.9.0"' in versions
 assert "~>" not in versions
 assert "tls_insecure_skip_verify = false" in providers
-assert 'key    = "wotbtools/prod/keycloak.tfstate"' in root_text
+assert 'backend "local"' in root_text
+assert 'path = "/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate"' in root_text
+assert 'TOFU_STATE_FILE="$TOFU_STATE_DIR/terraform.tfstate"' in tofu_script
+assert 'TOFU_STATE_MARKER="$TOFU_STATE_DIR/bootstrap-complete"' in tofu_script
+assert 'local-tofu-state-bootstrap-v1' in tofu_script
+assert 'local OpenTofu state is not bootstrapped or is unsafe' in tofu_script
 
 # --- no out-of-band execution path around the provider -----------------------
 for forbidden in ("remote-exec", "local-exec", "null_resource"):
@@ -231,11 +236,13 @@ assert "all(.resource_changes[]?; ((.change.actions // []) | all(. == \"no-op\")
 assert "second plan is invalid or not No changes" in tofu_script
 
 # --- one main-only owner starts the empty runtime, applies the realm, verifies,
-# --- and commits release metadata under the same TX host lock -----------------
+# --- under the same TX host lock ---------------------------------------------
 keycloak_events = keycloak_workflow.get("on", keycloak_workflow.get(True, {}))
 assert keycloak_events["push"]["branches"] == ["main"]
 assert "workflow_dispatch" in keycloak_events
-assert "concurrency" not in keycloak_workflow
+assert keycloak_workflow["concurrency"] == {
+    "group": "deploy-keycloak", "cancel-in-progress": "true",
+}
 assert keycloak_workflow["jobs"]["deploy"]["concurrency"] == {
     "group": "production-maintenance", "cancel-in-progress": "false", "queue": "max",
 }
@@ -263,20 +270,20 @@ for required_name in (
     "Stage TX runtime files",
     "Stage Keycloak realm root and its actual TX runner",
     "Reject stale main before TX mutation",
-    "Reconcile Keycloak, apply realm Tofu, verify, and commit metadata under one host lock",
+    "Reconcile Keycloak, apply realm Tofu, and verify under one host lock",
 ):
     assert required_name in deploy_names, required_name
 assert deploy_names.index("Prepare TX runtime and realm staging") < deploy_names.index("Stage TX runtime files")
 assert deploy_names.index("Stage Keycloak realm root and its actual TX runner") < deploy_names.index(
     "Reject stale main before TX mutation"
-) < deploy_names.index("Reconcile Keycloak, apply realm Tofu, verify, and commit metadata under one host lock")
+) < deploy_names.index("Reconcile Keycloak, apply realm Tofu, and verify under one host lock")
 freshness = next(step for step in deploy_steps if step.get("name") == "Reject stale main before TX mutation")
 assert freshness["env"]["SOURCE_SHA"] == "${{ needs.build.outputs.commit_sha }}"
 assert "deploy/check-production-freshness.sh" in freshness["run"]
 assert freshness["env"]["EVENT_SHA"] == "${{ github.sha }}"
 
 apply_step = next(step for step in deploy_steps
-                  if step.get("name") == "Reconcile Keycloak, apply realm Tofu, verify, and commit metadata under one host lock")
+                  if step.get("name") == "Reconcile Keycloak, apply realm Tofu, and verify under one host lock")
 assert apply_step["uses"] == "appleboy/ssh-action@v1"
 apply_script = apply_step["with"]["script"]
 assert "exec 9>/opt/wotb-tx/.deploy.lock" in apply_script
@@ -285,20 +292,15 @@ readiness_at = apply_script.index("bash /opt/wotb-tx/deploy.incoming/deploy/depe
 runtime_at = apply_script.index("bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh")
 tofu_at = apply_script.index('bash "$stage/deploy/tx/keycloak-tofu.sh" "$root"')
 verify_at = apply_script.index("docker exec \"$keycloak_id\" test -f /opt/keycloak/providers/keycloak-qq-provider.jar")
-metadata_at = apply_script.index("release-metadata.py update")
-assert readiness_at < runtime_at < tofu_at < verify_at < metadata_at
+assert readiness_at < runtime_at < tofu_at < verify_at
 assert "docker exec \"$keycloak_id\" test -f /opt/keycloak/providers/keycloak-qq-provider.jar" in apply_script
 assert "http://127.0.0.1:18080/realms/wotbtools/.well-known/openid-configuration" in apply_script
-assert metadata_at > apply_script.index("docker run --rm --network host")
-assert "WOTB_DEPLOY_DEFER_METADATA=1" in apply_script
+assert "release-metadata.py" not in apply_script
 
 apply_envs = set(apply_step["with"]["envs"].split(","))
 assert apply_envs == {
     "WOTB_DEPLOY_SERVICE",
     "WOTB_DEPLOY_CONFIG_SHA",
-    "WOTB_DEPLOY_IMAGE_TAG",
-    "WOTB_DEPLOY_IMAGE_DIGEST",
-    "WOTB_DEPLOY_IMAGE_COMMIT_SHA",
     "TX_IMAGE_REGISTRY_PREFIX",
     "KC_POSTGRES_ADMIN_USER",
     "KC_POSTGRES_ADMIN_PASSWORD",
@@ -307,7 +309,6 @@ assert apply_envs == {
     "KC_DB_PASSWORD",
     "WG_APPLICATION_ID",
     "WOTB_TX_BOOTSTRAP_KEYCLOAK",
-    "WOTB_DEPLOY_DEFER_METADATA",
     "KEYCLOAK_ADMIN_USERNAME",
     "KEYCLOAK_ADMIN_PASSWORD",
     "KEYCLOAK_ADMIN_CLIENT_SECRET",
@@ -317,8 +318,6 @@ assert apply_envs == {
     "WG_APPLICATION_ID",
     "TX_QQ_CLIENT_ID",
     "TX_QQ_CLIENT_SECRET",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
 }
 assert apply_step["env"]["KEYCLOAK_ADMIN_PASSWORD"] == "${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}"
 assert apply_step["env"]["KEYCLOAK_ADMIN_CLIENT_SECRET"] == "${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}"

@@ -1,0 +1,35 @@
+name: deploy
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+services:
+  keycloak-postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${KC_POSTGRES_ADMIN_USER:?KC_POSTGRES_ADMIN_USER is required}
+      POSTGRES_PASSWORD: ${KC_POSTGRES_ADMIN_PASSWORD:?KC_POSTGRES_ADMIN_PASSWORD is required}
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - keycloak_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  keycloak_postgres_data:
+
+networks:
+  default:
+    name: wotb_tx_internal
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16

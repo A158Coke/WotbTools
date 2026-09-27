@@ -13,6 +13,26 @@
 `8087/api/health`。完整
 Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 smoke，不在此记录静态推测。
 
+## 0. 当前拓扑（2026-09 observability realignment 后）
+
+双主机分工与观测数据路径（旧单机架构的历史记录见下文各节，与现状冲突时以本节为准）：
+
+- **观测栈在 Yecao**（`deploy/docker-compose.prod.yml`）：Prometheus/Loki/Alloy/Grafana/node-exporter。
+  除容器内网外只发布两个 WireGuard-only 端口：Grafana `10.20.0.2:3000`、Loki `10.20.0.2:3100`。
+- **业务在 TX**：`business-api` 的 management 端口只绑 `10.20.0.1:8088`，Yecao Prometheus 以
+  `job="wotb-backend"`（目标 `10.20.0.1:8088/actuator/prometheus`）跨 WireGuard 抓取；job 名与
+  `service` 标签保持不变，所有 dashboard PromQL 无需改动。
+- **日志**：TX 侧 `alloy-tx`（`deploy/tx/alloy/config.alloy`）按 `com.docker.compose.service`
+  标签采集 business-api/keycloak/wotb-frontend，标签归一化为旧名 `wotb-backend`/`keycloak`/
+  `wotb-frontend` 后经 WireGuard 推给 Yecao Loki；部署车道是 `.github/workflows/alloy-tx.yml`，
+  deploy gate 用带生产标签的 canary 证明三条流端到端可达。
+- **公网 monitor**：`monitor.wotbtools.com` DNS 指向 **TX（118.25.18.105）**，由 TX `Caddyfile`
+  的站点块反代到 `10.20.0.2:3000`；TX-local 就绪路由 `http://caddy/_wotb/monitor/*` 供无 DNS 部署
+  验证。Yecao 宿主上的 Grafana Tofu root 走本机 `http://10.20.0.2:3000`，不依赖公网 DNS。
+- **验证**：`deploy/verify-observability.sh` 在一次性 alpine 容器内执行全部检查（不再引用退役的
+  `wotb-backend` 容器），覆盖五类 target `up==1`、datasource/dashboard API、双 canary 与 APK
+  脱敏 canary；Yecao 部署在数据链路失败时仍只输出非阻塞的 `OBSERVABILITY DEGRADED`。
+
 ## 1. 架构总览
 
 ```
@@ -95,6 +115,11 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 ## 2. `monitor.wotbtools.com`：DNS、HTTPS、反向代理
 
+> **2026-09 迁移后**：本节前半部分描述的是旧 Yecao 单机架构（frontend nginx server 块 + host 级
+> Caddy）的历史实现，容器已随业务退役。现行路径见第 0 节：DNS 指向 TX，TLS 由 TX Caddy 终止，
+> 上游是 Yecao 的 WireGuard-only Grafana `10.20.0.2:3000`；仓库内配置为 `deploy/tx/Caddyfile` 的
+> `monitor.wotbtools.com` 站点块。`GF_SERVER_ROOT_URL` 契约不变。
+
 仓库内已完成的部分：
 
 - `deploy/nginx/nginx.conf`：新增 `server_name monitor.wotbtools.com` 的 server 块，使用 Docker embedded DNS `127.0.0.11` 在请求运行时解析 `grafana:3000`，并透传 `X-Forwarded-*`、支持 WebSocket（Grafana Live）。
@@ -160,15 +185,15 @@ dashboard 与运行时链路由 CI 的独立 runtime smoke 验证；生产运行
 
 ### 生产（CI 自动）
 
-main push 由服务 owner workflow 按各自路径规则独立触发。应用 image owner 是
+每次 main push 都触发五个应用 image owner；固定基础设施 owner 按各自路径规则独立触发。应用 image owner 是
 `business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 与 `minio.yml`；固定 runtime
 与 root owner 是 `caddy.yml`、`rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、
-`cos.yml` 与本 `observability.yml`。每个 workflow 使用自己的 staging、当前 main SHA 检查、
+`alloy-tx.yml`（TX 日志采集）与本 `observability.yml`。每个 workflow 使用自己的 staging、当前 main SHA 检查、
 验证和手动入口；TX 的 TCR 镜像只属于前三个 TX 应用，Yecao 的 GHCR 镜像只属于 parser-worker/MinIO。
-不相关服务不会因统一 release planner 被选择。生产维护队列不会因新 push 取消已开始的操作，
-host mutation 另有 `flock` 串行化；过期 SHA 在 mutation 前 fail closed。
+不相关服务不会因统一 release planner 被选择。应用 owner 在新 main 到来时取消旧运行，
+固定基础设施保留生产维护队列；host mutation 另有 `flock` 串行化，过期 SHA 在 mutation 前 fail closed。
 
-### Application gate 与 production metadata
+### Application gate 与镜像身份
 
 TX 应用 owner workflow 由 `deploy/tx/deploy.sh` 验证各自的 API/frontend/OIDC readiness；Business
 API 的 mutation 前检查还以只读 consumer 身份验证 PostgreSQL、Keycloak、RabbitMQ 与 MinIO，
@@ -176,23 +201,21 @@ parser-worker 检查 RabbitMQ 与 MinIO，再由容器存活判定 worker 运行
 dashboard 与日志 ingestion 失败只记 `OBSERVABILITY DEGRADED`，不让健康应用回退。部署失败由所属
 workflow 输出该服务诊断并停止确认失败的目标服务；不自动恢复旧镜像。
 
-metadata helper `deploy/release-metadata.py` 校验 schemaVersion 2、host/service ownership、
-完整 registry image reference、SHA 和 immutable tag，并用同目录原子更新与 0600 权限：
-TX `/opt/wotb-tx/production-release.json` 记录 business-api/frontend/keycloak，Yecao
-`/opt/wotb/production-release.json` 记录 parser-worker/minio。Config-only 成功只更新 configSha；
-固定上游 runtime 不记入应用 metadata。Metadata 缺失、损坏或镜像身份无法证明时 fail closed，
-不从 Compose 或运行容器补猜。
+main 是应用部署的唯一目标状态。各 owner workflow 构建、发布所属镜像的 `latest`，
+发布前确认 source SHA 仍为远端 main HEAD；旧 workflow 被新 main 取消。生产实际运行镜像与
+`BUILD_COMMIT` 可用 `docker inspect` 核对。固定基础设施独立管理持久 volume 与 OpenTofu state。
+
 
 backend 在 `ApplicationReadyEvent` 后记录 `WotBTools backend build=<commit> Flyway
 migration ceiling=<version>`。排查 schema/image 不匹配时，在 TX 日志中核对完整 build SHA 与
-metadata image tag/schema。
+运行容器的 image digest 与 schema。
 
 
 ### 单目标人工操作与数据库边界
 
 事故恢复通过对应应用 owner workflow 的单服务手动入口完成。镜像身份必须是当前 workflow 明确
-校验的 immutable SHA tag 和 registry digest；没有 `all` 或 `latest` 身份。schema 回退不是部署能力；
-数据库灾难恢复仍只通过人工核对的 `deploy/postgres-restore.sh` 执行。
+发布的 `latest`；没有 `all` 选择器。schema 回退不是部署能力；
+Business PostgreSQL 归档验证及 disposable restore 见 `docs/operations/business-postgres.md`；Keycloak PostgreSQL 归档必须与 Business PostgreSQL 工具隔离处理。
 `database-backup.yml` 保持 VPS 本地双库备份边界；COS 上传、对象验证和 retention 尚未纳入该链路。
 
 ### 停止观测系统（不影响主业务）
@@ -210,7 +233,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 > **禁止**使用 `docker compose down -v` 作为普通停止/回滚命令——它会删除所有 volume（含 PostgreSQL 数据）。
 
-> **应用失败处理**不由服务 owner workflow 自动切换旧版本：该 workflow 输出服务/image/status/log/schema 诊断并停止确认失败的目标 service，随后 workflow FAIL。operator 通过该应用 workflow 的单服务手动入口明确选择一个 immutable image identity；它不触碰数据库 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
+> **应用失败处理**不由服务 owner workflow 自动切换旧版本：该 workflow 输出服务/image/status/log/schema 诊断并停止确认失败的目标 service，随后 workflow FAIL。operator 通过该应用 workflow 的单服务手动入口重新部署当前 main 的 `latest`；它不触碰数据库 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
 
 ---
 

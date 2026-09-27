@@ -30,6 +30,12 @@ http://caddy {
 		}
 	}
 
+	# TX-local readiness surface for the monitor route: proves the WireGuard
+	# upstream to the Yecao Grafana without public DNS or a certificate.
+	handle_path /_wotb/monitor/* {
+		reverse_proxy 10.20.0.2:3000
+	}
+
 	handle {
 		respond "not found" 404
 	}
@@ -56,4 +62,13 @@ auth.wotbtools.com {
 			header_up Host {host}
 		}
 	}
+}
+
+# The public monitoring surface. Grafana itself runs on Yecao and is bound to
+# the WireGuard address only (10.20.0.2:3000); Caddy terminates TLS and proxies
+# without touching the Host header so Grafana's root URL stays
+# https://monitor.wotbtools.com. DNS for this name must point at the TX
+# address (118.25.18.105) for the certificate to issue.
+monitor.wotbtools.com {
+	reverse_proxy 10.20.0.2:3000
 }

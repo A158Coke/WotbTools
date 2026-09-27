@@ -161,8 +161,8 @@ TOFU_WORK_ROOT="$WORK/tofu-root"
 mkdir -p "$TOFU_WORK_ROOT"
 cp -a "$TOFU_ROOT/." "$TOFU_WORK_ROOT/"
 cd "$TOFU_WORK_ROOT"
-# The production root declares COS as its backend. A fresh CI realm must use
-# disposable local state, so remove only the backend declaration in this
+# The production root declares the TX persistent local backend. A fresh CI
+# realm must use disposable test state, so remove only that declaration in this
 # temporary copy; the committed backend contract is checked separately.
 rm -f -- backend.tf
 "$TOFU" init -backend=false -input=false >/dev/null

@@ -13,7 +13,7 @@ services:
   # outcome. No public port, no database credentials, no mounted job directory — PostgreSQL stays
   # the job authority on TX and RabbitMQ remains the delivery path.
   parser-worker:
-    image: ghcr.io/a158coke/wotbtools-parser-worker:${TAG:?TAG is required}
+    image: ghcr.io/a158coke/wotbtools-parser-worker:latest
     environment:
       RABBITMQ_HOST: "${PARSER_WORKER_RABBITMQ_HOST:-10.20.0.1}"
       RABBITMQ_PORT: "${PARSER_WORKER_RABBITMQ_PORT:-5672}"
@@ -73,6 +73,10 @@ services:
     volumes:
       - ./deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki_data:/loki
+    ports:
+      # WireGuard-only ingestion endpoint for the TX-side alloy-tx log shipper.
+      # Never published publicly; same class as the MinIO 10.20.0.2:9000 bind.
+      - "10.20.0.2:3100:3100"
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 256m
@@ -104,6 +108,10 @@ services:
       - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
+    ports:
+      # WireGuard-only bind consumed by the TX Caddy gateway (monitor.wotbtools.com
+      # reverse proxy) and by the host-local Grafana Tofu root. Never public.
+      - "10.20.0.2:3000:3000"
     depends_on:
       - prometheus
       - loki

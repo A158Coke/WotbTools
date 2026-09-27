@@ -1,9 +1,8 @@
 # TX Business PostgreSQL OpenTofu boundary
 
 `infra/tofu/postgres-business` is an isolated OpenTofu root for the TX Business
-PostgreSQL application role, database, and database grant. It is not part of the
-COS/Lighthouse root, the Grafana root, or the Keycloak PostgreSQL root, and it
-uses local TX-only state:
+PostgreSQL application role, database, and database grant. It is independent
+of the Grafana and Keycloak PostgreSQL roots and uses local TX-only state:
 
 ```text
 /opt/wotb-tx/postgres-business-tofu-state/terraform.tfstate

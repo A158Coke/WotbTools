@@ -5,21 +5,16 @@ set -Eeuo pipefail
 readonly WOTB_DIR="${WOTB_TX_DIR:-/opt/wotb-tx}"
 readonly INCOMING_DIR="${WOTB_TX_INCOMING_DIR:-$WOTB_DIR/deploy.incoming/deploy/tx}"
 readonly LIVE_DEPLOY_DIR="$WOTB_DIR/deploy"
-readonly LIVE_COMPOSE="$LIVE_DEPLOY_DIR/docker-compose.yml"
-readonly METADATA_FILE="$WOTB_DIR/production-release.json"
-readonly METADATA_TOOL="$(dirname "$INCOMING_DIR")/release-metadata.py"
+LIVE_COMPOSE="$LIVE_DEPLOY_DIR/docker-compose.yml"
+readonly LIVE_COMMON="$LIVE_DEPLOY_DIR/common.compose.yml"
 readonly TX_RUNTIME_ROOT="${TX_RUNTIME_ROOT:-$WOTB_DIR}"
 readonly TOFU_PROVISION_MARKER="${WOTB_TX_TOFU_PROVISION_MARKER:-$WOTB_DIR/keycloak.tofu-provisioned}"
 readonly RABBITMQ_TOFU_PROVISION_MARKER="${WOTB_TX_RABBITMQ_TOFU_PROVISION_MARKER:-$WOTB_DIR/rabbitmq.tofu-provisioned}"
 readonly BUSINESS_POSTGRES_TOFU_PROVISION_MARKER="${WOTB_TX_BUSINESS_POSTGRES_TOFU_PROVISION_MARKER:-$WOTB_DIR/business-postgres.tofu-provisioned}"
 readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
-readonly DEFER_RELEASE_METADATA="${WOTB_DEPLOY_DEFER_METADATA:-0}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://business-api:8087}"
 readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
 readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
-readonly IMAGE_TAG_VALUE="${WOTB_DEPLOY_IMAGE_TAG:-}"
-readonly IMAGE_COMMIT_SHA_VALUE="${WOTB_DEPLOY_IMAGE_COMMIT_SHA:-}"
-readonly IMAGE_DIGEST_VALUE="${WOTB_DEPLOY_IMAGE_DIGEST:-}"
 readonly TX_IMAGE_REGISTRY_PREFIX_VALUE="${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
 readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
@@ -27,11 +22,10 @@ readonly PROBE_CONNECT_TIMEOUT_SEC="${WOTB_PROBE_CONNECT_TIMEOUT_SEC:-3}"
 readonly PROBE_MAX_TIME_SEC="${WOTB_PROBE_MAX_TIME_SEC:-10}"
 
 declare -a DEPLOY_SERVICES=()
-declare -a DEPLOY_IMAGE_SERVICES=()
 declare -a APPLY_SERVICES=()
 DEPLOY_SERVICES_RAW=""
+SERVICE_COMPOSE=""
 FAILED_SERVICE=""
-CADDY_RELOAD_ONLY=false
 PROBE_LAST_SERVICE=""
 PROBE_LAST_URL=""
 PROBE_LAST_HTTP_STATUS="unavailable"
@@ -105,56 +99,40 @@ is_business_api_group_selected() {
   is_selected business-api
 }
 
-is_image_service() {
-  case "$1" in
-    keycloak|wotb-frontend|business-api) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-has_image_service() {
-  local wanted="$1" service
-  for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
-    [ "$service" = "$wanted" ] && return 0
-  done
-  return 1
-}
-
 validate_inputs() {
   is_safe_path "$WOTB_DIR" || die "unsafe WOTB_TX_DIR."
   is_safe_path "$INCOMING_DIR" || die "unsafe WOTB_TX_INCOMING_DIR."
   is_safe_path "$TX_RUNTIME_ROOT" || die "unsafe TX_RUNTIME_ROOT."
   [ "$INCOMING_DIR" != "$WOTB_DIR" ] || die "incoming directory must differ from TX runtime directory."
   [[ "$CONFIG_SHA_VALUE" =~ ^[0-9a-f]{40}$ ]] || die "WOTB_DEPLOY_CONFIG_SHA must be a full lowercase commit SHA."
-  [[ "$TX_IMAGE_REGISTRY_PREFIX_VALUE" =~ ^([a-z0-9][a-z0-9-]*\.)+tencentyun\.com/[a-z0-9][a-z0-9._-]*$ ]] \
-    || die "TX_IMAGE_REGISTRY_PREFIX must be a Tencent TCR registry and namespace."
-  [ "$BACKEND_UPSTREAM_VALUE" = "http://business-api:8087" ] \
-    || die "TX_BACKEND_UPSTREAM must be the TX-internal business runtime http://business-api:8087; public hosts and the retired Yecao WireGuard backend are no longer routable."
   is_positive_integer "$HEALTH_ATTEMPTS" || die "WOTB_HEALTH_ATTEMPTS must be a positive integer."
   is_positive_integer "$HEALTH_INTERVAL_SEC" || die "WOTB_HEALTH_INTERVAL_SEC must be a positive integer."
   is_positive_integer "$PROBE_CONNECT_TIMEOUT_SEC" || die "WOTB_PROBE_CONNECT_TIMEOUT_SEC must be a positive integer."
   is_positive_integer "$PROBE_MAX_TIME_SEC" || die "WOTB_PROBE_MAX_TIME_SEC must be a positive integer."
   case "$DEPLOY_SERVICE_VALUE" in
     frontend) DEPLOY_SERVICES=(wotb-frontend) ;;
-    keycloak-postgres|business-postgres|rabbitmq|keycloak|business-api|caddy)
+    keycloak-postgres|business-postgres|rabbitmq|keycloak|business-api|caddy|alloy-tx)
       DEPLOY_SERVICES=("$DEPLOY_SERVICE_VALUE") ;;
     *) die "unsupported TX deployment service: $DEPLOY_SERVICE_VALUE" ;;
   esac
   DEPLOY_SERVICES_RAW="${DEPLOY_SERVICES[0]}"
-  if [ -n "$IMAGE_TAG_VALUE" ] || [ -n "$IMAGE_COMMIT_SHA_VALUE" ] || [ -n "$IMAGE_DIGEST_VALUE" ]; then
-    [ -n "$IMAGE_TAG_VALUE" ] && [ -n "$IMAGE_COMMIT_SHA_VALUE" ] && [ -n "$IMAGE_DIGEST_VALUE" ] \
-      || die "image tag, source SHA, and registry digest must be supplied together."
-    [[ "$IMAGE_DIGEST_VALUE" =~ ^sha256:[0-9a-f]{64}$ ]] \
-      || die "WOTB_DEPLOY_IMAGE_DIGEST must be a sha256 digest."
-    is_image_service "$DEPLOY_SERVICES_RAW" || die "fixed upstream service cannot receive image identity."
-    DEPLOY_IMAGE_SERVICES=("$DEPLOY_SERVICES_RAW")
-  else
-    DEPLOY_IMAGE_SERVICES=()
+  case "$DEPLOY_SERVICES_RAW" in
+    wotb-frontend) SERVICE_COMPOSE=frontend.compose.yml ;;
+    *) SERVICE_COMPOSE="$DEPLOY_SERVICES_RAW.compose.yml" ;;
+  esac
+  LIVE_COMPOSE="$LIVE_DEPLOY_DIR/$SERVICE_COMPOSE"
+  if is_selected keycloak || is_selected wotb-frontend || is_selected business-api; then
+    [[ "$TX_IMAGE_REGISTRY_PREFIX_VALUE" =~ ^([a-z0-9][a-z0-9-]*\.)+tencentyun\.com/[a-z0-9][a-z0-9._-]*$ ]] \
+      || die "TX_IMAGE_REGISTRY_PREFIX must be a Tencent TCR registry and namespace."
+  fi
+  if is_selected wotb-frontend; then
+    [ "$BACKEND_UPSTREAM_VALUE" = "http://business-api:8087" ] \
+      || die "TX_BACKEND_UPSTREAM must be the TX-internal business runtime http://business-api:8087."
   fi
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy) ;;
+      keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy|alloy-tx) ;;
       *) die "unsupported TX deployment service: $service" ;;
     esac
   done
@@ -162,21 +140,6 @@ validate_inputs() {
     0|1) ;;
     *) die "WOTB_TX_BOOTSTRAP_KEYCLOAK must be 0 or 1." ;;
   esac
-  case "$DEFER_RELEASE_METADATA" in
-    0|1) ;;
-    *) die "WOTB_DEPLOY_DEFER_METADATA must be 0 or 1." ;;
-  esac
-  if [ "$DEFER_RELEASE_METADATA" = 1 ] && ! is_selected keycloak; then
-    die "WOTB_DEPLOY_DEFER_METADATA=1 is supported only for the Keycloak runtime/Tofu chain."
-  fi
-  for service in "${DEPLOY_IMAGE_SERVICES[@]}"; do
-    case "$service" in
-      "") ;;
-      keycloak|wotb-frontend|business-api) is_selected "$service" || die "TX image service is not selected: $service" ;;
-      *) die "unsupported TX image service: $service" ;;
-    esac
-  done
-
   # Only selected runtime services may require their credentials. RabbitMQ-only
   # and business-postgres-only reconciliation must not depend on each other or
   # on Keycloak/PostgreSQL application inputs.
@@ -220,104 +183,32 @@ validate_inputs() {
   fi
 }
 
-metadata_tag() {
-  local service="$1"
-  case "$service" in wotb-frontend) service=frontend ;; esac
-  python3 "$METADATA_TOOL" get --host tx --file "$METADATA_FILE" \
-    --tx-prefix "$TX_IMAGE_REGISTRY_PREFIX_VALUE" --service "$service" --field tag
-}
-
-effective_image_ref() {
-  local service="$1"
-  if has_image_service "$service"; then
-    printf '%s@%s\n' "$IMAGE_TAG_VALUE" "$IMAGE_DIGEST_VALUE"
-  else
-    metadata_tag "$service"
-  fi
-}
-# Render the promoted Compose document from the staged tree, pinning the immutable
-# identity resolved for every application image service (see effective_image_ref).
-render_effective_compose() {
-  local source="$1" target="$2" frontend_image="$3" keycloak_image="$4" business_api_image="$5"
-  FRONTEND_IMAGE="$frontend_image" KEYCLOAK_IMAGE="$keycloak_image" \
-    BUSINESS_API_IMAGE="$business_api_image" \
-    python3 - "$source" "$target" <<'PY'
-import os
-import re
-import sys
-
-source, target = sys.argv[1:3]
-# service -> immutable image reference resolved for this deployment. An empty value
-# means the service has never been deployed on this host, so its incoming declaration
-# is kept verbatim; a resolved value is pinned.
-images = {
-    "wotb-frontend": os.environ["FRONTEND_IMAGE"],
-    "keycloak": os.environ["KEYCLOAK_IMAGE"],
-    "business-api": os.environ["BUSINESS_API_IMAGE"],
-}
-current = ""
-seen = set()
-output = []
-for line in open(source, encoding="utf-8"):
-    match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
-    if match:
-        current = match.group(1)
-    if current in images and re.match(r"^\s+image:\s+", line):
-        image = images[current]
-        seen.add(current)
-        if image:
-            line = f"    image: {image}\n"
-    output.append(line)
-missing = set(images) - seen
-if missing:
-    raise SystemExit("compose is missing application image definitions: " + ", ".join(sorted(missing)))
-with open(target, "w", encoding="utf-8") as handle:
-    handle.writelines(output)
-PY
-  chmod 600 "$target"
-}
-
-caddy_runtime_fingerprint() {
-  local compose_file="$1" section
-  awk '
-    /^  caddy:[[:space:]]*$/ { capture=1 }
-    capture && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ && $0 !~ /^  caddy:/ { exit }
-    capture { print }
-  ' "$compose_file"
-  for section in volumes networks configs secrets x-logging; do
-    printf '\n# top-level %s\n' "$section"
-    awk -v section="$section" '
-      $0 ~ ("^" section ":[[:space:]]*") { capture=1; print; next }
-      capture && /^[^[:space:]#][^:]*:([[:space:]]|$)/ { exit }
-      capture { print }
-    ' "$compose_file"
-  done
-}
-
-caddy_runtime_can_reload_in_place() {
-  local candidate="$1" current="$2" container_id status active_email
-  [ -f "$current" ] || return 1
-  [ -f "$LIVE_DEPLOY_DIR/Caddyfile" ] || return 1
-  [ -f "$LIVE_DEPLOY_DIR/assets/auth/.well-known/assetlinks.json" ] || return 1
-  cmp -s <(caddy_runtime_fingerprint "$candidate") <(caddy_runtime_fingerprint "$current") || return 1
-  container_id="$(docker compose -f "$current" ps -q caddy)" || return 1
-  [ -n "$container_id" ] || return 1
-  status="$(docker inspect --format '{{.State.Status}}' "$container_id")" || return 1
-  [ "$status" = running ] || return 1
-  active_email="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" |
-    sed -n 's/^CADDY_ACME_EMAIL=//p' | head -n 1)" || return 1
-  [ "$active_email" = "$CADDY_ACME_EMAIL" ]
-}
-
 stage_and_validate() {
   local source="$INCOMING_DIR/docker-compose.yml"
-  readonly EFFECTIVE_COMPOSE="$INCOMING_DIR/docker-compose.effective.yml"
+  readonly EFFECTIVE_COMPOSE="$INCOMING_DIR/$SERVICE_COMPOSE"
   [ -f "$source" ] || die "staged TX deployment tree is missing docker-compose.yml."
-  [ -f "$INCOMING_DIR/Caddyfile" ] || die "staged TX deployment tree is missing Caddyfile."
-  [ -f "$INCOMING_DIR/nginx/frontend.conf.template" ] || die "staged TX deployment tree is missing frontend nginx template."
+  [ -f "$INCOMING_DIR/common.compose.yml" ] || die "staged TX common compose is missing."
+  [ -f "$EFFECTIVE_COMPOSE" ] || die "staged TX selected compose is missing: $SERVICE_COMPOSE"
+  [ -f "$INCOMING_DIR/business-postgres.compose.yml" ] \
+    || die "staged TX deployment tree is missing business-postgres.compose.yml."
+  [ -f "$INCOMING_DIR/keycloak-postgres.compose.yml" ] \
+    || die "staged TX deployment tree is missing keycloak-postgres.compose.yml."
+  [ -f "$INCOMING_DIR/runtime-check.sh" ] || die "staged TX deployment tree is missing runtime-check.sh."
+  [ -f "$INCOMING_DIR/runtime-check-lib.sh" ] || die "staged TX deployment tree is missing runtime-check-lib.sh."
+  if is_selected wotb-frontend; then
+    [ -f "$INCOMING_DIR/nginx/frontend.conf.template" ] || die "staged TX deployment tree is missing frontend nginx template."
+  fi
   if is_selected caddy; then
+    [ -f "$INCOMING_DIR/Caddyfile" ] || die "staged TX deployment tree is missing Caddyfile."
     [ -f "$INCOMING_DIR/assets/auth/.well-known/assetlinks.json" ] \
       || die "staged TX deployment tree is missing Caddy's assetlinks file."
+  fi
+  if is_selected alloy-tx; then
+    [ -f "$INCOMING_DIR/alloy/config.alloy" ] || die "staged TX Alloy config is missing."
+    local validator="$(dirname "$INCOMING_DIR")/validate-alloy-config.sh"
+    [ -f "$validator" ] || die "staged Alloy validator is missing."
+    bash "$validator" "$INCOMING_DIR/alloy/config.alloy" \
+      || die "staged TX Alloy config validation failed; live TX deployment was not changed."
   fi
   if is_selected wotb-frontend; then
     # Sponsor assets and Android releases are optional runtime content. The
@@ -332,25 +223,88 @@ stage_and_validate() {
   # The runtime E2E check mounts this directory into the health-probe container;
   # its content (the staged replay fixtures) is optional and staged separately.
   mkdir -p "$TX_RUNTIME_ROOT/e2e"
-  set_nonselected_compose_placeholders
-  local frontend_image keycloak_image business_api_image
-  frontend_image="$(effective_image_ref wotb-frontend)"
-  keycloak_image="$(effective_image_ref keycloak)"
-  business_api_image="$(effective_image_ref business-api)"
-  render_effective_compose "$source" "$EFFECTIVE_COMPOSE" \
-    "$frontend_image" "$keycloak_image" "$business_api_image"
   export TX_RUNTIME_ROOT
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"
   assert_routing_boundary "$EFFECTIVE_COMPOSE"
-  docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null \
+  docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" config >/dev/null \
     || die "staged TX compose config is invalid; live TX deployment was not changed."
   if is_selected caddy; then
-    docker compose -f "$EFFECTIVE_COMPOSE" run --rm --no-deps caddy \
+    docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" run --rm --no-deps caddy \
       validate --config /etc/caddy/Caddyfile --adapter caddyfile \
       || die "staged Caddy configuration is invalid; the live gateway was not changed."
-    if caddy_runtime_can_reload_in_place "$source" "$LIVE_COMPOSE"; then
-      CADDY_RELOAD_ONLY=true
-    fi
+  fi
+}
+
+assert_stateful_volume_identity() {
+  local service="$DEPLOY_SERVICES_RAW" fragment volume_key volume_name volume_target container_id mounted_volume volume_project
+  case "$service" in
+    business-postgres)
+      fragment="$INCOMING_DIR/business-postgres.compose.yml"
+      volume_key=business_postgres_data
+      volume_name=deploy_business_postgres_data
+      volume_target=/var/lib/postgresql
+      ;;
+    keycloak-postgres)
+      fragment="$INCOMING_DIR/keycloak-postgres.compose.yml"
+      volume_key=keycloak_postgres_data
+      volume_name=deploy_keycloak_postgres_data
+      volume_target=/var/lib/postgresql
+      ;;
+    rabbitmq)
+      fragment="$INCOMING_DIR/rabbitmq.compose.yml"
+      volume_key=rabbitmq_data
+      volume_name=deploy_rabbitmq_data
+      volume_target=/var/lib/rabbitmq
+      ;;
+    business-api)
+      fragment="$INCOMING_DIR/business-api.compose.yml"
+      volume_key=replay_data
+      volume_name=deploy_replay_data
+      volume_target=/data/replays
+      ;;
+    *) return 0 ;;
+  esac
+
+  if ! docker compose -p deploy -f "$fragment" config --format json | python3 -c '
+import json
+import sys
+
+service, volume_key, volume_name, volume_target = sys.argv[1:]
+data = json.load(sys.stdin)
+valid = (
+    data.get("name") == "deploy"
+    and (data.get("volumes", {}).get(volume_key) or {}).get("name") == volume_name
+    and (data.get("networks", {}).get("default") or {}).get("name") == "wotb_tx_internal"
+    and any(
+        mount.get("type") == "volume"
+        and mount.get("source") == volume_key
+        and mount.get("target") == volume_target
+        for mount in data["services"][service].get("volumes", [])
+    )
+)
+if not valid:
+    raise SystemExit(1)
+' "$service" "$volume_key" "$volume_name" "$volume_target"; then
+    die "$service Compose project, network, or persistent volume identity is invalid."
+  fi
+  docker volume inspect "$volume_name" >/dev/null 2>&1 \
+    || die "authoritative persistent volume is missing: $volume_name"
+  volume_project="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.project" }}' "$volume_name")" \
+    || die "could not inspect persistent volume ownership: $volume_name"
+  local actual_volume_key
+  actual_volume_key="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.volume" }}' "$volume_name")" \
+    || die "could not inspect persistent volume key: $volume_name"
+  [ "$volume_project" = deploy ] && [ "$actual_volume_key" = "$volume_key" ] \
+    || die "persistent volume ownership differs from the expected Compose identity: $volume_name"
+  docker network inspect wotb_tx_internal >/dev/null 2>&1 \
+    || die "TX runtime network is missing; refusing to create a separate network for $service."
+  container_id="$(docker compose -p deploy -f "$fragment" ps -aq "$service")" \
+    || die "could not inspect the current $service container."
+  if [ -n "$container_id" ]; then
+    mounted_volume="$(docker inspect --format "{{range .Mounts}}{{if eq .Destination \"$volume_target\"}}{{.Name}}{{end}}{{end}}" "$container_id")" \
+      || die "could not inspect the current $service volume mount."
+    [ "$mounted_volume" = "$volume_name" ] \
+      || die "$service is attached to a different data volume; refusing recreation."
   fi
 }
 
@@ -363,8 +317,10 @@ stage_and_validate() {
 #      dispatch in production.
 assert_routing_boundary() {
   local compose_file="$1"
-  grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}' "$compose_file" \
-    || die "staged TX compose must default the frontend upstream to the TX-internal business runtime."
+  if is_selected wotb-frontend; then
+    grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}' "$compose_file" \
+      || die "staged TX frontend must default to the TX-internal business runtime."
+  fi
   ! grep -Eq '8087:8087|10\.20\.0\.2:8087' "$compose_file" \
     || die "staged TX compose must not publish or reference the retired Yecao backend port."
   if is_selected business-api; then
@@ -377,26 +333,9 @@ assert_routing_boundary() {
 }
 
 pull_images() {
-  if is_selected caddy && [ "$CADDY_RELOAD_ONLY" = true ]; then
-    echo "Caddy Compose runtime is unchanged; skipping image pull for config reload."
-    return 0
-  fi
-  docker compose -f "$EFFECTIVE_COMPOSE" pull "$DEPLOY_SERVICES_RAW"
+  docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" pull "$DEPLOY_SERVICES_RAW"
 }
 promote_files() {
-  if is_selected caddy && [ "$CADDY_RELOAD_ONLY" = true ]; then
-    [ -f "$INCOMING_DIR/Caddyfile" ] || die "staged TX Caddyfile is missing."
-    [ -f "$INCOMING_DIR/assets/auth/.well-known/assetlinks.json" ] \
-      || die "staged TX assetlinks file is missing."
-    [ -f "$METADATA_TOOL" ] || die "staged release metadata validator is missing."
-    mkdir -p "$LIVE_DEPLOY_DIR/assets/auth/.well-known" || return 1
-    cp -f "$INCOMING_DIR/deploy.sh" "$LIVE_DEPLOY_DIR/deploy.sh" || return 1
-    cp -f "$METADATA_TOOL" "$LIVE_DEPLOY_DIR/release-metadata.py" || return 1
-    cat "$INCOMING_DIR/Caddyfile" > "$LIVE_DEPLOY_DIR/Caddyfile" || return 1
-    cat "$INCOMING_DIR/assets/auth/.well-known/assetlinks.json" \
-      > "$LIVE_DEPLOY_DIR/assets/auth/.well-known/assetlinks.json" || return 1
-    return 0
-  fi
   local next_deploy="$WOTB_DIR/deploy.next.$$" old_deploy="$WOTB_DIR/deploy.old.$$"
   rm -rf -- "$next_deploy" || return 1
   mkdir -p "$next_deploy" || return 1
@@ -404,10 +343,25 @@ promote_files() {
     cp -a "$LIVE_DEPLOY_DIR/." "$next_deploy/" || return 1
   fi
   [ -f "$INCOMING_DIR/deploy.sh" ] || die "staged TX deployment script is missing."
+  [ -f "$INCOMING_DIR/business-postgres.compose.yml" ] || die "staged Business PostgreSQL compose fragment is missing."
+  [ -f "$INCOMING_DIR/keycloak-postgres.compose.yml" ] || die "staged Keycloak PostgreSQL compose fragment is missing."
+  [ -f "$INCOMING_DIR/runtime-check.sh" ] || die "staged TX runtime check is missing."
+  [ -f "$INCOMING_DIR/runtime-check-lib.sh" ] || die "staged TX runtime check library is missing."
   [ -f "$INCOMING_DIR/docker-compose.yml" ] || die "staged TX compose file is missing."
   cp -f "$INCOMING_DIR/deploy.sh" "$next_deploy/deploy.sh" || return 1
-  cp -f "$METADATA_TOOL" "$next_deploy/release-metadata.py" || return 1
-  cp -f "$EFFECTIVE_COMPOSE" "$next_deploy/docker-compose.yml" || return 1
+  cp -f "$INCOMING_DIR/runtime-check.sh" "$next_deploy/runtime-check.sh" || return 1
+  cp -f "$INCOMING_DIR/runtime-check-lib.sh" "$next_deploy/runtime-check-lib.sh" || return 1
+  cp -f "$INCOMING_DIR/docker-compose.yml" "$next_deploy/docker-compose.yml" || return 1
+  cp -f "$INCOMING_DIR/common.compose.yml" "$next_deploy/common.compose.yml" || return 1
+  for compose_fragment in frontend business-api keycloak rabbitmq caddy alloy-tx; do
+    cp -f "$INCOMING_DIR/$compose_fragment.compose.yml" "$next_deploy/$compose_fragment.compose.yml" || return 1
+  done
+  if [ "$DEPLOY_SERVICES_RAW" = business-postgres ] || [ ! -f "$next_deploy/business-postgres.compose.yml" ]; then
+    cp -f "$INCOMING_DIR/business-postgres.compose.yml" "$next_deploy/business-postgres.compose.yml" || return 1
+  fi
+  if [ "$DEPLOY_SERVICES_RAW" = keycloak-postgres ] || [ ! -f "$next_deploy/keycloak-postgres.compose.yml" ]; then
+    cp -f "$INCOMING_DIR/keycloak-postgres.compose.yml" "$next_deploy/keycloak-postgres.compose.yml" || return 1
+  fi
   chmod 600 "$next_deploy/docker-compose.yml" || return 1
   case "$DEPLOY_SERVICES_RAW" in
     wotb-frontend)
@@ -429,6 +383,10 @@ promote_files() {
     business-postgres)
       cp -f "$INCOMING_DIR/business-postgres.tofurc" "$next_deploy/business-postgres.tofurc" || return 1
       ;;
+    alloy-tx)
+      mkdir -p "$next_deploy/alloy" || return 1
+      cp -f "$INCOMING_DIR/alloy/config.alloy" "$next_deploy/alloy/config.alloy" || return 1
+      ;;
   esac
   if [ -e "$LIVE_DEPLOY_DIR" ]; then
     mv -- "$LIVE_DEPLOY_DIR" "$old_deploy" || return 1
@@ -442,12 +400,12 @@ promote_files() {
 
 reload_frontend_trusted_peer() {
   local output
-  if ! output="$(docker compose -f "$LIVE_COMPOSE" exec -T wotb-frontend nginx -t 2>&1)"; then
+  if ! output="$(docker compose -p deploy -f "$LIVE_DEPLOY_DIR/frontend.compose.yml" exec -T wotb-frontend nginx -t 2>&1)"; then
     echo "ERROR: the running frontend nginx configuration is invalid; Caddy's trusted peer was not refreshed." >&2
     printf '%s\n' "$output" >&2
     return 1
   fi
-  if ! docker compose -f "$LIVE_COMPOSE" exec -T wotb-frontend nginx -s reload; then
+  if ! docker compose -p deploy -f "$LIVE_DEPLOY_DIR/frontend.compose.yml" exec -T wotb-frontend nginx -s reload; then
     echo "ERROR: the running frontend container could not reload nginx to re-resolve Caddy's address." >&2
     return 1
   fi
@@ -456,16 +414,7 @@ reload_frontend_trusted_peer() {
 
 apply_services() {
   APPLY_SERVICES=("$DEPLOY_SERVICES_RAW")
-  if is_selected caddy && [ "$CADDY_RELOAD_ONLY" = true ]; then
-    if ! docker compose -f "$LIVE_COMPOSE" exec -T caddy \
-        caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile; then
-      FAILED_SERVICE="caddy-reload"
-      return 1
-    fi
-    echo "caddy-config-reload: PASS"
-    return 0
-  fi
-  if ! docker compose -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate "$DEPLOY_SERVICES_RAW"; then
+  if ! docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" up -d --no-deps --force-recreate "$DEPLOY_SERVICES_RAW"; then
     FAILED_SERVICE="$DEPLOY_SERVICES_RAW"
     return 1
   fi
@@ -488,6 +437,10 @@ probe_http() {
   local service="$1" url="$2" host_header="${3:-}" output stderr_file exit_code stderr_output
   local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
     --max-time "$PROBE_MAX_TIME_SEC" --output /dev/null --write-out '%{http_code}')
+  local -a compose_args=(-p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE")
+  if [ "${TX_DEPLOY_LIBRARY_ONLY:-0}" = 1 ]; then
+    compose_args=(-f "$LIVE_COMPOSE")
+  fi
   PROBE_LAST_SERVICE="$service"
   PROBE_LAST_URL="$url"
   PROBE_LAST_HTTP_STATUS="unavailable"
@@ -495,7 +448,7 @@ probe_http() {
   [ -n "$host_header" ] && args+=(--header "$host_header")
   args+=("$url")
   stderr_file="$(mktemp)" || { FAILED_SERVICE="$service"; return 1; }
-  if output="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>"$stderr_file")"; then
+  if output="$(docker compose "${compose_args[@]}" run --rm --no-deps health-probe "${args[@]}" 2>"$stderr_file")"; then
     exit_code=0
   else
     exit_code=$?
@@ -537,7 +490,7 @@ wait_for_probe() {
 wait_for_database() {
   local attempt
   for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
-    if docker compose -f "$LIVE_COMPOSE" exec -T keycloak-postgres \
+    if docker compose -p deploy -f "$LIVE_DEPLOY_DIR/keycloak-postgres.compose.yml" exec -T keycloak-postgres \
       pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
       echo "keycloak-postgres: PASS"
       return 0
@@ -552,7 +505,7 @@ wait_for_database() {
 wait_for_rabbitmq() {
   local attempt
   for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
-    if docker compose -f "$LIVE_COMPOSE" exec -T rabbitmq \
+    if docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" exec -T rabbitmq \
       rabbitmq-diagnostics -q ping >/dev/null 2>&1; then
       echo "rabbitmq: PASS"
       return 0
@@ -567,7 +520,7 @@ wait_for_rabbitmq() {
 wait_for_business_database() {
   local attempt
   for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
-    if docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
+    if docker compose -p deploy -f "$LIVE_DEPLOY_DIR/business-postgres.compose.yml" exec -T business-postgres \
       pg_isready -U "$TX_BUSINESS_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
       echo "business-postgres: PASS"
       return 0
@@ -579,53 +532,90 @@ wait_for_business_database() {
   return 1
 }
 
-set_nonselected_compose_placeholders() {
-  # Compose expands every service even when only one is started. Only groups
-  # that this deployment does not own receive validation placeholders; a
-  # selected group's real values always come from the process environment and
-  # were already enforced by validate_inputs.
-  if ! is_keycloak_postgres_group_selected; then
-    : "${KC_POSTGRES_ADMIN_USER:=not-configured}"
-    : "${KC_POSTGRES_ADMIN_PASSWORD:=not-configured}"
-    export KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD
+tx_alloy_health() {
+  local canary_id="deploy-$(date +%s)-$$"
+  # Canary container names live in globals because the RETURN-trap cleanup
+  # runs after the function's local scope is gone (set -u would abort on the
+  # unbound names).
+  TX_ALLOY_BACKEND_CANARY="business-api-observability-canary-${canary_id}"
+  TX_ALLOY_KEYCLOAK_CANARY="keycloak-observability-canary-${canary_id}"
+  local backend_name="$TX_ALLOY_BACKEND_CANARY" keycloak_name="$TX_ALLOY_KEYCLOAK_CANARY"
+  local backend_marker="wotb-backend-canary-${canary_id}"
+  local keycloak_marker="wotb-keycloak-canary-${canary_id}"
+  local frontend_apk="observability-canary-${canary_id}.apk"
+  local start_ns="$(( $(date +%s) ))000000000"
+  local end_ns body attempt
+  cleanup_tx_alloy_canaries() {
+    docker rm -f "$TX_ALLOY_BACKEND_CANARY" "$TX_ALLOY_KEYCLOAK_CANARY" >/dev/null 2>&1 || true
+    TX_ALLOY_BACKEND_CANARY="" TX_ALLOY_KEYCLOAK_CANARY=""
+  }
+  trap cleanup_tx_alloy_canaries RETURN
+
+  if ! docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" ps -a alloy-tx | grep -Eq 'Up|running'; then
+    echo "alloy-tx: FAIL (container is not running)" >&2
+    FAILED_SERVICE=alloy-tx
+    return 1
   fi
-  if ! is_keycloak_runtime_selected; then
-    : "${KC_BOOTSTRAP_ADMIN_PASSWORD:=not-configured}"
-    : "${KC_DB_USERNAME:=not-configured}"
-    : "${KC_DB_PASSWORD:=not-configured}"
-    : "${WG_APPLICATION_ID:=not-configured}"
-    export KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD WG_APPLICATION_ID
+  if ! docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" run --rm --no-deps health-probe \
+    --silent --show-error --fail --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+    --max-time "$PROBE_MAX_TIME_SEC" http://10.20.0.2:3100/ready | grep -Fxq ready; then
+    FAILED_SERVICE=alloy-tx
+    return 1
   fi
-  if ! is_selected caddy; then
-    : "${CADDY_ACME_EMAIL:=not-configured@example.invalid}"
-    export CADDY_ACME_EMAIL
-  fi
-  if ! is_rabbitmq_group_selected; then
-    : "${TX_RABBITMQ_ADMIN_USER:=not-configured}"
-    : "${TX_RABBITMQ_ADMIN_PASSWORD:=not-configured}"
-    export TX_RABBITMQ_ADMIN_USER TX_RABBITMQ_ADMIN_PASSWORD
-  fi
-  if ! is_business_postgres_group_selected; then
-    : "${TX_BUSINESS_POSTGRES_ADMIN_USER:=not-configured}"
-    : "${TX_BUSINESS_POSTGRES_ADMIN_PASSWORD:=not-configured}"
-    export TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD
-  fi
-  if ! is_business_api_group_selected; then
-    # Compose expands every service even for a database-, broker-, or
-    # frontend-only deployment, so the business runtime's required inputs need
-    # validation placeholders that no selected service ever reads.
-    : "${TX_BUSINESS_DB_NAME:=not-configured}"
-    : "${TX_BUSINESS_DB_USERNAME:=not-configured}"
-    : "${TX_BUSINESS_DB_PASSWORD:=not-configured}"
-    : "${YECAO_MINIO_CONTROL_API_ACCESS_KEY:=not-configured}"
-    : "${YECAO_MINIO_CONTROL_API_SECRET_KEY:=not-configured}"
-    : "${KEYCLOAK_ADMIN_CLIENT_SECRET:=not-configured}"
-    : "${AI_API_KEY:=not-configured}"
-    : "${TX_RABBITMQ_CONTROL_API_PASSWORD:=not-configured}"
-    export TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
-      YECAO_MINIO_CONTROL_API_ACCESS_KEY YECAO_MINIO_CONTROL_API_SECRET_KEY \
-      KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY TX_RABBITMQ_CONTROL_API_PASSWORD
-  fi
+
+  # Compose service labels are the authoritative match key for the TX Alloy
+  # config; the labels here are exactly the production ones.
+  docker run -d --network wotb_tx_internal \
+    --label com.docker.compose.service=business-api \
+    --name "$backend_name" alpine:3.22 \
+    sh -c "printf '%s\n' '$backend_marker'; sleep 90" >/dev/null \
+    || { FAILED_SERVICE=alloy-tx; return 1; }
+  docker run -d --network wotb_tx_internal \
+    --label com.docker.compose.service=keycloak \
+    --name "$keycloak_name" alpine:3.22 \
+    sh -c "printf '%s\n' '$keycloak_marker'; sleep 90" >/dev/null \
+    || { FAILED_SERVICE=alloy-tx; return 1; }
+  # A 404 is expected and proves the real frontend nginx access-log path; the
+  # Android dashboard counts only status=200, so a 404 never inflates usage.
+  probe_http frontend-canary "http://caddy/_wotb/frontend/download/android/$frontend_apk" >/dev/null 2>&1 || true
+  FAILED_SERVICE=alloy-tx
+
+  loki_query_body() {
+    local selector="$1" marker="$2" range_start="$3" range_end="$4"
+    docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" run --rm --no-deps health-probe \
+      --silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+      --max-time "$PROBE_MAX_TIME_SEC" -G "http://10.20.0.2:3100/loki/api/v1/query_range" \
+      --data-urlencode "query=${selector} |= \"${marker}\"" \
+      --data-urlencode "start=${range_start}" \
+      --data-urlencode "end=${range_end}" \
+      --data-urlencode "limit=1" 2>/dev/null
+  }
+  loki_response_has_marker() {
+    local body="$1" marker="$2"
+    grep -Eq '"status"[[:space:]]*:[[:space:]]*"success"' <<<"$body" \
+      && grep -Eq '"values"' <<<"$body" \
+      && grep -Fq "$marker" <<<"$body"
+  }
+  for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
+    end_ns="$(( $(date +%s) + 2 ))000000000"
+    backend_body="$(loki_query_body '{container_name="wotb-backend"}' "$backend_marker" "$start_ns" "$end_ns" || true)"
+    keycloak_body="$(loki_query_body '{container_name="keycloak"}' "$keycloak_marker" "$start_ns" "$end_ns" || true)"
+    frontend_body="$(loki_query_body '{container_name="wotb-frontend",event="android_apk_download"}' "$frontend_apk" "$start_ns" "$end_ns" || true)"
+    if loki_response_has_marker "$backend_body" "$backend_marker" \
+      && loki_response_has_marker "$keycloak_body" "$keycloak_marker" \
+      && loki_response_has_marker "$frontend_body" "$frontend_apk" \
+      && grep -Fq 'event=android_apk_download' <<<"$frontend_body" \
+      && grep -Fq "apk=$frontend_apk" <<<"$frontend_body" \
+      && grep -Fq 'status=404' <<<"$frontend_body" \
+      && ! grep -Fq 'User-Agent' <<<"$frontend_body" \
+      && ! grep -Fq 'Referer' <<<"$frontend_body"; then
+      echo "alloy-tx: PASS (backend/keycloak/sanitized APK streams reached Loki over WireGuard)"
+      return 0
+    fi
+    [ "$attempt" -lt "$HEALTH_ATTEMPTS" ] && sleep "$HEALTH_INTERVAL_SEC"
+  done
+  echo "alloy-tx: FAIL (business log streams did not reach the Yecao Loki)" >&2
+  return 1
 }
 
 blocking_health() {
@@ -646,14 +636,14 @@ blocking_health() {
     fi
   fi
   if is_selected business-api; then
-    # The business runtime is TX-internal and publishes no port, so both the
-    # application surface and the dedicated management port are proven from
-    # inside wotb_tx_internal by the deployment-owned health-probe container.
+    # The application surface stays TX-internal; management also binds to
+    # WireGuard for the Yecao Prometheus scrape. Prove both paths from the
+    # deployment-owned health-probe container.
     wait_for_probe tx-business-api http://business-api:8088/actuator/health || return 1
     wait_for_probe business-api-app http://business-api:8087/api/health || return 1
   fi
   if is_selected wotb-frontend; then
-    docker compose -f "$LIVE_COMPOSE" exec -T wotb-frontend nginx -t >/dev/null \
+    docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" exec -T wotb-frontend nginx -t >/dev/null \
       || { FAILED_SERVICE=frontend-static; echo "frontend nginx config: FAIL" >&2; return 1; }
     wait_for_probe frontend-static http://wotb-frontend/ 'Host: wotbtools.com' || return 1
   fi
@@ -662,78 +652,11 @@ blocking_health() {
     wait_for_probe caddy-ready http://caddy/_wotb/ready || return 1
     wait_for_probe caddy-upstream-frontend http://caddy/_wotb/frontend/api/health || return 1
     wait_for_probe caddy-upstream-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
+    wait_for_probe caddy-upstream-monitor http://caddy/_wotb/monitor/api/health || return 1
   fi
-}
-
-probe_body_contains() {
-  local service="$1" url="$2" needle="$3" host_header="${4:-}" body
-  local -a args=(--silent --show-error --fail --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
-    --max-time "$PROBE_MAX_TIME_SEC")
-  [ -n "$host_header" ] && args+=(--header "$host_header")
-  args+=("$url")
-  if ! body="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
-    echo "$service: FAIL (probe command failed)" >&2
-    return 1
+  if is_selected alloy-tx; then
+    tx_alloy_health || return 1
   fi
-  if ! grep -Fq "$needle" <<< "$body"; then
-    echo "$service: FAIL (response missing expected contract)" >&2
-    return 1
-  fi
-  echo "$service: PASS"
-}
-
-qq_identity_provider_ready() {
-  local token_response admin_token idp_response
-  if ! token_response="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe \
-      --silent --show-error --fail --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
-      --max-time "$PROBE_MAX_TIME_SEC" --request POST \
-      --data-urlencode 'grant_type=password' \
-      --data-urlencode 'client_id=admin-cli' \
-      --data-urlencode 'username=admin' \
-      --data-urlencode "password=$KC_BOOTSTRAP_ADMIN_PASSWORD" \
-      http://keycloak:8080/realms/master/protocol/openid-connect/token 2>&1)"; then
-    echo "qq-idp-admin-token: FAIL (token request failed)" >&2
-    return 1
-  fi
-  if ! admin_token="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["access_token"])' <<< "$token_response" 2>/dev/null)"; then
-    echo "qq-idp-admin-token: FAIL (token response is invalid)" >&2
-    return 1
-  fi
-  if ! idp_response="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe \
-      --silent --show-error --fail --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
-      --max-time "$PROBE_MAX_TIME_SEC" \
-      --header "Authorization: Bearer $admin_token" \
-      http://keycloak:8080/admin/realms/wotbtools/identity-provider/instances 2>&1)"; then
-    echo "qq-idp-admin-api: FAIL (identity provider query failed)" >&2
-    return 1
-  fi
-  if ! python3 -c '
-import json
-import sys
-
-providers = json.load(sys.stdin)
-expected = {
-    "authorizationUrl": "https://graph.qq.com/oauth2.0/authorize",
-    "tokenUrl": "https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1",
-    "userInfoUrl": "https://graph.qq.com/user/get_user_info",
-    "clientAuthMethod": "client_secret_post",
-}
-qq = [provider for provider in providers if provider.get("alias") == "idp-qq"]
-if len(qq) != 1:
-    raise SystemExit(1)
-provider = qq[0]
-config = provider.get("config") or {}
-if provider.get("providerId") != "qq" or provider.get("enabled") is not True:
-    raise SystemExit(1)
-if config.get("clientId") in (None, "", "bootstrap-not-configured", "dummy", "empty"):
-    raise SystemExit(1)
-if any(config.get(key) != value for key, value in expected.items()):
-    raise SystemExit(1)
-' <<< "$idp_response"; then
-    echo "qq-idp-admin-api: FAIL (idp-qq representation is not production-ready)" >&2
-    return 1
-  fi
-  echo "qq-idp-admin-api: PASS"
 }
 
 preflight_host() {
@@ -747,715 +670,10 @@ preflight_host() {
     || die "a route to 10.20.0.2 is required."
 }
 
-# ---------------------------------------------------------------- business E2E
-# The read-only runtime check proves the *real* business chain from inside
-# wotb_tx_internal: Keycloak token -> business runtime -> PostgreSQL job
-# authority -> MinIO dataset -> RabbitMQ -> Yecao parser worker -> MinIO
-# artifacts -> dataset consumers. It stays read-only with respect to
-# infrastructure and user data; the only writes are one transient processing job
-# and one transient export job, both owned by the check machine identity and
-# swept by the existing 30-minute TTL. No paid AI provider call is made.
-
-E2E_CLIENT_ID="${KEYCLOAK_E2E_CLIENT_ID:-wotbtools-e2e}"
-E2E_CLIENT_SECRET="${KEYCLOAK_E2E_CLIENT_SECRET:-}"
-E2E_REPLAY_PATH="${WOTB_E2E_REPLAY_PATH:-/e2e/random-battle-example.wotbreplay}"
-E2E_JOB_TIMEOUT_SEC="${WOTB_E2E_JOB_TIMEOUT_SEC:-300}"
-E2E_POLL_INTERVAL_SEC="${WOTB_E2E_POLL_INTERVAL_SEC:-5}"
-E2E_PUBLIC_IP="${WOTB_E2E_PUBLIC_IP:-118.25.18.105}"
-# The public hosts and the URLs the edge check must prove.
-E2E_WEB_URL="${WOTB_E2E_WEB_URL:-https://wotbtools.com/api/health}"
-E2E_AUTH_URL="${WOTB_E2E_AUTH_URL:-https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration}"
-E2E_BEARER=""
-E2E_HTTP_STATUS="000"
-E2E_HTTP_BODY=""
-E2E_DOWNLOAD_SIZE="0"
-declare -a E2E_EXTRA_ARGS=()
-
-# Run one HTTP call in the deployment-owned health-probe container: the gate
-# needs no curl on the TX host and never contacts a published application port.
-e2e_http() {
-  local method="$1" url="$2" body="${3:-}" content_type="${4:-}" raw
-  local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
-    --max-time "$PROBE_MAX_TIME_SEC" --request "$method" --write-out $'\n%{http_code}')
-  [ -n "$E2E_BEARER" ] && args+=(--header "Authorization: Bearer $E2E_BEARER")
-  [ -n "$content_type" ] && args+=(--header "Content-Type: $content_type")
-  [ -n "$body" ] && args+=(--data "$body")
-  if [ "${#E2E_EXTRA_ARGS[@]}" -gt 0 ]; then
-    args+=("${E2E_EXTRA_ARGS[@]}")
-    E2E_EXTRA_ARGS=()
-  fi
-  args+=("$url")
-  E2E_HTTP_STATUS="000"
-  E2E_HTTP_BODY=""
-  if ! raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
-    E2E_HTTP_BODY="$raw"
-    return 1
-  fi
-  E2E_HTTP_STATUS="${raw##*$'\n'}"
-  E2E_HTTP_BODY="${raw%$'\n'*}"
-  [ "$E2E_HTTP_BODY" != "$raw" ] || E2E_HTTP_BODY=""
-  return 0
-}
-
-# Status-only probe for binary payloads (HoF replay originals, export artifact).
-e2e_download() {
-  local url="$1" raw
-  local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
-    --max-time "$PROBE_MAX_TIME_SEC" --output /dev/null --write-out '%{http_code} %{size_download}')
-  [ -n "$E2E_BEARER" ] && args+=(--header "Authorization: Bearer $E2E_BEARER")
-  args+=("$url")
-  E2E_HTTP_STATUS="000"
-  E2E_DOWNLOAD_SIZE="0"
-  if ! raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
-    return 1
-  fi
-  E2E_HTTP_STATUS="${raw%% *}"
-  E2E_DOWNLOAD_SIZE="${raw##* }"
-  return 0
-}
-
-# Decode one field from the JSON body by dotted path; empty output means absent.
-e2e_field() {
-  local body="$1" path="$2"
-  python3 -c '
-import json
-import sys
-
-try:
-    payload = json.load(sys.stdin)
-except ValueError:
-    raise SystemExit(0)
-for part in sys.argv[1].split("."):
-    if isinstance(payload, list):
-        try:
-            payload = payload[int(part)]
-            continue
-        except (ValueError, IndexError):
-            raise SystemExit(0)
-    if not isinstance(payload, dict) or part not in payload:
-        raise SystemExit(0)
-    payload = payload[part]
-if payload is None or isinstance(payload, (dict, list)):
-    raise SystemExit(0)
-print(payload)
-' "$path" <<< "$body"
-}
-
-# Ad-hoc AWS SigV4 query-string signing (standard library only) so the gate can
-# read the dataset/artifact objects the production control-api identity owns.
-# The signature is generated offline and the fetch itself goes through the
-# health-probe container, which keeps the gate testable without MinIO.
-presign_minio_url() {
-  local method="$1" key="$2"
-  E2E_MINIO_ENDPOINT="${YECAO_MINIO_ENDPOINT:-10.20.0.2:9000}" \
-  E2E_MINIO_BUCKET="${YECAO_MINIO_BUCKET:-wotbtools-temp}" \
-  E2E_MINIO_ACCESS_KEY="$YECAO_MINIO_CONTROL_API_ACCESS_KEY" \
-  E2E_MINIO_SECRET_KEY="$YECAO_MINIO_CONTROL_API_SECRET_KEY" \
-  python3 - "$method" "$key" <<'PY'
-import datetime
-import hashlib
-import hmac
-import os
-import sys
-import urllib.parse
-
-method, key = sys.argv[1], sys.argv[2]
-endpoint = os.environ["E2E_MINIO_ENDPOINT"]
-bucket = os.environ["E2E_MINIO_BUCKET"]
-access_key = os.environ["E2E_MINIO_ACCESS_KEY"]
-secret_key = os.environ["E2E_MINIO_SECRET_KEY"]
-region = "us-east-1"
-service = "s3"
-
-now = datetime.datetime.now(datetime.timezone.utc)
-amz_date = now.strftime("%Y%m%dT%H%M%SZ")
-datestamp = now.strftime("%Y%m%d")
-scope = f"{datestamp}/{region}/{service}/aws4_request"
-
-
-def quote(value):
-    return urllib.parse.quote(value, safe="-_.~")
-
-
-canonical_uri = "/" + "/".join(quote(part) for part in [bucket, *[p for p in key.split("/") if p]])
-query = {
-    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
-    "X-Amz-Credential": f"{access_key}/{scope}",
-    "X-Amz-Date": amz_date,
-    "X-Amz-Expires": "900",
-    "X-Amz-SignedHeaders": "host",
-}
-canonical_query = "&".join(f"{quote(name)}={quote(value)}" for name, value in sorted(query.items()))
-canonical_request = "\n".join([
-    method,
-    canonical_uri,
-    canonical_query,
-    f"host:{endpoint}\n",
-    "host",
-    "UNSIGNED-PAYLOAD",
-])
-string_to_sign = "\n".join([
-    "AWS4-HMAC-SHA256",
-    amz_date,
-    scope,
-    hashlib.sha256(canonical_request.encode("utf-8")).hexdigest(),
-])
-
-
-def sign(secret, message):
-    return hmac.new(secret, message.encode("utf-8"), hashlib.sha256).digest()
-
-
-signing_key = sign(sign(sign(sign(("AWS4" + secret_key).encode("utf-8"), datestamp), region), service), "aws4_request")
-signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
-print(f"http://{endpoint}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}")
-PY
-}
-
-# First integer `id` anywhere in a JSON document; robust against the paged HoF
-# envelope without hard-coding its wrapper field names.
-e2e_first_id() {
-  local body="$1"
-  python3 -c '
-import json
-import sys
-
-
-def first_id(node):
-    if isinstance(node, dict):
-        value = node.get("id")
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str) and value.isdigit():
-            return int(value)
-        for child in node.values():
-            found = first_id(child)
-            if found is not None:
-                return found
-    elif isinstance(node, list):
-        for child in node:
-            found = first_id(child)
-            if found is not None:
-                return found
-    return None
-
-
-try:
-    document = json.load(sys.stdin)
-except ValueError:
-    raise SystemExit(0)
-found = first_id(document)
-if found is not None:
-    print(found)
-' <<< "$body"
-}
-
-# Poll a replay/export job until it reaches a terminal state.
-e2e_wait_for_status() {
-  local label="$1" url="$2" field="$3" deadline=$((SECONDS + E2E_JOB_TIMEOUT_SEC))
-  local status=""
-  while [ "$SECONDS" -lt "$deadline" ]; do
-    if ! e2e_http GET "$url"; then
-      E2E_WAIT_REASON="$label status request failed: $E2E_HTTP_BODY"
-      return 1
-    fi
-    if [ "$E2E_HTTP_STATUS" != 200 ]; then
-      E2E_WAIT_REASON="$label status returned HTTP $E2E_HTTP_STATUS"
-      return 1
-    fi
-    status="$(e2e_field "$E2E_HTTP_BODY" "$field")"
-    case "$status" in
-      READY) E2E_WAIT_STATUS="$status"; return 0 ;;
-      FAILED|CANCELLED)
-        E2E_WAIT_REASON="$label reached $status ($(e2e_field "$E2E_HTTP_BODY" errorCode))"
-        return 1
-        ;;
-    esac
-    sleep "$E2E_POLL_INTERVAL_SEC"
-  done
-  E2E_WAIT_REASON="$label did not reach a terminal state within ${E2E_JOB_TIMEOUT_SEC}s (last=$status)"
-  return 1
-}
-
-e2e_emit() {
-  local name="$1" ok="$2" detail="${3:-}"
-  if [ "$ok" = 1 ]; then
-    echo "$name: PASS"
-  else
-    echo "$name: FAIL ($detail)" >&2
-  fi
-}
-
-business_e2e_check() {
-  local failures=0 status
-  E2E_BEARER=""
-
-  if [ -z "$E2E_CLIENT_SECRET" ]; then
-    e2e_emit business-e2e 0 "KEYCLOAK_E2E_CLIENT_SECRET is required; the gate drives the real business chain with the wotbtools-e2e identity"
-    return 1
-  fi
-
-  # --- auth: mint the machine token used by every authenticated call ---------
-  E2E_EXTRA_ARGS=(--data-urlencode 'grant_type=client_credentials' \
-    --data-urlencode "client_id=$E2E_CLIENT_ID" \
-    --data-urlencode "client_secret=$E2E_CLIENT_SECRET")
-  if e2e_http POST "http://keycloak:8080/realms/wotbtools/protocol/openid-connect/token" \
-    && [ "$E2E_HTTP_STATUS" = 200 ]; then
-    E2E_BEARER="$(e2e_field "$E2E_HTTP_BODY" access_token)"
-  fi
-  if [ -z "$E2E_BEARER" ]; then
-    e2e_emit business-e2e 0 "client_credentials token request failed (HTTP $E2E_HTTP_STATUS)"
-    return 1
-  fi
-  e2e_emit auth-token 1
-
-  # --- control plane contract + anonymous rejection --------------------------
-  local unknown_job="00000000-0000-4000-8000-000000000000"
-  e2e_http GET "http://business-api:8087/api/replay/processing-jobs/$unknown_job"
-  if [ "$E2E_HTTP_STATUS" = 404 ] && grep -Fq 'JOB_NOT_FOUND' <<< "$E2E_HTTP_BODY"; then
-    e2e_emit tx-control-plane 1
-  else
-    e2e_emit tx-control-plane 0 "unknown job must answer 404 JOB_NOT_FOUND, got HTTP $E2E_HTTP_STATUS"
-    failures=1
-  fi
-  local saved_bearer="$E2E_BEARER"
-  E2E_BEARER=""
-  e2e_http GET "http://business-api:8087/api/replay/processing-jobs/$unknown_job"
-  if [ "$E2E_HTTP_STATUS" = 401 ]; then
-    e2e_emit anonymous-rejected 1
-  else
-    e2e_emit anonymous-rejected 0 "anonymous processing-job access must be 401, got HTTP $E2E_HTTP_STATUS"
-    failures=1
-  fi
-  E2E_BEARER="$saved_bearer"
-
-  # --- admin authorization boundary -----------------------------------------
-  E2E_BEARER=""
-  e2e_http GET "http://business-api:8087/api/admin/users"
-  local admin_anonymous="$E2E_HTTP_STATUS"
-  E2E_BEARER="$saved_bearer"
-  e2e_http GET "http://business-api:8087/api/admin/users"
-  if [ "$admin_anonymous" = 401 ] && [ "$E2E_HTTP_STATUS" = 403 ]; then
-    e2e_emit admin-authz 1
-  else
-    e2e_emit admin-authz 0 "expected anonymous 401 and authenticated non-admin 403, got $admin_anonymous/$E2E_HTTP_STATUS"
-    failures=1
-  fi
-
-  # --- read-only business APIs ----------------------------------------------
-  e2e_http GET "http://business-api:8087/api/users/profile"
-  if [ "$E2E_HTTP_STATUS" = 200 ] || [ "$E2E_HTTP_STATUS" = 404 ]; then
-    e2e_emit business-profile 1
-  else
-    e2e_emit business-profile 0 "profile read must answer 200 or a canonical 404, got HTTP $E2E_HTTP_STATUS"
-    failures=1
-  fi
-  e2e_http GET "http://business-api:8087/api/hof?page=0&size=1"
-  local hof_body="$E2E_HTTP_BODY" hof_status="$E2E_HTTP_STATUS"
-  if [ "$hof_status" = 200 ]; then
-    e2e_emit business-hof 1
-  else
-    e2e_emit business-hof 0 "public HoF list must answer 200, got HTTP $hof_status"
-    failures=1
-  fi
-  # --- HoF replay originals are readable for a real migrated record ----------
-  local hof_id=""
-  [ "$hof_status" = 200 ] && hof_id="$(e2e_first_id "$hof_body")"
-  if [ -n "$hof_id" ] && e2e_download "http://business-api:8087/api/hof/$hof_id/replay" \
-    && [ "$E2E_HTTP_STATUS" = 200 ] && [ "$E2E_DOWNLOAD_SIZE" -gt 0 ]; then
-    e2e_emit hof-replay-storage 1
-  else
-    e2e_emit hof-replay-storage 0 "no readable HoF replay original for id=${hof_id:-none} (HTTP $E2E_HTTP_STATUS, ${E2E_DOWNLOAD_SIZE}B); check the replay_data volume"
-    failures=1
-  fi
-
-  # --- parser worker is consuming the broker ---------------------------------
-  local queues consumers result_queue dlq
-  if queues="$(docker compose -f "$LIVE_COMPOSE" exec -T rabbitmq rabbitmqctl -q list_queues name consumers messages 2>/dev/null)"; then
-    consumers="$(awk '$1 == "wotb.parser" { print $2 }' <<< "$queues")"
-    result_queue="$(awk '$1 == "wotb.parser.result" { print $1 }' <<< "$queues")"
-    dlq="$(awk '$1 == "wotb.parser.dlq" { print $3 }' <<< "$queues")"
-    if [ "${consumers:-0}" -ge 1 ] && [ -n "$result_queue" ] && [ "${dlq:-0}" -eq 0 ]; then
-      e2e_emit parser-worker 1
-    else
-      e2e_emit parser-worker 0 "wotb.parser consumers=${consumers:-0}, result queue=${result_queue:-missing}, dlq messages=${dlq:-0}"
-      failures=1
-    fi
-  else
-    e2e_emit parser-worker 0 "rabbitmqctl list_queues failed"
-    failures=1
-  fi
-
-  # --- end-to-end processing job (the real chain) -----------------------------
-  local operation_id job_id
-  operation_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
-  E2E_EXTRA_ARGS=(--form "files=@$E2E_REPLAY_PATH" --form "operationId=$operation_id")
-  e2e_http POST "http://business-api:8087/api/replay/processing-jobs"
-  job_id=""
-  if [ "$E2E_HTTP_STATUS" = 202 ]; then
-    job_id="$(e2e_field "$E2E_HTTP_BODY" jobId)"
-  fi
-  if [ -z "$job_id" ]; then
-    e2e_emit processing-e2e 0 "processing job create failed (HTTP $E2E_HTTP_STATUS; is $E2E_REPLAY_PATH staged into ${TX_RUNTIME_ROOT}/e2e?)"
-    failures=1
-    echo "business-e2e: NOT_VERIFIED" >&2
-    return 1
-  fi
-  if e2e_wait_for_status processing-e2e \
-    "http://business-api:8087/api/replay/processing-jobs/$job_id" status; then
-    e2e_emit processing-e2e 1
-  else
-    e2e_emit processing-e2e 0 "$E2E_WAIT_REASON"
-    failures=1
-    echo "business-e2e: NOT_VERIFIED" >&2
-    return 1
-  fi
-
-  # --- dataset consumers read the same job without reparsing ------------------
-  e2e_http GET "http://business-api:8087/api/replay/processing-jobs/$job_id/result"
-  if [ "$E2E_HTTP_STATUS" = 200 ] && grep -Fq '"battles"' <<< "$E2E_HTTP_BODY"; then
-    e2e_emit dataset-result 1
-  else
-    e2e_emit dataset-result 0 "GET result must answer 200 with a dataset body, got HTTP $E2E_HTTP_STATUS"
-    failures=1
-  fi
-
-  local dataset_request="{\"processingJobId\":\"$job_id\",\"sourceId\":\"0\"}"
-  e2e_http POST "http://business-api:8087/api/replay/map-overview" "$dataset_request" "application/json"
-  if [ "$E2E_HTTP_STATUS" = 200 ] && [ -n "$E2E_HTTP_BODY" ]; then
-    e2e_emit map-overview 1
-  else
-    e2e_emit map-overview 0 "map overview must answer 200 with a body, got HTTP $E2E_HTTP_STATUS (204 means the worker artifact is missing or unusable for $E2E_REPLAY_PATH)"
-    failures=1
-  fi
-  e2e_http POST "http://business-api:8087/api/replay/battle-playback-v2" "$dataset_request" "application/json"
-  if [ "$E2E_HTTP_STATUS" = 200 ] && [ -n "$E2E_HTTP_BODY" ]; then
-    e2e_emit battle-playback-v2 1
-  else
-    e2e_emit battle-playback-v2 0 "battle playback must answer 200 with a body, got HTTP $E2E_HTTP_STATUS (204 means the timeline artifact is missing or unusable for $E2E_REPLAY_PATH)"
-    failures=1
-  fi
-
-  # --- MinIO objects written by the control plane and by the worker ----------
-  local presigned
-  presigned="$(presign_minio_url GET "temp/jobs/$job_id/result/finalized.json")"
-  if [ -n "$presigned" ] && e2e_http GET "$presigned" \
-    && [ "$E2E_HTTP_STATUS" = 200 ] && [ -n "$E2E_HTTP_BODY" ]; then
-    e2e_emit minio 1
-  else
-    e2e_emit minio 0 "finalized dataset object is not readable (HTTP $E2E_HTTP_STATUS)"
-    failures=1
-  fi
-  presigned="$(presign_minio_url GET "temp/jobs/$job_id/artifacts/0/ai-facts.json")"
-  if [ -n "$presigned" ] && e2e_http GET "$presigned" \
-    && [ "$E2E_HTTP_STATUS" = 200 ] && [ -n "$E2E_HTTP_BODY" ]; then
-    e2e_emit ai-facts 1
-  else
-    e2e_emit ai-facts 0 "worker ai-facts artifact is not consumable (HTTP $E2E_HTTP_STATUS); no AI provider call is made by the gate"
-    failures=1
-  fi
-
-  # --- export job produces and serves a real artifact ------------------------
-  e2e_http POST "http://business-api:8087/api/replay/export-jobs?mode=aggregate&processingJobId=$job_id"
-  local export_job_id=""
-  if [ "$E2E_HTTP_STATUS" = 202 ]; then
-    export_job_id="$(e2e_field "$E2E_HTTP_BODY" jobId)"
-  fi
-  if [ -n "$export_job_id" ] && e2e_wait_for_status export \
-    "http://business-api:8087/api/replay/export-jobs/$export_job_id" status; then
-    if e2e_download "http://business-api:8087/api/replay/export-jobs/$export_job_id/download" \
-      && [ "$E2E_HTTP_STATUS" = 200 ] && [ "$E2E_DOWNLOAD_SIZE" -gt 0 ]; then
-      e2e_emit export 1
-    else
-      e2e_emit export 0 "export download failed (HTTP $E2E_HTTP_STATUS, ${E2E_DOWNLOAD_SIZE}B)"
-      failures=1
-    fi
-  else
-    e2e_emit export 0 "${E2E_WAIT_REASON:-export job create failed (HTTP $E2E_HTTP_STATUS)}"
-    failures=1
-  fi
-
-  [ "$failures" -eq 0 ] || return 1
-  return 0
-}
-
-# Public edge check: each public name must be served by the TX address over a
-# locally trusted certificate with 2xx. TLS verification is never disabled and
-# `curl -k` is never used, so an untrusted chain is a hard failure.
-edge_tls_probe() {
-  local host="$1" url="$2" raw exit_code=0
-  local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
-    --max-time "$PROBE_MAX_TIME_SEC" --output /dev/null --write-out '%{http_code} %{remote_ip}' \
-    --resolve "$host:443:$E2E_PUBLIC_IP" "$url")
-  EDGE_EXIT=0
-  EDGE_STATUS="000"
-  EDGE_REMOTE_IP=""
-  EDGE_ERROR=""
-  # `if ! cmd` would make `$?` the status of the negation (always 0), so the real
-  # exit code is captured in the else branch, where `$?` is the command's status.
-  # The command inside an `if` condition stays exempt from errexit.
-  if raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
-    exit_code=0
-  else
-    exit_code=$?
-  fi
-  EDGE_EXIT="$exit_code"
-  if [ "$exit_code" -ne 0 ]; then
-    EDGE_ERROR="$(tr '\r\n' ' ' <<< "$raw" | sed -E 's/[[:space:]]+/ /g')"
-    return 1
-  fi
-  EDGE_STATUS="${raw%% *}"
-  EDGE_REMOTE_IP="${raw##* }"
-  return 0
-}
-
-# Edge token: the public name must be served by the TX address over a locally
-# trusted certificate with 2xx. Verification is never disabled.
-edge_tls_token() {
-  local token="$1" host="$2" url="$3"
-  if ! edge_tls_probe "$host" "$url"; then
-    if [ "${EDGE_EXIT:-0}" = 60 ]; then
-      e2e_emit "$token" 0 "the certificate for $host is not trusted (curl exit 60): Caddy has no valid public certificate"
-    else
-      e2e_emit "$token" 0 "curl failed for $host (exit $EDGE_EXIT: $EDGE_ERROR)"
-    fi
-    return 1
-  fi
-  if [ "$EDGE_REMOTE_IP" != "$E2E_PUBLIC_IP" ]; then
-    e2e_emit "$token" 0 "$host was served by $EDGE_REMOTE_IP instead of the TX address $E2E_PUBLIC_IP"
-    return 1
-  fi
-  if [[ "$EDGE_STATUS" =~ ^2[0-9]{2}$ ]]; then
-    e2e_emit "$token" 1
-    return 0
-  fi
-  e2e_emit "$token" 0 "$host served HTTP $EDGE_STATUS over trusted HTTPS (expected 2xx)"
-  return 1
-}
-
-public_tls_check() {
-  local failures=0
-  edge_tls_token public-tls-web wotbtools.com "$E2E_WEB_URL" || failures=1
-  edge_tls_token public-tls-auth auth.wotbtools.com "$E2E_AUTH_URL" || failures=1
-  [ "$failures" -eq 0 ]
-}
-
-tx_runtime_check() {
-  local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health business_container
-  local failures=0 provider
-  DEPLOY_SERVICES=(keycloak-postgres business-postgres rabbitmq keycloak wotb-frontend business-api caddy)
-
-  command -v docker >/dev/null 2>&1 || { echo "docker: FAIL (docker is required)" >&2; return 1; }
-  command -v python3 >/dev/null 2>&1 || { echo "python3: FAIL (python3 is required)" >&2; return 1; }
-  for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD \
-    KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD \
-    WG_APPLICATION_ID CADDY_ACME_EMAIL \
-    TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD \
-    TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
-    TX_RABBITMQ_CONTROL_API_PASSWORD \
-    YECAO_MINIO_CONTROL_API_ACCESS_KEY YECAO_MINIO_CONTROL_API_SECRET_KEY \
-    KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY; do
-    require_env "$required"
-  done
-  [ -f "$LIVE_COMPOSE" ] || { echo "tx-compose: FAIL (missing $LIVE_COMPOSE)" >&2; return 1; }
-
-  if compose_json="$(docker compose -f "$LIVE_COMPOSE" config --format json 2>&1)"; then
-    echo "tx-compose: PASS"
-  else
-    echo "tx-compose: FAIL ($compose_json)" >&2
-    return 1
-  fi
-
-  if python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-services = data["services"]
-frontend = services["wotb-frontend"].get("environment") or {}
-assert frontend.get("BACKEND_UPSTREAM") == "http://business-api:8087", frontend.get("BACKEND_UPSTREAM")
-business_api = services["business-api"]
-assert not business_api.get("ports"), business_api.get("ports")
-published = [
-    str(port)
-    for name, service in services.items()
-    for port in (service.get("ports") or [])
-]
-assert not any("8087" in port for port in published), published
-' <<< "$compose_json"; then
-    echo "tx-internal-api-route: PASS"
-  else
-    echo "tx-internal-api-route: FAIL (frontend must proxy to the TX-internal business runtime and no service may publish 8087)" >&2
-    failures=1
-  fi
-
-  if python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-environment = data["services"]["business-api"].get("environment") or {}
-assert "WOTB_REPLAY_EXECUTION_MODE" not in environment, "the retired replay execution-mode switch must not be set"
-assert "WOTB_REPLAY_PROCESSING_JOB_REPOSITORY" not in environment, "the retired replay job-repository switch must not be set"
-' <<< "$compose_json"; then
-    echo "distributed-execution-plane: PASS"
-  else
-    echo "distributed-execution-plane: FAIL (business-api must not carry the retired replay execution-mode / job-repository switches)" >&2
-    failures=1
-  fi
-
-  if python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-ports = data["services"]["keycloak-postgres"].get("ports", [])
-values = [str(p) for p in ports]
-assert any("127.0.0.1" in p and "15432" in p and "5432" in p for p in values), values
-assert not any("0.0.0.0" in p or p.startswith("5432:") or "::" in p for p in values), values
-' <<< "$compose_json"; then
-    echo "postgres-loopback: PASS"
-  else
-    echo "postgres-loopback: FAIL (management port must be 127.0.0.1:15432:5432 only)" >&2
-    failures=1
-  fi
-
-  if python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-ports = [str(p) for p in data["services"]["business-postgres"].get("ports", [])]
-assert any("127.0.0.1" in p and "25432" in p and "5432" in p for p in ports), ports
-assert not any(
-    "0.0.0.0" in p or "::" in p or "10.20.0.1" in p or p.startswith("25432:") for p in ports
-), ports
-' <<< "$compose_json"; then
-    echo "business-postgres-loopback: PASS"
-  else
-    echo "business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)" >&2
-    failures=1
-  fi
-
-  if python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-ports = [str(p) for p in data["services"]["keycloak"].get("ports", [])]
-assert any("127.0.0.1" in p and "18080" in p and "8080" in p for p in ports), ports
-assert not any("0.0.0.0" in p or p.startswith("8080:") or "::" in p for p in ports)
-' <<< "$compose_json"; then
-    echo "keycloak-admin-loopback: PASS"
-  else
-    echo "keycloak-admin-loopback: FAIL (Admin API must bind to 127.0.0.1:18080:8080 only)" >&2
-    failures=1
-  fi
-
-  if python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-ports = [str(p) for p in data["services"]["rabbitmq"].get("ports", [])]
-assert any("10.20.0.1" in p and "5672" in p for p in ports), ports
-assert any("127.0.0.1" in p and "15672" in p for p in ports), ports
-assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
-' <<< "$compose_json"; then
-    echo "rabbitmq-bindings: PASS"
-  else
-    echo "rabbitmq-bindings: FAIL (AMQP must bind to WireGuard and management to loopback only)" >&2
-    failures=1
-  fi
-
-  health="$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' rabbitmq 2>/dev/null || true)"
-  if [ "$health" = healthy ] && docker compose -f "$LIVE_COMPOSE" exec -T rabbitmq \
-      rabbitmq-diagnostics -q ping >/dev/null 2>&1; then
-    echo "rabbitmq: PASS"
-  else
-    echo "rabbitmq: FAIL (container is not healthy)" >&2
-    failures=1
-  fi
-
-  if [ -f "$RABBITMQ_TOFU_PROVISION_MARKER" ] \
-      && grep -Fxq 'tx-local-opentofu-rabbitmq' "$RABBITMQ_TOFU_PROVISION_MARKER"; then
-    echo "rabbitmq-provisioning: PASS"
-  else
-    echo "rabbitmq-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)" >&2
-    failures=1
-  fi
-
-  health="$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' keycloak-postgres 2>/dev/null || true)"
-  if [ "$health" = healthy ] && docker compose -f "$LIVE_COMPOSE" exec -T keycloak-postgres \
-      pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
-    echo "keycloak-postgres: PASS"
-  else
-    echo "keycloak-postgres: FAIL (container is not healthy)" >&2
-    failures=1
-  fi
-
-  # Business PostgreSQL is authoritative business state, so TX_RUNTIME_READY
-  # must not be emitted until its runtime, loopback administration port, and
-  # TX-local OpenTofu provisioning marker are all proven. These checks are
-  # read-only: they never create, modify, or delete any database or row.
-  business_container="$(docker compose -f "$LIVE_COMPOSE" ps -q business-postgres 2>/dev/null || true)"
-  health="$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' business-postgres 2>/dev/null || true)"
-  if [ -n "$business_container" ] && [ "$health" = healthy ] \
-    && docker compose -f "$LIVE_COMPOSE" exec -T business-postgres \
-      pg_isready -U "$TX_BUSINESS_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
-    echo "business-postgres: PASS"
-  else
-    echo "business-postgres: FAIL (container is missing or not healthy)" >&2
-    failures=1
-  fi
-
-  if [ -f "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER" ] \
-      && grep -Fxq 'tx-local-opentofu-business-postgres' "$BUSINESS_POSTGRES_TOFU_PROVISION_MARKER"; then
-    echo "business-postgres-provisioning: PASS"
-  else
-    echo "business-postgres-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)" >&2
-    failures=1
-  fi
-
-  wait_for_probe keycloak http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration || failures=1
-  wait_for_probe tx-business-api http://business-api:8088/actuator/health || failures=1
-  wait_for_probe frontend http://wotb-frontend/api/health 'Host: wotbtools.com' || failures=1
-  wait_for_probe caddy-ready http://caddy/_wotb/ready || failures=1
-  wait_for_probe caddy-frontend http://caddy/_wotb/frontend/api/health || failures=1
-  wait_for_probe caddy-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || failures=1
-  probe_body_contains assetlinks http://caddy/.well-known/assetlinks.json 'com.wotbtools.app' || failures=1
-
-  for provider in keycloak-qq-provider.jar keycloak-wargaming-provider.jar; do
-    if docker compose -f "$LIVE_COMPOSE" exec -T keycloak test -f "/opt/keycloak/providers/$provider"; then
-      echo "keycloak-provider-$provider: PASS"
-    else
-      echo "keycloak-provider-$provider: FAIL" >&2
-      failures=1
-    fi
-  done
-
-  qq_identity_provider_ready || failures=1
-
-  if docker compose -f "$LIVE_COMPOSE" exec -T keycloak test ! -e /opt/keycloak/data/import/wotbtools-realm.json; then
-    echo "keycloak-realm-import: PASS (OpenTofu owns realm configuration)"
-  else
-    echo "keycloak-realm-import: FAIL (legacy realm import must be absent)" >&2
-    failures=1
-  fi
-
-  if [ -n "$source_root" ] && [ -f "$source_root/infra/tofu/keycloak/realm.tf" ]; then
-    echo "realm-client-source-of-truth: PASS (Keycloak OpenTofu root present)"
-  fi
-  # The TX deploy helper owns no DNS or Yecao retirement command; that boundary
-  # is enforced statically by the TX runtime contract tests.
-
-  # Real business chain: token -> control plane -> worker -> dataset consumers.
-  # These tokens are the reason TX_RUNTIME_READY means "business works", not
-  # "containers are up".
-  business_e2e_check || failures=1
-  # Public edge: both public hosts must be served by TX over trusted TLS with 2xx.
-  public_tls_check || failures=1
-
-  [ "$failures" -eq 0 ] && echo "QQ_IDP_STATUS=idp-qq=READY"
-  if [ "$failures" -ne 0 ]; then
-    echo "TX_RUNTIME_NOT_READY" >&2
-    return 1
-  fi
-  echo "TX_RUNTIME_READY"
-}
-
 diagnostics() {
   echo "== TX DEPLOY DIAGNOSTICS =="
   echo "configSha=$CONFIG_SHA_VALUE"
-  echo "image=$IMAGE_TAG_VALUE"
+  case "$DEPLOY_SERVICES_RAW" in keycloak|wotb-frontend|business-api) echo "image=latest" ;; esac
   echo "deployServices=$DEPLOY_SERVICES_RAW"
   if [ -n "$PROBE_LAST_SERVICE" ]; then
     echo "probeService=$PROBE_LAST_SERVICE"
@@ -1463,14 +681,14 @@ diagnostics() {
     echo "probeHttpStatus=$PROBE_LAST_HTTP_STATUS"
     echo "probeError=$PROBE_LAST_ERROR"
   fi
-  docker compose -f "$LIVE_COMPOSE" ps -a || true
+  docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" ps -a || true
   local -a services=("${APPLY_SERVICES[@]}")
   [ "$FAILED_SERVICE" = caddy ] && services+=(caddy)
   local service
   for service in "${services[@]}"; do
     echo "== $service inspect =="
-    docker compose -f "$LIVE_COMPOSE" ps -a "$service" || true
-    docker compose -f "$LIVE_COMPOSE" logs --tail 120 "$service" || true
+    docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" ps -a "$service" || true
+    docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" logs --tail 120 "$service" || true
   done
 }
 
@@ -1492,25 +710,12 @@ stop_failed_service() {
     return 0
   fi
   case "$service" in
-    keycloak|wotb-frontend|business-api|caddy)
+    keycloak|wotb-frontend|business-api|caddy|alloy-tx)
       echo "Stopping failed affected TX service: $service"
-      docker compose -f "$LIVE_COMPOSE" stop "$service" || true
+      docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" stop "$service" || true
       ;;
     *) echo "Not stopping TX dependency after a failed health check: ${service:-unknown}" >&2 ;;
   esac
-}
-
-update_metadata() {
-  is_image_service "$DEPLOY_SERVICES_RAW" || return 0
-  local service="$DEPLOY_SERVICES_RAW"
-  [ "$service" = wotb-frontend ] && service=frontend
-  local -a args=(update --host tx --file "$METADATA_FILE" \
-    --tx-prefix "$TX_IMAGE_REGISTRY_PREFIX_VALUE" --service "$service" \
-    --config-sha "$CONFIG_SHA_VALUE")
-  if [ -n "$IMAGE_TAG_VALUE" ]; then
-    args+=(--image-tag "$IMAGE_TAG_VALUE" --image-commit-sha "$IMAGE_COMMIT_SHA_VALUE")
-  fi
-  python3 "$METADATA_TOOL" "${args[@]}"
 }
 
 acquire_deploy_lock() {
@@ -1532,19 +737,11 @@ apply_and_check() {
 main() {
   validate_inputs
   preflight_host
-  command -v python3 >/dev/null 2>&1 || die "python3 is required for immutable image handling."
-  [ -f "$METADATA_TOOL" ] || die "staged release metadata validator is missing."
-  local -a metadata_args=(validate --host tx --file "$METADATA_FILE" --tx-prefix "$TX_IMAGE_REGISTRY_PREFIX_VALUE")
-  if [ -n "$IMAGE_TAG_VALUE" ]; then
-    local metadata_service="$DEPLOY_SERVICES_RAW"
-    [ "$metadata_service" = wotb-frontend ] && metadata_service=frontend
-    metadata_args+=(--service "$metadata_service" --image-tag "$IMAGE_TAG_VALUE" --image-commit-sha "$IMAGE_COMMIT_SHA_VALUE")
-  fi
-  python3 "$METADATA_TOOL" "${metadata_args[@]}" || die "production metadata or incoming image identity is invalid."
   require_tofu_provisioning
   mkdir -p "$WOTB_DIR" "$INCOMING_DIR"
   acquire_deploy_lock
   stage_and_validate
+  assert_stateful_volume_identity
   pull_images || die "TX image pull failed; live TX deployment was not changed."
   promote_files || die "TX live-file promotion failed; prior TX files were restored when possible."
   if ! apply_and_check; then
@@ -1552,13 +749,7 @@ main() {
     stop_failed_service
     die "TX blocking health failed; no automatic recovery, DNS action, or Yecao action was attempted."
   fi
-  if [ "$DEFER_RELEASE_METADATA" = 0 ]; then
-    update_metadata
-  else
-    echo "TX release metadata update deferred until the Keycloak realm chain is verified."
-  fi
-  rm -f -- "$INCOMING_DIR/docker-compose.effective.yml"
-  echo "TX deployment completed: config=$CONFIG_SHA_VALUE service=$DEPLOY_SERVICES_RAW image=$IMAGE_TAG_VALUE"
+  echo "TX deployment completed: config=$CONFIG_SHA_VALUE service=$DEPLOY_SERVICES_RAW"
 }
 
 if [ "${TX_DEPLOY_LIBRARY_ONLY:-0}" != 1 ]; then

@@ -168,8 +168,6 @@ starts it nor begins demanding its credentials:
 ```bash
 WOTB_DEPLOY_SERVICE=parser-worker \
 WOTB_DEPLOY_CONFIG_SHA=<40-hex main SHA> \
-WOTB_DEPLOY_IMAGE_TAG=ghcr.io/a158coke/wotbtools-parser-worker:sha-<12> \
-WOTB_DEPLOY_IMAGE_COMMIT_SHA=<40-hex image SHA> \
 bash deploy/deploy.sh
 ```
 
@@ -245,7 +243,7 @@ Diagnosis order:
   immutable property objects carry the environment values (optional keys keep their
   reviewed defaults), that the assembly consumes them, and that a missing or blank
   `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `RABBITMQ_PASSWORD` fails startup.
-- `scripts/ci/test-workflow-contract.sh` keeps `java/pom.xml` modules and the
+- ``deploy/test-deploy-contract.sh` keeps `java/pom.xml` modules and the
   Dockerfile COPY lists in lockstep, including the `-pl wotb-parser-worker -am`
   dependency closure of the worker image.
 - `deploy/test-deploy-contract.sh` pins the compose/deploy contract: no public
