@@ -1,6 +1,6 @@
 package com.wotb.core.export;
 
-import com.wotb.core.league.LeagueColumns;
+import com.wotb.core.rating.LeagueColumns;
 
 import java.util.Map;
 

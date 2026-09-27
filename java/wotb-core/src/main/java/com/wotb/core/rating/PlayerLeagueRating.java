@@ -1,4 +1,4 @@
-package com.wotb.core.league;
+package com.wotb.core.rating;
 
 import java.util.List;
 

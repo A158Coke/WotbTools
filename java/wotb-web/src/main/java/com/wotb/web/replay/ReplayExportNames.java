@@ -1,6 +1,6 @@
 package com.wotb.web.replay;
 
-import com.wotb.core.league.LeagueRatingMode;
+import com.wotb.core.rating.LeagueRatingMode;
 
 /**
  * Replay XLSX 导出文件名规则（同步 ReplayService / 异步 ReplayExportJobService /

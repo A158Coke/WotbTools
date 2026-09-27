@@ -1,12 +1,12 @@
 package com.wotb.core.export;
 
-import com.wotb.core.league.LeagueColumns;
-import com.wotb.core.league.LeagueRatingBatch;
-import com.wotb.core.league.LeagueRatingResult;
-import com.wotb.core.league.PlayerLeagueRating;
-import com.wotb.core.league.PlayerLeagueSummary;
-import com.wotb.core.league.TeamLeagueRating;
-import com.wotb.core.league.TeamLeagueSummary;
+import com.wotb.core.rating.LeagueColumns;
+import com.wotb.core.rating.LeagueRatingBatch;
+import com.wotb.core.rating.LeagueRatingResult;
+import com.wotb.core.rating.PlayerLeagueRating;
+import com.wotb.core.rating.PlayerLeagueSummary;
+import com.wotb.core.rating.TeamLeagueRating;
+import com.wotb.core.rating.TeamLeagueSummary;
 import com.wotb.core.model.Battle;
 import com.wotb.core.ref.MapNames;
 import com.wotb.core.ref.Tankopedia;
@@ -223,7 +223,7 @@ final class LeagueAggregateSheets {
             battleArenaIds.add(b.arenaId);
         }
         final Map<String, String> codeByArena = new HashMap<>();
-        for (final com.wotb.core.league.LeagueFailure f : batch.failures()) {
+        for (final com.wotb.core.rating.LeagueFailure f : batch.failures()) {
             codeByArena.putIfAbsent(f.arenaId(), f.code());
         }
         int rIdx = 1;
@@ -247,7 +247,7 @@ final class LeagueAggregateSheets {
             styles.setCell(row.createCell(1), d[1], styles.plain(), "clan");
             styles.setCell(row.createCell(5), "重复", styles.plain(), "nickname");
         }
-        for (final com.wotb.core.league.LeagueFailure f : batch.failures()) {
+        for (final com.wotb.core.rating.LeagueFailure f : batch.failures()) {
             // 校验失败场次已在 battle 行显示状态，避免重复行；仅冲突等不在 battles 的失败单独成行
             if (battleArenaIds.contains(f.arenaId())) {
                 continue;
@@ -262,10 +262,10 @@ final class LeagueAggregateSheets {
 
     private static String failureLabel(final String code) {
         return switch (code) {
-            case com.wotb.core.league.LeagueFailure.Code.CONFLICTING_REPLAYS_FOR_ARENA -> "arena 冲突，不评分";
-            case com.wotb.core.league.LeagueFailure.Code.NOT_SEVEN_VS_SEVEN -> "非标准 7v7";
-            case com.wotb.core.league.LeagueFailure.Code.ROSTER_INCOMPLETE -> "名册不完整";
-            case com.wotb.core.league.LeagueFailure.Code.NO_DECISIVE_WINNER -> "平局/未知胜方";
+            case com.wotb.core.rating.LeagueFailure.Code.CONFLICTING_REPLAYS_FOR_ARENA -> "arena 冲突，不评分";
+            case com.wotb.core.rating.LeagueFailure.Code.NOT_SEVEN_VS_SEVEN -> "非标准 7v7";
+            case com.wotb.core.rating.LeagueFailure.Code.ROSTER_INCOMPLETE -> "名册不完整";
+            case com.wotb.core.rating.LeagueFailure.Code.NO_DECISIVE_WINNER -> "平局/未知胜方";
             default -> code;
         };
     }

@@ -1,10 +1,10 @@
 package com.wotb.web.replay.job;
 
-import com.wotb.core.league.LeagueFailure;
-import com.wotb.core.league.LeagueRatingBatch;
-import com.wotb.core.league.LeagueRatingBatchAggregator;
-import com.wotb.core.league.LeagueRatingCalculator;
-import com.wotb.core.league.LeagueRatingResult;
+import com.wotb.core.rating.LeagueFailure;
+import com.wotb.core.rating.LeagueRatingBatch;
+import com.wotb.core.rating.LeagueRatingBatchAggregator;
+import com.wotb.core.rating.LeagueRatingCalculator;
+import com.wotb.core.rating.LeagueRatingResult;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.stats.PerformanceMetricsCalculator;

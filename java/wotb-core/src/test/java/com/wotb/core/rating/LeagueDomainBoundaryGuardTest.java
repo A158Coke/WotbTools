@@ -1,4 +1,4 @@
-package com.wotb.core.league;
+package com.wotb.core.rating;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;

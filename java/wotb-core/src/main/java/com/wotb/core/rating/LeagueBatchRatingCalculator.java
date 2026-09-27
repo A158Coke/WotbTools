@@ -1,4 +1,4 @@
-package com.wotb.core.league;
+package com.wotb.core.rating;
 
 /**
  * League Rating V6 batch projection（纯函数，无 Spring/DTO/DB/IO）。

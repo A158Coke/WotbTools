@@ -1,9 +1,9 @@
-import com.wotb.core.league.LeagueBatchRatingCalculator;
-import com.wotb.core.league.LeagueRatingCalculator;
-import com.wotb.core.league.LeagueRatingNormalizer;
-import com.wotb.core.league.LeagueRatingResult;
-import com.wotb.core.league.PlayerLeagueRating;
-import com.wotb.core.league.TeamLeagueRating;
+import com.wotb.core.rating.LeagueBatchRatingCalculator;
+import com.wotb.core.rating.LeagueRatingCalculator;
+import com.wotb.core.rating.LeagueRatingNormalizer;
+import com.wotb.core.rating.LeagueRatingResult;
+import com.wotb.core.rating.PlayerLeagueRating;
+import com.wotb.core.rating.TeamLeagueRating;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.facts.TradeFacts;
@@ -37,7 +37,7 @@ public final class RatingGoldenDumper {
     public static void main(String[] args) {
         final Random random = new Random(20260927L);
         final StringBuilder json = new StringBuilder();
-        json.append("{\n  \"source\": \"com.wotb.core.league.LeagueRatingCalculator (V4.1) + LeagueBatchRatingCalculator (V6)\",\n");
+        json.append("{\n  \"source\": \"com.wotb.core.rating.LeagueRatingCalculator (V4.1) + LeagueBatchRatingCalculator (V6)\",\n");
         json.append("  \"scenarios\": [\n");
 
         final List<String> scenarios = new ArrayList<>();

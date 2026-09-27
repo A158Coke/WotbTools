@@ -2,15 +2,15 @@ package com.wotb.web.replay.mapper;
 
 import com.wotb.core.AggregateColumns;
 import com.wotb.core.Columns;
-import com.wotb.core.league.LeagueColumns;
-import com.wotb.core.league.LeagueRatingBatch;
-import com.wotb.core.league.LeagueRatingBatchAggregator;
-import com.wotb.core.league.LeagueRatingResult;
-import com.wotb.core.league.PlayerLeagueRating;
-import com.wotb.core.league.PlayerLeagueSummary;
-import com.wotb.core.league.PlayerVehicleUsage;
-import com.wotb.core.league.TeamLeagueRating;
-import com.wotb.core.league.TeamLeagueSummary;
+import com.wotb.core.rating.LeagueColumns;
+import com.wotb.core.rating.LeagueRatingBatch;
+import com.wotb.core.rating.LeagueRatingBatchAggregator;
+import com.wotb.core.rating.LeagueRatingResult;
+import com.wotb.core.rating.PlayerLeagueRating;
+import com.wotb.core.rating.PlayerLeagueSummary;
+import com.wotb.core.rating.PlayerVehicleUsage;
+import com.wotb.core.rating.TeamLeagueRating;
+import com.wotb.core.rating.TeamLeagueSummary;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -455,7 +455,7 @@ public final class Mapper {
                     s.wins(), s.arenaTeams()));
         }
         final List<LeagueFailureDto> failures = new ArrayList<>();
-        for (final com.wotb.core.league.LeagueFailure f : league.failures()) {
+        for (final com.wotb.core.rating.LeagueFailure f : league.failures()) {
             failures.add(new LeagueFailureDto(f.fileName(), f.arenaId(), f.code()));
         }
         return new LeagueRatingDto("LEAGUE_RATING", leagueColumnDefs(), players, teams,

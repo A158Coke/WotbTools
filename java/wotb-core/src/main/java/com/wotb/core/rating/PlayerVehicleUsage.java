@@ -1,4 +1,4 @@
-package com.wotb.core.league;
+package com.wotb.core.rating;
 
 /**
  * 一名选手在当前批次已评分场次中对某辆坦克的使用统计。

@@ -1,6 +1,6 @@
 //! League Rating: V4.1 single battle + V6 batch projection.
 //!
-//! Ports `com.wotb.core.league.{LeagueRatingCalculator,LeagueRatingNormalizer,LeagueBatchRatingCalculator}`
+//! Ports `com.wotb.core.rating.{LeagueRatingCalculator,LeagueRatingNormalizer,LeagueBatchRatingCalculator}`
 //! and `com.wotb.core.replay.facts.TradeFacts` without touching any formula, weight, cap or
 //! normalization. The frozen spec is `docs/features/league-rating.md:92-162` (single battle) and
 //! `docs/WotBTools_League_Rating_V6.md` (batch).
