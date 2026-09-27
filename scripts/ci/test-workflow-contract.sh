@@ -68,7 +68,7 @@ for script in ("business-postgres-backup.sh", "keycloak-postgres-backup.sh", "to
 # may only proceed when its triggering SHA is still current for every owned input.
 owners = (
     "business-api", "frontend", "keycloak", "parser-worker", "minio", "caddy",
-    "rabbitmq", "business-postgres", "keycloak-postgres", "observability",
+    "rabbitmq", "business-postgres", "keycloak-postgres", "observability", "alloy-tx",
 )
 image_owners = {"business-api", "frontend", "keycloak", "parser-worker", "minio"}
 queue = {"group": "production-maintenance", "cancel-in-progress": "false", "queue": "max"}

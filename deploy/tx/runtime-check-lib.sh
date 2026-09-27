@@ -567,7 +567,7 @@ public_tls_check() {
 tx_runtime_check() {
   local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health business_container
   local failures=0 provider
-  DEPLOY_SERVICES=(keycloak-postgres business-postgres rabbitmq keycloak wotb-frontend business-api caddy)
+  DEPLOY_SERVICES=(keycloak-postgres business-postgres rabbitmq keycloak wotb-frontend business-api caddy alloy-tx)
 
   command -v docker >/dev/null 2>&1 || { echo "docker: FAIL (docker is required)" >&2; return 1; }
   command -v python3 >/dev/null 2>&1 || { echo "python3: FAIL (python3 is required)" >&2; return 1; }
@@ -597,7 +597,11 @@ services = data["services"]
 frontend = services["wotb-frontend"].get("environment") or {}
 assert frontend.get("BACKEND_UPSTREAM") == "http://business-api:8087", frontend.get("BACKEND_UPSTREAM")
 business_api = services["business-api"]
-assert not business_api.get("ports"), business_api.get("ports")
+business_ports = [
+    (str(port.get("host_ip", "")), str(port.get("published")), str(port.get("target")))
+    for port in (business_api.get("ports") or [])
+]
+assert business_ports == [("10.20.0.1", "8088", "8088")], business_ports
 published = [
     str(port)
     for name, service in services.items()
@@ -607,7 +611,22 @@ assert not any("8087" in port for port in published), published
 ' <<< "$compose_json"; then
     echo "tx-internal-api-route: PASS"
   else
-    echo "tx-internal-api-route: FAIL (frontend must proxy to the TX-internal business runtime and no service may publish 8087)" >&2
+    echo "tx-internal-api-route: FAIL (frontend must use TX-internal business-api and only its management port may bind to WireGuard)" >&2
+    failures=1
+  fi
+
+  if python3 -c '
+import json, sys
+services = json.load(sys.stdin)["services"]
+alloy = services["alloy-tx"]
+assert not (alloy.get("ports") or []), alloy.get("ports")
+volumes = alloy.get("volumes") or []
+assert any(v.get("source") == "/var/run/docker.sock" and v.get("target") == "/var/run/docker.sock" for v in volumes), volumes
+assert any(v.get("target") == "/etc/alloy/config.alloy" and v.get("read_only") for v in volumes), volumes
+' <<< "$compose_json"; then
+    echo "tx-alloy-config: PASS"
+  else
+    echo "tx-alloy-config: FAIL (alloy-tx must publish no port and mount its config and Docker socket)" >&2
     failures=1
   fi
 
@@ -735,6 +754,7 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
   wait_for_probe caddy-ready http://caddy/_wotb/ready || failures=1
   wait_for_probe caddy-frontend http://caddy/_wotb/frontend/api/health || failures=1
   wait_for_probe caddy-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || failures=1
+  wait_for_probe caddy-monitor http://caddy/_wotb/monitor/api/health || failures=1
   probe_body_contains assetlinks http://caddy/.well-known/assetlinks.json 'com.wotbtools.app' || failures=1
 
   for provider in keycloak-qq-provider.jar keycloak-wargaming-provider.jar; do
@@ -775,4 +795,3 @@ assert not any("0.0.0.0" in p or "::" in p for p in ports), ports
   fi
   echo "TX_RUNTIME_READY"
 }
-

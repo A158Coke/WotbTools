@@ -9,3 +9,4 @@ include:
   - path: frontend.compose.yml
   - path: business-api.compose.yml
   - path: caddy.compose.yml
+  - path: alloy-tx.compose.yml

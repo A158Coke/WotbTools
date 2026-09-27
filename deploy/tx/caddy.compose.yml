@@ -14,7 +14,8 @@ services:
       # interface by default. It is the only service in this stack allowed to
       # publish publicly: the two PostgreSQL ports, the Keycloak admin port and
       # the RabbitMQ management port stay on 127.0.0.1, AMQP stays on the
-      # WireGuard address, and business-api/frontend publish nothing at all.
+      # WireGuard address; business-api exposes only management on WireGuard,
+      # while frontend publishes nothing.
       # An operator can still move the bind address with CADDY_HTTP_BIND or
       # CADDY_HTTPS_BIND without editing this file.
       - "${CADDY_HTTP_BIND:-0.0.0.0}:80:80"
