@@ -78,7 +78,10 @@ for owner in owners:
     assert events["push"]["branches"] == ["main"], owner
     trigger_paths = events["push"].get("paths", [])
     freshness_paths = workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
-    assert trigger_paths == freshness_paths, owner
+    if owner in image_owners:
+        assert not trigger_paths, owner
+    else:
+        assert trigger_paths == freshness_paths, owner
     checks = [
         step for job in workflow["jobs"].values() for step in job.get("steps", [])
         if "deploy/check-production-freshness.sh" in step.get("run", "")
@@ -86,6 +89,9 @@ for owner in owners:
     assert len(checks) >= 2, owner
     assert all(step.get("env", {}).get("EVENT_SHA") == "${{ github.sha }}" for step in checks), owner
     if owner in image_owners:
+        assert workflow["concurrency"] == {
+            "group": f"deploy-{owner}", "cancel-in-progress": "true"
+        }, owner
         assert workflow["jobs"]["deploy"]["concurrency"] == queue, owner
     else:
         assert workflow["concurrency"] == queue, owner

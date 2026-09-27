@@ -1,0 +1,40 @@
+name: deploy
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    ports:
+      # Caddy is the TX production public ingress and owns 80/443 on every TX
+      # interface by default. It is the only service in this stack allowed to
+      # publish publicly: the two PostgreSQL ports, the Keycloak admin port and
+      # the RabbitMQ management port stay on 127.0.0.1, AMQP stays on the
+      # WireGuard address, and business-api/frontend publish nothing at all.
+      # An operator can still move the bind address with CADDY_HTTP_BIND or
+      # CADDY_HTTPS_BIND without editing this file.
+      - "${CADDY_HTTP_BIND:-0.0.0.0}:80:80"
+      - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443"
+      - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443/udp"
+    environment:
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./assets/auth/.well-known/assetlinks.json:/srv/.well-known/assetlinks.json:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    logging: *default-logging
+
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  default:
+    name: wotb_tx_internal

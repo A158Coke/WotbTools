@@ -575,6 +575,7 @@ jobs:
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
+          deploy/check-latest-main.sh deploy/test-check-latest-main.sh
           infra/tofu/minio/validate-plan.sh infra/tofu/minio/test-validate-plan.sh
           infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
           infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
@@ -588,9 +589,10 @@ jobs:
           bash scripts/ci/test-tofu-workflow-contract.sh
           bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
           bash scripts/ci/test-postgres-business-tofu-contract.sh
-      - name: TX runtime and metadata fixtures
+      - name: TX and Yecao owner runtime fixtures
         run: |
           set -euo pipefail
+          bash deploy/test-check-latest-main.sh
           bash deploy/test-tx-runtime-config.sh
           bash deploy/test-yecao-wireguard-boundary.sh
           bash deploy/test-tx-runtime-check.sh
@@ -600,7 +602,6 @@ jobs:
         run: bash deploy/test-keycloak-postgres-backup.sh
       - name: Production Compose configuration contract
         env:
-          TAG: sha-ci
           DB_PASSWORD: ci
           KC_ADMIN_PASSWORD: ci
           WG_APPLICATION_ID: ci
@@ -670,7 +671,6 @@ jobs:
           PY
       - name: MinIO Compose configuration contract
         env:
-          TAG: sha-ci
           YECAO_MINIO_ROOT_USER: ci-root-user
           YECAO_MINIO_ROOT_PASSWORD: ci-root-password
         run: |
@@ -682,7 +682,7 @@ jobs:
               compose = json.load(compose_file)
           assert set(compose['services']) == {'minio'}
           service = compose['services']['minio']
-          assert service['image'] == 'ghcr.io/a158coke/wotbtools-minio:sha-ci'
+          assert service['image'] == 'ghcr.io/a158coke/wotbtools-minio:latest'
           ports = [str(port) for port in service.get('ports', [])]
           assert any('10.20.0.2' in port and '9000' in port for port in ports), ports
           assert any('127.0.0.1' in port and '9001' in port for port in ports), ports

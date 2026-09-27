@@ -514,7 +514,7 @@ keycloak-qq-provider
 生产部署注入 `WG_APPLICATION_ID`，同步更新：
 
 - `.env.example`
-- TX 生产 Compose（`deploy/tx/docker-compose.yml` 的 keycloak service environment）
+- TX 生产 Compose（`deploy/tx/keycloak.compose.yml` 的 keycloak service environment）
 - 必要的部署文档
 
 禁止在日志中输出环境变量值。
