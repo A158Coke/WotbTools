@@ -42,8 +42,10 @@ root_paths = {
 for name, path in root_paths.items():
     assert f"{name}) path={path}" in root_resolver, name
 fixture_step = step("Validate local-root safety policy fixtures")["run"]
-assert "rabbitmq|minio|business-postgres" in fixture_step
-assert "test-validate-plan.sh" in fixture_step
+assert "rabbitmq|minio)" in fixture_step
+assert "business-postgres)" in fixture_step
+assert fixture_step.count("test-validate-plan.sh") == 2
+assert "bash deploy/test-business-postgres-runtime.sh" in fixture_step
 
 print("PR OpenTofu validation has no plan/apply or production credentials")
 PY
