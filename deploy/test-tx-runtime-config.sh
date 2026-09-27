@@ -24,6 +24,9 @@ verb="${1:-}"; shift || true
 printf '%s %s\n' "$verb" "$*" >> "$FAKE_DOCKER_LOG"
 case "$verb" in
   run)
+    if [[ "${FAKE_CADDY_VALIDATE_FAIL:-0}" = 1 && "$*" == *"--entrypoint caddy caddy validate"* ]]; then
+      exit 1
+    fi
     if [[ "$*" == *":3100/ready"* ]]; then
       printf 'ready'
     elif [[ "$*" == *loki/api/v1/query_range* ]]; then
