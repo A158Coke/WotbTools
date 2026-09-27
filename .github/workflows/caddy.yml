@@ -9,6 +9,7 @@ on:
       - deploy/tx/docker-compose.yml
       - deploy/tx/common.compose.yml
       - deploy/tx/caddy.compose.yml
+      - deploy/tx/validate-caddy-config.sh
       - deploy/tx/Caddyfile
       - deploy/tx/assets/**
   workflow_dispatch:
@@ -28,6 +29,7 @@ env:
     deploy/tx/docker-compose.yml
     deploy/tx/common.compose.yml
     deploy/tx/caddy.compose.yml
+    deploy/tx/validate-caddy-config.sh
     deploy/tx/Caddyfile
     deploy/tx/assets/**
 
