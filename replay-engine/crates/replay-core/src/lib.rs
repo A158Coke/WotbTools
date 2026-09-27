@@ -13,10 +13,12 @@ pub mod error;
 pub mod meta;
 pub mod pickle;
 pub mod protobuf;
+pub mod rating;
 pub mod result;
 
 pub use error::ReplayError;
 pub use meta::{ParseQuality, ReplayMeta};
+pub use rating::{rate_battle, BattleRating, PlayerRating, RatingPlayer, TeamRating};
 pub use result::{parse_result, BattleResult, ParticipantResult};
 
 /// Engine version; consumers use it to gate behaviour instead of guessing from a game version.

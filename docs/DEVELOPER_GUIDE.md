@@ -149,6 +149,16 @@ node tests/corpus-scan.mjs <dir>    # 本地语料扫描（gitignored 样本，�
 
 `ci.yml` 的 `replay_engine` job 使用同一组命令（不用 wasm-pack，避免运行时下载与未锁定安装脚本）。
 
+**Java golden（parity oracle）**：`tests/golden/*.json` 由 `tests/java-golden/*.java` 跑生产 Java 实现生成，CI 无 Java 工具链时用它验证 Rust 移植。重新生成（需先 `mvn -pl wotb-core -DskipTests package`，并让 `spring-core` 在 classpath 上）：
+
+```bash
+javac -cp java/wotb-core/target/classes -d "$TMP/golden" replay-engine/tests/java-golden/RatingGoldenDumper.java
+java -cp "java/wotb-core/target/classes:$TMP/golden:<spring-core.jar>" RatingGoldenDumper \
+  > replay-engine/tests/golden/league-rating-v41.json
+```
+
+重跑后必须重新执行 `cargo test -p replay-core --test rating_parity`：golden 变更只有在 Rust 仍逐字段一致时才代表 parity 成立。
+
 约定：解析预算与 strict contiguous framing 见 [`docs/reference/replay-data.md`](reference/replay-data.md)；协议语义权威按 [`docs/research/replay/README.md`](research/replay/README.md) 的读取顺序；u64 identifier（`arenaId` / `gameAccountId` / `vehicleId`）过 WASM/JSON 边界一律用字符串。`replay-engine/**` 由 `ci.yml` 的 replay engine job 验证，`CI / Required Gate` 仍是唯一 required check。
 ---
 
