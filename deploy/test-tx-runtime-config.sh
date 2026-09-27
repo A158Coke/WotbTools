@@ -15,6 +15,7 @@ TAG_B="$PREFIX/wotbtools-business-api:sha-bbbbbbbbbbbb"
 mkdir -p "$WORK/host" "$WORK/incoming/deploy/tx" "$WORK/bin"
 cp -a "$ROOT/deploy/tx/." "$WORK/incoming/deploy/tx/"
 cp "$ROOT/deploy/release-metadata.py" "$WORK/incoming/deploy/"
+cp "$ROOT/deploy/validate-alloy-config.sh" "$WORK/incoming/deploy/"
 find "$WORK/incoming/deploy/tx" -name '*.sh' -exec sed -i 's/\r$//' {} +
 cat > "$WORK/host/production-release.json" <<JSON
 {"schemaVersion":2,"services":{"business-api":{"configSha":"$SHA_A","image":{"tag":"$TAG_A","commitSha":"$SHA_A"},"deployedAt":"2026-01-01T00:00:00Z"},"frontend":{"configSha":"$SHA_A","image":{"tag":"$PREFIX/wotbtools-frontend:sha-aaaaaaaaaaaa","commitSha":"$SHA_A"},"deployedAt":"2026-01-01T00:00:00Z"},"keycloak":{"configSha":"$SHA_A","image":{"tag":"$PREFIX/wotbtools-keycloak:sha-aaaaaaaaaaaa","commitSha":"$SHA_A"},"deployedAt":"2026-01-01T00:00:00Z"}}}
@@ -44,13 +45,27 @@ verb="${1:-}"; shift || true
 printf '%s %s\n' "$verb" "$*" >> "${FAKE_DOCKER_LOG:?}"
 case "$verb" in
   up) [ "${FAKE_UP_FAILURE:-0}" != 1 ] ;;
-  ps) printf 'fake-container\n' ;;
+  ps) printf 'fake-container Up\n' ;;
   run)
     if [[ "$*" == *"caddy validate"* ]] && [ "${FAKE_CADDY_INVALID:-0}" = 1 ]; then
       echo 'staged Caddyfile rejected' >&2
       exit 1
     fi
-    if [ "${FAKE_PROBE_FAILURE:-0}" = 1 ]; then printf '503'; else printf '200'; fi
+    if [[ "$*" == *":3100/ready"* ]]; then
+      if [ "${FAKE_PROBE_FAILURE:-0}" = 1 ]; then printf '503'; else printf 'ready'; fi
+    elif [[ "$*" == *loki/api/v1/query_range* ]]; then
+      marker=""
+      previous=""
+      for argument in "$@"; do
+        if [ "$previous" = "--data-urlencode" ]; then
+          case "$argument" in
+            query=*) marker="$(printf '%s' "$argument" | grep -oE '[|]= "[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)"/\1/')" ;;
+          esac
+        fi
+        previous="$argument"
+      done
+      printf '{"status":"success","data":{"result":[{"values":[[1727123456000000000,"event=android_apk_download apk=%s status=404 bytes=123 %s"]]}]}}\n' "${marker:-none}" "${marker:-none}"
+    elif [ "${FAKE_PROBE_FAILURE:-0}" = 1 ]; then printf '503'; else printf '200'; fi
     ;;
   *) : ;;
 esac
@@ -113,6 +128,17 @@ grep -Fq "$TAG_A" "$WORK/host/deploy/docker-compose.yml"
 run_minimal frontend "$WORK/frontend-minimal.log" >/dev/null
 grep -q '^up -d --no-deps --force-recreate wotb-frontend$' "$WORK/frontend-minimal.log"
 ! grep -Eq '^up .*keycloak|^up .*business-api|^up .*caddy' "$WORK/frontend-minimal.log"
+
+# The TX log-shipper lane needs no credentials, validates its Alloy config,
+# promotes it, proves the Loki path with labeled canaries, and starts only
+# alloy-tx.
+run_minimal alloy-tx "$WORK/alloy-minimal.log" >/dev/null
+grep -q '^pull alloy-tx$' "$WORK/alloy-minimal.log"
+grep -q '^up -d --no-deps --force-recreate alloy-tx$' "$WORK/alloy-minimal.log"
+! grep -Eq '^up .*(keycloak|keycloak-postgres|business-postgres|rabbitmq|business-api|wotb-frontend|caddy)' "$WORK/alloy-minimal.log"
+cmp -s "$ROOT/deploy/tx/alloy/config.alloy" "$WORK/host/deploy/alloy/config.alloy" \
+  || { echo "FAIL: alloy-tx config was not promoted verbatim" >&2; exit 1; }
+grep -q 'alloy-tx: PASS' "$WORK/alloy-minimal.log"
 mkdir -p "$WORK/host/deploy/assets/auth/.well-known"
 cp "$WORK/incoming/deploy/tx/Caddyfile" "$WORK/host/deploy/Caddyfile"
 cp "$WORK/incoming/deploy/tx/assets/auth/.well-known/assetlinks.json" \

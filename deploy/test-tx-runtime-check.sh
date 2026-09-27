@@ -22,6 +22,7 @@ grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "$DEPLOY"
 grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "$DEPLOY"
 grep -Fq 'https://graph.qq.com/user/get_user_info' "$DEPLOY"
 grep -Fq 'tx-internal-api-route: PASS' "$DEPLOY"
+grep -Fq 'tx-alloy-config: PASS' "$DEPLOY"
 grep -Fq 'distributed-execution-plane: PASS' "$DEPLOY"
 ! grep -Fq 'wireguard-backend' "$DEPLOY"
 grep -Fq 'keycloak-qq-provider.jar' "$DEPLOY"
@@ -92,10 +93,17 @@ fi
 # 组合成 business-api 的 environment 主体（去掉首个逗号，空集时是合法 JSON {}）。
 extra_env="${job_repository_field}${execution_mode_field}"
 extra_env="${extra_env#,}"
-business_api_ports="${FAKE_BUSINESS_API_PUBLISHED_PORT:-[]}"
+# Healthy default is the single WireGuard-only management bind; FAKE_BUSINESS_API_PUBLISHED_PORT
+# injects regressions (public or wildcard binds) to prove the deploy guard still fails closed.
+# The JSON cannot live inside a ${VAR:-default} expansion: bash would consume its
+# quotes and braces as syntax instead of emitting them verbatim.
+business_api_ports='[{"host_ip":"10.20.0.1","published":8088,"target":8088}]'
+if [ -n "${FAKE_BUSINESS_API_PUBLISHED_PORT:-}" ]; then
+  business_api_ports="$FAKE_BUSINESS_API_PUBLISHED_PORT"
+fi
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}}}}\n' \
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"image":"grafana/alloy:v1.4.2","ports":[],"volumes":["/var/run/docker.sock:/var/run/docker.sock:ro","./alloy/config.alloy:/etc/alloy/config.alloy:ro"]}}}\n' \
       "$business_ports" "$frontend_upstream" "$business_api_ports" "$extra_env"
     ;;
   ps)
@@ -256,8 +264,10 @@ printf 'tx-local-opentofu-business-postgres\n' > "$WORK/business-postgres.tofu-p
 ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
 grep -Fq 'TX_RUNTIME_READY' <<< "$ready_output"
 grep -Fq 'tx-internal-api-route: PASS' <<< "$ready_output"
+grep -Fq 'tx-alloy-config: PASS' <<< "$ready_output"
 grep -Fq 'distributed-execution-plane: PASS' <<< "$ready_output"
 grep -Fq 'tx-business-api: PASS' <<< "$ready_output"
+grep -Fq 'caddy-monitor: PASS' <<< "$ready_output"
 grep -Fq 'auth-token: PASS' <<< "$ready_output"
 grep -Fq 'tx-control-plane: PASS' <<< "$ready_output"
 grep -Fq 'anonymous-rejected: PASS' <<< "$ready_output"
@@ -328,6 +338,12 @@ run_gate_failure "frontend-upstream-public" 'tx-internal-api-route: FAIL' \
 run_gate_failure "business-api-published-port" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8087,"target":8087}]'
+run_gate_failure "business-api-public-management-port" 'tx-internal-api-route: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8088,"target":8088}]'
+run_gate_failure "business-api-extra-management-bind" 'tx-internal-api-route: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"10.20.0.1","published":8088,"target":8088},{"host_ip":"127.0.0.1","published":8088,"target":8088}]'
 run_gate_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
   "" "$RELOCATED_ROOT/deploy/runtime-check.sh" env FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
 run_gate_failure "retired-execution-mode-switch" 'distributed-execution-plane: FAIL' \
