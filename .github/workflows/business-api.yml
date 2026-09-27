@@ -106,7 +106,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tags="$(crane ls "$REPOSITORY")"
+          tags="$(bash "$GITHUB_WORKSPACE/deploy/list-image-tags.sh" "$REPOSITORY")"
           if grep -Fxq "$TAG" <<< "$tags"; then
             docker pull "$IMAGE"
             revision="$(docker image inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE" | sed -n 's/^BUILD_COMMIT=//p' | head -n 1)"

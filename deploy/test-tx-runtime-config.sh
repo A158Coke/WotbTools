@@ -56,6 +56,10 @@ env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 CADDY_ACME_EMAIL=ci@example.invalid \
   FAKE_DOCKER_LOG="$WORK/caddy.log" bash "$WORK/incoming/deploy/tx/deploy.sh" >/dev/null
 grep -q '^up -d --no-deps --force-recreate caddy$' "$WORK/caddy.log"
+# The staged gateway config must be validated by the real Caddy executable before
+# the gateway is recreated: the published image has no ENTRYPOINT, so the
+# validation has to pin `--entrypoint caddy` explicitly.
+grep -q '^run .*--entrypoint caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile$' "$WORK/caddy.log"
 ! grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/caddy.log"
 env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \

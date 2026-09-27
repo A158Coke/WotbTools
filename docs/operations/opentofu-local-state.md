@@ -13,6 +13,21 @@ source by this repository.
 | TX | `infra/tofu/keycloak` | `/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate` |
 | Yecao | `infra/tofu/grafana` | `/opt/wotb/grafana-tofu-state/terraform.tfstate` |
 
+## Owner-host prerequisites
+
+The owner workflows and the nightly state backup run with these host tools: `tofu`,
+`flock`, `curl`, and `jq`. `jq` is a hard requirement of the Grafana plan guard
+(`.github/workflows/observability.yml`, `infra/tofu/grafana/validate-plan.sh`) and of
+the TX Keycloak runner (`deploy/tx/keycloak-tofu.sh`); a host without it fails the
+workflow before any plan is produced. Both hosts were verified on 2026-09-28
+(Asia/Hong_Kong): TX has all four, Yecao was missing `jq` and needs
+`apt-get install -y jq` once.
+
+`deploy/tofu-local-state-backup.sh` (invoked by `.github/workflows/database-backup.yml`)
+requires **every** state file listed above plus the `bootstrap-complete` marker for each
+adopted root. A missing `keycloak-tofu-state` (TX) or `grafana-tofu-state` (Yecao)
+therefore fails the state-backup jobs as well, not only the owner deploy workflows.
+
 ## Bootstrap boundary
 
 Every owner workflow checks for a regular, non-empty, non-symlink state file

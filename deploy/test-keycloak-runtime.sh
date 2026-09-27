@@ -132,15 +132,24 @@ fi
 if docker logs "$KC_NAME" 2>&1 | grep -Eiq 'Quarkus augmentation'; then
   fail "runtime startup performed Quarkus augmentation"
 fi
+# The runtime contract is that startup reports exactly the build commit baked
+# into the image it is running: `runtime-contract` for the disposable image this
+# script builds, or the frozen source SHA for a published production image.
+# Deriving the expectation from the running container keeps the assertion true
+# for both paths instead of pinning one of them as a literal.
+expected_build="$(docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$KC_NAME" \
+  | sed -n 's/^WOTBTOOLS_BUILD_COMMIT=//p' | head -n 1)"
+[[ "$expected_build" =~ ^([0-9a-f]{40}|runtime-contract)$ ]] \
+  || fail "Keycloak image does not identify a full build commit: '${expected_build}'"
 build_identity_seen=false
 for attempt in $(seq 1 "$RETRIES"); do
-  if docker logs "$KC_NAME" 2>&1 | grep -Fq 'WotBTools Keycloak build=runtime-contract'; then
+  if docker logs "$KC_NAME" 2>&1 | grep -Fq "WotBTools Keycloak build=$expected_build"; then
     build_identity_seen=true
     break
   fi
   [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
 done
 if [ "$build_identity_seen" != true ]; then
-  fail "runtime startup did not report the injected build commit"
+  fail "runtime startup did not report the injected build commit ($expected_build)"
 fi
 echo "PASS: Keycloak optimized runtime did not rebuild or augment"
