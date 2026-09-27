@@ -10,13 +10,16 @@
 //! batch projection fails here with the offending field.
 
 use std::fs;
-use std::path::PathBuf;
 
 use replay_core::rating::{
     finite_positive, global_index, observed_mean, player_batch_rating, rate_battle,
     team_batch_rating, team_index, wilson_lower_bound, RatingPlayer,
 };
 use serde::Deserialize;
+
+mod common;
+
+use common::{assert_close, golden_path};
 
 #[derive(Debug, Deserialize)]
 struct Golden {
@@ -100,29 +103,10 @@ struct ExpectedTeam {
 }
 
 fn golden() -> Golden {
-    let path: PathBuf = [
-        env!("CARGO_MANIFEST_DIR"),
-        "..",
-        "..",
-        "tests",
-        "golden",
-        "league-rating-v41.json",
-    ]
-    .iter()
-    .collect();
+    let path = golden_path();
     let raw = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read golden {}: {e}", path.display()));
     serde_json::from_str(&raw).expect("golden is valid JSON")
-}
-
-/// Tolerance: the port must be numerically indistinguishable, not merely close.
-fn assert_close(actual: f64, expected: f64, context: &str) {
-    let tolerance = 1e-9 * (1.0 + expected.abs());
-    assert!(
-        (actual - expected).abs() <= tolerance,
-        "{context}: expected {expected}, got {actual} (delta {})",
-        (actual - expected).abs()
-    );
 }
 
 fn to_rating_player(input: &InputPlayer) -> RatingPlayer {

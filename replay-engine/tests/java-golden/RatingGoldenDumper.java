@@ -70,6 +70,23 @@ public final class RatingGoldenDumper {
         json.append(",\n");
         json.append(batchRow("observed-mean", LeagueBatchRatingCalculator.observedMean(1500.0, 3)));
         json.append("\n  ],\n");
+        final List<Battle> aggBattles = aggregateBattles(random);
+        json.append("  \"aggregateInput\": [\n");
+        for (int i = 0; i < aggBattles.size(); i++) {
+            json.append(aggregateInputRow(aggBattles.get(i)));
+            json.append(i + 1 == aggBattles.size() ? "\n" : ",\n");
+        }
+        json.append("  ],\n");
+        json.append("  \"aggregate\": [\n");
+        final java.util.Map<Long, com.wotb.core.model.Agg> aggregated =
+                com.wotb.core.stats.Aggregator.aggregate(aggBattles,
+                        com.wotb.core.ref.Tankopedia.load());
+        int aggregateIndex = 0;
+        for (final com.wotb.core.model.Agg a : aggregated.values()) {
+            json.append(aggregateRow(a));
+            json.append(++aggregateIndex == aggregated.size() ? "\n" : ",\n");
+        }
+        json.append("  ],\n");
         json.append("  \"normalizer\": [\n");
         json.append(normalizerRow("wilson-1-1", LeagueRatingNormalizer.wilsonLowerBound(1, 1)));
         json.append(",\n");
@@ -360,6 +377,111 @@ public final class RatingGoldenDumper {
             players.add(p);
         }
         return players;
+    }
+
+    private static String aggregateInputRow(Battle battle) {
+        final StringBuilder out = new StringBuilder();
+        out.append("    {\"arenaId\": \"").append(battle.arenaId).append("\"")
+                .append(", \"winnerTeam\": ").append(battle.winnerTeam)
+                .append(", \"startTime\": ").append(battle.startTime == null ? 0 : battle.startTime)
+                .append(", \"durationSec\": ").append(number(battle.durationS))
+                .append(", \"players\": [");
+        for (int i = 0; i < battle.players.size(); i++) {
+            out.append(playerJson(battle.players.get(i)));
+            if (i + 1 != battle.players.size()) {
+                out.append(", ");
+            }
+        }
+        return out.append("]}").toString();
+    }
+
+    private static String playerJson(PlayerResult p) {
+        return "{\"accountId\": \"" + p.accountId + "\""
+                + ", \"team\": " + p.team
+                + ", \"nickname\": " + quote(p.nickname)
+                + ", \"clan\": " + quote(p.clan)
+                + ", \"vehicleId\": \"" + p.tankId + "\""
+                + ", \"damageDealt\": " + p.damageDealt
+                + ", \"damageAssisted\": " + p.damageAssisted
+                + ", \"damageBlocked\": " + p.damageBlocked
+                + ", \"damageReceived\": " + p.damageReceived
+                + ", \"kills\": " + p.kills
+                + ", \"shots\": " + p.nShots
+                + ", \"hitsDealt\": " + p.nHitsDealt
+                + ", \"penetrationsDealt\": " + p.nPenetrationsDealt
+                + ", \"enemiesDamaged\": " + p.nEnemiesDamaged
+                + ", \"victoryPointsEarned\": " + p.victoryPointsEarned
+                + ", \"survived\": " + p.survived
+                + ", \"lifeTimeSec\": " + number((double) p.settlementLifeTimeSec)
+                + "}";
+    }
+
+    private static String aggregateRow(com.wotb.core.model.Agg a) {
+        final StringBuilder out = new StringBuilder();
+        out.append("    {\"accountId\": \"").append(a.accountId).append("\"")
+                .append(", \"nickname\": \"").append(a.nickname).append("\"")
+                .append(", \"clan\": \"").append(a.clan).append("\"")
+                .append(", \"team\": ").append(a.team)
+                .append(", \"battles\": ").append(a.battles)
+                .append(", \"wins\": ").append(a.wins)
+                .append(", \"survived\": ").append(a.survived)
+                .append(", \"kills\": ").append(a.kills)
+                .append(", \"damage\": ").append(a.damage)
+                .append(", \"assisted\": ").append(a.assisted)
+                .append(", \"received\": ").append(a.received)
+                .append(", \"blocked\": ").append(a.blocked)
+                .append(", \"earned\": ").append(a.earned)
+                .append(", \"shots\": ").append(a.shots)
+                .append(", \"hits\": ").append(a.hits)
+                .append(", \"pens\": ").append(a.pens)
+                .append(", \"enemiesDamaged\": ").append(a.enemiesDamaged)
+                .append(", \"survivalSum\": ").append(number(a.survivalSum))
+                .append(", \"survivalKnownBattles\": ").append(a.survivalKnownBattles)
+                .append(", \"winRate\": ").append(number(a.winRate()))
+                .append(", \"survivalRate\": ").append(number(a.survivalRate()))
+                .append(", \"damageAvg\": ").append(number(a.avg(a.damage)))
+                .append(", \"assistedAvg\": ").append(number(a.avg(a.assisted)))
+                .append(", \"receivedAvg\": ").append(number(a.avg(a.received)))
+                .append(", \"blockedAvg\": ").append(number(a.avg(a.blocked)))
+                .append(", \"killsAvg\": ").append(number(a.avg(a.kills)))
+                .append(", \"earnedAvg\": ").append(number(a.avg(a.earned)))
+                .append(", \"survivalAvg\": ").append(number(a.survivalAvg()))
+                .append(", \"hitRate\": ").append(number(a.hitRate()))
+                .append(", \"penRate\": ").append(number(a.penRate()))
+                .append(", \"tanksStr\": \"").append(a.tanksStr().replace("\"", "\\\"")).append("\"")
+                .append("}");
+        return out.toString();
+    }
+
+    /**
+     * Two battles sharing accounts with different start times, winners and (partially) renamed
+     * players, so the "most recent battle wins the nickname/team" rule is exercised.
+     */
+    private static List<Battle> aggregateBattles(Random random) {
+        final List<PlayerResult> first = typicalPlayers(random, 0);
+        final List<PlayerResult> second = typicalPlayers(random, 1);
+        for (int i = 0; i < first.size(); i++) {
+            second.get(i).nickname = "R" + i;
+            second.get(i).clan = "C9";
+            second.get(i).survived = i % 3 == 0;
+            second.get(i).settlementLifeTimeSec = second.get(i).survived ? 300 : 20 + i;
+        }
+        // The first battle has no usable duration -> its survivors contribute no survival seconds.
+        final Battle battle1 = new Battle();
+        battle1.arenaId = "8000000000000001";
+        battle1.winnerTeam = 1;
+        battle1.startTime = 1_700_000_000L;
+        battle1.durationS = null;
+        battle1.players = first;
+
+        final Battle battle2 = new Battle();
+        battle2.arenaId = "8000000000000002";
+        battle2.winnerTeam = 2;
+        battle2.startTime = 1_700_000_500L;
+        battle2.durationS = 301.5;
+        battle2.players = second;
+
+        return List.of(battle1, battle2);
     }
 
     private static int randomWinner(Random random) {

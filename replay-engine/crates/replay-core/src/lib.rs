@@ -8,6 +8,7 @@
 //! Authority for the format is `docs/reference/replay-data.md`; protocol semantics follow
 //! `docs/research/replay/README.md`.
 
+pub mod aggregate;
 pub mod container;
 pub mod error;
 pub mod meta;
@@ -16,6 +17,7 @@ pub mod protobuf;
 pub mod rating;
 pub mod result;
 
+pub use aggregate::{aggregate, Aggregate, VehicleUsage};
 pub use error::ReplayError;
 pub use meta::{ParseQuality, ReplayMeta};
 pub use rating::{rate_battle, BattleRating, PlayerRating, RatingPlayer, TeamRating};
