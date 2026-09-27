@@ -131,14 +131,21 @@ grep -q '^up -d --no-deps --force-recreate wotb-frontend$' "$WORK/frontend-minim
 
 # The TX log-shipper lane needs no credentials, validates its Alloy config,
 # promotes it, proves the Loki path with labeled canaries, and starts only
-# alloy-tx.
-run_minimal alloy-tx "$WORK/alloy-minimal.log" >/dev/null
-grep -q '^pull alloy-tx$' "$WORK/alloy-minimal.log"
-grep -q '^up -d --no-deps --force-recreate alloy-tx$' "$WORK/alloy-minimal.log"
-! grep -Eq '^up .*(keycloak|keycloak-postgres|business-postgres|rabbitmq|business-api|wotb-frontend|caddy)' "$WORK/alloy-minimal.log"
+# alloy-tx. The first argument of run_minimal is the FAKE_DOCKER_LOG (docker
+# call trace); the deploy script's own stdout is captured separately so the
+# blocking-gate PASS tokens stay assertable.
+run_minimal alloy-tx "$WORK/alloy-minimal.log" >"$WORK/alloy-stdout.log" 2>&1 \
+  || { echo "FAIL: alloy-tx deploy.sh exited non-zero (see $WORK/alloy-stdout.log)" >&2; cat "$WORK/alloy-stdout.log" >&2; exit 1; }
+grep -q '^pull alloy-tx$' "$WORK/alloy-minimal.log" \
+  || { echo "FAIL: alloy-tx image pull was not reconciled; docker log:" >&2; cat "$WORK/alloy-minimal.log" >&2; exit 1; }
+grep -q '^up -d --no-deps --force-recreate alloy-tx$' "$WORK/alloy-minimal.log" \
+  || { echo "FAIL: alloy-tx service was not recreated; docker log:" >&2; cat "$WORK/alloy-minimal.log" >&2; exit 1; }
+! grep -Eq '^up .*(keycloak|keycloak-postgres|business-postgres|rabbitmq|business-api|wotb-frontend|caddy)' "$WORK/alloy-minimal.log" \
+  || { echo "FAIL: alloy-tx lane started unrelated services; docker log:" >&2; cat "$WORK/alloy-minimal.log" >&2; exit 1; }
 cmp -s "$ROOT/deploy/tx/alloy/config.alloy" "$WORK/host/deploy/alloy/config.alloy" \
   || { echo "FAIL: alloy-tx config was not promoted verbatim" >&2; exit 1; }
-grep -q 'alloy-tx: PASS' "$WORK/alloy-minimal.log"
+grep -q 'alloy-tx: PASS' "$WORK/alloy-stdout.log" \
+  || { echo "FAIL: alloy-tx blocking canary gate did not pass; deploy output:" >&2; cat "$WORK/alloy-stdout.log" >&2; exit 1; }
 mkdir -p "$WORK/host/deploy/assets/auth/.well-known"
 cp "$WORK/incoming/deploy/tx/Caddyfile" "$WORK/host/deploy/Caddyfile"
 cp "$WORK/incoming/deploy/tx/assets/auth/.well-known/assetlinks.json" \
