@@ -156,8 +156,6 @@ jobs:
 
             docker compose -f "$compose" exec -T keycloak-postgres               pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d keycloak
 
-            install -d -m 700 /opt/wotb-tx/deploy
-            install -m 600 "$compose" /opt/wotb-tx/deploy/keycloak-postgres.compose.yml
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.source.outputs.source_sha }}
