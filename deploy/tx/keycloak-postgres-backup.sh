@@ -22,6 +22,9 @@ database="${KC_DB_NAME:-$SOURCE_DATABASE}"
 skip_retention="false"
 temporary_file=""
 backup_stage=""
+published_dump="false"
+published_checksum="false"
+backup_file=""
 
 usage() {
   cat >&2 <<'EOF'
@@ -47,6 +50,12 @@ cleanup() {
   fi
   if [ -n "$backup_stage" ] && [ -d "$backup_stage" ]; then
     rm -rf -- "$backup_stage"
+  fi
+  if [ "$published_dump" = true ] && [ -n "$backup_file" ]; then
+    rm -f -- "$backup_file"
+  fi
+  if [ "$published_checksum" = true ] && [ -n "$backup_file" ]; then
+    rm -f -- "${backup_file}.sha256"
   fi
 }
 
@@ -114,7 +123,17 @@ sha256sum "$temporary_file" | awk '{print $1}' > "${temporary_file}.sha256"
 chmod 600 -- "$temporary_file" "${temporary_file}.sha256"
 mv -- "$temporary_file" "$backup_stage/$(basename "$backup_file")"
 mv -- "${temporary_file}.sha256" "$backup_stage/$(basename "${backup_file}.sha256")"
-mv -T -- "$backup_stage" "$backup_file"
+ln -- "$backup_stage/$(basename "$backup_file")" "$backup_file"
+published_dump="true"
+ln -- "$backup_stage/$(basename "${backup_file}.sha256")" "${backup_file}.sha256"
+published_checksum="true"
+test -f "$backup_file" && test ! -d "$backup_file"
+test -f "${backup_file}.sha256"
+rm -- "$backup_stage/$(basename "$backup_file")" \
+  "$backup_stage/$(basename "${backup_file}.sha256")"
+published_dump="false"
+published_checksum="false"
+rmdir -- "$backup_stage"
 backup_stage=""
 temporary_file=""
 

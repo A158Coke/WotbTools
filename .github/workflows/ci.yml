@@ -674,6 +674,7 @@ jobs:
           bash -n deploy/deploy.sh deploy/minio-deploy.sh
           deploy/verify-observability.sh deploy/tx/deploy.sh
           deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
+          deploy/tx/keycloak-postgres-backup.sh deploy/test-keycloak-postgres-backup.sh
           deploy/tofu-local-state-backup.sh
           deploy/tx/runtime-check.sh deploy/tx/publish-loaded-image-to-tcr.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
@@ -703,6 +704,8 @@ jobs:
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
           bash deploy/test-deploy-contract.sh
+      - name: Keycloak PostgreSQL backup runtime smoke
+        run: bash deploy/test-keycloak-postgres-backup.sh
       - name: Production Compose configuration contract
         env:
           TAG: sha-ci
