@@ -567,6 +567,7 @@ jobs:
         run: >-
           bash -n deploy/deploy.sh deploy/minio-deploy.sh
           deploy/verify-observability.sh deploy/tx/deploy.sh
+          deploy/tx/validate-caddy-config.sh deploy/list-image-tags.sh
           deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
           deploy/tx/keycloak-postgres-backup.sh deploy/test-keycloak-postgres-backup.sh
           deploy/tofu-local-state-backup.sh
@@ -582,6 +583,36 @@ jobs:
           deploy/test-business-postgres-runtime.sh
           scripts/ci/test-postgres-business-tofu-contract.sh
           scripts/ci/test-tofu-workflow-contract.sh
+      - name: Caddy staged configuration validation
+        env:
+          TX_RUNTIME_ROOT: /tmp/tx-runtime
+          CADDY_ACME_EMAIL: ci@example.invalid
+        run: |
+          set -euo pipefail
+          mkdir -p "$TX_RUNTIME_ROOT"
+          bash scripts/ci/run-with-network-retry.sh "Pull Caddy image" docker pull caddy:2.10.2-alpine
+          # The real staged validator must accept the committed TX Caddyfile ...
+          bash deploy/tx/validate-caddy-config.sh deploy/tx
+          # ... and must still fail closed before any live mutation when the
+          # staged Caddyfile cannot be loaded. The token has to sit inside a site
+          # block: a bare top-level token is a valid Caddy *site address*, so it
+          # would be accepted and would make this negative case meaningless.
+          broken="$RUNNER_TEMP/broken-caddy"
+          rm -rf -- "$broken"
+          cp -a deploy/tx "$broken"
+          printf '%s\n' 'wotbtools.com {' '  this-is-not-a-caddy-directive' '}' > "$broken/Caddyfile"
+          if bash deploy/tx/validate-caddy-config.sh "$broken"; then
+            echo 'an invalid staged Caddyfile was accepted' >&2
+            exit 1
+          fi
+          # The validator runs through the real compose service, which creates the
+          # fixed `wotb_tx_internal` network (172.29.0.0/16) and the Caddy
+          # volumes. Later fixtures in this job create overlapping subnets, so
+          # leave no compose project behind. Cleanup failure must not mask the
+          # validation result above.
+          docker compose -p deploy -f deploy/tx/common.compose.yml -f deploy/tx/caddy.compose.yml \
+            down --volumes --remove-orphans >/dev/null 2>&1 || true
+          echo 'Caddy staged validation accepts the real config and rejects a broken one'
       - name: Workflow and ToFu safety fixtures
         run: |
           set -euo pipefail
