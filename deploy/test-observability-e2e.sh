@@ -8,15 +8,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NETWORK="wotb-observability-e2e-${GITHUB_RUN_ID:-local}-$$"
 LOKI="wotb-observability-loki-${GITHUB_RUN_ID:-local}-$$"
 ALLOY="wotb-observability-alloy-${GITHUB_RUN_ID:-local}-$$"
+ALLOY_TX="wotb-observability-alloy-tx-${GITHUB_RUN_ID:-local}-$$"
 BACKEND="wotb-backend-smoke-${GITHUB_RUN_ID:-local}-$$"
+BACKEND_TX="business-api-tx-smoke-${GITHUB_RUN_ID:-local}-$$"
 KEYCLOAK="keycloak-smoke-${GITHUB_RUN_ID:-local}-$$"
 FRONTEND="wotb-frontend-smoke-${GITHUB_RUN_ID:-local}-$$"
 MARKER="observability-e2e-${GITHUB_RUN_ID:-local}-$$"
+MARKER_TX="tx-alloy-e2e-${GITHUB_RUN_ID:-local}-$$"
 KEYCLOAK_MARKER="keycloak-${MARKER}"
 APK="observability-canary-${MARKER}.apk"
 
 cleanup() {
-  docker rm -f "$ALLOY" "$BACKEND" "$KEYCLOAK" "$FRONTEND" "$LOKI" >/dev/null 2>&1 || true
+  docker rm -f "$ALLOY" "$ALLOY_TX" "$BACKEND" "$BACKEND_TX" "$KEYCLOAK" "$FRONTEND" "$LOKI" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -109,4 +112,28 @@ frontend_query() {
 wait_until "backend Docker stream reaches Loki" backend_query
 wait_until "Keycloak Docker stream reaches Loki" keycloak_query
 wait_until "sanitized Android frontend stream reaches Loki" frontend_query
+
+# TX lane: the production TX config matches by Compose service label (container
+# names are project-prefixed there) and must normalize the stream to the legacy
+# {container_name="wotb-backend"} identity every dashboard queries.
+docker run -d --name "$ALLOY_TX" --network "$NETWORK" \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v "$ROOT/deploy/tx/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
+  grafana/alloy:v1.4.2 run --server.http.listen-addr=0.0.0.0:12346 \
+  /etc/alloy/config.alloy >/dev/null
+docker run -d --name "$BACKEND_TX" --network "$NETWORK" \
+  --label com.docker.compose.service=business-api \
+  alpine:3.22 sh -c "while true; do echo event=backend_tx_smoke marker=$MARKER_TX; sleep 1; done" >/dev/null
+
+backend_tx_query() {
+  body="$(query_range '{container_name="wotb-backend"}')"
+  loki_response_has_sample "$body" && grep -Fq "$MARKER_TX" <<<"$body"
+}
+unlabeled_stream_not_collected_by_tx_lane() {
+  body="$(query_range '{container_name="keycloak"}')"
+  loki_response_has_sample "$body" && grep -Fq "$KEYCLOAK_MARKER" <<<"$body"
+}
+wait_until "TX Compose-label stream reaches Loki as wotb-backend" backend_tx_query
+wait_until "Yecao name-matched Keycloak stream still reaches Loki" unlabeled_stream_not_collected_by_tx_lane
+
 echo "OK: production Alloy Docker discovery, normalization, redaction, and Loki ingestion passed"
