@@ -16,6 +16,8 @@ on:
       - deploy/test-keycloak-tofu.sh
       - deploy/tx/deploy.sh
       - deploy/tx/docker-compose.yml
+      - deploy/tx/runtime-check.sh
+      - deploy/tx/runtime-check-lib.sh
       - deploy/tx/keycloak-tofu.sh
       - deploy/dependency-readiness.sh
       - deploy/dependency-readiness.py
@@ -40,6 +42,8 @@ env:
     deploy/test-keycloak-tofu.sh
     deploy/tx/deploy.sh
     deploy/tx/docker-compose.yml
+    deploy/tx/runtime-check.sh
+    deploy/tx/runtime-check-lib.sh
     deploy/tx/keycloak-tofu.sh
     deploy/dependency-readiness.sh
     deploy/dependency-readiness.py

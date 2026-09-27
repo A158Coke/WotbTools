@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/keycloak-postgres.yml
+      - deploy/tx/docker-compose.yml
       - deploy/tx/keycloak-postgres.compose.yml
       - infra/tofu/postgres-keycloak/**
   workflow_dispatch:
@@ -20,6 +21,7 @@ concurrency:
 env:
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/keycloak-postgres.yml
+    deploy/tx/docker-compose.yml
     deploy/tx/keycloak-postgres.compose.yml
     infra/tofu/postgres-keycloak/**
 
@@ -113,13 +115,51 @@ jobs:
             exec 9>/opt/wotb-tx/.deploy.lock
             flock -n 9 || { echo 'Another TX production mutation is running.' >&2; exit 1; }
 
-            docker compose -f "$compose" config >/dev/null
-            docker compose -f "$compose" pull keycloak-postgres
-            docker compose -f "$compose" up -d --no-deps --force-recreate keycloak-postgres
+            compose_json="$(KC_POSTGRES_ADMIN_USER="$KC_POSTGRES_ADMIN_USER" \
+              KC_POSTGRES_ADMIN_PASSWORD="$KC_POSTGRES_ADMIN_PASSWORD" \
+              docker compose -p deploy -f "$compose" config --format json)"
+            jq -e '
+              .name == "deploy" and
+              .volumes.keycloak_postgres_data.name == "deploy_keycloak_postgres_data" and
+              .networks.default.name == "wotb_tx_internal" and
+              any(.services["keycloak-postgres"].volumes[]?;
+                .source == "keycloak_postgres_data" and .target == "/var/lib/postgresql")
+            ' <<< "$compose_json" >/dev/null || {
+              echo 'Keycloak PostgreSQL Compose project, network, or persistent volume identity changed.' >&2
+              exit 1
+            }
+            docker volume inspect deploy_keycloak_postgres_data >/dev/null || {
+              echo 'Expected Keycloak PostgreSQL data volume is missing; refusing to create a new volume.' >&2
+              exit 1
+            }
+            volume_project="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.project" }}' deploy_keycloak_postgres_data)"
+            volume_key="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.volume" }}' deploy_keycloak_postgres_data)"
+            [[ "$volume_project" == deploy && "$volume_key" == keycloak_postgres_data ]] || {
+              echo 'Keycloak PostgreSQL volume labels do not match the existing Compose identity.' >&2
+              exit 1
+            }
+            docker network inspect wotb_tx_internal >/dev/null || {
+              echo 'Expected TX runtime network is missing; refusing to create a separate network.' >&2
+              exit 1
+            }
+            existing_container="$(docker compose -p deploy -f "$compose" ps -aq keycloak-postgres)"
+            if [ -n "$existing_container" ]; then
+              mounted_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql"}}{{.Name}}{{end}}{{end}}' "$existing_container")"
+              [[ "$mounted_volume" == deploy_keycloak_postgres_data ]] || {
+                echo 'Existing Keycloak PostgreSQL container is attached to another volume; refusing recreation.' >&2
+                exit 1
+              }
+            fi
+
+            live_compose=/opt/wotb-tx/deploy/keycloak-postgres.compose.yml
+            install -m 600 "$compose" "$live_compose.next.$SOURCE_SHA"
+            mv -f -- "$live_compose.next.$SOURCE_SHA" "$live_compose"
+            docker compose -p deploy -f "$live_compose" pull keycloak-postgres
+            docker compose -p deploy -f "$live_compose" up -d --no-deps --force-recreate keycloak-postgres
 
             runtime_ready=false
             for attempt in $(seq 1 30); do
-              if docker compose -f "$compose" exec -T keycloak-postgres  pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
+              if docker compose -p deploy -f "$live_compose" exec -T keycloak-postgres pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
                 runtime_ready=true
                 break
               fi
@@ -127,8 +167,8 @@ jobs:
             done
             [ "$runtime_ready" = true ] || {
               echo 'Keycloak PostgreSQL runtime did not become ready.' >&2
-              docker compose -f "$compose" ps -a keycloak-postgres >&2 || true
-              docker compose -f "$compose" logs --tail 120 keycloak-postgres >&2 || true
+              docker compose -p deploy -f "$live_compose" ps -a keycloak-postgres >&2 || true
+              docker compose -p deploy -f "$live_compose" logs --tail 120 keycloak-postgres >&2 || true
               exit 1
             }
 
@@ -154,7 +194,7 @@ jobs:
               exit 1
             fi
 
-            docker compose -f "$compose" exec -T keycloak-postgres  pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d keycloak
+            docker compose -p deploy -f "$live_compose" exec -T keycloak-postgres pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d keycloak
 
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}

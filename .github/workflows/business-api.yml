@@ -34,6 +34,8 @@ on:
       - deploy/release-metadata.py
       - deploy/tx/docker-compose.yml
       - deploy/tx/deploy.sh
+      - deploy/tx/runtime-check.sh
+      - deploy/tx/runtime-check-lib.sh
   workflow_dispatch:
 
 permissions:
@@ -72,6 +74,8 @@ env:
     deploy/release-metadata.py
     deploy/tx/docker-compose.yml
     deploy/tx/deploy.sh
+    deploy/tx/runtime-check.sh
+    deploy/tx/runtime-check-lib.sh
 
 jobs:
   build:

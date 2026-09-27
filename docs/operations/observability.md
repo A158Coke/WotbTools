@@ -192,7 +192,7 @@ metadata image tag/schema。
 
 事故恢复通过对应应用 owner workflow 的单服务手动入口完成。镜像身份必须是当前 workflow 明确
 校验的 immutable SHA tag 和 registry digest；没有 `all` 或 `latest` 身份。schema 回退不是部署能力；
-数据库灾难恢复仍只通过人工核对的 `deploy/postgres-restore.sh` 执行。
+Business PostgreSQL 归档验证及 disposable restore 见 `docs/operations/business-postgres.md`；Keycloak PostgreSQL 归档必须与 Business PostgreSQL 工具隔离处理。
 `database-backup.yml` 保持 VPS 本地双库备份边界；COS 上传、对象验证和 retention 尚未纳入该链路。
 
 ### 停止观测系统（不影响主业务）

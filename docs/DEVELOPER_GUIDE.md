@@ -110,18 +110,11 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 
 HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/serialization → runtime validation → contract tests → affected tests → PR CI`。在 `frontend/` 使用 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；生成文件位于 `frontend/src/api/generated/`，不可手改。Playback 旧 artifact 的兼容处理只能放在读取边界；`204` capability unavailable 与 `200` schema violation 必须保持不同语义。完整边界与兼容规则见 [`docs/architecture/http-contracts.md`](architecture/http-contracts.md)。
 
-### PR CI path-aware gate
+### PR CI validation gate
 
-`.github/workflows/ci.yml` 始终创建 `changes` 与 `CI / Required Gate`。CI-only selector
-`scripts/ci/ci-impact.py --base <PR base> --head <PR head>` 按影响域选择 backend、frontend、
-HTTP contract、Android、Keycloak（provider/runtime）、data、live data、deploy、observability、
-七个 Tofu validation roots 与 full 验证；只有相关 jobs 执行，合法 skipped job 不阻塞最终 gate。
-docs-only 变更仍运行 selector 与 Required Gate；CI workflow、全局 Maven/Node/Gradle 配置、共享构建
-脚本等跨切面变更触发 full CI。Branch protection / Ruleset 应长期只要求 `CI / Required Gate`，
-不应把可按路径 skipped 的单项 job 设为 required。PR 只做验证，不访问生产凭据、宿主、state 或
-authenticated plan。main 的生产发布由各服务 owner workflow 按自己的路径规则独立触发；不再有
-统一 Release planner 或可复用 Build/Deploy/Tofu DAG。
+`.github/workflows/ci.yml` 是唯一 PR validation workflow，始终运行 Python、backend、Keycloak provider/runtime、frontend（含两套真实浏览器回归）、HTTP contract、Android、observability、deployment smoke 與六个 OpenTofu roots，并由稳定的 `CI / Required Gate` 汇总。Workflow 保留 PR/base/head SHA 身份校验；不使用自研 changed-path selector，也不在 workflow trigger 上设置 paths，以免 required check 被跳过后保持 pending。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
+三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
 ---
 
 ## 后端架构速览
@@ -578,8 +571,8 @@ state；postgres-keycloak、Keycloak 与 Grafana 的新 local state 需由 owner
 读取或迁移。COS state backend、legacy COS artifact root、Lighthouse 和 firewall IaC ownership 已从仓库移除，
 不会触发真实云资源 destroy。详见 `docs/operations/opentofu-local-state.md`。
 
-PR 侧只做 validation：selector 按 root 选择 `tofu fmt -check`、`tofu init -backend=false`、
-`tofu validate` 与该 root 已有的本地 safety fixture。PR 不 SSH 任何生产宿主、不读取生产 local
+PR 侧只做 validation：六个 OpenTofu root 均运行 `tofu fmt -check`、`tofu init -backend=false`、
+`tofu validate` 与适用的本地 safety fixture。PR 不 SSH 任何生产宿主、不读取生产 local
 state、也不接收 host-local 生产凭据；五个需要 production-local provider 的 root，其 plan 只在
 对应 main-only service workflow 运行中产生。PR workflow 与
 production apply 不共享 binary plan；main 始终重新 plan。Local state、plan、真实 tfvars 不得提交，
@@ -615,7 +608,8 @@ Yecao parser-worker 作为唯一执行面服务必须保持无状态：选中它
 端点走 Docker 服务发现 `minio:9000`（`PARSER_WORKER_MINIO_ENDPOINT`）；`10.20.0.2:9000` 只是 TX
 控制面的 WireGuard 端点（`YECAO_MINIO_ENDPOINT`），是同一 MinIO runtime 上互不合并的两条 ownership。
 
-**全业务运行时 E2E 检查**：`deploy/tx/runtime-check.sh` 除基础设施与路由 token 外，还用
+**全业务运行时 E2E 检查**：`deploy/tx/runtime-check.sh` 加载独立只读校验库
+`deploy/tx/runtime-check-lib.sh`；除基础设施与路由 token 外，还用
 Keycloak 的 `wotbtools-e2e` 机器身份（client_credentials，唯一 realm role `wotbtools-user`，secret 由
 `KEYCLOAK_E2E_CLIENT_SECRET` 注入）驱动真实业务链并逐项给出 PASS/FAIL：`processing-e2e`
 （上传 staged 回放 → 分布式链路 → READY）、`dataset-result`、`map-overview`、`battle-playback-v2`、
@@ -665,8 +659,11 @@ Compose 服务 `parser-worker`）：它**不依赖 `wotb-web`、不持有数据�
 `wotb.parser.retry` 回流；业务失败 → 逐源 FAILED 后 ack；无法解码 → 原字节 park
 到 DLQ）见 `docs/operations/parser-worker.md`。
 
-TX Business PostgreSQL 与 Keycloak PostgreSQL 完全独立：Compose 只运行
-`business-postgres`（`postgres:18-alpine`、`business_postgres_data`、
+TX Business PostgreSQL 与 Keycloak PostgreSQL 完全独立：主 Compose 通过
+`include` 使用 `business-postgres.compose.yml` 和 `keycloak-postgres.compose.yml` 两个 owner 文件。
+二者使用固定 Compose project `deploy`，生产 Docker volumes 分别是
+`deploy_business_postgres_data` 与 `deploy_keycloak_postgres_data`。Business PostgreSQL 为
+`postgres:18-alpine`，使用 `business_postgres_data`、
 `127.0.0.1:25432:5432` 仅 loopback、`pg_isready` 健康检查）；`infra/tofu/postgres-business`
 只管理 `wotb` 数据库、`control_api` 应用角色与 database-level grant，用独立 local
 state `/opt/wotb-tx/postgres-business-tofu-state`，provider 经
@@ -694,11 +691,9 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 
 生产 CI/CD 使用唯一 PR 验证入口和独立的 service owner workflows：
 
-- `.github/workflows/ci.yml` 是唯一 PR 验证工作流，selector 用 `scripts/ci/ci-impact.py` 处理完整
-  base..head diff；`CI / Required Gate` 只聚合本次选中的验证。普通 Java module 用
-  reactor `-pl/-am`，root POM/global build 影响触发 full reactor。普通源码 PR 不构建 Docker
-  镜像；Dockerfile、dockerignore、Keycloak provider/runtime 等 packaging 变更做真实构建或
-  runtime smoke，且不 push 镜像。
+- `.github/workflows/ci.yml` 是唯一 PR 验证工作流；每个 PR 运行实际验证 jobs，
+  `CI / Required Gate` 汇总全部结果。Backend 运行 Maven full reactor，frontend 运行类型检查、
+  单测、两套真实浏览器回归和 build；部署 smoke 校验运行时契约。PR 验证不 push 镜像。
 - `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 与
   `minio.yml` 分别 build、push 和部署一个应用服务；TX 的前三个镜像只发到 TCR，Yecao 的
   parser-worker/MinIO 只发到 GHCR。每个 workflow 冻结完整 source SHA，发布不可变 `sha-<12>` tag，
@@ -736,7 +731,7 @@ bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 
 
 Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurrency，`cancel-in-progress: false`（`queue: max` 只排队、不丢弃已开始的生产写入）；服务器脚本另用 `flock` 串行化 production mutation。Build 与 Release 不占用该队列，但每个 lane 都在 mutation 前核对 source 仍是当前 main。这不是 distributed lock。
 
-生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 备份 `wotb` 和 `keycloak`；同一维护队列随后备份 TX/Yecao owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256。PostgreSQL 恢复只允许手工使用 `deploy/postgres-restore.sh` 并显式确认。
+生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 调用 TX owner 的 `deploy/tx/business-postgres-backup.sh` 与 `deploy/tx/keycloak-postgres-backup.sh` 备份；两者只访问已运行的 owner service，并在 pg_dump 前核对固定 Compose project、卷标签与实际挂载卷。同一维护队列随后备份 TX/Yecao owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256。Business PostgreSQL 归档只能用 `deploy/tx/business-postgres-restore.sh` 校验并恢复到经确认的 disposable 数据库；Keycloak PostgreSQL 归档不能传给 Business restore 工具。
 
 Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-config.json` 与 `/opt/wotb-tx/config/sponsor/{alipay,wechat}.png` 只读挂载，Vue 页面从 `/sponsor-config.json` 按 no-store 读取运行时配置。二维码加载失败时页面必须隐藏失败方式；全部方式不可用时回退到“暂未配置”，不得显示 broken image。
 

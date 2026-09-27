@@ -16,6 +16,7 @@ mkdir -p "$WORK/host" "$WORK/incoming/deploy/tx" "$WORK/bin"
 cp -a "$ROOT/deploy/tx/." "$WORK/incoming/deploy/tx/"
 cp "$ROOT/deploy/release-metadata.py" "$WORK/incoming/deploy/"
 find "$WORK/incoming/deploy/tx" -name '*.sh' -exec sed -i 's/\r$//' {} +
+find "$WORK/incoming/deploy/tx" -type f \( -name '*.yml' -o -name '*.yaml' \) | while IFS= read -r file; do sed -i 's/\r$//' "$file"; done
 cat > "$WORK/host/production-release.json" <<JSON
 {"schemaVersion":2,"services":{"business-api":{"configSha":"$SHA_A","image":{"tag":"$TAG_A","commitSha":"$SHA_A"},"deployedAt":"2026-01-01T00:00:00Z"},"frontend":{"configSha":"$SHA_A","image":{"tag":"$PREFIX/wotbtools-frontend:sha-aaaaaaaaaaaa","commitSha":"$SHA_A"},"deployedAt":"2026-01-01T00:00:00Z"},"keycloak":{"configSha":"$SHA_A","image":{"tag":"$PREFIX/wotbtools-keycloak:sha-aaaaaaaaaaaa","commitSha":"$SHA_A"},"deployedAt":"2026-01-01T00:00:00Z"}}}
 JSON
@@ -39,7 +40,12 @@ fi
 [ "${1:-}" = compose ] || exit 0
 shift
 if [ "${1:-}" = version ]; then exit 0; fi
-while [ "${1:-}" = -f ]; do shift 2; done
+while :; do
+  case "${1:-}" in
+    -f|-p) shift 2 ;;
+    *) break ;;
+  esac
+done
 verb="${1:-}"; shift || true
 printf '%s %s\n' "$verb" "$*" >> "${FAKE_DOCKER_LOG:?}"
 case "$verb" in

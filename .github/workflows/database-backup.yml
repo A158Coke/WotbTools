@@ -53,9 +53,10 @@ jobs:
             exec 9>/opt/wotb-tx/.deploy.lock
             flock -n 9 || { echo 'Another TX production mutation is running.' >&2; exit 1; }
 
-            # Keep the existing Business PostgreSQL runtime identity explicit;
-            # this backup-owner PR must not redefine how that runtime is started.
-            WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT=wotb-tx-business-postgres \
+            # Both PostgreSQL owners use the stable `deploy` Compose project;
+            # each backup refuses to start a missing runtime or adopt a
+            # different named volume.
+            WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT=deploy \
               "$business_script"
             WOTB_TX_KEYCLOAK_POSTGRES_COMPOSE_PROJECT=deploy \
               "$keycloak_script"
