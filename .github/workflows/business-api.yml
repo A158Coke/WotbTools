@@ -32,6 +32,7 @@ on:
       - deploy/dependency-readiness.sh
       - deploy/dependency-readiness.py
       - deploy/check-latest-main.sh
+      - deploy/list-image-tags.sh
       - deploy/tx/business-api.compose.yml
       - deploy/tx/deploy.sh
       - deploy/tx/common.compose.yml
@@ -72,6 +73,7 @@ env:
     deploy/dependency-readiness.sh
     deploy/dependency-readiness.py
     deploy/check-latest-main.sh
+    deploy/list-image-tags.sh
     deploy/tx/business-api.compose.yml
     deploy/tx/deploy.sh
     deploy/tx/common.compose.yml
