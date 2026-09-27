@@ -3,6 +3,39 @@ name: Business API
 on:
   push:
     branches: [main]
+    paths:
+      - .github/workflows/business-api.yml
+      - .dockerignore
+      - docker/Dockerfile.business-api
+      - common/tankopedia-tier7.json
+      - common/tankopedia-tier8.json
+      - common/tankopedia-tier9.json
+      - common/tankopedia-tier10.json
+      - common/map_names.json
+      - common/tank_tactical_profiles.json
+      - common/map-semantics/**
+      - java/pom.xml
+      - java/**/pom.xml
+      - java/settings-docker.xml
+      - java/wotb-contracts/**
+      - java/wotb-object-storage-minio/**
+      - java/wotb-broker-rabbitmq/**
+      - java/wotb-core/**
+      - java/wotb-result/**
+      - java/wotb-playback/**
+      - java/wotb-replay-coordinator/**
+      - java/wotb-replay-processing/**
+      - java/wotb-ai/**
+      - java/wotb-web/**
+      - contracts/http/**
+      - contracts/mq/**
+      - deploy/dependency-readiness.sh
+      - deploy/dependency-readiness.py
+      - deploy/check-latest-main.sh
+      - deploy/tx/business-api.compose.yml
+      - deploy/tx/deploy.sh
+      - deploy/tx/common.compose.yml
+      - deploy/tx/docker-compose.yml
   workflow_dispatch:
 
 permissions:
@@ -39,8 +72,10 @@ env:
     deploy/dependency-readiness.sh
     deploy/dependency-readiness.py
     deploy/check-latest-main.sh
-    deploy/tx/**
-
+    deploy/tx/business-api.compose.yml
+    deploy/tx/deploy.sh
+    deploy/tx/common.compose.yml
+    deploy/tx/docker-compose.yml
 concurrency:
   group: deploy-business-api
   cancel-in-progress: true

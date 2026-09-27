@@ -27,7 +27,7 @@
 - 应用 owner 的「复用已存在的 immutable 镜像」判断必须走 `deploy/list-image-tags.sh`：只有 registry 明确返回 `NAME_UNKNOWN`（仓库尚不存在＝首次发布）才按空仓库继续 build + push；401/403/5xx/网络/DNS 一律仍 fail，禁止用 `crane ls … || true` 之类把 registry 故障当成空仓库。
 - Grafana 生产 API 校验必须复用 `deploy/grafana-api-request.sh` 这条生产 backend Alpine 运行时可用的 BusyBox `wget` 路径：调用方只传 `/api/...`，helper 在 backend 容器内唯一拼接 Grafana hostname 并生成 `Authorization: Basic` header（不得把密码放 URL、命令输出或日志），datasource health 的唯一成功值是 JSON `status=OK`。CI runtime smoke 还必须在 Alpine 3.22 中验证正确凭据通过、错误凭据失败，以防回退到 GNU-only `wget` 参数或 double URL prefix。
 - Loki canary 校验在 emitter 启动前固定 `start`，重试时只推进 `end`；响应必须是 `status=success`、至少一个 result stream、至少一个 values 样本并包含 marker。Keycloak canary 是加入 `wotb_internal` 网络的独立 Alpine emitter，只用于验证 Alloy 的 ownership 采集路径，不得把 Keycloak 镜像当 shell 执行。
-- Keycloak 运行时契约由 `deploy/test-keycloak-runtime.sh` 独立验证：自定义镜像必须以 `start --optimized` 启动，保留 PostgreSQL 与应用 OIDC discovery；不再启用或暴露 management health/metrics 端口，且不得出现启动时 Quarkus augmentation。启动日志必须报告**运行镜像自身注入的** build commit（`runtime-contract`＝本脚本自建的一次性镜像，或 40 位源码 SHA＝已发布生产镜像），期望值从容器 env 推导，不得写死其中一种。真实 Docker gate 是 main push 上 `.github/workflows/keycloak.yml` 的 `smoke`（对 published digest 运行 runtime + realm Tofu smoke）；`.github/workflows/ci.yml` 的 `keycloak-runtime` 在 PR 上只做 entrypoint 语法检查（不构建镜像）。
+- Keycloak 运行时契约由 `deploy/test-keycloak-runtime.sh` 独立验证：自定义镜像必须以 `start --optimized` 启动，保留 PostgreSQL 与应用 OIDC discovery；不再启用或暴露 management health/metrics 端口，且不得出现启动时 Quarkus augmentation。启动日志必须报告**运行镜像自身注入的** build commit（`runtime-contract`＝本脚本自建的一次性镜像，或 40 位源码 SHA＝已发布生产镜像），期望值从容器 env 推导。main push 上 `.github/workflows/keycloak.yml` 的 `smoke` 验证 published digest；PR 上 `.github/workflows/ci-keycloak.yml` 的 `keycloak_runtime` 运行真实 Docker smoke。
 
 ## Gate boundary
 
