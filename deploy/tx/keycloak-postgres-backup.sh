@@ -112,7 +112,7 @@ backup_file="$backup_root/keycloak-${timestamp}.dump"
   || { echo "Refusing to overwrite an existing backup: $backup_file" >&2; exit 1; }
 backup_stage="$(mktemp -d "$backup_root/.staging-${database}-${timestamp}.XXXXXX")"
 chmod 700 "$backup_stage"
-temporary_file="$backup_stage/${database}-${timestamp}.dump"
+temporary_file="$backup_stage/.${database}-${timestamp}.dump.tmp"
 
 db_exec pg_dump -U "$admin_user" -d "$database" --format=custom --no-owner --no-privileges > "$temporary_file"
 [ -s "$temporary_file" ] || { echo "Backup archive is empty: $temporary_file" >&2; exit 1; }
