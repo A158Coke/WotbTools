@@ -8,7 +8,7 @@
 > - `回放射击事件逆向分析.md` blob `2dca7b669ac91196885ee2f45fa8a58db6e60040`
 > - `WI射击参数与命中位置分析.md` blob `b0cd657e4e6963111a46b943e08649f5a6fbb4d0`
 >
-> This is a clean-room factual synthesis. It does not copy the source documents. The source repository had no root project license at review time, so its prose/code is not imported.
+> This is an independent factual synthesis written in WotBTools terminology. The external project is MIT-licensed; its implementation may be reused subject to the MIT license and required attribution. External-only protocol claims still require independent reproduction against the WotBTools corpus or controlled probes before promotion to WotBTools `PROVEN` evidence.
 >
 > **Authority rule:** this document is external corroboration, not a replacement for WotbTools controlled evidence. Existing WotbTools `PROVEN` facts remain authoritative. New external-only findings below stay `EXTERNAL_CANDIDATE` until reproduced against the WotbTools corpus or a controlled probe.
 
