@@ -49,7 +49,15 @@ printf old > "$old_checksum"
 printf keep > "$other_file"
 mkdir "$old_directory"
 touch -d '2 minutes ago' "$old_dump" "$old_checksum"
-docker exec "$NAME" createdb -U "$ADMIN_USER" keycloak
+database_created=false
+for _ in $(seq 1 30); do
+  if docker exec "$NAME" createdb -U "$ADMIN_USER" keycloak >/dev/null 2>&1; then
+    database_created=true
+    break
+  fi
+  sleep 1
+done
+[ "$database_created" = true ] || fail "disposable keycloak database could not be created"
 docker exec -i "$NAME" psql -v ON_ERROR_STOP=1 -U "$ADMIN_USER" -d keycloak <<'SQL'
 CREATE TABLE backup_smoke (id integer PRIMARY KEY, value text NOT NULL);
 INSERT INTO backup_smoke VALUES (1, 'sentinel survives backup');
