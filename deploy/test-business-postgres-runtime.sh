@@ -15,10 +15,9 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE="$ROOT/deploy/tx/docker-compose.yml"
+COMPOSE="$ROOT/deploy/tx/business-postgres.compose.yml"
 TOFU_ROOT="$ROOT/infra/tofu/postgres-business"
 TOFU="${TOFU_BIN:-tofu}"
-TAG="sha-0123456789ab"
 NAME="wotb-business-postgres-$RANDOM-$$"
 PROJECT="wotb-business-postgres-$RANDOM-$$"
 PORT="25432"
@@ -57,23 +56,11 @@ command -v "$TOFU" >/dev/null 2>&1 || fail "$TOFU is required"
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 
 echo "== Compose runtime contract =="
-export TAG
 export TX_RUNTIME_ROOT="$WORK/runtime"
 mkdir -p "$TX_RUNTIME_ROOT"
 export TX_BUSINESS_POSTGRES_ADMIN_USER="$ADMIN_USER"
 export TX_BUSINESS_POSTGRES_ADMIN_PASSWORD="$ADMIN_PASSWORD"
-KC_POSTGRES_ADMIN_USER=not-configured KC_POSTGRES_ADMIN_PASSWORD=not-configured \
-KC_BOOTSTRAP_ADMIN_PASSWORD=not-configured KC_DB_USERNAME=not-configured \
-KC_DB_PASSWORD=not-configured WG_APPLICATION_ID=not-configured \
-CADDY_ACME_EMAIL=not-configured@example.invalid \
-TX_RABBITMQ_ADMIN_USER=not-configured TX_RABBITMQ_ADMIN_PASSWORD=not-configured \
-TX_RABBITMQ_CONTROL_API_PASSWORD=not-configured \
-TX_BUSINESS_DB_NAME="$DB_NAME" TX_BUSINESS_DB_USERNAME="$APP_ROLE" \
-TX_BUSINESS_DB_PASSWORD=not-configured \
-YECAO_MINIO_CONTROL_API_ACCESS_KEY=not-configured \
-YECAO_MINIO_CONTROL_API_SECRET_KEY=not-configured \
-KEYCLOAK_ADMIN_CLIENT_SECRET=not-configured AI_API_KEY=not-configured \
-  docker compose -f "$COMPOSE" config --format json > "$WORK/compose.json"
+docker compose -p deploy -f "$COMPOSE" config --format json > "$WORK/compose.json"
 python3 - "$WORK/compose.json" <<'PY'
 import json
 import sys
@@ -81,6 +68,8 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     document = json.load(handle)
 services = document["services"]
+assert document["name"] == "deploy", document.get("name")
+assert document["volumes"]["business_postgres_data"]["name"] == "deploy_business_postgres_data"
 assert "business-postgres" in services, sorted(services)
 service = services["business-postgres"]
 assert service["image"] == "postgres:18-alpine", service["image"]
@@ -97,8 +86,7 @@ environment = service.get("environment") or {}
 assert set(environment) == {"POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"}, sorted(environment)
 assert environment["POSTGRES_DB"] == "postgres", environment["POSTGRES_DB"]
 assert "business_postgres_data" in document["volumes"], sorted(document["volumes"])
-assert "keycloak_postgres_data" in document["volumes"], sorted(document["volumes"])
-print("business-postgres Compose service/port/volume contract OK")
+print("business-postgres Compose project/service/port/volume contract OK")
 PY
 
 echo "== OpenTofu root ownership guard =="

@@ -42,7 +42,7 @@
 - **Admin 安全**：`/api/admin/hof/**` 要求 `HoF-admin` 或 `wotbtools-admin`（`SecurityConfig` 中置于 `ADMIN_PATTERN` 之前；HoF-admin 只管理名人堂，不能访问 `/api/admin/users/**` 等其他 admin 域）。角色由 Keycloak Admin Console 授予（本仓库仅 realm JSON provision，无授予 UI）。wotbtools-admin 自动拥有全部 HoF admin 权限。
 - **单场车辆筛选**：`arena_id` 与 raw `arena_bonus_type` 继续保留在记录和审计快照中，供去重与追溯，但不作为业务页面的展示或筛选项。管理页与公开页共用当前名人堂实际车辆选项；国家/系别、车种、等级是三个无序可选条件，所有非空条件既对车辆名称候选取交集，也作为真实榜单查询条件独立生效；选中具体车辆时再与 `tankId` 继续取交集。
 - **Admin hard delete**：真实 hard delete（无 soft delete / tombstone / blocklist）。**audit + record delete 单事务**（`BEGIN → validate → audit snapshot(DELETE_ENTRY) → delete record → COMMIT`；audit 失败 → 记录不删；删除失败 → 无假审计）。commit 后：`replay_hash` 非空且无其他记录引用 → 删除 `{sha256}.wotbreplay`；仍有引用 → 保留；清理失败 → 仅 WARN（orphan 保留，不回滚已 commit 的删除）。删除后同一回放未来可重新上传（正常校验后重新 SAVED）。审计快照保存 timestamp / admin sub+username / action / recordId / arenaId / accountId / nickname / tankId / tankName / damage / battleType / arenaBonusType / replayHash（record 删除后原记录已不存在，不能只存 record_id FK）。第一版无 audit retention / cleanup scheduler。批量删除（`POST /api/admin/hof/records/bulk-delete`）**逐条复用同一语义**：每条独立事务（`TransactionTemplate`）+ commit 后跨域引用计数清理物理文件，允许 partial success；不存在的 id 以 `HOF_ENTRY_NOT_FOUND` 逐条失败，其余继续；单批去重后上限 100，超出整批 400 `BULK_LIMIT_EXCEEDED`。
-- **备份决策**：回放文件为 **best-effort 可丢数据**——数据库备份（`postgres-backup.sh`）只备份 metadata，不备份文件；VPS 损坏/迁移后可能出现下载 404（tolerance 设计）。
+- **备份决策**：回放文件为 **best-effort 可丢数据**——Business PostgreSQL 归档只涵盖数据库，不包含 `replay_data` 持久卷中的文件；若该卷损坏或迁移失败，可能出现下载 404（tolerance 设计）。
 - **解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务。容量满返回 503 `REPLAY_BUSY`。
 
 

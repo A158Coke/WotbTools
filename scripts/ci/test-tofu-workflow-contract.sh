@@ -21,7 +21,6 @@ steps = tofu_job["steps"]
 def step(name):
     return next(item for item in steps if item.get("name") == name)
 
-assert tofu_job["if"] == "needs.changes.outputs.tofu_roots != '[]'"
 assert tofu_job["name"] == "OpenTofu validation / ${{ matrix.root }}"
 assert "${{ secrets." not in json.dumps(tofu_job)
 assert "tofu fmt -check -recursive" in step("Format, initialize without production state, and validate")["run"]
@@ -43,19 +42,10 @@ root_paths = {
 for name, path in root_paths.items():
     assert f"{name}) path={path}" in root_resolver, name
 fixture_step = step("Validate local-root safety policy fixtures")["run"]
-assert "rabbitmq|minio|business-postgres" in fixture_step
-assert "test-validate-plan.sh" in fixture_step
-
-deploy_runs = "\n".join(
-    item.get("run", "")
-    for item in ci["jobs"]["deploy_smoke"]["steps"]
-)
-for fixture in (
-    "test-keycloak-tofu-contract.sh",
-    "test-postgres-keycloak-tofu-contract.sh",
-    "test-postgres-business-tofu-contract.sh",
-):
-    assert fixture in deploy_runs, fixture
+assert "rabbitmq|minio)" in fixture_step
+assert "business-postgres)" in fixture_step
+assert fixture_step.count("test-validate-plan.sh") == 2
+assert "bash deploy/test-business-postgres-runtime.sh" in fixture_step
 
 print("PR OpenTofu validation has no plan/apply or production credentials")
 PY

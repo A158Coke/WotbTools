@@ -11,17 +11,11 @@ readonly WOTB_DIR="${WOTB_DIR:-/opt/wotb}"
 readonly INCOMING_DIR="${WOTB_INCOMING_DIR:-$WOTB_DIR/deploy.incoming}"
 readonly LIVE_DEPLOY_DIR="$WOTB_DIR/deploy"
 readonly LIVE_COMPOSE="$WOTB_DIR/docker-compose.yml"
-readonly METADATA_FILE="$WOTB_DIR/production-release.json"
-readonly METADATA_TOOL="$INCOMING_DIR/deploy/release-metadata.py"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
 readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
 readonly PULL_ATTEMPTS="${WOTB_PULL_ATTEMPTS:-3}"
 readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
 readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
-readonly IMAGE_TAG_VALUE="${WOTB_DEPLOY_IMAGE_TAG:-}"
-readonly IMAGE_COMMIT_SHA_VALUE="${WOTB_DEPLOY_IMAGE_COMMIT_SHA:-}"
-readonly IMAGE_DIGEST_VALUE="${WOTB_DEPLOY_IMAGE_DIGEST:-}"
-readonly RELEASE_SHA_VALUE="$CONFIG_SHA_VALUE"
 
 declare -a DEPLOY_SERVICES=()
 declare -a APPLY_SERVICES=()
@@ -92,14 +86,6 @@ validate_inputs() {
       *) die "unsupported deployment service: $service" ;;
     esac
   done
-  if [ -n "$IMAGE_TAG_VALUE" ] || [ -n "$IMAGE_COMMIT_SHA_VALUE" ] || [ -n "$IMAGE_DIGEST_VALUE" ]; then
-    [ -n "$IMAGE_TAG_VALUE" ] && [ -n "$IMAGE_COMMIT_SHA_VALUE" ] && [ -n "$IMAGE_DIGEST_VALUE" ] \
-      || die "image tag, source SHA, and registry digest must be supplied together."
-    [[ "$IMAGE_DIGEST_VALUE" =~ ^sha256:[0-9a-f]{64}$ ]] \
-      || die "WOTB_DEPLOY_IMAGE_DIGEST must be a sha256 digest."
-    [ "$DEPLOY_SERVICE_VALUE" = parser-worker ] || die "fixed upstream service cannot receive image identity."
-  fi
-
   # The worker is the only Yecao service that talks to two remote planes (the TX broker and the
   # Yecao MinIO). Its credentials are required exactly when it is selected, so a
   # observability-only deploy keeps working while the worker path stays fail-closed instead of
@@ -121,52 +107,13 @@ validate_inputs() {
   fi
 }
 
-worker_image_ref() {
-  if [ -n "$IMAGE_TAG_VALUE" ]; then
-    printf '%s@%s\n' "$IMAGE_TAG_VALUE" "$IMAGE_DIGEST_VALUE"
-  else
-    python3 "$METADATA_TOOL" get --host yecao --file "$METADATA_FILE" \
-      --service parser-worker --field tag
-  fi
-}
-render_effective_compose() {
-  local source="$1" target="$2" worker_image="$3"
-  WORKER_IMAGE="$worker_image" \
-    python3 - "$source" "$target" <<'PY'
-import os
-import re
-import sys
-
-source, target = sys.argv[1:3]
-images = {"parser-worker": os.environ["WORKER_IMAGE"]}
-current = ""
-seen = set()
-output = []
-for line in open(source, encoding="utf-8"):
-    match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
-    if match:
-        current = match.group(1)
-    if current in images and re.match(r"^\s+image:\s+", line):
-        line = f"    image: {images[current]}\n"
-        seen.add(current)
-    output.append(line)
-missing = set(images) - seen
-if missing:
-    raise SystemExit("compose is missing application image definitions: " + ", ".join(sorted(missing)))
-with open(target, "w", encoding="utf-8") as handle:
-    handle.writelines(output)
-PY
-  chmod 600 "$target"
-}
-
 stage_and_validate() {
   local staged_source="$INCOMING_DIR/deploy/docker-compose.prod.yml"
   readonly EFFECTIVE_COMPOSE="$INCOMING_DIR/docker-compose.effective.yml"
   [ -f "$staged_source" ] || die "staged deployment tree is missing docker-compose.prod.yml."
   mkdir -p "$INCOMING_DIR"
-  local worker_image
-  worker_image="$(worker_image_ref)" || die "parser-worker metadata identity is unavailable."
-  render_effective_compose "$staged_source" "$EFFECTIVE_COMPOSE" "$worker_image"
+  cp -f "$staged_source" "$EFFECTIVE_COMPOSE"
+  chmod 600 "$EFFECTIVE_COMPOSE"
   assert_parser_worker_execution_plane "$EFFECTIVE_COMPOSE"
   if ! docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null; then
     die "staged compose config is invalid; live deployment was not changed."
@@ -202,17 +149,15 @@ pull_images() {
 promote_files() {
   local next_deploy="$WOTB_DIR/deploy.next.$$" next_compose="$WOTB_DIR/docker-compose.next.$$"
   local old_deploy="$WOTB_DIR/deploy.old.$$" old_compose="$WOTB_DIR/docker-compose.old.$$"
-  local common_file worker_file observability_file observability_selected=false service
+  local worker_file observability_file observability_selected=false service
   rm -rf -- "$next_deploy"
   rm -f -- "$next_compose"
   mkdir -p "$next_deploy" || return 1
   if [ -d "$LIVE_DEPLOY_DIR" ]; then
     cp -a "$LIVE_DEPLOY_DIR/." "$next_deploy/" || return 1
   fi
-  for common_file in deploy.sh release-metadata.py; do
-    [ -f "$INCOMING_DIR/deploy/$common_file" ] || die "staged deployment tree is missing $common_file."
-    cp -f "$INCOMING_DIR/deploy/$common_file" "$next_deploy/$common_file" || return 1
-  done
+  [ -f "$INCOMING_DIR/deploy/deploy.sh" ] || die "staged deployment tree is missing deploy.sh."
+  cp -f "$INCOMING_DIR/deploy/deploy.sh" "$next_deploy/deploy.sh" || return 1
   if is_selected parser-worker; then
     for worker_file in dependency-readiness.sh dependency-readiness.py; do
       [ -f "$INCOMING_DIR/deploy/$worker_file" ] || die "staged deployment tree is missing $worker_file."
@@ -332,8 +277,8 @@ run_observability_checks() {
 
 diagnostics() {
   echo "== DEPLOY DIAGNOSTICS =="
-  echo "releaseSha=$RELEASE_SHA_VALUE"
-  echo "releaseImage=$IMAGE_TAG_VALUE"
+  echo "sourceSha=$CONFIG_SHA_VALUE"
+  [ "$DEPLOY_SERVICES_RAW" != parser-worker ] || echo "image=latest"
   echo "deployServices=$DEPLOY_SERVICES_RAW"
   docker compose -f "$LIVE_COMPOSE" ps -a || true
   local -a diagnostic_services=("${APPLY_SERVICES[@]}")
@@ -370,27 +315,11 @@ stop_failed_service() {
   docker compose -f "$LIVE_COMPOSE" stop "$service" || true
 }
 
-update_metadata() {
-  is_selected parser-worker || return 0
-  local -a args=(update --host yecao --file "$METADATA_FILE" \
-    --service parser-worker --config-sha "$CONFIG_SHA_VALUE")
-  if [ -n "$IMAGE_TAG_VALUE" ]; then
-    args+=(--image-tag "$IMAGE_TAG_VALUE" --image-commit-sha "$IMAGE_COMMIT_SHA_VALUE")
-  fi
-  python3 "$METADATA_TOOL" "${args[@]}"
-}
 main() {
   validate_inputs
   mkdir -p "$WOTB_DIR" "$INCOMING_DIR"
   command -v docker >/dev/null 2>&1 || die "docker is required."
   command -v flock >/dev/null 2>&1 || die "flock is required to serialize production deployments."
-  command -v python3 >/dev/null 2>&1 || die "python3 is required for release metadata and compose identity handling."
-  [ -f "$METADATA_TOOL" ] || die "staged release metadata validator is missing."
-  local -a metadata_args=(validate --host yecao --file "$METADATA_FILE")
-  if [ -n "$IMAGE_TAG_VALUE" ]; then
-    metadata_args+=(--service parser-worker --image-tag "$IMAGE_TAG_VALUE" --image-commit-sha "$IMAGE_COMMIT_SHA_VALUE")
-  fi
-  python3 "$METADATA_TOOL" "${metadata_args[@]}" || die "production metadata or incoming image identity is invalid."
   if [ -n "${WOTB_DEPLOY_LOCK_FD:-}" ]; then
     [ "$WOTB_DEPLOY_LOCK_FD" = 9 ] || die "unsupported inherited deployment lock descriptor."
     { true >&9; } 2>/dev/null || die "inherited deployment lock descriptor is unavailable."
@@ -424,9 +353,8 @@ main() {
     exit 1
   fi
   run_observability_checks
-  update_metadata
   rm -f -- "$INCOMING_DIR/docker-compose.effective.yml"
-  echo "Deployment completed: config=$CONFIG_SHA_VALUE service=$DEPLOY_SERVICES_RAW image=$IMAGE_TAG_VALUE"
+  echo "Deployment completed: config=$CONFIG_SHA_VALUE service=$DEPLOY_SERVICES_RAW"
 }
 
 main "$@"

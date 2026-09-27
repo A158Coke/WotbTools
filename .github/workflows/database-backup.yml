@@ -1,5 +1,5 @@
 name: Ops / Database Backup
-run-name: Ops / Backup production PostgreSQL by @${{ github.actor }}
+run-name: Ops / Backup production state by @${{ github.actor }}
 
 on:
   schedule:
@@ -16,58 +16,67 @@ concurrency:
   queue: max
 
 jobs:
-  backup:
+  tx_databases:
+    name: Back up TX PostgreSQL databases
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: tx-production
     steps:
       - uses: actions/checkout@v5
-      - name: Install backup scripts
+
+      - name: Stage TX database backup scripts
         uses: appleboy/scp-action@v1
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          port: ${{ secrets.VPS_PORT }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          source: "deploy/postgres-backup.sh,deploy/postgres-backup-inspect.sh,deploy/postgres-restore.sh"
-          target: /opt/wotb
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx/business-postgres-backup.sh,deploy/tx/keycloak-postgres-backup.sh
+          target: /opt/wotb-tx/ops
           overwrite: true
-      - name: Create and verify backup
+
+      - name: Back up authoritative TX databases
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          port: ${{ secrets.VPS_PORT }}
-          key: ${{ secrets.VPS_SSH_KEY }}
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 20m
+          envs: TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_DB_NAME,KC_POSTGRES_ADMIN_USER,KC_DB_NAME
           script: |
-            set -euo pipefail
-            chmod 700 /opt/wotb/deploy/postgres-backup.sh \
-              /opt/wotb/deploy/postgres-backup-inspect.sh \
-              /opt/wotb/deploy/postgres-restore.sh
-            /opt/wotb/deploy/postgres-backup.sh --database wotb
-            /opt/wotb/deploy/postgres-backup.sh --database keycloak
-      - name: Stage and back up Yecao local OpenTofu state
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          port: ${{ secrets.VPS_PORT }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          source: deploy/tofu-local-state-backup.sh
-          target: /opt/wotb/deploy
-          overwrite: true
-      - name: Verify Yecao local OpenTofu state backup
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          port: ${{ secrets.VPS_PORT }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            set -euo pipefail
-            chmod 700 /opt/wotb/deploy/tofu-local-state-backup.sh
-            /opt/wotb/deploy/tofu-local-state-backup.sh yecao
-      - name: Stage and back up TX local OpenTofu states
+            set -Eeuo pipefail
+            business_script=/opt/wotb-tx/ops/deploy/tx/business-postgres-backup.sh
+            keycloak_script=/opt/wotb-tx/ops/deploy/tx/keycloak-postgres-backup.sh
+            chmod 700 "$business_script" "$keycloak_script"
+
+            exec 9>/opt/wotb-tx/.deploy.lock
+            flock -n 9 || { echo 'Another TX production mutation is running.' >&2; exit 1; }
+
+            # Both PostgreSQL owners use the stable `deploy` Compose project;
+            # each backup refuses to start a missing runtime or adopt a
+            # different named volume.
+            WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT=deploy \
+              "$business_script"
+            WOTB_TX_KEYCLOAK_POSTGRES_COMPOSE_PROJECT=deploy \
+              "$keycloak_script"
+        env:
+          TX_BUSINESS_POSTGRES_ADMIN_USER: ${{ vars.TX_BUSINESS_POSTGRES_ADMIN_USER }}
+          TX_BUSINESS_DB_NAME: ${{ vars.TX_BUSINESS_DB_NAME }}
+          KC_POSTGRES_ADMIN_USER: kc_admin
+          KC_DB_NAME: keycloak
+
+  tx_tofu_state:
+    name: Back up TX OpenTofu state
+    needs: [tx_databases]
+    if: ${{ always() && needs.tx_databases.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: tx-production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Stage TX local OpenTofu state backup
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
@@ -75,9 +84,10 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           source: deploy/tofu-local-state-backup.sh
-          target: /opt/wotb-tx/deploy
+          target: /opt/wotb-tx/ops
           overwrite: true
-      - name: Verify TX local OpenTofu state backup
+
+      - name: Back up TX local OpenTofu states
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
@@ -85,6 +95,36 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           script: |
-            set -euo pipefail
-            chmod 700 /opt/wotb-tx/deploy/tofu-local-state-backup.sh
-            /opt/wotb-tx/deploy/tofu-local-state-backup.sh tx
+            set -Eeuo pipefail
+            chmod 700 /opt/wotb-tx/ops/deploy/tofu-local-state-backup.sh
+            /opt/wotb-tx/ops/deploy/tofu-local-state-backup.sh tx
+
+  yecao_tofu_state:
+    name: Back up Yecao OpenTofu state
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Stage Yecao local OpenTofu state backup
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: deploy/tofu-local-state-backup.sh
+          target: /opt/wotb/ops
+          overwrite: true
+
+      - name: Back up Yecao local OpenTofu state
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -Eeuo pipefail
+            chmod 700 /opt/wotb/ops/deploy/tofu-local-state-backup.sh
+            /opt/wotb/ops/deploy/tofu-local-state-backup.sh yecao

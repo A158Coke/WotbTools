@@ -3,23 +3,6 @@ name: Keycloak
 on:
   push:
     branches: [main]
-    paths:
-      - .github/workflows/keycloak.yml
-      - .dockerignore
-      - docker/Dockerfile.keycloak
-      - docker/keycloak/**
-      - java/settings-docker.xml
-      - keycloak-qq-provider/**
-      - keycloak-wargaming-provider/**
-      - infra/tofu/keycloak/**
-      - deploy/test-keycloak-runtime.sh
-      - deploy/test-keycloak-tofu.sh
-      - deploy/tx/deploy.sh
-      - deploy/tx/docker-compose.yml
-      - deploy/tx/keycloak-tofu.sh
-      - deploy/dependency-readiness.sh
-      - deploy/dependency-readiness.py
-      - deploy/release-metadata.py
   workflow_dispatch:
 
 permissions:
@@ -38,12 +21,14 @@ env:
     infra/tofu/keycloak/**
     deploy/test-keycloak-runtime.sh
     deploy/test-keycloak-tofu.sh
-    deploy/tx/deploy.sh
-    deploy/tx/docker-compose.yml
-    deploy/tx/keycloak-tofu.sh
+    deploy/tx/**
     deploy/dependency-readiness.sh
     deploy/dependency-readiness.py
-    deploy/release-metadata.py
+    deploy/check-latest-main.sh
+
+concurrency:
+  group: deploy-keycloak
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -150,6 +135,19 @@ jobs:
           [ "$revision" = "$SOURCE_SHA" ] || { echo 'Published Keycloak image does not contain the frozen build commit.' >&2; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
+      - name: Publish latest only from current main
+        env:
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          IMAGE: ${{ steps.identity.outputs.image }}
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          DIGEST: ${{ steps.verify.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-latest-main.sh" "$SOURCE_SHA"
+          crane cp "$IMAGE@$DIGEST" "$REPOSITORY:latest"
+
+
   smoke:
     needs: [build]
     runs-on: ubuntu-latest
@@ -233,7 +231,7 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx,deploy/release-metadata.py,deploy/dependency-readiness.sh,deploy/dependency-readiness.py
+          source: deploy/tx,deploy/dependency-readiness.sh,deploy/dependency-readiness.py
           target: /opt/wotb-tx/deploy.incoming
           overwrite: true
       - name: Stage Keycloak realm root and its actual TX runner
@@ -257,7 +255,7 @@ jobs:
           set -euo pipefail
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
-      - name: Reconcile Keycloak, apply realm Tofu, verify, and commit metadata under one host lock
+      - name: Reconcile Keycloak, apply realm Tofu, and verify under one host lock
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
@@ -265,19 +263,15 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 55m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,WOTB_TX_BOOTSTRAP_KEYCLOAK,WOTB_DEPLOY_DEFER_METADATA,KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,WOTB_TX_BOOTSTRAP_KEYCLOAK,KEYCLOAK_ADMIN_USERNAME,KEYCLOAK_ADMIN_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION,KEYCLOAK_E2E_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET_VERSION,TX_QQ_CLIENT_ID,TX_QQ_CLIENT_SECRET
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
             flock -n 9 || { echo 'Another TX production deployment is running.' >&2; exit 1; }
             export WOTB_DEPLOY_LOCK_FD=9
-            export WOTB_DEPLOY_DEFER_METADATA=1
             export WOTB_TX_BOOTSTRAP_KEYCLOAK=1
             export WOTB_DEPLOY_SERVICE=keycloak
             export WOTB_DEPLOY_CONFIG_SHA='${{ needs.build.outputs.commit_sha }}'
-            export WOTB_DEPLOY_IMAGE_TAG='${{ needs.build.outputs.image }}'
-            export WOTB_DEPLOY_IMAGE_COMMIT_SHA='${{ needs.build.outputs.commit_sha }}'
-            export WOTB_DEPLOY_IMAGE_DIGEST='${{ needs.build.outputs.digest }}'
             export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
             stage="/opt/wotb-tx/tofu.incoming/${{ needs.build.outputs.commit_sha }}"
             root="$stage/infra/tofu/keycloak"
@@ -311,20 +305,9 @@ jobs:
             docker run --rm --network host curlimages/curl:8.12.1 --fail --silent --show-error \
               --connect-timeout 3 --max-time 15 \
               http://127.0.0.1:18080/realms/wotbtools/.well-known/openid-configuration >/dev/null
-
-            python3 /opt/wotb-tx/deploy/release-metadata.py update \
-              --host tx --file /opt/wotb-tx/production-release.json \
-              --tx-prefix "$TX_IMAGE_REGISTRY_PREFIX" --service keycloak \
-              --config-sha "$WOTB_DEPLOY_CONFIG_SHA" \
-              --image-tag "$WOTB_DEPLOY_IMAGE_TAG" \
-              --image-commit-sha "$WOTB_DEPLOY_IMAGE_COMMIT_SHA"
         env:
           WOTB_DEPLOY_SERVICE: keycloak
           WOTB_DEPLOY_CONFIG_SHA: ${{ needs.build.outputs.commit_sha }}
-          WOTB_DEPLOY_IMAGE_TAG: ${{ needs.build.outputs.image }}
-          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
-          WOTB_DEPLOY_IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
-          WOTB_DEPLOY_DEFER_METADATA: '1'
           WOTB_TX_BOOTSTRAP_KEYCLOAK: '1'
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
           KC_POSTGRES_ADMIN_USER: kc_admin

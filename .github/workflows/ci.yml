@@ -25,28 +25,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  changes:
-    name: changes
+  pr_identity:
+    name: pull request identity
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       base_sha: ${{ steps.revisions.outputs.base_sha }}
       head_sha: ${{ steps.revisions.outputs.head_sha }}
-      backend: ${{ steps.plan.outputs.backend }}
-      frontend: ${{ steps.plan.outputs.frontend }}
-      http_contract: ${{ steps.plan.outputs.http_contract }}
-      keycloak_provider: ${{ steps.plan.outputs.keycloak_provider }}
-      keycloak_runtime: ${{ steps.plan.outputs.keycloak_runtime }}
-      data: ${{ steps.plan.outputs.data }}
-      live_data: ${{ steps.plan.outputs.live_data }}
-      android: ${{ steps.plan.outputs.android }}
-      deploy: ${{ steps.plan.outputs.deploy }}
-      observability: ${{ steps.plan.outputs.observability }}
-      full: ${{ steps.plan.outputs.full }}
-      java_modules: ${{ steps.plan.outputs.java_modules }}
-      java_full: ${{ steps.plan.outputs.java_full }}
-      browser_suites: ${{ steps.plan.outputs.browser_suites }}
-      tofu_roots: ${{ steps.plan.outputs.tofu_roots }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -162,47 +147,9 @@ jobs:
               output.write(f"base_sha={base_sha}\n")
               output.write(f"head_sha={head_sha}\n")
           PY
-      - name: Select validation from the CI-only impact selector
-        id: plan
-        env:
-          BASE_SHA: ${{ steps.revisions.outputs.base_sha }}
-          HEAD_SHA: ${{ steps.revisions.outputs.head_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          [ -n "$BASE_SHA" ] || { echo "::error::PR base SHA is required" >&2; exit 1; }
-          [ -n "$HEAD_SHA" ] || { echo "::error::PR head SHA is required" >&2; exit 1; }
-          python3 scripts/ci/ci-impact.py --base "$BASE_SHA" --head "$HEAD_SHA" > ci-impact.json
-          python3 - ci-impact.json <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          import sys
-
-          impact = json.load(open(sys.argv[1], encoding="utf-8"))
-          surfaces = impact["surfaces"]
-          names = {
-              "backend": "backend",
-              "frontend": "frontend",
-              "http_contract": "httpContract",
-              "android": "android",
-              "keycloak_provider": "keycloakProvider",
-              "keycloak_runtime": "keycloakRuntime",
-              "data": "data",
-              "live_data": "liveData",
-              "deploy": "deploy",
-              "observability": "observability",
-              "full": "full",
-          }
-          for output_name, surface_name in names.items():
-              print(f"{output_name}={str(surfaces[surface_name]).lower()}")
-          print("java_modules=" + ",".join(impact["javaModules"]))
-          print("java_full=" + str(impact["javaFull"]).lower())
-          print("browser_suites=" + json.dumps(impact["frontendBrowserSuites"], separators=(",", ":")))
-          print("tofu_roots=" + json.dumps(impact["tofuRoots"], separators=(",", ":")))
-          PY
 
   python_unit:
-    needs: [changes]
-    if: needs.changes.outputs.data == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: Python unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -211,43 +158,9 @@ jobs:
       - name: Python unit tests
         run: python3 -m unittest discover -s common/python/tests -p 'test_*.py'
 
-  live_data_contracts:
-    needs: [changes]
-    if: needs.changes.outputs.live_data == 'true'
-    name: Live data contracts
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v5
-      - name: Validate live BlitzKit equipment contract
-        run: |
-          set -euo pipefail
-          cp common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
-          python3 common/python/sync_equipment_snapshot.py --catalog /tmp/equipment.json
-          diff -u common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
-      - name: Validate live BlitzKit Tankopedia contract
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/tankopedia-ci
-          mkdir -p /tmp/tankopedia-ci
-          python3 common/python/sync_tankopedia_snapshot.py \
-            --existing-dir common \
-            --output-dir /tmp/tankopedia-ci
-          for tier in 7 8 9 10; do
-            python3 -m json.tool "/tmp/tankopedia-ci/tankopedia-tier${tier}.json" >/dev/null
-          done
-      - name: Validate live BlitzKit crew skill contract
-        run: |
-          set -euo pipefail
-          python3 common/python/update_crew_skills.py \
-            --existing common/crew-skills.json \
-            --output /tmp/crew-skills.json
-          python3 -m json.tool /tmp/crew-skills.json >/dev/null
-          diff -u common/crew-skills.json /tmp/crew-skills.json
 
   backend:
-    needs: [changes]
-    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: Backend
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -264,22 +177,13 @@ jobs:
           restore-keys: ${{ runner.os }}-maven-
       - name: Maven test
         working-directory: java
-        env:
-          JAVA_MODULES: ${{ needs.changes.outputs.java_modules }}
-          JAVA_FULL: ${{ needs.changes.outputs.java_full }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$JAVA_FULL" = true ]; then
-            mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo test
-          else
-            [ -n "$JAVA_MODULES" ] || { echo "::error::selected Java validation has no modules" >&2; exit 1; }
-            mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl "$JAVA_MODULES" -am test
-          fi
+          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo test
 
   keycloak_providers:
-    needs: [changes]
-    if: needs.changes.outputs.keycloak_provider == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: Keycloak providers
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -299,8 +203,7 @@ jobs:
         run: bash scripts/ci/test-keycloak-tofu-contract.sh
 
   keycloak_runtime:
-    needs: [changes]
-    if: needs.changes.outputs.keycloak_runtime == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: Keycloak runtime
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -312,8 +215,7 @@ jobs:
           bash -n docker/keycloak/wotbtools-entrypoint.sh
 
   frontend:
-    needs: [changes]
-    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: Frontend
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -334,11 +236,9 @@ jobs:
         working-directory: frontend
         run: npm test
       - name: Real-browser Playback layout regression
-        if: contains(fromJSON(needs.changes.outputs.browser_suites), 'playback-layout')
         working-directory: frontend
         run: npm run test:browser-layout
       - name: Real-browser Playback/Workspace interaction regression
-        if: contains(fromJSON(needs.changes.outputs.browser_suites), 'workspace-interaction')
         working-directory: frontend
         run: npm run test:browser-interaction
       - name: Build
@@ -349,8 +249,7 @@ jobs:
         run: node scripts/check-bundle-separation.mjs
 
   http_contract:
-    needs: [changes]
-    if: needs.changes.outputs.http_contract == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: HTTP contract
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -388,8 +287,7 @@ jobs:
           mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-web -Dtest=BattlePlaybackDatasetTest,BattlePlaybackProjectorTest,ReplayArtifactWriterTest -Dsurefire.failIfNoSpecifiedTests=true test
 
   android:
-    needs: [changes]
-    if: needs.changes.outputs.android == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: Android
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -420,8 +318,7 @@ jobs:
           if-no-files-found: error
 
   android_release_helpers:
-    needs: [changes]
-    if: needs.changes.outputs.android == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: Android release helpers
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -437,8 +334,7 @@ jobs:
         run: bash scripts/android-release/test-release.sh
 
   android_contract:
-    needs: [changes]
-    if: needs.changes.outputs.android == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: Android contract
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -459,8 +355,8 @@ jobs:
           bash scripts/android-release/test-android-contract.sh
       - name: Enforce version and bridge compatibility against base
         env:
-          BASE_SHA: ${{ needs.changes.outputs.base_sha }}
-          HEAD_SHA: ${{ needs.changes.outputs.head_sha }}
+          BASE_SHA: ${{ needs.pr_identity.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
         run: |
           set -euo pipefail
           git show "$BASE_SHA:android/gradle.properties" > /tmp/base-gradle.properties
@@ -501,8 +397,7 @@ jobs:
             $([ "$INITIAL_VERSION_BASELINE" = true ] && echo --initial-version-baseline)
 
   observability_config:
-    needs: [changes]
-    if: needs.changes.outputs.observability == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: Observability
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -652,8 +547,7 @@ jobs:
           print("provisioning yml + dashboards json OK")
           PY
   deploy_smoke:
-    needs: [changes]
-    if: needs.changes.outputs.deploy == 'true' || needs.changes.outputs.full == 'true'
+    needs: [pr_identity]
     name: Deployment and infrastructure contracts
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -663,7 +557,7 @@ jobs:
           fetch-depth: 0
       - name: Flyway migration immutability guard
         env:
-          FLYWAY_BASE_REF: ${{ needs.changes.outputs.base_sha }}
+          FLYWAY_BASE_REF: ${{ needs.pr_identity.outputs.base_sha }}
         run: bash deploy/check-flyway-immutability.sh "$FLYWAY_BASE_REF"
       - name: Flyway migration guard fixture
         run: bash deploy/test-flyway-immutability.sh
@@ -674,38 +568,40 @@ jobs:
           bash -n deploy/deploy.sh deploy/minio-deploy.sh
           deploy/verify-observability.sh deploy/tx/deploy.sh
           deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
+          deploy/tx/keycloak-postgres-backup.sh deploy/test-keycloak-postgres-backup.sh
           deploy/tofu-local-state-backup.sh
-          deploy/tx/runtime-check.sh deploy/tx/publish-loaded-image-to-tcr.sh
+          deploy/tx/runtime-check.sh deploy/tx/runtime-check-lib.sh
+          deploy/tx/publish-loaded-image-to-tcr.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
+          deploy/check-latest-main.sh deploy/test-check-latest-main.sh
           infra/tofu/minio/validate-plan.sh infra/tofu/minio/test-validate-plan.sh
           infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
           infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
-          scripts/ci/test-keycloak-tofu-contract.sh
-          scripts/ci/test-postgres-keycloak-tofu-contract.sh
+          deploy/test-business-postgres-runtime.sh
           scripts/ci/test-postgres-business-tofu-contract.sh
           scripts/ci/test-tofu-workflow-contract.sh
-      - name: CI selector, workflow purity, and ToFu safety fixtures
+      - name: Workflow and ToFu safety fixtures
         run: |
           set -euo pipefail
-          python3 scripts/ci/test-path-filters.py
           bash scripts/ci/test-workflow-contract.sh
           bash scripts/ci/test-tofu-workflow-contract.sh
-          bash scripts/ci/test-keycloak-tofu-contract.sh
           bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
           bash scripts/ci/test-postgres-business-tofu-contract.sh
-      - name: TX runtime and metadata fixtures
+      - name: TX and Yecao owner runtime fixtures
         run: |
           set -euo pipefail
+          bash deploy/test-check-latest-main.sh
           bash deploy/test-tx-runtime-config.sh
           bash deploy/test-yecao-wireguard-boundary.sh
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
           bash deploy/test-deploy-contract.sh
+      - name: Keycloak PostgreSQL backup runtime smoke
+        run: bash deploy/test-keycloak-postgres-backup.sh
       - name: Production Compose configuration contract
         env:
-          TAG: sha-ci
           DB_PASSWORD: ci
           KC_ADMIN_PASSWORD: ci
           WG_APPLICATION_ID: ci
@@ -716,6 +612,55 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f deploy/docker-compose.prod.yml config --format json > /tmp/compose.json
+          export TX_RUNTIME_ROOT=/tmp/tx-runtime
+          export TX_BUSINESS_POSTGRES_ADMIN_USER=ci-business-admin
+          export TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=ci-business-password
+          export KC_POSTGRES_ADMIN_USER=ci-keycloak-admin
+          export KC_POSTGRES_ADMIN_PASSWORD=ci-keycloak-password
+          export KC_BOOTSTRAP_ADMIN_PASSWORD=ci-keycloak-bootstrap
+          export KC_DB_USERNAME=ci-keycloak
+          export KC_DB_PASSWORD=ci-keycloak-password
+          export WG_APPLICATION_ID=ci-wg
+          export CADDY_ACME_EMAIL=ci@example.invalid
+          export TX_RABBITMQ_ADMIN_USER=ci-rabbit-admin
+          export TX_RABBITMQ_ADMIN_PASSWORD=ci-rabbit-password
+          export TX_RABBITMQ_CONTROL_API_PASSWORD=ci-rabbit-control
+          export TX_RABBITMQ_PARSER_WORKER_PASSWORD=ci-rabbit-worker
+          export TX_BUSINESS_DB_NAME=wotb
+          export TX_BUSINESS_DB_USERNAME=control_api
+          export TX_BUSINESS_DB_PASSWORD=ci-business-app
+          export YECAO_MINIO_CONTROL_API_ACCESS_KEY=ci-minio-key
+          export YECAO_MINIO_CONTROL_API_SECRET_KEY=ci-minio-secret
+          export KEYCLOAK_ADMIN_CLIENT_SECRET=ci-kc-client
+          export AI_API_KEY=ci-ai
+          docker compose -p deploy -f deploy/tx/docker-compose.yml config --format json > /tmp/tx-compose.json
+          KC_POSTGRES_ADMIN_USER=ci-keycloak-admin KC_POSTGRES_ADMIN_PASSWORD=ci-keycloak-password \
+            docker compose -p deploy -f deploy/tx/keycloak-postgres.compose.yml config --format json > /tmp/keycloak-postgres-compose.json
+          TX_BUSINESS_POSTGRES_ADMIN_USER=ci-business-admin TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=ci-business-password \
+            docker compose -p deploy -f deploy/tx/business-postgres.compose.yml config --format json > /tmp/business-postgres-compose.json
+          python3 - <<'PY'
+          import json
+          expected_volumes = {
+              "/tmp/tx-compose.json": {
+                  "business_postgres_data": "deploy_business_postgres_data",
+                  "keycloak_postgres_data": "deploy_keycloak_postgres_data",
+              },
+              "/tmp/keycloak-postgres-compose.json": {
+                  "keycloak_postgres_data": "deploy_keycloak_postgres_data",
+              },
+              "/tmp/business-postgres-compose.json": {
+                  "business_postgres_data": "deploy_business_postgres_data",
+              },
+          }
+          for path, volumes in expected_volumes.items():
+              with open(path, encoding="utf-8") as handle:
+                  compose = json.load(handle)
+              assert compose["name"] == "deploy", (path, compose.get("name"))
+              for key, name in volumes.items():
+                  assert compose["volumes"][key]["name"] == name, path
+              assert compose["networks"]["default"]["name"] == "wotb_tx_internal", path
+          print("TX Compose project and authoritative PostgreSQL volume identities are stable")
+          PY
           python3 - <<'PY'
           import json
           with open('/tmp/compose.json', encoding='utf-8') as compose_file:
@@ -726,7 +671,6 @@ jobs:
           PY
       - name: MinIO Compose configuration contract
         env:
-          TAG: sha-ci
           YECAO_MINIO_ROOT_USER: ci-root-user
           YECAO_MINIO_ROOT_PASSWORD: ci-root-password
         run: |
@@ -738,7 +682,7 @@ jobs:
               compose = json.load(compose_file)
           assert set(compose['services']) == {'minio'}
           service = compose['services']['minio']
-          assert service['image'] == 'ghcr.io/a158coke/wotbtools-minio:sha-ci'
+          assert service['image'] == 'ghcr.io/a158coke/wotbtools-minio:latest'
           ports = [str(port) for port in service.get('ports', [])]
           assert any('10.20.0.2' in port and '9000' in port for port in ports), ports
           assert any('127.0.0.1' in port and '9001' in port for port in ports), ports
@@ -755,8 +699,7 @@ jobs:
       - name: nginx Grafana recreate fixture smoke
         run: bash deploy/test-nginx-grafana-recreate.sh
   tofu_plans:
-    needs: [changes]
-    if: needs.changes.outputs.tofu_roots != '[]'
+    needs: [pr_identity]
     name: OpenTofu validation / ${{ matrix.root }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -766,7 +709,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        root: ${{ fromJSON(needs.changes.outputs.tofu_roots) }}
+        root: [keycloak, rabbitmq, business-postgres, keycloak-postgres, minio, grafana]
     env:
       TF_IN_AUTOMATION: "true"
       CHECKPOINT_DISABLE: "1"
@@ -811,17 +754,20 @@ jobs:
         run: |
           set -euo pipefail
           case "$ROOT" in
-            rabbitmq|minio|business-postgres)
+            rabbitmq|minio)
               bash "$ROOT_DIR/test-validate-plan.sh"
+              ;;
+            business-postgres)
+              bash "$ROOT_DIR/test-validate-plan.sh"
+              bash deploy/test-business-postgres-runtime.sh
               ;;
             keycloak|keycloak-postgres|grafana) ;;
             *) exit 1 ;;
           esac
   required:
     needs:
-      - changes
+      - pr_identity
       - python_unit
-      - live_data_contracts
       - backend
       - keycloak_providers
       - keycloak_runtime
@@ -838,58 +784,43 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every selected job to pass
+      - name: Require every validation job to pass
         env:
-          CHANGES: ${{ needs.changes.result }}
-          FULL: ${{ needs.changes.outputs.full }}
+          PR_IDENTITY: ${{ needs.pr_identity.result }}
           PYTHON_UNIT: ${{ needs.python_unit.result }}
-          DATA_CHANGED: ${{ needs.changes.outputs.data }}
-          LIVE_DATA_CONTRACTS: ${{ needs.live_data_contracts.result }}
-          LIVE_DATA_CHANGED: ${{ needs.changes.outputs.live_data }}
           BACKEND: ${{ needs.backend.result }}
-          BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
           KEYCLOAK_PROVIDERS: ${{ needs.keycloak_providers.result }}
-          KEYCLOAK_PROVIDER_CHANGED: ${{ needs.changes.outputs.keycloak_provider }}
           KEYCLOAK_RUNTIME: ${{ needs.keycloak_runtime.result }}
-          KEYCLOAK_RUNTIME_CHANGED: ${{ needs.changes.outputs.keycloak_runtime }}
           FRONTEND: ${{ needs.frontend.result }}
-          FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend }}
           HTTP_CONTRACT: ${{ needs.http_contract.result }}
-          HTTP_CONTRACT_CHANGED: ${{ needs.changes.outputs.http_contract }}
           ANDROID: ${{ needs.android.result }}
-          ANDROID_CHANGED: ${{ needs.changes.outputs.android }}
           ANDROID_RELEASE_HELPERS: ${{ needs.android_release_helpers.result }}
           ANDROID_CONTRACT: ${{ needs.android_contract.result }}
           OBSERVABILITY: ${{ needs.observability_config.result }}
-          OBSERVABILITY_CHANGED: ${{ needs.changes.outputs.observability }}
           DEPLOY_SMOKE: ${{ needs.deploy_smoke.result }}
-          DEPLOY_CHANGED: ${{ needs.changes.outputs.deploy }}
           TOFU_PLANS: ${{ needs.tofu_plans.result }}
-          TOFU_ROOTS: ${{ needs.changes.outputs.tofu_roots }}
         shell: bash
         run: |
           set -euo pipefail
           failed=0
-          while IFS='|' read -r job expected result; do
-            case "$expected:$result" in
-              true:success) ;;
-              false:skipped) ;;
-              *) echo "::error::$job expected=$expected ended with $result"; failed=1 ;;
-            esac
+          while IFS='|' read -r job result; do
+            if [ "$result" != success ]; then
+              echo "::error::$job ended with $result" >&2
+              failed=1
+            fi
           done <<EOF
-          changes|true|$CHANGES
-          python_unit|$([ "$DATA_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$PYTHON_UNIT
-          live_data_contracts|$([ "$LIVE_DATA_CHANGED" = true ] && echo true || echo false)|$LIVE_DATA_CONTRACTS
-          backend|$([ "$BACKEND_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$BACKEND
-          keycloak_providers|$([ "$KEYCLOAK_PROVIDER_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$KEYCLOAK_PROVIDERS
-          keycloak_runtime|$([ "$KEYCLOAK_RUNTIME_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$KEYCLOAK_RUNTIME
-          frontend|$([ "$FRONTEND_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$FRONTEND
-          http_contract|$([ "$HTTP_CONTRACT_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$HTTP_CONTRACT
-          android|$([ "$ANDROID_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$ANDROID
-          android_release_helpers|$([ "$ANDROID_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$ANDROID_RELEASE_HELPERS
-          android_contract|$([ "$ANDROID_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$ANDROID_CONTRACT
-          observability|$([ "$OBSERVABILITY_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$OBSERVABILITY
-          deploy_smoke|$([ "$DEPLOY_CHANGED" = true ] || [ "$FULL" = true ] && echo true || echo false)|$DEPLOY_SMOKE
-          tofu_plans|$([ "$TOFU_ROOTS" != '[]' ] && echo true || echo false)|$TOFU_PLANS
+          pr_identity|$PR_IDENTITY
+          python_unit|$PYTHON_UNIT
+          backend|$BACKEND
+          keycloak_providers|$KEYCLOAK_PROVIDERS
+          keycloak_runtime|$KEYCLOAK_RUNTIME
+          frontend|$FRONTEND
+          http_contract|$HTTP_CONTRACT
+          android|$ANDROID
+          android_release_helpers|$ANDROID_RELEASE_HELPERS
+          android_contract|$ANDROID_CONTRACT
+          observability_config|$OBSERVABILITY
+          deploy_smoke|$DEPLOY_SMOKE
+          tofu_plans|$TOFU_PLANS
           EOF
           [ "$failed" -eq 0 ]

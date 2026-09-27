@@ -8,7 +8,6 @@ on:
       - deploy/deploy.sh
       - deploy/docker-compose.prod.yml
       - deploy/grafana-api-request.sh
-      - deploy/release-metadata.py
       - deploy/validate-alloy-config.sh
       - deploy/verify-observability.sh
       - deploy/observability/**
@@ -42,7 +41,6 @@ env:
     deploy/deploy.sh
     deploy/docker-compose.prod.yml
     deploy/grafana-api-request.sh
-    deploy/release-metadata.py
     deploy/validate-alloy-config.sh
     deploy/verify-observability.sh
     deploy/observability/**
@@ -99,7 +97,7 @@ jobs:
               changed_paths="$(git diff --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$SOURCE_SHA")"
               while IFS= read -r path; do
                 case "$path" in
-                  .github/workflows/observability.yml|deploy/deploy.sh|deploy/docker-compose.prod.yml|deploy/release-metadata.py|deploy/validate-alloy-config.sh|deploy/verify-observability.sh)
+                  .github/workflows/observability.yml|deploy/deploy.sh|deploy/docker-compose.prod.yml|deploy/validate-alloy-config.sh|deploy/verify-observability.sh)
                     add_all
                     ;;
                   deploy/observability/prometheus/*) add_service prometheus ;;
@@ -169,7 +167,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 40m
-          envs: SOURCE_SHA,RUNTIME_SERVICES,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,GRAFANA_PAT
+          envs: SOURCE_SHA,RUNTIME_SERVICES,WOTB_DEPLOY_CONFIG_SHA,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,GRAFANA_PAT
           script: |
             set -Eeuo pipefail
             [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -209,8 +207,6 @@ jobs:
               esac
               export WOTB_DEPLOY_SERVICE="$service"
               export WOTB_DEPLOY_CONFIG_SHA="$SOURCE_SHA"
-              export WOTB_DEPLOY_IMAGE_TAG=''
-              export WOTB_DEPLOY_IMAGE_COMMIT_SHA=''
               if [[ "$service" == grafana ]]; then
                 GRAFANA_PAT='' \
                   bash /opt/wotb/deploy.incoming/deploy/deploy.sh
@@ -270,8 +266,6 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           RUNTIME_SERVICES: ${{ steps.source.outputs.runtime_services }}
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.source.outputs.source_sha }}
-          WOTB_DEPLOY_IMAGE_TAG: ''
-          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ''
           GRAFANA_ADMIN_USER: ${{ contains(steps.source.outputs.runtime_services, 'grafana') && secrets.GRAFANA_ADMIN_USER || '' }}
           GRAFANA_ADMIN_PASSWORD: ${{ contains(steps.source.outputs.runtime_services, 'grafana') && secrets.GRAFANA_ADMIN_PASSWORD || '' }}
           GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
