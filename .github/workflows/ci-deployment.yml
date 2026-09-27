@@ -1,0 +1,185 @@
+name: CI / deployment
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  deploy_smoke:
+    name: Deployment and infrastructure contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+          fetch-depth: 0
+      - name: Flyway migration immutability guard
+        env:
+          FLYWAY_BASE_REF: ${{ inputs.base_sha }}
+        run: bash deploy/check-flyway-immutability.sh "$FLYWAY_BASE_REF"
+      - name: Flyway migration guard fixture
+        run: bash deploy/test-flyway-immutability.sh
+      - name: Read-only dependency readiness protocol unit tests
+        run: python3 deploy/test_dependency_readiness.py
+      - name: Bash syntax for deploy entrypoints and local policy fixtures
+        run: >-
+          bash -n deploy/deploy.sh deploy/minio-deploy.sh
+          deploy/verify-observability.sh deploy/tx/deploy.sh
+          deploy/tx/validate-caddy-config.sh deploy/list-image-tags.sh
+          deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
+          deploy/tx/keycloak-postgres-backup.sh deploy/test-keycloak-postgres-backup.sh
+          deploy/tofu-local-state-backup.sh
+          deploy/tx/runtime-check.sh deploy/tx/runtime-check-lib.sh
+          deploy/tx/publish-loaded-image-to-tcr.sh
+          deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
+          deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
+          deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
+          deploy/check-latest-main.sh deploy/test-check-latest-main.sh
+          infra/tofu/minio/validate-plan.sh infra/tofu/minio/test-validate-plan.sh
+          infra/tofu/rabbitmq/validate-plan.sh infra/tofu/rabbitmq/test-validate-plan.sh
+          infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
+          deploy/test-business-postgres-runtime.sh
+          scripts/ci/test-postgres-business-tofu-contract.sh
+          scripts/ci/test-tofu-workflow-contract.sh
+      - name: Caddy staged configuration validation
+        env:
+          TX_RUNTIME_ROOT: /tmp/tx-runtime
+          CADDY_ACME_EMAIL: ci@example.invalid
+        run: |
+          set -euo pipefail
+          mkdir -p "$TX_RUNTIME_ROOT"
+          bash scripts/ci/run-with-network-retry.sh "Pull Caddy image" docker pull caddy:2.10.2-alpine
+          bash deploy/tx/validate-caddy-config.sh deploy/tx
+          broken="$RUNNER_TEMP/broken-caddy"
+          rm -rf -- "$broken"
+          cp -a deploy/tx "$broken"
+          printf '%s\n' 'wotbtools.com {' '  this-is-not-a-caddy-directive' '}' > "$broken/Caddyfile"
+          if bash deploy/tx/validate-caddy-config.sh "$broken"; then
+            echo 'an invalid staged Caddyfile was accepted' >&2
+            exit 1
+          fi
+          docker compose -p deploy -f deploy/tx/common.compose.yml -f deploy/tx/caddy.compose.yml \
+            down --volumes --remove-orphans >/dev/null 2>&1 || true
+      - name: Workflow and ToFu safety fixtures
+        run: |
+          set -euo pipefail
+          bash scripts/ci/test-workflow-contract.sh
+          bash scripts/ci/test-tofu-workflow-contract.sh
+          bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
+          bash scripts/ci/test-postgres-business-tofu-contract.sh
+      - name: TX and Yecao owner runtime fixtures
+        run: |
+          set -euo pipefail
+          bash deploy/test-check-latest-main.sh
+          bash deploy/test-tx-runtime-config.sh
+          bash deploy/test-yecao-wireguard-boundary.sh
+          bash deploy/test-tx-runtime-check.sh
+          bash deploy/test-user-profile-reset-audit.sh
+          bash deploy/test-deploy-contract.sh
+      - name: Keycloak PostgreSQL backup runtime smoke
+        run: bash deploy/test-keycloak-postgres-backup.sh
+      - name: Production Compose configuration contract
+        env:
+          DB_PASSWORD: ci
+          KC_ADMIN_PASSWORD: ci
+          WG_APPLICATION_ID: ci
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ci
+          AI_API_KEY: ci
+          GRAFANA_ADMIN_USER: ci
+          GRAFANA_ADMIN_PASSWORD: ci
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/docker-compose.prod.yml config --format json > /tmp/compose.json
+          export TX_RUNTIME_ROOT=/tmp/tx-runtime
+          export TX_BUSINESS_POSTGRES_ADMIN_USER=ci-business-admin
+          export TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=ci-business-password
+          export KC_POSTGRES_ADMIN_USER=ci-keycloak-admin
+          export KC_POSTGRES_ADMIN_PASSWORD=ci-keycloak-password
+          export KC_BOOTSTRAP_ADMIN_PASSWORD=ci-keycloak-bootstrap
+          export KC_DB_USERNAME=ci-keycloak
+          export KC_DB_PASSWORD=ci-keycloak-password
+          export WG_APPLICATION_ID=ci-wg
+          export CADDY_ACME_EMAIL=ci@example.invalid
+          export TX_RABBITMQ_ADMIN_USER=ci-rabbit-admin
+          export TX_RABBITMQ_ADMIN_PASSWORD=ci-rabbit-password
+          export TX_RABBITMQ_CONTROL_API_PASSWORD=ci-rabbit-control
+          export TX_RABBITMQ_PARSER_WORKER_PASSWORD=ci-rabbit-worker
+          export TX_BUSINESS_DB_NAME=wotb
+          export TX_BUSINESS_DB_USERNAME=control_api
+          export TX_BUSINESS_DB_PASSWORD=ci-business-app
+          export YECAO_MINIO_CONTROL_API_ACCESS_KEY=ci-minio-key
+          export YECAO_MINIO_CONTROL_API_SECRET_KEY=ci-minio-secret
+          export KEYCLOAK_ADMIN_CLIENT_SECRET=ci-kc-client
+          export AI_API_KEY=ci-ai
+          docker compose -p deploy -f deploy/tx/docker-compose.yml config --format json > /tmp/tx-compose.json
+          KC_POSTGRES_ADMIN_USER=ci-keycloak-admin KC_POSTGRES_ADMIN_PASSWORD=ci-keycloak-password \
+            docker compose -p deploy -f deploy/tx/keycloak-postgres.compose.yml config --format json > /tmp/keycloak-postgres-compose.json
+          TX_BUSINESS_POSTGRES_ADMIN_USER=ci-business-admin TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=ci-business-password \
+            docker compose -p deploy -f deploy/tx/business-postgres.compose.yml config --format json > /tmp/business-postgres-compose.json
+          python3 - <<'PY'
+          import json
+          expected_volumes = {
+              "/tmp/tx-compose.json": {
+                  "business_postgres_data": "deploy_business_postgres_data",
+                  "keycloak_postgres_data": "deploy_keycloak_postgres_data",
+              },
+              "/tmp/keycloak-postgres-compose.json": {
+                  "keycloak_postgres_data": "deploy_keycloak_postgres_data",
+              },
+              "/tmp/business-postgres-compose.json": {
+                  "business_postgres_data": "deploy_business_postgres_data",
+              },
+          }
+          for path, volumes in expected_volumes.items():
+              with open(path, encoding="utf-8") as handle:
+                  compose = json.load(handle)
+              assert compose["name"] == "deploy", (path, compose.get("name"))
+              for key, name in volumes.items():
+                  assert compose["volumes"][key]["name"] == name, path
+              assert compose["networks"]["default"]["name"] == "wotb_tx_internal", path
+          print("TX Compose project and authoritative PostgreSQL volume identities are stable")
+          PY
+          python3 - <<'PY'
+          import json
+          with open('/tmp/compose.json', encoding='utf-8') as compose_file:
+              services = json.load(compose_file)['services']
+          endpoint = services['parser-worker']['environment']['MINIO_ENDPOINT']
+          assert endpoint == 'minio:9000', endpoint
+          print('parser-worker resolves MinIO through Docker service discovery')
+          PY
+      - name: MinIO Compose configuration contract
+        env:
+          YECAO_MINIO_ROOT_USER: ci-root-user
+          YECAO_MINIO_ROOT_PASSWORD: ci-root-password
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/docker-compose.minio.yml config --format json > /tmp/minio-compose.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/minio-compose.json', encoding='utf-8') as compose_file:
+              compose = json.load(compose_file)
+          assert set(compose['services']) == {'minio'}
+          service = compose['services']['minio']
+          assert service['image'] == 'ghcr.io/a158coke/wotbtools-minio:latest'
+          ports = [str(port) for port in service.get('ports', [])]
+          assert any('10.20.0.2' in port and '9000' in port for port in ports), ports
+          assert any('127.0.0.1' in port and '9001' in port for port in ports), ports
+          assert not any('0.0.0.0' in port for port in ports), ports
+          assert service.get('healthcheck'), 'MinIO healthcheck is required'
+          assert compose['volumes']['minio_data']['name'] == 'wotb_yecao_minio_data'
+          assert compose['networks']['default']['external'] is True
+          print('MinIO Compose network and persistence contract OK')
+          PY
+      - name: nginx rate-limit fixture smoke
+        run: bash deploy/test-nginx-ratelimit.sh
+      - name: nginx Android download route fixture smoke
+        run: bash deploy/test-nginx-android-route.sh
+      - name: nginx Grafana recreate fixture smoke
+        run: bash deploy/test-nginx-grafana-recreate.sh

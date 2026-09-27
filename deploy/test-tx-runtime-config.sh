@@ -24,6 +24,9 @@ verb="${1:-}"; shift || true
 printf '%s %s\n' "$verb" "$*" >> "$FAKE_DOCKER_LOG"
 case "$verb" in
   run)
+    if [[ "${FAKE_CADDY_VALIDATE_FAIL:-0}" = 1 && "$*" == *"--entrypoint caddy caddy validate"* ]]; then
+      exit 1
+    fi
     if [[ "$*" == *":3100/ready"* ]]; then
       printf 'ready'
     elif [[ "$*" == *loki/api/v1/query_range* ]]; then
@@ -61,6 +64,16 @@ grep -q '^up -d --no-deps --force-recreate caddy$' "$WORK/caddy.log"
 # validation has to pin `--entrypoint caddy` explicitly.
 grep -q '^run .*--entrypoint caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile$' "$WORK/caddy.log"
 ! grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/caddy.log"
+if env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+  WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \
+  TX_RUNTIME_ROOT="$WORK/host" WOTB_DEPLOY_SERVICE=caddy WOTB_DEPLOY_CONFIG_SHA="$SHA" \
+  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 CADDY_ACME_EMAIL=ci@example.invalid \
+  FAKE_CADDY_VALIDATE_FAIL=1 FAKE_DOCKER_LOG="$WORK/caddy-fail.log" \
+  bash "$WORK/incoming/deploy/tx/deploy.sh" >/dev/null 2>&1; then
+  echo 'Caddy deployment accepted invalid staged configuration' >&2
+  exit 1
+fi
+! grep -q '^up ' "$WORK/caddy-fail.log"
 env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \
   TX_RUNTIME_ROOT="$WORK/host" WOTB_DEPLOY_SERVICE=keycloak WOTB_DEPLOY_CONFIG_SHA="$SHA" \
