@@ -13,6 +13,26 @@
 `8087/api/health`。完整
 Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 smoke，不在此记录静态推测。
 
+## 0. 当前拓扑（2026-09 observability realignment 后）
+
+双主机分工与观测数据路径（旧单机架构的历史记录见下文各节，与现状冲突时以本节为准）：
+
+- **观测栈在 Yecao**（`deploy/docker-compose.prod.yml`）：Prometheus/Loki/Alloy/Grafana/node-exporter。
+  除容器内网外只发布两个 WireGuard-only 端口：Grafana `10.20.0.2:3000`、Loki `10.20.0.2:3100`。
+- **业务在 TX**：`business-api` 的 management 端口只绑 `10.20.0.1:8088`，Yecao Prometheus 以
+  `job="wotb-backend"`（目标 `10.20.0.1:8088/actuator/prometheus`）跨 WireGuard 抓取；job 名与
+  `service` 标签保持不变，所有 dashboard PromQL 无需改动。
+- **日志**：TX 侧 `alloy-tx`（`deploy/tx/alloy/config.alloy`）按 `com.docker.compose.service`
+  标签采集 business-api/keycloak/wotb-frontend，标签归一化为旧名 `wotb-backend`/`keycloak`/
+  `wotb-frontend` 后经 WireGuard 推给 Yecao Loki；部署车道是 `.github/workflows/alloy-tx.yml`，
+  deploy gate 用带生产标签的 canary 证明三条流端到端可达。
+- **公网 monitor**：`monitor.wotbtools.com` DNS 指向 **TX（118.25.18.105）**，由 TX `Caddyfile`
+  的站点块反代到 `10.20.0.2:3000`；TX-local 就绪路由 `http://caddy/_wotb/monitor/*` 供无 DNS 部署
+  验证。Yecao 宿主上的 Grafana Tofu root 走本机 `http://10.20.0.2:3000`，不依赖公网 DNS。
+- **验证**：`deploy/verify-observability.sh` 在一次性 alpine 容器内执行全部检查（不再引用退役的
+  `wotb-backend` 容器），覆盖五类 target `up==1`、datasource/dashboard API、双 canary 与 APK
+  脱敏 canary；Yecao 部署在数据链路失败时仍只输出非阻塞的 `OBSERVABILITY DEGRADED`。
+
 ## 1. 架构总览
 
 ```
@@ -95,6 +115,11 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 ## 2. `monitor.wotbtools.com`：DNS、HTTPS、反向代理
 
+> **2026-09 迁移后**：本节前半部分描述的是旧 Yecao 单机架构（frontend nginx server 块 + host 级
+> Caddy）的历史实现，容器已随业务退役。现行路径见第 0 节：DNS 指向 TX，TLS 由 TX Caddy 终止，
+> 上游是 Yecao 的 WireGuard-only Grafana `10.20.0.2:3000`；仓库内配置为 `deploy/tx/Caddyfile` 的
+> `monitor.wotbtools.com` 站点块。`GF_SERVER_ROOT_URL` 契约不变。
+
 仓库内已完成的部分：
 
 - `deploy/nginx/nginx.conf`：新增 `server_name monitor.wotbtools.com` 的 server 块，使用 Docker embedded DNS `127.0.0.11` 在请求运行时解析 `grafana:3000`，并透传 `X-Forwarded-*`、支持 WebSocket（Grafana Live）。
@@ -163,7 +188,7 @@ dashboard 与运行时链路由 CI 的独立 runtime smoke 验证；生产运行
 main push 由服务 owner workflow 按各自路径规则独立触发。应用 image owner 是
 `business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 与 `minio.yml`；固定 runtime
 与 root owner 是 `caddy.yml`、`rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、
-与本 `observability.yml`。每个 workflow 使用自己的 staging、当前 main SHA 检查、
+`alloy-tx.yml`（TX 日志采集）与本 `observability.yml`。每个 workflow 使用自己的 staging、当前 main SHA 检查、
 验证和手动入口；TX 的 TCR 镜像只属于前三个 TX 应用，Yecao 的 GHCR 镜像只属于 parser-worker/MinIO。
 不相关服务不会因统一 release planner 被选择。生产维护队列不会因新 push 取消已开始的操作，
 host mutation 另有 `flock` 串行化；过期 SHA 在 mutation 前 fail closed。

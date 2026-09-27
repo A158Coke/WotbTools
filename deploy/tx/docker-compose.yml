@@ -139,9 +139,12 @@ services:
 
   # TX business runtime: one Spring Boot process that serves every public
   # business endpoint and owns the distributed replay control plane (the
-  # single-runtime decision). It publishes no port at all; only TX-internal
-  # peers (frontend nginx, the Caddy readiness surface, the deployment
-  # health-probe) may reach it on wotb_tx_internal.
+  # single-runtime decision). It publishes exactly one port: the dedicated
+  # management surface bound to the WireGuard address only, so the Yecao
+  # Prometheus can scrape business metrics across the existing TX<->Yecao link.
+  # The application surface and everything else stay TX-internal peers only
+  # (frontend nginx, the Caddy readiness surface, the deployment health-probe)
+  # on wotb_tx_internal.
   business-api:
     # The same business image, published as wotbtools-business-api; the TX service
     # name is intentionally distinct so production metadata can never confuse the
@@ -233,6 +236,13 @@ services:
       BOOST_AUTO_CONFIRM_SCAN_MS: "${BOOST_AUTO_CONFIRM_SCAN_MS:-300000}"
     volumes:
       - replay_data:/data/replays
+    ports:
+      # Observability scrape endpoint only: the Spring management port is bound
+      # to the WireGuard address so the Yecao Prometheus can reach
+      # /actuator/prometheus across the existing link. Never public, never
+      # loopback, and the application port 8087 stays unpublished. Same bind
+      # class as rabbitmq's WireGuard AMQP port above.
+      - "10.20.0.1:8088:8088"
     depends_on:
       - business-postgres
       - rabbitmq
@@ -240,16 +250,39 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
+  # TX log shipper: discovers this Compose project's business-api, keycloak, and
+  # wotb-frontend containers through the Docker socket and forwards their logs to
+  # the Yecao Loki over WireGuard. Labels are normalized to the legacy
+  # container_name values (wotb-backend/keycloak/wotb-frontend) so every Grafana
+  # log query keeps its pre-cutover identity.
+  alloy-tx:
+    image: grafana/alloy:v1.4.2
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      # Must stay a read-write mount: read-only bind mounts make the unix
+      # socket's connect() fail with EROFS on some kernels, which would leave
+      # discovery silently empty. Log shipping only reads container metadata
+      # and log streams through the Docker API.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+
   caddy:
     image: caddy:2.10.2-alpine
     ports:
       # Caddy is the TX production public ingress and owns 80/443 on every TX
       # interface by default. It is the only service in this stack allowed to
       # publish publicly: the two PostgreSQL ports, the Keycloak admin port and
-      # the RabbitMQ management port stay on 127.0.0.1, AMQP stays on the
-      # WireGuard address, and business-api/frontend publish nothing at all.
-      # An operator can still move the bind address with CADDY_HTTP_BIND or
-      # CADDY_HTTPS_BIND without editing this file.
+      # the RabbitMQ management port stay on 127.0.0.1, AMQP and the
+      # business-api management surface stay on the WireGuard address, and
+      # frontend/alloy-tx publish nothing at all. An operator can still move
+      # the bind address with CADDY_HTTP_BIND or CADDY_HTTPS_BIND without
+      # editing this file.
       - "${CADDY_HTTP_BIND:-0.0.0.0}:80:80"
       - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443"
       - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443/udp"

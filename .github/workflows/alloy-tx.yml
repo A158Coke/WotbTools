@@ -1,0 +1,127 @@
+name: TX Alloy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/alloy-tx.yml
+      - deploy/tx/alloy/**
+      - deploy/tx/docker-compose.yml
+      - deploy/tx/deploy.sh
+      - deploy/release-metadata.py
+      - deploy/validate-alloy-config.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/alloy-tx.yml
+    deploy/tx/alloy/**
+    deploy/tx/docker-compose.yml
+    deploy/tx/deploy.sh
+    deploy/release-metadata.py
+    deploy/validate-alloy-config.sh
+
+jobs:
+  deploy:
+    name: Reconcile the TX log shipper
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: tx-production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Freeze current main and reject stale source
+        id: identity
+        env:
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            [ "$REF_NAME" = refs/heads/main ] || { echo 'Manual deployment must dispatch from main.' >&2; exit 1; }
+          fi
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          echo "commit_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Recheck main immediately before production staging
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+      - name: Prepare TX staging
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          script: |
+            set -eu
+            root=/opt/wotb-tx
+            rm -rf -- "$root/deploy.incoming/deploy/tx"
+            mkdir -p "$root/deploy.incoming/deploy/tx"
+      - name: Stage the TX runtime tree, the shared contract, and the Alloy validator
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx,deploy/release-metadata.py,deploy/validate-alloy-config.sh
+          target: /opt/wotb-tx/deploy.incoming
+          overwrite: true
+      - name: Reject stale main before TX mutation
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+      - name: Reconcile alloy-tx under one TX host lock
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 20m
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX
+          script: |
+            set -euo pipefail
+            exec 9>/opt/wotb-tx/.deploy.lock
+            flock -n 9 || { echo 'Another TX production deployment is running.' >&2; exit 1; }
+            export WOTB_DEPLOY_LOCK_FD=9
+            export WOTB_DEPLOY_SERVICE=alloy-tx
+            export WOTB_DEPLOY_CONFIG_SHA='${{ steps.identity.outputs.commit_sha }}'
+            export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
+            bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
+        env:
+          WOTB_DEPLOY_SERVICE: alloy-tx
+          WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
+          TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
