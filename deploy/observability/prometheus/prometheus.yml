@@ -6,11 +6,15 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  # The business runtime (business-api) runs on TX and publishes its management
+  # port on the TX WireGuard address only; Prometheus dials it across the
+  # existing TX<->Yecao WireGuard link. The job name stays `wotb-backend` so all
+  # dashboard PromQL and the verification contract keep their stable identity.
   - job_name: wotb-backend
     metrics_path: /actuator/prometheus
     static_configs:
       - targets:
-          - wotb-backend:8088
+          - 10.20.0.1:8088
         labels:
           service: wotb-backend
 

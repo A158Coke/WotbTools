@@ -212,6 +212,7 @@ def matches_input(patterns, path, is_directory=False):
 production_owners = (
     "business-api", "frontend", "keycloak", "parser-worker", "minio",
     "rabbitmq", "business-postgres", "keycloak-postgres", "observability", "caddy",
+    "alloy-tx",
 )
 image_owners = {"business-api", "frontend", "keycloak", "parser-worker", "minio"}
 production_concurrency = {
