@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["crates/replay-core", "crates/replay-wasm"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+serde-pickle = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true

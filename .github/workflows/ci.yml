@@ -764,6 +764,48 @@ jobs:
             keycloak|keycloak-postgres|grafana) ;;
             *) exit 1 ;;
           esac
+  replay_engine:
+    name: Replay engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+      - name: Format
+        working-directory: replay-engine
+        run: cargo fmt --all --check
+      - name: Clippy
+        working-directory: replay-engine
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        working-directory: replay-engine
+        run: cargo test --workspace
+      - name: Install wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
+      - name: Build WASM (node boundary)
+        working-directory: replay-engine
+        run: |
+          set -euo pipefail
+          cargo build -p replay-wasm --target wasm32-unknown-unknown --release
+          wasm-bindgen --target nodejs --out-dir crates/replay-wasm/pkg \
+            target/wasm32-unknown-unknown/release/replay_wasm.wasm
+      - name: Build WASM (browser boundary)
+        working-directory: replay-engine
+        run: |
+          set -euo pipefail
+          wasm-bindgen --target web --out-dir crates/replay-wasm/pkg-web \
+            target/wasm32-unknown-unknown/release/replay_wasm.wasm
+      - name: WASM boundary smoke (node)
+        working-directory: replay-engine
+        run: node tests/wasm-smoke.mjs
+      - name: WASM boundary smoke (headless Chromium)
+        working-directory: replay-engine
+        run: node tests/browser-wasm-smoke.mjs
   required:
     needs:
       - pr_identity
@@ -779,6 +821,7 @@ jobs:
       - observability_config
       - deploy_smoke
       - tofu_plans
+      - replay_engine
     if: always()
     name: CI / Required Gate
     runs-on: ubuntu-latest
@@ -799,6 +842,7 @@ jobs:
           OBSERVABILITY: ${{ needs.observability_config.result }}
           DEPLOY_SMOKE: ${{ needs.deploy_smoke.result }}
           TOFU_PLANS: ${{ needs.tofu_plans.result }}
+          REPLAY_ENGINE: ${{ needs.replay_engine.result }}
         shell: bash
         run: |
           set -euo pipefail
@@ -822,5 +866,6 @@ jobs:
           observability_config|$OBSERVABILITY
           deploy_smoke|$DEPLOY_SMOKE
           tofu_plans|$TOFU_PLANS
+          replay_engine|$REPLAY_ENGINE
           EOF
           [ "$failed" -eq 0 ]

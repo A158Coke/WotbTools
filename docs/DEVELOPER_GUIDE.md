@@ -115,6 +115,40 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 `.github/workflows/ci.yml` 是唯一 PR validation workflow，始终运行 Python、backend、Keycloak provider/runtime、frontend（含两套真实浏览器回归）、HTTP contract、Android、observability、deployment smoke 與六个 OpenTofu roots，并由稳定的 `CI / Required Gate` 汇总。Workflow 保留 PR/base/head SHA 身份校验；不使用自研 changed-path selector，也不在 workflow trigger 上设置 paths，以免 required check 被跳过后保持 pending。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
+
+### Replay Engine（Rust/WASM）
+
+`.wotbreplay` 的解析权威是客户端 Replay Engine，位于 `replay-engine/`（Cargo workspace）：
+
+```text
+replay-engine/
+├── Cargo.toml
+└── crates/
+    ├── replay-core/   # 容器 / pickle / protobuf framing + result、stream facts
+    │                  # 禁止 HTTP/DB/框架/文件系统专用 API，只接受 bytes 或 Read + Seek
+    └── replay-wasm/   # wasm-bindgen 边界：parseResult() / parseStream() → JSON
+```
+
+工具链与本地命令：
+
+```bash
+rustup toolchain install stable-x86_64-pc-windows-gnu   # 本机无 MSVC linker 时用 GNU host
+rustup target add wasm32-unknown-unknown
+cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo build -p replay-wasm --target wasm32-unknown-unknown --release
+cargo install wasm-bindgen-cli --version 0.2.129 --locked   # 与本 workspace 的 wasm-bindgen 版本一致
+wasm-bindgen --target nodejs --out-dir crates/replay-wasm/pkg \
+  target/wasm32-unknown-unknown/release/replay_wasm.wasm
+wasm-bindgen --target web --out-dir crates/replay-wasm/pkg-web \
+  target/wasm32-unknown-unknown/release/replay_wasm.wasm
+node tests/wasm-smoke.mjs           # Node 边界
+node tests/browser-wasm-smoke.mjs   # headless Chromium（主线程 + module worker），复用 frontend/scripts/browser-chrome.mjs
+```
+
+`ci.yml` 的 `replay_engine` job 使用同一组命令（不用 wasm-pack，避免运行时下载与未锁定安装脚本）。
+
+约定：解析预算与 strict contiguous framing 见 [`docs/reference/replay-data.md`](reference/replay-data.md)；协议语义权威按 [`docs/research/replay/README.md`](research/replay/README.md) 的读取顺序；u64 identifier（`arenaId` / `gameAccountId` / `vehicleId`）过 WASM/JSON 边界一律用字符串。`replay-engine/**` 由 `ci.yml` 的 replay engine job 验证，`CI / Required Gate` 仍是唯一 required check。
 ---
 
 ## 后端架构速览

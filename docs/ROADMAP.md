@@ -4,7 +4,7 @@
 
 ## Now
 
-- 稳定当前 Replay Workspace、AI Review、Battle Playback、Hall of Fame 与分布式 Replay Processing 生产链路。
+- 迁移 Replay 解析权威到客户端 Replay Engine（Rust/WASM，`replay-engine/`）；迁移期间保持 Replay Workspace、AI Review、Battle Playback 与 Hall of Fame 可用，现有分布式 Replay Processing 链路在客户端 parity 全部通过前继续服务生产。
 - 持续降低 Replay 事实模型中的 UNKNOWN / heuristic 范围，但只在存在可验证证据时提升语义等级。
 - 完成当前认证入口与生产身份配置的稳定化，保持普通用户通过受控 IdP 登录。
 
@@ -19,12 +19,12 @@
 ## Research
 
 - **进场满血覆盖率**：继续用真实 Replay 扩大可证明覆盖率，减少车辆基础 HP fallback；证据不足时保持 fail-closed。
-- **战斗表现指标回归**：使用真实比赛批量样本验证贡献度、KAST、Impact 等派生指标的分布与口径。
 - **Replay Protocol**：继续将逆向结论收敛到 Canonical Replay Facts；未证明字段保持 UNKNOWN 或 version-gated。
 - **AI Review 质量**：继续扩展 Evidence Contract、Evaluation Harness 与回归案例，避免把外部知识或模型推断当成 Replay 事实。
 
 ## Not planned
 
 - 不重新建立已经退役的代练业务。
-- 不恢复 TX 本地 Replay Parsing；生产 Replay Processing 保持 Control Plane / Parser Worker 分离。
-- 不维护第二套 Replay Parser、Rating 事实源或 AI 专用解析链。
+- 不在客户端 Replay Engine 之外保留第二套 Replay Parser：解析权威是 `replay-engine/`（Web 与 Android 共用同一引擎）；服务端解析执行平面（`parser-worker`、parser MQ 拓扑）随迁移退役，不再作为长期 authority。
+- 服务端不重新承担 Replay 解析执行：服务端只保留 schema validation / dedup / authorization / 共享状态与 AI 编排。
+- 不维护第二套 Rating 事实源或 AI 专用解析链。

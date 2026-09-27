@@ -1,0 +1,20 @@
+[package]
+name = "replay-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "WotBTools client replay engine core: .wotbreplay container, pickle and protobuf framing, canonical battle result"
+
+[dependencies]
+serde = { workspace = true }
+serde_bytes = "0.11"
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+zip = { workspace = true }
+serde-pickle = { workspace = true }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dev-dependencies]
+zip = { workspace = true }

@@ -1,0 +1,4 @@
+# wasm-bindgen output (produced by the CI `replay_engine` job and the local commands in
+# docs/DEVELOPER_GUIDE.md); never committed.
+crates/replay-wasm/pkg/
+crates/replay-wasm/pkg-web/
