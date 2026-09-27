@@ -12,8 +12,15 @@
 
 pub mod batch;
 pub mod eligibility;
+pub mod league;
 pub mod normalizer;
 pub mod trade;
+
+pub use league::{
+    classify, is_league, team_auto_name, team_name_source, LeagueRatingMode,
+    ARENA_BONUS_TYPE_TOURNAMENT, ARENA_BONUS_TYPE_TRAINING, MAJORITY_THRESHOLD,
+    NAME_SOURCE_CLAN_MAJORITY, NAME_SOURCE_UNNAMED,
+};
 
 pub use batch::{
     observed_mean, player_batch_rating, require_observation, team_batch_rating, BatchRatingError,

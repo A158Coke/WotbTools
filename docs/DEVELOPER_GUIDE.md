@@ -136,6 +136,8 @@ rustup toolchain install stable-x86_64-pc-windows-gnu   # 本机无 MSVC linker 
 rustup target add wasm32-unknown-unknown
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+# Windows 上若上一条报 `Access is denied (os error 5)`（安全代理拒绝执行单个测试二进制，非代码问题），
+# 改用逐目标调用：cargo test -p replay-core --lib / --test fixtures / --test rating_parity / --test aggregate_parity
 cargo build -p replay-wasm --target wasm32-unknown-unknown --release
 cargo install wasm-bindgen-cli --version 0.2.129 --locked   # 与本 workspace 的 wasm-bindgen 版本一致
 wasm-bindgen --target nodejs --out-dir crates/replay-wasm/pkg \
