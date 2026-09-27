@@ -5,9 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/keycloak-postgres.yml
-      - deploy/release-metadata.py
-      - deploy/tx/deploy.sh
-      - deploy/tx/docker-compose.yml
+      - deploy/tx/keycloak-postgres.compose.yml
       - infra/tofu/postgres-keycloak/**
   workflow_dispatch:
 
@@ -22,9 +20,7 @@ concurrency:
 env:
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/keycloak-postgres.yml
-    deploy/release-metadata.py
-    deploy/tx/deploy.sh
-    deploy/tx/docker-compose.yml
+    deploy/tx/keycloak-postgres.compose.yml
     infra/tofu/postgres-keycloak/**
 
 jobs:
@@ -52,30 +48,18 @@ jobs:
           [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'Keycloak PostgreSQL workflow requires main.' >&2; exit 1; }
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'The event SHA must be a full lowercase commit SHA.' >&2; exit 1; }
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo 'Checkout SHA differs from the event SHA.' >&2; exit 1; }
-          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
-            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh"             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Stage TX runtime and Keycloak PostgreSQL root
+      - name: Stage Keycloak PostgreSQL runtime and OpenTofu root
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx,deploy/release-metadata.py,infra/tofu/postgres-keycloak
+          source: deploy/tx/keycloak-postgres.compose.yml,infra/tofu/postgres-keycloak
           target: /opt/wotb-tx/tofu.incoming/${{ steps.source.outputs.source_sha }}
-          overwrite: true
-
-      - name: Stage TX runtime inputs
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx,deploy/release-metadata.py
-          target: /opt/wotb-tx/deploy.incoming
           overwrite: true
 
       - name: Reject stale main before TX mutation
@@ -87,10 +71,9 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
         run: |
           set -euo pipefail
-          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
-            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh"             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
-      - name: Reconcile runtime, apply exact Keycloak PostgreSQL plan, and verify
+      - name: Reconcile PostgreSQL runtime, apply exact plan, and verify
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
@@ -98,40 +81,63 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: SOURCE_SHA,WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,KC_DB_PASSWORD_VERSION
+          envs: SOURCE_SHA,WOTB_DEPLOY_CONFIG_SHA,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_DB_PASSWORD,KC_DB_PASSWORD_VERSION
           script: |
             set -Eeuo pipefail
             [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
             [[ "$WOTB_DEPLOY_CONFIG_SHA" == "$SOURCE_SHA" ]]
-            root="/opt/wotb-tx/tofu.incoming/$SOURCE_SHA/infra/tofu/postgres-keycloak"
+
+            stage="/opt/wotb-tx/tofu.incoming/$SOURCE_SHA"
+            root="$stage/infra/tofu/postgres-keycloak"
+            compose="$stage/deploy/tx/keycloak-postgres.compose.yml"
             test -d "$root"
+            test -f "$compose"
+
             state_dir=/opt/wotb-tx/postgres-keycloak-tofu-state
             state_file="$state_dir/terraform.tfstate"
             state_marker="$state_dir/bootstrap-complete"
-            [[ -d "$state_dir" && ! -L "$state_dir" && -f "$state_file" && -s "$state_file" && ! -L "$state_file" && -f "$state_marker" && -s "$state_marker" && ! -L "$state_marker" ]] \
-              && grep -qx 'local-tofu-state-bootstrap-v1' "$state_marker" || {
+            [[ -d "$state_dir" && ! -L "$state_dir" && -f "$state_file" && -s "$state_file" && ! -L "$state_file" && -f "$state_marker" && -s "$state_marker" && ! -L "$state_marker" ]]               && grep -qx 'local-tofu-state-bootstrap-v1' "$state_marker" || {
               echo 'Local OpenTofu state is not bootstrapped or is unsafe; refusing to initialize an empty production state.' >&2
               exit 1
             }
-            test -f /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
+
             test -f /opt/wotb-tx/tofurc
             for name in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD KC_DB_PASSWORD KC_DB_PASSWORD_VERSION; do
               test -n "$(printenv "$name")" || { echo "$name is required." >&2; exit 2; }
             done
+            command -v docker >/dev/null
             command -v flock >/dev/null
             command -v tofu >/dev/null
             command -v jq >/dev/null
+
             exec 9>/opt/wotb-tx/.deploy.lock
             flock -n 9 || { echo 'Another TX production mutation is running.' >&2; exit 1; }
-            export WOTB_DEPLOY_LOCK_FD=9
-            KC_DB_USERNAME=not-configured \
-              KC_DB_PASSWORD=not-configured \
-              bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
+
+            docker compose -f "$compose" config >/dev/null
+            docker compose -f "$compose" pull keycloak-postgres
+            docker compose -f "$compose" up -d --no-deps --force-recreate keycloak-postgres
+
+            runtime_ready=false
+            for attempt in $(seq 1 30); do
+              if docker compose -f "$compose" exec -T keycloak-postgres                 pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d postgres >/dev/null 2>&1; then
+                runtime_ready=true
+                break
+              fi
+              [ "$attempt" -lt 30 ] && sleep 2
+            done
+            [ "$runtime_ready" = true ] || {
+              echo 'Keycloak PostgreSQL runtime did not become ready.' >&2
+              docker compose -f "$compose" ps -a keycloak-postgres >&2 || true
+              docker compose -f "$compose" logs --tail 120 keycloak-postgres >&2 || true
+              exit 1
+            }
+
             export TF_CLI_CONFIG_FILE=/opt/wotb-tx/tofurc
-            export TF_VAR_postgresql_admin_username=kc_admin
+            export TF_VAR_postgresql_admin_username="$KC_POSTGRES_ADMIN_USER"
             export TF_VAR_postgresql_admin_password="$KC_POSTGRES_ADMIN_PASSWORD"
             export TF_VAR_keycloak_role_password="$KC_DB_PASSWORD"
             export TF_VAR_keycloak_role_password_version="$KC_DB_PASSWORD_VERSION"
+
             umask 077
             cd "$root"
             trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
@@ -147,16 +153,15 @@ jobs:
               echo 'Keycloak PostgreSQL second plan is malformed or not clean.' >&2
               exit 1
             fi
-            docker compose -f /opt/wotb-tx/deploy/docker-compose.yml exec -T keycloak-postgres pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d keycloak
+
+            docker compose -f "$compose" exec -T keycloak-postgres               pg_isready -U "$KC_POSTGRES_ADMIN_USER" -d keycloak
+
+            install -d -m 700 /opt/wotb-tx/deploy
+            install -m 600 "$compose" /opt/wotb-tx/deploy/keycloak-postgres.compose.yml
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
-          WOTB_DEPLOY_SERVICE: keycloak-postgres
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.source.outputs.source_sha }}
-          WOTB_DEPLOY_IMAGE_TAG: ''
-          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ''
-          TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
           KC_POSTGRES_ADMIN_USER: kc_admin
           KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
-          KC_DB_USERNAME: keycloak
           KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
           KC_DB_PASSWORD_VERSION: ${{ vars.TX_KC_DB_PASSWORD_VERSION || '1' }}
