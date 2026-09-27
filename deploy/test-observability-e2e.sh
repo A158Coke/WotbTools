@@ -125,6 +125,7 @@ docker run -d --name "$BACKEND_TX" --network "$NETWORK" \
   alpine:3.22 sh -c "while true; do echo event=backend_tx_smoke marker=$MARKER_TX; sleep 1; done" >/dev/null
 docker run -d --name "$ALLOY_TX" --network "$NETWORK" \
   -p 127.0.0.1::12345 \
+  -e WOTB_LOKI_URL="http://loki:3100/loki/api/v1/push" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$ROOT/deploy/tx/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
   grafana/alloy:v1.4.2 run --server.http.listen-addr=0.0.0.0:12345 \
