@@ -1,5 +1,5 @@
 name: Ops / Database Backup
-run-name: Ops / Backup production PostgreSQL by @${{ github.actor }}
+run-name: Ops / Backup production state by @${{ github.actor }}
 
 on:
   schedule:
@@ -16,7 +16,8 @@ concurrency:
   queue: max
 
 jobs:
-  backup:
+  tx_databases:
+    name: Back up TX PostgreSQL databases
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: tx-production
@@ -52,7 +53,9 @@ jobs:
             exec 9>/opt/wotb-tx/.deploy.lock
             flock -n 9 || { echo 'Another TX production mutation is running.' >&2; exit 1; }
 
-            WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT=deploy \
+            # Keep the existing Business PostgreSQL runtime identity explicit;
+            # this backup-owner PR must not redefine how that runtime is started.
+            WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT=wotb-tx-business-postgres \
               "$business_script"
             WOTB_TX_KEYCLOAK_POSTGRES_COMPOSE_PROJECT=deploy \
               "$keycloak_script"
@@ -61,6 +64,16 @@ jobs:
           TX_BUSINESS_DB_NAME: ${{ vars.TX_BUSINESS_DB_NAME }}
           KC_POSTGRES_ADMIN_USER: kc_admin
           KC_DB_NAME: keycloak
+
+  tx_tofu_state:
+    name: Back up TX OpenTofu state
+    needs: [tx_databases]
+    if: ${{ always() && needs.tx_databases.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: tx-production
+    steps:
+      - uses: actions/checkout@v5
 
       - name: Stage TX local OpenTofu state backup
         uses: appleboy/scp-action@v1
@@ -85,6 +98,13 @@ jobs:
             script=/opt/wotb-tx/ops/deploy/tofu-local-state-backup.sh
             chmod 700 "$script"
             "$script" tx
+
+  yecao_tofu_state:
+    name: Back up Yecao OpenTofu state
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
 
       - name: Stage Yecao local OpenTofu state backup
         uses: appleboy/scp-action@v1
