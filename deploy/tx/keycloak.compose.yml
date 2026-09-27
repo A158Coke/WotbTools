@@ -28,3 +28,6 @@ services:
 networks:
   default:
     name: wotb_tx_internal
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16
