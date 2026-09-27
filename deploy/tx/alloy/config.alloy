@@ -138,8 +138,10 @@ loki.process "android_download" {
 }
 
 // Yecao Loki 的 WireGuard-only 摄入端口（deploy/docker-compose.prod.yml）。
+// E2E smoke 测试网络里不存在 WireGuard 地址，因此允许用 WOTB_LOKI_URL 覆盖；
+// 生产 compose 不设置该变量，端点保持 10.20.0.2:3100 不变。
 loki.write "default" {
 	endpoint {
-		url = "http://10.20.0.2:3100/loki/api/v1/push"
+		url = coalesce(env("WOTB_LOKI_URL"), "http://10.20.0.2:3100/loki/api/v1/push")
 	}
 }
