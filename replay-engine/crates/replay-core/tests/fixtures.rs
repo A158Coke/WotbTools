@@ -61,15 +61,107 @@ fn parses_every_committed_fixture() {
     }
 }
 
+/// Result parity against the committed Java golden
+/// (`java/wotb-core/src/test/java/com/wotb/core/ReplayParserFixtureTest.java:42-76`).
+///
+/// The expectations are the repository's own authoritative numbers, so a Rust regression in tag
+/// mapping, team resolution or roster joins fails here instead of silently shipping.
 #[test]
-fn random_battle_fixture_is_a_full_roster() {
+fn random_battle_fixture_matches_the_java_golden() {
     let result = parse_result(&fixture_bytes("random-battle-example.wotbreplay")).expect("parses");
-    assert_eq!(result.participants.len(), 14, "11.19 corpus is 7v7");
+
+    assert_eq!(result.arena_id, "1168689173149065733");
+    assert_eq!(result.map.as_deref(), Some("rift"));
+    assert_eq!(result.winner_team, Some(2));
+    assert_eq!(result.participants.len(), 14);
+    assert!(
+        result.roster_complete,
+        "real 7v7 fixture: #201 and #301 account sets agree"
+    );
+
+    let damage_dealt = |team: i64| -> i64 {
+        result
+            .participants
+            .iter()
+            .filter(|p| p.team == Some(team))
+            .filter_map(|p| p.damage_dealt)
+            .sum()
+    };
+    assert_eq!(damage_dealt(1), 12917, "team 1 damage dealt");
+    assert_eq!(damage_dealt(2), 13600, "team 2 damage dealt");
+
     assert_eq!(
-        result.game_version.as_deref().map(str::is_empty),
-        Some(false)
+        result.participants.iter().filter(|p| p.survived).count(),
+        1,
+        "survivors"
+    );
+    assert!(
+        result
+            .participants
+            .iter()
+            .all(|p| p.nickname.as_deref().is_some_and(|name| !name.is_empty())),
+        "every settled combatant resolves a non-empty roster nickname"
     );
     assert!(result.duration_sec.unwrap_or(0.0) > 0.0);
+
+    // Battle timing parity (`ReplayParser.java:238-249`): settlement root5 decides the duration,
+    // the clamp is 420s, and implausible epochs never surface as a battle time.
+    assert!(
+        result.duration_sec.unwrap_or(0.0) <= 420.0,
+        "duration must be clamped to 420s"
+    );
+    if let Some(settlement) = result.settlement_duration_sec.filter(|value| *value > 0.0) {
+        assert_eq!(
+            result.duration_sec,
+            Some(settlement.min(420.0)),
+            "settlement root5 is the duration authority"
+        );
+    }
+    if let Some(battle_time) = result.battle_time {
+        assert!(
+            battle_time > 1_388_534_400,
+            "battle time must be a plausible epoch, got {battle_time}"
+        );
+    }
+}
+
+/// Structural parity against `ReplayParserFixtureTest.committedFixturesAreStructurallyValid`.
+#[test]
+fn committed_fixtures_satisfy_the_structural_invariants() {
+    for name in FIXTURES {
+        let result = parse_result(&fixture_bytes(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(result.participants.len(), 14, "{name}: settled combatants");
+
+        let mut kills = [0i64; 3];
+        let mut deaths = [0i64; 3];
+        for participant in &result.participants {
+            let shots = participant.shots.unwrap_or(0);
+            let hits = participant.hits_dealt.unwrap_or(0);
+            let penetrations = participant.penetrations_dealt.unwrap_or(0);
+            assert!(
+                shots >= hits && hits >= penetrations,
+                "{name}: shots >= hits >= penetrations"
+            );
+            if let Some(team) = participant.team.filter(|t| (1..=2).contains(t)) {
+                let index = team as usize;
+                kills[index] += participant.kills.unwrap_or(0);
+                if !participant.survived {
+                    deaths[index] += 1;
+                }
+            }
+        }
+        assert_eq!(deaths[2], kills[1], "{name}: team1 kills == team2 deaths");
+        assert_eq!(deaths[1], kills[2], "{name}: team2 kills == team1 deaths");
+
+        // The roster of this fixture carries non-combatant extras, so the strict Java semantics
+        // (`#201` set == `#301` set) must report incomplete rather than papering over it.
+        if name.contains("cw-training-15-14") {
+            assert!(
+                !result.roster_complete,
+                "{name}: roster has non-combatant extras -> roster_complete must stay false"
+            );
+        }
+    }
 }
 
 #[test]

@@ -144,6 +144,7 @@ wasm-bindgen --target web --out-dir crates/replay-wasm/pkg-web \
   target/wasm32-unknown-unknown/release/replay_wasm.wasm
 node tests/wasm-smoke.mjs           # Node 边界
 node tests/browser-wasm-smoke.mjs   # headless Chromium（主线程 + module worker），复用 frontend/scripts/browser-chrome.mjs
+node tests/corpus-scan.mjs <dir>    # 本地语料扫描（gitignored 样本，例如 common/data；非 CI 测试）
 ```
 
 `ci.yml` 的 `replay_engine` job 使用同一组命令（不用 wasm-pack，避免运行时下载与未锁定安装脚本）。
