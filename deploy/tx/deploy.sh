@@ -426,6 +426,10 @@ probe_http() {
   local service="$1" url="$2" host_header="${3:-}" output stderr_file exit_code stderr_output
   local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
     --max-time "$PROBE_MAX_TIME_SEC" --output /dev/null --write-out '%{http_code}')
+  local -a compose_args=(-p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE")
+  if [ "${TX_DEPLOY_LIBRARY_ONLY:-0}" = 1 ]; then
+    compose_args=(-f "$LIVE_COMPOSE")
+  fi
   PROBE_LAST_SERVICE="$service"
   PROBE_LAST_URL="$url"
   PROBE_LAST_HTTP_STATUS="unavailable"
@@ -433,7 +437,7 @@ probe_http() {
   [ -n "$host_header" ] && args+=(--header "$host_header")
   args+=("$url")
   stderr_file="$(mktemp)" || { FAILED_SERVICE="$service"; return 1; }
-  if output="$(docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>"$stderr_file")"; then
+  if output="$(docker compose "${compose_args[@]}" run --rm --no-deps health-probe "${args[@]}" 2>"$stderr_file")"; then
     exit_code=0
   else
     exit_code=$?

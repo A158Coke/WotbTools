@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 重新引入「前端 400s / nginx 420s / 后端 400s」式的旧链路。
  *
  * <p>业务运行时在双云 cutover 后由 TX 承载，因此整条超时链的部署锚点是
- * {@code deploy/tx/docker-compose.yml} 与 {@code business-api.yml} owner workflow。已退役的 Yecao
+ * {@code deploy/tx/business-api.compose.yml} 与 {@code business-api.yml} owner workflow。已退役的 Yecao
  * {@code deploy/docker-compose.prod.yml} 与 {@code deploy/deploy.sh} 不得再携带这些变量：
  * 一旦携带，就等于在 Yecao 重新长出一个不受本契约保护的 AI 运行时。
  */
@@ -58,8 +58,8 @@ class AiTimeoutChainContractTest {
         assertFileContains("business-api.yml",
                 repoPath(".github", "workflows", "business-api.yml"),
                 "AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC: '1100'");
-        assertFileContains("docker-compose.tx.yml",
-                repoPath("deploy", "tx", "docker-compose.yml"),
+        assertFileContains("business-api.compose.yml",
+                repoPath("deploy", "tx", "business-api.compose.yml"),
                 "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-1100}");
         assertFileContains(".env.example",
                 repoPath(".env.example"),
@@ -82,8 +82,8 @@ class AiTimeoutChainContractTest {
         assertFileContains(".env.example",
                 repoPath(".env.example"),
                 "AI_MODEL=deepseek-v4-flash");
-        assertFileContains("docker-compose.tx.yml",
-                repoPath("deploy", "tx", "docker-compose.yml"),
+        assertFileContains("business-api.compose.yml",
+                repoPath("deploy", "tx", "business-api.compose.yml"),
                 "AI_MODEL: \"${AI_MODEL:-deepseek-v4-flash}\"");
         assertFileContains("business-api.yml",
                 repoPath(".github", "workflows", "business-api.yml"),
