@@ -22,6 +22,7 @@
 4. `research-completion-audit-11.19.md` — completion gate / remaining-boundary audit。
 5. `WOTB_REPLAY_PROTOCOL_11_19_COMPLETE_REFERENCE.md` — 较早英文综合参考；若与 1–4 冲突，以 1–4 为准。
 6. `protocol.md` 和早期 broad probe notes — 研究轨迹与历史上下文。
+7. `external-wot-blitz-agent-cross-validation.md` — 外部 WoT-Blitz-Agent 研究的 clean-room 交叉验证与待本地闭合候选；**external evidence 不能单独提升 canonical evidence grade**。
 
 `main/docs/reference/replay-data.md` 等 11.18-era production docs 不能覆盖 PR147 current controlled evidence；其中部分 Type4、Type10 tail、legacy direct-damage 解释已被后续研究推翻或收敛。
 
