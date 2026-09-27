@@ -11,12 +11,19 @@
 //! not a second copy of the battle facts.
 
 pub mod batch;
+pub mod eligibility;
 pub mod normalizer;
 pub mod trade;
 
 pub use batch::{
     observed_mean, player_batch_rating, require_observation, team_batch_rating, BatchRatingError,
     PLAYER_PRIOR_WEIGHT, TEAM_PRIOR_WEIGHT, V6_ANCHOR,
+};
+pub use eligibility::{
+    consistent, fingerprint, first_failure_code, validate, validate_copies, LeagueFailure,
+    CODE_ARENA_ID_MISSING, CODE_CONFLICTING_REPLAYS_FOR_ARENA, CODE_DUPLICATE_ACCOUNT_ID,
+    CODE_INVALID_STAT_FACTS, CODE_INVALID_TEAM, CODE_MISSING_TANK, CODE_NOT_SEVEN_VS_SEVEN,
+    CODE_NO_DECISIVE_WINNER,
 };
 pub use normalizer::{
     finite_positive, global_index, team_index, wilson_lower_bound, TOTAL_PLAYERS, WILSON_Z,
