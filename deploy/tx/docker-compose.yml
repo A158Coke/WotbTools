@@ -1,5 +1,9 @@
 name: deploy
 
+# Every included fragment declares the same canonical networks.default (the name
+# wotb_tx_internal plus the fixed 172.29.0.0/16 subnet). Compose refuses to import
+# a resource whose definition differs from the one already imported, so a new
+# fragment must repeat that block verbatim instead of declaring a bare `name:`.
 include:
   - path: common.compose.yml
   - path: business-postgres.compose.yml
