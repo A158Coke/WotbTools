@@ -3,15 +3,6 @@ name: MinIO
 on:
   push:
     branches: [main]
-    paths:
-      - .github/workflows/minio.yml
-      - .dockerignore
-      - docker/Dockerfile.minio
-      - deploy/docker-compose.minio.yml
-      - deploy/minio-deploy.sh
-      - deploy/minio/**
-      - deploy/release-metadata.py
-      - infra/tofu/minio/**
   workflow_dispatch:
 
 permissions:
@@ -26,8 +17,12 @@ env:
     deploy/docker-compose.minio.yml
     deploy/minio-deploy.sh
     deploy/minio/**
-    deploy/release-metadata.py
+    deploy/check-latest-main.sh
     infra/tofu/minio/**
+
+concurrency:
+  group: deploy-minio
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -129,6 +124,19 @@ jobs:
           revision="$(docker image inspect --format='{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE@$digest")"
           [ "$revision" = "$SOURCE_SHA" ] || { echo 'Published MinIO image does not contain the frozen OCI revision.' >&2; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Publish latest only from current main
+        env:
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          IMAGE: ${{ steps.identity.outputs.image }}
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          DIGEST: ${{ steps.verify.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-latest-main.sh" "$SOURCE_SHA"
+          crane cp "$IMAGE@$DIGEST" "$REPOSITORY:latest"
+
 
   smoke:
     needs: [build]
@@ -251,7 +259,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: deploy/docker-compose.minio.yml,deploy/minio-deploy.sh,deploy/release-metadata.py,deploy/minio
+          source: deploy/docker-compose.minio.yml,deploy/minio-deploy.sh,deploy/minio
           target: /opt/wotb/minio.incoming/${{ needs.build.outputs.commit_sha }}
           overwrite: true
       - name: Stage the exact MinIO OpenTofu root and provider mirror config
@@ -275,7 +283,7 @@ jobs:
           set -euo pipefail
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
-      - name: Reconcile MinIO, apply Tofu, verify, and commit metadata under one host lock
+      - name: Reconcile MinIO, apply Tofu, and verify under one host lock
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -283,18 +291,14 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 55m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,WOTB_DEPLOY_IMAGE_DIGEST,WOTB_DEPLOY_DEFER_METADATA,YECAO_MINIO_ROOT_USER,YECAO_MINIO_ROOT_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,YECAO_MINIO_ROOT_USER,YECAO_MINIO_ROOT_PASSWORD,YECAO_MINIO_WORKER_ACCESS_KEY,YECAO_MINIO_WORKER_SECRET_KEY,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY
           script: |
             set -euo pipefail
             exec 9>/opt/wotb/.deploy.lock
             flock -n 9 || { echo 'Another Yecao production deployment is running.' >&2; exit 1; }
             export WOTB_DEPLOY_LOCK_FD=9
-            export WOTB_DEPLOY_DEFER_METADATA=1
             export WOTB_DEPLOY_SERVICE=minio
             export WOTB_DEPLOY_CONFIG_SHA='${{ needs.build.outputs.commit_sha }}'
-            export WOTB_DEPLOY_IMAGE_TAG='${{ needs.build.outputs.image }}'
-            export WOTB_DEPLOY_IMAGE_COMMIT_SHA='${{ needs.build.outputs.commit_sha }}'
-            export WOTB_DEPLOY_IMAGE_DIGEST='${{ needs.build.outputs.digest }}'
             stage="/opt/wotb/minio.incoming/${{ needs.build.outputs.commit_sha }}"
             root="$stage/infra/tofu/minio"
             compose="$stage/deploy/docker-compose.minio.yml"
@@ -344,19 +348,9 @@ jobs:
               [ "$attempt" -lt 60 ] && sleep 2
             done
             [ "$health" = true ] || { echo 'MinIO final readiness verification failed after OpenTofu.' >&2; exit 1; }
-
-            python3 "$stage/deploy/release-metadata.py" update \
-              --host yecao --file /opt/wotb/production-release.json \
-              --service minio --config-sha "$WOTB_DEPLOY_CONFIG_SHA" \
-              --image-tag "$WOTB_DEPLOY_IMAGE_TAG" \
-              --image-commit-sha "$WOTB_DEPLOY_IMAGE_COMMIT_SHA"
         env:
           WOTB_DEPLOY_SERVICE: minio
           WOTB_DEPLOY_CONFIG_SHA: ${{ needs.build.outputs.commit_sha }}
-          WOTB_DEPLOY_IMAGE_TAG: ${{ needs.build.outputs.image }}
-          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
-          WOTB_DEPLOY_IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
-          WOTB_DEPLOY_DEFER_METADATA: '1'
           YECAO_MINIO_ROOT_USER: ${{ secrets.YECAO_MINIO_ROOT_USER }}
           YECAO_MINIO_ROOT_PASSWORD: ${{ secrets.YECAO_MINIO_ROOT_PASSWORD }}
           YECAO_MINIO_WORKER_ACCESS_KEY: ${{ secrets.YECAO_MINIO_WORKER_ACCESS_KEY }}

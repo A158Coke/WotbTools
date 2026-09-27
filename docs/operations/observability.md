@@ -165,10 +165,10 @@ main push 由服务 owner workflow 按各自路径规则独立触发。应用 im
 与 root owner 是 `caddy.yml`、`rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、
 与本 `observability.yml`。每个 workflow 使用自己的 staging、当前 main SHA 检查、
 验证和手动入口；TX 的 TCR 镜像只属于前三个 TX 应用，Yecao 的 GHCR 镜像只属于 parser-worker/MinIO。
-不相关服务不会因统一 release planner 被选择。生产维护队列不会因新 push 取消已开始的操作，
-host mutation 另有 `flock` 串行化；过期 SHA 在 mutation 前 fail closed。
+不相关服务不会因统一 release planner 被选择。应用 owner 在新 main 到来时取消旧运行，
+固定基础设施保留生产维护队列；host mutation 另有 `flock` 串行化，过期 SHA 在 mutation 前 fail closed。
 
-### Application gate 与 production metadata
+### Application gate 与镜像身份
 
 TX 应用 owner workflow 由 `deploy/tx/deploy.sh` 验证各自的 API/frontend/OIDC readiness；Business
 API 的 mutation 前检查还以只读 consumer 身份验证 PostgreSQL、Keycloak、RabbitMQ 与 MinIO，
@@ -176,22 +176,20 @@ parser-worker 检查 RabbitMQ 与 MinIO，再由容器存活判定 worker 运行
 dashboard 与日志 ingestion 失败只记 `OBSERVABILITY DEGRADED`，不让健康应用回退。部署失败由所属
 workflow 输出该服务诊断并停止确认失败的目标服务；不自动恢复旧镜像。
 
-metadata helper `deploy/release-metadata.py` 校验 schemaVersion 2、host/service ownership、
-完整 registry image reference、SHA 和 immutable tag，并用同目录原子更新与 0600 权限：
-TX `/opt/wotb-tx/production-release.json` 记录 business-api/frontend/keycloak，Yecao
-`/opt/wotb/production-release.json` 记录 parser-worker/minio。Config-only 成功只更新 configSha；
-固定上游 runtime 不记入应用 metadata。Metadata 缺失、损坏或镜像身份无法证明时 fail closed，
-不从 Compose 或运行容器补猜。
+main 是应用部署的唯一目标状态。各 owner workflow 构建、发布所属镜像的 `latest`，
+发布前确认 source SHA 仍为远端 main HEAD；旧 workflow 被新 main 取消。生产实际运行镜像与
+`BUILD_COMMIT` 可用 `docker inspect` 核对。固定基础设施独立管理持久 volume 与 OpenTofu state。
+
 
 backend 在 `ApplicationReadyEvent` 后记录 `WotBTools backend build=<commit> Flyway
 migration ceiling=<version>`。排查 schema/image 不匹配时，在 TX 日志中核对完整 build SHA 与
-metadata image tag/schema。
+运行容器的 image digest 与 schema。
 
 
 ### 单目标人工操作与数据库边界
 
 事故恢复通过对应应用 owner workflow 的单服务手动入口完成。镜像身份必须是当前 workflow 明确
-校验的 immutable SHA tag 和 registry digest；没有 `all` 或 `latest` 身份。schema 回退不是部署能力；
+发布的 `latest`；没有 `all` 选择器。schema 回退不是部署能力；
 Business PostgreSQL 归档验证及 disposable restore 见 `docs/operations/business-postgres.md`；Keycloak PostgreSQL 归档必须与 Business PostgreSQL 工具隔离处理。
 `database-backup.yml` 保持 VPS 本地双库备份边界；COS 上传、对象验证和 retention 尚未纳入该链路。
 
@@ -210,7 +208,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 > **禁止**使用 `docker compose down -v` 作为普通停止/回滚命令——它会删除所有 volume（含 PostgreSQL 数据）。
 
-> **应用失败处理**不由服务 owner workflow 自动切换旧版本：该 workflow 输出服务/image/status/log/schema 诊断并停止确认失败的目标 service，随后 workflow FAIL。operator 通过该应用 workflow 的单服务手动入口明确选择一个 immutable image identity；它不触碰数据库 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
+> **应用失败处理**不由服务 owner workflow 自动切换旧版本：该 workflow 输出服务/image/status/log/schema 诊断并停止确认失败的目标 service，随后 workflow FAIL。operator 通过该应用 workflow 的单服务手动入口重新部署当前 main 的 `latest`；它不触碰数据库 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
 
 ---
 

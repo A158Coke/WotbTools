@@ -695,13 +695,12 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
   `CI / Required Gate` 汇总全部结果。Backend 运行 Maven full reactor，frontend 运行类型检查、
   单测、两套真实浏览器回归和 build；部署 smoke 校验运行时契约。PR 验证不 push 镜像。
 - `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 与
-  `minio.yml` 分别 build、push 和部署一个应用服务；TX 的前三个镜像只发到 TCR，Yecao 的
-  parser-worker/MinIO 只发到 GHCR。每个 workflow 冻结完整 source SHA，发布不可变 `sha-<12>` tag，
-  核对 registry digest 后将精确 image identity 传给所属部署步骤。没有独立 Build workflow、
-  reusable Build/Deploy DAG、latest tag 或 all selector。
+  `minio.yml` 分别构建一个应用镜像。每个 workflow 保留 SHA tag 供诊断，并在确认 source SHA 仍为
+  远端 main HEAD 后发布 `latest`；部署只使用所属服务的 `latest`。服务级 concurrency 会取消旧 main
+  的工作流，Keycloak/MinIO 在 runtime 后继续执行各自的 OpenTofu 与最终验证。
 - `.github/workflows/caddy.yml` 独立负责 TX 网关：staged Caddy 配置与 assets 校验后只 reconcile
   Caddy，并验证 trusted TLS、redirect、前端/API、Keycloak 与 auth asset 路由。它不 build 应用镜像、
-  不依赖数据库或 Keycloak admin credentials，也不写应用镜像 metadata。
+  不依赖数据库或 Keycloak admin credentials。
 - `.github/workflows/rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml` 与
   `observability.yml` 分别拥有 RabbitMQ、两个 PostgreSQL 和 Yecao 观测运行时/Grafana root。
   各 workflow 自己执行 root 专属 safety guard、apply 后 clean second-plan/readiness；observability
@@ -709,15 +708,10 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 - 三个数据更新 workflow (`update-tankopedia.yml`、`update-equipment.yml`、`update-crew-skills.yml`)
   保持独立，生成 PR 后核对 open PR 的 main base、自动化 head branch 和精确 head SHA，再 dispatch
   `ci.yml`；CI 通过只读 GitHub API 核对该 run 仍验证同一 PR head。它们不自动 merge。
-- TX `/opt/wotb-tx/production-release.json` 只记录 business-api/frontend/keycloak；Yecao
-  `/opt/wotb/production-release.json` 只记录 parser-worker/minio。metadata 使用 schemaVersion 2、
-  同目录原子替换和 0600 权限；config-only 成功只推进 configSha，固定上游服务不写入此文件。
-  helper 是 `deploy/release-metadata.py`。不存在或损坏的 metadata、registry 不匹配、immutable
-  tag/digest 不匹配都 fail closed，不从运行容器猜镜像身份。
-- 固定上游服务的 Compose/config 变化只触发其对应 owner workflow，不构建应用镜像。生产 owner
-  workflow 使用不可取消的共享维护队列，并在关键 staging/mutation 边界拒绝过期 SHA，TX 与 Yecao
-  host mutation 由 `flock` 串行化。失败不自动回滚其他服务或数据库。切换 metadata v2 前仍须在合并前
-  读取实时 host 状态、冻结旧生产写入并预置经核对的实际镜像身份；本地/PR 结果不代表生产切换完成。
+- main 是应用的唯一目标状态；生产镜像来自当前 main 的 `latest`。TX 服务定义按 owner 分离，
+  各部署只渲染所属服务和通用探针。固定基础设施使用既有 volume、network 与 OpenTofu state，
+  不读取应用镜像发布记录。运行中的版本通过 `docker inspect`、镜像 digest 与 `BUILD_COMMIT` 查询。
+
 
 Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties` 的
 `wotbVersion` 是唯一版本来源，`versionCode` 由 SemVer 确定性计算；发布工作流

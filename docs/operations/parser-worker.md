@@ -168,8 +168,6 @@ starts it nor begins demanding its credentials:
 ```bash
 WOTB_DEPLOY_SERVICE=parser-worker \
 WOTB_DEPLOY_CONFIG_SHA=<40-hex main SHA> \
-WOTB_DEPLOY_IMAGE_TAG=ghcr.io/a158coke/wotbtools-parser-worker:sha-<12> \
-WOTB_DEPLOY_IMAGE_COMMIT_SHA=<40-hex image SHA> \
 bash deploy/deploy.sh
 ```
 

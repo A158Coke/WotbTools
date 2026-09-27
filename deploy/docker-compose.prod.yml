@@ -13,7 +13,7 @@ services:
   # outcome. No public port, no database credentials, no mounted job directory — PostgreSQL stays
   # the job authority on TX and RabbitMQ remains the delivery path.
   parser-worker:
-    image: ghcr.io/a158coke/wotbtools-parser-worker:${TAG:?TAG is required}
+    image: ghcr.io/a158coke/wotbtools-parser-worker:latest
     environment:
       RABBITMQ_HOST: "${PARSER_WORKER_RABBITMQ_HOST:-10.20.0.1}"
       RABBITMQ_PORT: "${PARSER_WORKER_RABBITMQ_PORT:-5672}"

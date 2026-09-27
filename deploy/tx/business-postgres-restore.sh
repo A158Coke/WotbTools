@@ -34,7 +34,7 @@ Options:
   --database NAME     disposable/scratch target database (never the source)
   --confirm TOKEN     exact opt-in token RESTORE-<scratch>
   --verify-only       only validate the archive and its SHA-256 sidecar
-  --compose-file PATH TX Compose file (default /opt/wotb-tx/deploy/docker-compose.yml)
+  --compose-file PATH TX owner Compose file (default /opt/wotb-tx/deploy/business-postgres.compose.yml)
 
 The script refuses to target the authoritative source database and prints the
 verification SQL an operator must run before declaring the archive restorable.

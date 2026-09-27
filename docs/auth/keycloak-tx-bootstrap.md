@@ -260,7 +260,7 @@ TX_RUNTIME_READY
 `parser-worker` token 在 `wotb.parser.dlq` 不为空时 FAIL（非空 DLQ 意味着至少一条回放永久失败或
 无法解码）。这是**必须人工处置**的状态，不允许通过删除证据让检查变绿：
 
-1. 只读确认权威状态：`docker compose -f /opt/wotb-tx/deploy/docker-compose.yml exec -T rabbitmq
+1. 只读确认权威状态：`docker compose -p deploy -f /opt/wotb-tx/deploy/rabbitmq.compose.yml exec -T rabbitmq
    rabbitmqctl -q list_queues name messages consumers`，并确认 PostgreSQL 中没有该 job 的未终态
    投影（job 权威在 PG，不在 broker）。
 2. 在 TX loopback 的 Management UI（`http://127.0.0.1:15672/`，`wotb.parser.dlq` 队列）逐条查看

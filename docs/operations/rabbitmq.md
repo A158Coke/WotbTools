@@ -13,7 +13,7 @@ MinIO     = temporary job workspace
 **Static RabbitMQ topology is OpenTofu-owned. Applications only publish/consume
 and implement runtime messaging semantics.**
 
-`deploy/tx/docker-compose.yml` owns the RabbitMQ `4.3.6-management-alpine`
+`deploy/tx/rabbitmq.compose.yml` owns the RabbitMQ `4.3.6-management-alpine`
 runtime, the `rabbitmq_data` volume, health check, restart/memory policy, and
 network bindings:
 
@@ -181,7 +181,7 @@ or could not be decoded. A check that goes green by purging evidence is worse th
 a red check, so the sequence is:
 
 ```text
-1. read-only state:   docker compose -f /opt/wotb-tx/deploy/docker-compose.yml exec -T rabbitmq \
+1. read-only state:   docker compose -p deploy -f /opt/wotb-tx/deploy/rabbitmq.compose.yml exec -T rabbitmq \
                         rabbitmqctl -q list_queues name messages consumers
                       and confirm PostgreSQL holds no non-terminal job projection for it
                       (the job authority is PostgreSQL, never the broker)

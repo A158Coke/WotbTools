@@ -5,13 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/caddy.yml
-      - deploy/tx/assets/auth/.well-known/assetlinks.json
-      - deploy/release-metadata.py
-      - deploy/tx/Caddyfile
-      - deploy/tx/docker-compose.yml
-      - deploy/tx/deploy.sh
-      - deploy/tx/runtime-check.sh
-      - deploy/tx/runtime-check-lib.sh
+      - deploy/tx/**
   workflow_dispatch:
 
 permissions:
@@ -25,13 +19,7 @@ concurrency:
 env:
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/caddy.yml
-    deploy/tx/assets/auth/.well-known/assetlinks.json
-    deploy/release-metadata.py
-    deploy/tx/Caddyfile
-    deploy/tx/docker-compose.yml
-    deploy/tx/deploy.sh
-    deploy/tx/runtime-check.sh
-    deploy/tx/runtime-check-lib.sh
+    deploy/tx/**
 
 jobs:
   deploy:
@@ -93,7 +81,7 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx,deploy/release-metadata.py
+          source: deploy/tx
           target: /opt/wotb-tx/deploy.incoming
           overwrite: true
       - name: Reject stale main before TX mutation
@@ -115,7 +103,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 30m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,CADDY_ACME_EMAIL
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,CADDY_ACME_EMAIL
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -123,7 +111,6 @@ jobs:
             export WOTB_DEPLOY_LOCK_FD=9
             export WOTB_DEPLOY_SERVICE=caddy
             export WOTB_DEPLOY_CONFIG_SHA='${{ steps.identity.outputs.commit_sha }}'
-            export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
             bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
 
             # Test the public gateway after its own local readiness and trusted-peer reload
@@ -168,5 +155,4 @@ jobs:
         env:
           WOTB_DEPLOY_SERVICE: caddy
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
-          TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
