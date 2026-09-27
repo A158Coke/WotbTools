@@ -232,10 +232,9 @@ npm run build
 
 ## 生产备份与恢复
 
-- `.github/workflows/database-backup.yml` 每日香港时间 03:15 备份 `wotb` 与 `keycloak`；部署前也会自动备份。
-- 归档在 `/opt/wotb/backups/{wotb,keycloak}/`，通过 catalog + 全压缩数据读取校验，按数据库分别保留 7 天。
-- 查看归档：`deploy/postgres-backup-inspect.sh <archive.dump>`。
-- 恢复：`deploy/postgres-restore.sh --database wotb|keycloak --file <archive.dump> --confirm RESTORE-<database>`。脚本会先做安全备份；恢复失败时依赖服务保持停止，需人工处理。
+- `.github/workflows/database-backup.yml` 每日香港时间 03:15 分别运行 Business PostgreSQL 和 Keycloak PostgreSQL 的 TX owner backup 脚本。
+- Business PostgreSQL 归档位于 `/opt/wotb-tx/backups/business-postgres/`；恢复与校验命令见 [`docs/operations/business-postgres.md`](../docs/operations/business-postgres.md)，恢复目标必须是经确认的 disposable 数据库。
+- Keycloak PostgreSQL 归档由 `deploy/tx/keycloak-postgres-backup.sh` 写入 `/opt/wotb-tx/backups/keycloak-postgres/`，必须使用独立 Keycloak 备份流程处理；不得传给 Business PostgreSQL restore 工具。
 
 ## 构建配置
 

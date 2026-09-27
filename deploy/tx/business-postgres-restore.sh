@@ -7,13 +7,13 @@ set -Eeuo pipefail
 
 umask 077
 
-readonly COMPOSE_FILE_DEFAULT="/opt/wotb-tx/deploy/docker-compose.yml"
+readonly COMPOSE_FILE_DEFAULT="/opt/wotb-tx/deploy/business-postgres.compose.yml"
 readonly COMPOSE_SERVICE_DEFAULT="business-postgres"
 readonly SOURCE_DATABASE="wotb"
 
 compose_file="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_FILE:-$COMPOSE_FILE_DEFAULT}"
 compose_service="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_SERVICE:-$COMPOSE_SERVICE_DEFAULT}"
-project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-wotb-tx-business-postgres}"
+project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-deploy}"
 # Optional container override, used by the disposable CI smoke.
 container_override="${WOTB_TX_BUSINESS_POSTGRES_CONTAINER:-}"
 admin_user="${TX_BUSINESS_POSTGRES_ADMIN_USER:-wotb}"
@@ -34,7 +34,7 @@ Options:
   --database NAME     disposable/scratch target database (never the source)
   --confirm TOKEN     exact opt-in token RESTORE-<scratch>
   --verify-only       only validate the archive and its SHA-256 sidecar
-  --compose-file PATH TX Compose file (default /opt/wotb-tx/deploy/docker-compose.yml)
+  --compose-file PATH TX owner Compose file (default /opt/wotb-tx/deploy/business-postgres.compose.yml)
 
 The script refuses to target the authoritative source database and prints the
 verification SQL an operator must run before declaring the archive restorable.
@@ -94,6 +94,8 @@ command -v docker >/dev/null 2>&1 || { echo "docker is required." >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required." >&2; exit 1; }
 if [ -z "$container_override" ]; then
   [ -f "$compose_file" ] || { echo "Missing compose file: $compose_file" >&2; exit 1; }
+  [ "$project_name" = deploy ] && [ "$compose_service" = business-postgres ] \
+    || { echo 'Refusing a non-canonical Business PostgreSQL Compose project or service.' >&2; exit 1; }
 fi
 
 expected_sha="$(tr -d '[:space:]' < "${backup_file}.sha256")"
@@ -105,7 +107,19 @@ actual_sha="$(sha256sum "$backup_file" | awk '{print $1}')"
 echo "Backup SHA-256 verified."
 
 if [ -z "$container_override" ]; then
-  docker compose -p "$project_name" -f "$compose_file" up -d "$compose_service" >/dev/null
+  volume_name=deploy_business_postgres_data
+  docker volume inspect "$volume_name" >/dev/null 2>&1 \
+    || { echo "Authoritative PostgreSQL volume is missing: $volume_name" >&2; exit 1; }
+  volume_project="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.project" }}' "$volume_name")"
+  volume_key="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.volume" }}' "$volume_name")"
+  [ "$volume_project" = deploy ] && [ "$volume_key" = business_postgres_data ] \
+    || { echo "PostgreSQL volume ownership is not the expected Compose identity: $volume_name" >&2; exit 1; }
+  container_id="$(docker compose -p "$project_name" -f "$compose_file" ps --status running -q "$compose_service")"
+  [ -n "$container_id" ] \
+    || { echo 'Business PostgreSQL runtime is not running; restore will not create it.' >&2; exit 1; }
+  mounted_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql"}}{{.Name}}{{end}}{{end}}' "$container_id")"
+  [ "$mounted_volume" = "$volume_name" ] \
+    || { echo 'Business PostgreSQL runtime is not using the authoritative named volume; refusing restore.' >&2; exit 1; }
 fi
 db_exec pg_restore --list < "$backup_file" >/dev/null
 db_exec pg_restore --file=/dev/null < "$backup_file"

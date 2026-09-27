@@ -5,11 +5,12 @@ retry, and backpressure only. MinIO is a temporary workspace. Business
 PostgreSQL is deliberately independent from Keycloak PostgreSQL:
 
 ```text
-Compose        business-postgres                        keycloak-postgres
+Compose        business-postgres.compose.yml             keycloak-postgres.compose.yml
 OpenTofu root  infra/tofu/postgres-business             infra/tofu/postgres-keycloak
 state          /opt/wotb-tx/postgres-business-tofu-state  /opt/wotb-tx/postgres-keycloak-tofu-state
 port           127.0.0.1:25432                          127.0.0.1:15432
 volume         business_postgres_data                   keycloak_postgres_data
+Docker volume  deploy_business_postgres_data             deploy_keycloak_postgres_data
 marker         business-postgres.tofu-provisioned       keycloak.tofu-provisioned
 ```
 
@@ -18,7 +19,10 @@ created outside Flyway.
 
 ## Resource ownership
 
-`deploy/tx/docker-compose.yml` owns the `business-postgres` runtime only:
+`deploy/tx/business-postgres.compose.yml` is the single owner definition for
+the `business-postgres` runtime. `deploy/tx/docker-compose.yml` includes this
+fragment alongside the independent Keycloak PostgreSQL fragment so application
+deployments share the same service and volume definition:
 
 - image `postgres:18-alpine` (never a floating tag);
 - administration port `127.0.0.1:25432:5432` - loopback only, never public and
@@ -32,9 +36,11 @@ created outside Flyway.
 - `pg_isready` healthcheck, `restart: unless-stopped`, and a 512m memory limit.
 
 The application credential is intentionally absent from the `business-postgres`
-service in the Compose document: that runtime never receives it. Its only
-consumer is the TX business runtime `business-api`
-(`deploy/tx/docker-compose.yml`), which is also the process that runs Flyway.
+service: that runtime never receives it. Its only consumer is the TX business
+runtime `business-api` (`deploy/tx/docker-compose.yml`), which is also the
+process that runs Flyway. Both TX PostgreSQL owner fragments use Compose project
+`deploy`; changing that project or either volume key would select a different
+Docker volume and is a production data migration, not routine cleanup.
 
 `infra/tofu/postgres-business` owns exactly three logical resources:
 
@@ -79,7 +85,7 @@ Apply (`root=business-postgres`) split this sequence; there is no `all` selector
 
 ```text
 Deploy lane (deploy/tx/deploy.sh)
-1. validate inputs and render the Compose document
+1. validate inputs and render the Compose document with the owner fragments
 2. start the business-postgres runtime and wait for pg_isready
 3. require the root-only /opt/wotb-tx/business-postgres.tofu-provisioned marker
 
@@ -156,12 +162,17 @@ deploy/tx/business-postgres-backup.sh [--backup-root DIR] [--retention-minutes N
   block (`pg_restore --file=/dev/null`) before the file is published, and only
   then renames the temporary file into place.
 - Applies retention to older `*.dump` files (default 10080 minutes).
+- Requires the existing `deploy_business_postgres_data` volume, its Compose
+  ownership labels, and a running Business PostgreSQL container mounted on that
+  exact volume. Backup refuses to start a missing runtime or select another
+  project/volume.
 - **Never** drops, truncates, or deletes the source database or its rows. There
   is no `DROP`/`DELETE`/`TRUNCATE` path in the backup script.
 
-Backup files may be stored on TX root-only storage as above. This PR does not
-introduce any external backup platform, object-storage upload, or scheduled
-backup workflow; such a platform is a separate, explicitly approved change.
+Backup files are stored on TX root-only storage as above. The scheduled
+`database-backup.yml` workflow runs this script and the separate Keycloak
+PostgreSQL backup owner, then backs up local Tofu state. This PR does not
+introduce an external backup platform or object-storage upload.
 
 ## Restore
 
@@ -175,6 +186,9 @@ deploy/tx/business-postgres-restore.sh --file <dump> --verify-only
 
 - `--verify-only` checks the SHA-256 sidecar and the full archive integrity
   without creating, modifying, or deleting any database.
+- The restore tool requires the existing Business PostgreSQL runtime and
+  verifies the `deploy_business_postgres_data` volume identity. It never starts
+  the database runtime automatically.
 - The script refuses to target the authoritative source database (`wotb`), and
   requires the exact `--confirm RESTORE-<scratch>` opt-in token.
 - It creates the scratch database, restores with `--exit-on-error`, and prints

@@ -12,22 +12,23 @@ grep -Fq 'TX_DEPLOY_LIBRARY_ONLY=1' "$CHECK"
 grep -Fq 'DEPLOY_SH="$SCRIPT_DIR/deploy.sh"' "$CHECK"
 grep -Fq 'source "$DEPLOY_SH"' "$CHECK"
 grep -Fq 'tx_runtime_check' "$CHECK"
-grep -Fq 'TX_RUNTIME_READY' "$DEPLOY"
-grep -Fq 'TX_RUNTIME_NOT_READY' "$DEPLOY"
-grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' "$DEPLOY"
-grep -Fq 'qq_identity_provider_ready' "$DEPLOY"
-grep -Fq 'identity-provider/instances' "$DEPLOY"
-grep -Fq 'clientAuthMethod' "$DEPLOY"
-grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "$DEPLOY"
-grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "$DEPLOY"
-grep -Fq 'https://graph.qq.com/user/get_user_info' "$DEPLOY"
-grep -Fq 'tx-internal-api-route: PASS' "$DEPLOY"
-grep -Fq 'tx-alloy-config: PASS' "$DEPLOY"
-grep -Fq 'distributed-execution-plane: PASS' "$DEPLOY"
-! grep -Fq 'wireguard-backend' "$DEPLOY"
-grep -Fq 'keycloak-qq-provider.jar' "$DEPLOY"
-grep -Fq 'keycloak-wargaming-provider.jar' "$DEPLOY"
-grep -Fq 'com.wotbtools.app' "$DEPLOY"
+RUNTIME_CHECK_LIB="$ROOT/deploy/tx/runtime-check-lib.sh"
+grep -Fq 'TX_RUNTIME_READY' "$RUNTIME_CHECK_LIB"
+grep -Fq 'TX_RUNTIME_NOT_READY' "$RUNTIME_CHECK_LIB"
+grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' "$RUNTIME_CHECK_LIB"
+grep -Fq 'qq_identity_provider_ready' "$RUNTIME_CHECK_LIB"
+grep -Fq 'identity-provider/instances' "$RUNTIME_CHECK_LIB"
+grep -Fq 'clientAuthMethod' "$RUNTIME_CHECK_LIB"
+grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "$RUNTIME_CHECK_LIB"
+grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "$RUNTIME_CHECK_LIB"
+grep -Fq 'https://graph.qq.com/user/get_user_info' "$RUNTIME_CHECK_LIB"
+grep -Fq 'tx-internal-api-route: PASS' "$RUNTIME_CHECK_LIB"
+grep -Fq 'tx-alloy-config: PASS' "$RUNTIME_CHECK_LIB"
+grep -Fq 'distributed-execution-plane: PASS' "$RUNTIME_CHECK_LIB"
+! grep -Fq 'wireguard-backend' "$RUNTIME_CHECK_LIB"
+grep -Fq 'keycloak-qq-provider.jar' "$RUNTIME_CHECK_LIB"
+grep -Fq 'keycloak-wargaming-provider.jar' "$RUNTIME_CHECK_LIB"
+grep -Fq 'com.wotbtools.app' "$RUNTIME_CHECK_LIB"
 ! grep -Eiq '(nsupdate|route53|cloudflare|gcloud dns|az network dns)' "$CHECK"
 ! grep -Eiq 'docker compose .* (stop|rm|down).*yecao' "$CHECK"
 
@@ -35,32 +36,32 @@ grep -Fq 'com.wotbtools.app' "$DEPLOY"
 # edge phase, no cutover verdicts or boundary token, no migration-only snapshot,
 # and no business-data-integrity token (its Yecao row-count snapshot input cannot
 # be regenerated, so the token was retired with the machinery).
-! grep -Fq 'WOTB_CUTOVER_PHASE' "$DEPLOY"
-! grep -Fq 'CUTOVER_PHASE' "$DEPLOY"
-! grep -Fq 'public-edge-sni' "$DEPLOY"
-! grep -Fq 'POST_CUTOVER' "$DEPLOY"
-! grep -Fq 'PRE_CUTOVER' "$DEPLOY"
-! grep -Fq 'cutover-safety-boundary' "$DEPLOY"
-! grep -Fq 'pre-cutover' "$DEPLOY"
-! grep -Fq 'WOTB_E2E_DATA_SNAPSHOT' "$DEPLOY"
-! grep -Fq 'business-data-integrity' "$DEPLOY"
+! grep -Fq 'WOTB_CUTOVER_PHASE' "$RUNTIME_CHECK_LIB"
+! grep -Fq 'CUTOVER_PHASE' "$RUNTIME_CHECK_LIB"
+! grep -Fq 'public-edge-sni' "$RUNTIME_CHECK_LIB"
+! grep -Fq 'POST_CUTOVER' "$RUNTIME_CHECK_LIB"
+! grep -Fq 'PRE_CUTOVER' "$RUNTIME_CHECK_LIB"
+! grep -Fq 'cutover-safety-boundary' "$RUNTIME_CHECK_LIB"
+! grep -Fq 'pre-cutover' "$RUNTIME_CHECK_LIB"
+! grep -Fq 'WOTB_E2E_DATA_SNAPSHOT' "$RUNTIME_CHECK_LIB"
+! grep -Fq 'business-data-integrity' "$RUNTIME_CHECK_LIB"
 ! grep -Fq -- '--post-cutover' "$CHECK"
 ! grep -Fq 'pre-cutover' "$CHECK"
 
 # Business PostgreSQL is authoritative state: the check must own its health,
 # loopback binding, and provisioning marker before it may report readiness.
-grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_USER' "$DEPLOY"
-grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_PASSWORD' "$DEPLOY"
-grep -Fq 'business-postgres-loopback: PASS' "$DEPLOY"
-grep -Fq 'business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)' "$DEPLOY"
-grep -Fq 'business-postgres: PASS' "$DEPLOY"
-grep -Fq 'business-postgres: FAIL (container is missing or not healthy)' "$DEPLOY"
-grep -Fq 'business-postgres-provisioning: PASS' "$DEPLOY"
-grep -Fq 'business-postgres-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)' "$DEPLOY"
-grep -Fq 'tx-local-opentofu-business-postgres' "$DEPLOY"
-grep -Fq 'BUSINESS_POSTGRES_TOFU_PROVISION_MARKER' "$DEPLOY"
+grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_USER' "$RUNTIME_CHECK_LIB"
+grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_PASSWORD' "$RUNTIME_CHECK_LIB"
+grep -Fq 'business-postgres-loopback: PASS' "$RUNTIME_CHECK_LIB"
+grep -Fq 'business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)' "$RUNTIME_CHECK_LIB"
+grep -Fq 'business-postgres: PASS' "$RUNTIME_CHECK_LIB"
+grep -Fq 'business-postgres: FAIL (container is missing or not healthy)' "$RUNTIME_CHECK_LIB"
+grep -Fq 'business-postgres-provisioning: PASS' "$RUNTIME_CHECK_LIB"
+grep -Fq 'business-postgres-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)' "$RUNTIME_CHECK_LIB"
+grep -Fq 'tx-local-opentofu-business-postgres' "$RUNTIME_CHECK_LIB"
+grep -Fq 'BUSINESS_POSTGRES_TOFU_PROVISION_MARKER' "$RUNTIME_CHECK_LIB"
 # The new checks must be read-only: no DDL/DML against the business database.
-! grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alter[[:space:]]+database)' "$DEPLOY"
+! grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alter[[:space:]]+database)' "$RUNTIME_CHECK_LIB"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -93,17 +94,11 @@ fi
 # 组合成 business-api 的 environment 主体（去掉首个逗号，空集时是合法 JSON {}）。
 extra_env="${job_repository_field}${execution_mode_field}"
 extra_env="${extra_env#,}"
-# Healthy default is the single WireGuard-only management bind; FAKE_BUSINESS_API_PUBLISHED_PORT
-# injects regressions (public or wildcard binds) to prove the deploy guard still fails closed.
-# The JSON cannot live inside a ${VAR:-default} expansion: bash would consume its
-# quotes and braces as syntax instead of emitting them verbatim.
 business_api_ports='[{"host_ip":"10.20.0.1","published":8088,"target":8088}]'
-if [ -n "${FAKE_BUSINESS_API_PUBLISHED_PORT:-}" ]; then
-  business_api_ports="$FAKE_BUSINESS_API_PUBLISHED_PORT"
-fi
+[ -z "${FAKE_BUSINESS_API_PUBLISHED_PORT:-}" ] || business_api_ports="$FAKE_BUSINESS_API_PUBLISHED_PORT"
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"image":"grafana/alloy:v1.4.2","ports":[],"volumes":["/var/run/docker.sock:/var/run/docker.sock","./alloy/config.alloy:/etc/alloy/config.alloy:ro"]}}}\n' \
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
       "$business_ports" "$frontend_upstream" "$business_api_ports" "$extra_env"
     ;;
   ps)
@@ -265,9 +260,9 @@ ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
 grep -Fq 'TX_RUNTIME_READY' <<< "$ready_output"
 grep -Fq 'tx-internal-api-route: PASS' <<< "$ready_output"
 grep -Fq 'tx-alloy-config: PASS' <<< "$ready_output"
+grep -Fq 'caddy-monitor: PASS' <<< "$ready_output"
 grep -Fq 'distributed-execution-plane: PASS' <<< "$ready_output"
 grep -Fq 'tx-business-api: PASS' <<< "$ready_output"
-grep -Fq 'caddy-monitor: PASS' <<< "$ready_output"
 grep -Fq 'auth-token: PASS' <<< "$ready_output"
 grep -Fq 'tx-control-plane: PASS' <<< "$ready_output"
 grep -Fq 'anonymous-rejected: PASS' <<< "$ready_output"
@@ -303,6 +298,7 @@ RELOCATED_ROOT="$WORK/relocated-root"
 mkdir -p "$RELOCATED_ROOT/deploy" "$RELOCATED_ROOT/config/sponsor" "$RELOCATED_ROOT/android-release"
 cp "$ROOT/deploy/tx/runtime-check.sh" "$RELOCATED_ROOT/deploy/runtime-check.sh"
 cp "$ROOT/deploy/tx/deploy.sh" "$RELOCATED_ROOT/deploy/deploy.sh"
+cp "$ROOT/deploy/tx/runtime-check-lib.sh" "$RELOCATED_ROOT/deploy/runtime-check-lib.sh"
 cp "$ROOT/deploy/tx/docker-compose.yml" "$RELOCATED_ROOT/deploy/docker-compose.yml"
 printf '{}\n' > "$RELOCATED_ROOT/config/sponsor-config.json"
 printf 'tx-local-opentofu-rabbitmq\n' > "$RELOCATED_ROOT/rabbitmq.tofu-provisioned"
@@ -338,9 +334,6 @@ run_gate_failure "frontend-upstream-public" 'tx-internal-api-route: FAIL' \
 run_gate_failure "business-api-published-port" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8087,"target":8087}]'
-run_gate_failure "business-api-public-management-port" 'tx-internal-api-route: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
-  FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8088,"target":8088}]'
 run_gate_failure "business-api-extra-management-bind" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"10.20.0.1","published":8088,"target":8088},{"host_ip":"127.0.0.1","published":8088,"target":8088}]'

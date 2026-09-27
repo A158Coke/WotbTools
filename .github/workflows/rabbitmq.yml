@@ -5,9 +5,10 @@ on:
     branches: [main]
     paths:
       - .github/workflows/rabbitmq.yml
-      - deploy/release-metadata.py
       - deploy/tx/deploy.sh
       - deploy/tx/docker-compose.yml
+      - deploy/tx/common.compose.yml
+      - deploy/tx/rabbitmq.compose.yml
       - deploy/tx/rabbitmq.tofurc
       - infra/tofu/rabbitmq/**
   workflow_dispatch:
@@ -23,9 +24,10 @@ concurrency:
 env:
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/rabbitmq.yml
-    deploy/release-metadata.py
     deploy/tx/deploy.sh
     deploy/tx/docker-compose.yml
+    deploy/tx/common.compose.yml
+    deploy/tx/rabbitmq.compose.yml
     deploy/tx/rabbitmq.tofurc
     infra/tofu/rabbitmq/**
 
@@ -65,7 +67,7 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx,deploy/release-metadata.py,infra/tofu/rabbitmq
+          source: deploy/tx,infra/tofu/rabbitmq
           target: /opt/wotb-tx/tofu.incoming/${{ steps.source.outputs.source_sha }}
           overwrite: true
 
@@ -76,7 +78,7 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx,deploy/release-metadata.py
+          source: deploy/tx
           target: /opt/wotb-tx/deploy.incoming
           overwrite: true
 
@@ -100,7 +102,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: SOURCE_SHA,WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,WOTB_DEPLOY_IMAGE_TAG,WOTB_DEPLOY_IMAGE_COMMIT_SHA,TX_IMAGE_REGISTRY_PREFIX,TX_RABBITMQ_ADMIN_USER,TX_RABBITMQ_ADMIN_PASSWORD,TX_RABBITMQ_CONTROL_API_PASSWORD,TX_RABBITMQ_PARSER_WORKER_PASSWORD
+          envs: SOURCE_SHA,WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_RABBITMQ_ADMIN_USER,TX_RABBITMQ_ADMIN_PASSWORD,TX_RABBITMQ_CONTROL_API_PASSWORD,TX_RABBITMQ_PARSER_WORKER_PASSWORD
           script: |
             set -Eeuo pipefail
             [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -138,16 +140,13 @@ jobs:
             tofu apply -input=false -auto-approve plan.tfplan
             tofu plan -input=false -no-color -out=second-plan.tfplan
             bash ./validate-plan.sh second-plan.tfplan --require-no-changes
-            docker compose -f /opt/wotb-tx/deploy/docker-compose.yml exec -T rabbitmq rabbitmq-diagnostics -q ping
+            docker compose -p deploy -f /opt/wotb-tx/deploy/rabbitmq.compose.yml exec -T rabbitmq rabbitmq-diagnostics -q ping
             printf '%s\n' tx-local-opentofu-rabbitmq > /opt/wotb-tx/rabbitmq.tofu-provisioned
             chmod 600 /opt/wotb-tx/rabbitmq.tofu-provisioned
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           WOTB_DEPLOY_SERVICE: rabbitmq
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.source.outputs.source_sha }}
-          WOTB_DEPLOY_IMAGE_TAG: ''
-          WOTB_DEPLOY_IMAGE_COMMIT_SHA: ''
-          TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
           TX_RABBITMQ_ADMIN_USER: ${{ vars.TX_RABBITMQ_ADMIN_USER }}
           TX_RABBITMQ_ADMIN_PASSWORD: ${{ secrets.TX_RABBITMQ_ADMIN_PASSWORD }}
           TX_RABBITMQ_CONTROL_API_PASSWORD: ${{ secrets.TX_RABBITMQ_CONTROL_API_PASSWORD }}

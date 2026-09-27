@@ -7,8 +7,9 @@ on:
       - .github/workflows/alloy-tx.yml
       - deploy/tx/alloy/**
       - deploy/tx/docker-compose.yml
+      - deploy/tx/common.compose.yml
+      - deploy/tx/alloy-tx.compose.yml
       - deploy/tx/deploy.sh
-      - deploy/release-metadata.py
       - deploy/validate-alloy-config.sh
   workflow_dispatch:
 
@@ -25,8 +26,9 @@ env:
     .github/workflows/alloy-tx.yml
     deploy/tx/alloy/**
     deploy/tx/docker-compose.yml
+    deploy/tx/common.compose.yml
+    deploy/tx/alloy-tx.compose.yml
     deploy/tx/deploy.sh
-    deploy/release-metadata.py
     deploy/validate-alloy-config.sh
 
 jobs:
@@ -89,7 +91,7 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx,deploy/release-metadata.py,deploy/validate-alloy-config.sh
+          source: deploy/tx,deploy/validate-alloy-config.sh
           target: /opt/wotb-tx/deploy.incoming
           overwrite: true
       - name: Reject stale main before TX mutation
