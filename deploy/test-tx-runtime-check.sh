@@ -103,7 +103,7 @@ if [ -n "${FAKE_BUSINESS_API_PUBLISHED_PORT:-}" ]; then
 fi
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"image":"grafana/alloy:v1.4.2","ports":[],"volumes":["/var/run/docker.sock:/var/run/docker.sock:ro","./alloy/config.alloy:/etc/alloy/config.alloy:ro"]}}}\n' \
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"image":"grafana/alloy:v1.4.2","ports":[],"volumes":["/var/run/docker.sock:/var/run/docker.sock","./alloy/config.alloy:/etc/alloy/config.alloy:ro"]}}}\n' \
       "$business_ports" "$frontend_upstream" "$business_api_ports" "$extra_env"
     ;;
   ps)
