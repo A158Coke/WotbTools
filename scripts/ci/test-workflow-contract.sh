@@ -110,3 +110,55 @@ for invariant in (
 
 print("PR gate, production freshness/ownership, ToFu validation, and backup safety OK")
 PY
+
+# The "reuse only an existing immutable image" release step must not confuse a
+# brand-new application repository with a broken registry. Exercise the real gate
+# helper through fake crane binaries: a first publish has to fall through to
+# build + push, while an auth/server/network failure has to stay fatal.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/bin"
+cat > "$work/bin/crane" <<'CRANE'
+#!/usr/bin/env bash
+set -euo pipefail
+repository="${2:?repository is required}"
+case "${FAKE_CRANE_MODE:?}" in
+  tags) printf '%s\n' "${FAKE_CRANE_TAGS:?}" ;;
+  name-unknown)
+    echo "Error: reading tags for $repository: GET https://registry.example/v2/$repository/tags/list?n=1000: NAME_UNKNOWN: repository name not known to registry" >&2
+    exit 1
+    ;;
+  unauthorized)
+    echo "Error: reading tags for $repository: GET https://registry.example/v2/$repository/tags/list?n=1000: UNAUTHORIZED: authentication required" >&2
+    exit 1
+    ;;
+  server-error)
+    echo "Error: reading tags for $repository: GET https://registry.example/v2/$repository/tags/list?n=1000: unexpected status code 500 Internal Server Error" >&2
+    exit 1
+    ;;
+  *) echo 'unsupported FAKE_CRANE_MODE' >&2; exit 2 ;;
+esac
+CRANE
+chmod +x "$work/bin/crane"
+
+repository=registry.example/team/wotbtools-business-api
+tag=sha-0123456789ab
+
+listed="$(PATH="$work/bin:$PATH" FAKE_CRANE_MODE=tags FAKE_CRANE_TAGS="$tag" \
+  bash "$ROOT/deploy/list-image-tags.sh" "$repository")"
+[ "$listed" = "$tag" ] || { echo "existing repository tags were not passed through: $listed" >&2; exit 1; }
+
+first_publish="$(PATH="$work/bin:$PATH" FAKE_CRANE_MODE=name-unknown \
+  bash "$ROOT/deploy/list-image-tags.sh" "$repository")"
+[ -z "$first_publish" ] || { echo "a first publish must not report tags: $first_publish" >&2; exit 1; }
+
+for mode in unauthorized server-error; do
+  if PATH="$work/bin:$PATH" FAKE_CRANE_MODE="$mode" \
+    bash "$ROOT/deploy/list-image-tags.sh" "$repository" >"$work/$mode.out" 2>&1; then
+    echo "a registry failure was accepted as an empty repository: $mode" >&2
+    exit 1
+  fi
+  [ -s "$work/$mode.out" ] || { echo "the registry error was swallowed: $mode" >&2; exit 1; }
+done
+
+echo "first publish falls through to build while registry failures stay fatal: PASS"

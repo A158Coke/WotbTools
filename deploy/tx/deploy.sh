@@ -229,8 +229,7 @@ stage_and_validate() {
   docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" config >/dev/null \
     || die "staged TX compose config is invalid; live TX deployment was not changed."
   if is_selected caddy; then
-    docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" run --rm --no-deps caddy \
-      validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+    bash "$INCOMING_DIR/validate-caddy-config.sh" "$INCOMING_DIR" \
       || die "staged Caddy configuration is invalid; the live gateway was not changed."
   fi
 }
