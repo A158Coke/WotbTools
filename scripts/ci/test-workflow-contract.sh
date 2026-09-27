@@ -44,11 +44,22 @@ filters = load(root / filter_path)
 def affected(path):
     return {owner for owner, patterns in filters.items()
             if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)}
+def covers_production_path(production_path, owner_pattern):
+    if not any(char in production_path for char in "*?["):
+        return fnmatch.fnmatchcase(production_path, owner_pattern)
+    if production_path == owner_pattern:
+        return True
+    # A subtree glob can cover a narrower subtree glob; matching glob text
+    # with fnmatch alone would incorrectly accept narrower owner patterns.
+    return (owner_pattern.endswith("/**")
+            and production_path.startswith(owner_pattern[:-2]))
 assert affected("frontend/src/styles/base.css") == {"frontend"}
 assert affected("infra/tofu/minio/main.tf") == {"minio"}
 assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgres"}
 assert affected("docs/README.md") == set()
 assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend", "android"}
+assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment"}
+assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
 for owner in jobs["changes"]["outputs"]:
     caller = jobs[owner]
     assert caller["if"] == f"needs.changes.outputs.{owner} == 'true'", owner
@@ -94,6 +105,20 @@ owners = (
     "business-api", "frontend", "keycloak", "parser-worker", "minio", "caddy",
     "rabbitmq", "business-postgres", "keycloak-postgres", "observability", "alloy-tx",
 )
+pr_owner_for_production = {
+    "business-api": "business_api",
+    "frontend": "frontend",
+    "keycloak": "keycloak",
+    "parser-worker": "parser_worker",
+    "minio": "minio",
+    "caddy": "caddy",
+    "rabbitmq": "rabbitmq",
+    "business-postgres": "business_postgres",
+    "keycloak-postgres": "keycloak_postgres",
+    "observability": "observability",
+    "alloy-tx": "alloy_tx",
+}
+assert set(pr_owner_for_production) == set(owners)
 image_owners = {"business-api", "frontend", "keycloak", "parser-worker", "minio"}
 queue = {"group": "production-maintenance", "cancel-in-progress": "false", "queue": "max"}
 for owner in owners:
@@ -103,6 +128,10 @@ for owner in owners:
     trigger_paths = events["push"].get("paths", [])
     freshness_paths = workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
     assert trigger_paths == freshness_paths, owner
+    pr_owner = pr_owner_for_production[owner]
+    for production_path in freshness_paths:
+        assert any(covers_production_path(production_path, pattern)
+                   for pattern in filters[pr_owner]), (owner, production_path)
     checks = [
         step for job in workflow["jobs"].values() for step in job.get("steps", [])
         if "deploy/check-production-freshness.sh" in step.get("run", "")
