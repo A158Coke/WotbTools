@@ -13,7 +13,7 @@ readonly SOURCE_DATABASE="wotb"
 
 compose_file="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_FILE:-$COMPOSE_FILE_DEFAULT}"
 compose_service="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_SERVICE:-$COMPOSE_SERVICE_DEFAULT}"
-project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-wotb-tx-business-postgres}"
+project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-deploy}"
 # Optional container override. The disposable CI smoke uses this to drive the
 # real script against a throwaway container without starting a Compose project.
 container_override="${WOTB_TX_BUSINESS_POSTGRES_CONTAINER:-}"
@@ -40,62 +40,33 @@ EOF
 }
 
 cleanup() {
-  if [ -n "$temporary_file" ] && [ -f "$temporary_file" ]; then
-    rm -f -- "$temporary_file"
-  fi
+  if [ -n "$temporary_file" ] && [ -f "$temporary_file" ]; then rm -f -- "$temporary_file"; fi
+  if [ -n "$temporary_file" ] && [ -f "${temporary_file}.sha256" ]; then rm -f -- "${temporary_file}.sha256"; fi
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --compose-file)
-      [ $# -ge 2 ] || { usage; exit 2; }
-      compose_file="$2"
-      shift 2
-      ;;
-    --backup-root)
-      [ $# -ge 2 ] || { usage; exit 2; }
-      backup_root="$2"
-      shift 2
-      ;;
-    --retention-minutes)
-      [ $# -ge 2 ] || { usage; exit 2; }
-      retention_minutes="$2"
-      shift 2
-      ;;
-    --skip-retention)
-      skip_retention="true"
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      usage
-      exit 2
-      ;;
+    --compose-file) [ $# -ge 2 ] || { usage; exit 2; }; compose_file="$2"; shift 2 ;;
+    --backup-root) [ $# -ge 2 ] || { usage; exit 2; }; backup_root="$2"; shift 2 ;;
+    --retention-minutes) [ $# -ge 2 ] || { usage; exit 2; }; retention_minutes="$2"; shift 2 ;;
+    --skip-retention) skip_retention="true"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage; exit 2 ;;
   esac
 done
 
-[[ "$retention_minutes" =~ ^[1-9][0-9]*$ ]] \
-  || { echo "Retention minutes must be a positive integer." >&2; exit 2; }
-[[ "$database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
-  || { echo "Unsupported database name: $database" >&2; exit 2; }
-command -v docker >/dev/null 2>&1 || { echo "docker is required." >&2; exit 1; }
-command -v flock >/dev/null 2>&1 || { echo "flock is required for a safe backup lock." >&2; exit 1; }
-if [ -z "$container_override" ]; then
-  [ -f "$compose_file" ] || { echo "Missing compose file: $compose_file" >&2; exit 1; }
-fi
+[[ "$retention_minutes" =~ ^[1-9][0-9]*$ ]] || { echo 'Retention minutes must be a positive integer.' >&2; exit 2; }
+[[ "$database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "Unsupported database name: $database" >&2; exit 2; }
+command -v docker >/dev/null 2>&1 || { echo 'docker is required.' >&2; exit 1; }
+command -v flock >/dev/null 2>&1 || { echo 'flock is required for a safe backup lock.' >&2; exit 1; }
+command -v sha256sum >/dev/null 2>&1 || { echo 'sha256sum is required.' >&2; exit 1; }
+if [ -z "$container_override" ]; then [ -f "$compose_file" ] || { echo "Missing compose file: $compose_file" >&2; exit 1; }; fi
 
-# TX root-only storage. `install -m 700` is the Linux production path; the
-# mkdir fallback keeps the script runnable from a POSIX-emulation shell without
-# POSIX chmod support.
 install -d -m 700 "$backup_root" 2>/dev/null || mkdir -p "$backup_root"
 exec 9>"$backup_root/.maintenance.lock"
-flock -n 9 || { echo "Another Business PostgreSQL backup or restore is running." >&2; exit 1; }
+flock -n 9 || { echo 'Another Business PostgreSQL backup or restore is running.' >&2; exit 1; }
 trap cleanup EXIT
 
-# stdin is forwarded so pg_dump/pg_restore streams work from the host.
 db_exec() {
   if [ -n "$container_override" ]; then
     docker exec -i "$container_override" "$@"
@@ -105,50 +76,39 @@ db_exec() {
 }
 
 if [ -n "$container_override" ]; then
-  docker inspect "$container_override" >/dev/null 2>&1 \
-    || { echo "Container is not available: $container_override" >&2; exit 1; }
+  docker inspect "$container_override" >/dev/null 2>&1 || { echo "Container is not available: $container_override" >&2; exit 1; }
 else
-  docker compose -p "$project_name" -f "$compose_file" up -d "$compose_service" >/dev/null
+  docker compose -p "$project_name" -f "$compose_file" ps --status running "$compose_service" | grep -q "$compose_service" \
+    || { echo "Business PostgreSQL runtime is not running: $compose_service" >&2; exit 1; }
 fi
 
-ready="false"
+ready=false
 for _ in $(seq 1 30); do
-  if db_exec pg_isready -U "$admin_user" -d "$database" >/dev/null 2>&1; then
-    ready="true"
-    break
-  fi
+  if db_exec pg_isready -U "$admin_user" -d "$database" >/dev/null 2>&1; then ready=true; break; fi
   sleep 2
 done
-[ "$ready" = "true" ] || { echo "Business PostgreSQL did not become ready: $database" >&2; exit 1; }
+[ "$ready" = true ] || { echo "Business PostgreSQL did not become ready: $database" >&2; exit 1; }
 
 timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
 backup_file="$backup_root/${database}-${timestamp}.dump"
-if [ -e "$backup_file" ]; then
-  echo "Refusing to overwrite an existing backup: $backup_file" >&2
-  exit 1
-fi
+[ ! -e "$backup_file" ] || { echo "Refusing to overwrite an existing backup: $backup_file" >&2; exit 1; }
 temporary_file="${backup_file}.tmp.$$"
 
-db_exec pg_dump -U "$admin_user" -d "$database" --format=custom --no-owner --no-privileges \
-  > "$temporary_file"
+db_exec pg_dump -U "$admin_user" -d "$database" --format=custom --no-owner --no-privileges > "$temporary_file"
 [ -s "$temporary_file" ] || { echo "Backup archive is empty: $temporary_file" >&2; exit 1; }
-
-# Validate the catalog and every compressed data block without connecting to or
-# changing any database, then record the archive hash for restore verification.
 db_exec pg_restore --list < "$temporary_file" >/dev/null
 db_exec pg_restore --file=/dev/null < "$temporary_file"
 sha256sum "$temporary_file" | awk '{print $1}' > "${temporary_file}.sha256"
-[ -s "${temporary_file}.sha256" ] || { echo "SHA-256 sidecar is empty." >&2; exit 1; }
-
-chmod 600 -- "$temporary_file" 2>/dev/null || true
+[ -s "${temporary_file}.sha256" ] || { echo 'SHA-256 sidecar is empty.' >&2; exit 1; }
+chmod 600 -- "$temporary_file" "${temporary_file}.sha256" 2>/dev/null || true
 mv -- "$temporary_file" "$backup_file"
 mv -- "${temporary_file}.sha256" "${backup_file}.sha256"
-chmod 600 -- "${backup_file}.sha256" 2>/dev/null || true
 temporary_file=""
 
-if [ "$skip_retention" != "true" ]; then
-  find "$backup_root" -type f -name '*.dump' ! -path "$backup_file" \
-    -mmin "+$retention_minutes" -delete
+if [ "$skip_retention" != true ]; then
+  find "$backup_root" -type f -name '*.dump' ! -path "$backup_file" -mmin "+$retention_minutes" -delete
+  find "$backup_root" -type f -name '*.dump.sha256' ! -path "${backup_file}.sha256" -mmin "+$retention_minutes" -delete
 fi
+
 echo "Business PostgreSQL backup created and verified: $backup_file"
 echo "SHA-256: $(cat "${backup_file}.sha256")"
