@@ -1,6 +1,6 @@
 //! League Rating eligibility gates and duplicate-replay settlement identity.
 //!
-//! Ports `com.wotb.core.league.LeagueRatingValidator` and `LeagueRatingConflictDetector`.
+//! Ports `com.wotb.core.rating.LeagueRatingValidator` and `LeagueRatingConflictDetector`.
 //!
 //! Zero-value policy (inherited from the protobuf wire): structural fields (identity, team, vehicle,
 //! winner) fail closed on `0`/invalid, while statistical fields are legitimately `0` — an absent

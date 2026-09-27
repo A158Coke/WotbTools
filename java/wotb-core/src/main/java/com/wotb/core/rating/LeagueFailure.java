@@ -1,4 +1,4 @@
-package com.wotb.core.league;
+package com.wotb.core.rating;
 
 /** 一场训练赛/联赛回放的完整性校验失败（稳定英文错误码，前端三语映射）。 */
 public record LeagueFailure(

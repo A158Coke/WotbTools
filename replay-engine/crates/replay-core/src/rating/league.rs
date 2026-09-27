@@ -1,6 +1,6 @@
 //! League batch admission: team auto-naming and replay-mode classification.
 //!
-//! Ports `com.wotb.core.league.LeagueTeamNamer` and `LeagueRatingMode`. Both answer the same
+//! Ports `com.wotb.core.rating.LeagueTeamNamer` and `LeagueRatingMode`. Both answer the same
 //! question — "does this batch become a League Rating batch, and what is the team called" — so they
 //! live together instead of in two one-function files.
 //!

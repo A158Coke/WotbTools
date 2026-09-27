@@ -1,7 +1,7 @@
 package com.wotb.core.export;
 
-import com.wotb.core.league.LeagueRatingBatch;
-import com.wotb.core.league.LeagueRatingResult;
+import com.wotb.core.rating.LeagueRatingBatch;
+import com.wotb.core.rating.LeagueRatingResult;
 import com.wotb.core.model.Battle;
 import com.wotb.core.ref.Tankopedia;
 

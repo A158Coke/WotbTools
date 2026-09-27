@@ -1,6 +1,6 @@
 //! League Rating V6 batch projection.
 //!
-//! Ports `com.wotb.core.league.LeagueBatchRatingCalculator`: batch state is the raw unrounded sum
+//! Ports `com.wotb.core.rating.LeagueBatchRatingCalculator`: batch state is the raw unrounded sum
 //! plus the rated-battle count, and the fixed symmetric prior (`A = 475`) is applied exactly once at
 //! projection time. No median, no evidence curve, no per-battle average-of-ratios.
 

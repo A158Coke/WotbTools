@@ -1,6 +1,6 @@
 //! League Rating 归一化纯函数。
 //!
-//! Ports `com.wotb.core.league.LeagueRatingNormalizer` exactly: the team index `T`, the global rank
+//! Ports `com.wotb.core.rating.LeagueRatingNormalizer` exactly: the team index `T`, the global rank
 //! index `G` over the fixed 14-player field, the Wilson 95% lower bound (`z = 1.96`), and the shared
 //! "finite and positive" predicate.
 

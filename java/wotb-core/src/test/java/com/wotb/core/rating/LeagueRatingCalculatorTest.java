@@ -1,4 +1,4 @@
-package com.wotb.core.league;
+package com.wotb.core.rating;
 
 import com.wotb.core.model.Battle;
 import org.junit.jupiter.api.Test;
@@ -8,7 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-import static com.wotb.core.league.LeagueTestBattles.defaultSevenVsSeven;
+import static com.wotb.core.rating.LeagueTestBattles.defaultSevenVsSeven;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

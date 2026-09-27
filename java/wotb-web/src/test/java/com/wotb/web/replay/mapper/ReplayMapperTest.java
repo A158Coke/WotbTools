@@ -1,9 +1,9 @@
 package com.wotb.web.replay.mapper;
 
-import com.wotb.core.league.PlayerVehicleUsage;
-import com.wotb.core.league.LeagueRatingBatch;
-import com.wotb.core.league.PlayerLeagueSummary;
-import com.wotb.core.league.TeamLeagueSummary;
+import com.wotb.core.rating.PlayerVehicleUsage;
+import com.wotb.core.rating.LeagueRatingBatch;
+import com.wotb.core.rating.PlayerLeagueSummary;
+import com.wotb.core.rating.TeamLeagueSummary;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;

@@ -1,10 +1,10 @@
 package com.wotb.core.export;
 
 import com.wotb.core.Columns;
-import com.wotb.core.league.LeagueColumns;
-import com.wotb.core.league.LeagueRatingResult;
-import com.wotb.core.league.PlayerLeagueRating;
-import com.wotb.core.league.TeamLeagueRating;
+import com.wotb.core.rating.LeagueColumns;
+import com.wotb.core.rating.LeagueRatingResult;
+import com.wotb.core.rating.PlayerLeagueRating;
+import com.wotb.core.rating.TeamLeagueRating;
 import com.wotb.core.model.Battle;
 import com.wotb.core.ref.Tankopedia;
 import java.util.ArrayList;

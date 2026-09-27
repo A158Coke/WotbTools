@@ -1,5 +1,5 @@
 {
-  "source": "com.wotb.core.league.LeagueRatingCalculator (V4.1) + LeagueBatchRatingCalculator (V6)",
+  "source": "com.wotb.core.rating.LeagueRatingCalculator (V4.1) + LeagueBatchRatingCalculator (V6)",
   "scenarios": [
     {
       "name": "typical",
