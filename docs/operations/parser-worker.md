@@ -245,7 +245,7 @@ Diagnosis order:
   immutable property objects carry the environment values (optional keys keep their
   reviewed defaults), that the assembly consumes them, and that a missing or blank
   `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `RABBITMQ_PASSWORD` fails startup.
-- `scripts/ci/test-workflow-contract.sh` keeps `java/pom.xml` modules and the
+- ``deploy/test-deploy-contract.sh` keeps `java/pom.xml` modules and the
   Dockerfile COPY lists in lockstep, including the `-pl wotb-parser-worker -am`
   dependency closure of the worker image.
 - `deploy/test-deploy-contract.sh` pins the compose/deploy contract: no public

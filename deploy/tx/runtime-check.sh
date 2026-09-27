@@ -38,4 +38,11 @@ export TX_DEPLOY_LIBRARY_ONLY=1
 
 # shellcheck disable=SC1091
 source "$DEPLOY_SH"
+RUNTIME_CHECK_LIB="$SCRIPT_DIR/runtime-check-lib.sh"
+[ -f "$RUNTIME_CHECK_LIB" ] || {
+  echo "TX_RUNTIME_NOT_READY: sibling runtime-check-lib.sh is missing from $SCRIPT_DIR" >&2
+  exit 1
+}
+# shellcheck disable=SC1090
+source "$RUNTIME_CHECK_LIB"
 tx_runtime_check

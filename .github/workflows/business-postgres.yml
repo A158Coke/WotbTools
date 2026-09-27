@@ -8,7 +8,10 @@ on:
       - deploy/release-metadata.py
       - deploy/tx/deploy.sh
       - deploy/tx/docker-compose.yml
+      - deploy/tx/business-postgres.compose.yml
       - deploy/tx/business-postgres.tofurc
+      - deploy/tx/runtime-check.sh
+      - deploy/tx/runtime-check-lib.sh
       - infra/tofu/postgres-business/**
   workflow_dispatch:
 
@@ -26,7 +29,10 @@ env:
     deploy/release-metadata.py
     deploy/tx/deploy.sh
     deploy/tx/docker-compose.yml
+    deploy/tx/business-postgres.compose.yml
     deploy/tx/business-postgres.tofurc
+    deploy/tx/runtime-check.sh
+    deploy/tx/runtime-check-lib.sh
     infra/tofu/postgres-business/**
 
 jobs:

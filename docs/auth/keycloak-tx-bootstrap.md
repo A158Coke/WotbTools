@@ -284,3 +284,22 @@ TX deploy 在修改 runtime 前只检查 Docker/Compose、`wg0` 地址与到 `10
 MinIO 与 broker 链路）；staging 阶段先 fail-closed 拒绝「引用/发布已退役 8087」或「重新启用本地
 执行面」的 staged Compose，再进入 pull/promote，因此不会出现「已切到 TX 内部路由但仍依赖
 Yecao backend」或反向的中间状态。
+
+## Keycloak PostgreSQL backup owner
+
+`deploy/tx/keycloak-postgres.compose.yml` is the sole Keycloak PostgreSQL service
+definition and is included by the TX main Compose file. The independent
+`keycloak-postgres.yml` owner stages this fragment directly and fixes Compose
+project `deploy`; its existing Docker volume remains
+`deploy_keycloak_postgres_data`. Before recreating the service, the workflow
+requires that volume, checks its Compose labels and any existing container mount,
+and refuses a different identity. It also promotes the validated fragment beside
+the main Compose file for later runtime checks.
+
+The scheduled `database-backup.yml` calls
+`deploy/tx/keycloak-postgres-backup.sh`. It only reads the existing running
+service, verifies the same project and volume identity, and publishes regular
+`keycloak-<timestamp>.dump` and `.dump.sha256` files after archive and checksum
+validation. It never starts or recreates PostgreSQL and never mutates the source
+database. Keycloak archives must not be passed to the Business PostgreSQL restore
+tool.

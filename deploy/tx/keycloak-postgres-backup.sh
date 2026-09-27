@@ -6,7 +6,7 @@ set -Eeuo pipefail
 
 umask 077
 
-readonly COMPOSE_FILE_DEFAULT="/opt/wotb-tx/deploy/docker-compose.yml"
+readonly COMPOSE_FILE_DEFAULT="/opt/wotb-tx/deploy/keycloak-postgres.compose.yml"
 readonly COMPOSE_SERVICE_DEFAULT="keycloak-postgres"
 readonly BACKUP_ROOT_DEFAULT="/opt/wotb-tx/backups/keycloak-postgres"
 readonly SOURCE_DATABASE="keycloak"
@@ -95,8 +95,21 @@ db_exec() {
 if [ -n "$container_override" ]; then
   docker inspect "$container_override" >/dev/null 2>&1 || { echo "Container is not available: $container_override" >&2; exit 1; }
 else
-  docker compose -p "$project_name" -f "$compose_file" ps --status running "$compose_service" | grep -q "$compose_service" \
-    || { echo "Keycloak PostgreSQL runtime is not running: $compose_service" >&2; exit 1; }
+  [ "$project_name" = deploy ] && [ "$compose_service" = keycloak-postgres ] \
+    || { echo 'Refusing a non-canonical Keycloak PostgreSQL Compose project or service.' >&2; exit 1; }
+  volume_name=deploy_keycloak_postgres_data
+  docker volume inspect "$volume_name" >/dev/null 2>&1 \
+    || { echo "Authoritative PostgreSQL volume is missing: $volume_name" >&2; exit 1; }
+  volume_project="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.project" }}' "$volume_name")"
+  volume_key="$(docker volume inspect --format '{{ index .Labels "com.docker.compose.volume" }}' "$volume_name")"
+  [ "$volume_project" = deploy ] && [ "$volume_key" = keycloak_postgres_data ] \
+    || { echo "PostgreSQL volume ownership is not the expected Compose identity: $volume_name" >&2; exit 1; }
+  container_id="$(docker compose -p "$project_name" -f "$compose_file" ps --status running -q "$compose_service")"
+  [ -n "$container_id" ] \
+    || { echo 'Keycloak PostgreSQL runtime is not running; backup will not create it.' >&2; exit 1; }
+  mounted_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql"}}{{.Name}}{{end}}{{end}}' "$container_id")"
+  [ "$mounted_volume" = "$volume_name" ] \
+    || { echo 'Keycloak PostgreSQL runtime is not using the authoritative named volume; refusing backup.' >&2; exit 1; }
 fi
 
 ready=false

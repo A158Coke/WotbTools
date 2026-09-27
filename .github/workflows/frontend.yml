@@ -18,6 +18,8 @@ on:
       - deploy/release-metadata.py
       - deploy/tx/docker-compose.yml
       - deploy/tx/deploy.sh
+      - deploy/tx/runtime-check.sh
+      - deploy/tx/runtime-check-lib.sh
       - deploy/tx/nginx/frontend.conf.template
   workflow_dispatch:
 
@@ -41,6 +43,8 @@ env:
     deploy/release-metadata.py
     deploy/tx/docker-compose.yml
     deploy/tx/deploy.sh
+    deploy/tx/runtime-check.sh
+    deploy/tx/runtime-check-lib.sh
     deploy/tx/nginx/frontend.conf.template
 
 jobs:

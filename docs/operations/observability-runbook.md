@@ -93,6 +93,6 @@ normal Deploy 失败不会自动恢复旧 application image。Release 的每个 
 2. 镜像服务（business-api/frontend/keycloak/parser-worker/minio）由 workflow 从当前 main 的 first-parent 历史中选出在对应 registry 存在的 immutable `sha-<12>` tag，并用 registry digest 核对；config-only 服务从目标宿主 metadata 读取已部署 identity。
 3. 需要基础设施变更时，另行触发 `Infra / Tofu Apply` 的单 root（例如 `keycloak-postgres`），它只接受当前 main 完整 SHA。
 
-单目标 Deploy 只 pull/recreate 一个 service，不隐式选择其它服务，也不执行数据库 restore。schema 回退不是 Deploy 能力：数据库灾难恢复只通过人工确认的 `deploy/postgres-restore.sh` 执行。
+单目标 Deploy 只 pull/recreate 一个 service，不隐式选择其它服务，也不执行数据库 restore。schema 回退不是 Deploy 能力。Business PostgreSQL 归档验证及 disposable restore 见 `docs/operations/business-postgres.md`；该工具拒绝 authoritative `wotb` 数据库。Keycloak PostgreSQL 归档由独立备份脚本生成，不能用 Business restore 工具处理。
 
 本仓库当前的 `database-backup.yml` 保持 VPS 本地双库备份边界。COS 上传、对象存在/大小验证和 retention 仍是后续独立 PR；本 runbook 不把本地归档描述为 COS 已完成。

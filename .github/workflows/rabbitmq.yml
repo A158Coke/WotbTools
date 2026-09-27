@@ -9,6 +9,8 @@ on:
       - deploy/tx/deploy.sh
       - deploy/tx/docker-compose.yml
       - deploy/tx/rabbitmq.tofurc
+      - deploy/tx/runtime-check.sh
+      - deploy/tx/runtime-check-lib.sh
       - infra/tofu/rabbitmq/**
   workflow_dispatch:
 
@@ -27,6 +29,8 @@ env:
     deploy/tx/deploy.sh
     deploy/tx/docker-compose.yml
     deploy/tx/rabbitmq.tofurc
+    deploy/tx/runtime-check.sh
+    deploy/tx/runtime-check-lib.sh
     infra/tofu/rabbitmq/**
 
 jobs:

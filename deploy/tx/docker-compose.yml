@@ -1,8 +1,14 @@
+name: deploy
+
 x-logging: &default-logging
   driver: json-file
   options:
     max-size: "20m"
     max-file: "3"
+
+include:
+  - path: business-postgres.compose.yml
+  - path: keycloak-postgres.compose.yml
 
 # TX public edge only.  The existing deploy/docker-compose.prod.yml remains the
 # Yecao runtime and must not be used to deploy this target.
@@ -17,59 +23,6 @@ services:
       # runtime content created by deploy.sh / the Deploy workflow.
       - ${TX_RUNTIME_ROOT:?TX_RUNTIME_ROOT is required}/e2e:/e2e:ro
     logging: *default-logging
-
-  keycloak-postgres:
-    image: postgres:18-alpine
-    environment:
-      # OpenTofu, running locally on TX, owns the application database, role,
-      # and grants after this PostgreSQL runtime is available.
-      POSTGRES_USER: ${KC_POSTGRES_ADMIN_USER:?KC_POSTGRES_ADMIN_USER is required}
-      POSTGRES_PASSWORD: ${KC_POSTGRES_ADMIN_PASSWORD:?KC_POSTGRES_ADMIN_PASSWORD is required}
-    ports:
-      # TX-local OpenTofu administration only. Never publish PostgreSQL to a
-      # public or WireGuard interface.
-      - "127.0.0.1:15432:5432"
-    volumes:
-      - keycloak_postgres_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-    restart: unless-stopped
-    logging: *default-logging
-
-  business-postgres:
-    image: postgres:18-alpine
-    environment:
-      # Compose owns only the runtime and its bootstrap administrator. OpenTofu
-      # on TX owns the wotb database, the control_api application role, and its
-      # grants; Flyway owns every application table. The application credential
-      # is deliberately absent here: this runtime never receives it, and the
-      # `business-api` service is its only consumer.
-      #
-      # POSTGRES_DB pins the entrypoint's initial database to the maintenance
-      # database. Without it the image would auto-create a database named after
-      # POSTGRES_USER, which would collide with the OpenTofu-owned wotb database
-      # whenever the bootstrap administrator is also named wotb.
-      POSTGRES_DB: postgres
-      POSTGRES_USER: ${TX_BUSINESS_POSTGRES_ADMIN_USER:?TX_BUSINESS_POSTGRES_ADMIN_USER is required}
-      POSTGRES_PASSWORD: ${TX_BUSINESS_POSTGRES_ADMIN_PASSWORD:?TX_BUSINESS_POSTGRES_ADMIN_PASSWORD is required}
-    ports:
-      # TX-local OpenTofu administration only. Business PostgreSQL is
-      # authoritative state and must never be published publicly or over
-      # WireGuard. Keep this independent from keycloak-postgres.
-      - "127.0.0.1:25432:5432"
-    volumes:
-      - business_postgres_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-    restart: unless-stopped
-    logging: *default-logging
-    mem_limit: 512m
 
   rabbitmq:
     image: rabbitmq:4.3.6-management-alpine
@@ -266,8 +219,6 @@ services:
     logging: *default-logging
 
 volumes:
-  keycloak_postgres_data:
-  business_postgres_data:
   rabbitmq_data:
   # HoF replay originals (permanent, content-addressed); migrated from Yecao by
   # the operator and deliberately separate from the MinIO dataset workspace.

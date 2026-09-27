@@ -1,0 +1,44 @@
+name: deploy
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+services:
+  business-postgres:
+    image: postgres:18-alpine
+    environment:
+      # Compose owns only the runtime and its bootstrap administrator. OpenTofu
+      # on TX owns the wotb database, the control_api application role, and its
+      # grants; Flyway owns every application table. The application credential
+      # is deliberately absent here: this runtime never receives it.
+      #
+      # POSTGRES_DB pins initial startup to postgres, so the image entrypoint
+      # cannot create a database named after the bootstrap administrator.
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${TX_BUSINESS_POSTGRES_ADMIN_USER:?TX_BUSINESS_POSTGRES_ADMIN_USER is required}
+      POSTGRES_PASSWORD: ${TX_BUSINESS_POSTGRES_ADMIN_PASSWORD:?TX_BUSINESS_POSTGRES_ADMIN_PASSWORD is required}
+    ports:
+      - "127.0.0.1:25432:5432"
+    volumes:
+      - business_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 512m
+
+volumes:
+  business_postgres_data:
+
+networks:
+  default:
+    name: wotb_tx_internal
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16

@@ -81,6 +81,9 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     document = json.load(handle)
 services = document["services"]
+assert document["name"] == "deploy", document.get("name")
+assert document["volumes"]["business_postgres_data"]["name"] == "deploy_business_postgres_data"
+assert document["volumes"]["keycloak_postgres_data"]["name"] == "deploy_keycloak_postgres_data"
 assert "business-postgres" in services, sorted(services)
 service = services["business-postgres"]
 assert service["image"] == "postgres:18-alpine", service["image"]
@@ -98,7 +101,7 @@ assert set(environment) == {"POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"}
 assert environment["POSTGRES_DB"] == "postgres", environment["POSTGRES_DB"]
 assert "business_postgres_data" in document["volumes"], sorted(document["volumes"])
 assert "keycloak_postgres_data" in document["volumes"], sorted(document["volumes"])
-print("business-postgres Compose service/port/volume contract OK")
+print("business-postgres Compose project/service/port/volume contract OK")
 PY
 
 echo "== OpenTofu root ownership guard =="
