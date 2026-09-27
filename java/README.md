@@ -34,7 +34,7 @@ state 中独立验证，不访问 production state。
 
 ### CI/CD 与部署所有权
 
-`ci.yml` 是唯一的 Pull Request 验证入口，并负责 `CI / Required Gate`。它按变更选择后端、前端、契约、Android、部署和 OpenTofu 验证，不读取生产凭据，也不执行生产部署。
+`ci-gate.yml` 是唯一的 Pull Request 验证入口，并负责 `CI / Required Gate`。它按变更选择后端、前端、契约、Android、部署和 OpenTofu 验证，不读取生产凭据，也不执行生产部署。
 
 推送到 `main` 后由独立 workflow 负责各自服务：`business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 和 `minio.yml` 分别构建或复用并部署一个精确镜像身份。`caddy.yml` 单独保证 TX 网关可用。RabbitMQ、两个 PostgreSQL root、COS 和 Observability 也各有独立 owner workflow。三个数据更新 workflow 继续独立运行，并为生成的精确 head 创建或更新 PR，再触发 CI 验证。
 

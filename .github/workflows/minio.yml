@@ -3,6 +3,15 @@ name: MinIO
 on:
   push:
     branches: [main]
+    paths:
+      - .github/workflows/minio.yml
+      - .dockerignore
+      - docker/Dockerfile.minio
+      - deploy/docker-compose.minio.yml
+      - deploy/minio-deploy.sh
+      - deploy/minio/**
+      - deploy/check-latest-main.sh
+      - infra/tofu/minio/**
   workflow_dispatch:
 
 permissions:
@@ -19,7 +28,6 @@ env:
     deploy/minio/**
     deploy/check-latest-main.sh
     infra/tofu/minio/**
-
 concurrency:
   group: deploy-minio
   cancel-in-progress: true

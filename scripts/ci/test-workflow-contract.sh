@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python3 - "$ROOT" <<'PY'
 import json
+import fnmatch
 import sys
 from pathlib import Path
 
@@ -13,7 +14,7 @@ root = Path(sys.argv[1])
 workflow_dir = root / ".github/workflows"
 load = lambda path: yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
-ci = load(workflow_dir / "ci.yml")
+ci = load(workflow_dir / "ci-gate.yml")
 triggers = ci.get("on", ci.get(True, {}))
 assert set(triggers) == {"pull_request", "workflow_dispatch"}
 assert triggers["pull_request"]["branches"] == ["main"]
@@ -26,7 +27,7 @@ for path in sorted((*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml"))):
     events = load(path).get("on", load(path).get(True, {}))
     if "pull_request" in events:
         pr_owners.append(path.name)
-assert pr_owners == ["ci.yml"], pr_owners
+assert pr_owners == ["ci-gate.yml"], pr_owners
 
 jobs = ci["jobs"]
 required = jobs["required"]
@@ -34,27 +35,50 @@ assert required["name"] == "CI / Required Gate" and required["if"] == "always()"
 assert set(required["needs"]) == set(jobs) - {"required"}
 assert "ci-impact.py" not in json.dumps(ci)
 assert "test-path-filters.py" not in json.dumps(ci)
+assert "dorny/paths-filter@v3" in json.dumps(jobs["changes"])
+assert set(jobs["changes"]["outputs"]) == set(jobs) - {"pr_identity", "changes", "required"}
+filter_path = next(step for step in jobs["changes"]["steps"]
+                   if step.get("id") == "filter")["with"]["filters"]
+assert filter_path == ".github/ci-owner-paths.yml"
+filters = load(root / filter_path)
+def affected(path):
+    return {owner for owner, patterns in filters.items()
+            if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)}
+assert affected("frontend/src/styles/base.css") == {"frontend"}
+assert affected("infra/tofu/minio/main.tf") == {"minio"}
+assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgres"}
+assert affected("docs/README.md") == set()
+assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend", "android"}
+for owner in jobs["changes"]["outputs"]:
+    caller = jobs[owner]
+    assert caller["if"] == f"needs.changes.outputs.{owner} == 'true'", owner
+    assert caller["uses"] == f"./.github/workflows/ci-{owner.replace('_', '-')}.yml", owner
+    workflow = load(workflow_dir / f"ci-{owner.replace('_', '-')}.yml")
+    assert workflow["on"].keys() == {"workflow_call"}
+    for job in workflow["jobs"].values():
+        for step in job.get("steps", []):
+            if step.get("uses") == "actions/checkout@v5":
+                assert step.get("with", {}).get("ref") == "${{ inputs.head_sha }}", owner
 ci_text = json.dumps(ci, ensure_ascii=False)
 for forbidden in (
     "secrets.", "appleboy/ssh-action", "appleboy/scp-action",
     "docker/build-push-action", "docker/setup-buildx-action", "tofu apply",
 ):
     assert forbidden not in ci_text, f"PR CI must not access production credentials or mutate production: {forbidden}"
-for job in jobs.values():
+for workflow in [ci] + [load(path) for path in workflow_dir.glob("ci-*.yml")]:
+  for job in workflow["jobs"].values():
     for step in job.get("steps", []):
         run = step.get("run", "")
         assert not any(line.lstrip().startswith(("ssh ", "scp ", "docker login", "docker push"))
                        for line in run.splitlines()), "PR CI must not run production mutation commands"
 
-tofu = jobs["tofu_plans"]
-tofu_text = json.dumps(tofu, ensure_ascii=False)
-assert "tofu fmt -check -recursive" in tofu_text
-assert "tofu init -backend=false -input=false" in tofu_text
-assert "tofu validate" in tofu_text
-assert "tofu apply" not in tofu_text and "secrets." not in tofu_text
-assert set(tofu["strategy"]["matrix"]["root"]) == {
-    "keycloak", "rabbitmq", "business-postgres", "keycloak-postgres", "minio", "grafana"
-}
+for owner in ("keycloak", "rabbitmq", "business-postgres", "keycloak-postgres", "minio", "observability"):
+    tofu = load(workflow_dir / f"ci-{owner}.yml")["jobs"]["tofu_plans"]
+    tofu_text = json.dumps(tofu, ensure_ascii=False)
+    assert "tofu fmt -check -recursive" in tofu_text
+    assert "tofu init -backend=false -input=false" in tofu_text
+    assert "tofu validate" in tofu_text
+    assert "tofu apply" not in tofu_text and "secrets." not in tofu_text
 
 backup = load(workflow_dir / "database-backup.yml")
 assert backup["concurrency"] == {
@@ -78,10 +102,7 @@ for owner in owners:
     assert events["push"]["branches"] == ["main"], owner
     trigger_paths = events["push"].get("paths", [])
     freshness_paths = workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
-    if owner in image_owners:
-        assert not trigger_paths, owner
-    else:
-        assert trigger_paths == freshness_paths, owner
+    assert trigger_paths == freshness_paths, owner
     checks = [
         step for job in workflow["jobs"].values() for step in job.get("steps", [])
         if "deploy/check-production-freshness.sh" in step.get("run", "")

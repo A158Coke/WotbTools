@@ -1,0 +1,51 @@
+name: CI / parser-worker
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Build Parser Worker image without publishing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.parser-worker
+          push: false
+          build-args: BUILD_COMMIT=${{ inputs.head_sha }}
+  backend:
+    name: Parser Worker modules
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: actions/cache@v4
+        with:
+          path: java/.m2repo
+          key: ${{ runner.os }}-maven-${{ hashFiles('java/**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+      - name: Maven test for Parser Worker and dependencies
+        working-directory: java
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-parser-worker -am test

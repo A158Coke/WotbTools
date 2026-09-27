@@ -11,41 +11,35 @@ from pathlib import Path
 import yaml
 
 root = Path(sys.argv[1])
-ci = yaml.load(
-    (root / ".github/workflows/ci.yml").read_text(encoding="utf-8"),
-    Loader=yaml.BaseLoader,
-)
-tofu_job = ci["jobs"]["tofu_plans"]
-steps = tofu_job["steps"]
-
-def step(name):
-    return next(item for item in steps if item.get("name") == name)
-
-assert tofu_job["name"] == "OpenTofu validation / ${{ matrix.root }}"
-assert "${{ secrets." not in json.dumps(tofu_job)
-assert "tofu fmt -check -recursive" in step("Format, initialize without production state, and validate")["run"]
-validation = step("Format, initialize without production state, and validate")["run"]
-assert "tofu init -backend=false -input=false" in validation
-assert "tofu validate" in validation
-assert not re.search(r"(?i)\btofu(?:\s+-[^\s]+)*\s+(?:plan|apply)\b", json.dumps(tofu_job))
-assert "init -reconfigure" not in json.dumps(tofu_job)
-
-root_resolver = step("Resolve one declared root")["run"]
-root_paths = {
-    "keycloak": "infra/tofu/keycloak",
-    "rabbitmq": "infra/tofu/rabbitmq",
-    "business-postgres": "infra/tofu/postgres-business",
-    "keycloak-postgres": "infra/tofu/postgres-keycloak",
-    "minio": "infra/tofu/minio",
-    "grafana": "infra/tofu/grafana",
+owners = {
+    "keycloak": "keycloak", "rabbitmq": "rabbitmq",
+    "business-postgres": "business-postgres", "keycloak-postgres": "keycloak-postgres",
+    "minio": "minio", "observability": "grafana",
 }
-for name, path in root_paths.items():
-    assert f"{name}) path={path}" in root_resolver, name
-fixture_step = step("Validate local-root safety policy fixtures")["run"]
-assert "rabbitmq|minio)" in fixture_step
-assert "business-postgres)" in fixture_step
-assert fixture_step.count("test-validate-plan.sh") == 2
-assert "bash deploy/test-business-postgres-runtime.sh" in fixture_step
+jobs = {
+    owner: yaml.load((root / f".github/workflows/ci-{owner}.yml").read_text(encoding="utf-8"),
+                     Loader=yaml.BaseLoader)["jobs"]["tofu_plans"]
+    for owner in owners
+}
+assert all(job["name"] == f"OpenTofu validation / {owners[owner]}" for owner, job in jobs.items())
+assert all("${{ secrets." not in json.dumps(job) for job in jobs.values())
+for owner, job in jobs.items():
+    validation = next(step for step in job["steps"] if step.get("name") == "Format, initialize without production state, and validate")
+    assert validation["env"]["ROOT_DIR"] == {
+        "keycloak": "infra/tofu/keycloak", "rabbitmq": "infra/tofu/rabbitmq",
+        "business-postgres": "infra/tofu/postgres-business", "keycloak-postgres": "infra/tofu/postgres-keycloak",
+        "minio": "infra/tofu/minio", "observability": "infra/tofu/grafana",
+    }[owner]
+    assert "tofu fmt -check -recursive" in validation["run"]
+    assert "tofu init -backend=false -input=false" in validation["run"]
+    assert "tofu validate" in validation["run"]
+assert all(not re.search(r"(?i)\btofu(?:\s+-[^\s]+)*\s+(?:plan|apply)\b", json.dumps(job)) for job in jobs.values())
+assert all("init -reconfigure" not in json.dumps(job) for job in jobs.values())
+
+for owner in ("rabbitmq", "minio", "business-postgres"):
+    fixture = next(step for step in jobs[owner]["steps"] if step.get("name") == "Validate local-root safety policy fixtures")
+    assert "test-validate-plan.sh" in fixture["run"]
+assert "bash deploy/test-business-postgres-runtime.sh" in fixture["run"]
 
 print("PR OpenTofu validation has no plan/apply or production credentials")
 PY

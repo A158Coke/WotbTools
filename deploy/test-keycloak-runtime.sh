@@ -48,6 +48,11 @@ if [ "${WOTB_KEYCLOAK_SKIP_BUILD:-0}" != "1" ]; then
   echo "== Building real Keycloak production image =="
   docker build --build-arg BUILD_COMMIT=runtime-contract -f "$ROOT/docker/Dockerfile.keycloak" -t "$IMAGE" "$ROOT" >/dev/null
 fi
+expected_build=runtime-contract
+if [ "${WOTB_KEYCLOAK_SKIP_BUILD:-0}" = "1" ]; then
+  expected_build="$(docker image inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE" | sed -n 's/^WOTBTOOLS_BUILD_COMMIT=//p' | head -n 1)"
+  [ -n "$expected_build" ] || fail "existing Keycloak image has no build identity"
+fi
 
 docker run --rm --entrypoint /bin/sh "$IMAGE" -ec '
   test -f /opt/keycloak/providers/keycloak-qq-provider.jar

@@ -22,7 +22,7 @@ import yaml
 root = Path(sys.argv[1])
 tofu_root = root / "infra/tofu/postgres-business"
 workflow_text = (root / ".github/workflows/business-postgres.yml").read_text(encoding="utf-8")
-ci_text = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+ci_text = (root / ".github/workflows/ci-business-postgres.yml").read_text(encoding="utf-8")
 tx_deploy = (root / "deploy/tx/deploy.sh").read_text(encoding="utf-8")
 tofurc = (root / "deploy/tx/business-postgres.tofurc").read_text(encoding="utf-8")
 root_text = "\n".join(path.read_text(encoding="utf-8") for path in sorted(tofu_root.glob("*.tf")))

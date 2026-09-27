@@ -112,9 +112,28 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 ### PR CI validation gate
 
-`.github/workflows/ci.yml` 是唯一 PR validation workflow，始终运行 Python、backend、Keycloak provider/runtime、frontend（含两套真实浏览器回归）、HTTP contract、Android、observability、deployment smoke 與六个 OpenTofu roots，并由稳定的 `CI / Required Gate` 汇总。Workflow 保留 PR/base/head SHA 身份校验；不使用自研 changed-path selector，也不在 workflow trigger 上设置 paths，以免 required check 被跳过后保持 pending。PR CI 不接触 production credentials、host、state 或 authenticated plan。
+`.github/workflows/ci-gate.yml` 是唯一 PR 入口：校验 PR/base/head SHA 身份，用 `dorny/paths-filter` 将变更映射到 owner，调用相应 reusable CI workflow，最后由稳定的 `CI / Required Gate` 汇总。未受影响的 owner 跳过；六个 OpenTofu root 只在各自 owner 受影响时验证。PR trigger 不设置 paths，确保 required check 始终产生。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
+
+### CI/CD owner 依赖清单
+
+`ci-gate.yml` 读取 `.github/ci-owner-paths.yml` 作为 PR 路由表；生产 owner workflow 的 `on.push.paths` 与 `PRODUCTION_INPUT_PATHS` 必须逐项相同。共享输入按真实依赖 fan-out，未列出的普通文档变更只执行 PR gate。下表是维护边界索引，具体路径以 workflow 为准。
+
+| Owner | Source / shared inputs | Runtime inputs | PR validation | OpenTofu root | Production workflow |
+|---|---|---|---|---|---|
+| Business API | Java control/web modules、HTTP/MQ contracts、shared common data | business-api image、TX Compose、dependency readiness | Maven、HTTP contract | — | `business-api.yml` |
+| Parser Worker | Java parser/processing modules、MQ contract、shared common data | parser-worker image、Yecao Compose、dependency readiness | Maven | — | `parser-worker.yml` |
+| Frontend | Vue、HTTP contract、shared assets/map/tier data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
+| Keycloak | QQ/Wargaming providers、Keycloak image | realm runtime、TX Compose | provider/runtime、Tofu | `keycloak` | `keycloak.yml` |
+| Android | Android source、native bridge、release helpers | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |
+| MinIO | MinIO image、MinIO config | Yecao Compose | Compose、Tofu | `minio` | `minio.yml` |
+| Business PostgreSQL | root config、backup/restore | TX Compose、local state | disposable PostgreSQL、Tofu | `postgres-business` | `business-postgres.yml` |
+| Keycloak PostgreSQL | root config、backup | TX Compose、local state | backup safety、Tofu | `postgres-keycloak` | `keycloak-postgres.yml` |
+| RabbitMQ | MQ contract、root config | TX Compose、local state | runtime safety、Tofu | `rabbitmq` | `rabbitmq.yml` |
+| Observability | Prometheus/Loki/Alloy/Grafana config | Yecao Compose、local state | config/runtime、Tofu | `grafana` | `observability.yml` |
+| Caddy / TX Alloy | gateway / TX shipper config | TX Compose | config validation | — | `caddy.yml` / `alloy-tx.yml` |
+| Deployment / Python | shared deploy policy / common Python tools | shared scripts | contract smokes / unit tests | — | — |
 ---
 
 ## 后端架构速览
@@ -691,9 +710,9 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 
 生产 CI/CD 使用唯一 PR 验证入口和独立的 service owner workflows：
 
-- `.github/workflows/ci.yml` 是唯一 PR 验证工作流；每个 PR 运行实际验证 jobs，
-  `CI / Required Gate` 汇总全部结果。Backend 运行 Maven full reactor，frontend 运行类型检查、
-  单测、两套真实浏览器回归和 build；部署 smoke 校验运行时契约。PR 验证不 push 镜像。
+- `.github/workflows/ci-gate.yml` 是唯一 PR 入口；按 changed paths 调用受影响的 `ci-<owner>.yml`，
+  `CI / Required Gate` 汇总受影响结果。Backend 运行 Maven，frontend 运行类型检查、单测、两套真实浏览器回归和 build；
+  OpenTofu 每个 owner 只验证自己的 root。PR 验证不 push 镜像。
 - `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 与
   `minio.yml` 分别构建一个应用镜像。每个 workflow 保留 SHA tag 供诊断，并在确认 source SHA 仍为
   远端 main HEAD 后发布 `latest`；部署只使用所属服务的 `latest`。服务级 concurrency 会取消旧 main
@@ -707,7 +726,7 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
   失败仍按现有契约显示为 degraded，不改变应用服务结果。
 - 三个数据更新 workflow (`update-tankopedia.yml`、`update-equipment.yml`、`update-crew-skills.yml`)
   保持独立，生成 PR 后核对 open PR 的 main base、自动化 head branch 和精确 head SHA，再 dispatch
-  `ci.yml`；CI 通过只读 GitHub API 核对该 run 仍验证同一 PR head。它们不自动 merge。
+  `ci-gate.yml`；CI 通过只读 GitHub API 核对该 run 仍验证同一 PR head。它们不自动 merge。
 - main 是应用的唯一目标状态；生产镜像来自当前 main 的 `latest`。TX 服务定义按 owner 分离，
   各部署只渲染所属服务和通用探针。固定基础设施使用既有 volume、network 与 OpenTofu state，
   不读取应用镜像发布记录。运行中的版本通过 `docker inspect`、镜像 digest 与 `BUILD_COMMIT` 查询。
