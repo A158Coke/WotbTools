@@ -23,6 +23,7 @@ grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "$RUNTIME_CHECK_LIB"
 grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "$RUNTIME_CHECK_LIB"
 grep -Fq 'https://graph.qq.com/user/get_user_info' "$RUNTIME_CHECK_LIB"
 grep -Fq 'tx-internal-api-route: PASS' "$RUNTIME_CHECK_LIB"
+grep -Fq 'tx-alloy-config: PASS' "$RUNTIME_CHECK_LIB"
 grep -Fq 'distributed-execution-plane: PASS' "$RUNTIME_CHECK_LIB"
 ! grep -Fq 'wireguard-backend' "$RUNTIME_CHECK_LIB"
 grep -Fq 'keycloak-qq-provider.jar' "$RUNTIME_CHECK_LIB"
@@ -93,10 +94,11 @@ fi
 # 组合成 business-api 的 environment 主体（去掉首个逗号，空集时是合法 JSON {}）。
 extra_env="${job_repository_field}${execution_mode_field}"
 extra_env="${extra_env#,}"
-business_api_ports="${FAKE_BUSINESS_API_PUBLISHED_PORT:-[]}"
+business_api_ports='[{"host_ip":"10.20.0.1","published":8088,"target":8088}]'
+[ -z "${FAKE_BUSINESS_API_PUBLISHED_PORT:-}" ] || business_api_ports="$FAKE_BUSINESS_API_PUBLISHED_PORT"
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}}}}\n' \
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
       "$business_ports" "$frontend_upstream" "$business_api_ports" "$extra_env"
     ;;
   ps)
@@ -257,6 +259,8 @@ printf 'tx-local-opentofu-business-postgres\n' > "$WORK/business-postgres.tofu-p
 ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
 grep -Fq 'TX_RUNTIME_READY' <<< "$ready_output"
 grep -Fq 'tx-internal-api-route: PASS' <<< "$ready_output"
+grep -Fq 'tx-alloy-config: PASS' <<< "$ready_output"
+grep -Fq 'caddy-monitor: PASS' <<< "$ready_output"
 grep -Fq 'distributed-execution-plane: PASS' <<< "$ready_output"
 grep -Fq 'tx-business-api: PASS' <<< "$ready_output"
 grep -Fq 'auth-token: PASS' <<< "$ready_output"
@@ -330,6 +334,9 @@ run_gate_failure "frontend-upstream-public" 'tx-internal-api-route: FAIL' \
 run_gate_failure "business-api-published-port" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8087,"target":8087}]'
+run_gate_failure "business-api-extra-management-bind" 'tx-internal-api-route: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"10.20.0.1","published":8088,"target":8088},{"host_ip":"127.0.0.1","published":8088,"target":8088}]'
 run_gate_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
   "" "$RELOCATED_ROOT/deploy/runtime-check.sh" env FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
 run_gate_failure "retired-execution-mode-switch" 'distributed-execution-plane: FAIL' \

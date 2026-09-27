@@ -111,7 +111,7 @@ validate_inputs() {
   is_positive_integer "$PROBE_MAX_TIME_SEC" || die "WOTB_PROBE_MAX_TIME_SEC must be a positive integer."
   case "$DEPLOY_SERVICE_VALUE" in
     frontend) DEPLOY_SERVICES=(wotb-frontend) ;;
-    keycloak-postgres|business-postgres|rabbitmq|keycloak|business-api|caddy)
+    keycloak-postgres|business-postgres|rabbitmq|keycloak|business-api|caddy|alloy-tx)
       DEPLOY_SERVICES=("$DEPLOY_SERVICE_VALUE") ;;
     *) die "unsupported TX deployment service: $DEPLOY_SERVICE_VALUE" ;;
   esac
@@ -132,7 +132,7 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy) ;;
+      keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy|alloy-tx) ;;
       *) die "unsupported TX deployment service: $service" ;;
     esac
   done
@@ -202,6 +202,13 @@ stage_and_validate() {
     [ -f "$INCOMING_DIR/Caddyfile" ] || die "staged TX deployment tree is missing Caddyfile."
     [ -f "$INCOMING_DIR/assets/auth/.well-known/assetlinks.json" ] \
       || die "staged TX deployment tree is missing Caddy's assetlinks file."
+  fi
+  if is_selected alloy-tx; then
+    [ -f "$INCOMING_DIR/alloy/config.alloy" ] || die "staged TX Alloy config is missing."
+    local validator="$(dirname "$INCOMING_DIR")/validate-alloy-config.sh"
+    [ -f "$validator" ] || die "staged Alloy validator is missing."
+    bash "$validator" "$INCOMING_DIR/alloy/config.alloy" \
+      || die "staged TX Alloy config validation failed; live TX deployment was not changed."
   fi
   if is_selected wotb-frontend; then
     # Sponsor assets and Android releases are optional runtime content. The
@@ -346,7 +353,7 @@ promote_files() {
   cp -f "$INCOMING_DIR/runtime-check-lib.sh" "$next_deploy/runtime-check-lib.sh" || return 1
   cp -f "$INCOMING_DIR/docker-compose.yml" "$next_deploy/docker-compose.yml" || return 1
   cp -f "$INCOMING_DIR/common.compose.yml" "$next_deploy/common.compose.yml" || return 1
-  for compose_fragment in frontend business-api keycloak rabbitmq caddy; do
+  for compose_fragment in frontend business-api keycloak rabbitmq caddy alloy-tx; do
     cp -f "$INCOMING_DIR/$compose_fragment.compose.yml" "$next_deploy/$compose_fragment.compose.yml" || return 1
   done
   if [ "$DEPLOY_SERVICES_RAW" = business-postgres ] || [ ! -f "$next_deploy/business-postgres.compose.yml" ]; then
@@ -375,6 +382,10 @@ promote_files() {
       ;;
     business-postgres)
       cp -f "$INCOMING_DIR/business-postgres.tofurc" "$next_deploy/business-postgres.tofurc" || return 1
+      ;;
+    alloy-tx)
+      mkdir -p "$next_deploy/alloy" || return 1
+      cp -f "$INCOMING_DIR/alloy/config.alloy" "$next_deploy/alloy/config.alloy" || return 1
       ;;
   esac
   if [ -e "$LIVE_DEPLOY_DIR" ]; then
@@ -521,6 +532,92 @@ wait_for_business_database() {
   return 1
 }
 
+tx_alloy_health() {
+  local canary_id="deploy-$(date +%s)-$$"
+  # Canary container names live in globals because the RETURN-trap cleanup
+  # runs after the function's local scope is gone (set -u would abort on the
+  # unbound names).
+  TX_ALLOY_BACKEND_CANARY="business-api-observability-canary-${canary_id}"
+  TX_ALLOY_KEYCLOAK_CANARY="keycloak-observability-canary-${canary_id}"
+  local backend_name="$TX_ALLOY_BACKEND_CANARY" keycloak_name="$TX_ALLOY_KEYCLOAK_CANARY"
+  local backend_marker="wotb-backend-canary-${canary_id}"
+  local keycloak_marker="wotb-keycloak-canary-${canary_id}"
+  local frontend_apk="observability-canary-${canary_id}.apk"
+  local start_ns="$(( $(date +%s) ))000000000"
+  local end_ns body attempt
+  cleanup_tx_alloy_canaries() {
+    docker rm -f "$TX_ALLOY_BACKEND_CANARY" "$TX_ALLOY_KEYCLOAK_CANARY" >/dev/null 2>&1 || true
+    TX_ALLOY_BACKEND_CANARY="" TX_ALLOY_KEYCLOAK_CANARY=""
+  }
+  trap cleanup_tx_alloy_canaries RETURN
+
+  if ! docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" ps -a alloy-tx | grep -Eq 'Up|running'; then
+    echo "alloy-tx: FAIL (container is not running)" >&2
+    FAILED_SERVICE=alloy-tx
+    return 1
+  fi
+  if ! docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" run --rm --no-deps health-probe \
+    --silent --show-error --fail --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+    --max-time "$PROBE_MAX_TIME_SEC" http://10.20.0.2:3100/ready | grep -Fxq ready; then
+    FAILED_SERVICE=alloy-tx
+    return 1
+  fi
+
+  # Compose service labels are the authoritative match key for the TX Alloy
+  # config; the labels here are exactly the production ones.
+  docker run -d --network wotb_tx_internal \
+    --label com.docker.compose.service=business-api \
+    --name "$backend_name" alpine:3.22 \
+    sh -c "printf '%s\n' '$backend_marker'; sleep 90" >/dev/null \
+    || { FAILED_SERVICE=alloy-tx; return 1; }
+  docker run -d --network wotb_tx_internal \
+    --label com.docker.compose.service=keycloak \
+    --name "$keycloak_name" alpine:3.22 \
+    sh -c "printf '%s\n' '$keycloak_marker'; sleep 90" >/dev/null \
+    || { FAILED_SERVICE=alloy-tx; return 1; }
+  # A 404 is expected and proves the real frontend nginx access-log path; the
+  # Android dashboard counts only status=200, so a 404 never inflates usage.
+  probe_http frontend-canary "http://caddy/_wotb/frontend/download/android/$frontend_apk" >/dev/null 2>&1 || true
+  FAILED_SERVICE=alloy-tx
+
+  loki_query_body() {
+    local selector="$1" marker="$2" range_start="$3" range_end="$4"
+    docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" run --rm --no-deps health-probe \
+      --silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
+      --max-time "$PROBE_MAX_TIME_SEC" -G "http://10.20.0.2:3100/loki/api/v1/query_range" \
+      --data-urlencode "query=${selector} |= \"${marker}\"" \
+      --data-urlencode "start=${range_start}" \
+      --data-urlencode "end=${range_end}" \
+      --data-urlencode "limit=1" 2>/dev/null
+  }
+  loki_response_has_marker() {
+    local body="$1" marker="$2"
+    grep -Eq '"status"[[:space:]]*:[[:space:]]*"success"' <<<"$body" \
+      && grep -Eq '"values"' <<<"$body" \
+      && grep -Fq "$marker" <<<"$body"
+  }
+  for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
+    end_ns="$(( $(date +%s) + 2 ))000000000"
+    backend_body="$(loki_query_body '{container_name="wotb-backend"}' "$backend_marker" "$start_ns" "$end_ns" || true)"
+    keycloak_body="$(loki_query_body '{container_name="keycloak"}' "$keycloak_marker" "$start_ns" "$end_ns" || true)"
+    frontend_body="$(loki_query_body '{container_name="wotb-frontend",event="android_apk_download"}' "$frontend_apk" "$start_ns" "$end_ns" || true)"
+    if loki_response_has_marker "$backend_body" "$backend_marker" \
+      && loki_response_has_marker "$keycloak_body" "$keycloak_marker" \
+      && loki_response_has_marker "$frontend_body" "$frontend_apk" \
+      && grep -Fq 'event=android_apk_download' <<<"$frontend_body" \
+      && grep -Fq "apk=$frontend_apk" <<<"$frontend_body" \
+      && grep -Fq 'status=404' <<<"$frontend_body" \
+      && ! grep -Fq 'User-Agent' <<<"$frontend_body" \
+      && ! grep -Fq 'Referer' <<<"$frontend_body"; then
+      echo "alloy-tx: PASS (backend/keycloak/sanitized APK streams reached Loki over WireGuard)"
+      return 0
+    fi
+    [ "$attempt" -lt "$HEALTH_ATTEMPTS" ] && sleep "$HEALTH_INTERVAL_SEC"
+  done
+  echo "alloy-tx: FAIL (business log streams did not reach the Yecao Loki)" >&2
+  return 1
+}
+
 blocking_health() {
   if is_selected keycloak-postgres || is_selected keycloak; then
     wait_for_database || return 1
@@ -539,9 +636,9 @@ blocking_health() {
     fi
   fi
   if is_selected business-api; then
-    # The business runtime is TX-internal and publishes no port, so both the
-    # application surface and the dedicated management port are proven from
-    # inside wotb_tx_internal by the deployment-owned health-probe container.
+    # The application surface stays TX-internal; management also binds to
+    # WireGuard for the Yecao Prometheus scrape. Prove both paths from the
+    # deployment-owned health-probe container.
     wait_for_probe tx-business-api http://business-api:8088/actuator/health || return 1
     wait_for_probe business-api-app http://business-api:8087/api/health || return 1
   fi
@@ -555,6 +652,10 @@ blocking_health() {
     wait_for_probe caddy-ready http://caddy/_wotb/ready || return 1
     wait_for_probe caddy-upstream-frontend http://caddy/_wotb/frontend/api/health || return 1
     wait_for_probe caddy-upstream-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1
+    wait_for_probe caddy-upstream-monitor http://caddy/_wotb/monitor/api/health || return 1
+  fi
+  if is_selected alloy-tx; then
+    tx_alloy_health || return 1
   fi
 }
 
@@ -609,7 +710,7 @@ stop_failed_service() {
     return 0
   fi
   case "$service" in
-    keycloak|wotb-frontend|business-api|caddy)
+    keycloak|wotb-frontend|business-api|caddy|alloy-tx)
       echo "Stopping failed affected TX service: $service"
       docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" stop "$service" || true
       ;;

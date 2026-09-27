@@ -220,6 +220,10 @@ jobs:
 
             unset GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD
             export TF_VAR_grafana_auth="$GRAFANA_PAT"
+            # The Grafana provider dials the host-local WireGuard bind published by
+            # docker-compose.prod.yml; dashboard management must never depend on
+            # public DNS or the Caddy certificate chain.
+            export TF_VAR_grafana_url="http://10.20.0.2:3000"
             export TF_IN_AUTOMATION=true
             export CHECKPOINT_DISABLE=1
             # Grafana uses its committed provider lockfile and the default registry install;
@@ -267,14 +271,3 @@ jobs:
           GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
           OBSERVABILITY_ENVIRONMENT: ${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}
           GRAFANA_PAT: ${{ secrets.GRAFANA_PAT }}
-
-      - name: Report the existing metrics and logs verification gap
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo '### Observability verification limitation'
-            echo
-            echo 'Selected runtime containers and the Grafana dashboard root are checked directly. The existing metrics/log target realignment remains **degraded/unverified** because the current end-to-end verifier still targets retired Yecao application services. This workflow does not claim a metrics or logs data-chain pass.'
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo '::warning::Metrics/log target realignment remains degraded/unverified; no end-to-end data-chain pass is claimed.'

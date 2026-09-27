@@ -99,6 +99,8 @@ services:
       - replay_data:/data/replays
     restart: unless-stopped
     logging: *default-logging
+    ports:
+      - "10.20.0.1:8088:8088"
 
 
 volumes:

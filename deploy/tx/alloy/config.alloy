@@ -1,0 +1,147 @@
+// Alloy 配置 — TX 侧日志采集
+// 采集 business-api、keycloak、wotb-frontend 三个业务容器的日志，经 WireGuard 转发到
+// Yecao Loki（10.20.0.2:3100）。需要挂载 /var/run/docker.sock（见 docker-compose.yml）。
+//
+// 匹配用 com.docker.compose.service 标签而不是容器名：TX 的服务没有固定 container_name，
+// 且容器名形如 <project>-<service>-1，`.*keycloak.*` 这类名字正则会同时命中
+// keycloak-postgres。Loki 里的标签仍然归一化为退役前的旧名字
+// （wotb-backend/keycloak/wotb-frontend），因此所有 Grafana 日志查询无需改动。
+
+// Discover all containers once. Authoritative matching happens in the relabel
+// rules below; keeping discovery unfiltered avoids version-dependent filter
+// semantics (same rationale as the Yecao config). The refresh interval is
+// explicit because the default is 60s: a business container (re)started in
+// compose must be discovered well before any deployment gate asserts on its
+// log stream, not up to a minute later.
+discovery.docker "containers" {
+	host             = "unix:///var/run/docker.sock"
+	refresh_interval = "5s"
+}
+
+// business-api 的日志流沿用 wotb-backend 身份：backend 的指标 job 名、
+// error-explorer/ai-review 的 {container_name="wotb-backend"} 查询都保持不变。
+discovery.relabel "backend" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "business-api"
+		action        = "keep"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "(.*)"
+		target_label  = "container_name"
+		replacement   = "wotb-backend"
+	}
+}
+
+loki.source.docker "backend" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.backend.output
+	forward_to = [loki.write.default.receiver]
+}
+
+discovery.relabel "keycloak" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "keycloak"
+		action        = "keep"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "(.*)"
+		target_label  = "container_name"
+		replacement   = "keycloak"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "(.*)"
+		target_label  = "service"
+		replacement   = "keycloak"
+	}
+}
+
+loki.source.docker "keycloak" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.keycloak.output
+	forward_to = [loki.write.default.receiver]
+}
+
+// Android APK 由 frontend nginx 直接静态托管，不经过 Spring Boot。
+// 这里只采集 GET /download/android/*.apk 的 access log，并在写入 Loki 前丢弃
+// 客户端 IP、Referer、User-Agent 等原始字段，只保留计数所需的文件名、状态码与字节数。
+discovery.relabel "frontend" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "wotb-frontend"
+		action        = "keep"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "(.*)"
+		target_label  = "container_name"
+		replacement   = "wotb-frontend"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "(.*)"
+		target_label  = "service"
+		replacement   = "wotb-frontend"
+	}
+}
+
+loki.source.docker "frontend" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.frontend.output
+	forward_to = [loki.process.android_download.receiver]
+}
+
+loki.process "android_download" {
+	forward_to = [loki.write.default.receiver]
+
+	// 仅保留真实 APK GET；下载页、version.json、普通前端流量全部丢弃。
+	stage.match {
+		selector            = "{container_name=\"wotb-frontend\"} !~ \"GET /download/android/[^ ]+[.]apk\""
+		action              = "drop"
+		drop_counter_reason = "not_android_apk_download"
+	}
+
+	// nginx combined log: "GET /download/android/<apk> HTTP/1.1" <status> <bytes> ...
+	stage.regex {
+		expression = "\\\"(?P<method>GET) /download/android/(?P<apk>[^/? ]+\\.apk)(?:\\?[^ ]*)? HTTP/[^\\\"]+\\\" (?P<status>[0-9]{3}) (?P<bytes>[0-9]+)"
+	}
+
+	stage.template {
+		source   = "sanitized"
+		template = "event=android_apk_download method={{ .method }} apk={{ .apk }} status={{ .status }} bytes={{ .bytes }}"
+	}
+
+	stage.static_labels {
+		values = {
+			event = "android_apk_download",
+		}
+	}
+
+	stage.output {
+		source = "sanitized"
+	}
+}
+
+// Yecao Loki 的 WireGuard-only 摄入端口（deploy/docker-compose.prod.yml）。
+// E2E smoke 测试网络里不存在 WireGuard 地址，因此允许用 WOTB_LOKI_URL 覆盖；
+// 生产 compose 不设置该变量，端点保持 10.20.0.2:3100 不变。
+loki.write "default" {
+	endpoint {
+		url = coalesce(env("WOTB_LOKI_URL"), "http://10.20.0.2:3100/loki/api/v1/push")
+	}
+}
