@@ -39,6 +39,11 @@ impl Value {
         self.as_u64().map(|v| v as i64)
     }
 
+    /// Numeric view of any scalar field, mirroring the production decoder's `Number` handling.
+    pub fn as_f64(&self) -> Option<f64> {
+        self.as_u64().map(|v| v as f64)
+    }
+
     pub fn as_bytes(&self) -> Option<&[u8]> {
         match self {
             Value::Bytes(v) => Some(v),
@@ -123,6 +128,10 @@ impl Message {
 
     pub fn int(&self, field: u32) -> Option<i64> {
         self.first(field).and_then(Value::as_i64)
+    }
+
+    pub fn number(&self, field: u32) -> Option<f64> {
+        self.first(field).and_then(Value::as_f64)
     }
 
     pub fn string(&self, field: u32) -> Option<&str> {

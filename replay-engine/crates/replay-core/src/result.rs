@@ -7,6 +7,8 @@
 //! Identifier contract: every identifier that can exceed the JS safe-integer range (`arenaId`,
 //! `gameAccountId`, `vehicleId`) leaves this module as a decimal **string**.
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::container::ReplayArchive;
@@ -18,8 +20,15 @@ use crate::protobuf::Message;
 // Settlement root fields.
 const F_BATTLE_START: u32 = 2;
 const F_WINNER_TEAM: u32 = 3;
+const F_SETTLEMENT_FINISH_REASON: u32 = 4;
+const F_SETTLEMENT_DURATION: u32 = 5;
 const F_ROSTER: u32 = 201;
 const F_PLAYER_RESULTS: u32 = 301;
+
+/// Java parity (`ReplayParser.java:238-249`): durations above this are clamped, and timestamps at or
+/// below 2014-01-01 are treated as absent rather than surfaced as a bogus battle time.
+const MAX_BATTLE_DURATION_SEC: f64 = 420.0;
+const MIN_PLAUSIBLE_EPOCH_SEC: i64 = 1_388_534_400;
 
 // Roster entry (#201).
 const F_ACCOUNT_ID: u32 = 1;
@@ -63,17 +72,25 @@ pub struct BattleResult {
     /// Decimal string; may exceed the JS safe-integer range.
     pub arena_id: String,
     pub game_version: Option<String>,
+    /// Battle start (unix seconds). Settlement `root2` is primary, `meta.battleStartTime` the
+    /// fallback, and implausible epochs are dropped — same order as `ReplayParser.java:246-249`.
     pub battle_time: Option<i64>,
+    /// Effective battle duration: settlement `root5` first, `meta.battleDuration` as fallback,
+    /// clamped to 420s (`ReplayParser.java:239-245`).
     pub duration_sec: Option<f64>,
+    /// Raw settlement duration in seconds (`root5`), untouched by the clamp.
+    pub settlement_duration_sec: Option<f64>,
+    /// Raw settlement finish-reason code (`root4`).
+    pub settlement_finish_reason_raw: Option<i64>,
     pub battle_mode: Option<i64>,
     pub map: Option<String>,
     pub recorder_vehicle: Option<String>,
     pub winner_team: Option<i64>,
     pub roster_len: usize,
-    /// True when every settled combatant also appears in the roster.
-    pub roster_covers_settlement: bool,
-    /// True when roster team never contradicts settlement team (`None` = nothing to compare).
-    pub roster_team_consistent: Option<bool>,
+    /// Java `Battle.rosterComplete` parity (`ReplayParser.resolveRosterComplete`): the `#201` account
+    /// set must equal the `#301` account set and every shared account must agree on team. A fixture
+    /// whose roster carries non-combatant extras is deliberately `false` (strict fail-closed).
+    pub roster_complete: bool,
     pub participants: Vec<ParticipantResult>,
     pub quality: ParseQuality,
 }
@@ -129,28 +146,25 @@ pub fn parse_result(bytes: &[u8]) -> Result<BattleResult, ReplayError> {
     let mut participants = settlement_participants(&root, &roster)?;
     let winner_team = root.int(F_WINNER_TEAM);
 
-    let roster_len = roster.len();
-    let roster_covers_settlement = participants
-        .iter()
-        .all(|p| roster.iter().any(|r| r.account_id == p.game_account_id));
-    let roster_team_consistent = {
-        let mut compared = false;
-        let mut consistent = true;
-        for participant in &participants {
-            if let Some(entry) = roster
-                .iter()
-                .find(|r| r.account_id == participant.game_account_id)
-            {
-                if let (Some(settlement_team), Some(roster_team)) = (participant.team, entry.team) {
-                    compared = true;
-                    if settlement_team != roster_team {
-                        consistent = false;
-                    }
-                }
-            }
-        }
-        compared.then_some(consistent)
+    // Battle-level timing: settlement is authoritative, metadata is the fallback.
+    let settlement_start_time = root.int(F_BATTLE_START);
+    let settlement_duration_sec = root.number(F_SETTLEMENT_DURATION);
+    let settlement_finish_reason_raw = root.int(F_SETTLEMENT_FINISH_REASON);
+    let duration_sec = match settlement_duration_sec {
+        Some(value) if value > 0.0 => Some(value.min(MAX_BATTLE_DURATION_SEC)),
+        _ => meta
+            .battle_duration
+            .map(|value| value.min(MAX_BATTLE_DURATION_SEC)),
     };
+    let battle_time = match settlement_start_time {
+        Some(value) if value > MIN_PLAUSIBLE_EPOCH_SEC => Some(value),
+        _ => meta
+            .battle_start_time
+            .filter(|value| *value > MIN_PLAUSIBLE_EPOCH_SEC),
+    };
+
+    let roster_len = roster.len();
+    let roster_complete = resolve_roster_complete(&roster, &participants);
     if roster_len == 0 {
         quality.note(crate::error::LIMITATION_ROSTER_MISSING);
     }
@@ -166,17 +180,45 @@ pub fn parse_result(bytes: &[u8]) -> Result<BattleResult, ReplayError> {
     Ok(BattleResult {
         arena_id: payload.arena_id.to_string(),
         game_version: meta.version.clone(),
-        battle_time: meta.battle_start_time.or_else(|| root.int(F_BATTLE_START)),
-        duration_sec: meta.battle_duration,
+        battle_time,
+        duration_sec,
+        settlement_duration_sec,
+        settlement_finish_reason_raw,
         battle_mode: meta.arena_bonus_type,
         map: meta.map_name.clone(),
         recorder_vehicle: meta.player_vehicle_name.clone(),
         winner_team,
         roster_len,
-        roster_covers_settlement,
-        roster_team_consistent,
+        roster_complete,
         participants,
         quality,
+    })
+}
+
+/// Ports `ReplayParser.resolveRosterComplete`: strict set equality plus team agreement.
+fn resolve_roster_complete(roster: &[RosterEntry], participants: &[ParticipantResult]) -> bool {
+    if roster.is_empty() || participants.is_empty() {
+        return false;
+    }
+    let roster_accounts: BTreeSet<&str> = roster.iter().map(|r| r.account_id.as_str()).collect();
+    let result_accounts: BTreeSet<&str> = participants
+        .iter()
+        .map(|p| p.game_account_id.as_str())
+        .collect();
+    if roster_accounts != result_accounts {
+        return false;
+    }
+    participants.iter().all(|participant| {
+        match (
+            participant.team,
+            roster
+                .iter()
+                .find(|r| r.account_id == participant.game_account_id)
+                .and_then(|r| r.team),
+        ) {
+            (Some(settlement_team), Some(roster_team)) => settlement_team == roster_team,
+            _ => true,
+        }
     })
 }
 
