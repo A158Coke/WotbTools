@@ -126,7 +126,15 @@ export async function launchChromeForCdp(chrome, { extraArgs = [] } = {}) {
     if (child.exitCode != null) throw new Error(`Chrome exited before publishing DevToolsActivePort (code=${child.exitCode})`)
     if (Date.now() > deadline) throw new Error('Chrome did not publish DevToolsActivePort within 30s')
     // 文件出现 ≠ 写完：读到空/半行时继续等，避免把 NaN 递给 fetch。
-    if (existsSync(portFile)) port = Number(readFileSync(portFile, 'utf8').split('\n')[0].trim()) || 0
+    // Windows 上 Chrome 可能仍持有写锁（EBUSY）读完即释放，因此瞬时读取失败按“还没就绪”处理。
+    if (existsSync(portFile)) {
+      try {
+        port = Number(readFileSync(portFile, 'utf8').split('\n')[0].trim()) || 0
+      } catch (error) {
+        if (error.code !== 'EBUSY' && error.code !== 'EPERM' && error.code !== 'ENOENT') throw error
+        port = 0
+      }
+    }
     if (!port) await delay(50)
   }
 
