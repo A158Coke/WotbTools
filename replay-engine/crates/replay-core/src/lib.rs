@@ -16,12 +16,14 @@ pub mod pickle;
 pub mod protobuf;
 pub mod rating;
 pub mod result;
+pub mod stream;
 
 pub use aggregate::{aggregate, Aggregate, VehicleUsage};
 pub use error::ReplayError;
 pub use meta::{ParseQuality, ReplayMeta};
 pub use rating::{rate_battle, BattleRating, PlayerRating, RatingPlayer, TeamRating};
 pub use result::{parse_result, BattleResult, ParticipantResult};
+pub use stream::{Packet, PacketStream, ReplayStreamHeader, StreamDiagnostics};
 
 /// Engine version; consumers use it to gate behaviour instead of guessing from a game version.
 pub fn engine_version() -> &'static str {
