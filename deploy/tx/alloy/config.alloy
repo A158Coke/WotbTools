@@ -14,7 +14,7 @@
 // compose must be discovered well before any deployment gate asserts on its
 // log stream, not up to a minute later.
 discovery.docker "containers" {
-	host            = "unix:///var/run/docker.sock"
+	host = "unix:///var/run/docker.sock"
 	refresh_interval = "5s"
 }
 
