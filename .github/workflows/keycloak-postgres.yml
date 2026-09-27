@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/keycloak-postgres.yml
-      - deploy/tx/**
+      - deploy/tx/keycloak-postgres.compose.yml
       - infra/tofu/postgres-keycloak/**
   workflow_dispatch:
 
@@ -20,7 +20,7 @@ concurrency:
 env:
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/keycloak-postgres.yml
-    deploy/tx/**
+    deploy/tx/keycloak-postgres.compose.yml
     infra/tofu/postgres-keycloak/**
 
 jobs:

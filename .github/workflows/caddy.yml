@@ -5,7 +5,12 @@ on:
     branches: [main]
     paths:
       - .github/workflows/caddy.yml
-      - deploy/tx/**
+      - deploy/tx/deploy.sh
+      - deploy/tx/docker-compose.yml
+      - deploy/tx/common.compose.yml
+      - deploy/tx/caddy.compose.yml
+      - deploy/tx/Caddyfile
+      - deploy/tx/assets/**
   workflow_dispatch:
 
 permissions:
@@ -19,7 +24,12 @@ concurrency:
 env:
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/caddy.yml
-    deploy/tx/**
+    deploy/tx/deploy.sh
+    deploy/tx/docker-compose.yml
+    deploy/tx/common.compose.yml
+    deploy/tx/caddy.compose.yml
+    deploy/tx/Caddyfile
+    deploy/tx/assets/**
 
 jobs:
   deploy:
