@@ -19,6 +19,13 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 - **观测栈在 Yecao**（`deploy/docker-compose.prod.yml`）：Prometheus/Loki/Alloy/Grafana/node-exporter。
   除容器内网外只发布两个 WireGuard-only 端口：Grafana `10.20.0.2:3000`、Loki `10.20.0.2:3100`。
+  端口发布只在容器**重建**时生效：若容器早于端口发布创建（端口随后才加入 compose），宿主不会有监听，
+  必须重新 reconcile 该服务（`WOTB_DEPLOY_SERVICE=loki`／`grafana` 走 `deploy/deploy.sh`，其
+  `apply_services` 用 `up -d --no-deps --force-recreate`）。注意 `observability.yml` 的 Grafana
+  local-state gate 在 runtime reconcile **之前**执行：state 未 bootstrap 时整个 workflow 会先失败、
+  根本不会 reconcile，其典型症状是「TX 侧 Alloy 本身启动正常，但 `10.20.0.2:3100` 连接超时」。
+  判据：`docker inspect <loki> --format '{{json .HostConfig.PortBindings}}'` 为空＝端口未发布，
+  而不是网络/WireGuard 故障（对照 `10.20.0.2:9000` 这类已发布端口应可连通）。
 - **业务在 TX**：`business-api` 的 management 端口只绑 `10.20.0.1:8088`，Yecao Prometheus 以
   `job="wotb-backend"`（目标 `10.20.0.1:8088/actuator/prometheus`）跨 WireGuard 抓取；job 名与
   `service` 标签保持不变，所有 dashboard PromQL 无需改动。
