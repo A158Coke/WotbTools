@@ -262,8 +262,11 @@ services:
       - --storage.path=/var/lib/alloy/data
       - /etc/alloy/config.alloy
     volumes:
-      # Read-only: log shipping only reads container metadata and log streams.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Must stay a read-write mount: read-only bind mounts make the unix
+      # socket's connect() fail with EROFS on some kernels, which would leave
+      # discovery silently empty. Log shipping only reads container metadata
+      # and log streams through the Docker API.
+      - /var/run/docker.sock:/var/run/docker.sock
       - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
     restart: unless-stopped
     logging: *default-logging

@@ -9,9 +9,13 @@
 
 // Discover all containers once. Authoritative matching happens in the relabel
 // rules below; keeping discovery unfiltered avoids version-dependent filter
-// semantics (same rationale as the Yecao config).
+// semantics (same rationale as the Yecao config). The refresh interval is
+// explicit because the default is 60s: a business container (re)started in
+// compose must be discovered well before any deployment gate asserts on its
+// log stream, not up to a minute later.
 discovery.docker "containers" {
-	host = "unix:///var/run/docker.sock"
+	host            = "unix:///var/run/docker.sock"
+	refresh_interval = "5s"
 }
 
 // business-api 的日志流沿用 wotb-backend 身份：backend 的指标 job 名、

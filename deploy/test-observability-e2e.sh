@@ -125,7 +125,7 @@ docker run -d --name "$BACKEND_TX" --network "$NETWORK" \
   alpine:3.22 sh -c "while true; do echo event=backend_tx_smoke marker=$MARKER_TX; sleep 1; done" >/dev/null
 docker run -d --name "$ALLOY_TX" --network "$NETWORK" \
   -p 127.0.0.1::12345 \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$ROOT/deploy/tx/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
   grafana/alloy:v1.4.2 run --server.http.listen-addr=0.0.0.0:12345 \
   /etc/alloy/config.alloy >/dev/null
@@ -133,15 +133,22 @@ ALLOY_TX_PORT="$(docker port "$ALLOY_TX" 12345/tcp | sed -E 's/.*://')"
 [[ -n "$ALLOY_TX_PORT" ]] || fail "TX Alloy HTTP port was not published"
 
 # Inspect what the label relabel actually discovered: every emitter container
-# this lane depends on must appear with the exact Compose service label.
+# this lane depends on must appear with the exact Compose service label. The
+# /api/v0/web/components payload carries each discovery.relabel component's
+# debug data (its processed targets); /metrics carries the discovery target
+# counters as a cross-check.
 dump_tx_relabel_targets() {
-  local component
-  for component in backend keycloak frontend; do
-    echo "== discovery.relabel.$component targets ==" >&2
-    curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/api/v0/component/discovery.relabel.${component}" \
-      >&2 || echo "FAIL: could not reach the TX Alloy HTTP API on ${ALLOY_TX_PORT}" >&2
-    echo >&2
-  done
+  local raw
+  raw="$(curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/api/v0/web/components" 2>&1 || echo "CURL_FAILED")"
+  if [ "$raw" = "CURL_FAILED" ]; then
+    echo "FAIL: could not reach the TX Alloy HTTP API on ${ALLOY_TX_PORT}" >&2
+  else
+    printf '%s' "$raw" | jq -c '.. | objects | select((.id? // "") | test("^discovery\\.(docker|relabel)")) | {id: .id, health: (.health // .state // empty), debugInfo: (.debugInfo // empty), exports: (.exports // empty)}' 2>/dev/null >&2 \
+      || { echo "== raw components payload (first 20KB) ==" >&2; printf '%s' "$raw" | head -c 20000 >&2; echo >&2; }
+  fi
+  echo "== discovery counters ==" >&2
+  curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/metrics" 2>/dev/null \
+    | grep -Ei 'docker|discovery.*target|loki_source_docker' | head -40 >&2 || true
   echo "== emitter container labels ==" >&2
   docker inspect "$BACKEND_TX" --format '{{json .Config.Labels}}' >&2
 }
