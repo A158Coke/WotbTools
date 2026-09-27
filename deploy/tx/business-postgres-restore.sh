@@ -13,8 +13,7 @@ readonly SOURCE_DATABASE="wotb"
 
 compose_file="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_FILE:-$COMPOSE_FILE_DEFAULT}"
 compose_service="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_SERVICE:-$COMPOSE_SERVICE_DEFAULT}"
-project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-wotb-tx-business-postgres}"
-# Optional container override, used by the disposable CI smoke.
+project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-deploy}"
 container_override="${WOTB_TX_BUSINESS_POSTGRES_CONTAINER:-}"
 admin_user="${TX_BUSINESS_POSTGRES_ADMIN_USER:-wotb}"
 source_database="${TX_BUSINESS_DB_NAME:-$SOURCE_DATABASE}"
@@ -42,89 +41,47 @@ EOF
 }
 
 db_exec() {
-  if [ -n "$container_override" ]; then
-    docker exec -i "$container_override" "$@"
-  else
-    docker compose -p "$project_name" -f "$compose_file" exec -T "$compose_service" "$@"
-  fi
+  if [ -n "$container_override" ]; then docker exec -i "$container_override" "$@"; else docker compose -p "$project_name" -f "$compose_file" exec -T "$compose_service" "$@"; fi
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --file)
-      [ $# -ge 2 ] || { usage; exit 2; }
-      backup_file="$2"
-      shift 2
-      ;;
-    --database)
-      [ $# -ge 2 ] || { usage; exit 2; }
-      target_database="$2"
-      shift 2
-      ;;
-    --confirm)
-      [ $# -ge 2 ] || { usage; exit 2; }
-      confirmation="$2"
-      shift 2
-      ;;
-    --verify-only)
-      verify_only="true"
-      shift
-      ;;
-    --compose-file)
-      [ $# -ge 2 ] || { usage; exit 2; }
-      compose_file="$2"
-      shift 2
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      usage
-      exit 2
-      ;;
+    --file) [ $# -ge 2 ] || { usage; exit 2; }; backup_file="$2"; shift 2 ;;
+    --database) [ $# -ge 2 ] || { usage; exit 2; }; target_database="$2"; shift 2 ;;
+    --confirm) [ $# -ge 2 ] || { usage; exit 2; }; confirmation="$2"; shift 2 ;;
+    --verify-only) verify_only="true"; shift ;;
+    --compose-file) [ $# -ge 2 ] || { usage; exit 2; }; compose_file="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage; exit 2 ;;
   esac
 done
 
-[ -n "$backup_file" ] && [ -f "$backup_file" ] && [ ! -L "$backup_file" ] \
-  || { echo "Backup archive does not exist or is not a regular file." >&2; exit 1; }
-[ -f "${backup_file}.sha256" ] \
-  || { echo "Backup SHA-256 sidecar is missing: ${backup_file}.sha256" >&2; exit 1; }
-command -v docker >/dev/null 2>&1 || { echo "docker is required." >&2; exit 1; }
-command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required." >&2; exit 1; }
-if [ -z "$container_override" ]; then
-  [ -f "$compose_file" ] || { echo "Missing compose file: $compose_file" >&2; exit 1; }
-fi
+[ -n "$backup_file" ] && [ -f "$backup_file" ] && [ ! -L "$backup_file" ] || { echo 'Backup archive does not exist or is not a regular file.' >&2; exit 1; }
+[ -f "${backup_file}.sha256" ] || { echo "Backup SHA-256 sidecar is missing: ${backup_file}.sha256" >&2; exit 1; }
+command -v docker >/dev/null 2>&1 || { echo 'docker is required.' >&2; exit 1; }
+command -v sha256sum >/dev/null 2>&1 || { echo 'sha256sum is required.' >&2; exit 1; }
+if [ -z "$container_override" ]; then [ -f "$compose_file" ] || { echo "Missing compose file: $compose_file" >&2; exit 1; }; fi
 
 expected_sha="$(tr -d '[:space:]' < "${backup_file}.sha256")"
-[[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]] \
-  || { echo "Backup SHA-256 sidecar is not a lowercase hex digest." >&2; exit 1; }
+[[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]] || { echo 'Backup SHA-256 sidecar is not a lowercase hex digest.' >&2; exit 1; }
 actual_sha="$(sha256sum "$backup_file" | awk '{print $1}')"
-[ "$actual_sha" = "$expected_sha" ] \
-  || { echo "Backup archive SHA-256 mismatch; refusing to restore." >&2; exit 1; }
-echo "Backup SHA-256 verified."
+[ "$actual_sha" = "$expected_sha" ] || { echo 'Backup archive SHA-256 mismatch; refusing to restore.' >&2; exit 1; }
+echo 'Backup SHA-256 verified.'
 
 if [ -z "$container_override" ]; then
-  docker compose -p "$project_name" -f "$compose_file" up -d "$compose_service" >/dev/null
+  docker compose -p "$project_name" -f "$compose_file" ps --status running "$compose_service" | grep -q "$compose_service" \
+    || { echo "Business PostgreSQL runtime is not running: $compose_service" >&2; exit 1; }
 fi
 db_exec pg_restore --list < "$backup_file" >/dev/null
 db_exec pg_restore --file=/dev/null < "$backup_file"
-echo "Backup catalog and data blocks verified without changing any database."
+echo 'Backup catalog and data blocks verified without changing any database.'
 
-if [ "$verify_only" = "true" ]; then
-  echo "Verify-only: no database was created, modified, or deleted."
-  exit 0
-fi
+if [ "$verify_only" = true ]; then echo 'Verify-only: no database was created, modified, or deleted.'; exit 0; fi
 
 [ -n "$target_database" ] || { usage; exit 2; }
-[[ "$target_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
-  || { echo "Unsupported target database name." >&2; exit 2; }
-if [ "$target_database" = "$source_database" ]; then
-  echo "Refusing to restore into the authoritative source database $source_database." >&2
-  exit 2
-fi
-[ "$confirmation" = "RESTORE-$target_database" ] \
-  || { echo "Restore refused. Pass --confirm RESTORE-$target_database explicitly." >&2; exit 2; }
+[[ "$target_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo 'Unsupported target database name.' >&2; exit 2; }
+[ "$target_database" != "$source_database" ] || { echo "Refusing to restore into the authoritative source database $source_database." >&2; exit 2; }
+[ "$confirmation" = "RESTORE-$target_database" ] || { echo "Restore refused. Pass --confirm RESTORE-$target_database explicitly." >&2; exit 2; }
 
 db_exec psql -U "$admin_user" -d postgres -v ON_ERROR_STOP=1 <<SQL
 select pg_terminate_backend(pid)
@@ -134,9 +91,7 @@ drop database if exists "$target_database";
 create database "$target_database" owner "$admin_user";
 SQL
 
-db_exec pg_restore -U "$admin_user" -d "$target_database" --exit-on-error --no-owner --no-privileges \
-  < "$backup_file"
-
+db_exec pg_restore -U "$admin_user" -d "$target_database" --exit-on-error --no-owner --no-privileges < "$backup_file"
 echo "Restored $backup_file into disposable database $target_database."
 echo "The authoritative source database $source_database was not modified or deleted."
 cat <<EOF
