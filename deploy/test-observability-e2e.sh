@@ -148,9 +148,20 @@ dump_tx_relabel_targets() {
   fi
   echo "== discovery counters ==" >&2
   curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/metrics" 2>/dev/null \
-    | grep -Ei 'docker|discovery.*target|loki_source_docker' | head -40 >&2 || true
-  echo "== emitter container labels ==" >&2
-  docker inspect "$BACKEND_TX" --format '{{json .Config.Labels}}' >&2
+    | grep -Ei 'docker|discovery.*target|loki_source_docker|loki_write|drop' | head -60 >&2 || true
+  echo "== emitter liveness (docker logs --tail 2) ==" >&2
+  docker logs --tail 2 "$BACKEND_TX" >&2 2>&1 || true
+  local entries_first entries_second
+  entries_first="$(curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/metrics" 2>/dev/null \
+    | grep '^loki_source_docker_target_entries_total{component_id="loki.source.docker.backend"' | grep -oE '[0-9]+$')"
+  sleep 10
+  entries_second="$(curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/metrics" 2>/dev/null \
+    | grep '^loki_source_docker_target_entries_total{component_id="loki.source.docker.backend"' | grep -oE '[0-9]+$')"
+  echo "== backend entries growth over 10s: ${entries_first:-unknown} -> ${entries_second:-unknown} ==" >&2
+  echo "== Loki streams / labels ==" >&2
+  curl -sS --max-time 5 -G "http://127.0.0.1:${LOKI_PORT}/loki/api/v1/labels" 2>/dev/null | head -c 2000 >&2; echo >&2
+  curl -sS --max-time 5 -G "http://127.0.0.1:${LOKI_PORT}/loki/api/v1/series" \
+    --data-urlencode 'match[]={container_name=~".+"}' 2>/dev/null | head -c 4000 >&2; echo >&2
 }
 
 backend_tx_query() {
