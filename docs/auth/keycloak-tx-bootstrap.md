@@ -47,8 +47,7 @@ output 或日志（`TX_QQ_CLIENT_SECRET` 的 state 归属见下一节）：
 - `TX_QQ_CLIENT_SECRET`（QQ Connect application secret）。
 
 TX workflow secrets：`TX_KC_POSTGRES_ADMIN_PASSWORD`、`TX_KC_DB_PASSWORD`、
-`TX_KC_BOOTSTRAP_ADMIN_PASSWORD`、`WG_APPLICATION_ID`、`TENCENTCLOUD_SECRET_ID`、
-`TENCENTCLOUD_SECRET_KEY`。非敏感固定值 `KC_POSTGRES_ADMIN_USER=kc_admin`、
+`TX_KC_BOOTSTRAP_ADMIN_PASSWORD`、`WG_APPLICATION_ID`。非敏感固定值 `KC_POSTGRES_ADMIN_USER=kc_admin`、
 `KC_DB_USERNAME=keycloak` 由 workflow 提供；`CADDY_ACME_EMAIL` 使用
 `vars.CADDY_ACME_EMAIL`，为空时 fail-closed。
 
@@ -79,9 +78,9 @@ Wargaming IdP representation 与 Keycloak runtime 共用**同一个**已存在�
   值相同则 no-op，因此「secret 是否变化」不需要任何版本信号来判断。provider schema 也决定了
   这一点：`client_secret_wo` 声明了 `RequiredWith = client_secret_wo_version`，且只在 version
   变化时才把写-only 值发给 Keycloak（`provider/resource_keycloak_oidc_identity_provider.go`）；
-- 代价是该 secret 作为 sensitive 属性进入 OpenTofu state（`backend.tf` 的 COS
-  `wotbtools-prod-tofu-state-1478073677` / `wotbtools/prod/keycloak.tfstate`）。这是本仓库唯一
-  允许长驻该 secret 的介质：只有持有 `TENCENTCLOUD_SECRET_ID/KEY` 的 TX OpenTofu apply 能读取；
+- 代价是该 secret 作为 sensitive 属性进入 TX owner-host 的 OpenTofu local state
+  `/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate`。State 文件只允许 host root 访问，
+  权限为 0600，父目录为 0700；state backup 同样使用 0600 权限并留在 owner host。
   Git、realm JSON、tfvars、Tofu output、日志与其它介质依然禁止。apply 期间 TX 上的
   `plan.tfplan` / `second-plan.tfplan` 同样带有该值（写-only 字段此前不会落进 plan 文件），
   因此 `deploy/tx/keycloak-tofu.sh` 的 `trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT`

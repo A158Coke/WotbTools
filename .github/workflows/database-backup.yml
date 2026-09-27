@@ -46,3 +46,45 @@ jobs:
               /opt/wotb/deploy/postgres-restore.sh
             /opt/wotb/deploy/postgres-backup.sh --database wotb
             /opt/wotb/deploy/postgres-backup.sh --database keycloak
+      - name: Stage and back up Yecao local OpenTofu state
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: deploy/tofu-local-state-backup.sh
+          target: /opt/wotb/deploy
+          overwrite: true
+      - name: Verify Yecao local OpenTofu state backup
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            chmod 700 /opt/wotb/deploy/tofu-local-state-backup.sh
+            /opt/wotb/deploy/tofu-local-state-backup.sh yecao
+      - name: Stage and back up TX local OpenTofu states
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tofu-local-state-backup.sh
+          target: /opt/wotb-tx/deploy
+          overwrite: true
+      - name: Verify TX local OpenTofu state backup
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            chmod 700 /opt/wotb-tx/deploy/tofu-local-state-backup.sh
+            /opt/wotb-tx/deploy/tofu-local-state-backup.sh tx

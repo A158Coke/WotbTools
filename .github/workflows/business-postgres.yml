@@ -107,6 +107,12 @@ jobs:
             [[ "$WOTB_DEPLOY_CONFIG_SHA" == "$SOURCE_SHA" ]]
             root="/opt/wotb-tx/tofu.incoming/$SOURCE_SHA/infra/tofu/postgres-business"
             test -d "$root"
+            state_dir=/opt/wotb-tx/postgres-business-tofu-state
+            state_file="$state_dir/terraform.tfstate"
+            [[ -d "$state_dir" && ! -L "$state_dir" && -f "$state_file" && -s "$state_file" && ! -L "$state_file" ]] || {
+              echo 'Local OpenTofu state is not bootstrapped or is unsafe; refusing to initialize an empty production state.' >&2
+              exit 1
+            }
             test -f /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
             test -f /opt/wotb-tx/deploy.incoming/deploy/tx/business-postgres.tofurc
             command -v flock >/dev/null
@@ -130,7 +136,6 @@ jobs:
             export TF_VAR_business_role_password="$TX_BUSINESS_DB_PASSWORD"
             export TF_VAR_business_role_password_version="$TX_BUSINESS_DB_PASSWORD_VERSION"
             umask 077
-            install -d -m 700 /opt/wotb-tx/postgres-business-tofu-state
             cd "$root"
             trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
             tofu fmt -check -recursive

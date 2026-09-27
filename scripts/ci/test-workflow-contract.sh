@@ -211,7 +211,7 @@ def matches_input(patterns, path, is_directory=False):
 # Image work can build concurrently; only the host mutation job queues behind production maintenance.
 production_owners = (
     "business-api", "frontend", "keycloak", "parser-worker", "minio",
-    "rabbitmq", "business-postgres", "keycloak-postgres", "cos", "observability", "caddy",
+    "rabbitmq", "business-postgres", "keycloak-postgres", "observability", "caddy",
 )
 image_owners = {"business-api", "frontend", "keycloak", "parser-worker", "minio"}
 production_concurrency = {
@@ -308,7 +308,6 @@ tofu_owner_roots = {
     "rabbitmq": "infra/tofu/rabbitmq",
     "business-postgres": "infra/tofu/postgres-business",
     "keycloak-postgres": "infra/tofu/postgres-keycloak",
-    "cos": "infra/tofu/environments/prod",
     "observability": "infra/tofu/grafana",
 }
 for owner, path in tofu_owner_roots.items():
