@@ -1,0 +1,5 @@
+{"decoders":["BattleEndDecoder","SessionDecisecondLowByteDecoder"],"fixtures":[
+{"name":"random-battle-example.wotbreplay","packetCount":97958,"closed":1,"session":3043,"unsupported":94914,"digest":"6664b2bb2a1ae72f"},
+{"name":"cw-training-15-14-example.wotbreplay","packetCount":73468,"closed":1,"session":2048,"unsupported":71419,"digest":"84103cb1d71e2587"},
+{"name":"tournament-14-14-example.wotbreplay","packetCount":57610,"closed":1,"session":1468,"unsupported":56141,"digest":"fa5a59fcc691251c"}
+],"malformedType35":{"status":"UNSUPPORTED","reason":"TYPE35_LAYOUT_MISMATCH","warningCode":"TYPE35_LAYOUT_MISMATCH","warningMessage":"Type35 expected 1-byte payload, got: 0"}}

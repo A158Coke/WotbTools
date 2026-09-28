@@ -10,6 +10,7 @@
 
 pub mod aggregate;
 pub mod container;
+pub mod decoder;
 pub mod error;
 pub mod meta;
 pub mod pickle;
