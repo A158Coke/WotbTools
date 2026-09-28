@@ -1,18 +1,17 @@
 # WoT-Blitz-Agent 回放数据切面契约（replay facets）v1
 
 > Producer: [`fanypcd/WoT-Blitz-Agent`](https://github.com/fanypcd/WoT-Blitz-Agent)（MIT）
-> · 产出模块：`src/replay/model.rs`（内部回放模型）+ `src/facets/`（切面投影）
-> · 导出入口：`wotb-agent facets <file.wotbreplay> --parts playback,ai,hof`
+> · 状态：消费方目标契约；截至 2026-09-28，上游公开 `main`（`fe055367`）尚无
+>   `src/facets/` 或 `wotb-agent facets`。需待生产端实现并用真实回放验证。
 >
-> **性质声明**：本文档是生产方行为契约——描述上游 Agent 当前实际输出的数据形状与语义边界，
-> 供 WotBTools 消费侧（`replay-engine` / Java / AI 编排）对表。它**不是协议证据主张**：
-> 涉及回放协议语义的权威判定仍以 WotBTools 自有证据链为准
-> （见 `docs/research/replay/README.md` 的 evidence grades 与
-> `docs/research/replay/external-wot-blitz-agent-cross-validation.md` 的 authority rule）。
+> **性质声明**：本文档规定预期的公开消费 DTO 形状与语义边界，
+> 供 WotBTools 消费侧（Web playback / Java / AI 编排）对表。它**不是协议证据主张**：
+> Agent Rust Core 是未来回放解析与领域解释的上游来源；WotBTools 现有研究档案
+> （见 `docs/research/replay/README.md`）保留交叉验证证据，不定义 Agent 内部模型。
 
 ## 1. 契约形状总则
 
-- 三个切面顶层均带 `"version": 1`。**同版本内只做加字段（消费方忽略未知键）；不兼容变更递增 version。**
+- 三个切面顶层均带 `"version": 1`。v1 尚未稳定；正式发布后，同版本只加字段（消费方忽略未知键），不兼容变更递增 version。
 - 语义原则：**unknown ≠ 0 ≠ false ≠ 没发生**。观测缺失一律字段缺省（`skip_serializing_if`）或显式 null；
   `0` 只在该字段语义就是数值零时出现。协议哨兵（如 `game_hit_result: 255 = 未获取`、`killer_eid: 0 = 无归属`）
   在字段文档中显式标注。
@@ -27,9 +26,10 @@
 | **ai-review** | `*.facet.ai.json` | AI 复盘编排（→ Java → LLM） | 花名册 + 类型化事件流（spawn/shot/damage/kill/visibility/counter/damage_tick）+ 结算锚点 |
 | **hof** | `*.facet.hof.json` | Java → PostgreSQL | 结算精简行（14 人花名册战绩，无任何时序数据） |
 
-样例（客户端匿名回放，无真实用户内容）：[`samples/hof.sample.json`](samples/hof.sample.json)、
-[`samples/ai-review.sample.json`](samples/ai-review.sample.json)。playback 切面因含完整位置轨迹
-（单场 ~10MB 量级）不入库，形状以本文档 §2.1 与生产端 `PlaybackData` 结构为准。
+现存匿名 [`samples/hof.sample.json`](samples/hof.sample.json) 仅供形状参考，尚不能从上游公开 `main` 重导出。
+原 ai-review 样例把未知时长写为 `0.0`，且 84 条 visibility 中有 58 条 EID 不在 roster，已撤下；
+待上游实现以下不变量并从真实匿名回放重导出后再加入。playback 切面因含完整位置轨迹
+（单场 ~10MB 量级）不入库，形状以本文档 §2.1 的消费要求为准。
 
 ### 2.1 playback（`PlaybackData`）
 
@@ -42,12 +42,17 @@
 - `kills[]`：击杀者/受害者/死因（0=炮弹 1=火 2=撞击 3=世界 5=溺水）/≥50% 助攻归属。
 - `periods[]`：战局阶段（准备/倒计时/战斗）与剩余时间。
 - `visibility[]`：AoI 可见窗口 `{eid, t_in, t_out?}`（Type33/5 物化开段、Type4 关段；重入 = 多段）。
-  **本队视角的点亮/熄灭时序以本字段为准。**
+  **本队视角的点亮/熄灭时序以本字段为准。** Playback 可保留重建所需的完整 AoI 粒度，
+  不受 ai-review 的车辆 roster 过滤约束。
 
 ### 2.2 ai-review（`AiReviewFacet`）
 
-- `battle`：地图/模式/胜方/时长/阶段表。
+- `battle`：地图/模式/胜方/时长/阶段表。`duration_secs` 使用可空类型；结算口径时长未知时输出
+  `null`（与 hof 一致），绝不把未知映射为 `0` / `0.0`，也不用 meta 时长冒充结算时长。
 - `rosters[]`：有身份实体（14 车）的 `eid ↔ 账号/昵称/队伍/车型` 联表。
+- `events[]` 中 `type=visibility` 的 `eid` 仅指 `rosters[].eid` 中的车辆实体，每条都必须可联表。
+  原始 AoI 流可能包含不在车辆 roster 中的 EID；这些 EID 的实体类型尚未由生产端证明，
+  不应作为裸 EID 泄漏到 ai-review。其他事件 EID 的语义按各事件字段定义，不由此推定。
 - `events[]`：按回放时钟升序、`type` 内部标签的统一事件流。喂给 LLM 的粒度（降采样/摘要）由编排层决定，
   本层保持权威全量（单场 7 分钟典型 ~300 事件）。
 - `settlements[]`：结算总量行（与 hof 行同构），供模型结论与过程事件互验。
@@ -57,7 +62,7 @@
 
 ### 2.3 hof（`HofFacet`）
 
-`battle`（开始时间/地图/模式/胜方/**`duration_secs` 当前恒为 null**——结算口径时长字段尚未解码，
+`battle`（开始时间/地图/模式/胜方/**`duration_secs` 未知时为 null**——结算口径时长字段尚未解码，
 禁用 meta 口径冒充）+ `entries[]`（账号/昵称/军团/组队/队伍/车型、伤害/格挡/**点亮协助与断带协助分列**/
 击杀/击杀者/存活/寿命、射击/命中/击穿、点亮数/毁灭协助/炮印、评级、经验/银币）。
 发服务器的就是这些聚合数字——不含位置/炮线/镜头帧。
@@ -65,24 +70,21 @@
 ## 3. 复现
 
 ```bash
-# Agent 仓库（MIT）：
+# 待上游发布 facets 命令后，在 Agent 仓库（MIT）执行：
 wotb-agent facets <file.wotbreplay> --parts playback,ai,hof --tank-cache data/tank_cache.json
 # 互验报告随导出输出：0x0c 过程计数 vs 结算总量（作者口径），对不上标 MISMATCH
 ```
 
-样例由客户端匿名回放（Anonyme 场次）产出，昵称/账号为游戏侧匿名化占位。
+已保留的 hof 样例来自匿名回放，但当前公开 producer 不提供可复现的 facets 导出入口。
 
 ## 4. 与 WotBTools 既有面的关系
 
-- `contracts/mq/parser-messages.json`（RabbitMQ 解析信封）：本契约描述的是**上游 Agent 的产出数据**，
-  与 metadata-only 信封正交；两者可在 parser worker 侧并存（信封调度任务，切面是任务产物之一）。
-- `contracts/http/fixtures/battle-playback-v2.json`：WotBTools 自有 playback 消费形状。
-  本契约 playback 切面是**另一生产者**的独立产物，字段不对齐也互不阻塞；如需收敛形状，
-  在 `replay-engine` 消费层做映射（不反向约束上游内部结构——Rust 内部模型 ≠ 对外 DTO）。
-- `feat/client-replay-engine` 的 Java/WASM 解码线与本契约互补：该线自主解码协议，
-  本契约提供上游现成的语义切面（可直接消费或作为 golden 对照）。
+- `contracts/mq/parser-messages.json` 规定现有任务信封；Facet 规定未来回放语义产物的消费边界。
+- `contracts/http/fixtures/battle-playback-v2.json` 是 WotBTools 当前 HTTP playback 消费形状。
+  接入上游 Facet / WASM / Web playback 时，在消费边界映射实际公开 DTO；Rust 内部模型不作为公开契约。
+- Agent Rust Core 负责回放解析与领域解释，WotBTools 负责产品消费与编排，不把现有解码实现固化为长期第二套协议权威。
 
 ## 5. 版本记录
 
-- v1（2026-09-29）：首版。三切面 + 匿名样例；已知开放项：0x0c 次数口径互验、结算时长 root5 解码、
+- v1（草案）：三切面目标形状；已知开放项：上游 Facet 发布与真实回放重导出、0x0c 次数口径互验、结算时长 root5 解码、
   评审切面暂不含点亮协助的位置级归因。
