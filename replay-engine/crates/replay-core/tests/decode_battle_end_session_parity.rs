@@ -121,6 +121,9 @@ fn java_subset_matches_every_packet() {
                 DecodeEvent::Materialization(_) => {
                     panic!("materialization decoder is not in this subset")
                 }
+                DecodeEvent::Ammunition(_) => panic!("ammunition decoder is not in this subset"),
+                DecodeEvent::Lifecycle(_) => panic!("lifecycle decoder is not in this subset"),
+                DecodeEvent::AimMarker(_) => panic!("aim marker decoder is not in this subset"),
             };
             let status = match result.status {
                 DecodeStatus::Success => "SUCCESS",
