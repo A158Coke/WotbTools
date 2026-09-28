@@ -4,6 +4,8 @@ use std::collections::HashMap;
 
 use crate::stream::Packet;
 
+pub mod position;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeStatus {
     Success,
@@ -21,8 +23,12 @@ pub struct DecodeWarning {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeEvent {
+    Position(position::PositionEvent),
     /// Type 14 closes the packet stream; its payload is not interpreted.
-    StreamClosed { sequence: u32, raw_clock_bits: u32 },
+    StreamClosed {
+        sequence: u32,
+        raw_clock_bits: u32,
+    },
     /// Type 35 is a session counter low byte, not a battle clock.
     SessionDecisecondLowByte {
         sequence: u32,
@@ -45,55 +51,200 @@ pub struct DecodeResult {
     pub warnings: Vec<DecodeWarning>,
 }
 
-/// The first independently verifiable decoder slice uses only Type 14 and Type 35.
-/// Other packet types remain explicit unsupported events until their decoder is ported.
-pub fn decode_battle_end_session(packet: &Packet, source: &[u8]) -> DecodeResult {
-    let sequence = packet.sequence;
-    let raw_clock_bits = packet.raw_clock_sec.to_bits();
-    let payload = packet.payload(source);
-    match packet.packet_type {
-        14 => DecodeResult {
+/// Mutable state shared by every decoder in one stream run.
+#[derive(Debug, Default)]
+pub struct DecodeContext {
+    pub replay_version: String,
+    pub entity_class: EntityClassRegistry,
+}
+
+impl DecodeContext {
+    pub fn new(replay_version: impl Into<String>) -> Self {
+        Self {
+            replay_version: replay_version.into(),
+            entity_class: EntityClassRegistry::default(),
+        }
+    }
+}
+
+/// A decoder may inspect the shared state when deciding whether it owns a packet.
+pub trait PacketDecoder {
+    fn name(&self) -> &'static str;
+    fn supports(&self, context: &DecodeContext, packet: &Packet, payload: &[u8]) -> bool;
+    fn decode(&self, context: &mut DecodeContext, packet: &Packet, payload: &[u8]) -> DecodeResult;
+}
+
+/// Dispatches to the first matching decoder in Java declaration order.
+pub struct DecoderRegistry {
+    decoders: Vec<Box<dyn PacketDecoder>>,
+}
+
+impl DecoderRegistry {
+    /// Java-compatible subset for the first event-level parity gate.
+    /// The full Java `createDefault()` registry is added only after all 14 decoders exist.
+    pub fn battle_end_session_subset() -> Self {
+        let mut registry = Self::empty();
+        registry.register(BattleEndDecoder);
+        registry.register(SessionDecisecondLowByteDecoder);
+        registry
+    }
+
+    /// Matching Java subset containing only PositionDecoder.
+    pub fn position_subset() -> Self {
+        let mut registry = Self::empty();
+        registry.register(PositionDecoder);
+        registry
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            decoders: Vec::new(),
+        }
+    }
+
+    pub fn register(&mut self, decoder: impl PacketDecoder + 'static) {
+        self.decoders.push(Box::new(decoder));
+    }
+
+    pub fn decoder_names(&self) -> Vec<&'static str> {
+        self.decoders.iter().map(|decoder| decoder.name()).collect()
+    }
+
+    pub fn decode(
+        &self,
+        context: &mut DecodeContext,
+        packet: &Packet,
+        source: &[u8],
+    ) -> DecodeResult {
+        let payload = packet
+            .payload_offset
+            .checked_add(packet.payload_len as usize)
+            .and_then(|end| source.get(packet.payload_offset..end));
+        let Some(payload) = payload else {
+            return DecodeResult {
+                status: DecodeStatus::Malformed,
+                events: vec![DecodeEvent::Unknown {
+                    sequence: packet.sequence,
+                    raw_clock_bits: packet.raw_clock_sec.to_bits(),
+                    packet_type: packet.packet_type,
+                    payload_len: packet.payload_len,
+                    reason: "TRUNCATED_PACKET",
+                }],
+                warnings: vec![DecodeWarning {
+                    code: "TRUNCATED_PACKET",
+                    message: "packet payload exceeds source bytes".to_owned(),
+                }],
+            };
+        };
+        for decoder in &self.decoders {
+            if decoder.supports(context, packet, payload) {
+                return decoder.decode(context, packet, payload);
+            }
+        }
+        unknown(packet, "UNSUPPORTED_TYPE", vec![])
+    }
+}
+
+fn unknown(packet: &Packet, reason: &'static str, warnings: Vec<DecodeWarning>) -> DecodeResult {
+    DecodeResult {
+        status: DecodeStatus::Unsupported,
+        events: vec![DecodeEvent::Unknown {
+            sequence: packet.sequence,
+            raw_clock_bits: packet.raw_clock_sec.to_bits(),
+            packet_type: packet.packet_type,
+            payload_len: packet.payload_len,
+            reason,
+        }],
+        warnings,
+    }
+}
+
+struct BattleEndDecoder;
+
+struct PositionDecoder;
+
+impl PacketDecoder for PositionDecoder {
+    fn name(&self) -> &'static str {
+        "PositionDecoder"
+    }
+    fn supports(&self, _: &DecodeContext, packet: &Packet, _: &[u8]) -> bool {
+        packet.packet_type == position::TYPE_POSITION
+    }
+    fn decode(&self, _: &mut DecodeContext, packet: &Packet, payload: &[u8]) -> DecodeResult {
+        // The position module consumes a Packet offset into its source. A payload slice is its
+        // complete source, so reset the offset without changing any packet metadata.
+        let mut local = packet.clone();
+        local.payload_offset = 0;
+        let result = position::decode_position(&local, payload);
+        let status = match result.status {
+            position::PositionStatus::Success => DecodeStatus::Success,
+            position::PositionStatus::Partial => DecodeStatus::Partial,
+            position::PositionStatus::Malformed => DecodeStatus::Malformed,
+        };
+        DecodeResult {
+            status,
+            events: vec![DecodeEvent::Position(result.event)],
+            warnings: result
+                .warnings
+                .into_iter()
+                .map(|warning| DecodeWarning {
+                    code: warning.code,
+                    message: warning.message,
+                })
+                .collect(),
+        }
+    }
+}
+
+impl PacketDecoder for BattleEndDecoder {
+    fn name(&self) -> &'static str {
+        "BattleEndDecoder"
+    }
+    fn supports(&self, _: &DecodeContext, packet: &Packet, _: &[u8]) -> bool {
+        packet.packet_type == 14
+    }
+    fn decode(&self, _: &mut DecodeContext, packet: &Packet, _: &[u8]) -> DecodeResult {
+        DecodeResult {
             status: DecodeStatus::Success,
             events: vec![DecodeEvent::StreamClosed {
-                sequence,
-                raw_clock_bits,
+                sequence: packet.sequence,
+                raw_clock_bits: packet.raw_clock_sec.to_bits(),
             }],
             warnings: vec![],
-        },
-        35 if payload.len() == 1 => DecodeResult {
-            status: DecodeStatus::Success,
-            events: vec![DecodeEvent::SessionDecisecondLowByte {
-                sequence,
-                raw_clock_bits,
-                low8: payload[0],
-            }],
-            warnings: vec![],
-        },
-        35 => DecodeResult {
-            status: DecodeStatus::Unsupported,
-            events: vec![DecodeEvent::Unknown {
-                sequence,
-                raw_clock_bits,
-                packet_type: 35,
-                payload_len: packet.payload_len,
-                reason: "TYPE35_LAYOUT_MISMATCH",
-            }],
-            warnings: vec![DecodeWarning {
-                code: "TYPE35_LAYOUT_MISMATCH",
-                message: format!("Type35 expected 1-byte payload, got: {}", payload.len()),
-            }],
-        },
-        _ => DecodeResult {
-            status: DecodeStatus::Unsupported,
-            events: vec![DecodeEvent::Unknown {
-                sequence,
-                raw_clock_bits,
-                packet_type: packet.packet_type,
-                payload_len: packet.payload_len,
-                reason: "UNSUPPORTED_TYPE",
-            }],
-            warnings: vec![],
-        },
+        }
+    }
+}
+
+struct SessionDecisecondLowByteDecoder;
+
+impl PacketDecoder for SessionDecisecondLowByteDecoder {
+    fn name(&self) -> &'static str {
+        "SessionDecisecondLowByteDecoder"
+    }
+    fn supports(&self, _: &DecodeContext, packet: &Packet, _: &[u8]) -> bool {
+        packet.packet_type == 35
+    }
+    fn decode(&self, _: &mut DecodeContext, packet: &Packet, payload: &[u8]) -> DecodeResult {
+        if payload.len() == 1 {
+            DecodeResult {
+                status: DecodeStatus::Success,
+                events: vec![DecodeEvent::SessionDecisecondLowByte {
+                    sequence: packet.sequence,
+                    raw_clock_bits: packet.raw_clock_sec.to_bits(),
+                    low8: payload[0],
+                }],
+                warnings: vec![],
+            }
+        } else {
+            unknown(
+                packet,
+                "TYPE35_LAYOUT_MISMATCH",
+                vec![DecodeWarning {
+                    code: "TYPE35_LAYOUT_MISMATCH",
+                    message: format!("Type35 expected 1-byte payload, got: {}", payload.len()),
+                }],
+            )
+        }
     }
 }
 
@@ -148,7 +299,8 @@ impl EntityClassRegistry {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_battle_end_session, DecodeEvent, DecodeStatus, EntityClass, EntityClassRegistry,
+        DecodeContext, DecodeEvent, DecodeResult, DecodeStatus, DecoderRegistry, EntityClass,
+        EntityClassRegistry, PacketDecoder,
     };
     use crate::stream::Packet;
 
@@ -161,6 +313,14 @@ mod tests {
             raw_clock_sec: 1.25,
             payload_offset: 0,
         }
+    }
+
+    fn decode_battle_end_session(packet: &Packet, source: &[u8]) -> DecodeResult {
+        DecoderRegistry::battle_end_session_subset().decode(
+            &mut DecodeContext::default(),
+            packet,
+            source,
+        )
     }
 
     #[test]
@@ -231,5 +391,70 @@ mod tests {
         classes.mark_vehicle(3);
         classes.mark_avatar(3);
         assert_eq!(classes.resolve(3), EntityClass::Avatar);
+    }
+
+    struct MarkerDecoder(&'static str, u8);
+
+    impl PacketDecoder for MarkerDecoder {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+        fn supports(&self, context: &DecodeContext, packet: &Packet, _: &[u8]) -> bool {
+            packet.packet_type == 8 && context.entity_class.resolve(42) == EntityClass::Vehicle
+        }
+        fn decode(&self, _: &mut DecodeContext, packet: &Packet, _: &[u8]) -> DecodeResult {
+            DecodeResult {
+                status: DecodeStatus::Success,
+                events: vec![DecodeEvent::SessionDecisecondLowByte {
+                    sequence: packet.sequence,
+                    raw_clock_bits: packet.raw_clock_sec.to_bits(),
+                    low8: self.1,
+                }],
+                warnings: vec![],
+            }
+        }
+    }
+
+    #[test]
+    fn registry_preserves_order_shared_context_and_unsupported_fallback() {
+        let mut registry = DecoderRegistry::empty();
+        registry.register(MarkerDecoder("first", 1));
+        registry.register(MarkerDecoder("second", 2));
+        assert_eq!(registry.decoder_names(), ["first", "second"]);
+        let mut context = DecodeContext::new("1.2.3");
+        assert_eq!(context.replay_version, "1.2.3");
+        let unclassified = registry.decode(&mut context, &packet(8, 0), &[]);
+        assert_eq!(unclassified.status, DecodeStatus::Unsupported);
+        assert!(matches!(
+            unclassified.events[0],
+            DecodeEvent::Unknown {
+                reason: "UNSUPPORTED_TYPE",
+                ..
+            }
+        ));
+        context.entity_class.mark_vehicle(42);
+        let classified = registry.decode(&mut context, &packet(8, 0), &[]);
+        assert!(matches!(
+            classified.events[0],
+            DecodeEvent::SessionDecisecondLowByte { low8: 1, .. }
+        ));
+        assert_eq!(
+            DecoderRegistry::battle_end_session_subset().decoder_names(),
+            ["BattleEndDecoder", "SessionDecisecondLowByteDecoder"]
+        );
+    }
+
+    #[test]
+    fn registry_rejects_truncated_payload_without_panicking() {
+        let registry = DecoderRegistry::position_subset();
+        let result = registry.decode(&mut DecodeContext::default(), &packet(10, 49), &[]);
+        assert_eq!(result.status, DecodeStatus::Malformed);
+        assert!(matches!(
+            result.events[0],
+            DecodeEvent::Unknown {
+                reason: "TRUNCATED_PACKET",
+                ..
+            }
+        ));
     }
 }
