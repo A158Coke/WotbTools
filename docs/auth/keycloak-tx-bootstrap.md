@@ -9,6 +9,10 @@ Keycloak 镜像只包含自定义 provider。`infra/tofu/keycloak` 是 TX realm�
 `127.0.0.1:18080` 上以 bootstrap admin 建立 fresh realm，并在 apply 后执行第二次 plan
 确认无 drift。
 
+TX production Keycloak 使用 `--hostname=https://auth.wotbtools.com` 与
+`--hostname-strict=true` 固定对外 OIDC issuer。容器内仍以 HTTP 8080 提供服务，
+`--proxy-headers=xforwarded` 接收代理头，由 Caddy 终止对外 TLS。
+
 ## 删除保护边界（`tofu plan` 是 destructive-change 审计门）
 
 唯一授权路径是 `.tf` 期望状态 → `tofu plan` → destructive audit → `tofu apply` → 第二次 plan 无
