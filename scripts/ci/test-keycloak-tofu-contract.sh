@@ -40,6 +40,12 @@ providers = read("infra/tofu/keycloak/providers.tf")
 identity_text = read("infra/tofu/keycloak/identity-providers.tf")
 variables_text = read("infra/tofu/keycloak/variables.tf")
 tx_compose = read("deploy/tx/keycloak.compose.yml")
+keycloak_command = yaml.safe_load(tx_compose)["services"]["keycloak"]["command"].split()
+assert keycloak_command == [
+    "start", "--optimized", "--hostname=https://auth.wotbtools.com",
+    "--hostname-strict=true", "--http-enabled=true", "--http-port=8080",
+    "--proxy-headers=xforwarded",
+], "TX Keycloak must publish the HTTPS canonical issuer while serving internal HTTP 8080"
 tofu_script = read("deploy/tx/keycloak-tofu.sh")
 keycloak_workflow_text = read(".github/workflows/keycloak.yml")
 keycloak_workflow = yaml.load(keycloak_workflow_text, Loader=yaml.BaseLoader)
