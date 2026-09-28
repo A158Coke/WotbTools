@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use replay_core::container::ReplayArchive;
-use replay_core::decoder::{decode_battle_end_session, DecodeEvent, DecodeStatus};
+use replay_core::decoder::{DecodeContext, DecodeEvent, DecodeStatus, DecoderRegistry};
 use replay_core::stream::{Packet, PacketStream};
 use serde::Deserialize;
 
@@ -36,6 +36,8 @@ struct Fixture {
     session: usize,
     unsupported: usize,
     digest: String,
+    block_digests: Vec<String>,
+    samples: Vec<String>,
 }
 
 #[test]
@@ -52,7 +54,10 @@ fn java_subset_matches_every_packet() {
     );
     assert_eq!(golden.fixtures.len(), 3);
 
-    let malformed = decode_battle_end_session(
+    let registry = DecoderRegistry::battle_end_session_subset();
+    let mut context = DecodeContext::default();
+    let malformed = registry.decode(
+        &mut context,
         &Packet {
             sequence: 7,
             source_offset: 0,
@@ -87,11 +92,17 @@ fn java_subset_matches_every_packet() {
             .expect("stream entry");
         let packets = PacketStream::open(&stream).expect("framing").packets;
         let mut digest = FNV_OFFSET;
+        let mut block_digest = FNV_OFFSET;
+        let mut block_count = 0;
+        let mut block_digests = Vec::new();
+        let mut samples = Vec::new();
         let mut closed = 0;
         let mut session = 0;
         let mut unsupported = 0;
+        let registry = DecoderRegistry::battle_end_session_subset();
+        let mut context = DecodeContext::default();
         for packet in &packets {
-            let result = decode_battle_end_session(packet, &stream);
+            let result = registry.decode(&mut context, packet, &stream);
             let event = match &result.events[0] {
                 DecodeEvent::StreamClosed { .. } => {
                     closed += 1;
@@ -105,6 +116,7 @@ fn java_subset_matches_every_packet() {
                     unsupported += 1;
                     format!("unknown:{reason}")
                 }
+                DecodeEvent::Position(_) => panic!("position decoder is not in this subset"),
             };
             let status = match result.status {
                 DecodeStatus::Success => "SUCCESS",
@@ -124,7 +136,23 @@ fn java_subset_matches_every_packet() {
             );
             for byte in row.bytes() {
                 digest = (digest ^ u64::from(byte)).wrapping_mul(FNV_PRIME);
+                block_digest = (block_digest ^ u64::from(byte)).wrapping_mul(FNV_PRIME);
             }
+            block_count += 1;
+            if block_count == 1000 {
+                block_digests.push(format!("{block_digest:x}"));
+                block_digest = FNV_OFFSET;
+                block_count = 0;
+            }
+            if packet.sequence < 64
+                || usize::try_from(packet.sequence).expect("sequence") >= packets.len() - 16
+                || packet.sequence % 2000 == 0
+            {
+                samples.push(row.trim_end().to_owned());
+            }
+        }
+        if block_count > 0 {
+            block_digests.push(format!("{block_digest:x}"));
         }
         assert_eq!(
             packets.len(),
@@ -145,5 +173,11 @@ fn java_subset_matches_every_packet() {
             "{} digest",
             expected.name
         );
+        assert_eq!(
+            block_digests, expected.block_digests,
+            "{} blocks",
+            expected.name
+        );
+        assert_eq!(samples, expected.samples, "{} samples", expected.name);
     }
 }

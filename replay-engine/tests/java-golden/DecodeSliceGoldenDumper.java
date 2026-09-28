@@ -13,12 +13,14 @@ import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 /** Java oracle for the Type14/Type35-only decoder registry. All other types are unsupported. */
 public final class DecodeSliceGoldenDumper {
     private static final long OFFSET = 0xcbf29ce484222325L;
     private static final long PRIME = 0x100000001b3L;
+    private static final int BLOCK_SIZE = 1000;
 
     public static void main(final String[] args) throws Exception {
         final Path dir = Path.of(args[0]);
@@ -35,6 +37,10 @@ public final class DecodeSliceGoldenDumper {
             registry.register(new SessionDecisecondLowByteDecoder());
             final ReplayDecodeContext context = new ReplayDecodeContext();
             long digest = OFFSET;
+            long blockDigest = OFFSET;
+            int blockCount = 0;
+            final List<String> blockDigests = new ArrayList<>();
+            final List<String> samples = new ArrayList<>();
             int closed = 0;
             int session = 0;
             int unsupported = 0;
@@ -58,12 +64,27 @@ public final class DecodeSliceGoldenDumper {
                         + packet.payloadLength() + "|" + result.status() + "|" + event + "\n";
                 for (final byte b : row.getBytes(StandardCharsets.UTF_8)) {
                     digest = (digest ^ (b & 0xff)) * PRIME;
+                    blockDigest = (blockDigest ^ (b & 0xff)) * PRIME;
                 }
+                if (++blockCount == BLOCK_SIZE) {
+                    blockDigests.add(Long.toUnsignedString(blockDigest, 16));
+                    blockDigest = OFFSET;
+                    blockCount = 0;
+                }
+                if (packet.sequence() < 64 || packet.sequence() >= packets.size() - 16
+                        || packet.sequence() % 2000 == 0) {
+                    samples.add(row.stripTrailing());
+                }
+            }
+            if (blockCount > 0) {
+                blockDigests.add(Long.toUnsignedString(blockDigest, 16));
             }
             System.out.print("{\"name\":\"" + name + "\",\"packetCount\":" + packets.size()
                     + ",\"closed\":" + closed + ",\"session\":" + session
                     + ",\"unsupported\":" + unsupported + ",\"digest\":\""
-                    + Long.toUnsignedString(digest, 16) + "\"}");
+                    + Long.toUnsignedString(digest, 16) + "\",\"blockDigests\":[\""
+                    + String.join("\",\"", blockDigests) + "\"],\"samples\":[\""
+                    + String.join("\",\"", samples) + "\"]}");
             System.out.println(n + 1 == names.size() ? "" : ",");
         }
         final ReplayPacketDecoderRegistry registry = new ReplayPacketDecoderRegistry();
