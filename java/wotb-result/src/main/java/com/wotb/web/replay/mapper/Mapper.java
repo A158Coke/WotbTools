@@ -8,12 +8,12 @@ import com.wotb.core.rating.LeagueRatingBatchAggregator;
 import com.wotb.core.rating.LeagueRatingResult;
 import com.wotb.core.rating.PlayerLeagueRating;
 import com.wotb.core.rating.PlayerLeagueSummary;
-import com.wotb.core.rating.PlayerVehicleUsage;
 import com.wotb.core.rating.TeamLeagueRating;
 import com.wotb.core.rating.TeamLeagueSummary;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.PlayerVehicleUsage;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.ref.VehicleCodes;
@@ -71,9 +71,7 @@ public final class Mapper {
 
     // ---- League Rating 列定义（key 单一来源 LeagueColumns；显示名前端三语 / 导出中文） ----
 
-    /** League 模式单场玩家列：标准列（含 contribution/kast/impact，Performance Metrics 保留在 CW）
-     * + Rating 维度 + 占点原始字段（contribution/kast/impact 是 Replay Performance Metrics，
-     * 不是 League Rating 维度，必须保留在 CW 单场表，不得进入七维 Rating/Radar）。 */
+    /** League 模式单场玩家列：标准列 + Rating 维度 + 占点原始字段。 */
     public static List<ColumnDef> leaguePlayerColumns() {
         final List<ColumnDef> out = new ArrayList<>();
         out.add(new ColumnDef("nickname", false));
@@ -88,7 +86,6 @@ public final class Mapper {
             out.add(new ColumnDef(key, true));
         }
         out.add(new ColumnDef(LeagueColumns.VICTORY_POINTS_EARNED, true));
-        // victory_points_seized 保留为 backend fact，CW Rating 主 UI 不展示
         return out;
     }
 
@@ -102,12 +99,10 @@ public final class Mapper {
                     LeagueColumns.dimMax(d), false, false, "rating"));
         }
         out.add(new LeagueColumnDef(LeagueColumns.VICTORY_POINTS_EARNED, true, 0, false, false, "battle"));
-        // victory_points_seized 不进入 Rating 列系统（backend fact 保留，UI 不展示）
         return out;
     }
 
-    /** League 模式汇总列：标准汇总列完整保留（含跨场 contribution/kast/impact；
-     * Performance Metrics 属于 Replay 数据，CW 汇总表必须可显示）。 */
+    /** League 模式汇总列：标准汇总列（canonical {@link AggregateColumns} 契约）。 */
     public static List<ColumnDef> leagueAggregateColumns() {
         return aggregateColumns();
     }
@@ -130,10 +125,6 @@ public final class Mapper {
         out.add(new ColumnDef("damage_total", true));
         out.add(new ColumnDef("assist_total", true));
         out.add(new ColumnDef("kills_total", true));
-        // 跨场 Performance Metrics（与 resp.aggregate 同一全部已解析场次样本）
-        out.add(new ColumnDef("contribution", true));
-        out.add(new ColumnDef("kast", true));
-        out.add(new ColumnDef("impact", true));
         return out;
     }
 
@@ -164,8 +155,7 @@ public final class Mapper {
      *                  Rating 列留空——Replay validity and Rating eligibility are independent;
      *                  Rating-ineligible parsed battles remain valid Replay results）
      * @param leagueMode 整个批次是否为 League Rating 模式（决定是否注入 Rating 列元数据 /
-     *                   CW UI 语义；contribution/kast/impact 保留；
-     *                   Rating-ineligible 场次 league==null 但 leagueMode 仍为 true）
+     *                   CW UI 语义；Rating-ineligible 场次 league==null 但 leagueMode 仍为 true）
      */
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp,
                                      final LeagueRatingResult league, final boolean leagueMode) {
@@ -187,8 +177,6 @@ public final class Mapper {
             Players.enrich(p, tp);
             final Map<String, Object> cells = new LinkedHashMap<>();
             for (final Columns.Column c : Columns.PLAYER) {
-                // 单场 Performance Metrics（contribution/kast/impact）在 League 模式同样保留
-                // （表现指标 ≠ Rating 维度；由调用方 populateBattle 回填）
                 cells.put(c.key(), playerValue(c, p));
             }
             if (league != null) {
@@ -201,13 +189,11 @@ public final class Mapper {
                     }
                 }
                 cells.put(LeagueColumns.VICTORY_POINTS_EARNED, p.victoryPointsEarned);
-                cells.put(LeagueColumns.VICTORY_POINTS_SEIZED, p.victoryPointsSeized);
             } else if (leagueMode) {
                 // Rating-ineligible league 场次：占点原始字段是 battle facts，仍应输出
                 cells.put(LeagueColumns.VICTORY_POINTS_EARNED, p.victoryPointsEarned);
-                cells.put(LeagueColumns.VICTORY_POINTS_SEIZED, p.victoryPointsSeized);
             }
-            rows.add(new PlayerRow(cells, p.team));
+            rows.add(new PlayerRow(cells, p.team, p.accountId, p.tankId));
         }
         return new BattleDto(b.arenaId, b.mapName, b.version, b.durationS,
                 b.startTime, b.winnerTeam, sourceId, sourceName, rows, leagueBattleDto(league, b));
@@ -261,11 +247,11 @@ public final class Mapper {
             }
             final PerformanceMetricsCalculator.Row perf = perfById.get(a.accountId);
             // 跨场表现派生列：canonical getter 单一来源（HP 全部 UNKNOWN 时
-            // contribution/kast/多伤率 unavailable → null，UI 显示 "--"；impact/tradedDeaths 恒有值）
+            // 多伤率 unavailable → null，UI 显示 "--"）
             for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
                 cells.put(c.key(), perf == null ? null : c.get().apply(perf));
             }
-            out.add(new AggRow(cells, a.team));
+            out.add(new AggRow(cells, a.team, a.accountId));
         }
         return out;
     }
@@ -403,8 +389,7 @@ public final class Mapper {
         }
         // 基础 Replay Aggregate 属于 Replay Core：无论 League Rating 是否成功，
         // 只要是多场（跨场汇总语义），就必须输出标准基础汇总——League Rating Summary
-        // 是附加分析，不替代基础汇总。League 模式的 aggregateColumns 保留
-        // 跨场 contribution/kast/impact（Performance Metrics 在 CW 可显示）。
+        // 是附加分析，不替代基础汇总。
         // CW/League 单场也生成基础 Replay Aggregate row——
         // 单场 CW Unified Summary 需要 damage_avg/assisted_avg/kills_avg/earned_avg 等
         // Replay Core 权威事实（全部可由该场结算得出，禁止伪装成 unavailable）；
@@ -415,35 +400,27 @@ public final class Mapper {
         }
         final boolean shouldAggregate = battles.size() > 1 || league != null;
         final List<AggRow> aggregate = shouldAggregate
-                ? toAggregate(Aggregator.aggregate(battles, tp), perfById)
+                ? toAggregate(Aggregator.aggregate(battles), perfById)
                 : List.of();
         if (league != null) {
             // leagueMode=true：CW UI 存在（含 Rating-ineligible 场次）；league 仅决定本场 Rating 结果
             return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
-                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league, perfById, tp),
+                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league, tp),
                     null, true);
         }
         return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
                 playerColumns(), aggregateColumns(), null, leagueUnavailableCode, false);
     }
 
-    private static LeagueRatingDto leagueDto(final LeagueRatingBatch league,
-                                              final Map<Long, PerformanceMetricsCalculator.Row> perfById,
-                                              final Tankopedia tp) {
+    private static LeagueRatingDto leagueDto(final LeagueRatingBatch league, final Tankopedia tp) {
         final List<LeaguePlayerSummaryDto> players = new ArrayList<>();
         for (final PlayerLeagueSummary s : league.playerSummaries()) {
-            final PerformanceMetricsCalculator.Row perf = perfById.get(s.accountId());
             players.add(new LeaguePlayerSummaryDto(
                     s.accountId(), s.nickname(), s.clan(), s.ratedBattles(),
                     s.rating(),
                     r1(s.observedMean()),
                     s.dimensionMeans().stream().map(Mapper::r1).toList(),
                     s.mvpCount(), s.wins(), s.damageTotal(), s.assistTotal(), s.killsTotal(),
-                    // 跨场 Performance Metrics（与 resp.aggregate 同一全部已解析场次样本）；
-                    // HP 全部 UNKNOWN → contribution/kast null（UI "--"），impact 恒有值
-                    perf == null || !perf.hpEligible ? null : r1(perf.contribution),
-                    perf == null || !perf.hpEligible ? null : r1(perf.kast),
-                    perf == null ? null : r1(perf.impactValue),
                     mostUsedVehicle(s, tp)));
         }
         final List<LeagueTeamSummaryDto> teams = new ArrayList<>();

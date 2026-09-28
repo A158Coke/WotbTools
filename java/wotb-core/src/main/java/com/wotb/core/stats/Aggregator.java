@@ -3,7 +3,6 @@ package com.wotb.core.stats;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.util.PlayerResultFormat;
 import org.springframework.util.StringUtils;
 
@@ -17,7 +16,7 @@ public final class Aggregator {
     private Aggregator() {
     }
 
-    public static Map<Long, Agg> aggregate(final List<Battle> battles, final Tankopedia tp) {
+    public static Map<Long, Agg> aggregate(final List<Battle> battles) {
         final Map<Long, Agg> map = new LinkedHashMap<>();
         for (final Battle b : battles) {
             final Integer winner = b.winnerTeam;
@@ -57,8 +56,8 @@ public final class Aggregator {
                 a.pens += p.nPenetrationsDealt;
                 a.enemiesDamaged += p.nEnemiesDamaged;
                 a.earned += p.victoryPointsEarned;
-                final String tn = tp.info(p.tankId).name();
-                a.tanks.merge(tn, 1, Integer::sum);
+                // B6：只累计 vehicleId + 场次（车辆名称属 Tank Knowledge，由展示层解析）
+                a.vehicleBattles.merge(p.tankId, 1, Integer::sum);
             }
         }
         return map;

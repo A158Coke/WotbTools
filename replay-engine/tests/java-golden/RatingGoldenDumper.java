@@ -79,8 +79,7 @@ public final class RatingGoldenDumper {
         json.append("  ],\n");
         json.append("  \"aggregate\": [\n");
         final java.util.Map<Long, com.wotb.core.model.Agg> aggregated =
-                com.wotb.core.stats.Aggregator.aggregate(aggBattles,
-                        com.wotb.core.ref.Tankopedia.load());
+                com.wotb.core.stats.Aggregator.aggregate(aggBattles);
         int aggregateIndex = 0;
         for (final com.wotb.core.model.Agg a : aggregated.values()) {
             json.append(aggregateRow(a));
@@ -445,12 +444,27 @@ public final class RatingGoldenDumper {
                 .append(", \"blockedAvg\": ").append(number(a.avg(a.blocked)))
                 .append(", \"killsAvg\": ").append(number(a.avg(a.kills)))
                 .append(", \"earnedAvg\": ").append(number(a.avg(a.earned)))
-                .append(", \"survivalAvg\": ").append(number(a.survivalAvg()))
+                .append(", \"survivalTimeAvg\": ").append(number(a.survivalTimeAvg()))
                 .append(", \"hitRate\": ").append(number(a.hitRate()))
                 .append(", \"penRate\": ").append(number(a.penRate()))
-                .append(", \"tanksStr\": \"").append(a.tanksStr().replace("\"", "\\\"")).append("\"")
+                .append(", \"vehicleUsage\": [")
+                .append(vehicleUsageJson(a.vehicleUsage()))
+                .append("]")
                 .append("}");
         return out.toString();
+    }
+
+    /** 结构化用车统计（B6：`tanksStr` 字符串已退役，改为 vehicleId + battles）。 */
+    private static String vehicleUsageJson(final java.util.List<com.wotb.core.model.PlayerVehicleUsage> usage) {
+        final StringBuilder sb = new StringBuilder();
+        for (final com.wotb.core.model.PlayerVehicleUsage u : usage) {
+            if (!sb.isEmpty()) {
+                sb.append(", ");
+            }
+            sb.append("{\"tankId\": \"").append(u.tankId())
+                    .append("\", \"battles\": ").append(u.battles()).append("}");
+        }
+        return sb.toString();
     }
 
     /**

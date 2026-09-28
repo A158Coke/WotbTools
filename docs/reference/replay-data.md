@@ -509,9 +509,6 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `kills`                       | 整数  | `PlayerResult.kills`                     | 人数    | #18                                                                             |
 | `damage_dealt`                | 整数  | `PlayerResult.damageDealt`               | HP    | #8                                                                              |
 | `damage_assisted`             | 整数  | `PlayerResult.damageAssisted`            | HP    | #9 + #10                                                                        |
-| `contribution`               | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.contribution` | %  | 单场贡献率（派生；HP 全 UNKNOWN 时为 null → 前端 `--`）                                     |
-| `kast`                       | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.kast`          | %  | 单场 KAST（派生；HP 全 UNKNOWN 时为 null → 前端 `--`）                                    |
-| `impact`                     | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.impact`        | %  | 单场 Impact（派生，不依赖 HP，恒有值）                                                     |
 | `damage_received`             | 整数  | `PlayerResult.damageReceived`            | HP    | #11                                                                             |
 | `damage_blocked`              | 整数  | `PlayerResult.damageBlocked`             | HP    | #117                                                                            |
 | `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | settlement lifeTime 的兼容投影；live reconstruction 不覆盖业务值 |
@@ -524,8 +521,11 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `n_penetrations_received`     | 整数  | `PlayerResult.nPenetrationsReceived`     | 次数    | #15                                                                             |
 | `n_enemies_damaged`           | 整数  | `PlayerResult.nEnemiesDamaged`           | 人数    | #17                                                                             |
 | ~~`platoon_label`~~             | —     | 已删除（PR147：field2 是 prebattle/training-room 分组 ID，非排/小队；A/B/C 排标签为错误业务语义） | — |推导）                                                          |
-| `tank_id`                     | 长整数 | `PlayerResult.tankId`                    | —     | #103                                                                            |
-| `account_id`                  | 长整数 | `PlayerResult.accountId`                 | —     | #101                                                                            |
+
+> **B6 列退役**：`alpha_damage`、`contribution`、`kast`、`impact`、`traded_deaths`、
+> `victory_points_seized` 已从公共列移除；`tank_id`/`account_id` 不再是列，改由响应行的
+> 结构化身份字段 `vehicleId`（= `PlayerResult.tankId`，#103）/ `accountId`（#101）承载
+> （内部能力保留，用于归属与身份校验）。派生指标未退役的只有汇总 `multi_damage_rate`。
 
 ### 汇总列（AggregateSheets / AGG_COLS）
 
@@ -535,7 +535,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `wins`                | 整数  | Sum（team==winnerTeam）    | 场次   |
 | `win_rate`            | 浮点数 | `wins/battles * 100`     | %    |
 | `survival_rate`       | 浮点数 | `survived/battles * 100` | %    |
-| `survival_avg`        | 浮点数 | `survivalSum/battles`    | 秒    |
+| `survival_time_avg`   | 浮点数 | `survivalSum/battles`    | 秒    |
 | `kills`               | 整数  | Sum                      | 人数   |
 | `kills_avg`           | 浮点数 | `kills/battles`          | 人数/场 |
 | `damage`              | 整数  | Sum                      | HP   |
@@ -550,13 +550,8 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `hits`                | 整数  | Sum                      | 次数   |
 | `pens`                | 整数  | Sum                      | 次数   |
 | `enemies_damaged_avg` | 浮点数 | `enemiesDamaged/battles` | 人数/场 |
-| `contribution`        | 浮点数 | `PerformanceMetricsCalculator.compute` 按 accountId 合并 | %  | 跨场贡献率（无 HP 已知场次时 null → 前端 `--`） |
-| `kast`                | 浮点数 | `PerformanceMetricsCalculator.compute` 按 accountId 合并 | %  | 跨场 KAST（无 HP 已知场次时 null → 前端 `--`）   |
-| `impact`              | 浮点数 | `PerformanceMetricsCalculator.compute` 按 accountId 合并 | %  | 跨场 Impact（不依赖 HP）                          |
 | `multi_damage_rate`   | 浮点数 | `PerformanceMetricsCalculator.compute` 按 accountId 合并 | %  | 多伤率（无 HP 已知场次时 null → 前端 `--`）      |
-| `traded_deaths`       | 整数  | `PerformanceMetricsCalculator.compute` 按 accountId 合并 | 场次 | 互换击杀                                        |
-| `tanks`               | 文本  | `Map<车辆名, 场次>`           | —    |
-| `account_id`          | 长整数 | —                        | —    |
+| `tanks`               | 结构化数组 | `Agg.vehicleUsage()`：`[{tankId, battles}]`（按场次降序 → tankId 升序） | —    | 车辆名称属 Tank Knowledge，由展示层（Excel / 客户端）解析 |
 
 ---
 

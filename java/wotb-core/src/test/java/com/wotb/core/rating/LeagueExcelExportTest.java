@@ -19,11 +19,12 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** League Rating Excel 导出（含单场
- * Performance Metrics contribution/kast/impact、维度分/满分/百分比、战队名称覆盖）。 */
+/** League Rating Excel 导出（含单场维度分/满分/百分比、战队名称覆盖、
+ *  B6 退役列缺省：占领分 / contribution / KAST / Impact 不再导出）。 */
 class LeagueExcelExportTest {
 
     private static LeagueRatingResult ratedBattle(final int winner) {
@@ -53,11 +54,11 @@ class LeagueExcelExportTest {
             assertTrue(headerText.toString().contains("总Rating"), "必须包含总Rating列");
             assertTrue(headerText.toString().contains("伤害评分"), "必须包含维度列");
             assertTrue(headerText.toString().contains("占点得分"), "必须包含占点原始字段");
-            assertTrue(headerText.toString().contains("占领分"), "必须包含占领分原始字段");
-            // 单场 Performance Metrics 保留在 CW 单场工作簿
-            assertTrue(headerText.toString().contains("贡献度"), "League 单场必须含 Contribution");
-            assertTrue(headerText.toString().contains("KAST"), "League 单场必须含 KAST");
-            assertTrue(headerText.toString().contains("Impact"), "League 单场必须含 Impact");
+            // B6：占领分（victory_points_seized）与表现指标（contribution/kast/impact）已退役
+            assertFalse(headerText.toString().contains("占领分"), "占领分列已退役，不得再出现");
+            assertFalse(headerText.toString().contains("贡献度"), "contribution 已退役，不得再出现");
+            assertFalse(headerText.toString().contains("KAST"), "KAST 已退役，不得再出现");
+            assertFalse(headerText.toString().contains("Impact"), "Impact 已退役，不得再出现");
 
             // 战队 Rating + MVP 在战斗信息表
             final Sheet info = wb.getSheet("战斗信息");
@@ -150,13 +151,17 @@ class LeagueExcelExportTest {
                     "Potential Damage 已全局移除，任何表头都不得出现：" + headers);
             // League 专属扩展
             assertTrue(headers.contains("占点得分"), "必须含 占点得分");
-            assertTrue(headers.contains("占领分"), "必须含 占领分");
             assertTrue(headers.contains("伤害评分"), "必须含七维评分列");
             assertTrue(headers.contains("总Rating"), "必须含总Rating");
+            assertFalse(headers.contains("占领分"), "占领分（victory_points_seized）列已退役");
             // 非 Potential 的 canonical Replay facts 必须完整保留（不得误删其它字段）
             for (final String missing : List.of("等级", "坦克类型",
-                    "国家", "炮伤", "被命中", "被击穿", "击伤", "军阶", "车辆ID", "账号ID")) {
+                    "国家", "被命中", "被击穿", "击伤", "军阶")) {
                 assertTrue(headers.contains(missing), "此前缺失字段必须存在：" + missing);
+            }
+            // B6：身份列（车辆ID/账号ID）与 炮伤（alpha_damage）不再占用展示列
+            for (final String retired : List.of("车辆ID", "账号ID", "炮伤", "贡献度", "KAST", "Impact")) {
+                assertFalse(headers.contains(retired), "已退役列不得再出现：" + retired + "，实际：" + headers);
             }
         }
     }
@@ -183,12 +188,16 @@ class LeagueExcelExportTest {
             // Replay 汇总：canonical aggregate facts（含此前缺失的获取点数 + Performance Metrics）
             final Sheet replay = wb.getSheet("Replay 汇总");
             final String replayHeader = headerText(replay);
-            for (final String col : List.of("场次", "获取点数总计", "获取点数/场", "贡献度%", "KAST%", "Impact%",
+            for (final String col : List.of("场次", "获取点数总计", "获取点数/场", "多伤率%", "平均存活时间",
                     "总伤害", "总射击次数", "总命中次数", "总击穿次数")) {
                 assertTrue(replayHeader.contains(col), "Replay 汇总必须含 " + col + "，实际：" + replayHeader);
             }
-            assertTrue(!replayHeader.contains("潜在伤害"),
+            assertFalse(replayHeader.contains("潜在伤害"),
                     "Potential Damage 已全局移除，Replay 汇总也不得含潜在伤害：" + replayHeader);
+            for (final String retired : List.of("贡献度%", "KAST%", "Impact%", "互换击杀", "账号ID")) {
+                assertFalse(replayHeader.contains(retired),
+                        "B6 已退役列不得再出现在 Replay 汇总：" + retired + "，实际：" + replayHeader);
+            }
             // 场次列（第 3 列）数据 = 2：全部解析场次样本（含 Rating-ineligible）
             assertEquals(2.0, replay.getRow(1).getCell(2).getNumericCellValue(), 1e-9,
                     "Replay aggregate 样本 = 全部解析场次（2），Rating-ineligible 不得从 aggregate 消失");
@@ -235,7 +244,7 @@ class LeagueExcelExportTest {
             case "wins" -> "胜场";
             case "win_rate" -> "胜率%";
             case "survival_rate" -> "存活率%";
-            case "survival_avg" -> "平均存活时间";
+            case "survival_time_avg" -> "平均存活时间";
             case "kills" -> "总击杀";
             case "kills_avg" -> "场均击杀";
             case "damage" -> "总伤害";
@@ -251,14 +260,9 @@ class LeagueExcelExportTest {
             case "pens" -> "总击穿次数";
             case "enemies_damaged_avg" -> "场均击伤";
             case "tanks" -> "用车";
-            case "account_id" -> "账号ID";
             case "earned_total" -> "获取点数总计";
             case "earned_avg" -> "获取点数/场";
-            case "contribution" -> "贡献度%";
-            case "kast" -> "KAST%";
-            case "impact" -> "Impact%";
             case "multi_damage_rate" -> "多伤率%";
-            case "traded_deaths" -> "互换击杀";
             default -> throw new AssertionError("unexpected aggregate key: " + key);
         };
     }
@@ -333,8 +337,12 @@ class LeagueExcelExportTest {
                         || h.contains("潜在明细")),
                 "Standard 单场不得含 Potential Damage 列：" + headers);
         for (final String keep : List.of("伤害", "射击次数", "命中次数", "击穿", "命中率", "击穿率",
-                "贡献度", "KAST", "Impact")) {
+                "存活时间", "军阶")) {
             assertTrue(headers.contains(keep), "Standard 单场必须保留 " + keep + "：" + headers);
+        }
+        // B6：表现指标与身份列已退役（身份不由 Excel 展示列承载）
+        for (final String retired : List.of("贡献度", "KAST", "Impact", "账号ID", "车辆ID", "炮伤")) {
+            assertFalse(headers.contains(retired), "Standard 单场不得再含已退役列：" + retired + "：" + headers);
         }
     }
 
@@ -369,11 +377,13 @@ class LeagueExcelExportTest {
             for (final String once : List.of("玩家", "战队", "车辆")) {
                 assertEquals(1, headers.stream().filter(once::equals).count(), once + " 不得在明细表重复，实际：" + headers);
             }
-            // 此前容易丢失的字段必须存在（不依赖行数断言）
-            for (final String missing : List.of("等级", "坦克类型", "国家", "炮伤",
-                    "被命中", "被击穿", "击伤", "军阶", "车辆ID", "账号ID",
-                    "贡献度", "KAST", "Impact")) {
+            // 此前容易丢失的字段必须存在（不依赖行数断言）；B6 退役列不得出现
+            for (final String missing : List.of("等级", "坦克类型", "国家",
+                    "被命中", "被击穿", "击伤", "军阶", "存活时间")) {
                 assertTrue(headers.contains(missing), "此前缺失字段必须存在：" + missing + "，实际：" + headers);
+            }
+            for (final String retired : List.of("炮伤", "车辆ID", "账号ID", "贡献度", "KAST", "Impact")) {
+                assertFalse(headers.contains(retired), "B6 已退役列不得出现：" + retired + "，实际：" + headers);
             }
             assertTrue(headers.stream().noneMatch(h -> h.contains("潜在伤害") || h.contains("补增伤害")
                             || h.contains("潜在明细")),

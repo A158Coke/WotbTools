@@ -25,6 +25,10 @@
 ## Not planned
 
 - 不重新建立已经退役的代练业务。
+- 不恢复已退役的战斗表现派生指标列（`contribution` / `kast` / `impact` / `alpha_damage` /
+  `traded_deaths`）作为跨场公共列：它们是 average-of-per-battle 型复合指标，与
+  「跨场比率先累计总量再相除」的口径冲突；账号 / 车辆 ID（`account_id` / `tank_id`）也不再
+  作为公共列，改由响应行结构化身份字段承载。汇总表现只保留 `multi_damage_rate`。
 - 不在客户端 Replay Engine 之外保留第二套 Replay Parser：解析权威是 `replay-engine/`（Web 与 Android 共用同一引擎）；服务端解析执行平面（`parser-worker`、parser MQ 拓扑）随迁移退役，不再作为长期 authority。
 - 服务端不重新承担 Replay 解析执行：服务端只保留 schema validation / dedup / authorization / 共享状态与 AI 编排。
 - 不维护第二套 Rating 事实源或 AI 专用解析链。
