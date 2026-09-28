@@ -25,8 +25,7 @@ public final class Columns {
             new Column("车辆", "tank_name", 20, false, p -> p.tankName),
             new Column("等级", "tank_tier", 6, true, p -> p.tankTier),
             new Column("坦克类型", "tank_type", 9, false, p -> p.tankType),
-            new Column("国家", "tank_nation", 8, false, p -> p.tankNation),
-            new Column("炮伤", "alpha_damage", 7, true, p -> p.alphaDamage)
+            new Column("国家", "tank_nation", 8, false, p -> p.tankNation)
     );
 
     public static final List<Column> STAT = List.of(
@@ -34,9 +33,6 @@ public final class Columns {
             new Column("击杀", "kills", 6, true, p -> p.kills),
             new Column("伤害", "damage_dealt", 8, true, p -> p.damageDealt),
             new Column("协助伤害", "damage_assisted", 9, true, p -> p.damageAssisted),
-            new Column("贡献度", "contribution", 8, true, p -> p.contribution),
-            new Column("KAST", "kast", 7, true, p -> p.kast),
-            new Column("Impact", "impact", 8, true, p -> p.impact),
             new Column("损失血量", "damage_received", 9, true, p -> p.damageReceived),
             new Column("格挡", "damage_blocked", 9, true, p -> p.damageBlocked),
             new Column("存活时间", "survival_time", 10, true, p -> p.survivalTimeSec),
@@ -50,10 +46,15 @@ public final class Columns {
             new Column("击伤", "n_enemies_damaged", 9, true, p -> p.nEnemiesDamaged)
     );
 
+    /**
+     * 尾部单场事实列。
+     *
+     * <p><b>B6</b>：{@code tank_id}/{@code account_id} 不再作为公共列——身份（账号 / 车辆）由
+     * 响应行的结构化 {@code accountId}/{@code vehicleId} 承载（内部能力保留），不再占用可排序
+     * 可导出的展示列。</p>
+     */
     public static final List<Column> TAIL = List.of(
-            new Column("军阶", "rank", 6, true, p -> p.rank),
-            new Column("车辆ID", "tank_id", 9, true, p -> p.tankId),
-            new Column("账号ID", "account_id", 12, true, p -> p.accountId)
+            new Column("军阶", "rank", 6, true, p -> p.rank)
     );
 
     /** 单场「玩家数据」表完整列。 */

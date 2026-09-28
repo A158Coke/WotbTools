@@ -2,6 +2,7 @@ package com.wotb.core.rating;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.PlayerVehicleUsage;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;

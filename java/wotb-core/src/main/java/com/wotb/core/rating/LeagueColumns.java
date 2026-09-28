@@ -39,10 +39,10 @@ public final class LeagueColumns {
             PlayerLeagueRating.MAX_SURVIVAL_TRADE,
             PlayerLeagueRating.MAX_SHOOTING);
 
-    /** 占点原始字段列 key（backend/export facts）：earned → CW 主 UI 展示；
-     *  seized → backend fact 保留、XLSX 可导出、CW 主 UI 不展示。 */
+    /** 占点原始字段列 key（backend/export facts）：earned → CW 主 UI 展示。
+     *  <p><b>B6</b>：{@code victory_points_seized} 列已退役（结算事实仍在
+     *  {@code PlayerResult.victoryPointsSeized} 内部保留，供 AI 事实与归属校验消费）。</p> */
     public static final String VICTORY_POINTS_EARNED = "victory_points_earned";
-    public static final String VICTORY_POINTS_SEIZED = "victory_points_seized";
 
     /** League 模式默认可见列（玩家/战队/车辆/伤害/助攻/击杀/总 Rating）。 */
     public static final List<String> DEFAULT_VISIBLE = List.of(

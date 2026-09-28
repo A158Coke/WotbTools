@@ -107,12 +107,22 @@ struct ExpectedAggregate {
     kills_avg: f64,
     #[serde(rename = "earnedAvg")]
     earned_avg: f64,
-    #[serde(rename = "survivalAvg")]
-    survival_avg: Option<f64>,
+    #[serde(rename = "survivalTimeAvg")]
+    survival_time_avg: Option<f64>,
     #[serde(rename = "hitRate")]
     hit_rate: Option<f64>,
     #[serde(rename = "penRate")]
     pen_rate: Option<f64>,
+    #[serde(rename = "vehicleUsage")]
+    vehicle_usage: Vec<ExpectedVehicleUsage>,
+}
+
+/// Structured vehicle usage from the Java oracle (`Agg.vehicleUsage()`, key `tanks`).
+#[derive(Debug, Deserialize)]
+struct ExpectedVehicleUsage {
+    #[serde(rename = "tankId")]
+    tank_id: String,
+    battles: i64,
 }
 
 fn to_battle(input: &InputBattle) -> BattleResult {
@@ -258,7 +268,7 @@ fn aggregate_matches_the_java_golden() {
             expected.earned_avg,
             &format!("{label} earned avg"),
         );
-        match (entry.survival_time_avg(), expected.survival_avg) {
+        match (entry.survival_time_avg(), expected.survival_time_avg) {
             (None, None) => {}
             (Some(actual), Some(expected_value)) => assert_close(
                 actual,
@@ -291,7 +301,9 @@ fn aggregate_matches_the_java_golden() {
             }
         }
 
-        // Vehicle usage replaces the deleted tank-name column: every battle is attributed once.
+        // Vehicle usage replaces the deleted tank-name column: every battle is attributed once and
+        // the structured (vehicleId, battles) list matches the Java oracle entry for entry
+        // (same canonical order: battles desc, then decimal vehicle id asc).
         let vehicle_total: i64 = entry.vehicle_usage.iter().map(|usage| usage.battles).sum();
         assert_eq!(
             vehicle_total, entry.battles,
@@ -303,6 +315,20 @@ fn aggregate_matches_the_java_golden() {
                 .iter()
                 .all(|usage| !usage.vehicle_id.is_empty()),
             "{label} vehicle ids must not be empty"
+        );
+        let actual_usage: Vec<(String, i64)> = entry
+            .vehicle_usage
+            .iter()
+            .map(|usage| (usage.vehicle_id.clone(), usage.battles))
+            .collect();
+        let expected_usage: Vec<(String, i64)> = expected
+            .vehicle_usage
+            .iter()
+            .map(|usage| (usage.tank_id.clone(), usage.battles))
+            .collect();
+        assert_eq!(
+            actual_usage, expected_usage,
+            "{label} structured vehicle usage must match the Java oracle"
         );
     }
 }

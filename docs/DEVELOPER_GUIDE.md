@@ -151,15 +151,30 @@ node tests/corpus-scan.mjs <dir>    # 本地语料扫描（gitignored 样本，�
 
 `ci.yml` 的 `replay_engine` job 使用同一组命令（不用 wasm-pack，避免运行时下载与未锁定安装脚本）。
 
-**Java golden（parity oracle）**：`tests/golden/*.json` 由 `tests/java-golden/*.java` 跑生产 Java 实现生成，CI 无 Java 工具链时用它验证 Rust 移植。重新生成（需先 `mvn -pl wotb-core -DskipTests package`，并让 `spring-core` 在 classpath 上）：
+**Java golden（parity oracle）**：`tests/golden/*.json` 由 `tests/java-golden/*.java` 跑生产 Java 实现生成，CI 无 Java 工具链时用它验证 Rust 移植。每个 golden 只由**同一个提交里的** Rust parity test 消费：
+
+| golden | 生成器 | 消费测试 |
+|---|---|---|
+| `tests/golden/league-rating-v41.json` | `RatingGoldenDumper`（Rating V4.1 + V6、Result、Aggregate、Normalizer） | `rating_parity`、`aggregate_parity` |
+| `tests/golden/packet-stream.json` | `PacketStreamGoldenDumper`（`data.wotreplay` 包流 framing 与诊断） | `stream_parity`、`stream_framing` |
+
+重新生成（需先在 `java/` 编译 `wotb-core`；`RatingGoldenDumper` 还要求 `spring-core` 与 Jackson 在 classpath 上）：
 
 ```bash
+# A. Rating / Result / Aggregate
 javac -cp java/wotb-core/target/classes -d "$TMP/golden" replay-engine/tests/java-golden/RatingGoldenDumper.java
-java -cp "java/wotb-core/target/classes:$TMP/golden:<spring-core.jar>" RatingGoldenDumper \
+java -cp "java/wotb-core/target/classes:$TMP/golden:<spring-core.jar>:<jackson-*.jar>" RatingGoldenDumper \
   > replay-engine/tests/golden/league-rating-v41.json
+
+# B. 包流 framing（只要核心类）
+javac -cp java/wotb-core/target/classes -d "$TMP/golden" replay-engine/tests/java-golden/PacketStreamGoldenDumper.java
+java -cp "java/wotb-core/target/classes:$TMP/golden" PacketStreamGoldenDumper \
+  common/fixtures/replays > replay-engine/tests/golden/packet-stream.json
 ```
 
-重跑后必须重新执行 `cargo test -p replay-core --test rating_parity`：golden 变更只有在 Rust 仍逐字段一致时才代表 parity 成立。
+重跑后必须重新执行对应 parity test：golden 变更只有在 Rust 仍逐项一致时才代表 parity 成立。
+
+**大体积 parity 的写法（`packet-stream.json` 是模板）**：单回放约 11 万包，明文 dump 会有几十 MB。约定是「**全量等价交给摘要，明文只做有界抽样**」——whole-stream FNV-1a 64 digest（对每个包的 12 字节帧头 + payload 依序）+ 每 1000 包块摘要（不匹配时可定位到块）+ 按类型聚合统计，明文只留前 64 / 后 16 / 每 5000 一包；比较一律用整数与 **float 位模式**（`Float.floatToRawIntBits` ↔ `f32::to_bits`），绝不比较格式化后的浮点文本。注意两个已踩过的坑：真实流的 terminator 时钟为 0（因此 `clockRegressionCount >= 1` 恒成立、最大时钟不由 terminator 决定），以及 Java 的 packet type 是**有符号 int**（dump 时必须 `Integer.toUnsignedLong` 归一化，否则 `0xFFFFFFFF` 会一侧是 `-1`、一侧是 `4294967295`）。
 
 约定：解析预算与 strict contiguous framing 见 [`docs/reference/replay-data.md`](reference/replay-data.md)；协议语义权威按 [`docs/research/replay/README.md`](research/replay/README.md) 的读取顺序；u64 identifier（`arenaId` / `gameAccountId` / `vehicleId`）过 WASM/JSON 边界一律用字符串。`replay-engine/**` 由 `ci.yml` 的 replay engine job 验证，`CI / Required Gate` 仍是唯一 required check。
 ---
@@ -295,7 +310,8 @@ Lease（读取期间 TTL 不清）。
 Tankopedia）；Web `Mapper` 消费 `Tankopedia` 选最常使用（场次降序 → 官方名忽略大小写升序 → tankId
 升序；无可靠名称返回 null），生成 `LeaguePlayerSummaryDto.mostUsedVehicle`
 （`LeagueVehicleUsageDto`）。前端 Drawer 渲染贴图（本地 Tier X WebP，缺图/非 Tier X 文字降级）与占比；
-Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）。
+Battle 直接取该场玩家行的结构化身份 `vehicleId`（= `PlayerResult.tankId`，B6 后
+`tank_id` 不再是列）与 `tank_name` 列。
 
 ### Hall of Fame / Hundred Battles
 
@@ -816,7 +832,7 @@ Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-confi
 | AI 复盘架构 | `docs/architecture/ai-review.md` |
 | 回放重建流水线 | `docs/architecture/replay-pipeline.md` |
 | 地图鸟瞰 / 战局回放 | `docs/features/battle-playback.md` |
-| 战斗表现 | `docs/features/performance.md` |
+| 战斗表现（contribution/KAST/Impact，**已退役**，见 `docs/ROADMAP.md` Not planned） | 无 canonical 文档；canonical 列集见 `AggregateColumns` / `Columns` |
 | 历史 Rating V2（管理员灰度） | `docs/features/rating-v2.md` |
 | League Rating | `docs/features/league-rating.md` |
 | 名人堂 / 百场 | `docs/features/hall-of-fame.md` |

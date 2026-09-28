@@ -40,7 +40,8 @@ public final class AggregateColumns {
             new CoreColumn("wins", true, a -> a.wins),
             new CoreColumn("win_rate", true, a -> r1(a.winRate())),
             new CoreColumn("survival_rate", true, a -> r1(a.survivalRate())),
-            new CoreColumn("survival_avg", true, a -> a.survivalAvg() == null ? null : r1(a.survivalAvg())),
+            new CoreColumn("survival_time_avg", true,
+                    a -> a.survivalTimeAvg() == null ? null : r1(a.survivalTimeAvg())),
             new CoreColumn("kills", true, a -> a.kills),
             new CoreColumn("kills_avg", true, a -> r2(a.avg(a.kills))),
             new CoreColumn("damage", true, a -> a.damage),
@@ -55,8 +56,7 @@ public final class AggregateColumns {
             new CoreColumn("hits", true, a -> a.hits),
             new CoreColumn("pens", true, a -> a.pens),
             new CoreColumn("enemies_damaged_avg", true, a -> r2(a.avg(a.enemiesDamaged))),
-            new CoreColumn("tanks", false, Agg::tanksStr),
-            new CoreColumn("account_id", true, a -> a.accountId),
+            new CoreColumn("tanks", false, Agg::vehicleUsage),
             new CoreColumn("earned_total", true, a -> a.earned),
             new CoreColumn("earned_avg", true, a -> r1(a.avg(a.earned)))
     );
@@ -64,16 +64,15 @@ public final class AggregateColumns {
     /**
      * 跨场表现派生列（顺序 = API aggregateColumns 追加顺序）。
      *
-     * <p>HP 全部 UNKNOWN（{@code hpEligible=false}）时 contribution/kast/多伤率 unavailable
-     * （getter 返回 null，Excel 空单元格 = API null，不冒充 0）；impact / tradedDeaths
-     * 不依赖 HP，恒有值。</p>
+     * <p>HP 全部 UNKNOWN（{@code hpEligible=false}）时多伤率 unavailable（getter 返回 null，
+     * Excel 空单元格 = API null，不冒充 0）。</p>
+     *
+     * <p><b>B6</b>：{@code contribution}/{@code kast}/{@code impact}/{@code traded_deaths} 已退役
+     * （见 {@code docs/ROADMAP.md} Not planned）；{@code account_id} 改由响应行结构化
+     * {@code accountId} 承载，{@code tanks} 改为结构化 vehicle usage。</p>
      */
     public static final List<PerfColumn> PERFORMANCE = List.of(
-            new PerfColumn("contribution", true, row -> row.hpEligible ? r1(row.contribution) : null),
-            new PerfColumn("kast", true, row -> row.hpEligible ? r1(row.kast) : null),
-            new PerfColumn("impact", true, row -> r1(row.impactValue)),
-            new PerfColumn("multi_damage_rate", true, row -> row.hpEligible ? r1(row.multiDamageRate) : null),
-            new PerfColumn("traded_deaths", true, row -> (double) row.tradedDeaths)
+            new PerfColumn("multi_damage_rate", true, row -> row.hpEligible ? r1(row.multiDamageRate) : null)
     );
 
     /** 按 key 查找核心列（未知 key 立即失败，防止展示层漂移）。 */

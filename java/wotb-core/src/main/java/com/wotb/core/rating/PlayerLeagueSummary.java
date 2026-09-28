@@ -1,5 +1,7 @@
 package com.wotb.core.rating;
 
+import com.wotb.core.model.PlayerVehicleUsage;
+
 import java.util.List;
 
 /** 批次选手汇总（V6 raw sum/count projection + seven dimension means）。 */
