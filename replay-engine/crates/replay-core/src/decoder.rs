@@ -4,6 +4,9 @@ use std::collections::HashMap;
 
 use crate::stream::Packet;
 
+pub mod aim_marker;
+pub mod ammunition;
+pub mod entity_lifecycle;
 pub mod materialization;
 pub mod position;
 pub mod property;
@@ -28,6 +31,9 @@ pub enum DecodeEvent {
     Position(position::PositionEvent),
     Property(property::PropertyEvent),
     Materialization(materialization::MaterializationEvent),
+    Ammunition(ammunition::AmmunitionEvent),
+    Lifecycle(entity_lifecycle::LifecycleEvent),
+    AimMarker(aim_marker::AimMarkerEvent),
     /// Type 14 closes the packet stream; its payload is not interpreted.
     StreamClosed {
         sequence: u32,
@@ -114,6 +120,30 @@ impl DecoderRegistry {
         registry
     }
 
+    /// Matching Java subset containing only AmmunitionSelectionDecoder.
+    pub fn ammunition_subset() -> Self {
+        let mut registry = Self::empty();
+        registry.register(AmmunitionSelectionDecoder);
+        registry
+    }
+
+    /// Java relative order for entity leave/create/announcement decoders.
+    pub fn entity_lifecycle_subset() -> Self {
+        let mut registry = Self::empty();
+        registry.register(LifecycleDecoder(LifecycleKind::Leave));
+        registry.register(LifecycleDecoder(LifecycleKind::Create));
+        registry.register(LifecycleDecoder(LifecycleKind::Announced));
+        registry
+    }
+
+    /// Java relative order for the two recorder aiming decoders.
+    pub fn aim_marker_subset() -> Self {
+        let mut registry = Self::empty();
+        registry.register(AimMarkerDecoder(aim_marker::TYPE_GUN_MARKER_SIZE));
+        registry.register(AimMarkerDecoder(aim_marker::TYPE_AIM_RAY_STATE));
+        registry
+    }
+
     pub fn empty() -> Self {
         Self {
             decoders: Vec::new(),
@@ -184,6 +214,113 @@ struct PositionDecoder;
 struct EntityPropertyDecoder;
 
 struct MaterializationDecoder;
+
+struct AmmunitionSelectionDecoder;
+
+enum LifecycleKind {
+    Leave,
+    Create,
+    Announced,
+}
+struct LifecycleDecoder(LifecycleKind);
+
+impl PacketDecoder for LifecycleDecoder {
+    fn name(&self) -> &'static str {
+        match self.0 {
+            LifecycleKind::Leave => "EntityLeaveDecoder",
+            LifecycleKind::Create => "EntityCreateDecoder",
+            LifecycleKind::Announced => "MaterializationAnnouncedDecoder",
+        }
+    }
+    fn supports(&self, _: &DecodeContext, packet: &Packet, _: &[u8]) -> bool {
+        match self.0 {
+            LifecycleKind::Leave => packet.packet_type == 4,
+            LifecycleKind::Create => matches!(packet.packet_type, 0..=2),
+            LifecycleKind::Announced => packet.packet_type == 33,
+        }
+    }
+    fn decode(&self, _: &mut DecodeContext, packet: &Packet, payload: &[u8]) -> DecodeResult {
+        let result = entity_lifecycle::decode(packet, payload);
+        DecodeResult {
+            status: match result.status {
+                entity_lifecycle::LifecycleStatus::Success => DecodeStatus::Success,
+                entity_lifecycle::LifecycleStatus::Partial => DecodeStatus::Partial,
+                entity_lifecycle::LifecycleStatus::Malformed => DecodeStatus::Malformed,
+            },
+            events: result
+                .events
+                .into_iter()
+                .map(DecodeEvent::Lifecycle)
+                .collect(),
+            warnings: result
+                .warnings
+                .into_iter()
+                .map(|warning| DecodeWarning {
+                    code: warning.code,
+                    message: warning.message,
+                })
+                .collect(),
+        }
+    }
+}
+
+struct AimMarkerDecoder(u32);
+
+impl PacketDecoder for AimMarkerDecoder {
+    fn name(&self) -> &'static str {
+        match self.0 {
+            aim_marker::TYPE_GUN_MARKER_SIZE => "GunMarkerSizeDecoder",
+            aim_marker::TYPE_AIM_RAY_STATE => "AimRayStateDecoder",
+            _ => unreachable!("only two aim marker decoders are registered"),
+        }
+    }
+    fn supports(&self, _: &DecodeContext, packet: &Packet, _: &[u8]) -> bool {
+        packet.packet_type == self.0
+    }
+    fn decode(&self, _: &mut DecodeContext, packet: &Packet, payload: &[u8]) -> DecodeResult {
+        let result = aim_marker::decode(packet.packet_type, payload);
+        DecodeResult {
+            status: if result.warning.is_some() {
+                DecodeStatus::Malformed
+            } else {
+                DecodeStatus::Success
+            },
+            events: vec![DecodeEvent::AimMarker(result.event)],
+            warnings: result
+                .warning
+                .into_iter()
+                .map(|(code, message)| DecodeWarning { code, message })
+                .collect(),
+        }
+    }
+}
+
+impl PacketDecoder for AmmunitionSelectionDecoder {
+    fn name(&self) -> &'static str {
+        "AmmunitionSelectionDecoder"
+    }
+    fn supports(&self, _: &DecodeContext, packet: &Packet, _: &[u8]) -> bool {
+        packet.packet_type == ammunition::TYPE_AMMUNITION_SELECTION
+    }
+    fn decode(&self, _: &mut DecodeContext, packet: &Packet, payload: &[u8]) -> DecodeResult {
+        let result = ammunition::decode(packet, payload);
+        DecodeResult {
+            status: if result.malformed {
+                DecodeStatus::Malformed
+            } else if result.partial {
+                DecodeStatus::Partial
+            } else {
+                DecodeStatus::Success
+            },
+            events: vec![DecodeEvent::Ammunition(result.event)],
+            warnings: result
+                .warning
+                .into_iter()
+                .map(|(code, message)| DecodeWarning { code, message })
+                .collect(),
+        }
+    }
+}
 
 impl PacketDecoder for MaterializationDecoder {
     fn name(&self) -> &'static str {
