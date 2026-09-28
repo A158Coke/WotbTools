@@ -4,7 +4,9 @@ use std::collections::HashMap;
 
 use crate::stream::Packet;
 
+pub mod materialization;
 pub mod position;
+pub mod property;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeStatus {
@@ -24,6 +26,8 @@ pub struct DecodeWarning {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeEvent {
     Position(position::PositionEvent),
+    Property(property::PropertyEvent),
+    Materialization(materialization::MaterializationEvent),
     /// Type 14 closes the packet stream; its payload is not interpreted.
     StreamClosed {
         sequence: u32,
@@ -96,6 +100,20 @@ impl DecoderRegistry {
         registry
     }
 
+    /// Matching Java subset containing only EntityPropertyDecoder.
+    pub fn property_subset() -> Self {
+        let mut registry = Self::empty();
+        registry.register(EntityPropertyDecoder);
+        registry
+    }
+
+    /// Matching Java subset containing only MaterializationDecoder.
+    pub fn materialization_subset() -> Self {
+        let mut registry = Self::empty();
+        registry.register(MaterializationDecoder);
+        registry
+    }
+
     pub fn empty() -> Self {
         Self {
             decoders: Vec::new(),
@@ -162,6 +180,86 @@ fn unknown(packet: &Packet, reason: &'static str, warnings: Vec<DecodeWarning>) 
 struct BattleEndDecoder;
 
 struct PositionDecoder;
+
+struct EntityPropertyDecoder;
+
+struct MaterializationDecoder;
+
+impl PacketDecoder for MaterializationDecoder {
+    fn name(&self) -> &'static str {
+        "MaterializationDecoder"
+    }
+    fn supports(&self, _: &DecodeContext, packet: &Packet, _: &[u8]) -> bool {
+        packet.packet_type == materialization::TYPE_MATERIALIZATION
+    }
+    fn decode(&self, context: &mut DecodeContext, packet: &Packet, payload: &[u8]) -> DecodeResult {
+        let result = materialization::decode(packet, payload, &context.replay_version);
+        if let Some(event) = &result.event {
+            match event.entity_type_id {
+                2 => context.entity_class.mark_vehicle(event.entity_id),
+                3 => context.entity_class.mark_other(event.entity_id),
+                _ => {}
+            }
+        }
+        DecodeResult {
+            status: if result.event.is_none() {
+                DecodeStatus::Malformed
+            } else if result.warnings.is_empty() {
+                DecodeStatus::Success
+            } else {
+                DecodeStatus::Partial
+            },
+            events: result
+                .event
+                .into_iter()
+                .map(DecodeEvent::Materialization)
+                .collect(),
+            warnings: result
+                .warnings
+                .into_iter()
+                .map(|warning| DecodeWarning {
+                    code: warning.code,
+                    message: warning.message,
+                })
+                .collect(),
+        }
+    }
+}
+
+impl PacketDecoder for EntityPropertyDecoder {
+    fn name(&self) -> &'static str {
+        "EntityPropertyDecoder"
+    }
+    fn supports(&self, _: &DecodeContext, packet: &Packet, _: &[u8]) -> bool {
+        packet.packet_type == property::TYPE_ENTITY_PROPERTY
+    }
+    fn decode(&self, _: &mut DecodeContext, packet: &Packet, payload: &[u8]) -> DecodeResult {
+        let mut local = packet.clone();
+        local.payload_offset = 0;
+        let result = property::decode_property(&local, payload);
+        let status = match result.status {
+            property::PropertyStatus::Success => DecodeStatus::Success,
+            property::PropertyStatus::Partial => DecodeStatus::Partial,
+            property::PropertyStatus::Malformed => DecodeStatus::Malformed,
+        };
+        DecodeResult {
+            status,
+            events: result
+                .events
+                .into_iter()
+                .map(DecodeEvent::Property)
+                .collect(),
+            warnings: result
+                .warnings
+                .into_iter()
+                .map(|warning| DecodeWarning {
+                    code: warning.code,
+                    message: warning.message,
+                })
+                .collect(),
+        }
+    }
+}
 
 impl PacketDecoder for PositionDecoder {
     fn name(&self) -> &'static str {

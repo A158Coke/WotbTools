@@ -159,6 +159,10 @@ fn java_position_only_registry_matches_every_fixture_packet() {
                     unsupported += 1;
                     format!("unknown:{reason}")
                 }
+                DecodeEvent::Property(_) => panic!("property decoder is not in this subset"),
+                DecodeEvent::Materialization(_) => {
+                    panic!("materialization decoder is not in this subset")
+                }
                 other => panic!("unexpected event: {other:?}"),
             };
             if result.status == DecodeStatus::Partial {
