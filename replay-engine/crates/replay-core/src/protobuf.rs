@@ -163,20 +163,31 @@ impl Message {
 fn read_varint(buf: &[u8], cursor: &mut usize) -> Result<u64, ReplayError> {
     let mut result = 0u64;
     let mut shift = 0u32;
-    for _ in 0..MAX_VARINT_BYTES {
-        let byte = *buf
-            .get(*cursor)
-            .ok_or_else(|| ReplayError::InvalidResults("truncated varint".to_string()))?;
-        *cursor += 1;
+    // The first nine bytes may carry seven bits each.
+    for _ in 0..(MAX_VARINT_BYTES - 1) {
+        let byte = next_byte(buf, cursor)?;
         result |= u64::from(byte & 0x7f) << shift;
         if byte & 0x80 == 0 {
             return Ok(result);
         }
         shift += 7;
     }
-    Err(ReplayError::InvalidResults(format!(
-        "varint longer than {MAX_VARINT_BYTES} bytes"
-    )))
+    // 10th byte: only bit 0 still fits in a u64. Java (`Protobuf.readVarint`) rejects anything
+    // above bit 0 — including the continuation bit, which is part of the same mask — so a varint
+    // that would overflow is *rejected* instead of being silently truncated into a wrong value.
+    let byte = next_byte(buf, cursor)?;
+    if (byte & 0xFE) != 0 {
+        return Err(ReplayError::InvalidResults("varint overflow".to_string()));
+    }
+    Ok(result | (u64::from(byte) << 63))
+}
+
+fn next_byte(buf: &[u8], cursor: &mut usize) -> Result<u8, ReplayError> {
+    let byte = *buf
+        .get(*cursor)
+        .ok_or_else(|| ReplayError::InvalidResults("truncated varint".to_string()))?;
+    *cursor += 1;
+    Ok(byte)
 }
 
 fn read_exact<'b>(buf: &'b [u8], cursor: &mut usize, len: usize) -> Result<&'b [u8], ReplayError> {
@@ -223,5 +234,44 @@ mod tests {
     fn rejects_truncated_length_delimited_field() {
         let err = Message::decode(&[0xAA, 0x12, 0x05, 0x01]).unwrap_err();
         assert_eq!(err.code(), "INVALID_RESULTS");
+    }
+
+    /// Java rejects a 10-byte varint whose last byte is anything above bit 0 (`Protobuf.readVarint`
+    /// "varint overflow"). Rust must reject it too: shifting that byte would silently drop the
+    /// overflow bits and accept malformed input as a wrong value.
+    #[test]
+    fn rejects_varint_that_does_not_fit_in_64_bits() {
+        let mut buf = vec![0x08]; // field 1, wire type 0
+        buf.extend_from_slice(&[0xff; 9]);
+        buf.push(0x02); // 10th byte carries bit 1 — overflow
+        let err = Message::decode(&buf).unwrap_err();
+        assert!(
+            err.to_string().contains("varint overflow"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// The largest legal 10-byte varint (bit 63 set) is still accepted by both implementations.
+    #[test]
+    fn accepts_the_largest_legal_varint() {
+        let mut buf = vec![0x08];
+        buf.extend_from_slice(&[0xff; 9]);
+        buf.push(0x01);
+        let message = Message::decode(&buf).expect("u64::MAX fits");
+        assert_eq!(message.varint(1), Some(u64::MAX));
+    }
+
+    /// An 11th continuation byte never gets a chance: the 10th byte carrying the continuation bit
+    /// is already an overflow (same precedence as Java, whose "varint longer than 10" branch is
+    /// therefore unreachable — the port keeps that behaviour instead of inventing a new message).
+    #[test]
+    fn a_tenth_continuation_bit_is_an_overflow() {
+        let mut buf = vec![0x08];
+        buf.extend_from_slice(&[0xff; 11]);
+        let err = Message::decode(&buf).unwrap_err();
+        assert!(
+            err.to_string().contains("varint overflow"),
+            "unexpected error: {err}"
+        );
     }
 }
