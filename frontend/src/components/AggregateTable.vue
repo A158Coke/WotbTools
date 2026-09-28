@@ -9,7 +9,7 @@ const props = defineProps({ aggregate: Array, shownCols: Array, aggStats: Object
 const sortKey = ref('')
 const sortReverse = ref(false)
 // 跨场表现派生列：百分比展示；HP 全部 UNKNOWN 时为 null（显示 "--"，不冒充 0）
-const PERCENT_KEYS = new Set(['contribution', 'kast', 'impact', 'multi_damage_rate'])
+const PERCENT_KEYS = new Set(['multi_damage_rate'])
 // 跨场原始比例列：分母为 0（无射击/无命中）→ null（unavailable，显示 "--"，禁止 0/0 伪装 0%）
 const RATE_KEYS = new Set(['hit_rate', 'pen_rate'])
 
@@ -32,7 +32,7 @@ const sorted = computed(() => {
     direction: sortReverse.value ? -1 : 1,
     num: !!col?.num,
     locale: locale.value,
-    tiebreakGetter: row => row.cells?.account_id,
+    tiebreakGetter: row => row.accountId,
   })
 })
 
@@ -56,12 +56,12 @@ function arrow(key) {
     <div class="tablewrap">
       <table>
         <thead><tr>
-          <th v-for="c in shownCols" :key="c.key" @click="sortBy(c)" :title="c.key === 'survival_avg' ? $t('agg_labels.survival_avg_tip') : undefined">{{ $t('agg_labels.' + c.key) }}{{ arrow(c.key) }}</th>
+          <th v-for="c in shownCols" :key="c.key" @click="sortBy(c)" :title="c.key === 'survival_time_avg' ? $t('agg_labels.survival_time_avg_tip') : undefined">{{ $t('agg_labels.' + c.key) }}{{ arrow(c.key) }}</th>
         </tr></thead>
         <tbody>
           <tr v-for="(row, i) in sorted" :key="i" :class="row.team === 1 ? 't1' : 't2'">
             <td v-for="c in shownCols" :key="c.key">
-              <span v-if="c.key === 'survival_avg'">{{ fmtDuration(row.cells[c.key], t) }}</span>
+              <span v-if="c.key === 'survival_time_avg'">{{ fmtDuration(row.cells[c.key], t) }}</span>
               <span v-else-if="PERCENT_KEYS.has(c.key)">{{ percentCell(row.cells[c.key]) }}</span>
               <span v-else-if="RATE_KEYS.has(c.key)">{{ rateCell(row.cells[c.key]) }}</span>
               <span v-else>{{ row.cells[c.key] }}</span>

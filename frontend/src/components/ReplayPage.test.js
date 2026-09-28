@@ -257,7 +257,7 @@ vi.mock('../composables/useColumns.js', async () => {
       // window.__testCwVisible / __testCwOrder 模拟 useColumns cw scope
       const cwKeys = window.__testCwVisible || [
         'nickname', 'league_rating', 'clan', 'battles', 'wins', 'win_rate',
-        'damage_avg', 'earned_avg', 'contribution', 'kast', 'impact'
+        'damage_avg', 'earned_avg', 'multi_damage_rate', 'survival_time_avg'
       ]
       const cwOrder = window.__testCwOrder || [...cwKeys]
       return {
@@ -1032,15 +1032,14 @@ describe('ReplayPage PNG export', () => {
           {
             mapName: 'Lagoon', league: { mvpAccountId: 1001 },
             players: [
-              { team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', tank_name: 'KV-2', damage_dealt: 5000, damage_assisted: 900, kills: 3, contribution: 22.4, kast: 100, impact: 151.2, league_rating: 927.4, league_damage_score: 342, league_shooting_score: 100, victory_points_earned: 5 } },
-              { team: 2, cells: { account_id: 2001, nickname: 'Beta', clan: 'BBB', tank_name: 'IS-7', damage_dealt: 3000, damage_assisted: 400, kills: 1, contribution: null, kast: null, impact: 80.5, league_rating: null, league_damage_score: null, league_shooting_score: null, victory_points_earned: 0 } },
+              { team: 1, accountId: 1001, vehicleId: 7169, cells: { nickname: 'Alpha', clan: 'AAA', tank_name: 'KV-2', damage_dealt: 5000, damage_assisted: 900, kills: 3, league_rating: 927.4, league_damage_score: 342, league_shooting_score: 100, victory_points_earned: 5 } },
+              { team: 2, accountId: 2001, vehicleId: 10785, cells: { nickname: 'Beta', clan: 'BBB', tank_name: 'IS-7', damage_dealt: 3000, damage_assisted: 400, kills: 1, league_rating: null, league_damage_score: null, league_shooting_score: null, victory_points_earned: 0 } },
             ],
           },
         ],
         playerColumns: [
           { key: 'nickname', num: false }, { key: 'clan', num: false }, { key: 'tank_name', num: false },
           { key: 'damage_dealt', num: true }, { key: 'damage_assisted', num: true }, { key: 'kills', num: true },
-          { key: 'contribution', num: true }, { key: 'kast', num: true }, { key: 'impact', num: true },
           { key: 'league_rating', num: true }, { key: 'league_damage_score', num: true },
           { key: 'league_shooting_score', num: true }, { key: 'victory_points_earned', num: true },
         ],
@@ -1065,7 +1064,7 @@ describe('ReplayPage PNG export', () => {
           props: ['battle', 'shownCols'],
           template: '<div class="battle-table-stub"><div class="tablewrap"><table>' +
             '<thead><tr><th v-for="c in shownCols" :key="c.key">player_labels.{{ c.key }}</th></tr></thead>' +
-            '<tbody><tr v-for="p in battle.players" :key="p.cells.account_id">' +
+            '<tbody><tr v-for="p in battle.players" :key="p.accountId">' +
             '<td v-for="c in shownCols" :key="c.key">{{ p.cells[c.key] ?? \'--\' }}</td></tr></tbody>' +
             '</table></div></div>'
         },
@@ -1104,7 +1103,7 @@ describe('ReplayPage PNG export', () => {
     }
 
     it('单场 Battle PNG：按当前 shownCols 导出（隐藏列不出现，顺序保持）', async () => {
-      window.__testShownCols = [{ key: 'nickname' }, { key: 'league_rating' }, { key: 'impact' }, { key: 'damage_dealt' }]
+      window.__testShownCols = [{ key: 'nickname' }, { key: 'league_rating' }, { key: 'league_shooting_score' }, { key: 'damage_dealt' }]
       state.init.resp = leaguePngResp()
       state.init.activeTab = 'b0'
       wrapper = mountPage({ stubs: viewStubs() })
@@ -1113,17 +1112,16 @@ describe('ReplayPage PNG export', () => {
       await flushPromises()
       const html = getClone().querySelector('.tablewrap').innerHTML
       expect(headerKeys(html)).toEqual([
-        'player_labels.nickname', 'player_labels.league_rating', 'player_labels.impact', 'player_labels.damage_dealt'
+        'player_labels.nickname', 'player_labels.league_rating', 'player_labels.league_shooting_score', 'player_labels.damage_dealt'
       ])
       // 未勾选的列不得偷偷进入 PNG（不再是「全量列导出」contract）
-      expect(headerKeys(html)).not.toContain('player_labels.kast')
       expect(headerKeys(html)).not.toContain('player_labels.kills')
       expect(headerKeys(html)).not.toContain('player_labels.league_damage_score')
       expect(headerKeys(html)).not.toContain('player_labels.victory_points_earned')
     })
 
     it('单场 Battle PNG：用户自定义顺序严格保留', async () => {
-      window.__testShownCols = [{ key: 'nickname' }, { key: 'league_rating' }, { key: 'impact' }, { key: 'kast' }, { key: 'damage_dealt' }]
+      window.__testShownCols = [{ key: 'nickname' }, { key: 'league_rating' }, { key: 'league_shooting_score' }, { key: 'damage_dealt' }, { key: 'kills' }]
       state.init.resp = leaguePngResp()
       state.init.activeTab = 'b0'
       wrapper = mountPage({ stubs: viewStubs() })
@@ -1132,8 +1130,8 @@ describe('ReplayPage PNG export', () => {
       await flushPromises()
       const html = getClone().querySelector('.tablewrap').innerHTML
       expect(headerKeys(html)).toEqual([
-        'player_labels.nickname', 'player_labels.league_rating', 'player_labels.impact',
-        'player_labels.kast', 'player_labels.damage_dealt'
+        'player_labels.nickname', 'player_labels.league_rating', 'player_labels.league_shooting_score',
+        'player_labels.damage_dealt', 'player_labels.kills'
       ])
     })
 
@@ -1153,16 +1151,18 @@ describe('ReplayPage PNG export', () => {
       expect(html).not.toMatch(/0%/g)
     })
 
-    it('CW 汇总 PNG：按当前 cwVisibleKeys 导出（隐藏 KAST/七维不出现，顺序保持）', async () => {
-      window.__testCwVisible = window.__testCwOrder = ['nickname', 'league_rating', 'impact', 'rated_battles', 'damage_avg']
+    it('CW 汇总 PNG：按当前 cwVisibleKeys 导出（隐藏列/无本地化列不出现，顺序保持）', async () => {
+      window.__testCwVisible = window.__testCwOrder = ['nickname', 'league_rating', 'multi_damage_rate', 'rated_battles', 'damage_avg']
       state.init.resp = makeResp({
         aggregate: [
-          { team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', battles: 1, wins: 1, damage_avg: 5000, earned_avg: 5, contribution: 22.4, kast: 100, impact: 151.2 } },
+          { team: 1, accountId: 1001, cells: { nickname: 'Alpha', clan: 'AAA', battles: 1, wins: 1, damage_avg: 5000, earned_avg: 5, multi_damage_rate: 62.5, survival_time_avg: 120 } },
         ],
         aggregateColumns: [
           { key: 'nickname', num: false }, { key: 'battles', num: true }, { key: 'wins', num: true },
           { key: 'damage_avg', num: true }, { key: 'earned_avg', num: true },
-          { key: 'contribution', num: true }, { key: 'kast', num: true }, { key: 'impact', num: true },
+          { key: 'multi_damage_rate', num: true }, { key: 'survival_time_avg', num: true },
+          // B6：tanks 仍在 wire（结构化 vehicle usage），但列层不展示
+          { key: 'tanks', num: false },
         ],
         playerColumns: [{ key: 'nickname', num: false }],
         battles: [],
@@ -1175,14 +1175,12 @@ describe('ReplayPage PNG export', () => {
           ],
           playerSummaries: [
             { accountId: 1001, nickname: 'Alpha', clan: 'AAA', ratedBattles: 1, rating: 927.4, observedMean: 927.4,
-              dimensionMeans: [342, 60, 70, 110, 40, 80, 100], mvpCount: 1, wins: 1,
-              contribution: 22.4, kast: 100, impact: 151.2 },
+              dimensionMeans: [342, 60, 70, 110, 40, 80, 100], mvpCount: 1, wins: 1 },
           ],
           playerSummaryColumns: [
             { key: 'nickname', num: false }, { key: 'rated_battles', num: true },
             { key: 'league_rating', num: true }, { key: 'league_damage_score', num: true },
-            { key: 'mvp_count', num: true }, { key: 'contribution', num: true },
-            { key: 'kast', num: true }, { key: 'impact', num: true },
+            { key: 'mvp_count', num: true },
           ],
           teamSummaries: [
             { teamKey: 'AAA', autoName: 'AAA', ratedBattles: 1, rating: 900.6, observedMean: 900.6,
@@ -1203,11 +1201,13 @@ describe('ReplayPage PNG export', () => {
       await flushPromises()
       const wraps = getClone().querySelectorAll('.tablewrap')
       expect(wraps.length).toBeGreaterThanOrEqual(2) // 玩家统一表 + 战队汇总表
-      // 玩家统一表 = 当前 cw 可见列（不包含隐藏的 kast/七维），顺序严格保持
+      // 玩家统一表 = 当前 cw 可见列（不包含隐藏的七维），顺序严格保持
       expect(headerKeys(wraps[0].innerHTML)).toEqual([
-        'agg_labels.nickname', 'agg_labels.league_rating', 'agg_labels.impact',
+        'agg_labels.nickname', 'agg_labels.league_rating', 'agg_labels.multi_damage_rate',
         'agg_labels.rated_battles', 'agg_labels.damage_avg'
       ])
+      // B6：tanks 不在列 universe → PNG 也不得出现
+      expect(headerKeys(wraps[0].innerHTML)).not.toContain('agg_labels.tanks')
       // 战队汇总表 = 当前完整显示列
       const teamKeys = headerKeys(wraps[1].innerHTML)
       expect(teamKeys[0]).toBe('league.summary.team_name')
@@ -1216,9 +1216,9 @@ describe('ReplayPage PNG export', () => {
     })
 
     it('Standard aggregate PNG：按当前 shownAggCols 导出（无全量列替换）', async () => {
-      window.__testShownAggCols = [{ key: 'nickname' }, { key: 'battles' }, { key: 'damage_avg' }, { key: 'impact' }]
+      window.__testShownAggCols = [{ key: 'nickname' }, { key: 'battles' }, { key: 'damage_avg' }, { key: 'multi_damage_rate' }]
       state.init.resp = makeResp({
-        aggregate: [{ cells: { nickname: 'P1', battles: 2, damage_avg: 5000, impact: 151.2 } }],
+        aggregate: [{ accountId: 1, cells: { nickname: 'P1', battles: 2, damage_avg: 5000, multi_damage_rate: 62.5 } }],
         battles: [],
       })
       state.init.activeTab = 'aggregate'
@@ -1227,8 +1227,8 @@ describe('ReplayPage PNG export', () => {
       await pngButton(wrapper).trigger('click')
       await flushPromises()
       const html = getClone().querySelector('.tablewrap').innerHTML
-      expect(headerKeys(html)).toEqual(['agg_labels.nickname', 'agg_labels.battles', 'agg_labels.damage_avg', 'agg_labels.impact'])
-      expect(headerKeys(html)).not.toContain('agg_labels.kast')
+      expect(headerKeys(html)).toEqual(['agg_labels.nickname', 'agg_labels.battles', 'agg_labels.damage_avg', 'agg_labels.multi_damage_rate'])
+      expect(headerKeys(html)).not.toContain('agg_labels.tanks')
     })
   })
 })
@@ -2080,10 +2080,10 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     // 生产 contract：纯 CW 批次必有 league envelope（无论评分场数）；单场是否评分由 battle.league 决定。
     state.init.resp = makeResp({
       aggregate: [
-        { cells: { account_id: 1001, nickname: 'P1', damage_dealt: 5000 } },
+        { team: 1, accountId: 1001, cells: { nickname: 'P1', damage_dealt: 5000 } },
       ],
       battles: [
-        { mapName: 'Lagoon', league: null, players: [{ team: 1, cells: { account_id: 1001, nickname: 'P1', damage_dealt: 5000 } }] },
+        { mapName: 'Lagoon', league: null, players: [{ team: 1, accountId: 1001, vehicleId: 7169, cells: { nickname: 'P1', damage_dealt: 5000 } }] },
       ],
       playerColumns: [{ key: 'nickname', label: '昵称' }],
       league: {
@@ -2120,8 +2120,8 @@ describe('ReplayPage Player Detail Drawer', () => {
   function leagueResp() {
     return makeResp({
       aggregate: [
-        { team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', battles: 3, wins: 2, damage_avg: 500, earned_avg: 80 } },
-        { team: 2, cells: { account_id: 2001, nickname: 'Beta', clan: 'BBB', battles: 2, wins: 0, damage_avg: 300, earned_avg: 40 } },
+        { team: 1, accountId: 1001, cells: { nickname: 'Alpha', clan: 'AAA', battles: 3, wins: 2, damage_avg: 500, earned_avg: 80 } },
+        { team: 2, accountId: 2001, cells: { nickname: 'Beta', clan: 'BBB', battles: 2, wins: 0, damage_avg: 300, earned_avg: 40 } },
       ],
       playerColumns: [{ key: 'nickname', label: '昵称' }],
       leagueMode: true,
@@ -2193,8 +2193,8 @@ describe('ReplayPage Player Detail Drawer', () => {
       aggregate: [],
       battles: [{
         arenaId: '111', mapName: 'Lagoon',
-        players: [{ team: 1, cells: {
-          account_id: 1001, nickname: 'P1', league_rating: 812.6,
+        players: [{ team: 1, accountId: 1001, vehicleId: 7169, cells: {
+          nickname: 'P1', league_rating: 812.6,
           league_damage_score: 320, league_assist_score: 55, league_kill_score: 70,
           league_exchange_score: 110, league_blocked_score: 40,
           league_survival_score: 75, league_shooting_score: 82,
@@ -2259,18 +2259,20 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
     delete window.__testCwOrder
   })
 
-  /** 富 league 响应：playerSummaryColumns 含七维 + mvp_count + perf；aggregateColumns 含 facts。 */
+  /** 富 league 响应：playerSummaryColumns 含七维 + mvp_count；aggregateColumns 含 facts + 幸存的 Performance Metrics。 */
   function cwResp() {
     return makeResp({
       aggregate: [
-        { team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', battles: 12, wins: 8, win_rate: 66.7, damage_avg: 500, earned_avg: 80, contribution: 22.4, kast: 100, impact: 151.2 } },
-        { team: 2, cells: { account_id: 2001, nickname: 'Beta', clan: 'BBB', battles: 12, wins: 4, win_rate: 33.3, damage_avg: 300, earned_avg: 40, contribution: 18.1, kast: 80, impact: 120.5 } },
+        { team: 1, accountId: 1001, cells: { nickname: 'Alpha', clan: 'AAA', battles: 12, wins: 8, win_rate: 66.7, damage_avg: 500, earned_avg: 80, multi_damage_rate: 62.5, survival_time_avg: 120 } },
+        { team: 2, accountId: 2001, cells: { nickname: 'Beta', clan: 'BBB', battles: 12, wins: 4, win_rate: 33.3, damage_avg: 300, earned_avg: 40, multi_damage_rate: 40.5, survival_time_avg: 95 } },
       ],
       aggregateColumns: [
         { key: 'nickname', num: false }, { key: 'clan', num: false }, { key: 'battles', num: true },
         { key: 'wins', num: true }, { key: 'win_rate', num: true }, { key: 'damage_avg', num: true },
-        { key: 'earned_avg', num: true }, { key: 'contribution', num: true }, { key: 'kast', num: true },
-        { key: 'impact', num: true },
+        { key: 'earned_avg', num: true }, { key: 'multi_damage_rate', num: true },
+        { key: 'survival_time_avg', num: true },
+        // B6：tanks 仍在 aggregate wire 上，但列层不展示（无本地化 label）
+        { key: 'tanks', num: false },
       ],
       playerColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
       leagueMode: true,
@@ -2282,7 +2284,7 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
           { key: 'league_shooting_score', max: 100 },
         ],
         playerSummaries: [
-          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', ratedBattles: 8, rating: 826.1, observedMean: 850.4, dimensionMeans: [342, 60, 70, 110, 40, 80, 100], mvpCount: 2, wins: 8, contribution: 22.4, kast: 100, impact: 151.2 },
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', ratedBattles: 8, rating: 826.1, observedMean: 850.4, dimensionMeans: [342, 60, 70, 110, 40, 80, 100], mvpCount: 2, wins: 8 },
         ],
         playerSummaryColumns: [
           { key: 'nickname', num: false }, { key: 'clan', num: false }, { key: 'battles', num: true },
@@ -2290,8 +2292,7 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
           { key: 'rated_battles', num: true },
           { key: 'league_rating', num: true }, { key: 'league_damage_score', num: true },
           { key: 'league_shooting_score', num: true }, { key: 'mvp_count', num: true },
-          { key: 'wins', num: true }, { key: 'contribution', num: true }, { key: 'kast', num: true },
-          { key: 'impact', num: true },
+          { key: 'wins', num: true },
         ],
         teamSummaries: [], teamSummaryColumns: [], failures: [],
       }
@@ -2306,7 +2307,7 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
 
   it('统一表列 = cw scope 可见列：七维/MVP 不是 forced visible', async () => {
     window.__testCwVisible = ['nickname', 'league_rating', 'clan', 'battles', 'rated_battles', 'wins', 'win_rate',
-      'damage_avg', 'earned_avg', 'contribution', 'kast', 'impact']
+      'damage_avg', 'earned_avg', 'multi_damage_rate', 'survival_time_avg']
     state.init.resp = cwResp()
     const wrapper = mountPage()
     await flushPromises()
@@ -2317,24 +2318,25 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
     // nickname + league_rating 固定出现
     expect(keys[0]).toBe('nickname')
     expect(keys[1]).toBe('league_rating')
-    // 表现指标与 facts 可显示
-    expect(keys).toContain('contribution')
-    expect(keys).toContain('kast')
-    expect(keys).toContain('impact')
+    // 幸存的 Performance Metrics 与 facts 可显示
+    expect(keys).toContain('multi_damage_rate')
+    expect(keys).toContain('survival_time_avg')
     expect(keys).toContain('earned_avg')
     // rated_battles 走真实生产链（playerSummaryColumns → merge → cwVisibleKeys → 表头）
     expect(keys).toContain('rated_battles')
+    // B6：tanks 在 aggregateColumns 里也不可能进入统一表
+    expect(keys).not.toContain('tanks')
     wrapper.unmount()
   })
 
   it('用户自定义顺序生效：nickname + league_rating 固定前两位，其余按偏好顺序', async () => {
     window.__testCwVisible = window.__testCwOrder = ['nickname', 'league_rating',
-      'impact', 'kast', 'rated_battles', 'damage_avg', 'league_damage_score', 'earned_avg']
+      'multi_damage_rate', 'rated_battles', 'damage_avg', 'league_damage_score', 'earned_avg', 'survival_time_avg']
     state.init.resp = cwResp()
     const wrapper = mountPage()
     await flushPromises()
     const keys = cwThKeys(wrapper)
-    expect(keys).toEqual(['nickname', 'league_rating', 'impact', 'kast', 'rated_battles', 'damage_avg', 'league_damage_score', 'earned_avg'])
+    expect(keys).toEqual(['nickname', 'league_rating', 'multi_damage_rate', 'rated_battles', 'damage_avg', 'league_damage_score', 'earned_avg', 'survival_time_avg'])
     wrapper.unmount()
   })
 
@@ -2342,7 +2344,7 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
     state.init.resp = makeResp({
       aggregate: [],
       battles: [
-        { arenaId: '111', mapName: 'Lagoon', league: null, players: [{ team: 1, cells: { account_id: 1001, nickname: 'P1', damage_dealt: 5000 } }] },
+        { arenaId: '111', mapName: 'Lagoon', league: null, players: [{ team: 1, accountId: 1001, vehicleId: 7169, cells: { nickname: 'P1', damage_dealt: 5000 } }] },
       ],
       leagueMode: true,
       league: {
@@ -2380,7 +2382,7 @@ describe('ReplayPage Drawer 玩家坦克数据透传', () => {
 
   it('Summary Drawer：透传 playerSummary 的 mostUsedVehicle + ratedBattles（数据源 row.league，不解析 cells.tanks）', async () => {
     state.init.resp = makeResp({
-      aggregate: [{ team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', battles: 12 } }],
+      aggregate: [{ team: 1, accountId: 1001, cells: { nickname: 'Alpha', clan: 'AAA', battles: 12 } }],
       battles: [],
       leagueMode: true,
       league: {
@@ -2413,12 +2415,12 @@ describe('ReplayPage Drawer 玩家坦克数据透传', () => {
     wrapper.unmount()
   })
 
-  it('Battle Drawer：透传本场 tank_id/tank_name（battles=1）', async () => {
+  it('Battle Drawer：透传本场 vehicleId/tank_name（battles=1）', async () => {
     state.init.resp = makeResp({
       aggregate: [],
       battles: [
         { arenaId: '111', mapName: 'Lagoon', league: {}, players: [
-          { team: 1, cells: { account_id: 1001, nickname: 'P1', clan: 'AAA', tank_id: 7169, tank_name: 'IS-7', damage_dealt: 5000 } },
+          { team: 1, accountId: 1001, vehicleId: 7169, cells: { nickname: 'P1', clan: 'AAA', tank_name: 'IS-7', damage_dealt: 5000 } },
         ] },
       ],
       leagueMode: true,

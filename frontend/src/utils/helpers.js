@@ -3,13 +3,21 @@ import MAP_NAMES from '../../../common/map_names.json'
 export const DEFAULT_VISIBLE = [
   'nickname', 'clan', 'tank_name', 'tank_type', 'survived_label',
   'kills', 'damage_dealt', 'damage_assisted',
-  'contribution', 'kast', 'impact',
   'damage_received', 'damage_blocked', 'n_shots', 'n_hits_dealt', 'n_penetrations_dealt',
   'hit_rate', 'pen_rate', 'n_enemies_damaged'
 ]
 
 export const EXTENDED_ONLY_PLAYER_KEYS = new Set([
-  'alpha_damage', 'rank'
+  'rank'
+])
+
+/**
+ * B6：仍在 wire 上但不是展示列的 key——列层没有任何解析/本地化能力，
+ * 必须从每个列 universe（picker / 表格 / locale label）排除。
+ * `tanks` = 结构化 vehicle 使用量 `[{ tankId, battles }]`（坦克名属 Tank Knowledge，导出侧消费）。
+ */
+export const UNPRESENTABLE_COLUMN_KEYS = new Set([
+  'tanks'
 ])
 
 /** League Rating 模式默认可见列（玩家/战队/车辆/伤害/助攻/击杀/总 Rating）。 */
@@ -28,8 +36,7 @@ export const CW_SUMMARY_DEFAULT_VISIBLE = [
   'league_exchange_score', 'league_blocked_score', 'league_survival_score',
   'league_shooting_score', 'mvp_count',
   'clan', 'battles', 'rated_battles', 'wins', 'win_rate',
-  'damage_avg', 'assisted_avg', 'kills_avg', 'earned_avg',
-  'contribution', 'kast', 'impact'
+  'damage_avg', 'assisted_avg', 'kills_avg', 'earned_avg'
 ]
 
 /** League 模式固定列（玩家 + 总 Rating；sticky 布局依据，不可隐藏/移动）。 */
@@ -63,19 +70,17 @@ export function ratingCellText(value, key, maxByKey = {}) {
 }
 
 const COL_GROUP_CAT = {
-  nickname: 'identity', clan: 'identity', account_id: 'extra',
+  nickname: 'identity', clan: 'identity',
   tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle',
-  alpha_damage: 'vehicle', tank_id: 'extra',
   survived_label: 'battle', survival_time: 'battle', kills: 'battle', damage_dealt: 'battle',
   damage_assisted: 'battle', damage_received: 'battle', damage_blocked: 'battle',
   n_shots: 'battle', n_hits_dealt: 'battle', n_penetrations_dealt: 'battle',
   n_hits_received: 'battle', n_penetrations_received: 'battle', n_enemies_damaged: 'battle',
-  contribution: 'battle', kast: 'battle', impact: 'battle',
-  multi_damage_rate: 'battle', traded_deaths: 'battle',
+  multi_damage_rate: 'battle',
   league_rating: 'rating', league_observed_mean: 'rating', league_damage_score: 'rating', league_assist_score: 'rating',
   league_kill_score: 'rating', league_exchange_score: 'rating', league_blocked_score: 'rating',
   league_survival_score: 'rating', league_shooting_score: 'rating',
-  victory_points_earned: 'battle', victory_points_seized: 'battle',
+  victory_points_earned: 'battle',
   mvp_count: 'overview', damage_total: 'battle', assist_total: 'battle', kills_total: 'battle',
   team_name: 'identity',
   rank: 'extra',
@@ -83,7 +88,7 @@ const COL_GROUP_CAT = {
   rated_battles: 'overview',
   kills_avg: 'battle', damage: 'battle', damage_avg: 'battle', assisted: 'battle', assisted_avg: 'battle',
   received_avg: 'battle', blocked_avg: 'battle', hit_rate: 'battle', pen_rate: 'battle',
-  enemies_damaged_avg: 'battle', survival_avg: 'battle', tanks: 'extra',
+  enemies_damaged_avg: 'battle', survival_time_avg: 'battle',
 }
 
 const MAP_FALLBACK_LOCALE = 'zh'

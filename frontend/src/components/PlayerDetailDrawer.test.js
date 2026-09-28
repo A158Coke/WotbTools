@@ -48,9 +48,8 @@ const SUMMARY_PLAYER = {
   battles: 3,
   wins: 2,
   cells: {
-    account_id: 1001, battles: 12, rated_battles: 8, wins: 2, win_rate: 66.7,
+    battles: 12, rated_battles: 8, wins: 2, win_rate: 66.7,
     damage_avg: 500, assisted_avg: 120, kills_avg: 3.2, earned_avg: 80,
-    contribution: 22.4, kast: 100, impact: 151.2,
   },
 }
 
@@ -61,10 +60,9 @@ const BATTLE_PLAYER = {
   rating: 812.6,
   dimensionScores: [320, 55, 70, 110, 40, 75, 82],
   cells: {
-    account_id: 2001, damage_dealt: 3000, damage_assisted: 900, kills: 3,
+    damage_dealt: 3000, damage_assisted: 900, kills: 3,
     damage_blocked: 1200, n_shots: 20, n_hits_dealt: 14, n_penetrations_dealt: 9,
     survived_label: 'SURVIVED', victory_points_earned: 180,
-    contribution: 18.1, kast: 80, impact: 120.5,
   },
 }
 
@@ -93,15 +91,17 @@ const LEAGUE_COLUMNS = [
 
 function mountDrawer(context, player, extraProps = {}, mountOptions = {}) {
   const defaultScopePlayers = context?.scope === 'summary'
-    ? [{ cells: { account_id: player?.accountId }, league: { dimensionMeans: player?.dimensionMeans } }]
-    : [{ cells: {
-        account_id: player?.accountId,
-        league_rating: player?.rating,
-        ...Object.fromEntries((player?.dimensionScores || []).map((value, index) => [
-          ['league_damage_score', 'league_assist_score', 'league_kill_score', 'league_exchange_score',
-            'league_blocked_score', 'league_survival_score', 'league_shooting_score'][index], value,
-        ])),
-      } }]
+    ? [{ accountId: player?.accountId, cells: {}, league: { dimensionMeans: player?.dimensionMeans } }]
+    : [{
+        accountId: player?.accountId,
+        cells: {
+          league_rating: player?.rating,
+          ...Object.fromEntries((player?.dimensionScores || []).map((value, index) => [
+            ['league_damage_score', 'league_assist_score', 'league_kill_score', 'league_exchange_score',
+              'league_blocked_score', 'league_survival_score', 'league_shooting_score'][index], value,
+          ])),
+        },
+      }]
   const stubs = { teleport: true }
   if (!mountOptions.realRadar) stubs.PlayerRatingRadar = RADAR_STUB
   return mount(PlayerDetailDrawer, {
@@ -231,15 +231,14 @@ describe('PlayerDetailDrawer header / scope（V4.1 vs League V6）', () => {
     expect(text).toContain('180')
   })
 
-  it('performance section shows Contribution/KAST/Impact with %（独立区域，不是 Rating）', () => {
+  it('B6：已退役的 Performance Metrics（Contribution/KAST/Impact）不再渲染，也无对应 label', () => {
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     const text = wrapper.text()
-    expect(text).toContain('league.drawer.perf_title')
-    expect(text).toContain('player_labels.contribution')
-    expect(text).toContain('player_labels.kast')
-    expect(text).toContain('player_labels.impact')
-    expect(text).toContain('22.4%')
-    expect(text).toContain('151.2%')
+    expect(text).not.toContain('league.drawer.perf_title')
+    expect(text).not.toContain('player_labels.contribution')
+    expect(text).not.toContain('player_labels.kast')
+    expect(text).not.toContain('player_labels.impact')
+    expect(wrapper.find('[data-testid="perf-facts"]').exists()).toBe(false)
   })
 })
 
@@ -320,8 +319,8 @@ describe('PlayerDetailDrawer Radar（仅 League 七维 + 参考平均）', () =>
 
 describe('PlayerDetailDrawer reference average', () => {
   const scopes = (meansA, meansB) => [
-    { cells: { account_id: 1001 }, league: { dimensionMeans: meansA } },
-    { cells: { account_id: 1002 }, league: { dimensionMeans: meansB } },
+    { accountId: 1001, cells: {}, league: { dimensionMeans: meansA } },
+    { accountId: 1002, cells: {}, league: { dimensionMeans: meansB } },
   ]
 
   it('summary: reference passed = Global Average（global_average label），League V6 不影响几何', () => {
@@ -339,8 +338,8 @@ describe('PlayerDetailDrawer reference average', () => {
 
   it('battle: reference passed = Battle Average（battle_average label）, selected player included', () => {
     const players = [
-      { cells: { account_id: 2001, league_rating: 812.6, league_damage_score: 320, league_assist_score: 55, league_kill_score: 70, league_exchange_score: 110, league_blocked_score: 40, league_survival_score: 75, league_shooting_score: 82 } },
-      { cells: { account_id: 2002, league_rating: 780, league_damage_score: 200, league_assist_score: 45, league_kill_score: 50, league_exchange_score: 90, league_blocked_score: 30, league_survival_score: 55, league_shooting_score: 40 } },
+      { accountId: 2001, cells: { league_rating: 812.6, league_damage_score: 320, league_assist_score: 55, league_kill_score: 70, league_exchange_score: 110, league_blocked_score: 40, league_survival_score: 75, league_shooting_score: 82 } },
+      { accountId: 2002, cells: { league_rating: 780, league_damage_score: 200, league_assist_score: 45, league_kill_score: 50, league_exchange_score: 90, league_blocked_score: 30, league_survival_score: 55, league_shooting_score: 40 } },
     ]
     const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, BATTLE_PLAYER, { scopePlayers: players })
     const ref = radarReference(wrapper)
@@ -354,9 +353,10 @@ describe('PlayerDetailDrawer reference average', () => {
     const selected = Object.fromEntries(keys.map((key, index) => [key, BATTLE_PLAYER.dimensionScores[index]]))
     const low = Object.fromEntries(keys.map((key, index) => [key, [20, 5, 5, 10, 5, 50, 10][index]]))
     const scopePlayers = [
-      { cells: { account_id: 2001, league_rating: 812.6, ...selected } },
+      { accountId: 2001, cells: { league_rating: 812.6, ...selected } },
       ...Array.from({ length: 13 }, (_, index) => ({
-        cells: { account_id: 3000 + index, league_rating: 400, ...low },
+        accountId: 3000 + index,
+        cells: { league_rating: 400, ...low },
       })),
     ]
     const wrapper = mountDrawer(

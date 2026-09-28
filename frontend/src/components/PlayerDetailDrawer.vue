@@ -252,19 +252,6 @@ const referenceLabel = computed(() =>
 const playerUnavailable = computed(() =>
   radarMetrics.value.length > 0 && radarMetrics.value.some(m => !m.available))
 
-// ---- 表现指标（Performance Metrics；独立区域，不是 Rating）----
-const perfFacts = computed(() => {
-  const p = props.player
-  if (!p) return []
-  return ['contribution', 'kast', 'impact'].map((key) => {
-    const v = p.cells?.[key]
-    const display = (v == null || v === '' || !Number.isFinite(Number(v)))
-      ? '--'
-      : (Math.round(Number(v) * 10) / 10) + '%'
-    return [t('player_labels.' + key), display]
-  })
-})
-
 // ---- 比赛事实（scope 语义）；Observed Mean / Rated Battles 已移入头部（§6），不在此重复 ----
 const facts = computed(() => {
   const p = props.player
@@ -596,15 +583,6 @@ function ensureImageLoaded(url) {
             </p>
             <PlayerRatingRadar v-else-if="radarMetrics.length" :metrics="radarMetrics" :reference="referenceSeries"
                                :reference-label="referenceLabel" :player-label="player?.nickname || ''" />
-
-            <!-- 表现指标（Contribution/KAST/Impact 独立区域，不是 Rating） -->
-            <div class="pd-section">{{ t('league.drawer.perf_title') }}</div>
-            <dl class="pd-facts" data-testid="perf-facts">
-              <template v-for="(f, i) in perfFacts" :key="'p' + i">
-                <dt>{{ f[0] }}</dt>
-                <dd>{{ f[1] }}</dd>
-              </template>
-            </dl>
 
             <!-- 比赛事实（scope 语义） -->
             <div class="pd-section">{{ isSummary ? t('league.drawer.facts_title_summary') : t('league.drawer.facts_title_battle') }}</div>
