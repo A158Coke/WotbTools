@@ -3,18 +3,17 @@
  * 以 Replay Aggregate（Replay Core，覆盖全部已解析 CW 场次与玩家）为基底，
  * 按 accountId join League Player Summary（Rating 附加字段）。
  *
- * - join identity 一律 accountId，禁止 array index / nickname / row order。
+ * - join identity 一律结构化 accountId，禁止 array index / nickname / row order。
  * - 缺失侧（有 Aggregate 无 League Rating）保留玩家，League 字段补 null → UI 显示 "--"（missing side）。
  * - 样本语义分离：cells.battles = Replay Aggregate 解析场次（不被 League 覆盖）；
  *   cells.rated_battles = League Player Summary 评分场次（LeaguePlayerSummary.battles，rated-only）。
- * - Performance Metrics（contribution/kast/impact）为跨场 aggregate 样本；仅当某评分玩家
- *   在 aggregate 中缺失（防御路径，见 mergeCwPlayerRows）时，才取 league playerSummary
- *   携带的跨场值兜底。
  *
  * 生产 contract：CW 批次必生成基础 Replay Aggregate（shouldAggregate = battles.size() > 1
  * || league != null），因此「单场 CW 无 aggregate」不是合法状态——League-only 分支只为
  * aggregate 侧数据形状变化（如未来过滤/裁剪）保留 union 兜底，正常不触发。
  */
+
+import { UNPRESENTABLE_COLUMN_KEYS } from './helpers.js'
 
 /** League Rating 七维列 key（顺序与后端 LeagueColumns.DIM_KEYS 一致）。 */
 export const CW_DIM_KEYS = [
@@ -35,32 +34,31 @@ const LEAGUE_ONLY_KEYS = new Set([
 ])
 
 /**
- * 合并统一玩家行（union：Aggregate ∪ League，按 accountId）。
+ * 合并统一玩家行（union：Aggregate ∪ League，按结构化 accountId）。
  * - 有 Aggregate 无 League：保留玩家，League 字段补 null（UI 显示 "--"，missing side）。
  * - 有 League 无 Aggregate：防御兜底——保留评分玩家，Aggregate 字段补 null（当前 contract 下
  *   CW 批次必生成 aggregate，正常不触发）。
- * @param {Array} aggregateRows resp.aggregate（每行 {team, cells}，cells 含 account_id）
+ * @param {Array} aggregateRows resp.aggregate（每行 {team, cells, accountId}）
  * @param {Array} playerSummaries league.playerSummaries（每项 accountId/nickname/clan/ratedBattles/rating/observedMean/
  *   dimensionMeans/mvpCount/wins；dimensionMeans 原样透传到 row.league 供 Summary Radar）
- * @returns {Array<{team:number, cells:Object, league:Object|null}>}
+ * @returns {Array<{team:number, accountId:number|string, cells:Object, league:Object|null}>}
  */
 export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
   const summaries = (playerSummaries || []).slice()
   const byAccount = new Map(summaries.map(s => [String(s.accountId), s]))
   const rows = (aggregateRows || []).map(row => {
     const cells = { ...(row.cells || {}) }
-    const summary = byAccount.get(String(cells.account_id)) || null
+    const summary = byAccount.get(String(row.accountId)) || null
     fillLeagueCells(cells, summary)
     if (summary) {
-      byAccount.delete(String(cells.account_id))
+      byAccount.delete(String(row.accountId))
     }
-    return { team: row.team, cells, league: summary }
+    return { team: row.team, accountId: row.accountId, cells, league: summary }
   })
   // 防御兜底：playerSummary 中存在但 aggregate 未覆盖的玩家（当前 contract 下 CW 批次
   // 必生成 aggregate，正常不触发）——保留评分玩家，Aggregate 字段补 null。
   for (const s of byAccount.values()) {
     const cells = {
-      account_id: s.accountId,
       nickname: s.nickname ?? null,
       clan: s.clan ?? null,
       battles: s.battles ?? null,
@@ -69,18 +67,15 @@ export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
       assist_total: s.assistTotal ?? null,
       kills_total: s.killsTotal ?? null,
     }
-    fillLeagueCells(cells, s, true)
-    rows.push({ team: 0, cells, league: s })
+    fillLeagueCells(cells, s)
+    rows.push({ team: 0, accountId: s.accountId, cells, league: s })
   }
   return rows
 }
 
 /** 把 League summary 字段写入统一行 cells（V6 主 Rating / Observed Mean / 七维均值 /
- * MVP 次数 / 评分场次；
- * includePerf=true 时附加跨场 Performance Metrics，仅用于 aggregate 未覆盖的兜底行，
- * 绝不覆盖 aggregate 样本）。
- */
-function fillLeagueCells(cells, summary, includePerf = false) {
+ * MVP 次数 / 评分场次）。身份（accountId）是结构化字段，不写回 cells。 */
+function fillLeagueCells(cells, summary) {
   // V6：league_rating = pooled-sample Rating；Observed Mean 仅作透明度信息展示。
   cells.league_rating = summary?.rating ?? null
   cells.league_observed_mean = summary?.observedMean ?? null
@@ -89,17 +84,12 @@ function fillLeagueCells(cells, summary, includePerf = false) {
   cells.mvp_count = summary?.mvpCount ?? null
   // 评分场次（rated-only 样本，独立于 aggregate 的解析场次）
   cells.rated_battles = summary?.ratedBattles ?? summary?.battles ?? null
-  // 跨场 Performance Metrics：只给 aggregate 未覆盖的兜底行补值
-  if (includePerf) {
-    cells.contribution = summary?.contribution ?? null
-    cells.kast = summary?.kast ?? null
-    cells.impact = summary?.impact ?? null
-  }
 }
 
 /**
  * 合并统一表列定义：League 特有列（Rating + 七维 + MVP 次数）前置，
  * 其后追加 Replay Aggregate 全部列（nickname/battles/wins/win_rate/damage_avg/earned_avg 等），去重。
+ * B6：wire 上仍有但不是展示列的 key（`tanks`）不进 universe。
  * @param {Array} leagueSummaryCols league.playerSummaryColumns
  * @param {Array} aggregateCols resp.aggregateColumns
  * @returns {Array<{key:string, num:boolean}>}
@@ -113,7 +103,7 @@ export function mergeCwPlayerColumns(leagueSummaryCols, aggregateCols) {
     out.push(c)
   }
   for (const c of (aggregateCols || [])) {
-    if (seen.has(c.key)) continue
+    if (seen.has(c.key) || UNPRESENTABLE_COLUMN_KEYS.has(c.key)) continue
     seen.add(c.key)
     out.push(c)
   }

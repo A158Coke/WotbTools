@@ -29,9 +29,10 @@ const LEAGUE_COLUMNS = [
   { key: 'league_shooting_score', max: 100, fixed: false },
 ]
 
+// B6：身份是结构化 accountId（不再是 cells.account_id）
 const ROWS = [
-  { team: 1, league: { accountId: 1001 }, cells: { account_id: 1001, nickname: 'A', battles: 3, earned_avg: 80, win_rate: 66.7, league_rating: 850.4, league_damage_score: 342.1, mvp_count: 2 } },
-  { team: 2, league: null, cells: { account_id: 2001, nickname: 'B', battles: 2, earned_avg: 40, win_rate: 50, league_rating: null, league_damage_score: null, mvp_count: null } },
+  { team: 1, accountId: 1001, league: { accountId: 1001 }, cells: { nickname: 'A', battles: 3, earned_avg: 80, win_rate: 66.7, league_rating: 850.4, league_damage_score: 342.1, mvp_count: 2 } },
+  { team: 2, accountId: 2001, league: null, cells: { nickname: 'B', battles: 2, earned_avg: 40, win_rate: 50, league_rating: null, league_damage_score: null, mvp_count: null } },
 ]
 
 function mountTable(overrides = {}) {
@@ -88,9 +89,9 @@ describe('CwPlayerSummaryTable', () => {
   it('sorts numeric asc then desc, missing last', async () => {
     const wrapper = mountTable({
       rows: [
-        { team: 1, league: null, cells: { account_id: 1001, nickname: 'A', earned_avg: 80, league_rating: null, mvp_count: null } },
-        { team: 2, league: null, cells: { account_id: 2001, nickname: 'B', earned_avg: 40, league_rating: null, mvp_count: null } },
-        { team: 1, league: null, cells: { account_id: 3001, nickname: 'C', earned_avg: null, league_rating: null, mvp_count: null } },
+        { team: 1, accountId: 1001, league: null, cells: { nickname: 'A', earned_avg: 80, league_rating: null, mvp_count: null } },
+        { team: 2, accountId: 2001, league: null, cells: { nickname: 'B', earned_avg: 40, league_rating: null, mvp_count: null } },
+        { team: 1, accountId: 3001, league: null, cells: { nickname: 'C', earned_avg: null, league_rating: null, mvp_count: null } },
       ]
     })
     const th = wrapper.findAll('th').find(t => t.text().includes('earned_avg'))
@@ -119,11 +120,11 @@ describe('CwPlayerSummaryTable', () => {
   it('player summary sorting uses full-precision raw Rating when display values tie', async () => {
     const wrapper = mountTable({
       rows: [
-        { team: 1, league: { accountId: 1001 }, cells: {
-          account_id: 1001, nickname: 'HighRaw', league_rating: 700.24,
+        { team: 1, accountId: 1001, league: { accountId: 1001 }, cells: {
+          nickname: 'HighRaw', league_rating: 700.24,
         } },
-        { team: 1, league: { accountId: 1002 }, cells: {
-          account_id: 1002, nickname: 'LowRaw', league_rating: 700.21,
+        { team: 1, accountId: 1002, league: { accountId: 1002 }, cells: {
+          nickname: 'LowRaw', league_rating: 700.21,
         } },
       ],
       columns: [
@@ -140,7 +141,7 @@ describe('CwPlayerSummaryTable', () => {
     expect(rows.at(1).text()).toContain('700.2')
   })
 
-  it('renders Performance Metrics columns as percentages', () => {
+  it('B6：已退役的 Performance Metrics（contribution/kast/impact）不再被 % 特殊化', () => {
     const wrapper = mountTable({
       columns: [
         { key: 'nickname', num: false },
@@ -149,15 +150,15 @@ describe('CwPlayerSummaryTable', () => {
         { key: 'impact', num: true },
       ],
       rows: [
-        { team: 1, league: null, cells: { account_id: 1001, nickname: 'A', contribution: 22.4, kast: 100, impact: 151.2 } },
-        { team: 2, league: null, cells: { account_id: 2001, nickname: 'B', contribution: null, kast: null, impact: null } },
+        { team: 1, accountId: 1001, league: null, cells: { nickname: 'A', contribution: 22.4, kast: 100, impact: 151.2 } },
+        { team: 2, accountId: 2001, league: null, cells: { nickname: 'B', contribution: null, kast: null, impact: null } },
       ],
     })
     const text = wrapper.text()
-    expect(text).toContain('22.4%')
-    expect(text).toContain('100%')
-    expect(text).toContain('151.2%')
-    // HP UNKNOWN → B 行全部 '--'（不冒充 0%；'100%' 里的 '0%' 子串不算）
+    // 组件不再有派生 % 展示；missing 仍是 '--'（不冒充 0）
+    expect(text).not.toContain('22.4%')
+    expect(text).not.toContain('151.2%')
+    expect(text).toContain('22.4')
     expect(text).toContain('B------')
     expect(text).not.toMatch(/(^|\D)0%/)
   })
@@ -170,7 +171,7 @@ describe('CwPlayerSummaryTable', () => {
         { key: 'rated_battles', num: true },
       ],
       rows: [
-        { team: 1, league: null, cells: { account_id: 1001, nickname: 'A', battles: 12, rated_battles: 8 } },
+        { team: 1, accountId: 1001, league: null, cells: { nickname: 'A', battles: 12, rated_battles: 8 } },
       ],
     })
     const text = wrapper.text()

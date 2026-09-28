@@ -8,8 +8,6 @@ import { useStickyColumns } from '../utils/stickyColumns.js'
 
 const { locale, t, te } = useI18n()
 const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation'])
-// 单场表现派生列：HP unknown 时为 null（显示 "--"，不冒充 0）；有值时统一百分比展示
-const PERCENT_KEYS = new Set(['contribution', 'kast', 'impact'])
 // 原始比例列：denominator == 0（无射击/无命中）→ null（unavailable，显示 "--"，禁止 0/0 伪装 0%）
 const RATE_KEYS = new Set(['hit_rate', 'pen_rate'])
 const props = defineProps({
@@ -47,11 +45,6 @@ const emit = defineEmits(['update-team-name', 'select-player'])
 const isLeague = computed(() => props.leagueMode)
 const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
-function percentCell(value) {
-  if (value == null || value === '') return '--'
-  return (Math.round(value * 10) / 10) + '%'
-}
-
 /** 原始比例（0-100 标尺）：denominator==0 → null（unavailable，显示 "--"）；否则展示数值。 */
 function rateCell(value) {
   if (value == null || value === '') return '--'
@@ -82,7 +75,7 @@ const sorted = computed(() => {
     locale: locale.value,
     valueGetter,
     // accountId 兜底保持稳定（同分不跳行）
-    tiebreakGetter: row => row.cells?.account_id,
+    tiebreakGetter: row => row.accountId,
   })
 })
 
@@ -133,10 +126,10 @@ function onRowClick(row) {
   if (!isLeague.value) return
   emit('select-player', {
     scope: 'battle',
-    accountId: Number(row.cells.account_id),
+    accountId: Number(row.accountId),
     arenaId: props.battle.arenaId,
     // order = 当前可见顺序（排序后），供 Drawer 前后导航（§29）。
-    order: sorted.value.map(p => Number(p.cells.account_id)),
+    order: sorted.value.map(p => Number(p.accountId)),
   })
 }
 
@@ -147,7 +140,7 @@ function isSelectedRow(row) {
   const selArena = props.selectedArenaId
   if (selId == null || selId === '' || selArena == null || selArena === '') return false
   return String(props.battle.arenaId) === String(selArena)
-    && Number(row.cells.account_id) === Number(selId)
+    && Number(row.accountId) === Number(selId)
 }
 
 // ---- Rating 单元格（总分「927.4」；维度「342 / 400 · 85.5%」；缺失 → '--'）----
@@ -155,7 +148,7 @@ function isSelectedRow(row) {
 
 function rowFlags(row) {
   if (!isLeague.value) return { mvp: false, teamBest: false }
-  const accountId = Number(row.cells.account_id) || 0
+  const accountId = Number(row.accountId) || 0
   const mvp = accountId === Number(props.league?.mvpAccountId)
   const teamBest = accountId === (row.team === 1
     ? Number(props.league?.team1BestAccountId)
@@ -225,7 +218,7 @@ watch([sortKey, sortReverse], schedule)
           </th>
         </tr></thead>
         <tbody>
-          <tr v-for="row in sorted" :key="row.cells.account_id"
+          <tr v-for="row in sorted" :key="row.accountId"
               :class="[row.team === 1 ? 't1' : 't2', isLeague ? 'player-row' : '', { selected: isSelectedRow(row) }]"
               @click="onRowClick(row)">
             <td v-for="c in shownCols" :key="c.key"
@@ -234,7 +227,6 @@ watch([sortKey, sortReverse], schedule)
               <span v-if="c.key === 'survived_label'" :class="survivalClass(row.cells[c.key])">{{ survivalLabel(row.cells[c.key]) }}</span>
               <span v-else-if="c.key === 'survival_time'">{{ fmtDuration(row.cells[c.key], t) }}</span>
               <span v-else-if="LOCALIZED_VALUE_KEYS.has(c.key)">{{ replayValueLabel(t, te, row.cells[c.key]) }}</span>
-              <span v-else-if="PERCENT_KEYS.has(c.key)">{{ percentCell(row.cells[c.key]) }}</span>
               <span v-else-if="RATE_KEYS.has(c.key)">{{ rateCell(row.cells[c.key]) }}</span>
               <span v-else-if="c.key === 'league_rating'" class="league-rating-cell">
                 {{ ratingCellText(row.cells[c.key], c.key, maxByKey) }}

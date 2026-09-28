@@ -13,11 +13,12 @@ const S = 'league_survival_score'
 const SH = 'league_shooting_score'
 
 /** 构造 battle player（cells 含 league_*_score）。rated=true → league_rating 有值（V4.1 finalRating），
- *  表明属于 valid rated population；rated=false → league_rating null（本场未评分 → 非成员）。 */
+ *  表明属于 valid rated population；rated=false → league_rating null（本场未评分 → 非成员）。
+ *  B6：身份是结构性 accountId（不再是 cells.account_id）。 */
 function bp(accountId, scores, { rated = true } = {}) {
   return {
+    accountId,
     cells: {
-      account_id: accountId,
       ...(rated ? { league_rating: 800 } : { league_rating: null }),
       ...scores,
     },
@@ -27,9 +28,9 @@ function bp(accountId, scores, { rated = true } = {}) {
 /** 构造 summary row。rated=true → league 有 PlayerSummary（dimensionMeans 按 CW_DIM_KEYS 顺序），
  *  表明属于 rated unique player；rated=false → league null（aggregate-only / 未评分 → 非成员）。 */
 function sr(accountId, means, { rated = true } = {}) {
-  if (!rated) return { cells: { account_id: accountId }, league: null }
+  if (!rated) return { accountId, cells: {}, league: null }
   const keys = [D, A, K, E, B, S, SH]
-  return { cells: { account_id: accountId }, league: { dimensionMeans: keys.map(k => means[k] ?? null) } }
+  return { accountId, cells: {}, league: { dimensionMeans: keys.map(k => means[k] ?? null) } }
 }
 
 describe('battleAverage', () => {
@@ -147,7 +148,7 @@ describe('globalAverage', () => {
     // 只有 A 是 rated 且完整；B 是 aggregate-only（league null）→ 非成员，排除
     const rows = [
       sr(1, { [D]: 300, [SH]: 60 }),
-      { cells: { account_id: 2 }, league: null },
+      { accountId: 2, cells: {}, league: null },
     ]
     const res = globalAverage(rows, { dimKeys: [D, SH] })
     expect(res.available).toBe(true)
@@ -158,7 +159,7 @@ describe('globalAverage', () => {
     // A 是 rated 但缺 Shooting；B 是 aggregate-only（league null）→ 因 A 是不完整成员 → unavailable
     const rows = [
       sr(1, { [D]: 100 }, { rated: true }), // rated 但缺 SH
-      { cells: { account_id: 2 }, league: null }, // unrated 非成员
+      { accountId: 2, cells: {}, league: null }, // unrated 非成员
     ]
     const res = globalAverage(rows, { dimKeys: [D, SH] })
     expect(res.available).toBe(false)

@@ -15,10 +15,11 @@ const COLS = [
   { key: 'earned_avg', num: true },
 ]
 
+// B6：account_id 不再是列——身份是结构化 row.accountId
 const ROWS = [
-  { team: 1, cells: { nickname: 'A', account_id: 1, damage_avg: 100, win_rate: 50, earned_avg: 80 } },
-  { team: 2, cells: { nickname: 'B', account_id: 2, damage_avg: 9, win_rate: 90, earned_avg: 40 } },
-  { team: 1, cells: { nickname: 'C', account_id: 3, damage_avg: 21, win_rate: null, earned_avg: null } },
+  { team: 1, accountId: 1, cells: { nickname: 'A', damage_avg: 100, win_rate: 50, earned_avg: 80 } },
+  { team: 2, accountId: 2, cells: { nickname: 'B', damage_avg: 9, win_rate: 90, earned_avg: 40 } },
+  { team: 1, accountId: 3, cells: { nickname: 'C', damage_avg: 21, win_rate: null, earned_avg: null } },
 ]
 
 function mountTable(overrides = {}) {
@@ -36,14 +37,23 @@ describe('AggregateTable raw rates', () => {
       { key: 'pen_rate', num: true }
     ]
     const rows = [
-      { team: 1, cells: { nickname: 'A', account_id: 1, hit_rate: 50, pen_rate: 80 } },
-      { team: 1, cells: { nickname: 'B', account_id: 2, hit_rate: null, pen_rate: null } }
+      { team: 1, accountId: 1, cells: { nickname: 'A', hit_rate: 50, pen_rate: 80 } },
+      { team: 1, accountId: 2, cells: { nickname: 'B', hit_rate: null, pen_rate: null } }
     ]
     const wrapper = mountTable({ aggregate: rows, shownCols: cols })
     const text = wrapper.text()
     expect(text).toContain('50')
     expect(text).toContain('80')
     expect((text.match(/--/g) || []).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('B6：survival_time_avg 走时长格式化（旧 key survival_avg 已退役）', () => {
+    const cols = [{ key: 'survival_time_avg', num: true }]
+    const rows = [{ team: 1, accountId: 1, cells: { survival_time_avg: 125, survival_avg: 999 } }]
+    const wrapper = mountTable({ aggregate: rows, shownCols: cols })
+    // fmtDuration → $t('duration', {min, sec})；旧 key 会被当成普通数字渲染成 999
+    expect(wrapper.find('tbody td').text()).toBe('duration')
+    expect(wrapper.find('th').attributes('title')).toBe('agg_labels.survival_time_avg_tip')
   })
 })
 
@@ -81,9 +91,9 @@ describe('AggregateTable sorting', () => {
   it('string natural order', async () => {
     const wrapper = mountTable({
       aggregate: [
-        { team: 1, cells: { nickname: 'Player10', account_id: 10, damage_avg: 1, win_rate: 1, earned_avg: 1 } },
-        { team: 1, cells: { nickname: 'Player2', account_id: 2, damage_avg: 1, win_rate: 1, earned_avg: 1 } },
-        { team: 1, cells: { nickname: 'Player1', account_id: 1, damage_avg: 1, win_rate: 1, earned_avg: 1 } },
+        { team: 1, accountId: 10, cells: { nickname: 'Player10', damage_avg: 1, win_rate: 1, earned_avg: 1 } },
+        { team: 1, accountId: 2, cells: { nickname: 'Player2', damage_avg: 1, win_rate: 1, earned_avg: 1 } },
+        { team: 1, accountId: 1, cells: { nickname: 'Player1', damage_avg: 1, win_rate: 1, earned_avg: 1 } },
       ]
     })
     const th = wrapper.findAll('th').find(t => t.text().includes('nickname'))
