@@ -117,6 +117,10 @@ fn java_subset_matches_every_packet() {
                     format!("unknown:{reason}")
                 }
                 DecodeEvent::Position(_) => panic!("position decoder is not in this subset"),
+                DecodeEvent::Property(_) => panic!("property decoder is not in this subset"),
+                DecodeEvent::Materialization(_) => {
+                    panic!("materialization decoder is not in this subset")
+                }
             };
             let status = match result.status {
                 DecodeStatus::Success => "SUCCESS",
