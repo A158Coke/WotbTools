@@ -9,7 +9,6 @@ import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import ReplayPage from './ReplayPage.vue'
-import AiReviewPanel from './AiReviewPanel.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 import FileUploader from './FileUploader.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
@@ -107,7 +106,6 @@ const battleOptions = computed(() => {
   })
 })
 
-const aiReplay = useCapabilityReplay(workspace.replay)
 const playbackReplay = useCapabilityReplay(workspace.replay)
 
 watch(
@@ -120,15 +118,13 @@ watch(
     workspace.replay.files,
   ],
   () => {
-    const cap = activeCapability.value
-    if (cap !== 'ai' && cap !== 'playback') return
-    const helper = cap === 'ai' ? aiReplay : playbackReplay
+    if (activeCapability.value !== 'playback') return
     const file = workspace.currentTargetFile.value
     if (workspace.replay.files.value.length > 1 && !file) {
-      helper.setLimitError()
+      playbackReplay.setLimitError()
       return
     }
-    helper.reconcile({ file, selectionRevision: workspace.replay.selectionRevision.value })
+    playbackReplay.reconcile({ file, selectionRevision: workspace.replay.selectionRevision.value })
   },
   { immediate: true },
 )
@@ -168,7 +164,7 @@ function requestLogin(view, { userInitiated = false } = {}) {
 
 async function setCapability(key) {
   if (key === activeCapability.value) return
-  if (!authenticated.value) {
+  if (key !== 'ai' && !authenticated.value) {
     requestLogin(viewFor(key), { userInitiated: true })
     return
   }
@@ -190,13 +186,12 @@ function confirmRemove() {
 
 function clearSelection() {
   updateFiles([])
-  aiReplay.reset()
   playbackReplay.reset()
 }
 
 // 只有正常完成且确认未登录时才自动发起登录。failed 是明确的恢复态，不能自动循环。
 watch(authInitState, (state) => {
-  if (state !== 'unauthenticated') return
+  if (state !== 'unauthenticated' || activeCapability.value === 'ai') return
   nextTick(() => requestLogin(viewFor(activeCapability.value)))
 }, { immediate: true })
 
@@ -224,8 +219,12 @@ watch(() => props.initialCapability, (val) => {
     <ReplayWorkspaceHeader :has-files="!!files.length" @clear="clearSelection" />
     <ReplayCapabilityTabs :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
 
+    <section v-if="activeCapability === 'ai'" class="workspace-auth-gate" data-testid="ws-ai" role="status">
+      <p class="workspace-auth-title">{{ $t('workspace.ai_maintenance') }}</p>
+    </section>
+
     <section
-      v-if="authInitState === 'idle' || authInitState === 'initializing'"
+      v-else-if="authInitState === 'idle' || authInitState === 'initializing'"
       class="workspace-auth-gate"
       data-testid="ws-auth-loading"
       aria-live="polite"
@@ -311,15 +310,6 @@ watch(() => props.initialCapability, (val) => {
           :replay-context="workspace.replay"
           :workspace-context="workspace"
         />
-        <div v-show="activeCapability === 'ai'" class="capability-pane" data-testid="ws-ai">
-          <AiReviewPanel
-            :file="aiReplay.targetFile.value"
-            :processing-job-id="aiReplay.datasetRef.value?.processingJobId ?? null"
-            :source-id="aiReplay.datasetRef.value?.sourceId ?? null"
-            :dataset-error="aiReplay.datasetError.value || ''"
-            @dataset-recover="aiReplay.recover"
-          />
-        </div>
         <div v-show="activeCapability === 'playback'" class="capability-pane" data-testid="ws-playback">
           <BattlePlaybackPanel
             :file="playbackReplay.targetFile.value"
