@@ -1,0 +1,324 @@
+name: CI / PR
+run-name: "CI / PR for ${{ github.ref_name }}"
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open pull request number to validate
+        required: true
+        type: string
+      head_sha:
+        description: Exact current pull request head commit SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr_identity:
+    name: pull request identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      base_sha: ${{ steps.revisions.outputs.base_sha }}
+      head_sha: ${{ steps.revisions.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Reject tracked local development plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files --error-unmatch -- docs/current-plan.md >/dev/null 2>&1; then
+            echo "::error::docs/current-plan.md is a local-only planning artifact and must not be tracked." >&2
+            exit 1
+          fi
+          git check-ignore -q --no-index -- docs/current-plan.md || {
+            echo "::error::docs/current-plan.md must remain ignored." >&2
+            exit 1
+          }
+      - name: Resolve and verify pull request range
+        id: revisions
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          EVENT_BASE_REPO: ${{ github.event.pull_request.base.repo.full_name || '' }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref || '' }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          DISPATCH_PR_NUMBER: ${{ inputs.pr_number || '' }}
+          DISPATCH_HEAD_SHA: ${{ inputs.head_sha || '' }}
+          REPOSITORY: ${{ github.repository }}
+          CURRENT_SHA: ${{ github.sha }}
+          CURRENT_REF: ${{ github.ref }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.request
+
+          sha_pattern = re.compile(r"[0-9a-f]{40}\Z")
+          event = os.environ["CI_EVENT_NAME"]
+          repository = os.environ["REPOSITORY"]
+
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(f"::error::{message}")
+
+          def valid_sha(value):
+              return bool(sha_pattern.fullmatch(value))
+
+          if event == "pull_request":
+              base_repo = os.environ["EVENT_BASE_REPO"]
+              base_ref = os.environ["EVENT_BASE_REF"]
+              base_sha = os.environ["EVENT_BASE_SHA"]
+              head_sha = os.environ["EVENT_HEAD_SHA"]
+              pr_number = os.environ["EVENT_PR_NUMBER"]
+              require(base_repo.casefold() == repository.casefold(), "PR base repository must be this repository")
+              require(base_ref == "main", "PR base branch must be main")
+          elif event == "workflow_dispatch":
+              pr_number = os.environ["DISPATCH_PR_NUMBER"]
+              requested_head = os.environ["DISPATCH_HEAD_SHA"]
+              current_sha = os.environ["CURRENT_SHA"]
+              current_ref = os.environ["CURRENT_REF"]
+              require(pr_number.isascii() and pr_number.isdecimal() and int(pr_number) > 0,
+                      "workflow_dispatch pr_number must be a positive integer")
+              require(valid_sha(requested_head), "workflow_dispatch head_sha must be a full lowercase commit SHA")
+              require(current_ref.startswith("refs/heads/") and len(current_ref) > len("refs/heads/"),
+                      "workflow_dispatch must run from a branch")
+              require(current_sha == requested_head, "workflow_dispatch head_sha is stale for this workflow run")
+              token = os.environ.get("GH_TOKEN", "")
+              require(bool(token), "read-only GitHub token is unavailable")
+              url = f"https://api.github.com/repos/{repository}/pulls/{pr_number}"
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "wotbtools-ci",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      pr = json.load(response)
+              except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+                  raise SystemExit(f"::error::Unable to read PR {pr_number} with the read-only GitHub token: {error}")
+              base = pr.get("base") or {}
+              head = pr.get("head") or {}
+              base_repository = (base.get("repo") or {}).get("full_name", "")
+              head_repository = (head.get("repo") or {}).get("full_name", "")
+              head_ref = head.get("ref", "")
+              base_ref = base.get("ref", "")
+              base_sha = base.get("sha", "")
+              head_sha = head.get("sha", "")
+              current_branch = current_ref.removeprefix("refs/heads/")
+              require(pr.get("state") == "open", f"PR {pr_number} must be open")
+              require(base_repository.casefold() == repository.casefold(), "PR base repository must be this repository")
+              require(base_ref == "main", "PR base branch must be main")
+              require(head_repository.casefold() == repository.casefold(), "workflow_dispatch only accepts same-repository PR heads")
+              require(head_ref == current_branch, "workflow_dispatch ref must match the PR head branch")
+              require(head_sha == requested_head == current_sha,
+                      "PR head, workflow_dispatch head_sha, and current workflow SHA must match")
+          else:
+              raise SystemExit(f"::error::Unsupported CI event {event!r}")
+
+          require(pr_number.isascii() and pr_number.isdecimal() and int(pr_number) > 0,
+                  "PR number must be a positive integer")
+          require(valid_sha(base_sha), "PR base SHA must be a full lowercase commit SHA")
+          require(valid_sha(head_sha), "PR head SHA must be a full lowercase commit SHA")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"base_sha={base_sha}\n")
+              output.write(f"head_sha={head_sha}\n")
+          PY
+  changes:
+    needs: [pr_identity]
+    runs-on: ubuntu-latest
+    outputs:
+      business_api: ${{ steps.filter.outputs.business_api }}
+      parser_worker: ${{ steps.filter.outputs.parser_worker }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      keycloak: ${{ steps.filter.outputs.keycloak }}
+      android: ${{ steps.filter.outputs.android }}
+      observability: ${{ steps.filter.outputs.observability }}
+      deployment: ${{ steps.filter.outputs.deployment }}
+      python: ${{ steps.filter.outputs.python }}
+      business_postgres: ${{ steps.filter.outputs.business_postgres }}
+      keycloak_postgres: ${{ steps.filter.outputs.keycloak_postgres }}
+      rabbitmq: ${{ steps.filter.outputs.rabbitmq }}
+      minio: ${{ steps.filter.outputs.minio }}
+      caddy: ${{ steps.filter.outputs.caddy }}
+      alloy_tx: ${{ steps.filter.outputs.alloy_tx }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.pr_identity.outputs.head_sha }}
+          fetch-depth: 0
+      - name: Verify exact PR head checkout
+        env:
+          HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
+        run: test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          base: ${{ needs.pr_identity.outputs.base_sha }}
+          ref: ${{ needs.pr_identity.outputs.head_sha }}
+          filters: .github/ci-owner-paths.yml
+  business_api:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.business_api == 'true'
+    uses: ./.github/workflows/ci-business-api.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  parser_worker:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.parser_worker == 'true'
+    uses: ./.github/workflows/ci-parser-worker.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  frontend:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/ci-frontend.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  keycloak:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.keycloak == 'true'
+    uses: ./.github/workflows/ci-keycloak.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  android:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.android == 'true'
+    uses: ./.github/workflows/ci-android.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  observability:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.observability == 'true'
+    uses: ./.github/workflows/ci-observability.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  deployment:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.deployment == 'true'
+    uses: ./.github/workflows/ci-deployment.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  python:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.python == 'true'
+    uses: ./.github/workflows/ci-python.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  business_postgres:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.business_postgres == 'true'
+    uses: ./.github/workflows/ci-business-postgres.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  keycloak_postgres:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.keycloak_postgres == 'true'
+    uses: ./.github/workflows/ci-keycloak-postgres.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  rabbitmq:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.rabbitmq == 'true'
+    uses: ./.github/workflows/ci-rabbitmq.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  minio:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.minio == 'true'
+    uses: ./.github/workflows/ci-minio.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  caddy:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.caddy == 'true'
+    uses: ./.github/workflows/ci-caddy.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  alloy_tx:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.alloy_tx == 'true'
+    uses: ./.github/workflows/ci-alloy-tx.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  required:
+    needs:
+      - pr_identity
+      - changes
+      - business_api
+      - parser_worker
+      - frontend
+      - keycloak
+      - android
+      - observability
+      - deployment
+      - python
+      - business_postgres
+      - keycloak_postgres
+      - rabbitmq
+      - minio
+      - caddy
+      - alloy_tx
+    if: always()
+    name: CI / Required Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate affected owner results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          if needs["pr_identity"]["result"] != "success" or needs["changes"]["result"] != "success":
+              raise SystemExit("::error::PR identity or changed-file detection failed")
+          failed = []
+          for owner, affected in needs["changes"]["outputs"].items():
+              result = needs[owner]["result"]
+              expected = "success" if affected == "true" else "skipped" if affected == "false" else None
+              if result != expected:
+                  failed.append(f"{owner}: affected={affected}, result={result}, expected={expected}")
+          if failed:
+              raise SystemExit("::error::Affected owner CI failed or dispatch mismatched: " + "; ".join(failed))
+          PY

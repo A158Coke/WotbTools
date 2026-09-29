@@ -3,6 +3,24 @@ name: Keycloak
 on:
   push:
     branches: [main]
+    paths:
+      - .github/workflows/keycloak.yml
+      - .dockerignore
+      - docker/Dockerfile.keycloak
+      - docker/keycloak/**
+      - java/settings-docker.xml
+      - keycloak-qq-provider/**
+      - keycloak-wargaming-provider/**
+      - infra/tofu/keycloak/**
+      - deploy/test-keycloak-runtime.sh
+      - deploy/test-keycloak-tofu.sh
+      - deploy/dependency-readiness.sh
+      - deploy/dependency-readiness.py
+      - deploy/check-latest-main.sh
+      - deploy/tx/keycloak.compose.yml
+      - deploy/tx/deploy.sh
+      - deploy/tx/common.compose.yml
+      - deploy/tx/docker-compose.yml
   workflow_dispatch:
 
 permissions:
@@ -21,11 +39,13 @@ env:
     infra/tofu/keycloak/**
     deploy/test-keycloak-runtime.sh
     deploy/test-keycloak-tofu.sh
-    deploy/tx/**
     deploy/dependency-readiness.sh
     deploy/dependency-readiness.py
     deploy/check-latest-main.sh
-
+    deploy/tx/keycloak.compose.yml
+    deploy/tx/deploy.sh
+    deploy/tx/common.compose.yml
+    deploy/tx/docker-compose.yml
 concurrency:
   group: deploy-keycloak
   cancel-in-progress: true

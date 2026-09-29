@@ -835,7 +835,7 @@ export function initPlayback(container, store) {
       try {
         const [loader, sd] = await Promise.all([
           Promise.resolve(GLTFLoader),
-          fetch(assetUrl('/api/tank/') + tankId).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(assetBase() ? assetUrl(`tank/${tankId}.json`) : assetUrl('/api/tank/') + tankId).then(r => r.ok ? r.json() : null).catch(() => null),
         ]);
         const model = await new Promise((res) =>
           new loader().load(assetUrl(`/glb/${tankId}/model.glb`), g => res(g.scene), undefined, () => res(null)));

@@ -1,0 +1,53 @@
+name: CI / rabbitmq
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  compose_config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Validate RabbitMQ Compose
+        run: docker compose -p deploy -f deploy/tx/rabbitmq.compose.yml config --quiet
+  tofu_plans:
+    name: OpenTofu validation / rabbitmq
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    # PR OpenTofu work is local validation only: fmt, init without a backend,
+    # validate, and root-specific safety fixtures. No production plan or credentials
+    # are available to this workflow.
+    env:
+      TF_IN_AUTOMATION: "true"
+      CHECKPOINT_DISABLE: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+      - name: Format, initialize without production state, and validate
+        env:
+          ROOT_DIR: infra/tofu/rabbitmq
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+          tofu fmt -check -recursive
+          tofu init -backend=false -input=false
+          tofu validate
+      - name: Validate local-root safety policy fixtures
+        run: |
+          set -euo pipefail
+          bash infra/tofu/rabbitmq/test-validate-plan.sh

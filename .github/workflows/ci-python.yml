@@ -1,0 +1,23 @@
+name: CI / python
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  python_unit:
+    name: Python unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Python unit tests
+        run: python3 -m unittest discover -s common/python/tests -p 'test_*.py'

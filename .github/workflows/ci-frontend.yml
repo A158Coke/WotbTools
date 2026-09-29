@@ -1,0 +1,50 @@
+name: CI / frontend
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Verify generated HTTP client contract
+        working-directory: frontend
+        run: npm run api:check
+      - name: Type check
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Unit tests
+        working-directory: frontend
+        run: npm test
+      - name: Real-browser Playback layout regression
+        working-directory: frontend
+        run: npm run test:browser-layout
+      - name: Real-browser Playback/Workspace interaction regression
+        working-directory: frontend
+        run: npm run test:browser-interaction
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+      - name: Bundle separation check
+        working-directory: frontend
+        run: node scripts/check-bundle-separation.mjs
