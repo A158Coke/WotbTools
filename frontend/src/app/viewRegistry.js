@@ -12,6 +12,7 @@ import AndroidDownloadPage from '../components/AndroidDownloadPage.vue'
 import SponsorPage from '../components/SponsorPage.vue'
 
 const PlaybackQaPage = defineAsyncComponent(() => import('../components/PlaybackQaPage.vue'))
+const AgentReplay3DPage = defineAsyncComponent(() => import('../components/AgentReplay3D.vue'))
 const RatingDocsPage = defineAsyncComponent(() => import('../components/RatingDocsPage.vue'))
 const RatingV2AdminPage = defineAsyncComponent(() => import('../components/RatingV2AdminPage.vue'))
 
@@ -20,6 +21,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   replay: ReplayWorkspace,
   'ai-review': ReplayWorkspace,
   'battle-playback': ReplayWorkspace,
+  'agent-replay': AgentReplay3DPage,
   hof: HoFPage,
   'hof-admin': HoFAdminPage,
   profile: ProfilePage,
