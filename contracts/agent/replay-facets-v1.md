@@ -24,7 +24,7 @@
 | 切面 | 顶层文件 | 消费方 | 内容 |
 |---|---|---|---|
 | **playback** | `*.facet.playback.json` | 前端 3D 回放 / WASM 播放器 | 全场时序：0.1s 网格位姿（列式）、炮塔/炮管角、全员弹道、血量链、击杀流、战局阶段、AoI 可见性窗口 |
-| **ai-review** | `*.facet.ai.json` | AI 复盘编排（→ Java → LLM） | 花名册 + 类型化事件流（spawn/shot/damage/kill/visibility/counter/damage_tick）+ 结算锚点 |
+| **ai-review** | `*.facet.ai.json` | AI 复盘编排（→ Java → LLM） | 花名册 + 类型化事件流（spawn/shot/damage/kill/visibility/counter/damage_tick）+ 结算锚点；counter 语义 = code 低字节基类型（1/2/3/5/15/17）+ seq 同类型内序号（上游 v0.1.6 复合编码修正，Canal 互验全对账） |
 | **hof** | `*.facet.hof.json` | Java → PostgreSQL | 结算精简行（14 人花名册战绩，无任何时序数据） |
 
 两份样例均已从真实匿名回放经上游 `427975f` 重导出，并通过以下不变量核验：

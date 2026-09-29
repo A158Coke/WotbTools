@@ -9,7 +9,8 @@
     "profile": "Profile",
     "feedback": "Feedback",
     "global_error_title": "Error",
-    "close": "Close"
+    "close": "Close",
+    "agent_replay_tab": "Agent 3D Replay"
   },
   "errors": {
     "auth_unauthenticated": "Your session has expired. Please sign in again.",
@@ -1431,5 +1432,14 @@
   },
   "history": {
     "btn": "Project history"
+  },
+  "agentReplay": {
+    "title": "Agent 3D Replay",
+    "pick_hint": "Pick a local .wotbreplay file — parsing runs fully in your browser via WebAssembly (the file never leaves your device).",
+    "parsing": "Parsing replay…",
+    "error_parse": "Parse failed:",
+    "ready": "Loaded {map} — {count} vehicles.",
+    "play": "Play",
+    "pause": "Pause"
   }
 }

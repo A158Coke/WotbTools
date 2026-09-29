@@ -131,8 +131,8 @@ export type AgentAiEvent =
       assister_eid?: number
     }
   | { type: 'visibility'; t_in: number; eid: number; t_out?: number }
-  /** 作者战斗反馈计数：code 1=累计伤害 2=点亮 3=击杀 5=挡伤 15=毁灭协助 17=总助攻 */
-  | { type: 'counter'; t: number; code: number; count: number; value: number }
+  /** 作者战斗反馈计数：code 低字节=基类型（1=累计伤害 2=点亮 3=击杀 5=挡伤 15=毁灭协助 17=总助攻），高字节=同类型内序号（上游 v0.1.6 复合编码修正） */
+  | { type: 'counter'; t: number; code: number; seq: number; count: number; value: number }
   | { type: 'damage_tick'; t: number; eid: number; cumulative: number }
 
 export interface AgentRosterEntry {
