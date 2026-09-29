@@ -75,10 +75,6 @@ jobs:
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
         shell: bash
-      - name: 上游 WASM 产物直取（fetch-agent-wasm.sh，sha256 校验）
-        shell: bash
-        run: bash "$GITHUB_WORKSPACE/scripts/fetch-agent-wasm.sh"
-
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -166,6 +162,14 @@ jobs:
           docker cp "$container:/usr/share/nginx/html/assets" "$temp/assets"
           grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/assets" \
             || { echo 'Published frontend bundle does not contain the frozen source commit.' >&2; exit 1; }
+          # Agent WASM 产物存在性 smoke：3D 回放/装甲查看器/射击复现的运行前提。
+          # 镜像里必须有非空的 glue JS 与 .wasm（magic 0x0061736d），缺失 = 发布不可用镜像。
+          docker cp "$container:/usr/share/nginx/html/wasm" "$temp/wasm"
+          for f in wotb_replay_wasm.js wotb_replay_wasm_bg.wasm; do
+            [ -s "$temp/wasm/$f" ] || { echo "Published image misses agent wasm artifact: $f" >&2; exit 1; }
+          done
+          [ "$(head -c4 "$temp/wasm/wotb_replay_wasm_bg.wasm" | od -An -tx1 | tr -d ' \n')" = "0061736d" ] \
+            || { echo 'wotb_replay_wasm_bg.wasm lacks wasm magic (truncated/HTML error page).' >&2; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Publish latest only from current main
