@@ -2,7 +2,7 @@
 
 > Producer: [`fanypcd/WoT-Blitz-Agent`](https://github.com/fanypcd/WoT-Blitz-Agent)（MIT）
 > · 状态：生产方行为契约。上游 `main` 已于 2026-09-29 随 commit
->   [`427975f`](https://github.com/fanypcd/WoT-Blitz-Agent/commit/427975f) 发布
+>   [`6b442cf`](https://github.com/fanypcd/WoT-Blitz-Agent/commit/6b442cf)（tag `v0.1.6`）发布
 >   `src/facets/` 与 `wotb-agent facets` 导出入口；样例可从该 SHA 重导出复现。
 >
 > **性质声明**：本文档规定预期的公开消费 DTO 形状与语义边界，
@@ -27,7 +27,7 @@
 | **ai-review** | `*.facet.ai.json` | AI 复盘编排（→ Java → LLM） | 花名册 + 类型化事件流（spawn/shot/damage/kill/visibility/counter/damage_tick）+ 结算锚点；counter 语义 = code 低字节基类型（1/2/3/5/15/17）+ seq 同类型内序号（上游 v0.1.6 复合编码修正，Canal 互验全对账） |
 | **hof** | `*.facet.hof.json` | Java → PostgreSQL | 结算精简行（14 人花名册战绩，无任何时序数据） |
 
-两份样例均已从真实匿名回放经上游 `427975f` 重导出，并通过以下不变量核验：
+两份样例均已从真实匿名回放经上游 v0.1.6（`6b442cf`）重导出，并通过以下不变量核验：
 `duration_secs` 未知输出 null（原样例误写 `0.0`，已修复为可空语义）；visibility 事件
 84 → 26 条，全部可联表到 roster（原 58 条未证明实体类型的裸 EID 已在生产端过滤）。
 [`samples/hof.sample.json`](samples/hof.sample.json) ·
@@ -73,12 +73,12 @@
 ## 3. 复现
 
 ```bash
-# 上游 main（427975f）已发布，在 Agent 仓库（MIT）执行：
+# 上游 main（v0.1.6 = `6b442cf`）已发布，在 Agent 仓库（MIT）执行：
 wotb-agent facets <file.wotbreplay> --parts playback,ai,hof --tank-cache data/tank_cache.json
 # 互验报告随导出输出：0x0c 过程计数 vs 结算总量（作者口径），对不上标 MISMATCH
 ```
 
-样例由客户端匿名回放（Anonyme 场次）产出，昵称/账号为游戏侧匿名化占位；从 `427975f` 重跑上述命令可逐字节复现。
+样例由客户端匿名回放（Anonyme 场次）产出，昵称/账号为游戏侧匿名化占位；从 `6b442cf` 重跑上述命令可复现（0x0c 计数口径已随该版本解码修正对齐）。
 
 ## 4. 与 WotBTools 既有面的关系
 
@@ -89,5 +89,5 @@ wotb-agent facets <file.wotbreplay> --parts playback,ai,hof --tank-cache data/ta
 
 ## 5. 版本记录
 
-- v1（2026-09-29 随上游 `427975f` 发布）：三切面 + 真实匿名回放样例（不变量已核验）；已知开放项：0x0c 次数口径互验（待非匿名场次）、结算时长 root5 解码、
+- v1（2026-09-29 随上游 v0.1.6 `6b442cf` 发布）：三切面 + 真实匿名回放样例（不变量已核验）；已知开放项：0x0c 次数口径互验（待非匿名场次）、结算时长 root5 解码、
   评审切面暂不含点亮协助的位置级归因。
