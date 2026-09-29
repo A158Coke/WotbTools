@@ -3,6 +3,23 @@ name: Frontend
 on:
   push:
     branches: [main]
+    paths:
+      - .github/workflows/frontend.yml
+      - .dockerignore
+      - docker/Dockerfile.frontend
+      - frontend/**
+      - common/map_names.json
+      - common/tankopedia-tier10.json
+      - common/assets/**
+      - HISTORY.md
+      - docs/architecture/TECHNICAL_EVOLUTION.md
+      - docs/WotBTools_League_Rating_V6.md
+      - deploy/nginx/nginx.conf
+      - deploy/check-latest-main.sh
+      - deploy/tx/frontend.compose.yml
+      - deploy/tx/deploy.sh
+      - deploy/tx/common.compose.yml
+      - deploy/tx/docker-compose.yml
   workflow_dispatch:
 
 permissions:
@@ -23,8 +40,10 @@ env:
     docs/WotBTools_League_Rating_V6.md
     deploy/nginx/nginx.conf
     deploy/check-latest-main.sh
-    deploy/tx/**
-
+    deploy/tx/frontend.compose.yml
+    deploy/tx/deploy.sh
+    deploy/tx/common.compose.yml
+    deploy/tx/docker-compose.yml
 concurrency:
   group: deploy-frontend
   cancel-in-progress: true
@@ -109,6 +128,9 @@ jobs:
           else
             echo 'existing_digest=' >> "$GITHUB_OUTPUT"
           fi
+      - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
+        run: bash scripts/fetch-agent-wasm.sh
+
       - uses: docker/setup-buildx-action@v4
       - name: Build and publish this frozen image
         id: build_image
