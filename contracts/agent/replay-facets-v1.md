@@ -1,12 +1,13 @@
 # WoT-Blitz-Agent 回放数据切面契约（replay facets）v1
 
 > Producer: [`fanypcd/WoT-Blitz-Agent`](https://github.com/fanypcd/WoT-Blitz-Agent)（MIT）
-> · 状态：消费方目标契约；截至 2026-09-28，上游公开 `main`（`fe055367`）尚无
->   `src/facets/` 或 `wotb-agent facets`。需待生产端实现并用真实回放验证。
+> · 状态：生产方行为契约。上游 `main` 已于 2026-09-29 随 commit
+>   [`427975f`](https://github.com/fanypcd/WoT-Blitz-Agent/commit/427975f) 发布
+>   `src/facets/` 与 `wotb-agent facets` 导出入口；样例可从该 SHA 重导出复现。
 >
 > **性质声明**：本文档规定预期的公开消费 DTO 形状与语义边界，
 > 供 WotBTools 消费侧（Web playback / Java / AI 编排）对表。它**不是协议证据主张**：
-> Agent Rust Core 是未来回放解析与领域解释的上游来源；WotBTools 现有研究档案
+> Agent Rust Core 是回放解析与领域解释的上游来源；WotBTools 现有研究档案
 > （见 `docs/research/replay/README.md`）保留交叉验证证据，不定义 Agent 内部模型。
 
 ## 1. 契约形状总则
@@ -26,9 +27,11 @@
 | **ai-review** | `*.facet.ai.json` | AI 复盘编排（→ Java → LLM） | 花名册 + 类型化事件流（spawn/shot/damage/kill/visibility/counter/damage_tick）+ 结算锚点 |
 | **hof** | `*.facet.hof.json` | Java → PostgreSQL | 结算精简行（14 人花名册战绩，无任何时序数据） |
 
-现存匿名 [`samples/hof.sample.json`](samples/hof.sample.json) 仅供形状参考，尚不能从上游公开 `main` 重导出。
-原 ai-review 样例把未知时长写为 `0.0`，且 84 条 visibility 中有 58 条 EID 不在 roster，已撤下；
-待上游实现以下不变量并从真实匿名回放重导出后再加入。playback 切面因含完整位置轨迹
+两份样例均已从真实匿名回放经上游 `427975f` 重导出，并通过以下不变量核验：
+`duration_secs` 未知输出 null（原样例误写 `0.0`，已修复为可空语义）；visibility 事件
+84 → 26 条，全部可联表到 roster（原 58 条未证明实体类型的裸 EID 已在生产端过滤）。
+[`samples/hof.sample.json`](samples/hof.sample.json) ·
+[`samples/ai-review.sample.json`](samples/ai-review.sample.json)。playback 切面因含完整位置轨迹
 （单场 ~10MB 量级）不入库，形状以本文档 §2.1 的消费要求为准。
 
 ### 2.1 playback（`PlaybackData`）
@@ -70,12 +73,12 @@
 ## 3. 复现
 
 ```bash
-# 待上游发布 facets 命令后，在 Agent 仓库（MIT）执行：
+# 上游 main（427975f）已发布，在 Agent 仓库（MIT）执行：
 wotb-agent facets <file.wotbreplay> --parts playback,ai,hof --tank-cache data/tank_cache.json
 # 互验报告随导出输出：0x0c 过程计数 vs 结算总量（作者口径），对不上标 MISMATCH
 ```
 
-已保留的 hof 样例来自匿名回放，但当前公开 producer 不提供可复现的 facets 导出入口。
+样例由客户端匿名回放（Anonyme 场次）产出，昵称/账号为游戏侧匿名化占位；从 `427975f` 重跑上述命令可逐字节复现。
 
 ## 4. 与 WotBTools 既有面的关系
 
@@ -86,5 +89,5 @@ wotb-agent facets <file.wotbreplay> --parts playback,ai,hof --tank-cache data/ta
 
 ## 5. 版本记录
 
-- v1（草案）：三切面目标形状；已知开放项：上游 Facet 发布与真实回放重导出、0x0c 次数口径互验、结算时长 root5 解码、
+- v1（2026-09-29 随上游 `427975f` 发布）：三切面 + 真实匿名回放样例（不变量已核验）；已知开放项：0x0c 次数口径互验（待非匿名场次）、结算时长 root5 解码、
   评审切面暂不含点亮协助的位置级归因。

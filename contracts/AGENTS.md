@@ -8,4 +8,4 @@
 - `frontend/src/api/generated/` 是生成产物，不手工编辑；fixture 必须使用生产形状且不得包含凭据、token 或用户回放内容。
 - 修改 wire contract 时运行 `npm run api:lint`, `npm run api:check`, `npm run api:fixture` 及受影响的后端/前端测试。
 - `mq/parser-messages.json` 是 RabbitMQ parser 协议的 JSON Schema（`parser.request` / `parser.result` / `parser.failed`），不是 HTTP contract。它的应用侧权威是 `java/wotb-broker-rabbitmq` 的 `ParserMessageCodec`，两者由该模块的 `ParserMessageContractTest` 互锁（`required` 集合 ↔ 实际产出属性集合、`const` ↔ `SCHEMA_VERSION`）；改任一文件必须同步另一个，并且 `schemaVersion` 不兼容变更要按 fail-closed 处理（不得让旧版本被静默降级接受）。
-- `agent/` 是上游 WoT-Blitz-Agent（fanypcd/WoT-Blitz-Agent，MIT）回放 Facet 的消费目标契约（`replay-facets-v1.md`）。上游公开 `main` 尚无 Facet 导出入口；现存 hof 样例仅供形状参考，不得把它或已撤下的 ai-review 样例宣称为当前 producer 可复现输出。Facet 发布后必须从真实匿名回放重导出样例、验证不变量，再转为生产方行为契约。它不是协议证据主张，也不受 HTTP/MQ 契约的生成与互锁流程约束；协议语义权威仍在 `docs/research/replay/`。
+- `agent/` 是上游 WoT-Blitz-Agent（fanypcd/WoT-Blitz-Agent，MIT）回放 Facet 的生产方行为契约（`replay-facets-v1.md`）。上游 `main` `427975f` 已实现 Facet 导出；两份样例已从真实匿名回放重导出并核验空值/联表不变量（此前的失真 ai-review 样例已替换）。它不是协议证据主张，也不受 HTTP/MQ 契约的生成与互锁流程约束；协议语义权威仍在 `docs/research/replay/`。消费方忽略未知键；生产方同版本只加字段，不兼容变更递增顶层 `version`。
