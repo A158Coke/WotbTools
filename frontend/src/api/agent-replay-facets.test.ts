@@ -15,8 +15,8 @@ import {
 
 const SAMPLES_DIR = join(__dirname, '../../../contracts/agent/samples')
 
-function readSample(name: string): unknown {
-  return JSON.parse(readFileSync(join(SAMPLES_DIR, name), 'utf-8'))
+function readSample(name: string): Record<string, any> {
+  return JSON.parse(readFileSync(join(SAMPLES_DIR, name), 'utf-8')) as Record<string, any>
 }
 
 function hasSamples(): boolean {
