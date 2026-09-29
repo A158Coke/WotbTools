@@ -12,9 +12,10 @@ import { parseAgentFacetsFromBytes } from '../api/agent-replay-facets.js'
 
 const { t } = useI18n()
 
-// 资产基址（?assets= 覆盖）：WASM 产物与展示名表同源（wotbagent 资产包布局）
+// 资产基址（?assets= 覆盖）：承载展示名表等静态数据（wotbagent 资产包布局）
 const ASSET_BASE = (new URLSearchParams(window.location.search).get('assets') ?? '').replace(/\/+$/, '')
-const WASM_URL = `${ASSET_BASE}/wasm/wotb_replay_wasm.js`
+// WASM 产物走同源 /wasm/（#394 build-agent-wasm.sh 输出 common/assets/wasm/ → dist）
+const WASM_URL = '/wasm/wotb_replay_wasm.js'
 
 async function loadTankNames() {
   try {
