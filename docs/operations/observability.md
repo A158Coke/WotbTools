@@ -256,7 +256,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 - Backend production gate 还确认至少一个稳定的 Hikari 指标（`hikaricp_connections_active`），避免连接池遥测在 dashboard 中静默失效。
 - Keycloak production gate 确认应用 realm metadata / OIDC discovery；Keycloak 镜像使用 PostgreSQL 与 `start --optimized` runtime，且不启用或暴露 management health/metrics 端点。登录、QQ callback、broker/IdP 错误与 WARN/ERROR 事件通过 Alloy → Loki 观测。
 
-### CI 实际验证项（PR 时自动执行，见 `.github/workflows/ci.yml` `observability_config` job）
+### CI 实际验证项（PR 时自动执行，见 `.github/workflows/ci-observability.yml` `observability_config` job）
 
 > **CI 验证边界**：静态检查覆盖生产观测配置语法/结构、
 > dashboard 合同与端口安全；runtime smoke 会实际启动最小 Prometheus/Loki/Grafana、Alpine emitter，

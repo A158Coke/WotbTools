@@ -1,0 +1,84 @@
+name: CI / keycloak
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  keycloak_providers:
+    name: Keycloak providers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Official QQ provider
+        working-directory: keycloak-qq-provider
+        run: mvn --batch-mode --no-transfer-progress -s ../java/settings-ci.xml -Dmaven.repo.local=../java/.m2repo test
+      - name: Wargaming provider
+        working-directory: keycloak-wargaming-provider
+        run: mvn --batch-mode --no-transfer-progress -s ../java/settings-ci.xml -Dmaven.repo.local=../java/.m2repo test
+      - name: Validate Keycloak provider/runtime safety contract
+        run: bash scripts/ci/test-keycloak-tofu-contract.sh
+  keycloak_runtime:
+    name: Keycloak runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Validate Keycloak runtime inputs
+        run: |
+          set -euo pipefail
+          bash -n docker/keycloak/wotbtools-entrypoint.sh
+      - name: Smoke production Keycloak image against disposable PostgreSQL
+        run: bash deploy/test-keycloak-runtime.sh
+      - name: Smoke existing image identity mode
+        env:
+          WOTB_KEYCLOAK_TEST_IMAGE: wotbtools-keycloak:ci-head
+          WOTB_KEYCLOAK_SKIP_BUILD: '1'
+          HEAD_SHA: ${{ inputs.head_sha }}
+        run: |
+          set -euo pipefail
+          docker build --build-arg "BUILD_COMMIT=$HEAD_SHA" -f docker/Dockerfile.keycloak -t "$WOTB_KEYCLOAK_TEST_IMAGE" . >/dev/null
+          bash deploy/test-keycloak-runtime.sh
+  tofu_plans:
+    name: OpenTofu validation / keycloak
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    # PR OpenTofu work is local validation only: fmt, init without a backend,
+    # validate, and root-specific safety fixtures. No production plan or credentials
+    # are available to this workflow.
+    env:
+      TF_IN_AUTOMATION: "true"
+      CHECKPOINT_DISABLE: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+      - name: Format, initialize without production state, and validate
+        env:
+          ROOT_DIR: infra/tofu/keycloak
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+          tofu fmt -check -recursive
+          tofu init -backend=false -input=false
+          tofu validate

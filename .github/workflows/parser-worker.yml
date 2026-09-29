@@ -3,6 +3,34 @@ name: Parser Worker
 on:
   push:
     branches: [main]
+    paths:
+      - .github/workflows/parser-worker.yml
+      - .dockerignore
+      - docker/Dockerfile.parser-worker
+      - common/tankopedia-tier7.json
+      - common/tankopedia-tier8.json
+      - common/tankopedia-tier9.json
+      - common/tankopedia-tier10.json
+      - common/map_names.json
+      - common/tank_tactical_profiles.json
+      - common/map-semantics/**
+      - java/pom.xml
+      - java/**/pom.xml
+      - java/settings-docker.xml
+      - java/wotb-contracts/**
+      - java/wotb-object-storage-minio/**
+      - java/wotb-broker-rabbitmq/**
+      - java/wotb-core/**
+      - java/wotb-result/**
+      - java/wotb-playback/**
+      - java/wotb-replay-processing/**
+      - java/wotb-parser-worker/**
+      - contracts/mq/**
+      - deploy/dependency-readiness.sh
+      - deploy/dependency-readiness.py
+      - deploy/deploy.sh
+      - deploy/docker-compose.prod.yml
+      - deploy/check-latest-main.sh
   workflow_dispatch:
 
 permissions:
@@ -38,7 +66,6 @@ env:
     deploy/deploy.sh
     deploy/docker-compose.prod.yml
     deploy/check-latest-main.sh
-
 concurrency:
   group: deploy-parser-worker
   cancel-in-progress: true

@@ -112,71 +112,28 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 ### PR CI validation gate
 
-`.github/workflows/ci.yml` 是唯一 PR validation workflow，始终运行 Python、backend、Keycloak provider/runtime、frontend（含两套真实浏览器回归）、HTTP contract、Android、observability、deployment smoke 與六个 OpenTofu roots，并由稳定的 `CI / Required Gate` 汇总。Workflow 保留 PR/base/head SHA 身份校验；不使用自研 changed-path selector，也不在 workflow trigger 上设置 paths，以免 required check 被跳过后保持 pending。PR CI 不接触 production credentials、host、state 或 authenticated plan。
+`.github/workflows/ci-gate.yml` 是唯一 PR 入口：校验 PR/base/head SHA 身份，用 `dorny/paths-filter` 将变更映射到 owner，调用相应 reusable CI workflow，最后由稳定的 `CI / Required Gate` 汇总。未受影响的 owner 跳过；六个 OpenTofu root 只在各自 owner 受影响时验证。PR trigger 不设置 paths，确保 required check 始终产生。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
 
-### Replay Engine（Rust/WASM）
+### CI/CD owner 依赖清单
 
-`.wotbreplay` 的解析权威是客户端 Replay Engine，位于 `replay-engine/`（Cargo workspace）：
+`ci-gate.yml` 读取 `.github/ci-owner-paths.yml` 作为 PR 路由表；生产 owner workflow 的 `on.push.paths` 与 `PRODUCTION_INPUT_PATHS` 必须逐项相同。共享输入按真实依赖 fan-out，未列出的普通文档变更只执行 PR gate。下表是维护边界索引，具体路径以 workflow 为准。
 
-```text
-replay-engine/
-├── Cargo.toml
-└── crates/
-    ├── replay-core/   # 容器 / pickle / protobuf framing + result、stream facts
-    │                  # 禁止 HTTP/DB/框架/文件系统专用 API，只接受 bytes 或 Read + Seek
-    └── replay-wasm/   # wasm-bindgen 边界：parseResult() / parseStream() → JSON
-```
-
-工具链与本地命令：
-
-```bash
-rustup toolchain install stable-x86_64-pc-windows-gnu   # 本机无 MSVC linker 时用 GNU host
-rustup target add wasm32-unknown-unknown
-cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-# Windows 上若上一条报 `Access is denied (os error 5)`（安全代理拒绝执行单个测试二进制，非代码问题），
-# 改用逐目标调用：cargo test -p replay-core --lib / --test fixtures / --test rating_parity / --test aggregate_parity
-cargo build -p replay-wasm --target wasm32-unknown-unknown --release
-cargo install wasm-bindgen-cli --version 0.2.129 --locked   # 与本 workspace 的 wasm-bindgen 版本一致
-wasm-bindgen --target nodejs --out-dir crates/replay-wasm/pkg \
-  target/wasm32-unknown-unknown/release/replay_wasm.wasm
-wasm-bindgen --target web --out-dir crates/replay-wasm/pkg-web \
-  target/wasm32-unknown-unknown/release/replay_wasm.wasm
-node tests/wasm-smoke.mjs           # Node 边界
-node tests/browser-wasm-smoke.mjs   # headless Chromium（主线程 + module worker），复用 frontend/scripts/browser-chrome.mjs
-node tests/corpus-scan.mjs <dir>    # 本地语料扫描（gitignored 样本，例如 common/data；非 CI 测试）
-```
-
-`ci.yml` 的 `replay_engine` job 使用同一组命令（不用 wasm-pack，避免运行时下载与未锁定安装脚本）。
-
-**Java golden（parity oracle）**：`tests/golden/*.json` 由 `tests/java-golden/*.java` 跑生产 Java 实现生成，CI 无 Java 工具链时用它验证 Rust 移植。每个 golden 只由**同一个提交里的** Rust parity test 消费：
-
-| golden | 生成器 | 消费测试 |
-|---|---|---|
-| `tests/golden/league-rating-v41.json` | `RatingGoldenDumper`（Rating V4.1 + V6、Result、Aggregate、Normalizer） | `rating_parity`、`aggregate_parity` |
-| `tests/golden/packet-stream.json` | `PacketStreamGoldenDumper`（`data.wotreplay` 包流 framing 与诊断） | `stream_parity`、`stream_framing` |
-
-重新生成（需先在 `java/` 编译 `wotb-core`；`RatingGoldenDumper` 还要求 `spring-core` 与 Jackson 在 classpath 上）：
-
-```bash
-# A. Rating / Result / Aggregate
-javac -cp java/wotb-core/target/classes -d "$TMP/golden" replay-engine/tests/java-golden/RatingGoldenDumper.java
-java -cp "java/wotb-core/target/classes:$TMP/golden:<spring-core.jar>:<jackson-*.jar>" RatingGoldenDumper \
-  > replay-engine/tests/golden/league-rating-v41.json
-
-# B. 包流 framing（只要核心类）
-javac -cp java/wotb-core/target/classes -d "$TMP/golden" replay-engine/tests/java-golden/PacketStreamGoldenDumper.java
-java -cp "java/wotb-core/target/classes:$TMP/golden" PacketStreamGoldenDumper \
-  common/fixtures/replays > replay-engine/tests/golden/packet-stream.json
-```
-
-重跑后必须重新执行对应 parity test：golden 变更只有在 Rust 仍逐项一致时才代表 parity 成立。
-
-**大体积 parity 的写法（`packet-stream.json` 是模板）**：单回放约 11 万包，明文 dump 会有几十 MB。约定是「**全量等价交给摘要，明文只做有界抽样**」——whole-stream FNV-1a 64 digest（对每个包的 12 字节帧头 + payload 依序）+ 每 1000 包块摘要（不匹配时可定位到块）+ 按类型聚合统计，明文只留前 64 / 后 16 / 每 5000 一包；比较一律用整数与 **float 位模式**（`Float.floatToRawIntBits` ↔ `f32::to_bits`），绝不比较格式化后的浮点文本。注意两个已踩过的坑：真实流的 terminator 时钟为 0（因此 `clockRegressionCount >= 1` 恒成立、最大时钟不由 terminator 决定），以及 Java 的 packet type 是**有符号 int**（dump 时必须 `Integer.toUnsignedLong` 归一化，否则 `0xFFFFFFFF` 会一侧是 `-1`、一侧是 `4294967295`）。
-
-约定：解析预算与 strict contiguous framing 见 [`docs/reference/replay-data.md`](reference/replay-data.md)；协议语义权威按 [`docs/research/replay/README.md`](research/replay/README.md) 的读取顺序；u64 identifier（`arenaId` / `gameAccountId` / `vehicleId`）过 WASM/JSON 边界一律用字符串。`replay-engine/**` 由 `ci.yml` 的 replay engine job 验证，`CI / Required Gate` 仍是唯一 required check。
+| Owner | Source / shared inputs | Runtime inputs | PR validation | OpenTofu root | Production workflow |
+|---|---|---|---|---|---|
+| Business API | Java control/web modules、HTTP/MQ contracts、shared common data | business-api image、TX Compose、dependency readiness | Maven、HTTP contract | — | `business-api.yml` |
+| Parser Worker | Java parser/processing modules、MQ contract、shared common data | parser-worker image、Yecao Compose、dependency readiness | Maven | — | `parser-worker.yml` |
+| Frontend | Vue、HTTP contract、shared assets/map/tier data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
+| Keycloak | QQ/Wargaming providers、Keycloak image | realm runtime、TX Compose | provider/runtime、Tofu | `keycloak` | `keycloak.yml` |
+| Android | Android source、native bridge、release helpers | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |
+| MinIO | MinIO image、MinIO config | Yecao Compose | Compose、Tofu | `minio` | `minio.yml` |
+| Business PostgreSQL | root config、backup/restore | TX Compose、local state | disposable PostgreSQL、Tofu | `postgres-business` | `business-postgres.yml` |
+| Keycloak PostgreSQL | root config、backup | TX Compose、local state | backup safety、Tofu | `postgres-keycloak` | `keycloak-postgres.yml` |
+| RabbitMQ | MQ contract、root config | TX Compose、local state | runtime safety、Tofu | `rabbitmq` | `rabbitmq.yml` |
+| Observability | Prometheus/Loki/Alloy/Grafana config | Yecao Compose、local state | config/runtime、Tofu | `grafana` | `observability.yml` |
+| Caddy / TX Alloy | gateway / TX shipper config | TX Compose | config validation | — | `caddy.yml` / `alloy-tx.yml` |
+| Deployment / Python | shared deploy policy / common Python tools | shared scripts | contract smokes / unit tests | — | — |
 ---
 
 ## 后端架构速览
@@ -310,8 +267,7 @@ Lease（读取期间 TTL 不清）。
 Tankopedia）；Web `Mapper` 消费 `Tankopedia` 选最常使用（场次降序 → 官方名忽略大小写升序 → tankId
 升序；无可靠名称返回 null），生成 `LeaguePlayerSummaryDto.mostUsedVehicle`
 （`LeagueVehicleUsageDto`）。前端 Drawer 渲染贴图（本地 Tier X WebP，缺图/非 Tier X 文字降级）与占比；
-Battle 直接取该场玩家行的结构化身份 `vehicleId`（= `PlayerResult.tankId`，B6 后
-`tank_id` 不再是列）与 `tank_name` 列。
+Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）。
 
 ### Hall of Fame / Hundred Battles
 
@@ -754,9 +710,9 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 
 生产 CI/CD 使用唯一 PR 验证入口和独立的 service owner workflows：
 
-- `.github/workflows/ci.yml` 是唯一 PR 验证工作流；每个 PR 运行实际验证 jobs，
-  `CI / Required Gate` 汇总全部结果。Backend 运行 Maven full reactor，frontend 运行类型检查、
-  单测、两套真实浏览器回归和 build；部署 smoke 校验运行时契约。PR 验证不 push 镜像。
+- `.github/workflows/ci-gate.yml` 是唯一 PR 入口；按 changed paths 调用受影响的 `ci-<owner>.yml`，
+  `CI / Required Gate` 汇总受影响结果。Backend 运行 Maven，frontend 运行类型检查、单测、两套真实浏览器回归和 build；
+  OpenTofu 每个 owner 只验证自己的 root。PR 验证不 push 镜像。
 - `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 与
   `minio.yml` 分别构建一个应用镜像。每个 workflow 保留 SHA tag 供诊断，并在确认 source SHA 仍为
   远端 main HEAD 后发布 `latest`；部署只使用所属服务的 `latest`。服务级 concurrency 会取消旧 main
@@ -770,7 +726,7 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
   失败仍按现有契约显示为 degraded，不改变应用服务结果。
 - 三个数据更新 workflow (`update-tankopedia.yml`、`update-equipment.yml`、`update-crew-skills.yml`)
   保持独立，生成 PR 后核对 open PR 的 main base、自动化 head branch 和精确 head SHA，再 dispatch
-  `ci.yml`；CI 通过只读 GitHub API 核对该 run 仍验证同一 PR head。它们不自动 merge。
+  `ci-gate.yml`；CI 通过只读 GitHub API 核对该 run 仍验证同一 PR head。它们不自动 merge。
 - main 是应用的唯一目标状态；生产镜像来自当前 main 的 `latest`。TX 服务定义按 owner 分离，
   各部署只渲染所属服务和通用探针。固定基础设施使用既有 volume、network 与 OpenTofu state，
   不读取应用镜像发布记录。运行中的版本通过 `docker inspect`、镜像 digest 与 `BUILD_COMMIT` 查询。
@@ -832,7 +788,7 @@ Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-confi
 | AI 复盘架构 | `docs/architecture/ai-review.md` |
 | 回放重建流水线 | `docs/architecture/replay-pipeline.md` |
 | 地图鸟瞰 / 战局回放 | `docs/features/battle-playback.md` |
-| 战斗表现（contribution/KAST/Impact，**已退役**，见 `docs/ROADMAP.md` Not planned） | 无 canonical 文档；canonical 列集见 `AggregateColumns` / `Columns` |
+| 战斗表现 | `docs/features/performance.md` |
 | 历史 Rating V2（管理员灰度） | `docs/features/rating-v2.md` |
 | League Rating | `docs/features/league-rating.md` |
 | 名人堂 / 百场 | `docs/features/hall-of-fame.md` |

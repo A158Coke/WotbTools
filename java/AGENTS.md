@@ -2,7 +2,7 @@
 
 > 仓库级硬约定见 `.agents/AGENTS.md`；环境/命令/部署背景见 `docs/DEVELOPER_GUIDE.md`。
 
-## 构建（全部经 ci.yml / settings.xml 核对）
+## 构建（全部经 owner CI / settings.xml 核对）
 
 - JDK 25（CI `java-version: "25"`）；本地 Maven 使用 `-s java/settings.xml`（Aliyun 镜像 + 独立 `java/.m2repo`）；GitHub Actions 使用无 mirror 的 `java/settings-ci.xml` 并继续使用独立本地仓库。容器构建用 `java/settings-docker.xml`。
 - 全量测试：`cd java && mvn -s settings.xml test`（JAVA_HOME 指向 JDK 25）——**CI authoritative validation**，

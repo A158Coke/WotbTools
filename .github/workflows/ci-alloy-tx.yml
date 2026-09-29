@@ -1,0 +1,21 @@
+name: CI / alloy-tx
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Validate TX Alloy configuration
+        run: bash deploy/validate-alloy-config.sh "$PWD/deploy/tx/alloy/config.alloy"
