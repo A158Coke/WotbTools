@@ -239,16 +239,17 @@ function assertContractVersion(v: unknown, path: string): void {
  * 信封形状校验（trust boundary：进 view model 前的完整结构契约锁定）。
  *
  * 锁定面（缺一即抛，杜绝"伪装成校验的 unsafe cast"）：
- * - 信封 version === 1
- * - playback：version === 1、meta、vehicles/shots/kills/periods/visibility 数组
- * - ai：version === 1、battle、rosters/events/settlements 数组
- * - hof：version === 1、battle、entries 数组
+ * - playback/ai/hof 三切面各顶层 version === 1（契约 §1："三个切面顶层均带
+ *   version: 1"；上游 envelope_json 组装的信封 `{playback,ai,hof}` 自身无版本键——
+ *   版本语义在切面层，消费方对信封未知键忽略）
+ * - playback：meta、vehicles/shots/kills/periods/visibility 数组
+ * - ai：battle、rosters/events/settlements 数组
+ * - hof：battle、entries 数组
  * 语义不变量：visibility.eid ∈ rosters[].eid（裸 EID 不泄漏）。
  * 未知键忽略 = 契约的同版本加字段策略；字段级取值语义由类型承载。
  */
 export function validateAgentFacetEnvelope(value: unknown): AgentFacetEnvelope {
   const env = assertObject(value, 'envelope')
-  assertContractVersion(env.version, 'envelope.version')
 
   const playback = assertObject(env.playback, 'playback')
   assertContractVersion(playback.version, 'playback.version')
@@ -334,4 +335,93 @@ export async function parseAgentFacetsFromBytes(bytes: Uint8Array): Promise<Agen
 export function parseAgentFacetsFromJson(json: string | unknown): AgentFacetEnvelope {
   const value = typeof json === 'string' ? (JSON.parse(json) as unknown) : json
   return validateAgentFacetEnvelope(value)
+}
+
+// ---------- 射击复现通道（parseShotReplays；上游 shots 数组同构透传） ----------
+
+/**
+ * 单发射击复现数据（上游 replay-core ShotReplayData；字段语义见上游
+ * crates/replay-core/src/replay/combat/shots.rs——本接口只标注消费面，
+ * 未知键透传保留：3D 查看器消费弹道/锚点/时间线等全部字段）。
+ */
+export interface AgentShotReplay {
+  index: number
+  time_s: number
+  damage: number
+  target_name: string
+  is_kill: boolean
+  shooter_eid: number
+  shooter_name?: string
+  is_author?: boolean
+  shooter_pos: number[]
+  shooter_ang: number[]
+  target_pos: number[]
+  target_ang: number[]
+  target_turret_yaw: number
+  shooter_turret_yaw: number
+  /** 弹道两点（回放世界系，米）：炮口发射位置 / 弹道终点 */
+  ball_a: number[]
+  ball_b: number[]
+  launch_velocity: number[]
+  /** 命中结果位图（0x0008 跳弹 / 0x0010 击穿 / 0x1000 HE 爆炸分支…） */
+  hit_flags: number
+  shell_id: number
+  shell_kind?: string
+  shell_slot?: number
+  shooter_shell_idx?: number
+  armor_group: number
+  /** 0=无 1=未击穿 2=间隙止 3=有伤害 4=履带/模块 255=未获取 */
+  game_hit_result: number
+  target_tank_id?: number
+  shooter_tank_id?: number
+  target_config_idx?: number
+  shooter_config_idx?: number
+  shooter_equipment?: number
+  target_equipment?: number
+  /** 逐发质量标注（降级/陈旧/兜底路径，UI ⚠ 悬停依据） */
+  quality?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+function assertShotArray(v: unknown): AgentShotReplay[] {
+  if (!Array.isArray(v)) throw new Error('agent shots: 顶层必须是 shots 数组')
+  for (const s of v) {
+    if (!isObject(s) || typeof s.index !== 'number') {
+      throw new Error('agent shots: 每发必须是有数值 index 的对象')
+    }
+  }
+  return v as AgentShotReplay[]
+}
+
+/**
+ * 全局重编号（上游 Web /api/replay/shots 同规则，src/web/mod.rs：
+ * `all_shots.sort_by(time_s)` + `s.index = i + 1`）。WASM parseShotReplays 的
+ * 作者严格 + 他人宽松两路各自持局部 index（上游 shots.rs:1581 注明"合并后由
+ * 调用方按 time_s 全局重编号"），消费方必须收敛，否则 shot= 查错弹。
+ */
+export function normalizeAgentShotIndices(shots: AgentShotReplay[]): AgentShotReplay[] {
+  const sorted = shots.slice().sort((a, b) => {
+    const ta = a.time_s ?? a.fire_time ?? 0
+    const tb = b.time_s ?? b.fire_time ?? 0
+    return ta - tb
+  })
+  sorted.forEach((s, i) => {
+    s.index = i + 1
+  })
+  return sorted
+}
+
+/**
+ * 本地通道：.wotbreplay 字节 → WASM parseShotReplays → 全员射击链数组
+ * （time_s 排序 + 全局重编号，与 /api/replay/shots 响应同构：
+ * 作者严格路径 + 他人宽松路径合并，含弹道/命中判定/逐发质量标记/双方渲染锚点）；
+ * 文件不出本机（契约 §6）。
+ */
+export async function parseAgentShotsFromBytes(bytes: Uint8Array): Promise<AgentShotReplay[]> {
+  const mod = await loadAgentWasm()
+  const modWithShots = mod as AgentWasmModule & { parseShotReplays?: (b: Uint8Array) => string }
+  if (typeof modWithShots.parseShotReplays !== 'function') {
+    throw new Error('agent wasm: parseShotReplays 缺失（产物版本早于 v0.1.6）')
+  }
+  return normalizeAgentShotIndices(assertShotArray(JSON.parse(modWithShots.parseShotReplays(bytes)) as unknown))
 }

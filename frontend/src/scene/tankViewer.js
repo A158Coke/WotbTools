@@ -1,7 +1,8 @@
 // 3D 装甲检视器：viewer.rs 嵌入 INDEX_HTML 的模块脚本整体抽取平移（含另一会话新增的
 // 配件自动判定逻辑），除包一层 initTankViewer() 外一行未改。
-// 依赖根级路由：/api/tank、/glb、/api/tank_filter、/api/shells、/api/penetrate、
-// /api/replay_shot、/api/hold、/api/ready（见 src/web/mod.rs）。
+// 数据面（WotBTools 增量）：tank 数据/名册/弹表/GLB/封面/射击数据经 agentData.js
+// 资产面优先 + /api 回退；击穿判定为 penetration.js 客户端移植（上游 Rust 单测同源）。
+// /api/hold、/api/ready 保留（Agent 自托管无头截图链专用，静态面缺席时静默无操作）。
 // 调用前须设置 window.__INITIAL_TANK__ / __INITIAL_SHOOTER__（ArmorView 从路由参数注入）。
 // 生命周期：返回 { destroy }——SPA 路由离开时必须调用（ArmorView onBeforeUnmount）：
 // 取消 rAF 循环、摘除 window 监听器、释放 WebGL 上下文；不调用则多次进出路由会
@@ -10,6 +11,15 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { poseFromYPR } from './glbRig.js'
+import {
+    fetchTankData,
+    fetchTankFilter,
+    fetchShells,
+    fetchReplayShots,
+    judgePenetration,
+    tankImageUrl,
+    assetUrl,
+} from './agentData.js'
 
 export function initTankViewer() {
 
@@ -1018,7 +1028,7 @@ export function initTankViewer() {
                 document.getElementById('loading').textContent = 'Failed to load ' + phase + ': ' + msg;
             };
 
-            loader.load(tankData.model_url, function(gltf) {
+            loader.load(assetUrl(tankData.model_url), function(gltf) {
                 armorModel = gltf.scene;
                 _armorPrefixCache = null;   // 装甲模型重建后前缀缓存失效
                 tagArmorPlates(armorModel);
@@ -1047,7 +1057,7 @@ export function initTankViewer() {
                 applyUrlOptionsOnce();
             }, undefined, fail('armor model'));
 
-            loader.load(tankData.visual_model_url, function(gltf) {
+            loader.load(assetUrl(tankData.visual_model_url), function(gltf) {
                 tankModel = gltf.scene;
                 applyModelTransforms(tankModel);
                 tagModuleMeshes(tankModel);
@@ -1154,10 +1164,9 @@ export function initTankViewer() {
             const shotNo = parseInt(QP.get('shot'), 10);
             const isShotReplay = !isNaN(shotNo);
             if (isShotReplay) {
-                fetch('/api/replay_shot').then(r => {
-                    if (!r.ok) { throw new Error('接口错误 HTTP ' + r.status); }
-                    return r.json();
-                }).then(d => {
+                // 数据来源：射击复现表经 sessionStorage 交接（WotBTools 纯客户端链），
+                // 无交接回退 Agent 自托管 /api/replay_shot（agentData.fetchReplayShots）
+                fetchReplayShots().then(d => {
                     const shots = d.shots || d;
                     const s = (Array.isArray(shots) ? shots : []).find(x => x.index === shotNo);
                     if (!s) { showShotError('shot #' + shotNo + ' 不存在（接口返回 ' + (Array.isArray(shots) ? shots.length : 0) + ' 发）'); return; }
@@ -1353,9 +1362,9 @@ export function initTankViewer() {
                         // URL 前缀跟随目标模型（Web 服务挂 /armor_view/glb/...，独立 viewer 挂 /glb/...，
                         // 硬编码 /glb/ 在 Web 下 404）；/api/tank 不手动拼前缀——viewer_index_html
                         // 已对字面量 '/api/ 加前缀，手动拼会双重前缀 404。
-                        const shooterGlbUrl = tankData.visual_model_url.replace(/\/glb\/\d+\//, '/glb/' + tid + '/');
+                        const shooterGlbUrl = assetUrl(tankData.visual_model_url.replace(/\/glb\/\d+\//, '/glb/' + tid + '/'));
                         return Promise.all([
-                            fetch('/api/tank/' + tid).then(r => r.ok ? r.json() : null).catch(() => null),
+                            fetchTankData(tid).catch(() => null),
                             new Promise(function(res) {
                                 new GLTFLoader().load(shooterGlbUrl,
                                     function(g) { res(g); }, undefined, function() { res(null); });
@@ -2696,7 +2705,7 @@ export function initTankViewer() {
 
         async function loadTarget(tid) {
             tidyTrajectory();
-            tankData = await (await fetch('/api/tank/' + tid)).json();
+            tankData = await fetchTankData(tid);
             const q = new URLSearchParams(location.search);
             const wantCfg = parseInt(q.get('config'), 10);
             const defaultCfg = Math.max(0, (tankData.configs ? tankData.configs.length : 1) - 1);
@@ -2804,12 +2813,11 @@ export function initTankViewer() {
         }
 
         async function loadShooter(tid) {
-            shooterData = await (await fetch('/api/tank/' + tid)).json();
+            shooterData = await fetchTankData(tid);
             let shells = shooterData.shells || [];
             let caliber = shooterData.caliber || 120;
             if (!shells || shells.length === 0) {
-                const resp = await fetch('/api/shells/' + tid);
-                const data = await resp.json();
+                const data = await fetchShells(tid);
                 if (Array.isArray(data)) {
                     shells = data;
                 } else {
@@ -2887,7 +2895,7 @@ export function initTankViewer() {
             const img = document.createElement('img');
             img.className = 'tc-img';
             img.loading = 'lazy';
-            img.src = '/api/tank_image/' + t.id;
+            img.src = tankImageUrl(t.id);
             img.alt = t.name;
 
             const body = document.createElement('div');
@@ -2969,7 +2977,7 @@ export function initTankViewer() {
         }
 
         async function populateTankLists(initTargetId, initShooterId) {
-            tanksList = await (await fetch('/api/tank_filter')).json();
+            tanksList = await fetchTankFilter();
             currentShooterId = initShooterId || initTargetId;
             currentTargetId = initTargetId;
             populateFilterOptions();
@@ -3653,11 +3661,9 @@ export function initTankViewer() {
                 }),
             };
 
-            fetch('/api/penetrate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(req),
-            }).then(r => { if (!r.ok) throw new Error('API ' + r.status); return r.json(); }).then(res => {
+            // 判定客户端执行（penetration.js 移植，上游 Rust calculate 同源单测锁定）；
+            // wire 形状与 /api/penetrate 响应一致，消费链无感
+            judgePenetration(req).then(res => {
                 if (penSeq !== __penCheckSeq) return;   // 过期响应：更新位姿的判定已在途，直接丢弃
                 let trajLayers = res.layers.map(l => {
                     const ah = hitsForCheck.find(ah => ah.partName === l.part_name);
@@ -3706,8 +3712,8 @@ export function initTankViewer() {
                                 view_dir: [reflect.x, reflect.y, reflect.z],
                                 hits: ricHits.map(ah => ({ section: ah.section, plate_id: ah.plateId, thickness: ah.thickness, normal: [ah.normal.x, ah.normal.y, ah.normal.z], point: [ah.point.x * mpu, ah.point.y * mpu, ah.point.z * mpu], part_name: ah.partName })),
                             };
-                            fetch('/api/penetrate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ricReq) })
-                                .then(r => r.ok ? r.json() : null).then(ricRes => {
+                            judgePenetration(ricReq)
+                                .then(ricRes => {
                                     if (penSeq !== __penCheckSeq) return;   // 过期响应丢弃
                                     if (ricRes) {
                                         const ricLayers = ricRes.layers.map(l => ({ point: ricHits.find(ah => ah.partName === l.part_name)?.point || lastLayer.point, name: l.part_name, thickness: l.thickness, eff: l.effective, remainBefore: l.remaining_before, penetrated: l.penetrated, ricochet: l.ricochet, seg: 1 }));
