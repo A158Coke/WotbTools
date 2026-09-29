@@ -1,176 +1,66 @@
 <script setup>
 /**
- * Agent 三维回放页（上游 WoT-Blitz-Agent 切面消费，契约见
- * contracts/agent/replay-facets-v1.md）：本地 .wotbreplay 文件 → 浏览器 WASM
- * 解析 → three.js 全场回放。文件不出本机（契约 §6 纯客户端）。
- * 车辆展示名：来自上游资产包 data/tank_names.json（wotbagent 数据口径），非消费方 tankopedia。
+ * Agent 三维回放页（场景内核版）：本地 .wotbreplay → 浏览器 WASM 解析
+ * （parseReplayFacets，文件不出本机）→ playbackScene 全场渲染。
+ * 车辆展示名：来自上游资产包 data/tank_names.json（wotbagent 数据口径）。
  */
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import * as THREE from 'three'
-import { parseAgentFacetsFromBytes } from '../api/agent-replay-facets.js'
+import { createPlaybackStore } from '../scene/playbackStore.js'
+import { initPlayback } from '../scene/playbackScene.js'
+import { loadPlaybackData } from '../scene/replaySource.js'
 
 const { t } = useI18n()
 
-// 资产基址（?assets= 覆盖）：承载展示名表等静态数据（wotbagent 资产包布局）
+// 资产基址（?assets= 覆盖）：展示名表等静态数据（wotbagent 资产包布局）
 const ASSET_BASE = (new URLSearchParams(window.location.search).get('assets') ?? '').replace(/\/+$/, '')
 // WASM 产物走同源 /wasm/（#394 build-agent-wasm.sh 输出 common/assets/wasm/ → dist）
 const WASM_URL = '/wasm/wotb_replay_wasm.js'
 
-async function loadTankNames() {
-  try {
-    return await fetch(`${ASSET_BASE}/data/tank_names.json`).then((r) => (r.ok ? r.json() : null))
-  } catch {
-    return null
-  }
-}
-
+const store = createPlaybackStore()
+const stage = ref(null)
 const fileInput = ref(null)
-const phase = ref('idle') // idle | loading | ready | error
-const errorDetail = ref('')
-const facet = ref(null)
-const playing = ref(false)
-const progress = ref(0) // 0..1（相对切片时长）
+const seekPct = ref(0)
+let sceneApi = null
 
-const TEAM_COLORS = { 1: 0xe0665b, 2: 0x5b8fe1 }
-const UNKNOWN_COLOR = 0x9aa4ad
-const GROUND_HALF = 300
-
-const container = ref(null)
-let renderer = null
-let scene = null
-let camera = null
-let raf = 0
-let lastTs = 0
-let vehicleMeshes = []
-
-function statusText(key, detail = '') {
-  status.value = detail ? `${t(key)} ${detail}` : t(key)
-}
-
-function buildScene(containerEl) {
-  scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x11161d)
-  camera = new THREE.PerspectiveCamera(55, containerEl.clientWidth / 480, 1, 3000)
-  camera.position.set(0, 260, 260)
-  camera.lookAt(0, 0, 0)
-
-  const grid = new THREE.GridHelper(GROUND_HALF * 2, 60, 0x3a4654, 0x232b35)
-  scene.add(grid)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7))
-  const sun = new THREE.DirectionalLight(0xffffff, 0.8)
-  sun.position.set(200, 400, 150)
-  scene.add(sun)
-
-  renderer = new THREE.WebGLRenderer({ antialias: true })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  renderer.setSize(containerEl.clientWidth, 480)
-  containerEl.appendChild(renderer.domElement)
-}
-
-function buildVehicles(pb) {
-  const geometry = new THREE.BoxGeometry(3.4, 2.2, 6.6)
-  vehicleMeshes = pb.vehicles.map((v) => {
-    const color = v.team === 1 ? TEAM_COLORS[1] : v.team === 2 ? TEAM_COLORS[2] : UNKNOWN_COLOR
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ color }))
-    scene.add(mesh)
-    return { mesh, track: v }
-  })
-}
-
-function sampleAt(track, index, k) {
-  const i = Math.min(index, track.pos.length / 3 - 2)
-  const a = i * 3
-  const b = a + 3
-  const lerp = (arr, o) => arr[o] + (arr[b + (o - a)] - arr[a + (o - a)]) * k
-  return {
-    x: lerp(track.pos, a),
-    y: lerp(track.pos, a + 1),
-    z: lerp(track.pos, a + 2),
-    yaw: track.hull_yaw[i] + (track.hull_yaw[i + 1] - track.hull_yaw[i]) * k,
-  }
-}
-
-function applyTime() {
-  const pb = facet.value
-  if (!pb) return
-  const span = Math.max(pb.meta.duration - pb.meta.t_start, 0.1)
-  const t = pb.meta.t_start + progress.value * span
-  const idx = Math.min(Math.floor((t - pb.meta.t_start) / 0.1), pb.meta.samples - 2)
-  const k = Math.min(Math.max((t - pb.meta.t_start - idx * 0.1) / 0.1, 0), 1)
-  for (const { mesh, track } of vehicleMeshes) {
-    if (track.pos.length < 6) continue
-    const s = sampleAt(track, idx, k)
-    mesh.position.set(s.x, s.y + 1.2, s.z)
-    mesh.rotation.y = -s.yaw
-    mesh.visible = track.death_t === null || t <= track.death_t
-  }
-}
-
-function tick(ts) {
-  raf = requestAnimationFrame(tick)
-  if (!lastTs) lastTs = ts
-  const dt = (ts - lastTs) / 1000
-  lastTs = ts
-  if (playing.value && facet.value) {
-    progress.value = Math.min(progress.value + dt / 10, 1)
-    if (progress.value >= 1) playing.value = false
-    applyTime()
-  }
-  renderer?.render(scene, camera)
-}
+const SPEEDS = [0.5, 1, 2, 4, 8, 16]
 
 async function onFilePicked(event) {
   const file = event.target.files && event.target.files[0]
   event.target.value = ''
   if (!file) return
-  phase.value = 'loading'
-  errorDetail.value = ''
+  store.loading = true
   try {
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    facet.value = await parseAgentFacetsFromBytes(bytes, { wasmUrl: WASM_URL })
-    // 车辆展示名来自上游资产包的精简名表（wotbagent tank_cache 口径）
-    const names = ASSET_BASE ? await loadTankNames() : null
-    if (names) {
-      for (const v of facet.value.playback.vehicles) {
-        const n = names[String(v.tank_id)]
-        if (n && !v.tank_name) v.tank_name = n
-      }
-    }
-    phase.value = 'ready'
-    playing.value = false
-    progress.value = 0
-    buildVehicles(facet.value.playback)
-    applyTime()
+    await sceneApi.loadData({ kind: 'local', file })
   } catch (e) {
-    phase.value = 'error'
-    errorDetail.value = String(e?.message || e).slice(0, 200)
+    store.err = (t('agentReplay.error_parse') || '解析失败') + ' ' + String(e?.message || e).slice(0, 160)
+  } finally {
+    store.loading = false
   }
 }
 
-function togglePlay() {
-  if (phase.value !== 'ready') return
-  playing.value = !playing.value
-  if (playing.value && progress.value >= 1) progress.value = 0
+function loadFile() {
+  const v = (store.filePath || '').trim()
+  if (v) sceneApi.loadData({ kind: 'server', file: v })
 }
 
-function onResize() {
-  const el = container.value
-  if (!el || !renderer) return
-  camera.aspect = el.clientWidth / 480
-  camera.updateProjectionMatrix()
-  renderer.setSize(el.clientWidth, 480)
+function onTogglePlay() {
+  sceneApi?.togglePlay()
+}
+
+function onSeekInput(e) {
+  sceneApi?.seekFraction(e.target.value / 1000)
+}
+
+function onSpeed(e) {
+  sceneApi?.setSpeed(Number(e.target.value))
 }
 
 onMounted(() => {
-  raf = requestAnimationFrame(tick)
-  window.addEventListener('resize', onResize)
+  sceneApi = initPlayback(stage.value, store)
 })
 onBeforeUnmount(() => {
-  cancelAnimationFrame(raf)
-  window.removeEventListener('resize', onResize)
-  renderer?.dispose()
-  renderer = null
+  sceneApi?.destroy?.()
 })
 </script>
 
@@ -179,39 +69,49 @@ onBeforeUnmount(() => {
     <h2>{{ t('agentReplay.title') }}</h2>
     <p class="hint">{{ t('agentReplay.pick_hint') }}</p>
     <div class="controls">
-      <input ref="fileInput" type="file" accept=".wotbreplay" @change="onFilePicked" />
-      <button type="button" :disabled="phase !== 'ready'" @click="togglePlay">
-        {{ playing ? t('agentReplay.pause') : t('agentReplay.play') }}
-      </button>
       <input
-        v-model.number="progress"
-        class="timeline"
-        type="range"
-        min="0"
-        max="1"
-        step="0.001"
-        :disabled="phase !== 'ready'"
-        @input="applyTime"
+        v-model="store.filePath"
+        class="path"
+        type="text"
+        placeholder=".wotbreplay 路径（服务端通道）"
+        @keydown.enter="loadFile"
       />
+      <button type="button" class="go" @click="loadFile">加载</button>
+      <label class="pick">
+        <input type="file" accept=".wotbreplay" @change="onFilePicked" />
+        本地文件
+      </label>
+      <select class="speed" :value="store.speed" @change="onSpeed" :disabled="!store.hasData">
+        <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
+      </select>
+      <button type="button" class="go" :disabled="!store.hasData" @click="onTogglePlay">
+        {{ store.playing ? '暂停' : '播放' }}
+      </button>
     </div>
-    <p v-if="phase === 'loading'" class="status">{{ t('agentReplay.parsing') }}</p>
-    <p v-else-if="phase === 'error'" class="status error">
-      {{ t('agentReplay.error_parse') }} {{ errorDetail }}
-    </p>
-    <p v-else-if="phase === 'ready'" class="status">
-      {{ t('agentReplay.ready', { count: facet.playback.vehicles.length, map: facet.playback.meta.map_name }) }}
-    </p>
-    <div ref="container" class="stage"></div>
+    <p v-if="store.loading" class="status">{{ t('agentReplay.parsing') }}</p>
+    <p v-else-if="store.err" class="status error">{{ store.err }}</p>
+    <div ref="stage" class="stage"></div>
+    <input
+      class="timeline"
+      type="range"
+      min="0"
+      max="1000"
+      :value="store.seekFrac * 1000"
+      :disabled="!store.hasData"
+      @input="onSeekInput"
+    />
   </section>
 </template>
 
 <style scoped>
-.agent-replay { padding: 16px; }
-.hint { color: var(--text-label, #8a94a3); margin: 4px 0 12px; }
-.controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.controls input[type='file'] { max-width: 320px; }
-.timeline { flex: 1; min-width: 200px; }
-.stage { margin-top: 12px; border: 1px solid var(--line, #2a3441); }
-.status { margin-top: 8px; }
+.agent-replay { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.path { flex: 1; min-width: 240px; }
+.pick input[type='file'] { display: none; }
+.pick { cursor: pointer; border: 1px solid var(--line, #2a3441); padding: 4px 10px; border-radius: 4px; }
+.stage { width: 100%; height: 70vh; min-height: 420px; border: 1px solid var(--line, #2a3441); }
+.timeline { width: 100%; }
 .status.error { color: var(--danger, #e0665b); }
+button, select { background: #1d242e; color: var(--fg, #dfe5ec); border: 1px solid var(--line, #2a3441); padding: 4px 10px; border-radius: 4px; }
+input[type='text'] { background: #1d242e; color: var(--fg, #dfe5ec); border: 1px solid var(--line, #2a3441); padding: 4px 8px; border-radius: 4px; }
 </style>
