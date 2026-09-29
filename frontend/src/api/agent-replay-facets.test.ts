@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
+  normalizeAgentShotIndices,
   parseAgentFacetsFromJson,
   validateAgentFacetEnvelope,
 } from './agent-replay-facets.js'
@@ -45,9 +46,8 @@ describe.skipIf(!hasSamples())('agent replay facets（上游契约样例）', ()
   const hof = readSample('hof.sample.json')
   const ai = readSample('ai-review.sample.json')
 
-  it('真实样例通过信封校验', () => {
+  it('真实样例通过信封校验（产物形状：信封无版本键，版本在切面层）', () => {
     const env = validateAgentFacetEnvelope({
-      version: 1,
       playback: minimalPlayback(),
       ai,
       hof,
@@ -59,10 +59,12 @@ describe.skipIf(!hasSamples())('agent replay facets（上游契约样例）', ()
     expect(env.ai.rosters.length).toBeGreaterThanOrEqual(10)
   })
 
-  it('version 不匹配 fail-fast', () => {
+  it('切面 version 不匹配 fail-fast（信封级未知键忽略）', () => {
+    const bad = structuredClone(ai) as Record<string, unknown>
+    bad.version = 2
     expect(() =>
-      validateAgentFacetEnvelope({ version: 2, playback: minimalPlayback(), ai, hof }),
-    ).toThrow(/不支持的契约版本/)
+      validateAgentFacetEnvelope({ playback: minimalPlayback(), ai: bad, hof }),
+    ).toThrow(/ai\.version = 2，不支持的契约版本/)
   })
 
   it('缺切面 fail-fast', () => {
@@ -137,7 +139,6 @@ describe.skipIf(!hasSamples())('结构契约锁定（139c5092 评审 blocker 回
   })
 
   it.each([
-    ['envelope.version', (env: Record<string, unknown>) => { env.version = 2 }],
     ['playback.version', (env: Record<string, unknown>) => { (env.playback as Record<string, unknown>).version = 2 }],
     ['ai.version', (env: Record<string, unknown>) => { (env.ai as Record<string, unknown>).version = 0 }],
     ['hof.version', (env: Record<string, unknown>) => { delete (env.hof as Record<string, unknown>).version }],
@@ -156,5 +157,28 @@ describe.skipIf(!hasSamples())('结构契约锁定（139c5092 评审 blocker 回
     const env = validEnvelope()
     ;(env.ai as Record<string, unknown>).events = [{ type: 'visibility', t_in: 1, eid: 424242 }]
     expect(() => validateAgentFacetEnvelope(env)).toThrow(/visibility eid 424242/)
+  })
+})
+
+describe('normalizeAgentShotIndices（/api/replay/shots 同规则全局重编号）', () => {
+  it('time_s 排序 + index 从 1 起连续重编（作者/他人两路局部 index 收敛）', () => {
+    const shots = [
+      { index: 0, time_s: 22.6, shooter_name: 'b' },
+      { index: 3, time_s: 20.6, shooter_name: 'a' },
+      { index: 0, time_s: 47.1, shooter_name: 'c' },
+    ]
+    const out = normalizeAgentShotIndices(shots as never[])
+    expect(out.map((s) => s.index)).toEqual([1, 2, 3])
+    expect(out.map((s) => s.shooter_name)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('不改输入数组的顺序（slice 后排序；index 就地重写——同一对象流向查看器）', () => {
+    const a = { index: 9, time_s: 30 }
+    const b = { index: 1, time_s: 10 }
+    const shots = [a, b]
+    const out = normalizeAgentShotIndices(shots as never[])
+    expect(shots.map((s) => s.time_s)).toEqual([30, 10])
+    expect(out[0]).toBe(b)
+    expect(out.map((s) => s.index)).toEqual([1, 2])
   })
 })
