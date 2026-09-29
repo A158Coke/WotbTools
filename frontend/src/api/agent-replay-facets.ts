@@ -210,7 +210,7 @@ export interface AgentFacetEnvelope {
   hof: AgentHofFacet
 }
 
-// ---------- 形状校验 ----------
+// ---------- 形状校验（trust boundary：完整结构契约锁定） ----------
 
 const CONTRACT_VERSION = 1
 
@@ -223,36 +223,59 @@ function assertObject(v: unknown, path: string): Record<string, unknown> {
   return v
 }
 
+function assertArray(v: unknown, path: string): unknown[] {
+  if (!Array.isArray(v)) throw new Error(`agent facets: ${path} 必须是数组`)
+  return v
+}
+
+/** 切面/信封契约版本锁定（v1；不兼容变更递增，消费方 fail-fast） */
+function assertContractVersion(v: unknown, path: string): void {
+  if (v !== CONTRACT_VERSION) {
+    throw new Error(`agent facets: ${path} = ${String(v)}，不支持的契约版本（期望 ${CONTRACT_VERSION}）`)
+  }
+}
+
 /**
- * 信封形状校验（fail-fast；未知键忽略 = 契约的同版本加字段策略）。
- * 只锁结构性不变量（version/三切面/数组/花名册可联表），字段级语义由类型承载。
+ * 信封形状校验（trust boundary：进 view model 前的完整结构契约锁定）。
+ *
+ * 锁定面（缺一即抛，杜绝"伪装成校验的 unsafe cast"）：
+ * - 信封 version === 1
+ * - playback：version === 1、meta、vehicles/shots/kills/periods/visibility 数组
+ * - ai：version === 1、battle、rosters/events/settlements 数组
+ * - hof：version === 1、battle、entries 数组
+ * 语义不变量：visibility.eid ∈ rosters[].eid（裸 EID 不泄漏）。
+ * 未知键忽略 = 契约的同版本加字段策略；字段级取值语义由类型承载。
  */
 export function validateAgentFacetEnvelope(value: unknown): AgentFacetEnvelope {
   const env = assertObject(value, 'envelope')
-  if (env.version !== CONTRACT_VERSION) {
-    throw new Error(`agent facets: 不支持的契约版本 ${String(env.version)}（期望 ${CONTRACT_VERSION}）`)
-  }
-  for (const key of ['playback', 'ai', 'hof']) {
-    if (!(key in env)) throw new Error(`agent facets: 缺 ${key} 切面`)
-  }
+  assertContractVersion(env.version, 'envelope.version')
 
   const playback = assertObject(env.playback, 'playback')
+  assertContractVersion(playback.version, 'playback.version')
   assertObject(playback.meta, 'playback.meta')
-  if (!Array.isArray(playback.vehicles)) throw new Error('agent facets: playback.vehicles 必须是数组')
-
-  const ai = assertObject(env.ai, 'ai')
-  if (!Array.isArray(ai.rosters)) throw new Error('agent facets: ai.rosters 必须是数组')
-  if (!Array.isArray(ai.events)) throw new Error('agent facets: ai.events 必须是数组')
-  // 可见性事件必须可联表（契约 §2.2：裸 EID 不泄漏）
-  const rosterEids = new Set<number>((ai.rosters as Array<Record<string, unknown>>).map((r) => r.eid as number))
-  for (const e of ai.events as Array<Record<string, unknown>>) {
-    if (e.type === 'visibility' && !rosterEids.has(e.eid as number)) {
-      throw new Error(`agent facets: visibility eid ${e.eid} 不在花名册`)
-    }
+  for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
+    assertArray(playback[key], `playback.${key}`)
   }
 
+  const ai = assertObject(env.ai, 'ai')
+  assertContractVersion(ai.version, 'ai.version')
+  assertObject(ai.battle, 'ai.battle')
+  assertArray(ai.rosters, 'ai.rosters')
+  const events = assertArray(ai.events, 'ai.events')
+  assertArray(ai.settlements, 'ai.settlements')
+
   const hof = assertObject(env.hof, 'hof')
-  if (!Array.isArray(hof.entries)) throw new Error('agent facets: hof.entries 必须是数组')
+  assertContractVersion(hof.version, 'hof.version')
+  assertObject(hof.battle, 'hof.battle')
+  assertArray(hof.entries, 'hof.entries')
+
+  // 语义不变量：可见性事件必须可联表（契约 §2.2：裸 EID 不泄漏）
+  const rosterEids = new Set<number>((ai.rosters as Array<Record<string, unknown>>).map((r) => r.eid as number))
+  for (const e of events as Array<Record<string, unknown>>) {
+    if (isObject(e) && e.type === 'visibility' && !rosterEids.has(e.eid as number)) {
+      throw new Error(`agent facets: visibility eid ${String(e.eid)} 不在花名册`)
+    }
+  }
 
   return value as unknown as AgentFacetEnvelope
 }
