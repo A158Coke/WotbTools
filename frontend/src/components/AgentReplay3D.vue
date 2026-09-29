@@ -3,6 +3,7 @@
  * Agent 三维回放页（上游 WoT-Blitz-Agent 切面消费，契约见
  * contracts/agent/replay-facets-v1.md）：本地 .wotbreplay 文件 → 浏览器 WASM
  * 解析 → three.js 全场回放。文件不出本机（契约 §6 纯客户端）。
+ * 车辆展示名：来自上游资产包 data/tank_names.json（wotbagent 数据口径），非消费方 tankopedia。
  */
 import { onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -10,6 +11,18 @@ import * as THREE from 'three'
 import { parseAgentFacetsFromBytes } from '../api/agent-replay-facets.js'
 
 const { t } = useI18n()
+
+// 资产基址（?assets= 覆盖）：WASM 产物与展示名表同源（wotbagent 资产包布局）
+const ASSET_BASE = (new URLSearchParams(window.location.search).get('assets') ?? '').replace(/\/+$/, '')
+const WASM_URL = `${ASSET_BASE}/wasm/wotb_replay_wasm.js`
+
+async function loadTankNames() {
+  try {
+    return await fetch(`${ASSET_BASE}/data/tank_names.json`).then((r) => (r.ok ? r.json() : null))
+  } catch {
+    return null
+  }
+}
 
 const fileInput = ref(null)
 const phase = ref('idle') // idle | loading | ready | error
@@ -114,7 +127,15 @@ async function onFilePicked(event) {
   errorDetail.value = ''
   try {
     const bytes = new Uint8Array(await file.arrayBuffer())
-    facet.value = await parseAgentFacetsFromBytes(bytes)
+    facet.value = await parseAgentFacetsFromBytes(bytes, { wasmUrl: WASM_URL })
+    // 车辆展示名来自上游资产包的精简名表（wotbagent tank_cache 口径）
+    const names = ASSET_BASE ? await loadTankNames() : null
+    if (names) {
+      for (const v of facet.value.playback.vehicles) {
+        const n = names[String(v.tank_id)]
+        if (n && !v.tank_name) v.tank_name = n
+      }
+    }
     phase.value = 'ready'
     playing.value = false
     progress.value = 0
