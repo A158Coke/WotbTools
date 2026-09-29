@@ -9,7 +9,8 @@
     "profile": "Профиль",
     "feedback": "Обратная связь",
     "global_error_title": "Ошибка",
-    "close": "Закрыть"
+    "close": "Закрыть",
+    "agent_replay_tab": "3D-повторение (Agent)"
   },
   "errors": {
     "auth_unauthenticated": "Сеанс истёк. Войдите снова.",
@@ -1431,5 +1432,14 @@
   },
   "history": {
     "btn": "История проекта"
+  },
+  "agentReplay": {
+    "title": "3D-повторение (Agent)",
+    "pick_hint": "Выберите локальный файл .wotbreplay — разбор идёт в браузере через WebAssembly, файл не покидает устройство.",
+    "parsing": "Разбор…",
+    "error_parse": "Ошибка разбора:",
+    "ready": "Загружено {map} — {count} машин.",
+    "play": "Играть",
+    "pause": "Пауза"
   }
 }
