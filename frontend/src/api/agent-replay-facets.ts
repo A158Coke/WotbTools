@@ -7,10 +7,15 @@
  *
  * 三条消费路径：
  *  1. 本地 WASM：`parseAgentFacetsFromBytes(bytes)` —— 浏览器文件 → wotb-replay-wasm
- *     → 信封 JSON，文件不出本机（wasm 产物由上游 Release 或
- *     `cargo build -p wotb-replay-wasm --target wasm32-unknown-unknown` + wasm-bindgen 生成）；
+ *     → 信封 JSON，文件不出本机；
  *  2. 预解析 JSON：部署面静态托管的三切面文件（同信封形状）；
  *  3. 未来服务端代理（独立上游契约，不在 `contracts/http/openapi.yaml` SSOT 约束内）。
+ *
+ * WASM 归属（评审结论）：Agent 仓库是 external read-only upstream dependency——
+ * WotBTools CI 读取 `deploy/agent/source.json` 锁定的完整上游 commit SHA，
+ * 自行 checkout 构建 wasm-bindgen 产物并打包进前端 release。**运行时不选择
+ * upstream artifact**：本模块装载 build-time 固定的 `/wasm/` 本地产物，
+ * 不暴露 wasmUrl 之类的运行时选择。
  *
  * 语义原则（契约 §1）：unknown ≠ 0 ≠ false —— 观测缺失一律 undefined/null；
  * 数值零只在该字段语义就是零时出现。本模块不修改上游形状，只做形状校验与装载。
@@ -254,10 +259,12 @@ export function validateAgentFacetEnvelope(value: unknown): AgentFacetEnvelope {
 
 // ---------- WASM 装载（本地通道） ----------
 
-export interface AgentWasmOptions {
-  /** wasm-bindgen 产物 JS 入口；默认 `/wasm/wotb_replay_wasm.js`（产物不入库，由上游 Release 或构建脚本提供） */
-  wasmUrl?: string
-}
+/**
+ * build-time 固定的本地产物路径：WotBTools CI 依据 `deploy/agent/source.json`
+ * 锁定的上游 SHA 构建 wasm-bindgen 产物并打包进前端 release。运行时不选择
+ * upstream artifact——版本决策发生在 build/release 边界（可复现构建）。
+ */
+const AGENT_WASM_URL = '/wasm/wotb_replay_wasm.js'
 
 interface AgentWasmModule {
   parseReplayFacets(bytes: Uint8Array): string
@@ -267,14 +274,16 @@ interface AgentWasmModule {
 
 let wasmPromise: Promise<AgentWasmModule> | null = null
 
-/** 惰性装载 wasm-bindgen 产物（web target：default() 异步初始化；幂等） */
-export function loadAgentWasm(options: AgentWasmOptions = {}): Promise<AgentWasmModule> {
+/**
+ * 惰性装载 wasm-bindgen 产物（web target：default() 异步初始化）。
+ * 保证：单次初始化、并发调用共享 Promise、失败清空缓存可重试、产物形状校验。
+ * 不提供运行时版本选择——版本由 WotBTools CI 在构建时决定。
+ */
+export function loadAgentWasm(): Promise<AgentWasmModule> {
   if (!wasmPromise) {
-    const url = options.wasmUrl ?? '/wasm/wotb_replay_wasm.js'
     wasmPromise = (async () => {
-      // 运行时 URL：变量形式避免 bundler 构建期解析
-      const spec = url
-      const mod = (await import(/* @vite-ignore */ spec)) as AgentWasmModule
+      // 运行时 URL：常量形式 + @vite-ignore 避免 bundler 构建期解析
+      const mod = (await import(/* @vite-ignore */ AGENT_WASM_URL)) as AgentWasmModule
       if (mod.default) await mod.default()
       if (typeof mod.parseReplayFacets !== 'function') {
         throw new Error('agent wasm: parseReplayFacets 缺失（产物版本不匹配）')
@@ -292,11 +301,8 @@ export function loadAgentWasm(options: AgentWasmOptions = {}): Promise<AgentWasm
  * 本地通道：.wotbreplay 字节 → WASM 解析 → 校验过的三切面信封。
  * 文件不出本机（契约 §6 纯客户端）。
  */
-export async function parseAgentFacetsFromBytes(
-  bytes: Uint8Array,
-  options: AgentWasmOptions = {},
-): Promise<AgentFacetEnvelope> {
-  const mod = await loadAgentWasm(options)
+export async function parseAgentFacetsFromBytes(bytes: Uint8Array): Promise<AgentFacetEnvelope> {
+  const mod = await loadAgentWasm()
   const env = JSON.parse(mod.parseReplayFacets(bytes)) as unknown
   return validateAgentFacetEnvelope(env)
 }
