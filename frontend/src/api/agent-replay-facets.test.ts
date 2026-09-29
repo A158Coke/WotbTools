@@ -66,7 +66,7 @@ describe.skipIf(!hasSamples())('agent replay facets（上游契约样例）', ()
   })
 
   it('缺切面 fail-fast', () => {
-    expect(() => validateAgentFacetEnvelope({ version: 1, playback: minimalPlayback(), ai })).toThrow(/缺 hof/)
+    expect(() => validateAgentFacetEnvelope({ version: 1, playback: minimalPlayback(), ai })).toThrow(/hof 必须是对象/)
   })
 
   it('visibility 事件必须可联表花名册（裸 EID 不泄漏）', () => {
@@ -98,5 +98,63 @@ describe('agent replay facets（合成用例）', () => {
 
   it('非对象输入 fail-fast', () => {
     expect(() => parseAgentFacetsFromJson('null')).toThrow()
+  })
+})
+
+describe.skipIf(!hasSamples())('结构契约锁定（139c5092 评审 blocker 回归）', () => {
+  const hof = readSample('hof.sample.json')
+  const ai = readSample('ai-review.sample.json')
+
+  function validEnvelope(): Record<string, unknown> {
+    // 深拷贝：用例会就地变更（删键/改版本），不得污染 describe 级共享样例
+    return { version: 1, playback: minimalPlayback(), ai: structuredClone(ai), hof: structuredClone(hof) }
+  }
+
+  /** 从合法信封删除指定键（或改写值）后必须被校验器拒绝 */
+  function expectReject(mutate: (env: Record<string, unknown>) => void): void {
+    const env = validEnvelope()
+    mutate(env)
+    expect(() => validateAgentFacetEnvelope(env)).toThrow()
+  }
+
+  function dropKey(section: 'playback' | 'ai' | 'hof', key: string) {
+    return (env: Record<string, unknown>) => {
+      const sec = env[section] as Record<string, unknown>
+      delete sec[key]
+    }
+  }
+
+  it.each([
+    ['playback.shots', dropKey('playback', 'shots')],
+    ['playback.kills', dropKey('playback', 'kills')],
+    ['playback.periods', dropKey('playback', 'periods')],
+    ['playback.visibility', dropKey('playback', 'visibility')],
+    ['ai.battle', dropKey('ai', 'battle')],
+    ['ai.settlements', dropKey('ai', 'settlements')],
+    ['hof.battle', dropKey('hof', 'battle')],
+  ])('缺失 %s → reject', (_name, mutate) => {
+    expectReject(mutate)
+  })
+
+  it.each([
+    ['envelope.version', (env: Record<string, unknown>) => { env.version = 2 }],
+    ['playback.version', (env: Record<string, unknown>) => { (env.playback as Record<string, unknown>).version = 2 }],
+    ['ai.version', (env: Record<string, unknown>) => { (env.ai as Record<string, unknown>).version = 0 }],
+    ['hof.version', (env: Record<string, unknown>) => { delete (env.hof as Record<string, unknown>).version }],
+  ])('切面 %s ≠ 1 → reject', (_name, mutate) => {
+    expectReject(mutate)
+  })
+
+  it('playback.meta 缺失 → reject', () => {
+    expectReject((env) => {
+      const pb = env.playback as Record<string, unknown>
+      delete pb.meta
+    })
+  })
+
+  it('visibility 可联表不变量仍然锁定', () => {
+    const env = validEnvelope()
+    ;(env.ai as Record<string, unknown>).events = [{ type: 'visibility', t_in: 1, eid: 424242 }]
+    expect(() => validateAgentFacetEnvelope(env)).toThrow(/visibility eid 424242/)
   })
 })
