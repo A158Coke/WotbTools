@@ -73,19 +73,19 @@ onBeforeUnmount(() => {
         v-model="store.filePath"
         class="path"
         type="text"
-        placeholder=".wotbreplay 路径（服务端通道）"
+        :placeholder="t('agentReplay.path_ph')"
         @keydown.enter="loadFile"
       />
-      <button type="button" class="go" @click="loadFile">加载</button>
+      <button type="button" class="go" @click="loadFile">{{ t('agentReplay.load') }}</button>
       <label class="pick">
         <input type="file" accept=".wotbreplay" @change="onFilePicked" />
-        本地文件
+        {{ t('agentReplay.local_file') }}
       </label>
       <select class="speed" :value="store.speed" @change="onSpeed" :disabled="!store.hasData">
         <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
       </select>
       <button type="button" class="go" :disabled="!store.hasData" @click="onTogglePlay">
-        {{ store.playing ? '暂停' : '播放' }}
+        {{ store.playing ? t('agentReplay.pause') : t('agentReplay.play') }}
       </button>
     </div>
     <p v-if="store.loading" class="status">{{ t('agentReplay.parsing') }}</p>
