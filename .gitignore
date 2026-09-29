@@ -62,3 +62,6 @@ tmp/
 
 # Opt-in replay performance benchmark results and JFR recordings
 build/performance/
+
+# Agent WASM 构建产物（scripts/build-agent-wasm.sh 生成，随发布不入库）
+common/assets/wasm/
