@@ -124,6 +124,9 @@ jobs:
           else
             echo 'existing_digest=' >> "$GITHUB_OUTPUT"
           fi
+      - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
+        run: bash scripts/fetch-agent-wasm.sh
+
       - uses: docker/setup-buildx-action@v4
       - name: Build and publish this frozen image
         id: build_image
