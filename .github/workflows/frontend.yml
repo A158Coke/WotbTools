@@ -56,6 +56,10 @@ jobs:
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
         shell: bash
+      - name: 上游 WASM 产物直取（fetch-agent-wasm.sh，sha256 校验）
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/scripts/fetch-agent-wasm.sh"
+
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
