@@ -9,7 +9,8 @@
     "profile": "个人中心",
     "feedback": "反馈",
     "global_error_title": "错误",
-    "close": "关闭"
+    "close": "关闭",
+    "agent_replay_tab": "三维回放（Agent）"
   },
   "errors": {
     "auth_unauthenticated": "登录已失效，请重新登录。",
@@ -1431,5 +1432,14 @@
   },
   "history": {
     "btn": "项目历史"
+  },
+  "agentReplay": {
+    "title": "三维回放（Agent）",
+    "pick_hint": "选择本地 .wotbreplay 文件——解析在浏览器内经 WebAssembly 完成，文件不出本机。",
+    "parsing": "解析中…",
+    "error_parse": "解析失败：",
+    "ready": "已加载 {map} —— {count} 辆车。",
+    "play": "播放",
+    "pause": "暂停"
   }
 }
