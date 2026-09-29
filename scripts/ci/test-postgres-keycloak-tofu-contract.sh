@@ -24,7 +24,7 @@ import yaml
 root = Path(sys.argv[1])
 tofu_root = root / "infra/tofu/postgres-keycloak"
 workflow_text = (root / ".github/workflows/keycloak-postgres.yml").read_text(encoding="utf-8")
-ci_text = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+ci_text = (root / ".github/workflows/ci-keycloak-postgres.yml").read_text(encoding="utf-8")
 root_text = "\n".join(path.read_text(encoding="utf-8") for path in tofu_root.glob("*.tf"))
 workflow = yaml.load(workflow_text, Loader=yaml.BaseLoader)
 ci = yaml.load(ci_text, Loader=yaml.BaseLoader)

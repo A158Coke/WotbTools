@@ -1,0 +1,192 @@
+name: CI / observability
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  observability_config:
+    name: Observability
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Pull Prometheus image with bounded network retry
+        run: bash scripts/ci/run-with-network-retry.sh "Pull Prometheus image" docker pull prom/prometheus:v2.55.1
+      - name: Pull Loki image with bounded network retry
+        run: bash scripts/ci/run-with-network-retry.sh "Pull Loki image" docker pull grafana/loki:3.3.2
+      - name: Pull Alloy image with bounded network retry
+        run: bash scripts/ci/run-with-network-retry.sh "Pull Alloy image" docker pull grafana/alloy:v1.4.2
+      - name: Prometheus config validation
+        run: >-
+          docker run --rm --entrypoint promtool
+          -v "$PWD/deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+          prom/prometheus:v2.55.1 check config /etc/prometheus/prometheus.yml
+      - name: Loki config validation
+        run: >-
+          docker run --rm --entrypoint loki
+          -v "$PWD/deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro"
+          grafana/loki:3.3.2 --config.file=/etc/loki/loki-config.yml --verify-config
+      - name: Alloy config format check
+        run: >-
+          docker run --rm --entrypoint alloy
+          -v "$PWD/deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro"
+          grafana/alloy:v1.4.2 fmt -t /etc/alloy/config.alloy
+      - name: Alloy production selector contract
+        run: bash deploy/test-alloy-config.sh
+      - name: Runtime Docker emitter to Alloy to Loki smoke
+        run: bash deploy/test-observability-e2e.sh
+      - name: Grafana runtime provisioning smoke
+        run: bash deploy/test-grafana-runtime.sh
+      - name: Validate Grafana provisioning and dashboards
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import glob, json, os, yaml
+
+          # Panel links of type=dashboard + uid without a valid url crash the Grafana
+          # frontend (TypeError: Cannot read properties of undefined (reading 'replace')).
+          # Forbid this structure so the dashboard runtime stays stable.
+          required = {
+              "wotbtools-production-overview.json",
+              "wotbtools-backend-overview.json",
+              "wotbtools-ai-review.json",
+              "wotbtools-keycloak.json",
+              "wotbtools-error-explorer.json",
+              "wotbtools-usage.json",
+          }
+          paths = glob.glob("deploy/observability/grafana/dashboards/*.json")
+          assert {p.replace("\\", "/").rsplit("/", 1)[-1] for p in paths} == required, "dashboard inventory drift"
+          dashboard_uids = {}
+          dashboard_link_uids = []
+          production_health_contract = {
+              "后端服务": 'up{job="wotb-backend"}',
+              "主机": 'up{job="node-exporter"}',
+              "Prometheus": 'up{job="prometheus"}',
+              "Loki": 'up{job="loki"}',
+              "Grafana": 'up{job="grafana"}',
+          }
+
+          def validate_datasource(value, where):
+              if not isinstance(value, dict):
+                  return
+              uid = value.get("uid")
+              if uid is not None:
+                  assert uid in {"prometheus", "loki"}, f"{where}: unknown datasource uid {uid}"
+
+          def walk_dashboard_panels(node, where):
+              if not isinstance(node, dict):
+                  return
+              validate_datasource(node.get("datasource"), where)
+              for target_index, target in enumerate(node.get("targets") or []):
+                  if isinstance(target, dict):
+                      validate_datasource(target.get("datasource"), f"{where}.targets[{target_index}]")
+                      expr = target.get("expr") or target.get("query") or ""
+                      if "or vector(0)" in expr:
+                          assert not any(token in expr for token in ("up(", "queue_depth", "in_flight", "node_")), \
+                              f"{where}: health/gauge query must not mask no-data with vector(0): {expr}"
+              for link in node.get("links") or []:
+                  if isinstance(link, dict) and link.get("type") == "dashboard" and isinstance(link.get("uid"), str):
+                      dashboard_link_uids.append(link["uid"])
+                      url = link.get("url")
+                      if not isinstance(url, str) or not url.strip():
+                          raise SystemExit(
+                              f"{where}: panel link type=dashboard with uid but no valid url: {link}"
+                          )
+              for key in ("panels", "rows"):
+                  for i, child in enumerate(node.get(key) or []):
+                      walk_dashboard_panels(child, f"{where}.{key}[{i}]")
+
+          def collect_production_panels(node, found):
+              if not isinstance(node, dict):
+                  return
+              title = node.get("title")
+              if isinstance(title, str):
+                  found.setdefault(title, []).extend(
+                      target.get("expr", "")
+                      for target in node.get("targets") or []
+                      if isinstance(target, dict) and isinstance(target.get("expr"), str)
+                  )
+              for key in ("panels", "rows"):
+                  for child in node.get(key) or []:
+                      collect_production_panels(child, found)
+
+          for p in glob.glob("deploy/observability/grafana/provisioning/**/*.yml", recursive=True):
+              yaml.safe_load(open(p, encoding="utf-8"))
+          assert not os.path.exists("deploy/observability/grafana/provisioning/dashboards/dashboards.yml"), \
+              "dashboard file-provisioning controller must remain disabled after OpenTofu adoption"
+          for p in paths:
+              d = json.load(open(p, encoding="utf-8"))
+              assert d.get("panels"), "empty dashboard " + p
+              uid = d.get("uid")
+              assert isinstance(uid, str) and uid, "dashboard uid missing: " + p
+              assert uid not in dashboard_uids.values(), "duplicate dashboard uid: " + uid
+              dashboard_uids[p] = uid
+              if p.replace("\\", "/").endswith("wotbtools-production-overview.json"):
+                  production_panels = {}
+                  collect_production_panels(d, production_panels)
+                  for title, expected_expr in production_health_contract.items():
+                      actual_exprs = {"".join(expr.split()) for expr in production_panels.get(title, [])}
+                      assert expected_expr in actual_exprs, \
+                          f"production overview health panel {title} must query {expected_expr}"
+                      assert all("orvector(0)" not in expr for expr in actual_exprs), \
+                          f"production overview health panel {title} must not mask no-data"
+                  overall_exprs = [
+                      expr for title, exprs in production_panels.items()
+                      if title.startswith("生产状态")
+                      for expr in exprs
+                  ]
+                  assert overall_exprs, "production overview overall health panel missing"
+                  overall_expr = "".join(overall_exprs[0].split())
+                  required_jobs = "wotb-backend|node-exporter|prometheus|loki|grafana"
+                  expected_overall = (
+                      f'min(up{{job=~"{required_jobs}"}})and('
+                      f'count(up{{job=~"{required_jobs}"}})==5)'
+                  )
+                  assert overall_expr == expected_overall, \
+                      "production overview overall health must use min(up) as the value and count(up)==5 as the presence guard"
+                  assert "orvector(0)" not in overall_expr, \
+                      "production overview overall health must not mask no-data"
+              for i, panel in enumerate(d.get("panels", [])):
+                  walk_dashboard_panels(panel, f"{p}::panels[{i}]")
+          uid_set = set(dashboard_uids.values())
+          assert len(uid_set) == len(paths), "dashboard UIDs must be unique"
+          assert set(dashboard_link_uids) <= uid_set, "dashboard link points to an unknown uid"
+          print("provisioning yml + dashboards json OK")
+          PY
+  tofu_plans:
+    name: OpenTofu validation / grafana
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    # PR OpenTofu work is local validation only: fmt, init without a backend,
+    # validate, and root-specific safety fixtures. No production plan or credentials
+    # are available to this workflow.
+    env:
+      TF_IN_AUTOMATION: "true"
+      CHECKPOINT_DISABLE: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+      - name: Format, initialize without production state, and validate
+        env:
+          ROOT_DIR: infra/tofu/grafana
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+          tofu fmt -check -recursive
+          tofu init -backend=false -input=false
+          tofu validate

@@ -1,0 +1,23 @@
+name: CI / caddy
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Validate Caddy configuration
+        env:
+          CADDY_ACME_EMAIL: ci@example.invalid
+        run: docker run --rm --entrypoint caddy -e CADDY_ACME_EMAIL -v "$PWD/deploy/tx/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10.2-alpine validate --config /etc/caddy/Caddyfile --adapter caddyfile
