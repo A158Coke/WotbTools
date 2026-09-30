@@ -1,11 +1,23 @@
-// 实时回放 three.js 场景内核：自 playback_viewer.rs 的 INDEX_HTML 模块脚本逐行平移。
+// 实时回放 three.js 场景内核：自上游 Agent 前端平移（会话生命周期修复版）。
 // 渲染语义（位姿滤波/炮塔随动/弹道动画/分层地表/画质档/GLB 姿态）一行不改；
 // 唯一改动是原 DOM 面板触点（$('timer') 等）全部改写 store（playbackStore.js）。
+//
+// WotBTools 唯一分叉（评审 P0-3 client-only 拓扑）：资产访问只走 assetProvider
+//（?assets= 资产平面），上游的 /api/playback/*、/api/tank 同源服务端回退删除——
+// 其余与上游逐行同源，上游渲染/生命周期修复随版本跟随。
+//
+// 会话生命周期（契约 v2 / 评审 P0-2）：同场景实例换回放必须 teardown 上一场——
+// load A → dispose A → load B；路由/组件销毁 → dispose 当前会话。会话拥有的资源
+// （车辆低模/GLB 克隆/标签/弹道特效/地图与地表纹理/GLB 模板缓存）显式 dispose，
+// 异步资产加载带 generation guard（迟到完成不得污染新会话，迟到的已加载资源随旧
+// 会话缓存一并释放）。GLB 模板缓存为 session-scoped：同 tank 会话内复用，会话结束
+// 对 unique shared resources dispose 一次并清缓存（clone 共享模板资源，不逐克隆
+// 深度 dispose）；cross-session refcount/LRU 不在本层。
 import * as THREE from 'three'
 
-import { loadPlaybackData, mapStaticUrl, resolveMapKey, serverMapUrl } from './replaySource.js'
+import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
 import { poseFromYPR } from './glbRig.js'
-import { assetUrl } from './assetBase.js'
+import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
@@ -21,7 +33,7 @@ export const QUALITY_PRESETS = {
 
 export function initPlayback(container, store) {
   // ---------- 全局状态 ----------
-  let DATA = null;                 // PlaybackData
+  let DATA = null;                 // PlaybackData（当前会话）
   let V = [];                      // 车辆运行时 {def, group, turretG, gunPivot, label, meshHull, glb}
   let T = 0, PLAYING = false, SPEED = store.speed;
   let CAM = 'free', FOLLOW_EID = 0;
@@ -37,8 +49,16 @@ export function initPlayback(container, store) {
   let groundLayers = null;
   let terrainMesh = null, heightField = null, heightMeta = null;  // 3D 地形
   let mapScenery = null;                              // 静态场景 GLB（建筑等）
+  let groundMesh = null, gridHelper = null;           // buildWorld 的占位地面/网格（会话拥有）
   let destroyed = false;
   let kfId = 0;
+  // 会话代数：loadData/teardown 各自递增，全部异步续体持旧代数即失效
+  let sessionGen = 0;
+  // 渲染帧句柄：destroy 显式 cancel（旧实现依赖 destroyed 标志的自然退出，
+  // 帧回调在 destroy 后仍可能再排队一次）
+  let rafId = 0;
+  // 诊断强引用仅在显式 debug 下创建（生产不挂 window.__scene 等长生命周期引用）
+  const DEBUG = (() => { try { return new URLSearchParams(location.search).has('debug'); } catch (e) { return false; } })();
 
   // ---------- 画质分档 ----------
   // 解析优先级：URL ?q= > localStorage > 设备默认；三档都开 3D 地形（仅分段数降档）。
@@ -135,14 +155,14 @@ export function initPlayback(container, store) {
   function initScene() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x11161d);
-    window.__scene = scene;   // 诊断钩子
+    if (DEBUG) window.__scene = scene;   // 诊断钩子（仅显式 ?debug，destroy 时清除）
     // SPA 壳内渲染：视口尺寸取容器（main 区域），而非整窗（顶部导航占 67px）
     camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.5, 4000);
     camera.position.set(0, 180, 220);
     renderer = new THREE.WebGLRenderer({ antialias: Q.antialias });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio, Q.maxDpr));
-    window.__renderer = renderer;   // 诊断钩子（renderer 创建后才可引用）
+    if (DEBUG) window.__renderer = renderer;   // 诊断钩子（renderer 创建后才可引用；仅 ?debug）
     // three r165+ 恒为物理光照单位（Lambert 除以 π），旧强度会让建筑/车模暗到发黑；
     // 与装甲查看器一致：ACES 色调映射 + ×π 级别的光强
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -208,8 +228,10 @@ export function initPlayback(container, store) {
       new THREE.MeshLambertMaterial({ color: 0x202a36 }));
     ground.rotation.x = -Math.PI / 2; ground.position.set(cx, 0, cz);
     scene.add(ground);
+    groundMesh = ground;
     const grid = new THREE.GridHelper(ext * 2 + 100, Math.floor((ext * 2 + 100) / 50), 0x3a4a5e, 0x273140);
     grid.position.set(cx, 0.02, cz); scene.add(grid);
+    gridHelper = grid;
     WORLD_CENTER = { cx, cz, ext };
     camera.position.set(cx, ext * 1.1, cz + ext * 1.2);
     controls.target.set(cx, 0, cz);
@@ -273,6 +295,10 @@ export function initPlayback(container, store) {
   }
 
   async function loadMapImage() {
+    // generation guard：回放替换/销毁后，旧会话的地图资产续体一律失效——
+    // 迟到的已加载纹理就地 dispose，不得写入新会话的共享状态或场景
+    const gen = sessionGen;
+    const stale = () => gen !== sessionGen;
     if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
     if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
     if (mapScenery) { scene.remove(mapScenery); mapScenery = null; }
@@ -287,34 +313,38 @@ export function initPlayback(container, store) {
     // mapq，TDZ ReferenceError 让整个函数静默死亡，地图/地形/场景一个请求都不发，
     // 全画质档回退占位网格）
     await resolveMapKey(mapq).catch(() => {});
+    if (stale()) return;
     try {
-      // 低档 res=mini：客户端小地图作地面（比高清底图小一个量级，保留 3D 起伏）
-      const resp = await fetch((Q.miniMap ? mapStaticUrl('map-mini') : null) ?? mapStaticUrl('map') ?? serverMapUrl('map', mapq, Q.miniMap ? '&res=mini' : ''));
-      if (resp.ok) {
-        mapMetaInfo = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
-        const url = URL.createObjectURL(await resp.blob());
-        mapTexture = await new THREE.TextureLoader().loadAsync(url);
-        URL.revokeObjectURL(url);
-        mapTexture.colorSpace = THREE.SRGBColorSpace;
-        mapTexture.anisotropy = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
-        if (mapMetaInfo.flip_x) { mapTexture.wrapS = THREE.RepeatWrapping; mapTexture.repeat.x = -1; mapTexture.offset.x = 1; }
+      // 低档 mini：客户端小地图作地面（比高清底图小一个量级，保留 3D 起伏）。
+      // client-only：仅资产平面静态路径；未配置基址/索引未命中 → 无底图（回退网格），
+      // 不存在服务端回退
+      const mapUrl = (Q.miniMap ? mapStaticUrl('map-mini') : null) ?? mapStaticUrl('map');
+      if (mapUrl) {
+        const resp = await fetch(mapUrl);
+        if (stale()) return;
+        if (resp.ok) {
+          mapMetaInfo = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
+          const url = URL.createObjectURL(await resp.blob());
+          mapTexture = await new THREE.TextureLoader().loadAsync(url);
+          URL.revokeObjectURL(url);
+          if (stale()) { mapTexture.dispose(); mapTexture = null; return; }
+          mapTexture.colorSpace = THREE.SRGBColorSpace;
+          mapTexture.anisotropy = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
+          if (mapMetaInfo.flip_x) { mapTexture.wrapS = THREE.RepeatWrapping; mapTexture.repeat.x = -1; mapTexture.offset.x = 1; }
+        }
       }
     } catch (e) { console.warn('底图加载失败（回退网格）:', e); }
     try {
+      // 3D 地形：仅资产平面静态路径 + terrain.json sidecar 尺度；无静态资产 → 保持 2D
       const terrainBin = mapStaticUrl('terrain');
       let tmeta = {}; let tbuf = null;
       if (terrainBin) {
-        // 静态资产面：meta 来自打包器物化的 terrain.json sidecar
         const m = await fetch(mapStaticUrl('terrain-meta'));
+        if (stale()) return;
         if (m.ok) tmeta = await m.json();
         const b = await fetch(terrainBin);
+        if (stale()) return;
         if (b.ok) tbuf = await b.arrayBuffer();
-      } else {
-        const resp = await fetch(serverMapUrl('terrain', mapq));
-        if (resp.ok) {
-          tmeta = JSON.parse(resp.headers.get('X-Terrain-Meta') || '{}');
-          tbuf = await resp.arrayBuffer();
-        }
       }
       {
         const meta = tmeta;
@@ -338,7 +368,11 @@ export function initPlayback(container, store) {
     // 近黑），第 4 通道在独立灰度图里（tile1/mask1/hmap1 的 R）。
     // 低/中档跳过分层地表：直接走整图烘焙底图（省 4–8 张纹理下载与显存）
     if (Q.groundLayers) try {
-      const mresp = await fetch(mapStaticUrl('groundmeta') ?? serverMapUrl('groundmeta', mapq));
+      const gmUrl = mapStaticUrl('groundmeta');
+      if (!gmUrl) { /* 未配置资产面/未命中索引：跳过分层地表，回退烘焙底图/网格 */ }
+      else {
+      const mresp = await fetch(gmUrl);
+      if (stale()) return;
       if (mresp.ok) {
         const L = await mresp.json();
         const need = L.height_blend
@@ -348,11 +382,14 @@ export function initPlayback(container, store) {
         let ok = true;
         for (const k of need) {
           try {
-            const r = await fetch(mapStaticUrl('groundtex', k) ?? serverMapUrl('groundtex', mapq, '&k=' + k));
+            const texUrl = mapStaticUrl('groundtex', k);
+            if (!texUrl) { ok = false; break; }
+            const r = await fetch(texUrl);
             if (!r.ok) { ok = false; break; }
             const u = URL.createObjectURL(await r.blob());
             texs[k] = await new THREE.TextureLoader().loadAsync(u);
             URL.revokeObjectURL(u);
+            if (stale()) { texs[k].dispose(); delete texs[k]; ok = false; break; }
           } catch { ok = false; break; }
         }
         if (ok) {
@@ -366,22 +403,31 @@ export function initPlayback(container, store) {
             texs[k].anisotropy = ani;
           }
           groundLayers = { layers: L, texs };
+        } else {
+          // 半途失效/缺失：已加载的分层纹理就地释放，不留悬挂 GPU 资源
+          for (const k in texs) texs[k]?.dispose?.();
         }
       }
+      }
     } catch (e) { console.warn('分层地表加载失败（回退烘焙底图）:', e); }
-    // 诊断钩子：window.__gdbg 查看地表实际走的路径与已加载分层
-    window.__gdbg = { layers: !!groundLayers, texs: groundLayers ? Object.keys(groundLayers.texs) : [],
-                      meta: !!mapMetaInfo, sizeM: mapMetaInfo?.size_m ?? null };
+    if (stale()) return;
+    // 诊断钩子：window.__gdbg 查看地表实际走的路径与已加载分层（仅 ?debug）
+    if (DEBUG) window.__gdbg = { layers: !!groundLayers, texs: groundLayers ? Object.keys(groundLayers.texs) : [],
+                                 meta: !!mapMetaInfo, sizeM: mapMetaInfo?.size_m ?? null };
     rebuildGround();
     // 静态场景模型（建筑/桥/岩石，tools/export_map_glb.py 预生成；缺失静默跳过）。
     // GLB 为游戏系（z 上、+y 北），qFrame = Ry(π)·Rx(-π/2)（YXZ 序）转到回放场景系——
     // 与坦克 GLB 同一帧变换，纯旋转无镜像，绕序天然正确。
     // 中/低档跳过场景 GLB（单图 11–67MB 下载 + 大块显存，是画质档最大的分流项）
     if (Q.scenery) try {
+      const sceneryUrl = mapStaticUrl('scenery');
+      if (!sceneryUrl) { /* 未配置资产面/未命中索引：跳过场景 GLB（无服务端回退） */ }
+      else {
       const gltf = await new Promise((res) => {
-        new GLTFLoader().load(mapStaticUrl('scenery') ?? serverMapUrl('scenery', mapq),
+        new GLTFLoader().load(sceneryUrl,
           (g) => res(g), undefined, () => res(null));
       });
+      if (stale()) return;   // 迟到的场景 GLB：整体 GC（未渲染即未上传 GPU），不入新会话场景
       if (gltf && gltf.scene) {
         // GLTFLoader 默认 MeshStandardMaterial（PBR）比场景 Lambert 光照吃光得多，
         // 建筑会渲染成近黑——统一降级为 Lambert 并保留贴图/透明/平直着色。
@@ -435,6 +481,7 @@ export function initPlayback(container, store) {
           if (!o.isMesh) return;
           if (/sky/i.test(o.name || '')) o.visible = false;
         });
+      }
       }
     } catch (e) { console.warn('场景模型加载失败（忽略）:', e); }
   }
@@ -827,18 +874,24 @@ export function initPlayback(container, store) {
   // - GLB 内部系 x右/y前/z上（models.pb 原点已按 (x,z,y) 校正到该系）；根位姿 = qYaw·qPitch·qRoll·qFrame，
   //   qFrame = Ry(π)·Rx(−π/2) 的 z-up→y-up 帧变换；yaw 传镜像值（−游戏 yaw），pitch 原值，roll 滤波层恒 0；
   // - 炮塔/炮管 = 烘焙矩阵绕枢轴旋转：炮塔 Rz(−rel)（镜像系）@ tP=track+turret，炮管 Rx(俯仰)@ gP=tP+gun_origin；
-  // - 部件数据（model_origins / configs[].gun_origin / initial_turret_rotation）来自 /api/tank/{id}。
+  // - 部件数据（model_origins / configs[].gun_origin / initial_turret_rotation）来自资产平面 tank/{id}.json
+  //  （WotBTools client-only：dump-tank-data 物化，与上游 /api/tank/{id} 同一形状）。
 
   async function loadGlb(tankId) {
-    if (glbCache.has(tankId)) return glbCache.get(tankId);
+    // 捕获当前会话的缓存实例：会话结束后迟到的完成写入旧 Map（已脱离新会话），
+    // 模板未渲染即未上传 GPU，随 JS GC 回收——不污染新会话缓存
+    const cache = glbCache;
+    if (cache.has(tankId)) return cache.get(tankId);
     const p = (async () => {
       try {
-        const [loader, sd] = await Promise.all([
-          Promise.resolve(GLTFLoader),
-          fetch(assetBase() ? assetUrl(`tank/${tankId}.json`) : assetUrl('/api/tank/') + tankId).then(r => r.ok ? r.json() : null).catch(() => null),
+        const [glbBytes, sd] = await Promise.all([
+          assetProvider.bytes(`/glb/${tankId}/model.glb`),
+          assetProvider.json(`/tank/${tankId}.json`).catch(() => null),
         ]);
+        // GLTFLoader.parse：bytes 经 provider（storage/network 与场景解耦），
+        // GLB 自包含无外部资源，resourcePath 无关紧要
         const model = await new Promise((res) =>
-          new loader().load(assetUrl(`/glb/${tankId}/model.glb`), g => res(g.scene), undefined, () => res(null)));
+          new GLTFLoader().parse(glbBytes.buffer, '', (g) => res(g.scene), () => res(null)));
         if (!model) return null;
         model.scale.setScalar(1);
         // hide_elements 拆件全部渲染（与装甲检视器同规则；位于部件子树内，姿态随父节点自动跟随）
@@ -847,7 +900,7 @@ export function initPlayback(container, store) {
         return { template: model, sd };
       } catch { return null; }
     })();
-    glbCache.set(tankId, p);
+    cache.set(tankId, p);
     return p;
   }
 
@@ -927,13 +980,16 @@ export function initPlayback(container, store) {
   }
 
   async function applyGlbToggle(on) {
+    const gen = sessionGen;
     glbOn = on;
     store.glbOn = on;
     if (on) {
-      // 并行加载：单个大模型慢解析不阻塞其余车辆；每车 clone 独立实例
+      // 并行加载：单个大模型慢解析不阻塞其余车辆；每车 clone 独立实例。
+      // generation guard：回放替换后迟到的完成不得挂载到新会话场景
       await Promise.all(V.filter(v => v.def.tank_id > 0).map(async (v) => {
         if (!v.glb) {
           const loaded = await loadGlb(v.def.tank_id);
+          if (gen !== sessionGen) return;   // 迟到：模板留在旧缓存对象里随 GC 回收
           if (loaded && glbOn && !v.glb) {
             const inst = loaded.template.clone();
             inst.scale.setScalar(1);
@@ -1054,6 +1110,7 @@ export function initPlayback(container, store) {
 
   // ---------- 击杀 feed / 计分 ----------
   function feedEntry(k) {
+    const gen = sessionGen;
     const name = (eid) => { const v = V.find((x) => x.def.eid === eid);
       return v ? (v.def.nickname || 'Unknown') : eid === 0 ? '环境' : String(eid); };
     const causeMap = { 0: '', 1: '（火焰）', 2: '（撞击）', 3: '（环境）', 5: '（溺水）' };
@@ -1063,6 +1120,7 @@ export function initPlayback(container, store) {
     const entry = { id: ++kfId, kill: k.killer_eid !== 0, killer: name(k.killer_eid), victim: name(k.victim_eid), text };
     store.killfeed.push(entry);
     setTimeout(() => {
+      if (gen !== sessionGen) return;   // 会话已切换：条目已随 teardown 清空，不动新会话
       const i = store.killfeed.findIndex((x) => x.id === entry.id);
       if (i >= 0) store.killfeed.splice(i, 1);
     }, 8000);
@@ -1167,7 +1225,7 @@ export function initPlayback(container, store) {
   let winnerShown = false;
   function animate() {
     if (destroyed) return;
-    requestAnimationFrame(animate);
+    rafId = requestAnimationFrame(animate);
     if (!renderer) return;   // 渲染器惰性创建（首次 startPlayback）：数据加载完成前无场景可渲染
     const dt = Math.min(clock.getDelta(), 0.1);
     if (DATA && PLAYING) {
@@ -1231,22 +1289,7 @@ export function initPlayback(container, store) {
   }
   function seekTo(t) {
     T = Math.max(DATA.meta.t_start, Math.min(DATA.meta.duration, t));
-    // 重置动态层（dispose 对齐各对象自身的移除路径，防 seek 循环累积显存）
-    for (const tr of tracers) {
-      scene.remove(tr.mesh);
-      tr.mesh.geometry.dispose(); tr.mesh.material.dispose();
-    }
-    tracers.length = 0;
-    for (const im of impacts) {
-      scene.remove(im.g);
-      im.ball.geometry.dispose(); im.ball.material.dispose();
-      im.ring.geometry.dispose(); im.ring.material.dispose();
-    }
-    impacts.length = 0;
-    for (const tl of trajLines) {
-      scene.remove(tl.mesh); tl.mesh.geometry.dispose(); tl.mesh.material.dispose();
-    }
-    trajLines.length = 0;
+    clearEffects();   // 动态层 dispose（与 teardown 同一路径，防 seek 循环累积显存）
     shotPtr = 0;
     while (shotPtr < DATA.shots.length && DATA.shots[shotPtr].t_fire <= T) shotPtr++;
     rebuildFeed();
@@ -1279,20 +1322,111 @@ export function initPlayback(container, store) {
   // ---------- 数据加载 ----------
   // 注：hull_yaw/turret_yaw 由后端相位解卷绕（连续域）后落盘，朴素线性插值即物理正确，
   // 前端不再二次去缠绕（旧版前端 unwrapAngleArray 已由后端数据契约取代）。
+
+  // 递归收集 Object3D 子树的 geometry / material / texture 并各自 dispose 一次
+  //（Set 去重：clone 共享的模板资源多路径命中只 dispose 一遍；three dispose 幂等，
+  // 此处集合化只为省去重复遍历开销）
+  function disposeObject3D(root) {
+    const geos = new Set(), mats = new Set(), texs = new Set();
+    root.traverse((o) => {
+      if (o.geometry) geos.add(o.geometry);
+      const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      for (const m of ms) {
+        mats.add(m);
+        for (const k in m) {
+          const val = m[k];
+          if (val && val.isTexture) texs.add(val);
+        }
+      }
+    });
+    for (const t of texs) t.dispose();
+    for (const m of mats) m.dispose();
+    for (const g of geos) g.dispose();
+  }
+
+  // 动态层（弹道/弹着点/轨迹线）清除：与 seekTo 共用一条 dispose 路径
+  function clearEffects() {
+    for (const tr of tracers) {
+      scene.remove(tr.mesh);
+      tr.mesh.geometry.dispose(); tr.mesh.material.dispose();
+    }
+    tracers.length = 0;
+    for (const im of impacts) {
+      scene.remove(im.g);
+      im.ball.geometry.dispose(); im.ball.material.dispose();
+      im.ring.geometry.dispose(); im.ring.material.dispose();
+    }
+    impacts.length = 0;
+    for (const tl of trajLines) {
+      scene.remove(tl.mesh); tl.mesh.geometry.dispose(); tl.mesh.material.dispose();
+    }
+    trajLines.length = 0;
+  }
+
+  // 会话拆除：车辆/标签/GLB 克隆/地图与地表/特效/GLB 模板缓存全部移出场景并
+  // dispose 会话拥有的 GPU 资源；异步续体经 sessionGen 递增整体失效。
+  // 调用时序：loadData 拿到新数据且代数有效后、startPlayback 之前（load A → dispose
+  // A → load B）；destroy 亦走此路径（route/component destroy → dispose currentSession）。
+  function teardownSession() {
+    sessionGen++;
+    clearEffects();
+    for (const v of V) {
+      if (v.glb) scene.remove(v.glb);          // clone 与模板共享资源：不在此 dispose
+      if (v.label) {
+        labelScene.remove(v.label);
+        if (v.label.material) {
+          if (v.label.material.map) v.label.material.map.dispose();
+          v.label.material.dispose();
+        }
+      }
+      if (v.group) { scene.remove(v.group); disposeObject3D(v.group); }
+    }
+    V = [];
+    for (const o of [mapPlane, terrainMesh, mapScenery, groundMesh, gridHelper]) {
+      if (o) { scene.remove(o); disposeObject3D(o); }
+    }
+    mapPlane = null; terrainMesh = null; mapScenery = null; groundMesh = null; gridHelper = null;
+    if (mapTexture) { mapTexture.dispose(); mapTexture = null; }
+    if (groundLayers) { for (const k in groundLayers.texs) groundLayers.texs[k]?.dispose?.(); }
+    groundLayers = null;
+    heightField = null; heightMeta = null; mapMetaInfo = null;
+    // GLB 模板缓存（session-scoped）：unique shared resources dispose 一次并清缓存。
+    // 未决的加载 Promise 随旧缓存对象被丢弃——迟到的模板未渲染即未上传 GPU，JS GC 回收
+    for (const p of glbCache.values()) {
+      p.then((entry) => { if (entry && entry.template) disposeObject3D(entry.template); })
+        .catch(() => {});
+    }
+    glbCache = new Map();
+    DATA = null;
+    T = 0; shotPtr = 0; killPtr = 0;
+    winnerShown = false;
+    FOLLOW_EID = 0; followAnchor = null;
+    store.killfeed = [];
+    store.banner = null;
+    store.roster.team1 = [];
+    store.roster.team2 = [];
+  }
+
   async function loadData(source) {
     // source = 路径字符串（服务端通道，兼容既有调用）或 { kind:'local', file }（本地 WASM 通道）
+    const gen = ++sessionGen;   // 使上一会话的在途异步续体全部失效
     store.err = '';
     store.loading = true;
     try {
-      DATA = await loadPlaybackData(
+      // 数据获取在 teardown 之前：新回放解析失败时当前回放保持完好（替换语义 =
+      // 新数据就位才拆旧会话）
+      const data = await loadPlaybackData(
         typeof source === 'string' ? { kind: 'server', file: source } : source,
       );
+      if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
+      teardownSession();   // 内部再递增一代——gen+1 仍属本调用（仍是最新所有者）
+      DATA = data;
       startPlayback();
       store.hasData = true;
     } catch (e) {
-      store.err = '加载失败: ' + e.message;
+      if (gen === sessionGen || gen + 1 === sessionGen) store.err = '加载失败: ' + e.message;
     } finally {
-      store.loading = false;
+      if (gen === sessionGen || gen + 1 === sessionGen) store.loading = false;
     }
   }
   function startPlayback() {
@@ -1306,7 +1440,8 @@ export function initPlayback(container, store) {
     buildRoster();
     T = DATA.meta.t_start;
     shotPtr = 0; killPtr = 0;
-    window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态
+    if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
+    if (glbOn) applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
     setPlaying(true);
     tick();
   }
@@ -1330,8 +1465,14 @@ export function initPlayback(container, store) {
     qualityPresets: QUALITY_PRESETS,
     destroy() {
       destroyed = true;
+      cancelAnimationFrame(rafId);   // 显式取消：不等下一帧的 destroyed 自然退出
+      teardownSession();             // 会话资源（车辆/地图/特效/GLB 模板）全量 dispose
       removeEventListener('keydown', onKeydown);
       removeEventListener('resize', onResize);
+      if (DEBUG) {
+        delete window.__scene; delete window.__renderer;
+        delete window.__pbV; delete window.__gdbg;
+      }
       if (controls) { try { controls.dispose(); } catch (_) {} }
       if (renderer) {
         renderer.dispose();

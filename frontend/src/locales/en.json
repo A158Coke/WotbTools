@@ -1438,12 +1438,10 @@
     "pick_hint": "Pick a local .wotbreplay — parsing happens in-browser via WebAssembly; the file never leaves your machine.",
     "parsing": "Parsing…",
     "error_parse": "Parse failed: ",
-    "ready": "Loaded {map} — {count} vehicles.",
     "play": "Play",
     "pause": "Pause",
-    "path_ph": ".wotbreplay path (server channel)",
-    "load": "Load",
-    "local_file": "Local file"
+    "local_file": "Local file",
+    "assets_hint": "Asset plane not configured: append ?assets=<COS/CDN base> to load map terrain / vehicle GLBs / tank data (replay parsing itself does not depend on it)."
   },
   "agentTanks": {
     "title": "Tankopedia (Agent)",

@@ -1,7 +1,9 @@
 <script setup>
 /**
- * Agent 三维回放页（场景内核版）：本地 .wotbreplay → 浏览器 WASM 解析
- * （parseReplayFacets，文件不出本机）→ playbackScene 全场渲染。
+ * Agent 三维回放页（场景内核版 / client-only）：本地 .wotbreplay → 浏览器 WASM
+ * parsePlayback 解析（契约 v2 时序能力，文件不出本机）→ playbackScene 全场渲染。
+ * 拓扑（评审 P0-3）：无服务端通道——Business API / Agent 自托管服务端不参与
+ * Playback；地图/GLB/坦克数据渲染资产经 ?assets= 资产平面（assetProvider）。
  * 车辆展示名：来自上游资产包 data/tank_names.json（wotbagent 数据口径）。
  */
 import { onBeforeUnmount, onMounted, ref } from 'vue'
@@ -9,21 +11,18 @@ import { useI18n } from 'vue-i18n'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback } from '../scene/playbackScene.js'
 import { loadPlaybackData } from '../scene/replaySource.js'
+import { assetProvider } from '../scene/assetProvider.js'
 
 const { t } = useI18n()
-
-// 资产基址（?assets= 覆盖）：展示名表等静态数据（wotbagent 资产包布局）
-const ASSET_BASE = (new URLSearchParams(window.location.search).get('assets') ?? '').replace(/\/+$/, '')
-// WASM 产物走同源 /wasm/（#394 build-agent-wasm.sh 输出 common/assets/wasm/ → dist）
-const WASM_URL = '/wasm/wotb_replay_wasm.js'
 
 const store = createPlaybackStore()
 const stage = ref(null)
 const fileInput = ref(null)
-const seekPct = ref(0)
 let sceneApi = null
 
 const SPEEDS = [0.5, 1, 2, 4, 8, 16]
+// 资产平面状态提示：回放解析不依赖资产；地图/地形/车模 GLB 需要 ?assets=
+const assetsReady = assetProvider.configured()
 
 async function onFilePicked(event) {
   const file = event.target.files && event.target.files[0]
@@ -37,11 +36,6 @@ async function onFilePicked(event) {
   } finally {
     store.loading = false
   }
-}
-
-function loadFile() {
-  const v = (store.filePath || '').trim()
-  if (v) sceneApi.loadData({ kind: 'server', file: v })
 }
 
 function onTogglePlay() {
@@ -68,15 +62,8 @@ onBeforeUnmount(() => {
   <section class="agent-replay">
     <h2>{{ t('agentReplay.title') }}</h2>
     <p class="hint">{{ t('agentReplay.pick_hint') }}</p>
+    <p v-if="!assetsReady" class="hint warn">{{ t('agentReplay.assets_hint') }}</p>
     <div class="controls">
-      <input
-        v-model="store.filePath"
-        class="path"
-        type="text"
-        :placeholder="t('agentReplay.path_ph')"
-        @keydown.enter="loadFile"
-      />
-      <button type="button" class="go" @click="loadFile">{{ t('agentReplay.load') }}</button>
       <label class="pick">
         <input type="file" accept=".wotbreplay" @change="onFilePicked" />
         {{ t('agentReplay.local_file') }}
@@ -112,6 +99,7 @@ onBeforeUnmount(() => {
 .stage { width: 100%; height: 70vh; min-height: 420px; border: 1px solid var(--line, #2a3441); }
 .timeline { width: 100%; }
 .status.error { color: var(--danger, #e0665b); }
+.hint.warn { color: #ffcf5c; }
 button, select { background: #1d242e; color: var(--fg, #dfe5ec); border: 1px solid var(--line, #2a3441); padding: 4px 10px; border-radius: 4px; }
 input[type='text'] { background: #1d242e; color: var(--fg, #dfe5ec); border: 1px solid var(--line, #2a3441); padding: 4px 8px; border-radius: 4px; }
 </style>
