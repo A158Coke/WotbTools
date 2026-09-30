@@ -47,29 +47,38 @@ function enrichShotsFromRoster(parsedShots, vehicles) {
 }
 
 /**
- * 弹种客户端反解（上游由服务端 player_shells 注入 shell_kind，纯客户端链用
- * 射手坦克弹表等价补齐）：shell_id（全局弹种 id）→ 射手实际搭载弹链
- * （configs 末位 shell_global_ids 同序反查）→ shell_kind。与 3D 链接的
- * shell 槽位反查同一数据链；查不到的弹保留空 kind（UI 走槽位/id 兜底）。
+ * 弹种解析（上游 ShellKindTable.annotate 同源）：全局弹种 id → shell_type。
+ * 优先查 tanks.pb 全量展开的静态反解表（shellKinds.json，dump-shell-kinds 产物，
+ * 作者+他人/命中+脱靶统一覆盖——脱靶弹的 shell_id 来自开火/地形广播，属同国全域，
+ * 射手自身弹链查不到）；表未命中再走射手坦克弹链兜底；仍查不到保留空 kind
+ * （UI 走槽位/id 兜底，shell_id=0 的弹上游也保持未知）。
  */
 async function enrichShellKinds(parsedShots) {
+  let table = null
+  try {
+    table = (await import('../scene/shellKinds.json')).default
+  } catch { /* 表缺失：退化为射手弹链反解 */ }
   const byTank = new Map()
   for (const s of parsedShots) {
     const tid = s.shooter_tank_id
     if (tid && !byTank.has(tid)) byTank.set(tid, null)
   }
   await Promise.all([...byTank.keys()].map(async (tid) => {
-    try { byTank.set(tid, await fetchTankData(tid)) } catch { /* 静态面缺失：弹种留空走兜底 */ }
+    try { byTank.set(tid, await fetchTankData(tid)) } catch { /* 静态面缺失：跳过弹链兜底 */ }
   }))
   for (const s of parsedShots) {
-    if (s.shell_kind || !s.shell_id) continue
+    if (!s.shell_id) continue
+    if (table) {
+      const kind = table[String(s.shell_id)]
+      if (kind) { s.shell_kind = s.shell_kind || kind; continue }
+    }
     const data = byTank.get(s.shooter_tank_id)
     if (!data) continue
     // 服务端 shell_index_by_global_id 同式：全配置弹链查找（该弹可能在非顶级变体）
     for (const cfg of data.configs || []) {
       const idx = (cfg.shell_global_ids || []).indexOf(s.shell_id)
       if (idx >= 0 && cfg.shells?.[idx]?.type) {
-        s.shell_kind = cfg.shells[idx].type
+        s.shell_kind = s.shell_kind || cfg.shells[idx].type
         break
       }
     }
@@ -181,7 +190,9 @@ function qualityTitle(s) {
   return issues.join('; ')
 }
 
-// 弹种徽标：shell_kind → AP/APCR/HEAT/HE + premium 标记；缺 kind 时槽位/id 兜底
+// 弹种徽标：shell_kind → AP/APCR/HEAT/HE + premium 标记。脱靶弹（无命中通知）
+// 的 shell_id 来自开火/地形广播、与弹表全局域不同——不可反解，一律显示 "—"；
+// 命中弹缺 kind 时作者走槽位兜底，其余走 shell_id 小字（数据缺坦克可查时）。
 function shellBadge(s) {
   const kindOf = (t) => {
     t = (t || '').toLowerCase()
@@ -193,6 +204,7 @@ function shellBadge(s) {
   }
   const label = kindOf(s.shell_kind)
   if (!label) {
+    if (!s.target_name) return {}
     if (s.is_author && s.shell_slot != null) return { fallback: '#' + s.shell_slot }
     if (s.shell_id) return { fallbackSmall: 'id' + s.shell_id }
     return {}
@@ -222,10 +234,11 @@ function dmgColor(s) {
   return !d ? 'var(--muted, #9aa4b2)' : d >= 1000 ? 'var(--danger, #e0665b)' : d >= 600 ? '#ffcf5c' : 'var(--fg, #dfe5ec)'
 }
 
-// 行内 3D 复现可用性：命中弹必有弹道；脱靶弹也可复现（ball_a→ball_b 弹道 + terrain_impact 落点）
+// 行内 3D 复现可用性：仅命中弹（有目标 = 服务器命中通知在案，弹道/命中判定/装甲
+// 实测齐备）。脱靶弹不提供 3D 复现（评审裁决：其 shell_id/弹道为广播降级数据，
+// 无装甲判定意义）
 function rowHas3d(s) {
-  const miss = !s.target_name
-  return !miss || (Array.isArray(s.ball_b) && (s.ball_b[0] || s.ball_b[1] || s.ball_b[2]))
+  return !!s.target_name
 }
 
 // 3D 查看器 URL（世界模式）：命中弹用目标车辆；脱靶弹（无 target_tank_id）用射手车辆兜底。
