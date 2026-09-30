@@ -26,6 +26,7 @@ import com.wotb.core.replay.timeline.HpSource;
 import com.wotb.core.replay.timeline.PositionKnowledge;
 import com.wotb.core.replay.timeline.PositionSource;
 import com.wotb.core.replay.timeline.VehicleKnowledgeState;
+import com.wotb.core.replay.event.AssaultBaseStateTransition;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -114,6 +115,34 @@ class BattlePlaybackProjectorTest {
         assertFalse(json.contains("baseIndex"));
         assertFalse(json.contains("field5"));
         assertFalse(json.contains("field6"));
+    }
+
+    @Test
+    void projectsAssaultBaseProgressAtOneHundredWithoutInventingTeamSemantics() {
+        final long account = 2001L;
+        final Battle battle = syntheticBattle(account, 1);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(7, new TeamEntityIdentity(7, account, "Recorder", 456L, "Recorder", 1,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(7)), Map.of(), 0, List.of());
+        final FrameHealth health = new FrameHealth(1000, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH);
+        final ReplayEvent base = new AssaultBaseStateTransition(
+                11, new ReplayTimestamp(10f, 10f), 8, DecodeConfidence.EXACT, 100);
+        final BattleTimeline timeline = syntheticTimeline(40,
+                List.of(new BattleFrame(0, 0, null,
+                        List.of(frameVehicleWithHealth(7, account, 1, true, health, 0)),
+                        List.of(), List.of(), Map.of(), List.of())),
+                List.of(base));
+
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(
+                battle, timeline, mapping, account);
+
+        final BattlePlaybackDataset.BaseStateTransition projected = dataset.baseStates().getFirst();
+        assertEquals("BASE", projected.baseId());
+        assertEquals(100, projected.captureProgress());
+        assertNull(projected.ownerTeam());
+        assertNull(projected.capturingTeam());
     }
 
     @Test
