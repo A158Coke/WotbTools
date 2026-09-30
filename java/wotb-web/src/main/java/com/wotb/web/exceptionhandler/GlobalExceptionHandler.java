@@ -1,6 +1,5 @@
 package com.wotb.web.exceptionhandler;
 
-import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.replay.processing.MixedAnalysisScopesException;
 import com.wotb.core.replay.processing.MixedRandomBattleRecordersException;
 import com.wotb.core.replay.processing.PerspectiveTeamNotResolvedException;
@@ -8,9 +7,6 @@ import com.wotb.core.replay.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
-import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
-import com.wotb.web.replay.exception.AiReviewBusyException;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.job.ExportQueueFullException;
@@ -157,32 +153,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleExportQueueFull(
             final ExportQueueFullException exception, final HttpServletRequest request) {
         return response("EXPORT_QUEUE_FULL", HttpStatus.SERVICE_UNAVAILABLE, exception, request);
-    }
-
-    @ExceptionHandler(AiReviewBusyException.class)
-    public ResponseEntity<ApiErrorResponse> handleAiReviewBusy(
-            final AiReviewBusyException exception, final HttpServletRequest request) {
-        return response("AI_REVIEW_BUSY", HttpStatus.SERVICE_UNAVAILABLE, exception, request);
-    }
-
-    @ExceptionHandler(AiNotConfiguredException.class)
-    public ResponseEntity<ApiErrorResponse> handleAiNotConfigured(
-            final AiNotConfiguredException exception, final HttpServletRequest request) {
-        return response("AI_NOT_CONFIGURED", HttpStatus.SERVICE_UNAVAILABLE, exception, request);
-    }
-
-    @ExceptionHandler(AiUpstreamException.class)
-    public ResponseEntity<ApiErrorResponse> handleAiUpstream(
-            final AiUpstreamException exception, final HttpServletRequest request) {
-        return response(errorCode(exception.code(), "AI_UPSTREAM_ERROR"),
-                HttpStatus.BAD_GATEWAY, exception, request);
-    }
-
-    @ExceptionHandler(AiPromptBudgetExceededException.class)
-    public ResponseEntity<ApiErrorResponse> handleAiPromptBudget(
-            final AiPromptBudgetExceededException exception, final HttpServletRequest request) {
-        return response("AI_PROMPT_MANDATORY_SECTION_TOO_LARGE",
-                HttpStatus.BAD_REQUEST, exception, request);
     }
 
     @ExceptionHandler(ReplayFileCountExceededException.class)

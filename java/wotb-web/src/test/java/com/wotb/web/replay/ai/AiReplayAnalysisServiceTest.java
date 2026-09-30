@@ -23,15 +23,9 @@ import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.BattleCategory;
 import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
-import com.wotb.core.replay.processing.ReplayIdentity;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
@@ -272,10 +266,7 @@ class AiReplayAnalysisServiceTest {
     @Test
     void singleTeamRequestUsesConfiguredModelAndCompressedTeamContext() {
         final var service = startService();
-        final var context = service.buildSingleTeamContext(
-                teamGroups(List.of(teamResult(
-                        "training.wotbreplay", "arena-one", "Ally", 1001L, 1)))
-                        .getFirst());
+        final var context = teamContext(teamResult("arena-one", "Ally", 1001L, 1));
         final var result = service.analyzeSingleTeamContext(context);
         assertEquals("team review", result.analysis());
         final AiChatRequest req = teamRequests().getLast();
@@ -307,10 +298,7 @@ class AiReplayAnalysisServiceTest {
     @Test
     void singleTeamRequestContainsResultLabel() {
         final var service = startService();
-        final var context = service.buildSingleTeamContext(
-                teamGroups(List.of(teamResult(
-                        "result-test.wotbreplay", "arena-result", "Ally", 1001L, 1)))
-                        .getFirst());
+        final var context = teamContext(teamResult("arena-result", "Ally", 1001L, 1));
         final var result = service.analyzeSingleTeamContext(context);
         assertEquals("team review", result.analysis());
         assertTrue(teamLastBody().contains("result=TEAM_WIN")
@@ -325,10 +313,7 @@ class AiReplayAnalysisServiceTest {
         gateway.nextCompletionText = envelope("team review");
         gateway.autopsyCompletionText = AUTOPSY_JSON;
         final var service = startService();
-        final var context = service.buildSingleTeamContext(
-                teamGroups(List.of(sevenTeamResult(
-                        "autopsy.wotbreplay", "arena-autopsy", "Ally", 1001L, 1)))
-                        .getFirst());
+        final var context = teamContext(sevenTeamResult("arena-autopsy", "Ally", 1001L, 1));
         final var result = service.analyzeSingleTeamContext(context);
         assertTrue(result.analysis().startsWith("team review"));
         // （生产装配输出，测试 E）：最终 analysis 不得出现
@@ -365,10 +350,7 @@ class AiReplayAnalysisServiceTest {
         gateway.nextCompletionText = envelope("team review");
         gateway.preBattleCompletionText = PRIOR_JSON;
         final var service = startService();
-        final var context = service.buildSingleTeamContext(
-                teamGroups(List.of(sevenTeamResult(
-                        "prior.wotbreplay", "arena-prior", "Ally", 1001L, 1)))
-                        .getFirst());
+        final var context = teamContext(sevenTeamResult("arena-prior", "Ally", 1001L, 1));
         final var result = service.analyzeSingleTeamContext(context);
         assertEquals("team review", result.analysis());
         final String body = teamLastBody();
@@ -387,10 +369,7 @@ class AiReplayAnalysisServiceTest {
         gateway.nextCompletionText = envelope("team review");
         gateway.preBattleCompletionText = "not a json object";
         final var service = startService();
-        final var context = service.buildSingleTeamContext(
-                teamGroups(List.of(sevenTeamResult(
-                        "prior-fail.wotbreplay", "arena-prior-fail", "Ally", 1001L, 1)))
-                        .getFirst());
+        final var context = teamContext(sevenTeamResult("arena-prior-fail", "Ally", 1001L, 1));
         final var result = service.analyzeSingleTeamContext(context);
         assertEquals("team review", result.analysis());
         assertTrue(teamLastBody().contains("赛前战略基线不可用"),
@@ -400,10 +379,11 @@ class AiReplayAnalysisServiceTest {
     @Test
     void playerRequestWithoutReconstructionRejectsAiReview() {
         // 无法构建 canonical timeline → 拒绝 AI Review，不走 settlement-only
-        final var service = startService();
+        final var service = playerService();
         final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
                 com.wotb.web.replay.exception.AiTimelineUnusableException.class,
-                () -> service.analyzePlayerOrFallback(randomResultWithoutReconstruction()));
+                () -> service.analyzePlayerOrFallback(randomBattleWithoutReconstruction(), null,
+                        AllowedLanguage.ZH, AiReviewStreamListener.NOOP));
         assertTrue(e.getMessage().contains("AI_TIMELINE_UNUSABLE"));
     }
 
@@ -411,9 +391,8 @@ class AiReplayAnalysisServiceTest {
     void singleTeamPerspectiveUsesSingleTeamContext() {
         gateway.nextCompletionText = structuredResult();
         final var service = startService();
-        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
-        final var result = service.analyzeTeamGroups(groups);
+        final TeamFixture fixture = teamResultWithRecon("shared-arena", "Ally", 1001L, 1);
+        final var result = analyzeTeam(service, fixture, AllowedLanguage.ZH);
         assertEquals("team review", result.analysis().analysis());
         assertNotNull(result.structuredResult());
         // 单文件 team single 路径：SINGLE_TEAM_CONTEXT，无 MULTI_TEAM_CONTEXT / PERSPECTIVE 分区
@@ -435,9 +414,8 @@ class AiReplayAnalysisServiceTest {
         gateway.nextCompletionText = structuredResult();
         gateway.preBattleCompletionText = PRIOR_JSON;
         final var service = startService();
-        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
-        final var result = service.analyzeTeamGroups(groups);
+        final TeamFixture fixture = teamResultWithRecon("shared-arena", "Ally", 1001L, 1);
+        final var result = analyzeTeam(service, fixture, AllowedLanguage.ZH);
         assertEquals("team review", result.analysis().analysis(),
                 "summary compatibility text must be unaffected by preBattleSection");
         assertNotNull(result.structuredResult());
@@ -455,9 +433,8 @@ class AiReplayAnalysisServiceTest {
     void teamAnalyzeGroupsNullSectionWhenPriorUnavailable() {
         gateway.nextCompletionText = structuredResult();
         final var service = startService();
-        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
-        final var result = service.analyzeTeamGroups(groups);
+        final TeamFixture fixture = teamResultWithRecon("shared-arena", "Ally", 1001L, 1);
+        final var result = analyzeTeam(service, fixture, AllowedLanguage.ZH);
         assertEquals("team review", result.analysis().analysis());
         assertNotNull(result.structuredResult());
         assertNull(result.preBattleSection(),
@@ -469,9 +446,8 @@ class AiReplayAnalysisServiceTest {
         gateway.nextCompletionText = structuredResult();
         // startService() 使用 4 参构造（call2 thinking 默认开启 true/high），验证团队入口透传
         final var service = startService();
-        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
-        service.analyzeTeamGroups(groups);
+        final TeamFixture fixture = teamResultWithRecon("shared-arena", "Ally", 1001L, 1);
+        analyzeTeam(service, fixture, AllowedLanguage.ZH);
         final AiChatRequest review = gateway.requests.stream()
                 .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
                 .findFirst()
@@ -486,10 +462,9 @@ class AiReplayAnalysisServiceTest {
     void invalidOptionalSchemaReferencesAreSalvagedWithoutRecovery() {
         gateway.teamCompletionSequence.add(optionalReferencesResult());
         final var service = startService();
-        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("normalized.wotbreplay", "normalized-arena", "Ally", 1001L, 1)));
+        final TeamFixture fixture = teamResultWithRecon("normalized-arena", "Ally", 1001L, 1);
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(groups);
+        final TeamAnalyzeResult result = analyzeTeam(service, fixture, AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(1, allTeamReviewRequests().size());
@@ -503,10 +478,9 @@ class AiReplayAnalysisServiceTest {
                 + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],"
                 + "\"highContributors\":[],\"unknown\":true}");
         final var service = startService();
-        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("repair.wotbreplay", "repair-arena", "Ally", 1001L, 1)));
+        final TeamFixture fixture = teamResultWithRecon("repair-arena", "Ally", 1001L, 1);
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(groups);
+        final TeamAnalyzeResult result = analyzeTeam(service, fixture, AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(1, allTeamReviewRequests().size());
@@ -525,10 +499,9 @@ class AiReplayAnalysisServiceTest {
         gateway.teamCompletionSequence.add(initial);
         gateway.teamCompletionSequence.add(structuredResult());
         final var service = startService();
-        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("mixed-repair.wotbreplay", "mixed-repair-arena", "Ally", 1001L, 1)));
+        final TeamFixture fixture = teamResultWithRecon("mixed-repair-arena", "Ally", 1001L, 1);
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(groups);
+        final TeamAnalyzeResult result = analyzeTeam(service, fixture, AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(1, allTeamReviewRequests().size());
@@ -542,9 +515,8 @@ class AiReplayAnalysisServiceTest {
                 .replace("\"playerKeys\":[]", "\"playerKeys\":[\"P1\",\"UNKNOWN\",\"P1\"]"));
         final var service = startService();
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
-                teamResultWithRecon("partial-player-keys.wotbreplay", "partial-player-keys-arena",
-                        "Ally", 1001L, 1))));
+        final TeamAnalyzeResult result = analyzeTeam(service, teamResultWithRecon("partial-player-keys-arena",
+                        "Ally", 1001L, 1), AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(List.of("P1", "P1"),
@@ -562,9 +534,8 @@ class AiReplayAnalysisServiceTest {
         final var service = startService();
 
         final AiUpstreamException error = assertThrows(AiUpstreamException.class,
-                () -> service.analyzeTeamGroups(teamGroups(List.of(
-                        teamResultWithRecon("recovery-unknown.wotbreplay", "recovery-unknown-arena",
-                                "Ally", 1001L, 1)))));
+                () -> analyzeTeam(service, teamResultWithRecon("recovery-unknown-arena",
+                                "Ally", 1001L, 1), AllowedLanguage.ZH));
 
         assertEquals("AI_REVIEW_SCHEMA_FAILED", error.code());
         assertEquals(2, allTeamReviewRequests().size());
@@ -576,11 +547,10 @@ class AiReplayAnalysisServiceTest {
         gateway.teamCompletionSequence.add("{}");
         gateway.teamCompletionSequence.add("not json");
         final var service = startService();
-        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("repair-fail.wotbreplay", "repair-fail-arena", "Ally", 1001L, 1)));
+        final TeamFixture fixture = teamResultWithRecon("repair-fail-arena", "Ally", 1001L, 1);
 
         final AiUpstreamException error = assertThrows(AiUpstreamException.class,
-                () -> service.analyzeTeamGroups(groups));
+                () -> analyzeTeam(service, fixture, AllowedLanguage.ZH));
 
         assertEquals("AI_REVIEW_SCHEMA_FAILED", error.code());
         assertEquals(2, allTeamReviewRequests().size());
@@ -593,9 +563,8 @@ class AiReplayAnalysisServiceTest {
         gateway.teamCompletionSequence.add(structuredResult());
         final var service = startService();
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
-                teamResultWithRecon("truncated-json.wotbreplay", "truncated-json-arena", "Ally",
-                        1001L, 1))));
+        final TeamAnalyzeResult result = analyzeTeam(service, teamResultWithRecon("truncated-json-arena", "Ally",
+                        1001L, 1), AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(2, allTeamReviewRequests().size());
@@ -610,8 +579,7 @@ class AiReplayAnalysisServiceTest {
         gateway.teamCompletionSequence.add(structuredResult());
         final var service = startService();
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
-                teamResultWithRecon("long-plain.wotbreplay", "long-plain-arena", "Ally", 1001L, 1))));
+        final TeamAnalyzeResult result = analyzeTeam(service, teamResultWithRecon("long-plain-arena", "Ally", 1001L, 1), AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(2, allTeamReviewRequests().size());
@@ -623,9 +591,8 @@ class AiReplayAnalysisServiceTest {
         gateway.teamCompletionSequence.add(structuredResult());
         final var service = startService();
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
-                teamResultWithRecon("large-structured.wotbreplay", "large-structured-arena", "Ally",
-                        1001L, 1))));
+        final TeamAnalyzeResult result = analyzeTeam(service, teamResultWithRecon("large-structured-arena", "Ally",
+                        1001L, 1), AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(1, allTeamReviewRequests().size());
@@ -641,8 +608,7 @@ class AiReplayAnalysisServiceTest {
                 17, 19, 36, 0, 0, 0, "stop"));
         final var service = startService();
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
-                teamResultWithRecon("recovery-metadata.wotbreplay", "recovery-metadata-arena", "Ally", 1001L, 1))));
+        final TeamAnalyzeResult result = analyzeTeam(service, teamResultWithRecon("recovery-metadata-arena", "Ally", 1001L, 1), AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertTrue(teamReviewEvents("ai_review_recovery_triggered").stream()
@@ -663,9 +629,8 @@ class AiReplayAnalysisServiceTest {
                 11, 13, 24, 0, 0, 0, "stop"));
         final var service = startService();
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
-                teamResultWithRecon("recovery-plain-text.wotbreplay", "recovery-plain-text-arena", "Ally",
-                        1001L, 1))));
+        final TeamAnalyzeResult result = analyzeTeam(service, teamResultWithRecon("recovery-plain-text-arena", "Ally",
+                        1001L, 1), AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(2, allTeamReviewRequests().size());
@@ -682,8 +647,7 @@ class AiReplayAnalysisServiceTest {
         gateway.teamCompletionSequence.add(structuredResult());
         final var service = startService();
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
-                teamResultWithRecon("recovery.wotbreplay", "recovery-arena", "Ally", 1001L, 1))));
+        final TeamAnalyzeResult result = analyzeTeam(service, teamResultWithRecon("recovery-arena", "Ally", 1001L, 1), AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(2, allTeamReviewRequests().size());
@@ -698,8 +662,7 @@ class AiReplayAnalysisServiceTest {
                 TeamAiReviewResultParser.MAX_EPISODES + 1));
         final var service = startService();
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
-                teamResultWithRecon("cardinality.wotbreplay", "cardinality-arena", "Ally", 1001L, 1))));
+        final TeamAnalyzeResult result = analyzeTeam(service, teamResultWithRecon("cardinality-arena", "Ally", 1001L, 1), AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(TeamAiReviewResultParser.MAX_EPISODES, result.structuredResult().episodes().size());
@@ -714,8 +677,7 @@ class AiReplayAnalysisServiceTest {
         gateway.teamCompletionSequence.add(structuredResult());
         final var service = startService();
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(teamGroups(List.of(
-                teamResultWithRecon("wrong-type.wotbreplay", "wrong-type-arena", "Ally", 1001L, 1))));
+        final TeamAnalyzeResult result = analyzeTeam(service, teamResultWithRecon("wrong-type-arena", "Ally", 1001L, 1), AllowedLanguage.ZH);
 
         assertNotNull(result.structuredResult());
         assertEquals(2, allTeamReviewRequests().size());
@@ -730,9 +692,8 @@ class AiReplayAnalysisServiceTest {
         final AllowedLanguage language = AllowedLanguage.valueOf(languageName);
         final var service = startService();
 
-        service.analyzeTeamGroups(teamGroups(List.of(
-                teamResultWithRecon("localized-recovery.wotbreplay", "localized-recovery-arena",
-                        "Ally", 1001L, 1))), language);
+        analyzeTeam(service, teamResultWithRecon("localized-recovery-arena", "Ally", 1001L, 1),
+                language);
 
         final String prompt = allTeamReviewRequests().getLast().userPrompt();
         assertFalse(prompt.contains("这是唯一一次 recovery"));
@@ -745,11 +706,11 @@ class AiReplayAnalysisServiceTest {
     void teamStreamingEmitsEvidenceDoneBeforeReviewCall() {
         gateway.nextCompletionText = structuredResult();
         final var service = startService();
-        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
+        final TeamFixture fixture = teamResultWithRecon("shared-arena", "Ally", 1001L, 1);
         final List<String> stages = new CopyOnWriteArrayList<>();
         final List<String> tokens = new CopyOnWriteArrayList<>();
-        service.analyzeTeamGroups(groups, AllowedLanguage.ZH, new AiReviewStreamListener() {
+        service.analyzeTeam(fixture.battle(), fixture.reconstruction(), AllowedLanguage.ZH,
+                new AiReviewStreamListener() {
             @Override
             public void onStage(final String stage) {
                 stages.add(stage);
@@ -802,15 +763,17 @@ class AiReplayAnalysisServiceTest {
     void singleTeamPerspectiveProducesOneRequest() {
         gateway.nextCompletionText = structuredResult();
         final var service = startService();
-        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
-        service.analyzeTeamGroups(groups);
+        final TeamFixture fixture = teamResultWithRecon("shared-arena", "Ally", 1001L, 1);
+        analyzeTeam(service, fixture, AllowedLanguage.ZH);
         final List<AiChatRequest> teamRequests = teamRequests();
         assertEquals(1, teamRequests.size(),
                 "Single team perspective must produce exactly 1 team request");
 
         final String first = teamRequests.get(0).userPrompt();
-        assertTrue(first.contains("ally.wotbreplay"), "Request must be the ally perspective");
+        // 旧断言用 replay fileName 标识视角；迁移后 file= 恒为空（生产入口不再携带 fileName），
+        // 改为断言「录像者所在队伍即视角队伍」：本队权威结果含 Ally，对方仅在 opposing 段出现。
+        assertTrue(perspectiveBodySection(first).contains("Ally"),
+                "Request must be the ally perspective");
         assertFalse(perspectiveBodySection(first).contains("Enemy"),
                 "Ally perspective body must not contain the opposing team's members");
         assertTrue(first.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"),
@@ -910,7 +873,8 @@ class AiReplayAnalysisServiceTest {
                         new ConservativeDeepSeekTokenEstimator(), "test-model",
                         30000, 131072, 8192, 1000, true, "high", 315, 4096));
         assertThrows(com.wotb.web.replay.exception.AiTimelineUnusableException.class,
-                () -> service.analyzePlayerOrFallback(randomResultWithoutReconstruction()));
+                () -> service.analyzePlayerOrFallback(randomBattleWithoutReconstruction(), null,
+                        AllowedLanguage.ZH, AiReviewStreamListener.NOOP));
         assertTrue(gateway.requests.isEmpty(),
                 "无重建时必须拒绝，绝不调用 AI Gateway");
     }
@@ -1251,9 +1215,26 @@ class AiReplayAnalysisServiceTest {
                 null, battle, features, recorderMapping, coverage, List.of("TEST_LIMITATION"));
     }
 
-    private static List<ReplayPerspectiveGroup> teamGroups(
-            final List<ReplayProcessingResult> results) {
-        return new BatchAnalyzer().analyze(results).groups();
+    /** battle + reconstruction 测试夹具：新 AI 入口直接接收领域事实。 */
+    private record TeamFixture(Battle battle, ReplayReconstruction reconstruction) {
+    }
+
+    private static SingleTeamBattleAnalysisContext teamContext(final TeamFixture fixture) {
+        return TeamContextBuilder.buildSingleTeamContext(fixture.battle(), fixture.reconstruction());
+    }
+
+    private static TeamAnalyzeResult analyzeTeam(
+            final AiReplayAnalysisService service, final TeamFixture fixture,
+            final AllowedLanguage language) {
+        return service.analyzeTeam(fixture.battle(), fixture.reconstruction(), language,
+                AiReviewStreamListener.NOOP);
+    }
+
+    /** facade 不再暴露 analyzePlayerOrFallback 重载；直接构造 Player Service（与 startService 同配置）。 */
+    private PlayerReplayAnalysisService playerService() {
+        return new PlayerReplayAnalysisService(gateway, new AiReplayAnalysisConfig(
+                new ConservativeDeepSeekTokenEstimator(), "test-model",
+                200000, 131072, 8192, 1000, true, "high", 315, 4096));
     }
 
     private static String unitLimitationsOf(final String section) {
@@ -1264,18 +1245,8 @@ class AiReplayAnalysisServiceTest {
         return end < 0 ? section.substring(start) : section.substring(start, end + 1);
     }
 
-    private static String extractSection(final String body, final String analysisUnitId) {
-        final String[] perspectives = body.split("=== PERSPECTIVE ");
-        for (int i = 1; i < perspectives.length; i++) {
-            if (perspectives[i].contains("analysisUnitId=\"" + analysisUnitId)) {
-                return perspectives[i];
-            }
-        }
-        return null;
-    }
-
-    private static ReplayProcessingResult teamResult(
-            final String fileName, final String arenaId,
+    private static TeamFixture teamResult(
+            final String arenaId,
             final String recorderNickname, final long recorderAccountId,
             final int recorderTeam) {
         final Battle battle = new Battle();
@@ -1292,28 +1263,20 @@ class AiReplayAnalysisServiceTest {
                 recorderTeam == 2 ? recorderAccountId : 2001L,
                 recorderTeam == 2 ? recorderNickname : "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        return new ReplayProcessingResult(
-                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
-                        recorderAccountId, null),
-                  battle, null, null, capabilities, null, null);
+        return new TeamFixture(battle, null);
       }
 
     /**
      * {@link #teamResult} 的有效重建变体：通过 Team canonical Timeline hard gate
-     * （PR #102 ）—— analyzeTeamGroups 在 LLM 调用前要求 timeline 可构建。
+     * （PR #102 ）—— analyzeTeam 在 LLM 调用前要求 timeline 可构建。
      */
-    private static ReplayProcessingResult teamResultWithRecon(
-            final String fileName, final String arenaId,
+    private static TeamFixture teamResultWithRecon(
+            final String arenaId,
             final String recorderNickname, final long recorderAccountId,
             final int recorderTeam) {
-        final ReplayProcessingResult base = teamResult(
-                fileName, arenaId, recorderNickname, recorderAccountId, recorderTeam);
-        return new ReplayProcessingResult(
-                base.fileName(), base.status(), base.identity(), base.battle(),
-                teamReconstruction(base.battle()), base.diagnostics(), base.capabilities(),
-                base.error(), base.reconstructionError());
+        final TeamFixture base = teamResult(
+                arenaId, recorderNickname, recorderAccountId, recorderTeam);
+        return new TeamFixture(base.battle(), teamReconstruction(base.battle()));
     }
 
     /** 由 battle roster 派生最小有效重建（IDENTIFIED 时钟 + 逐 player 映射/位置/血量）。 */
@@ -1344,8 +1307,8 @@ class AiReplayAnalysisServiceTest {
     }
 
     /** 完整 7 名本方玩家 + 1 名敌方的团队回放（Team Autopsy 成功 fixture）。 */
-    private static ReplayProcessingResult sevenTeamResult(
-            final String fileName, final String arenaId,
+    private static TeamFixture sevenTeamResult(
+            final String arenaId,
             final String recorderNickname, final long recorderAccountId,
             final int recorderTeam) {
         final Battle battle = new Battle();
@@ -1367,67 +1330,7 @@ class AiReplayAnalysisServiceTest {
         }
         players.add(player(2001L, "Enemy", recorderTeam == 1 ? 2 : 1, 900));
         battle.players = players;
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        return new ReplayProcessingResult(
-                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
-                        recorderAccountId, null),
-                battle, null, null, capabilities, null, null);
-    }
-
-    private static ReplayProcessingResult teamResultWithDuplicateIds(
-            final String fileName, final String arenaId,
-            final String recorderNickname, final long recorderAccountId,
-            final int recorderTeam) {
-        final Battle battle = new Battle();
-        battle.arenaId = arenaId;
-        battle.mapName = "team_map";
-        battle.arenaBonusType = 2;
-        battle.durationS = 300.0;
-        battle.winnerTeam = 1;
-        battle.recorder = recorderNickname;
-        final PlayerResult p1 = player(recorderTeam == 1 ? recorderAccountId : 1001L,
-                recorderTeam == 1 ? recorderNickname : "PlayerA", recorderTeam, 1500);
-        final PlayerResult p2 = player(recorderTeam == 1 ? recorderAccountId : 2001L,
-                "DuplicateId", recorderTeam, 800);
-        battle.players = List.of(p1, p2);
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        return new ReplayProcessingResult(
-                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
-                        recorderAccountId, null),
-                battle, null, null, capabilities, null, null);
-    }
-
-    private static ReplayProcessingResult teamResultWithClan(
-            final String fileName, final String arenaId,
-            final String clan, final boolean withDuplicateId) {
-        final Battle battle = new Battle();
-        battle.arenaId = arenaId;
-        battle.mapName = "team_map";
-        battle.arenaBonusType = 2;
-        battle.durationS = 300.0;
-        battle.winnerTeam = 1;
-        battle.recorder = withDuplicateId ? "PlayerA" : "PlayerC";
-        final PlayerResult p1 = clanPlayer(1001L, "PlayerA", 1, 1500, clan);
-        final PlayerResult p2 = clanPlayer(1002L, "PlayerB", 1, 1200, clan);
-        final PlayerResult p3;
-        final PlayerResult p4;
-        if (withDuplicateId) {
-            p3 = clanPlayer(1001L, "PlayerDup", 1, 800, clan);
-            p4 = clanPlayer(1003L, "PlayerC", 1, 900, clan);
-        } else {
-            p3 = clanPlayer(1003L, "PlayerC", 1, 900, clan);
-            p4 = clanPlayer(1005L, "PlayerE", 1, 1000, clan);
-        }
-        final PlayerResult enemy = clanPlayer(9999L, "Enemy", 2, 500, "ENEMY_CLAN");
-        battle.players = List.of(p1, p2, p3, p4, enemy);
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        return new ReplayProcessingResult(
-                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
-                        withDuplicateId ? 1001L : 1003L, null),
-                battle, null, null, capabilities, null, null);
+        return new TeamFixture(battle, null);
     }
 
     private static PlayerResult player(
@@ -1448,14 +1351,8 @@ class AiReplayAnalysisServiceTest {
         return p;
     }
 
-    private static PlayerResult clanPlayer(final long accountId, final String nickname,
-                                            final int team, final int damage, final String clan) {
-        final PlayerResult p = player(accountId, nickname, team, damage);
-        p.clan = clan;
-        return p;
-    }
-
-    private static ReplayProcessingResult randomResultWithoutReconstruction() {
+    /** 无重建的随机战 Battle：player 复盘入口必须在任何 AI 调用前拒绝。 */
+    private static Battle randomBattleWithoutReconstruction() {
         final Battle battle = new Battle();
         battle.arenaId = "random-arena";
         battle.mapName = "random_map";
@@ -1463,78 +1360,6 @@ class AiReplayAnalysisServiceTest {
         final PlayerResult recorder = player(1001L, "Player", 1, 1_000);
         battle.players = List.of(recorder);
         battle.recorder = recorder.nickname;
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, false, false);
-        return new ReplayProcessingResult(
-                "random.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("random-hash", "random-arena", null, "random_map",
-                        1001L, null),
-                battle, (ReplayReconstruction) null, null, capabilities, null, null);
-    }
-
-    private static ReplayProcessingResult manyMemberTeamResult() {
-        final Battle battle = new Battle();
-        battle.arenaId = "large-team-arena";
-        battle.mapName = "team_map";
-        battle.arenaBonusType = 2;
-        battle.durationS = 300.0;
-        battle.winnerTeam = 1;
-        battle.players = IntStream.range(0, 15 + 2)
-                .mapToObj(index -> player(
-                        10_000L + index, "Member" + index, 1, 500 + index))
-                .toList();
-        battle.recorder = battle.players.getFirst().nickname;
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        return new ReplayProcessingResult(
-                "large-team.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("large-team-hash", battle.arenaId, "11.0",
-                        battle.mapName, battle.players.getFirst().accountId, null),
-                battle, null, null, capabilities, null, null);
-    }
-
-    private static ReplayProcessingResult manyMemberTeamResultWithClan(
-            final String fileName, final String arenaId, final String clan) {
-        final Battle battle = new Battle();
-        battle.arenaId = arenaId;
-        battle.mapName = "team_map";
-        battle.arenaBonusType = 2;
-        battle.durationS = 300.0;
-        battle.winnerTeam = 1;
-        battle.recorder = "Member0";
-        battle.players = IntStream.range(0, 15 + 2)
-                .mapToObj(index -> clanPlayer(
-                        10_000L + index, "Member" + index, 1,
-                        500 + index, clan))
-                .toList();
-        battle.players.get(0).damageDealt = 500;
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        return new ReplayProcessingResult(
-                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("hash-" + fileName, arenaId, "11.0",
-                        battle.mapName, battle.players.getFirst().accountId, null),
-                battle, null, null, capabilities, null, null);
-    }
-
-    private static ReplayProcessingResult teamResultWithNMembers(
-            final String fileName, final String arenaId, final String clan,
-            final int memberCount, final int firstId, final int lastId) {
-        final Battle battle = new Battle();
-        battle.arenaId = arenaId;
-        battle.mapName = "team_map";
-        battle.arenaBonusType = 2;
-        battle.durationS = 300.0;
-        battle.winnerTeam = 1;
-        battle.recorder = "Player" + firstId;
-        final java.util.ArrayList<PlayerResult> players = new java.util.ArrayList<>();
-        for (int id = firstId; id <= lastId && players.size() < memberCount; id++) {
-            players.add(clanPlayer(id, "Player" + id, 1, 500 + id, clan));
-        }
-        players.add(clanPlayer(9999L, "Enemy", 2, 500, "ENEMY_CLAN"));
-        battle.players = players;
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        return new ReplayProcessingResult(
-                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
-                        players.getFirst().accountId, null),
-                battle, null, null, capabilities, null, null);
+        return battle;
     }
 }

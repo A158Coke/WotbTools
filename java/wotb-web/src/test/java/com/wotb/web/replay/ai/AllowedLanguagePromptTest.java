@@ -10,11 +10,6 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.processing.BatchAnalyzer;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
@@ -160,8 +155,9 @@ class AllowedLanguagePromptTest {
         final AiChatGateway gateway = capturingGateway(captured);
         final AiReplayAnalysisService facade = new AiReplayAnalysisService(
                 gateway, "test-model", 200000, new ConservativeDeepSeekTokenEstimator());
-        final ReplayPerspectiveGroup group = teamGroup();
-        final var context = facade.buildSingleTeamContext(group);
+        final Battle teamBattle = teamBattle();
+        final ReplayReconstruction teamRecon = teamRecon();
+        final var context = TeamContextBuilder.buildSingleTeamContext(teamBattle, teamRecon);
 
         facade.analyzeSingleTeamContext(context, AllowedLanguage.EN);
         assertTrue(captured.get().systemPrompt().contains("natural, fluent English"));
@@ -173,7 +169,7 @@ class AllowedLanguagePromptTest {
         assertFalse(containsAny(captured.get().systemPrompt(), CHINESE_OUTPUT_MANDATES));
         assertFalse(containsAny(captured.get().systemPrompt(), LOCALIZED_OUTPUT_MANDATES));
 
-        facade.analyzeTeamGroups(List.of(teamGroup()), AllowedLanguage.EN);
+        facade.analyzeTeam(teamBattle, teamRecon, AllowedLanguage.EN, AiReviewStreamListener.NOOP);
         assertTrue(captured.get().systemPrompt().contains("natural, fluent English"));
         assertFalse(containsAny(captured.get().systemPrompt(), CHINESE_OUTPUT_MANDATES));
         assertFalse(containsAny(captured.get().systemPrompt(), LOCALIZED_OUTPUT_MANDATES));
@@ -235,7 +231,7 @@ class AllowedLanguagePromptTest {
         return battle;
     }
 
-    private static ReplayPerspectiveGroup teamGroup() {
+    private static Battle teamBattle() {
         final Battle battle = new Battle();
         battle.arenaId = "stub";
         battle.mapName = "team_map";
@@ -246,13 +242,7 @@ class AllowedLanguagePromptTest {
         final PlayerResult ally = player(1001L, "Ally", 1, 1500);
         final PlayerResult enemy = player(2001L, "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
-        final ReplayProcessingCapabilities capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        final ReplayProcessingResult result = new ReplayProcessingResult(
-                "stub.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new com.wotb.core.replay.processing.ReplayIdentity(
-                        "h", "stub", "11.0", "team_map", 1001L, null),
-                battle, teamRecon(), null, capabilities, null, null);
-        return new BatchAnalyzer().analyze(List.of(result)).groups().getFirst();
+        return battle;
     }
 
     /** 有效团队 reconstruction（IDENTIFIED battle-relative 时钟 + 双方实体位置/血量）：通过 Team hard gate。 */

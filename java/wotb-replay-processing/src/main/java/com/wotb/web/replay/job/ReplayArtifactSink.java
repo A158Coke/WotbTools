@@ -8,7 +8,6 @@ package com.wotb.web.replay.job;
  * 不允许出现第二条 artifact 生成路径。</p>
  *
  * <p>sink 实现按 {@code (sourceIndex, artifactName)} 覆盖写。{@code artifactName} 固定为
- * {@link ReplayArtifactWriter#AI_FACTS_NAME} /
  * {@link ReplayArtifactWriter#MAP_OVERVIEW_NAME} /
  * {@link ReplayArtifactWriter#BATTLE_PLAYBACK_V2_NAME}。</p>
  */

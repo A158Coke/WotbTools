@@ -6,7 +6,6 @@ import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -133,21 +132,6 @@ public class PlayerReplayAnalysisService {
      * 单场分析：先尝试完整特征分析，不满足条件时降级到结算分析。
      * <p>fallback 是延迟执行的控制流，不提前调用 AI。</p>
      */
-    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result) {
-        return analyzePlayerOrFallback(result, AllowedLanguage.ZH);
-    }
-
-    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
-                                                 final AllowedLanguage language) {
-        return analyzePlayerOrFallback(result, language, AiReviewStreamListener.NOOP);
-    }
-
-    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
-                                                 final AllowedLanguage language,
-                                                 final AiReviewStreamListener listener) {
-        return analyzePlayerOrFallback(result.battle(), result.reconstruction(), language, listener);
-    }
-
     public AnalyzeResult analyzePlayerOrFallback(final Battle battle,
                                                  final ReplayReconstruction reconstruction,
                                                  final AllowedLanguage language,

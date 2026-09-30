@@ -6,11 +6,6 @@ import com.wotb.contracts.ReplayProcessingDispatcher;
 import com.wotb.contracts.ReplayProcessingRequest;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.facts.AiReplayFacts;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
-import com.wotb.core.replay.processing.ReplayIdentity;
 import com.wotb.storage.ObjectStorageKeys;
 import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
@@ -57,7 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>进程 1 跑完收尾（写 {@code result/finalized.json} + per-source dataset），PG 置 READY；</li>
  *   <li>丢弃进程 1 的 store；</li>
  *   <li>进程 2 用同一个 PG 权威开一个**全新 store**（live registry 必然为空）；</li>
- *   <li>GET result / Map Overview / Battle Playback V2 / AI Review artifact / Export 必须全部可用，
+ *   <li>GET result / Map Overview / Battle Playback V2 / Export 必须全部可用，
  *       且不重新解析、不依赖任何 TX 本地 job 目录（本测试的 store 根目录下不存在该 job 的任何文件）。</li>
  * </ol>
  */
@@ -111,7 +106,6 @@ class DistributedRestartRecoveryTest {
             job.recordParseSuccess();
             putSourceDataset(jobId);
             // artifact 一律用生产内容生成器产出（与 worker 写出的字节同源），避免手写 JSON 掩盖真实契约。
-            putArtifact(ReplayArtifactWriter.AI_FACTS_NAME, requireContent(ReplayArtifactWriter.aiFactsContent(result())));
             putArtifact(ReplayArtifactWriter.MAP_OVERVIEW_NAME,
                     requireContent(ReplayArtifactWriter.mapOverviewContent(overview())));
             putArtifact(ReplayArtifactWriter.BATTLE_PLAYBACK_V2_NAME,
@@ -153,13 +147,7 @@ class DistributedRestartRecoveryTest {
             assertNotNull(playback, "重启后 Battle Playback V2 必须可用");
             assertEquals("restart_map", playback.mapCode());
 
-            // 3) AI Review 的 ai-facts artifact（对象存储，从 PG 恢复的 jobId 直接可读）
-            final AiReplayFacts facts =
-                    ReplayArtifactWriter.decodeAiFacts(repository.aiFacts(jobId, 0));
-            assertNotNull(facts, "重启后 ai-facts 必须从对象存储读到");
-            assertNotNull(facts.battle(), "ai-facts 必须是可消费的 canonical facts");
-
-            // 4) Export：必须接受权威恢复出来的 READY 投影
+            // 3) Export：必须接受权威恢复出来的 READY 投影
             final ReplayExportWorkerExecutor executor = new ReplayExportWorkerExecutor(1, 1);
             try {
                 final ReplayExportJobService export = new ReplayExportJobService(
@@ -201,28 +189,6 @@ class DistributedRestartRecoveryTest {
     }
 
     /** 与 worker 落盘/上传的 artifact 同源的内容 fixture。 */
-    private static ReplayProcessingResult result() {
-        final Battle battle = new Battle();
-        battle.arenaId = "arena-restart";
-        battle.mapName = "restart_map";
-        battle.arenaBonusType = 1;
-        battle.durationS = 300.0;
-        battle.winnerTeam = 1;
-        battle.recorder = "Player123";
-        final PlayerResult recorder = new PlayerResult();
-        recorder.accountId = 1001L;
-        recorder.nickname = "Player123";
-        recorder.team = 1;
-        recorder.damageDealt = 1_000;
-        recorder.survived = true;
-        battle.players = List.of(recorder);
-        final ReplayProcessingCapabilities capabilities = new ReplayProcessingCapabilities(true, true, false, false, false);
-        return new ReplayProcessingResult(
-                "round.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("h", "arena-restart", "11.0", "restart_map", 1001L, null),
-                battle, null, null, capabilities, null, null);
-    }
-
     private static MapOverview overview() {
         return new MapOverview(
                 "restart_map", "Restart Map", Map.of("zh", "重启地图"), 1,

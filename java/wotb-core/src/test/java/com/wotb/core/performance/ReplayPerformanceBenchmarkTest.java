@@ -1,12 +1,12 @@
 package com.wotb.core.performance;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ParsedReplay;
 import com.wotb.core.parse.ReplayParser;
-import com.wotb.core.replay.facts.AiReplayFacts;
-import com.wotb.core.replay.facts.ReplayFactsCodec;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
@@ -16,6 +16,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstructionContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.lang.management.GarbageCollectorMXBean;
@@ -69,6 +70,15 @@ class ReplayPerformanceBenchmarkTest {
     private static final double BYTES_PER_MIB = 1024.0 * 1024.0;
     private static final boolean PROGRESS_LOGGING =
             Boolean.getBoolean("performance.progress");
+
+    /**
+     * Canonical facts JSON writer for the determinism digest; field visibility matches the removed
+     * stored-facts projection so no fact silently serializes empty.
+     */
+    private static final JsonMapper CANONICAL_FACTS_MAPPER = JsonMapper.builder()
+            .changeDefaultVisibility(vc -> vc.withVisibility(
+                    PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY))
+            .build();
 
     private final DefaultReplayProcessingFacade facade = new DefaultReplayProcessingFacade();
     private final ReplayReconstructionService reconstructionService = new ReplayReconstructionService();
@@ -523,8 +533,17 @@ class ReplayPerformanceBenchmarkTest {
                 recorderAccountId, battle.recorder);
     }
 
+    /**
+     * Determinism digest of one full-pipeline result: SHA-256 over the canonical facts JSON.
+     *
+     * <p>Replaces the former {@code ReplayFactsCodec.toBytes(AiReplayFacts.fromResult(result))}
+     * digest, removed together with the AI-only {@code ai-facts} artifact and its write-side codec.
+     * The digest still covers the same parsed facts (Battle + reconstruction, including every
+     * {@code ReplayEvent}) and now also the result-level fields, so it stays byte-exact for an equal
+     * result and changes whenever any parsed fact changes.</p>
+     */
     private static String fingerprint(final ReplayProcessingResult result) {
-        return sha256(ReplayFactsCodec.toBytes(AiReplayFacts.fromResult(result)));
+        return sha256(CANONICAL_FACTS_MAPPER.writeValueAsBytes(result));
     }
 
     private static String sha256(final byte[] data) {

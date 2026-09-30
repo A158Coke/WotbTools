@@ -2,20 +2,20 @@ package com.wotb.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.facts.ReplayFactsCodec;
-import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.processing.BattleCategoryUtils;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.replay.processing.ReplayAnalysisScope;
 import com.wotb.core.replay.processing.UnsupportedBattleCategoryException;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.timeline.BattleTimelineBuilder;
-import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.AllowedLanguage;
+import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.TacticalReviewHarness;
 import com.wotb.web.replay.ai.AnalysisUnitAssembler;
+import com.wotb.web.replay.ai.PlayerReviewOutputCorrector;
 import com.wotb.web.replay.ai.PreBattleSectionRenderer;
+import com.wotb.web.replay.ai.TeamAnalyzeResult;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiCancellationToken;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
@@ -48,13 +48,16 @@ public class AiReviewController {
     private static final int MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 
     private final TacticalReviewHarness tacticalReviewHarness;
+    private final AiReplayAnalysisService aiReplayAnalysisService;
     private final AiReviewWorkerExecutor workerExecutor;
     private final AiCancellationRegistry cancellations;
 
     public AiReviewController(final TacticalReviewHarness tacticalReviewHarness,
+                              final AiReplayAnalysisService aiReplayAnalysisService,
                               final AiReviewWorkerExecutor workerExecutor,
                               final AiCancellationRegistry cancellations) {
         this.tacticalReviewHarness = tacticalReviewHarness;
+        this.aiReplayAnalysisService = aiReplayAnalysisService;
         this.workerExecutor = workerExecutor;
         this.cancellations = cancellations;
     }
@@ -66,13 +69,13 @@ public class AiReviewController {
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter reviewJson(final HttpServletRequest request) {
         if (request.getContentLengthLong() > MAX_REQUEST_BYTES) {
-            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "AI_REQUEST_TOO_LARGE");
+            throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE, "AI_REQUEST_TOO_LARGE");
         }
         final JsonNode body;
         try {
             final byte[] bytes = request.getInputStream().readNBytes(MAX_REQUEST_BYTES + 1);
             if (bytes.length > MAX_REQUEST_BYTES) {
-                throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "AI_REQUEST_TOO_LARGE");
+                throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE, "AI_REQUEST_TOO_LARGE");
             }
             body = JsonMapper.builder().build().readTree(bytes);
         } catch (final IOException error) {
@@ -112,18 +115,12 @@ public class AiReviewController {
         if (!AiCancellationRegistry.isValidCorrelationId(request.correlationId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_CORRELATION_ID");
         }
-        // This direct input currently supports personal review only. Reject team mode before
-        // any provider call until the group-oriented analyzer accepts direct projection input.
         final ReplayAnalysisScope scope;
         try {
             scope = BattleCategoryUtils.resolveScope(
                     BattleCategoryUtils.fromArenaBonusType(request.battle().arenaBonusType));
         } catch (final UnsupportedBattleCategoryException error) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "UNSUPPORTED_BATTLE_CATEGORY");
-        }
-        if (scope != ReplayAnalysisScope.PLAYER_FOCUSED) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
                     "UNSUPPORTED_BATTLE_CATEGORY");
         }
         final AiCancellationToken cancellation = cancellations.register(request.correlationId());
@@ -134,7 +131,7 @@ public class AiReviewController {
         emitter.onTimeout(() -> cancellations.cancel(request.correlationId()));
         emitter.onError(error -> cancellations.cancel(request.correlationId()));
         try {
-            workerExecutor.execute(() -> runReview(request, language, cancellation, emitter));
+            workerExecutor.execute(() -> runReview(request, language, scope, cancellation, emitter));
         } catch (final RejectedExecutionException error) {
             cancellations.unregister(request.correlationId(), cancellation);
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "AI_REVIEW_BUSY");
@@ -154,6 +151,7 @@ public class AiReviewController {
     }
 
     private void runReview(final AiReviewRequestV1 request, final AllowedLanguage language,
+                           final ReplayAnalysisScope scope,
                            final AiCancellationToken cancellation, final SseEmitter emitter) {
         AiRequestContext.set(request.correlationId(), cancellation);
         try {
@@ -161,10 +159,7 @@ public class AiReviewController {
                 emitter.complete();
                 return;
             }
-            requireUsableTimeline(request.battle(), request.reconstruction());
-            final TacticalReviewHarness.HarnessOutcome outcome = tacticalReviewHarness.analyzeWithPrior(
-                    request.battle(),
-                    request.reconstruction(), language, new AiReviewStreamListener() {
+            final AiReviewStreamListener listener = new AiReviewStreamListener() {
                         @Override
                         public void onStage(final String stage) {
                             send(emitter, cancellation, stage, Map.of());
@@ -174,19 +169,36 @@ public class AiReviewController {
                         public void onToken(final String delta) {
                             send(emitter, cancellation, "call2_token", Map.of("delta", delta));
                         }
-                    });
+                    };
             final Map<String, Object> done = new HashMap<>();
-            done.put("analysis", outcome.result().analysis());
-            final var recorder = AnalysisUnitAssembler.findRecorder(request.battle(), request.reconstruction());
-            done.put("preBattleSection", outcome.preBattlePrior() == null ? null
-                    : PreBattleSectionRenderer.renderRandomBattle(outcome.preBattlePrior(),
-                            recorder.team() == null ? 0 : recorder.team(), language,
-                            request.battle().mapName));
+            if (scope == ReplayAnalysisScope.PLAYER_FOCUSED) {
+                requireUsableTimeline(request.battle(), request.reconstruction());
+                final TacticalReviewHarness.HarnessOutcome outcome = tacticalReviewHarness.analyzeWithPrior(
+                        request.battle(), request.reconstruction(), language, listener);
+                final var recorder = AnalysisUnitAssembler.findRecorder(request.battle(), request.reconstruction());
+                final String preBattleSection = outcome.preBattlePrior() == null ? null
+                        : PreBattleSectionRenderer.renderRandomBattle(outcome.preBattlePrior(),
+                                recorder.team() == null ? 0 : recorder.team(), language,
+                                request.battle().mapName);
+                // 不变量：迁移前 AiReplayReviewService 对随机战输出应用的确定性纠正链
+                // （坦克名纠正 → 「簇」兜底 → 三语免责句）必须继续生效。
+                final PlayerReviewOutputCorrector.Corrected corrected = PlayerReviewOutputCorrector.apply(
+                        outcome.result().analysis(), preBattleSection, request.battle(), language);
+                done.put("analysis", corrected.analysis());
+                done.put("preBattleSection", corrected.preBattleSection());
+                done.put("teamReview", null);
+                done.put("teamPlayers", java.util.List.of());
+            } else {
+                final TeamAnalyzeResult outcome = aiReplayAnalysisService.analyzeTeam(
+                        request.battle(), request.reconstruction(), language, listener);
+                done.put("analysis", outcome.analysis() == null ? null : outcome.analysis().analysis());
+                done.put("preBattleSection", outcome.preBattleSection());
+                done.put("teamReview", outcome.structuredResult());
+                done.put("teamPlayers", outcome.teamPlayers());
+            }
             done.put("capability", request.reconstruction().battleStartRawClockSec() == null
                     ? AnalyzeResponse.Capability.AVAILABLE_WITH_LIMITED_TIMELINE
                     : AnalyzeResponse.Capability.AVAILABLE);
-            done.put("teamReview", null);
-            done.put("teamPlayers", java.util.List.of());
             send(emitter, cancellation, "done", done);
             emitter.complete();
         } catch (final RuntimeException error) {
@@ -227,26 +239,16 @@ public class AiReviewController {
 
     private static void requireUsableTimeline(final Battle battle,
                                               final ReplayReconstruction reconstruction) {
-        final Map<Long, Integer> entities = new HashMap<>();
-        for (final var event : reconstruction.events()) {
-            if (event instanceof ParticipantMappingEvent mapping) {
-                entities.put(mapping.accountId(), mapping.entityId());
-            }
+        final var recorder = AnalysisUnitAssembler.findRecorder(battle, reconstruction);
+        if (recorder.accountId() == null || recorder.team() == null) {
+            throw new AiTimelineUnusableException("RECORDER_UNRESOLVED");
         }
-        for (final var participant : reconstruction.participants()) {
-            if (participant.recorder()) {
-                if (!entities.containsKey(participant.accountId())) {
-                    throw new AiTimelineUnusableException("RECORDER_UNRESOLVED");
-                }
-                final var timeline = BattleTimelineBuilder.build(battle, reconstruction,
-                        TimelinePerspective.personal(participant.accountId(), participant.team()));
-                if (!timeline.usable()) {
-                    throw new AiTimelineUnusableException(timeline.validation().errors());
-                }
-                return;
-            }
+        final var result = com.wotb.core.replay.timeline.BattleTimelineBuilder.build(battle, reconstruction,
+                com.wotb.core.replay.timeline.TimelinePerspective.personal(
+                        recorder.accountId(), recorder.team()));
+        if (!result.usable()) {
+            throw new AiTimelineUnusableException(result.validation().errors());
         }
-        throw new AiTimelineUnusableException("RECORDER_UNRESOLVED");
     }
 
     private static void send(final SseEmitter emitter, final AiCancellationToken cancellation,

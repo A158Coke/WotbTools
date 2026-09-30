@@ -2,9 +2,6 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
-import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
@@ -69,10 +66,8 @@ class AiReplayAnalysisServiceFacadeTest {
     @Test
     void analyzeSingleTeamContextAndBuildSingleTeamContextDelegateToTeamService() {
         gateway.configured = true;
-        final ReplayProcessingResult result = teamResultStub();
-        final var group = new com.wotb.core.replay.processing.BatchAnalyzer()
-                .analyze(List.of(result)).groups().getFirst();
-        final var ctx = facade().buildSingleTeamContext(group);
+        final Battle battle = teamBattleStub();
+        final var ctx = TeamContextBuilder.buildSingleTeamContext(battle, null);
         assertNotNull(ctx.analysisUnitId());
         final AnalyzeResult r = facade().analyzeSingleTeamContext(ctx);
         // 团队流程 = Call #1（PRE_BATTLE）+ 团队复盘（SINGLE_TEAM_BATTLE）
@@ -82,11 +77,10 @@ class AiReplayAnalysisServiceFacadeTest {
 
     @Test
     void findRecorderStaticDelegates() {
-        final ReplayProcessingResult result = teamResultStub();
-        assertNotNull(AiReplayAnalysisService.findRecorder(result));
+        assertNotNull(AnalysisUnitAssembler.findRecorder(teamBattleStub(), null));
     }
 
-    private static ReplayProcessingResult teamResultStub() {
+    private static Battle teamBattleStub() {
         final Battle battle = new Battle();
         battle.arenaId = "stub";
         battle.mapName = "team_map";
@@ -97,13 +91,7 @@ class AiReplayAnalysisServiceFacadeTest {
         final var ally = player(1001L, "Ally", 1, 1500);
         final var enemy = player(2001L, "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
-        final var capabilities = new com.wotb.core.replay.processing.ReplayProcessingCapabilities(
-                true, true, false, true, false);
-        return new ReplayProcessingResult(
-                "stub.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new com.wotb.core.replay.processing.ReplayIdentity(
-                        "h", "stub", "11.0", "team_map", 1001L, null),
-                battle, (ReplayReconstruction) null, null, capabilities, null, null);
+        return battle;
     }
 
     private static com.wotb.core.model.PlayerResult player(

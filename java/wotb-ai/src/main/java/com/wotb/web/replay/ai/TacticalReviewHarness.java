@@ -6,7 +6,6 @@ import com.wotb.core.replay.evidence.EvidenceSkillResult;
 import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.timeline.BattleTimeline;
@@ -90,24 +89,12 @@ public class TacticalReviewHarness {
         this.meterRegistry = meterRegistry;
     }
 
-    /** 运行双 Call Harness；不满足前提时回退到旧单 Call 路径。 */
-    public AnalyzeResult analyze(final ReplayProcessingResult result, final AllowedLanguage language) {
-        return analyzeWithPrior(result, language, AiReviewStreamListener.NOOP).result();
-    }
-
     /**
      * 运行双 Call Harness 并暴露本次执行实际使用的 Call #1 prior
      * （仅 ZH 全路径成功时非 null，供上层渲染用户可见赛前预测区块）；
      * 通过 {@code listener} 广播阶段事件（call1_start/call1_done/evidence_done）
      * 与 Call #2 主复盘 token 增量（call2_token）。
      */
-    public HarnessOutcome analyzeWithPrior(final ReplayProcessingResult result,
-                                           final AllowedLanguage language,
-                                           final AiReviewStreamListener listener) {
-        return analyzeWithPrior(result == null ? null : result.battle(),
-                result == null ? null : result.reconstruction(), language, listener);
-    }
-
     public HarnessOutcome analyzeWithPrior(final Battle battle,
                                            final ReplayReconstruction reconstruction,
                                            final AllowedLanguage language,

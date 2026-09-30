@@ -12,12 +12,6 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.processing.BatchAnalyzer;
-import com.wotb.core.replay.processing.ReplayIdentity;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
@@ -213,32 +207,22 @@ class TeamReviewRetryContractTest {
 
     private static SingleTeamBattleAnalysisContext context(final AiChatGateway gateway,
                                                            final TeamReplayAnalysisService service) {
-        return service.buildSingleTeamContext(retryGroups().getFirst());
-    }
-
-    private static List<ReplayPerspectiveGroup> retryGroups() {
-        return new BatchAnalyzer().analyze(
-                List.of(teamResult("retry.wotbreplay", "arena-retry", "Ally", 1001L, 1, validRecon())))
-                .groups();
+        return service.buildSingleTeamContext(teamBattle("arena-retry", "Ally", 1001L, 1), validRecon());
     }
 
     private static SingleTeamBattleAnalysisContext contextWithDeath(final AiChatGateway gateway,
                                                                      final TeamReplayAnalysisService service) {
-        final ReplayProcessingResult result = teamResult(
-                "retry-death.wotbreplay", "arena-retry-death", "Ally", 1001L, 1, validRecon());
-        final PlayerResult dead = result.battle().players.getFirst();
+        final Battle battle = teamBattle("arena-retry-death", "Ally", 1001L, 1);
+        final PlayerResult dead = battle.players.getFirst();
         dead.survived = false;
         dead.settlementLifeTimeSec = 10.0;
-        final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer().analyze(List.of(result)).groups();
-        return service.buildSingleTeamContext(groups.getFirst());
+        return service.buildSingleTeamContext(battle, validRecon());
     }
 
-    private static ReplayProcessingResult teamResult(final String fileName,
-                                                     final String arenaId,
-                                                     final String recorderNickname,
-                                                     final long recorderAccountId,
-                                                     final int recorderTeam,
-                                                     final ReplayReconstruction recon) {
+    private static Battle teamBattle(final String arenaId,
+                                     final String recorderNickname,
+                                     final long recorderAccountId,
+                                     final int recorderTeam) {
         final Battle battle = new Battle();
         battle.arenaId = arenaId;
         battle.mapName = "team_map";
@@ -270,12 +254,7 @@ class TeamReviewRetryContractTest {
             players.add(enemy);
         }
         battle.players = players;
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        return new ReplayProcessingResult(
-                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
-                        recorderAccountId, null),
-                battle, recon, null, capabilities, null, null);
+        return battle;
     }
 
     private static ReplayReconstruction validRecon() {

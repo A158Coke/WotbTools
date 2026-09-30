@@ -6,9 +6,6 @@ import ch.qos.logback.core.read.ListAppender;
 import com.wotb.web.config.RequestIdFilter;
 import com.wotb.web.exceptionhandler.GlobalExceptionHandler;
 import com.wotb.web.replay.MapOverviewQueryService;
-import com.wotb.web.replay.ai.AiReplayReviewService;
-import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
-import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -23,35 +20,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Actual Battle Playback controller slice: internal failures retain one response/log trace identity. */
+/**
+ * Actual Battle Playback controller slice: internal failures retain one response/log trace identity.
+ * <p>AI Review（含 {@code /api/replay/analyze[/cancel]}）已迁出 wotb-web，控制器只依赖
+ * {@link MapOverviewQueryService}。</p>
+ */
 class BattlePlaybackErrorContractTest {
-
-    @Test
-    void missingCancellationIsCanonicalInsteadOfAnEmptyProtectedApiResponse() throws Exception {
-        final String traceId = "cancel-missing-trace";
-        final String correlationId = "12345678-1234-1234-1234-123456789abc";
-        final AiCancellationRegistry cancellationRegistry = mock(AiCancellationRegistry.class);
-        when(cancellationRegistry.cancel(correlationId)).thenReturn(false);
-        final ReconstructionController controller = new ReconstructionController(
-                mock(AiReplayReviewService.class),
-                cancellationRegistry,
-                mock(AiReviewWorkerExecutor.class),
-                mock(MapOverviewQueryService.class));
-        final MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
-                .setControllerAdvice(new GlobalExceptionHandler())
-                .addFilters(new RequestIdFilter())
-                .build();
-
-        mvc.perform(post("/api/replay/analyze/cancel")
-                        .header(RequestIdFilter.HEADER, traceId)
-                        .param("correlationId", correlationId))
-                .andExpect(status().isNotFound())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(header().string(RequestIdFilter.HEADER, traceId))
-                .andExpect(jsonPath("$.errorCode").value("RESOURCE_NOT_FOUND"))
-                .andExpect(jsonPath("$.status").value(404))
-                .andExpect(jsonPath("$.id").value(traceId));
-    }
 
     @Test
     void internalFailureIsCanonicalAndLoggedWithResponseTraceId() throws Exception {
@@ -59,11 +33,7 @@ class BattlePlaybackErrorContractTest {
         final MapOverviewQueryService mapOverview = mock(MapOverviewQueryService.class);
         when(mapOverview.buildBattlePlaybackFromDataset("p1", 0))
                 .thenThrow(new RuntimeException("private playback storage detail"));
-        final ReconstructionController controller = new ReconstructionController(
-                mock(AiReplayReviewService.class),
-                mock(AiCancellationRegistry.class),
-                mock(AiReviewWorkerExecutor.class),
-                mapOverview);
+        final ReconstructionController controller = new ReconstructionController(mapOverview);
         final MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(new RequestIdFilter())

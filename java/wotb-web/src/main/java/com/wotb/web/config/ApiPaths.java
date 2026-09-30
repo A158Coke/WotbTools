@@ -35,8 +35,6 @@ public final class ApiPaths {
     public static final String COLUMNS = "/api/columns";
     public static final String PREVIEW = "/api/preview";
     public static final String EXPORT = "/api/export";
-    public static final String REPLAY_ANALYZE = "/api/replay/analyze";
-    public static final String REPLAY_ANALYZE_CANCEL = "/api/replay/analyze/cancel";
     public static final String REPLAY_MAP_OVERVIEW = "/api/replay/map-overview";
     /** V2 battle playback dataset（canonical timeline 稀疏投影；timeline 不可用 → 204）。 */
     public static final String REPLAY_BATTLE_PLAYBACK_V2 = "/api/replay/battle-playback-v2";

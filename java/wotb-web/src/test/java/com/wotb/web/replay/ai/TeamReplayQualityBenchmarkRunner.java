@@ -6,9 +6,7 @@ import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
 import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
@@ -123,9 +121,8 @@ public class TeamReplayQualityBenchmarkRunner {
         final ReplayProcessingResult processed = new DefaultReplayProcessingFacade().process(
                 new Source(replay.getFileName().toString(), Files.readAllBytes(replay)),
                 ReplayProcessingOptions.full());
-        final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer()
-                .analyze(List.of(processed)).groups();
-        final SingleTeamBattleAnalysisContext context = buildContext(groups);
+        final SingleTeamBattleAnalysisContext context = TeamContextBuilder.buildSingleTeamContext(
+                processed.battle(), processed.reconstruction());
         final BattleTimelineResult timelineResult = BattleTimelineBuilder.build(
                 context.battle(), context.reconstruction(), TimelinePerspective.team(context.perspectiveTeam()));
         if (!timelineResult.usable()) {
@@ -185,13 +182,6 @@ public class TeamReplayQualityBenchmarkRunner {
                 shortcuts.stream().map(TeamQualityShortcutValidator.Violation::code).toList(),
                 scores, average(scores), gold.mustNoticeHits(), gold.mustNoticeMisses(),
                 gold.mustNotViolations(), review, "");
-    }
-
-    private static SingleTeamBattleAnalysisContext buildContext(final List<ReplayPerspectiveGroup> groups) {
-        if (groups == null || groups.isEmpty()) {
-            throw new IllegalStateException("real replay produced no team perspective group");
-        }
-        return com.wotb.web.replay.ai.TeamContextBuilder.buildSingleTeamContext(groups.getFirst());
     }
 
     private static void writeReports(final String model, final int runs,

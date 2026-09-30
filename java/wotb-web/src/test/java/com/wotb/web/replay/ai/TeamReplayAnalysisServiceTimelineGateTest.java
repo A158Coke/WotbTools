@@ -11,12 +11,6 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.processing.BatchAnalyzer;
-import com.wotb.core.replay.processing.ReplayIdentity;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
@@ -46,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * PR #102 ：Team AI Canonical Timeline hard gate（真实 Team production
  * orchestration path，非 Mockito）。
- * <p>通过 {@link TeamReplayAnalysisService#analyzeTeamGroups}（Team AI 唯一 production 编排
+ * <p>通过 {@link TeamReplayAnalysisService#analyzeTeam}（Team AI 唯一 production 编排
  * 入口）验证：timeline invalid / reconstruction 缺失 → {@link AiTimelineUnusableException}
  * 且 AI Gateway requests = 0（Call #1 / Call #2 / Team Autopsy 均不执行）；valid timeline →
  * Call #2 prompt 必含 TACTICAL TIMELINE 与确定性 battle-relative 事实；
@@ -76,11 +70,12 @@ class TeamReplayAnalysisServiceTimelineGateTest {
     void timelineInvalidClockUnresolvedRejectsBeforeAnyLlmCall() {
         // Team features 可形成（battle roster + perspective 解析成功），但 canonical timeline
         // 时钟不可解析（无 battle start、无 BattleEndedEvent）→ TIMELINE_CLOCK_UNRESOLVED。
-        final List<ReplayPerspectiveGroup> groups = groupsOf(teamResult(
-                "clock.wotbreplay", "arena-clock", "Ally", 1001L, 1, clockUnresolvedRecon()));
+        final TeamCase teamCase = teamResult(
+                "arena-clock", "Ally", 1001L, 1, clockUnresolvedRecon());
 
         final AiTimelineUnusableException e = assertThrows(AiTimelineUnusableException.class,
-                () -> service.analyzeTeamGroups(groups, AllowedLanguage.ZH));
+                () -> service.analyzeTeam(teamCase.battle(), teamCase.recon(),
+                        AllowedLanguage.ZH, AiReviewStreamListener.NOOP));
 
         assertTrue(e.getMessage().contains("AI_TIMELINE_UNUSABLE"), e.getMessage());
         assertTrue(e.getMessage().contains("TIMELINE_CLOCK_UNRESOLVED"), e.getMessage());
@@ -91,11 +86,12 @@ class TeamReplayAnalysisServiceTimelineGateTest {
 
     @Test
     void noReconstructionRejectsBeforeAnyLlmCall() {
-        final List<ReplayPerspectiveGroup> groups = groupsOf(teamResult(
-                "norecon.wotbreplay", "arena-norecon", "Ally", 1001L, 1, null));
+        final TeamCase teamCase = teamResult(
+                "arena-norecon", "Ally", 1001L, 1, null);
 
         final AiTimelineUnusableException e = assertThrows(AiTimelineUnusableException.class,
-                () -> service.analyzeTeamGroups(groups, AllowedLanguage.ZH));
+                () -> service.analyzeTeam(teamCase.battle(), teamCase.recon(),
+                        AllowedLanguage.ZH, AiReviewStreamListener.NOOP));
 
         assertTrue(e.getMessage().contains("AI_TIMELINE_UNUSABLE"), e.getMessage());
         assertTrue(e.getMessage().contains("NO_RECONSTRUCTION"), e.getMessage());
@@ -105,10 +101,11 @@ class TeamReplayAnalysisServiceTimelineGateTest {
 
     @Test
     void validTimelineInjectedIntoTeamCall2Prompt() {
-        final List<ReplayPerspectiveGroup> groups = groupsOf(teamResult(
-                "valid.wotbreplay", "arena-valid", "Ally", 1001L, 1, validRecon()));
+        final TeamCase teamCase = teamResult(
+                "arena-valid", "Ally", 1001L, 1, validRecon());
 
-        final TeamAnalyzeResult result = service.analyzeTeamGroups(groups, AllowedLanguage.ZH);
+        final TeamAnalyzeResult result = service.analyzeTeam(teamCase.battle(), teamCase.recon(),
+                AllowedLanguage.ZH, AiReviewStreamListener.NOOP);
 
         assertNotNull(result.analysis());
         // Call #2（SINGLE_TEAM_BATTLE）prompt 必须包含 TACTICAL TIMELINE 与确定性事实
@@ -141,16 +138,15 @@ class TeamReplayAnalysisServiceTimelineGateTest {
 
     // ---- helpers ----
 
-    private static List<ReplayPerspectiveGroup> groupsOf(final ReplayProcessingResult result) {
-        return new BatchAnalyzer().analyze(List.of(result)).groups();
+    /** 团队 AI 入口的领域事实夹具（旧 ReplayProcessingResult 包装已删除）。 */
+    private record TeamCase(Battle battle, ReplayReconstruction recon) {
     }
 
-    private static ReplayProcessingResult teamResult(final String fileName,
-                                                     final String arenaId,
-                                                     final String recorderNickname,
-                                                     final long recorderAccountId,
-                                                     final int recorderTeam,
-                                                     final ReplayReconstruction recon) {
+    private static TeamCase teamResult(final String arenaId,
+                                       final String recorderNickname,
+                                       final long recorderAccountId,
+                                       final int recorderTeam,
+                                       final ReplayReconstruction recon) {
         final Battle battle = new Battle();
         battle.arenaId = arenaId;
         battle.mapName = "team_map";
@@ -182,12 +178,7 @@ class TeamReplayAnalysisServiceTimelineGateTest {
             players.add(enemy);
         }
         battle.players = players;
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        return new ReplayProcessingResult(
-                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
-                        recorderAccountId, null),
-                battle, recon, null, capabilities, null, null);
+        return new TeamCase(battle, recon);
     }
 
     /** 有效团队 fixture：battle-relative 时钟 IDENTIFIED + 双方实体位置/血量 + 首次接敌。 */

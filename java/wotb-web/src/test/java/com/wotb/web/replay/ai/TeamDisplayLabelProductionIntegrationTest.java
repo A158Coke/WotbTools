@@ -11,12 +11,6 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.processing.BatchAnalyzer;
-import com.wotb.core.replay.processing.ReplayIdentity;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
@@ -167,18 +161,7 @@ class TeamDisplayLabelProductionIntegrationTest {
     }
 
     private static SingleTeamBattleAnalysisContext contextOf(final Battle battle) {
-        final ReplayPerspectiveGroup group = new BatchAnalyzer().analyze(List.of(
-                result(battle))).groups().getFirst();
-        return TeamContextBuilder.buildSingleTeamContext(group);
-    }
-
-    private static ReplayProcessingResult result(final Battle battle) {
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        return new ReplayProcessingResult(
-                "display.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("hash-display", battle.arenaId, "11.0", battle.mapName,
-                        1001L, null),
-                battle, validRecon(), null, capabilities, null, null);
+        return TeamContextBuilder.buildSingleTeamContext(battle, validRecon());
     }
 
     private static ReplayReconstruction validRecon() {

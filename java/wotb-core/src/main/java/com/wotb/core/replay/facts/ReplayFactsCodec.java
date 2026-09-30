@@ -6,13 +6,13 @@ import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.deser.std.StdDeserializer;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.module.SimpleModule;
-import tools.jackson.databind.ser.std.StdSerializer;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
@@ -22,9 +22,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * {@link AiReplayFacts} 的确定性 JSON 编解码（Jackson JSON，不做
- * 额外压缩）。ReplayEvent 是 sealed interface，用显式 type 标记做多态序列化；
- * 其余对象（record / Bean / public-field POJO / 枚举）由 Jackson 原生处理。
+ * 客户端投影（{@code Battle} + {@code ReplayReconstruction}）的确定性 JSON 解码（Jackson JSON，
+ * 不做额外压缩）。{@link ReplayEvent} 是 sealed interface，其 {@code {"type": <简单类名>}}
+ * 标记由本类显式反序列化；其余对象（record / Bean / public-field POJO / 枚举）由 Jackson
+ * 原生处理。
+ *
+ * <p>只保留解码方向：AI Review 的写入侧（stored facts）已随 artifact 一起移除，standalone
+ * ai-service（{@code com.wotb.ai.AiReviewController}）只消费客户端投影的请求体。</p>
  */
 public final class ReplayFactsCodec {
 
@@ -33,15 +37,7 @@ public final class ReplayFactsCodec {
     private ReplayFactsCodec() {
     }
 
-    public static JsonNode toJson(final AiReplayFacts facts) {
-        return MAPPER.valueToTree(facts);
-    }
-
-    public static AiReplayFacts fromJson(final JsonNode node) throws IOException {
-        return MAPPER.treeToValue(node, AiReplayFacts.class);
-    }
-
-    /** Decodes the browser projection using the same ReplayEvent type registry as stored facts. */
+    /** Decodes the browser projection using the same ReplayEvent type registry as the wire contract. */
     public static Battle battleFromJson(final JsonNode node) throws IOException {
         return MAPPER.treeToValue(node, Battle.class);
     }
@@ -50,52 +46,18 @@ public final class ReplayFactsCodec {
         return MAPPER.treeToValue(node, ReplayReconstruction.class);
     }
 
-    public static byte[] toBytes(final AiReplayFacts facts) {
-        return MAPPER.writeValueAsBytes(facts);
-    }
-
-    public static AiReplayFacts fromBytes(final byte[] data) {
-        return MAPPER.readValue(data, AiReplayFacts.class);
-    }
-
     private static ObjectMapper buildMapper() {
         final SimpleModule module = new SimpleModule("replay-facts");
-        module.addSerializer(ReplayEvent.class, new ReplayEventSerializer());
         module.addDeserializer(ReplayEvent.class, new ReplayEventDeserializer());
         return JsonMapper.builder()
                 .enable(MapperFeature.ALLOW_FINAL_FIELDS_AS_MUTATORS)
+                // 输入是外部客户端投影（browser Rust/WASM）：无法确定的原始类型字段可能为 null，
+                // 回落 primitive 默认值，而不是让整个 AI 请求因一个字段判为非法。
+                .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
                 .changeDefaultVisibility(vc -> vc.withVisibility(
                         PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY))
                 .addModule(module)
                 .build();
-    }
-
-    /** ReplayEvent → {"type": <简单类名>, <record 组件>...}。 */
-    private static final class ReplayEventSerializer extends StdSerializer<ReplayEvent> {
-
-        private ReplayEventSerializer() {
-            super(ReplayEvent.class);
-        }
-
-        @Override
-        public void serialize(final ReplayEvent value,
-                              final tools.jackson.core.JsonGenerator gen,
-                              final tools.jackson.databind.SerializationContext ctxt) {
-            gen.writeStartObject();
-            gen.writeName("type");
-            gen.writeString(value.getClass().getSimpleName());
-            for (final RecordComponent component : value.getClass().getRecordComponents()) {
-                gen.writeName(component.getName());
-                final Object componentValue;
-                try {
-                    componentValue = component.getAccessor().invoke(value);
-                } catch (final ReflectiveOperationException e) {
-                    throw new IllegalStateException("record accessor failed: " + component.getName(), e);
-                }
-                ctxt.writeValue(gen, componentValue);
-            }
-            gen.writeEndObject();
-        }
     }
 
     /** {"type": ...} → 具体 ReplayEvent record（canonical constructor + 组件类型转换）。 */
@@ -119,7 +81,11 @@ public final class ReplayFactsCodec {
             for (int i = 0; i < components.length; i++) {
                 final RecordComponent component = components[i];
                 final JsonNode componentNode = node.get(component.getName());
-                args[i] = MAPPER.convertValue(componentNode, component.getType());
+                // 必须用 generic type，而不是擦除后的 raw Class：否则 List<ComponentResult> /
+                // List<Integer> 这类泛型 record 组件会被解成 List<LinkedHashMap>，下游按具体类型
+                // 遍历时抛 ClassCastException（如 PlayerEvidenceFormatter 的 ShotResultEvent.components()）。
+                args[i] = MAPPER.convertValue(componentNode,
+                        MAPPER.getTypeFactory().constructType(component.getGenericType()));
             }
             try {
                 final Constructor<?> ctor = clazz.getDeclaredConstructor(

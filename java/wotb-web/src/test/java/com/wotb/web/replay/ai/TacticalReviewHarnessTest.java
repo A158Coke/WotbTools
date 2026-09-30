@@ -11,7 +11,6 @@ import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.BattleLifecycle;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
@@ -218,20 +217,10 @@ class TacticalReviewHarnessTest {
                         vehicles, Map.of(), List.of(), false, null));
     }
 
-    private static ReplayProcessingResult result(final ReplayReconstruction reconstruction) {
-        return result(battle(), reconstruction);
-    }
-
-    private static ReplayProcessingResult result(final Battle battle,
-                                                 final ReplayReconstruction reconstruction) {
-        return new ReplayProcessingResult(
-                "f.wotbreplay", null, null, battle, reconstruction, null, null, null, null);
-    }
-
     @Test
     void fullHarnessUsedWhenAllInputsAvailable() {
         final AnalyzeResult result = harness(gateway(PRIOR_JSON))
-                .analyze(result(recon()), AllowedLanguage.ZH);
+                .analyzeWithPrior(battle(), recon(), AllowedLanguage.ZH, AiReviewStreamListener.NOOP).result();
         assertEquals("harness-review-text", result.analysis());
     }
 
@@ -240,28 +229,28 @@ class TacticalReviewHarnessTest {
         // 无 canonical timeline → 拒绝 AI Review（不走 settlement-only fallback）
         final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
                 com.wotb.web.replay.exception.AiTimelineUnusableException.class,
-                () -> harness(gateway(PRIOR_JSON)).analyze(result(null), AllowedLanguage.ZH));
+                () -> harness(gateway(PRIOR_JSON)).analyzeWithPrior(battle(), null, AllowedLanguage.ZH, AiReviewStreamListener.NOOP).result());
         assertTrue(e.getMessage().contains("AI_TIMELINE_UNUSABLE"));
     }
 
     @Test
     void nonZhFallsBackToOldPath() {
         final AnalyzeResult result = harness(gateway(PRIOR_JSON))
-                .analyze(result(recon()), AllowedLanguage.EN);
+                .analyzeWithPrior(battle(), recon(), AllowedLanguage.EN, AiReviewStreamListener.NOOP).result();
         assertEquals("old-path-text", result.analysis());
     }
 
     @Test
     void unparsablePreBattlePriorFallsBackToOldPath() {
         final AnalyzeResult result = harness(gateway("not a json object"))
-                .analyze(result(recon()), AllowedLanguage.ZH);
+                .analyzeWithPrior(battle(), recon(), AllowedLanguage.ZH, AiReviewStreamListener.NOOP).result();
         assertEquals("old-path-text", result.analysis());
     }
 
     @Test
     void structuredCall1DisablesThinking() {
         final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
-        harness(gateway).analyze(result(recon()), AllowedLanguage.ZH);
+        harness(gateway).analyzeWithPrior(battle(), recon(), AllowedLanguage.ZH, AiReviewStreamListener.NOOP).result();
         assertNotNull(gateway.lastPreBattleRequest, "Call #1 must reach the gateway");
         assertEquals("PRE_BATTLE_STRATEGIC_PRIOR",
                 gateway.lastPreBattleRequest.analysisMode());
@@ -274,7 +263,7 @@ class TacticalReviewHarnessTest {
     @Test
     void call2FreeTextDisablesThinkingByDefault() {
         final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
-        harness(gateway).analyze(result(recon()), AllowedLanguage.ZH);
+        harness(gateway).analyzeWithPrior(battle(), recon(), AllowedLanguage.ZH, AiReviewStreamListener.NOOP).result();
         assertNotNull(gateway.lastHarnessRequest, "Call #2 must reach the gateway");
         assertEquals("TACTICAL_REVIEW_HARNESS", gateway.lastHarnessRequest.analysisMode());
         assertFalse(gateway.lastHarnessRequest.thinkingEnabled(),
@@ -288,7 +277,7 @@ class TacticalReviewHarnessTest {
         final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
         final AtomicLong clock = new AtomicLong(0L);
         final AnalyzeResult result = harness(gateway, clock::get)
-                .analyze(result(recon()), AllowedLanguage.ZH);
+                .analyzeWithPrior(battle(), recon(), AllowedLanguage.ZH, AiReviewStreamListener.NOOP).result();
 
         assertEquals("harness-review-text", result.analysis());
         assertNotNull(gateway.lastHarnessRequest);
@@ -310,7 +299,7 @@ class TacticalReviewHarnessTest {
 
         final com.wotb.web.replay.ai.gateway.AiUpstreamException e = assertThrows(
                 com.wotb.web.replay.ai.gateway.AiUpstreamException.class,
-                () -> harness.analyze(result(recon()), AllowedLanguage.ZH));
+                () -> harness.analyzeWithPrior(battle(), recon(), AllowedLanguage.ZH, AiReviewStreamListener.NOOP).result());
 
         assertEquals("AI_TIMEOUT", e.code());
         assertNull(gateway.lastHarnessRequest, "Call #2 must not run when the overall budget is gone");
@@ -326,7 +315,7 @@ class TacticalReviewHarnessTest {
         try {
             final com.wotb.web.replay.ai.gateway.AiUpstreamException e = assertThrows(
                     com.wotb.web.replay.ai.gateway.AiUpstreamException.class,
-                    () -> harness.analyze(result(recon()), AllowedLanguage.ZH));
+                    () -> harness.analyzeWithPrior(battle(), recon(), AllowedLanguage.ZH, AiReviewStreamListener.NOOP).result());
             assertEquals("AI_TIMEOUT", e.code());
         } finally {
             AiRequestContext.clear();
@@ -357,7 +346,7 @@ class TacticalReviewHarnessTest {
         final TacticalReviewHarness harness = new TacticalReviewHarness(
                 playerService, preBattleService, gateway, cfg, System::nanoTime, null);
 
-        final AnalyzeResult result = harness.analyze(result(recon()), AllowedLanguage.ZH);
+        final AnalyzeResult result = harness.analyzeWithPrior(battle(), recon(), AllowedLanguage.ZH, AiReviewStreamListener.NOOP).result();
 
         assertEquals("harness-review-text", result.analysis());
         assertNotNull(gateway.lastHarnessRequest, "player Call #2 must run");
