@@ -86,8 +86,8 @@ public class AiReviewController {
         }
         try {
             return review(new AiReviewRequestV1(1,
-                    body.path("locale").asText(),
-                    body.path("correlationId").asText(),
+                    body.path("locale").asString(""),
+                    body.path("correlationId").asString(""),
                     ReplayFactsCodec.battleFromJson(body.path("battle")),
                     ReplayFactsCodec.reconstructionFromJson(body.path("reconstruction"))));
         } catch (final IOException | IllegalArgumentException error) {

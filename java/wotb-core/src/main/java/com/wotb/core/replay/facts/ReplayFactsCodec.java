@@ -71,7 +71,7 @@ public final class ReplayFactsCodec {
         public ReplayEvent deserialize(final tools.jackson.core.JsonParser p,
                                        final DeserializationContext ctxt) {
             final JsonNode node = ctxt.readTree(p);
-            final String type = node.path("type").asText();
+            final String type = node.path("type").asString("");
             final Class<?> clazz = EVENT_TYPES.get(type);
             if (clazz == null) {
                 throw new IllegalArgumentException("Unknown ReplayEvent type: " + type);
