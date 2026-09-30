@@ -46,6 +46,36 @@ function enrichShotsFromRoster(parsedShots, vehicles) {
   }
 }
 
+/**
+ * 弹种客户端反解（上游由服务端 player_shells 注入 shell_kind，纯客户端链用
+ * 射手坦克弹表等价补齐）：shell_id（全局弹种 id）→ 射手实际搭载弹链
+ * （configs 末位 shell_global_ids 同序反查）→ shell_kind。与 3D 链接的
+ * shell 槽位反查同一数据链；查不到的弹保留空 kind（UI 走槽位/id 兜底）。
+ */
+async function enrichShellKinds(parsedShots) {
+  const byTank = new Map()
+  for (const s of parsedShots) {
+    const tid = s.shooter_tank_id
+    if (tid && !byTank.has(tid)) byTank.set(tid, null)
+  }
+  await Promise.all([...byTank.keys()].map(async (tid) => {
+    try { byTank.set(tid, await fetchTankData(tid)) } catch { /* 静态面缺失：弹种留空走兜底 */ }
+  }))
+  for (const s of parsedShots) {
+    if (s.shell_kind || !s.shell_id) continue
+    const data = byTank.get(s.shooter_tank_id)
+    if (!data) continue
+    // 服务端 shell_index_by_global_id 同式：全配置弹链查找（该弹可能在非顶级变体）
+    for (const cfg of data.configs || []) {
+      const idx = (cfg.shell_global_ids || []).indexOf(s.shell_id)
+      if (idx >= 0 && cfg.shells?.[idx]?.type) {
+        s.shell_kind = cfg.shells[idx].type
+        break
+      }
+    }
+  }
+}
+
 async function onFilePicked(event) {
   const file = event.target.files && event.target.files[0]
   event.target.value = ''
@@ -56,12 +86,17 @@ async function onFilePicked(event) {
   try {
     const bytes = new Uint8Array(await file.arrayBuffer())
     const parsedShots = await parseAgentShotsFromBytes(bytes)
-    // 花名册富化失败不阻断主表（仅 3D 链接缺失）
+    // 富化失败不阻断主表（roster 失败仅 3D 链接缺失；弹种反解失败走槽位/id 兜底）
     try {
       const playback = await parseAgentPlaybackFromBytes(bytes)
       enrichShotsFromRoster(parsedShots, playback.vehicles)
     } catch (e) {
       console.warn('roster enrichment skipped:', e)
+    }
+    try {
+      await enrichShellKinds(parsedShots)
+    } catch (e) {
+      console.warn('shell kind enrichment skipped:', e)
     }
     shots.value = parsedShots
     shooter.value = 'all'
@@ -271,46 +306,47 @@ async function resolveShellIdx(s) {
         <div class="stat-box"><div class="lbl">{{ t('agentShots.stat_kills') }}</div><div class="val r">{{ shotSummary.kills }}</div></div>
       </div>
 
-      <table class="shot-table">
-        <thead>
-          <tr>
-            <th>#</th><th>{{ t('agentShots.col_time') }}</th><th>{{ t('agentShots.col_shooter') }}</th>
-            <th>{{ t('agentShots.col_dmg') }}</th><th>{{ t('agentShots.col_shell') }}</th>
-            <th>{{ t('agentShots.col_result') }}</th><th>{{ t('agentShots.col_target') }}</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="s in filteredShots" :key="s.index" :style="rowHas3d(s) ? 'cursor:pointer;' : ''" @click="rowHas3d(s) && openShotInViewer(s.index)">
-            <td>#{{ s.index }}</td>
-            <td>{{ s.time_s.toFixed(1) }}s</td>
-            <td>
-              <b v-if="s.is_author" class="author">★{{ s.shooter_name || t('agentShots.author') }}</b>
-              <span v-else>{{ s.shooter_name || ('eid:' + s.shooter_eid) }}</span>
-              <span v-if="qualityTitle(s)" :title="qualityTitle(s)" class="warn">⚠</span>
-            </td>
-            <td><b :style="{ color: dmgColor(s) }">{{ s.damage || 0 }}</b></td>
-            <td>
-              <template v-if="shellBadge(s).fallback"><span class="muted">{{ shellBadge(s).fallback }}</span></template>
-              <template v-else-if="shellBadge(s).fallbackSmall"><span class="muted small">{{ shellBadge(s).fallbackSmall }}</span></template>
-              <template v-else>
-                <span class="pill" :class="{ gold: shellBadge(s).gold }">{{ shellBadge(s).label }}</span>
-              </template>
-            </td>
-            <td>
-              <span class="pill" :class="resultBadge(s).cls">{{ resultBadge(s).text }}</span>
-              <span v-if="s.is_kill" class="pill kill">KILL</span>
-            </td>
-            <td>
-              <span v-if="!s.target_name" class="muted">—</span>
-              <template v-else>{{ s.target_name }}</template>
-            </td>
-            <td @click.stop>
-              <a v-if="rowHas3d(s) && srViewerUrl(s)" class="btn" :href="srViewerUrl(s)" @click.prevent="openShotInViewer(s.index)">3D</a>
-              <span v-else class="muted">—</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table class="shot-table">
+          <colgroup>
+            <col class="w-idx"><col class="w-time"><col><col class="w-dmg"><col class="w-shell"><col class="w-res"><col class="w-target"><col class="w-3d">
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="num">#</th><th>{{ t('agentShots.col_time') }}</th><th>{{ t('agentShots.col_shooter') }}</th>
+              <th class="num">{{ t('agentShots.col_dmg') }}</th><th class="ctr">{{ t('agentShots.col_shell') }}</th>
+              <th class="ctr">{{ t('agentShots.col_result') }}</th><th>{{ t('agentShots.col_target') }}</th><th class="ctr"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in filteredShots" :key="s.index" :class="{ link: rowHas3d(s) && srViewerUrl(s) }" @click="rowHas3d(s) && openShotInViewer(s.index)">
+              <td class="num muted">#{{ s.index }}</td>
+              <td class="num">{{ s.time_s.toFixed(1) }}</td>
+              <td class="ell">
+                <b v-if="s.is_author" class="author">★{{ s.shooter_name || t('agentShots.author') }}</b>
+                <span v-else>{{ s.shooter_name || ('eid:' + s.shooter_eid) }}</span>
+                <span v-if="qualityTitle(s)" :title="qualityTitle(s)" class="warn">⚠</span>
+              </td>
+              <td class="num"><b :style="{ color: dmgColor(s) }">{{ s.damage || 0 }}</b></td>
+              <td class="ctr">
+                <span v-if="shellBadge(s).label" class="pill shell-pill" :class="{ gold: shellBadge(s).gold }">{{ shellBadge(s).label }}</span>
+                <span v-else-if="shellBadge(s).fallback" class="muted">#{{ shellBadge(s).fallback }}</span>
+                <span v-else-if="shellBadge(s).fallbackSmall" class="muted sid" :title="t('agentShots.shell_unknown')">{{ shellBadge(s).fallbackSmall }}</span>
+                <span v-else class="muted">—</span>
+              </td>
+              <td class="ctr">
+                <span class="pill" :class="resultBadge(s).cls">{{ resultBadge(s).text }}</span>
+                <span v-if="s.is_kill" class="pill kill">KILL</span>
+              </td>
+              <td class="ell">{{ s.target_name || '—' }}</td>
+              <td class="ctr" @click.stop>
+                <a v-if="rowHas3d(s) && srViewerUrl(s)" class="btn" :href="srViewerUrl(s)" @click.prevent="openShotInViewer(s.index)">3D</a>
+                <span v-else class="muted">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p class="muted footnote">{{ t('agentShots.footnote') }}</p>
     </template>
     <p v-else-if="shots.length === 0 && fileName && !parsing && !err" class="status">{{ t('agentShots.no_shots') }}</p>
@@ -326,7 +362,7 @@ async function resolveShellIdx(s) {
 .status.error { color: var(--danger, #e0665b); }
 .muted { color: var(--muted, #9aa4b2); }
 .small { font-size: 10px; }
-.footnote { font-size: 0.8em; }
+.footnote { font-size: 0.8em; margin: 0; }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .stat-box { background: var(--panel, #1a2029); border: 1px solid var(--line, #2a3441); border-radius: 8px; padding: 8px 10px; }
 .stat-box .lbl { font-size: 0.72em; color: var(--muted, #9aa4b2); }
@@ -336,13 +372,26 @@ async function resolveShellIdx(s) {
 .stat-box .val.r { color: #ff6b6b; }
 .stat-box .val.o { color: #ff9800; }
 .stat-box .sub { font-size: 0.72em; color: var(--muted, #9aa4b2); }
-.shot-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
-.shot-table th { text-align: left; color: var(--muted, #9aa4b2); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--line, #2a3441); }
-.shot-table td { padding: 4px 6px; border-bottom: 1px dashed var(--line, #2a3441); }
-.shot-table tr:hover td { background: rgba(110, 168, 254, 0.06); }
+
+/* 表格：固定布局 + 定列宽（auto 布局下中文表头/长昵称互相挤压错位）。
+   薄外层负责横向滚动兜底（窄视口），行内容单行省略不换行。 */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line, #2a3441); border-radius: 8px; }
+.shot-table { width: 100%; min-width: 760px; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
+.shot-table th, .shot-table td { padding: 5px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot-table th { text-align: left; color: var(--muted, #9aa4b2); font-weight: 600; border-bottom: 1px solid var(--line, #2a3441); }
+.shot-table td { border-bottom: 1px dashed var(--line, #2a3441); }
+.shot-table tbody tr:hover td { background: rgba(110, 168, 254, 0.06); }
+.shot-table tbody tr.link { cursor: pointer; }
+.w-idx { width: 44px; } .w-time { width: 56px; } .w-dmg { width: 58px; }
+.w-shell { width: 68px; } .w-res { width: 92px; } .w-3d { width: 48px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.ctr { text-align: center; }
+.ell { overflow: hidden; text-overflow: ellipsis; }
 .author { color: #6ea8fe; }
 .warn { color: #ff9800; cursor: help; font-size: 10px; }
-.pill { border-radius: 999px; padding: 1px 8px; font-weight: 700; font-size: 10px; }
+.sid { font-size: 10px; }
+.pill { border-radius: 999px; padding: 1px 8px; font-weight: 700; font-size: 10px; display: inline-block; }
+.shell-pill { min-width: 40px; box-sizing: border-box; }
 .pill.gold { background: rgba(255, 207, 92, 0.16); color: #ffcf5c; }
 .pill.pen { background: rgba(95, 191, 122, 0.16); color: #5fbf7a; }
 .pill.nopen { background: rgba(255, 107, 107, 0.15); color: #ff6b6b; }
@@ -350,7 +399,7 @@ async function resolveShellIdx(s) {
 .pill.track { background: rgba(95, 168, 232, 0.16); color: #5fa8e8; }
 .pill.he-res { background: rgba(255, 207, 92, 0.2); color: #ffd970; }
 .pill.miss { background: rgba(154, 164, 178, 0.16); color: #9aa4b2; }
-.pill.kill { background: rgba(255, 107, 107, 0.24); color: #ff8a8a; }
+.pill.kill { background: rgba(255, 107, 107, 0.24); color: #ff8a8a; margin-left: 4px; }
 .btn { border: 1px solid var(--line, #2a3441); padding: 2px 10px; border-radius: 6px; text-decoration: none; }
 select, button { background: #1d242e; color: var(--fg, #dfe5ec); border: 1px solid var(--line, #2a3441); padding: 4px 10px; border-radius: 6px; }
 </style>
