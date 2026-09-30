@@ -124,7 +124,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 |---|---|---|---|---|---|
 | Business API | Java control/web modules、HTTP/MQ contracts、shared common data | business-api image、TX Compose、dependency readiness | Maven、HTTP contract | — | `business-api.yml` |
 | Parser Worker | Java parser/processing modules、MQ contract、shared common data | parser-worker image、Yecao Compose、dependency readiness | Maven | — | `parser-worker.yml` |
-| AI Service（预部署） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、WireGuard readiness；当前无公开流量 | Maven、AI image build、Compose | — | `ai-service.yml` |
+| AI Service（预部署） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端仍维护中 | Maven、AI image build、Compose | — | `ai-service.yml` |
 | Frontend | Vue、HTTP contract、shared assets/map/tier data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
 | Keycloak | QQ/Wargaming providers、Keycloak image | realm runtime、TX Compose | provider/runtime、Tofu | `keycloak` | `keycloak.yml` |
 | Android | Android source、native bridge、release helpers | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |
@@ -192,10 +192,11 @@ Processing Job 创建后把输入持久化到对象存储，协调器经 `Replay
 任务确认式投递给 RabbitMQ，由 Yecao `parser-worker` 消费（Replay Full Processing 唯一 CPU
 预算 = AMQP consumer 数 `PARSER_WORKER_CONCURRENCY`，默认 2）；worker 内每个 source 独立
 `processFull` 后写 derived artifact
-（`ai-facts.json` / `map-overview.json`，原子写、先写后 READY），全部完成后单线程
+（`map-overview.json`，原子写、先写后 READY），全部完成后单线程
 deterministic FINALIZING_BATCH（去重 / League / Rating / 汇总）→ READY 保存
-`ProcessedDataset`。Preview / Export / AI / 战局回放消费同一 Dataset（AI/Playback 走
-`processingJobId + sourceId` 引用读 artifact，不再重复 full process）。`ReplayJobState` /
+`ProcessedDataset`。Preview / Export / 战局回放消费同一 Dataset（Playback 走
+`processingJobId + sourceId` 引用读 artifact，不再重复 full process）；AI Review 已迁至
+独立 `ai-service`，不再消费 Dataset。`ReplayJobState` /
 `ReplayJobStorage` 是 Export 与 Processing 共用的状态机/临时目录底座；
 `ReplayArtifactWriter` 负责 artifact 读写，`acquireForSource/release` 提供 Dataset
 Lease（读取期间 TTL 不清）。
@@ -224,10 +225,10 @@ Lease（读取期间 TTL 不清）。
   （`temp/jobs/<jobId>/result/finalized.json`），随后才置 READY。
 - **dataset / artifact 权威边界**：PG 是 lifecycle 权威，MinIO 是 dataset 与 artifact 权威，
   **distributed 生产不依赖 TX 本地磁盘**。读取侧只有一个端口 `ReplayProcessingResultReader`
-  （对象存储），`GET result`、Export、Rating V2、AI Review
-  （`ai-facts.json`）、Map Overview、Battle Playback V2 全部经它取数据；读取侧**不再**拼接
+  （对象存储），`GET result`、Export、Rating V2、Map Overview、Battle Playback V2 全部经它取数据；
+  读取侧**不再**拼接
   per-source 对象（那会跳过上面那套批次语义）。字节 → DTO 的解码由
-  `ReplayArtifactWriter.decode*(...)` 唯一拥有。
+  `ReplayArtifactWriter.decode*(...)` 唯一拥有（AI 专用的 `ai-facts.json` 已随 AI 解耦退役）。
 - 派发是**确认式**投递：`submit` 失败（NACK/不可路由/超时）即 create 失败，并回收已登记的 job 与输入。
 - 结果消费：`wotb.parser.result`（`parser.result` 与 `parser.failed` 两个 routing key 都绑到该队列）
   → `ParserResultListener`（manual ack）→ `PostgresParserOutcomeHandler`。判序为「未知 job → 陈旧
@@ -633,7 +634,7 @@ Yecao parser-worker 作为唯一执行面服务必须保持无状态：选中它
 Keycloak 的 `wotbtools-e2e` 机器身份（client_credentials，唯一 realm role `wotbtools-user`，secret 由
 `KEYCLOAK_E2E_CLIENT_SECRET` 注入）驱动真实业务链并逐项给出 PASS/FAIL：`processing-e2e`
 （上传 staged 回放 → 分布式链路 → READY）、`dataset-result`、`map-overview`、`battle-playback-v2`、
-`minio`、`ai-facts`、`export`、`hof-replay-storage`、`parser-worker`、`admin-authz`，以及公网
+`minio`、`export`、`hof-replay-storage`、`parser-worker`、`admin-authz`，以及公网
 边缘断言（`public-tls-web` / `public-tls-auth`，要求 host 解析到 TX 地址 + 受信任证书 + 2xx）。
 `business-data-integrity` 已随 cutover machinery 退役（其 Yecao 冻结行数快照输入不可再生），
 不保留替代检查。检查全程不关闭 TLS 校验、不使用 `-k`；对基础设施与用户数据只读，唯一

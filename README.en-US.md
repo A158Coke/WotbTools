@@ -18,10 +18,9 @@ Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://gi
 flowchart LR
     A["Upload .wotbreplay"] --> B["POST /api/replay/processing-jobs (exactly one Processing Job per selection)"]
     B --> C["Yecao parser-worker (exactly one processFull per source: parse + reconstruction + enrich)"]
-    C --> D["Derived Dataset (ProcessedDataset + ai-facts.json + map-overview.json)"]
+    C --> D["Derived Dataset (ProcessedDataset + map-overview.json)"]
     D --> E["Preview result (GET processing-jobs/{jobId}/result)"]
     D --> F["Export Job (reuse result; no re-upload / no second processFull)"]
-    D --> G["AI review (SSE text/event-stream, reads ai-facts.json)"]
     D --> H["Battle playback (cached map-overview.json)"]
 ```
 
@@ -31,9 +30,9 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 
 ## Key engineering trade-offs
 
-0. **Parse once / consume many**: upload `.wotbreplay` → `POST /api/replay/processing-jobs` (exactly one Processing Job per selection) → the Yecao parser worker performs exactly one `processFull` per source → shared Derived Dataset (`ProcessedDataset` + `ai-facts.json` + `map-overview.json`); Preview / Export / AI review / Battle Playback all read the same dataset. There is no multipart AI or Playback fallback path that reprocesses the replay.
+0. **Parse once / consume many**: upload `.wotbreplay` → `POST /api/replay/processing-jobs` (exactly one Processing Job per selection) → the Yecao parser worker performs exactly one `processFull` per source → shared Derived Dataset (`ProcessedDataset` + `map-overview.json`); Preview / Export / Battle Playback all read the same dataset. There is no multipart Playback fallback path that reprocesses the replay.
 1. **Authoritative settlement > observed event stream**: damage / deaths come from `battle_results`; the event stream is only an observed subset, and its numbers are suppressed when coverage is partial (`OBSERVED_DAMAGE_IS_PARTIAL`).
-2. **SSE streaming, single attempt**: `/api/replay/analyze` is `text/event-stream`; no in-stream retry; a bounded worker pool (4+4) prevents blocking and returns 503 on saturation.
+2. **AI review is its own service**: `POST /api/ai/reviews` (`text/event-stream`) is served by a standalone stateless `ai-service` on Yecao, reached over the private WireGuard path behind the TX `/api/ai/**` ingress route. The Business Backend no longer participates in AI requests and the legacy `/api/replay/analyze` endpoint is removed. Cancellation is `POST /api/ai/reviews/{correlationId}/cancel`; admission is bounded and saturation returns 503 `AI_REVIEW_BUSY`. The frontend entry stays in maintenance until every release gate passes.
 3. **3x3 grid + map semantics**: canonical 500×500 grid regions 1-9; AREA semantics are decoded from client SC2 / heightmap and are not treated as verified facts before manual review.
 
 > More architecture and trade-offs: `docs/DEVELOPER_GUIDE.md` and `docs/architecture/`.

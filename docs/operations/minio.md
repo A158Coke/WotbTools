@@ -6,7 +6,7 @@ database or an artifact archive:
 ```text
 wotbtools-temp/temp/jobs/<job-id>/…
   input/<source-index>/<name>          raw replay input
-  artifacts/<source-index>/<name>      parsed artifacts (ai-facts / map-overview / battle-playback-v2)
+  artifacts/<source-index>/<name>      parsed artifacts (map-overview / battle-playback-v2)
   result/source-<source-index>.json    canonical per-source dataset (input of batch finalization)
   result/finalized.json                finalized batch dataset (the dataset readers use)
 ```

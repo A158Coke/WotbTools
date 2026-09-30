@@ -118,6 +118,11 @@ ReplayReconstruction 输出
 > （`ReconstructSummary` / `StateAtResponse` DTO 和 `ReplayReconstructionService.stateAt()` 同时删除）。
 > 重建能力保留在 core，由 `/api/replay/analyze` 在内部调用；`BattleStateReconstructor.stateAt(...)` 仍是 core 公共 API。
 > 下文对这两个端点的请求/响应示例仅作历史记录。
+>
+> 2026-09 更新：AI Review 已拆为独立无状态 `ai-service`（`POST /api/ai/reviews`，经 TX `/api/ai/**` 私网反代）。
+> Business Backend 的 `/api/replay/analyze` 端点、`ReplaySseWriter` 与 `AiReplayReviewService` 已移除，
+> AI 不再消费 Processing Dataset（`ai-facts.json` / `processingJobId` / `sourceId` 退出 AI 链路）。
+> 重建能力仍保留在 core，现由回放 dataset 路径（`/api/replay/map-overview`、`battle-playback-v2`）消费。
 
 ### 测试文件
 
