@@ -901,6 +901,9 @@ export function initPlayback(container, store) {
       } catch { return null; }
     })();
     cache.set(tankId, p);
+    // 负结果不入缓存：失败（404/解析失败）只影响本次，资产补位后下次切换即可重试——
+    // 缓存 null 会毒化整个会话（transient 缺资产被永久记住）
+    p.then((entry) => { if (!entry) cache.delete(tankId); }).catch(() => cache.delete(tankId));
     return p;
   }
 
@@ -1275,9 +1278,11 @@ export function initPlayback(container, store) {
     if (!winnerShown && T >= DATA.meta.duration - 1e-3 && DATA.meta.winner_team) {
       winnerShown = true;
       const w = DATA.meta.winner_team, fr = DATA.meta.friendly_team;
+      // outcome 供消费方面板三语化（text 为上游兼容中文字段；WotBTools 唯一分叉的加性字段）
       store.banner = {
         text: w === 0 ? '平局' : (w === fr ? '胜利' : '失败'),
         color: w === fr ? '#3fa66a' : '#c05046',
+        outcome: w === 0 ? 'draw' : (w === fr ? 'win' : 'lose'),
       };
     }
   }
