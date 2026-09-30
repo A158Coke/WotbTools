@@ -1441,7 +1441,7 @@
     "play": "播放",
     "pause": "暂停",
     "local_file": "本地文件",
-    "assets_hint": "未配置资产平面：追加 ?assets=<COS/CDN 基址> 以加载地图地形/车模 GLB/坦克数据（回放解析本身不依赖）。",
+    "assets_hint": "未配置资产源：追加 ?assets=<remote-asset-base-url> 以加载地图地形/车模 GLB/坦克数据（回放解析本身不依赖）。",
     "cam_free": "自由",
     "cam_top": "俯视",
     "cam_follow": "跟随",
