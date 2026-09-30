@@ -11,12 +11,17 @@ on:
       - common/map_names.json
       - common/tankopedia-tier10.json
       - common/assets/**
+      - deploy/agent/source.json
+      - scripts/fetch-agent-wasm.sh
       - HISTORY.md
       - docs/architecture/TECHNICAL_EVOLUTION.md
       - docs/WotBTools_League_Rating_V6.md
       - deploy/nginx/nginx.conf
       - deploy/tx/nginx/**
       - deploy/check-latest-main.sh
+      - deploy/check-production-freshness.sh
+      - deploy/list-image-tags.sh
+      - scripts/ci/run-with-network-retry.sh
       - deploy/tx/frontend.compose.yml
       - deploy/tx/deploy.sh
       - deploy/tx/common.compose.yml
@@ -36,12 +41,17 @@ env:
     common/map_names.json
     common/tankopedia-tier10.json
     common/assets/**
+    deploy/agent/source.json
+    scripts/fetch-agent-wasm.sh
     HISTORY.md
     docs/architecture/TECHNICAL_EVOLUTION.md
     docs/WotBTools_League_Rating_V6.md
     deploy/nginx/nginx.conf
     deploy/tx/nginx/**
     deploy/check-latest-main.sh
+    deploy/check-production-freshness.sh
+    deploy/list-image-tags.sh
+    scripts/ci/run-with-network-retry.sh
     deploy/tx/frontend.compose.yml
     deploy/tx/deploy.sh
     deploy/tx/common.compose.yml
@@ -128,6 +138,7 @@ jobs:
       - uses: imjasonh/setup-crane@v0.7
       - name: Reuse only an existing immutable image with this source + asset-origin identity
         id: immutable
+        timeout-minutes: 15
         env:
           IMAGE: ${{ steps.identity.outputs.image }}
           REPOSITORY: ${{ steps.identity.outputs.repository }}
@@ -137,77 +148,183 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tags="$(crane ls "$REPOSITORY")"
+          # 复用判定必须走 deploy/list-image-tags.sh：只有 registry 明确返回 NAME_UNKNOWN
+          # （仓库尚不存在＝首次发布）才按空仓库继续 build；401/403/5xx/网络一律仍然 fatal。
+          # 裸 `crane ls` 在首次发布会因 set -e 直接失败，且把 registry 故障与空仓库混为一谈。
+          tags="$(bash "$GITHUB_WORKSPACE/deploy/list-image-tags.sh" "$REPOSITORY")"
           if grep -Fxq "$TAG" <<< "$tags"; then
-            docker pull "$IMAGE"
+            source "$GITHUB_WORKSPACE/scripts/ci/run-with-network-retry.sh"
+            # 300s：可复用镜像约 175MB 的跨境内网拉取，仍比构建+发布整条链路短一个量级
+            NETWORK_RETRY_TIMEOUT_SECONDS=300 run_with_network_retry \
+              "pull reusable immutable frontend image from Tencent TCR" docker pull "$IMAGE"
             container="$(docker create "$IMAGE")"
             temp="$(mktemp -d)"
             trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$temp"' EXIT
-            docker cp "$container:/usr/share/nginx/html/assets" "$temp/assets"
-            grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/assets" \
+            docker cp "$container:/usr/share/nginx/html" "$temp/html"
+            grep -Fq "\"buildCommit\": \"$SOURCE_SHA\"" "$temp/html/version.json" \
+              || { echo 'Existing immutable tag does not carry this source commit in version.json.' >&2; exit 1; }
+            grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/html/assets" \
               || { echo 'Existing immutable tag does not contain this source commit in the frontend bundle.' >&2; exit 1; }
             # 身份含资产源：复用前再按 bundle 内容自证，防陈旧/手工 tag 让旧 origin 蒙混复用
-            grep -R --binary-files=text -Fq "$ASSET_BASE_URL" "$temp/assets" \
+            grep -R --binary-files=text -Fq "$ASSET_BASE_URL" "$temp/html/assets" \
               || { echo 'Existing immutable image was not built with the current ASSET_BASE_URL; refusing to reuse it.' >&2; exit 1; }
-            digest="$(crane digest "$IMAGE")"
+            # 60s：单次 tag→digest 查询（与 deploy/tx/publish-loaded-image-to-tcr.sh 的
+            # TAG_LOOKUP_TIMEOUT_SECONDS 同值），本步骤内是纯只读小请求
+            NETWORK_RETRY_TIMEOUT_SECONDS=60 run_with_network_retry \
+              "read back the reusable immutable tag digest from Tencent TCR" \
+              crane digest "$IMAGE" > "$temp/digest.out"
+            digest="$(tail -n1 "$temp/digest.out" | tr -d '[:space:]')"
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
             echo "existing_digest=$digest" >> "$GITHUB_OUTPUT"
           else
             echo 'existing_digest=' >> "$GITHUB_OUTPUT"
           fi
       - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
+        timeout-minutes: 5
         run: bash scripts/fetch-agent-wasm.sh
 
       - uses: docker/setup-buildx-action@v4
-      - name: Build and publish this frozen image
-        id: build_image
+      # BUILD / VERIFY / PUBLISH / PROMOTE 四段分离。构建只产出本地镜像；所有 registry 写入都在
+      # 后面的具名步骤里，且每个边界都有步级超时——不再出现"单个 step 静默跑 60 分钟"。
+      # 这里不写 cache-from / cache-to：type=gha,mode=max 要求把整个 build stage（node_modules
+      # 与含 dist 的构建层）上传到 GitHub cache，是本 step 内无法单独设超时、且与镜像同量级的
+      # 上传边界（本次事故的候选挂点之一）；mode=min 不缓存 build stage、省不下 npm ci，却被同一
+      # 失败面支配。故前端不使用外部 cache（此决策不外推到其他应用 owner）。
+      - name: Build immutable frontend image
         if: steps.immutable.outputs.existing_digest == ''
+        # 健康基线：同一范围（构建+导出+发布）实测 6m04s。去掉外部缓存后每次要跑 npm ci，
+        # 25m 仍留 3-4x 余量；它只用于给"构建本身挂住"设界，不承担发布边界的约束。
+        timeout-minutes: 25
         uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.frontend
-          push: true
+          # 单平台（本 workflow 不声明 platforms）→ docker exporter（load）是最简的"可复用本地
+          # 镜像"方案，无需引入 OCI tar / artifact 机制。
+          push: false
+          load: true
           tags: ${{ steps.identity.outputs.image }}
           build-args: |
             BUILD_COMMIT=${{ steps.identity.outputs.commit_sha }}
             ASSET_BASE_URL=${{ vars.ASSET_BASE_URL }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
           provenance: false
           sbom: false
-      - name: Verify registry digest, source and asset-origin identity
-        id: verify
+      - name: Verify local frontend artifact before any registry write
+        if: steps.immutable.outputs.existing_digest == ''
+        timeout-minutes: 10
         env:
           IMAGE: ${{ steps.identity.outputs.image }}
           SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
-          EXISTING_DIGEST: ${{ steps.immutable.outputs.existing_digest }}
-          BUILD_DIGEST: ${{ steps.build_image.outputs.digest }}
           ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
         shell: bash
         run: |
           set -euo pipefail
-          digest="${EXISTING_DIGEST:-$BUILD_DIGEST}"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Missing or invalid image digest.' >&2; exit 1; }
-          [ "$(crane digest "$IMAGE")" = "$digest" ] || { echo 'Registry digest changed after build.' >&2; exit 1; }
-          docker pull "$IMAGE@$digest" >/dev/null
-          container="$(docker create "$IMAGE@$digest")"
+          container="$(docker create "$IMAGE")"
           temp="$(mktemp -d)"
           trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$temp"' EXIT
-          docker cp "$container:/usr/share/nginx/html/assets" "$temp/assets"
-          grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/assets" \
-            || { echo 'Published frontend bundle does not contain the frozen source commit.' >&2; exit 1; }
-          # 资产源同为构建期输入：发布产物必须真的烘焙了当前 origin，否则 artifact identity
-          # 名不副实（镜像身份含 origin，内容必须自证同一 origin）
-          grep -R --binary-files=text -Fq "$ASSET_BASE_URL" "$temp/assets" \
-            || { echo 'Published frontend bundle was not built with the current ASSET_BASE_URL.' >&2; exit 1; }
-          # Agent WASM 产物存在性 smoke：3D 回放/装甲查看器/射击复现的运行前提。
-          # 镜像里必须有非空的 glue JS 与 .wasm（magic 0x0061736d），缺失 = 发布不可用镜像。
-          docker cp "$container:/usr/share/nginx/html/wasm" "$temp/wasm"
+          docker cp "$container:/usr/share/nginx/html" "$temp/html"
+          # 1) 确定性身份：version.json 由构建期 BUILD_COMMIT 生成，必须与冻结的 source SHA 精确相等
+          grep -Fq "\"buildCommit\": \"$SOURCE_SHA\"" "$temp/html/version.json" \
+            || { echo 'Local frontend image does not carry the frozen source commit in version.json.' >&2; exit 1; }
+          # 2) bundle 自证：source SHA 与资产源都必须烘焙进 assets。原本是"发布后把镜像拉回来
+          #    复检"；现在前移到任何 registry 写入之前，失败不再留下垃圾 tag。
+          grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/html/assets" \
+            || { echo 'Local frontend bundle does not contain the frozen source commit.' >&2; exit 1; }
+          grep -R --binary-files=text -Fq "$ASSET_BASE_URL" "$temp/html/assets" \
+            || { echo 'Local frontend bundle was not built with the current ASSET_BASE_URL.' >&2; exit 1; }
+          # 3) Agent WASM 产物存在性 smoke：3D 回放/装甲查看器/射击复现的运行前提。
+          #    镜像里必须有非空的 glue JS 与 .wasm（magic 0x0061736d），缺失 = 发布不可用镜像。
           for f in wotb_replay_wasm.js wotb_replay_wasm_bg.wasm; do
-            [ -s "$temp/wasm/$f" ] || { echo "Published image misses agent wasm artifact: $f" >&2; exit 1; }
+            [ -s "$temp/html/wasm/$f" ] || { echo "Local frontend image misses agent wasm artifact: $f" >&2; exit 1; }
           done
-          [ "$(head -c4 "$temp/wasm/wotb_replay_wasm_bg.wasm" | od -An -tx1 | tr -d ' \n')" = "0061736d" ] \
+          [ "$(head -c4 "$temp/html/wasm/wotb_replay_wasm_bg.wasm" | od -An -tx1 | tr -d ' \n')" = "0061736d" ] \
             || { echo 'wotb_replay_wasm_bg.wasm lacks wasm magic (truncated/HTML error page).' >&2; exit 1; }
+          # 4) 期望静态文件与镜像内烘焙的 nginx 配置
+          for f in index.html version.json sponsor-bg.png icon.ico icon.png wotbtoolslogo.png; do
+            [ -s "$temp/html/$f" ] || { echo "Local frontend image misses expected static file: $f" >&2; exit 1; }
+          done
+          docker cp "$container:/etc/nginx/conf.d/default.conf" "$temp/default.conf"
+          [ -s "$temp/default.conf" ] || { echo 'Local frontend image misses its baked nginx configuration.' >&2; exit 1; }
+          echo "local frontend artifact verified for source $SOURCE_SHA"
+      - name: Report frontend image and layer sizes
+        if: steps.immutable.outputs.existing_digest == ''
+        timeout-minutes: 5
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 发布边界的容量证据：镜像/分层/目录体积。用于确认"一次发布实际上传多少"，
+          # 并为发布超时是否足够提供数据，而不是靠猜。
+          docker image inspect --format 'image_id={{.Id}}' "$IMAGE"
+          docker image inspect --format 'total_size_bytes={{.Size}}' "$IMAGE"
+          echo '== layers (this is what one publish uploads) =='
+          docker history --no-trunc --format '{{.Size}}\t{{.CreatedBy}}' "$IMAGE" > "$RUNNER_TEMP/image-history.txt"
+          sed -n '1,40p' "$RUNNER_TEMP/image-history.txt"
+          echo '== payload inside the final image =='
+          docker run --rm --entrypoint sh "$IMAGE" -c '
+            set -e
+            du -sh /usr/share/nginx/html
+            du -sh /usr/share/nginx/html/assets /usr/share/nginx/html/wasm
+            du -sk /usr/share/nginx/html/assets/* 2>/dev/null | sort -n | tail -15
+          '
+      - name: Reject stale main before registry publication
+        if: steps.immutable.outputs.existing_digest == ''
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+      - name: Publish immutable image to Tencent TCR
+        id: publish
+        if: steps.immutable.outputs.existing_digest == ''
+        timeout-minutes: 35
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          # 每次尝试 600s（与 deploy/tx/publish-loaded-image-to-tcr.sh 的 TCR_PUSH_TIMEOUT_SECONDS
+          # 同值）、最多 3 次、仅瞬态失败重试：registry 内容寻址，重试只补传上次未完成的 blob，
+          # 既不重建镜像也不重复构建。超时/重试都用尽即 fail closed，不再有 60-90 分钟静默等待。
+          NETWORK_RETRY_TIMEOUT_SECONDS: "600"
+          NETWORK_RETRY_KILL_AFTER_SECONDS: "30"
+          NETWORK_RETRY_MAX_ATTEMPTS: "3"
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/scripts/ci/run-with-network-retry.sh"
+          push_log="$RUNNER_TEMP/tcr-push.log"
+          run_with_network_retry "publish immutable frontend image to Tencent TCR" \
+            docker push "$IMAGE" 2>&1 | tee "$push_log"
+          # docker push 只在 manifest 落地后打印 digest，故最后一条即本次发布结果
+          digest="$(grep -oE 'digest: sha256:[0-9a-f]{64}' "$push_log" | tail -n1 | awk '{print $2}' || true)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
+            || { echo 'docker push did not report a manifest digest for the immutable tag.' >&2; exit 1; }
+          echo "immutable frontend image published: digest=$digest"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Verify Tencent TCR digest for the published immutable image
+        id: verify
+        timeout-minutes: 8
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          EXISTING_DIGEST: ${{ steps.immutable.outputs.existing_digest }}
+          PUBLISHED_DIGEST: ${{ steps.publish.outputs.digest }}
+          NETWORK_RETRY_TIMEOUT_SECONDS: "60"
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/scripts/ci/run-with-network-retry.sh"
+          digest="${EXISTING_DIGEST:-$PUBLISHED_DIGEST}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Missing or invalid image digest.' >&2; exit 1; }
+          # 这里只证一件事：registry 上 immutable tag 的 manifest digest 就是本 run 刚发布的那一个。
+          # 内容校验（source SHA / 资产源 / WASM）已在推送前、在"即将被推送的那份字节"上完成，
+          # 因此不再把整镜像从 TCR 拉回来复检（那只是重复本 run 已证过的事实）。
+          run_with_network_retry "read back the published immutable tag from Tencent TCR" \
+            bash -c 'test "$(crane digest "$1")" = "$2"' readback "$IMAGE" "$digest"
+          echo "registry digest=$digest matches the immutable image published by this run"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Publish latest only from current main

@@ -35,7 +35,7 @@ assetBase()  ← 解析出的 asset origin
 | CORS | 已配置：`https://wotbtools.com` 与 `https://www.wotbtools.com` 均回 `Access-Control-Allow-Origin`，`GET,HEAD`，Max-Age 600 |
 | 桶列举 | `/` 返回 `403`（仅列举被拒，属预期；对象读正常） |
 | 本地开发 | **未覆盖** `http://localhost:*`——本地 dev 直连该 origin 时 GLB/JSON 的 `fetch` 会被 CORS 拦截（见下"本地开发"） |
-| 待办 | `ASSET_BASE_URL` Repository Variable 尚未设置（见 §3） |
+| 变量状态 | `ASSET_BASE_URL` Repository Variable **已设置**（Frontend 运行的 "Validate production asset origin" 步骤通过即证明，见 §接线） |
 
 ## 配置来源与优先级
 
@@ -48,9 +48,9 @@ assetBase()  ← 解析出的 asset origin
 
 `?assets=`（显式空）用于**清除 override**，回落到生产构建默认。
 
-## 部署：接线（当前唯一待办）
+## 部署：接线
 
-资产包与 CORS 都已就绪，**只剩设置变量并重建镜像**：
+资产包与 CORS 都已就绪，`ASSET_BASE_URL` 已设置——接线已完成。下列步骤用于**首次接线或更换 origin**：
 
 1. **Settings → Secrets and variables → Actions → Variables** 新增（非敏感）：
 
@@ -64,10 +64,34 @@ assetBase()  ← 解析出的 asset origin
 2. **触发一次 Frontend 工作流**（新 commit 或 `workflow_dispatch`）。资产源是构建期输入，
    已计入镜像身份：`identity = sha256(source SHA + ASSET_BASE_URL)[:12]`，tag 为
    `sha-<identity>`（沿用既有 `sha-<12 hex>` 契约）。因此**只改 `ASSET_BASE_URL` 也会
-   得到新 tag、必然重建**——不会被"镜像已存在"复用而停留在旧 origin。复用检查与发布
-   验证都会按 bundle 内容自证 source SHA 与 origin 两者一致。
+   得到新 tag、必然重建**——不会被"镜像已存在"复用而停留在旧 origin。复用检查与该镜像的
+   发布校验都会按 bundle 内容自证 source SHA 与 origin 两者一致（见下"发布边界"）。
 
 3. 验证（见下）。变量本身只放公开 origin，**不放任何密钥**。
+
+### 发布边界（frontend image → Tencent TCR）
+
+Frontend 的镜像发布是四段分离、每段都有步级超时的边界，**不存在"一个 step 静默跑 60 分钟"**：
+
+```
+Build immutable frontend image          本地成镜像（push:false + load），不写 registry
+Verify local frontend artifact          version.json/source SHA + 资产源 + WASM + 静态文件（推送前）
+Report frontend image and layer sizes   镜像/分层/目录体积诊断
+Reject stale main before publication    main 已前进则 fail-fast（不推一份注定不能 promote 的 tag）
+Publish immutable image to Tencent TCR  docker push：每次 600s、最多 3 次、仅瞬态失败重试
+Verify Tencent TCR digest               只证 registry 上该 immutable tag 的 digest == 本次推送的 digest
+Publish latest only from current main   确认 source SHA 仍是远端 main 后 crane cp -> :latest
+```
+
+- **校验前置**：内容校验（source SHA / 资产源 / WASM magic / 期望静态文件）在**任何 registry
+  写入之前**完成，校验对象是"即将被推送的那份字节"。发布后不再把整镜像从 TCR 拉回复检，
+  只证 digest 对应关系（manifest digest 相等）；失败不留垃圾 tag。
+- **有界重试**：`docker push` 对 immutable tag 是幂等的（registry 内容寻址，重试只补传上次
+  未完成的 blob，不重建镜像、不重复构建）；超时或重试预算用尽即 fail closed。
+- **不使用 GHA 构建缓存**（`cache-from`/`cache-to` 已移除）：`mode=max` 需要把整个 build stage
+  上传到 GitHub cache，是与镜像同量级、且在 step 内无法单独设超时的边界；`mode=min` 不缓存
+  build stage、省不下 `npm ci`，却被同一失败面支配。该决策**只适用于 frontend**，不外推到
+  business-api / keycloak / minio / parser-worker / ai-service。
 
 ### 验证（不需要凭据——公开读）
 

@@ -4,6 +4,13 @@ set -euo pipefail
 # Run one CI command with a small, fail-closed retry budget for transport-only
 # failures. The command's original exit status is preserved for non-retryable
 # failures and after the final retry.
+#
+# Optional per-attempt bound: when NETWORK_RETRY_TIMEOUT_SECONDS is set, every
+# attempt runs under `timeout --kill-after=${NETWORK_RETRY_KILL_AFTER_SECONDS:-30}s`
+# and a timeout kill (124/137) counts as a retryable transport failure. Without
+# that variable the helper behaves exactly as before, so existing callers keep
+# their current semantics. The command must be an executable in that mode:
+# `timeout` cannot run a shell function.
 
 network_retry_is_transport_failure() {
   local output="$1"
@@ -11,6 +18,16 @@ network_retry_is_transport_failure() {
   grep -Eqi \
     '(HTTP[[:space:]]+(429|5[0-9][0-9])|status code:[[:space:]]*(429|5[0-9][0-9])|too many requests|toomanyrequests|bad gateway|service unavailable|gateway timeout|connection (reset|refused|timed out)|connection timeout|read timeout|connect timed out|TLS handshake timeout|i/o timeout|client\.timeout|could not (get|head) .* (https?://|artifact|repository)|failed to connect|network is unreachable|temporary failure|unexpected (end of stream|EOF)|remote host terminated)' \
     <<<"$output"
+}
+
+# 124 = the per-attempt `timeout` expired; 137 = SIGKILL delivered by --kill-after.
+# A stalled transfer is transient against a content-addressed registry: the next
+# attempt only re-uploads the blobs the previous attempt did not finish.
+# $1 = the configured per-attempt bound (empty when unset), $2 = the command's status.
+# Only a bounded caller can receive 124/137 from `timeout`; without a bound those
+# statuses must stay fail-closed exactly as before this option existed.
+network_retry_is_timeout_kill() {
+  [[ -n "$1" && ( "$2" == 124 || "$2" == 137 ) ]]
 }
 
 run_with_network_retry() {
@@ -24,6 +41,8 @@ run_with_network_retry() {
   local max_attempts="${NETWORK_RETRY_MAX_ATTEMPTS:-3}"
   local backoff_first="${NETWORK_RETRY_BACKOFF_FIRST_SECONDS:-5}"
   local backoff_later="${NETWORK_RETRY_BACKOFF_LATER_SECONDS:-15}"
+  local attempt_timeout="${NETWORK_RETRY_TIMEOUT_SECONDS:-}"
+  local kill_after="${NETWORK_RETRY_KILL_AFTER_SECONDS:-30}"
   local attempt=1
   local output_file
   local output
@@ -48,11 +67,26 @@ run_with_network_retry() {
     return 2
   }
 
+  if [[ -n "$attempt_timeout" ]]; then
+    [[ "$attempt_timeout" =~ ^[1-9][0-9]*$ ]] || {
+      echo "ERROR: NETWORK_RETRY_TIMEOUT_SECONDS must be a positive integer" >&2
+      return 2
+    }
+    [[ "$kill_after" =~ ^[1-9][0-9]*$ ]] || {
+      echo "ERROR: NETWORK_RETRY_KILL_AFTER_SECONDS must be a positive integer" >&2
+      return 2
+    }
+  fi
+
   while ((attempt <= max_attempts)); do
     echo "Running $label (attempt $attempt/$max_attempts)"
     output_file="$(mktemp)"
     set +e
-    "$@" >"$output_file" 2>&1
+    if [[ -n "$attempt_timeout" ]]; then
+      timeout --kill-after="${kill_after}s" "${attempt_timeout}s" "$@" >"$output_file" 2>&1
+    else
+      "$@" >"$output_file" 2>&1
+    fi
     status=$?
     set -e
     output="$(<"$output_file")"
@@ -63,7 +97,9 @@ run_with_network_retry() {
       return 0
     fi
 
-    if ((attempt >= max_attempts)) || ! network_retry_is_transport_failure "$output"; then
+    if ((attempt >= max_attempts)) \
+      || { ! network_retry_is_timeout_kill "$attempt_timeout" "$status" \
+           && ! network_retry_is_transport_failure "$output"; }; then
       return "$status"
     fi
 
@@ -72,7 +108,11 @@ run_with_network_retry() {
     else
       backoff="$backoff_later"
     fi
-    echo "Transient transport failure detected for $label; retrying in ${backoff}s" >&2
+    if network_retry_is_timeout_kill "$attempt_timeout" "$status"; then
+      echo "Attempt for $label timed out after ${attempt_timeout}s (status $status); retrying in ${backoff}s" >&2
+    else
+      echo "Transient transport failure detected for $label; retrying in ${backoff}s" >&2
+    fi
     sleep "$backoff"
     ((attempt += 1))
   done
