@@ -12,7 +12,7 @@ import { useI18n } from 'vue-i18n'
 import { fetchTankEncyclopedia, fetchTankData, tankImageUrl } from '../scene/agentData.js'
 import {
   tankFuzzyScore, TYPE_LABEL, TYPE_CLS, NATION_LABEL,
-  normType, shellLabel, isPremiumShell, armorColorStyle, fmt,
+  normType, shellLabel, isPremiumShell, fmt,
 } from '../scene/tankMeta.js'
 
 const { t } = useI18n()
@@ -39,8 +39,6 @@ const tanks = computed(() =>
     type: v.type || 'unknown',
     is_premium: !!v.is_premium,
     hp: v.hp ?? null,
-    armor_front: v.armor?.hull_front ?? null,
-    armor_turret: v.armor?.turret_front ?? null,
     pen_max: Array.isArray(v.shells) ? Math.max(0, ...v.shells.map((s) => s.penetration || 0)) || null : null,
   })),
 )
@@ -70,7 +68,6 @@ const sorted = computed(() => {
     name: (a, b) => (a.name || '').localeCompare(b.name || ''),
     tier: (a, b) => (b.tier ?? 0) - (a.tier ?? 0) || (a.name || '').localeCompare(b.name || ''),
     hp: byNum('hp'),
-    armor: byNum('armor_front'),
     pen: byNum('pen_max'),
   }[sort.value] || ((a, b) => (a.name || '').localeCompare(b.name || ''))
   return filtered.value.slice().sort(cmp)
@@ -159,7 +156,8 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- 3D 装甲检视器入口（wotbagent open3d 同逻辑：新窗口 + config 参数） -->
+        <!-- 3D 装甲检视器入口（wotbagent open3d 同逻辑：新窗口 + config 参数）。
+             装甲数据不在百科页呈现——数值/热力/等效判定以 3D 检视器为准（唯一装甲事实源） -->
         <div class="d-card">
           <div class="sec-title">{{ t('agentTanks.open3d_title') }}</div>
           <div class="cfg-row" v-if="cfgs.length > 1">
@@ -169,29 +167,7 @@ onMounted(async () => {
             </select>
           </div>
           <button class="open3d" @click="open3d">🔍 {{ t('agentTanks.open3d') }}</button>
-        </div>
-
-        <!-- 装甲（热力色表 + 炮管，wotbagent 装甲卡同构） -->
-        <div class="d-card">
-          <div class="sec-title">{{ t('agentTanks.armor') }}</div>
-          <table class="armor-table">
-            <thead><tr><th></th><th>{{ t('agentTanks.front') }}</th><th>{{ t('agentTanks.side') }}</th><th>{{ t('agentTanks.rear') }}</th></tr></thead>
-            <tbody>
-              <tr>
-                <td class="muted">{{ t('agentTanks.hull') }}</td>
-                <td class="hot" :style="armorColorStyle(detail.armor?.hull_front)">{{ fmt(detail.armor?.hull_front) }}</td>
-                <td class="hot" :style="armorColorStyle(detail.armor?.hull_sides)">{{ fmt(detail.armor?.hull_sides) }}</td>
-                <td class="hot" :style="armorColorStyle(detail.armor?.hull_rear)">{{ fmt(detail.armor?.hull_rear) }}</td>
-              </tr>
-              <tr>
-                <td class="muted">{{ t('agentTanks.turret') }}</td>
-                <td class="hot" :style="armorColorStyle(detail.armor?.turret_front)">{{ fmt(detail.armor?.turret_front) }}</td>
-                <td class="hot" :style="armorColorStyle(detail.armor?.turret_sides)">{{ fmt(detail.armor?.turret_sides) }}</td>
-                <td class="hot" :style="armorColorStyle(detail.armor?.turret_rear)">{{ fmt(detail.armor?.turret_rear) }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="muted small" v-if="curCfg?.gun_thickness != null">{{ t('agentTanks.gun_armor') }}: {{ fmt(curCfg.gun_thickness) }} mm</div>
+          <div class="muted small" style="margin-top:8px;">{{ t('agentTanks.open3d_hint') }}</div>
         </div>
 
         <!-- 弹种表（选中配置弹链，wotbagent 弹药卡同构） -->
@@ -258,7 +234,6 @@ onMounted(async () => {
           <option value="name">{{ t('agentTanks.sort_name') }}</option>
           <option value="tier">{{ t('agentTanks.sort_tier') }}</option>
           <option value="hp">{{ t('agentTanks.sort_hp') }}</option>
-          <option value="armor">{{ t('agentTanks.sort_armor') }}</option>
           <option value="pen">{{ t('agentTanks.sort_pen') }}</option>
         </select>
         <span class="count">{{ gridError ? '' : `${sorted.length} / ${tanks.length}` }}</span>
@@ -284,7 +259,6 @@ onMounted(async () => {
             </div>
             <div class="tc-stats">
               <div><i>HP</i>{{ tc.hp ?? '-' }}</div>
-              <div><i>{{ t('agentTanks.armor') }}</i>{{ tc.armor_front ?? '-' }}<span class="dim">/</span>{{ tc.armor_turret ?? '-' }}</div>
               <div><i>{{ t('agentTanks.pen') }}</i>{{ tc.pen_max ?? '-' }}</div>
             </div>
           </div>
@@ -311,7 +285,7 @@ onMounted(async () => {
 .tank-card .tc-body { padding: 8px 10px 10px; }
 .tank-card .tc-name { font-size: 0.88em; font-weight: 700; line-height: 1.3; max-height: 2.6em; overflow: hidden; }
 .tank-card .tc-meta { display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-top: 6px; font-size: 0.74em; flex-wrap: wrap; }
-.tank-card .tc-stats { display: grid; grid-template-columns: 1fr 1.25fr 1fr; gap: 4px; margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--line, #2a3441); }
+.tank-card .tc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--line, #2a3441); }
 .tank-card .tc-stats > div { text-align: center; font-size: 0.74em; font-weight: 800; }
 .tank-card .tc-stats i { display: block; font-style: normal; color: var(--muted, #9aa4b2); font-weight: 600; font-size: 0.88em; }
 .dim { color: var(--muted, #9aa4b2); }
