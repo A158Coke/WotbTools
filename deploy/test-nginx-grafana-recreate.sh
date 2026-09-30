@@ -46,7 +46,7 @@ docker network create --driver bridge --subnet 172.29.0.0/16 --gateway 172.29.0.
 start_grafana_stub() {
   local name="$1" ip="$2" marker="$3"
   docker create --name "$name" python:3.12-alpine sh -c \
-    "mkdir -p /www/api; printf '{\"database\":\"ok\",\"marker\":\"$marker\"}\\n' > /www/api/health; exec python -m http.server 3000 --directory /www" \
+    "mkdir -p /www/api; printf '{\"database\": \"ok\",\"marker\":\"$marker\"}\\n' > /www/api/health; exec python -m http.server 3000 --directory /www" \
     >/dev/null
   docker network connect --ip "$ip" --alias grafana --alias wotb-backend --alias keycloak \
     "$NETWORK" "$name"
@@ -78,7 +78,7 @@ assert_monitor_health() {
     return 1
   fi
   if [ "$status" != 200 ] \
-      || ! grep -Fq '"database":"ok"' "$body_file" \
+      || ! grep -Eq '"database"[[:space:]]*:[[:space:]]*"ok"' "$body_file" \
       || ! grep -Fq "\"marker\":\"$marker\"" "$body_file"; then
     rm -f -- "$body_file"
     return 1
