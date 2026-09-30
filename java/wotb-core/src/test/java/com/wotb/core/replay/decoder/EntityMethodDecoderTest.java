@@ -5,6 +5,7 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ProjectileLaunchedEvent;
 import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.RawAssaultBaseUpdate;
 import com.wotb.core.replay.event.RawSupremacyBaseUpdate;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
@@ -299,6 +300,24 @@ class EntityMethodDecoderTest {
         assertEquals(2, t2.team());
         assertEquals(306, t2.points());
         assertEquals(DecodeConfidence.EXACT, t2.confidence());
+        assertEquals(DecodeStatus.SUCCESS, result.status());
+    }
+
+    @Test
+    void updateArena2Wrapper8DecodesAssaultProgressThroughOneHundred() {
+        context.entityClassRegistry().markAvatar(0);
+        // Controlled 11.20 Assault family: root field8 child { field1=2, field2=1, field3=100 }.
+        final byte[] base = new byte[]{0x08, 0x02, 0x10, 0x01, 0x18, 0x64};
+        final ReplayDecodeResult result = decoder.decode(context,
+                rawPacket48(EntityMethodDecoder.WRAPPER_ASSAULT_BASE, fieldDelimited(8, base)));
+
+        final RawAssaultBaseUpdate event = assertInstanceOf(
+                RawAssaultBaseUpdate.class, result.events().getFirst());
+        assertEquals(2, event.rawField1());
+        assertEquals(1, event.rawField2());
+        assertEquals(100, event.captureProgress());
+        assertNull(event.rawField4());
+        assertEquals(DecodeConfidence.EXACT, event.confidence());
         assertEquals(DecodeStatus.SUCCESS, result.status());
     }
 
