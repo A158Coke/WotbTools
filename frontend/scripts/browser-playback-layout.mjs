@@ -36,10 +36,7 @@ if (!battleMapSource.includes('screenOffsetToSvgDelta(offset, props.mapView, ren
   || !battlePlaybackSource.includes(':rendered-frame="renderedMapFrame"')) {
   throw new Error('BattleMap leader-line production wiring must use the rendered SVG frame contract')
 }
-const hdManifest = JSON.parse(readFileSync(resolve(frontendRoot, 'src/assets/maps-hd/manifest.json'), 'utf8'))
-const faustManifestEntry = hdManifest.entries.find(entry => entry.enhanced.endsWith('/faust.webp'))
-if (!faustManifestEntry) throw new Error('faust.webp is missing from maps-hd manifest')
-const faustAssetUrl = pathToFileURL(resolve(frontendRoot, 'src/assets/maps-hd/faust.webp')).href
+const faustAssetUrl = pathToFileURL(resolve(frontendRoot, 'src/assets/maps/faust.webp')).href
 
 const scenarios = [
   { name: 'pc-1600x900', form: 'pc', width: 1600, height: 900, check: 'pc' },
@@ -48,8 +45,8 @@ const scenarios = [
   // Structural isolation: a PC form at tablet width must not accidentally receive tablet geometry.
   { name: 'pc-isolated-at-1024', form: 'pc', width: 1024, height: 768, check: 'pc-isolated' },
   // Real raster frame guard: intentionally non-square logical dimensions must remain the shared
-  // frame for the HD img, overlay SVG and marker layer.
-  { name: 'raster-frame-hd', form: 'pc', width: 1280, height: 900, check: 'raster' },
+  // frame for the basemap img, overlay SVG and marker layer.
+  { name: 'raster-frame-source', form: 'pc', width: 1280, height: 900, check: 'raster' },
   // Real leader-line geometry guard: a 4x layout-scaled, non-square SVG frame must preserve the
   // same 20px screen displacement as the HTML marker on a mobile-sized visible map frame.
   { name: 'leader-line-non-1-to-1', form: 'mobile', width: 390, height: 844, check: 'leader' },
@@ -208,9 +205,7 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
           basemap.addEventListener('error', resolve, { once: true })
         })
       }
-      require(basemap && basemap.complete, 'HD basemap image must finish loading')
-      require(basemap && basemap.naturalWidth === ${JSON.stringify(faustManifestEntry.enhancedPixels[0])}, 'HD basemap naturalWidth must match manifest')
-      require(basemap && basemap.naturalHeight === ${JSON.stringify(faustManifestEntry.enhancedPixels[1])}, 'HD basemap naturalHeight must match manifest')
+      require(basemap && basemap.complete && basemap.naturalWidth > 0 && basemap.naturalHeight > 0, 'source basemap must decode successfully')
       require(svg && !svg.querySelector('image'), 'overlay SVG must not contain a raster image')
       const fitRect = basemap?.getBoundingClientRect()
       const fitDensity = mapRasterDensity({
