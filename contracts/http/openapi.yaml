@@ -1096,10 +1096,17 @@ components:
       required: [timeSec, baseId, ownerTeam, capturingTeam, captureProgress]
       properties:
         timeSec: { type: number, minimum: 0 }
-        baseId: { type: string, enum: [A, B, C, D] }
+        baseId:
+          type: string
+          enum: [A, B, C, D, BASE]
+          description: Supremacy uses A-D; Assault single-base uses BASE.
         ownerTeam: { type: [integer, 'null'], enum: [1, 2, null] }
         capturingTeam: { type: [integer, 'null'], enum: [1, 2, null] }
-        captureProgress: { type: [integer, 'null'], minimum: 0, maximum: 99 }
+        captureProgress:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 100
+          description: Supremacy canonical states remain 0-99; Assault BASE may reach protocol value 100.
     ApiError:
       type: object
       additionalProperties: false
