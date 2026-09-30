@@ -153,9 +153,10 @@ wait_for_http "PROMETHEUS_TARGET" "node exporter metrics endpoint" "http://node-
 wait_for_http "PROMETHEUS_TARGET" "prometheus metrics endpoint" "http://prometheus:9090/metrics" "prometheus_"
 wait_for_http "PROMETHEUS_TARGET" "loki metrics endpoint" "http://loki:3100/metrics" "loki_"
 wait_for_http "GRAFANA" "grafana metrics endpoint" "http://grafana:3000/metrics" "grafana_"
-wait_for_http "GRAFANA" "grafana health endpoint" "http://grafana:3000/api/health" '"database":"ok"'
-wait_for_http "GRAFANA_PROXY" "monitor public health endpoint" \
-  "$MONITOR_HEALTH_URL" '"database":"ok"'
+wait_for_http_regex "GRAFANA" "grafana health endpoint" "http://grafana:3000/api/health" \
+  '"database"[[:space:]]*:[[:space:]]*"ok"'
+wait_for_http_regex "GRAFANA_PROXY" "monitor public health endpoint" \
+  "$MONITOR_HEALTH_URL" '"database"[[:space:]]*:[[:space:]]*"ok"'
 
 targets="$(wait_for_http "PROMETHEUS_TARGET" "prometheus target API" "http://prometheus:9090/api/v1/targets" \
   '"status":"success"' '"job":"wotb-backend"' '"job":"ai-service"' '"job":"node-exporter"' \
