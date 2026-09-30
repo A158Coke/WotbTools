@@ -26,6 +26,8 @@ import com.wotb.core.replay.timeline.HpSource;
 import com.wotb.core.replay.timeline.PositionKnowledge;
 import com.wotb.core.replay.timeline.PositionSource;
 import com.wotb.core.replay.timeline.VehicleKnowledgeState;
+import com.wotb.core.replay.event.AssaultBaseStateTransition;
+import com.wotb.core.replay.event.RawAssaultBaseUpdate;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -114,6 +116,76 @@ class BattlePlaybackProjectorTest {
         assertFalse(json.contains("baseIndex"));
         assertFalse(json.contains("field5"));
         assertFalse(json.contains("field6"));
+    }
+
+    @Test
+    void projectsAssaultBaseProgressAtOneHundredWithoutInventingTeamSemantics() {
+        final long account = 2001L;
+        final Battle battle = syntheticBattle(account, 1);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(7, new TeamEntityIdentity(7, account, "Recorder", 456L, "Recorder", 1,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(7)), Map.of(), 0, List.of());
+        final FrameHealth health = new FrameHealth(1000, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH);
+        final ReplayEvent base = new AssaultBaseStateTransition(
+                11, new ReplayTimestamp(131.688f, null), 8, DecodeConfidence.EXACT, 100);
+        final BattleTimeline timeline = new BattleTimeline("neptune", 140, 9.287,
+                BattleTimelineClock.IDENTIFIED,
+                List.of(new BattleFrame(0, 0, null,
+                        List.of(frameVehicleWithHealth(7, account, 1, true, health, 0)),
+                        List.of(), List.of(), Map.of(), List.of())),
+                List.of(new RawAssaultBaseUpdate(1, new ReplayTimestamp(9.889f, null),
+                        8, DecodeConfidence.EXACT, 2, 1, null, null), base),
+                List.of(), BattleTimelineValidationResult.ok(), List.of());
+
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(
+                battle, timeline, mapping, account);
+
+        final BattlePlaybackDataset.BaseStateTransition projected = dataset.baseStates().getFirst();
+        assertTrue(dataset.assaultObjectivePresent());
+        assertEquals("BASE", projected.baseId());
+        assertEquals(122.401, projected.timeSec(), 0.001);
+        assertEquals(100, projected.captureProgress());
+        assertNull(projected.ownerTeam());
+        assertNull(projected.capturingTeam());
+    }
+
+    @Test
+    void projectsMalinovkaObjectiveWithoutCaptureAndDoesNotInferFromTrainingRoom() {
+        final long account = 2001L;
+        final Battle battle = syntheticBattle(account, 1);
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(7, new TeamEntityIdentity(7, account, "Recorder", 456L, "Recorder", 1,
+                        DecodeConfidence.EXACT)),
+                Map.of(account, List.of(7)), Map.of(), 0, List.of());
+        final FrameHealth health = new FrameHealth(1000, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH);
+        battle.arenaBonusType = 2;
+        final ReplayEvent base = new RawAssaultBaseUpdate(
+                11, new ReplayTimestamp(9.889f, null), 8, DecodeConfidence.EXACT, 2, 1, null, null);
+        final BattleTimeline timeline = new BattleTimeline("malinovka", 14.15, 9.287,
+                BattleTimelineClock.IDENTIFIED,
+                List.of(new BattleFrame(0, 0, null,
+                        List.of(frameVehicleWithHealth(7, account, 1, true, health, 0)),
+                        List.of(), List.of(), Map.of(), List.of())),
+                List.of(base), List.of(), BattleTimelineValidationResult.ok(), List.of());
+
+        final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(
+                battle, timeline, mapping, account);
+
+        assertTrue(dataset.assaultObjectivePresent());
+        assertTrue(dataset.baseStates().isEmpty());
+        final BattleTimeline trainingWithoutInit = syntheticTimeline(14.15, timeline.frames(), List.of());
+        assertFalse(BattlePlaybackProjector.project(battle, trainingWithoutInit, mapping, account)
+                .assaultObjectivePresent());
+        try {
+            final String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(dataset);
+            assertTrue(json.contains("\"assaultObjectivePresent\":true"));
+            assertTrue(json.contains("\"baseStates\":[]"));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
+            throw new AssertionError(failure);
+        }
     }
 
     @Test

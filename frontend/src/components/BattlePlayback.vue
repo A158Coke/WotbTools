@@ -77,6 +77,10 @@ import {
  * 复用 mapImages 素材、coordinateBounds 坐标映射、自适应色板与响应式布局；
  * RAF 只推进 battle-relative 时间，坐标查询遵循 canonical positionSegments。
  */
+const mapSemantics = Object.values(import.meta.glob('../../../common/map-semantics/*.semantic.json', {
+  eager: true, import: 'default',
+}))
+
 const props = defineProps({
   /**
    * MapOverview（heatmap/secondary 鸟瞰）overlay 数据。仅提供可选 overlay 事实
@@ -193,7 +197,7 @@ const baseStatesAt = computed(() => {
   const latest = new Map()
   for (const state of playback.value?.baseStates || []) {
     if (!state || !Number.isFinite(state.timeSec) || state.timeSec > currentTime.value + 1e-6) continue
-    if (!['A', 'B', 'C', 'D'].includes(state.baseId)) continue
+    if (!['A', 'B', 'C', 'D', 'BASE'].includes(state.baseId)) continue
     // 取时间上最新的一条，而不是数组里最后出现的一条：wire 契约没有保证 baseStates
     // 按 timeSec 排序，靠数组顺序会显示已经过期的状态（例如车早已离开、占领已清空，
     // 却仍然画着占领进度）。
@@ -1914,13 +1918,34 @@ function capturedBy(state) {
 // （mapBases 未收录该 mapCode）HUD 仍是唯一的基地信息来源。
 const hudBaseStates = computed(() => (basesAt.value.length ? [] : baseStatesAt.value))
 
+const ASSAULT_BASE_RADIUS_FALLBACK_M = 20
+
 const basesAt = computed(() => {
-  // 只在存在 canonical Supremacy base tracks 时绘制。空 baseStates 表示非争霸战，
-  // 或旧 producer 未发该字段（契约把缺失归一化为 []）；两种情况都不能靠地图几何
-  // 反推出「这是争霸战」，否则遭遇战/攻防战会凭空多出 A/B/C 中立圈。
-  if (!baseStatesAt.value.length) return []
-  const geometry = mapBases[pbOverview.value?.mapCode]?.supremacy || []
+  // Objective existence is independent of capture activity; geometry never infers mode.
   const states = new Map(baseStatesAt.value.map((state) => [state.baseId, state]))
+  const assaultState = states.get('BASE')
+  if (playback.value?.assaultObjectivePresent === true) {
+    const mapCode = pbOverview.value?.mapCode
+    const semantics = mapSemantics.find(map => map.verified && map.mapCodes?.includes(mapCode))
+    const geometry = (semantics?.sceneEvidence?.battlePoints || [])
+      .filter(point => point.type === 'controlpoint' && point.confidence === 'EXACT_SCENE_DATA')
+      .map(point => ({ x: point.position[0], y: point.position[1], radius: null }))
+    // Ambiguous geometry cannot select an objective; retain the canonical HUD fallback.
+    if (geometry.length !== 1) return []
+    return geometry.map((base) => ({
+      ...base,
+      baseId: 'BASE',
+      // 部分 client scene 未声明 controlpoint radius。20m 仅是 presentation fallback，
+      // 不进入 protocol/canonical truth，也不根据车辆距离推导半径。
+      radius: base.radius ?? ASSAULT_BASE_RADIUS_FALLBACK_M,
+      status: baseStatus(assaultState),
+      progress: assaultState?.captureProgress ?? null,
+      capturedBy: capturedBy(assaultState),
+    }))
+  }
+
+  if (!baseStatesAt.value.some(state => ['A', 'B', 'C', 'D'].includes(state.baseId))) return []
+  const geometry = mapBases[pbOverview.value?.mapCode]?.supremacy || []
   return geometry
     .filter((base) => base.radius != null)
     .map((base) => {
@@ -1928,9 +1953,7 @@ const basesAt = computed(() => {
       return {
         ...base,
         status: baseStatus(state),
-        // 水位表示「有人正在占领」，门禁是 capturingTeam 而不是 captureProgress：
-        // 契约规定省略的字段保留旧值（wrapper12-supremacy-capture-state.md#lifecycle-rules），
-        // 所以车踩了一半离开后 progress 仍是旧数，只有 capturingTeam 会归 null。
+        // Supremacy 水位只有 capturingTeam 存在时才显示；离开基地后旧 progress 不得继续挂着。
         progress: state?.capturingTeam != null ? (state.captureProgress ?? null) : null,
         capturedBy: capturedBy(state),
       }

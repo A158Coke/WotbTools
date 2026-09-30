@@ -42,10 +42,20 @@ anti-future-leak 或现有 tank-marker 资产契约。
   current time、playing、倍速、选中车辆、zoom/pan、annotations 和偏好；移动端只对
   `screen.orientation.lock('landscape')` 做 best-effort 尝试，失败不阻断播放。
 - Fullscreen 几何 ownership 按 form 固定：Universal Battle HUD 在 PC / Tablet / Mobile 始终属于地图顶部，即使存在 `pb-side-slots` 也不会迁移到 gutter；side-slot 只允许复用 PC / Tablet 的非移动端 controls 空白侧边空间。camera fit 动态量取顶部 `.pb-hud` 的真实高度，并在 Mobile transient controls 可见时额外量取 `.pb-mobile-overlay-content` 作为 bottom safe inset；Mobile 本身不启用 side-slot optimization。`test:browser-layout` 用真实 Chrome 几何断言覆盖 fullscreen + side-slot / mobile bottom-overlay，禁止只靠 CSS 源码正则判断。
-- `BattlePlaybackDataset.baseStates` 是 wrapper12（UpdateArena2 root field11）经后端 sparse
-  reconstruction 投影的权威基地 transition；查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新
-  A/B/C/D 完整状态。前端不接触 raw protobuf update，不负责合并缺失字段或协议 index，也不合成
-  进度或阵营结论。前端另以 canonical `positionSegments` 的 OBSERVED
+- `BattlePlaybackDataset.baseStates` 是后端 canonical 基地 transition：Supremacy 来自
+  wrapper12/root11（`baseId=A|B|C|D`），Assault 单基地来自 wrapper8/root8
+  （`baseId=BASE`）。Assault controlled 11.20 样本证明 progress 会真实广播到 `100`；
+  当前只提升 progress 语义，`ownerTeam/capturingTeam` 保持 null，禁止从 wrapper8 field4 猜阵营。
+  `assaultObjectivePresent` 从 wrapper8 初始化独立确认 objective；field3 未出现时 `baseStates=[]`，
+  仍按 mapCode 从 verified semantic 数据渲染静态 BASE，LEFT JOIN 可为空的 runtime state。
+  无 runtime progress 时不画水位；`arenaBonusType=2` 仅表示训练房，不是 Assault mode。
+  Malinovka 无占领与 Neptune 满占领共用泛化路径，不按地图名称分支。
+  查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新状态。前端不接触 raw protobuf update，
+  不负责合并缺失字段或协议 index，也不合成进度或阵营结论。协议证据见
+  `docs/research/replay/assault-base-state.md` 与 `supremacy-base-state.md`。
+  Assault state authority 是 `BattlePlaybackDataset.baseStates`；3D objective consumer
+  pending，后续直接消费同一 `BASE` timeline，不新增 wrapper8 协议解析路径。
+  前端另以 canonical `positionSegments` 的 OBSERVED
   samples 派生最近 2 秒轨迹：不跨 segment/AoI gap，不使用 LAST_KNOWN，不读取未来样本，暂停
   冻结、seek 重算、倍速只改变时间推进语义。
 
@@ -435,4 +445,3 @@ python common/python/extract_vehicle_sizes.py --check   # CI：过期即失败
 Playback 继续使用现有俯视 hull/turret 资产，不引入 3D 坦克模型。启用 2.5D terrain relief 时，前端以当前车辆 footprint 和可靠 hull yaw 在 heightfield 上采样前/后/左/右地面高度，得到 presentation-only pitch/roll。pitch/roll 只倾斜车辆视觉层 `.pb-graphics`；HP、名称、hitbox、selected/recorder 与 collision layout 保持 screen-aligned。
 
 该姿态来自地图权威 heightfield，不从前端猜测 replay Z；无 terrain model 或无可靠 hull yaw 时保持原有平面 marker。为避免小尺寸贴图翻卡片，视觉 pitch clamp ±14°、roll clamp ±10°，并遵守 `prefers-reduced-motion`。
-

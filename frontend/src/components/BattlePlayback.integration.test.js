@@ -34,6 +34,14 @@ vi.mock('../data/mapImages', () => ({
       height: 769,
       coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
     },
+    neptune: {
+      src: 'neptune.png', width: 766, height: 769,
+      coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
+    },
+    malinovka: {
+      src: 'malinovka.png', width: 766, height: 769,
+      coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
+    },
     // 有底图但 mapBases 未收录几何——新地图上线到基地坐标补齐之间的真实状态。
     map_without_base_geometry: {
       src: 'no-bases.webp',
@@ -114,6 +122,56 @@ describe('Supremacy 基地 overlay', () => {
     expect(clipRects).toHaveLength(3)
     const diameter = Number(clipRects[2].attributes('width'))
     expect(Number(clipRects[2].attributes('height'))).toBeCloseTo(diameter * 0.4, 3)
+  })
+
+  it('renders the Assault single base and accepts protocol progress 100', async () => {
+    const overview = { ...makeOverview(), mapCode: 'neptune' }
+    const dataset = {
+      ...makePlaybackV2({
+        baseStates: [
+          { timeSec: 0, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 0 },
+          { timeSec: 10, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 50 },
+          { timeSec: 20, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 100 },
+        ],
+      }),
+      mapCode: 'neptune',
+      assaultObjectivePresent: true,
+    }
+    const wrapper = await mountPlayback(overview, 20, dataset)
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(1)
+    expect(wrapper.find('[data-test="pb-base-BASE"]').text()).toContain('BASE')
+    expect(wrapper.findComponent({ name: 'BattleMap' }).props('bases')[0]).toMatchObject({
+      x: 49.5339, y: 8.5291, baseId: 'BASE', radius: 20,
+    })
+    const fill = wrapper.find('[data-test="pb-base-fill"]')
+    expect(fill.exists()).toBe(true)
+    expect(fill.classes()).toContain('pb-capture-unknown')
+    const rect = wrapper.find('clipPath rect')
+    expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')), 3)
+    await wrapper.setProps({ seekTo: 10 })
+    await flushPromises()
+    expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')) * 0.5, 3)
+    await wrapper.setProps({ seekTo: 0 })
+    await flushPromises()
+    expect(Number(rect.attributes('height'))).toBe(0)
+    expect(wrapper.find('[data-test="pb-base-A"]').exists()).toBe(false)
+    await wrapper.setProps({ playbackV2: { ...dataset, assaultObjectivePresent: false } })
+    expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(0)
+  })
+
+  it('renders Malinovka Assault initialization without any capture transitions', async () => {
+    const dataset = { ...makePlaybackV2(), mapCode: 'malinovka', arenaBonusType: 2,
+      assaultObjectivePresent: true, baseStates: [], durationSec: 14.15 }
+    const wrapper = mountPlayback({ ...makeOverview(), mapCode: 'malinovka' }, null, dataset)
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(1)
+    expect(wrapper.find('[data-test="pb-base-BASE"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-base-fill"]').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'BattleMap' }).props('bases')[0].progress).toBeNull()
+    await wrapper.setProps({ playbackV2: { ...dataset, assaultObjectivePresent: false } })
+    expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(0)
   })
 
   // 非争霸战（baseStates 为空，或旧 producer 未发该字段）不得靠地图几何画出基地。

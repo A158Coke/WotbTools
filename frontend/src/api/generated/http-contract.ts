@@ -780,6 +780,8 @@ export interface components {
             vehicles: components["schemas"]["VehiclePlaybackTrack"][];
             events: components["schemas"]["BattleEvent"][];
             pointsSamples: components["schemas"]["PointsSample"][];
+            /** @description Proven wrapper8 objective-family initialization, independent of capture progress. Missing on older artifacts means unknown (no static Assault objective rendering). Not derived from arenaBonusType. */
+            assaultObjectivePresent?: boolean;
             baseStates?: components["schemas"]["BaseStateTransition"][];
             limitations: string[];
             capability: components["schemas"]["PlaybackCapability"];
@@ -892,12 +894,16 @@ export interface components {
         };
         BaseStateTransition: {
             timeSec: number;
-            /** @enum {string} */
-            baseId: "A" | "B" | "C" | "D";
+            /**
+             * @description Supremacy uses A-D; Assault single-base uses BASE.
+             * @enum {string}
+             */
+            baseId: "A" | "B" | "C" | "D" | "BASE";
             /** @enum {integer|null} */
             ownerTeam: 1 | 2 | null;
             /** @enum {integer|null} */
             capturingTeam: 1 | 2 | null;
+            /** @description Supremacy canonical states remain 0-99; Assault BASE may reach protocol value 100. */
             captureProgress: number | null;
         };
         ApiError: {

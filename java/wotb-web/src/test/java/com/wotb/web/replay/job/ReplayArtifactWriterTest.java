@@ -74,6 +74,7 @@ class ReplayArtifactWriterTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final BattlePlaybackDataset read = ReplayArtifactWriter.decodeBattlePlaybackV2(legacyArtifact);
+        assertFalse(read.assaultObjectivePresent());
         assertEquals(BattlePlaybackDataset.ConfidenceDto.HIGH,
                 read.vehicles().get(0).loadout().confidence());
         assertEquals(3, read.vehicles().get(0).loadout().consumables().size());
