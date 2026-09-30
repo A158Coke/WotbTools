@@ -18,6 +18,17 @@ scrape_configs:
         labels:
           service: wotb-backend
 
+  # AI Review executes as an independent Yecao runtime. Scrape it over the
+  # shared wotb_internal Docker network; do not route local telemetry through
+  # the host WireGuard-published port.
+  - job_name: ai-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - ai-service:8080
+        labels:
+          service: ai-service
+
   - job_name: node-exporter
     static_configs:
       - targets:
