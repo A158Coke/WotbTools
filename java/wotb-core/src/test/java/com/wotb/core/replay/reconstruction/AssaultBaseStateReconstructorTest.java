@@ -3,6 +3,7 @@ package com.wotb.core.replay.reconstruction;
 import com.wotb.core.replay.event.AssaultBaseStateTransition;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.RawAssaultBaseUpdate;
+import com.wotb.core.replay.event.RawSupremacyBaseUpdate;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,17 @@ class AssaultBaseStateReconstructorTest {
     void siblingRawFamilyDoesNotBecomeCanonicalTeamState() {
         final List<AssaultBaseStateTransition> states =
                 AssaultBaseStateReconstructor.reconstruct(List.of(raw(1, 1, 1, null, 1)));
+        assertEquals(List.of(), states);
+    }
+
+    @Test
+    void suppressesSingleBaseProjectionWhenSupremacyWrapper12IsPresent() {
+        final RawSupremacyBaseUpdate supremacy = new RawSupremacyBaseUpdate(
+                2, new ReplayTimestamp(2, null), 8, DecodeConfidence.EXACT,
+                0, 0, 0, 0, null, null);
+        final List<AssaultBaseStateTransition> states =
+                AssaultBaseStateReconstructor.reconstruct(List.of(
+                        raw(1, 2, 1, 40, null), supremacy));
         assertEquals(List.of(), states);
     }
 
