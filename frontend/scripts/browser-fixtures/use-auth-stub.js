@@ -152,6 +152,8 @@ function hasRole(role) {
   const roles = tokenParsed.value?.realm_access?.roles
   return Boolean(role) && Array.isArray(roles) && roles.includes(role)
 }
+/** 与真实 composable 一致：admin-only 功能开关（feature flag）判定源。 */
+const isAdmin = computed(() => hasRole('wotbtools-admin'))
 /** 与真实 composable 一致：展示名优先 displayName claim，preferred_username 只作兜底。 */
 function displayName() { return tokenParsed.value?.displayName || tokenParsed.value?.preferred_username || '' }
 function token() { return authenticated.value ? 'fixture-access-token' : '' }
@@ -168,6 +170,7 @@ export function useAuth() {
     logout,
     isAuthenticated,
     hasRole,
+    isAdmin,
     token,
     ensureToken,
     initialized,
