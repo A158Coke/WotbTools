@@ -891,7 +891,8 @@ export function initPlayback(container, store) {
 
   async function loadGlb(tankId) {
     // 捕获当前会话的缓存实例：会话结束后迟到的完成写入旧 Map（已脱离新会话），
-    // 模板未渲染即未上传 GPU，随 JS GC 回收——不污染新会话缓存
+    // 不污染新会话缓存；teardown 时在册的 Promise 已被挂 then(dispose)——迟到
+    // 模板到达即销毁，teardown 后才创建的残余随旧 Map GC
     const cache = glbCache;
     if (cache.has(tankId)) return cache.get(tankId);
     const p = (async () => {
@@ -1408,7 +1409,8 @@ export function initPlayback(container, store) {
     groundLayers = null;
     heightField = null; heightMeta = null; mapMetaInfo = null;
     // GLB 模板缓存（session-scoped）：unique shared resources dispose 一次并清缓存。
-    // 未决的加载 Promise 随旧缓存对象被丢弃——迟到的模板未渲染即未上传 GPU，JS GC 回收
+    // 未决 Promise 逐个挂 then(dispose)——迟到模板到达即销毁（未渲染未上传 GPU，
+    // 不泄漏）；teardown 之后才创建的迟到 Promise 不在册，随旧缓存对象 GC
     for (const p of glbCache.values()) {
       p.then((entry) => { if (entry && entry.template) disposeObject3D(entry.template); })
         .catch(() => {});
@@ -1425,16 +1427,15 @@ export function initPlayback(container, store) {
   }
 
   async function loadData(source) {
-    // source = 路径字符串（服务端通道，兼容既有调用）或 { kind:'local', file }（本地 WASM 通道）
+    // source 仅接受 { kind:'local', file }（client-only 拓扑，replaySource 对
+    // 其他形态显式拒绝）；字符串路径等 server 形态在本拓扑中不存在
     const gen = ++sessionGen;   // 使上一会话的在途异步续体全部失效
     store.err = '';
     store.loading = true;
     try {
       // 数据获取在 teardown 之前：新回放解析失败时当前回放保持完好（替换语义 =
       // 新数据就位才拆旧会话）
-      const data = await loadPlaybackData(
-        typeof source === 'string' ? { kind: 'server', file: source } : source,
-      );
+      const data = await loadPlaybackData(source);
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       teardownSession();   // 内部再递增一代——gen+1 仍属本调用（仍是最新所有者）
       DATA = data;
