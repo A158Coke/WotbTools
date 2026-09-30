@@ -1497,7 +1497,21 @@
     "turret_front": "炮塔正面",
     "turret_sides": "炮塔侧面",
     "turret_rear": "炮塔尾部",
-    "open_armor": "在 3D 装甲查看器打开"
+    "open_armor": "在 3D 装甲查看器打开",
+    "back": "← 返回坦克百科",
+    "open3d": "在新的浏览器窗口打开 3D 检视器",
+    "open3d_title": "3D 装甲检视器",
+    "select_config": "搭载配置",
+    "pen_far": "远距穿深",
+    "velocity": "弹速",
+    "reload": "装填",
+    "aim_time": "瞄准时间",
+    "gun_armor": "炮管装甲",
+    "hull": "车体",
+    "turret": "炮塔",
+    "front": "正面",
+    "side": "侧面",
+    "rear": "尾部"
   },
   "agentShots": {
     "title": "射击复现（Agent）",
@@ -1549,7 +1563,6 @@
   "agentNav": {
     "replay": "三维回放",
     "tanks": "坦克百科",
-    "shots": "射击复现",
-    "armor": "装甲查看器"
+    "shots": "射击复现"
   }
 }

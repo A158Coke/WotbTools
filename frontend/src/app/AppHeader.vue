@@ -24,13 +24,12 @@ function onLangChange(event) {
   localStorage.setItem('wotb-lang', event.target.value)
 }
 
-// Agent 数据平面顶端标签页（评审 UI 交互补充；同 wotbagent 的顶部 tab 导航形态）。
-// 四视图共用一个 active 高亮组；任一激活时整组高亮由各 tab 自身 activeView 精确匹配。
+// Agent 数据平面顶端标签页（同 wotbagent 的顶部 tab 导航形态）。
+// 装甲查看器无顶层入口（wotbagent 同逻辑）：从坦克百科详情页进入。
 const AGENT_TABS = [
   { view: 'agent-replay', key: 'agentNav.replay' },
   { view: 'agent-tankopedia', key: 'agentNav.tanks' },
   { view: 'agent-shots', key: 'agentNav.shots' },
-  { view: 'agent-armor', key: 'agentNav.armor' },
 ]
 </script>
 
