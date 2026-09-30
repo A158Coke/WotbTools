@@ -18,6 +18,7 @@ on:
       - docs/WotBTools_League_Rating_V6.md
       - deploy/nginx/nginx.conf
       - deploy/check-latest-main.sh
+      - deploy/check-production-freshness.sh
       - deploy/list-image-tags.sh
       - scripts/ci/run-with-network-retry.sh
       - deploy/tx/frontend.compose.yml
@@ -46,6 +47,7 @@ env:
     docs/WotBTools_League_Rating_V6.md
     deploy/nginx/nginx.conf
     deploy/check-latest-main.sh
+    deploy/check-production-freshness.sh
     deploy/list-image-tags.sh
     scripts/ci/run-with-network-retry.sh
     deploy/tx/frontend.compose.yml
