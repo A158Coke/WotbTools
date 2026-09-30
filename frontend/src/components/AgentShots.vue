@@ -85,6 +85,45 @@ async function enrichShellKinds(parsedShots) {
   }
 }
 
+/**
+ * 俯仰锚定表（上游服务端 TankResolver 同数据链的客户端等价）：
+ * playback.vehicles 的昵称 → tank_id → tank/{id}.json 顶级配置 pitch_limits，
+ * 换算 GunPitchRange 形状（dep=max 俯角上限、ele=−min 仰角上限，扇区透传）。
+ * 注入 WASM 后 prop2 俯仰按车型极限解码——消解客户端空表下的
+ * 「俯仰由弹道推算/俯仰降级」大面积降级标记。缺数据的玩家跳过（如实降级）。
+ */
+async function buildPitchLimits(vehicles) {
+  const limits = {}
+  const tankNames = new Map()   // tank_id → [昵称]
+  const tankRange = new Map()   // tank_id → GunPitchRange
+  for (const v of vehicles || []) {
+    if (v.nickname && v.tank_id && !tankNames.has(v.tank_id)) tankNames.set(v.tank_id, [])
+    if (v.nickname && v.tank_id) tankNames.get(v.tank_id).push(v.nickname)
+  }
+  await Promise.all([...tankNames.keys()].map(async (tid) => {
+    try {
+      const data = await fetchTankData(tid)
+      const cfgs = data.configs || []
+      const pl = cfgs.length ? cfgs[cfgs.length - 1].pitch_limits : null
+      if (pl && pl.max != null && pl.min != null) {
+        tankRange.set(tid, {
+          dep: pl.max,
+          ele: -pl.min,
+          ...(pl.front ? { front: pl.front } : {}),
+          ...(pl.back ? { back: pl.back } : {}),
+          ...(pl.transition != null ? { transition: pl.transition } : {}),
+        })
+      }
+    } catch { /* 数据缺失：该坦克玩家保持空锚定（如实降级） */ }
+  }))
+  for (const [tid, names] of tankNames) {
+    const range = tankRange.get(tid)
+    if (!range) continue
+    for (const nick of names) limits[nick] = range
+  }
+  return limits
+}
+
 async function onFilePicked(event) {
   const file = event.target.files && event.target.files[0]
   event.target.value = ''
@@ -94,13 +133,28 @@ async function onFilePicked(event) {
   err.value = ''
   try {
     const bytes = new Uint8Array(await file.arrayBuffer())
-    const parsedShots = await parseAgentShotsFromBytes(bytes)
-    // 富化失败不阻断主表（roster 失败仅 3D 链接缺失；弹种反解失败走槽位/id 兜底）
+    // 时序：先解析 playback（轻）构建俯仰锚定表，shots 只做一次重解析。
+    // 锚定注入失败（产物过旧等）→ 裸解析兜底（俯仰降级标记如实透传）。
+    let playback = null
+    let pitchLimits = null
     try {
-      const playback = await parseAgentPlaybackFromBytes(bytes)
-      enrichShotsFromRoster(parsedShots, playback.vehicles)
+      playback = await parseAgentPlaybackFromBytes(bytes)
+      pitchLimits = await buildPitchLimits(playback.vehicles)
     } catch (e) {
-      console.warn('roster enrichment skipped:', e)
+      console.warn('pitch limits skipped:', e)
+    }
+    let parsedShots
+    try {
+      parsedShots = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined)
+    } catch (e) {
+      console.warn('anchored parse failed, fallback:', e)
+      parsedShots = await parseAgentShotsFromBytes(bytes)
+    }
+    // 富化失败不阻断主表（roster 失败仅 3D 链接缺失；弹种反解失败走槽位/id 兜底）
+    if (playback) {
+      try { enrichShotsFromRoster(parsedShots, playback.vehicles) } catch (e) {
+        console.warn('roster enrichment skipped:', e)
+      }
     }
     try {
       await enrichShellKinds(parsedShots)

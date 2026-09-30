@@ -274,7 +274,7 @@ const AGENT_WASM_URL = '/wasm/wotb_replay_wasm.js'
 interface AgentWasmModule {
   parseResult?: (bytes: Uint8Array) => string
   parsePlayback?: (bytes: Uint8Array) => string
-  parseShotReplays?: (bytes: Uint8Array) => string
+  parseShotReplays?: (bytes: Uint8Array, limits?: string) => string
   default?: () => Promise<void>
   initSync?: () => void
 }
@@ -351,10 +351,20 @@ export function normalizeAgentShotIndices(shots: AgentShotReplay[]): AgentShotRe
   return sorted
 }
 
-/** 射击复现能力：.wotbreplay 字节 → 全员射击链（time_s 排序 + 全局重编号）。 */
-export async function parseAgentShotsFromBytes(bytes: Uint8Array): Promise<AgentShotReplay[]> {
+/**
+ * 射击复现能力：.wotbreplay 字节 → 全员射击链（time_s 排序 + 全局重编号）。
+ * `pitchLimits` 可选：俯仰锚定表 {昵称: {dep, ele, front?, back?, transition?}}
+ * （GunPitchRange serde 形状，消费方由资产面 tank/{id}.json 的 pitch_limits 组装
+ * dep=max、ele=−min）——注入后 prop2 俯仰按车型极限解码（服务端同级质量）；
+ * 缺省空表时俯仰降级标记如实透传（客户端路径数据边界，非错误）。
+ */
+export async function parseAgentShotsFromBytes(
+  bytes: Uint8Array,
+  pitchLimits?: Record<string, unknown>,
+): Promise<AgentShotReplay[]> {
   const parse = await wasmFn('parseShotReplays')
-  return normalizeAgentShotIndices(assertShotArray(JSON.parse(parse(bytes)) as unknown))
+  const raw = pitchLimits ? parse(bytes, JSON.stringify(pitchLimits)) : parse(bytes)
+  return normalizeAgentShotIndices(assertShotArray(JSON.parse(raw) as unknown))
 }
 
 /** 预解析 JSON 通道（部署面静态文件/服务端代理共用） */
