@@ -271,3 +271,29 @@ jobs:
           GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
           OBSERVABILITY_ENVIRONMENT: ${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}
           GRAFANA_PAT: ${{ secrets.GRAFANA_PAT }}
+
+      - name: Cleanup staged Grafana root
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 2m
+          envs: SOURCE_SHA
+          script: |
+            set -Eeuo pipefail
+            [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+              echo 'Refusing to clean an invalid observability staging SHA.' >&2
+              exit 2
+            }
+            stage="/opt/wotb/observability.incoming/$SOURCE_SHA"
+            rm -rf -- "$stage"
+            [[ ! -e "$stage" ]] || {
+              echo "Observability staging cleanup failed: $stage" >&2
+              exit 1
+            }
+            echo "Observability staging cleanup: PASS ($SOURCE_SHA)"
+        env:
+          SOURCE_SHA: ${{ github.sha }}
