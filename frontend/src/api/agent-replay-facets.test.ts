@@ -1,32 +1,88 @@
 /**
- * Agent 回放切面接口测试：用上游契约样例（contracts/agent/samples/，随 PR #392 合并）
- * 锁定信封校验的真实不变量——version 锁定、三切面齐备、可见性事件必须可联表花名册。
- * 样例缺失时跳过（不伪造 fixture）。
+ * Agent 回放数据消费接口测试（契约 v2）。
+ *
+ * 契约 v2 = 独立能力（Result / Playback / Shots），giant envelope 与 HofFacet 已从
+ * Agent 公开面拆除（breaking，评审 P0-1）。本文件锁定：
+ * - 结果能力轻校验（花名册齐备 + 不得物化时序键——"Result-only 不 materialize
+ *   Playback"的消费侧镜像）；
+ * - Playback 校验（version 锁定 + 数组齐备）；
+ * - shots 全局重编号（上游 /api/replay/shots 同规则）；
+ * - HoF = BattleResult 的消费方投影（字段映射与上游 HofFacet.from_settlement 逐项
+ *   对齐——职责移入消费方，映射语义不变）；
+ * - 旧接口（giant envelope 装载 / validateAgentFacetEnvelope）不复存在。
  */
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import * as api from './agent-replay-facets.js'
 import {
   normalizeAgentShotIndices,
-  parseAgentFacetsFromJson,
-  validateAgentFacetEnvelope,
+  parseAgentPlaybackFromJson,
+  parseAgentResultFromJson,
+  projectHoF,
+  validateAgentBattleResult,
+  validateAgentPlayback,
 } from './agent-replay-facets.js'
 
-const SAMPLES_DIR = join(__dirname, '../../../contracts/agent/samples')
-
-function readSample(name: string): Record<string, any> {
-  return JSON.parse(readFileSync(join(SAMPLES_DIR, name), 'utf-8')) as Record<string, any>
-}
-
-function hasSamples(): boolean {
-  try {
-    readSample('hof.sample.json')
-    readSample('ai-review.sample.json')
-    return true
-  } catch {
-    return false
+function minimalResult(): Record<string, unknown> {
+  return {
+    file_name: 'x.wotbreplay',
+    timestamp: 1780000000,
+    datetime: '2026-06-04 12:00:00',
+    room_type: 'Rating',
+    map_id: 1,
+    map_name: 'x',
+    battle_duration_secs: 300,
+    winner_team: 1,
+    author_account_id: 7,
+    author_nickname: 'a',
+    author_tank_id: 1,
+    author_tank_name: 'T-34',
+    author_team: 1,
+    author_won: true,
+    author: {},
+    players: [{
+      account_id: 7,
+      nickname: 'a',
+      team: 1,
+      tank_id: 1,
+      tank_name: 'T-34',
+      base_xp: 900,
+      credits_earned: 50000,
+      n_shots: 10,
+      n_hits_dealt: 6,
+      n_penetrations_dealt: 4,
+      damage_dealt: 2000,
+      damage_blocked: 300,
+      damage_assisted_1: 250,
+      damage_assisted_2: 120,
+      n_hits_received: 3,
+      n_penetrations_received: 1,
+      n_enemies_damaged: 5,
+      n_enemies_destroyed: 2,
+      survived: true,
+    }, {
+      account_id: 8,
+      nickname: 'b',
+      team: 2,
+      tank_id: 2,
+      tank_name: 'B',
+      base_xp: 400,
+      credits_earned: 30000,
+      n_shots: 8,
+      n_hits_dealt: 3,
+      n_penetrations_dealt: 1,
+      damage_dealt: 800,
+      damage_blocked: 0,
+      damage_assisted_1: 0,
+      damage_assisted_2: 0,
+      n_hits_received: 5,
+      n_penetrations_received: 4,
+      n_enemies_damaged: 2,
+      n_enemies_destroyed: 1,
+      survived: false,
+      killer_id: 7,
+    }],
   }
 }
 
@@ -42,121 +98,59 @@ function minimalPlayback(): Record<string, unknown> {
   }
 }
 
-describe.skipIf(!hasSamples())('agent replay facets（上游契约样例）', () => {
-  const hof = readSample('hof.sample.json')
-  const ai = readSample('ai-review.sample.json')
-
-  it('真实样例通过信封校验（产物形状：信封无版本键，版本在切面层）', () => {
-    const env = validateAgentFacetEnvelope({
-      playback: minimalPlayback(),
-      ai,
-      hof,
-    })
-    expect(env.hof.version).toBe(1)
-    expect(env.ai.version).toBe(1)
-    expect(Array.isArray(env.hof.entries)).toBe(true)
-    // 样例来自整场回放：花名册规模锁定在契约边界内
-    expect(env.ai.rosters.length).toBeGreaterThanOrEqual(10)
+describe('结果能力（BattleResult 轻校验）', () => {
+  it('合法结果通过校验且形状透传', () => {
+    const r = validateAgentBattleResult(minimalResult())
+    expect(r.players).toHaveLength(2)
+    expect(r.winner_team).toBe(1)
   })
 
-  it('切面 version 不匹配 fail-fast（信封级未知键忽略）', () => {
-    const bad = structuredClone(ai) as Record<string, unknown>
-    bad.version = 2
-    expect(() =>
-      validateAgentFacetEnvelope({ playback: minimalPlayback(), ai: bad, hof }),
-    ).toThrow(/ai\.version = 2，不支持的契约版本/)
+  it('players 缺失/非数组 → reject', () => {
+    const bad = minimalResult()
+    delete (bad as Record<string, unknown>).players
+    expect(() => validateAgentBattleResult(bad)).toThrow(/result\.players 必须是数组/)
+    expect(() => validateAgentBattleResult({ ...bad, players: 'x' })).toThrow(/result\.players 必须是数组/)
   })
 
-  it('缺切面 fail-fast', () => {
-    expect(() => validateAgentFacetEnvelope({ version: 1, playback: minimalPlayback(), ai })).toThrow(/hof 必须是对象/)
+  it('author_account_id 缺失 → reject', () => {
+    const bad = minimalResult()
+    delete (bad as Record<string, unknown>).author_account_id
+    expect(() => validateAgentBattleResult(bad)).toThrow(/author_account_id/)
   })
 
-  it('visibility 事件必须可联表花名册（裸 EID 不泄漏）', () => {
-    const bad = {
-      version: 1,
-      playback: minimalPlayback(),
-      ai: {
-        ...ai,
-        rosters: [],
-        events: [{ type: 'visibility', t_in: 1, eid: 999 }],
-      },
-      hof,
-    }
-    expect(() => validateAgentFacetEnvelope(bad)).toThrow(/visibility eid 999/)
+  it('结果能力物化时序键 → reject（Result-only 不 materialize Playback 的消费侧锁定）', () => {
+    const bad = { ...minimalResult(), vehicles: [] }
+    expect(() => validateAgentBattleResult(bad)).toThrow(/不得物化时序键 vehicles/)
+  })
+
+  it('JSON 通道与对象通道等价', () => {
+    expect(parseAgentResultFromJson(JSON.stringify(minimalResult())).players).toHaveLength(2)
   })
 })
 
-describe('agent replay facets（合成用例）', () => {
-  it('parseAgentFacetsFromJson 接受对象与 JSON 字符串', () => {
-    const env = {
-      version: 1,
-      playback: minimalPlayback(),
-      ai: { version: 1, battle: {}, rosters: [], events: [], settlements: [] },
-      hof: { version: 1, battle: {}, entries: [] },
-    }
-    expect(parseAgentFacetsFromJson(env).playback.version).toBe(1)
-    expect(parseAgentFacetsFromJson(JSON.stringify(env)).hof.version).toBe(1)
+describe('时序能力（PlaybackData 校验）', () => {
+  it('合法 playback 通过且 version 锁定', () => {
+    const pb = validateAgentPlayback(minimalPlayback())
+    expect(pb.version).toBe(1)
   })
 
-  it('非对象输入 fail-fast', () => {
-    expect(() => parseAgentFacetsFromJson('null')).toThrow()
-  })
-})
-
-describe.skipIf(!hasSamples())('结构契约锁定（139c5092 评审 blocker 回归）', () => {
-  const hof = readSample('hof.sample.json')
-  const ai = readSample('ai-review.sample.json')
-
-  function validEnvelope(): Record<string, unknown> {
-    // 深拷贝：用例会就地变更（删键/改版本），不得污染 describe 级共享样例
-    return { version: 1, playback: minimalPlayback(), ai: structuredClone(ai), hof: structuredClone(hof) }
-  }
-
-  /** 从合法信封删除指定键（或改写值）后必须被校验器拒绝 */
-  function expectReject(mutate: (env: Record<string, unknown>) => void): void {
-    const env = validEnvelope()
-    mutate(env)
-    expect(() => validateAgentFacetEnvelope(env)).toThrow()
-  }
-
-  function dropKey(section: 'playback' | 'ai' | 'hof', key: string) {
-    return (env: Record<string, unknown>) => {
-      const sec = env[section] as Record<string, unknown>
-      delete sec[key]
-    }
-  }
-
-  it.each([
-    ['playback.shots', dropKey('playback', 'shots')],
-    ['playback.kills', dropKey('playback', 'kills')],
-    ['playback.periods', dropKey('playback', 'periods')],
-    ['playback.visibility', dropKey('playback', 'visibility')],
-    ['ai.battle', dropKey('ai', 'battle')],
-    ['ai.settlements', dropKey('ai', 'settlements')],
-    ['hof.battle', dropKey('hof', 'battle')],
-  ])('缺失 %s → reject', (_name, mutate) => {
-    expectReject(mutate)
+  it('version ≠ 1 → reject', () => {
+    expect(() => validateAgentPlayback({ ...minimalPlayback(), version: 2 })).toThrow(/不支持的契约版本/)
+    expect(() => {
+      const bad = minimalPlayback()
+      delete (bad as Record<string, unknown>).version
+      validateAgentPlayback(bad)
+    }).toThrow(/不支持的契约版本/)
   })
 
-  it.each([
-    ['playback.version', (env: Record<string, unknown>) => { (env.playback as Record<string, unknown>).version = 2 }],
-    ['ai.version', (env: Record<string, unknown>) => { (env.ai as Record<string, unknown>).version = 0 }],
-    ['hof.version', (env: Record<string, unknown>) => { delete (env.hof as Record<string, unknown>).version }],
-  ])('切面 %s ≠ 1 → reject', (_name, mutate) => {
-    expectReject(mutate)
+  it('缺数组键 → reject', () => {
+    const bad = minimalPlayback()
+    delete (bad as Record<string, unknown>).shots
+    expect(() => validateAgentPlayback(bad)).toThrow(/playback\.shots 必须是数组/)
   })
 
-  it('playback.meta 缺失 → reject', () => {
-    expectReject((env) => {
-      const pb = env.playback as Record<string, unknown>
-      delete pb.meta
-    })
-  })
-
-  it('visibility 可联表不变量仍然锁定', () => {
-    const env = validEnvelope()
-    ;(env.ai as Record<string, unknown>).events = [{ type: 'visibility', t_in: 1, eid: 424242 }]
-    expect(() => validateAgentFacetEnvelope(env)).toThrow(/visibility eid 424242/)
+  it('JSON 通道等价', () => {
+    expect(parseAgentPlaybackFromJson(JSON.stringify(minimalPlayback())).meta.map_id).toBe(1)
   })
 })
 
@@ -180,5 +174,62 @@ describe('normalizeAgentShotIndices（/api/replay/shots 同规则全局重编号
     expect(shots.map((s) => s.time_s)).toEqual([30, 10])
     expect(out[0]).toBe(b)
     expect(out.map((s) => s.index)).toEqual([1, 2])
+  })
+})
+
+describe('projectHoF（BattleResult 的消费方投影；上游 HofFacet.from_settlement 映射逐项对齐）', () => {
+  it('字段映射：结算原名 → HoF 提交名（damage_assisted_1/2、n_hits_dealt、base_xp、credits_earned）', () => {
+    const sub = projectHoF(validateAgentBattleResult(minimalResult()))
+    expect(sub.version).toBe(1)
+    expect(sub.battle).toEqual({
+      start_time: 1780000000,
+      map_id: 1,
+      map_name: 'x',
+      room_type: 'Rating',
+      winner: 1,
+      duration_secs: null, // root5 未解码；宁缺勿冒充
+    })
+    const [p1, p2] = sub.entries
+    expect(p1).toMatchObject({
+      account_id: 7,
+      nickname: 'a',
+      team: 1,
+      tank_id: 1,
+      damage_dealt: 2000,
+      damage_blocked: 300,
+      damage_assisted_spot: 250,   // damage_assisted_1
+      damage_assisted_track: 120,  // damage_assisted_2
+      kills: 2,                    // n_enemies_destroyed
+      n_shots: 10,
+      n_hits: 6,                   // n_hits_dealt
+      n_penetrations: 4,           // n_penetrations_dealt
+      survived: true,
+      xp: 900,                     // base_xp
+      credits: 50000,              // credits_earned
+    })
+    // 无对应结算值 → 键不存在（unknown ≠ 0；undefined 键不序列化）
+    expect('killer_id' in p1).toBe(false)
+    expect(p2.killer_id).toBe(7)
+  })
+
+  it('投影是纯函数：不修改输入 Result', () => {
+    const r = validateAgentBattleResult(minimalResult())
+    const snapshot = JSON.stringify(r)
+    projectHoF(r)
+    expect(JSON.stringify(r)).toBe(snapshot)
+  })
+})
+
+describe('契约 v2 边界（评审 P0-1 验收的消费侧锁定）', () => {
+  it('旧 giant-envelope 接口不复存在（parseAgentFacets*/validateAgentFacetEnvelope 已拆除）', () => {
+    expect((api as Record<string, unknown>).parseAgentFacetsFromBytes).toBeUndefined()
+    expect((api as Record<string, unknown>).parseAgentFacetsFromJson).toBeUndefined()
+    expect((api as Record<string, unknown>).validateAgentFacetEnvelope).toBeUndefined()
+  })
+
+  it('Agent 公开面无 HoF 能力：模块只暴露 HoF 投影（消费方职责），无 HofFacet 装载', () => {
+    expect(typeof api.projectHoF).toBe('function')
+    expect((api as Record<string, unknown>).HofFacet).toBeUndefined()
+    expect((api as Record<string, unknown>).parseAgentHofFromBytes).toBeUndefined()
   })
 })

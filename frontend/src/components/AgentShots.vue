@@ -8,7 +8,7 @@
  */
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { parseAgentShotsFromBytes, parseAgentFacetsFromBytes } from '../api/agent-replay-facets.js'
+import { parseAgentShotsFromBytes, parseAgentPlaybackFromBytes } from '../api/agent-replay-facets.js'
 import { storeShotsForViewer, fetchTankData } from '../scene/agentData.js'
 
 const { t } = useI18n()
@@ -21,17 +21,18 @@ const shots = ref([])
 const shooter = ref('all')
 
 /**
- * 客户端富化（上游由 /api/replay/shots 服务端注入的字段，纯客户端链用切面花名册等价补齐）：
+ * 客户端富化（上游由 /api/replay/shots 服务端注入的字段，纯客户端链用 Playback
+ * 花名册等价补齐——vehicles 即含 nickname/tank_id/team/is_author）：
  * - target_tank_id / shooter_tank_id：花名册 nickname → tank_id（battle_results 口径）；
  * - shooter_team：'ally' / 'enemy'（相对回放作者阵营）。
  * 名称冲突时取首个匹配（服务端 team_tank_of 同约束）。
  */
-function enrichShotsFromRoster(parsedShots, roster) {
+function enrichShotsFromRoster(parsedShots, vehicles) {
   const byNick = new Map()
-  for (const r of roster || []) {
+  for (const r of vehicles || []) {
     if (r.nickname && !byNick.has(r.nickname)) byNick.set(r.nickname, r)
   }
-  const authorTeam = (roster || []).find((r) => r.is_author)?.team
+  const authorTeam = (vehicles || []).find((r) => r.is_author)?.team
   for (const s of parsedShots) {
     const target = s.target_name ? byNick.get(s.target_name) : null
     if (target?.tank_id) s.target_tank_id = target.tank_id
@@ -57,8 +58,8 @@ async function onFilePicked(event) {
     const parsedShots = await parseAgentShotsFromBytes(bytes)
     // 花名册富化失败不阻断主表（仅 3D 链接缺失）
     try {
-      const facets = await parseAgentFacetsFromBytes(bytes)
-      enrichShotsFromRoster(parsedShots, facets.ai.rosters)
+      const playback = await parseAgentPlaybackFromBytes(bytes)
+      enrichShotsFromRoster(parsedShots, playback.vehicles)
     } catch (e) {
       console.warn('roster enrichment skipped:', e)
     }
