@@ -3,8 +3,17 @@
  * 组件只使用语义 token（--color-*、--elevation-*），不引用原始色。
  * data-theme 由 useUiProfile 从 wotb-ui-profile 派生：showcase → dark（沉浸），classic → light（简约）。
  * 所有文字 / UI 色均已按 WCAG 2.2 AA 在本主题四层表面上的最差值验证（正文 ≥ 4.5，UI ≥ 3）。
+ *
+ * 原始色（--{色相}-{级}）只在被两个及以上语义 token 共用时才抽出（§1），组件不得直接引用。
  */
 @layer tokens {
+  :root {
+    --green-400: #5cc280;
+    --green-700: #16703c;
+    --red-400: #f2786d;
+    --red-700: #b8352a;
+  }
+
   :root,
   :root[data-theme="dark"] {
     color-scheme: dark;
@@ -25,13 +34,13 @@
     --color-on-accent: #17130b;
     --color-accent-text: #f0b33e;
 
-    --color-success: #5cc280;
-    --color-danger: #f2786d;
+    --color-success: var(--green-400);
+    --color-danger: var(--red-400);
     --color-warning: #f5ca76;
     --color-info: #6db3ec;
 
-    --color-team-ally: #5cc280;
-    --color-team-enemy: #f2786d;
+    --color-team-ally: var(--green-400);
+    --color-team-enemy: var(--red-400);
     --color-team-enemy-cb: #c38bf0;
 
     --color-scrim: rgb(0 0 0 / .6);
@@ -61,13 +70,13 @@
     --color-on-accent: #ffffff;
     --color-accent-text: #955708;
 
-    --color-success: #16703c;
-    --color-danger: #b8352a;
+    --color-success: var(--green-700);
+    --color-danger: var(--red-700);
     --color-warning: #855600;
     --color-info: #1a64a8;
 
-    --color-team-ally: #16703c;
-    --color-team-enemy: #b8352a;
+    --color-team-ally: var(--green-700);
+    --color-team-enemy: var(--red-700);
     --color-team-enemy-cb: #7b3fb3;
 
     --color-scrim: rgb(0 0 0 / .35);

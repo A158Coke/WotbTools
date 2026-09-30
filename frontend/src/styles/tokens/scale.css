@@ -1,9 +1,10 @@
-/* 设计语言 · 与主题无关的刻度 token（规则见 docs/frontend/design-language.md §4–§5）
+/* 设计语言 · 与主题无关的刻度 token（规则见 docs/frontend/design-language.md §1、§4–§5）
  *
- * 层级顺序在这里声明一次：本文件是 main.js 的第一个样式入口。
+ * 层级顺序只在这里声明一次：本文件是 main.js 的第一个样式入口。
+ * 第一次需要新层（如 components）时，把它按 §1 的顺序追加到这条语句里，不要在别处另行声明。
  * 未分层（legacy）样式始终高于任何 @layer，因此在迁移完成前现有规则的胜负不变。
  */
-@layer reset, tokens, base, layout, components, patterns, pages, utilities;
+@layer tokens;
 
 @layer tokens {
   :root {
@@ -20,13 +21,27 @@
     --space-12: 48px;
     --gutter: 16px;
 
-    /* 字号阶梯：字号 / 行高（§4），最小 12px */
-    --type-display: 700 32px / 40px var(--font-family-sans);
-    --type-h1: 700 24px / 32px var(--font-family-sans);
-    --type-h2: 600 20px / 28px var(--font-family-sans);
-    --type-h3: 600 16px / 24px var(--font-family-sans);
-    --type-body: 400 14px / 20px var(--font-family-sans);
-    --type-caption: 400 12px / 16px var(--font-family-sans);
+    /* 字号阶梯（§4），最小 12px。
+     * 原子 token：font-size / line-height 只能引用 --font-size-* / --line-height-*；
+     * 组合 token：font 简写只能引用 --type-*。 */
+    --font-size-display: 32px;
+    --font-size-h1: 24px;
+    --font-size-h2: 20px;
+    --font-size-h3: 16px;
+    --font-size-body: 14px;
+    --font-size-caption: 12px;
+    --line-height-display: 40px;
+    --line-height-h1: 32px;
+    --line-height-h2: 28px;
+    --line-height-h3: 24px;
+    --line-height-body: 20px;
+    --line-height-caption: 16px;
+    --type-display: 700 var(--font-size-display) / var(--line-height-display) var(--font-family-sans);
+    --type-h1: 700 var(--font-size-h1) / var(--line-height-h1) var(--font-family-sans);
+    --type-h2: 600 var(--font-size-h2) / var(--line-height-h2) var(--font-family-sans);
+    --type-h3: 600 var(--font-size-h3) / var(--line-height-h3) var(--font-family-sans);
+    --type-body: 400 var(--font-size-body) / var(--line-height-body) var(--font-family-sans);
+    --type-caption: 400 var(--font-size-caption) / var(--line-height-caption) var(--font-family-sans);
     --font-family-sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
     --font-family-mono: ui-monospace, "SF Mono", Consolas, monospace;
 
@@ -74,7 +89,8 @@
 
   @media (pointer: coarse) {
     :root {
-      --type-body: 400 15px / 22px var(--font-family-sans);
+      --font-size-body: 15px;
+      --line-height-body: 22px;
       --control-h-sm: 36px;
       --control-h-md: 44px;
       --control-h-lg: 48px;

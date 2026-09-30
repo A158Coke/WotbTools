@@ -30,7 +30,7 @@
 
 ## Design language
 
-- 改任何界面前先读 [`docs/frontend/design-language.md`](../docs/frontend/design-language.md)。组件只用语义 token（`--color-*`、`--space-*`、`--type-*`、`--radius-*`、`--z-*`、`--elevation-*`、`--control-h-*`）；需要新的视觉值时先加 token，不写字面量。
+- 改任何界面前先读 [`docs/frontend/design-language.md`](../docs/frontend/design-language.md)。组件只用语义 token（`--color-*`、`--space-*`、`--type-*` / `--font-size-*` / `--line-height-*`、`--radius-*`、`--z-*`、`--elevation-*`、`--control-h-*`）；需要新的视觉值时先加 token，不写字面量。
 - `npm run lint:css` 必须通过。新建的 `.css` / `.vue` 自动受严格规则约束；**不得把新文件加入 `stylelint.legacy.json`**。迁移旧文件时把它从名单中删除并修复全部报错。
 - 不新增 `!important`、非三档断点、`100vh` / `100vw`、emoji 图标或未进 i18n 的界面文字。
 

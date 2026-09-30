@@ -29,11 +29,11 @@ Semantic（语义）        --color-accent: var(--orange-500)     组件只能�
 Component（可选）       --button-primary-bg: var(--color-accent)     仅复杂组件需要
 ```
 
-- **文件：** `src/styles/tokens/scale.css`（间距、字号、圆角、层级、控件尺寸、动效等与主题无关的量，并在文件顶部声明 `@layer` 顺序）· `src/styles/tokens/color.css`（原始色与两套主题的语义映射、层级阴影）。目前原始色直接写在语义映射里；等同一个原始色被第二个语义 token 引用时，再抽出 `--{色相}-{级}` 原始层。
+- **文件：** `src/styles/tokens/scale.css`（间距、字号、圆角、层级、控件尺寸、动效等与主题无关的量，并在文件顶部声明 `@layer` 顺序）· `src/styles/tokens/color.css`（原始色层与两套主题的语义映射、层级阴影）。**原始层只收录被两个及以上语义 token 共用的颜色**（目前是 `--green-400/700`、`--red-400/700`，被 success / danger 与阵营色共用）；只被一个语义 token 使用的颜色直接写在语义映射里，等出现第二个引用方时再抽出。
 - **主题切换：** `<html data-theme="dark|light">`。主题文件只重新映射**语义层**；原始层和 scale 层两套主题共用。
-- **CSS 分层：** `@layer reset, tokens, base, layout, components, patterns, pages, utilities;`，靠层级顺序解决优先级，从此不需要 `!important`。
+- **CSS 分层：** 目标顺序是 `reset, tokens, base, layout, components, patterns, pages, utilities`，靠层级顺序解决优先级，从此不需要 `!important`。**只声明已经在用的层**：目前 `scale.css` 顶部只有 `@layer tokens;`，第一次需要新层时按上面的顺序把它追加进这条语句（全站只有这一处声明）。
 - **命名：** `--{类别}-{角色}-{变体}-{状态}`，例如 `--color-text-secondary`、`--color-surface-2`、`--color-border-focus`。
-- **旧 token 迁移：** `tokens.css` 里的旧变量保持原值（标注 deprecated），与新 token 并存。组件迁移时直接改用新 token；某个旧变量不再被任何地方引用时就删除（§13）。**不把旧变量整体改成指向新值的 alias**：新旧色值不同，整体 alias 会一次性改变全站视觉。
+- **旧 token 迁移：** 与新刻度同名、同值的旧变量（`--space-1…4`、`--radius-sm/md/lg`）已迁入 `scale.css`，保持单一事实源；`--space-5/6` 的旧用法已改指取值相同的 `--space-6/8`。其余旧变量（颜色、`--z-*`、`--font-*`、`--friendly/--enemy` 等）保持原值、标注 deprecated，与新 token 并存。组件迁移时直接改用新 token；某个旧变量不再被任何地方引用时就删除（§13）。**不把旧变量整体改成指向新值的 alias**：新旧色值不同，整体 alias 会一次性改变全站视觉。
 
 ---
 
@@ -99,6 +99,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `--color-warning` | `#f5ca76` | `#855600` | 警告 |
 | `--color-info` | `#6db3ec` | `#1a64a8` | 提示、链接（非品牌链接） |
 
+- 遮罩：`--color-scrim` 暗色为 `rgb(0 0 0 / .6)`、亮色为 `rgb(0 0 0 / .35)`，所有弹窗、sheet 共用；组件里不再各写一个遮罩色。
 - 状态色的背景版本（`--color-danger-bg` 等）统一用 `color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1))`，不再单独定义色值。
 - **强调色要克制**：每个视图只保留一个主操作用橙色填充。其余按钮用 secondary 或 ghost（§7）。
 
@@ -139,6 +140,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `--type-caption` | 12 / 16 | 400 / 600 | 标签、表头、辅助说明。**这是最小字号**，中文 < 12px 不可读 |
 
 - 字号只有这 7 级，从现在的 83 种收敛下来。**禁止出现 12px 以下的文字。**
+- **token 形态：** 每一级有两个原子 token `--font-size-{级}`、`--line-height-{级}`，以及一个组合 token `--type-{级}`（字重 + 字号 / 行高 + 字体，用于 `font` 简写）。`font-size` / `line-height` 只能引用原子 token，`font` 只能引用组合 token；触控档只覆盖 `--font-size-body` / `--line-height-body`，组合 token 自动跟随。
 - 字重只用 400 / 600 / 700。
 - 大写字母 + 字间距的 "kicker" 标签（如 `WOTBTOOLS · REPLAY WORKSPACE`）只能出现在装饰插槽里，工作区不用。
 
@@ -176,6 +178,8 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 **Z-index**（从约 40 个值收敛为 8 级，**只能用 token**）：
 
 `--z-base: 0` · `--z-sticky: 100` · `--z-header: 200` · `--z-drawer: 300` · `--z-sheet: 400` · `--z-menu: 500` · `--z-dialog: 600` · `--z-toast: 700`
+
+**动效**：`--duration-fast: 120ms`（hover、按下）· `--duration-base: 200ms`（展开、切换）· `--duration-slow: 300ms`（sheet、抽屉进出）· `--ease-standard: cubic-bezier(.2, 0, 0, 1)`。`prefers-reduced-motion: reduce` 时三个时长都归零。
 
 回放、3D 等组件内部的叠放用 `isolation: isolate` 建立局部层叠上下文，内部只用 1–9，不参与全局竞争。
 
@@ -294,10 +298,10 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 1. **stylelint**（`npm run lint:css`，配置见 `frontend/stylelint.config.mjs`，CI 必过）：
    - `declaration-no-important`：禁止 `!important`。
-   - `scale-unlimited/declaration-strict-value`：`*color`、`fill`、`stroke`、`z-index`、`font-size`、`border-radius`、`box-shadow` 只能用 `var(--*)` 或关键字（`transparent`、`currentColor`、`inherit`、`none` 等）。
+   - `scale-unlimited/declaration-strict-value`：`*color`、`fill`、`stroke`、`z-index`、`font`、`font-size`、`line-height`、`border-radius`、`box-shadow` 只能用 `var(--*)` 或豁免值。豁免值（`TOKEN_EXEMPT_VALUES`）：`transparent`、`currentColor` / `currentcolor`（插件区分大小写）、`inherit`、`initial`、`unset`、`revert`、`none`、`0`、`auto`、`normal`。
    - `color-no-hex`、`color-named: never`、`function-disallowed-list: rgb/rgba/hsl/hsla`：组件里不出现色值；只有 `src/styles/tokens/**` 例外。需要半透明时用 `color-mix()`。
-   - `media-feature-range-notation: context`、`media-feature-name-value-allowed-list: width → 768px / 1200px`、`media-feature-name-disallowed-list: min-width / max-width`：断点只有三档，且必须写 range 语法。
-   - `declaration-property-unit-disallowed-list`：高度类属性禁止 `vh`（用 `dvh` / `svh`），宽度类属性禁止 `vw`（用 `%`）。
+   - `media-feature-range-notation: context`、`media-feature-name-value-allowed-list: width → 768px / 1200px`、`media-feature-name-disallowed-list: min-width / max-width / device-width`：断点只有三档，且必须写 range 语法。
+   - `declaration-property-unit-disallowed-list`：块方向尺寸（`height`、`block-size` 及其 min/max，`top`、`bottom`、`inset`、`inset-block*`）禁止 `vh`，用 `dvh` / `svh`；行方向尺寸（`width`、`inline-size` 及其 min/max）禁止 `vw`，用 `%`；`flex-basis` 两者都禁。
    - 旧文件列在 `frontend/stylelint.legacy.json` 忽略名单里（基线），新文件一律严格检查；每迁完一个文件就从名单里删掉，名单长度即迁移进度。
 2. **frontend/AGENTS.md** 引用本文件："改动 UI 前必须阅读 design-language.md；新增视觉值必须先加 token。"
 3. **视觉回归（后续 PR）：** 在已有的 `test:browser-layout` 里加上两套主题 × 三档宽度的截图，以及基于 axe-core 的对比度检查。
@@ -312,7 +316,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 ## 13. 迁移策略（不推倒重来）
 
-1. **建立基础：** 新增 tokens 分层文件和 `@layer` 顺序声明；旧变量原值保留、与新 token 并存；接入 stylelint。视觉上保持不变。
+1. **建立基础：** 新增 tokens 分层文件和 `@layer tokens` 声明；同名同值的间距、圆角迁入 `scale.css`，其余旧变量原值保留、与新 token 并存；接入 stylelint。视觉上保持不变。
 2. **组件：** 先实现 Button / Input / FileDrop / Dialog / Sheet / DataTable / EmptyState / PlaybackControls，再逐页替换。
 3. **删除 showcase 覆盖层：** 每迁完一页，就删掉 `showcase*.css` 和 `classic-profile.css` 里对应的选择器。简约主题改为纯语义映射。
 4. **收紧 lint：** 迁移完成的目录开启严格规则，并在 CI 里阻断。
