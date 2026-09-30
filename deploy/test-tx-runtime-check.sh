@@ -80,6 +80,9 @@ if [ "${FAKE_BUSINESS_PORT_EXPOSED:-0}" = 1 ]; then
   business_ports='[{"host_ip":"0.0.0.0","published":25432,"target":5432}]'
 fi
 frontend_upstream="${FAKE_FRONTEND_UPSTREAM:-http://business-api:8087}"
+# The AI route's upstream is the Yecao ai-service WireGuard endpoint; the fake can
+# point it elsewhere to prove the readiness check still fails closed.
+frontend_ai_upstream="${FAKE_FRONTEND_AI_UPSTREAM:-http://10.20.0.2:8089}"
 # The retired replay execution-mode switch must be absent from a healthy compose; setting
 # FAKE_EXECUTION_MODE injects it back to prove the deploy guard still fails closed.
 execution_mode_field=""
@@ -98,8 +101,8 @@ business_api_ports='[{"host_ip":"10.20.0.1","published":8088,"target":8088}]'
 [ -z "${FAKE_BUSINESS_API_PUBLISHED_PORT:-}" ] || business_api_ports="$FAKE_BUSINESS_API_PUBLISHED_PORT"
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
-      "$business_ports" "$frontend_upstream" "$business_api_ports" "$extra_env"
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s","AI_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
+      "$business_ports" "$frontend_upstream" "$frontend_ai_upstream" "$business_api_ports" "$extra_env"
     ;;
   ps)
     if [[ "$*" == *business-postgres* ]]; then
@@ -176,8 +179,6 @@ case "${1:-}" in
       printf '%s %s\n' "${FAKE_EXPORT_DOWNLOAD_STATUS:-200}" "${FAKE_EXPORT_BYTES:-4096}"
     elif [[ "$*" == *"/replay"* && "$write_out" == *size_download* ]]; then
       printf '%s %s\n' "${FAKE_HOF_REPLAY_STATUS:-200}" "${FAKE_HOF_REPLAY_BYTES:-2048}"
-    elif [[ "$*" == *"X-Amz-Signature"* && "$*" == *"artifacts/0/ai-facts.json"* ]]; then
-      respond '{"facts":true}' "${FAKE_MINIO_ARTIFACT_STATUS:-200}"
     elif [[ "$*" == *"X-Amz-Signature"* ]]; then
       respond '{"schemaVersion":"1"}' "${FAKE_MINIO_STATUS:-200}"
     elif [[ "$*" == *"/api/replay/processing-jobs/"*"/result"* ]]; then
@@ -243,7 +244,7 @@ CHECK_ENV=(
   TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api TX_BUSINESS_DB_PASSWORD=not-real
   TX_RABBITMQ_CONTROL_API_PASSWORD=not-real
   YECAO_MINIO_CONTROL_API_ACCESS_KEY=not-real YECAO_MINIO_CONTROL_API_SECRET_KEY=not-real
-  KEYCLOAK_ADMIN_CLIENT_SECRET=not-real AI_API_KEY=not-real
+  KEYCLOAK_ADMIN_CLIENT_SECRET=not-real
   KEYCLOAK_E2E_CLIENT_SECRET=not-real-e2e
   WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1
 )
@@ -276,7 +277,6 @@ grep -Fq 'dataset-result: PASS' <<< "$ready_output"
 grep -Fq 'map-overview: PASS' <<< "$ready_output"
 grep -Fq 'battle-playback-v2: PASS' <<< "$ready_output"
 grep -Fq 'minio: PASS' <<< "$ready_output"
-grep -Fq 'ai-facts: PASS' <<< "$ready_output"
 grep -Fq 'export: PASS' <<< "$ready_output"
 # The public edge is a single trusted-TLS assertion, never an SNI-only phase.
 grep -Fq 'public-tls-web: PASS' <<< "$ready_output"
@@ -331,6 +331,12 @@ run_gate_failure "frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
 run_gate_failure "frontend-upstream-public" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=https://example.test
+# The AI route must reach the Yecao ai-service over WireGuard: pointing it at the TX
+# business runtime or a public host reintroduces exactly the boundary this check owns.
+run_gate_failure "frontend-ai-upstream-business-api" 'tx-internal-api-route: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=http://business-api:8087
+run_gate_failure "frontend-ai-upstream-public" 'tx-internal-api-route: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=https://ai.example.test
 run_gate_failure "business-api-published-port" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8087,"target":8087}]'
@@ -375,8 +381,6 @@ run_gate_failure "battle-playback-missing-artifact" 'battle-playback-v2: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_PLAYBACK_STATUS=204
 run_gate_failure "minio-unreadable" 'minio: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_MINIO_STATUS=403
-run_gate_failure "ai-facts-unreadable" 'ai-facts: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_MINIO_ARTIFACT_STATUS=403
 run_gate_failure "export-job-failed" 'export: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_EXPORT_JOB_STATUS=FAILED
 run_gate_failure "export-download-error" 'export: FAIL' \

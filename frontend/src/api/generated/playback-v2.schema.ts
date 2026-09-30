@@ -940,38 +940,558 @@ export default {
         }
       }
     },
-    "AiReviewAnalyzeRequest": {
+    "AiReviewRequestV1": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "processingJobId",
-        "sourceId",
-        "lang",
-        "correlationId"
+        "schemaVersion",
+        "locale",
+        "correlationId",
+        "battle",
+        "reconstruction"
       ],
       "properties": {
-        "processingJobId": {
-          "type": "string",
-          "minLength": 1
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1
         },
-        "sourceId": {
-          "type": "string",
-          "pattern": "^r[0-9]+$"
-        },
-        "lang": {
+        "locale": {
           "type": "string",
           "enum": [
-            "zh",
-            "en",
-            "ru"
+            "zh-CN",
+            "en-US",
+            "ru-RU"
           ]
         },
         "correlationId": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 128
+          "format": "uuid"
+        },
+        "battle": {
+          "$ref": "#/$defs/AiReviewBattle"
+        },
+        "reconstruction": {
+          "$ref": "#/$defs/AiReviewReconstruction"
         }
       }
+    },
+    "AiReviewBattle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "players"
+      ],
+      "properties": {
+        "arenaId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "winnerTeam": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "arenaBonusType": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "version": {
+          "type": "string"
+        },
+        "mapName": {
+          "type": "string"
+        },
+        "durationS": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "startTime": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "settlementStartTime": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "settlementFinishReasonRaw": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "settlementDurationSec": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "recorder": {
+          "type": "string"
+        },
+        "recorderVehicle": {
+          "type": "string"
+        },
+        "clientVersion": {
+          "type": "string"
+        },
+        "rosterComplete": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "players": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AiReviewPlayerResult"
+          }
+        }
+      }
+    },
+    "AiReviewPlayerResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountId",
+        "team",
+        "tankId",
+        "nickname",
+        "survived"
+      ],
+      "properties": {
+        "accountId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "team": {
+          "type": "integer"
+        },
+        "tankId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "nShots": {
+          "type": "integer"
+        },
+        "nHitsDealt": {
+          "type": "integer"
+        },
+        "nPenetrationsDealt": {
+          "type": "integer"
+        },
+        "damageDealt": {
+          "type": "integer"
+        },
+        "damageAssisted": {
+          "type": "integer"
+        },
+        "damageReceived": {
+          "type": "integer"
+        },
+        "nHitsReceived": {
+          "type": "integer"
+        },
+        "nPenetrationsReceived": {
+          "type": "integer"
+        },
+        "nEnemiesDamaged": {
+          "type": "integer"
+        },
+        "kills": {
+          "type": "integer"
+        },
+        "damageBlocked": {
+          "type": "integer"
+        },
+        "victoryPointsEarned": {
+          "type": "integer"
+        },
+        "victoryPointsSeized": {
+          "type": "integer"
+        },
+        "survived": {
+          "type": "boolean"
+        },
+        "xp": {
+          "type": "integer"
+        },
+        "credits": {
+          "type": "integer"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "clan": {
+          "type": "string"
+        },
+        "prebattleGroupId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "rank": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "tankName": {
+          "type": "string"
+        },
+        "contribution": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "kast": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "impact": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "observedMaxHp": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "entryHpSource": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "entryHp": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tankTier": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ]
+        },
+        "tankType": {
+          "type": "string"
+        },
+        "tankNation": {
+          "type": "string"
+        },
+        "alphaDamage": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ]
+        },
+        "deathTimeMillis": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "settlementResultEntityId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "settlementLifeTimeSec": {
+          "type": "number"
+        },
+        "settlementKillerResultEntityId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "settlementDeathReasonRaw": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "killerAccountId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "survivalTimeSec": {
+          "type": "number"
+        },
+        "raw": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "array",
+            "items": {}
+          }
+        }
+      }
+    },
+    "AiReviewReconstruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "participants",
+        "events",
+        "coverage"
+      ],
+      "properties": {
+        "battleDurationSec": {
+          "type": "number"
+        },
+        "battleStartRawClockSec": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AiReviewParticipant"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AiReviewEvent"
+          }
+        },
+        "checkpoints": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "finalState": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        },
+        "coverage": {
+          "$ref": "#/$defs/AiReviewCoverage"
+        }
+      }
+    },
+    "AiReviewParticipant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountId",
+        "nickname",
+        "team",
+        "tankId",
+        "tankCode",
+        "recorder"
+      ],
+      "properties": {
+        "accountId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "team": {
+          "type": "integer"
+        },
+        "tankId": {
+          "type": "integer"
+        },
+        "tankCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recorder": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AiReviewEvent": {
+      "type": "object",
+      "required": [
+        "type",
+        "sequence"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "AimRayStateEvent",
+            "AmmunitionSelectionChangedEvent",
+            "AmmunitionStateEvent",
+            "ArenaPeriodChangedEvent",
+            "AttachedTransformEvent",
+            "ConsumableLifecycleEvent",
+            "DamageEvent",
+            "EntityAuxiliaryBlobEvent",
+            "EntityCreatedEvent",
+            "EntityRemovedEvent",
+            "GunMarkerSizeEvent",
+            "HealthChangedEvent",
+            "MaterializationAnnouncedEvent",
+            "MaterializationEvent",
+            "ParticipantMappingEvent",
+            "PositionChangedEvent",
+            "ProjectileLaunchedEvent",
+            "ProjectileResolutionEvent",
+            "ProjectileTerminalEvent",
+            "RawSupremacyBaseUpdate",
+            "RecorderHealthChangedEvent",
+            "ReplayStreamClosedEvent",
+            "RoundFinishedEvent",
+            "SessionDecisecondLowByteEvent",
+            "ShotResultEvent",
+            "SupremacyBaseStateTransition",
+            "SupremacyPointsChangedEvent",
+            "TargetingInfoSnapshotEvent",
+            "TurretDirectionChangedEvent",
+            "UnknownReplayEvent",
+            "UnsupportedDamageEvent",
+            "VehicleDestroyedEvent",
+            "VehicleFiredEvent",
+            "VehicleHealthStateEvent",
+            "VehicleHitEvent",
+            "VehicleModuleCrewStateEvent",
+            "VehicleVehicleCollisionEvent"
+          ]
+        },
+        "sequence": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": true
+    },
+    "AiReviewCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "totalPackets",
+        "decodedPackets",
+        "partiallyDecodedPackets",
+        "unknownPackets",
+        "failedPackets",
+        "decodedPacketRatio",
+        "packetTypes"
+      ],
+      "properties": {
+        "totalPackets": {
+          "type": "integer"
+        },
+        "decodedPackets": {
+          "type": "integer"
+        },
+        "partiallyDecodedPackets": {
+          "type": "integer"
+        },
+        "unknownPackets": {
+          "type": "integer"
+        },
+        "failedPackets": {
+          "type": "integer"
+        },
+        "decodedPacketRatio": {
+          "type": "number"
+        },
+        "packetTypes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "AiReviewStageEventPayload": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "AiReviewTokenEventPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "delta"
+      ],
+      "properties": {
+        "delta": {
+          "type": "string"
+        }
+      }
+    },
+    "AiReviewErrorEventPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "errorCode"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errorCode": {
+          "$ref": "#/$defs/AiReviewErrorCode"
+        }
+      }
+    },
+    "AiReviewErrorCode": {
+      "type": "string",
+      "enum": [
+        "AI_CANCELLED",
+        "AI_NOT_CONFIGURED",
+        "AI_INVALID_REQUEST",
+        "AI_TIMEOUT",
+        "AI_UPSTREAM_UNAVAILABLE",
+        "AI_AUTHENTICATION_ERROR",
+        "AI_RATE_LIMITED",
+        "AI_CONTEXT_TOO_LARGE",
+        "AI_EMPTY_RESPONSE",
+        "AI_RESPONSE_INVALID",
+        "AI_REVIEW_SCHEMA_FAILED",
+        "AI_REVIEW_GROUNDING_FAILED",
+        "AI_TIMELINE_UNUSABLE",
+        "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE"
+      ]
     },
     "TeamAiReviewSummary": {
       "type": "object",
@@ -2081,6 +2601,13 @@ export default {
         "PROCESSING_QUEUE_FULL",
         "EXPORT_QUEUE_FULL",
         "AI_REVIEW_BUSY",
+        "AI_REQUEST_TOO_LARGE",
+        "INVALID_AI_REQUEST",
+        "UNSUPPORTED_AI_REQUEST_SCHEMA",
+        "UNKNOWN_LOCALE",
+        "INVALID_CORRELATION_ID",
+        "DUPLICATE_CORRELATION_ID",
+        "UNSUPPORTED_BATTLE_CATEGORY",
         "AI_QUEUE_FULL",
         "AI_RATE_LIMITED",
         "AI_UPSTREAM_TIMEOUT",

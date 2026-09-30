@@ -17,6 +17,7 @@ on:
       - docs/architecture/TECHNICAL_EVOLUTION.md
       - docs/WotBTools_League_Rating_V6.md
       - deploy/nginx/nginx.conf
+      - deploy/tx/nginx/**
       - deploy/check-latest-main.sh
       - deploy/check-production-freshness.sh
       - deploy/list-image-tags.sh
@@ -46,6 +47,7 @@ env:
     docs/architecture/TECHNICAL_EVOLUTION.md
     docs/WotBTools_League_Rating_V6.md
     deploy/nginx/nginx.conf
+    deploy/tx/nginx/**
     deploy/check-latest-main.sh
     deploy/check-production-freshness.sh
     deploy/list-image-tags.sh

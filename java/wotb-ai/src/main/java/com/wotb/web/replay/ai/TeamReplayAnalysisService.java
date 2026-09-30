@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.evidence.TeamAiReviewResult;
 import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
@@ -9,7 +10,6 @@ import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.replay.processing.FriendlyEnemyResult;
 import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -40,18 +40,17 @@ import java.util.function.LongSupplier;
 
 /**
  * 团队 AI 复盘编排（team perspective：训练房/联赛）。
- * <p>职责：兼容 facade 路径的单团队入口、{@code analyzeTeamGroups} 的完整编排（Call #1 prior、
+ * <p>职责：兼容 facade 路径的单团队入口、{@link #analyzeTeam} 的完整编排（Call #1 prior、
  * 逐 context 的 Team Prompt 调用）；roster 校验/Context 组装/团队 Prompt 规则
  * 分别由 {@link TeamRosterResolver} / {@link TeamContextBuilder} /
  * {@link TeamPromptLocalizer} 负责。Prompt 文本由 {@link TeamAiPromptBuilder} 产出，
- * HTTP/DTO/异常分类由 {@link AiChatGateway} 负责，预算由 {@link AiPromptBudgetGuard} 守，
- * {@code analysisUnitId} 由 {@link AnalysisUnitAssembler} 提供稳定实现。</p>
+ * HTTP/DTO/异常分类由 {@link AiChatGateway} 负责，预算由 {@link AiPromptBudgetGuard} 守。</p>
  * <p>团队复盘与随机战一样先执行 Call #1（Pre-Battle Strategic Prior：基于地图与双方阵容的赛前先验，
  * 含开局/分路假设），按视角队伍重标 TEAM_A 后注入团队 Prompt；Call #1 失败不阻断团队复盘（仅缺 prior 段）。
  * Call #2 只接受 Team AI Review 结构化 JSON；后端只做 JSON/schema/引用的技术解析，
  * 不判断战术结论。</p>
- * <p><b>Canonical Timeline hard gate（PR #102 ）</b>：{@code analyzeTeamGroups}
- * 是 Team AI 的<b>唯一 production 编排入口</b>（由 {@code AiReplayReviewService} 调用）。
+ * <p><b>Canonical Timeline hard gate（PR #102 ）</b>：{@link #analyzeTeam}
+ * 是 Team AI 的<b>唯一 production 编排入口</b>。
  * 它在<b>任何 LLM 调用之前</b>（Call #1 prior / Call #2）为每个 context 构建并
  * 验证 canonical BattleTimeline（一次 build、一次 validation）：reconstruction 缺失 /
  * timeline 不可用 / timeline 为 null → 立即抛 {@link AiTimelineUnusableException}（AI Gateway
@@ -102,7 +101,7 @@ public class TeamReplayAnalysisService {
 
     /**
      * 单场团队上下文入口（<b>非 production AI Review entrypoint</b>：仅供兼容 facade /
-     * 历史契约测试引用；production Team AI 必须走 {@link #analyzeTeamGroups}，后者在
+     * 历史契约测试引用；production Team AI 必须走 {@link #analyzeTeam}，后者在
      * 任何 LLM 调用前执行 canonical Timeline hard gate）。
      * <p>本入口保持旧语义（Call #1 → prompt 构建 → Call #2 + Autopsy），不执行 timeline
      * hard gate，也不渲染 TACTICAL TIMELINE 段（未提供 validated timeline）；不得被
@@ -135,7 +134,7 @@ public class TeamReplayAnalysisService {
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(
                 context, extraLimitations, prior, config.estimator(), config.singleReplayMaxInputTokens());
         // 兼容入口无已验证 timeline：Grounding Facts 只含结算可推导事实（该稳定模块不动）。
-        // Historical facade compatibility only; production uses analyzeTeamGroups below and
+        // Historical facade compatibility only; production uses analyzeTeam below and
         // therefore never reaches the legacy envelope/autopsy path.
         final String legacy = callLegacyValidatedTeamReview(
                 context, input, language, startNanos, listener, null);
@@ -159,32 +158,22 @@ public class TeamReplayAnalysisService {
     }
 
     /**
-     * 完整 Team 分析编排：逐个 context 发起单队 AI 请求（AI 复盘单文件策略下无分区合并）。
-     * <p>返回的 {@link TeamAnalyzeResult#analysis} 是第一个 context 的 AI 输出；
-     * {@link TeamAnalyzeResult#preBattleSection} 是对应同一 context 的 Call #1 prior
-     * 用户可见渲染（失败/降级为 null）。</p>
+     * Production entry for the standalone service: no processing result or group wrapper.
      */
-    public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups) {
-        return analyzeTeamGroups(groups, AllowedLanguage.ZH);
+    public TeamAnalyzeResult analyzeTeam(final Battle battle,
+                                         final ReplayReconstruction reconstruction,
+                                         final AllowedLanguage language,
+                                         final AiReviewStreamListener listener) {
+        return analyzeTeamContexts(List.of(TeamContextBuilder.buildSingleTeamContext(battle, reconstruction)),
+                language, listener);
     }
 
-    public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
-                                               final AllowedLanguage language) {
-        return analyzeTeamGroups(groups, language, AiReviewStreamListener.NOOP);
-    }
-
-    public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
-                                               final AllowedLanguage language,
-                                               final AiReviewStreamListener listener) {
+    private TeamAnalyzeResult analyzeTeamContexts(final List<SingleTeamBattleAnalysisContext> contexts,
+                                                   final AllowedLanguage language,
+                                                   final AiReviewStreamListener listener) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
-        if (groups == null || groups.isEmpty()) {
-            throw new IllegalArgumentException("NO_BATTLE_DATA");
-        }
-        final List<SingleTeamBattleAnalysisContext> contexts = groups.stream()
-                .map(this::buildSingleTeamContext)
-                .toList();
         final Set<String> unitIds = new HashSet<>();
         for (final SingleTeamBattleAnalysisContext ctx : contexts) {
             if (!unitIds.add(ctx.analysisUnitId())) {
@@ -289,8 +278,9 @@ public class TeamReplayAnalysisService {
         return TeamPromptLocalizer.localizeTeamSystemPrompt(zhPrompt, language);
     }
 
-    public SingleTeamBattleAnalysisContext buildSingleTeamContext(final ReplayPerspectiveGroup group) {
-        return TeamContextBuilder.buildSingleTeamContext(group);
+    public SingleTeamBattleAnalysisContext buildSingleTeamContext(final Battle battle,
+                                                                  final ReplayReconstruction reconstruction) {
+        return TeamContextBuilder.buildSingleTeamContext(battle, reconstruction);
     }
 
     /** Legacy grounding facade 的历史重写预算；production structured Team Review 不使用它。 */

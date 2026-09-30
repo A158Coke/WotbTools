@@ -212,25 +212,16 @@ class ParserWorkerPipelineTest {
         // 2) Every artifact the request produced is present in object storage and decodable through
         //    the single artifact SSOT (ReplayArtifactWriter content/decode).
         for (final String artifact : List.of(
-                ReplayArtifactWriter.AI_FACTS_NAME,
                 ReplayArtifactWriter.MAP_OVERVIEW_NAME,
                 ReplayArtifactWriter.BATTLE_PLAYBACK_V2_NAME)) {
             final ObjectKey workerArtifact = ObjectStorageKeys.tempJobObject(
                     jobId, "artifacts/0/" + artifact);
-            final boolean workerHasArtifact = storage.exists(workerArtifact);
-            if (ReplayArtifactWriter.AI_FACTS_NAME.equals(artifact)) {
-                assertTrue(workerHasArtifact, "ai-facts.json is always written for a READY source");
-            }
-            if (workerHasArtifact) {
+            if (storage.exists(workerArtifact)) {
                 assertTrue(read(workerArtifact).length > 0, artifact + " must not be empty");
             }
         }
-        final ObjectKey aiFactsKey = ObjectStorageKeys.tempJobObject(
-                jobId, "artifacts/0/" + ReplayArtifactWriter.AI_FACTS_NAME);
-        assertNotNull(ReplayArtifactWriter.decodeAiFacts(read(aiFactsKey)),
-                "ai-facts.json must decode through the single artifact SSOT");
 
-        // 4) The canonical per-source dataset PR F reads.
+        // 3) The canonical per-source dataset PR F reads.
         final ObjectKey datasetKey = ObjectStorageKeys.tempJobObject(jobId, "result/source-0.json");
         assertTrue(storage.exists(datasetKey), "the canonical dataset must be persisted");
         final JsonNode dataset = MAPPER.readTree(read(datasetKey));

@@ -82,7 +82,7 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      node-exporter|prometheus|loki|alloy|grafana|parser-worker) ;;
+      node-exporter|prometheus|loki|alloy|grafana|parser-worker|ai-service) ;;
       *) die "unsupported deployment service: $service" ;;
     esac
   done
@@ -95,6 +95,9 @@ validate_inputs() {
       YECAO_MINIO_WORKER_SECRET_KEY; do
       require_env "$service"
     done
+  fi
+  if is_selected ai-service; then
+    require_env AI_API_KEY
   fi
 
   if is_selected grafana; then
@@ -223,6 +226,21 @@ worker_health() {
   return 1
 }
 
+ai_health() {
+  is_selected ai-service || return 0
+  local attempt
+  for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
+    if curl --fail --silent --show-error --max-time 5 http://10.20.0.2:8089/actuator/health/readiness >/dev/null; then
+      echo "ai-service: PASS"
+      return 0
+    fi
+    [ "$attempt" -lt "$HEALTH_ATTEMPTS" ] && sleep "$HEALTH_INTERVAL_SEC"
+  done
+  FAILED_SERVICE=ai-service
+  echo "ai-service: FAIL" >&2
+  return 1
+}
+
 apply_services() {
   mapfile -t APPLY_SERVICES < <(compose_service_list | awk 'NF && !seen[$0]++')
   [ "${#APPLY_SERVICES[@]}" -gt 0 ] || die "no runtime service selected."
@@ -301,7 +319,7 @@ stop_failed_service() {
   local service="$FAILED_SERVICE"
   [ -n "$service" ] || return 0
   case "$service" in
-    parser-worker) ;;
+    parser-worker|ai-service) ;;
     *)
       echo "Not stopping non-application health dependency: $service" >&2
       return 0
@@ -350,6 +368,12 @@ main() {
     diagnostics
     stop_failed_service
     echo "ERROR: parser-worker did not stay running; no automatic application recovery was attempted." >&2
+    exit 1
+  fi
+  if ! ai_health; then
+    diagnostics
+    stop_failed_service
+    echo "ERROR: ai-service readiness failed; no automatic application recovery was attempted." >&2
     exit 1
   fi
   run_observability_checks

@@ -6,7 +6,6 @@ import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -133,32 +132,24 @@ public class PlayerReplayAnalysisService {
      * 单场分析：先尝试完整特征分析，不满足条件时降级到结算分析。
      * <p>fallback 是延迟执行的控制流，不提前调用 AI。</p>
      */
-    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result) {
-        return analyzePlayerOrFallback(result, AllowedLanguage.ZH);
-    }
-
-    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
-                                                 final AllowedLanguage language) {
-        return analyzePlayerOrFallback(result, language, AiReviewStreamListener.NOOP);
-    }
-
-    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
+    public AnalyzeResult analyzePlayerOrFallback(final Battle battle,
+                                                 final ReplayReconstruction reconstruction,
                                                  final AllowedLanguage language,
                                                  final AiReviewStreamListener listener) {
-        if (result.battle() == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
+        if (battle == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
         // 无法构建 canonical BattleTimeline → 拒绝 AI Review，
         // 禁止 settlement-only fallback 仍然调用 AI。
-        if (result.reconstruction() == null) {
+        if (reconstruction == null) {
             throw new AiTimelineUnusableException("NO_RECONSTRUCTION");
         }
 
-        final var recorder = AnalysisUnitAssembler.findRecorder(result);
+        final var recorder = AnalysisUnitAssembler.findRecorder(battle, reconstruction);
         if (!recorder.resolved()) {
             throw new AiTimelineUnusableException("RECORDER_UNRESOLVED");
         }
         // 个人复盘 Timeline 门禁：recorder 身份可用后立即构建 canonical timeline
         final BattleTimelineResult timelineResult = BattleTimelineBuilder.build(
-                result.battle(), result.reconstruction(),
+                battle, reconstruction,
                 TimelinePerspective.personal(recorder.accountId(), recorder.team()));
         if (!timelineResult.usable()) {
             throw new AiTimelineUnusableException(timelineResult.validation().errors());
@@ -167,20 +158,20 @@ public class PlayerReplayAnalysisService {
         final PlayerBattleFeatureSet features;
         try {
             features = new DefaultPlayerBattleFeatureExtractor()
-                    .extract(result.reconstruction(), recorder, result.battle());
+                    .extract(reconstruction, recorder, battle);
         } catch (RuntimeException e) {
             LOGGER.warn("Feature extraction failed, falling back: {}", e.getMessage());
-            return analyze(result.battle(), result.reconstruction(), language, listener);
+            return analyze(battle, reconstruction, language, listener);
         }
 
         if (!features.hasFeatures()) {
-            return analyze(result.battle(), result.reconstruction(), language, listener);
+            return analyze(battle, reconstruction, language, listener);
         }
 
         return analyzePlayerContext(new SinglePlayerBattleAnalysisContext(
-                null, result.battle(), features, recorder,
-                result.reconstruction().coverage(), features.limitations()),
-                result.reconstruction(), language, listener);
+                null, battle, features, recorder,
+                reconstruction.coverage(), features.limitations()),
+                reconstruction, language, listener);
     }
 
     /**

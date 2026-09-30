@@ -3,9 +3,6 @@ package com.wotb.web.replay.controller;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ReplayLegacyEndpoints;
-import com.wotb.web.replay.ai.AiReplayReviewService;
-import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
-import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.job.ExportJobStore;
 import com.wotb.web.replay.job.ReplayExportJobService;
 import com.wotb.web.replay.job.ReplayExportWorkerExecutor;
@@ -38,6 +35,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
  * 架构/契约测试：full processing 唯一入口是 Processing Job 管线——public/anonymous 与
  * authenticated 的 legacy 同步端点一律稳定 410 {@code REPLAY_LEGACY_DEPRECATED}，绝不创建
  * 第二套 full processing；控制器/服务不再持有 processingFacade。
+ * <p>AI Review（{@code /api/replay/analyze}）已迁出 wotb-web 到独立 ai-service，
+ * {@link ReconstructionController} 只保留 map-overview / legacy 410 表面。</p>
  */
 class ReplayLegacyEndpointContractTest {
 
@@ -76,20 +75,15 @@ class ReplayLegacyEndpointContractTest {
 
     @Test
     void authenticatedLegacyEndpointsReturnStableGoneWithoutAnyFullProcessing() {
-        final AiReplayReviewService reviewService = mock(AiReplayReviewService.class);
-        final AiCancellationRegistry registry = mock(AiCancellationRegistry.class);
-        final AiReviewWorkerExecutor workerExecutor = mock(AiReviewWorkerExecutor.class);
         final MapOverviewQueryService mapOverviewService = mock(MapOverviewQueryService.class);
-        final ReconstructionController controller = new ReconstructionController(
-                reviewService, registry, workerExecutor, mapOverviewService);
+        final ReconstructionController controller = new ReconstructionController(mapOverviewService);
         final MultipartFile[] files = new MultipartFile[0];
 
-        goneOf(() -> controller.analyze(files, "zh", null));
         goneOf(() -> controller.reconstructBatch(files));
         goneOf(() -> controller.process(files, true));
         goneOf(() -> controller.mapOverview(files));
-        // analyze multipart 不得走到 reviewService；map-overview multipart 不得走到 query service。
-        verifyNoInteractions(reviewService, registry, workerExecutor, mapOverviewService);
+        // map-overview multipart 不得走到 query service。
+        verifyNoInteractions(mapOverviewService);
     }
 
     @Test
@@ -118,7 +112,6 @@ class ReplayLegacyEndpointContractTest {
     void legacyFullProcessingMethodsAreRemovedFromProductionSurface() {
         assertNoMethod(ReplayService.class, "preview");
         assertNoMethod(ReplayService.class, "export");
-        assertNoMethod(AiReplayReviewService.class, "analyzeStreaming");
         assertNoMethod(MapOverviewQueryService.class, "buildOverview");
     }
 
@@ -126,9 +119,6 @@ class ReplayLegacyEndpointContractTest {
     void concurrentLegacyCallsAllReturnGone() throws Exception {
         final ReplayController replayController = new ReplayController(mock(ReplayService.class));
         final ReconstructionController reconController = new ReconstructionController(
-                mock(AiReplayReviewService.class),
-                mock(AiCancellationRegistry.class),
-                mock(AiReviewWorkerExecutor.class),
                 mock(MapOverviewQueryService.class));
         final ReplayExportJobService exportService = new ReplayExportJobService(
                 mock(ExportJobStore.class), mock(ReplayExportWorkerExecutor.class),
@@ -156,7 +146,7 @@ class ReplayLegacyEndpointContractTest {
                         if (isGone(e)) gone.incrementAndGet();
                     }
                     try {
-                        reconController.analyze(files, "zh", null);
+                        reconController.mapOverview(files);
                     } catch (final ResponseStatusException e) {
                         if (isGone(e)) gone.incrementAndGet();
                     }

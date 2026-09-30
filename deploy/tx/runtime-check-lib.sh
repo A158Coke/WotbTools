@@ -470,14 +470,6 @@ business_e2e_check() {
     e2e_emit minio 0 "finalized dataset object is not readable (HTTP $E2E_HTTP_STATUS)"
     failures=1
   fi
-  presigned="$(presign_minio_url GET "temp/jobs/$job_id/artifacts/0/ai-facts.json")"
-  if [ -n "$presigned" ] && e2e_http GET "$presigned" \
-    && [ "$E2E_HTTP_STATUS" = 200 ] && [ -n "$E2E_HTTP_BODY" ]; then
-    e2e_emit ai-facts 1
-  else
-    e2e_emit ai-facts 0 "worker ai-facts artifact is not consumable (HTTP $E2E_HTTP_STATUS); no AI provider call is made by the gate"
-    failures=1
-  fi
 
   # --- export job produces and serves a real artifact ------------------------
   e2e_http POST "http://business-api:8087/api/replay/export-jobs?mode=aggregate&processingJobId=$job_id"
@@ -578,7 +570,7 @@ tx_runtime_check() {
     TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
     TX_RABBITMQ_CONTROL_API_PASSWORD \
     YECAO_MINIO_CONTROL_API_ACCESS_KEY YECAO_MINIO_CONTROL_API_SECRET_KEY \
-    KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY; do
+    KEYCLOAK_ADMIN_CLIENT_SECRET; do
     require_env "$required"
   done
   [ -f "$LIVE_COMPOSE" ] || { echo "tx-compose: FAIL (missing $LIVE_COMPOSE)" >&2; return 1; }
@@ -596,6 +588,7 @@ data = json.load(sys.stdin)
 services = data["services"]
 frontend = services["wotb-frontend"].get("environment") or {}
 assert frontend.get("BACKEND_UPSTREAM") == "http://business-api:8087", frontend.get("BACKEND_UPSTREAM")
+assert frontend.get("AI_UPSTREAM") == "http://10.20.0.2:8089", frontend.get("AI_UPSTREAM")
 business_api = services["business-api"]
 business_ports = [
     (str(port.get("host_ip", "")), str(port.get("published")), str(port.get("target")))
@@ -607,11 +600,11 @@ published = [
     for name, service in services.items()
     for port in (service.get("ports") or [])
 ]
-assert not any("8087" in port for port in published), published
+assert not any("8087" in port or "8089" in port for port in published), published
 ' <<< "$compose_json"; then
     echo "tx-internal-api-route: PASS"
   else
-    echo "tx-internal-api-route: FAIL (frontend must use TX-internal business-api and only its management port may bind to WireGuard)" >&2
+    echo "tx-internal-api-route: FAIL (frontend must use TX-internal business-api plus the Yecao ai-service WireGuard endpoint, and only the management port may bind to WireGuard)" >&2
     failures=1
   fi
 

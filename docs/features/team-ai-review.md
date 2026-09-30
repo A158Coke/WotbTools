@@ -54,7 +54,7 @@ Team review 的质量验证不依赖默认 CI 调用模型。deterministic contr
 
 分析对象是整支录像者所在队伍，而非录像者个人。
 
-> 2026-08-12：AI Review 收口为单文件（`AiReplayBatchPolicy.MAX_FILES=1`），多文件/多视角 partition 能力已移除（`analyzeMulti`、MULTI prompt、complete-link partition、多场 roster 趋势）。
+> 2026-08-12：AI Review 收口为单文件（`AiReplayBatchPolicy.MAX_FILES=1`），多文件/多视角 partition 能力已移除（`analyzeMulti`、MULTI prompt、complete-link partition、多场 roster 趋势）。（2026-09 补充：`AiReplayBatchPolicy` 已随 AI 解耦删除；单文件约束由 `POST /api/ai/reviews` 的请求形态保证。）
 
 ## 1. 产品语义
 
@@ -90,41 +90,37 @@ Team Review 不再以尽可能短为目标，而是采用 selective but complete
 
 `primaryDiagnosis` 只是整场摘要，正文 `reviewMarkdown` 可以继续保留次级关键 episode、信息变化、目标义务、传播和执行后果。正文优先级为团队战术分析、Information/Objectives、关键 episode、propagation、训练建议，之后才是可选的「重点复查」和「高贡献者」；两个个人 section 各自最多 0–2 人，缺少 structural evidence 或可复查的决策/执行问题时完全省略。普通 7v7 约 1200–2200 字、复杂局允许约 2500–3500 字只是软目标；Team Call #2 默认专用输出上限调整为 8192 tokens，仍不改变 SSE/API contract。
 
-## 2. 入口和分层（Dataset-only）
+## 2. 入口和分层（独立 ai-service，无 Dataset 依赖）
 
 ```
-Replay selection
-  -> Processing Job (Yecao parser-worker / full process，multipart 上传仅发生在此一次)
-  -> derived artifacts：
-       ai-facts.json       (ReplayArtifactWriter.aiFactsContent)
-       map-overview.json   (ReplayArtifactWriter.mapOverviewContent)
-  -> source READY（r0）
-  -> authoritative Dataset identity = processingJobId + sourceId
+Replay selection（本地文件，不上传）
+  -> 客户端 Rust/WASM 解析 → canonical ParsedReplay → AiReviewProjection
+  -> AiReviewRequestV1 = { schemaVersion, locale, correlationId, battle, reconstruction }
+       reconstruction = battleDurationSec / battleStartRawClockSec / participants / events
+                        / coverage / checkpoints / finalState（不含 metadata / streamHeader / diagnostics）
 
-AI：
+AI（独立 ai-service，无 DB / MinIO / Business Backend 依赖）：
   ReplayPage Workspace -> AiReviewPanel
-  -> POST /api/replay/analyze   (Content-Type: application/json)
-       { processingJobId, sourceId, lang, correlationId }
-  -> ReconstructionController.analyzeDataset
-  -> AiReplayReviewService.analyzeFacts(processingJobId, sourceIndex, language, listener)
-       -> ReplayProcessingJobStore.acquireForSource(processingJobId)   [Dataset lease]
-       -> ReplayArtifactWriter.decodeAiFacts(...)
-       -> AiReplayAnalysisService.analyzeTeamGroups / analyzePlayerOrFallback / TacticalReviewHarness
+  -> POST /api/ai/reviews   (Content-Type: application/json)
+  -> TX ingress /api/ai/** → WireGuard 私网 → Yecao ai-service
+  -> AiReviewController：信封校验（schemaVersion / locale / canonical UUID correlationId）+ 战斗模式与视角判定
+  -> TacticalReviewHarness（个人）/ TeamReplayAnalysisService（团队）
    -> SSE 流式响应（call1 / evidence / call2 阶段事件；Team v0.5 在 done 一次性返回结构化结果）
 ```
 
-- 不重新上传 replay、不重新 full-process：AI Review / Battle Playback / Export 全部消费同一 Processing Dataset。
-- multipart `POST /api/replay/analyze` 已废弃为 legacy 410 compatibility shim（`ReplayLegacyEndpoints`），不是业务入口。
+- AI Review 不再消费 Processing Dataset：`ai-facts.json`、`processingJobId`、`sourceId`、Dataset lease 全部退出 AI 链路；Battle Playback / Export 仍各自消费 Processing Dataset。
+- 旧 `POST /api/replay/analyze`（含 multipart legacy shim）与 `AiReplayReviewService` 已移除；Business Backend 不承载也不代理 AI 请求。
+- 客户端投影依赖上游 Agent WASM 的 `ai` 入口（`contracts/agent/replay-facets-v2.md` §6 目前仍把 AI 事件数据标注为服务端/CLI 能力、不在 WASM 浏览器面），在该入口发布前前端维持「维护中」。
 
 ## 3. 上传边界 / Dataset 边界
 
 - 用户选择回放 → 创建 Processing Job（multipart 上传在此发生一次；upload/process once → derived artifacts 复用）
-- AI Review 单次分析 1 个 source（`sourceId` 形如 `r0`，对应 Processing Job sources[i]）
-- source 未 READY → `PREPARING_DATASET`（前端禁用 Analyze，显示「正在准备回放数据…」）
+- Battle Playback / Export 单次消费 1 个 source（`sourceId` 形如 `r0`，对应 Processing Job sources[i]）；AI Review 已不在 Dataset 路径上
+- source 未 READY → `PREPARING_DATASET`（前端禁用对应入口，显示「正在准备回放数据…」）
 - Dataset 过期（`JOB_NOT_FOUND`）→ 前端可自动恢复一次（exactly-once + generation-owned + authoritative invalidation，保留已有 `resp`）
 - `DATASET_UNAVAILABLE` / `DATASET_REFERENCE_REQUIRED` / `SOURCE_NOT_FOUND` 不是可恢复的过期信号：本地化展示，绝不静默 full-process
 - `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` 保持稳定语义
-- `/api/replay/analyze`（AI）与 `/api/replay/map-overview`（Playback）走同一 Dataset 引用，绝无 multipart AI/Playback 回退
+- AI Review 走 `/api/ai/reviews`（客户端投影），与 Dataset 引用完全解耦
 
 ## 4. Grouping 与 Partition
 
@@ -243,14 +239,14 @@ Enemy-only damage 不得延长 Team phase。
 
 ## 8. Result Contract
 
-`POST /api/replay/analyze` 已由同步 JSON 改为 **SSE 流式**（`text/event-stream`，旧同步端点不保留），
-`ReplaySseWriter` 序列化（自定 JSON event，`data` 为 JSON）：
+`POST /api/ai/reviews`（由独立 `ai-service` 承载）返回 **SSE 流式**（`text/event-stream`，无同步 JSON 响应），
+`AiReviewController` 直接向 `SseEmitter` 写入（自定 JSON event，`data` 为 JSON）：
 
 | event | data | 说明 |
 |-------|------|------|
 | `call1_start` | `{}` | Call #1（赛前战略基线）开始 |
 | `call1_done` | `{}` | Call #1 结束（真实发起调用时必发，无论成败） |
-| `evidence_done` | `{}` | 后端证据分析完成（随机战 harness 与团队路径均发射；团队路径在 `TeamReplayAnalysisService.analyzeTeamGroups` 首轮 Call #2 前补发，前端阶段指示随之推进） |
+| `evidence_done` | `{}` | 后端证据分析完成（随机战 harness 与团队路径均发射；团队路径在 `TeamReplayAnalysisService.analyzeTeam` 首轮 Call #2 前补发，前端阶段指示随之推进） |
 | `call2_token` | `{"delta":"..."}` | 主复盘 token 增量 |
 | `done` | `{"analysis":null,"preBattleSection":"...","teamReview":{...}}` | Team v0.5 结构化结果一次性完成；个人旧文本结果仍可使用 `analysis` |
 | `error` | `{"code":"AI_..."}` | 流中途失败（稳定错误码） |

@@ -60,6 +60,11 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
     private final Semaphore admissionPermits;
     private final AtomicInteger virtualQueueDepth;
     private final AtomicBoolean closed = new AtomicBoolean();
+    /**
+     * 已进入 worker、尚未完成的 Review 数（Gauge {@code wotb_ai_review_in_flight}）：
+     * 不含排队等待的请求，也不含被 {@code AI_REVIEW_BUSY} 回绝的请求。
+     */
+    private final AtomicInteger inFlight = new AtomicInteger();
     private final boolean virtualThreads;
     private final long overallDeadlineNanos;
     private final MeterRegistry meterRegistry;
@@ -123,6 +128,9 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
         if (meterRegistry != null) {
             Gauge.builder("wotb_ai_review_queue_depth", this, AiReviewWorkerExecutor::queueDepth)
                     .description("当前等待执行的 AI Review worker 数")
+                    .register(meterRegistry);
+            Gauge.builder("wotb_ai_review_in_flight", inFlight, AtomicInteger::get)
+                    .description("当前已进入 worker 且尚未完成的 AI Review 数（不含排队等待）")
                     .register(meterRegistry);
         }
     }
@@ -228,11 +236,13 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
                         .record(startNanos - submittedNanos, TimeUnit.NANOSECONDS);
             }
         }
+        inFlight.incrementAndGet();
         AiRequestContext.setOverallDeadline(submittedNanos + overallDeadlineNanos);
         try {
             task.run();
         } finally {
             AiRequestContext.clearOverallDeadline();
+            inFlight.decrementAndGet();
         }
     }
 

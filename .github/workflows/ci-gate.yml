@@ -152,6 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       business_api: ${{ steps.filter.outputs.business_api }}
+      ai_service: ${{ steps.filter.outputs.ai_service }}
       parser_worker: ${{ steps.filter.outputs.parser_worker }}
       frontend: ${{ steps.filter.outputs.frontend }}
       keycloak: ${{ steps.filter.outputs.keycloak }}
@@ -184,6 +185,13 @@ jobs:
     needs: [pr_identity, changes]
     if: needs.changes.outputs.business_api == 'true'
     uses: ./.github/workflows/ci-business-api.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  ai_service:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.ai_service == 'true'
+    uses: ./.github/workflows/ci-ai-service.yml
     with:
       base_sha: ${{ needs.pr_identity.outputs.base_sha }}
       head_sha: ${{ needs.pr_identity.outputs.head_sha }}
@@ -283,6 +291,7 @@ jobs:
       - pr_identity
       - changes
       - business_api
+      - ai_service
       - parser_worker
       - frontend
       - keycloak

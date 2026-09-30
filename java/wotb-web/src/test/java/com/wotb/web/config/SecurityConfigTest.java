@@ -94,13 +94,16 @@ class SecurityConfigTest {
                 .andExpect(status().isOk());
         mvc.perform(get("/api/admin/other/probe").with(jwt().authorities(role)))
                 .andExpect(status().isOk());
-        mvc.perform(get("/api/replay/analyze").with(jwt().authorities(role)))
-                .andExpect(status().isOk());
     }
 
+    /**
+     * AI Review 已迁出 wotb-web（独立 ai-service）：{@code /api/replay/analyze} 与其 cancel
+     * 端点不再有专属安全规则，也不再有专属角色门，落回「未显式声明的 API 默认拒绝」
+     * （anonymous → 401 canonical envelope；任何已认证身份 → 403）。
+     */
     @Test
-    void replayAnalysisShouldAcceptUserAndAdmin() throws Exception {
-        // anonymous → 401
+    void removedAiAnalyzeEndpointsFallThroughToDefaultApiDenyAll() throws Exception {
+        // anonymous → 401 canonical envelope
         mvc.perform(get("/api/replay/analyze"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith("application/json"))
@@ -108,34 +111,23 @@ class SecurityConfigTest {
                 .andExpect(jsonPath("$.id").isNotEmpty())
                 .andExpect(header().string("X-Request-ID",
                         org.hamcrest.Matchers.not(org.hamcrest.Matchers.emptyOrNullString())));
-
-        // wotbtools-user → 200 (new permission)
-        mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
-                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
-                .andExpect(status().isOk());
-
-        // wotbtools-admin → 200 (existing permission)
-        mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
-                        new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
-                .andExpect(status().isOk());
-
-        // authenticated but no allowed role → 403
-        mvc.perform(get("/api/replay/analyze").with(jwt()))
-                .andExpect(status().isForbidden())
-                .andExpect(content().contentTypeCompatibleWith("application/json"))
-                .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"))
-                .andExpect(jsonPath("$.id").isNotEmpty());
-
-        // cancel uses the same role gate as analyze
-        mvc.perform(get("/api/replay/analyze/cancel").with(jwt().authorities(
-                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
-                .andExpect(status().isOk());
         mvc.perform(get("/api/replay/analyze/cancel"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"));
 
-        // HoF-admin 不在 replay 门禁的角色集合内 → 403
-        mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
-                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
+        // 已认证（含 wotbtools-user / wotbtools-admin / HoF-admin）→ 403，不再有 analyze 角色门
+        for (final String role : List.of("ROLE_wotbtools-user", "ROLE_wotbtools-admin", "ROLE_HoF-admin")) {
+            mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
+                            new SimpleGrantedAuthority(role))))
+                    .andExpect(status().isForbidden())
+                    .andExpect(content().contentTypeCompatibleWith("application/json"))
+                    .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"))
+                    .andExpect(jsonPath("$.id").isNotEmpty());
+            mvc.perform(get("/api/replay/analyze/cancel").with(jwt().authorities(
+                            new SimpleGrantedAuthority(role))))
+                    .andExpect(status().isForbidden());
+        }
+        mvc.perform(get("/api/replay/analyze").with(jwt()))
                 .andExpect(status().isForbidden());
     }
 
@@ -448,8 +440,6 @@ class SecurityConfigTest {
                 "/api/unmatched",
                 "/api/health",
                 "/api/users/probe",
-                "/api/replay/analyze",
-                "/api/replay/analyze/cancel",
                 "/api/replay/processing-jobs/{jobId}",
                 "/api/replay/processing-jobs/{jobId}/result",
                 "/api/replay/export-jobs/{jobId}",

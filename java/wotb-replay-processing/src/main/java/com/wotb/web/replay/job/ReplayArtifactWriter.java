@@ -1,8 +1,5 @@
 package com.wotb.web.replay.job;
 
-import com.wotb.core.replay.facts.AiReplayFacts;
-import com.wotb.core.replay.facts.ReplayFactsCodec;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import com.wotb.web.replay.dto.MapOverview;
 import tools.jackson.databind.ObjectMapper;
@@ -29,7 +26,14 @@ import java.io.IOException;
  */
 public final class ReplayArtifactWriter {
 
-    /** ai-facts artifact 文件名（sink 的 artifactName）。 */
+    /**
+     * ai-facts artifact 文件名（legacy-only，仅用于清理迁移前写入的对象）。
+     *
+     * <p>AI Review 已迁出 Business Backend（独立 ai-service 只接收客户端投影的
+     * {@code Battle} + {@code ReplayReconstruction}），本 artifact 不再被写入。常量与
+     * {@code ObjectStorageReplayJobWorkspaceCleaner} 的删除行保留，只为 TTL 前清理迁移之前写入的
+     * 对象，避免遗留对象泄漏。</p>
+     */
     public static final String AI_FACTS_NAME = "ai-facts.json";
 
     /** map-overview artifact 文件名（sink 的 artifactName）。 */
@@ -41,13 +45,6 @@ public final class ReplayArtifactWriter {
     private static final ObjectMapper MAPPER = JsonMapper.builder().build();
 
     private ReplayArtifactWriter() {
-    }
-
-    /**
-     * ai-facts.json 的内容（唯一实现）：{@link ReplayFactsCodec} 的稳定编码。
-     */
-    public static byte[] aiFactsContent(final ReplayProcessingResult result) {
-        return ReplayFactsCodec.toBytes(AiReplayFacts.fromResult(result));
     }
 
     /**
@@ -70,16 +67,6 @@ public final class ReplayArtifactWriter {
             return null;
         }
         return MAPPER.writeValueAsBytes(dataset);
-    }
-
-    /**
-     * 字节 → ai-facts（**唯一解码实现**）。
-     *
-     * @param content artifact 字节；{@code null}（对象/文件不存在）返回 {@code null}，由调用方
-     *                决定「缺失」对它的含义（AI 路径是 DATASET_UNAVAILABLE）
-     */
-    public static AiReplayFacts decodeAiFacts(final byte[] content) throws IOException {
-        return content == null ? null : ReplayFactsCodec.fromBytes(content);
     }
 
     /** 字节 → map-overview；{@code null}（unavailable）返回 {@code null}（204 语义）。 */
