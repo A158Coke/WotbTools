@@ -115,14 +115,14 @@ or a team. The envelope retains the existing subtype48 framing and length checks
 |---|---|---|---|
 | nested field1 | varint | `rawField1` | `2` selects the observed progress family; `1` occurs in the sibling family. Exact private enum name UNKNOWN |
 | nested field2 | varint | `rawField2` | Observed value `1`; production progress gate requires exactly `1`. Exact index/identifier semantics UNKNOWN; never interpreted as team |
-| nested field3 | varint | `captureProgress` | For field1=2 + field2=1, realtime capture progress; 1..100 observed in the controlled sample |
+| nested field3 | varint | `rawField3` | Raw scalar for every wrapper8 family; only field1=2 + field2=1 proves progress, with 1..100 observed |
 | nested field4 | varint | `rawField4` | Sibling family observed value `1`; exact meaning UNKNOWN. Never mapped to capturingTeam or ownerTeam |
 
 Absent scalar fields remain `null` in `RawAssaultBaseUpdate`. Known fields 1..4,
 when present, must each occur exactly once as a non-negative varint representable
 by Java `Integer`; malformed protobuf, wrong scalar wire type, duplicate known
-scalar fields or narrowing overflow reject that child. Present field3 must be
-within 0..100, including on raw-only families. Unknown fields do not acquire
+scalar fields or narrowing overflow reject that child. The decoder applies no 0..100 domain restriction to raw field3, including
+other wrapper8 families; structural Integer bounds still apply. Unknown fields do not acquire
 production semantics. A rejected child emits no Assault raw/canonical event;
 the outer decoder preserves the packet as unknown when no recognized event was
 decoded. This does not imply a separate raw diagnostic for every rejected child
@@ -132,7 +132,7 @@ Canonical promotion requires **all** of:
 
 1. Valid subtype48 envelope, wrapper8 and root field8 child framing.
 2. `rawField1 == 2` and `rawField2 == 1`.
-3. **Present** `captureProgress` in 0..100. Missing field3 never generates 0.
+3. **Present** `rawField3` in 0..100, promoted here to `captureProgress`. Missing field3 never generates 0.
 4. No independently decoded `RawSupremacyBaseUpdate` in the reconstruction input;
    the current mode guard suppresses Assault projection when wrapper12 is present.
 
@@ -152,7 +152,8 @@ These bytes illustrate **nested children**, not complete captured packets:
 08 02 10 01 18 00  → explicit field3=0             → canonical progress 0
 08 02 10 01        → absent field3                 → raw-only; no synthetic zero
 08 01 10 01 20 01  → field1=1, field2=1, field4=1   → raw-only; team UNKNOWN
-08 02 10 01 18 65  → field3=101                    → rejected
+08 02 10 01 18 65  → field3=101                    → raw-only; reconstruction rejects progress
+08 01 10 01 18 AC 02 → sibling field3=300           → raw-only; no progress domain applied
 08 02 10 01 1A 00  → field3 length-delimited        → rejected scalar wire type
 ```
 
@@ -230,15 +231,20 @@ The SC2 `controlpoint.team` field must **not** be documented as "defending team"
 in this controlled sample it is 1 while team 1 is the user-confirmed attacking and
 capturing side. Its exact scene meaning remains unresolved.
 
-## Variant filtering
+## Authoritative geometry boundary
 
-Map scenes can carry multiple labelled battle-layout variants. Base extraction must
-select the active variant before emitting `mapBases.js`; otherwise mutually
-exclusive control points can be merged into one map.
+This PR preserves the existing global map generator contract and restores
+`mapBases.js` to its base-branch generated artifact. No corpus-wide variant
+filtering or manual generated-geometry edits are shipped without real Maps input.
 
-The base extractor now follows the same label-frequency variant selection used by
-`map-semanticizer`. For the controlled Neptune layout this produces one active
-Assault control point instead of three mixed-variant candidates.
+For 2D Neptune, the verified `common/map-semantics/33_neptune_nt.semantic.json`
+(`verified=true`, `battleVariant=nt0`) is the geometry authority. The consumer reads
+its unique `sceneEvidence.battlePoints` entry with `type=controlpoint` and
+`confidence=EXACT_SCENE_DATA`, using its X/Y directly. It does not copy coordinates
+into a second data file or treat static team metadata as runtime ownership.
+The semantic entry supplies no radius, so the existing presentation fallback applies.
+Ambiguous geometry is not resolved by taking the first entry; canonical HUD state
+remains available. Other maps retain the existing generated geometry path.
 
 ## Evidence grade
 
@@ -261,4 +267,4 @@ Production support must retain tests for:
 4. transport `baseId=BASE` and `captureProgress<=100`;
 5. frontend single-base rendering at 100;
 6. no guessed capturing-team/ownership semantics;
-7. map extraction variant filtering.
+7. 2D Neptune joins the verified semantic controlpoint; global generated geometry is unchanged.

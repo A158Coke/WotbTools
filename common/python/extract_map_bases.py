@@ -9,9 +9,9 @@ Two entity types carry base geometry:
   strategicpoint  Supremacy (争霸赛). 3-4 per map, each with a `baseID` 0..3 that
                   matches `SupremacyBaseId.fromProtocolIndex()` on the backend,
                   so it maps straight onto the `baseStates` wire field.
-  controlpoint    Encounter / Assault (攻防战). One base per active scene variant.
-                  `team` is retained as raw scene metadata; its attacker/defender
-                  meaning is not closed. Radius may be absent in the scene.
+  controlpoint    Encounter / Assault (攻防战). One base per mode configuration,
+                  `team` marks the defending side. Radius is larger than a
+                  Supremacy base where the scene declares one.
 
 Coordinates are world meters on the same axes as replay positions and as
 `coordinateSystem.worldBounds` in `common/map-semantics/*.semantic.json`
@@ -46,9 +46,6 @@ from wotb_sc2 import (  # noqa: E402
 )
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "map-semanticizer"))
-from map_semanticizer import detect_variant, entity_labels, matches_variant  # noqa: E402
-
 SEMANTICS_DIR = REPO / "common" / "map-semantics"
 MAP_IMAGES = REPO / "frontend" / "src" / "data" / "mapImages.js"
 OUTPUT = REPO / "frontend" / "src" / "data" / "mapBases.js"
@@ -100,18 +97,7 @@ class SceneSource:
 
 
 def capture_points(raw: bytes) -> Iterator[tuple[str, dict[str, Any], tuple[float, float, float]]]:
-    entities = scene_entities(read_sc2(decode_dvpl(raw)))
-
-    # A map scene may contain multiple labelled battle-layout variants. Keep the same
-    # active-variant selection contract as map-semanticizer; otherwise mutually
-    # exclusive control points leak into one generated map and Assault appears to
-    # have several bases (Neptune 11.20 controlled sample exposed this).
-    variant = detect_variant(entities)
-
-    for entity in entities:
-        labels = entity_labels(entity)
-        if not matches_variant(labels, variant):
-            continue
+    for entity in scene_entities(read_sc2(decode_dvpl(raw))):
         properties = entity_properties(entity)
         point_type = properties.get("type")
         if point_type not in ("strategicpoint", "controlpoint"):
@@ -142,14 +128,12 @@ def extract_map(raw: bytes, map_code: str) -> dict[str, Any]:
                 "radius": round4(radius) if radius is not None else None,
             })
         else:
-            base = {
+            assault.append({
                 "x": round4(x),
                 "y": round4(y),
                 "radius": round4(radius) if radius is not None else None,
                 "team": properties.get("team"),
-            }
-            if base not in assault:
-                assault.append(base)
+            })
 
     supremacy.sort(key=lambda base: base["baseId"])
     seen = [base["baseId"] for base in supremacy]
@@ -181,8 +165,8 @@ def render_js(data: dict[str, dict[str, Any]], source_name: str) -> str:
         " *",
         " * supremacy 争霸赛：3-4 个基地，`baseId` 由场景 `baseID` 0..3 而来，",
         " *   与后端 `SupremacyBaseId.fromProtocolIndex()` 及 wire 字段 `baseStates[].baseId` 同源。",
-        " * assault 攻防战/遭遇战：active scene variant 的单基地；`team` 仅保留 raw scene metadata，",
-        " *   不解释为攻/守方；场景未声明半径时为 null，调用方自行取 presentation fallback。",
+        " * assault 攻防战/遭遇战：每种模式配置一个基地，`team` 为守方；",
+        " *   场景未声明半径时为 null，调用方自行取默认值。",
         " */",
         "export const mapBases = {",
     ]

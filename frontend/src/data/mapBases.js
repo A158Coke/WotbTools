@@ -8,8 +8,8 @@
  *
  * supremacy 争霸赛：3-4 个基地，`baseId` 由场景 `baseID` 0..3 而来，
  *   与后端 `SupremacyBaseId.fromProtocolIndex()` 及 wire 字段 `baseStates[].baseId` 同源。
- * assault 攻防战/遭遇战：active scene variant 的单基地；`team` 仅保留 raw scene metadata，
- *   不解释为攻/守方；场景未声明半径时为 null，调用方自行取 presentation fallback。
+ * assault 攻防战/遭遇战：每种模式配置一个基地，`team` 为守方；
+ *   场景未声明半径时为 null，调用方自行取默认值。
  */
 export const mapBases = {
   amigosville: {
@@ -248,7 +248,9 @@ export const mapBases = {
       { baseId: "D", x: 139.5419, y: 63.0127, radius: 15.0 },
     ],
     assault: [
+      { x: -174.7717, y: 8.811, radius: 15.0, team: 1 },
       { x: 49.5339, y: 8.5291, radius: null, team: 1 },
+      { x: 56.7256, y: 8.1217, radius: null, team: 1 },
     ],
   },
   plant: {

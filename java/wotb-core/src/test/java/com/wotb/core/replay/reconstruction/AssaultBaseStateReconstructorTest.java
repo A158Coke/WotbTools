@@ -35,7 +35,8 @@ class AssaultBaseStateReconstructorTest {
     void missingAndInvalidProgressNeverCreateCanonicalStates() {
         assertEquals(List.of(), AssaultBaseStateReconstructor.reconstruct(List.of(
                 raw(1, 2, 1, null, null), raw(2, 2, 1, -1, null),
-                raw(3, 2, 1, 101, null), raw(4, 2, 2, 50, null))));
+                raw(3, 2, 1, 101, null), raw(4, 2, 2, 50, null),
+                raw(5, 1, 1, 300, null), raw(6, 3, 1, 50, null))));
     }
 
     @Test

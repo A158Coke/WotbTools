@@ -36,14 +36,14 @@ public final class AssaultBaseStateReconstructor {
                 .map(RawAssaultBaseUpdate.class::cast)
                 .filter(update -> Integer.valueOf(2).equals(update.rawField1()))
                 .filter(update -> Integer.valueOf(1).equals(update.rawField2()))
-                .filter(update -> update.captureProgress() != null
-                        && update.captureProgress() >= 0 && update.captureProgress() <= 100)
+                .filter(update -> update.rawField3() != null
+                        && update.rawField3() >= 0 && update.rawField3() <= 100)
                 .sorted(Comparator.comparingDouble(AssaultBaseStateReconstructor::rawClock)
                         .thenComparingInt(RawAssaultBaseUpdate::sequence))
                 .map(update -> new AssaultBaseStateTransition(
                         update.sequence(), update.timestamp(), update.packetType(),
                         update.confidence(),
-                        update.captureProgress()))
+                        update.rawField3()))
                 .toList();
     }
 

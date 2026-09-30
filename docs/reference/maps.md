@@ -81,10 +81,13 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 
 ### 已知限制
 
-- 客户端场景可能同时携带多个带 label 的 battle-layout variant。基地生成器与
-  map-semanticizer 共用“battle point label 众数”选择 active variant，避免把互斥 controlpoint
-  合并成同一局的多个基地，并去重相同 controlpoint。无 label 的旧场景保留原始几何；
-  若输出仍不是唯一 controlpoint，2D 不任意选第一个，只显示 canonical HUD 状态。
+- 全局基地生成器保留原有抽取行为；本 PR 不对全部地图施加未经真实 Maps corpus 验证的 variant 筛选。
+  `mapBases.js` 保留 base branch 生成产物，旧注释中的“守方”不构成已证明语义；以本节 raw metadata 边界为准。
+- 2D Neptune 的 Assault controlpoint 直接来自已核验的
+  `common/map-semantics/33_neptune_nt.semantic.json`（`verified=true`、`battleVariant=nt0`），
+  使用唯一 `sceneEvidence.battlePoints` controlpoint 的 X/Y；不手改 generated 坐标。
+  semantic entry 未提供 radius，沿用 presentation fallback。其他地图继续使用既有 generated 几何；
+  候选不是唯一基地时只显示 canonical HUD 状态，不任意取第一项。
 - `controlpoint.team` 的攻/守含义未闭合：11.20 Neptune controlled Assault 样本中该值为 1，
   同时 team 1 是用户确认的进攻/占领方，因此不得再把它写死解释为“守方”。
 - 部分 `controlpoint` 没有 `radius`。Playback 当前仅在 presentation 层使用 20m fallback；

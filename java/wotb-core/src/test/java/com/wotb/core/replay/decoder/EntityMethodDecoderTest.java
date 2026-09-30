@@ -315,17 +315,16 @@ class EntityMethodDecoderTest {
                 RawAssaultBaseUpdate.class, result.events().getFirst());
         assertEquals(2, event.rawField1());
         assertEquals(1, event.rawField2());
-        assertEquals(100, event.captureProgress());
+        assertEquals(100, event.rawField3());
         assertNull(event.rawField4());
         assertEquals(DecodeConfidence.EXACT, event.confidence());
         assertEquals(DecodeStatus.SUCCESS, result.status());
     }
 
     @Test
-    void assaultDecoderRejectsInvalidProgressAndMalformedScalarShapes() {
+    void assaultDecoderRejectsMalformedScalarShapes() {
         context.entityClassRegistry().markAvatar(0);
         final List<byte[]> children = List.of(
-                new byte[]{0x08, 0x02, 0x10, 0x01, 0x18, 0x65},
                 new byte[]{0x08, 0x02, 0x10, 0x01, 0x18, (byte) 0x80},
                 new byte[]{0x08, 0x02, 0x10, 0x01, 0x1a, 0x00},
                 new byte[]{0x08, 0x02, 0x10, 0x01, 0x18, 0x01, 0x18, 0x02},
@@ -339,6 +338,20 @@ class EntityMethodDecoderTest {
     }
 
     @Test
+    void wrapper8PreservesField3OutsideProgressDomainAsRawForEveryFamily() {
+        context.entityClassRegistry().markAvatar(0);
+        for (final byte kind : new byte[]{1, 2, 3}) {
+            final byte[] child = new byte[]{0x08, kind, 0x10, 0x01, 0x18, (byte) 0xac, 0x02};
+            final ReplayDecodeResult result = decoder.decode(context,
+                    rawPacket48(EntityMethodDecoder.WRAPPER_ASSAULT_BASE, fieldDelimited(8, child)));
+            final RawAssaultBaseUpdate raw = assertInstanceOf(RawAssaultBaseUpdate.class,
+                    result.events().getFirst());
+            assertEquals((int) kind, raw.rawField1());
+            assertEquals(300, raw.rawField3());
+        }
+    }
+
+    @Test
     void assaultDecoderAcceptsExplicitZeroAndOneButRejectsWrongRoot() {
         context.entityClassRegistry().markAvatar(0);
         for (final byte progress : new byte[]{0, 1}) {
@@ -346,7 +359,7 @@ class EntityMethodDecoderTest {
             final ReplayDecodeResult result = decoder.decode(context,
                     rawPacket48(EntityMethodDecoder.WRAPPER_ASSAULT_BASE, fieldDelimited(8, child)));
             assertEquals((int) progress, assertInstanceOf(RawAssaultBaseUpdate.class,
-                    result.events().getFirst()).captureProgress());
+                    result.events().getFirst()).rawField3());
             final ReplayDecodeResult wrongRoot = decoder.decode(context,
                     rawPacket48(EntityMethodDecoder.WRAPPER_ASSAULT_BASE, fieldDelimited(11, child)));
             assertTrue(wrongRoot.events().stream().noneMatch(RawAssaultBaseUpdate.class::isInstance));

@@ -137,6 +137,9 @@ describe('Supremacy 基地 overlay', () => {
 
     expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(1)
     expect(wrapper.find('[data-test="pb-base-BASE"]').text()).toContain('BASE')
+    expect(wrapper.findComponent({ name: 'BattleMap' }).props('bases')[0]).toMatchObject({
+      x: 49.5339, y: 8.5291, baseId: 'BASE', radius: 20,
+    })
     const fill = wrapper.find('[data-test="pb-base-fill"]')
     expect(fill.exists()).toBe(true)
     expect(fill.classes()).toContain('pb-capture-unknown')

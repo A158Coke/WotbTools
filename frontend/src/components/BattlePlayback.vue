@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useI18n } from 'vue-i18n'
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import { mapBases } from '../data/mapBases'
+import neptuneSemantics from '../../../common/map-semantics/33_neptune_nt.semantic.json'
 import { mapImages } from '../data/mapImages'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
@@ -1922,7 +1923,14 @@ const basesAt = computed(() => {
   const states = new Map(baseStatesAt.value.map((state) => [state.baseId, state]))
   const assaultState = states.get('BASE')
   if (assaultState) {
-    const geometry = mapBases[pbOverview.value?.mapCode]?.assault || []
+    const mapCode = pbOverview.value?.mapCode
+    // Neptune's verified semantic document already selects the authoritative scene.
+    // Keep the global generated client geometry unchanged until a real Maps regeneration.
+    const geometry = neptuneSemantics.verified && neptuneSemantics.mapCodes.includes(mapCode)
+      ? neptuneSemantics.sceneEvidence.battlePoints
+        .filter(point => point.type === 'controlpoint' && point.confidence === 'EXACT_SCENE_DATA')
+        .map(point => ({ x: point.position[0], y: point.position[1], radius: null }))
+      : (mapBases[mapCode]?.assault || [])
     // Ambiguous geometry cannot select an objective; retain the canonical HUD fallback.
     if (geometry.length !== 1) return []
     return geometry.map((base) => ({
