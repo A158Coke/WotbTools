@@ -16,7 +16,10 @@ export function assetBase() {
   const override = q ?? localStorage.getItem('wotb_asset_base')
   cached = (override || productionDefault).replace(/\/+$/, '')
   if (q !== null) {
-    if (cached) localStorage.setItem('wotb_asset_base', cached)
+    // 只持久化真正的显式 override。`?assets=`（显式空）是"清除 override"的手段：
+    // 若把回落到的生产默认写进 localStorage，后续更换生产 origin 时这些浏览器会被
+    // 旧值钉住，永远取不到新的构建默认。
+    if (q) localStorage.setItem('wotb_asset_base', cached)
     else localStorage.removeItem('wotb_asset_base')
   }
   return cached
