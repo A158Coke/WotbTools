@@ -1,6 +1,6 @@
 package com.wotb.core;
 
-import com.wotb.core.league.LeagueRatingNormalizer;
+import com.wotb.core.rating.LeagueRatingNormalizer;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;

@@ -1,6 +1,7 @@
 /**
  * Radar Metric Registry：
- * 选手画像雷达图只允许 League Rating 七维，禁止 contribution/kast/impact 进入 Radar。
+ * 选手画像雷达图只允许 League Rating 七维（B6 后 contribution/kast/impact 已退役，
+ * 更不存在进入 Radar 的可能）。
  * 每个 League 维度保留 score/max 解释值；V6 Radar 几何由当前 reference=75、权威 max=150 的
  * bounded scale 生成。
  * PlayerDetailDrawer 只消费本 registry + resolveRadarMetric，组件不硬编码业务公式。
@@ -66,7 +67,7 @@ export const RADAR_DEFAULT_ORDER = [
   'league_assist_score',
 ]
 
-/** 全部可选的 Radar 指标 key（picker 显示；仅七维，贡献度/KAST 属于 Performance Metrics，不入 Radar）。 */
+/** 全部可选的 Radar 指标 key（picker 显示；仅 League 七维）。 */
 export const RADAR_AVAILABLE_KEYS = [...CW_DIM_KEYS]
 
 function readStoredList() {

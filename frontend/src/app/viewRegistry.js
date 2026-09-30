@@ -12,6 +12,10 @@ import AndroidDownloadPage from '../components/AndroidDownloadPage.vue'
 import SponsorPage from '../components/SponsorPage.vue'
 
 const PlaybackQaPage = defineAsyncComponent(() => import('../components/PlaybackQaPage.vue'))
+const AgentReplay3DPage = defineAsyncComponent(() => import('../components/AgentReplay3D.vue'))
+const AgentTankopediaPage = defineAsyncComponent(() => import('../components/AgentTankopedia.vue'))
+const AgentArmorViewPage = defineAsyncComponent(() => import('../components/AgentArmorView.vue'))
+const AgentShotsPage = defineAsyncComponent(() => import('../components/AgentShots.vue'))
 const RatingDocsPage = defineAsyncComponent(() => import('../components/RatingDocsPage.vue'))
 const RatingV2AdminPage = defineAsyncComponent(() => import('../components/RatingV2AdminPage.vue'))
 
@@ -20,6 +24,10 @@ export const VIEW_COMPONENTS = Object.freeze({
   replay: ReplayWorkspace,
   'ai-review': ReplayWorkspace,
   'battle-playback': ReplayWorkspace,
+  'agent-replay': AgentReplay3DPage,
+  'agent-tankopedia': AgentTankopediaPage,
+  'agent-armor': AgentArmorViewPage,
+  'agent-shots': AgentShotsPage,
   hof: HoFPage,
   'hof-admin': HoFAdminPage,
   profile: ProfilePage,

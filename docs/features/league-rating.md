@@ -36,9 +36,8 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   kills、survived、survivalTimeSec、nShots、nHitsDealt、nPenetrationsDealt、
   victoryPointsEarned、victoryPointsSeized、accountId、nickname、clan、arenaId、arenaBonusType。
 - **Rating 计算不用** Tankopedia HP / 期望值、XP/Credits、AI、历史上传、
-  外部 API 或全服统计（contribution/kast/impact 是 Replay Performance Metrics，**保留在
-  CW 单场/汇总表与选手 Drawer**，只作表现展示，不进七维 Rating；contribution/kast 可经用户
-  选择进入自定义 Radar，Impact 无稳定 normalization contract 暂不入 Radar）。
+  外部 API 或全服统计。表现派生指标列（contribution/kast/impact）已随 B6 退役，
+  Radar 只允许七维 League Rating（见「Excel 导出」与「Build-to-Learn」）。
 - 全部结果（评分、战队名称覆盖、MVP）只存在于当前 HTTP 请求与前端页面内存中；
   刷新 / 重新上传 / 服务重启后不保留。不写数据库、localStorage、服务端文件。
 - 复用 `TradeFacts`（V4.1 directional 互换窗口：玩家死亡后 `[0, +5]` 秒内存在敌方死亡，
@@ -203,14 +202,21 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 
 ## Excel 导出
 
-- **XLSX = 数据导出**：永远导出完整合法数据字段，完全不受当前 UI ColumnPicker 影响
+- **XLSX = 数据导出**：导出**当前 canonical 字段集**（`Columns` / `AggregateColumns` /
+  `LeagueColumns` 的 key 宇宙），完全不受当前 UI ColumnPicker 影响
   （与前端显示偏好解耦；backend export 不读取任何前端列偏好）。
-- 普通模式 Excel 保持现状。
-- League 单场工作簿：玩家数据（身份 + 单场 Performance Metrics（contribution/kast/impact）
-  + Rating 关键原始字段 + 占点原始字段 + 七维度实际分/满分/百分比
-  + 总 Rating）、战斗信息（含双方战队 Rating、全场 MVP、双方队内最佳）、原始字段。
+- **已退役指标不再导出**：`contribution` / `kast` / `impact` / `alpha_damage` /
+  `victory_points_seized` / `traded_deaths` / `account_id` / `tank_id` 已随 B6 从公共列与
+  Excel 移除，导出层不再输出；`survival_avg` 已改名 `survival_time_avg`。
+  账号 / 车辆 ID 仍作为响应行的结构化身份字段（`accountId` / `vehicleId`）保留，
+  但不再是可导出列。
+- 普通模式 Excel 保持现状（同样只导出 canonical 字段集）。
+- League 单场工作簿：玩家数据（身份 + 单场 stats + Rating 关键原始字段 + 占点得分
+  + 七维度实际分/满分/百分比 + 总 Rating）、战斗信息（含双方战队 Rating、全场 MVP、
+  双方队内最佳）、原始字段。
 - League 批量工作簿：选手汇总、战队汇总、每场明细、战斗列表（含重复/冲突/校验失败）；
-  不产生赛季排名或批次奖项。
+  不产生赛季排名或批次奖项。汇总「用车」列由结构化 vehicle usage（vehicleId + 场次）
+  在导出层用 Tankopedia 解析车辆名称渲染。
 - mode=each：逐场导出单场工作簿——League 模式已评分场次为 League 单场工作簿、未评分场次
   回退普通单场工作簿；解析失败/冲突场次跳过并计入 failures 进度。
 - **混合批次（普通 + 训练赛/联赛混传）**：League Rating 不聚合（`league=null` +
@@ -247,14 +253,14 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   useColumns（league scope）控制可见性与顺序，持久化独立于普通模式。CW 统一玩家表另有独立
   cw scope（wotb-league-cw-* storage），同样复用同一 ColumnPicker /拖拽/持久化基础设施，
   不另建第二套系统。
-- League 默认可见列：单场表 = 玩家/战队/车辆/伤害/助攻/击杀/总 Rating（contribution/kast/impact
-  在列 universe 中，可经 ColumnPicker 显示）；CW 统一玩家表默认 = 玩家/总 Rating/七维/MVP/
-  场次/评分场次/胜场/胜率/场均伤害/场均助攻/场均击杀/获取点数每场/表现指标
+- League 默认可见列：单场表 = 玩家/战队/车辆/伤害/助攻/击杀/总 Rating；CW 统一玩家表默认 =
+  玩家/总 Rating/七维/MVP/场次/评分场次/胜场/胜率/场均伤害/场均助攻/场均击杀/获取点数每场
   （rated_battles 进入生产 Column contract：leaguePlayerSummaryColumns → mergeCwPlayerColumns
   → useColumns cw scope → ColumnPicker）。列名与原始字段区分（「伤害」vs「伤害评分」）。
+  contribution/kast/impact/traded_deaths/account_id/tank_id/alpha_damage/victory_points_seized
+  已退役，不在任何列 universe 中。
 - **选手 Drawer 雷达**：只允许七维 League Rating，用户可自定义维度与顺序（min 3 / max 7），
-  偏好独立 localStorage（`wotb-radar-metric-order`），Summary 与 Battle 共用；Contribution/KAST/Impact
-  继续保留在表现指标区，不进入 Radar。每个玩家顶点常驻标注 0–150 视觉分；明细默认显示玩家/平均视觉分，
+  偏好独立 localStorage（`wotb-radar-metric-order`），Summary 与 Battle 共用。每个玩家顶点常驻标注 0–150 视觉分；明细默认显示玩家/平均视觉分，
   可切换为 raw `score/max` 与真实平均值，切换不改变几何。维度 raw score 与权威 `max` 均来自后端 metadata；
   V6 最终几何把 `0..当前 Battle/Global Average` 线性映射到 `0..75`，把 `average..max` 线性映射到
   `75..150`。max 缺失/非法或 average 不在 `(0,max)` 时整轴 fail-closed，不回退旧相对公式。Rating Profile
@@ -280,7 +286,8 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 - 模式：单普通/单训练/单联赛/随机/游戏内评级、Training+Tournament 允许、Training+Random
   与 Tournament+评级 整体 400、preview/合并导出/每场导出规则一致。
 - API 契约：普通模式响应兼容、League 含 typed 数据、League playerColumns/aggregateColumns
-  **含** contribution/kast/impact、总 Rating 固定列元数据、七维度 max、leagueMode 显式标记
+  为 canonical 列集（汇总仅 `multi_damage_rate` 为表现派生列）、账号/车辆 ID 走响应行结构化
+  身份字段、总 Rating 固定列元数据、七维度 max、leagueMode 显式标记
   （唯一事实源，league=null 不改变模式）、failures/duplicates/conflicts。
 - 前端：普通模式不显示 Rating UI、League 显示战队 Rating/MVP/新列、混合错误、固定列、
   ColumnPicker 控制维度、普通/League 偏好隔离、sticky 列、队名编辑即时更新、重复徽标、
@@ -290,7 +297,7 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   **自定义 Radar（默认七维/自定义/重排/持久化/非法偏好 fallback/缺失轴 --）**、
   批次只汇总不排名、手机/平板/桌面滚动无覆盖。
 - 导出：普通 Excel 不回归、League Excel 含总分/七维度/MVP/战队分/队名覆盖、
-  **含单场 contribution/kast/impact**、XLSX 完整字段不受 ColumnPicker 影响、PNG 当前视图
+  XLSX 导出当前 canonical 字段集（不受 ColumnPicker 影响，已退役指标不导出）、PNG 当前视图
   列/顺序/排序导出、sticky 不覆盖、超宽不裁切、深浅主题、canvas 限制安全缩放。
 
 ## Build-to-Learn（设计决策）
@@ -312,10 +319,11 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 5. **为什么占点字段不参与 Rating**：`victoryPointsEarned/Seized` 是逐人结算统计，
    不包含实时点数广播/胜负阈值信息（protocol.md 证明实时点数走事件流 wrapper=13），
    且其精确定义（是否含被动占点增长/击杀夺分）尚未证明；把结算值合成进个人评分属于
-   过度推断。2026-08 起两个字段仅作为客观统计展示（获取点数 / 获取点数/场），
-   **不进入任何 Rating 维度**。
-6. **为什么 League 与普通回放必须使用模式化列契约**：两种模式都保留 contribution/kast/impact
-   （它们是 Replay Performance Metrics，不属于 League Rating）；League 模式**新增** Rating
+   过度推断。2026-08 起该类字段仅作为客观统计展示，**不进入任何 Rating 维度**；
+   B6 之后只有 `victory_points_earned` 仍作为展示列（`victory_points_seized` 列已退役，
+   结算事实仍在 `PlayerResult` 内部保留供 AI 事实与归属校验使用）。
+6. **为什么 League 与普通回放必须使用模式化列契约**：两种模式共用同一 canonical Replay 列集
+   （已退役的表现派生指标不在其中）；League 模式**新增** Rating
    维度列（league_*），且只有「玩家 + 总 Rating」固定。若不模式化，两种模式会互相污染列配置
    （ColumnPicker 偏好、Excel 表头、PNG），且用户会把「伤害」与「伤害评分」混淆。模式化后：
    API 按模式返回列集合、前端按模式隔离 storage scope、导出按模式选择 writer。
@@ -396,7 +404,8 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
   稳定兜底。Tankopedia 对未知 ID 返回的 `#<tankId>` 占位名视作「无可靠名称」——不参与排序、
   不伪造坦克；若全部最大次数候选均无可靠名称则返回 null。不使用最近出场时间 / Rating /
   胜率 / 伤害打破平局，也不退回使用次数较少的坦克。
-- **Battle**：直接显示该场玩家行的 `tank_id` / `tank_name`（来源 `PlayerResult.tankId`），
+- **Battle**：直接显示该场玩家行的 `tank_name` 列与结构化 `vehicleId`
+  （来源 `PlayerResult.tankId`；B6 后 `tank_id` 不再是列），
   不执行统计、不显示无意义的 `1 场 · 100%`。
 - **数据流**：Core 聚合器在 rated-only 循环中把 `(tankId, 场次)` 直方图累计进
   `PlayerLeagueSummary.vehicleUsage`（`List<PlayerVehicleUsage>`，只有 tankId + battles，

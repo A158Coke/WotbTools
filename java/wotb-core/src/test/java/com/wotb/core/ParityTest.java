@@ -168,7 +168,7 @@ class ParityTest {
         assertEquals(files.size() - uniqueArenas.size() + 1, c.duplicates.size(), "重复数");
         assertEquals(0, c.failures.size());
 
-        final var agg = Aggregator.aggregate(c.battles, Tankopedia.load());
+        final var agg = Aggregator.aggregate(c.battles);
         assertFalse(agg.isEmpty());
         agg.values().forEach(a -> {
             assertTrue(a.battles >= 1 && a.battles <= c.battles.size());

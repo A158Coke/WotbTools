@@ -1,8 +1,8 @@
 package com.wotb.web.replay;
 
-import com.wotb.core.league.LeagueFailure;
-import com.wotb.core.league.LeagueRatingValidator;
-import com.wotb.core.league.LeagueReplays;
+import com.wotb.core.rating.LeagueFailure;
+import com.wotb.core.rating.LeagueRatingValidator;
+import com.wotb.core.rating.LeagueReplays;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;

@@ -3,7 +3,6 @@ package com.wotb.core.stats;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.ref.Tankopedia;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -19,7 +18,7 @@ class AggregatorTest {
         final Battle latestBattle = battle(200L, "   ");
 
         final Map<Long, Agg> aggregated = Aggregator.aggregate(
-                List.of(olderBattle, latestBattle), Tankopedia.load());
+                List.of(olderBattle, latestBattle));
 
         assertEquals("1", aggregated.get(1L).nickname);
     }

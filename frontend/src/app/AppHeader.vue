@@ -1,6 +1,7 @@
 <script setup>
 import { computed, inject } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuth } from '../composables/useAuth.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { isHomeHost, viewFromRoute } from './navigation.js'
@@ -8,7 +9,9 @@ import UserMenu from './UserMenu.vue'
 
 const route = useRoute()
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const activeView = computed(() => viewFromRoute(route))
+// admin-only 视图按角色放行（与 ViewHost 同一判定源）
+const { isAdmin } = useAuth()
+const activeView = computed(() => viewFromRoute(route, { allowAdminViews: isAdmin.value }))
 const showHome = isHomeHost(window.location.hostname)
 const showDevEnvironmentNotice = import.meta.env.DEV
 const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
@@ -23,6 +26,16 @@ const languageOptions = [
 function onLangChange(event) {
   localStorage.setItem('wotb-lang', event.target.value)
 }
+
+// Agent 数据平面顶端标签页（同 wotbagent 的顶部 tab 导航形态）。
+// 装甲查看器无顶层入口（wotbagent 同逻辑）：从坦克百科详情页进入。
+// feature flag：仅 wotbtools-admin 可见（ADMIN_ONLY_VIEWS 同集合）。
+const AGENT_TABS = [
+  { view: 'agent-replay', key: 'agentNav.replay' },
+  { view: 'agent-tankopedia', key: 'agentNav.tanks' },
+  { view: 'agent-shots', key: 'agentNav.shots' },
+]
+const agentTabs = computed(() => (isAdmin.value ? AGENT_TABS : []))
 </script>
 
 <template>
@@ -34,6 +47,12 @@ function onLangChange(event) {
       <button v-if="showHome" :class="{ active: activeView === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
       <button :class="{ active: ['replay', 'ai-review', 'battle-playback'].includes(activeView) }" @click="navigate('replay')">{{ $t('home.replayParse') }}</button>
       <button :class="{ active: activeView === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
+      <button
+        v-for="tab in agentTabs" :key="tab.view"
+        class="agent-tab" :class="{ active: activeView === tab.view }"
+        :data-testid="'nav-' + tab.view"
+        @click="navigate(tab.view)"
+      >{{ $t(tab.key) }}</button>
     </nav>
     <span
       v-if="showDevEnvironmentNotice"

@@ -32,9 +32,8 @@ function makeCols() {
   return [
     { key: 'nickname', num: false },
     { key: 'damage_dealt', num: true },
-    { key: 'contribution', num: true },
-    { key: 'kast', num: true },
-    { key: 'impact', num: true }
+    { key: 'hit_rate', num: true },
+    { key: 'pen_rate', num: true }
   ]
 }
 
@@ -45,26 +44,23 @@ function mountTable(battle, cols) {
   })
 }
 
-describe('BattleTable derived metrics', () => {
-  it('renders contribution/kast/impact columns with % formatting (no performance tab needed)', () => {
+describe('BattleTable columns', () => {
+  it('B6：已退役的 contribution/kast/impact 不再被 % 特殊化（列层已移除）', () => {
+    // 回归锁：即使旧 wire 数据里残留这些 key，组件也不得再有派生 % 展示
     const wrapper = mountTable(makeBattle([
-      { team: 1, cells: { nickname: 'A', damage_dealt: 3000, contribution: 22.4, kast: 100, impact: 151.2 } }
-    ]), makeCols())
+      { team: 1, accountId: 1001, vehicleId: 7169, cells: { nickname: 'A', damage_dealt: 3000, contribution: 22.4, kast: 100, impact: 151.2 } }
+    ]), [
+      { key: 'nickname', num: false },
+      { key: 'contribution', num: true },
+      { key: 'kast', num: true },
+      { key: 'impact', num: true }
+    ])
 
     const text = wrapper.text()
-    expect(text).toContain('22.4%')
-    expect(text).toContain('100%')
-    expect(text).toContain('151.2%')
-  })
-
-  it('renders -- for null metrics (HP unknown, not fake 0)', () => {
-    const wrapper = mountTable(makeBattle([
-      { team: 1, cells: { nickname: 'A', damage_dealt: 3000, contribution: null, kast: null, impact: 120.5 } }
-    ]), makeCols())
-
-    const text = wrapper.text()
-    expect(text).toContain('--')
-    expect(text).toContain('120.5%')
+    expect(text).not.toContain('22.4%')
+    expect(text).not.toContain('151.2%')
+    // 列值按原始值渲染（不再有派生 % 展示）
+    expect(text).toContain('22.4')
   })
 
   it('renders hit_rate/pen_rate raw percentages; null (no shots/no hits) shows -- not 0', () => {
@@ -75,11 +71,11 @@ describe('BattleTable derived metrics', () => {
     ]
     const wrapper = mountTable(makeBattle([
       // shots=10 hits=5 pens=4 → 命中率 50，击穿率 80
-      { team: 1, cells: { nickname: 'A', hit_rate: 50, pen_rate: 80 } },
+      { team: 1, accountId: 1, vehicleId: 1, cells: { nickname: 'A', hit_rate: 50, pen_rate: 80 } },
       // shots=0 → 无射击 → null（unavailable，显示 --，禁止 0/0 伪装 0%）
-      { team: 1, cells: { nickname: 'B', hit_rate: null, pen_rate: null } },
+      { team: 1, accountId: 2, vehicleId: 2, cells: { nickname: 'B', hit_rate: null, pen_rate: null } },
       // shots=10 hits=0 → 命中率 0（合法），击穿率 null
-      { team: 1, cells: { nickname: 'C', hit_rate: 0, pen_rate: null } }
+      { team: 1, accountId: 3, vehicleId: 3, cells: { nickname: 'C', hit_rate: 0, pen_rate: null } }
     ]), cols)
 
     const text = wrapper.text()
@@ -89,23 +85,23 @@ describe('BattleTable derived metrics', () => {
     expect((text.match(/--/g) || []).length).toBeGreaterThanOrEqual(2)
   })
 
-  it('sorts contribution numerically (not lexicographically)', async () => {
+  it('sorts hit_rate numerically (not lexicographically)', async () => {
     const wrapper = mountTable(makeBattle([
-      { team: 1, cells: { nickname: 'A', damage_dealt: 3000, contribution: 100, kast: 100, impact: 200 } },
-      { team: 1, cells: { nickname: 'B', damage_dealt: 2000, contribution: 9, kast: 50, impact: 80 } },
-      { team: 1, cells: { nickname: 'C', damage_dealt: 1000, contribution: 21, kast: 60, impact: 90 } }
+      { team: 1, accountId: 1, vehicleId: 1, cells: { nickname: 'A', damage_dealt: 3000, hit_rate: 100 } },
+      { team: 1, accountId: 2, vehicleId: 2, cells: { nickname: 'B', damage_dealt: 2000, hit_rate: 9 } },
+      { team: 1, accountId: 3, vehicleId: 3, cells: { nickname: 'C', damage_dealt: 1000, hit_rate: 21 } }
     ]), makeCols())
 
-    // click contribution header -> ascending numeric
-    const th = wrapper.findAll('th').find(t => t.text().includes('contribution'))
+    // click hit_rate header -> ascending numeric
+    const th = wrapper.findAll('th').find(t => t.text().includes('hit_rate'))
     await th.trigger('click')
     let firstCols = wrapper.findAll('tbody tr').at(0).findAll('td')
-    expect(firstCols.at(2).text()).toBe('9%')
+    expect(firstCols.at(2).text()).toBe('9')
 
     // click again -> descending
     await th.trigger('click')
     firstCols = wrapper.findAll('tbody tr').at(0).findAll('td')
-    expect(firstCols.at(2).text()).toBe('100%')
+    expect(firstCols.at(2).text()).toBe('100')
   })
 })
 
@@ -118,8 +114,8 @@ function makeLeagueBattle() {
     durationS: 300,
     winnerTeam: 1,
     players: [
-      { team: 1, cells: { nickname: 'A', account_id: 1001, league_rating: 927.4, league_damage_score: 342.1, damage_dealt: 3000 } },
-      { team: 2, cells: { nickname: 'B', account_id: 2001, league_rating: 812.6, league_damage_score: 250.2, damage_dealt: 2500 } }
+      { team: 1, accountId: 1001, vehicleId: 7169, cells: { nickname: 'A', league_rating: 927.4, league_damage_score: 342.1, damage_dealt: 3000 } },
+      { team: 2, accountId: 2001, vehicleId: 10785, cells: { nickname: 'B', league_rating: 812.6, league_damage_score: 250.2, damage_dealt: 2500 } }
     ],
     league: {
       mvpNickname: 'A', mvpAccountId: 1001,
@@ -193,8 +189,8 @@ describe('BattleTable League Rating', () => {
   it('raw league_rating=927.4/927.8 → 展示保留 1 位小数，排序用 raw 值（回归）', async () => {
     const battle = makeLeagueBattle()
     battle.players = [
-      { team: 1, cells: { nickname: 'A', account_id: 1001, league_rating: 927.4, league_damage_score: 342.1, damage_dealt: 3000 } },
-      { team: 1, cells: { nickname: 'B', account_id: 1002, league_rating: 927.8, league_damage_score: 350.2, damage_dealt: 3100 } },
+      { team: 1, accountId: 1001, vehicleId: 7169, cells: { nickname: 'A', league_rating: 927.4, league_damage_score: 342.1, damage_dealt: 3000 } },
+      { team: 1, accountId: 1002, vehicleId: 10785, cells: { nickname: 'B', league_rating: 927.8, league_damage_score: 350.2, damage_dealt: 3100 } },
     ]
     const wrapper = mountLeague(battle, leagueCols())
     // 展示保留 1 位小数，不显示更多后端精度或百分比
@@ -336,7 +332,7 @@ describe('BattleTable League Rating', () => {
 
   it('does not emit select-player in standard (non-league) mode', async () => {
     const wrapper = mountTable(makeBattle([
-      { team: 1, cells: { nickname: 'A', damage_dealt: 3000, contribution: 22.4, kast: 100, impact: 151.2 } }
+      { team: 1, accountId: 1001, vehicleId: 7169, cells: { nickname: 'A', damage_dealt: 3000, hit_rate: 50 } }
     ]), makeCols())
     await wrapper.find('tbody tr').trigger('click')
     expect(wrapper.emitted('select-player')).toBeUndefined()
@@ -430,7 +426,7 @@ describe('BattleTable selected row highlight', () => {
 
   it('Standard（非 leagueMode）→ 即使传 props 也不 highlight', () => {
     const battle = makeBattle([
-      { team: 1, cells: { nickname: 'A', account_id: 1001, damage_dealt: 3000 } },
+      { team: 1, accountId: 1001, vehicleId: 7169, cells: { nickname: 'A', damage_dealt: 3000 } },
     ])
     battle.arenaId = '111'
     const wrapper = mount(BattleTable, {

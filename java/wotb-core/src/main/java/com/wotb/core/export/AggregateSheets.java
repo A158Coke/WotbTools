@@ -5,6 +5,8 @@ import com.wotb.core.Columns;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.PlayerVehicleUsage;
+import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.MapNames;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.Aggregator;
@@ -45,7 +47,7 @@ final class AggregateSheets {
             Map.entry("wins", new SummaryPresentation("胜场", 6)),
             Map.entry("win_rate", new SummaryPresentation("胜率%", 8)),
             Map.entry("survival_rate", new SummaryPresentation("存活率%", 9)),
-            Map.entry("survival_avg", new SummaryPresentation("平均存活时间", 12)),
+            Map.entry("survival_time_avg", new SummaryPresentation("平均存活时间", 12)),
             Map.entry("kills", new SummaryPresentation("总击杀", 7)),
             Map.entry("kills_avg", new SummaryPresentation("场均击杀", 7)),
             Map.entry("damage", new SummaryPresentation("总伤害", 9)),
@@ -61,14 +63,9 @@ final class AggregateSheets {
             Map.entry("pens", new SummaryPresentation("总击穿次数", 8)),
             Map.entry("enemies_damaged_avg", new SummaryPresentation("场均击伤", 9)),
             Map.entry("tanks", new SummaryPresentation("用车", 30)),
-            Map.entry("account_id", new SummaryPresentation("账号ID", 12)),
             Map.entry("earned_total", new SummaryPresentation("获取点数总计", 10)),
             Map.entry("earned_avg", new SummaryPresentation("获取点数/场", 9)),
-            Map.entry("contribution", new SummaryPresentation("贡献度%", 9)),
-            Map.entry("kast", new SummaryPresentation("KAST%", 8)),
-            Map.entry("impact", new SummaryPresentation("Impact%", 9)),
-            Map.entry("multi_damage_rate", new SummaryPresentation("多伤率%", 9)),
-            Map.entry("traded_deaths", new SummaryPresentation("互换击杀", 8))
+            Map.entry("multi_damage_rate", new SummaryPresentation("多伤率%", 9))
     );
 
     /** 表现派生列 key 集合（canonical 成员资格单一来源）。 */
@@ -111,23 +108,23 @@ final class AggregateSheets {
      */
     static void write(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
                       final List<String[]> duplicates, final Tankopedia tp, final String sheetPrefix) {
-        final Map<Long, Agg> agg = Aggregator.aggregate(battles, tp);
+        final Map<Long, Agg> agg = Aggregator.aggregate(battles);
         final Map<Long, PerformanceMetricsCalculator.Row> perfById = new HashMap<>();
         for (final PerformanceMetricsCalculator.Row row : PerformanceMetricsCalculator.compute(battles)) {
             perfById.put(row.accountId, row);
         }
-        summary(styles, agg, perfById, sheetPrefix);
+        summary(styles, agg, perfById, tp, sheetPrefix);
         detail(styles, battles, sourceNames, tp, sheetPrefix);
         battleList(styles, battles, sourceNames, duplicates, sheetPrefix);
     }
 
     private static void summary(final ExcelStyles styles, final Map<Long, Agg> aggMap,
                                 final Map<Long, PerformanceMetricsCalculator.Row> perfById,
-                                final String sheetPrefix) {
+                                final Tankopedia tp, final String sheetPrefix) {
         final Sheet ws = styles.workbook().createSheet(sheetPrefix + "汇总");
         // 与 API Mapper.toAggregate 同一 canonical 契约（AggregateColumns getter 单一事实源）：
-        //   contribution/kast/多伤率 依赖 HP（hpEligible=false 时 unavailable → null = Excel 空单元格）
-        //   impact/tradedDeaths 不依赖 HP（仅要求该账号存在 performance row）
+        //   多伤率依赖 HP（hpEligible=false 时 unavailable → null = Excel 空单元格）
+        //   tanks 为结构化 vehicle usage（名称在展示层用 Tankopedia 解析）
         styles.writeHeader(ws, SUMMARY_KEYS.stream()
                 .map(k -> new String[]{SUMMARY_PRESENTATION.get(k).title(),
                         String.valueOf(SUMMARY_PRESENTATION.get(k).width())}).toList());
@@ -137,7 +134,7 @@ final class AggregateSheets {
         for (final Agg a : rows) {
             final Row row = ws.createRow(rIdx++);
             for (int c = 0; c < SUMMARY_KEYS.size(); c++) {
-                styles.setCell(row.createCell(c), summaryValue(SUMMARY_KEYS.get(c), a, perfById),
+                styles.setCell(row.createCell(c), summaryValue(SUMMARY_KEYS.get(c), a, perfById, tp),
                         styles.plain(), c < 2 ? "nickname" : "x");
             }
         }
@@ -145,11 +142,16 @@ final class AggregateSheets {
         ws.setAutoFilter(new CellRangeAddress(0, rows.size(), 0, SUMMARY_KEYS.size() - 1));
     }
 
-    /** 汇总单元格取值：canonical getter 单一来源；仅「平均存活时间」做 Excel duration 展示格式化。 */
+    /** 汇总单元格取值：canonical getter 单一来源；仅「平均存活时间」做 Excel duration 展示格式化，
+     *  「用车」由结构化 vehicle usage 在展示层解析车辆名称。 */
     private static Object summaryValue(final String key, final Agg a,
-                                       final Map<Long, PerformanceMetricsCalculator.Row> perfById) {
-        if (key.equals("survival_avg")) {
+                                       final Map<Long, PerformanceMetricsCalculator.Row> perfById,
+                                       final Tankopedia tp) {
+        if (key.equals("survival_time_avg")) {
             return ExcelStyles.duration((Double) AggregateColumns.core(key).get().apply(a));
+        }
+        if (key.equals("tanks")) {
+            return vehicleUsageText(a.vehicleUsage(), tp);
         }
         if (PERF_KEYS.contains(key)) {
             final PerformanceMetricsCalculator.Row row = perfById.get(a.accountId);
@@ -158,10 +160,25 @@ final class AggregateSheets {
         return AggregateColumns.core(key).get().apply(a);
     }
 
+    /** 结构化用车统计 → Excel 展示文本（名称属 Tank Knowledge，由展示层解析；未知 ID 显式退化）。 */
+    private static String vehicleUsageText(final List<PlayerVehicleUsage> usage, final Tankopedia tp) {
+        final StringBuilder sb = new StringBuilder();
+        for (final PlayerVehicleUsage u : usage) {
+            if (!sb.isEmpty()) {
+                sb.append(", ");
+            }
+            final TankInfo info = tp == null ? null : tp.info(u.tankId());
+            final String name = info == null ? null : info.name();
+            final String label = name == null || name.isBlank() ? "#" + u.tankId() : name;
+            sb.append(u.battles() > 1 ? label + "×" + u.battles() : label);
+        }
+        return sb.toString();
+    }
+
     /**
      * Replay 明细：battle context（文件名 / 竞技场ID / 日期 / 地图 / 胜负）+
-     * 完整 canonical {@link Columns#PLAYER}（玩家/战队/车辆/等级/类型/国家/炮伤/单场 stats/
-     * 被命中/被击穿/击伤/排/军阶/车辆ID/账号ID——单一 schema 源，不复制字段列表）。
+     * 完整 canonical {@link Columns#PLAYER}（玩家/战队/车辆/等级/类型/国家/单场 stats/
+     * 被命中/被击穿/击伤/存活时间/军阶——单一 schema 源，不复制字段列表）。
      *
      * <p>（PR147：field2 为 prebattle/training-room 分组 ID，非排/小队；A/B/C 排标签已删除。）
      * 映射只在该场有效，不同 replay 的排号重新从 A 开始（排号不是跨场身份）。</p>

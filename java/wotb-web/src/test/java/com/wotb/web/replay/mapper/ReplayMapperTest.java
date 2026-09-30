@@ -1,9 +1,9 @@
 package com.wotb.web.replay.mapper;
 
-import com.wotb.core.league.PlayerVehicleUsage;
-import com.wotb.core.league.LeagueRatingBatch;
-import com.wotb.core.league.PlayerLeagueSummary;
-import com.wotb.core.league.TeamLeagueSummary;
+import com.wotb.core.model.PlayerVehicleUsage;
+import com.wotb.core.rating.LeagueRatingBatch;
+import com.wotb.core.rating.PlayerLeagueSummary;
+import com.wotb.core.rating.TeamLeagueSummary;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -12,6 +12,7 @@ import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.LeagueVehicleUsageDto;
+import com.wotb.web.replay.dto.PlayerRow;
 import com.wotb.web.replay.dto.PreviewResponse;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +22,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -77,8 +79,8 @@ class ReplayMapperTest {
 
         final Map<Long, Map<String, Object>> cellsByAccount = dto.players().stream()
                 .collect(Collectors.toMap(
-                        row -> ((Number) row.cells().get("account_id")).longValue(),
-                        row -> row.cells()));
+                        PlayerRow::accountId,
+                        PlayerRow::cells));
         assertEquals("HEAVY_TANK", cellsByAccount.get(1L).get("tank_type"));
         assertEquals("EUROPE", cellsByAccount.get(1L).get("tank_nation"));
         assertEquals("LIGHT_TANK", cellsByAccount.get(2L).get("tank_type"));
@@ -86,7 +88,7 @@ class ReplayMapperTest {
     }
 
     @Test
-    void battleCellsIncludeContributionKastImpactAfterPopulate() {
+    void battleCellsOmitRetiredPerformanceAndIdentityColumns() {
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
         final List<PlayerResult> players = new java.util.ArrayList<>();
@@ -104,21 +106,22 @@ class ReplayMapperTest {
 
         final BattleDto dto = Mapper.toBattle(battle, "sample.wotbreplay", Tankopedia.load());
 
-        final Map<String, Object> firstCells = dto.players().stream()
-                .filter(row -> ((Number) row.cells().get("account_id")).longValue() == 1L)
-                .findFirst().orElseThrow().cells();
-        assertTrue(firstCells.containsKey("contribution"));
-        assertTrue(firstCells.containsKey("kast"));
-        assertTrue(firstCells.containsKey("impact"));
-        assertNotNull(firstCells.get("impact"), "HP 已知场 impact 应有值");
-        assertNotNull(firstCells.get("contribution"), "HP 已知场 contribution 应有值");
-        // 与跨场聚合（单场）同一事实源：impact/contribution/kast 数值一致
-        final PerformanceMetricsCalculator.Row aggregate = PerformanceMetricsCalculator.compute(List.of(battle)).stream()
-                .filter(r -> r.accountId == 1L)
+        final PlayerRow firstRow = dto.players().stream()
+                .filter(row -> row.accountId() == 1L)
                 .findFirst().orElseThrow();
-        assertEquals(aggregate.impactValue, ((Number) firstCells.get("impact")).doubleValue(), 0.01);
-        assertEquals(aggregate.contribution, ((Number) firstCells.get("contribution")).doubleValue(), 0.01);
-        assertEquals(aggregate.kast, ((Number) firstCells.get("kast")).doubleValue(), 0.01);
+        final Map<String, Object> firstCells = firstRow.cells();
+        // B6：contribution/kast/impact 已退役；身份（account_id/tank_id）不再占用公共列。
+        // populateBattle 仍会回填 PlayerResult 派生值，但 Mapper 的 canonical 列宇宙不得再输出它们。
+        for (final String retired : List.of("contribution", "kast", "impact", "traded_deaths",
+                "account_id", "tank_id", "alpha_damage")) {
+            assertFalse(firstCells.containsKey(retired), "单场单元格不得再含已退役列：" + retired);
+        }
+        // 身份能力不丢失：改由结构化行字段承载（供行选中 / join / 车辆详情）
+        assertEquals(1L, firstRow.accountId());
+        assertEquals(4481L, firstRow.vehicleId());
+        assertEquals(1, firstRow.team());
+        // 保留列仍与 authoritative fact 同源（列宇宙收缩不得影响保留列）
+        assertEquals(2600.0, ((Number) firstCells.get("damage_dealt")).doubleValue());
     }
 
     @Test
@@ -153,13 +156,14 @@ class ReplayMapperTest {
         final List<AggRow> rows = Mapper.toAggregate(agg, perfById);
 
         final AggRow first = rows.getFirst();
-        assertTrue(first.cells().containsKey("contribution"));
-        assertTrue(first.cells().containsKey("kast"));
-        assertTrue(first.cells().containsKey("impact"));
         assertTrue(first.cells().containsKey("multi_damage_rate"));
-        assertTrue(first.cells().containsKey("traded_deaths"));
-        assertNotNull(first.cells().get("impact"));
-        assertNotNull(first.cells().get("contribution"));
+        // B6：contribution/kast/impact/traded_deaths 已退役；account_id 改为结构化行字段
+        for (final String retired : List.of("contribution", "kast", "impact", "traded_deaths", "account_id")) {
+            assertFalse(first.cells().containsKey(retired), "汇总单元格不得再含已退役列：" + retired);
+        }
+        assertNotNull(first.cells().get("multi_damage_rate"));
+        // accountId 是结构化行字段（不再是 account_id 单元格）：必须能 join 回聚合输入
+        assertTrue(agg.containsKey(first.accountId()), "汇总行必须携带可 join 的结构化 accountId");
     }
 
     @Test
@@ -185,12 +189,12 @@ class ReplayMapperTest {
 
         final List<AggRow> rows = Mapper.toAggregate(agg, perfById);
 
-        // HP 全 UNKNOWN → contribution/kast/多伤率 unavailable（null），impact 仍有值
+        // HP 全 UNKNOWN → 多伤率 unavailable（null）；已退役的 contribution/kast 不得回魂
         final Map<String, Object> cells = rows.getFirst().cells();
-        assertEquals(null, cells.get("contribution"));
-        assertEquals(null, cells.get("kast"));
         assertEquals(null, cells.get("multi_damage_rate"));
-        assertNotNull(cells.get("impact"));
+        assertFalse(cells.containsKey("contribution"));
+        assertFalse(cells.containsKey("kast"));
+        assertFalse(cells.containsKey("impact"));
     }
 
     @Test

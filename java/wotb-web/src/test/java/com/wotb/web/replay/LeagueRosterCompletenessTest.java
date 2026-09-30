@@ -1,11 +1,11 @@
 package com.wotb.web.replay;
 
-import com.wotb.core.league.LeagueRatingCalculator;
-import com.wotb.core.league.LeagueRatingMode;
-import com.wotb.core.league.LeagueRatingResult;
-import com.wotb.core.league.LeagueRatingValidator;
-import com.wotb.core.league.LeagueReplays;
-import com.wotb.core.league.PlayerLeagueRating;
+import com.wotb.core.rating.LeagueRatingCalculator;
+import com.wotb.core.rating.LeagueRatingMode;
+import com.wotb.core.rating.LeagueRatingResult;
+import com.wotb.core.rating.LeagueRatingValidator;
+import com.wotb.core.rating.LeagueReplays;
+import com.wotb.core.rating.PlayerLeagueRating;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.PickleReader;
