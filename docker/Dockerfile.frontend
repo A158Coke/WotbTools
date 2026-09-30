@@ -25,6 +25,12 @@ RUN npm run build
 # 必须已随构建进 dist——3D 回放/装甲查看器/射击复现的运行前提。缺失时 fail-fast，
 # 而不是发布一个页面打开即 "Failed to fetch dynamically imported module" 的镜像。
 RUN node -e 'const fs=require("fs");const js="/app/dist/wasm/wotb_replay_wasm.js";const bin="/app/dist/wasm/wotb_replay_wasm_bg.wasm";for(const f of [js,bin]){if(!fs.existsSync(f))throw new Error("agent wasm artifact missing from dist: "+f);if(!fs.statSync(f).size)throw new Error("agent wasm artifact empty: "+f)}if(fs.readFileSync(bin).subarray(0,4).toString("hex")!=="0061736d")throw new Error("wotb_replay_wasm_bg.wasm lacks wasm magic");console.log("agent wasm artifacts present in dist")'
+# 构建后断言：资产 origin 确实写进了 bundle。防"变量设了却未生效"的静默失败——
+# ENV 名 / Vite 前缀（VITE_）/ 代码读取名（import.meta.env.VITE_ASSET_BASE_URL）三者
+# 任一处漂移，都会得到"WORKFLOW 绿、线上仍提示未配置"的假成功。
+# 留空只警告（CI 的 Validate production asset origin 步骤已对生产 fail-closed）；
+# 非空则必须能在产物中找到，否则 fail。
+RUN node -e 'const fs=require("fs"),path=require("path");const v=(process.env.VITE_ASSET_BASE_URL||"").trim();if(!v){console.warn("VITE_ASSET_BASE_URL is empty: building an image without an asset origin (3D assets will be unavailable)");process.exit(0)}const dir="/app/dist/assets";const hit=fs.readdirSync(dir).filter(f=>f.endsWith(".js")).some(f=>fs.readFileSync(path.join(dir,f),"utf8").includes(v));if(!hit)throw new Error("asset origin was not baked into the built bundle: "+v);console.log("asset origin baked into bundle: "+v)'
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
