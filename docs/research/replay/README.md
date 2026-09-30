@@ -5,7 +5,7 @@
 > Base scope: Blitz `11.19.0_china` / `11.19.0_china_apple`.
 >
 > Focused newer-version controls are documented separately; currently this includes
-> the 11.20 China Apple Assault single-base closure in `assault-base-state.md`.
+> the 11.20 China Apple Assault full-capture / no-capture single-base controls in `assault-base-state.md`.
 >
 > Base canonical corpus: 34 unique arenas / 476 settled players.
 >

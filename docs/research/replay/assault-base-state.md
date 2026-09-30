@@ -2,8 +2,8 @@
 
 > Status: controlled protocol closure for the realtime capture-progress surface.
 >
-> Scope: controlled Blitz `11.20.0_china_apple` Assault replay on `neptune`
-> (`攻防.wotbreplay`), where team 1 captured the single base to 100 and won.
+> Scope: two controlled Blitz `11.20.0_china_apple` Assault replays:
+> `攻防.wotbreplay` on Neptune (full capture), and `攻防2.wotbreplay` on Malinovka (no capture).
 >
 > This document separates closed protocol facts from still-unknown wrapper8 fields.
 > Unknown fields remain raw-preserved and must not be assigned attacker/defender/team
@@ -79,6 +79,29 @@ sample, but one positive sample is not enough to promote the enum name globally.
 It remains a strong candidate and stays `UNKNOWN` in production `RoundFinishedEvent`
 until an independent control confirms it.
 
+## No-capture controlled sample / 无占领对照
+
+`攻防2.wotbreplay`: version `11.20.0_china_apple`, map `malinovka`,
+`arenaBonusType=2`, battle duration approximately 14.15s. Around raw clock
+9.889s, wrapper8/root8 emits these initialization children:
+
+```text
+field1=2, field2=1  // field3 absent
+field1=1, field2=1  // field3 absent
+```
+
+No field3 capture-progress sequence is emitted. Together with the full-capture
+control this closes **objective existence independently of capture activity** for
+these controlled samples. Initialization is objective-family evidence, not a
+progress=0 broadcast. `arenaBonusType=2` indicates a training room and never
+identifies Assault. The progress domain and field4 team semantics are unchanged.
+
+The shared reconstructor exposes `hasObjective(events)`: exact raw wrapper8
+field1=2 / field2=1 proves the objective family even when rawField3 is absent;
+independently decoded Supremacy wrapper12 suppresses Assault identification.
+The projector writes `assaultObjectivePresent=true` separately from `baseStates`.
+With no field3, `baseStates=[]` remains correct: no synthetic progress event.
+
 ## Sibling wrapper8 family
 
 The same capture window repeatedly contains:
@@ -128,7 +151,7 @@ the outer decoder preserves the packet as unknown when no recognized event was
 decoded. This does not imply a separate raw diagnostic for every rejected child
 of a mixed packet.
 
-Canonical promotion requires **all** of:
+Capture-progress promotion requires **all** of:
 
 1. Valid subtype48 envelope, wrapper8 and root field8 child framing.
 2. `rawField1 == 2` and `rawField2 == 1`.
@@ -150,7 +173,7 @@ These bytes illustrate **nested children**, not complete captured packets:
 08 02 10 01 18 01  → field1=2, field2=1, field3=1   → canonical progress 1
 08 02 10 01 18 64  → field1=2, field2=1, field3=100 → canonical progress 100
 08 02 10 01 18 00  → explicit field3=0             → canonical progress 0
-08 02 10 01        → absent field3                 → raw-only; no synthetic zero
+08 02 10 01        → absent field3                 → objective present; no progress transition
 08 01 10 01 20 01  → field1=1, field2=1, field4=1   → raw-only; team UNKNOWN
 08 02 10 01 18 65  → field3=101                    → raw-only; reconstruction rejects progress
 08 01 10 01 18 AC 02 → sibling field3=300           → raw-only; no progress domain applied
@@ -162,6 +185,7 @@ These bytes illustrate **nested children**, not complete captured packets:
 | Canonical/wire field | Source / rule |
 |---|---|
 | `sequence`, `timestamp`, `packetType`, `confidence` | Preserved from the decoded packet; structural exactness does not prove unknown field semantics |
+| `assaultObjectivePresent` | Shared wrapper8 initialization-family gate; independent of rawField3 presence and arenaBonusType |
 | `baseStates[].timeSec` | Existing projector battle-relative clock: raw clock minus resolved battle start |
 | `baseStates[].baseId` | Literal `BASE` for Assault; no breaking rename of `baseStates` |
 | `baseStates[].captureProgress` | Explicit decoded field3, unchanged; 100 is accepted |
@@ -233,23 +257,34 @@ capturing side. Its exact scene meaning remains unresolved.
 
 ## Authoritative geometry boundary
 
-This PR preserves the existing global map generator contract and restores
-`mapBases.js` to its base-branch generated artifact. No corpus-wide variant
-filtering or manual generated-geometry edits are shipped without real Maps input.
+The global map generator contract and base-branch `mapBases.js` remain unchanged.
+2D resolves Assault geometry generically by `mapCode` from the existing
+`common/map-semantics/*.semantic.json` corpus. A verified document must supply a
+unique `sceneEvidence.battlePoints` controlpoint with `confidence=EXACT_SCENE_DATA`.
+No map name is special-cased and coordinates are not copied to another data file.
+Docker copies the semantic corpus into `/common/map-semantics` before Vite build.
 
-For 2D Neptune, the verified `common/map-semantics/33_neptune_nt.semantic.json`
-(`verified=true`, `battleVariant=nt0`) is the geometry authority. The consumer reads
-its unique `sceneEvidence.battlePoints` entry with `type=controlpoint` and
-`confidence=EXACT_SCENE_DATA`, using its X/Y directly. It does not copy coordinates
-into a second data file or treat static team metadata as runtime ownership.
-The semantic entry supplies no radius, so the existing presentation fallback applies.
-Ambiguous geometry is not resolved by taking the first entry; canonical HUD state
-remains available. Other maps retain the existing generated geometry path.
+The rendering join is:
+
+```text
+assaultObjectivePresent=true
+  → semantic controlpoint for mapCode (static BASE geometry)
+  LEFT JOIN latest baseStates[baseId=BASE, timeSec<=currentTime]
+  → circle always; progress/fill only if an explicit runtime value exists
+```
+
+`assaultObjectivePresent` is additive and optional for old artifacts; missing or
+false means no proven Assault objective, never inferred from progress, static
+geometry, or training-room metadata. Malinovka initialization with no progress
+renders the static circle without fill. Neptune follows the same path and joins
+its 0..100 progress. Ambiguous/missing semantic geometry does not select the first
+candidate. Static scene team metadata never establishes runtime ownership;
+missing radius uses the presentation fallback.
 
 ## Evidence grade
 
 ```text
-wrapper8 / root field8 Assault family        PROVEN controlled sample
+wrapper8 init / objective existence          PROVEN two controlled samples
 field1=2 + field2=1 + field3 progress        PROVEN controlled sample
 progress reaches protocol value 100          PROVEN controlled sample
 field1=1 + field2=1 + field4=1 semantics     UNKNOWN / strong correlation only
@@ -267,4 +302,6 @@ Production support must retain tests for:
 4. transport `baseId=BASE` and `captureProgress<=100`;
 5. frontend single-base rendering at 100;
 6. no guessed capturing-team/ownership semantics;
-7. 2D Neptune joins the verified semantic controlpoint; global generated geometry is unchanged.
+7. generic semantic geometry for Malinovka no-progress and Neptune full-capture;
+8. initialization projects objective presence with zero transitions; training-room metadata alone does not;
+9. global generated geometry unchanged, semantic corpus present in Docker build.

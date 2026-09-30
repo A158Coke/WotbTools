@@ -352,6 +352,22 @@ class EntityMethodDecoderTest {
     }
 
     @Test
+    void wrapper8InitializationPreservesObjectiveFamilyWithoutProgress() {
+        context.entityClassRegistry().markAvatar(0);
+        for (final byte kind : new byte[]{1, 2}) {
+            final byte[] child = new byte[]{0x08, kind, 0x10, 0x01};
+            final ReplayDecodeResult result = decoder.decode(context,
+                    rawPacket48(EntityMethodDecoder.WRAPPER_ASSAULT_BASE, fieldDelimited(8, child)));
+            final RawAssaultBaseUpdate raw = assertInstanceOf(RawAssaultBaseUpdate.class,
+                    result.events().getFirst());
+            assertEquals((int) kind, raw.rawField1());
+            assertEquals(1, raw.rawField2());
+            assertNull(raw.rawField3());
+            assertNull(raw.rawField4());
+        }
+    }
+
+    @Test
     void assaultDecoderAcceptsExplicitZeroAndOneButRejectsWrongRoot() {
         context.entityClassRegistry().markAvatar(0);
         for (final byte progress : new byte[]{0, 1}) {

@@ -96,6 +96,10 @@ public final class ReplayArtifactWriter {
             return;
         }
         object.remove("shots");
+        // Older artifacts have no independent Assault objective evidence.
+        if (!object.has("assaultObjectivePresent")) {
+            object.put("assaultObjectivePresent", false);
+        }
         final JsonNode capability = object.get("capability");
         if (capability != null && "UNAVAILABLE".equals(capability.asText())) {
             object.put("capability", object.path("limitations").isArray()

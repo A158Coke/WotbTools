@@ -38,6 +38,10 @@ vi.mock('../data/mapImages', () => ({
       src: 'neptune.png', width: 766, height: 769,
       coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
     },
+    malinovka: {
+      src: 'malinovka.png', width: 766, height: 769,
+      coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
+    },
     // 有底图但 mapBases 未收录几何——新地图上线到基地坐标补齐之间的真实状态。
     map_without_base_geometry: {
       src: 'no-bases.webp',
@@ -131,6 +135,7 @@ describe('Supremacy 基地 overlay', () => {
         ],
       }),
       mapCode: 'neptune',
+      assaultObjectivePresent: true,
     }
     const wrapper = await mountPlayback(overview, 20, dataset)
     await flushPromises()
@@ -152,6 +157,21 @@ describe('Supremacy 基地 overlay', () => {
     await flushPromises()
     expect(Number(rect.attributes('height'))).toBe(0)
     expect(wrapper.find('[data-test="pb-base-A"]').exists()).toBe(false)
+    await wrapper.setProps({ playbackV2: { ...dataset, assaultObjectivePresent: false } })
+    expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(0)
+  })
+
+  it('renders Malinovka Assault initialization without any capture transitions', async () => {
+    const dataset = { ...makePlaybackV2(), mapCode: 'malinovka', arenaBonusType: 2,
+      assaultObjectivePresent: true, baseStates: [], durationSec: 14.15 }
+    const wrapper = mountPlayback({ ...makeOverview(), mapCode: 'malinovka' }, null, dataset)
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(1)
+    expect(wrapper.find('[data-test="pb-base-BASE"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-base-fill"]').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'BattleMap' }).props('bases')[0].progress).toBeNull()
+    await wrapper.setProps({ playbackV2: { ...dataset, assaultObjectivePresent: false } })
+    expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(0)
   })
 
   // 非争霸战（baseStates 为空，或旧 producer 未发该字段）不得靠地图几何画出基地。

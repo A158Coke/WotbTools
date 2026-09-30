@@ -1871,6 +1871,10 @@ export default {
             "$ref": "#/$defs/PointsSample"
           }
         },
+        "assaultObjectivePresent": {
+          "type": "boolean",
+          "description": "Proven wrapper8 objective-family initialization, independent of capture progress. Missing on older artifacts means unknown (no static Assault objective rendering). Not derived from arenaBonusType."
+        },
         "baseStates": {
           "type": "array",
           "items": {

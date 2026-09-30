@@ -895,6 +895,9 @@ components:
         # not required — the previous production contract omits it, and the frontend
         # contract boundary normalizes a missing value to [] so older responses still
         # validate. Newer producers MUST still emit baseStates: [] or real transitions.
+        assaultObjectivePresent:
+          type: boolean
+          description: Proven wrapper8 objective-family initialization, independent of capture progress. Missing on older artifacts means unknown (no static Assault objective rendering). Not derived from arenaBonusType.
         baseStates:
           type: array
           items:

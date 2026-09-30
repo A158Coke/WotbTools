@@ -46,6 +46,10 @@ anti-future-leak 或现有 tank-marker 资产契约。
   wrapper12/root11（`baseId=A|B|C|D`），Assault 单基地来自 wrapper8/root8
   （`baseId=BASE`）。Assault controlled 11.20 样本证明 progress 会真实广播到 `100`；
   当前只提升 progress 语义，`ownerTeam/capturingTeam` 保持 null，禁止从 wrapper8 field4 猜阵营。
+  `assaultObjectivePresent` 从 wrapper8 初始化独立确认 objective；field3 未出现时 `baseStates=[]`，
+  仍按 mapCode 从 verified semantic 数据渲染静态 BASE，LEFT JOIN 可为空的 runtime state。
+  无 runtime progress 时不画水位；`arenaBonusType=2` 仅表示训练房，不是 Assault mode。
+  Malinovka 无占领与 Neptune 满占领共用泛化路径，不按地图名称分支。
   查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新状态。前端不接触 raw protobuf update，
   不负责合并缺失字段或协议 index，也不合成进度或阵营结论。协议证据见
   `docs/research/replay/assault-base-state.md` 与 `supremacy-base-state.md`。

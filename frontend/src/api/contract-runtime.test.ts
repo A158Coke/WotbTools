@@ -137,6 +137,12 @@ describe('HTTP contract runtime validator', () => {
     expect(validateBattlePlaybackDataset(bad).data).toBeNull()
   })
 
+  it('accepts independent Assault objective evidence with no progress and rejects non-boolean values', () => {
+    const payload = { ...dataset(), assaultObjectivePresent: true, baseStates: [] }
+    expect(validateBattlePlaybackDataset(payload).data?.assaultObjectivePresent).toBe(true)
+    expect(validateBattlePlaybackDataset({ ...payload, assaultObjectivePresent: 2 }).data).toBeNull()
+  })
+
   it('accepts Assault BASE at 100 and rejects progress outside the wire domain', () => {
     const state = { timeSec: 0, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 100 }
     expect(validateBattlePlaybackDataset({ ...dataset(), baseStates: [state] }).data?.baseStates).toEqual([state])
