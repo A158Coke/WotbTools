@@ -195,6 +195,7 @@ onBeforeUnmount(() => {
   /* 此前绕过 token 直接写死的颜色——收进 token 才能被浅色档统一覆盖 */
   --root-bg: #0d1117; --btn-bg: #1d242e; --on-accent: #14181e;
   --hover-soft: rgba(255, 255, 255, .06); --hpbar-bg: #222a34;
+  --loader-bg: rgba(10, 13, 17, .94); --warn: #ffcf5c; --error: #e07b7b;
   background: var(--root-bg); color: var(--fg);
   font: 13px/1.45 "Segoe UI", "Microsoft YaHei", sans-serif;
 }
@@ -203,6 +204,9 @@ html[data-ui-profile="classic"] .pb-root {
   --ally: #15803d; --enemy: #b3261e; --accent: #a95c1c;
   --root-bg: #f4f5f2; --btn-bg: #fff; --on-accent: #fff;
   --hover-soft: rgba(0, 0, 0, .05); --hpbar-bg: #e3e6e1;
+  /* loader 是整页 UI overlay（store.hasData 之前铺满视口），不是 3D 场景 →
+     必须跟随主题；深度与 canonical 浅色档状态色一致以保证可读 */
+  --loader-bg: rgba(244, 245, 242, .97); --warn: #9a6000; --error: #a3232e;
 }
 .scene { position: absolute; inset: 0; }
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line);
@@ -254,14 +258,14 @@ html[data-ui-profile="classic"] .pb-root {
 .banner { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
           font-size: 42px; font-weight: 700; padding: 14px 44px; z-index: 6;
           background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
-.loader { position: absolute; inset: 0; background: rgba(10, 13, 17, .94); z-index: 10;
+.loader { position: absolute; inset: 0; background: var(--loader-bg); z-index: 10;
           display: flex; flex-direction: column; gap: 14px; align-items: center;
           justify-content: center; }
 .loader h2 { font-weight: 500; }
 .loader .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
 .loader .hint { color: var(--dim); max-width: 620px; text-align: center; margin: 0; }
-.loader .assets-warn { color: #ffcf5c; }
-.loader .err { color: #e07b7b; max-width: 640px; white-space: pre-wrap; }
+.loader .assets-warn { color: var(--warn); }
+.loader .err { color: var(--error); max-width: 640px; white-space: pre-wrap; }
 .pick { cursor: pointer; border: 1px solid var(--line); padding: 6px 14px; border-radius: 6px; }
 .pick input[type='file'] { display: none; }
 .loader button { min-width: 44px; }

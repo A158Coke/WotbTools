@@ -2402,10 +2402,10 @@ export function initTankViewer() {
                                 const tMax = Math.max.apply(null, allDt);
                                 if (tMax - tMin < 0.1) return '';
                                 return '<div class="ctrl-row" style="margin-top:6px;gap:6px;">'
-                                    + '<span style="font-size:10px;color:#cc66ff;flex:none;">⏱</span>'
+                                    + '<span style="font-size:10px;color:var(--scrub);flex:none;">⏱</span>'
                                     + '<input type="range" id="time-scrub" min="' + (tMin*1000).toFixed(0) + '" max="' + (tMax*1000).toFixed(0) + '" value="0" step="10"'
-                                    + ' style="flex:1;min-width:0;accent-color:#cc66ff;">'
-                                    + '<span id="time-scrub-label" style="font-size:10px;color:#cc66ff;flex:none;min-width:50px;text-align:right;"></span>'
+                                    + ' style="flex:1;min-width:0;accent-color:var(--scrub);">'
+                                    + '<span id="time-scrub-label" style="font-size:10px;color:var(--scrub);flex:none;min-width:50px;text-align:right;"></span>'
                                     + '</div>';
                             })() +
                             (qIssues.length ? '<div class="ctrl-row" style="font-size:10px;color:var(--yellow);">⚠ '
