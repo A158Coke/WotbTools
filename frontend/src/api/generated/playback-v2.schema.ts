@@ -2499,8 +2499,10 @@ export default {
             "A",
             "B",
             "C",
-            "D"
-          ]
+            "D",
+            "BASE"
+          ],
+          "description": "Supremacy uses A-D; Assault single-base uses BASE."
         },
         "ownerTeam": {
           "type": [
@@ -2530,7 +2532,8 @@ export default {
             "null"
           ],
           "minimum": 0,
-          "maximum": 99
+          "maximum": 100,
+          "description": "Supremacy canonical states remain 0-99; Assault BASE may reach protocol value 100."
         }
       }
     },
