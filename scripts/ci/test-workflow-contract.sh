@@ -58,8 +58,14 @@ assert affected("infra/tofu/minio/main.tf") == {"minio"}
 assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgres"}
 assert affected("docs/README.md") == set()
 assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend", "android"}
-assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment"}
+assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment", "frontend"}
 assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
+# The frontend publish owns these as production inputs: the Agent WASM pin, the script
+# that fetches it, the immutable-image reuse gate helper and the bounded-retry helper
+# used by the TCR publication step.
+assert affected("deploy/agent/source.json") == {"frontend"}
+assert affected("scripts/fetch-agent-wasm.sh") == {"frontend"}
+assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment", "frontend"}
 for owner in jobs["changes"]["outputs"]:
     caller = jobs[owner]
     assert caller["if"] == f"needs.changes.outputs.{owner} == 'true'", owner
