@@ -1,0 +1,109 @@
+/* 设计语言 · 与主题无关的刻度 token（规则见 docs/frontend/design-language.md §1、§4–§5）
+ *
+ * 层级顺序只在这里声明一次：本文件是 main.js 的第一个样式入口。
+ * 第一次需要新层（如 components）时，把它按 §1 的顺序追加到这条语句里，不要在别处另行声明。
+ * 未分层（legacy）样式始终高于任何 @layer，因此在迁移完成前现有规则的胜负不变。
+ */
+@layer tokens;
+
+@layer tokens {
+  :root {
+    /* 间距：N × 4px（§5） */
+    --space-0: 0;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+    --gutter: 16px;
+
+    /* 字号阶梯（§4），最小 12px。
+     * 原子 token：font-size / line-height 只能引用 --font-size-* / --line-height-*；
+     * 组合 token：font 简写只能引用 --type-*。 */
+    --font-size-display: 32px;
+    --font-size-h1: 24px;
+    --font-size-h2: 20px;
+    --font-size-h3: 16px;
+    --font-size-body: 14px;
+    --font-size-caption: 12px;
+    --line-height-display: 40px;
+    --line-height-h1: 32px;
+    --line-height-h2: 28px;
+    --line-height-h3: 24px;
+    --line-height-body: 20px;
+    --line-height-caption: 16px;
+    --type-display: 700 var(--font-size-display) / var(--line-height-display) var(--font-family-sans);
+    --type-h1: 700 var(--font-size-h1) / var(--line-height-h1) var(--font-family-sans);
+    --type-h2: 600 var(--font-size-h2) / var(--line-height-h2) var(--font-family-sans);
+    --type-h3: 600 var(--font-size-h3) / var(--line-height-h3) var(--font-family-sans);
+    --type-body: 400 var(--font-size-body) / var(--line-height-body) var(--font-family-sans);
+    --type-caption: 400 var(--font-size-caption) / var(--line-height-caption) var(--font-family-sans);
+    --font-family-sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    --font-family-mono: ui-monospace, "SF Mono", Consolas, monospace;
+
+    /* 圆角（§5） */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-full: 999px;
+
+    /* 层级：只允许用这些值（§5） */
+    --z-base: 0;
+    --z-sticky: 100;
+    --z-header: 200;
+    --z-drawer: 300;
+    --z-sheet: 400;
+    --z-menu: 500;
+    --z-dialog: 600;
+    --z-toast: 700;
+
+    /* 控件尺寸与密度：默认紧凑，触屏自动切换（§5） */
+    --control-h-sm: 28px;
+    --control-h-md: 32px;
+    --control-h-lg: 40px;
+    --row-h: 36px;
+    --hit-min: 24px;
+
+    /* 动效 */
+    --duration-fast: 120ms;
+    --duration-base: 200ms;
+    --duration-slow: 300ms;
+    --ease-standard: cubic-bezier(.2, 0, 0, 1);
+
+    /* 焦点环 */
+    --focus-outline: 2px solid var(--color-accent);
+    --focus-outline-offset: 2px;
+  }
+
+  @media (width >= 768px) {
+    :root { --gutter: 24px; }
+  }
+
+  @media (width >= 1200px) {
+    :root { --gutter: 32px; }
+  }
+
+  @media (pointer: coarse) {
+    :root {
+      --font-size-body: 15px;
+      --line-height-body: 22px;
+      --control-h-sm: 36px;
+      --control-h-md: 44px;
+      --control-h-lg: 48px;
+      --row-h: 48px;
+      --hit-min: 44px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --duration-fast: 0ms;
+      --duration-base: 0ms;
+      --duration-slow: 0ms;
+    }
+  }
+}

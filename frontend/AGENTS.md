@@ -28,6 +28,12 @@
 - 后端 API 保持稳定英文 key/data 契约；用户文案、显示名和错误本地化留在 locale/display 层。
 - 路由历史、深链和 Back/Forward 由 Vue Router 所有；组件不得手写 `history.pushState`、`replaceState` 或 `popstate`。
 
+## Design language
+
+- 改任何界面前先读 [`docs/frontend/design-language.md`](../docs/frontend/design-language.md)。组件只用语义 token（`--color-*`、`--space-*`、`--type-*` / `--font-size-*` / `--line-height-*`、`--radius-*`、`--z-*`、`--elevation-*`、`--control-h-*`）；需要新的视觉值时先加 token，不写字面量。
+- `npm run lint:css` 必须通过。新建的 `.css` / `.vue` 自动受严格规则约束；**不得把新文件加入 `stylelint.legacy.json`**。迁移旧文件时把它从名单中删除并修复全部报错。
+- 不新增 `!important`、非三档断点、`100vh` / `100vw`、emoji 图标或未进 i18n 的界面文字。
+
 ## UI Profile invariant
 
 - `showcase` / `classic` 是 Presentation Profile，共用同一套业务组件、状态、API 和结构。

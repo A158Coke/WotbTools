@@ -1,8 +1,9 @@
 /* ============================================================
- * WotBTools Design Tokens — 单一事实源（V2 Frontend Foundation）
+ * WotBTools legacy tokens（deprecated）
  *
- * 产品只支持暗色主题。所有基础视觉 token 直接定义在 :root，
- * 不维护 light/auto 分支，也不依赖运行时主题切换。
+ * 新代码使用 tokens/scale.css 与 tokens/color.css 中的设计语言 token，
+ * 规则见 docs/frontend/design-language.md。本文件保留旧变量原值以保证视觉不变；
+ * 组件迁移到新 token 后，旧变量无人引用即删除。亮色覆盖见 classic-profile.css。
  * ============================================================ */
 
 :root {
@@ -87,26 +88,15 @@
   --wide-max: 1600px;
   --workspace-gutter: 24px;
 
-  /* Spacing scale */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
+  /* 间距与圆角已迁至 tokens/scale.css（--space-*、--radius-*）。 */
 
-  /* Radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-
-  /* Z-index 层级 */
+  /* Z-index 层级（deprecated → tokens/scale.css 的 --z-*） */
   --z-topbar: 100;
   --z-modal: 200;
   --z-panel: 260;
   --z-fullscreen: 300;
 
-  /* Typography */
+  /* Typography（deprecated → tokens/scale.css 的 --type-*） */
   --font-xs: 11px;
   --font-sm: 12px;
   --font-md: 13px;

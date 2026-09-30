@@ -37,6 +37,9 @@ jobs:
       - name: Type check
         working-directory: frontend
         run: npm run typecheck
+      - name: Style lint (design language)
+        working-directory: frontend
+        run: npm run lint:css
       - name: Unit tests
         working-directory: frontend
         run: npm test

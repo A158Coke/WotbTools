@@ -109,7 +109,7 @@ function hideUnavailableImage(type) {
 
 .sponsor-card {
   min-width: 0;
-  padding: var(--space-5);
+  padding: var(--space-6);
   background: color-mix(in srgb, var(--bg-card) 94%, transparent);
   color: var(--text);
 }
@@ -133,7 +133,7 @@ function hideUnavailableImage(type) {
 }
 
 .sponsor-unconfigured {
-  padding-block: var(--space-6);
+  padding-block: var(--space-8);
   text-align: center;
 }
 
