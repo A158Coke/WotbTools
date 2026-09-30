@@ -55,3 +55,8 @@ wotb:
       queue-capacity: ${AI_REVIEW_WORKER_QUEUE_CAPACITY:4}
       virtual-threads: ${AI_REVIEW_WORKER_VIRTUAL_THREADS:true}
       overall-deadline-sec: ${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:1100}
+# OpenAiChatModel 在 provider 返回空 choices 时会以 WARN 打印完整 prompt（含回放证据文本），
+# 因此独立 ai-service 必须把该类压到 ERROR；不得用全局 ERROR 静默整个服务。
+logging:
+  level:
+    org.springframework.ai.openai.OpenAiChatModel: ERROR
