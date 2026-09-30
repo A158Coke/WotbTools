@@ -2,6 +2,13 @@
 
 本文档是前端 UI 约定的 canonical 入口。具体 token 数值与页面规则以当前 CSS 和 `docs/DEVELOPER_GUIDE.md` 为准；本文件不复制页面级设计稿。
 
+## Design language
+
+- 设计规则（颜色、字号、间距、圆角、层级、组件、状态、文案）的 canonical 是 [`design-language.md`](design-language.md)；本文件只记录实现位置与不变量。
+- 设计语言 token：`frontend/src/styles/tokens/scale.css`（刻度，并声明 `@layer` 顺序）与 `frontend/src/styles/tokens/color.css`（两套主题的语义色）。`data-theme` 仍由 profile 派生：`showcase → dark`、`classic → light`。
+- `frontend/src/styles/tokens.css` 与 `classic-profile.css` 是 deprecated 的旧 token，仅为保持现有视觉；新代码不得再引用，无人引用的旧变量随迁移删除。
+- `npm run lint:css`（stylelint，CI 必过）强制执行设计语言；`frontend/stylelint.legacy.json` 是迁移前旧文件的基线名单，只减不增。
+
 ## UI Profile
 
 - `frontend/src/composables/useUiProfile.js` 是 profile 的唯一 reactive owner，持久化 key 为 `wotb-ui-profile`。

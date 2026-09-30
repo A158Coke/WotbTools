@@ -51,6 +51,8 @@
 | `frontend/architecture.md` | 改 Vue 应用壳、路由、依赖方向或状态 ownership 时 |
 | `frontend/replay-workspace.md` | 改 Replay Workspace capability、selection 或 dataset 边界时 |
 | `frontend/ui-system.md` | 改 UI Profile、token、layout primitive 或响应式规则时 |
+| `frontend/design-language.md` | 改任何界面前：颜色 / 字号 / 间距 / 组件 / 文案的设计规则与 stylelint 守护 |
+| `frontend/layout-audit-2026-09-30.md` | 查看多端布局与 UI/UX 审计快照（问题清单、改版方案、路线图） |
 | `architecture/TECHNICAL_EVOLUTION.md` | 查技术决策、authority / boundary、分布式 Replay 与双云架构的 canonical 演进时 |
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / Team Autopsy 时 |
 | `architecture/replay-pipeline.md` | 改回放重建 / decoder / 事件流时 |
