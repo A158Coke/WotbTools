@@ -33,6 +33,10 @@
 
 ## 研究原则
 
+字段解析新增入口：[Assault wrapper8 字段解析契约](assault-base-state.md#field-decoding-contract--字段解析契约)
+记录 nested field1..4、raw/canonical 映射、缺失字段与非法输入处理、字节示例和测试位置；
+面向维护者的摘要同步到[回放解析字段字典](../../reference/replay-parsed-fields.md)。
+
 - Evidence grades: `PROVEN / VERY STRONG PARTIAL / PARTIAL / UNKNOWN / SUPERSEDED / REJECTED`.
 - `PROVEN` 必须依赖当前 replay 行为；历史 PC/WoT/BigWorld 只做 architecture cross-check。
 - numeric IDs 全部 version + entity-class scoped。

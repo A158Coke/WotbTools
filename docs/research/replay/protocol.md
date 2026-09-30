@@ -5,6 +5,12 @@
 
 ## CURRENT VERDICT
 
+11.20 补充：Assault 单基地 realtime state 使用 Type8/subtype48 **wrapper8 → root field8**。
+field1=2 / field2=1 / 显式 field3=0..100 才提升为 progress；100 已在受控样本广播，
+field4 阵营语义 UNKNOWN。Supremacy 仍独立使用 wrapper12/root11。
+完整字段表、protobuf 字节示例、fail-closed 条件、canonical 映射与证据边界见
+[assault-base-state.md](assault-base-state.md#field-decoding-contract--字段解析契约)。
+
 | type | 语义 | 状态 |
 |---|---|---|
 | 0 basePlayerCreate | 实体创建 + 竞技场 pickle（权威名册/队名） | PROVEN |

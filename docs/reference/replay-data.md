@@ -8,6 +8,13 @@
 
 ## 文件结构
 
+字段增量：11.20 China Apple Neptune 受控 Assault 样本新增了 Type8/subtype48
+**wrapper8 → root field8** 的单基地实时占领解析。nested field1=2、field2=1 下，
+显式 field3 为进度，允许 0..100（100 真实广播）；field4 保持 raw/UNKNOWN。
+该路径独立于 Supremacy wrapper12/root11，不扩展 Supremacy 的 0..99 语义。
+详见[已解析字段字典](replay-parsed-fields.md#1120-补充assault-单基地-runtime-字段)与
+[Assault 解析契约](../research/replay/assault-base-state.md)。
+
 `.wotbreplay` = ZIP 压缩包，包含 3 个条目：
 
 | 条目                   | 说明                          | 本工具使用                |
