@@ -171,7 +171,7 @@
 
 | ID | 级别 | 问题 | 现象（实测） | 位置 / 建议 |
 |---|---|---|---|---|
-| 3D-01 | P1 | **三维回放名单缺人、名字未解析** | 队伍 1 共 10 人，8 人显示"Unknown"，录像者本人（★）也是；队伍 2 只列出 4 人；车辆显示 `tank_6929`，地图显示 `map_43` | WASM 解析链缺少昵称、车名、地图名映射。复用服务端解析器的名册和 `common/` 的 map_names 与 tankopedia |
+| 3D-01 | P1 | **三维回放名单缺人、名字未解析** | 队伍 1 共 10 人，8 人显示"Unknown"，录像者本人（★）也是；队伍 2 只列出 4 人；车辆显示 `tank_6929`，地图显示 `map_43` | Agent 契约里 `parsePlayback` 的 `vehicles[]` 和 `parseResult` 的 `players[]` 都带花名册（昵称、tank_id、队伍），先核实是消费侧没有联表还是上游缺失；车名、地图名按 `tank_id` / `map_id` 走 `common/` 的 tankopedia 与 map_names。**不引入服务端名册**（解析权威为上游 Agent，见 #410） |
 | 3D-02 | P1 | **射击复现整队玩家显示为 `eid:280151379`** | 一队 7 人全部显示 entity id，射击者下拉框里也一样 | 同 3D-01 |
 | 3D-03 | P1 | **射击统计口径错误** | "穿透率 192%（102/53）"：击穿数比命中数还多；"跳弹 / HE 0 / 0" 可疑 | `AgentShots.vue` 统计计算；分母应为命中数，并核对击穿、未穿、跳弹的分类 |
 | 3D-04 | P1 | 三维回放比分不更新 | 播到 128s 时已有多次击穿和击杀，比分仍是 0 : 0 | `playbackScene.js` 比分来源 |
@@ -234,7 +234,7 @@
 
 | ID | 级别 | 问题 | 证据 | 建议 |
 |---|---|---|---|---|
-| BZ-02 | P1 | **解析迁移只完成了一半**：只有 3D 功能（`scene/replaySource.js`）走本地 WASM；主工作台还在上传文件到 `/api/replay/processing-jobs` 并轮询，2D 回放调 `/api/replay/battle-playback-v2`、`/map-overview`，导出调 `/api/replay/export-jobs`。同一场回放在前端存在两套解析结果，这就是 3D-01/02 的名称缺失与 2D 不一致的根源 | `api/replay.ts`、`api/replay-capabilities.ts`；`docs/ROADMAP.md:7` 写的是"客户端 parity 全部通过前服务端链路继续服务生产" | 确认迁移阶段后：工作台改用 WASM 结果；再按计划退役 `processing-jobs`、`export-jobs`、`FileUploader` 的上传进度、`useProcessingJob.ts` 及对应 OpenAPI 契约 |
+| BZ-02 | P1 | **解析迁移只完成了一半**：只有 3D 功能（`scene/replaySource.js`）走本地 WASM；主工作台还在上传文件到 `/api/replay/processing-jobs` 并轮询，2D 回放调 `/api/replay/battle-playback-v2`、`/map-overview`，导出调 `/api/replay/export-jobs`。同一场回放在前端存在两套解析结果，这就是 3D-01/02 的名称缺失与 2D 不一致的根源 | `api/replay.ts`、`api/replay-capabilities.ts`；`docs/ROADMAP.md:7` 写的是"客户端 parity 全部通过前服务端链路继续服务生产" | **已决策（2026-10-01）：解析权威为上游 Agent Rust Core**（见 #410）。按能力逐项迁移：先证明 parity，再把工作台 / 战局回放 / 导出 / HoF 切到 `parseResult` / `parsePlayback`，随后退役 `processing-jobs`、`export-jobs`、上传进度、`useProcessingJob.ts` 及对应 OpenAPI 契约 |
 | BZ-03 | P2 | "本页不保存回放文件"让用户以为是纯本地处理，实际上会把全部文件（包括重复的）上传到服务器 | 实测 67.5MB 上传 | 迁移完成前如实说明；上传前先去重 |
 | BZ-04 | P2 | 重复文件既不在选择时去重也不提示：选了两次文件夹后显示"共 44 场"，其实只有 23 场 | 实测 | 选择时按内容哈希去重 |
 | BZ-05 | P2 | 每次页面加载都会 `PUT /api/users/profile`（本次会话 5 次以上）；首页记录卡片重复请求 `/api/hof?size=1` | 网络面板 | 登录同步只在 token 变化时执行 |
