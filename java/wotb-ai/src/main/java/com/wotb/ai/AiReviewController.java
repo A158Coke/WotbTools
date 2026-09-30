@@ -24,6 +24,8 @@ import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import jakarta.servlet.http.HttpServletRequest;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -51,15 +53,30 @@ public class AiReviewController {
     private final AiReplayAnalysisService aiReplayAnalysisService;
     private final AiReviewWorkerExecutor workerExecutor;
     private final AiCancellationRegistry cancellations;
+    /**
+     * Review 侧指标（见 {@code docs/operations/observability.md} §10 的 ai-service 清单）：
+     * <b>一次进入 worker 的请求 = 一次 Review</b>；HTTP 4xx/409/413/422/503 预校验失败
+     * 不进入 worker，因此不计入这些计数器。
+     */
+    private final MeterRegistry meterRegistry;
+    private final Timer reviewDuration;
 
     public AiReviewController(final TacticalReviewHarness tacticalReviewHarness,
                               final AiReplayAnalysisService aiReplayAnalysisService,
                               final AiReviewWorkerExecutor workerExecutor,
-                              final AiCancellationRegistry cancellations) {
+                              final AiCancellationRegistry cancellations,
+                              final MeterRegistry meterRegistry) {
         this.tacticalReviewHarness = tacticalReviewHarness;
         this.aiReplayAnalysisService = aiReplayAnalysisService;
         this.workerExecutor = workerExecutor;
         this.cancellations = cancellations;
+        this.meterRegistry = meterRegistry;
+        // publishPercentileHistogram 是 Dashboard P50/P95/P99（histogram_quantile）的前提：
+        // 不启用则只有 _count/_sum，没有 _bucket。
+        this.reviewDuration = Timer.builder("wotb_ai_review_duration_seconds")
+                .description("AI Review 完整总耗时（成功与异常都结束）")
+                .publishPercentileHistogram()
+                .register(meterRegistry);
     }
 
     public record AiReviewRequestV1(int schemaVersion, String locale, String correlationId,
@@ -154,8 +171,15 @@ public class AiReviewController {
                            final ReplayAnalysisScope scope,
                            final AiCancellationToken cancellation, final SseEmitter emitter) {
         AiRequestContext.set(request.correlationId(), cancellation);
+        meterRegistry.counter("wotb_ai_review_requests_total").increment();
+        final Timer.Sample durationSample = Timer.start(meterRegistry);
+        String result = "success";
+        String errorType = null;
         try {
             if (cancellation.isCancelled()) {
+                // 未执行任何上游调用即被取消：Review 未产出结果，按流内失败归类。
+                result = "failure";
+                errorType = "AI_CANCELLED";
                 emitter.complete();
                 return;
             }
@@ -202,23 +226,40 @@ public class AiReviewController {
             send(emitter, cancellation, "done", done);
             emitter.complete();
         } catch (final RuntimeException error) {
+            result = isRejected(error) ? "rejected" : "failure";
+            errorType = errorCodeOf(error);
             if (error instanceof ClientDisconnectedException) {
                 cancellations.cancel(request.correlationId());
             }
-            final String code = errorCodeOf(error);
             if (!(error instanceof ClientDisconnectedException)) {
                 try {
                     emitter.send(SseEmitter.event().name("error")
-                            .data(Map.of("id", request.correlationId(), "errorCode", code)));
+                            .data(Map.of("id", request.correlationId(), "errorCode", errorType)));
                 } catch (final IOException | IllegalStateException ignored) {
                     cancellations.cancel(request.correlationId());
                 }
             }
             emitter.complete();
         } finally {
+            durationSample.stop(reviewDuration);
+            meterRegistry.counter("wotb_ai_review_results_total", "result", result).increment();
+            if (errorType != null) {
+                meterRegistry.counter("wotb_ai_review_errors_total", "type", errorType).increment();
+            }
             AiRequestContext.clear();
             cancellations.unregister(request.correlationId(), cancellation);
         }
+    }
+
+    /**
+     * 流内“事实校验退回”判定：AI 未配置 / 时间线不可用 / prompt 预算拒绝属于
+     * {@code result=rejected}（Dashboard 显示为“事实校验退回”），其余流内失败为
+     * {@code result=failure}。
+     */
+    private static boolean isRejected(final RuntimeException error) {
+        return error instanceof AiTimelineUnusableException
+                || error instanceof AiNotConfiguredException
+                || error instanceof AiPromptBudgetExceededException;
     }
 
     private static String errorCodeOf(final RuntimeException error) {
