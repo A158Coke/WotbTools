@@ -9,9 +9,9 @@ Two entity types carry base geometry:
   strategicpoint  Supremacy (争霸赛). 3-4 per map, each with a `baseID` 0..3 that
                   matches `SupremacyBaseId.fromProtocolIndex()` on the backend,
                   so it maps straight onto the `baseStates` wire field.
-  controlpoint    Encounter / Assault (攻防战). One base per mode configuration,
-                  `team` marks the defending side. Radius is larger than a
-                  Supremacy base where the scene declares one.
+  controlpoint    Encounter / Assault (攻防战). One base per active scene variant.
+                  `team` is retained as raw scene metadata; its attacker/defender
+                  meaning is not closed. Radius may be absent in the scene.
 
 Coordinates are world meters on the same axes as replay positions and as
 `coordinateSystem.worldBounds` in `common/map-semantics/*.semantic.json`
@@ -186,8 +186,8 @@ def render_js(data: dict[str, dict[str, Any]], source_name: str) -> str:
         " *",
         " * supremacy 争霸赛：3-4 个基地，`baseId` 由场景 `baseID` 0..3 而来，",
         " *   与后端 `SupremacyBaseId.fromProtocolIndex()` 及 wire 字段 `baseStates[].baseId` 同源。",
-        " * assault 攻防战/遭遇战：每种模式配置一个基地，`team` 为守方；",
-        " *   场景未声明半径时为 null，调用方自行取默认值。",
+        " * assault 攻防战/遭遇战：active scene variant 的单基地；`team` 仅保留 raw scene metadata，",
+        " *   不解释为攻/守方；场景未声明半径时为 null，调用方自行取 presentation fallback。",
         " */",
         "export const mapBases = {",
     ]
