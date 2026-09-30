@@ -61,21 +61,6 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    location ^~ /api/replay/analyze {
-        proxy_pass ${BACKEND_UPSTREAM};
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
-        proxy_set_header X-Request-ID $http_x_request_id;
-        proxy_set_header Connection "";
-        proxy_buffering off;
-        add_header X-Accel-Buffering no always;
-        proxy_read_timeout 1120s;
-        proxy_send_timeout 1120s;
-    }
-
     location = /api/preview {
         limit_req zone=replay_api burst=10 nodelay;
         limit_conn replay_api_conn 5;
@@ -113,6 +98,29 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
         proxy_read_timeout 120s;
+    }
+
+    # 独立 AI 微服务（Yecao 预部署，仅 WireGuard 10.20.0.2:8089 可达，无公网端口）。
+    # 公开路径与 ai-service controller 路径保持一致（/api/ai/reviews...），因此
+    # proxy_pass 不带 URI：绝不重写 path。
+    # ^~ 前缀优先于下方通用 location /api/，AI 流量不会落到 TX Business Backend。
+    # 超时链：SseEmitter 1120s / 应用整体 deadline 1100s（AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC，
+    # 单次上游调用预算 315s），代理必须 ≥1120s 才不会先于应用 504；SSE 需 HTTP/1.1 +
+    # 清空 Connection + 关闭响应缓冲，Authorization 必须原样转发给 ai-service。
+    location ^~ /api/ai/ {
+        proxy_pass ${AI_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header X-Request-ID $http_x_request_id;
+        proxy_set_header Authorization $http_authorization;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        add_header X-Accel-Buffering no always;
+        proxy_read_timeout 1120s;
+        proxy_send_timeout 1120s;
     }
 
     location /api/ {
