@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.event.AssaultBaseStateTransition;
 import com.wotb.core.replay.event.ConsumableLifecycleEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -700,20 +701,33 @@ public final class BattlePlaybackProjector {
         final Map<String, BaseStateTransition> latestPreBattle = new HashMap<>();
         final Set<String> basesWithZeroState = new HashSet<>();
         for (final ReplayEvent event : timeline.events()) {
-            if (!(event instanceof SupremacyBaseStateTransition base)
-                    || base.confidence() != DecodeConfidence.EXACT) {
+            final BaseStateTransition projected;
+            if (event instanceof SupremacyBaseStateTransition base
+                    && base.confidence() == DecodeConfidence.EXACT) {
+                final double timeSec = battleClockOf(event, timeline);
+                if (!Double.isFinite(timeSec)) {
+                    continue;
+                }
+                projected = new BaseStateTransition(
+                        timeSec,
+                        base.baseId().name(),
+                        base.ownerTeam(),
+                        base.capturingTeam(),
+                        base.captureProgress());
+            } else if (event instanceof AssaultBaseStateTransition assault
+                    && assault.confidence() == DecodeConfidence.EXACT) {
+                final double timeSec = battleClockOf(event, timeline);
+                if (!Double.isFinite(timeSec)) {
+                    continue;
+                }
+                // Wrapper8 currently proves progress only. Do not synthesize team/ownership
+                // semantics from raw field4 until an independent control closes it.
+                projected = new BaseStateTransition(
+                        timeSec, "BASE", null, null, assault.captureProgress());
+            } else {
                 continue;
             }
-            final double timeSec = battleClockOf(event, timeline);
-            if (!Double.isFinite(timeSec)) {
-                continue;
-            }
-            final BaseStateTransition projected = new BaseStateTransition(
-                    timeSec,
-                    base.baseId().name(),
-                    base.ownerTeam(),
-                    base.capturingTeam(),
-                    base.captureProgress());
+            final double timeSec = projected.timeSec();
             if (timeSec < 0d) {
                 // Base updates before battle start are canonical full states. Retain the
                 // latest one per base so playback has a deterministic t=0 seed.
@@ -848,8 +862,14 @@ public final class BattlePlaybackProjector {
         }
         for (final BaseStateTransition state : dataset.baseStates()) {
             requireActiveTime("base.timeSec", state.timeSec());
-            if (!List.of("A", "B", "C", "D").contains(state.baseId())) {
-                throw new IllegalStateException("base id outside supported A-D range: " + state.baseId());
+            if (!List.of("A", "B", "C", "D", "BASE").contains(state.baseId())) {
+                throw new IllegalStateException("base id outside supported objective range: " + state.baseId());
+            }
+            final int maxProgress = "BASE".equals(state.baseId()) ? 100 : 99;
+            if (state.captureProgress() != null
+                    && (state.captureProgress() < 0 || state.captureProgress() > maxProgress)) {
+                throw new IllegalStateException("base progress outside supported range: "
+                        + state.baseId() + "=" + state.captureProgress());
             }
         }
     }
