@@ -3,6 +3,8 @@ import { createI18n } from 'vue-i18n'
 
 // 与 src/main.js 完全相同的样式加载顺序：三档 form + fullscreen contract 的相对顺序
 // 本身就是被验证的契约之一，fixture 不得另起一套顺序。
+import '../../src/styles/tokens/scale.css'
+import '../../src/styles/tokens/color.css'
 import '../../src/styles/tokens.css'
 import '../../src/styles/showcase.css'
 import '../../src/styles/showcase-workspaces.css'
