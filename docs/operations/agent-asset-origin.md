@@ -25,6 +25,18 @@ assetBase()  ← 解析出的 asset origin
 
 基础设施选择只出现在本文件与部署配置里，不出现在应用契约中。
 
+## 当前状态（2026-09-30 实测）
+
+| 项 | 值 |
+|---|---|
+| origin | `https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com` |
+| 资产包位置 | **桶根目录**（`/index.json`、`/glb/...`、`/map/...`、`/tank/...`、`/data/...`） |
+| 包完整性 | 抽查 14 条关键路径全部 `200`（GLB / 碰撞 / tank JSON / 封面 / tanks.pb / models.pb / 底图 / 小地图 / 地形 bin / terrain.json / 场景 GLB / 地表分层 / 卷积贴图） |
+| CORS | 已配置：`https://wotbtools.com` 与 `https://www.wotbtools.com` 均回 `Access-Control-Allow-Origin`，`GET,HEAD`，Max-Age 600 |
+| 桶列举 | `/` 返回 `403`（仅列举被拒，属预期；对象读正常） |
+| 本地开发 | **未覆盖** `http://localhost:*`——本地 dev 直连该 origin 时 GLB/JSON 的 `fetch` 会被 CORS 拦截（见下"本地开发"） |
+| 待办 | `ASSET_BASE_URL` Repository Variable 尚未设置（见 §3） |
+
 ## 配置来源与优先级
 
 `frontend/src/scene/assetBase.js`：
@@ -36,22 +48,44 @@ assetBase()  ← 解析出的 asset origin
 
 `?assets=`（显式空）用于**清除 override**，回落到生产构建默认。
 
-## 当前选择（临时）：腾讯云 COS
+## 部署：接线（当前唯一待办）
 
-> **临时决定**，仅因现成可用。运行时保持中立：换成 GitHub Release 附件 / 静态服务器 /
-> 其他对象存储，成本 = 改一个 Repository Variable + 重建镜像。本文件是唯一需要改的文档。
->
-> 注意：COS 存在持续下行流量成本；评估其它 origin 时按下方 §3 换值即可。
+资产包与 CORS 都已就绪，**只剩设置变量并重建镜像**：
 
-### 1. 生成资产包（上游仓库）
+1. **Settings → Secrets and variables → Actions → Variables** 新增（非敏感）：
+
+   ```
+   ASSET_BASE_URL = https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com
+   ```
+
+   必须 `https://` 开头且**不带结尾 `/`**；`frontend.yml` 的 "Validate production
+   asset origin" 步骤 fail-closed 校验这两点，缺变量时 Frontend 工作流直接失败。
+
+2. **触发一次 Frontend 工作流**（origin 是构建期写进 bundle 的：只改变量不会更新
+   已部署镜像；需新 commit 或 `workflow_dispatch`）。
+
+3. 验证（见下）。变量本身只放公开 origin，**不放任何密钥**。
+
+### 验证（不需要凭据——公开读）
+
+```bash
+B=https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com
+curl -sI "$B/index.json" | head -1                                  # 期望 200
+curl -sI "$B/data/tank_cache.json" -H "Origin: https://wotbtools.com" \
+  | grep -i access-control-allow-origin                             # 期望回该 origin
+```
+
+线上：打开站点 → 坦克百科 / 全场回放出图出模型；DevTools Network 中 GLB / JSON 请求
+指向该 origin 且为 200、无 CORS 报错；"未配置资产源"提示消失。
+
+## 发布：生成与上传资产包
 
 资产包由上游 `WoT-Blitz-Agent` 生成（本仓不产出游戏资产）：
 
 ```bash
 # 需游戏客户端在场（地图注册表源）
 wotb-agent dump-map-index > map_index.json
-python scripts/export_asset_pack.py --map-index map_index.json
-# 缺省产物：release/asset_pack/（--out 用绝对路径）
+python scripts/export_asset_pack.py --map-index map_index.json   # 产物 release/asset_pack/
 ```
 
 产物布局（契约 §13；`manifest.json` 附全量 sha256）：
@@ -62,63 +96,61 @@ glb/{tank_id}/{model,collision}.glb
 tank_images/{id}.webp
 data/{tanks.pb,models.pb,tank_cache.json,data_version.json}
 map/{key}/{ground,mini}.webp  terrain.u16.bin  terrain.json
-map/{key}/{scenery.glb,ground.layers.json,ground/*.webp}
+map/{key}/{scenery.glb,ground.layers.json}  map/{key}/ground/*.webp
 ```
 
-### 2. 上传到 COS
-
-用官方 CLI（凭据只存本地，**绝不进仓库**）：
+上传到桶**根目录**（当前布局；改前缀则 `ASSET_BASE_URL` 必须同步带该前缀）：
 
 ```bash
 pip install coscmd
-coscmd config -a <SecretId> -s <SecretKey> -b <bucket> -r <region>
-coscmd upload -r release/asset_pack/ /asset_pack/
+coscmd config -a "$COS_SECRET_ID" -s "$COS_SECRET_KEY" \
+              -b wotbtools-assets-1478073677 -r ap-shanghai
+coscmd upload -r release/asset_pack/ /
 ```
 
 要求：
 
-- **读权限**：桶/前缀需允许匿名读（或经 CDN 回源）。前端按 HTTP GET 直取，无签名。
-- **CORS（必做，否则 3D 资产静默失败）**：`assetProvider.bytes()` / `.json()` 走
-  `fetch()`，跨域需要 CORS 响应头。允许站点源 + `GET`/`HEAD`：
-  - `Access-Control-Allow-Origin: https://wotbtools.com`（或 `*`，资产为公开内容）
-  - `Access-Control-Allow-Methods: GET, HEAD`
-
+- **读权限**：桶需允许匿名读。前端按 HTTP GET 直取，无签名。
+- **CORS（必需）**：`assetProvider.bytes()` / `.json()` 走 `fetch()`，跨域需要 CORS
+  响应头。当前规则允许 `wotbtools.com` 与 `www.wotbtools.com` + `GET`/`HEAD`。
   封面图经 `<img>` 加载不需要 CORS，但 GLB / tank JSON / terrain 都走 `fetch`——
-  "只配了图片可用"是常见误判：图能出、模型和地形全挂。
-- **缓存**：文件名不含内容哈希。用较短 `Cache-Control` TTL，或换包时同时切换路径前缀
-  （如 `/asset_pack/v3/`），否则用户会长时间命中旧包。
+  "只配了图片可用"是常见误判：封面能出、模型和地形全挂。
+  把站点换到新域名/新端口时，**必须同步加 CORS 规则**。
+- **缓存**：文件名不含内容哈希。用较短 `Cache-Control` TTL，或换包时切换路径前缀
+  （如 `/v3/`），否则用户会长时间命中旧包。
 
-### 3. 注入生产 origin
+### 本地开发
 
-仓库 **Settings → Secrets and variables → Actions → Variables** 新增（非敏感）：
+CORS 未覆盖 `http://localhost:*`，本地 dev 直连该 origin 时 GLB/JSON 会被拦。两种做法：
 
-```
-ASSET_BASE_URL = https://<bucket>-<appid>.cos.<region>.myqcloud.com/asset_pack
-```
+- 用本地镜像：把包放本地静态目录，`VITE_ASSET_BASE_URL`（或 `?assets=`）指向它；
+- 或给桶加一条 localhost 的 CORS 规则（仅开发便利，注意不要放宽到不可信源）。
 
-- 必须是 `https://` 开头、**不能以 `/` 结尾**——`frontend.yml` 的
-  "Validate production asset origin" 步骤 fail-closed 校验这两点，缺变量直接失败。
-- 只放公开 origin，**不放任何密钥**（Repository Variable，不是 Secret）。
+## 凭据与安全
 
-构建链路：`vars.ASSET_BASE_URL` → `frontend.yml` build-arg `ASSET_BASE_URL`
-→ `Dockerfile.frontend` 的 `ARG`/`ENV VITE_ASSET_BASE_URL` → Vite 构建期写进 bundle。
+**前端与 CI 都不需要桶凭据**：`ASSET_BASE_URL` 是公开 origin，浏览器匿名 GET。
+上传凭据只用于**发布侧**（生成包 → 上传），不属于运行时链路。
 
-本地构建：`VITE_ASSET_BASE_URL=... npm run build`。
+- **绝不提交凭据进仓库**：本仓是公开仓库，提交即等于泄露。凭据也不要写进 Issue /
+  PR 正文或评论——只走本地环境变量或密码管理器。
+- 交付/轮换走**安全渠道**（企业 IM 私聊、密码管理器），不要发到公开群、工单或聊天窗口。
+- 当前发布凭据归属子账号 `100053279232`（`wotbtools-asset-publisher`），权限为**该桶整桶
+  读 + 写（含上传、分块上传、删除）**——含删除，属较高权限，仅限可信范围使用。
+- 该密钥可能同时被既有发布流水线使用：**禁用或轮换会同时影响对方与原有业务**，
+  需提前约定更换窗口。
+- 上传脚本从环境变量读取凭据（`COS_SECRET_ID` / `COS_SECRET_KEY`），不落盘、不入库。
 
-### 4. 生效与验证
+## 覆盖与回滚
 
-- **必须先设置变量再触发构建**：CI 已 fail-closed，变量缺失时 Frontend 工作流在构建前
-  就失败（不会产出指向空 origin 的镜像）。
-- origin 是**构建期**写入 bundle 的：改变量不会更新已部署镜像，需要新的 commit 或
-  `workflow_dispatch` 手动跑一次 Frontend 工作流。
-- 线上验证：打开站点 → 坦克百科 / 全场回放出图出模型；DevTools Network 里 GLB / JSON
-  请求指向该 origin、状态 200（无 CORS 报错）；"未配置资产源"提示消失。
-
-### 5. 覆盖与回滚
-
-- 单浏览器覆盖：`https://wotbtools.com/?assets=https://other-origin/pack`
+- 单浏览器覆盖：`https://wotbtools.com/?assets=https://other-origin/`
 - 回到生产默认：访问 `?assets=`（显式空，清除 override）
 - 回滚：把 `ASSET_BASE_URL` 改回上一个 origin 并重建镜像
+
+## 未来更换 origin
+
+> COS 为**临时**选择，存在持续下行流量成本。换到 GitHub Release 附件 / 静态服务器 /
+> 其他对象存储时，本文件是唯一需要改的文档：改 §"发布"与 §"接线"的地址即可，
+> 消费方代码零改动。评估替代方案时按上面的"验证"节核对读权限 + CORS + 缓存三项。
 
 ## 相关
 
