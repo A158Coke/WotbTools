@@ -165,6 +165,18 @@ export interface AgentPlaybackFacet {
 
 // ---------- 射击复现通道（parseShotReplays；上游 shots 数组同构透传） ----------
 
+/** 全局弹种反解表条目（dump-shell-kinds 产物值形状；tanks.pb 弹种项属性） */
+export interface AgentShellData {
+  type: string
+  penetration: number
+  damage: number
+  module_damage: number
+  explosion_radius: number
+}
+
+/** 全局弹种反解表：{全局弹种 id(十进制串): AgentShellData}（与回放 shell_id 同域） */
+export type AgentShellTable = Record<string, AgentShellData>
+
 /**
  * 单发射击复现数据（上游 replay-core ShotReplayData；字段语义见上游
  * crates/replay-core/src/replay/combat/shots.rs——本接口只标注消费面，
@@ -195,6 +207,13 @@ export interface AgentShotReplay {
   shell_kind?: string
   shell_slot?: number
   shooter_shell_idx?: number
+  /** shooter_shell_idx 所属配置（build_configs 下标；弹表域钉死，多炮坦克不再错位） */
+  shooter_shell_cfg_idx?: number
+  /**
+   * 发射弹种完整数据（shellsJson 注入后由 WASM 反解；dump-shell-kinds 富表条目）。
+   * 值为射手配置弹表口径（tanks.pb 弹种项），徽标穿深/判定直接消费。
+   */
+  shell?: AgentShellData
   armor_group: number
   /** 0=无 1=未击穿 2=间隙止 3=有伤害 4=履带/模块 255=未获取 */
   game_hit_result: number
@@ -274,7 +293,7 @@ const AGENT_WASM_URL = '/wasm/wotb_replay_wasm.js'
 interface AgentWasmModule {
   parseResult?: (bytes: Uint8Array) => string
   parsePlayback?: (bytes: Uint8Array) => string
-  parseShotReplays?: (bytes: Uint8Array, limits?: string) => string
+  parseShotReplays?: (bytes: Uint8Array, limits?: string, shells?: string) => string
   default?: () => Promise<void>
   initSync?: () => void
 }
@@ -357,13 +376,20 @@ export function normalizeAgentShotIndices(shots: AgentShotReplay[]): AgentShotRe
  * （GunPitchRange serde 形状，消费方由资产面 tank/{id}.json 的 pitch_limits 组装
  * dep=max、ele=−min）——注入后 prop2 俯仰按车型极限解码（服务端同级质量）；
  * 缺省空表时俯仰降级标记如实透传（客户端路径数据边界，非错误）。
+ * `shellTable` 可选：全局弹种反解表（dump-shell-kinds 富表，AgentShellTable）——
+ * 注入后带 shell_id 的弹补齐 `shell_kind` 与 `shell`（完整弹数据，服务端
+ * /api/replay/shots 注入语义同构）；缺省时无弹种反解（旧产物兼容路径由
+ * 消费组件自行富化）。
  */
 export async function parseAgentShotsFromBytes(
   bytes: Uint8Array,
   pitchLimits?: Record<string, unknown>,
+  shellTable?: AgentShellTable,
 ): Promise<AgentShotReplay[]> {
   const parse = await wasmFn('parseShotReplays')
-  const raw = pitchLimits ? parse(bytes, JSON.stringify(pitchLimits)) : parse(bytes)
+  const limitsJson = pitchLimits ? JSON.stringify(pitchLimits) : undefined
+  const shellsJson = shellTable ? JSON.stringify(shellTable) : undefined
+  const raw = parse(bytes, limitsJson, shellsJson)
   return normalizeAgentShotIndices(assertShotArray(JSON.parse(raw) as unknown))
 }
 

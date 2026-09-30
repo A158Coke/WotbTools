@@ -578,6 +578,16 @@ export function initTankViewer() {
             const thickMul = enhOn ? 1.04 : 1.0;
             return { penMul, thickMul };
         }
+        // 校准弹判定态变化后刷新下拉穿深文本：populateShellSelector 渲染时回放配件
+        // 判定（__shotCtx）常未就绪（并行装载竞速），文本停在基础穿深，与判定
+        // 实际采用的 ×1.06/×1.07 口径不一致。只更新文本，不动选中项。
+        function refreshShellOptionText() {
+            const sel = document.getElementById('shell-select');
+            if (!sel || !shooterShells || !shooterShells.length) return;
+            Array.from(sel.options).forEach((opt, i) => {
+                if (shooterShells[i]) opt.textContent = shellOptionText(shooterShells[i]);
+            });
+        }
         // 镜头切换时把勾选框同步为回放自动判定（数据在场=禁用并标注来源；缺失=恢复手动）
         function syncEquipmentCheckboxes(s) {
             const cal = document.getElementById('eq-calibrated');
@@ -591,6 +601,7 @@ export function initTankViewer() {
                 else { enh.disabled = false; enh.title = ''; }
             }
             updateHeatmapThickness();
+            refreshShellOptionText();
         }
         function eqBadge(eq) {
             if (!eq) return '<span style="color:#888;">配件?</span>';
@@ -2307,18 +2318,23 @@ export function initTankViewer() {
                                         shellTypeOf(sh) === 'he' || (sh && sh.explosion_radius > 0));
                                 }
                                 if (want == null || want < 0 && window.__worldShellId) {
-                                    // 射手弹表全局 id：configs[射手配置].shell_global_ids（与顶层
-                                    // shells 同源同序）；全配置扫一遍取首个包含该弹的
+                                    // 射手配置弹表全局 id：configs[].shell_global_ids（与弹表
+                                    // 同源同序）。优先 &scfg=（射手实际搭载配置，下拉表即其
+                                    // shells，下标同域）；未命中再全配置扫（顶级偏好）
                                     const cfgArr = (shooterData && shooterData.configs) || null;
-                                    let gids = null;
-                                    if (cfgArr) {
-                                        for (let ci = cfgArr.length - 1; ci >= 0 && !gids; ci--) {
-                                            gids = cfgArr[ci].shell_global_ids || null;
-                                        }
+                                    const scfg = parseInt(QP.get('scfg'), 10);
+                                    const tryGids = (gids) => {
+                                        if (!gids || want >= 0) return;
+                                        const gi = gids.indexOf(window.__worldShellId);
+                                        if (gi >= 0) want = gi;
+                                    };
+                                    if (!isNaN(scfg) && cfgArr && cfgArr[scfg]) {
+                                        tryGids(cfgArr[scfg].shell_global_ids || null);
                                     }
-                                    if (gids) {
-                                        want = gids.indexOf(window.__worldShellId);
-                                        if (want != null && want < 0) want = null;
+                                    if (cfgArr) {
+                                        for (let ci = cfgArr.length - 1; ci >= 0 && !(want >= 0); ci--) {
+                                            tryGids(cfgArr[ci].shell_global_ids || null);
+                                        }
                                     }
                                 }
                                 // 槽位兜底仅在完全无 shell_id 时使用
@@ -2348,6 +2364,7 @@ export function initTankViewer() {
                                 return '<div class="ctrl-row" style="font-size:10px;color:#8ab4ff;">弹种: shell_id=' + s.shell_id +
                                     ' (局部' + sp3.local + ' · 国家0x' + sp3.nation.toString(16) + ')' +
                                     (s.shell_kind ? ' · <b>' + s.shell_kind + '</b>' : '') +
+                                    (s.shell && s.shell.penetration ? ' · ' + Math.round(s.shell.penetration) + 'mm/' + Math.round(s.shell.damage || 0) + 'dmg（弹种反解表）' : '') +
                                     ((s.quality && s.quality.shell_from_broadcast) ? ' · 来源0x07广播' : '') +
                                     ((s.quality && s.quality.shell_from_terrain) ? ' · 来源0x1b广播' : '') +
                                     (s.segment ? ' · 装甲组=' + (s.armor_group || '—') : '') + '</div>';
@@ -2759,7 +2776,10 @@ export function initTankViewer() {
             collectArmorNodes();
             updateTurretGun(currentTurretDeg, currentGunDeg);
 
-            if (shooterData && tankData && shooterData.tank_id === tankData.tank_id) {
+            // 射手弹表随目标配置切换仅限普通装甲检视；射击复现会话中弹表已按
+            // 射手实际搭载配置（&scfg=）选定，同坦克不同玩家配置不同，此处覆盖会
+            // 把 scfg 域的弹表错换成目标当前配置的弹表
+            if (shooterData && tankData && shooterData.tank_id === tankData.tank_id && !QP.get('shot')) {
                 shooterShells = cfg.shells || [];
                 shooterCaliber = cfg.caliber || shooterCaliber;
                 populateShellSelector(shooterShells);
@@ -2809,8 +2829,21 @@ export function initTankViewer() {
 
         async function loadShooter(tid) {
             shooterData = await fetchTankData(tid);
-            let shells = shooterData.shells || [];
-            let caliber = shooterData.caliber || 120;
+            // 射手实际搭载配置弹表（&scfg= = shooter_config_idx，射击复现表注入）：
+            // 多炮坦克 stock 弹表与发射炮的穿深/弹种清单不同（KV-1 发射 85mm F-30 AP
+            // 120mm，stock ZiS-5 表只有 86/102/20），选择器必须用发射炮的表；
+            // 无 scfg（旧链接）回退顶层 shells（stock 表，仅单配置坦克正确）
+            const scfg = parseInt(QP.get('scfg'), 10);
+            const cfgArr = shooterData.configs || [];
+            let shells = null, caliber = null;
+            if (!isNaN(scfg) && scfg >= 0 && scfg < cfgArr.length && (cfgArr[scfg].shells || []).length) {
+                shells = cfgArr[scfg].shells;
+                caliber = cfgArr[scfg].caliber;
+            }
+            if (!shells || shells.length === 0) {
+                shells = shooterData.shells || [];
+                caliber = shooterData.caliber || 120;
+            }
             if (!shells || shells.length === 0) {
                 const data = await fetchShells(tid);
                 if (Array.isArray(data)) {
@@ -2824,6 +2857,7 @@ export function initTankViewer() {
                 ? Object.assign({}, s, { caliber: caliber }) : s);
             shooterCaliber = caliber;
             populateShellSelector(shooterShells);
+            // &shell= = 射手配置内弹下标（射击复现表 resolveShellIdx 同域）
             const si = parseInt(QP.get('shell'), 10);
             if (!isNaN(si) && si >= 0 && si < shooterShells.length) {
                 const sel = document.getElementById('shell-select');

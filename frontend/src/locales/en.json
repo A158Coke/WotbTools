@@ -1530,7 +1530,7 @@
     "res_ric": "Rico",
     "res_track": "Track",
     "no_shots": "No shots detected.",
-    "footnote": "Click a row → open the 3D armor viewer (world mode); missed shots replay to terrain impact (no armor verdict); ★ = replay author; ⚠ = degraded data for that shot (hover for details).",
+    "footnote": "Hit shots only: click a row / 3D → armor viewer world mode (trajectory + hit verdict + armor test); ★ = replay author; ⚠ = degraded data for that shot (hover for details).",
     "q_muzzle": "Shooter position fell back to muzzle coordinates (snapshot missing)",
     "q_shooter_dt": "Shooter snapshot offset",
     "q_target_dt": "Target snapshot offset",
