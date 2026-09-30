@@ -23,6 +23,15 @@ const languageOptions = [
 function onLangChange(event) {
   localStorage.setItem('wotb-lang', event.target.value)
 }
+
+// Agent 数据平面顶端标签页（评审 UI 交互补充；同 wotbagent 的顶部 tab 导航形态）。
+// 四视图共用一个 active 高亮组；任一激活时整组高亮由各 tab 自身 activeView 精确匹配。
+const AGENT_TABS = [
+  { view: 'agent-replay', key: 'agentNav.replay' },
+  { view: 'agent-tankopedia', key: 'agentNav.tanks' },
+  { view: 'agent-shots', key: 'agentNav.shots' },
+  { view: 'agent-armor', key: 'agentNav.armor' },
+]
 </script>
 
 <template>
@@ -34,6 +43,12 @@ function onLangChange(event) {
       <button v-if="showHome" :class="{ active: activeView === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
       <button :class="{ active: ['replay', 'ai-review', 'battle-playback'].includes(activeView) }" @click="navigate('replay')">{{ $t('home.replayParse') }}</button>
       <button :class="{ active: activeView === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
+      <button
+        v-for="tab in AGENT_TABS" :key="tab.view"
+        class="agent-tab" :class="{ active: activeView === tab.view }"
+        :data-testid="'nav-' + tab.view"
+        @click="navigate(tab.view)"
+      >{{ $t(tab.key) }}</button>
     </nav>
     <span
       v-if="showDevEnvironmentNotice"

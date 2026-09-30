@@ -1441,7 +1441,27 @@
     "play": "播放",
     "pause": "暂停",
     "local_file": "本地文件",
-    "assets_hint": "未配置资产平面：追加 ?assets=<COS/CDN 基址> 以加载地图地形/车模 GLB/坦克数据（回放解析本身不依赖）。"
+    "assets_hint": "未配置资产平面：追加 ?assets=<COS/CDN 基址> 以加载地图地形/车模 GLB/坦克数据（回放解析本身不依赖）。",
+    "cam_free": "自由",
+    "cam_top": "俯视",
+    "cam_follow": "跟随",
+    "camera": "镜头",
+    "glb": "真实车模（GLB）",
+    "glb_gate_hint": "低画质档不加载真实车模（中/高档可用）",
+    "labels": "昵称标签",
+    "quality": "画质",
+    "q_low": "低",
+    "q_mid": "中",
+    "q_high": "高",
+    "q_title": "画质档在加载前选择：本页选择区，或 URL ?q=low|mid|high",
+    "q_desc": "低=小地图地面（无建筑/盒子车模）· 中=烘焙底图+建筑 · 高=分层地表+建筑+抗锯齿",
+    "team1": "队伍 1",
+    "team2": "队伍 2",
+    "destroyed": "击毁",
+    "banner_win": "胜利",
+    "banner_lose": "失败",
+    "banner_draw": "平局",
+    "pb_hint": "14 车全场连续回放：滤波渲染位姿 + 炮塔/炮管随动 + 弹道飞行动画 + 实时血量/击杀流。数据由本机解析，加载需数秒。"
   },
   "agentTanks": {
     "title": "坦克百科（Agent）",
@@ -1525,5 +1545,11 @@
     "q_pitch_velocity": "射手炮管俯仰由弹道推算（他人视角无该状态）",
     "q_shell_unknown": "弹种未知（通知与广播均缺失）",
     "q_result_unknown": "服务器未通知命中结果"
+  },
+  "agentNav": {
+    "replay": "三维回放",
+    "tanks": "坦克百科",
+    "shots": "射击复现",
+    "armor": "装甲查看器"
   }
 }
