@@ -127,6 +127,19 @@ jobs:
       - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
         run: bash scripts/fetch-agent-wasm.sh
 
+      - name: Validate production asset origin
+        env:
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$ASSET_BASE_URL" ] || { echo 'Repository variable ASSET_BASE_URL is required.' >&2; exit 1; }
+          case "$ASSET_BASE_URL" in
+            https://*) ;;
+            *) echo 'ASSET_BASE_URL must be an https:// origin.' >&2; exit 1 ;;
+          esac
+          [ "${ASSET_BASE_URL%/}" = "$ASSET_BASE_URL" ] || { echo 'ASSET_BASE_URL must not end with /.' >&2; exit 1; }
+
       - uses: docker/setup-buildx-action@v4
       - name: Build and publish this frozen image
         id: build_image
