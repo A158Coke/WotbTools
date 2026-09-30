@@ -313,7 +313,8 @@ function resultBadge(s) {
 
 function dmgColor(s) {
   const d = s.damage || 0
-  return !d ? 'var(--muted, #9aa4b2)' : d >= 1000 ? 'var(--danger, #e0665b)' : d >= 600 ? '#ffcf5c' : 'var(--fg, #dfe5ec)'
+  // canonical token（两档成对）：伤害分级着色在高对比/低对比档都可读
+  return !d ? 'var(--text-muted)' : d >= 1000 ? 'var(--status-err-fg)' : d >= 600 ? 'var(--status-warn-fg)' : 'var(--text)'
 }
 
 // 行内 3D 复现可用性：仅命中弹（有目标 = 服务器命中通知在案，弹道/命中判定/装甲
@@ -423,7 +424,7 @@ async function resolveShellIdx(s) {
             <tr v-for="s in filteredShots" :key="s.index" :class="{ link: rowHas3d(s) && srViewerUrl(s) }" @click="rowHas3d(s) && openShotInViewer(s.index)">
               <td class="num muted">#{{ s.index }}</td>
               <td class="num">{{ s.time_s.toFixed(1) }}</td>
-              <td class="ell">
+              <td class="ell" :title="s.shooter_name || (s.shooter_eid ? 'eid:' + s.shooter_eid : '')">
                 <b v-if="s.is_author" class="author">★{{ s.shooter_name || t('agentShots.author') }}</b>
                 <span v-else>{{ s.shooter_name || ('eid:' + s.shooter_eid) }}</span>
                 <span v-if="qualityTitle(s)" :title="qualityTitle(s)" class="q-warn">⚠</span>
@@ -442,7 +443,7 @@ async function resolveShellIdx(s) {
                 <span class="pill" :class="resultBadge(s).cls">{{ resultBadge(s).text }}</span>
                 <span v-if="s.is_kill" class="pill kill">KILL</span>
               </td>
-              <td class="ell">{{ s.target_name || '—' }}</td>
+              <td class="ell" :title="s.target_name || ''">{{ s.target_name || '—' }}</td>
               <td class="ctr" @click.stop>
                 <a v-if="rowHas3d(s) && srViewerUrl(s)" class="btn" :href="srViewerUrl(s)" @click.prevent="openShotInViewer(s.index)">3D</a>
                 <span v-else class="muted">—</span>
@@ -458,53 +459,59 @@ async function resolveShellIdx(s) {
 </template>
 
 <style scoped>
+/* 配色一律走 canonical token（tokens.css / classic-profile.css 两档均有定义）——
+   此前用 --fg/--panel/--line/--muted/--danger 这套名字在本仓**从未定义**，var() 的
+   深色 fallback 恒生效，等于写死深色：浅色档下 --muted 的 #9aa4b2 落在白底上对比度
+   仅 ~2.5:1（"文字发淡"），面板/按钮/边框则是突兀深色块。
+   语义色用 --status-*-fg / --accent（同样两档成对），tint 用 color-mix 自适应主题。 */
 .agent-shots { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pick { cursor: pointer; border: 1px solid var(--line, #2a3441); padding: 5px 12px; border-radius: 6px; }
+.pick { cursor: pointer; border: 1px solid var(--border); padding: 5px 12px; border-radius: 6px; }
 .pick input[type='file'] { display: none; }
-.fname { color: var(--muted, #9aa4b2); font-size: 0.85em; }
-.status.error { color: var(--danger, #e0665b); }
-.muted { color: var(--muted, #9aa4b2); }
+.fname { color: var(--text-muted); font-size: 0.85em; }
+.status.error { color: var(--error); }
+.muted { color: var(--text-muted); }
 .small { font-size: 10px; }
 .footnote { font-size: 0.8em; margin: 0; }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
-.stat-box { background: var(--panel, #1a2029); border: 1px solid var(--line, #2a3441); border-radius: 8px; padding: 8px 10px; }
-.stat-box .lbl { font-size: 0.72em; color: var(--muted, #9aa4b2); }
+.stat-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.stat-box .lbl { font-size: 0.72em; color: var(--text-muted); }
 .stat-box .val { font-size: 1.15em; font-weight: 800; }
-.stat-box .val.g { color: #5fbf7a; }
-.stat-box .val.y { color: #ffcf5c; }
-.stat-box .val.r { color: #ff6b6b; }
-.stat-box .val.o { color: #ff9800; }
-.stat-box .sub { font-size: 0.72em; color: var(--muted, #9aa4b2); }
+.stat-box .val.g { color: var(--status-ok-fg); }
+.stat-box .val.y { color: var(--status-warn-fg); }
+.stat-box .val.r { color: var(--status-err-fg); }
+.stat-box .val.o { color: var(--accent); }
+.stat-box .sub { font-size: 0.72em; color: var(--text-muted); }
 
 /* 表格：固定布局 + 定列宽（auto 布局下中文表头/长昵称互相挤压错位）。
    薄外层负责横向滚动兜底（窄视口），行内容单行省略不换行。 */
-.table-wrap { overflow-x: auto; border: 1px solid var(--line, #2a3441); border-radius: 8px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
 .shot-table { width: 100%; min-width: 760px; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
 .shot-table th, .shot-table td { padding: 5px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shot-table th { text-align: left; color: var(--muted, #9aa4b2); font-weight: 600; border-bottom: 1px solid var(--line, #2a3441); }
-.shot-table td { border-bottom: 1px dashed var(--line, #2a3441); }
-.shot-table tbody tr:hover td { background: rgba(110, 168, 254, 0.06); }
+.shot-table th { text-align: left; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+.shot-table td { border-bottom: 1px dashed var(--border); }
+.shot-table tbody tr:hover td { background: var(--bg-list-hover); }
 .shot-table tbody tr.link { cursor: pointer; }
 .w-idx { width: 44px; } .w-time { width: 56px; } .w-dmg { width: 58px; }
 .w-shell { width: 104px; } .w-res { width: 92px; } .w-3d { width: 48px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .ctr { text-align: center; }
 .ell { overflow: hidden; text-overflow: ellipsis; }
-.author { color: #6ea8fe; }
+.author { color: var(--status-info-fg); }
 /* 单符号宽：.warn 是 app-shell 设施类（display:block+padding），表格内标注点必须避开撞名 */
-.q-warn { display: inline; width: 1em; color: #ff9800; cursor: help; font-size: 10px; vertical-align: baseline; }
+.q-warn { display: inline; width: 1em; color: var(--status-warn-fg); cursor: help; font-size: 10px; vertical-align: baseline; }
 .sid { font-size: 10px; }
 .pill { border-radius: 999px; padding: 1px 8px; font-weight: 700; font-size: 10px; display: inline-block; }
 .shell-pill { min-width: 40px; box-sizing: border-box; }
-.pill.gold { background: rgba(255, 207, 92, 0.16); color: #ffcf5c; }
-.pill.pen { background: rgba(95, 191, 122, 0.16); color: #5fbf7a; }
-.pill.nopen { background: rgba(255, 107, 107, 0.15); color: #ff6b6b; }
-.pill.ric { background: rgba(255, 152, 0, 0.16); color: #ff9800; }
-.pill.track { background: rgba(95, 168, 232, 0.16); color: #5fa8e8; }
-.pill.he-res { background: rgba(255, 207, 92, 0.2); color: #ffd970; }
-.pill.miss { background: rgba(154, 164, 178, 0.16); color: #9aa4b2; }
-.pill.kill { background: rgba(255, 107, 107, 0.24); color: #ff8a8a; margin-left: 4px; }
-.btn { border: 1px solid var(--line, #2a3441); padding: 2px 10px; border-radius: 6px; text-decoration: none; }
-select, button { background: #1d242e; color: var(--fg, #dfe5ec); border: 1px solid var(--line, #2a3441); padding: 4px 10px; border-radius: 6px; }
+/* 徽标 tint = 同 token 的 color-mix（浅/深档自动跟随，不再写死深色 rgba） */
+.pill.gold { background: color-mix(in srgb, var(--status-warn-fg) 18%, transparent); color: var(--status-warn-fg); }
+.pill.pen { background: color-mix(in srgb, var(--status-ok-fg) 18%, transparent); color: var(--status-ok-fg); }
+.pill.nopen { background: color-mix(in srgb, var(--status-err-fg) 16%, transparent); color: var(--status-err-fg); }
+.pill.ric { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.pill.track { background: color-mix(in srgb, var(--status-info-fg) 18%, transparent); color: var(--status-info-fg); }
+.pill.he-res { background: color-mix(in srgb, var(--status-warn-fg) 22%, transparent); color: var(--status-warn-fg); }
+.pill.miss { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-muted); }
+.pill.kill { background: color-mix(in srgb, var(--status-err-fg) 24%, transparent); color: var(--status-err-fg); margin-left: 4px; }
+.btn { border: 1px solid var(--border); padding: 2px 10px; border-radius: 6px; text-decoration: none; }
+select, button { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px; }
 </style>
