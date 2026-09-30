@@ -177,7 +177,7 @@ onBeforeUnmount(() => {
         <span class="dim small">{{ t('agentReplay.q_desc') }}</span>
       </div>
       <p class="hint">{{ t('agentReplay.pick_hint') }}</p>
-      <p v-if="!assetsReady" class="hint warn">{{ t('agentReplay.assets_hint') }}</p>
+      <p v-if="!assetsReady" class="hint assets-warn">{{ t('agentReplay.assets_hint') }}</p>
       <p class="hint">{{ t('agentReplay.pb_hint') }}</p>
       <p v-if="store.err" class="err">{{ store.err }}</p>
     </div>
@@ -249,7 +249,7 @@ onBeforeUnmount(() => {
 .loader h2 { font-weight: 500; }
 .loader .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
 .loader .hint { color: var(--dim); max-width: 620px; text-align: center; margin: 0; }
-.loader .warn { color: #ffcf5c; }
+.loader .assets-warn { color: #ffcf5c; }
 .loader .err { color: #e07b7b; max-width: 640px; white-space: pre-wrap; }
 .pick { cursor: pointer; border: 1px solid var(--line); padding: 6px 14px; border-radius: 6px; }
 .pick input[type='file'] { display: none; }

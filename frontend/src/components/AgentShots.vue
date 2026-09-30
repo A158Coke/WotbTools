@@ -325,7 +325,7 @@ async function resolveShellIdx(s) {
               <td class="ell">
                 <b v-if="s.is_author" class="author">★{{ s.shooter_name || t('agentShots.author') }}</b>
                 <span v-else>{{ s.shooter_name || ('eid:' + s.shooter_eid) }}</span>
-                <span v-if="qualityTitle(s)" :title="qualityTitle(s)" class="warn">⚠</span>
+                <span v-if="qualityTitle(s)" :title="qualityTitle(s)" class="q-warn">⚠</span>
               </td>
               <td class="num"><b :style="{ color: dmgColor(s) }">{{ s.damage || 0 }}</b></td>
               <td class="ctr">
@@ -388,7 +388,8 @@ async function resolveShellIdx(s) {
 .ctr { text-align: center; }
 .ell { overflow: hidden; text-overflow: ellipsis; }
 .author { color: #6ea8fe; }
-.warn { color: #ff9800; cursor: help; font-size: 10px; }
+/* 单符号宽：.warn 是 app-shell 设施类（display:block+padding），表格内标注点必须避开撞名 */
+.q-warn { display: inline; width: 1em; color: #ff9800; cursor: help; font-size: 10px; vertical-align: baseline; }
 .sid { font-size: 10px; }
 .pill { border-radius: 999px; padding: 1px 8px; font-weight: 700; font-size: 10px; display: inline-block; }
 .shell-pill { min-width: 40px; box-sizing: border-box; }
