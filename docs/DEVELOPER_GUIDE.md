@@ -717,6 +717,10 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
   `minio.yml` 分别构建一个应用镜像。每个 workflow 保留 SHA tag 供诊断，并在确认 source SHA 仍为
   远端 main HEAD 后发布 `latest`；部署只使用所属服务的 `latest`。服务级 concurrency 会取消旧 main
   的工作流，Keycloak/MinIO 在 runtime 后继续执行各自的 OpenTofu 与最终验证。
+- `frontend.yml` 的镜像发布按 BUILD → VERIFY → PUBLISH → PROMOTE 分段：构建只产出本地镜像，
+  内容校验在任何 registry 写入之前完成，immutable tag 的 `docker push` 有 per-attempt 超时与
+  有界瞬态重试，发布后只校验 digest 对应关系；每段独立步级超时，禁止把 push 合回构建步骤。
+  该 workflow 不使用 GHA 构建缓存（仅前端决策，不适用于其他应用 owner）。
 - `.github/workflows/caddy.yml` 独立负责 TX 网关：staged Caddy 配置与 assets 校验后只 reconcile
   Caddy，并验证 trusted TLS、redirect、前端/API、Keycloak 与 auth asset 路由。它不 build 应用镜像、
   不依赖数据库或 Keycloak admin credentials。
