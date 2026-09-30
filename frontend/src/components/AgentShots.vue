@@ -47,37 +47,53 @@ function enrichShotsFromRoster(parsedShots, vehicles) {
 }
 
 /**
- * 弹种解析（上游 ShellKindTable.annotate 同源）：全局弹种 id → shell_type。
- * 优先查 tanks.pb 全量展开的静态反解表（shellKinds.json，dump-shell-kinds 产物，
- * 作者+他人/命中+脱靶统一覆盖——脱靶弹的 shell_id 来自开火/地形广播，属同国全域，
- * 射手自身弹链查不到）；表未命中再走射手坦克弹链兜底；仍查不到保留空 kind
- * （UI 走槽位/id 兜底，shell_id=0 的弹上游也保持未知）。
+ * 全局弹种反解表（dump-shell-kinds 富表：{全局弹种 id: {type, penetration,
+ * damage, ...}}，与回放 shell_id 同域）。构建期常量：传给 parseAgentShotsFromBytes
+ * 由 WASM 反解（作者+他人/命中+脱靶统一覆盖——脱靶弹的 shell_id 来自开火/地形
+ * 广播，同国全域，射手自身弹链查不到）；产物过旧忽略第三参时由
+ * enrichShellFallback 客户端补齐。
  */
-async function enrichShellKinds(parsedShots) {
-  let table = null
-  try {
-    table = (await import('../scene/shellKinds.json')).default
-  } catch { /* 表缺失：退化为射手弹链反解 */ }
+let shellTablePromise = null
+function loadShellTable() {
+  if (!shellTablePromise) {
+    shellTablePromise = (async () => {
+      const mod = await import('../scene/shellKinds.json')
+      return mod.default
+    })()
+    shellTablePromise.catch(() => { shellTablePromise = null })
+  }
+  return shellTablePromise
+}
+
+/**
+ * 弹种富化兜底（仅旧 WASM 产物路径：parseShotReplays 尚不支持表注入、输出无
+ * shell 字段时，按同款表在客户端反解——新产物由 WASM 注入，此处零命中直通）：
+ * 查表（全域，kind+穿深一次到位）→ 射手坦克弹链兜底；均查不到保留空 kind。
+ */
+async function enrichShellFallback(parsedShots, table) {
   const byTank = new Map()
   for (const s of parsedShots) {
-    const tid = s.shooter_tank_id
-    if (tid && !byTank.has(tid)) byTank.set(tid, null)
+    if (s.shell_id && !s.shell && !byTank.has(s.shooter_tank_id)) byTank.set(s.shooter_tank_id, null)
   }
   await Promise.all([...byTank.keys()].map(async (tid) => {
     try { byTank.set(tid, await fetchTankData(tid)) } catch { /* 静态面缺失：跳过弹链兜底 */ }
   }))
   for (const s of parsedShots) {
-    if (!s.shell_id) continue
-    if (table) {
-      const kind = table[String(s.shell_id)]
-      if (kind) { s.shell_kind = s.shell_kind || kind; continue }
+    if (!s.shell_id || s.shell) continue
+    const entry = table && table[String(s.shell_id)]
+    if (entry) {
+      s.shell = entry
+      s.shell_kind = s.shell_kind || entry.type
+      continue
     }
     const data = byTank.get(s.shooter_tank_id)
     if (!data) continue
-    // 服务端 shell_index_by_global_id 同式：全配置弹链查找（该弹可能在非顶级变体）
-    for (const cfg of data.configs || []) {
+    // 服务端 resolve_shell_by_global_id 同式：全配置弹链查找（顶级偏好，从后往前）
+    for (let ci = (data.configs || []).length - 1; ci >= 0; ci--) {
+      const cfg = data.configs[ci]
       const idx = (cfg.shell_global_ids || []).indexOf(s.shell_id)
-      if (idx >= 0 && cfg.shells?.[idx]?.type) {
+      if (idx >= 0 && cfg.shells?.[idx]) {
+        s.shell = s.shell || cfg.shells[idx]
         s.shell_kind = s.shell_kind || cfg.shells[idx].type
         break
       }
@@ -143,9 +159,10 @@ async function onFilePicked(event) {
     } catch (e) {
       console.warn('pitch limits skipped:', e)
     }
+    const shellTable = await loadShellTable().catch(() => undefined)
     let parsedShots
     try {
-      parsedShots = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined)
+      parsedShots = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined, shellTable)
     } catch (e) {
       console.warn('anchored parse failed, fallback:', e)
       parsedShots = await parseAgentShotsFromBytes(bytes)
@@ -156,10 +173,16 @@ async function onFilePicked(event) {
         console.warn('roster enrichment skipped:', e)
       }
     }
-    try {
-      await enrichShellKinds(parsedShots)
-    } catch (e) {
-      console.warn('shell kind enrichment skipped:', e)
+    // 弹种兜底：旧产物（parseShotReplays 不支持表注入，输出无 shell 字段）客户端补齐；
+    // 新产物 WASM 已注入，此处零命中直通
+    if (shellTable) {
+      try {
+        if (parsedShots.some((s) => s.shell_id && !s.shell)) {
+          await enrichShellFallback(parsedShots, shellTable)
+        }
+      } catch (e) {
+        console.warn('shell enrichment skipped:', e)
+      }
     }
     shots.value = parsedShots
     shooter.value = 'all'
@@ -244,9 +267,9 @@ function qualityTitle(s) {
   return issues.join('; ')
 }
 
-// 弹种徽标：shell_kind → AP/APCR/HEAT/HE + premium 标记。脱靶弹（无命中通知）
-// 的 shell_id 来自开火/地形广播、与弹表全局域不同——不可反解，一律显示 "—"；
-// 命中弹缺 kind 时作者走槽位兜底，其余走 shell_id 小字（数据缺坦克可查时）。
+// 弹种徽标：shell_kind（表注入反解，全域覆盖命中+脱靶）→ AP/APCR/HEAT/HE +
+// premium 标记 + 穿深（注入 shell 数据，射手配置弹表口径）。缺 kind 时作者走
+// 槽位兜底，其余走 shell_id 小字（shell_id=0 的弹上游也保持未知）。
 function shellBadge(s) {
   const kindOf = (t) => {
     t = (t || '').toLowerCase()
@@ -256,14 +279,19 @@ function shellBadge(s) {
     if (/^ap/.test(t)) return 'AP'
     return ''
   }
-  const label = kindOf(s.shell_kind)
+  const t = s.shell_kind || (s.shell && s.shell.type) || ''
+  const label = kindOf(t)
   if (!label) {
     if (!s.target_name) return {}
     if (s.is_author && s.shell_slot != null) return { fallback: '#' + s.shell_slot }
     if (s.shell_id) return { fallbackSmall: 'id' + s.shell_id }
     return {}
   }
-  return { label, gold: /premium/.test(s.shell_kind || '') }
+  return {
+    label,
+    gold: /premium/.test(t),
+    pen: s.shell && s.shell.penetration ? Math.round(s.shell.penetration) + 'mm' : null,
+  }
 }
 
 // 结果徽标：hit_flags 位图 → 击穿/HE/跳弹/未穿/脱靶；非作者按 game_hit_result 降级
@@ -297,16 +325,19 @@ function rowHas3d(s) {
 
 // 3D 查看器 URL（世界模式）：命中弹用目标车辆；脱靶弹（无 target_tank_id）用射手车辆兜底。
 // shots 数组先经 sessionStorage 交接（新窗口同源可取，agentData.fetchReplayShots）。
-// 弹种下标：确定性 shell_id → 射手实际搭载弹表（configs 末位）反查；查不到回退槽位/省略。
-function srViewerUrl(s, shellIdx) {
+// 弹种下标：确定性 shell_id → 射手弹表全配置反查（顶级偏好），连同所属配置
+// scfg 一起传（3D 端下拉弹表按 scfg 选定，下标同域——多炮坦克不再错挂 stock 表）。
+function srViewerUrl(s, shellHit) {
   const shooterTank = s.shooter_tank_id || 0
   const tid = s.target_tank_id || shooterTank || 0
   if (!tid) return ''
   const sh = shooterTank ? '&shooter=' + shooterTank : ''
-  const shIdx = shellIdx != null ? shellIdx : (s.is_author && s.shell_slot != null) ? s.shell_slot : null
+  const hit = shellHit || null
+  const shIdx = hit ? hit.idx : (s.is_author && s.shell_slot != null) ? s.shell_slot : null
   const ammo = shIdx != null ? '&shell=' + shIdx : ''
+  const scfg = hit && hit.cfg != null ? '&scfg=' + hit.cfg : ''
   const cfg = s.target_config_idx != null ? '&config=' + s.target_config_idx : ''
-  return `/?view=agent-armor&tank=${tid}&shot=${s.index}${sh}${ammo}${cfg}&world=1&heatmap=1`
+  return `/?view=agent-armor&tank=${tid}&shot=${s.index}${sh}${ammo}${cfg}${scfg}&world=1&heatmap=1`
 }
 
 async function openShotInViewer(no) {
@@ -318,16 +349,19 @@ async function openShotInViewer(no) {
   window.open(url, '_blank', 'width=' + Math.round(window.innerWidth * 0.85) + ',height=' + Math.round(window.innerHeight * 0.9))
 }
 
-// shell_id（全局弹种 id）→ 射手弹表下标：与上游 shell_index_by_global_id 同规则（顶级配置弹链）
+// shell_id（全局弹种 id）→ 射手弹表 (配置下标, 弹下标)：与上游
+// resolve_shell_by_global_id 同式（全配置弹链查找，顶级偏好从后往前——
+// 该弹可能在非顶级变体，仅扫顶级会漏）
 async function resolveShellIdx(s) {
   if (!s.shell_id || !s.shooter_tank_id) return null
   try {
     const data = await fetchTankData(s.shooter_tank_id)
     const cfgs = data.configs || []
-    const cfg = cfgs.length ? cfgs[cfgs.length - 1] : null
-    const ids = cfg?.shell_global_ids || []
-    const idx = ids.indexOf(s.shell_id)
-    return idx >= 0 ? idx : null
+    for (let ci = cfgs.length - 1; ci >= 0; ci--) {
+      const idx = (cfgs[ci].shell_global_ids || []).indexOf(s.shell_id)
+      if (idx >= 0) return { cfg: ci, idx }
+    }
+    return null
   } catch {
     return null
   }
@@ -396,7 +430,10 @@ async function resolveShellIdx(s) {
               </td>
               <td class="num"><b :style="{ color: dmgColor(s) }">{{ s.damage || 0 }}</b></td>
               <td class="ctr">
-                <span v-if="shellBadge(s).label" class="pill shell-pill" :class="{ gold: shellBadge(s).gold }">{{ shellBadge(s).label }}</span>
+                <template v-if="shellBadge(s).label">
+                  <span class="pill shell-pill" :class="{ gold: shellBadge(s).gold }">{{ shellBadge(s).label }}</span>
+                  <span v-if="shellBadge(s).pen" class="muted sid">{{ shellBadge(s).pen }}</span>
+                </template>
                 <span v-else-if="shellBadge(s).fallback" class="muted">#{{ shellBadge(s).fallback }}</span>
                 <span v-else-if="shellBadge(s).fallbackSmall" class="muted sid" :title="t('agentShots.shell_unknown')">{{ shellBadge(s).fallbackSmall }}</span>
                 <span v-else class="muted">—</span>
@@ -450,7 +487,7 @@ async function resolveShellIdx(s) {
 .shot-table tbody tr:hover td { background: rgba(110, 168, 254, 0.06); }
 .shot-table tbody tr.link { cursor: pointer; }
 .w-idx { width: 44px; } .w-time { width: 56px; } .w-dmg { width: 58px; }
-.w-shell { width: 68px; } .w-res { width: 92px; } .w-3d { width: 48px; }
+.w-shell { width: 104px; } .w-res { width: 92px; } .w-3d { width: 48px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .ctr { text-align: center; }
 .ell { overflow: hidden; text-overflow: ellipsis; }
