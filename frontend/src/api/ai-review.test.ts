@@ -1,0 +1,131 @@
+// @vitest-environment happy-dom
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  AI_REVIEWS_PATH,
+  buildAiReviewRequest,
+  cancelAiReview,
+  cancelAiReviewUrl,
+  openAiReviewStream,
+} from './ai-review.js'
+import { toAiReviewLocale, type AiReviewProjection } from '../types/ai-review.js'
+
+const auth = {
+  token: () => 'test-token',
+  ensureToken: vi.fn().mockResolvedValue(true),
+}
+
+const CORRELATION_ID = '5c2b1f4e-9a0d-4f6b-8f1e-2b3c4d5e6f70'
+
+const projection: AiReviewProjection = {
+  battle: { players: [] },
+  reconstruction: {
+    participants: [],
+    events: [],
+    coverage: {
+      totalPackets: 10,
+      decodedPackets: 9,
+      partiallyDecodedPackets: 1,
+      unknownPackets: 0,
+      failedPackets: 0,
+      decodedPacketRatio: 0.9,
+      packetTypes: {},
+    },
+  },
+}
+
+function responseStub(status: number, body = '') {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: () => null },
+    text: async () => body,
+    json: async () => JSON.parse(body || '{}'),
+  } as unknown as Response
+}
+
+function stubFetch(response: Response) {
+  const fetchMock = vi.fn().mockResolvedValue(response)
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('buildAiReviewRequest', () => {
+  it('freezes schemaVersion at the contract constant and carries only the projection', () => {
+    const request = buildAiReviewRequest({
+      ...projection,
+      locale: 'zh-CN',
+      correlationId: CORRELATION_ID,
+    })
+
+    expect(request.schemaVersion).toBe(1)
+    expect(request.locale).toBe('zh-CN')
+    expect(request.correlationId).toBe(CORRELATION_ID)
+    expect(request.battle).toBe(projection.battle)
+    expect(request.reconstruction).toBe(projection.reconstruction)
+    // metadata / streamHeader / diagnostics 永不进入 HTTP。
+    expect(Object.keys(request).sort()).toEqual([
+      'battle', 'correlationId', 'locale', 'reconstruction', 'schemaVersion',
+    ])
+  })
+})
+
+describe('toAiReviewLocale', () => {
+  it('accepts only contract locales and falls back to zh-CN', () => {
+    expect(toAiReviewLocale('en-US')).toBe('en-US')
+    expect(toAiReviewLocale('ru-RU')).toBe('ru-RU')
+    expect(toAiReviewLocale('zh')).toBe('zh-CN')
+    expect(toAiReviewLocale(undefined)).toBe('zh-CN')
+  })
+})
+
+describe('AI Review transport', () => {
+  it('opens the SSE stream against /api/ai/reviews with the bearer JWT', async () => {
+    const fetchMock = stubFetch(responseStub(200))
+
+    await openAiReviewStream(auth, buildAiReviewRequest({
+      ...projection,
+      locale: 'zh-CN',
+      correlationId: CORRELATION_ID,
+    }))
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(AI_REVIEWS_PATH)
+    expect(AI_REVIEWS_PATH).toBe('/api/ai/reviews')
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-token')
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+    expect(JSON.parse(init.body as string).correlationId).toBe(CORRELATION_ID)
+  })
+
+  it('cancels by correlationId path parameter (not the retired query form)', async () => {
+    const fetchMock = stubFetch(responseStub(204))
+
+    await cancelAiReview(auth, CORRELATION_ID)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`/api/ai/reviews/${CORRELATION_ID}/cancel`)
+    expect(cancelAiReviewUrl(CORRELATION_ID)).toBe(url)
+    expect(url).not.toContain('?')
+    expect(init.method).toBe('POST')
+    expect(init.keepalive).toBe(true)
+  })
+
+  it('treats an already-finished review (404) as a best-effort no-op', async () => {
+    stubFetch(responseStub(404, '{"errorCode":"RESOURCE_NOT_FOUND","status":404}'))
+
+    await expect(cancelAiReview(auth, CORRELATION_ID)).resolves.toBeUndefined()
+  })
+
+  it('does not call the backend when there is no correlationId', async () => {
+    const fetchMock = stubFetch(responseStub(204))
+
+    await cancelAiReview(auth, '')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})

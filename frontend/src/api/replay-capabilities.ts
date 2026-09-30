@@ -12,20 +12,19 @@ export interface ReplayDatasetRef {
   sourceId: string
 }
 
-export interface AiReviewRequest extends ReplayDatasetRef {
-  lang: string
-  correlationId: string
-}
-
 export type OptionalArtifact<T> =
   | { available: true; status: number; data: T }
   | { available: false; status: 204; data: null }
 
-async function authedReplayPost(
+/**
+ * Bearer 鉴权 POST：`ensureToken` 保鲜 + canonical `ApiError` 归一。
+ * `/api/replay/*` 与 `/api/ai/**` 两个 transport 模块共用，组件不得复制此逻辑。
+ */
+export async function authedReplayPost(
   auth: ReplayAuthSession,
   url: string,
   body: unknown,
-  options: { signal?: AbortSignal; allowNoContent?: boolean } = {},
+  options: { signal?: AbortSignal; allowNoContent?: boolean; keepalive?: boolean } = {},
 ): Promise<Response> {
   const valid = await auth.ensureToken(30)
   if (!valid) {
@@ -43,6 +42,7 @@ async function authedReplayPost(
     headers,
     body: JSON.stringify(body),
     signal: options.signal,
+    keepalive: options.keepalive,
   })
 
   if (response.status === 204 && options.allowNoContent) return response
@@ -94,28 +94,4 @@ export async function fetchBattlePlaybackDataset(
   }
 
   return { available: true, status: response.status, data: validation.data }
-}
-
-/** Opens the AI Review SSE response. Stream parsing remains a presentation/application concern. */
-export function openAiReviewStream(
-  auth: ReplayAuthSession,
-  request: AiReviewRequest,
-  signal?: AbortSignal,
-): Promise<Response> {
-  return authedReplayPost(auth, '/api/replay/analyze', request, { signal })
-}
-
-/** Best-effort cancellation for unload/button/timeout paths. */
-export async function cancelAiReview(
-  auth: Pick<ReplayAuthSession, 'token'>,
-  correlationId: string,
-): Promise<void> {
-  if (!correlationId) return
-  const accessToken = auth.token()
-  const headers: Record<string, string> = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-  await apiFetch(`/api/replay/analyze/cancel?correlationId=${encodeURIComponent(correlationId)}`, {
-    method: 'POST',
-    headers,
-    keepalive: true,
-  })
 }
