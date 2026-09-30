@@ -777,16 +777,13 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             }
             final Long rawField1 = optionalLong(fields, 1);
             final Long rawField2 = optionalLong(fields, 2);
-            final Long progress = optionalLong(fields, 3);
+            final Long rawField3 = optionalLong(fields, 3);
             final Long rawField4 = optionalLong(fields, 4);
-            if (progress != null && (progress < 0 || progress > 100)) {
-                continue;
-            }
             out.add(new RawAssaultBaseUpdate(
                     packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                     rawField1 == null ? null : rawField1.intValue(),
                     rawField2 == null ? null : rawField2.intValue(),
-                    progress == null ? null : progress.intValue(),
+                    rawField3 == null ? null : rawField3.intValue(),
                     rawField4 == null ? null : rawField4.intValue()));
         }
         return out;
