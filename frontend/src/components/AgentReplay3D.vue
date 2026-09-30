@@ -185,13 +185,28 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* 面板配色体系自上游 PlaybackView 平移（独立于主应用 tokens） */
+/* 面板配色体系自上游 PlaybackView 平移；名字沿用上游，但**两档主题各自给值**：
+   深色值逐字保留（showcase 零变化），classic 档在同名 token 上覆盖为浅色。
+   3D 场景本体（three.js 画的战场）不随主题变化，只有 HUD 面板跟随。 */
 .pb-root {
   position: relative; flex: 1; min-width: 0; min-height: calc(100vh - 67px); overflow: hidden;
   --panel: rgba(16, 20, 26, .82); --line: #2c3542; --fg: #d8dee7; --dim: #8a94a3;
   --ally: #3fa66a; --enemy: #c05046; --accent: #e8b23c;
-  background: #0d1117; color: var(--fg);
+  /* 此前绕过 token 直接写死的颜色——收进 token 才能被浅色档统一覆盖 */
+  --root-bg: #0d1117; --btn-bg: #1d242e; --on-accent: #14181e;
+  --hover-soft: rgba(255, 255, 255, .06); --hpbar-bg: #222a34;
+  --loader-bg: rgba(10, 13, 17, .94); --warn: #ffcf5c; --error: #e07b7b;
+  background: var(--root-bg); color: var(--fg);
   font: 13px/1.45 "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+html[data-ui-profile="classic"] .pb-root {
+  --panel: rgba(255, 255, 255, .94); --line: #d9dde3; --fg: #2a2f28; --dim: #5c665a;
+  --ally: #15803d; --enemy: #b3261e; --accent: #a95c1c;
+  --root-bg: #f4f5f2; --btn-bg: #fff; --on-accent: #fff;
+  --hover-soft: rgba(0, 0, 0, .05); --hpbar-bg: #e3e6e1;
+  /* loader 是整页 UI overlay（store.hasData 之前铺满视口），不是 3D 场景 →
+     必须跟随主题；深度与 canonical 浅色档状态色一致以保证可读 */
+  --loader-bg: rgba(244, 245, 242, .97); --warn: #9a6000; --error: #a3232e;
 }
 .scene { position: absolute; inset: 0; }
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line);
@@ -208,7 +223,7 @@ onBeforeUnmount(() => {
 .team2 { right: 10px; }
 .team h3 { font-size: 12px; color: var(--dim); margin: 2px 4px 6px; font-weight: 500; }
 .pl { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; cursor: pointer; }
-.pl:hover { background: rgba(255, 255, 255, .06); }
+.pl:hover { background: var(--hover-soft); }
 .pl.dead { opacity: .42; }
 .pl.dead .nick { text-decoration: line-through; }
 .pl.followed { outline: 1px solid var(--accent); }
@@ -216,7 +231,7 @@ onBeforeUnmount(() => {
 .pl .nick { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl .tank { color: var(--dim); font-size: 11px; max-width: 86px; overflow: hidden;
             text-overflow: ellipsis; white-space: nowrap; }
-.pl .hpbar { width: 52px; height: 5px; background: #222a34; border-radius: 3px; flex: none; }
+.pl .hpbar { width: 52px; height: 5px; background: var(--hpbar-bg); border-radius: 3px; flex: none; }
 .pl .hpbar i { display: block; height: 100%; border-radius: 3px; }
 .killfeed { position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
             display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; z-index: 4; }
@@ -229,10 +244,10 @@ onBeforeUnmount(() => {
 .controls input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); padding: 0; border: none; background: transparent; border-radius: 0; }
 .pb-root input[type="checkbox"] { flex: none; min-width: 0; width: auto; margin: 0; }
 .controls .time { font-variant-numeric: tabular-nums; color: var(--dim); min-width: 96px; text-align: center; }
-.pb-root button, .pb-root select { background: #1d242e; color: var(--fg); border: 1px solid var(--line);
+.pb-root button, .pb-root select { background: var(--btn-bg); color: var(--fg); border: 1px solid var(--line);
                    border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
 .pb-root button:hover { border-color: var(--accent); }
-.pb-root button.on { background: var(--accent); color: #14181e; border-color: var(--accent); font-weight: 600; }
+.pb-root button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
 .play-btn { width: 84px; font-weight: 600; }
 .speeds .speed-btn { min-width: 38px; }
 .toggle { display: flex; gap: 4px; align-items: center; color: var(--dim); cursor: pointer; }
@@ -243,14 +258,14 @@ onBeforeUnmount(() => {
 .banner { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
           font-size: 42px; font-weight: 700; padding: 14px 44px; z-index: 6;
           background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
-.loader { position: absolute; inset: 0; background: rgba(10, 13, 17, .94); z-index: 10;
+.loader { position: absolute; inset: 0; background: var(--loader-bg); z-index: 10;
           display: flex; flex-direction: column; gap: 14px; align-items: center;
           justify-content: center; }
 .loader h2 { font-weight: 500; }
 .loader .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
 .loader .hint { color: var(--dim); max-width: 620px; text-align: center; margin: 0; }
-.loader .assets-warn { color: #ffcf5c; }
-.loader .err { color: #e07b7b; max-width: 640px; white-space: pre-wrap; }
+.loader .assets-warn { color: var(--warn); }
+.loader .err { color: var(--error); max-width: 640px; white-space: pre-wrap; }
 .pick { cursor: pointer; border: 1px solid var(--line); padding: 6px 14px; border-radius: 6px; }
 .pick input[type='file'] { display: none; }
 .loader button { min-width: 44px; }
