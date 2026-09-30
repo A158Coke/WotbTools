@@ -166,7 +166,7 @@ onBeforeUnmount(() => {
           <input type="file" accept=".wotbreplay" @change="onFilePicked" />
           {{ t('agentReplay.local_file') }}
         </label>
-        <span v-if="store.loading" class="dim">{{ t('agentReplay.parsing') }}</span>
+        <span v-if="store.loading">{{ store.assetStage ? t('agentReplay.loading_assets') : t('agentReplay.parsing') }}</span>
       </div>
       <div class="row" v-if="!store.hasData">
         <span class="dim">{{ t('agentReplay.quality') }}</span>

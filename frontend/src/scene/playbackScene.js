@@ -1426,7 +1426,7 @@ export function initPlayback(container, store) {
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       teardownSession();   // 内部再递增一代——gen+1 仍属本调用（仍是最新所有者）
       DATA = data;
-      startPlayback();
+      await startPlayback();   // 进入场景前等待运行所需全部资产（地图/地形/地表/场景）
       store.hasData = true;
     } catch (e) {
       if (gen === sessionGen || gen + 1 === sessionGen) store.err = '加载失败: ' + e.message;
@@ -1434,13 +1434,21 @@ export function initPlayback(container, store) {
       if (gen === sessionGen || gen + 1 === sessionGen) store.loading = false;
     }
   }
-  function startPlayback() {
+  async function startPlayback() {
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
     store.mapName = DATA.meta.map_name || ('map_' + DATA.meta.map_id);
     buildWorld();
-    // catch 兜底：loadMapImage 内部各段有自己的 try，但裸调用时任何漏网异常
-    // 都会变成静默的 unhandled rejection（地图消失且控制台无痕）
-    loadMapImage().catch(e => console.warn('地图资产加载失败（回退网格）:', e));
+    // 进入场景前等待运行所需全部资产（评审要求：地图/地形/分层地表/场景 GLB 按
+    // 画质档全部就绪后才进场，不再先进场后异步补图）。各段内部已 try/catch——
+    // 资产缺失按档位语义降级（回退网格/2D/烘焙底图），等待不因单项缺失而悬挂。
+    store.assetStage = true;
+    try {
+      await loadMapImage();
+    } catch (e) {
+      console.warn('地图资产加载失败（回退网格）:', e);
+    } finally {
+      store.assetStage = false;
+    }
     buildVehicles();
     buildRoster();
     T = DATA.meta.t_start;

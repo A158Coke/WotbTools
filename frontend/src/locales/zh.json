@@ -1461,7 +1461,8 @@
     "banner_win": "胜利",
     "banner_lose": "失败",
     "banner_draw": "平局",
-    "pb_hint": "14 车全场连续回放：滤波渲染位姿 + 炮塔/炮管随动 + 弹道飞行动画 + 实时血量/击杀流。数据由本机解析，加载需数秒。"
+    "pb_hint": "14 车全场连续回放：滤波渲染位姿 + 炮塔/炮管随动 + 弹道飞行动画 + 实时血量/击杀流。数据由本机解析，加载需数秒。",
+    "loading_assets": "正在获取地图/地形/场景资产…"
   },
   "agentTanks": {
     "title": "坦克百科（Agent）",
@@ -1473,12 +1474,10 @@
     "sort_name": "排序：名称",
     "sort_tier": "排序：等级 ↓",
     "sort_hp": "排序：HP ↓",
-    "sort_armor": "排序：装甲 ↓",
     "sort_pen": "排序：穿透 ↓",
     "loading": "坦克数据装载中…",
     "no_match": "没有匹配的坦克。",
     "error_load": "加载失败：",
-    "armor": "装甲",
     "pen": "穿透",
     "dmg": "伤害",
     "shell": "弹种",
@@ -1491,12 +1490,6 @@
     "hull_traverse": "车体转速",
     "turret_traverse": "炮塔转速",
     "gun_dep_ele": "俯角/仰角",
-    "hull_front": "车体正面",
-    "hull_sides": "车体侧面",
-    "hull_rear": "车体尾部",
-    "turret_front": "炮塔正面",
-    "turret_sides": "炮塔侧面",
-    "turret_rear": "炮塔尾部",
     "open_armor": "在 3D 装甲查看器打开",
     "back": "← 返回坦克百科",
     "open3d": "在新的浏览器窗口打开 3D 检视器",
@@ -1506,12 +1499,7 @@
     "velocity": "弹速",
     "reload": "装填",
     "aim_time": "瞄准时间",
-    "gun_armor": "炮管装甲",
-    "hull": "车体",
-    "turret": "炮塔",
-    "front": "正面",
-    "side": "侧面",
-    "rear": "尾部"
+    "open3d_hint": "装甲数值、等效厚度与击穿判定以 3D 装甲检视器实测为准。"
   },
   "agentShots": {
     "title": "射击复现（Agent）",
