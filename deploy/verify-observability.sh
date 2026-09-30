@@ -19,6 +19,8 @@ readonly NETWORK="${WOTB_OBSERVABILITY_NETWORK:-wotb_internal}"
 # The business runtime (business-api) publishes its management port on the TX
 # WireGuard address only; Prometheus scrapes it there and so does this gate.
 readonly BACKEND_METRICS_URL="${WOTB_BACKEND_METRICS_URL:-http://10.20.0.1:8088/actuator/prometheus}"
+# AI Review is an independent Yecao runtime on the shared Docker network.
+readonly AI_SERVICE_METRICS_URL="${WOTB_AI_SERVICE_METRICS_URL:-http://ai-service:8080/actuator/prometheus}"
 # Keycloak and both public domains are reached over their real public TLS chain;
 # verification is never disabled and no curl -k equivalent is used.
 readonly KEYCLOAK_METADATA_URL="${WOTB_KEYCLOAK_METADATA_URL:-https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration}"
@@ -141,10 +143,10 @@ echo "== Verifying observability data path =="
 validate_alloy
 wait_for_http "BACKEND_METRICS" "backend metrics endpoint" \
   "$BACKEND_METRICS_URL" "jvm_" "process_" "system_" "http_server_requests"
-wait_for_http "BACKEND_METRICS" "backend AI queue gauges" \
-  "$BACKEND_METRICS_URL" "wotb_ai_review_in_flight" "wotb_ai_review_queue_depth"
 wait_for_http "BACKEND_METRICS" "backend Hikari metrics" \
   "$BACKEND_METRICS_URL" "hikaricp_connections_active"
+wait_for_http "AI_SERVICE_METRICS" "AI service metrics endpoint" \
+  "$AI_SERVICE_METRICS_URL" "wotb_ai_review_in_flight" "wotb_ai_review_queue_depth"
 wait_for_http "KEYCLOAK_APPLICATION" "Keycloak application metadata" \
   "$KEYCLOAK_METADATA_URL" '"issuer"'
 wait_for_http "PROMETHEUS_TARGET" "node exporter metrics endpoint" "http://node-exporter:9100/metrics" "node_"
@@ -156,15 +158,15 @@ wait_for_http "GRAFANA_PROXY" "monitor public health endpoint" \
   "$MONITOR_HEALTH_URL" '"database":"ok"'
 
 targets="$(wait_for_http "PROMETHEUS_TARGET" "prometheus target API" "http://prometheus:9090/api/v1/targets" \
-  '"status":"success"' '"job":"wotb-backend"' '"job":"node-exporter"' \
+  '"status":"success"' '"job":"wotb-backend"' '"job":"ai-service"' '"job":"node-exporter"' \
   '"job":"prometheus"' '"job":"loki"' '"job":"grafana"' >/dev/null \
   && net_exec "http://prometheus:9090/api/v1/targets")" || fail "PROMETHEUS_TARGET" "Prometheus target API unavailable"
-for job in wotb-backend node-exporter prometheus loki grafana; do
+for job in wotb-backend ai-service node-exporter prometheus loki grafana; do
   grep -Fq "\"job\":\"$job\"" <<<"$targets" || fail "PROMETHEUS_TARGET" "Prometheus target missing job=$job"
   wait_for_prometheus_target_up "$job"
 done
 
-echo "PASS: Prometheus required targets up (backend/node-exporter/prometheus/loki/grafana)"
+echo "PASS: Prometheus required targets up (backend/ai-service/node-exporter/prometheus/loki/grafana)"
 
 prom_query="$(query_prometheus 'min(up{job="wotb-backend"})')" || fail "PROMETHEUS_TARGET" "Prometheus data query failed"
 prometheus_value_is_one <<<"$prom_query" || fail "PROMETHEUS_TARGET" "Prometheus backend up query is not healthy (up != 1)"
