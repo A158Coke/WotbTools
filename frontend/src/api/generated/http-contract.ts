@@ -316,7 +316,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/replay/analyze": {
+    "/api/ai/reviews": {
         parameters: {
             query?: never;
             header?: never;
@@ -326,7 +326,24 @@ export interface paths {
         get?: never;
         put?: never;
         /** Stream an AI replay review */
-        post: operations["analyzeReplay"];
+        post: operations["createAiReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/reviews/{correlationId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel an in-flight AI review */
+        post: operations["cancelAiReview"];
         delete?: never;
         options?: never;
         head?: never;
@@ -560,13 +577,141 @@ export interface components {
             processingJobId: string;
             sourceId: string;
         };
-        AiReviewAnalyzeRequest: {
-            processingJobId: string;
-            sourceId: string;
+        AiReviewRequestV1: {
+            /** @constant */
+            schemaVersion: 1;
             /** @enum {string} */
-            lang: "zh" | "en" | "ru";
+            locale: "zh-CN" | "en-US" | "ru-RU";
+            /** Format: uuid */
             correlationId: string;
+            battle: components["schemas"]["AiReviewBattle"];
+            reconstruction: components["schemas"]["AiReviewReconstruction"];
         };
+        AiReviewBattle: {
+            arenaId?: string | null;
+            winnerTeam?: number | null;
+            arenaBonusType?: number | null;
+            version?: string;
+            mapName?: string;
+            durationS?: number | null;
+            /** Format: int64 */
+            startTime?: number | null;
+            /** Format: int64 */
+            settlementStartTime?: number | null;
+            settlementFinishReasonRaw?: number | null;
+            settlementDurationSec?: number | null;
+            recorder?: string;
+            recorderVehicle?: string;
+            clientVersion?: string;
+            rosterComplete?: boolean | null;
+            players: components["schemas"]["AiReviewPlayerResult"][];
+        };
+        AiReviewPlayerResult: {
+            /** Format: int64 */
+            accountId: number;
+            team: number;
+            /** Format: int64 */
+            tankId: number;
+            nShots?: number;
+            nHitsDealt?: number;
+            nPenetrationsDealt?: number;
+            damageDealt?: number;
+            damageAssisted?: number;
+            damageReceived?: number;
+            nHitsReceived?: number;
+            nPenetrationsReceived?: number;
+            nEnemiesDamaged?: number;
+            kills?: number;
+            damageBlocked?: number;
+            victoryPointsEarned?: number;
+            victoryPointsSeized?: number;
+            survived: boolean;
+            xp?: number;
+            credits?: number;
+            nickname: string;
+            clan?: string;
+            /** Format: int64 */
+            prebattleGroupId?: number | null;
+            /** Format: int64 */
+            rank?: number | null;
+            tankName?: string;
+            contribution?: number | null;
+            kast?: number | null;
+            impact?: number | null;
+            observedMaxHp?: number | null;
+            entryHpSource?: string | null;
+            entryHp?: number | null;
+            tankTier?: string | number | null;
+            tankType?: string;
+            tankNation?: string;
+            alphaDamage?: string | number | null;
+            /** Format: int64 */
+            deathTimeMillis?: number;
+            /** Format: int64 */
+            settlementResultEntityId?: number;
+            settlementLifeTimeSec?: number;
+            /** Format: int64 */
+            settlementKillerResultEntityId?: number | null;
+            settlementDeathReasonRaw?: number | null;
+            /** Format: int64 */
+            killerAccountId?: number | null;
+            survivalTimeSec?: number;
+            raw?: {
+                [key: string]: unknown[];
+            } | null;
+        };
+        AiReviewReconstruction: {
+            battleDurationSec?: number;
+            battleStartRawClockSec?: number | null;
+            participants: components["schemas"]["AiReviewParticipant"][];
+            events: components["schemas"]["AiReviewEvent"][];
+            checkpoints?: {
+                [key: string]: unknown;
+            }[] | null;
+            finalState?: {
+                [key: string]: unknown;
+            } | null;
+            coverage: components["schemas"]["AiReviewCoverage"];
+        };
+        AiReviewParticipant: {
+            /** Format: int64 */
+            accountId: number;
+            nickname: string;
+            team: number;
+            tankId: number;
+            tankCode: string | null;
+            recorder: boolean;
+        };
+        AiReviewEvent: {
+            /** @enum {string} */
+            type: "AimRayStateEvent" | "AmmunitionSelectionChangedEvent" | "AmmunitionStateEvent" | "ArenaPeriodChangedEvent" | "AttachedTransformEvent" | "ConsumableLifecycleEvent" | "DamageEvent" | "EntityAuxiliaryBlobEvent" | "EntityCreatedEvent" | "EntityRemovedEvent" | "GunMarkerSizeEvent" | "HealthChangedEvent" | "MaterializationAnnouncedEvent" | "MaterializationEvent" | "ParticipantMappingEvent" | "PositionChangedEvent" | "ProjectileLaunchedEvent" | "ProjectileResolutionEvent" | "ProjectileTerminalEvent" | "RawSupremacyBaseUpdate" | "RecorderHealthChangedEvent" | "ReplayStreamClosedEvent" | "RoundFinishedEvent" | "SessionDecisecondLowByteEvent" | "ShotResultEvent" | "SupremacyBaseStateTransition" | "SupremacyPointsChangedEvent" | "TargetingInfoSnapshotEvent" | "TurretDirectionChangedEvent" | "UnknownReplayEvent" | "UnsupportedDamageEvent" | "VehicleDestroyedEvent" | "VehicleFiredEvent" | "VehicleHealthStateEvent" | "VehicleHitEvent" | "VehicleModuleCrewStateEvent" | "VehicleVehicleCollisionEvent";
+            sequence: number;
+        } & {
+            [key: string]: unknown;
+        };
+        AiReviewCoverage: {
+            totalPackets: number;
+            decodedPackets: number;
+            partiallyDecodedPackets: number;
+            unknownPackets: number;
+            failedPackets: number;
+            decodedPacketRatio: number;
+            packetTypes: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        AiReviewStageEventPayload: Record<string, never>;
+        AiReviewTokenEventPayload: {
+            delta: string;
+        };
+        AiReviewErrorEventPayload: {
+            id: string | null;
+            errorCode: components["schemas"]["AiReviewErrorCode"];
+        };
+        /** @enum {string} */
+        AiReviewErrorCode: "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_AUTHENTICATION_ERROR" | "AI_RATE_LIMITED" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE";
         TeamAiReviewSummary: {
             verdict: string;
             primaryDiagnosis: string;
@@ -769,7 +914,7 @@ export interface components {
             timestamp: string | null;
         };
         /** @enum {string} */
-        ApiErrorCode: "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
+        ApiErrorCode: "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNSUPPORTED_AI_REQUEST_SCHEMA" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
     };
     responses: never;
     parameters: never;
@@ -1440,7 +1585,7 @@ export interface operations {
             };
         };
     };
-    analyzeReplay: {
+    createAiReview: {
         parameters: {
             query?: never;
             header?: never;
@@ -1449,11 +1594,11 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AiReviewAnalyzeRequest"];
+                "application/json": components["schemas"]["AiReviewRequestV1"];
             };
         };
         responses: {
-            /** @description SSE stream. The terminal done event carries analysis/preBattleSection or teamReview; teamPlayers is the authoritative playerKey-to-display-identity mapping for team reviews. */
+            /** @description SSE stream. Stage events have empty payloads; call2_token carries delta; done carries the review result; error carries a stable error code. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1462,7 +1607,7 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
-            /** @description Invalid analyze request */
+            /** @description Invalid request envelope or unsupported schema/locale */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1473,6 +1618,107 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description AI review role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Duplicate correlation ID */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request exceeds the 16 MiB limit */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported battle category */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Bounded AI worker queue is full */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    cancelAiReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                correlationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation accepted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid correlation ID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description AI review role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No active review for this correlation ID */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

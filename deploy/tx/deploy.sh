@@ -13,6 +13,7 @@ readonly RABBITMQ_TOFU_PROVISION_MARKER="${WOTB_TX_RABBITMQ_TOFU_PROVISION_MARKE
 readonly BUSINESS_POSTGRES_TOFU_PROVISION_MARKER="${WOTB_TX_BUSINESS_POSTGRES_TOFU_PROVISION_MARKER:-$WOTB_DIR/business-postgres.tofu-provisioned}"
 readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://business-api:8087}"
+readonly AI_UPSTREAM_VALUE="${TX_AI_UPSTREAM:-http://10.20.0.2:8089}"
 readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
 readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
 readonly TX_IMAGE_REGISTRY_PREFIX_VALUE="${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}"
@@ -91,9 +92,10 @@ is_business_postgres_group_selected() {
   is_selected business-postgres
 }
 
-# The TX business runtime owns the application database role, the distributed
-# replay control plane, and AI Review, so it is the only group that requires the
-# application credentials, the MinIO control-plane identity, and the AI key. A
+# The TX business runtime owns the application database role and the distributed
+# replay control plane, so it is the only group that requires the application
+# credentials and the MinIO control-plane identity. AI provider configuration
+# belongs to the Yecao ai-service, so this group never requires an AI key. A
 # RabbitMQ-only or database-only deployment must never depend on them.
 is_business_api_group_selected() {
   is_selected business-api
@@ -128,6 +130,11 @@ validate_inputs() {
   if is_selected wotb-frontend; then
     [ "$BACKEND_UPSTREAM_VALUE" = "http://business-api:8087" ] \
       || die "TX_BACKEND_UPSTREAM must be the TX-internal business runtime http://business-api:8087."
+    # /api/ai/ is the only route that leaves TX: the standalone AI service runs on
+    # Yecao and has no public port, so its upstream is the WireGuard address. Any
+    # other value would be a public hop, the wrong service, or a different port.
+    [ "$AI_UPSTREAM_VALUE" = "http://10.20.0.2:8089" ] \
+      || die "TX_AI_UPSTREAM must be the Yecao ai-service WireGuard endpoint http://10.20.0.2:8089."
   fi
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
@@ -172,12 +179,13 @@ validate_inputs() {
   if is_business_api_group_selected; then
     # The business runtime is TX-internal, so it consumes exactly the
     # credentials below: the OpenTofu-owned application database role, the
-    # RabbitMQ control-api identity, the MinIO control_api identity, the
-    # Keycloak Admin API client, and the AI Review key.
+    # RabbitMQ control-api identity, the MinIO control_api identity, and the
+    # Keycloak Admin API client. It carries no AI provider configuration: AI
+    # Review runs in the standalone Yecao ai-service.
     for required in TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
       TX_RABBITMQ_CONTROL_API_PASSWORD \
       YECAO_MINIO_CONTROL_API_ACCESS_KEY YECAO_MINIO_CONTROL_API_SECRET_KEY \
-      KEYCLOAK_ADMIN_CLIENT_SECRET AI_API_KEY; do
+      KEYCLOAK_ADMIN_CLIENT_SECRET; do
       require_env "$required"
     done
   fi
@@ -197,6 +205,16 @@ stage_and_validate() {
   [ -f "$INCOMING_DIR/runtime-check-lib.sh" ] || die "staged TX deployment tree is missing runtime-check-lib.sh."
   if is_selected wotb-frontend; then
     [ -f "$INCOMING_DIR/nginx/frontend.conf.template" ] || die "staged TX deployment tree is missing frontend nginx template."
+    # The AI route is a routing boundary, not a tuning detail: it must stay a
+    # more-specific ^~ prefix ahead of the generic /api/ route, must proxy to the
+    # Yecao upstream without rewriting the path (public and controller paths are both
+    # /api/ai/...), and the generic /api/ route must remain on the TX business runtime.
+    grep -Fq 'location ^~ /api/ai/ {' "$INCOMING_DIR/nginx/frontend.conf.template" \
+      || die "staged TX frontend template is missing the /api/ai/ route to the standalone AI service."
+    grep -Fq 'proxy_pass ${AI_UPSTREAM};' "$INCOMING_DIR/nginx/frontend.conf.template" \
+      || die "staged TX AI route must proxy to the AI upstream without rewriting /api/ai/."
+    grep -Fq 'proxy_pass ${BACKEND_UPSTREAM}/api/;' "$INCOMING_DIR/nginx/frontend.conf.template" \
+      || die "staged TX frontend template must keep the generic /api/ route on the TX business runtime."
   fi
   if is_selected caddy; then
     [ -f "$INCOMING_DIR/Caddyfile" ] || die "staged TX deployment tree is missing Caddyfile."
@@ -225,6 +243,7 @@ stage_and_validate() {
   mkdir -p "$TX_RUNTIME_ROOT/e2e"
   export TX_RUNTIME_ROOT
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"
+  export TX_AI_UPSTREAM="$AI_UPSTREAM_VALUE"
   assert_routing_boundary "$EFFECTIVE_COMPOSE"
   docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" config >/dev/null \
     || die "staged TX compose config is invalid; live TX deployment was not changed."
@@ -309,7 +328,8 @@ if not valid:
 
 # Fail closed on the two production invariants this routing boundary establishes:
 #   1. the frontend proxies public API traffic to the TX-internal business
-#      runtime, and no staged service publishes the retired Yecao port;
+#      runtime while /api/ai/ goes to the Yecao ai-service over WireGuard, and no
+#      staged service publishes the retired Yecao port;
 #   2. the business runtime's replay execution plane is the distributed one
 #      (PostgreSQL job authority + RabbitMQ dispatch), so a future edit cannot
 #      silently re-enable local parsing, local job authority, or in-process
@@ -319,6 +339,8 @@ assert_routing_boundary() {
   if is_selected wotb-frontend; then
     grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}' "$compose_file" \
       || die "staged TX frontend must default to the TX-internal business runtime."
+    grep -Fq 'AI_UPSTREAM: ${TX_AI_UPSTREAM:-http://10.20.0.2:8089}' "$compose_file" \
+      || die "staged TX frontend must default /api/ai/ to the Yecao ai-service WireGuard endpoint."
   fi
   ! grep -Eq '8087:8087|10\.20\.0\.2:8087' "$compose_file" \
     || die "staged TX compose must not publish or reference the retired Yecao backend port."

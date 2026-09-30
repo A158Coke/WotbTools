@@ -9,6 +9,24 @@ x-logging: &default-logging
     max-size: "20m"
     max-file: "3"
 services:
+  ai-service:
+    image: ghcr.io/a158coke/ai-service:latest
+    container_name: ai-service
+    environment:
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
+      AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}
+      OTEL_SERVICE_NAME: ai-service
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-https://auth.wotbtools.com/realms/wotbtools}
+      AI_REVIEW_WORKER_MAX_CONCURRENT: ${AI_REVIEW_WORKER_MAX_CONCURRENT:-2}
+      AI_REVIEW_WORKER_QUEUE_CAPACITY: ${AI_REVIEW_WORKER_QUEUE_CAPACITY:-2}
+      AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC: ${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-1100}
+    ports:
+      - "10.20.0.2:8089:8080"
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1536m
+    cpus: 1.5
   # Yecao execution plane: consumes wotb.parser, reads/writes MinIO temp/jobs/*, publishes the
   # outcome. No public port, no database credentials, no mounted job directory — PostgreSQL stays
   # the job authority on TX and RabbitMQ remains the delivery path.

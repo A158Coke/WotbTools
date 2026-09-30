@@ -96,9 +96,12 @@ key 宇宙；`contribution`/`kast`/`impact`/`alpha_damage`/`traded_deaths`/`acco
 
 以下同步端点已随 Replay Processing V2 移除，一律返回 `410 REPLAY_LEGACY_DEPRECATED`：
 
-`POST /api/preview`、`POST /api/export`、multipart `POST /api/replay/analyze`、
+`POST /api/preview`、`POST /api/export`、
 multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
 `POST /api/replay/reconstruct-batch`。
+
+AI Review 的旧 `POST /api/replay/analyze`（含 multipart 形态）已随迁移整体移除，**不再返回 410**；
+新入口是独立 `ai-service` 的 `POST /api/ai/reviews`（见 `docs/operations/ai-service.md`）。
 
 当前 V2 只有：Processing Dataset → Export Job → XLSX/ZIP（`GET .../result` +
 `POST /api/replay/export-jobs`），不再有 raw replay → Export 路径。历史契约见
@@ -133,9 +136,9 @@ multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
 consumer 数，默认 2）；TX backend 内的 Excel/ZIP artifact 构建并发独立为
 `REPLAY_ARTIFACT_MAX_CONCURRENT`（默认 1）。ProcessedDataset 为**内存态短生命周期缓存**
 （TTL `REPLAY_PROCESSING_JOB_TTL_MINUTES=30`）：只缓存已 enrich 的 Battle 结算战绩
-（不携带 reconstruction 事件流）；per-source derived artifact（`ai-facts.json` /
-`map-overview.json`）写对象存储 `temp/jobs/<jobId>/artifacts/<i>/`（先写后 READY，
-TTL 随 job 工作区清理）。Dataset Lease：Export / AI / Playback 读取前 `acquire`（引用计数
+（不携带 reconstruction 事件流）；per-source derived artifact（`map-overview.json`）写对象存储
+`temp/jobs/<jobId>/artifacts/<i>/`（先写后 READY，
+TTL 随 job 工作区清理）。Dataset Lease：Export / Playback 读取前 `acquire`（引用计数
 +1，TTL 清理跳过），结束后 `release`；acquire 后任何失败都释放引用（不泄漏 refcount）。
 Job 工作区由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）；上传输入落对象存储。旧同步
 `POST /api/preview` / `POST /api/export` 已随 V2 移除（返回 `410 REPLAY_LEGACY_DEPRECATED`；
@@ -143,20 +146,24 @@ Job 工作区由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿�
 
 > **容量边界**：Processing V2 的解析 CPU 预算在 Yecao `parser-worker`（`PARSER_WORKER_CONCURRENCY`，AMQP consumer 数）；TX backend 不存在进程内解析预算。全局 `ReplayCapacityLimiter`（`REPLAY_MAX_CONCURRENT_JOBS`，默认 2，与 HoF/Hundred/Mark3 等**非 Processing** 业务共享）是「同一实例同一时刻执行其它领域回放解析任务」的独立许可，容量满由对应业务接口返回 `503 REPLAY_BUSY`；它**不是** Processing V2（`/api/replay/processing-jobs`）的容量 authority，二者不重复计费、不存在第二套并行处理。
 
-### AI 复盘与批量处理（wotbtools-user / wotbtools-admin）
+### AI 复盘（独立 ai-service）与战局回放（wotbtools-user / wotbtools-admin）
 
-完整战斗重建（parse + reconstruction + enrich）在 Processing Job 的 per-source 阶段于
-parser-worker 内完成（`ReplayProcessingSourceRunner` → `DefaultReplayProcessingFacade`），产出
-`ai-facts.json` / `map-overview.json` 等 derived artifact。AI / 战局回放只读这些 artifact，
-**不在** `/analyze` 内部做 reconstruction，也绝不重新上传 / 重新 full process。
+AI Review 已从 Business Backend 拆出，运行在 Yecao 的独立无状态 `ai-service`（Maven module 仍叫
+`wotb-ai`，镜像 `ghcr.io/a158coke/ai-service`）：无数据库、无 MinIO、无 Business Backend 依赖，
+只保留内存态的活跃请求 / 取消注册表 / 准入状态。**Business Backend 不再承载或代理 AI 请求**。
 
-- `POST /api/replay/analyze` — **Dataset 路径（唯一）**：JSON body `{processingJobId, sourceId, lang, correlationId}`，只读 derived `ai-facts.json`（**不重新上传 / 不重新 full process / 不执行 reconstruction**）；legacy multipart `files[]` 路径已废弃（410 `REPLAY_LEGACY_DEPRECATED`）。**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式。表单/JSON 字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制输出语言；缺失返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`）。稳定错误码：`JOB_NOT_FOUND`（job/dataset 已 TTL 清理，可重建）/`SOURCE_NOT_FOUND` / `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` / `DATASET_UNAVAILABLE`（artifact 读取/存储故障，**不可**按过期 dataset 自动重建）。`POST /api/replay/map-overview` — Dataset 路径 JSON body `{processingJobId, sourceId}` 读 cached `map-overview.json`（不重新 full process）；legacy multipart 路径已废弃（410 `REPLAY_LEGACY_DEPRECATED`）。地图不可构建返回 `204`。**响应为 SSE 流式**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`，仅个人文本路径）/ `done`（个人为 `{"analysis","preBattleSection"}`；团队为 `{"analysis":null,"preBattleSection","teamReview"}`）/ `error`（`{"id","errorCode","errorMsg"}`）；团队 production chain 不发送 `autopsy_*` 阶段事件。request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md`。
+完整战斗重建仍由 Processing Job 的 per-source 阶段在 parser-worker 内完成，产出 `map-overview.json`
+等 derived artifact，供**战局回放**读取；AI 复盘不再消费任何 Dataset artifact。
+
+- `POST /api/ai/reviews`（独立 `ai-service`）— JSON body `{schemaVersion, locale, correlationId, battle, reconstruction}`（`AiReviewRequestV1`）：`schemaVersion` 必须为 `1`，`locale` 白名单 `zh-CN`/`en-US`/`ru-RU`，`correlationId` 为 canonical UUID。客户端负责解析与事实投影，服务端不读 Processing Dataset。稳定错误码：`UNSUPPORTED_AI_REQUEST_SCHEMA` / `INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` / `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`（409）/ `UNSUPPORTED_BATTLE_CATEGORY`（422）/ `AI_REQUEST_TOO_LARGE`（413，16 MiB 上限）/ `AI_REVIEW_BUSY`（503，有界准入饱和）。取消：`POST /api/ai/reviews/{correlationId}/cancel`（`204`，未注册 `404`）。公开入口经 TX `/api/ai/**` 私网反代，服务本身无公网端口。完整协议见 `docs/features/team-ai-review.md`。
+
+- `POST /api/replay/map-overview` — Dataset 路径 JSON body `{processingJobId, sourceId}` 读 cached `map-overview.json`（不重新 full process）；legacy multipart 路径已废弃（410 `REPLAY_LEGACY_DEPRECATED`）。地图不可构建返回 `204`。战局回放与 AI 复盘解耦：回放只依赖 Dataset artifact，AI 只依赖客户端投影。
 
 **策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
 
 团队总伤害、承伤、助攻、格挡、击杀、存活和业务死亡秒值来自 `battle_results.dat` 权威结算（`#301 field24 lifeTime`）；Playback/live reconstruction 仅服务播放、HP/动画与诊断，不能覆盖或回写 settlement `PlayerResult`。`deathTimeMillis`/`survivalTimeSec` 仅保留兼容投影，legacy 启发式不作为死亡 authority；事件流伤害只作为观测子集。重建可用时补充每名队员独立移动、阵型、交火和关键事件；重建不可用时仍可生成明确标注的权威结算 fallback。AI 输入不包含原始事件流，prompt 长度由 token 估算器（`AiTokenEstimator`）按 `AiModelProperties` 预算控制（`singleReplayMaxInputTokens` 等），不再使用固定成员数/事件数/字符数截断；超限时返回 `AI_INPUT_TRUNCATED` limitation。
 
-AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`AI_CANCELLED`、`AI_UPSTREAM_UNAVAILABLE` 等），前端以 zh/en/ru 本地化。`/api/replay/**` 需要 `wotbtools-user` 或 `wotbtools-admin` 角色；未配置 `AI_API_KEY` 时 `/analyze` 返回 `AI_NOT_CONFIGURED`，应用其余功能不受影响。全链路超时对齐：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 analyze 安全超时 1100s < 容器 nginx `/api/replay/analyze` 1120s，后端 AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量；`AI_TIMEOUT` 不再自动重试（上游可能已计费）。
+AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`AI_CANCELLED`、`AI_UPSTREAM_UNAVAILABLE` 等），前端以 zh/en/ru 本地化。`/api/ai/**` 需要 `wotbtools-user` 或 `wotbtools-admin` 角色；未配置 `AI_API_KEY` 时 `POST /api/ai/reviews` 的 SSE `error` 事件返回 `AI_NOT_CONFIGURED`，应用其余功能不受影响。全链路超时对齐：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 review 安全超时 1100s < TX ingress `/api/ai/**` 1120s，`ai-service` AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量；`AI_TIMEOUT` 不再自动重试（上游可能已计费）。
 
 ### 名人堂（Hall of Fame）
 

@@ -1,37 +1,38 @@
 <!--
   AI 复盘能力面板：SSE 分析流（call1/evidence/call2）+ 流式进度 + 结果面板。
   不负责页面级登录门禁/自动跳转（由宿主入口把关）。HTTP endpoint / auth / canonical
-  error handling 由 api/replay-capabilities.ts 统一拥有；本组件只编排 run lifecycle 与 SSE 展示状态。
+  error handling 由 api/ai-review.ts 统一拥有；本组件只编排 run lifecycle 与 SSE 展示状态。
+  输入是**客户端 AI 投影**（battle + reconstruction），不是完整回放、也不再是 dataset 引用。
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
-import { cancelAiReview, openAiReviewStream, type ReplayAuthSession } from '../api/replay-capabilities.js'
-import { isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
+import { buildAiReviewRequest, cancelAiReview, openAiReviewStream } from '../api/ai-review.js'
+import type { ReplayAuthSession } from '../api/replay-capabilities.js'
+import { toAiReviewLocale } from '../types/ai-review.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { ApiError, normalizeApiError } from '../utils/http.js'
-import type { AiReviewCapability, AiReviewResult, AiReviewRunState } from '../types/ai-review.js'
+import type { AiReviewCapability, AiReviewProjection, AiReviewResult, AiReviewRunState } from '../types/ai-review.js'
 import type { AiReviewEvent } from '../types/ai-review.js'
 import { createAiReviewSseParser } from '../utils/aiReviewSse.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 
 type AuthTokenParsed = { realm_access?: { roles?: unknown } } | null
-type AiRuntimeError = Error & { recoverableDatasource?: boolean; isLocalized?: boolean }
+type AiRuntimeError = Error & { isLocalized?: boolean }
 type AiPanelAuth = ReplayAuthSession & { tokenParsed: { value: AuthTokenParsed } }
 
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
   file: { type: Object, default: null },
-  /** Dataset 引用：两者齐备时走 derived ai-facts，不再上传 replay。 */
-  processingJobId: { type: String, default: null },
-  sourceId: { type: String, default: null },
-  /** Dataset 准备失败（父组件 ensureDatasetFor 未能建立引用）时的已本地化错误；空 = 无。 */
-  datasetError: { type: String, default: '' }
+  /** 客户端 AI 投影（battle + reconstruction）：由本地解析层产出；null = 尚未就绪。 */
+  projection: { type: Object as () => AiReviewProjection | null, default: null },
+  /** 投影准备失败时的已本地化错误；空 = 无。 */
+  projectionError: { type: String, default: '' }
 })
 
-const emit = defineEmits(['seek', 'dataset-recover'])
+const emit = defineEmits(['seek'])
 
 const { t, te, locale } = useI18n()
 const auth = useAuth() as AiPanelAuth
@@ -46,18 +47,14 @@ const canUseAiReview = computed(() => {
 })
 
 /**
- * Dataset 就绪守卫（defense-in-depth）：AI Analyze 只有在 authoritative
- * processingJobId + sourceId 都已绑定到面板后才能执行。file 已选但引用缺失 =
- * PREPARING_DATASET（状态机问题），不是用户错误。
+ * 投影就绪守卫（defense-in-depth）：AI Analyze 只有在客户端投影
+ * （authoritative battle + reconstruction）已绑定时才能执行。
+ * file 已选但投影缺失 = 本地解析/投影未完成（状态机问题），不是用户错误。
  */
-const datasetReady = computed(() => !!props.processingJobId && !!props.sourceId)
-const datasetRecovering = ref(false)
-/** Dataset 准备中/过期重试/失败的用户可读文案（数据集生命周期，非 AI 模型错误）。 */
-const datasetMessage = computed(() => {
-  if (datasetRecovering.value) return t('workspace.dataset_expired')
-  if (props.datasetError) return props.datasetError
-  return t('workspace.dataset_preparing')
-})
+const projectionReady = computed(() => !!props.projection)
+/** 投影准备中/失败的用户可读文案（本地解析生命周期，非 AI 模型错误）。 */
+const projectionMessage = computed(() =>
+  props.projectionError || t('workspace.dataset_preparing'))
 
 const error = ref('')
 const errorId = ref('')
@@ -91,8 +88,7 @@ function resetResults() {
   partialAnalysis.value = ''
 }
 
-watch(() => [props.file, props.processingJobId, props.sourceId], () => {
-  datasetRecovering.value = false
+watch(() => [props.file, props.projection], () => {
   const oldRun = activeRun
   if (oldRun) cancelRun(oldRun)
   activeRun = null
@@ -142,28 +138,21 @@ function newCorrelationId() {
   return `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-/** 数据集可恢复错误（job/dataset 引用过期或缺失）：交给父组件重建引用，不当作最终用户错误。 */
-function handleDatasetRecover(code) {
-  datasetRecovering.value = true
-  error.value = ''
-  emit('dataset-recover', code)
-}
-
 function analyzeRequest(correlationId: string) {
-  if (!props.processingJobId || !props.sourceId) {
+  if (!props.projection) {
     throw new Error(t('recon.errors.DATASET_REFERENCE_REQUIRED'))
   }
-  return {
-    processingJobId: props.processingJobId,
-    sourceId: props.sourceId,
-    lang: locale.value,
+  return buildAiReviewRequest({
+    battle: props.projection.battle,
+    reconstruction: props.projection.reconstruction,
+    locale: toAiReviewLocale(locale.value),
     correlationId,
-  }
+  })
 }
 
 async function runAnalyze() {
   if (analyzing.value) return
-  if (!datasetReady.value) return
+  if (!projectionReady.value) return
   const run: AiReviewRunState = {
     controller: new AbortController(),
     correlationId: newCorrelationId(),
@@ -195,14 +184,6 @@ async function runAnalyze() {
   } catch (e) {
     if (activeRun !== run) return
     const runtimeError = e as AiRuntimeError
-    if (runtimeError.recoverableDatasource) {
-      handleDatasetRecover(runtimeError.message)
-      return
-    }
-    if (e instanceof ApiError && isRecoverableDatasetCode(e.code)) {
-      handleDatasetRecover(e.code)
-      return
-    }
     const normalized = normalizeApiError(e)
     errorId.value = normalized.id || normalized.traceId || ''
     if (normalized.code === 'REQUEST_ABORTED') {
@@ -256,11 +237,6 @@ async function readAnalyzeStream(r, run) {
         receivedDone = true
         break
       case 'error':
-        if (isRecoverableDatasetCode(event.code)) {
-          const recoverable = new Error(event.code || 'JOB_NOT_FOUND') as AiRuntimeError
-          recoverable.recoverableDatasource = true
-          throw recoverable
-        }
         throw new ApiError({
           errorCode: event.code || 'AI_REVIEW_GROUNDING_FAILED',
           errorMsg: event.errorMsg,
@@ -300,7 +276,7 @@ async function readAnalyzeStream(r, run) {
     if (e && e.name === 'AbortError') throw e
     if (e instanceof ApiError) throw e
     const runtimeError = e as AiRuntimeError
-    if (runtimeError.isLocalized || runtimeError.recoverableDatasource) throw e
+    if (runtimeError.isLocalized) throw e
     throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
   } finally {
     reader.releaseLock?.()
@@ -323,15 +299,15 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="ai-review-panel">
-    <p v-if="!file && !datasetReady" class="ws-note">{{ $t('workspace.ai_empty') }}</p>
+    <p v-if="!file && !projectionReady" class="ws-note">{{ $t('workspace.ai_empty') }}</p>
     <template v-else>
       <div v-if="canUseAiReview" class="ai-action-row">
-        <ReplayAnalysisAction :analyzing="analyzing" :disabled="!datasetReady" @analyze="runAnalyze" @cancel="cancelAnalyze" />
+        <ReplayAnalysisAction :analyzing="analyzing" :disabled="!projectionReady" @analyze="runAnalyze" @cancel="cancelAnalyze" />
       </div>
 
-      <div v-if="!datasetReady" class="ai-dataset-status" data-test="ai-dataset-status">
-        <span v-if="!datasetError" class="stream-spinner" aria-hidden="true"></span>
-        <span :class="{ 'ai-dataset-error': !!datasetError }">{{ datasetMessage }}</span>
+      <div v-if="!projectionReady" class="ai-projection-status" data-test="ai-projection-status">
+        <span v-if="!projectionError" class="stream-spinner" aria-hidden="true"></span>
+        <span :class="{ 'ai-projection-error': !!projectionError }">{{ projectionMessage }}</span>
       </div>
 
       <div v-if="error" class="ai-error" data-test="ai-error">
@@ -382,7 +358,7 @@ onBeforeUnmount(() => {
   margin: 16px 0;
 }
 .ws-note { margin: 18px 4px; color: var(--text-muted); font-size: .85rem; }
-.ai-dataset-status {
+.ai-projection-status {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -390,7 +366,7 @@ onBeforeUnmount(() => {
   font-size: .9rem;
   color: var(--text-label);
 }
-.ai-dataset-status .ai-dataset-error { color: var(--error); }
+.ai-projection-status .ai-projection-error { color: var(--error); }
 .streaming-panel { margin-top: 16px; }
 .stream-status {
   display: flex;

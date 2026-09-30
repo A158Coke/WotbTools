@@ -12,8 +12,8 @@ import java.io.IOException;
  *
  * <p>实现不得读取或推断 job 状态：调用方已经确认 job 是 READY、source 是 READY。</p>
  *
- * <p><b>derived artifact 也走这里</b>：AI Review（{@code ai-facts.json}）、Map Overview 与
- * Battle Playback V2（{@code map-overview.json} / {@code battle-playback-v2.json}）同样只通过本端口
+ * <p><b>derived artifact 也走这里</b>：Map Overview 与 Battle Playback V2
+ * （{@code map-overview.json} / {@code battle-playback-v2.json}）同样只通过本端口
  * 取字节，因此「distributed 下 TX 本地磁盘不参与 dataset/artifact 读取」是结构约束，而不是每个
  * feature 各自遵守的纪律。字节 → DTO 的解码由
  * {@code ReplayArtifactWriter.decode*(...)} 唯一拥有。</p>
@@ -26,14 +26,11 @@ public interface ReplayProcessingResultReader {
     ProcessedDataset readReadyDataset(ReplayProcessingJob job);
 
     /**
-     * {@code ai-facts.json} 字节。
+     * {@code map-overview.json} 字节。
      *
-     * @return {@code null} = 不存在（AI 路径按 DATASET_UNAVAILABLE 503 处理）
+     * @return {@code null} = 不存在 / capability unavailable（204 语义）
      * @throws IOException 存储 I/O / 权限故障——与「不存在」必须可区分
      */
-    byte[] aiFacts(String jobId, int sourceIndex) throws IOException;
-
-    /** {@code map-overview.json} 字节；{@code null} = capability unavailable（204 语义）。 */
     byte[] mapOverview(String jobId, int sourceIndex) throws IOException;
 
     /** {@code battle-playback-v2.json} 字节；{@code null} = capability unavailable（204 语义）。 */

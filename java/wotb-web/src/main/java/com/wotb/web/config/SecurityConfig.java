@@ -36,8 +36,6 @@ import static com.wotb.web.config.ApiPaths.HOF_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_REPLAY_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_UPLOAD;
 import static com.wotb.web.config.ApiPaths.PREVIEW;
-import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE;
-import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE_CANCEL;
 import static com.wotb.web.config.ApiPaths.REPLAY_BATTLE_PLAYBACK_V2;
 import static com.wotb.web.config.ApiPaths.REPLAY_EXPORT_JOBS_PATTERN;
 import static com.wotb.web.config.ApiPaths.REPLAY_MAP_OVERVIEW;
@@ -100,15 +98,13 @@ public class SecurityConfig {
                 // --- Replay Processing Job（需登录：wotbtools-user / wotbtools-admin） ---
                 // 该 pattern 覆盖四条端点：POST 创建 / GET 状态 / GET result / DELETE 取消，四条都必须 authenticated。
                 // 与 /api/preview、/api/export 的公开 contract 无关（那两个是独立 legacy 公共端点，其 permitAll 保持不变）；
-                // 本 pattern 与 REPLAY_ANALYZE / REPLAY_MAP_OVERVIEW / REPLAY_BATTLE_PLAYBACK_V2 同属一档角色门。
+                // 本 pattern 与 REPLAY_MAP_OVERVIEW / REPLAY_BATTLE_PLAYBACK_V2 同属一档角色门。
                 .requestMatchers(REPLAY_PROCESSING_JOBS_PATTERN)
                     .hasAnyRole("wotbtools-user", "wotbtools-admin")
 
-                // --- AI 复盘与批量处理 (wotbtools-user / wotbtools-admin) ---
+                // --- 回放地图/播放与批量处理 (wotbtools-user / wotbtools-admin) ---
                 .requestMatchers(REPLAY_RECONSTRUCT_BATCH,
                         REPLAY_PROCESS,
-                        REPLAY_ANALYZE,
-                        REPLAY_ANALYZE_CANCEL,
                         REPLAY_MAP_OVERVIEW,
                         REPLAY_BATTLE_PLAYBACK_V2)
                     .hasAnyRole("wotbtools-user", "wotbtools-admin")

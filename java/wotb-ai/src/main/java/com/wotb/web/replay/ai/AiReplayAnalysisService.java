@@ -4,24 +4,17 @@ import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.processing.RecorderEntityMapping;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-
 /**
  * 兼容 facade：保持 Controller / Review Service / 现有测试的公共入口不变，
  * 委托给 {@link PlayerReplayAnalysisService} 与 {@link TeamReplayAnalysisService}。
  * <p>本类不构建 Prompt、不发送 HTTP、不处理 Provider DTO、不含大型业务算法。
  * 所有真实编排已移出；统计/分区/预算/拼装均下沉到对应组件。</p>
- * <p>静态方法 {@link #findRecorder} 委托给 {@link AnalysisUnitAssembler}
- * 以保持原有公共契约。</p>
  */
 @Service
 public class AiReplayAnalysisService {
@@ -107,26 +100,6 @@ public class AiReplayAnalysisService {
         return playerService.analyzePlayerContext(ctx, recon, language);
     }
 
-    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result) {
-        return analyzePlayerOrFallback(result, AllowedLanguage.ZH);
-    }
-
-    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
-                                                 final AllowedLanguage language) {
-        return playerService.analyzePlayerOrFallback(result, language);
-    }
-
-    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
-                                                 final AllowedLanguage language,
-                                                 final AiReviewStreamListener listener) {
-        return playerService.analyzePlayerOrFallback(result, language, listener);
-    }
-
-    public SingleTeamBattleAnalysisContext buildSingleTeamContext(
-            final ReplayPerspectiveGroup group) {
-        return teamService.buildSingleTeamContext(group);
-    }
-
     public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context) {
         return analyzeSingleTeamContext(context, AllowedLanguage.ZH);
     }
@@ -136,25 +109,9 @@ public class AiReplayAnalysisService {
         return teamService.analyzeSingleTeamContext(context, language);
     }
 
-    public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups) {
-        return analyzeTeamGroups(groups, AllowedLanguage.ZH);
-    }
-
-    public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
-                                               final AllowedLanguage language) {
-        return analyzeTeamGroups(groups, language, AiReviewStreamListener.NOOP);
-    }
-
-    public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
-                                               final AllowedLanguage language,
-                                               final AiReviewStreamListener listener) {
-        return teamService.analyzeTeamGroups(groups, language, listener);
-    }
-
-    /**
-     * 委托 {@link AnalysisUnitAssembler#findRecorder} 以保持原有静态公共契约。
-     */
-    public static RecorderEntityMapping findRecorder(final ReplayProcessingResult rep) {
-        return AnalysisUnitAssembler.findRecorder(rep);
+    public TeamAnalyzeResult analyzeTeam(final Battle battle, final ReplayReconstruction reconstruction,
+                                         final AllowedLanguage language,
+                                         final AiReviewStreamListener listener) {
+        return teamService.analyzeTeam(battle, reconstruction, language, listener);
     }
 }
