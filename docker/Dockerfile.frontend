@@ -1,6 +1,9 @@
 FROM node:24-alpine AS build
 # Build identity：CI 经 build-arg 注入 git commit（Docker 上下文无 .git，不能自行 rev-parse）。
 ARG BUILD_COMMIT=unknown
+# Public static-asset origin (currently Tencent COS). This is a deployment value,
+# not a storage contract: frontend consumers remain behind AssetProvider.
+ARG ASSET_BASE_URL=
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm config set registry https://registry.npmmirror.com && npm ci
@@ -16,6 +19,7 @@ COPY docs/architecture/TECHNICAL_EVOLUTION.md /docs/architecture/TECHNICAL_EVOLU
 # League Rating V6 canonical 文档：RatingDocsPage 构建期以 ?raw 读取（.dockerignore 显式放行）
 COPY docs/WotBTools_League_Rating_V6.md /docs/WotBTools_League_Rating_V6.md
 ENV BUILD_COMMIT=${BUILD_COMMIT}
+ENV VITE_ASSET_BASE_URL=${ASSET_BASE_URL}
 RUN npm run build
 # 构建后断言：Agent WASM 产物（CI 里 fetch-agent-wasm.sh 落到 publicDir ../common/assets/wasm）
 # 必须已随构建进 dist——3D 回放/装甲查看器/射击复现的运行前提。缺失时 fail-fast，
