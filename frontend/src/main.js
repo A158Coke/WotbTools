@@ -1,5 +1,7 @@
 import { createApp } from 'vue'
 import { createI18n } from 'vue-i18n'
+import './styles/tokens/scale.css'
+import './styles/tokens/color.css'
 import './styles/tokens.css'
 import './styles/showcase.css'
 import './styles/showcase-workspaces.css'
