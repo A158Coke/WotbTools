@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import MarkdownContent from './MarkdownContent.vue'
 
 // 普通用户页面只展示 AI 复盘正文/Team v0.5 结构化结果 + 可折叠的「赛前预测」区块。
-// 后端 /api/replay/analyze 返回个人 { analysis, preBattleSection? } 或团队 { teamReview, preBattleSection? }；
+// 后端 SSE `done` 载荷返回个人 { analysis, preBattleSection? } 或团队 { teamReview, preBattleSection? }；
 // preBattleSection 为 null/空（Call #1 失败/降级）时整个区块不渲染。
 // 地图鸟瞰（热力/路线/战局回放）已拆为页面级独立区块（ReplayPage Workspace / BattlePlaybackPanel 加载），
 // 不随 AI 复盘结果渲染；AI 报告时间链接经 seek 事件上抛给页面。
