@@ -341,7 +341,19 @@ export function initPlayback(container, store) {
       if (terrainBin) {
         const m = await fetch(mapStaticUrl('terrain-meta'));
         if (stale()) return;
-        if (m.ok) tmeta = await m.json();
+        if (m.ok) {
+          tmeta = await m.json();
+          // span = 水平世界跨度（服务端 terrain_scale 同式 max(dx,dy)，map_assets.rs）。
+          // 打包器 v0.1.7 sidecar 误写垂直高度差（zmax-zmin，malinovka=60）——按
+          // sidecar 自带的 worldBounds 自愈，否则地形被压成 span×span 小块、
+          // 高度采样坍缩（"地图未完全加载显示"的根因）
+          const wb = tmeta.worldBounds;
+          if (Array.isArray(wb?.min) && Array.isArray(wb?.max)) {
+            const dx = wb.max[0] - wb.min[0];
+            const dy = wb.max[1] - wb.min[1];
+            if (dx > 0 || dy > 0) tmeta.span = Math.max(dx, dy);
+          }
+        }
         const b = await fetch(terrainBin);
         if (stale()) return;
         if (b.ok) tbuf = await b.arrayBuffer();
