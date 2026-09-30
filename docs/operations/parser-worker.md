@@ -44,7 +44,7 @@ owner; the worker declares nothing at startup) and it does not own job state.
 parser.request on wotb.parser
   -> ObjectStorageKeys.tempJobObject(jobId, "input/<i>/<name>")   MinIO GET
   -> DefaultReplayProcessingFacade.process(source, full)         canonical parse
-  -> artifacts/<i>/{ai-facts,map-overview,battle-playback-v2}.json  MinIO PUT
+  -> artifacts/<i>/{map-overview,battle-playback-v2}.json         MinIO PUT
   -> result/source-<i>.json                                      canonical dataset (PR F)
   -> parser.result (confirmed) | parser.failed (confirmed)
   -> basicAck

@@ -187,9 +187,10 @@ Business PostgreSQL 是权威业务状态，因此检查同样要求它完全就
 
 检查读取的 live Compose 现在也包含 TX 业务运行时 `business-api`，因此它的必需输入同样要在
 环境中提供（应用数据库凭据 `TX_BUSINESS_DB_*`、`TX_RABBITMQ_CONTROL_API_PASSWORD`、
-MinIO `control_api` key pair、`KEYCLOAK_ADMIN_CLIENT_SECRET`、`AI_API_KEY`），缺失时检查在
-渲染阶段立即拒绝，而不是给出误导性的 ready。检查本身仍只读：这些值只用于 Compose 渲染与
-就绪判定，不写盘、不落日志。
+MinIO `control_api` key pair、`KEYCLOAK_ADMIN_CLIENT_SECRET`），缺失时检查在
+渲染阶段立即拒绝，而不是给出误导性的 ready。该运行时不再携带任何 AI provider 变量
+（AI 配置归属 Yecao `ai-service`），因此检查也不需要 `AI_API_KEY`。检查本身仍只读：这些值
+只用于 Compose 渲染与就绪判定，不写盘、不落日志。
 
 ## 全业务 E2E token（operator 运行时需要）
 
@@ -211,12 +212,13 @@ WOTB_E2E_JOB_TIMEOUT_SEC     processing/export job 轮询上限（默认 300）
 ```
 
 检查用 `wotbtools-e2e`（client_credentials）驱动真实链路并逐项输出 `processing-e2e`、
-`dataset-result`、`map-overview`、`battle-playback-v2`、`minio`、`ai-facts`、`export`、
+`dataset-result`、`map-overview`、`battle-playback-v2`、`minio`、`export`、
 `hof-replay-storage`、`parser-worker`、`admin-authz`、`anonymous-rejected`。
 任何一项 FAIL 都输出 `TX_RUNTIME_NOT_READY`：**这是「TX runtime
 不是业务可用状态」的机械含义**。
 
-- 检查不做付费 AI 调用：AI 只验证 worker 写入的 `ai-facts.json` 可通过 control_api 身份读取。
+- 检查不做付费 AI 调用：AI Review 已迁至独立 `ai-service`，本检查不再消费 `ai-facts.json`
+  （该 artifact 随 AI 解耦退役）；MinIO 可读性由 `minio` token（`finalized.json`）覆盖。
 - 检查对基础设施与用户数据只读；唯一写入是一个 30 分钟 TTL 自动回收的瞬时 processing job
   与 export job（属于一次性安全操作，不改任何真实用户数据）。
 - `business-data-integrity` 已**随 cutover machinery 一并退役**：它的输入是 X1 搬迁前从 Yecao
