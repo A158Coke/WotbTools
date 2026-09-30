@@ -278,7 +278,11 @@ public record BattlePlaybackDataset(
     public record PointsSample(double timeSec, int team, int points) {
     }
 
-    /** One backend-reconstructed full-state transition; protocol indexes never cross this boundary. */
+    /**
+     * Canonical playback objective transition. Supremacy uses baseId A-D and progress 0..99;
+     * Assault single-base uses baseId BASE and may carry replay-broadcast progress 100.
+     * Raw protocol indexes/discriminators never cross this boundary.
+     */
     public record BaseStateTransition(
             double timeSec,
             String baseId,
