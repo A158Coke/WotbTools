@@ -81,6 +81,7 @@
 | `research/replay/README.md` | 进入 replay protocol 逆向研究前；按其中权威读取顺序继续读 |
 | `research/replay/WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md` | 查 11.19 replay protocol 中英双语顶层权威参考时 |
 | `research/replay/protocol.md` | 逆向 data.wotreplay 包类型 / 协议时 |
+| `research/replay/assault-base-state.md` | 查 11.20 Assault wrapper8/root8 字段解析、raw/canonical 边界与受控样本证据时 |
 | `research/replay/turret-direction.md` | 查炮塔相对方向证据时 |
 | `research/replay/visibility.md` | 查可见性 / 点亮证据时 |
 | `research/replay/capture-probe.md` | 查占点时间线探测结论时 |

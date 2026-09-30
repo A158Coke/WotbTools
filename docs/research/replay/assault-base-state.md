@@ -104,6 +104,87 @@ Requirements:
 
 ## Canonical architecture
 
+### Field decoding contract / 字段解析契约
+
+The wrapper selector and protobuf field numbers belong to different layers.
+`wrapperFieldNumber=8` is the subtype48 envelope selector; root field8 is a
+repeated length-delimited child message. Neither number identifies the objective
+or a team. The envelope retains the existing subtype48 framing and length checks.
+
+| Wire location | Wire type | Raw event field | Proven meaning / 证据边界 |
+|---|---|---|---|
+| nested field1 | varint | `rawField1` | `2` selects the observed progress family; `1` occurs in the sibling family. Exact private enum name UNKNOWN |
+| nested field2 | varint | `rawField2` | Observed value `1`; production progress gate requires exactly `1`. Exact index/identifier semantics UNKNOWN; never interpreted as team |
+| nested field3 | varint | `captureProgress` | For field1=2 + field2=1, realtime capture progress; 1..100 observed in the controlled sample |
+| nested field4 | varint | `rawField4` | Sibling family observed value `1`; exact meaning UNKNOWN. Never mapped to capturingTeam or ownerTeam |
+
+Absent scalar fields remain `null` in `RawAssaultBaseUpdate`. Known fields 1..4,
+when present, must each occur exactly once as a non-negative varint representable
+by Java `Integer`; malformed protobuf, wrong scalar wire type, duplicate known
+scalar fields or narrowing overflow reject that child. Present field3 must be
+within 0..100, including on raw-only families. Unknown fields do not acquire
+production semantics. A rejected child emits no Assault raw/canonical event;
+the outer decoder preserves the packet as unknown when no recognized event was
+decoded. This does not imply a separate raw diagnostic for every rejected child
+of a mixed packet.
+
+Canonical promotion requires **all** of:
+
+1. Valid subtype48 envelope, wrapper8 and root field8 child framing.
+2. `rawField1 == 2` and `rawField2 == 1`.
+3. **Present** `captureProgress` in 0..100. Missing field3 never generates 0.
+4. No independently decoded `RawSupremacyBaseUpdate` in the reconstruction input;
+   the current mode guard suppresses Assault projection when wrapper12 is present.
+
+Explicit field3=0 is accepted and preserved by the implementation; it is not
+claimed as an independently observed zero/init message in the supplied sample.
+The sample proves the positive 1..100 sequence, including 100. Ordering follows
+raw clock then packet sequence; reconstruction creates no intermediate values
+and imposes no monotonicity rule, so an explicit decrease/reset is preserved.
+
+### Minimal protobuf examples / 最小字段示例
+
+These bytes illustrate **nested children**, not complete captured packets:
+
+```text
+08 02 10 01 18 01  → field1=2, field2=1, field3=1   → canonical progress 1
+08 02 10 01 18 64  → field1=2, field2=1, field3=100 → canonical progress 100
+08 02 10 01 18 00  → explicit field3=0             → canonical progress 0
+08 02 10 01        → absent field3                 → raw-only; no synthetic zero
+08 01 10 01 20 01  → field1=1, field2=1, field4=1   → raw-only; team UNKNOWN
+08 02 10 01 18 65  → field3=101                    → rejected
+08 02 10 01 1A 00  → field3 length-delimited        → rejected scalar wire type
+```
+
+### Playback field mapping / 输出映射
+
+| Canonical/wire field | Source / rule |
+|---|---|
+| `sequence`, `timestamp`, `packetType`, `confidence` | Preserved from the decoded packet; structural exactness does not prove unknown field semantics |
+| `baseStates[].timeSec` | Existing projector battle-relative clock: raw clock minus resolved battle start |
+| `baseStates[].baseId` | Literal `BASE` for Assault; no breaking rename of `baseStates` |
+| `baseStates[].captureProgress` | Explicit decoded field3, unchanged; 100 is accepted |
+| `baseStates[].ownerTeam` | `null`; no proven ownership field |
+| `baseStates[].capturingTeam` | `null`; field4 and static SC2 team are not authorities |
+
+In the controlled example, `131.688 - 9.287 = 122.401s` is the playback time
+of progress 100. The 2D consumer takes the latest state at or before the seek
+time, with no smoothing or future-state lookup. 3D Playback remains experimental;
+its future objective consumer must use this same dataset, without decoding wrapper8.
+
+### Implementation and regression references
+
+- Decoder: `java/wotb-core/.../replay/decoder/EntityMethodDecoder.java`
+  (`parseRawAssaultBaseUpdates`); tests: `EntityMethodDecoderTest`.
+- Reconstruction: `java/wotb-core/.../replay/reconstruction/AssaultBaseStateReconstructor.java`;
+  tests: `AssaultBaseStateReconstructorTest`.
+- Projection: `java/wotb-playback/.../replay/ai/BattlePlaybackProjector.java`;
+  tests: `java/wotb-web/.../replay/ai/BattlePlaybackProjectorTest.java`.
+- Wire authority: `contracts/http/openapi.yaml`, `BaseStateTransition`;
+  runtime boundary tests: `frontend/src/api/contract-runtime.test.ts`.
+- 2D rendering and seek: `frontend/src/components/BattlePlayback.vue` and
+  `BattlePlayback.integration.test.js`.
+
 Wire protocols stay separate:
 
 ```text

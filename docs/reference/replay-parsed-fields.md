@@ -7,6 +7,27 @@
 > capacity 需独立 evidence。字段号可能随版本变化。
 > 生产状态：本文件字段/语义按已证明事实标注（AFFIRMED）；尾部 `trailingStateRaw` 与未知系数标 UNKNOWN，不得冒充已证明语义。
 
+## 11.20 补充：Assault 单基地 runtime 字段
+
+该补充仅依据 `11.20.0_china_apple` Neptune 单场受控占领样本，不扩大下文 11.19 corpus 的证据范围。
+路径：Type8 → subtype48 → **wrapper8** → root **field8** repeated child。
+
+| nested 字段 | 解析出口 | 当前解释 | 生产限制 |
+|---|---|---|---|
+| field1 | `rawField1` | 观察到 2 为 progress family，1 为 sibling family；私有枚举名 UNKNOWN | 只有值 2 允许提升 progress |
+| field2 | `rawField2` | 观察到 1；精确 index/identifier 语义 UNKNOWN | 必须为 1，不解释为队伍 |
+| field3 | `captureProgress` | field1=2 / field2=1 下的实时占领进度；受控样本真实广播 1..100 | 显式值 0..100；缺失保持 raw-only，不生成 0 |
+| field4 | `rawField4` | sibling family 观察到 1；精确语义 UNKNOWN | 不映射 capturingTeam / ownerTeam |
+
+上述已知字段只接受单个非负、无 Integer 溢出的 varint；错误 wire type、重复 scalar、malformed child
+和 progress >100 不进入 Assault semantic。canonical 输出沿用 `baseStates`：`baseId=BASE`、
+`ownerTeam=null`、`capturingTeam=null`、显式 progress 原值，时间按 battle-relative clock 转换。
+Supremacy 独立使用 wrapper12/root11、A-D 和 0..99。`finishReasonRaw=2` 仍是单受控样本的
+STRONG CANDIDATE，不提升为跨版本占领胜利枚举；SC2 `controlpoint.team` 仅为静态 raw metadata。
+
+完整字段规则、字节示例、拒绝条件、证据等级和实现/测试位置见
+[Assault 字段解析契约](../research/replay/assault-base-state.md#field-decoding-contract--字段解析契约)。
+
 ## 1. 权威结算层（`battle_results.dat` → `PlayerResult`）
 
 来源：`ReplayParser` 解析 pickle → protobuf（`#301` 玩家战绩 → `#2` 单场明细），字段号来自 protobuf schema。
