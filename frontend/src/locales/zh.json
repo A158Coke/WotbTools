@@ -1438,12 +1438,10 @@
     "pick_hint": "选择本地 .wotbreplay 文件——解析在浏览器内经 WebAssembly 完成，文件不出本机。",
     "parsing": "解析中…",
     "error_parse": "解析失败：",
-    "ready": "已加载 {map} —— {count} 辆车。",
     "play": "播放",
     "pause": "暂停",
-    "path_ph": ".wotbreplay 路径（服务端通道）",
-    "load": "加载",
-    "local_file": "本地文件"
+    "local_file": "本地文件",
+    "assets_hint": "未配置资产平面：追加 ?assets=<COS/CDN 基址> 以加载地图地形/车模 GLB/坦克数据（回放解析本身不依赖）。"
   },
   "agentTanks": {
     "title": "坦克百科（Agent）",

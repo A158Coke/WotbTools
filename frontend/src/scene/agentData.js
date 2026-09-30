@@ -1,33 +1,23 @@
-// Agent 坦克/装甲/射击数据源（静态资产面优先，同源服务端回退）。
+// Agent 坦克/装甲/射击数据源（评审 P0-3：**client-only**，纯静态资产平面）。
 //
-// 上游 tankViewer.js 与 Agent 自托管 Web 面耦合（/api/tank、/api/tank_filter、
-// /api/shells、/api/penetrate、/api/replay_shot、/api/tank_image）；WotBTools 的
-// 部署面是纯静态资产包（契约 §13：?assets=<基址> 指向 COS 镜像）。本层把每类数据
-// 的"静态路径物化 / 服务端回退"收敛到单点：
-// - 静态：dump-tank-data 物化的 tank/{id}.json（与 /api/tank/{id} 同一 tank_data_value
-//   形状）、打包器 data/tank_cache.json（735 辆全景卡）、tank_images/{id}.webp；
-// - 回退：Agent 自托管（同源 /api/*）行为不变——场景层无感切换；
-// - 击穿判定无静态物可回退：penetration.js 客户端移植（上游 Rust calculate 同源单测）。
-// - 射击复现数据：本地 WASM parseShotReplays 产出 shots 数组，经 sessionStorage
-//   在"射击复现表 → 3D 查看器（新窗口）"间交接；无交接时回退 /api/replay_shot
-//  （Agent 自托管 viewer 链）。
-import { assetBase, assetUrl } from './assetBase.js'
+// WotBTools Playback 拓扑无 Agent 自托管服务端——tank 数据/GLB/封面/名册全部来自
+// `?assets=` 资产平面（dump-tank-data 物化的 tank/{id}.json 与 /api/tank/{id} 同一
+// 形状；打包器 data/tank_cache.json；tank_images/{id}.webp），经 assetProvider 访问。
+// 击穿判定为 penetration.js 客户端移植（上游 Rust calculate 同源单测）。
+// 射击复现数据：本地 WASM parseShotReplays 产出，经 localStorage/sessionStorage
+// 在"射击复现表 → 3D 查看器（新窗口）"间交接——无 /api/replay_shot 回退。
+// 资产基址未配置时显式抛错（错误信息指导配置），不做静默降级。
+import { assetProvider } from './assetProvider.js'
 
-export { assetUrl }
+export { assetProvider }
 
 // ---------- per-tank 数据（dump-tank-data 物化 → /api/tank/{id} 同形状） ----------
 
-export function tankDataUrl(id) {
-  return assetBase() ? assetUrl(`/tank/${id}.json`) : `/api/tank/${id}`
-}
-
 export async function fetchTankData(id) {
-  const resp = await fetch(tankDataUrl(id))
-  if (!resp.ok) throw new Error(`tank data ${id}: HTTP ${resp.status}`)
-  return resp.json()
+  return assetProvider.json(`/tank/${id}.json`)
 }
 
-// ---------- 全景名册（tank_cache.json → /api/tank_filter / /api/tanks 同形状） ----------
+// ---------- 全景名册（tank_cache.json；无服务端聚合回退） ----------
 
 let tankFilterPromise = null
 let tankCachePromise = null
@@ -35,11 +25,7 @@ let tankCachePromise = null
 /** 静态 tank_cache.json（一次装载，名册/百科两通道共享） */
 function fetchTankCacheStatic() {
   if (!tankCachePromise) {
-    tankCachePromise = fetch(assetUrl('/data/tank_cache.json'))
-      .then((r) => {
-        if (!r.ok) throw new Error(`tank_cache: HTTP ${r.status}`)
-        return r.json()
-      })
+    tankCachePromise = assetProvider.json('/data/tank_cache.json')
       .catch((e) => {
         tankCachePromise = null
         throw e
@@ -63,50 +49,35 @@ function tankCacheToFilter(cache) {
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** 坦克名册（3D 查看器选择器）：静态 tank_cache.json 优先，服务端 /api/tank_filter 回退 */
+/** 坦克名册（3D 查看器选择器）：静态 tank_cache.json */
 export function fetchTankFilter() {
-  if (assetBase()) {
-    if (!tankFilterPromise) {
-      tankFilterPromise = fetchTankCacheStatic().then(tankCacheToFilter)
-    }
-    return tankFilterPromise
+  if (!tankFilterPromise) {
+    tankFilterPromise = fetchTankCacheStatic().then(tankCacheToFilter)
   }
-  return fetch('/api/tank_filter').then((r) => {
-    if (!r.ok) throw new Error(`tank_filter: HTTP ${r.status}`)
-    return r.json()
-  })
+  return tankFilterPromise
 }
 
 /**
  * 坦克百科全量卡（含 armor 六面/shells/hp/机动/视野/俯仰）：静态 tank_cache.json 原样
- *（{id: info} 映射，字段透传），服务端 /api/tanks 聚合回退。
+ *（{id: info} 映射，字段透传）。
  */
 export function fetchTankEncyclopedia() {
-  if (assetBase()) return fetchTankCacheStatic()
-  return fetch('/api/tanks').then((r) => {
-    if (!r.ok) throw new Error(`tanks: HTTP ${r.status}`)
-    return r.json()
-  })
+  return fetchTankCacheStatic()
 }
 
-// ---------- 封面图（tank_images/{id}.webp → /api/tank_image/{id}） ----------
+// ---------- 封面图（tank_images/{id}.webp） ----------
 
 export function tankImageUrl(id) {
-  return assetBase() ? assetUrl(`/tank_images/${id}.webp`) : `/api/tank_image/${id}`
+  return assetProvider.url(`/tank_images/${id}.webp`)
 }
 
-// ---------- 弹表（tank JSON configs 构建 → /api/shells/{id} 同形状） ----------
+// ---------- 弹表（tank JSON configs 客户端构建） ----------
 
 /**
  * 服务端 /api/shells/{id} 的客户端等价：顶级配置（configs 末位 = 默认顶级变体）的
  * 弹链 + caliber + 全局弹种 id（shell_global_ids 与 configs[].shells 同序）。
  */
 export async function fetchShells(id) {
-  if (!assetBase()) {
-    const resp = await fetch(`/api/shells/${id}`)
-    if (!resp.ok) throw new Error(`shells ${id}: HTTP ${resp.status}`)
-    return resp.json()
-  }
   const data = await fetchTankData(id)
   const cfgs = data.configs || []
   const cfg = cfgs.length ? cfgs[cfgs.length - 1] : null
@@ -130,7 +101,7 @@ export async function judgePenetration(req) {
   return calculate(req)
 }
 
-// ---------- 射击复现数据交接（射击复现表 → 3D 查看器新窗口） ----------
+// ---------- 射击复现数据交接（射击复现表 → 3D 查看器新窗口；无服务端通道） ----------
 
 const SHOTS_KEY = 'wotb_agent_shots'
 const SHOTS_TTL_MS = 30 * 60 * 1000
@@ -152,29 +123,24 @@ export function storeShotsForViewer(shots) {
 }
 
 /**
- * 查看器取射击数据：本地交接优先（WotBTools 纯客户端链），
- * 无交接（直接打开 URL/旧链）回退 Agent 自托管 /api/replay_shot。
- * 返回形状兼容两种来源：{shots:[...]} 或裸数组（tankViewer 消费端 d.shots || d）。
+ * 查看器取射击数据（client-only：仅本地交接通道）。
+ * 无交接（直接打开带 shot= 的 URL 而未经射击复现表）→ 显式报错指导入口，
+ * 不静默回退任何服务端。返回形状固定 {shots:[...]}（tankViewer 消费端 d.shots || d）。
  */
 export async function fetchReplayShots() {
-  const readLocal = () => {
-    for (const store of [localStorage, sessionStorage]) {
-      try {
-        const raw = store.getItem(SHOTS_KEY)
-        if (!raw) continue
-        const parsed = JSON.parse(raw)
-        const shots = Array.isArray(parsed) ? parsed : parsed.shots
-        const at = Array.isArray(parsed) ? 0 : parsed.at || 0
-        if (Array.isArray(shots) && shots.length && Date.now() - at < SHOTS_TTL_MS) {
-          return { shots }
-        }
-      } catch { /* 损坏条目按下个通道处理 */ }
-    }
-    return null
+  for (const store of [localStorage, sessionStorage]) {
+    try {
+      const raw = store.getItem(SHOTS_KEY)
+      if (!raw) continue
+      const parsed = JSON.parse(raw)
+      const shots = Array.isArray(parsed) ? parsed : parsed.shots
+      const at = Array.isArray(parsed) ? 0 : parsed.at || 0
+      if (Array.isArray(shots) && shots.length && Date.now() - at < SHOTS_TTL_MS) {
+        return { shots }
+      }
+    } catch { /* 损坏条目按下个通道处理 */ }
   }
-  const local = readLocal()
-  if (local) return local
-  const resp = await fetch('/api/replay_shot')
-  if (!resp.ok) throw new Error(`replay_shot: HTTP ${resp.status}`)
-  return resp.json()
+  throw new Error(
+    '射击复现数据缺失：请从「射击复现」页点击行进入（shots 经本地交接，无服务端通道）',
+  )
 }

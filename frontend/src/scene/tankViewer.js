@@ -18,7 +18,7 @@ import {
     fetchReplayShots,
     judgePenetration,
     tankImageUrl,
-    assetUrl,
+    assetProvider,
 } from './agentData.js'
 
 export function initTankViewer() {
@@ -41,15 +41,10 @@ export function initTankViewer() {
             if (el) { el.textContent = 'Promise Rejection: ' + (e.reason && (e.reason.message || e.reason)); el.style.color = '#f44336'; el.style.whiteSpace = 'pre-wrap'; }
         });
 
+        // WotBTools client-only：上游 /api/hold、/api/ready 是 Agent 自托管无头截图
+        // 链的会话门控（headless=1 挂起 XHR 扣 Chrome 虚拟时间），WotBTools 拓扑
+        // 无该服务端——headless 会话门控整体移除（评审 P0-3 验收 6）。
         const SESS = Math.random().toString(36).slice(2);
-        {
-            const q0 = new URLSearchParams(location.search);
-            if (q0.get('headless') === '1' && SESS) {
-                const holdXhr = new XMLHttpRequest();
-                holdXhr.open('GET', '/api/hold?sess=' + encodeURIComponent(SESS), true);
-                holdXhr.send();
-            }
-        }
         let heatFrames = 0, heatReadySent = false;
 
         let scene, camera, renderer, controls;
@@ -1028,7 +1023,7 @@ export function initTankViewer() {
                 document.getElementById('loading').textContent = 'Failed to load ' + phase + ': ' + msg;
             };
 
-            loader.load(assetUrl(tankData.model_url), function(gltf) {
+            loader.load(assetProvider.url(tankData.model_url), function(gltf) {
                 armorModel = gltf.scene;
                 _armorPrefixCache = null;   // 装甲模型重建后前缀缓存失效
                 tagArmorPlates(armorModel);
@@ -1057,7 +1052,7 @@ export function initTankViewer() {
                 applyUrlOptionsOnce();
             }, undefined, fail('armor model'));
 
-            loader.load(assetUrl(tankData.visual_model_url), function(gltf) {
+            loader.load(assetProvider.url(tankData.visual_model_url), function(gltf) {
                 tankModel = gltf.scene;
                 applyModelTransforms(tankModel);
                 tagModuleMeshes(tankModel);
@@ -1362,7 +1357,7 @@ export function initTankViewer() {
                         // URL 前缀跟随目标模型（Web 服务挂 /armor_view/glb/...，独立 viewer 挂 /glb/...，
                         // 硬编码 /glb/ 在 Web 下 404）；/api/tank 不手动拼前缀——viewer_index_html
                         // 已对字面量 '/api/ 加前缀，手动拼会双重前缀 404。
-                        const shooterGlbUrl = assetUrl(tankData.visual_model_url.replace(/\/glb\/\d+\//, '/glb/' + tid + '/'));
+                        const shooterGlbUrl = assetProvider.url(tankData.visual_model_url.replace(/\/glb\/\d+\//, '/glb/' + tid + '/'));
                         return Promise.all([
                             fetchTankData(tid).catch(() => null),
                             new Promise(function(res) {
@@ -3904,11 +3899,7 @@ export function initTankViewer() {
             controls.update();
             if (penetrationMode && armorModel) {
                 if (SESS && heatFrames < 5) {
-                    heatFrames++;
-                    if (heatFrames === 5 && !heatReadySent) {
-                        heatReadySent = true;
-                        fetch('/api/ready?sess=' + encodeURIComponent(SESS)).catch(()=>{});
-                    }
+                    heatFrames++;   // 就绪门控计数保留（上游语义）；上报端点已随 client-only 移除
                 }
                 renderSpacedArmorPass();
                 renderer.render(scene, camera);                       // 背景/网格（autoClear 已置 false）
