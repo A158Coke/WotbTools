@@ -1,9 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Source;
-import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.web.config.AiModelProperties;
@@ -16,7 +14,6 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
 /**
  * 真实 DeepSeek E2E 探针（手动运行，不进 CI）：对真实 team replay 走 production 编排
@@ -45,8 +42,6 @@ class TeamReviewRealE2EProbeTest {
         final ReplayProcessingResult result = new DefaultReplayProcessingFacade()
                 .process(new Source(file.getFileName().toString(), bytes), ReplayProcessingOptions.full());
         Assumptions.assumeTrue(result.battle() != null && result.battle().players != null, "no battle parsed");
-        final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer().analyze(List.of(result)).groups();
-        Assumptions.assumeTrue(!groups.isEmpty(), "no team group");
 
         final AiModelProperties props = new AiModelProperties(
                 apiKey, "https://api.deepseek.com", "deepseek-v4-flash",
@@ -65,11 +60,11 @@ class TeamReviewRealE2EProbeTest {
                 System::nanoTime, null);
 
         System.out.println("===== 真实 E2E: " + file.getFileName());
-        System.out.println("map=" + result.battle().mapName + " arenaBonusType=" + result.battle().arenaBonusType
-                + " groups=" + groups.size());
+        System.out.println("map=" + result.battle().mapName + " arenaBonusType=" + result.battle().arenaBonusType);
         final long start = System.nanoTime();
         try {
-            final TeamAnalyzeResult out = service.analyzeTeamGroups(groups, AllowedLanguage.ZH);
+            final TeamAnalyzeResult out = service.analyzeTeam(result.battle(),
+                    result.reconstruction(), AllowedLanguage.ZH, AiReviewStreamListener.NOOP);
             final long ms = (System.nanoTime() - start) / 1_000_000;
             System.out.println("===== E2E SUCCESS in " + ms + "ms");
             System.out.println("preBattleSection=" + (out.preBattleSection() == null ? "null" : out.preBattleSection().length() + " chars"));

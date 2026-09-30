@@ -22,17 +22,9 @@ import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
-import com.wotb.core.replay.processing.BatchAnalyzer;
-import com.wotb.core.replay.processing.ReplayIdentity;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
-import com.wotb.web.replay.ai.gateway.AiChatGateway;
-import com.wotb.web.replay.ai.gateway.AiChatRequest;
-import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -378,32 +370,8 @@ class TeamAiPromptBuilderTest {
         battle.winnerTeam = 1;
         battle.players = players;
         battle.recorder = players.getFirst().nickname;
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        final var result = new ReplayProcessingResult(
-                "budget.wotbreplay",
-                ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity(
-                        "budget-hash",
-                        "budget-arena",
-                        "11.0",
-                        "budget_map",
-                        players.getFirst().accountId,
-                        null),
-                battle,
-                null,
-                null,
-                capabilities,
-                null,
-                null);
-        final var group = new BatchAnalyzer().analyze(List.of(result))
-                .groups()
-                .getFirst();
-        return new AiReplayAnalysisService(
-                new AiChatGateway() {
-                    @Override public AiChatResponse chat(final AiChatRequest r) { return null; }
-                    @Override public boolean isConfigured() { return false; }
-                }, "", 30000, new ConservativeDeepSeekTokenEstimator())
-                .buildSingleTeamContext(group);
+        // 视角解析失败 / 特征不可用会在构建时直接抛错（旧 perspective group 分组已删除）。
+        return TeamContextBuilder.buildSingleTeamContext(battle, null);
     }
 
     // ========== TEAM_PERSPECTIVE contract tests ==========
@@ -500,6 +468,8 @@ class TeamAiPromptBuilderTest {
         final var input = TeamAiPromptBuilder.single(contextWithMembers(1, 1));
         assertTrue(input.content().contains("map="),
                 "Prompt must contain map field");
+        // battleIdentity= 以 BattleIdentity.toString() 渲染；ARENA 场景该记录的 mapName 必须为空
+        // （与迁移前 BattleGroupingKey.toBattleIdentity() 一致），因此整个 prompt 都不得出现内部 map code。
         assertFalse(input.content().contains("budget_map"),
                 "Prompt must not contain raw internal map code 'budget_map'");
     }

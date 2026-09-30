@@ -13,18 +13,12 @@ import java.util.Map;
  */
 public final class InMemoryReplayDatasetRepository implements ReplayProcessingResultReader {
 
-    private final Map<String, byte[]> aiFacts = new HashMap<>();
     private final Map<String, byte[]> mapOverview = new HashMap<>();
     private final Map<String, byte[]> battlePlaybackV2 = new HashMap<>();
 
     @Override
     public ProcessedDataset readReadyDataset(final ReplayProcessingJob job) {
         return job.result();
-    }
-
-    @Override
-    public byte[] aiFacts(final String jobId, final int sourceIndex) {
-        return aiFacts.get(key(jobId, sourceIndex));
     }
 
     @Override
@@ -35,11 +29,6 @@ public final class InMemoryReplayDatasetRepository implements ReplayProcessingRe
     @Override
     public byte[] battlePlaybackV2(final String jobId, final int sourceIndex) {
         return battlePlaybackV2.get(key(jobId, sourceIndex));
-    }
-
-    /** {@code null} = 该 artifact 不存在（capability unavailable）。 */
-    public void putAiFacts(final String jobId, final int sourceIndex, final byte[] content) {
-        putOrRemove(aiFacts, key(jobId, sourceIndex), content);
     }
 
     /** {@code null} = 该 artifact 不存在（capability unavailable）。 */

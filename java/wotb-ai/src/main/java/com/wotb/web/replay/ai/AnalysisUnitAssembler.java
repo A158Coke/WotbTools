@@ -2,23 +2,15 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
-import com.wotb.core.replay.processing.BattleGroupingKey;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.Map;
 
 /**
  * 分析单元映射的唯一实现。
- * <p>负责把 {@link ReplayPerspectiveGroup} 映射为稳定的 {@code analysisUnitId}，
- * 并查找录像者 entity 映射，供 Player/Team 编排复用。纯映射，不含业务判断；
+ * <p>负责查找录像者 entity 映射，供 Player/Team 编排复用。纯映射，不含业务判断；
  * 不发送 HTTP、不构建 Prompt。</p>
  */
 public final class AnalysisUnitAssembler {
@@ -27,29 +19,8 @@ public final class AnalysisUnitAssembler {
     }
 
     /**
-     * 为单个 perspective group 生成稳定、permutation 无关的 {@code analysisUnitId}。
-     */
-    public static String analysisUnitId(final ReplayPerspectiveGroup group) {
-        final BattleGroupingKey key = group.key().battleKey();
-        final String battlePart = switch (key.type()) {
-            case ARENA -> "arena-" + key.arenaUniqueId();
-            case COMPOSITE -> {
-                final String raw = key.mapCode() + "|" + key.clientVersion() + "|" + key.battleStartEpochSecond();
-                yield "battle-" + sha256(raw).substring(0, 16);
-            }
-            case FALLBACK -> "hash-" + key.uniqueFallback().substring(0, Math.min(16, key.uniqueFallback().length()));
-        };
-        final int teamHash = (battlePart + "-p" + group.key().perspectiveTeam()).hashCode() & 0xffff;
-        return battlePart + "-u" + Integer.toHexString(teamHash);
-    }
-
-    /**
      * 查找录像者在重建结果中的 entity 映射。
      */
-    public static RecorderEntityMapping findRecorder(final ReplayProcessingResult rep) {
-        return findRecorder(rep.battle(), rep.reconstruction());
-    }
-
     public static RecorderEntityMapping findRecorder(final Battle battle,
                                                       final ReplayReconstruction reconstruction) {
         if (reconstruction != null) {
@@ -72,14 +43,5 @@ public final class AnalysisUnitAssembler {
             return new RecorderEntityMapping(null, null, null,
                     battle.recorder, 0, 0, DecodeConfidence.INFERRED);
         return RecorderEntityMapping.unresolved();
-    }
-
-    static String sha256(final String input) {
-        try {
-            final var md = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(md.digest(input.getBytes(StandardCharsets.UTF_8)));
-        } catch (final NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
     }
 }

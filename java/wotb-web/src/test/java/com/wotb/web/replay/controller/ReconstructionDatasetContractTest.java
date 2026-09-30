@@ -1,11 +1,6 @@
 package com.wotb.web.replay.controller;
 
 import com.wotb.web.replay.MapOverviewQueryService;
-import com.wotb.web.replay.ai.AiReplayAnalysisService;
-import com.wotb.web.replay.ai.AiReplayReviewService;
-import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
-import com.wotb.web.replay.ai.TacticalReviewHarness;
-import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.job.InMemoryReplayJobAuthority;
 import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayProcessingJob;
@@ -22,13 +17,14 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
 
 /**
  * Dataset JSON reference REST 契约——缺失/空引用 → 400
  * DATASET_REFERENCE_REQUIRED、非法 sourceId → 400 SOURCE_NOT_FOUND、
  * job 不存在/过期 → 404 JOB_NOT_FOUND、source 未 READY → 409 SOURCE_NOT_READY。
  * 绝不允许 null processingJobId 进入 store 查找 NPE → 500。
+ * <p>AI 复盘（{@code /api/replay/analyze}）已迁出 wotb-web 到独立 ai-service；
+ * 本测试只覆盖仍归 wotb-web 所有的 map-overview Dataset 路径。</p>
  */
 class ReconstructionDatasetContractTest {
 
@@ -46,16 +42,7 @@ class ReconstructionDatasetContractTest {
     private void newController() throws Exception {
         root = Files.createTempDirectory("wotb-dataset-contract-test");
         store = new ReplayProcessingJobStore(root, 60, new InMemoryReplayJobAuthority());
-        final AiReplayReviewService reviewService = new AiReplayReviewService(
-                mock(AiReplayAnalysisService.class),
-                mock(TacticalReviewHarness.class),
-                null,
-                store,
-                new InMemoryReplayDatasetRepository());
         controller = new ReconstructionController(
-                reviewService,
-                mock(AiCancellationRegistry.class),
-                mock(AiReviewWorkerExecutor.class),
                 new MapOverviewQueryService(store, new InMemoryReplayDatasetRepository()));
     }
 
@@ -77,42 +64,6 @@ class ReconstructionDatasetContractTest {
         final ResponseStatusException e = assertThrows(ResponseStatusException.class, call::run);
         assertEquals(status, e.getStatusCode(), "HTTP status for " + code);
         assertEquals(code, e.getReason(), "稳定错误码");
-    }
-
-    @Test
-    void analyzeMissingReferencesReturn400DatasetReferenceRequired() throws Exception {
-        newController();
-        assertContract(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED",
-                () -> controller.analyzeDataset(null));
-        assertContract(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED",
-                () -> controller.analyzeDataset(new ReconstructionController.AnalyzeDatasetRequest(
-                        null, "r0", "zh", null)));
-        assertContract(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED",
-                () -> controller.analyzeDataset(new ReconstructionController.AnalyzeDatasetRequest(
-                        "  ", "r0", "zh", null)));
-        assertContract(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED",
-                () -> controller.analyzeDataset(new ReconstructionController.AnalyzeDatasetRequest(
-                        "p1", null, "zh", null)));
-    }
-
-    @Test
-    void analyzeInvalidSourceIdReturns400SourceNotFound() throws Exception {
-        newController();
-        assertContract(HttpStatus.BAD_REQUEST, "SOURCE_NOT_FOUND",
-                () -> controller.analyzeDataset(new ReconstructionController.AnalyzeDatasetRequest(
-                        "p1", "not-a-source", "zh", null)));
-    }
-
-    @Test
-    void analyzeValidReferenceProceedsPastReferenceValidation() throws Exception {
-        newController();
-        store.register(readyJob("p-ready"));
-        // 合法 reference 通过同步字段校验 → 走到 cancellation registry（mock 返回 null →
-        // DUPLICATE_CORRELATION_ID），证明没有 NPE / 500，且 reference validation 已放行。
-        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> controller.analyzeDataset(new ReconstructionController.AnalyzeDatasetRequest(
-                        "p-ready", "r0", "zh", null)));
-        assertEquals("DUPLICATE_CORRELATION_ID", e.getMessage());
     }
 
     @Test
@@ -151,5 +102,15 @@ class ReconstructionDatasetContractTest {
         assertContract(HttpStatus.BAD_REQUEST, "SOURCE_NOT_FOUND",
                 () -> controller.mapOverviewDataset(new ReconstructionController.MapOverviewDatasetRequest(
                         "p1", "bogus")));
+    }
+
+    @Test
+    void mapOverviewReadyJobWithoutCachedArtifactReturns204() throws Exception {
+        newController();
+        store.register(readyJob("p-ready"));
+        // 引用校验通过 → 读到 READY job 但无 cached map-overview 产物 → 204（而非 4xx/5xx）。
+        assertEquals(204, controller.mapOverviewDataset(
+                        new ReconstructionController.MapOverviewDatasetRequest("p-ready", "r0"))
+                .getStatusCode().value());
     }
 }

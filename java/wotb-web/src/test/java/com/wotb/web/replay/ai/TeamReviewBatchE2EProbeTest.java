@@ -2,9 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Source;
-import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.web.config.AiModelProperties;
@@ -72,9 +70,8 @@ class TeamReviewBatchE2EProbeTest {
                 final byte[] bytes = Files.readAllBytes(file);
                 final ReplayProcessingResult result = new DefaultReplayProcessingFacade()
                         .process(new Source(file.getFileName().toString(), bytes), ReplayProcessingOptions.full());
-                final List<ReplayPerspectiveGroup> groups =
-                        new BatchAnalyzer().analyze(List.of(result)).groups();
-                final TeamAnalyzeResult out = service.analyzeTeamGroups(groups, AllowedLanguage.ZH);
+                final TeamAnalyzeResult out = service.analyzeTeam(result.battle(),
+                        result.reconstruction(), AllowedLanguage.ZH, AiReviewStreamListener.NOOP);
                 final long ms = (System.nanoTime() - start) / 1_000_000;
                 final int len = out.analysis() == null || out.analysis().analysis() == null
                         ? 0 : out.analysis().analysis().length();

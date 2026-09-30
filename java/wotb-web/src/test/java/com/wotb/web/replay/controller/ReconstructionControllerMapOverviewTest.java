@@ -1,9 +1,6 @@
 package com.wotb.web.replay.controller;
 
 import com.wotb.web.replay.MapOverviewQueryService;
-import com.wotb.web.replay.ai.AiReplayReviewService;
-import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
-import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.dto.MapOverview;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -27,6 +24,7 @@ import static org.mockito.Mockito.when;
  * {@code /api/replay/map-overview} Dataset 路径契约：JSON 引用读取
  * cached map-overview.json → 200；不可构建 → 204；multipart 上传路径已废弃 → 410
  * {@code REPLAY_LEGACY_DEPRECATED}（不再有 scheduler 之外的 full processing）。
+ * <p>AI Review 已迁出 wotb-web（独立 ai-service），控制器只依赖 {@link MapOverviewQueryService}。</p>
  */
 class ReconstructionControllerMapOverviewTest {
 
@@ -41,11 +39,7 @@ class ReconstructionControllerMapOverviewTest {
     private ReconstructionController controller(final MapOverview overview) {
         final MapOverviewQueryService service = mock(MapOverviewQueryService.class);
         when(service.buildOverviewFromDataset(eq("p1"), eq(0))).thenReturn(overview);
-        return new ReconstructionController(
-                mock(AiReplayReviewService.class),
-                new AiCancellationRegistry(),
-                new AiReviewWorkerExecutor(),
-                service);
+        return new ReconstructionController(service);
     }
 
     @Test
@@ -67,11 +61,7 @@ class ReconstructionControllerMapOverviewTest {
     @Test
     void legacyMultipartMapOverviewReturnsGone() throws Exception {
         final MapOverviewQueryService service = mock(MapOverviewQueryService.class);
-        final ReconstructionController controller = new ReconstructionController(
-                mock(AiReplayReviewService.class),
-                new AiCancellationRegistry(),
-                new AiReviewWorkerExecutor(),
-                service);
+        final ReconstructionController controller = new ReconstructionController(service);
         final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                 () -> controller.mapOverview(new org.springframework.mock.web.MockMultipartFile[0]));
         assertEquals(HttpStatus.GONE, e.getStatusCode());

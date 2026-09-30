@@ -20,7 +20,9 @@ import java.util.Objects;
  *   <li>{@code input/<i>/<sourceName>} —— 控制面 create 时写的原始回放；</li>
  *   <li>{@code result/source-<i>.json} —— worker 写的 canonical per-source dataset；</li>
  *   <li>{@code result/finalized.json} —— 控制面 FINALIZING_BATCH 写的 batch dataset；</li>
- *   <li>{@code artifacts/<i>/{ai-facts,map-overview,battle-playback-v2}.json} —— worker 写的 artifact。</li>
+ *   <li>{@code artifacts/<i>/{map-overview,battle-playback-v2}.json} —— worker 写的 artifact；
+ *       {@code artifacts/<i>/ai-facts.json} 是迁移前的 legacy artifact（AI Review 已迁出
+ *       Business Backend，不再写入），这里保留删除是为了在 lifecycle TTL 之前清掉遗留对象。</li>
  * </ul>
  *
  * <p>这就是这个 job 在对象存储里的全部内容（{@code tempJobObject} 的全部调用点都落在这些形状上）。

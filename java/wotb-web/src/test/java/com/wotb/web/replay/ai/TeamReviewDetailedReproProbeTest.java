@@ -5,9 +5,7 @@ import com.wotb.core.model.Source;
 import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.timeline.BattleTimeline;
@@ -56,9 +54,8 @@ class TeamReviewDetailedReproProbeTest {
         final ReplayProcessingResult result = new DefaultReplayProcessingFacade()
                 .process(new Source(file.getFileName().toString(), bytes), ReplayProcessingOptions.full());
         Assumptions.assumeTrue(result.battle() != null && result.battle().players != null, "no battle parsed");
-        final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer().analyze(List.of(result)).groups();
-        Assumptions.assumeTrue(!groups.isEmpty(), "no team group");
-        final SingleTeamBattleAnalysisContext ctx = TeamContextBuilder.buildSingleTeamContext(groups.get(0));
+        final SingleTeamBattleAnalysisContext ctx = TeamContextBuilder.buildSingleTeamContext(
+                result.battle(), result.reconstruction());
         final BattleTimelineResult tl = BattleTimelineBuilder.build(
                 ctx.battle(), ctx.reconstruction(), TimelinePerspective.team(ctx.perspectiveTeam()));
         Assumptions.assumeTrue(tl.usable() && tl.timeline() != null, "timeline unusable");

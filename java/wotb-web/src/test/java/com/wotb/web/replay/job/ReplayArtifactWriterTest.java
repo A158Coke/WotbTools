@@ -1,12 +1,5 @@
 package com.wotb.web.replay.job;
 
-import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.facts.AiReplayFacts;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingDiagnostics;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.web.replay.dto.MapOverview;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.VehicleBattleLoadoutDto;
@@ -15,7 +8,6 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import tools.jackson.databind.exc.InvalidFormatException;
@@ -33,22 +25,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 因此这里锁定的是内容生成与解码这一对 SSOT，而不是任何本地文件布局。</p>
  */
 class ReplayArtifactWriterTest {
-
-    @Test
-    void aiFactsRoundTripsThroughContentBytes() throws Exception {
-        final ReplayProcessingResult result = new ReplayProcessingResult(
-                "a.wotbreplay", ReplayProcessingStatus.SUCCESS, null, battle("arena-1"),
-                null, ReplayProcessingDiagnostics.empty(),
-                ReplayProcessingCapabilities.summaryOnly(true), null, null);
-
-        final byte[] content = ReplayArtifactWriter.aiFactsContent(result);
-        final AiReplayFacts facts = ReplayArtifactWriter.decodeAiFacts(content);
-
-        assertEquals("a.wotbreplay", facts.fileName());
-        assertEquals("arena-1", facts.battle().arenaId);
-        assertEquals(ReplayProcessingStatus.SUCCESS, facts.status());
-        assertNull(ReplayArtifactWriter.decodeAiFacts(null), "缺失 artifact 必须解出 null，而不是抛异常");
-    }
 
     @Test
     void mapOverviewRoundTripsThroughContentBytesAndNullStaysUnavailable() throws Exception {
@@ -166,17 +142,5 @@ class ReplayArtifactWriterTest {
         assertTrue(json.contains("\"confidence\":\"HIGH\""));
         assertEquals(ConfidenceDto.HIGH, read.vehicles().get(0).loadout().confidence());
         assertNull(ReplayArtifactWriter.battlePlaybackV2Content(null), "timeline 不可用时不得产生伪 artifact");
-    }
-
-    private static Battle battle(final String arenaId) {
-        final Battle battle = new Battle();
-        battle.arenaId = arenaId;
-        battle.players = new ArrayList<>();
-        final PlayerResult p = new PlayerResult();
-        p.accountId = 1L;
-        p.nickname = "p1";
-        p.team = 1;
-        battle.players.add(p);
-        return battle;
     }
 }

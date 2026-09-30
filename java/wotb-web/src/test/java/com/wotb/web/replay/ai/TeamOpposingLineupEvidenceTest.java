@@ -1,17 +1,8 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.processing.BatchAnalyzer;
-import com.wotb.core.replay.processing.ReplayIdentity;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
-import com.wotb.web.replay.ai.gateway.AiChatGateway;
-import com.wotb.web.replay.ai.gateway.AiChatRequest;
-import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -160,19 +151,7 @@ class TeamOpposingLineupEvidenceTest {
         battle.players = players;
         battle.recorder = ownAce.nickname;
 
-        final var capabilities = new ReplayProcessingCapabilities(true, true, false, true, false);
-        final var result = new ReplayProcessingResult(
-                "team-enemy.wotbreplay",
-                ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new ReplayIdentity("team-enemy-hash", "team-enemy-arena", "11.0",
-                        "budget_map", ownAce.accountId, null),
-                battle, null, null, capabilities, null, null);
-        final var group = new BatchAnalyzer().analyze(List.of(result)).groups().getFirst();
-        return new AiReplayAnalysisService(
-                new AiChatGateway() {
-                    @Override public AiChatResponse chat(final AiChatRequest r) { return null; }
-                    @Override public boolean isConfigured() { return false; }
-                }, "", 30000, new ConservativeDeepSeekTokenEstimator())
-                .buildSingleTeamContext(group);
+        // 视角解析失败 / 特征不可用会在构建时直接抛错（旧 perspective group 分组已删除）。
+        return TeamContextBuilder.buildSingleTeamContext(battle, null);
     }
 }

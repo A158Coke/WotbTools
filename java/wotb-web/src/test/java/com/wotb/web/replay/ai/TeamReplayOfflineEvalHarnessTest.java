@@ -3,9 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Source;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.timeline.BattleTimeline;
@@ -44,10 +42,9 @@ class TeamReplayOfflineEvalHarnessTest {
             assertNotNull(processed.battle(), qualityCase.id() + " battle was not parsed");
             assertNotNull(processed.reconstruction(), qualityCase.id() + " reconstruction was not built");
 
-            final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer()
-                    .analyze(List.of(processed)).groups();
-            assertFalse(groups.isEmpty(), qualityCase.id() + " has no perspective group");
-            final SingleTeamBattleAnalysisContext context = TeamContextBuilder.buildSingleTeamContext(groups.getFirst());
+            // 视角解析失败 / 特征不可用会在构建时直接抛错（旧 perspective group 分组已删除）。
+            final SingleTeamBattleAnalysisContext context = TeamContextBuilder.buildSingleTeamContext(
+                    processed.battle(), processed.reconstruction());
             final BattleTimelineResult timelineResult = BattleTimelineBuilder.build(
                     context.battle(), context.reconstruction(), TimelinePerspective.team(context.perspectiveTeam()));
             assertTrue(timelineResult.usable(), qualityCase.id() + " timeline unusable: "

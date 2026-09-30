@@ -131,7 +131,7 @@ class ReplayDamageWindowIntegrationTest {
     void harnessAndFallbackPromptsIncludeRealDamageWindows() throws Exception {
         final ReplayProcessingResult result = processFixture();
         final Battle battle = result.battle();
-        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result);
+        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result.battle(), result.reconstruction());
         assertTrue(recorder.resolved());
         final PlayerBattleFeatureSet features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(result.reconstruction(), recorder, battle);
@@ -199,7 +199,7 @@ class ReplayDamageWindowIntegrationTest {
     void fallbackPromptSuppressesAllEventStreamDamageNumbersWhenPartial() throws Exception {
         final ReplayProcessingResult result = processFixture();
         final Battle battle = result.battle();
-        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result);
+        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result.battle(), result.reconstruction());
         assertTrue(recorder.resolved());
         final PlayerBattleFeatureSet features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(result.reconstruction(), recorder, battle);
@@ -242,7 +242,7 @@ class ReplayDamageWindowIntegrationTest {
     void killAttributionIdentityRetainedFromCanonicalTerminalWhenPartial() throws Exception {
         final ReplayProcessingResult result = processFixture();
         final Battle battle = result.battle();
-        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result);
+        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result.battle(), result.reconstruction());
         assertTrue(recorder.resolved());
         final PlayerResult rec = battle.recorderResult();
         assertNotNull(rec);
@@ -302,7 +302,7 @@ class ReplayDamageWindowIntegrationTest {
     void teamPathProducesWindowsForRealMembers() throws Exception {
         final ReplayProcessingResult result = processFixture();
         final Battle battle = result.battle();
-        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result);
+        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result.battle(), result.reconstruction());
         assertTrue(recorder.resolved());
         final int perspectiveTeam = recorder.team() != null ? recorder.team() : 1;
         final List<TeamMemberFeatureSet> members = new ArrayList<>();

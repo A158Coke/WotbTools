@@ -74,13 +74,15 @@ class SecurityErrorLoggingContractTest {
 
     @Test
     void forbiddenResponseIdMatchesSafeRejectionLog() throws Exception {
+        // AI analyze 端点已迁出 wotb-web；此处用仍在 production 的 replay 角色门（processing-jobs）
+        // 作为「已认证但无角色 → 403」样本。
         final String responseId = performAndReadId(
-                get("/api/replay/analyze")
+                get("/api/replay/processing-jobs/job-1")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_other")))
                         .header("X-Request-ID", "security-403"));
 
         final ILoggingEvent event = rejectionEvent("AUTH_FORBIDDEN", 403);
-        assertSecurityLog(event, responseId, "security-403", "GET", "/api/replay/analyze");
+        assertSecurityLog(event, responseId, "security-403", "GET", "/api/replay/processing-jobs/job-1");
     }
 
     @Test

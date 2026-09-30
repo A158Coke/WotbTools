@@ -96,11 +96,6 @@ public final class ObjectStorageReplayDatasetRepository
     // ---- derived artifact：与 dataset 同一端口，distributed 下 TX 本地磁盘不参与读取 ----
 
     @Override
-    public byte[] aiFacts(final String jobId, final int sourceIndex) throws IOException {
-        return readArtifact(jobId, sourceIndex, ReplayArtifactWriter.AI_FACTS_NAME);
-    }
-
-    @Override
     public byte[] mapOverview(final String jobId, final int sourceIndex) throws IOException {
         return readArtifact(jobId, sourceIndex, ReplayArtifactWriter.MAP_OVERVIEW_NAME);
     }

@@ -4,7 +4,6 @@ import com.wotb.core.replay.feature.MapCoordinateProfile;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import jakarta.annotation.PostConstruct;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
 /**
@@ -19,7 +18,6 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @ConfigurationProperties(prefix = "wotb.replay.coordinate")
-@EnableConfigurationProperties(AiModelProperties.class)
 public class CoordinateProfileConfig {
 
     private float halfExtent = 250f;

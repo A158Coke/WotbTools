@@ -113,8 +113,6 @@ public final class ReplayProcessingSourceRunner {
             LOGGER.info("event=processing_job_v2_unavailable jobId={} sourceIndex={} sourceName={} reason={}",
                     jobId, sourceIndex, sourceName, v2.reason());
         }
-        artifactSink.write(sourceIndex, ReplayArtifactWriter.AI_FACTS_NAME,
-                ReplayArtifactWriter.aiFactsContent(result));
     }
 
     /** 失败 → 稳定 error code 与 {@code code} / {@code code: message} 文本（既有本地模式逐字一致）。 */
