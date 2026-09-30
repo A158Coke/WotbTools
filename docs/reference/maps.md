@@ -83,11 +83,11 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 
 - 全局基地生成器保留原有抽取行为；本 PR 不对全部地图施加未经真实 Maps corpus 验证的 variant 筛选。
   `mapBases.js` 保留 base branch 生成产物，旧注释中的“守方”不构成已证明语义；以本节 raw metadata 边界为准。
-- 2D Neptune 的 Assault controlpoint 直接来自已核验的
-  `common/map-semantics/33_neptune_nt.semantic.json`（`verified=true`、`battleVariant=nt0`），
-  使用唯一 `sceneEvidence.battlePoints` controlpoint 的 X/Y；不手改 generated 坐标。
-  semantic entry 未提供 radius，沿用 presentation fallback。其他地图继续使用既有 generated 几何；
-  候选不是唯一基地时只显示 canonical HUD 状态，不任意取第一项。
+- 2D Assault 以 `assaultObjectivePresent`（wrapper8 初始化证据）确认 objective 存在；
+  按 `mapCode` 查找 verified `common/map-semantics/*.semantic.json`，使用唯一 EXACT_SCENE_DATA
+  controlpoint 的 X/Y。无地图特例；Neptune 与 Malinovka 共用此路径。Docker 在 Vite build 前复制该目录。
+  静态几何 LEFT JOIN runtime `baseStates`；无 field3、无 BASE transition 时仍画圈，但不画占领水位。
+  semantic entry 未提供 radius 时沿用 presentation fallback；静态 team metadata 不解释为动态阵营。
 - `controlpoint.team` 的攻/守含义未闭合：11.20 Neptune controlled Assault 样本中该值为 1，
   同时 team 1 是用户确认的进攻/占领方，因此不得再把它写死解释为“守方”。
 - 部分 `controlpoint` 没有 `radius`。Playback 当前仅在 presentation 层使用 20m fallback；

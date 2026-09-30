@@ -780,6 +780,8 @@ export interface components {
             vehicles: components["schemas"]["VehiclePlaybackTrack"][];
             events: components["schemas"]["BattleEvent"][];
             pointsSamples: components["schemas"]["PointsSample"][];
+            /** @description Proven wrapper8 objective-family initialization, independent of capture progress. Missing on older artifacts means unknown (no static Assault objective rendering). Not derived from arenaBonusType. */
+            assaultObjectivePresent?: boolean;
             baseStates?: components["schemas"]["BaseStateTransition"][];
             limitations: string[];
             capability: components["schemas"]["PlaybackCapability"];

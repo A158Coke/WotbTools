@@ -502,7 +502,9 @@ Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标�
 不从静态地图或最终结果推导。Supremacy 使用 wrapper12/root11，经
 `SupremacyBaseStateReconstructor` 形成 `baseId=A/B/C/D` 的完整 canonical state；
 Assault 单基地使用 wrapper8/root8，经 `AssaultBaseStateReconstructor` 形成
-`baseId=BASE` 的 progress transition（当前只提升已闭合的 0..100 progress 语义，阵营字段保持 unknown）。
+`baseId=BASE` 的 progress transition（0..100，阵营 unknown）；wrapper8 初始化独立投影
+`assaultObjectivePresent`，无 field3 时保留空 progress timeline。2D 按 mapCode 从 verified semantic
+数据解析静态 BASE，并 LEFT JOIN runtime state；训练房 arenaBonusType 不参与 Assault 判定。
 前端不合并 protobuf sparse update；坦克 marker sizing 优先使用可靠 hull metadata，model overlap 只通过有界
 presentation offset 软避让，canonical 坐标和命中判定语义保持一致。
 车辆状态投影与时钟推进分别由 `utils/playbackVehicleState.ts`、`utils/playbackClock.ts` 提供纯函数，

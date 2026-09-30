@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.AssaultBaseStateTransition;
+import com.wotb.core.replay.reconstruction.AssaultBaseStateReconstructor;
 import com.wotb.core.replay.event.ConsumableLifecycleEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -131,7 +132,8 @@ public final class BattlePlaybackProjector {
                 baseStates(timeline),
                 limitations,
                 null,
-                battle.arenaBonusType);
+                battle.arenaBonusType,
+                AssaultBaseStateReconstructor.hasObjective(timeline.events()));
         validateTemporalInvariant(dataset);
         return dataset;
     }

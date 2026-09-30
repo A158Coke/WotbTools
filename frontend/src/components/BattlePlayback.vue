@@ -3,7 +3,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useI18n } from 'vue-i18n'
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import { mapBases } from '../data/mapBases'
-import neptuneSemantics from '../../../common/map-semantics/33_neptune_nt.semantic.json'
 import { mapImages } from '../data/mapImages'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
@@ -78,6 +77,10 @@ import {
  * 复用 mapImages 素材、coordinateBounds 坐标映射、自适应色板与响应式布局；
  * RAF 只推进 battle-relative 时间，坐标查询遵循 canonical positionSegments。
  */
+const mapSemantics = Object.values(import.meta.glob('../../../common/map-semantics/*.semantic.json', {
+  eager: true, import: 'default',
+}))
+
 const props = defineProps({
   /**
    * MapOverview（heatmap/secondary 鸟瞰）overlay 数据。仅提供可选 overlay 事实
@@ -1918,19 +1921,15 @@ const hudBaseStates = computed(() => (basesAt.value.length ? [] : baseStatesAt.v
 const ASSAULT_BASE_RADIUS_FALLBACK_M = 20
 
 const basesAt = computed(() => {
-  // 只在存在 canonical runtime base track 时绘制；静态地图几何绝不反推游戏模式。
-  if (!baseStatesAt.value.length) return []
+  // Objective existence is independent of capture activity; geometry never infers mode.
   const states = new Map(baseStatesAt.value.map((state) => [state.baseId, state]))
   const assaultState = states.get('BASE')
-  if (assaultState) {
+  if (playback.value?.assaultObjectivePresent === true) {
     const mapCode = pbOverview.value?.mapCode
-    // Neptune's verified semantic document already selects the authoritative scene.
-    // Keep the global generated client geometry unchanged until a real Maps regeneration.
-    const geometry = neptuneSemantics.verified && neptuneSemantics.mapCodes.includes(mapCode)
-      ? neptuneSemantics.sceneEvidence.battlePoints
-        .filter(point => point.type === 'controlpoint' && point.confidence === 'EXACT_SCENE_DATA')
-        .map(point => ({ x: point.position[0], y: point.position[1], radius: null }))
-      : (mapBases[mapCode]?.assault || [])
+    const semantics = mapSemantics.find(map => map.verified && map.mapCodes?.includes(mapCode))
+    const geometry = (semantics?.sceneEvidence?.battlePoints || [])
+      .filter(point => point.type === 'controlpoint' && point.confidence === 'EXACT_SCENE_DATA')
+      .map(point => ({ x: point.position[0], y: point.position[1], radius: null }))
     // Ambiguous geometry cannot select an objective; retain the canonical HUD fallback.
     if (geometry.length !== 1) return []
     return geometry.map((base) => ({
@@ -1940,11 +1939,12 @@ const basesAt = computed(() => {
       // 不进入 protocol/canonical truth，也不根据车辆距离推导半径。
       radius: base.radius ?? ASSAULT_BASE_RADIUS_FALLBACK_M,
       status: baseStatus(assaultState),
-      progress: assaultState.captureProgress ?? null,
+      progress: assaultState?.captureProgress ?? null,
       capturedBy: capturedBy(assaultState),
     }))
   }
 
+  if (!baseStatesAt.value.some(state => ['A', 'B', 'C', 'D'].includes(state.baseId))) return []
   const geometry = mapBases[pbOverview.value?.mapCode]?.supremacy || []
   return geometry
     .filter((base) => base.radius != null)

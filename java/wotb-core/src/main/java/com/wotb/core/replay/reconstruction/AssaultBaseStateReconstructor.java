@@ -25,17 +25,13 @@ public final class AssaultBaseStateReconstructor {
         if (events == null || events.isEmpty()) {
             return List.of();
         }
-        // Mode fail-closed: a replay with the independently proven wrapper12 Supremacy
-        // base family must never also be projected as the single BASE objective even if
-        // some unrelated wrapper8 payload happens to share this raw shape.
-        if (events.stream().anyMatch(RawSupremacyBaseUpdate.class::isInstance)) {
+        if (!hasObjective(events)) {
             return List.of();
         }
         return events.stream()
                 .filter(RawAssaultBaseUpdate.class::isInstance)
                 .map(RawAssaultBaseUpdate.class::cast)
-                .filter(update -> Integer.valueOf(2).equals(update.rawField1()))
-                .filter(update -> Integer.valueOf(1).equals(update.rawField2()))
+                .filter(AssaultBaseStateReconstructor::isObjectiveFamily)
                 .filter(update -> update.rawField3() != null
                         && update.rawField3() >= 0 && update.rawField3() <= 100)
                 .sorted(Comparator.comparingDouble(AssaultBaseStateReconstructor::rawClock)
@@ -45,6 +41,23 @@ public final class AssaultBaseStateReconstructor {
                         update.confidence(),
                         update.rawField3()))
                 .toList();
+    }
+
+    /** Proven wrapper8 objective family, independent of whether progress is present. */
+    public static boolean hasObjective(final List<ReplayEvent> events) {
+        if (events == null || events.stream().anyMatch(RawSupremacyBaseUpdate.class::isInstance)) {
+            return false;
+        }
+        return events.stream()
+                .filter(RawAssaultBaseUpdate.class::isInstance)
+                .map(RawAssaultBaseUpdate.class::cast)
+                .anyMatch(AssaultBaseStateReconstructor::isObjectiveFamily);
+    }
+
+    private static boolean isObjectiveFamily(final RawAssaultBaseUpdate update) {
+        return Integer.valueOf(2).equals(update.rawField1())
+                && Integer.valueOf(1).equals(update.rawField2())
+                && update.confidence() == com.wotb.core.replay.event.DecodeConfidence.EXACT;
     }
 
     private static double rawClock(final RawAssaultBaseUpdate update) {

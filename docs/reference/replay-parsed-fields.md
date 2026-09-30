@@ -9,7 +9,7 @@
 
 ## 11.20 补充：Assault 单基地 runtime 字段
 
-该补充仅依据 `11.20.0_china_apple` Neptune 单场受控占领样本，不扩大下文 11.19 corpus 的证据范围。
+该补充依据 `11.20.0_china_apple` Neptune 满占领与 Malinovka 无占领两场受控样本，不扩大下文 11.19 corpus 的证据范围。
 路径：Type8 → subtype48 → **wrapper8** → root **field8** repeated child。
 
 | nested 字段 | 解析出口 | 当前解释 | 生产限制 |
@@ -20,7 +20,7 @@
 | field4 | `rawField4` | sibling family 观察到 1；精确语义 UNKNOWN | 不映射 capturingTeam / ownerTeam |
 
 上述已知字段只接受单个非负、无 Integer 溢出的 varint；错误 wire type、重复 scalar、malformed child
-只拒绝非法结构；raw field3 不施加 progress domain。只有 field1=2 / field2=1 后，重建器拒绝 progress >100。canonical 输出沿用 `baseStates`：`baseId=BASE`、
+只拒绝非法结构；raw field3 不施加 progress domain。只有 field1=2 / field2=1 后，重建器拒绝 progress >100。wrapper8 field1=2 / field2=1 初始化独立输出 `assaultObjectivePresent`，与 field3 presence 无关；无 field3 时仍无 progress transition。`arenaBonusType=2` 不用于 Assault 判定。canonical progress 输出沿用 `baseStates`：`baseId=BASE`、
 `ownerTeam=null`、`capturingTeam=null`、显式 progress 原值，时间按 battle-relative clock 转换。
 Supremacy 独立使用 wrapper12/root11、A-D 和 0..99。`finishReasonRaw=2` 仍是单受控样本的
 STRONG CANDIDATE，不提升为跨版本占领胜利枚举；SC2 `controlpoint.team` 仅为静态 raw metadata。

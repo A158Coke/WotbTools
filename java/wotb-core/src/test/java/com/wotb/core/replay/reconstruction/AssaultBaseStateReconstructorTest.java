@@ -15,6 +15,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class AssaultBaseStateReconstructorTest {
 
     @Test
+    void initializationProvesObjectiveWithoutInventingProgress() {
+        final List<ReplayEvent> events = List.of(raw(1, 2, 1, null, null), raw(2, 1, 1, null, null));
+        assertEquals(true, AssaultBaseStateReconstructor.hasObjective(events));
+        assertEquals(List.of(), AssaultBaseStateReconstructor.reconstruct(events));
+        assertEquals(false, AssaultBaseStateReconstructor.hasObjective(List.of(raw(1, 1, 1, null, null))));
+        assertEquals(false, AssaultBaseStateReconstructor.hasObjective(List.of(raw(1, 2, 2, null, null))));
+    }
+
+    @Test
     void reconstructsInitializationAndFullCaptureIncludingOneHundred() {
         final List<ReplayEvent> events = List.of(
                 raw(1, 2, 1, 0, null),
