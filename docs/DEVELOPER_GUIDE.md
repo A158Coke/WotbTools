@@ -186,7 +186,19 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `user`：Profile、WoTB 账号。
 - `admin`：用户和后台管理。
 
+### 客户端 Replay Engine（上游 Agent）
+
+`.wotbreplay` 的目标解析权威是上游 [fanypcd/WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) 的 Rust Core（作者同为 WotbTools 贡献者）。本仓库**不维护第二份 Rust 解析器**：此前的 `replay-engine/` 移植（含 Java parity golden）已于 2026-09-30 随 #397 退役。
+
+- **产物锁定**：`deploy/agent/source.json` 记录上游 repo、ref 与 Release 附件 sha256；`scripts/fetch-agent-wasm.sh` 下载并校验到 `common/assets/wasm/`（经 Vite publicDir 进入 `dist/wasm/`）。`scripts/build-agent-wasm.sh` 是按源码自建的后备路径。CI（`ci-frontend.yml`）与发布（`frontend.yml`）都会执行同一校验。
+- **消费契约**：`contracts/agent/replay-facets-v2.md`。三个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影）、`parsePlayback`（时序与花名册）、`parseShotReplays`（射击复现）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
+- **当前消费方**：三维回放、射击复现、装甲查看器（世界模式）。Replay Workspace、战局回放、导出、Hall of Fame 仍消费下方服务端链路。
+- **迁移规则**：某项能力切换到客户端之前，必须先证明客户端结果与服务端结果一致（parity）；切换后，该能力对应的服务端执行路径随之退役，不长期保留两条解析路径。
+
 ### Replay Processing
+
+> 迁移期服务端链路：客户端 parity 全部通过后，随上面的迁移规则逐项退役。
+
 
 Processing Job 创建后把输入持久化到对象存储，协调器经 `ReplayProcessingDispatcher` 把 source
 任务确认式投递给 RabbitMQ，由 Yecao `parser-worker` 消费（Replay Full Processing 唯一 CPU
