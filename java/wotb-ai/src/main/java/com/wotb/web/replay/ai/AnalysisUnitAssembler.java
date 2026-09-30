@@ -6,6 +6,8 @@ import com.wotb.core.replay.processing.BattleGroupingKey;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.model.Battle;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -45,14 +47,19 @@ public final class AnalysisUnitAssembler {
      * 查找录像者在重建结果中的 entity 映射。
      */
     public static RecorderEntityMapping findRecorder(final ReplayProcessingResult rep) {
-        if (rep.reconstruction() != null) {
+        return findRecorder(rep.battle(), rep.reconstruction());
+    }
+
+    public static RecorderEntityMapping findRecorder(final Battle battle,
+                                                      final ReplayReconstruction reconstruction) {
+        if (reconstruction != null) {
             final Map<Long, Integer> entityByAccount = new java.util.HashMap<>();
-            for (final var e : rep.reconstruction().events()) {
+            for (final var e : reconstruction.events()) {
                 if (e instanceof ParticipantMappingEvent pm) {
                     entityByAccount.put(pm.accountId(), pm.entityId());
                 }
             }
-            for (final var p : rep.reconstruction().participants()) {
+            for (final var p : reconstruction.participants()) {
                 if (p.recorder()) {
                     final Integer eid = entityByAccount.get(p.accountId());
                     return new RecorderEntityMapping(p.accountId(), p.tankId(),
@@ -61,9 +68,9 @@ public final class AnalysisUnitAssembler {
                 }
             }
         }
-        if (rep.battle() != null && rep.battle().recorder != null)
+        if (battle != null && battle.recorder != null)
             return new RecorderEntityMapping(null, null, null,
-                    rep.battle().recorder, 0, 0, DecodeConfidence.INFERRED);
+                    battle.recorder, 0, 0, DecodeConfidence.INFERRED);
         return RecorderEntityMapping.unresolved();
     }
 

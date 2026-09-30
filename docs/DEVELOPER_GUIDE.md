@@ -124,6 +124,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 |---|---|---|---|---|---|
 | Business API | Java control/web modules、HTTP/MQ contracts、shared common data | business-api image、TX Compose、dependency readiness | Maven、HTTP contract | — | `business-api.yml` |
 | Parser Worker | Java parser/processing modules、MQ contract、shared common data | parser-worker image、Yecao Compose、dependency readiness | Maven | — | `parser-worker.yml` |
+| AI Service（预部署） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、WireGuard readiness；当前无公开流量 | Maven、AI image build、Compose | — | `ai-service.yml` |
 | Frontend | Vue、HTTP contract、shared assets/map/tier data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
 | Keycloak | QQ/Wargaming providers、Keycloak image | realm runtime、TX Compose | provider/runtime、Tofu | `keycloak` | `keycloak.yml` |
 | Android | Android source、native bridge、release helpers | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |

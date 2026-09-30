@@ -107,6 +107,7 @@
 | `operations/observability-runbook.md` | 生产观测链路排障和人工 runbook 时 |
 | `operations/ai-evaluation.md` | 运行 / 复盘 AI evaluation 运维流程时 |
 | `operations/agent-asset-origin.md` | 部署/更换 Agent 3D 静态资产源（GLB/地图/坦克数据）时 |
+| `operations/ai-service.md` | Yecao 独立 AI 服务的预部署、私网边界与健康验收时 |
 
 ## Reference（参考字典）
 
