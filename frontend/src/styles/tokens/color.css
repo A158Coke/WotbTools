@@ -1,0 +1,79 @@
+/* 设计语言 · 颜色与层级 token（规则见 docs/frontend/design-language.md §2–§3、§5）
+ *
+ * 组件只使用语义 token（--color-*、--elevation-*），不引用原始色。
+ * data-theme 由 useUiProfile 从 wotb-ui-profile 派生：showcase → dark（沉浸），classic → light（简约）。
+ * 所有文字 / UI 色均已按 WCAG 2.2 AA 在本主题四层表面上的最差值验证（正文 ≥ 4.5，UI ≥ 3）。
+ */
+@layer tokens {
+  :root,
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --color-canvas: #0b0f11;
+    --color-surface-1: #11171a;
+    --color-surface-2: #172024;
+    --color-surface-3: #1e292e;
+
+    --color-text-primary: #eceae4;
+    --color-text-secondary: #aab1ac;
+    --color-text-tertiary: #8a938e;
+
+    --color-border-subtle: #25313a;
+    --color-border-strong: #6c7a82;
+
+    --color-accent: #e0a02e;
+    --color-on-accent: #17130b;
+    --color-accent-text: #f0b33e;
+
+    --color-success: #5cc280;
+    --color-danger: #f2786d;
+    --color-warning: #f5ca76;
+    --color-info: #6db3ec;
+
+    --color-team-ally: #5cc280;
+    --color-team-enemy: #f2786d;
+    --color-team-enemy-cb: #c38bf0;
+
+    --color-scrim: rgb(0 0 0 / .6);
+
+    /* 暗色：层级靠表面亮度，阴影只作辅助 */
+    --elevation-1: none;
+    --elevation-2: 0 4px 12px rgb(0 0 0 / .4);
+    --elevation-3: 0 12px 32px rgb(0 0 0 / .5);
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+
+    --color-canvas: #f6f5f2;
+    --color-surface-1: #ffffff;
+    --color-surface-2: #f1efea;
+    --color-surface-3: #e8e5de;
+
+    --color-text-primary: #1b1e1c;
+    --color-text-secondary: #4c534f;
+    --color-text-tertiary: #5a615d;
+
+    --color-border-subtle: #e3dfd6;
+    --color-border-strong: #7f7c74;
+
+    --color-accent: #a0620c;
+    --color-on-accent: #ffffff;
+    --color-accent-text: #955708;
+
+    --color-success: #16703c;
+    --color-danger: #b8352a;
+    --color-warning: #855600;
+    --color-info: #1a64a8;
+
+    --color-team-ally: #16703c;
+    --color-team-enemy: #b8352a;
+    --color-team-enemy-cb: #7b3fb3;
+
+    --color-scrim: rgb(0 0 0 / .35);
+
+    --elevation-1: 0 1px 2px rgb(0 0 0 / .06);
+    --elevation-2: 0 4px 12px rgb(0 0 0 / .10);
+    --elevation-3: 0 12px 32px rgb(0 0 0 / .16);
+  }
+}
