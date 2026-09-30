@@ -1,27 +1,85 @@
 /**
- * WoT-Blitz-Agent 回放数据切面（replay facets）消费接口。
+ * WoT-Blitz-Agent 回放数据消费接口（契约 v2：独立能力，无 giant envelope）。
  *
- * 契约 SSOT：`contracts/agent/replay-facets-v1.md`（v1；同版本只加字段，
- * 消费方忽略未知键；不兼容变更递增顶层 `version`）。
- * 生产方：fanypcd/WoT-Blitz-Agent（MIT）。
+ * 契约 SSOT：`contracts/agent/replay-facets-v2.md`。能力边界（评审裁决）：
+ *   Agent Rust Core = 结果解释（BattleResult）+ 时序解释（PlaybackData / AI 事件）
+ *   WotBTools = 消费/编排；名人堂（HoF）是 WotBTools 产品域——从 Result 投影，
+ *   Agent 公开面不感知（v1 的 HofFacet / `{playback,ai,hof}` 信封已拆除，breaking）。
  *
- * 三条消费路径：
- *  1. 本地 WASM：`parseAgentFacetsFromBytes(bytes)` —— 浏览器文件 → wotb-replay-wasm
- *     → 信封 JSON，文件不出本机；
- *  2. 预解析 JSON：部署面静态托管的三切面文件（同信封形状）；
- *  3. 未来服务端代理（独立上游契约，不在 `contracts/http/openapi.yaml` SSOT 约束内）。
+ * 四条消费路径（全部本地 WASM，文件不出本机；WotBTools Playback 拓扑 client-only）：
+ *  1. `parseAgentResultFromBytes`   → BattleResult（毫秒级，不物化 Playback）
+ *  2. `parseAgentPlaybackFromBytes` → PlaybackData（时序）
+ *  3. `parseAgentShotsFromBytes`    → 全员射击链（射击复现）
+ *  4. `projectHoF(result)`          → HoF 提交行（Result 的消费方投影，纯函数）
+ * 预解析 JSON 通道（`*FromJson`）用于部署面静态托管的同形状文件。
  *
- * WASM 归属（评审结论）：Agent 仓库是 external read-only upstream dependency——
- * WotBTools CI 读取 `deploy/agent/source.json` 锁定的完整上游 commit SHA，
- * 自行 checkout 构建 wasm-bindgen 产物并打包进前端 release。**运行时不选择
- * upstream artifact**：本模块装载 build-time 固定的 `/wasm/` 本地产物，
- * 不暴露 wasmUrl 之类的运行时选择。
+ * AI 事件数据（AiReviewFacet）保持 Agent 服务端/CLI 能力（DTO 冻结 v1），
+ * 不在 WASM 浏览器面——本模块不再建模。
  *
- * 语义原则（契约 §1）：unknown ≠ 0 ≠ false —— 观测缺失一律 undefined/null；
+ * 语义原则：unknown ≠ 0 ≠ false —— 观测缺失一律 undefined/null；
  * 数值零只在该字段语义就是零时出现。本模块不修改上游形状，只做形状校验与装载。
  */
 
-// ---------- 契约 v1 类型（按 contracts/agent/replay-facets-v1.md §2） ----------
+// ---------- 结果能力：BattleResult（BattleSummary wire 形状，DTO 冻结） ----------
+
+/** 单战斗者结算行（关键字段标注消费面；未知键透传保留） */
+export interface AgentResultPlayer {
+  account_id: number
+  nickname: string
+  team: number
+  platoon_id?: number
+  clan_tag?: string
+  tank_id: number
+  tank_name: string
+  base_xp: number
+  credits_earned: number
+  n_shots: number
+  n_hits_dealt: number
+  n_penetrations_dealt: number
+  damage_dealt: number
+  damage_blocked: number
+  /** 点亮协助（结算 damage_assisted_1） */
+  damage_assisted_1: number
+  /** 断带协助（结算 damage_assisted_2） */
+  damage_assisted_2: number
+  n_hits_received: number
+  n_penetrations_received: number
+  n_enemies_damaged: number
+  n_enemies_destroyed: number
+  mm_rating?: number
+  display_rating?: number
+  death_reason?: number
+  survived?: boolean
+  life_time_secs?: number
+  n_enemies_spotted?: number
+  destruction_assistance?: number
+  gun_marks?: number
+  killer_id?: number
+  [key: string]: unknown
+}
+
+/** 结果能力 DTO：BattleSummary（花名册/胜负/地图/全员统计；无任何时序物化） */
+export interface AgentBattleResult {
+  file_name: string
+  timestamp: number
+  datetime: string
+  room_type: string
+  map_id: number
+  map_name: string
+  battle_duration_secs: number
+  winner_team: number
+  author_account_id: number
+  author_nickname: string
+  author_tank_id: number
+  author_tank_name: string
+  author_team: number
+  author_won: boolean
+  author: Record<string, unknown>
+  players: AgentResultPlayer[]
+  [key: string]: unknown
+}
+
+// ---------- 时序能力：PlaybackData（与 v1 回放切面同形状，version 锁定不变） ----------
 
 export interface AgentPlaybackMeta {
   map_id: number
@@ -34,7 +92,7 @@ export interface AgentPlaybackMeta {
   duration: number
 }
 
-/** 车辆全场时间线（列式网格；字段语义见契约 §2.1） */
+/** 车辆全场时间线（列式网格；含花名册语义：nickname/tank_id/team/is_author） */
 export interface AgentVehicleTrack {
   eid: number
   account_id: number
@@ -105,238 +163,6 @@ export interface AgentPlaybackFacet {
   visibility: AgentAoiPresence[]
 }
 
-/** 评审切面事件（`type` 内部标签；契约 §2.2） */
-export type AgentAiEvent =
-  | { type: 'spawn'; t: number; eid: number; max_hp: number }
-  | {
-      type: 'shot'
-      t: number
-      shooter_eid: number
-      target_eid?: number
-      hit: boolean
-      ricochet: boolean
-      game_hit_result: number
-      damage: number
-      is_kill: boolean
-      is_author: boolean
-      shell_kind?: string
-    }
-  | { type: 'damage'; t: number; victim_eid: number; hp: number; source_eid: number; cause: number }
-  | {
-      type: 'kill'
-      t: number
-      killer_eid: number
-      victim_eid: number
-      cause: number
-      assister_eid?: number
-    }
-  | { type: 'visibility'; t_in: number; eid: number; t_out?: number }
-  /** 作者战斗反馈计数：code 低字节=基类型（1=累计伤害 2=点亮 3=击杀 5=挡伤 15=毁灭协助 17=总助攻），高字节=同类型内序号（上游 v0.1.6 复合编码修正） */
-  | { type: 'counter'; t: number; code: number; seq: number; count: number; value: number }
-  | { type: 'damage_tick'; t: number; eid: number; cumulative: number }
-
-export interface AgentRosterEntry {
-  eid: number
-  account_id?: number
-  nickname?: string
-  team?: number
-  tank_id?: number
-  tank_name: string
-  is_author: boolean
-}
-
-export interface AgentAiReviewFacet {
-  version: number
-  battle: {
-    start_time: number
-    map_id: number
-    map_name: string
-    room_type: string
-    winner: number
-    /** 结算口径；未知 = null（绝不 0/0.0），meta 口径单列 meta_duration_secs */
-    duration_secs: number | null
-    meta_duration_secs?: number
-    periods: Array<{ clock: number; period: number; remaining_s: number; duration_s: number }>
-  }
-  rosters: AgentRosterEntry[]
-  events: AgentAiEvent[]
-  settlements: Array<Record<string, unknown>>
-}
-
-export interface AgentHofFacet {
-  version: number
-  battle: {
-    start_time: number
-    map_id: number
-    map_name: string
-    room_type: string
-    winner: number
-    duration_secs: number | null
-  }
-  entries: Array<{
-    account_id: number
-    nickname: string
-    clan_tag?: string
-    platoon_id?: number
-    team: number
-    tank_id: number
-    tank_name: string
-    damage_dealt: number
-    damage_blocked: number
-    damage_assisted_spot: number
-    damage_assisted_track: number
-    kills: number
-    killer_id?: number
-    survived?: boolean
-    life_time_secs?: number
-    n_shots: number
-    n_hits: number
-    n_penetrations: number
-    n_enemies_damaged: number
-    n_hits_received: number
-    n_penetrations_received: number
-    n_enemies_spotted?: number
-    destruction_assistance?: number
-    gun_marks?: number
-    mm_rating?: number
-    xp: number
-    credits: number
-  }>
-}
-
-export interface AgentFacetEnvelope {
-  playback: AgentPlaybackFacet
-  ai: AgentAiReviewFacet
-  hof: AgentHofFacet
-}
-
-// ---------- 形状校验（trust boundary：完整结构契约锁定） ----------
-
-const CONTRACT_VERSION = 1
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v)
-}
-
-function assertObject(v: unknown, path: string): Record<string, unknown> {
-  if (!isObject(v)) throw new Error(`agent facets: ${path} 必须是对象`)
-  return v
-}
-
-function assertArray(v: unknown, path: string): unknown[] {
-  if (!Array.isArray(v)) throw new Error(`agent facets: ${path} 必须是数组`)
-  return v
-}
-
-/** 切面/信封契约版本锁定（v1；不兼容变更递增，消费方 fail-fast） */
-function assertContractVersion(v: unknown, path: string): void {
-  if (v !== CONTRACT_VERSION) {
-    throw new Error(`agent facets: ${path} = ${String(v)}，不支持的契约版本（期望 ${CONTRACT_VERSION}）`)
-  }
-}
-
-/**
- * 信封形状校验（trust boundary：进 view model 前的完整结构契约锁定）。
- *
- * 锁定面（缺一即抛，杜绝"伪装成校验的 unsafe cast"）：
- * - playback/ai/hof 三切面各顶层 version === 1（契约 §1："三个切面顶层均带
- *   version: 1"；上游 envelope_json 组装的信封 `{playback,ai,hof}` 自身无版本键——
- *   版本语义在切面层，消费方对信封未知键忽略）
- * - playback：meta、vehicles/shots/kills/periods/visibility 数组
- * - ai：battle、rosters/events/settlements 数组
- * - hof：battle、entries 数组
- * 语义不变量：visibility.eid ∈ rosters[].eid（裸 EID 不泄漏）。
- * 未知键忽略 = 契约的同版本加字段策略；字段级取值语义由类型承载。
- */
-export function validateAgentFacetEnvelope(value: unknown): AgentFacetEnvelope {
-  const env = assertObject(value, 'envelope')
-
-  const playback = assertObject(env.playback, 'playback')
-  assertContractVersion(playback.version, 'playback.version')
-  assertObject(playback.meta, 'playback.meta')
-  for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
-    assertArray(playback[key], `playback.${key}`)
-  }
-
-  const ai = assertObject(env.ai, 'ai')
-  assertContractVersion(ai.version, 'ai.version')
-  assertObject(ai.battle, 'ai.battle')
-  assertArray(ai.rosters, 'ai.rosters')
-  const events = assertArray(ai.events, 'ai.events')
-  assertArray(ai.settlements, 'ai.settlements')
-
-  const hof = assertObject(env.hof, 'hof')
-  assertContractVersion(hof.version, 'hof.version')
-  assertObject(hof.battle, 'hof.battle')
-  assertArray(hof.entries, 'hof.entries')
-
-  // 语义不变量：可见性事件必须可联表（契约 §2.2：裸 EID 不泄漏）
-  const rosterEids = new Set<number>((ai.rosters as Array<Record<string, unknown>>).map((r) => r.eid as number))
-  for (const e of events as Array<Record<string, unknown>>) {
-    if (isObject(e) && e.type === 'visibility' && !rosterEids.has(e.eid as number)) {
-      throw new Error(`agent facets: visibility eid ${String(e.eid)} 不在花名册`)
-    }
-  }
-
-  return value as unknown as AgentFacetEnvelope
-}
-
-// ---------- WASM 装载（本地通道） ----------
-
-/**
- * build-time 固定的本地产物路径：WotBTools CI 依据 `deploy/agent/source.json`
- * 锁定的上游 SHA 构建 wasm-bindgen 产物并打包进前端 release。运行时不选择
- * upstream artifact——版本决策发生在 build/release 边界（可复现构建）。
- */
-const AGENT_WASM_URL = '/wasm/wotb_replay_wasm.js'
-
-interface AgentWasmModule {
-  parseReplayFacets(bytes: Uint8Array): string
-  default?: () => Promise<void>
-  initSync?: () => void
-}
-
-let wasmPromise: Promise<AgentWasmModule> | null = null
-
-/**
- * 惰性装载 wasm-bindgen 产物（web target：default() 异步初始化）。
- * 保证：单次初始化、并发调用共享 Promise、失败清空缓存可重试、产物形状校验。
- * 不提供运行时版本选择——版本由 WotBTools CI 在构建时决定。
- */
-export function loadAgentWasm(): Promise<AgentWasmModule> {
-  if (!wasmPromise) {
-    wasmPromise = (async () => {
-      // 运行时 URL：常量形式 + @vite-ignore 避免 bundler 构建期解析
-      const mod = (await import(/* @vite-ignore */ AGENT_WASM_URL)) as AgentWasmModule
-      if (mod.default) await mod.default()
-      if (typeof mod.parseReplayFacets !== 'function') {
-        throw new Error('agent wasm: parseReplayFacets 缺失（产物版本不匹配）')
-      }
-      return mod
-    })()
-    wasmPromise.catch(() => {
-      wasmPromise = null // 失败可重试
-    })
-  }
-  return wasmPromise
-}
-
-/**
- * 本地通道：.wotbreplay 字节 → WASM 解析 → 校验过的三切面信封。
- * 文件不出本机（契约 §6 纯客户端）。
- */
-export async function parseAgentFacetsFromBytes(bytes: Uint8Array): Promise<AgentFacetEnvelope> {
-  const mod = await loadAgentWasm()
-  const env = JSON.parse(mod.parseReplayFacets(bytes)) as unknown
-  return validateAgentFacetEnvelope(env)
-}
-
-/** 预解析 JSON 通道（部署面静态文件/服务端代理共用） */
-export function parseAgentFacetsFromJson(json: string | unknown): AgentFacetEnvelope {
-  const value = typeof json === 'string' ? (JSON.parse(json) as unknown) : json
-  return validateAgentFacetEnvelope(value)
-}
-
 // ---------- 射击复现通道（parseShotReplays；上游 shots 数组同构透传） ----------
 
 /**
@@ -383,6 +209,120 @@ export interface AgentShotReplay {
   [key: string]: unknown
 }
 
+// ---------- 形状校验（trust boundary：进 view model 前的结构契约锁定） ----------
+
+const CONTRACT_VERSION = 1
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+function assertObject(v: unknown, path: string): Record<string, unknown> {
+  if (!isObject(v)) throw new Error(`agent facets: ${path} 必须是对象`)
+  return v
+}
+
+function assertArray(v: unknown, path: string): unknown[] {
+  if (!Array.isArray(v)) throw new Error(`agent facets: ${path} 必须是数组`)
+  return v
+}
+
+/** 切面契约版本锁定（v1 切面字段口径沿用；能力拆分见契约 v2 文档） */
+function assertFacetVersion(v: unknown, path: string): void {
+  if (v !== CONTRACT_VERSION) {
+    throw new Error(`agent facets: ${path} = ${String(v)}，不支持的契约版本（期望 ${CONTRACT_VERSION}）`)
+  }
+}
+
+/**
+ * BattleResult 形状校验：花名册齐备 + 身份键在册。
+ * 轻校验（DTO 冻结、字段全透传；时序键出现视为非法形状——结果能力不得物化时序）。
+ */
+export function validateAgentBattleResult(value: unknown): AgentBattleResult {
+  const r = assertObject(value, 'result')
+  assertArray(r.players, 'result.players')
+  if (typeof r.author_account_id !== 'number') throw new Error('agent facets: result.author_account_id 必须是数值')
+  for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
+    if (key in r) throw new Error(`agent facets: 结果能力不得物化时序键 ${key}`)
+  }
+  return value as unknown as AgentBattleResult
+}
+
+/**
+ * PlaybackData 形状校验：version === 1、meta、vehicles/shots/kills/periods/visibility 数组。
+ * 未知键忽略 = 契约的同版本加字段策略；字段级取值语义由类型承载。
+ */
+export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
+  const pb = assertObject(value, 'playback')
+  assertFacetVersion(pb.version, 'playback.version')
+  assertObject(pb.meta, 'playback.meta')
+  for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
+    assertArray(pb[key], `playback.${key}`)
+  }
+  return value as unknown as AgentPlaybackFacet
+}
+
+// ---------- WASM 装载（本地通道；build-time 固定产物，运行时不选择版本） ----------
+
+/**
+ * build-time 固定的本地产物路径：WotBTools CI 依据 `deploy/agent/source.json`
+ * 锁定的上游 Release 产物（sha256 校验）打包进前端 release。运行时不选择
+ * upstream artifact——版本决策发生在 build/release 边界（可复现构建）。
+ */
+const AGENT_WASM_URL = '/wasm/wotb_replay_wasm.js'
+
+interface AgentWasmModule {
+  parseResult?: (bytes: Uint8Array) => string
+  parsePlayback?: (bytes: Uint8Array) => string
+  parseShotReplays?: (bytes: Uint8Array) => string
+  default?: () => Promise<void>
+  initSync?: () => void
+}
+
+let wasmPromise: Promise<AgentWasmModule> | null = null
+
+/**
+ * 惰性装载 wasm-bindgen 产物（web target：default() 异步初始化）。
+ * 保证：单次初始化、并发调用共享 Promise、失败清空缓存可重试。
+ */
+export function loadAgentWasm(): Promise<AgentWasmModule> {
+  if (!wasmPromise) {
+    wasmPromise = (async () => {
+      // 运行时 URL：常量形式 + @vite-ignore 避免 bundler 构建期解析
+      const mod = (await import(/* @vite-ignore */ AGENT_WASM_URL)) as AgentWasmModule
+      if (mod.default) await mod.default()
+      return mod
+    })()
+    wasmPromise.catch(() => {
+      wasmPromise = null // 失败可重试
+    })
+  }
+  return wasmPromise
+}
+
+async function wasmFn<K extends keyof AgentWasmModule>(name: K): Promise<Exclude<AgentWasmModule[K], undefined>> {
+  const mod = await loadAgentWasm()
+  const fn = mod[name]
+  if (typeof fn !== 'function') {
+    throw new Error(`agent wasm: ${String(name)} 缺失（产物版本不匹配契约 v2）`)
+  }
+  return fn as Exclude<AgentWasmModule[K], undefined>
+}
+
+// ---------- 本地通道：bytes → WASM → 校验过的能力数据 ----------
+
+/** 结果能力（毫秒级）：.wotbreplay 字节 → BattleResult。文件不出本机。 */
+export async function parseAgentResultFromBytes(bytes: Uint8Array): Promise<AgentBattleResult> {
+  const parse = await wasmFn('parseResult')
+  return validateAgentBattleResult(JSON.parse(parse(bytes)) as unknown)
+}
+
+/** 时序能力：.wotbreplay 字节 → PlaybackData。文件不出本机。 */
+export async function parseAgentPlaybackFromBytes(bytes: Uint8Array): Promise<AgentPlaybackFacet> {
+  const parse = await wasmFn('parsePlayback')
+  return validateAgentPlayback(JSON.parse(parse(bytes)) as unknown)
+}
+
 function assertShotArray(v: unknown): AgentShotReplay[] {
   if (!Array.isArray(v)) throw new Error('agent shots: 顶层必须是 shots 数组')
   for (const s of v) {
@@ -411,17 +351,117 @@ export function normalizeAgentShotIndices(shots: AgentShotReplay[]): AgentShotRe
   return sorted
 }
 
-/**
- * 本地通道：.wotbreplay 字节 → WASM parseShotReplays → 全员射击链数组
- * （time_s 排序 + 全局重编号，与 /api/replay/shots 响应同构：
- * 作者严格路径 + 他人宽松路径合并，含弹道/命中判定/逐发质量标记/双方渲染锚点）；
- * 文件不出本机（契约 §6）。
- */
+/** 射击复现能力：.wotbreplay 字节 → 全员射击链（time_s 排序 + 全局重编号）。 */
 export async function parseAgentShotsFromBytes(bytes: Uint8Array): Promise<AgentShotReplay[]> {
-  const mod = await loadAgentWasm()
-  const modWithShots = mod as AgentWasmModule & { parseShotReplays?: (b: Uint8Array) => string }
-  if (typeof modWithShots.parseShotReplays !== 'function') {
-    throw new Error('agent wasm: parseShotReplays 缺失（产物版本早于 v0.1.6）')
+  const parse = await wasmFn('parseShotReplays')
+  return normalizeAgentShotIndices(assertShotArray(JSON.parse(parse(bytes)) as unknown))
+}
+
+/** 预解析 JSON 通道（部署面静态文件/服务端代理共用） */
+export function parseAgentResultFromJson(json: string | unknown): AgentBattleResult {
+  const value = typeof json === 'string' ? (JSON.parse(json) as unknown) : json
+  return validateAgentBattleResult(value)
+}
+
+/** 预解析 JSON 通道（部署面静态文件/服务端代理共用） */
+export function parseAgentPlaybackFromJson(json: string | unknown): AgentPlaybackFacet {
+  const value = typeof json === 'string' ? (JSON.parse(json) as unknown) : json
+  return validateAgentPlayback(value)
+}
+
+// ---------- HoF 投影（WotBTools 产品域；上游不再提供 HofFacet） ----------
+
+/** HoF 单场提交行（原上游 HofFacet 投影语义；字段缺失按 undefined 透传） */
+export interface HoFEntry {
+  account_id: number
+  nickname: string
+  clan_tag?: string
+  platoon_id?: number
+  team: number
+  tank_id: number
+  tank_name: string
+  damage_dealt: number
+  damage_blocked: number
+  damage_assisted_spot: number
+  damage_assisted_track: number
+  kills: number
+  killer_id?: number
+  survived?: boolean
+  life_time_secs?: number
+  n_shots: number
+  n_hits: number
+  n_penetrations: number
+  n_enemies_damaged: number
+  n_hits_received: number
+  n_penetrations_received: number
+  n_enemies_spotted?: number
+  destruction_assistance?: number
+  gun_marks?: number
+  mm_rating?: number
+  xp: number
+  credits: number
+}
+
+export interface HoFSubmission {
+  version: number
+  battle: {
+    start_time: number
+    map_id: number
+    map_name: string
+    room_type: string
+    winner: number
+    /** 结算口径整秒时长；上游 root5 未解码恒 null（宁缺勿冒充） */
+    duration_secs: null
   }
-  return normalizeAgentShotIndices(assertShotArray(JSON.parse(modWithShots.parseShotReplays(bytes)) as unknown))
+  entries: HoFEntry[]
+}
+
+/**
+ * HoF 提交 = BattleResult 的纯投影（上游 HofFacet.from_settlement 同一映射，
+ * 职责移入消费方——评审 P0-1：Agent 不感知 WotBTools 的 HoF 产品域）。
+ * 纯函数，不触碰时序数据；提交仍可携带 original .wotbreplay（Business API 侧
+ * replay 是 evidence/storage，不做 server-side replay verification）。
+ */
+export function projectHoF(result: AgentBattleResult): HoFSubmission {
+  const entries: HoFEntry[] = result.players.map((p) => ({
+    account_id: p.account_id,
+    nickname: p.nickname,
+    ...(p.clan_tag !== undefined ? { clan_tag: p.clan_tag } : {}),
+    ...(p.platoon_id !== undefined ? { platoon_id: p.platoon_id } : {}),
+    team: p.team,
+    tank_id: p.tank_id,
+    tank_name: p.tank_name,
+    damage_dealt: p.damage_dealt,
+    damage_blocked: p.damage_blocked,
+    damage_assisted_spot: p.damage_assisted_1,
+    damage_assisted_track: p.damage_assisted_2,
+    kills: p.n_enemies_destroyed,
+    ...(p.killer_id !== undefined ? { killer_id: p.killer_id } : {}),
+    ...(p.survived !== undefined ? { survived: p.survived } : {}),
+    ...(p.life_time_secs !== undefined ? { life_time_secs: p.life_time_secs } : {}),
+    n_shots: p.n_shots,
+    n_hits: p.n_hits_dealt,
+    n_penetrations: p.n_penetrations_dealt,
+    n_enemies_damaged: p.n_enemies_damaged,
+    n_hits_received: p.n_hits_received,
+    n_penetrations_received: p.n_penetrations_received,
+    ...(p.n_enemies_spotted !== undefined ? { n_enemies_spotted: p.n_enemies_spotted } : {}),
+    ...(p.destruction_assistance !== undefined ? { destruction_assistance: p.destruction_assistance } : {}),
+    ...(p.gun_marks !== undefined ? { gun_marks: p.gun_marks } : {}),
+    ...(p.mm_rating !== undefined ? { mm_rating: p.mm_rating } : {}),
+    xp: p.base_xp,
+    credits: p.credits_earned,
+  }))
+  return {
+    version: CONTRACT_VERSION,
+    battle: {
+      start_time: result.timestamp,
+      map_id: result.map_id,
+      map_name: result.map_name,
+      room_type: result.room_type,
+      winner: result.winner_team,
+      duration_secs: null, // root5 未解码；宁缺勿冒充
+    },
+    entries,
+  }
 }
