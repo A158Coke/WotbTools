@@ -9,7 +9,7 @@
 
 2026-09-06 核对生产 Dockerfile/compose 与 Prometheus 配置时：backend 业务端口为 `8087`，management
 端口为 `8088`；frontend 的 host port 也是 `8088:80`，因此不能把两者混用。Prometheus 与部署 gate
-统一抓取专用管理端点 `wotb-backend:8088/actuator/prometheus`，业务健康检查仍访问 backend 的
+统一抓取 TX WireGuard 专用管理端点 `10.20.0.1:8088/actuator/prometheus`，业务健康检查仍访问 backend 的
 `8087/api/health`。完整
 Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 smoke，不在此记录静态推测。
 
@@ -37,7 +37,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
   的站点块反代到 `10.20.0.2:3000`；TX-local 就绪路由 `http://caddy/_wotb/monitor/*` 供无 DNS 部署
   验证。Yecao 宿主上的 Grafana Tofu root 走本机 `http://10.20.0.2:3000`，不依赖公网 DNS。
 - **验证**：`deploy/verify-observability.sh` 在一次性 alpine 容器内执行全部检查（不再引用退役的
-  `wotb-backend` 容器），覆盖五类 target `up==1`、datasource/dashboard API、双 canary 与 APK
+  `wotb-backend` 容器），覆盖 backend、ai-service、node-exporter、Prometheus、Loki、Grafana 六类 target `up==1`、datasource/dashboard API、双 canary 与 APK
   脱敏 canary；Yecao 部署在数据链路失败时仍只输出非阻塞的 `OBSERVABILITY DEGRADED`。
 
 ## 1. 架构总览
@@ -86,7 +86,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 | 组件 | 版本（固定） | 职责 |
 |---|---|---|
 | `wotb-backend` Actuator | Spring Boot 4.1.1 自带 | 业务 HTTP 使用容器端口 `8087`；dedicated management / Actuator 使用容器端口 `8088`，暴露 `/actuator/prometheus`、`/actuator/health` |
-| Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 Backend、node-exporter 以及 Prometheus/Loki/Grafana 自身，TSDB 保留 7 天 / 上限 2GiB |
+| Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 TX Backend、Yecao `ai-service`、node-exporter 以及 Prometheus/Loki/Grafana 自身，TSDB 保留 7 天 / 上限 2GiB |
 | Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 Backend / Keycloak 容器日志，保留 7 天 |
 | Alloy | `grafana/alloy:v1.4.2` | 通过 docker.sock 采集 `wotb-backend` 与 `keycloak` 容器 stdout/stderr → Loki，使用低基数标签 |
 | Grafana | `grafana/grafana:11.6.16` | 可视化；Datasource 由 file provisioning 配置，Dashboard API 对象由 OpenTofu 管理 |
@@ -248,7 +248,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 ### 5.0 生产 gate 的认证与日志 canary 契约
 
-- `verify-observability.sh` 通过现有 `wotb-backend` 容器执行共享的 `deploy/grafana-api-request.sh` 与 BusyBox 兼容 `wget`；调用方只传 `/api/...`，helper 唯一拼接 Grafana hostname 并在容器内生成 Basic Authorization header。不会使用 GNU-only 的 `--user/--password`，也不会把 Grafana 密码放进 URL、命令行输出或诊断日志。
+- `verify-observability.sh` 通过加入 `wotb_internal` 的一次性 Alpine 容器执行 HTTP 数据链路检查，并复用 `deploy/grafana-api-request.sh` 访问 Grafana API；不会依赖已退役的 Yecao backend 容器，也不会把 Grafana 密码放进 URL、命令行输出或诊断日志。
 - Grafana Prometheus/Loki datasource health 只有 JSON `status: "OK"` 才算成功；其他值（包括旧版兼容的 `success`）一律失败。
 - backend/Keycloak canary 启动前记录固定 Loki `start`，每次重试只更新 `end`。Keycloak canary 使用加入 `wotb_internal` 的 Alpine 3.22 独立 emitter，容器名仍带 `keycloak-observability-canary-`，用于确认 Alloy ownership 规则，不启动第二个 Keycloak。
 - Loki gate 必须同时确认 API `status=success`、`data.result` 非空、stream 的 `values` 非空以及 marker 在实际日志值中；空数组不能被“`values` 字段存在”误判为成功。
@@ -607,7 +607,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 - **HTTP**：`http_server_requests_seconds_*`（Micrometer 自动，URI 已模板化，低基数；2xx/3xx/4xx/5xx 分布、P50/P95/P99 直方图）
 - **JVM**：`jvm_memory_used_bytes`、`process_cpu_usage`、`system_cpu_usage`、`jvm_gc_pause_seconds_*`、`jvm_threads_*`
 - **HikariCP**：`hikaricp_connections_active/idle/pending`
-- **AI Review**（自定义，`ai-service` 的 `AiReviewController` 边界，**一次进入 worker 的请求 = 一次 Review**）：
+- **AI Review**（自定义；由 Yecao `ai-service` 暴露并由 Prometheus `job="ai-service"` 抓取；`AiReviewController` 边界，**一次进入 worker 的请求 = 一次 Review**）：
   - `wotb_ai_review_requests_total` — Review 请求量（每次 analyze +1，与上游调用次数无关）
   - `wotb_ai_review_results_total{result=success|failure|rejected}` — 结果（rejected 在 Dashboard 中显示为“事实校验退回”，含流内拒绝：AI 未配置/不支持战斗类型/perspective 未确定/token budget 拒绝；混合批次中单文件解析失败返回 FAILED 结果不抛异常，计入 success 的请求完成语义）。**注意**：SSE worker 池饱和（503 `AI_REVIEW_BUSY`）与 request-envelope 预校验失败（`UNSUPPORTED_AI_REQUEST_SCHEMA` / `INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` / `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID` / `UNSUPPORTED_BATTLE_CATEGORY` / 413 `AI_REQUEST_TOO_LARGE`）在提交 worker 前同步返回 HTTP 400 / 409 / 413 / 422 / 503，**不进入 review worker，不计入这些 AI Review 计数器**——只能在 `http_server_requests_seconds_*`（按 status 4xx/5xx）与 nginx access log 中观察；监控告警须结合两者，不能只看 `wotb_ai_review_*`。
   - `wotb_ai_review_errors_total{type=<固定枚举>}` — 错误分类（仅流内失败，与 `failure` 一致；HTTP 4xx 预校验失败不在此处计数）
