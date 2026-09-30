@@ -27,11 +27,24 @@ vi.mock('./components/AndroidDownloadPage.vue', () => ({ default: { template: '<
 vi.mock('./components/SponsorPage.vue', () => ({ default: { template: '<main data-test="view-sponsor" />' } }))
 vi.mock('./components/HistoryPage.vue', () => ({ default: { template: '<div data-test="view-history" />' } }))
 vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ default: { template: '<div data-test="view-technical-evolution" />' } }))
+// Agent 数据平面（admin-only）：详情/场景组件用轻量替身，断言可见性边界即可。
+// `__esModule: true` 必需——viewRegistry 经 defineAsyncComponent 动态 import，
+// Vue 靠它把命名空间的 `.default` 解包成组件（缺失时会把命名空间本身当组件，
+// 触发对 __isTeleport/name 的探测并报错）。
+const agentViewMock = (testId, name) => ({
+  __esModule: true,
+  default: { name, template: `<div data-test="${testId}" />` },
+})
+vi.mock('./components/AgentReplay3D.vue', () => agentViewMock('view-agent-replay', 'AgentReplay3D'))
+vi.mock('./components/AgentTankopedia.vue', () => agentViewMock('view-agent-tankopedia', 'AgentTankopedia'))
+vi.mock('./components/AgentArmorView.vue', () => agentViewMock('view-agent-armor', 'AgentArmorView'))
+vi.mock('./components/AgentShots.vue', () => agentViewMock('view-agent-shots', 'AgentShots'))
 
 const authState = vi.hoisted(() => ({
   authenticated: false,
   authenticatedRef: null,
   authInitState: null,
+  isAdminRef: null,
   initPromise: Promise.resolve(false),
   displayName: '',
   login: vi.fn(),
@@ -40,6 +53,8 @@ const authState = vi.hoisted(() => ({
 }))
 authState.authenticatedRef = ref(false)
 authState.authInitState = ref('unauthenticated')
+// admin-only 功能开关（feature flag）：默认非管理员，按用例切换
+authState.isAdminRef = ref(false)
 vi.mock('./composables/useAuth.js', () => ({
   useAuth: () => ({
     initPromise: authState.initPromise,
@@ -49,6 +64,7 @@ vi.mock('./composables/useAuth.js', () => ({
     login: authState.login, logout: authState.logout, isAuthenticated: () => authState.authenticated,
     displayName: computed(() => authState.displayName),
     hasRole: authState.hasRole,
+    isAdmin: authState.isAdminRef,
   }),
 }))
 
@@ -106,6 +122,47 @@ describe('App routing', () => {
   it('mounts with Vue Router and keeps localhost default as Replay', async () => {
     const { wrapper } = await mountApp('/')
     expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
+  })
+
+  // Agent 数据平面合入主干期间的 feature flag：仅 wotbtools-admin 可见。
+  // 隐藏导航入口只是 UI 收敛，深链封锁才是边界——两者都要有回归网。
+  describe('admin-only Agent views (feature flag: wotbtools-admin)', () => {
+    beforeEach(() => { authState.isAdminRef.value = false })
+    afterEach(() => { authState.isAdminRef.value = false })
+
+    it('hides the Agent nav tabs from non-admins', async () => {
+      const { wrapper } = await mountApp('/')
+      for (const view of ['agent-replay', 'agent-tankopedia', 'agent-shots']) {
+        expect(wrapper.find(`[data-testid="nav-${view}"]`).exists()).toBe(false)
+      }
+    })
+
+    it('shows the Agent nav tabs to admins', async () => {
+      authState.isAdminRef.value = true
+      const { wrapper } = await mountApp('/')
+      for (const view of ['agent-replay', 'agent-tankopedia', 'agent-shots']) {
+        expect(wrapper.find(`[data-testid="nav-${view}"]`).exists()).toBe(true)
+      }
+    })
+
+    it('falls back to the default view when a non-admin deep-links an Agent view', async () => {
+      for (const view of ['agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots']) {
+        const { wrapper } = await mountApp(`/?view=${view}`)
+        expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
+        expect(wrapper.find(`[data-test="view-${view}"]`).exists()).toBe(false)
+      }
+    })
+
+    it('renders the Agent view for an admin deep link', async () => {
+      authState.isAdminRef.value = true
+      const { wrapper } = await mountApp('/?view=agent-shots')
+      // Agent 视图是 defineAsyncComponent：等异步组件解析完成再断言
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+      expect(wrapper.find('[data-test="view-agent-shots"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
+    })
   })
 
   it.each([

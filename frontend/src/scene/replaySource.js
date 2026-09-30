@@ -1,6 +1,6 @@
 // 回放数据源（契约 v2）：**client-only**——本地 WASM 解析（文件不出本机），
 // 无服务端通道。WotBTools Playback 拓扑不含 Business API / Agent 自托管服务端
-//（评审 P0-3）；地图/地形/场景等渲染资产经 assetProvider 走 ?assets= 资产平面。
+//（评审 P0-3）；地图/地形/场景等渲染资产经 assetProvider 走配置的 remote asset origin。
 //
 // WASM 产物由 CI 依据 deploy/agent/source.json 锁定的上游 Release 产物直取
 //（fetch-agent-wasm.sh，sha256 校验）到 common/assets/wasm/，经 publicDir 进
@@ -49,20 +49,18 @@ export async function loadPlaybackData(source) {
   throw new Error('回放数据源仅支持本地文件（client-only 拓扑，无服务端通道）')
 }
 
-// ---------- 地图静态路径（契约 §13 纯静态资产面；打包器 export_asset_pack.py 布局） ----------
-// 全部经资产平面（?assets= 基址）；无同源 /api/playback/* 回退（client-only）。
-import { assetBase } from './assetBase.js'
+// ---------- 地图静态路径（logical asset path；打包器 export_asset_pack.py 布局） ----------
+// 一律经 assetProvider（消费方不拼接任何基础设施域名）；无同源 /api/playback/* 回退（client-only）。
+import { assetProvider } from './assetProvider.js'
 
 let mapIndexPromise = null
 let currentMapKey = null
 
-/** 一次性装载资产面索引（数字 id → key）；仅在配置了资产基址时请求 */
+/** 一次性装载资产源索引（数字 id → key）；未配置 origin 时为空 */
 export function loadMapIndex() {
-  if (!assetBase()) return Promise.resolve(null)
+  if (!assetProvider.configured()) return Promise.resolve(null)
   if (!mapIndexPromise) {
-    mapIndexPromise = fetch(assetBase() + '/index.json')
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null)
+    mapIndexPromise = assetProvider.json('/index.json').catch(() => null)
   }
   return mapIndexPromise
 }
@@ -70,20 +68,19 @@ export function loadMapIndex() {
 /** 从 mapq（id=..&name=..）解析当前地图的静态 key；结果缓存供同步取用 */
 export async function resolveMapKey(mapq) {
   const id = new URLSearchParams(mapq).get('id')
-  const idx = assetBase() ? await loadMapIndex() : null
+  const idx = assetProvider.configured() ? await loadMapIndex() : null
   currentMapKey = (idx && idx.maps && idx.maps[String(id)]) ? idx.maps[String(id)].key : null
   return currentMapKey
 }
 
 /**
- * 静态模式 URL（已配置基址且 index 命中 → 打包器物化路径）；
- * key 未解析/未配置基址 → null，调用方跳过该资产（无服务端回退）。
+ * 静态模式 URL（已配置 origin 且 index 命中 → 打包器物化路径）；
+ * key 未解析/未配置 origin → null，调用方跳过该资产（无服务端回退）。
  * kind ∈ map | map-mini | terrain | terrain-meta | scenery | groundmeta | groundtex
  */
 export function mapStaticUrl(kind, layer) {
-  const base = assetBase()
-  if (!currentMapKey || !base) return null
-  const f = (name) => `${base}/map/${currentMapKey}/${name}`
+  if (!currentMapKey || !assetProvider.configured()) return null
+  const f = (name) => assetProvider.url(`/map/${currentMapKey}/${name}`)
   switch (kind) {
     case 'map': return f('ground.webp')
     case 'map-mini': return f('mini.webp')

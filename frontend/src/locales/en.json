@@ -1441,7 +1441,7 @@
     "play": "Play",
     "pause": "Pause",
     "local_file": "Local file",
-    "assets_hint": "Asset plane not configured: append ?assets=<COS/CDN base> to load map terrain / vehicle GLBs / tank data (replay parsing itself does not depend on it).",
+    "assets_hint": "Asset source not configured: append ?assets=<remote-asset-base-url> to load map terrain / vehicle GLBs / tank data (replay parsing itself does not depend on it).",
     "cam_free": "Free",
     "cam_top": "Top",
     "cam_follow": "Follow",

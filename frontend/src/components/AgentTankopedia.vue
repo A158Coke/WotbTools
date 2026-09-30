@@ -3,7 +3,7 @@
  * Agent 坦克百科（?view=agent-tankopedia）：列表 + 详情两态，逻辑对齐 wotbagent——
  * 卡片 → 详情页 → 详情页内"3D 装甲检视器"入口（装甲查看器无顶层入口，评审 UI 对齐）。
  * 数据面：tank_cache.json（列表/概要）+ tank/{id}.json（详情，configs/armor_model/shells）
- * 经 agentData 静态资产平面（?assets= / 同源回退）。
+ * 经 agentData → assetProvider 走配置的 remote asset origin（client-only，无同源回退）。
  * 详情态由 URL ?tank={id} 承载（可刷新/可分享）；?config= 下标联动 3D 入口（上游同参）。
  */
 import { ref, computed, onMounted, watch } from 'vue'
