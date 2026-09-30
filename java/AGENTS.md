@@ -59,6 +59,8 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 
 ## AI Review 边界（wotb-web/.../replay/ai + wotb-core/.../replay）
 
+当前过渡阶段：wotb-ai 同时产出可独立启动的 Yecao i-service；前端仍为维护中且 TX 不转发 /api/ai/**。旧 dataset-backed AiReplayReviewService 暂留 wotb-web，待完整流量迁移后删除。独立服务的部署边界见 docs/operations/ai-service.md。
+
 - 单文件策略：`AiReplayBatchPolicy.MAX_FILES = 1`（仅 AI 复盘；多文件批量端点 `/process`、`/reconstruct-batch` 已 410，批量分析模式 `MULTI_*` 已删除）。
 - 编排归属：`AiReplayAnalysisService` 是**兼容 facade**（无真实编排）；随机战双 Call 在 `TacticalReviewHarness`，团队复盘在 `TeamReplayAnalysisService`，赛前基线 `PreBattleStrategicService`。Team Call #2 的 v0.5 结果为 `TeamAiReviewResult`；`TeamAutopsyService` 仅保留历史兼容实现，不进入生产链。
 - Team AI Review v0.6 只升级 prompt 的 tactical reasoning order 与 causal contract：先权威事实/信息状态/目标义务，再 local participation、episode propagation 与 HP 下游验证；v0.5 wire schema 保持不变，不新增 LLM call、Team Autopsy、后端 tactical semantic validator 或第二套 episode 模型。

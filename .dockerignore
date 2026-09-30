@@ -10,6 +10,7 @@ dist-desktop
 python
 common/data
 *.md
+!java/wotb-ai/src/main/resources/prompts/**/*.md
 !HISTORY.md
 !docs/architecture/TECHNICAL_EVOLUTION.md
 !docs/WotBTools_League_Rating_V6.md

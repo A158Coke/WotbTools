@@ -3,6 +3,8 @@ package com.wotb.core.replay.facts;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.model.Battle;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.MapperFeature;
@@ -37,6 +39,15 @@ public final class ReplayFactsCodec {
 
     public static AiReplayFacts fromJson(final JsonNode node) throws IOException {
         return MAPPER.treeToValue(node, AiReplayFacts.class);
+    }
+
+    /** Decodes the browser projection using the same ReplayEvent type registry as stored facts. */
+    public static Battle battleFromJson(final JsonNode node) throws IOException {
+        return MAPPER.treeToValue(node, Battle.class);
+    }
+
+    public static ReplayReconstruction reconstructionFromJson(final JsonNode node) throws IOException {
+        return MAPPER.treeToValue(node, ReplayReconstruction.class);
     }
 
     public static byte[] toBytes(final AiReplayFacts facts) {

@@ -35,6 +35,13 @@ case "$verb" in
 esac
 DOCKER
 chmod 700 "$WORK/bin/docker"
+cat > "$WORK/bin/curl" <<'CURL'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$FAKE_CURL_LOG"
+[[ "$*" == *'http://10.20.0.2:8089/actuator/health/readiness'* ]]
+CURL
+chmod 700 "$WORK/bin/curl"
 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 run() {
   env -i PATH="$WORK/bin:$PATH" HOME="$WORK" WOTB_DIR="$WORK" WOTB_INCOMING_DIR="$WORK/incoming" \
@@ -53,6 +60,20 @@ grep -q '^pull parser-worker$' "$WORK/docker.log"
 grep -q '^up -d --no-deps --force-recreate parser-worker$' "$WORK/docker.log"
 grep -Fq 'wotbtools-parser-worker:latest' "$WORK/docker-compose.yml"
 [ ! -e "$WORK/production-release.json" ]
+ai_run() {
+  env -i PATH="$WORK/bin:$PATH" HOME="$WORK" WOTB_DIR="$WORK" WOTB_INCOMING_DIR="$WORK/incoming" \
+    WOTB_DEPLOY_SERVICE=ai-service WOTB_DEPLOY_CONFIG_SHA="$SHA" \
+    WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 WOTB_PULL_ATTEMPTS=1 \
+    AI_API_KEY="${AI_API_KEY:-}" FAKE_DOCKER_LOG="$WORK/docker.log" FAKE_CURL_LOG="$WORK/curl.log" \
+    bash "$WORK/incoming/deploy/deploy.sh"
+}
+if ai_run >/dev/null 2>&1; then echo 'AI service accepted a missing API key' >&2; exit 1; fi
+AI_API_KEY=test ai_run >/dev/null
+grep -q '^pull ai-service$' "$WORK/docker.log"
+grep -q '^up -d --no-deps --force-recreate ai-service$' "$WORK/docker.log"
+grep -Fq 'ghcr.io/a158coke/ai-service:latest' "$WORK/docker-compose.yml"
+grep -Fq '10.20.0.2:8089:8080' "$WORK/docker-compose.yml"
+grep -Fq 'http://10.20.0.2:8089/actuator/health/readiness' "$WORK/curl.log"
 # MinIO refuses to create an empty data volume; an existing owner volume works without metadata.
 minio() {
   env -i PATH="$WORK/bin:$PATH" HOME="$WORK" WOTB_DIR="$WORK" \
