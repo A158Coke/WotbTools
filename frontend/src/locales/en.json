@@ -1466,7 +1466,7 @@
   },
   "agentTanks": {
     "title": "Tankopedia (Agent)",
-    "hint": "All tanks — data from the Agent asset pack (?assets= static plane / same-origin fallback). Click a card for armor/shells/mobility details, or open it in the 3D armor viewer.",
+    "hint": "All tanks — data from the configured asset source (static asset pack). Click a card for armor/shells/mobility details, or open it in the 3D armor viewer.",
     "search_ph": "Search (fuzzy): e100 · is7 · def…",
     "tier": "Tier",
     "nation": "Nation",
