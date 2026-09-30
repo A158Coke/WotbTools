@@ -59,3 +59,18 @@ jobs:
       - name: Bundle separation check
         working-directory: frontend
         run: node scripts/check-bundle-separation.mjs
+      - name: Production Docker build and payload baseline
+        run: |
+          set -euo pipefail
+          du -sk frontend/dist
+          du -sk frontend/dist/assets
+          find frontend/dist -type f -printf "%s %p\n" | sort -n | tail -15
+          docker build -f docker/Dockerfile.frontend --build-arg BUILD_COMMIT=${{ inputs.head_sha }} -t frontend-ci .
+          docker image inspect --format 'total_size_bytes={{.Size}}' frontend-ci
+          docker history --no-trunc --format '{{.Size}}\t{{.CreatedBy}}' frontend-ci
+          docker run --rm --entrypoint sh frontend-ci -c '
+            set -e
+            du -sk /usr/share/nginx/html
+            du -sk /usr/share/nginx/html/assets
+            find /usr/share/nginx/html -type f -exec du -k {} + | sort -n | tail -15
+          '
