@@ -1497,7 +1497,21 @@
     "turret_front": "Turret front",
     "turret_sides": "Turret side",
     "turret_rear": "Turret rear",
-    "open_armor": "Open in 3D armor viewer"
+    "open_armor": "Open in 3D armor viewer",
+    "back": "← Back to Tankopedia",
+    "open3d": "Open the 3D inspector in a new browser window",
+    "open3d_title": "3D Armor Inspector",
+    "select_config": "Loadout",
+    "pen_far": "Pen @ far",
+    "velocity": "Shell velocity",
+    "reload": "Reload",
+    "aim_time": "Aim time",
+    "gun_armor": "Gun barrel armor",
+    "hull": "Hull",
+    "turret": "Turret",
+    "front": "Front",
+    "side": "Side",
+    "rear": "Rear"
   },
   "agentShots": {
     "title": "Shot Replay (Agent)",
@@ -1549,7 +1563,6 @@
   "agentNav": {
     "replay": "3D Replay",
     "tanks": "Tankopedia",
-    "shots": "Shot Replay",
-    "armor": "Armor Viewer"
+    "shots": "Shot Replay"
   }
 }
