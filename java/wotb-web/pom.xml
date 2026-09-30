@@ -12,11 +12,6 @@
     <artifactId>wotb-web</artifactId>
     <name>WotBTools Web</name>
 
-    <properties>
-        <!-- 默认排除人工探测类（占点时间线等）；运行探测时用 -Dai.probe.excludedGroups= 覆盖 -->
-        <ai.probe.excludedGroups>ai-capture-probe,ai-live</ai.probe.excludedGroups>
-    </properties>
-
     <dependencies>
         <dependency>
             <groupId>com.wotb</groupId>
@@ -37,11 +32,6 @@
         <dependency>
             <groupId>com.wotb</groupId>
             <artifactId>wotb-replay-processing</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.wotb</groupId>
-            <artifactId>wotb-ai</artifactId>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.wotb</groupId>
@@ -172,7 +162,6 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.0</version>
                 <configuration>
-                    <excludedGroups>${ai.probe.excludedGroups}</excludedGroups>
                     <!-- 生产总是装配分布式回放控制面（ReplayDistributedConfig 不再有条件门控），
                          因此全上下文 @SpringBootTest 必须像生产一样提供控制面配置，否则 fail-closed
                          的 MinioObjectStorageProperties/RabbitBrokerProperties 会让 context 启动失败。

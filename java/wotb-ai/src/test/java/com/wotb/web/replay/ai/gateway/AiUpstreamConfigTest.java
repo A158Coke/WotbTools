@@ -9,6 +9,7 @@ import org.springframework.core.io.ClassPathResource;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,11 +48,12 @@ class AiUpstreamConfigTest {
                 .load("application", new ClassPathResource("application.yml"));
         final PropertySource<?> source = sources.getFirst();
         // OpenAiChatModel logs the full prompt at WARN when the provider returns
-        // empty choices; the production config must keep that class at ERROR and
+        // empty choices; the ai-service config must keep that class at ERROR and
         // must not silence the whole application via a global ERROR level.
         assertEquals("ERROR", source.getProperty(
                 "logging.level.org.springframework.ai.openai.OpenAiChatModel"));
-        assertEquals("WARN", source.getProperty("logging.level.org.apache.poi"));
+        assertNull(source.getProperty("logging.level.root"),
+                "ai-service must not silence the whole application with a global level");
     }
 
     @Test
