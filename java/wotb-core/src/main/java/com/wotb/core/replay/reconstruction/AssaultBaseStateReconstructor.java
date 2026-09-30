@@ -2,6 +2,7 @@ package com.wotb.core.replay.reconstruction;
 
 import com.wotb.core.replay.event.AssaultBaseStateTransition;
 import com.wotb.core.replay.event.RawAssaultBaseUpdate;
+import com.wotb.core.replay.event.RawSupremacyBaseUpdate;
 import com.wotb.core.replay.event.ReplayEvent;
 
 import java.util.Comparator;
@@ -22,6 +23,12 @@ public final class AssaultBaseStateReconstructor {
 
     public static List<AssaultBaseStateTransition> reconstruct(final List<ReplayEvent> events) {
         if (events == null || events.isEmpty()) {
+            return List.of();
+        }
+        // Mode fail-closed: a replay with the independently proven wrapper12 Supremacy
+        // base family must never also be projected as the single BASE objective even if
+        // some unrelated wrapper8 payload happens to share this raw shape.
+        if (events.stream().anyMatch(RawSupremacyBaseUpdate.class::isInstance)) {
             return List.of();
         }
         return events.stream()
