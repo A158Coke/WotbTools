@@ -15,6 +15,7 @@ import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.ShotResultEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.RawAssaultBaseUpdate;
 import com.wotb.core.replay.event.RawSupremacyBaseUpdate;
 import com.wotb.core.replay.event.TargetingInfoSnapshotEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
@@ -79,6 +80,8 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     static final int SUBTYPE_ROUND_FINISHED = 4;
     /** subtype48 wrapper=3 = ARENA_PERIOD 更新（root field3 = period；PROVEN）。 */
     public static final long WRAPPER_ARENA_PERIOD = 3L;
+    /** subtype48 wrapper=8 = realtime Assault single-base state（root field8；11.20 controlled sample）。 */
+    public static final long WRAPPER_ASSAULT_BASE = 8L;
     /** subtype48 wrapper=12 = realtime Supremacy base state（root field11；PROVEN current corpus）。 */
     public static final long WRAPPER_SUPREMACY_BASE = 12L;
     /** wrapper3 root field：arena period 值。 */
@@ -368,6 +371,9 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     }
                     // 争霸赛实时点数仅在 nested shape 校验通过时解码。
                     events.addAll(parseSupremacyPoints(payload, packet, ts));
+                    // Wrapper8 Assault realtime single-base state：field3 progress 已由 11.20
+                    // controlled full-capture sample 闭合到 0..100；其余字段 raw-preserve。
+                    events.addAll(parseRawAssaultBaseUpdates(payload, packet, ts));
                     // Wrapper12 realtime base ownership/capture state：只接受已闭合的
                     // wrapper/root/field shape，不从点数或静态地图基地圈推导。
                     events.addAll(parseRawSupremacyBaseUpdates(payload, packet, ts));
@@ -723,6 +729,62 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             out.add(new SupremacyPointsChangedEvent(
                     packet.sequence(), ts, packet.type(),
                     DecodeConfidence.EXACT, (int) team, (int) points));
+        }
+        return out;
+    }
+
+    /**
+     * 解析 subtype48 wrapper8 的攻防战单基地实时状态（root field8 repeated protobuf）。
+     *
+     * <p>11.20.0_china_apple controlled full-capture sample closes only one production
+     * semantic: nested raw field1=2 / raw field2=1 / field3=progress emits 1..100
+     * monotonically during uninterrupted capture. raw field1/2/4 are preserved for
+     * diagnostics and independent controls; decoder must not name field4 as a team yet.</p>
+     */
+    private List<RawAssaultBaseUpdate> parseRawAssaultBaseUpdates(
+            byte[] payload, RawReplayPacket packet, ReplayTimestamp ts) {
+        final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
+        if (decoded == null || decoded.wrapperFieldNumber() != WRAPPER_ASSAULT_BASE) {
+            return List.of();
+        }
+        final List<Object> blocks = decoded.root().get(8);
+        if (blocks == null || blocks.isEmpty()) {
+            return List.of();
+        }
+        final List<RawAssaultBaseUpdate> out = new ArrayList<>();
+        for (final Object blockRaw : blocks) {
+            if (!(blockRaw instanceof byte[] block)) {
+                continue;
+            }
+            final Map<Integer, List<Object>> fields;
+            try {
+                fields = ProtobufDecoder.decode(block);
+            } catch (IllegalArgumentException malformedBlock) {
+                continue;
+            }
+            boolean validFields = true;
+            for (final int field : List.of(1, 2, 3, 4)) {
+                final List<Object> values = fields.get(field);
+                if (values != null && (values.size() != 1
+                        || !(values.getFirst() instanceof Long value)
+                        || value < 0 || value > Integer.MAX_VALUE)) {
+                    validFields = false;
+                    break;
+                }
+            }
+            if (!validFields) {
+                continue;
+            }
+            final Long rawField1 = optionalLong(fields, 1);
+            final Long rawField2 = optionalLong(fields, 2);
+            final Long rawField3 = optionalLong(fields, 3);
+            final Long rawField4 = optionalLong(fields, 4);
+            out.add(new RawAssaultBaseUpdate(
+                    packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                    rawField1 == null ? null : rawField1.intValue(),
+                    rawField2 == null ? null : rawField2.intValue(),
+                    rawField3 == null ? null : rawField3.intValue(),
+                    rawField4 == null ? null : rawField4.intValue()));
         }
         return out;
     }

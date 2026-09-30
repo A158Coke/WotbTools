@@ -5,6 +5,10 @@
 > Scope: Blitz 11.19.0 China replay corpus, with additional validation against 34 tournament Supremacy replays supplied for base-state research.
 >
 > This document records only evidence-backed protocol facts and the required canonical architecture boundary. It does **not** authorize frontend protocol inference.
+>
+> Assault is a separate wire family and must not be generalized from this document:
+> see [`assault-base-state.md`](assault-base-state.md) for the controlled 11.20
+> wrapper8/root8 single-base progress closure.
 
 ## Executive verdict
 

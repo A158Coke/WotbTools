@@ -1871,6 +1871,10 @@ export default {
             "$ref": "#/$defs/PointsSample"
           }
         },
+        "assaultObjectivePresent": {
+          "type": "boolean",
+          "description": "Proven wrapper8 objective-family initialization, independent of capture progress. Missing on older artifacts means unknown (no static Assault objective rendering). Not derived from arenaBonusType."
+        },
         "baseStates": {
           "type": "array",
           "items": {
@@ -2499,8 +2503,10 @@ export default {
             "A",
             "B",
             "C",
-            "D"
-          ]
+            "D",
+            "BASE"
+          ],
+          "description": "Supremacy uses A-D; Assault single-base uses BASE."
         },
         "ownerTeam": {
           "type": [
@@ -2530,7 +2536,8 @@ export default {
             "null"
           ],
           "minimum": 0,
-          "maximum": 99
+          "maximum": 100,
+          "description": "Supremacy canonical states remain 0-99; Assault BASE may reach protocol value 100."
         }
       }
     },

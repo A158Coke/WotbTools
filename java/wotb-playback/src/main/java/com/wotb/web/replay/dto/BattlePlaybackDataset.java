@@ -23,7 +23,8 @@ import java.util.Map;
  * @param recorderAccountId 录像者账号（null = 未解析）
  * @param vehicles          参战车辆转录（稀疏 transition tracks）
  * @param pointsSamples     争霸赛实时点数广播（battle-relative 秒升序）
- * @param baseStates        争霸赛基地实时状态（wrapper12；battle-relative 秒升序）
+ * @param baseStates        Supremacy / Assault runtime 状态（battle-relative 秒升序）
+ * @param assaultObjectivePresent wrapper8 初始化确认的 Assault objective，与占领进度独立
  * @param limitations       content limitations（如 BATTLE_RELATIVE_TIME_UNAVAILABLE）；空 = 无限制
  * @param arenaBonusType    战斗模式（meta.json#arenaBonusType 原值；null = 未知）。
  *                          仅携带该权威类别事实（前端用于标准/争霸事件过滤），<b>不</b>复制 MapOverview。
@@ -42,7 +43,8 @@ public record BattlePlaybackDataset(
         List<BaseStateTransition> baseStates,
         List<String> limitations,
         Capability capability,
-        Integer arenaBonusType
+        Integer arenaBonusType,
+        boolean assaultObjectivePresent
 ) {
     /** 战局回放完整度 capability（与 limitations 严格一致，前端本地化）。 */
     public enum Capability {
@@ -60,6 +62,17 @@ public record BattlePlaybackDataset(
         // A null value remains readable for old artifacts, but an explicit contradictory
         // value is not allowed to survive into the current DTO either.
         capability = limitations.isEmpty() ? Capability.FULL : Capability.PARTIAL;
+    }
+
+    /** Compatibility for callers/artifacts without independent objective-family evidence. */
+    public BattlePlaybackDataset(
+            final double durationSec, final String mapCode, final Integer friendlyTeam,
+            final Long recorderAccountId, final List<VehiclePlaybackTrack> vehicles,
+            final List<BattleEvent> events, final List<PointsSample> pointsSamples,
+            final List<BaseStateTransition> baseStates, final List<String> limitations,
+            final Capability capability, final Integer arenaBonusType) {
+        this(durationSec, mapCode, friendlyTeam, recorderAccountId, vehicles, events,
+                pointsSamples, baseStates, limitations, capability, arenaBonusType, false);
     }
 
     /** 8-arg convenience constructor（既有 caller 投影）：capability 由 limitations 派生；arenaBonusType 未知。 */
@@ -278,7 +291,11 @@ public record BattlePlaybackDataset(
     public record PointsSample(double timeSec, int team, int points) {
     }
 
-    /** One backend-reconstructed full-state transition; protocol indexes never cross this boundary. */
+    /**
+     * Canonical playback objective transition. Supremacy uses baseId A-D and progress 0..99;
+     * Assault single-base uses baseId BASE and may carry replay-broadcast progress 100.
+     * Raw protocol indexes/discriminators never cross this boundary.
+     */
     public record BaseStateTransition(
             double timeSec,
             String baseId,

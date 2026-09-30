@@ -2,7 +2,10 @@
 
 本目录记录 WotBTools 对 WoT Blitz `.wotbreplay` 的逆向研究。
 
-> Scope: Blitz `11.19.0_china` / `11.19.0_china_apple`.
+> Base scope: Blitz `11.19.0_china` / `11.19.0_china_apple`.
+>
+> Focused newer-version controls are documented separately; currently this includes
+> the 11.20 China Apple Assault full-capture / no-capture single-base controls in `assault-base-state.md`.
 >
 > Base canonical corpus: 34 unique arenas / 476 settled players.
 >
@@ -17,7 +20,9 @@
 后续实现、审查和研究必须按以下优先级读取：
 
 1. **`WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md`** — 新的中英双语顶层权威文档；同时区分 protocol truth 与 `main` 当前实现状态。
-2. 当前 focused closure 文档，例如 `type10-movement-transform-closure.md`、`method38-0200-device-not-pierced-closure.md`、method36 / HP / ammo / component 专项 closure。
+2. 当前 focused closure 文档，例如 `type10-movement-transform-closure.md`、
+   `method38-0200-device-not-pierced-closure.md`、`assault-base-state.md`、method36 / HP /
+   ammo / component 专项 closure。
 3. `inventory.md` — canonical fact ledger。
 4. `research-completion-audit-11.19.md` — completion gate / remaining-boundary audit。
 5. `WOTB_REPLAY_PROTOCOL_11_19_COMPLETE_REFERENCE.md` — 较早英文综合参考；若与 1–4 冲突，以 1–4 为准。
@@ -27,6 +32,10 @@
 `main/docs/reference/replay-data.md` 等 11.18-era production docs 不能覆盖 PR147 current controlled evidence；其中部分 Type4、Type10 tail、legacy direct-damage 解释已被后续研究推翻或收敛。
 
 ## 研究原则
+
+字段解析新增入口：[Assault wrapper8 字段解析契约](assault-base-state.md#field-decoding-contract--字段解析契约)
+记录 nested field1..4、raw/canonical 映射、缺失字段与非法输入处理、字节示例和测试位置；
+面向维护者的摘要同步到[回放解析字段字典](../../reference/replay-parsed-fields.md)。
 
 - Evidence grades: `PROVEN / VERY STRONG PARTIAL / PARTIAL / UNKNOWN / SUPERSEDED / REJECTED`.
 - `PROVEN` 必须依赖当前 replay 行为；历史 PC/WoT/BigWorld 只做 architecture cross-check。
