@@ -23,6 +23,8 @@ public sealed interface ReplayEvent
                 SupremacyPointsChangedEvent,
                 RawSupremacyBaseUpdate,
                 SupremacyBaseStateTransition,
+                RawAssaultBaseUpdate,
+                AssaultBaseStateTransition,
                 RecorderHealthChangedEvent,
                 VehicleHealthStateEvent,
                 VehicleModuleCrewStateEvent,
