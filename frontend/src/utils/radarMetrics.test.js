@@ -71,7 +71,7 @@ describe('Radar League raw geometry 与 max 明细解释解耦', () => {
     expect(leagueKeys).toHaveLength(7)
   })
 
-  it('仅 League 七维可选进 Radar：contribution/kast/impact 不在 picker（属于 Performance Metrics）', () => {
+  it('仅 League 七维可选进 Radar：B6 已退役的 contribution/kast/impact 不在 picker', () => {
     expect(RADAR_AVAILABLE_KEYS).toEqual(CW_DIM_KEYS)
     expect(RADAR_AVAILABLE_KEYS).not.toContain('contribution')
     expect(RADAR_AVAILABLE_KEYS).not.toContain('kast')
@@ -95,7 +95,7 @@ describe('Radar League raw geometry 与 max 明细解释解耦', () => {
     ])
   })
 
-  it('偏好加载：旧值 contribution/kast/impact 被静默过滤（§66）；不足 min → fallback 默认七维', () => {
+  it('偏好加载：已退役/无效 key 被静默过滤（§66）；不足 min → fallback 默认七维', () => {
     saveRadarPreference(['removed_metric', 'contribution', 'kast', 'impact'])
     expect(loadRadarPreference()).toEqual(RADAR_DEFAULT_ORDER)
     saveRadarPreference(['league_damage_score', 'league_kill_score', 'league_assist_score'])

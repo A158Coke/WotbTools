@@ -30,9 +30,6 @@ const emit = defineEmits(['select-player'])
 
 const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
-// 跨场/单场 Performance Metrics 百分比展示；HP UNKNOWN → null → '--'（不冒充 0）
-const PERCENT_KEYS = new Set(['contribution', 'kast', 'impact'])
-
 // ---- 全列 ASC/DESC（任何可见列都可排序；missing-last；raw sort）----
 const sortKey = ref('')
 const sortReverse = ref(false)
@@ -44,7 +41,7 @@ const sortedRows = computed(() => {
     key: sortKey.value,
     direction: sortReverse.value ? -1 : 1,
     num: !!col?.num,
-    tiebreakGetter: row => row.cells?.account_id,
+    tiebreakGetter: row => row.accountId,
   })
 })
 
@@ -63,17 +60,11 @@ function isRatingKey(key) {
   return props.leagueMode && (key === 'league_rating' || key === 'league_observed_mean' || CW_DIM_KEYS.includes(key))
 }
 
-function percentCell(value) {
-  if (value == null || value === '') return '--'
-  return (Math.round(Number(value) * 10) / 10) + '%'
-}
-
 function cellDisplay(row, col) {
   const key = col.key
   const raw = row.cells[key]
   if (raw == null || raw === '') return '--'
   if (isRatingKey(key)) return ratingCellText(raw, key, maxByKey.value)
-  if (PERCENT_KEYS.has(key)) return percentCell(raw)
   if (col.num) {
     const n = Number(raw)
     if (Number.isFinite(n)) return String(Math.round(n * 10) / 10)
@@ -86,8 +77,8 @@ function onRowClick(row) {
   // order = 当前可见顺序（排序后），供 Drawer 前后导航（§29）。
   emit('select-player', {
     scope: 'summary',
-    accountId: Number(row.cells.account_id),
-    order: sortedRows.value.map(r => Number(r.cells.account_id)),
+    accountId: Number(row.accountId),
+    order: sortedRows.value.map(r => Number(r.accountId)),
   })
 }
 
@@ -95,7 +86,7 @@ function onRowClick(row) {
 function isSelectedRow(row) {
   const sel = props.selectedAccountId
   if (sel == null || sel === '') return false
-  return Number(row.cells.account_id) === Number(sel)
+  return Number(row.accountId) === Number(sel)
 }
 
 // ---- sticky 核心对：nickname.left=0；league_rating.left=实测昵称列宽 >0 ----
@@ -124,7 +115,7 @@ watch([sortKey, sortReverse], schedule)
               @click="sortBy(c)">{{ $t('agg_labels.' + c.key) }}{{ arrow(c.key) }}</th>
         </tr></thead>
         <tbody>
-          <tr v-for="(row, i) in sortedRows" :key="row.cells.account_id ?? i"
+          <tr v-for="(row, i) in sortedRows" :key="row.accountId ?? i"
               :class="[row.team === 1 ? 't1' : 't2', 'player-row', { selected: isSelectedRow(row) }]"
               @click="onRowClick(row)">
             <td v-for="c in columns" :key="c.key"

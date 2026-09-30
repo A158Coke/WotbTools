@@ -262,7 +262,7 @@ onBeforeUnmount(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(row, index) in sortedRows" :key="`${row.cells.account_id || row.cells.nickname}-${index}`">
+              <tr v-for="(row, index) in sortedRows" :key="`${row.cells.nickname}-${index}`">
                 <td v-for="column in ratingResponse.columns" :key="column.key" :class="{ num: column.num }">
                   <button v-if="column.key === 'nickname'" class="rating-v2-player" type="button"
                     :aria-label="t('ratingV2.radar.open', { player: row.cells[column.key] ?? '--' })"

@@ -180,10 +180,10 @@ const drawerPlayer = computed(() => {
   const ctx = selectedPlayerContext.value
   if (!ctx) return null
   if (ctx.scope === 'summary') {
-    const row = unifiedRows.value.find(r => Number(r.cells.account_id) === Number(ctx.accountId))
+    const row = unifiedRows.value.find(r => Number(r.accountId) === Number(ctx.accountId))
     if (!row) return null
     return {
-      accountId: row.cells.account_id,
+      accountId: row.accountId,
       nickname: row.cells.nickname,
       clan: row.cells.clan || '',
       rating: row.cells.league_rating,
@@ -198,15 +198,15 @@ const drawerPlayer = computed(() => {
     }
   }
   const battle = (resp.value?.battles || []).find(b => b.arenaId === ctx.arenaId)
-  const row = battle?.players?.find(p => Number(p.cells.account_id) === Number(ctx.accountId))
+  const row = battle?.players?.find(p => Number(p.accountId) === Number(ctx.accountId))
   if (!row) return null
   return {
-    accountId: row.cells.account_id,
+    accountId: row.accountId,
     nickname: row.cells.nickname,
     clan: row.cells.clan || '',
     rating: row.cells.league_rating,
     dimensionScores: CW_DIM_KEYS.map(k => row.cells[k]),
-    tankId: row.cells?.tank_id ?? null,
+    tankId: row.vehicleId ?? null,
     tankName: row.cells?.tank_name ?? '',
     tankBattles: 1,
     cells: row.cells,

@@ -1,7 +1,7 @@
 package com.wotb.web.replay.job;
 
-import com.wotb.core.league.LeagueRatingMode;
-import com.wotb.core.league.LeagueReplays;
+import com.wotb.core.rating.LeagueRatingMode;
+import com.wotb.core.rating.LeagueReplays;
 import com.wotb.core.model.Battle;
 import com.wotb.core.parse.Replays;
 import com.wotb.core.ref.Tankopedia;

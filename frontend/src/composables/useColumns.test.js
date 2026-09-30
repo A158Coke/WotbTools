@@ -17,25 +17,26 @@ function freshStorage() {
   return store
 }
 
+// B6：contribution/kast/impact/account_id/tank_id/alpha_damage/traded_deaths/victory_points_seized 已退役；
+// tanks 仍在 wire 上但列层不展示。
 const PLAYER_COLS = [
   { key: 'nickname', num: false },
   { key: 'kills', num: true },
   { key: 'damage_dealt', num: true },
   { key: 'damage_assisted', num: true },
-  { key: 'contribution', num: true },
-  { key: 'kast', num: true },
-  { key: 'impact', num: true },
   { key: 'damage_received', num: true },
-  { key: 'account_id', num: true }
+  { key: 'hit_rate', num: true },
+  { key: 'pen_rate', num: true }
 ]
 
 const AGG_COLS = [
   { key: 'nickname', num: false },
-  { key: 'contribution', num: true },
-  { key: 'kast', num: true },
-  { key: 'impact', num: true },
+  { key: 'battles', num: true },
+  { key: 'win_rate', num: true },
+  { key: 'damage_avg', num: true },
   { key: 'multi_damage_rate', num: true },
-  { key: 'traded_deaths', num: true }
+  { key: 'survival_time_avg', num: true },
+  { key: 'tanks', num: false }
 ]
 
 function mountCols(storage) {
@@ -51,45 +52,57 @@ function mountCols(storage) {
 describe('useColumns derived metric columns', () => {
   beforeEach(() => { freshStorage(); vi.clearAllMocks() })
 
-  it('DEFAULT_VISIBLE includes contribution/kast/impact (default visible per product goal)', () => {
-    expect(DEFAULT_VISIBLE).toContain('contribution')
-    expect(DEFAULT_VISIBLE).toContain('kast')
-    expect(DEFAULT_VISIBLE).toContain('impact')
+  it('B6：DEFAULT_VISIBLE 已不含退役列（contribution/kast/impact/alpha_damage）', () => {
+    expect(DEFAULT_VISIBLE).not.toContain('contribution')
+    expect(DEFAULT_VISIBLE).not.toContain('kast')
+    expect(DEFAULT_VISIBLE).not.toContain('impact')
+    expect(DEFAULT_VISIBLE).not.toContain('alpha_damage')
+    // 真实默认可见列仍在
+    expect(DEFAULT_VISIBLE).toContain('damage_dealt')
+    expect(DEFAULT_VISIBLE).toContain('damage_received')
   })
 
-  it('initFromResponse shows the three columns by default for fresh users', () => {
+  it('initFromResponse shows DEFAULT_VISIBLE columns for fresh users', () => {
     const c = mountCols(freshStorage())
-    expect(c.visibleKeys.value).toContain('contribution')
-    expect(c.visibleKeys.value).toContain('kast')
-    expect(c.visibleKeys.value).toContain('impact')
+    // 可见 = playerColumns ∩ DEFAULT_VISIBLE（保持响应列顺序）
+    expect(c.visibleKeys.value).toEqual([
+      'nickname', 'kills', 'damage_dealt', 'damage_assisted', 'damage_received', 'hit_rate', 'pen_rate'
+    ])
   })
 
-  it('toggleCol hides/shows a derived column', async () => {
+  it('toggleCol hides/shows a column', async () => {
     const c = mountCols(freshStorage())
-    c.toggleCol({ key: 'kast', scope: 'player' })
-    expect(c.visibleKeys.value).not.toContain('kast')
-    c.toggleCol({ key: 'kast', scope: 'player' })
-    expect(c.visibleKeys.value).toContain('kast')
+    c.toggleCol({ key: 'damage_received', scope: 'player' })
+    expect(c.visibleKeys.value).not.toContain('damage_received')
+    c.toggleCol({ key: 'damage_received', scope: 'player' })
+    expect(c.visibleKeys.value).toContain('damage_received')
   })
 
-  it('resetCols restores the three core columns', () => {
+  it('resetCols restores the DEFAULT_VISIBLE columns', () => {
     const c = mountCols(freshStorage())
-    c.toggleCol({ key: 'contribution', scope: 'player' })
-    c.toggleCol({ key: 'impact', scope: 'player' })
-    expect(c.visibleKeys.value).not.toContain('contribution')
+    c.toggleCol({ key: 'damage_received', scope: 'player' })
+    c.toggleCol({ key: 'hit_rate', scope: 'player' })
+    expect(c.visibleKeys.value).not.toContain('damage_received')
     c.resetCols('player')
-    expect(c.visibleKeys.value).toContain('contribution')
-    expect(c.visibleKeys.value).toContain('kast')
-    expect(c.visibleKeys.value).toContain('impact')
+    expect(c.visibleKeys.value).toContain('damage_received')
+    expect(c.visibleKeys.value).toContain('damage_dealt')
   })
 
   it('aggregate columns include cross-battle metrics and default to visible', () => {
     const c = mountCols(freshStorage())
-    expect(c.aggVisibleKeys.value).toContain('contribution')
-    expect(c.aggVisibleKeys.value).toContain('kast')
-    expect(c.aggVisibleKeys.value).toContain('impact')
     expect(c.aggVisibleKeys.value).toContain('multi_damage_rate')
-    expect(c.aggVisibleKeys.value).toContain('traded_deaths')
+    expect(c.aggVisibleKeys.value).toContain('survival_time_avg')
+    expect(c.aggVisibleKeys.value).toContain('damage_avg')
+  })
+
+  it('B6：aggregate universe 排除 tanks（wire 上仍在，但不是展示列）', () => {
+    const c = mountCols(freshStorage())
+    expect(c.aggOrder.value).not.toContain('tanks')
+    expect(c.aggVisibleKeys.value).not.toContain('tanks')
+    // reset 也不得把 tanks 复活
+    c.resetCols('agg')
+    expect(c.aggOrder.value).not.toContain('tanks')
+    expect(c.aggVisibleKeys.value).not.toContain('tanks')
   })
 })
 
@@ -103,12 +116,9 @@ const LEAGUE_PLAYER_COLS = [
   { key: 'kills', num: true },
   { key: 'damage_dealt', num: true },
   { key: 'damage_assisted', num: true },
-  // Performance Metrics 保留在 CW 单场列 universe
-  { key: 'contribution', num: true },
-  { key: 'kast', num: true },
-  { key: 'impact', num: true },
-  { key: 'league_damage_score', num: true },
-  { key: 'victory_points_earned', num: true }
+  // League 单场列 universe 里的可选事实列（非默认可见）
+  { key: 'victory_points_earned', num: true },
+  { key: 'league_damage_score', num: true }
 ]
 
 function mountLeagueCols(storage) {
@@ -135,11 +145,11 @@ describe('useColumns League Rating scope', () => {
     const c = useColumns(ref(LEAGUE_PLAYER_COLS), ref(AGG_COLS), ref('SINGLE'), ref(false))
     c.initFromResponse({ playerColumns: LEAGUE_PLAYER_COLS, aggregateColumns: AGG_COLS, leagueMode: false })
     expect(c.leagueMode.value).toBe(false)
-    // 普通可见列默认（DEFAULT_VISIBLE）：league_rating 不默认显示、contribution 默认显示
+    // 普通可见列默认（DEFAULT_VISIBLE）：league_rating 不默认显示、kills 默认显示
     expect(c.visibleKeys.value).not.toContain('league_rating')
-    expect(c.visibleKeys.value).toContain('contribution')
+    expect(c.visibleKeys.value).toContain('kills')
     // 持久化走普通 storage scope，不污染 league scope
-    c.toggleCol({ key: 'kast', scope: 'player' })
+    c.toggleCol({ key: 'victory_points_earned', scope: 'player' })
     await nextTick()
     expect(store.get('wotb-replay-player-visible-cols')).toBeTruthy()
     expect(store.has('wotb-league-player-visible-cols')).toBe(false)
@@ -167,17 +177,15 @@ describe('useColumns League Rating scope', () => {
     expect(c.visibleKeys.value).toContain('league_rating')
   })
 
-  it('league battle columns keep contribution/kast/impact in universe, not default-visible, toggleable', () => {
+  it('league battle columns keep optional facts in universe, not default-visible, toggleable', () => {
     const c = mountLeagueCols(freshStorage())
     // 存在于列 universe（ColumnPicker 可显示）
-    expect(c.playerOrder.value).toContain('contribution')
-    expect(c.playerOrder.value).toContain('kast')
-    expect(c.playerOrder.value).toContain('impact')
-    // 默认不显示（LEAGUE_DEFAULT_VISIBLE 不含表现指标）
-    expect(c.visibleKeys.value).not.toContain('contribution')
+    expect(c.playerOrder.value).toContain('victory_points_earned')
+    // 默认不显示（LEAGUE_DEFAULT_VISIBLE 不含占点原始字段）
+    expect(c.visibleKeys.value).not.toContain('victory_points_earned')
     // 可 toggle
-    c.toggleCol({ key: 'kast', scope: 'player' })
-    expect(c.visibleKeys.value).toContain('kast')
+    c.toggleCol({ key: 'victory_points_earned', scope: 'player' })
+    expect(c.visibleKeys.value).toContain('victory_points_earned')
     expect(c.visibleKeys.value).toContain('league_rating')
     expect(c.visibleKeys.value).toContain('damage_dealt')
   })
@@ -201,7 +209,7 @@ describe('useColumns League Rating scope', () => {
   it('standard and league scopes do not pollute each other', async () => {
     const store = freshStorage()
     const standard = mountCols(store)
-    standard.toggleCol({ key: 'kast', scope: 'player' })
+    standard.toggleCol({ key: 'damage_received', scope: 'player' })
     await nextTick() // 等 storage watcher flush（异步）
     const standardOrder = [...standard.playerOrder.value]
     const standardVisible = [...standard.visibleKeys.value]
@@ -231,9 +239,6 @@ const LEAGUE_SUMMARY_COLS = [
   { key: 'league_shooting_score', num: true },
   { key: 'mvp_count', num: true },
   { key: 'wins', num: true },
-  { key: 'contribution', num: true },
-  { key: 'kast', num: true },
-  { key: 'impact', num: true },
 ]
 
 const CW_AGG_COLS = [
@@ -244,9 +249,7 @@ const CW_AGG_COLS = [
   { key: 'damage_avg', num: true },
   { key: 'earned_avg', num: true },
   { key: 'tanks', num: false },
-  { key: 'contribution', num: true },
-  { key: 'kast', num: true },
-  { key: 'impact', num: true },
+  { key: 'multi_damage_rate', num: true },
 ]
 
 function mountCwCols(storage) {
@@ -267,18 +270,22 @@ function mountCwCols(storage) {
 describe('useColumns CW unified summary scope', () => {
   beforeEach(() => { freshStorage(); vi.clearAllMocks() })
 
-  it('cw scope: nickname + league_rating pinned first, dims/mvp/perf default-visible, facts toggleable', () => {
+  it('cw scope: nickname + league_rating pinned first, dims/mvp/facts default-visible', () => {
     const c = mountCwCols(freshStorage())
     expect(c.cwOrder.value.slice(0, 2)).toEqual(['nickname', 'league_rating'])
-    // 七维/MVP/表现指标默认可见（延续旧体验），但属于用户可控制列
+    // 七维/MVP 默认可见（延续旧体验），但属于用户可控制列
     expect(c.cwVisibleKeys.value).toContain('league_damage_score')
     expect(c.cwVisibleKeys.value).toContain('mvp_count')
-    expect(c.cwVisibleKeys.value).toContain('contribution')
-    expect(c.cwVisibleKeys.value).toContain('kast')
-    expect(c.cwVisibleKeys.value).toContain('impact')
     // 纯 facts 列默认可见
     expect(c.cwVisibleKeys.value).toContain('damage_avg')
     expect(c.cwVisibleKeys.value).toContain('earned_avg')
+  })
+
+  it('B6：tanks 不进 cw 列 universe（aggregate wire 上仍在）', () => {
+    const c = mountCwCols(freshStorage())
+    expect(CW_AGG_COLS.map(x => x.key)).toContain('tanks')
+    expect(c.cwOrder.value).not.toContain('tanks')
+    expect(c.cwVisibleKeys.value).not.toContain('tanks')
   })
 
   it('nickname + league_rating cannot be hidden in cw scope', () => {
@@ -289,33 +296,37 @@ describe('useColumns CW unified summary scope', () => {
     expect(c.cwVisibleKeys.value).toContain('nickname')
   })
 
-  it('seven dimensions / MVP / perf can be hidden and re-shown', () => {
+  it('dimensions / MVP / performance columns can be hidden and re-shown', () => {
     const c = mountCwCols(freshStorage())
     c.toggleCol({ key: 'league_damage_score', scope: 'cw' })
     expect(c.cwVisibleKeys.value).not.toContain('league_damage_score')
     c.toggleCol({ key: 'league_damage_score', scope: 'cw' })
     expect(c.cwVisibleKeys.value).toContain('league_damage_score')
-    c.toggleCol({ key: 'kast', scope: 'cw' })
-    expect(c.cwVisibleKeys.value).not.toContain('kast')
+    // B6 后仅剩的 Performance Metrics（multi_damage_rate）可 toggle
+    expect(c.cwVisibleKeys.value).not.toContain('multi_damage_rate')
+    c.toggleCol({ key: 'multi_damage_rate', scope: 'cw' })
+    expect(c.cwVisibleKeys.value).toContain('multi_damage_rate')
+    c.toggleCol({ key: 'multi_damage_rate', scope: 'cw' })
+    expect(c.cwVisibleKeys.value).not.toContain('multi_damage_rate')
   })
 
-  it('user custom order applies: impact, kast, damage_avg, league_damage_score, earned_avg → nickname, league_rating 前置', () => {
+  it('user custom order applies: multi_damage_rate, league_shooting_score, damage_avg, league_damage_score, earned_avg → nickname, league_rating 前置', () => {
     const c = mountCwCols(freshStorage())
     c.pickerScope.value = 'cw' // 真实流程：toggleColPicker 先设 pickerScope 再 handleReorder
-    c.handleReorder(['impact', 'kast', 'damage_avg', 'league_damage_score', 'earned_avg'])
+    c.handleReorder(['multi_damage_rate', 'league_shooting_score', 'damage_avg', 'league_damage_score', 'earned_avg'])
     expect(c.cwOrder.value).toEqual([
       'nickname', 'league_rating',
-      'impact', 'kast', 'damage_avg', 'league_damage_score', 'earned_avg',
+      'multi_damage_rate', 'league_shooting_score', 'damage_avg', 'league_damage_score', 'earned_avg',
     ])
   })
 
   it('another custom order proves not hardcoded', () => {
     const c = mountCwCols(freshStorage())
     c.pickerScope.value = 'cw'
-    c.handleReorder(['kast', 'contribution', 'league_damage_score', 'league_assist_score', 'battles'])
+    c.handleReorder(['mvp_count', 'win_rate', 'league_damage_score', 'league_shooting_score', 'battles'])
     expect(c.cwOrder.value).toEqual([
       'nickname', 'league_rating',
-      'kast', 'contribution', 'league_damage_score', 'league_assist_score', 'battles',
+      'mvp_count', 'win_rate', 'league_damage_score', 'league_shooting_score', 'battles',
     ])
   })
 
@@ -324,18 +335,19 @@ describe('useColumns CW unified summary scope', () => {
     const c1 = mountCwCols(store)
     c1.toggleCol({ key: 'league_damage_score', scope: 'cw' }) // 隐藏 → visible 持久化
     // 完整 order reorder（ColumnPicker 语义：拖拽后 emit 完整数组）
-    const reordered = ['nickname', 'league_rating', 'impact', 'kast', 'earned_avg', 'clan', 'battles',
-      'wins', 'win_rate', 'damage_avg', 'contribution', 'mvp_count', 'league_shooting_score',
-      'league_damage_score', 'league_assist_score', 'league_kill_score', 'league_exchange_score',
-      'league_blocked_score', 'league_survival_score', 'tanks']
+    const reordered = ['nickname', 'league_rating', 'multi_damage_rate', 'league_shooting_score', 'earned_avg', 'clan',
+      'battles', 'wins', 'win_rate', 'damage_avg', 'mvp_count', 'rated_battles',
+      'league_damage_score', 'tanks']
     c1.pickerScope.value = 'cw'
     c1.handleReorder(reordered)
     await nextTick()
     const c2 = mountCwCols(store)
     expect(c2.cwVisibleKeys.value).not.toContain('league_damage_score') // visible 持久化
     expect(c2.cwOrder.value.slice(0, 2)).toEqual(['nickname', 'league_rating'])
-    expect(c2.cwOrder.value[2]).toBe('impact')
-    expect(c2.cwOrder.value[3]).toBe('kast')
+    expect(c2.cwOrder.value[2]).toBe('multi_damage_rate')
+    expect(c2.cwOrder.value[3]).toBe('league_shooting_score')
+    // 持久化偏好里的 tanks 被 universe 过滤，不复活
+    expect(c2.cwOrder.value).not.toContain('tanks')
   })
 
   it('colScope: league summary tab → cw; league battle tab → player', () => {
@@ -354,13 +366,14 @@ describe('useColumns CW unified summary scope', () => {
 
   it('resetCols cw restores defaults with fixed pair front', () => {
     const c = mountCwCols(freshStorage())
-    c.toggleCol({ key: 'league_shooting_score', scope: 'cw' })
+    c.toggleCol({ key: 'multi_damage_rate', scope: 'cw' })
     c.pickerScope.value = 'cw'
-    c.handleReorder(['impact', 'kast'])
+    c.handleReorder(['multi_damage_rate', 'league_shooting_score'])
+    expect(c.cwVisibleKeys.value).toContain('multi_damage_rate')
     c.resetCols('cw')
     expect(c.cwOrder.value.slice(0, 2)).toEqual(['nickname', 'league_rating'])
     expect(c.cwVisibleKeys.value).toContain('league_shooting_score')
-    expect(c.cwVisibleKeys.value).toContain('impact')
+    expect(c.cwVisibleKeys.value).not.toContain('multi_damage_rate')
   })
 
   it('rated_battles 进入生产 cw column contract：universe/order/visible/toggle/reorder', () => {
@@ -374,11 +387,11 @@ describe('useColumns CW unified summary scope', () => {
     expect(c.cwVisibleKeys.value).not.toContain('rated_battles')
     c.toggleCol({ key: 'rated_battles', scope: 'cw' })
     expect(c.cwVisibleKeys.value).toContain('rated_battles')
-    // reorder：rated_battles 可放在任意非固定位置（如 impact 之后）
+    // reorder：rated_battles 可放在任意非固定位置（如 multi_damage_rate 之后）
     c.pickerScope.value = 'cw'
-    c.handleReorder(['impact', 'rated_battles', 'kast', 'league_damage_score'])
+    c.handleReorder(['multi_damage_rate', 'rated_battles', 'league_shooting_score', 'league_damage_score'])
     expect(c.cwOrder.value).toEqual([
-      'nickname', 'league_rating', 'impact', 'rated_battles', 'kast', 'league_damage_score',
+      'nickname', 'league_rating', 'multi_damage_rate', 'rated_battles', 'league_shooting_score', 'league_damage_score',
     ])
   })
 })

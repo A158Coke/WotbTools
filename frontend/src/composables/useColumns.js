@@ -4,7 +4,8 @@ import {
   EXTENDED_ONLY_PLAYER_KEYS,
   LEAGUE_DEFAULT_VISIBLE,
   LEAGUE_FIXED_KEYS,
-  CW_SUMMARY_DEFAULT_VISIBLE
+  CW_SUMMARY_DEFAULT_VISIBLE,
+  UNPRESENTABLE_COLUMN_KEYS
 } from '../utils/helpers.js'
 import { mergeCwPlayerColumns } from '../utils/playerSummaryMerge.js'
 
@@ -124,9 +125,12 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
         : playerOrder.value)
   const basePlayerCols = computed(() =>
     playerCols.value.filter(c => !EXTENDED_ONLY_PLAYER_KEYS.has(c.key)))
+  /** B6：wire 上仍存在但列层不展示的 key（`tanks`）不进 aggregate 列 universe。 */
+  const presentableAggCols = computed(() =>
+    (aggCols.value || []).filter(c => !UNPRESENTABLE_COLUMN_KEYS.has(c.key)))
 
   const playerColMap = computed(() => Object.fromEntries(basePlayerCols.value.map(c => [c.key, c])))
-  const aggColMap = computed(() => Object.fromEntries(aggCols.value.map(c => [c.key, c])))
+  const aggColMap = computed(() => Object.fromEntries(presentableAggCols.value.map(c => [c.key, c])))
 
   const shownCols = computed(() =>
     playerOrder.value.filter(k => visibleKeys.value.includes(k)).map(k => playerColMap.value[k]).filter(Boolean))
@@ -141,7 +145,7 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
     const pk = (resp.playerColumns || [])
       .filter(c => !EXTENDED_ONLY_PLAYER_KEYS.has(c.key))
       .map(c => c.key)
-    const ak = (resp.aggregateColumns || []).map(c => c.key)
+    const ak = presentableAggCols.value.map(c => c.key)
 
     const storedPlayerOrder = readStoredList(storage.playerOrder)
     const storedPlayerVisible = readStoredList(storage.playerVisible)
@@ -208,8 +212,8 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
       cwOrder.value = pinLeagueOrder([...cwAvailableKeys.value])
       cwVisibleKeys.value = forceLeagueVisible([...CW_SUMMARY_DEFAULT_VISIBLE])
     } else if (scope === 'agg') {
-      aggOrder.value = aggCols.value.map(c => c.key)
-      aggVisibleKeys.value = aggCols.value.map(c => c.key)
+      aggOrder.value = presentableAggCols.value.map(c => c.key)
+      aggVisibleKeys.value = presentableAggCols.value.map(c => c.key)
     } else if (leagueMode.value) {
       playerOrder.value = pinLeagueOrder(basePlayerCols.value.map(c => c.key))
       visibleKeys.value = forceLeagueVisible([...LEAGUE_DEFAULT_VISIBLE])

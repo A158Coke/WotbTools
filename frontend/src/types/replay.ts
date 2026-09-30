@@ -25,14 +25,19 @@ export interface ColumnDef {
   num: boolean
 }
 
+/** 单场玩家行。B6：accountId/vehicleId 是结构性身份，不在 cells 里。 */
 export interface PlayerRow {
   cells: JsonObject
   team: number
+  accountId: number
+  vehicleId: number
 }
 
+/** 汇总行。B6：accountId 是结构性身份，不在 cells 里。 */
 export interface AggregateRow {
   cells: JsonObject
   team: number
+  accountId: number
 }
 
 export interface Battle {

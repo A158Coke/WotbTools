@@ -1,6 +1,6 @@
 package com.wotb.web.replay.job;
 
-import com.wotb.core.league.LeagueRatingBatch;
+import com.wotb.core.rating.LeagueRatingBatch;
 import com.wotb.core.model.Battle;
 
 import java.util.List;

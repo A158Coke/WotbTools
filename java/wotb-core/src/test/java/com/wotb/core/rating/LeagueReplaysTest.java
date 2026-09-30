@@ -1,0 +1,343 @@
+package com.wotb.core.rating;
+
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.Source;
+import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.util.PlayerResultFormat;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/** 模式判定 / 去重 / 冲突 / 校验失败。 */
+class LeagueReplaysTest {
+
+    private static Source source(final String name, final Battle battle, final int arenaBonusType) throws Exception {
+        return new Source(name, LeagueTestBattles.replayBytes(battle, arenaBonusType));
+    }
+
+    private static Source source(final String name, final Battle battle, final int arenaBonusType,
+                                 final List<Long> extraRosterAccounts) throws Exception {
+        return new Source(name, LeagueTestBattles.replayBytes(battle, arenaBonusType, extraRosterAccounts));
+    }
+
+    private static LeagueReplays.LeagueCollectResult collect(final List<Source> sources) {
+        return LeagueReplays.collect(sources, source -> ReplayParser.parse(source.bytes()), null, null);
+    }
+
+    @Test
+    void singleTrainingBattleIsLeagueRated() throws Exception {
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        battle.arenaId = "111";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(source("a.wotbreplay", battle, 2)));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(1, r.battles().size());
+        assertEquals(1, r.leagueBatch().battleResults().size());
+        assertTrue(r.leagueBatch().battleResults().getFirst().rated());
+    }
+
+    @Test
+    void tournamentBattleIsLeagueRated() throws Exception {
+        final Battle battle = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
+        battle.arenaId = "222";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(source("b.wotbreplay", battle, 4)));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(1, r.battles().size());
+    }
+
+    @Test
+    void standardRandomBattleHasNoLeagueRating() throws Exception {
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        battle.arenaId = "333";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(source("c.wotbreplay", battle, 1)));
+        assertEquals(LeagueRatingMode.STANDARD_REPLAY, r.mode());
+        assertEquals(1, r.battles().size());
+        assertNull(r.leagueBatch());
+    }
+
+    @Test
+    void inGameRatingBattleIsStandard() throws Exception {
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        battle.arenaId = "444";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(source("d.wotbreplay", battle, 7)));
+        assertEquals(LeagueRatingMode.STANDARD_REPLAY, r.mode());
+        assertNull(r.leagueBatch());
+    }
+
+    @Test
+    void trainingPlusTournamentBatchAllowed() throws Exception {
+        final Battle t = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        t.arenaId = "111";
+        final Battle t2 = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
+        t2.arenaId = "222";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(
+                source("t.wotbreplay", t, 2), source("t2.wotbreplay", t2, 4)));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(2, r.battles().size());
+        assertEquals(2, r.leagueBatch().battleResults().size());
+    }
+
+    @Test
+    void trainingPlusRandomIsMixedKeepsParsedBattles() throws Exception {
+        // 混合批次不再整体拒绝——League Rating 不聚合，但全部可解析
+        // replay 仍按普通回放语义成功返回（battles 保留、无 leagueBatch、progress 真实 outcome）。
+        final Battle t = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        t.arenaId = "111";
+        final Battle rand = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        rand.arenaId = "999";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(
+                source("t.wotbreplay", t, 2), source("r.wotbreplay", rand, 1)));
+        assertEquals(LeagueRatingMode.MIXED_UNSUPPORTED, r.mode());
+        assertEquals(2, r.battles().size(), "混合批次所有可解析 Battle 必须保留（禁止污染 Parser）");
+        assertNull(r.leagueBatch(), "混合批次不产生 League Rating");
+        assertTrue(r.leagueFailures().isEmpty());
+        // 每个文件恰好一次 progress；已解析文件必须 SUCCESS（不得计为解析失败）
+        final List<String> outcomes = new ArrayList<>();
+        LeagueReplays.collect(List.of(source("t.wotbreplay", t, 2), source("r.wotbreplay", rand, 1)),
+                source -> ReplayParser.parse(source.bytes()), null,
+                (index, name, o) -> outcomes.add(name + ":" + o));
+        assertEquals(2, outcomes.size());
+        assertTrue(outcomes.stream().allMatch(o -> o.endsWith(":SUCCESS")));
+    }
+
+    @Test
+    void sameArenaConsistentCopiesDeduplicate() throws Exception {
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        battle.arenaId = "111";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(
+                source("a.wotbreplay", battle, 2), source("a2.wotbreplay", battle, 2)));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(1, r.battles().size());
+        assertEquals(1, r.duplicates().size());
+        assertTrue(r.leagueFailures().isEmpty());
+    }
+
+    @Test
+    void sameArenaConflictingCopiesRejected() throws Exception {
+        final Battle a = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        a.arenaId = "111";
+        final Battle b = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b.arenaId = "111";
+        b.winnerTeam = 2; // 关键事实冲突
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(
+                source("a.wotbreplay", a, 2), source("b.wotbreplay", b, 2)));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertTrue(r.battles().isEmpty());
+        assertEquals(2, r.leagueFailures().size());
+        assertTrue(r.leagueFailures().stream()
+                .allMatch(f -> f.code().equals(LeagueFailure.Code.CONFLICTING_REPLAYS_FOR_ARENA)));
+    }
+
+    @Test
+    void trainingRosterWithExtraNonCombatantStillRated() throws Exception {
+        // probe shape（20260725_1535 训练房）：名册 #201=15（14 combatant + 1 extra non-combatant），
+        // 结算 #301=14。extra 只写名册不写结算 → parser rosterComplete=true → Rating 通过
+        // （ActualCombatantSet == #301；名册 extra ≠ 缺失的结算队员）。
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        battle.arenaId = "111";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(
+                source("a.wotbreplay", battle, 2, List.of(3117047709L))));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(1, r.battles().size());
+        assertEquals(1, r.leagueBatch().battleResults().size());
+        assertTrue(r.leagueBatch().battleResults().getFirst().rated());
+        assertTrue(r.leagueFailures().isEmpty(), "名册 extra non-combatant 不得导致 ROSTER_INCOMPLETE");
+    }
+
+    @Test
+    void multipleValidLeagueReplaysProduceSummaries() throws Exception {
+        // 真实批量：N>=2 份合法 League 回放 → playerSummaries / teamSummaries 非空
+        final Battle t1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        t1.arenaId = "111";
+        final Battle t2 = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
+        t2.arenaId = "222";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(
+                source("t1.wotbreplay", t1, 2, List.of(999_999L)),
+                source("t2.wotbreplay", t2, 4, List.of(888_888L))));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(2, r.leagueBatch().battleResults().size());
+        assertTrue(r.leagueFailures().isEmpty());
+        assertFalse(r.leagueBatch().playerSummaries().isEmpty(), "多场合法 CW playerSummaries 必须非空");
+        assertFalse(r.leagueBatch().teamSummaries().isEmpty(), "多场合法 CW teamSummaries 必须非空");
+    }
+
+    @Test
+    void invalidSevenVsSevenReportedAsFailureOthersContinue() throws Exception {
+        final Battle bad = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        bad.arenaId = "111";
+        bad.players.remove(0); // 13 人
+        final Battle good = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
+        good.arenaId = "222";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(
+                source("bad.wotbreplay", bad, 2), source("good.wotbreplay", good, 2)));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(2, r.battles().size(), "Rating 校验失败的场次必须保留在 battles（领域分离，P0）");
+        assertTrue(r.battles().stream().anyMatch(b -> b.arenaId.equals("111")),
+                "bad 场（13 人）必须仍存在于 battles");
+        assertEquals(1, r.leagueBatch().battleResults().size(), "Rating 只对 eligible 场次计算");
+        assertEquals(1, r.leagueFailures().size());
+        assertEquals(LeagueFailure.Code.NOT_SEVEN_VS_SEVEN, r.leagueFailures().getFirst().code());
+        assertEquals("bad.wotbreplay", r.leagueFailures().getFirst().fileName());
+    }
+
+    // ---- P0 回归：replay parsing validity != league rating eligibility ----
+    // 直接 loader 返回构造好的 Battle（绕过 parser 字节往返），精确测试校验/保留/评分语义。
+
+    private static LeagueReplays.LeagueCollectResult collectBattles(final List<Battle> battles) {
+        final List<Source> sources = new ArrayList<>();
+        for (int i = 0; i < battles.size(); i++) {
+            sources.add(new Source("r" + i + ".wotbreplay", new byte[]{(byte) i}));
+        }
+        return LeagueReplays.collect(sources, source -> {
+            final int idx = Integer.parseInt(source.name().substring(1, source.name().indexOf('.')));
+            return battles.get(idx);
+        }, null, null);
+    }
+
+    @Test
+    void caseA_allParsedAndAllEligible() throws Exception {
+        final Battle a = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        a.arenaId = "111";
+        final Battle b = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
+        b.arenaId = "222";
+        final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(a, b));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(2, r.battles().size());
+        assertEquals(2, r.leagueBatch().battleResults().size());
+        assertEquals(0, r.leagueFailures().size());
+        assertTrue(r.leagueBatch().battleResults().stream().allMatch(LeagueRatingResult::rated));
+    }
+
+    @Test
+    void caseB_partialRatingIneligibleBattleKeptWithFailure() throws Exception {
+        final Battle good = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        good.arenaId = "111";
+        final Battle bad = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
+        bad.arenaId = "222";
+        bad.players.remove(0); // 13 人
+        final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(good, bad));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(2, r.battles().size(), "Rating 不合格的 Battle 必须保留在解析结果");
+        assertEquals(2, r.battleSourceNames().size());
+        assertTrue(r.battles().stream().anyMatch(b -> b.arenaId.equals("222")),
+                "bad 场必须仍存在于 battles");
+        assertEquals(1, r.leagueBatch().battleResults().size(), "Rating 只对 eligible 场次计算");
+        assertEquals(1, r.leagueFailures().size());
+        assertEquals(LeagueFailure.Code.NOT_SEVEN_VS_SEVEN, r.leagueFailures().getFirst().code());
+        assertEquals("r1.wotbreplay", r.leagueFailures().getFirst().fileName());
+    }
+
+    @Test
+    void caseC_allRatingIneligibleAllBattlesStillParsed() throws Exception {
+        // NOT_SEVEN_VS_SEVEN + NO_DECISIVE_WINNER：全部 Rating 不合格时所有 Battle 仍必须保留
+        final Battle roster = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        roster.arenaId = "222";
+        roster.players.remove(0); // 13 人
+        final Battle winner = LeagueTestBattles.battle(null, LeagueTestBattles.defaultSevenVsSeven());
+        winner.arenaId = "333";
+        final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(roster, winner));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(2, r.battles().size(), "全部 Rating 不合格时所有 Battle 仍必须保留（禁止 NO_VALID_REPLAYS）");
+        assertEquals(0, r.leagueBatch().battleResults().size());
+        assertEquals(2, r.leagueFailures().size());
+        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.NOT_SEVEN_VS_SEVEN)));
+        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.NO_DECISIVE_WINNER)));
+    }
+
+    @Test
+    void missingSettlementDeathTimeIsRejected() throws Exception {
+        // 阵亡玩家缺失 settlement lifeTime 必须在 League validator fail-closed。
+        final List<LeagueTestBattles.PlayerSpec> deathSpecs = LeagueTestBattles.defaultSevenVsSeven();
+        deathSpecs.getFirst().dead(0);
+        final Battle death = LeagueTestBattles.battle(1, deathSpecs);
+        death.arenaId = "111";
+        final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(death));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(1, r.battles().size());
+        assertEquals(0, r.leagueBatch().battleResults().size(), "缺失结算死亡秒值不得评分");
+        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.INVALID_STAT_FACTS)));
+    }
+
+    // ---- Survivor INVALID 上传顺序无关（P0）：valid+NaN / valid+Infinity / valid+negative ----
+
+    @Test
+    void survivorInvalidConflictsRegardlessOfUploadOrder() {
+        // 玩家 1001 两份副本都 survived=true；一份 survivalTimeSec=300（合法），
+        // 另一份为 INVALID（NaN/Infinity/-1）。Validator 对全玩家拒绝 INVALID，
+        // 因此 group 一致性必须 fail closed——两个上传顺序必须同 outcome：
+        // 全部 CONFLICTING_REPLAYS_FOR_ARENA、该 arena 0 场 rated（不许某一顺序进入
+        // Validator 而另一个顺序被拒绝）。每个顺序用全新 Battle（canonical 不 mutate 冲突副本）。
+        for (final double invalid : new double[]{Double.NaN, Double.POSITIVE_INFINITY, -1}) {
+            final LeagueReplays.LeagueCollectResult r1 = collectBattles(List.of(
+                    survivorCopy(300), survivorCopy(invalid)));
+            final LeagueReplays.LeagueCollectResult r2 = collectBattles(List.of(
+                    survivorCopy(invalid), survivorCopy(300)));
+            for (final LeagueReplays.LeagueCollectResult r : List.of(r1, r2)) {
+                assertEquals(0, r.battles().size(),
+                        "invalid=" + invalid + " 必须整场拒绝评分（上传顺序无关）");
+                assertEquals(2, r.leagueFailures().size());
+                assertTrue(r.leagueFailures().stream().allMatch(
+                                f -> f.code().equals(LeagueFailure.Code.CONFLICTING_REPLAYS_FOR_ARENA)),
+                        "invalid=" + invalid + " 必须是 CONFLICTING_REPLAYS_FOR_ARENA");
+                assertEquals(0, r.leagueBatch().battleResults().size(),
+                        "invalid=" + invalid + " 该 arena 不得进入 Validator/评分");
+            }
+        }
+    }
+
+    /** 全新 Battle：玩家 1001 存活且 survivalTimeSec 为指定值（其余默认 7v7）。 */
+    private static Battle survivorCopy(final double survivalTimeSec) {
+        final List<LeagueTestBattles.PlayerSpec> specs = LeagueTestBattles.defaultSevenVsSeven();
+        specs.getFirst().survived = true;
+        specs.getFirst().survivalTimeSec = survivalTimeSec;
+        final Battle b = LeagueTestBattles.battle(1, specs);
+        b.arenaId = "111";
+        return b;
+    }
+
+    @Test
+    void ratingValidationFailureReportsSuccessProgressNotFailure() {
+        final Battle bad = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        bad.arenaId = "111";
+        bad.players.remove(0); // 13 人
+        final List<String> outcomes = new ArrayList<>();
+        final LeagueReplays.LeagueCollectResult r = LeagueReplays.collect(
+                List.of(new Source("bad.wotbreplay", new byte[]{1})),
+                source -> bad, null, (index, name, o) -> outcomes.add(name + ":" + o));
+        assertEquals(1, r.battles().size());
+        assertEquals(1, r.leagueFailures().size());
+        assertEquals(List.of("bad.wotbreplay:SUCCESS"), outcomes,
+                "Rating-ineligible 但已解析的 replay 必须报 SUCCESS（不得计入解析失败）");
+    }
+
+    @Test
+    void parseFailureReportedAsFailure() throws Exception {
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(
+                new Source("broken.wotbreplay", new byte[]{1, 2, 3})));
+        assertEquals(LeagueRatingMode.STANDARD_REPLAY, r.mode());
+        assertEquals(1, r.failures().size());
+        assertEquals("broken.wotbreplay", r.failures().getFirst()[0]);
+    }
+
+    @Test
+    void settlementLifeTimeAndDeathSecSurviveParse() throws Exception {
+        // PR147 production contract on the synthetic fixture: #24 lifeTime (seconds) is parsed into
+        // settlementLifeTimeSec and PlayerResultFormat.deathSec() (settlement authority), and must not
+        // be read from the legacy #104 deathTimeMillis.
+        final List<LeagueTestBattles.PlayerSpec> specs = LeagueTestBattles.defaultSevenVsSeven();
+        specs.getFirst().dead(100); // player 1001 dies at 100s
+        final Battle battle = LeagueTestBattles.battle(1, specs);
+        battle.arenaId = "111";
+        final Battle parsed = ReplayParser.parse(LeagueTestBattles.replayBytes(battle, 2));
+        final PlayerResult dead = parsed.players.getFirst();
+        assertFalse(dead.survived);
+        assertEquals(100.0, dead.settlementLifeTimeSec, 1e-9);
+        assertEquals(100, PlayerResultFormat.deathSec(dead), 1e-9);
+    }
+}

@@ -76,7 +76,7 @@ export function battleAverage(players, { dimKeys }) {
   const members = (players || []).filter(p => isRawValid(p?.cells?.league_rating))
   return aggregate(members, {
     dimKeys,
-    idOf: p => p?.cells?.account_id,
+    idOf: p => p?.accountId,
     getRaw: (p, key) => p?.cells?.[key],
   })
 }
@@ -93,7 +93,7 @@ export function globalAverage(rows, { dimKeys }) {
   const unique = dedupeByAccountId(rated)
   return aggregate(unique, {
     dimKeys,
-    idOf: r => r?.cells?.account_id,
+    idOf: r => r?.accountId,
     getRaw: (r, key) => {
       const idx = CW_DIM_KEYS.indexOf(key)
       return r?.league?.dimensionMeans?.[idx]
@@ -105,7 +105,7 @@ export function globalAverage(rows, { dimKeys }) {
 function dedupeByAccountId(rows) {
   const map = new Map()
   for (const r of rows) {
-    const id = String(r?.cells?.account_id ?? '')
+    const id = String(r?.accountId ?? '')
     if (id === '') continue
     if (!map.has(id)) map.set(id, r)
   }

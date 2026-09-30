@@ -124,6 +124,9 @@ jobs:
           else
             echo 'existing_digest=' >> "$GITHUB_OUTPUT"
           fi
+      - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
+        run: bash scripts/fetch-agent-wasm.sh
+
       - uses: docker/setup-buildx-action@v4
       - name: Build and publish this frozen image
         id: build_image
@@ -159,6 +162,14 @@ jobs:
           docker cp "$container:/usr/share/nginx/html/assets" "$temp/assets"
           grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/assets" \
             || { echo 'Published frontend bundle does not contain the frozen source commit.' >&2; exit 1; }
+          # Agent WASM 产物存在性 smoke：3D 回放/装甲查看器/射击复现的运行前提。
+          # 镜像里必须有非空的 glue JS 与 .wasm（magic 0x0061736d），缺失 = 发布不可用镜像。
+          docker cp "$container:/usr/share/nginx/html/wasm" "$temp/wasm"
+          for f in wotb_replay_wasm.js wotb_replay_wasm_bg.wasm; do
+            [ -s "$temp/wasm/$f" ] || { echo "Published image misses agent wasm artifact: $f" >&2; exit 1; }
+          done
+          [ "$(head -c4 "$temp/wasm/wotb_replay_wasm_bg.wasm" | od -An -tx1 | tr -d ' \n')" = "0061736d" ] \
+            || { echo 'wotb_replay_wasm_bg.wasm lacks wasm magic (truncated/HTML error page).' >&2; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Publish latest only from current main

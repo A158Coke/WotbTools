@@ -83,11 +83,14 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 战斗表现（Performance Metrics）由 Replay Processing V2 的
 `GET /api/replay/processing-jobs/{jobId}/result` 统一返回。完整链：
-`POST /api/replay/processing-jobs` → Processing Job → Yecao parser-worker →
-共享 `ProcessedDataset` → `GET .../result`。Performance Metrics / League Rating /
-base replay facts 都来自同一 result。单场玩家表直接包含 `contribution`/`kast`/`impact`
-列，汇总表包含跨场 `contribution`/`kast`/`impact`/`multi_damage_rate`/`traded_deaths`，
-不存在独立 `/extended` 页面、`/api/performance` 端点或「战斗表现」tab。
+`POST /api/replay/processing-jobs` → Processing Job → parser-worker →
+共享 `ProcessedDataset` → `GET .../result`。League Rating / base replay facts
+都来自同一 result。单场玩家表与汇总表的列集是 canonical `Columns` / `AggregateColumns`
+key 宇宙；`contribution`/`kast`/`impact`/`alpha_damage`/`traded_deaths`/`account_id`/
+`tank_id`/`victory_points_seized` 已随 B6 退役（汇总仅保留 `multi_damage_rate`），
+`survival_avg` 改名 `survival_time_avg`；账号 / 车辆 ID 改由响应行结构化
+`accountId`/`vehicleId` 承载。不存在独立 `/extended` 页面、`/api/performance`
+端点或「战斗表现」tab。
 
 ### Legacy（已废弃）
 

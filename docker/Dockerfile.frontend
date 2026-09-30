@@ -17,6 +17,10 @@ COPY docs/architecture/TECHNICAL_EVOLUTION.md /docs/architecture/TECHNICAL_EVOLU
 COPY docs/WotBTools_League_Rating_V6.md /docs/WotBTools_League_Rating_V6.md
 ENV BUILD_COMMIT=${BUILD_COMMIT}
 RUN npm run build
+# 构建后断言：Agent WASM 产物（CI 里 fetch-agent-wasm.sh 落到 publicDir ../common/assets/wasm）
+# 必须已随构建进 dist——3D 回放/装甲查看器/射击复现的运行前提。缺失时 fail-fast，
+# 而不是发布一个页面打开即 "Failed to fetch dynamically imported module" 的镜像。
+RUN node -e 'const fs=require("fs");const js="/app/dist/wasm/wotb_replay_wasm.js";const bin="/app/dist/wasm/wotb_replay_wasm_bg.wasm";for(const f of [js,bin]){if(!fs.existsSync(f))throw new Error("agent wasm artifact missing from dist: "+f);if(!fs.statSync(f).size)throw new Error("agent wasm artifact empty: "+f)}if(fs.readFileSync(bin).subarray(0,4).toString("hex")!=="0061736d")throw new Error("wotb_replay_wasm_bg.wasm lacks wasm magic");console.log("agent wasm artifacts present in dist")'
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html

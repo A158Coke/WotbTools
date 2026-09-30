@@ -1,10 +1,10 @@
 package com.wotb.core.export;
 
 import com.wotb.core.Columns;
-import com.wotb.core.league.LeagueColumns;
-import com.wotb.core.league.LeagueRatingResult;
-import com.wotb.core.league.PlayerLeagueRating;
-import com.wotb.core.league.TeamLeagueRating;
+import com.wotb.core.rating.LeagueColumns;
+import com.wotb.core.rating.LeagueRatingResult;
+import com.wotb.core.rating.PlayerLeagueRating;
+import com.wotb.core.rating.TeamLeagueRating;
 import com.wotb.core.model.Battle;
 import com.wotb.core.ref.Tankopedia;
 import java.util.ArrayList;
@@ -45,13 +45,14 @@ final class LeagueSingleSheets {
     /**
      * 玩家数据表：canonical {@link Columns#PLAYER} 全部 Replay 字段（单一 schema 源，
      * 由 SingleBattleSheets 共享 writer 渲染）+ League 专属扩展列
-     * （占点得分/占领分 + 七维评分/满分/百分比 + 总Rating/满分/百分比）。
+     * （占点得分 + 七维评分/满分/百分比 + 总Rating/满分/百分比）。
+     *
+     * <p><b>B6</b>：占领分（{@code victory_points_seized}）列已退役。</p>
      */
     private void players(final ExcelStyles styles, final Battle b, final LeagueRatingResult result,
                          final Tankopedia tp) {
         final List<String[]> leagueHeader = new ArrayList<>();
         leagueHeader.add(new String[]{"占点得分", "9"});
-        leagueHeader.add(new String[]{"占领分", "9"});
         // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
         for (final String key : LeagueColumns.DIM_KEYS) {
             leagueHeader.add(new String[]{LeagueExcelColumns.dimensionTitle(key), "9"});
@@ -65,7 +66,6 @@ final class LeagueSingleSheets {
         SingleBattleSheets.writePlayers(styles, b, tp, leagueHeader, (row, p, fill, startCol) -> {
             int c = startCol;
             styles.setCell(row.createCell(c++), p.victoryPointsEarned, fill, "victory_points_earned");
-            styles.setCell(row.createCell(c++), p.victoryPointsSeized, fill, "victory_points_seized");
             final PlayerLeagueRating r = result.byAccount(p.accountId);
             if (r != null) {
                 // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）

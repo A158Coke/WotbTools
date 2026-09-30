@@ -1,7 +1,7 @@
 package com.wotb.web.replay.job;
 
 import com.wotb.core.export.ExcelExporter;
-import com.wotb.core.league.LeagueRatingResult;
+import com.wotb.core.rating.LeagueRatingResult;
 import com.wotb.core.model.Battle;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.replay.ReplayExportNames;
