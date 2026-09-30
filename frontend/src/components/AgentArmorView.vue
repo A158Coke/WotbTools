@@ -102,6 +102,35 @@ onBeforeUnmount(() => {
             --green:#5fbf7a; --orange:#ff9800; --red:#ff6b6b; --blue:#5fa8e8; --yellow:#ffcf5c;
             --txt:#f3ede6; --muted:#9c8f7f; --shadow:0 10px 34px rgba(0,0,0,0.5);
             --radius:14px; --radius-sm:9px;
+            /* 此前绕过 token 直接写死的颜色（表单底/hover/缩略图底板/卡片渐变…）——
+               收进 token 才能被浅色档统一覆盖 */
+            --input-bg:#2c2724; --input-bg-hover:#35302c;
+            --plate-a:#211b17; --plate-b:#171310;
+            --card-a:#251f1c; --card-b:#1b1715;
+            --on-accent:#1a1208; --hover-strong:#fff;
+            --picker-shadow:0 16px 70px rgba(0,0,0,0.7);
+            --tooltip-bg:rgba(12,14,22,0.97);
+            --scrub:#cc66ff;
+            --sel-ring:rgba(255,138,61,0.4);
+        }
+    /* 浅色档（classic）：3D 视口本体保留游戏视觉（#canvas-container 的暗色渐变不动），
+       其上的面板/HUD 落浅色——与 classic-profile.css 对 Reconstruction/战术地图
+       「外围面板落浅色、地图本体保留游戏视觉」的既有约定一致。
+       深色档取值与上方逐字相同，故 showcase（默认档）零视觉变化。 */
+    html[data-ui-profile="classic"] .armor-view {
+            --bg:#f4f5f2; --panel:rgba(255,255,255,0.94); --panel2:rgba(255,255,255,0.96);
+            --border:#d9dde3; --border-hi:rgba(201,118,46,0.45);
+            --accent:#c9762e; --accent-2:#a95c1c; --accent-3:#8a4a12;
+            --green:#1f7a33; --orange:#9a6000; --red:#a3232e; --blue:#1f5566; --yellow:#8a6d1f;
+            --txt:#2a2f28; --muted:#5c665a; --shadow:0 8px 24px rgba(0,0,0,0.08);
+            --input-bg:#fff; --input-bg-hover:#f2f3f0;
+            --plate-a:#fbfbfa; --plate-b:#eef0ec;
+            --card-a:#fff; --card-b:#f4f5f2;
+            --on-accent:#fff; --hover-strong:#11140f;
+            --picker-shadow:0 16px 70px rgba(0,0,0,0.18);
+            --tooltip-bg:rgba(255,255,255,0.97);
+            --scrub:#6d28d9;
+            --sel-ring:rgba(201,118,46,0.4);
         }
     .armor-view { margin: 0; padding: 0; background: var(--bg); color: var(--txt); font-family: system-ui, sans-serif; overflow: hidden; position: relative; width: 100%; height: calc(100vh - 67px); min-height: 480px; }
     .armor-view #canvas-container { width: 100%; height: 100%; background: radial-gradient(1100px 600px at 30% -10%, #3a2412 0%, transparent 60%), radial-gradient(1000px 600px at 90% 0%, #2f1a0c 0%, transparent 55%); }
@@ -113,6 +142,7 @@ onBeforeUnmount(() => {
             background: var(--panel); padding: 20px; border-radius: var(--radius);
             max-width: 350px; backdrop-filter: blur(12px);
             border: 1px solid var(--border); box-shadow: var(--shadow);
+            max-height: min(58vh, 460px); overflow-y: auto; overflow-wrap: anywhere;
         }
     .armor-view #info-panel h1 { font-size: 1.5em; margin: 0 0 10px 0; color: var(--accent-3); }
     .armor-view #info-panel .stat { display: flex; justify-content: space-between; margin: 4px 0; }
@@ -131,18 +161,24 @@ onBeforeUnmount(() => {
             font-family: Consolas, monospace; font-size: 11px;
         }
     .armor-view #debug-info h4 { margin: 0 0 6px 0; font-size: 11px; font-weight: bold; color: var(--accent-2); font-family: system-ui, sans-serif; }
-    .armor-view #debug-info .dbg-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; white-space: nowrap; }
-    .armor-view #debug-info .dbg-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
-    .armor-view #debug-info .dbg-name { color: var(--muted); flex: none; }
-    .armor-view #debug-info .dbg-val { color: var(--txt); }
+    /* 调试值此前 nowrap + max-width 380px 且只设 overflow-y → 长值被裁且无法滚动查看。
+       改为标签不换行、值可换行（长坐标/哈希也不会溢出）。 */
+    .armor-view #debug-info .dbg-row { display: flex; align-items: flex-start; gap: 6px; margin: 3px 0; white-space: normal; overflow-wrap: anywhere; }
+    .armor-view #debug-info .dbg-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; }
+    .armor-view #debug-info .dbg-name { color: var(--muted); flex: none; white-space: nowrap; }
+    .armor-view #debug-info .dbg-val { color: var(--txt); min-width: 0; }
     .armor-view #turret-controls {
             position: absolute; bottom: 20px; left: 20px;
             background: var(--panel); padding: 12px 16px; border-radius: var(--radius);
             backdrop-filter: blur(12px); border: 1px solid var(--border); box-shadow: var(--shadow);
             display: none; min-width: 280px; max-width: min(520px, 44vw);
+            /* 此前既无换行也无 max-height：长行（弹种/质量标记/图例）溢出面板，
+               面板高于视口时被根容器 overflow:hidden 裁掉且无法滚动查看 */
+            max-height: min(58vh, 460px); overflow-y: auto; overflow-wrap: anywhere;
         }
-    .armor-view .ctrl-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 0.85em; }
-    .armor-view .ctrl-row label { width: 50px; color: var(--muted); }
+    .armor-view .ctrl-row { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0; font-size: 0.85em; flex-wrap: wrap; }
+    .armor-view .ctrl-row > * { min-width: 0; }
+    .armor-view .ctrl-row label { width: 50px; flex: none; color: var(--muted); }
     .armor-view .ctrl-row span { color: var(--accent); font-weight: bold; }
     .armor-view #click-info {
             position: absolute;
@@ -163,7 +199,7 @@ onBeforeUnmount(() => {
             background: var(--panel); padding: 10px 15px; border-radius: var(--radius-sm);
             backdrop-filter: blur(12px); border: 1px solid var(--border); box-shadow: var(--shadow);
         }
-    .armor-view #shell-selector select { background: #2c2724; color: var(--txt); border: 1px solid var(--border-hi); border-radius: var(--radius-sm); padding: 4px 9px; }
+    .armor-view #shell-selector select { background: var(--input-bg); color: var(--txt); border: 1px solid var(--border-hi); border-radius: var(--radius-sm); padding: 4px 9px; }
     .armor-view #tank-selectors {
             background: var(--panel); padding: 12px 16px; border-radius: var(--radius);
             backdrop-filter: blur(12px); border: 1px solid var(--border); box-shadow: var(--shadow);
@@ -174,11 +210,11 @@ onBeforeUnmount(() => {
     /* 全局 input{flex:1;min-width:120px} 会把复选框撑到 120px 导致 Equip 行溢出面板——恢复自然尺寸 */
     .armor-view input[type="checkbox"] { flex: none; min-width: 0; width: auto; margin: 0; }
     .armor-view #tank-selectors .tank-btn {
-            background: #2c2724; color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm);
             padding: 5px 10px; max-width: 176px; cursor: pointer; font-size: 0.85em;
             text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: all .12s ease;
         }
-    .armor-view #tank-selectors .tank-btn:hover { border-color: var(--accent); background: #35302c; }
+    .armor-view #tank-selectors .tank-btn:hover { border-color: var(--accent); background: var(--input-bg-hover); }
     .armor-view #shooter-label { color: var(--accent-2); }
     .armor-view #target-label { color: var(--green); }
     .armor-view #tank-picker {
@@ -186,25 +222,25 @@ onBeforeUnmount(() => {
             width: min(1060px, 94vw); height: min(700px, 88vh);
             background: var(--panel); border: 1px solid var(--border-hi);
             border-radius: var(--radius); z-index: 1000; display: none; flex-direction: column;
-            box-shadow: 0 16px 70px rgba(0,0,0,0.7); backdrop-filter: blur(14px);
+            box-shadow: var(--picker-shadow); backdrop-filter: blur(14px);
         }
     .armor-view #tank-picker.open { display: flex; }
     .armor-view #tp-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
     .armor-view #tp-title { font-size: 1em; font-weight: bold; color: var(--accent-3); }
-    .armor-view #tp-search { flex: 1; min-width: 140px; background: #2c2724; color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 10px; font-size: 0.85em; }
-    .armor-view #tp-header select { background: #2c2724; color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 0.82em; }
+    .armor-view #tp-search { flex: 1; min-width: 140px; background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 10px; font-size: 0.85em; }
+    .armor-view #tp-header select { background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 0.82em; }
     .armor-view #tp-count { color: var(--accent); font-size: 0.8em; }
     .armor-view #tp-close { background: none; border: none; color: var(--muted); font-size: 1.4em; cursor: pointer; line-height: 1; }
-    .armor-view #tp-close:hover { color: #fff; }
+    .armor-view #tp-close:hover { color: var(--hover-strong); }
     .armor-view #tp-grid { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-content: flex-start; }
     .armor-view .tank-card {
             flex: 0 0 196px; max-width: 196px;
-            background: linear-gradient(180deg,#251f1c,#1b1715); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            background: linear-gradient(180deg,var(--card-a),var(--card-b)); border: 1px solid var(--border); border-radius: var(--radius-sm);
             overflow: hidden; cursor: pointer; transition: transform 0.08s, border-color 0.08s, box-shadow 0.08s;
         }
     .armor-view .tank-card:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: var(--shadow); }
-    .armor-view .tank-card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,138,61,0.4); }
-    .armor-view .tank-card .tc-img { width: 100%; height: 132px; object-fit: contain; background: linear-gradient(180deg,#211b17,#171310); display: block; padding: 4px; }
+    .armor-view .tank-card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--sel-ring); }
+    .armor-view .tank-card .tc-img { width: 100%; height: 132px; object-fit: contain; background: linear-gradient(180deg,var(--plate-a),var(--plate-b)); display: block; padding: 4px; }
     .armor-view .tank-card .tc-body { padding: 6px 8px; }
     .armor-view .tank-card .tc-name { font-size: 0.84em; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .armor-view .tank-card .tc-meta { display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-top: 4px; font-size: 0.74em; }
@@ -216,7 +252,7 @@ onBeforeUnmount(() => {
             backdrop-filter: blur(12px); border: 1px solid var(--border); box-shadow: var(--shadow);
             display: flex; gap: 8px; flex-wrap: wrap;
         }
-    .armor-view #view-toggle button { background: #35302c; color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 12px; cursor: pointer; font-size: 0.85em; transition: all .12s ease; }
+    .armor-view #view-toggle button { background: var(--input-bg-hover); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 12px; cursor: pointer; font-size: 0.85em; transition: all .12s ease; }
     .armor-view #view-toggle button:hover { border-color: var(--accent); }
-    .armor-view #view-toggle button.active { background: linear-gradient(135deg,var(--accent),var(--accent-2)); color: #1a1208; border-color: transparent; }
+    .armor-view #view-toggle button.active { background: linear-gradient(135deg,var(--accent),var(--accent-2)); color: var(--on-accent); border-color: transparent; }
 </style>

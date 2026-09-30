@@ -604,9 +604,9 @@ export function initTankViewer() {
             refreshShellOptionText();
         }
         function eqBadge(eq) {
-            if (!eq) return '<span style="color:#888;">配件?</span>';
-            const c = eq.calibrated_shells ? '<span style="color:#7ee787;">校准弹✓</span>' : '<span style="color:#666;">校准弹✗</span>';
-            const e = eq.enhanced_armor ? '<span style="color:#7ee787;">强化装甲✓</span>' : '<span style="color:#666;">强化装甲✗</span>';
+            if (!eq) return '<span style="color:var(--muted);">配件?</span>';
+            const c = eq.calibrated_shells ? '<span style="color:var(--green);">校准弹✓</span>' : '<span style="color:var(--muted);">校准弹✗</span>';
+            const e = eq.enhanced_armor ? '<span style="color:var(--green);">强化装甲✓</span>' : '<span style="color:var(--muted);">强化装甲✗</span>';
             return c + ' ' + e;
         }
         function updateHeatmapThickness() {
@@ -1592,12 +1592,12 @@ export function initTankViewer() {
                             if (st2) { st2.innerHTML = '<div class="ctrl-row"><b>World View — Shot #' + s.index + ' (脱靶)</b></div>' +
                                 (function() {
                                     const t4 = s.is_author ? '作者' : (s.shooter_team === 'enemy' ? '敌方' : (s.shooter_team === 'ally' ? '我方' : ''));
-                                    return '<div class="ctrl-row">Shooter: <b style="color:#ffcf5c;">' + (s.shooter_name || '—') + '</b>' + (t4 ? ' · ' + t4 : '') + '</div>' +
+                                    return '<div class="ctrl-row">Shooter: <b style="color:var(--yellow);">' + (s.shooter_name || '—') + '</b>' + (t4 ? ' · ' + t4 : '') + '</div>' +
                                     '<div class="ctrl-row" style="font-size:10px;">搭载: 射手 ' + eqBadge(s.shooter_equipment) +
                                     (s.target_equipment || s.game_hit_result !== undefined ? ' · 目标 ' + eqBadge(s.target_equipment) : '') + '</div>';
                                 })() +
                                 '<div class="ctrl-row">DMG 0 · MISS · 弦长 ' + chordM.toFixed(0) + 'm</div>' +
-                                (s.terrain_impact ? '<div class="ctrl-row" style="font-size:10px;color:#8ab4ff;">落点材质类: ' +
+                                (s.terrain_impact ? '<div class="ctrl-row" style="font-size:10px;color:var(--blue);">落点材质类: ' +
                                     s.terrain_impact.material + (function() {
                                         // 出射方向 vs（发射点→落点）弦的偏角：>2° 提示弹跳/末段减速
                                         const td = s.terrain_impact.terminal_dir;
@@ -1608,16 +1608,16 @@ export function initTankViewer() {
                                             (td[0]*ch[0]+td[1]*ch[1]+td[2]*ch[2])/(dn*cn)))) * 180/Math.PI;
                                         return ' · 出射偏角 <b>' + ang.toFixed(1) + '°</b>' + (ang > 2 ? '（弹跳/减速）' : '');
                                     })() + '</div>' : '') +
-                                '<div class="ctrl-row" style="font-size:10px;color:#888;">' +
+                                '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">' +
                                 '<span style="color:#ff6622;">●</span> LaunchPoint <span style="color:#00ccff;">┄</span> 速度向量 ' +
                                 '<span style="color:#00ff00;">—</span> 弹道弦 <span style="color:#ffcc00;">●</span> 落点 ' +
                                 '<span style="color:#ffaa00;">●</span> 弹跳点 ' +
                                 '<span style="color:#cc66ff;">●</span> 炮闩(发射起点) ' +
                                 '<span style="color:#00aaff;">●</span> 基准点·射手(type10锚)</div>' +
-                                '<div class="ctrl-row" style="font-size:10px;color:#888;">flags=' + flgM.toString(16) +
+                                '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">flags=' + flgM.toString(16) +
                                 ' · shell_id=' + (s.shell_id || '—') +
                                 (s.shell_kind ? ' (' + s.shell_kind + ')' : '') +
-                                (s.quality && s.quality.shell_from_terrain ? ' · <span style="color:#8ab4ff;">弹种来自 0x1b 地形广播</span>' : '') +
+                                (s.quality && s.quality.shell_from_terrain ? ' · <span style="color:var(--blue);">弹种来自 0x1b 地形广播</span>' : '') +
                                 '</div>'; }
                             // 脱靶弹分支同样受调试开关收纳:默认隐藏面板与标注
                             const dbgBtnM = makeDebugToggle(null);
@@ -2352,7 +2352,7 @@ export function initTankViewer() {
                         if (st) { st.innerHTML = '<div class="ctrl-row"><b>World View — Shot #' + s.index + '</b></div>' +
                             (function() {
                                 const t4 = s.is_author ? '作者' : (s.shooter_team === 'enemy' ? '敌方' : (s.shooter_team === 'ally' ? '我方' : ''));
-                                return '<div class="ctrl-row">Shooter: <b style="color:#ffcf5c;">' + (s.shooter_name || '—') + '</b>' + (t4 ? ' · ' + t4 : '') + '</div>' +
+                                return '<div class="ctrl-row">Shooter: <b style="color:var(--yellow);">' + (s.shooter_name || '—') + '</b>' + (t4 ? ' · ' + t4 : '') + '</div>' +
                                     '<div class="ctrl-row" style="font-size:10px;">搭载: 射手 ' + eqBadge(s.shooter_equipment) +
                                     (s.target_equipment || s.game_hit_result !== undefined ? ' · 目标 ' + eqBadge(s.target_equipment) : '') + '</div>';
                             })() +
@@ -2361,7 +2361,7 @@ export function initTankViewer() {
                             (function() {
                                 const sp3 = shellIdParts(s.shell_id);
                                 if (!sp3) return '';
-                                return '<div class="ctrl-row" style="font-size:10px;color:#8ab4ff;">弹种: shell_id=' + s.shell_id +
+                                return '<div class="ctrl-row" style="font-size:10px;color:var(--blue);">弹种: shell_id=' + s.shell_id +
                                     ' (局部' + sp3.local + ' · 国家0x' + sp3.nation.toString(16) + ')' +
                                     (s.shell_kind ? ' · <b>' + s.shell_kind + '</b>' : '') +
                                     (s.shell && s.shell.penetration ? ' · ' + Math.round(s.shell.penetration) + 'mm/' + Math.round(s.shell.damage || 0) + 'dmg（弹种反解表）' : '') +
@@ -2373,18 +2373,18 @@ export function initTankViewer() {
                                 const cr3 = decodeModules(s.crit_modules || 0);
                                 const ds3 = decodeModules(s.destroyed_modules || 0);
                                 if (!cr3.length && !ds3.length) return '';
-                                return '<div class="ctrl-row" style="font-size:10px;color:#ffcf5c;">模块: ' +
+                                return '<div class="ctrl-row" style="font-size:10px;color:var(--yellow);">模块: ' +
                                     cr3.concat(ds3.map(n3 => n3 + '(摧毁)')).join(' · ') + '</div>';
                             })() +
-                            (s.shooter_aim ? '<div class="ctrl-row" style="font-size:10px;color:#888;">瞄准: 炮塔偏航 ' +
+                            (s.shooter_aim ? '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">瞄准: 炮塔偏航 ' +
                                 s.shooter_aim.turret_rel_yaw.toFixed(4) + ' rad' +
                                 (typeof s.shooter_aim.state_before === 'number'
                                     ? ' · 状态 ' + s.shooter_aim.state_before.toFixed(3) + '→' +
                                       (s.shooter_aim.state_after != null ? s.shooter_aim.state_after.toFixed(3) : '—')
                                     : '') + '</div>' : '') +
-                            (s.server_part_index != null ? '<div class="ctrl-row" style="font-size:10px;color:#ff8866;">服务器部件: ' +
+                            (s.server_part_index != null ? '<div class="ctrl-row" style="font-size:10px;color:var(--orange);">服务器部件: ' +
                                 s.server_part_index + '（0=底盘/履带 1=车体 2=炮塔 3=炮管）· 弹着点已按部件约束</div>' : '') +
-                            (s.target_render ? '<div class="ctrl-row" style="font-size:10px;color:#00aaff;">渲染锚点(游戏画面): 滞后 ' +
+                            (s.target_render ? '<div class="ctrl-row" style="font-size:10px;color:var(--blue);">渲染锚点(游戏画面): 滞后 ' +
                                 s.target_render.latency.toFixed(3) + 's · 渲染-判定偏差 ' +
                                 s.target_render.dist_to_judgment.toFixed(2) + 'm</div>' : '') +
                             // ===== 连续时间滑块（拖动平滑控制双模型位置/姿态） =====
@@ -2402,29 +2402,29 @@ export function initTankViewer() {
                                 const tMax = Math.max.apply(null, allDt);
                                 if (tMax - tMin < 0.1) return '';
                                 return '<div class="ctrl-row" style="margin-top:6px;gap:6px;">'
-                                    + '<span style="font-size:10px;color:#cc66ff;flex:none;">⏱</span>'
+                                    + '<span style="font-size:10px;color:var(--scrub);flex:none;">⏱</span>'
                                     + '<input type="range" id="time-scrub" min="' + (tMin*1000).toFixed(0) + '" max="' + (tMax*1000).toFixed(0) + '" value="0" step="10"'
-                                    + ' style="flex:1;min-width:0;accent-color:#cc66ff;">'
-                                    + '<span id="time-scrub-label" style="font-size:10px;color:#cc66ff;flex:none;min-width:50px;text-align:right;"></span>'
+                                    + ' style="flex:1;min-width:0;accent-color:var(--scrub);">'
+                                    + '<span id="time-scrub-label" style="font-size:10px;color:var(--scrub);flex:none;min-width:50px;text-align:right;"></span>'
                                     + '</div>';
                             })() +
-                            (qIssues.length ? '<div class="ctrl-row" style="font-size:10px;color:#ffcf5c;">⚠ '
+                            (qIssues.length ? '<div class="ctrl-row" style="font-size:10px;color:var(--yellow);">⚠ '
                                 + qIssues.join(' · ') + '</div>' : '') +
-                            '<div class="ctrl-row" style="font-size:10px;color:#888;">' +
+                            '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">' +
                             '<span style="color:#ff6622;">●</span> LaunchPoint <span style="color:#00ccff;">┄</span> 速度向量 ' +
                             '<span style="color:#00ff00;">—</span> 弹道弦 <span style="color:#ff2222;">●</span> 弹着点 ' +
                             '<span style="color:#ffcc00;">●</span> 服务器终点 ' +
                             '<span style="color:#cc66ff;">●</span> 炮闩(发射起点) <span style="color:#fff;">┄</span> 偏差线</div>' +
-                            '<div class="ctrl-row" style="font-size:10px;color:#888;">' +
+                            '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">' +
                             '<span style="color:#33ff66;">↑</span>履带朝向 <span style="color:#00ccff;">↑</span>位移方向 ' +
                             '<span style="color:#ff6622;">↑</span>倒车(橙) <span style="color:#ffdd33;">↑</span>转向(黄) ' +
                             '<span style="color:#00ccff;">—</span>tick路径(3D)</div>' +
-                            '<div class="ctrl-row" style="font-size:10px;color:#888;">' +
+                            '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">' +
                             '<span style="color:#00ffcc;">●</span>基准点·受击(type10锚) ' +
                             '<span style="color:#00aaff;">●</span>基准点·射手(type10锚)</div>' +
                             '<div class="ctrl-row"><label style="font-size:11px;cursor:pointer;">' +
                             '<input type="checkbox" id="move-toggle" checked> 移动方向标注</label>' +
-                            '<span id="move-err" style="font-size:10px;color:#8ab4ff;margin-left:8px;"></span></div>'; }
+                            '<span id="move-err" style="font-size:10px;color:var(--blue);margin-left:8px;"></span></div>'; }
                         const mt2 = document.getElementById('move-toggle');
                         if (mt2) mt2.onchange = function() {
                             if (window.__moveAnno) window.__moveAnno.visible = this.checked;
@@ -3450,8 +3450,8 @@ export function initTankViewer() {
             if (st) {
                 // 世界模式调试关闭时该面板被收纳——错误必须强制可见
                 st.style.display = 'block';
-                st.innerHTML = '<div class="ctrl-row" style="color:#ff5555;"><b>射击复现错误</b></div>' +
-                    '<div class="ctrl-row" style="color:#ff5555;font-size:11px;">' + msg + '</div>';
+                st.innerHTML = '<div class="ctrl-row" style="color:var(--red);"><b>射击复现错误</b></div>' +
+                    '<div class="ctrl-row" style="color:var(--red);font-size:11px;">' + msg + '</div>';
             }
         }
 
@@ -3568,14 +3568,14 @@ export function initTankViewer() {
                         // 浮动中性提示即可，不覆盖左下 World View 面板（tick 选择器在里面）；
                         // 切到命中时刻附近的 tick 会自动被真实判定替换。
                         const div = document.getElementById('traj-info');
-                        div.innerHTML = '<div style="background:rgba(12,14,22,0.97);border-radius:10px;'
-                            + 'border-left:4px solid #ffcf5c;padding:10px 16px;font-size:13px;color:#ffcf5c;'
+                        div.innerHTML = '<div style="background:var(--tooltip-bg);border-radius:10px;'
+                            + 'border-left:4px solid #ffcf5c;padding:10px 16px;font-size:13px;color:var(--yellow);'
                             + 'white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">'
                             + '当前 tick 位姿与弹道弦不相交（命中前采样，坦克未到命中点）— 切换 tick 查看命中判定</div>';
                         trajInfoPos = controls.target.clone();
                         // 对比面板同步置中性：否则残留上一次判定的"✓ 一致/✗ 不一致"误导
                         const cmpEl = document.getElementById('world-pen-cmp');
-                        if (cmpEl) cmpEl.innerHTML = '<span style="color:#888;">— 当前位姿弹道弦未命中装甲，无判定</span>';
+                        if (cmpEl) cmpEl.innerHTML = '<span style="color:var(--muted);">— 当前位姿弹道弦未命中装甲，无判定</span>';
                     } else {
                         showShotError('服务器判定命中但射线未命中任何装甲板——弹道/模型几何错位');
                     }
@@ -3855,7 +3855,7 @@ export function initTankViewer() {
             trajInfoPos = lastPt.clone();
             const div = document.getElementById('traj-info');
             const colorHex = '#' + color.toString(16).padStart(6, '0');
-            let html = `<div style="background:rgba(12,14,22,0.97);border-radius:10px;border-left:4px solid ${colorHex};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
+            let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${colorHex};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
             html += `<div style="font-size:18px;font-weight:bold;color:${colorHex};margin-bottom:4px;">${result}</div>`;
             const dmgLine = (() => {
                 const hp = (typeof dmgVal === 'number') ? dmgVal : 0;
@@ -3867,20 +3867,20 @@ export function initTankViewer() {
             })();
             const decayedPen = layers.length && layers[0].remainBefore != null ? layers[0].remainBefore : null;
             const distPart = (typeof distVal === 'number' && distVal > 0)
-                ? ` · <span style="color:#9fc3e8;">Dist ${distVal.toFixed(0)}m</span>` + (decayedPen != null && Math.abs(decayedPen - penVal) > 0.5 ? ` · Pen@${distVal.toFixed(0)}m <span style="color:#FFD29B;">${decayedPen.toFixed(1)}</span>` : '')
+                ? ` · <span style="color:var(--blue);">Dist ${distVal.toFixed(0)}m</span>` + (decayedPen != null && Math.abs(decayedPen - penVal) > 0.5 ? ` · Pen@${distVal.toFixed(0)}m <span style="color:var(--accent-3);">${decayedPen.toFixed(1)}</span>` : '')
                 : '';
-            html += `<div style="font-size:13px;color:#8ab;margin-bottom:8px;">Eff ${totalEff.toFixed(0)}mm · Pen ${penVal}mm${distPart} · Remain ${Math.max(0, (decayedPen??penVal) - totalEff).toFixed(0)}mm · ${layers.length} layers${dmgLine ? ' · <span style="color:#FFB74D;">' + dmgLine + '</span>' : ''}</div>`;
-            html += `<div style="border-top:1px solid rgba(255,255,255,0.1);margin-bottom:6px;"></div>`;
+            html += `<div style="font-size:13px;color:var(--muted);margin-bottom:8px;">Eff ${totalEff.toFixed(0)}mm · Pen ${penVal}mm${distPart} · Remain ${Math.max(0, (decayedPen??penVal) - totalEff).toFixed(0)}mm · ${layers.length} layers${dmgLine ? ' · <span style="color:var(--accent-2);">' + dmgLine + '</span>' : ''}</div>`;
+            html += `<div style="border-top:1px solid var(--border);margin-bottom:6px;"></div>`;
             for (let i = 0; i < layers.length; i++) {
                 const l = layers[i];
-                const pc = l.penetrated ? '#5fbf64' : (l.ricochet ? '#ff9c40' : '#e85050');
+                const pc = l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)');
                 const remain = l.penetrated ? (l.remainBefore - l.eff).toFixed(0) : 'BLOCKED';
                 // 厚度去尾差：整数显示 150，小数保留一位 62.4
                 const th = Number(l.thickness);
                 const thStr = isFinite(th) ? (Number.isInteger(Math.round(th * 10) / 10) ? String(Math.round(th)) : (Math.round(th * 10) / 10).toFixed(1)) : l.thickness;
                 html += `<div style="font-size:13px;line-height:20px;color:${pc};">`;
-                html += `<span style="color:${pc};">●</span> <span style="color:#ddd;">${l.name}</span>`;
-                html += `<span style="color:#888;margin-left:16px;">${thStr}mm / ${l.eff.toFixed(0)}eff / pen ${remain}</span>`;
+                html += `<span style="color:${pc};">●</span> <span style="color:var(--txt);">${l.name}</span>`;
+                html += `<span style="color:var(--muted);margin-left:16px;">${thStr}mm / ${l.eff.toFixed(0)}eff / pen ${remain}</span>`;
                 html += `</div>`;
             }
             html += `</div>`;
