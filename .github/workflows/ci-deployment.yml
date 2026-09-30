@@ -91,6 +91,8 @@ jobs:
           KC_ADMIN_PASSWORD: ci
           WG_APPLICATION_ID: ci
           KEYCLOAK_ADMIN_CLIENT_SECRET: ci
+          # Yecao-only fixture: the predeployed ai-service owns AI provider config.
+          # TX renders no AI_* variable (see the TX Compose render below).
           AI_API_KEY: ci
           GRAFANA_ADMIN_USER: ci
           GRAFANA_ADMIN_PASSWORD: ci
@@ -117,7 +119,6 @@ jobs:
           export YECAO_MINIO_CONTROL_API_ACCESS_KEY=ci-minio-key
           export YECAO_MINIO_CONTROL_API_SECRET_KEY=ci-minio-secret
           export KEYCLOAK_ADMIN_CLIENT_SECRET=ci-kc-client
-          export AI_API_KEY=ci-ai
           docker compose -p deploy -f deploy/tx/docker-compose.yml config --format json > /tmp/tx-compose.json
           KC_POSTGRES_ADMIN_USER=ci-keycloak-admin KC_POSTGRES_ADMIN_PASSWORD=ci-keycloak-password \
             docker compose -p deploy -f deploy/tx/keycloak-postgres.compose.yml config --format json > /tmp/keycloak-postgres-compose.json

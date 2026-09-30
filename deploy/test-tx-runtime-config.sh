@@ -43,16 +43,89 @@ esac
 DOCKER
 chmod 700 "$WORK/bin/ip" "$WORK/bin/docker"
 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
-  WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \
-  TX_RUNTIME_ROOT="$WORK/host" WOTB_DEPLOY_SERVICE=frontend WOTB_DEPLOY_CONFIG_SHA="$SHA" \
-  WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 FAKE_DOCKER_LOG="$WORK/docker.log" \
-  bash "$WORK/incoming/deploy/tx/deploy.sh" >/dev/null
+run_frontend() {
+  env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
+    WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \
+    TX_RUNTIME_ROOT="$WORK/host" WOTB_DEPLOY_SERVICE=frontend WOTB_DEPLOY_CONFIG_SHA="$SHA" \
+    WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 "$@" \
+    bash "$WORK/incoming/deploy/tx/deploy.sh"
+}
+run_frontend FAKE_DOCKER_LOG="$WORK/docker.log" >/dev/null
 grep -q '^pull wotb-frontend$' "$WORK/docker.log"
 grep -q '^up -d --no-deps --force-recreate wotb-frontend$' "$WORK/docker.log"
 ! grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/docker.log"
 grep -Fq 'wotbtools-frontend:latest' "$WORK/host/deploy/frontend.compose.yml"
 [ ! -e "$WORK/host/production-release.json" ]
+
+# The live TX edge is this promoted template: Caddy terminates TLS and proxies the
+# whole wotbtools.com site to wotb-frontend:80, where the nginx template entrypoint
+# renders it to /etc/nginx/conf.d/default.conf. /api/ai/** must therefore be a
+# more-specific ^~ prefix (ahead of the generic /api/ location) that proxies to the
+# Yecao ai-service without rewriting the path and keeps the SSE contract intact.
+TEMPLATE="$WORK/host/deploy/nginx/frontend.conf.template"
+AI_ROUTE="$WORK/ai-route.conf"
+awk '/^    location \^~ \/api\/ai\/ \{/{inside=1} inside{print} inside&&/^    \}$/{exit}' \
+  "$TEMPLATE" > "$AI_ROUTE"
+grep -Fq 'location ^~ /api/ai/ {' "$AI_ROUTE" \
+  || { echo 'FAIL: the staged TX template has no /api/ai/ route' >&2; exit 1; }
+if grep -Fq 'rewrite ' "$AI_ROUTE"; then
+  echo 'FAIL: the AI route must not rewrite the /api/ai/ path' >&2
+  exit 1
+fi
+# No path rewrite: the public path and the ai-service controller path are both /api/ai/...
+grep -Fq 'proxy_pass ${AI_UPSTREAM};' "$AI_ROUTE" \
+  || { echo 'FAIL: the AI route must proxy ${AI_UPSTREAM} with no URI suffix' >&2; exit 1; }
+for setting in \
+  'proxy_http_version 1.1;' \
+  'proxy_set_header Connection "";' \
+  'proxy_buffering off;' \
+  'add_header X-Accel-Buffering no always;' \
+  'proxy_read_timeout 1120s;' \
+  'proxy_send_timeout 1120s;' \
+  'proxy_set_header Host $host;' \
+  'proxy_set_header X-Real-IP $remote_addr;' \
+  'proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' \
+  'proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;' \
+  'proxy_set_header X-Request-ID $http_x_request_id;' \
+  'proxy_set_header Authorization $http_authorization;'; do
+  grep -Fq "$setting" "$AI_ROUTE" \
+    || { echo "FAIL: the AI route is missing: $setting" >&2; exit 1; }
+done
+# ^~ already outranks a plain prefix, but the route must also be declared first so the
+# boundary stays obvious to a reader.
+ai_line="$(grep -n 'location ^~ /api/ai/ {' "$TEMPLATE" | head -n1 | cut -d: -f1)"
+api_line="$(grep -n '^    location /api/ {' "$TEMPLATE" | head -n1 | cut -d: -f1)"
+[ "$ai_line" -lt "$api_line" ] \
+  || { echo 'FAIL: the AI route must precede the generic /api/ route' >&2; exit 1; }
+# The generic route keeps its TX business runtime target and is never repointed.
+grep -Fq 'proxy_pass ${BACKEND_UPSTREAM}/api/;' "$TEMPLATE" \
+  || { echo 'FAIL: the generic /api/ route must stay on the TX business runtime' >&2; exit 1; }
+
+# Fail closed: a wrong AI upstream (the TX business runtime, a public host, another
+# port) or a staged template that drops / rewrites the AI route must stop the deploy
+# before the live frontend is recreated.
+if run_frontend TX_AI_UPSTREAM=http://business-api:8087 FAKE_DOCKER_LOG="$WORK/frontend-ai-upstream.log" \
+  >/dev/null 2>&1; then
+  echo 'TX deployment accepted a non-ai-service AI upstream' >&2
+  exit 1
+fi
+! grep -q '^up ' "$WORK/frontend-ai-upstream.log" 2>/dev/null
+STAGED_TEMPLATE="$WORK/incoming/deploy/tx/nginx/frontend.conf.template"
+cp "$STAGED_TEMPLATE" "$WORK/frontend.conf.template.bak"
+sed -i '\#^    location ^~ /api/ai/ {#d' "$STAGED_TEMPLATE"
+if run_frontend FAKE_DOCKER_LOG="$WORK/frontend-ai-route-missing.log" >/dev/null 2>&1; then
+  echo 'TX deployment accepted a template without the AI route' >&2
+  exit 1
+fi
+! grep -q '^up ' "$WORK/frontend-ai-route-missing.log" 2>/dev/null
+cp "$WORK/frontend.conf.template.bak" "$STAGED_TEMPLATE"
+sed -i 's#proxy_pass \${AI_UPSTREAM};#proxy_pass \${AI_UPSTREAM}/api/ai/;#' "$STAGED_TEMPLATE"
+if run_frontend FAKE_DOCKER_LOG="$WORK/frontend-ai-rewrite.log" >/dev/null 2>&1; then
+  echo 'TX deployment accepted an AI route that rewrites /api/ai/' >&2
+  exit 1
+fi
+! grep -q '^up ' "$WORK/frontend-ai-rewrite.log" 2>/dev/null
+cp "$WORK/frontend.conf.template.bak" "$STAGED_TEMPLATE"
 env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \
   TX_RUNTIME_ROOT="$WORK/host" WOTB_DEPLOY_SERVICE=caddy WOTB_DEPLOY_CONFIG_SHA="$SHA" \

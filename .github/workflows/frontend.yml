@@ -15,6 +15,7 @@ on:
       - docs/architecture/TECHNICAL_EVOLUTION.md
       - docs/WotBTools_League_Rating_V6.md
       - deploy/nginx/nginx.conf
+      - deploy/tx/nginx/**
       - deploy/check-latest-main.sh
       - deploy/tx/frontend.compose.yml
       - deploy/tx/deploy.sh
@@ -39,6 +40,7 @@ env:
     docs/architecture/TECHNICAL_EVOLUTION.md
     docs/WotBTools_League_Rating_V6.md
     deploy/nginx/nginx.conf
+    deploy/tx/nginx/**
     deploy/check-latest-main.sh
     deploy/tx/frontend.compose.yml
     deploy/tx/deploy.sh
