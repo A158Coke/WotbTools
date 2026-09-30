@@ -10,7 +10,7 @@
 - `frontend/src/composables/useProcessingJob.ts` 持有 Processing Job 的上传、single-flight、轮询、source-ready、取消与 Dataset recovery lifecycle；它只消费 session refs。
 - `frontend/src/composables/useReplay.ts` 是 compatibility facade/orchestrator，组合 session、Processing 与 Export，不再持有 Processing lifecycle 闭包。
 - `frontend/src/composables/useExportJob.ts` 持有 Export Job 的创建、轮询、取消和下载 lifecycle；它只消费 session 的 READY `processingJobId`。
-- `frontend/src/composables/useCapabilityReplay.js` 为 AI 与 Playback 各自持有 capability dataset 状态；它们消费 Workspace 的 authoritative dataset，不复制基础 selection，也不互相 handoff 业务状态。
+- `frontend/src/composables/useCapabilityReplay.js` 当前仅为 Playback 持有 capability dataset 状态；AI 复盘维护期间不创建 AI dataset 状态。
 - `frontend/src/app/viewRegistry.js` 将 `replay`、`ai-review`、`battle-playback` URL 映射到同一个 `ReplayWorkspace`，由 `initialCapability` 决定初始 tab；`ViewHost.vue` 用 `KeepAlive` 保留工作台实例。
 - `frontend/src/app/router.js` 是历史与深链 owner。页面组件通过注入的 `navigate` 改变 URL，不直接操作浏览器 history。
 
@@ -18,7 +18,7 @@
 
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision`、`sourceId` 与 Processing 状态作为唯一 identity。
 - Source panel 的 selector 只负责展示 `battleOptions` 和发出 `select-battle`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。
-- AI 与 Playback 共享 replay/source/processing dataset identity，但各自错误域和 dataset ref 独立；切换 capability 不应重传或重建基础 Processing Job。
+- AI 复盘 tab 与深链显示维护提示，不挂载 AI 面板、不准备 AI dataset，也不要求登录；Playback 仍消费 Workspace 的 authoritative dataset。切换 capability 不应重传或重建基础 Processing Job。
 - Replay Workspace 的登录门禁、Dataset-only 交接和 AI/Playback 详细接口以以下文档为准，不在本索引重复维护：
   - [`docs/architecture/ai-review.md`](../architecture/ai-review.md)
   - [`docs/features/team-ai-review.md`](../features/team-ai-review.md)
@@ -29,23 +29,23 @@
 
 ## 登录门禁与 Processing 授权
 
-Authentication 是 Replay Workspace 的**真实 UI gate**，不是 mount 时的 side effect：
+Authentication 是数据解析与战局回放的**真实 UI gate**，不是 mount 时的 side effect。AI 复盘维护页优先显示，不经过登录门禁：
 
 | 状态 | 渲染 |
 |---|---|
 | auth init 未完成（`idle` / `initializing`） | `data-testid="ws-auth-loading"`（检查登录态） |
 | init 失败或 watchdog 超时（`failed`） | `data-testid="ws-auth-failed"` + 重新检查 `data-testid="ws-auth-retry"` / 直接登录 `data-testid="ws-login-recovery"` |
 | init 完成且未登录（`unauthenticated`） | `data-testid="ws-auth-required"` + 登录按钮 `data-testid="ws-login"` |
-| 已登录 | 完整工作台（Source panel / FileUploader / Processing 面板 / data·AI·Playback 面板 / Export 卡片 / 确认弹窗） |
+| 已登录 | 完整工作台（Source panel / FileUploader / Processing 面板 / data·Playback 面板 / Export 卡片 / 确认弹窗） |
 
 - header 与 capability tabs 在四种状态都渲染：它们既是导航入口，也是「登录失败/取消后重新发起」的
-  重试入口；`setCapability()` 未登录时发起 login，不再静默 return。
-- 未登录时 `ReplaySourcePanel`、`FileUploader`、`ReplayProcessingPanel`、`ReplayPage`、AI / Playback
+  重试入口；`setCapability()` 未登录时进入 data/playback 会发起 login，进入 AI 维护页不会发起 login。
+- 未登录时 `ReplaySourcePanel`、`FileUploader`、`ReplayProcessingPanel`、`ReplayPage`、Playback
   面板、`ReplayTaskCard` 与 `RemoveConfirmModal` 全部不渲染——未登录无法触发上传或解析。
 - `useAuth.login(view)` 只对「同一个进行中的 redirect」去重：`loginInFlight` 是短生命周期 ref，在
   `finally` 释放；不存在 component-lifetime 一次性锁，因此取消/失败后 tabs、登录按钮与 UserMenu
   都能重新发起新的 login transaction。
-- 未登录 mount 仍自动发起一次 login（保留既有 UX），失败或取消后停留在 `ws-auth-required` 可重试状态。
+- 未登录 mount 到 data/playback 时仍自动发起一次 login（保留既有 UX），失败或取消后停留在 `ws-auth-required` 可重试状态；直接进入 AI 维护页不自动登录。
 - Android pending 字节通过固定同源 HTTPS Native resource 读取；header 校验 pending identity，响应不缓存。fetch/blob 失败复用 Replay 错误区与重试，不启动 Job、不 ACK。
 - Android pending replay 只在 `authInitState === 'authenticated' && authenticated` 时消费；未登录或 init 失败期间 Native pending 原样保留
   （见 [`docs/android/replay-intent.md`](../android/replay-intent.md)）。

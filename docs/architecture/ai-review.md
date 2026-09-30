@@ -1,5 +1,7 @@
 # AI Review 架构（随机战双 Call / 团队复盘）
 
+> 前端状态：迁移 AI 后端至野草云独立服务期间，AI 复盘页面暂时显示“维护中”，不启动分析。现有后端接口和下文的后端契约未在本次前端调整中改变。
+
 ## Team AI Review v0.6：推理顺序与因果边界
 
 v0.6 是 prompt 层的战术推理深度升级，保持 v0.5 `TeamAiReviewResult`、SSE/API、
