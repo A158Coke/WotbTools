@@ -762,6 +762,19 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             } catch (IllegalArgumentException malformedBlock) {
                 continue;
             }
+            boolean validFields = true;
+            for (final int field : List.of(1, 2, 3, 4)) {
+                final List<Object> values = fields.get(field);
+                if (values != null && (values.size() != 1
+                        || !(values.getFirst() instanceof Long value)
+                        || value < 0 || value > Integer.MAX_VALUE)) {
+                    validFields = false;
+                    break;
+                }
+            }
+            if (!validFields) {
+                continue;
+            }
             final Long rawField1 = optionalLong(fields, 1);
             final Long rawField2 = optionalLong(fields, 2);
             final Long progress = optionalLong(fields, 3);

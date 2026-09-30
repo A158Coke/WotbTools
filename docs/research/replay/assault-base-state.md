@@ -141,10 +141,9 @@ team = 1 (raw scene metadata; semantic UNKNOWN)
 SC2 uses X/Y as the map plane and Z as elevation. Replay Type10 uses X/Z as the
 map plane and Y as elevation, so SC2 `(x,y)` maps directly to playback `(x,z)`.
 
-The controlled recorder sits about 19.7 m from the control-point center while
-capture progress continues. The frontend currently uses a 20 m presentation
-fallback only when the scene omits `radius`; that fallback is not promoted as a
-protocol or client-resource fact.
+The frontend uses a 20 m presentation fallback only when the scene omits
+`radius`. This display policy is not inferred from vehicle distance and is not
+promoted as a protocol or client-resource fact.
 
 The SC2 `controlpoint.team` field must **not** be documented as "defending team":
 in this controlled sample it is 1 while team 1 is the user-confirmed attacking and
@@ -176,7 +175,7 @@ controlpoint.team attacker/defender meaning  UNKNOWN
 Production support must retain tests for:
 
 1. wrapper8/root8 decoding of progress value 100;
-2. canonical initialization/default progress 0;
+2. explicit wire progress 0 is retained; absent field3 remains raw-only;
 3. canonical progress sequence accepting 100;
 4. transport `baseId=BASE` and `captureProgress<=100`;
 5. frontend single-base rendering at 100;

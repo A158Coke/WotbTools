@@ -892,13 +892,16 @@ export interface components {
         };
         BaseStateTransition: {
             timeSec: number;
-            /** @enum {string} */
-            /** @description Supremacy uses A-D; Assault single-base uses BASE. */
+            /**
+             * @description Supremacy uses A-D; Assault single-base uses BASE.
+             * @enum {string}
+             */
             baseId: "A" | "B" | "C" | "D" | "BASE";
             /** @enum {integer|null} */
             ownerTeam: 1 | 2 | null;
             /** @enum {integer|null} */
             capturingTeam: 1 | 2 | null;
+            /** @description Supremacy canonical states remain 0-99; Assault BASE may reach protocol value 100. */
             captureProgress: number | null;
         };
         ApiError: {

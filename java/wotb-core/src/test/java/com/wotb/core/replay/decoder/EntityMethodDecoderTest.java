@@ -322,6 +322,38 @@ class EntityMethodDecoderTest {
     }
 
     @Test
+    void assaultDecoderRejectsInvalidProgressAndMalformedScalarShapes() {
+        context.entityClassRegistry().markAvatar(0);
+        final List<byte[]> children = List.of(
+                new byte[]{0x08, 0x02, 0x10, 0x01, 0x18, 0x65},
+                new byte[]{0x08, 0x02, 0x10, 0x01, 0x18, (byte) 0x80},
+                new byte[]{0x08, 0x02, 0x10, 0x01, 0x1a, 0x00},
+                new byte[]{0x08, 0x02, 0x10, 0x01, 0x18, 0x01, 0x18, 0x02},
+                new byte[]{0x08, (byte) 0x82, (byte) 0x80, (byte) 0x80, (byte) 0x80, 0x10,
+                        0x10, 0x01, 0x18, 0x01});
+        for (final byte[] child : children) {
+            final ReplayDecodeResult result = decoder.decode(context,
+                    rawPacket48(EntityMethodDecoder.WRAPPER_ASSAULT_BASE, fieldDelimited(8, child)));
+            assertTrue(result.events().stream().noneMatch(RawAssaultBaseUpdate.class::isInstance));
+        }
+    }
+
+    @Test
+    void assaultDecoderAcceptsExplicitZeroAndOneButRejectsWrongRoot() {
+        context.entityClassRegistry().markAvatar(0);
+        for (final byte progress : new byte[]{0, 1}) {
+            final byte[] child = new byte[]{0x08, 0x02, 0x10, 0x01, 0x18, progress};
+            final ReplayDecodeResult result = decoder.decode(context,
+                    rawPacket48(EntityMethodDecoder.WRAPPER_ASSAULT_BASE, fieldDelimited(8, child)));
+            assertEquals((int) progress, assertInstanceOf(RawAssaultBaseUpdate.class,
+                    result.events().getFirst()).captureProgress());
+            final ReplayDecodeResult wrongRoot = decoder.decode(context,
+                    rawPacket48(EntityMethodDecoder.WRAPPER_ASSAULT_BASE, fieldDelimited(11, child)));
+            assertTrue(wrongRoot.events().stream().noneMatch(RawAssaultBaseUpdate.class::isInstance));
+        }
+    }
+
+    @Test
     void updateArena2Wrapper12DecodesAuthoritativeBaseStateFields() {
         context.entityClassRegistry().markAvatar(0);
         // wrapper12 root field11: base B (zero-based index 1), capturing team 1, 3% progress.

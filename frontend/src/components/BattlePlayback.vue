@@ -1923,11 +1923,13 @@ const basesAt = computed(() => {
   const assaultState = states.get('BASE')
   if (assaultState) {
     const geometry = mapBases[pbOverview.value?.mapCode]?.assault || []
-    return geometry.slice(0, 1).map((base) => ({
+    // Ambiguous geometry cannot select an objective; retain the canonical HUD fallback.
+    if (geometry.length !== 1) return []
+    return geometry.map((base) => ({
       ...base,
       baseId: 'BASE',
       // 部分 client scene 未声明 controlpoint radius。20m 仅是 presentation fallback，
-      // 不进入 protocol/canonical truth；当前 Neptune controlled sample 在约 19.7m 处持续占点。
+      // 不进入 protocol/canonical truth，也不根据车辆距离推导半径。
       radius: base.radius ?? ASSAULT_BASE_RADIUS_FALLBACK_M,
       status: baseStatus(assaultState),
       progress: assaultState.captureProgress ?? null,

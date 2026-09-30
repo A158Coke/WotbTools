@@ -27,7 +27,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from collections import Counter
 import json
 import pathlib
 import re
@@ -40,7 +39,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from wotb_sc2 import (  # noqa: E402
     Sc2ParseError,
     decode_dvpl,
-    entity_labels,
     entity_position,
     entity_properties,
     read_sc2,
@@ -48,6 +46,9 @@ from wotb_sc2 import (  # noqa: E402
 )
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "map-semanticizer"))
+from map_semanticizer import detect_variant, entity_labels, matches_variant  # noqa: E402
+
 SEMANTICS_DIR = REPO / "common" / "map-semantics"
 MAP_IMAGES = REPO / "frontend" / "src" / "data" / "mapImages.js"
 OUTPUT = REPO / "frontend" / "src" / "data" / "mapBases.js"
@@ -105,19 +106,11 @@ def capture_points(raw: bytes) -> Iterator[tuple[str, dict[str, Any], tuple[floa
     # active-variant selection contract as map-semanticizer; otherwise mutually
     # exclusive control points leak into one generated map and Assault appears to
     # have several bases (Neptune 11.20 controlled sample exposed this).
-    variant_counts: Counter[str] = Counter()
-    for entity in entities:
-        properties = entity_properties(entity)
-        if properties.get("type") in ("spawnpoint", "controlpoint", "strategicpoint"):
-            variant_counts.update(entity_labels(entity))
-    variant = variant_counts.most_common(1)[0][0] if variant_counts else None
+    variant = detect_variant(entities)
 
     for entity in entities:
         labels = entity_labels(entity)
-        if variant is None:
-            if labels:
-                continue
-        elif variant not in labels:
+        if not matches_variant(labels, variant):
             continue
         properties = entity_properties(entity)
         point_type = properties.get("type")
@@ -149,12 +142,14 @@ def extract_map(raw: bytes, map_code: str) -> dict[str, Any]:
                 "radius": round4(radius) if radius is not None else None,
             })
         else:
-            assault.append({
+            base = {
                 "x": round4(x),
                 "y": round4(y),
                 "radius": round4(radius) if radius is not None else None,
                 "team": properties.get("team"),
-            })
+            }
+            if base not in assault:
+                assault.append(base)
 
     supremacy.sort(key=lambda base: base["baseId"])
     seen = [base["baseId"] for base in supremacy]

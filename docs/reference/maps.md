@@ -83,7 +83,8 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 
 - 客户端场景可能同时携带多个带 label 的 battle-layout variant。基地生成器与
   map-semanticizer 共用“battle point label 众数”选择 active variant，避免把互斥 controlpoint
-  合并成同一局的多个基地。仍存在无 label 的旧场景时，按原始场景事实 fail-closed。
+  合并成同一局的多个基地，并去重相同 controlpoint。无 label 的旧场景保留原始几何；
+  若输出仍不是唯一 controlpoint，2D 不任意选第一个，只显示 canonical HUD 状态。
 - `controlpoint.team` 的攻/守含义未闭合：11.20 Neptune controlled Assault 样本中该值为 1，
   同时 team 1 是用户确认的进攻/占领方，因此不得再把它写死解释为“守方”。
 - 部分 `controlpoint` 没有 `radius`。Playback 当前仅在 presentation 层使用 20m fallback；

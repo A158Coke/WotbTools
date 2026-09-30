@@ -137,6 +137,14 @@ describe('HTTP contract runtime validator', () => {
     expect(validateBattlePlaybackDataset(bad).data).toBeNull()
   })
 
+  it('accepts Assault BASE at 100 and rejects progress outside the wire domain', () => {
+    const state = { timeSec: 0, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 100 }
+    expect(validateBattlePlaybackDataset({ ...dataset(), baseStates: [state] }).data?.baseStates).toEqual([state])
+    for (const captureProgress of [-1, 101]) {
+      expect(validateBattlePlaybackDataset({ ...dataset(), baseStates: [{ ...state, captureProgress }] }).data).toBeNull()
+    }
+  })
+
   it('missing an unrelated required field still fails validation', () => {
     const missing = { ...dataset() } as Record<string, unknown>
     delete missing.durationSec

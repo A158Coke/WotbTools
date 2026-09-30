@@ -34,6 +34,10 @@ vi.mock('../data/mapImages', () => ({
       height: 769,
       coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
     },
+    neptune: {
+      src: 'neptune.png', width: 766, height: 769,
+      coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
+    },
     // 有底图但 mapBases 未收录几何——新地图上线到基地坐标补齐之间的真实状态。
     map_without_base_geometry: {
       src: 'no-bases.webp',
@@ -121,12 +125,15 @@ describe('Supremacy 基地 overlay', () => {
     const dataset = {
       ...makePlaybackV2({
         baseStates: [
-          { timeSec: 0, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 100 },
+          { timeSec: 0, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 0 },
+          { timeSec: 10, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 50 },
+          { timeSec: 20, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 100 },
         ],
       }),
       mapCode: 'neptune',
     }
-    const wrapper = await mountPlayback(overview, null, dataset)
+    const wrapper = await mountPlayback(overview, 20, dataset)
+    await flushPromises()
 
     expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(1)
     expect(wrapper.find('[data-test="pb-base-BASE"]').text()).toContain('BASE')
@@ -135,6 +142,13 @@ describe('Supremacy 基地 overlay', () => {
     expect(fill.classes()).toContain('pb-capture-unknown')
     const rect = wrapper.find('clipPath rect')
     expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')), 3)
+    await wrapper.setProps({ seekTo: 10 })
+    await flushPromises()
+    expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')) * 0.5, 3)
+    await wrapper.setProps({ seekTo: 0 })
+    await flushPromises()
+    expect(Number(rect.attributes('height'))).toBe(0)
+    expect(wrapper.find('[data-test="pb-base-A"]').exists()).toBe(false)
   })
 
   // 非争霸战（baseStates 为空，或旧 producer 未发该字段）不得靠地图几何画出基地。

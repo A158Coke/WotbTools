@@ -17,17 +17,25 @@ class AssaultBaseStateReconstructorTest {
     @Test
     void reconstructsInitializationAndFullCaptureIncludingOneHundred() {
         final List<ReplayEvent> events = List.of(
-                raw(1, 2, 1, null, null),
+                raw(1, 2, 1, 0, null),
                 raw(2, 1, 1, null, 1),
                 raw(3, 2, 1, 1, null),
                 raw(4, 2, 1, 99, null),
-                raw(5, 2, 1, 100, null));
+                raw(5, 2, 1, 100, null),
+                raw(6, 2, 1, 50, null));
 
         final List<AssaultBaseStateTransition> states =
                 AssaultBaseStateReconstructor.reconstruct(events);
 
-        assertEquals(List.of(0, 1, 99, 100),
+        assertEquals(List.of(0, 1, 99, 100, 50),
                 states.stream().map(AssaultBaseStateTransition::captureProgress).toList());
+    }
+
+    @Test
+    void missingAndInvalidProgressNeverCreateCanonicalStates() {
+        assertEquals(List.of(), AssaultBaseStateReconstructor.reconstruct(List.of(
+                raw(1, 2, 1, null, null), raw(2, 2, 1, -1, null),
+                raw(3, 2, 1, 101, null), raw(4, 2, 2, 50, null))));
     }
 
     @Test

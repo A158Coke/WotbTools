@@ -36,16 +36,14 @@ public final class AssaultBaseStateReconstructor {
                 .map(RawAssaultBaseUpdate.class::cast)
                 .filter(update -> Integer.valueOf(2).equals(update.rawField1()))
                 .filter(update -> Integer.valueOf(1).equals(update.rawField2()))
-                .filter(update -> update.captureProgress() == null
-                        || (update.captureProgress() >= 0 && update.captureProgress() <= 100))
+                .filter(update -> update.captureProgress() != null
+                        && update.captureProgress() >= 0 && update.captureProgress() <= 100)
                 .sorted(Comparator.comparingDouble(AssaultBaseStateReconstructor::rawClock)
                         .thenComparingInt(RawAssaultBaseUpdate::sequence))
                 .map(update -> new AssaultBaseStateTransition(
                         update.sequence(), update.timestamp(), update.packetType(),
                         update.confidence(),
-                        // For the kind=2 progress family, protobuf scalar absence is the
-                        // initialization/reset default 0 at the canonical message boundary.
-                        update.captureProgress() == null ? 0 : update.captureProgress()))
+                        update.captureProgress()))
                 .toList();
     }
 

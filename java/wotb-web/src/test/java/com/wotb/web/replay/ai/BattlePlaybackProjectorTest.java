@@ -128,18 +128,20 @@ class BattlePlaybackProjectorTest {
         final FrameHealth health = new FrameHealth(1000, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
                 FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH);
         final ReplayEvent base = new AssaultBaseStateTransition(
-                11, new ReplayTimestamp(10f, 10f), 8, DecodeConfidence.EXACT, 100);
-        final BattleTimeline timeline = syntheticTimeline(40,
+                11, new ReplayTimestamp(131.688f, null), 8, DecodeConfidence.EXACT, 100);
+        final BattleTimeline timeline = new BattleTimeline("neptune", 140, 9.287,
+                BattleTimelineClock.IDENTIFIED,
                 List.of(new BattleFrame(0, 0, null,
                         List.of(frameVehicleWithHealth(7, account, 1, true, health, 0)),
                         List.of(), List.of(), Map.of(), List.of())),
-                List.of(base));
+                List.of(base), List.of(), BattleTimelineValidationResult.ok(), List.of());
 
         final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(
                 battle, timeline, mapping, account);
 
         final BattlePlaybackDataset.BaseStateTransition projected = dataset.baseStates().getFirst();
         assertEquals("BASE", projected.baseId());
+        assertEquals(122.401, projected.timeSec(), 0.001);
         assertEquals(100, projected.captureProgress());
         assertNull(projected.ownerTeam());
         assertNull(projected.capturingTeam());

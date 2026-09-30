@@ -49,6 +49,8 @@ anti-future-leak 或现有 tank-marker 资产契约。
   查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新状态。前端不接触 raw protobuf update，
   不负责合并缺失字段或协议 index，也不合成进度或阵营结论。协议证据见
   `docs/research/replay/assault-base-state.md` 与 `supremacy-base-state.md`。
+  Assault state authority 是 `BattlePlaybackDataset.baseStates`；3D objective consumer
+  pending，后续直接消费同一 `BASE` timeline，不新增 wrapper8 协议解析路径。
   前端另以 canonical `positionSegments` 的 OBSERVED
   samples 派生最近 2 秒轨迹：不跨 segment/AoI gap，不使用 LAST_KNOWN，不读取未来样本，暂停
   冻结、seek 重算、倍速只改变时间推进语义。
@@ -439,4 +441,3 @@ python common/python/extract_vehicle_sizes.py --check   # CI：过期即失败
 Playback 继续使用现有俯视 hull/turret 资产，不引入 3D 坦克模型。启用 2.5D terrain relief 时，前端以当前车辆 footprint 和可靠 hull yaw 在 heightfield 上采样前/后/左/右地面高度，得到 presentation-only pitch/roll。pitch/roll 只倾斜车辆视觉层 `.pb-graphics`；HP、名称、hitbox、selected/recorder 与 collision layout 保持 screen-aligned。
 
 该姿态来自地图权威 heightfield，不从前端猜测 replay Z；无 terrain model 或无可靠 hull yaw 时保持原有平面 marker。为避免小尺寸贴图翻卡片，视觉 pitch clamp ±14°、roll clamp ±10°，并遵守 `prefers-reduced-motion`。
-
