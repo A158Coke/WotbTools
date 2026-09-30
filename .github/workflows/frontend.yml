@@ -64,6 +64,23 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
+      # 先于身份计算校验：身份含 ASSET_BASE_URL，非法值不应参与 tag 推导
+      - name: Validate production asset origin
+        env:
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$ASSET_BASE_URL" ] || { echo 'Repository variable ASSET_BASE_URL is required.' >&2; exit 1; }
+          case "$ASSET_BASE_URL" in
+            https://*) ;;
+            *) echo 'ASSET_BASE_URL must be an https:// origin.' >&2; exit 1 ;;
+          esac
+          # 空白会既破坏"烘焙进 bundle"的可验证性，又产生无效 origin
+          case "$ASSET_BASE_URL" in
+            *[[:space:]]*) echo 'ASSET_BASE_URL must not contain whitespace.' >&2; exit 1 ;;
+          esac
+          [ "${ASSET_BASE_URL%/}" = "$ASSET_BASE_URL" ] || { echo 'ASSET_BASE_URL must not end with /.' >&2; exit 1; }
       - name: Freeze current main and image identity
         id: identity
         env:
@@ -74,6 +91,7 @@ jobs:
           REF_NAME: ${{ github.ref }}
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -86,12 +104,19 @@ jobs:
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
           [ -n "$TCR_NAMESPACE" ] || { echo 'TCR_NAMESPACE is required.' >&2; exit 1; }
-          image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-frontend:sha-${SOURCE_SHA:0:12}"
+          # 镜像身份 = source SHA + ASSET_BASE_URL。资产源是**构建期输入**（Vite 把它烘焙进
+          # JS bundle），若身份只取 source SHA，则"仅改资产源 + 重跑"会命中已存在的 tag 而被
+          # 复用、跳过构建，线上仍是旧 origin，而 origin 校验只看当前变量 → CI 绿但 artifact
+          # 陈旧（provenance 不完整）。把两者折进同一个 12 位身份哈希即可保持既有
+          # `sha-<12 lowercase hex>` tag 契约（deploy/tx/publish-loaded-image-to-tcr.sh 与
+          # 其余组件共用该格式）：同源同 tag 可复用，换源即换 tag 必然重建。
+          identity="$(printf '%s\n%s' "$SOURCE_SHA" "$ASSET_BASE_URL" | sha256sum | cut -c1-12)"
+          image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-frontend:sha-$identity"
           {
             echo "commit_sha=$SOURCE_SHA"
             echo "image=$image"
             echo "repository=${image%:*}"
-            echo "tag=sha-${SOURCE_SHA:0:12}"
+            echo "tag=sha-$identity"
           } >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@v4
         with:
@@ -99,13 +124,14 @@ jobs:
           username: ${{ secrets.TCR_USERNAME }}
           password: ${{ secrets.TCR_PASSWORD }}
       - uses: imjasonh/setup-crane@v0.7
-      - name: Reuse only an existing immutable image with this source identity
+      - name: Reuse only an existing immutable image with this source + asset-origin identity
         id: immutable
         env:
           IMAGE: ${{ steps.identity.outputs.image }}
           REPOSITORY: ${{ steps.identity.outputs.repository }}
           TAG: ${{ steps.identity.outputs.tag }}
           SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -118,6 +144,9 @@ jobs:
             docker cp "$container:/usr/share/nginx/html/assets" "$temp/assets"
             grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/assets" \
               || { echo 'Existing immutable tag does not contain this source commit in the frontend bundle.' >&2; exit 1; }
+            # 身份含资产源：复用前再按 bundle 内容自证，防陈旧/手工 tag 让旧 origin 蒙混复用
+            grep -R --binary-files=text -Fq "$ASSET_BASE_URL" "$temp/assets" \
+              || { echo 'Existing immutable image was not built with the current ASSET_BASE_URL; refusing to reuse it.' >&2; exit 1; }
             digest="$(crane digest "$IMAGE")"
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
             echo "existing_digest=$digest" >> "$GITHUB_OUTPUT"
@@ -126,19 +155,6 @@ jobs:
           fi
       - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
         run: bash scripts/fetch-agent-wasm.sh
-
-      - name: Validate production asset origin
-        env:
-          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          [ -n "$ASSET_BASE_URL" ] || { echo 'Repository variable ASSET_BASE_URL is required.' >&2; exit 1; }
-          case "$ASSET_BASE_URL" in
-            https://*) ;;
-            *) echo 'ASSET_BASE_URL must be an https:// origin.' >&2; exit 1 ;;
-          esac
-          [ "${ASSET_BASE_URL%/}" = "$ASSET_BASE_URL" ] || { echo 'ASSET_BASE_URL must not end with /.' >&2; exit 1; }
 
       - uses: docker/setup-buildx-action@v4
       - name: Build and publish this frozen image
@@ -157,13 +173,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
           provenance: false
           sbom: false
-      - name: Verify registry digest and source identity
+      - name: Verify registry digest, source and asset-origin identity
         id: verify
         env:
           IMAGE: ${{ steps.identity.outputs.image }}
           SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
           EXISTING_DIGEST: ${{ steps.immutable.outputs.existing_digest }}
           BUILD_DIGEST: ${{ steps.build_image.outputs.digest }}
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -177,6 +194,10 @@ jobs:
           docker cp "$container:/usr/share/nginx/html/assets" "$temp/assets"
           grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/assets" \
             || { echo 'Published frontend bundle does not contain the frozen source commit.' >&2; exit 1; }
+          # 资产源同为构建期输入：发布产物必须真的烘焙了当前 origin，否则 artifact identity
+          # 名不副实（镜像身份含 origin，内容必须自证同一 origin）
+          grep -R --binary-files=text -Fq "$ASSET_BASE_URL" "$temp/assets" \
+            || { echo 'Published frontend bundle was not built with the current ASSET_BASE_URL.' >&2; exit 1; }
           # Agent WASM 产物存在性 smoke：3D 回放/装甲查看器/射击复现的运行前提。
           # 镜像里必须有非空的 glue JS 与 .wasm（magic 0x0061736d），缺失 = 发布不可用镜像。
           docker cp "$container:/usr/share/nginx/html/wasm" "$temp/wasm"

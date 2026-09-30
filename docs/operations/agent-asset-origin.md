@@ -61,8 +61,11 @@ assetBase()  ← 解析出的 asset origin
    必须 `https://` 开头且**不带结尾 `/`**；`frontend.yml` 的 "Validate production
    asset origin" 步骤 fail-closed 校验这两点，缺变量时 Frontend 工作流直接失败。
 
-2. **触发一次 Frontend 工作流**（origin 是构建期写进 bundle 的：只改变量不会更新
-   已部署镜像；需新 commit 或 `workflow_dispatch`）。
+2. **触发一次 Frontend 工作流**（新 commit 或 `workflow_dispatch`）。资产源是构建期输入，
+   已计入镜像身份：`identity = sha256(source SHA + ASSET_BASE_URL)[:12]`，tag 为
+   `sha-<identity>`（沿用既有 `sha-<12 hex>` 契约）。因此**只改 `ASSET_BASE_URL` 也会
+   得到新 tag、必然重建**——不会被"镜像已存在"复用而停留在旧 origin。复用检查与发布
+   验证都会按 bundle 内容自证 source SHA 与 origin 两者一致。
 
 3. 验证（见下）。变量本身只放公开 origin，**不放任何密钥**。
 
@@ -144,7 +147,9 @@ CORS 未覆盖 `http://localhost:*`，本地 dev 直连该 origin 时 GLB/JSON �
 
 - 单浏览器覆盖：`https://wotbtools.com/?assets=https://other-origin/`
 - 回到生产默认：访问 `?assets=`（显式空，清除 override）
-- 回滚：把 `ASSET_BASE_URL` 改回上一个 origin 并重建镜像
+- 回滚：把 `ASSET_BASE_URL` 改回上一个 origin 并重建镜像（原 origin 对应的旧 tag 仍在
+  仓库中，必要时可直接改回 compose 指向的 `latest` 提升源；镜像身份随 origin 变化，
+  不会出现"同 tag 不同内容"）
 
 ## 未来更换 origin
 
