@@ -137,7 +137,9 @@ jobs:
           file: docker/Dockerfile.frontend
           push: true
           tags: ${{ steps.identity.outputs.image }}
-          build-args: BUILD_COMMIT=${{ steps.identity.outputs.commit_sha }}
+          build-args: |
+            BUILD_COMMIT=${{ steps.identity.outputs.commit_sha }}
+            ASSET_BASE_URL=${{ vars.ASSET_BASE_URL }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
           provenance: false
