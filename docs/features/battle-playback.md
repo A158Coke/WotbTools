@@ -42,10 +42,14 @@ anti-future-leak 或现有 tank-marker 资产契约。
   current time、playing、倍速、选中车辆、zoom/pan、annotations 和偏好；移动端只对
   `screen.orientation.lock('landscape')` 做 best-effort 尝试，失败不阻断播放。
 - Fullscreen 几何 ownership 按 form 固定：Universal Battle HUD 在 PC / Tablet / Mobile 始终属于地图顶部，即使存在 `pb-side-slots` 也不会迁移到 gutter；side-slot 只允许复用 PC / Tablet 的非移动端 controls 空白侧边空间。camera fit 动态量取顶部 `.pb-hud` 的真实高度，并在 Mobile transient controls 可见时额外量取 `.pb-mobile-overlay-content` 作为 bottom safe inset；Mobile 本身不启用 side-slot optimization。`test:browser-layout` 用真实 Chrome 几何断言覆盖 fullscreen + side-slot / mobile bottom-overlay，禁止只靠 CSS 源码正则判断。
-- `BattlePlaybackDataset.baseStates` 是 wrapper12（UpdateArena2 root field11）经后端 sparse
-  reconstruction 投影的权威基地 transition；查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新
-  A/B/C/D 完整状态。前端不接触 raw protobuf update，不负责合并缺失字段或协议 index，也不合成
-  进度或阵营结论。前端另以 canonical `positionSegments` 的 OBSERVED
+- `BattlePlaybackDataset.baseStates` 是后端 canonical 基地 transition：Supremacy 来自
+  wrapper12/root11（`baseId=A|B|C|D`），Assault 单基地来自 wrapper8/root8
+  （`baseId=BASE`）。Assault controlled 11.20 样本证明 progress 会真实广播到 `100`；
+  当前只提升 progress 语义，`ownerTeam/capturingTeam` 保持 null，禁止从 wrapper8 field4 猜阵营。
+  查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新状态。前端不接触 raw protobuf update，
+  不负责合并缺失字段或协议 index，也不合成进度或阵营结论。协议证据见
+  `docs/research/replay/assault-base-state.md` 与 `supremacy-base-state.md`。
+  前端另以 canonical `positionSegments` 的 OBSERVED
   samples 派生最近 2 秒轨迹：不跨 segment/AoI gap，不使用 LAST_KNOWN，不读取未来样本，暂停
   冻结、seek 重算、倍速只改变时间推进语义。
 
