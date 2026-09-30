@@ -116,6 +116,27 @@ describe('Supremacy 基地 overlay', () => {
     expect(Number(clipRects[2].attributes('height'))).toBeCloseTo(diameter * 0.4, 3)
   })
 
+  it('renders the Assault single base and accepts protocol progress 100', async () => {
+    const overview = { ...makeOverview(), mapCode: 'neptune' }
+    const dataset = {
+      ...makePlaybackV2({
+        baseStates: [
+          { timeSec: 0, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 100 },
+        ],
+      }),
+      mapCode: 'neptune',
+    }
+    const wrapper = await mountPlayback(overview, null, dataset)
+
+    expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(1)
+    expect(wrapper.find('[data-test="pb-base-BASE"]').text()).toContain('BASE')
+    const fill = wrapper.find('[data-test="pb-base-fill"]')
+    expect(fill.exists()).toBe(true)
+    expect(fill.classes()).toContain('pb-capture-unknown')
+    const rect = wrapper.find('clipPath rect')
+    expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')), 3)
+  })
+
   // 非争霸战（baseStates 为空，或旧 producer 未发该字段）不得靠地图几何画出基地。
   // HUD chip 是 fallback：地图能画基地时不重复；mapBases 未收录该图时 HUD 必须仍然显示，
   // 否则新地图上线到素材补齐之间会完全看不到基地归属。
