@@ -110,6 +110,7 @@ onBeforeUnmount(() => {
             --on-accent:#1a1208; --hover-strong:#fff;
             --picker-shadow:0 16px 70px rgba(0,0,0,0.7);
             --tooltip-bg:rgba(12,14,22,0.97);
+            --scrub:#cc66ff;
             --sel-ring:rgba(255,138,61,0.4);
         }
     /* 浅色档（classic）：3D 视口本体保留游戏视觉（#canvas-container 的暗色渐变不动），
@@ -128,6 +129,7 @@ onBeforeUnmount(() => {
             --on-accent:#fff; --hover-strong:#11140f;
             --picker-shadow:0 16px 70px rgba(0,0,0,0.18);
             --tooltip-bg:rgba(255,255,255,0.97);
+            --scrub:#6d28d9;
             --sel-ring:rgba(201,118,46,0.4);
         }
     .armor-view { margin: 0; padding: 0; background: var(--bg); color: var(--txt); font-family: system-ui, sans-serif; overflow: hidden; position: relative; width: 100%; height: calc(100vh - 67px); min-height: 480px; }
