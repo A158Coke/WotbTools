@@ -498,10 +498,12 @@ Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标�
 `BattleMap.vue` 渲染，通用 HUD 由 `BattlePlaybackHud.vue` 渲染，播放控制与标注工具由
 `PlaybackControls.vue`/`AnnotationToolbar.vue` 渲染。`PlaybackTimeline.vue` 是纯 seek bar，事件列表位于
 `PlaybackSidePanel.vue` 并通过 root command 执行 seek + pause；当前车辆详情仍由
-`VehicleDetailsPanel.vue` 渲染。wrapper12 权威基地状态由后端 projector 提供 `baseStates`，前端只按当前
-回放时间查询，不从静态地图或最终结果推导。wrapper12 raw update 只在后端经过
-`SupremacyBaseStateReconstructor` 形成带 `baseId`（A/B/C/D）的完整 canonical state，前端不合并
-protobuf sparse update；坦克 marker sizing 优先使用可靠 hull metadata，model overlap 只通过有界
+`VehicleDetailsPanel.vue` 渲染。基地 runtime state 由后端 projector 统一提供 `baseStates`，前端只按当前回放时间查询，
+不从静态地图或最终结果推导。Supremacy 使用 wrapper12/root11，经
+`SupremacyBaseStateReconstructor` 形成 `baseId=A/B/C/D` 的完整 canonical state；
+Assault 单基地使用 wrapper8/root8，经 `AssaultBaseStateReconstructor` 形成
+`baseId=BASE` 的 progress transition（当前只提升已闭合的 0..100 progress 语义，阵营字段保持 unknown）。
+前端不合并 protobuf sparse update；坦克 marker sizing 优先使用可靠 hull metadata，model overlap 只通过有界
 presentation offset 软避让，canonical 坐标和命中判定语义保持一致。
 车辆状态投影与时钟推进分别由 `utils/playbackVehicleState.ts`、`utils/playbackClock.ts` 提供纯函数，
 组件只负责把 canonical V2 数据转换为展示 props/commands。
