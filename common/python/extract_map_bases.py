@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import pathlib
 import re
@@ -39,6 +40,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from wotb_sc2 import (  # noqa: E402
     Sc2ParseError,
     decode_dvpl,
+    entity_labels,
     entity_position,
     entity_properties,
     read_sc2,
@@ -97,7 +99,26 @@ class SceneSource:
 
 
 def capture_points(raw: bytes) -> Iterator[tuple[str, dict[str, Any], tuple[float, float, float]]]:
-    for entity in scene_entities(read_sc2(decode_dvpl(raw))):
+    entities = scene_entities(read_sc2(decode_dvpl(raw)))
+
+    # A map scene may contain multiple labelled battle-layout variants. Keep the same
+    # active-variant selection contract as map-semanticizer; otherwise mutually
+    # exclusive control points leak into one generated map and Assault appears to
+    # have several bases (Neptune 11.20 controlled sample exposed this).
+    variant_counts: Counter[str] = Counter()
+    for entity in entities:
+        properties = entity_properties(entity)
+        if properties.get("type") in ("spawnpoint", "controlpoint", "strategicpoint"):
+            variant_counts.update(entity_labels(entity))
+    variant = variant_counts.most_common(1)[0][0] if variant_counts else None
+
+    for entity in entities:
+        labels = entity_labels(entity)
+        if variant is None:
+            if labels:
+                continue
+        elif variant not in labels:
+            continue
         properties = entity_properties(entity)
         point_type = properties.get("type")
         if point_type not in ("strategicpoint", "controlpoint"):
