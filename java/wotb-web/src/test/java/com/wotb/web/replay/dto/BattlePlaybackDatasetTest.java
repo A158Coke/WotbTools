@@ -124,7 +124,11 @@ class BattlePlaybackDatasetTest {
 
         final JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(dataset));
         assertFieldNames(json, Set.of("durationSec", "mapCode", "friendlyTeam", "recorderAccountId",
-                "vehicles", "events", "pointsSamples", "baseStates", "limitations", "capability", "arenaBonusType"));
+                "vehicles", "events", "pointsSamples", "baseStates", "limitations", "capability", "arenaBonusType",
+                "assaultObjectivePresent"));
+        final JsonNode assaultObjectivePresent = requiredField(json, "assaultObjectivePresent");
+        assertTrue(assaultObjectivePresent.isBoolean());
+        assertFalse(assaultObjectivePresent.asBoolean());
         final JsonNode vehicles = requiredField(json, "vehicles");
         assertTrue(vehicles.isArray());
         final JsonNode serializedVehicle = vehicles.get(0);
@@ -161,6 +165,20 @@ class BattlePlaybackDatasetTest {
         assertFalse(baseStates.get(0).toString().contains("baseIndex"));
         assertFalse(baseStates.get(0).toString().contains("field5"));
         assertFalse(baseStates.get(0).toString().contains("field6"));
+    }
+
+    @Test
+    void jacksonSerializationPreservesAssaultObjectiveWithoutCaptureTransitions() throws Exception {
+        final BattlePlaybackDataset dataset = new BattlePlaybackDataset(
+                100, "malinovka", 1, 42L, List.of(), List.of(), List.of(),
+                List.of(), List.of(), Capability.FULL, 2, true);
+        final ObjectMapper objectMapper = JsonMapper.builder().build();
+        final JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(dataset));
+
+        final JsonNode assaultObjectivePresent = requiredField(json, "assaultObjectivePresent");
+        assertTrue(assaultObjectivePresent.isBoolean());
+        assertTrue(assaultObjectivePresent.asBoolean());
+        assertTrue(requiredField(json, "baseStates").isEmpty());
     }
 
     private static JsonNode requiredField(final JsonNode object, final String field) {
