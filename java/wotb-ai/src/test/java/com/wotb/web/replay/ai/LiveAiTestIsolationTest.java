@@ -94,7 +94,7 @@ class LiveAiTestIsolationTest {
         final Matcher property = Pattern.compile(
                 "<ai\\.probe\\.excludedGroups>\\s*([^<]+?)\\s*</ai\\.probe\\.excludedGroups>")
                 .matcher(pom);
-        assertTrue(property.find(), "wotb-web POM must define ai.probe.excludedGroups");
+        assertTrue(property.find(), "wotb-ai POM must define ai.probe.excludedGroups");
         final List<String> groups = List.of(property.group(1).trim().split("\\s*,\\s*"));
         assertTrue(groups.contains("ai-live"), "Default Surefire exclusions must contain ai-live");
         assertTrue(groups.contains("ai-capture-probe"),
@@ -142,16 +142,16 @@ class LiveAiTestIsolationTest {
         if (Files.isDirectory(moduleTestRoot)) {
             return moduleTestRoot;
         }
-        return moduleRoot.resolve("java/wotb-web/src/test/java");
+        return moduleRoot.resolve("java/wotb-ai/src/test/java");
     }
 
     private static Path modulePom() {
         final Path moduleRoot = Path.of(System.getProperty("user.dir"));
         final Path modulePom = moduleRoot.resolve("pom.xml");
-        if (Files.isRegularFile(modulePom) && readQuietly(modulePom).contains("<artifactId>wotb-web</artifactId>")) {
+        if (Files.isRegularFile(modulePom) && readQuietly(modulePom).contains("<artifactId>wotb-ai</artifactId>")) {
             return modulePom;
         }
-        return moduleRoot.resolve("java/wotb-web/pom.xml");
+        return moduleRoot.resolve("java/wotb-ai/pom.xml");
     }
 
     private static String readQuietly(final Path path) {
