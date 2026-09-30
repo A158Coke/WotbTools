@@ -893,7 +893,8 @@ export interface components {
         BaseStateTransition: {
             timeSec: number;
             /** @enum {string} */
-            baseId: "A" | "B" | "C" | "D";
+            /** @description Supremacy uses A-D; Assault single-base uses BASE. */
+            baseId: "A" | "B" | "C" | "D" | "BASE";
             /** @enum {integer|null} */
             ownerTeam: 1 | 2 | null;
             /** @enum {integer|null} */
