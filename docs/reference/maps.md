@@ -86,19 +86,10 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
   需要渲染攻防战基地时必须先解决这个归属问题。
 - `botspawn` 实体全部为 `performanceTestBot: true`（性能测试假车），不是战斗数据，未抽取。
 
-## HD Playback 底图验证契约
+## 2D Local / 3D Remote 资产边界
 
-- `frontend/src/assets/maps/` 是原始素材 source-of-truth / rollback；`frontend/src/assets/maps-hd/` 只存增强版本。
-- 每张 HD 图必须对应一张原图，实际 WebP 画布严格为原图 2×（宽高均 2×），不允许 crop 或 aspect-ratio drift。
-- `frontend/src/data/mapHdAssets.test.js` 校验 29/29 coverage、manifest SHA-256、实际 WebP 尺寸、`mapImages.js` HD import coverage，以及 delivery budget。
-- 单张 HD 图预算：不超过 5 MiB，且不超过对应原图 4× 文件大小；这是面向 Android/移动端与大陆链路的硬上限，不代表必须用满。
-- `geometryTransform=NONE` 只说明生成 pipeline 未显式执行 warp/crop；它**不能证明** AI restoration 没有改变局部道路边缘、建筑轮廓、岸线或掩体边界。HD 资源合并前仍需 29/29 source ↔ HD overlay/side-by-side 人工视觉 QA。
-
-### PR #256 视觉 QA 记录
-
-- 29/29 地图已逐张查看 source / HD side-by-side 与 macro-edge overlay（source=red、HD=cyan、重合=white）。
-- 未发现画布 crop/warp、主道路/建筑整体位移、岸线重绘或主要地形轮廓漂移。
-- diagnostic macro-edge F1 最低为 Faust `0.9312`、Desert Sands `0.9318`；人工对照未见战术拓扑变化，主要差异为 AI restoration 带来的纹理/锐化边缘密度变化。
-- 当前 29 张全部满足 deterministic delivery budget；最大单图 Canyon `4,666,308 B`，最大增长 Faust `3.748×`。
-- macro-edge 指标仅用于发现可疑图，不替代人工视觉判断。
-
+- 2D 地图鸟瞰与战局回放直接消费 `frontend/src/assets/maps/*.webp` 的游戏客户端原图，由 `mapImages.js` 静态 import 随前端镜像发布；不依赖远端资产源。
+- 原图实际 raster 尺寸与本表一致（当前 29 张均为 2024×2024）。`mapImages.width/height` 是既有 logical frame 尺寸，与 raster 尺寸分开维护；更新图片不得改变地图坐标、车辆、基地与标注对齐。
+- `frontend/src/data/mapAssets.test.js` 校验注册表与本地原图的一一对应及实际 WebP 尺寸；真实浏览器布局回归覆盖底图加载与 overlay 对齐。
+- 3D 模型、纹理与地图资产继续由 `frontend/src/scene/assetProvider.js` 从已配置的 remote asset origin（生产 COS）读取；2D 原图不进入该 provider。
+- 原始客户端地图是唯一 2D 来源，不维护 AI 增强副本、生成 manifest 或增强 QA 工具。
