@@ -248,9 +248,7 @@ export const mapBases = {
       { baseId: "D", x: 139.5419, y: 63.0127, radius: 15.0 },
     ],
     assault: [
-      { x: -174.7717, y: 8.811, radius: 15.0, team: 1 },
       { x: 49.5339, y: 8.5291, radius: null, team: 1 },
-      { x: 56.7256, y: 8.1217, radius: null, team: 1 },
     ],
   },
   plant: {
