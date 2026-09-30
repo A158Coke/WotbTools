@@ -64,7 +64,7 @@
 | 场景实体 | 对应模式 | 每图数量 | 说明 |
 |---|---|---|---|
 | `strategicpoint` | 争霸赛 | 3–4 | `baseID` 0..3 与后端 `SupremacyBaseId.fromProtocolIndex()` 及 wire 字段 `baseStates[].baseId` 同源，直接 join，无需推断 |
-| `controlpoint` | 攻防战 / 遭遇战 | 1（按模式配置可能多份） | `team` 为守方；半径大于争霸基地。**当前已抽取但未渲染** |
+| `controlpoint` | 攻防战 / 遭遇战 | active variant 通常 1 个 | `team` 仅保留 raw scene metadata，攻/守语义未闭合；半径可能缺失。Battle Playback 已可按 runtime `baseId=BASE` 渲染单基地 |
 
 半径由场景 `radius` 声明（争霸基地 93 个里 92 个为 15 m）。坐标是世界米，与回放坐标、
 `mapImages.js` 的 `coordinateBounds` 同一坐标系，可直接落到底图上。
@@ -81,9 +81,13 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 
 ### 已知限制
 
-- `controlpoint` 每图有 1–5 个（如 `milbase` 5 个），是同一基地的不同模式配置；
-  场景实体不带 variant 标签（`entity_labels` 为空），**无法自动判定哪个属于哪个模式**。
-  需要渲染攻防战基地时必须先解决这个归属问题。
+- 客户端场景可能同时携带多个带 label 的 battle-layout variant。基地生成器与
+  map-semanticizer 共用“battle point label 众数”选择 active variant，避免把互斥 controlpoint
+  合并成同一局的多个基地。仍存在无 label 的旧场景时，按原始场景事实 fail-closed。
+- `controlpoint.team` 的攻/守含义未闭合：11.20 Neptune controlled Assault 样本中该值为 1，
+  同时 team 1 是用户确认的进攻/占领方，因此不得再把它写死解释为“守方”。
+- 部分 `controlpoint` 没有 `radius`。Playback 当前仅在 presentation 层使用 20m fallback；
+  该 fallback 不是协议或客户端资源事实。
 - `botspawn` 实体全部为 `performanceTestBot: true`（性能测试假车），不是战斗数据，未抽取。
 
 ## 2D Local / 3D Remote 资产边界
