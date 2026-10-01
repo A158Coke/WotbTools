@@ -1,0 +1,22 @@
+{
+  "single:random": ["common/fixtures/replays/random-battle-example.wotbreplay"],
+  "single:cw-training": ["common/fixtures/replays/cw-training-15-14-example.wotbreplay"],
+  "single:tournament": ["common/fixtures/replays/tournament-14-14-example.wotbreplay"],
+  "single:training-no-winner": ["common/fixtures/hall-of-fame/training-room-example.wotbreplay"],
+  "league:cw+tournament": [
+    "common/fixtures/replays/cw-training-15-14-example.wotbreplay",
+    "common/fixtures/replays/tournament-14-14-example.wotbreplay"
+  ],
+  "mixed:random+cw": [
+    "common/fixtures/replays/random-battle-example.wotbreplay",
+    "common/fixtures/replays/cw-training-15-14-example.wotbreplay"
+  ],
+  "duplicate:cw+cw": [
+    "common/fixtures/replays/cw-training-15-14-example.wotbreplay",
+    "common/fixtures/replays/cw-training-15-14-example.wotbreplay"
+  ],
+  "failure:random+corrupt": [
+    "common/fixtures/replays/random-battle-example.wotbreplay",
+    "java/wotb-web/data/replays-it/0df0c6b35eae99e3b5133610c848f3572aca1642f2bb926dd504198a24f34d96.wotbreplay"
+  ]
+}
