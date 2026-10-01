@@ -26,10 +26,14 @@ resolve() {
   WOTB_ROOT="$ROOT" WOTB_TRIGGER="$1" WOTB_TAG_NAME="${2:-}" WOTB_COMMIT="deadbeef" bash "$RESOLVE"
 }
 
-resolve workflow_dispatch | grep -q '^versionName=1.4.9$' || fail "committed version authority"
-resolve workflow_dispatch | grep -q '^versionCode=1004009$' || fail "versionCode formula"
+# 期望值取自已提交的 android/gradle.properties，而不是写死某个版本：每次发版升号都不该改测试。
+COMMITTED_VERSION="$(sed -n 's/^wotbVersion=//p' "$ROOT/android/gradle.properties" | head -n1)"
+[[ "$COMMITTED_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || fail "committed version is not X.Y.Z: $COMMITTED_VERSION"
+EXPECTED_CODE=$(( BASH_REMATCH[1] * 1000000 + BASH_REMATCH[2] * 1000 + BASH_REMATCH[3] ))
+resolve workflow_dispatch | grep -qx "versionName=$COMMITTED_VERSION" || fail "committed version authority"
+resolve workflow_dispatch | grep -qx "versionCode=$EXPECTED_CODE" || fail "versionCode formula"
 resolve workflow_dispatch | grep -q '^nativeBridgeVersion=1$' || fail "bridge version from contract"
-resolve push android-v1.4.9 | grep -q '^tagName=android-v1.4.9$' || fail "compatible tag"
+resolve push "android-v$COMMITTED_VERSION" | grep -qx "tagName=android-v$COMMITTED_VERSION" || fail "compatible tag"
 if resolve push android-v9.9.9 >/dev/null 2>&1; then fail "mismatched tag must fail"; fi
 
 python3 "$ROOT/scripts/android-release/android_contract.py" version 1.0.2 | grep -q '1000002' || fail "version parser"
