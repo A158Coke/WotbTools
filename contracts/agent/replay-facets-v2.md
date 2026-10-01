@@ -23,11 +23,12 @@ WotBTools
 
 - **名人堂（HoF）不是 Agent 公开能力**：v1 的 `HofFacet` 已从上游删除，
   `{playback, ai, hof}` giant envelope 已拆除——Agent 不感知消费方的下游产品。
-- **三个独立 WASM 入口**（浏览器通道，`wotb-replay-wasm` v0.1.7）：
-  `parseResult(bytes)` / `parsePlayback(bytes)` / `parseShotReplays(bytes)`，
+- **四个独立 WASM 入口**（浏览器通道；v0.3.1 起为四个）：
+  `parseResult(bytes, tankNamesJson?)` / `parsePlayback(bytes, tankNamesJson?)` /
+  `parseShotReplays(bytes, limitsJson?, shellsJson?)` / `parseAiReview(bytes)`，
   不做双 API 兼容；只要 Result 时不得被迫物化 ~MB 级 Playback。
-- **AI 事件数据保持 Agent 服务端/CLI 能力**（`AiReviewFacet`，DTO 冻结 v1），
-  不在 WASM 浏览器面。
+- **AI 事件数据自 v0.3.1 起同时提供 WASM 入口**（`parseAiReview`，DTO 冻结 v1）；
+  CLI/服务端通道（`facets --parts ai`）继续保留，两者逐字段同构。
 - 消费方接口：`frontend/src/api/agent-replay-facets.ts`（三能力装载 + 形状校验
   + `projectHoF` 投影；样例锁定测试同目录）。
 
@@ -42,7 +43,9 @@ WotBTools
 
 ## 3. 结果能力（BattleResult）
 
-- WASM 入口：`parseResult(new Uint8Array(fileBuffer))` → BattleSummary JSON。
+- WASM 入口：`parseResult(new Uint8Array(fileBuffer), tankNamesJson?)` → BattleSummary JSON。
+  `tankNamesJson` 可选（`{tank_id: name}`）：注入后 `tank_name` 为真实车型名；不注入时为
+  `tank_{id}`（**不是空串**——v0.3.1 起文档与实现统一，此前文档写空串）。
 - 只解析 meta + battle_results——**不读包流、不建时序模型**，单文件毫秒级；
   批量扫描与 HoF 投影均走此通道。
 - DTO 冻结（`BattleSummary`）：`file_name / timestamp / datetime / room_type /
@@ -54,8 +57,9 @@ WotBTools
 
 ## 4. 时序能力（PlaybackData）
 
-- WASM 入口：`parsePlayback(new Uint8Array(fileBuffer))` → PlaybackData JSON
-  （单次扫描；与服务端 `/api/playback/data` 同一构建语义）。
+- WASM 入口：`parsePlayback(new Uint8Array(fileBuffer), tankNamesJson?)` → PlaybackData JSON
+  （单次扫描；与服务端 `/api/playback/data` 同一构建语义）。`tankNamesJson` 同 §3：
+  注入后 `vehicles[].tank_name` 为真实车型名，缺省为空串。
 - 形状与 v1 回放切面一致（version 1）：0.1s 网格位姿（列式）、炮塔/炮管角、
   全员弹道、血量链、击杀流、战局阶段、AoI 可见性窗口。
 - `vehicles[]` 自带花名册语义（`nickname / tank_id / team / is_author`）——
@@ -121,11 +125,15 @@ WotBTools
 ## 6. AI 事件数据（Agent 服务端/CLI 能力；DTO 冻结）
 
 - `AiReviewFacet`（花名册 + 类型化事件流 spawn/shot/damage/kill/visibility/
-  counter/damage_tick + 结算锚点）经 `wotb-agent facets --parts ai` 与服务端
-  通道产出；DTO 冻结 v1（counter 语义 = code 低字节基类型 + seq 同类型内序号，
+  counter/damage_tick + 结算锚点）经 `wotb-agent facets --parts ai`、服务端通道
+  与 **WASM 入口 `parseAiReview(bytes)`（v0.3.1 起）**三方产出，逐字段同构；
+  DTO 冻结 v1（counter 语义 = code 低字节基类型 + seq 同类型内序号，
   上游 v0.1.6 复合编码修正）。
-- **不在 WASM 浏览器面**；样例 `samples/ai-review.sample.json` 保留作 DTO 对照
-  （与 result 样例同场，GravityMode / map 13）。
+- **`Shot.target_eid` 取自弹道自带身份**（作者 = method38 受击者、他人 = method8 直击
+  通知，服务器权威）——v0.3.1 起不再按昵称反查实体名表：昵称损坏/缺失时不再丢受击方。
+  `hit` 的定义随之统一为「target_eid 存在」。
+- 样例 `samples/ai-review.sample.json` 保留作 DTO 对照（与 result 样例同场，
+  GravityMode / map 13）。
 
 ## 7. HoF（WotBTools 产品域；非 Agent 能力）
 
@@ -146,3 +154,11 @@ WotBTools
   （消费方从 Result 投影）；AI 事件数据保持 Agent 服务端能力（DTO 冻结）；
   已知开放项不变：0x0c 次数口径互验（待非匿名场次）、结算时长 root5 解码、
   评审切面暂不含点亮协助的位置级归因。
+- v0.3.1（2026-10-01，agent 仓库 `main`）：**P1R5**（消耗品生命周期 / 开局 loadout /
+  车辆模块乘员状态 / 攻防战单基地占领进度）且**修正 assault 判据**——进度族去掉
+  `field1` 限制（真实回放中携带进度的族在 `field1=1/2` 间切换）、`assaultObjectivePresent`
+  收紧为「目标族发出裸初始化对以外的字段」（裸初始化对是通用广播，8/62 普通对局同样发出）；
+  新增 `assault_bases[]` 与 `assault_objective_present`（契约见 §4c）。
+  **P2**：`tankNamesJson` 可选注入、第 4 入口 `parseAiReview`、AiReview `Shot.target_eid`
+  改用弹道自带身份、`PlaybackData` 版本注释订正；Release 附件随 tag 发布
+  （`wotb-replay-wasm-v0.3.1.zip`）。
