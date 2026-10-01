@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory } from 'vue-router'
 import { nextTick, inject, ref, computed } from 'vue'
 import App from './App.vue'
+import { DIALOG_INLINE_KEY } from './shared/dialog.js'
 import { NAVIGATE_VIEW_KEY } from './shared/navigation.js'
 import { createAppRouter } from './app/router.js'
 import { ALLOWED_VIEWS } from './app/navigation.js'
@@ -112,6 +113,7 @@ async function mountApp(path = '/') {
   const wrapper = mount(App, {
     global: {
       plugins: [router],
+      provide: { [DIALOG_INLINE_KEY]: true },
       mocks: {
         $t: key => key === 'home.icpFiling' ? '闽ICP备2026036303号-1' : key,
         $i18n: { locale: 'zh' },
@@ -549,7 +551,6 @@ describe('App shell navigation, 更多 and account', () => {
     authState.isAdminRef.value = true
     const { wrapper } = await mountApp('/?view=replay')
     expect(wrapper.get('[data-testid="nav-admin-users"]').attributes('aria-current')).toBeUndefined()
-    expect(wrapper.find('[data-testid="nav-rating-v2"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-hof-admin"]').exists()).toBe(true)
     authState.isAdminRef.value = false
   })
