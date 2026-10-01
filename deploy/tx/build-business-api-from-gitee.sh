@@ -237,35 +237,8 @@ build_publish() {
   printf 'RESULT build_commit_verified=true\n'
 }
 
-promote_latest() {
-  local source_sha="$1" registry="$2" namespace="$3"
-  validate_common "$source_sha" "$registry" "$namespace"
-
-  local immutable="$registry/$namespace/wotbtools-business-api:sha-${source_sha:0:12}"
-  local latest="$registry/$namespace/wotbtools-business-api:latest"
-  local immutable_digest latest_digest
-
-  immutable_digest="$(lookup_remote_digest "$immutable")" || die "immutable release tag is not readable before latest promotion"
-
-  run_tcr_stage pull-for-latest \
-    timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_PULL_TIMEOUT_SECONDS}s" \
-    docker pull "$immutable@$immutable_digest" >/dev/null
-  verify_image_commit "$immutable@$immutable_digest" "$source_sha"
-
-  docker tag "$immutable@$immutable_digest" "$latest"
-  run_tcr_stage push-latest \
-    timeout --kill-after="${KILL_AFTER_SECONDS}s" "${TCR_PUSH_TIMEOUT_SECONDS}s" docker push "$latest"
-
-  latest_digest="$(lookup_remote_digest "$latest")" || die "latest is not readable after promotion"
-  [ "$latest_digest" = "$immutable_digest" ] \
-    || die "latest digest differs from immutable digest after promotion"
-
-  printf 'RESULT latest_published=true\n'
-  printf 'RESULT digest=%s\n' "$immutable_digest"
-}
-
 usage() {
-  echo "usage: $0 <build-publish|promote-latest> <source-sha> <tcr-registry> <tcr-namespace>" >&2
+  echo "usage: $0 build-publish <source-sha> <tcr-registry> <tcr-namespace>" >&2
   exit 2
 }
 
@@ -275,6 +248,5 @@ shift
 
 case "$mode" in
   build-publish) build_publish "$@" ;;
-  promote-latest) promote_latest "$@" ;;
   *) usage ;;
 esac
