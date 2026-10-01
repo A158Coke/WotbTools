@@ -21,6 +21,10 @@
     --space-12: 48px;
     --gutter: 16px;
 
+    /* 应用外壳（§9）：顶栏 / 底部 Tab 栏高度。所有吸顶偏移都读 --header-h */
+    --header-h: 48px;
+    --tabbar-h: 56px;
+
     /* 字号阶梯（§4），最小 12px。
      * 原子 token：font-size / line-height 只能引用 --font-size-* / --line-height-*；
      * 组合 token：font 简写只能引用 --type-*。 */
@@ -80,7 +84,11 @@
   }
 
   @media (width >= 768px) {
-    :root { --gutter: 24px; }
+    :root {
+      --gutter: 24px;
+      --header-h: 56px;
+      --tabbar-h: 0px;
+    }
   }
 
   @media (width >= 1200px) {

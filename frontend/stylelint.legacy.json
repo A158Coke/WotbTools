@@ -2,11 +2,7 @@
   "$comment": "迁移前的旧样式文件基线（docs/frontend/design-language.md §12–§13）。只减不增：文件迁移到设计语言 token 后从此名单删除。",
   "files": [
     "src/App.vue",
-    "src/app/AppHeader.vue",
-    "src/app/AppShell.vue",
     "src/app/GlobalErrorDialog.vue",
-    "src/app/UserMenu.vue",
-    "src/app/ViewHost.vue",
     "src/components/AdminUsersPage.vue",
     "src/components/AgentArmorView.vue",
     "src/components/AgentReplay3D.vue",

@@ -102,9 +102,9 @@ describe('Classic Profile — 真浅色主题契约（Theme 计划：Classic=Lig
     expect(css).not.toMatch(/\b\*\s*\{/)
   })
 
-  it('覆盖核心页面面:topbar/user-menu/tabs/table/form/modal 均带 namespace 且不隐藏业务', () => {
-    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.topbar\s*\{/)
-    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.user-menu-panel\s*\{/)
+  // 应用外壳（顶栏 / 底部 Tab 栏 / 更多）只用设计语言语义 token，浅色由 tokens/color.css 的
+  // [data-theme="light"] 映射提供，不再需要 classic 覆盖规则。
+  it('覆盖核心页面面:tabs/table/form/modal 均带 namespace 且不隐藏业务', () => {
     expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.modal\s*\{/)
     expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.layout-data-workspace\s+:is\(input, select, textarea\)/)
     expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.layout-data-workspace\s+table\s+thead\s+th/)
@@ -139,13 +139,6 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.record-card', ['background: var(--bg-card) !important', 'color: var(--text-heading) !important'])
     has('.record-card > span', ['color: var(--text-sub) !important'])
     has('.mini-action', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
-  })
-
-  it('用户菜单：菜单项/Hover/Danger/分段控件 浅底深字 !important', () => {
-    has('.user-menu-panel .user-menu-item', ['color: var(--text) !important'])
-    has('.user-menu-panel .user-menu-item:hover', ['background: var(--bg-list-hover) !important'])
-    has('.user-menu-panel .user-menu-item.danger', ['color: var(--delete) !important'])
-    has('.ui-profile-option.active', ['background: var(--accent) !important', 'color: var(--accent-text) !important'])
   })
 
   it('Replay 上传区：Heading/Card/Filebar/Ghost 按钮 浅底深字 !important', () => {

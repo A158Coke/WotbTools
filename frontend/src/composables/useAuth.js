@@ -249,12 +249,14 @@ function hasRole(role) {
 
 /**
  * `wotbtools-admin` 角色：admin-only 功能开关（feature flag）的唯一判定源。
- * 与 UserMenu 的 `isAdmin` 同源同语义（同一 realm_access.roles）。
  */
 const isAdmin = computed(() => hasRole('wotbtools-admin'))
 
+/** 名人堂审核权限：`HoF-admin` 或全站管理员。 */
+const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)
+
 /**
- * 展示名（顶栏用户菜单 / 个人中心）：Keycloak `display-name-mapper` 映射的 `displayName`
+ * 展示名（顶栏账户入口 / 个人中心）：Keycloak `display-name-mapper` 映射的 `displayName`
  * （WG 官方昵称 / QQ 昵称）。`preferred_username` 是内部登录名（形如 `wg_eu_572253806`），
  * 只在 claim 缺失时兜底，绝不作为首选展示。
  */
@@ -296,6 +298,7 @@ export function useAuth() {
     isAuthenticated,
     hasRole,
     isAdmin,
+    isHofAdmin,
     token,
     ensureToken,
     initialized,

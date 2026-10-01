@@ -226,17 +226,15 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   padding: 10px 14px;
   margin: 0;
   border-bottom: 1px solid var(--border);
-  /* 长报告滚动时头部吸顶：top 使用全局 topbar token（App.vue 桌面端 .topbar
-     fixed 高 var(--topbar-h)），禁止硬编码重复事实源。 */
+  /* 长报告滚动时头部吸顶：top 使用全局顶栏高度 token（--topbar-h 是 --header-h 的 deprecated 别名），
+     禁止硬编码重复事实源。 */
   position: sticky;
   top: var(--topbar-h);
   z-index: 20;
   background: var(--bg-card2);
 }
 @media (max-width: 1080px) {
-  /* <=1080px 时 App.vue .topbar 变为 sticky + auto height（可换行、高度不定），
-     固定偏移无法对齐；回退普通流式头部——复制按钮随面板滚动（不重叠、可操作、
-     滚出面板后消失），满足「不遮挡导航/正文、无横向溢出」。 */
+  /* 窄屏回退普通流式头部：复制按钮随面板滚动（不重叠、可操作、滚出面板后消失）。 */
   .panel-head {
     position: static;
     top: auto;

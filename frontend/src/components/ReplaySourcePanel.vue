@@ -21,7 +21,7 @@ function selectBattle(sourceId) {
 }
 function closeBatch() { batchOpen.value = false }
 
-// 移动端 bottom sheet 的 outside-tap 关闭（照 UserMenu：document 级监听 + cleanup）。
+// 移动端 bottom sheet 的 outside-tap 关闭（document 级监听 + cleanup）。
 // 仅 <768px bottom-sheet 布局启用：桌面 dropdown 无遮罩、行为不变。
 function onDocumentClick(event) {
   if (!batchOpen.value || window.innerWidth >= 768) return
