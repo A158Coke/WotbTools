@@ -191,4 +191,42 @@ describe('AgentTankopedia', () => {
     await wrapper.find('[data-testid="filter-toggle"]').trigger('click')
     expect(wrapper.find('[data-testid="tank-filters"]').attributes('role')).toBe('dialog')
   })
+
+  it('俯仰角与弹种数值按紧凑小数呈现，不直出 f32 扩宽尾数', async () => {
+    // 上游 per-tank JSON 把 f32 以 f64 直出：2.3f32 → 2.299999952316284
+    data.fetchTankData.mockResolvedValue({
+      name: 'SU-100M1', tier: 7, nation: 'ussr', type: 'AT-SPG', hp: 1150,
+      speed_forward: 50, speed_reverse: 14,
+      gun_depression: 2.299999952316284, gun_elevation: 18.5,
+      configs: [{
+        label: 'Top', view_range: 240,
+        shells: [{ type: 'ap', penetration: 155.3000030517578, damage: 310, penetration_far: 194, velocity: 1015 }],
+      }],
+    })
+    const { wrapper } = await mountAt({ tank: '999' })
+    const text = wrapper.text()
+    expect(text).toContain('2.3° / 18.5°')
+    expect(text).toContain('155.3')
+    expect(text).toContain('240 m')
+    expect(text).not.toContain('2.299999952316284')
+    expect(text).not.toContain('155.3000030517578')
+  })
+
+  it('俯仰角字段缺失时回退当前配置 pitch_limits（dep=max、ele=−min）', async () => {
+    data.fetchTankData.mockResolvedValue({
+      name: 'IS-7', tier: 10, nation: 'ussr', type: 'heavyTank', hp: 2400,
+      configs: [{ label: 'Top', view_range: 250, pitch_limits: { max: 6, min: -18 }, shells: [] }],
+    })
+    const { wrapper } = await mountAt({ tank: '999' })
+    expect(wrapper.text()).toContain('6° / 18°')
+  })
+
+  it('俯仰角三层来源都缺失时显示 -，不显示 NaN', async () => {
+    data.fetchTankData.mockResolvedValue({
+      name: 'IS-7', tier: 10, nation: 'ussr', type: 'heavyTank', hp: 2400,
+      configs: [{ label: 'Top', shells: [] }],
+    })
+    const { wrapper } = await mountAt({ tank: '999' })
+    expect(wrapper.text()).toContain('-° / -°')
+  })
 })

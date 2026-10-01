@@ -15,7 +15,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Box, RotateCcw, Search, SearchX, TriangleAlert } from 'lucide-vue-next'
 import { fetchTankEncyclopedia, fetchTankData, tankImageUrl } from '../scene/agentData.js'
-import { TYPE_CLS, normType, shellLabel, isPremiumShell, fmt } from '../scene/tankMeta.js'
+import { TYPE_CLS, normType, shellLabel, isPremiumShell, fmt, fmtNum } from '../scene/tankMeta.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useIncrementalList } from '../composables/useIncrementalList.js'
@@ -163,6 +163,20 @@ const cfgIdx = computed({
 const curCfg = computed(() => cfgs.value[cfgIdx.value] || null)
 const shells = computed(() => curCfg.value?.shells || detail.value?.shells || [])
 
+/**
+ * 俯角/仰角显示回退链：per-tank 数据 → tank_cache 概要 → 当前配置 pitch_limits。
+ * 前两者取决于资产包生成时间，配置级 pitch_limits（models.pb 直取）只要配置有数据就有值，
+ * 是数据面缺字段时的兜底——与 GunPitchRange 同一约定：dep = max、ele = −min。
+ */
+const pitchLimits = computed(() => curCfg.value?.pitch_limits || null)
+const gunDepression = computed(() =>
+  detail.value?.gun_depression ?? summary.value?.gun_depression ?? pitchLimits.value?.max ?? null)
+const gunElevation = computed(() => {
+  const ele = detail.value?.gun_elevation ?? summary.value?.gun_elevation
+  if (ele != null) return ele
+  return pitchLimits.value?.min != null ? -pitchLimits.value.min : null
+})
+
 async function loadDetail(id) {
   const request = ++detailRequest
   if (id == null) {
@@ -278,10 +292,10 @@ onMounted(() => {
               <tbody>
                 <tr v-for="(s, i) in shells" :key="i">
                   <td><span class="tp-pill is-shell" :class="{ 'is-premium': isPremiumShell(s) }">{{ shellLabel(s) || normType(s.type) }}</span></td>
-                  <td class="is-num">{{ s.penetration ?? '-' }}</td>
-                  <td class="is-num">{{ s.damage ?? '-' }}</td>
-                  <td class="is-num">{{ s.penetration_far ?? '-' }}</td>
-                  <td class="is-num">{{ s.velocity ?? '-' }}</td>
+                  <td class="is-num">{{ fmtNum(s.penetration) }}</td>
+                  <td class="is-num">{{ fmtNum(s.damage) }}</td>
+                  <td class="is-num">{{ fmtNum(s.penetration_far) }}</td>
+                  <td class="is-num">{{ fmtNum(s.velocity) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -291,13 +305,13 @@ onMounted(() => {
         <section class="tp-card-section">
           <h2 class="tp-section-title">{{ t('agentTanks.mobility') }}</h2>
           <dl class="tp-stats">
-            <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ detail.hp ?? '-' }}</dd></div>
-            <div><dt>{{ t('agentTanks.speed_fwd') }}</dt><dd>{{ detail.speed_forward ?? summary?.speed_forward ?? detail.speed ?? '-' }} km/h</dd></div>
-            <div><dt>{{ t('agentTanks.speed_rev') }}</dt><dd>{{ detail.speed_reverse ?? summary?.speed_reverse ?? '-' }} km/h</dd></div>
-            <div><dt>{{ t('agentTanks.view_range') }}</dt><dd>{{ curCfg?.view_range ?? summary?.view_range ?? '-' }} m</dd></div>
+            <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(detail.hp, 0) }}</dd></div>
+            <div><dt>{{ t('agentTanks.speed_fwd') }}</dt><dd>{{ fmtNum(detail.speed_forward ?? summary?.speed_forward ?? detail.speed) }} km/h</dd></div>
+            <div><dt>{{ t('agentTanks.speed_rev') }}</dt><dd>{{ fmtNum(detail.speed_reverse ?? summary?.speed_reverse) }} km/h</dd></div>
+            <div><dt>{{ t('agentTanks.view_range') }}</dt><dd>{{ fmtNum(curCfg?.view_range ?? summary?.view_range, 0) }} m</dd></div>
             <div><dt>{{ t('agentTanks.hull_traverse') }}</dt><dd>{{ fmt(summary?.hull_traverse, 1) }} °/s</dd></div>
             <div><dt>{{ t('agentTanks.turret_traverse') }}</dt><dd>{{ fmt(curCfg?.turret_traverse_speed ?? summary?.turret_traverse_speed, 0) }} °/s</dd></div>
-            <div><dt>{{ t('agentTanks.gun_dep_ele') }}</dt><dd>{{ detail.gun_depression ?? summary?.gun_depression ?? '-' }}° / {{ detail.gun_elevation ?? summary?.gun_elevation ?? '-' }}°</dd></div>
+            <div><dt>{{ t('agentTanks.gun_dep_ele') }}</dt><dd>{{ fmtNum(gunDepression) }}° / {{ fmtNum(gunElevation) }}°</dd></div>
             <div v-if="curCfg?.reload_time != null"><dt>{{ t('agentTanks.reload') }}</dt><dd>{{ fmt(curCfg.reload_time, 1) }} s</dd></div>
             <div v-if="curCfg?.dpm != null"><dt>{{ t('agentTanks.dpm') }}</dt><dd>{{ fmt(curCfg.dpm, 0) }}</dd></div>
             <div v-if="curCfg?.aim_time != null"><dt>{{ t('agentTanks.aim_time') }}</dt><dd>{{ fmt(curCfg.aim_time, 1) }} s</dd></div>

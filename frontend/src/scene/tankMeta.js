@@ -70,3 +70,14 @@ export function armorColorStyle(mm) {
 }
 
 export const fmt = (v, d = 0) => (v != null ? Number(v).toFixed(d) : '-')
+
+/**
+ * 紧凑数值：最多 d 位小数并去掉尾随 0（816 → "816"、2.299999952316284 → "2.3"）。
+ * 上游 per-tank JSON 把 f32 字段以 f64 直出（2.3f32 → 2.299999952316284），
+ * 不做收敛就会把二进制尾数带进界面。非数值/缺失 → '-'。
+ */
+export const fmtNum = (v, d = 1) => {
+  if (v == null) return '-'
+  const n = Number(v)
+  return Number.isFinite(n) ? String(Number(n.toFixed(d))) : '-'
+}
