@@ -6,6 +6,7 @@ set -Eeuo pipefail
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
 readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
+readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
 readonly GITEE_WAIT_ATTEMPTS="${GITEE_WAIT_ATTEMPTS:-20}"
 readonly GITEE_WAIT_INTERVAL_SECONDS="${GITEE_WAIT_INTERVAL_SECONDS:-15}"
 readonly GIT_FETCH_TIMEOUT_SECONDS="${GIT_FETCH_TIMEOUT_SECONDS:-60}"
@@ -45,14 +46,15 @@ run_tcr_stage() {
       rm -f "$output_file"
       printf 'stage=%s result=PASS attempts=%s\n' "$stage_name" "$attempt"
       return 0
+    else
+      status=$?
     fi
-
-    status=$?
     output="$(<"$output_file")"
     rm -f "$output_file"
     printf '%s\n' "$output" >&2
 
-    if [ "$attempt" -ge "$RETRY_MAX_ATTEMPTS" ] || ! is_transient_tcr_failure "$output"; then
+    if [ "$attempt" -ge "$RETRY_MAX_ATTEMPTS" ] \
+      || { [ "$status" -ne 124 ] && [ "$status" -ne 137 ] && ! is_transient_tcr_failure "$output"; }; then
       printf 'stage=%s result=FAIL attempts=%s status=%s\n' "$stage_name" "$attempt" "$status" >&2
       return "$status"
     fi
@@ -86,6 +88,7 @@ validate_common() {
   command -v git >/dev/null || die "git is required"
   command -v docker >/dev/null || die "docker is required"
   command -v timeout >/dev/null || die "timeout is required"
+  command -v flock >/dev/null || die "flock is required"
   docker version >/dev/null
   docker buildx version >/dev/null
 }
@@ -138,9 +141,9 @@ lookup_remote_digest() {
       [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "registry returned an invalid digest for $image"
       printf '%s\n' "$digest"
       return 0
+    else
+      status=$?
     fi
-
-    status=$?
     output="$(<"$output_file")"
     rm -f "$output_file"
 
@@ -149,7 +152,8 @@ lookup_remote_digest() {
     fi
 
     printf '%s\n' "$output" >&2
-    if [ "$attempt" -ge "$RETRY_MAX_ATTEMPTS" ] || ! is_transient_tcr_failure "$output"; then
+    if [ "$attempt" -ge "$RETRY_MAX_ATTEMPTS" ] \
+      || { [ "$status" -ne 124 ] && [ "$status" -ne 137 ] && ! is_transient_tcr_failure "$output"; }; then
       return "$status"
     fi
 
@@ -178,6 +182,10 @@ build_publish() {
   local local_image="wotbtools-production-business-api:$tag"
   local worktree="/tmp/wotbtools-production-build-${source_sha:0:12}-$$"
   local digest="" lookup_status=0 reused=false
+
+  mkdir -p "$CACHE_ROOT"
+  exec 8>"$BUILD_LOCK_FILE"
+  flock -n 8 || die "another TX Business API build is already running"
 
   wait_for_gitee_sha "$source_sha"
 
