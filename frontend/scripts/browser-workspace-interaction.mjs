@@ -152,6 +152,19 @@ function playbackControlProbe() {
       ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}`
       : null,
     formClass: root ? Array.from(root.classList).find((name) => name.startsWith('pb-form-')) || null : null,
+    /** rail 模式下速度档位必须一行排开且不撑出 rail（档位个数变化时的回归点） */
+    railSpeeds: (() => {
+      const group = document.querySelector('.pb-controls-rail-mode .pb-speed')
+      if (!group) return null
+      const container = group.closest('.pb-left-rail') || group.parentElement
+      const limit = container.getBoundingClientRect()
+      const buttons = [...group.querySelectorAll('[data-test^="pb-speed-"]')].map((b) => b.getBoundingClientRect())
+      return {
+        count: buttons.length,
+        rows: new Set(buttons.map((r) => Math.round(r.top))).size,
+        overflow: buttons.some((r) => r.left < limit.left - 1 || r.right > limit.right + 1),
+      }
+    })(),
     pageScrollWidth: document.documentElement.scrollWidth,
     viewportWidth: innerWidth,
     viewportHeight: innerHeight,
@@ -495,6 +508,11 @@ async function runPlaybackControlScenario(env, scenario) {
   const control = before.hitIsButton ? before : await page.revealControl('[data-test="pb-play"]')
   check(failures, control.hitIsButton,
     `play button center hit ${control.hitDescription} instead (viewport=${control.viewportWidth}x${control.viewportHeight} geometry=${JSON.stringify(control.geometry)})`)
+  if (before.railSpeeds) {
+    check(failures, before.railSpeeds.rows === 1,
+      `rail speed options wrapped onto ${before.railSpeeds.rows} rows (${before.railSpeeds.count} options)`)
+    check(failures, !before.railSpeeds.overflow, 'rail speed options overflow the rail')
+  }
   check(failures, before.pageScrollWidth <= before.viewportWidth + 1,
     `page-level horizontal overflow: ${before.pageScrollWidth} > ${before.viewportWidth} (contentWidth=${before.contentWidth} overflowing=${JSON.stringify(before.overflowing)})`)
   if (scenario.form) check(failures, before.formClass === scenario.form, `form factor class=${before.formClass}, expected ${scenario.form}`)
