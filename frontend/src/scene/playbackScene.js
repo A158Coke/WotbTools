@@ -1169,6 +1169,7 @@ export function initPlayback(container, store) {
   function buildRoster() {
     store.roster.team1 = [];
     store.roster.team2 = [];
+    store.roster.unknown = [];
     for (const v of V) {
       const d = v.def;
       const entry = {
@@ -1181,7 +1182,11 @@ export function initPlayback(container, store) {
         followed: false,
       };
       v.rosterEntry = entry;
-      (d.team === 2 ? store.roster.team2 : store.roster.team1).push(entry);
+      // 显式三元分组：未知阵营（team=0，联表失败/观察者）进中性组，fail-visible
+      // 且绝不污染任何一队（旧 `team!==2→team1` 把 Unknown 划给队伍 1）
+      if (d.team === 2) store.roster.team2.push(entry);
+      else if (d.team === 1) store.roster.team1.push(entry);
+      else store.roster.unknown.push(entry);
     }
   }
   function updateRoster() {
@@ -1424,6 +1429,7 @@ export function initPlayback(container, store) {
     store.banner = null;
     store.roster.team1 = [];
     store.roster.team2 = [];
+    store.roster.unknown = [];
   }
 
   async function loadData(source) {
