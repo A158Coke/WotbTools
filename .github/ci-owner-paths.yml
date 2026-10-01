@@ -103,6 +103,7 @@ frontend:
   - 'deploy/check-production-freshness.sh'
   - 'deploy/list-image-tags.sh'
   - 'scripts/ci/run-with-network-retry.sh'
+  - 'deploy/tx/build-frontend-from-gitee.sh'
   - 'deploy/tx/frontend.compose.yml'
   - 'deploy/tx/deploy.sh'
   - 'deploy/tx/common.compose.yml'
