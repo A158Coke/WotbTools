@@ -17,6 +17,7 @@ import { confirm as appConfirm } from '../composables/useConfirm.js'
 import * as THREE from 'three'
 
 import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
+import { battleEndTime } from './battleEnd.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
@@ -54,6 +55,8 @@ export function initPlayback(container, store) {
   let boundaryGroup = null;        // 地图边界带（会话拥有）
   let V = [];                      // 车辆运行时 {def, group, turretG, gunPivot, label, meshHull, glb}
   let T = 0, PLAYING = false, SPEED = store.speed;
+  // 时间轴终点 = 比赛结束（battleEnd.js）；加载数据时确定，播放 / seek / 胜负横幅都以它为准
+  let END = 0;
   let CAM = 'free', FOLLOW_EID = 0;
   let shotPtr = 0, killPtr = 0;
   const tracers = [], impacts = [];
@@ -1959,7 +1962,7 @@ export function initPlayback(container, store) {
     const dt = Math.min(clock.getDelta(), 0.1);
     if (DATA && PLAYING) {
       T += dt * SPEED;
-      if (T >= DATA.meta.duration) { T = DATA.meta.duration; setPlaying(false); }
+      if (T >= END) { T = END; setPlaying(false); }
       tick();
     }
     // 相机
@@ -2022,10 +2025,10 @@ export function initPlayback(container, store) {
     store.timer = gameTimerLabel(T);
     store.time = T;
     store.startTime = DATA.meta.t_start;
-    store.duration = DATA.meta.duration;
-    const f = (T - DATA.meta.t_start) / Math.max(0.001, DATA.meta.duration - DATA.meta.t_start);
+    store.duration = END;
+    const f = (T - DATA.meta.t_start) / Math.max(0.001, END - DATA.meta.t_start);
     if (!store.seeking) store.seekFrac = Math.round(f * 1000);
-    if (!winnerShown && T >= DATA.meta.duration - 1e-3 && DATA.meta.winner_team) {
+    if (!winnerShown && T >= END - 1e-3 && DATA.meta.winner_team) {
       winnerShown = true;
       const w = DATA.meta.winner_team, fr = DATA.meta.friendly_team;
       // outcome 供消费方面板三语化（text 为上游兼容中文字段；WotBTools 唯一分叉的加性字段）
@@ -2043,7 +2046,7 @@ export function initPlayback(container, store) {
     store.playing = p;
   }
   function seekTo(t) {
-    T = Math.max(DATA.meta.t_start, Math.min(DATA.meta.duration, t));
+    T = Math.max(DATA.meta.t_start, Math.min(END, t));
     clearEffects();   // 动态层 dispose（与 teardown 同一路径，防 seek 循环累积显存）
     // 游标一律重定到「T 之后第一条」：clearEffects 已把 transient 游标归零，
     // 若不重定，紧随的 tick() 会把 t<=T 的历史飘字/爆散一次性补播（与 2D seek 语义不符）
@@ -2226,6 +2229,7 @@ export function initPlayback(container, store) {
     buildSupremacyBases();   // 争霸基地（A–D）
     buildAssaultBase();   // 单基地目标（攻防/遭遇战）
     T = DATA.meta.t_start;
+    END = battleEndTime(DATA);
     shotPtr = 0; killPtr = 0;
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
     if (glbOn) applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
@@ -2242,7 +2246,7 @@ export function initPlayback(container, store) {
     togglePlay: () => setPlaying(!PLAYING),
     setPlaying,
     setSpeed,
-    seekFraction: (frac) => { if (DATA) seekTo(DATA.meta.t_start + frac * (DATA.meta.duration - DATA.meta.t_start)); },
+    seekFraction: (frac) => { if (DATA) seekTo(DATA.meta.t_start + frac * (END - DATA.meta.t_start)); },
     // 共用播放控件（PlaybackTransport）按绝对秒 seek / 跳秒；seekTo 自带 [t_start, duration] 夹取
     seekTime: (t) => { if (DATA) seekTo(t); },
     seekBy: (delta) => { if (DATA) seekTo(T + delta); },
