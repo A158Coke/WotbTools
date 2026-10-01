@@ -1,0 +1,27 @@
+# Replay parity（迁移期一次性工具）
+
+服务端 Java 解析器退役前的安全网：同一批回放分别跑 **Java `ReplayParser`**（即将删除）与
+**上游 Rust Core WASM**（`common/assets/wasm`，按 `deploy/agent/source.json` 锁定），逐字段对比。
+Java 解析器删除时本目录一起删除。
+
+**回放与输出都不入库**：回放放在仓库外，输出写到临时目录。
+
+```bash
+# 1) Java 侧（在 java/ 下先 mvn -s settings.xml -pl wotb-core -am -DskipTests install）
+mvn -q -s settings.xml -pl wotb-core dependency:build-classpath -Dmdep.outputFile=/tmp/cp.txt
+cd <回放目录> && java -cp "<java>/wotb-core/target/classes;$(cat /tmp/cp.txt)" \
+  <repo>/tools/parity/JavaReplayDump.java . <out>/java.json
+
+# 2) WASM 侧（先 scripts/fetch-agent-wasm.sh）
+node tools/parity/wasm-dump.mjs <回放目录> <out>/wasm.json
+
+# 3) 对比
+node tools/parity/compare.mjs <out>/java.json <out>/wasm.json
+```
+
+Windows 注意：回放目录名含中文时，Java 的命令行参数会乱码——先 `cd` 进回放目录再传 `.`。
+
+## 记录
+- 2026-10-01 · v0.3.1：37 字段 32 一致；差异（xp/credits、地图代号、击杀者账号、survived）由上游
+  fanypcd/WoT-Blitz-Agent#1 补齐。
+- 2026-10-01 · v0.3.2：23 场 / 322 名战斗者，38 字段全部一致。
