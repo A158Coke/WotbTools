@@ -387,8 +387,9 @@ const ZERO_OTHERS: AgentShotsOthersStats = {
 
 /**
  * 包装/裸数组双形状归一化（trust boundary）：v0.1.9 起上游输出
- * `{shots, author_path, author_error?, author_eid, others}`；旧产物为裸数组
- * （author 状态不可知 → ok/eid=0/others 全 0，消费面按缺数据处理）。
+ * `{shots, author_path, author_error?, author_eid, others}`——对象形状的
+ * `author_path` 只接受 "ok" | "error"（缺失或其他值 throw，drift 显形）；
+ * 旧产物为裸数组（author 状态不可知 → ok/eid=0/others 全 0，消费面按缺数据处理）。
  */
 export function normalizeAgentShotsOutcome(v: unknown): AgentShotsOutcome {
   if (Array.isArray(v)) {
@@ -397,7 +398,12 @@ export function normalizeAgentShotsOutcome(v: unknown): AgentShotsOutcome {
   if (!isObject(v) || !Array.isArray(v.shots)) {
     throw new Error('agent shots: 顶层必须是 shots 数组或 {shots, ...} 包装对象')
   }
-  const authorPath = v.author_path === 'error' ? 'error' : 'ok'
+  // trust boundary 严格化：author_path 只收 "ok" | "error"（缺失/其他值一律 throw）——
+  // schema drift / 错版 WASM 不允许被静默伪装成正常解析
+  if (v.author_path !== 'ok' && v.author_path !== 'error') {
+    throw new Error('agent shots: author_path 必须是 "ok" | "error"')
+  }
+  const authorPath = v.author_path
   if (authorPath === 'error' && typeof v.author_error !== 'string') {
     throw new Error('agent shots: author_path="error" 必须携带 author_error')
   }
@@ -415,6 +421,18 @@ export function normalizeAgentShotsOutcome(v: unknown): AgentShotsOutcome {
       muzzle_fallback: num(o.muzzle_fallback),
     },
   }
+}
+
+/**
+ * 命中判定（唯一权威 = `target_eid` 在案）。上游 v0.1.9 起 Playback/AI 切面与
+ * 逐发数据统一 `hit: target_eid.is_some()`（method38/method8 服务器权威）；消费端
+ * 一律走本函数，不再按 is_author 分叉 hit_flags/昵称启发式——author 的
+ * `target_eid=Some 且 hit_flags=0` 是合法在案命中，按旧法会误判 miss 并污染
+ * hitRate/penRate 分母。breaking：旧产物（无 target_eid）一律按未命中——
+ * 3D 尚在 feature flag，允许 breaking，不保留双语义。
+ */
+export function isShotHit(s: Pick<AgentShotReplay, 'target_eid'>): boolean {
+  return s.target_eid != null
 }
 
 /**
