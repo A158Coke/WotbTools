@@ -1,18 +1,26 @@
 <script setup>
+// 移除单场回放的确认（审计 PG-09：统一 AppDialog——焦点陷阱、Esc、关闭后焦点回到触发元素）
+import AppDialog from './AppDialog.vue'
+import AppButton from './AppButton.vue'
+
 defineProps({ pending: Object })
-const emit = defineEmits(['confirm', 'cancel'])
+defineEmits(['confirm', 'cancel'])
 </script>
 
 <template>
-  <div v-if="pending" class="modal-mask" @click.self="$emit('cancel')">
-    <div class="modal">
-      <p class="modal-title">{{ $t('modal.remove_title') }}</p>
-      <p>{{ $t('modal.remove_confirm', { label: pending.label }) }}</p>
-      <p class="modal-sub">{{ $t('modal.remove_hint') }}</p>
-      <div class="modal-actions">
-        <button @click="$emit('confirm')">{{ $t('modal.confirm') }}</button>
-        <button class="ghost" @click="$emit('cancel')">{{ $t('modal.cancel') }}</button>
-      </div>
-    </div>
-  </div>
+  <AppDialog
+    :open="!!pending"
+    :title="$t('modal.remove_title')"
+    size="sm"
+    tone="danger"
+    data-testid="remove-confirm"
+    @close="$emit('cancel')"
+  >
+    <p>{{ $t('modal.remove_confirm', { label: pending?.label }) }}</p>
+    <p class="modal-sub">{{ $t('modal.remove_hint') }}</p>
+    <template #actions>
+      <AppButton data-autofocus @click="$emit('cancel')">{{ $t('modal.cancel') }}</AppButton>
+      <AppButton variant="danger" data-testid="remove-confirm-ok" @click="$emit('confirm')">{{ $t('modal.confirm') }}</AppButton>
+    </template>
+  </AppDialog>
 </template>

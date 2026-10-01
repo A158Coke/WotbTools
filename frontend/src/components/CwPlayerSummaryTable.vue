@@ -4,6 +4,8 @@ import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
 import { stableSortRows } from '../utils/tableSort.js'
 import { useStickyColumns } from '../utils/stickyColumns.js'
 import { leagueMaxByKey, ratingCellText } from '../utils/helpers.js'
+import { useI18n } from 'vue-i18n'
+import PlayerCardList from './PlayerCardList.vue'
 
 /**
  * CW 统一玩家汇总表：Replay Aggregate 全量玩家 + League Rating 按 accountId join，
@@ -25,8 +27,11 @@ const props = defineProps({
   active: { type: Boolean, default: true },
   /** Drawer 选中玩家 accountId（identity 跟随；Drawer 关闭 → null → 清除 highlight） */
   selectedAccountId: { type: [Number, String], default: null },
+  /** 呈现方式：table（默认）/ cards（手机卡片列表；表格保留在 DOM 里供 PNG 导出）。 */
+  layout: { type: String, default: 'table' },
 })
 const emit = defineEmits(['select-player'])
+const { t } = useI18n()
 
 const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
@@ -92,12 +97,43 @@ function isSelectedRow(row) {
 // ---- sticky 核心对：nickname.left=0；league_rating.left=实测昵称列宽 >0 ----
 const { headerRefs, isStickyCol, colStyle, schedule } = useStickyColumns({
   enabled: computed(() => props.leagueMode),
-  active: computed(() => props.active),
+  active: computed(() => props.active && props.layout !== 'cards'),
   watchCols: computed(() => props.columns),
 })
 
 // 排序箭头变化可能改昵称列宽 → 重新调度测量
 watch([sortKey, sortReverse], schedule)
+
+// ---- 卡片列表（手机）：与表格共用排序、选中与单元格格式 ----
+const CARD_IDENTITY_KEYS = new Set(['nickname', 'clan', 'league_rating'])
+
+const cardItems = computed(() => {
+  const ratingCol = props.columns.find(c => c.key === 'league_rating')
+  return sortedRows.value.map((row, i) => ({
+    key: String(row.accountId ?? i),
+    title: row.cells.nickname ?? '--',
+    subtitle: row.cells.clan || '',
+    team: row.team,
+    primary: ratingCol ? { label: t('agg_labels.league_rating'), value: cellDisplay(row, ratingCol) } : null,
+    metrics: props.columns
+      .filter(c => !CARD_IDENTITY_KEYS.has(c.key))
+      .map(c => ({ key: c.key, label: t('agg_labels.' + c.key), value: cellDisplay(row, c) })),
+    selected: isSelectedRow(row),
+  }))
+})
+const cardSortOptions = computed(() => props.columns
+  .filter(c => c.key !== 'nickname')
+  .map(c => ({ key: c.key, label: t('agg_labels.' + c.key) })))
+
+function onCardSort({ key, desc }) {
+  sortKey.value = key
+  sortReverse.value = desc
+}
+
+function onCardSelect(accountId) {
+  const row = props.rows.find(r => String(r.accountId) === accountId)
+  if (row) onRowClick(row)
+}
 </script>
 
 <template>
@@ -106,7 +142,18 @@ watch([sortKey, sortReverse], schedule)
       <span class="league-summary-title">{{ title }}</span>
       <span class="league-summary-note">{{ $t('league.summary.battles_note') }}</span>
     </div>
-    <div class="tablewrap">
+    <PlayerCardList
+      v-if="layout === 'cards'"
+      :items="cardItems"
+      clickable
+      :sort-options="cardSortOptions"
+      :sort-key="sortKey"
+      :sort-desc="sortReverse"
+      :empty-text="$t('league.summary.no_rateable')"
+      @sort="onCardSort"
+      @select="onCardSelect"
+    />
+    <div v-show="layout !== 'cards'" class="tablewrap">
       <table :class="'cw-table'">
         <thead><tr>
           <th v-for="c in columns" :key="c.key"

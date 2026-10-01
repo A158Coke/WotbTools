@@ -57,18 +57,18 @@ function hideUnavailableImage(type) {
 
 <style scoped>
 .sponsor-page {
-  width: min(980px, calc(100vw - 40px));
+  width: min(980px, calc(100% - 40px));
   max-width: 980px;
   padding-block: 36px 48px;
   background-color: var(--bg);
-  background-image: linear-gradient(rgb(8 12 15 / .62), rgb(8 12 15 / .78)), url('/sponsor-bg.png');
+  background-image: linear-gradient(rgb(8 12 15 / .62), rgb(8 12 15 / .78)), url('/sponsor-bg.webp');
   background-position: center;
   background-size: cover;
   border-radius: var(--radius-lg);
 }
 
 .sponsor-page.layout-content {
-  width: min(980px, calc(100vw - 40px)) !important;
+  width: min(980px, calc(100% - 40px)) !important;
   max-width: 980px !important;
 }
 
@@ -168,7 +168,7 @@ function hideUnavailableImage(type) {
 
 @media (width < 768px) {
   .sponsor-page.layout-content {
-    width: min(980px, calc(100vw - 40px)) !important;
+    width: min(980px, calc(100% - 40px)) !important;
     padding-block: 28px 36px;
   }
 

@@ -5,7 +5,7 @@
 ## 核心规则
 
 - 每个正式产品页面必须拥有自己的专属背景资产，不再使用一个 shared background 覆盖多个页面。
-- **当前 SPA 正式展示层使用高质量 PNG**（`*-v1.png` / `hero-v4.png`）；它们是当前 showcase 的 canonical assets。
+- **当前 SPA 正式展示层使用高质量 PNG**（`*-v1.png` / `hero-v4.webp`）；它们是当前 showcase 的 canonical assets。
 - V1/V2/V3 SVG 保留在仓库中作为 fallback / 视觉历史，**不再控制 SPA 正式页面**（正式 CSS 不优先引用它们）；独立静态页可使用专属 SVG 资产。
 - 素材只负责氛围和页面识别；背景中的装饰性文字、Logo 或徽标必须来自已获授权的用户提供素材，不能替代真实 UI、按钮、业务数值或可交互状态。
 - 背景只承担 atmosphere / product identity，不得作为 Replay、Map、Tankopedia、Rating 或 AI Review 的事实来源。
@@ -18,21 +18,21 @@
 
 | Page                 | File                                      | Role                                | 替换约束                                                                                                      |
 |----------------------|-------------------------------------------|-------------------------------------|---------------------------------------------------------------------------------------------------------------|
-| Home — Hero          | `home/hero-v4.png`                        | Hero 横幅背景（全屏 + hero 内背景） | 坦克主体应在画面右侧、左侧留暗色负空间给文案；保持宽幅（约 2.5:1）；背景文字不得替代真实 UI                       |
-| Home — Replay 卡片   | `home/card-replay-parser-v1.png`          | feature card media area（cover 裁切） | Replay 解析主题；卡片以 object-fit: cover 裁切                                                               |
-| Home — AI 复盘卡片   | `home/card-ai-review-v1.png`              | feature card media area（cover 裁切） | AI 复盘/训练主题；卡片以 object-fit: cover 裁切                                                               |
-| Home — 战局重建卡片  | `home/card-battle-playback-v1.png`       | feature card media area（cover 裁切） | 战局地图主题；卡片以 object-fit: cover 裁切                                                                   |
-| Home — HoF 卡片      | `home/card-hall-of-fame-v1.png`           | feature card media area（cover 裁切） | 名人堂主题                                                                                                    |
-| Home — Sponsor 卡片  | `home/card-sponsor-v1.png`                | feature card media area（cover 裁切） | 支持/赞助主题                                                                                                 |
-| Replay Parser        | `replay/replay-hero-battlefield-v1.png`   | 全屏背景 + upload 战术表面          | 16:9；暗部为主；背景中的地图/标记仅作氛围，不作为回放事实                                               |
-| Hall of Fame         | `hof/hof-hero-hall-v1.png`                | 全屏背景                            | 16:9；金色荣誉大厅主题                                                                                        |
-| Rating               | `rating/rating-hero-analysis-v1.png`      | 全屏背景                            | 16:9；图片内即使有生成式 dashboard 元素也只能是低权重氛围，真实 Rating 数据必须覆盖在独立 readable surface 上 |
-| Profile              | `profile/profile-hero-camp-v1.png`        | 全屏背景 + profile-hero 表面        | 16:9；不引入 avatar 依赖                                                                                      |
-| Admin Users          | `admin/admin-hero-command-v1.png`         | 全屏背景（强度较弱）                | 16:9；Operations Console 优先，管理效率优先                                                                   |
-| HoF Admin            | `hof-admin/hof-admin-hero-command-v1.png` | 全屏背景（强度较弱）                | 16:9；CRUD / review 数据必须保持清晰                                                                          |
-| Version / Changelog  | `version/version-hero-workshop-v1.png`    | 全屏背景                            | 16:9；工坊主题                                                                                                |
-| Contact              | `contact/contact-hero-radio-v1.png`       | 全屏背景                            | 16:9；通信塔/无线电主题                                                                                       |
-| Sponsor              | `../../../public/sponsor-bg.png`          | `/sponsor` Vue 页面背景             | 用户提供的原创素材；仅作赞助页氛围背景，不承载赞助配置或二维码                                               |
+| Home — Hero          | `home/hero-v4.webp`                        | Hero 横幅背景（全屏 + hero 内背景） | 坦克主体应在画面右侧、左侧留暗色负空间给文案；保持宽幅（约 2.5:1）；背景文字不得替代真实 UI                       |
+| Home — Replay 卡片   | `home/card-replay-parser-v1.webp`          | feature card media area（cover 裁切） | Replay 解析主题；卡片以 object-fit: cover 裁切                                                               |
+| Home — AI 复盘卡片   | `home/card-ai-review-v1.webp`              | feature card media area（cover 裁切） | AI 复盘/训练主题；卡片以 object-fit: cover 裁切                                                               |
+| Home — 战局重建卡片  | `home/card-battle-playback-v1.webp`       | feature card media area（cover 裁切） | 战局地图主题；卡片以 object-fit: cover 裁切                                                                   |
+| Home — HoF 卡片      | `home/card-hall-of-fame-v1.webp`           | feature card media area（cover 裁切） | 名人堂主题                                                                                                    |
+| Home — Sponsor 卡片  | `home/card-sponsor-v1.webp`                | feature card media area（cover 裁切） | 支持/赞助主题                                                                                                 |
+| Replay Parser        | `replay/replay-hero-battlefield-v1.webp`   | 全屏背景 + upload 战术表面          | 16:9；暗部为主；背景中的地图/标记仅作氛围，不作为回放事实                                               |
+| Hall of Fame         | `hof/hof-hero-hall-v1.webp`                | 全屏背景                            | 16:9；金色荣誉大厅主题                                                                                        |
+| Rating               | `rating/rating-hero-analysis-v1.webp`      | 全屏背景                            | 16:9；图片内即使有生成式 dashboard 元素也只能是低权重氛围，真实 Rating 数据必须覆盖在独立 readable surface 上 |
+| Profile              | `profile/profile-hero-camp-v1.webp`        | 全屏背景 + profile-hero 表面        | 16:9；不引入 avatar 依赖                                                                                      |
+| Admin Users          | `admin/admin-hero-command-v1.webp`         | 全屏背景（强度较弱）                | 16:9；Operations Console 优先，管理效率优先                                                                   |
+| HoF Admin            | `hof-admin/hof-admin-hero-command-v1.webp` | 全屏背景（强度较弱）                | 16:9；CRUD / review 数据必须保持清晰                                                                          |
+| Version / Changelog  | `version/version-hero-workshop-v1.webp`    | 全屏背景                            | 16:9；工坊主题                                                                                                |
+| Contact              | `contact/contact-hero-radio-v1.webp`       | 全屏背景                            | 16:9；通信塔/无线电主题                                                                                       |
+| Sponsor              | `../../../public/sponsor-bg.webp`          | `/sponsor` Vue 页面背景             | 用户提供的原创素材；仅作赞助页氛围背景，不承载赞助配置或二维码                                               |
 
 隐藏的 `PlaybackQaPage` 是 QA / production-component verification 页面，不属于正式产品 Showcase，因此不创建营销背景。
 

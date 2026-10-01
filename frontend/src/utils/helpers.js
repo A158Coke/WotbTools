@@ -1,10 +1,25 @@
 import MAP_NAMES from '../../../common/map_names.json'
 
+/**
+ * 默认只显示 6–8 个核心列（审计 BZ-07），其余指标在「列」面板里按需打开。
+ * 修改默认值时把旧值追加进对应的 LEGACY_* 列表：从未改过列的用户会迁到新默认值，自定义过的保持不变。
+ */
 export const DEFAULT_VISIBLE = [
-  'nickname', 'clan', 'tank_name', 'tank_type', 'survived_label',
-  'kills', 'damage_dealt', 'damage_assisted',
-  'damage_received', 'damage_blocked', 'n_shots', 'n_hits_dealt', 'n_penetrations_dealt',
-  'hit_rate', 'pen_rate', 'n_enemies_damaged'
+  'nickname', 'clan', 'tank_name', 'survived_label',
+  'kills', 'damage_dealt', 'damage_assisted', 'damage_blocked'
+]
+
+/** 汇总表（普通批次）核心列；以前默认全部可见。 */
+export const AGG_DEFAULT_VISIBLE = [
+  'nickname', 'clan', 'battles', 'win_rate', 'damage_avg', 'assisted_avg', 'kills_avg', 'survival_rate'
+]
+
+/** 历代默认可见列：localStorage 里的可见列与其中某一版完全相同 = 用户没改过，迁到当前默认值。 */
+export const LEGACY_DEFAULT_VISIBLE = [
+  ['nickname', 'clan', 'tank_name', 'tank_type', 'survived_label',
+    'kills', 'damage_dealt', 'damage_assisted',
+    'damage_received', 'damage_blocked', 'n_shots', 'n_hits_dealt', 'n_penetrations_dealt',
+    'hit_rate', 'pen_rate', 'n_enemies_damaged'],
 ]
 
 export const EXTENDED_ONLY_PLAYER_KEYS = new Set([
@@ -31,12 +46,17 @@ export const LEAGUE_DEFAULT_VISIBLE = [
  * 七维 + MVP 默认展示（延续旧体验），但不再是 alwaysVisible 硬编码。
  */
 export const CW_SUMMARY_DEFAULT_VISIBLE = [
-  'nickname', 'league_rating', 'league_observed_mean',
-  'league_damage_score', 'league_assist_score', 'league_kill_score',
-  'league_exchange_score', 'league_blocked_score', 'league_survival_score',
-  'league_shooting_score', 'mvp_count',
-  'clan', 'battles', 'rated_battles', 'wins', 'win_rate',
-  'damage_avg', 'assisted_avg', 'kills_avg', 'earned_avg'
+  'nickname', 'league_rating', 'clan', 'battles', 'rated_battles', 'wins', 'mvp_count', 'damage_avg'
+]
+
+/** CW 统一玩家表历代默认值（七维与观察均值已移到「列」面板，审计 BZ-07）。 */
+export const LEGACY_CW_SUMMARY_DEFAULT_VISIBLE = [
+  ['nickname', 'league_rating', 'league_observed_mean',
+    'league_damage_score', 'league_assist_score', 'league_kill_score',
+    'league_exchange_score', 'league_blocked_score', 'league_survival_score',
+    'league_shooting_score', 'mvp_count',
+    'clan', 'battles', 'rated_battles', 'wins', 'win_rate',
+    'damage_avg', 'assisted_avg', 'kills_avg', 'earned_avg'],
 ]
 
 /** League 模式固定列（玩家 + 总 Rating；sticky 布局依据，不可隐藏/移动）。 */

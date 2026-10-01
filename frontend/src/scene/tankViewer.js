@@ -21,7 +21,38 @@ import {
     assetProvider,
 } from './agentData.js'
 
-export function initTankViewer() {
+/**
+ * @param {object} [options]
+ * @param {object} [options.labels] 界面文案（审计 3D-16：由宿主页按当前语言提供；缺省为英文原文）
+ */
+/**
+ * 场景脚本把射击复现 / 调试状态挂在 window 上（__worldPan、__shotCtx…）。以前每次都在新窗口里打开，
+ * 现在同一标签页内反复进出，残留状态会让下一辆坦克的炮塔转不动、镜头被锁——初始化与销毁时统一清掉。
+ * 宿主传入的 __INITIAL_TANK__ / __INITIAL_SHOOTER__ 不在此列。
+ */
+const VIEWER_GLOBAL_RE = /^__(world|shot|shooter|victim|hit|seg|move|launch|end|dbg|debug|autoRel|fireGun|update)/
+function resetViewerGlobals() {
+    if (typeof window === 'undefined') return
+    for (const key of Object.keys(window)) {
+        if (VIEWER_GLOBAL_RE.test(key)) {
+            try { delete window[key] } catch (_) { window[key] = undefined }
+        }
+    }
+}
+
+export function initTankViewer({ labels = {} } = {}) {
+        resetViewerGlobals();
+        const L = {
+            loading: 'Loading tank model...',
+            loadFailed: (phase, msg) => 'Failed to load ' + phase + ': ' + msg,
+            tier: (tier) => 'Tier ' + tier,
+            type: (value) => value,
+            nation: (value) => value,
+            showCollision: 'Show Collision',
+            hideCollision: 'Hide Collision',
+            worldHint: 'Drag to rotate · Scroll to zoom · Right-drag: pan',
+            ...labels,
+        };
 
         // window 级监听统一经 onWin 登记，destroy 时成对摘除
         const cleanups = [];
@@ -1023,7 +1054,7 @@ export function initTankViewer() {
 
         function loadModels() {
             document.getElementById('loading').style.display = 'block';
-            document.getElementById('loading').textContent = 'Loading tank model...';
+            document.getElementById('loading').textContent = L.loading;
             window.__LOAD__ = 'start';
             clearModels();
             const loader = new GLTFLoader();
@@ -1031,7 +1062,7 @@ export function initTankViewer() {
                 const msg = (typeof error === 'string') ? error : (error && (error.message || error.statusText || String(error))) || 'unknown';
                 window.__LOAD__ = 'fail:' + phase + ':' + msg;
                 console.error('Failed to load ' + phase + ':', error);
-                document.getElementById('loading').textContent = 'Failed to load ' + phase + ': ' + msg;
+                document.getElementById('loading').textContent = L.loadFailed(phase, msg);
             };
 
             loader.load(assetProvider.url(tankData.model_url), function(gltf) {
@@ -1426,7 +1457,7 @@ export function initTankViewer() {
                         controls.screenSpacePanning = false;
                         window.__worldPan = true;
                         const hintEl = document.getElementById('controls-hint');
-                        if (hintEl) hintEl.textContent = 'Drag to rotate · Scroll to zoom · Right-drag: pan';
+                        if (hintEl) hintEl.textContent = L.worldHint;
                         // ===== 脱靶弹分支：无目标模型，仅射手 + 弹道 + 落点/材质标注 =====
                         // terrain_impact（method 0x1b）提供精确落点与弹道末段起点。
                         const isMiss = !s.target_name;
@@ -2709,9 +2740,9 @@ export function initTankViewer() {
 
         function updateInfoPanel() {
             document.getElementById('tank-name').textContent = tankData.name || '?';
-            document.getElementById('tank-tier').textContent = 'Tier ' + (tankData.tier || '?');
-            document.getElementById('tank-type').textContent = tankData.type || '?';
-            document.getElementById('tank-nation').textContent = tankData.nation || '?';
+            document.getElementById('tank-tier').textContent = L.tier(tankData.tier || '?');
+            document.getElementById('tank-type').textContent = tankData.type ? L.type(tankData.type) : '?';
+            document.getElementById('tank-nation').textContent = tankData.nation ? L.nation(tankData.nation) : '?';
             document.getElementById('info-panel').style.display = 'block';
         }
 
@@ -3116,7 +3147,7 @@ export function initTankViewer() {
             document.getElementById('collision-btn').addEventListener('click', function() {
                 collisionMode = !collisionMode;
                 this.classList.toggle('active', collisionMode);
-                this.textContent = collisionMode ? 'Hide Collision' : 'Show Collision';
+                this.textContent = collisionMode ? L.hideCollision : L.showCollision;
                 if (!armorModel) return;
                 applyArmorViewStyle(collisionMode);
             });
@@ -3155,8 +3186,10 @@ export function initTankViewer() {
             });
             onWin('mousemove', function(e) {
                 if (!rmbDown) return;
-                const dx = e.clientX - rmbStartX;
-                const dy = e.clientY - rmbStartY;
+                aimFromDrag(e.clientX - rmbStartX, e.clientY - rmbStartY);
+            });
+            /** 拖动位移 → 炮塔 / 炮管角度（右键拖动与触屏「炮塔」模式共用，含俯仰 / 水平射界限制）。 */
+            function aimFromDrag(dx, dy) {
                 const norm180 = (a) => ((a + 180) % 360 + 360) % 360 - 180;
                 const yl = currentConfig()?.yaw_limits;
                 const pl = currentConfig()?.pitch_limits;
@@ -3205,10 +3238,35 @@ export function initTankViewer() {
                 document.getElementById('turret-val').textContent = currentTurretDeg.toFixed(0) + '°';
                 document.getElementById('gun-val').textContent = currentGunDeg.toFixed(0) + '°';
                 updateTurretGun(currentTurretDeg, currentGunDeg);
-            });
+            }
             onWin('mouseup', function(e) {
                 if (e.button === 2) rmbDown = false;
             });
+
+            // 触屏 / 没有右键的设备（审计 3D-14）：「炮塔」开关打开时，单指拖动转炮塔与炮管，镜头旋转暂停
+            let aimMode = false, aimPointer = null;
+            const aimBtn = document.getElementById('aim-btn');
+            if (aimBtn) aimBtn.addEventListener('click', function() {
+                aimMode = !aimMode;
+                this.classList.toggle('active', aimMode);
+                this.setAttribute('aria-pressed', String(aimMode));
+                if (controls) controls.enabled = !aimMode;
+            });
+            renderer.domElement.addEventListener('pointerdown', function(e) {
+                if (!aimMode || aimPointer != null || window.__worldPan) return;
+                aimPointer = e.pointerId;
+                rmbStartX = e.clientX;
+                rmbStartY = e.clientY;
+                rmbStartTurret = currentTurretDeg;
+                rmbStartGun = currentGunDeg;
+            });
+            onWin('pointermove', function(e) {
+                if (aimPointer !== e.pointerId) return;
+                aimFromDrag(e.clientX - rmbStartX, e.clientY - rmbStartY);
+            });
+            const endAim = function(e) { if (aimPointer === e.pointerId) aimPointer = null; };
+            onWin('pointerup', endAim);
+            onWin('pointercancel', endAim);
 
             document.getElementById('turret-controls').style.display = 'block';
 
@@ -3949,6 +4007,7 @@ export function initTankViewer() {
         /// canvas 由 ArmorView 的容器 DOM 一并移除，这里只处理 JS 侧句柄。
         function destroy() {
             destroyed = true;
+            resetViewerGlobals();
             cancelAnimationFrame(rafId);
             while (cleanups.length) { try { cleanups.pop()(); } catch (_) {} }
             try { if (controls) controls.dispose(); } catch (_) {}

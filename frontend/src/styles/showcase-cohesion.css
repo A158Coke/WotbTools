@@ -29,7 +29,6 @@
   color: #f0aa30 !important;
 }
 
-.layout-data-workspace .restoolbar,
 .layout-data-workspace .tablewrap {
   border-color: #344047 !important;
   background: rgba(12,18,21,.92) !important;
@@ -110,8 +109,7 @@
   min-width: 0;
 }
 .lb-wrap .lb-toolbar .lb-label,
-.lb-wrap .lb-toolbar .label,
-.lb-wrap .lb-toolbar span:not(.dropdown) {
+.lb-wrap .lb-toolbar .label {
   color: #a8aaa5 !important;
 }
 .lb-wrap .lb-toolbar .lb-label {
@@ -119,7 +117,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.lb-wrap .lb-toolbar :is(select,input) {
+.lb-wrap .lb-toolbar :is(select, input) {
   width: 100% !important;
   min-width: 0 !important;
   max-width: none !important;

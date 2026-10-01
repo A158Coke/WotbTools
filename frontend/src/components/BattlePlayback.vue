@@ -1,5 +1,6 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
+import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
 import { useI18n } from 'vue-i18n'
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import { mapBases } from '../data/mapBases'
@@ -14,6 +15,7 @@ import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
+import PlaybackRoster from './PlaybackRoster.vue'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
@@ -92,7 +94,12 @@ const props = defineProps({
   /** QA 场景循环播放（PR4 §49：时间线到末尾自动回到 0 继续） */
   loop: { type: Boolean, default: false },
   /** V2 canonical battle-playback-dataset；未加载时为空。 */
-  playbackV2: { type: Object, default: null }
+  playbackV2: { type: Object, default: null },
+  /**
+   * 是否为当前可见的模式（审计 PB-05）。false 时暂停播放、不响应快捷键——
+   * 工作台用 v-show 保留实例，隐藏的回放不能再抢空格 / 方向键。
+   */
+  active: { type: Boolean, default: true },
 })
 
 const { t } = useI18n()
@@ -521,9 +528,9 @@ const wideLayout = ref(false)
    互斥性由「只挂一个类」保证，而不是靠媒体查询之间的算术——旧写法里
    .pb-device-mobile(0,4,0) 会压掉宽度键控的规则(0,3,0)，一档的改动因此
    反复打穿另一档。三档与旧行为逐条等价：
-     mobile = isMobileDevice（pointer: coarse 且 <=1200，旧 .pb-device-mobile）
-     pc     = 非 mobile 且 >=1200（旧 wideLayout 分支）
-     tablet = 非 mobile 且 <1200（旧「窄视口非触屏」分支） */
+     mobile = isMobileDevice（宽 <768，或触屏且高 <=500；见 shared/breakpoints PLAYBACK_MOBILE_QUERY）
+     pc     = 非 mobile 且 >=1200
+     tablet = 非 mobile 且 <1200（含 iPad / Android 平板；触屏只放大点击区域，不改形态） */
 const formFactor = computed(() => {
   if (isMobileDevice.value) return 'mobile'
   return wideLayout.value ? 'pc' : 'tablet'
@@ -540,7 +547,7 @@ const controlsInRail = computed(() => (isFullscreen.value || wideLayout.value)
 // 原来写的是 max-width: 1200px，与之在恰好 1200px 处重叠：触屏设备在该宽度上
 // form 判为 mobile，而 @media (min-width: 1200px) 的规则同时生效——形态就不再互斥。
 // 1199.98 是 CSS 惯用的「差一个亚像素」写法（媒体查询按分数像素比较）。
-const mobileLayoutQuery = '(pointer: coarse) and (max-width: 1199.98px)'
+const mobileLayoutQuery = PLAYBACK_MOBILE_QUERY
 const isMobileDevice = ref(false)
 // §fullscreen：PlaybackControls 是否已在 Left Rail。移动端必须保持 bottom overlay，故全屏/大桌面
 // 且非移动端才为 true；移动端全屏仍走 overlay，bottom inset 由真实 overlay content 高度决定。
@@ -608,7 +615,9 @@ function toggleFullscreen() {
 
 // 地图容器尺寸观察：fullscreen enter/exit / 窗口缩放 → ResizeObserver 更新 mapSize
 //（reactive）→ markerScreen/labelLayout/selectAt/textInput 以新尺寸重算；不依赖 magic delay。
-watch(() => mapEl.value, (el) => {
+watch(() => mapEl.value, (el, prev) => {
+  if (prev) prev.removeEventListener('pointerleave', onMapPointerLeave)
+  if (el) el.addEventListener('pointerleave', onMapPointerLeave)
   if (!el || mapResizeObserver) return
   if (typeof ResizeObserver === 'function') {
     mapResizeObserver = new ResizeObserver((entries) => {
@@ -760,7 +769,30 @@ function screenPoint(clientX, clientY) {
   return { x: clientX - rect.left, y: clientY - rect.top }
 }
 
+/**
+ * 滚轮缩放只在用户明确与地图交互时生效（审计 PB-04，同 Google Maps 的 cooperative gestures）：
+ * 全屏、按住 Ctrl / ⌘、或刚在地图上按下过指针（直到指针离开地图）。否则让页面正常滚动，并短暂提示。
+ */
+const mapEngaged = ref(false)
+const wheelHintVisible = ref(false)
+let wheelHintTimer = null
+function showWheelHint() {
+  wheelHintVisible.value = true
+  if (wheelHintTimer != null) clearTimeout(wheelHintTimer)
+  wheelHintTimer = setTimeout(() => { wheelHintVisible.value = false; wheelHintTimer = null }, 1500)
+}
+function onMapPointerLeave() { mapEngaged.value = false }
+
+/** 审计 PB-01：地图未放大、非全屏、未在标注时，单指纵向滑动交给页面滚动。 */
+const mapTouchPan = computed(() => !isFullscreen.value && !activeTool.value && view.scale <= fitScale() + 1e-3)
+
 function onWheel(e) {
+  if (!(isFullscreen.value || e.ctrlKey || e.metaKey || mapEngaged.value)) {
+    showWheelHint()
+    return
+  }
+  e.preventDefault()
+  wheelHintVisible.value = false
   const p = screenPoint(e.clientX, e.clientY)
   // 缩放下限 = 完整地图 fit scale：放大后再缩小能回到原始完整视图，不会卡在 1x。
   applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()))
@@ -773,6 +805,7 @@ function pinchInfo() {
 }
 
 function onPointerDown(e) {
+  mapEngaged.value = true
   suppressClick = false
   gestureMoved = false
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -1352,7 +1385,14 @@ function setSpeed(next) {
   if ([0.5, 1, 2, 4].includes(next)) speed.value = next
 }
 
+// KeepAlive 停用（切到别的页面）时同样视为不可见
+const lifecycleVisible = ref(true)
+onDeactivated(() => { lifecycleVisible.value = false; pause() })
+onActivated(() => { lifecycleVisible.value = true })
+watch(() => props.active, (value) => { if (!value) pause() })
+
 function onKeydown(e) {
+  if (!props.active || !lifecycleVisible.value) return
   const target = e.target
   const tagName = target && target.tagName
   if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tagName)) return
@@ -1400,6 +1440,7 @@ onBeforeUnmount(() => {
   }
   mobileLayoutQueryMql = null
   window.removeEventListener('keydown', onKeydown)
+  if (wheelHintTimer != null) clearTimeout(wheelHintTimer)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
@@ -1726,6 +1767,17 @@ const teamVehicles = computed(() => {
   return { friendly, enemy }
 })
 
+/**
+ * 审计 BZ-13 / PB-03：PC / 平板双栏的右侧栏在未选中车辆时不再空着，显示两队阵容（含当前存活状态），
+ * 点玩家即打开该车详情。手机与窄平板（<860，堆叠形态）由 CSS 隐藏，避免把控制栏推出首屏。
+ */
+const destroyedNow = computed(() => new Set(
+  baseVehicleStates.value.filter(st => st.destroyed === true).map(st => st.vehicle.accountId)))
+function selectFromRoster(accountId) {
+  selectedAccountId.value = accountId
+  activePanel.value = null
+}
+
 const selectedState = computed(() => {
   if (selectedAccountId.value == null) return null
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
@@ -1981,7 +2033,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen, 'pb-rail-collapsed': railCollapsed, 'pb-side-slots': sideSlots, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen, 'pb-rail-collapsed': railCollapsed, 'pb-side-slots': sideSlots, 'pb-controls-bottom': !controlsInRail, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
     <BattlePlaybackHud
       :friendly-hp="friendlyHp"
       :enemy-hp="enemyHp"
@@ -2206,6 +2258,7 @@ const mapStyle = computed(() => ({
           :visible-floats="visibleFloats"
           :visible-bursts="visibleBursts"
           :float-team-class="floatTeamClass"
+          :touch-pan="mapTouchPan"
           @wheel="onWheel"
           @pointer-down="onPointerDown"
           @pointer-move="onPointerMove"
@@ -2216,6 +2269,8 @@ const mapStyle = computed(() => ({
           @commit-text="commitSession"
           @cancel-text="cancelSession"
         />
+        <!-- 审计 PB-04：未与地图交互时滚轮交给页面，这里短暂提示如何缩放 -->
+        <div v-if="wheelHintVisible" class="pb-wheel-hint" role="status" data-test="pb-wheel-hint">{{ t('workspace.map_wheel_hint') }}</div>
 
         <div class="pb-side-panel-shell" :class="{ 'pb-details-active': !!selectedState }" data-test="pb-side-panel-shell">
           <div
@@ -2237,11 +2292,12 @@ const mapStyle = computed(() => ({
             :format-clock="formatClock"
             @close="closeSidebar"
           />
+          <PlaybackRoster v-else-if="formFactor !== 'mobile'" :teams="teamVehicles" :destroyed="destroyedNow" @select="selectFromRoster" />
         </div>
 
       </div>
 
-      <PlaybackMobileOverlay ref="mobileOverlay">
+      <PlaybackMobileOverlay ref="mobileOverlay" :paused="!playing">
         <PlaybackControls
           v-if="!controlsInRail"
           :playing="playing"
@@ -2289,6 +2345,15 @@ const mapStyle = computed(() => ({
         </div>
       </PlaybackMobileOverlay>
 
+      <!-- 手机横屏（非全屏）：阵容放在地图右侧的空白里（CSS 只在该形态显示） -->
+      <PlaybackRoster
+        v-if="formFactor === 'mobile' && !selectedState"
+        class="pb-landscape-roster"
+        :teams="teamVehicles"
+        :destroyed="destroyedNow"
+        @select="selectFromRoster"
+      />
+
       <div v-if="visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
         <div v-for="feed in visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimPlayerName ? feed.victimPlayerName + '（' + feed.victimName + '）' : feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
       </div>
@@ -2297,6 +2362,19 @@ const mapStyle = computed(() => ({
 </template>
 
 <style scoped>
+.pb-wheel-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 30;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-scrim);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
 .pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; }
 .pb-viewport {
   position: relative;

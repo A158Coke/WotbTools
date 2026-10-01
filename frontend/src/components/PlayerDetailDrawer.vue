@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { X } from 'lucide-vue-next'
 import PlayerRatingRadar from './PlayerRatingRadar.vue'
 import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
 import { leagueMaxByKey, ratingTotalText } from '../utils/helpers.js'
@@ -17,8 +18,10 @@ import {
 import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
 
 /**
- * 选手详情 Side Drawer。
- * - position: fixed 右侧 overlay，不占 Table 布局空间。
+ * 选手详情 Side Drawer（design-language §7 Drawer / §9 Master–Detail）。
+ * - 桌面（≥1200）：推开式侧栏，可拖宽；平板（768–1199）：固定宽度的推开式侧栏；
+ *   两者都通过 --pd-drawer-offset 让工作台让出右侧空间，不遮挡表格。
+ * - 手机（<768）：全屏 sheet（modal），左右滑动切换上一位 / 下一位玩家。
  * - 打开时 focus 关闭按钮；Escape / × / backdrop 关闭；关闭后 focus 回到触发行。
  * - selection identity = accountId：排序/刷新后由父组件按 accountId 重新 resolve 数据。
  * - scope 语义：summary = 当前批次（V6 Rating + Observed Mean + Rated Battles 头部；
@@ -60,6 +63,8 @@ const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 14
 // ---- Side Panel 自由 Resize（仅桌面）----
 const DRAWER_MIN = 320
 const DRAWER_DEFAULT = 380
+/** 平板固定宽度：768 宽时给表格留约 400px。 */
+const DRAWER_TABLET = 360
 const DRAWER_MAX_RATIO = 0.45
 const DRAWER_WIDTH_KEY = 'radarSidePanelWidth'
 const drawerWidth = ref(DRAWER_DEFAULT)
@@ -130,12 +135,18 @@ function onResizeKey(delta) {
   setDrawerWidth(drawerWidth.value + delta)
 }
 
-/** Side Panel 真 reflow：桌面(>=1200px)开启时把抽屉宽度暴露成 CSS 变量，
- * 供 .layout-data-workspace 预留右侧空间，主内容随之收窄/扩展，不再被 fixed overlay 覆盖；
- * tablet/mobile 保持原有 overlay 行为（offset=0px）。 */
+/** 侧栏宽度：桌面 = 用户可拖的宽度；平板 = 固定宽度；手机 = 全屏（null）。 */
+const panelWidth = computed(() => {
+  if (isMobile.value) return null
+  return isDesktop.value ? drawerWidth.value : DRAWER_TABLET
+})
+
+/** Side Panel 真 reflow：桌面 / 平板开启时把侧栏宽度暴露成 CSS 变量，
+ * 供 .layout-data-workspace 预留右侧空间，主内容随之收窄/扩展，不被 fixed 侧栏覆盖；
+ * 手机是全屏 sheet（offset=0px）。 */
 const workspaceOffset = computed(() =>
-  isDesktop.value && open.value ? (drawerWidth.value + 8) + 'px' : '0px')
-watch([isDesktop, open, drawerWidth], () => {
+  open.value && panelWidth.value ? (panelWidth.value + 8) + 'px' : '0px')
+watch([panelWidth, open], () => {
   if (typeof document !== 'undefined') {
     document.documentElement.style.setProperty('--pd-drawer-offset', workspaceOffset.value)
   }
@@ -369,6 +380,24 @@ watch(open, (v) => {
   if (v) nextTick(() => closeBtn.value?.focus?.())
 })
 
+// ---- 手机全屏 sheet：左右滑动切换玩家（水平位移足够大且明显大于垂直位移，避免与纵向滚动冲突） ----
+const SWIPE_MIN_PX = 60
+let touchStart = null
+function onTouchStart(e) {
+  if (!isMobile.value || e.touches.length !== 1 || isEditable(e.target)) { touchStart = null; return }
+  touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+}
+function onTouchEnd(e) {
+  if (!touchStart) return
+  const end = e.changedTouches[0]
+  const dx = end.clientX - touchStart.x
+  const dy = end.clientY - touchStart.y
+  touchStart = null
+  if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy) * 1.5) return
+  if (dx < 0 && props.hasNext) onNext()
+  else if (dx > 0 && props.hasPrev) onPrev()
+}
+
 onMounted(() => { window.addEventListener('keydown', onKeydown); drawerWidth.value = loadDrawerWidth(); bindMobile() })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
@@ -498,9 +527,11 @@ function ensureImageLoaded(url) {
     <div v-if="open || closing" class="drawer-backdrop" :class="{ 'pd-modal': isMobile }" @click.self="isMobile ? requestClose() : null">
       <aside class="player-drawer" :class="{ 'pd-closing': closing }" role="dialog" :aria-modal="isMobile ? 'true' : undefined"
              :aria-labelledby="'pd-title-' + (player?.accountId ?? 'x')"
-             :style="{ width: isDesktop ? drawerWidth + 'px' : undefined }">
+             :style="{ width: panelWidth ? panelWidth + 'px' : undefined }"
+             data-testid="player-drawer"
+             @touchstart.passive="onTouchStart" @touchend="onTouchEnd">
         <button ref="closeBtn" class="pd-close pd-close-abs" :aria-label="t('league.drawer.close')"
-                @click="requestClose">✕</button>
+                @click="requestClose"><X :size="18" aria-hidden="true" /></button>
 
         <Transition :name="'pd-dir-' + navDir" mode="out-in">
           <div :key="(player?.accountId ?? 'none') + (isSummary ? '-s' : '-b')" class="pd-content">
@@ -696,7 +727,7 @@ function ensureImageLoaded(url) {
   background: rgb(0 0 0 / .35);
 }
 .player-drawer {
-  position: fixed; top: calc(var(--topbar-h) + 8px); right: 8px; bottom: 8px; width: min(380px, calc(100vw - 16px));
+  position: fixed; top: calc(var(--header-h) + 8px); right: 8px; bottom: 8px; width: min(380px, calc(100% - 16px));
   background: var(--bg-card2); border: 1px solid var(--border); border-radius: 12px;
   box-shadow: var(--surface-shadow); overflow-y: auto; padding: 16px;
   /* Android edge-to-edge 预备：env() 今日解析为 0，视觉零变化 */
@@ -711,7 +742,7 @@ function ensureImageLoaded(url) {
 /* Side Panel resize handle（桌面）：视觉 2px 线，实际 12px hit 区；默认不显，hover/拖动时高亮。 */
 .pd-resizer {
   position: absolute;
-  top: calc(var(--topbar-h) + 8px);
+  top: calc(var(--header-h) + 8px);
   bottom: 8px;
   width: 12px;
   margin-left: -5px;
@@ -739,10 +770,22 @@ body.pd-resizing .pd-resizer { opacity: 1; }
 body.pd-resizing .pd-resizer-line,
 .pd-resizer:focus-visible .pd-resizer-line { background: var(--accent); height: 72px; }
 @media (max-width: 1199px) { .pd-resizer { display: none; } }
-@media (max-width: 1080px) {
-  .drawer-backdrop { z-index: var(--z-modal); }
-  .player-drawer { top: 8px; }
+/* 手机：全屏 sheet，盖住顶栏与底部 Tab 栏 */
+@media (width < 768px) {
+  .drawer-backdrop { z-index: var(--z-sheet); }
+  .player-drawer {
+    inset: 0;
+    width: auto;
+    border: 0;
+    border-radius: 0;
+    padding-top: calc(var(--space-4) + env(safe-area-inset-top));
+    animation: pd-sheet-in var(--duration-base) var(--ease-standard);
+  }
+  .player-drawer.pd-closing { animation: pd-sheet-out var(--duration-fast) var(--ease-standard) forwards; }
+  .pd-close-abs { top: calc(var(--space-3) + env(safe-area-inset-top)); }
 }
+@keyframes pd-sheet-in { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pd-sheet-out { from { transform: none; opacity: 1; } to { transform: translateY(24px); opacity: 0; } }
 .pd-close-abs { position: absolute; top: 12px; right: 12px; }
 .pd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding-right: 40px; }
 .pd-title { font-size: 1.1rem; font-weight: 800; color: var(--text-heading); }

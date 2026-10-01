@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { confirm } from '../composables/useConfirm.js'
 import { useAuth } from '../composables/useAuth.js'
 import { whenBusinessUserSettled } from '../composables/useBusinessUserBootstrap.js'
 import {
@@ -200,7 +201,7 @@ async function loadHundredStatus() {
 
 /** 撤销当前待审核申请：确认后调用取消 API，成功后刷新状态。 */
 async function withdrawHundred(id) {
-  if (!confirm(t('hundred.withdrawConfirm'))) return
+  if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return
   hundredWithdrawingId.value = id
   hundredMessage.value = ''
   hundredError.value = ''
@@ -220,7 +221,7 @@ function formatTime(value) {
 }
 
 async function removeAccount() {
-  if (!confirm(t('profile.unbindConfirm'))) return
+  if (!(await confirm({ title: t('profile.unbindConfirm'), confirmLabel: t('profile.unbind'), danger: true }))) return
   editError.value = ''
   try {
     profile.value = await deleteUserWotbAccount()

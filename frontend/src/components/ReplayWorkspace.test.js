@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises as flushVue, mount } from '@vue/test-utils'
+
+/** 2D 回放面板是异步组件：每次 flush 同时等动态 import 完成。 */
+async function flushPromises() {
+  await flushVue()
+  await vi.dynamicImportSettled()
+  await flushVue()
+}
 import { useError } from '../composables/useError.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
@@ -55,7 +62,9 @@ vi.mock('./AiReviewPanel.vue', () => ({
     template: '<div data-test="ai-pane">{{ processingJobId }}|{{ sourceId }}|{{ datasetError }}</div>',
   },
 }))
+// __esModule：BattlePlaybackPanel 在工作台里是异步组件（审计 PF-02），Vue 需要它来解包 default
 vi.mock('./BattlePlaybackPanel.vue', () => ({
+  __esModule: true,
   default: {
     name: 'BattlePlaybackPanelMock',
     props: ['file', 'processingJobId', 'sourceId', 'active', 'seekTo', 'datasetError'],
@@ -81,7 +90,7 @@ vi.mock('../composables/useNativeReplayImport.js', () => ({
     return { consumePendingWhenReady: nativeImportState.retry }
   },
 }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true, locale: { value: 'en' } }) }))
 
 /** 以真实 Vue ref/函数构造 useReplay 返回物（保证 files/resp/processingJobId/selectionRevision 响应式）。 */
 function buildState() {
@@ -193,6 +202,13 @@ describe('ReplayWorkspace', () => {
     expect(tabs.map(t => t.attributes('data-cap'))).toEqual(['data', 'playback', 'ai'])
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ai-pane"]').exists()).toBe(false)
+    // 审计 PF-02：2D 回放面板首次进入时才挂载（代码块按需加载），之后切走只隐藏、保留状态
+    expect(wrapper.find('[data-test="playback-pane"]').exists()).toBe(false)
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="playback-pane"]').exists()).toBe(true)
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="data"]').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-test="playback-pane"]').exists()).toBe(true)
   })
 
@@ -460,6 +476,18 @@ describe('ReplayWorkspace', () => {
     await expect(nativeImportState.onPendingFile(file)).resolves.toBe(false)
   })
 
+  /** 数据模式的场次选择器在 ReplayPage 工具栏里（此处为 mock），它调用的就是 workspaceContext.selectBattle。 */
+  async function selectInData(wrapper, sourceId) {
+    wrapper.findComponent({ name: 'ReplayPageMock' }).props('workspaceContext').selectBattle(sourceId)
+    await flushPromises()
+  }
+
+  async function openPlaybackPicker(wrapper) {
+    await wrapper.get('[data-testid="playback-battle-picker"]').trigger('click')
+    await flushPromises()
+    return wrapper.findAll('[data-testid="battle-picker-option"]')
+  }
+
   it('回归：选 #8 → 经 AI 维护页切到 Playback 仍消费 #8', async () => {
     const files = Array.from({ length: 9 }, (_, i) => new File(['x'], `f${i}.wotbreplay`))
     replayState.files.value = files
@@ -471,11 +499,7 @@ describe('ReplayWorkspace', () => {
     replayState.processingJobId.value = 'job-1'
     const wrapper = mountWorkspace('data')
     await flushPromises()
-    await wrapper.find('[data-testid="ws-batch-selector"]').trigger('click')
-    const items = wrapper.findAll('.ws-batch-item')
-    expect(items).toHaveLength(9)
-    await items[7].trigger('click')
-    await flushPromises()
+    await selectInData(wrapper, 'r7')
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="ws-ai"]').exists()).toBe(true)
@@ -487,7 +511,7 @@ describe('ReplayWorkspace', () => {
     expect(pbVm.props('file')?.name).toBe('f7.wotbreplay')
   })
 
-  it('selector 只列有效 parsed battles（failed/duplicate 不列出）；选第二个有效 battle 得 sourceId r2 / files[2]', async () => {
+  it('2D 回放的场次选择器只列有效 parsed battles（failed/duplicate 不列出）；选第二个有效 battle 得 sourceId r2 / files[2]', async () => {
     const files = [new File(['x'], 'f0.wotbreplay'), new File(['x'], 'f1.wotbreplay'), new File(['x'], 'f2.wotbreplay')]
     replayState.files.value = files
     replayState.resp.value = {
@@ -499,12 +523,10 @@ describe('ReplayWorkspace', () => {
       ],
     }
     replayState.processingJobId.value = 'job-1'
-    const wrapper = mountWorkspace('data')
+    const wrapper = mountWorkspace('playback')
     await flushPromises()
-    await wrapper.find('[data-testid="ws-batch-selector"]').trigger('click')
-    const items = wrapper.findAll('.ws-batch-item')
-    expect(items).toHaveLength(2)
-    expect(items.map(i => i.text()).join(',')).not.toContain('f1.wotbreplay')
+    const items = await openPlaybackPicker(wrapper)
+    expect(items.map(i => i.attributes('data-value'))).toEqual(['r0', 'r2'])
     await items[1].trigger('click')
     await flushPromises()
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
@@ -515,7 +537,7 @@ describe('ReplayWorkspace', () => {
     expect(playbackVm.props('file')?.name).toBe('f2.wotbreplay')
   })
 
-  it('布局：header 无 batch-selector / top capability status flags；source section 承载批次 + 当前回放 selector', async () => {
+  it('布局：无顶部能力状态标记；数据模式的场次选择在 ReplayPage 工具栏，工作台只给 2D 回放渲染选择器', async () => {
     const files = [
       new File(['x'], 'f0.wotbreplay'),
       new File(['x'], 'f1.wotbreplay'),
@@ -532,13 +554,13 @@ describe('ReplayWorkspace', () => {
     replayState.processingJobId.value = 'job-1'
     const wrapper = mountWorkspace('data')
     await flushPromises()
-    expect(wrapper.find('.workspace-header [data-testid="ws-batch-selector"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="cap-base"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="cap-ai"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="cap-playback"]').exists()).toBe(false)
-    expect(wrapper.find('.replay-source').exists()).toBe(true)
-    expect(wrapper.find('.replay-source [data-testid="ws-batch-selector"]').exists()).toBe(true)
-    expect(wrapper.find('.replay-source').text()).toContain('workspace.batch_count')
+    // 选择器在 v-show 的 2D 回放面板里：数据模式下存在但不可见
+    expect(wrapper.find('[data-testid="ws-playback"]').element.style.display).toBe('none')
+    expect(wrapper.find('[data-testid="ws-playback"] [data-testid="playback-battle-picker"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ws-data"] [data-testid="playback-battle-picker"]').exists()).toBe(false)
   })
 
   it('Data → FileUploader allowFolder=true；AI 无上传器；Playback allowFolder=false', async () => {
@@ -569,9 +591,7 @@ describe('ReplayWorkspace', () => {
     replayState.processingJobId.value = 'job-1'
     const wrapper = mountWorkspace('data')
     await flushPromises()
-    await wrapper.find('[data-testid="ws-batch-selector"]').trigger('click')
-    await wrapper.findAll('.ws-batch-item')[7].trigger('click')
-    await flushPromises()
+    await selectInData(wrapper, 'r7')
     expect(replayState.files.value.length).toBe(34)
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
     await flushPromises()
@@ -652,15 +672,14 @@ describe('ReplayWorkspace', () => {
     }
     const wrapper = mountWorkspace('data')
     await flushPromises()
-    await wrapper.find('[data-testid="ws-batch-selector"]').trigger('click')
-    await wrapper.findAll('.ws-batch-item')[1].trigger('click')
-    await flushPromises()
+    await selectInData(wrapper, 'r2')
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
     await flushPromises()
     const pb = wrapper.findComponent({ name: 'BattlePlaybackPanelMock' })
     expect(pb.props('file')?.name).toBe('f2.wotbreplay')
+    expect(wrapper.get('[data-testid="playback-battle-picker"]').attributes('aria-label')).toContain('workspace.battle_n')
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="data"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="ws-batch-selector"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'ReplayPageMock' }).props('workspaceContext').currentBattleId.value).toBe('r2')
   })
 })

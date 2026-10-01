@@ -5,6 +5,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import ProfilePage from './ProfilePage.vue'
 
+const confirmDialog = vi.hoisted(() => ({ confirm: vi.fn(() => Promise.resolve(true)) }))
+vi.mock('../composables/useConfirm.js', () => ({ confirm: confirmDialog.confirm }))
+
+
 let currentProfile = null
 let profileFailures = 0
 const tokenRef = ref(null)
@@ -363,7 +367,6 @@ describe('ProfilePage Wargaming regions', () => {
     // withdraw triggers cancel API and refreshes status
     const withdrawButton = wrapper.findAll('button').find(b => b.text().includes('hundred.withdraw'))
     expect(withdrawButton).toBeTruthy()
-    vi.stubGlobal('confirm', vi.fn(() => true))
     await withdrawButton.trigger('click')
     await flushPromises()
 

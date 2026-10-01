@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { apiErrorLabel } from '../utils/display.js'
 import { normalizeJobError } from '../utils/http.js'
+import { CircleAlert, CircleCheck } from 'lucide-vue-next'
+import AppButton from './AppButton.vue'
 
 /**
  * 统一 Replay Task Card（Processing 与 Export 共用同一视觉体系）。
@@ -54,7 +56,7 @@ const hasCounts = computed(() => (props.job?.duplicates || 0) + (props.job?.fail
       <div class="etc-sub">{{ isProcessing
         ? $t('replay.processing_job.preparing', { total: job.total })
         : $t('replay.export_job.preparing', { total: job.total }) }}</div>
-      <button class="etc-btn" @click="$emit('cancel')">{{ $t('replay.export_job.cancel') }}</button>
+      <AppButton size="sm" class="etc-btn" @click="$emit('cancel')">{{ $t('replay.export_job.cancel') }}</AppButton>
     </template>
 
     <template v-else-if="job.status === 'PROCESSING'">
@@ -64,8 +66,8 @@ const hasCounts = computed(() => (props.job?.duplicates || 0) + (props.job?.fail
           ? $t('replay.processing_job.progress', { processed: job.processed, total: job.total })
           : $t('replay.export_job.progress', { processed: job.processed, total: job.total }) }}
       </div>
-      <div class="etc-bar" data-testid="etc-bar">
-        <div class="etc-bar-fill" :style="{ width: percent + '%' }" data-testid="etc-bar-fill"></div>
+      <div class="etc-bar task-bar" data-testid="etc-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="percent">
+        <div class="etc-bar-fill task-bar-fill" :style="{ width: percent + '%' }" data-testid="etc-bar-fill"></div>
       </div>
       <div class="etc-sub">{{ isProcessing && job.currentFile
         ? $t('replay.processing_job.current_file', { file: job.currentFile })
@@ -75,11 +77,11 @@ const hasCounts = computed(() => (props.job?.duplicates || 0) + (props.job?.fail
           ? $t('replay.processing_job.counts', { v: validCount, d: job.duplicates || 0, f: job.failures || 0 })
           : $t('replay.export_job.duplicates_failures', { d: job.duplicates || 0, f: job.failures || 0 }) }}
       </div>
-      <button class="etc-btn" @click="$emit('cancel')">{{ $t('replay.export_job.cancel') }}</button>
+      <AppButton size="sm" class="etc-btn" @click="$emit('cancel')">{{ $t('replay.export_job.cancel') }}</AppButton>
     </template>
 
     <template v-else-if="job.status === 'READY'">
-      <div class="etc-title etc-ok">✓ {{ isProcessing ? $t('replay.processing_job.ready') : $t('replay.export_job.ready') }}</div>
+      <div class="etc-title etc-ok"><CircleCheck :size="16" aria-hidden="true" />{{ isProcessing ? $t('replay.processing_job.ready') : $t('replay.export_job.ready') }}</div>
       <div class="etc-sub">{{
         isProcessing
           ? $t('replay.processing_job.counts', { v: validCount, d: job.duplicates || 0, f: job.failures || 0 })
@@ -87,24 +89,24 @@ const hasCounts = computed(() => (props.job?.duplicates || 0) + (props.job?.fail
       }}</div>
       <div class="etc-actions">
         <template v-if="isProcessing">
-          <button class="etc-btn" @click="$emit('dismiss')">{{ $t('replay.export_job.dismiss') }}</button>
+          <AppButton size="sm" class="etc-btn" @click="$emit('dismiss')">{{ $t('replay.export_job.dismiss') }}</AppButton>
         </template>
         <template v-else>
-          <button class="etc-btn primary" @click="$emit('download')">{{ $t('replay.export_job.download') }}</button>
-          <button class="etc-btn" @click="$emit('dismiss')">{{ $t('replay.export_job.dismiss') }}</button>
+          <AppButton variant="primary" size="sm" @click="$emit('download')">{{ $t('replay.export_job.download') }}</AppButton>
+          <AppButton size="sm" class="etc-btn" @click="$emit('dismiss')">{{ $t('replay.export_job.dismiss') }}</AppButton>
         </template>
       </div>
     </template>
 
     <template v-else-if="job.status === 'FAILED'">
-      <div class="etc-title etc-err">✕ {{ isProcessing ? $t('replay.processing_job.failed') : $t('replay.export_job.failed') }}</div>
+      <div class="etc-title etc-err"><CircleAlert :size="16" aria-hidden="true" />{{ isProcessing ? $t('replay.processing_job.failed') : $t('replay.export_job.failed') }}</div>
       <div class="etc-sub">{{ failedLabel }}</div>
-      <button class="etc-btn" @click="$emit('dismiss')">{{ $t('replay.export_job.dismiss') }}</button>
+      <AppButton size="sm" class="etc-btn" @click="$emit('dismiss')">{{ $t('replay.export_job.dismiss') }}</AppButton>
     </template>
 
     <template v-else>
       <div class="etc-title">{{ isProcessing ? $t('replay.processing_job.cancelled') : $t('replay.export_job.cancelled') }}</div>
-      <button class="etc-btn" @click="$emit('dismiss')">{{ $t('replay.export_job.dismiss') }}</button>
+      <AppButton size="sm" class="etc-btn" @click="$emit('dismiss')">{{ $t('replay.export_job.dismiss') }}</AppButton>
     </template>
 
     <div v-if="error" class="etc-error" data-testid="etc-error">{{ error }}</div>
@@ -112,58 +114,59 @@ const hasCounts = computed(() => (props.job?.duplicates || 0) + (props.job?.fail
 </template>
 
 <style scoped>
+/* 导出 / 后台任务的浮动卡：桌面右下角；手机贴在底部 Tab 栏上方、左右留出 gutter。 */
 .replay-task-card {
   position: fixed;
-  right: 16px;
-  bottom: 16px;
-  width: 300px;
-  z-index: 1000;
-  background: rgba(15,21,25,.97);
-  border: 1px solid #39444a;
-  border-radius: 10px;
-  padding: 14px 16px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
-  font-size: 13px;
-  line-height: 1.5;
-  color: #e9e7e0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  right: var(--gutter);
+  bottom: var(--space-4);
+  z-index: var(--z-toast);
+  display: grid;
+  gap: var(--space-2);
+  width: 320px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-3);
+  box-shadow: var(--elevation-3);
+  color: var(--color-text-primary);
+  font: var(--type-body);
 }
-.etc-title { font-weight: 700; color: #f2ede3; }
-.etc-ok { color: #7fd48a; }
-.etc-err { color: #ff8f86; }
-.etc-sub { color: #a3a6a0; word-break: break-word; }
-.etc-counts { color: #f0a42b; font-size: 12px; }
-.etc-error { color: #ff8f86; font-size: 12px; }
+
+.etc-title { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: 600; }
+.etc-ok { color: var(--color-success); }
+.etc-err { color: var(--color-danger); }
+.etc-sub { color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.etc-counts,
+.etc-error { font: var(--type-caption); }
+.etc-counts { color: var(--color-text-secondary); }
+.etc-error { color: var(--color-danger); }
 .etc-progress-line { font-variant-numeric: tabular-nums; }
-.etc-bar {
-  height: 8px;
-  background: #2b3439;
-  border-radius: 4px;
+
+.task-bar {
+  height: var(--space-2);
   overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-3);
 }
-.etc-bar-fill {
+
+.task-bar-fill {
   height: 100%;
-  background: #4c8dff;
-  border-radius: 4px;
-  transition: width 0.3s ease;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  transition: width var(--duration-slow) var(--ease-standard);
 }
-.etc-actions { display: flex; gap: 8px; }
-.etc-btn {
-  align-self: flex-start;
-  padding: 5px 12px;
-  border-radius: 6px;
-  border: 1px solid #465159;
-  background: transparent;
-  color: #d7d3ca;
-  cursor: pointer;
-  font-size: 13px;
-}
-.etc-btn.primary {
-  background: #4c8dff;
-  border-color: #4c8dff;
-  color: #fff;
-  font-weight: 600;
+
+/* 卡片本身是 surface-3，轨道降一档才看得见 */
+.replay-task-card .task-bar { background: var(--color-surface-1); }
+.etc-actions { display: flex; gap: var(--space-2); }
+.etc-btn { justify-self: start; }
+
+@media (width < 768px) {
+  .replay-task-card {
+    right: var(--gutter);
+    bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--space-3));
+    left: var(--gutter);
+    width: auto;
+  }
 }
 </style>
