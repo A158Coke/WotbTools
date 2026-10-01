@@ -240,7 +240,7 @@ html[data-ui-profile="classic"] .pb-root {
 .team2 { right: 10px; }
 /* 未知阵营中性组：居中灰调 fail-visible */
 .team-unknown { left: 50%; transform: translateX(-50%); width: 220px; }
-.team-unknown h3 { color: #9aa5b1; }
+.team-unknown h3 { color: var(--text-muted); }
 .team h3 { font-size: 12px; color: var(--dim); margin: 2px 4px 6px; font-weight: 500; }
 .pl { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; cursor: pointer; }
 .pl:hover { background: var(--hover-soft); }
