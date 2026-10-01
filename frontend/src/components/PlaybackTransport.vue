@@ -127,8 +127,11 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
 /* rail 是竖向窄列：按钮铺满宽度，速度档位排成一行；插槽里与 rail 图标导航重复的按钮由使用方隐藏 */
 .pb-controls-rail-mode { flex-direction: column; align-items: stretch; gap: var(--space-2); }
 .pb-controls-rail-mode .pb-btn { width: 100%; }
-.pb-controls-rail-mode .pb-speed { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
-.pb-controls-rail-mode .pb-speed .pb-btn { padding: 0; }
+/* 速度档位一行排开：列数跟随档位个数（grid-auto-flow: column），不再硬编码——档位从 4 增到 5 时
+   固定 4 列会把 8× 挤到第二行。rail 只有 --pb-rail-w 宽，档位按钮放弃触屏最小宽度（保留 44px 最小高度），
+   否则 5 × 44px 会撑出 rail。 */
+.pb-controls-rail-mode .pb-speed { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 3px; }
+.pb-controls-rail-mode .pb-speed .pb-btn { min-width: 0; padding: 0; }
 .pb-controls-rail-mode .pb-time { margin-inline: 0; text-align: center; }
 /* column 方向的 flex-basis:100% 等于撑满整列高度，必须还原成内容高度 */
 .pb-controls-rail-mode .pb-unavailable { flex-basis: auto; }
