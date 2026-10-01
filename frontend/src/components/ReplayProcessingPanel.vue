@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { apiErrorLabel } from '../utils/display.js'
 import { normalizeJobError } from '../utils/http.js'
+import { CircleAlert, CircleCheck } from 'lucide-vue-next'
+import AppButton from './AppButton.vue'
 
 /**
  * Replay Processing 主操作区进度面板：真实分阶段
@@ -69,13 +71,13 @@ function formatBytes(bytes) {
           total: formatBytes(uploadState.total)
         }) }} · {{ uploadState.percent || 0 }}%
       </div>
-      <div class="rpp-bar"><div class="rpp-bar-fill" :style="{ width: (uploadState.percent || 0) + '%' }"></div></div>
+      <div class="rpp-bar task-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="uploadState.percent || 0"><div class="rpp-bar-fill task-bar-fill" :style="{ width: (uploadState.percent || 0) + '%' }"></div></div>
     </template>
 
     <!-- 上传完成、202 未返回 -->
     <template v-else-if="uiState === 'REGISTERING'">
       <div class="rpp-title">{{ $t('replay.processing_job.registering') }}</div>
-      <div class="rpp-bar"><div class="rpp-bar-fill" style="width: 100%"></div></div>
+      <div class="rpp-bar task-bar rpp-indeterminate" role="progressbar"><div class="rpp-bar-fill task-bar-fill"></div></div>
     </template>
 
     <!-- 等待解析资源 -->
@@ -90,7 +92,7 @@ function formatBytes(bytes) {
       <div class="rpp-progress-line">
         {{ $t('replay.processing_job.progress', { processed: parseCount, total: job?.total || 0 }) }} · {{ percent }}%
       </div>
-      <div class="rpp-bar"><div class="rpp-bar-fill" :style="{ width: percent + '%' }"></div></div>
+      <div class="rpp-bar task-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="percent"><div class="rpp-bar-fill task-bar-fill" :style="{ width: percent + '%' }"></div></div>
       <div v-if="job?.activeSources?.length" class="rpp-sub" data-testid="active-sources">
         {{ $t('replay.processing_job.active_sources', { count: job.activeSources.length }) }}
         <ul class="rpp-sources">
@@ -109,13 +111,13 @@ function formatBytes(bytes) {
     <template v-else-if="uiState === 'FINALIZING'">
       <div class="rpp-title">{{ $t('replay.processing_job.finalizing') }}</div>
       <div class="rpp-sub">{{ $t('replay.processing_job.finalizing_detail') }}</div>
-      <div class="rpp-bar rpp-indeterminate"><div class="rpp-bar-fill"></div></div>
+      <div class="rpp-bar task-bar rpp-indeterminate" role="progressbar"><div class="rpp-bar-fill task-bar-fill"></div></div>
     </template>
 
     <!-- 终态 -->
     <template v-else-if="uiState === 'READY'">
       <div class="rpp-ready-inline rpp-ok" data-testid="processing-ready">
-        ✓ {{ $t('replay.processing_job.ready') }}
+        <CircleCheck :size="16" aria-hidden="true" />{{ $t('replay.processing_job.ready') }}
         <span class="rpp-ready-detail">
           {{ $t('replay.processing_job.valid_summary', {
             v: job?.valid || 0, d: job?.duplicates || 0, f: job?.failures || 0
@@ -124,7 +126,7 @@ function formatBytes(bytes) {
       </div>
     </template>
     <template v-else-if="uiState === 'FAILED'">
-      <div class="rpp-title rpp-err">✕ {{ $t('replay.processing_job.failed') }}</div>
+      <div class="rpp-title rpp-err"><CircleAlert :size="16" aria-hidden="true" />{{ $t('replay.processing_job.failed') }}</div>
       <div class="rpp-sub">{{ failedLabel }}</div>
     </template>
     <template v-else-if="uiState === 'CANCELLED'">
@@ -132,12 +134,12 @@ function formatBytes(bytes) {
     </template>
 
     <div class="rpp-actions">
-      <button v-if="canCancel" class="rpp-btn" data-testid="processing-cancel" @click="$emit('cancel')">
+      <AppButton v-if="canCancel" size="sm" data-testid="processing-cancel" @click="$emit('cancel')">
         {{ $t('replay.export_job.cancel') }}
-      </button>
-      <button v-if="canDismiss" class="rpp-btn" data-testid="processing-dismiss" @click="$emit('dismiss')">
+      </AppButton>
+      <AppButton v-if="canDismiss" variant="ghost" size="sm" data-testid="processing-dismiss" @click="$emit('dismiss')">
         {{ $t('replay.export_job.dismiss') }}
-      </button>
+      </AppButton>
     </div>
 
     <div v-if="error" class="rpp-error" data-testid="processing-error">{{ error }}</div>
@@ -146,66 +148,55 @@ function formatBytes(bytes) {
 
 <style scoped>
 .replay-processing-panel {
-  margin: 14px 0;
-  padding: 14px 16px;
-  border: 1px solid var(--border, #303a40);
-  border-radius: 10px;
-  background: rgba(13, 18, 22, .94);
-  color: #d8d5cd;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
 }
-.rpp-title { font-weight: 700; color: #f2ede3; }
-.rpp-ok { color: #7fd48a; }
-.rpp-err { color: #ff8f86; }
-.rpp-sub { color: #a3a6a0; font-size: .85rem; word-break: break-word; }
-/* READY 后 compact（Blocker #5）：不再长期显示巨大成功卡，改成 inline 状态。 */
-.rpp-compact {
-  margin: 8px 0;
-  padding: 6px 10px;
-  border-radius: 7px;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-}
-.rpp-ready-inline { display: inline-flex; align-items: baseline; gap: 8px; font-weight: 700; font-size: .88rem; }
-.rpp-ready-detail { color: #a3a6a0; font-weight: 400; font-size: .82rem; }
-.rpp-counts { color: #f0a42b; font-size: .85rem; }
-.rpp-sources { margin: 4px 0 0; padding-left: 18px; }
-.rpp-sources li { font-size: .82rem; }
-.rpp-progress-line { font-variant-numeric: tabular-nums; font-size: .9rem; }
-.rpp-bar {
-  height: 8px;
-  background: #2b3439;
-  border-radius: 4px;
+
+/* READY 后收起为一行状态（不长期占一张大卡） */
+.rpp-compact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); }
+
+.rpp-title { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: 600; }
+.rpp-ok { color: var(--color-success); }
+.rpp-err { color: var(--color-danger); }
+.rpp-sub { color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.rpp-ready-inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-weight: 600; }
+.rpp-ready-detail { color: var(--color-text-secondary); font: var(--type-caption); }
+.rpp-counts { color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
+.rpp-sources { margin: var(--space-1) 0 0; padding-inline-start: var(--space-5); font: var(--type-caption); }
+.rpp-progress-line { font-variant-numeric: tabular-nums; }
+
+.task-bar {
+  height: var(--space-2);
   overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-3);
 }
-.rpp-bar-fill {
+
+.task-bar-fill {
   height: 100%;
-  background: #4c8dff;
-  border-radius: 4px;
-  transition: width .3s ease;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  transition: width var(--duration-slow) var(--ease-standard);
 }
-.rpp-indeterminate .rpp-bar-fill {
-  width: 35%;
-  animation: rpp-slide 1.2s ease-in-out infinite;
-}
+
+.rpp-indeterminate .task-bar-fill { width: 35%; animation: rpp-slide 1.2s var(--ease-standard) infinite; }
+
 @keyframes rpp-slide {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
 }
-.rpp-actions { display: flex; gap: 8px; }
-.rpp-btn {
-  align-self: flex-start;
-  padding: 5px 12px;
-  border-radius: 6px;
-  border: 1px solid #465159;
-  background: transparent;
-  color: #d7d3ca;
-  cursor: pointer;
-  font-size: 13px;
+
+@media (prefers-reduced-motion: reduce) {
+  .rpp-indeterminate .task-bar-fill { width: 100%; animation: none; opacity: .5; }
 }
-.rpp-btn:hover { border-color: var(--accent, #4c8dff); }
-.rpp-error { color: #ff8f86; font-size: 12px; }
+
+.rpp-actions { display: flex; gap: var(--space-2); }
+.rpp-compact .rpp-actions { margin-inline-start: auto; }
+.rpp-error { color: var(--color-danger); font: var(--type-caption); }
 </style>

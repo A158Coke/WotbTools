@@ -141,10 +141,9 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.mini-action', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
   })
 
-  it('Replay 结果区：Ghost 按钮 / Tabs / 视图切换 浅底深字 !important（上传区已改用设计语言 token）', () => {
+  it('Replay 结果区：Ghost 按钮 / Tabs 浅底深字 !important（上传区、视图切换已改用设计语言 token）', () => {
     has('.filebtn.ghost', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
     has('.tabs button', ['color: var(--text-sub) !important'])
-    has('.dataview-toggle button', ['color: var(--text-sub) !important'])
   })
 
   it('回归：Replay .tablewrap 必须 background/border-color/color/box-shadow 全带 !important', () => {
@@ -154,19 +153,6 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
       'color: var(--text) !important',
       'box-shadow: var(--surface-shadow) !important',
     ])
-  })
-
-  it('回归：Replay 处理面板 / Export 任务卡 浅色 token + !important（scoped 写死深色面板/进度条/按钮）', () => {
-    has('.replay-processing-panel', ['background: var(--bg-card) !important', 'border-color: var(--border) !important', 'color: var(--text) !important'])
-    has('.replay-processing-panel .rpp-title', ['color: var(--text-heading) !important'])
-    has('.replay-processing-panel .rpp-ok', ['color: var(--status-ok-fg) !important'])
-    has('.replay-processing-panel .rpp-bar', ['background: var(--border) !important'])
-    has('.replay-processing-panel .rpp-bar-fill', ['background: var(--accent) !important'])
-    has('.replay-processing-panel .rpp-btn', ['background: var(--bg-card) !important', 'color: var(--text) !important', 'border-color: var(--border) !important'])
-    has('.replay-task-card', ['background: var(--bg-card) !important', 'border-color: var(--border) !important'])
-    has('.replay-task-card .etc-bar', ['background: var(--border) !important'])
-    has('.replay-task-card .etc-bar-fill', ['background: var(--accent) !important'])
-    has('.replay-task-card .etc-btn.primary', ['background: var(--accent) !important', 'color: var(--accent-text) !important'])
   })
 
   it('HoF：Toolbar/Table Header/Upload Modal 浅色 !important', () => {

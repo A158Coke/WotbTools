@@ -91,10 +91,6 @@ tr:hover td { background: var(--bg-list-hover); }
 .alive, .dead { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
 .alive { background: var(--status-ok-bg); color: var(--status-ok-fg); }
 .dead { background: var(--status-err-bg); color: var(--status-err-fg); }
-.restoolbar { display: flex; align-items: flex-start; gap: 12px; margin: 18px 0; flex-wrap: wrap; position: relative; z-index: 5; }
-.restoolbar .tabs { flex: 1; min-width: 0; }
-.resactions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.resactions button { white-space: nowrap; }
 .tabx { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
   margin-left: 4px; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 1;
   color: var(--text-sub); background: transparent; cursor: pointer; transition: all .12s; }
@@ -201,10 +197,7 @@ tr:hover td { background: var(--bg-list-hover); }
   .cph-title { grid-column: 1 / -1; }
   .linkbtn { width: 100%; }
   .collist { max-height: calc(100vh - 144px); }
-  .restoolbar { flex-direction: column; }
   .tabs { flex: none; width: 100%; }
-  .restoolbar .resactions { width: 100%; gap: 4px; }
-  .restoolbar .resactions button { flex: 1; min-width: 0; }
   th, td { padding: 4px 5px; font-size: 11px; }
   .chip { font-size: 11px; padding: 2px 4px; }
 }
