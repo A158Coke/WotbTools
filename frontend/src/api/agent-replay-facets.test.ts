@@ -332,6 +332,33 @@ describe('enrichShotsFromRoster（eid 联表）', () => {
     expect(shots[3].target_tank_id).toBeUndefined() // team=0 无 tank_id：富化缺省
   })
 
+  it('unknown team（team=0）带非零 tank_id：tank_id 正常富化、阵营必须 undefined（评审 blocker 回归）', () => {
+    const withUnknownTank = [
+      ...vehicles,
+    ]
+    withUnknownTank[withUnknownTank.length - 1] = { eid: 999, nickname: '观察者', team: 0, tank_id: 555 }
+    const shots = [
+      shot({ shooter_eid: 999, target_eid: 200 }),   // unknown 射手有真实坦克
+      shot({ shooter_eid: 100, target_eid: 999 }),   // 打向 unknown（有坦克）
+    ]
+    api.enrichShotsFromRoster(shots, withUnknownTank)
+    expect(shots[0].shooter_tank_id).toBe(555)          // 富化照常
+    expect(shots[0].shooter_team).toBeUndefined()       // 绝不因 0 !== 1 被染成 enemy
+    expect(shots[1].target_tank_id).toBe(555)
+  })
+
+  it('作者自身 team=0（无法定向）：所有射击不做 ally/enemy 分类', () => {
+    const noAuthorSide = [
+      { eid: 100, nickname: 'a', team: 0, tank_id: 1, is_author: true },
+      { eid: 200, nickname: 'b', team: 2, tank_id: 2 },
+    ]
+    const shots = [shot({ shooter_eid: 100, target_eid: 200 })]
+    api.enrichShotsFromRoster(shots, noAuthorSide)
+    expect(shots[0].shooter_tank_id).toBe(1)
+    expect(shots[0].target_tank_id).toBe(2)
+    expect(shots[0].shooter_team).toBeUndefined()       // authorTeam=0：0===0 不得伪装 ally
+  })
+
   it('eid 缺失（旧产物）不断链：仅跳过富化', () => {
     const shots = [shot({ shooter_eid: 100, target_eid: undefined })]
     api.enrichShotsFromRoster(shots, vehicles)

@@ -1527,6 +1527,7 @@
     "col_result": "结果",
     "col_target": "目标",
     "res_miss": "脱靶",
+    "res_hit_unknown": "命中·结果未知",
     "res_pen": "击穿",
     "res_nopen": "未穿",
     "res_ric": "跳弹",

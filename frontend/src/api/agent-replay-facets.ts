@@ -448,14 +448,20 @@ export function enrichShotsFromRoster(parsedShots: AgentShotReplay[], vehicles: 
   for (const r of vehicles || []) {
     if (r && typeof r.eid === 'number') byEid.set(r.eid, r)
   }
-  const authorTeam = (vehicles || []).find((r) => r.is_author)?.team
+  // 阵营分类只接受显式 1/2（与名册分组同一规则）：team=0/未知绝不归入任一队——
+  // unknown 车辆常带 tank_id=0 恰好被富化外层挡住，但非零 tank_id 的 unknown
+  // 一旦走 `team !== authorTeam → enemy` 就会把白色未知染成敌方红（3D 炮线）
+  const authorTeamRaw = (vehicles || []).find((r) => r.is_author)?.team
+  const authorTeam = authorTeamRaw === 1 || authorTeamRaw === 2 ? authorTeamRaw : undefined
+  const knownSide = (t?: number): t is 1 | 2 => t === 1 || t === 2
   for (const s of parsedShots) {
     const target = s.target_eid != null ? byEid.get(s.target_eid) : undefined
     if (target?.tank_id) s.target_tank_id = target.tank_id
     const shooterEntry = byEid.get(s.shooter_eid)
     if (shooterEntry?.tank_id) {
+      // tank_id 富化与阵营分类解耦：unknown（team=0）照样富化 3D 目标车，但阵营保持 undefined
       s.shooter_tank_id = shooterEntry.tank_id
-      if (authorTeam != null && shooterEntry.team != null) {
+      if (authorTeam != null && knownSide(shooterEntry.team)) {
         s.shooter_team = shooterEntry.team === authorTeam ? 'ally' : 'enemy'
       }
     }

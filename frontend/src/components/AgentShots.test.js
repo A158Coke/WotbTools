@@ -92,7 +92,7 @@ describe('AgentShots author_path fail-visible（评审 blocker 回归）', () =>
     parseAgentShotsFromBytes.mockResolvedValue({
       shots: [{
         index: 1, time_s: 5, damage: 100, target_name: '林肝美', is_kill: false,
-        shooter_eid: 200, target_eid: 101, hit_flags: 0, game_hit_result: 3, shell_id: 0,
+        shooter_eid: 200, target_eid: 101, hit_flags: 0, game_hit_result: 255, shell_id: 0,
       }],
       author_path: 'error',
       author_error: 'boom',
@@ -102,5 +102,9 @@ describe('AgentShots author_path fail-visible（评审 blocker 回归）', () =>
     const wrapper = await mountAndPick()
     expect(wrapper.findAll('.status.warn').length).toBe(1)
     expect(wrapper.find('table.shot-table').exists()).toBe(true)
+    // 命中在案（target_eid）但结果未知（255）→ "命中·结果未知"，不得伪装成未击穿
+    expect(wrapper.text()).toContain('agentShots.res_hit_unknown')
+    expect(wrapper.text()).not.toContain('agentShots.res_miss')
+    expect(wrapper.text()).not.toContain('agentShots.res_nopen')
   })
 })

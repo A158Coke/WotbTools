@@ -288,6 +288,9 @@ function resultBadge(s) {
     const r = s.game_hit_result
     if (r === 3) return { text: t('agentShots.res_pen'), cls: 'pen' }
     if (r === 4) return { text: t('agentShots.res_track'), cls: 'track' }
+    // eid 在案 = 命中已知；r 未知（255/0/缺）只能证明"结果未知"，不得伪装成未击穿
+    // （qualityTitle 已把 255 标 q_result_unknown，两处状态语义对齐）
+    if (r == null || r === 255 || r === 0) return { text: t('agentShots.res_hit_unknown'), cls: 'unknown' }
     return { text: t('agentShots.res_nopen'), cls: 'nopen' }
   }
   if (f & 0x1000) return { text: 'HE', cls: 'he-res' }
@@ -511,6 +514,7 @@ async function resolveShellIdx(s) {
 .pill.track { background: color-mix(in srgb, var(--status-info-fg) 18%, transparent); color: var(--status-info-fg); }
 .pill.he-res { background: color-mix(in srgb, var(--status-warn-fg) 22%, transparent); color: var(--status-warn-fg); }
 .pill.miss { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-muted); }
+.pill.unknown { background: color-mix(in srgb, var(--status-warn-fg) 16%, transparent); color: var(--status-warn-fg); }
 .pill.kill { background: color-mix(in srgb, var(--status-err-fg) 24%, transparent); color: var(--status-err-fg); margin-left: 4px; }
 .btn { border: 1px solid var(--border); padding: 2px 10px; border-radius: 6px; text-decoration: none; }
 select, button { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px; }
