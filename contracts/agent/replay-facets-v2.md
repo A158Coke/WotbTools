@@ -66,7 +66,17 @@ WotBTools
 
 ## 5. 射击复现能力（ShotReplays）
 
-- WASM 入口：`parseShotReplays(new Uint8Array(fileBuffer))` → shots JSON 数组
+- **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——
+  `{shots, author_path: "ok"|"error", author_error?, author_eid, others}`。作者严格
+  路径失败不再静默降级为空数组：`author_path="error"` 时 `author_error` 携带链式
+  原因（仅 error 态存在该键），`shots` 仍含他人宽松路径全量，消费方 fail-visible
+  （WotBTools 射击复现页顶部警示条）。消费端 `normalizeAgentShotsOutcome` 对
+  旧裸数组产物归一化兼容（author 状态不可知 → ok/eid=0/others 全 0）。
+- **受击方身份 = `target_eid`**：v0.1.9 起逐发直传受击方实体 id（作者 = method38 /
+  他人 = method8，服务器权威）。此前仅 `target_name`，消费方按昵称反查 eid——
+  名字缺失（昵称损坏/非 ASCII 旧版解析）时 hit/target 全丢；联表一律用 eid，
+  昵称仅显示域。
+- WASM 入口：`parseShotReplays(new Uint8Array(fileBuffer))` → 射击链包装
   （作者严格路径 + 他人宽松路径合并；弹道/命中判定/逐发质量标记/双方渲染锚点）。
 - **index 语义**：合并后两路各自持局部 index——消费方必须按 `time_s` 排序后全局
   重编号（`index = i + 1`，与上游 Web `/api/replay/shots` 同规则；上游

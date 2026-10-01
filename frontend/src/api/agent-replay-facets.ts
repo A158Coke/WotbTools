@@ -187,6 +187,9 @@ export interface AgentShotReplay {
   time_s: number
   damage: number
   target_name: string
+  /** 受击方实体 id（作者 = method38 / 他人 = method8，服务器权威）。身份联表用
+   * 此字段而非昵称反查——名字缺失/冲突时 target_name 不可作身份（上游 v0.1.9 起直传） */
+  target_eid?: number
   is_kill: boolean
   shooter_eid: number
   shooter_name?: string
@@ -352,6 +355,95 @@ function assertShotArray(v: unknown): AgentShotReplay[] {
   return v as AgentShotReplay[]
 }
 
+// ---------- 射击复现包装契约（上游 v0.1.9：fail-visible，不再静默吞作者链） ----------
+
+/** 他人宽松路径统计（fail-soft 边界透明化；字段语义见上游 OtherShotsExtraction） */
+export interface AgentShotsOthersStats {
+  total_launches: number
+  skipped_no_endpoint: number
+  skipped_no_target_state: number
+  muzzle_fallback: number
+}
+
+/** parseShotReplays 输出（上游 v0.1.9 契约；旧裸数组产物归一化进同一形状） */
+export interface AgentShotsOutcome {
+  shots: AgentShotReplay[]
+  /** 作者严格路径状态："error" 时 shots 仅含他人宽松路径，author_error 携带原因 */
+  author_path: 'ok' | 'error'
+  /** strict 失败链式原因（仅 author_path="error" 时存在） */
+  author_error?: string
+  /** 作者 Avatar 实体 eid（0 = 未解析；旧裸数组产物不可知 → 0） */
+  author_eid: number
+  /** 他人宽松路径跳过/兜底统计（旧产物不可知 → 全 0） */
+  others: AgentShotsOthersStats
+}
+
+const ZERO_OTHERS: AgentShotsOthersStats = {
+  total_launches: 0,
+  skipped_no_endpoint: 0,
+  skipped_no_target_state: 0,
+  muzzle_fallback: 0,
+}
+
+/**
+ * 包装/裸数组双形状归一化（trust boundary）：v0.1.9 起上游输出
+ * `{shots, author_path, author_error?, author_eid, others}`；旧产物为裸数组
+ * （author 状态不可知 → ok/eid=0/others 全 0，消费面按缺数据处理）。
+ */
+export function normalizeAgentShotsOutcome(v: unknown): AgentShotsOutcome {
+  if (Array.isArray(v)) {
+    return { shots: assertShotArray(v), author_path: 'ok', author_eid: 0, others: { ...ZERO_OTHERS } }
+  }
+  if (!isObject(v) || !Array.isArray(v.shots)) {
+    throw new Error('agent shots: 顶层必须是 shots 数组或 {shots, ...} 包装对象')
+  }
+  const authorPath = v.author_path === 'error' ? 'error' : 'ok'
+  if (authorPath === 'error' && typeof v.author_error !== 'string') {
+    throw new Error('agent shots: author_path="error" 必须携带 author_error')
+  }
+  const o = (isObject(v.others) ? v.others : {}) as Record<string, unknown>
+  const num = (x: unknown) => (typeof x === 'number' && x >= 0 ? x : 0)
+  return {
+    shots: assertShotArray(v.shots),
+    author_path: authorPath,
+    ...(authorPath === 'error' ? { author_error: v.author_error as string } : {}),
+    author_eid: typeof v.author_eid === 'number' ? v.author_eid : 0,
+    others: {
+      total_launches: num(o.total_launches),
+      skipped_no_endpoint: num(o.skipped_no_endpoint),
+      skipped_no_target_state: num(o.skipped_no_target_state),
+      muzzle_fallback: num(o.muzzle_fallback),
+    },
+  }
+}
+
+/**
+ * 射击链花名册富化（消费端编排；上游服务端 /api/replay/shots 注入字段的客户端等价）：
+ * - target_tank_id / shooter_tank_id：受击方/射手实体 → tank_id；
+ * - shooter_team：'ally' / 'enemy'（相对回放作者阵营）。
+ * 联表键 = **eid**（vehicles[].eid ↔ shot.shooter_eid/target_eid）——eid 是
+ * 身份域主键；此前按昵称联表，名称冲突取首匹配、名字缺失（如受击方昵称损坏）
+ * 即断链，均已在上游 v0.1.9 eid 直传后消除。昵称仅作显示。
+ */
+export function enrichShotsFromRoster(parsedShots: AgentShotReplay[], vehicles: Array<{ eid: number; nickname?: string; team?: number; tank_id?: number; is_author?: boolean }>): void {
+  const byEid = new Map<number, { team?: number; tank_id?: number }>()
+  for (const r of vehicles || []) {
+    if (r && typeof r.eid === 'number') byEid.set(r.eid, r)
+  }
+  const authorTeam = (vehicles || []).find((r) => r.is_author)?.team
+  for (const s of parsedShots) {
+    const target = s.target_eid != null ? byEid.get(s.target_eid) : undefined
+    if (target?.tank_id) s.target_tank_id = target.tank_id
+    const shooterEntry = byEid.get(s.shooter_eid)
+    if (shooterEntry?.tank_id) {
+      s.shooter_tank_id = shooterEntry.tank_id
+      if (authorTeam != null && shooterEntry.team != null) {
+        s.shooter_team = shooterEntry.team === authorTeam ? 'ally' : 'enemy'
+      }
+    }
+  }
+}
+
 /**
  * 全局重编号（上游 Web /api/replay/shots 同规则，src/web/mod.rs：
  * `all_shots.sort_by(time_s)` + `s.index = i + 1`）。WASM parseShotReplays 的
@@ -381,16 +473,31 @@ export function normalizeAgentShotIndices(shots: AgentShotReplay[]): AgentShotRe
  * /api/replay/shots 注入语义同构）；缺省时无弹种反解（旧产物兼容路径由
  * 消费组件自行富化）。
  */
+/**
+ * 射击复现能力：.wotbreplay 字节 → 射击链包装（time_s 排序 + 全局重编号）。
+ * 输出形状见 [`AgentShotsOutcome`]（上游 v0.1.9：author_path fail-visible；
+ * 旧裸数组产物自动归一化）。
+ * `pitchLimits` 可选：俯仰锚定表 {昵称: {dep, ele, front?, back?, transition?}}
+ * （GunPitchRange serde 形状，消费方由资产面 tank/{id}.json 的 pitch_limits 组装
+ * dep=max、ele=−min）——注入后 prop2 俯仰按车型极限解码（服务端同级质量）；
+ * 缺省空表时俯仰降级标记如实透传（客户端路径数据边界，非错误）。
+ * `shellTable` 可选：全局弹种反解表（dump-shell-kinds 富表，AgentShellTable）——
+ * 注入后带 shell_id 的弹补齐 `shell_kind` 与 `shell`（完整弹数据，服务端
+ * /api/replay/shots 注入语义同构）；缺省时无弹种反解（旧产物兼容路径由
+ * 消费组件自行富化）。
+ */
 export async function parseAgentShotsFromBytes(
   bytes: Uint8Array,
   pitchLimits?: Record<string, unknown>,
   shellTable?: AgentShellTable,
-): Promise<AgentShotReplay[]> {
+): Promise<AgentShotsOutcome> {
   const parse = await wasmFn('parseShotReplays')
   const limitsJson = pitchLimits ? JSON.stringify(pitchLimits) : undefined
   const shellsJson = shellTable ? JSON.stringify(shellTable) : undefined
   const raw = parse(bytes, limitsJson, shellsJson)
-  return normalizeAgentShotIndices(assertShotArray(JSON.parse(raw) as unknown))
+  const outcome = normalizeAgentShotsOutcome(JSON.parse(raw) as unknown)
+  outcome.shots = normalizeAgentShotIndices(outcome.shots)
+  return outcome
 }
 
 /** 预解析 JSON 通道（部署面静态文件/服务端代理共用） */
