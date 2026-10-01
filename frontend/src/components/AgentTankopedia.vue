@@ -10,12 +10,15 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { fetchTankEncyclopedia, fetchTankData, tankImageUrl } from '../scene/agentData.js'
+import { useAuth } from '../composables/useAuth.js'
 import {
   tankFuzzyScore, TYPE_LABEL, TYPE_CLS, NATION_LABEL,
   normType, shellLabel, isPremiumShell, fmt,
 } from '../scene/tankMeta.js'
 
 const { t } = useI18n()
+/** 百科公开；3D 装甲查看器（agent-armor）仍仅管理员内测，非管理员不显示入口。 */
+const { isAdmin } = useAuth()
 const route = useRoute()
 const router = useRouter()
 
@@ -158,7 +161,7 @@ onMounted(async () => {
 
         <!-- 3D 装甲检视器入口（wotbagent open3d 同逻辑：新窗口 + config 参数）。
              装甲数据不在百科页呈现——数值/热力/等效判定以 3D 检视器为准（唯一装甲事实源） -->
-        <div class="d-card">
+        <div v-if="isAdmin" class="d-card" data-testid="tank-open3d-card">
           <div class="sec-title">{{ t('agentTanks.open3d_title') }}</div>
           <div class="cfg-row" v-if="cfgs.length > 1">
             <span class="dim">{{ t('agentTanks.select_config') }}</span>

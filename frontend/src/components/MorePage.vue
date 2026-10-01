@@ -34,13 +34,12 @@ const groups = computed(() => [
   {
     id: 'tools',
     titleKey: 'more.sections.tools',
-    links: isAdmin.value
-      ? [
-          { view: 'agent-replay', labelKey: 'agentNav.replay', icon: Box },
-          { view: 'agent-shots', labelKey: 'agentNav.shots', icon: Crosshair },
-          { view: 'agent-tankopedia', labelKey: 'agentNav.tanks', icon: BookOpen },
-        ]
-      : [],
+    // 坦克百科公开；3D 回放 / 射击分析仍仅管理员内测
+    links: [
+      isAdmin.value && { view: 'agent-replay', labelKey: 'agentNav.replay', icon: Box },
+      isAdmin.value && { view: 'agent-shots', labelKey: 'agentNav.shots', icon: Crosshair },
+      { view: 'agent-tankopedia', labelKey: 'agentNav.tanks', icon: BookOpen },
+    ].filter(Boolean),
   },
   {
     id: 'admin',
