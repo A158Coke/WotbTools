@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 
 import * as api from './agent-replay-facets.js'
 import {
+  PLAYBACK_CONTRACT_VERSION,
   normalizeAgentShotIndices,
   parseAgentPlaybackFromJson,
   parseAgentResultFromJson,
@@ -88,7 +89,7 @@ function minimalResult(): Record<string, unknown> {
 
 function minimalPlayback(): Record<string, unknown> {
   return {
-    version: 1,
+    version: PLAYBACK_CONTRACT_VERSION,
     meta: { map_id: 1, map_name: 'x', winner_team: 1, friendly_team: 1, author_eid: 0, t_start: 0, samples: 1, duration: 0.1 },
     vehicles: [],
     shots: [],
@@ -129,18 +130,43 @@ describe('结果能力（BattleResult 轻校验）', () => {
 })
 
 describe('时序能力（PlaybackData 校验）', () => {
-  it('合法 playback 通过且 version 锁定', () => {
+  it('合法 playback 通过且 version 锁定（contract v2）', () => {
     const pb = validateAgentPlayback(minimalPlayback())
-    expect(pb.version).toBe(1)
+    expect(pb.version).toBe(PLAYBACK_CONTRACT_VERSION)
+    expect(PLAYBACK_CONTRACT_VERSION).toBe(2)
   })
 
-  it('version ≠ 1 → reject', () => {
-    expect(() => validateAgentPlayback({ ...minimalPlayback(), version: 2 })).toThrow(/不支持的契约版本/)
+  it('version 错版 → reject（含 v1 旧产物：错版 WASM 不允许静默半残解析）', () => {
+    expect(() => validateAgentPlayback({ ...minimalPlayback(), version: 1 })).toThrow(/不支持的契约版本/)
+    expect(() => validateAgentPlayback({ ...minimalPlayback(), version: 3 })).toThrow(/不支持的契约版本/)
     expect(() => {
       const bad = minimalPlayback()
       delete (bad as Record<string, unknown>).version
       validateAgentPlayback(bad)
     }).toThrow(/不支持的契约版本/)
+  })
+
+  it('contract v2 新键：缺省合法、非数组拒绝', () => {
+    const ok = validateAgentPlayback(minimalPlayback())
+    expect(ok.supremacy_bases).toBeUndefined()
+    const bad = minimalPlayback()
+    ;(bad as Record<string, unknown>).supremacy_bases = 'x'
+    expect(() => validateAgentPlayback(bad)).toThrow(/playback\.supremacy_bases 必须是数组/)
+  })
+
+  it('单基地键（v0.3.1）：缺省合法、assault_bases 非数组拒绝、objective 非布尔拒绝', () => {
+    const ok = validateAgentPlayback(minimalPlayback())
+    expect(ok.assault_bases).toBeUndefined()
+    // 目标存在性独立于进度：只有 objective 没有 bases 也合法（无占领活动的单基地场次）
+    const objOnly = minimalPlayback()
+    ;(objOnly as Record<string, unknown>).assault_objective_present = true
+    expect(validateAgentPlayback(objOnly).assault_objective_present).toBe(true)
+    const badArr = minimalPlayback()
+    ;(badArr as Record<string, unknown>).assault_bases = 'x'
+    expect(() => validateAgentPlayback(badArr)).toThrow(/playback\.assault_bases 必须是数组/)
+    const badBool = minimalPlayback()
+    ;(badBool as Record<string, unknown>).assault_objective_present = 'yes'
+    expect(() => validateAgentPlayback(badBool)).toThrow(/assault_objective_present 必须是布尔/)
   })
 
   it('缺数组键 → reject', () => {
@@ -231,5 +257,157 @@ describe('契约 v2 边界（评审 P0-1 验收的消费侧锁定）', () => {
     expect(typeof api.projectHoF).toBe('function')
     expect((api as Record<string, unknown>).HofFacet).toBeUndefined()
     expect((api as Record<string, unknown>).parseAgentHofFromBytes).toBeUndefined()
+  })
+})
+
+// ---------- 契约 v0.1.9：parseShotReplays 包装形状 + eid 联表富化 ----------
+
+describe('normalizeAgentShotsOutcome', () => {
+  const shot = { index: 1, time_s: 1, damage: 100, target_name: 'x', is_kill: false, shooter_eid: 2 }
+
+  it('v0.1.9 包装形状：ok 态透传 others 统计与 author_eid', () => {
+    const o = api.normalizeAgentShotsOutcome({
+      shots: [shot],
+      author_path: 'ok',
+      author_eid: 7,
+      others: { total_launches: 30, skipped_no_endpoint: 1, skipped_no_target_state: 2, muzzle_fallback: 3 },
+    })
+    expect(o.author_path).toBe('ok')
+    expect(o.author_error).toBeUndefined()
+    expect(o.author_eid).toBe(7)
+    expect(o.others).toEqual({ total_launches: 30, skipped_no_endpoint: 1, skipped_no_target_state: 2, muzzle_fallback: 3 })
+    expect(o.shots).toHaveLength(1)
+  })
+
+  it('v0.1.9 包装形状：error 态必须携带 author_error（fail-visible）', () => {
+    const o = api.normalizeAgentShotsOutcome({
+      shots: [],
+      author_path: 'error',
+      author_error: 'shot #1: 受击者实体 0x123 不在 type=5 名册中',
+      author_eid: 7,
+      others: { total_launches: 9, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 },
+    })
+    expect(o.author_path).toBe('error')
+    expect(o.author_error).toContain('type=5 名册')
+    expect(() => api.normalizeAgentShotsOutcome({ shots: [], author_path: 'error' })).toThrow(/author_error/)
+  })
+
+  it('旧裸数组产物归一化（author 状态不可知 → ok / eid 0 / others 全 0）', () => {
+    const o = api.normalizeAgentShotsOutcome([shot, { ...shot, index: 2 }])
+    expect(o.author_path).toBe('ok')
+    expect(o.author_eid).toBe(0)
+    expect(o.others.total_launches).toBe(0)
+    expect(o.shots).toHaveLength(2)
+  })
+
+  it('非法顶层拒绝', () => {
+    expect(() => api.normalizeAgentShotsOutcome({ nope: true })).toThrow(/shots 数组或/)
+  })
+
+  it('trust boundary 严格化：对象形状的 author_path 只收 "ok"|"error"', () => {
+    // 缺失（schema drift / 错版 WASM）→ throw，不得静默伪装成正常解析
+    expect(() => api.normalizeAgentShotsOutcome({ shots: [] })).toThrow(/author_path/)
+    // 值漂移（大小写/未知枚举）→ throw
+    expect(() => api.normalizeAgentShotsOutcome({ shots: [], author_path: 'Error', author_error: 'x' })).toThrow(/author_path/)
+    expect(() => api.normalizeAgentShotsOutcome({ shots: [], author_path: 'OK' })).toThrow(/author_path/)
+    // 合法值放行
+    expect(api.normalizeAgentShotsOutcome({ shots: [], author_path: 'ok', author_eid: 1, others: {} }).author_path).toBe('ok')
+  })
+})
+
+describe('isShotHit（hit authority = target_eid，评审 blocker 回归）', () => {
+  it('作者在案命中（target_eid 有值）即使 hit_flags=0 也是命中——不再误判 miss', () => {
+    expect(api.isShotHit({ target_eid: 283127376 })).toBe(true)
+  })
+  it('无受击方 eid → 未命中（不回退昵称/hit_flags 双语义）', () => {
+    // 契约类型是 number | undefined；null 属坏生产者输出，运行时同样按缺失处理
+    expect(api.isShotHit({ target_eid: undefined })).toBe(false)
+    expect(api.isShotHit({ target_eid: null } as unknown as api.AgentShotReplay)).toBe(false)
+  })
+  it('非作者同规则（单一权威，无双语义）', () => {
+    expect(api.isShotHit({ target_eid: 1 })).toBe(true)
+  })
+})
+
+describe('enrichShotsFromRoster（eid 联表）', () => {
+  // 国服场次同构 fixture：7v7 中文昵称 + 1 台 team=0（联表失败的观察者）
+  const vehicles = [
+    ...Array.from({ length: 7 }, (_, i) => ({ eid: 100 + i, nickname: `兰亭公子苏${i}`, team: 1, tank_id: 30085 + i, is_author: i === 0 })),
+    ...Array.from({ length: 7 }, (_, i) => ({ eid: 200 + i, nickname: `他们都叫我袁弟呀${i}`, team: 2, tank_id: 40085 + i })),
+    { eid: 999, nickname: '', team: 0, tank_id: 0 }, // 未知阵营
+  ]
+  const shot = (over: Record<string, unknown>) => ({
+    index: 1, time_s: 1, damage: 100, target_name: '', is_kill: false,
+    shooter_eid: 100, target_eid: 200, ...over,
+  } as api.AgentShotReplay)
+
+  it('eid 联表：昵称缺失/冲突不影响 tank_id 与阵营归属', () => {
+    const shots = [
+      shot({ shooter_eid: 100, target_eid: 200 }),           // 常规
+      shot({ shooter_eid: 200, target_eid: 101 }),           // 敢打我方（敌视角联表）
+      shot({ shooter_eid: 999, target_eid: 205 }),           // 未知阵营射手
+      shot({ shooter_eid: 100, target_eid: 999 }),           // 打向未知阵营（不产 tank_id）
+    ]
+    api.enrichShotsFromRoster(shots, vehicles)
+    expect(shots[0].shooter_tank_id).toBe(30085)
+    expect(shots[0].target_tank_id).toBe(40085)
+    expect(shots[0].shooter_team).toBe('ally')      // 射手 = 作者（eid 100, is_author）
+    expect(shots[1].shooter_team).toBe('enemy')     // eid 200 ∈ team2 ≠ 作者 team1
+    expect(shots[1].target_tank_id).toBe(30086)
+    expect(shots[2].shooter_team).toBeUndefined()   // team=0：不归入任何一队
+    expect(shots[3].target_tank_id).toBeUndefined() // team=0 无 tank_id：富化缺省
+  })
+
+  it('unknown team（team=0）带非零 tank_id：tank_id 正常富化、阵营必须 undefined（评审 blocker 回归）', () => {
+    const withUnknownTank = [
+      ...vehicles,
+    ]
+    withUnknownTank[withUnknownTank.length - 1] = { eid: 999, nickname: '观察者', team: 0, tank_id: 555 }
+    const shots = [
+      shot({ shooter_eid: 999, target_eid: 200 }),   // unknown 射手有真实坦克
+      shot({ shooter_eid: 100, target_eid: 999 }),   // 打向 unknown（有坦克）
+    ]
+    api.enrichShotsFromRoster(shots, withUnknownTank)
+    expect(shots[0].shooter_tank_id).toBe(555)          // 富化照常
+    expect(shots[0].shooter_team).toBeUndefined()       // 绝不因 0 !== 1 被染成 enemy
+    expect(shots[1].target_tank_id).toBe(555)
+  })
+
+  it('作者自身 team=0（无法定向）：所有射击不做 ally/enemy 分类', () => {
+    const noAuthorSide = [
+      { eid: 100, nickname: 'a', team: 0, tank_id: 1, is_author: true },
+      { eid: 200, nickname: 'b', team: 2, tank_id: 2 },
+    ]
+    const shots = [shot({ shooter_eid: 100, target_eid: 200 })]
+    api.enrichShotsFromRoster(shots, noAuthorSide)
+    expect(shots[0].shooter_tank_id).toBe(1)
+    expect(shots[0].target_tank_id).toBe(2)
+    expect(shots[0].shooter_team).toBeUndefined()       // authorTeam=0：0===0 不得伪装 ally
+  })
+
+  it('已知敌方缺车型（team=2, tank_id=0）→ 阵营照常 enemy（评审 blocker 回归）', () => {
+    const noTank = [...vehicles]
+    noTank[noTank.length - 1] = { eid: 999, nickname: '无车型敌方', team: 2, tank_id: 0 }
+    const shots = [shot({ shooter_eid: 999, target_eid: 100 })]
+    api.enrichShotsFromRoster(shots, noTank)
+    expect(shots[0].shooter_tank_id).toBeUndefined()   // 车型富化缺省
+    expect(shots[0].shooter_team).toBe('enemy')        // 阵营不受车型缺失影响
+  })
+
+  it('eid 缺失（旧产物）不断链：仅跳过富化', () => {
+    const shots = [shot({ shooter_eid: 100, target_eid: undefined })]
+    api.enrichShotsFromRoster(shots, vehicles)
+    expect(shots[0].shooter_tank_id).toBe(30085)
+    expect(shots[0].target_tank_id).toBeUndefined()
+  })
+
+  it('同名昵称两实体：eid 联表不受名称冲突影响（昵称反查的旧缺陷回归锚）', () => {
+    const dup = [
+      { eid: 300, nickname: '同名', team: 1, tank_id: 111 },
+      { eid: 301, nickname: '同名', team: 2, tank_id: 222 },
+    ]
+    const shots = [shot({ shooter_eid: 100, target_eid: 301 })]
+    api.enrichShotsFromRoster(shots, dup)
+    expect(shots[0].target_tank_id).toBe(222)  // 按 eid 精确命中，而非昵称首匹配的 111
   })
 })

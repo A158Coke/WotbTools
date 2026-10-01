@@ -17,6 +17,13 @@ import { confirm as appConfirm } from '../composables/useConfirm.js'
 import * as THREE from 'three'
 
 import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
+import { mapBases } from '../data/mapBases.js'
+import { firstIndexAfter } from './seekPointer.js'
+import { impactKind } from './impactKind.js'
+import { pointsAt } from './supremacyPoints.js'
+// 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
+import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
+import { playableBounds } from '../data/playableBounds.js'
 import { createLoadProgress } from './loadProgress.js'
 import { poseFromYPR } from './glbRig.js'
 import { assetProvider } from './assetProvider.js'
@@ -36,6 +43,15 @@ export const QUALITY_PRESETS = {
 export function initPlayback(container, store) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
+  let currentMapBases = null;
+  // 阵营/中立调色（唯一事实源）：green / red / white——炮线、基地归属、标签共用；
+  // 中立与未知阵营一律 white（unknown ≠ enemy）。
+  const COLOR_FRIENDLY = 0x2ecc71;
+  const COLOR_ENEMY = 0xef4444;
+  const COLOR_UNKNOWN = 0xf5f5f5;
+      // mapBases[资产面 map key]（基地几何；loadMapImage 解析后缓存）
+  let currentMapKey = null;        // 资产面 map key（playableBounds 表索引）
+  let boundaryGroup = null;        // 地图边界带（会话拥有）
   let V = [];                      // 车辆运行时 {def, group, turretG, gunPivot, label, meshHull, glb}
   let T = 0, PLAYING = false, SPEED = store.speed;
   let CAM = 'free', FOLLOW_EID = 0;
@@ -217,6 +233,108 @@ export function initPlayback(container, store) {
     }
   }
 
+  // ---------- 地图边界带 ----------
+  // 边界 = 游戏内实际战场范围（playableBoundsMeters），比真实地图 worldBounds(±300) 小。
+  // 边界线是连续带（不是离散分段标注）：沿闭合矩形按 BOUNDARY_STEP 采样、逐顶点贴地，
+  // 起伏地形上不被埋掉。与上游 Agent 同式（上游表按数字 map_id，本表按 mapCode）。
+  const BOUNDARY_COLOR = 0xff2f2f;
+  const BOUNDARY_THICK = 1.8;   // 带宽（米）
+  const BOUNDARY_STEP = 2.0;    // 采样步长（米）：越小越贴合地形
+
+  // 优先 terrain meta 的 playableBounds（打包器从场景 MapBorderComponent 提取，新地图自带）；
+  // 否则回退 mapCode 表。两者皆缺 → null（不画，不用车辆范围猜）
+  function playableBoundsFor() {
+    const pb = (heightMeta && heightMeta.playableBounds) || playableBounds[currentMapKey];
+    if (!pb) return null;
+    const sxMin = -pb.xMax, sxMax = -pb.xMin;   // 场景为 x 镜像系
+    return { cx: (sxMin + sxMax) / 2, cz: (pb.yMin + pb.yMax) / 2,
+             hx: (sxMax - sxMin) / 2, hz: (pb.yMax - pb.yMin) / 2 };
+  }
+
+  function clearBoundary() {
+    if (!boundaryGroup) return;
+    const old = boundaryGroup.userData.sharedMaterial;
+    if (old) old.dispose();
+    scene.remove(boundaryGroup);
+    disposeObject3D(boundaryGroup);
+    boundaryGroup = null;
+  }
+
+  // 边界只认权威可玩范围（playableBounds）：**fail-closed**——拿不到就不画。
+  // 车辆范围 / 地形 span / worldBounds 都不是「游戏内红色战场边界」的证据，
+  // 不得作为兜底（历史实现曾用车辆 ext 与 terrain span 兜底，会凭空画出一条
+  // 与玩法不符的边界）。
+  function buildBoundary(bounds, thick) {
+    clearBoundary();
+    if (!bounds) return;
+    const { cx, cz, hx, hz } = bounds;
+    const x0 = cx - hx, x1 = cx + hx, z0 = cz - hz, z1 = cz + hz;
+    // 闭合路径（顺时针四条边，角点精确落在 (±hx, ±hz)）
+    const path = [];
+    const push = (ax, az, bx, bz) => {
+      const len = Math.hypot(bx - ax, bz - az);
+      const n = Math.max(2, Math.ceil(len / BOUNDARY_STEP));
+      for (let i = 0; i < n; i++) {
+        const t = i / n;
+        path.push([ax + (bx - ax) * t, az + (bz - az) * t]);
+      }
+    };
+    push(x0, z0, x1, z0);   // 北
+    push(x1, z0, x1, z1);   // 东
+    push(x1, z1, x0, z1);   // 南
+    push(x0, z1, x0, z0);   // 西
+    const N = path.length;
+    const pos = new Float32Array(N * 2 * 3);
+    const idx = [];
+    const half = thick / 2;
+    for (let i = 0; i < N; i++) {
+      const [px, pz] = path[i];
+      const [nx2, nz2] = path[(i + 1) % N];
+      const [ox, oz] = path[(i - 1 + N) % N];
+      let tx = nx2 - ox, tz = nz2 - oz;               // 切线 → 水平面内左法线
+      const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+      const lx = -tz, lz = tx;
+      const y = groundY(px, pz) + 0.06;               // 贴地面（随地形起伏）
+      pos[i * 6] = px + lx * half; pos[i * 6 + 1] = y; pos[i * 6 + 2] = pz + lz * half;
+      pos[i * 6 + 3] = px - lx * half; pos[i * 6 + 4] = y; pos[i * 6 + 5] = pz - lz * half;
+    }
+    for (let i = 0; i < N; i++) {
+      const j = (i + 1) % N;
+      idx.push(i * 2, i * 2 + 1, j * 2, i * 2 + 1, j * 2 + 1, j * 2);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshBasicMaterial({
+      color: BOUNDARY_COLOR, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,   // 防与地形 z-fighting
+    });
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(geo, mat));
+    g.userData.sharedMaterial = mat;
+    boundaryGroup = g;
+    scene.add(g);
+  }
+
+  // 相机距离钳制（禁止无限 zoom-out）：min/max 基于 world extent，初值实测后再调
+  function applyCameraClamp() {
+    const { ext } = WORLD_CENTER;
+    controls.minDistance = Math.max(20, ext * 0.08);
+    controls.maxDistance = ext * 2.2;
+  }
+
+  // 相机目标钳制在战场范围内（拖到天边会让地形/边界消失、只剩背景色）
+  function clampCameraTarget() {
+    const { cx, cz, ext } = WORLD_CENTER;
+    const lim = ext * 1.1;
+    const t = controls.target;
+    const nx = Math.min(cx + lim, Math.max(cx - lim, t.x));
+    const nz = Math.min(cz + lim, Math.max(cz - lim, t.z));
+    if (nx !== t.x) t.x = nx;
+    if (nz !== t.z) t.z = nz;
+  }
+
   function buildWorld() {
     // 数据范围（直接取自 DATA；去 2% 离群后取整百）。注意必须在 buildVehicles 之前也可用——
     // 运行时数组 V 此时尚未填充
@@ -240,9 +358,13 @@ export function initPlayback(container, store) {
     const grid = new THREE.GridHelper(ext * 2 + 100, Math.floor((ext * 2 + 100) / 50), 0x3a4a5e, 0x273140);
     grid.position.set(cx, 0.02, cz); scene.add(grid);
     gridHelper = grid;
+    // 边界只按权威可玩范围画（见 buildBoundary 的 fail-closed 说明）：此处地图资产
+    // 尚未加载，命中 mapCode 表则先画，否则不画；rebuildGround 再按 terrain meta 重建
+    buildBoundary(playableBoundsFor(), BOUNDARY_THICK);
     WORLD_CENTER = { cx, cz, ext };
     camera.position.set(cx, ext * 1.1, cz + ext * 1.2);
     controls.target.set(cx, 0, cz);
+    applyCameraClamp();   // 世界范围决定 min/max 距离（初值，实测再调）
   }
   let WORLD_CENTER = { cx: 0, cz: 0, ext: 300 };
 
@@ -320,7 +442,9 @@ export function initPlayback(container, store) {
     // 静态资产面的 key 解析（必须在 mapq 构造之后——曾放在函数首行引用未初始化的
     // mapq，TDZ ReferenceError 让整个函数静默死亡，地图/地形/场景一个请求都不发，
     // 全画质档回退占位网格）
-    await resolveMapKey(mapq).catch(() => {});
+    const resolvedKey = await resolveMapKey(mapq).catch(() => null);
+    currentMapKey = resolvedKey;
+    currentMapBases = resolvedKey ? (mapBases[resolvedKey] || null) : null;
     if (stale()) return;
     // 资产阶段进度（审计 3D-23）：按画质档实际会请求的段登记，每段完成（含缺失降级）计满；
     // 分层地表按纹理张数、场景 GLB 按字节推进。写入 store.assetProgress（0–1）
@@ -489,7 +613,14 @@ export function initPlayback(container, store) {
             opacity: m.opacity ?? 1,
             side: THREE.DoubleSide,
           });
-          if (m.alphaMode === 'MASK') nm.alphaTest = m.alphaCutoff || 0.33;
+          // 镂空材质必须继承 GLTFLoader 解析好的 alphaTest。GLTFLoader 不把 glTF 的
+          // alphaMode 挂到材质上——MASK 只体现为 alphaTest（alphaCutoff ?? 0.5），
+          // BLEND 只体现为 transparent。旧判据 `m.alphaMode === 'MASK'` 恒为 false
+          // （该属性不存在），重建材质又只拷了 map/color/opacity/side，于是 MASK 的
+          // 裁切被整个丢掉：铁丝网（wirebarricade）/藤蔓（ivy）/蕨/标牌这类镂空贴图
+          // 按整片方片照绘，背景没被剔除——那些贴图的背景恰是纯黑（实测 ivy 背景区
+          // 亮度 0.0），看上去就是一张实心黑片。
+          if (m.alphaTest > 0) nm.alphaTest = m.alphaTest;
           nm.flatShading = true;
           return nm;
         })());
@@ -700,12 +831,353 @@ export function initPlayback(container, store) {
       mapPlane.position.set(meta.x || 0, 0.04, meta.z || 0);
       scene.add(mapPlane);
     }
+    // 边界按权威可玩范围重建（terrain meta 的 playableBounds 优先，否则 mapCode 表）；
+    // 两者皆缺则不画（fail-closed，绝不用 terrain span 冒充战场边界）
+    buildBoundary(playableBoundsFor(), BOUNDARY_THICK);
+    // 地形异步就绪后把基地环带/HUD 重新贴回地表
+    regroundSupremacyBases();
+    if (assaultMarker && assaultMarker.reground) assaultMarker.reground();
   }
 
   function teamColor(v) {
     const f = DATA.meta.friendly_team, t = v.def.team;
-    if (t === 0 || f === 0) return 0x8a94a3;
-    return t === f ? 0x3fa66a : 0xc05046;
+    if (t === 0 || f === 0) return COLOR_UNKNOWN;   // 中立＝白（green / red / white 口径）
+    // 深绿/深红（与上游 Agent 同值）：原 0x3fa66a/0xc05046 偏亮，明亮地表上对比不足
+    return t === f ? 0x26794a : 0x98322a;
+  }
+
+  // ---------- 争霸基地（Supremacy）----------
+  // 几何来自 mapBases[key].supremacy（客户端 .sc2 提取，世界坐标；scene x = −游戏 x 镜像）；
+  // 状态来自 Agent 契约 v2 的 supremacy_bases（wrapper12/root11 sparse 重建）——
+  // seek 折叠：每基地取 clock≤t 的最后一条。渲染只做呈现，不推断协议。
+  // 队伍色沿用本仓调色（与花名册圆点/车辆标签同一 teamColor 系），不引入第二套配色。
+  const BASE_OWNER_FRIENDLY = 0x3fa66a, BASE_OWNER_ENEMY = 0xc05046, BASE_NEUTRAL = COLOR_UNKNOWN;
+  let baseObjects = [];   // 争霸基地 { baseId, bid, ring, sprite, canvas, ctx, tex, state, r }
+
+  function baseSideColor(team) {
+    const ft = DATA.meta.friendly_team;
+    if ((team !== 1 && team !== 2) || (ft !== 1 && ft !== 2)) return BASE_NEUTRAL;
+    return team === ft ? BASE_OWNER_FRIENDLY : BASE_OWNER_ENEMY;
+  }
+
+  function clearSupremacyBases() {
+    for (const b of baseObjects) {
+      if (b.ring) { scene.remove(b.ring); b.ring.geometry.dispose(); b.ring.material.dispose(); }
+      if (b.sprite) {
+        labelScene.remove(b.sprite);
+        if (b.sprite.material) { b.sprite.material.map?.dispose(); b.sprite.material.dispose(); }
+      }
+    }
+    baseObjects = [];
+  }
+
+  function buildSupremacyBases() {
+    clearSupremacyBases();
+    const tracks = DATA.supremacy_bases;
+    if (!tracks || !tracks.length) return;   // 非争霸场次：不画（不靠静态几何猜模式）
+    const pts = (currentMapBases && currentMapBases.supremacy) || [];
+    if (!pts.length) return;   // 无几何数据的地图：不猜坐标
+    for (const p of pts) {
+      const bid = { A: 0, B: 1, C: 2, D: 3 }[p.baseId];
+      if (bid == null) continue;
+      const gx = -p.x, gz = p.y;
+      const r = p.radius || 15;
+      // 贴地圆环（不用平面 RingGeometry——起伏地形上会被坡地埋掉大半）
+      const ring = new THREE.Mesh(
+        makeGroundedRing(gx, gz, r),
+        new THREE.MeshBasicMaterial({ color: BASE_NEUTRAL, side: THREE.DoubleSide,
+                                      transparent: true, opacity: 0.9, depthWrite: false,
+                                      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+      scene.add(ring);
+      // HUD：billboard sprite（字母 + 占领进度），屏幕尺寸 clamp
+      const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 128;
+      const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, depthTest: false, depthWrite: false, transparent: true }));
+      sprite.renderOrder = 998;
+      sprite.position.set(gx, ringMaxGroundY(gx, gz, r) + BASE_HUD_H, gz);
+      labelScene.add(sprite);
+      baseObjects.push({ baseId: p.baseId, bid, ring, sprite, canvas, ctx: canvas.getContext('2d'),
+                         tex, state: null, r,
+                         // 地形异步就绪后：重建贴地环带 + HUD 抬到环内最高地形之上
+                         reground: () => {
+                           ring.geometry.dispose();
+                           ring.geometry = makeGroundedRing(gx, gz, r);
+                           sprite.position.y = ringMaxGroundY(gx, gz, r) + BASE_HUD_H;
+                         } });
+    }
+  }
+
+  function regroundSupremacyBases() {
+    for (const b of baseObjects) if (b.reground) b.reground();
+  }
+
+  // 每基地取 clock ≤ t 的最后一条（tracks 按 clock 升序，重建侧保证）
+  function baseStateAt(bid, t) {
+    const arr = DATA.supremacy_bases || [];
+    let st = { owner: null, capturing: null, progress: null };
+    for (let i = 0; i < arr.length; i++) {
+      const tr = arr[i];
+      if (tr.base_id !== bid) continue;
+      if (tr.clock > t) break;
+      st = { owner: tr.owner_team ?? null, capturing: tr.capturing_team ?? null,
+             progress: tr.capture_progress ?? null };
+    }
+    return st;
+  }
+
+  function drawBaseHud(b) {
+    const st = b.state; const ctx = b.ctx;
+    const ownerColor = baseSideColor(st.owner);
+    const capColor = st.capturing != null ? baseSideColor(st.capturing) : null;
+    const col = (c) => '#' + c.toString(16).padStart(6, '0');
+    ctx.clearRect(0, 0, 256, 128);
+    ctx.font = 'bold 64px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(0,0,0,.72)';
+    ctx.strokeText(b.baseId, 128, 42); ctx.fillStyle = col(ownerColor); ctx.fillText(b.baseId, 128, 42);
+    // 占领进度条（capturing 队伍色）；progress 缺失时不画条（0 ≠ 没发生）
+    if (capColor != null && st.progress != null) {
+      const w = 176, h = 16, x = (256 - w) / 2, y = 92;
+      ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+      ctx.fillStyle = 'rgba(255,255,255,.16)'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = col(capColor);
+      ctx.fillRect(x, y, Math.max(0, Math.min(1, st.progress / 100)) * w, h);
+    }
+    b.tex.needsUpdate = true;
+  }
+
+  function updateSupremacyBases() {
+    for (const b of baseObjects) {
+      const st = baseStateAt(b.bid, T);
+      const key = st.owner + '/' + st.capturing + '/' + st.progress;
+      if (b.stateKey !== key) { b.state = st; b.stateKey = key; drawBaseHud(b); }
+      // 圆环随 owner 变色
+      const oc = baseSideColor(st.owner);
+      if (b.ringColor !== oc) { b.ring.material.color.setHex(oc); b.ringColor = oc; }
+      // HUD 屏幕尺寸 clamp：按相机距离调整 sprite 世界尺寸
+      const d = camera.position.distanceTo(b.sprite.position);
+      const s = Math.min(16, Math.max(5, d * 0.03));
+      b.sprite.scale.set(s * 2, s, 1);
+    }
+  }
+  const BASE_HUD_H = 11;   // 基地 HUD 抬高（争霸/单基地共用）
+
+  // ---------- 单基地目标（Assault / Encounter）----------
+  // 几何来自 mapBases[key].assault（客户端 .sc2 提取，世界坐标；scene x = −游戏 x 镜像），
+  // 状态来自 Agent 契约 v2 的 assault_objective_present / assault_bases（wrapper8/root8）。
+  //
+  // 语义红线（docs/research/replay/assault-base-state.md）：单基地的 owner/capturing 恒为
+  // null，静态 scene 的 `team` 字段语义 UNKNOWN——一律不据此上色/推断归属；环与 HUD 用中性
+  // 色，进度条用呈现强调色（仅表示"有占领进度"，不代表阵营）。半径不做车辆距离推算。
+  //
+  // 目标存在性判据：assault_objective_present（上游 v0.3.1；目标族发出裸初始化对以外的
+  // 字段）优先，旧产物回退"有进度广播"。裸初始化对 1=1,2=1 + 1=2,2=1 是通用广播，
+  // 普通对局同样会发，不得据此判定。
+  const ASSAULT_RADIUS_FALLBACK = 20;      // 客户端 scene 常不声明 radius：20m 仅呈现兜底
+  const ASSAULT_PROGRESS_COLOR = 0xffc24b; // 呈现强调色（非阵营语义）
+  let assaultMarker = null;
+
+  function assaultHasObjective() {
+    if (DATA.assault_objective_present === true) return true;
+    if (DATA.assault_objective_present === undefined) {
+      return !!(DATA.assault_bases && DATA.assault_bases.length);
+    }
+    return false;
+  }
+
+  function clearAssaultBase() {
+    if (!assaultMarker) return;
+    const m = assaultMarker;
+    if (m.ring) { scene.remove(m.ring); m.ring.geometry.dispose(); m.ring.material.dispose(); }
+    if (m.sprite) {
+      labelScene.remove(m.sprite);
+      if (m.sprite.material) { m.sprite.material.map?.dispose(); m.sprite.material.dispose(); }
+    }
+    assaultMarker = null;
+  }
+
+  function buildAssaultBase() {
+    clearAssaultBase();
+    if (!assaultHasObjective()) return;
+    const entry = currentMapBases;   // loadMapImage 里按 id → 资产面 key 解析后缓存
+    const pts = (entry && entry.assault) || [];
+    // 多 candidate 无证据 fail-closed（与 2D basesAt 同式）：几何不唯一就不选目标
+    if (pts.length !== 1) return;
+    const p = pts[0];
+    const gx = -p.x, gz = p.y;
+    const r = p.radius || ASSAULT_RADIUS_FALLBACK;
+    const ring = new THREE.Mesh(
+      makeGroundedRing(gx, gz, r),
+      new THREE.MeshBasicMaterial({ color: 0x9aa5b1, side: THREE.DoubleSide,
+                                    transparent: true, opacity: 0.9, depthWrite: false,
+                                    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+    scene.add(ring);
+    const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 128;
+    const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, depthTest: false, depthWrite: false, transparent: true }));
+    sprite.renderOrder = 998;   // 与车辆标签同层：水面/半透明层不得覆盖
+    sprite.position.set(gx, ringMaxGroundY(gx, gz, r) + BASE_HUD_H, gz);
+    labelScene.add(sprite);
+    assaultMarker = { ring, sprite, canvas, ctx: canvas.getContext('2d'), tex, r,
+                      stateKey: undefined,
+                      reground: () => {
+                        ring.geometry.dispose();
+                        ring.geometry = makeGroundedRing(gx, gz, r);
+                        sprite.position.y = ringMaxGroundY(gx, gz, r) + BASE_HUD_H;
+                      } };
+  }
+
+  // 单基地占领进度：取 clock ≤ t 的最后一条（tracks 按 clock 升序）；无广播 → null
+  function assaultProgressAt(t) {
+    const arr = DATA.assault_bases || [];
+    let p = null;
+    for (let i = 0; i < arr.length; i++) {
+      const tr = arr[i];
+      if (tr.clock > t) break;
+      p = tr.progress ?? null;
+    }
+    return p;
+  }
+
+  function drawAssaultHud(m, progress) {
+    const ctx = m.ctx;
+    ctx.clearRect(0, 0, 256, 128);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(0,0,0,.72)';
+    ctx.font = 'bold 30px sans-serif';
+    ctx.strokeText('BASE', 128, 24); ctx.fillStyle = '#f0f0f0'; ctx.fillText('BASE', 128, 24);
+    const col = '#' + ASSAULT_PROGRESS_COLOR.toString(16).padStart(6, '0');
+    if (progress == null) {
+      // 目标存在但当前无占领进度：不画 0% 条（0 ≠ 没发生）
+      ctx.font = 'bold 34px sans-serif'; ctx.fillStyle = 'rgba(240,240,240,.55)';
+      ctx.strokeText('—', 128, 84); ctx.fillText('—', 128, 84);
+      m.tex.needsUpdate = true;
+      return;
+    }
+    const w = 176, h = 16, x = (256 - w) / 2, y = 92;
+    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+    ctx.fillStyle = 'rgba(255,255,255,.16)'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y, Math.max(0, Math.min(1, progress / 100)) * w, h);
+    ctx.font = 'bold 44px sans-serif';
+    ctx.strokeText(progress + '%', 128, 58); ctx.fillStyle = col; ctx.fillText(progress + '%', 128, 58);
+    m.tex.needsUpdate = true;
+  }
+
+  function updateAssaultBase() {
+    const m = assaultMarker;
+    if (!m) return;
+    const p = assaultProgressAt(T);
+    if (m.stateKey !== p) { m.stateKey = p; drawAssaultHud(m, p); }
+    const d = camera.position.distanceTo(m.sprite.position);
+    const s = Math.min(16, Math.max(5, d * 0.03));
+    m.sprite.scale.set(s * 2, s, 1);
+  }
+
+  // 逐顶点贴地圆环（与地面/边界同构：起伏地形上平面圆环会被坡地埋掉）
+  function makeGroundedRing(gx, gz, radius, seg = 72) {
+    const pos = new Float32Array((seg + 1) * 2 * 3);
+    const idx = [];
+    for (let i = 0; i <= seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const xo = gx + ca * radius, zo = gz + sa * radius;
+      const xi = gx + ca * radius * 0.9, zi = gz + sa * radius * 0.9;
+      pos[i * 6] = xo; pos[i * 6 + 1] = groundY(xo, zo) + 0.08; pos[i * 6 + 2] = zo;
+      pos[i * 6 + 3] = xi; pos[i * 6 + 4] = groundY(xi, zi) + 0.08; pos[i * 6 + 5] = zi;
+    }
+    for (let i = 0; i < seg; i++) {
+      idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  // 圆环范围内地形最高点：HUD 需高于它才不被坡地遮挡
+  function ringMaxGroundY(gx, gz, radius, seg = 24) {
+    let mx = groundY(gx, gz);
+    for (let i = 0; i < seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      for (const rr of [radius * 0.5, radius, radius * 1.5]) {
+        mx = Math.max(mx, groundY(gx + Math.cos(a) * rr, gz + Math.sin(a) * rr));
+      }
+    }
+    return mx;
+  }
+
+  function groundY(x, z) {
+    return sampleHeight(x, z) + 0.12;
+  }
+
+  // ---------- 标签软遮挡（fast-pass）----------
+  // camera → 标签锚点做一次视线检测：先撞地形或静态场景 → 弱化到
+  // LABEL_BLOCKED_OPACITY；否则全不透明度。**永不隐藏**（下限 0.35，不是 0）——
+  // 标签始终可见，被挡时只是明显变淡。只把地形与静态场景当 blocker，不含其他车辆。
+  //
+  // 成本控制（不让每个标签每帧都检测）：
+  //   · 地形用高度场解析步进（LABEL_OCCL_SAMPLES 次 sampleHeight），不 raycast
+  //     512² 地形网格（那是几十万三角形）；
+  //   · 场景（建筑/树）才 raycast，且**每 occlStride 帧只检测一辆车**（轮转），
+  //     其余帧复用上次结果；
+  //   · 单次 raycast 超过 4ms（大图三角形多）自动拉长步长，避免掉帧。
+  const LABEL_OPACITY = 1;
+  const LABEL_BLOCKED_OPACITY = 0.35;
+  const LABEL_OCCL_SAMPLES = 16;
+  const LABEL_OCCL_BUDGET_MS = 4;
+  let occlCursor = 0, occlTick = 0, occlStride = 1, occlCostMs = 0;
+  const _occlDir = new THREE.Vector3();
+
+  // 地形遮挡：沿 camera→anchor 采样高度场（地形高过视线即判遮挡）
+  function terrainBlocksAim(cx, cy, cz, ax, ay, az) {
+    if (!heightField || !heightMeta) return false;
+    for (let i = 1; i < LABEL_OCCL_SAMPLES; i++) {
+      const k = i / LABEL_OCCL_SAMPLES;
+      const x = cx + (ax - cx) * k, z = cz + (az - cz) * k;
+      const y = cy + (ay - cy) * k;
+      if (sampleHeight(x, z) > y + 0.5) return true;
+    }
+    return false;
+  }
+
+  // 静态场景遮挡（建筑/树）：raycast，far 收到锚点之前
+  function sceneryBlocksAim(anchor) {
+    if (!mapScenery || !raycaster) return false;
+    _occlDir.copy(anchor).sub(camera.position);
+    const dist = _occlDir.length();
+    if (dist < 2) return false;
+    _occlDir.divideScalar(dist);
+    const prevFar = raycaster.far;
+    raycaster.far = dist - 1.0;   // 只关心锚点之前的遮挡物
+    raycaster.set(camera.position, _occlDir);
+    const hit = raycaster.intersectObject(mapScenery, true).length > 0;
+    raycaster.far = prevFar;
+    return hit;
+  }
+
+  function updateLabelOcclusion() {
+    const n = V.length;
+    if (!n) return;
+    occlStride = Math.min(16, occlCostMs > LABEL_OCCL_BUDGET_MS
+      ? occlStride + 1 : Math.max(1, occlStride - 1));
+    if (++occlTick < occlStride) return;   // 未到检测帧：沿用缓存结果
+    occlTick = 0;
+    const v = V[occlCursor++ % n];
+    if (!v || !v.label || !v.label.visible) return;
+    const a = v.label.position;
+    let blocked = terrainBlocksAim(camera.position.x, camera.position.y, camera.position.z,
+                                   a.x, a.y, a.z);
+    if (!blocked) {
+      const t0 = performance.now();
+      blocked = sceneryBlocksAim(a);
+      occlCostMs = performance.now() - t0;
+    } else {
+      occlCostMs = 0;
+    }
+    v.labelOccluded = blocked;
   }
 
   // 标签恒定屏幕占比：世界尺寸按相机距离逐帧反算（透视投影 h = f·2d·tan(θ/2)），
@@ -713,6 +1185,7 @@ export function initPlayback(container, store) {
   const LABEL_FRAC = 0.0275;    // 标签高 ≈ 视口高度的 2.75%（当前尺寸）
   const LABEL_ASPECT = 4;       // 画布 512×128 = 4:1
   function updateLabels() {
+    updateLabelOcclusion();   // 软遮挡：每 occlStride 帧检测一辆车
     const k = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * LABEL_FRAC;
     for (const v of V) {
       if (!v.label) continue;
@@ -727,6 +1200,9 @@ export function initPlayback(container, store) {
       v.label.position.y += Math.min(6, Math.max(3.25, d * 0.045));   // 上限随标签减半等比收紧
       // 车辆不可见时标签同步隐藏（原先经父子关系继承，现根级需显式管理）
       v.label.visible = v.group.visible && store.labelsOn;
+      // 软遮挡：被地形/静态场景挡住时弱化（永不隐藏，下限 LABEL_BLOCKED_OPACITY）
+      const target = v.labelOccluded ? LABEL_BLOCKED_OPACITY : LABEL_OPACITY;
+      if (v.label.material.opacity !== target) v.label.material.opacity = target;
     }
   }
 
@@ -737,7 +1213,7 @@ export function initPlayback(container, store) {
     tex.colorSpace = THREE.SRGBColorSpace;   // canvas 本身是 sRGB，颜色直出
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({
       map: tex, depthTest: false, depthWrite: false,
-      transparent: true, opacity: 0.72,   // 整体半透明，弱化对场景的遮挡感
+      transparent: true, opacity: LABEL_OPACITY,   // 由软遮挡逐帧驱动（1 / 0.35）
     }));
     sp.renderOrder = 999;   // 最后绘制：水面/半透明层不得覆盖标签；不写深度避免
                             // 透明四边形裁掉后画的相邻标签（14 车聚簇时必现）
@@ -769,8 +1245,8 @@ export function initPlayback(container, store) {
   // 变化检测必须在清空画布之前——先 clear 再早退会得到永久空白标签。
   function drawLabel(v) {
     const hp = hpAt(v, T), dead = deathAt(v, T);
-    if (hp === v.labelHp && dead === v.labelDead) return;
-    v.labelHp = hp; v.labelDead = dead;
+    if (hp === v.labelHp && dead === v.labelDead && !v.labelDirty) return;
+    v.labelHp = hp; v.labelDead = dead; v.labelDirty = false;
     const cv = v.labelCanvas, ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, 512, 128);
     const team = '#' + new THREE.Color(teamColor(v)).getHexString();
@@ -779,19 +1255,23 @@ export function initPlayback(container, store) {
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 5;
     rrPath(ctx, 26, 6, 460, 116, 18);
-    ctx.fillStyle = 'rgba(15,20,28,.85)'; ctx.fill();
+    ctx.fillStyle = '#0f141b'; ctx.fill();
     ctx.restore();
     const bg = ctx.createLinearGradient(0, 6, 0, 122);
-    bg.addColorStop(0, 'rgba(24,31,43,.88)');
-    bg.addColorStop(1, 'rgba(12,17,24,.80)');
+    bg.addColorStop(0, '#202836');
+    bg.addColorStop(1, '#0d1219');
     rrPath(ctx, 26, 6, 460, 116, 18);
     ctx.fillStyle = bg; ctx.fill();
     ctx.lineWidth = 3;
-    ctx.strokeStyle = dead ? 'rgba(122,130,140,.42)' : team + '99';
+    // 受击闪（FLASH_MS）：描边瞬亮，弱化而非隐藏
+    const flashing = (flashByEid.get(v.def.eid) || 0) > performance.now();
+    ctx.strokeStyle = dead ? '#6a727c' : flashing ? '#ffffff' : team;
+    if (flashing) ctx.lineWidth = 5;
     ctx.stroke();
+    ctx.lineWidth = 3;
     ctx.save();
     rrPath(ctx, 26, 6, 460, 116, 18); ctx.clip();
-    ctx.globalAlpha = dead ? .45 : .92; ctx.fillStyle = base;
+    ctx.fillStyle = dead ? '#4a525c' : base;
     ctx.fillRect(26, 6, 12, 116);
     ctx.restore();
     // 车型名为主（大字亮色）+ 昵称为辅（小字置灰），并排一行水平居中；超宽自适应缩字号
@@ -810,7 +1290,7 @@ export function initPlayback(container, store) {
       return w;
     };
     while (tfs > 28 && rowWidth() > 430) tfs -= 2;
-    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,.75)';
+    ctx.lineWidth = 6; ctx.strokeStyle = '#000000';
     let tx = 256 - rowWidth() / 2;
     if (starW) {
       ctx.strokeText('★', tx, 34);
@@ -821,7 +1301,7 @@ export function initPlayback(container, store) {
     const primaryText = tank || name;
     ctx.font = tankFont(tfs);
     ctx.strokeText(primaryText, tx, 34);
-    ctx.fillStyle = dead ? 'rgba(160,168,178,.78)' : '#eef3f9';
+    ctx.fillStyle = dead ? '#a4acb6' : '#eef3f9';
     ctx.fillText(primaryText, tx, 34);
     tx += ctx.measureText(primaryText).width;
     // 辅：昵称（小字置灰；tank 缺失时已顶位，不重复绘制）
@@ -830,15 +1310,15 @@ export function initPlayback(container, store) {
       ctx.font = nickFont;
       ctx.lineWidth = 5;
       ctx.strokeText(name, tx, 36);
-      ctx.fillStyle = dead ? 'rgba(140,148,158,.6)' : '#b9c4cf';
+      ctx.fillStyle = dead ? '#8b939d' : '#b9c4cf';
       ctx.fillText(name, tx, 36);
     }
     // 血量条：暗槽 + 队伍色纵向渐变填充
     const frac = v.def.max_hp > 0 ? Math.max(0, Math.min(1, hp / v.def.max_hp)) : 0;
     const bx = 56, by = 68, bw = 400, bh = 44;
     rrPath(ctx, bx, by, bw, bh, 11);
-    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.stroke();
+    ctx.fillStyle = '#0a0e13'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = '#3a4450'; ctx.stroke();
     if (frac > 0 && !dead) {
       const fg = ctx.createLinearGradient(0, by + 3, 0, by + bh - 3);
       fg.addColorStop(0, shadeCss(base, 1.35));
@@ -847,11 +1327,21 @@ export function initPlayback(container, store) {
       rrPath(ctx, bx + 3, by + 3, Math.max(16, (bw - 6) * frac), bh - 6, 8);
       ctx.fillStyle = fg; ctx.fill();
     }
+    // lost-HP 幽灵段（GHOST_MS）：当前血量右侧显示刚失去的一段（2D ghost 同语义）
+    const ghost = ghostByEid.get(v.def.eid);
+    if (ghost && !dead && ghost.toFrac > ghost.fromFrac) {
+      const gw = (bw - 6) * (ghost.toFrac - ghost.fromFrac);
+      if (gw > 1) {
+        rrPath(ctx, bx + 3 + (bw - 6) * ghost.fromFrac, by + 3, gw, bh - 6, 8);
+        ctx.fillStyle = '#c8d2de';   // 不透明的"刚失去"段，与队伍色填充区分
+        ctx.fill();
+      }
+    }
     // 血量数字（条上居中，描边保证低血量时可读；恒定屏幕占比下优先保证可读性）
     const txt = v.def.max_hp > 0 ? `${hp} / ${v.def.max_hp}` : '—';
     ctx.font = '700 30px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
-    ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.85)';
+    ctx.lineWidth = 5; ctx.strokeStyle = '#000000';
     ctx.strokeText(txt, 256, by + bh / 2 + 1);
     ctx.fillStyle = '#fff'; ctx.fillText(txt, 256, by + bh / 2 + 1);
     v.label.material.map.needsUpdate = true;
@@ -1058,15 +1548,18 @@ export function initPlayback(container, store) {
 
   // ---------- 弹道 ----------
   const TRACER_LEN = 9;
-  // 全弹道轨迹线：纯色不透明（淡出阶段除外）；与弹着点特效同步（t1+2.2s 移除、最后 1.2s 淡出）
-  const TRAJ_OPACITY = 1.0;
+  // 全弹道轨迹线按 replay clock 保留；impact 单独使用 wall-clock transient（见 updateImpacts）。
+  const TRAJ_OPACITY = 0.35;   // 与上游 Agent 同值（细且半透明；淡出阶段在其上再乘）
+  const TRACER_RADIUS = 0.22;   // 飞行段粗细
+  const TRAJ_RADIUS = 0.11;     // 轨迹线粗细
   let trajLines = [];
   function spawnShot(s) {
     const from = new THREE.Vector3(-s.from[0], s.from[1], s.from[2]);
     const to = new THREE.Vector3(-s.to[0], s.to[1], s.to[2]);
-    const color = s.is_kill ? 0xff3355 : s.ricochet ? 0x9aa5b1
-      : s.game_hit_result === 3 ? 0xffc94d : s.hit ? 0x6fb3ff : 0xd8dee7;
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, TRACER_LEN),
+    // 炮线唯一颜色规则 = 射手阵营（绿/红/白）；命中/跳弹/击毁不改炮线颜色——
+    // 结果由弹着点 impact 编码（原实现按结果上色，与上游 Agent 不一致）
+    const color = shotTeamColor(s);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(TRACER_RADIUS, TRACER_RADIUS, TRACER_LEN),
       new THREE.MeshBasicMaterial({ color }));
     scene.add(mesh);
     // WoTB 弹速高、交战近，直飞常 <0.3s——最小显示 0.22s 保证可见性
@@ -1075,7 +1568,7 @@ export function initPlayback(container, store) {
     // 全弹道轨迹线（队伍色：友军蓝/敌军红，与飞行段的命中结果色区分）：
     // 开火即显整条弹道；消失节奏与弹着点特效同步——t1+2.2s 移除、最后 1.2s 淡出
     const traj = new THREE.Mesh(
-      new THREE.BoxGeometry(0.28, 0.28, from.distanceTo(to)),
+      new THREE.BoxGeometry(TRAJ_RADIUS, TRAJ_RADIUS, from.distanceTo(to)),
       new THREE.MeshBasicMaterial({
         color: shotTeamColor(s), transparent: true, opacity: TRAJ_OPACITY, depthWrite: false,
       }));
@@ -1084,25 +1577,74 @@ export function initPlayback(container, store) {
     scene.add(traj);
     trajLines.push({ mesh: traj, until: t1 + 1.0, fadeEnd: t1 + 2.2, base: TRAJ_OPACITY });
   }
-  // 射手阵营 → 轨迹颜色：深蓝（友）/ 深红（敌）；无法判断阵营时灰
+  // 阵营色见文件顶部调色常量（唯一规则：按射手阵营 → green / red / white）
   function shotTeamColor(s) {
     const d = DATA.vehicles.find((x) => x.eid === s.shooter_eid);
     const t = d ? d.team : 0;
-    if (!t || !DATA.meta.friendly_team) return 0x9aa5b1;
-    return t === DATA.meta.friendly_team ? 0x1e40af : 0x9b1c1c;
+    const ft = DATA.meta.friendly_team;
+    if ((t !== 1 && t !== 2) || (ft !== 1 && ft !== 2)) return COLOR_UNKNOWN;
+    return t === ft ? COLOR_FRIENDLY : COLOR_ENEMY;
   }
+  // 命中类型 → impact（评审批准语义，与上游 Agent 同式；全部 transient，无 decal/弹孔）：
+  //   pen（击穿）= 白色球 + 小环；nonpen = 更大的球 + 明显 shock ring；ricochet = 侧向 sparks；
+  //   miss（无 target）/未知结果 = 不生成 target impact（不伪造）
+  const IMPACT_WHITE = 0xffffff;
+  // impactKind 见 ./impactKind.js（纯函数，可单测）：game_hit_result 枚举里没有"跳弹"
+  // 取值（1=未击穿、2=间隙止），只有作者 hit_flags & 0x0008 才是跳弹证据。
   function spawnImpact(tr) {
+    const kind = impactKind(tr.shot);
+    if (!kind) return;
     const g = new THREE.Group();
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 10),
-      new THREE.MeshBasicMaterial({ color: tr.color, transparent: true }));
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(kind === 'nonpen' ? 0.42 : 0.72, 10, 10),
+      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true }));
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.15, 20),
-      new THREE.MeshBasicMaterial({ color: tr.color, side: THREE.DoubleSide, transparent: true }));
+      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, side: THREE.DoubleSide, transparent: true }));
     ring.rotation.x = -Math.PI / 2;
     g.add(ball); g.add(ring);
+    // ricochet：侧向 sparks（两段短射线沿弹道法向散开）
+    const sparks = [];
+    if (kind === 'ricochet') {
+      const dir = tr.to.clone().sub(tr.from).normalize();
+      const side = new THREE.Vector3(dir.z, 0, -dir.x).normalize();
+      for (const sgn of [1, -1]) {
+        const sp = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 2.2),
+          new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true }));
+        // 局部偏移：群组已置于 tr.to，子物体不得再叠加一次世界坐标（否则成 2*tr.to + offset）
+        sp.position.set(side.x * sgn * 1.1, 0, side.z * sgn * 1.1);
+        // 盒体沿 +Z、朝水平 ±side：直接给 yaw，不依赖 lookAt 对父子变换的处理
+        sp.rotation.y = Math.atan2(side.x * sgn, side.z * sgn);
+        g.add(sp); sparks.push(sp);
+      }
+    }
     g.position.copy(tr.to);
     scene.add(g);
-    impacts.push({ g, until: tr.t1 + 2.2, ball, ring });
+    // impact 属于 UI feedback transient：寿命按真实壁钟计，而不是 replay clock。
+    // 这样 0.5x / 16x 下可读时长一致；暂停时自然淡出；seek 由 clearEffects 直接清空。
+    const durationMs = kind === 'nonpen' ? 650 : kind === 'ricochet' ? 550 : 450;
+    impacts.push({ g, bornMs: performance.now(), durationMs, ball, ring, sparks, kind });
   }
+
+  function updateImpacts() {
+    const now = performance.now();
+    for (let i = impacts.length - 1; i >= 0; i--) {
+      const im = impacts[i];
+      const k = Math.max(0, Math.min(1, (now - im.bornMs) / im.durationMs));
+      if (k >= 1) {
+        scene.remove(im.g);
+        im.ball.geometry.dispose(); im.ball.material.dispose();
+        im.ring.geometry.dispose(); im.ring.material.dispose();
+        if (im.sparks) for (const sp of im.sparks) { sp.geometry.dispose(); sp.material.dispose(); }
+        impacts.splice(i, 1);
+        continue;
+      }
+      const op = 1 - k;
+      im.ball.material.opacity = op;
+      im.ring.material.opacity = op * 0.8;
+      im.ring.scale.setScalar(1 + k * (im.kind === 'nonpen' ? 2.2 : 1.6));
+      if (im.sparks) for (const sp of im.sparks) sp.material.opacity = op * 0.7;
+    }
+  }
+
   function updateTracers() {
     for (let i = tracers.length - 1; i >= 0; i--) {
       const tr = tracers[i];
@@ -1121,20 +1663,6 @@ export function initPlayback(container, store) {
         spawnImpact(tr);
       }
     }
-    for (let i = impacts.length - 1; i >= 0; i--) {
-      const im = impacts[i];
-      const left = im.until - T;
-      if (left <= 0) {
-        scene.remove(im.g);
-        im.ball.geometry.dispose(); im.ball.material.dispose();
-        im.ring.geometry.dispose(); im.ring.material.dispose();
-        impacts.splice(i, 1);
-        continue;
-      }
-      const op = Math.min(1, left / 1.2);
-      im.ball.material.opacity = op; im.ring.material.opacity = op * 0.8;
-      im.ring.scale.setScalar(1 + (1 - Math.min(1, left / 2.2)) * 1.6);
-    }
     // 全弹道轨迹线：命中后延迟停留，再线性淡出并释放
     for (let i = trajLines.length - 1; i >= 0; i--) {
       const tl = trajLines[i];
@@ -1145,6 +1673,160 @@ export function initPlayback(container, store) {
       tl.mesh.material.opacity = T <= tl.until ? tl.base
         : tl.base * Math.max(0, 1 - (T - tl.until) / (tl.fadeEnd - tl.until));
     }
+  }
+
+  // ---------- 战斗反馈 transient（语义与 WotBTools 2D 对齐）----------
+  // 关键语义：**壁钟（真实 ms）寿命**，而非回放时钟——任意倍速下可读时长相近
+  // （2D battlePlayback.js 同款常量与注释）。因用壁钟，暂停时 transient 自然走完，
+  // 无需特殊处理；seek 则清空并重置事件游标（不补播历史动画）。
+  // FLOAT_DMG_MS / GHOST_MS / FLASH_MS / BURST_MS 来自 ../utils/battlePlayback.js（2D SSOT）
+  const ghostByEid = new Map();  // eid -> { fromFrac, toFrac, untilMs }
+  const flashByEid = new Map();  // eid -> untilMs
+  let floatDmgs = [];          // { sp, tex, born, baseY, group }
+  let burstFx = [];            // { g, born, rings, ball }
+  let dmgEvents = [];          // { t, eid, hpLoss }（回放时钟，升序）
+  let burstEvents = [];        // { t, eid }（回放时钟，升序）
+  let dmgPtr = 0, burstPtr = 0;
+
+  // 事件源：伤害 = 血量链相邻下降幅值（幅值即丢失血量；无逐段伤害归属时仍可判
+  // "谁掉了多少"）；击毁 = kills（死亡终态 × 击杀播报归属增强）。
+  function buildTransientSources() {
+    dmgEvents = [];
+    for (const def of DATA.vehicles || []) {
+      const hp = def.hp || [];
+      for (let i = 1; i < hp.length; i++) {
+        const loss = hp[i - 1][1] - hp[i][1];
+        if (loss > 0) dmgEvents.push({ t: hp[i][0], eid: def.eid, hpLoss: loss });
+      }
+    }
+    dmgEvents.sort((a, b) => a.t - b.t);
+    burstEvents = (DATA.kills || []).map((k) => ({ t: k.t, eid: k.victim_eid }))
+      .sort((a, b) => a.t - b.t);
+    dmgPtr = 0; burstPtr = 0;
+  }
+
+  function vehicleByEid(eid) { return V.find((x) => x.def.eid === eid); }
+
+  // 伤害飘字：受击车上方浮出 "-<lost>"，上浮 + 淡出（1s）
+  function spawnFloatDmg(eid, hpLoss) {
+    const v = vehicleByEid(eid);
+    if (!v || !v.group.visible) return;
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128;
+    const c = cv.getContext('2d');
+    // 可读性优先：加粗黑描边 + 外阴影 + 深橙填充（浅黄在黑描边偏薄时，
+    // 落在亮色地形/白车上对比不足）
+    c.font = 'bold 76px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.lineWidth = 12; c.strokeStyle = 'rgba(0,0,0,.95)'; c.lineJoin = 'round';
+    c.shadowColor = 'rgba(0,0,0,.85)'; c.shadowBlur = 14;
+    const text = '-' + hpLoss;
+    c.strokeText(text, 128, 64);
+    c.shadowBlur = 0;                      // 填充不再叠阴影，保持笔画锐利
+    c.fillStyle = '#ff9f1a'; c.fillText(text, 128, 64);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, depthTest: false, depthWrite: false, transparent: true, opacity: 1,
+    }));
+    sp.renderOrder = 1001;                 // 高于车辆标签（999）
+    sp.scale.set(4, 2, 1);
+    sp.position.copy(v.group.position); sp.position.y += 3.2;
+    scene.add(sp);
+    floatDmgs.push({ sp, tex, born: performance.now(), baseY: sp.position.y, group: v.group });
+    // 同源触发 HP 条反馈（2D 三件套：飘字 + 幽灵 + 闪，同一 loss 事件驱动）
+    const nowMs = performance.now();
+    const maxHp = v.def.max_hp > 0 ? v.def.max_hp : 0;
+    if (maxHp > 0) {
+      const curHp = Math.max(0, hpAt(v, T));
+      const fromFrac = Math.max(0, Math.min(1, curHp / maxHp));
+      const toFrac = Math.max(0, fromFrac + hpLoss / maxHp);   // 损失前比例（幽灵显示刚丢的量）
+      ghostByEid.set(eid, { fromFrac, toFrac, untilMs: nowMs + GHOST_MS });
+    }
+    flashByEid.set(eid, nowMs + FLASH_MS);
+    v.labelDirty = true;   // 标签重绘由反馈触发（否则只在 HP 整数变化时重绘）
+  }
+
+  // 击毁爆散：双层扩散环 + 中心球，700ms 内扩张并淡出
+  function spawnBurst(eid) {
+    const v = vehicleByEid(eid);
+    if (!v || !v.group.visible) return;
+    const g = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffa53a, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const rings = [];
+    for (const r0 of [0.8, 1.6]) {
+      const mesh = new THREE.Mesh(new THREE.RingGeometry(r0, r0 + 0.45, 28), mat.clone());
+      mesh.rotation.x = -Math.PI / 2;
+      g.add(mesh); rings.push(mesh);
+    }
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 10), mat.clone());
+    g.add(ball);
+    g.position.copy(v.group.position);
+    scene.add(g);
+    burstFx.push({ g, born: performance.now(), rings, ball });
+  }
+
+  function updateTransients() {
+    const now = performance.now();
+    // HP 条反馈过期清理（过期后再刷一次标签以擦除残影/闪光）
+    for (const [eid, g] of ghostByEid) {
+      if (now >= g.untilMs) {
+        ghostByEid.delete(eid);
+        const v = vehicleByEid(eid); if (v) v.labelDirty = true;
+      }
+    }
+    for (const [eid, until] of flashByEid) {
+      if (now >= until) {
+        flashByEid.delete(eid);
+        const v = vehicleByEid(eid); if (v) v.labelDirty = true;
+      }
+    }
+    for (let i = floatDmgs.length - 1; i >= 0; i--) {
+      const f = floatDmgs[i];
+      const k = (now - f.born) / FLOAT_DMG_MS;
+      if (k >= 1) {
+        scene.remove(f.sp); f.sp.material.dispose(); f.tex.dispose(); f.sp.material.map = null;
+        floatDmgs.splice(i, 1);
+        continue;
+      }
+      // 跟随车辆水平漂移 + 上浮 + 线性淡出
+      f.sp.position.x = f.group.position.x;
+      f.sp.position.z = f.group.position.z;
+      f.sp.position.y = f.baseY + k * 4.5;
+      f.sp.material.opacity = 1 - k;
+    }
+    for (let i = burstFx.length - 1; i >= 0; i--) {
+      const b = burstFx[i];
+      const k = (now - b.born) / BURST_MS;
+      if (k >= 1) {
+        scene.remove(b.g);
+        for (const rr of b.rings) { rr.geometry.dispose(); rr.material.dispose(); }
+        b.ball.geometry.dispose(); b.ball.material.dispose();
+        burstFx.splice(i, 1);
+        continue;
+      }
+      for (let j = 0; j < b.rings.length; j++) {
+        b.rings[j].scale.setScalar(1 + k * (2.2 + j * 1.6));
+        b.rings[j].material.opacity = 0.85 * (1 - k);
+      }
+      b.ball.scale.setScalar(1 + k * 1.5);
+      b.ball.material.opacity = 0.7 * (1 - k);
+    }
+  }
+
+  function clearTransients() {
+    for (const f of floatDmgs) {
+      scene.remove(f.sp); f.sp.material.dispose(); f.tex.dispose();
+    }
+    floatDmgs.length = 0;
+    for (const b of burstFx) {
+      scene.remove(b.g);
+      for (const rr of b.rings) { rr.geometry.dispose(); rr.material.dispose(); }
+      b.ball.geometry.dispose(); b.ball.material.dispose();
+    }
+    burstFx.length = 0;
+    ghostByEid.clear(); flashByEid.clear();   // 2D seek 同语义：清空且不补播
+    dmgPtr = 0; burstPtr = 0;                 // 游标重置：seek 后不补播历史动画
   }
 
   // ---------- 击杀 feed / 计分 ----------
@@ -1192,6 +1874,7 @@ export function initPlayback(container, store) {
   function buildRoster() {
     store.roster.team1 = [];
     store.roster.team2 = [];
+    store.roster.unknown = [];
     for (const v of V) {
       const d = v.def;
       const entry = {
@@ -1204,7 +1887,11 @@ export function initPlayback(container, store) {
         followed: false,
       };
       v.rosterEntry = entry;
-      (d.team === 2 ? store.roster.team2 : store.roster.team1).push(entry);
+      // 显式三元分组：未知阵营（team=0，联表失败/观察者）进中性组，fail-visible
+      // 且绝不污染任何一队（旧 `team!==2→team1` 把 Unknown 划给队伍 1）
+      if (d.team === 2) store.roster.team2.push(entry);
+      else if (d.team === 1) store.roster.team1.push(entry);
+      else store.roster.unknown.push(entry);
     }
   }
   function updateRoster() {
@@ -1290,8 +1977,13 @@ export function initPlayback(container, store) {
         followAnchor = (followAnchor || new THREE.Vector3()).copy(tmpV);
       } else followAnchor = null;
     } else followAnchor = null;
+    clampCameraTarget();
     controls.update();
     updateLabels();
+    updateSupremacyBases();
+    updateAssaultBase();
+    updateImpacts();      // wall-clock transient：暂停时也继续自然淡出
+    updateTransients();
     renderer.render(scene, camera);
     // 标签覆盖画布：同一相机，标签恒在主场景之上
     if (labelRenderer) labelRenderer.render(labelScene, camera);
@@ -1303,9 +1995,27 @@ export function initPlayback(container, store) {
     while (shotPtr < shots.length && shots[shotPtr].t_fire <= T) { spawnShot(shots[shotPtr]); shotPtr++; }
     updateTracers();
     advanceKills();
+    // 战斗反馈事件泵（回放时钟；壁钟寿命见 transient 段）
+    while (dmgPtr < dmgEvents.length && dmgEvents[dmgPtr].t <= T) {
+      const e = dmgEvents[dmgPtr++];
+      spawnFloatDmg(e.eid, e.hpLoss);
+    }
+    while (burstPtr < burstEvents.length && burstEvents[burstPtr].t <= T) {
+      spawnBurst(burstEvents[burstPtr++].eid);
+    }
     for (const v of V) applyPose(v);
     updateRoster(); updateScore();
     // HUD → store
+    // 顶栏：争霸实时点数——**每 tick 确定性重算**（无采样也写 null）：从争霸场切到普通场时
+    // supremacy_points 缺失，若只在有采样时才写，上一场的点数会残留在 HUD 上。
+    // 阵营映射只认 friendly_team ∈ {1,2}（unknown ≠ enemy，见 pointsAt）。
+    {
+      const pts = pointsAt(DATA.supremacy_points, T, DATA.meta.friendly_team);
+      store.pointsFriend = pts.friend; store.pointsEnemy = pts.enemy;
+    }
+    // 顶栏：单基地目标存在性 + 占领进度（取 ≤T 最后一条；无目标证据整行不显示）
+    store.assaultObjective = assaultHasObjective();
+    store.assaultProgress = store.assaultObjective ? assaultProgressAt(T) : null;
     store.timer = gameTimerLabel(T);
     store.time = T;
     store.duration = DATA.meta.duration;
@@ -1331,8 +2041,11 @@ export function initPlayback(container, store) {
   function seekTo(t) {
     T = Math.max(DATA.meta.t_start, Math.min(DATA.meta.duration, t));
     clearEffects();   // 动态层 dispose（与 teardown 同一路径，防 seek 循环累积显存）
-    shotPtr = 0;
-    while (shotPtr < DATA.shots.length && DATA.shots[shotPtr].t_fire <= T) shotPtr++;
+    // 游标一律重定到「T 之后第一条」：clearEffects 已把 transient 游标归零，
+    // 若不重定，紧随的 tick() 会把 t<=T 的历史飘字/爆散一次性补播（与 2D seek 语义不符）
+    shotPtr = firstIndexAfter(DATA.shots, T, (x) => x.t_fire);
+    dmgPtr = firstIndexAfter(dmgEvents, T);
+    burstPtr = firstIndexAfter(burstEvents, T);
     rebuildFeed();
     winnerShown = false; store.banner = null;
     tick();
@@ -1396,12 +2109,14 @@ export function initPlayback(container, store) {
       scene.remove(im.g);
       im.ball.geometry.dispose(); im.ball.material.dispose();
       im.ring.geometry.dispose(); im.ring.material.dispose();
+      if (im.sparks) for (const sp of im.sparks) { sp.geometry.dispose(); sp.material.dispose(); }
     }
     impacts.length = 0;
     for (const tl of trajLines) {
       scene.remove(tl.mesh); tl.mesh.geometry.dispose(); tl.mesh.material.dispose();
     }
     trajLines.length = 0;
+    clearTransients();   // 战斗反馈（飘字/爆散/幽灵段/受击闪）：seek 后不补播
   }
 
   // 会话拆除：车辆/标签/GLB 克隆/地图与地表/特效/GLB 模板缓存全部移出场景并
@@ -1411,6 +2126,17 @@ export function initPlayback(container, store) {
   function teardownSession() {
     sessionGen++;
     clearEffects();
+    if (boundaryGroup) {
+      const shared = boundaryGroup.userData.sharedMaterial;
+      if (shared) shared.dispose();
+      scene.remove(boundaryGroup);
+      disposeObject3D(boundaryGroup);
+      boundaryGroup = null;
+    }
+    currentMapKey = null;
+    clearSupremacyBases();   // 争霸基地（圆环 + HUD sprite）随会话释放
+    clearAssaultBase();      // 单基地（圆环 + HUD sprite）随会话释放
+    currentMapBases = null;
     for (const v of V) {
       if (v.glb) scene.remove(v.glb);          // clone 与模板共享资源：不在此 dispose
       if (v.label) {
@@ -1445,8 +2171,12 @@ export function initPlayback(container, store) {
     FOLLOW_EID = 0; followAnchor = null;
     store.killfeed = [];
     store.banner = null;
+    // HUD 派生字段显式归零（与 tick 的确定性重算互为双保险：会话切换不留上一场残值）
+    store.pointsFriend = null; store.pointsEnemy = null;
+    store.assaultObjective = false; store.assaultProgress = null;
     store.roster.team1 = [];
     store.roster.team2 = [];
+    store.roster.unknown = [];
   }
 
   async function loadData(source) {
@@ -1489,6 +2219,9 @@ export function initPlayback(container, store) {
     }
     buildVehicles();
     buildRoster();
+    buildTransientSources();   // 战斗反馈事件源（伤害/击毁）
+    buildSupremacyBases();   // 争霸基地（A–D）
+    buildAssaultBase();   // 单基地目标（攻防/遭遇战）
     T = DATA.meta.t_start;
     shotPtr = 0; killPtr = 0;
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）

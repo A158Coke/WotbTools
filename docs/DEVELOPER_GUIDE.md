@@ -191,7 +191,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 `.wotbreplay` 的目标解析权威是上游 [fanypcd/WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) 的 Rust Core（作者同为 WotbTools 贡献者）。本仓库**不维护第二份 Rust 解析器**：此前的 `replay-engine/` 移植（含 Java parity golden）已于 2026-09-30 随 #397 退役。
 
 - **产物锁定**：`deploy/agent/source.json` 记录上游 repo、ref 与 Release 附件 sha256；`scripts/fetch-agent-wasm.sh` 下载并校验到 `common/assets/wasm/`（经 Vite publicDir 进入 `dist/wasm/`）。`scripts/build-agent-wasm.sh` 是按源码自建的后备路径。CI（`ci-frontend.yml`）与发布（`frontend.yml`）都会执行同一校验。
-- **消费契约**：`contracts/agent/replay-facets-v2.md`。三个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影）、`parsePlayback`（时序与花名册）、`parseShotReplays`（射击复现）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
+- **消费契约**：`contracts/agent/replay-facets-v2.md`。四个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影；可选 `tankNamesJson` 注入车型名）、`parsePlayback`（时序与花名册；可选 `tankNamesJson`）、`parseShotReplays`（射击复现；可选俯仰锚定表与弹种反解表）、`parseAiReview`（AI 事件数据，v0.3.1 起）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
 - **当前消费方**：三维回放、射击复现、装甲查看器（世界模式）。Replay Workspace、战局回放、导出、Hall of Fame 仍消费下方服务端链路。
 - **迁移规则**：某项能力切换到客户端之前，必须先证明客户端结果与服务端结果一致（parity）；切换后，该能力对应的服务端执行路径随之退役，不长期保留两条解析路径。
 
@@ -514,8 +514,9 @@ Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标�
 不从静态地图或最终结果推导。Supremacy 使用 wrapper12/root11，经
 `SupremacyBaseStateReconstructor` 形成 `baseId=A/B/C/D` 的完整 canonical state；
 Assault 单基地使用 wrapper8/root8，经 `AssaultBaseStateReconstructor` 形成
-`baseId=BASE` 的 progress transition（0..100，阵营 unknown）；wrapper8 初始化独立投影
-`assaultObjectivePresent`，无 field3 时保留空 progress timeline。2D 按 mapCode 从 verified semantic
+`baseId=BASE` 的 progress transition（0..100，阵营 unknown；判据为 field2==1 且 field3 存在，
+**不锁 field1**——携带进度的族会在 field1=1/2 间切换）；`assaultObjectivePresent` 需目标族发出
+裸初始化对以外的字段（裸初始化对是通用广播，普通对局也发），无 field3 时保留空 progress timeline。2D 按 mapCode 从 verified semantic
 数据解析静态 BASE，并 LEFT JOIN runtime state；训练房 arenaBonusType 不参与 Assault 判定。
 前端不合并 protobuf sparse update；坦克 marker sizing 优先使用可靠 hull metadata，model overlap 只通过有界
 presentation offset 软避让，canonical 坐标和命中判定语义保持一致。

@@ -79,7 +79,7 @@ export interface AgentBattleResult {
   [key: string]: unknown
 }
 
-// ---------- 时序能力：PlaybackData（与 v1 回放切面同形状，version 锁定不变） ----------
+// ---------- 时序能力：PlaybackData（contract v2：+Supremacy/点数/瞄准帧；版本显式门禁） ----------
 
 export interface AgentPlaybackMeta {
   map_id: number
@@ -153,6 +153,50 @@ export interface AgentAoiPresence {
   t_out?: number
 }
 
+/** Supremacy 基地状态迁移（上游 v0.2.0 wrapper12/root11 PROVEN；sparse 重建产物） */
+export interface AgentSupremacyBaseTransition {
+  clock: number
+  /** 0..3 = A..D */
+  base_id: number
+  /**
+   * 上游为 `Option<u8>` 且未加 skip_serializing_if —— 空 canonical 态（无主/未占领/
+   * 无进度）序列化为**显式 null**，故必须建模为 `number | null`：`undefined` 表示
+   * 字段本身缺失（老产物），`null` 表示"该维度为空"。渲染侧不得把 null 当作
+   * 有值的 owner/capturer/progress。
+   */
+  owner_team?: number | null
+  capturing_team?: number | null
+  capture_progress?: number | null
+}
+
+/** Supremacy 实时点数采样（wrapper13/root12；仅真实广播，消费取 ≤t 最后值） */
+export interface AgentSupremacyPointsSample {
+  clock: number
+  team: number
+  points: number
+}
+
+/**
+ * 单基地占领进度迁移（上游 v0.3.1 wrapper8/root8；攻防战/遭遇战共用载体）。
+ * 判据为 `field2==1 && field3 存在`（0..100）——**不锁 field1**：真实回放中携带进度的族
+ * 会在 field1=1/2 之间切换（Yukon 两族交替、Malinovka 仅 2、遭遇战仅 1）。
+ * 不施加单调性：回落/重置原样保留。
+ */
+export interface AgentAssaultBaseTransition {
+  clock: number
+  /** 占领进度 0..100 */
+  progress: number
+}
+
+/** 作者瞄准帧（Type39 投影，recorder-only；缺帧不外推，存活期按 deaths 门控） */
+export interface AgentAimFrame {
+  time_sec: number
+  world_yaw: number
+  world_pitch: number
+  /** 上游 `[f32; 3]`——定长三元组，非任意长度数组 */
+  ray_point: [number, number, number]
+}
+
 export interface AgentPlaybackFacet {
   version: number
   meta: AgentPlaybackMeta
@@ -161,6 +205,20 @@ export interface AgentPlaybackFacet {
   kills: AgentKillEvent[]
   periods: Array<{ clock: number; period: number; remaining_s: number; duration_s: number }>
   visibility: AgentAoiPresence[]
+  /** contract v2 新能力（skip-when-empty：非争霸场缺省） */
+  supremacy_bases?: AgentSupremacyBaseTransition[]
+  supremacy_points?: AgentSupremacyPointsSample[]
+  /** 仅作者/recorder；禁止给其他车辆伪造 */
+  aim_frames?: AgentAimFrame[]
+  /**
+   * 单基地目标存在性（上游 v0.3.1）——**独立于是否已有占领进度**。判据为目标族发出
+   * 裸初始化对以外的字段：裸初始化对 `1=1,2=1` + `1=2,2=1` 是通用广播，普通对局同样
+   * 会发（62 份样本里 8 份 Regular/TrainingRoom/Any 只发这一对），不得据此判定。
+   * 缺省/ false = 无已证实的单基地目标。单基地与争霸互斥（wrapper8 vs wrapper12）。
+   */
+  assault_objective_present?: boolean
+  /** 单基地占领进度时间线（skip-when-empty：非单基地场次缺省） */
+  assault_bases?: AgentAssaultBaseTransition[]
 }
 
 // ---------- 射击复现通道（parseShotReplays；上游 shots 数组同构透传） ----------
@@ -187,6 +245,9 @@ export interface AgentShotReplay {
   time_s: number
   damage: number
   target_name: string
+  /** 受击方实体 id（作者 = method38 / 他人 = method8，服务器权威）。身份联表用
+   * 此字段而非昵称反查——名字缺失/冲突时 target_name 不可作身份（上游 v0.1.9 起直传） */
+  target_eid?: number
   is_kill: boolean
   shooter_eid: number
   shooter_name?: string
@@ -231,6 +292,9 @@ export interface AgentShotReplay {
 // ---------- 形状校验（trust boundary：进 view model 前的结构契约锁定） ----------
 
 const CONTRACT_VERSION = 1
+/** PlaybackData 契约版本（上游 v0.2.0 起 = 2：+supremacy_bases/supremacy_points/aim_frames）。
+ *  错版 WASM 在此显式拒绝，不允许被静默解析成半残数据（trust boundary）。 */
+export const PLAYBACK_CONTRACT_VERSION = 2
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -247,9 +311,9 @@ function assertArray(v: unknown, path: string): unknown[] {
 }
 
 /** 切面契约版本锁定（v1 切面字段口径沿用；能力拆分见契约 v2 文档） */
-function assertFacetVersion(v: unknown, path: string): void {
-  if (v !== CONTRACT_VERSION) {
-    throw new Error(`agent facets: ${path} = ${String(v)}，不支持的契约版本（期望 ${CONTRACT_VERSION}）`)
+function assertFacetVersion(v: unknown, path: string, expected: number = CONTRACT_VERSION): void {
+  if (v !== expected) {
+    throw new Error(`agent facets: ${path} = ${String(v)}，不支持的契约版本（期望 ${expected}）`)
   }
 }
 
@@ -268,15 +332,23 @@ export function validateAgentBattleResult(value: unknown): AgentBattleResult {
 }
 
 /**
- * PlaybackData 形状校验：version === 1、meta、vehicles/shots/kills/periods/visibility 数组。
+ * PlaybackData 形状校验：version === PLAYBACK_CONTRACT_VERSION(2)、meta、必备数组 + v2 新键。
  * 未知键忽略 = 契约的同版本加字段策略；字段级取值语义由类型承载。
  */
 export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   const pb = assertObject(value, 'playback')
-  assertFacetVersion(pb.version, 'playback.version')
+  assertFacetVersion(pb.version, 'playback.version', PLAYBACK_CONTRACT_VERSION)
   assertObject(pb.meta, 'playback.meta')
   for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
     assertArray(pb[key], `playback.${key}`)
+  }
+  // contract v2 新能力（上游 v0.2.0 / v0.3.1；skip-when-empty 语义）：在场时必须为数组
+  for (const key of ['supremacy_bases', 'supremacy_points', 'aim_frames', 'assault_bases']) {
+    if (pb[key] !== undefined) assertArray(pb[key], `playback.${key}`)
+  }
+  // 目标存在性必须是布尔（跳空键按"无已证实目标"解读，与 assaultObjectivePresent 同义）
+  if (pb.assault_objective_present !== undefined && typeof pb.assault_objective_present !== 'boolean') {
+    throw new Error('agent facets: playback.assault_objective_present 必须是布尔')
   }
   return value as unknown as AgentPlaybackFacet
 }
@@ -291,9 +363,12 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
 const AGENT_WASM_URL = '/wasm/wotb_replay_wasm.js'
 
 interface AgentWasmModule {
-  parseResult?: (bytes: Uint8Array) => string
-  parsePlayback?: (bytes: Uint8Array) => string
+  /** tankNamesJson 可选：`{tank_id: name}` 车型名表（上游 v0.3.1 起） */
+  parseResult?: (bytes: Uint8Array, tankNames?: string) => string
+  parsePlayback?: (bytes: Uint8Array, tankNames?: string) => string
   parseShotReplays?: (bytes: Uint8Array, limits?: string, shells?: string) => string
+  /** 第 4 入口（上游 v0.3.1）：AiReviewFacet JSON（花名册 + 事件流 + 结算锚点） */
+  parseAiReview?: (bytes: Uint8Array) => string
   default?: () => Promise<void>
   initSync?: () => void
 }
@@ -336,10 +411,38 @@ export async function parseAgentResultFromBytes(bytes: Uint8Array): Promise<Agen
   return validateAgentBattleResult(JSON.parse(parse(bytes)) as unknown)
 }
 
+/**
+ * 车型名表注入参数（可选）：`{tank_id: name}` JSON 串。注入后 `tank_name` 为真实车型名；
+ * 不注入时 `tank_name` 为 `tank_{id}`（**不是空串**——上游 v0.3.1 起文档与实现统一）。
+ */
+export function tankNamesJson(table: Record<number, string>): string {
+  return JSON.stringify(table)
+}
+
 /** 时序能力：.wotbreplay 字节 → PlaybackData。文件不出本机。 */
-export async function parseAgentPlaybackFromBytes(bytes: Uint8Array): Promise<AgentPlaybackFacet> {
+export async function parseAgentPlaybackFromBytes(
+  bytes: Uint8Array, tankNames?: string,
+): Promise<AgentPlaybackFacet> {
   const parse = await wasmFn('parsePlayback')
-  return validateAgentPlayback(JSON.parse(parse(bytes)) as unknown)
+  return validateAgentPlayback(JSON.parse(parse(bytes, tankNames)) as unknown)
+}
+
+/**
+ * AI 事件数据（第 4 入口；上游 v0.3.1）：.wotbreplay 字节 → AiReviewFacet。
+ * DTO 冻结 v1；仅做最小形状校验（version + 四个顶层键 + 事件为数组），
+ * 字段级语义由上游契约持有。注意：上报为 JSON 字符串而非 DTO 类型——
+ * 消费方按需投影，不在此层教条化形状。
+ */
+export async function parseAgentAiReviewFromBytes(bytes: Uint8Array): Promise<unknown> {
+  const parse = await wasmFn('parseAiReview')
+  const doc = JSON.parse(parse(bytes)) as Record<string, unknown>
+  if (!isObject(doc)) throw new Error('agent ai review: 顶层必须是对象')
+  if (doc.version !== 1) throw new Error(`agent ai review: 契约版本应为 1，实为 ${String(doc.version)}`)
+  for (const key of ['battle', 'rosters', 'events', 'settlements']) {
+    if (doc[key] === undefined) throw new Error(`agent ai review: 缺键 ${key}`)
+  }
+  for (const key of ['rosters', 'events', 'settlements']) assertArray(doc[key], `ai review.${key}`)
+  return doc
 }
 
 function assertShotArray(v: unknown): AgentShotReplay[] {
@@ -350,6 +453,120 @@ function assertShotArray(v: unknown): AgentShotReplay[] {
     }
   }
   return v as AgentShotReplay[]
+}
+
+// ---------- 射击复现包装契约（上游 v0.1.9：fail-visible，不再静默吞作者链） ----------
+
+/** 他人宽松路径统计（fail-soft 边界透明化；字段语义见上游 OtherShotsExtraction） */
+export interface AgentShotsOthersStats {
+  total_launches: number
+  skipped_no_endpoint: number
+  skipped_no_target_state: number
+  muzzle_fallback: number
+}
+
+/** parseShotReplays 输出（上游 v0.1.9 契约；旧裸数组产物归一化进同一形状） */
+export interface AgentShotsOutcome {
+  shots: AgentShotReplay[]
+  /** 作者严格路径状态："error" 时 shots 仅含他人宽松路径，author_error 携带原因 */
+  author_path: 'ok' | 'error'
+  /** strict 失败链式原因（仅 author_path="error" 时存在） */
+  author_error?: string
+  /** 作者 Avatar 实体 eid（0 = 未解析；旧裸数组产物不可知 → 0） */
+  author_eid: number
+  /** 他人宽松路径跳过/兜底统计（旧产物不可知 → 全 0） */
+  others: AgentShotsOthersStats
+}
+
+const ZERO_OTHERS: AgentShotsOthersStats = {
+  total_launches: 0,
+  skipped_no_endpoint: 0,
+  skipped_no_target_state: 0,
+  muzzle_fallback: 0,
+}
+
+/**
+ * 包装/裸数组双形状归一化（trust boundary）：v0.1.9 起上游输出
+ * `{shots, author_path, author_error?, author_eid, others}`——对象形状的
+ * `author_path` 只接受 "ok" | "error"（缺失或其他值 throw，drift 显形）；
+ * 旧产物为裸数组（author 状态不可知 → ok/eid=0/others 全 0，消费面按缺数据处理）。
+ */
+export function normalizeAgentShotsOutcome(v: unknown): AgentShotsOutcome {
+  if (Array.isArray(v)) {
+    return { shots: assertShotArray(v), author_path: 'ok', author_eid: 0, others: { ...ZERO_OTHERS } }
+  }
+  if (!isObject(v) || !Array.isArray(v.shots)) {
+    throw new Error('agent shots: 顶层必须是 shots 数组或 {shots, ...} 包装对象')
+  }
+  // trust boundary 严格化：author_path 只收 "ok" | "error"（缺失/其他值一律 throw）——
+  // schema drift / 错版 WASM 不允许被静默伪装成正常解析
+  if (v.author_path !== 'ok' && v.author_path !== 'error') {
+    throw new Error('agent shots: author_path 必须是 "ok" | "error"')
+  }
+  const authorPath = v.author_path
+  if (authorPath === 'error' && typeof v.author_error !== 'string') {
+    throw new Error('agent shots: author_path="error" 必须携带 author_error')
+  }
+  const o = (isObject(v.others) ? v.others : {}) as Record<string, unknown>
+  const num = (x: unknown) => (typeof x === 'number' && x >= 0 ? x : 0)
+  return {
+    shots: assertShotArray(v.shots),
+    author_path: authorPath,
+    ...(authorPath === 'error' ? { author_error: v.author_error as string } : {}),
+    author_eid: typeof v.author_eid === 'number' ? v.author_eid : 0,
+    others: {
+      total_launches: num(o.total_launches),
+      skipped_no_endpoint: num(o.skipped_no_endpoint),
+      skipped_no_target_state: num(o.skipped_no_target_state),
+      muzzle_fallback: num(o.muzzle_fallback),
+    },
+  }
+}
+
+/**
+ * 命中判定（唯一权威 = `target_eid` 在案）。上游 v0.1.9 起 Playback/AI 切面与
+ * 逐发数据统一 `hit: target_eid.is_some()`（method38/method8 服务器权威）；消费端
+ * 一律走本函数，不再按 is_author 分叉 hit_flags/昵称启发式——author 的
+ * `target_eid=Some 且 hit_flags=0` 是合法在案命中，按旧法会误判 miss 并污染
+ * hitRate/penRate 分母。breaking：旧产物（无 target_eid）一律按未命中——
+ * 3D 尚在 feature flag，允许 breaking，不保留双语义。
+ */
+export function isShotHit(s: Pick<AgentShotReplay, 'target_eid'>): boolean {
+  return s.target_eid != null
+}
+
+/**
+ * 射击链花名册富化（消费端编排；上游服务端 /api/replay/shots 注入字段的客户端等价）：
+ * - target_tank_id / shooter_tank_id：受击方/射手实体 → tank_id；
+ * - shooter_team：'ally' / 'enemy'（相对回放作者阵营）。
+ * 联表键 = **eid**（vehicles[].eid ↔ shot.shooter_eid/target_eid）——eid 是
+ * 身份域主键；此前按昵称联表，名称冲突取首匹配、名字缺失（如受击方昵称损坏）
+ * 即断链，均已在上游 v0.1.9 eid 直传后消除。昵称仅作显示。
+ */
+export function enrichShotsFromRoster(parsedShots: AgentShotReplay[], vehicles: Array<{ eid: number; nickname?: string; team?: number; tank_id?: number; is_author?: boolean }>): void {
+  const byEid = new Map<number, { team?: number; tank_id?: number }>()
+  for (const r of vehicles || []) {
+    if (r && typeof r.eid === 'number') byEid.set(r.eid, r)
+  }
+  // 阵营分类只接受显式 1/2（与名册分组同一规则）：team=0/未知绝不归入任一队——
+  // unknown 车辆常带 tank_id=0 恰好被富化外层挡住，但非零 tank_id 的 unknown
+  // 一旦走 `team !== authorTeam → enemy` 就会把白色未知染成敌方红（3D 炮线）
+  const authorTeamRaw = (vehicles || []).find((r) => r.is_author)?.team
+  const authorTeam = authorTeamRaw === 1 || authorTeamRaw === 2 ? authorTeamRaw : undefined
+  const knownSide = (t?: number): t is 1 | 2 => t === 1 || t === 2
+  for (const s of parsedShots) {
+    const target = s.target_eid != null ? byEid.get(s.target_eid) : undefined
+    if (target?.tank_id) s.target_tank_id = target.tank_id
+    const shooterEntry = byEid.get(s.shooter_eid)
+    if (shooterEntry?.tank_id) {
+      s.shooter_tank_id = shooterEntry.tank_id
+    }
+    // 阵营分类独立于车型富化：车型识别失败（tank_id=0）≠ 阵营未知——
+    // 已知敌方只是缺车型时，仍必须正确分类为 enemy（评审 blocker 回归点）
+    if (authorTeam != null && knownSide(shooterEntry?.team)) {
+      s.shooter_team = shooterEntry.team === authorTeam ? 'ally' : 'enemy'
+    }
+  }
 }
 
 /**
@@ -381,16 +598,31 @@ export function normalizeAgentShotIndices(shots: AgentShotReplay[]): AgentShotRe
  * /api/replay/shots 注入语义同构）；缺省时无弹种反解（旧产物兼容路径由
  * 消费组件自行富化）。
  */
+/**
+ * 射击复现能力：.wotbreplay 字节 → 射击链包装（time_s 排序 + 全局重编号）。
+ * 输出形状见 [`AgentShotsOutcome`]（上游 v0.1.9：author_path fail-visible；
+ * 旧裸数组产物自动归一化）。
+ * `pitchLimits` 可选：俯仰锚定表 {昵称: {dep, ele, front?, back?, transition?}}
+ * （GunPitchRange serde 形状，消费方由资产面 tank/{id}.json 的 pitch_limits 组装
+ * dep=max、ele=−min）——注入后 prop2 俯仰按车型极限解码（服务端同级质量）；
+ * 缺省空表时俯仰降级标记如实透传（客户端路径数据边界，非错误）。
+ * `shellTable` 可选：全局弹种反解表（dump-shell-kinds 富表，AgentShellTable）——
+ * 注入后带 shell_id 的弹补齐 `shell_kind` 与 `shell`（完整弹数据，服务端
+ * /api/replay/shots 注入语义同构）；缺省时无弹种反解（旧产物兼容路径由
+ * 消费组件自行富化）。
+ */
 export async function parseAgentShotsFromBytes(
   bytes: Uint8Array,
   pitchLimits?: Record<string, unknown>,
   shellTable?: AgentShellTable,
-): Promise<AgentShotReplay[]> {
+): Promise<AgentShotsOutcome> {
   const parse = await wasmFn('parseShotReplays')
   const limitsJson = pitchLimits ? JSON.stringify(pitchLimits) : undefined
   const shellsJson = shellTable ? JSON.stringify(shellTable) : undefined
   const raw = parse(bytes, limitsJson, shellsJson)
-  return normalizeAgentShotIndices(assertShotArray(JSON.parse(raw) as unknown))
+  const outcome = normalizeAgentShotsOutcome(JSON.parse(raw) as unknown)
+  outcome.shots = normalizeAgentShotIndices(outcome.shots)
+  return outcome
 }
 
 /** 预解析 JSON 通道（部署面静态文件/服务端代理共用） */
