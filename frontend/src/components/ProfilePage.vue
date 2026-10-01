@@ -13,9 +13,10 @@ import {
 import { hofHundredCancel, hofHundredMyStatus } from '../utils/api.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
+import AppButton from './AppButton.vue'
 
 const { locale, t, te } = useI18n()
-const { initPromise, login, isAuthenticated, initError, tokenParsed, displayName: authDisplayName } = useAuth()
+const { initPromise, login, logout, isAuthenticated, initError, tokenParsed, displayName: authDisplayName } = useAuth()
 
 const phase = ref('init')
 const profile = ref(null)
@@ -47,8 +48,8 @@ onMounted(async () => {
     } else if (initError.value) {
       phase.value = 'error'
     } else {
-      // 未登录：直接跳转 Keycloak 托管登录页（IdP 选择由 Keycloak 页面提供）。
-      doLogin()
+      // 未登录：显示账户说明卡与登录按钮（design-language §10），不自动跳转登录页。
+      phase.value = 'signedOut'
     }
   } catch {
     phase.value = 'error'
@@ -139,7 +140,18 @@ const serverLabel = computed(() => {
 function doLogin() {
   if (!loginStarted.value) {
     loginStarted.value = true
-    login()
+    // 登录完成后回到账户页
+    Promise.resolve(login('profile')).finally(() => { loginStarted.value = false })
+  }
+}
+
+/** 出错重试：已登录时重新加载资料；只有确实未登录时才发起登录。 */
+function retry() {
+  if (isAuthenticated()) {
+    phase.value = 'done'
+    loadProfile()
+  } else {
+    doLogin()
   }
 }
 
@@ -225,7 +237,13 @@ async function removeAccount() {
 
     <div v-else-if="phase === 'error'" class="profile-card profile-message">
       <p class="text-error">{{ $t('profile.error') }}</p>
-      <button class="btn-primary" @click="doLogin">{{ $t('profile.retry') }}</button>
+      <button class="btn-primary" data-testid="profile-retry" @click="retry">{{ $t('profile.retry') }}</button>
+    </div>
+
+    <div v-else-if="phase === 'signedOut'" class="profile-signed-out" data-testid="profile-signed-out">
+      <h1 class="profile-signed-out-title">{{ $t('account.signedOutTitle') }}</h1>
+      <p class="profile-signed-out-hint">{{ $t('account.signedOutHint') }}</p>
+      <AppButton variant="primary" size="lg" data-testid="profile-login" @click="doLogin">{{ $t('app.login') }}</AppButton>
     </div>
 
     <div v-else-if="profile" class="profile-main">
@@ -237,6 +255,7 @@ async function removeAccount() {
             <p class="hero-subtitle">{{ heroSubtitle }}</p>
           </div>
         </div>
+        <AppButton variant="danger" size="sm" data-testid="profile-logout" @click="logout()">{{ $t('profile.logout') }}</AppButton>
       </div>
 
       <div class="profile-body">
@@ -437,6 +456,19 @@ async function removeAccount() {
 .section-actions { display: flex; gap: 6px; }
 .profile-hero { display: flex; align-items: center; justify-content: space-between; padding: 24px 28px; margin-bottom: 24px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--bg-card)), var(--bg-card)); }
 .hero-left { display: flex; align-items: center; gap: 20px; }
+.profile-signed-out {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  max-width: 560px;
+  margin: var(--space-12) auto;
+  padding: var(--space-6);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+}
+.profile-signed-out-title { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
+.profile-signed-out-hint { margin: 0 0 var(--space-2); color: var(--color-text-secondary); font: var(--type-body); }
 .hero-avatar { width: 56px; height: 56px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--accent-hover)); color: var(--accent-text); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 800; flex-shrink: 0; box-shadow: 0 12px 26px var(--accent-shadow); }
 .hero-name { font-size: 1.3rem; font-weight: 700; color: var(--text-heading); margin: 0 0 6px; }
 .hero-subtitle { font-size: .85rem; color: var(--text-sub); margin: 0; }

@@ -154,6 +154,31 @@
         "damage_avg": "均伤", "potential_damage_avg": "潜在均伤", "potential_damage_supplement_avg": "场均补增",
         "assist_avg": "场均协助", "multi_damage_rate": "多伤率%", "kills": "人头", "kills_avg": "场均人头"
       }
+    },
+    "nav": {
+      "primary": "主导航",
+      "home": "首页",
+      "replay": "回放",
+      "hof": "名人堂",
+      "more": "更多",
+      "account": "账户"
+    },
+    "more": {
+      "title": "更多",
+      "sections": {
+        "display": "显示设置",
+        "tools": "工具",
+        "admin": "管理",
+        "about": "关于与支持"
+      },
+      "language": "语言",
+      "sponsor": "支持项目",
+      "ratingDocs": "Rating 文档",
+      "playbackQa": "回放 QA"
+    },
+    "account": {
+      "signedOutTitle": "登录 WoTBTools",
+      "signedOutHint": "登录后可以绑定游戏账号、提交名人堂记录、查看你的记录。解析回放不需要登录。"
     }
   },
   "en": {
@@ -311,6 +336,31 @@
         "damage_avg": "Avg damage", "potential_damage_avg": "Potential DPB", "potential_damage_supplement_avg": "Avg supplement",
         "assist_avg": "Avg assist", "multi_damage_rate": "Multi-damage %", "kills": "Kills", "kills_avg": "Avg kills"
       }
+    },
+    "nav": {
+      "primary": "Main navigation",
+      "home": "Home",
+      "replay": "Replays",
+      "hof": "Hall of Fame",
+      "more": "More",
+      "account": "Account"
+    },
+    "more": {
+      "title": "More",
+      "sections": {
+        "display": "Display",
+        "tools": "Tools",
+        "admin": "Administration",
+        "about": "About & support"
+      },
+      "language": "Language",
+      "sponsor": "Support the project",
+      "ratingDocs": "Rating docs",
+      "playbackQa": "Playback QA"
+    },
+    "account": {
+      "signedOutTitle": "Sign in to WoTBTools",
+      "signedOutHint": "Sign in to link your game account, submit Hall of Fame records and see your records. Parsing replays does not require an account."
     }
   },
   "ru": {
@@ -468,6 +518,31 @@
         "damage_avg": "Средний урон", "potential_damage_avg": "Потенциальный DPB", "potential_damage_supplement_avg": "Среднее добавление",
         "assist_avg": "Средняя помощь", "multi_damage_rate": "Мульти-урон %", "kills": "Фраги", "kills_avg": "Средние фраги"
       }
+    },
+    "nav": {
+      "primary": "Основная навигация",
+      "home": "Главная",
+      "replay": "Реплеи",
+      "hof": "Зал славы",
+      "more": "Ещё",
+      "account": "Аккаунт"
+    },
+    "more": {
+      "title": "Ещё",
+      "sections": {
+        "display": "Отображение",
+        "tools": "Инструменты",
+        "admin": "Администрирование",
+        "about": "О проекте и поддержка"
+      },
+      "language": "Язык",
+      "sponsor": "Поддержать проект",
+      "ratingDocs": "Документация Rating",
+      "playbackQa": "QA повтора"
+    },
+    "account": {
+      "signedOutTitle": "Вход в WoTBTools",
+      "signedOutHint": "Войдите, чтобы привязать игровой аккаунт, отправлять записи в Зал славы и видеть свои записи. Для разбора реплеев вход не нужен."
     }
   }
 }

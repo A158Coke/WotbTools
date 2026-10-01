@@ -4,15 +4,19 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useBusinessUserBootstrap } from '../composables/useBusinessUserBootstrap.js'
 import { useError } from '../composables/useError.js'
+import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { locationForView } from './navigation.js'
-import AppHeader from './AppHeader.vue'
+import AppTopBar from './AppTopBar.vue'
+import AppTabBar from './AppTabBar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 
 const router = useRouter()
 const route = useRoute()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
+// 外壳按可用宽度切换：compact 用标题栏 + 底部 Tab 栏，其余用单行顶栏（design-language §9）
+const { isCompact } = useBreakpoint()
 
 /**
  * 全局业务用户 bootstrap：只要 Keycloak 认证成功并进入 SPA（任意 view —— home /
@@ -39,12 +43,12 @@ provide(NAVIGATE_VIEW_KEY, navigate)
 </script>
 
 <template>
-  <AppHeader />
-  <RouterView />
+  <AppTopBar :compact="isCompact" />
   <div v-if="failed" class="business-bootstrap-notice" role="alert" data-testid="business-bootstrap-notice">
     <span>{{ $t('bootstrap.profileFailed') }}</span>
     <button type="button" class="business-bootstrap-retry" @click="retry">{{ $t('bootstrap.retry') }}</button>
   </div>
+  <RouterView />
   <footer class="app-footer" data-testid="app-footer">
     <div class="app-footer-filings">
       <a
@@ -67,15 +71,21 @@ provide(NAVIGATE_VIEW_KEY, navigate)
     </div>
     <p class="app-footer-disclaimer" data-testid="wargaming-disclaimer">{{ $t('home.wargamingDisclaimer') }}</p>
   </footer>
+  <AppTabBar v-if="isCompact" />
   <GlobalErrorDialog :error="globalError" :visible="showGlobalError" @close="closeGlobalError" />
 </template>
 
 <style scoped>
 /* Keep the shared footer at the viewport bottom on short pages without pinning it over content. */
 :global(#app) {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
+}
+
+/* 底部 Tab 栏是 fixed，给页面底部留出同等空间（--tabbar-h 在 ≥768 时为 0） */
+@media (width < 768px) {
+  :global(#app) { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
 }
 
 .app-footer {

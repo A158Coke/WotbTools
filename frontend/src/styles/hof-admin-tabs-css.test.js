@@ -59,16 +59,14 @@ describe('HoF admin tab strip CSS contract', () => {
   it('keeps the canonical sticky tab strip in showcase-rankings.css (desktop)', () => {
     const body = ruleBody(stripComments(rankings), '.hof-admin-tabs')
     expect(body).toMatch(/position:\s*sticky/)
-    expect(body).toMatch(/top:\s*66px/)
+    // 吸在顶栏下方：偏移读唯一的顶栏高度 token（design-language §9），不写死像素
+    expect(body).toMatch(/top:\s*calc\(var\(--header-h\)\s*\+\s*6px\)/)
     expect(body).toMatch(/z-index:\s*22/)
   })
 
-  it('keeps the tab strip sticky below the topbar on tablet (top 64px)', () => {
+  it('does not hardcode a tablet-specific sticky offset (the header token already varies by tier)', () => {
     const tablet = mediaBlock(rankings, '@media(max-width:1199px)')
-    const body = ruleBody(tablet, '.hof-admin-tabs')
-    expect(body).toMatch(/top:\s*64px/)
-    // 仍为 sticky：tablet 只调偏移，不回到 relative/static。
-    expect(body).not.toMatch(/position:\s*(relative|static)/)
+    expect(tablet).not.toMatch(/\.hof-admin-tabs\s*\{[^}]*top:\s*\d+px/)
   })
 
   it('flattens the tab strip to static on mobile (no sticky offset issues)', () => {
