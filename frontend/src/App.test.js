@@ -147,17 +147,19 @@ describe('App routing', () => {
     expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
   })
 
-  // Agent 数据平面合入主干期间的 feature flag：仅 wotbtools-admin 可见。
+  // Agent 数据平面内测 feature flag：3D 回放 / 射击分析 / 装甲查看器仅 wotbtools-admin 可见；
+  // 坦克百科已公开（2026-10-01）。
   // 隐藏导航入口只是 UI 收敛，深链封锁才是边界——两者都要有回归网。
   describe('admin-only Agent views (feature flag: wotbtools-admin)', () => {
     beforeEach(() => { authState.isAdminRef.value = false })
     afterEach(() => { authState.isAdminRef.value = false })
 
-    it('hides the Agent tool entries in 更多 from non-admins', async () => {
+    it('hides the internal-beta Agent entries in 更多 from non-admins, but shows 坦克百科', async () => {
       const { wrapper } = await mountApp('/?view=more')
-      for (const view of ['agent-replay', 'agent-tankopedia', 'agent-shots']) {
+      for (const view of ['agent-replay', 'agent-shots']) {
         expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists()).toBe(false)
       }
+      expect(wrapper.find('[data-testid="more-link-agent-tankopedia"]').exists()).toBe(true)
     })
 
     it('shows the Agent tool entries in 更多 to admins', async () => {
@@ -169,7 +171,7 @@ describe('App routing', () => {
     })
 
     it('falls back to the default view when a non-admin deep-links an Agent view', async () => {
-      for (const view of ['agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots']) {
+      for (const view of ['agent-replay', 'agent-armor', 'agent-shots']) {
         const { wrapper } = await mountApp(`/?view=${view}`)
         expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
         expect(wrapper.find(`[data-test="view-${view}"]`).exists()).toBe(false)
@@ -186,6 +188,15 @@ describe('App routing', () => {
       expect(wrapper.find('[data-test="view-agent-shots"]').exists()).toBe(true)
       expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
     })
+
+    it('lets a non-admin deep-link the public 坦克百科', async () => {
+      const { wrapper } = await mountApp('/?view=agent-tankopedia')
+      await settle()
+      await nextTick()
+      await settle()
+      expect(wrapper.find('[data-test="view-agent-tankopedia"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
+    })
   })
 
   it.each([
@@ -196,6 +207,7 @@ describe('App routing', () => {
     const { wrapper, router } = await mountApp(`/?view=${legacy}`)
     expect(router.currentRoute.value.query.view).toBe(canonical)
     expect(wrapper.find(`[data-test="${testId}"]`).exists()).toBe(true)
+
   })
 
   it('keeps Replay capability deep links on the shared workspace', async () => {

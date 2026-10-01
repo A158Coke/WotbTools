@@ -6,7 +6,7 @@ import type {
   UploadProgressEvent,
 } from '../types/jobs.js'
 import type { ReplayResult } from '../types/replay.js'
-import type { ReplayAuthSession } from './replay-capabilities.js'
+import { optionalBearer, type ReplayAuthSession } from './replay-capabilities.js'
 import {
   isExportJob,
   isExportJobCreateResponse,
@@ -24,16 +24,10 @@ import {
 export type ExportMode = 'aggregate' | 'each' | (string & {})
 
 /**
- * Processing Job 的认证边界（与 `replay-capabilities.ts` 同一 contract）：
- * 先确保 token 有效再返回 Bearer header；未登录抛 canonical AUTH_UNAUTHENTICATED，
- * 由统一 error infrastructure 处理，不新增特殊 auth code。
+ * Processing / Export Job 的认证边界：赛果解析对匿名开放（与 `replay-capabilities.ts` 同一 contract）。
+ * 已登录时附带 Bearer（idempotency 按 subject 分域、绑定账号验证）；未登录则匿名请求。
  */
-async function authHeaders(auth: ReplayAuthSession): Promise<Record<string, string>> {
-  const valid = await auth.ensureToken(30)
-  if (!valid) throw new ApiError({ code: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
-  const accessToken = auth.token()
-  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-}
+const authHeaders = optionalBearer
 
 function invalidResponse(message: string, status: number | null = null): ApiError {
   return new ApiError({ errorCode: 'INVALID_RESPONSE', status, retryable: false, errorMsg: message })
@@ -63,7 +57,7 @@ async function downloadResponse(response: Response, fallbackName: string): Promi
   URL.revokeObjectURL(url)
 }
 
-/** Create an asynchronous processing job from replay files. Requires an authenticated session. */
+/** Create an asynchronous processing job from replay files. Anonymous allowed; Bearer attached when signed in. */
 export async function createProcessingJob(
   auth: ReplayAuthSession,
   body: FormData,
@@ -176,7 +170,7 @@ export async function cancelExportJob(auth: ReplayAuthSession, jobId: string): P
 }
 
 /**
- * Export artifact 下载：必须走 authenticated fetch（不能是 `<a href>` 裸链，否则不会附带 Bearer），
+ * Export artifact 下载：走 fetch（不用 `<a href>` 裸链，已登录时才能附带 Bearer），
  * 读取 blob 后再触发下载。
  */
 export async function downloadExportJob(auth: ReplayAuthSession, jobId: string, fallbackName: string): Promise<void> {
