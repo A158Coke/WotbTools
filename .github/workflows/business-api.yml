@@ -282,15 +282,17 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          set +e
+          set -u
           remote="/tmp/wotbtools-business-api-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
-          ssh \
+          if ! ssh \
             -i ~/.ssh/tx-business-build \
             -p "$TX_PORT" \
             -o BatchMode=yes \
             -o ConnectTimeout=10 \
             "$TX_USER@$TX_HOST" \
-            "rm -f -- '$remote'"
+            "rm -f -- '$remote'"; then
+            echo "WARNING: failed to remove staged TX build publisher: $remote"
+          fi
 
 
   deploy:
