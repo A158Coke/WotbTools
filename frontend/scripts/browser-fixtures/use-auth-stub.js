@@ -154,6 +154,8 @@ function hasRole(role) {
 }
 /** 与真实 composable 一致：admin-only 功能开关（feature flag）判定源。 */
 const isAdmin = computed(() => hasRole('wotbtools-admin'))
+/** 与真实 composable 一致：名人堂审核权限（侧边栏管理组按它显示"名人堂管理"）。 */
+const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)
 /** 与真实 composable 一致：展示名优先 displayName claim，preferred_username 只作兜底。 */
 function displayName() { return tokenParsed.value?.displayName || tokenParsed.value?.preferred_username || '' }
 function token() { return authenticated.value ? 'fixture-access-token' : '' }
@@ -171,6 +173,7 @@ export function useAuth() {
     isAuthenticated,
     hasRole,
     isAdmin,
+    isHofAdmin,
     token,
     ensureToken,
     initialized,
