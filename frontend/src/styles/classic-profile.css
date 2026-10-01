@@ -9,7 +9,7 @@
  *    让绝大多数消费 var(--*) 的组件直接落浅色。data-theme 由 useUiProfile 按 profile 派生。
  * 2) 同步 --showcase-tactical* :Reconstruction/战术地图外围面板落浅色(地图本体保留游戏视觉)。
  * 3) namespace 覆盖:对 showcase*.css 里写死的深色 hex/rgba/color-mix 叠加有限的
- *    [data-ui-profile="classic"] 规则(topbar/user-menu/表单/表格 sticky/管理表),用比
+ *    [data-ui-profile="classic"] 规则(表单/表格 sticky/管理表；应用外壳只用设计语言 token，无需覆盖),用比
  *    展示层更高的 specificity 覆盖,不重排现有 showcase 全局样式。
  * 4) 关闭全屏 AI/装饰性展示层(沿用原「从简」规则)与 Home 四张 AI 装饰卡图。
  *
@@ -115,14 +115,6 @@ html[data-ui-profile="classic"] {
 }
 
 /* 3) namespace 覆盖:写死深色的高层级展示面(topbar / 菜单 / 表单 / 表格 / 管理表) */
-[data-ui-profile="classic"] .topbar {background: color-mix(in srgb, #fbfbfa 94%, transparent) !important; border-bottom: 1px solid #d9dde3 !important; box-shadow: 0 6px 22px rgba(0, 0, 0, .06) !important}
-[data-ui-profile="classic"] .topbar nav button {color: #3f463f !important}
-[data-ui-profile="classic"] .topbar nav button:hover {background: rgba(0, 0, 0, .04) !important; color: #11140f !important}
-[data-ui-profile="classic"] .topbar nav button.active {background: linear-gradient(180deg, rgba(201, 118, 46, .04), rgba(201, 118, 46, .1)) !important; color: #a95c1c !important; border-bottom-color: var(--accent) !important}
-[data-ui-profile="classic"] .lang-select,
-[data-ui-profile="classic"] .auth-btn.ghost,
-[data-ui-profile="classic"] .user-menu-trigger {border-color: #cbd0c9 !important; background: #ffffff !important; color: #2a2f28 !important}
-[data-ui-profile="classic"] .user-menu-panel {border: 1px solid #d9dde3 !important; background: #ffffff !important; box-shadow: 0 16px 40px rgba(0, 0, 0, .12) !important}
 [data-ui-profile="classic"] .layout-content :is(input, select, textarea),
 [data-ui-profile="classic"] .layout-wide :is(input, select, textarea),
 [data-ui-profile="classic"] .layout-data-workspace :is(input, select, textarea),
@@ -209,19 +201,6 @@ html[data-ui-profile="classic"] .feature-visual {background: var(--bg-elevated) 
 html[data-ui-profile="classic"] .feature-visual:after {background: none !important}
 html[data-ui-profile="classic"] .feature-action {color: var(--accent-dark) !important}
 html[data-ui-profile="classic"] .feature-card {border-color: var(--showcase-tactical-border) !important}
-
-/* ---- 用户菜单（showcase-backgrounds.css 写死浅字/深底） ---- */
-html[data-ui-profile="classic"] .user-menu-panel .user-menu-item {color: var(--text) !important}
-html[data-ui-profile="classic"] .user-menu-panel .user-menu-item:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important}
-html[data-ui-profile="classic"] .user-menu-panel .user-menu-item.danger {color: var(--delete) !important}
-html[data-ui-profile="classic"] .user-menu-panel .user-menu-item.danger:hover {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important}
-html[data-ui-profile="classic"] .user-menu-panel .user-menu-section-title,
-html[data-ui-profile="classic"] .user-menu-panel .user-menu-divider,
-html[data-ui-profile="classic"] .user-menu-panel .user-menu-separator,
-html[data-ui-profile="classic"] .user-menu-panel hr {color: var(--text-muted) !important; border-color: var(--border-light) !important}
-html[data-ui-profile="classic"] .ui-profile-segmented {border-color: var(--border-light) !important}
-html[data-ui-profile="classic"] .ui-profile-option {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .ui-profile-option.active {background: var(--accent) !important; color: var(--accent-text) !important}
 
 /* ---- Replay 上传区（showcase-cohesion/workspaces 写死浅字/深底） ---- */
 html[data-ui-profile="classic"] .layout-data-workspace {color: var(--text) !important}

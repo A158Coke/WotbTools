@@ -12,7 +12,7 @@ League Rating，也不是当前回放页的战斗表现指标。
 
 | 项目 | Rating V2 规则 |
 | --- | --- |
-| 页面 | 隐藏深链 `?view=rating-v2`，没有首页、顶栏或用户菜单入口 |
+| 页面 | 深链 `?view=rating-v2`；入口只在「我的 → 管理」（仅管理员可见），首页与主导航不出现 |
 | 权限 | 前端与后端均要求 `wotbtools-admin` |
 | API | `POST /api/admin/rating-v2/processing-jobs/{jobId}` |
 | 输入 | 当前 Processing Job 已 READY 的 `ProcessedDataset` |

@@ -154,6 +154,29 @@
         "damage_avg": "均伤", "potential_damage_avg": "潜在均伤", "potential_damage_supplement_avg": "场均补增",
         "assist_avg": "场均协助", "multi_damage_rate": "多伤率%", "kills": "人头", "kills_avg": "场均人头"
       }
+    },
+    "nav": {
+      "primary": "主导航",
+      "home": "首页",
+      "replay": "回放",
+      "hof": "名人堂",
+      "me": "我的"
+    },
+    "me": {
+      "title": "我的",
+      "signedOutTitle": "未登录",
+      "signedOutHint": "登录后可以提交名人堂记录、同步个人资料。解析回放不需要登录。",
+      "sections": {
+        "account": "账户",
+        "display": "显示设置",
+        "tools": "工具",
+        "admin": "管理",
+        "about": "关于与支持"
+      },
+      "language": "语言",
+      "sponsor": "支持项目",
+      "ratingDocs": "Rating 文档",
+      "playbackQa": "回放 QA"
     }
   },
   "en": {
@@ -311,6 +334,29 @@
         "damage_avg": "Avg damage", "potential_damage_avg": "Potential DPB", "potential_damage_supplement_avg": "Avg supplement",
         "assist_avg": "Avg assist", "multi_damage_rate": "Multi-damage %", "kills": "Kills", "kills_avg": "Avg kills"
       }
+    },
+    "nav": {
+      "primary": "Main navigation",
+      "home": "Home",
+      "replay": "Replays",
+      "hof": "Hall of Fame",
+      "me": "Me"
+    },
+    "me": {
+      "title": "Me",
+      "signedOutTitle": "Not signed in",
+      "signedOutHint": "Sign in to submit Hall of Fame records and sync your profile. Parsing replays does not require an account.",
+      "sections": {
+        "account": "Account",
+        "display": "Display",
+        "tools": "Tools",
+        "admin": "Administration",
+        "about": "About & support"
+      },
+      "language": "Language",
+      "sponsor": "Support the project",
+      "ratingDocs": "Rating docs",
+      "playbackQa": "Playback QA"
     }
   },
   "ru": {
@@ -468,6 +514,29 @@
         "damage_avg": "Средний урон", "potential_damage_avg": "Потенциальный DPB", "potential_damage_supplement_avg": "Среднее добавление",
         "assist_avg": "Средняя помощь", "multi_damage_rate": "Мульти-урон %", "kills": "Фраги", "kills_avg": "Средние фраги"
       }
+    },
+    "nav": {
+      "primary": "Основная навигация",
+      "home": "Главная",
+      "replay": "Реплеи",
+      "hof": "Зал славы",
+      "me": "Профиль"
+    },
+    "me": {
+      "title": "Профиль",
+      "signedOutTitle": "Вход не выполнен",
+      "signedOutHint": "Войдите, чтобы отправлять записи в Зал славы и синхронизировать профиль. Для разбора реплеев вход не нужен.",
+      "sections": {
+        "account": "Аккаунт",
+        "display": "Отображение",
+        "tools": "Инструменты",
+        "admin": "Администрирование",
+        "about": "О проекте и поддержка"
+      },
+      "language": "Язык",
+      "sponsor": "Поддержать проект",
+      "ratingDocs": "Документация Rating",
+      "playbackQa": "QA повтора"
     }
   }
 }

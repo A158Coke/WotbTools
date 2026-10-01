@@ -484,7 +484,7 @@ Workspace 是四态 UI gate（检查登录态 / Login Required + 可重试登录
 工作台）：未登录时不渲染
 Source panel、上传器与任何 capability 面板，因此未登录无法发出 processing 请求；`useAuth.login()` 只对
 「同一个进行中的 redirect」去重（`loginInFlight` 在 `finally` 释放，无 component-lifetime 一次性锁），
-失败或取消后 capability tabs、登录按钮与 UserMenu 都能重新发起新的 login transaction。后端同样把
+失败或取消后 capability tabs、登录按钮与「我的」页登录入口都能重新发起新的 login transaction。后端同样把
 `/api/replay/processing-jobs/**`（创建/状态/result/取消）收紧为 `wotbtools-user`/`wotbtools-admin`，
 前端 gate 只是 UX，后端才是 authorization authority。
 **能力解耦**：AI 与 Playback 仅共享 replay/source/processing dataset，不做 `AI@seek → Playback`

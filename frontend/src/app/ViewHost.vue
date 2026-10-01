@@ -14,9 +14,17 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
 </script>
 
 <template>
-  <div class="tb-content">
+  <main id="main" class="app-main">
     <KeepAlive :include="['ReplayWorkspace']">
       <component :is="currentView" :initial-capability="initialCapability" />
     </KeepAlive>
-  </div>
+  </main>
 </template>
+
+<style scoped>
+/* 顶栏是 fixed：内容区只在这里让出一次高度（含顶部安全区） */
+.app-main {
+  flex: 1 0 auto;
+  padding-top: calc(var(--header-h) + env(safe-area-inset-top));
+}
+</style>

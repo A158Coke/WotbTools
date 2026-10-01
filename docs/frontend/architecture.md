@@ -8,11 +8,13 @@ The application root, [`frontend/src/App.vue`](../../frontend/src/App.vue), only
 App.vue
   → app/router.js
   → app/AppShell.vue
-      ├── AppHeader.vue
-      │   └── UserMenu.vue
-      ├── ViewHost.vue
+      ├── AppTopBar.vue      # 桌面 / 平板：单行顶栏；compact：标题栏
+      ├── ViewHost.vue       # <main>，按 ?view= 渲染页面
+      ├── AppTabBar.vue      # compact（< 768）：底部主导航
       └── GlobalErrorDialog.vue
 ```
+
+主导航的唯一数据源是 `app/navigation.js` 的 `PRIMARY_NAV`（首页 · 回放 · 名人堂 · 我的）与 `primarySection(view)`（视图归属哪个主栏目）；顶栏与底部 Tab 栏都用 `RouterLink` 渲染同一份清单，并以 `aria-current` 标记当前栏目。外壳按 `useBreakpoint()`（`composables/useBreakpoint.js`，断点常量在 `shared/breakpoints.ts`）在两种形态间切换。原用户菜单的全部入口（个人中心、界面风格、语言、工具、管理、关于）由 `?view=me`（`components/MePage.vue`）承载。
 
 `router.js` owns browser history, deep-link handling, redirects, and Back/Forward. Product URLs deliberately retain the compatible query contract: `?view=replay`, `?view=ai-review`, and `?view=battle-playback` all resolve to the same kept-alive Replay Workspace with a different initial capability. Legacy aliases (`leaderboard`, `extended`, `reconstruction`) redirect once to their canonical query values. `/download/android` and `/download/android/` resolve to the Android page; `/sponsor` is a first-class AppShell route that resolves through `ViewHost` to `SponsorPage`.
 

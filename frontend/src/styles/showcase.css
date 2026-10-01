@@ -60,45 +60,6 @@ body {
   background-size: auto, 36px 36px, 36px 36px, auto;
 }
 
-.topbar {
-  min-height: var(--topbar-h) !important;
-  height: var(--topbar-h) !important;
-  padding: 8px max(14px, calc((100vw - 1840px) / 2)) !important;
-  gap: 8px !important;
-  background: color-mix(in srgb, #080c0f 93%, transparent) !important;
-  border-bottom: 1px solid #30383d !important;
-  box-shadow: 0 10px 32px rgba(0,0,0,.24) !important;
-}
-.tb-content { padding-top: var(--topbar-h) !important; }
-.tb-brand { min-width: 48px; }
-.tb-logo { height: 34px !important; }
-.topbar nav { height: 100%; align-items: stretch !important; gap: 2px !important; }
-.topbar nav button {
-  min-height: 42px;
-  padding: 7px 14px !important;
-  border-radius: 5px !important;
-  color: #bebbb4 !important;
-  border-bottom: 2px solid transparent !important;
-  transition: background .16s ease, color .16s ease, border-color .16s ease;
-}
-.topbar nav button:hover { background: rgba(255,255,255,.035) !important; color: #f4efe5 !important; }
-.topbar nav button.active {
-  background: linear-gradient(180deg, rgba(217,143,24,.02), rgba(217,143,24,.14)) !important;
-  border-color: transparent !important;
-  border-bottom-color: var(--accent) !important;
-  color: #f5b445 !important;
-}
-.lang-select, .auth-btn.ghost, .user-menu-trigger {
-  border-color: #343d42 !important;
-  background: rgba(17,23,26,.92) !important;
-  color: #d9d5cc !important;
-}
-.user-menu-panel {
-  border: 1px solid #394247 !important;
-  background: #11171a !important;
-  box-shadow: 0 22px 54px rgba(0,0,0,.44) !important;
-}
-
 .wrap {
   max-width: var(--showcase-wide-max) !important;
   width: calc(100vw - var(--showcase-gutter) * 2) !important;
@@ -169,7 +130,7 @@ body {
 .layout-data-workspace > :first-child { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)) !important; }
 .restoolbar {
   position: sticky;
-  top: 66px;
+  top: calc(var(--header-h) + 6px);
   z-index: 30;
   padding: 9px 10px !important;
   border: 1px solid var(--border) !important;
@@ -317,26 +278,16 @@ body {
 
 @media (max-width: 1199px) {
   :root { --showcase-gutter: 14px; }
-  .topbar { padding-inline: 12px !important; overflow-x: auto !important; }
-  .topbar nav button { padding-inline: 10px !important; }
   .layout-content,
   .layout-wide,
   .layout-data-workspace,
   .admin-page,
   .profile-page { padding-top: 18px !important; }
-  .restoolbar { top: 64px; }
   .admin-table-wrap { max-height: none; }
 }
 
 @media (width < 768px) {
   :root { --showcase-gutter: 8px; }
-  .topbar { min-height: 56px !important; height: 56px !important; }
-  .tb-content { padding-top: 56px !important; }
-  .tb-logo { height: 30px !important; }
-  .topbar nav { max-width: 58vw; overflow-x: auto; scrollbar-width: none; }
-  .topbar nav::-webkit-scrollbar { display: none; }
-  .topbar nav button { min-height: 38px; padding-inline: 9px !important; font-size: .78rem !important; }
-  .lang-select { max-width: 72px; }
 
   .layout-content,
   .layout-wide,

@@ -47,7 +47,7 @@
 /* AI review header sits below the actual Showcase topbar (60px). */
 @media (min-width: 1081px) {
   .analysis-panel .panel-head {
-    top: 60px !important;
+    top: var(--header-h) !important;
   }
 }
 

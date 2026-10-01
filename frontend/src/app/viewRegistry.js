@@ -10,6 +10,7 @@ import TechnicalEvolutionPage from '../components/TechnicalEvolutionPage.vue'
 import ContactPage from '../components/ContactPage.vue'
 import AndroidDownloadPage from '../components/AndroidDownloadPage.vue'
 import SponsorPage from '../components/SponsorPage.vue'
+import MePage from '../components/MePage.vue'
 
 const PlaybackQaPage = defineAsyncComponent(() => import('../components/PlaybackQaPage.vue'))
 const AgentReplay3DPage = defineAsyncComponent(() => import('../components/AgentReplay3D.vue'))
@@ -29,6 +30,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   'agent-armor': AgentArmorViewPage,
   'agent-shots': AgentShotsPage,
   hof: HoFPage,
+  me: MePage,
   'hof-admin': HoFAdminPage,
   profile: ProfilePage,
   'admin-users': AdminUsersPage,
