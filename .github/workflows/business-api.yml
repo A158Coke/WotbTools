@@ -32,8 +32,8 @@ on:
       - deploy/dependency-readiness.sh
       - deploy/dependency-readiness.py
       - deploy/check-latest-main.sh
-      - deploy/list-image-tags.sh
       - deploy/tx/business-api.compose.yml
+      - deploy/tx/build-business-api-from-gitee.sh
       - deploy/tx/deploy.sh
       - deploy/tx/common.compose.yml
       - deploy/tx/docker-compose.yml
@@ -73,8 +73,8 @@ env:
     deploy/dependency-readiness.sh
     deploy/dependency-readiness.py
     deploy/check-latest-main.sh
-    deploy/list-image-tags.sh
     deploy/tx/business-api.compose.yml
+    deploy/tx/build-business-api-from-gitee.sh
     deploy/tx/deploy.sh
     deploy/tx/common.compose.yml
     deploy/tx/docker-compose.yml
@@ -85,20 +85,21 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 90
+    environment: tx-production
     permissions:
       contents: read
-      packages: write
     outputs:
-      image: ${{ steps.identity.outputs.image }}
+      image: ${{ steps.remote_build.outputs.image }}
       commit_sha: ${{ steps.identity.outputs.commit_sha }}
-      digest: ${{ steps.verify.outputs.digest }}
+      digest: ${{ steps.remote_build.outputs.digest }}
       latest_published: ${{ steps.latest.outputs.published }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
+
       - name: Freeze current main and image identity
         id: identity
         env:
@@ -120,92 +121,176 @@ jobs:
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
-          [ -n "$TCR_NAMESPACE" ] || { echo 'TCR_NAMESPACE is required.' >&2; exit 1; }
-          image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-business-api:sha-${SOURCE_SHA:0:12}"
+          [[ "$TCR_NAMESPACE" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo 'TCR_NAMESPACE is invalid.' >&2; exit 1; }
           {
             echo "commit_sha=$SOURCE_SHA"
-            echo "image=$image"
-            echo "repository=${image%:*}"
             echo "tag=sha-${SOURCE_SHA:0:12}"
           } >> "$GITHUB_OUTPUT"
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ vars.TCR_REGISTRY }}
-          username: ${{ secrets.TCR_USERNAME }}
-          password: ${{ secrets.TCR_PASSWORD }}
-      - uses: imjasonh/setup-crane@v0.7
-      - name: Reuse only an existing immutable image with this source identity
-        id: immutable
-        env:
-          IMAGE: ${{ steps.identity.outputs.image }}
-          REPOSITORY: ${{ steps.identity.outputs.repository }}
-          TAG: ${{ steps.identity.outputs.tag }}
-          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+
+      - name: Configure TX SSH
         shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
         run: |
           set -euo pipefail
-          tags="$(bash "$GITHUB_WORKSPACE/deploy/list-image-tags.sh" "$REPOSITORY")"
-          if grep -Fxq "$TAG" <<< "$tags"; then
-            docker pull "$IMAGE"
-            revision="$(docker image inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE" | sed -n 's/^BUILD_COMMIT=//p' | head -n 1)"
-            [ "$revision" = "$SOURCE_SHA" ] || { echo 'Existing immutable tag has a different BUILD_COMMIT.' >&2; exit 1; }
-            digest="$(crane digest "$IMAGE")"
-            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-            echo "existing_digest=$digest" >> "$GITHUB_OUTPUT"
-          else
-            echo 'existing_digest=' >> "$GITHUB_OUTPUT"
-          fi
-      - uses: docker/setup-buildx-action@v4
-      - name: Build and publish this frozen image
-        id: build_image
-        if: steps.immutable.outputs.existing_digest == ''
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/Dockerfile.business-api
-          push: true
-          tags: ${{ steps.identity.outputs.image }}
-          build-args: BUILD_COMMIT=${{ steps.identity.outputs.commit_sha }}
-          cache-from: type=gha,scope=business-api
-          cache-to: type=gha,mode=max,scope=business-api
-          provenance: false
-          sbom: false
-      - name: Verify registry digest and source identity
-        id: verify
-        env:
-          IMAGE: ${{ steps.identity.outputs.image }}
-          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
-          EXISTING_DIGEST: ${{ steps.immutable.outputs.existing_digest }}
-          BUILD_DIGEST: ${{ steps.build_image.outputs.digest }}
+          : "${TX_HOST:?TX_VPS_HOST is required}"
+          : "${TX_PORT:?TX_VPS_PORT is required}"
+          : "${TX_KEY:?TX_VPS_SSH_KEY is required}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$TX_KEY" | tr -d '\r' > ~/.ssh/tx-business-build
+          chmod 600 ~/.ssh/tx-business-build
+          ssh-keyscan -T 15 -p "$TX_PORT" "$TX_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Stage TX build publisher
         shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          digest="${EXISTING_DIGEST:-$BUILD_DIGEST}"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Missing or invalid image digest.' >&2; exit 1; }
-          [ "$(crane digest "$IMAGE")" = "$digest" ] || { echo 'Registry digest changed after build.' >&2; exit 1; }
-          docker pull "$IMAGE@$digest" >/dev/null
-          revision="$(docker image inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$IMAGE@$digest" | sed -n 's/^BUILD_COMMIT=//p' | head -n 1)"
-          [ "$revision" = "$SOURCE_SHA" ] || { echo 'Published image does not contain the frozen BUILD_COMMIT.' >&2; exit 1; }
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          remote="/tmp/wotbtools-business-api-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
+          scp \
+            -i ~/.ssh/tx-business-build \
+            -P "$TX_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            "$GITHUB_WORKSPACE/deploy/tx/build-business-api-from-gitee.sh" \
+            "$TX_USER@$TX_HOST:$remote"
+          ssh \
+            -i ~/.ssh/tx-business-build \
+            -p "$TX_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            "$TX_USER@$TX_HOST" \
+            "chmod 700 '$remote'"
+
+      - name: Build and publish immutable image on TX
+        id: remote_build
+        shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          remote="/tmp/wotbtools-business-api-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
+          log="$RUNNER_TEMP/tx-business-build.log"
+
+          ssh \
+            -i ~/.ssh/tx-business-build \
+            -p "$TX_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=10 \
+            -o ServerAliveCountMax=6 \
+            "$TX_USER@$TX_HOST" \
+            "bash '$remote' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE'" \
+            | tee "$log"
+
+          python3 - "$log" >> "$GITHUB_OUTPUT" <<'PY'
+          import pathlib
+          import sys
+
+          values = {}
+          for line in pathlib.Path(sys.argv[1]).read_text(errors="replace").splitlines():
+              if not line.startswith("RESULT "):
+                  continue
+              key, value = line[7:].split("=", 1)
+              values[key] = value
+
+          required = {"source_sha", "image", "digest", "reused", "build_commit_verified"}
+          missing = required - values.keys()
+          if missing:
+              raise SystemExit(f"missing remote build outputs: {sorted(missing)}")
+          if values["build_commit_verified"] != "true":
+              raise SystemExit("remote build provenance was not verified")
+
+          for key, value in values.items():
+              print(f"{key}={value}")
+          PY
 
       - name: Publish latest only from current main
         id: latest
+        shell: bash
         env:
           SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
-          IMAGE: ${{ steps.identity.outputs.image }}
-          REPOSITORY: ${{ steps.identity.outputs.repository }}
-          DIGEST: ${{ steps.verify.outputs.digest }}
-        shell: bash
+          PUBLISHED_DIGEST: ${{ steps.remote_build.outputs.digest }}
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          # 10 = main 已前进且改了本服务输入：交给更新的那次运行发布，本次跳过但不判红
+
           status=0
           bash "$GITHUB_WORKSPACE/deploy/check-latest-main.sh" "$SOURCE_SHA" || status=$?
           case "$status" in
-            0) crane cp "$IMAGE@$DIGEST" "$REPOSITORY:latest"; echo 'published=true' >> "$GITHUB_OUTPUT" ;;
-            10) echo 'published=false' >> "$GITHUB_OUTPUT" ;;
-            *) exit "$status" ;;
+            0)
+              remote="/tmp/wotbtools-business-api-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
+              log="$RUNNER_TEMP/tx-business-latest.log"
+              ssh \
+                -i ~/.ssh/tx-business-build \
+                -p "$TX_PORT" \
+                -o BatchMode=yes \
+                -o ConnectTimeout=15 \
+                -o ServerAliveInterval=10 \
+                -o ServerAliveCountMax=6 \
+                "$TX_USER@$TX_HOST" \
+                "bash '$remote' promote-latest '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE'" \
+                | tee "$log"
+
+              promoted_digest="$(sed -n 's/^RESULT digest=//p' "$log" | tail -n1)"
+              [ "$promoted_digest" = "$PUBLISHED_DIGEST" ] || {
+                echo "Promoted latest digest differs from the immutable build digest." >&2
+                exit 1
+              }
+              grep -Fxq 'RESULT latest_published=true' "$log" || {
+                echo "TX latest promotion did not report success." >&2
+                exit 1
+              }
+              echo 'published=true' >> "$GITHUB_OUTPUT"
+              ;;
+            10)
+              echo 'published=false' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              exit "$status"
+              ;;
           esac
+
+      - name: Cleanup staged TX build publisher
+        if: always()
+        shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set +e
+          remote="/tmp/wotbtools-business-api-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
+          ssh \
+            -i ~/.ssh/tx-business-build \
+            -p "$TX_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            "$TX_USER@$TX_HOST" \
+            "rm -f -- '$remote'"
 
 
   deploy:
