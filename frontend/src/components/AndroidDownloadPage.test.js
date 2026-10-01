@@ -58,15 +58,17 @@ describe('AndroidDownloadPage', () => {
     expect(wrapper.text()).toContain('Android 版本信息暂未配置')
   })
 
-  it('未登录：显示登录门禁并自动触发登录（不展示 download card）', async () => {
+  it('未登录：显示登录说明卡，不自动跳转登录；点按钮才登录（不展示 download card）', async () => {
     authHolder.authenticated = false
     const login = vi.fn(() => Promise.resolve())
     authHolder.login = login
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(manifestResponse()))
     const wrapper = mount(AndroidDownloadPage, { global: { plugins: [i18n] } })
     await flushPromises()
-    expect(login).toHaveBeenCalledWith('android')
+    expect(login).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="android-login-required"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="android-download-card"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="android-login-btn"]').trigger('click')
+    expect(login).toHaveBeenCalledWith('android')
   })
 })

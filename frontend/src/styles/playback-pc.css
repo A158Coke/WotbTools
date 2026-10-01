@@ -102,7 +102,8 @@
     }
   .battle-playback.pb-form-pc:not(:fullscreen) .pb-map-stage {
       /* 大桌面（非 fullscreen）Workspace 高度有界：地图 contain-fit，避免超出页面。 */
-      height: min(calc(100vh - 170px), 850px);
+      /* 审计 PB-02：扣掉固定顶栏，控制栏才能留在首屏 */
+      height: min(calc(100dvh - var(--header-h) - 170px), 850px);
       display: grid;
       grid-template-columns: minmax(0, 1fr) var(--pb-details-w);
       grid-template-rows: minmax(0, 1fr);

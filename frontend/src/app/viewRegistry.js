@@ -1,17 +1,19 @@
 import { defineAsyncComponent } from 'vue'
 import HomePage from '../components/HomePage.vue'
 import ReplayWorkspace from '../components/ReplayWorkspace.vue'
-import HoFPage from '../components/HoFPage.vue'
-import HoFAdminPage from '../components/HoFAdminPage.vue'
-import ProfilePage from '../components/ProfilePage.vue'
-import AdminUsersPage from '../components/AdminUsersPage.vue'
-import HistoryPage from '../components/HistoryPage.vue'
-import TechnicalEvolutionPage from '../components/TechnicalEvolutionPage.vue'
-import ContactPage from '../components/ContactPage.vue'
-import AndroidDownloadPage from '../components/AndroidDownloadPage.vue'
-import SponsorPage from '../components/SponsorPage.vue'
-import MorePage from '../components/MorePage.vue'
 
+// 审计 PF-02：只有落地页（首页 / 回放工作台）同步加载，其余页面按需拆包，
+// 管理页、markdown-it、DOMPurify、历史 .md 不再进主包。
+const HoFPage = defineAsyncComponent(() => import('../components/HoFPage.vue'))
+const HoFAdminPage = defineAsyncComponent(() => import('../components/HoFAdminPage.vue'))
+const ProfilePage = defineAsyncComponent(() => import('../components/ProfilePage.vue'))
+const AdminUsersPage = defineAsyncComponent(() => import('../components/AdminUsersPage.vue'))
+const HistoryPage = defineAsyncComponent(() => import('../components/HistoryPage.vue'))
+const TechnicalEvolutionPage = defineAsyncComponent(() => import('../components/TechnicalEvolutionPage.vue'))
+const ContactPage = defineAsyncComponent(() => import('../components/ContactPage.vue'))
+const AndroidDownloadPage = defineAsyncComponent(() => import('../components/AndroidDownloadPage.vue'))
+const SponsorPage = defineAsyncComponent(() => import('../components/SponsorPage.vue'))
+const MorePage = defineAsyncComponent(() => import('../components/MorePage.vue'))
 const PlaybackQaPage = defineAsyncComponent(() => import('../components/PlaybackQaPage.vue'))
 const AgentReplay3DPage = defineAsyncComponent(() => import('../components/AgentReplay3D.vue'))
 const AgentTankopediaPage = defineAsyncComponent(() => import('../components/AgentTankopedia.vue'))

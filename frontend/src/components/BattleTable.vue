@@ -5,6 +5,8 @@ import { fmtDuration, mapLabel, leagueMaxByKey, ratingCellText, ratingTotalText 
 import { replayValueLabel } from '../utils/display.js'
 import { stableSortRows } from '../utils/tableSort.js'
 import { useStickyColumns } from '../utils/stickyColumns.js'
+import PlayerCardList from './PlayerCardList.vue'
+import StatStrip from './StatStrip.vue'
 
 const { locale, t, te } = useI18n()
 const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation'])
@@ -38,6 +40,8 @@ const props = defineProps({
    * Drawer 关闭 → null → 清除 highlight。 */
   selectedAccountId: { type: [Number, String], default: null },
   selectedArenaId: { type: [Number, String], default: null },
+  /** 呈现方式：table（默认）/ cards（手机卡片列表；表格保留在 DOM 里供 PNG 导出）。 */
+  layout: { type: String, default: 'table' },
 })
 const emit = defineEmits(['update-team-name', 'select-player'])
 
@@ -161,22 +165,76 @@ function rowFlags(row) {
 // 复用 useStickyColumns（抽取自本组件验证过的 sticky lifecycle）。
 const { headerRefs, isStickyCol, colStyle, schedule } = useStickyColumns({
   enabled: isLeague,
-  active: computed(() => props.active),
+  // 卡片模式下表格被隐藏，宽度为 0，不能参与 sticky 测量
+  active: computed(() => props.active && props.layout !== 'cards'),
   watchCols: computed(() => props.shownCols),
 })
 
 // 排序箭头变化可能改昵称列宽 → 重新调度测量
 watch([sortKey, sortReverse], schedule)
+
+// ---- 本场关键数字：胜方显示战队名（覆盖名 → 军团标签），没有名字时才用「队伍 N」 ----
+const battleStats = computed(() => {
+  const winner = props.battle.winnerTeam
+  const winnerName = winner ? (teamName(winner) || t('team.' + winner)) : t('team.unknown')
+  return [
+    { key: 'map', label: t('metric.map'), value: mapLabel(props.battle.mapName, locale.value) },
+    { key: 'duration', label: t('metric.duration'), value: fmtDuration(props.battle.durationS, t) },
+    { key: 'winner', label: t('metric.winner'), value: winnerName },
+    { key: 'players', label: t('metric.player_count'), value: props.battle.players.length },
+  ]
+})
+
+// ---- 卡片列表（手机）：与表格共用排序、选中与单元格格式 ----
+/** 卡片头部已展示的身份列，不再重复进指标区。 */
+const CARD_IDENTITY_KEYS = new Set(['nickname', 'clan', 'tank_name', 'league_rating'])
+
+function cellText(row, c) {
+  const value = row.cells[c.key]
+  if (c.key === 'survived_label') return survivalLabel(value)
+  if (c.key === 'survival_time') return fmtDuration(value, t)
+  if (LOCALIZED_VALUE_KEYS.has(c.key)) return replayValueLabel(t, te, value)
+  if (RATE_KEYS.has(c.key)) return rateCell(value)
+  if (c.key === 'league_rating' || (isLeague.value && maxByKey.value[c.key] > 0)) return ratingCellText(value, c.key, maxByKey.value)
+  return value == null || value === '' ? '--' : String(value)
+}
+
+const cardItems = computed(() => {
+  const ratingCol = props.shownCols.find(c => c.key === 'league_rating')
+  return sorted.value.map(row => {
+    const flags = rowFlags(row)
+    return {
+      key: String(row.accountId),
+      title: row.cells.nickname ?? '--',
+      subtitle: [row.cells.clan, row.cells.tank_name].filter(Boolean).join(' · '),
+      team: row.team,
+      primary: ratingCol ? { label: t('player_labels.league_rating'), value: cellText(row, ratingCol) } : null,
+      badge: flags.mvp ? t('league.mvp') : flags.teamBest ? t('league.team_best') : '',
+      metrics: props.shownCols
+        .filter(c => !CARD_IDENTITY_KEYS.has(c.key))
+        .map(c => ({ key: c.key, label: t('player_labels.' + c.key), value: cellText(row, c) })),
+      selected: isSelectedRow(row),
+    }
+  })
+})
+const cardSortOptions = computed(() => props.shownCols
+  .filter(c => c.key !== 'nickname')
+  .map(c => ({ key: c.key, label: t('player_labels.' + c.key) })))
+
+function onCardSort({ key, desc }) {
+  sortKey.value = key
+  sortReverse.value = desc
+}
+
+function onCardSelect(accountId) {
+  const row = props.battle.players.find(p => String(p.accountId) === accountId)
+  if (row) onRowClick(row)
+}
 </script>
 
 <template>
   <div>
-    <div class="mcards">
-      <div class="mc"><div class="k">{{ $t('metric.map') }}</div><div class="v">{{ mapLabel(battle.mapName, locale) }}</div></div>
-      <div class="mc"><div class="k">{{ $t('metric.duration') }}</div><div class="v">{{ fmtDuration(battle.durationS, t) }}</div></div>
-      <div class="mc"><div class="k">{{ $t('metric.winner') }}</div><div class="v">{{ battle.winnerTeam ? $t('team.' + battle.winnerTeam) : $t('team.unknown') }}</div></div>
-      <div class="mc"><div class="k">{{ $t('metric.player_count') }}</div><div class="v">{{ battle.players.length }}</div></div>
-    </div>
+    <StatStrip :stats="battleStats" />
 
     <!-- League Rating 概览（CW 专属；Rating-ineligible 场次 league=null → 显示 "--" 不伪造） -->
     <div v-if="isLeague" class="league-overview">
@@ -205,7 +263,17 @@ watch([sortKey, sortReverse], schedule)
       <div class="league-note">{{ $t('league.points_note') }}</div>
     </div>
 
-    <div class="tablewrap">
+    <PlayerCardList
+      v-if="layout === 'cards'"
+      :items="cardItems"
+      :clickable="isLeague"
+      :sort-options="cardSortOptions"
+      :sort-key="sortKey"
+      :sort-desc="sortReverse"
+      @sort="onCardSort"
+      @select="onCardSelect"
+    />
+    <div v-show="layout !== 'cards'" class="tablewrap">
       <table :class="isLeague ? 'league-table' : ''">
         <thead><tr>
           <th v-for="c in shownCols" :key="c.key"
@@ -240,40 +308,55 @@ watch([sortKey, sortReverse], schedule)
         </tbody>
       </table>
     </div>
-    <p class="scroll-hint">{{ $t('result.scroll_hint') }}</p>
+    <p v-show="layout !== 'cards'" class="scroll-hint">{{ $t('result.scroll_hint') }}</p>
   </div>
 </template>
 
 <style scoped>
+/* League Rating 概览：两队 Rating + 可改队名 + MVP / 队内最佳（class 名保留给 PNG 导出样式） */
 .league-overview {
-  margin-bottom: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-card);
-  box-shadow: var(--surface-shadow);
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
 }
-.league-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
-.league-title { font-size: .95rem; font-weight: 800; color: var(--text-heading); }
-.league-sub { font-size: .75rem; color: var(--text-sub); }
-.league-teams { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.league-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); }
+.league-title { color: var(--color-text-primary); font: var(--type-h3); }
+.league-sub,
+.league-note { color: var(--color-text-secondary); font: var(--type-caption); }
+.league-teams { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-2); }
 .league-team {
-  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
-  border: 1px solid var(--border-light); border-radius: 7px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
 }
-.league-team.league-win { border-color: var(--accent); background: var(--bg-blue-light); }
-.league-team-tag { font-size: .72rem; font-weight: 700; color: var(--text-sub); white-space: nowrap; }
+.league-team.league-win { border-color: var(--color-accent); }
+.league-team-tag { flex: none; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
 .team-name-input {
-  flex: 1; min-width: 0; padding: 4px 8px;
-  border: 1px dashed var(--border); border-radius: 5px;
-  background: transparent; color: var(--text-heading); font-size: .85rem; font-weight: 600; font-family: inherit;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  font-weight: 600;
 }
-.team-name-input:focus { border-color: var(--accent); outline: none; }
-.league-team-rating { font-size: .95rem; font-weight: 800; color: var(--accent-dark); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.league-mvp { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: .82rem; }
-.lm-label { color: var(--text-sub); font-weight: 600; }
-.lm-value { color: var(--text-heading); font-weight: 700; }
-.league-note { margin-top: 6px; font-size: .72rem; color: var(--text-sub); }
+.team-name-input:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.league-team-rating { flex: none; color: var(--color-accent-text); font: var(--type-h3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.league-mvp { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); font: var(--type-body); }
+.lm-label { color: var(--color-text-secondary); }
+.lm-value { color: var(--color-text-primary); font-weight: 600; }
 
 /* League 表格：玩家 + 总 Rating sticky；其余列横向滚动。
    z-index 层级：tbody normal < tbody sticky(3) < thead normal(5) < thead sticky(7)。

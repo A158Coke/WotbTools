@@ -8,11 +8,13 @@
 - 设计语言 token：`frontend/src/styles/tokens/scale.css`（刻度，并声明 `@layer` 顺序）与 `frontend/src/styles/tokens/color.css`（两套主题的语义色）。`data-theme` 仍由 profile 派生：`showcase → dark`、`classic → light`。
 - `frontend/src/styles/tokens.css` 与 `classic-profile.css` 是 deprecated 的旧 token，仅为保持现有视觉；新代码不得再引用，无人引用的旧变量随迁移删除。
 - `npm run lint:css`（stylelint，CI 必过）强制执行设计语言；`frontend/stylelint.legacy.json` 是迁移前旧文件的基线名单，只减不增。
+- 已实现的设计语言组件（`frontend/src/components/`，均只用语义 token）：`AppButton`（Button）· `SegmentedControl` · `PageHeader` · `EmptyState` · `Banner` · `MenuButton`（Menu：方向键 / Esc / 外部点击关闭）· `BattlePicker`（SearchSelect 单选：超过 6 项显示搜索；手机为底部 sheet）· `StatStrip`（Stat）· `PlayerCardList`（DataTable 的手机卡片形态） · `FilterChips`（手机筛选入口：「筛选」按钮 + 已生效条件 chip，配合底部 sheet） · `AppDialog`（Dialog：焦点陷阱、Esc、关闭后焦点回到触发元素、手机底部 sheet；`keepMounted` 保留表单草稿）· `confirm()` + `ConfirmDialogHost`（应用内确认，禁止 `window.confirm`）· `MarkdownDocPage`（长文档：二级标题目录、吸顶 / 折叠目录、回到顶部）· `ReplayCapabilityTabs`（Tabs）。新界面优先复用它们，不再新增一次性按钮 / 下拉样式。
 
 ## UI Profile
 
 - `frontend/src/composables/useUiProfile.js` 是 profile 的唯一 reactive owner，持久化 key 为 `wotb-ui-profile`。
 - `showcase` 与 `classic` 只改变 Presentation 层；`data-theme` 从 profile 派生。两种 profile 共用组件、业务状态、API、spacing 和 layout。
+- 用户偏好可以是 `showcase` / `classic` / `auto`（跟随系统 `prefers-color-scheme`，系统切换时实时跟随）。`uiProfile` 是实际生效的 profile，`uiProfilePreference` 是用户的选择；持久化存的是偏好。`<meta name="theme-color">` 随生效主题取两套 `--color-canvas`（`THEME_COLOR`），首屏脚本与运行时一致。
 - 首屏投影在 `frontend/index.html`，运行时 token 与 profile 覆盖分别位于 `frontend/src/styles/tokens.css` 和 `frontend/src/styles/classic-profile.css`。
 
 ## Layout and responsive contract

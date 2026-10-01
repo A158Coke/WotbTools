@@ -8,10 +8,12 @@
  */
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { parseAgentShotsFromBytes, parseAgentPlaybackFromBytes } from '../api/agent-replay-facets.js'
 import { storeShotsForViewer, fetchTankData } from '../scene/agentData.js'
 
 const { t } = useI18n()
+const router = useRouter()
 
 const fileEl = ref(null)
 const fileName = ref('')
@@ -347,7 +349,9 @@ async function openShotInViewer(no) {
   const url = srViewerUrl(shot, await resolveShellIdx(shot))
   if (!url) return
   storeShotsForViewer(shots.value)
-  window.open(url, '_blank', 'width=' + Math.round(window.innerWidth * 0.85) + ',height=' + Math.round(window.innerHeight * 0.9))
+  // 审计 3D-09：不再 window.open 弹小窗（被拦截时静默无反应、WebView 行为不可控、没有返回路径），
+  // 在当前标签页打开装甲查看器，返回走浏览器历史
+  router.push(url)
 }
 
 // shell_id（全局弹种 id）→ 射手弹表 (配置下标, 弹下标)：与上游

@@ -1,11 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import * as api from '../utils/api.js'
-import cardReplayImg from '../assets/showcase/home/card-replay-parser-v1.png'
-import cardAiReviewImg from '../assets/showcase/home/card-ai-review-v1.png'
-import cardBattlePlaybackImg from '../assets/showcase/home/card-battle-playback-v1.png'
-import cardHofImg from '../assets/showcase/home/card-hall-of-fame-v1.png'
-import cardSponsorImg from '../assets/showcase/home/card-sponsor-v1.png'
+import cardReplayImg from '../assets/showcase/home/card-replay-parser-v1.webp'
+import cardAiReviewImg from '../assets/showcase/home/card-ai-review-v1.webp'
+import cardBattlePlaybackImg from '../assets/showcase/home/card-battle-playback-v1.webp'
+import cardHofImg from '../assets/showcase/home/card-hall-of-fame-v1.webp'
+import cardSponsorImg from '../assets/showcase/home/card-sponsor-v1.webp'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { RouterLink } from 'vue-router'
 
@@ -32,7 +32,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
   <main class="homepage-showcase">
     <section class="showcase-hero">
       <div class="hero-copy">
-        <img class="hero-logo" src="/wotbtoolslogo.png" alt="WoTBTools">
+        <img class="hero-logo" src="/wotbtoolslogo-128.webp" width="128" height="128" alt="WoTBTools">
         <p class="hero-kicker">WOTBTOOLS · BATTLE INTELLIGENCE</p>
         <h1>{{ $t('app.title') }}</h1>
         <p class="hero-subtitle">{{ $t('app.subtitle') }}</p>
@@ -56,23 +56,23 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
 
     <section class="feature-grid" aria-label="WotBTools">
       <a class="feature-card feature-primary" href="/?view=replay">
-        <div class="feature-visual"><img :src="cardReplayImg" alt="" aria-hidden="true"><span class="feature-index">01</span></div>
+        <div class="feature-visual"><img :src="cardReplayImg" width="840" height="560" loading="lazy" decoding="async" alt="" aria-hidden="true"><span class="feature-index">01</span></div>
         <div class="feature-copy"><h2>{{ $t('home.replayParse') }}</h2><p>{{ $t('home.replayParseDesc') }}</p><span class="feature-action">{{ $t('home.replayParse') }} →</span></div>
       </a>
       <a class="feature-card" href="/?view=ai-review">
-        <div class="feature-visual"><img :src="cardAiReviewImg" alt="" aria-hidden="true"><span class="feature-index">02</span></div>
+        <div class="feature-visual"><img :src="cardAiReviewImg" width="840" height="560" loading="lazy" decoding="async" alt="" aria-hidden="true"><span class="feature-index">02</span></div>
         <div class="feature-copy"><h2>{{ $t('home.aiReview') }}</h2><p>{{ $t('home.aiReviewDesc') }}</p><span class="feature-action">{{ $t('home.aiReview') }} →</span></div>
       </a>
       <a class="feature-card" href="/?view=battle-playback">
-        <div class="feature-visual"><img :src="cardBattlePlaybackImg" alt="" aria-hidden="true"><span class="feature-index">03</span></div>
+        <div class="feature-visual"><img :src="cardBattlePlaybackImg" width="840" height="560" loading="lazy" decoding="async" alt="" aria-hidden="true"><span class="feature-index">03</span></div>
         <div class="feature-copy"><h2>{{ $t('home.battlePlayback') }}</h2><p>{{ $t('home.battlePlaybackDesc') }}</p><span class="feature-action">{{ $t('home.battlePlayback') }} →</span></div>
       </a>
       <a class="feature-card" href="/?view=hof">
-        <div class="feature-visual"><img :src="cardHofImg" alt="" aria-hidden="true"><span class="feature-index">04</span></div>
+        <div class="feature-visual"><img :src="cardHofImg" width="840" height="560" loading="lazy" decoding="async" alt="" aria-hidden="true"><span class="feature-index">04</span></div>
         <div class="feature-copy"><h2>{{ $t('hof.btn') }}</h2><p>{{ $t('home.hofDesc') }}</p><span class="feature-action">{{ $t('hof.btn') }} →</span></div>
       </a>
       <RouterLink class="feature-card" to="/sponsor">
-        <div class="feature-visual"><img :src="cardSponsorImg" alt="" aria-hidden="true"><span class="feature-index">05</span></div>
+        <div class="feature-visual"><img :src="cardSponsorImg" width="840" height="560" loading="lazy" decoding="async" alt="" aria-hidden="true"><span class="feature-index">05</span></div>
         <div class="feature-copy"><h2>{{ $t('home.sponsorTitle') }}</h2><p>{{ $t('home.sponsorDesc') }}</p><span class="feature-action">{{ $t('home.sponsorTag') }} →</span></div>
       </RouterLink>
     </section>
@@ -90,10 +90,10 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
 </template>
 
 <style scoped>
-/* Home hero backdrop comes from showcase-backgrounds*.css (hero-v4.png);
+/* Home hero backdrop comes from showcase-backgrounds*.css (hero-v4.webp);
    these styles only shape the hero content + feature card layout. */
 .homepage-showcase {
-  width: min(1680px, calc(100vw - 40px));
+  width: min(1680px, calc(100% - 40px));
   margin: 0 auto;
   padding: 20px 0 40px;
 }
@@ -255,7 +255,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
 .quick-panel a:hover { color: #f0a42b; text-decoration: none; }
 .quick-panel a span { margin-left: auto; }
 @media (max-width: 1199px) {
-  .homepage-showcase { width: calc(100vw - 28px); }
+  .homepage-showcase { width: calc(100% - 28px); }
   .showcase-hero { min-height: 400px; }
   .hero-copy { width: 62%; padding: 42px 34px; }
   .record-card { right: 18px; width: 220px; }
@@ -263,8 +263,9 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
   .home-bottom { grid-template-columns: 1fr; }
 }
 @media (width < 768px) {
-  .homepage-showcase { width: calc(100vw - 16px); padding-top: 8px; }
-  .showcase-hero { min-height: 540px; }
+  .homepage-showcase { width: calc(100% - 16px); padding-top: 8px; }
+  /* 审计 PG-01：手机上记录卡回到文档流（排在文案之后），不再绝对定位盖住按钮；英雄区高度随内容 */
+  .showcase-hero { display: flex; flex-direction: column; min-height: 0; }
   .showcase-hero:before { background: linear-gradient(180deg, rgba(4, 8, 12, .9) 0%, rgba(4, 8, 12, .7) 54%, rgba(4, 8, 12, .97) 100%); }
   .hero-copy { width: 100%; padding: 24px 20px; }
   .hero-logo { width: 48px; height: 48px; }
@@ -272,7 +273,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
   .hero-subtitle { font-size: .92rem; }
   .hero-actions { flex-direction: column; }
   .hero-btn { width: 100%; }
-  .record-card { left: 14px; right: 14px; top: auto; bottom: 14px; width: auto; transform: none; }
+  .record-card { position: relative; inset: auto; width: auto; margin: 0 14px 14px; transform: none; }
   .record-card > strong { font-size: 1.85rem; }
   .feature-grid { grid-template-columns: 1fr; }
   .feature-visual { height: 112px; }

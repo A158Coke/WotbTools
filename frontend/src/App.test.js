@@ -21,13 +21,13 @@ vi.mock('./components/ReplayWorkspace.vue', () => ({
     template: `<div :data-cap="initialCapability" data-test="view-replay"><button data-testid="ws-tab" @click="navigate('ai-review')">ai</button></div>`,
   },
 }))
-vi.mock('./components/HomePage.vue', () => ({ default: { template: '<div data-test="view-home" />' } }))
-vi.mock('./components/HoFPage.vue', () => ({ default: { template: '<div data-test="view-hof" />' } }))
-vi.mock('./components/AndroidDownloadPage.vue', () => ({ default: { template: '<div data-test="view-android" />' } }))
-vi.mock('./components/SponsorPage.vue', () => ({ default: { template: '<main data-test="view-sponsor" />' } }))
-vi.mock('./components/ProfilePage.vue', () => ({ default: { template: '<div data-test="view-profile" />' } }))
-vi.mock('./components/HistoryPage.vue', () => ({ default: { template: '<div data-test="view-history" />' } }))
-vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ default: { template: '<div data-test="view-technical-evolution" />' } }))
+vi.mock('./components/HomePage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-home" />' } }))
+vi.mock('./components/HoFPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-hof" />' } }))
+vi.mock('./components/AndroidDownloadPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-android" />' } }))
+vi.mock('./components/SponsorPage.vue', () => ({ __esModule: true, default: { template: '<main data-test="view-sponsor" />' } }))
+vi.mock('./components/ProfilePage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-profile" />' } }))
+vi.mock('./components/HistoryPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-history" />' } }))
+vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-technical-evolution" />' } }))
 // Agent 数据平面（admin-only）：详情/场景组件用轻量替身，断言可见性边界即可。
 // `__esModule: true` 必需——viewRegistry 经 defineAsyncComponent 动态 import，
 // Vue 靠它把命名空间的 `.default` 解包成组件（缺失时会把命名空间本身当组件，
@@ -98,6 +98,13 @@ vi.mock('./utils/api-user.js', () => ({
   ensureUserProfile: bootstrapApi.ensureUserProfile,
 }))
 
+/** 非落地页是异步组件（审计 PF-02）：等动态 import 完成后再断言。 */
+async function settle() {
+  await flushPromises()
+  await vi.dynamicImportSettled()
+  await flushPromises()
+}
+
 async function mountApp(path = '/') {
   const router = createAppRouter(createMemoryHistory())
   await router.push(path)
@@ -112,7 +119,7 @@ async function mountApp(path = '/') {
     },
   })
   mountedWrappers.push(wrapper)
-  await flushPromises()
+  await settle()
   return { wrapper, router }
 }
 
@@ -173,9 +180,9 @@ describe('App routing', () => {
       authState.isAdminRef.value = true
       const { wrapper } = await mountApp('/?view=agent-shots')
       // Agent 视图是 defineAsyncComponent：等异步组件解析完成再断言
-      await flushPromises()
+      await settle()
       await nextTick()
-      await flushPromises()
+      await settle()
       expect(wrapper.find('[data-test="view-agent-shots"]').exists()).toBe(true)
       expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
     })
@@ -242,7 +249,7 @@ describe('App routing', () => {
   it('supports back and forward navigation to the canonical Sponsor path', async () => {
     const { wrapper, router } = await mountApp('/?view=home')
     await router.push('/sponsor')
-    await flushPromises()
+    await settle()
     expect(wrapper.find('[data-test="view-sponsor"]').exists()).toBe(true)
     router.back()
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -256,7 +263,7 @@ describe('App routing', () => {
     setAuthState('authenticated', true)
     const { wrapper, router } = await mountApp('/?view=more')
     await wrapper.get('[data-testid="more-link-android"]').trigger('click')
-    await flushPromises()
+    await settle()
     expect(router.currentRoute.value.path).toBe('/download/android')
     expect(router.currentRoute.value.query.view).toBeUndefined()
     expect(wrapper.find('[data-test="view-android"]').exists()).toBe(true)
@@ -265,7 +272,7 @@ describe('App routing', () => {
   it('uses router history for capability navigation', async () => {
     const { wrapper, router } = await mountApp('/?view=replay')
     await wrapper.get('[data-testid="ws-tab"]').trigger('click')
-    await flushPromises()
+    await settle()
     expect(router.currentRoute.value.query.view).toBe('ai-review')
     expect(wrapper.find('[data-test="view-replay"]').attributes('data-cap')).toBe('ai')
   })
@@ -273,7 +280,7 @@ describe('App routing', () => {
   it('restores Replay capability with Back navigation', async () => {
     const { wrapper, router } = await mountApp('/?view=replay')
     await wrapper.get('[data-testid="ws-tab"]').trigger('click')
-    await flushPromises()
+    await settle()
     router.back()
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(router.currentRoute.value.query.view).toBe('replay')
@@ -313,7 +320,7 @@ describe('Business user bootstrap', () => {
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1, keycloakUserId: 'kc-1' })
 
     const { wrapper } = await mountApp('/?view=replay')
-    await flushPromises()
+    await settle()
 
     expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="business-bootstrap-notice"]').exists()).toBe(false)
@@ -339,7 +346,7 @@ describe('Business user bootstrap', () => {
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
 
     await mountApp('/?view=replay')
-    await flushPromises()
+    await settle()
 
     expect(bootstrapApi.ensureUserProfile).not.toHaveBeenCalled()
   })
@@ -349,7 +356,7 @@ describe('Business user bootstrap', () => {
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
 
     await mountApp('/?view=replay')
-    await flushPromises()
+    await settle()
 
     expect(bootstrapApi.ensureUserProfile).not.toHaveBeenCalled()
   })
@@ -360,12 +367,12 @@ describe('Business user bootstrap', () => {
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
 
     await mountApp('/?view=replay')
-    await flushPromises()
+    await settle()
     expect(bootstrapApi.ensureUserProfile).not.toHaveBeenCalled()
 
     setAuthState('authenticated', true, Promise.resolve(true))
     await nextTick()
-    await flushPromises()
+    await settle()
 
     expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
   })
@@ -375,14 +382,14 @@ describe('Business user bootstrap', () => {
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
 
     await mountApp('/?view=replay')
-    await flushPromises()
+    await settle()
     expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
 
     setAuthState('initializing', false, Promise.resolve(false))
     await nextTick()
     setAuthState('authenticated', true, Promise.resolve(true))
     await nextTick()
-    await flushPromises()
+    await settle()
 
     expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
   })
@@ -392,7 +399,7 @@ describe('Business user bootstrap', () => {
     bootstrapApi.ensureUserProfile.mockRejectedValueOnce(new Error('502'))
 
     const { wrapper } = await mountApp('/?view=replay')
-    await flushPromises()
+    await settle()
 
     const notice = wrapper.find('[data-testid="business-bootstrap-notice"]')
     expect(notice.exists()).toBe(true)
@@ -405,13 +412,13 @@ describe('Business user bootstrap', () => {
     // 第一次 bootstrap：transient 5xx。
     bootstrapApi.ensureUserProfile.mockRejectedValueOnce(new Error('502'))
     const first = await mountApp('/?view=replay')
-    await flushPromises()
+    await settle()
     expect(first.wrapper.find('[data-testid="business-bootstrap-notice"]').exists()).toBe(true)
 
     // 用户刷新 / 重新挂载：同一个 rejected Promise 绝不能锁死后续 ensure。
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
     const second = await mountApp('/?view=replay')
-    await flushPromises()
+    await settle()
 
     expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(2)
     expect(second.wrapper.find('[data-testid="business-bootstrap-notice"]').exists()).toBe(false)
@@ -421,11 +428,11 @@ describe('Business user bootstrap', () => {
     setAuthState('authenticated', true)
     bootstrapApi.ensureUserProfile.mockRejectedValueOnce(new Error('502'))
     const { wrapper } = await mountApp('/?view=replay')
-    await flushPromises()
+    await settle()
 
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
     await wrapper.get('.business-bootstrap-retry').trigger('click')
-    await flushPromises()
+    await settle()
 
     expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(2)
     expect(wrapper.find('[data-testid="business-bootstrap-notice"]').exists()).toBe(false)
@@ -463,7 +470,7 @@ describe('App shell navigation, 更多 and account', () => {
   it('navigates between primary sections through router links', async () => {
     const { wrapper, router } = await mountApp('/?view=replay')
     await wrapper.get('[data-testid="nav-hof"]').trigger('click')
-    await flushPromises()
+    await settle()
     expect(router.currentRoute.value.query.view).toBe('hof')
     expect(wrapper.find('[data-test="view-hof"]').exists()).toBe(true)
   })
@@ -481,7 +488,7 @@ describe('App shell navigation, 更多 and account', () => {
   it('opens the account page from the account entry', async () => {
     const { wrapper, router } = await mountApp('/?view=replay')
     await wrapper.get('[data-testid="nav-account"]').trigger('click')
-    await flushPromises()
+    await settle()
     expect(router.currentRoute.value.query.view).toBe('profile')
   })
 
@@ -504,7 +511,7 @@ describe('App shell navigation, 更多 and account', () => {
   it('opens the project history view from 更多', async () => {
     const { wrapper, router } = await mountApp('/?view=more')
     await wrapper.get('[data-testid="more-link-history"]').trigger('click')
-    await flushPromises()
+    await settle()
     expect(router.currentRoute.value.query.view).toBe('history')
     expect(wrapper.find('[data-test="view-history"]').exists()).toBe(true)
   })

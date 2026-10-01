@@ -36,6 +36,9 @@ anti-future-leak 或现有 tank-marker 资产契约。
   `FULL_RELATIVE`、`EXACT`、`PARTIAL`、`UNKNOWN` 语义保持不变。
 - 地图是 workspace 的主视觉。Desktop / Tablet 的 controls 为紧凑流式布局，Mobile
   初始只保留地图和 HUD；轻触地图显示播放 controls，控制事件不会穿透到地图。
+- 形态判定（`shared/breakpoints` 的 `PLAYBACK_MOBILE_QUERY`）：Mobile = 宽 `<768px` 或触屏且高 `≤500px`（手机横屏）；`768–1199px` 一律 Tablet、`≥1200px` 一律 PC。布局只看可用空间，触屏只放大控件点击区域（44px），iPad / Android 平板拿 Tablet 形态。
+- 不抢页面：滚轮只在全屏、按住 Ctrl/⌘ 或刚在地图上按下后才缩放，否则交给页面滚动并短暂提示；地图未放大、非全屏、未标注时 `touch-action: pan-y`，单指纵向滑动滚动页面；`active=false`（隐藏的模式 / KeepAlive 停用）时暂停并不响应空格 / 方向键。地图高度扣掉固定顶栏，手机横屏按可用高度封顶。
+- PC / 宽平板（≥860）的右侧栏未选车时显示两队阵容，点玩家打开车辆详情；控制条在底部时，☰ 侧栏不再重复标注 / 重置视图 / 全屏。
 - Display、Events、Vehicle 与 Battle 内容通过侧面板按需显示；Events 只呈现
   `DAMAGE`、`KILL`、`DESTROYED`，点击事件执行 seek + pause，纯时间轴不承载事件标记。
 - 标注工具默认折叠，绘图不暂停 battle clock。Fullscreen 继续保持同一组件实例的

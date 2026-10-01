@@ -4,7 +4,7 @@
 
 /* HoF admin: the table wrapper is the only scrolling/sticky coordinate system. */
 .hof-admin {
-  width: min(1760px, calc(100vw - 48px)) !important;
+  width: min(1760px, calc(100% - 48px)) !important;
   max-width: 1760px !important;
 }
 .hof-admin .tablewrap {

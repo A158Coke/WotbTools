@@ -288,3 +288,35 @@
       margin-top: 8px;
     }
 }
+
+/* 审计 PB-01：手机横屏非全屏 —— 三栏：工具栏在左、地图居中、阵容在右，用满左右的空白。
+   地图原来按容器宽度定尺寸（844 宽时约 844 高），比视口还高，控制栏被挤出首屏；
+   现在按可用高度封顶（只扣顶栏、底部 Tab 栏与 HUD），工具栏不再占地图下方的高度。 */
+.battle-playback.pb-form-mobile .pb-landscape-roster { display: none; }
+@media (orientation: landscape) and (height <= 500px) {
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) auto minmax(160px, 1fr);
+    align-items: start;
+    gap: 8px;
+  }
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-map-stage { grid-column: 2; grid-row: 1; }
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-mobile-overlay { grid-column: 1; grid-row: 1; min-width: 0; }
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-landscape-roster {
+    grid-column: 3;
+    grid-row: 1;
+    display: grid;
+    max-height: calc(100dvh - var(--header-h) - var(--tabbar-h) - 80px);
+    padding: 0;
+  }
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main .pb-map {
+    width: calc((100dvh - var(--header-h) - var(--tabbar-h) - 80px) * var(--pb-map-ratio, 1));
+    max-width: none;
+    margin-inline: 0;
+  }
+  /* 窄侧栏里的工具栏：按钮自然换行成网格，时间与进度条各占一行 */
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-mobile-overlay .pb-controls {
+    justify-content: flex-start;
+  }
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-mobile-overlay .pb-time { flex-basis: 100%; }
+}

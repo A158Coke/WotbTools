@@ -20,6 +20,13 @@ const { t } = useI18n()
 const store = createPlaybackStore()
 const stage = ref(null)
 const seekEl = ref(null)
+/** 审计 3D-15：手机上两队名单默认收起（原来两块 240px 面板互相重叠、盖住场景），按需打开 */
+const rosterOpen = ref(false)
+/** 审计 3D-22：时间与 2D 回放统一为 mm:ss */
+function clock(sec) {
+  const total = Math.max(0, Math.floor(Number(sec) || 0))
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
 let sceneApi = null
 
 // 画质徽标按 qualityKey 三语计算（store.qualityLabel 为上游兼容中文字段）
@@ -81,7 +88,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="pb-root">
+  <div class="pb-root" :class="{ 'roster-open': rosterOpen }">
     <div class="scene" ref="stage"></div>
 
     <div v-if="store.hasData" class="topbar panel">
@@ -140,9 +147,10 @@ onBeforeUnmount(() => {
           @pointerdown="store.seeking = true" @pointerup="store.seeking = false"
           @blur="store.seeking = false" @input="onSeekInput"
         >
-        <span class="time">{{ store.time.toFixed(1) }}s / {{ store.duration.toFixed(1) }}s</span>
+        <span class="time">{{ clock(store.time) }} / {{ clock(store.duration) }}</span>
       </div>
       <div class="row">
+        <button type="button" class="roster-toggle" :class="{ on: rosterOpen }" :aria-pressed="rosterOpen" data-testid="roster-toggle" @click="rosterOpen = !rosterOpen">{{ t('agentReplay.roster') }}</button>
         <span class="dim">{{ t('agentReplay.camera') }}</span>
         <button
           v-for="c in CAMS" :key="c.k"
@@ -189,7 +197,7 @@ onBeforeUnmount(() => {
    深色值逐字保留（showcase 零变化），classic 档在同名 token 上覆盖为浅色。
    3D 场景本体（three.js 画的战场）不随主题变化，只有 HUD 面板跟随。 */
 .pb-root {
-  position: relative; flex: 1; min-width: 0; min-height: calc(100vh - 67px); overflow: hidden;
+  position: relative; flex: 1; min-width: 0; min-height: calc(100dvh - var(--header-h) - var(--tabbar-h)); overflow: hidden;
   --panel: rgba(16, 20, 26, .82); --line: #2c3542; --fg: #d8dee7; --dim: #8a94a3;
   --ally: #3fa66a; --enemy: #c05046; --accent: #e8b23c;
   /* 此前绕过 token 直接写死的颜色——收进 token 才能被浅色档统一覆盖 */
@@ -269,4 +277,19 @@ html[data-ui-profile="classic"] .pb-root {
 .pick { cursor: pointer; border: 1px solid var(--line); padding: 6px 14px; border-radius: 6px; }
 .pick input[type='file'] { display: none; }
 .loader button { min-width: 44px; }
+.roster-toggle { display: none; }
+@media (pointer: coarse) {
+  .pb-root button { min-height: 44px; }
+}
+/* 审计 3D-15：手机上名单收进「阵容」开关，打开时两队并排各占一半宽度，场景仍可见 */
+@media (width < 768px) {
+  .roster-toggle { display: inline-flex; }
+  .team { display: none; top: 52px; width: calc(50% - 12px); max-height: 42%; }
+  .team1 { left: 8px; }
+  .team2 { right: 8px; }
+  .pb-root.roster-open .team { display: block; }
+  .pl .tank, .pl .hpbar { display: none; }
+  .topbar { top: 6px; padding: 4px 12px; gap: 10px; }
+  .controls { bottom: 6px; width: calc(100% - 12px); padding: 6px 8px; }
+}
 </style>

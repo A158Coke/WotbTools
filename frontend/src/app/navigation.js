@@ -99,13 +99,27 @@ export function viewFromRoute(route, { allowAdminViews = false } = {}) {
   return view
 }
 
+/** 名人堂写进 URL 的筛选键（utils/hofQuery.js）：只属于 hof，导航到别的页面时丢掉。 */
+const HOF_QUERY_KEYS = ['tab', 'page', 'tank', 'nation', 'type', 'tier', 'bt', 'nick', 'limit']
+
 /** Keep legacy query URLs as the public URL contract while Vue Router owns history. */
 export function locationForView(view, route) {
   const query = { ...route.query }
+  // 进出名人堂都丢掉这些键：既不把筛选带到别的页面，也不把别处同名参数（如坦克百科的 tank）当成名人堂筛选
+  if ((route.query?.view === 'hof') !== (view === 'hof')) {
+    for (const key of HOF_QUERY_KEYS) delete query[key]
+  }
   if (view === 'home' || view === 'android' || view === 'sponsor') delete query.view
   else query.view = view
   return {
     path: view === 'android' ? ANDROID_PATH : view === 'sponsor' ? SPONSOR_PATH : '/',
     query,
   }
+}
+
+/** 当前页面所属一级区块的标题 key（顶栏紧凑标题与 document.title 共用）；不属于任何区块时为 null。 */
+export function sectionTitleKey(view) {
+  const section = primarySection(view)
+  const item = primaryNavItems().find(entry => entry.id === section)
+  return item?.labelKey ?? (section === 'account' ? 'nav.account' : null)
 }

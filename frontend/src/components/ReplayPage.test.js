@@ -23,13 +23,19 @@ const h2c = vi.hoisted(() => {
     call: (...args) => { calls.push(args); if (!impl) throw new Error('html2canvas not initialized'); return impl(...args) },
   }
 describe('ReplayPage export job flow', () => {
+  // 导出统一收进「导出 ▾」菜单（design-language §7 Menu）：菜单项只在打开后渲染。
+  async function openExportMenu(wrapper) {
+    await wrapper.get('[data-testid="export-menu"]').trigger('click')
+    await flushPromises()
+  }
   function exportButtons(wrapper) {
-    return wrapper.findAll('button').filter(b => b.text().includes('action.export_aggregate') || b.text().includes('action.export_each'))
+    return ['export-aggregate', 'export-each'].map(id => wrapper.get(`[data-testid="${id}"]`))
   }
 
   it('export aggregate button calls startExportJob with aggregate', async () => {
     state.init.resp = makeResp()
     const wrapper = mountPage()
+    await openExportMenu(wrapper)
     await exportButtons(wrapper)[0].trigger('click')
     // 无覆盖时 teamNamesPayload() = null（名称必须经 payload 传递）
     expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', null)
@@ -38,6 +44,7 @@ describe('ReplayPage export job flow', () => {
   it('export each button calls startExportJob with each', async () => {
     state.init.resp = makeResp()
     const wrapper = mountPage()
+    await openExportMenu(wrapper)
     await exportButtons(wrapper)[1].trigger('click')
     expect(state.replay.startExportJob).toHaveBeenCalledWith('each', null)
   })
@@ -56,6 +63,7 @@ describe('ReplayPage export job flow', () => {
     const wrapper = mountPage()
     jobState.setActive(true)
     await flushPromises()
+    await openExportMenu(wrapper)
     for (const btn of exportButtons(wrapper)) {
       expect(btn.attributes('disabled')).toBeDefined()
     }
@@ -66,6 +74,7 @@ describe('ReplayPage export job flow', () => {
     const wrapper = mountPage()
     jobState.setActive(true)
     await flushPromises()
+    await openExportMenu(wrapper)
     await exportButtons(wrapper)[0].trigger('click')
     expect(state.replay.startExportJob).not.toHaveBeenCalled()
   })
@@ -265,7 +274,7 @@ vi.mock('../composables/useColumns.js', async () => {
         playerOrder: ref([]), aggOrder: ref([]),
         cwVisibleKeys: ref([...cwKeys]),
         cwOrder: ref([...cwOrder]),
-        showColPicker: ref(false), pickerScope: ref('player'),
+        showColPicker: ref(false), pickerScope: ref('player'), colScope: computed(() => 'player'),
         currentOrder: computed(() => []),
         // 测试 seam：当前视图列（PNG 所见即所得断言用）
         shownCols: computed(() => window.__testShownCols || []),
@@ -350,8 +359,24 @@ function panelDisplay(wrapper, testId) {
   return el.exists() ? el.element.style.display : null
 }
 
+/**
+ * PNG 导出入口在「导出 ▾」菜单里。返回一个与按钮包装器同形的句柄：
+ * attributes / text 读菜单触发按钮（loading / 导出中时整个菜单禁用），trigger 打开菜单再点 PNG 项。
+ */
 function pngButton(wrapper) {
-  return wrapper.findAll('button').find(b => b.text().includes('action.download_png'))
+  const menuTrigger = wrapper.find('[data-testid="export-menu"]')
+  if (!menuTrigger.exists()) return undefined
+  return {
+    exists: () => true,
+    attributes: name => menuTrigger.attributes(name),
+    text: () => menuTrigger.text(),
+    async trigger(event = 'click') {
+      if (menuTrigger.attributes('disabled') !== undefined) return
+      await menuTrigger.trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="export-png"]').trigger(event)
+    },
+  }
 }
 
 function setScrollProps(el, w, h) {
@@ -652,7 +677,7 @@ describe('ReplayPage PNG export', () => {
 
   describe('reactive state control (real refs)', () => {
     function activeTabButton(wrapper) {
-      return wrapper.findAll('.restoolbar .dataview-toggle button').find(b => b.classes().includes('active'))
+      return wrapper.findAll('[data-testid="data-view"] [role="radio"]').find(b => b.attributes('aria-checked') === 'true')
     }
 
     it('setActiveTab changes activeTab ref before mount', () => {
@@ -685,7 +710,7 @@ describe('ReplayPage PNG export', () => {
 
   describe('async export context immutability (real ref changes)', () => {
     function activeTabButton(wrapper) {
-      return wrapper.findAll('.restoolbar .dataview-toggle button').find(b => b.classes().includes('active'))
+      return wrapper.findAll('[data-testid="data-view"] [role="radio"]').find(b => b.attributes('aria-checked') === 'true')
     }
 
     function captureAnchors() {
@@ -1783,11 +1808,11 @@ describe('ReplayPage League Rating', () => {
     await flushPromises()
     // 默认：汇总可见，详情（文件名/错误码）折叠——不得默认铺满红色解析失败
     expect(wrapper.find('[data-testid="league-failure-summary"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).not.toContain('error')
-    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).toContain('warn')
+    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).not.toContain('is-danger')
+    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).toContain('is-warning')
     expect(wrapper.text()).toContain('league.rated_count')
     expect(wrapper.find('[data-testid="league-failure-detail"]').exists()).toBe(false)
-    expect(wrapper.find('.error').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
     // 展开详情 → 分组错误码 + 展开分组 → 具体文件与 arenaId
     await wrapper.find('[data-testid="league-failure-toggle"]').trigger('click')
     expect(wrapper.find('[data-testid="league-failure-detail"]').exists()).toBe(true)
@@ -1822,7 +1847,7 @@ describe('ReplayPage League Rating', () => {
     expect(wrapper.text()).not.toContain('LEAGUE_MISSING_DEATH_TIME')
     expect(wrapper.find('[data-testid="league-failure-toggle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="league-failure-detail"]').exists()).toBe(false)
-    expect(wrapper.find('.error').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
   })
 
   it('shows aggregate tab in league mode (resp.leagueMode is the page source of truth)', async () => {
@@ -1841,7 +1866,7 @@ describe('ReplayPage League Rating', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    const tabs = wrapper.findAll('button')
+    const tabs = wrapper.findAll('[data-testid="data-view"] [role="radio"]')
     expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
   })
 
@@ -1869,7 +1894,9 @@ describe('ReplayPage League Rating', () => {
     await flushPromises()
     wrapper.vm.battleTeamNames['111:1'] = 'CHRD'
     wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
-    const exportBtn = wrapper.findAll('button').find(b => b.text().includes('action.export_aggregate'))
+    await wrapper.get('[data-testid="export-menu"]').trigger('click')
+    await flushPromises()
+    const exportBtn = wrapper.get('[data-testid="export-aggregate"]')
     await exportBtn.trigger('click')
     expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', {
       battle: { '111:1': 'CHRD' },
@@ -1935,9 +1962,9 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     state.init.activeTab = 'b0'
     const wrapper = mountPage()
     await flushPromises()
-    // 无 aggregate 且非 league → 汇总视图不渲染（无可展示内容），只保留单场视图。
+    // 无 aggregate 且非 league → 汇总视图不渲染（无可展示内容），只有单场视图，因此不显示视图切换。
     expect(wrapper.find('[data-testid="data-view-summary"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="data-view-single"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="data-view"]').exists()).toBe(false)
     expect(wrapper.findAll('button').some(b => b.text().includes('Lagoon #1'))).toBe(false)
     expect(wrapper.findAll('button').some(b => b.text().includes('Frozen #2'))).toBe(false)
     // 至少一个 BattleTable panel 可见（结果区不为空）
@@ -1967,7 +1994,7 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
     await flushPromises()
-    const tabs = wrapper.findAll('button')
+    const tabs = wrapper.findAll('[data-testid="data-view"] [role="radio"]')
     expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
     // CW 模式：玩家信息只走统一玩家表，不再渲染两张平级玩家表
     expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
@@ -2033,7 +2060,7 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     expect(wrapper.find('[data-testid="league-summary-empty"]').classes()).not.toContain('error')
     expect(wrapper.find('.league-summary').exists()).toBe(false)
     // 汇总 tab 人数来自 resp.aggregate（2），不是 league.playerSummaries（0）
-    const tabs = wrapper.findAll('button')
+    const tabs = wrapper.findAll('[data-testid="data-view"] [role="radio"]')
     const aggTab = tabs.find(b => b.text().includes('result.aggregate_tab'))
     expect(aggTab.text()).toContain('result.aggregate_tab:2')
     wrapper.unmount()
@@ -2481,13 +2508,13 @@ describe('ReplayPage League failure UX separation', () => {
     expect(card.exists()).toBe(true)
     expect(card.text()).toContain('replay.processing_job.valid_summary:30,5,0')
     // 不得出现红色解析失败块（result.failures 只用于真正 parser failure）
-    expect(wrapper.find('.error').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('result.failures')
     // League failure 汇总存在且为 warning 语义
     const summary = wrapper.find('[data-testid="league-failure-summary"]')
     expect(summary.exists()).toBe(true)
-    expect(summary.classes()).toContain('warn')
-    expect(summary.classes()).not.toContain('error')
+    expect(summary.classes()).toContain('is-warning')
+    expect(summary.classes()).not.toContain('is-danger')
     wrapper.unmount()
   })
 
@@ -2523,9 +2550,9 @@ describe('ReplayPage League failure UX separation', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).toContain('warn')
-    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).not.toContain('error')
-    expect(wrapper.find('.error').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).toContain('is-warning')
+    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).not.toContain('is-danger')
+    expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -2564,7 +2591,7 @@ describe('ReplayPage League failure UX separation', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    const errBlock = wrapper.find('.error')
+    const errBlock = wrapper.find('[data-testid="result-failures"]')
     expect(errBlock.exists()).toBe(true)
     expect(errBlock.text()).toContain('result.failures:1')
     expect(errBlock.text()).toContain('broken.wotbreplay')
@@ -2580,10 +2607,10 @@ describe('ReplayPage League failure UX separation', () => {
     await flushPromises()
     const notice = wrapper.find('[data-testid="league-unavailable"]')
     expect(notice.exists()).toBe(true)
-    expect(notice.classes()).toContain('warn')
+    expect(notice.classes()).toContain('is-warning')
     expect(wrapper.text()).toContain('league.unavailable_mixed')
     expect(wrapper.findAll('.battle-table-stub').length).toBe(2)
-    expect(wrapper.find('.error').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

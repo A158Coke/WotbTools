@@ -442,3 +442,38 @@ describe('BattleTable selected row highlight', () => {
     expect(selectedRows(wrapper).length).toBe(0)
   })
 })
+
+describe('BattleTable 卡片模式（手机）', () => {
+  it('卡片：昵称为标题、总 Rating 在头部、其余可见列进指标区；表格保留在 DOM 里但隐藏', () => {
+    const wrapper = mountLeague(makeLeagueBattle(), undefined, undefined, { layout: 'cards' })
+    const cards = wrapper.findAll('[data-testid="player-card"]')
+    expect(cards).toHaveLength(2)
+    expect(cards[0].find('.card-title').text()).toBe('A')
+    expect(cards[0].find('.card-primary').text()).toContain('player_labels.league_rating')
+    expect(cards[0].find('.card-primary').text()).toContain('league.mvp')
+    const metricKeys = cards[0].findAll('.card-metric dt').map(dt => dt.text())
+    expect(metricKeys).toEqual(['player_labels.league_damage_score', 'player_labels.damage_dealt'])
+    expect(wrapper.find('.tablewrap').element.style.display).toBe('none')
+  })
+
+  it('排序控件与表格共用排序状态；点击卡片打开玩家详情（同表格行）', async () => {
+    const wrapper = mountLeague(makeLeagueBattle(), undefined, undefined, { layout: 'cards' })
+    const select = wrapper.get('[data-testid="player-cards-sort"]')
+    await select.setValue('damage_dealt')
+    await wrapper.get('[data-testid="player-cards-sort-dir"]').trigger('click')
+    const titles = wrapper.findAll('.card-title').map(n => n.text())
+    const tableOrder = wrapper.findAll('tbody tr').map(r => r.findAll('td')[0].text())
+    expect(titles).toEqual(tableOrder)
+
+    await wrapper.findAll('[data-testid="player-card"]').find(c => c.text().includes('B')).trigger('click')
+    expect(wrapper.emitted('select-player')[0][0]).toMatchObject({ scope: 'battle', accountId: 2001 })
+  })
+
+  it('普通（非 League）批次卡片不可点击', () => {
+    const wrapper = mount(BattleTable, {
+      props: { battle: makeBattle([{ team: 1, accountId: 1, cells: { nickname: 'A', damage_dealt: 1 } }]), shownCols: makeCols(), layout: 'cards' },
+      global: { mocks: { $t: key => key } },
+    })
+    expect(wrapper.get('[data-testid="player-card"]').element.tagName).toBe('DIV')
+  })
+})

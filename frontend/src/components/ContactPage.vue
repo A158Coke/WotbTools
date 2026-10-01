@@ -1,10 +1,12 @@
 <script setup>
 import { ref } from 'vue'
+import { Check, Copy, Gamepad2, MessageCircle, MessageSquareText } from 'lucide-vue-next'
 
+// design-language §8：不用 emoji 当图标。Lucide 不收录品牌 logo，用语义相近的通用图标，平台名写在卡片标题里
 const contacts = [
-  { key: 'qq', icon: '🐧', value: '1582536892' },
-  { key: 'wechat', icon: '💬', value: 'a1582536892' },
-  { key: 'discord', icon: '🎮', value: 'a158coke' },
+  { key: 'qq', icon: MessageCircle, value: '1582536892' },
+  { key: 'wechat', icon: MessageSquareText, value: 'a1582536892' },
+  { key: 'discord', icon: Gamepad2, value: 'a158coke' },
 ]
 const copiedKey = ref(null)
 
@@ -49,10 +51,11 @@ async function copyText(text) {
 
     <div class="contact-grid">
       <div v-for="c in contacts" :key="c.key" class="contact-card">
-        <span class="contact-icon" aria-hidden="true">{{ c.icon }}</span>
+        <component :is="c.icon" class="contact-icon" :size="28" aria-hidden="true" />
         <h2>{{ $t(`contact.${c.key}`) }}</h2>
         <p class="contact-value">{{ c.value }}</p>
         <button class="copy-btn" @click="copyContact(c)">
+          <component :is="copiedKey === c.key ? Check : Copy" :size="16" aria-hidden="true" />
           {{ copiedKey === c.key ? $t('contact.copied') : $t('contact.copy') }}
         </button>
       </div>
@@ -78,7 +81,7 @@ async function copyText(text) {
   border-radius: 8px;
 }
 .contact-card:hover { border-color: var(--accent); }
-.contact-icon { font-size: 1.7rem; line-height: 1; }
+.contact-icon { color: var(--color-accent-text); }
 .contact-card h2 { font-size: 1rem; color: var(--showcase-tactical-heading); margin: 0; }
 .contact-value {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -92,6 +95,10 @@ async function copyText(text) {
   word-break: break-all;
 }
 .copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--control-h-sm);
   margin-top: 4px;
   border: 1px solid rgba(80, 92, 100, .55);
   background: rgba(20, 26, 30, .9);

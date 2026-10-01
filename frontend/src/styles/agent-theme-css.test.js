@@ -97,7 +97,7 @@ function declarationsIn(rawSource, fragment) {
   return out
 }
 
-/** 简单规则切分（本仓这些样式块无 @media 嵌套；有嵌套时会在测试里显式失败） */
+/** 规则切分：正则只匹配最内层声明块，@media 内的规则同样被取出（选择器取块前最后一行） */
 function rulesIn(css) {
   return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
     selector: m[1].trim().split('\n').map((s) => s.trim()).filter(Boolean).pop() ?? '',
@@ -106,10 +106,13 @@ function rulesIn(css) {
 }
 
 describe('Agent 视觉面配色契约', () => {
+  // 含设计语言 token 目录（styles/tokens/*.css：--header-h / --tabbar-h / --color-* 等）
+  const cssFiles = [
+    ...readdirSync(stylesDir).filter((f) => f.endsWith('.css')),
+    ...readdirSync(stylesDir + 'tokens/').filter((f) => f.endsWith('.css')).map((f) => 'tokens/' + f),
+  ]
   const repoDefined = new Set(
-    readdirSync(stylesDir)
-      .filter((f) => f.endsWith('.css'))
-      .flatMap((f) => [...readFileSync(stylesDir + f, 'utf8').matchAll(DECLARATION)].map((m) => m[1])),
+    cssFiles.flatMap((f) => [...readFileSync(stylesDir + f, 'utf8').matchAll(DECLARATION)].map((m) => m[1])),
   )
 
   it('样式源里确实解析到了 token（防契约测试自身空跑）', () => {
@@ -167,7 +170,6 @@ describe('Agent 视觉面配色契约', () => {
       it(`${label} 的规则只经 token 取色`, () => {
         const css = styleBlockOf(read(file))
         expect(css, `${label} 未解析到样式块`).not.toBe('')
-        expect(css.includes('@media'), `${label} 样式块出现 @media 嵌套，需扩展本测试的规则切分`).toBe(false)
 
         const allowed = BARE_COLOR_SELECTOR_ALLOWLIST[label] ?? []
         const offenders = []

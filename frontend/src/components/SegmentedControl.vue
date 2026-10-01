@@ -2,7 +2,7 @@
 // 同一内容的呈现方式切换（design-language §7）：单选组，方向键在选项间移动并选中。
 const props = defineProps({
   modelValue: { type: String, required: true },
-  options: { type: Array, required: true }, // [{ value, label }]
+  options: { type: Array, required: true }, // [{ value, label, testid? }]
   ariaLabel: { type: String, required: true },
 })
 const emit = defineEmits(['update:modelValue'])
@@ -34,6 +34,7 @@ function onKeydown(event) {
       :aria-checked="option.value === modelValue"
       :tabindex="option.value === modelValue ? 0 : -1"
       :data-value="option.value"
+      :data-testid="option.testid"
       @click="select(option.value)"
     >{{ option.label }}</button>
   </div>

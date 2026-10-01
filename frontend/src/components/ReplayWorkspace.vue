@@ -1,26 +1,28 @@
 <script setup>
-import { computed, inject, nextTick, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CircleAlert, LogIn, Sparkles } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
-import { displayName } from '../utils/helpers.js'
+import { mapLabel } from '../utils/helpers.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useError } from '../composables/useError.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import ReplayPage from './ReplayPage.vue'
-import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 import FileUploader from './FileUploader.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
 import AppButton from './AppButton.vue'
+// 审计 PF-02：2D 回放（含约 2.5MB 的地图语义数据）只在进入 2D 回放模式时加载，不进主包。
+const BattlePlaybackPanel = defineAsyncComponent(() => import('./BattlePlaybackPanel.vue'))
 import Banner from './Banner.vue'
 import EmptyState from './EmptyState.vue'
 import PageHeader from './PageHeader.vue'
-import ReplaySourcePanel from './ReplaySourcePanel.vue'
+import BattlePicker from './BattlePicker.vue'
+import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
 
 defineOptions({ name: 'ReplayWorkspace' })
 
@@ -30,7 +32,7 @@ const props = defineProps({
 })
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { authInitState, authenticated, login, loginInFlight, retryAuth, isAdmin } = useAuth()
 /** 项目统一错误 UI（AppShell 的 GlobalErrorDialog）——不新造 toast/error system。 */
 const { show: showGlobalError } = useError()
@@ -90,33 +92,22 @@ const capabilityOptions = computed(() => [
 ])
 
 const activeCapability = workspace.activeWorkspaceTab
-
-/** 当前选中单场显示名（header「当前回放：xxx #N」。Blocker #4）。 */
-const currentBattleName = computed(() => {
-  const f = workspace.currentTargetFile.value
-  return f ? displayName(f) : ''
-})
+/** 2D 回放面板首次进入时才挂载（之后保留状态，切走只是隐藏），它的代码块因此不随工作台加载。 */
+const playbackMounted = ref(activeCapability.value === 'playback')
+watch(activeCapability, (cap) => { if (cap === 'playback') playbackMounted.value = true })
 
 /** 模板直接消费的 workspace 权威 ref（顶层绑定，模板自动解包 ref）。 */
 const currentBattleId = workspace.currentBattleId
-const currentBattleIndex = workspace.currentBattleIndex
-const parsedBattles = workspace.parsedBattles
+
+/**
+ * 2D 回放的场次选择器：只列解析成功的场次（failed / duplicate 不入列），
+ * 选项文案与数据模式一致（第 N 场 · 地图 · 胜方 · 时间）。数据模式的选择器在 ReplayPage 工具栏里。
+ */
+const playbackBattleOptions = computed(() =>
+  battlePickerOptions(buildSeriesOverview(resp.value), { t, locale: locale.value, mapLabel }))
 function onBattleSelect(sourceId) {
   workspace.selectBattle(sourceId)
 }
-
-/**
- * 有效 battle 选项（selector 只列 parsed battles——failed / duplicate 的 source 不入列；
- * label 由 sourceId 'r<N>' -> files[N] 映射，与 source identity 严格对齐）。
- */
-const battleOptions = computed(() => {
-  const fileArr = workspace.replay.files.value
-  return parsedBattles.value.map(b => {
-    const m = /^r(\d+)$/.exec(b?.sourceId || '')
-    const f = m ? fileArr[parseInt(m[1], 10)] : null
-    return { sourceId: b?.sourceId ?? '', label: f ? displayName(f) : (b?.sourceId || '') }
-  })
-})
 
 const playbackReplay = useCapabilityReplay(workspace.replay)
 
@@ -289,15 +280,6 @@ watch(() => props.initialCapability, (val) => {
 
     <template v-else>
       <div class="workspace-source">
-        <ReplaySourcePanel
-          :files="files"
-          :current-battle-index="currentBattleIndex"
-          :current-battle-name="currentBattleName"
-          :current-battle-id="currentBattleId"
-          :battle-options="battleOptions"
-          @select-battle="onBattleSelect"
-        />
-
         <FileUploader
           :files="files"
           :loading="loading"
@@ -333,7 +315,17 @@ watch(() => props.initialCapability, (val) => {
           :workspace-context="workspace"
         />
         <div v-show="activeCapability === 'playback'" class="capability-pane" data-testid="ws-playback">
+          <BattlePicker
+            v-if="playbackBattleOptions.length > 1"
+            class="playback-picker"
+            :options="playbackBattleOptions"
+            :model-value="currentBattleId"
+            :aria-label="$t('workspace.battle_picker')"
+            data-testid="playback-battle-picker"
+            @update:model-value="onBattleSelect"
+          />
           <BattlePlaybackPanel
+            v-if="playbackMounted"
             :file="playbackReplay.targetFile.value"
             :processing-job-id="playbackReplay.datasetRef.value?.processingJobId ?? null"
             :source-id="playbackReplay.datasetRef.value?.sourceId ?? null"
@@ -356,4 +348,5 @@ watch(() => props.initialCapability, (val) => {
 .workspace-source { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
 .workspace-status { margin: 0; padding: var(--space-12) var(--space-4); color: var(--color-text-secondary); font: var(--type-body); text-align: center; }
 .capability-pane { margin-top: var(--space-1); }
+.playback-picker { margin-bottom: var(--space-3); }
 </style>
