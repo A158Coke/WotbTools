@@ -83,7 +83,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-<div class="armor-view" :class="{ 'is-unsupported': !webgl.supported }">
+<div class="armor-view" :class="{ 'is-unsupported': !webgl.supported, 'has-back': canGoBack }">
     <button v-if="canGoBack" type="button" class="armor-back" data-testid="armor-back" @click="router.back()"><ArrowLeft :size="16" aria-hidden="true" /> {{ $t('armor.back') }}</button>
     <Scene3DStatus v-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
     <!-- 3D 装甲检视器 DOM：自上游 ArmorView.vue 原样平移（JS 按 ID 查找） -->
@@ -215,6 +215,8 @@ onBeforeUnmount(() => {
             position: absolute; top: 20px; left: 20px;
             display: flex; gap: 20px; align-items: flex-start;
         }
+    /* 返回键占用左上角时给信息面板留出一行，避免互相遮挡。 */
+    .armor-view.has-back #corner-tl { top: 64px; }
     .armor-view #info-panel {
             background: var(--panel); padding: 20px; border-radius: var(--radius);
             max-width: 350px; backdrop-filter: blur(12px);
@@ -335,7 +337,8 @@ onBeforeUnmount(() => {
     /* 审计 3D-09：返回入口（从射击分析 / 坦克百科打开时） */
     .armor-view .armor-back {
             /* 高于 Scene3DStatus 的错误遮罩（--z-sticky），加载失败时仍能返回 */
-            position: absolute; z-index: calc(var(--z-sticky) + 1); top: 12px; left: 50%; transform: translateX(-50%);
+            position: absolute; z-index: calc(var(--z-sticky) + 1); top: 20px; left: 20px;
+            display: inline-flex; align-items: center; gap: 6px;
             min-height: 36px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px;
             background: var(--panel); color: var(--txt); cursor: pointer; backdrop-filter: blur(12px);
         }
