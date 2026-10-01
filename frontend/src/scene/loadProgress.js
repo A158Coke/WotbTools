@@ -45,17 +45,17 @@ export function createLoadProgress(onChange) {
     },
     /** 字节进度（XHR ProgressEvent：loaded / total；lengthComputable=false 时 total=0） */
     update(key, loaded, total) {
-      const item = items.get(key) || { loaded: 0, total: 0, done: false }
+      const item = items.get(key)
+      if (!item) return
       item.loaded = Number(loaded) || 0
       item.total = Number(total) || 0
-      items.set(key, item)
       emit()
     },
-    /** 完成（成功或失败都算结束；失败由调用方另行上报） */
+    /** 完成（成功或失败都算结束；未登记项忽略，避免虚构工作量） */
     complete(key) {
-      const item = items.get(key) || { loaded: 0, total: 0, done: false }
+      const item = items.get(key)
+      if (!item) return
       item.done = true
-      items.set(key, item)
       emit()
     },
     reset() {
