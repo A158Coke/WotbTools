@@ -13,7 +13,8 @@ import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
-import { isPlaybackSpeed, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
+import { PLAYBACK_SPEEDS, isPlaybackSpeed, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
+import { usePointer } from '../composables/useBreakpoint.js'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
@@ -229,6 +230,24 @@ const { labelPrefs, hpPrefs, trailPrefs, paneWidths, railCollapsed } = usePlayba
 
 // 左右两栏宽度可拖拽调整；持久化由 usePlaybackPreferences 负责。
 const RAIL_W_RANGE = { min: 160, max: 420 }
+/**
+ * 触屏时 rail 的宽度下限：速度档位一行排开、每个都满足 44px 点击区域（--hit-min）。
+ * = 档位数 × 44 + (档位数 − 1) × 3px 间距 + rail 左右 padding 8px × 2；5 档时为 248px。
+ * 触屏 + rail 只出现在视口 >1200px 的大平板（≤1200 的触屏设备走 mobile 形态，没有 rail）。
+ */
+const TOUCH_HIT_MIN_PX = 44
+const COARSE_RAIL_MIN_W = PLAYBACK_SPEEDS.length * TOUCH_HIT_MIN_PX + (PLAYBACK_SPEEDS.length - 1) * 3 + 16
+const DEFAULT_RAIL_W = 220 // 与 playback-shared.css 的 --pb-rail-w 默认值一致
+const { coarse: coarsePointer } = usePointer()
+const railWidthRange = computed(() => ({
+  min: coarsePointer.value ? Math.max(RAIL_W_RANGE.min, COARSE_RAIL_MIN_W) : RAIL_W_RANGE.min,
+  max: RAIL_W_RANGE.max,
+}))
+/** 实际 rail 宽度：用户拖过就用拖的值（不低于下限）；没拖过时触屏也要抬到下限，否则交给 CSS 默认 */
+const railWidthPx = computed(() => {
+  if (paneWidths.rail != null) return Math.max(paneWidths.rail, railWidthRange.value.min)
+  return coarsePointer.value ? Math.max(DEFAULT_RAIL_W, railWidthRange.value.min) : null
+})
 const DETAILS_W_RANGE = { min: 240, max: 560 }
 const clampWidth = (value, range) => Math.min(range.max, Math.max(range.min, value))
 
@@ -248,7 +267,7 @@ function startPaneResize(event, pane) {
       ? moveEvent.clientX - rootRect.left
       : rootRect.right - moveEvent.clientX
     paneWidths[pane] = clampWidth(Math.round(next),
-      pane === 'rail' ? RAIL_W_RANGE : DETAILS_W_RANGE)
+      pane === 'rail' ? railWidthRange.value : DETAILS_W_RANGE)
   }
   const stop = () => {
     window.removeEventListener('pointermove', move)
@@ -2021,7 +2040,7 @@ const basesAt = computed(() => {
 
 const mapStyle = computed(() => ({
   // 只有用户真的拖过才覆盖；否则保持 CSS 里的响应式默认宽度。
-  ...(paneWidths.rail != null ? { '--pb-rail-w': `${paneWidths.rail}px` } : {}),
+  ...(railWidthPx.value != null ? { '--pb-rail-w': `${railWidthPx.value}px` } : {}),
   ...(paneWidths.details != null ? { '--pb-details-w': `${paneWidths.details}px` } : {}),
   // §side-slots：两侧黑边实宽（0 = 不启用侧栏形态）。
   ...(sideSlotWidth.value ? { '--pb-slot-w': `${sideSlotWidth.value}px` } : {}),
