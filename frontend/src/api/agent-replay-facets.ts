@@ -79,7 +79,7 @@ export interface AgentBattleResult {
   [key: string]: unknown
 }
 
-// ---------- 时序能力：PlaybackData（与 v1 回放切面同形状，version 锁定不变） ----------
+// ---------- 时序能力：PlaybackData（contract v2：+Supremacy/点数/瞄准帧；版本显式门禁） ----------
 
 export interface AgentPlaybackMeta {
   map_id: number
@@ -153,6 +153,31 @@ export interface AgentAoiPresence {
   t_out?: number
 }
 
+/** Supremacy 基地状态迁移（上游 v0.2.0 wrapper12/root11 PROVEN；sparse 重建产物） */
+export interface AgentSupremacyBaseTransition {
+  clock: number
+  /** 0..3 = A..D */
+  base_id: number
+  owner_team?: number
+  capturing_team?: number
+  capture_progress?: number
+}
+
+/** Supremacy 实时点数采样（wrapper13/root12；仅真实广播，消费取 ≤t 最后值） */
+export interface AgentSupremacyPointsSample {
+  clock: number
+  team: number
+  points: number
+}
+
+/** 作者瞄准帧（Type39 投影，recorder-only；缺帧不外推，存活期按 deaths 门控） */
+export interface AgentAimFrame {
+  time_sec: number
+  world_yaw: number
+  world_pitch: number
+  ray_point: number[]
+}
+
 export interface AgentPlaybackFacet {
   version: number
   meta: AgentPlaybackMeta
@@ -161,6 +186,11 @@ export interface AgentPlaybackFacet {
   kills: AgentKillEvent[]
   periods: Array<{ clock: number; period: number; remaining_s: number; duration_s: number }>
   visibility: AgentAoiPresence[]
+  /** contract v2 新能力（skip-when-empty：非争霸场缺省） */
+  supremacy_bases?: AgentSupremacyBaseTransition[]
+  supremacy_points?: AgentSupremacyPointsSample[]
+  /** 仅作者/recorder；禁止给其他车辆伪造 */
+  aim_frames?: AgentAimFrame[]
 }
 
 // ---------- 射击复现通道（parseShotReplays；上游 shots 数组同构透传） ----------
@@ -234,6 +264,9 @@ export interface AgentShotReplay {
 // ---------- 形状校验（trust boundary：进 view model 前的结构契约锁定） ----------
 
 const CONTRACT_VERSION = 1
+/** PlaybackData 契约版本（上游 v0.2.0 起 = 2：+supremacy_bases/supremacy_points/aim_frames）。
+ *  错版 WASM 在此显式拒绝，不允许被静默解析成半残数据（trust boundary）。 */
+export const PLAYBACK_CONTRACT_VERSION = 2
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -250,9 +283,9 @@ function assertArray(v: unknown, path: string): unknown[] {
 }
 
 /** 切面契约版本锁定（v1 切面字段口径沿用；能力拆分见契约 v2 文档） */
-function assertFacetVersion(v: unknown, path: string): void {
-  if (v !== CONTRACT_VERSION) {
-    throw new Error(`agent facets: ${path} = ${String(v)}，不支持的契约版本（期望 ${CONTRACT_VERSION}）`)
+function assertFacetVersion(v: unknown, path: string, expected: number = CONTRACT_VERSION): void {
+  if (v !== expected) {
+    throw new Error(`agent facets: ${path} = ${String(v)}，不支持的契约版本（期望 ${expected}）`)
   }
 }
 
@@ -271,15 +304,19 @@ export function validateAgentBattleResult(value: unknown): AgentBattleResult {
 }
 
 /**
- * PlaybackData 形状校验：version === 1、meta、vehicles/shots/kills/periods/visibility 数组。
+ * PlaybackData 形状校验：version === PLAYBACK_CONTRACT_VERSION(2)、meta、必备数组 + v2 新键。
  * 未知键忽略 = 契约的同版本加字段策略；字段级取值语义由类型承载。
  */
 export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   const pb = assertObject(value, 'playback')
-  assertFacetVersion(pb.version, 'playback.version')
+  assertFacetVersion(pb.version, 'playback.version', PLAYBACK_CONTRACT_VERSION)
   assertObject(pb.meta, 'playback.meta')
   for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
     assertArray(pb[key], `playback.${key}`)
+  }
+  // contract v2 新能力（上游 v0.2.0；skip-when-empty 语义）：在场时必须为数组
+  for (const key of ['supremacy_bases', 'supremacy_points', 'aim_frames']) {
+    if (pb[key] !== undefined) assertArray(pb[key], `playback.${key}`)
   }
   return value as unknown as AgentPlaybackFacet
 }
@@ -459,11 +496,12 @@ export function enrichShotsFromRoster(parsedShots: AgentShotReplay[], vehicles: 
     if (target?.tank_id) s.target_tank_id = target.tank_id
     const shooterEntry = byEid.get(s.shooter_eid)
     if (shooterEntry?.tank_id) {
-      // tank_id 富化与阵营分类解耦：unknown（team=0）照样富化 3D 目标车，但阵营保持 undefined
       s.shooter_tank_id = shooterEntry.tank_id
-      if (authorTeam != null && knownSide(shooterEntry.team)) {
-        s.shooter_team = shooterEntry.team === authorTeam ? 'ally' : 'enemy'
-      }
+    }
+    // 阵营分类独立于车型富化：车型识别失败（tank_id=0）≠ 阵营未知——
+    // 已知敌方只是缺车型时，仍必须正确分类为 enemy（评审 blocker 回归点）
+    if (authorTeam != null && knownSide(shooterEntry?.team)) {
+      s.shooter_team = shooterEntry.team === authorTeam ? 'ally' : 'enemy'
     }
   }
 }

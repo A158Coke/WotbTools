@@ -1513,6 +1513,7 @@
     "all_shooters": "All players",
     "allies": "Allies",
     "enemies": "Enemies",
+    "unknown_side": "Unknown team",
     "author": "author",
     "stat_shots": "Shots",
     "stat_hit": "Hit rate",
