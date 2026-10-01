@@ -117,7 +117,7 @@ jobs:
           dst_token: ${{ secrets.GITEE_TOKEN }}
           static_list: WotbTools
           account_type: user
-          force_update: false
+          force_update: true
           timeout: 10m
 
   build:
