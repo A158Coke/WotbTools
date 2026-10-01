@@ -83,7 +83,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  mirror_gitee:
+    name: Mirror exact GitHub source to Gitee
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Reject non-main invocation
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            push|workflow_dispatch) ;;
+            *) echo "Unsupported mirror event: $EVENT_NAME" >&2; exit 1 ;;
+          esac
+          [ "$EVENT_REF" = refs/heads/main ] || {
+            echo "Gitee production mirror must run from main." >&2
+            exit 1
+          }
+
+      - name: Mirror WotbTools to Gitee
+        uses: Yikun/hub-mirror-action@ec47170fa9d126a4bee5a1ab9359845bb1395248
+        with:
+          src: github/A158Coke
+          dst: gitee/A158Coke
+          dst_key: ${{ secrets.GITEE_PRIVATE_KEY }}
+          dst_token: ${{ secrets.GITEE_TOKEN }}
+          static_list: WotbTools
+          account_type: user
+          force_update: true
+          timeout: 10m
+
   build:
+    needs: [mirror_gitee]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: tx-production
