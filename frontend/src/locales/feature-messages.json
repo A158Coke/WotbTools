@@ -218,13 +218,117 @@
       "hundred": "成为第一个上榜的人：点击「{action}」，上传该车百场战绩截图与回放，审核通过后显示在这里。",
       "mark3": "成为第一个上榜的人：点击「{action}」，上传三环截图，审核通过后显示在这里。"
     },
+    "vehiclePicker": {
+      "placeholder": "输入车辆名称搜索",
+      "noResults": "没有匹配的车辆",
+      "clear": "清除所选车辆",
+      "toggle": "展开车辆列表",
+      "unknownId": "未知车辆 #{id}"
+    },
+    "hofVersion": {
+      "edition": {
+        "apple": "Apple",
+        "china": "中国服",
+        "eu": "欧服",
+        "asia": "亚服",
+        "na": "美服",
+        "ru": "俄服"
+      }
+    },
+    "hofPager": {
+      "summary": "共 {items} 条 · 第 {page}/{total} 页",
+      "pages": "第 {page}/{total} 页",
+      "page": "第 {page} 页"
+    },
+    "hofRules": {
+      "title": "上榜规则",
+      "positiveInteger": "正整数",
+      "single": {
+        "recorder": "只统计录像者本人在该场的伤害，队友的成绩不会计入。",
+        "modes": "仅接受随机战斗和评级战斗回放；同一场战斗同一玩家只记录一次。"
+      },
+      "hundred": {
+        "tierX": "仅限 Tier X 车辆，每辆车单独排名，按审核通过的生涯场均伤害排序。",
+        "evidence": "需要 1 张成绩截图和正好 5 个回放：回放必须是你本人账号驾驶所选车辆的 5 场不同战斗。",
+        "higher": "该车已有你的纪录时，新成绩必须严格高于当前纪录。"
+      },
+      "mark3": {
+        "ranking": "按获得三环所需场数从少到多排名，场数相同时并列。",
+        "evidence": "需要 1–2 张三环截图和正好 5 个回放：回放必须是你本人账号驾驶所选车辆的 5 场不同战斗。",
+        "once": "每辆车只能有一条通过审核的三环纪录，通过后不能替换。"
+      },
+      "threshold": {
+        "title": "当前门槛",
+        "chooseVehicle": "选择车辆后显示你在该车的当前纪录。",
+        "hundredCurrent": "你在该车的当前纪录是场均 {damage}（{battles} 场），新成绩必须高于 {damage}。",
+        "hundredFirst": "你在该车还没有百场纪录，这次提交将是你的第一条纪录。",
+        "mark3Current": "你在该车已有三环纪录（{battles} 场），不能再次提交。",
+        "mark3First": "你在该车还没有三环纪录，这次提交将是你的第一条纪录。",
+        "pending": "你在该车已有一条待审核的申请，撤销后才能再次提交。"
+      }
+    },
     "agentReplay": {
       "title": "3D 回放", "roster": "阵容",
+      "error_load": "回放加载失败：{msg}",
       "pick_hint": "选择本地 .wotbreplay 文件——在浏览器内本地解析，文件不会上传。"
     },
     "agentTanks": {
       "title": "坦克百科",
-      "hint": "全部坦克图鉴。点击卡片查看装甲、弹种与机动数据，或在装甲查看器中打开。"
+      "hint": "全部坦克图鉴。点击卡片查看弹种与机动数据。",
+      "search_label": "搜索坦克",
+      "search_ph": "名称，支持模糊匹配：e100、is7…",
+      "sort": "排序",
+      "sort_name": "名称",
+      "sort_tier": "等级（高→低）",
+      "sort_hp": "HP（高→低）",
+      "sort_pen": "穿深（高→低）",
+      "all": "全部",
+      "tier_n": "{tier} 级",
+      "count": "{shown} / {total} 辆",
+      "load_more": "显示更多（还有 {n} 辆）",
+      "loading": "正在加载坦克数据…",
+      "error_title": "坦克数据加载失败",
+      "error_desc": "可能是网络中断或资源服务暂时不可用。请稍后重试。",
+      "retry": "重试",
+      "empty_title": "没有匹配的坦克",
+      "empty_desc": "换一个关键词，或清除部分筛选条件。",
+      "clear_filters": "清除筛选",
+      "detail_error_title": "这辆坦克的数据加载失败",
+      "back": "返回坦克百科",
+      "premium": "金币车",
+      "open3d": "在装甲查看器中打开",
+      "open3d_title": "装甲查看器",
+      "open3d_hint": "装甲数值、等效厚度与击穿判定以装甲查看器实测为准。",
+      "dpm": "DPM",
+      "nations": {
+        "ussr": "苏联",
+        "usa": "美国",
+        "germany": "德国",
+        "uk": "英国",
+        "japan": "日本",
+        "china": "中国",
+        "france": "法国",
+        "european": "欧洲",
+        "other": "其他",
+        "unknown": "未知"
+      },
+      "types": {
+        "light": "轻坦",
+        "medium": "中坦",
+        "heavy": "重坦",
+        "td": "坦克歼击车",
+        "unknown": "未知"
+      }
+    },
+    "scene3d": {
+      "loading": "正在加载…",
+      "unsupported_title": "当前浏览器无法显示 3D 画面",
+      "webgl1_only": "3D 视图需要 WebGL 2，而当前浏览器或显卡驱动只支持旧版 WebGL。请更新浏览器或显卡驱动后再试。",
+      "webgl_unavailable": "当前浏览器没有可用的 WebGL。请在浏览器设置中开启硬件加速，或换用最新版 Chrome、Edge、Firefox、Safari 后再试。",
+      "error_title": "3D 资源加载失败",
+      "error_generic": "可能是网络中断或资源暂时不可用。",
+      "retry": "重试",
+      "dismiss": "关闭"
     },
     "agentShots": {
       "title": "射击分析",
@@ -233,6 +337,10 @@
     "armor": {
       "back": "返回",
       "loading": "正在加载坦克模型…",
+      "phase_armor_model": "装甲模型",
+      "phase_tank_model": "坦克模型",
+      "phase_tank_data": "坦克数据",
+      "phase_tank_list": "坦克列表",
       "load_failed": "{phase} 加载失败：{msg}",
       "tier": "等级",
       "type": "类型",
@@ -262,6 +370,11 @@
       "hint": "拖动旋转 · 滚轮缩放 · 点击查看装甲 · 右键拖动转炮塔",
       "hint_touch": "单指旋转 · 双指缩放 · 点击查看装甲 · 打开「炮塔」后拖动转炮塔",
       "world_hint": "拖动旋转 · 滚轮缩放 · 右键拖动平移"
+    },
+    "hofAdmin": {
+      "tabsLabel": "管理分区",
+      "valPass": "通过",
+      "valFail": "未通过"
     },
     "dialog": {
       "confirm": "确定",
@@ -495,13 +608,117 @@
       "hundred": "Be the first: tap “{action}”, upload the stats screenshot and replays for that vehicle, and it appears here once approved.",
       "mark3": "Be the first: tap “{action}”, upload the mark screenshot, and it appears here once approved."
     },
+    "vehiclePicker": {
+      "placeholder": "Search vehicle name",
+      "noResults": "No matching vehicles",
+      "clear": "Clear selected vehicle",
+      "toggle": "Show vehicle list",
+      "unknownId": "Unknown vehicle #{id}"
+    },
+    "hofVersion": {
+      "edition": {
+        "apple": "Apple",
+        "china": "China",
+        "eu": "EU",
+        "asia": "Asia",
+        "na": "NA",
+        "ru": "RU"
+      }
+    },
+    "hofPager": {
+      "summary": "{items} records · page {page} of {total}",
+      "pages": "Page {page} of {total}",
+      "page": "Page {page}"
+    },
+    "hofRules": {
+      "title": "Ranking rules",
+      "positiveInteger": "Positive integer",
+      "single": {
+        "recorder": "Only the damage dealt by the player who recorded the replay counts; teammates are not ranked.",
+        "modes": "Only Random and Rating battle replays are accepted; each player is recorded once per battle."
+      },
+      "hundred": {
+        "tierX": "Tier X vehicles only. Each vehicle has its own ranking, ordered by the approved career average damage.",
+        "evidence": "Requires 1 stats screenshot and exactly 5 replays: 5 different battles played on your own account in the selected vehicle.",
+        "higher": "If you already have a record for this vehicle, the new result must be strictly higher."
+      },
+      "mark3": {
+        "ranking": "Ranked by the fewest battles needed to earn 3 marks; equal battle counts share a rank.",
+        "evidence": "Requires 1–2 mark screenshots and exactly 5 replays: 5 different battles played on your own account in the selected vehicle.",
+        "once": "Each vehicle can have only one approved 3-mark record, and it cannot be replaced."
+      },
+      "threshold": {
+        "title": "Current threshold",
+        "chooseVehicle": "Select a vehicle to see your current record for it.",
+        "hundredCurrent": "Your current record for this vehicle is {damage} average damage ({battles} battles); the new result must be higher than {damage}.",
+        "hundredFirst": "You have no hundred-battle record for this vehicle yet; this will be your first record.",
+        "mark3Current": "You already have a 3-mark record for this vehicle ({battles} battles) and cannot submit again.",
+        "mark3First": "You have no 3-mark record for this vehicle yet; this will be your first record.",
+        "pending": "You already have a submission under review for this vehicle; withdraw it before submitting again."
+      }
+    },
     "agentReplay": {
       "title": "3D replay", "roster": "Rosters",
+      "error_load": "Couldn't load the replay: {msg}",
       "pick_hint": "Pick a local .wotbreplay — it is parsed in your browser and never uploaded."
     },
     "agentTanks": {
       "title": "Tankopedia",
-      "hint": "Every tank. Open a card for armor, shells and mobility, or view it in the armor viewer."
+      "hint": "Every tank. Open a card for shells and mobility.",
+      "search_label": "Search tanks",
+      "search_ph": "Name, fuzzy match: e100, is7…",
+      "sort": "Sort",
+      "sort_name": "Name",
+      "sort_tier": "Tier (high → low)",
+      "sort_hp": "HP (high → low)",
+      "sort_pen": "Penetration (high → low)",
+      "all": "All",
+      "tier_n": "Tier {tier}",
+      "count": "{shown} / {total} tanks",
+      "load_more": "Show more ({n} left)",
+      "loading": "Loading tanks…",
+      "error_title": "Couldn't load tank data",
+      "error_desc": "The network may be down or the asset service temporarily unavailable. Try again in a moment.",
+      "retry": "Retry",
+      "empty_title": "No tanks match",
+      "empty_desc": "Try another keyword or clear some filters.",
+      "clear_filters": "Clear filters",
+      "detail_error_title": "Couldn't load this tank",
+      "back": "Back to Tankopedia",
+      "premium": "Premium",
+      "open3d": "Open in armor viewer",
+      "open3d_title": "Armor viewer",
+      "open3d_hint": "Armor values, effective thickness and penetration checks are authoritative in the armor viewer.",
+      "dpm": "DPM",
+      "nations": {
+        "ussr": "USSR",
+        "usa": "USA",
+        "germany": "Germany",
+        "uk": "UK",
+        "japan": "Japan",
+        "china": "China",
+        "france": "France",
+        "european": "Europe",
+        "other": "Other",
+        "unknown": "Unknown"
+      },
+      "types": {
+        "light": "Light tank",
+        "medium": "Medium tank",
+        "heavy": "Heavy tank",
+        "td": "Tank destroyer",
+        "unknown": "Unknown"
+      }
+    },
+    "scene3d": {
+      "loading": "Loading…",
+      "unsupported_title": "This browser can't display 3D",
+      "webgl1_only": "The 3D view needs WebGL 2, but this browser or graphics driver only supports the older WebGL. Update your browser or graphics driver and try again.",
+      "webgl_unavailable": "WebGL isn't available in this browser. Turn on hardware acceleration in your browser settings, or use a current Chrome, Edge, Firefox or Safari.",
+      "error_title": "Couldn't load 3D assets",
+      "error_generic": "The network may be down or the assets temporarily unavailable.",
+      "retry": "Retry",
+      "dismiss": "Close"
     },
     "agentShots": {
       "title": "Shot analysis",
@@ -510,6 +727,10 @@
     "armor": {
       "back": "Back",
       "loading": "Loading tank model…",
+      "phase_armor_model": "armor model",
+      "phase_tank_model": "tank model",
+      "phase_tank_data": "tank data",
+      "phase_tank_list": "tank list",
       "load_failed": "Failed to load {phase}: {msg}",
       "tier": "Tier",
       "type": "Type",
@@ -539,6 +760,11 @@
       "hint": "Drag to rotate · Scroll to zoom · Click for armor · Right-drag: turret/gun",
       "hint_touch": "Drag to rotate · Pinch to zoom · Tap for armor · Turn on “Turret” to aim",
       "world_hint": "Drag to rotate · Scroll to zoom · Right-drag: pan"
+    },
+    "hofAdmin": {
+      "tabsLabel": "Admin sections",
+      "valPass": "Passed",
+      "valFail": "Failed"
     },
     "dialog": {
       "confirm": "OK",
@@ -772,13 +998,117 @@
       "hundred": "Станьте первым: нажмите «{action}», загрузите скриншот статистики и реплеи для этой техники — после проверки запись появится здесь.",
       "mark3": "Станьте первым: нажмите «{action}», загрузите скриншот — после проверки запись появится здесь."
     },
+    "vehiclePicker": {
+      "placeholder": "Поиск техники по названию",
+      "noResults": "Подходящей техники нет",
+      "clear": "Сбросить выбор техники",
+      "toggle": "Показать список техники",
+      "unknownId": "Неизвестная техника #{id}"
+    },
+    "hofVersion": {
+      "edition": {
+        "apple": "Apple",
+        "china": "Китай",
+        "eu": "EU",
+        "asia": "Азия",
+        "na": "NA",
+        "ru": "RU"
+      }
+    },
+    "hofPager": {
+      "summary": "Записей: {items} · страница {page} из {total}",
+      "pages": "Страница {page} из {total}",
+      "page": "Страница {page}"
+    },
+    "hofRules": {
+      "title": "Правила рейтинга",
+      "positiveInteger": "Целое положительное число",
+      "single": {
+        "recorder": "Учитывается только урон игрока, записавшего реплей; результаты союзников не учитываются.",
+        "modes": "Принимаются только реплеи случайных и рейтинговых боёв; один игрок записывается один раз за бой."
+      },
+      "hundred": {
+        "tierX": "Только техника X уровня. У каждой машины свой рейтинг по одобренному среднему урону за всё время.",
+        "evidence": "Нужны 1 скриншот статистики и ровно 5 реплеев: 5 разных боёв на вашем аккаунте на выбранной технике.",
+        "higher": "Если у вас уже есть запись для этой техники, новый результат должен быть строго выше."
+      },
+      "mark3": {
+        "ranking": "Рейтинг по наименьшему числу боёв до трёх отметок; при равном числе боёв места делятся.",
+        "evidence": "Нужны 1–2 скриншота отметок и ровно 5 реплеев: 5 разных боёв на вашем аккаунте на выбранной технике.",
+        "once": "Для каждой машины может быть только одна одобренная запись трёх отметок, заменить её нельзя."
+      },
+      "threshold": {
+        "title": "Текущий порог",
+        "chooseVehicle": "Выберите технику, чтобы увидеть свою текущую запись.",
+        "hundredCurrent": "Ваша текущая запись для этой техники — средний урон {damage} ({battles} боёв); новый результат должен быть выше {damage}.",
+        "hundredFirst": "У вас ещё нет записи «100 боёв» для этой техники — это будет ваша первая запись.",
+        "mark3Current": "У вас уже есть запись трёх отметок для этой техники ({battles} боёв), повторная подача невозможна.",
+        "mark3First": "У вас ещё нет записи трёх отметок для этой техники — это будет ваша первая запись.",
+        "pending": "У вас уже есть заявка на проверке для этой техники; отзовите её, чтобы подать новую."
+      }
+    },
     "agentReplay": {
       "title": "3D-повтор", "roster": "Составы",
+      "error_load": "Не удалось загрузить повтор: {msg}",
       "pick_hint": "Выберите локальный .wotbreplay — он разбирается в браузере и никуда не загружается."
     },
     "agentTanks": {
       "title": "Энциклопедия танков",
-      "hint": "Все танки. Откройте карточку, чтобы увидеть броню, снаряды и подвижность, или откройте её в просмотрщике брони."
+      "hint": "Все танки. Откройте карточку, чтобы увидеть снаряды и подвижность.",
+      "search_label": "Поиск танков",
+      "search_ph": "Название, нечёткий поиск: e100, is7…",
+      "sort": "Сортировка",
+      "sort_name": "Название",
+      "sort_tier": "Уровень (по убыванию)",
+      "sort_hp": "Прочность (по убыванию)",
+      "sort_pen": "Пробитие (по убыванию)",
+      "all": "Все",
+      "tier_n": "Уровень {tier}",
+      "count": "{shown} / {total} танков",
+      "load_more": "Показать ещё (осталось {n})",
+      "loading": "Загрузка танков…",
+      "error_title": "Не удалось загрузить данные танков",
+      "error_desc": "Возможно, нет сети или сервис ресурсов временно недоступен. Повторите попытку чуть позже.",
+      "retry": "Повторить",
+      "empty_title": "Подходящих танков нет",
+      "empty_desc": "Измените запрос или сбросьте часть фильтров.",
+      "clear_filters": "Сбросить фильтры",
+      "detail_error_title": "Не удалось загрузить этот танк",
+      "back": "К энциклопедии танков",
+      "premium": "Премиум",
+      "open3d": "Открыть в просмотрщике брони",
+      "open3d_title": "Просмотрщик брони",
+      "open3d_hint": "Значения брони, приведённая толщина и пробитие точнее всего в просмотрщике брони.",
+      "dpm": "Урон в минуту",
+      "nations": {
+        "ussr": "СССР",
+        "usa": "США",
+        "germany": "Германия",
+        "uk": "Великобритания",
+        "japan": "Япония",
+        "china": "Китай",
+        "france": "Франция",
+        "european": "Европа",
+        "other": "Другие",
+        "unknown": "Неизвестно"
+      },
+      "types": {
+        "light": "Лёгкий танк",
+        "medium": "Средний танк",
+        "heavy": "Тяжёлый танк",
+        "td": "ПТ-САУ",
+        "unknown": "Неизвестно"
+      }
+    },
+    "scene3d": {
+      "loading": "Загрузка…",
+      "unsupported_title": "Этот браузер не может показать 3D",
+      "webgl1_only": "Для 3D нужен WebGL 2, а этот браузер или драйвер видеокарты поддерживает только старый WebGL. Обновите браузер или драйвер и попробуйте снова.",
+      "webgl_unavailable": "В этом браузере недоступен WebGL. Включите аппаратное ускорение в настройках браузера или используйте актуальный Chrome, Edge, Firefox или Safari.",
+      "error_title": "Не удалось загрузить 3D-ресурсы",
+      "error_generic": "Возможно, нет сети или ресурсы временно недоступны.",
+      "retry": "Повторить",
+      "dismiss": "Закрыть"
     },
     "agentShots": {
       "title": "Анализ выстрелов",
@@ -787,6 +1117,10 @@
     "armor": {
       "back": "Назад",
       "loading": "Загрузка модели танка…",
+      "phase_armor_model": "модель брони",
+      "phase_tank_model": "модель танка",
+      "phase_tank_data": "данные танка",
+      "phase_tank_list": "список танков",
       "load_failed": "Не удалось загрузить {phase}: {msg}",
       "tier": "Уровень",
       "type": "Тип",
@@ -816,6 +1150,11 @@
       "hint": "Перетаскивание — вращение · Колесо — масштаб · Клик — броня · ПКМ — башня/орудие",
       "hint_touch": "Палец — вращение · Щипок — масштаб · Тап — броня · Включите «Башня», чтобы наводить",
       "world_hint": "Перетаскивание — вращение · Колесо — масштаб · ПКМ — сдвиг"
+    },
+    "hofAdmin": {
+      "tabsLabel": "Разделы администрирования",
+      "valPass": "Пройдено",
+      "valFail": "Не пройдено"
     },
     "dialog": {
       "confirm": "ОК",

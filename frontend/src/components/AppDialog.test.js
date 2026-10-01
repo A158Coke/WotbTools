@@ -9,7 +9,7 @@ import { confirm } from '../composables/useConfirm.js'
 
 const mocks = { $t: key => key }
 let wrapper
-afterEach(() => { wrapper?.unmount(); document.body.innerHTML = '' })
+afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; document.body.classList.remove('dialog-open'); delete document.body.dataset.dialogLockCount })
 
 function mountDialog() {
   const Host = defineComponent({
@@ -65,6 +65,28 @@ describe('AppDialog', () => {
     document.querySelector('[data-testid="dialog-scrim"]').click()
     await flushPromises()
     expect(dialog()).toBeNull()
+  })
+
+  it('嵌套对话框关闭一个后仍保持 body scroll lock，最后一个关闭才释放', async () => {
+    const first = mount(AppDialog, { props: { open: true, title: 'Outer' }, attachTo: document.body, global: { mocks } })
+    const second = mount(AppDialog, { props: { open: true, title: 'Inner' }, attachTo: document.body, global: { mocks } })
+    await flushPromises()
+
+    expect(document.body.dataset.dialogLockCount).toBe('2')
+    expect(document.body.classList.contains('dialog-open')).toBe(true)
+
+    await second.setProps({ open: false })
+    await flushPromises()
+    expect(document.body.dataset.dialogLockCount).toBe('1')
+    expect(document.body.classList.contains('dialog-open')).toBe(true)
+
+    await first.setProps({ open: false })
+    await flushPromises()
+    expect(document.body.dataset.dialogLockCount).toBeUndefined()
+    expect(document.body.classList.contains('dialog-open')).toBe(false)
+
+    second.unmount()
+    first.unmount()
   })
 })
 

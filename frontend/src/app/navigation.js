@@ -101,6 +101,8 @@ export function viewFromRoute(route, { allowAdminViews = false } = {}) {
 
 /** 名人堂写进 URL 的筛选键（utils/hofQuery.js）：只属于 hof，导航到别的页面时丢掉。 */
 const HOF_QUERY_KEYS = ['tab', 'page', 'tank', 'nation', 'type', 'tier', 'bt', 'nick', 'limit']
+/** 坦克百科写进 URL 的筛选 / 详情键（utils/tankopediaQuery.js）：离开百科时丢掉，不带到别的页面。 */
+const TANKOPEDIA_QUERY_KEYS = ['q', 'tier', 'nation', 'type', 'sort', 'tank', 'config']
 
 /** Keep legacy query URLs as the public URL contract while Vue Router owns history. */
 export function locationForView(view, route) {
@@ -108,6 +110,9 @@ export function locationForView(view, route) {
   // 进出名人堂都丢掉这些键：既不把筛选带到别的页面，也不把别处同名参数（如坦克百科的 tank）当成名人堂筛选
   if ((route.query?.view === 'hof') !== (view === 'hof')) {
     for (const key of HOF_QUERY_KEYS) delete query[key]
+  }
+  if (route.query?.view === 'agent-tankopedia' && view !== 'agent-tankopedia') {
+    for (const key of TANKOPEDIA_QUERY_KEYS) delete query[key]
   }
   if (view === 'home' || view === 'android' || view === 'sponsor') delete query.view
   else query.view = view
