@@ -34,7 +34,18 @@ RUN node -e 'const fs=require("fs");const js="/app/dist/wasm/wotb_replay_wasm.js
 # 非空则必须能在产物中找到，否则 fail。
 RUN node -e 'const fs=require("fs"),path=require("path");const v=(process.env.VITE_ASSET_BASE_URL||"").trim();if(!v){console.warn("VITE_ASSET_BASE_URL is empty: building an image without an asset origin (3D assets will be unavailable)");process.exit(0)}const dir="/app/dist/assets";const hit=fs.readdirSync(dir).filter(f=>f.endsWith(".js")).some(f=>fs.readFileSync(path.join(dir,f),"utf8").includes(v));if(!hit)throw new Error("asset origin was not baked into the built bundle: "+v);console.log("asset origin baked into bundle: "+v)'
 
+# 图片（地图底图 / 坦克图标等，占前端产物约 90%，文件名带内容哈希、很少变）单独成层，
+# 并把产物 mtime 归零：配合构建时的 SOURCE_DATE_EPOCH + rewrite-timestamp，图片不变时该层
+# 逐字节一致，registry 已有同 digest 的 blob，docker push 直接跳过——每次发布只需上传
+# 几 MB 的 JS/CSS 层（TCR 跨境推送慢，整层 45MB 经常超时）。
+RUN mkdir -p /out/media/assets \
+ && find /app/dist/assets -maxdepth 1 -type f \
+      \( -name '*.webp' -o -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.svg' -o -name '*.glb' \) \
+      -exec mv {} /out/media/assets/ \; \
+ && find /out/media /app/dist -exec touch -h -d @0 {} +
+
 FROM nginx:alpine
+COPY --from=build /out/media /usr/share/nginx/html
 COPY --from=build /app/dist /usr/share/nginx/html
 # Sponsor uses the Vue SPA route; retain its page background at a stable public URL.
 COPY frontend/public/sponsor-bg.webp /usr/share/nginx/html/sponsor-bg.webp
