@@ -136,7 +136,9 @@ function openDetail(id) {
   writeState({ tank: id, config: null }, { push: true })
 }
 function backToList() {
-  writeState({ tank: null, config: null }, { push: true })
+  // In-app back must collapse the detail history entry instead of adding another one.
+  // Otherwise list → detail → in-app back → browser Back re-opens the same detail.
+  writeState({ tank: null, config: null })
 }
 
 // ---------- 详情态（?tank=；数据 = tank/{id}.json + tank_cache 概要） ----------
