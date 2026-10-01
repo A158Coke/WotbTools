@@ -8,7 +8,6 @@ import * as api from '../utils/api.js'
 import FileUploader from './FileUploader.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import RatingV2RadarPanel from './RatingV2RadarPanel.vue'
-import { ChevronDown, ChevronUp } from 'lucide-vue-next'
 
 const LOGIN_VIEW = 'rating-v2'
 
@@ -69,10 +68,9 @@ function setSort(column) {
     : { key: column.key, numeric: column.num, reverse: false }
 }
 
-// 排序方向图标（lucide 取代 ▲▼ 字符，design-language §8）；方向本身由 th 的 aria-sort 表达
-function sortIcon(column) {
-  if (sort.value?.key !== column.key) return null
-  return sort.value.reverse ? ChevronDown : ChevronUp
+function sortArrow(column) {
+  if (sort.value?.key !== column.key) return ''
+  return sort.value.reverse ? ' ▼' : ' ▲'
 }
 
 async function loadRating(jobId) {
@@ -258,8 +256,7 @@ onBeforeUnmount(() => {
                 <th v-for="column in ratingResponse.columns" :key="column.key" :class="{ num: column.num }"
                   :aria-sort="sort?.key === column.key ? (sort.reverse ? 'descending' : 'ascending') : 'none'">
                   <button class="rating-v2-sort" type="button" @click="setSort(column)">
-                    {{ t(`ratingV2.labels.${column.key}`) }}
-                    <component :is="sortIcon(column)" v-if="sortIcon(column)" class="rating-v2-sort-icon" :size="16" aria-hidden="true" />
+                    {{ t(`ratingV2.labels.${column.key}`) }}{{ sortArrow(column) }}
                   </button>
                 </th>
               </tr>
@@ -300,154 +297,51 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* 设计语言 token（docs/frontend/design-language.md）：只用语义 token，三档断点 */
-.rating-v2-page { padding-bottom: var(--space-12); }
-.rating-v2-header { margin: var(--space-6) 0 var(--space-4); }
-/* 工作区不用 kicker 大写字距样式（§4），保留为普通说明标签 */
-.rating-v2-kicker { margin: 0 0 var(--space-1); color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; }
-.rating-v2-header h1 { margin: 0; color: var(--color-text-primary); font: var(--type-h1); }
-
-.rating-v2-header p:not(.rating-v2-kicker),
-.rating-v2-note,
-.rating-v2-hint { color: var(--color-text-secondary); }
-
-.rating-v2-actions,
-.rating-v2-results-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: var(--space-3) 0; }
-
-.rating-v2-run {
-  min-height: var(--control-h-lg);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--color-on-accent);
-  font: var(--type-body);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.rating-v2-run:disabled { cursor: not-allowed; opacity: .5; }
-
-.rating-v2-notice {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  margin: var(--space-3) 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-}
-
-.rating-v2-notice.warn { background: color-mix(in oklab, var(--color-warning) 14%, var(--color-surface-1)); }
-
-.rating-v2-results {
-  margin-top: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-}
-
+.rating-v2-page { padding-bottom: 48px; }
+.rating-v2-header { margin: 22px 0 16px; }
+.rating-v2-kicker { margin: 0 0 4px; color: var(--accent); font-size: .74rem; font-weight: 800; letter-spacing: .14em; }
+.rating-v2-header h1 { margin: 0; color: var(--text-heading); font-size: 1.3rem; }
+.rating-v2-header p:not(.rating-v2-kicker), .rating-v2-note, .rating-v2-hint { color: var(--text-muted); }
+.rating-v2-actions, .rating-v2-results-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
+.rating-v2-run { min-height: 38px; padding: 8px 16px; border: 1px solid var(--accent); border-radius: 7px; background: var(--accent); color: var(--accent-text); cursor: pointer; font: inherit; font-weight: 800; }
+.rating-v2-run:disabled { cursor: not-allowed; opacity: .55; }
+.rating-v2-notice { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.rating-v2-notice.warn { background: color-mix(in srgb, var(--accent) 10%, var(--bg-card)); }
+.rating-v2-results { margin-top: 18px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); }
 .rating-v2-results-head { justify-content: space-between; margin-top: 0; }
-.rating-v2-results-head h2 { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
-.rating-v2-results-head span { color: var(--color-text-secondary); }
-.rating-v2-tablewrap { overflow-x: auto; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); }
-.rating-v2-tablewrap table { width: max-content; min-width: 100%; border-collapse: collapse; font: var(--type-body); }
-
-.rating-v2-tablewrap th,
-.rating-v2-tablewrap td {
-  height: var(--row-h);
-  padding: 0 var(--space-3);
-  border-bottom: 1px solid var(--color-border-subtle);
-  white-space: nowrap;
-}
-
-.rating-v2-tablewrap th { padding: 0; background: var(--color-surface-2); }
-
-.rating-v2-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  width: 100%;
-  min-height: var(--row-h);
-  padding: 0 var(--space-3);
-  border: 0;
-  background: transparent;
-  color: var(--color-text-primary);
-  font: var(--type-caption);
-  font-weight: 600;
-  text-align: inherit;
-  cursor: pointer;
-}
-
-.rating-v2-sort-icon { flex: none; color: var(--color-accent-text); }
-.rating-v2-sort:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
-
-.rating-v2-tablewrap th.num,
-.rating-v2-tablewrap td.num { text-align: right; font-variant-numeric: tabular-nums; }
-
-.rating-v2-tablewrap th.num .rating-v2-sort { justify-content: flex-end; }
-
-.rating-v2-player {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--color-text-primary);
-  font: var(--type-body);
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-
-.rating-v2-player[aria-pressed="true"] { color: var(--color-accent-text); text-decoration: underline; text-underline-offset: 3px; }
-.rating-v2-player:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-
-@media (hover: hover) {
-  .rating-v2-sort:hover { background: var(--color-surface-3); }
-  .rating-v2-player:hover { color: var(--color-accent-text); text-decoration: underline; text-underline-offset: 3px; }
-}
-
-/* 抽屉（design-language §7 Drawer）：桌面 / 平板为右侧非模态面板，手机为模态全宽面板。
- * ponytail: V2 局部复用稳定抽屉视觉，避免耦合 V5 业务 Drawer；出现第三个同类抽屉时再抽中性 shell。 */
-.rating-v2-radar-backdrop { position: fixed; inset: 0; z-index: var(--z-drawer); background: none; pointer-events: none; }
-
+.rating-v2-results-head h2 { margin: 0; color: var(--text-heading); font-size: 1rem; }
+.rating-v2-results-head span { color: var(--text-muted); font-size: .85rem; }
+.rating-v2-tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.rating-v2-tablewrap table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: .82rem; }
+.rating-v2-tablewrap th, .rating-v2-tablewrap td { padding: 8px 10px; border-bottom: 1px solid var(--border-light); white-space: nowrap; }
+.rating-v2-tablewrap th { padding: 0; background: var(--bg-card2); }
+.rating-v2-sort { width: 100%; padding: 8px 10px; border: 0; background: transparent; color: var(--text-heading); cursor: pointer; font: inherit; font-weight: 700; text-align: inherit; }
+.rating-v2-sort:hover, .rating-v2-sort:focus-visible { background: var(--bg-card-hover); outline: 1px solid var(--accent); outline-offset: -1px; }
+.rating-v2-tablewrap th.num, .rating-v2-tablewrap td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.rating-v2-player { padding: 0; border: 0; background: transparent; color: var(--text-heading); cursor: pointer; font: inherit; font-weight: 700; text-align: left; }
+.rating-v2-player:hover, .rating-v2-player:focus-visible, .rating-v2-player[aria-pressed="true"] { color: var(--accent); outline: none; text-decoration: underline; text-underline-offset: 3px; }
+/* ponytail: V2 局部复用稳定抽屉视觉，避免耦合 V5 业务 Drawer；出现第三个同类抽屉时再抽中性 shell。 */
+.rating-v2-radar-backdrop { position: fixed; inset: 0; z-index: 60; pointer-events: none; background: none; }
 .rating-v2-radar-drawer {
-  position: fixed;
-  top: calc(var(--header-h) + var(--space-2));
-  right: var(--space-2);
-  bottom: var(--space-2);
-  width: min(560px, calc(100% - var(--space-4)));
-  padding: var(--space-4);
-  overflow-y: auto;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-2);
-  box-shadow: var(--elevation-3);
-  pointer-events: auto;
-  animation: rating-v2-drawer-in var(--duration-slow) var(--ease-standard);
+  position: fixed; top: calc(var(--topbar-h) + 8px); right: 8px; bottom: 8px;
+  width: min(560px, calc(100vw - 16px)); overflow-y: auto; padding: 16px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card2);
+  box-shadow: var(--surface-shadow); pointer-events: auto; animation: rating-v2-drawer-in .22s ease-out;
 }
-
 .rating-v2-radar-drawer :deep(.rating-v2-radar-panel) { margin: 0; padding: 0; border: 0; background: transparent; }
-
-@keyframes rating-v2-drawer-in {
-  from { transform: translateX(30px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+@keyframes rating-v2-drawer-in { from { transform: translateX(30px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@media (max-width: 1080px) {
+  .rating-v2-radar-backdrop { z-index: var(--z-modal); }
+  .rating-v2-radar-drawer { top: 8px; }
 }
-
-@media (width < 1200px) {
-  .rating-v2-radar-backdrop { z-index: var(--z-dialog); }
-  .rating-v2-radar-drawer { top: var(--space-2); }
-}
-
 @media (width < 768px) {
-  .rating-v2-page { padding-bottom: var(--space-8); }
+  .rating-v2-page { padding-bottom: 28px; }
   .rating-v2-actions { align-items: stretch; }
   .rating-v2-run { width: 100%; }
-  .rating-v2-radar-backdrop.rating-v2-radar-modal { background: var(--color-scrim); pointer-events: auto; }
-  .rating-v2-radar-drawer { left: var(--space-2); width: auto; padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
+  .rating-v2-tablewrap td { padding: 7px 8px; font-size: .76rem; }
+  .rating-v2-sort { padding: 7px 8px; font-size: .76rem; }
+  .rating-v2-radar-backdrop.rating-v2-radar-modal { pointer-events: auto; background: rgb(0 0 0 / .35); }
+  .rating-v2-radar-drawer { left: 8px; width: auto; }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .rating-v2-radar-drawer { animation: none; }
-}
+@media (prefers-reduced-motion: reduce) { .rating-v2-radar-drawer { animation: none; } }
 </style>
