@@ -145,6 +145,21 @@ for owner in ("business-api", "frontend"):
     assert workflow["jobs"]["build"]["concurrency"] == {
         "group": "tx-production-build", "cancel-in-progress": "false", "queue": "max",
     }, owner
+
+# The runtime digest reference is deliberately tagless. A value such as
+# repo:sha-<tag>@sha256:<digest> is content-addressed for Docker, but deploy.sh
+# intentionally rejects tags so production identity has one canonical shape.
+frontend_workflow = load(workflow_dir / "frontend.yml")
+frontend_deploy = next(
+    step for step in frontend_workflow["jobs"]["deploy"]["steps"]
+    if step.get("name") == "Reconcile only Frontend under the TX host lock"
+)
+expected_frontend_ref = (
+    "${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}/"
+    "wotbtools-frontend@${{ needs.build.outputs.digest }}"
+)
+assert frontend_deploy["env"]["TX_FRONTEND_IMAGE_REF"] == expected_frontend_ref
+assert "needs.build.outputs.image" not in frontend_deploy["env"]["TX_FRONTEND_IMAGE_REF"]
 for owner in owners:
     workflow = load(workflow_dir / f"{owner}.yml")
     events = workflow.get("on", workflow.get(True, {}))
