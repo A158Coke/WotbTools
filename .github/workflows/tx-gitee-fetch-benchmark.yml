@@ -1,0 +1,248 @@
+name: TX Gitee Fetch Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      repetitions:
+        description: Number of cold and warm fetch attempts
+        required: true
+        default: "3"
+        type: choice
+        options:
+          - "1"
+          - "3"
+          - "5"
+      target_sha:
+        description: Exact commit SHA to fetch from Gitee
+        required: true
+        default: "9327bd563e69ba0c53637a7206c724fa68eb3ed7"
+        type: string
+      base_sha:
+        description: Previous commit SHA used to prepare the warm repository
+        required: true
+        default: "371f453cf8a41d89bf068e5815ec3fce663f8fab"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: TX fetches exact source from Gitee
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: tx-production
+
+    steps:
+      - name: Validate benchmark inputs
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+          BASE_SHA: ${{ inputs.base_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$TARGET_SHA" != "$BASE_SHA" ]
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          : "${TX_HOST:?TX_VPS_HOST is required}"
+          : "${TX_USER:?TX_VPS_USER is required}"
+          : "${TX_PORT:?TX_VPS_PORT is required}"
+          : "${TX_KEY:?TX_VPS_SSH_KEY is required}"
+
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$TX_KEY" | tr -d '\r' > ~/.ssh/tx-benchmark
+          chmod 600 ~/.ssh/tx-benchmark
+
+          ssh-keyscan -T 15 -p "$TX_PORT" "$TX_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Benchmark TX Gitee fetch
+        id: fetch
+        shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+          BASE_SHA: ${{ inputs.base_sha }}
+          REPETITIONS: ${{ inputs.repetitions }}
+        run: |
+          set -euo pipefail
+
+          csv="$RUNNER_TEMP/tx-gitee-fetch.csv"
+          printf 'mode,run,status,elapsed_seconds,object_bytes_before,object_bytes_after,object_bytes_delta\n' > "$csv"
+
+          ssh \
+            -i ~/.ssh/tx-benchmark \
+            -p "$TX_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=10 \
+            -o ServerAliveCountMax=3 \
+            "$TX_USER@$TX_HOST" \
+            bash -s -- "$TARGET_SHA" "$BASE_SHA" "$REPETITIONS" <<'REMOTE' | tee -a "$csv"
+          set -u
+
+          target_sha="$1"
+          base_sha="$2"
+          repetitions="$3"
+          repo_url="https://gitee.com/A158Coke/Wotbtools.git"
+          root="/tmp/wotbtools-gitee-fetch-benchmark-${target_sha:0:12}-$$"
+
+          cleanup() {
+            rm -rf -- "$root"
+          }
+          trap cleanup EXIT
+
+          command -v git >/dev/null 2>&1 || {
+            echo "git is not installed on TX" >&2
+            exit 20
+          }
+
+          mkdir -p "$root"
+
+          object_bytes() {
+            local git_dir="$1"
+            if [ -d "$git_dir/objects" ]; then
+              du -sb "$git_dir/objects" | awk '{print $1}'
+            else
+              printf '0\n'
+            fi
+          }
+
+          run_fetch() {
+            local mode="$1"
+            local run="$2"
+            local dir="$3"
+            local fetch_sha="$4"
+            local before after delta start_ns end_ns elapsed status fetched
+
+            before="$(object_bytes "$dir/.git")"
+            start_ns="$(date +%s%N)"
+
+            if timeout 300 env GIT_TERMINAL_PROMPT=0 \
+              git -C "$dir" fetch --no-tags --depth=1 origin "$fetch_sha" >/dev/null 2>&1; then
+              status=0
+            else
+              status=$?
+            fi
+
+            end_ns="$(date +%s%N)"
+            after="$(object_bytes "$dir/.git")"
+            delta=$((after - before))
+            elapsed="$(python3 -c "print(f'{($end_ns-$start_ns)/1e9:.3f}')" 2>/dev/null || awk "BEGIN {print ($end_ns-$start_ns)/1000000000}")"
+
+            if [ "$status" -eq 0 ]; then
+              fetched="$(git -C "$dir" rev-parse FETCH_HEAD 2>/dev/null || true)"
+              if [ "$fetched" != "$fetch_sha" ]; then
+                status=98
+              fi
+            fi
+
+            printf '%s,%s,%s,%s,%s,%s,%s\n' \
+              "$mode" "$run" "$status" "$elapsed" "$before" "$after" "$delta"
+          }
+
+          # Cold path: no repository state exists on TX.
+          for run in $(seq 1 "$repetitions"); do
+            dir="$root/cold-$run"
+            mkdir -p "$dir"
+            git -C "$dir" init -q
+            git -C "$dir" remote add origin "$repo_url"
+            run_fetch cold "$run" "$dir" "$target_sha"
+          done
+
+          # Warm path: previous commit is present first; only the exact target fetch is measured.
+          for run in $(seq 1 "$repetitions"); do
+            dir="$root/warm-$run"
+            mkdir -p "$dir"
+            git -C "$dir" init -q
+            git -C "$dir" remote add origin "$repo_url"
+
+            if ! timeout 300 env GIT_TERMINAL_PROMPT=0 \
+              git -C "$dir" fetch --no-tags --depth=1 origin "$base_sha" >/dev/null 2>&1; then
+              printf 'warm,%s,97,0,0,0,0\n' "$run"
+              continue
+            fi
+
+            git -C "$dir" checkout -q --detach FETCH_HEAD
+            run_fetch warm "$run" "$dir" "$target_sha"
+          done
+          REMOTE
+
+          failures="$(awk -F, 'NR>1 && $3 != 0 {count++} END {print count+0}' "$csv")"
+          echo "failures=$failures" >> "$GITHUB_OUTPUT"
+
+      - name: Publish benchmark summary
+        if: always()
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+          BASE_SHA: ${{ inputs.base_sha }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import csv
+          import os
+          import pathlib
+          import statistics
+
+          path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "tx-gitee-fetch.csv"
+
+          print("# TX Gitee fetch benchmark")
+          print()
+          print(f"- Gitee repo: `https://gitee.com/A158Coke/Wotbtools.git`")
+          print(f"- Target SHA: `{os.environ['TARGET_SHA']}`")
+          print(f"- Warm baseline SHA: `{os.environ['BASE_SHA']}`")
+          print()
+
+          if not path.exists():
+              print("No benchmark CSV was produced.")
+              raise SystemExit(0)
+
+          rows = list(csv.DictReader(path.open()))
+          print("| Mode | Attempts | Failures | P50 seconds | Min / max seconds | P50 object delta MiB |")
+          print("|---|---:|---:|---:|---:|---:|")
+
+          for mode in ("cold", "warm"):
+              subset = [r for r in rows if r["mode"] == mode]
+              ok = [r for r in subset if r["status"] == "0"]
+              failures = len(subset) - len(ok)
+
+              if ok:
+                  times = [float(r["elapsed_seconds"]) for r in ok]
+                  deltas = [int(r["object_bytes_delta"]) / 1024 / 1024 for r in ok]
+                  p50_time = f"{statistics.median(times):.3f}"
+                  minmax = f"{min(times):.3f} / {max(times):.3f}"
+                  p50_delta = f"{statistics.median(deltas):.2f}"
+              else:
+                  p50_time = minmax = p50_delta = "n/a"
+
+              print(
+                  f"| {mode} | {len(subset)} | {failures} | "
+                  f"{p50_time} | {minmax} | {p50_delta} |"
+              )
+
+          print()
+          print("Cold = empty TX repository. Warm = previous commit already fetched, then exact target SHA is fetched.")
+          print("Only /tmp is used on TX; no production files, Docker images, Compose services, or TCR state are changed.")
+          PY
+
+      - name: Fail benchmark on fetch errors
+        if: always()
+        shell: bash
+        env:
+          FETCH_FAILURES: ${{ steps.fetch.outputs.failures || '1' }}
+        run: |
+          set -euo pipefail
+          echo "fetch_failures=$FETCH_FAILURES"
+          [ "$FETCH_FAILURES" -eq 0 ]
