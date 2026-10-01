@@ -55,6 +55,19 @@ export interface AgentResultPlayer {
   destruction_assistance?: number
   gun_marks?: number
   killer_id?: number
+  /** v0.3.2：#301 f23 经验（crate `base_xp` 在 11.19 语料为 0，消费方只读本字段）；结算缺该字段时缺省 */
+  xp?: number
+  /** v0.3.2：#301 f106 银币（同上，取代 `credits_earned`） */
+  credits?: number
+  /** v0.3.2：本战斗者的结算 result/entity ID（`killer_id` 引用此命名空间） */
+  result_id?: number
+  /** v0.3.2：击杀者账号（`killer_id` 经同场 `result_id` 联表；联不上缺省） */
+  killer_account_id?: number
+  damage_received?: number
+  victory_points_earned?: number | null
+  victory_points_seized?: number | null
+  hitpoints_left?: number | null
+  rank?: number | null
   [key: string]: unknown
 }
 
@@ -64,9 +77,19 @@ export interface AgentBattleResult {
   timestamp: number
   datetime: string
   room_type: string
+  /** meta.json arenaBonusType（名人堂准入 / 联赛模式判定） */
+  arena_id?: string | null
+  arena_bonus_type?: number | null
+  finish_reason?: number | null
+  /** 结算层整秒时长（root f5，权威）；`battle_duration_secs` 是 meta 口径 */
+  result_duration_secs?: number | null
+  client_version?: string | null
   map_id: number
   map_name: string
+  /** v0.3.2：meta.json 原始地图代号（底图 / 语义 / i18n 键）；`map_name` 是枚举名 */
+  map_key?: string | null
   battle_duration_secs: number
+  /** 1 / 2；0 = 无胜方（v0.3.3 起平局不再报成 1） */
   winner_team: number
   author_account_id: number
   author_nickname: string
