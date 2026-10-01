@@ -176,6 +176,18 @@ export interface AgentSupremacyPointsSample {
   points: number
 }
 
+/**
+ * 单基地占领进度迁移（上游 v0.3.1 wrapper8/root8；攻防战/遭遇战共用载体）。
+ * 判据为 `field2==1 && field3 存在`（0..100）——**不锁 field1**：真实回放中携带进度的族
+ * 会在 field1=1/2 之间切换（Yukon 两族交替、Malinovka 仅 2、遭遇战仅 1）。
+ * 不施加单调性：回落/重置原样保留。
+ */
+export interface AgentAssaultBaseTransition {
+  clock: number
+  /** 占领进度 0..100 */
+  progress: number
+}
+
 /** 作者瞄准帧（Type39 投影，recorder-only；缺帧不外推，存活期按 deaths 门控） */
 export interface AgentAimFrame {
   time_sec: number
@@ -198,6 +210,15 @@ export interface AgentPlaybackFacet {
   supremacy_points?: AgentSupremacyPointsSample[]
   /** 仅作者/recorder；禁止给其他车辆伪造 */
   aim_frames?: AgentAimFrame[]
+  /**
+   * 单基地目标存在性（上游 v0.3.1）——**独立于是否已有占领进度**。判据为目标族发出
+   * 裸初始化对以外的字段：裸初始化对 `1=1,2=1` + `1=2,2=1` 是通用广播，普通对局同样
+   * 会发（62 份样本里 8 份 Regular/TrainingRoom/Any 只发这一对），不得据此判定。
+   * 缺省/ false = 无已证实的单基地目标。单基地与争霸互斥（wrapper8 vs wrapper12）。
+   */
+  assault_objective_present?: boolean
+  /** 单基地占领进度时间线（skip-when-empty：非单基地场次缺省） */
+  assault_bases?: AgentAssaultBaseTransition[]
 }
 
 // ---------- 射击复现通道（parseShotReplays；上游 shots 数组同构透传） ----------
@@ -321,9 +342,13 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
     assertArray(pb[key], `playback.${key}`)
   }
-  // contract v2 新能力（上游 v0.2.0；skip-when-empty 语义）：在场时必须为数组
-  for (const key of ['supremacy_bases', 'supremacy_points', 'aim_frames']) {
+  // contract v2 新能力（上游 v0.2.0 / v0.3.1；skip-when-empty 语义）：在场时必须为数组
+  for (const key of ['supremacy_bases', 'supremacy_points', 'aim_frames', 'assault_bases']) {
     if (pb[key] !== undefined) assertArray(pb[key], `playback.${key}`)
+  }
+  // 目标存在性必须是布尔（跳空键按"无已证实目标"解读，与 assaultObjectivePresent 同义）
+  if (pb.assault_objective_present !== undefined && typeof pb.assault_objective_present !== 'boolean') {
+    throw new Error('agent facets: playback.assault_objective_present 必须是布尔')
   }
   return value as unknown as AgentPlaybackFacet
 }
@@ -338,9 +363,12 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
 const AGENT_WASM_URL = '/wasm/wotb_replay_wasm.js'
 
 interface AgentWasmModule {
-  parseResult?: (bytes: Uint8Array) => string
-  parsePlayback?: (bytes: Uint8Array) => string
+  /** tankNamesJson 可选：`{tank_id: name}` 车型名表（上游 v0.3.1 起） */
+  parseResult?: (bytes: Uint8Array, tankNames?: string) => string
+  parsePlayback?: (bytes: Uint8Array, tankNames?: string) => string
   parseShotReplays?: (bytes: Uint8Array, limits?: string, shells?: string) => string
+  /** 第 4 入口（上游 v0.3.1）：AiReviewFacet JSON（花名册 + 事件流 + 结算锚点） */
+  parseAiReview?: (bytes: Uint8Array) => string
   default?: () => Promise<void>
   initSync?: () => void
 }
@@ -383,10 +411,38 @@ export async function parseAgentResultFromBytes(bytes: Uint8Array): Promise<Agen
   return validateAgentBattleResult(JSON.parse(parse(bytes)) as unknown)
 }
 
+/**
+ * 车型名表注入参数（可选）：`{tank_id: name}` JSON 串。注入后 `tank_name` 为真实车型名；
+ * 不注入时 `tank_name` 为 `tank_{id}`（**不是空串**——上游 v0.3.1 起文档与实现统一）。
+ */
+export function tankNamesJson(table: Record<number, string>): string {
+  return JSON.stringify(table)
+}
+
 /** 时序能力：.wotbreplay 字节 → PlaybackData。文件不出本机。 */
-export async function parseAgentPlaybackFromBytes(bytes: Uint8Array): Promise<AgentPlaybackFacet> {
+export async function parseAgentPlaybackFromBytes(
+  bytes: Uint8Array, tankNames?: string,
+): Promise<AgentPlaybackFacet> {
   const parse = await wasmFn('parsePlayback')
-  return validateAgentPlayback(JSON.parse(parse(bytes)) as unknown)
+  return validateAgentPlayback(JSON.parse(parse(bytes, tankNames)) as unknown)
+}
+
+/**
+ * AI 事件数据（第 4 入口；上游 v0.3.1）：.wotbreplay 字节 → AiReviewFacet。
+ * DTO 冻结 v1；仅做最小形状校验（version + 四个顶层键 + 事件为数组），
+ * 字段级语义由上游契约持有。注意：上报为 JSON 字符串而非 DTO 类型——
+ * 消费方按需投影，不在此层教条化形状。
+ */
+export async function parseAgentAiReviewFromBytes(bytes: Uint8Array): Promise<unknown> {
+  const parse = await wasmFn('parseAiReview')
+  const doc = JSON.parse(parse(bytes)) as Record<string, unknown>
+  if (!isObject(doc)) throw new Error('agent ai review: 顶层必须是对象')
+  if (doc.version !== 1) throw new Error(`agent ai review: 契约版本应为 1，实为 ${String(doc.version)}`)
+  for (const key of ['battle', 'rosters', 'events', 'settlements']) {
+    if (doc[key] === undefined) throw new Error(`agent ai review: 缺键 ${key}`)
+  }
+  for (const key of ['rosters', 'events', 'settlements']) assertArray(doc[key], `ai review.${key}`)
+  return doc
 }
 
 function assertShotArray(v: unknown): AgentShotReplay[] {

@@ -154,6 +154,21 @@ describe('时序能力（PlaybackData 校验）', () => {
     expect(() => validateAgentPlayback(bad)).toThrow(/playback\.supremacy_bases 必须是数组/)
   })
 
+  it('单基地键（v0.3.1）：缺省合法、assault_bases 非数组拒绝、objective 非布尔拒绝', () => {
+    const ok = validateAgentPlayback(minimalPlayback())
+    expect(ok.assault_bases).toBeUndefined()
+    // 目标存在性独立于进度：只有 objective 没有 bases 也合法（无占领活动的单基地场次）
+    const objOnly = minimalPlayback()
+    ;(objOnly as Record<string, unknown>).assault_objective_present = true
+    expect(validateAgentPlayback(objOnly).assault_objective_present).toBe(true)
+    const badArr = minimalPlayback()
+    ;(badArr as Record<string, unknown>).assault_bases = 'x'
+    expect(() => validateAgentPlayback(badArr)).toThrow(/playback\.assault_bases 必须是数组/)
+    const badBool = minimalPlayback()
+    ;(badBool as Record<string, unknown>).assault_objective_present = 'yes'
+    expect(() => validateAgentPlayback(badBool)).toThrow(/assault_objective_present 必须是布尔/)
+  })
+
   it('缺数组键 → reject', () => {
     const bad = minimalPlayback()
     delete (bad as Record<string, unknown>).shots
