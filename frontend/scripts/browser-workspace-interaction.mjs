@@ -604,6 +604,60 @@ async function runRotationScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `rotate ${scenario.width}x${scenario.height} -> ${scenario.rotateTo.width}x${scenario.rotateTo.height}` })
 }
 
+/**
+ * §mobile-fullscreen：手机横屏全屏是「148px navigation rail | map」，播放控件仍在底部 overlay。
+ * 触屏 rail 的 248px 下限只属于「控件真的在 rail 里」的大平板，不得通过 inline --pb-rail-w
+ * 盖掉 mobile fullscreen 的 148px（inline style 优先级高于 CSS 规则）。
+ */
+const MOBILE_FULLSCREEN_SCENARIO = {
+  name: 'fullscreen-740x360-landscape-coarse',
+  width: 740, height: 360, touch: true, duration: 60,
+}
+
+async function runMobileFullscreenScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+
+  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=${scenario.duration}`)
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-fullscreen"]'), { label: 'fullscreen button' })
+  await page.evaluate(`document.querySelector('[data-test="pb-fullscreen"]').scrollIntoView({ block: 'center' })`)
+  const button = await page.evaluate(`(() => {
+    const r = document.querySelector('[data-test="pb-fullscreen"]').getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  })()`)
+  // 真实触摸 = user gesture，requestFullscreen 才会被浏览器放行
+  await page.tap({ ...button, touch: scenario.touch })
+  await page.waitFor(() => !!document.fullscreenElement, { timeout: 5000, label: 'document.fullscreenElement' })
+  await delay(200)
+
+  const state = await page.evaluate(`(() => {
+    const root = document.querySelector('[data-test="battle-playback"]')
+    const rail = root.querySelector('.pb-left-rail')
+    return {
+      fullscreenIsRoot: document.fullscreenElement === root,
+      formClass: Array.from(root.classList).find((n) => n.startsWith('pb-form-')) || null,
+      railVar: getComputedStyle(root).getPropertyValue('--pb-rail-w').trim(),
+      inlineRailVar: root.style.getPropertyValue('--pb-rail-w').trim(),
+      railWidth: rail ? rail.getBoundingClientRect().width : null,
+      controlsInRail: !!document.querySelector('.pb-controls-rail-mode'),
+    }
+  })()`)
+  check(failures, state.fullscreenIsRoot, 'fullscreen element is not the playback root')
+  check(failures, state.formClass === 'pb-form-mobile', `fullscreen form=${state.formClass}, expected pb-form-mobile`)
+  check(failures, !state.controlsInRail, 'mobile fullscreen must keep the playback controls out of the rail')
+  check(failures, state.railVar === '148px',
+    `mobile fullscreen --pb-rail-w=${state.railVar} (inline=${state.inlineRailVar || 'none'}), expected 148px`)
+  check(failures, state.railWidth != null && Math.abs(state.railWidth - 148) <= 1,
+    `mobile fullscreen rail rendered ${state.railWidth}px wide, expected 148px`)
+
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `fullscreen ${scenario.width}x${scenario.height}` })
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chrome = findChrome()
@@ -623,6 +677,7 @@ try {
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
     { scenario: ROTATION_SCENARIO, run: () => runRotationScenario(env, ROTATION_SCENARIO) },
+    { scenario: MOBILE_FULLSCREEN_SCENARIO, run: () => runMobileFullscreenScenario(env, MOBILE_FULLSCREEN_SCENARIO) },
   ]
   // 可选场景名过滤（调试单个形态时不必跑满矩阵）。
   const nameFilter = process.argv.slice(2).find((arg) => !arg.startsWith('-'))
