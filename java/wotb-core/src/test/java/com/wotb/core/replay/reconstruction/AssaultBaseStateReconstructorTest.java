@@ -15,12 +15,40 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class AssaultBaseStateReconstructorTest {
 
     @Test
-    void initializationProvesObjectiveWithoutInventingProgress() {
-        final List<ReplayEvent> events = List.of(raw(1, 2, 1, null, null), raw(2, 1, 1, null, null));
-        assertEquals(true, AssaultBaseStateReconstructor.hasObjective(events));
-        assertEquals(List.of(), AssaultBaseStateReconstructor.reconstruct(events));
-        assertEquals(false, AssaultBaseStateReconstructor.hasObjective(List.of(raw(1, 1, 1, null, null))));
-        assertEquals(false, AssaultBaseStateReconstructor.hasObjective(List.of(raw(1, 2, 2, null, null))));
+    void objectiveRequiresMoreThanBareInitialization() {
+        // 裸初始化对是通用广播：普通对局（Regular / TrainingRoom）同样只发这一对，
+        // 不得据此判定"有目标"（62 份真实样本里 8 份普通对局正是如此）。
+        final List<ReplayEvent> bare = List.of(raw(1, 2, 1, null, null), raw(2, 1, 1, null, null));
+        assertEquals(false, AssaultBaseStateReconstructor.hasObjective(bare));
+        assertEquals(List.of(), AssaultBaseStateReconstructor.reconstruct(bare));
+
+        // 目标族发出裸初始化对以外的字段（field4 标志流 / field3 进度）→ 目标存在
+        assertEquals(true, AssaultBaseStateReconstructor.hasObjective(
+                List.of(raw(1, 2, 1, null, null), raw(2, 2, 1, null, 1))));
+        assertEquals(true, AssaultBaseStateReconstructor.hasObjective(
+                List.of(raw(1, 2, 1, 0, null))));
+        // 目标存在但无进度 → 不合成进度事件
+        assertEquals(List.of(), AssaultBaseStateReconstructor.reconstruct(
+                List.of(raw(1, 2, 1, null, 1))));
+
+        // field2 非 1：不属目标族
+        assertEquals(false, AssaultBaseStateReconstructor.hasObjective(
+                List.of(raw(1, 2, 2, null, 1))));
+    }
+
+    @Test
+    void progressIsAcceptedFromEitherField1Side() {
+        // 遭遇战（Naval Frontier 真实样本）里进度**只**由 field1=1 承载，
+        // field1=2 族只有常量 field4=1；旧判据 field1==2 会得到空时间线。
+        final List<ReplayEvent> events = List.of(
+                raw(1, 2, 1, null, 1),
+                raw(2, 1, 1, 1, null),
+                raw(3, 1, 1, 19, null),
+                raw(4, 2, 1, 7, null));
+        final List<AssaultBaseStateTransition> states =
+                AssaultBaseStateReconstructor.reconstruct(events);
+        assertEquals(List.of(1, 19, 7),
+                states.stream().map(AssaultBaseStateTransition::captureProgress).toList());
     }
 
     @Test
