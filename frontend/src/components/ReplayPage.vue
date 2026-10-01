@@ -33,6 +33,7 @@ import MenuButton from './MenuButton.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import SeriesOverview from './SeriesOverview.vue'
 import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
+import { useBreakpoint } from '../composables/useBreakpoint.js'
 
 defineOptions({ name: 'ReplayPage' })
 
@@ -294,6 +295,18 @@ function selectBattle(sourceId) {
   if (index >= 0) activeTab.value = `b${index}`
 }
 
+/**
+ * 玩家表呈现方式：手机默认卡片列表，可切回表格；平板 / 桌面固定表格（design-language §7 DataTable）。
+ * 用户的选择只在本页会话内有效。
+ */
+const { isCompact } = useBreakpoint()
+const layoutChoice = ref('cards')
+const dataLayout = computed(() => (isCompact.value ? layoutChoice.value : 'table'))
+const layoutOptions = computed(() => [
+  { value: 'cards', label: t('workspace.layout_cards'), testid: 'data-layout-cards' },
+  { value: 'table', label: t('workspace.layout_table'), testid: 'data-layout-table' },
+])
+
 /** 「列 8/20」：让用户知道还有指标收在列面板里（默认只显示核心列，审计 BZ-07）。 */
 const columnCounts = computed(() => {
   if (colScope.value === 'cw') return { shown: unifiedShownCols.value.length, total: cwOrder.value.length }
@@ -383,6 +396,9 @@ function createExportClone(target, theme) {
 
 function prepareReplayExportClone(clone) {
   if (!clone) return
+  // PNG 总是导出表格：卡片模式下表格只是被隐藏
+  for (const el of clone.querySelectorAll('.player-cards')) el.remove()
+  for (const el of clone.querySelectorAll('.tablewrap, .scroll-hint')) el.style.display = ''
   for (const el of clone.querySelectorAll('.selected')) {
     el.classList.remove('selected')
   }
@@ -595,6 +611,14 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
             @update:model-value="selectBattle"
           />
           <div class="data-actions">
+            <SegmentedControl
+              v-if="isCompact"
+              v-model="layoutChoice"
+              class="data-layout-toggle"
+              :options="layoutOptions"
+              :aria-label="$t('workspace.layout')"
+              data-testid="data-layout"
+            />
             <AppButton v-if="leagueMode" variant="ghost" size="sm" data-testid="league-docs-btn" @click="openRatingDocs">
               <BookOpen :size="16" aria-hidden="true" />{{ $t('workspace.rating_docs') }}
             </AppButton>
@@ -625,7 +649,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
           <SeriesOverview v-if="series.battles.length > 1" :series="series" @select-battle="selectBattle" />
           <template v-if="!leagueMode && resp.aggregate.length">
             <h2 class="replay-section-title" data-testid="base-aggregate-title">{{ $t('result.base_summary_title') }}</h2>
-            <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
+            <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" :layout="dataLayout" />
           </template>
           <template v-if="leagueMode">
             <h2 class="replay-section-title" data-testid="league-summary-title">{{ $t('league.summary.section_title') }}</h2>
@@ -633,6 +657,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
               :rows="unifiedRows" :columns="unifiedShownCols"
               :league-columns="leagueData?.columns || []" :league-mode="true"
               :active="isSummaryView"
+              :layout="dataLayout"
               :selected-account-id="selectedPlayer?.accountId ?? null"
               @select-player="selectPlayer" />
             <template v-if="(leagueData?.teamSummaries?.length || 0) > 0">
@@ -652,6 +677,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
             :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
             :selected-account-id="selectedPlayer?.accountId ?? null"
             :selected-arena-id="selectedPlayer?.arenaId ?? null"
+            :layout="dataLayout"
             @select-player="selectPlayer" />
         </div>
         </template>
@@ -698,6 +724,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 @media (width < 768px) {
   .data-toolbar > .segmented { width: 100%; }
   .data-actions { width: 100%; justify-content: flex-end; }
+  .data-layout-toggle { margin-inline-end: auto; }
 }
 .league-failure-head {
   display: flex;
@@ -813,25 +840,26 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 .replay-export-root .league-summary-title {
   color: var(--exp-text);
 }
+/* StatStrip 的 scoped 规则与这里同特异性，导出样式多带一层 .mcards 以确定性胜出 */
 .replay-export-root .mcards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-bottom: 16px;
 }
-.replay-export-root .mc {
+.replay-export-root .mcards .mc {
   background: var(--exp-card-bg);
   border: 1px solid var(--exp-border);
   border-radius: 8px;
   padding: 14px 16px;
   text-align: center;
 }
-.replay-export-root .mc .k {
+.replay-export-root .mcards .mc .k {
   font-size: .78rem;
   color: var(--exp-text-sub);
   margin-bottom: 4px;
 }
-.replay-export-root .mc .v {
+.replay-export-root .mcards .mc .v {
   font-size: 1.4rem;
   font-weight: 700;
   color: var(--exp-text);
