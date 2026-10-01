@@ -288,3 +288,12 @@
       margin-top: 8px;
     }
 }
+
+/* 审计 PB-01：手机横屏非全屏。地图原来按容器宽度定尺寸（844 宽时约 844 高），比视口还高，
+   控制栏被挤出首屏。改为按可用高度封顶（扣掉顶栏、底部 Tab 栏与 HUD + 控制栏约 150px），写法同平板窄屏。 */
+@media (orientation: landscape) {
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main .pb-map {
+    max-width: min(100%, calc((100dvh - var(--header-h) - var(--tabbar-h) - 150px) * var(--pb-map-ratio, 1)));
+    margin-inline: auto;
+  }
+}

@@ -133,3 +133,21 @@ describe('L3：滚轮与快捷键不抢页面（审计 PB-04 / PB-05）', () => 
     expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.play')
   })
 })
+
+describe('L3：右侧栏未选车时显示两队阵容（审计 BZ-13 / PB-03）', () => {
+  afterEach(() => { mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.unstubAllGlobals() })
+
+  it('列出两队玩家；点玩家打开车辆详情，阵容随之隐藏', async () => {
+    stubRaf()
+    const wrapper = mountPlayback()
+    await flushPromises()
+    const rows = wrapper.findAll('[data-test="pb-roster-row"]')
+    expect(rows.length).toBeGreaterThan(1)
+    expect(wrapper.find('.pb-roster-friendly').exists()).toBe(true)
+    expect(wrapper.find('.pb-roster-enemy').exists()).toBe(true)
+    await rows[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-shell-roster"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').classes()).toContain('pb-details-active')
+  })
+})

@@ -300,7 +300,8 @@ describe('BattlePlayback', () => {
     expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('00:12 / 01:00')
     expect(wrapper.find('svg').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('NeverSeen')
+    // 从未被观测到的车辆不出现在地图上（阵容列表来自结算名单，仍会列出全员）
+    expect(wrapper.find('[data-test="pb-map"]').text()).not.toContain('NeverSeen')
     expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
   })
 

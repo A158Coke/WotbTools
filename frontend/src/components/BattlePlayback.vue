@@ -1766,6 +1766,17 @@ const teamVehicles = computed(() => {
   return { friendly, enemy }
 })
 
+/**
+ * 审计 BZ-13 / PB-03：PC / 平板双栏的右侧栏在未选中车辆时不再空着，显示两队阵容（含当前存活状态），
+ * 点玩家即打开该车详情。手机与窄平板（<860，堆叠形态）由 CSS 隐藏，避免把控制栏推出首屏。
+ */
+const destroyedNow = computed(() => new Set(
+  baseVehicleStates.value.filter(st => st.destroyed === true).map(st => st.vehicle.accountId)))
+function selectFromRoster(accountId) {
+  selectedAccountId.value = accountId
+  activePanel.value = null
+}
+
 const selectedState = computed(() => {
   if (selectedAccountId.value == null) return null
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
@@ -2021,7 +2032,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen, 'pb-rail-collapsed': railCollapsed, 'pb-side-slots': sideSlots, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen, 'pb-rail-collapsed': railCollapsed, 'pb-side-slots': sideSlots, 'pb-controls-bottom': !controlsInRail, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
     <BattlePlaybackHud
       :friendly-hp="friendlyHp"
       :enemy-hp="enemyHp"
@@ -2280,6 +2291,26 @@ const mapStyle = computed(() => ({
             :format-clock="formatClock"
             @close="closeSidebar"
           />
+          <div v-else-if="formFactor !== 'mobile'" class="pb-shell-roster" data-test="pb-shell-roster">
+            <section v-for="side in ['friendly', 'enemy']" :key="side" class="pb-roster-team" :class="'pb-roster-' + side">
+              <strong class="pb-team-head">{{ $t(side === 'friendly' ? 'recon.map.playback.team_friendly' : 'recon.map.playback.team_enemy') }}</strong>
+              <ul class="pb-roster-list">
+                <li v-for="v in teamVehicles[side]" :key="v.accountId">
+                  <button
+                    type="button"
+                    class="pb-roster-row"
+                    :class="{ 'is-destroyed': destroyedNow.has(v.accountId) }"
+                    data-test="pb-roster-row"
+                    @click="selectFromRoster(v.accountId)"
+                  >
+                    <span class="pb-team-player">{{ v.playerName }}</span>
+                    <span class="pb-team-tank">{{ v.tankName || v.tankId }}</span>
+                  </button>
+                </li>
+              </ul>
+            </section>
+            <p class="pb-roster-hint">{{ t('workspace.playback_roster_hint') }}</p>
+          </div>
         </div>
 
       </div>
