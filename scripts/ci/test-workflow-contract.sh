@@ -141,7 +141,7 @@ for owner in ("business-api", "frontend"):
         step for step in workflow["jobs"]["mirror_gitee"]["steps"]
         if step.get("name") == "Mirror WotbTools to Gitee"
     )
-    assert mirror_step["with"]["force_update"] == "false", owner
+    assert mirror_step["with"]["force_update"] == "true", owner
     assert workflow["jobs"]["build"]["concurrency"] == {
         "group": "tx-production-build", "cancel-in-progress": "false", "queue": "max",
     }, owner
