@@ -12,7 +12,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { poseFromYPR } from './glbRig.js'
+import { poseFromYPR, neutralizeDefaultMetalness } from './glbRig.js'
 import {
     fetchTankData,
     fetchTankFilter,
@@ -1167,6 +1167,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         node.receiveShadow = true;
                     }
                 });
+                // 老式车（无 metallicRoughness 贴图）的金属度会被 three.js 取 glTF 默认 1.0
+                // 当全金属渲染，无环境贴图下整车发黑（见 glbRig.js）
+                neutralizeDefaultMetalness(tankModel);
                 scene.add(tankModel);
                     // ?debug=1：标注模型原点（=车体原点=场景原点）与两个包围盒中心（验证定位）
                 if (QP.get('debug') === '1') {
@@ -1505,6 +1508,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                     }
                                 }
                             });
+                            // 必须在材质 clone 之后：幽灵车与目标车同规则（老式车金属度归零）
+                            neutralizeDefaultMetalness(sModel);
                             sModel.updateMatrixWorld(true);
                             scene.add(sModel);
                             return { sd: sd, sModel: sModel, breechGunLocal: breechGunLocal };

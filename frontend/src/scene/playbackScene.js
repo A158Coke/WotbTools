@@ -25,7 +25,7 @@ import { pointsAt } from './supremacyPoints.js'
 import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { playableBounds } from '../data/playableBounds.js'
 import { createLoadProgress } from './loadProgress.js'
-import { poseFromYPR } from './glbRig.js'
+import { poseFromYPR, neutralizeDefaultMetalness } from './glbRig.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -1420,6 +1420,9 @@ export function initPlayback(container, store) {
           new GLTFLoader().parse(glbBytes.buffer, '', (g) => res(g.scene), () => res(null)));
         if (!model) return null;
         model.scale.setScalar(1);
+        // 老式车（无 metallicRoughness 贴图）金属度归零——否则无环境贴图下发黑；
+        // 在模板上做一次，逐车 clone 共享材质即随带（见 glbRig.js）
+        neutralizeDefaultMetalness(model);
         // hide_elements 拆件全部渲染（与装甲检视器同规则；位于部件子树内，姿态随父节点自动跟随）
         // 缓存模板 + 部件数据（sd）；每车实例化时 clone 并重收集节点引用
         //（同 tank_id 多车共用一个实例会互相抢对象、位姿互覆盖）
