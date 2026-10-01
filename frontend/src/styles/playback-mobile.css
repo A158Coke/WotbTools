@@ -178,6 +178,11 @@
    手机 landscape（内宽>768）仍保持 mobile UX（不再只依赖 @media(width<768px)）。 */
 .battle-playback.pb-form-mobile .pb-controls { justify-content: center; gap: 4px; }
 .battle-playback.pb-form-mobile .pb-controls .pb-btn { min-width: 36px; min-height: 36px; padding: 2px 6px; }
+/* 触屏点击区域契约（--hit-min，pointer: coarse 下为 44px）：上一行的 36px 选择器特异性高于组件内的
+   coarse 规则，会把手机上的播放控件压回 36px——触屏时这里同样抬到 --hit-min。 */
+@media (pointer: coarse) {
+  .battle-playback.pb-form-mobile .pb-controls .pb-btn { min-width: var(--hit-min); min-height: var(--hit-min); }
+}
 .battle-playback.pb-form-mobile .pb-controls .pb-control-label { display: none; }
 .battle-playback.pb-form-mobile .pb-controls .pb-time {
   flex-basis: 100%;

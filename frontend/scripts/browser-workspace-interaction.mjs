@@ -152,6 +152,14 @@ function playbackControlProbe() {
       ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}`
       : null,
     formClass: root ? Array.from(root.classList).find((name) => name.startsWith('pb-form-')) || null : null,
+    /** 所有可见速度档位按钮的最小边（触屏点击区域契约：≥ 44px） */
+    speedMinSide: (() => {
+      const sides = [...document.querySelectorAll('[data-test^="pb-speed-"]')]
+        .map((b) => b.getBoundingClientRect())
+        .filter((r) => r.width > 0 && r.height > 0)
+        .map((r) => Math.min(r.width, r.height))
+      return sides.length ? Math.min(...sides) : null
+    })(),
     /** rail 模式下速度档位必须一行排开且不撑出 rail（档位个数变化时的回归点） */
     railSpeeds: (() => {
       const group = document.querySelector('.pb-controls-rail-mode .pb-speed')
@@ -163,6 +171,7 @@ function playbackControlProbe() {
         count: buttons.length,
         rows: new Set(buttons.map((r) => Math.round(r.top))).size,
         overflow: buttons.some((r) => r.left < limit.left - 1 || r.right > limit.right + 1),
+        minSide: Math.min(...buttons.map((r) => Math.min(r.width, r.height))),
       }
     })(),
     pageScrollWidth: document.documentElement.scrollWidth,
@@ -412,6 +421,9 @@ const PLAYBACK_SCENARIOS = [
   // 审计 PB-07：iPad 横屏是触屏但有平板的可用空间，必须拿 tablet 形态（触屏只放大点击区域）
   { name: 'play-1024x768-ipad-coarse', width: 1024, height: 768, touch: true, duration: 60, form: 'pb-form-tablet' },
   { name: 'play-1440x900-desktop', width: 1440, height: 900, touch: false, duration: 60, form: 'pb-form-pc' },
+  // 触屏 + rail：视口 >1200 的大平板（iPad Pro / Android 平板横屏）走 pc 形态，控件进 rail；
+  // 速度档位必须一行排开且每个都满足 44px 点击区域（rail 在触屏上自动加宽）
+  { name: 'play-1366x1024-tablet-coarse-rail', width: 1366, height: 1024, touch: true, duration: 60, form: 'pb-form-pc' },
   { name: 'duration-zero-390x844-coarse', width: 390, height: 844, touch: true, duration: 0, form: 'pb-form-mobile' },
 ]
 
@@ -512,6 +524,13 @@ async function runPlaybackControlScenario(env, scenario) {
     check(failures, before.railSpeeds.rows === 1,
       `rail speed options wrapped onto ${before.railSpeeds.rows} rows (${before.railSpeeds.count} options)`)
     check(failures, !before.railSpeeds.overflow, 'rail speed options overflow the rail')
+  }
+  if (scenario.touch && before.speedMinSide != null) {
+    check(failures, before.speedMinSide >= 43.5,
+      `touch speed option hit target is ${before.speedMinSide.toFixed(1)}px, below 44px`)
+  }
+  if (scenario.name.endsWith('-rail')) {
+    check(failures, !!before.railSpeeds, 'expected the playback controls to be in the rail')
   }
   check(failures, before.pageScrollWidth <= before.viewportWidth + 1,
     `page-level horizontal overflow: ${before.pageScrollWidth} > ${before.viewportWidth} (contentWidth=${before.contentWidth} overflowing=${JSON.stringify(before.overflowing)})`)
