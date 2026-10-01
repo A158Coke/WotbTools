@@ -158,9 +158,15 @@ export interface AgentSupremacyBaseTransition {
   clock: number
   /** 0..3 = A..D */
   base_id: number
-  owner_team?: number
-  capturing_team?: number
-  capture_progress?: number
+  /**
+   * 上游为 `Option<u8>` 且未加 skip_serializing_if —— 空 canonical 态（无主/未占领/
+   * 无进度）序列化为**显式 null**，故必须建模为 `number | null`：`undefined` 表示
+   * 字段本身缺失（老产物），`null` 表示"该维度为空"。渲染侧不得把 null 当作
+   * 有值的 owner/capturer/progress。
+   */
+  owner_team?: number | null
+  capturing_team?: number | null
+  capture_progress?: number | null
 }
 
 /** Supremacy 实时点数采样（wrapper13/root12；仅真实广播，消费取 ≤t 最后值） */
@@ -175,7 +181,8 @@ export interface AgentAimFrame {
   time_sec: number
   world_yaw: number
   world_pitch: number
-  ray_point: number[]
+  /** 上游 `[f32; 3]`——定长三元组，非任意长度数组 */
+  ray_point: [number, number, number]
 }
 
 export interface AgentPlaybackFacet {
