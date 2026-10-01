@@ -6,7 +6,10 @@
 set -Eeuo pipefail
 
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
-readonly CACHE_ROOT="${WOTB_TX_FRONTEND_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-frontend-production-build}"
+# Share the exact-source cache and host build lock with the Business API builder.
+# TX is the constrained production builder; two application images must not compete
+# for CPU/RAM or maintain duplicate Gitee clones when the same main commit touches both.
+readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
 readonly GITEE_WAIT_ATTEMPTS="${GITEE_WAIT_ATTEMPTS:-12}"
