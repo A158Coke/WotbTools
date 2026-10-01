@@ -8,7 +8,7 @@
 }
 .lb-wrap > .tabs {
   position: sticky;
-  top: 66px;
+  top: calc(var(--header-h) + 6px);
   z-index: 22;
   display: flex;
   gap: 5px;
@@ -94,7 +94,7 @@
 }
 .hof-admin-tabs {
   position: sticky;
-  top: 66px;
+  top: calc(var(--header-h) + 6px);
   z-index: 22;
   display: flex !important;
   gap: 5px !important;
@@ -182,7 +182,6 @@
   .lb-wrap,
   .hof-admin { width: calc(100vw - 24px) !important; padding-top: 16px !important; }
   .lb-wrap > .tabs,
-  .hof-admin-tabs { top: 64px; }
   .lb-wrap .lb-toolbar { position: static; }
 }
 

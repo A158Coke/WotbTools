@@ -53,7 +53,7 @@
   content: '';
   position: fixed;
   z-index: -2;
-  top: 60px;
+  top: var(--header-h);
   right: 0;
   bottom: 0;
   left: 0;
@@ -86,7 +86,7 @@
   content: '';
   position: fixed;
   z-index: -1;
-  top: 60px;
+  top: var(--header-h);
   right: 0;
   bottom: 0;
   left: 0;
@@ -185,16 +185,6 @@
 }
 
 /* User menu stays readable regardless of page background. */
-.user-menu-panel {
-  background: #0f161a !important;
-  border-color: #354148 !important;
-}
-.user-menu-panel .user-menu-item { color: #d8d6cf !important; }
-.user-menu-panel .user-menu-item:hover {
-  color: #fff !important;
-  background: #1a2429 !important;
-}
-.user-menu-panel .user-menu-item.danger { color: #ef746b !important; }
 
 @media (max-width: 1199px) {
   .homepage-showcase::before,
@@ -221,7 +211,7 @@
   .rating-section::after,
   .rating-workspace::after,
   .homepage-showcase::before {
-    top: 56px;
+    top: var(--header-h);
     background-position: 68% center;
   }
   .layout-content::before,
@@ -242,7 +232,7 @@
   .rating-page::before,
   .rating-section::before,
   .rating-workspace::before {
-    top: 56px;
+    top: var(--header-h);
   }
   .homepage-showcase .showcase-hero {
     background-position: 68% center !important;

@@ -43,7 +43,7 @@ Authentication 是数据解析与战局回放的**真实 UI gate**，不是 moun
 - 未登录时 `ReplaySourcePanel`、`FileUploader`、`ReplayProcessingPanel`、`ReplayPage`、Playback
   面板、`ReplayTaskCard` 与 `RemoveConfirmModal` 全部不渲染——未登录无法触发上传或解析。
 - `useAuth.login(view)` 只对「同一个进行中的 redirect」去重：`loginInFlight` 是短生命周期 ref，在
-  `finally` 释放；不存在 component-lifetime 一次性锁，因此取消/失败后 tabs、登录按钮与 UserMenu
+  `finally` 释放；不存在 component-lifetime 一次性锁，因此取消/失败后 tabs、登录按钮与「我的」页登录入口
   都能重新发起新的 login transaction。
 - 未登录 mount 到 data/playback 时仍自动发起一次 login（保留既有 UX），失败或取消后停留在 `ws-auth-required` 可重试状态；直接进入 AI 维护页不自动登录。
 - Android pending 字节通过固定同源 HTTPS Native resource 读取；header 校验 pending identity，响应不缓存。fetch/blob 失败复用 Replay 错误区与重试，不启动 Job、不 ACK。
