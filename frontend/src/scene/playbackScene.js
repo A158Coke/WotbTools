@@ -467,7 +467,14 @@ export function initPlayback(container, store) {
             opacity: m.opacity ?? 1,
             side: THREE.DoubleSide,
           });
-          if (m.alphaMode === 'MASK') nm.alphaTest = m.alphaCutoff || 0.33;
+          // 镂空材质必须继承 GLTFLoader 解析好的 alphaTest。GLTFLoader 不把 glTF 的
+          // alphaMode 挂到材质上——MASK 只体现为 alphaTest（alphaCutoff ?? 0.5），
+          // BLEND 只体现为 transparent。旧判据 `m.alphaMode === 'MASK'` 恒为 false
+          // （该属性不存在），重建材质又只拷了 map/color/opacity/side，于是 MASK 的
+          // 裁切被整个丢掉：铁丝网（wirebarricade）/藤蔓（ivy）/蕨/标牌这类镂空贴图
+          // 按整片方片照绘，背景没被剔除——那些贴图的背景恰是纯黑（实测 ivy 背景区
+          // 亮度 0.0），看上去就是一张实心黑片。
+          if (m.alphaTest > 0) nm.alphaTest = m.alphaTest;
           nm.flatShading = true;
           return nm;
         })());
