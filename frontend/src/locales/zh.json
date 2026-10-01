@@ -1513,6 +1513,7 @@
     "all_shooters": "全部玩家",
     "allies": "我方",
     "enemies": "敌方",
+    "unknown_side": "未识别阵营",
     "author": "作者",
     "stat_shots": "射击数",
     "stat_hit": "命中率",

@@ -178,9 +178,11 @@ async function onFilePicked(event) {
   }
 }
 
-// 射击者筛选：我方（作者阵营）/ 敌方分组，作者置顶
+// 射击者筛选：显式三态 ally / enemy / unknown——undefined（阵营未知，含
+// team=0 与未联上花名册）绝不并入 Allies（旧 `!== 'enemy'` 是 roster team hack
+// 的同族 bug）；作者置顶，其余按发数
 const shooterGroups = computed(() => {
-  const groups = { allies: [], enemies: [] }
+  const groups = { allies: [], enemies: [], unknown: [] }
   const count = {}
   for (const s of shots.value) {
     const name = s.shooter_name || `eid:${s.shooter_eid}`
@@ -191,16 +193,19 @@ const shooterGroups = computed(() => {
     const name = s.shooter_name || `eid:${s.shooter_eid}`
     if (seen.has(name)) continue
     seen.add(name)
-    const entry = { name, n: count[name], isAuthor: !!s.is_author, ally: s.shooter_team !== 'enemy' }
-    ;(entry.ally ? groups.allies : groups.enemies).push(entry)
+    const entry = { name, n: count[name], isAuthor: !!s.is_author }
+    if (s.shooter_team === 'ally') groups.allies.push(entry)
+    else if (s.shooter_team === 'enemy') groups.enemies.push(entry)
+    else groups.unknown.push(entry)
   }
   const byN = (a, b) => (b.isAuthor ? 1 : 0) - (a.isAuthor ? 1 : 0) || b.n - a.n
   groups.allies.sort(byN)
   groups.enemies.sort((a, b) => b.n - a.n)
+  groups.unknown.sort((a, b) => b.n - a.n)
   return groups
 })
 
-const shooterOptions = computed(() => [...shooterGroups.value.allies, ...shooterGroups.value.enemies])
+const shooterOptions = computed(() => [...shooterGroups.value.allies, ...shooterGroups.value.enemies, ...shooterGroups.value.unknown])
 
 const filteredShots = computed(() => {
   if (shooter.value === 'all') return shots.value
@@ -391,6 +396,9 @@ async function resolveShellIdx(s) {
           </optgroup>
           <optgroup v-if="shooterGroups.enemies.length" :label="t('agentShots.enemies')">
             <option v-for="o in shooterGroups.enemies" :key="o.name" :value="o.name">{{ o.name }} ({{ o.n }})</option>
+          </optgroup>
+          <optgroup v-if="shooterGroups.unknown.length" :label="t('agentShots.unknown_side')">
+            <option v-for="o in shooterGroups.unknown" :key="o.name" :value="o.name">{{ o.name }} ({{ o.n }})</option>
           </optgroup>
         </select>
       </div>

@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 
 import * as api from './agent-replay-facets.js'
 import {
+  PLAYBACK_CONTRACT_VERSION,
   normalizeAgentShotIndices,
   parseAgentPlaybackFromJson,
   parseAgentResultFromJson,
@@ -88,7 +89,7 @@ function minimalResult(): Record<string, unknown> {
 
 function minimalPlayback(): Record<string, unknown> {
   return {
-    version: 1,
+    version: PLAYBACK_CONTRACT_VERSION,
     meta: { map_id: 1, map_name: 'x', winner_team: 1, friendly_team: 1, author_eid: 0, t_start: 0, samples: 1, duration: 0.1 },
     vehicles: [],
     shots: [],
@@ -129,18 +130,28 @@ describe('结果能力（BattleResult 轻校验）', () => {
 })
 
 describe('时序能力（PlaybackData 校验）', () => {
-  it('合法 playback 通过且 version 锁定', () => {
+  it('合法 playback 通过且 version 锁定（contract v2）', () => {
     const pb = validateAgentPlayback(minimalPlayback())
-    expect(pb.version).toBe(1)
+    expect(pb.version).toBe(PLAYBACK_CONTRACT_VERSION)
+    expect(PLAYBACK_CONTRACT_VERSION).toBe(2)
   })
 
-  it('version ≠ 1 → reject', () => {
-    expect(() => validateAgentPlayback({ ...minimalPlayback(), version: 2 })).toThrow(/不支持的契约版本/)
+  it('version 错版 → reject（含 v1 旧产物：错版 WASM 不允许静默半残解析）', () => {
+    expect(() => validateAgentPlayback({ ...minimalPlayback(), version: 1 })).toThrow(/不支持的契约版本/)
+    expect(() => validateAgentPlayback({ ...minimalPlayback(), version: 3 })).toThrow(/不支持的契约版本/)
     expect(() => {
       const bad = minimalPlayback()
       delete (bad as Record<string, unknown>).version
       validateAgentPlayback(bad)
     }).toThrow(/不支持的契约版本/)
+  })
+
+  it('contract v2 新键：缺省合法、非数组拒绝', () => {
+    const ok = validateAgentPlayback(minimalPlayback())
+    expect(ok.supremacy_bases).toBeUndefined()
+    const bad = minimalPlayback()
+    ;(bad as Record<string, unknown>).supremacy_bases = 'x'
+    expect(() => validateAgentPlayback(bad)).toThrow(/playback\.supremacy_bases 必须是数组/)
   })
 
   it('缺数组键 → reject', () => {
@@ -357,6 +368,15 @@ describe('enrichShotsFromRoster（eid 联表）', () => {
     expect(shots[0].shooter_tank_id).toBe(1)
     expect(shots[0].target_tank_id).toBe(2)
     expect(shots[0].shooter_team).toBeUndefined()       // authorTeam=0：0===0 不得伪装 ally
+  })
+
+  it('已知敌方缺车型（team=2, tank_id=0）→ 阵营照常 enemy（评审 blocker 回归）', () => {
+    const noTank = [...vehicles]
+    noTank[noTank.length - 1] = { eid: 999, nickname: '无车型敌方', team: 2, tank_id: 0 }
+    const shots = [shot({ shooter_eid: 999, target_eid: 100 })]
+    api.enrichShotsFromRoster(shots, noTank)
+    expect(shots[0].shooter_tank_id).toBeUndefined()   // 车型富化缺省
+    expect(shots[0].shooter_team).toBe('enemy')        // 阵营不受车型缺失影响
   })
 
   it('eid 缺失（旧产物）不断链：仅跳过富化', () => {

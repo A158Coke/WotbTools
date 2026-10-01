@@ -88,6 +88,33 @@ describe('AgentShots author_path fail-visible（评审 blocker 回归）', () =>
     expect(wrapper.findAll('.status.warn').length).toBe(0)
   })
 
+  it('shooter 分组三态：ally/enemy/unknown（unknown 绝不并入 Allies——评审 blocker 回归）', async () => {
+    parseAgentPlaybackFromBytes.mockResolvedValue({
+      vehicles: [
+        { eid: 100, nickname: '名雅山庄', team: 1, tank_id: 30085, is_author: true },
+        { eid: 200, nickname: '林肝美', team: 2, tank_id: 40085 },
+        { eid: 300, nickname: '观察者', team: 0, tank_id: 0 },
+      ],
+    })
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [
+        { index: 1, time_s: 5, damage: 100, target_name: 'x', is_kill: false, shooter_eid: 100, shooter_name: '名雅山庄', target_eid: 200, hit_flags: 16, game_hit_result: 3, shell_id: 0 },
+        { index: 2, time_s: 6, damage: 100, target_name: 'y', is_kill: false, shooter_eid: 200, shooter_name: '林肝美', target_eid: 100, hit_flags: 0, game_hit_result: 255, shell_id: 0 },
+        { index: 3, time_s: 7, damage: 0, target_name: '', is_kill: false, shooter_eid: 300, hit_flags: 0, game_hit_result: 255, shell_id: 0 },
+      ],
+      author_path: 'ok',
+      author_eid: 100,
+      others: { total_launches: 3, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 },
+    })
+    const wrapper = await mountAndPick()
+    const labels = wrapper.findAll('optgroup').map((g) => g.attributes('label'))
+    expect(labels).toEqual(['agentShots.allies', 'agentShots.enemies', 'agentShots.unknown_side'])
+    const options = wrapper.findAll('option').map((o) => o.text())
+    expect(options.some((t) => t.startsWith('名雅山庄'))).toBe(true)
+    expect(options.some((t) => t.startsWith('林肝美'))).toBe(true)
+    expect(options.some((t) => t.startsWith('eid:300'))).toBe(true)
+  })
+
   it('author_path=error 但他人路径有 shots → 警示与表格并存', async () => {
     parseAgentShotsFromBytes.mockResolvedValue({
       shots: [{
