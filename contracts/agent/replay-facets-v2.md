@@ -80,6 +80,25 @@ WotBTools
 - gameplay mode 纪律：`arenaBonusType` 非 objective mode 权威；Supremacy 存在性
   以 `supremacy_bases` 非空为强事实；Assault/Encounter 多 candidate 无证据 fail-closed。
 
+## 4c. 单基地目标（Assault / Encounter；上游 v0.3.1）
+
+与争霸走**不同载体**（wrapper8，非 wrapper12），两者天然互斥（实测不共存）：
+
+- `assault_objective_present: bool` —— 单基地目标是否存在，**独立于是否已有占领进度**。
+  缺省/`false` = 无已证实的单基地目标（缺省按 false 解读，与 `assaultObjectivePresent` 同义）。
+  **判据**：目标族（`field2==1`、`field1 ∈ {1,2}`）发出过**裸初始化对以外的**字段
+  （`field3` 或 `field4`）。裸初始化对 `1=1,2=1` + `1=2,2=1` 是**通用广播**，普通对局
+  同样会发（62 份真实样本里 8 份 Regular/TrainingRoom/Any 只发这一对），故不得据此判定。
+- `assault_bases[]`: `{clock, progress(0..100)}` —— 单基地占领进度时间线；无该族（非
+  单基地场次）为空。seek 消费 = 取 ≤t 最后一条；**不施加单调性**（回落/重置原样保留）。
+- **`field1` 不是进度族判别子**：真实回放中携带 `field3` 的族会在 `field1=1`/`field1=2`
+  之间切换（Yukon 两族交替、Malinovka 仅 2、**遭遇战仅 1**、Hellas 评级战 13 条）。
+  锁 `field1=2` 会丢事件甚至得到空时间线。`field1` 语义（进度所属方）仍未闭合。
+- 无阵营语义：单基地的 owner/capturing 恒为 `null`；静态几何的 `team` 字段语义 UNKNOWN，
+  消费端不得据此上色推断归属；几何 `radius` 缺失时用呈现兜底（20m），不得由车辆距离推算。
+- provenance 全文：WotbTools `docs/research/replay/assault-base-state.md`（含 2026-10-01
+  判据修正通告）。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——
