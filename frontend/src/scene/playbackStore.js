@@ -30,7 +30,8 @@ export function createPlaybackStore() {
     // 覆盖层
     banner: null, // { text, color }
     killfeed: [], // { id, text }
-    roster: { team1: [], team2: [] }, // { eid, dot, nick, tank, frac, dead, followed, isAuthor }
+    // team 未知（0）的车进 unknown 中性组——绝不污染 team1（旧 hack `team!==2→team1`）
+    roster: { team1: [], team2: [], unknown: [] }, // { eid, dot, nick, tank, frac, dead, followed, isAuthor }
     hasData: false,
   })
 }
