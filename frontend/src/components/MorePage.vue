@@ -16,7 +16,9 @@ import SegmentedControl from './SegmentedControl.vue'
 const navigate = inject(NAVIGATE_VIEW_KEY)
 const { isAdmin, isHofAdmin } = useAuth()
 const { uiProfilePreference, setUiProfile } = useUiProfile()
-const i18n = getCurrentInstance().proxy.$i18n
+// Capture the component instance during setup, but read $i18n only when the user acts.
+// In vue-i18n legacy mode, the mixin installs $i18n after setup has run.
+const instance = getCurrentInstance()
 
 const FEEDBACK_URL = 'https://github.com/A158Coke/WotbTools/issues/new'
 const LANGUAGES = [
@@ -26,7 +28,7 @@ const LANGUAGES = [
 ]
 
 function setLocale(value) {
-  i18n.locale = value
+  instance.proxy.$i18n.locale = value
   localStorage.setItem('wotb-lang', value)
 }
 
