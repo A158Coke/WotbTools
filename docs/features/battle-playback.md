@@ -171,8 +171,12 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     方向采样必须落在该车同一可信 position-interval 内，hull yaw 只从同区间位置配对——
     位置流中断期间不继续旋转炮塔、不跨 gap 取对侧 hull yaw，re-entry 后新段继续；
     每个可信方向段最后一个样本恒保留（冻结准确）。
-    **时长契约**：playback `durationSec` 三优先级 = `battle.durationS`（finite>0）→
-    `RoundFinishedEvent`（合法 battle-relative）→ 位置流最后时刻；全部 event/interval/
+    **时长契约**（`BattleTimelineBuilder.resolveDurationSec`，wotb-core timeline 层）：playback
+    `durationSec` 四优先级 = battle_results root5 `settlementDurationSec`（finite>0，权威）→
+    `RoundFinishedEvent`（method4/AFTERBATTLE）rawClock − battle 开始 rawClock（finite>0）→
+    legacy `battle.durationS`（无 settlement 时即 `meta.json#battleDuration`，不可靠，常比真实战斗长）→
+    最后有限事件时刻；前三档均 cap 420s。round-finished 严格优先于 meta，因此 meta 偏长时
+    进度条按真实结束时刻收尾（不再在战斗结束时只走到一半）。全部 event/interval/
     所有 wire 时间字段由 producer 保证为 finite 且 `[0, durationSec]`。
   - **双层坦克标记**：前端 `BattlePlayback.vue` 用 PR #72 四张运行时 PNG
     （`frontend/src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png`，512×512

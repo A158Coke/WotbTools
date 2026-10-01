@@ -13,6 +13,8 @@ import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
+import { PLAYBACK_SPEEDS, isPlaybackSpeed, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
+import { usePointer } from '../composables/useBreakpoint.js'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
@@ -228,6 +230,32 @@ const { labelPrefs, hpPrefs, trailPrefs, paneWidths, railCollapsed } = usePlayba
 
 // 左右两栏宽度可拖拽调整；持久化由 usePlaybackPreferences 负责。
 const RAIL_W_RANGE = { min: 160, max: 420 }
+/**
+ * 触屏时 rail 的宽度下限：速度档位一行排开、每个都满足 44px 点击区域（--hit-min）。
+ * = 档位数 × 44 + (档位数 − 1) × 3px 间距 + rail 左右 padding 8px × 2；5 档时为 248px。
+ * 只在「播放控件真的在 rail 里」时生效（controlsInRail：非 mobile 形态的 fullscreen/宽屏，即视口 >1200 的
+ * 触屏大平板）。mobile fullscreen 也有一条 navigation rail，但控件不在里面，宽度继续交给 CSS（148px）。
+ */
+const TOUCH_HIT_MIN_PX = 44
+const COARSE_RAIL_MIN_W = PLAYBACK_SPEEDS.length * TOUCH_HIT_MIN_PX + (PLAYBACK_SPEEDS.length - 1) * 3 + 16
+const DEFAULT_RAIL_W = 220 // 与 playback-shared.css 的 --pb-rail-w 默认值一致
+const { coarse: coarsePointer } = usePointer()
+// controlsInRail 定义在下方；computed 惰性求值，setup 结束后才读取
+const coarseControlsRail = computed(() => coarsePointer.value && controlsInRail.value)
+const railWidthRange = computed(() => ({
+  min: coarseControlsRail.value ? Math.max(RAIL_W_RANGE.min, COARSE_RAIL_MIN_W) : RAIL_W_RANGE.min,
+  max: RAIL_W_RANGE.max,
+}))
+/**
+ * 实际 rail 宽度：只有可调的控件 rail 才写 inline --pb-rail-w。mobile fullscreen 的 navigation rail
+ * 不可拖、宽度由 CSS 决定（148px），持久化的拖拽宽度（可能来自桌面）不得盖掉它。
+ * 用户拖过就用拖的值（不低于下限）；没拖过时仅触屏控件 rail 抬到下限，否则交给 CSS。
+ */
+const railWidthPx = computed(() => {
+  if (!controlsInRail.value) return null
+  if (paneWidths.rail != null) return Math.max(paneWidths.rail, railWidthRange.value.min)
+  return coarseControlsRail.value ? Math.max(DEFAULT_RAIL_W, railWidthRange.value.min) : null
+})
 const DETAILS_W_RANGE = { min: 240, max: 560 }
 const clampWidth = (value, range) => Math.min(range.max, Math.max(range.min, value))
 
@@ -247,7 +275,7 @@ function startPaneResize(event, pane) {
       ? moveEvent.clientX - rootRect.left
       : rootRect.right - moveEvent.clientX
     paneWidths[pane] = clampWidth(Math.round(next),
-      pane === 'rail' ? RAIL_W_RANGE : DETAILS_W_RANGE)
+      pane === 'rail' ? railWidthRange.value : DETAILS_W_RANGE)
   }
   const stop = () => {
     window.removeEventListener('pointermove', move)
@@ -1364,9 +1392,13 @@ function togglePlay() {
   else play()
 }
 
-/** 拖动进度条：按下即暂停，拖动中实时 seek，松开后保持暂停（不恢复拖动前状态）。 */
+/** 拖动进度条：按下即暂停，拖动中实时 seek，松开时若原先在播放则自动继续（与 3D 共用 usePlaybackTransport）。 */
 function dragStart() {
-  pause()
+  transport.scrubStart()
+}
+
+function dragEnd() {
+  transport.scrubEnd()
 }
 
 /** Event Panel 行点击：跳转并保持暂停。 */
@@ -1382,7 +1414,7 @@ function step(delta) {
 }
 
 function setSpeed(next) {
-  if ([0.5, 1, 2, 4].includes(next)) speed.value = next
+  if (isPlaybackSpeed(next)) speed.value = next
 }
 
 // KeepAlive 停用（切到别的页面）时同样视为不可见
@@ -1391,18 +1423,21 @@ onDeactivated(() => { lifecycleVisible.value = false; pause() })
 onActivated(() => { lifecycleVisible.value = true })
 watch(() => props.active, (value) => { if (!value) pause() })
 
+/**
+ * 播放传输行为与 3D 共用：空格 / ←→ 的键位、输入框不劫持、拖动暂停后自动继续。
+ * 键盘监听仍由本组件在 onMounted / onBeforeUnmount 挂卸（与其它全局监听同一处管理），
+ * 所以 keyboard: false，只借用 handleKeydown。
+ */
+const transport = usePlaybackTransport({
+  isPlaying: () => playing.value,
+  play,
+  pause,
+  step,
+  isActive: () => props.active && lifecycleVisible.value,
+}, { keyboard: false })
+
 function onKeydown(e) {
-  if (!props.active || !lifecycleVisible.value) return
-  const target = e.target
-  const tagName = target && target.tagName
-  if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tagName)) return
-  if (e.code === 'Space' || e.key === ' ') {
-    e.preventDefault()
-    togglePlay()
-  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-    e.preventDefault()
-    step(e.key === 'ArrowLeft' ? -5 : 5)
-  }
+  transport.handleKeydown(e)
 }
 
 onBeforeUnmount(() => {
@@ -1966,9 +2001,8 @@ function capturedBy(state) {
   return state.capturingTeam === friendlyTeam.value ? 'friendly' : 'enemy'
 }
 
-// HUD 的基地 chip 是 fallback：地图能画基地时不重复显示，地图缺该图几何时
-// （mapBases 未收录该 mapCode）HUD 仍是唯一的基地信息来源。
-const hudBaseStates = computed(() => (basesAt.value.length ? [] : baseStatesAt.value))
+// 顶部基地状态条（与 3D 共用 BaseStatusBar）：始终显示，地图缺该图几何时它也是唯一的基地信息来源。
+const hudBaseStates = computed(() => baseStatesAt.value)
 
 const ASSAULT_BASE_RADIUS_FALLBACK_M = 20
 
@@ -2014,7 +2048,7 @@ const basesAt = computed(() => {
 
 const mapStyle = computed(() => ({
   // 只有用户真的拖过才覆盖；否则保持 CSS 里的响应式默认宽度。
-  ...(paneWidths.rail != null ? { '--pb-rail-w': `${paneWidths.rail}px` } : {}),
+  ...(railWidthPx.value != null ? { '--pb-rail-w': `${railWidthPx.value}px` } : {}),
   ...(paneWidths.details != null ? { '--pb-details-w': `${paneWidths.details}px` } : {}),
   // §side-slots：两侧黑边实宽（0 = 不启用侧栏形态）。
   ...(sideSlotWidth.value ? { '--pb-slot-w': `${sideSlotWidth.value}px` } : {}),
@@ -2162,6 +2196,7 @@ const mapStyle = computed(() => ({
           @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
           @toggle-annotation="toggleAnnotation()"
           @drag-start="dragStart"
+          @drag-end="dragEnd"
           @seek="seek"
         />
       <button
@@ -2315,6 +2350,7 @@ const mapStyle = computed(() => ({
           @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
           @toggle-annotation="toggleAnnotation()"
           @drag-start="dragStart"
+          @drag-end="dragEnd"
           @seek="seek"
         />
         <!-- 移动端（rail 隐藏）标注工具栏：和 controls 一样排在地图下方的流内容器里。

@@ -152,6 +152,28 @@ function playbackControlProbe() {
       ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}`
       : null,
     formClass: root ? Array.from(root.classList).find((name) => name.startsWith('pb-form-')) || null : null,
+    /** 所有可见速度档位按钮的最小边（触屏点击区域契约：≥ 44px） */
+    speedMinSide: (() => {
+      const sides = [...document.querySelectorAll('[data-test^="pb-speed-"]')]
+        .map((b) => b.getBoundingClientRect())
+        .filter((r) => r.width > 0 && r.height > 0)
+        .map((r) => Math.min(r.width, r.height))
+      return sides.length ? Math.min(...sides) : null
+    })(),
+    /** rail 模式下速度档位必须一行排开且不撑出 rail（档位个数变化时的回归点） */
+    railSpeeds: (() => {
+      const group = document.querySelector('.pb-controls-rail-mode .pb-speed')
+      if (!group) return null
+      const container = group.closest('.pb-left-rail') || group.parentElement
+      const limit = container.getBoundingClientRect()
+      const buttons = [...group.querySelectorAll('[data-test^="pb-speed-"]')].map((b) => b.getBoundingClientRect())
+      return {
+        count: buttons.length,
+        rows: new Set(buttons.map((r) => Math.round(r.top))).size,
+        overflow: buttons.some((r) => r.left < limit.left - 1 || r.right > limit.right + 1),
+        minSide: Math.min(...buttons.map((r) => Math.min(r.width, r.height))),
+      }
+    })(),
     pageScrollWidth: document.documentElement.scrollWidth,
     viewportWidth: innerWidth,
     viewportHeight: innerHeight,
@@ -399,6 +421,9 @@ const PLAYBACK_SCENARIOS = [
   // 审计 PB-07：iPad 横屏是触屏但有平板的可用空间，必须拿 tablet 形态（触屏只放大点击区域）
   { name: 'play-1024x768-ipad-coarse', width: 1024, height: 768, touch: true, duration: 60, form: 'pb-form-tablet' },
   { name: 'play-1440x900-desktop', width: 1440, height: 900, touch: false, duration: 60, form: 'pb-form-pc' },
+  // 触屏 + rail：视口 >1200 的大平板（iPad Pro / Android 平板横屏）走 pc 形态，控件进 rail；
+  // 速度档位必须一行排开且每个都满足 44px 点击区域（rail 在触屏上自动加宽）
+  { name: 'play-1366x1024-tablet-coarse-rail', width: 1366, height: 1024, touch: true, duration: 60, form: 'pb-form-pc' },
   { name: 'duration-zero-390x844-coarse', width: 390, height: 844, touch: true, duration: 0, form: 'pb-form-mobile' },
 ]
 
@@ -495,6 +520,18 @@ async function runPlaybackControlScenario(env, scenario) {
   const control = before.hitIsButton ? before : await page.revealControl('[data-test="pb-play"]')
   check(failures, control.hitIsButton,
     `play button center hit ${control.hitDescription} instead (viewport=${control.viewportWidth}x${control.viewportHeight} geometry=${JSON.stringify(control.geometry)})`)
+  if (before.railSpeeds) {
+    check(failures, before.railSpeeds.rows === 1,
+      `rail speed options wrapped onto ${before.railSpeeds.rows} rows (${before.railSpeeds.count} options)`)
+    check(failures, !before.railSpeeds.overflow, 'rail speed options overflow the rail')
+  }
+  if (scenario.touch && before.speedMinSide != null) {
+    check(failures, before.speedMinSide >= 43.5,
+      `touch speed option hit target is ${before.speedMinSide.toFixed(1)}px, below 44px`)
+  }
+  if (scenario.name.endsWith('-rail')) {
+    check(failures, !!before.railSpeeds, 'expected the playback controls to be in the rail')
+  }
   check(failures, before.pageScrollWidth <= before.viewportWidth + 1,
     `page-level horizontal overflow: ${before.pageScrollWidth} > ${before.viewportWidth} (contentWidth=${before.contentWidth} overflowing=${JSON.stringify(before.overflowing)})`)
   if (scenario.form) check(failures, before.formClass === scenario.form, `form factor class=${before.formClass}, expected ${scenario.form}`)
@@ -567,6 +604,77 @@ async function runRotationScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `rotate ${scenario.width}x${scenario.height} -> ${scenario.rotateTo.width}x${scenario.rotateTo.height}` })
 }
 
+/**
+ * §mobile-fullscreen：手机横屏全屏是「148px navigation rail | map」，播放控件仍在底部 overlay。
+ * 触屏 rail 的 248px 下限只属于「控件真的在 rail 里」的大平板，不得通过 inline --pb-rail-w
+ * 盖掉 mobile fullscreen 的 148px（inline style 优先级高于 CSS 规则）；用户在桌面拖过、持久化在
+ * localStorage 的 rail 宽度同样不得盖掉它。
+ */
+const MOBILE_FULLSCREEN_SCENARIOS = [
+  { name: 'fullscreen-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 60 },
+  {
+    name: 'fullscreen-740x360-landscape-coarse-persisted-rail',
+    width: 740, height: 360, touch: true, duration: 60,
+    paneWidths: { rail: 320, details: null },
+  },
+]
+
+async function runMobileFullscreenScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  if (scenario.paneWidths) {
+    // mount 前写入持久化偏好（模拟此前在桌面拖过 rail）
+    await env.chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `try { localStorage.setItem('wotb.pb.pane-widths', ${JSON.stringify(JSON.stringify(scenario.paneWidths))}) } catch {}`,
+    }, sessionId)
+  }
+
+  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=${scenario.duration}`)
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-fullscreen"]'), { label: 'fullscreen button' })
+  await page.evaluate(`document.querySelector('[data-test="pb-fullscreen"]').scrollIntoView({ block: 'center' })`)
+  const button = await page.evaluate(`(() => {
+    const r = document.querySelector('[data-test="pb-fullscreen"]').getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  })()`)
+  // 真实触摸 = user gesture，requestFullscreen 才会被浏览器放行
+  await page.tap({ ...button, touch: scenario.touch })
+  await page.waitFor(() => !!document.fullscreenElement, { timeout: 5000, label: 'document.fullscreenElement' })
+  await delay(200)
+
+  const state = await page.evaluate(`(() => {
+    const root = document.querySelector('[data-test="battle-playback"]')
+    const rail = root.querySelector('.pb-left-rail')
+    return {
+      fullscreenIsRoot: document.fullscreenElement === root,
+      formClass: Array.from(root.classList).find((n) => n.startsWith('pb-form-')) || null,
+      persisted: localStorage.getItem('wotb.pb.pane-widths'),
+      railVar: getComputedStyle(root).getPropertyValue('--pb-rail-w').trim(),
+      inlineRailVar: root.style.getPropertyValue('--pb-rail-w').trim(),
+      railWidth: rail ? rail.getBoundingClientRect().width : null,
+      controlsInRail: !!document.querySelector('.pb-controls-rail-mode'),
+    }
+  })()`)
+  check(failures, state.fullscreenIsRoot, 'fullscreen element is not the playback root')
+  check(failures, state.formClass === 'pb-form-mobile', `fullscreen form=${state.formClass}, expected pb-form-mobile`)
+  check(failures, !state.controlsInRail, 'mobile fullscreen must keep the playback controls out of the rail')
+  if (scenario.paneWidths) {
+    check(failures, state.persisted === JSON.stringify(scenario.paneWidths),
+      `persisted pane widths were not in place: ${state.persisted}`)
+  }
+  check(failures, state.inlineRailVar === '', `mobile fullscreen wrote inline --pb-rail-w=${state.inlineRailVar}`)
+  check(failures, state.railVar === '148px',
+    `mobile fullscreen --pb-rail-w=${state.railVar} (inline=${state.inlineRailVar || 'none'}), expected 148px`)
+  check(failures, state.railWidth != null && Math.abs(state.railWidth - 148) <= 1,
+    `mobile fullscreen rail rendered ${state.railWidth}px wide, expected 148px`)
+
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `fullscreen ${scenario.width}x${scenario.height}` })
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chrome = findChrome()
@@ -586,6 +694,7 @@ try {
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
     { scenario: ROTATION_SCENARIO, run: () => runRotationScenario(env, ROTATION_SCENARIO) },
+    ...MOBILE_FULLSCREEN_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileFullscreenScenario(env, scenario) })),
   ]
   // 可选场景名过滤（调试单个形态时不必跑满矩阵）。
   const nameFilter = process.argv.slice(2).find((arg) => !arg.startsWith('-'))
