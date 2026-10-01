@@ -19,6 +19,7 @@ import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
+import { pointsAt } from './supremacyPoints.js'
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { playableBounds } from '../data/playableBounds.js'
@@ -40,7 +41,13 @@ export const QUALITY_PRESETS = {
 export function initPlayback(container, store) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
-  let currentMapBases = null;      // mapBases[资产面 map key]（基地几何；loadMapImage 解析后缓存）
+  let currentMapBases = null;
+  // 阵营/中立调色（唯一事实源）：green / red / white——炮线、基地归属、标签共用；
+  // 中立与未知阵营一律 white（unknown ≠ enemy）。
+  const COLOR_FRIENDLY = 0x2ecc71;
+  const COLOR_ENEMY = 0xef4444;
+  const COLOR_UNKNOWN = 0xf5f5f5;
+      // mapBases[资产面 map key]（基地几何；loadMapImage 解析后缓存）
   let currentMapKey = null;        // 资产面 map key（playableBounds 表索引）
   let boundaryGroup = null;        // 地图边界带（会话拥有）
   let V = [];                      // 车辆运行时 {def, group, turretG, gunPivot, label, meshHull, glb}
@@ -811,7 +818,7 @@ export function initPlayback(container, store) {
 
   function teamColor(v) {
     const f = DATA.meta.friendly_team, t = v.def.team;
-    if (t === 0 || f === 0) return 0x8a94a3;
+    if (t === 0 || f === 0) return COLOR_UNKNOWN;   // 中立＝白（green / red / white 口径）
     // 深绿/深红（与上游 Agent 同值）：原 0x3fa66a/0xc05046 偏亮，明亮地表上对比不足
     return t === f ? 0x26794a : 0x98322a;
   }
@@ -821,7 +828,7 @@ export function initPlayback(container, store) {
   // 状态来自 Agent 契约 v2 的 supremacy_bases（wrapper12/root11 sparse 重建）——
   // seek 折叠：每基地取 clock≤t 的最后一条。渲染只做呈现，不推断协议。
   // 队伍色沿用本仓调色（与花名册圆点/车辆标签同一 teamColor 系），不引入第二套配色。
-  const BASE_OWNER_FRIENDLY = 0x3fa66a, BASE_OWNER_ENEMY = 0xc05046, BASE_NEUTRAL = 0x9aa5b1;
+  const BASE_OWNER_FRIENDLY = 0x3fa66a, BASE_OWNER_ENEMY = 0xc05046, BASE_NEUTRAL = COLOR_UNKNOWN;
   let baseObjects = [];   // 争霸基地 { baseId, bid, ring, sprite, canvas, ctx, tex, state, r }
 
   function baseSideColor(team) {
@@ -1547,12 +1554,7 @@ export function initPlayback(container, store) {
     scene.add(traj);
     trajLines.push({ mesh: traj, until: t1 + 1.0, fadeEnd: t1 + 2.2, base: TRAJ_OPACITY });
   }
-  // 炮线/轨迹阵营色（唯一规则，与上游 Agent 同值）：friendly=绿 / enemy=红 / unknown=白。
-  // team 必须显式 ∈ {1,2} 才参与判定——team=0 或 friendly_team 未知一律白（绝不
-  // fallback 到任一方；与射击复现 consumer 的三态阵营模型同规则）
-  const COLOR_FRIENDLY = 0x2ecc71;
-  const COLOR_ENEMY = 0xef4444;
-  const COLOR_UNKNOWN = 0xf5f5f5;
+  // 阵营色见文件顶部调色常量（唯一规则：按射手阵营 → green / red / white）
   function shotTeamColor(s) {
     const d = DATA.vehicles.find((x) => x.eid === s.shooter_eid);
     const t = d ? d.team : 0;
@@ -1972,15 +1974,12 @@ export function initPlayback(container, store) {
     for (const v of V) applyPose(v);
     updateRoster(); updateScore();
     // HUD → store
-    // 顶栏：争霸实时点数（取 ≤T 的最后采样；无广播的场次保持 null → UI 不显示）
-    if (DATA.supremacy_points && DATA.supremacy_points.length) {
-      const ft = DATA.meta.friendly_team;
-      let pf = null, pe = null;
-      for (const sp of DATA.supremacy_points) {
-        if (sp.clock > T) continue;
-        if (sp.team === ft) pf = sp.points; else pe = sp.points;
-      }
-      store.pointsFriend = pf; store.pointsEnemy = pe;
+    // 顶栏：争霸实时点数——**每 tick 确定性重算**（无采样也写 null）：从争霸场切到普通场时
+    // supremacy_points 缺失，若只在有采样时才写，上一场的点数会残留在 HUD 上。
+    // 阵营映射只认 friendly_team ∈ {1,2}（unknown ≠ enemy，见 pointsAt）。
+    {
+      const pts = pointsAt(DATA.supremacy_points, T, DATA.meta.friendly_team);
+      store.pointsFriend = pts.friend; store.pointsEnemy = pts.enemy;
     }
     // 顶栏：单基地目标存在性 + 占领进度（取 ≤T 最后一条；无目标证据整行不显示）
     store.assaultObjective = assaultHasObjective();
@@ -2140,6 +2139,9 @@ export function initPlayback(container, store) {
     FOLLOW_EID = 0; followAnchor = null;
     store.killfeed = [];
     store.banner = null;
+    // HUD 派生字段显式归零（与 tick 的确定性重算互为双保险：会话切换不留上一场残值）
+    store.pointsFriend = null; store.pointsEnemy = null;
+    store.assaultObjective = false; store.assaultProgress = null;
     store.roster.team1 = [];
     store.roster.team2 = [];
     store.roster.unknown = [];
