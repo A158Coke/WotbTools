@@ -197,8 +197,12 @@ onMounted(async () => {
           <div class="sec-title">{{ t('agentTanks.mobility') }}</div>
           <div class="stat-grid">
             <div class="stat-box"><div class="lbl">{{ t('agentTanks.hp') }}</div><div class="val">{{ detail.hp ?? '-' }}</div></div>
-            <div class="stat-box"><div class="lbl">{{ t('agentTanks.speed_fwd') }}</div><div class="val">{{ detail.speed_forward ?? detail.speed?.forward ?? '-' }} km/h</div></div>
-            <div class="stat-box"><div class="lbl">{{ t('agentTanks.speed_rev') }}</div><div class="val">{{ detail.speed_reverse ?? detail.speed?.reverse ?? '-' }} km/h</div></div>
+            <!-- 速度形状：tank/{id}.json 的 `speed` 是数字（=前向极速，上游 /api/tank
+                 形状），倒车只在 tank_cache（summary）有——此前按 tank_detail 形状读
+                 speed_forward/speed?.forward，两格恒 '-'。上游 v0.1.9 起 per-tank JSON
+                 也补了顶层 speed_forward/speed_reverse，此处三级兜底兼容旧包 -->
+            <div class="stat-box"><div class="lbl">{{ t('agentTanks.speed_fwd') }}</div><div class="val">{{ detail.speed_forward ?? summary?.speed_forward ?? detail.speed ?? '-' }} km/h</div></div>
+            <div class="stat-box"><div class="lbl">{{ t('agentTanks.speed_rev') }}</div><div class="val">{{ detail.speed_reverse ?? summary?.speed_reverse ?? '-' }} km/h</div></div>
             <div class="stat-box"><div class="lbl">{{ t('agentTanks.view_range') }}</div><div class="val">{{ curCfg?.view_range ?? summary?.view_range ?? '-' }} m</div></div>
             <div class="stat-box"><div class="lbl">{{ t('agentTanks.hull_traverse') }}</div><div class="val">{{ fmt(summary?.hull_traverse, 1) }} °/s</div></div>
             <div class="stat-box"><div class="lbl">{{ t('agentTanks.turret_traverse') }}</div><div class="val">{{ fmt(curCfg?.turret_traverse_speed ?? summary?.turret_traverse_speed, 0) }} °/s</div></div>
