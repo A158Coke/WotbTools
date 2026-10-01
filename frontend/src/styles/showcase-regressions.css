@@ -38,10 +38,12 @@
 
 /* Public Hall of Fame: only the primary tab strip is sticky. A second fixed offset
  * for filters breaks as soon as translated labels change the tabs' real height. */
+/* 工具栏本身带 backdrop-filter（自成层叠上下文）：设为 relative + z-index 5，车辆选择器的下拉列表才能盖住
+ * 下方表格的 sticky 表头（z-index 4），同时仍低于吸顶 Tab（22），滚动时不会盖住 Tab。 */
 .lb-wrap .lb-toolbar {
-  position: static !important;
+  position: relative !important;
   top: auto !important;
-  z-index: auto !important;
+  z-index: 5 !important;
 }
 
 /* AI review header sits below the actual Showcase topbar (60px). */

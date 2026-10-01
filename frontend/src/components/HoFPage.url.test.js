@@ -92,6 +92,31 @@ describe('HoFPage URL 状态', () => {
     expect(lbApi.hofList).toHaveBeenCalledWith(expect.objectContaining({ page: 3, size: 100, tankId: 4657, battleType: 'RATING', nickname: 'abc' }))
   })
 
+  // 审计 BZ-17：深链里的车辆不在当前选项中时，选择器仍显示为已选（能解析车名就显示车名，否则 #id）
+  it('深链车辆不在选项里：选择器仍显示为已选，未知车名回退为 #id', async () => {
+    const { wrapper } = await mountAt({ tank: '4657' })
+    const box = wrapper.find('.hof-vehicle-select input[role="combobox"]')
+    expect(box.attributes('data-value')).toBe('4657')
+    expect(box.element.value).toBe('#4657')
+    expect(wrapper.find('.lb-filter-hint strong').text()).toBe('#4657')
+  })
+
+  it('深链车辆能从 Tier X 车表或榜单行解析出车名时显示真实车名，而不是 #id', async () => {
+    const { wrapper } = await mountAt({ tank: '385' })
+    expect(wrapper.find('.hof-vehicle-select input[role="combobox"]').element.value).toBe('Progetto 65')
+
+    lbApi.hofVehicleOptions.mockResolvedValue([{ tankId: 4657, tankName: '#4657', nation: 'GERMANY', type: 'HEAVY_TANK', tier: 8 }])
+    lbApi.hofList.mockResolvedValue({
+      items: [{ id: 9, rank: 1, nickname: 'A', tankId: 4657, tankName: 'Löwe', battleType: 'RANDOM', damageDealt: 5000, mapName: 'm', replayAvailable: false }],
+      page: 1, size: 50, totalItems: 1, totalPages: 1,
+    })
+    const second = await mountAt({ tank: '4657' })
+    expect(second.wrapper.find('.hof-vehicle-select input[role="combobox"]').element.value).toBe('Löwe')
+    const labels = second.wrapper.findAll('.hof-vehicle-select [role="option"] .vp-label').map(label => label.text())
+    expect(labels).toContain('Löwe')
+    expect(labels).not.toContain('#4657')
+  })
+
   it('打开百场链接：直接进入百场 Tab 并按车辆请求', async () => {
     await mountAt({ tab: 'hundred', tank: '12345', page: '2' })
     expect(lbApi.hofHundredList).toHaveBeenCalledWith(expect.objectContaining({ page: 2, vehicleId: 12345 }))
