@@ -63,7 +63,7 @@ Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability �
 - 网络/版本门禁、WebView 加载、splash、back、生命周期、错误屏
 - Replay 意图入口（ACTION_SEND / ACTION_VIEW → content URI）
 - 极薄 Native Bridge（`getCapabilities`/`getPendingReplay`/`consumePendingReplay`/
-  `checkForUpdate`/`startUpdate`；禁止 readFile/http/execute/launch）——
+  `checkForUpdate`/`startUpdate`/`getAuthClientSessionId`/`setAuthClientSessionId`；禁止 readFile/http/execute/launch）——
   **origin-scoped**：经 AndroidX WebKit `WebMessageListener`（`addWebMessageListener`），
   仅 `https://wotbtools.com` / `https://www.wotbtools.com` 可调，不暴露给 Keycloak / IdP /
   任意第三方 frame（替代 `addJavascriptInterface` 的全 frame 暴露）
@@ -72,7 +72,7 @@ Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability �
   `wotbtools-user` / `wotbtools-admin`；Android 不实现第二套上传/解析，也不携带任何自有凭据）
 
 Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`/`replay-open`/
-`app-update`），不涉及 replay 业务 capability 判断（FULL/DEGRADED/PERFORMANCE 等由 Web 端接入）。
+`app-update`/`auth-session`），不涉及 replay 业务 capability 判断（FULL/DEGRADED/PERFORMANCE 等由 Web 端接入）。
 
 ## Authentication Boundary
 
@@ -229,8 +229,7 @@ Native runtime 1.4.10 reports the first main-frame WebView loading failure per A
 `POST /api/observability/client-events` using the fixed `client.android_webview_failed` /
 `CLIENT_WEBVIEW_FAILED` event. The report is anonymous: no cookies, token, auth-return URL,
 raw WebView error, replay content, or client userId is copied. Connect/read timeouts are five
-seconds; failed telemetry is dropped without retry or recursive reporting. The native bridge
-protocol is unchanged. Frontend bootstrap and WASM initialization failures use separate fixed
+seconds; failed telemetry is dropped without retry or recursive reporting. The native bridge version remains 1, with additive UUID-session RPCs. Frontend bootstrap and WASM initialization failures use separate fixed
 events; these signals describe critical failures, not native/parser worker health.
 
 ### Auth attempt telemetry
