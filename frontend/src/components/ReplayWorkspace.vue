@@ -1,6 +1,7 @@
 <script setup>
 import { computed, inject, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { CircleAlert, LogIn, Sparkles } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { displayName } from '../utils/helpers.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -14,8 +15,11 @@ import FileUploader from './FileUploader.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
-import ReplayWorkspaceHeader from './ReplayWorkspaceHeader.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
+import AppButton from './AppButton.vue'
+import Banner from './Banner.vue'
+import EmptyState from './EmptyState.vue'
+import PageHeader from './PageHeader.vue'
 import ReplaySourcePanel from './ReplaySourcePanel.vue'
 
 defineOptions({ name: 'ReplayWorkspace' })
@@ -27,7 +31,7 @@ const props = defineProps({
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const { t } = useI18n()
-const { authInitState, authenticated, login, loginInFlight, retryAuth } = useAuth()
+const { authInitState, authenticated, login, loginInFlight, retryAuth, isAdmin } = useAuth()
 /** 项目统一错误 UI（AppShell 的 GlobalErrorDialog）——不新造 toast/error system。 */
 const { show: showGlobalError } = useError()
 
@@ -71,11 +75,19 @@ const { consumePendingWhenReady } = useNativeReplayImport({
   },
 })
 
-const capabilityOptions = [
+/**
+ * 模式：数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘（* 仅管理员）。
+ * 3D / 射击目前仍是独立页面（各自读取本地文件），切换时导航过去；嵌入工作台留到 L6。
+ */
+const NAVIGATION_ONLY_CAPABILITIES = Object.freeze({ '3d': 'agent-replay', shots: 'agent-shots' })
+const capabilityOptions = computed(() => [
   { key: 'data', labelKey: 'workspace.tab_data' },
-  { key: 'ai', labelKey: 'workspace.tab_ai' },
   { key: 'playback', labelKey: 'workspace.tab_playback' },
-]
+  ...(isAdmin.value
+    ? [{ key: '3d', labelKey: 'workspace.tab_3d' }, { key: 'shots', labelKey: 'workspace.tab_shots' }]
+    : []),
+  { key: 'ai', labelKey: 'workspace.tab_ai' },
+])
 
 const activeCapability = workspace.activeWorkspaceTab
 
@@ -164,6 +176,10 @@ function requestLogin(view, { userInitiated = false } = {}) {
 
 async function setCapability(key) {
   if (key === activeCapability.value) return
+  if (NAVIGATION_ONLY_CAPABILITIES[key]) {
+    if (navigate) navigate(NAVIGATION_ONLY_CAPABILITIES[key])
+    return
+  }
   if (key !== 'ai' && !authenticated.value) {
     requestLogin(viewFor(key), { userInitiated: true })
     return
@@ -189,11 +205,13 @@ function clearSelection() {
   playbackReplay.reset()
 }
 
-// 只有正常完成且确认未登录时才自动发起登录。failed 是明确的恢复态，不能自动循环。
-watch(authInitState, (state) => {
-  if (state !== 'unauthenticated' || activeCapability.value === 'ai') return
-  nextTick(() => requestLogin(viewFor(activeCapability.value)))
-}, { immediate: true })
+/** 上传条是唯一的清空入口（带确认）；清空时同时复位 2D 回放引用。 */
+function onFilesUpdate(next) {
+  if (!next.length) clearSelection()
+  else updateFiles(next)
+}
+
+// 未登录时显示说明卡与登录按钮，不自动跳转登录页（design-language §10 / 审计 PG-03）。
 
 function retryAuthCheck() {
   return retryAuth()
@@ -216,91 +234,95 @@ watch(() => props.initialCapability, (val) => {
 
 <template>
   <div class="layout-data-workspace replay-workspace">
-    <ReplayWorkspaceHeader :has-files="!!files.length" @clear="clearSelection" />
+    <PageHeader :title="$t('workspace.title')" />
     <ReplayCapabilityTabs :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
 
-    <section v-if="activeCapability === 'ai'" class="workspace-auth-gate" data-testid="ws-ai" role="status">
-      <p class="workspace-auth-title">{{ $t('workspace.ai_maintenance') }}</p>
-    </section>
+    <EmptyState
+      v-if="activeCapability === 'ai'"
+      data-testid="ws-ai"
+      :icon="Sparkles"
+      :title="$t('workspace.ai_title')"
+      :description="$t('workspace.ai_description')"
+    >
+      <AppButton data-testid="ws-ai-go-data" @click="setCapability('data')">{{ $t('workspace.go_data') }}</AppButton>
+      <AppButton data-testid="ws-ai-go-playback" @click="setCapability('playback')">{{ $t('workspace.go_playback') }}</AppButton>
+    </EmptyState>
 
-    <section
+    <p
       v-else-if="authInitState === 'idle' || authInitState === 'initializing'"
-      class="workspace-auth-gate"
+      class="workspace-status"
       data-testid="ws-auth-loading"
       aria-live="polite"
+    >{{ $t('workspace.auth_checking') }}</p>
+
+    <EmptyState
+      v-else-if="authInitState === 'failed'"
+      data-testid="ws-auth-failed"
+      role="alert"
+      :icon="CircleAlert"
+      :title="$t('workspace.auth_init_failed')"
+      :description="$t('workspace.auth_init_failed_hint')"
     >
-      <p class="workspace-auth-title">{{ $t('workspace.auth_checking') }}</p>
-    </section>
+      <AppButton data-testid="ws-auth-retry" @click="retryAuthCheck">{{ $t('workspace.auth_retry') }}</AppButton>
+      <AppButton
+        data-testid="ws-login-recovery"
+        :disabled="loginInFlight"
+        @click="requestLogin(viewFor(activeCapability), { userInitiated: true })"
+      >{{ $t('app.login') }}</AppButton>
+    </EmptyState>
 
-    <section v-else-if="authInitState === 'failed'" class="workspace-auth-gate" data-testid="ws-auth-failed" role="alert">
-      <p class="workspace-auth-title">{{ $t('workspace.auth_init_failed') }}</p>
-      <p class="workspace-auth-hint">{{ $t('workspace.auth_init_failed_hint') }}</p>
-      <div class="auth-gate-actions">
-        <button
-          type="button"
-          class="auth-gate-action"
-          data-testid="ws-auth-retry"
-          @click="retryAuthCheck"
-        >{{ $t('workspace.auth_retry') }}</button>
-        <button
-          type="button"
-          class="auth-gate-action"
-          data-testid="ws-login-recovery"
-          :disabled="loginInFlight"
-          @click="requestLogin(viewFor(activeCapability), { userInitiated: true })"
-        >{{ $t('app.login') }}</button>
-      </div>
-    </section>
-
-    <!-- 未登录：只提供登录入口，replay 业务动作（上传 / 解析 / capability 面板）一律不可执行 -->
-    <section v-else-if="authInitState === 'unauthenticated'" class="workspace-auth-gate" data-testid="ws-auth-required">
-      <p class="workspace-auth-title">{{ $t('workspace.auth_required') }}</p>
-      <p class="workspace-auth-hint">{{ $t('workspace.auth_required_hint') }}</p>
-      <button
-        type="button"
-        class="auth-gate-action"
+    <!-- 未登录：说明卡 + 登录；replay 业务动作（上传 / 解析 / capability 面板）一律不可执行 -->
+    <EmptyState
+      v-else-if="authInitState === 'unauthenticated'"
+      data-testid="ws-auth-required"
+      :icon="LogIn"
+      :title="$t('workspace.auth_required_title')"
+      :description="$t('workspace.auth_required_hint')"
+    >
+      <AppButton
+        variant="primary"
         data-testid="ws-login"
         :disabled="loginInFlight"
         @click="requestLogin(viewFor(activeCapability), { userInitiated: true })"
-      >{{ $t('app.login') }}</button>
-    </section>
+      >{{ $t('app.login') }}</AppButton>
+    </EmptyState>
 
     <template v-else>
-      <ReplaySourcePanel
-        :files="files"
-        :current-battle-index="currentBattleIndex"
-        :current-battle-name="currentBattleName"
-        :current-battle-id="currentBattleId"
-        :battle-options="battleOptions"
-        @select-battle="onBattleSelect"
-      />
+      <div class="workspace-source">
+        <ReplaySourcePanel
+          :files="files"
+          :current-battle-index="currentBattleIndex"
+          :current-battle-name="currentBattleName"
+          :current-battle-id="currentBattleId"
+          :battle-options="battleOptions"
+          @select-battle="onBattleSelect"
+        />
 
-      <FileUploader
-        :files="files"
-        :loading="loading"
-        :confirm-remove="!!resp"
-        :compact="!!resp"
-        :allow-folder="activeCapability === 'data'"
-        @update:files="updateFiles"
-        @preview="onPreview"
-        @remove-request="onFileRemoveRequest"
-      />
-      <ReplayProcessingPanel
-        v-if="uploadState || processingJob"
-        :upload-state="uploadState"
-        :job="processingJob"
-        :error="processingError"
-        @cancel="cancelProcessing"
-        @dismiss="dismissProcessingJob"
-      />
-      <p v-if="error" class="error">{{ error }}</p>
-      <button
-        v-if="error === t('workspace.native_replay_read_failed')"
-        type="button"
-        class="auth-gate-action"
-        data-testid="ws-native-retry"
-        @click="consumePendingWhenReady"
-      >{{ $t('workspace.native_replay_retry') }}</button>
+        <FileUploader
+          :files="files"
+          :loading="loading"
+          :confirm-remove="!!resp"
+          :compact="!!resp"
+          :allow-folder="activeCapability === 'data'"
+          @update:files="onFilesUpdate"
+          @preview="onPreview"
+          @remove-request="onFileRemoveRequest"
+        />
+        <ReplayProcessingPanel
+          v-if="uploadState || processingJob"
+          :upload-state="uploadState"
+          :job="processingJob"
+          :error="processingError"
+          @cancel="cancelProcessing"
+          @dismiss="dismissProcessingJob"
+        />
+        <Banner v-if="error" tone="danger" data-testid="ws-error">
+          <p>{{ error }}</p>
+          <template v-if="error === t('workspace.native_replay_read_failed')" #actions>
+            <AppButton size="sm" data-testid="ws-native-retry" @click="consumePendingWhenReady">{{ $t('workspace.native_replay_retry') }}</AppButton>
+          </template>
+        </Banner>
+      </div>
 
       <div class="workspace-content">
         <ReplayPage
@@ -331,17 +353,7 @@ watch(() => props.initialCapability, (val) => {
 
 <style scoped>
 .replay-workspace { padding-right: var(--pd-drawer-offset, 0px); }
-.capability-pane { margin-top: 4px; }
-.workspace-auth-gate {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 48px 16px;
-  text-align: center;
-}
-.workspace-auth-title { font-weight: 600; }
-.workspace-auth-hint { opacity: 0.8; }
-.auth-gate-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-.auth-gate-action { padding: 8px 20px; cursor: pointer; }
+.workspace-source { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+.workspace-status { margin: 0; padding: var(--space-12) var(--space-4); color: var(--color-text-secondary); font: var(--type-body); text-align: center; }
+.capability-pane { margin-top: var(--space-1); }
 </style>

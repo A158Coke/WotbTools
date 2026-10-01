@@ -326,3 +326,28 @@ describe('FileUploader 文件列表与回放工作台', () => {
     expect(wrapper.text()).toContain('upload.single_only')
   })
 })
+
+describe('FileUploader 解析完成后的批次条（compact）', () => {
+  function mountCompact(files) {
+    return mount(FileUploader, {
+      props: { files, loading: false, confirmRemove: true, compact: true },
+      global: { mocks: { $t: key => key } },
+    })
+  }
+
+  it('清空会丢掉已解析结果：先确认，再清空（WS-21）', async () => {
+    const wrapper = mountCompact([new File(['x'], 'a.wotbreplay')])
+    await wrapper.get('[data-testid="compact-clear"]').trigger('click')
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    await wrapper.get('[data-testid="compact-clear-confirm"]').trigger('click')
+    expect(wrapper.emitted('update:files')[0][0]).toEqual([])
+  })
+
+  it('取消确认后保留选择', async () => {
+    const wrapper = mountCompact([new File(['x'], 'a.wotbreplay')])
+    await wrapper.get('[data-testid="compact-clear"]').trigger('click')
+    await wrapper.get('[data-testid="compact-clear-cancel"]').trigger('click')
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    expect(wrapper.find('[data-testid="compact-clear"]').exists()).toBe(true)
+  })
+})

@@ -1,58 +1,82 @@
 <script setup>
+// 回放工作台的模式切换（design-language §7 Tabs：切换内容区域）。
+// WAI-ARIA tablist：方向键在模式间移动并激活，Home / End 跳到首尾。
 defineOptions({ name: 'ReplayCapabilityTabs' })
 
-defineProps({
-  options: { type: Array, default: () => [] },
+const props = defineProps({
+  options: { type: Array, default: () => [] }, // [{ key, labelKey }]
   activeCapability: { type: String, default: 'data' },
 })
 
 const emit = defineEmits(['select'])
+
+function onKeydown(event) {
+  const keys = props.options.map(option => option.key)
+  const index = keys.indexOf(props.activeCapability)
+  const next = {
+    ArrowRight: keys[(index + 1) % keys.length],
+    ArrowLeft: keys[(index - 1 + keys.length) % keys.length],
+    Home: keys[0],
+    End: keys[keys.length - 1],
+  }[event.key]
+  if (!next) return
+  event.preventDefault()
+  emit('select', next)
+  event.currentTarget.querySelector(`[data-cap="${next}"]`)?.focus()
+}
 </script>
 
 <template>
-  <nav class="workspace-tabs" role="tablist" aria-label="Replay capabilities">
+  <div class="workspace-tabs" role="tablist" :aria-label="$t('workspace.title')" @keydown="onKeydown">
     <button
       v-for="option in options"
       :key="option.key"
       role="tab"
       type="button"
-      :class="{ active: activeCapability === option.key }"
+      class="workspace-tab"
+      :class="{ 'is-active': activeCapability === option.key }"
       :aria-selected="activeCapability === option.key"
+      :tabindex="activeCapability === option.key ? 0 : -1"
       data-testid="ws-tab"
       :data-cap="option.key"
       @click="emit('select', option.key)"
     >
       {{ $t(option.labelKey) }}
     </button>
-  </nav>
+  </div>
 </template>
 
 <style scoped>
 .workspace-tabs {
   display: flex;
-  gap: 4px;
-  margin: 10px 0 14px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  padding: 3px;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
   overflow-x: auto;
+  border-bottom: 1px solid var(--color-border-subtle);
   scrollbar-width: none;
 }
+
 .workspace-tabs::-webkit-scrollbar { display: none; }
-.workspace-tabs button {
-  flex: 0 0 auto;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 7px;
+
+.workspace-tab {
+  flex: none;
+  min-height: var(--control-h-lg);
+  margin-bottom: -1px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--text-label);
-  cursor: pointer;
-  font-size: .88rem;
-  font-family: inherit;
+  color: var(--color-text-secondary);
+  font: var(--type-body);
   font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
 }
-.workspace-tabs button.active { background: color-mix(in srgb, var(--accent) 16%, var(--bg-card)); color: var(--accent-dark); font-weight: 700; }
-.workspace-tabs button:hover:not(.active) { color: var(--text-label); }
+
+.workspace-tab.is-active { border-bottom-color: var(--color-accent); color: var(--color-text-primary); }
+.workspace-tab:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
+
+@media (hover: hover) {
+  .workspace-tab:not(.is-active):hover { color: var(--color-text-primary); }
+}
 </style>

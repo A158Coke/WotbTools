@@ -27,6 +27,7 @@ vi.mock('../composables/useAuth.js', async () => {
   authState.authenticated = ref(true)
   authState.loginInFlight = ref(false)
   authState.authInitState = ref('authenticated')
+  authState.isAdmin = ref(false)
   return {
     useAuth: () => ({
       initPromise: authState.initPromise,
@@ -35,6 +36,7 @@ vi.mock('../composables/useAuth.js', async () => {
       authInitState: authState.authInitState,
       login: authState.login,
       retryAuth: authState.retryAuth,
+      isAdmin: authState.isAdmin,
     }),
   }
 })
@@ -156,7 +158,7 @@ describe('ReplayWorkspace', () => {
     nativeImportState.retry.mockClear()
     nativeImportState.onReadError()
     await flushPromises()
-    expect(wrapper.find('.error').text()).toBe('workspace.native_replay_read_failed')
+    expect(wrapper.get('[data-testid="ws-error"]').text()).toContain('workspace.native_replay_read_failed')
     await wrapper.get('[data-testid="ws-native-retry"]').trigger('click')
     expect(nativeImportState.retry).toHaveBeenCalledTimes(1)
     expect(replayState.startProcessingJob).not.toHaveBeenCalled()
@@ -165,7 +167,7 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('[data-testid="ws-native-retry"]').exists()).toBe(false)
     nativeImportState.onReadError('native-client-upgrade-required')
     await flushPromises()
-    expect(wrapper.find('.error').text()).toBe('workspace.native_client_upgrade_required')
+    expect(wrapper.get('[data-testid="ws-error"]').text()).toContain('workspace.native_client_upgrade_required')
     expect(wrapper.find('[data-testid="ws-native-retry"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -188,7 +190,7 @@ describe('ReplayWorkspace', () => {
     await flushPromises()
     const tabs = wrapper.findAll('[data-testid="ws-tab"]')
     expect(tabs).toHaveLength(3)
-    expect(tabs.map(t => t.attributes('data-cap'))).toEqual(['data', 'ai', 'playback'])
+    expect(tabs.map(t => t.attributes('data-cap'))).toEqual(['data', 'playback', 'ai'])
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ai-pane"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="playback-pane"]').exists()).toBe(true)
@@ -209,7 +211,7 @@ describe('ReplayWorkspace', () => {
     const wrapper = mountWorkspace('data')
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="ws-ai"]').text()).toBe('workspace.ai_maintenance')
+    expect(wrapper.get('[data-testid="ws-ai"]').text()).toContain('workspace.ai_title')
     expect(wrapper.find('[data-test="ai-pane"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="uploader"]').exists()).toBe(false)
     expect(replayState.requestDirectAction).not.toHaveBeenCalled()
@@ -243,8 +245,8 @@ describe('ReplayWorkspace', () => {
     const aiPanelVm = wrapper.findComponent({ name: 'AiReviewPanelMock' })
     expect(aiPanelVm.exists()).toBe(false)
     await flushPromises()
-    expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').classes()).toContain('active')
-    expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').classes()).not.toContain('active')
+    expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').classes()).toContain('is-active')
+    expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').classes()).not.toContain('is-active')
   })
 
   it('auth init 完成后 authenticated=true 时 login 不被调用（SSO/session 用户不被打断）', async () => {
@@ -339,7 +341,8 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('Case A：未登录进入可用能力时请求登录', async () => {
+  // design-language §10 / 审计 PG-03：未登录时显示说明卡，不自动跳转登录页；点击登录才发起，并回到当前能力。
+  it('Case A：未登录进入可用能力时显示登录说明卡，点击后才请求登录', async () => {
     const cases = [
       { cap: 'data', view: 'replay' },
       { cap: 'playback', view: 'battle-playback' },
@@ -348,26 +351,52 @@ describe('ReplayWorkspace', () => {
       const login = vi.fn()
       const wrapper = mountWorkspace(c.cap, { authenticated: false, login })
       await flushPromises()
+      expect(login).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="ws-auth-required"]').exists()).toBe(true)
+      await wrapper.get('[data-testid="ws-login"]').trigger('click')
+      await flushPromises()
       expect(login).toHaveBeenCalledWith(c.view)
       wrapper.unmount()
     }
+  })
+
+  it('AI 维护页提供跳到数据 / 2D 回放的入口', async () => {
+    const wrapper = mountWorkspace('ai')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ws-ai-go-data"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ws-ai-go-playback"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('3D / 射击分析模式只对管理员显示，且导航到对应页面', async () => {
+    const plain = mountWorkspace('data')
+    await flushPromises()
+    expect(plain.findAll('[data-testid="ws-tab"]').map(tab => tab.attributes('data-cap'))).toEqual(['data', 'playback', 'ai'])
+    plain.unmount()
+
+    authState.isAdmin.value = true
+    const admin = mountWorkspace('data')
+    await flushPromises()
+    expect(admin.findAll('[data-testid="ws-tab"]').map(tab => tab.attributes('data-cap'))).toEqual(['data', 'playback', '3d', 'shots', 'ai'])
+    authState.isAdmin.value = false
+    admin.unmount()
   })
 
   it('Case B/C：AI 维护页免登录，Playback 仍能重新发起 login', async () => {
     const login = vi.fn(() => Promise.reject(new Error('AUTH_NAVIGATION_FAILED')))
     const wrapper = mountWorkspace('data', { authenticated: false, login })
     await flushPromises()
-    expect(login).toHaveBeenCalledTimes(1)
-    expect(login).toHaveBeenCalledWith('replay')
+    // 挂载时不自动登录（说明卡 + 登录按钮）
+    expect(login).not.toHaveBeenCalled()
 
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
     await flushPromises()
-    expect(login).toHaveBeenCalledTimes(1)
+    expect(login).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="ws-ai"]').exists()).toBe(true)
 
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
     await flushPromises()
-    expect(login).toHaveBeenCalledTimes(2)
+    expect(login).toHaveBeenCalledTimes(1)
     expect(login).toHaveBeenLastCalledWith('battle-playback')
 
     wrapper.unmount()
@@ -380,7 +409,8 @@ describe('ReplayWorkspace', () => {
     const login = vi.fn(() => Promise.reject(new Error('AUTH_NAVIGATION_FAILED')))
     const wrapper = mountWorkspace('data', { authenticated: false, login })
     await flushPromises()
-    // 挂载时的自动登录失败不弹窗：auth gate 本身已是确定的、可重试的可见表面。
+    // 挂载时不发起登录，也就不会有错误弹窗：说明卡本身就是可重试的可见表面。
+    expect(login).not.toHaveBeenCalled()
     expect(showError.value).toBe(false)
 
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
@@ -400,7 +430,7 @@ describe('ReplayWorkspace', () => {
     await wrapper.find('[data-testid="ws-login"]').trigger('click')
     await flushPromises()
 
-    expect(login).toHaveBeenCalledTimes(2)
+    expect(login).toHaveBeenCalledTimes(1)
     expect(showError.value).toBe(false)
     wrapper.unmount()
   })
