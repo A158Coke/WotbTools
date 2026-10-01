@@ -2021,6 +2021,7 @@ export function initPlayback(container, store) {
     store.assaultProgress = store.assaultObjective ? assaultProgressAt(T) : null;
     store.timer = gameTimerLabel(T);
     store.time = T;
+    store.startTime = DATA.meta.t_start;
     store.duration = DATA.meta.duration;
     const f = (T - DATA.meta.t_start) / Math.max(0.001, DATA.meta.duration - DATA.meta.t_start);
     if (!store.seeking) store.seekFrac = Math.round(f * 1000);
@@ -2072,9 +2073,8 @@ export function initPlayback(container, store) {
   }
   function setSpeed(s) { SPEED = s; store.speed = s; }
 
-  function onKeydown(e) {
-    if (e.code === 'Space' && DATA) { e.preventDefault(); setPlaying(!PLAYING); }
-  }
+  // 键盘（空格 / ←→）由页面经 usePlaybackTransport 统一处理（与 2D 同一套键位与输入框防误触），
+  // 场景内核不再自挂全局 keydown：原实现不区分输入框，会吞掉文本框里的空格。
 
   // ---------- 数据加载 ----------
   // 注：hull_yaw/turret_yaw 由后端相位解卷绕（连续域）后落盘，朴素线性插值即物理正确，
@@ -2234,7 +2234,6 @@ export function initPlayback(container, store) {
   }
 
   // 初始化：事件绑定 + 动画循环（渲染器惰性创建，画质选择先于首帧定型）
-  addEventListener('keydown', onKeydown);
   animate();
   applyGlbGate();
 
@@ -2244,6 +2243,9 @@ export function initPlayback(container, store) {
     setPlaying,
     setSpeed,
     seekFraction: (frac) => { if (DATA) seekTo(DATA.meta.t_start + frac * (DATA.meta.duration - DATA.meta.t_start)); },
+    // 共用播放控件（PlaybackTransport）按绝对秒 seek / 跳秒；seekTo 自带 [t_start, duration] 夹取
+    seekTime: (t) => { if (DATA) seekTo(t); },
+    seekBy: (delta) => { if (DATA) seekTo(T + delta); },
     setCam,
     setFollow,
     setGlb: (on) => { if (Q.allowGlb || !on) applyGlbToggle(on); },
@@ -2254,7 +2256,6 @@ export function initPlayback(container, store) {
       destroyed = true;
       cancelAnimationFrame(rafId);   // 显式取消：不等下一帧的 destroyed 自然退出
       teardownSession();             // 会话资源（车辆/地图/特效/GLB 模板）全量 dispose
-      removeEventListener('keydown', onKeydown);
       removeEventListener('resize', onResize);
       if (DEBUG) {
         delete window.__scene; delete window.__renderer;
