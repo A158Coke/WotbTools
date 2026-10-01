@@ -207,7 +207,7 @@ These bytes illustrate **nested children**, not complete captured packets:
 | Canonical/wire field | Source / rule |
 |---|---|
 | `sequence`, `timestamp`, `packetType`, `confidence` | Preserved from the decoded packet; structural exactness does not prove unknown field semantics |
-| `assaultObjectivePresent` | Shared wrapper8 initialization-family gate; independent of rawField3 presence and arenaBonusType |
+| `assaultObjectivePresent` | 目标族发出裸初始化对**以外**的字段（field3/field4）——裸初始化对是通用广播，普通对局也发（2026-10-01 修正）；与 arenaBonusType 无关 |
 | `baseStates[].timeSec` | Existing projector battle-relative clock: raw clock minus resolved battle start |
 | `baseStates[].baseId` | Literal `BASE` for Assault; no breaking rename of `baseStates` |
 | `baseStates[].captureProgress` | Explicit decoded field3, unchanged; 100 is accepted |
