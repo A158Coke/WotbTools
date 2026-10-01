@@ -131,13 +131,6 @@ function capabilityStateProbe() {
   }
 }
 
-function authRecoveryButtonProbe() {
-  const button = document.querySelector('[data-testid="ws-login-recovery"]')
-  if (!button) return null
-  const rect = button.getBoundingClientRect()
-  return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
-}
-
 function playbackControlProbe() {
   const play = document.querySelector('[data-test="pb-play"]')
   const root = document.querySelector('[data-test="battle-playback"]')
@@ -392,7 +385,8 @@ const APP_SCENARIOS = [
   { name: 'capability-740x360-landscape-coarse', width: 740, height: 360, touch: true, authenticated: true, login: 'resolve' },
   { name: 'capability-1024x768-tablet', width: 1024, height: 768, touch: false, authenticated: true, login: 'resolve' },
   { name: 'capability-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve' },
-  { name: 'login-retry-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'reject' },
+  // 赛果解析 / 2D 回放对匿名开放：未登录、auth init 挂起 / 失败时工作台都照常可用，且不发起登录。
+  { name: 'anonymous-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'reject' },
   { name: 'auth-init-pending-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'pending', authTimeout: 300 },
   { name: 'auth-init-reject-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'reject', authTimeout: 300 },
 ]
@@ -430,39 +424,14 @@ async function runAppScenario(env, scenario) {
   await page.goto(url)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="playback"]'), { label: 'capability tabs' })
 
-  if (scenario.authInit === 'pending' || scenario.authInit === 'reject') {
-    const timeout = (scenario.authTimeout ?? 12_000) + 2_000
-    await page.waitFor(() => !!document.querySelector('[data-testid="ws-auth-failed"]'), {
-      timeout,
-      label: 'auth init recovery state',
-    })
-    const recoveryState = await page.evaluate(`({
-      loading: !!document.querySelector('[data-testid="ws-auth-loading"]'),
-      data: !!document.querySelector('[data-testid="ws-data"]'),
-    })`)
-    check(failures, !recoveryState.loading, 'auth init failure remained in checking state')
-    check(failures, !recoveryState.data, 'auth init failure exposed replay workspace without authentication')
-    const before = await page.evaluate('window.__wsAuth.loginCalls.length')
-    const recovery = await page.probe(authRecoveryButtonProbe)
-    check(failures, !!recovery, 'auth init failure has no direct login recovery button')
-    if (recovery) {
-      await page.tap({ ...recovery, touch: scenario.touch })
-      await page.waitFor(() => !!document.querySelector('[data-testid="ws-auth-required"]'), { label: 'auth recovery login gate' })
-      const after = await page.evaluate('window.__wsAuth.loginCalls.length')
-      check(failures, after > before, `recovery login did not issue a new transaction (before=${before} after=${after})`)
-    }
-    check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
-    await env.chrome.client.send('Target.closeTarget', { targetId })
-    results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
-    return
-  }
-
-  await page.waitFor(
-    scenario.authenticated
-      ? () => !!document.querySelector('[data-testid="ws-data"]')
-      : () => !!document.querySelector('[data-testid="ws-auth-required"]'),
-    { label: scenario.authenticated ? 'data pane' : 'auth gate' },
-  )
+  // auth init 挂起会先经 watchdog 超时落成 failed：等待时间要覆盖该超时
+  const readyTimeout = scenario.authInit ? (scenario.authTimeout ?? 12_000) + 2_000 : undefined
+  await page.waitFor(() => !!document.querySelector('[data-testid="ws-data"]'), {
+    ...(readyTimeout ? { timeout: readyTimeout } : {}),
+    label: 'data pane',
+  })
+  check(failures, !(await page.evaluate(`!!document.querySelector('[data-testid="ws-auth-loading"]')`)),
+    'workspace remained in auth checking state')
 
   // —— B. 无透明 blocker：真实 hit-testing ——
   const hit = await page.probe(capabilityHitProbe)
@@ -485,54 +454,24 @@ async function runAppScenario(env, scenario) {
   check(failures, input?.click?.cap === 'playback',
     `the real click landed on ${JSON.stringify(input?.click)} instead of the playback tab button`)
 
-  if (scenario.authenticated) {
-    await page.waitForValue('new URLSearchParams(location.search).get("view")', (value) => value === 'battle-playback', { label: 'route ?view=battle-playback' })
-    const state = await page.probe(capabilityStateProbe)
-    check(failures, state.playback.visible, `ws-playback not visible after tap (${JSON.stringify(state.playback)})`)
-    check(failures, !state.data.visible, 'ws-data still visible after switching to playback')
-    const playbackTab = state.tabs.find((tab) => tab.cap === 'playback')
-    check(failures, !!playbackTab && playbackTab.selected && playbackTab.active, `playback tab not marked active: ${JSON.stringify(state.tabs)}`)
-    // §3.6：结论必须稳定——不能被别的 watcher / route sync 事后改回 data/ai。
-    await delay(500)
-    const settled = await page.probe(capabilityStateProbe)
-    check(failures, settled.playback.visible && !settled.data.visible
-      && settled.tabs.find((tab) => tab.cap === 'playback')?.selected === true,
-    `capability was reverted by a later watcher/route sync: ${JSON.stringify(settled)}`)
-    check(failures, await page.evaluate('new URLSearchParams(location.search).get("view")') === 'battle-playback',
-      'route was reverted away from ?view=battle-playback by a later watcher/route sync')
-    check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
-  } else {
-    const state = await page.probe(capabilityStateProbe)
-    check(failures, !state.playback.visible, 'unauthenticated tap switched capability instead of starting login')
+  await page.waitForValue('new URLSearchParams(location.search).get("view")', (value) => value === 'battle-playback', { label: 'route ?view=battle-playback' })
+  const state = await page.probe(capabilityStateProbe)
+  check(failures, state.playback.visible, `ws-playback not visible after tap (${JSON.stringify(state.playback)})`)
+  check(failures, !state.data.visible, 'ws-data still visible after switching to playback')
+  const playbackTab = state.tabs.find((tab) => tab.cap === 'playback')
+  check(failures, !!playbackTab && playbackTab.selected && playbackTab.active, `playback tab not marked active: ${JSON.stringify(state.tabs)}`)
+  // §3.6：结论必须稳定——不能被别的 watcher / route sync 事后改回 data/ai。
+  await delay(500)
+  const settled = await page.probe(capabilityStateProbe)
+  check(failures, settled.playback.visible && !settled.data.visible
+    && settled.tabs.find((tab) => tab.cap === 'playback')?.selected === true,
+  `capability was reverted by a later watcher/route sync: ${JSON.stringify(settled)}`)
+  check(failures, await page.evaluate('new URLSearchParams(location.search).get("view")') === 'battle-playback',
+    'route was reverted away from ?view=battle-playback by a later watcher/route sync')
+  check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
+  if (!scenario.authenticated) {
     const attempts = await page.evaluate('window.__wsAuth.loginCalls.length')
-    // 挂载时不再自动登录（说明卡 + 登录按钮）：这次 tap 就是第一次登录尝试
-    check(failures, attempts === 1, `expected exactly one login attempt from the tap (no mount auto-login), loginCalls=${attempts}`)
-    check(failures, !!state.errorDialog && state.errorDialog.visible,
-      `login failure produced no observable error surface (dialog=${JSON.stringify(state.errorDialog)})`)
-    // 错误文案必须真的解析成翻译，而不是把 i18n key 原样显示给用户。
-    check(failures, !!state.errorDialog && !state.errorDialog.text.includes('workspace.login_failed'),
-      `login failure dialog rendered the raw i18n key: ${JSON.stringify(state.errorDialog?.text)}`)
-
-    // 关闭错误提示后必须能再次发起登录（不得 permanent lock）。
-    const closePoint = await page.probe(function globalErrorCloseProbe() {
-      const button = document.querySelector('[data-testid="global-error-close"]')
-      if (!button) return null
-      const rect = button.getBoundingClientRect()
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
-    })
-    check(failures, !!closePoint, 'global error dialog has no close action')
-    if (closePoint) {
-      await page.tap({ ...closePoint, touch: scenario.touch })
-      await page.waitFor(() => !document.querySelector('.global-error-modal'), { label: 'error dialog closed' })
-      const retryHit = await page.probe(capabilityHitProbe)
-      check(failures, retryHit.hitIsButton, `after dismissing the error the tab is no longer hittable: ${JSON.stringify(retryHit.hitChain)}`)
-      await page.resetInputTrace()
-      await page.tap({ ...retryHit.center, touch: scenario.touch })
-      const retryInput = await page.inputTrace()
-      check(failures, retryInput?.click?.cap === 'playback', `retry tap click landed on ${JSON.stringify(retryInput?.click)}`)
-      const retried = await page.evaluate('window.__wsAuth.loginCalls.length')
-      check(failures, retried > attempts, `retry after failure did not re-issue login (before=${attempts} after=${retried})`)
-    }
+    check(failures, attempts === 0, `anonymous capability switch must not start login, loginCalls=${attempts}`)
   }
 
   await env.chrome.client.send('Target.closeTarget', { targetId })

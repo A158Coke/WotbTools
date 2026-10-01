@@ -308,7 +308,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Read the cached Battle Playback V2 dataset for a ready processing source */
+        /**
+         * Read the cached Battle Playback V2 dataset for a ready processing source
+         * @description Anonymous access allowed; a valid bearer token is accepted but not required.
+         */
         post: operations["getBattlePlaybackV2"];
         delete?: never;
         options?: never;
