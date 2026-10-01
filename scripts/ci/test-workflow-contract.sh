@@ -128,6 +128,18 @@ pr_owner_for_production = {
 assert set(pr_owner_for_production) == set(owners)
 image_owners = {"business-api", "frontend", "keycloak", "parser-worker", "minio"}
 queue = {"group": "production-maintenance", "cancel-in-progress": "false", "queue": "max"}
+
+# Business API and Frontend both mirror the same GitHub repository to Gitee and
+# build on the same constrained TX host. Those shared mutation points must stay
+# serialized across the two otherwise-independent owner workflows.
+for owner in ("business-api", "frontend"):
+    workflow = load(workflow_dir / f"{owner}.yml")
+    assert workflow["jobs"]["mirror_gitee"]["concurrency"] == {
+        "group": "production-gitee-mirror", "cancel-in-progress": "false", "queue": "max",
+    }, owner
+    assert workflow["jobs"]["build"]["concurrency"] == {
+        "group": "tx-production-build", "cancel-in-progress": "false", "queue": "max",
+    }, owner
 for owner in owners:
     workflow = load(workflow_dir / f"{owner}.yml")
     events = workflow.get("on", workflow.get(True, {}))
