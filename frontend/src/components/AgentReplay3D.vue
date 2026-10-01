@@ -88,6 +88,12 @@ onBeforeUnmount(() => {
       <span class="map">{{ store.mapName }}</span>
       <span class="timer">{{ store.timer }}</span>
       <span class="score"><span class="t1">{{ store.score1 }}</span> : <span class="t2">{{ store.score2 }}</span></span>
+      <!-- 单基地目标（攻防/遭遇战）：目标存在性独立于占领活动；无进度显示「—」而非 0% -->
+      <span v-if="store.assaultObjective" class="assault-obj" :title="$t('recon.map.playback.base_progress', { progress: store.assaultProgress ?? 0 })">
+        <em>BASE</em>
+        <span class="assault-bar"><i :style="{ width: (store.assaultProgress ?? 0) + '%' }"></i></span>
+        <b>{{ store.assaultProgress != null ? store.assaultProgress + '%' : '—' }}</b>
+      </span>
     </div>
 
     <div v-if="store.hasData" class="team panel team1">
@@ -233,6 +239,13 @@ html[data-ui-profile="classic"] .pb-root {
 .topbar .timer { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .topbar .score { font-size: 16px; font-weight: 600; }
 .topbar .score .t1 { color: var(--ally); }
+/* 单基地占领进度：中性呈现——协议侧 owner/capturing 恒 null，不借 --ally/--enemy 暗示阵营 */
+.topbar .assault-obj { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; color: var(--dim); }
+.topbar .assault-obj em { font-style: normal; letter-spacing: .04em; }
+.topbar .assault-obj b { font-variant-numeric: tabular-nums; min-width: 2.4em; text-align: right; color: var(--accent); }
+.topbar .assault-bar { display: inline-block; width: 84px; height: 6px; border-radius: 3px;
+  background: var(--line); overflow: hidden; }
+.topbar .assault-bar > i { display: block; height: 100%; background: var(--accent); transition: width .18s linear; }
 .topbar .score .t2 { color: var(--enemy); }
 .topbar .map { color: var(--dim); }
 .team { top: 60px; width: 240px; padding: 6px; max-height: calc(100% - 190px); overflow-y: auto; z-index: 5; }

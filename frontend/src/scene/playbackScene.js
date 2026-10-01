@@ -16,6 +16,7 @@
 import * as THREE from 'three'
 
 import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
+import { mapBases } from '../data/mapBases.js'
 import { poseFromYPR } from './glbRig.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -34,6 +35,7 @@ export const QUALITY_PRESETS = {
 export function initPlayback(container, store) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
+  let currentMapBases = null;      // mapBases[资产面 map key]（单基地几何；loadMapImage 解析后缓存）
   let V = [];                      // 车辆运行时 {def, group, turretG, gunPivot, label, meshHull, glb}
   let T = 0, PLAYING = false, SPEED = store.speed;
   let CAM = 'free', FOLLOW_EID = 0;
@@ -312,7 +314,8 @@ export function initPlayback(container, store) {
     // 静态资产面的 key 解析（必须在 mapq 构造之后——曾放在函数首行引用未初始化的
     // mapq，TDZ ReferenceError 让整个函数静默死亡，地图/地形/场景一个请求都不发，
     // 全画质档回退占位网格）
-    await resolveMapKey(mapq).catch(() => {});
+    const resolvedKey = await resolveMapKey(mapq).catch(() => null);
+    currentMapBases = resolvedKey ? (mapBases[resolvedKey] || null) : null;
     if (stale()) return;
     try {
       // 低档 mini：客户端小地图作地面（比高清底图小一个量级，保留 3D 起伏）。
@@ -684,12 +687,166 @@ export function initPlayback(container, store) {
       mapPlane.position.set(meta.x || 0, 0.04, meta.z || 0);
       scene.add(mapPlane);
     }
+    // 地形异步就绪后把单基地环带/HUD 重新贴回地表
+    if (assaultMarker && assaultMarker.reground) assaultMarker.reground();
   }
 
   function teamColor(v) {
     const f = DATA.meta.friendly_team, t = v.def.team;
     if (t === 0 || f === 0) return 0x8a94a3;
     return t === f ? 0x3fa66a : 0xc05046;
+  }
+
+  // ---------- 单基地目标（Assault / Encounter）----------
+  // 几何来自 mapBases[key].assault（客户端 .sc2 提取，世界坐标；scene x = −游戏 x 镜像），
+  // 状态来自 Agent 契约 v2 的 assault_objective_present / assault_bases（wrapper8/root8）。
+  //
+  // 语义红线（docs/research/replay/assault-base-state.md）：单基地的 owner/capturing 恒为
+  // null，静态 scene 的 `team` 字段语义 UNKNOWN——一律不据此上色/推断归属；环与 HUD 用中性
+  // 色，进度条用呈现强调色（仅表示"有占领进度"，不代表阵营）。半径不做车辆距离推算。
+  //
+  // 目标存在性判据：assault_objective_present（上游 v0.3.1；目标族发出裸初始化对以外的
+  // 字段）优先，旧产物回退"有进度广播"。裸初始化对 1=1,2=1 + 1=2,2=1 是通用广播，
+  // 普通对局同样会发，不得据此判定。
+  const ASSAULT_RADIUS_FALLBACK = 20;      // 客户端 scene 常不声明 radius：20m 仅呈现兜底
+  const ASSAULT_PROGRESS_COLOR = 0xffc24b; // 呈现强调色（非阵营语义）
+  let assaultMarker = null;
+
+  function assaultHasObjective() {
+    if (DATA.assault_objective_present === true) return true;
+    if (DATA.assault_objective_present === undefined) {
+      return !!(DATA.assault_bases && DATA.assault_bases.length);
+    }
+    return false;
+  }
+
+  function clearAssaultBase() {
+    if (!assaultMarker) return;
+    const m = assaultMarker;
+    if (m.ring) { scene.remove(m.ring); m.ring.geometry.dispose(); m.ring.material.dispose(); }
+    if (m.sprite) {
+      labelScene.remove(m.sprite);
+      if (m.sprite.material) { m.sprite.material.map?.dispose(); m.sprite.material.dispose(); }
+    }
+    assaultMarker = null;
+  }
+
+  function buildAssaultBase() {
+    clearAssaultBase();
+    if (!assaultHasObjective()) return;
+    const entry = currentMapBases;   // loadMapImage 里按 id → 资产面 key 解析后缓存
+    const pts = (entry && entry.assault) || [];
+    // 多 candidate 无证据 fail-closed（与 2D basesAt 同式）：几何不唯一就不选目标
+    if (pts.length !== 1) return;
+    const p = pts[0];
+    const gx = -p.x, gz = p.y;
+    const r = p.radius || ASSAULT_RADIUS_FALLBACK;
+    const ring = new THREE.Mesh(
+      makeGroundedRing(gx, gz, r),
+      new THREE.MeshBasicMaterial({ color: 0x9aa5b1, side: THREE.DoubleSide,
+                                    transparent: true, opacity: 0.9, depthWrite: false,
+                                    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+    scene.add(ring);
+    const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 128;
+    const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, depthTest: false, depthWrite: false, transparent: true }));
+    sprite.renderOrder = 998;   // 与车辆标签同层：水面/半透明层不得覆盖
+    sprite.position.set(gx, ringMaxGroundY(gx, gz, r) + ASSAULT_HUD_H, gz);
+    labelScene.add(sprite);
+    assaultMarker = { ring, sprite, canvas, ctx: canvas.getContext('2d'), tex, r,
+                      stateKey: undefined,
+                      reground: () => {
+                        ring.geometry.dispose();
+                        ring.geometry = makeGroundedRing(gx, gz, r);
+                        sprite.position.y = ringMaxGroundY(gx, gz, r) + ASSAULT_HUD_H;
+                      } };
+  }
+
+  // 单基地占领进度：取 clock ≤ t 的最后一条（tracks 按 clock 升序）；无广播 → null
+  function assaultProgressAt(t) {
+    const arr = DATA.assault_bases || [];
+    let p = null;
+    for (let i = 0; i < arr.length; i++) {
+      const tr = arr[i];
+      if (tr.clock > t) break;
+      p = tr.progress ?? null;
+    }
+    return p;
+  }
+
+  function drawAssaultHud(m, progress) {
+    const ctx = m.ctx;
+    ctx.clearRect(0, 0, 256, 128);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(0,0,0,.72)';
+    ctx.font = 'bold 30px sans-serif';
+    ctx.strokeText('BASE', 128, 24); ctx.fillStyle = '#f0f0f0'; ctx.fillText('BASE', 128, 24);
+    const col = '#' + ASSAULT_PROGRESS_COLOR.toString(16).padStart(6, '0');
+    if (progress == null) {
+      // 目标存在但当前无占领进度：不画 0% 条（0 ≠ 没发生）
+      ctx.font = 'bold 34px sans-serif'; ctx.fillStyle = 'rgba(240,240,240,.55)';
+      ctx.strokeText('—', 128, 84); ctx.fillText('—', 128, 84);
+      m.tex.needsUpdate = true;
+      return;
+    }
+    const w = 176, h = 16, x = (256 - w) / 2, y = 92;
+    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+    ctx.fillStyle = 'rgba(255,255,255,.16)'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y, Math.max(0, Math.min(1, progress / 100)) * w, h);
+    ctx.font = 'bold 44px sans-serif';
+    ctx.strokeText(progress + '%', 128, 58); ctx.fillStyle = col; ctx.fillText(progress + '%', 128, 58);
+    m.tex.needsUpdate = true;
+  }
+
+  function updateAssaultBase() {
+    const m = assaultMarker;
+    if (!m) return;
+    const p = assaultProgressAt(T);
+    if (m.stateKey !== p) { m.stateKey = p; drawAssaultHud(m, p); }
+    const d = camera.position.distanceTo(m.sprite.position);
+    const s = Math.min(16, Math.max(5, d * 0.03));
+    m.sprite.scale.set(s * 2, s, 1);
+  }
+  const ASSAULT_HUD_H = 11;
+
+  // 逐顶点贴地圆环（与地面/边界同构：起伏地形上平面圆环会被坡地埋掉）
+  function makeGroundedRing(gx, gz, radius, seg = 72) {
+    const pos = new Float32Array((seg + 1) * 2 * 3);
+    const idx = [];
+    for (let i = 0; i <= seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const xo = gx + ca * radius, zo = gz + sa * radius;
+      const xi = gx + ca * radius * 0.9, zi = gz + sa * radius * 0.9;
+      pos[i * 6] = xo; pos[i * 6 + 1] = groundY(xo, zo) + 0.08; pos[i * 6 + 2] = zo;
+      pos[i * 6 + 3] = xi; pos[i * 6 + 4] = groundY(xi, zi) + 0.08; pos[i * 6 + 5] = zi;
+    }
+    for (let i = 0; i < seg; i++) {
+      idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  // 圆环范围内地形最高点：HUD 需高于它才不被坡地遮挡
+  function ringMaxGroundY(gx, gz, radius, seg = 24) {
+    let mx = groundY(gx, gz);
+    for (let i = 0; i < seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      for (const rr of [radius * 0.5, radius, radius * 1.5]) {
+        mx = Math.max(mx, groundY(gx + Math.cos(a) * rr, gz + Math.sin(a) * rr));
+      }
+    }
+    return mx;
+  }
+
+  function groundY(x, z) {
+    return sampleHeight(x, z) + 0.12;
   }
 
   // 标签恒定屏幕占比：世界尺寸按相机距离逐帧反算（透视投影 h = f·2d·tan(θ/2)），
@@ -1281,6 +1438,7 @@ export function initPlayback(container, store) {
     } else followAnchor = null;
     controls.update();
     updateLabels();
+    updateAssaultBase();
     renderer.render(scene, camera);
     // 标签覆盖画布：同一相机，标签恒在主场景之上
     if (labelRenderer) labelRenderer.render(labelScene, camera);
@@ -1295,6 +1453,9 @@ export function initPlayback(container, store) {
     for (const v of V) applyPose(v);
     updateRoster(); updateScore();
     // HUD → store
+    // 顶栏：单基地目标存在性 + 占领进度（取 ≤T 最后一条；无目标证据整行不显示）
+    store.assaultObjective = assaultHasObjective();
+    store.assaultProgress = store.assaultObjective ? assaultProgressAt(T) : null;
     store.timer = gameTimerLabel(T);
     store.time = T;
     store.duration = DATA.meta.duration;
@@ -1400,6 +1561,8 @@ export function initPlayback(container, store) {
   function teardownSession() {
     sessionGen++;
     clearEffects();
+    clearAssaultBase();   // 单基地（圆环 + HUD sprite）随会话释放
+    currentMapBases = null;
     for (const v of V) {
       if (v.glb) scene.remove(v.glb);          // clone 与模板共享资源：不在此 dispose
       if (v.label) {
@@ -1477,6 +1640,7 @@ export function initPlayback(container, store) {
     }
     buildVehicles();
     buildRoster();
+    buildAssaultBase();   // 单基地目标（攻防/遭遇战）
     T = DATA.meta.t_start;
     shotPtr = 0; killPtr = 0;
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
