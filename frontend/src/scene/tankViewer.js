@@ -1054,6 +1054,21 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             armorModel.updateMatrixWorld(true);
 
         }
+        function disposeDetachedModel(root) {
+            if (!root) return;
+            root.traverse(function(node) {
+                if (node.geometry && typeof node.geometry.dispose === 'function') node.geometry.dispose();
+                const materials = Array.isArray(node.material) ? node.material : (node.material ? [node.material] : []);
+                materials.forEach(function(material) {
+                    if (!material) return;
+                    for (const value of Object.values(material)) {
+                        if (value && value.isTexture && typeof value.dispose === 'function') value.dispose();
+                    }
+                    if (typeof material.dispose === 'function') material.dispose();
+                });
+            });
+        }
+
         function clearModels() {
             if (tankModel) { scene.remove(tankModel); tankModel = null; }
             if (armorModel) { scene.remove(armorModel); armorModel = null; }
@@ -1102,6 +1117,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             };
 
             loader.load(assetProvider.url(tankData.model_url), function(gltf) {
+                if (!current() || destroyed) {
+                    disposeDetachedModel(gltf?.scene);
+                    return;
+                }
                 armorModel = gltf.scene;
                 _armorPrefixCache = null;   // 装甲模型重建后前缀缓存失效
                 tagArmorPlates(armorModel);
@@ -1132,6 +1151,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             }, onBytes('armor'), fail('armor model'));
 
             loader.load(assetProvider.url(tankData.visual_model_url), function(gltf) {
+                if (!current() || destroyed) {
+                    disposeDetachedModel(gltf?.scene);
+                    return;
+                }
                 tankModel = gltf.scene;
                 applyModelTransforms(tankModel);
                 tagModuleMeshes(tankModel);
@@ -4057,6 +4080,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         /// canvas 由 ArmorView 的容器 DOM 一并移除，这里只处理 JS 侧句柄。
         function destroy() {
             destroyed = true;
+            loadGen++;   // invalidate any in-flight GLTF callbacks before releasing the live scene
             resetViewerGlobals();
             cancelAnimationFrame(rafId);
             while (cleanups.length) { try { cleanups.pop()(); } catch (_) {} }
