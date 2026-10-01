@@ -70,7 +70,7 @@ Thus root field 4 is `finishReason` for the current schema.
 
 Observed range: 172–399 seconds.
 
-It tracks settlement lifetime/common battle duration and differs fundamentally from `meta.json#battleDuration`, which is not a reliable canonical active-battle clock. Survivor `lifeTime` differs from root field5 only at the expected nearest-integer boundary in this corpus.
+It tracks settlement lifetime/common battle duration and differs fundamentally from `meta.json#battleDuration`, which is not a reliable canonical active-battle clock. Consequently the playback timeline duration (`BattleTimelineBuilder.resolveDurationSec`) uses root5 first, then `RoundFinishedEvent` − battle-period start, and only then meta `battleDuration` (see `docs/features/battle-playback.md`, 时长契约). Survivor `lifeTime` differs from root field5 only at the expected nearest-integer boundary in this corpus.
 
 Verdict: common result-layer battle duration is `PROVEN`; the exact server-side symbol/quantization remains version-scoped.
 
