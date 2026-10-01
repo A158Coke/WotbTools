@@ -687,7 +687,8 @@ export function initPlayback(container, store) {
       mapPlane.position.set(meta.x || 0, 0.04, meta.z || 0);
       scene.add(mapPlane);
     }
-    // 地形异步就绪后把单基地环带/HUD 重新贴回地表
+    // 地形异步就绪后把基地环带/HUD 重新贴回地表
+    regroundSupremacyBases();
     if (assaultMarker && assaultMarker.reground) assaultMarker.reground();
   }
 
@@ -696,6 +697,122 @@ export function initPlayback(container, store) {
     if (t === 0 || f === 0) return 0x8a94a3;
     return t === f ? 0x3fa66a : 0xc05046;
   }
+
+  // ---------- 争霸基地（Supremacy）----------
+  // 几何来自 mapBases[key].supremacy（客户端 .sc2 提取，世界坐标；scene x = −游戏 x 镜像）；
+  // 状态来自 Agent 契约 v2 的 supremacy_bases（wrapper12/root11 sparse 重建）——
+  // seek 折叠：每基地取 clock≤t 的最后一条。渲染只做呈现，不推断协议。
+  // 队伍色沿用本仓调色（与花名册圆点/车辆标签同一 teamColor 系），不引入第二套配色。
+  const BASE_OWNER_FRIENDLY = 0x3fa66a, BASE_OWNER_ENEMY = 0xc05046, BASE_NEUTRAL = 0x9aa5b1;
+  let baseObjects = [];   // 争霸基地 { baseId, bid, ring, sprite, canvas, ctx, tex, state, r }
+
+  function baseSideColor(team) {
+    const ft = DATA.meta.friendly_team;
+    if ((team !== 1 && team !== 2) || (ft !== 1 && ft !== 2)) return BASE_NEUTRAL;
+    return team === ft ? BASE_OWNER_FRIENDLY : BASE_OWNER_ENEMY;
+  }
+
+  function clearSupremacyBases() {
+    for (const b of baseObjects) {
+      if (b.ring) { scene.remove(b.ring); b.ring.geometry.dispose(); b.ring.material.dispose(); }
+      if (b.sprite) {
+        labelScene.remove(b.sprite);
+        if (b.sprite.material) { b.sprite.material.map?.dispose(); b.sprite.material.dispose(); }
+      }
+    }
+    baseObjects = [];
+  }
+
+  function buildSupremacyBases() {
+    clearSupremacyBases();
+    const tracks = DATA.supremacy_bases;
+    if (!tracks || !tracks.length) return;   // 非争霸场次：不画（不靠静态几何猜模式）
+    const pts = (currentMapBases && currentMapBases.supremacy) || [];
+    if (!pts.length) return;   // 无几何数据的地图：不猜坐标
+    for (const p of pts) {
+      const bid = { A: 0, B: 1, C: 2, D: 3 }[p.baseId];
+      if (bid == null) continue;
+      const gx = -p.x, gz = p.y;
+      const r = p.radius || 15;
+      // 贴地圆环（不用平面 RingGeometry——起伏地形上会被坡地埋掉大半）
+      const ring = new THREE.Mesh(
+        makeGroundedRing(gx, gz, r),
+        new THREE.MeshBasicMaterial({ color: BASE_NEUTRAL, side: THREE.DoubleSide,
+                                      transparent: true, opacity: 0.9, depthWrite: false,
+                                      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+      scene.add(ring);
+      // HUD：billboard sprite（字母 + 占领进度），屏幕尺寸 clamp
+      const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 128;
+      const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, depthTest: false, depthWrite: false, transparent: true }));
+      sprite.renderOrder = 998;
+      sprite.position.set(gx, ringMaxGroundY(gx, gz, r) + BASE_HUD_H, gz);
+      labelScene.add(sprite);
+      baseObjects.push({ baseId: p.baseId, bid, ring, sprite, canvas, ctx: canvas.getContext('2d'),
+                         tex, state: null, r,
+                         // 地形异步就绪后：重建贴地环带 + HUD 抬到环内最高地形之上
+                         reground: () => {
+                           ring.geometry.dispose();
+                           ring.geometry = makeGroundedRing(gx, gz, r);
+                           sprite.position.y = ringMaxGroundY(gx, gz, r) + BASE_HUD_H;
+                         } });
+    }
+  }
+
+  function regroundSupremacyBases() {
+    for (const b of baseObjects) if (b.reground) b.reground();
+  }
+
+  // 每基地取 clock ≤ t 的最后一条（tracks 按 clock 升序，重建侧保证）
+  function baseStateAt(bid, t) {
+    const arr = DATA.supremacy_bases || [];
+    let st = { owner: null, capturing: null, progress: null };
+    for (let i = 0; i < arr.length; i++) {
+      const tr = arr[i];
+      if (tr.base_id !== bid) continue;
+      if (tr.clock > t) break;
+      st = { owner: tr.owner_team ?? null, capturing: tr.capturing_team ?? null,
+             progress: tr.capture_progress ?? null };
+    }
+    return st;
+  }
+
+  function drawBaseHud(b) {
+    const st = b.state; const ctx = b.ctx;
+    const ownerColor = baseSideColor(st.owner);
+    const capColor = st.capturing != null ? baseSideColor(st.capturing) : null;
+    const col = (c) => '#' + c.toString(16).padStart(6, '0');
+    ctx.clearRect(0, 0, 256, 128);
+    ctx.font = 'bold 64px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(0,0,0,.72)';
+    ctx.strokeText(b.baseId, 128, 42); ctx.fillStyle = col(ownerColor); ctx.fillText(b.baseId, 128, 42);
+    // 占领进度条（capturing 队伍色）；progress 缺失时不画条（0 ≠ 没发生）
+    if (capColor != null && st.progress != null) {
+      const w = 176, h = 16, x = (256 - w) / 2, y = 92;
+      ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+      ctx.fillStyle = 'rgba(255,255,255,.16)'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = col(capColor);
+      ctx.fillRect(x, y, Math.max(0, Math.min(1, st.progress / 100)) * w, h);
+    }
+    b.tex.needsUpdate = true;
+  }
+
+  function updateSupremacyBases() {
+    for (const b of baseObjects) {
+      const st = baseStateAt(b.bid, T);
+      const key = st.owner + '/' + st.capturing + '/' + st.progress;
+      if (b.stateKey !== key) { b.state = st; b.stateKey = key; drawBaseHud(b); }
+      // 圆环随 owner 变色
+      const oc = baseSideColor(st.owner);
+      if (b.ringColor !== oc) { b.ring.material.color.setHex(oc); b.ringColor = oc; }
+      // HUD 屏幕尺寸 clamp：按相机距离调整 sprite 世界尺寸
+      const d = camera.position.distanceTo(b.sprite.position);
+      const s = Math.min(16, Math.max(5, d * 0.03));
+      b.sprite.scale.set(s * 2, s, 1);
+    }
+  }
+  const BASE_HUD_H = 11;   // 基地 HUD 抬高（争霸/单基地共用）
 
   // ---------- 单基地目标（Assault / Encounter）----------
   // 几何来自 mapBases[key].assault（客户端 .sc2 提取，世界坐标；scene x = −游戏 x 镜像），
@@ -752,14 +869,14 @@ export function initPlayback(container, store) {
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
       map: tex, depthTest: false, depthWrite: false, transparent: true }));
     sprite.renderOrder = 998;   // 与车辆标签同层：水面/半透明层不得覆盖
-    sprite.position.set(gx, ringMaxGroundY(gx, gz, r) + ASSAULT_HUD_H, gz);
+    sprite.position.set(gx, ringMaxGroundY(gx, gz, r) + BASE_HUD_H, gz);
     labelScene.add(sprite);
     assaultMarker = { ring, sprite, canvas, ctx: canvas.getContext('2d'), tex, r,
                       stateKey: undefined,
                       reground: () => {
                         ring.geometry.dispose();
                         ring.geometry = makeGroundedRing(gx, gz, r);
-                        sprite.position.y = ringMaxGroundY(gx, gz, r) + ASSAULT_HUD_H;
+                        sprite.position.y = ringMaxGroundY(gx, gz, r) + BASE_HUD_H;
                       } };
   }
 
@@ -809,7 +926,6 @@ export function initPlayback(container, store) {
     const s = Math.min(16, Math.max(5, d * 0.03));
     m.sprite.scale.set(s * 2, s, 1);
   }
-  const ASSAULT_HUD_H = 11;
 
   // 逐顶点贴地圆环（与地面/边界同构：起伏地形上平面圆环会被坡地埋掉）
   function makeGroundedRing(gx, gz, radius, seg = 72) {
@@ -1438,6 +1554,7 @@ export function initPlayback(container, store) {
     } else followAnchor = null;
     controls.update();
     updateLabels();
+    updateSupremacyBases();
     updateAssaultBase();
     renderer.render(scene, camera);
     // 标签覆盖画布：同一相机，标签恒在主场景之上
@@ -1453,6 +1570,16 @@ export function initPlayback(container, store) {
     for (const v of V) applyPose(v);
     updateRoster(); updateScore();
     // HUD → store
+    // 顶栏：争霸实时点数（取 ≤T 的最后采样；无广播的场次保持 null → UI 不显示）
+    if (DATA.supremacy_points && DATA.supremacy_points.length) {
+      const ft = DATA.meta.friendly_team;
+      let pf = null, pe = null;
+      for (const sp of DATA.supremacy_points) {
+        if (sp.clock > T) continue;
+        if (sp.team === ft) pf = sp.points; else pe = sp.points;
+      }
+      store.pointsFriend = pf; store.pointsEnemy = pe;
+    }
     // 顶栏：单基地目标存在性 + 占领进度（取 ≤T 最后一条；无目标证据整行不显示）
     store.assaultObjective = assaultHasObjective();
     store.assaultProgress = store.assaultObjective ? assaultProgressAt(T) : null;
@@ -1561,7 +1688,8 @@ export function initPlayback(container, store) {
   function teardownSession() {
     sessionGen++;
     clearEffects();
-    clearAssaultBase();   // 单基地（圆环 + HUD sprite）随会话释放
+    clearSupremacyBases();   // 争霸基地（圆环 + HUD sprite）随会话释放
+    clearAssaultBase();      // 单基地（圆环 + HUD sprite）随会话释放
     currentMapBases = null;
     for (const v of V) {
       if (v.glb) scene.remove(v.glb);          // clone 与模板共享资源：不在此 dispose
@@ -1640,6 +1768,7 @@ export function initPlayback(container, store) {
     }
     buildVehicles();
     buildRoster();
+    buildSupremacyBases();   // 争霸基地（A–D）
     buildAssaultBase();   // 单基地目标（攻防/遭遇战）
     T = DATA.meta.t_start;
     shotPtr = 0; killPtr = 0;
