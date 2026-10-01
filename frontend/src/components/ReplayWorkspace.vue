@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, nextTick, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CircleAlert, LogIn, Sparkles } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
@@ -10,13 +10,14 @@ import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import ReplayPage from './ReplayPage.vue'
-import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 import FileUploader from './FileUploader.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
 import AppButton from './AppButton.vue'
+// 审计 PF-02：2D 回放（含约 2.5MB 的地图语义数据）只在进入 2D 回放模式时加载，不进主包。
+const BattlePlaybackPanel = defineAsyncComponent(() => import('./BattlePlaybackPanel.vue'))
 import Banner from './Banner.vue'
 import EmptyState from './EmptyState.vue'
 import PageHeader from './PageHeader.vue'
@@ -91,6 +92,9 @@ const capabilityOptions = computed(() => [
 ])
 
 const activeCapability = workspace.activeWorkspaceTab
+/** 2D 回放面板首次进入时才挂载（之后保留状态，切走只是隐藏），它的代码块因此不随工作台加载。 */
+const playbackMounted = ref(activeCapability.value === 'playback')
+watch(activeCapability, (cap) => { if (cap === 'playback') playbackMounted.value = true })
 
 /** 模板直接消费的 workspace 权威 ref（顶层绑定，模板自动解包 ref）。 */
 const currentBattleId = workspace.currentBattleId
@@ -321,6 +325,7 @@ watch(() => props.initialCapability, (val) => {
             @update:model-value="onBattleSelect"
           />
           <BattlePlaybackPanel
+            v-if="playbackMounted"
             :file="playbackReplay.targetFile.value"
             :processing-job-id="playbackReplay.datasetRef.value?.processingJobId ?? null"
             :source-id="playbackReplay.datasetRef.value?.sourceId ?? null"

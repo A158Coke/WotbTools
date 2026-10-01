@@ -14,7 +14,6 @@ const manifest = ref(null)
 const loadFailed = ref(false)
 /** 登录门禁状态：checking（鉴权检查中）| ready（已登录）| required（需登录）。 */
 const authState = ref('checking')
-let loginAttempted = false
 
 async function loadManifest() {
   try {
@@ -27,7 +26,7 @@ async function loadManifest() {
 }
 
 onMounted(async () => {
-  // 公开入口，登录门禁：未登录访问 /download/android 自动跳 Keycloak（登录后回本页）。
+  // 公开入口，登录门禁：未登录时显示登录说明卡（登录后回本页）。
   try {
     await initPromise
   } catch {
@@ -38,11 +37,8 @@ onMounted(async () => {
     await loadManifest()
     return
   }
+  // 审计 PG-03：未登录时显示说明与登录按钮，不自动跳转 Keycloak（design-language §10）
   authState.value = 'required'
-  if (!loginAttempted) {
-    loginAttempted = true
-    login('android').catch(() => {})
-  }
 })
 </script>
 

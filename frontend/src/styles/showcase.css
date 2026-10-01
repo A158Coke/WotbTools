@@ -62,16 +62,16 @@ body {
 
 .wrap {
   max-width: var(--showcase-wide-max) !important;
-  width: calc(100vw - var(--showcase-gutter) * 2) !important;
+  width: calc(100% - var(--showcase-gutter) * 2) !important;
   margin-inline: auto !important;
 }
 .layout-content {
-  width: min(var(--showcase-content-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--showcase-content-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   padding: 26px 0 64px !important;
 }
 .layout-wide {
-  width: min(var(--showcase-wide-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--showcase-wide-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   padding: 26px 0 64px !important;
 }
@@ -87,7 +87,7 @@ body {
   height: calc(100vh - var(--topbar-h)) !important;
 }
 .admin-page {
-  width: min(var(--showcase-page-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--showcase-page-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin-inline: auto !important;
   padding: 26px 0 64px !important;
@@ -144,7 +144,7 @@ body {
 .hof-page,
 .hof-wrap,
 .hall-page {
-  width: min(var(--showcase-wide-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--showcase-wide-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin-inline: auto !important;
 }
@@ -166,7 +166,7 @@ body {
 
 /* Profile: no avatar; identity reads like a tactical account header. */
 .profile-page {
-  width: min(var(--showcase-content-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--showcase-content-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin-inline: auto !important;
   padding: 26px 0 64px !important;
@@ -286,14 +286,14 @@ body {
   .profile-page,
   .hof-page,
   .hof-wrap {
-    width: calc(100vw - 16px) !important;
+    width: calc(100% - 16px) !important;
     padding: 12px 0 42px !important;
   }
   .layout-full-workspace { height: calc(100vh - 56px) !important; }
   .admin-search { flex-direction: column; }
   .admin-search button { min-height: 40px; }
   .admin-table-wrap { width: 100%; }
-  .admin-modal { width: calc(100vw - 22px) !important; padding: 18px !important; }
+  .admin-modal { width: calc(100% - 22px) !important; padding: 18px !important; }
   .profile-page .profile-body { display: block !important; }
   .profile-page .profile-left,
   .profile-page .profile-right { display: grid; gap: 12px; }

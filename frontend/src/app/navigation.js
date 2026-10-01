@@ -109,3 +109,10 @@ export function locationForView(view, route) {
     query,
   }
 }
+
+/** 当前页面所属一级区块的标题 key（顶栏紧凑标题与 document.title 共用）；不属于任何区块时为 null。 */
+export function sectionTitleKey(view) {
+  const section = primarySection(view)
+  const item = primaryNavItems().find(entry => entry.id === section)
+  return item?.labelKey ?? (section === 'account' ? 'nav.account' : null)
+}

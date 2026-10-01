@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises as flushVue, mount } from '@vue/test-utils'
+
+/** 2D 回放面板是异步组件：每次 flush 同时等动态 import 完成。 */
+async function flushPromises() {
+  await flushVue()
+  await vi.dynamicImportSettled()
+  await flushVue()
+}
 import { useError } from '../composables/useError.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
@@ -55,7 +62,9 @@ vi.mock('./AiReviewPanel.vue', () => ({
     template: '<div data-test="ai-pane">{{ processingJobId }}|{{ sourceId }}|{{ datasetError }}</div>',
   },
 }))
+// __esModule：BattlePlaybackPanel 在工作台里是异步组件（审计 PF-02），Vue 需要它来解包 default
 vi.mock('./BattlePlaybackPanel.vue', () => ({
+  __esModule: true,
   default: {
     name: 'BattlePlaybackPanelMock',
     props: ['file', 'processingJobId', 'sourceId', 'active', 'seekTo', 'datasetError'],
@@ -193,6 +202,13 @@ describe('ReplayWorkspace', () => {
     expect(tabs.map(t => t.attributes('data-cap'))).toEqual(['data', 'playback', 'ai'])
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ai-pane"]').exists()).toBe(false)
+    // 审计 PF-02：2D 回放面板首次进入时才挂载（代码块按需加载），之后切走只隐藏、保留状态
+    expect(wrapper.find('[data-test="playback-pane"]').exists()).toBe(false)
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="playback-pane"]').exists()).toBe(true)
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="data"]').trigger('click')
+    await flushPromises()
     expect(wrapper.find('[data-test="playback-pane"]').exists()).toBe(true)
   })
 

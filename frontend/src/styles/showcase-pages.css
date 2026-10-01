@@ -2,7 +2,7 @@
 
 /* Changelog */
 .version-page {
-  width: min(1280px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(1280px, calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   padding: 28px 0 64px !important;
 }
@@ -36,7 +36,7 @@
 
 /* Rating docs（League Rating V6 算法说明） */
 .rating-docs-page {
-  width: min(1120px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(1120px, calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin: 0 auto !important;
   padding: 28px 0 64px !important;
@@ -45,7 +45,7 @@
 
 /* Contact */
 .contact-page {
-  width: min(1280px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(1280px, calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   padding: 28px 0 64px !important;
   color: #c9c5bb !important;
@@ -71,7 +71,7 @@
 .hof-admin-page,
 .hofadmin-page,
 .admin-hof-page {
-  width: min(1760px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(1760px, calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin-inline: auto !important;
   padding: 24px 0 64px !important;
@@ -127,7 +127,7 @@
   .hof-admin-page,
   .hofadmin-page,
   .admin-hof-page {
-    width: calc(100vw - 16px) !important;
+    width: calc(100% - 16px) !important;
     padding: 12px 0 42px !important;
   }
   .version-page .ver { padding-left: 16px; }

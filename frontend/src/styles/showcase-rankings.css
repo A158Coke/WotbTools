@@ -1,7 +1,7 @@
 /* Hall of Fame public ranking + HoF admin review console */
 
 .lb-wrap {
-  width: min(1720px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(1720px, calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin: 0 auto !important;
   padding: 22px 0 64px !important;
@@ -87,7 +87,7 @@
 .lb-wrap .hof-upload-modal { border-color: #3b454b !important; background: #11171a !important; box-shadow: 0 30px 80px rgba(0,0,0,.5) !important; }
 
 .hof-admin {
-  width: min(1760px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(1760px, calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin: 0 auto !important;
   padding: 22px 0 64px !important;
@@ -180,14 +180,14 @@
 
 @media(max-width:1199px) {
   .lb-wrap,
-  .hof-admin { width: calc(100vw - 24px) !important; padding-top: 16px !important; }
+  .hof-admin { width: calc(100% - 24px) !important; padding-top: 16px !important; }
   .lb-wrap > .tabs,
   .lb-wrap .lb-toolbar { position: static; }
 }
 
 @media (width < 768px) {
   .lb-wrap,
-  .hof-admin { width: calc(100vw - 16px) !important; padding: 10px 0 42px !important; }
+  .hof-admin { width: calc(100% - 16px) !important; padding: 10px 0 42px !important; }
   .lb-wrap > .tabs,
   .hof-admin-tabs { position: static; }
   .lb-wrap .lb-head { padding: 18px !important; }
