@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
-import { defaultView, locationForView, primaryNavItems, primarySection, viewFromRoute } from './navigation.js'
+import { defaultView, locationForView, primaryNavItems, primarySection, sectionTitleKey as titleKeyFor, viewFromRoute } from './navigation.js'
 import { ACCOUNT_ICON, PRIMARY_NAV_ICONS } from './navIcons.js'
 
 // 桌面 / 平板：logo · 主导航 · 更多 · 账户。手机（compact）：logo · 当前栏目名 · 账户，主导航交给底部 Tab 栏。
@@ -16,7 +16,7 @@ const items = primaryNavItems()
 const sectionItems = items.filter(item => item.id !== 'more')
 const moreItem = items.find(item => item.id === 'more')
 const activeItem = computed(() => items.find(item => item.id === activeSection.value))
-const sectionTitleKey = computed(() => activeItem.value?.labelKey ?? (activeSection.value === 'account' ? 'nav.account' : null))
+const sectionTitleKey = computed(() => titleKeyFor(activeView.value))
 const brandTarget = computed(() => locationForView(defaultView(), route))
 const accountLabel = computed(() => (isAuthenticated() && displayName.value) || null)
 const showDevEnvironmentNotice = import.meta.env.DEV
@@ -32,7 +32,7 @@ function to(view) {
 <template>
   <header class="app-top-bar" :class="{ 'is-compact': props.compact }" data-testid="app-top-bar">
     <RouterLink class="brand" :to="brandTarget" :aria-label="'WoTBTools'">
-      <img class="brand-logo" src="/wotbtoolslogo.png" alt="" aria-hidden="true">
+      <img class="brand-logo" src="/wotbtoolslogo-128.webp" width="128" height="128" alt="" aria-hidden="true">
     </RouterLink>
 
     <span v-if="props.compact && sectionTitleKey" class="section-title">{{ $t(sectionTitleKey) }}</span>

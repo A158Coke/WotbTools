@@ -42,7 +42,7 @@ docker/keycloak/themes/wotbtools/login/
 
 加一张图：把 `<id>.webp`（横版 ≤500KB）与 `<id>-mobile.webp`（900×1600 竖版 ≤300KB）放进 `resources/img/`，然后在 `background-rotation.ftl` 的 `backgrounds` 里加一条。`desktopPos` / `mobilePos` 是 `background-position`，用来把画面主体让开登录卡（桌面卡片靠右、手机卡片在上半屏）。
 
-当前 3 张：`battlefield`（src `frontend/src/assets/showcase/home/hero-v4.png`）、`wtc-overlook`、`summit-station`。后两张按 1672×941 原生分辨率转码，不上采样到 1920×1080——源就是 1672 宽，放大只增体积不增细节；竖版由横版按 9:16 裁切后缩放到 900×1600，因此比横版略软。
+当前 3 张：`battlefield`（src `frontend/src/assets/showcase/home/hero-v4.webp`）、`wtc-overlook`、`summit-station`。后两张按 1672×941 原生分辨率转码，不上采样到 1920×1080——源就是 1672 宽，放大只增体积不增细节；竖版由横版按 9:16 裁切后缩放到 900×1600，因此比横版略软。
 ## 生产部署注意
 
 生产/TX realm 由 TX-local OpenTofu 管理（非 `--import-realm`）。主题仍由镜像发布；上线需通过 OpenTofu 同步：

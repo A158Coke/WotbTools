@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import { createI18n } from 'vue-i18n'
 import './styles/tokens/scale.css'
 import './styles/tokens/color.css'
@@ -29,6 +29,7 @@ import './styles/playback-fullscreen-form-contract.css'
 import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
 import router from './app/router.js'
+import { sectionTitleKey, viewFromRoute } from './app/navigation.js'
 
 // Build identity（vite define 注入）：生产环境可立即确认实际运行的 bundle 版本，
 // 避免"我刚部署了"式猜测（对应同源 /version.json 可查）。
@@ -53,6 +54,18 @@ async function bootstrap() {
   })
 
   createApp(App).use(i18n).use(router).mount('#app')
+
+  // 审计 PG-16：<html lang> 与标签页标题跟随界面语言和当前区块（原来固定为中文）
+  const HTML_LANG = { zh: 'zh-CN', en: 'en', ru: 'ru' }
+  const syncDocumentMeta = () => {
+    const lang = i18n.global.locale
+    document.documentElement.lang = HTML_LANG[lang] || lang
+    const key = sectionTitleKey(viewFromRoute(router.currentRoute.value, { allowAdminViews: true }))
+    document.title = key ? `${i18n.global.t(key)} · WoTBTools` : 'WoTBTools'
+  }
+  router.afterEach(() => syncDocumentMeta())
+  watch(() => i18n.global.locale, syncDocumentMeta)
+  syncDocumentMeta()
 
   // Production intentionally links the brand to wotbtools.com. During localhost UI review,
   // keep the brand in the local SPA and make it a reliable Home button.
