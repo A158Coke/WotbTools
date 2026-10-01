@@ -141,15 +141,10 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.mini-action', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
   })
 
-  it('Replay 上传区：Heading/Card/Filebar/Ghost 按钮 浅底深字 !important', () => {
-    has('.uploadhead h1', ['color: var(--text-heading) !important'])
-    has('.uploadcard', ['background: var(--bg-upload) !important'])
-    has('.uploadcard .up-title', ['color: var(--text-heading) !important'])
-    has('.filebar', ['background: var(--bg-upload) !important'])
+  it('Replay 结果区：Ghost 按钮 / Tabs / 视图切换 浅底深字 !important（上传区已改用设计语言 token）', () => {
     has('.filebtn.ghost', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
     has('.tabs button', ['color: var(--text-sub) !important'])
     has('.dataview-toggle button', ['color: var(--text-sub) !important'])
-    has('.upload-points span', ['background:', 'border-color:', 'color: var(--text-sub) !important'])
   })
 
   it('回归：Replay .tablewrap 必须 background/border-color/color/box-shadow 全带 !important', () => {

@@ -77,7 +77,9 @@ describe('Classic 主题 residual-dark 回归（语义 token 契约）', () => {
   })
 
   it('ReplayCapabilityTabs / BattlePlaybackPanel 面板 不得再写死深色面', () => {
-    expect(ruleBody(capabilityTabs, '\\.workspace-tabs')).toContain('background: var(--bg-card)')
+    // 设计语言组件：只用语义 token（--color-*），不写死任何色值
+    expect(capabilityTabs).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+    expect(ruleBody(capabilityTabs, '\\.workspace-tab\\.is-active')).toContain('var(--color-')
     expect(ruleBody(bpPanel, '\\.panel ')).toContain('background: var(--bg-card)')
     expect(ruleBody(bpPanel, '\\.panel ')).toContain('color: var(--text)')
     expect(ruleBody(bpPanel, '\\.panel ')).not.toContain('#303a40')

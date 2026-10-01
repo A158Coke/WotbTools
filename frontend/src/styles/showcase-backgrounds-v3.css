@@ -51,16 +51,6 @@
   background-image: url('../assets/showcase/replay/replay-hero-battlefield-v1.png') !important;
   opacity: .88 !important;
 }
-.layout-data-workspace .uploadwrap {
-  background:
-    linear-gradient(96deg, rgba(10,16,19,.96) 0%, rgba(11,17,20,.90) 55%, rgba(13,18,21,.78) 100%),
-    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') 72% 50% / cover no-repeat !important;
-}
-.layout-data-workspace .uploadcard {
-  background:
-    linear-gradient(135deg, rgba(5,11,14,.88), rgba(7,12,14,.92)),
-    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') center / cover no-repeat !important;
-}
 
 /* ---------- Hall of Fame — ceremonial hall, strong gold focal point ---------- */
 .hof-page::after,
