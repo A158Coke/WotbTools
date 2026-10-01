@@ -70,7 +70,6 @@
 |---|---|
 | `features/battle-playback.md` | 改地图鸟瞰 / 战局回放 / 双层坦克标记时 |
 | `features/battle-playback-hp-authority.md` | 改战局回放 HP 权威来源 / settlement 优先级时 |
-| `features/rating-v2.md` | 改管理员灰度 Rating V2 的公式、阈值、输出字段、六轴雷达展示或历史比较口径时（唯一算法维护基线） |
 | `features/hall-of-fame.md` | 改名人堂时 |
 | `features/team-ai-review.md` | 改团队复盘产品语义时 |
 | `features/league-rating.md` | 改训练赛/联赛评分（League Rating）公式 / 模式 / 完整性门槛 / 导出时 |
