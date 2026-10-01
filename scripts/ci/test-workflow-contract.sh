@@ -58,14 +58,15 @@ assert affected("infra/tofu/minio/main.tf") == {"minio"}
 assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgres"}
 assert affected("docs/README.md") == set()
 assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend", "android"}
-assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment", "frontend"}
+assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment"}
+assert affected("deploy/tx/publish-loaded-image-to-tcr.sh") == {"deployment"}
 assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
-# The frontend publish owns these as production inputs: the Agent WASM pin, the script
-# that fetches it, the immutable-image reuse gate helper, the bounded-retry helper used
-# by the TCR publication step and the freshness gate the publication re-checks.
+# Frontend production builds now publish from TX through the Gitee exact-SHA builder.
+# The GitHub-runner registry-list/retry helpers are no longer frontend-owned inputs;
+# the Agent WASM pin/fetch contract and freshness gate remain production inputs.
 assert affected("deploy/agent/source.json") == {"frontend"}
 assert affected("scripts/fetch-agent-wasm.sh") == {"frontend"}
-assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment", "frontend"}
+assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment"}
 assert affected("deploy/check-production-freshness.sh") == {"deployment", "frontend"}
 for owner in jobs["changes"]["outputs"]:
     caller = jobs[owner]
@@ -128,6 +129,43 @@ pr_owner_for_production = {
 assert set(pr_owner_for_production) == set(owners)
 image_owners = {"business-api", "frontend", "keycloak", "parser-worker", "minio"}
 queue = {"group": "production-maintenance", "cancel-in-progress": "false", "queue": "max"}
+
+# Business API and Frontend both mirror the same GitHub repository to Gitee and
+# build on the same constrained TX host. Those shared mutation points must stay
+# serialized across the two otherwise-independent owner workflows.
+for owner in ("business-api", "frontend"):
+    workflow = load(workflow_dir / f"{owner}.yml")
+    assert workflow["jobs"]["mirror_gitee"]["concurrency"] == {
+        "group": "production-gitee-mirror", "cancel-in-progress": "false", "queue": "max",
+    }, owner
+    mirror_step = next(
+        step for step in workflow["jobs"]["mirror_gitee"]["steps"]
+        if step.get("name") == "Mirror WotbTools to Gitee"
+    )
+    assert mirror_step["with"]["force_update"] == "true", owner
+    assert workflow["jobs"]["build"]["concurrency"] == {
+        "group": "tx-production-build", "cancel-in-progress": "false", "queue": "max",
+    }, owner
+
+# The runtime digest reference is deliberately tagless. A value such as
+# repo:sha-<tag>@sha256:<digest> is content-addressed for Docker, but deploy.sh
+# intentionally rejects tags so production identity has one canonical shape.
+frontend_workflow = load(workflow_dir / "frontend.yml")
+assert set(frontend_workflow["jobs"]["build"]["outputs"]) == {"commit_sha", "digest"}
+frontend_deploy = next(
+    step for step in frontend_workflow["jobs"]["deploy"]["steps"]
+    if step.get("name") == "Reconcile only Frontend under the TX host lock"
+)
+expected_frontend_ref = (
+    "${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}/"
+    "wotbtools-frontend@${{ needs.build.outputs.digest }}"
+)
+assert frontend_deploy["env"]["TX_FRONTEND_IMAGE_REF"] == expected_frontend_ref
+assert "needs.build.outputs.image" not in frontend_deploy["env"]["TX_FRONTEND_IMAGE_REF"]
+
+legacy_tcr_publisher = (root / "deploy/tx/publish-loaded-image-to-tcr.sh").read_text(encoding="utf-8")
+assert "<backend|frontend|keycloak>" not in legacy_tcr_publisher
+assert "backend|frontend|keycloak)" not in legacy_tcr_publisher
 for owner in owners:
     workflow = load(workflow_dir / f"{owner}.yml")
     events = workflow.get("on", workflow.get(True, {}))
