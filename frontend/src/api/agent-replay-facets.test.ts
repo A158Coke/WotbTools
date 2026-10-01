@@ -233,3 +233,95 @@ describe('契约 v2 边界（评审 P0-1 验收的消费侧锁定）', () => {
     expect((api as Record<string, unknown>).parseAgentHofFromBytes).toBeUndefined()
   })
 })
+
+// ---------- 契约 v0.1.9：parseShotReplays 包装形状 + eid 联表富化 ----------
+
+describe('normalizeAgentShotsOutcome', () => {
+  const shot = { index: 1, time_s: 1, damage: 100, target_name: 'x', is_kill: false, shooter_eid: 2 }
+
+  it('v0.1.9 包装形状：ok 态透传 others 统计与 author_eid', () => {
+    const o = api.normalizeAgentShotsOutcome({
+      shots: [shot],
+      author_path: 'ok',
+      author_eid: 7,
+      others: { total_launches: 30, skipped_no_endpoint: 1, skipped_no_target_state: 2, muzzle_fallback: 3 },
+    })
+    expect(o.author_path).toBe('ok')
+    expect(o.author_error).toBeUndefined()
+    expect(o.author_eid).toBe(7)
+    expect(o.others).toEqual({ total_launches: 30, skipped_no_endpoint: 1, skipped_no_target_state: 2, muzzle_fallback: 3 })
+    expect(o.shots).toHaveLength(1)
+  })
+
+  it('v0.1.9 包装形状：error 态必须携带 author_error（fail-visible）', () => {
+    const o = api.normalizeAgentShotsOutcome({
+      shots: [],
+      author_path: 'error',
+      author_error: 'shot #1: 受击者实体 0x123 不在 type=5 名册中',
+      author_eid: 7,
+      others: { total_launches: 9, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 },
+    })
+    expect(o.author_path).toBe('error')
+    expect(o.author_error).toContain('type=5 名册')
+    expect(() => api.normalizeAgentShotsOutcome({ shots: [], author_path: 'error' })).toThrow(/author_error/)
+  })
+
+  it('旧裸数组产物归一化（author 状态不可知 → ok / eid 0 / others 全 0）', () => {
+    const o = api.normalizeAgentShotsOutcome([shot, { ...shot, index: 2 }])
+    expect(o.author_path).toBe('ok')
+    expect(o.author_eid).toBe(0)
+    expect(o.others.total_launches).toBe(0)
+    expect(o.shots).toHaveLength(2)
+  })
+
+  it('非法顶层拒绝', () => {
+    expect(() => api.normalizeAgentShotsOutcome({ nope: true })).toThrow(/shots 数组或/)
+  })
+})
+
+describe('enrichShotsFromRoster（eid 联表）', () => {
+  // 国服场次同构 fixture：7v7 中文昵称 + 1 台 team=0（联表失败的观察者）
+  const vehicles = [
+    ...Array.from({ length: 7 }, (_, i) => ({ eid: 100 + i, nickname: `兰亭公子苏${i}`, team: 1, tank_id: 30085 + i, is_author: i === 0 })),
+    ...Array.from({ length: 7 }, (_, i) => ({ eid: 200 + i, nickname: `他们都叫我袁弟呀${i}`, team: 2, tank_id: 40085 + i })),
+    { eid: 999, nickname: '', team: 0, tank_id: 0 }, // 未知阵营
+  ]
+  const shot = (over: Record<string, unknown>) => ({
+    index: 1, time_s: 1, damage: 100, target_name: '', is_kill: false,
+    shooter_eid: 100, target_eid: 200, ...over,
+  } as api.AgentShotReplay)
+
+  it('eid 联表：昵称缺失/冲突不影响 tank_id 与阵营归属', () => {
+    const shots = [
+      shot({ shooter_eid: 100, target_eid: 200 }),           // 常规
+      shot({ shooter_eid: 200, target_eid: 101 }),           // 敢打我方（敌视角联表）
+      shot({ shooter_eid: 999, target_eid: 205 }),           // 未知阵营射手
+      shot({ shooter_eid: 100, target_eid: 999 }),           // 打向未知阵营（不产 tank_id）
+    ]
+    api.enrichShotsFromRoster(shots, vehicles)
+    expect(shots[0].shooter_tank_id).toBe(30085)
+    expect(shots[0].target_tank_id).toBe(40085)
+    expect(shots[0].shooter_team).toBe('ally')      // 射手 = 作者（eid 100, is_author）
+    expect(shots[1].shooter_team).toBe('enemy')     // eid 200 ∈ team2 ≠ 作者 team1
+    expect(shots[1].target_tank_id).toBe(30086)
+    expect(shots[2].shooter_team).toBeUndefined()   // team=0：不归入任何一队
+    expect(shots[3].target_tank_id).toBeUndefined() // team=0 无 tank_id：富化缺省
+  })
+
+  it('eid 缺失（旧产物）不断链：仅跳过富化', () => {
+    const shots = [shot({ shooter_eid: 100, target_eid: undefined })]
+    api.enrichShotsFromRoster(shots, vehicles)
+    expect(shots[0].shooter_tank_id).toBe(30085)
+    expect(shots[0].target_tank_id).toBeUndefined()
+  })
+
+  it('同名昵称两实体：eid 联表不受名称冲突影响（昵称反查的旧缺陷回归锚）', () => {
+    const dup = [
+      { eid: 300, nickname: '同名', team: 1, tank_id: 111 },
+      { eid: 301, nickname: '同名', team: 2, tank_id: 222 },
+    ]
+    const shots = [shot({ shooter_eid: 100, target_eid: 301 })]
+    api.enrichShotsFromRoster(shots, dup)
+    expect(shots[0].target_tank_id).toBe(222)  // 按 eid 精确命中，而非昵称首匹配的 111
+  })
+})
