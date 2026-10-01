@@ -84,3 +84,17 @@ describe('confirm() + ConfirmDialogHost', () => {
     await expect(no).resolves.toBe(false)
   })
 })
+
+describe('ConfirmDialogHost：离开页面时结束未决确认', () => {
+  it('路由变化 → 按「取消」结束', async () => {
+    const { createMemoryHistory, createRouter } = await import('vue-router')
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }, { path: '/b', component: { template: '<div />' } }] })
+    await router.push('/')
+    wrapper = mount(ConfirmDialogHost, { attachTo: document.body, global: { mocks, plugins: [router] } })
+    const pending = confirm({ title: 'Withdraw?' })
+    await flushPromises()
+    await router.push('/b')
+    await expect(pending).resolves.toBe(false)
+    expect(dialog()).toBeNull()
+  })
+})

@@ -25,7 +25,23 @@ import {
  * @param {object} [options]
  * @param {object} [options.labels] 界面文案（审计 3D-16：由宿主页按当前语言提供；缺省为英文原文）
  */
+/**
+ * 场景脚本把射击复现 / 调试状态挂在 window 上（__worldPan、__shotCtx…）。以前每次都在新窗口里打开，
+ * 现在同一标签页内反复进出，残留状态会让下一辆坦克的炮塔转不动、镜头被锁——初始化与销毁时统一清掉。
+ * 宿主传入的 __INITIAL_TANK__ / __INITIAL_SHOOTER__ 不在此列。
+ */
+const VIEWER_GLOBAL_RE = /^__(world|shot|shooter|victim|hit|seg|move|launch|end|dbg|debug|autoRel|fireGun|update)/
+function resetViewerGlobals() {
+    if (typeof window === 'undefined') return
+    for (const key of Object.keys(window)) {
+        if (VIEWER_GLOBAL_RE.test(key)) {
+            try { delete window[key] } catch (_) { window[key] = undefined }
+        }
+    }
+}
+
 export function initTankViewer({ labels = {} } = {}) {
+        resetViewerGlobals();
         const L = {
             loading: 'Loading tank model...',
             loadFailed: (phase, msg) => 'Failed to load ' + phase + ': ' + msg,
@@ -3991,6 +4007,7 @@ export function initTankViewer({ labels = {} } = {}) {
         /// canvas 由 ArmorView 的容器 DOM 一并移除，这里只处理 JS 侧句柄。
         function destroy() {
             destroyed = true;
+            resetViewerGlobals();
             cancelAnimationFrame(rafId);
             while (cleanups.length) { try { cleanups.pop()(); } catch (_) {} }
             try { if (controls) controls.dispose(); } catch (_) {}

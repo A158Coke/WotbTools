@@ -84,7 +84,6 @@
 .lb-wrap tbody tr:hover { background: var(--bg-list-hover) !important; }
 .lb-wrap .lb-dmg { color: var(--accent-dark) !important; font-weight: 900; }
 .lb-wrap .rk { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
-.lb-wrap .hof-upload-modal { border-color: #3b454b !important; background: #11171a !important; box-shadow: 0 30px 80px rgba(0,0,0,.5) !important; }
 
 .hof-admin {
   width: min(1760px, calc(100% - var(--showcase-gutter) * 2)) !important;

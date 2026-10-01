@@ -41,8 +41,9 @@ const activeId = computed(() => (activeIndex.value >= 0 ? `${listId}-${activeInd
 async function openPicker() {
   open.value = true
   query.value = ''
-  activeIndex.value = Math.max(0, props.options.findIndex(option => option.value === props.modelValue))
+  // 等 query 的 watch 先跑完（它会把高亮复位到第一项），再定位到当前场次
   await nextTick()
+  activeIndex.value = Math.max(0, props.options.findIndex(option => option.value === props.modelValue))
   ;(searchable.value ? searchInput.value : list.value)?.focus()
   scrollActiveIntoView()
 }
@@ -50,6 +51,7 @@ async function openPicker() {
 function closePicker({ restoreFocus = false } = {}) {
   if (!open.value) return
   open.value = false
+  query.value = ''
   if (restoreFocus) trigger.value?.focus()
 }
 

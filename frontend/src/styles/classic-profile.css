@@ -245,9 +245,6 @@ html[data-ui-profile="classic"] .lb-wrap table {color: var(--text) !important}
 html[data-ui-profile="classic"] .lb-wrap thead th {background: var(--bg-card2) !important; color: var(--text-sub) !important}
 html[data-ui-profile="classic"] .lb-wrap tbody td {color: var(--text) !important}
 html[data-ui-profile="classic"] .lb-wrap tbody tr:hover {background: var(--bg-list-hover) !important}
-html[data-ui-profile="classic"] .lb-wrap .hof-upload-modal {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--hard-shadow) !important; color: var(--text) !important}
-html[data-ui-profile="classic"] .lb-wrap .hof-upload-modal :is(h1, h2, h3) {color: var(--text-heading) !important}
-html[data-ui-profile="classic"] .lb-wrap .hof-upload-modal p, html[data-ui-profile="classic"] .lb-wrap .hof-upload-modal .muted {color: var(--text-sub) !important}
 html[data-ui-profile="classic"] .lb-wrap .lb-limit label, html[data-ui-profile="classic"] .lb-wrap .lb-filter label {color: var(--text-sub) !important}
 html[data-ui-profile="classic"] .lb-wrap .lb-head .lb-kicker {color: var(--accent-dark) !important}
 html[data-ui-profile="classic"] .lb-wrap .lb-dmg {color: var(--accent-dark) !important}

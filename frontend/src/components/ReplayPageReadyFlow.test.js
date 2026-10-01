@@ -107,6 +107,8 @@ function mountPage() {
 
 describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即可见）', () => {
   beforeEach(() => {
+    // 列偏好存在 localStorage 里：每个用例从干净的存档开始，避免互相影响
+    localStorage.clear()
     vi.useFakeTimers()
     vi.clearAllMocks()
   })

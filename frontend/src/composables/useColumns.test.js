@@ -425,3 +425,19 @@ describe('useColumns CW unified summary scope', () => {
     ])
   })
 })
+
+describe('列默认值迁移只做一次（审查：全选后不能被重置）', () => {
+  beforeEach(() => { freshStorage(); vi.clearAllMocks() })
+
+  it('迁移后写入版本标记；之后「全选」与「恰好等于旧默认值」的选择都会保留', async () => {
+    const store = freshStorage()
+    const first = mountCols(store)
+    expect(store.get('wotb-columns-defaults-v')).toBe('2')
+    first.selectAllCols('agg')
+    first.visibleKeys.value = [...LEGACY_DEFAULT_VISIBLE[0]].filter(key => first.playerOrder.value.includes(key))
+    await nextTick()
+    const second = mountCols(store)
+    expect(second.aggVisibleKeys.value).toEqual(second.aggOrder.value)
+    expect(second.visibleKeys.value).toEqual(first.visibleKeys.value)
+  })
+})

@@ -249,10 +249,13 @@ function hofQueryState() {
   }
 }
 
+/** 最近一次自己写入的 query：路由监听遇到它就跳过（它反映的是当时的状态，不是外部导航） */
+let lastWrittenQuery = null
 function writeHofQuery() {
   if (!router || !onHofView()) return
   const next = { view: 'hof', ...serializeHofQuery(hofQueryState()) }
   if (sameHofQuery(route.query, next)) return
+  lastWrittenQuery = next
   router.replace({ query: next })
 }
 
@@ -302,6 +305,7 @@ watch(singleVehicleOptions, (options) => {
 if (route) {
   watch(() => route.query, (query) => {
     if (query?.view !== 'hof' || sameHofQuery(query, { view: 'hof', ...serializeHofQuery(hofQueryState()) })) return
+    if (lastWrittenQuery && sameHofQuery(query, lastWrittenQuery)) return
     applyHofQuery(query)
   })
 }
@@ -309,8 +313,18 @@ if (route) {
 // ── 手机筛选（审计 PG-05 / design-language §9）：筛选收进底部 sheet，已生效条件显示为 chip ──
 const { isCompact } = useBreakpoint()
 const filterSheet = ref(null) // null | 'single' | 'hundred' | 'mark3'
+let filterSheetOpener = null
 function toggleFilterSheet(tab) {
-  filterSheet.value = filterSheet.value === tab ? null : tab
+  if (filterSheet.value === tab) return closeFilterSheet()
+  filterSheetOpener = document.activeElement
+  filterSheet.value = tab
+  nextTick(() => document.querySelector('.lb-toolbar-host.is-sheet select, .lb-toolbar-host.is-sheet input')?.focus())
+}
+function closeFilterSheet() {
+  filterSheet.value = null
+  const opener = filterSheetOpener
+  filterSheetOpener = null
+  nextTick(() => opener?.focus?.())
 }
 
 function vehicleChips(nation, type, vehicleName) {
@@ -1093,7 +1107,7 @@ function fmtDate(s) {
 
 <template>
   <div ref="boardTop" class="lb-wrap">
-    <div v-if="isCompact && filterSheet" class="lb-sheet-scrim" aria-hidden="true" @click="filterSheet = null"></div>
+    <div v-if="isCompact && filterSheet" class="lb-sheet-scrim" aria-hidden="true" @click="closeFilterSheet"></div>
     <div class="tabs">
       <button type="button" :class="{ active: activeTab === 'single' }" @click="switchTab('single')">{{ $t('hof.singleTab') }}</button>
       <button type="button" :class="{ active: activeTab === 'hundred' }" @click="switchTab('hundred')">{{ $t('hundred.tab') }}</button>
@@ -1135,10 +1149,10 @@ function fmtDate(s) {
       </AppDialog>
 
       <FilterChips v-if="isCompact" :chips="singleChips" :open="filterSheet === 'single'" @toggle="toggleFilterSheet('single')" @remove="removeSingleFilter" />
-      <div v-if="!isCompact || filterSheet === 'single'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }">
+      <div v-if="!isCompact || filterSheet === 'single'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
-          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="filterSheet = null">{{ $t('filters.done') }}</AppButton>
+          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
         </div>
         <div class="lb-toolbar">
         <label class="lb-limit"><span class="lb-label">{{ $t('hof.nation') }}</span>
@@ -1302,10 +1316,10 @@ function fmtDate(s) {
       </div>
 
       <FilterChips v-if="isCompact" :chips="hundredChips" :open="filterSheet === 'hundred'" @toggle="toggleFilterSheet('hundred')" @remove="removeHundredFilter" />
-      <div v-if="!isCompact || filterSheet === 'hundred'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }">
+      <div v-if="!isCompact || filterSheet === 'hundred'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
-          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="filterSheet = null">{{ $t('filters.done') }}</AppButton>
+          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
         </div>
         <div class="lb-toolbar h100-toolbar">
         <label class="lb-limit h100-filter"><span class="lb-label">{{ $t('hundred.nation') }}</span>
@@ -1415,10 +1429,10 @@ function fmtDate(s) {
       </div>
 
       <FilterChips v-if="isCompact" :chips="mark3Chips" :open="filterSheet === 'mark3'" @toggle="toggleFilterSheet('mark3')" @remove="removeMark3Filter" />
-      <div v-if="!isCompact || filterSheet === 'mark3'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }">
+      <div v-if="!isCompact || filterSheet === 'mark3'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
-          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="filterSheet = null">{{ $t('filters.done') }}</AppButton>
+          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
         </div>
         <div class="lb-toolbar h100-toolbar">
         <label class="lb-limit mark3-filter"><span class="lb-label">{{ $t('mark3.nation') }}</span>
@@ -1802,7 +1816,7 @@ span.lb-card-tank { min-height: 0; color: var(--color-text-secondary); }
 
 .lb-submit-row { display: flex; align-items: center; gap: 12px; margin: 14px 0 16px; flex-wrap: wrap; }
 .lb-submit-row .lb-upload-msg { margin: 0; }
-.hof-upload-modal { max-width: 560px; }
+.lb-upload-msg.err { color: var(--color-danger); }
 .hof-upload-modal .lb-upload-card { padding: 26px 18px; }
 .lb-upload-section { margin: 16px 0; }
 .lb-upload-card {

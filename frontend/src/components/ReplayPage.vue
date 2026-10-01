@@ -281,7 +281,7 @@ const dataViewOptions = computed(() => [
   { value: 'SUMMARY', label: t('result.aggregate_tab', { count: aggregatePlayerCount.value }), testid: 'data-view-summary' },
   { value: 'SINGLE', label: t('result.single_tab'), testid: 'data-view-single' },
 ])
-const series = computed(() => buildSeriesOverview(resp.value, summaryTeamNames.value))
+const series = computed(() => buildSeriesOverview(resp.value, summaryTeamNames.value, battleTeamNames.value))
 const pickerOptions = computed(() => battlePickerOptions(series.value, { t, locale: locale.value, mapLabel }))
 const currentSourceId = computed(() => resp.value?.battles?.[currentSingleIndex.value]?.sourceId ?? null)
 

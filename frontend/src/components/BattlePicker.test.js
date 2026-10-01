@@ -97,4 +97,15 @@ describe('BattlePicker', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="battle-picker-panel"]').exists()).toBe(false)
   })
+
+  it('搜索过后再打开：搜索已清空，高亮仍是当前场次（审查回归）', async () => {
+    mountPicker({ options: options(10), modelValue: 'r5' })
+    await open()
+    await wrapper.get('[data-testid="battle-picker-search"]').setValue('file7')
+    await wrapper.get('[data-testid="battle-picker-search"]').trigger('keydown', { key: 'Escape' })
+    await open()
+    const search = wrapper.get('[data-testid="battle-picker-search"]')
+    expect(search.element.value).toBe('')
+    expect(search.attributes('aria-activedescendant')).toMatch(/-5$/)
+  })
 })

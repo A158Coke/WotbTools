@@ -5,6 +5,7 @@ import {
   ALLOWED_VIEWS,
   defaultView,
   isAdminOnlyView,
+  locationForView,
   PRIMARY_NAV,
   primaryNavItems,
   primarySection,
@@ -83,5 +84,18 @@ describe('primary navigation', () => {
 
   it('points every primary item at a registered view', () => {
     for (const item of PRIMARY_NAV) expect(ALLOWED_VIEWS).toContain(item.view)
+  })
+})
+
+describe('locationForView：名人堂筛选只属于名人堂', () => {
+  const hofRoute = { path: '/', query: { view: 'hof', tab: 'hundred', tank: '123', page: '3', lang: 'x' } }
+  it('离开名人堂时丢掉筛选键，保留其他参数', () => {
+    expect(locationForView('replay', hofRoute).query).toEqual({ view: 'replay', lang: 'x' })
+    expect(locationForView('agent-tankopedia', hofRoute).query).toEqual({ view: 'agent-tankopedia', lang: 'x' })
+  })
+  it('留在名人堂时保留；从别的页面进来时不把同名参数当成筛选', () => {
+    expect(locationForView('hof', hofRoute).query).toEqual(hofRoute.query)
+    expect(locationForView('hof', { path: '/', query: { view: 'agent-tankopedia', tank: '5' } }).query)
+      .toEqual({ view: 'hof' })
   })
 })

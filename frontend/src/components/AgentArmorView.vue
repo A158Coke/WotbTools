@@ -296,7 +296,7 @@ onBeforeUnmount(() => {
     }
     /* 审计 3D-14：手机——四角面板改为上下两条可滚动的窄带，场景留在中间；选车弹窗全屏 */
     @media (width < 768px) {
-        .armor-view #corner-tl { top: 8px; left: 8px; right: 8px; flex-direction: column; gap: 6px; max-height: 38%; overflow-y: auto; }
+        .armor-view #corner-tl { top: 56px; left: 8px; right: 8px; flex-direction: column; gap: 6px; max-height: 34%; overflow-y: auto; }
         .armor-view #info-panel { max-width: none; padding: 10px 12px; }
         .armor-view #info-panel h1 { font-size: 1.1em; margin-bottom: 4px; }
         .armor-view #tank-selectors { width: auto; padding: 8px 12px; }
@@ -304,7 +304,7 @@ onBeforeUnmount(() => {
         .armor-view #view-toggle { justify-content: center; }
         .armor-view #corner-br { display: none; }
         .armor-view #turret-controls { display: none !important; }
-        .armor-view .armor-back { top: auto; bottom: 120px; }
+        .armor-view .armor-back { top: 8px; left: 8px; transform: none; }
         .armor-view #tank-picker { width: 100%; height: 100%; top: 0; left: 0; transform: none; border-radius: 0; }
         .armor-view .tank-card { flex: 1 1 140px; max-width: none; }
     }
