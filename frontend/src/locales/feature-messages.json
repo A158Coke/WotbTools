@@ -1,5 +1,18 @@
 {
   "zh": {
+    "baseStatus": {
+      "title": "基地状态",
+      "owner_friendly": "友方持有",
+      "owner_enemy": "敌方持有",
+      "owner_neutral": "中立",
+      "capturing_friendly": "友方正在占领 {progress}%",
+      "capturing_enemy": "敌方正在占领 {progress}%",
+      "objective": "目标基地",
+      "objective_progress": "占领进度 {progress}%",
+      "objective_idle": "暂无占领",
+      "points_friendly": "友方积分 {points}",
+      "points_enemy": "敌方积分 {points}"
+    },
     "uiProfile": {
       "auto": "跟随系统",
       "title": "界面风格",
@@ -361,6 +374,19 @@
     }
   },
   "en": {
+    "baseStatus": {
+      "title": "Base status",
+      "owner_friendly": "Held by allies",
+      "owner_enemy": "Held by enemies",
+      "owner_neutral": "Neutral",
+      "capturing_friendly": "Allies capturing {progress}%",
+      "capturing_enemy": "Enemies capturing {progress}%",
+      "objective": "Objective base",
+      "objective_progress": "Capture progress {progress}%",
+      "objective_idle": "Not being captured",
+      "points_friendly": "Allied points {points}",
+      "points_enemy": "Enemy points {points}"
+    },
     "uiProfile": {
       "auto": "Follow system",
       "title": "Interface Style",
@@ -722,6 +748,19 @@
     }
   },
   "ru": {
+    "baseStatus": {
+      "title": "Состояние баз",
+      "owner_friendly": "Под контролем союзников",
+      "owner_enemy": "Под контролем врага",
+      "owner_neutral": "Нейтральная",
+      "capturing_friendly": "Союзники захватывают {progress}%",
+      "capturing_enemy": "Враг захватывает {progress}%",
+      "objective": "Целевая база",
+      "objective_progress": "Прогресс захвата {progress}%",
+      "objective_idle": "Не захватывается",
+      "points_friendly": "Очки союзников {points}",
+      "points_enemy": "Очки врага {points}"
+    },
     "uiProfile": {
       "auto": "Как в системе",
       "title": "Стиль интерфейса",

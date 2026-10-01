@@ -1974,9 +1974,8 @@ function capturedBy(state) {
   return state.capturingTeam === friendlyTeam.value ? 'friendly' : 'enemy'
 }
 
-// HUD 的基地 chip 是 fallback：地图能画基地时不重复显示，地图缺该图几何时
-// （mapBases 未收录该 mapCode）HUD 仍是唯一的基地信息来源。
-const hudBaseStates = computed(() => (basesAt.value.length ? [] : baseStatesAt.value))
+// 顶部基地状态条（与 3D 共用 BaseStatusBar）：始终显示，地图缺该图几何时它也是唯一的基地信息来源。
+const hudBaseStates = computed(() => baseStatesAt.value)
 
 const ASSAULT_BASE_RADIUS_FALLBACK_M = 20
 
