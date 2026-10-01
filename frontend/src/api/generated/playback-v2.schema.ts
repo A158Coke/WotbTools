@@ -1873,7 +1873,7 @@ export default {
         },
         "assaultObjectivePresent": {
           "type": "boolean",
-          "description": "Proven wrapper8 objective-family initialization, independent of capture progress. Missing on older artifacts means unknown (no static Assault objective rendering). Not derived from arenaBonusType."
+          "description": "Proven single-base objective presence, independent of capture progress. Requires the objective family to emit fields beyond the bare initialization pair (1=1,2=1 + 1=2,2=1), which ordinary battles also broadcast. Missing on older artifacts means unknown (no static Assault objective rendering). Not derived from arenaBonusType."
         },
         "baseStates": {
           "type": "array",

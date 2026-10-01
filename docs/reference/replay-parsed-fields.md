@@ -20,7 +20,7 @@
 | field4 | `rawField4` | sibling family 观察到 1；精确语义 UNKNOWN | 不映射 capturingTeam / ownerTeam |
 
 上述已知字段只接受单个非负、无 Integer 溢出的 varint；错误 wire type、重复 scalar、malformed child
-只拒绝非法结构；raw field3 不施加 progress domain。只有 field1=2 / field2=1 后，重建器拒绝 progress >100。wrapper8 field1=2 / field2=1 初始化独立输出 `assaultObjectivePresent`，与 field3 presence 无关；无 field3 时仍无 progress transition。`arenaBonusType=2` 不用于 Assault 判定。canonical progress 输出沿用 `baseStates`：`baseId=BASE`、
+只拒绝非法结构；raw field3 不施加 progress domain。重建器只认 field2==1 且 field3 存在（0..100，不锁 field1——携带进度的族会在 field1=1/2 间切换）。`assaultObjectivePresent` 需目标族发出**裸初始化对以外**的字段（field3 或 field4）：裸初始化对是通用广播、普通对局同样会发，不得据此判定；无 field3 时仍无 progress transition。`arenaBonusType=2` 不用于 Assault 判定。canonical progress 输出沿用 `baseStates`：`baseId=BASE`、
 `ownerTeam=null`、`capturingTeam=null`、显式 progress 原值，时间按 battle-relative clock 转换。
 Supremacy 独立使用 wrapper12/root11、A-D 和 0..99。`finishReasonRaw=2` 仍是单受控样本的
 STRONG CANDIDATE，不提升为跨版本占领胜利枚举；SC2 `controlpoint.team` 仅为静态 raw metadata。
