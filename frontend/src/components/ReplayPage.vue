@@ -81,7 +81,7 @@ const currentSingleIndex = computed(() => {
 const dataViewModeRef = computed(() => isSummaryView.value ? 'SUMMARY' : 'SINGLE')
 
 const cols = useColumns(replay.playerCols, replay.aggCols, dataViewModeRef, leagueMode)
-const { visibleKeys, aggVisibleKeys, cwVisibleKeys, cwOrder, showColPicker, pickerScope,
+const { visibleKeys, aggVisibleKeys, cwVisibleKeys, cwOrder, playerOrder, aggOrder, colScope, showColPicker, pickerScope,
   currentOrder, shownCols, shownAggCols,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
@@ -293,6 +293,13 @@ function selectBattle(sourceId) {
   const index = (resp.value?.battles || []).findIndex(b => String(b.sourceId) === String(sourceId))
   if (index >= 0) activeTab.value = `b${index}`
 }
+
+/** 「列 8/20」：让用户知道还有指标收在列面板里（默认只显示核心列，审计 BZ-07）。 */
+const columnCounts = computed(() => {
+  if (colScope.value === 'cw') return { shown: unifiedShownCols.value.length, total: cwOrder.value.length }
+  if (colScope.value === 'agg') return { shown: shownAggCols.value.length, total: aggOrder.value.length }
+  return { shown: shownCols.value.length, total: playerOrder.value.length }
+})
 
 const exportItems = computed(() => [
   { key: 'aggregate', label: t('workspace.export_excel_summary'), disabled: !!exportActive.value, testid: 'export-aggregate' },
@@ -592,7 +599,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
               <BookOpen :size="16" aria-hidden="true" />{{ $t('workspace.rating_docs') }}
             </AppButton>
             <AppButton variant="ghost" size="sm" data-testid="column-picker-btn" :aria-expanded="showColPicker" @click="toggleColPicker">
-              <Columns3 :size="16" aria-hidden="true" />{{ $t('workspace.columns') }}
+              <Columns3 :size="16" aria-hidden="true" />{{ $t('workspace.columns_count', columnCounts) }}
             </AppButton>
             <Teleport to="body">
               <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
