@@ -15,6 +15,7 @@ import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
+import PlaybackRoster from './PlaybackRoster.vue'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
@@ -2291,26 +2292,7 @@ const mapStyle = computed(() => ({
             :format-clock="formatClock"
             @close="closeSidebar"
           />
-          <div v-else-if="formFactor !== 'mobile'" class="pb-shell-roster" data-test="pb-shell-roster">
-            <section v-for="side in ['friendly', 'enemy']" :key="side" class="pb-roster-team" :class="'pb-roster-' + side">
-              <strong class="pb-team-head">{{ $t(side === 'friendly' ? 'recon.map.playback.team_friendly' : 'recon.map.playback.team_enemy') }}</strong>
-              <ul class="pb-roster-list">
-                <li v-for="v in teamVehicles[side]" :key="v.accountId">
-                  <button
-                    type="button"
-                    class="pb-roster-row"
-                    :class="{ 'is-destroyed': destroyedNow.has(v.accountId) }"
-                    data-test="pb-roster-row"
-                    @click="selectFromRoster(v.accountId)"
-                  >
-                    <span class="pb-team-player">{{ v.playerName }}</span>
-                    <span class="pb-team-tank">{{ v.tankName || v.tankId }}</span>
-                  </button>
-                </li>
-              </ul>
-            </section>
-            <p class="pb-roster-hint">{{ t('workspace.playback_roster_hint') }}</p>
-          </div>
+          <PlaybackRoster v-else-if="formFactor !== 'mobile'" :teams="teamVehicles" :destroyed="destroyedNow" @select="selectFromRoster" />
         </div>
 
       </div>
@@ -2362,6 +2344,15 @@ const mapStyle = computed(() => ({
           />
         </div>
       </PlaybackMobileOverlay>
+
+      <!-- 手机横屏（非全屏）：阵容放在地图右侧的空白里（CSS 只在该形态显示） -->
+      <PlaybackRoster
+        v-if="formFactor === 'mobile' && !selectedState"
+        class="pb-landscape-roster"
+        :teams="teamVehicles"
+        :destroyed="destroyedNow"
+        @select="selectFromRoster"
+      />
 
       <div v-if="visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
         <div v-for="feed in visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimPlayerName ? feed.victimPlayerName + '（' + feed.victimName + '）' : feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
