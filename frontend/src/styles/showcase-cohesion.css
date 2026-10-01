@@ -9,62 +9,11 @@
   color: #e9e7e0;
 }
 
-.layout-data-workspace .uploadwrap {
-  border-color: rgba(218, 151, 37, .42) !important;
-  background:
-    linear-gradient(100deg, rgba(12,17,20,.97) 0%, rgba(13,19,22,.94) 52%, rgba(17,20,21,.82) 100%),
-    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') 82% center / cover no-repeat !important;
-  color: #e9e7e0 !important;
-  box-shadow: 0 24px 60px rgba(0,0,0,.38) !important;
-  backdrop-filter: blur(12px);
-}
-.layout-data-workspace .uploadwrap::after {
-  opacity: .55;
-}
-.layout-data-workspace .uploadhead h1 { color: #f6f1e7 !important; }
-.layout-data-workspace .uploadhead p { color: #aaa79f !important; }
-.layout-data-workspace .upload-kicker { color: #f0a42b !important; }
-.layout-data-workspace .upload-points span {
-  border-color: rgba(222,154,40,.25) !important;
-  background: rgba(217,143,24,.08) !important;
-  color: #c9c5bb !important;
-}
-
-.layout-data-workspace .uploadcard {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(102,118,127,.60) !important;
-  background:
-    linear-gradient(105deg, rgba(5,11,14,.91), rgba(6,13,16,.77)),
-    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') center 58% / cover no-repeat !important;
-  color: #ece9e0 !important;
-  box-shadow: inset 0 0 45px rgba(0,0,0,.32);
-}
-.layout-data-workspace .uploadcard::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 18% 82%, rgba(238,101,25,.16), transparent 25%),
-    radial-gradient(circle at 82% 22%, rgba(44,145,180,.13), transparent 28%);
-}
-.layout-data-workspace .uploadcard > * { position: relative; z-index: 1; }
-.layout-data-workspace .uploadcard .up-title { color: #f2ede3 !important; }
-.layout-data-workspace .uploadcard .up-sub,
-.layout-data-workspace .uploadcard .muted { color: #9da3a1 !important; }
-.layout-data-workspace .uploadcard .up-icon {
-  border: 1px solid rgba(240,164,43,.20);
-  background: rgba(240,164,43,.11) !important;
-  color: #f0a42b !important;
-}
-
 .layout-data-workspace .filebtn,
 .layout-data-workspace button {
   border-color: #465159;
 }
-.layout-data-workspace .filebtn:not(.ghost),
-.layout-data-workspace .actionrow .lg {
+.layout-data-workspace .filebtn:not(.ghost) {
   border-color: #d98f18 !important;
   background: linear-gradient(180deg, #f0aa30, #cf8310) !important;
   color: #140d03 !important;
@@ -80,7 +29,6 @@
   color: #f0aa30 !important;
 }
 
-.layout-data-workspace .filebar,
 .layout-data-workspace .restoolbar,
 .layout-data-workspace .tablewrap {
   border-color: #344047 !important;
@@ -287,24 +235,18 @@
 }
 
 @media (min-width: 1200px) {
-  .layout-data-workspace .uploadwrap {
-    width: min(1040px, 72vw);
-    margin-inline: auto;
-  }
   .lb-wrap .lb-toolbar.h100-toolbar {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
 }
 
 @media (max-width: 1199px) {
-  .layout-data-workspace .uploadwrap { width: 100%; }
   .lb-wrap .lb-toolbar {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
 @media (width < 768px) {
-  .layout-data-workspace .uploadwrap { padding: 16px !important; }
   .lb-wrap .lb-toolbar {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 8px 10px !important;
