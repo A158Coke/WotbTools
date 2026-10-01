@@ -13,6 +13,7 @@ import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
+import { isPlaybackSpeed, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
@@ -1364,9 +1365,13 @@ function togglePlay() {
   else play()
 }
 
-/** 拖动进度条：按下即暂停，拖动中实时 seek，松开后保持暂停（不恢复拖动前状态）。 */
+/** 拖动进度条：按下即暂停，拖动中实时 seek，松开时若原先在播放则自动继续（与 3D 共用 usePlaybackTransport）。 */
 function dragStart() {
-  pause()
+  transport.scrubStart()
+}
+
+function dragEnd() {
+  transport.scrubEnd()
 }
 
 /** Event Panel 行点击：跳转并保持暂停。 */
@@ -1382,7 +1387,7 @@ function step(delta) {
 }
 
 function setSpeed(next) {
-  if ([0.5, 1, 2, 4].includes(next)) speed.value = next
+  if (isPlaybackSpeed(next)) speed.value = next
 }
 
 // KeepAlive 停用（切到别的页面）时同样视为不可见
@@ -1391,18 +1396,21 @@ onDeactivated(() => { lifecycleVisible.value = false; pause() })
 onActivated(() => { lifecycleVisible.value = true })
 watch(() => props.active, (value) => { if (!value) pause() })
 
+/**
+ * 播放传输行为与 3D 共用：空格 / ←→ 的键位、输入框不劫持、拖动暂停后自动继续。
+ * 键盘监听仍由本组件在 onMounted / onBeforeUnmount 挂卸（与其它全局监听同一处管理），
+ * 所以 keyboard: false，只借用 handleKeydown。
+ */
+const transport = usePlaybackTransport({
+  isPlaying: () => playing.value,
+  play,
+  pause,
+  step,
+  isActive: () => props.active && lifecycleVisible.value,
+}, { keyboard: false })
+
 function onKeydown(e) {
-  if (!props.active || !lifecycleVisible.value) return
-  const target = e.target
-  const tagName = target && target.tagName
-  if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tagName)) return
-  if (e.code === 'Space' || e.key === ' ') {
-    e.preventDefault()
-    togglePlay()
-  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-    e.preventDefault()
-    step(e.key === 'ArrowLeft' ? -5 : 5)
-  }
+  transport.handleKeydown(e)
 }
 
 onBeforeUnmount(() => {
@@ -2162,6 +2170,7 @@ const mapStyle = computed(() => ({
           @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
           @toggle-annotation="toggleAnnotation()"
           @drag-start="dragStart"
+          @drag-end="dragEnd"
           @seek="seek"
         />
       <button
@@ -2315,6 +2324,7 @@ const mapStyle = computed(() => ({
           @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
           @toggle-annotation="toggleAnnotation()"
           @drag-start="dragStart"
+          @drag-end="dragEnd"
           @seek="seek"
         />
         <!-- 移动端（rail 隐藏）标注工具栏：和 controls 一样排在地图下方的流内容器里。
