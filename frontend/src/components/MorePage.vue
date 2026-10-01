@@ -1,6 +1,5 @@
 <script setup>
-import { computed, inject } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { computed, getCurrentInstance, inject } from 'vue'
 import {
   BookOpen, Box, ChevronRight, Cpu, Crosshair, Download, ExternalLink, FileText, FlaskConical, Gauge,
   Heart, History, Mail, MessageSquare, ShieldCheck, Users,
@@ -17,7 +16,9 @@ import SegmentedControl from './SegmentedControl.vue'
 const navigate = inject(NAVIGATE_VIEW_KEY)
 const { isAdmin, isHofAdmin } = useAuth()
 const { uiProfilePreference, setUiProfile } = useUiProfile()
-const { locale } = useI18n({ useScope: 'global' })
+// Capture the component instance during setup, but read $i18n only when the user acts.
+// In vue-i18n legacy mode, the mixin installs $i18n after setup has run.
+const instance = getCurrentInstance()
 
 const FEEDBACK_URL = 'https://github.com/A158Coke/WotbTools/issues/new'
 const LANGUAGES = [
@@ -27,7 +28,7 @@ const LANGUAGES = [
 ]
 
 function setLocale(value) {
-  locale.value = value
+  instance.proxy.$i18n.locale = value
   localStorage.setItem('wotb-lang', value)
 }
 
@@ -88,7 +89,7 @@ const groups = computed(() => [
         <div class="more-setting">
           <span class="more-setting-label">{{ $t('more.language') }}</span>
           <SegmentedControl
-            :model-value="locale"
+            :model-value="$i18n.locale"
             :options="LANGUAGES"
             :aria-label="$t('more.language')"
             data-testid="more-language"
