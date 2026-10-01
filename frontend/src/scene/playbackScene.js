@@ -1525,7 +1525,7 @@ export function initPlayback(container, store) {
 
   // ---------- 弹道 ----------
   const TRACER_LEN = 9;
-  // 全弹道轨迹线：纯色不透明（淡出阶段除外）；与弹着点特效同步（t1+2.2s 移除、最后 1.2s 淡出）
+  // 全弹道轨迹线按 replay clock 保留；impact 单独使用 wall-clock transient（见 updateImpacts）。
   const TRAJ_OPACITY = 0.35;   // 与上游 Agent 同值（细且半透明；淡出阶段在其上再乘）
   const TRACER_RADIUS = 0.22;   // 飞行段粗细
   const TRAJ_RADIUS = 0.11;     // 轨迹线粗细
@@ -1595,8 +1595,33 @@ export function initPlayback(container, store) {
     }
     g.position.copy(tr.to);
     scene.add(g);
-    impacts.push({ g, until: tr.t1 + (kind === 'nonpen' ? 2.6 : 1.8), ball, ring, sparks, kind });
+    // impact 属于 UI feedback transient：寿命按真实壁钟计，而不是 replay clock。
+    // 这样 0.5x / 16x 下可读时长一致；暂停时自然淡出；seek 由 clearEffects 直接清空。
+    const durationMs = kind === 'nonpen' ? 650 : kind === 'ricochet' ? 550 : 450;
+    impacts.push({ g, bornMs: performance.now(), durationMs, ball, ring, sparks, kind });
   }
+
+  function updateImpacts() {
+    const now = performance.now();
+    for (let i = impacts.length - 1; i >= 0; i--) {
+      const im = impacts[i];
+      const k = Math.max(0, Math.min(1, (now - im.bornMs) / im.durationMs));
+      if (k >= 1) {
+        scene.remove(im.g);
+        im.ball.geometry.dispose(); im.ball.material.dispose();
+        im.ring.geometry.dispose(); im.ring.material.dispose();
+        if (im.sparks) for (const sp of im.sparks) { sp.geometry.dispose(); sp.material.dispose(); }
+        impacts.splice(i, 1);
+        continue;
+      }
+      const op = 1 - k;
+      im.ball.material.opacity = op;
+      im.ring.material.opacity = op * 0.8;
+      im.ring.scale.setScalar(1 + k * (im.kind === 'nonpen' ? 2.2 : 1.6));
+      if (im.sparks) for (const sp of im.sparks) sp.material.opacity = op * 0.7;
+    }
+  }
+
   function updateTracers() {
     for (let i = tracers.length - 1; i >= 0; i--) {
       const tr = tracers[i];
@@ -1614,23 +1639,6 @@ export function initPlayback(container, store) {
         tracers.splice(i, 1);
         spawnImpact(tr);
       }
-    }
-    for (let i = impacts.length - 1; i >= 0; i--) {
-      const im = impacts[i];
-      const left = im.until - T;
-      if (left <= 0) {
-        scene.remove(im.g);
-        im.ball.geometry.dispose(); im.ball.material.dispose();
-        im.ring.geometry.dispose(); im.ring.material.dispose();
-        if (im.sparks) for (const sp of im.sparks) { sp.geometry.dispose(); sp.material.dispose(); }
-        impacts.splice(i, 1);
-        continue;
-      }
-      const op = Math.min(1, left / 1.2);
-      im.ball.material.opacity = op; im.ring.material.opacity = op * 0.8;
-      const span = im.kind === 'nonpen' ? 2.6 : 2.2;
-      im.ring.scale.setScalar(1 + (1 - Math.min(1, left / span)) * (im.kind === 'nonpen' ? 2.2 : 1.6));
-      if (im.sparks) for (const sp of im.sparks) sp.material.opacity = op * 0.7;
     }
     // 全弹道轨迹线：命中后延迟停留，再线性淡出并释放
     for (let i = trajLines.length - 1; i >= 0; i--) {
@@ -1951,6 +1959,7 @@ export function initPlayback(container, store) {
     updateLabels();
     updateSupremacyBases();
     updateAssaultBase();
+    updateImpacts();      // wall-clock transient：暂停时也继续自然淡出
     updateTransients();
     renderer.render(scene, camera);
     // 标签覆盖画布：同一相机，标签恒在主场景之上
