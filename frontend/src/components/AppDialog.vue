@@ -28,21 +28,28 @@ const inline = inject(DIALOG_INLINE_KEY, false)
 const panel = ref(null)
 
 // Multiple dialogs can overlap (for example an editor dialog opening useConfirm()).
-// Keep the body lock until the last open dialog closes.
-let bodyLockCount = 0
+// Store the shared count on <body> so every AppDialog instance participates in the same lock.
+const BODY_LOCK_DATASET_KEY = 'dialogLockCount'
 function acquireBodyLock() {
   if (typeof document === 'undefined') return
-  bodyLockCount += 1
-  document.body.classList.add('dialog-open')
+  const body = document.body
+  const next = (Number(body.dataset[BODY_LOCK_DATASET_KEY]) || 0) + 1
+  body.dataset[BODY_LOCK_DATASET_KEY] = String(next)
+  body.classList.add('dialog-open')
 }
 function releaseBodyLock() {
   if (typeof document === 'undefined') return
-  bodyLockCount = Math.max(0, bodyLockCount - 1)
-  if (bodyLockCount === 0) document.body.classList.remove('dialog-open')
+  const body = document.body
+  const next = Math.max(0, (Number(body.dataset[BODY_LOCK_DATASET_KEY]) || 0) - 1)
+  if (next === 0) {
+    delete body.dataset[BODY_LOCK_DATASET_KEY]
+    body.classList.remove('dialog-open')
+  } else {
+    body.dataset[BODY_LOCK_DATASET_KEY] = String(next)
+  }
 }
 
 const bodyLockHeld = ref(false)
-const titleId
 const titleId = `dialog-title-${useId()}`
 let opener = null
 
