@@ -312,10 +312,6 @@ html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page,
 html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-denied p {color: var(--text-sub) !important}
 html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-table td {border-bottom-color: var(--border-light) !important}
 
-/* Blocker 2 — 选择 battle 后动态出现的 .mcards/.mc 指标卡（App.vue 全局深色）必须跟随浅色 token */
-html[data-ui-profile="classic"] .layout-data-workspace .mc {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .mc .k {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .mc .v {color: var(--text-heading) !important}
 
 /* ---- 管理 / Profile / Admin Users / Version / Contact / Rating Docs ---- */
 html[data-ui-profile="classic"] :is(.admin-page, .profile-page, .version-page, .contact-page, .rating-docs-page, .admin-users-page) {color: var(--text) !important}

@@ -8,7 +8,7 @@
 - 设计语言 token：`frontend/src/styles/tokens/scale.css`（刻度，并声明 `@layer` 顺序）与 `frontend/src/styles/tokens/color.css`（两套主题的语义色）。`data-theme` 仍由 profile 派生：`showcase → dark`、`classic → light`。
 - `frontend/src/styles/tokens.css` 与 `classic-profile.css` 是 deprecated 的旧 token，仅为保持现有视觉；新代码不得再引用，无人引用的旧变量随迁移删除。
 - `npm run lint:css`（stylelint，CI 必过）强制执行设计语言；`frontend/stylelint.legacy.json` 是迁移前旧文件的基线名单，只减不增。
-- 已实现的设计语言组件（`frontend/src/components/`，均只用语义 token）：`AppButton`（Button）· `SegmentedControl` · `PageHeader` · `EmptyState` · `Banner` · `MenuButton`（Menu：方向键 / Esc / 外部点击关闭）· `BattlePicker`（SearchSelect 单选：超过 6 项显示搜索；手机为底部 sheet）· `ReplayCapabilityTabs`（Tabs）。新界面优先复用它们，不再新增一次性按钮 / 下拉样式。
+- 已实现的设计语言组件（`frontend/src/components/`，均只用语义 token）：`AppButton`（Button）· `SegmentedControl` · `PageHeader` · `EmptyState` · `Banner` · `MenuButton`（Menu：方向键 / Esc / 外部点击关闭）· `BattlePicker`（SearchSelect 单选：超过 6 项显示搜索；手机为底部 sheet）· `StatStrip`（Stat）· `PlayerCardList`（DataTable 的手机卡片形态）· `ReplayCapabilityTabs`（Tabs）。新界面优先复用它们，不再新增一次性按钮 / 下拉样式。
 
 ## UI Profile
 
