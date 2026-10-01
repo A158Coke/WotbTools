@@ -169,12 +169,8 @@ function vehicleValueLabel(value) {
   return value ? replayValueLabel(t, te, value) : ''
 }
 
-// ── 版本列与分页（审计 BZ-17）──
-function editionLabel(code) {
-  const key = `hofVersion.edition.${code}`
-  return te(key) ? t(key) : ''
-}
-const fmtVersion = value => formatGameVersion(value, editionLabel) || '-'
+// ── 版本列与分页（审计 BZ-17）：只展示游戏版本号，忽略平台 / 渠道后缀 ──
+const fmtVersion = value => formatGameVersion(value) || '-'
 
 /** 接口返回 totalItems 时显示总数；缺失时只显示页码。 */
 function pageTotalItems(res) {
