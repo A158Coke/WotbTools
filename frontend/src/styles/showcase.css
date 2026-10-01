@@ -70,21 +70,11 @@ body {
   max-width: none !important;
   padding: 26px 0 64px !important;
 }
-.layout-wide {
-  width: min(var(--showcase-wide-max), calc(100% - var(--showcase-gutter) * 2)) !important;
-  max-width: none !important;
-  padding: 26px 0 64px !important;
-}
 .layout-data-workspace {
   /* 100% 而非 100vw：100vw 含滚动条宽度，有竖向滚动条时会产生横向溢出 */
   width: min(var(--showcase-page-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   padding: 24px 0 64px !important;
-}
-.layout-full-workspace {
-  width: 100% !important;
-  max-width: none !important;
-  height: calc(100vh - var(--topbar-h)) !important;
 }
 .admin-page {
   width: min(var(--showcase-page-max), calc(100% - var(--showcase-gutter) * 2)) !important;
@@ -95,34 +85,29 @@ body {
 
 .layout-content > h1,
 .layout-content > h2,
-.layout-wide > h1,
-.layout-wide > h2,
 .layout-data-workspace > h1,
 .layout-data-workspace > h2,
 .admin-page > h1,
 .admin-page > h2 { letter-spacing: -.015em; }
 
-.layout-content :is(.card,.panel,.section-card,.profile-card,.account-card),
-.layout-wide :is(.card,.panel,.section-card),
-.layout-data-workspace :is(.card,.panel),
-.admin-page :is(.admin-table-wrap,.admin-search),
+.layout-content :is(.card, .panel, .profile-card),
+.layout-data-workspace :is(.card, .panel),
+.admin-page :is(.admin-table-wrap, .admin-search),
 .modal {
   border-color: var(--showcase-line) !important;
   box-shadow: var(--surface-shadow);
 }
 
-.layout-content :is(input,select,textarea),
-.layout-wide :is(input,select,textarea),
-.layout-data-workspace :is(input,select,textarea),
-.admin-page :is(input,select,textarea) {
+.layout-content :is(input, select, textarea),
+.layout-data-workspace :is(input, select, textarea),
+.admin-page :is(input, select, textarea) {
   border-color: #39444a !important;
   background: #0f1518 !important;
   color: #e4e1d9 !important;
 }
-.layout-content :is(input,select,textarea):focus,
-.layout-wide :is(input,select,textarea):focus,
-.layout-data-workspace :is(input,select,textarea):focus,
-.admin-page :is(input,select,textarea):focus {
+.layout-content :is(input, select, textarea):focus,
+.layout-data-workspace :is(input, select, textarea):focus,
+.admin-page :is(input, select, textarea):focus {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px var(--accent-shadow);
 }
@@ -138,31 +123,6 @@ body {
 .layout-data-workspace table thead th { background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important; }
 
 /* Hall of Fame / rankings */
-.layout-wide table { width: 100%; font-variant-numeric: tabular-nums; }
-.layout-wide table thead th { background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important; }
-.layout-wide table tbody tr:hover { background: var(--bg-list-hover) !important; }
-.hof-page,
-.hof-wrap,
-.hall-page {
-  width: min(var(--showcase-wide-max), calc(100% - var(--showcase-gutter) * 2)) !important;
-  max-width: none !important;
-  margin-inline: auto !important;
-}
-.hof-page :is(.tabs,.filters,.filterbar,.hof-filters),
-.hof-wrap :is(.tabs,.filters,.filterbar,.hof-filters) {
-  border-color: var(--showcase-line) !important;
-}
-.hof-page table,
-.hof-wrap table { font-variant-numeric: tabular-nums; }
-.hof-page thead th,
-.hof-wrap thead th {
-  position: sticky;
-  top: var(--topbar-h);
-  z-index: 4;
-  background: #171e22 !important;
-}
-.hof-page tbody tr:hover,
-.hof-wrap tbody tr:hover { background: #172025 !important; }
 
 /* Profile: no avatar; identity reads like a tactical account header. */
 .profile-page {
@@ -261,18 +221,13 @@ body {
 }
 
 /* Tactical workspaces */
-.layout-full-workspace,
-.reconstruction-page,
-.playback-page { background: #080c0e; }
-.layout-full-workspace :is(.panel,.sidebar,.details-panel,.timeline,.toolbar) { border-color: #303a40 !important; }
 
 @media (max-width: 1199px) {
   :root { --showcase-gutter: 14px; }
   .layout-content,
-  .layout-wide,
-  .layout-data-workspace,
-  .admin-page,
-  .profile-page { padding-top: 18px !important; }
+.layout-data-workspace,
+.admin-page,
+.profile-page { padding-top: 18px !important; }
   .admin-table-wrap { max-height: none; }
 }
 
@@ -280,16 +235,12 @@ body {
   :root { --showcase-gutter: 8px; }
 
   .layout-content,
-  .layout-wide,
-  .layout-data-workspace,
-  .admin-page,
-  .profile-page,
-  .hof-page,
-  .hof-wrap {
+.layout-data-workspace,
+.admin-page,
+.profile-page {
     width: calc(100% - 16px) !important;
     padding: 12px 0 42px !important;
   }
-  .layout-full-workspace { height: calc(100vh - 56px) !important; }
   .admin-search { flex-direction: column; }
   .admin-search button { min-height: 40px; }
   .admin-table-wrap { width: 100%; }
@@ -299,8 +250,6 @@ body {
   .profile-page .profile-right { display: grid; gap: 12px; }
   .profile-page .profile-hero { padding: 20px !important; min-height: 100px; }
   .profile-page .hero-name { font-size: 1.35rem !important; }
-  .hof-page thead th,
-  .hof-wrap thead th { top: 56px; }
   /* Same 56px topbar offset for the admin users table; !important is required
    * to beat the global .admin-table th { top: 0 !important } rule above. */
   .admin-table th { top: 56px !important; }

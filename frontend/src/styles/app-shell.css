@@ -91,20 +91,10 @@ tr:hover td { background: var(--bg-list-hover); }
 .alive, .dead { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
 .alive { background: var(--status-ok-bg); color: var(--status-ok-fg); }
 .dead { background: var(--status-err-bg); color: var(--status-err-fg); }
-.tabx { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
-  margin-left: 4px; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 1;
-  color: var(--text-sub); background: transparent; cursor: pointer; transition: all .12s; }
-.tabx:hover { background: var(--error); color: var(--danger-solid-fg); }
 /* 页面级提示条（V2）：不依赖 .wrap 容器，任何 Layout Primitive 下均可复用。 */
 .warn, .error { display: block; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; line-height: 1.55; }
 .warn { background: var(--warn-bg); border: 1px solid var(--border-warn); color: var(--warn-text); }
 .error { background: var(--status-err-bg); border: 1px solid color-mix(in srgb, var(--error) 34%, var(--border)); color: var(--status-err-fg); }
-.up-area { border: 2px dashed var(--border-dashed); border-radius: 8px; padding: 28px 16px; text-align: center;
-  background: var(--bg-upload); cursor: pointer; margin-bottom: 12px; transition: background .15s, border-color .15s; }
-.up-area:hover { border-color: var(--accent); background: var(--bg-blue-light); box-shadow: 0 14px 34px var(--accent-shadow); }
-.up-area.dragover { border-color: var(--accent); background: var(--bg-blue); }
-.up-area .title { font-weight: 600; color: var(--text-upload); font-size: 1rem; margin-bottom: 8px; }
-.up-area .sub { font-size: 13px; color: var(--text-upload-sub); }
 .up-title { font-weight: 800; color: var(--text-upload); font-size: 1.08rem; }
 .up-sub { font-size: 13px; color: var(--text-upload-sub); margin-top: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 6px; border-radius: 5px; background: var(--bg-chip); color: var(--text-label); }
@@ -127,7 +117,6 @@ tr:hover td { background: var(--bg-list-hover); }
 .error-msg { color: var(--error); }
 .btn-sm { padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); cursor: pointer; font-size: .8rem; font-family: inherit; }
 .btn-sm:hover { background: var(--bg-card-hover); }
-.dropdown { position: relative; }
 .colpanel {
   position: fixed;
   top: 72px;

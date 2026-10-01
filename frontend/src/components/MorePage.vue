@@ -15,7 +15,7 @@ import SegmentedControl from './SegmentedControl.vue'
 // 账户（登录 / 个人中心 / 登出）不在这里，由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
 const { isAdmin, isHofAdmin } = useAuth()
-const { uiProfile, setUiProfile } = useUiProfile()
+const { uiProfilePreference, setUiProfile } = useUiProfile()
 const i18n = getCurrentInstance().proxy.$i18n
 
 const FEEDBACK_URL = 'https://github.com/A158Coke/WotbTools/issues/new'
@@ -78,8 +78,8 @@ const groups = computed(() => [
         <div class="more-setting">
           <span class="more-setting-label">{{ $t('uiProfile.title') }}</span>
           <SegmentedControl
-            :model-value="uiProfile"
-            :options="[{ value: 'showcase', label: $t('uiProfile.showcase') }, { value: 'classic', label: $t('uiProfile.classic') }]"
+            :model-value="uiProfilePreference"
+            :options="[{ value: 'showcase', label: $t('uiProfile.showcase') }, { value: 'classic', label: $t('uiProfile.classic') }, { value: 'auto', label: $t('uiProfile.auto') }]"
             :aria-label="$t('uiProfile.title')"
             data-testid="more-ui-profile"
             @update:model-value="setUiProfile"

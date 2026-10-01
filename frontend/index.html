@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <link rel="icon" type="image/x-icon" href="/icon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="/icon.png">
+  <meta name="theme-color" content="#0b0f11" />
   <title>WoTBTools</title>
   <style>
     :root{color-scheme:dark;--bg:#0d1117;--bg-card:#161b22;--bg-card2:#21262d;--text:#c9d1d9;--text-heading:#f0f6fc;--text-sub:#8b949e;--text-muted:#8b949e;--text-label:#8b949e;--border:#30363d;--border-header:#21262d;--border-ghost:#30363d;--accent:#58a6ff;--accent-hover:#79c0ff;--accent-dark:#58a6ff;--error:#f85149}
@@ -27,9 +28,13 @@
       // 与 src/composables/useUiProfile.js 的 key/校验/默认保持一致。
       try {
         var p = localStorage.getItem('wotb-ui-profile')
+        // auto：跟随系统深浅色（与 useUiProfile.resolveUiProfile 一致）
+        if (p === 'auto') p = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'classic' : 'showcase'
         if (p !== 'classic' && p !== 'showcase') p = 'showcase'
         document.documentElement.setAttribute('data-ui-profile', p)
         document.documentElement.setAttribute('data-theme', p === 'classic' ? 'light' : 'dark')
+        var meta = document.querySelector('meta[name="theme-color"]')
+        if (meta) meta.setAttribute('content', p === 'classic' ? '#f6f5f2' : '#0b0f11')
       } catch (e) {
         document.documentElement.setAttribute('data-ui-profile', 'showcase')
         document.documentElement.setAttribute('data-theme', 'dark')
