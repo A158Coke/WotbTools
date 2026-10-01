@@ -25,12 +25,14 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.Map;
 
 /**
- * Replay Processing Job REST API（需登录：wotbtools-user / wotbtools-admin）。
+ * Replay Processing Job REST API（公开：匿名可用）。
  *
- * <p>真实契约与 /api/preview、/api/export 无关：本 API 由 {@code SecurityConfig} 的
- * {@code REPLAY_PROCESSING_JOBS_PATTERN} 角色门保护，下列四条端点（POST 创建 / GET 状态 /
- * GET result / DELETE 取消）全部必须携带有效 Bearer token——匿名 → 401
- * AUTH_UNAUTHENTICATED，已登录但无 wotbtools-user / wotbtools-admin 角色 → 403 AUTH_FORBIDDEN。</p>
+ * <p>真实契约与 /api/preview、/api/export 无关：{@code SecurityConfig} 对
+ * {@code REPLAY_PROCESSING_JOBS_PATTERN} 下的四条端点（POST 创建 / GET 状态 / GET result /
+ * DELETE 取消）一律 {@code permitAll()}，job 只以不可猜测的 jobId 引用。携带有效 Bearer token 时
+ * 照常解析 JWT subject；匿名时 subject 为 {@code null}——创建端点因此跳过 operationId 幂等
+ * （每次提交都是新 job），GET result 跳过绑定账号回放验证。无效 Bearer 仍 → 401 AUTH_UNAUTHENTICATED。
+ * 滥用防护：nginx 对创建端点按 IP 限流 + 服务端 PROCESSING_QUEUE_FULL。</p>
  *
  * <pre>
  * POST   /api/replay/processing-jobs            → 202 {jobId, status, total}（创建；HTTP request 不等待解析）
@@ -48,7 +50,7 @@ import java.util.Map;
  * <p><b>Idempotency</b>：创建端点接受可选 multipart 字段 {@code operationId}（Android external replay
  * 传入其 pending identity）。同一已认证 subject 用同一 {@code operationId} 重复提交返回同一个
  * {@code jobId}，用于覆盖「server 已接受但 Native ACK 前进程被杀 → 冷启动重新导入同一份 replay」的
- * exactly-once 语义。字段缺失时保持「每次提交都是新 job」的既有语义。</p>
+ * exactly-once 语义。字段缺失或匿名（无 subject）时保持「每次提交都是新 job」的既有语义。</p>
  */
 @RestController
 @CrossOrigin(origins = "*")

@@ -8,6 +8,7 @@
  * protocol, visibility, marker, and interaction regressions.
  */
 
+import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
@@ -299,7 +300,8 @@ describe('BattlePlayback', () => {
     expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('00:12 / 01:00')
     expect(wrapper.find('svg').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('NeverSeen')
+    // 从未被观测到的车辆不出现在地图上（阵容列表来自结算名单，仍会列出全员）
+    expect(wrapper.find('[data-test="pb-map"]').text()).not.toContain('NeverSeen')
     expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
   })
 
@@ -879,7 +881,7 @@ describe('PR4 §33 B3 — collision UX：标签与 HP 永不因碰撞隐藏', ()
     expect(playerVisible(wrapper, 2001)).toBe(true)
     expect(tankVisible(wrapper, 2001)).toBe(true)
     expect(hpVisible(wrapper, 2001)).toBe(true)
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 400, clientY: 300 })
     await flushPromises()
     expect(playerVisible(wrapper, 2001)).toBe(true)
     expect(tankVisible(wrapper, 2001)).toBe(true)
@@ -1009,7 +1011,7 @@ describe('PR4 §33 B3 — collision UX：标签与 HP 永不因碰撞隐藏', ()
     expect(fitState.presentationOffset).toEqual(fitOffset)
 
     for (let i = 0; i < 14; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 400, clientY: 300 })
     }
     await flushPromises()
     const zoomOffset = offsetOf(2001)
@@ -1102,7 +1104,8 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
   // mobile 形态、又命中 pc 的媒体查询，互斥性就是假的。
   it('keeps the mobile and pc breakpoints strictly complementary', () => {
     const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
-    const mobileMax = /max-width:\s*([\d.]+)px\)'/.exec(src)
+    // mobile 形态的唯一来源是 shared/breakpoints 的 PLAYBACK_MOBILE_QUERY
+    const mobileMax = /max-width:\s*([\d.]+)px\)/.exec(PLAYBACK_MOBILE_QUERY)
     const pcMin = /matchMedia\('\(min-width:\s*([\d.]+)px\)'\)/.exec(src)
     expect(mobileMax).not.toBeNull()
     expect(pcMin).not.toBeNull()
@@ -1113,7 +1116,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
   // 之间的算术——旧写法里一档的规则会以更高特异性压掉另一档，反复打穿。
   it('puts exactly one mutually exclusive form class on the root', async () => {
     const cases = [
-      ['mobile', { '(pointer: coarse) and (max-width: 1199.98px)': true }],
+      ['mobile', { '(max-width: 767.98px), (pointer: coarse) and (max-height: 500px)': true }],
       ['pc', { '(min-width: 1200px)': true }],
       ['tablet', {}],
     ]
@@ -1242,7 +1245,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await wrapper.find('[data-test="pb-speed-2"]').trigger('click') // 2×
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 }) // 选中
     for (let i = 0; i < 3; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 400, clientY: 300 })
     }
     await flushPromises()
     const timeBefore = wrapper.find('.pb-time').text()
@@ -1327,7 +1330,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubRaf()
     stubFullscreenApi()
     stubMatchMedia({
-      '(pointer: coarse) and (max-width: 1199.98px)': true,
+      '(max-width: 767.98px), (pointer: coarse) and (max-height: 500px)': true,
       '(min-width: 1200px)': false,
     })
     const getRoCb = stubResizeObserver()
@@ -1399,7 +1402,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubFullscreenApi()
     // 移动端：primary pointer=coarse 且视口<=1200（手机横屏内宽>768 仍命中）。大桌面 1200 判定为 false。
     stubMatchMedia({
-      '(pointer: coarse) and (max-width: 1199.98px)': true,
+      '(max-width: 767.98px), (pointer: coarse) and (max-height: 500px)': true,
       '(min-width: 1200px)': false,
     })
     const wrapper = mountPlayback(makeOverview(), 12)
@@ -1455,7 +1458,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubRaf()
     stubFullscreenApi()
     stubMatchMedia({
-      '(pointer: coarse) and (max-width: 1199.98px)': true,
+      '(max-width: 767.98px), (pointer: coarse) and (max-height: 500px)': true,
       '(min-width: 1200px)': false,
     })
     const getRoCb = stubResizeObserver()
@@ -1483,7 +1486,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     // 先 zoom in，让地图走出 contain-fit、产生可平移余量（真实手势路径：手指拖动）
     const map = wrapper.find('[data-test="pb-map"]')
     for (let i = 0; i < 3; i++) {
-      await map.trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
+      await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 400, clientY: 300 })
     }
     await flushPromises()
 
@@ -1533,14 +1536,14 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
 
     // 放大 3 步（deltaY<0）
     for (let i = 0; i < 3; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     await flushPromises()
     expect(scaleOf()).toBeGreaterThan(fitScale)
 
     // 缩小足够多步（deltaY>0）→ 回到 fitScale（缩放下限 = 完整地图 fit，不是 1x）
     for (let i = 0; i < 20; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: 120, clientX: 0, clientY: 0 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: 120, clientX: 0, clientY: 0 })
     }
     await flushPromises()
     expect(scaleOf()).toBeCloseTo(fitScale, 3)
@@ -1654,8 +1657,8 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(labelsStyle()).toContain('scale(1)') // 1× 反缩放
     // 2× zoom：wheel 锚点 = 车辆所在容器 px（(96,646)，1× 时内容 (95.75,646.2)）——
     // 避免 zoom 的 pan 把车辆移出 viewport 被裁剪（裁剪是真实机制，但本测试验证的是 zoom 后 collision）
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 96, clientY: 646 })
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 96, clientY: 646 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 96, clientY: 646 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 96, clientY: 646 })
     await flushPromises()
     const style2x = labelsStyle()
     expect(style2x).toContain('scale(0.6944') // 2× 反缩放
@@ -2446,3 +2449,4 @@ describe('V2 HP regression (restored critical coverage)', () => {
     expect(enemy[1].text()).toContain('NeverSeen')
   })
 })
+

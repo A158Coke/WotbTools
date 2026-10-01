@@ -240,7 +240,7 @@ jobs:
           [ "$(head -c4 "$temp/html/wasm/wotb_replay_wasm_bg.wasm" | od -An -tx1 | tr -d ' \n')" = "0061736d" ] \
             || { echo 'wotb_replay_wasm_bg.wasm lacks wasm magic (truncated/HTML error page).' >&2; exit 1; }
           # 4) 期望静态文件与镜像内烘焙的 nginx 配置
-          for f in index.html version.json sponsor-bg.png icon.ico icon.png wotbtoolslogo.png; do
+          for f in index.html version.json sponsor-bg.webp icon.ico icon.png wotbtoolslogo.png; do
             [ -s "$temp/html/$f" ] || { echo "Local frontend image misses expected static file: $f" >&2; exit 1; }
           done
           docker cp "$container:/etc/nginx/conf.d/default.conf" "$temp/default.conf"

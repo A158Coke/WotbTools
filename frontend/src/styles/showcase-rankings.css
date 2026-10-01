@@ -1,19 +1,23 @@
 /* Hall of Fame public ranking + HoF admin review console */
 
 .lb-wrap {
-  width: min(1720px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(1720px, calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin: 0 auto !important;
   padding: 22px 0 64px !important;
+  /* 审计 PG-06：吸顶 Tab 的块高（按钮 + 上下内边距 + 上下边框）。表格吸顶区与翻页回到表格顶部都只读
+   * --hof-sticky-top 这一个值；平板 Tab 不吸顶，在下方媒体查询里改为只扣顶栏。 */
+  --hof-tabs-block: calc(var(--control-h-md) + var(--space-2) * 2 + 2px);
+  --hof-sticky-top: calc(var(--header-h) + 6px + var(--hof-tabs-block) + var(--space-2));
 }
 .lb-wrap > .tabs {
   position: sticky;
-  top: 66px;
+  top: calc(var(--header-h) + 6px);
   z-index: 22;
   display: flex;
   gap: 5px;
   margin-bottom: 14px !important;
-  padding: 7px !important;
+  padding: var(--space-2) !important;
   border: 1px solid #303a40 !important;
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg) 84%, transparent) !important;
@@ -21,7 +25,7 @@
   backdrop-filter: blur(12px);
 }
 .lb-wrap > .tabs button {
-  min-height: 35px;
+  min-height: var(--control-h-md);
   padding: 0 18px !important;
   border-radius: 6px !important;
 }
@@ -63,7 +67,11 @@
   backdrop-filter: blur(10px);
 }
 .lb-wrap .lb-toolbar :is(select,input) { border-color: #3a454b !important; background: #0f1518 !important; }
+/* 审计 PG-06：横向滚动要求 .tablewrap 是滚动容器，sticky 表头只能相对它吸顶；因此平板 / 桌面限制它的高度，
+ * 让表格在自身内纵向滚动。高度扣掉顶栏与吸顶 Tab，表格顶部对齐到 Tab 下方时表头不会被盖住。 */
 .lb-wrap .tablewrap {
+  max-height: calc(100dvh - var(--hof-sticky-top) - var(--space-4));
+  scroll-margin-top: var(--hof-sticky-top);
   margin-top: 12px;
   overflow: auto !important;
   border: 1px solid #303a40 !important;
@@ -84,113 +92,28 @@
 .lb-wrap tbody tr:hover { background: var(--bg-list-hover) !important; }
 .lb-wrap .lb-dmg { color: var(--accent-dark) !important; font-weight: 900; }
 .lb-wrap .rk { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
-.lb-wrap .hof-upload-modal { border-color: #3b454b !important; background: #11171a !important; box-shadow: 0 30px 80px rgba(0,0,0,.5) !important; }
 
 .hof-admin {
-  width: min(1760px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(1760px, calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin: 0 auto !important;
   padding: 22px 0 64px !important;
 }
-.hof-admin-tabs {
-  position: sticky;
-  top: 66px;
-  z-index: 22;
-  display: flex !important;
-  gap: 5px !important;
-  overflow-x: auto;
-  margin-bottom: 14px !important;
-  padding: 8px !important;
-  border: 1px solid #303a40 !important;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 84%, transparent) !important;
-  box-shadow: 0 12px 30px rgba(0,0,0,.18);
-  backdrop-filter: blur(12px);
-}
-.hof-admin-tabs button {
-  flex: 0 0 auto;
-  min-height: 36px;
-  border-radius: 6px !important;
-  background: transparent !important;
-  color: #b5b2aa !important;
-}
-.hof-admin-tabs button:hover { color: #f2ede3 !important; }
-.hof-admin-tabs button.active {
-  border-color: rgba(217, 143, 24, .42) !important;
-  background: rgba(217, 143, 24, .16) !important;
-  color: #f0a42b !important;
-}
-.hof-admin-filters {
-  display: grid !important;
-  grid-template-columns: repeat(auto-fit, minmax(150px,1fr));
-  gap: 8px !important;
-  padding: 12px !important;
-  border: 1px solid #303a40 !important;
-  border-radius: 8px;
-  background: rgba(11, 17, 20, .94) !important;
-  box-shadow: var(--surface-shadow);
-}
-.hof-admin-filters :is(input,select) { width: 100%; min-width: 0; border-color: #394349 !important; background: #0f1518 !important; }
-.hof-admin .tablewrap {
-  margin-top: 12px;
-  overflow: auto !important;
-  border: 1px solid #303a40 !important;
-  border-radius: 8px;
-  background: rgba(11, 17, 20, .94);
-  box-shadow: 0 16px 40px rgba(0,0,0,.18);
-}
-.hof-admin-table { width: max-content !important; min-width: 100% !important; font-variant-numeric: tabular-nums; }
-.hof-admin-table th {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  height: 42px;
-  background: #171e22 !important;
-  color: #aaa79f !important;
-}
-.hof-admin-table td {
-  height: 45px;
-  color: #d8d5cd !important;
-  border-bottom-color: #263136 !important;
-}
-.hof-admin-table tbody tr { background: rgba(13, 19, 22, .86); }
-.hof-admin-table tbody tr:hover { background: #172025 !important; }
-.hof-admin .dmg { color: #f0a42b !important; font-weight: 800; }
-.hof-admin .btn-sm,
-.hof-admin .pagination button {
-  border-color: #39444a !important;
-  background: #151d21 !important;
-  color: #d7d3ca !important;
-}
-.hof-admin .btn-sm:hover:not(:disabled),
-.hof-admin .pagination button:hover:not(:disabled) { background: #1c262b !important; }
-.hof-admin .btn-sm.danger,
-.hof-admin .actions .danger { color: #ff8f86 !important; border-color: rgba(225, 87, 78, .5) !important; }
-.hof-admin .page-size select {
-  border-color: #39444a !important;
-  background: #0f1518 !important;
-  color: #e4e1d9 !important;
-}
-.hof-admin .hof-admin-login,
-.hof-admin .hof-admin-denied p { color: #9aa09c !important; }
-.hof-admin .hof-admin-denied h2 { color: #f2ede3 !important; }
-.hof-admin .actions { white-space: nowrap; }
-.hof-admin .actions .danger { opacity: .72; background: transparent !important; }
-.hof-admin .actions .danger:hover { opacity: 1; }
+/* 用户管理 / 名人堂管理页内部元素由组件自身按设计语言 token 定义（design-language §13），这里只保留页面容器宽度。 */
 
 @media(max-width:1199px) {
   .lb-wrap,
-  .hof-admin { width: calc(100vw - 24px) !important; padding-top: 16px !important; }
+  .hof-admin { width: calc(100% - 24px) !important; padding-top: 16px !important; }
   .lb-wrap > .tabs,
-  .hof-admin-tabs { top: 64px; }
   .lb-wrap .lb-toolbar { position: static; }
+  /* 平板 Tab 不吸顶：表格吸顶区只需让出顶栏 */
+  .lb-wrap { --hof-sticky-top: calc(var(--header-h) + var(--space-2)); }
 }
 
 @media (width < 768px) {
   .lb-wrap,
-  .hof-admin { width: calc(100vw - 16px) !important; padding: 10px 0 42px !important; }
-  .lb-wrap > .tabs,
-  .hof-admin-tabs { position: static; }
+  .hof-admin { width: calc(100% - 16px) !important; padding: 10px 0 42px !important; }
+  .lb-wrap > .tabs { position: static; }
   .lb-wrap .lb-head { padding: 18px !important; }
   /* Mobile: the filter form must never become a horizontal-scrolling strip (data
    * tables may scroll, form filters may not). Task-first 2-column grid, explicit
@@ -226,6 +149,4 @@
   .lb-wrap .lb-toolbar.h100-toolbar .lb-limit:has(.mark3-vehicle-select) { grid-area: 2 / 1 / 3 / 3; }
   .lb-wrap .lb-toolbar.h100-toolbar > button:nth-child(4) { grid-area: 3 / 1; }
   .lb-wrap .lb-toolbar.h100-toolbar > button:nth-child(5) { grid-area: 3 / 2; }
-  .hof-admin-filters { grid-template-columns: 1fr 1fr !important; }
-  .hof-admin-table th { top: 56px; }
 }

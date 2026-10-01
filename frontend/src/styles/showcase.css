@@ -60,72 +60,24 @@ body {
   background-size: auto, 36px 36px, 36px 36px, auto;
 }
 
-.topbar {
-  min-height: var(--topbar-h) !important;
-  height: var(--topbar-h) !important;
-  padding: 8px max(14px, calc((100vw - 1840px) / 2)) !important;
-  gap: 8px !important;
-  background: color-mix(in srgb, #080c0f 93%, transparent) !important;
-  border-bottom: 1px solid #30383d !important;
-  box-shadow: 0 10px 32px rgba(0,0,0,.24) !important;
-}
-.tb-content { padding-top: var(--topbar-h) !important; }
-.tb-brand { min-width: 48px; }
-.tb-logo { height: 34px !important; }
-.topbar nav { height: 100%; align-items: stretch !important; gap: 2px !important; }
-.topbar nav button {
-  min-height: 42px;
-  padding: 7px 14px !important;
-  border-radius: 5px !important;
-  color: #bebbb4 !important;
-  border-bottom: 2px solid transparent !important;
-  transition: background .16s ease, color .16s ease, border-color .16s ease;
-}
-.topbar nav button:hover { background: rgba(255,255,255,.035) !important; color: #f4efe5 !important; }
-.topbar nav button.active {
-  background: linear-gradient(180deg, rgba(217,143,24,.02), rgba(217,143,24,.14)) !important;
-  border-color: transparent !important;
-  border-bottom-color: var(--accent) !important;
-  color: #f5b445 !important;
-}
-.lang-select, .auth-btn.ghost, .user-menu-trigger {
-  border-color: #343d42 !important;
-  background: rgba(17,23,26,.92) !important;
-  color: #d9d5cc !important;
-}
-.user-menu-panel {
-  border: 1px solid #394247 !important;
-  background: #11171a !important;
-  box-shadow: 0 22px 54px rgba(0,0,0,.44) !important;
-}
-
 .wrap {
   max-width: var(--showcase-wide-max) !important;
-  width: calc(100vw - var(--showcase-gutter) * 2) !important;
+  width: calc(100% - var(--showcase-gutter) * 2) !important;
   margin-inline: auto !important;
 }
 .layout-content {
-  width: min(var(--showcase-content-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
-  max-width: none !important;
-  padding: 26px 0 64px !important;
-}
-.layout-wide {
-  width: min(var(--showcase-wide-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--showcase-content-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   padding: 26px 0 64px !important;
 }
 .layout-data-workspace {
-  width: min(var(--showcase-page-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  /* 100% 而非 100vw：100vw 含滚动条宽度，有竖向滚动条时会产生横向溢出 */
+  width: min(var(--showcase-page-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   padding: 24px 0 64px !important;
 }
-.layout-full-workspace {
-  width: 100% !important;
-  max-width: none !important;
-  height: calc(100vh - var(--topbar-h)) !important;
-}
 .admin-page {
-  width: min(var(--showcase-page-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--showcase-page-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin-inline: auto !important;
   padding: 26px 0 64px !important;
@@ -133,51 +85,30 @@ body {
 
 .layout-content > h1,
 .layout-content > h2,
-.layout-wide > h1,
-.layout-wide > h2,
 .layout-data-workspace > h1,
-.layout-data-workspace > h2,
-.admin-page > h1,
-.admin-page > h2 { letter-spacing: -.015em; }
+.layout-data-workspace > h2 { letter-spacing: -.015em; }
 
-.layout-content :is(.card,.panel,.section-card,.profile-card,.account-card),
-.layout-wide :is(.card,.panel,.section-card),
-.layout-data-workspace :is(.card,.panel),
-.admin-page :is(.admin-table-wrap,.admin-search),
+.layout-content :is(.card, .panel, .profile-card),
+.layout-data-workspace :is(.card, .panel),
 .modal {
   border-color: var(--showcase-line) !important;
   box-shadow: var(--surface-shadow);
 }
 
-.layout-content :is(input,select,textarea),
-.layout-wide :is(input,select,textarea),
-.layout-data-workspace :is(input,select,textarea),
-.admin-page :is(input,select,textarea) {
+.layout-content :is(input, select, textarea),
+.layout-data-workspace :is(input, select, textarea) {
   border-color: #39444a !important;
   background: #0f1518 !important;
   color: #e4e1d9 !important;
 }
-.layout-content :is(input,select,textarea):focus,
-.layout-wide :is(input,select,textarea):focus,
-.layout-data-workspace :is(input,select,textarea):focus,
-.admin-page :is(input,select,textarea):focus {
+.layout-content :is(input, select, textarea):focus,
+.layout-data-workspace :is(input, select, textarea):focus {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px var(--accent-shadow);
 }
 
 /* Replay parser */
 .layout-data-workspace > :first-child { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)) !important; }
-.restoolbar {
-  position: sticky;
-  top: 66px;
-  z-index: 30;
-  padding: 9px 10px !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 96%, transparent) !important;
-  box-shadow: 0 12px 30px rgba(0,0,0,.18);
-  backdrop-filter: blur(12px);
-}
 .tabs button.active {
   color: var(--accent-dark) !important;
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
@@ -187,35 +118,10 @@ body {
 .layout-data-workspace table thead th { background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important; }
 
 /* Hall of Fame / rankings */
-.layout-wide table { width: 100%; font-variant-numeric: tabular-nums; }
-.layout-wide table thead th { background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important; }
-.layout-wide table tbody tr:hover { background: var(--bg-list-hover) !important; }
-.hof-page,
-.hof-wrap,
-.hall-page {
-  width: min(var(--showcase-wide-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
-  max-width: none !important;
-  margin-inline: auto !important;
-}
-.hof-page :is(.tabs,.filters,.filterbar,.hof-filters),
-.hof-wrap :is(.tabs,.filters,.filterbar,.hof-filters) {
-  border-color: var(--showcase-line) !important;
-}
-.hof-page table,
-.hof-wrap table { font-variant-numeric: tabular-nums; }
-.hof-page thead th,
-.hof-wrap thead th {
-  position: sticky;
-  top: var(--topbar-h);
-  z-index: 4;
-  background: #171e22 !important;
-}
-.hof-page tbody tr:hover,
-.hof-wrap tbody tr:hover { background: #172025 !important; }
 
 /* Profile: no avatar; identity reads like a tactical account header. */
 .profile-page {
-  width: min(var(--showcase-content-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--showcase-content-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin-inline: auto !important;
   padding: 26px 0 64px !important;
@@ -258,111 +164,31 @@ body {
 }
 .profile-page .card-title { letter-spacing: -.01em; }
 
-/* Admin operations console */
-.admin-page > h2 { font-size: 1.55rem !important; margin-bottom: 5px !important; }
-.admin-hint { margin-bottom: 18px !important; }
-.admin-search {
-  padding: 12px;
-  border: 1px solid #39444a;
-  border-radius: 8px;
-  background: rgba(13, 18, 22, .92);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, .22);
-  backdrop-filter: blur(10px);
-}
-.admin-search input {
-  min-height: 40px;
-  border-color: #39444a !important;
-  background: #0f1518 !important;
-  color: #e4e1d9 !important;
-}
-.admin-search button {
-  min-width: 96px;
-  background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important;
-  box-shadow: 0 9px 24px var(--accent-shadow);
-}
-.admin-table-wrap {
-  max-height: calc(100vh - 250px);
-  overflow: auto !important;
-  border-color: #354047 !important;
-  background: rgba(13, 18, 22, .94) !important;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, .22) !important;
-}
-.admin-table { min-width: 1160px; font-variant-numeric: tabular-nums; }
-.admin-table th {
-  top: 0 !important;
-  z-index: 2;
-  height: 42px;
-  background: #171e22 !important;
-  color: #aaa79f !important;
-}
-.admin-table td {
-  height: 48px;
-  border-bottom-color: #263136 !important;
-  color: #d8d5cd !important;
-}
-.admin-table tbody tr:hover { background: #172025 !important; }
-.admin-table .cell-short { max-width: 190px !important; }
-.admin-table .btn-danger { background: transparent !important; opacity: .72; }
-.admin-modal {
-  border: 1px solid #394247;
-  background: #11171a !important;
-  box-shadow: 0 30px 80px rgba(0,0,0,.46);
-}
+/* 用户管理 / 名人堂管理页内部元素由组件自身按设计语言 token 定义（design-language §13），这里只保留页面容器宽度。 */
 
 /* Tactical workspaces */
-.layout-full-workspace,
-.reconstruction-page,
-.playback-page { background: #080c0e; }
-.layout-full-workspace :is(.panel,.sidebar,.details-panel,.timeline,.toolbar) { border-color: #303a40 !important; }
 
 @media (max-width: 1199px) {
   :root { --showcase-gutter: 14px; }
-  .topbar { padding-inline: 12px !important; overflow-x: auto !important; }
-  .topbar nav button { padding-inline: 10px !important; }
   .layout-content,
-  .layout-wide,
-  .layout-data-workspace,
-  .admin-page,
-  .profile-page { padding-top: 18px !important; }
-  .restoolbar { top: 64px; }
-  .admin-table-wrap { max-height: none; }
+.layout-data-workspace,
+.admin-page,
+.profile-page { padding-top: 18px !important; }
 }
 
 @media (width < 768px) {
   :root { --showcase-gutter: 8px; }
-  .topbar { min-height: 56px !important; height: 56px !important; }
-  .tb-content { padding-top: 56px !important; }
-  .tb-logo { height: 30px !important; }
-  .topbar nav { max-width: 58vw; overflow-x: auto; scrollbar-width: none; }
-  .topbar nav::-webkit-scrollbar { display: none; }
-  .topbar nav button { min-height: 38px; padding-inline: 9px !important; font-size: .78rem !important; }
-  .lang-select { max-width: 72px; }
 
   .layout-content,
-  .layout-wide,
-  .layout-data-workspace,
-  .admin-page,
-  .profile-page,
-  .hof-page,
-  .hof-wrap {
-    width: calc(100vw - 16px) !important;
+.layout-data-workspace,
+.admin-page,
+.profile-page {
+    width: calc(100% - 16px) !important;
     padding: 12px 0 42px !important;
   }
-  .layout-full-workspace { height: calc(100vh - 56px) !important; }
-  .restoolbar { position: static; }
-  .resactions { overflow-x: auto; flex-wrap: nowrap !important; padding-bottom: 4px; }
-  .admin-search { flex-direction: column; }
-  .admin-search button { min-height: 40px; }
-  .admin-table-wrap { width: 100%; }
-  .admin-modal { width: calc(100vw - 22px) !important; padding: 18px !important; }
   .profile-page .profile-body { display: block !important; }
   .profile-page .profile-left,
   .profile-page .profile-right { display: grid; gap: 12px; }
   .profile-page .profile-hero { padding: 20px !important; min-height: 100px; }
   .profile-page .hero-name { font-size: 1.35rem !important; }
-  .hof-page thead th,
-  .hof-wrap thead th { top: 56px; }
-  /* Same 56px topbar offset for the admin users table; !important is required
-   * to beat the global .admin-table th { top: 0 !important } rule above. */
-  .admin-table th { top: 56px !important; }
 }

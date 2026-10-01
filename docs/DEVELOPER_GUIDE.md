@@ -471,7 +471,7 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 `processingJobId + sourceId` Dataset 引用，绝不 multipart 重传/重解析。三个 capability tab 始终可见
 （不因能力不可用而消失）；AI 与 Playback 各持独立 `useCapabilityReplay`，Dataset 状态互不污染。
 Workspace 的标题/清空、能力 tabs、批次与当前回放 selector 分别由
-`ReplayWorkspaceHeader`、`ReplayCapabilityTabs`、`ReplaySourcePanel` 展示；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。
+`PageHeader`、`ReplayCapabilityTabs`、`FileUploader`、`BattlePicker` 展示（数据结果区的工具栏、系列赛概览与导出菜单在 `ReplayPage` 内）；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。
 `ReplayPage` 作为 data 结果 tab 嵌入（`embedded` prop），在 Workspace 内只渲染结果 / 列系统 / Export /
 Drawer。**登录门禁**：整个 Replay Workspace 全部要求登录——未登录进入任意 replay capability
 （data / ai / playback）自动跳 Keycloak/OIDC 并按 redirectUri 回原 capability，不再有「data 匿名解析」；
@@ -484,7 +484,7 @@ Workspace 是四态 UI gate（检查登录态 / Login Required + 可重试登录
 工作台）：未登录时不渲染
 Source panel、上传器与任何 capability 面板，因此未登录无法发出 processing 请求；`useAuth.login()` 只对
 「同一个进行中的 redirect」去重（`loginInFlight` 在 `finally` 释放，无 component-lifetime 一次性锁），
-失败或取消后 capability tabs、登录按钮与 UserMenu 都能重新发起新的 login transaction。后端同样把
+失败或取消后 capability tabs、登录按钮与「账户」页（个人中心）登录入口都能重新发起新的 login transaction。后端同样把
 `/api/replay/processing-jobs/**`（创建/状态/result/取消）收紧为 `wotbtools-user`/`wotbtools-admin`，
 前端 gate 只是 UX，后端才是 authorization authority。
 **能力解耦**：AI 与 Playback 仅共享 replay/source/processing dataset，不做 `AI@seek → Playback`

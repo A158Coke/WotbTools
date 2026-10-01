@@ -25,6 +25,15 @@ import { mergeCwPlayerRows, mergeCwPlayerColumns, CW_DIM_KEYS } from '../utils/p
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
+import { BookOpen, Columns3, Download } from 'lucide-vue-next'
+import AppButton from './AppButton.vue'
+import Banner from './Banner.vue'
+import BattlePicker from './BattlePicker.vue'
+import MenuButton from './MenuButton.vue'
+import SegmentedControl from './SegmentedControl.vue'
+import SeriesOverview from './SeriesOverview.vue'
+import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
+import { useBreakpoint } from '../composables/useBreakpoint.js'
 
 defineOptions({ name: 'ReplayPage' })
 
@@ -73,7 +82,7 @@ const currentSingleIndex = computed(() => {
 const dataViewModeRef = computed(() => isSummaryView.value ? 'SUMMARY' : 'SINGLE')
 
 const cols = useColumns(replay.playerCols, replay.aggCols, dataViewModeRef, leagueMode)
-const { visibleKeys, aggVisibleKeys, cwVisibleKeys, cwOrder, showColPicker, pickerScope,
+const { visibleKeys, aggVisibleKeys, cwVisibleKeys, cwOrder, playerOrder, aggOrder, colScope, showColPicker, pickerScope,
   currentOrder, shownCols, shownAggCols,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
@@ -84,8 +93,10 @@ watch(resp, (result) => {
   if (result) cols.initFromResponse(result)
 }, { immediate: true })
 
-/** 数据页视图切换：汇总视图 / 单场视图（单场选择由 Workspace current-battle selector 控制）。 */
+/** 数据页视图切换：汇总视图 / 单场视图（单场由工具栏的场次选择器决定）。 */
 function setDataView(mode) {
+  // 列选择面板按视图分 scope；切换视图时收起，避免面板编辑的列与正在看的表不一致。
+  showColPicker.value = false
   if (replayWorkspace) {
     replayWorkspace.setDataViewMode(mode)
     return
@@ -262,6 +273,57 @@ const leagueUnavailableMessage = computed(() => {
   return t('league.unavailable_mixed')
 })
 const aggregatePlayerCount = computed(() => replayAggregatePlayerCount(resp.value))
+
+// ---- 数据工具栏：视图切换 · 场次选择 · 操作（审计 BZ-06 / BZ-09，design-language §7） ----
+const hasSummaryView = computed(() => !!resp.value && (resp.value.aggregate.length > 0 || leagueMode.value))
+const hasSingleView = computed(() => (resp.value?.battles?.length || 0) > 0)
+const dataViewOptions = computed(() => [
+  { value: 'SUMMARY', label: t('result.aggregate_tab', { count: aggregatePlayerCount.value }), testid: 'data-view-summary' },
+  { value: 'SINGLE', label: t('result.single_tab'), testid: 'data-view-single' },
+])
+const series = computed(() => buildSeriesOverview(resp.value, summaryTeamNames.value, battleTeamNames.value))
+const pickerOptions = computed(() => battlePickerOptions(series.value, { t, locale: locale.value, mapLabel }))
+const currentSourceId = computed(() => resp.value?.battles?.[currentSingleIndex.value]?.sourceId ?? null)
+
+function selectBattle(sourceId) {
+  showColPicker.value = false
+  if (replayWorkspace) {
+    replayWorkspace.selectBattle(sourceId)
+    return
+  }
+  const index = (resp.value?.battles || []).findIndex(b => String(b.sourceId) === String(sourceId))
+  if (index >= 0) activeTab.value = `b${index}`
+}
+
+/**
+ * 玩家表呈现方式：手机默认卡片列表，可切回表格；平板 / 桌面固定表格（design-language §7 DataTable）。
+ * 用户的选择只在本页会话内有效。
+ */
+const { isCompact } = useBreakpoint()
+const layoutChoice = ref('cards')
+const dataLayout = computed(() => (isCompact.value ? layoutChoice.value : 'table'))
+const layoutOptions = computed(() => [
+  { value: 'cards', label: t('workspace.layout_cards'), testid: 'data-layout-cards' },
+  { value: 'table', label: t('workspace.layout_table'), testid: 'data-layout-table' },
+])
+
+/** 「列 8/20」：让用户知道还有指标收在列面板里（默认只显示核心列，审计 BZ-07）。 */
+const columnCounts = computed(() => {
+  if (colScope.value === 'cw') return { shown: unifiedShownCols.value.length, total: cwOrder.value.length }
+  if (colScope.value === 'agg') return { shown: shownAggCols.value.length, total: aggOrder.value.length }
+  return { shown: shownCols.value.length, total: playerOrder.value.length }
+})
+
+const exportItems = computed(() => [
+  { key: 'aggregate', label: t('workspace.export_excel_summary'), disabled: !!exportActive.value, testid: 'export-aggregate' },
+  { key: 'each', label: t('workspace.export_excel_each'), disabled: !!exportActive.value, testid: 'export-each' },
+  { key: 'png', label: t('workspace.export_png'), testid: 'export-png' },
+])
+
+function onExport(key) {
+  if (key === 'png') downloadResultPng()
+  else startExportJob(key, teamNamesPayload())
+}
 const battleTeamNames = ref({})
 const summaryTeamNames = ref({})
 
@@ -334,6 +396,9 @@ function createExportClone(target, theme) {
 
 function prepareReplayExportClone(clone) {
   if (!clone) return
+  // PNG 总是导出表格：卡片模式下表格只是被隐藏
+  for (const el of clone.querySelectorAll('.player-cards')) el.remove()
+  for (const el of clone.querySelectorAll('.tablewrap, .scroll-hint')) el.style.display = ''
   for (const el of clone.querySelectorAll('.selected')) {
     el.classList.remove('selected')
   }
@@ -475,7 +540,8 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
       @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest"
       />
 
-    <p v-if="error" class="error">{{ error }}</p>
+    <!-- 嵌入工作台时由工作台统一显示错误 Banner，这里不重复 -->
+    <Banner v-if="error && !props.embedded" tone="danger" data-testid="replay-error"><p>{{ error }}</p></Banner>
 
     <ReplayProcessingPanel
       v-if="!props.embedded && (uploadState || processingJob)"
@@ -489,18 +555,19 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
       <div>
         <p v-if="!resp" class="replay-empty-note">{{ $t('workspace.results_hint') }}</p>
         <template v-if="resp">
-        <div v-if="resp.duplicates.length" class="warn">
-          {{ $t('result.duplicates', { count: resp.duplicates.length }) }}
-          <span v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</span>
-        </div>
-        <div v-if="resp.failures.length" class="error">
-          {{ $t('result.failures', { count: resp.failures.length }) }}
-          <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
-        </div>
-        <div v-if="leagueUnavailableMessage" class="warn league-unavailable" data-testid="league-unavailable">
-          {{ leagueUnavailableMessage }}
-        </div>
-        <div v-if="leagueData && leagueData.failures?.length" class="warn league-failure-summary" data-testid="league-failure-summary">
+        <div class="result-notices">
+        <Banner v-if="resp.duplicates.length" tone="warning" data-testid="result-duplicates">
+          <p>{{ $t('result.duplicates', { count: resp.duplicates.length }) }}</p>
+          <ul class="notice-files"><li v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</li></ul>
+        </Banner>
+        <Banner v-if="resp.failures.length" tone="danger" data-testid="result-failures">
+          <p>{{ $t('result.failures', { count: resp.failures.length }) }}</p>
+          <ul class="notice-files"><li v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</li></ul>
+        </Banner>
+        <Banner v-if="leagueUnavailableMessage" tone="warning" class="league-unavailable" data-testid="league-unavailable">
+          <p>{{ leagueUnavailableMessage }}</p>
+        </Banner>
+        <Banner v-if="leagueData && leagueData.failures?.length" tone="warning" class="league-failure-summary" data-testid="league-failure-summary">
           <div class="league-failure-head">
             <span class="lf-title">{{ $t('league.title') }}</span>
             <span class="lf-rated">{{ $t('league.rated_count', { rated: ratedBattleCount, total: resp.battles.length }) }}</span>
@@ -523,55 +590,66 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
               </ul>
             </div>
           </div>
+        </Banner>
         </div>
 
-        <div class="restoolbar">
-          <div class="dataview-toggle" :class="{ locked: showColPicker }"
-               :title="showColPicker ? $t('action.picker_locked') : ''">
-            <button v-if="resp.aggregate.length || leagueMode" :disabled="showColPicker"
-                    :class="{ active: isSummaryView }"
-                    data-testid="data-view-summary"
-                    @click="setDataView('SUMMARY')">{{ $t('result.aggregate_tab', { count: aggregatePlayerCount }) }}</button>
-            <button v-if="resp.battles.length" :disabled="showColPicker"
-                    :class="{ active: !isSummaryView }"
-                    data-testid="data-view-single"
-                    @click="setDataView('SINGLE')">{{ $t('result.single_tab') }}</button>
-          </div>
-          <div class="resactions">
-            <button v-if="leagueMode" class="ghost sm" data-testid="league-docs-btn" @click="openRatingDocs">
-              <svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20" /></svg>{{ $t('league.docs_button') }}
-            </button>
-            <span class="dropdown">
-              <button class="ghost sm" @click="toggleColPicker">
-                <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} v
-              </button>
-              <Teleport to="body">
+        <div class="data-toolbar" data-testid="data-toolbar">
+          <SegmentedControl
+            v-if="hasSummaryView && hasSingleView"
+            :model-value="isSummaryView ? 'SUMMARY' : 'SINGLE'"
+            :options="dataViewOptions"
+            :aria-label="$t('workspace.data_view')"
+            data-testid="data-view"
+            @update:model-value="setDataView"
+          />
+          <BattlePicker
+            v-if="!isSummaryView && pickerOptions.length > 1"
+            :options="pickerOptions"
+            :model-value="currentSourceId"
+            :aria-label="$t('workspace.battle_picker')"
+            data-testid="battle-picker"
+            @update:model-value="selectBattle"
+          />
+          <div class="data-actions">
+            <SegmentedControl
+              v-if="isCompact"
+              v-model="layoutChoice"
+              class="data-layout-toggle"
+              :options="layoutOptions"
+              :aria-label="$t('workspace.layout')"
+              data-testid="data-layout"
+            />
+            <AppButton v-if="leagueMode" variant="ghost" size="sm" data-testid="league-docs-btn" @click="openRatingDocs">
+              <BookOpen :size="16" aria-hidden="true" />{{ $t('workspace.rating_docs') }}
+            </AppButton>
+            <AppButton variant="ghost" size="sm" data-testid="column-picker-btn" :aria-expanded="showColPicker" @click="toggleColPicker">
+              <Columns3 :size="16" aria-hidden="true" />{{ $t('workspace.columns_count', columnCounts) }}
+            </AppButton>
+            <Teleport to="body">
               <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
                 :visible="pickerScope === 'agg' ? aggVisibleKeys : pickerScope === 'cw' ? cwVisibleKeys : visibleKeys"
                 :fixed-keys="(pickerScope === 'cw' || (pickerScope === 'player' && leagueMode)) ? ['nickname', 'league_rating'] : []"
                 @close="showColPicker = false" @toggle="toggleCol"
                 @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
-              </Teleport>
-            </span>
-            <button class="sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('aggregate', teamNamesPayload())">
-              <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
-            </button>
-            <button class="ghost sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('each', teamNamesPayload())">
-              <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
-            </button>
-            <button class="ghost sm" :disabled="loading || exportingPng" @click="downloadResultPng">
-              <svg class="ic" viewBox="0 0 24 24" width="16" height="16"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12"/></svg>
-              {{ exportingPng ? $t('replay.png_exporting') : $t('action.download_png') }}
-            </button>
+            </Teleport>
+            <MenuButton
+              :label="exportingPng ? $t('replay.png_exporting') : $t('workspace.export')"
+              :icon="Download"
+              :items="exportItems"
+              :disabled="loading || exportingPng"
+              data-testid="export-menu"
+              @select="onExport"
+            />
           </div>
         </div>
 
         <p v-if="!resp.battles.length && !resp.aggregate.length && !leagueData" class="replay-empty-note">{{ $t('replay.no_results') }}</p>
 
         <div v-show="isSummaryView && (resp.aggregate.length || leagueMode)" ref="aggregateRef">
+          <SeriesOverview v-if="series.battles.length > 1" :series="series" @select-battle="selectBattle" />
           <template v-if="!leagueMode && resp.aggregate.length">
             <h2 class="replay-section-title" data-testid="base-aggregate-title">{{ $t('result.base_summary_title') }}</h2>
-            <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
+            <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" :layout="dataLayout" />
           </template>
           <template v-if="leagueMode">
             <h2 class="replay-section-title" data-testid="league-summary-title">{{ $t('league.summary.section_title') }}</h2>
@@ -579,6 +657,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
               :rows="unifiedRows" :columns="unifiedShownCols"
               :league-columns="leagueData?.columns || []" :league-mode="true"
               :active="isSummaryView"
+              :layout="dataLayout"
               :selected-account-id="selectedPlayer?.accountId ?? null"
               @select-player="selectPlayer" />
             <template v-if="(leagueData?.teamSummaries?.length || 0) > 0">
@@ -598,6 +677,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
             :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
             :selected-account-id="selectedPlayer?.accountId ?? null"
             :selected-arena-id="selectedPlayer?.arenaId ?? null"
+            :layout="dataLayout"
             @select-player="selectPlayer" />
         </div>
         </template>
@@ -636,32 +716,16 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   background: color-mix(in srgb, var(--bg-card) 82%, transparent);
 }
 .replay-empty-note { padding: 18px 4px; color: var(--text-muted); font-size: .85rem; }
-.dataview-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
+.result-notices { display: grid; gap: var(--space-2); margin-bottom: var(--space-3); }
+.result-notices:empty { display: none; }
+.notice-files { margin: var(--space-1) 0 0; padding-inline-start: var(--space-5); color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+.data-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-4); }
+.data-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-inline-start: auto; }
+@media (width < 768px) {
+  .data-toolbar > .segmented { width: 100%; }
+  .data-actions { width: 100%; justify-content: flex-end; }
+  .data-layout-toggle { margin-inline-end: auto; }
 }
-.dataview-toggle button {
-  min-height: 34px;
-  padding: 6px 14px;
-  border: 1px solid var(--border-ghost);
-  border-radius: 6px;
-  background: var(--bg-card);
-  color: var(--text-label);
-  cursor: pointer;
-  font-size: .85rem;
-  font-family: inherit;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.dataview-toggle button:hover:not(.active) { border-color: var(--border); color: var(--text-heading); background: var(--bg-list-hover); }
-.dataview-toggle button.active {
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  color: var(--accent-dark);
-}
-.league-failure-summary { margin-top: 10px; padding: 10px 14px; }
 .league-failure-head {
   display: flex;
   align-items: center;
@@ -675,7 +739,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 .lf-toggle {
   margin-left: auto;
   padding: 3px 10px;
-  border: 1px solid rgba(224,160,45,.5);
+  border: 1px solid color-mix(in oklab, var(--color-warning) 50%, transparent);
   border-radius: 6px;
   background: transparent;
   color: var(--warn-text);
@@ -683,8 +747,8 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   font-size: .78rem;
   font-family: inherit;
 }
-.lf-toggle:hover { background: rgba(224,160,45,.16); }
-.league-failure-detail { margin-top: 8px; border-top: 1px solid rgba(224,160,45,.25); padding-top: 8px; }
+.lf-toggle:hover { background: color-mix(in oklab, var(--color-warning) 16%, transparent); }
+.league-failure-detail { margin-top: 8px; border-top: 1px solid color-mix(in oklab, var(--color-warning) 25%, transparent); padding-top: 8px; }
 .league-failure-group { margin-bottom: 4px; }
 .lf-group-head {
   display: block;
@@ -699,7 +763,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   font-size: .8rem;
   font-family: inherit;
 }
-.lf-group-head:hover { background: rgba(224,160,45,.14); color: var(--warn-text); }
+.lf-group-head:hover { background: color-mix(in oklab, var(--color-warning) 14%, transparent); color: var(--warn-text); }
 .lf-group-files {
   margin: 2px 0 6px;
   padding: 2px 8px 2px 22px;
@@ -707,7 +771,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   font-size: .78rem;
   word-break: break-word;
 }
-.league-unavailable { margin-top: 10px; padding: 8px 14px; font-size: .85rem; }
 .replay-export-root.replay-export-light {
   --exp-bg: #ffffff;
   --exp-card-bg: #f8f9fa;
@@ -777,25 +840,26 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 .replay-export-root .league-summary-title {
   color: var(--exp-text);
 }
+/* StatStrip 的 scoped 规则与这里同特异性，导出样式多带一层 .mcards 以确定性胜出 */
 .replay-export-root .mcards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-bottom: 16px;
 }
-.replay-export-root .mc {
+.replay-export-root .mcards .mc {
   background: var(--exp-card-bg);
   border: 1px solid var(--exp-border);
   border-radius: 8px;
   padding: 14px 16px;
   text-align: center;
 }
-.replay-export-root .mc .k {
+.replay-export-root .mcards .mc .k {
   font-size: .78rem;
   color: var(--exp-text-sub);
   margin-bottom: 4px;
 }
-.replay-export-root .mc .v {
+.replay-export-root .mcards .mc .v {
   font-size: 1.4rem;
   font-weight: 700;
   color: var(--exp-text);

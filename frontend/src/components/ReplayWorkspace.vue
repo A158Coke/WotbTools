@@ -1,22 +1,27 @@
 <script setup>
-import { computed, inject, nextTick, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Sparkles } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
-import { displayName } from '../utils/helpers.js'
+import { mapLabel } from '../utils/helpers.js'
 import { useAuth } from '../composables/useAuth.js'
-import { useError } from '../composables/useError.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import ReplayPage from './ReplayPage.vue'
-import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 import FileUploader from './FileUploader.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
-import ReplayWorkspaceHeader from './ReplayWorkspaceHeader.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
-import ReplaySourcePanel from './ReplaySourcePanel.vue'
+import AppButton from './AppButton.vue'
+// 审计 PF-02：2D 回放（含约 2.5MB 的地图语义数据）只在进入 2D 回放模式时加载，不进主包。
+const BattlePlaybackPanel = defineAsyncComponent(() => import('./BattlePlaybackPanel.vue'))
+import Banner from './Banner.vue'
+import EmptyState from './EmptyState.vue'
+import PageHeader from './PageHeader.vue'
+import BattlePicker from './BattlePicker.vue'
+import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
 
 defineOptions({ name: 'ReplayWorkspace' })
 
@@ -26,10 +31,14 @@ const props = defineProps({
 })
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
-const { t } = useI18n()
-const { authInitState, authenticated, login, loginInFlight, retryAuth } = useAuth()
-/** 项目统一错误 UI（AppShell 的 GlobalErrorDialog）——不新造 toast/error system。 */
-const { show: showGlobalError } = useError()
+const { t, locale } = useI18n()
+const { authInitState, isAdmin } = useAuth()
+/**
+ * 赛果解析与 2D 回放对匿名开放；登录只是可选增强（已登录时请求附带 Bearer）。
+ * 仍等 auth init 落定再展示工作台：避免已登录用户在 Keycloak 初始化完成前以匿名身份建 Job。
+ * init 失败也照常放行（匿名使用），不再显示登录门禁。
+ */
+const authSettled = computed(() => authInitState.value !== 'idle' && authInitState.value !== 'initializing')
 
 /**
  * Workspace 持有唯一一份 replay selection / Processing Job。
@@ -62,7 +71,7 @@ async function importPendingFile(file, pending) {
 }
 
 const { consumePendingWhenReady } = useNativeReplayImport({
-  isAuthenticated: () => authenticated.value,
+  isReady: () => authSettled.value,
   onPendingFile: importPendingFile,
   onReadError: (reason) => {
     error.value = reason === 'native-client-upgrade-required'
@@ -71,40 +80,37 @@ const { consumePendingWhenReady } = useNativeReplayImport({
   },
 })
 
-const capabilityOptions = [
+/**
+ * 模式：数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘（* 仅管理员）。
+ * 3D / 射击目前仍是独立页面（各自读取本地文件），切换时导航过去；嵌入工作台留到 L6。
+ */
+const NAVIGATION_ONLY_CAPABILITIES = Object.freeze({ '3d': 'agent-replay', shots: 'agent-shots' })
+const capabilityOptions = computed(() => [
   { key: 'data', labelKey: 'workspace.tab_data' },
-  { key: 'ai', labelKey: 'workspace.tab_ai' },
   { key: 'playback', labelKey: 'workspace.tab_playback' },
-]
+  ...(isAdmin.value
+    ? [{ key: '3d', labelKey: 'workspace.tab_3d' }, { key: 'shots', labelKey: 'workspace.tab_shots' }]
+    : []),
+  { key: 'ai', labelKey: 'workspace.tab_ai' },
+])
 
 const activeCapability = workspace.activeWorkspaceTab
-
-/** 当前选中单场显示名（header「当前回放：xxx #N」。Blocker #4）。 */
-const currentBattleName = computed(() => {
-  const f = workspace.currentTargetFile.value
-  return f ? displayName(f) : ''
-})
+/** 2D 回放面板首次进入时才挂载（之后保留状态，切走只是隐藏），它的代码块因此不随工作台加载。 */
+const playbackMounted = ref(activeCapability.value === 'playback')
+watch(activeCapability, (cap) => { if (cap === 'playback') playbackMounted.value = true })
 
 /** 模板直接消费的 workspace 权威 ref（顶层绑定，模板自动解包 ref）。 */
 const currentBattleId = workspace.currentBattleId
-const currentBattleIndex = workspace.currentBattleIndex
-const parsedBattles = workspace.parsedBattles
+
+/**
+ * 2D 回放的场次选择器：只列解析成功的场次（failed / duplicate 不入列），
+ * 选项文案与数据模式一致（第 N 场 · 地图 · 胜方 · 时间）。数据模式的选择器在 ReplayPage 工具栏里。
+ */
+const playbackBattleOptions = computed(() =>
+  battlePickerOptions(buildSeriesOverview(resp.value), { t, locale: locale.value, mapLabel }))
 function onBattleSelect(sourceId) {
   workspace.selectBattle(sourceId)
 }
-
-/**
- * 有效 battle 选项（selector 只列 parsed battles——failed / duplicate 的 source 不入列；
- * label 由 sourceId 'r<N>' -> files[N] 映射，与 source identity 严格对齐）。
- */
-const battleOptions = computed(() => {
-  const fileArr = workspace.replay.files.value
-  return parsedBattles.value.map(b => {
-    const m = /^r(\d+)$/.exec(b?.sourceId || '')
-    const f = m ? fileArr[parseInt(m[1], 10)] : null
-    return { sourceId: b?.sourceId ?? '', label: f ? displayName(f) : (b?.sourceId || '') }
-  })
-})
 
 const playbackReplay = useCapabilityReplay(workspace.replay)
 
@@ -131,41 +137,15 @@ watch(
 
 const VIEW_BY_CAPABILITY = Object.freeze({ data: 'replay', ai: 'ai-review', playback: 'battle-playback' })
 
-/** capability → 登录后要回到的 view。 */
+/** capability → 路由 view。 */
 function viewFor(cap) {
   return VIEW_BY_CAPABILITY[cap] || 'replay'
 }
 
-/**
- * 登录门禁：未登录时始终可以发起（或重新发起）login transaction。
- * 去重只发生在 useAuth.login() 内部（同一个进行中的 redirect），
- * 绝不存在「这个组件已尝试过登录 → 后续点击静默 no-op」的 component-lifetime 状态。
- *
- * 失败必须可观测：这里的 catch 只覆盖当前页面生命周期内 login() 的发起/导航
- * Promise rejection，不能严格等价于跳转后的 provider cancellation 或 WebView
- * process death；后两者分别由 auth/init 与 Android pending/auth-return 生命周期负责恢复。
- * 对当前页面能观测到的 immediate failure，现在改为：
- *   - 用户主动发起（点 capability tab / 点登录按钮）失败 → 走统一 GlobalErrorDialog；
- *   - 挂载时的自动登录失败不弹窗（auth gate 本身已是确定的、可重试的可见表面）。
- * 无论哪种情况都只释放 in-flight，不写任何 component-lifetime 状态：
- * 后续点击仍会重新发起登录。
- */
-function requestLogin(view, { userInitiated = false } = {}) {
-  const target = view || 'replay'
-  return Promise.resolve()
-    .then(() => login(target))
-    .catch(() => {
-      // 低敏诊断：只记 view 名，不记 token / redirect URL / replay 内容。
-      console.warn(`[workspace-auth] login failed view=${target}`)
-      if (userInitiated) showGlobalError(t('workspace.login_failed'))
-      return false
-    })
-}
-
 async function setCapability(key) {
   if (key === activeCapability.value) return
-  if (key !== 'ai' && !authenticated.value) {
-    requestLogin(viewFor(key), { userInitiated: true })
+  if (NAVIGATION_ONLY_CAPABILITIES[key]) {
+    if (navigate) navigate(NAVIGATION_ONLY_CAPABILITIES[key])
     return
   }
   workspace.setWorkspaceTab(key)
@@ -189,23 +169,18 @@ function clearSelection() {
   playbackReplay.reset()
 }
 
-// 只有正常完成且确认未登录时才自动发起登录。failed 是明确的恢复态，不能自动循环。
-watch(authInitState, (state) => {
-  if (state !== 'unauthenticated' || activeCapability.value === 'ai') return
-  nextTick(() => requestLogin(viewFor(activeCapability.value)))
-}, { immediate: true })
-
-function retryAuthCheck() {
-  return retryAuth()
+/** 上传条是唯一的清空入口（带确认）；清空时同时复位 2D 回放引用。 */
+function onFilesUpdate(next) {
+  if (!next.length) clearSelection()
+  else updateFiles(next)
 }
 
 /**
- * 只有「auth init 完成 且 authenticated」时才允许消费 Android pending replay；
- * 未登录期间 Native pending 原样保留（跨 auth 保留）。
+ * auth init 落定后（无论是否登录）消费 Android pending replay：
+ * 已登录时 operationId 幂等按 subject 分域；匿名时每次导入都是新 job。
  */
-watch([authInitState, authenticated], ([state, authed]) => {
-  if (state !== 'authenticated' || !authed) return
-  nextTick(() => consumePendingWhenReady())
+watch(authSettled, (settled) => {
+  if (settled) nextTick(() => consumePendingWhenReady())
 }, { immediate: true })
 
 watch(() => props.initialCapability, (val) => {
@@ -216,91 +191,54 @@ watch(() => props.initialCapability, (val) => {
 
 <template>
   <div class="layout-data-workspace replay-workspace">
-    <ReplayWorkspaceHeader :has-files="!!files.length" @clear="clearSelection" />
+    <PageHeader :title="$t('workspace.title')" />
     <ReplayCapabilityTabs :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
 
-    <section v-if="activeCapability === 'ai'" class="workspace-auth-gate" data-testid="ws-ai" role="status">
-      <p class="workspace-auth-title">{{ $t('workspace.ai_maintenance') }}</p>
-    </section>
+    <EmptyState
+      v-if="activeCapability === 'ai'"
+      data-testid="ws-ai"
+      :icon="Sparkles"
+      :title="$t('workspace.ai_title')"
+      :description="$t('workspace.ai_description')"
+    >
+      <AppButton data-testid="ws-ai-go-data" @click="setCapability('data')">{{ $t('workspace.go_data') }}</AppButton>
+      <AppButton data-testid="ws-ai-go-playback" @click="setCapability('playback')">{{ $t('workspace.go_playback') }}</AppButton>
+    </EmptyState>
 
-    <section
-      v-else-if="authInitState === 'idle' || authInitState === 'initializing'"
-      class="workspace-auth-gate"
+    <p
+      v-else-if="!authSettled"
+      class="workspace-status"
       data-testid="ws-auth-loading"
       aria-live="polite"
-    >
-      <p class="workspace-auth-title">{{ $t('workspace.auth_checking') }}</p>
-    </section>
-
-    <section v-else-if="authInitState === 'failed'" class="workspace-auth-gate" data-testid="ws-auth-failed" role="alert">
-      <p class="workspace-auth-title">{{ $t('workspace.auth_init_failed') }}</p>
-      <p class="workspace-auth-hint">{{ $t('workspace.auth_init_failed_hint') }}</p>
-      <div class="auth-gate-actions">
-        <button
-          type="button"
-          class="auth-gate-action"
-          data-testid="ws-auth-retry"
-          @click="retryAuthCheck"
-        >{{ $t('workspace.auth_retry') }}</button>
-        <button
-          type="button"
-          class="auth-gate-action"
-          data-testid="ws-login-recovery"
-          :disabled="loginInFlight"
-          @click="requestLogin(viewFor(activeCapability), { userInitiated: true })"
-        >{{ $t('app.login') }}</button>
-      </div>
-    </section>
-
-    <!-- 未登录：只提供登录入口，replay 业务动作（上传 / 解析 / capability 面板）一律不可执行 -->
-    <section v-else-if="authInitState === 'unauthenticated'" class="workspace-auth-gate" data-testid="ws-auth-required">
-      <p class="workspace-auth-title">{{ $t('workspace.auth_required') }}</p>
-      <p class="workspace-auth-hint">{{ $t('workspace.auth_required_hint') }}</p>
-      <button
-        type="button"
-        class="auth-gate-action"
-        data-testid="ws-login"
-        :disabled="loginInFlight"
-        @click="requestLogin(viewFor(activeCapability), { userInitiated: true })"
-      >{{ $t('app.login') }}</button>
-    </section>
+    >{{ $t('workspace.auth_checking') }}</p>
 
     <template v-else>
-      <ReplaySourcePanel
-        :files="files"
-        :current-battle-index="currentBattleIndex"
-        :current-battle-name="currentBattleName"
-        :current-battle-id="currentBattleId"
-        :battle-options="battleOptions"
-        @select-battle="onBattleSelect"
-      />
-
-      <FileUploader
-        :files="files"
-        :loading="loading"
-        :confirm-remove="!!resp"
-        :compact="!!resp"
-        :allow-folder="activeCapability === 'data'"
-        @update:files="updateFiles"
-        @preview="onPreview"
-        @remove-request="onFileRemoveRequest"
-      />
-      <ReplayProcessingPanel
-        v-if="uploadState || processingJob"
-        :upload-state="uploadState"
-        :job="processingJob"
-        :error="processingError"
-        @cancel="cancelProcessing"
-        @dismiss="dismissProcessingJob"
-      />
-      <p v-if="error" class="error">{{ error }}</p>
-      <button
-        v-if="error === t('workspace.native_replay_read_failed')"
-        type="button"
-        class="auth-gate-action"
-        data-testid="ws-native-retry"
-        @click="consumePendingWhenReady"
-      >{{ $t('workspace.native_replay_retry') }}</button>
+      <div class="workspace-source">
+        <FileUploader
+          :files="files"
+          :loading="loading"
+          :confirm-remove="!!resp"
+          :compact="!!resp"
+          :allow-folder="activeCapability === 'data'"
+          @update:files="onFilesUpdate"
+          @preview="onPreview"
+          @remove-request="onFileRemoveRequest"
+        />
+        <ReplayProcessingPanel
+          v-if="uploadState || processingJob"
+          :upload-state="uploadState"
+          :job="processingJob"
+          :error="processingError"
+          @cancel="cancelProcessing"
+          @dismiss="dismissProcessingJob"
+        />
+        <Banner v-if="error" tone="danger" data-testid="ws-error">
+          <p>{{ error }}</p>
+          <template v-if="error === t('workspace.native_replay_read_failed')" #actions>
+            <AppButton size="sm" data-testid="ws-native-retry" @click="consumePendingWhenReady">{{ $t('workspace.native_replay_retry') }}</AppButton>
+          </template>
+        </Banner>
+      </div>
 
       <div class="workspace-content">
         <ReplayPage
@@ -311,7 +249,17 @@ watch(() => props.initialCapability, (val) => {
           :workspace-context="workspace"
         />
         <div v-show="activeCapability === 'playback'" class="capability-pane" data-testid="ws-playback">
+          <BattlePicker
+            v-if="playbackBattleOptions.length > 1"
+            class="playback-picker"
+            :options="playbackBattleOptions"
+            :model-value="currentBattleId"
+            :aria-label="$t('workspace.battle_picker')"
+            data-testid="playback-battle-picker"
+            @update:model-value="onBattleSelect"
+          />
           <BattlePlaybackPanel
+            v-if="playbackMounted"
             :file="playbackReplay.targetFile.value"
             :processing-job-id="playbackReplay.datasetRef.value?.processingJobId ?? null"
             :source-id="playbackReplay.datasetRef.value?.sourceId ?? null"
@@ -331,17 +279,8 @@ watch(() => props.initialCapability, (val) => {
 
 <style scoped>
 .replay-workspace { padding-right: var(--pd-drawer-offset, 0px); }
-.capability-pane { margin-top: 4px; }
-.workspace-auth-gate {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 48px 16px;
-  text-align: center;
-}
-.workspace-auth-title { font-weight: 600; }
-.workspace-auth-hint { opacity: 0.8; }
-.auth-gate-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-.auth-gate-action { padding: 8px 20px; cursor: pointer; }
+.workspace-source { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+.workspace-status { margin: 0; padding: var(--space-12) var(--space-4); color: var(--color-text-secondary); font: var(--type-body); text-align: center; }
+.capability-pane { margin-top: var(--space-1); }
+.playback-picker { margin-bottom: var(--space-3); }
 </style>

@@ -258,7 +258,9 @@ paths:
     post:
       operationId: getBattlePlaybackV2
       summary: Read the cached Battle Playback V2 dataset for a ready processing source
+      description: Anonymous access allowed; a valid bearer token is accepted but not required.
       security:
+        - {}
         - bearerAuth: []
       requestBody:
         required: true

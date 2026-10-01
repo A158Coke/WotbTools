@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 import PlayerRatingRadar from './PlayerRatingRadar.vue'
 import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
 import { leagueMaxByKey, ratingTotalText } from '../utils/helpers.js'
@@ -17,8 +18,10 @@ import {
 import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
 
 /**
- * 选手详情 Side Drawer。
- * - position: fixed 右侧 overlay，不占 Table 布局空间。
+ * 选手详情 Side Drawer（design-language §7 Drawer / §9 Master–Detail）。
+ * - 桌面（≥1200）：推开式侧栏，可拖宽；平板（768–1199）：固定宽度的推开式侧栏；
+ *   两者都通过 --pd-drawer-offset 让工作台让出右侧空间，不遮挡表格。
+ * - 手机（<768）：全屏 sheet（modal），左右滑动切换上一位 / 下一位玩家。
  * - 打开时 focus 关闭按钮；Escape / × / backdrop 关闭；关闭后 focus 回到触发行。
  * - selection identity = accountId：排序/刷新后由父组件按 accountId 重新 resolve 数据。
  * - scope 语义：summary = 当前批次（V6 Rating + Observed Mean + Rated Battles 头部；
@@ -60,6 +63,8 @@ const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 14
 // ---- Side Panel 自由 Resize（仅桌面）----
 const DRAWER_MIN = 320
 const DRAWER_DEFAULT = 380
+/** 平板固定宽度：768 宽时给表格留约 400px。 */
+const DRAWER_TABLET = 360
 const DRAWER_MAX_RATIO = 0.45
 const DRAWER_WIDTH_KEY = 'radarSidePanelWidth'
 const drawerWidth = ref(DRAWER_DEFAULT)
@@ -130,12 +135,18 @@ function onResizeKey(delta) {
   setDrawerWidth(drawerWidth.value + delta)
 }
 
-/** Side Panel 真 reflow：桌面(>=1200px)开启时把抽屉宽度暴露成 CSS 变量，
- * 供 .layout-data-workspace 预留右侧空间，主内容随之收窄/扩展，不再被 fixed overlay 覆盖；
- * tablet/mobile 保持原有 overlay 行为（offset=0px）。 */
+/** 侧栏宽度：桌面 = 用户可拖的宽度；平板 = 固定宽度；手机 = 全屏（null）。 */
+const panelWidth = computed(() => {
+  if (isMobile.value) return null
+  return isDesktop.value ? drawerWidth.value : DRAWER_TABLET
+})
+
+/** Side Panel 真 reflow：桌面 / 平板开启时把侧栏宽度暴露成 CSS 变量，
+ * 供 .layout-data-workspace 预留右侧空间，主内容随之收窄/扩展，不被 fixed 侧栏覆盖；
+ * 手机是全屏 sheet（offset=0px）。 */
 const workspaceOffset = computed(() =>
-  isDesktop.value && open.value ? (drawerWidth.value + 8) + 'px' : '0px')
-watch([isDesktop, open, drawerWidth], () => {
+  open.value && panelWidth.value ? (panelWidth.value + 8) + 'px' : '0px')
+watch([panelWidth, open], () => {
   if (typeof document !== 'undefined') {
     document.documentElement.style.setProperty('--pd-drawer-offset', workspaceOffset.value)
   }
@@ -369,6 +380,24 @@ watch(open, (v) => {
   if (v) nextTick(() => closeBtn.value?.focus?.())
 })
 
+// ---- 手机全屏 sheet：左右滑动切换玩家（水平位移足够大且明显大于垂直位移，避免与纵向滚动冲突） ----
+const SWIPE_MIN_PX = 60
+let touchStart = null
+function onTouchStart(e) {
+  if (!isMobile.value || e.touches.length !== 1 || isEditable(e.target)) { touchStart = null; return }
+  touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+}
+function onTouchEnd(e) {
+  if (!touchStart) return
+  const end = e.changedTouches[0]
+  const dx = end.clientX - touchStart.x
+  const dy = end.clientY - touchStart.y
+  touchStart = null
+  if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy) * 1.5) return
+  if (dx < 0 && props.hasNext) onNext()
+  else if (dx > 0 && props.hasPrev) onPrev()
+}
+
 onMounted(() => { window.addEventListener('keydown', onKeydown); drawerWidth.value = loadDrawerWidth(); bindMobile() })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
@@ -455,8 +484,10 @@ async function exportProfile() {
     await ensureVehiclePortraitForExport()
     await nextTick()
     const html2canvas = (await import('html2canvas')).default
+    // 画布底色取导出卡自身的语义 token 底色（随主题），不再写死深色
+    const cardEl = exportCardRef.value.querySelector('.rp-card') || exportCardRef.value
     const canvas = await html2canvas(exportCardRef.value, {
-      scale: 2, useCORS: true, backgroundColor: '#14161a',
+      scale: 2, useCORS: true, backgroundColor: getComputedStyle(cardEl).backgroundColor || null,
     })
     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
     if (!blob) throw new Error('toBlob returned null')
@@ -498,28 +529,32 @@ function ensureImageLoaded(url) {
     <div v-if="open || closing" class="drawer-backdrop" :class="{ 'pd-modal': isMobile }" @click.self="isMobile ? requestClose() : null">
       <aside class="player-drawer" :class="{ 'pd-closing': closing }" role="dialog" :aria-modal="isMobile ? 'true' : undefined"
              :aria-labelledby="'pd-title-' + (player?.accountId ?? 'x')"
-             :style="{ width: isDesktop ? drawerWidth + 'px' : undefined }">
+             :style="{ width: panelWidth ? panelWidth + 'px' : undefined }"
+             data-testid="player-drawer"
+             @touchstart.passive="onTouchStart" @touchend="onTouchEnd">
         <button ref="closeBtn" class="pd-close pd-close-abs" :aria-label="t('league.drawer.close')"
-                @click="requestClose">✕</button>
+                @click="requestClose"><X :size="20" aria-hidden="true" /></button>
 
         <Transition :name="'pd-dir-' + navDir" mode="out-in">
           <div :key="(player?.accountId ?? 'none') + (isSummary ? '-s' : '-b')" class="pd-content">
-            <div class="pd-head">
-              <div>
-                <div class="pd-title" :id="'pd-title-' + (player?.accountId ?? 'x')">{{ player?.nickname || '--' }}</div>
-                <div class="pd-sub">{{ player?.clan || t('league.drawer.no_clan') }}
-                  <span class="pd-scope">{{ isSummary ? t('league.drawer.scope_summary') : t('league.drawer.scope_battle') }}</span>
-                </div>
+            <header class="pd-head">
+              <h2 class="pd-title" :id="'pd-title-' + (player?.accountId ?? 'x')">{{ player?.nickname || '--' }}</h2>
+              <div class="pd-sub">{{ player?.clan || t('league.drawer.no_clan') }}
+                <span class="pd-scope">{{ isSummary ? t('league.drawer.scope_summary') : t('league.drawer.scope_battle') }}</span>
               </div>
-            </div>
+              <div class="pd-nav">
+                <button type="button" class="pd-nav-btn" :disabled="!hasPrev" :aria-label="t('league.drawer.prev_player')"
+                        :title="t('league.drawer.prev_player')" data-testid="drawer-prev" @click="onPrev">
+                  <ChevronLeft :size="20" aria-hidden="true" />
+                </button>
+                <button type="button" class="pd-nav-btn" :disabled="!hasNext" :aria-label="t('league.drawer.next_player')"
+                        :title="t('league.drawer.next_player')" data-testid="drawer-next" @click="onNext">
+                  <ChevronRight :size="20" aria-hidden="true" />
+                </button>
+              </div>
+            </header>
 
-            <div class="pd-nav">
-              <button class="pd-nav-btn" :disabled="!hasPrev" :aria-label="t('league.drawer.prev_player')"
-                      data-testid="drawer-prev" @click="onPrev">←</button>
-              <button class="pd-nav-btn" :disabled="!hasNext" :aria-label="t('league.drawer.next_player')"
-                      data-testid="drawer-next" @click="onNext">→</button>
-            </div>
-
+            <!-- Stat（design-language §7）：标签 caption + 数值 h2 等宽数字 -->
             <div class="pd-rating">
               <span class="pd-rating-label">{{ t('league.drawer.rating_label') }}</span>
               <span class="pd-rating-value" data-testid="drawer-rating">{{ ratingLine().rating }}</span>
@@ -548,12 +583,12 @@ function ensureImageLoaded(url) {
 
             <!-- 七维 / 自定义 Radar -->
             <div class="pd-section-row">
-              <div class="pd-section">{{ isSummary ? t('league.drawer.radar_title_summary') : t('league.drawer.radar_title_battle') }}</div>
+              <h3 class="pd-section">{{ isSummary ? t('league.drawer.radar_title_summary') : t('league.drawer.radar_title_battle') }}</h3>
               <div class="pd-section-actions">
-                <button class="pd-linkbtn" data-testid="radar-settings" @click="showRadarPicker = !showRadarPicker">
+                <button type="button" class="pd-linkbtn" data-testid="radar-settings" @click="showRadarPicker = !showRadarPicker">
                   {{ showRadarPicker ? t('league.drawer.radar_done') : t('league.drawer.radar_settings') }}
                 </button>
-                <button class="pd-linkbtn" data-testid="export-profile" :disabled="playerUnavailable" @click="exportProfile">
+                <button type="button" class="pd-linkbtn" data-testid="export-profile" :disabled="playerUnavailable" @click="exportProfile">
                   {{ t('league.drawer.export_profile') }}
                 </button>
               </div>
@@ -569,10 +604,12 @@ function ensureImageLoaded(url) {
                     {{ t(RADAR_METRIC_DEFS[key].labelKey) }}
                   </label>
                   <span class="rp-arrows">
-                    <button class="rp-arrow" :disabled="!radarOrder.includes(key) || radarOrder.indexOf(key) === 0"
-                            :aria-label="t('league.drawer.radar_move_up')" @click="moveRadarMetric(key, -1)">↑</button>
-                    <button class="rp-arrow" :disabled="!radarOrder.includes(key) || radarOrder.indexOf(key) === radarOrder.length - 1"
-                            :aria-label="t('league.drawer.radar_move_down')" @click="moveRadarMetric(key, 1)">↓</button>
+                    <button type="button" class="rp-arrow" :disabled="!radarOrder.includes(key) || radarOrder.indexOf(key) === 0"
+                            :aria-label="t('league.drawer.radar_move_up')" :title="t('league.drawer.radar_move_up')"
+                            @click="moveRadarMetric(key, -1)"><ArrowUp :size="16" aria-hidden="true" /></button>
+                    <button type="button" class="rp-arrow" :disabled="!radarOrder.includes(key) || radarOrder.indexOf(key) === radarOrder.length - 1"
+                            :aria-label="t('league.drawer.radar_move_down')" :title="t('league.drawer.radar_move_down')"
+                            @click="moveRadarMetric(key, 1)"><ArrowDown :size="16" aria-hidden="true" /></button>
                   </span>
                 </li>
               </ul>
@@ -585,12 +622,13 @@ function ensureImageLoaded(url) {
                                :reference-label="referenceLabel" :player-label="player?.nickname || ''" />
 
             <!-- 比赛事实（scope 语义） -->
-            <div class="pd-section">{{ isSummary ? t('league.drawer.facts_title_summary') : t('league.drawer.facts_title_battle') }}</div>
+            <h3 class="pd-section">{{ isSummary ? t('league.drawer.facts_title_summary') : t('league.drawer.facts_title_battle') }}</h3>
+            <!-- Stat grid：每项一格（标签在上、数值在下），两列；手机同样两列 -->
             <dl class="pd-facts" data-testid="player-facts">
-              <template v-for="(f, i) in facts" :key="i">
+              <div v-for="(f, i) in facts" :key="i" class="pd-fact">
                 <dt>{{ f[0] }}</dt>
                 <dd>{{ f[1] }}</dd>
-              </template>
+              </div>
             </dl>
           </div>
         </Transition>
@@ -610,7 +648,8 @@ function ensureImageLoaded(url) {
     </div>
   </Teleport>
 
-  <!-- 导出专用 Rating Profile 卡（offscreen 不可变快照；实色 token 规避 color-mix 兼容） -->
+  <!-- 导出专用 Rating Profile 卡（offscreen 不可变快照；只用实色语义 token，不用 color-mix，规避导出库兼容问题）。
+       SVG 刻度 / 分数字号写成展示属性：与 RADAR 几何里的徽章宽度、刻度宽度估算绑定，不跟随界面字号阶梯。 -->
   <Teleport to="body">
     <div v-if="exportingProfile" class="rp-export" ref="exportCardRef">
       <div class="rp-card">
@@ -644,7 +683,7 @@ function ensureImageLoaded(url) {
           <svg :viewBox="'0 0 340 340'" class="rp-radar-svg">
             <polygon v-for="g in snapGrids" :key="'g' + g.value" :points="g.points" class="rp-grid" :class="{ 'rp-grid-strong': g.value === RADAR.STRONG_VALUE }" />
             <line v-for="(r, i) in snapAxes" :key="'a' + i" :x1="RADAR.CENTER" :y1="RADAR.CENTER" :x2="r.x" :y2="r.y" class="rp-axis" />
-            <text v-for="t in snapScaleTicks" :key="'t' + t.value" :x="t.p.x" :y="t.p.y" text-anchor="middle" dominant-baseline="middle" class="rp-scale">{{ t.value }}</text>
+            <text v-for="t in snapScaleTicks" :key="'t' + t.value" :x="t.p.x" :y="t.p.y" text-anchor="middle" dominant-baseline="middle" font-size="9" class="rp-scale">{{ t.value }}</text>
             <polygon v-if="snapRefs.length" :points="snapRefPoints" class="rp-ref" />
             <polygon :points="snapPlayerPoints" class="rp-data" />
             <template v-for="(m, i) in snapMetrics" :key="'d' + i">
@@ -658,7 +697,7 @@ function ensureImageLoaded(url) {
                       :width="score.width" :height="RADAR.SCORE_BADGE_HEIGHT" :rx="RADAR.SCORE_BADGE_RADIUS"
                       class="rp-score-bg" />
                 <text :x="score.x" :y="score.y" text-anchor="middle" dominant-baseline="middle"
-                      class="rp-score">{{ score.value }}</text>
+                      font-size="10" class="rp-score">{{ score.value }}</text>
               </g>
             </template>
             <text v-for="(p, i) in snapLabels" :key="'l' + i" :x="p.x" :y="p.y" text-anchor="middle" dominant-baseline="middle" class="rp-label">{{ p.label }}</text>
@@ -684,177 +723,355 @@ function ensureImageLoaded(url) {
 </template>
 
 <style scoped>
-/* 非模态侧栏：桌面/平板 backdrop 不拦截 Grid 点击（pointer-events:none），
-   Drawer 自身恢复可交互；移动端(<768px)再切回 modal veil（.pd-modal）。 */
+/* 设计语言 token（docs/frontend/design-language.md §4–§7 Drawer / Stat）。
+ * 非模态侧栏：桌面 / 平板 backdrop 不拦截 Grid 点击（pointer-events:none），
+ * Drawer 自身恢复可交互；移动端（<768px）再切回 modal veil（.pd-modal）。 */
 .drawer-backdrop {
-  position: fixed; inset: 0; z-index: 60;
-  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drawer);
+  isolation: isolate;
   background: none;
+  pointer-events: none;
 }
-.drawer-backdrop.pd-modal {
-  pointer-events: auto;
-  background: rgb(0 0 0 / .35);
-}
-.player-drawer {
-  position: fixed; top: calc(var(--topbar-h) + 8px); right: 8px; bottom: 8px; width: min(380px, calc(100vw - 16px));
-  background: var(--bg-card2); border: 1px solid var(--border); border-radius: 12px;
-  box-shadow: var(--surface-shadow); overflow-y: auto; padding: 16px;
-  /* Android edge-to-edge 预备：env() 今日解析为 0，视觉零变化 */
-  padding-bottom: calc(16px + env(safe-area-inset-bottom));
-  animation: pd-slide-in .22s ease-out;
-  pointer-events: auto;
-}
-.player-drawer.pd-closing { animation: pd-slide-out .17s ease-in forwards; }
-@keyframes pd-slide-in { from { transform: translateX(30px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-@keyframes pd-slide-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(30px); opacity: 0; } }
 
-/* Side Panel resize handle（桌面）：视觉 2px 线，实际 12px hit 区；默认不显，hover/拖动时高亮。 */
+.drawer-backdrop.pd-modal { background: var(--color-scrim); pointer-events: auto; }
+
+.player-drawer {
+  position: fixed;
+  top: calc(var(--header-h) + var(--space-2));
+  right: var(--space-2);
+  bottom: var(--space-2);
+  width: min(380px, calc(100% - var(--space-4)));
+  padding: var(--space-4);
+  /* Android edge-to-edge 预备：env() 今日解析为 0，视觉零变化 */
+  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  box-shadow: var(--elevation-3);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  pointer-events: auto;
+  animation: pd-slide-in var(--duration-slow) var(--ease-standard);
+}
+
+.player-drawer.pd-closing { animation: pd-slide-out var(--duration-base) var(--ease-standard) forwards; }
+
+@keyframes pd-slide-in {
+  from { transform: translateX(30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes pd-slide-out {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(30px); opacity: 0; }
+}
+
+/* Side Panel resize handle（桌面）：视觉 2px 线，实际 12px hit 区；默认不显，hover / 拖动时高亮。 */
 .pd-resizer {
   position: absolute;
-  top: calc(var(--topbar-h) + 8px);
-  bottom: 8px;
-  width: 12px;
-  margin-left: -5px;
-  z-index: 2;
-  cursor: col-resize;
-  touch-action: none;
-  pointer-events: auto;
+  top: calc(var(--header-h) + var(--space-2));
+  bottom: var(--space-2);
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   justify-content: center;
+  width: var(--space-3);
+  margin-left: -5px;
+  cursor: col-resize;
   opacity: 0;
-  transition: opacity .15s ease;
+  touch-action: none;
+  pointer-events: auto;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
-.pd-resizer:hover,
+
+.pd-resizer:focus-visible,
 body.pd-resizing .pd-resizer { opacity: 1; }
-.pd-resizer:focus-visible { opacity: 1; }
+
 .pd-resizer-line {
   width: 2px;
   height: 52px;
-  border-radius: 2px;
-  background: var(--border);
-  transition: background .15s ease, height .15s ease;
+  border-radius: var(--radius-full);
+  background: var(--color-border-strong);
+  transition: background-color var(--duration-fast) var(--ease-standard), height var(--duration-fast) var(--ease-standard);
 }
-.pd-resizer:hover .pd-resizer-line,
+
 body.pd-resizing .pd-resizer-line,
-.pd-resizer:focus-visible .pd-resizer-line { background: var(--accent); height: 72px; }
-@media (max-width: 1199px) { .pd-resizer { display: none; } }
-@media (max-width: 1080px) {
-  .drawer-backdrop { z-index: var(--z-modal); }
-  .player-drawer { top: 8px; }
+.pd-resizer:focus-visible .pd-resizer-line { height: 72px; background: var(--color-accent); }
+
+@media (hover: hover) {
+  .pd-resizer:hover { opacity: 1; }
+  .pd-resizer:hover .pd-resizer-line { height: 72px; background: var(--color-accent); }
 }
-.pd-close-abs { position: absolute; top: 12px; right: 12px; }
-.pd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding-right: 40px; }
-.pd-title { font-size: 1.1rem; font-weight: 800; color: var(--text-heading); }
-.pd-sub { font-size: .8rem; color: var(--text-sub); margin-top: 2px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pd-scope { font-size: .68rem; font-weight: 700; color: var(--accent-dark); background: var(--bg-blue-light); border-radius: 8px; padding: 2px 8px; }
-.pd-close {
-  border: 1px solid var(--border); background: transparent; color: var(--text-sub);
-  width: 30px; height: 30px; border-radius: 7px; cursor: pointer; font-size: .9rem; flex: none;
+
+@media (width < 1200px) {
+  .pd-resizer { display: none; }
 }
-.pd-close:hover { color: var(--text-heading); border-color: var(--accent); }
-.pd-nav { display: inline-flex; gap: 6px; margin: 10px 0 0; }
-.pd-nav-btn {
-  width: 30px; height: 26px; border: 1px solid var(--border-light); background: transparent;
-  color: var(--text-sub); border-radius: 6px; font-size: .85rem; cursor: pointer; font-family: inherit;
+
+/* 头部：标题（h2）+ 战队 / 范围 + 上一位 / 下一位 */
+.pd-close-abs { position: absolute; top: var(--space-3); right: var(--space-3); }
+.pd-head { display: grid; gap: var(--space-1); padding-right: var(--space-10); }
+.pd-title { margin: 0; overflow-wrap: anywhere; color: var(--color-text-primary); font: var(--type-h2); }
+
+.pd-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
 }
-.pd-nav-btn:disabled { opacity: .35; cursor: default; }
-.pd-nav-btn:not(:disabled):hover { color: var(--accent-dark); border-color: var(--accent); }
-.pd-rating { display: flex; align-items: baseline; gap: 8px; margin: 12px 0 2px; }
-.pd-rating-label { font-size: .72rem; font-weight: 800; color: var(--text-sub); text-transform: uppercase; letter-spacing: .04em; }
-.pd-rating-value { font-size: 1.6rem; font-weight: 800; color: var(--accent-dark); font-variant-numeric: tabular-nums; }
-.pd-rating-extra { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 2px; }
-.pd-extra { font-size: .74rem; color: var(--text-sub); }
-.pd-extra b { color: var(--text-heading); font-variant-numeric: tabular-nums; }
-.pd-section { margin: 14px 0 8px; font-size: .8rem; font-weight: 800; color: var(--text-sub); letter-spacing: .02em; }
-.pd-section-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 8px; }
-.pd-section-row .pd-section { margin: 0; }
-.pd-section-actions { display: flex; gap: 6px; }
-.pd-linkbtn {
-  border: 1px solid var(--border-light); background: transparent; color: var(--text-sub);
-  font-size: .72rem; font-weight: 700; border-radius: 6px; padding: 3px 10px; cursor: pointer; font-family: inherit;
+
+.pd-scope {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1));
+  color: var(--color-accent-text);
+  font: var(--type-caption);
+  font-weight: 600;
 }
-.pd-linkbtn:hover { color: var(--accent-dark); border-color: var(--accent); }
-.pd-linkbtn:disabled { opacity: .4; cursor: default; }
-.radar-picker { margin: 4px 0 8px; padding: 8px 10px; border: 1px solid var(--border-light); border-radius: 8px; }
-.radar-hint { margin: 0 0 6px; font-size: .72rem; color: var(--warn-text); }
-.radar-picker-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 240px; overflow-y: auto; }
-.radar-picker-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .78rem; }
-.rp-item { display: flex; align-items: center; gap: 6px; color: var(--text-label); cursor: pointer; }
-.rp-item input { accent-color: var(--accent); }
-.rp-arrows { display: inline-flex; gap: 2px; }
+
+.pd-close,
+.pd-nav-btn,
 .rp-arrow {
-  width: 22px; height: 20px; border: 1px solid var(--border-light); background: transparent;
-  color: var(--text-sub); border-radius: 5px; font-size: .7rem; cursor: pointer; font-family: inherit;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  cursor: pointer;
 }
-.rp-arrow:disabled { opacity: .35; cursor: default; }
-.rp-arrow:not(:disabled):hover { color: var(--accent-dark); border-color: var(--accent); }
-.radar-empty { margin: 10px 0; padding: 14px; text-align: center; color: var(--text-muted); font-size: .8rem; border: 1px dashed var(--border); border-radius: 8px; }
-.pd-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: .82rem; }
-.pd-facts dt { color: var(--text-sub); font-weight: 600; }
-.pd-facts dd { margin: 0; color: var(--text-heading); font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
-.pd-vehicle { margin: 12px 0 2px; padding: 10px 12px; border: 1px solid var(--border-light); border-radius: 10px; background: var(--bg-card); }
-.pd-vehicle-label { font-size: .72rem; font-weight: 800; color: var(--text-sub); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
-.pd-vehicle-body { display: flex; align-items: center; gap: 12px; }
-.pd-vehicle-img { width: 150px; height: auto; border-radius: 6px; flex: none; }
+
+.pd-close { width: var(--control-h-md); height: var(--control-h-md); }
+.pd-nav { display: inline-flex; gap: var(--space-2); margin-top: var(--space-2); }
+.pd-nav-btn { width: var(--control-h-sm); height: var(--control-h-sm); }
+.rp-arrow { width: var(--hit-min); height: var(--hit-min); border-radius: var(--radius-sm); }
+
+.pd-nav-btn:disabled,
+.rp-arrow:disabled,
+.pd-linkbtn:disabled { cursor: not-allowed; opacity: .4; }
+
+.pd-close:focus-visible,
+.pd-nav-btn:focus-visible,
+.rp-arrow:focus-visible,
+.pd-linkbtn:focus-visible,
+.pd-resizer:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+/* Stat：Rating 主数值 + 观测均值 / 计分场次 */
+.pd-rating { display: grid; gap: 0; margin-top: var(--space-4); }
+.pd-rating-label { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+.pd-rating-value { color: var(--color-accent-text); font: var(--type-h1); font-variant-numeric: tabular-nums; }
+.pd-rating-extra { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin-top: var(--space-1); }
+.pd-extra { color: var(--color-text-secondary); font: var(--type-caption); }
+.pd-extra b { color: var(--color-text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* 小节标题：抽屉小节统一 h3（§4），上方留区块间距 */
+.pd-section { margin: var(--space-6) 0 var(--space-2); color: var(--color-text-primary); font: var(--type-h3); }
+
+.pd-section-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: var(--space-6) 0 var(--space-2);
+}
+
+.pd-section-row .pd-section { margin: 0; }
+.pd-section-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.pd-linkbtn {
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.radar-picker {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.radar-hint { margin: 0 0 var(--space-2); color: var(--color-warning); font: var(--type-caption); }
+.radar-picker-list { display: grid; gap: var(--space-1); max-height: 240px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.radar-picker-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.rp-item { display: flex; align-items: center; gap: var(--space-2); min-height: var(--hit-min); color: var(--color-text-primary); cursor: pointer; }
+.radar-picker-list li:not(.checked) .rp-item { color: var(--color-text-secondary); }
+.rp-item input { inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
+.rp-arrows { display: inline-flex; gap: var(--space-1); }
+
+.radar-empty {
+  margin: var(--space-3) 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+/* Stat grid：两列格子，标签 caption 在上、数值等宽数字在下 */
+.pd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin: 0; }
+
+.pd-fact {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.pd-fact dt { overflow: hidden; color: var(--color-text-secondary); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
+.pd-fact dd { margin: 0; overflow-wrap: anywhere; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* 坦克展示 */
+.pd-vehicle {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.pd-vehicle-label { margin-bottom: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+.pd-vehicle-body { display: flex; align-items: center; gap: var(--space-3); }
+.pd-vehicle-img { flex: none; width: 150px; height: auto; border-radius: var(--radius-sm); }
 .pd-vehicle-meta { min-width: 0; }
-.pd-vehicle-name { font-size: .95rem; font-weight: 800; color: var(--text-heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pd-vehicle-stats { display: flex; gap: 10px; margin-top: 3px; font-size: .78rem; color: var(--text-sub); font-variant-numeric: tabular-nums; }
-@media (width < 768px) { .pd-vehicle-img { width: 100px; } }
+.pd-vehicle-name { overflow: hidden; color: var(--color-text-primary); font: var(--type-h3); text-overflow: ellipsis; white-space: nowrap; }
+
+.pd-vehicle-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-1);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (hover: hover) {
+  .pd-close:hover,
+  .pd-nav-btn:not(:disabled):hover,
+  .rp-arrow:not(:disabled):hover { border-color: var(--color-accent); color: var(--color-text-primary); }
+  .pd-linkbtn:not(:disabled):hover { background: var(--color-surface-2); }
+}
+
+/* 手机：全屏 sheet，盖住顶栏与底部 Tab 栏 */
+@media (width < 768px) {
+  .drawer-backdrop { z-index: var(--z-sheet); }
+
+  .player-drawer {
+    inset: 0;
+    width: auto;
+    padding-top: calc(var(--space-4) + env(safe-area-inset-top));
+    border: 0;
+    border-radius: 0;
+    animation: pd-sheet-in var(--duration-base) var(--ease-standard);
+  }
+
+  .player-drawer.pd-closing { animation: pd-sheet-out var(--duration-fast) var(--ease-standard) forwards; }
+  .pd-close-abs { top: calc(var(--space-3) + env(safe-area-inset-top)); }
+  .pd-vehicle-img { width: 100px; }
+}
+
+@keyframes pd-sheet-in {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes pd-sheet-out {
+  from { transform: none; opacity: 1; }
+  to { transform: translateY(24px); opacity: 0; }
+}
 
 /* 切换动画（§35/§38）：next 旧左出新右入；prev 旧右出新左入；reduced-motion 关闭（§40） */
 .pd-dir-next-enter-from { transform: translateX(28px); opacity: 0; }
 .pd-dir-next-leave-to { transform: translateX(-28px); opacity: 0; }
 .pd-dir-prev-enter-from { transform: translateX(-28px); opacity: 0; }
 .pd-dir-prev-leave-to { transform: translateX(28px); opacity: 0; }
-.pd-dir-next-enter-active, .pd-dir-next-leave-active,
-.pd-dir-prev-enter-active, .pd-dir-prev-leave-active { transition: transform .18s ease, opacity .18s ease; }
+
+.pd-dir-next-enter-active,
+.pd-dir-next-leave-active,
+.pd-dir-prev-enter-active,
+.pd-dir-prev-leave-active { transition: transform var(--duration-base) var(--ease-standard), opacity var(--duration-base) var(--ease-standard); }
+
 @media (prefers-reduced-motion: reduce) {
-  .pd-dir-next-enter-from, .pd-dir-next-leave-to,
-  .pd-dir-prev-enter-from, .pd-dir-prev-leave-to { transform: none; }
-  .pd-dir-next-enter-active, .pd-dir-next-leave-active,
-  .pd-dir-prev-enter-active, .pd-dir-prev-leave-active { transition: none; }
-  .player-drawer, .player-drawer.pd-closing { animation: none; }
+  .pd-dir-next-enter-from,
+  .pd-dir-next-leave-to,
+  .pd-dir-prev-enter-from,
+  .pd-dir-prev-leave-to { transform: none; }
+
+  .pd-dir-next-enter-active,
+  .pd-dir-next-leave-active,
+  .pd-dir-prev-enter-active,
+  .pd-dir-prev-leave-active { transition: none; }
+
+  .player-drawer,
+  .player-drawer.pd-closing { animation: none; }
 }
 
-/* 导出卡（offscreen，实色 token） */
-.rp-export { position: absolute; left: -9999px; top: 0; }
-.rp-card { width: 720px; padding: 24px 28px; background: var(--bg-card); color: var(--text); font-family: inherit; }
-.rp-brand { font-size: .78rem; font-weight: 800; color: #d4a017; letter-spacing: .06em; }
-.rp-player { font-size: 1.5rem; font-weight: 800; color: var(--text-heading); margin: 6px 0 2px; }
-.rp-scope { font-size: .8rem; font-weight: 600; color: #9aa0a6; margin-left: 8px; }
-.rp-rating { display: flex; align-items: baseline; gap: 8px; }
-.rp-rating-label { font-size: .72rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
-.rp-rating-value { font-size: 2rem; font-weight: 800; color: #d4a017; font-variant-numeric: tabular-nums; }
-.rp-headline-extra { display: flex; gap: 16px; margin-top: 2px; }
-.rp-extra { font-size: .8rem; color: var(--text-muted); }
-.rp-extra b { color: var(--text); font-variant-numeric: tabular-nums; }
-.rp-vehicle { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); }
-.rp-vehicle-label { font-size: .72rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
-.rp-vehicle-body { display: flex; align-items: center; gap: 12px; }
-.rp-vehicle-img { width: 140px; height: auto; border-radius: 6px; flex: none; }
+/* 导出卡（offscreen）：只用实色语义 token，不用 color-mix（导出库兼容） */
+.rp-export { position: absolute; top: 0; left: -9999px; }
+.rp-card { width: 720px; padding: var(--space-6) var(--space-8); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); }
+.rp-brand { color: var(--color-accent-text); font: var(--type-caption); font-weight: 700; }
+.rp-player { margin: var(--space-2) 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h1); }
+.rp-scope { margin-left: var(--space-2); color: var(--color-text-secondary); font: var(--type-body); font-weight: 600; }
+.rp-rating { display: flex; align-items: baseline; gap: var(--space-2); }
+.rp-rating-label { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+.rp-rating-value { color: var(--color-accent-text); font: var(--type-display); font-variant-numeric: tabular-nums; }
+.rp-headline-extra { display: flex; gap: var(--space-4); margin-top: var(--space-1); }
+.rp-extra { color: var(--color-text-secondary); font: var(--type-caption); }
+.rp-extra b { color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+
+.rp-vehicle {
+  margin: var(--space-3) 0 var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.rp-vehicle-label { margin-bottom: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+.rp-vehicle-body { display: flex; align-items: center; gap: var(--space-3); }
+.rp-vehicle-img { flex: none; width: 140px; height: auto; border-radius: var(--radius-sm); }
 .rp-vehicle-meta { min-width: 0; }
-.rp-vehicle-name { font-size: 1.05rem; font-weight: 800; color: var(--text-heading); }
-.rp-vehicle-stats { display: flex; gap: 12px; margin-top: 3px; font-size: .82rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.rp-radar { margin: 10px auto 4px; width: 340px; }
+.rp-vehicle-name { color: var(--color-text-primary); font: var(--type-h3); }
+.rp-vehicle-stats { display: flex; gap: var(--space-3); margin-top: var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
+.rp-radar { width: 340px; margin: var(--space-3) auto var(--space-1); }
 .rp-radar-svg { width: 340px; height: 340px; }
-.rp-scale-legend { display: flex; justify-content: center; gap: 16px; color: var(--text-muted); font-size: .7rem; }
-.rp-scale-note { margin-top: 3px; color: var(--text-muted); font-size: .66rem; text-align: center; }
-.rp-grid { fill: none; stroke: var(--border); stroke-width: 1; }
-.rp-grid-strong { stroke: var(--border-light-strong); stroke-width: 1.2; }
-.rp-axis { stroke: var(--border); stroke-width: 1; }
-.rp-scale { fill: var(--text-muted); font-size: 9px; font-weight: 600; }
-.rp-data { fill: rgba(212, 160, 23, .22); stroke: #d4a017; stroke-width: 2; }
-.rp-ref { fill: none; stroke: var(--text-muted); stroke-width: 1.3; stroke-dasharray: 4 3; }
-.rp-dot { fill: #d4a017; }
-.rp-score-bg { fill: var(--bg-elevated); stroke: #d4a017; stroke-width: .8; }
-.rp-score { fill: #d4a017; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.rp-label { fill: #cfd2d6; font-size: 12px; font-weight: 700; }
-.rp-detail { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: 8px; }
-.rp-detail th, .rp-detail td { padding: 5px 8px; text-align: left; }
-.rp-detail thead th { color: #9aa0a6; font-weight: 800; border-bottom: 1px solid #3a3f45; }
-.rp-detail td { color: #cfd2d6; }
+.rp-scale-legend { display: flex; justify-content: center; gap: var(--space-4); color: var(--color-text-secondary); font: var(--type-caption); }
+.rp-scale-note { margin-top: var(--space-1); color: var(--color-text-tertiary); font: var(--type-caption); text-align: center; }
+.rp-grid { fill: none; stroke: var(--color-border-subtle); stroke-width: 1; }
+.rp-grid-strong { stroke: var(--color-border-strong); stroke-width: 1.2; }
+.rp-axis { stroke: var(--color-border-subtle); stroke-width: 1; }
+.rp-scale { fill: var(--color-text-tertiary); font-weight: 600; }
+.rp-data { fill: var(--color-accent); fill-opacity: .22; stroke: var(--color-accent); stroke-width: 2; }
+.rp-ref { fill: none; stroke: var(--color-text-tertiary); stroke-width: 1.3; stroke-dasharray: 4 3; }
+.rp-dot { fill: var(--color-accent); }
+.rp-score-bg { fill: var(--color-surface-2); stroke: var(--color-accent); stroke-width: .8; }
+.rp-score { fill: var(--color-accent-text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.rp-label { fill: var(--color-text-primary); font-size: var(--font-size-caption); font-weight: 700; }
+.rp-detail { width: 100%; margin-top: var(--space-2); border-collapse: collapse; font: var(--type-body); }
+
+.rp-detail th,
+.rp-detail td { padding: var(--space-1) var(--space-2); text-align: left; }
+
+.rp-detail thead th { border-bottom: 1px solid var(--color-border-subtle); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
+.rp-detail td { color: var(--color-text-primary); }
 .rp-detail td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-.rp-detail tbody tr:nth-child(even) td { background: rgba(255, 255, 255, .03); }
-.rp-footer { margin-top: 12px; font-size: .72rem; font-weight: 700; color: #9aa0a6; text-align: right; }
+.rp-detail tbody tr:nth-child(even) td { background: var(--color-surface-2); }
+.rp-footer { margin-top: var(--space-3); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; text-align: right; }
 </style>

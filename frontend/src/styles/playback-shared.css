@@ -523,3 +523,44 @@
   padding: 6px 10px;
   gap: 9px;
 }
+
+/* 审计 BZ-13 / PB-03：未选车时右侧栏显示两队阵容（BattlePlayback .pb-shell-roster） */
+.battle-playback .pb-shell-roster {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  width: 100%;
+  max-height: 100%;
+  padding: var(--space-3);
+  overflow-y: auto;
+}
+.battle-playback .pb-roster-list { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.battle-playback .pb-roster-row {
+  display: grid;
+  width: 100%;
+  min-height: var(--row-h);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-inline-start: 3px solid var(--color-team-ally);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  text-align: start;
+  cursor: pointer;
+}
+.battle-playback .pb-roster-enemy .pb-roster-row { border-inline-start-color: var(--color-team-enemy); }
+.battle-playback .pb-roster-row.is-destroyed { opacity: .5; }
+.battle-playback .pb-roster-row:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.battle-playback .pb-roster-row .pb-team-player { color: var(--color-text-primary); font-weight: 600; }
+.battle-playback .pb-roster-row .pb-team-tank { color: var(--color-text-secondary); font-weight: 400; }
+.battle-playback .pb-roster-hint { margin: 0; color: var(--color-text-tertiary); font: var(--type-caption); }
+@media (hover: hover) {
+  .battle-playback .pb-roster-row:hover { background: var(--color-surface-3); }
+}
+
+/* 审计 BZ-12：一个操作只放一处。控制条在底部时，它已经带了标注 / 重置视图 / 全屏；
+   ☰ 打开的侧栏只保留阵容 / 显示 / 事件，不再重复这三项（控制条在侧栏里时反过来由控制条隐藏）。 */
+.battle-playback.pb-controls-bottom .pb-rail-btn[data-test="pb-rail-annotation"],
+.battle-playback.pb-controls-bottom .pb-rail-btn[data-test="pb-rail-fullscreen"],
+.battle-playback.pb-controls-bottom .pb-rail-btn[data-test="pb-rail-reset"] { display: none; }

@@ -21,6 +21,10 @@
     --space-12: 48px;
     --gutter: 16px;
 
+    /* 应用外壳（§9）：顶栏 / 底部 Tab 栏高度。所有吸顶偏移都读 --header-h */
+    --header-h: 48px;
+    --tabbar-h: 56px;
+
     /* 字号阶梯（§4），最小 12px。
      * 原子 token：font-size / line-height 只能引用 --font-size-* / --line-height-*；
      * 组合 token：font 简写只能引用 --type-*。 */
@@ -36,6 +40,8 @@
     --line-height-h3: 24px;
     --line-height-body: 20px;
     --line-height-caption: 16px;
+    /* 长文阅读（项目历史 / 技术演进等文档页）：比界面正文更松的行高 */
+    --line-height-prose: 1.7;
     --type-display: 700 var(--font-size-display) / var(--line-height-display) var(--font-family-sans);
     --type-h1: 700 var(--font-size-h1) / var(--line-height-h1) var(--font-family-sans);
     --type-h2: 600 var(--font-size-h2) / var(--line-height-h2) var(--font-family-sans);
@@ -67,6 +73,8 @@
     --control-h-lg: 40px;
     --row-h: 36px;
     --hit-min: 24px;
+    /* 复选框 / 单选框的可视尺寸（审计 PG-10：原生 13×13 太小） */
+    --control-check: 18px;
 
     /* 动效 */
     --duration-fast: 120ms;
@@ -80,7 +88,11 @@
   }
 
   @media (width >= 768px) {
-    :root { --gutter: 24px; }
+    :root {
+      --gutter: 24px;
+      --header-h: 56px;
+      --tabbar-h: 0px;
+    }
   }
 
   @media (width >= 1200px) {
@@ -96,6 +108,7 @@
       --control-h-lg: 48px;
       --row-h: 48px;
       --hit-min: 44px;
+      --control-check: 24px;
     }
   }
 

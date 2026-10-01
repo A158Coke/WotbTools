@@ -90,27 +90,20 @@ public class SecurityConfig {
                 .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_PATTERN).permitAll()
 
-                // --- Replay Export Job（需登录：wotbtools-user / wotbtools-admin；含 status/cancel/download） ---
-                // Export 已收口为 Dataset-only：消费的是 Processing Job 的 ProcessedDataset，因此必须与
-                // processing-jobs 同级鉴权——否则匿名调用只要知道 processingJobId 就能绕过
-                // GET /api/replay/processing-jobs/{jobId}/result 的认证，直接生成并下载同一份受保护数据。
-                // 覆盖：POST 创建 / GET 状态 / DELETE 取消 / GET download 四条端点。
-                // /api/export（EXPORT，legacy 同步导出）是独立 public contract，保持 permitAll，不与本 pattern 绑定。
-                .requestMatchers(REPLAY_EXPORT_JOBS_PATTERN)
-                    .hasAnyRole("wotbtools-user", "wotbtools-admin")
-
-                // --- Replay Processing Job（需登录：wotbtools-user / wotbtools-admin） ---
-                // 该 pattern 覆盖四条端点：POST 创建 / GET 状态 / GET result / DELETE 取消，四条都必须 authenticated。
-                // 与 /api/preview、/api/export 的公开 contract 无关（那两个是独立 legacy 公共端点，其 permitAll 保持不变）；
-                // 本 pattern 与 REPLAY_MAP_OVERVIEW / REPLAY_BATTLE_PLAYBACK_V2 同属一档角色门。
-                .requestMatchers(REPLAY_PROCESSING_JOBS_PATTERN)
-                    .hasAnyRole("wotbtools-user", "wotbtools-admin")
-
-                // --- 回放地图/播放与批量处理 (wotbtools-user / wotbtools-admin) ---
-                .requestMatchers(REPLAY_RECONSTRUCT_BATCH,
-                        REPLAY_PROCESS,
+                // --- 赛果解析与 2D 回放：公开（匿名可用） ---
+                // Processing Job（POST 创建 / GET 状态 / GET result / DELETE 取消）、其衍生的 Export Job
+                // （创建 / 状态 / 取消 / download）与 Dataset-only 的 map-overview / battle-playback-v2
+                // 同属一档：都只消费调用方自己上传、以不可猜测 jobId 引用的 ProcessedDataset。
+                // 携带有效 Bearer 时照常解析 subject（idempotency 分域、绑定账号验证）；匿名时 subject 为空，
+                // 只是失去 operationId 幂等。滥用防护：nginx 对创建端点按 IP 限流 + 服务端 PROCESSING_QUEUE_FULL。
+                .requestMatchers(REPLAY_PROCESSING_JOBS_PATTERN,
+                        REPLAY_EXPORT_JOBS_PATTERN,
                         REPLAY_MAP_OVERVIEW,
-                        REPLAY_BATTLE_PLAYBACK_V2)
+                        REPLAY_BATTLE_PLAYBACK_V2).permitAll()
+
+                // --- 批量重建 / 同步处理 (wotbtools-user / wotbtools-admin) ---
+                .requestMatchers(REPLAY_RECONSTRUCT_BATCH,
+                        REPLAY_PROCESS)
                     .hasAnyRole("wotbtools-user", "wotbtools-admin")
 
                 // --- 管理员用户管理 (仅 wotbtools-admin) ---

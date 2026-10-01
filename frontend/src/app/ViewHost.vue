@@ -14,9 +14,18 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
 </script>
 
 <template>
-  <div class="tb-content">
-    <KeepAlive :include="['ReplayWorkspace']">
+  <main id="main" class="app-main">
+    <!-- AgentShots：从装甲查看器（同一标签页内打开）返回时保留已解析的射击列表 -->
+    <KeepAlive :include="['ReplayWorkspace', 'AgentShots']">
       <component :is="currentView" :initial-capability="initialCapability" />
     </KeepAlive>
-  </div>
+  </main>
 </template>
+
+<style scoped>
+/* 顶栏是 fixed：内容区只在这里让出一次高度（含顶部安全区） */
+.app-main {
+  flex: 1 0 auto;
+  padding-top: calc(var(--header-h) + env(safe-area-inset-top));
+}
+</style>

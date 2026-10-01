@@ -102,9 +102,9 @@ describe('Classic Profile — 真浅色主题契约（Theme 计划：Classic=Lig
     expect(css).not.toMatch(/\b\*\s*\{/)
   })
 
-  it('覆盖核心页面面:topbar/user-menu/tabs/table/form/modal 均带 namespace 且不隐藏业务', () => {
-    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.topbar\s*\{/)
-    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.user-menu-panel\s*\{/)
+  // 应用外壳（顶栏 / 底部 Tab 栏 / 更多）只用设计语言语义 token，浅色由 tokens/color.css 的
+  // [data-theme="light"] 映射提供，不再需要 classic 覆盖规则。
+  it('覆盖核心页面面:tabs/table/form/modal 均带 namespace 且不隐藏业务', () => {
     expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.modal\s*\{/)
     expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.layout-data-workspace\s+:is\(input, select, textarea\)/)
     expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.layout-data-workspace\s+table\s+thead\s+th/)
@@ -141,22 +141,9 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.mini-action', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
   })
 
-  it('用户菜单：菜单项/Hover/Danger/分段控件 浅底深字 !important', () => {
-    has('.user-menu-panel .user-menu-item', ['color: var(--text) !important'])
-    has('.user-menu-panel .user-menu-item:hover', ['background: var(--bg-list-hover) !important'])
-    has('.user-menu-panel .user-menu-item.danger', ['color: var(--delete) !important'])
-    has('.ui-profile-option.active', ['background: var(--accent) !important', 'color: var(--accent-text) !important'])
-  })
-
-  it('Replay 上传区：Heading/Card/Filebar/Ghost 按钮 浅底深字 !important', () => {
-    has('.uploadhead h1', ['color: var(--text-heading) !important'])
-    has('.uploadcard', ['background: var(--bg-upload) !important'])
-    has('.uploadcard .up-title', ['color: var(--text-heading) !important'])
-    has('.filebar', ['background: var(--bg-upload) !important'])
+  it('Replay 结果区：Ghost 按钮 / Tabs 浅底深字 !important（上传区、视图切换已改用设计语言 token）', () => {
     has('.filebtn.ghost', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
     has('.tabs button', ['color: var(--text-sub) !important'])
-    has('.dataview-toggle button', ['color: var(--text-sub) !important'])
-    has('.upload-points span', ['background:', 'border-color:', 'color: var(--text-sub) !important'])
   })
 
   it('回归：Replay .tablewrap 必须 background/border-color/color/box-shadow 全带 !important', () => {
@@ -168,61 +155,9 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     ])
   })
 
-  it('回归：Replay 处理面板 / Export 任务卡 浅色 token + !important（scoped 写死深色面板/进度条/按钮）', () => {
-    has('.replay-processing-panel', ['background: var(--bg-card) !important', 'border-color: var(--border) !important', 'color: var(--text) !important'])
-    has('.replay-processing-panel .rpp-title', ['color: var(--text-heading) !important'])
-    has('.replay-processing-panel .rpp-ok', ['color: var(--status-ok-fg) !important'])
-    has('.replay-processing-panel .rpp-bar', ['background: var(--border) !important'])
-    has('.replay-processing-panel .rpp-bar-fill', ['background: var(--accent) !important'])
-    has('.replay-processing-panel .rpp-btn', ['background: var(--bg-card) !important', 'color: var(--text) !important', 'border-color: var(--border) !important'])
-    has('.replay-task-card', ['background: var(--bg-card) !important', 'border-color: var(--border) !important'])
-    has('.replay-task-card .etc-bar', ['background: var(--border) !important'])
-    has('.replay-task-card .etc-bar-fill', ['background: var(--accent) !important'])
-    has('.replay-task-card .etc-btn.primary', ['background: var(--accent) !important', 'color: var(--accent-text) !important'])
-  })
-
-  it('HoF：Toolbar/Table Header/Upload Modal 浅色 !important', () => {
+  it('HoF：Toolbar/Table Header 浅色 !important（上传弹窗已改用 AppDialog token）', () => {
     has('.lb-toolbar', ['background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important'])
     has('.lb-wrap thead th', ['background: var(--bg-card2) !important'])
-    has('.hof-upload-modal', ['background: var(--bg-card) !important'])
-  })
-
-  it('HoF Admin：Tabs(默认+active)/Filters/Table/Pagination 浅色 !important', () => {
-    has('.hof-admin-tabs button', ['color: var(--text-sub) !important'])
-    has('.hof-admin-tabs button.active', ['color: var(--accent-dark) !important'])
-    has('.hof-admin-filters :is(input, select)', ['background: var(--bg-card) !important'])
-    has('admin-hof-page) thead th', ['background: var(--bg-card2) !important'])
-    has('.hof-admin .pagination button', ['background: var(--bg-card) !important', 'color: var(--text-sub) !important'])
-  })
-
-  it('回归：HoF Admin tbody td 必须 color var(--text) !important（防白底浅字）', () => {
-    has('admin-hof-page) tbody td', ['color: var(--text) !important'])
-  })
-
-  it('回归：HoF Admin .tablewrap 必须 background/border-color/color/box-shadow 全带 !important（防浅色主题残留深色边框/阴影）', () => {
-    has(':is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .tablewrap', [
-      'background: var(--bg-card) !important',
-      'border-color: var(--border) !important',
-      'color: var(--text) !important',
-      'box-shadow: var(--surface-shadow) !important',
-    ])
-  })
-
-  it('回归：HoF Admin 表格行基础背景 / denied 标题 / dmg 值 浅色 token + !important（Blocker 3 收尾）', () => {
-    has('hof-admin-table tbody tr', ['background: var(--bg-card) !important'])
-    has('hof-admin-denied h2', ['color: var(--text-heading) !important'])
-    has('admin-hof-page) .dmg', ['color: var(--accent-dark) !important'])
-  })
-
-  it('回归：HoF Admin denied 提示段落 / 登录态 / 表格行分隔线 浅色 token + !important（Blocker 4；.denied/.login 选择器修正为真实类防不命中）', () => {
-    has('admin-hof-page) .hof-admin-login', ['color: var(--text) !important'])
-    has('admin-hof-page) .hof-admin-denied p', ['color: var(--text-sub) !important'])
-    has('admin-hof-page) .hof-admin-table td', ['border-bottom-color: var(--border-light) !important'])
-  })
-
-  it('回归：选择 battle 后动态 .mcards/.mc 指标卡 浅色 token + !important（Blocker 2，防 App.vue 深色卡残留）', () => {
-    has('.layout-data-workspace .mc', ['background: var(--bg-card) !important', 'border-color: var(--border) !important', 'box-shadow: var(--surface-shadow) !important'])
-    has('.layout-data-workspace .mc .v', ['color: var(--text-heading) !important'])
   })
 
   it('HoF 公开页残留缺口：submit row/普通行基础背景/分隔线/pending/下载/分页 浅色 !important（PR #151 收尾）', () => {
@@ -244,10 +179,17 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.lb-wrap .pagination button', ['background: var(--bg-card) !important', 'color: var(--text-sub) !important'])
   })
 
-  it('Version/Contact/Admin/Player Drawer 浅色 !important', () => {
-    has('.version-page .ver', ['background: var(--bg-card) !important'])
+  it('Version/Contact 浅色 !important', () => {
     has('.contact-card', ['background: var(--bg-card) !important'])
-    has('.admin-table th', ['background: var(--bg-card2) !important'])
-    has('.player-drawer .pd-vehicle', ['background: var(--bg-card) !important', 'border-color: var(--border-light) !important'])
+  })
+
+  // 用户管理 / 名人堂管理 / 玩家详情抽屉已迁到设计语言语义 token（design-language §13）：
+  // 浅色由 tokens/color.css 的语义映射提供，classic 不得再用 !important 覆盖其内部元素（避免第二个样式 owner）。
+  it('已迁移组件（Admin Users / HoF Admin / Player Drawer）不再有 classic 覆盖', () => {
+    for (const chunk of css.split(/}/).filter((c2) => c2.includes('{'))) {
+      const sel = chunk.slice(0, chunk.indexOf('{'))
+      if (/::(after|before)/.test(sel)) continue // 关闭装饰背景的 content:none 规则保留
+      expect(sel, 'migrated selector: ' + sel.trim().slice(0, 80)).not.toMatch(/\.(admin-page|admin-table|hof-admin|player-drawer)\b/)
+    }
   })
 })

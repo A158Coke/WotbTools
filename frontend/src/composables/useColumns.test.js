@@ -3,7 +3,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 import { useColumns } from './useColumns.js'
-import { DEFAULT_VISIBLE } from '../utils/helpers.js'
+import { AGG_DEFAULT_VISIBLE, CW_SUMMARY_DEFAULT_VISIBLE, DEFAULT_VISIBLE, LEGACY_CW_SUMMARY_DEFAULT_VISIBLE, LEGACY_DEFAULT_VISIBLE } from '../utils/helpers.js'
 
 // localStorage 隔离
 function freshStorage() {
@@ -59,40 +59,61 @@ describe('useColumns derived metric columns', () => {
     expect(DEFAULT_VISIBLE).not.toContain('alpha_damage')
     // 真实默认可见列仍在
     expect(DEFAULT_VISIBLE).toContain('damage_dealt')
-    expect(DEFAULT_VISIBLE).toContain('damage_received')
+  })
+
+  it('审计 BZ-07：各表默认只显示 6–8 个核心列', () => {
+    for (const defaults of [DEFAULT_VISIBLE, AGG_DEFAULT_VISIBLE, CW_SUMMARY_DEFAULT_VISIBLE]) {
+      expect(defaults.length).toBeGreaterThanOrEqual(6)
+      expect(defaults.length).toBeLessThanOrEqual(8)
+    }
   })
 
   it('initFromResponse shows DEFAULT_VISIBLE columns for fresh users', () => {
     const c = mountCols(freshStorage())
     // 可见 = playerColumns ∩ DEFAULT_VISIBLE（保持响应列顺序）
-    expect(c.visibleKeys.value).toEqual([
-      'nickname', 'kills', 'damage_dealt', 'damage_assisted', 'damage_received', 'hit_rate', 'pen_rate'
-    ])
+    expect(c.visibleKeys.value).toEqual(['nickname', 'kills', 'damage_dealt', 'damage_assisted'])
+  })
+
+  it('从未改过列的老用户（存档 = 旧默认值）迁到新的核心列；自定义过的保持不变', async () => {
+    const store = freshStorage()
+    store.set('wotb-replay-player-visible-cols', JSON.stringify(LEGACY_DEFAULT_VISIBLE[0]))
+    store.set('wotb-replay-player-order', JSON.stringify(PLAYER_COLS.map(c => c.key)))
+    const migrated = mountCols(store)
+    expect(migrated.visibleKeys.value).toEqual(['nickname', 'kills', 'damage_dealt', 'damage_assisted'])
+
+    store.set('wotb-replay-player-visible-cols', JSON.stringify(['nickname', 'hit_rate']))
+    const custom = mountCols(store)
+    expect(custom.visibleKeys.value).toEqual(['nickname', 'hit_rate'])
   })
 
   it('toggleCol hides/shows a column', async () => {
     const c = mountCols(freshStorage())
     c.toggleCol({ key: 'damage_received', scope: 'player' })
-    expect(c.visibleKeys.value).not.toContain('damage_received')
-    c.toggleCol({ key: 'damage_received', scope: 'player' })
     expect(c.visibleKeys.value).toContain('damage_received')
+    c.toggleCol({ key: 'damage_received', scope: 'player' })
+    expect(c.visibleKeys.value).not.toContain('damage_received')
   })
 
   it('resetCols restores the DEFAULT_VISIBLE columns', () => {
     const c = mountCols(freshStorage())
     c.toggleCol({ key: 'damage_received', scope: 'player' })
-    c.toggleCol({ key: 'hit_rate', scope: 'player' })
-    expect(c.visibleKeys.value).not.toContain('damage_received')
-    c.resetCols('player')
+    c.toggleCol({ key: 'damage_dealt', scope: 'player' })
     expect(c.visibleKeys.value).toContain('damage_received')
+    expect(c.visibleKeys.value).not.toContain('damage_dealt')
+    c.resetCols('player')
+    expect(c.visibleKeys.value).not.toContain('damage_received')
     expect(c.visibleKeys.value).toContain('damage_dealt')
   })
 
-  it('aggregate columns include cross-battle metrics and default to visible', () => {
+  it('aggregate：默认只显示核心列，跨场派生指标在列面板里可打开', () => {
     const c = mountCols(freshStorage())
+    expect(c.aggVisibleKeys.value).toEqual(['nickname', 'battles', 'win_rate', 'damage_avg'])
+    expect(c.aggOrder.value).toContain('multi_damage_rate')
+    expect(c.aggOrder.value).toContain('survival_time_avg')
+    c.toggleCol({ key: 'multi_damage_rate', scope: 'agg' })
     expect(c.aggVisibleKeys.value).toContain('multi_damage_rate')
-    expect(c.aggVisibleKeys.value).toContain('survival_time_avg')
-    expect(c.aggVisibleKeys.value).toContain('damage_avg')
+    c.resetCols('agg')
+    expect(c.aggVisibleKeys.value).toEqual(['nickname', 'battles', 'win_rate', 'damage_avg'])
   })
 
   it('B6：aggregate universe 排除 tanks（wire 上仍在，但不是展示列）', () => {
@@ -270,15 +291,24 @@ function mountCwCols(storage) {
 describe('useColumns CW unified summary scope', () => {
   beforeEach(() => { freshStorage(); vi.clearAllMocks() })
 
-  it('cw scope: nickname + league_rating pinned first, dims/mvp/facts default-visible', () => {
+  it('cw scope: nickname + league_rating pinned first；默认核心列，七维 / 观察均值在列面板里', () => {
     const c = mountCwCols(freshStorage())
     expect(c.cwOrder.value.slice(0, 2)).toEqual(['nickname', 'league_rating'])
-    // 七维/MVP 默认可见（延续旧体验），但属于用户可控制列
-    expect(c.cwVisibleKeys.value).toContain('league_damage_score')
     expect(c.cwVisibleKeys.value).toContain('mvp_count')
-    // 纯 facts 列默认可见
     expect(c.cwVisibleKeys.value).toContain('damage_avg')
-    expect(c.cwVisibleKeys.value).toContain('earned_avg')
+    expect(c.cwVisibleKeys.value).toContain('rated_battles')
+    // 七维与观察均值不再默认显示（审计 BZ-07），仍在列 universe 里
+    expect(c.cwVisibleKeys.value).not.toContain('league_damage_score')
+    expect(c.cwVisibleKeys.value).not.toContain('earned_avg')
+    expect(c.cwOrder.value).toContain('league_damage_score')
+  })
+
+  it('cw：存档 = 旧默认值时迁到新核心列', () => {
+    const store = freshStorage()
+    store.set('wotb-league-cw-visible-cols', JSON.stringify(LEGACY_CW_SUMMARY_DEFAULT_VISIBLE[0]))
+    const c = mountCwCols(store)
+    expect(c.cwVisibleKeys.value).not.toContain('league_damage_score')
+    expect(c.cwVisibleKeys.value).toContain('mvp_count')
   })
 
   it('B6：tanks 不进 cw 列 universe（aggregate wire 上仍在）', () => {
@@ -299,9 +329,9 @@ describe('useColumns CW unified summary scope', () => {
   it('dimensions / MVP / performance columns can be hidden and re-shown', () => {
     const c = mountCwCols(freshStorage())
     c.toggleCol({ key: 'league_damage_score', scope: 'cw' })
-    expect(c.cwVisibleKeys.value).not.toContain('league_damage_score')
-    c.toggleCol({ key: 'league_damage_score', scope: 'cw' })
     expect(c.cwVisibleKeys.value).toContain('league_damage_score')
+    c.toggleCol({ key: 'league_damage_score', scope: 'cw' })
+    expect(c.cwVisibleKeys.value).not.toContain('league_damage_score')
     // B6 后仅剩的 Performance Metrics（multi_damage_rate）可 toggle
     expect(c.cwVisibleKeys.value).not.toContain('multi_damage_rate')
     c.toggleCol({ key: 'multi_damage_rate', scope: 'cw' })
@@ -333,7 +363,7 @@ describe('useColumns CW unified summary scope', () => {
   it('cw preference persists across remount', async () => {
     const store = freshStorage()
     const c1 = mountCwCols(store)
-    c1.toggleCol({ key: 'league_damage_score', scope: 'cw' }) // 隐藏 → visible 持久化
+    c1.toggleCol({ key: 'mvp_count', scope: 'cw' }) // 隐藏 → visible 持久化
     // 完整 order reorder（ColumnPicker 语义：拖拽后 emit 完整数组）
     const reordered = ['nickname', 'league_rating', 'multi_damage_rate', 'league_shooting_score', 'earned_avg', 'clan',
       'battles', 'wins', 'win_rate', 'damage_avg', 'mvp_count', 'rated_battles',
@@ -342,7 +372,7 @@ describe('useColumns CW unified summary scope', () => {
     c1.handleReorder(reordered)
     await nextTick()
     const c2 = mountCwCols(store)
-    expect(c2.cwVisibleKeys.value).not.toContain('league_damage_score') // visible 持久化
+    expect(c2.cwVisibleKeys.value).not.toContain('mvp_count') // visible 持久化
     expect(c2.cwOrder.value.slice(0, 2)).toEqual(['nickname', 'league_rating'])
     expect(c2.cwOrder.value[2]).toBe('multi_damage_rate')
     expect(c2.cwOrder.value[3]).toBe('league_shooting_score')
@@ -372,7 +402,7 @@ describe('useColumns CW unified summary scope', () => {
     expect(c.cwVisibleKeys.value).toContain('multi_damage_rate')
     c.resetCols('cw')
     expect(c.cwOrder.value.slice(0, 2)).toEqual(['nickname', 'league_rating'])
-    expect(c.cwVisibleKeys.value).toContain('league_shooting_score')
+    expect(c.cwVisibleKeys.value).toContain('mvp_count')
     expect(c.cwVisibleKeys.value).not.toContain('multi_damage_rate')
   })
 
@@ -393,5 +423,21 @@ describe('useColumns CW unified summary scope', () => {
     expect(c.cwOrder.value).toEqual([
       'nickname', 'league_rating', 'multi_damage_rate', 'rated_battles', 'league_shooting_score', 'league_damage_score',
     ])
+  })
+})
+
+describe('列默认值迁移只做一次（审查：全选后不能被重置）', () => {
+  beforeEach(() => { freshStorage(); vi.clearAllMocks() })
+
+  it('迁移后写入版本标记；之后「全选」与「恰好等于旧默认值」的选择都会保留', async () => {
+    const store = freshStorage()
+    const first = mountCols(store)
+    expect(store.get('wotb-columns-defaults-v')).toBe('2')
+    first.selectAllCols('agg')
+    first.visibleKeys.value = [...LEGACY_DEFAULT_VISIBLE[0]].filter(key => first.playerOrder.value.includes(key))
+    await nextTick()
+    const second = mountCols(store)
+    expect(second.aggVisibleKeys.value).toEqual(second.aggOrder.value)
+    expect(second.visibleKeys.value).toEqual(first.visibleKeys.value)
   })
 })

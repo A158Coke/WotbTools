@@ -5,6 +5,10 @@ import {
   ALLOWED_VIEWS,
   defaultView,
   isAdminOnlyView,
+  locationForView,
+  PRIMARY_NAV,
+  primaryNavItems,
+  primarySection,
   viewFromRoute,
 } from './navigation.js'
 
@@ -53,5 +57,50 @@ describe('viewFromRoute admin-only gating', () => {
   it('still falls back to the default view for unknown views', () => {
     expect(viewFromRoute(routeFor('nope-not-a-view'))).toBe(defaultView())
     expect(viewFromRoute(routeFor('nope-not-a-view'), { allowAdminViews: true })).toBe(defaultView())
+  })
+})
+
+describe('primary navigation', () => {
+  it('maps every Replay capability (and the admin 3D / shot modes) to the Replay section', () => {
+    for (const view of ['replay', 'ai-review', 'battle-playback', 'agent-replay', 'agent-shots']) {
+      expect(primarySection(view)).toBe('replay')
+    }
+  })
+
+  it('maps settings, about, admin and tool pages to 更多', () => {
+    for (const view of ['more', 'history', 'technical-evolution', 'contact', 'sponsor', 'android',
+      'admin-users', 'hof-admin', 'rating-v2', 'rating-docs', 'playback-qa', 'agent-tankopedia', 'agent-armor']) {
+      expect(primarySection(view)).toBe('more')
+    }
+    expect(primarySection('profile')).toBe('account')
+    expect(primarySection('hof')).toBe('hof')
+    expect(primarySection('home')).toBe('home')
+  })
+
+  it('only offers Home on the production home host', () => {
+    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'more'])
+    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'more'])
+  })
+
+  it('points every primary item at a registered view', () => {
+    for (const item of PRIMARY_NAV) expect(ALLOWED_VIEWS).toContain(item.view)
+  })
+})
+
+describe('locationForView：名人堂筛选只属于名人堂', () => {
+  const hofRoute = { path: '/', query: { view: 'hof', tab: 'hundred', tank: '123', page: '3', lang: 'x' } }
+  it('离开名人堂时丢掉筛选键，保留其他参数', () => {
+    expect(locationForView('replay', hofRoute).query).toEqual({ view: 'replay', lang: 'x' })
+    expect(locationForView('agent-tankopedia', hofRoute).query).toEqual({ view: 'agent-tankopedia', lang: 'x' })
+  })
+  it('离开坦克百科时丢掉百科的筛选 / 详情键，留在百科时保留', () => {
+    const tankRoute = { path: '/', query: { view: 'agent-tankopedia', q: 'is7', tier: '10', nation: 'ussr', type: 'heavyTank', sort: 'hp', tank: '5', config: '1', lang: 'x' } }
+    expect(locationForView('replay', tankRoute).query).toEqual({ view: 'replay', lang: 'x' })
+    expect(locationForView('agent-tankopedia', tankRoute).query).toEqual(tankRoute.query)
+  })
+  it('留在名人堂时保留；从别的页面进来时不把同名参数当成筛选', () => {
+    expect(locationForView('hof', hofRoute).query).toEqual(hofRoute.query)
+    expect(locationForView('hof', { path: '/', query: { view: 'agent-tankopedia', tank: '5' } }).query)
+      .toEqual({ view: 'hof' })
   })
 })

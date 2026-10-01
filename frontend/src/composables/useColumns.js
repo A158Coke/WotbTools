@@ -1,10 +1,13 @@
 import { ref, computed, watch } from 'vue'
 import {
+  AGG_DEFAULT_VISIBLE,
   DEFAULT_VISIBLE,
   EXTENDED_ONLY_PLAYER_KEYS,
   LEAGUE_DEFAULT_VISIBLE,
   LEAGUE_FIXED_KEYS,
   CW_SUMMARY_DEFAULT_VISIBLE,
+  LEGACY_CW_SUMMARY_DEFAULT_VISIBLE,
+  LEGACY_DEFAULT_VISIBLE,
   UNPRESENTABLE_COLUMN_KEYS
 } from '../utils/helpers.js'
 import { mergeCwPlayerColumns } from '../utils/playerSummaryMerge.js'
@@ -39,6 +42,29 @@ function readStoredList(key) {
   }
 }
 
+/**
+ * 列默认值迁移的版本标记：只在第一次（标记缺失）把「与旧默认值相同」的存档视为未改过；
+ * 之后完全信任存档——否则用户主动「全选」或恰好选回旧默认集合，每次加载都会被重置。
+ */
+const COLUMN_DEFAULTS_VERSION_KEY = 'wotb-columns-defaults-v'
+const COLUMN_DEFAULTS_VERSION = '2'
+
+function needsDefaultsMigration() {
+  try {
+    return localStorage.getItem(COLUMN_DEFAULTS_VERSION_KEY) !== COLUMN_DEFAULTS_VERSION
+  } catch (_) {
+    return false
+  }
+}
+
+function markDefaultsMigrated() {
+  try {
+    localStorage.setItem(COLUMN_DEFAULTS_VERSION_KEY, COLUMN_DEFAULTS_VERSION)
+  } catch (_) {
+    // 隐私模式等：下次仍会尝试迁移，但只影响「与旧默认值完全相同」的存档
+  }
+}
+
 function writeStoredList(key, values) {
   try {
     localStorage.setItem(key, JSON.stringify(values))
@@ -54,6 +80,8 @@ function mergeOrder(availableKeys, storedOrder) {
 }
 
 function restorePlayerVisible(availableKeys, storedOrder, storedVisible, defaults) {
+  // 没有可见列存档（新用户或迁移后）：直接用默认值，不能再用旧顺序推算「新出现的列」
+  if (storedVisible == null) return availableKeys.filter(key => defaults.includes(key))
   const available = new Set(availableKeys)
   const visible = uniqueKeys((storedVisible || []).filter(key => available.has(key)))
   const missingDefault = availableKeys.filter(key =>
@@ -61,13 +89,29 @@ function restorePlayerVisible(availableKeys, storedOrder, storedVisible, default
   return [...visible, ...missingDefault.filter(key => !visible.includes(key))]
 }
 
-function restoreAggVisible(availableKeys, storedOrder, storedVisible) {
-  if (storedVisible == null) return [...availableKeys]
+/**
+ * 已存的可见列与某一版旧默认值完全相同 → 用户从未改过列，返回 null 让调用方采用当前默认值。
+ * （初始化时 watch 会立即把可见列写回 storage，所以「没改过」的用户也一定有存档。）
+ */
+function migrateUntouchedDefaults(storedVisible, legacyDefaults, migrate) {
+  if (storedVisible == null) return null
+  if (!migrate) return storedVisible
+  const stored = new Set(storedVisible)
+  const untouched = legacyDefaults.some(defaults =>
+    defaults.length === stored.size && defaults.every(key => stored.has(key)))
+  return untouched ? null : storedVisible
+}
+
+function aggDefaults(availableKeys) {
+  const defaults = availableKeys.filter(key => AGG_DEFAULT_VISIBLE.includes(key))
+  return defaults.length ? defaults : [...availableKeys]
+}
+
+/** 汇总表：以前默认全部可见，所以「存档 = 当时全部列」也视为没改过，迁到核心列。 */
+function restoreAggVisible(availableKeys, storedOrder, storedVisible, migrate) {
+  if (storedVisible == null || (migrate && hadAllColumnsVisible(storedOrder, storedVisible))) return aggDefaults(availableKeys)
   const available = new Set(availableKeys)
-  const visible = uniqueKeys(storedVisible.filter(key => available.has(key)))
-  return hadAllColumnsVisible(storedOrder, storedVisible)
-    ? appendMissingKeys(visible, availableKeys.filter(key => !(storedOrder || []).includes(key)))
-    : visible
+  return uniqueKeys(storedVisible.filter(key => available.has(key)))
 }
 
 function uniqueKeys(keys) {
@@ -138,6 +182,7 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
     aggOrder.value.filter(k => aggVisibleKeys.value.includes(k)).map(k => aggColMap.value[k]).filter(Boolean))
 
   function initFromResponse(resp) {
+    const migrate = needsDefaultsMigration()
     // 唯一事实源 resp.leagueMode；playerColumns 是否含 league_rating 不决定模式
     const league = resp.leagueMode === true
     const storage = league ? LEAGUE_STORAGE_KEYS : STORAGE_KEYS
@@ -148,7 +193,10 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
     const ak = presentableAggCols.value.map(c => c.key)
 
     const storedPlayerOrder = readStoredList(storage.playerOrder)
-    const storedPlayerVisible = readStoredList(storage.playerVisible)
+    // League 单场表的默认值（LEAGUE_DEFAULT_VISIBLE）本来就是核心列，没有旧版本需要迁移
+    const storedPlayerVisible = league
+      ? readStoredList(storage.playerVisible)
+      : migrateUntouchedDefaults(readStoredList(storage.playerVisible), LEGACY_DEFAULT_VISIBLE, migrate)
     const storedAggOrder = readStoredList(storage.aggOrder)
     const storedAggVisible = readStoredList(storage.aggVisible)
 
@@ -159,7 +207,7 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
       ? forceLeagueVisible(restorePlayerVisible(pk, storedPlayerOrder, storedPlayerVisible, defaults))
       : restorePlayerVisible(pk, storedPlayerOrder, storedPlayerVisible, defaults)
     aggOrder.value = mergeOrder(ak, storedAggOrder)
-    aggVisibleKeys.value = restoreAggVisible(ak, storedAggOrder, storedAggVisible)
+    aggVisibleKeys.value = restoreAggVisible(ak, storedAggOrder, storedAggVisible, migrate)
 
     // CW 统一玩家表列 universe = league.playerSummaryColumns ∪ aggregateColumns：
     // mergeCwPlayerColumns 只负责提供合法 universe/去重，最终可见顺序由用户偏好决定
@@ -170,11 +218,12 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
       ).filter(c => !EXTENDED_ONLY_PLAYER_KEYS.has(c.key)).map(c => c.key)
       cwAvailableKeys.value = ck
       const storedCwOrder = readStoredList(storage.cwOrder)
-      const storedCwVisible = readStoredList(storage.cwVisible)
+      const storedCwVisible = migrateUntouchedDefaults(readStoredList(storage.cwVisible), LEGACY_CW_SUMMARY_DEFAULT_VISIBLE, migrate)
       cwOrder.value = pinLeagueOrder(mergeOrder(ck, storedCwOrder))
       cwVisibleKeys.value = forceLeagueVisible(
         restorePlayerVisible(ck, storedCwOrder, storedCwVisible, CW_SUMMARY_DEFAULT_VISIBLE))
     }
+    if (migrate) markDefaultsMigrated()
   }
 
   function toggleColPicker() {
@@ -213,7 +262,7 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
       cwVisibleKeys.value = forceLeagueVisible([...CW_SUMMARY_DEFAULT_VISIBLE])
     } else if (scope === 'agg') {
       aggOrder.value = presentableAggCols.value.map(c => c.key)
-      aggVisibleKeys.value = presentableAggCols.value.map(c => c.key)
+      aggVisibleKeys.value = aggDefaults(aggOrder.value)
     } else if (leagueMode.value) {
       playerOrder.value = pinLeagueOrder(basePlayerCols.value.map(c => c.key))
       visibleKeys.value = forceLeagueVisible([...LEAGUE_DEFAULT_VISIBLE])

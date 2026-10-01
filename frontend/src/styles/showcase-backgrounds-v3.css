@@ -37,29 +37,19 @@
 .homepage-showcase::before {
   background-image:
     linear-gradient(180deg, rgba(4,7,9,.10), rgba(4,7,9,.40)),
-    url('../assets/showcase/home/hero-v4.png') !important;
+    url('../assets/showcase/home/hero-v4.webp') !important;
   opacity: .96 !important;
 }
 .homepage-showcase .showcase-hero {
   background:
     linear-gradient(90deg, rgba(5,8,10,.94) 0%, rgba(5,8,10,.79) 34%, rgba(5,8,10,.10) 67%, rgba(5,8,10,.40) 100%),
-    url('../assets/showcase/home/hero-v4.png') 62% 50% / cover no-repeat !important;
+    url('../assets/showcase/home/hero-v4.webp') 62% 50% / cover no-repeat !important;
 }
 
 /* ---------- Replay — cold ruined battlefield; upload/toolbar/results share one tactical surface ---------- */
 .layout-data-workspace::after {
-  background-image: url('../assets/showcase/replay/replay-hero-battlefield-v1.png') !important;
+  background-image: url('../assets/showcase/replay/replay-hero-battlefield-v1.webp') !important;
   opacity: .88 !important;
-}
-.layout-data-workspace .uploadwrap {
-  background:
-    linear-gradient(96deg, rgba(10,16,19,.96) 0%, rgba(11,17,20,.90) 55%, rgba(13,18,21,.78) 100%),
-    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') 72% 50% / cover no-repeat !important;
-}
-.layout-data-workspace .uploadcard {
-  background:
-    linear-gradient(135deg, rgba(5,11,14,.88), rgba(7,12,14,.92)),
-    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') center / cover no-repeat !important;
 }
 
 /* ---------- Hall of Fame — ceremonial hall, strong gold focal point ---------- */
@@ -67,7 +57,7 @@
 .hof-wrap::after,
 .hall-page::after,
 .lb-wrap::after {
-  background-image: url('../assets/showcase/hof/hof-hero-hall-v1.png') !important;
+  background-image: url('../assets/showcase/hof/hof-hero-hall-v1.webp') !important;
   opacity: .90 !important;
 }
 
@@ -75,25 +65,25 @@
 .rating-page::after,
 .rating-section::after,
 .rating-workspace::after {
-  background-image: url('../assets/showcase/rating/rating-hero-analysis-v1.png') !important;
+  background-image: url('../assets/showcase/rating/rating-hero-analysis-v1.webp') !important;
   opacity: .80 !important;
 }
 
 /* ---------- Profile — armored camp / hangar; no avatar dependency ---------- */
 .profile-page::after {
-  background-image: url('../assets/showcase/profile/profile-hero-camp-v1.png') !important;
+  background-image: url('../assets/showcase/profile/profile-hero-camp-v1.webp') !important;
   opacity: .84 !important;
 }
 .profile-page .profile-hero {
   background:
     linear-gradient(95deg, rgba(12,17,20,.93) 0%, rgba(14,19,21,.80) 52%, rgba(15,20,22,.55) 100%),
-    url('../assets/showcase/profile/profile-hero-camp-v1.png') 72% 55% / cover no-repeat !important;
+    url('../assets/showcase/profile/profile-hero-camp-v1.webp') 72% 55% / cover no-repeat !important;
 }
 
 
 /* ---------- User admin — command center, deliberately weaker: operations console first ---------- */
 .admin-page::after {
-  background-image: url('../assets/showcase/admin/admin-hero-command-v1.png') !important;
+  background-image: url('../assets/showcase/admin/admin-hero-command-v1.webp') !important;
   opacity: .42 !important;
 }
 
@@ -102,19 +92,19 @@
 .hofadmin-page::after,
 .admin-hof-page::after,
 .hof-admin::after {
-  background-image: url('../assets/showcase/hof-admin/hof-admin-hero-command-v1.png') !important;
+  background-image: url('../assets/showcase/hof-admin/hof-admin-hero-command-v1.webp') !important;
   opacity: .42 !important;
 }
 
 /* ---------- Version history — workshop / changelog ---------- */
 .version-page::after {
-  background-image: url('../assets/showcase/version/version-hero-workshop-v1.png') !important;
+  background-image: url('../assets/showcase/version/version-hero-workshop-v1.webp') !important;
   opacity: .74 !important;
 }
 
 /* ---------- Contact — field communications radio link ---------- */
 .contact-page::after {
-  background-image: url('../assets/showcase/contact/contact-hero-radio-v1.png') !important;
+  background-image: url('../assets/showcase/contact/contact-hero-radio-v1.webp') !important;
   opacity: .74 !important;
 }
 

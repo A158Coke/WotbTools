@@ -6,6 +6,8 @@ import { mapLabel } from '../utils/helpers.js'
 import { apiErrorCodeLabel, apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import * as api from '../utils/api.js'
+import { Check, Download, Trash2, X } from 'lucide-vue-next'
+import AppDialog from './AppDialog.vue'
 
 const { t, te, tm, locale } = useI18n()
 const { initPromise, tokenParsed, login } = useAuth()
@@ -20,6 +22,12 @@ const authPhase = ref('init') // init | login | ready
 const denied = ref(false)
 const error = ref('')
 const activeTab = ref('records')
+const ADMIN_TABS = [
+  { key: 'records', label: 'hofAdmin.recordsTab' },
+  { key: 'audit', label: 'hofAdmin.auditTab' },
+  { key: 'hundred', label: 'hundredAdmin.tab' },
+  { key: 'mark3', label: 'mark3Admin.tab' },
+]
 
 // ── 名人堂记录 tab ──
 const rows = ref([])
@@ -993,11 +1001,17 @@ function battleTypeLabel(tp) {
     </div>
 
     <template v-else>
-      <div class="hof-admin-tabs">
-        <button :class="{ active: activeTab === 'records' }" @click="switchTab('records')">{{ $t('hofAdmin.recordsTab') }}</button>
-        <button :class="{ active: activeTab === 'audit' }" @click="switchTab('audit')">{{ $t('hofAdmin.auditTab') }}</button>
-        <button :class="{ active: activeTab === 'hundred' }" @click="switchTab('hundred')">{{ $t('hundredAdmin.tab') }}</button>
-        <button :class="{ active: activeTab === 'mark3' }" @click="switchTab('mark3')">{{ $t('mark3Admin.tab') }}</button>
+      <!-- 页面级分区（design-language §7 Tabs）：窄屏横向滚动，不再被裁掉（审计 PG-10） -->
+      <div class="hof-admin-tabs" role="tablist" :aria-label="$t('hofAdmin.tabsLabel')">
+        <button
+          v-for="tab in ADMIN_TABS"
+          :key="tab.key"
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === tab.key"
+          :class="{ active: activeTab === tab.key }"
+          @click="switchTab(tab.key)"
+        >{{ $t(tab.label) }}</button>
       </div>
 
       <!-- ── 名人堂记录 ── -->
@@ -1074,7 +1088,7 @@ function battleTypeLabel(tp) {
                 <th>{{ $t('hofAdmin.replaySize') }}</th>
                 <th>{{ $t('hofAdmin.uploadedBy') }}</th>
                 <th>{{ $t('hofAdmin.replay') }}</th>
-                <th>{{ $t('hofAdmin.actions') }}</th>
+                <th class="actions">{{ $t('hofAdmin.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -1100,10 +1114,17 @@ function battleTypeLabel(tp) {
                 <td class="muted hash">{{ r.replayHash ? r.replayHash.slice(0, 12) + '…' : '-' }}</td>
                 <td class="muted">{{ r.replaySize != null ? r.replaySize.toLocaleString() : '-' }}</td>
                 <td class="muted">{{ r.replayUploadedBy || '-' }}</td>
-                <td>{{ r.replayAvailable ? '✓' : '—' }}</td>
+                <td>
+                  <Check v-if="r.replayAvailable" class="hof-icon val-ok" :size="16" :aria-label="$t('hofAdmin.replayAvailable')" role="img" />
+                  <span v-else>—</span>
+                </td>
                 <td class="actions">
-                  <button v-if="r.replayAvailable" class="btn-sm" :title="$t('hofAdmin.download')" @click="download(r.id)">⬇</button>
-                  <button class="btn-sm danger" :title="$t('hofAdmin.delete')" @click="askDelete(r)">🗑</button>
+                  <button v-if="r.replayAvailable" type="button" class="btn-sm btn-icon" :title="$t('hofAdmin.download')" :aria-label="$t('hofAdmin.download')" @click="download(r.id)">
+                    <Download :size="16" aria-hidden="true" />
+                  </button>
+                  <button type="button" class="btn-sm btn-icon danger" :title="$t('hofAdmin.delete')" :aria-label="$t('hofAdmin.delete')" @click="askDelete(r)">
+                    <Trash2 :size="16" aria-hidden="true" />
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -1220,7 +1241,7 @@ function battleTypeLabel(tp) {
                 <th>{{ $t('hundredAdmin.approvedBattles') }}</th>
                 <th>{{ $t('hundredAdmin.statusLabel') }}</th>
                 <th>{{ $t('hundredAdmin.submittedAt') }}</th>
-                <th>{{ $t('hofAdmin.actions') }}</th>
+                <th class="actions">{{ $t('hofAdmin.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -1316,7 +1337,7 @@ function battleTypeLabel(tp) {
                 <th>{{ $t('mark3Admin.claimedWinRate') }}</th>
                 <th>{{ $t('mark3Admin.statusLabel') }}</th>
                 <th>{{ $t('mark3Admin.submittedAt') }}</th>
-                <th>{{ $t('hofAdmin.actions') }}</th>
+                <th class="actions">{{ $t('hofAdmin.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -1358,9 +1379,7 @@ function battleTypeLabel(tp) {
       </div>
 
       <!-- ── 百场详情：所有状态都从这里查看，操作不会直接出现在列表中 ── -->
-      <div v-if="reviewTarget" class="modal-overlay" @click.self="closeReview">
-        <div class="modal hof-review-modal">
-          <h3>{{ $t('hundredAdmin.details') }}</h3>
+      <AppDialog :open="!!reviewTarget" :title="$t('hundredAdmin.details')" class="hof-review-modal" @close="closeReview">
           <p v-if="reviewLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
           <template v-else-if="reviewDetail">
             <table class="hof-delete-table">
@@ -1418,7 +1437,9 @@ function battleTypeLabel(tp) {
                       <span class="replay-slot">#{{ ev.slot }}</span>
                       <span class="replay-name" :title="ev.originalFilename">{{ ev.originalFilename }}</span>
                       <span class="replay-size">{{ fmtSize(ev.fileSize) }}</span>
-                      <button class="btn-sm" :title="$t('hundredAdmin.replayDownload')" @click="downloadReplay(ev)">⬇</button>
+                      <button type="button" class="btn-sm btn-icon" :title="$t('hundredAdmin.replayDownload')" :aria-label="$t('hundredAdmin.replayDownload')" @click="downloadReplay(ev)">
+                        <Download :size="16" aria-hidden="true" />
+                      </button>
                     </li>
                   </ul>
                 </template>
@@ -1429,16 +1450,16 @@ function battleTypeLabel(tp) {
               <div class="hundred-review-label">{{ $t('hundredAdmin.replayValidation') }}</div>
               <ul class="val-list">
                 <li :class="reviewDetail.replayParseOk ? 'val-ok' : 'val-bad'">
-                  <span class="val-mark">{{ reviewDetail.replayParseOk ? '✓' : '✗' }}</span>{{ $t('hundredAdmin.valParsed') }}
+                  <component :is="reviewDetail.replayParseOk ? Check : X" class="val-mark" :size="16" role="img" :aria-label="reviewDetail.replayParseOk ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('hundredAdmin.valParsed') }}
                 </li>
                 <li :class="reviewDetail.replayGameIdMatch ? 'val-ok' : 'val-bad'">
-                  <span class="val-mark">{{ reviewDetail.replayGameIdMatch ? '✓' : '✗' }}</span>{{ $t('hundredAdmin.valGameId') }}
+                  <component :is="reviewDetail.replayGameIdMatch ? Check : X" class="val-mark" :size="16" role="img" :aria-label="reviewDetail.replayGameIdMatch ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('hundredAdmin.valGameId') }}
                 </li>
                 <li :class="reviewDetail.replayVehicleMatch ? 'val-ok' : 'val-bad'">
-                  <span class="val-mark">{{ reviewDetail.replayVehicleMatch ? '✓' : '✗' }}</span>{{ $t('hundredAdmin.valVehicle') }}
+                  <component :is="reviewDetail.replayVehicleMatch ? Check : X" class="val-mark" :size="16" role="img" :aria-label="reviewDetail.replayVehicleMatch ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('hundredAdmin.valVehicle') }}
                 </li>
                 <li :class="reviewDetail.replayDistinctBattles ? 'val-ok' : 'val-bad'">
-                  <span class="val-mark">{{ reviewDetail.replayDistinctBattles ? '✓' : '✗' }}</span>{{ $t('hundredAdmin.valDistinct') }}
+                  <component :is="reviewDetail.replayDistinctBattles ? Check : X" class="val-mark" :size="16" role="img" :aria-label="reviewDetail.replayDistinctBattles ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('hundredAdmin.valDistinct') }}
                 </li>
               </ul>
             </div>
@@ -1502,13 +1523,10 @@ function battleTypeLabel(tp) {
               <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
             </div>
           </template>
-        </div>
-      </div>
+      </AppDialog>
 
       <!-- ── 三环详情：只审核状态，绝不提供成绩编辑控件 ── -->
-      <div v-if="mark3ReviewTarget" class="modal-overlay" @click.self="closeMark3Review">
-        <div class="modal hof-review-modal">
-          <h3>{{ $t('mark3Admin.details') }}</h3>
+      <AppDialog :open="!!mark3ReviewTarget" :title="$t('mark3Admin.details')" class="hof-review-modal" @close="closeMark3Review">
           <p v-if="mark3ReviewLoading" class="muted">{{ $t('mark3Admin.loading') }}</p>
           <template v-else-if="mark3ReviewDetail">
             <table class="hof-delete-table">
@@ -1563,7 +1581,9 @@ function battleTypeLabel(tp) {
                       <span class="replay-slot">#{{ evidence.slot }}</span>
                       <span class="replay-name" :title="evidence.originalFilename">{{ evidence.originalFilename }}</span>
                       <span class="replay-size">{{ fmtSize(evidence.fileSize) }}</span>
-                      <button class="btn-sm" :title="$t('mark3Admin.replayDownload')" @click="downloadMark3Replay(evidence)">⬇</button>
+                      <button type="button" class="btn-sm btn-icon" :title="$t('mark3Admin.replayDownload')" :aria-label="$t('mark3Admin.replayDownload')" @click="downloadMark3Replay(evidence)">
+                        <Download :size="16" aria-hidden="true" />
+                      </button>
                     </li>
                   </ul>
                 </template>
@@ -1573,10 +1593,10 @@ function battleTypeLabel(tp) {
             <div class="hundred-review-section">
               <div class="hundred-review-label">{{ $t('mark3Admin.replayValidation') }}</div>
               <ul class="val-list">
-                <li :class="mark3ReviewDetail.replayParseOk ? 'val-ok' : 'val-bad'"><span class="val-mark">{{ mark3ReviewDetail.replayParseOk ? '✓' : '✗' }}</span>{{ $t('mark3Admin.valParsed') }}</li>
-                <li :class="mark3ReviewDetail.replayGameIdMatch ? 'val-ok' : 'val-bad'"><span class="val-mark">{{ mark3ReviewDetail.replayGameIdMatch ? '✓' : '✗' }}</span>{{ $t('mark3Admin.valGameId') }}</li>
-                <li :class="mark3ReviewDetail.replayVehicleMatch ? 'val-ok' : 'val-bad'"><span class="val-mark">{{ mark3ReviewDetail.replayVehicleMatch ? '✓' : '✗' }}</span>{{ $t('mark3Admin.valVehicle') }}</li>
-                <li :class="mark3ReviewDetail.replayDistinctBattles ? 'val-ok' : 'val-bad'"><span class="val-mark">{{ mark3ReviewDetail.replayDistinctBattles ? '✓' : '✗' }}</span>{{ $t('mark3Admin.valDistinct') }}</li>
+                <li :class="mark3ReviewDetail.replayParseOk ? 'val-ok' : 'val-bad'"><component :is="mark3ReviewDetail.replayParseOk ? Check : X" class="val-mark" :size="16" role="img" :aria-label="mark3ReviewDetail.replayParseOk ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('mark3Admin.valParsed') }}</li>
+                <li :class="mark3ReviewDetail.replayGameIdMatch ? 'val-ok' : 'val-bad'"><component :is="mark3ReviewDetail.replayGameIdMatch ? Check : X" class="val-mark" :size="16" role="img" :aria-label="mark3ReviewDetail.replayGameIdMatch ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('mark3Admin.valGameId') }}</li>
+                <li :class="mark3ReviewDetail.replayVehicleMatch ? 'val-ok' : 'val-bad'"><component :is="mark3ReviewDetail.replayVehicleMatch ? Check : X" class="val-mark" :size="16" role="img" :aria-label="mark3ReviewDetail.replayVehicleMatch ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('mark3Admin.valVehicle') }}</li>
+                <li :class="mark3ReviewDetail.replayDistinctBattles ? 'val-ok' : 'val-bad'"><component :is="mark3ReviewDetail.replayDistinctBattles ? Check : X" class="val-mark" :size="16" role="img" :aria-label="mark3ReviewDetail.replayDistinctBattles ? $t('hofAdmin.valPass') : $t('hofAdmin.valFail')" />{{ $t('mark3Admin.valDistinct') }}</li>
               </ul>
             </div>
 
@@ -1633,27 +1653,42 @@ function battleTypeLabel(tp) {
               <button class="btn-sm" :disabled="mark3ActionBusy" @click="closeMark3Review">{{ $t('mark3Admin.close') }}</button>
             </div>
           </template>
-        </div>
-      </div>
+      </AppDialog>
 
       <!-- ── 截图放大（lightbox）── -->
-      <div v-if="screenshotZoom && reviewDetail?.proofScreenshot" class="modal-overlay screenshot-zoom" @click.self="screenshotZoom = false">
-        <div class="screenshot-zoom-inner">
-          <img :src="reviewDetail.proofScreenshot" :alt="$t('hundredAdmin.screenshot')" />
-          <button class="btn-sm" @click="screenshotZoom = false">{{ $t('hundredAdmin.zoomClose') }}</button>
-        </div>
-      </div>
-      <div v-if="mark3ScreenshotZoom" class="modal-overlay screenshot-zoom" @click.self="mark3ScreenshotZoom = ''">
-        <div class="screenshot-zoom-inner">
-          <img :src="mark3ScreenshotZoom" :alt="$t('mark3Admin.screenshot', { number: '' })" />
-          <button class="btn-sm" @click="mark3ScreenshotZoom = ''">{{ $t('mark3Admin.zoomClose') }}</button>
-        </div>
-      </div>
+      <AppDialog
+        :open="!!(screenshotZoom && reviewDetail?.proofScreenshot)"
+        :title="$t('hundredAdmin.screenshot')"
+        size="lg"
+        scrim-class="screenshot-zoom"
+        @close="screenshotZoom = false"
+      >
+        <img class="screenshot-zoom-img" :src="reviewDetail?.proofScreenshot" :alt="$t('hundredAdmin.screenshot')" />
+        <template #actions>
+          <button type="button" class="btn-sm" @click="screenshotZoom = false">{{ $t('hundredAdmin.zoomClose') }}</button>
+        </template>
+      </AppDialog>
+      <AppDialog
+        :open="!!mark3ScreenshotZoom"
+        :title="$t('mark3Admin.screenshot', { number: '' })"
+        size="lg"
+        scrim-class="screenshot-zoom"
+        @close="mark3ScreenshotZoom = ''"
+      >
+        <img class="screenshot-zoom-img" :src="mark3ScreenshotZoom" :alt="$t('mark3Admin.screenshot', { number: '' })" />
+        <template #actions>
+          <button type="button" class="btn-sm" @click="mark3ScreenshotZoom = ''">{{ $t('mark3Admin.zoomClose') }}</button>
+        </template>
+      </AppDialog>
 
       <!-- ── 批量删除二次确认（三个域各自一次；整批只弹一次）── -->
-      <div v-if="bulkDomain" class="modal-overlay" @click.self="cancelBulkDelete">
-        <div class="modal hof-delete-modal bulk-delete-modal">
-          <h3>{{ $t('hofAdmin.bulkDeleteTitle') }}</h3>
+      <AppDialog
+        :open="!!bulkDomain"
+        :title="$t('hofAdmin.bulkDeleteTitle')"
+        tone="danger"
+        class="hof-delete-modal bulk-delete-modal"
+        @close="!bulkDeleting && cancelBulkDelete()"
+      >
           <p class="hof-delete-msg">
             {{ bulkDomain === 'records'
               ? $t('hofAdmin.bulkDeleteHint', { count: bulkIds.length })
@@ -1696,13 +1731,17 @@ function battleTypeLabel(tp) {
               {{ bulkDeleting ? $t('hofAdmin.bulkDeleting') : $t('hofAdmin.bulkDelete') }}
             </button>
           </div>
-        </div>
-      </div>
+      </AppDialog>
 
       <!-- ── 删除二次确认 ── -->
-      <div v-if="deleteTarget" class="modal-overlay" @click.self="cancelDelete">
-        <div class="modal hof-delete-modal">
-          <h3>{{ $t('hofAdmin.deleteTitle') }}</h3>
+      <AppDialog
+        :open="!!deleteTarget"
+        :title="$t('hofAdmin.deleteTitle')"
+        size="sm"
+        tone="danger"
+        class="hof-delete-modal"
+        @close="!deleting && cancelDelete()"
+      >
           <p class="hof-delete-msg">{{ $t('hofAdmin.deleteHint') }}</p>
           <table class="hof-delete-table">
             <tbody>
@@ -1721,98 +1760,310 @@ function battleTypeLabel(tp) {
               {{ deleting ? $t('hofAdmin.deleting') : $t('hofAdmin.delete') }}
             </button>
           </div>
-        </div>
-      </div>
+      </AppDialog>
     </template>
   </div>
 </template>
 
 <style scoped>
-.hof-admin { max-width: 1280px; margin: 0 auto; padding: 24px 20px 56px; }
-.hof-admin-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-.hof-admin-tabs button { padding: 8px 16px; border: 1px solid var(--border-ghost); border-radius: 8px;
-  background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .9rem; }
-.hof-admin-tabs button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 700; }
-.hof-admin-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-.hof-admin-filters input, .hof-admin-filters select {
-  border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
-  padding: 6px 10px; border-radius: 7px; font-size: 13px; font-family: inherit; }
-.hof-admin-table { font-size: .8rem; }
-.hof-admin-table th { white-space: nowrap; padding: 6px 8px; }
-.hof-admin-table td { padding: 6px 8px; }
-.hof-admin-table .dmg { font-weight: 700; color: var(--accent-dark); font-variant-numeric: tabular-nums; }
-.hof-admin-table .muted { color: var(--text-muted); }
-.hof-admin-table .hash { font-family: monospace; font-size: .75rem; }
-.hof-admin-table .actions { white-space: nowrap; }
-.hof-check { width: 34px; text-align: center; }
-.hof-check input { cursor: pointer; }
-.hof-bulk-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin: 8px 0; border: 1px solid var(--border-ghost); border-radius: 8px; background: var(--bg-card2); }
-.hof-bulk-count { font-size: .82rem; font-weight: 600; color: var(--text-label); }
-.hof-bulk-summary { font-size: .85rem; font-weight: 600; color: var(--text-label); }
-.hof-bulk-failures ul { margin: 6px 0 0; padding-left: 18px; font-size: .8rem; color: var(--text-label); }
-.admin-confirm-input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; border: 1px solid var(--border-ghost); border-radius: 6px; background: var(--bg-card2); color: var(--text-label); font-family: inherit; }
-.bt-badge { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-.bt-random { background: var(--rating-good-bg); color: var(--rating-good-fg); }
-.bt-rating { background: var(--rating-great-bg); color: var(--rating-great-fg); }
-.audit-action { display: inline-block; padding: 1px 7px; border-radius: 6px; background: var(--status-warn-bg); color: var(--status-warn-fg); font-size: 11px; font-weight: 600; }
-.hundred-status { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-.hundred-status-pending { background: var(--status-warn-bg); color: var(--status-warn-fg); }
-.hundred-status-current { background: var(--rating-good-bg); color: var(--rating-good-fg); }
-.hundred-status-rejected, .hundred-status-deleted { background: color-mix(in srgb, var(--error) 12%, var(--bg-card2)); color: var(--error); }
-.hundred-status-superseded, .hundred-status-cancelled { background: var(--bg-chip); color: var(--text-muted); }
-.hundred-source { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-.hundred-source-manual { background: var(--bg-chip); color: var(--text-label); }
-.btn-sm { padding: 5px 12px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2);
-  color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .8rem; }
-.btn-sm.danger { color: var(--delete); border-color: color-mix(in srgb, var(--delete) 45%, var(--border-ghost)); }
-.btn-sm.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--delete) 8%, var(--bg-card2)); }
-.btn-sm.ok { color: var(--rating-good-fg); border-color: color-mix(in srgb, var(--rating-good-fg) 45%, var(--border-ghost)); }
-.btn-sm.ok:hover:not(:disabled) { background: color-mix(in srgb, var(--rating-good-fg) 8%, var(--bg-card2)); }
-.btn-sm:disabled { opacity: .5; cursor: not-allowed; }
-.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 14px 0; font-size: .82rem; }
-.pagination button { padding: 5px 12px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; }
-.pagination button:disabled { opacity: .4; cursor: not-allowed; }
-.page-size { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-label); margin-top: 8px; }
-.page-size select { border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label); padding: 4px 8px; border-radius: 6px; font-family: inherit; }
-.error { display: inline-block; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--error) 35%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--error) 8%, var(--bg-card)); color: var(--error); }
-.muted { padding: 24px 4px; color: var(--text-muted); }
-.hof-admin-denied { max-width: 520px; margin: 48px auto; text-align: center; }
-.hof-admin-denied h2 { color: var(--text-heading); }
-.hof-delete-table { width: 100%; font-size: .85rem; margin: 12px 0; }
-.hof-delete-table th { text-align: left; padding: 6px 10px; color: var(--text-muted); font-weight: 600; width: 40%; }
-.hof-delete-table td { padding: 6px 10px; }
-.hof-delete-msg { color: var(--warn-text); }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
-.hof-review-modal { max-width: 620px; }
-.hundred-review-section { margin: 12px 0; }
-.hundred-review-label { font-weight: 600; color: var(--text-muted); font-size: .85rem; margin-bottom: 6px; }
-.hundred-wg-snapshot { padding: 10px; border: 1px solid var(--border-ghost); border-radius: 8px; background: var(--bg-card2); }
-.hundred-wg-snapshot .hof-delete-table { margin: 4px 0 0; }
-.hundred-proof { display: block; max-width: 100%; max-height: 320px; border: 1px solid var(--border-ghost); border-radius: 8px; cursor: zoom-in; }
-.hundred-proof-empty { color: var(--text-muted); }
-.hundred-proof-row { display: flex; align-items: flex-start; gap: 10px; }
-.mark3-admin-screenshots { display: grid; gap: 10px; }
-.hundred-proof-row .btn-sm { margin-top: 4px; white-space: nowrap; }
-.replay-evidence-list { list-style: none; padding: 0; margin: 6px 0; }
-.replay-evidence-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: .85rem; color: var(--text-label); }
-.replay-slot { color: var(--text-muted); font-weight: 600; min-width: 2.2em; }
+/* 设计语言 token（docs/frontend/design-language.md）：本组件是名人堂管理页样式的唯一 owner，
+ * showcase / classic 不再覆盖内部元素；两套主题只通过语义 token 换色。 */
+.hof-admin { padding-block: var(--space-6) var(--space-12); color: var(--color-text-primary); font: var(--type-body); }
+
+/* Tabs：吸顶于顶栏下方；窄屏横向滚动而不是被裁掉（审计 PG-10） */
+.hof-admin-tabs {
+  position: sticky;
+  top: calc(var(--header-h) + var(--space-2));
+  z-index: var(--z-sticky);
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  padding: var(--space-2);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  box-shadow: var(--elevation-2);
+}
+
+.hof-admin-tabs button {
+  flex: none;
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: var(--type-body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hof-admin-tabs button.active {
+  border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-border-subtle));
+  background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1));
+  color: var(--color-accent-text);
+  font-weight: 600;
+}
+
+.hof-admin-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+}
+
+.hof-admin input:not([type="checkbox"]),
+.hof-admin select,
+.hof-admin textarea,
+.admin-confirm-input {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--control-h-md);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+}
+
+.hof-admin textarea { min-height: auto; padding-block: var(--space-2); }
+
+/* 表格：容器横向滚动，表头吸顶；操作列吸附在右侧，手机上不会被滚出视口（审计 PG-10）。
+ * isolation 建立局部层叠上下文，表头 / 操作列的 z-index 不参与全局竞争（§5） */
+.tablewrap {
+  isolation: isolate;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  box-shadow: var(--elevation-1);
+}
+
+.hof-admin-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font: var(--type-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.hof-admin-table th,
+.hof-admin-table td {
+  height: var(--row-h);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.hof-admin-table th {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+
+.hof-admin-table td { background: var(--color-surface-1); color: var(--color-text-primary); }
+.hof-admin-table .dmg { color: var(--color-accent-text); font-weight: 600; }
+.hof-admin-table .muted { padding: 0 var(--space-3); color: var(--color-text-secondary); }
+.hof-admin-table .hash { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
+
+.hof-admin-table .actions {
+  position: sticky;
+  right: 0;
+  z-index: var(--z-base);
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+.hof-admin-table td.actions > * + * { margin-left: var(--space-1); }
+.hof-icon { vertical-align: middle; }
+
+/* 复选框：放大到控件尺寸 token，单元格保证最小点击区域 */
+.hof-check { width: var(--hit-min); text-align: center; }
+
+.hof-check input {
+  inline-size: var(--control-check);
+  block-size: var(--control-check);
+  margin: 0;
+  accent-color: var(--color-accent);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.hof-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.hof-bulk-count,
+.hof-bulk-summary { color: var(--color-text-primary); font-weight: 600; }
+.hof-bulk-failures ul { margin: var(--space-1) 0 0; padding-left: var(--space-5); color: var(--color-text-secondary); }
+
+/* 徽章 */
+.bt-badge,
+.audit-action,
+.hundred-status,
+.hundred-source {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font: var(--type-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bt-random,
+.hundred-status-current { background: color-mix(in oklab, var(--color-success) 14%, var(--color-surface-1)); color: var(--color-success); }
+.bt-rating { background: color-mix(in oklab, var(--color-info) 14%, var(--color-surface-1)); color: var(--color-info); }
+
+.audit-action,
+.hundred-status-pending { background: color-mix(in oklab, var(--color-warning) 14%, var(--color-surface-1)); color: var(--color-warning); }
+
+.hundred-status-rejected,
+.hundred-status-deleted { background: color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1)); color: var(--color-danger); }
+
+.hundred-status-superseded,
+.hundred-status-cancelled,
+.hundred-source-manual { background: var(--color-surface-3); color: var(--color-text-secondary); }
+
+/* 按钮 */
+.btn-sm,
+.pagination button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  cursor: pointer;
+}
+
+.btn-icon { min-width: var(--control-h-sm); padding: 0; }
+.btn-sm.danger { border-color: var(--color-danger); color: var(--color-danger); }
+.btn-sm.ok { border-color: var(--color-success); color: var(--color-success); }
+
+.btn-sm:disabled,
+.pagination button:disabled { opacity: .5; cursor: not-allowed; }
+
+.btn-sm:focus-visible,
+.pagination button:focus-visible,
+.hof-admin-tabs button:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+@media (hover: hover) {
+  .hof-admin-tabs button:hover:not(.active) { background: var(--color-surface-2); color: var(--color-text-primary); }
+  .hof-admin-table tbody tr:hover td { background: var(--color-surface-2); }
+
+  .btn-sm:hover:not(:disabled),
+  .pagination button:hover:not(:disabled) { background: var(--color-surface-2); }
+
+  .btn-sm.danger:hover:not(:disabled) { background: color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1)); }
+  .btn-sm.ok:hover:not(:disabled) { background: color-mix(in oklab, var(--color-success) 14%, var(--color-surface-1)); }
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  color: var(--color-text-secondary);
+}
+
+.page-size { display: inline-flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); color: var(--color-text-secondary); }
+
+.error {
+  display: inline-block;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklab, var(--color-danger) 45%, var(--color-border-subtle));
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1));
+  color: var(--color-danger);
+}
+
+.muted { padding: var(--space-6) var(--space-1); color: var(--color-text-secondary); }
+.hof-admin-denied { max-width: 52ch; margin: var(--space-12) auto; text-align: center; }
+.hof-admin-denied h2 { margin: 0 0 var(--space-2); color: var(--color-text-primary); font: var(--type-h2); }
+.hof-admin-denied p { color: var(--color-text-secondary); }
+
+/* 对话框内容（外壳由 AppDialog 负责） */
+.hof-delete-table { width: 100%; margin: var(--space-3) 0; border-collapse: collapse; }
+
+.hof-delete-table th,
+.hof-delete-table td { padding: var(--space-1) var(--space-2); text-align: left; vertical-align: top; }
+
+.hof-delete-table th { width: 40%; color: var(--color-text-secondary); font-weight: 600; }
+.hof-delete-table td { color: var(--color-text-primary); overflow-wrap: anywhere; }
+.hof-delete-table .muted { padding: var(--space-1) var(--space-2); }
+.hof-delete-table .dmg { color: var(--color-accent-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.hof-delete-msg,
+.hundred-confirm,
+.hundred-legacy-warn { margin: var(--space-2) 0; color: var(--color-warning); }
+
+.modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
+.hundred-review-section { margin: var(--space-3) 0; }
+
+.hundred-review-label,
+.hundred-reason-label { display: block; margin-bottom: var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+
+.hundred-reason-label { margin-top: var(--space-2); }
+.hundred-wg-snapshot { padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-2); }
+.hundred-proof { display: block; max-width: 100%; max-height: 320px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); cursor: zoom-in; }
+.hundred-proof-empty { color: var(--color-text-tertiary); }
+.hundred-proof-row { display: flex; align-items: flex-start; gap: var(--space-3); }
+.hundred-proof-row .btn-sm { flex: none; margin-top: var(--space-1); white-space: nowrap; }
+.mark3-admin-screenshots { display: grid; gap: var(--space-3); }
+
+.replay-evidence-list,
+.val-list { margin: var(--space-2) 0; padding: 0; list-style: none; }
+
+.replay-evidence-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) 0; color: var(--color-text-primary); }
+.replay-slot { min-width: 2.2em; color: var(--color-text-secondary); font-weight: 600; }
 .replay-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.replay-size { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.hundred-legacy-warn { color: var(--warn-text); font-size: .85rem; margin: 6px 0; }
-.screenshot-zoom .screenshot-zoom-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.screenshot-zoom .screenshot-zoom-inner img { max-width: 90vw; max-height: 80vh; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,.5); }
-.val-list { list-style: none; padding: 0; margin: 6px 0; }
-.val-list li { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: .85rem; color: var(--text-label); }
-.val-mark { font-weight: 700; }
-.val-ok { color: var(--rating-good-fg); }
-.val-bad { color: var(--error); }
-.hundred-action-area { margin-top: 12px; }
-.hundred-action-area select, .hundred-action-area textarea {
-  width: 100%; border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
-  padding: 6px 10px; border-radius: 7px; font-size: 13px; font-family: inherit; margin: 4px 0 8px; }
-.hof-delete-modal select, .hof-delete-modal textarea {
-  width: 100%; border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
-  padding: 6px 10px; border-radius: 7px; font-size: 13px; font-family: inherit; margin: 4px 0 8px; }
-.hundred-reason-label { display: block; font-size: .85rem; color: var(--text-muted); font-weight: 600; margin-top: 8px; }
-.hundred-confirm { color: var(--warn-text); font-size: .85rem; margin: 8px 0; }
+.replay-size { color: var(--color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.val-list li { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; }
+.val-mark { flex: none; }
+.val-ok { color: var(--color-success); }
+.val-bad { color: var(--color-danger); }
+.hundred-action-area { margin-top: var(--space-3); }
+
+.hundred-action-area select,
+.hundred-action-area textarea,
+.hof-delete-modal select,
+.hof-delete-modal textarea { width: 100%; margin: var(--space-1) 0 var(--space-2); }
+
+.admin-confirm-input { width: 100%; margin-top: var(--space-1); }
+.screenshot-zoom-img { display: block; max-width: 100%; max-height: 70dvh; margin: 0 auto; border-radius: var(--radius-md); }
+
+@media (width < 768px) {
+  .hof-admin { padding-block: var(--space-3) var(--space-10); }
+  .hof-admin-tabs { position: static; }
+  .hof-admin-filters { grid-template-columns: 1fr 1fr; }
+}
 </style>

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ArrowRight, CloudUpload, FileText, FolderOpen, Plus, Trash2 } from 'lucide-vue-next'
 import { fileKey, displayName } from '../utils/helpers.js'
 import {
   MAX_REPLAY_FILES,
@@ -9,6 +10,8 @@ import {
   isReplayFileName,
   validateReplaySelection
 } from '../utils/replayUpload.js'
+import AppButton from './AppButton.vue'
+import Banner from './Banner.vue'
 
 const emit = defineEmits(['update:files', 'preview', 'remove-request'])
 const props = defineProps({
@@ -23,11 +26,23 @@ const props = defineProps({
 })
 const dragging = ref(false)
 const listOpen = ref(false)
+/** 解析完成后的「清空」会丢掉已解析结果：先进入确认态（WS-21）。 */
+const confirmingClear = ref(false)
 /** preflight 拒绝结果（{offending, tooMany, totalTooLarge}；非空时 selection 保持不变）。 */
 const validation = ref(null)
 const { t } = useI18n()
 const maxReplayFiles = MAX_REPLAY_FILES
 const maxReplayTotal = formatReplaySize(MAX_REPLAY_TOTAL_BYTES)
+
+/** 原生 file input 视觉隐藏，由真正的按钮触发，保证键盘可达（WS-07）。 */
+const filesInput = ref(null)
+const folderInput = ref(null)
+const addFilesInput = ref(null)
+const addFolderInput = ref(null)
+const compactAddInput = ref(null)
+function openPicker(input) {
+  input.value?.click()
+}
 
 const totalBytes = computed(() => props.files.reduce((sum, f) => sum + (f.size || 0), 0))
 
@@ -35,6 +50,7 @@ const totalBytes = computed(() => props.files.reduce((sum, f) => sum + (f.size |
 // 不会触发 update:files，因此错误会保留直到下一次成功 add 或 files 变化）。
 watch(() => props.files, () => {
   validation.value = null
+  confirmingClear.value = false
 })
 
 /**
@@ -87,6 +103,7 @@ function removeFile(f) {
 
 function clearFiles() {
   validation.value = null
+  confirmingClear.value = false
   emit('update:files', [])
 }
 
@@ -103,24 +120,13 @@ function onDrop(e) {
 </script>
 
 <template>
-  <section class="uploadwrap"
+  <section class="uploadwrap" :class="{ 'is-dragging': dragging }"
            @dragover.prevent="dragging = true"
            @dragleave.prevent="dragging = false"
            @drop.prevent="onDrop">
-    <div class="uploadhead">
-      <span class="upload-kicker">{{ $t('upload.kicker') }}</span>
-      <h1>{{ $t('upload.title') }}</h1>
-      <p>{{ $t('upload.description') }}</p>
-      <div class="upload-points">
-        <span>{{ $t(allowFolder ? 'upload.multi' : 'upload.multi_single') }}</span>
-        <span>{{ $t('upload.excel') }}</span>
-        <span>{{ $t('upload.privacy') }}</span>
-      </div>
-    </div>
-
-    <div v-if="validation" class="upload-errors" data-testid="upload-validation-error">
-      <p v-if="validation.noReplay" class="upload-errors-hint">{{ $t('upload.reject_no_replay') }}</p>
-      <p v-if="validation.singleOnly" class="upload-errors-hint">{{ $t('upload.single_only') }}</p>
+    <Banner v-if="validation" tone="danger" data-testid="upload-validation-error">
+      <p v-if="validation.noReplay">{{ $t('upload.reject_no_replay') }}</p>
+      <p v-if="validation.singleOnly">{{ $t('upload.single_only') }}</p>
       <p v-if="validation.offending.length" class="upload-errors-title">{{ $t('upload.reject_offending_title') }}</p>
       <ul v-if="validation.offending.length" class="upload-errors-list">
         <li v-for="off in validation.offending" :key="fileKey(off.file)">
@@ -128,39 +134,46 @@ function onDrop(e) {
           <span v-else>{{ $t('upload.reject_too_large_file', { name: displayName(off.file), size: formatReplaySize(off.file.size) }) }}</span>
         </li>
       </ul>
-      <p v-if="validation.offending.some(o => o.reason === 'FILE_TOO_LARGE')" class="upload-errors-hint">{{ $t('upload.reject_size_hint') }}</p>
-      <p v-if="validation.tooMany" class="upload-errors-hint">{{ $t('upload.reject_count', { max: maxReplayFiles, current: validation.count }) }}</p>
-      <p v-if="validation.totalTooLarge" class="upload-errors-hint">{{ $t('upload.reject_total', { size: formatReplaySize(validation.totalBytes), max: maxReplayTotal }) }}</p>
+      <p v-if="validation.offending.some(o => o.reason === 'FILE_TOO_LARGE')">{{ $t('upload.reject_size_hint') }}</p>
+      <p v-if="validation.tooMany">{{ $t('upload.reject_count', { max: maxReplayFiles, current: validation.count }) }}</p>
+      <p v-if="validation.totalTooLarge">{{ $t('upload.reject_total', { size: formatReplaySize(validation.totalBytes), max: maxReplayTotal }) }}</p>
+    </Banner>
+
+    <!-- 原生 input：视觉隐藏、不进 Tab 序列，由下方按钮触发 -->
+    <input ref="filesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" :multiple="allowFolder" accept=".wotbreplay" data-testid="select-files-input" @change="onPick" />
+    <input v-if="allowFolder" ref="folderInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple webkitdirectory data-testid="select-folder-input" @change="onPick" />
+    <input ref="addFilesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" :multiple="allowFolder" accept=".wotbreplay" data-testid="add-files-input" @change="onPick" />
+    <input v-if="allowFolder" ref="addFolderInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple webkitdirectory data-testid="add-folder-input" @change="onPick" />
+    <input ref="compactAddInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" :multiple="allowFolder" accept=".wotbreplay" data-testid="compact-add-files-input" @change="onPick" />
+
+    <!-- 状态 1：空 —— 全宽拖放区 -->
+    <div v-if="!files.length" class="dropzone" data-testid="file-uploader-empty">
+      <CloudUpload class="dropzone-icon" :size="40" aria-hidden="true" />
+      <p class="dropzone-title">{{ $t('upload.drop_hint') }}</p>
+      <p class="dropzone-hint">{{ $t(allowFolder ? 'upload.sub_hint' : 'upload.sub_hint_single') }}</p>
+      <div class="dropzone-actions">
+        <AppButton variant="primary" @click="openPicker(filesInput)"><FileText :size="18" aria-hidden="true" />{{ $t('upload.select_files') }}</AppButton>
+        <AppButton v-if="allowFolder" @click="openPicker(folderInput)"><FolderOpen :size="18" aria-hidden="true" />{{ $t('upload.select_folder') }}</AppButton>
+      </div>
+      <p class="dropzone-meta">{{ $t(allowFolder ? 'upload.multi' : 'upload.multi_single') }} · {{ $t('upload.excel') }} · {{ $t('upload.privacy') }}</p>
     </div>
 
-    <div v-if="!files.length" class="uploadcard" :class="{ dragging }">
-      <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
-      <div class="up-title">{{ $t('upload.drop_hint') }}</div>
-          <div class="up-sub">{{ $t(allowFolder ? 'upload.sub_hint' : 'upload.sub_hint_single') }}</div>
-          <div class="up-actions">
-            <label class="filebtn">
-              <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>{{ $t('upload.select_files') }}
-              <input type="file" :multiple="allowFolder" accept=".wotbreplay" data-testid="select-files-input" @change="onPick" />
-            </label>
-            <label v-if="allowFolder" class="filebtn ghost">
-              <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>{{ $t('upload.select_folder') }}
-              <input type="file" multiple webkitdirectory data-testid="select-folder-input" @change="onPick" />
-            </label>
-          </div>
-    </div>
-
-    <div v-else-if="!compact" class="filebar" :class="{ dragging }">
-      <div class="fb-summary">
-        <svg class="ic fb-ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
-        <div>
-          <strong>{{ $t('upload.selected_title') }}</strong>
-          <span class="fb-count">{{ $t('upload.files_size', { count: files.length, size: formatReplaySize(totalBytes) }) }}</span>
+    <!-- 状态 2：已选择、未解析 —— 批次条 + 解析主操作 -->
+    <div v-else-if="!compact" class="filebar">
+      <div class="filebar-row">
+        <div class="fb-summary">
+          <FileText :size="20" aria-hidden="true" />
+          <span><strong>{{ $t('upload.selected_title') }}</strong> <span class="fb-count">{{ $t('upload.files_size', { count: files.length, size: formatReplaySize(totalBytes) }) }}</span></span>
+        </div>
+        <div class="fb-actions">
+          <AppButton variant="ghost" size="sm" :aria-expanded="listOpen" @click="listOpen = !listOpen">
+            {{ listOpen ? $t('upload.hide_list') : $t('upload.view_list', { count: files.length }) }}
+          </AppButton>
+          <AppButton variant="ghost" size="sm" :title="$t('upload.add_files_title')" @click="openPicker(addFilesInput)"><Plus :size="16" aria-hidden="true" />{{ $t('upload.add') }}</AppButton>
+          <AppButton v-if="allowFolder" variant="ghost" size="sm" :title="$t('upload.add_folder_title')" @click="openPicker(addFolderInput)"><FolderOpen :size="16" aria-hidden="true" />{{ $t('upload.folder') }}</AppButton>
+          <AppButton variant="ghost" size="sm" :disabled="loading" @click="clearFiles"><Trash2 :size="16" aria-hidden="true" />{{ $t('upload.clear') }}</AppButton>
         </div>
       </div>
-
-      <button class="ghost sm" :class="{ active: listOpen }" :aria-expanded="listOpen" @click="listOpen = !listOpen">
-        {{ listOpen ? $t('upload.hide_list') : $t('upload.view_list', { count: files.length }) }}
-      </button>
       <div v-if="listOpen" class="fb-list" data-testid="file-list">
         <span v-for="f in files" :key="fileKey(f)" class="chip" :title="displayName(f)">
           <span class="chip-name">{{ displayName(f) }}</span>
@@ -168,61 +181,154 @@ function onDrop(e) {
           <button type="button" class="chipx" :title="$t('upload.remove_title')" :aria-label="$t('upload.remove_title')" @click.stop="removeFile(f)">&times;</button>
         </span>
       </div>
-
-      <div class="fb-actions">
-        <label class="filebtn ghost sm" :title="$t('upload.add_files_title')">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{{ $t('upload.add') }}
-          <input type="file" :multiple="allowFolder" accept=".wotbreplay" data-testid="add-files-input" @change="onPick" />
-        </label>
-        <label v-if="allowFolder" class="filebtn ghost sm" :title="$t('upload.add_folder_title')">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>{{ $t('upload.folder') }}
-          <input type="file" multiple webkitdirectory data-testid="add-folder-input" @change="onPick" />
-        </label>
-        <button class="ghost sm" :disabled="loading" @click="clearFiles">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" /></svg>{{ $t('upload.clear') }}
-        </button>
+      <div v-if="showPreview" class="replay-primary-actions">
+        <AppButton variant="primary" size="lg" :disabled="loading" @click="$emit('preview')">
+          {{ $t('action.preview') }}<ArrowRight :size="18" aria-hidden="true" />
+        </AppButton>
+        <span v-if="loading" class="fb-count" role="status">{{ $t('action.processing') }}</span>
       </div>
     </div>
 
-    <!-- 解析完成后压缩态（compact）：只保留细条批次摘要 + 添加/清空，不占首屏大卡。 -->
+    <!-- 状态 3：解析完成 —— 一行批次条，把空间让给结果 -->
     <div v-else class="compactbar" data-testid="file-uploader-compact">
       <div class="fb-summary">
-        <svg class="ic fb-ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
-        <div>
-          <strong>{{ $t('upload.selected_title') }}</strong>
-          <span class="fb-count">{{ $t('upload.files_size', { count: files.length, size: formatReplaySize(totalBytes) }) }}</span>
-        </div>
+        <FileText :size="18" aria-hidden="true" />
+        <span class="fb-count">{{ $t('upload.files_size', { count: files.length, size: formatReplaySize(totalBytes) }) }}</span>
       </div>
-      <label class="filebtn ghost sm" :title="$t('upload.add_files_title')">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{{ $t('upload.add') }}
-        <input type="file" :multiple="allowFolder" accept=".wotbreplay" data-testid="compact-add-files-input" @change="onPick" />
-      </label>
-      <button class="ghost sm" :disabled="loading" @click="clearFiles">{{ $t('upload.clear') }}</button>
-    </div>
-
-    <!-- 解析预览：ReplayPage 基础操作（独立于 workspace shortcut 开关 showPreview）。 -->
-    <div v-if="files.length && showPreview && !compact" class="replay-primary-actions">
-      <div class="actionrow">
-        <button class="lg" :disabled="loading" @click="$emit('preview')">
-          {{ $t('action.preview') }}<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-        </button>
-        <span v-if="loading" class="muted">{{ $t('action.processing') }}</span>
+      <div v-if="!confirmingClear" class="fb-actions">
+        <AppButton variant="ghost" size="sm" :title="$t('upload.add_files_title')" @click="openPicker(compactAddInput)"><Plus :size="16" aria-hidden="true" />{{ $t('upload.add') }}</AppButton>
+        <AppButton variant="ghost" size="sm" :disabled="loading" data-testid="compact-clear" @click="confirmingClear = true"><Trash2 :size="16" aria-hidden="true" />{{ $t('upload.clear') }}</AppButton>
+      </div>
+      <div v-else class="fb-actions" role="group" :aria-label="$t('upload.clear_confirm')">
+        <span class="fb-confirm">{{ $t('upload.clear_confirm') }}</span>
+        <AppButton variant="danger" size="sm" data-testid="compact-clear-confirm" @click="clearFiles">{{ $t('upload.clear') }}</AppButton>
+        <AppButton variant="ghost" size="sm" data-testid="compact-clear-cancel" @click="confirmingClear = false">{{ $t('upload.cancel') }}</AppButton>
       </div>
     </div>
   </section>
 </template>
 
 <style scoped>
-.fb-list { display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow-y:auto; padding:4px 2px; border-top:1px solid var(--border,#dee2e6); }
-.fb-list .chip { display:inline-flex; align-items:center; gap:6px; max-width:320px; min-width:0; }
-.chip-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.chip-size { flex:0 0 auto; color:var(--text-sub,#6c757d); font-size:12px; }
-.fb-list .chipx { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; padding:0; border-radius:6px; line-height:1; cursor:pointer; }
-.fb-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-.upload-errors { margin:10px 0; padding:10px 12px; border:1px solid var(--danger-border,#f5c2c7); border-radius:7px; background:var(--danger-bg,#fff5f5); color:var(--danger,#b02a37); font-size:.9rem; }
-.upload-errors-title { font-weight:700; margin:0 0 6px; }
-.upload-errors-list { margin:0 0 4px; padding-left:18px; display:flex; flex-direction:column; gap:2px; }
-.upload-errors-hint { margin:2px 0 0; opacity:.9; }
-.replay-primary-actions { margin-top:14px; padding-top:14px; border-top:1px solid var(--border-ghost); }
-.actionrow { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.uploadwrap { display: grid; gap: var(--space-3); }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-10) var(--space-4);
+  border: 2px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  text-align: center;
+  transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
+}
+
+.is-dragging .dropzone,
+.is-dragging .filebar {
+  border-color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 8%, var(--color-surface-1));
+}
+
+.dropzone-icon { color: var(--color-accent-text); }
+.dropzone-title { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
+.dropzone-hint { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
+.dropzone-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin-top: var(--space-2); }
+.dropzone-meta { margin: var(--space-2) 0 0; color: var(--color-text-tertiary); font: var(--type-caption); }
+
+.filebar,
+.compactbar {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+}
+
+.filebar { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+
+.filebar-row,
+.compactbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.compactbar { padding: var(--space-2) var(--space-3); }
+
+.fb-summary { display: flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--color-text-primary); font: var(--type-body); }
+.fb-summary > svg { flex: none; color: var(--color-text-secondary); }
+.fb-count { color: var(--color-text-secondary); font: var(--type-body); }
+.fb-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.fb-confirm { color: var(--color-text-primary); font: var(--type-body); }
+
+.fb-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  max-height: 180px;
+  overflow-y: auto;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 320px;
+  min-width: 0;
+  padding: 2px 2px 2px var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+}
+
+.chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-size { flex: none; color: var(--color-text-secondary); }
+
+.chipx {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--hit-min);
+  height: var(--hit-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: var(--type-body);
+  cursor: pointer;
+}
+
+.chipx:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+.upload-errors-title { font-weight: 600; }
+.upload-errors-list { margin: 0; padding-inline-start: var(--space-5); }
+
+.replay-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+@media (hover: hover) {
+  .chipx:hover { background: var(--color-surface-3); color: var(--color-text-primary); }
+}
 </style>

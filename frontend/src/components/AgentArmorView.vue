@@ -6,18 +6,72 @@
  * 击穿判定 penetration.js 客户端移植；射击复现数据经 sessionStorage 交接（AgentShots）。
  * URL 参数保持上游契约：?tank= &shooter= &config= &shell= &shot= &heatmap=1 &world=1 等。
  */
-import { onMounted, onBeforeUnmount } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+import { ArrowLeft } from 'lucide-vue-next'
 import { initTankViewer } from '../scene/tankViewer.js'
+import { detectWebGL } from '../scene/webglSupport.js'
+import { replayValueLabel } from '../utils/display.js'
+import { usePointer } from '../composables/useBreakpoint.js'
+import Scene3DStatus from './Scene3DStatus.vue'
+
+const { t, te } = useI18n()
+const router = useRouter()
+const { coarse } = usePointer()
+// 审计 3D-09：从射击分析 / 坦克百科在当前标签页打开，返回走浏览器历史
+const canGoBack = typeof window !== 'undefined' && !!window.history.state?.back
+const hint = computed(() => t(coarse.value ? 'armor.hint_touch' : 'armor.hint'))
 
 let viewer = null
+// 审计 3D-23：创建渲染器之前做 WebGL 预检；不支持时整页换成说明，不再抛原始报错
+const webgl = detectWebGL()
+/** 场景加载状态（tankViewer onLoadState 上报）：loading / ready / error */
+const load = ref({ state: 'loading', progress: null, message: '' })
+/** 重建场景 DOM 的计数：整体重试时换 key，让 tankViewer 拿到全新的按 ID 查找的节点 */
+const attempt = ref(0)
+const PHASE_KEY = { 'armor model': 'armor_model', 'tank model': 'tank_model', 'tank data': 'tank_data', 'tank list': 'tank_list' }
 
-onMounted(() => {
+function onLoadState(next) {
+    load.value = { state: next.state, progress: next.progress ?? null, message: next.message || '' }
+}
+
+function startViewer() {
     const q = new URLSearchParams(window.location.search)
     const tank = Number(q.get('tank')) || 0
     // 初始坦克：?tank=（缺省给 T-34 = 1，避免空参打开白屏）
     window.__INITIAL_TANK__ = tank || 1
     window.__INITIAL_SHOOTER__ = Number(q.get('shooter')) || window.__INITIAL_TANK__
-    viewer = initTankViewer()
+    // 审计 3D-16：场景脚本写入的文案与枚举值按当前语言提供
+    viewer = initTankViewer({
+        labels: {
+            loading: t('armor.loading'),
+            loadFailed: (phase, msg) => t('armor.load_failed', { phase, msg }),
+            tier: (tier) => `${t('armor.tier')} ${tier}`,
+            type: (value) => replayValueLabel(t, te, value),
+            nation: (value) => replayValueLabel(t, te, value),
+            showCollision: t('armor.show_collision'),
+            hideCollision: t('armor.hide_collision'),
+            worldHint: t('armor.world_hint'),
+            phase: (phase) => (PHASE_KEY[phase] ? t(`armor.phase_${PHASE_KEY[phase]}`) : phase),
+        },
+        onLoadState,
+    })
+}
+
+async function retry() {
+    load.value = { state: 'loading', progress: null, message: '' }
+    if (viewer?.retry?.()) return
+    // 名册都没拿到（或渲染器创建失败）：销毁后重建整个场景
+    viewer?.destroy?.()
+    viewer = null
+    attempt.value += 1
+    await nextTick()
+    startViewer()
+}
+
+onMounted(() => {
+    if (webgl.supported) startViewer()
 })
 
 // 离开路由必须销毁：rAF 循环 + WebGL 上下文不释放，反复进出会耗尽浏览器
@@ -29,66 +83,85 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-<div class="armor-view">
+<div class="armor-view" :class="{ 'is-unsupported': !webgl.supported }">
+    <button v-if="canGoBack" type="button" class="armor-back" data-testid="armor-back" @click="router.back()"><ArrowLeft :size="16" aria-hidden="true" /> {{ $t('armor.back') }}</button>
+    <Scene3DStatus v-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
     <!-- 3D 装甲检视器 DOM：自上游 ArmorView.vue 原样平移（JS 按 ID 查找） -->
-        <div id="loading">Loading tank model...</div>
+    <div v-else :key="attempt" class="armor-stage" data-testid="armor-stage">
+        <!-- 旧的单行文字加载提示由 Scene3DStatus 取代；节点保留给场景脚本写入（不可见） -->
+        <div class="armor-legacy-loading" hidden><div id="loading">{{ $t('armor.loading') }}</div></div>
         <div id="canvas-container"></div>
         <div id="corner-tl">
             <div id="info-panel" style="display:none;">
                 <h1 id="tank-name">Loading...</h1>
-                <div class="stat"><span class="label">Tier</span><span class="value" id="tank-tier"></span></div>
-                <div class="stat"><span class="label">Type</span><span class="value" id="tank-type"></span></div>
-                <div class="stat"><span class="label">Nation</span><span class="value" id="tank-nation"></span></div>
+                <div class="stat"><span class="label">{{ $t('armor.tier') }}</span><span class="value" id="tank-tier"></span></div>
+                <div class="stat"><span class="label">{{ $t('armor.type') }}</span><span class="value" id="tank-type"></span></div>
+                <div class="stat"><span class="label">{{ $t('armor.nation') }}</span><span class="value" id="tank-nation"></span></div>
             </div>
             <div id="tank-selectors">
-                <div class="sel-row" id="config-row" style="display:none;"><label id="config-label">Config:</label><select id="config-select"></select></div>
+                <div class="sel-row" id="config-row" style="display:none;"><label id="config-label">{{ $t('armor.config') }}</label><select id="config-select"></select></div>
                 <div class="sel-row">
-                    <label>Equip:</label>
-                    <label style="width:auto;display:flex;align-items:center;gap:3px;cursor:pointer;font-size:0.78em;"><input type="checkbox" id="eq-calibrated"> Calib.Shells</label>
-                    <label style="width:auto;display:flex;align-items:center;gap:3px;cursor:pointer;font-size:0.78em;"><input type="checkbox" id="eq-enhanced"> Enh.Armor</label>
+                    <label>{{ $t('armor.equip') }}</label>
+                    <label style="width:auto;display:flex;align-items:center;gap:3px;cursor:pointer;font-size:0.78em;"><input type="checkbox" id="eq-calibrated"> {{ $t('armor.calibrated') }}</label>
+                    <label style="width:auto;display:flex;align-items:center;gap:3px;cursor:pointer;font-size:0.78em;"><input type="checkbox" id="eq-enhanced"> {{ $t('armor.enhanced') }}</label>
                 </div>
-                <div class="sel-row"><label id="shooter-label">Shooter:</label><button class="tank-btn" id="shooter-select">—</button></div>
-                <div class="sel-row"><label id="target-label">Target:</label><button class="tank-btn" id="target-select">—</button></div>
+                <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select">—</button></div>
+                <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select">—</button></div>
             </div>
         </div>
         <div id="corner-tr">
             <div id="shell-selector" style="display:none;">
-                <label style="font-size:0.85em;">Shell: </label>
+                <label style="font-size:0.85em;">{{ $t('armor.shell') }} </label>
                 <select id="shell-select"></select>
             </div>
             <div id="view-toggle">
-                <button id="collision-btn">Show Collision</button>
-                <button id="penetration-btn">穿透热力图</button>
+                <button id="collision-btn">{{ $t('armor.show_collision') }}</button>
+                <button id="penetration-btn">{{ $t('armor.heatmap') }}</button>
+                <!-- 审计 3D-14：没有右键的设备（触屏）用开关切到瞄准模式 -->
+                <button id="aim-btn" type="button" aria-pressed="false" :title="$t('armor.aim_hint')">{{ $t('armor.aim') }}</button>
             </div>
         </div>
         <div id="tank-picker">
             <div id="tp-header">
-                <span id="tp-title">Select Tank</span>
-                <input type="text" id="tp-search" placeholder="Search tank...">
+                <span id="tp-title">{{ $t('armor.select_tank') }}</span>
+                <input type="text" id="tp-search" :placeholder="$t('armor.search')" :aria-label="$t('armor.search')">
                 <select id="tp-tier"></select>
                 <select id="tp-nation"></select>
                 <select id="tp-type"></select>
                 <span id="tp-count"></span>
-                <button id="tp-close" title="Close">×</button>
+                <button id="tp-close" :title="$t('armor.close')" :aria-label="$t('armor.close')">×</button>
             </div>
             <div id="tp-grid"></div>
         </div>
             <div id="click-info">
                 <h3 id="click-part">—</h3>
-                <div class="row"><span>Base armor</span><span id="click-armor">—</span></div>
-                <div class="row"><span>Angle</span><span id="click-angle">—</span></div>
-                <div class="row"><span>Effective</span><span id="click-effective">—</span></div>
-                <div class="row"><span>Penetration</span><span id="click-pen">—</span></div>
-                <div class="row"><span>Result</span><span id="click-result">—</span></div>
+                <div class="row"><span>{{ $t('armor.base_armor') }}</span><span id="click-armor">—</span></div>
+                <div class="row"><span>{{ $t('armor.angle') }}</span><span id="click-angle">—</span></div>
+                <div class="row"><span>{{ $t('armor.effective') }}</span><span id="click-effective">—</span></div>
+                <div class="row"><span>{{ $t('armor.penetration') }}</span><span id="click-pen">—</span></div>
+                <div class="row"><span>{{ $t('armor.result') }}</span><span id="click-result">—</span></div>
             </div>
         <div id="corner-br">
-            <div id="controls-hint">Drag to rotate · Scroll to zoom · Left-click: armor · Right-drag: turret/gun</div>
+            <div id="controls-hint">{{ hint }}</div>
         </div>
         <div id="traj-info" style="display:none;position:fixed;z-index:200;pointer-events:none;"></div>
         <div id="turret-controls">
-            <div class="ctrl-row"><label>Turret</label><span id="turret-val">0°</span></div>
-            <div class="ctrl-row"><label>Gun</label><span id="gun-val">0°</span></div>
+            <div class="ctrl-row"><label>{{ $t('armor.turret') }}</label><span id="turret-val">0°</span></div>
+            <div class="ctrl-row"><label>{{ $t('armor.gun') }}</label><span id="gun-val">0°</span></div>
         </div>
+        <Scene3DStatus
+            v-if="load.state === 'loading'"
+            mode="loading"
+            :progress="load.progress"
+            :message="$t('armor.loading')"
+        />
+        <Scene3DStatus
+            v-else-if="load.state === 'error'"
+            mode="error"
+            :message="load.message"
+            @retry="retry"
+        />
+    </div>
 </div>
 </template>
 
@@ -132,7 +205,11 @@ onBeforeUnmount(() => {
             --scrub:#6d28d9;
             --sel-ring:rgba(201,118,46,0.4);
         }
-    .armor-view { margin: 0; padding: 0; background: var(--bg); color: var(--txt); font-family: system-ui, sans-serif; overflow: hidden; position: relative; width: 100%; height: calc(100vh - 67px); min-height: 480px; }
+    .armor-view { margin: 0; padding: 0; background: var(--bg); color: var(--txt); font-family: system-ui, sans-serif; overflow: hidden; position: relative; width: 100%; height: calc(100dvh - var(--header-h) - var(--tabbar-h)); min-height: 420px; }
+    /* 场景舞台：整体重试时按 key 重建；铺满根容器，四角面板仍以它为定位参照 */
+    .armor-view .armor-stage { position: absolute; inset: 0; }
+    .armor-view.is-unsupported { height: auto; min-height: 0; overflow: visible; background: transparent; }
+    .armor-view.is-unsupported .armor-back { position: static; transform: none; margin: var(--space-4) var(--gutter) 0; }
     .armor-view #canvas-container { width: 100%; height: 100%; background: radial-gradient(1100px 600px at 30% -10%, #3a2412 0%, transparent 60%), radial-gradient(1000px 600px at 90% 0%, #2f1a0c 0%, transparent 55%); }
     .armor-view #corner-tl {
             position: absolute; top: 20px; left: 20px;
@@ -255,4 +332,32 @@ onBeforeUnmount(() => {
     .armor-view #view-toggle button { background: var(--input-bg-hover); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 12px; cursor: pointer; font-size: 0.85em; transition: all .12s ease; }
     .armor-view #view-toggle button:hover { border-color: var(--accent); }
     .armor-view #view-toggle button.active { background: linear-gradient(135deg,var(--accent),var(--accent-2)); color: var(--on-accent); border-color: transparent; }
+    /* 审计 3D-09：返回入口（从射击分析 / 坦克百科打开时） */
+    .armor-view .armor-back {
+            /* 高于 Scene3DStatus 的错误遮罩（--z-sticky），加载失败时仍能返回 */
+            position: absolute; z-index: calc(var(--z-sticky) + 1); top: 12px; left: 50%; transform: translateX(-50%);
+            min-height: 36px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px;
+            background: var(--panel); color: var(--txt); cursor: pointer; backdrop-filter: blur(12px);
+        }
+    .armor-view #view-toggle button#aim-btn.active { background: linear-gradient(135deg,var(--accent),var(--accent-2)); color: var(--on-accent); border-color: transparent; }
+    /* 审计 3D-14：触屏控件放大到 44px 点击区域 */
+    @media (pointer: coarse) {
+        .armor-view #view-toggle button,
+        .armor-view #tank-selectors .tank-btn,
+        .armor-view #tp-close { min-height: 44px; }
+    }
+    /* 审计 3D-14：手机——四角面板改为上下两条可滚动的窄带，场景留在中间；选车弹窗全屏 */
+    @media (width < 768px) {
+        .armor-view #corner-tl { top: 56px; left: 8px; right: 8px; flex-direction: column; gap: 6px; max-height: 34%; overflow-y: auto; }
+        .armor-view #info-panel { max-width: none; padding: 10px 12px; }
+        .armor-view #info-panel h1 { font-size: 1.1em; margin-bottom: 4px; }
+        .armor-view #tank-selectors { width: auto; padding: 8px 12px; }
+        .armor-view #corner-tr { top: auto; bottom: 8px; right: 8px; left: 8px; align-items: stretch; }
+        .armor-view #view-toggle { justify-content: center; }
+        .armor-view #corner-br { display: none; }
+        .armor-view #turret-controls { display: none !important; }
+        .armor-view .armor-back { top: 8px; left: 8px; transform: none; }
+        .armor-view #tank-picker { width: 100%; height: 100%; top: 0; left: 0; transform: none; border-radius: 0; }
+        .armor-view .tank-card { flex: 1 1 140px; max-width: none; }
+    }
 </style>

@@ -42,11 +42,11 @@ describe('Classic 主题 residual-dark 回归（语义 token 契约）', () => {
   })
 
   it('AdminUsersPage 搜索/表格/按钮 不得再写死深色面', () => {
-    expect(ruleBody(admin, '\\.admin-search input')).toContain('background: var(--bg-card)')
-    expect(ruleBody(admin, '\\.admin-table-wrap')).toContain('background: var(--bg-card)')
-    expect(ruleBody(admin, '\\.admin-table th')).toContain('background: var(--bg-card2)')
-    expect(ruleBody(admin, '\\.btn-sm')).toContain('background: var(--bg-card)')
-    expect(ruleBody(admin, '\\.btn-sm')).not.toContain('#151d21')
+    // 设计语言组件：只用语义 token（--color-*），不写死任何色值
+    expect(admin).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+    expect(ruleBody(admin, '\\.admin-table-wrap')).toContain('background: var(--color-surface-1)')
+    expect(ruleBody(admin, '\\.admin-table th')).toContain('background: var(--color-surface-2)')
+    expect(ruleBody(admin, '\\.btn-sm')).toContain('background: var(--color-surface-1)')
   })
 
   it('ProfilePage 编辑输入/记录表 不得再写死深色面', () => {
@@ -70,14 +70,17 @@ describe('Classic 主题 residual-dark 回归（语义 token 契约）', () => {
   })
 
   it('PlayerDetailDrawer 导出评分卡 不得再写死深色面', () => {
-    expect(ruleBody(drawer, '\\.rp-card')).toContain('background: var(--bg-card)')
-    expect(ruleBody(drawer, '\\.rp-vehicle')).toContain('background: var(--bg-elevated)')
-    expect(ruleBody(drawer, '\\.rp-player')).toContain('color: var(--text-heading)')
-    expect(ruleBody(drawer, '\\.rp-card')).not.toContain('#14161a')
+    // 设计语言组件：只用语义 token（--color-*），导出卡同样跟随主题，不写死任何色值
+    expect(drawer).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+    expect(ruleBody(drawer, '\\.rp-card')).toContain('background: var(--color-surface-1)')
+    expect(ruleBody(drawer, '\\.rp-vehicle')).toContain('background: var(--color-surface-2)')
+    expect(ruleBody(drawer, '\\.rp-player')).toContain('color: var(--color-text-primary)')
   })
 
   it('ReplayCapabilityTabs / BattlePlaybackPanel 面板 不得再写死深色面', () => {
-    expect(ruleBody(capabilityTabs, '\\.workspace-tabs')).toContain('background: var(--bg-card)')
+    // 设计语言组件：只用语义 token（--color-*），不写死任何色值
+    expect(capabilityTabs).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+    expect(ruleBody(capabilityTabs, '\\.workspace-tab\\.is-active')).toContain('var(--color-')
     expect(ruleBody(bpPanel, '\\.panel ')).toContain('background: var(--bg-card)')
     expect(ruleBody(bpPanel, '\\.panel ')).toContain('color: var(--text)')
     expect(ruleBody(bpPanel, '\\.panel ')).not.toContain('#303a40')
