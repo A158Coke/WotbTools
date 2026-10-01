@@ -28,13 +28,43 @@ async function loadWasm() {
  * 本地通道（唯一通道）：File/Blob → 浏览器文件接口 → WASM parsePlayback →
  * PlaybackData（契约 v2 时序能力）。
  */
+// tank_id → 显示名（静态 tank_cache.json；资产源未配置/缺失 → 空表，label 走
+// tank_{id} 兜底）。解析/身份面保持 asset-independent——此处仅补**展示名**。
+let tankNamesPromise = null
+function tankNamesStatic() {
+  if (!tankNamesPromise) {
+    tankNamesPromise = assetProvider.json('/data/tank_cache.json').then((cache) => {
+      const out = new Map()
+      for (const [id, info] of Object.entries(cache || {})) {
+        if (info && info.name) out.set(Number(id), info.name)
+      }
+      return out
+    }).catch(() => {
+      tankNamesPromise = null
+      return new Map()
+    })
+  }
+  return tankNamesPromise
+}
+
 export async function loadFromLocalFile(fileObject) {
   const mod = await loadWasm()
   if (typeof mod.parsePlayback !== 'function') {
     throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
   }
   const bytes = new Uint8Array(await fileObject.arrayBuffer())
-  return JSON.parse(mod.parsePlayback(bytes))
+  const data = JSON.parse(mod.parsePlayback(bytes))
+  // 展示名富化：客户端 WASM 无 tank_names（数据边界），按静态资产补齐；
+  // 仅补空值，不覆盖上游已有名。失败不阻断回放（兜底显示 tank_{id}）
+  try {
+    const names = await tankNamesStatic()
+    if (names.size) {
+      for (const v of data.vehicles || []) {
+        if (v.tank_id && !v.tank_name) v.tank_name = names.get(v.tank_id) || ''
+      }
+    }
+  } catch { /* 资产缺失：兜底显示 */ }
+  return data
 }
 
 /**
