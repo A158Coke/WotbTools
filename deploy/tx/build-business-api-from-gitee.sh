@@ -196,7 +196,7 @@ build_publish() {
       reused=false
       rm -rf -- "$worktree"
       git -C "$REPO_DIR" worktree add --force --detach "$worktree" "$source_sha" >/dev/null
-      trap 'git -C "$REPO_DIR" worktree remove --force "$worktree" >/dev/null 2>&1 || true; rm -rf -- "$worktree"' EXIT
+      trap "git -C '$REPO_DIR' worktree remove --force '$worktree' >/dev/null 2>&1 || true; rm -rf -- '$worktree'" EXIT
 
       [ "$(git -C "$worktree" rev-parse HEAD)" = "$source_sha" ] || die "detached worktree SHA mismatch"
 
