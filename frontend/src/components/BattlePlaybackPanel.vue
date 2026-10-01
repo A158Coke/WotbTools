@@ -265,6 +265,7 @@ onBeforeUnmount(() => {
               :overview="pbOverview || undefined"
               :playback-v2="mapPlaybackV2 || undefined"
               :seek-to="mapSeek ?? undefined"
+              :active="active && panelView === 'playback'"
             />
 
             <!-- 2.5D directly upgrades the map background. BattleMap still owns all

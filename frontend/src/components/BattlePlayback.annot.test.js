@@ -206,7 +206,7 @@ describe('BattlePlayback annotations', () => {
     // 先缩放平移再开标注：打开标注会自动选中画笔，之后的拖拽是画线而不是平移。
     setMapLayout(wrapper, 600, 602)
     // 滚轮在 (100,100) 放大 ×1.2 → tx=ty=-20；拖拽 (100,100)→(140,130) 平移 +40/+30
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { clientX: 100, clientY: 100, deltaY: -100 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, clientX: 100, clientY: 100, deltaY: -100 })
     const viewport = wrapper.find('[data-test="pb-viewport"]')
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 100, clientY: 100 })
     dispatchPointer('pointermove', { pointerId: 1, clientX: 140, clientY: 130 })
@@ -354,7 +354,7 @@ describe('BattlePlayback annotations', () => {
     const wrapper = mountAnnot()
     await flushPromises()
     // 现有行为：scale≤1 时平移复位（clampViewPan），先滚轮放大到 1.2 再拖拽平移
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { clientX: 100, clientY: 100, deltaY: -100 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, clientX: 100, clientY: 100, deltaY: -100 })
     const viewport = wrapper.find('[data-test="pb-viewport"]')
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 100, clientY: 100 })
     dispatchPointer('pointermove', { pointerId: 1, clientX: 150, clientY: 150 })

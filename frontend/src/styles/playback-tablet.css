@@ -115,7 +115,8 @@
   }
   .battle-playback.pb-form-tablet:not(:fullscreen) .pb-map-stage {
     /* 170px ≈ 页头 + HUD + controls/timeline；850 是大屏上的绝对上限。 */
-    height: min(calc(100dvh - 170px), 850px);
+    /* 审计 PB-02：扣掉固定顶栏，控制栏才能留在首屏 */
+    height: min(calc(100dvh - var(--header-h) - 170px), 850px);
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--pb-details-w);
     grid-template-rows: minmax(0, 1fr);
@@ -166,7 +167,7 @@
    把工具栏顶出首屏。地图近似方形，按高度换算宽度即可（--pb-map-ratio = W/H）。 */
 @media (width < 860px) {
   .battle-playback.pb-form-tablet:not(:fullscreen) .pb-main .pb-map {
-    max-width: min(100%, calc((100dvh - 210px) * var(--pb-map-ratio, 1)));
+    max-width: min(100%, calc((100dvh - var(--header-h) - 210px) * var(--pb-map-ratio, 1)));
     margin-inline: auto;
   }
 }
