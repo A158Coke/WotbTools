@@ -34,7 +34,8 @@ WotBTools
 
 ## 2. 契约形状总则
 
-- 切面顶层均带 `"version": 1`；同版本只加字段（消费方忽略未知键），不兼容变更递增 version。
+- 各切面顶层带 `version`：Result / AI 切面为 **1**；**PlaybackData 自上游 v0.3.1 起为 2**
+  （版本显式门禁，见 §4b）。同版本只加字段（消费方忽略未知键），不兼容变更递增 version。
 - 语义原则：**unknown ≠ 0 ≠ false ≠ 没发生**。观测缺失一律字段缺省（`skip_serializing_if`）或显式 null；
   `0` 只在该字段语义就是数值零时出现。协议哨兵（如 `game_hit_result: 255 = 未获取`、`killer_eid: 0 = 无归属`）
   在字段文档中显式标注。
@@ -60,7 +61,7 @@ WotBTools
 - WASM 入口：`parsePlayback(new Uint8Array(fileBuffer), tankNamesJson?)` → PlaybackData JSON
   （单次扫描；与服务端 `/api/playback/data` 同一构建语义）。`tankNamesJson` 同 §3：
   注入后 `vehicles[].tank_name` 为真实车型名，缺省为空串。
-- 形状与 v1 回放切面一致（version 1）：0.1s 网格位姿（列式）、炮塔/炮管角、
+- 形状与 v1 回放切面一致（顶层 version 见 §2 / §4b）：0.1s 网格位姿（列式）、炮塔/炮管角、
   全员弹道、血量链、击杀流、战局阶段、AoI 可见性窗口。
 - `vehicles[]` 自带花名册语义（`nickname / tank_id / team / is_author`）——
   消费方联表（如射击复现的 target/shooter tank_id 富化）以此为准，不依赖 AI 切面。

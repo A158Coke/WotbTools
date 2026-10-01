@@ -18,6 +18,9 @@ import * as THREE from 'three'
 import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
+import { impactKind } from './impactKind.js'
+// 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
+import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { playableBounds } from '../data/playableBounds.js'
 import { poseFromYPR } from './glbRig.js'
 import { assetProvider } from './assetProvider.js'
@@ -1080,11 +1083,79 @@ export function initPlayback(container, store) {
     return sampleHeight(x, z) + 0.12;
   }
 
+  // ---------- 标签软遮挡（fast-pass）----------
+  // camera → 标签锚点做一次视线检测：先撞地形或静态场景 → 弱化到
+  // LABEL_BLOCKED_OPACITY；否则全不透明度。**永不隐藏**（下限 0.35，不是 0）——
+  // 标签始终可见，被挡时只是明显变淡。只把地形与静态场景当 blocker，不含其他车辆。
+  //
+  // 成本控制（不让每个标签每帧都检测）：
+  //   · 地形用高度场解析步进（LABEL_OCCL_SAMPLES 次 sampleHeight），不 raycast
+  //     512² 地形网格（那是几十万三角形）；
+  //   · 场景（建筑/树）才 raycast，且**每 occlStride 帧只检测一辆车**（轮转），
+  //     其余帧复用上次结果；
+  //   · 单次 raycast 超过 4ms（大图三角形多）自动拉长步长，避免掉帧。
+  const LABEL_OPACITY = 1;
+  const LABEL_BLOCKED_OPACITY = 0.35;
+  const LABEL_OCCL_SAMPLES = 16;
+  const LABEL_OCCL_BUDGET_MS = 4;
+  let occlCursor = 0, occlTick = 0, occlStride = 1, occlCostMs = 0;
+  const _occlDir = new THREE.Vector3();
+
+  // 地形遮挡：沿 camera→anchor 采样高度场（地形高过视线即判遮挡）
+  function terrainBlocksAim(cx, cy, cz, ax, ay, az) {
+    if (!heightField || !heightMeta) return false;
+    for (let i = 1; i < LABEL_OCCL_SAMPLES; i++) {
+      const k = i / LABEL_OCCL_SAMPLES;
+      const x = cx + (ax - cx) * k, z = cz + (az - cz) * k;
+      const y = cy + (ay - cy) * k;
+      if (sampleHeight(x, z) > y + 0.5) return true;
+    }
+    return false;
+  }
+
+  // 静态场景遮挡（建筑/树）：raycast，far 收到锚点之前
+  function sceneryBlocksAim(anchor) {
+    if (!mapScenery || !raycaster) return false;
+    _occlDir.copy(anchor).sub(camera.position);
+    const dist = _occlDir.length();
+    if (dist < 2) return false;
+    _occlDir.divideScalar(dist);
+    const prevFar = raycaster.far;
+    raycaster.far = dist - 1.0;   // 只关心锚点之前的遮挡物
+    raycaster.set(camera.position, _occlDir);
+    const hit = raycaster.intersectObject(mapScenery, true).length > 0;
+    raycaster.far = prevFar;
+    return hit;
+  }
+
+  function updateLabelOcclusion() {
+    const n = V.length;
+    if (!n) return;
+    occlStride = Math.min(16, occlCostMs > LABEL_OCCL_BUDGET_MS
+      ? occlStride + 1 : Math.max(1, occlStride - 1));
+    if (++occlTick < occlStride) return;   // 未到检测帧：沿用缓存结果
+    occlTick = 0;
+    const v = V[occlCursor++ % n];
+    if (!v || !v.label || !v.label.visible) return;
+    const a = v.label.position;
+    let blocked = terrainBlocksAim(camera.position.x, camera.position.y, camera.position.z,
+                                   a.x, a.y, a.z);
+    if (!blocked) {
+      const t0 = performance.now();
+      blocked = sceneryBlocksAim(a);
+      occlCostMs = performance.now() - t0;
+    } else {
+      occlCostMs = 0;
+    }
+    v.labelOccluded = blocked;
+  }
+
   // 标签恒定屏幕占比：世界尺寸按相机距离逐帧反算（透视投影 h = f·2d·tan(θ/2)），
   // 远处血量数字同样大、近处不再撑满屏幕；悬浮高度随距离收缩贴住车顶
   const LABEL_FRAC = 0.0275;    // 标签高 ≈ 视口高度的 2.75%（当前尺寸）
   const LABEL_ASPECT = 4;       // 画布 512×128 = 4:1
   function updateLabels() {
+    updateLabelOcclusion();   // 软遮挡：每 occlStride 帧检测一辆车
     const k = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * LABEL_FRAC;
     for (const v of V) {
       if (!v.label) continue;
@@ -1099,6 +1170,9 @@ export function initPlayback(container, store) {
       v.label.position.y += Math.min(6, Math.max(3.25, d * 0.045));   // 上限随标签减半等比收紧
       // 车辆不可见时标签同步隐藏（原先经父子关系继承，现根级需显式管理）
       v.label.visible = v.group.visible && store.labelsOn;
+      // 软遮挡：被地形/静态场景挡住时弱化（永不隐藏，下限 LABEL_BLOCKED_OPACITY）
+      const target = v.labelOccluded ? LABEL_BLOCKED_OPACITY : LABEL_OPACITY;
+      if (v.label.material.opacity !== target) v.label.material.opacity = target;
     }
   }
 
@@ -1109,7 +1183,7 @@ export function initPlayback(container, store) {
     tex.colorSpace = THREE.SRGBColorSpace;   // canvas 本身是 sRGB，颜色直出
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({
       map: tex, depthTest: false, depthWrite: false,
-      transparent: true, opacity: 0.72,   // 整体半透明，弱化对场景的遮挡感
+      transparent: true, opacity: LABEL_OPACITY,   // 由软遮挡逐帧驱动（1 / 0.35）
     }));
     sp.renderOrder = 999;   // 最后绘制：水面/半透明层不得覆盖标签；不写深度避免
                             // 透明四边形裁掉后画的相邻标签（14 车聚簇时必现）
@@ -1490,21 +1564,8 @@ export function initPlayback(container, store) {
   //   pen（击穿）= 白色球 + 小环；nonpen = 更大的球 + 明显 shock ring；ricochet = 侧向 sparks；
   //   miss（无 target）/未知结果 = 不生成 target impact（不伪造）
   const IMPACT_WHITE = 0xffffff;
-  function impactKind(s) {
-    if (s.target_eid == null) return null;
-    const f = s.hit_flags || 0;
-    if (s.is_author && f) {
-      if (f & 0x0008) return 'ricochet';
-      if (f & (0x0010 | 0x0040 | 0x0100 | 0x1000)) return 'pen';
-      return 'nonpen';
-    }
-    const r = s.game_hit_result;
-    if (r === 3) return 'pen';
-    if (r === 1) return 'ricochet';
-    if (r === 4) return 'nonpen';
-    if (r === 2) return 'ricochet';
-    return null;   // 0/255/缺失 = 结果未知或脱靶 → 不伪造 target impact
-  }
+  // impactKind 见 ./impactKind.js（纯函数，可单测）：game_hit_result 枚举里没有"跳弹"
+  // 取值（1=未击穿、2=间隙止），只有作者 hit_flags & 0x0008 才是跳弹证据。
   function spawnImpact(tr) {
     const kind = impactKind(tr.shot);
     if (!kind) return;
@@ -1585,10 +1646,7 @@ export function initPlayback(container, store) {
   // 关键语义：**壁钟（真实 ms）寿命**，而非回放时钟——任意倍速下可读时长相近
   // （2D battlePlayback.js 同款常量与注释）。因用壁钟，暂停时 transient 自然走完，
   // 无需特殊处理；seek 则清空并重置事件游标（不补播历史动画）。
-  const FLOAT_DMG_MS = 1000;   // 伤害飘字
-  const GHOST_MS = 600;        // HP 条 lost-HP 幽灵段（2D 同值）
-  const FLASH_MS = 280;        // HP 条受击闪（2D 同值）
-  const BURST_MS = 700;        // 击毁爆散
+  // FLOAT_DMG_MS / GHOST_MS / FLASH_MS / BURST_MS 来自 ../utils/battlePlayback.js（2D SSOT）
   const ghostByEid = new Map();  // eid -> { fromFrac, toFrac, untilMs }
   const flashByEid = new Map();  // eid -> untilMs
   let floatDmgs = [];          // { sp, tex, born, baseY, group }
