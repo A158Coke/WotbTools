@@ -11,62 +11,12 @@
  * - 阵亡却没有结算寿命 = 非法结算，整场失败（Java canonical fail-closed）。
  */
 import type { AgentBattleResult, AgentResultPlayer } from '../api/agent-replay-facets.js'
+import type { Battle, PlayerResult } from './compute/index.js'
 
 /** 结算时长封顶（与 Java ReplayParser 一致：异常长的时长不进入派生指标） */
 const MAX_DURATION_SEC = 420
 /** 早于 2014-01-01 的时间戳视为无效（Java 同阈值） */
 const MIN_VALID_TIMESTAMP_SEC = 1388534400
-
-export interface PlayerFacts {
-  accountId: number
-  team: number
-  tankId: number
-  nShots: number
-  nHitsDealt: number
-  nPenetrationsDealt: number
-  damageDealt: number
-  damageAssisted: number
-  damageReceived: number
-  nHitsReceived: number
-  nPenetrationsReceived: number
-  nEnemiesDamaged: number
-  kills: number
-  damageBlocked: number
-  victoryPointsEarned: number
-  victoryPointsSeized: number
-  survived: boolean
-  xp: number
-  credits: number
-  nickname: string
-  clan: string
-  prebattleGroupId: number | null
-  rank: number | null
-  settlementResultEntityId: number
-  settlementLifeTimeSec: number
-  settlementKillerResultEntityId: number | null
-  settlementDeathReasonRaw: number | null
-  killerAccountId: number | null
-  /** 兼容投影（导出 / 存活时间列）：存活 = 全场时长；阵亡 = min(结算寿命, 全场时长) */
-  survivalTimeSec: number
-  /** 兼容投影：阵亡 = 结算寿命毫秒；存活 = 0 */
-  deathTimeMillis: number
-}
-
-export interface BattleFacts {
-  arenaId: string | null
-  winnerTeam: number | null
-  arenaBonusType: number | null
-  version: string
-  mapName: string
-  durationS: number | null
-  startTime: number | null
-  settlementStartTime: number | null
-  settlementFinishReasonRaw: number | null
-  settlementDurationSec: number | null
-  recorder: string
-  clientVersion: string
-  players: PlayerFacts[]
-}
 
 const count = (value: number | null | undefined): number => value ?? 0
 
@@ -77,7 +27,7 @@ function durationOf(result: AgentBattleResult): number | null {
   return meta > 0 ? Math.min(meta, MAX_DURATION_SEC) : null
 }
 
-function playerFacts(p: AgentResultPlayer, durationS: number | null): PlayerFacts {
+function playerFacts(p: AgentResultPlayer, durationS: number | null): PlayerResult {
   const survived = p.survived === true
   const lifeTime = p.life_time_secs ?? 0
   if (!survived && lifeTime <= 0) {
@@ -115,15 +65,29 @@ function playerFacts(p: AgentResultPlayer, durationS: number | null): PlayerFact
     killerAccountId: p.killer_account_id ?? null,
     survivalTimeSec: survived ? battleSec : Math.min(lifeTime, battleSec),
     deathTimeMillis: survived ? 0 : Math.round(lifeTime * 1000),
+    // 以下由批次计算 enrichment 回填（车辆库 / 指标），解析层一律留空——与 Java ReplayParser 输出一致
+    tankName: '',
+    tankTier: '',
+    tankType: '',
+    tankNation: '',
+    alphaDamage: '',
+    contribution: null,
+    kast: null,
+    impact: null,
+    // 进场血量来自时序重建，不属于结算通道
+    observedMaxHp: null,
+    entryHpSource: null,
+    entryHp: null,
+    raw: null,
   }
 }
 
 /** parseResult → Battle 事实。非法结算（阵亡缺寿命）抛错，调用方记为该文件失败。 */
-export function toBattleFacts(result: AgentBattleResult): BattleFacts {
+export function toBattleFacts(result: AgentBattleResult): Battle {
   const durationS = durationOf(result)
   const timestamp = result.timestamp > MIN_VALID_TIMESTAMP_SEC ? result.timestamp : null
   return {
-    arenaId: result.arena_id ?? null,
+    arenaId: result.arena_id ?? '',
     winnerTeam: result.winner_team === 1 || result.winner_team === 2 ? result.winner_team : null,
     arenaBonusType: result.arena_bonus_type ?? null,
     version: result.client_version ?? '',
@@ -136,5 +100,8 @@ export function toBattleFacts(result: AgentBattleResult): BattleFacts {
     recorder: result.author_nickname,
     clientVersion: result.client_version ?? '',
     players: result.players.map((p) => playerFacts(p, durationS)),
+    // 上游未提供：录制者车辆只有 xlsx 导出用（待补上游字段）；阵容完整性批次计算与投影都不消费
+    recorderVehicle: '',
+    rosterComplete: null,
   }
 }
