@@ -1,5 +1,24 @@
 # Assault Single-Base Realtime State
 
+> **判据修正通告（2026-10-01）。** 本文档基于 **两场受控样本**（Neptune 完整占领 /
+> Malinovka 无占领，均 `11.20.0_china_apple`）得出的两条结论，已被 **62 份真实回放**
+> 复验推翻，生产实现（Java `AssaultBaseStateReconstructor` 与 Agent Rust Core 同批）
+> 已按修正后的判据更新：
+>
+> 1. **`field1` 不是进度族判别子。** 受控样本里进度恰好全部由 `field1=2` 承载，但真实
+>    回放中携带 `field3` 的族会在 `field1=1`/`field1=2` 之间切换——Yukon（重力模式，
+>    两族交替，锁 `field1=2` 丢 16/24 事件）、Winter Malinovka（仅 2，无害）、
+>    **Naval Frontier（遭遇战，仅 1）**、Hellas（评级战，13 条）。故 `field1` 是
+>    *哪一方的*进度（owner/占领方，精确语义仍未闭合），进度只认
+>    `field2==1 && field3 存在`。遭遇战（Encounter）与攻防战共用该载体。
+> 2. **裸初始化对不能证明目标存在。** `1=1,2=1` + `1=2,2=1` 是**通用广播**：62 份样本里
+>    Regular 的 Canal、TrainingRoom 的 Copperfield/Himmelsdorf、Any 的 Mayan Ruins 等
+>    **8 份普通对局只发这一对**（各 2 个 subtype8 包、无任何其它字段），而真实单基地场次
+>    发 182 个包（116 次 `field4=1` 标志流 + `field3` 进度）。故目标存在性要求目标族发出过
+>    **裸初始化对以外的**字段（`field3` 或 `field4`）。
+>
+> 下方正文保留原始取证过程与受控样本数据；与上述两条冲突处以上述修正为准。
+
 > Status: controlled protocol closure for the realtime capture-progress surface.
 >
 > Scope: two controlled Blitz `11.20.0_china_apple` Assault replays:
@@ -30,10 +49,10 @@ wrapper8  = 296 packets
 wrapper12 = 0 packets
 ```
 
-The progress family is:
+The progress family is (见文首修正通告：`field1` 非判别子，原标题陈述已被推翻):
 
 ```text
-nested field1 = 2        raw discriminator; exact private name UNKNOWN
+nested field1 = 1 or 2   progress carrier side; exact private name UNKNOWN
 nested field2 = 1        raw single-objective index; exact private name UNKNOWN
 nested field3 = progress PROVEN for this controlled Assault surface
 nested field4            absent on this family
@@ -97,7 +116,9 @@ progress=0 broadcast. `arenaBonusType=2` indicates a training room and never
 identifies Assault. The progress domain and field4 team semantics are unchanged.
 
 The shared reconstructor exposes `hasObjective(events)`: exact raw wrapper8
-field1=2 / field2=1 proves the objective family even when rawField3 is absent;
+field1=2 / field2=1 appears even when rawField3 is absent, **but the bare init pair is
+emitted by ordinary battles too** — see the correction notice; production now requires
+fields beyond that pair;
 independently decoded Supremacy wrapper12 suppresses Assault identification.
 The projector writes `assaultObjectivePresent=true` separately from `baseStates`.
 With no field3, `baseStates=[]` remains correct: no synthetic progress event.
@@ -136,9 +157,9 @@ or a team. The envelope retains the existing subtype48 framing and length checks
 
 | Wire location | Wire type | Raw event field | Proven meaning / 证据边界 |
 |---|---|---|---|
-| nested field1 | varint | `rawField1` | `2` selects the observed progress family; `1` occurs in the sibling family. Exact private enum name UNKNOWN |
+| nested field1 | varint | `rawField1` | 进度**所属方**（`1`/`2`）；**不是**进度族判别子——真实回放中携带 `field3` 的族在两值间切换。精确语义 UNKNOWN |
 | nested field2 | varint | `rawField2` | Observed value `1`; production progress gate requires exactly `1`. Exact index/identifier semantics UNKNOWN; never interpreted as team |
-| nested field3 | varint | `rawField3` | Raw scalar for every wrapper8 family; only field1=2 + field2=1 proves progress, with 1..100 observed |
+| nested field3 | varint | `rawField3` | `field2==1` 且本字段存在即进度（0..100；不锁 `field1`） |
 | nested field4 | varint | `rawField4` | Sibling family observed value `1`; exact meaning UNKNOWN. Never mapped to capturingTeam or ownerTeam |
 
 Absent scalar fields remain `null` in `RawAssaultBaseUpdate`. Known fields 1..4,
@@ -172,9 +193,10 @@ These bytes illustrate **nested children**, not complete captured packets:
 ```text
 08 02 10 01 18 01  → field1=2, field2=1, field3=1   → canonical progress 1
 08 02 10 01 18 64  → field1=2, field2=1, field3=100 → canonical progress 100
+08 01 10 01 18 07  → field1=1, field2=1, field3=7   → canonical progress 7（遭遇战实际形态）
 08 02 10 01 18 00  → explicit field3=0             → canonical progress 0
-08 02 10 01        → absent field3                 → objective present; no progress transition
-08 01 10 01 20 01  → field1=1, field2=1, field4=1   → raw-only; team UNKNOWN
+08 02 10 01        → absent field3                 → **裸初始化对：不构成目标证据**（普通对局同样发出）
+08 01 10 01 20 01  → field1=1, field2=1, field4=1   → 目标系统活跃（超出裸初始化对）；team UNKNOWN
 08 02 10 01 18 65  → field3=101                    → raw-only; reconstruction rejects progress
 08 01 10 01 18 AC 02 → sibling field3=300           → raw-only; no progress domain applied
 08 02 10 01 1A 00  → field3 length-delimited        → rejected scalar wire type
@@ -285,7 +307,9 @@ missing radius uses the presentation fallback.
 
 ```text
 wrapper8 init / objective existence          PROVEN two controlled samples
-field1=2 + field2=1 + field3 progress        PROVEN controlled sample
+field2=1 + field3 progress（任一 field1）     PROVEN 62-sample（含遭遇战/评级战）
+field1=2-only progress family                FALSIFIED（受控样本假象）
+bare init pair ⇒ objective present            FALSIFIED（8/62 普通对局同样发出）
 progress reaches protocol value 100          PROVEN controlled sample
 field1=1 + field2=1 + field4=1 semantics     UNKNOWN / strong correlation only
 finishReasonRaw=2 exact enum name             UNKNOWN / strong candidate
