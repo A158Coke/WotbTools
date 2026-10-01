@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import * as api from '../utils/api.js'
+import BrandMark from './BrandMark.vue'
 import cardReplayImg from '../assets/showcase/home/card-replay-parser-v1.webp'
 import cardAiReviewImg from '../assets/showcase/home/card-ai-review-v1.webp'
 import cardBattlePlaybackImg from '../assets/showcase/home/card-battle-playback-v1.webp'
@@ -32,7 +33,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
   <main class="homepage-showcase">
     <section class="showcase-hero">
       <div class="hero-copy">
-        <img class="hero-logo" src="/wotbtoolslogo-128.webp" width="128" height="128" alt="WoTBTools">
+        <BrandMark class="hero-logo" label="WoTBTools" />
         <p class="hero-kicker">WOTBTOOLS · BATTLE INTELLIGENCE</p>
         <h1>{{ $t('app.title') }}</h1>
         <p class="hero-subtitle">{{ $t('app.subtitle') }}</p>
@@ -120,7 +121,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
   padding: 52px;
   color: #f7f4ed;
 }
-.hero-logo { width: 62px; height: 62px; object-fit: contain; }
+.hero-logo { height: 56px; }
 .hero-kicker { margin: 18px 0 8px; color: #d59a32; font-size: .7rem; font-weight: 800; letter-spacing: .14em; }
 .showcase-hero h1 {
   margin: 0;
@@ -268,7 +269,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
   .showcase-hero { display: flex; flex-direction: column; min-height: 0; }
   .showcase-hero:before { background: linear-gradient(180deg, rgba(4, 8, 12, .9) 0%, rgba(4, 8, 12, .7) 54%, rgba(4, 8, 12, .97) 100%); }
   .hero-copy { width: 100%; padding: 24px 20px; }
-  .hero-logo { width: 48px; height: 48px; }
+  .hero-logo { height: 44px; }
   .showcase-hero h1 { font-size: 2.45rem; }
   .hero-subtitle { font-size: .92rem; }
   .hero-actions { flex-direction: column; }

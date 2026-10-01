@@ -7,6 +7,7 @@ import {
   isAdminOnlyView,
   locationForView,
   PRIMARY_NAV,
+  ADMIN_NAV,
   primaryNavItems,
   primarySection,
   viewFromRoute,
@@ -67,23 +68,24 @@ describe('primary navigation', () => {
     }
   })
 
-  it('maps settings, about, admin and tool pages to 更多', () => {
-    for (const view of ['more', 'history', 'technical-evolution', 'contact', 'sponsor', 'android',
-      'admin-users', 'hof-admin', 'rating-v2', 'rating-docs', 'playback-qa', 'agent-tankopedia', 'agent-armor']) {
+  it('maps settings and about pages to 更多; tankopedia and each admin page have their own section', () => {
+    for (const view of ['more', 'history', 'technical-evolution', 'contact', 'sponsor', 'android', 'rating-docs']) {
       expect(primarySection(view)).toBe('more')
     }
+    for (const view of ['agent-tankopedia', 'agent-armor']) expect(primarySection(view)).toBe('tankopedia')
+    for (const item of ADMIN_NAV) expect(primarySection(item.view)).toBe(item.id)
     expect(primarySection('profile')).toBe('account')
     expect(primarySection('hof')).toBe('hof')
     expect(primarySection('home')).toBe('home')
   })
 
   it('only offers Home on the production home host', () => {
-    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'more'])
-    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'more'])
+    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'more'])
+    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'more'])
   })
 
-  it('points every primary item at a registered view', () => {
-    for (const item of PRIMARY_NAV) expect(ALLOWED_VIEWS).toContain(item.view)
+  it('points every primary and admin item at a registered view', () => {
+    for (const item of [...PRIMARY_NAV, ...ADMIN_NAV]) expect(ALLOWED_VIEWS).toContain(item.view)
   })
 })
 

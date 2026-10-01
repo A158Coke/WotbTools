@@ -34,8 +34,6 @@
 | Contact              | `contact/contact-hero-radio-v1.webp`       | 全屏背景                            | 16:9；通信塔/无线电主题                                                                                       |
 | Sponsor              | `../../../public/sponsor-bg.webp`          | `/sponsor` Vue 页面背景             | 用户提供的原创素材；仅作赞助页氛围背景，不承载赞助配置或二维码                                               |
 
-隐藏的 `PlaybackQaPage` 是 QA / production-component verification 页面，不属于正式产品 Showcase，因此不创建营销背景。
-
 ## CSS 引用（加载顺序见 `frontend/src/main.js`）
 
 - `showcase-backgrounds.css`：全屏背景基础 contract + V2 SVG fallback。
