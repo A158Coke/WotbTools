@@ -496,7 +496,8 @@
 .battle-playback.pb-drawer-open .pb-left-rail {
   display: flex;
   position: fixed;
-  left: 0;
+  /* 平板有应用侧边栏（--sidebar-w）：抽屉贴着它展开，不钻到它下面；手机为 0 */
+  left: var(--sidebar-w);
   top: 0;
   bottom: 0;
   width: min(84vw, 320px);

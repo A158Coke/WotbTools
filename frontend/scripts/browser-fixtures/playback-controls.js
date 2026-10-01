@@ -29,7 +29,7 @@ import BattlePlayback from '../../src/components/BattlePlayback.vue'
 import { makeBattlePlaybackDataset } from '../../src/test/playbackV2TestUtil.js'
 
 /**
- * `?view=playback-qa` 之外的第二条浏览器级入口：以固定 dataset 直接挂载**生产**
+ * 浏览器级入口：以固定 dataset 直接挂载**生产**
  * `BattlePlayback`，用于验证播放控件在真实浏览器/真实设备形态下可交互。
  * `?duration=<sec>` 指定时间线长度；`duration=0` 用来复现「duration<=0 时播放按钮
  * 看起来可用但 silent no-op」这一类不可用态。
