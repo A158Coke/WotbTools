@@ -108,7 +108,6 @@ jobs:
     permissions:
       contents: read
     outputs:
-      image: ${{ steps.remote_build.outputs.image }}
       commit_sha: ${{ steps.identity.outputs.commit_sha }}
       digest: ${{ steps.remote_build.outputs.digest }}
     steps:
