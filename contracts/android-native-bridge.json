@@ -54,6 +54,16 @@
     "startUpdate": {
       "request": { "fields": {} },
       "response": { "type": "boolean" }
+    },
+    "getAuthClientSessionId": {
+      "request": { "fields": {} },
+      "response": { "type": "string" }
+    },
+    "setAuthClientSessionId": {
+      "request": {
+        "fields": { "clientSessionId": { "type": "string", "required": true } }
+      },
+      "response": { "type": "boolean" }
     }
   },
   "syntheticResources": {

@@ -133,7 +133,7 @@ public class QQIdentityProvider
             throw e;
         } catch (Exception e) {
             AuthEventLog.failure("qq", "identity", "QQ_UPSTREAM_FAILURE", e);
-            throw new IdentityBrokerException("QQ login failed", AuthEventLog.safeThrowable(e));
+            throw new IdentityBrokerException("QQ login failed", AuthEventLog.safeOAuthThrowable(e));
         }
     }
 

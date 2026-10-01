@@ -1,5 +1,7 @@
 import Keycloak from 'keycloak-js'
 import { computed, ref } from 'vue'
+import { reportClientFailure } from '../api/client-events.js'
+import { isAndroidApp, getAuthClientSessionId, setAuthClientSessionId } from './usePlatformBridge.js'
 
 const AUTH_INIT_WATCHDOG_MS = 12_000
 const AUTH_INIT_PENDING_LOG_MS = 5_000
@@ -26,6 +28,52 @@ const initFailureReason = ref(null)
  * 必须始终能重新发起 login。
  */
 const loginInFlight = ref(false)
+
+const SESSION_KEY = 'wotb-auth-client-session'
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+let clientSessionId = null
+let nativeSessionReady = null
+
+function authSession() {
+  if (clientSessionId) return clientSessionId
+  try { clientSessionId = sessionStorage.getItem(SESSION_KEY) } catch { /* Storage may be unavailable. */ }
+  if (!UUID_PATTERN.test(clientSessionId || '')) clientSessionId = crypto.randomUUID()
+  try { sessionStorage.setItem(SESSION_KEY, clientSessionId) } catch { /* In-memory session remains usable. */ }
+  return clientSessionId
+}
+
+async function syncAuthSession() {
+  const localId = authSession()
+  if (!isAndroidApp()) return localId
+  if (!nativeSessionReady) nativeSessionReady = (async () => {
+    const nativeId = await getAuthClientSessionId()
+    if (typeof nativeId === 'string' && UUID_PATTERN.test(nativeId)) {
+      if (clientSessionId === localId) {
+        clientSessionId = nativeId
+        try { sessionStorage.setItem(SESSION_KEY, nativeId) } catch { /* No credentials stored. */ }
+      }
+      return nativeId
+    }
+    await setAuthClientSessionId(localId)
+    return localId
+  })()
+  return nativeSessionReady.catch(() => localId)
+}
+
+function beginAuthAttempt() {
+  clientSessionId = crypto.randomUUID()
+  try { sessionStorage.setItem(SESSION_KEY, clientSessionId) } catch { /* In-memory session remains usable. */ }
+  const attemptId = clientSessionId
+  nativeSessionReady = isAndroidApp()
+    ? setAuthClientSessionId(attemptId).then(() => attemptId).catch(() => attemptId)
+    : null
+}
+
+function reportAuthFailure(event, errorCode, stage) {
+  const accessToken = event === 'client.auth_token_refresh_failed' ? '' : token()
+  void syncAuthSession().then(id => reportClientFailure(event, errorCode, { stage, clientSessionId: id }, accessToken))
+    .catch(() => { /* Telemetry must never change auth recovery or expose raw errors. */ })
+}
 
 function ensureKeycloak() {
   if (!keycloak) keycloak = new Keycloak(KEYCLOAK_CONFIG)
@@ -89,6 +137,8 @@ function markFailed(transaction, error, reason) {
       + `elapsedMs=${elapsedMs(transaction)}`,
     )
   }
+  reportAuthFailure(reason === 'init-timeout' ? 'client.auth_init_timeout' : 'client.auth_init_failed',
+    reason === 'init-timeout' ? 'AUTH_INIT_TIMEOUT' : 'AUTH_INIT_FAILED', 'init')
   resolveTransaction(transaction, false)
 }
 
@@ -194,6 +244,7 @@ async function initAuth() {
 }
 
 async function retryAuth() {
+  beginAuthAttempt()
   const promise = startAuthInit({ reason: 'retry' })
   console.debug(`[auth] init_retry generation=${currentTransaction.generation}`)
   return promise
@@ -216,6 +267,7 @@ async function login(view = 'profile') {
     return false
   }
   loginInFlight.value = true
+  beginAuthAttempt()
   console.debug(`[auth] login_requested view=${view} generation=${authGeneration}`)
   try {
     if (!currentTransaction || authInitState.value === 'initializing' || authInitState.value === 'failed') {
@@ -228,6 +280,9 @@ async function login(view = 'profile') {
       throw new Error('AUTH_INIT_NOT_READY')
     }
     return await transaction.keycloak.login({ redirectUri: loginRedirectUri(view) })
+  } catch (error) {
+    reportAuthFailure('client.auth_login_failed', 'AUTH_LOGIN_FAILED', 'login')
+    throw error
   } finally {
     loginInFlight.value = false
   }
@@ -264,6 +319,11 @@ const displayName = computed(
   () => tokenParsed.value?.displayName || tokenParsed.value?.preferred_username || '',
 )
 
+/** Side-effect-free bearer lookup; telemetry must never call useAuth()/initAuth(). */
+export function currentAuthToken() {
+  return keycloak?.token || ''
+}
+
 function token() {
   return keycloak?.token || ''
 }
@@ -277,6 +337,7 @@ async function ensureToken(minValidity = 30) {
     if (refreshed) tokenParsed.value = kc.tokenParsed
     return true
   } catch {
+    reportAuthFailure('client.auth_token_refresh_failed', 'AUTH_TOKEN_REFRESH_FAILED', 'token-refresh')
     authenticated.value = false
     tokenParsed.value = null
     authInitState.value = 'unauthenticated'

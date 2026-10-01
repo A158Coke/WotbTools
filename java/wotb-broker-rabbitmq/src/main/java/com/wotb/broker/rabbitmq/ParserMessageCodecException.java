@@ -1,5 +1,6 @@
 package com.wotb.broker.rabbitmq;
 
+import com.wotb.core.observability.ApplicationLogger;
 import java.util.Optional;
 
 /**
@@ -26,7 +27,7 @@ public final class ParserMessageCodecException extends RuntimeException {
             final String eventId,
             final Throwable cause
     ) {
-        super(detail + " (jobId=" + jobId + ", eventId=" + eventId + ")", cause);
+        super(detail, cause);
         this.jobId = jobId;
         this.eventId = eventId;
     }
@@ -39,5 +40,17 @@ public final class ParserMessageCodecException extends RuntimeException {
     /** Best-effort event identity of the undecodable body, empty when the body did not yield one. */
     public Optional<String> eventId() {
         return Optional.ofNullable(eventId);
+    }
+
+    /** Stable envelope diagnostic and typed root survive; nested JSON payload messages do not. */
+    public Throwable safePayloadThrowable() {
+        if (getCause() == null && getSuppressed().length == 0) return this;
+        final ParserMessageCodecException safe = new ParserMessageCodecException(getMessage(), jobId, eventId,
+                ApplicationLogger.safePayloadThrowable(getCause()));
+        safe.setStackTrace(getStackTrace());
+        for (final Throwable suppressed : getSuppressed()) {
+            safe.addSuppressed(ApplicationLogger.safePayloadThrowable(suppressed));
+        }
+        return safe;
     }
 }

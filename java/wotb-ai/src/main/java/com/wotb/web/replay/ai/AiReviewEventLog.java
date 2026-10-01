@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.core.observability.ApplicationLogger;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import org.slf4j.Logger;
 import org.slf4j.event.Level;
 import org.springframework.util.StringUtils;
@@ -37,6 +38,11 @@ public final class AiReviewEventLog {
                 "outcome", "degraded", "fallbackPath", path);
     }
 
+    public static void providerFallback(final Logger logger, final String event, final Throwable failure,
+                                        final String path) {
+        fallback(logger, event, safeAiProviderThrowable(failure), path);
+    }
+
     private static void log(final Logger logger, final Level level, final String event,
                             final String correlationId, final Throwable failure, final Object... fields) {
         final var builder = ApplicationLogger.event(logger, level, event)
@@ -45,7 +51,7 @@ public final class AiReviewEventLog {
             builder.addKeyValue(String.valueOf(fields[i]), fields[i + 1]);
         }
         if (failure != null) {
-            builder.setCause(ApplicationLogger.diagnosticCause(failure));
+            builder.setCause(failure);
         }
         builder.log(line(event, correlationId, fields));
     }
@@ -53,7 +59,22 @@ public final class AiReviewEventLog {
     public static void upstreamFailure(final Logger logger, final String event,
                                        final String correlationId, final Throwable cause,
                                        final Object... fields) {
-        log(logger, Level.WARN, event, correlationId, cause, fields);
+        log(logger, Level.WARN, event, correlationId, safeAiProviderThrowable(cause), fields);
+    }
+
+    private static Throwable safeAiProviderThrowable(final Throwable failure) {
+        if (failure instanceof AiUpstreamException upstream) {
+            // The application-owned root is a stable code. Only its provider cause is untrusted.
+            if (upstream.getCause() == null && upstream.getSuppressed().length == 0) return upstream;
+            final AiUpstreamException safe = new AiUpstreamException(upstream.code(), upstream.providerStatus(),
+                    upstream.correlationId(), ApplicationLogger.safeProviderThrowable(upstream.getCause()));
+            safe.setStackTrace(upstream.getStackTrace());
+            for (final Throwable suppressed : upstream.getSuppressed()) {
+                safe.addSuppressed(ApplicationLogger.safeProviderThrowable(suppressed));
+            }
+            return safe;
+        }
+        return ApplicationLogger.safeProviderThrowable(failure);
     }
 
     /** 当前线程的 correlationId（由 Controller worker 设置），缺失时为 {@code -}。 */

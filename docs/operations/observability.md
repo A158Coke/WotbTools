@@ -659,7 +659,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 
 ### Observability vNext PR A runtime foundation
 
-Loki uses canonical `service` labels: TX `business-api`, `keycloak`, `frontend`;
+Loki uses canonical `service` labels: TX `business-api`, `keycloak`, `web`;
 Yecao `ai-service`, `parser-worker`. Docker discovery selects exact Compose
 service labels, excluding Keycloak PostgreSQL. Legacy `container_name` labels on
 TX remain compatible with the six existing dashboards until PR B; no dashboard
@@ -669,22 +669,23 @@ Business API and retain their platform field.
 
 A Docker-internal `blackbox-exporter` supplies only three public GET probes:
 Web `/`, Business API `/api/health`, and Auth realm OpenID metadata. Prometheus
-scrapes `public-endpoints` with `service=web|business-api|auth-endpoint`;
+scrapes `public-endpoints` with `service=web|business-api|keycloak`;
 `probe_success` measures actual HTTP/TLS success, separately from scrape `up`.
 No parser health is inferred from logs or container existence. Deploy verification
 requires all three probes to succeed. Loki/Prometheus retention stays seven days,
 and the Prometheus size cap stays `2GB`.
 
-Keycloak console uses native JSON output; AuthEventLog writes canonical fields into
+Keycloak console uses native JSON output with `KC_LOG_MDC_ENABLED=true` and
+`KC_LOG_CONSOLE_INCLUDE_MDC=true`; AuthEventLog writes canonical fields into
 JBoss MDC and restores previous MDC after every event. TX Alloy flattens only
 these canonical fields to the top-level JSON, preserving native exception objects,
 stack traces and messages. Non-event operational logs pass through unchanged.
 QQ and WG provider JARs emit bounded AuthEventLog events for broker verification,
 validation rejection, upstream/unexpected failure and degraded token logout.
 User identity is deliberately absent before a SecurityContext JWT `sub` exists.
-OAuth exception diagnostics retain class names, stack frames, cause and suppressed
-chains while redacting all exception messages, which may contain request URLs,
-tokens or response bodies. Auth success means upstream broker verification, not
+Trusted internal exceptions retain original types, safe messages, stacks and causes.
+Only explicit OAuth/provider/raw-payload boundaries redact untrusted messages;
+their safe stage/code metadata and original type names remain available. Auth success means upstream broker verification, not
 proof of a completed Keycloak login.
 
 Production acceptance for PR A: verify TX/Yecao actual application streams using
@@ -711,19 +712,24 @@ An AMQP jobId is diagnostic metadata, never proof of authenticated user identity
 
 `POST /api/observability/client-events` permits anonymous reports and authenticated
 JWT reports. The OpenAPI schema is authoritative. The closed body accepts only
-`event`, `platform`, `errorCode` and optional UUID `correlationId`; userId, unknown
+`event`, `platform`, `errorCode`, optional UUID `correlationId`, and bounded auth
+`stage` / UUID `clientSessionId`; userId, unknown
 fields, duplicate keys, trailing JSON and arbitrary error messages are rejected.
 The maximum body is 4096 bytes. Nginx limits trusted client IPs to 10 requests per
 minute (burst 3); the service adds a global 300/minute bound and verified JWT-sub
 10/minute bound, without trusting forwarded headers as its own identity source.
 Valid reports return 204; invalid shape 400, oversize 413, throttled 429. Client
-reports are explicitly untrusted failure signals, not authoritative service health.
+reports are explicitly untrusted diagnostic signals, not authoritative service health.
 
-Only bootstrap failure, Agent WASM load failure and native main-frame WebView
-failure are reported. Browser reports are deduplicated per event per page; native
+Bootstrap, WASM and main-frame WebView failures are reported alongside auth init,
+login and refresh failures, plus native auth-return received/rejected/handoff events.
+WebView reports use `platform=android`; ordinary browsers use `web`. Auth attempts
+carry a randomly generated `clientSessionId` shared through the optional native
+bridge capability. It is neither OAuth state/code nor a user identity. Browser reports are deduplicated per event per page; native
 reports once per Activity. Reporting is best effort, time bounded and does not
 retry or recursively report its own failure. Android release version is 1.4.10;
-bridge version and business replay wire shapes are unchanged.
+the native auth-session bridge capability is additive and existing replay wire shapes
+remain unchanged.
 
 PR A production verification also requires authenticated→anonymous identity
 isolation, actual async review/export correlation, safe validation/retry/fallback
@@ -732,3 +738,14 @@ records. Run Android failure handling on a device. PR CI supplies the Docker
 Alloy/Loki, Keycloak and parser/broker/PostgreSQL integration checks unavailable
 when the local Docker daemon is absent. PR A does not change Grafana Home or the
 six-dashboard OpenTofu map; PR B remains gated on merge and runtime verification.
+
+API error records include explicit requestId, traceId, errorId (plus temporary id),
+errorCode, status, method and route path without query parameters. Typed ApiException
+diagnostics are safe application-owned fields; 5xx retain Throwable. WG logout cleanup
+failure emits one WARN `auth_token_cleanup_failed`, `outcome=degraded`,
+`errorCode=WG_LOGOUT_DEGRADED`; it is not counted as failed login.
+
+The Docker observability smoke starts the production Keycloak image with a CI-only
+provider logger hook and verifies actual JBoss MDC → Docker → TX Alloy → Loki,
+including canonical auth fields and exclusion of the database stream. The hook is
+not installed in production.

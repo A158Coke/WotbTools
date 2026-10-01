@@ -338,25 +338,42 @@ class MainActivity : Activity() {
     private fun reportWebFailure() {
         if (webFailureReported) return
         webFailureReported = true
-        executor.execute {
-            // Anonymous fixed-code report: never copy WebView cookies, auth URLs, or raw errors.
-            val connection = java.net.URL("$BASE_URL/api/observability/client-events")
-                .openConnection() as java.net.HttpURLConnection
-            try {
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                connection.instanceFollowRedirects = false
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json")
-                val body = """{"event":"client.android_webview_failed","platform":"android","errorCode":"CLIENT_WEBVIEW_FAILED"}"""
-                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                connection.responseCode
-            } catch (_: java.io.IOException) {
-                // Best effort, no retries or telemetry about telemetry.
-            } finally {
-                connection.disconnect()
+        reportNativeEvent("client.android_webview_failed", "CLIENT_WEBVIEW_FAILED")
+    }
+
+    private val reportedNativeEvents = mutableSetOf<String>()
+
+    private fun reportNativeEvent(event: String, errorCode: String, stage: String? = null) {
+        val sessionId = if (stage != null) bridgeAuthClientSessionId() else ""
+        synchronized(reportedNativeEvents) {
+            if (reportedNativeEvents.size >= 100 || !reportedNativeEvents.add("$event:$sessionId")) return
+        }
+        val body = org.json.JSONObject().put("event", event).put("platform", "android").put("errorCode", errorCode)
+        if (stage != null) body.put("stage", stage).put("clientSessionId", sessionId)
+        val encoded = body.toString()
+        try {
+            executor.execute {
+                var connection: java.net.HttpURLConnection? = null
+                try {
+                    // Fixed metadata only: never cookies, callback URLs, OAuth state/code, or raw errors.
+                    connection = java.net.URL("$BASE_URL/api/observability/client-events")
+                        .openConnection() as java.net.HttpURLConnection
+                    connection.requestMethod = "POST"
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+                    connection.instanceFollowRedirects = false
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(encoded.toByteArray(Charsets.UTF_8)) }
+                    connection.responseCode
+                } catch (_: java.io.IOException) {
+                    // Best effort, no retries or telemetry about telemetry.
+                } finally {
+                    connection?.disconnect()
+                }
             }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            // Activity shutdown must not turn a best-effort report into an auth failure.
         }
     }
 
@@ -457,6 +474,7 @@ class MainActivity : Activity() {
         webView.visibility = View.VISIBLE
         if (webView.url.isNullOrEmpty()) {
             val url = entryUrl()
+            if (pendingAuthReturn != null) reportNativeEvent("client.native_auth_webview_handoff", "NATIVE_AUTH_WEBVIEW_HANDOFF", "webview-handoff")
             // callback 开始加载后清空，防止再次 loadWeb 重复加载同一 callback。
             pendingAuthReturn = null
             webView.loadUrl(url)
@@ -838,7 +856,11 @@ class MainActivity : Activity() {
      */
     private fun handleAuthReturnColdStart(intent: Intent): Boolean {
         val uri = intent.data ?: return false
-        if (!verifyAuthReturn(intent, uri)) return false
+        if (!verifyAuthReturn(intent, uri)) {
+            if (uri.host.equals("auth.wotbtools.com", ignoreCase = true)) reportNativeEvent("client.native_auth_return_rejected", "NATIVE_AUTH_RETURN_REJECTED", "auth-return")
+            return false
+        }
+        reportNativeEvent("client.native_auth_return_received", "NATIVE_AUTH_RETURN_RECEIVED", "auth-return")
         pendingAuthReturn = uri
         inAuthFlow = true
         dismissAuthLinkRecovery(REASON_TRUSTED_AUTH_RETURN)
@@ -852,14 +874,21 @@ class MainActivity : Activity() {
      */
     private fun handleAuthReturnHot(intent: Intent): Boolean {
         val uri = intent.data ?: return false
-        if (!verifyAuthReturn(intent, uri)) return false
+        if (!verifyAuthReturn(intent, uri)) {
+            if (uri.host.equals("auth.wotbtools.com", ignoreCase = true)) reportNativeEvent("client.native_auth_return_rejected", "NATIVE_AUTH_RETURN_REJECTED", "auth-return")
+            return false
+        }
+        reportNativeEvent("client.native_auth_return_received", "NATIVE_AUTH_RETURN_RECEIVED", "auth-return")
         inAuthFlow = true
         hideAllGates()
         webView.visibility = View.VISIBLE
         // 受信任 auth return 已到达 ⇒ recovery 提示的前提消失。
         dismissAuthLinkRecovery(REASON_TRUSTED_AUTH_RETURN)
         Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link hot=true")
-        webView.post { webView.loadUrl(uri.toString()) }
+        webView.post {
+            reportNativeEvent("client.native_auth_webview_handoff", "NATIVE_AUTH_WEBVIEW_HANDOFF", "webview-handoff")
+            webView.loadUrl(uri.toString())
+        }
         return true
     }
 
@@ -878,9 +907,30 @@ class MainActivity : Activity() {
 
     // ── Native Bridge 白名单能力（供 Vue 端；origin-scoped）──
 
+    @Synchronized
+    fun bridgeAuthClientSessionId(): String {
+        val preferences = getSharedPreferences("auth-telemetry", MODE_PRIVATE)
+        val existing = preferences.getString("clientSessionId", null)
+        if (existing != null && validClientSessionId(existing)) return existing
+        val generated = java.util.UUID.randomUUID().toString()
+        preferences.edit().putString("clientSessionId", generated).apply()
+        return generated
+    }
+
+    @Synchronized
+    fun bridgeSetAuthClientSessionId(value: String?): Boolean {
+        if (value == null || !validClientSessionId(value)) return false
+        getSharedPreferences("auth-telemetry", MODE_PRIVATE).edit().putString("clientSessionId", value).apply()
+        return true
+    }
+
+    private fun validClientSessionId(value: String): Boolean = try {
+        value.length == 36 && java.util.UUID.fromString(value).toString().equals(value, ignoreCase = true)
+    } catch (_: IllegalArgumentException) { false }
+
     fun bridgeVersion(): Int = BuildConfig.NATIVE_BRIDGE_VERSION
 
-    fun bridgeCapabilities(): List<String> = listOf("replay-share", "replay-open", "app-update")
+    fun bridgeCapabilities(): List<String> = listOf("replay-share", "replay-open", "app-update", "auth-session")
 
     /**
      * pending replay 的 wire contract（`getPendingReplay` 的 result）：`pendingId` 是这份 pending 的

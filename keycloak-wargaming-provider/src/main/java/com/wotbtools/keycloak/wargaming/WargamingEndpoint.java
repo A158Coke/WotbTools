@@ -158,10 +158,9 @@ final class WargamingEndpoint {
             apiClient.logout(applicationId, accessToken);
         } catch (final WargamingApiClient.WargamingApiException e) {
             // token 值绝不进日志。
-            AuthEventLog.degraded("wargaming", "token-cleanup", "WG_LOGOUT_DEGRADED");
-            AuthEventLog.failure("wargaming", "logout", "WG_LOGOUT_DEGRADED", e);
+            AuthEventLog.tokenCleanupFailed(e);
         } catch (final RuntimeException e) {
-            AuthEventLog.failure("wargaming", "logout", "WG_LOGOUT_UNEXPECTED", e);
+            AuthEventLog.tokenCleanupFailed(e);
         }
     }
 

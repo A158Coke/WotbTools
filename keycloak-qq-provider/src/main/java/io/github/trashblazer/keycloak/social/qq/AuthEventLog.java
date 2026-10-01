@@ -24,7 +24,7 @@ final class AuthEventLog {
     }
 
     static void failure(String provider, String stage, String errorCode, Throwable failure) {
-        emit(Logger.Level.ERROR, "auth_failure", provider, stage, errorCode, "failure", safeThrowable(failure));
+        emit(Logger.Level.ERROR, "auth_failure", provider, stage, errorCode, "failed", safeOAuthThrowable(failure));
     }
 
     private static void emit(Logger.Level level, String event, String provider, String stage,
@@ -43,7 +43,7 @@ final class AuthEventLog {
 
     // OAuth HTTP/parser exception messages may embed URLs, response bodies and credentials.
     // Preserve the complete cause/suppressed topology and stack frames, but never those messages.
-    static Throwable safeThrowable(Throwable failure) {
+    static Throwable safeOAuthThrowable(Throwable failure) {
         return copy(failure, new IdentityHashMap<>());
     }
 
@@ -51,7 +51,12 @@ final class AuthEventLog {
         if (failure == null) return null;
         Throwable existing = seen.get(failure);
         if (existing != null) return existing;
-        Throwable safe = new Throwable(failure.getClass().getName() + " [OAuth message redacted]");
+        String message = failure.getMessage();
+        boolean stableProviderDiagnostic = failure instanceof org.keycloak.broker.provider.IdentityBrokerException
+                && java.util.Set.of("QQ did not return a valid openid", "QQ user information request was rejected",
+                        "QQ login failed").contains(message == null ? "" : message);
+        Throwable safe = stableProviderDiagnostic ? new org.keycloak.broker.provider.IdentityBrokerException(message)
+                : new OAuthBoundaryThrowable(failure.getClass().getName());
         safe.setStackTrace(failure.getStackTrace());
         seen.put(failure, safe);
         Throwable cause = copy(failure.getCause(), seen);
@@ -61,5 +66,17 @@ final class AuthEventLog {
             if (redacted != safe) safe.addSuppressed(redacted);
         }
         return safe;
+    }
+
+    private static final class OAuthBoundaryThrowable extends Throwable {
+        private final String originalType;
+
+        private OAuthBoundaryThrowable(String originalType) {
+            super(originalType + " [OAuth message redacted]");
+            this.originalType = originalType;
+        }
+
+        @Override
+        public String toString() { return originalType + ": " + getMessage(); }
     }
 }

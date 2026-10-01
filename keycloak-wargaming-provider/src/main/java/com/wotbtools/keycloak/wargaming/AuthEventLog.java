@@ -19,12 +19,17 @@ final class AuthEventLog {
         emit(Logger.Level.WARN, "auth_fallback", provider, stage, errorCode, "degraded", null);
     }
 
+    static void tokenCleanupFailed(Throwable failure) {
+        emit(Logger.Level.WARN, "auth_token_cleanup_failed", "wargaming", "token-cleanup",
+                "WG_LOGOUT_DEGRADED", "degraded", safeOAuthThrowable(failure));
+    }
+
     static void success(String provider) {
         emit(Logger.Level.INFO, "auth_broker_verified", provider, "identity", "NONE", "success", null);
     }
 
     static void failure(String provider, String stage, String errorCode, Throwable failure) {
-        emit(Logger.Level.ERROR, "auth_failure", provider, stage, errorCode, "failure", safeThrowable(failure));
+        emit(Logger.Level.ERROR, "auth_failure", provider, stage, errorCode, "failed", safeOAuthThrowable(failure));
     }
 
     private static void emit(Logger.Level level, String event, String provider, String stage,
@@ -43,7 +48,7 @@ final class AuthEventLog {
 
     // OAuth HTTP/parser exception messages may embed URLs, response bodies and credentials.
     // Preserve the complete cause/suppressed topology and stack frames, but never those messages.
-    static Throwable safeThrowable(Throwable failure) {
+    static Throwable safeOAuthThrowable(Throwable failure) {
         return copy(failure, new IdentityHashMap<>());
     }
 
@@ -51,12 +56,17 @@ final class AuthEventLog {
         if (failure == null) return null;
         Throwable existing = seen.get(failure);
         if (existing != null) return existing;
-        String diagnostic = " [OAuth message redacted]";
-        if (failure instanceof WargamingApiClient.WargamingApiException && failure.getMessage() != null
-                && failure.getMessage().matches("WG API rejected request: code=-?[0-9]+")) {
-            diagnostic = " " + failure.getMessage();
-        }
-        Throwable safe = new Throwable(failure.getClass().getName() + diagnostic);
+        String message = failure.getMessage();
+        boolean stableProviderDiagnostic = failure instanceof WargamingApiClient.WargamingApiException
+                && message != null && (message.matches("WG API rejected request: code=-?[0-9]+")
+                || message.matches("WG (API|login) returned HTTP [0-9]{3}")
+                || java.util.Set.of("WG login redirect missing Location", "WG login response missing data.location",
+                        "WG login request interrupted", "WG login request failed", "WG prolongate response missing access_token",
+                        "WG account/info did not return the account", "WG API request interrupted", "WG API request failed",
+                        "WG API returned invalid JSON", "WG prolongate response missing account_id",
+                        "WG prolongate response invalid account_id").contains(message));
+        Throwable safe = stableProviderDiagnostic ? new WargamingApiClient.WargamingApiException(message)
+                : new OAuthBoundaryThrowable(failure.getClass().getName());
         safe.setStackTrace(failure.getStackTrace());
         seen.put(failure, safe);
         Throwable cause = copy(failure.getCause(), seen);
@@ -66,5 +76,17 @@ final class AuthEventLog {
             if (redacted != safe) safe.addSuppressed(redacted);
         }
         return safe;
+    }
+
+    private static final class OAuthBoundaryThrowable extends Throwable {
+        private final String originalType;
+
+        private OAuthBoundaryThrowable(String originalType) {
+            super(originalType + " [OAuth message redacted]");
+            this.originalType = originalType;
+        }
+
+        @Override
+        public String toString() { return originalType + ": " + getMessage(); }
     }
 }

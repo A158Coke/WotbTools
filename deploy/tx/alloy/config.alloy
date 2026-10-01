@@ -81,11 +81,13 @@ loki.source.docker "keycloak" {
 // Flatten only our canonical fields, preserving native exceptions and operational logs.
 loki.process "auth_json" {
 	forward_to = [loki.write.default.receiver]
+
 	stage.json {
 		expressions = {
 			canonical = "mdc.event && merge(@, {event: mdc.event, provider: mdc.provider, errorCode: mdc.errorCode, stage: mdc.stage, outcome: mdc.outcome, service: mdc.service})",
 		}
 	}
+
 	stage.output {
 		source = "canonical"
 	}
@@ -114,7 +116,7 @@ discovery.relabel "frontend" {
 		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
 		regex         = "(.*)"
 		target_label  = "service"
-		replacement   = "frontend"
+		replacement   = "web"
 	}
 }
 

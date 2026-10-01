@@ -232,3 +232,9 @@ raw WebView error, replay content, or client userId is copied. Connect/read time
 seconds; failed telemetry is dropped without retry or recursive reporting. The native bridge
 protocol is unchanged. Frontend bootstrap and WASM initialization failures use separate fixed
 events; these signals describe critical failures, not native/parser worker health.
+
+### Auth attempt telemetry
+
+WebView auth timeout/init/login/refresh failures and native auth-return received/rejected/handoff use the strict client-events endpoint. Only fixed event/errorCode/stage, `platform=android`, and a random UUID `clientSessionId` are sent; callback URLs, OAuth state/code, cookies, tokens and exception text are excluded. A refresh failure reports anonymously because its bearer token may already be invalid. Server-validated JWT sub remains the only user identity.
+
+The additive bridge-v1 methods `getAuthClientSessionId` and `setAuthClientSessionId` exchange only that UUID through the existing trusted-origin RPC. Native stores it separately from OAuth data so a killed process can correlate its cold auth return. Web starts a fresh UUID for each explicit login/retry; ordinary Web uses sessionStorage across redirect. Old native versions return null/false and Web telemetry continues with its own UUID.

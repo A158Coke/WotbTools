@@ -168,11 +168,11 @@ public class TeamAutopsyService {
             if ("AI_CANCELLED".equals(e.code())) {
                 throw e;
             }
-            AiReviewEventLog.fallback(LOGGER, "ai_autopsy_failed", e, "skip_autopsy");
+            AiReviewEventLog.providerFallback(LOGGER, "ai_autopsy_failed", e, "skip_autopsy");
             count("failure");
             return null;
         } catch (final RuntimeException e) {
-            AiReviewEventLog.fallback(LOGGER, "ai_autopsy_failed", e, "skip_autopsy");
+            AiReviewEventLog.providerFallback(LOGGER, "ai_autopsy_failed", e, "skip_autopsy");
             count("failure");
             return null;
         } finally {

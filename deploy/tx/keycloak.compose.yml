@@ -13,6 +13,10 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD is required}
       KC_LOG_CONSOLE_OUTPUT: json
+      KC_LOG_MDC_ENABLED: "true"
+      KC_LOG_CONSOLE_INCLUDE_MDC: "true"
+      # Do not add IP, session or authentication-session identifiers to logs.
+      KC_LOG_MDC_KEYS: realmName,clientId
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/${KC_DB_NAME:-keycloak}
       KC_DB_USERNAME: ${KC_DB_USERNAME:?KC_DB_USERNAME is required}

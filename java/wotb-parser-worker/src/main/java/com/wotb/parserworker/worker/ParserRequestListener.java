@@ -93,7 +93,7 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
                     .addKeyValue("routingKey", routingKey)
                     .addKeyValue("bytes", message.getBody().length)
                     .addKeyValue("parkedOn", ParserTopology.PARSER_DLQ)
-                    .setCause(ApplicationLogger.diagnosticCause(e)).log("parser_worker_undecodable_request");
+                    .setCause(e.safePayloadThrowable()).log("parser_worker_undecodable_request");
             parkOnDlq(message.getBody(), channel, deliveryTag, routingKey);
             return;
         }
@@ -112,7 +112,7 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
                     .addKeyValue("attempt", request.attempt())
                     .addKeyValue("routingKey", routingKey)
                     .addKeyValue("outcome", "unacknowledged").addKeyValue("fallbackPath", "transport_redelivery")
-                    .setCause(ApplicationLogger.diagnosticCause(uncertainOutcome)).log("parser_worker_outcome_publish_uncertain");
+                    .setCause(uncertainOutcome).log("parser_worker_outcome_publish_uncertain");
             return;
         } catch (final Exception failure) {
             reportInfrastructureFailure(request, message, channel, deliveryTag, routingKey, failure);
@@ -149,7 +149,7 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
                     .addKeyValue("attempt", request.attempt())
                     .addKeyValue("routingKey", routingKey)
                     .addKeyValue("errorCode", errorCode)
-                    .addKeyValue("outcome", "unacknowledged").setCause(ApplicationLogger.diagnosticCause(undelivered)).log("parser_worker_failure_report_undelivered");
+                    .addKeyValue("outcome", "unacknowledged").setCause(undelivered).log("parser_worker_failure_report_undelivered");
             return;
         }
         ApplicationLogger.event(LOG, Level.ERROR, "parser_worker_infrastructure_failure")
@@ -157,7 +157,7 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
                     .addKeyValue("attempt", request.attempt())
                     .addKeyValue("routingKey", routingKey)
                     .addKeyValue("errorCode", errorCode)
-                    .setCause(ApplicationLogger.diagnosticCause(failure)).log("parser_worker_infrastructure_failure");
+                    .setCause(failure).log("parser_worker_infrastructure_failure");
         channel.basicAck(deliveryTag, false);
     }
 
@@ -176,7 +176,7 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
             ApplicationLogger.event(LOG, Level.ERROR, "parser_worker_terminal_park_undelivered")
                     .addKeyValue("routingKey", routingKey)
                     .addKeyValue("bytes", body.length)
-                    .setCause(ApplicationLogger.diagnosticCause(undelivered)).log("parser_worker_terminal_park_undelivered");
+                    .setCause(undelivered).log("parser_worker_terminal_park_undelivered");
             return;
         }
         ApplicationLogger.event(LOG, Level.WARN, "parser_worker_terminal_park_confirmed")

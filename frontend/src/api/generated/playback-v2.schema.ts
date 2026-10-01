@@ -17,7 +17,14 @@ export default {
           "enum": [
             "client.bootstrap_failed",
             "client.wasm_load_failed",
-            "client.android_webview_failed"
+            "client.android_webview_failed",
+            "client.auth_init_timeout",
+            "client.auth_init_failed",
+            "client.auth_login_failed",
+            "client.auth_token_refresh_failed",
+            "client.native_auth_return_received",
+            "client.native_auth_return_rejected",
+            "client.native_auth_webview_handoff"
           ]
         },
         "platform": {
@@ -32,12 +39,34 @@ export default {
           "enum": [
             "CLIENT_BOOTSTRAP_FAILED",
             "CLIENT_WASM_LOAD_FAILED",
-            "CLIENT_WEBVIEW_FAILED"
+            "CLIENT_WEBVIEW_FAILED",
+            "AUTH_INIT_TIMEOUT",
+            "AUTH_INIT_FAILED",
+            "AUTH_LOGIN_FAILED",
+            "AUTH_TOKEN_REFRESH_FAILED",
+            "NATIVE_AUTH_RETURN_RECEIVED",
+            "NATIVE_AUTH_RETURN_REJECTED",
+            "NATIVE_AUTH_WEBVIEW_HANDOFF"
           ]
         },
         "correlationId": {
           "type": "string",
           "format": "uuid"
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "init",
+            "login",
+            "token-refresh",
+            "auth-return",
+            "webview-handoff"
+          ]
+        },
+        "clientSessionId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Random anonymous auth attempt identifier; never OAuth state/code or user identity. Required with stage for auth events."
         }
       }
     },

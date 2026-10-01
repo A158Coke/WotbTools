@@ -16,7 +16,7 @@ scrape_configs:
       - targets:
           - 10.20.0.1:8088
         labels:
-          service: wotb-backend
+          service: business-api
 
   # AI Review executes as an independent Yecao runtime. Scrape it over the
   # shared wotb_internal Docker network; do not route local telemetry through
@@ -73,7 +73,7 @@ scrape_configs:
           service: business-api
       - targets: [https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration]
         labels:
-          service: auth-endpoint
+          service: keycloak
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

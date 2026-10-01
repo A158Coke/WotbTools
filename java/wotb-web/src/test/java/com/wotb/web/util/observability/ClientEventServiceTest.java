@@ -30,6 +30,23 @@ class ClientEventServiceTest {
     }
 
     @Test
+    void authEventsRequireBoundedSessionAndMatchingStageAndPlatform() throws IOException {
+        final String auth = """
+                {"event":"client.auth_init_timeout","platform":"android","errorCode":"AUTH_INIT_TIMEOUT",
+                 "stage":"init","clientSessionId":"48ec107a-c954-489c-9919-ea6f6ac1317c"}
+                """;
+        assertEquals(HttpStatus.NO_CONTENT, accept(auth));
+        assertEquals(HttpStatus.BAD_REQUEST, accept(auth.replace("init\"", "login\"")));
+        assertEquals(HttpStatus.BAD_REQUEST, accept(auth.replace("48ec107a-c954-489c-9919-ea6f6ac1317c", "oauth-secret")));
+        assertEquals(HttpStatus.BAD_REQUEST, accept(auth.replace(",\"clientSessionId\":\"48ec107a-c954-489c-9919-ea6f6ac1317c\"", "")));
+        final String nativeEvent = auth.replace("client.auth_init_timeout", "client.native_auth_return_received")
+                .replace("AUTH_INIT_TIMEOUT", "NATIVE_AUTH_RETURN_RECEIVED").replace("\"init\"", "\"auth-return\"");
+        assertEquals(HttpStatus.NO_CONTENT, accept(nativeEvent));
+        assertEquals(HttpStatus.BAD_REQUEST, accept(nativeEvent.replace("android", "web")));
+        assertEquals(HttpStatus.BAD_REQUEST, accept(VALID.replace("}", ",\"stage\":\"init\"}")));
+    }
+
+    @Test
     void throttlesPeerAndBoundsGlobalReports() throws IOException {
         final ClientEventService service = new ClientEventService();
         final Jwt jwt = Jwt.withTokenValue("test").header("alg", "RS256").subject("verified-sub").build();

@@ -99,7 +99,7 @@ public final class ParserMessageCodec {
         }
         if (!SCHEMA_VERSION.equals(version.asString())) {
             throw new ParserMessageCodecException(
-                    "unsupported parser envelope " + SCHEMA_VERSION_FIELD + ": " + version.asString(),
+                    "unsupported parser envelope " + SCHEMA_VERSION_FIELD,
                     peekJobId(body), peekEventId(body), null);
         }
         try {
@@ -134,7 +134,9 @@ public final class ParserMessageCodec {
                 return null;
             }
             final JsonNode value = node.get(field);
-            return value != null && value.isString() ? value.asString() : null;
+            if (value == null || !value.isString()) return null;
+            final String identity = value.asString();
+            return identity.matches("[a-zA-Z0-9_.-]{1,128}") ? identity : null;
         } catch (final JacksonException ignored) {
             // Unparsable body: no identity is the honest answer.
             return null;

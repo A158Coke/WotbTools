@@ -339,8 +339,8 @@ class ObservabilityDashboardContractTest {
     void teamReviewLoggingContractIsInfoLevelAndDoesNotLogRawAiContent() throws Exception {
         final String source = Files.readString(resolve("java", "wotb-ai", "src", "main", "java",
                 "com", "wotb", "web", "replay", "ai", "TeamReplayAnalysisService.java"));
-        assertTrue(source.contains("LOGGER.info(AiReviewEventLog.line(\"team_review_validation_conflict\""));
-        assertFalse(source.contains("LOGGER.debug(AiReviewEventLog.line(\"team_review_validation_conflict\""));
+        assertTrue(source.contains("AiReviewEventLog.info(LOGGER, \"team_review_validation_conflict\""));
+        assertFalse(source.contains("AiReviewEventLog.debug(LOGGER, \"team_review_validation_conflict\""));
         assertTrue(source.contains("\"rewrite\", rewrite"));
         assertTrue(source.contains("wotb_ai_team_review_validation_retry_total"));
         assertTrue(source.contains("case 4 -> \"SAFE\""));

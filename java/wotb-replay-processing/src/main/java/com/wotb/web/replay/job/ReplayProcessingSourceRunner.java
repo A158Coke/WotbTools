@@ -132,7 +132,7 @@ public final class ReplayProcessingSourceRunner {
             ApplicationLogger.event(LOGGER, Level.WARN, "processing_job_storage_failed")
                     .addKeyValue("jobId", jobId)
                     .addKeyValue("sourceIndex", sourceIndex)
-                    .setCause(ApplicationLogger.diagnosticCause(failure)).log("event=processing_job_storage_failed");
+                    .setCause(failure).log("event=processing_job_storage_failed");
             return "PROCESSING_JOB_STORAGE_UNAVAILABLE";
         }
         final String errorCode = failure instanceof ReplayProcessingSourceException sourceError
@@ -143,7 +143,7 @@ public final class ReplayProcessingSourceRunner {
                     .addKeyValue("jobId", jobId)
                     .addKeyValue("sourceIndex", sourceIndex)
                     .addKeyValue("errorCode", errorCode)
-                    .setCause(ApplicationLogger.diagnosticCause(failure)).log("event=processing_job_source_failed");
+                    .setCause(ApplicationLogger.safePayloadThrowable(failure)).log("event=processing_job_source_failed");
         return result;
     }
 

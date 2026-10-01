@@ -130,3 +130,12 @@ export function usePlatformBridge() {
     startUpdate,
   }
 }
+
+/** Bounded anonymous telemetry session; older bridges return null/false. */
+export async function getAuthClientSessionId() {
+  return await call('getAuthClientSessionId')
+}
+
+export async function setAuthClientSessionId(clientSessionId) {
+  return (await call('setAuthClientSessionId', { clientSessionId })) === true
+}

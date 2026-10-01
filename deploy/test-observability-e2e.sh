@@ -5,6 +5,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Smoke settings below must remain the settings enabled by the production owner.
+for setting in 'KC_LOG_CONSOLE_OUTPUT: json' 'KC_LOG_MDC_ENABLED: "true"' 'KC_LOG_CONSOLE_INCLUDE_MDC: "true"' 'KC_LOG_MDC_KEYS: realmName,clientId'; do
+  grep -Fq "$setting" "$ROOT/deploy/tx/keycloak.compose.yml" \
+    || { echo "FAIL: production Keycloak MDC configuration drift: $setting" >&2; exit 1; }
+done
 NETWORK="wotb-observability-e2e-${GITHUB_RUN_ID:-local}-$$"
 LOKI="wotb-observability-loki-${GITHUB_RUN_ID:-local}-$$"
 ALLOY="wotb-observability-alloy-${GITHUB_RUN_ID:-local}-$$"
@@ -32,6 +37,8 @@ fail() {
   docker logs "$ALLOY" 2>&1 | tail -80 >&2 || true
   echo "== Loki diagnostics ==" >&2
   docker logs "$LOKI" 2>&1 | tail -80 >&2 || true
+  echo "== Keycloak diagnostics ==" >&2
+  docker logs "$AUTH" 2>&1 | tail -80 >&2 || true
   exit 1
 }
 
@@ -99,7 +106,7 @@ keycloak_query() {
   loki_response_has_sample "$body" && grep -Fq "$KEYCLOAK_MARKER" <<<"$body"
 }
 frontend_query() {
-  body="$(query_range '{service="frontend",container_name="wotb-frontend",event="android_apk_download"}')"
+  body="$(query_range '{service="web",container_name="wotb-frontend",event="android_apk_download"}')"
   loki_response_has_sample "$body" \
     && grep -Fq 'event=android_apk_download' <<<"$body" \
     && grep -Fq "apk=$APK" <<<"$body" \
@@ -124,10 +131,20 @@ wait_until "Yecao parser Docker stream reaches Loki" keycloak_query
 docker run -d --name "$BACKEND_TX" --network "$NETWORK" \
   --label com.docker.compose.service=business-api \
   alpine:3.22 sh -c "while true; do echo event=backend_tx_smoke marker=$MARKER_TX; sleep 1; done" >/dev/null
+# Build the repository's production image, then add an isolated CI-only logger hook.
+PRODUCTION_IMAGE="wotbtools-keycloak:observability-production"
+SMOKE_IMAGE="wotbtools-keycloak:observability-smoke"
+docker build --build-arg BUILD_COMMIT=runtime-contract -f "$ROOT/docker/Dockerfile.keycloak" -t "$PRODUCTION_IMAGE" "$ROOT" >/dev/null
+docker build --build-arg PRODUCTION_IMAGE="$PRODUCTION_IMAGE" -t "$SMOKE_IMAGE" "$ROOT/deploy/observability/keycloak-smoke" >/dev/null
 docker run -d --name "$AUTH" --network "$NETWORK" --label com.docker.compose.service=keycloak \
-  alpine:3.22 sh -c "while true; do echo '{\"level\":\"ERROR\",\"message\":\"auth-$MARKER_TX\",\"mdc\":{\"event\":\"auth_failure\",\"provider\":\"qq\",\"errorCode\":\"QQ_UPSTREAM_FAILURE\",\"service\":\"keycloak\"},\"exception\":{\"message\":\"sanitized cause\",\"frames\":[{\"class\":\"AuthEventLog\"}]}}'; sleep 1; done" >/dev/null
+  -e KC_DB=postgres -e KC_DB_URL="jdbc:postgresql://$AUTH_DB:5432/keycloak" \
+  -e KC_DB_USERNAME=smoke -e KC_DB_PASSWORD=smoke-runtime-password \
+  -e KC_HTTP_ENABLED=true -e KC_HOSTNAME_STRICT=false \
+  -e KC_LOG_CONSOLE_OUTPUT=json -e KC_LOG_MDC_ENABLED=true \
+  -e KC_LOG_CONSOLE_INCLUDE_MDC=true -e KC_LOG_MDC_KEYS=realmName,clientId \
+  "$SMOKE_IMAGE" start --optimized >/dev/null
 docker run -d --name "$AUTH_DB" --network "$NETWORK" --label com.docker.compose.service=keycloak-postgres \
-  alpine:3.22 sh -c "while true; do echo event=excluded_database marker=db-$MARKER_TX; sleep 1; done" >/dev/null
+  -e POSTGRES_DB=keycloak -e POSTGRES_USER=smoke -e POSTGRES_PASSWORD=smoke-runtime-password postgres:18-alpine >/dev/null
 docker run -d --name "$ALLOY_TX" --network "$NETWORK" \
   -p 127.0.0.1::12345 \
   -e WOTB_LOKI_URL="http://loki:3100/loki/api/v1/push" \
@@ -197,12 +214,20 @@ wait_until "Yecao parser stream still reaches Loki" unlabeled_stream_not_collect
 wait_until "TX sanitized frontend stream reaches Loki" frontend_query
 
 auth_query() {
-  body="$(query_range '{service="keycloak"} | json | event="auth_failure" | provider="qq" | errorCode="QQ_UPSTREAM_FAILURE"')"
-  loki_response_has_sample "$body" && grep -Fq "auth-$MARKER_TX" <<<"$body" \
-    && grep -Fq 'exception' <<<"$body" && grep -Fq 'sanitized cause' <<<"$body" \
+  body="$(query_range '{service="keycloak"} | json | event="auth_failure" | provider="qq" | stage="runtime_smoke" | errorCode="QQ_UPSTREAM_FAILURE"')"
+  loki_response_has_sample "$body" && grep -Fq 'runtime_smoke' <<<"$body" \
+    && grep -Fq 'exception' <<<"$body" && grep -Fq 'java.io.IOException' <<<"$body" \
     && grep -Fq 'AuthEventLog' <<<"$body"
 }
 wait_until "TX Keycloak canonical stream reaches Loki" auth_query
+keycloak_oidc_ready() {
+  docker run --rm --network "$NETWORK" alpine:3.22 wget -qO- \
+    "http://$AUTH:8080/realms/master/.well-known/openid-configuration" | grep -Fq '"issuer"'
+}
+wait_until "Real production Keycloak OIDC runtime is ready" keycloak_oidc_ready
+# Assert native Keycloak JSON, before Alloy flattening. This is not a hand-written emitter.
+docker logs "$AUTH" 2>&1 | jq -R -s -e 'split("\n") | map(fromjson? | select(.mdc.event? == "auth_failure" and .mdc.provider == "qq" and .mdc.stage == "runtime_smoke" and .mdc.service == "keycloak" and .mdc.errorCode == "QQ_UPSTREAM_FAILURE" and (.mdc.outcome | length > 0))) | length > 0' >/dev/null \
+  || fail "real Keycloak JSON did not include provider JBoss MDC"
 body="$(query_range '{service="keycloak"}')"
-! grep -Fq "db-$MARKER_TX" <<<"$body" || fail "Keycloak PostgreSQL logs leaked into auth stream"
+! grep -Fq 'database system is ready' <<<"$body" || fail "Keycloak PostgreSQL logs leaked into auth stream"
 echo "OK: production Alloy Docker discovery, normalization, redaction, and Loki ingestion passed"

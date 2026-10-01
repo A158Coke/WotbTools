@@ -112,6 +112,24 @@ class ParserMessageContractTest {
     }
 
     @Test
+    void payloadIdentityAndSchemaVersionCannotEnterSafeDiagnostic() {
+        final byte[] body = "{\"schemaVersion\":\"raw-secret-token\",\"jobId\":\"oauth code=private\",\"eventId\":\"raw callback URL\"}"
+                .getBytes(StandardCharsets.UTF_8);
+        final ParserMessageCodecException failure =
+                assertThrows(ParserMessageCodecException.class, () -> codec.decodeRequest(body));
+        assertEquals("unsupported parser envelope schemaVersion", failure.getMessage());
+        assertNull(failure.jobId().orElse(null));
+        assertNull(failure.eventId().orElse(null));
+        assertEquals(ParserMessageCodecException.class, failure.safePayloadThrowable().getClass());
+        final ParserMessageCodecException withCause = new ParserMessageCodecException("parser envelope is not valid JSON",
+                null, null, new IllegalArgumentException("raw completion=private"));
+        final Throwable safe = withCause.safePayloadThrowable();
+        assertEquals(ParserMessageCodecException.class, safe.getClass());
+        assertEquals("parser envelope is not valid JSON", safe.getMessage());
+        org.junit.jupiter.api.Assertions.assertFalse(safe.getCause().getMessage().contains("private"));
+    }
+
+    @Test
     void nonJsonAndNonObjectBodiesFailClosed() {
         final byte[] notJson = "parser.request".getBytes(StandardCharsets.UTF_8);
         final byte[] notObject = "[1,2,3]".getBytes(StandardCharsets.UTF_8);

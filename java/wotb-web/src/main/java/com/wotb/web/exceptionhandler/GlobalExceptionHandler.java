@@ -30,6 +30,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.util.StringUtils;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -296,12 +297,24 @@ public class GlobalExceptionHandler {
         final String responseId = error.id();
         ApplicationLogger.event(log, error.status() >= 500 ? Level.ERROR : Level.INFO,
                         error.status() >= 500 ? "api_request_failed" : "api_request_rejected")
-                .addKeyValue("requestId", traceId).addKeyValue("id", responseId)
+                .addKeyValue("requestId", traceId).addKeyValue("traceId", traceId)
+                .addKeyValue("errorId", responseId).addKeyValue("id", responseId)
                 .addKeyValue("errorCode", error.errorCode()).addKeyValue("status", error.status())
-                .addKeyValue("method", method)
+                .addKeyValue("method", method).addKeyValue("path", requestPath(request))
+                .addKeyValue("diagnostic", exception instanceof ApiException api ? api.diagnosticMessage() : null)
                 .setCause(error.status() >= 500 ? exception : null)
                 .log(error.status() >= 500 ? "event=api_request_failed" : "event=api_request_rejected");
         return ResponseEntity.status(error.status()).body(error);
+    }
+
+    /** Prefer the route template; never include query parameters or OAuth callback data. */
+    private static String requestPath(final HttpServletRequest request) {
+        if (request == null) return "UNKNOWN";
+        final Object route = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        if (route instanceof String template) return template;
+        final String uri = request.getRequestURI();
+        return uri != null && uri.length() <= 256 && uri.matches("[A-Za-z0-9/_\\-.]+")
+                ? uri : "UNKNOWN";
     }
 
     private static String uploadTooLargeCode(final MaxUploadSizeExceededException exception) {

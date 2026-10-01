@@ -27,11 +27,23 @@ public class ClientEventService {
     private static final JsonMapper MAPPER = JsonMapper.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
-    private static final Set<String> FIELDS = Set.of("event", "platform", "errorCode", "correlationId");
+    private static final Set<String> FIELDS = Set.of("event", "platform", "errorCode", "correlationId", "stage", "clientSessionId");
     private static final Map<String, String> EVENTS = Map.of(
             "client.bootstrap_failed", "CLIENT_BOOTSTRAP_FAILED",
             "client.wasm_load_failed", "CLIENT_WASM_LOAD_FAILED",
-            "client.android_webview_failed", "CLIENT_WEBVIEW_FAILED");
+            "client.android_webview_failed", "CLIENT_WEBVIEW_FAILED",
+            "client.auth_init_timeout", "AUTH_INIT_TIMEOUT",
+            "client.auth_init_failed", "AUTH_INIT_FAILED",
+            "client.auth_login_failed", "AUTH_LOGIN_FAILED",
+            "client.auth_token_refresh_failed", "AUTH_TOKEN_REFRESH_FAILED",
+            "client.native_auth_return_received", "NATIVE_AUTH_RETURN_RECEIVED",
+            "client.native_auth_return_rejected", "NATIVE_AUTH_RETURN_REJECTED",
+            "client.native_auth_webview_handoff", "NATIVE_AUTH_WEBVIEW_HANDOFF");
+    private static final Map<String, String> AUTH_STAGES = Map.of(
+            "client.auth_init_timeout", "init", "client.auth_init_failed", "init",
+            "client.auth_login_failed", "login", "client.auth_token_refresh_failed", "token-refresh",
+            "client.native_auth_return_received", "auth-return", "client.native_auth_return_rejected", "auth-return",
+            "client.native_auth_webview_handoff", "webview-handoff");
     private final Map<String, Integer> peers = new HashMap<>();
     private long windowStart;
     private int total;
@@ -52,30 +64,40 @@ public class ClientEventService {
         } catch (final tools.jackson.core.JacksonException invalid) {
             return HttpStatus.BAD_REQUEST;
         }
-        if (node == null || !node.isObject() || node.size() < 3 || node.size() > 4
+        if (node == null || !node.isObject() || node.size() < 3 || node.size() > 6
                 || node.propertyStream().anyMatch(entry -> !FIELDS.contains(entry.getKey())
                         || !entry.getValue().isTextual())) return HttpStatus.BAD_REQUEST;
         final String event = node.path("event").asText();
         final String platform = node.path("platform").asText();
         final String errorCode = node.path("errorCode").asText();
         if (!errorCode.equals(EVENTS.get(event)) || !("web".equals(platform) || "android".equals(platform))
-                || (event.equals("client.android_webview_failed") && !platform.equals("android"))) {
+                || ((event.equals("client.android_webview_failed") || event.startsWith("client.native_auth_")) && !platform.equals("android"))) {
             return HttpStatus.BAD_REQUEST;
         }
+        final String stage = node.path("stage").asText("");
+        final String clientSessionId = node.path("clientSessionId").asText("");
         final String correlationId = node.path("correlationId").asText("");
-        if (node.has("correlationId")) {
-            try {
-                if (!UUID.fromString(correlationId).toString().equalsIgnoreCase(correlationId)) return HttpStatus.BAD_REQUEST;
-            } catch (final IllegalArgumentException invalid) {
-                return HttpStatus.BAD_REQUEST;
-            }
-        }
-        final var log = ApplicationLogger.event(LOGGER, Level.WARN, event)
+        final String expectedStage = AUTH_STAGES.get(event);
+        if ((expectedStage != null && (!expectedStage.equals(stage) || !validUuid(clientSessionId)))
+                || (expectedStage == null && (node.has("stage") || node.has("clientSessionId")))
+                || (node.has("correlationId") && !validUuid(correlationId))) return HttpStatus.BAD_REQUEST;
+        final boolean success = event.equals("client.native_auth_return_received")
+                || event.equals("client.native_auth_webview_handoff");
+        final var log = ApplicationLogger.event(LOGGER, success ? Level.INFO : Level.WARN, event)
                 .addKeyValue("platform", platform).addKeyValue("errorCode", errorCode)
-                .addKeyValue("outcome", "failed");
+                .addKeyValue("outcome", success ? "succeeded" : "failed");
         if (!correlationId.isEmpty()) log.addKeyValue("correlationId", correlationId);
-        log.log("Allowlisted critical client failure reported");
+        if (expectedStage != null) log.addKeyValue("stage", stage).addKeyValue("clientSessionId", clientSessionId);
+        log.log("Allowlisted critical client event reported");
         return HttpStatus.NO_CONTENT;
+    }
+
+    private static boolean validUuid(final String value) {
+        try {
+            return UUID.fromString(value).toString().equalsIgnoreCase(value);
+        } catch (final IllegalArgumentException invalid) {
+            return false;
+        }
     }
 
     // Ignore forwarded headers so clients cannot invent a throttle identity; bound memory to 300 peers.

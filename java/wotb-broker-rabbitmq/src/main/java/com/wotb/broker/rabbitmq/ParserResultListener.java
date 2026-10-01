@@ -57,13 +57,13 @@ public final class ParserResultListener implements ChannelAwareMessageListener {
         } catch (final ParserMessageCodecException e) {
             ApplicationLogger.event(LOG, Level.ERROR, "parser_outcome_undecodable")
                     .addKeyValue("routingKey", routingKey).addKeyValue("outcome", "dead_lettered")
-                    .setCause(ApplicationLogger.diagnosticCause(e)).log("Parser outcome rejected to DLQ");
+                    .setCause(e.safePayloadThrowable()).log("Parser outcome rejected to DLQ");
             channel.basicNack(deliveryTag, false, false);
             return;
         } catch (final RuntimeException e) {
             ApplicationLogger.event(LOG, Level.ERROR, "parser_outcome_apply_failed")
                     .addKeyValue("routingKey", routingKey).addKeyValue("outcome", "dead_lettered")
-                    .setCause(ApplicationLogger.diagnosticCause(e)).log("Parser outcome application failed");
+                    .setCause(e).log("Parser outcome application failed");
             channel.basicNack(deliveryTag, false, false);
             return;
         }

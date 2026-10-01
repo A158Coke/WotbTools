@@ -7,6 +7,8 @@ const kcInit = vi.fn(() => Promise.resolve(true))
 const kcLogout = vi.fn(() => Promise.resolve(undefined))
 const kcUpdateToken = vi.fn(() => Promise.resolve(false))
 const kcConfigs = []
+const telemetry = vi.hoisted(() => vi.fn())
+vi.mock('../api/client-events.js', () => ({ reportClientFailure: telemetry }))
 
 vi.mock('keycloak-js', () => ({
   default: class {
@@ -86,6 +88,7 @@ describe('useAuth', () => {
 
     rejectFirst(new Error('AUTH_NAVIGATION_FAILED'))
     await expect(first).rejects.toThrow('AUTH_NAVIGATION_FAILED')
+    await vi.waitFor(() => expect(telemetry).toHaveBeenCalledWith('client.auth_login_failed', 'AUTH_LOGIN_FAILED', { stage: 'login', clientSessionId: expect.stringMatching(/^[a-f0-9-]{36}$/) }, ''))
     // 不是 component-lifetime 锁：失败后必须回到可重试状态
     expect(auth.loginInFlight.value).toBe(false)
 
@@ -116,6 +119,7 @@ describe('useAuth', () => {
 
     expect(auth.authInitState.value).toBe('failed')
     expect(auth.initFailureReason.value).toBe('init-error')
+    await vi.waitFor(() => expect(telemetry).toHaveBeenCalledWith('client.auth_init_failed', 'AUTH_INIT_FAILED', { stage: 'init', clientSessionId: expect.stringMatching(/^[a-f0-9-]{36}$/) }, ''))
     expect(auth.initialized.value).toBe(true)
   })
 
@@ -130,6 +134,7 @@ describe('useAuth', () => {
     await expect(pending).resolves.toBe(false)
     expect(auth.authInitState.value).toBe('failed')
     expect(auth.initFailureReason.value).toBe('init-timeout')
+    expect(telemetry).toHaveBeenCalledWith('client.auth_init_timeout', 'AUTH_INIT_TIMEOUT', { stage: 'init', clientSessionId: expect.stringMatching(/^[a-f0-9-]{36}$/) }, '')
     expect(auth.authenticated.value).toBe(false)
   })
 
@@ -204,4 +209,28 @@ describe('useAuth', () => {
     auth.tokenParsed.value = null
     expect(auth.displayName.value).toBe('')
   })
+  it('reports token refresh failure with fixed diagnostics and no exception contents', async () => {
+    const auth = useAuth()
+    await auth.retryAuth()
+    kcUpdateToken.mockRejectedValueOnce(new Error('secret provider payload'))
+    expect(await auth.ensureToken()).toBe(false)
+    await vi.waitFor(() => expect(telemetry).toHaveBeenCalledWith('client.auth_token_refresh_failed', 'AUTH_TOKEN_REFRESH_FAILED', { stage: 'token-refresh', clientSessionId: expect.stringMatching(/^[a-f0-9-]{36}$/) }, ''))
+  })
+
+  it('rotates the anonymous session on each new auth attempt', async () => {
+    telemetry.mockClear()
+    const auth = useAuth()
+    kcInit.mockRejectedValueOnce(new Error('oauth-secret-one'))
+    await auth.retryAuth()
+    await vi.waitFor(() => expect(telemetry).toHaveBeenCalledTimes(1))
+    const first = telemetry.mock.calls[0][2].clientSessionId
+    kcInit.mockRejectedValueOnce(new Error('oauth-secret-two'))
+    await auth.retryAuth()
+    await vi.waitFor(() => expect(telemetry).toHaveBeenCalledTimes(2))
+    const second = telemetry.mock.calls[1][2].clientSessionId
+    expect(first).not.toBe(second)
+    expect(sessionStorage.getItem('wotb-auth-client-session')).toBe(second)
+    expect(JSON.stringify(telemetry.mock.calls)).not.toContain('oauth-secret')
+  })
+
 })

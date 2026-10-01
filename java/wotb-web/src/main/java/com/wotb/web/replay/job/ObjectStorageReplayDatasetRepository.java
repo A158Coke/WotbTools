@@ -95,7 +95,7 @@ public final class ObjectStorageReplayDatasetRepository
             ApplicationLogger.event(LOGGER, Level.ERROR, "replay_processing_dataset_unreadable")
                     .addKeyValue("jobId", job.jobId())
                     .addKeyValue("key", key.value())
-                    .setCause(ApplicationLogger.diagnosticCause(e)).log("Replay processing lifecycle");
+                    .setCause(e instanceof IOException ? e : ApplicationLogger.safePayloadThrowable(e)).log("Replay processing lifecycle");
             return null;
         }
     }
@@ -202,7 +202,7 @@ public final class ObjectStorageReplayDatasetRepository
                     .addKeyValue("jobId", jobId)
                     .addKeyValue("sourceIndex", sourceIndex)
                     .addKeyValue("key", key.value())
-                    .setCause(ApplicationLogger.diagnosticCause(e)).log("Replay processing lifecycle");
+                    .setCause(e instanceof IOException ? e : ApplicationLogger.safePayloadThrowable(e)).log("Replay processing lifecycle");
             return null;
         }
     }

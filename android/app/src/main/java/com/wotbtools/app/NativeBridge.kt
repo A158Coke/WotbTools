@@ -5,10 +5,10 @@ import org.json.JSONObject
 
 /**
  * origin-scoped bridge：经 WebView WebMessageListener，仅 wotbtools.com/www 可调。
- * 只暴露：capability/version discovery、pending replay handoff、app update 触发。
+ * 只暴露：capability/version discovery、pending replay handoff、app update、匿名 auth telemetry UUID。
  * 禁止 arbitrary file/http/command/intent API（规格 §27）。
  *
- * 消息形状 `{id, method, params}`；只有 `consumePendingReplay` 使用 params —— 它必须携带
+ * 消息形状 `{id, method, params}`；`setAuthClientSessionId` 只接受 UUID；`consumePendingReplay` 必须携带
  * `pendingId` 作为 ACK 的 identity，缺失 / 空白一律走 `MISSING_IDENTITY`（绝不清理 pending）。
  */
 class NativeBridge(private val host: MainActivity) {
@@ -23,6 +23,8 @@ class NativeBridge(private val host: MainActivity) {
             id = msg.opt("id")
             val params = msg.optJSONObject("params")
             when (msg.optString("method")) {
+                "getAuthClientSessionId" -> result = host.bridgeAuthClientSessionId()
+                "setAuthClientSessionId" -> result = host.bridgeSetAuthClientSessionId(params?.optString("clientSessionId"))
                 "getBridgeVersion" -> result = host.bridgeVersion()
                 "getCapabilities" -> result = JSONArray(host.bridgeCapabilities())
                 "getPendingReplay" -> result = host.bridgePendingReplayJson()

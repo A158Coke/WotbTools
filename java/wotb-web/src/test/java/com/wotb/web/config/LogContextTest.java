@@ -10,7 +10,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-import org.slf4j.event.Level;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -28,15 +27,15 @@ class LogContextTest {
         final RuntimeException failure = new RuntimeException("raw replay payload",
                 new IllegalArgumentException("private meta.json value"));
         failure.addSuppressed(new java.io.IOException("secret response body"));
-        final Throwable safe = ApplicationLogger.diagnosticCause(failure);
+        final Throwable safe = ApplicationLogger.safePayloadThrowable(failure);
         final java.io.StringWriter output = new java.io.StringWriter();
         safe.printStackTrace(new java.io.PrintWriter(output));
         org.junit.jupiter.api.Assertions.assertFalse(output.toString().contains("raw replay payload"));
         org.junit.jupiter.api.Assertions.assertFalse(output.toString().contains("private meta.json"));
         org.junit.jupiter.api.Assertions.assertFalse(output.toString().contains("secret response"));
         assertEquals(failure.getStackTrace().length, safe.getStackTrace().length);
-        assertEquals(IllegalArgumentException.class.getName(), safe.getCause().getMessage());
-        assertEquals(java.io.IOException.class.getName(), safe.getSuppressed()[0].getMessage());
+        org.junit.jupiter.api.Assertions.assertTrue(safe.getCause().toString().contains(IllegalArgumentException.class.getName()));
+        org.junit.jupiter.api.Assertions.assertTrue(safe.getSuppressed()[0].toString().contains(java.io.IOException.class.getName()));
     }
 
     @Test
@@ -79,13 +78,16 @@ class LogContextTest {
         logger.addAppender(appender);
         try {
             final IllegalStateException failure = new IllegalStateException("unexpected", new java.io.IOException("root cause"));
-            ApplicationLogger.event(logger, Level.ERROR, "replay_failed")
-                    .addKeyValue("jobId", "job-42").setCause(failure).log("Replay failed");
+            ApplicationLogger.error(logger, "replay_failed", failure, "jobId", "job-42");
             final ILoggingEvent event = appender.list.getFirst();
             assertEquals("event", event.getKeyValuePairs().getFirst().key);
             assertEquals("replay_failed", event.getKeyValuePairs().getFirst().value);
+            assertEquals(IllegalStateException.class.getName(), event.getThrowableProxy().getClassName());
+            assertEquals("unexpected", event.getThrowableProxy().getMessage());
             assertEquals("java.io.IOException", event.getThrowableProxy().getCause().getClassName());
             assertEquals("root cause", event.getThrowableProxy().getCause().getMessage());
+            assertThrows(IllegalArgumentException.class, () -> ApplicationLogger.info(logger, "invalid event"));
+            assertThrows(IllegalArgumentException.class, () -> ApplicationLogger.warn(logger, "valid_event", "odd"));
         } finally {
             logger.detachAppender(appender);
             appender.stop();

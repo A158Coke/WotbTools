@@ -12,6 +12,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -32,7 +34,7 @@ class BattlePlaybackErrorContractTest {
         final String traceId = "playback-error-trace";
         final MapOverviewQueryService mapOverview = mock(MapOverviewQueryService.class);
         when(mapOverview.buildBattlePlaybackFromDataset("p1", 0))
-                .thenThrow(new RuntimeException("private playback storage detail"));
+                .thenThrow(new RuntimeException("private playback storage detail", new java.io.IOException("safe storage diagnostic")));
         final ReconstructionController controller = new ReconstructionController(mapOverview);
         final MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
@@ -62,11 +64,22 @@ class BattlePlaybackErrorContractTest {
                     .andExpect(jsonPath("$.message").doesNotExist())
                     .andExpect(jsonPath("$.stackTrace").doesNotExist());
 
-            assertTrue(appender.list.stream().anyMatch(event ->
-                            event.getLevel() == Level.ERROR
-                                    && event.getFormattedMessage().contains("api_request_failed")
-                                    && event.getFormattedMessage().contains("traceId=" + traceId)),
-                    "500 log must carry the same traceId returned by the endpoint");
+            final ILoggingEvent event = appender.list.stream().filter(e -> e.getLevel() == Level.ERROR)
+                    .filter(e -> e.getKeyValuePairs().stream().anyMatch(pair ->
+                            pair.key.equals("event") && pair.value.equals("api_request_failed")))
+                    .findFirst().orElseThrow();
+            final java.util.Map<String, Object> fields = event.getKeyValuePairs().stream()
+                    .filter(pair -> pair.value != null)
+                    .collect(java.util.stream.Collectors.toMap(pair -> pair.key, pair -> pair.value));
+            assertEquals(traceId, fields.get("traceId"));
+            assertEquals(traceId, fields.get("requestId"));
+            assertEquals(traceId, fields.get("errorId"));
+            assertEquals("/api/replay/battle-playback-v2", fields.get("path"));
+            assertNotNull(event.getThrowableProxy());
+            assertEquals("private playback storage detail", event.getThrowableProxy().getMessage());
+            assertEquals(java.io.IOException.class.getName(), event.getThrowableProxy().getCause().getClassName());
+            assertEquals("safe storage diagnostic", event.getThrowableProxy().getCause().getMessage());
+            assertTrue(event.getThrowableProxy().getStackTraceElementProxyArray().length > 0);
         } finally {
             logger.detachAppender(appender);
             logger.setLevel(previousLevel);

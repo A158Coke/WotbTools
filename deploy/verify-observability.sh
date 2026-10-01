@@ -174,7 +174,7 @@ prometheus_value_is_one <<<"$prom_query" || fail "PROMETHEUS_TARGET" "Prometheus
 echo "PASS: Prometheus data query"
 
 # Scrape availability is distinct from endpoint availability: require probe_success.
-for probe_service in web business-api auth-endpoint; do
+for probe_service in web business-api keycloak; do
   probe_ready=false
   for attempt in $(seq 1 "$RETRIES"); do
     sample="$(query_prometheus "min(probe_success{job=\"public-endpoints\",service=\"$probe_service\"})" 2>/dev/null || true)"

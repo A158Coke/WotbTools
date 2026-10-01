@@ -143,15 +143,27 @@ class GlobalExceptionHandlerTest {
     void typedInternalErrorResponseIdIsLoggedAndSearchable() {
         final MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/replay/probe");
         request.setAttribute(RequestTrace.REQUEST_ATTRIBUTE, "trace-log-500");
+        request.setQueryString("code=never-log-code&state=never-log-state");
         final ApiException exception = new ApiException(ApiErrorCode.INTERNAL_ERROR, "safe diagnostic", java.util.Map.of());
 
         final ResponseEntity<ApiErrorResponse> response = handler.handleApiException(exception, request);
 
         assertEquals(exception.id(), response.getBody().id());
-        assertTrue(errorEvents().stream().anyMatch(event ->
-                event.getFormattedMessage().contains("traceId=trace-log-500")
-                        && event.getFormattedMessage().contains("id=" + exception.id())
-                        && event.getFormattedMessage().contains("errorMsg=safe diagnostic")));
+        final ILoggingEvent event = errorEvents().getFirst();
+        final java.util.Map<String, Object> fields = event.getKeyValuePairs().stream()
+                .collect(java.util.stream.Collectors.toMap(pair -> pair.key, pair -> pair.value));
+        assertEquals("api_request_failed", fields.get("event"));
+        assertEquals("trace-log-500", fields.get("requestId"));
+        assertEquals("trace-log-500", fields.get("traceId"));
+        assertEquals(exception.id(), fields.get("errorId"));
+        assertEquals("INTERNAL_ERROR", fields.get("errorCode"));
+        assertEquals(500, fields.get("status"));
+        assertEquals("POST", fields.get("method"));
+        assertEquals("/api/replay/probe", fields.get("path"));
+        assertFalse(fields.toString().contains("never-log"));
+        assertEquals("safe diagnostic", fields.get("diagnostic"));
+        assertEquals(ApiException.class.getName(), event.getThrowableProxy().getClassName());
+        assertTrue(event.getThrowableProxy().getStackTraceElementProxyArray().length > 0);
     }
 
     @Test

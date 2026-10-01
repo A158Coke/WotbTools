@@ -462,7 +462,7 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         } catch (final Exception e) {
             logEvent(Level.ERROR, "processing_job_unexpected_failure", job.jobId(),
                     "errorCode", errorCodeOf(e))
-                    .setCause(ApplicationLogger.diagnosticCause(e)).log();
+                    .setCause(e).log();
             if (job.isCancelled()) {
                 job.markCancelled();
             } else {

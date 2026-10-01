@@ -14,7 +14,9 @@ jobs:
   observability_config:
     name: Observability
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The runtime smoke now compiles the actual production Keycloak image before
+    # exercising native MDC -> TX Alloy -> Loki, including cold Maven downloads.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
         with:

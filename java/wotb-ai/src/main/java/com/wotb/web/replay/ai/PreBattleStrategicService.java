@@ -114,7 +114,7 @@ public class PreBattleStrategicService {
         try {
             prior = PreBattleStrategicParser.parse(gateway.chat(request).completionText());
         } catch (final RuntimeException e) {
-            AiReviewEventLog.fallback(LOGGER, "ai_prebattle_failed", e, "skip_prebattle");
+            AiReviewEventLog.providerFallback(LOGGER, "ai_prebattle_failed", e, "skip_prebattle");
             if (meterRegistry != null) {
                 meterRegistry.counter("wotb_ai_review_prebattle_total", "result", "failure").increment();
             }

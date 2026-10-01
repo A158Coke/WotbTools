@@ -3,6 +3,8 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
   consumePendingReplay,
+  getAuthClientSessionId,
+  setAuthClientSessionId,
   getCapabilities,
   getNativeBridgeVersion,
   getPendingReplay,
@@ -102,4 +104,31 @@ describe('usePlatformBridge', () => {
     stubNative(['replay-share'], { pendingId: 'pid-2', name: 'a.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 1 }, false)
     await expect(consumePendingReplay('pid-1')).resolves.toBe(false)
   })
+  it('auth session RPC sends only a UUID and tolerates an older native bridge', async () => {
+    const { calls } = stubNative([], null)
+    expect(await getAuthClientSessionId()).toBeNull()
+    expect(await setAuthClientSessionId('48ec107a-c954-489c-9919-ea6f6ac1317c')).toBe(false)
+    expect(calls).toEqual([
+      { method: 'getAuthClientSessionId', params: {} },
+      { method: 'setAuthClientSessionId', params: { clientSessionId: '48ec107a-c954-489c-9919-ea6f6ac1317c' } },
+    ])
+  })
+
+  it('round-trips the UUID session through the trusted-origin native RPC', async () => {
+    stubNative([], null)
+    let listener
+    let nativeSessionId = '48ec107a-c954-489c-9919-ea6f6ac1317c'
+    window.WotbNative.addEventListener = (_, callback) => { listener = callback }
+    window.WotbNative.postMessage = json => {
+      const message = JSON.parse(json)
+      if (message.method === 'setAuthClientSessionId') nativeSessionId = message.params.clientSessionId
+      const result = message.method === 'getAuthClientSessionId' ? nativeSessionId : true
+      queueMicrotask(() => listener({ data: JSON.stringify({ id: message.id, result }) }))
+    }
+    expect(await getAuthClientSessionId()).toBe(nativeSessionId)
+    const attempt = crypto.randomUUID()
+    expect(await setAuthClientSessionId(attempt)).toBe(true)
+    expect(await getAuthClientSessionId()).toBe(attempt)
+  })
+
 })

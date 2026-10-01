@@ -6,20 +6,24 @@ discovery.docker "containers" {
 
 discovery.relabel "ai" {
 	targets = discovery.docker.containers.targets
+
 	rule {
 		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
 		regex         = "ai-service"
 		action        = "keep"
 	}
+
 	rule {
 		target_label = "service"
 		replacement  = "ai-service"
 	}
+
 	rule {
 		target_label = "container_name"
 		replacement  = "ai-service"
 	}
 }
+
 loki.source.docker "ai" {
 	host       = "unix:///var/run/docker.sock"
 	targets    = discovery.relabel.ai.output
@@ -28,20 +32,24 @@ loki.source.docker "ai" {
 
 discovery.relabel "parser" {
 	targets = discovery.docker.containers.targets
+
 	rule {
 		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
 		regex         = "parser-worker"
 		action        = "keep"
 	}
+
 	rule {
 		target_label = "service"
 		replacement  = "parser-worker"
 	}
+
 	rule {
 		target_label = "container_name"
 		replacement  = "parser-worker"
 	}
 }
+
 loki.source.docker "parser" {
 	host       = "unix:///var/run/docker.sock"
 	targets    = discovery.relabel.parser.output

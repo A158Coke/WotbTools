@@ -267,7 +267,7 @@ public class TeamReplayAnalysisService {
         try {
             return preBattleService.analyze(battle, listener);
         } catch (final RuntimeException e) {
-            AiReviewEventLog.fallback(LOGGER, "ai_prior_failed", e, "continue_without_prior");
+            AiReviewEventLog.providerFallback(LOGGER, "ai_prior_failed", e, "continue_without_prior");
             return null;
         }
     }

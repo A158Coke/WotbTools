@@ -8,6 +8,14 @@ CONFIGS=(
 )
 VALIDATOR="$ROOT/deploy/validate-alloy-config.sh"
 
+# Canonical services are shared by application metrics, log streams and probes;
+# legacy job/container_name values remain compatible with the existing dashboards.
+grep -Eq 'replacement[[:space:]]*=[[:space:]]*"business-api"' "$ROOT/deploy/tx/alloy/config.alloy"
+grep -Eq 'replacement[[:space:]]*=[[:space:]]*"web"' "$ROOT/deploy/tx/alloy/config.alloy"
+grep -Eq 'replacement[[:space:]]*=[[:space:]]*"keycloak"' "$ROOT/deploy/tx/alloy/config.alloy"
+! grep -Eq 'service:[[:space:]]*(wotb-backend|frontend|auth-endpoint)([[:space:]]|$)' "$ROOT/deploy/observability/prometheus/prometheus.yml"
+! grep -Eq 'replacement[[:space:]]*=[[:space:]]*"frontend"' "$ROOT/deploy/tx/alloy/config.alloy"
+
 for CONFIG in "${CONFIGS[@]}"; do
   [ -f "$CONFIG" ] || { echo "FAIL: missing Alloy config: $CONFIG" >&2; exit 1; }
   if ! bash "$VALIDATOR" "$CONFIG"; then
