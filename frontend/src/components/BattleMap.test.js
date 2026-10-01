@@ -206,7 +206,7 @@ describe('BattleMap', () => {
     await viewport.trigger('pointerup', { clientX: 3, clientY: 4 })
     await viewport.trigger('click')
     await wrapper.find('[data-test="marker-2"]').trigger('click')
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -1 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -1 })
 
     expect(wrapper.emitted('pointer-down')).toHaveLength(1)
     expect(wrapper.emitted('pointer-move')).toHaveLength(1)
@@ -247,7 +247,7 @@ describe('map zoom and pan', () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     return wrapper
   }
 
@@ -255,11 +255,11 @@ describe('map zoom and pan', () => {
     const wrapper = await zoomedWrapper()
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('width: 120%')
     for (let i = 0; i < 12; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('width: 400%')
     for (let i = 0; i < 20; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: 120, clientX: 0, clientY: 0 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: 120, clientX: 0, clientY: 0 })
     }
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('width: 100%')
   })
@@ -327,7 +327,7 @@ describe('map zoom and pan', () => {
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 110, clientY: 60 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 110, clientY: 60 })
     // 屏幕锚点 (10,10)：t' = 10 − 10×1.2 = −2
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('translate(-2px, -2px)')
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('width: 120%')
@@ -348,11 +348,11 @@ describe('map zoom and pan', () => {
     wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
     const map = wrapper.find('[data-test="pb-map"]')
     const viewport = wrapper.find('[data-test="pb-viewport"]')
-    await map.trigger('wheel', { deltaY: -120, clientX: 110, clientY: 60 }) // → (-2,-2) scale 1.2
+    await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 110, clientY: 60 }) // → (-2,-2) scale 1.2
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 10, clientY: 10 })
     await viewport.trigger('pointermove', { pointerId: 1, clientX: 60, clientY: 30 }) // 平移 +50/+20 → (48,18)
     await viewport.trigger('pointerup', { pointerId: 1 })
-    await map.trigger('wheel', { deltaY: -120, clientX: 150, clientY: 80 }) // 屏幕锚点 (50,30)
+    await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 150, clientY: 80 }) // 屏幕锚点 (50,30)
     const t = parseTransform(viewport.attributes('style'))
     expect(t).not.toBeNull()
     expect(t.scale).toBeCloseTo(1.44, 6)
@@ -374,17 +374,17 @@ describe('map zoom and pan', () => {
     const viewport = wrapper.find('[data-test="pb-viewport"]')
     // 初始 scale 1、t=0：屏幕锚点 (50,30) 即内容点
     for (let i = 0; i < 3; i++) {
-      await map.trigger('wheel', { deltaY: -120, clientX: 150, clientY: 80 })
+      await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 150, clientY: 80 })
       const t = parseTransform(viewport.attributes('style'))
       expect((50 - t.tx) / t.scale).toBeCloseTo(50, 6)
       expect((30 - t.ty) / t.scale).toBeCloseTo(30, 6)
     }
     for (let i = 0; i < 12; i++) {
-      await map.trigger('wheel', { deltaY: -120, clientX: 150, clientY: 80 })
+      await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 150, clientY: 80 })
     }
     expect(parseTransform(viewport.attributes('style')).scale).toBe(4)
     for (let i = 0; i < 30; i++) {
-      await map.trigger('wheel', { deltaY: 120, clientX: 150, clientY: 80 })
+      await map.trigger('wheel', { ctrlKey: true, deltaY: 120, clientX: 150, clientY: 80 })
     }
     const min = parseTransform(viewport.attributes('style'))
     expect(min.scale).toBe(1)
@@ -399,7 +399,7 @@ describe('map zoom and pan', () => {
     wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
     const map = wrapper.find('[data-test="pb-map"]')
     const viewport = wrapper.find('[data-test="pb-viewport"]')
-    await map.trigger('wheel', { deltaY: -120, clientX: 110, clientY: 60 }) // (-2,-2) 1.2
+    await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 110, clientY: 60 }) // (-2,-2) 1.2
     await viewport.trigger('pointerdown', { pointerId: 9, clientX: 10, clientY: 10 })
     await viewport.trigger('pointermove', { pointerId: 9, clientX: 60, clientY: 30 }) // → (48,18) 1.2
     await viewport.trigger('pointerup', { pointerId: 9 })
@@ -497,7 +497,7 @@ describe('vehicle marker presentation', () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120 })
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
     expect(marker.attributes('style')).toContain('scale(1.2)')
@@ -543,7 +543,7 @@ describe('vehicle-aware vehicle markers', () => {
     expect(parseMarkerScale(marker.attributes('style'))).toBe(1)
     // 2× → 4×（wheel）：camera content 改为 layout 放大，marker 保留自身同比缩放，名称按 1/view.scale 反缩放
     for (let i = 0; i < 14; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     expect(viewportScale(wrapper)).toBe(4)
     expect(parseMarkerScale(marker.attributes('style'))).toBe(4)
@@ -590,13 +590,13 @@ describe('vehicle-aware vehicle markers', () => {
     check()
     // ≈2×（1.2^4 ≈ 2.07）
     for (let i = 0; i < 4; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     expect(viewportScale(wrapper)).toBeGreaterThan(1.9)
     check()
     // 4×（钳制）
     for (let i = 0; i < 12; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     expect(viewportScale(wrapper)).toBe(4)
     check()
@@ -616,7 +616,7 @@ describe('vehicle-aware vehicle markers', () => {
     expect(marker.classes()).toContain('pb-destroyed')
     expect(marker.find('.pb-death').exists()).toBe(true)
     for (let i = 0; i < 4; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     const leftTopAfter = marker.attributes('style').match(/left: ([^;]+); top: ([^;]+);/).slice(1, 3)
     expect(leftTopAfter).toEqual(leftTopBefore) // 中心仍锚定同一地图坐标
@@ -634,7 +634,7 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     expect(wrapper.find('.pb-tracer').attributes('stroke-width')).toBe('6')
     expect(wrapper.find('.pb-tracer-core').attributes('stroke-width')).toBe('1.75')
     for (let i = 0; i < 12; i++) {
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     // 4×：除以 view.scale 保持屏幕宽度（长度仍随地图坐标缩放）
     expect(wrapper.find('.pb-tracer').attributes('stroke-width')).toBe('1.5')
@@ -691,7 +691,7 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     const firstStyle = wrapper.find('.pb-vehicle').attributes('style')
     expect(firstStyle).toContain('scale(1)') // marker 自身保留缩放，避免 layout camera 改变其屏幕尺寸
     for (let i = 0; i < 12; i++) { // 1× → 4×
-      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     expect(wrapper.findAll('.pb-labels').length).toBe(2)
   })
@@ -738,7 +738,7 @@ describe('gesture click suppression and pointer cleanup', () => {
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     const viewport = wrapper.find('[data-test="pb-viewport"]')
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 }) // scale>1 才可平移
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 }) // scale>1 才可平移
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 10, clientY: 10 })
     await viewport.trigger('pointermove', { pointerId: 1, clientX: 60, clientY: 30 }) // pan +50/+20
     const up = new window.Event('pointerup')

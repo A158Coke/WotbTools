@@ -1,10 +1,18 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
 
 defineOptions({ name: 'PlaybackMobileOverlay' })
 
+const props = defineProps({
+  /** 暂停时控制栏不自动隐藏（审计 PB-06）。 */
+  paused: { type: Boolean, default: false },
+})
+
 const AUTO_HIDE_MS = 2500
-const MOBILE_QUERY = '(pointer: coarse) and (max-width: 1199.98px)'
+const MOBILE_QUERY = PLAYBACK_MOBILE_QUERY
+/** 手指 / 鼠标按在控制栏上（拖动时间轴等）期间不自动隐藏。 */
+let pressing = false
 const root = ref(null)
 const open = ref(false)
 const transientFullscreen = ref(false)
@@ -34,7 +42,7 @@ function isMobileFullscreen() {
 
 function scheduleHide() {
   clearHideTimer()
-  if (!transientFullscreen.value) return
+  if (!transientFullscreen.value || pressing || props.paused) return
   hideTimer = setTimeout(() => {
     open.value = false
     hideTimer = null
@@ -62,6 +70,22 @@ function syncResponsiveMode() {
   open.value = false
 }
 
+function onContentPointerDown() {
+  pressing = true
+  reveal()
+}
+
+function onWindowPointerUp() {
+  if (!pressing) return
+  pressing = false
+  if (open.value) scheduleHide()
+}
+
+watch(() => props.paused, (paused) => {
+  if (paused) clearHideTimer()
+  else if (open.value) scheduleHide()
+})
+
 function onDocumentClick(event) {
   if (!isMobileFullscreen()) return
   const fullscreenRoot = document.fullscreenElement
@@ -86,11 +110,15 @@ onMounted(() => {
   }
   transientFullscreen.value = isMobileFullscreen()
   document.addEventListener('click', onDocumentClick, true)
+  window.addEventListener('pointerup', onWindowPointerUp)
+  window.addEventListener('pointercancel', onWindowPointerUp)
 })
 
 onBeforeUnmount(() => {
   clearHideTimer()
   document.removeEventListener('click', onDocumentClick, true)
+  window.removeEventListener('pointerup', onWindowPointerUp)
+  window.removeEventListener('pointercancel', onWindowPointerUp)
   if (mobileMql && typeof mobileMql.removeEventListener === 'function') {
     mobileMql.removeEventListener('change', syncResponsiveMode)
   }
@@ -112,7 +140,7 @@ defineExpose({ reveal, hide, open, transientFullscreen })
   >
     <div
       class="pb-mobile-overlay-content"
-      @pointerdown.stop="reveal"
+      @pointerdown.stop="onContentPointerDown"
       @click.stop="reveal"
     >
       <slot />

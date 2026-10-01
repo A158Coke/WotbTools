@@ -84,4 +84,8 @@ const emit = defineEmits([
   .pb-time { flex-basis: 100%; margin-inline: 0; text-align: center; order: 20; }
   .pb-secondary-btn, .pb-fullscreen-btn { min-width: 36px; }
 }
+/* 触屏：任何形态下控件都满足 44px 点击区域（--hit-min 在 pointer: coarse 下为 44px） */
+@media (pointer: coarse) {
+  .pb-btn { min-width: var(--hit-min); min-height: var(--hit-min); }
+}
 </style>

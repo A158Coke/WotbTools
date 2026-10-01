@@ -16,6 +16,8 @@ const props = defineProps({
   visibleTrails: { type: Array, default: () => [] },
   tracerColor: { type: Function, required: true },
   viewScale: { type: Number, default: 1 },
+  /** 未缩放且非全屏时允许单指纵向滑动滚动页面（审计 PB-01）；缩放 / 标注时由地图接管手势。 */
+  touchPan: { type: Boolean, default: false },
   renderedFrame: { type: Object, default: null },
   viewportStyle: { type: [String, Array], default: '' },
   annotVisible: Boolean,
@@ -191,9 +193,10 @@ function fillTop(base) {
 </script>
 
 <template>
-  <div class="pb-map" data-test="pb-map" ref="mapEl" :style="{ aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }" @wheel.prevent="emit('wheel', $event)">
+  <div class="pb-map" data-test="pb-map" ref="mapEl" :style="{ aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }" @wheel="emit('wheel', $event)">
     <div
       class="pb-viewport"
+      :class="{ 'pb-touch-pan': props.touchPan }"
       data-test="pb-viewport"
       :data-view-scale="props.viewScale"
       :style="[props.viewportStyle, { aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }]"
@@ -325,6 +328,7 @@ function fillTop(base) {
 <style>
 .pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
 .pb-viewport { position: absolute; inset: 0 auto auto 0; width: 100%; transform-origin: 0 0; touch-action: none; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
+.pb-viewport.pb-touch-pan { touch-action: pan-y; }
 .pb-basemap,
 .pb-svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 .pb-basemap { object-fit: fill; border-radius: 4px; user-select: none; pointer-events: none; }
