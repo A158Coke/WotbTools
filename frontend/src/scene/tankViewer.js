@@ -74,6 +74,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             : (error && (error.message || error.statusText || String(error))) || 'unknown';
         // 两个 GLB（装甲 + 外观）字节进度聚合；loadGen 让切车后旧加载的回调不再上报
         let loadGen = 0;
+        let targetLoadGen = 0;   // target JSON requests can finish out of order when users switch tanks quickly
         const modelProgress = createLoadProgress((snap) => reportLoad({ state: 'loading', progress: snap.fraction }));
         const onWin = (type, fn) => {
             window.addEventListener(type, fn);
@@ -2808,16 +2809,21 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         }
 
         async function loadTarget(tid) {
+            const gen = ++targetLoadGen;
             tidyTrajectory();
             reportLoad({ state: 'loading', progress: null });   // 车辆数据（JSON）阶段：不确定进度
-            tankData = await fetchTankData(tid);
+            const nextTankData = await fetchTankData(tid);
+            if (destroyed || gen !== targetLoadGen) return false;
+            tankData = nextTankData;
             const q = new URLSearchParams(location.search);
             const wantCfg = parseInt(q.get('config'), 10);
-            const defaultCfg = Math.max(0, (tankData.configs ? tankData.configs.length : 1) - 1);
-            currentConfigIdx = (Number.isInteger(wantCfg) && wantCfg >= 0 && wantCfg < tankData.configs.length) ? wantCfg : defaultCfg;
+            const configs = tankData.configs || [];
+            const defaultCfg = Math.max(0, configs.length - 1);
+            currentConfigIdx = (Number.isInteger(wantCfg) && wantCfg >= 0 && wantCfg < configs.length) ? wantCfg : defaultCfg;
             setupConfigSelect();
             updateInfoPanel();
             loadModels();
+            return true;
         }
 
         function currentConfig() {
@@ -4080,6 +4086,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         /// canvas 由 ArmorView 的容器 DOM 一并移除，这里只处理 JS 侧句柄。
         function destroy() {
             destroyed = true;
+            targetLoadGen++; // invalidate in-flight target JSON before it can mutate the destroyed/current viewer
             loadGen++;   // invalidate any in-flight GLTF callbacks before releasing the live scene
             resetViewerGlobals();
             cancelAnimationFrame(rafId);
