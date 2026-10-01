@@ -1,5 +1,6 @@
 <script setup>
-import { computed, getCurrentInstance, inject } from 'vue'
+import { computed, inject } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   BookOpen, Box, ChevronRight, Cpu, Crosshair, Download, ExternalLink, FileText, FlaskConical, Gauge,
   Heart, History, Mail, MessageSquare, ShieldCheck, Users,
@@ -16,7 +17,7 @@ import SegmentedControl from './SegmentedControl.vue'
 const navigate = inject(NAVIGATE_VIEW_KEY)
 const { isAdmin, isHofAdmin } = useAuth()
 const { uiProfilePreference, setUiProfile } = useUiProfile()
-const i18n = getCurrentInstance().proxy.$i18n
+const { locale } = useI18n({ useScope: 'global' })
 
 const FEEDBACK_URL = 'https://github.com/A158Coke/WotbTools/issues/new'
 const LANGUAGES = [
@@ -26,7 +27,7 @@ const LANGUAGES = [
 ]
 
 function setLocale(value) {
-  i18n.locale = value
+  locale.value = value
   localStorage.setItem('wotb-lang', value)
 }
 
@@ -87,7 +88,7 @@ const groups = computed(() => [
         <div class="more-setting">
           <span class="more-setting-label">{{ $t('more.language') }}</span>
           <SegmentedControl
-            :model-value="$i18n.locale"
+            :model-value="locale"
             :options="LANGUAGES"
             :aria-label="$t('more.language')"
             data-testid="more-language"
