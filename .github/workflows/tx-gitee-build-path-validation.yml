@@ -1,0 +1,243 @@
+name: TX Gitee Build Path Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact commit SHA that must already exist in the Gitee mirror
+        required: true
+        default: "9327bd563e69ba0c53637a7206c724fa68eb3ed7"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: TX persistent repo + business-api build
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    environment: tx-production
+
+    steps:
+      - name: Validate input
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          : "${TX_HOST:?TX_VPS_HOST is required}"
+          : "${TX_USER:?TX_VPS_USER is required}"
+          : "${TX_PORT:?TX_VPS_PORT is required}"
+          : "${TX_KEY:?TX_VPS_SSH_KEY is required}"
+
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$TX_KEY" | tr -d '\r' > ~/.ssh/tx-validation
+          chmod 600 ~/.ssh/tx-validation
+          ssh-keyscan -T 15 -p "$TX_PORT" "$TX_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Validate persistent Gitee source and local business-api build
+        id: validate
+        shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/tx-gitee-build-validation.log"
+
+          ssh \
+            -i ~/.ssh/tx-validation \
+            -p "$TX_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=10 \
+            -o ServerAliveCountMax=6 \
+            "$TX_USER@$TX_HOST" \
+            bash -s -- "$TARGET_SHA" "$RUN_ID" "$RUN_ATTEMPT" <<'REMOTE' | tee "$log"
+          set -euo pipefail
+
+          target_sha="$1"
+          run_id="$2"
+          run_attempt="$3"
+
+          repo_url="https://gitee.com/A158Coke/Wotbtools.git"
+          cache_root="$HOME/.cache/wotbtools-build-validation"
+          repo="$cache_root/repo"
+          worktree="/tmp/wotbtools-build-validation-${run_id}-${run_attempt}"
+          image="wotbtools-validation-business-api:${target_sha:0:12}"
+
+          cleanup() {
+            set +e
+            if [ -d "$repo/.git" ]; then
+              git -C "$repo" worktree remove --force "$worktree" >/dev/null 2>&1 || true
+              git -C "$repo" worktree prune >/dev/null 2>&1 || true
+            fi
+            rm -rf -- "$worktree"
+            docker image rm -f "$image" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          command -v git >/dev/null
+          command -v docker >/dev/null
+          docker version >/dev/null
+
+          mkdir -p "$cache_root"
+
+          if [ ! -d "$repo/.git" ]; then
+            mkdir -p "$repo"
+            git -C "$repo" init -q
+            git -C "$repo" remote add origin "$repo_url"
+            repo_state="cold"
+          else
+            repo_state="warm"
+            current_origin="$(git -C "$repo" remote get-url origin)"
+            if [ "$current_origin" != "$repo_url" ]; then
+              echo "unexpected origin: $current_origin" >&2
+              exit 31
+            fi
+          fi
+
+          fetch_start="$(date +%s%N)"
+          if ! timeout 300 env GIT_TERMINAL_PROMPT=0 \
+            git -C "$repo" fetch --no-tags --prune origin \
+            +refs/heads/master:refs/remotes/origin/master; then
+            if ! timeout 300 env GIT_TERMINAL_PROMPT=0 \
+              git -C "$repo" fetch --no-tags --prune origin \
+              +refs/heads/main:refs/remotes/origin/main; then
+              echo "Gitee branch fetch failed" >&2
+              exit 32
+            fi
+          fi
+          fetch_end="$(date +%s%N)"
+          fetch_seconds="$(python3 -c "print(f'{($fetch_end-$fetch_start)/1e9:.3f}')" 2>/dev/null || awk "BEGIN {print ($fetch_end-$fetch_start)/1000000000}")"
+
+          git -C "$repo" cat-file -e "$target_sha^{commit}" || {
+            echo "target SHA is not present in the Gitee mirror: $target_sha" >&2
+            exit 33
+          }
+
+          remote_tip="$(git -C "$repo" for-each-ref --format='%(objectname)' refs/remotes/origin/main refs/remotes/origin/master | head -n1)"
+          [ -n "$remote_tip" ] || {
+            echo "could not resolve Gitee default branch tip" >&2
+            exit 34
+          }
+
+          rm -rf -- "$worktree"
+          git -C "$repo" worktree add --force --detach "$worktree" "$target_sha" >/dev/null
+
+          checked_out="$(git -C "$worktree" rev-parse HEAD)"
+          [ "$checked_out" = "$target_sha" ] || {
+            echo "checked out SHA mismatch: expected=$target_sha actual=$checked_out" >&2
+            exit 35
+          }
+
+          build_start="$(date +%s%N)"
+          if ! timeout 1800 docker build \
+            --file "$worktree/docker/Dockerfile.business-api" \
+            --build-arg "BUILD_COMMIT=$target_sha" \
+            --tag "$image" \
+            "$worktree"; then
+            echo "business-api docker build failed or timed out" >&2
+            exit 36
+          fi
+          build_end="$(date +%s%N)"
+          build_seconds="$(python3 -c "print(f'{($build_end-$build_start)/1e9:.3f}')" 2>/dev/null || awk "BEGIN {print ($build_end-$build_start)/1000000000}")"
+
+          image_commit="$(docker inspect "$image" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^BUILD_COMMIT=//p' | head -n1)"
+          [ "$image_commit" = "$target_sha" ] || {
+            echo "image BUILD_COMMIT mismatch: expected=$target_sha actual=$image_commit" >&2
+            exit 37
+          }
+
+          image_id="$(docker image inspect "$image" --format '{{.Id}}')"
+          image_size="$(docker image inspect "$image" --format '{{.Size}}')"
+
+          printf 'RESULT repo_state=%s\n' "$repo_state"
+          printf 'RESULT target_sha=%s\n' "$target_sha"
+          printf 'RESULT gitee_tip=%s\n' "$remote_tip"
+          printf 'RESULT fetch_seconds=%s\n' "$fetch_seconds"
+          printf 'RESULT build_seconds=%s\n' "$build_seconds"
+          printf 'RESULT image_id=%s\n' "$image_id"
+          printf 'RESULT image_size_bytes=%s\n' "$image_size"
+          printf 'RESULT build_commit_verified=true\n'
+          REMOTE
+
+          python3 - "$log" >> "$GITHUB_OUTPUT" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          values = {}
+          for line in path.read_text(errors="replace").splitlines():
+              if not line.startswith("RESULT "):
+                  continue
+              key, value = line[7:].split("=", 1)
+              values[key] = value
+
+          required = {
+              "repo_state",
+              "target_sha",
+              "gitee_tip",
+              "fetch_seconds",
+              "build_seconds",
+              "image_id",
+              "image_size_bytes",
+              "build_commit_verified",
+          }
+          missing = required - values.keys()
+          if missing:
+              raise SystemExit(f"missing validation outputs: {sorted(missing)}")
+
+          for key, value in values.items():
+              print(f"{key}={value}")
+          PY
+
+      - name: Publish validation summary
+        if: always()
+        shell: bash
+        env:
+          REPO_STATE: ${{ steps.validate.outputs.repo_state }}
+          TARGET_SHA: ${{ steps.validate.outputs.target_sha }}
+          GITEE_TIP: ${{ steps.validate.outputs.gitee_tip }}
+          FETCH_SECONDS: ${{ steps.validate.outputs.fetch_seconds }}
+          BUILD_SECONDS: ${{ steps.validate.outputs.build_seconds }}
+          IMAGE_ID: ${{ steps.validate.outputs.image_id }}
+          IMAGE_SIZE_BYTES: ${{ steps.validate.outputs.image_size_bytes }}
+          BUILD_COMMIT_VERIFIED: ${{ steps.validate.outputs.build_commit_verified }}
+        run: |
+          {
+            echo "# TX Gitee build path validation"
+            echo
+            echo "- Persistent repo state: \`$REPO_STATE\`"
+            echo "- Requested exact SHA: \`$TARGET_SHA\`"
+            echo "- Gitee branch tip observed by TX: \`$GITEE_TIP\`"
+            echo "- Fetch: **$FETCH_SECONDS s**"
+            echo "- Business API docker build: **$BUILD_SECONDS s**"
+            echo "- Image BUILD_COMMIT verified: **$BUILD_COMMIT_VERIFIED**"
+            echo "- Image ID: \`$IMAGE_ID\`"
+            if [[ "$IMAGE_SIZE_BYTES" =~ ^[0-9]+$ ]]; then
+              mib="$(python3 -c "print(f'{int("$IMAGE_SIZE_BYTES")/1024/1024:.2f}')")"
+              echo "- Image size: **$mib MiB**"
+            fi
+            echo
+            echo "The persistent Git repo and Docker build cache remain on TX for the next validation run."
+            echo "The benchmark image and temporary worktree are removed; Compose and TCR are untouched."
+          } >> "$GITHUB_STEP_SUMMARY"
