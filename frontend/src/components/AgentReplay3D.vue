@@ -5,10 +5,10 @@
  * 交互面板自上游 PlaybackView 完整平移（顶栏/名册/击杀流/控制条/画质档/相机/GLB/标签），
  * 标签文案三语（zh/en/ru）；拓扑（评审 P0-3）：无服务端通道——渲染资产经
  * ?assets= 资产平面（assetProvider）。
- * 进度条为非受控输入（上游语义）：滑块值由场景 tick 直写 DOM，Vue 不回绑——
- * 避免每帧重渲染与用户拖拽打架；seeking 期间（按住）场景不回写。
+ * 播放传输控件与 2D 回放共用 PlaybackTransport + usePlaybackTransport：播放 / ±5s / 速度档位 /
+ * 时钟（从 00:00 起算）/ 进度条，键盘空格 / ←→，拖动时暂停、松手若原先在播放则继续。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
@@ -16,20 +16,25 @@ import { loadPlaybackData } from '../scene/replaySource.js'
 import { assetProvider } from '../scene/assetProvider.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import Scene3DStatus from './Scene3DStatus.vue'
+import PlaybackTransport from './PlaybackTransport.vue'
+import BaseStatusBar from './BaseStatusBar.vue'
+import { mapLabel } from '../utils/helpers.js'
+import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const store = createPlaybackStore()
 const stage = ref(null)
-const seekEl = ref(null)
 /** 审计 3D-15：手机上两队名单默认收起（原来两块 240px 面板互相重叠、盖住场景），按需打开 */
 const rosterOpen = ref(false)
-/** 审计 3D-22：时间与 2D 回放统一为 mm:ss */
-function clock(sec) {
-  const total = Math.max(0, Math.floor(Number(sec) || 0))
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
-}
 let sceneApi = null
+const transport = usePlaybackTransport({
+  isPlaying: () => store.playing,
+  play: () => sceneApi?.setPlaying(true),
+  pause: () => sceneApi?.setPlaying(false),
+  step: (delta) => sceneApi?.seekBy(delta),
+  isReady: () => store.hasData,
+})
 // 审计 3D-23：渲染器创建前做 WebGL 预检；不支持时不初始化场景，整页换成说明
 const webgl = detectWebGL()
 /** 最近一次选择的文件：失败后"重试"直接重新解析，不必再选一次 */
@@ -42,11 +47,14 @@ const qualityBadge = computed(() =>
   t('agentReplay.quality') + ' · ' + t('agentReplay.q_' + store.qualityKey),
 )
 
-// 争霸点数上限（与 2D HUD / 上游一致）：条宽按 v/POINTS_MAX 换算
-const POINTS_MAX = 1000
-const pointsPct = (v) => (v == null ? 0 : Math.max(0, Math.min(100, (v / POINTS_MAX) * 100)))
+/** 地图名三语：优先按资产面 key 查 map_names.json，查不到再用解析器给的名字，都没有就原样显示 */
+const mapTitle = computed(() => {
+  const key = store.mapKey
+  const byKey = key ? mapLabel(key, locale.value) : null
+  if (byKey && byKey !== key) return byKey
+  return mapLabel(store.mapName, locale.value) || store.mapName
+})
 
-const SPEEDS = [0.5, 1, 2, 4, 8, 16]
 const CAMS = [
   { k: 'free', label: () => t('agentReplay.cam_free') },
   { k: 'top', label: () => t('agentReplay.cam_top') },
@@ -81,14 +89,6 @@ function retryLoad() {
   store.err = ''
 }
 
-function onSeekInput(e) {
-  sceneApi?.seekFraction(e.target.value / 1000)
-}
-
-// 进度条非受控（上游 PlaybackView 同款）：滑块值由场景 tick 直写 DOM，不经 :value 绑定
-watch(() => store.seekFrac, (v) => {
-  if (seekEl.value && !store.seeking) seekEl.value = String(v)
-})
 
 function bannerText() {
   const b = store.banner
@@ -116,23 +116,14 @@ onBeforeUnmount(() => {
     <div class="scene" ref="stage"></div>
 
     <div v-if="store.hasData" class="topbar panel">
-      <span class="map">{{ store.mapName }}</span>
+      <span class="map">{{ mapTitle }}</span>
       <span class="timer">{{ store.timer }}</span>
       <span class="score"><span class="t1">{{ store.score1 }}</span> : <span class="t2">{{ store.score2 }}</span></span>
-      <!-- 争霸实时点数（上限 1000）：数值在外、两条紧贴中线对称；非争霸场次整块不显示 -->
-      <span v-if="store.pointsFriend != null || store.pointsEnemy != null" class="points-obj">
-        <b class="pdv pdv-f" :title="`${$t('recon.map.playback.points')} ${store.pointsFriend ?? 0} / ${POINTS_MAX}`">{{ store.pointsFriend ?? '—' }}</b>
-        <span class="points-bar pb-f"><i :style="{ width: pointsPct(store.pointsFriend) + '%' }"></i></span>
-        <i class="pdiv"></i>
-        <span class="points-bar pb-e"><i :style="{ width: pointsPct(store.pointsEnemy) + '%' }"></i></span>
-        <b class="pdv pdv-e" :title="`${$t('recon.map.playback.points')} ${store.pointsEnemy ?? 0} / ${POINTS_MAX}`">{{ store.pointsEnemy ?? '—' }}</b>
-      </span>
-      <!-- 单基地目标（攻防/遭遇战）：目标存在性独立于占领活动；无进度显示「—」而非 0% -->
-      <span v-if="store.assaultObjective" class="assault-obj" :title="$t('recon.map.playback.base_progress', { progress: store.assaultProgress ?? 0 })">
-        <em>BASE</em>
-        <span class="assault-bar"><i :style="{ width: (store.assaultProgress ?? 0) + '%' }"></i></span>
-        <b>{{ store.assaultProgress != null ? store.assaultProgress + '%' : '—' }}</b>
-      </span>
+    </div>
+
+    <!-- 基地状态条（与 2D 共用）：每基地一枚徽章（底色 = 归属，外环 = 占领进度），两端为争霸积分 -->
+    <div v-if="store.hasData && store.baseViews.length" class="base-status">
+      <BaseStatusBar :bases="store.baseViews" :friendly-points="store.pointsFriend" :enemy-points="store.pointsEnemy" />
     </div>
 
     <div v-if="store.hasData" class="team panel team1">
@@ -189,20 +180,22 @@ onBeforeUnmount(() => {
     <div v-if="store.banner" class="banner" :style="{ color: store.banner.color }">{{ bannerText() }}</div>
 
     <div v-if="store.hasData" class="controls panel">
-      <div class="row">
-        <button class="play-btn" @click="sceneApi.togglePlay()">{{ store.playing ? '⏸ ' + t('agentReplay.pause') : '▶ ' + t('agentReplay.play') }}</button>
-        <span class="speeds">
-          <button
-            v-for="s in SPEEDS" :key="s"
-            :class="{ on: store.speed === s }" @click="sceneApi.setSpeed(s)"
-          >{{ s }}x</button>
-        </span>
-        <input
-          type="range" class="seek" ref="seekEl" min="0" max="1000" value="0"
-          @pointerdown="store.seeking = true" @pointerup="store.seeking = false"
-          @blur="store.seeking = false" @input="onSeekInput"
-        >
-        <span class="time">{{ clock(store.time) }} / {{ clock(store.duration) }}</span>
+      <div class="transport" data-testid="replay3d-transport">
+        <PlaybackTransport
+          :playing="store.playing"
+          :speed="store.speed"
+          :speeds="PLAYBACK_SPEEDS"
+          :current-time="store.time"
+          :start-time="store.startTime"
+          :duration="store.duration"
+          :step-seconds="PLAYBACK_STEP_SECONDS"
+          @toggle-play="transport.togglePlay()"
+          @step="sceneApi.seekBy($event)"
+          @set-speed="sceneApi.setSpeed($event)"
+          @seek="sceneApi.seekTime($event)"
+          @scrub-start="store.seeking = true; transport.scrubStart()"
+          @scrub-end="store.seeking = false; transport.scrubEnd()"
+        />
       </div>
       <div class="row">
         <button type="button" class="roster-toggle" :class="{ on: rosterOpen }" :aria-pressed="rosterOpen" data-testid="roster-toggle" @click="rosterOpen = !rosterOpen">{{ t('agentReplay.roster') }}</button>
@@ -294,25 +287,7 @@ html[data-ui-profile="classic"] .pb-root {
 .topbar .timer { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .topbar .score { font-size: 16px; font-weight: 600; }
 .topbar .score .t1 { color: var(--ally); }
-/* 单基地占领进度：中性呈现——协议侧 owner/capturing 恒 null，不借 --ally/--enemy 暗示阵营 */
-/* 争霸点数：左条己方自右向左、右条敌方自左向右——两条均自中线向外增长，整块左右对称 */
-.topbar .points-obj { display: inline-flex; align-items: center; gap: 3px; font-size: .72rem; color: var(--dim); }
-.topbar .points-bar { display: inline-block; width: 62px; height: 6px; background: var(--line); overflow: hidden; }
-.topbar .points-bar.pb-f { border-radius: 3px 0 0 3px; }
-.topbar .points-bar.pb-e { border-radius: 0 3px 3px 0; }
-.topbar .points-bar > i { display: block; height: 100%; transition: width .18s linear; }
-.topbar .points-bar.pb-f > i { background: var(--ally); float: right; }
-.topbar .points-bar.pb-e > i { background: var(--enemy); float: left; }
-.topbar .points-obj .pdiv { width: 1px; height: 11px; background: var(--line); }
-.topbar .points-obj .pdv { min-width: 2.6em; font-variant-numeric: tabular-nums; }
-.topbar .points-obj .pdv-f { color: var(--ally); text-align: right; }
-.topbar .points-obj .pdv-e { color: var(--enemy); text-align: left; }
-.topbar .assault-obj { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; color: var(--dim); }
-.topbar .assault-obj em { font-style: normal; letter-spacing: .04em; }
-.topbar .assault-obj b { font-variant-numeric: tabular-nums; min-width: 2.4em; text-align: right; color: var(--accent); }
-.topbar .assault-bar { display: inline-block; width: 84px; height: 6px; border-radius: 3px;
-  background: var(--line); overflow: hidden; }
-.topbar .assault-bar > i { display: block; height: 100%; background: var(--accent); transition: width .18s linear; }
+/* 争霸点数与单基地进度已移到基地状态条（BaseStatusBar，与 2D 共用） */
 .topbar .score .t2 { color: var(--enemy); }
 .topbar .map { color: var(--dim); }
 .team { top: 60px; width: 240px; padding: 6px; max-height: calc(100% - 190px); overflow-y: auto; z-index: 5; }
@@ -341,15 +316,15 @@ html[data-ui-profile="classic"] .pb-root {
 .controls { bottom: 10px; left: 50%; transform: translateX(-50%); width: min(880px, 94%);
             padding: 8px 14px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
 .controls .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.controls input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); padding: 0; border: none; background: transparent; border-radius: 0; }
+/* 共用播放传输控件（PlaybackTransport，与 2D 同一套）；时间 mm:ss 与 2D 统一（审计 3D-22） */
+.controls .transport { display: flex; flex-direction: column; gap: 4px; }
+/* 基地状态条：顶栏正下方居中，不拦截场景操作（徽章本身可悬停看说明） */
+.base-status { position: absolute; top: 58px; left: 50%; transform: translateX(-50%); z-index: 5; pointer-events: none; }
 .pb-root input[type="checkbox"] { flex: none; min-width: 0; width: auto; margin: 0; }
-.controls .time { font-variant-numeric: tabular-nums; color: var(--dim); min-width: 96px; text-align: center; }
 .pb-root button, .pb-root select { background: var(--btn-bg); color: var(--fg); border: 1px solid var(--line);
                    border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
 .pb-root button:hover { border-color: var(--accent); }
 .pb-root button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
-.play-btn { width: 84px; font-weight: 600; }
-.speeds .speed-btn { min-width: 38px; }
 .toggle { display: flex; gap: 4px; align-items: center; color: var(--dim); cursor: pointer; }
 .dim { color: var(--dim); }
 .small { font-size: 11px; }

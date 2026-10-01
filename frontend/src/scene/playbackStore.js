@@ -14,6 +14,7 @@ export function createPlaybackStore() {
     qualityLabel: '',
     // 顶栏
     mapName: '',
+    mapKey: null, // 资产面地图 key（与三语地图名表 map_names.json 同一套 key）
     timer: '--:--',
     score1: 0,
     score2: 0,
@@ -21,12 +22,13 @@ export function createPlaybackStore() {
     // 争霸实时点数（上限 1000）：null = 该场无点数广播（非争霸）
     pointsFriend: null,
     pointsEnemy: null,
-    assaultObjective: false,
-    assaultProgress: null,
+    // 基地视图模型（utils/baseStatus.js baseView；争霸 A–D 与单基地）：顶部基地状态条直接渲染
+    baseViews: [],
     // 控制条
     playing: false,
-    speed: 2,
+    speed: 1, // 与 2D 统一默认 1×（usePlaybackTransport.DEFAULT_PLAYBACK_SPEED）
     time: 0,
+    startTime: 0, // 时间轴起点（DATA.meta.t_start，不一定是 0）
     duration: 0,
     seekFrac: 0,
     seeking: false, // 用户拖动进度条期间场景不回写

@@ -195,13 +195,15 @@ describe('Supremacy 基地 overlay', () => {
   })
 
   // 反向：地图画得出基地时 HUD 不再重复一份。
-  it('hides the HUD base chips once the map renders the bases', async () => {
+  // 顶部基地状态条与 3D 共用，始终显示（不再只是地图缺几何时的兜底）；地图上的圆照常画
+  it('shows the base status bar alongside the map bases', async () => {
     const dataset = makePlaybackV2({
       baseStates: [{ timeSec: 0, baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null }],
     })
     const wrapper = await mountPlayback(makeOverview(), null, dataset)
     expect(wrapper.findAll('.pb-base-circle').length).toBeGreaterThan(0)
-    expect(wrapper.find('[data-test="pb-hud-bases"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="base-status-bar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="base-badge-A"]').classes()).toContain('is-owner-friendly')
   })
 
   // wire 契约不保证 baseStates 按 timeSec 排序。靠数组顺序取「当前状态」会选中过期的一条，

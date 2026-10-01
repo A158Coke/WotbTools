@@ -45,6 +45,8 @@ public final class BattleTimelineBuilder {
     static final double POSITION_CHANGE_THRESHOLD_M = 5.0;
     /** 防御性帧数上限（450s 战斗约 451 帧；超长异常拒绝而非 OOM）。 */
     static final int MAX_FRAMES = 2400;
+    /** active-battle 时长上限（秒），与 ReplayParser {@code durationS} 的 420 cap 同口径。 */
+    static final double MAX_BATTLE_DURATION_SEC = 420.0;
 
     private BattleTimelineBuilder() {
     }
@@ -340,12 +342,36 @@ public final class BattleTimelineBuilder {
         return new ClockResult(Double.NaN, BattleTimelineClock.UNRESOLVED);
     }
 
+    /**
+     * Timeline/playback active-battle 时长权威链（docs/features/battle-playback.md「时长契约」）：
+     * <ol>
+     *   <li>battle_results root5 {@code settlementDurationSec}（权威；cap 420s，与 ReplayParser 同口径）；</li>
+     *   <li>{@code RoundFinishedEvent}（method4 = AFTERBATTLE）battle-relative 时间，即
+     *       round-finished rawClock − battle-period 开始 rawClock（finite &gt; 0；cap 420s）；</li>
+     *   <li>legacy {@code battle.durationS}（无 settlement 时来自 meta.json#battleDuration，cap 420s）——
+     *       meta battleDuration 不是可靠的 active-battle 时钟（battle-results.md root5），
+     *       常比真实战斗长，导致进度条在战斗结束时只走到一半，故排在 round-finished 之后；</li>
+     *   <li>最后一个有限事件时间（battle-relative）。</li>
+     * </ol>
+     * <p>由于 ② 严格优先于 ③，任何「meta 比 round-finished 长出明显余量」的情况都自然取 round-finished；
+     * {@link #roundFinishedBattleSec} 不可用时才落到 meta。</p>
+     */
     static double resolveDurationSec(
             final Battle battle, final ReplayReconstruction recon, final double startRawClockSec) {
-        if (battle != null && battle.durationS != null
-                && Double.isFinite(battle.durationS) && battle.durationS > 0) {
-            return battle.durationS;
+        // ① settlement root5：权威战斗时长
+        if (battle != null && isPositiveFinite(battle.settlementDurationSec)) {
+            return Math.min(battle.settlementDurationSec, MAX_BATTLE_DURATION_SEC);
         }
+        // ② round-finished − battle 开始：事件流实测的真实结束时刻
+        final double roundFinished = roundFinishedBattleSec(recon, startRawClockSec);
+        if (roundFinished > 0) {
+            return Math.min(roundFinished, MAX_BATTLE_DURATION_SEC);
+        }
+        // ③ legacy durationS（meta.json#battleDuration）
+        if (battle != null && isPositiveFinite(battle.durationS)) {
+            return Math.min(battle.durationS, MAX_BATTLE_DURATION_SEC);
+        }
+        // ④ 最后事件时间
         double max = 0d;
         for (final ReplayEvent e : recon.events()) {
             final double t = TimelineClock.battleClockOf(e, startRawClockSec);
@@ -354,6 +380,30 @@ public final class BattleTimelineBuilder {
             }
         }
         return max;
+    }
+
+    /**
+     * 第一个合法 {@code RoundFinishedEvent} 的 battle-relative 时间（秒）；无事件 / 时间戳非有限 /
+     * 不晚于 battle 开始时返回 {@link Double#NaN}。
+     */
+    static double roundFinishedBattleSec(
+            final ReplayReconstruction recon, final double startRawClockSec) {
+        if (recon == null || recon.events() == null || !Double.isFinite(startRawClockSec)) {
+            return Double.NaN;
+        }
+        for (final ReplayEvent e : recon.events()) {
+            if (e instanceof RoundFinishedEvent) {
+                final double t = TimelineClock.battleClockOf(e, startRawClockSec);
+                if (Double.isFinite(t) && t > 0) {
+                    return t;
+                }
+            }
+        }
+        return Double.NaN;
+    }
+
+    private static boolean isPositiveFinite(final Double value) {
+        return value != null && Double.isFinite(value) && value > 0;
     }
 
     /** 事件按 (battle-relative 时间, sequence) 排序；非有限时间戳的事件剔除并计数。 */
