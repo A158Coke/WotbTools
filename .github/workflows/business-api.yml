@@ -31,7 +31,6 @@ on:
       - contracts/mq/**
       - deploy/dependency-readiness.sh
       - deploy/dependency-readiness.py
-      - deploy/check-latest-main.sh
       - deploy/tx/business-api.compose.yml
       - deploy/tx/build-business-api-from-gitee.sh
       - deploy/tx/deploy.sh
@@ -72,7 +71,6 @@ env:
     contracts/mq/**
     deploy/dependency-readiness.sh
     deploy/dependency-readiness.py
-    deploy/check-latest-main.sh
     deploy/tx/business-api.compose.yml
     deploy/tx/build-business-api-from-gitee.sh
     deploy/tx/deploy.sh
@@ -129,7 +127,6 @@ jobs:
       image: ${{ steps.remote_build.outputs.image }}
       commit_sha: ${{ steps.identity.outputs.commit_sha }}
       digest: ${{ steps.remote_build.outputs.digest }}
-      latest_published: ${{ steps.latest.outputs.published }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -256,58 +253,6 @@ jobs:
               print(f"{key}={value}")
           PY
 
-      - name: Publish latest only from current main
-        id: latest
-        shell: bash
-        env:
-          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
-          PUBLISHED_DIGEST: ${{ steps.remote_build.outputs.digest }}
-          TX_HOST: ${{ secrets.TX_VPS_HOST }}
-          TX_USER: ${{ secrets.TX_VPS_USER }}
-          TX_PORT: ${{ secrets.TX_VPS_PORT }}
-          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
-          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -euo pipefail
-
-          status=0
-          bash "$GITHUB_WORKSPACE/deploy/check-latest-main.sh" "$SOURCE_SHA" || status=$?
-          case "$status" in
-            0)
-              remote="/tmp/wotbtools-business-api-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
-              log="$RUNNER_TEMP/tx-business-latest.log"
-              ssh \
-                -i ~/.ssh/tx-business-build \
-                -p "$TX_PORT" \
-                -o BatchMode=yes \
-                -o ConnectTimeout=15 \
-                -o ServerAliveInterval=10 \
-                -o ServerAliveCountMax=6 \
-                "$TX_USER@$TX_HOST" \
-                "bash '$remote' promote-latest '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE'" \
-                | tee "$log"
-
-              promoted_digest="$(sed -n 's/^RESULT digest=//p' "$log" | tail -n1)"
-              [ "$promoted_digest" = "$PUBLISHED_DIGEST" ] || {
-                echo "Promoted latest digest differs from the immutable build digest." >&2
-                exit 1
-              }
-              grep -Fxq 'RESULT latest_published=true' "$log" || {
-                echo "TX latest promotion did not report success." >&2
-                exit 1
-              }
-              echo 'published=true' >> "$GITHUB_OUTPUT"
-              ;;
-            10)
-              echo 'published=false' >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              exit "$status"
-              ;;
-          esac
-
       - name: Cleanup staged TX build publisher
         if: always()
         shell: bash
@@ -337,8 +282,6 @@ jobs:
       cancel-in-progress: false
       queue: max
     needs: [build]
-    # 被更新的 main 取代（published=false）时跳过：不部署旧镜像，也不判红
-    if: needs.build.outputs.latest_published == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: tx-production
@@ -400,7 +343,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION,TX_RABBITMQ_CONTROL_API_PASSWORD,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY,KEYCLOAK_ADMIN_CLIENT_SECRET,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,TX_BUSINESS_API_IMAGE_REF,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION,TX_RABBITMQ_CONTROL_API_PASSWORD,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY,KEYCLOAK_ADMIN_CLIENT_SECRET,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -415,6 +358,7 @@ jobs:
           WOTB_DEPLOY_SERVICE: business-api
           WOTB_DEPLOY_CONFIG_SHA: ${{ needs.build.outputs.commit_sha }}
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
+          TX_BUSINESS_API_IMAGE_REF: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}/wotbtools-business-api@${{ needs.build.outputs.digest }}
           TX_BUSINESS_DB_NAME: ${{ vars.TX_BUSINESS_DB_NAME }}
           TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
           TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}

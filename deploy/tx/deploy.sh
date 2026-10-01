@@ -17,6 +17,7 @@ readonly AI_UPSTREAM_VALUE="${TX_AI_UPSTREAM:-http://10.20.0.2:8089}"
 readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
 readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
 readonly TX_IMAGE_REGISTRY_PREFIX_VALUE="${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}"
+readonly TX_BUSINESS_API_IMAGE_REF_VALUE="${TX_BUSINESS_API_IMAGE_REF:-}"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
 readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
 readonly PROBE_CONNECT_TIMEOUT_SEC="${WOTB_PROBE_CONNECT_TIMEOUT_SEC:-3}"
@@ -177,6 +178,13 @@ validate_inputs() {
     done
   fi
   if is_business_api_group_selected; then
+    require_env TX_BUSINESS_API_IMAGE_REF
+    case "$TX_BUSINESS_API_IMAGE_REF_VALUE" in
+      "$TX_IMAGE_REGISTRY_PREFIX_VALUE/wotbtools-business-api@sha256:"*) ;;
+      *) die "TX_BUSINESS_API_IMAGE_REF must pin wotbtools-business-api by TCR sha256 digest." ;;
+    esac
+    local business_api_digest="${TX_BUSINESS_API_IMAGE_REF_VALUE##*@sha256:}"
+    [[ "$business_api_digest" =~ ^[0-9a-f]{64}$ ]]       || die "TX_BUSINESS_API_IMAGE_REF must contain a 64-character lowercase sha256 digest."
     # The business runtime is TX-internal, so it consumes exactly the
     # credentials below: the OpenTofu-owned application database role, the
     # RabbitMQ control-api identity, the MinIO control_api identity, and the
@@ -694,7 +702,10 @@ preflight_host() {
 diagnostics() {
   echo "== TX DEPLOY DIAGNOSTICS =="
   echo "configSha=$CONFIG_SHA_VALUE"
-  case "$DEPLOY_SERVICES_RAW" in keycloak|wotb-frontend|business-api) echo "image=latest" ;; esac
+  case "$DEPLOY_SERVICES_RAW" in
+    business-api) echo "image=$TX_BUSINESS_API_IMAGE_REF_VALUE" ;;
+    keycloak|wotb-frontend) echo "image=latest" ;;
+  esac
   echo "deployServices=$DEPLOY_SERVICES_RAW"
   if [ -n "$PROBE_LAST_SERVICE" ]; then
     echo "probeService=$PROBE_LAST_SERVICE"

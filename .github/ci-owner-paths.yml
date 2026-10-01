@@ -29,6 +29,7 @@ business_api:
   - 'deploy/check-latest-main.sh'
   - 'deploy/list-image-tags.sh'
   - 'deploy/tx/business-api.compose.yml'
+  - 'deploy/tx/build-business-api-from-gitee.sh'
   - 'deploy/tx/deploy.sh'
   - 'deploy/tx/common.compose.yml'
   - 'deploy/tx/docker-compose.yml'
