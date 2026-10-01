@@ -76,7 +76,8 @@ body {
   padding: 26px 0 64px !important;
 }
 .layout-data-workspace {
-  width: min(var(--showcase-page-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  /* 100% 而非 100vw：100vw 含滚动条宽度，有竖向滚动条时会产生横向溢出 */
+  width: min(var(--showcase-page-max), calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   padding: 24px 0 64px !important;
 }
@@ -128,17 +129,6 @@ body {
 
 /* Replay parser */
 .layout-data-workspace > :first-child { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)) !important; }
-.restoolbar {
-  position: sticky;
-  top: calc(var(--header-h) + 6px);
-  z-index: 30;
-  padding: 9px 10px !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 96%, transparent) !important;
-  box-shadow: 0 12px 30px rgba(0,0,0,.18);
-  backdrop-filter: blur(12px);
-}
 .tabs button.active {
   color: var(--accent-dark) !important;
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
@@ -300,8 +290,6 @@ body {
     padding: 12px 0 42px !important;
   }
   .layout-full-workspace { height: calc(100vh - 56px) !important; }
-  .restoolbar { position: static; }
-  .resactions { overflow-x: auto; flex-wrap: nowrap !important; padding-bottom: 4px; }
   .admin-search { flex-direction: column; }
   .admin-search button { min-height: 40px; }
   .admin-table-wrap { width: 100%; }

@@ -125,7 +125,6 @@ html[data-ui-profile="classic"] {
 [data-ui-profile="classic"] .admin-table td {color: var(--text) !important}
 [data-ui-profile="classic"] .admin-table tbody tr:hover {background: var(--bg-list-hover) !important}
 [data-ui-profile="classic"] .modal {border-color: #d9dde3 !important}
-[data-ui-profile="classic"] .restoolbar {background: color-mix(in srgb, #ffffff 96%, transparent) !important; box-shadow: 0 8px 22px rgba(0, 0, 0, .07) !important}
 
 /* 4) 关闭全屏 AI 路景背景(::after)与 readability 渐变遮罩(::before) */
 [data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.homepage-showcase)::after,
@@ -156,14 +155,10 @@ html[data-ui-profile="classic"] .layout-wide,
 html[data-ui-profile="classic"] .layout-data-workspace,
 html[data-ui-profile="classic"] .layout-full-workspace {color: var(--text) !important}
 
-html[data-ui-profile="classic"] .tabs,
-html[data-ui-profile="classic"] .dataview-toggle {background: var(--bg-card) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .tabs button,
-html[data-ui-profile="classic"] .dataview-toggle button {color: var(--text-sub) !important; background: var(--bg-card) !important; border-color: var(--border-light) !important}
-html[data-ui-profile="classic"] .tabs button:hover:not(.active),
-html[data-ui-profile="classic"] .dataview-toggle button:hover:not(.active) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .tabs button.active,
-html[data-ui-profile="classic"] .dataview-toggle button.active {background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important; color: var(--accent-dark) !important; border-bottom-color: var(--accent) !important}
+html[data-ui-profile="classic"] .tabs {background: var(--bg-card) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .tabs button {color: var(--text-sub) !important; background: var(--bg-card) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .tabs button:hover:not(.active) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .tabs button.active {background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important; color: var(--accent-dark) !important; border-bottom-color: var(--accent) !important}
 
 html[data-ui-profile="classic"] :is(.card, .panel, .section-card, .profile-card, .account-card, .modal, .dropdown, .popover, .tooltip) {border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
 html[data-ui-profile="classic"] .modal {background: var(--bg-card) !important; color: var(--text) !important}
@@ -206,7 +201,6 @@ html[data-ui-profile="classic"] .layout-data-workspace button.ghost {background:
 html[data-ui-profile="classic"] .layout-data-workspace .filebtn.ghost:hover,
 html[data-ui-profile="classic"] .layout-data-workspace button.ghost:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
 html[data-ui-profile="classic"] .layout-data-workspace .chip {background: color-mix(in srgb, var(--accent) 6%, var(--bg-chip)) !important; border-color: color-mix(in srgb, var(--accent) 22%, var(--border)) !important; color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .restoolbar {background: color-mix(in srgb, var(--bg-card) 96%, transparent) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
 html[data-ui-profile="classic"] .layout-data-workspace .tablewrap {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
 html[data-ui-profile="classic"] .layout-data-workspace table thead th,
 html[data-ui-profile="classic"] .layout-data-workspace table thead th:first-child {background: var(--bg-card2) !important; color: var(--text-sub) !important}
@@ -215,32 +209,6 @@ html[data-ui-profile="classic"] .layout-data-workspace table tbody tr {backgroun
 html[data-ui-profile="classic"] .layout-data-workspace table tbody tr:hover {background: var(--bg-list-hover) !important}
 html[data-ui-profile="classic"] .layout-data-workspace .error {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important; border-color: var(--error) !important}
 html[data-ui-profile="classic"] .layout-data-workspace .warn {background: var(--status-warn-bg) !important; color: var(--status-warn-fg) !important; border-color: var(--border-warn) !important}
-
-/* ---- Replay 处理面板 / Export 任务卡（ReplayProcessingPanel .rpp-* / ReplayTaskCard .etc-*
-   scoped 写死 showcase 深色：面板底/进度条/按钮。Classic 落浅色并跟随 token ---- */
-html[data-ui-profile="classic"] .replay-processing-panel {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--surface-shadow) !important}
-html[data-ui-profile="classic"] .replay-processing-panel .rpp-title {color: var(--text-heading) !important}
-html[data-ui-profile="classic"] .replay-processing-panel .rpp-ok {color: var(--status-ok-fg) !important}
-html[data-ui-profile="classic"] .replay-processing-panel .rpp-err {color: var(--status-err-fg) !important}
-html[data-ui-profile="classic"] .replay-processing-panel .rpp-sub {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .replay-processing-panel .rpp-counts {color: var(--accent-dark) !important}
-html[data-ui-profile="classic"] .replay-processing-panel .rpp-bar {background: var(--border) !important}
-html[data-ui-profile="classic"] .replay-processing-panel .rpp-bar-fill {background: var(--accent) !important}
-html[data-ui-profile="classic"] .replay-processing-panel .rpp-btn {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .replay-processing-panel .rpp-btn:hover {border-color: var(--accent) !important; color: var(--accent-dark) !important}
-html[data-ui-profile="classic"] .replay-processing-panel .rpp-error {color: var(--status-err-fg) !important}
-html[data-ui-profile="classic"] .replay-task-card {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--surface-shadow) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-title {color: var(--text-heading) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-ok {color: var(--status-ok-fg) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-err {color: var(--status-err-fg) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-sub {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-counts {color: var(--accent-dark) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-bar {background: var(--border) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-bar-fill {background: var(--accent) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-btn {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-btn:hover {border-color: var(--accent) !important; color: var(--accent-dark) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-btn.primary {background: var(--accent) !important; border-color: var(--accent) !important; color: var(--accent-text) !important}
-html[data-ui-profile="classic"] .replay-task-card .etc-error {color: var(--status-err-fg) !important}
 
 /* ---- League Rating / Player Drawer / Radar / Column Picker ---- */
 html[data-ui-profile="classic"] .rating-page, html[data-ui-profile="classic"] .rating-section, html[data-ui-profile="classic"] .rating-workspace {color: var(--text) !important}
