@@ -607,12 +607,17 @@ async function runRotationScenario(env, scenario) {
 /**
  * §mobile-fullscreen：手机横屏全屏是「148px navigation rail | map」，播放控件仍在底部 overlay。
  * 触屏 rail 的 248px 下限只属于「控件真的在 rail 里」的大平板，不得通过 inline --pb-rail-w
- * 盖掉 mobile fullscreen 的 148px（inline style 优先级高于 CSS 规则）。
+ * 盖掉 mobile fullscreen 的 148px（inline style 优先级高于 CSS 规则）；用户在桌面拖过、持久化在
+ * localStorage 的 rail 宽度同样不得盖掉它。
  */
-const MOBILE_FULLSCREEN_SCENARIO = {
-  name: 'fullscreen-740x360-landscape-coarse',
-  width: 740, height: 360, touch: true, duration: 60,
-}
+const MOBILE_FULLSCREEN_SCENARIOS = [
+  { name: 'fullscreen-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 60 },
+  {
+    name: 'fullscreen-740x360-landscape-coarse-persisted-rail',
+    width: 740, height: 360, touch: true, duration: 60,
+    paneWidths: { rail: 320, details: null },
+  },
+]
 
 async function runMobileFullscreenScenario(env, scenario) {
   const failures = []
@@ -621,6 +626,12 @@ async function runMobileFullscreenScenario(env, scenario) {
   lastPage = page
   await page.enable()
   await page.emulate(scenario)
+  if (scenario.paneWidths) {
+    // mount 前写入持久化偏好（模拟此前在桌面拖过 rail）
+    await env.chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `try { localStorage.setItem('wotb.pb.pane-widths', ${JSON.stringify(JSON.stringify(scenario.paneWidths))}) } catch {}`,
+    }, sessionId)
+  }
 
   await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=${scenario.duration}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-fullscreen"]'), { label: 'fullscreen button' })
@@ -640,6 +651,7 @@ async function runMobileFullscreenScenario(env, scenario) {
     return {
       fullscreenIsRoot: document.fullscreenElement === root,
       formClass: Array.from(root.classList).find((n) => n.startsWith('pb-form-')) || null,
+      persisted: localStorage.getItem('wotb.pb.pane-widths'),
       railVar: getComputedStyle(root).getPropertyValue('--pb-rail-w').trim(),
       inlineRailVar: root.style.getPropertyValue('--pb-rail-w').trim(),
       railWidth: rail ? rail.getBoundingClientRect().width : null,
@@ -649,6 +661,11 @@ async function runMobileFullscreenScenario(env, scenario) {
   check(failures, state.fullscreenIsRoot, 'fullscreen element is not the playback root')
   check(failures, state.formClass === 'pb-form-mobile', `fullscreen form=${state.formClass}, expected pb-form-mobile`)
   check(failures, !state.controlsInRail, 'mobile fullscreen must keep the playback controls out of the rail')
+  if (scenario.paneWidths) {
+    check(failures, state.persisted === JSON.stringify(scenario.paneWidths),
+      `persisted pane widths were not in place: ${state.persisted}`)
+  }
+  check(failures, state.inlineRailVar === '', `mobile fullscreen wrote inline --pb-rail-w=${state.inlineRailVar}`)
   check(failures, state.railVar === '148px',
     `mobile fullscreen --pb-rail-w=${state.railVar} (inline=${state.inlineRailVar || 'none'}), expected 148px`)
   check(failures, state.railWidth != null && Math.abs(state.railWidth - 148) <= 1,
@@ -677,7 +694,7 @@ try {
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
     { scenario: ROTATION_SCENARIO, run: () => runRotationScenario(env, ROTATION_SCENARIO) },
-    { scenario: MOBILE_FULLSCREEN_SCENARIO, run: () => runMobileFullscreenScenario(env, MOBILE_FULLSCREEN_SCENARIO) },
+    ...MOBILE_FULLSCREEN_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileFullscreenScenario(env, scenario) })),
   ]
   // 可选场景名过滤（调试单个形态时不必跑满矩阵）。
   const nameFilter = process.argv.slice(2).find((arg) => !arg.startsWith('-'))

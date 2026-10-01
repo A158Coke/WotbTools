@@ -246,8 +246,13 @@ const railWidthRange = computed(() => ({
   min: coarseControlsRail.value ? Math.max(RAIL_W_RANGE.min, COARSE_RAIL_MIN_W) : RAIL_W_RANGE.min,
   max: RAIL_W_RANGE.max,
 }))
-/** 实际 rail 宽度：用户拖过就用拖的值（不低于下限）；没拖过时仅触屏控件 rail 抬到下限，否则交给 CSS */
+/**
+ * 实际 rail 宽度：只有可调的控件 rail 才写 inline --pb-rail-w。mobile fullscreen 的 navigation rail
+ * 不可拖、宽度由 CSS 决定（148px），持久化的拖拽宽度（可能来自桌面）不得盖掉它。
+ * 用户拖过就用拖的值（不低于下限）；没拖过时仅触屏控件 rail 抬到下限，否则交给 CSS。
+ */
 const railWidthPx = computed(() => {
+  if (!controlsInRail.value) return null
   if (paneWidths.rail != null) return Math.max(paneWidths.rail, railWidthRange.value.min)
   return coarseControlsRail.value ? Math.max(DEFAULT_RAIL_W, railWidthRange.value.min) : null
 })
