@@ -10,7 +10,7 @@ services:
   business-api:
     # The same business image, published as wotbtools-business-api; the TX service
     # name is intentionally distinct from the retired Yecao runtime.
-    image: ${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}/wotbtools-business-api:latest
+    image: ${TX_BUSINESS_API_IMAGE_REF:?TX_BUSINESS_API_IMAGE_REF is required}
     environment:
       # Flyway owns every application table in the OpenTofu-provisioned business
       # database; the application role is separate from the PostgreSQL bootstrap
