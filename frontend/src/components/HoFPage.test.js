@@ -199,7 +199,7 @@ describe('HoFPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     const versions = wrapper.findAll('.lb-version').map(cell => cell.text())
-    expect(versions).toEqual(['10.6.0 · hofVersion.edition.apple', '-'])
+    expect(versions).toEqual(['10.6.0', '-'])
     expect(wrapper.find('[data-testid="hof-pager"]').text()).toContain('hofPager.summary')
     expect(wrapper.find('[data-testid="hof-pager"]').findAll('button')).toHaveLength(2)
   })
