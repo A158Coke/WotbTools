@@ -55,7 +55,7 @@ fail() {
 }
 
 usage() {
-  printf 'usage: %s <backend|frontend|keycloak> <sha-12>\n' "$0" >&2
+  printf 'usage: %s <backend|keycloak> <sha-12>\n' "$0" >&2
   exit 2
 }
 
@@ -114,7 +114,7 @@ component="$1"
 image_tag="$2"
 
 case "$component" in
-  backend|frontend|keycloak) ;;
+  backend|keycloak) ;;
   *) fail "unsupported TX image component" ;;
 esac
 [[ "$image_tag" =~ ^sha-[0-9a-f]{12}$ ]] || fail "immutable image tag must be sha-<12 lowercase hex>"
