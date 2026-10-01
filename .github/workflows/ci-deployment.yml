@@ -116,6 +116,7 @@ jobs:
           export TX_BUSINESS_DB_NAME=wotb
           export TX_BUSINESS_DB_USERNAME=control_api
           export TX_BUSINESS_DB_PASSWORD=ci-business-app
+          export TX_BUSINESS_API_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools-business-api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
           export YECAO_MINIO_CONTROL_API_ACCESS_KEY=ci-minio-key
           export YECAO_MINIO_CONTROL_API_SECRET_KEY=ci-minio-secret
           export KEYCLOAK_ADMIN_CLIENT_SECRET=ci-kc-client
