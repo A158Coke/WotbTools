@@ -233,20 +233,23 @@ const RAIL_W_RANGE = { min: 160, max: 420 }
 /**
  * 触屏时 rail 的宽度下限：速度档位一行排开、每个都满足 44px 点击区域（--hit-min）。
  * = 档位数 × 44 + (档位数 − 1) × 3px 间距 + rail 左右 padding 8px × 2；5 档时为 248px。
- * 触屏 + rail 只出现在视口 >1200px 的大平板（≤1200 的触屏设备走 mobile 形态，没有 rail）。
+ * 只在「播放控件真的在 rail 里」时生效（controlsInRail：非 mobile 形态的 fullscreen/宽屏，即视口 >1200 的
+ * 触屏大平板）。mobile fullscreen 也有一条 navigation rail，但控件不在里面，宽度继续交给 CSS（148px）。
  */
 const TOUCH_HIT_MIN_PX = 44
 const COARSE_RAIL_MIN_W = PLAYBACK_SPEEDS.length * TOUCH_HIT_MIN_PX + (PLAYBACK_SPEEDS.length - 1) * 3 + 16
 const DEFAULT_RAIL_W = 220 // 与 playback-shared.css 的 --pb-rail-w 默认值一致
 const { coarse: coarsePointer } = usePointer()
+// controlsInRail 定义在下方；computed 惰性求值，setup 结束后才读取
+const coarseControlsRail = computed(() => coarsePointer.value && controlsInRail.value)
 const railWidthRange = computed(() => ({
-  min: coarsePointer.value ? Math.max(RAIL_W_RANGE.min, COARSE_RAIL_MIN_W) : RAIL_W_RANGE.min,
+  min: coarseControlsRail.value ? Math.max(RAIL_W_RANGE.min, COARSE_RAIL_MIN_W) : RAIL_W_RANGE.min,
   max: RAIL_W_RANGE.max,
 }))
-/** 实际 rail 宽度：用户拖过就用拖的值（不低于下限）；没拖过时触屏也要抬到下限，否则交给 CSS 默认 */
+/** 实际 rail 宽度：用户拖过就用拖的值（不低于下限）；没拖过时仅触屏控件 rail 抬到下限，否则交给 CSS */
 const railWidthPx = computed(() => {
   if (paneWidths.rail != null) return Math.max(paneWidths.rail, railWidthRange.value.min)
-  return coarsePointer.value ? Math.max(DEFAULT_RAIL_W, railWidthRange.value.min) : null
+  return coarseControlsRail.value ? Math.max(DEFAULT_RAIL_W, railWidthRange.value.min) : null
 })
 const DETAILS_W_RANGE = { min: 240, max: 560 }
 const clampWidth = (value, range) => Math.min(range.max, Math.max(range.min, value))
