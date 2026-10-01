@@ -1,11 +1,14 @@
 <script setup>
 // 侧边栏底部的"更多"弹出面板（平板 / 桌面）：低频的显示设置 + 关于与支持。
 // 非模态 disclosure：触发按钮 aria-expanded / aria-controls；Esc 关闭并把焦点还给触发按钮，
-// 点面板外关闭；选一个链接后关闭。内容与手机"更多"页同源（useMoreMenu）。
+// 点面板外或焦点移出面板时关闭；选一个链接后关闭。内容与手机"更多"页同源（useMoreMenu）。
+// Teleport 到 body：侧边栏是 fixed + z-index 的层叠上下文，面板留在里面会被页面里更高的层
+// （如装甲查看器的 3D 浮层）盖住。测试用 DIALOG_INLINE_KEY 原地渲染。
 import { inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ExternalLink, MessageSquare } from 'lucide-vue-next'
 import { FEEDBACK_URL, LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import SegmentedControl from '../components/SegmentedControl.vue'
 
 const props = defineProps({
@@ -17,6 +20,7 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
+const inline = inject(DIALOG_INLINE_KEY, false)
 const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks } = useMoreMenu()
 const panel = ref(null)
 
@@ -35,6 +39,13 @@ function onKeydown(event) {
     event.stopPropagation()
     close({ restoreFocus: true })
   }
+}
+
+/** Tab 出面板（非模态，不锁焦点）：焦点去了面板与触发按钮之外就收起 */
+function onFocusOut(event) {
+  const next = event.relatedTarget
+  if (!next || panel.value?.contains(next) || props.anchor?.contains(next)) return
+  close()
 }
 
 function onPointerDown(event) {
@@ -57,6 +68,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 </script>
 
 <template>
+  <Teleport to="body" :disabled="inline">
   <div
     v-if="open"
     :id="id"
@@ -66,6 +78,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
     :aria-label="$t('nav.more')"
     data-testid="more-panel"
     @keydown="onKeydown"
+    @focusout="onFocusOut"
   >
     <section class="more-panel-section" aria-labelledby="more-panel-display">
       <h2 id="more-panel-display" class="more-panel-title">{{ $t('more.sections.display') }}</h2>
@@ -110,6 +123,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
       </ul>
     </section>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

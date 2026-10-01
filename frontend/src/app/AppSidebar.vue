@@ -2,7 +2,7 @@
 // 平板 / 桌面的应用导航（design-language §9）：固定在左侧、铺满视口高度。
 // 上：品牌 · 主栏目 · 管理组（按角色）；下：更多（弹出面板，放低频设置）· 账户 · 折叠开关（仅桌面）。
 // 平板（768–1199）固定为图标栏；桌面（≥1200）默认展开，可折叠成图标栏（useSidebar 记忆偏好）。
-// 图标栏里文字标签视觉隐藏但保留为可访问名称，悬停另有 title 提示。
+// 图标栏里文字缩成图标下方的小字（触屏平板没有悬停提示，不能只剩图标），过长时最多两行。
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-vue-next'
@@ -78,9 +78,10 @@ function linkAttrs(id) {
       </ul>
 
       <template v-if="adminItems.length">
-        <h2 class="sidebar-group-title" :class="{ 'visually-hidden': rail }">{{ $t('more.sections.admin') }}</h2>
+        <!-- 分组名不用标题元素：侧边栏在 DOM 里先于页面 h1，用 h2 会打乱标题层级 -->
+        <p id="sidebar-admin-title" class="sidebar-group-title" :class="{ 'visually-hidden': rail }">{{ $t('more.sections.admin') }}</p>
         <hr v-if="rail" class="sidebar-divider" aria-hidden="true">
-        <ul class="sidebar-list">
+        <ul class="sidebar-list" aria-labelledby="sidebar-admin-title">
           <li v-for="item in adminItems" :key="item.id">
             <RouterLink
               class="sidebar-link"
@@ -245,16 +246,28 @@ function linkAttrs(id) {
 .sidebar-link:focus-visible,
 .sidebar-brand:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 
-/* 图标栏：只剩图标，文字留给读屏（title 提供悬停提示） */
-.is-rail .sidebar-link { justify-content: center; padding: 0; }
+/* 图标栏：图标 + 下方小字（Material navigation rail 形态），过长两行截断，完整名称在 title */
+.app-sidebar.is-rail { padding-inline: var(--space-1); padding-inline-start: calc(var(--space-1) + env(safe-area-inset-left)); }
+
+.is-rail .sidebar-link {
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--space-1) 0;
+  font: var(--type-caption);
+  font-weight: 600;
+  text-align: center;
+}
 
 .is-rail .sidebar-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
+  display: -webkit-box;
+  max-width: 100%;
   overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .sidebar-collapse { color: var(--color-text-tertiary); }
