@@ -119,7 +119,7 @@ function capabilityStateProbe() {
     active: tab.classList.contains('is-active'),
   }))
   const dialog = document.querySelector('.global-error-modal')
-  const overlay = dialog ? dialog.closest('.modal-overlay') : null
+  const overlay = dialog ? dialog.closest('.dialog-scrim') : null
   return {
     tabs,
     data: pane('ws-data'),
@@ -515,7 +515,7 @@ async function runAppScenario(env, scenario) {
 
     // 关闭错误提示后必须能再次发起登录（不得 permanent lock）。
     const closePoint = await page.probe(function globalErrorCloseProbe() {
-      const button = document.querySelector('.modal-overlay .modal-actions button')
+      const button = document.querySelector('[data-testid="global-error-close"]')
       if (!button) return null
       const rect = button.getBoundingClientRect()
       return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }

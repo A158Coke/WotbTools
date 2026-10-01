@@ -267,6 +267,10 @@
       "hint_touch": "单指旋转 · 双指缩放 · 点击查看装甲 · 打开「炮塔」后拖动转炮塔",
       "world_hint": "拖动旋转 · 滚轮缩放 · 右键拖动平移"
     },
+    "dialog": {
+      "confirm": "确定",
+      "cancel": "取消"
+    },
     "account": {
       "signedOutTitle": "登录 WoTBTools",
       "signedOutHint": "登录后可以绑定游戏账号、提交名人堂记录、查看你的记录。解析回放不需要登录。"
@@ -540,6 +544,10 @@
       "hint_touch": "Drag to rotate · Pinch to zoom · Tap for armor · Turn on “Turret” to aim",
       "world_hint": "Drag to rotate · Scroll to zoom · Right-drag: pan"
     },
+    "dialog": {
+      "confirm": "OK",
+      "cancel": "Cancel"
+    },
     "account": {
       "signedOutTitle": "Sign in to WoTBTools",
       "signedOutHint": "Sign in to link your game account, submit Hall of Fame records and see your records. Parsing replays does not require an account."
@@ -812,6 +820,10 @@
       "hint": "Перетаскивание — вращение · Колесо — масштаб · Клик — броня · ПКМ — башня/орудие",
       "hint_touch": "Палец — вращение · Щипок — масштаб · Тап — броня · Включите «Башня», чтобы наводить",
       "world_hint": "Перетаскивание — вращение · Колесо — масштаб · ПКМ — сдвиг"
+    },
+    "dialog": {
+      "confirm": "ОК",
+      "cancel": "Отмена"
     },
     "account": {
       "signedOutTitle": "Вход в WoTBTools",

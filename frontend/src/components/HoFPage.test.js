@@ -5,6 +5,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { ApiError } from '../utils/http.js'
 import HoFPage from './HoFPage.vue'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
+
+const confirmDialog = vi.hoisted(() => ({ confirm: vi.fn(() => Promise.resolve(true)) }))
+vi.mock('../composables/useConfirm.js', () => ({ confirm: confirmDialog.confirm }))
+
 
 let authenticated = true
 let tokenClaims = null
@@ -74,7 +79,7 @@ describe('HoFPage', () => {
 
   function mountPage() {
     return mount(HoFPage, {
-      global: { mocks: { $t: key => key } }
+      global: { mocks: { $t: key => key }, provide: { [DIALOG_INLINE_KEY]: true } }
     })
   }
 
@@ -497,7 +502,7 @@ describe('HoFPage', () => {
         modal.findAll('input[type="file"]')[0],
         [new File(['proof'], 'cleared-proof.png', { type: 'image/png', lastModified: 1 })]
       )
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const confirm = confirmDialog.confirm
 
       await modal.find('.h100-clear-draft').trigger('click')
       readers[0].result = 'data:image/png;base64,AAAA'
@@ -507,7 +512,6 @@ describe('HoFPage', () => {
       expect(modal.find('.h100-file-reading').exists()).toBe(false)
       expect(modal.find('.h100-selected-file').exists()).toBe(false)
       expect(modal.text()).not.toContain('cleared-proof.png')
-      confirm.mockRestore()
     } finally {
       vi.unstubAllGlobals()
     }
@@ -554,14 +558,15 @@ describe('HoFPage', () => {
       wrapper.find('.h100-modal').findAll('input[type="file"]')[1],
       [new File(['r1'], 'battle-1.wotbreplay', { lastModified: 1 })]
     )
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirm = confirmDialog.confirm
 
     await wrapper.find('.h100-clear-draft').trigger('click')
+    await flushPromises()
 
-    expect(confirm).toHaveBeenCalledWith('hundred.clearDraftConfirm')
+    // 应用内确认对话框（审计 PG-09），不再用 window.confirm
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'hundred.clearDraftConfirm', danger: true }))
     expect(wrapper.find('#h100-submit-damage').element.value).toBe('')
     expect(wrapper.find('.h100-selected-files').exists()).toBe(false)
-    confirm.mockRestore()
   })
 
   it('invalidates an older pending screenshot read when a later invalid file is selected', async () => {

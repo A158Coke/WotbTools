@@ -10,6 +10,7 @@ import { locationForView } from './navigation.js'
 import AppTopBar from './AppTopBar.vue'
 import AppTabBar from './AppTabBar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
+import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 
 const router = useRouter()
@@ -73,6 +74,7 @@ provide(NAVIGATE_VIEW_KEY, navigate)
   </footer>
   <AppTabBar v-if="isCompact" />
   <GlobalErrorDialog :error="globalError" :visible="showGlobalError" @close="closeGlobalError" />
+  <ConfirmDialogHost />
 </template>
 
 <style scoped>
