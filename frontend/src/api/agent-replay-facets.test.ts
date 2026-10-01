@@ -277,6 +277,29 @@ describe('normalizeAgentShotsOutcome', () => {
   it('非法顶层拒绝', () => {
     expect(() => api.normalizeAgentShotsOutcome({ nope: true })).toThrow(/shots 数组或/)
   })
+
+  it('trust boundary 严格化：对象形状的 author_path 只收 "ok"|"error"', () => {
+    // 缺失（schema drift / 错版 WASM）→ throw，不得静默伪装成正常解析
+    expect(() => api.normalizeAgentShotsOutcome({ shots: [] })).toThrow(/author_path/)
+    // 值漂移（大小写/未知枚举）→ throw
+    expect(() => api.normalizeAgentShotsOutcome({ shots: [], author_path: 'Error', author_error: 'x' })).toThrow(/author_path/)
+    expect(() => api.normalizeAgentShotsOutcome({ shots: [], author_path: 'OK' })).toThrow(/author_path/)
+    // 合法值放行
+    expect(api.normalizeAgentShotsOutcome({ shots: [], author_path: 'ok', author_eid: 1, others: {} }).author_path).toBe('ok')
+  })
+})
+
+describe('isShotHit（hit authority = target_eid，评审 blocker 回归）', () => {
+  it('作者在案命中（target_eid 有值）即使 hit_flags=0 也是命中——不再误判 miss', () => {
+    expect(api.isShotHit({ target_eid: 283127376 })).toBe(true)
+  })
+  it('无受击方 eid → 未命中（不回退昵称/hit_flags 双语义）', () => {
+    expect(api.isShotHit({ target_eid: null })).toBe(false)
+    expect(api.isShotHit({ target_eid: undefined })).toBe(false)
+  })
+  it('非作者同规则（单一权威，无双语义）', () => {
+    expect(api.isShotHit({ target_eid: 1 })).toBe(true)
+  })
 })
 
 describe('enrichShotsFromRoster（eid 联表）', () => {

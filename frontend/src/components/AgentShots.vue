@@ -10,7 +10,7 @@
  */
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { parseAgentShotsFromBytes, parseAgentPlaybackFromBytes, enrichShotsFromRoster } from '../api/agent-replay-facets.js'
+import { parseAgentShotsFromBytes, parseAgentPlaybackFromBytes, enrichShotsFromRoster, isShotHit } from '../api/agent-replay-facets.js'
 import { storeShotsForViewer, fetchTankData, tankImageUrl } from '../scene/agentData.js'
 
 const { t } = useI18n()
@@ -210,11 +210,9 @@ const filteredShots = computed(() => {
 // 汇总摘要（随筛选联动）：命中率 = 有 flags 或非作者命中的比例；穿透率 = 击穿/命中（不含跳弹）
 const shotSummary = computed(() => {
   const rows = filteredShots.value
-  // 命中判定 = 受击方 eid 在案（method8/method38 服务器权威）。旧法 target_name
-  // 反推在名字缺失时把真实命中显示成未命中（中文昵称场次实测）
-  const isHit = (s) => (s.is_author ? (s.hit_flags || 0) !== 0 : s.target_eid != null)
+  // 命中判定唯一权威 = target_eid 在案（isShotHit；作者与非作者同规则）
   const total = rows.length
-  const hits = rows.filter(isHit).length
+  const hits = rows.filter(isShotHit).length
   const pens = rows.filter((s) => (s.is_author ? s.hit_flags & 0x0010 : s.game_hit_result === 3)).length
   const rics = rows.filter((s) => (s.is_author ? s.hit_flags & 0x0008 : false)).length
   const heHits = rows.filter((s) => s.is_author && s.hit_flags & 0x1000).length
@@ -280,17 +278,18 @@ function shellBadge(s) {
   }
 }
 
-// 结果徽标：hit_flags 位图 → 击穿/HE/跳弹/未穿/脱靶；非作者按 game_hit_result 降级
+// 结果徽标：hit_flags 位图 → 击穿/HE/跳弹/未穿/脱靶；无位图时按 game_hit_result
+// 降级——但 hit 权威 = target_eid（isShotHit）：eid 在案而无位图（method38 位图
+// 为空的边界）绝不显示 miss（与摘要统计同权威，不自相矛盾）
 function resultBadge(s) {
   const f = s.hit_flags || 0
-  if (!s.is_author && !f) {
+  if (!f) {
+    if (s.target_eid == null) return { text: t('agentShots.res_miss'), cls: 'miss' }
     const r = s.game_hit_result
-    if (r == null || r === 255 || r === 0) return { text: t('agentShots.res_miss'), cls: 'miss' }
     if (r === 3) return { text: t('agentShots.res_pen'), cls: 'pen' }
     if (r === 4) return { text: t('agentShots.res_track'), cls: 'track' }
     return { text: t('agentShots.res_nopen'), cls: 'nopen' }
   }
-  if (!f) return { text: t('agentShots.res_miss'), cls: 'miss' }
   if (f & 0x1000) return { text: 'HE', cls: 'he-res' }
   if (f & 0x0010) return { text: t('agentShots.res_pen'), cls: 'pen' }
   if (f & 0x0008) return { text: t('agentShots.res_ric'), cls: 'ric' }
@@ -371,11 +370,15 @@ async function resolveShellIdx(s) {
     <p v-if="parsing" class="status">{{ t('agentShots.parsing') }}</p>
     <p v-else-if="err" class="status error">{{ err }}</p>
 
-    <template v-else-if="filteredShots.length">
-      <!-- 作者严格路径 fail-visible（契约 v0.1.9）：strict 失败时本表仅含他人宽松路径 -->
+    <template v-else>
+      <!-- 作者严格路径 fail-visible（契约 v0.1.9 核心目标）：独立于 table/no-shots
+           状态链——author_path=error 且他人宽松路径 0 发时，警示与空态并存，
+           绝不允许只显示"没有射击"把作者链失败伪装成正常空结果 -->
       <p v-if="authorError" class="status warn" :title="authorError">
         ⚠ {{ t('agentShots.author_path_error') }}<span class="muted sid"> — {{ authorError.slice(0, 160) }}</span>
       </p>
+
+      <template v-if="filteredShots.length">
       <div v-if="shooterOptions.length > 1" class="controls">
         <span class="muted">{{ t('agentShots.shooter') }}</span>
         <select v-model="shooter">
@@ -447,8 +450,9 @@ async function resolveShellIdx(s) {
         </table>
       </div>
       <p class="muted footnote">{{ t('agentShots.footnote') }}</p>
+      </template>
+      <p v-else-if="shots.length === 0 && fileName" class="status">{{ t('agentShots.no_shots') }}</p>
     </template>
-    <p v-else-if="shots.length === 0 && fileName && !parsing && !err" class="status">{{ t('agentShots.no_shots') }}</p>
   </section>
 </template>
 
