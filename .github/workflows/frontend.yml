@@ -59,6 +59,10 @@ concurrency:
 jobs:
   mirror_gitee:
     name: Mirror exact GitHub source to Gitee
+    concurrency:
+      group: production-gitee-mirror
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -93,6 +97,10 @@ jobs:
           timeout: 10m
 
   build:
+    concurrency:
+      group: tx-production-build
+      cancel-in-progress: false
+      queue: max
     needs: [mirror_gitee]
     runs-on: ubuntu-latest
     timeout-minutes: 90
