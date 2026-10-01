@@ -292,8 +292,8 @@ onMounted(() => {
           <h2 class="tp-section-title">{{ t('agentTanks.mobility') }}</h2>
           <dl class="tp-stats">
             <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ detail.hp ?? '-' }}</dd></div>
-            <div><dt>{{ t('agentTanks.speed_fwd') }}</dt><dd>{{ detail.speed_forward ?? detail.speed?.forward ?? '-' }} km/h</dd></div>
-            <div><dt>{{ t('agentTanks.speed_rev') }}</dt><dd>{{ detail.speed_reverse ?? detail.speed?.reverse ?? '-' }} km/h</dd></div>
+            <div><dt>{{ t('agentTanks.speed_fwd') }}</dt><dd>{{ detail.speed_forward ?? summary?.speed_forward ?? detail.speed ?? '-' }} km/h</dd></div>
+            <div><dt>{{ t('agentTanks.speed_rev') }}</dt><dd>{{ detail.speed_reverse ?? summary?.speed_reverse ?? '-' }} km/h</dd></div>
             <div><dt>{{ t('agentTanks.view_range') }}</dt><dd>{{ curCfg?.view_range ?? summary?.view_range ?? '-' }} m</dd></div>
             <div><dt>{{ t('agentTanks.hull_traverse') }}</dt><dd>{{ fmt(summary?.hull_traverse, 1) }} °/s</dd></div>
             <div><dt>{{ t('agentTanks.turret_traverse') }}</dt><dd>{{ fmt(curCfg?.turret_traverse_speed ?? summary?.turret_traverse_speed, 0) }} °/s</dd></div>

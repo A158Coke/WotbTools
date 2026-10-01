@@ -6,6 +6,11 @@
 //（fetch-agent-wasm.sh，sha256 校验）到 common/assets/wasm/，经 publicDir 进
 // dist 伺服 /wasm/；产物缺失时本地通道拒绝并提示。
 
+// 契约校验复用 api/agent-replay-facets 的 validateAgentPlayback（trust-boundary
+// 单一实现）：3D 路径此前只做 JSON.parse，错版 WASM 可静默载入 v1 数据（缺
+// supremacy_bases/points/aim_frames），版本门禁形同虚设。
+import { validateAgentPlayback } from '../api/agent-replay-facets.js'
+
 let wasmPromise = null
 
 async function loadWasm() {
@@ -25,16 +30,56 @@ async function loadWasm() {
 }
 
 /**
+ * 测试注入点：以桩替换 WASM 模块加载（回归测试需在不依赖真实产物的前提下
+ * 走完 loadFromLocalFile 全路径）。生产代码不调用；传 null 可复位。
+ */
+export function __setWasmForTest(mod) {
+  wasmPromise = mod ? Promise.resolve(mod) : null
+}
+
+/**
  * 本地通道（唯一通道）：File/Blob → 浏览器文件接口 → WASM parsePlayback →
  * PlaybackData（契约 v2 时序能力）。
  */
+// tank_id → 显示名（静态 tank_cache.json；资产源未配置/缺失 → 空表，label 走
+// tank_{id} 兜底）。解析/身份面保持 asset-independent——此处仅补**展示名**。
+let tankNamesPromise = null
+function tankNamesStatic() {
+  if (!tankNamesPromise) {
+    tankNamesPromise = assetProvider.json('/data/tank_cache.json').then((cache) => {
+      const out = new Map()
+      for (const [id, info] of Object.entries(cache || {})) {
+        if (info && info.name) out.set(Number(id), info.name)
+      }
+      return out
+    }).catch(() => {
+      tankNamesPromise = null
+      return new Map()
+    })
+  }
+  return tankNamesPromise
+}
+
 export async function loadFromLocalFile(fileObject) {
   const mod = await loadWasm()
   if (typeof mod.parsePlayback !== 'function') {
     throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
   }
   const bytes = new Uint8Array(await fileObject.arrayBuffer())
-  return JSON.parse(mod.parsePlayback(bytes))
+  // 契约 v2 门禁：与 parseAgentPlaybackFromBytes 同一校验器（错版/陈旧 WASM
+  // 在此抛出，而不是把缺字段的 v1 数据交给渲染层）
+  const data = validateAgentPlayback(JSON.parse(mod.parsePlayback(bytes)))
+  // 展示名富化：客户端 WASM 无 tank_names（数据边界），按静态资产补齐；
+  // 仅补空值，不覆盖上游已有名。失败不阻断回放（兜底显示 tank_{id}）
+  try {
+    const names = await tankNamesStatic()
+    if (names.size) {
+      for (const v of data.vehicles || []) {
+        if (v.tank_id && !v.tank_name) v.tank_name = names.get(v.tank_id) || ''
+      }
+    }
+  } catch { /* 资产缺失：兜底显示 */ }
+  return data
 }
 
 /**

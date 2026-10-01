@@ -17,6 +17,12 @@ export function createPlaybackStore() {
     timer: '--:--',
     score1: 0,
     score2: 0,
+    // 单基地目标（攻防/遭遇战）：objective 存在性与进度分开——0 与「未发生」不同
+    // 争霸实时点数（上限 1000）：null = 该场无点数广播（非争霸）
+    pointsFriend: null,
+    pointsEnemy: null,
+    assaultObjective: false,
+    assaultProgress: null,
     // 控制条
     playing: false,
     speed: 2,
@@ -31,7 +37,8 @@ export function createPlaybackStore() {
     // 覆盖层
     banner: null, // { text, color }
     killfeed: [], // { id, text }
-    roster: { team1: [], team2: [] }, // { eid, dot, nick, tank, frac, dead, followed, isAuthor }
+    // team 未知（0）的车进 unknown 中性组——绝不污染 team1（旧 hack `team!==2→team1`）
+    roster: { team1: [], team2: [], unknown: [] }, // { eid, dot, nick, tank, frac, dead, followed, isAuthor }
     hasData: false,
   })
 }
