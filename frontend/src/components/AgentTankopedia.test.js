@@ -164,6 +164,13 @@ describe('AgentTankopedia', () => {
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ view: 'agent-tankopedia', nation: 'ussr' })
     expect(wrapper.findAll('[data-testid="tank-card"]').length).toBeGreaterThan(0)
+
+    // The in-app back replaces the detail entry instead of pushing another list entry.
+    // Browser Back must therefore not resurrect the detail that was just closed.
+    router.back()
+    await flushPromises()
+    expect(router.currentRoute.value.query.tank).toBeUndefined()
+    expect(wrapper.find('[data-testid="tank-open3d-card"]').exists()).toBe(false)
   })
 
   it('详情加载失败显示错误态与重试', async () => {
