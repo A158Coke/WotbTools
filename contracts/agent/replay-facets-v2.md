@@ -172,3 +172,5 @@ WotBTools
 - v0.3.2（2026-10-01，agent 仓库 `7fa0dc5`，fanypcd/WoT-Blitz-Agent#1）：Result 结算 parity 补齐
   （见 §3「v0.3.2 新增」）；meta.json 统一 UTF-8 lossy 读取，非法字节不再让 `arena_bonus_type` 整体丢失。
   Release 附件 `wotb-replay-wasm-v0.3.2.zip`。
+- v0.3.3（2026-10-01，agent 仓库 `cdce004`，fanypcd/WoT-Blitz-Agent#2）：`winner_team` 读结算原始字段，
+  无胜方（平局 / 结算缺胜方）= `0`，不再伪装成 1 队胜（Result 与 PlaybackData `meta.winner_team` 同步）。
