@@ -212,6 +212,15 @@
       "ratingDocs": "Rating 文档",
       "playbackQa": "回放 QA"
     },
+    "filters": {
+      "title": "筛选",
+      "done": "完成",
+      "remove": "移除筛选：{label}"
+    },
+    "hofHowTo": {
+      "hundred": "成为第一个上榜的人：点击「{action}」，上传该车百场战绩截图与回放，审核通过后显示在这里。",
+      "mark3": "成为第一个上榜的人：点击「{action}」，上传三环截图，审核通过后显示在这里。"
+    },
     "account": {
       "signedOutTitle": "登录 WoTBTools",
       "signedOutHint": "登录后可以绑定游戏账号、提交名人堂记录、查看你的记录。解析回放不需要登录。"
@@ -430,6 +439,15 @@
       "ratingDocs": "Rating docs",
       "playbackQa": "Playback QA"
     },
+    "filters": {
+      "title": "Filters",
+      "done": "Done",
+      "remove": "Remove filter: {label}"
+    },
+    "hofHowTo": {
+      "hundred": "Be the first: tap “{action}”, upload the stats screenshot and replays for that vehicle, and it appears here once approved.",
+      "mark3": "Be the first: tap “{action}”, upload the mark screenshot, and it appears here once approved."
+    },
     "account": {
       "signedOutTitle": "Sign in to WoTBTools",
       "signedOutHint": "Sign in to link your game account, submit Hall of Fame records and see your records. Parsing replays does not require an account."
@@ -647,6 +665,15 @@
       "sponsor": "Поддержать проект",
       "ratingDocs": "Документация Rating",
       "playbackQa": "QA повтора"
+    },
+    "filters": {
+      "title": "Фильтры",
+      "done": "Готово",
+      "remove": "Убрать фильтр: {label}"
+    },
+    "hofHowTo": {
+      "hundred": "Станьте первым: нажмите «{action}», загрузите скриншот статистики и реплеи для этой техники — после проверки запись появится здесь.",
+      "mark3": "Станьте первым: нажмите «{action}», загрузите скриншот — после проверки запись появится здесь."
     },
     "account": {
       "signedOutTitle": "Вход в WoTBTools",
