@@ -13,6 +13,7 @@
 // 会话缓存一并释放）。GLB 模板缓存为 session-scoped：同 tank 会话内复用，会话结束
 // 对 unique shared resources dispose 一次并清缓存（clone 共享模板资源，不逐克隆
 // 深度 dispose）；cross-session refcount/LRU 不在本层。
+import { confirm as appConfirm } from '../composables/useConfirm.js'
 import * as THREE from 'three'
 
 import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
@@ -90,10 +91,16 @@ export function initPlayback(container, store) {
     if (DATA) {
       // 已在播放：渲染参数一次性定型，切换档位需带新 ?q= 整页重载
       // （Tauri WebView 不弹 confirm 对话框，直接重载）
-      if (window.__TAURI__ || confirm('切换到「' + QUALITY_PRESETS[k].label + '」画质将重新加载回放，继续？')) {
+      // 应用内确认对话框（审计 PG-09：不用 window.confirm）；文案沿用本模块的上游中文
+      const reload = () => {
         try { localStorage.setItem('pb_quality', k); } catch (e) {}
         const u = new URL(location.href); u.searchParams.set('q', k); location.replace(u);
-      }
+      };
+      if (window.__TAURI__) { reload(); return; }
+      appConfirm({
+        title: '切换画质',
+        message: '切换到「' + QUALITY_PRESETS[k].label + '」画质将重新加载回放，继续？',
+      }).then((ok) => { if (ok) reload(); });
       return;   // 取消则维持原档
     }
     apply();
