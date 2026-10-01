@@ -156,6 +156,7 @@ deployment:
   - 'deploy/tx/deploy.sh'
   - 'deploy/tx/nginx/**'
   - 'deploy/list-image-tags.sh'
+  - 'deploy/tx/publish-loaded-image-to-tcr.sh'
   - 'deploy/tx/validate-caddy-config.sh'
   - 'deploy/deploy.sh'
   - 'deploy/tx/docker-compose.yml'
