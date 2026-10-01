@@ -162,14 +162,30 @@ class BattlePlaybackProjectorTest {
         final FrameHealth health = new FrameHealth(1000, 0.0, 0.0, HpSource.EXACT_BATTLE_EVENT,
                 FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH);
         battle.arenaBonusType = 2;
-        final ReplayEvent base = new RawAssaultBaseUpdate(
+        // 裸初始化对（1=2,2=1 无其它字段）是通用广播：普通对局同样会发（62 份真实样本
+        // 里 8 份 Regular/TrainingRoom 正是如此），故**不**判为目标存在
+        final ReplayEvent bareInit = new RawAssaultBaseUpdate(
                 11, new ReplayTimestamp(9.889f, null), 8, DecodeConfidence.EXACT, 2, 1, null, null);
+        final BattleTimeline bareTimeline = new BattleTimeline("malinovka", 14.15, 9.287,
+                BattleTimelineClock.IDENTIFIED,
+                List.of(new BattleFrame(0, 0, null,
+                        List.of(frameVehicleWithHealth(7, account, 1, true, health, 0)),
+                        List.of(), List.of(), Map.of(), List.of())),
+                List.of(bareInit), List.of(), BattleTimelineValidationResult.ok(), List.of());
+        final BattlePlaybackDataset bareDataset = BattlePlaybackProjector.project(
+                battle, bareTimeline, mapping, account);
+        assertFalse(bareDataset.assaultObjectivePresent());
+        assertTrue(bareDataset.baseStates().isEmpty());
+
+        // 目标族发出裸初始化对以外的字段（field4 标志流）→ 目标存在，但仍无进度广播
+        final ReplayEvent flag = new RawAssaultBaseUpdate(
+                11, new ReplayTimestamp(9.889f, null), 8, DecodeConfidence.EXACT, 2, 1, null, 1);
         final BattleTimeline timeline = new BattleTimeline("malinovka", 14.15, 9.287,
                 BattleTimelineClock.IDENTIFIED,
                 List.of(new BattleFrame(0, 0, null,
                         List.of(frameVehicleWithHealth(7, account, 1, true, health, 0)),
                         List.of(), List.of(), Map.of(), List.of())),
-                List.of(base), List.of(), BattleTimelineValidationResult.ok(), List.of());
+                List.of(flag), List.of(), BattleTimelineValidationResult.ok(), List.of());
 
         final BattlePlaybackDataset dataset = BattlePlaybackProjector.project(
                 battle, timeline, mapping, account);

@@ -42,6 +42,10 @@ const qualityBadge = computed(() =>
   t('agentReplay.quality') + ' · ' + t('agentReplay.q_' + store.qualityKey),
 )
 
+// 争霸点数上限（与 2D HUD / 上游一致）：条宽按 v/POINTS_MAX 换算
+const POINTS_MAX = 1000
+const pointsPct = (v) => (v == null ? 0 : Math.max(0, Math.min(100, (v / POINTS_MAX) * 100)))
+
 const SPEEDS = [0.5, 1, 2, 4, 8, 16]
 const CAMS = [
   { k: 'free', label: () => t('agentReplay.cam_free') },
@@ -115,6 +119,20 @@ onBeforeUnmount(() => {
       <span class="map">{{ store.mapName }}</span>
       <span class="timer">{{ store.timer }}</span>
       <span class="score"><span class="t1">{{ store.score1 }}</span> : <span class="t2">{{ store.score2 }}</span></span>
+      <!-- 争霸实时点数（上限 1000）：数值在外、两条紧贴中线对称；非争霸场次整块不显示 -->
+      <span v-if="store.pointsFriend != null || store.pointsEnemy != null" class="points-obj">
+        <b class="pdv pdv-f" :title="`${$t('recon.map.playback.points')} ${store.pointsFriend ?? 0} / ${POINTS_MAX}`">{{ store.pointsFriend ?? '—' }}</b>
+        <span class="points-bar pb-f"><i :style="{ width: pointsPct(store.pointsFriend) + '%' }"></i></span>
+        <i class="pdiv"></i>
+        <span class="points-bar pb-e"><i :style="{ width: pointsPct(store.pointsEnemy) + '%' }"></i></span>
+        <b class="pdv pdv-e" :title="`${$t('recon.map.playback.points')} ${store.pointsEnemy ?? 0} / ${POINTS_MAX}`">{{ store.pointsEnemy ?? '—' }}</b>
+      </span>
+      <!-- 单基地目标（攻防/遭遇战）：目标存在性独立于占领活动；无进度显示「—」而非 0% -->
+      <span v-if="store.assaultObjective" class="assault-obj" :title="$t('recon.map.playback.base_progress', { progress: store.assaultProgress ?? 0 })">
+        <em>BASE</em>
+        <span class="assault-bar"><i :style="{ width: (store.assaultProgress ?? 0) + '%' }"></i></span>
+        <b>{{ store.assaultProgress != null ? store.assaultProgress + '%' : '—' }}</b>
+      </span>
     </div>
 
     <div v-if="store.hasData" class="team panel team1">
@@ -137,6 +155,23 @@ onBeforeUnmount(() => {
       <div class="roster">
         <div
           v-for="p in store.roster.team2" :key="p.eid"
+          class="pl" :class="{ dead: p.dead, followed: p.followed }"
+          @click="sceneApi.setFollow(p.eid)"
+        >
+          <span class="dot" :style="{ background: p.dot }"></span>
+          <span class="nick">{{ p.nick }}</span>
+          <span class="tank">{{ p.tank }}</span>
+          <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dot }"></i></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 未知阵营（team=0，联表失败/观察者）：中性 fail-visible，不并入任何一队 -->
+    <div v-if="store.hasData && store.roster.unknown && store.roster.unknown.length" class="team panel team-unknown">
+      <h3>{{ t('agentReplay.teamUnknown') }}</h3>
+      <div class="roster">
+        <div
+          v-for="p in store.roster.unknown" :key="p.eid"
           class="pl" :class="{ dead: p.dead, followed: p.followed }"
           @click="sceneApi.setFollow(p.eid)"
         >
@@ -259,11 +294,33 @@ html[data-ui-profile="classic"] .pb-root {
 .topbar .timer { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .topbar .score { font-size: 16px; font-weight: 600; }
 .topbar .score .t1 { color: var(--ally); }
+/* 单基地占领进度：中性呈现——协议侧 owner/capturing 恒 null，不借 --ally/--enemy 暗示阵营 */
+/* 争霸点数：左条己方自右向左、右条敌方自左向右——两条均自中线向外增长，整块左右对称 */
+.topbar .points-obj { display: inline-flex; align-items: center; gap: 3px; font-size: .72rem; color: var(--dim); }
+.topbar .points-bar { display: inline-block; width: 62px; height: 6px; background: var(--line); overflow: hidden; }
+.topbar .points-bar.pb-f { border-radius: 3px 0 0 3px; }
+.topbar .points-bar.pb-e { border-radius: 0 3px 3px 0; }
+.topbar .points-bar > i { display: block; height: 100%; transition: width .18s linear; }
+.topbar .points-bar.pb-f > i { background: var(--ally); float: right; }
+.topbar .points-bar.pb-e > i { background: var(--enemy); float: left; }
+.topbar .points-obj .pdiv { width: 1px; height: 11px; background: var(--line); }
+.topbar .points-obj .pdv { min-width: 2.6em; font-variant-numeric: tabular-nums; }
+.topbar .points-obj .pdv-f { color: var(--ally); text-align: right; }
+.topbar .points-obj .pdv-e { color: var(--enemy); text-align: left; }
+.topbar .assault-obj { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; color: var(--dim); }
+.topbar .assault-obj em { font-style: normal; letter-spacing: .04em; }
+.topbar .assault-obj b { font-variant-numeric: tabular-nums; min-width: 2.4em; text-align: right; color: var(--accent); }
+.topbar .assault-bar { display: inline-block; width: 84px; height: 6px; border-radius: 3px;
+  background: var(--line); overflow: hidden; }
+.topbar .assault-bar > i { display: block; height: 100%; background: var(--accent); transition: width .18s linear; }
 .topbar .score .t2 { color: var(--enemy); }
 .topbar .map { color: var(--dim); }
 .team { top: 60px; width: 240px; padding: 6px; max-height: calc(100% - 190px); overflow-y: auto; z-index: 5; }
 .team1 { left: 10px; }
 .team2 { right: 10px; }
+/* 未知阵营中性组：居中灰调 fail-visible */
+.team-unknown { left: 50%; transform: translateX(-50%); width: 220px; }
+.team-unknown h3 { color: var(--text-muted); }
 .team h3 { font-size: 12px; color: var(--dim); margin: 2px 4px 6px; font-weight: 500; }
 .pl { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; cursor: pointer; }
 .pl:hover { background: var(--hover-soft); }

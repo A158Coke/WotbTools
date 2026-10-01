@@ -4,13 +4,15 @@
  * （全员射击链：作者严格路径 + 他人宽松路径合并，文件不出本机）→ 逐发表格
  * （射击者筛选/命中·穿透·跳弹摘要/弹种与结果徽标/质量⚠）→ 点击行在 3D 装甲查看器
  * 世界模式复现该发（shots 数组经 sessionStorage 交接，无服务端）。
+ * 契约 v0.1.9：输出 {shots, author_path, others} 包装——作者严格路径失败
+ * fail-visible（警示条），不再静默吞空。
  * 数据面：api/agent-replay-facets.ts parseAgentShotsFromBytes + scene/agentData.js 交接。
  */
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { parseAgentShotsFromBytes, parseAgentPlaybackFromBytes, enrichShotsFromRoster, isShotHit } from '../api/agent-replay-facets.js'
+import { storeShotsForViewer, fetchTankData, tankImageUrl } from '../scene/agentData.js'
 import { useRouter } from 'vue-router'
-import { parseAgentShotsFromBytes, parseAgentPlaybackFromBytes } from '../api/agent-replay-facets.js'
-import { storeShotsForViewer, fetchTankData } from '../scene/agentData.js'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -20,33 +22,9 @@ const fileName = ref('')
 const parsing = ref(false)
 const err = ref('')
 const shots = ref([])
+const authorError = ref('')
+const othersStats = ref(null)
 const shooter = ref('all')
-
-/**
- * 客户端富化（上游由 /api/replay/shots 服务端注入的字段，纯客户端链用 Playback
- * 花名册等价补齐——vehicles 即含 nickname/tank_id/team/is_author）：
- * - target_tank_id / shooter_tank_id：花名册 nickname → tank_id（battle_results 口径）；
- * - shooter_team：'ally' / 'enemy'（相对回放作者阵营）。
- * 名称冲突时取首个匹配（服务端 team_tank_of 同约束）。
- */
-function enrichShotsFromRoster(parsedShots, vehicles) {
-  const byNick = new Map()
-  for (const r of vehicles || []) {
-    if (r.nickname && !byNick.has(r.nickname)) byNick.set(r.nickname, r)
-  }
-  const authorTeam = (vehicles || []).find((r) => r.is_author)?.team
-  for (const s of parsedShots) {
-    const target = s.target_name ? byNick.get(s.target_name) : null
-    if (target?.tank_id) s.target_tank_id = target.tank_id
-    const shooterEntry = s.shooter_name ? byNick.get(s.shooter_name) : null
-    if (shooterEntry?.tank_id) {
-      s.shooter_tank_id = shooterEntry.tank_id
-      if (authorTeam != null && shooterEntry.team != null) {
-        s.shooter_team = shooterEntry.team === authorTeam ? 'ally' : 'enemy'
-      }
-    }
-  }
-}
 
 /**
  * 全局弹种反解表（dump-shell-kinds 富表：{全局弹种 id: {type, penetration,
@@ -162,13 +140,17 @@ async function onFilePicked(event) {
       console.warn('pitch limits skipped:', e)
     }
     const shellTable = await loadShellTable().catch(() => undefined)
-    let parsedShots
+    let outcome
     try {
-      parsedShots = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined, shellTable)
+      outcome = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined, shellTable)
     } catch (e) {
       console.warn('anchored parse failed, fallback:', e)
-      parsedShots = await parseAgentShotsFromBytes(bytes)
+      outcome = await parseAgentShotsFromBytes(bytes)
     }
+    // 作者严格路径 fail-visible（契约 v0.1.9）：失败不再静默，警示条 + 他人宽松全量
+    authorError.value = outcome.author_error || ''
+    othersStats.value = outcome.others || null
+    const parsedShots = outcome.shots
     // 富化失败不阻断主表（roster 失败仅 3D 链接缺失；弹种反解失败走槽位/id 兜底）
     if (playback) {
       try { enrichShotsFromRoster(parsedShots, playback.vehicles) } catch (e) {
@@ -190,15 +172,19 @@ async function onFilePicked(event) {
     shooter.value = 'all'
   } catch (e) {
     shots.value = []
+    authorError.value = ''
+    othersStats.value = null
     err.value = (t('agentShots.error_parse') || '解析失败') + ' ' + String(e?.message || e).slice(0, 200)
   } finally {
     parsing.value = false
   }
 }
 
-// 射击者筛选：我方（作者阵营）/ 敌方分组，作者置顶
+// 射击者筛选：显式三态 ally / enemy / unknown——undefined（阵营未知，含
+// team=0 与未联上花名册）绝不并入 Allies（旧 `!== 'enemy'` 是 roster team hack
+// 的同族 bug）；作者置顶，其余按发数
 const shooterGroups = computed(() => {
-  const groups = { allies: [], enemies: [] }
+  const groups = { allies: [], enemies: [], unknown: [] }
   const count = {}
   for (const s of shots.value) {
     const name = s.shooter_name || `eid:${s.shooter_eid}`
@@ -209,16 +195,19 @@ const shooterGroups = computed(() => {
     const name = s.shooter_name || `eid:${s.shooter_eid}`
     if (seen.has(name)) continue
     seen.add(name)
-    const entry = { name, n: count[name], isAuthor: !!s.is_author, ally: s.shooter_team !== 'enemy' }
-    ;(entry.ally ? groups.allies : groups.enemies).push(entry)
+    const entry = { name, n: count[name], isAuthor: !!s.is_author }
+    if (s.shooter_team === 'ally') groups.allies.push(entry)
+    else if (s.shooter_team === 'enemy') groups.enemies.push(entry)
+    else groups.unknown.push(entry)
   }
   const byN = (a, b) => (b.isAuthor ? 1 : 0) - (a.isAuthor ? 1 : 0) || b.n - a.n
   groups.allies.sort(byN)
   groups.enemies.sort((a, b) => b.n - a.n)
+  groups.unknown.sort((a, b) => b.n - a.n)
   return groups
 })
 
-const shooterOptions = computed(() => [...shooterGroups.value.allies, ...shooterGroups.value.enemies])
+const shooterOptions = computed(() => [...shooterGroups.value.allies, ...shooterGroups.value.enemies, ...shooterGroups.value.unknown])
 
 const filteredShots = computed(() => {
   if (shooter.value === 'all') return shots.value
@@ -228,9 +217,9 @@ const filteredShots = computed(() => {
 // 汇总摘要（随筛选联动）：命中率 = 有 flags 或非作者命中的比例；穿透率 = 击穿/命中（不含跳弹）
 const shotSummary = computed(() => {
   const rows = filteredShots.value
-  const isHit = (s) => (s.is_author ? (s.hit_flags || 0) !== 0 : !!s.target_name)
+  // 命中判定唯一权威 = target_eid 在案（isShotHit；作者与非作者同规则）
   const total = rows.length
-  const hits = rows.filter(isHit).length
+  const hits = rows.filter(isShotHit).length
   const pens = rows.filter((s) => (s.is_author ? s.hit_flags & 0x0010 : s.game_hit_result === 3)).length
   const rics = rows.filter((s) => (s.is_author ? s.hit_flags & 0x0008 : false)).length
   const heHits = rows.filter((s) => s.is_author && s.hit_flags & 0x1000).length
@@ -284,7 +273,7 @@ function shellBadge(s) {
   const t = s.shell_kind || (s.shell && s.shell.type) || ''
   const label = kindOf(t)
   if (!label) {
-    if (!s.target_name) return {}
+    if (s.target_eid == null) return {}
     if (s.is_author && s.shell_slot != null) return { fallback: '#' + s.shell_slot }
     if (s.shell_id) return { fallbackSmall: 'id' + s.shell_id }
     return {}
@@ -296,17 +285,21 @@ function shellBadge(s) {
   }
 }
 
-// 结果徽标：hit_flags 位图 → 击穿/HE/跳弹/未穿/脱靶；非作者按 game_hit_result 降级
+// 结果徽标：hit_flags 位图 → 击穿/HE/跳弹/未穿/脱靶；无位图时按 game_hit_result
+// 降级——但 hit 权威 = target_eid（isShotHit）：eid 在案而无位图（method38 位图
+// 为空的边界）绝不显示 miss（与摘要统计同权威，不自相矛盾）
 function resultBadge(s) {
   const f = s.hit_flags || 0
-  if (!s.is_author && !f) {
+  if (!f) {
+    if (s.target_eid == null) return { text: t('agentShots.res_miss'), cls: 'miss' }
     const r = s.game_hit_result
-    if (r == null || r === 255 || r === 0) return { text: t('agentShots.res_miss'), cls: 'miss' }
     if (r === 3) return { text: t('agentShots.res_pen'), cls: 'pen' }
     if (r === 4) return { text: t('agentShots.res_track'), cls: 'track' }
+    // eid 在案 = 命中已知；r 未知（255/0/缺）只能证明"结果未知"，不得伪装成未击穿
+    // （qualityTitle 已把 255 标 q_result_unknown，两处状态语义对齐）
+    if (r == null || r === 255 || r === 0) return { text: t('agentShots.res_hit_unknown'), cls: 'unknown' }
     return { text: t('agentShots.res_nopen'), cls: 'nopen' }
   }
-  if (!f) return { text: t('agentShots.res_miss'), cls: 'miss' }
   if (f & 0x1000) return { text: 'HE', cls: 'he-res' }
   if (f & 0x0010) return { text: t('agentShots.res_pen'), cls: 'pen' }
   if (f & 0x0008) return { text: t('agentShots.res_ric'), cls: 'ric' }
@@ -321,9 +314,9 @@ function dmgColor(s) {
 
 // 行内 3D 复现可用性：仅命中弹（有目标 = 服务器命中通知在案，弹道/命中判定/装甲
 // 实测齐备）。脱靶弹不提供 3D 复现（评审裁决：其 shell_id/弹道为广播降级数据，
-// 无装甲判定意义）
+// 无装甲判定意义）。判定按 target_eid（身份域），名字仅显示
 function rowHas3d(s) {
-  return !!s.target_name
+  return s.target_eid != null
 }
 
 // 3D 查看器 URL（世界模式）：命中弹用目标车辆；脱靶弹（无 target_tank_id）用射手车辆兜底。
@@ -389,7 +382,15 @@ async function resolveShellIdx(s) {
     <p v-if="parsing" class="status">{{ t('agentShots.parsing') }}</p>
     <p v-else-if="err" class="status error">{{ err }}</p>
 
-    <template v-else-if="filteredShots.length">
+    <template v-else>
+      <!-- 作者严格路径 fail-visible（契约 v0.1.9 核心目标）：独立于 table/no-shots
+           状态链——author_path=error 且他人宽松路径 0 发时，警示与空态并存，
+           绝不允许只显示"没有射击"把作者链失败伪装成正常空结果 -->
+      <p v-if="authorError" class="status warn" :title="authorError">
+        ⚠ {{ t('agentShots.author_path_error') }}<span class="muted sid"> — {{ authorError.slice(0, 160) }}</span>
+      </p>
+
+      <template v-if="filteredShots.length">
       <div v-if="shooterOptions.length > 1" class="controls">
         <span class="muted">{{ t('agentShots.shooter') }}</span>
         <select v-model="shooter">
@@ -399,6 +400,9 @@ async function resolveShellIdx(s) {
           </optgroup>
           <optgroup v-if="shooterGroups.enemies.length" :label="t('agentShots.enemies')">
             <option v-for="o in shooterGroups.enemies" :key="o.name" :value="o.name">{{ o.name }} ({{ o.n }})</option>
+          </optgroup>
+          <optgroup v-if="shooterGroups.unknown.length" :label="t('agentShots.unknown_side')">
+            <option v-for="o in shooterGroups.unknown" :key="o.name" :value="o.name">{{ o.name }} ({{ o.n }})</option>
           </optgroup>
         </select>
       </div>
@@ -447,7 +451,11 @@ async function resolveShellIdx(s) {
                 <span class="pill" :class="resultBadge(s).cls">{{ resultBadge(s).text }}</span>
                 <span v-if="s.is_kill" class="pill kill">KILL</span>
               </td>
-              <td class="ell" :title="s.target_name || ''">{{ s.target_name || '—' }}</td>
+              <td class="ell" :title="s.target_name || ''">
+                <img v-if="s.target_tank_id" class="ticon" loading="lazy"
+                     :src="tankImageUrl(s.target_tank_id)" alt="">
+                <span>{{ s.target_name || (s.target_eid != null ? 'eid:' + s.target_eid : '—') }}</span>
+              </td>
               <td class="ctr" @click.stop>
                 <a v-if="rowHas3d(s) && srViewerUrl(s)" class="btn" :href="srViewerUrl(s)" @click.prevent="openShotInViewer(s.index)">3D</a>
                 <span v-else class="muted">—</span>
@@ -457,8 +465,9 @@ async function resolveShellIdx(s) {
         </table>
       </div>
       <p class="muted footnote">{{ t('agentShots.footnote') }}</p>
+      </template>
+      <p v-else-if="shots.length === 0 && fileName" class="status">{{ t('agentShots.no_shots') }}</p>
     </template>
-    <p v-else-if="shots.length === 0 && fileName && !parsing && !err" class="status">{{ t('agentShots.no_shots') }}</p>
   </section>
 </template>
 
@@ -473,7 +482,9 @@ async function resolveShellIdx(s) {
 .pick { cursor: pointer; border: 1px solid var(--border); padding: 5px 12px; border-radius: 6px; }
 .pick input[type='file'] { display: none; }
 .fname { color: var(--text-muted); font-size: 0.85em; }
-.status.error { color: var(--error); }
+.status.error { color: var(--status-err-fg); }
+.status.warn { color: var(--status-warn-fg); border: 1px solid color-mix(in srgb, var(--status-warn-fg) 35%, transparent); border-radius: 6px; padding: 6px 10px; }
+.ticon { width: 36px; height: 25px; object-fit: contain; vertical-align: middle; margin-right: 6px; }
 .muted { color: var(--text-muted); }
 .small { font-size: 10px; }
 .footnote { font-size: 0.8em; margin: 0; }
@@ -515,6 +526,7 @@ async function resolveShellIdx(s) {
 .pill.track { background: color-mix(in srgb, var(--status-info-fg) 18%, transparent); color: var(--status-info-fg); }
 .pill.he-res { background: color-mix(in srgb, var(--status-warn-fg) 22%, transparent); color: var(--status-warn-fg); }
 .pill.miss { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-muted); }
+.pill.unknown { background: color-mix(in srgb, var(--status-warn-fg) 16%, transparent); color: var(--status-warn-fg); }
 .pill.kill { background: color-mix(in srgb, var(--status-err-fg) 24%, transparent); color: var(--status-err-fg); margin-left: 4px; }
 .btn { border: 1px solid var(--border); padding: 2px 10px; border-radius: 6px; text-decoration: none; }
 select, button { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px; }
