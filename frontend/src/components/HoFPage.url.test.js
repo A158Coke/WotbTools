@@ -6,6 +6,7 @@ import { ref } from 'vue'
 import { ApiError } from '../utils/http.js'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import HoFPage from './HoFPage.vue'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
 let authenticated = true
 let tokenClaims = null
@@ -72,7 +73,7 @@ describe('HoFPage URL 状态', () => {
   async function mountAt(query) {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
     await router.push({ path: '/', query: { view: 'hof', ...query } })
-    const wrapper = mount(HoFPage, { global: { plugins: [router], mocks: { $t: key => key } } })
+    const wrapper = mount(HoFPage, { global: { plugins: [router], mocks: { $t: key => key }, provide: { [DIALOG_INLINE_KEY]: true } } })
     await flushPromises()
     return { wrapper, router }
   }
@@ -136,7 +137,7 @@ describe('HoFPage 手机布局', () => {
   async function mountCompact(query = {}) {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
     await router.push({ path: '/', query: { view: 'hof', ...query } })
-    const wrapper = mount(HoFPage, { global: { plugins: [router], mocks: { $t: key => key } } })
+    const wrapper = mount(HoFPage, { global: { plugins: [router], mocks: { $t: key => key }, provide: { [DIALOG_INLINE_KEY]: true } } })
     await flushPromises()
     return wrapper
   }

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { confirm } from '../composables/useConfirm.js'
 import { useRoute, useRouter } from 'vue-router'
 import { parseHofQuery, sameHofQuery, serializeHofQuery } from '../utils/hofQuery.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -10,6 +11,7 @@ import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import * as api from '../utils/api.js'
 import ImageDataUploader from './ImageDataUploader.vue'
 import FilterChips from './FilterChips.vue'
+import AppDialog from './AppDialog.vue'
 import AppButton from './AppButton.vue'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 
@@ -573,9 +575,9 @@ function resetSubmitDraft() {
   needProfile.value = false
 }
 
-function clearSubmitDraft() {
+async function clearSubmitDraft() {
   if (!hasSubmitDraft.value || submitting.value) return
-  if (!window.confirm(t('hundred.clearDraftConfirm'))) return
+  if (!(await confirm({ title: t('hundred.clearDraftConfirm'), confirmLabel: t('hundred.clearDraft'), danger: true }))) return
   resetSubmitDraft()
 }
 
@@ -697,7 +699,7 @@ async function submitHundred() {
 
 async function withdrawPending(p) {
   if (withdrawingId.value) return
-  if (!window.confirm(t('hundred.withdrawConfirm'))) return
+  if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return
   withdrawingId.value = p.id
   h100Msg.value = ''
   try {
@@ -882,9 +884,9 @@ function resetMark3Draft() {
   if (mark3ReplaysInput.value) mark3ReplaysInput.value.value = ''
 }
 
-function clearMark3Draft() {
+async function clearMark3Draft() {
   if (!mark3HasDraft.value || mark3Submitting.value) return
-  if (!window.confirm(t('mark3.clearDraftConfirm'))) return
+  if (!(await confirm({ title: t('mark3.clearDraftConfirm'), confirmLabel: t('mark3.clearDraft'), danger: true }))) return
   resetMark3Draft()
 }
 
@@ -1052,7 +1054,7 @@ async function submitMark3() {
 
 async function withdrawMark3Pending(submission) {
   if (mark3WithdrawingId.value) return
-  if (!window.confirm(t('mark3.withdrawConfirm'))) return
+  if (!(await confirm({ title: t('mark3.withdrawConfirm'), confirmLabel: t('mark3.withdraw'), danger: true }))) return
   mark3WithdrawingId.value = submission.id
   mark3Msg.value = ''
   try {
@@ -1113,12 +1115,7 @@ function fmtDate(s) {
       </div>
 
       <!-- 提交记录 Modal（§29：上传入口不再长期占据首屏，Ranking 成为核心） -->
-      <div v-if="showUploadModal" class="modal-overlay" @click.self="showUploadModal = false">
-        <div class="modal hof-upload-modal" role="dialog" aria-modal="true" :aria-label="$t('hof.upload_title')">
-          <div class="modal-head">
-            <h2>{{ $t('hof.upload_title') }}</h2>
-            <button type="button" class="modal-x" :aria-label="$t('app.close')" @click="showUploadModal = false">&times;</button>
-          </div>
+      <AppDialog :open="showUploadModal" :title="$t('hof.upload_title')" class="hof-upload-modal" @close="showUploadModal = false">
           <section class="lb-upload-section"
                    @dragover.prevent="dragging = true"
                    @dragleave.prevent="dragging = false"
@@ -1135,8 +1132,7 @@ function fmtDate(s) {
             </div>
             <p v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</p>
           </section>
-        </div>
-      </div>
+      </AppDialog>
 
       <FilterChips v-if="isCompact" :chips="singleChips" :open="filterSheet === 'single'" @toggle="toggleFilterSheet('single')" @remove="removeSingleFilter" />
       <div v-if="!isCompact || filterSheet === 'single'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }">
@@ -1530,9 +1526,7 @@ function fmtDate(s) {
       </div>
     </div>
 
-    <div v-show="showSubmit" class="modal-overlay h100-submit-overlay" @click.self="closeSubmit">
-      <div class="modal h100-modal">
-        <h2>{{ $t('hundred.submitTitle') }}</h2>
+    <AppDialog :open="showSubmit" :title="$t('hundred.submitTitle')" size="lg" keep-mounted scrim-class="h100-submit-overlay" class="h100-modal" @close="closeSubmit">
         <p>{{ $t('hundred.submitDesc') }}</p>
         <p class="h100-draft-hint">{{ $t('hundred.draftHint') }}</p>
 
@@ -1594,20 +1588,17 @@ function fmtDate(s) {
         </p>
         <p v-else-if="submitError" class="h100-err">{{ submitError }}</p>
 
-        <div class="modal-actions">
+        <template #actions>
           <button type="button" class="ghost danger h100-clear-draft" :disabled="submitting || !hasSubmitDraft" @click="clearSubmitDraft">{{ $t('hundred.clearDraft') }}</button>
           <button type="button" class="ghost" :disabled="submitting" @click="closeSubmit">{{ $t('app.close') }}</button>
           <button type="button" class="filebtn h100-modal-submit"
                   :disabled="submitting || screenshotReading" @click="submitHundred">
             {{ submitting ? $t('hundred.submitting') : $t('hundred.submit') }}
           </button>
-        </div>
-      </div>
-    </div>
+        </template>
+    </AppDialog>
 
-    <div v-show="showMark3Submit" class="modal-overlay mark3-submit-overlay" @click.self="closeMark3Submit">
-      <div class="modal h100-modal mark3-modal">
-        <h2>{{ $t('mark3.submitTitle') }}</h2>
+    <AppDialog :open="showMark3Submit" :title="$t('mark3.submitTitle')" size="lg" keep-mounted scrim-class="mark3-submit-overlay" class="h100-modal mark3-modal" @close="closeMark3Submit">
         <p>{{ $t('mark3.submitDesc') }}</p>
         <p class="h100-draft-hint">{{ $t('mark3.draftHint') }}</p>
 
@@ -1680,15 +1671,14 @@ function fmtDate(s) {
         </p>
         <p v-else-if="mark3SubmitError" class="h100-err">{{ mark3SubmitError }}</p>
 
-        <div class="modal-actions">
+        <template #actions>
           <button type="button" class="ghost danger h100-clear-draft" :disabled="mark3Submitting || !mark3HasDraft" @click="clearMark3Draft">{{ $t('mark3.clearDraft') }}</button>
           <button type="button" class="ghost" :disabled="mark3Submitting" @click="closeMark3Submit">{{ $t('app.close') }}</button>
           <button type="button" class="filebtn mark3-modal-submit" :disabled="mark3Submitting || mark3ScreenshotsReading" @click="submitMark3">
             {{ mark3Submitting ? $t('mark3.submitting') : $t('mark3.submit') }}
           </button>
-        </div>
-      </div>
-    </div>
+        </template>
+    </AppDialog>
   </div>
 </template>
 
@@ -1812,10 +1802,6 @@ span.lb-card-tank { min-height: 0; color: var(--color-text-secondary); }
 
 .lb-submit-row { display: flex; align-items: center; gap: 12px; margin: 14px 0 16px; flex-wrap: wrap; }
 .lb-submit-row .lb-upload-msg { margin: 0; }
-.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.modal-head h2 { margin: 0; }
-.modal-x { border: none; background: transparent; color: var(--text-sub); font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
-.modal-x:hover { background: var(--bg-card-hover); color: var(--text-heading); }
 .hof-upload-modal { max-width: 560px; }
 .hof-upload-modal .lb-upload-card { padding: 26px 18px; }
 .lb-upload-section { margin: 16px 0; }
