@@ -6,7 +6,6 @@
     "src/components/AgentArmorView.vue",
     "src/components/AgentReplay3D.vue",
     "src/components/AgentShots.vue",
-    "src/components/AgentTankopedia.vue",
     "src/components/AggregateTable.vue",
     "src/components/AiReviewPanel.vue",
     "src/components/AnalysisResultPanel.vue",

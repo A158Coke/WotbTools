@@ -93,6 +93,11 @@ describe('locationForView：名人堂筛选只属于名人堂', () => {
     expect(locationForView('replay', hofRoute).query).toEqual({ view: 'replay', lang: 'x' })
     expect(locationForView('agent-tankopedia', hofRoute).query).toEqual({ view: 'agent-tankopedia', lang: 'x' })
   })
+  it('离开坦克百科时丢掉百科的筛选 / 详情键，留在百科时保留', () => {
+    const tankRoute = { path: '/', query: { view: 'agent-tankopedia', q: 'is7', tier: '10', nation: 'ussr', type: 'heavyTank', sort: 'hp', tank: '5', config: '1', lang: 'x' } }
+    expect(locationForView('replay', tankRoute).query).toEqual({ view: 'replay', lang: 'x' })
+    expect(locationForView('agent-tankopedia', tankRoute).query).toEqual(tankRoute.query)
+  })
   it('留在名人堂时保留；从别的页面进来时不把同名参数当成筛选', () => {
     expect(locationForView('hof', hofRoute).query).toEqual(hofRoute.query)
     expect(locationForView('hof', { path: '/', query: { view: 'agent-tankopedia', tank: '5' } }).query)

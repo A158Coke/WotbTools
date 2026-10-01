@@ -16,6 +16,7 @@
 import * as THREE from 'three'
 
 import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
+import { createLoadProgress } from './loadProgress.js'
 import { poseFromYPR } from './glbRig.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -314,6 +315,14 @@ export function initPlayback(container, store) {
     // 全画质档回退占位网格）
     await resolveMapKey(mapq).catch(() => {});
     if (stale()) return;
+    // 资产阶段进度（审计 3D-23）：按画质档实际会请求的段登记，每段完成（含缺失降级）计满；
+    // 分层地表按纹理张数、场景 GLB 按字节推进。写入 store.assetProgress（0–1）
+    const progress = createLoadProgress((snap) => { if (!stale()) store.assetProgress = snap.fraction; });
+    const mapUrlPlanned = (Q.miniMap ? mapStaticUrl('map-mini') : null) ?? mapStaticUrl('map');
+    if (mapUrlPlanned) progress.expect('map');
+    if (mapStaticUrl('terrain')) progress.expect('terrain');
+    if (Q.groundLayers && mapStaticUrl('groundmeta')) progress.expect('ground');
+    if (Q.scenery && mapStaticUrl('scenery')) progress.expect('scenery');
     try {
       // 低档 mini：客户端小地图作地面（比高清底图小一个量级，保留 3D 起伏）。
       // client-only：仅资产平面静态路径；未配置基址/索引未命中 → 无底图（回退网格），
@@ -334,6 +343,7 @@ export function initPlayback(container, store) {
         }
       }
     } catch (e) { console.warn('底图加载失败（回退网格）:', e); }
+    progress.complete('map');
     try {
       // 3D 地形：仅资产平面静态路径 + terrain.json sidecar 尺度；无静态资产 → 保持 2D
       const terrainBin = mapStaticUrl('terrain');
@@ -373,6 +383,7 @@ export function initPlayback(container, store) {
         }
       }
     } catch (e) { console.warn('地形加载失败（回退 2D）:', e); }
+    progress.complete('terrain');
     // 客户端同款分层地表：colormap/lightmap/tile 细节/mask/(HeightBlend 高度图)，
     // tile 纹理前端按 textureTiling 平铺全分辨率采样——清晰度等同客户端，不受整图烘焙
     // 分辨率限制。任一分层缺失则整体回退烘焙底图。
@@ -392,7 +403,8 @@ export function initPlayback(container, store) {
           : ['cm', 'lm', 'tile0', 'tile1', 'mask0', 'mask1'];
         const texs = {};
         let ok = true;
-        for (const k of need) {
+        for (const [i, k] of need.entries()) {
+          progress.update('ground', i, need.length);
           try {
             const texUrl = mapStaticUrl('groundtex', k);
             if (!texUrl) { ok = false; break; }
@@ -423,6 +435,7 @@ export function initPlayback(container, store) {
       }
     } catch (e) { console.warn('分层地表加载失败（回退烘焙底图）:', e); }
     if (stale()) return;
+    progress.complete('ground');
     // 诊断钩子：window.__gdbg 查看地表实际走的路径与已加载分层（仅 ?debug）
     if (DEBUG) window.__gdbg = { layers: !!groundLayers, texs: groundLayers ? Object.keys(groundLayers.texs) : [],
                                  meta: !!mapMetaInfo, sizeM: mapMetaInfo?.size_m ?? null };
@@ -437,7 +450,9 @@ export function initPlayback(container, store) {
       else {
       const gltf = await new Promise((res) => {
         new GLTFLoader().load(sceneryUrl,
-          (g) => res(g), undefined, () => res(null));
+          (g) => res(g),
+          (e) => { if (e) progress.update('scenery', e.loaded, e.lengthComputable ? e.total : 0); },
+          () => res(null));
       });
       if (stale()) return;   // 迟到的场景 GLB：整体 GC（未渲染即未上传 GPU），不入新会话场景
       if (gltf && gltf.scene) {
@@ -496,6 +511,7 @@ export function initPlayback(container, store) {
       }
       }
     } catch (e) { console.warn('场景模型加载失败（忽略）:', e); }
+    progress.complete('scenery');
   }
 
   // 双线性采样世界 (x,z) 处高度（米）；无高度场返回 0
@@ -1442,7 +1458,8 @@ export function initPlayback(container, store) {
       await startPlayback();   // 进入场景前等待运行所需全部资产（地图/地形/地表/场景）
       store.hasData = true;
     } catch (e) {
-      if (gen === sessionGen || gen + 1 === sessionGen) store.err = '加载失败: ' + e.message;
+      // 只写原因；标题与重试由宿主页（Scene3DStatus）按当前语言呈现
+      if (gen === sessionGen || gen + 1 === sessionGen) store.err = String(e?.message || e || 'unknown');
     } finally {
       if (gen === sessionGen || gen + 1 === sessionGen) store.loading = false;
     }
@@ -1455,6 +1472,7 @@ export function initPlayback(container, store) {
     // 画质档全部就绪后才进场，不再先进场后异步补图）。各段内部已 try/catch——
     // 资产缺失按档位语义降级（回退网格/2D/烘焙底图），等待不因单项缺失而悬挂。
     store.assetStage = true;
+    store.assetProgress = null;
     try {
       await loadMapImage();
     } catch (e) {

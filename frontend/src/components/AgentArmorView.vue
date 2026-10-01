@@ -6,12 +6,15 @@
  * 击穿判定 penetration.js 客户端移植；射击复现数据经 sessionStorage 交接（AgentShots）。
  * URL 参数保持上游契约：?tank= &shooter= &config= &shell= &shot= &heatmap=1 &world=1 等。
  */
-import { computed, onMounted, onBeforeUnmount } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { ArrowLeft } from 'lucide-vue-next'
 import { initTankViewer } from '../scene/tankViewer.js'
+import { detectWebGL } from '../scene/webglSupport.js'
 import { replayValueLabel } from '../utils/display.js'
 import { usePointer } from '../composables/useBreakpoint.js'
+import Scene3DStatus from './Scene3DStatus.vue'
 
 const { t, te } = useI18n()
 const router = useRouter()
@@ -21,8 +24,19 @@ const canGoBack = typeof window !== 'undefined' && !!window.history.state?.back
 const hint = computed(() => t(coarse.value ? 'armor.hint_touch' : 'armor.hint'))
 
 let viewer = null
+// 审计 3D-23：创建渲染器之前做 WebGL 预检；不支持时整页换成说明，不再抛原始报错
+const webgl = detectWebGL()
+/** 场景加载状态（tankViewer onLoadState 上报）：loading / ready / error */
+const load = ref({ state: 'loading', progress: null, message: '' })
+/** 重建场景 DOM 的计数：整体重试时换 key，让 tankViewer 拿到全新的按 ID 查找的节点 */
+const attempt = ref(0)
+const PHASE_KEY = { 'armor model': 'armor_model', 'tank model': 'tank_model', 'tank data': 'tank_data', 'tank list': 'tank_list' }
 
-onMounted(() => {
+function onLoadState(next) {
+    load.value = { state: next.state, progress: next.progress ?? null, message: next.message || '' }
+}
+
+function startViewer() {
     const q = new URLSearchParams(window.location.search)
     const tank = Number(q.get('tank')) || 0
     // 初始坦克：?tank=（缺省给 T-34 = 1，避免空参打开白屏）
@@ -39,8 +53,25 @@ onMounted(() => {
             showCollision: t('armor.show_collision'),
             hideCollision: t('armor.hide_collision'),
             worldHint: t('armor.world_hint'),
+            phase: (phase) => (PHASE_KEY[phase] ? t(`armor.phase_${PHASE_KEY[phase]}`) : phase),
         },
+        onLoadState,
     })
+}
+
+async function retry() {
+    load.value = { state: 'loading', progress: null, message: '' }
+    if (viewer?.retry?.()) return
+    // 名册都没拿到（或渲染器创建失败）：销毁后重建整个场景
+    viewer?.destroy?.()
+    viewer = null
+    attempt.value += 1
+    await nextTick()
+    startViewer()
+}
+
+onMounted(() => {
+    if (webgl.supported) startViewer()
 })
 
 // 离开路由必须销毁：rAF 循环 + WebGL 上下文不释放，反复进出会耗尽浏览器
@@ -52,10 +83,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-<div class="armor-view">
+<div class="armor-view" :class="{ 'is-unsupported': !webgl.supported }">
+    <button v-if="canGoBack" type="button" class="armor-back" data-testid="armor-back" @click="router.back()"><ArrowLeft :size="16" aria-hidden="true" /> {{ $t('armor.back') }}</button>
+    <Scene3DStatus v-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
     <!-- 3D 装甲检视器 DOM：自上游 ArmorView.vue 原样平移（JS 按 ID 查找） -->
-        <button v-if="canGoBack" type="button" class="armor-back" data-testid="armor-back" @click="router.back()">← {{ $t('armor.back') }}</button>
-        <div id="loading">{{ $t('armor.loading') }}</div>
+    <div v-else :key="attempt" class="armor-stage" data-testid="armor-stage">
+        <!-- 旧的单行文字加载提示由 Scene3DStatus 取代；节点保留给场景脚本写入（不可见） -->
+        <div class="armor-legacy-loading" hidden><div id="loading">{{ $t('armor.loading') }}</div></div>
         <div id="canvas-container"></div>
         <div id="corner-tl">
             <div id="info-panel" style="display:none;">
@@ -115,6 +149,19 @@ onBeforeUnmount(() => {
             <div class="ctrl-row"><label>{{ $t('armor.turret') }}</label><span id="turret-val">0°</span></div>
             <div class="ctrl-row"><label>{{ $t('armor.gun') }}</label><span id="gun-val">0°</span></div>
         </div>
+        <Scene3DStatus
+            v-if="load.state === 'loading'"
+            mode="loading"
+            :progress="load.progress"
+            :message="$t('armor.loading')"
+        />
+        <Scene3DStatus
+            v-else-if="load.state === 'error'"
+            mode="error"
+            :message="load.message"
+            @retry="retry"
+        />
+    </div>
 </div>
 </template>
 
@@ -159,6 +206,10 @@ onBeforeUnmount(() => {
             --sel-ring:rgba(201,118,46,0.4);
         }
     .armor-view { margin: 0; padding: 0; background: var(--bg); color: var(--txt); font-family: system-ui, sans-serif; overflow: hidden; position: relative; width: 100%; height: calc(100dvh - var(--header-h) - var(--tabbar-h)); min-height: 420px; }
+    /* 场景舞台：整体重试时按 key 重建；铺满根容器，四角面板仍以它为定位参照 */
+    .armor-view .armor-stage { position: absolute; inset: 0; }
+    .armor-view.is-unsupported { height: auto; min-height: 0; overflow: visible; background: transparent; }
+    .armor-view.is-unsupported .armor-back { position: static; transform: none; margin: var(--space-4) var(--gutter) 0; }
     .armor-view #canvas-container { width: 100%; height: 100%; background: radial-gradient(1100px 600px at 30% -10%, #3a2412 0%, transparent 60%), radial-gradient(1000px 600px at 90% 0%, #2f1a0c 0%, transparent 55%); }
     .armor-view #corner-tl {
             position: absolute; top: 20px; left: 20px;
