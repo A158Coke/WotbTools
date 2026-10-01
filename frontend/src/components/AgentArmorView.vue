@@ -334,7 +334,8 @@ onBeforeUnmount(() => {
     .armor-view #view-toggle button.active { background: linear-gradient(135deg,var(--accent),var(--accent-2)); color: var(--on-accent); border-color: transparent; }
     /* 审计 3D-09：返回入口（从射击分析 / 坦克百科打开时） */
     .armor-view .armor-back {
-            position: absolute; z-index: 30; top: 12px; left: 50%; transform: translateX(-50%);
+            /* 高于 Scene3DStatus 的错误遮罩（--z-sticky），加载失败时仍能返回 */
+            position: absolute; z-index: calc(var(--z-sticky) + 1); top: 12px; left: 50%; transform: translateX(-50%);
             min-height: 36px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px;
             background: var(--panel); color: var(--txt); cursor: pointer; backdrop-filter: blur(12px);
         }
