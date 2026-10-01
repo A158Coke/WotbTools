@@ -403,6 +403,36 @@ describe('PlayerDetailDrawer navigation', () => {
   })
 })
 
+describe('PlayerDetailDrawer 内部结构（设计语言：标题 / 小节 / Stat grid / 图标按钮）', () => {
+  it('标题为 h2、小节标题为 h3，比赛事实以「标签 + 数值」成对的格子呈现', () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const title = wrapper.find('h2.pd-title')
+    expect(title.exists()).toBe(true)
+    expect(wrapper.find('[role="dialog"]').attributes('aria-labelledby')).toBe(title.attributes('id'))
+    expect(wrapper.findAll('h3.pd-section').length).toBeGreaterThanOrEqual(2)
+    const cells = wrapper.findAll('[data-testid="player-facts"] > .pd-fact')
+    expect(cells.length).toBeGreaterThan(0)
+    for (const cell of cells) {
+      expect(cell.findAll('dt')).toHaveLength(1)
+      expect(cell.findAll('dd')).toHaveLength(1)
+    }
+  })
+
+  it('上一位 / 下一位与雷达排序按钮是带可访问名称的图标按钮（不用箭头字符）', async () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER, { hasPrev: true, hasNext: true })
+    for (const id of ['drawer-prev', 'drawer-next']) {
+      const button = wrapper.find(`[data-testid="${id}"]`)
+      expect(button.attributes('aria-label')).toBeTruthy()
+      expect(button.find('svg').exists()).toBe(true)
+      expect(button.text()).toBe('')
+    }
+    await wrapper.find('[data-testid="radar-settings"]').trigger('click')
+    const arrows = wrapper.findAll('.rp-arrow')
+    expect(arrows.length).toBeGreaterThan(0)
+    expect(arrows.every(button => button.attributes('aria-label') && button.find('svg').exists() && button.text() === '')).toBe(true)
+  })
+})
+
 describe('PlayerDetailDrawer export', () => {
   it('export button exists in rating profile area; disabled when playerUnavailable', () => {
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
@@ -418,7 +448,7 @@ describe('PlayerDetailDrawer export', () => {
 describe('Drawer stacking / layout contract', () => {
   it('桌面 / 平板侧栏从顶栏下方开始（--header-h）；手机全屏 sheet 提升到 sheet 层', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/PlayerDetailDrawer.vue'), 'utf8')
-    expect(source).toContain('top: calc(var(--header-h) + 8px)')
+    expect(source).toContain('top: calc(var(--header-h) + var(--space-2))')
     expect(source).not.toContain('top: 56px')
     const mobileBlock = source.match(/@media \(width < 768px\) \{\r?\n  \.drawer-backdrop[\s\S]*?\r?\n\}/)?.[0] || ''
     expect(mobileBlock).toContain('.drawer-backdrop { z-index: var(--z-sheet); }')

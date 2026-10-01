@@ -40,46 +40,8 @@
   max-width: none !important;
   margin-inline: auto !important;
   padding: 24px 0 64px !important;
-  color: #d8d5cd !important;
 }
-:is(.hof-admin) .hof-admin-tabs,
-:is(.hof-admin) .hof-admin-filters,
-:is(.hof-admin) .tablewrap {
-  background: rgba(13, 18, 22, .97) !important;
-}
-:is(.hof-admin) .tablewrap {
-  max-width: 100%;
-  overflow: auto !important;
-  border: 1px solid #354047 !important;
-  border-radius: 8px;
-}
-:is(.hof-admin) table {
-  width: max-content !important;
-  min-width: 100% !important;
-  color: #d8d5cd !important;
-  font-variant-numeric: tabular-nums;
-}
-:is(.hof-admin) thead th {
-  position: sticky;
-  top: 60px;
-  z-index: 4;
-  background: #171e22 !important;
-  color: #c9c5bb !important;
-}
-:is(.hof-admin) tbody td { color: #d8d5cd; }
-:is(.hof-admin) :is(input, select, textarea) {
-  border-color: #465158 !important;
-  background: #0f1518 !important;
-  color: #e4e1d9 !important;
-}
-
-/* Shared destructive actions are quieter until interaction. */
-:is(.admin-page, .hof-admin) .btn-danger {
-  box-shadow: none !important;
-}
-:is(.admin-page, .hof-admin) .btn-danger:hover {
-  opacity: 1 !important;
-}
+/* 用户管理 / 名人堂管理页内部元素由组件自身按设计语言 token 定义（design-language §13），这里只保留页面容器宽度。 */
 
 @media (width < 768px) {
   .rating-docs-page,
@@ -89,5 +51,4 @@
     padding: 12px 0 42px !important;
   }
   .contact-grid { grid-template-columns: 1fr !important; }
-  :is(.hof-admin) thead th { top: 56px; }
 }

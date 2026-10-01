@@ -311,7 +311,8 @@ describe('RatingV2AdminPage', () => {
 
   it('gives the desktop radar drawer more room while preserving the mobile inset layout', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/RatingV2AdminPage.vue'), 'utf8')
-    expect(source).toContain('width: min(560px, calc(100vw - 16px))')
-    expect(source).toContain('.rating-v2-radar-drawer { left: 8px; width: auto; }')
+    // 桌面抽屉宽 560，按百分比收窄（不用 100vw，design-language §6）；手机两侧留出间距 token
+    expect(source).toContain('width: min(560px, calc(100% - var(--space-4)))')
+    expect(source).toMatch(/\.rating-v2-radar-drawer \{ left: var\(--space-2\); width: auto;/)
   })
 })
