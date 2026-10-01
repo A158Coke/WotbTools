@@ -8,13 +8,14 @@ The application root, [`frontend/src/App.vue`](../../frontend/src/App.vue), only
 App.vue
   → app/router.js
   → app/AppShell.vue
-      ├── AppTopBar.vue      # 桌面 / 平板：单行顶栏；compact：标题栏
+      ├── AppSidebar.vue     # 平板 / 桌面（≥ 768）：左侧边栏主导航（含 MorePanel 弹出面板）
+      ├── AppTopBar.vue      # compact（< 768）：标题栏
       ├── ViewHost.vue       # <main>，按 ?view= 渲染页面
       ├── AppTabBar.vue      # compact（< 768）：底部主导航
       └── GlobalErrorDialog.vue
 ```
 
-主导航的唯一数据源是 `app/navigation.js` 的 `PRIMARY_NAV`（首页 · 回放 · 名人堂 · 更多）与 `primarySection(view)`（视图归属哪个主栏目）；顶栏与底部 Tab 栏都用 `RouterLink` 渲染同一份清单，并以 `aria-current` 标记当前栏目。外壳按 `useBreakpoint()`（`composables/useBreakpoint.js`，断点常量在 `shared/breakpoints.ts`）在两种形态间切换。原用户菜单的入口拆成两处：账户（登录、个人中心、登出）由顶栏右侧的头像进入 `?view=profile`（`ProfilePage.vue`，未登录时显示说明卡而不是自动跳转）；界面风格、语言、工具、管理、关于与支持由 `?view=more`（`components/MorePage.vue`）承载。
+主导航的唯一数据源是 `app/navigation.js`：`PRIMARY_NAV`（首页 · 回放 · 名人堂 · 坦克百科 · 更多）、`ADMIN_NAV`（按角色显示的管理入口）与 `primarySection(view)`（视图归属哪个栏目）。外壳按 `useBreakpoint()`（`composables/useBreakpoint.js`，断点常量在 `shared/breakpoints.ts`）在两种形态间切换：平板 / 桌面渲染 `AppSidebar`（桌面可折叠，偏好由 `composables/useSidebar.js` 写到 `<html data-sidebar>`，`tokens/scale.css` 据此派生 `--sidebar-w`）；手机渲染 `AppTopBar` 标题栏 + `AppTabBar`。两者都用 `RouterLink` 渲染，并以 `aria-current` 标记当前栏目。账户（登录、个人中心、登出）进入 `?view=profile`（`ProfilePage.vue`，未登录时显示说明卡而不是自动跳转）：平板 / 桌面在侧边栏底部，手机在标题栏右侧。"更多"的内容只有一个来源 `composables/useMoreMenu.js`：平板 / 桌面是侧边栏底部的弹出面板（`app/MorePanel.vue`：显示设置 + 关于与支持；管理入口在侧边栏管理组），手机是 `?view=more` 整页（`components/MorePage.vue`，另含内测工具与管理入口）。
 
 `router.js` owns browser history, deep-link handling, redirects, and Back/Forward. Product URLs deliberately retain the compatible query contract: `?view=replay`, `?view=ai-review`, and `?view=battle-playback` all resolve to the same kept-alive Replay Workspace with a different initial capability. Legacy aliases (`leaderboard`, `extended`, `reconstruction`) redirect once to their canonical query values. `/download/android` and `/download/android/` resolve to the Android page; `/sponsor` is a first-class AppShell route that resolves through `ViewHost` to `SponsorPage`.
 

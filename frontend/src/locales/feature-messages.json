@@ -194,7 +194,10 @@
       "replay": "回放",
       "hof": "名人堂",
       "more": "更多",
-      "account": "账户"
+      "account": "账户",
+      "tankopedia": "坦克百科",
+      "collapseSidebar": "收起侧边栏",
+      "expandSidebar": "展开侧边栏"
     },
     "more": {
       "title": "更多",
@@ -584,7 +587,10 @@
       "replay": "Replays",
       "hof": "Hall of Fame",
       "more": "More",
-      "account": "Account"
+      "account": "Account",
+      "tankopedia": "Tankopedia",
+      "collapseSidebar": "Collapse sidebar",
+      "expandSidebar": "Expand sidebar"
     },
     "more": {
       "title": "More",
@@ -974,7 +980,10 @@
       "replay": "Реплеи",
       "hof": "Зал славы",
       "more": "Ещё",
-      "account": "Аккаунт"
+      "account": "Аккаунт",
+      "tankopedia": "Энциклопедия",
+      "collapseSidebar": "Свернуть боковую панель",
+      "expandSidebar": "Развернуть боковую панель"
     },
     "more": {
       "title": "Ещё",

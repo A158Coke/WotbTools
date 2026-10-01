@@ -9,6 +9,7 @@ import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { locationForView } from './navigation.js'
 import AppTopBar from './AppTopBar.vue'
 import AppTabBar from './AppTabBar.vue'
+import AppSidebar from './AppSidebar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
 import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
@@ -16,7 +17,7 @@ import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 const router = useRouter()
 const route = useRoute()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
-// 外壳按可用宽度切换：compact 用标题栏 + 底部 Tab 栏，其余用单行顶栏（design-language §9）
+// 外壳按可用宽度切换（design-language §9）：compact 用标题栏 + 底部 Tab 栏；平板 / 桌面用左侧边栏
 const { isCompact } = useBreakpoint()
 
 /**
@@ -44,7 +45,8 @@ provide(NAVIGATE_VIEW_KEY, navigate)
 </script>
 
 <template>
-  <AppTopBar :compact="isCompact" />
+  <AppTopBar v-if="isCompact" compact />
+  <AppSidebar v-else />
   <div v-if="failed" class="business-bootstrap-notice" role="alert" data-testid="business-bootstrap-notice">
     <span>{{ $t('bootstrap.profileFailed') }}</span>
     <button type="button" class="business-bootstrap-retry" @click="retry">{{ $t('bootstrap.retry') }}</button>
@@ -85,7 +87,9 @@ provide(NAVIGATE_VIEW_KEY, navigate)
   flex-direction: column;
 }
 
-/* 底部 Tab 栏是 fixed，给页面底部留出同等空间（--tabbar-h 在 ≥768 时为 0） */
+/* 侧边栏是 fixed：内容整体让出 --sidebar-w（手机为 0）。底部 Tab 栏同理在页面底部留出空间 */
+:global(#app) { padding-inline-start: var(--sidebar-w); }
+
 @media (width < 768px) {
   :global(#app) { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
 }
