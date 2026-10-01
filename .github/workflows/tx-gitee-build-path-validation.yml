@@ -180,18 +180,68 @@ jobs:
 
           docker tag "$local_image" "$remote_image"
 
+          is_transient_tcr_failure() {
+            grep -Eqi \
+              '(timeout awaiting response headers|tls handshake timeout|i/o timeout|read timeout|write timeout|connection (reset|refused|timed out|timeout)|connection reset by peer|broken pipe|unexpected (end of stream|EOF)|remote host terminated|network is unreachable|temporary failure|server misbehaving|no such host|too many requests|toomanyrequests|(http|status code)[:= ]+(429|5[0-9][0-9])|(429|5[0-9][0-9])[[:space:]]+(too many requests|internal server error|bad gateway|service unavailable|gateway time-?out)|internal server error|bad gateway|service unavailable|gateway time-?out|received unexpected http status)' \
+              <<<"$1"
+          }
+
+          run_tcr_stage() {
+            local stage_name="$1"
+            shift
+            local attempt=1
+            local max_attempts=3
+            local output_file output status backoff
+
+            while :; do
+              echo "TCR stage=$stage_name attempt=$attempt/$max_attempts"
+              output_file="$(mktemp)"
+              if "$@" >"$output_file" 2>&1; then
+                cat "$output_file"
+                rm -f "$output_file"
+                echo "TCR stage=$stage_name result=PASS attempts=$attempt"
+                return 0
+              fi
+
+              status=$?
+              output="$(<"$output_file")"
+              rm -f "$output_file"
+              printf '%s\n' "$output" >&2
+
+              if [ "$attempt" -ge "$max_attempts" ] || ! is_transient_tcr_failure "$output"; then
+                echo "TCR stage=$stage_name result=FAIL attempts=$attempt status=$status" >&2
+                return "$status"
+              fi
+
+              if [ "$attempt" -eq 1 ]; then
+                backoff=5
+              else
+                backoff=15
+              fi
+              echo "TCR stage=$stage_name result=RETRY backoff_seconds=$backoff" >&2
+              sleep "$backoff"
+              attempt=$((attempt + 1))
+            done
+          }
+
           push_start="$(date +%s%N)"
-          timeout --kill-after=30s 600s docker push "$remote_image"
+          run_tcr_stage push-immutable \
+            timeout --kill-after=30s 600s docker push "$remote_image"
           push_end="$(date +%s%N)"
           push_seconds="$(python3 -c "print(f'{($push_end-$push_start)/1e9:.3f}')" 2>/dev/null || awk "BEGIN {print ($push_end-$push_start)/1000000000}")"
 
-          remote_digest="$(timeout --kill-after=15s 60s docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$remote_image")"
-          [[ "$remote_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
-            echo "invalid TCR digest: $remote_digest" >&2
+          remote_digest=""
+          verify_manifest() {
+            remote_digest="$(timeout --kill-after=15s 60s docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$remote_image")" || return 1
+            [[ "$remote_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          }
+          run_tcr_stage verify-immutable verify_manifest || {
+            echo "failed to verify TCR manifest for $remote_image" >&2
             exit 38
           }
 
-          timeout --kill-after=30s 300s docker pull "$remote_image@$remote_digest" >/dev/null
+          run_tcr_stage pull-immutable \
+            timeout --kill-after=30s 300s docker pull "$remote_image@$remote_digest" >/dev/null
           remote_commit="$(docker inspect "$remote_image@$remote_digest" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^BUILD_COMMIT=//p' | head -n1)"
           [ "$remote_commit" = "$target_sha" ] || {
             echo "TCR image BUILD_COMMIT mismatch: expected=$target_sha actual=$remote_commit" >&2
