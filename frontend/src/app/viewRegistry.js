@@ -14,13 +14,11 @@ const ContactPage = defineAsyncComponent(() => import('../components/ContactPage
 const AndroidDownloadPage = defineAsyncComponent(() => import('../components/AndroidDownloadPage.vue'))
 const SponsorPage = defineAsyncComponent(() => import('../components/SponsorPage.vue'))
 const MorePage = defineAsyncComponent(() => import('../components/MorePage.vue'))
-const PlaybackQaPage = defineAsyncComponent(() => import('../components/PlaybackQaPage.vue'))
 const AgentReplay3DPage = defineAsyncComponent(() => import('../components/AgentReplay3D.vue'))
 const AgentTankopediaPage = defineAsyncComponent(() => import('../components/AgentTankopedia.vue'))
 const AgentArmorViewPage = defineAsyncComponent(() => import('../components/AgentArmorView.vue'))
 const AgentShotsPage = defineAsyncComponent(() => import('../components/AgentShots.vue'))
 const RatingDocsPage = defineAsyncComponent(() => import('../components/RatingDocsPage.vue'))
-const RatingV2AdminPage = defineAsyncComponent(() => import('../components/RatingV2AdminPage.vue'))
 
 export const VIEW_COMPONENTS = Object.freeze({
   home: HomePage,
@@ -41,9 +39,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   contact: ContactPage,
   android: AndroidDownloadPage,
   sponsor: SponsorPage,
-  'playback-qa': PlaybackQaPage,
   'rating-docs': RatingDocsPage,
-  'rating-v2': RatingV2AdminPage,
 })
 
 export function replayInitialCapability(view) {

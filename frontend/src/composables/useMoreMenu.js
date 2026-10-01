@@ -1,6 +1,6 @@
 import { computed, getCurrentInstance } from 'vue'
 import {
-  Box, Cpu, Crosshair, Download, FileText, FlaskConical, Gauge, Heart, History, Mail, ShieldCheck, Users,
+  Box, Cpu, Crosshair, Download, FileText, Heart, History, Mail, ShieldCheck, Users,
 } from 'lucide-vue-next'
 import { useAuth } from './useAuth.js'
 import { useUiProfile } from './useUiProfile.js'
@@ -48,8 +48,6 @@ export function useMoreMenu() {
   const adminLinks = computed(() => [
     isAdmin.value && { view: 'admin-users', labelKey: 'admin.title', icon: Users },
     isHofAdmin.value && { view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', icon: ShieldCheck },
-    isAdmin.value && { view: 'rating-v2', labelKey: 'ratingV2.title', icon: Gauge },
-    isAdmin.value && { view: 'playback-qa', labelKey: 'more.playbackQa', icon: FlaskConical },
   ].filter(Boolean))
 
   /** 关于与支持：低频入口，两种形态都放在"更多"里。 */

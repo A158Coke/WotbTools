@@ -11,7 +11,7 @@ export const ALLOWED_VIEWS = Object.freeze([
   'home', 'replay', 'hof', 'more', 'hof-admin',
   'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots',
-  'playback-qa', 'rating-docs', 'rating-v2',
+  'rating-docs',
   'android', 'sponsor',
 ])
 
@@ -49,8 +49,6 @@ export const PRIMARY_NAV = Object.freeze([
 export const ADMIN_NAV = Object.freeze([
   Object.freeze({ id: 'admin-users', view: 'admin-users', labelKey: 'admin.title', role: 'admin' }),
   Object.freeze({ id: 'hof-admin', view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', role: 'hofAdmin' }),
-  Object.freeze({ id: 'rating-v2', view: 'rating-v2', labelKey: 'ratingV2.title', role: 'admin' }),
-  Object.freeze({ id: 'playback-qa', view: 'playback-qa', labelKey: 'more.playbackQa', role: 'admin' }),
 ])
 
 // 视图 → 所属栏目。个人中心属于账户入口；管理视图各自是侧边栏的一项；
@@ -67,8 +65,6 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'agent-armor': 'tankopedia',
   'admin-users': 'admin-users',
   'hof-admin': 'hof-admin',
-  'rating-v2': 'rating-v2',
-  'playback-qa': 'playback-qa',
   profile: 'account',
 })
 
