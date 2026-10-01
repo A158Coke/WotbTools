@@ -285,12 +285,13 @@ describe('createProcessingJob XHR upload progress', () => {
     await expect(promise).resolves.toMatchObject({ jobId: 'p2' })
   })
 
-  it('未登录（ensureToken=false）时抛 canonical AUTH_UNAUTHENTICATED 且不发请求', async () => {
+  it('未登录（ensureToken=false）时匿名上传：不带 Authorization', async () => {
     auth.ensureToken.mockResolvedValueOnce(false)
-    await expect(createProcessingJob(auth, new FormData())).rejects.toMatchObject({
-      name: 'ApiError', errorCode: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false,
-    })
-    expect(xhr).toBeNull()
+    const promise = createProcessingJob(auth, new FormData())
+    await vi.waitFor(() => expect(xhr).not.toBeNull())
+    expect(xhr.headers.Authorization).toBeUndefined()
+    xhr.respond(202, JSON.stringify({ jobId: 'p3', status: 'QUEUED', total: 1 }))
+    await expect(promise).resolves.toMatchObject({ jobId: 'p3' })
   })
 
   it('rejects with stable ApiError code on non-2xx', async () => {

@@ -29,9 +29,9 @@
 - 阶段日志只允许 event/status/已有 short ref；禁止 full ID、文件名、路径、异常原文、OAuth code/state、token/cookie。
 - 必须发布更新 APK 和 Web；仅部署 Web 无法修复旧 APK 的 content transport。
 
-真机发布验收（不能用 JVM/Vitest 代替）：未登录打开 replay → QQ 登录 → 自动 POST processing-jobs 202 → Data；
-已有 SSO 直接导入；取消登录零请求且 pending 保留，重登后自动导入；登录期间 process death 后 callback 冷启动恢复，
-同一 pending 恰好一个 Job。记录低敏 `replay-pending stream requested/served`、auth-return、processing accepted；
+真机发布验收（不能用 JVM/Vitest 代替）：未登录打开 replay → 自动 POST processing-jobs 202（匿名）→ Data；
+已有 SSO 直接导入（带 Bearer，operationId 幂等）；已登录时 process death 后 callback 冷启动恢复，
+同一 pending 恰好一个 Job（匿名导入没有 subject，冷启动重导可能新建 Job）。记录低敏 `replay-pending stream requested/served`、auth-return、processing accepted；
 勿保存完整请求头、OAuth URL 或 pending identity。清 App 数据须由测试者明确同意。
 
 ```text
@@ -40,9 +40,9 @@ ACTION_SEND / ACTION_VIEW
   → 最小验证(.wotbreplay) + 复制到 app private cache
   → private cache backing file + pendingId（完整 UUID，authoritative identity）+ createdAt
   → pending slot（single slot：最新 replay 取代旧 pending）+ SharedPreferences metadata
-  → Web 已登录时经 NativeBridge getPendingReplay() 取回 pendingId/name/size/uri
+  → Web auth init 落定后经 NativeBridge getPendingReplay() 取回 pendingId/name/size/uri
   → Web fetch 固定同源 HTTPS synthetic resource 读字节构造 File → 现有 FileUploader/validate 管线
-  → POST /api/replay/processing-jobs（需登录；Bearer；operationId = pendingId，可重放安全）
+  → POST /api/replay/processing-jobs（匿名可用；已登录时带 Bearer，operationId = pendingId 按 subject 幂等）
   → server 接受（202 + jobId）后 Web 调 consumePendingReplay(pendingId) ACK（compare-and-clear）
 ```
 
@@ -124,16 +124,16 @@ getPendingReplay → fetch(synthetic HTTPS resource) → await onPendingFile(fil
   （`window.wotbtoolsOnReplay()`）绝不被丢弃——只 coalesce 成一次 rerun，当前 import 结束后立即再
   drain 一次 Native pending。因此「A 处理中 Android 又收到 replay B，Native 只通知一次」时，B 会在 A
   完成后自动被处理：不需要用户再打开一次文件，也不需要外部第二次触发。
-- 未登录、未受理、读取失败或抛错：**不 ACK**，Native pending 原样保留供重试；Web 侧以 `inflight`
+- auth init 未落定、未受理、读取失败或抛错：**不 ACK**，Native pending 原样保留供重试；Web 侧以 `inflight`
   防并发、以 `pendingId` 集合防同一份 pending 重复注入。同一 pending 的重复回调只允许一次
   in-flight processing create。
-- 未登录期间 pending 既不消费也不丢失：登录成功后页面重新加载，由 Replay Workspace 再次触发消费，
-  因此登录前不会发出任何 `POST /api/replay/processing-jobs`。
+- auth init 落定前 pending 既不消费也不丢失：落定后（登录与否）由 Replay Workspace 触发消费；
+  赛果解析对匿名开放（2026-10-01 起），未登录不再阻塞导入。
 
 ## 生命周期
 
 - **Cold Start**：`onCreate` → 恢复持久 pending → 按引用清理 orphan → intent 分类（auth return 优先）
-  → 启动门禁（网络/版本）→ Web ready → 已登录则消费，未登录则先走登录流程。
+  → 启动门禁（网络/版本）→ Web ready → auth init 落定后消费（无需登录）。
 - **Warm Start**：`onNewIntent` → auth return 优先 → replay 入队 → 按 `ReplayDispatchPolicy` 分发
   （已在 replay view 就地通知，否则切到 canonical replay view）。
 - **Background Resume / auth 期间 process death**：pending 在 private storage 存活 → QQ 完成后

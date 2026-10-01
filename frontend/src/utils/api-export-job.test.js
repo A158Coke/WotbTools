@@ -148,20 +148,20 @@ describe('replay export job api', () => {
     expect(err.status).toBe(409)
   })
 
-  it('未登录时四条 export 端点都不发请求，抛 canonical AUTH_UNAUTHENTICATED', async () => {
+  it('未登录时四条 export 端点以匿名身份请求（不带 Authorization）', async () => {
     auth.ensureToken.mockResolvedValue(false)
+    vi.mocked(fetch).mockImplementation(async () => jsonResponse(500, { error: 'PROBE' }))
     const cases = [
       () => createExportJob(auth, 'aggregate', 'p1'),
       () => getExportJob(auth, 'j1'),
       () => cancelExportJob(auth, 'j1'),
       () => downloadExportJob(auth, 'j1', 'export.xlsx'),
     ]
-    for (const run of cases) {
-      await expect(run()).rejects.toMatchObject({
-        name: 'ApiError', errorCode: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false,
-      })
+    for (const run of cases) await run().catch(() => {})
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(4)
+    for (const [, init] of vi.mocked(fetch).mock.calls) {
+      expect(init?.headers ?? {}).not.toHaveProperty('Authorization')
     }
-    expect(vi.mocked(fetch)).not.toHaveBeenCalled()
     expect(auth.ensureToken).toHaveBeenCalledWith(30)
   })
 })

@@ -310,70 +310,40 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('Case G：auth init reject exits checking and exposes retry/login recovery actions', async () => {
+  it('Case G：auth init 失败时不阻塞：以匿名身份照常提供上传 / 解析，不显示登录门禁', async () => {
     const authInit = Promise.reject(new Error('AUTH_INIT_FAILED'))
     const login = vi.fn(() => Promise.resolve())
     const wrapper = mountWorkspace('data', { authenticated: false, login, authInit })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="ws-auth-loading"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="ws-auth-failed"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="ws-auth-retry"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="ws-login-recovery"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ws-auth-failed"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(true)
     expect(login).not.toHaveBeenCalled()
-
-    await wrapper.find('[data-testid="ws-login-recovery"]').trigger('click')
-    await flushPromises()
-    expect(login).toHaveBeenCalledWith('replay')
     wrapper.unmount()
   })
 
-  it('Case H：watchdog failure recovery retries auth without exposing replay UI', async () => {
-    let rejectInit
-    const authInit = new Promise((_, reject) => { rejectInit = reject })
-    const wrapper = mountWorkspace('data', { authenticated: false, authInit })
-    rejectInit(new Error('AUTH_INIT_WATCHDOG_TIMEOUT'))
+  // 赛果解析与 2D 回放对匿名开放：未登录时直接可用，不显示说明卡、不发起登录。
+  it('Case F：未登录时 FileUploader / 数据面板可用，没有登录门禁', async () => {
+    const login = vi.fn()
+    const wrapper = mountWorkspace('data', { authenticated: false, login })
     await flushPromises()
-
-    expect(wrapper.find('[data-testid="ws-auth-failed"]').exists()).toBe(true)
-    await wrapper.find('[data-testid="ws-auth-retry"]').trigger('click')
-    await flushPromises()
-    expect(authState.retryAuth).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('[data-testid="ws-auth-loading"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="ws-auth-required"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ws-auth-required"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ws-data"]').exists()).toBe(true)
+    expect(login).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  it('Case F：未登录时 FileUploader / processing / capability 面板都不可用', async () => {
-    const wrapper = mountWorkspace('data', { authenticated: false, login: vi.fn() })
+  it('Case A：未登录切到 2D 回放直接进入，不请求登录', async () => {
+    const login = vi.fn()
+    const wrapper = mountWorkspace('data', { authenticated: false, login })
     await flushPromises()
-    expect(wrapper.find('[data-testid="ws-auth-required"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="processing"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="ws-data"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="ws-ai"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="ws-playback"]').exists()).toBe(false)
-    expect(replayState.startProcessingJob).not.toHaveBeenCalled()
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
+    await flushPromises()
+    expect(login).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="playback-pane"]').exists()).toBe(true)
     wrapper.unmount()
-  })
-
-  // design-language §10 / 审计 PG-03：未登录时显示说明卡，不自动跳转登录页；点击登录才发起，并回到当前能力。
-  it('Case A：未登录进入可用能力时显示登录说明卡，点击后才请求登录', async () => {
-    const cases = [
-      { cap: 'data', view: 'replay' },
-      { cap: 'playback', view: 'battle-playback' },
-    ]
-    for (const c of cases) {
-      const login = vi.fn()
-      const wrapper = mountWorkspace(c.cap, { authenticated: false, login })
-      await flushPromises()
-      expect(login).not.toHaveBeenCalled()
-      expect(wrapper.find('[data-testid="ws-auth-required"]').exists()).toBe(true)
-      await wrapper.get('[data-testid="ws-login"]').trigger('click')
-      await flushPromises()
-      expect(login).toHaveBeenCalledWith(c.view)
-      wrapper.unmount()
-    }
   })
 
   it('AI 维护页提供跳到数据 / 2D 回放的入口', async () => {
@@ -396,59 +366,6 @@ describe('ReplayWorkspace', () => {
     expect(admin.findAll('[data-testid="ws-tab"]').map(tab => tab.attributes('data-cap'))).toEqual(['data', 'playback', '3d', 'shots', 'ai'])
     authState.isAdmin.value = false
     admin.unmount()
-  })
-
-  it('Case B/C：AI 维护页免登录，Playback 仍能重新发起 login', async () => {
-    const login = vi.fn(() => Promise.reject(new Error('AUTH_NAVIGATION_FAILED')))
-    const wrapper = mountWorkspace('data', { authenticated: false, login })
-    await flushPromises()
-    // 挂载时不自动登录（说明卡 + 登录按钮）
-    expect(login).not.toHaveBeenCalled()
-
-    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
-    await flushPromises()
-    expect(login).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="ws-ai"]').exists()).toBe(true)
-
-    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
-    await flushPromises()
-    expect(login).toHaveBeenCalledTimes(1)
-    expect(login).toHaveBeenLastCalledWith('battle-playback')
-
-    wrapper.unmount()
-  })
-
-  // 用户主动发起的登录失败必须可观测：以前 requestLogin 用 `.catch(() => {})` 全吞，
-  // 用户点了「战局回放」页面什么都没变，只能反复点——这正是「点了完全没反应」的来源。
-  it('用户主动点击 capability 且 login 失败 → 走统一 GlobalErrorDialog（不再 silent swallow）', async () => {
-    const { error: globalError, showError } = useError()
-    const login = vi.fn(() => Promise.reject(new Error('AUTH_NAVIGATION_FAILED')))
-    const wrapper = mountWorkspace('data', { authenticated: false, login })
-    await flushPromises()
-    // 挂载时不发起登录，也就不会有错误弹窗：说明卡本身就是可重试的可见表面。
-    expect(login).not.toHaveBeenCalled()
-    expect(showError.value).toBe(false)
-
-    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
-    await flushPromises()
-    expect(login).toHaveBeenLastCalledWith('battle-playback')
-    expect(showError.value).toBe(true)
-    expect(globalError.value).toBe('workspace.login_failed')
-    wrapper.unmount()
-  })
-
-  it('login 正常发起时不显示任何错误（redirect 流程不受影响）', async () => {
-    const { showError } = useError()
-    const login = vi.fn(() => Promise.resolve())
-    const wrapper = mountWorkspace('data', { authenticated: false, login })
-    await flushPromises()
-
-    await wrapper.find('[data-testid="ws-login"]').trigger('click')
-    await flushPromises()
-
-    expect(login).toHaveBeenCalledTimes(1)
-    expect(showError.value).toBe(false)
-    wrapper.unmount()
   })
 
   it('Android pending File 导入后自动 startProcessingJob exactly once（不重复建 Job）', async () => {

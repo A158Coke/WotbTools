@@ -45,14 +45,14 @@ describe('typed Replay API contracts', () => {
     expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({ Authorization: 'Bearer test-token' })
   })
 
-  it('未登录（ensureToken=false）时抛出 canonical AUTH_UNAUTHENTICATED，不发请求', async () => {
-    const fetchMock = vi.fn()
+  it('未登录（ensureToken=false）时以匿名身份请求：不带 Authorization', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      jobId: 'p1', status: 'RUNNING', total: 1, processed: 0, valid: 0, duplicates: 0, failures: 0,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(getProcessingJob({ token: () => '', ensureToken: async () => false }, 'p1'))
-      .rejects.toMatchObject({
-        name: 'ApiError', errorCode: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false,
-      })
-    expect(fetchMock).not.toHaveBeenCalled()
+    await getProcessingJob({ token: () => 'stale', ensureToken: async () => false }, 'p1').catch(() => {})
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][1]?.headers).not.toHaveProperty('Authorization')
   })
 })

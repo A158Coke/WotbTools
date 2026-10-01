@@ -1,11 +1,10 @@
 <script setup>
 import { computed, defineAsyncComponent, inject, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CircleAlert, LogIn, Sparkles } from 'lucide-vue-next'
+import { Sparkles } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { mapLabel } from '../utils/helpers.js'
 import { useAuth } from '../composables/useAuth.js'
-import { useError } from '../composables/useError.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
@@ -33,9 +32,13 @@ const props = defineProps({
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const { t, locale } = useI18n()
-const { authInitState, authenticated, login, loginInFlight, retryAuth, isAdmin } = useAuth()
-/** 项目统一错误 UI（AppShell 的 GlobalErrorDialog）——不新造 toast/error system。 */
-const { show: showGlobalError } = useError()
+const { authInitState, isAdmin } = useAuth()
+/**
+ * 赛果解析与 2D 回放对匿名开放；登录只是可选增强（已登录时请求附带 Bearer）。
+ * 仍等 auth init 落定再展示工作台：避免已登录用户在 Keycloak 初始化完成前以匿名身份建 Job。
+ * init 失败也照常放行（匿名使用），不再显示登录门禁。
+ */
+const authSettled = computed(() => authInitState.value !== 'idle' && authInitState.value !== 'initializing')
 
 /**
  * Workspace 持有唯一一份 replay selection / Processing Job。
@@ -68,7 +71,7 @@ async function importPendingFile(file, pending) {
 }
 
 const { consumePendingWhenReady } = useNativeReplayImport({
-  isAuthenticated: () => authenticated.value,
+  isReady: () => authSettled.value,
   onPendingFile: importPendingFile,
   onReadError: (reason) => {
     error.value = reason === 'native-client-upgrade-required'
@@ -134,45 +137,15 @@ watch(
 
 const VIEW_BY_CAPABILITY = Object.freeze({ data: 'replay', ai: 'ai-review', playback: 'battle-playback' })
 
-/** capability → 登录后要回到的 view。 */
+/** capability → 路由 view。 */
 function viewFor(cap) {
   return VIEW_BY_CAPABILITY[cap] || 'replay'
-}
-
-/**
- * 登录门禁：未登录时始终可以发起（或重新发起）login transaction。
- * 去重只发生在 useAuth.login() 内部（同一个进行中的 redirect），
- * 绝不存在「这个组件已尝试过登录 → 后续点击静默 no-op」的 component-lifetime 状态。
- *
- * 失败必须可观测：这里的 catch 只覆盖当前页面生命周期内 login() 的发起/导航
- * Promise rejection，不能严格等价于跳转后的 provider cancellation 或 WebView
- * process death；后两者分别由 auth/init 与 Android pending/auth-return 生命周期负责恢复。
- * 对当前页面能观测到的 immediate failure，现在改为：
- *   - 用户主动发起（点 capability tab / 点登录按钮）失败 → 走统一 GlobalErrorDialog；
- *   - 挂载时的自动登录失败不弹窗（auth gate 本身已是确定的、可重试的可见表面）。
- * 无论哪种情况都只释放 in-flight，不写任何 component-lifetime 状态：
- * 后续点击仍会重新发起登录。
- */
-function requestLogin(view, { userInitiated = false } = {}) {
-  const target = view || 'replay'
-  return Promise.resolve()
-    .then(() => login(target))
-    .catch(() => {
-      // 低敏诊断：只记 view 名，不记 token / redirect URL / replay 内容。
-      console.warn(`[workspace-auth] login failed view=${target}`)
-      if (userInitiated) showGlobalError(t('workspace.login_failed'))
-      return false
-    })
 }
 
 async function setCapability(key) {
   if (key === activeCapability.value) return
   if (NAVIGATION_ONLY_CAPABILITIES[key]) {
     if (navigate) navigate(NAVIGATION_ONLY_CAPABILITIES[key])
-    return
-  }
-  if (key !== 'ai' && !authenticated.value) {
-    requestLogin(viewFor(key), { userInitiated: true })
     return
   }
   workspace.setWorkspaceTab(key)
@@ -202,19 +175,12 @@ function onFilesUpdate(next) {
   else updateFiles(next)
 }
 
-// 未登录时显示说明卡与登录按钮，不自动跳转登录页（design-language §10 / 审计 PG-03）。
-
-function retryAuthCheck() {
-  return retryAuth()
-}
-
 /**
- * 只有「auth init 完成 且 authenticated」时才允许消费 Android pending replay；
- * 未登录期间 Native pending 原样保留（跨 auth 保留）。
+ * auth init 落定后（无论是否登录）消费 Android pending replay：
+ * 已登录时 operationId 幂等按 subject 分域；匿名时每次导入都是新 job。
  */
-watch([authInitState, authenticated], ([state, authed]) => {
-  if (state !== 'authenticated' || !authed) return
-  nextTick(() => consumePendingWhenReady())
+watch(authSettled, (settled) => {
+  if (settled) nextTick(() => consumePendingWhenReady())
 }, { immediate: true })
 
 watch(() => props.initialCapability, (val) => {
@@ -240,43 +206,11 @@ watch(() => props.initialCapability, (val) => {
     </EmptyState>
 
     <p
-      v-else-if="authInitState === 'idle' || authInitState === 'initializing'"
+      v-else-if="!authSettled"
       class="workspace-status"
       data-testid="ws-auth-loading"
       aria-live="polite"
     >{{ $t('workspace.auth_checking') }}</p>
-
-    <EmptyState
-      v-else-if="authInitState === 'failed'"
-      data-testid="ws-auth-failed"
-      role="alert"
-      :icon="CircleAlert"
-      :title="$t('workspace.auth_init_failed')"
-      :description="$t('workspace.auth_init_failed_hint')"
-    >
-      <AppButton data-testid="ws-auth-retry" @click="retryAuthCheck">{{ $t('workspace.auth_retry') }}</AppButton>
-      <AppButton
-        data-testid="ws-login-recovery"
-        :disabled="loginInFlight"
-        @click="requestLogin(viewFor(activeCapability), { userInitiated: true })"
-      >{{ $t('app.login') }}</AppButton>
-    </EmptyState>
-
-    <!-- 未登录：说明卡 + 登录；replay 业务动作（上传 / 解析 / capability 面板）一律不可执行 -->
-    <EmptyState
-      v-else-if="authInitState === 'unauthenticated'"
-      data-testid="ws-auth-required"
-      :icon="LogIn"
-      :title="$t('workspace.auth_required_title')"
-      :description="$t('workspace.auth_required_hint')"
-    >
-      <AppButton
-        variant="primary"
-        data-testid="ws-login"
-        :disabled="loginInFlight"
-        @click="requestLogin(viewFor(activeCapability), { userInitiated: true })"
-      >{{ $t('app.login') }}</AppButton>
-    </EmptyState>
 
     <template v-else>
       <div class="workspace-source">

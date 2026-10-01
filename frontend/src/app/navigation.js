@@ -17,13 +17,13 @@ export const ALLOWED_VIEWS = Object.freeze([
 
 /**
  * 仅管理员可见的视图（feature flag：`wotbtools-admin` 角色）。
- * Agent 数据平面（射击复现 / 坦克百科 / 装甲查看器）合入主干期间先小范围放量：
+ * Agent 数据平面（3D 回放 / 射击分析 / 装甲查看器）仍在内测；坦克百科已公开（2026-10-01）。
  * 非管理员看不到导航入口，且直达深链会被 viewFromRoute 收敛回默认视图。
  * 注意：这些视图仍在 ALLOWED_VIEWS / VIEW_COMPONENTS 登记（注册与可见性是两件事，
  * 保留登记以维持"两条清单恒等"的不变量）。
  */
 export const ADMIN_ONLY_VIEWS = Object.freeze([
-  'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots',
+  'agent-replay', 'agent-armor', 'agent-shots',
 ])
 
 /**

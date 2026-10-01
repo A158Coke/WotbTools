@@ -20,7 +20,7 @@ import {
  * exactly-once 语义（针对「一个具体 pending replay」）：
  * - **identity-aware**：pending identity 是 Native 提供的 `pendingId`（完整 UUID，不是 URI 字符串）。
  *   ACK 必须携带该 identity，Native 执行 compare-and-clear；identity 缺失的 pending 一律不消费。
- * - 只有 authenticated 时才消费；未登录一律不动 Native pending，登录后重新触发即可。
+ * - 只有 auth init 落定（`isReady`）后才消费；赛果解析对匿名开放，登录与否都会消费。
  * - ACK 边界是「server 已接受该 processing request」：`onPendingFile` 必须 await 并返回
  *   `true` 才调用 Native `consumePendingReplay(pendingId)`；未受理 / 抛错 / 中断都不 ACK，保留 pending 可重试。
  * - `onPendingFile` 必须把 `pendingId` 作为 processing create 的 operationId 传给后端，使
@@ -36,12 +36,12 @@ import {
  * - 多次 inflight 通知 coalesce 成一次 rerun；没有 pending 时 drain 直接结束，不空转。
  * - Web 端以 `consumedIds`（pendingId）防同一份重复注入。
  *
- * 跨 auth 保留：`window.wotbtoolsOnReplay` 读实际登录态，绝不以 authenticated=true 默认值绕过。
+ * 跨 auth 保留：`window.wotbtoolsOnReplay` 读实际的 init 落定状态，`isReady` 缺省为 false，绝不默认放行。
  *
  * @param onPendingFile async (file, pending) => boolean
  *        业务受理结果：`true` = server 已创建 Processing Job（可 ACK Native），否则不得 ACK。
  */
-export function useNativeReplayImport({ isAuthenticated = () => false, onPendingFile, onReadError } = {}) {
+export function useNativeReplayImport({ isReady = () => false, onPendingFile, onReadError } = {}) {
   let inflight = false
   let rerunRequested = false
   const consumedIds = new Set()
@@ -66,9 +66,9 @@ export function useNativeReplayImport({ isAuthenticated = () => false, onPending
   /** 单轮 drain：消费当前 Native pending（若有且未消费过）。返回本次是否真正受理了一份 replay。 */
   async function drainOnce() {
     if (!isAndroidApp()) return false
-    if (!isAuthenticated()) {
-      // 未登录：pending 原样留在 Native，登录成功（页面重新挂载）后再消费。
-      console.debug('[replay-native] pending deferred reason=unauthenticated')
+    if (!isReady()) {
+      // auth init 未落定：pending 原样留在 Native，落定后再消费。
+      console.debug('[replay-native] pending deferred reason=auth-pending')
       return false
     }
     const nativeBridgeVersion = await getNativeBridgeVersion()

@@ -82,7 +82,7 @@ describe('useNativeReplayImport', () => {
     const onPendingFile = vi.fn(async () => true)
     const onReadError = vi.fn()
     const { consumePendingWhenReady } = useNativeReplayImport({
-      isAuthenticated: () => true,
+      isReady: () => true,
       onPendingFile,
       onReadError,
     })
@@ -98,7 +98,7 @@ describe('useNativeReplayImport', () => {
     const onPendingFile = vi.fn(async () => true)
     const onReadError = vi.fn()
     const { consumePendingWhenReady } = useNativeReplayImport({
-      isAuthenticated: () => true,
+      isReady: () => true,
       onPendingFile,
       onReadError,
     })
@@ -123,7 +123,7 @@ describe('useNativeReplayImport', () => {
     const onPendingFile = vi.fn(async () => true)
     const onReadError = vi.fn()
     const { consumePendingWhenReady } = useNativeReplayImport({
-      isAuthenticated: () => true,
+      isReady: () => true,
       onPendingFile,
       onReadError,
     })
@@ -142,7 +142,7 @@ describe('useNativeReplayImport', () => {
     vi.stubGlobal('fetch', fetchMock)
     const onReadError = vi.fn()
     const { consumePendingWhenReady } = useNativeReplayImport({
-      isAuthenticated: () => true,
+      isReady: () => true,
       onReadError,
     })
 
@@ -163,7 +163,7 @@ describe('useNativeReplayImport', () => {
       if (failure === 'body') return { ok: true, blob: async () => { throw new Error('secret-file-name') } }
       return { ok: false, status: 404 }
     }))
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile, onReadError })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile, onReadError })
     await expect(consumePendingWhenReady()).resolves.toBe(false)
     expect(onReadError).toHaveBeenCalledTimes(1)
     expect(onPendingFile).not.toHaveBeenCalled()
@@ -187,7 +187,7 @@ describe('useNativeReplayImport', () => {
       }
       return { ok: true, blob: async () => new Blob(['bytes-B']) }
     }))
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile, onReadError })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile, onReadError })
     await expect(consumePendingWhenReady()).resolves.toBe(true)
     expect(onPendingFile).toHaveBeenCalledTimes(1)
     const [file, pending] = onPendingFile.mock.calls[0]
@@ -217,7 +217,7 @@ describe('useNativeReplayImport', () => {
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
     const { consumePendingWhenReady } = useNativeReplayImport({
-      isAuthenticated: () => true,
+      isReady: () => true,
       onPendingFile,
     })
     const consumed = await consumePendingWhenReady()
@@ -236,7 +236,7 @@ describe('useNativeReplayImport', () => {
     const native = stubNative(PENDING_A)
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile })
 
     await expect(consumePendingWhenReady()).resolves.toBe(true)
     expect(native.consumeRequests).toEqual([{ expectedPendingId: PENDING_A.pendingId }])
@@ -247,7 +247,7 @@ describe('useNativeReplayImport', () => {
     const native = stubNative({ name: 'legacy.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 5 })
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile })
 
     await expect(consumePendingWhenReady()).resolves.toBe(false)
     expect(onPendingFile).not.toHaveBeenCalled()
@@ -265,7 +265,7 @@ describe('useNativeReplayImport', () => {
       return true
     })
     const { consumePendingWhenReady, registerGlobalHandler } = useNativeReplayImport({
-      isAuthenticated: () => true,
+      isReady: () => true,
       onPendingFile,
     })
     registerGlobalHandler()
@@ -297,7 +297,7 @@ describe('useNativeReplayImport', () => {
     let release
     const gate = new Promise((res) => { release = res })
     const onPendingFile = vi.fn(async () => { await gate; return true })
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile })
 
     const first = consumePendingWhenReady()
     await vi.waitFor(() => expect(onPendingFile).toHaveBeenCalledTimes(1))
@@ -312,18 +312,18 @@ describe('useNativeReplayImport', () => {
     expect(native.consumeRequests).toHaveLength(1)
   })
 
-  it('does not consume pending replay before login (cross-auth retention)', async () => {
+  it('does not consume pending replay before auth init settles (cross-auth retention)', async () => {
     stubNative(PENDING_A)
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
     const { consumePendingWhenReady } = useNativeReplayImport({
-      isAuthenticated: () => false,
+      isReady: () => false,
       onPendingFile,
     })
     await consumePendingWhenReady()
     expect(onPendingFile).not.toHaveBeenCalled()
     // 登录后就绪时可消费
-    const authed = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })
+    const authed = useNativeReplayImport({ isReady: () => true, onPendingFile })
     await authed.consumePendingWhenReady()
     expect(onPendingFile).toHaveBeenCalledTimes(1)
   })
@@ -333,7 +333,7 @@ describe('useNativeReplayImport', () => {
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
     const { consumePendingWhenReady } = useNativeReplayImport({
-      isAuthenticated: () => true,
+      isReady: () => true,
       onPendingFile,
     })
     await consumePendingWhenReady()
@@ -341,12 +341,12 @@ describe('useNativeReplayImport', () => {
     expect(onPendingFile).toHaveBeenCalledTimes(1)
   })
 
-  it('window.wotbtoolsOnReplay 走实际登录态，不默认 authenticated=true', async () => {
+  it('window.wotbtoolsOnReplay 走实际 init 落定状态，不默认放行', async () => {
     const native = stubNative(PENDING_A)
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
     const authed = vi.fn(() => false)
-    const { registerGlobalHandler } = useNativeReplayImport({ isAuthenticated: authed, onPendingFile })
+    const { registerGlobalHandler } = useNativeReplayImport({ isReady: authed, onPendingFile })
     registerGlobalHandler()
     await window.wotbtoolsOnReplay()
     expect(onPendingFile).not.toHaveBeenCalled()
@@ -362,7 +362,7 @@ describe('useNativeReplayImport', () => {
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
     const { consumePendingWhenReady, registerGlobalHandler } = useNativeReplayImport({
-      isAuthenticated: () => true,
+      isReady: () => true,
       onPendingFile,
     })
     registerGlobalHandler()
@@ -386,7 +386,7 @@ describe('useNativeReplayImport', () => {
     const native = stubNative(PENDING_A)
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => false, onPendingFile })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => false, onPendingFile })
 
     await expect(consumePendingWhenReady()).resolves.toBe(false)
     expect(native.methods).toEqual([])
@@ -403,7 +403,7 @@ describe('useNativeReplayImport', () => {
       return basePost(json)
     })
     const onPendingFile = vi.fn(async () => { order.push('accepted'); return true })
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile })
 
     await expect(consumePendingWhenReady()).resolves.toBe(true)
     expect(order).toEqual(['accepted', 'consume'])
@@ -414,7 +414,7 @@ describe('useNativeReplayImport', () => {
     const native = stubNative(PENDING_A)
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => false)
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile })
 
     await expect(consumePendingWhenReady()).resolves.toBe(false)
     expect(native.methods).not.toContain('consumePendingReplay')
@@ -428,7 +428,7 @@ describe('useNativeReplayImport', () => {
     const undefinedCase = stubNative(PENDING_A)
     stubFetchBlob()
     const noResult = useNativeReplayImport({
-      isAuthenticated: () => true,
+      isReady: () => true,
       onPendingFile: vi.fn(async () => undefined),
     })
     await expect(noResult.consumePendingWhenReady()).resolves.toBe(false)
@@ -439,7 +439,7 @@ describe('useNativeReplayImport', () => {
     const native = stubNative(PENDING_A)
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => { throw new Error('PROCESSING_CREATE_FAILED') })
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile })
 
     await expect(consumePendingWhenReady()).resolves.toBe(false)
     expect(native.methods).not.toContain('consumePendingReplay')
@@ -456,7 +456,7 @@ describe('useNativeReplayImport', () => {
     let release
     const gate = new Promise((res) => { release = res })
     const onPendingFile = vi.fn(async () => { await gate; return true })
-    const { consumePendingWhenReady } = useNativeReplayImport({ isAuthenticated: () => true, onPendingFile })
+    const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile })
 
     const first = consumePendingWhenReady()
     await vi.waitFor(() => expect(onPendingFile).toHaveBeenCalledTimes(1))
