@@ -294,8 +294,9 @@ describe('isShotHit（hit authority = target_eid，评审 blocker 回归）', ()
     expect(api.isShotHit({ target_eid: 283127376 })).toBe(true)
   })
   it('无受击方 eid → 未命中（不回退昵称/hit_flags 双语义）', () => {
-    expect(api.isShotHit({ target_eid: null })).toBe(false)
+    // 契约类型是 number | undefined；null 属坏生产者输出，运行时同样按缺失处理
     expect(api.isShotHit({ target_eid: undefined })).toBe(false)
+    expect(api.isShotHit({ target_eid: null } as unknown as api.AgentShotReplay)).toBe(false)
   })
   it('非作者同规则（单一权威，无双语义）', () => {
     expect(api.isShotHit({ target_eid: 1 })).toBe(true)
