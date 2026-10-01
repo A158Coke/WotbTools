@@ -1,6 +1,7 @@
 {
   "zh": {
     "uiProfile": {
+      "auto": "跟随系统",
       "title": "界面风格",
       "classic": "简约",
       "showcase": "沉浸",
@@ -273,6 +274,7 @@
   },
   "en": {
     "uiProfile": {
+      "auto": "Follow system",
       "title": "Interface Style",
       "classic": "Classic",
       "showcase": "Showcase",
@@ -545,6 +547,7 @@
   },
   "ru": {
     "uiProfile": {
+      "auto": "Как в системе",
       "title": "Стиль интерфейса",
       "classic": "Классический",
       "showcase": "Showcase",

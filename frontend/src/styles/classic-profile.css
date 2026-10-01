@@ -116,19 +116,17 @@ html[data-ui-profile="classic"] {
 
 /* 3) namespace 覆盖:写死深色的高层级展示面(topbar / 菜单 / 表单 / 表格 / 管理表) */
 [data-ui-profile="classic"] .layout-content :is(input, select, textarea),
-[data-ui-profile="classic"] .layout-wide :is(input, select, textarea),
 [data-ui-profile="classic"] .layout-data-workspace :is(input, select, textarea),
 [data-ui-profile="classic"] .admin-page :is(input, select, textarea) {border-color: #c8cec5 !important; background: #ffffff !important; color: #2a2f28 !important}
-[data-ui-profile="classic"] .layout-data-workspace table thead th,
-[data-ui-profile="classic"] .layout-wide table thead th {background: color-mix(in srgb, var(--bg-card2) 94%, #e3e6e1) !important}
+[data-ui-profile="classic"] .layout-data-workspace table thead th {background: color-mix(in srgb, var(--bg-card2) 94%, #e3e6e1) !important}
 [data-ui-profile="classic"] .admin-table th {background: var(--bg-card2) !important; color: var(--text-heading) !important}
 [data-ui-profile="classic"] .admin-table td {color: var(--text) !important}
 [data-ui-profile="classic"] .admin-table tbody tr:hover {background: var(--bg-list-hover) !important}
 [data-ui-profile="classic"] .modal {border-color: #d9dde3 !important}
 
 /* 4) 关闭全屏 AI 路景背景(::after)与 readability 渐变遮罩(::before) */
-[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.homepage-showcase)::after,
-[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.homepage-showcase)::before {content: none}
+[data-ui-profile="classic"] :is(.layout-content, .layout-data-workspace, .admin-page, .profile-page, .contact-page, .lb-wrap, .hof-admin, .homepage-showcase)::after,
+[data-ui-profile="classic"] :is(.layout-content, .layout-data-workspace, .admin-page, .profile-page, .contact-page, .lb-wrap, .hof-admin, .homepage-showcase)::before {content: none}
 
 /* 5) 装饰性 hero / 上传 / profile-hero 表面:去掉 AI 图,落回浅色(保留结构) */
 [data-ui-profile="classic"] .profile-page .profile-hero {background: none !important; box-shadow: none !important}
@@ -151,19 +149,18 @@ html[data-ui-profile="classic"] {
 
 /* ---- 全局：页面根文字 / tabs / 卡片 / 表单 / modal / sticky / 状态 ---- */
 html[data-ui-profile="classic"] .layout-content,
-html[data-ui-profile="classic"] .layout-wide,
-html[data-ui-profile="classic"] .layout-data-workspace,
-html[data-ui-profile="classic"] .layout-full-workspace {color: var(--text) !important}
+html[data-ui-profile="classic"] .layout-data-workspace {color: var(--text) !important}
 
 html[data-ui-profile="classic"] .tabs {background: var(--bg-card) !important; border-color: var(--border) !important}
 html[data-ui-profile="classic"] .tabs button {color: var(--text-sub) !important; background: var(--bg-card) !important; border-color: var(--border-light) !important}
 html[data-ui-profile="classic"] .tabs button:hover:not(.active) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--border) !important}
 html[data-ui-profile="classic"] .tabs button.active {background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important; color: var(--accent-dark) !important; border-bottom-color: var(--accent) !important}
 
-html[data-ui-profile="classic"] :is(.card, .panel, .section-card, .profile-card, .account-card, .modal, .dropdown, .popover, .tooltip) {border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] :is(.card, .panel, .profile-card, .modal, .tooltip) {border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
 html[data-ui-profile="classic"] .modal {background: var(--bg-card) !important; color: var(--text) !important}
-html[data-ui-profile="classic"] :is(.modal, .dropdown, .popover, .tooltip) :is(h1, h2, h3, .title) {color: var(--text-heading) !important}
-html[data-ui-profile="classic"] :is(.modal, .dropdown, .popover, .tooltip) p, html[data-ui-profile="classic"] .muted {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] :is(.modal, .tooltip) :is(h1, h2, h3, .title) {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] :is(.modal, .tooltip) p,
+html[data-ui-profile="classic"] .muted {color: var(--text-sub) !important}
 
 html[data-ui-profile="classic"] :is(input, select, textarea) {color: var(--text) !important; background-color: var(--bg-card) !important; border-color: var(--border) !important}
 html[data-ui-profile="classic"] :is(input, select, textarea)::placeholder {color: var(--text-muted) !important}
@@ -211,13 +208,10 @@ html[data-ui-profile="classic"] .layout-data-workspace .error {background: var(-
 html[data-ui-profile="classic"] .layout-data-workspace .warn {background: var(--status-warn-bg) !important; color: var(--status-warn-fg) !important; border-color: var(--border-warn) !important}
 
 /* ---- League Rating / Player Drawer / Radar / Column Picker ---- */
-html[data-ui-profile="classic"] .rating-page, html[data-ui-profile="classic"] .rating-section, html[data-ui-profile="classic"] .rating-workspace {color: var(--text) !important}
-html[data-ui-profile="classic"] .rating-page table thead th, html[data-ui-profile="classic"] .rating-workspace table thead th {background: var(--bg-card2) !important; color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .rating-page table tbody tr:hover, html[data-ui-profile="classic"] .rating-workspace table tbody tr:hover {background: var(--bg-list-hover) !important}
 html[data-ui-profile="classic"] .layout-data-workspace table tbody tr.t1 td:first-child {background: color-mix(in srgb, var(--bg-t1) 64%, var(--bg-card)) !important}
 html[data-ui-profile="classic"] .layout-data-workspace table tbody tr.t2 td:first-child {background: color-mix(in srgb, var(--bg-t2) 64%, var(--bg-card)) !important}
 html[data-ui-profile="classic"] .player-drawer {background: var(--bg-card2) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
-html[data-ui-profile="classic"] .player-drawer :is(h1, .pd-title, .pd-name, .pd-head *) {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .player-drawer :is(h1, .pd-title, .pd-head *) {color: var(--text-heading) !important}
 html[data-ui-profile="classic"] .player-drawer .pd-sub {color: var(--text-sub) !important}
 html[data-ui-profile="classic"] .player-drawer .pd-facts dt {color: var(--text-sub) !important}
 html[data-ui-profile="classic"] .player-drawer .pd-facts dd {color: var(--text-heading) !important}
@@ -231,8 +225,7 @@ html[data-ui-profile="classic"] .player-drawer .pd-nav-btn:not(:disabled):hover 
 html[data-ui-profile="classic"] .player-drawer .pd-close {background: var(--bg-card) !important; color: var(--text-sub) !important; border-color: var(--border) !important}
 html[data-ui-profile="classic"] .player-drawer .pd-linkbtn {background: var(--bg-card) !important; color: var(--text-sub) !important; border-color: var(--border-light) !important}
 html[data-ui-profile="classic"] .player-drawer .pd-section, html[data-ui-profile="classic"] .player-drawer .pd-extra {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .col-picker, html[data-ui-profile="classic"] .column-picker {background: var(--bg-card) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .col-picker :is(.col-item, .col-toggle) {color: var(--text) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .column-picker {background: var(--bg-card) !important; border-color: var(--border) !important}
 
 
 
@@ -276,52 +269,48 @@ html[data-ui-profile="classic"] .lb-wrap .error {background: var(--status-err-bg
 html[data-ui-profile="classic"] .lb-wrap .lb-upload-msg.err {color: var(--error) !important}
 
 /* ---- HoF 状态（Pending/Warning/Error） ---- */
-html[data-ui-profile="classic"] :is(.of-status, .status-pending, .pending) {background: var(--status-warn-bg) !important; color: var(--status-warn-fg) !important}
-html[data-ui-profile="classic"] :is(.of-status, .status-rejected, .rejected) {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important}
-html[data-ui-profile="classic"] :is(.of-status, .status-approved, .approved) {background: var(--status-ok-bg) !important; color: var(--status-ok-fg) !important}
+html[data-ui-profile="classic"] :is(.status-pending, .pending) {background: var(--status-warn-bg) !important; color: var(--status-warn-fg) !important}
+html[data-ui-profile="classic"] :is(.status-rejected, .rejected) {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important}
+html[data-ui-profile="classic"] :is(.approved) {background: var(--status-ok-bg) !important; color: var(--status-ok-fg) !important}
 
 /* ---- HoF Admin（showcase-pages.css 三个 Tab / 表格 / 筛选 / 分页） ---- */
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) {color: var(--text) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-tabs,
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-filters,
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .tablewrap {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) {color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) .hof-admin-tabs,
+html[data-ui-profile="classic"] :is(.hof-admin) .hof-admin-filters,
+html[data-ui-profile="classic"] :is(.hof-admin) .tablewrap {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
 html[data-ui-profile="classic"] :is(.hof-admin-tabs) {border-color: var(--border) !important}
 html[data-ui-profile="classic"] .hof-admin-tabs button {color: var(--text-sub) !important; background: var(--bg-card) !important; border-color: var(--border-light) !important}
 html[data-ui-profile="classic"] .hof-admin-tabs button:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--border) !important}
 html[data-ui-profile="classic"] .hof-admin-tabs button.active {background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)) !important; color: var(--accent-dark) !important; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important}
 html[data-ui-profile="classic"] .hof-admin-filters {border-color: var(--border) !important; background: var(--bg-card) !important}
 html[data-ui-profile="classic"] .hof-admin-filters :is(input, select) {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) :is(input, select, textarea) {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) table {color: var(--text) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) thead th {background: var(--bg-card2) !important; color: var(--text-sub) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) tbody td {color: var(--text) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) tbody tr:hover {background: var(--bg-list-hover) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .btn-sm {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .btn-sm:hover {border-color: var(--accent) !important; color: var(--accent-dark) !important}
-html[data-ui-profile="classic"] :is(.admin-page, .hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .btn-danger {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important; border-color: var(--error) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) :is(input, select, textarea) {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) table {color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) thead th {background: var(--bg-card2) !important; color: var(--text-sub) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) tbody td {color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) tbody tr:hover {background: var(--bg-list-hover) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) .btn-sm {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) .btn-sm:hover {border-color: var(--accent) !important; color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] :is(.admin-page, .hof-admin) .btn-danger {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important; border-color: var(--error) !important}
 html[data-ui-profile="classic"] .hof-admin .pagination button {background: var(--bg-card) !important; color: var(--text-sub) !important; border-color: var(--border) !important}
 html[data-ui-profile="classic"] .hof-admin .pagination button:hover:not(:disabled) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
 html[data-ui-profile="classic"] .hof-admin .page-size select {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-denied, html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-login {color: var(--text) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .review-modal, html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .approve-modal {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--hard-shadow) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) .hof-admin-denied,
+html[data-ui-profile="classic"] :is(.hof-admin) .hof-admin-login {color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) .review-modal {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--hard-shadow) !important}
 /* HoF Admin 收尾（Blocker 3）：表格行基础背景 / denied 标题 / dmg 数值色 跟随浅色 token（防深色行 / 近白字残留） */
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-table tbody tr {background: var(--bg-card) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-denied h2 {color: var(--text-heading) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .dmg {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) .hof-admin-table tbody tr {background: var(--bg-card) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) .hof-admin-denied h2 {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) .dmg {color: var(--accent-dark) !important}
 /* HoF Admin 收尾（Blocker 4）：denied 提示段落 / 表格行分隔线 仍被 showcase-rankings.css 写死深色(#9aa09c / #263136)，Classic 补跟随浅色 token */
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-denied p {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-table td {border-bottom-color: var(--border-light) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) .hof-admin-denied p {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] :is(.hof-admin) .hof-admin-table td {border-bottom-color: var(--border-light) !important}
 
 
 /* ---- 管理 / Profile / Admin Users / Version / Contact / Rating Docs ---- */
-html[data-ui-profile="classic"] :is(.admin-page, .profile-page, .version-page, .contact-page, .rating-docs-page, .admin-users-page) {color: var(--text) !important}
-html[data-ui-profile="classic"] .version-page-title {color: var(--text-heading) !important; border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--border)) !important}
-html[data-ui-profile="classic"] .version-page .ver {background: var(--bg-card) !important; color: var(--text) !important; border-left-color: var(--border) !important; border-bottom-color: var(--border-light) !important}
-html[data-ui-profile="classic"] .version-page .ver:first-of-type {border-top-color: var(--border) !important}
-html[data-ui-profile="classic"] .version-page .ver-num {color: var(--accent-dark) !important}
-html[data-ui-profile="classic"] .version-page .ver-date {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .version-page .ver p {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] :is(.version-page, .rating-docs-page) pre, html[data-ui-profile="classic"] :is(.version-page, .rating-docs-page) code {background: var(--bg-elevated) !important; color: var(--text-code) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] :is(.admin-page, .profile-page, .contact-page, .rating-docs-page) {color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.rating-docs-page) pre,
+html[data-ui-profile="classic"] :is(.rating-docs-page) code {background: var(--bg-elevated) !important; color: var(--text-code) !important; border-color: var(--border-light) !important}
 html[data-ui-profile="classic"] .contact-page {color: var(--text) !important}
 html[data-ui-profile="classic"] .contact-title {color: var(--text-heading) !important}
 html[data-ui-profile="classic"] .contact-subtitle {color: var(--text-sub) !important}
@@ -363,7 +352,7 @@ html[data-ui-profile="classic"] .contact-page .contact-value {color: var(--text-
 /* Profile：info/security/account 行 label、表单 label、状态与 meta 浅字（#a3a6a0 / #9aa09c / #f0a42b / #ff8f86）落浅色卡。
    account-row/sec-row 的 value 位含 badge（.badge-ok/.availability-badge），只覆盖首位 label span，不动 badge 配色 */
 html[data-ui-profile="classic"] .profile-page .profile-empty {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .profile-page :is(.section-meta, .info-label, .text-muted, .rec-map, .hundred-rejected-text, .assign-group-title, .assign-meta, .assign-note) {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .profile-page :is(.section-meta, .info-label, .text-muted, .rec-map, .hundred-rejected-text) {color: var(--text-sub) !important}
 html[data-ui-profile="classic"] .profile-page :is(.account-row, .sec-row) > span:first-child {color: var(--text-sub) !important}
 html[data-ui-profile="classic"] .profile-page :is(.account-row, .sec-row) code {color: var(--accent-dark) !important}
 html[data-ui-profile="classic"] .profile-page .edit-form label {color: var(--text-sub) !important}

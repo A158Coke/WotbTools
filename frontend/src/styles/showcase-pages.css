@@ -1,38 +1,6 @@
 /* Remaining WotBTools pages: contact, changelog, admin review surfaces. */
 
 /* Changelog */
-.version-page {
-  width: min(1280px, calc(100% - var(--showcase-gutter) * 2)) !important;
-  max-width: none !important;
-  padding: 28px 0 64px !important;
-}
-.version-page-title {
-  padding: 0 0 14px !important;
-  margin-bottom: 20px !important;
-  font-size: 1.55rem !important;
-  border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--border)) !important;
-  color: #f2ede3 !important;
-}
-.version-page .ver {
-  position: relative;
-  margin: 0 !important;
-  padding: 15px 18px 15px 84px;
-  border-left: 1px solid #374148;
-  border-bottom: 1px solid #222b30;
-  background: rgba(13, 18, 22, .95);
-  color: #c9c5bb;
-  backdrop-filter: blur(6px);
-}
-.version-page .ver:first-of-type { border-top: 1px solid #374148; border-radius: 8px 8px 0 0; }
-.version-page .ver:last-child { border-radius: 0 0 8px 8px; }
-.version-page .ver-num {
-  position: absolute;
-  left: 16px;
-  top: 16px;
-  color: var(--accent-light) !important;
-}
-.version-page .ver-date { color: #a4a9a3 !important; }
-.version-page .ver p { color: #c3c0b8 !important; }
 
 /* Rating docs（League Rating V6 算法说明） */
 .rating-docs-page {
@@ -67,71 +35,59 @@
 .copy-btn { margin-top: auto !important; }
 
 /* HoF admin and other admin-like pages */
-.hof-admin,
-.hof-admin-page,
-.hofadmin-page,
-.admin-hof-page {
+.hof-admin {
   width: min(1760px, calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin-inline: auto !important;
   padding: 24px 0 64px !important;
   color: #d8d5cd !important;
 }
-:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) .hof-admin-tabs,
-:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) .hof-admin-filters,
-:is(.hof-admin,.hof-admin-page,.admin-hof-page) .tablewrap {
+:is(.hof-admin) .hof-admin-tabs,
+:is(.hof-admin) .hof-admin-filters,
+:is(.hof-admin) .tablewrap {
   background: rgba(13, 18, 22, .97) !important;
 }
-:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) .tablewrap {
+:is(.hof-admin) .tablewrap {
   max-width: 100%;
   overflow: auto !important;
   border: 1px solid #354047 !important;
   border-radius: 8px;
 }
-:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) table {
+:is(.hof-admin) table {
   width: max-content !important;
   min-width: 100% !important;
   color: #d8d5cd !important;
   font-variant-numeric: tabular-nums;
 }
-:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) thead th {
+:is(.hof-admin) thead th {
   position: sticky;
   top: 60px;
   z-index: 4;
   background: #171e22 !important;
   color: #c9c5bb !important;
 }
-:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) tbody td { color: #d8d5cd; }
-:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) :is(input,select,textarea) {
+:is(.hof-admin) tbody td { color: #d8d5cd; }
+:is(.hof-admin) :is(input, select, textarea) {
   border-color: #465158 !important;
   background: #0f1518 !important;
   color: #e4e1d9 !important;
 }
 
 /* Shared destructive actions are quieter until interaction. */
-:is(.admin-page,.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) .btn-danger {
+:is(.admin-page, .hof-admin) .btn-danger {
   box-shadow: none !important;
 }
-:is(.admin-page,.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) .btn-danger:hover {
+:is(.admin-page, .hof-admin) .btn-danger:hover {
   opacity: 1 !important;
 }
 
-@media (max-width:1199px) {
-}
-
 @media (width < 768px) {
-  .version-page,
   .rating-docs-page,
-  .contact-page,
-  .hof-admin,
-  .hof-admin-page,
-  .hofadmin-page,
-  .admin-hof-page {
+.contact-page,
+.hof-admin {
     width: calc(100% - 16px) !important;
     padding: 12px 0 42px !important;
   }
-  .version-page .ver { padding-left: 16px; }
-  .version-page .ver-num { position: static; }
   .contact-grid { grid-template-columns: 1fr !important; }
-  :is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) thead th { top: 56px; }
+  :is(.hof-admin) thead th { top: 56px; }
 }
