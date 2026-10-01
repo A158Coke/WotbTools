@@ -89,3 +89,19 @@ describe('battlePickerOptions', () => {
     expect(options[1].meta).toBe('workspace.series_unknown_winner')
   })
 })
+
+describe('buildSeriesOverview：平局与单场改名', () => {
+  const teams = [
+    { teamKey: 'clan:A', autoName: 'A', arenaTeams: ['a0:1', 'a1:1'] },
+    { teamKey: 'clan:B', autoName: 'B', arenaTeams: ['a0:2', 'a1:2'] },
+  ]
+  it('平局（winnerTeam=null）不计入「未能归属」', () => {
+    const series = buildSeriesOverview(cwResp([battle(0, 1), battle(1, null)], teams))
+    expect(series.unresolved).toBe(0)
+    expect(series.battles[1].winnerName).toBeNull()
+  })
+  it('单场改过的队名优先', () => {
+    const series = buildSeriesOverview(cwResp([battle(0, 1)], teams), { 'clan:A': '甲' }, { 'a0:1': '本场甲' })
+    expect(series.battles[0].winnerName).toBe('本场甲')
+  })
+})

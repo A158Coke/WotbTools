@@ -26,6 +26,7 @@ function arenaTeamIndex(teamSummaries) {
 /**
  * @param {object|null} resp ReplayResult
  * @param {Record<string,string>} [teamNames] 批次战队名覆盖 {teamKey: name}
+ * @param {Record<string,string>} [battleTeamNames] 单场战队名覆盖 {`${arenaId}:${team}`: name}
  * @returns {{
  *   teams: Array<{ key: string, name: string|null, wins: number }>|null,
  *   unresolved: number,
@@ -33,7 +34,7 @@ function arenaTeamIndex(teamSummaries) {
  *     startTime: number|null, sourceName: string|null, winnerTeam: number|null, winnerKey: string|null, winnerName: string|null }>
  * }}
  */
-export function buildSeriesOverview(resp, teamNames = {}) {
+export function buildSeriesOverview(resp, teamNames = {}, battleTeamNames = {}) {
   const battles = Array.isArray(resp?.battles) ? resp.battles : []
   const teamSummaries = resp?.leagueMode === true && Array.isArray(resp?.league?.teamSummaries)
     ? resp.league.teamSummaries
@@ -52,7 +53,8 @@ export function buildSeriesOverview(resp, teamNames = {}) {
       sourceName: battle.sourceName ?? null,
       winnerTeam: winner,
       winnerKey: summary ? summary.teamKey : null,
-      winnerName: summary ? teamDisplayName(summary, teamNames) : null,
+      // 单场里改过的队名（{arenaId:team}）优先于批次名，与单场概览一致
+      winnerName: (winner && battleTeamNames[`${battle.arenaId}:${winner}`]) || (summary ? teamDisplayName(summary, teamNames) : null),
     }
   })
 
@@ -69,7 +71,8 @@ export function buildSeriesOverview(resp, teamNames = {}) {
       }))
       .sort((a, b) => b.wins - a.wins || String(a.key).localeCompare(String(b.key)))
     : null
-  const unresolved = isSeries ? rows.filter(row => !row.winnerKey).length : 0
+  // 只统计「有胜方但归属不到战队」的场次；平局 / 胜负未知不算
+  const unresolved = isSeries ? rows.filter(row => row.winnerTeam && !row.winnerKey).length : 0
 
   return { teams, unresolved, battles: rows }
 }

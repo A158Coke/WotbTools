@@ -190,6 +190,11 @@ function fillHeight(base) {
 function fillTop(base) {
   return projectedY(base.x, base.y) + baseRadius(base) - fillHeight(base)
 }
+
+/** pan-y 下浏览器不处理捏合，但第一根手指先纵向移动会被当成滚动；两指时阻止默认行为，让地图自己的捏合生效。 */
+function onTwoFingerTouch(event) {
+  if (props.touchPan && event.touches && event.touches.length >= 2 && event.cancelable) event.preventDefault()
+}
 </script>
 
 <template>
@@ -200,6 +205,8 @@ function fillTop(base) {
       data-test="pb-viewport"
       :data-view-scale="props.viewScale"
       :style="[props.viewportStyle, { aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }]"
+      @touchstart="onTwoFingerTouch"
+      @touchmove="onTwoFingerTouch"
       @pointerdown="emit('pointer-down', $event)"
       @pointermove="emit('pointer-move', $event)"
       @pointerup="emit('pointer-up', $event)"

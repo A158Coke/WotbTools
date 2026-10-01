@@ -155,10 +155,9 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     ])
   })
 
-  it('HoF：Toolbar/Table Header/Upload Modal 浅色 !important', () => {
+  it('HoF：Toolbar/Table Header 浅色 !important（上传弹窗已改用 AppDialog token）', () => {
     has('.lb-toolbar', ['background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important'])
     has('.lb-wrap thead th', ['background: var(--bg-card2) !important'])
-    has('.hof-upload-modal', ['background: var(--bg-card) !important'])
   })
 
   it('HoF Admin：Tabs(默认+active)/Filters/Table/Pagination 浅色 !important', () => {

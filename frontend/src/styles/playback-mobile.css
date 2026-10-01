@@ -293,7 +293,7 @@
    地图原来按容器宽度定尺寸（844 宽时约 844 高），比视口还高，控制栏被挤出首屏；
    现在按可用高度封顶（只扣顶栏、底部 Tab 栏与 HUD），工具栏不再占地图下方的高度。 */
 .battle-playback.pb-form-mobile .pb-landscape-roster { display: none; }
-@media (orientation: landscape) {
+@media (orientation: landscape) and (height <= 500px) {
   .battle-playback:not(:fullscreen).pb-form-mobile .pb-main {
     display: grid;
     grid-template-columns: minmax(160px, 1fr) auto minmax(160px, 1fr);

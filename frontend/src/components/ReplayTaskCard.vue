@@ -156,6 +156,8 @@ const hasCounts = computed(() => (props.job?.duplicates || 0) + (props.job?.fail
   transition: width var(--duration-slow) var(--ease-standard);
 }
 
+/* 卡片本身是 surface-3，轨道降一档才看得见 */
+.replay-task-card .task-bar { background: var(--color-surface-1); }
 .etc-actions { display: flex; gap: var(--space-2); }
 .etc-btn { justify-self: start; }
 
