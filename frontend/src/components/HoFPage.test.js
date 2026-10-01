@@ -135,6 +135,21 @@ describe('HoFPage', () => {
     await flushPromises()
   }
 
+  /** 通过真实的 combobox 交互选车：点开输入框 → 点击对应选项。 */
+  async function pickVehicle(wrapper, selector, id) {
+    await wrapper.find(`${selector} input[role="combobox"]`).trigger('click')
+    await wrapper.find(`${selector} [role="option"][data-id="${id}"]`).trigger('click')
+    await flushPromises()
+  }
+
+  function pickerLabels(wrapper, selector) {
+    return wrapper.findAll(`${selector} [role="option"] .vp-label`).map(label => label.text())
+  }
+
+  function pickerValue(wrapper, selector) {
+    return wrapper.find(`${selector} input[role="combobox"]`).attributes('data-value')
+  }
+
   async function openMark3Submit(wrapper) {
     await wrapper.findAll('.tabs button')[2].trigger('click')
     await flushPromises()
@@ -175,12 +190,100 @@ describe('HoFPage', () => {
     expect(badges[1].classes()).toContain('bt-random')
   })
 
+  // 审计 BZ-17：版本列格式化 + 分页显示总数
+  it('formats the game version column and shows total records with page numbers', async () => {
+    lbApi.hofList.mockResolvedValue({
+      items: [makeRow({ id: 1, version: '10.6.0_apple' }), makeRow({ id: 2, version: '' })],
+      page: 1, size: 50, totalItems: 120, totalPages: 3,
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    const versions = wrapper.findAll('.lb-version').map(cell => cell.text())
+    expect(versions).toEqual(['10.6.0 · hofVersion.edition.apple', '-'])
+    expect(wrapper.find('[data-testid="hof-pager"]').text()).toContain('hofPager.summary')
+    expect(wrapper.find('[data-testid="hof-pager"]').findAll('button')).toHaveLength(2)
+  })
+
+  it('shows only the page number when the API omits the total, and no page buttons for one page', async () => {
+    lbApi.hofList.mockResolvedValue({ items: [makeRow()], page: 1, size: 50, totalPages: 1 })
+    const wrapper = mountPage()
+    await flushPromises()
+    const pager = wrapper.find('[data-testid="hof-pager"]')
+    expect(pager.text()).toBe('hofPager.pages')
+    expect(pager.findAll('button')).toHaveLength(0)
+  })
+
+  // 审计 PG-07：翻页回到表格顶部；加载期间保留旧行并变暗
+  it('scrolls the active board back into view on page change and keeps stale rows while loading', async () => {
+    lbApi.hofList.mockResolvedValue({ items: [makeRow()], page: 1, size: 50, totalItems: 60, totalPages: 2 })
+    const wrapper = mountPage()
+    await flushPromises()
+    const board = wrapper.find('[data-hof-pane="single"] [data-hof-board]')
+    const scrollIntoView = vi.fn()
+    board.element.scrollIntoView = scrollIntoView
+    board.element.getBoundingClientRect = () => ({ top: -200, bottom: 300, left: 0, right: 0, width: 0, height: 500 })
+
+    let resolveNext
+    lbApi.hofList.mockReturnValueOnce(new Promise(resolve => { resolveNext = resolve }))
+    await wrapper.find('[data-testid="hof-pager"] button:last-child').trigger('click')
+    await flushPromises()
+    expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }))
+    // 新一页还没回来：旧行仍在，只是变暗
+    expect(wrapper.find('[data-hof-pane="single"] .tablewrap').classes()).toContain('is-stale')
+    expect(wrapper.findAll('[data-hof-pane="single"] tbody tr')).toHaveLength(1)
+    resolveNext({ items: [makeRow({ id: 3 })], page: 2, size: 50, totalItems: 60, totalPages: 2 })
+    await flushPromises()
+    expect(wrapper.find('[data-hof-pane="single"] .tablewrap').classes()).not.toContain('is-stale')
+  })
+
+  // 审计 BZ-18：弹窗写明上榜规则；没有当前纪录时说明是第一条纪录，不提示「须高于当前纪录」
+  it('shows ranking rules in every submit dialog', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await openSingleUpload(wrapper)
+    expect(wrapper.find('[data-testid="hof-rules-single"]').text()).toContain('hofRules.single.recorder')
+    await openHundredSubmit(wrapper)
+    expect(wrapper.find('[data-testid="hof-rules-hundred"]').text()).toContain('hofRules.hundred.higher')
+    expect(wrapper.find('.h100-modal').text()).not.toContain('hundred.claimedDamageHint')
+    await openMark3Submit(wrapper)
+    expect(wrapper.find('[data-testid="hof-rules-mark3"]').text()).toContain('hofRules.mark3.once')
+  })
+
+  it('describes the hundred-battle threshold from the user\'s own current record', async () => {
+    lbApi.hofHundredMyStatus.mockResolvedValue({
+      current: [{ id: 5, vehicleId: 385, vehicleName: 'Progetto 65', status: 'CURRENT', approvedAverageDamage: 3800, approvedBattleCount: 110 }],
+      pending: [], rejected: [],
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await openHundredSubmit(wrapper)
+    const threshold = () => wrapper.find('[data-testid="hundred-threshold"]').text()
+    expect(threshold()).toContain('hofRules.threshold.chooseVehicle')
+
+    await pickVehicle(wrapper, '.h100-modal .h100-submit-vehicle', 385)
+    expect(threshold()).toContain('hofRules.threshold.hundredCurrent')
+
+    const other = wrapper.findAll('.h100-modal .h100-submit-vehicle [role="option"]')
+      .map(option => option.attributes('data-id'))
+      .find(id => id !== '385')
+    await pickVehicle(wrapper, '.h100-modal .h100-submit-vehicle', other)
+    expect(threshold()).toContain('hofRules.threshold.hundredFirst')
+  })
+
+  it('describes the Mark 3 threshold as a first record when the user has none for the vehicle', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await openMark3Submit(wrapper)
+    await pickVehicle(wrapper, '.mark3-modal .mark3-submit-vehicle', 385)
+    expect(wrapper.find('[data-testid="mark3-threshold"]').text()).toContain('hofRules.threshold.mark3First')
+  })
+
   it('passes battle type and nickname filters to hofList', async () => {
     const wrapper = mountPage()
     await flushPromises()
     const singleToolbar = wrapper.findAll('.lb-toolbar')[0]
     const selects = singleToolbar.findAll('select')
-    await selects[4].setValue('RATING')
+    await selects[3].setValue('RATING')
     const input = singleToolbar.find('.lb-nick-input')
     await input.setValue('Coke')
     await input.trigger('keyup.enter')
@@ -211,15 +314,14 @@ describe('HoFPage', () => {
     expect(selects[2].element.value).toBe('10')
     expect(selects[1].findAll('option').map(option => option.attributes('value')))
       .toEqual(['', 'MEDIUM_TANK', 'TANK_DESTROYER'])
-    expect(selects[3].findAll('option').map(option => option.text()))
-      .toEqual(['hof.all_tanks', 'Progetto 65 · T10'])
+    expect(pickerLabels(wrapper, '.hof-vehicle-select')).toEqual(['hof.all_tanks', 'Progetto 65'])
+    expect(wrapper.find('.hof-vehicle-select [role="option"][data-id="385"] .vp-hint').text()).toBe('T10 · EUROPE · MEDIUM_TANK')
     expect(lbApi.hofList).toHaveBeenLastCalledWith(expect.objectContaining({
       nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', tier: '10'
     }))
     expect(lbApi.hofList.mock.calls.at(-1)[0].tankId).toBeNull()
 
-    await selects[3].setValue('385')
-    await flushPromises()
+    await pickVehicle(wrapper, '.hof-vehicle-select', 385)
     expect(lbApi.hofList).toHaveBeenLastCalledWith(expect.objectContaining({
       nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', tier: '10', tankId: 385
     }))
@@ -342,13 +444,11 @@ describe('HoFPage', () => {
     // 切到百场 Tab → 拉取个人 PENDING 状态
     expect(lbApi.hofHundredMyStatus).toHaveBeenCalled()
 
-    const select = wrapper.find('.h100-vehicle-select')
-    expect(select.exists()).toBe(true)
-    // Tier X 全集 + 占位 option
-    expect(select.findAll('option').length).toBeGreaterThanOrEqual(85)
+    expect(wrapper.find('.h100-vehicle-select input[role="combobox"]').exists()).toBe(true)
+    // Tier X 全集 + 「默认」选项
+    expect(pickerLabels(wrapper, '.h100-vehicle-select').length).toBeGreaterThanOrEqual(86)
 
-    await select.setValue('385')
-    await flushPromises()
+    await pickVehicle(wrapper, '.h100-vehicle-select', 385)
     expect(lbApi.hofHundredList).toHaveBeenLastCalledWith(
       expect.objectContaining({ vehicleId: 385, page: 1, size: 50 })
     )
@@ -375,7 +475,7 @@ describe('HoFPage', () => {
     expect(lbApi.hofHundredList).toHaveBeenLastCalledWith({
       page: 1, size: 50, nation: '', vehicleType: '', vehicleId: null
     })
-    expect(wrapper.find('.h100-vehicle-select option').text()).toBe('hundred.default')
+    expect(pickerLabels(wrapper, '.h100-vehicle-select')[0]).toBe('hundred.default')
     expect(wrapper.text()).toContain('Progetto 65')
     expect(wrapper.text()).toContain('GlobalTop')
   })
@@ -396,14 +496,12 @@ describe('HoFPage', () => {
     expect(lbApi.hofHundredList).toHaveBeenLastCalledWith({
       page: 1, size: 50, nation: 'EUROPE', vehicleType: '', vehicleId: null
     })
-    expect(wrapper.find('.h100-vehicle-select').findAll('option').length).toBeGreaterThan(1)
+    expect(pickerLabels(wrapper, '.h100-vehicle-select').length).toBeGreaterThan(1)
     expect(wrapper.find('.h100-search-input').exists()).toBe(false)
 
     await filters[1].setValue('MEDIUM_TANK')
     await flushPromises()
-    const vehicleSelect = wrapper.find('.h100-vehicle-select')
-    await vehicleSelect.setValue('385')
-    await flushPromises()
+    await pickVehicle(wrapper, '.h100-vehicle-select', 385)
     expect(lbApi.hofHundredList).toHaveBeenLastCalledWith({
       page: 1, size: 50, nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', vehicleId: 385
     })
@@ -431,7 +529,7 @@ describe('HoFPage', () => {
     await openHundredSubmit(wrapper)
 
     const modal = wrapper.find('.h100-modal')
-    await modal.find('select').setValue('385')
+    await pickVehicle(wrapper, '.h100-modal .h100-submit-vehicle', 385)
     await modal.find('#h100-submit-damage').setValue('4200')
     await modal.find('#h100-submit-battles').setValue('120')
     const proof = new File(['proof'], 'proof.png', { type: 'image/png', lastModified: 1 })
@@ -453,10 +551,10 @@ describe('HoFPage', () => {
     await wrapper.find('.h100-submit-btn').trigger('click')
     await flushPromises()
     const reopened = wrapper.find('.h100-modal')
-    expect(reopened.find('select').element.value).toBe('385')
+    expect(pickerValue(wrapper, '.h100-modal .h100-submit-vehicle')).toBe('385')
     expect(reopened.find('#h100-submit-damage').element.value).toBe('4200')
     expect(reopened.find('#h100-submit-battles').element.value).toBe('120')
-    expect(reopened.find('select').findAll('option').map(option => option.text())).toContain('Progetto 65')
+    expect(pickerLabels(wrapper, '.h100-modal .h100-submit-vehicle')).toContain('Progetto 65')
     expect(reopened.text()).toContain('proof.png')
     expect(reopened.text()).toContain('battle-1.wotbreplay')
   })
@@ -608,7 +706,7 @@ describe('HoFPage', () => {
     await openHundredSubmit(wrapper)
 
     const modal = wrapper.find('.h100-modal')
-    await modal.find('select').setValue('385')
+    await pickVehicle(wrapper, '.h100-modal .h100-submit-vehicle', 385)
     await modal.find('#h100-submit-damage').setValue('4200')
     await modal.find('#h100-submit-battles').setValue('120')
     await setFiles(
@@ -677,7 +775,7 @@ describe('HoFPage', () => {
     await openMark3Submit(wrapper)
 
     const modal = wrapper.find('.mark3-modal')
-    await modal.find('#mark3-submit-vehicle').setValue('385')
+    await pickVehicle(wrapper, '.mark3-modal .mark3-submit-vehicle', 385)
     await modal.find('#mark3-submit-battles').setValue('86')
     await modal.find('#mark3-submit-damage').setValue('4123')
     await modal.find('#mark3-submit-win-rate').setValue('67.25')
@@ -798,7 +896,7 @@ describe('HoFPage', () => {
     await openMark3Submit(wrapper)
 
     const modal = wrapper.find('.mark3-modal')
-    await modal.find('#mark3-submit-vehicle').setValue('385')
+    await pickVehicle(wrapper, '.mark3-modal .mark3-submit-vehicle', 385)
     await modal.find('#mark3-submit-battles').setValue('86')
     await modal.find('#mark3-submit-damage').setValue('4123')
     await modal.find('#mark3-submit-win-rate').setValue('67.251')
@@ -836,7 +934,7 @@ describe('HoFPage', () => {
     await flushPromises()
     await wrapper.findAll('.tabs button')[2].trigger('click')
     await flushPromises()
-    await wrapper.find('.mark3-pane .mark3-vehicle-select').setValue('385')
+    await pickVehicle(wrapper, '.mark3-pane .mark3-vehicle-select', 385)
     await flushPromises()
 
     expect(wrapper.find('.mark3-current-card').exists()).toBe(true)

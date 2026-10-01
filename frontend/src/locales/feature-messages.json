@@ -218,6 +218,55 @@
       "hundred": "成为第一个上榜的人：点击「{action}」，上传该车百场战绩截图与回放，审核通过后显示在这里。",
       "mark3": "成为第一个上榜的人：点击「{action}」，上传三环截图，审核通过后显示在这里。"
     },
+    "vehiclePicker": {
+      "placeholder": "输入车辆名称搜索",
+      "noResults": "没有匹配的车辆",
+      "clear": "清除所选车辆",
+      "toggle": "展开车辆列表",
+      "unknownId": "未知车辆 #{id}"
+    },
+    "hofVersion": {
+      "edition": {
+        "apple": "Apple",
+        "china": "中国服",
+        "eu": "欧服",
+        "asia": "亚服",
+        "na": "美服",
+        "ru": "俄服"
+      }
+    },
+    "hofPager": {
+      "summary": "共 {items} 条 · 第 {page}/{total} 页",
+      "pages": "第 {page}/{total} 页",
+      "page": "第 {page} 页"
+    },
+    "hofRules": {
+      "title": "上榜规则",
+      "positiveInteger": "正整数",
+      "single": {
+        "recorder": "只统计录像者本人在该场的伤害，队友的成绩不会计入。",
+        "modes": "仅接受随机战斗和评级战斗回放；同一场战斗同一玩家只记录一次。"
+      },
+      "hundred": {
+        "tierX": "仅限 Tier X 车辆，每辆车单独排名，按审核通过的生涯场均伤害排序。",
+        "evidence": "需要 1 张成绩截图和正好 5 个回放：回放必须是你本人账号驾驶所选车辆的 5 场不同战斗。",
+        "higher": "该车已有你的纪录时，新成绩必须严格高于当前纪录。"
+      },
+      "mark3": {
+        "ranking": "按获得三环所需场数从少到多排名，场数相同时并列。",
+        "evidence": "需要 1–2 张三环截图和正好 5 个回放：回放必须是你本人账号驾驶所选车辆的 5 场不同战斗。",
+        "once": "每辆车只能有一条通过审核的三环纪录，通过后不能替换。"
+      },
+      "threshold": {
+        "title": "当前门槛",
+        "chooseVehicle": "选择车辆后显示你在该车的当前纪录。",
+        "hundredCurrent": "你在该车的当前纪录是场均 {damage}（{battles} 场），新成绩必须高于 {damage}。",
+        "hundredFirst": "你在该车还没有百场纪录，这次提交将是你的第一条纪录。",
+        "mark3Current": "你在该车已有三环纪录（{battles} 场），不能再次提交。",
+        "mark3First": "你在该车还没有三环纪录，这次提交将是你的第一条纪录。",
+        "pending": "你在该车已有一条待审核的申请，撤销后才能再次提交。"
+      }
+    },
     "agentReplay": {
       "title": "3D 回放", "roster": "阵容",
       "pick_hint": "选择本地 .wotbreplay 文件——在浏览器内本地解析，文件不会上传。"
@@ -495,6 +544,55 @@
       "hundred": "Be the first: tap “{action}”, upload the stats screenshot and replays for that vehicle, and it appears here once approved.",
       "mark3": "Be the first: tap “{action}”, upload the mark screenshot, and it appears here once approved."
     },
+    "vehiclePicker": {
+      "placeholder": "Search vehicle name",
+      "noResults": "No matching vehicles",
+      "clear": "Clear selected vehicle",
+      "toggle": "Show vehicle list",
+      "unknownId": "Unknown vehicle #{id}"
+    },
+    "hofVersion": {
+      "edition": {
+        "apple": "Apple",
+        "china": "China",
+        "eu": "EU",
+        "asia": "Asia",
+        "na": "NA",
+        "ru": "RU"
+      }
+    },
+    "hofPager": {
+      "summary": "{items} records · page {page} of {total}",
+      "pages": "Page {page} of {total}",
+      "page": "Page {page}"
+    },
+    "hofRules": {
+      "title": "Ranking rules",
+      "positiveInteger": "Positive integer",
+      "single": {
+        "recorder": "Only the damage dealt by the player who recorded the replay counts; teammates are not ranked.",
+        "modes": "Only Random and Rating battle replays are accepted; each player is recorded once per battle."
+      },
+      "hundred": {
+        "tierX": "Tier X vehicles only. Each vehicle has its own ranking, ordered by the approved career average damage.",
+        "evidence": "Requires 1 stats screenshot and exactly 5 replays: 5 different battles played on your own account in the selected vehicle.",
+        "higher": "If you already have a record for this vehicle, the new result must be strictly higher."
+      },
+      "mark3": {
+        "ranking": "Ranked by the fewest battles needed to earn 3 marks; equal battle counts share a rank.",
+        "evidence": "Requires 1–2 mark screenshots and exactly 5 replays: 5 different battles played on your own account in the selected vehicle.",
+        "once": "Each vehicle can have only one approved 3-mark record, and it cannot be replaced."
+      },
+      "threshold": {
+        "title": "Current threshold",
+        "chooseVehicle": "Select a vehicle to see your current record for it.",
+        "hundredCurrent": "Your current record for this vehicle is {damage} average damage ({battles} battles); the new result must be higher than {damage}.",
+        "hundredFirst": "You have no hundred-battle record for this vehicle yet; this will be your first record.",
+        "mark3Current": "You already have a 3-mark record for this vehicle ({battles} battles) and cannot submit again.",
+        "mark3First": "You have no 3-mark record for this vehicle yet; this will be your first record.",
+        "pending": "You already have a submission under review for this vehicle; withdraw it before submitting again."
+      }
+    },
     "agentReplay": {
       "title": "3D replay", "roster": "Rosters",
       "pick_hint": "Pick a local .wotbreplay — it is parsed in your browser and never uploaded."
@@ -771,6 +869,55 @@
     "hofHowTo": {
       "hundred": "Станьте первым: нажмите «{action}», загрузите скриншот статистики и реплеи для этой техники — после проверки запись появится здесь.",
       "mark3": "Станьте первым: нажмите «{action}», загрузите скриншот — после проверки запись появится здесь."
+    },
+    "vehiclePicker": {
+      "placeholder": "Поиск техники по названию",
+      "noResults": "Подходящей техники нет",
+      "clear": "Сбросить выбор техники",
+      "toggle": "Показать список техники",
+      "unknownId": "Неизвестная техника #{id}"
+    },
+    "hofVersion": {
+      "edition": {
+        "apple": "Apple",
+        "china": "Китай",
+        "eu": "EU",
+        "asia": "Азия",
+        "na": "NA",
+        "ru": "RU"
+      }
+    },
+    "hofPager": {
+      "summary": "Записей: {items} · страница {page} из {total}",
+      "pages": "Страница {page} из {total}",
+      "page": "Страница {page}"
+    },
+    "hofRules": {
+      "title": "Правила рейтинга",
+      "positiveInteger": "Целое положительное число",
+      "single": {
+        "recorder": "Учитывается только урон игрока, записавшего реплей; результаты союзников не учитываются.",
+        "modes": "Принимаются только реплеи случайных и рейтинговых боёв; один игрок записывается один раз за бой."
+      },
+      "hundred": {
+        "tierX": "Только техника X уровня. У каждой машины свой рейтинг по одобренному среднему урону за всё время.",
+        "evidence": "Нужны 1 скриншот статистики и ровно 5 реплеев: 5 разных боёв на вашем аккаунте на выбранной технике.",
+        "higher": "Если у вас уже есть запись для этой техники, новый результат должен быть строго выше."
+      },
+      "mark3": {
+        "ranking": "Рейтинг по наименьшему числу боёв до трёх отметок; при равном числе боёв места делятся.",
+        "evidence": "Нужны 1–2 скриншота отметок и ровно 5 реплеев: 5 разных боёв на вашем аккаунте на выбранной технике.",
+        "once": "Для каждой машины может быть только одна одобренная запись трёх отметок, заменить её нельзя."
+      },
+      "threshold": {
+        "title": "Текущий порог",
+        "chooseVehicle": "Выберите технику, чтобы увидеть свою текущую запись.",
+        "hundredCurrent": "Ваша текущая запись для этой техники — средний урон {damage} ({battles} боёв); новый результат должен быть выше {damage}.",
+        "hundredFirst": "У вас ещё нет записи «100 боёв» для этой техники — это будет ваша первая запись.",
+        "mark3Current": "У вас уже есть запись трёх отметок для этой техники ({battles} боёв), повторная подача невозможна.",
+        "mark3First": "У вас ещё нет записи трёх отметок для этой техники — это будет ваша первая запись.",
+        "pending": "У вас уже есть заявка на проверке для этой техники; отзовите её, чтобы подать новую."
+      }
     },
     "agentReplay": {
       "title": "3D-повтор", "roster": "Составы",

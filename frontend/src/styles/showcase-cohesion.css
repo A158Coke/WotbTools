@@ -143,7 +143,7 @@
   opacity: .52;
 }
 .lb-wrap .lb-toolbar input::placeholder { color: #737b7c !important; }
-.lb-wrap .lb-toolbar button {
+.lb-wrap .lb-toolbar button:not(.vp-btn) { /* 车辆选择器内部的图标按钮自带样式（VehiclePicker） */
   min-height: 38px;
   justify-self: start;
   border: 1px solid #445057 !important;
@@ -151,7 +151,7 @@
   background: #151d21 !important;
   color: #d7d3ca !important;
 }
-.lb-wrap .lb-toolbar button:hover {
+.lb-wrap .lb-toolbar button:not(.vp-btn):hover {
   border-color: #d98f18 !important;
   color: #f0aa30 !important;
 }

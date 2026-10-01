@@ -8,11 +8,14 @@ import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
+import { formatGameVersion } from '../utils/gameVersion.js'
+import { resolveVehicleName, vehicleNameIndex } from '../utils/hofVehicles.js'
 import * as api from '../utils/api.js'
 import ImageDataUploader from './ImageDataUploader.vue'
 import FilterChips from './FilterChips.vue'
 import AppDialog from './AppDialog.vue'
 import AppButton from './AppButton.vue'
+import VehiclePicker from './VehiclePicker.vue'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 
 const { locale, t, te } = useI18n()
@@ -22,6 +25,7 @@ const error = ref('')
 const limit = ref(50)
 const page = ref(1)
 const totalPages = ref(0)
+const totalItems = ref(null)
 const uploading = ref(false)
 const uploadMsg = ref('')
 const uploadOk = ref(false)
@@ -60,8 +64,34 @@ const singleVehicleTiers = computed(() => uniqueValues(singleVehicleOptions.valu
 const filteredSingleVehicles = computed(() => singleVehicleOptions.value
   .filter(vehicle => (!singleNation.value || vehicle.nation === singleNation.value)
     && (!singleVehicleType.value || vehicle.type === singleVehicleType.value)
-    && (!singleVehicleTier.value || String(vehicle.tier) === singleVehicleTier.value))
-  .sort((a, b) => (a.tankName || '').localeCompare(b.tankName || '')))
+    && (!singleVehicleTier.value || String(vehicle.tier) === singleVehicleTier.value)))
+
+// ── 车辆显示名（审计 BZ-17）：后端查不到车名时回退为 `#4657`，前端再用 Tier X 车表与已加载榜单行补全 ──
+const tier10NameById = vehicleNameIndex(HUNDRED_VEHICLES)
+const rowNameById = computed(() => vehicleNameIndex(rows.value, 'tankId', 'tankName'))
+function knownTankName(tankId, ...candidates) {
+  const id = Number(tankId)
+  return resolveVehicleName(...candidates, tier10NameById.get(id), rowNameById.value.get(id))
+}
+function singleVehicleLabel(vehicle) {
+  return knownTankName(vehicle.tankId, vehicle.tankName) || t('vehiclePicker.unknownId', { id: vehicle.tankId })
+}
+function vehicleHint(...parts) {
+  return parts.filter(Boolean).join(' · ')
+}
+const singlePickerOptions = computed(() => filteredSingleVehicles.value
+  .map(vehicle => ({
+    id: vehicle.tankId,
+    label: singleVehicleLabel(vehicle),
+    hint: vehicleHint(vehicle.tier == null ? '' : `T${vehicle.tier}`, vehicleValueLabel(vehicle.nation), vehicleValueLabel(vehicle.type)),
+  }))
+  .sort((a, b) => a.label.localeCompare(b.label)))
+/** 当前单场车辆的显示名：深链 ?tank= 指向的车辆不在选项里时也要显示为已选（能解析出车名就用车名，否则 `#id`）。 */
+const selectedTankLabel = computed(() => {
+  if (!selectedTankId.value) return ''
+  const option = singlePickerOptions.value.find(item => item.id === Number(selectedTankId.value))
+  return option?.label || knownTankName(selectedTankId.value, selectedTankName.value) || `#${selectedTankId.value}`
+})
 
 async function load() {
   writeHofQuery()
@@ -83,6 +113,7 @@ async function load() {
     if (generation !== loadGeneration) return
     rows.value = res.items || []
     totalPages.value = res.totalPages || 0
+    totalItems.value = pageTotalItems(res)
   } catch (e) {
     if (generation === loadGeneration) error.value = apiErrorLabel(t, te, e)
   } finally {
@@ -129,18 +160,30 @@ function onSingleVehicleConditionChange() {
 
 function onSingleVehicleChange() {
   const vehicle = singleVehicleOptions.value.find(option => option.tankId === Number(selectedTankId.value))
-  selectedTankName.value = vehicle?.tankName || ''
+  selectedTankName.value = vehicle ? knownTankName(vehicle.tankId, vehicle.tankName) : ''
   page.value = 1
   load()
 }
 
-function vehicleOptionLabel(vehicle) {
-  const name = vehicle.tankName || t('hof.unknownVehicle')
-  return vehicle.tier == null ? name : `${name} · T${vehicle.tier}`
+function vehicleValueLabel(value) {
+  return value ? replayValueLabel(t, te, value) : ''
 }
 
-function vehicleValueLabel(value) {
-  return replayValueLabel(t, te, value)
+// ── 版本列与分页（审计 BZ-17）──
+function editionLabel(code) {
+  const key = `hofVersion.edition.${code}`
+  return te(key) ? t(key) : ''
+}
+const fmtVersion = value => formatGameVersion(value, editionLabel) || '-'
+
+/** 接口返回 totalItems 时显示总数；缺失时只显示页码。 */
+function pageTotalItems(res) {
+  return Number.isInteger(res?.totalItems) ? res.totalItems : null
+}
+function pagerLabel(current, total, items) {
+  if (items != null && total > 0) return t('hofPager.summary', { items: items.toLocaleString(), page: current, total })
+  if (total > 0) return t('hofPager.pages', { page: current, total })
+  return t('hofPager.page', { page: current })
 }
 
 function uniqueValues(values) {
@@ -287,7 +330,8 @@ function applyHofQuery(query) {
   singleVehicleType.value = q.type
   singleVehicleTier.value = q.tier
   selectedTankId.value = q.tank
-  selectedTankName.value = singleVehicleOptions.value.find(v => v.tankId === q.tank)?.tankName || ''
+  const deepLinked = singleVehicleOptions.value.find(v => v.tankId === q.tank)
+  selectedTankName.value = deepLinked ? knownTankName(deepLinked.tankId, deepLinked.tankName) : ''
   battleType.value = q.bt
   nickname.value = q.nick
   limit.value = q.limit
@@ -298,7 +342,8 @@ function applyHofQuery(query) {
 // 车辆名在选项加载后才能解析（直接打开带 tank 的链接时）
 watch(singleVehicleOptions, (options) => {
   if (selectedTankId.value && !selectedTankName.value) {
-    selectedTankName.value = options.find(v => v.tankId === Number(selectedTankId.value))?.tankName || ''
+    const vehicle = options.find(v => v.tankId === Number(selectedTankId.value))
+    selectedTankName.value = vehicle ? knownTankName(vehicle.tankId, vehicle.tankName) : ''
   }
 })
 
@@ -337,12 +382,12 @@ function vehicleChips(nation, type, vehicleName) {
 const singleChips = computed(() => [
   ...vehicleChips(singleNation.value, singleVehicleType.value, '').filter(Boolean),
   singleVehicleTier.value && { key: 'tier', label: `T${singleVehicleTier.value}` },
-  selectedTankId.value && { key: 'vehicle', label: selectedTankName.value || `#${selectedTankId.value}` },
+  selectedTankId.value && { key: 'vehicle', label: selectedTankLabel.value },
   battleType.value && { key: 'bt', label: battleTypeLabel(battleType.value) },
   nickname.value.trim() && { key: 'nick', label: nickname.value.trim() },
 ].filter(Boolean))
-const hundredChips = computed(() => vehicleChips(h100Nation.value, h100VehicleType.value, h100VehicleId.value ? h100VehicleName.value : ''))
-const mark3Chips = computed(() => vehicleChips(mark3Nation.value, mark3VehicleType.value, mark3VehicleId.value ? mark3VehicleName.value : ''))
+const hundredChips = computed(() => vehicleChips(h100Nation.value, h100VehicleType.value, h100VehicleLabel.value))
+const mark3Chips = computed(() => vehicleChips(mark3Nation.value, mark3VehicleType.value, mark3VehicleLabel.value))
 
 function removeSingleFilter(key) {
   if (key === 'nation') singleNation.value = ''
@@ -366,13 +411,18 @@ function removeMark3Filter(key) {
   onMark3VehicleFilterChange()
 }
 
-/** 翻页后回到榜单顶部（审计 PG-07）；榜单顶部已在视口内时不滚动。 */
+/**
+ * 翻页后回到当前榜单的表格顶部（审计 PG-07）。表格容器自身也会纵向滚动（PG-06 表头吸顶），一并复位。
+ * 表格顶部已在吸顶 Tab 下方可见时不滚动页面；偏移量读表格的 scroll-margin-top（与吸顶 Tab 同一 CSS 变量）。
+ */
 const boardTop = ref(null)
 function scrollBoardIntoView() {
   nextTick(() => {
-    const el = boardTop.value
-    if (!el || typeof el.getBoundingClientRect !== 'function') return
-    if (el.getBoundingClientRect().top < 0) el.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+    const board = boardTop.value?.querySelector?.(`[data-hof-pane="${activeTab.value}"] [data-hof-board]`)
+    if (!board || typeof board.getBoundingClientRect !== 'function') return
+    board.scrollTop = 0
+    const offset = parseFloat(window.getComputedStyle?.(board).scrollMarginTop) || 0
+    if (board.getBoundingClientRect().top < offset) board.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
   })
 }
 
@@ -426,10 +476,12 @@ const h100Loading = ref(false)
 const h100Error = ref('')
 const h100Page = ref(1)
 const h100TotalPages = ref(0)
+const h100TotalItems = ref(null)
 const h100Size = 50
 let h100LoadGeneration = 0
 
 const pendingList = ref([])
+const h100CurrentList = ref([])
 const withdrawingId = ref(null)
 const h100Msg = ref('')
 const h100MsgErr = ref(false)
@@ -445,6 +497,13 @@ const currentPending = computed(() => {
   const id = Number(h100VehicleId.value)
   return pendingList.value.find(p => Number(p.vehicleId) === id) || null
 })
+/** 百场 / 三环车辆选项：全部是 Tier X，提示里只放国家 / 车种。 */
+function hundredPickerOption(vehicle) {
+  return { id: vehicle.id, label: vehicle.name, hint: vehicleHint(vehicleValueLabel(vehicle.nation), vehicleValueLabel(vehicle.vehicleType)) }
+}
+const hundredPickerOptions = computed(() => filteredHundredVehicles.value.map(hundredPickerOption))
+const h100VehicleLabel = computed(() => (h100VehicleId.value ? h100VehicleName.value || `#${h100VehicleId.value}` : ''))
+
 const currentPendingDamage = computed(() => currentPending.value?.claimedAverageDamage)
 const currentPendingBattles = computed(() => currentPending.value?.claimedBattleCount)
 
@@ -465,6 +524,7 @@ async function loadHundredList() {
     if (generation !== h100LoadGeneration) return
     h100Rows.value = res.items || []
     h100TotalPages.value = res.totalPages || 0
+    h100TotalItems.value = pageTotalItems(res)
   } catch (e) {
     if (generation === h100LoadGeneration) h100Error.value = apiErrorLabel(t, te, e)
   } finally {
@@ -497,13 +557,16 @@ function onHundredVehicleFilterChange() {
 async function loadPending() {
   if (!isAuthenticated()) {
     pendingList.value = []
+    h100CurrentList.value = []
     return
   }
   try {
     const status = await api.hofHundredMyStatus()
     pendingList.value = status.pending || []
+    h100CurrentList.value = Array.isArray(status.current) ? status.current : []
   } catch {
     pendingList.value = []
+    h100CurrentList.value = []
   }
 }
 
@@ -545,6 +608,26 @@ const submitHundredVehicles = computed(() => {
   const draftVehicle = tier10Vehicles.find(vehicle => vehicle.id === Number(submitForm.vehicleId))
   if (!draftVehicle || candidates.some(vehicle => vehicle.id === draftVehicle.id)) return candidates
   return [draftVehicle, ...candidates].sort((a, b) => a.name.localeCompare(b.name))
+})
+const submitHundredPickerOptions = computed(() => submitHundredVehicles.value.map(hundredPickerOption))
+
+/**
+ * 提交弹窗里的当前门槛（审计 BZ-18）：门槛是「你在该车的当前纪录」。没有纪录时明确说明这是第一条纪录，
+ * 而不是提示「须高于当前纪录」。
+ */
+const hundredThreshold = computed(() => {
+  const vehicleId = submitForm.vehicleId
+  if (!vehicleId) return { key: 'hofRules.threshold.chooseVehicle' }
+  if (findMark3Status(pendingList.value, vehicleId)) return { key: 'hofRules.threshold.pending', blocked: true }
+  const current = findMark3Status(h100CurrentList.value, vehicleId)
+  if (!current) return { key: 'hofRules.threshold.hundredFirst' }
+  return {
+    key: 'hofRules.threshold.hundredCurrent',
+    params: {
+      damage: formatMark3Number(current.approvedAverageDamage ?? current.claimedAverageDamage),
+      battles: formatMark3Number(current.approvedBattleCount ?? current.claimedBattleCount),
+    },
+  }
 })
 
 function openSubmit() {
@@ -741,6 +824,7 @@ const mark3Loading = ref(false)
 const mark3Error = ref('')
 const mark3Page = ref(1)
 const mark3TotalPages = ref(0)
+const mark3TotalItems = ref(null)
 const mark3Size = 50
 let mark3LoadGeneration = 0
 
@@ -755,6 +839,8 @@ const mark3VehicleTypes = uniqueValues(mark3Vehicles.map(vehicle => vehicle.vehi
 const filteredMark3Vehicles = computed(() => mark3Vehicles.filter(vehicle =>
   (!mark3Nation.value || vehicle.nation === mark3Nation.value)
     && (!mark3VehicleType.value || vehicle.vehicleType === mark3VehicleType.value)))
+const mark3PickerOptions = computed(() => filteredMark3Vehicles.value.map(hundredPickerOption))
+const mark3VehicleLabel = computed(() => (mark3VehicleId.value ? mark3VehicleName.value || `#${mark3VehicleId.value}` : ''))
 const selectedMark3Current = computed(() => findMark3Status(mark3CurrentList.value, mark3VehicleId.value))
 const selectedMark3Pending = computed(() => findMark3Status(mark3PendingList.value, mark3VehicleId.value))
 
@@ -780,6 +866,7 @@ async function loadMark3List() {
     if (generation !== mark3LoadGeneration) return
     mark3Rows.value = res.items || []
     mark3TotalPages.value = res.totalPages || 0
+    mark3TotalItems.value = pageTotalItems(res)
   } catch (e) {
     if (generation === mark3LoadGeneration) mark3Error.value = apiErrorLabel(t, te, e)
   } finally {
@@ -863,6 +950,23 @@ const submitMark3Vehicles = computed(() => {
   const draftVehicle = mark3Vehicles.find(vehicle => vehicle.id === Number(mark3SubmitForm.vehicleId))
   if (!draftVehicle || candidates.some(vehicle => vehicle.id === draftVehicle.id)) return candidates
   return [draftVehicle, ...candidates].sort((a, b) => a.name.localeCompare(b.name))
+})
+const submitMark3PickerOptions = computed(() => submitMark3Vehicles.value.map(hundredPickerOption))
+
+/** 三环没有分数门槛：已有通过纪录即不能再提交，没有纪录时说明这是第一条纪录（审计 BZ-18）。 */
+const mark3Threshold = computed(() => {
+  const vehicleId = mark3SubmitForm.vehicleId
+  if (!vehicleId) return { key: 'hofRules.threshold.chooseVehicle' }
+  const current = findMark3Status(mark3CurrentList.value, vehicleId)
+  if (current) {
+    return {
+      key: 'hofRules.threshold.mark3Current',
+      blocked: true,
+      params: { battles: formatMark3Number(current.approvedBattleCount ?? current.claimedBattleCount) },
+    }
+  }
+  if (findMark3Status(mark3PendingList.value, vehicleId)) return { key: 'hofRules.threshold.pending', blocked: true }
+  return { key: 'hofRules.threshold.mark3First' }
 })
 
 function openMark3Submit() {
@@ -1114,7 +1218,7 @@ function fmtDate(s) {
       <button type="button" :class="{ active: activeTab === 'mark3' }" @click="switchTab('mark3')">{{ $t('mark3.tab') }}</button>
     </div>
 
-    <div v-show="activeTab === 'single'">
+    <div v-show="activeTab === 'single'" data-hof-pane="single">
       <header class="lb-head">
         <span class="lb-kicker">{{ $t('hof.btn') }}</span>
         <h1>{{ $t('hof.title') }}</h1>
@@ -1130,6 +1234,13 @@ function fmtDate(s) {
 
       <!-- 提交记录 Modal（§29：上传入口不再长期占据首屏，Ranking 成为核心） -->
       <AppDialog :open="showUploadModal" :title="$t('hof.upload_title')" class="hof-upload-modal" @close="showUploadModal = false">
+          <section class="hof-rules" data-testid="hof-rules-single">
+            <h3 class="hof-rules-title">{{ $t('hofRules.title') }}</h3>
+            <ul>
+              <li>{{ $t('hofRules.single.recorder') }}</li>
+              <li>{{ $t('hofRules.single.modes') }}</li>
+            </ul>
+          </section>
           <section class="lb-upload-section"
                    @dragover.prevent="dragging = true"
                    @dragleave.prevent="dragging = false"
@@ -1173,12 +1284,11 @@ function fmtDate(s) {
             <option v-for="tier in singleVehicleTiers" :key="tier" :value="String(tier)">T{{ tier }}</option>
           </select>
         </label>
-        <label class="lb-limit"><span class="lb-label">{{ $t('hof.selectVehicle') }}</span>
-          <select v-model="selectedTankId" class="hof-vehicle-select" :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleChange">
-            <option :value="null">{{ $t('hof.all_tanks') }}</option>
-            <option v-for="vehicle in filteredSingleVehicles" :key="vehicle.tankId" :value="vehicle.tankId">{{ vehicleOptionLabel(vehicle) }}</option>
-          </select>
-        </label>
+        <div class="lb-limit"><label class="lb-label" for="hof-single-vehicle">{{ $t('hof.selectVehicle') }}</label>
+          <VehiclePicker v-model="selectedTankId" class="hof-vehicle-select" input-id="hof-single-vehicle"
+                         :options="singlePickerOptions" :null-label="$t('hof.all_tanks')" :fallback-label="selectedTankLabel"
+                         :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleChange" />
+        </div>
         <label class="lb-limit"><span class="lb-label">{{ $t('hof.battleTypeLabel') }}</span>
           <select v-model="battleType" @change="onBattleTypeChange">
             <option value="">{{ $t('hof.battleType.all') }}</option>
@@ -1209,14 +1319,14 @@ function fmtDate(s) {
 
       </div>
       <p v-if="selectedTankId && !isCompact" class="lb-filter-hint">
-        {{ $t('hof.filter_tank') }}: <strong>{{ selectedTankName }}</strong>
+        {{ $t('hof.filter_tank') }}: <strong>{{ selectedTankLabel }}</strong>
       </p>
 
       <p v-if="downloadErr" class="lb-upload-msg err">{{ downloadErr }}</p>
       <p v-if="error" class="error">{{ $t('hof.error') }}: {{ error }}</p>
       <p v-else-if="loading && !rows.length" class="muted">{{ $t('hof.loading') }}</p>
       <p v-else-if="!rows.length" class="muted">{{ $t('hof.empty') }}</p>
-      <div v-else-if="!isCompact" class="tablewrap" :class="{ 'is-stale': loading }" :aria-busy="loading">
+      <div v-else-if="!isCompact" class="tablewrap" data-hof-board :class="{ 'is-stale': loading }" :aria-busy="loading">
         <table>
           <thead>
             <tr>
@@ -1249,7 +1359,7 @@ function fmtDate(s) {
               <td><span class="bt-badge" :class="r.battleType === 'RATING' ? 'bt-rating' : 'bt-random'">{{ battleTypeLabel(r.battleType) }}</span></td>
               <td class="lb-dmg">{{ r.damageDealt.toLocaleString() }}</td>
               <td>{{ mapLabel(r.mapName, locale) }}</td>
-              <td class="lb-version">{{ r.version || '-' }}</td>
+              <td class="lb-version">{{ fmtVersion(r.version) }}</td>
               <td class="lb-time">{{ fmtTime(r.battleTime) || '-' }}</td>
               <td class="lb-time">{{ fmtTime(r.createdAt) }}</td>
               <td class="lb-replay">
@@ -1271,7 +1381,7 @@ function fmtDate(s) {
         </table>
       </div>
       <!-- 手机：卡片列表（审计 PG-05：10 列表格在 375 宽下要横向滚动，下载按钮被挤到屏幕外） -->
-      <ol v-else class="lb-cards" :class="{ 'is-stale': loading }" :aria-busy="loading" data-testid="hof-cards">
+      <ol v-else class="lb-cards" data-hof-board :class="{ 'is-stale': loading }" :aria-busy="loading" data-testid="hof-cards">
         <li v-for="r in rows" :key="r.id" class="lb-card">
           <span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span>
           <div class="lb-card-main">
@@ -1294,14 +1404,14 @@ function fmtDate(s) {
           ><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 15l4 4 4-4M12 3v16" /></svg></button>
         </li>
       </ol>
-      <div v-if="totalPages > 1" class="pagination">
-        <button type="button" :disabled="page <= 1" @click="goPage(page - 1)">{{ $t('hof.prev') }}</button>
-        <span>{{ $t('hof.page_info', { page, total: totalPages }) }}</span>
-        <button type="button" :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t('hof.next') }}</button>
+      <div v-if="rows.length && !error" class="pagination" data-testid="hof-pager">
+        <button v-if="totalPages > 1" type="button" :disabled="page <= 1" @click="goPage(page - 1)">{{ $t('hof.prev') }}</button>
+        <span aria-live="polite">{{ pagerLabel(page, totalPages, totalItems) }}</span>
+        <button v-if="totalPages > 1" type="button" :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t('hof.next') }}</button>
       </div>
     </div>
 
-    <div v-show="activeTab === 'hundred'" class="h100-pane">
+    <div v-show="activeTab === 'hundred'" class="h100-pane" data-hof-pane="hundred">
       <header class="lb-head">
         <span class="lb-kicker">{{ $t('hof.btn') }}</span>
         <h1>{{ $t('hundred.tab') }}</h1>
@@ -1334,12 +1444,11 @@ function fmtDate(s) {
             <option v-for="vehicleType in h100VehicleTypes" :key="vehicleType" :value="vehicleType">{{ vehicleValueLabel(vehicleType) }}</option>
           </select>
         </label>
-        <label class="lb-limit h100-vehicle-filter"><span class="lb-label">{{ $t('hundred.selectVehicle') }}</span>
-          <select v-model="h100VehicleId" class="h100-vehicle-select" @change="onHundredVehicleChange">
-            <option :value="null">{{ $t('hundred.default') }}</option>
-            <option v-for="vehicle in filteredHundredVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
-          </select>
-        </label>
+        <div class="lb-limit h100-vehicle-filter"><label class="lb-label" for="hof-hundred-vehicle">{{ $t('hundred.selectVehicle') }}</label>
+          <VehiclePicker v-model="h100VehicleId" class="h100-vehicle-select" input-id="hof-hundred-vehicle"
+                         :options="hundredPickerOptions" :null-label="$t('hundred.default')" :fallback-label="h100VehicleLabel"
+                         @change="onHundredVehicleChange" />
+        </div>
         <button type="button" class="ghost sm" :disabled="h100Loading" @click="loadHundredList">
           <svg class="ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v6h-6" /></svg>{{ $t('hof.refresh') }}
         </button>
@@ -1347,7 +1456,7 @@ function fmtDate(s) {
       </div>
 
       <p v-if="h100VehicleId && !isCompact" class="lb-filter-hint">
-        {{ $t('hundred.selectVehicle') }}: <strong>{{ h100VehicleName }}</strong>
+        {{ $t('hundred.selectVehicle') }}: <strong>{{ h100VehicleLabel }}</strong>
       </p>
 
       <div v-if="currentPending" class="h100-pending-card">
@@ -1372,7 +1481,7 @@ function fmtDate(s) {
         <p class="lb-empty-title">{{ $t(h100VehicleId ? 'hundred.empty' : 'hundred.emptyDefault') }}</p>
         <p class="lb-empty-how">{{ $t('hofHowTo.hundred', { action: $t('hundred.submit') }) }}</p>
       </div>
-      <div v-else-if="!isCompact" class="tablewrap" :class="{ 'is-stale': h100Loading }" :aria-busy="h100Loading">
+      <div v-else-if="!isCompact" class="tablewrap" data-hof-board :class="{ 'is-stale': h100Loading }" :aria-busy="h100Loading">
         <table>
           <thead>
             <tr>
@@ -1396,7 +1505,7 @@ function fmtDate(s) {
           </tbody>
         </table>
       </div>
-      <ol v-else class="lb-cards" :class="{ 'is-stale': h100Loading }" :aria-busy="h100Loading" data-testid="hundred-cards">
+      <ol v-else class="lb-cards" data-hof-board :class="{ 'is-stale': h100Loading }" :aria-busy="h100Loading" data-testid="hundred-cards">
         <li v-for="r in h100Rows" :key="r.id" class="lb-card">
           <span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span>
           <div class="lb-card-main">
@@ -1407,14 +1516,14 @@ function fmtDate(s) {
           <span class="lb-card-value">{{ r.approvedAverageDamage.toLocaleString() }}<small>{{ $t('hundred.avgDamage') }}</small></span>
         </li>
       </ol>
-      <div v-if="h100TotalPages > 1" class="pagination">
-        <button type="button" :disabled="h100Page <= 1" @click="goHundredPage(h100Page - 1)">{{ $t('hundred.prev') }}</button>
-        <span>{{ $t('hundred.pageInfo', { page: h100Page, total: h100TotalPages }) }}</span>
-        <button type="button" :disabled="h100Page >= h100TotalPages" @click="goHundredPage(h100Page + 1)">{{ $t('hundred.next') }}</button>
+      <div v-if="h100Rows.length && !h100Error" class="pagination" data-testid="hundred-pager">
+        <button v-if="h100TotalPages > 1" type="button" :disabled="h100Page <= 1" @click="goHundredPage(h100Page - 1)">{{ $t('hundred.prev') }}</button>
+        <span aria-live="polite">{{ pagerLabel(h100Page, h100TotalPages, h100TotalItems) }}</span>
+        <button v-if="h100TotalPages > 1" type="button" :disabled="h100Page >= h100TotalPages" @click="goHundredPage(h100Page + 1)">{{ $t('hundred.next') }}</button>
       </div>
     </div>
 
-    <div v-show="activeTab === 'mark3'" class="h100-pane mark3-pane">
+    <div v-show="activeTab === 'mark3'" class="h100-pane mark3-pane" data-hof-pane="mark3">
       <header class="lb-head">
         <span class="lb-kicker">{{ $t('hof.btn') }}</span>
         <h1>{{ $t('mark3.tab') }}</h1>
@@ -1447,12 +1556,11 @@ function fmtDate(s) {
             <option v-for="vehicleType in mark3VehicleTypes" :key="vehicleType" :value="vehicleType">{{ vehicleValueLabel(vehicleType) }}</option>
           </select>
         </label>
-        <label class="lb-limit mark3-vehicle-filter"><span class="lb-label">{{ $t('mark3.selectVehicle') }}</span>
-          <select v-model="mark3VehicleId" class="mark3-vehicle-select" @change="onMark3VehicleChange">
-            <option :value="null">{{ $t('mark3.default') }}</option>
-            <option v-for="vehicle in filteredMark3Vehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
-          </select>
-        </label>
+        <div class="lb-limit mark3-vehicle-filter"><label class="lb-label" for="hof-mark3-vehicle">{{ $t('mark3.selectVehicle') }}</label>
+          <VehiclePicker v-model="mark3VehicleId" class="mark3-vehicle-select" input-id="hof-mark3-vehicle"
+                         :options="mark3PickerOptions" :null-label="$t('mark3.default')" :fallback-label="mark3VehicleLabel"
+                         @change="onMark3VehicleChange" />
+        </div>
         <button type="button" class="ghost sm" :disabled="mark3Loading" @click="loadMark3List">
           <svg class="ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v6h-6" /></svg>{{ $t('hof.refresh') }}
         </button>
@@ -1460,7 +1568,7 @@ function fmtDate(s) {
       </div>
 
       <p v-if="mark3VehicleId && !isCompact" class="lb-filter-hint">
-        {{ $t('mark3.selectVehicle') }}: <strong>{{ mark3VehicleName }}</strong>
+        {{ $t('mark3.selectVehicle') }}: <strong>{{ mark3VehicleLabel }}</strong>
       </p>
 
       <div v-if="selectedMark3Current" class="h100-pending-card mark3-current-card">
@@ -1496,7 +1604,7 @@ function fmtDate(s) {
         <p class="lb-empty-title">{{ $t(mark3VehicleId ? 'mark3.empty' : 'mark3.emptyDefault') }}</p>
         <p class="lb-empty-how">{{ $t('hofHowTo.mark3', { action: $t('mark3.submit') }) }}</p>
       </div>
-      <div v-else-if="!isCompact" class="tablewrap" :class="{ 'is-stale': mark3Loading }" :aria-busy="mark3Loading">
+      <div v-else-if="!isCompact" class="tablewrap" data-hof-board :class="{ 'is-stale': mark3Loading }" :aria-busy="mark3Loading">
         <table>
           <thead>
             <tr>
@@ -1522,7 +1630,7 @@ function fmtDate(s) {
           </tbody>
         </table>
       </div>
-      <ol v-else class="lb-cards" :class="{ 'is-stale': mark3Loading }" :aria-busy="mark3Loading" data-testid="mark3-cards">
+      <ol v-else class="lb-cards" data-hof-board :class="{ 'is-stale': mark3Loading }" :aria-busy="mark3Loading" data-testid="mark3-cards">
         <li v-for="row in mark3Rows" :key="row.id" class="lb-card">
           <span class="rk" :class="rankClass(row.rank)">{{ row.rank }}</span>
           <div class="lb-card-main">
@@ -1533,29 +1641,38 @@ function fmtDate(s) {
           <span class="lb-card-value">{{ formatMark3Number(row.approvedAverageDamage) }}<small>{{ $t('mark3.avgDamage') }}</small></span>
         </li>
       </ol>
-      <div v-if="mark3TotalPages > 1" class="pagination">
-        <button type="button" :disabled="mark3Page <= 1" @click="goMark3Page(mark3Page - 1)">{{ $t('mark3.prev') }}</button>
-        <span>{{ $t('mark3.pageInfo', { page: mark3Page, total: mark3TotalPages }) }}</span>
-        <button type="button" :disabled="mark3Page >= mark3TotalPages" @click="goMark3Page(mark3Page + 1)">{{ $t('mark3.next') }}</button>
+      <div v-if="mark3Rows.length && !mark3Error" class="pagination" data-testid="mark3-pager">
+        <button v-if="mark3TotalPages > 1" type="button" :disabled="mark3Page <= 1" @click="goMark3Page(mark3Page - 1)">{{ $t('mark3.prev') }}</button>
+        <span aria-live="polite">{{ pagerLabel(mark3Page, mark3TotalPages, mark3TotalItems) }}</span>
+        <button v-if="mark3TotalPages > 1" type="button" :disabled="mark3Page >= mark3TotalPages" @click="goMark3Page(mark3Page + 1)">{{ $t('mark3.next') }}</button>
       </div>
     </div>
 
     <AppDialog :open="showSubmit" :title="$t('hundred.submitTitle')" size="lg" keep-mounted scrim-class="h100-submit-overlay" class="h100-modal" @close="closeSubmit">
         <p>{{ $t('hundred.submitDesc') }}</p>
+        <section class="hof-rules" data-testid="hof-rules-hundred">
+          <h3 class="hof-rules-title">{{ $t('hofRules.title') }}</h3>
+          <ul>
+            <li>{{ $t('hofRules.hundred.tierX') }}</li>
+            <li>{{ $t('hofRules.hundred.evidence') }}</li>
+            <li>{{ $t('hofRules.hundred.higher') }}</li>
+          </ul>
+        </section>
         <p class="h100-draft-hint">{{ $t('hundred.draftHint') }}</p>
 
         <div class="h100-field">
           <label class="h100-field-label" for="h100-submit-vehicle">{{ $t('hundred.selectVehicle') }}</label>
-          <select id="h100-submit-vehicle" v-model="submitForm.vehicleId">
-            <option :value="null" disabled>{{ $t('hundred.chooseVehicle') }}</option>
-            <option v-for="vehicle in submitHundredVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
-          </select>
+          <VehiclePicker v-model="submitForm.vehicleId" class="h100-submit-vehicle" input-id="h100-submit-vehicle"
+                         :options="submitHundredPickerOptions" :placeholder="$t('hundred.chooseVehicle')" />
+          <p class="hof-threshold" :class="{ 'is-blocked': hundredThreshold.blocked }" data-testid="hundred-threshold">
+            <strong>{{ $t('hofRules.threshold.title') }}</strong>{{ $t(hundredThreshold.key, hundredThreshold.params || {}) }}
+          </p>
         </div>
 
         <div class="h100-field">
           <label class="h100-field-label" for="h100-submit-damage">{{ $t('hundred.claimedDamage') }}</label>
           <input id="h100-submit-damage" v-model.number="submitForm.averageDamage" type="number" min="1" step="1" />
-          <small>{{ $t('hundred.claimedDamageHint') }}</small>
+          <small>{{ $t('hofRules.positiveInteger') }}</small>
         </div>
 
         <div class="h100-field">
@@ -1614,14 +1731,23 @@ function fmtDate(s) {
 
     <AppDialog :open="showMark3Submit" :title="$t('mark3.submitTitle')" size="lg" keep-mounted scrim-class="mark3-submit-overlay" class="h100-modal mark3-modal" @close="closeMark3Submit">
         <p>{{ $t('mark3.submitDesc') }}</p>
+        <section class="hof-rules" data-testid="hof-rules-mark3">
+          <h3 class="hof-rules-title">{{ $t('hofRules.title') }}</h3>
+          <ul>
+            <li>{{ $t('hofRules.mark3.ranking') }}</li>
+            <li>{{ $t('hofRules.mark3.evidence') }}</li>
+            <li>{{ $t('hofRules.mark3.once') }}</li>
+          </ul>
+        </section>
         <p class="h100-draft-hint">{{ $t('mark3.draftHint') }}</p>
 
         <div class="h100-field">
           <label class="h100-field-label" for="mark3-submit-vehicle">{{ $t('mark3.selectVehicle') }}</label>
-          <select id="mark3-submit-vehicle" v-model="mark3SubmitForm.vehicleId">
-            <option :value="null" disabled>{{ $t('mark3.chooseVehicle') }}</option>
-            <option v-for="vehicle in submitMark3Vehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
-          </select>
+          <VehiclePicker v-model="mark3SubmitForm.vehicleId" class="mark3-submit-vehicle" input-id="mark3-submit-vehicle"
+                         :options="submitMark3PickerOptions" :placeholder="$t('mark3.chooseVehicle')" />
+          <p class="hof-threshold" :class="{ 'is-blocked': mark3Threshold.blocked }" data-testid="mark3-threshold">
+            <strong>{{ $t('hofRules.threshold.title') }}</strong>{{ $t(mark3Threshold.key, mark3Threshold.params || {}) }}
+          </p>
         </div>
 
         <div class="h100-field">
@@ -1760,6 +1886,21 @@ span.lb-card-tank { min-height: 0; color: var(--color-text-secondary); }
 .lb-card-download:disabled { cursor: progress; opacity: .5; }
 .lb-card-tank:focus-visible,
 .lb-card-download:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+/* 审计 BZ-18：提交弹窗里的上榜规则与当前门槛 */
+.hof-rules {
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font: var(--type-body);
+}
+.hof-rules-title { margin: 0 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h3); }
+.hof-rules ul { display: grid; gap: var(--space-1); margin: 0; padding-inline-start: var(--space-5); }
+.hof-threshold { display: grid; gap: var(--space-0); margin: var(--space-2) 0 0; color: var(--color-text-secondary); font: var(--type-body); }
+.hof-threshold strong { color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; }
+.hof-threshold.is-blocked { color: var(--color-warning); }
 /* 审计 BZ-15：空榜说明怎样上榜 */
 .lb-empty { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-6) var(--space-4); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); text-align: center; }
 .lb-empty-title { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
@@ -1859,6 +2000,7 @@ span.lb-card-tank { min-height: 0; color: var(--color-text-secondary); }
 /* ── 百场 Tab ─────────────────────────────────── */
 .h100-vehicle-filter, .mark3-vehicle-filter { flex-wrap: wrap; }
 .hof-vehicle-select, .h100-vehicle-select, .mark3-vehicle-select { min-width: 200px; }
+.h100-submit-vehicle, .mark3-submit-vehicle { max-width: 360px; }
 .h100-pending-card {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   margin: 12px 0; padding: 12px 14px;
