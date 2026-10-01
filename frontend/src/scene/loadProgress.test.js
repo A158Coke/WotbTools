@@ -35,8 +35,19 @@ describe('createLoadProgress', () => {
 
   it('字节进度超出 total 时封顶', () => {
     const progress = createLoadProgress()
+    progress.expect('a')
     progress.update('a', 500, 100)
     expect(progress.snapshot().fraction).toBe(1)
+  })
+
+  it('忽略未登记项的 update / complete，不虚构总工作量', () => {
+    const progress = createLoadProgress()
+    progress.expect('scenery')
+    progress.update('map', 50, 100)
+    progress.complete('terrain')
+    expect(progress.snapshot()).toEqual({ fraction: 0, done: 0, total: 1 })
+    progress.complete('scenery')
+    expect(progress.snapshot()).toEqual({ fraction: 1, done: 1, total: 1 })
   })
 })
 
