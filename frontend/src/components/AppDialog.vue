@@ -26,6 +26,30 @@ defineOptions({ inheritAttrs: false })
 
 const inline = inject(DIALOG_INLINE_KEY, false)
 const panel = ref(null)
+
+// Multiple dialogs can overlap (for example an editor dialog opening useConfirm()).
+// Store the shared count on <body> so every AppDialog instance participates in the same lock.
+const BODY_LOCK_DATASET_KEY = 'dialogLockCount'
+function acquireBodyLock() {
+  if (typeof document === 'undefined') return
+  const body = document.body
+  const next = (Number(body.dataset[BODY_LOCK_DATASET_KEY]) || 0) + 1
+  body.dataset[BODY_LOCK_DATASET_KEY] = String(next)
+  body.classList.add('dialog-open')
+}
+function releaseBodyLock() {
+  if (typeof document === 'undefined') return
+  const body = document.body
+  const next = Math.max(0, (Number(body.dataset[BODY_LOCK_DATASET_KEY]) || 0) - 1)
+  if (next === 0) {
+    delete body.dataset[BODY_LOCK_DATASET_KEY]
+    body.classList.remove('dialog-open')
+  } else {
+    body.dataset[BODY_LOCK_DATASET_KEY] = String(next)
+  }
+}
+
+const bodyLockHeld = ref(false)
 const titleId = `dialog-title-${useId()}`
 let opener = null
 
@@ -62,15 +86,26 @@ watch(() => props.open, async (open) => {
     const items = focusables()
     const preferred = panel.value?.querySelector('[autofocus], [data-autofocus]')
     ;(preferred || items.find(el => el.tagName !== 'BUTTON' || !el.classList.contains('dialog-close')) || panel.value)?.focus()
-    document.body.classList.add('dialog-open')
+    if (!bodyLockHeld.value) {
+      acquireBodyLock()
+      bodyLockHeld.value = true
+    }
   } else {
-    document.body.classList.remove('dialog-open')
+    if (bodyLockHeld.value) {
+      releaseBodyLock()
+      bodyLockHeld.value = false
+    }
     if (opener && typeof opener.focus === 'function') opener.focus()
     opener = null
   }
 }, { immediate: true })
 
-onBeforeUnmount(() => { if (props.open) document.body.classList.remove('dialog-open') })
+onBeforeUnmount(() => {
+  if (bodyLockHeld.value) {
+    releaseBodyLock()
+    bodyLockHeld.value = false
+  }
+})
 </script>
 
 <template>

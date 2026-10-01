@@ -86,28 +86,23 @@ body {
 .layout-content > h1,
 .layout-content > h2,
 .layout-data-workspace > h1,
-.layout-data-workspace > h2,
-.admin-page > h1,
-.admin-page > h2 { letter-spacing: -.015em; }
+.layout-data-workspace > h2 { letter-spacing: -.015em; }
 
 .layout-content :is(.card, .panel, .profile-card),
 .layout-data-workspace :is(.card, .panel),
-.admin-page :is(.admin-table-wrap, .admin-search),
 .modal {
   border-color: var(--showcase-line) !important;
   box-shadow: var(--surface-shadow);
 }
 
 .layout-content :is(input, select, textarea),
-.layout-data-workspace :is(input, select, textarea),
-.admin-page :is(input, select, textarea) {
+.layout-data-workspace :is(input, select, textarea) {
   border-color: #39444a !important;
   background: #0f1518 !important;
   color: #e4e1d9 !important;
 }
 .layout-content :is(input, select, textarea):focus,
-.layout-data-workspace :is(input, select, textarea):focus,
-.admin-page :is(input, select, textarea):focus {
+.layout-data-workspace :is(input, select, textarea):focus {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px var(--accent-shadow);
 }
@@ -169,56 +164,7 @@ body {
 }
 .profile-page .card-title { letter-spacing: -.01em; }
 
-/* Admin operations console */
-.admin-page > h2 { font-size: 1.55rem !important; margin-bottom: 5px !important; }
-.admin-hint { margin-bottom: 18px !important; }
-.admin-search {
-  padding: 12px;
-  border: 1px solid #39444a;
-  border-radius: 8px;
-  background: rgba(13, 18, 22, .92);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, .22);
-  backdrop-filter: blur(10px);
-}
-.admin-search input {
-  min-height: 40px;
-  border-color: #39444a !important;
-  background: #0f1518 !important;
-  color: #e4e1d9 !important;
-}
-.admin-search button {
-  min-width: 96px;
-  background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important;
-  box-shadow: 0 9px 24px var(--accent-shadow);
-}
-.admin-table-wrap {
-  max-height: calc(100vh - 250px);
-  overflow: auto !important;
-  border-color: #354047 !important;
-  background: rgba(13, 18, 22, .94) !important;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, .22) !important;
-}
-.admin-table { min-width: 1160px; font-variant-numeric: tabular-nums; }
-.admin-table th {
-  top: 0 !important;
-  z-index: 2;
-  height: 42px;
-  background: #171e22 !important;
-  color: #aaa79f !important;
-}
-.admin-table td {
-  height: 48px;
-  border-bottom-color: #263136 !important;
-  color: #d8d5cd !important;
-}
-.admin-table tbody tr:hover { background: #172025 !important; }
-.admin-table .cell-short { max-width: 190px !important; }
-.admin-table .btn-danger { background: transparent !important; opacity: .72; }
-.admin-modal {
-  border: 1px solid #394247;
-  background: #11171a !important;
-  box-shadow: 0 30px 80px rgba(0,0,0,.46);
-}
+/* 用户管理 / 名人堂管理页内部元素由组件自身按设计语言 token 定义（design-language §13），这里只保留页面容器宽度。 */
 
 /* Tactical workspaces */
 
@@ -228,7 +174,6 @@ body {
 .layout-data-workspace,
 .admin-page,
 .profile-page { padding-top: 18px !important; }
-  .admin-table-wrap { max-height: none; }
 }
 
 @media (width < 768px) {
@@ -241,16 +186,9 @@ body {
     width: calc(100% - 16px) !important;
     padding: 12px 0 42px !important;
   }
-  .admin-search { flex-direction: column; }
-  .admin-search button { min-height: 40px; }
-  .admin-table-wrap { width: 100%; }
-  .admin-modal { width: calc(100% - 22px) !important; padding: 18px !important; }
   .profile-page .profile-body { display: block !important; }
   .profile-page .profile-left,
   .profile-page .profile-right { display: grid; gap: 12px; }
   .profile-page .profile-hero { padding: 20px !important; min-height: 100px; }
   .profile-page .hero-name { font-size: 1.35rem !important; }
-  /* Same 56px topbar offset for the admin users table; !important is required
-   * to beat the global .admin-table th { top: 0 !important } rule above. */
-  .admin-table th { top: 56px !important; }
 }

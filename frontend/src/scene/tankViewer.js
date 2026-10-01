@@ -4,7 +4,9 @@
 // 资产面优先 + /api 回退；击穿判定为 penetration.js 客户端移植（上游 Rust 单测同源）。
 // /api/hold、/api/ready 保留（Agent 自托管无头截图链专用，静态面缺席时静默无操作）。
 // 调用前须设置 window.__INITIAL_TANK__ / __INITIAL_SHOOTER__（ArmorView 从路由参数注入）。
-// 生命周期：返回 { destroy }——SPA 路由离开时必须调用（ArmorView onBeforeUnmount）：
+// 加载状态（审计 3D-23）：options.onLoadState 收到 { state: 'loading'|'ready'|'error', progress, message }，
+// 宿主页据此显示进度条 / 失败重试；返回的 retry() 重新加载当前目标坦克。
+// 生命周期：返回 { destroy, retry }——SPA 路由离开时必须调用（ArmorView onBeforeUnmount）：
 // 取消 rAF 循环、摘除 window 监听器、释放 WebGL 上下文；不调用则多次进出路由会
 // 耗尽浏览器 WebGL 上下文上限（~16 个）出现"context lost"黑屏。
 import * as THREE from 'three'
@@ -20,10 +22,12 @@ import {
     tankImageUrl,
     assetProvider,
 } from './agentData.js'
+import { createLoadProgress } from './loadProgress.js'
 
 /**
  * @param {object} [options]
  * @param {object} [options.labels] 界面文案（审计 3D-16：由宿主页按当前语言提供；缺省为英文原文）
+ * @param {(state: { state: string, progress?: number | null, message?: string }) => void} [options.onLoadState]
  */
 /**
  * 场景脚本把射击复现 / 调试状态挂在 window 上（__worldPan、__shotCtx…）。以前每次都在新窗口里打开，
@@ -40,7 +44,7 @@ function resetViewerGlobals() {
     }
 }
 
-export function initTankViewer({ labels = {} } = {}) {
+export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         resetViewerGlobals();
         const L = {
             loading: 'Loading tank model...',
@@ -51,13 +55,27 @@ export function initTankViewer({ labels = {} } = {}) {
             showCollision: 'Show Collision',
             hideCollision: 'Hide Collision',
             worldHint: 'Drag to rotate · Scroll to zoom · Right-drag: pan',
+            phase: (phase) => phase,   // 加载阶段名（armor model / tank model / tank data / tank list）
             ...labels,
         };
+        const loadFailed = (phase, msg) => L.loadFailed(L.phase(phase), msg);
 
         // window 级监听统一经 onWin 登记，destroy 时成对摘除
         const cleanups = [];
         let rafId = 0;
         let destroyed = false;   // destroy 后迟到的 init/ animate 不再启动渲染
+        let initDone = false;    // 渲染器与名册就绪后 retry 才能只重载目标坦克
+        // 加载状态上报（宿主页进度条 / 错误态）；宿主回调异常不影响场景
+        const reportLoad = (state) => {
+            if (destroyed || typeof onLoadState !== 'function') return;
+            try { onLoadState(state); } catch (_) {}
+        };
+        const errorMessage = (error) => (typeof error === 'string') ? error
+            : (error && (error.message || error.statusText || String(error))) || 'unknown';
+        // 两个 GLB（装甲 + 外观）字节进度聚合；loadGen 让切车后旧加载的回调不再上报
+        let loadGen = 0;
+        let targetLoadGen = 0;   // target JSON requests can finish out of order when users switch tanks quickly
+        const modelProgress = createLoadProgress((snap) => reportLoad({ state: 'loading', progress: snap.fraction }));
         const onWin = (type, fn) => {
             window.addEventListener(type, fn);
             cleanups.push(() => window.removeEventListener(type, fn));
@@ -1037,6 +1055,21 @@ export function initTankViewer({ labels = {} } = {}) {
             armorModel.updateMatrixWorld(true);
 
         }
+        function disposeDetachedModel(root) {
+            if (!root) return;
+            root.traverse(function(node) {
+                if (node.geometry && typeof node.geometry.dispose === 'function') node.geometry.dispose();
+                const materials = Array.isArray(node.material) ? node.material : (node.material ? [node.material] : []);
+                materials.forEach(function(material) {
+                    if (!material) return;
+                    for (const value of Object.values(material)) {
+                        if (value && value.isTexture && typeof value.dispose === 'function') value.dispose();
+                    }
+                    if (typeof material.dispose === 'function') material.dispose();
+                });
+            });
+        }
+
         function clearModels() {
             if (tankModel) { scene.remove(tankModel); tankModel = null; }
             if (armorModel) { scene.remove(armorModel); armorModel = null; }
@@ -1057,15 +1090,38 @@ export function initTankViewer({ labels = {} } = {}) {
             document.getElementById('loading').textContent = L.loading;
             window.__LOAD__ = 'start';
             clearModels();
+            const gen = ++loadGen;
+            const current = () => gen === loadGen;
+            let failed = false;
+            modelProgress.reset();
+            modelProgress.expect('armor');
+            modelProgress.expect('visual');
+            // XHR ProgressEvent：长度未知时 total=0，该项只在完成时计满
+            const onBytes = (key) => (e) => {
+                if (current() && e) modelProgress.update(key, e.loaded, e.lengthComputable ? e.total : 0);
+            };
+            const finish = (key) => {
+                if (!current()) return;
+                modelProgress.complete(key);
+                const snap = modelProgress.snapshot();
+                if (snap.done === snap.total && !failed) reportLoad({ state: 'ready', progress: 1 });
+            };
             const loader = new GLTFLoader();
             const fail = (phase) => (error) => {
-                const msg = (typeof error === 'string') ? error : (error && (error.message || error.statusText || String(error))) || 'unknown';
+                const msg = errorMessage(error);
                 window.__LOAD__ = 'fail:' + phase + ':' + msg;
                 console.error('Failed to load ' + phase + ':', error);
-                document.getElementById('loading').textContent = L.loadFailed(phase, msg);
+                document.getElementById('loading').textContent = loadFailed(phase, msg);
+                if (!current()) return;
+                failed = true;
+                reportLoad({ state: 'error', message: loadFailed(phase, msg) });
             };
 
             loader.load(assetProvider.url(tankData.model_url), function(gltf) {
+                if (!current() || destroyed) {
+                    disposeDetachedModel(gltf?.scene);
+                    return;
+                }
                 armorModel = gltf.scene;
                 _armorPrefixCache = null;   // 装甲模型重建后前缀缓存失效
                 tagArmorPlates(armorModel);
@@ -1092,9 +1148,14 @@ export function initTankViewer({ labels = {} } = {}) {
                 syncTransforms();
                 applyConfig(currentConfigIdx);
                 applyUrlOptionsOnce();
-            }, undefined, fail('armor model'));
+                finish('armor');
+            }, onBytes('armor'), fail('armor model'));
 
             loader.load(assetProvider.url(tankData.visual_model_url), function(gltf) {
+                if (!current() || destroyed) {
+                    disposeDetachedModel(gltf?.scene);
+                    return;
+                }
                 tankModel = gltf.scene;
                 applyModelTransforms(tankModel);
                 tagModuleMeshes(tankModel);
@@ -1143,7 +1204,8 @@ export function initTankViewer({ labels = {} } = {}) {
                 applyConfig(currentConfigIdx);
                 applyUrlOptionsOnce();
                 window.__DBG__ = { scene, tankModel, armorModel, tankData, THREE, controls };
-            }, undefined, fail('tank model'));
+                finish('visual');
+            }, onBytes('visual'), fail('tank model'));
         }
 
         const QP = new URLSearchParams(location.search);
@@ -2747,15 +2809,21 @@ export function initTankViewer({ labels = {} } = {}) {
         }
 
         async function loadTarget(tid) {
+            const gen = ++targetLoadGen;
             tidyTrajectory();
-            tankData = await fetchTankData(tid);
+            reportLoad({ state: 'loading', progress: null });   // 车辆数据（JSON）阶段：不确定进度
+            const nextTankData = await fetchTankData(tid);
+            if (destroyed || gen !== targetLoadGen) return false;
+            tankData = nextTankData;
             const q = new URLSearchParams(location.search);
             const wantCfg = parseInt(q.get('config'), 10);
-            const defaultCfg = Math.max(0, (tankData.configs ? tankData.configs.length : 1) - 1);
-            currentConfigIdx = (Number.isInteger(wantCfg) && wantCfg >= 0 && wantCfg < tankData.configs.length) ? wantCfg : defaultCfg;
+            const configs = tankData.configs || [];
+            const defaultCfg = Math.max(0, configs.length - 1);
+            currentConfigIdx = (Number.isInteger(wantCfg) && wantCfg >= 0 && wantCfg < configs.length) ? wantCfg : defaultCfg;
             setupConfigSelect();
             updateInfoPanel();
             loadModels();
+            return true;
         }
 
         function currentConfig() {
@@ -3031,7 +3099,7 @@ export function initTankViewer({ labels = {} } = {}) {
             } else {
                 currentTargetId = id;
                 updateTankLabels();
-                loadTarget(id);
+                loadTarget(id).catch((e) => reportLoad({ state: 'error', message: loadFailed('tank data', errorMessage(e)) }));
             }
             closePicker();
         }
@@ -3280,14 +3348,25 @@ export function initTankViewer({ labels = {} } = {}) {
         }
 
         async function init() {
+            reportLoad({ state: 'loading', progress: null });
             initScene();
             setupEventHandlers();
             const initTargetId = window.__INITIAL_TANK__ || 28689;
             const initShooterId = window.__INITIAL_SHOOTER__ || initTargetId;
             await populateTankLists(initTargetId, initShooterId);
+            initDone = true;
             await loadTarget(initTargetId);
             await loadShooter(initShooterId);
             if (!destroyed) animate();   // await 期间路由已离开则不再启动渲染
+        }
+
+        /// 宿主页"重试"：名册已就绪时只重载当前目标坦克；否则返回 false，由宿主整体重建
+        function retry() {
+            if (destroyed || !initDone || currentTargetId == null) return false;
+            loadTarget(currentTargetId)
+                .then(() => { if (!destroyed && !rafId) animate(); })   // 首次加载失败时渲染循环尚未启动
+                .catch((e) => reportLoad({ state: 'error', message: loadFailed('tank data', errorMessage(e)) }));
+            return true;
         }
 
         let turretNode = null, gunNodesList = [];
@@ -4007,6 +4086,8 @@ export function initTankViewer({ labels = {} } = {}) {
         /// canvas 由 ArmorView 的容器 DOM 一并移除，这里只处理 JS 侧句柄。
         function destroy() {
             destroyed = true;
+            targetLoadGen++; // invalidate in-flight target JSON before it can mutate the destroyed/current viewer
+            loadGen++;   // invalidate any in-flight GLTF callbacks before releasing the live scene
             resetViewerGlobals();
             cancelAnimationFrame(rafId);
             while (cleanups.length) { try { cleanups.pop()(); } catch (_) {} }
@@ -4020,6 +4101,9 @@ export function initTankViewer({ labels = {} } = {}) {
             }
         }
 
-        init();
-        return { destroy };
+        init().catch((e) => {
+            console.error('tank viewer init failed:', e);
+            reportLoad({ state: 'error', message: loadFailed(initDone ? 'tank data' : 'tank list', errorMessage(e)) });
+        });
+        return { destroy, retry };
     }
