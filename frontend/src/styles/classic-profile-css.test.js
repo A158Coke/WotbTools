@@ -102,7 +102,7 @@ describe('Classic Profile — 真浅色主题契约（Theme 计划：Classic=Lig
     expect(css).not.toMatch(/\b\*\s*\{/)
   })
 
-  // 应用外壳（顶栏 / 底部 Tab 栏 / 我的）只用设计语言语义 token，浅色由 tokens/color.css 的
+  // 应用外壳（顶栏 / 底部 Tab 栏 / 更多）只用设计语言语义 token，浅色由 tokens/color.css 的
   // [data-theme="light"] 映射提供，不再需要 classic 覆盖规则。
   it('覆盖核心页面面:tabs/table/form/modal 均带 namespace 且不隐藏业务', () => {
     expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.modal\s*\{/)

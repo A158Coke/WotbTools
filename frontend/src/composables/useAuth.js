@@ -256,7 +256,7 @@ const isAdmin = computed(() => hasRole('wotbtools-admin'))
 const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)
 
 /**
- * 展示名（顶栏账户入口 / 我的 / 个人中心）：Keycloak `display-name-mapper` 映射的 `displayName`
+ * 展示名（顶栏账户入口 / 个人中心）：Keycloak `display-name-mapper` 映射的 `displayName`
  * （WG 官方昵称 / QQ 昵称）。`preferred_username` 是内部登录名（形如 `wg_eu_572253806`），
  * 只在 claim 缺失时兜底，绝不作为首选展示。
  */

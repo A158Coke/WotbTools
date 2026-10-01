@@ -8,7 +8,7 @@ export const LEGACY_VIEW_ALIASES = Object.freeze({
 })
 
 export const ALLOWED_VIEWS = Object.freeze([
-  'home', 'replay', 'hof', 'me', 'hof-admin',
+  'home', 'replay', 'hof', 'more', 'hof-admin',
   'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots',
   'playback-qa', 'rating-docs', 'rating-v2',
@@ -28,16 +28,17 @@ export const ADMIN_ONLY_VIEWS = Object.freeze([
 
 /**
  * 主导航（design-language §9 / 审计 §8.1）：桌面 / 平板顶栏与手机 / App 底部 Tab 栏共用同一份清单。
+ * 账户（个人中心 / 登录登出）不在主导航里，由顶栏右侧的头像入口进入 `profile`。
  * `homeHostOnly`：首页只在 wotbtools.com 上存在（本地开发默认进入回放）。
  */
 export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'home', view: 'home', labelKey: 'nav.home', homeHostOnly: true }),
   Object.freeze({ id: 'replay', view: 'replay', labelKey: 'nav.replay' }),
   Object.freeze({ id: 'hof', view: 'hof', labelKey: 'nav.hof' }),
-  Object.freeze({ id: 'me', view: 'me', labelKey: 'nav.me' }),
+  Object.freeze({ id: 'more', view: 'more', labelKey: 'nav.more' }),
 ])
 
-// 视图 → 所属主栏目。未列出的视图（个人中心、关于、管理、工具等）都归入"我的"。
+// 视图 → 所属栏目。个人中心属于账户入口；未列出的视图（设置、关于、管理、工具等）都归入"更多"。
 const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   home: 'home',
   replay: 'replay',
@@ -46,10 +47,11 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'agent-replay': 'replay',
   'agent-shots': 'replay',
   hof: 'hof',
+  profile: 'account',
 })
 
 export function primarySection(view) {
-  return PRIMARY_SECTION_OF_VIEW[view] ?? 'me'
+  return PRIMARY_SECTION_OF_VIEW[view] ?? 'more'
 }
 
 export function primaryNavItems(hostname = window.location.hostname) {

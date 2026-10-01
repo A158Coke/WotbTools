@@ -6,20 +6,22 @@ import { computed, ref } from 'vue'
 import ProfilePage from './ProfilePage.vue'
 
 let currentProfile = null
+let profileFailures = 0
 const tokenRef = ref(null)
 let syncImpl = () => Promise.resolve(null)
 
 const api = vi.hoisted(() => ({
+  authenticated: true,
   login: vi.fn(() => Promise.resolve(undefined)),
   logout: vi.fn(() => Promise.resolve(undefined))
 }))
 
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
-    initPromise: Promise.resolve(true),
+    initPromise: Promise.resolve(api.authenticated),
     login: api.login,
     logout: api.logout,
-    isAuthenticated: () => true,
+    isAuthenticated: () => api.authenticated,
     initError: ref(null),
     tokenParsed: tokenRef,
     displayName: computed(() => tokenRef.value?.displayName || tokenRef.value?.preferred_username || '')
@@ -27,7 +29,7 @@ vi.mock('../composables/useAuth.js', () => ({
 }))
 
 vi.mock('../utils/api-user.js', () => ({
-  getUserProfile: () => Promise.resolve(currentProfile),
+  getUserProfile: () => (profileFailures-- > 0 ? Promise.reject(new Error('boom')) : Promise.resolve(currentProfile)),
   // 全局 bootstrap 才是 profile ensure 的 owner；页面只等待其结果。
   ensureUserProfile: () => Promise.resolve(currentProfile),
   syncUserWotbAccountFromLogin: () => syncImpl(),
@@ -369,5 +371,52 @@ describe('ProfilePage Wargaming regions', () => {
     expect(hundredApi.hofHundredMyStatus).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('hundred.withdrawSuccess')
     vi.unstubAllGlobals()
+  })
+})
+
+describe('ProfilePage as the account page', () => {
+  beforeEach(() => {
+    api.authenticated = true
+    api.login.mockClear()
+    api.logout.mockClear()
+    profileFailures = 0
+    currentProfile = null
+    tokenRef.value = null
+    hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
+  })
+
+  it('shows a sign-in card instead of redirecting when signed out', async () => {
+    api.authenticated = false
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
+    expect(api.login).not.toHaveBeenCalled()
+  })
+
+  it('signs in from the card and returns to the account page', async () => {
+    api.authenticated = false
+    const wrapper = mountProfile()
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-login"]').trigger('click')
+    expect(api.login).toHaveBeenCalledWith('profile')
+  })
+
+  it('retries loading the profile (not a login) when a signed-in load fails', async () => {
+    profileFailures = 1
+    currentProfile = wargamingProfile('ASIA', 1001)
+    const wrapper = mountProfile()
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-retry"]').trigger('click')
+    await flushPromises()
+    expect(api.login).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="profile-logout"]').exists()).toBe(true)
+  })
+
+  it('logs out from the account page', async () => {
+    currentProfile = wargamingProfile('ASIA', 1001)
+    const wrapper = mountProfile()
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-logout"]').trigger('click')
+    expect(api.logout).toHaveBeenCalled()
   })
 })
