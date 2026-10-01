@@ -150,6 +150,7 @@ for owner in ("business-api", "frontend"):
 # repo:sha-<tag>@sha256:<digest> is content-addressed for Docker, but deploy.sh
 # intentionally rejects tags so production identity has one canonical shape.
 frontend_workflow = load(workflow_dir / "frontend.yml")
+assert set(frontend_workflow["jobs"]["build"]["outputs"]) == {"commit_sha", "digest"}
 frontend_deploy = next(
     step for step in frontend_workflow["jobs"]["deploy"]["steps"]
     if step.get("name") == "Reconcile only Frontend under the TX host lock"
