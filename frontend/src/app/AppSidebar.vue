@@ -12,6 +12,7 @@ import { useSidebar } from '../composables/useSidebar.js'
 import { ADMIN_NAV, defaultView, locationForView, primaryNavItems, primarySection, viewFromRoute } from './navigation.js'
 import { ACCOUNT_ICON, ADMIN_NAV_ICONS, PRIMARY_NAV_ICONS } from './navIcons.js'
 import MorePanel from './MorePanel.vue'
+import BrandMark from '../components/BrandMark.vue'
 
 const route = useRoute()
 const { isAdmin, isHofAdmin, isAuthenticated, displayName } = useAuth()
@@ -49,8 +50,8 @@ function linkAttrs(id) {
 <template>
   <aside class="app-sidebar" :class="{ 'is-rail': rail }" data-testid="app-sidebar">
     <RouterLink class="sidebar-brand" :to="brandTarget" aria-label="WoTBTools">
-      <img class="sidebar-logo" src="/wotbtoolslogo-128.webp" width="128" height="128" alt="" aria-hidden="true">
-      <span v-if="!rail" class="sidebar-brand-name">WoTBTools</span>
+      <BrandMark class="sidebar-logo" />
+      <span v-if="!rail" class="sidebar-brand-name">WoTB<span class="sidebar-brand-accent">Tools</span></span>
     </RouterLink>
 
     <span
@@ -173,8 +174,11 @@ function linkAttrs(id) {
 }
 
 .is-rail .sidebar-brand { justify-content: center; padding-inline: 0; }
-.sidebar-logo { display: block; flex: none; width: auto; height: 32px; }
-.sidebar-brand-name { font: var(--type-h3); white-space: nowrap; }
+.sidebar-logo { flex: none; height: 28px; }
+/* 图标栏内宽约 64px：品牌图形（约 2.1:1）收小，避免撑出栏宽 */
+.is-rail .sidebar-logo { height: 24px; }
+.sidebar-brand-name { font: var(--type-h3); font-weight: 800; white-space: nowrap; }
+.sidebar-brand-accent { color: var(--color-accent-text); }
 
 .sidebar-dev-notice {
   padding: var(--space-1) var(--space-2);

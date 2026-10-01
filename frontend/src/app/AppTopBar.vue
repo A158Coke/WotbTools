@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { defaultView, locationForView, primarySection, sectionTitleKey as titleKeyFor, viewFromRoute } from './navigation.js'
 import { ACCOUNT_ICON } from './navIcons.js'
+import BrandMark from '../components/BrandMark.vue'
 
 // 手机 / App（compact）的标题栏：logo · 当前栏目名 · 账户。主导航在底部 Tab 栏；
 // 平板 / 桌面没有顶栏，导航在左侧边栏（AppSidebar）。
@@ -22,7 +23,7 @@ const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
 <template>
   <header class="app-top-bar" data-testid="app-top-bar">
     <RouterLink class="brand" :to="brandTarget" aria-label="WoTBTools">
-      <img class="brand-logo" src="/wotbtoolslogo-128.webp" width="128" height="128" alt="" aria-hidden="true">
+      <BrandMark class="brand-logo" />
     </RouterLink>
 
     <span v-if="sectionTitleKey" class="section-title">{{ $t(sectionTitleKey) }}</span>
@@ -65,7 +66,7 @@ const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
 }
 
 .brand { display: inline-flex; align-items: center; flex: none; }
-.brand-logo { display: block; width: auto; height: 28px; }
+.brand-logo { height: 24px; }
 
 .section-title {
   min-width: 0;
