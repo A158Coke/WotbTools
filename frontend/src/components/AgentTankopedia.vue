@@ -112,8 +112,8 @@ async function loadDetail(id) {
 watch(detailId, loadDetail, { immediate: false })
 
 function open3d() {
-  // wotbagent 同参：新窗口 3D 检视器，携带实际搭载配置下标
-  window.open(`/?view=agent-armor&tank=${detailId.value}&config=${cfgIdx.value}`, '_blank')
+  // 审计 3D-09：在当前标签页打开装甲查看器（携带实际搭载配置下标），返回走浏览器历史
+  router.push({ query: { view: 'agent-armor', tank: String(detailId.value), config: String(cfgIdx.value) } })
 }
 
 onMounted(async () => {

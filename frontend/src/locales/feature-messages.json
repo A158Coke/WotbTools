@@ -221,6 +221,51 @@
       "hundred": "成为第一个上榜的人：点击「{action}」，上传该车百场战绩截图与回放，审核通过后显示在这里。",
       "mark3": "成为第一个上榜的人：点击「{action}」，上传三环截图，审核通过后显示在这里。"
     },
+    "agentReplay": {
+      "title": "3D 回放", "roster": "阵容",
+      "pick_hint": "选择本地 .wotbreplay 文件——在浏览器内本地解析，文件不会上传。"
+    },
+    "agentTanks": {
+      "title": "坦克百科",
+      "hint": "全部坦克图鉴。点击卡片查看装甲、弹种与机动数据，或在装甲查看器中打开。"
+    },
+    "agentShots": {
+      "title": "射击分析",
+      "hint": "选择本地 .wotbreplay——在浏览器内本地解析全员射击（文件不会上传），点击一行即可在装甲查看器里复现这一发的弹道与命中判定。"
+    },
+    "armor": {
+      "back": "返回",
+      "loading": "正在加载坦克模型…",
+      "load_failed": "{phase} 加载失败：{msg}",
+      "tier": "等级",
+      "type": "类型",
+      "nation": "国籍",
+      "config": "配置",
+      "equip": "装备",
+      "calibrated": "校准弹",
+      "enhanced": "强化装甲",
+      "shooter": "射击方",
+      "target": "目标",
+      "shell": "弹种",
+      "show_collision": "显示碰撞模型",
+      "hide_collision": "隐藏碰撞模型",
+      "heatmap": "穿透热力图",
+      "aim": "炮塔",
+      "aim_hint": "打开后单指拖动转动炮塔与炮管",
+      "select_tank": "选择坦克",
+      "search": "搜索坦克…",
+      "close": "关闭",
+      "base_armor": "基础装甲",
+      "angle": "入射角",
+      "effective": "等效装甲",
+      "penetration": "穿深",
+      "result": "结果",
+      "turret": "炮塔",
+      "gun": "炮管",
+      "hint": "拖动旋转 · 滚轮缩放 · 点击查看装甲 · 右键拖动转炮塔",
+      "hint_touch": "单指旋转 · 双指缩放 · 点击查看装甲 · 打开「炮塔」后拖动转炮塔",
+      "world_hint": "拖动旋转 · 滚轮缩放 · 右键拖动平移"
+    },
     "account": {
       "signedOutTitle": "登录 WoTBTools",
       "signedOutHint": "登录后可以绑定游戏账号、提交名人堂记录、查看你的记录。解析回放不需要登录。"
@@ -448,6 +493,51 @@
       "hundred": "Be the first: tap “{action}”, upload the stats screenshot and replays for that vehicle, and it appears here once approved.",
       "mark3": "Be the first: tap “{action}”, upload the mark screenshot, and it appears here once approved."
     },
+    "agentReplay": {
+      "title": "3D replay", "roster": "Rosters",
+      "pick_hint": "Pick a local .wotbreplay — it is parsed in your browser and never uploaded."
+    },
+    "agentTanks": {
+      "title": "Tankopedia",
+      "hint": "Every tank. Open a card for armor, shells and mobility, or view it in the armor viewer."
+    },
+    "agentShots": {
+      "title": "Shot analysis",
+      "hint": "Pick a local .wotbreplay — every shot is parsed in your browser (never uploaded). Click a row to replay that shot’s trajectory and hit check in the armor viewer."
+    },
+    "armor": {
+      "back": "Back",
+      "loading": "Loading tank model…",
+      "load_failed": "Failed to load {phase}: {msg}",
+      "tier": "Tier",
+      "type": "Type",
+      "nation": "Nation",
+      "config": "Config",
+      "equip": "Equipment",
+      "calibrated": "Calibrated shells",
+      "enhanced": "Enhanced armor",
+      "shooter": "Shooter",
+      "target": "Target",
+      "shell": "Shell",
+      "show_collision": "Show collision model",
+      "hide_collision": "Hide collision model",
+      "heatmap": "Penetration heatmap",
+      "aim": "Turret",
+      "aim_hint": "When on, drag with one finger to traverse the turret and gun",
+      "select_tank": "Select tank",
+      "search": "Search tank…",
+      "close": "Close",
+      "base_armor": "Base armor",
+      "angle": "Angle",
+      "effective": "Effective",
+      "penetration": "Penetration",
+      "result": "Result",
+      "turret": "Turret",
+      "gun": "Gun",
+      "hint": "Drag to rotate · Scroll to zoom · Click for armor · Right-drag: turret/gun",
+      "hint_touch": "Drag to rotate · Pinch to zoom · Tap for armor · Turn on “Turret” to aim",
+      "world_hint": "Drag to rotate · Scroll to zoom · Right-drag: pan"
+    },
     "account": {
       "signedOutTitle": "Sign in to WoTBTools",
       "signedOutHint": "Sign in to link your game account, submit Hall of Fame records and see your records. Parsing replays does not require an account."
@@ -674,6 +764,51 @@
     "hofHowTo": {
       "hundred": "Станьте первым: нажмите «{action}», загрузите скриншот статистики и реплеи для этой техники — после проверки запись появится здесь.",
       "mark3": "Станьте первым: нажмите «{action}», загрузите скриншот — после проверки запись появится здесь."
+    },
+    "agentReplay": {
+      "title": "3D-повтор", "roster": "Составы",
+      "pick_hint": "Выберите локальный .wotbreplay — он разбирается в браузере и никуда не загружается."
+    },
+    "agentTanks": {
+      "title": "Энциклопедия танков",
+      "hint": "Все танки. Откройте карточку, чтобы увидеть броню, снаряды и подвижность, или откройте её в просмотрщике брони."
+    },
+    "agentShots": {
+      "title": "Анализ выстрелов",
+      "hint": "Выберите локальный .wotbreplay — все выстрелы разбираются в браузере (файл не загружается). Клик по строке воспроизводит траекторию и попадание в просмотрщике брони."
+    },
+    "armor": {
+      "back": "Назад",
+      "loading": "Загрузка модели танка…",
+      "load_failed": "Не удалось загрузить {phase}: {msg}",
+      "tier": "Уровень",
+      "type": "Тип",
+      "nation": "Нация",
+      "config": "Комплектация",
+      "equip": "Оборудование",
+      "calibrated": "Калибр. снаряды",
+      "enhanced": "Усил. броня",
+      "shooter": "Стрелок",
+      "target": "Цель",
+      "shell": "Снаряд",
+      "show_collision": "Показать модель столкновений",
+      "hide_collision": "Скрыть модель столкновений",
+      "heatmap": "Тепловая карта пробития",
+      "aim": "Башня",
+      "aim_hint": "Когда включено, перетаскивание одним пальцем поворачивает башню и орудие",
+      "select_tank": "Выбор танка",
+      "search": "Поиск танка…",
+      "close": "Закрыть",
+      "base_armor": "Броня",
+      "angle": "Угол",
+      "effective": "Приведённая",
+      "penetration": "Пробитие",
+      "result": "Результат",
+      "turret": "Башня",
+      "gun": "Орудие",
+      "hint": "Перетаскивание — вращение · Колесо — масштаб · Клик — броня · ПКМ — башня/орудие",
+      "hint_touch": "Палец — вращение · Щипок — масштаб · Тап — броня · Включите «Башня», чтобы наводить",
+      "world_hint": "Перетаскивание — вращение · Колесо — масштаб · ПКМ — сдвиг"
     },
     "account": {
       "signedOutTitle": "Вход в WoTBTools",
