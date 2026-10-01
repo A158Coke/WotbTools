@@ -6,6 +6,7 @@ import { useError } from '../composables/useError.js'
 import { apiErrorCodeLabel, apiErrorLabel } from '../utils/display.js'
 import { ApiError } from '../utils/http.js'
 import * as api from '../utils/api.js'
+import AppDialog from './AppDialog.vue'
 
 const { t, te } = useI18n()
 const { show: showError } = useError()
@@ -242,12 +243,12 @@ function fmtTime(s) {
 
 <template>
   <div class="admin-page">
-    <h2>{{ $t('admin.title') }}</h2>
+    <h1 class="admin-title">{{ $t('admin.title') }}</h1>
     <p class="admin-hint">{{ $t('admin.hint') }}</p>
 
     <div class="admin-search">
       <input v-model="searchQuery" :placeholder="$t('admin.search')" @keyup.enter="onSearch" />
-      <button @click="onSearch">{{ $t('admin.searchBtn') }}</button>
+      <button type="button" class="admin-search-btn" @click="onSearch">{{ $t('admin.searchBtn') }}</button>
     </div>
 
     <div class="admin-filters">
@@ -283,12 +284,14 @@ function fmtTime(s) {
         <thead>
           <tr>
             <th class="cell-check">
-              <input
-                type="checkbox"
-                :checked="allPageSelected"
-                :aria-label="$t('admin.selectAllPage')"
-                @change="toggleSelectAllPage($event.target.checked)"
-              />
+              <label class="check-hit">
+                <input
+                  type="checkbox"
+                  :checked="allPageSelected"
+                  :aria-label="$t('admin.selectAllPage')"
+                  @change="toggleSelectAllPage($event.target.checked)"
+                />
+              </label>
             </th>
             <th>{{ $t('admin.colId') }}</th>
             <th>{{ $t('admin.colDisplayName') }}</th>
@@ -299,18 +302,20 @@ function fmtTime(s) {
             <th>{{ $t('admin.colServer') }}</th>
             <th>{{ $t('admin.colCreated') }}</th>
             <th>{{ $t('admin.colState') }}</th>
-            <th>{{ $t('admin.colActions') }}</th>
+            <th class="cell-actions">{{ $t('admin.colActions') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="u in users" :key="u.keycloakUserId || u.profileId">
             <td class="cell-check">
-              <input
-                type="checkbox"
-                :checked="selectedSet.has(u.keycloakUserId)"
-                :aria-label="$t('admin.selectRow', { name: u.keycloakUsername || u.keycloakUserId })"
-                @change="toggleSelect(u, $event.target.checked)"
-              />
+              <label class="check-hit">
+                <input
+                  type="checkbox"
+                  :checked="selectedSet.has(u.keycloakUserId)"
+                  :aria-label="$t('admin.selectRow', { name: u.keycloakUsername || u.keycloakUserId })"
+                  @change="toggleSelect(u, $event.target.checked)"
+                />
+              </label>
             </td>
             <td>{{ u.profileId }}</td>
             <td>{{ u.displayName }}</td>
@@ -330,12 +335,13 @@ function fmtTime(s) {
             </td>
             <td class="cell-actions">
               <button
+                type="button"
                 class="btn-sm"
                 :disabled="u.keycloakUserMissing"
                 :title="u.keycloakUserMissing ? $t('admin.detailUnavailable') : ''"
                 @click="loadDetail(u)"
               >{{ $t('admin.view') }}</button>
-              <button class="btn-sm btn-danger" @click="startDelete(u)">{{ $t('admin.delete') }}</button>
+              <button type="button" class="btn-sm btn-danger" @click="startDelete(u)">{{ $t('admin.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -357,149 +363,312 @@ function fmtTime(s) {
       </label>
     </div>
 
-    <!-- Detail Modal -->
-    <div v-if="showDetail && detailUser" class="modal-overlay" @click.self="closeDetail">
-      <div class="modal admin-modal">
-        <h3>{{ $t('admin.detail') }}</h3>
-        <div class="admin-detail">
-          <div class="detail-section" v-if="detailUser.profile">
-            <h4>{{ $t('admin.profileSection') }}</h4>
-            <div class="detail-row"><span class="dl">{{ $t('admin.colId') }}</span><span>{{ detailUser.profile.id }}</span></div>
-            <div class="detail-row"><span class="dl">{{ $t('admin.colDisplayName') }}</span><span>{{ detailUser.profile.displayName }}</span></div>
-            <div class="detail-row"><span class="dl">{{ $t('admin.colAccountId') }}</span><span>{{ detailUser.profile.wotbAccountId }}</span></div>
-            <div class="detail-row"><span class="dl">{{ $t('admin.colNickname') }}</span><span>{{ detailUser.profile.wotbNickname }}</span></div>
-            <div class="detail-row"><span class="dl">{{ $t('admin.colServer') }}</span><span>{{ detailUser.profile.wotbServer }}</span></div>
-            <div class="detail-row"><span class="dl">{{ $t('admin.colCreated') }}</span><span>{{ fmtTime(detailUser.profile.createdAt) }}</span></div>
-          </div>
-          <div class="detail-section" v-if="detailUser.keycloak">
-            <h4>{{ $t('admin.keycloak') }}</h4>
-            <div class="detail-row"><span class="dl">{{ $t('admin.colId') }}</span><span class="cell-mono">{{ detailUser.keycloak.id }}</span></div>
-            <div class="detail-row"><span class="dl">{{ $t('admin.username') }}</span><span>{{ detailUser.keycloak.username }}</span></div>
-            <div class="detail-row"><span class="dl">{{ $t('admin.email') }}</span><span>{{ detailUser.keycloak.email }}</span></div>
-            <div class="detail-row"><span class="dl">{{ $t('admin.enabled') }}</span><span>{{ detailUser.keycloak.enabled }}</span></div>
-            <div class="detail-row" v-for="fi in (detailUser.keycloak.federatedIdentities || [])" :key="fi.userId">
-              <span class="dl">{{ fi.identityProvider }}</span>
-              <span>{{ fi.userName }} ({{ fi.userId }})</span>
+    <!-- 详情（AppDialog：焦点陷阱 / Esc / 关闭后焦点回到触发按钮） -->
+    <AppDialog :open="showDetail && !!detailUser" :title="$t('admin.detail')" class="admin-modal detail-modal" @close="closeDetail">
+      <div class="admin-detail">
+        <section v-if="detailUser?.profile" class="detail-section">
+          <h3 class="detail-heading">{{ $t('admin.profileSection') }}</h3>
+          <dl class="detail-list">
+            <div class="detail-row"><dt>{{ $t('admin.colId') }}</dt><dd>{{ detailUser.profile.id }}</dd></div>
+            <div class="detail-row"><dt>{{ $t('admin.colDisplayName') }}</dt><dd>{{ detailUser.profile.displayName }}</dd></div>
+            <div class="detail-row"><dt>{{ $t('admin.colAccountId') }}</dt><dd>{{ detailUser.profile.wotbAccountId }}</dd></div>
+            <div class="detail-row"><dt>{{ $t('admin.colNickname') }}</dt><dd>{{ detailUser.profile.wotbNickname }}</dd></div>
+            <div class="detail-row"><dt>{{ $t('admin.colServer') }}</dt><dd>{{ detailUser.profile.wotbServer }}</dd></div>
+            <div class="detail-row"><dt>{{ $t('admin.colCreated') }}</dt><dd>{{ fmtTime(detailUser.profile.createdAt) }}</dd></div>
+          </dl>
+        </section>
+        <section v-if="detailUser?.keycloak" class="detail-section">
+          <h3 class="detail-heading">{{ $t('admin.keycloak') }}</h3>
+          <dl class="detail-list">
+            <div class="detail-row"><dt>{{ $t('admin.colId') }}</dt><dd class="cell-mono">{{ detailUser.keycloak.id }}</dd></div>
+            <div class="detail-row"><dt>{{ $t('admin.username') }}</dt><dd>{{ detailUser.keycloak.username }}</dd></div>
+            <div class="detail-row"><dt>{{ $t('admin.email') }}</dt><dd>{{ detailUser.keycloak.email }}</dd></div>
+            <div class="detail-row"><dt>{{ $t('admin.enabled') }}</dt><dd>{{ detailUser.keycloak.enabled }}</dd></div>
+            <div v-for="fi in (detailUser.keycloak.federatedIdentities || [])" :key="fi.userId" class="detail-row">
+              <dt>{{ fi.identityProvider }}</dt>
+              <dd>{{ fi.userName }} ({{ fi.userId }})</dd>
             </div>
-          </div>
-          <p v-if="detailUser.warnings?.length" class="admin-warn">{{ detailUser.warnings.map(warning => apiErrorLabel(t, te, { code: warning })).join(', ') }}</p>
-        </div>
-        <button class="btn-sm" @click="closeDetail">{{ $t('admin.close') }}</button>
+          </dl>
+        </section>
+        <p v-if="detailUser?.warnings?.length" class="admin-warn">{{ detailUser.warnings.map(warning => apiErrorLabel(t, te, { code: warning })).join(', ') }}</p>
       </div>
-    </div>
+      <template #actions>
+        <button type="button" class="btn-sm" @click="closeDetail">{{ $t('admin.close') }}</button>
+      </template>
+    </AppDialog>
 
-    <!-- Delete Confirm Modal -->
-    <div v-if="deleteUserId" class="modal-overlay" @click.self="cancelDelete">
-      <div class="modal admin-modal confirm-modal">
-        <h3 class="danger">{{ $t('admin.confirmDelete') }}</h3>
-        <div class="admin-detail">
-          <p>{{ $t('admin.confirmText') }}</p>
-          <p class="admin-warn">{{ $t('admin.confirmWarn') }}</p>
-          <p v-if="deleteResult === 'DELETED'" class="admin-ok">{{ $t('admin.deleted') }}</p>
-          <p v-else-if="deleteResult" class="admin-error">{{ deleteResult }}</p>
-          <div v-else>
-            <label>{{ $t('admin.confirmInput') }}</label>
-            <input v-model="deleteConfirmText" :placeholder="$t('admin.deleteKeyword')" class="admin-confirm-input" />
-          </div>
-        </div>
-        <div class="modal-actions">
-          <button class="btn-sm" @click="cancelDelete">{{ $t('admin.cancel') }}</button>
-          <button class="btn-sm btn-danger" :disabled="deleteConfirmText !== 'DELETE' || deleting" @click="confirmDelete">
-            {{ deleting ? $t('admin.deleting') : $t('admin.delete') }}
-          </button>
-        </div>
+    <!-- 单个删除确认（需输入 DELETE） -->
+    <AppDialog
+      :open="!!deleteUserId"
+      :title="$t('admin.confirmDelete')"
+      size="sm"
+      tone="danger"
+      class="admin-modal confirm-modal"
+      @close="!deleting && cancelDelete()"
+    >
+      <div class="admin-detail">
+        <p>{{ $t('admin.confirmText') }}</p>
+        <p class="admin-warn">{{ $t('admin.confirmWarn') }}</p>
+        <p v-if="deleteResult === 'DELETED'" class="admin-ok">{{ $t('admin.deleted') }}</p>
+        <p v-else-if="deleteResult" class="admin-error">{{ deleteResult }}</p>
+        <label v-else class="admin-confirm-field">
+          <span>{{ $t('admin.confirmInput') }}</span>
+          <input v-model="deleteConfirmText" :placeholder="$t('admin.deleteKeyword')" class="admin-confirm-input" />
+        </label>
       </div>
-    </div>
+      <template #actions>
+        <button type="button" class="btn-sm" @click="cancelDelete">{{ $t('admin.cancel') }}</button>
+        <button type="button" class="btn-sm btn-danger" :disabled="deleteConfirmText !== 'DELETE' || deleting" @click="confirmDelete">
+          {{ deleting ? $t('admin.deleting') : $t('admin.delete') }}
+        </button>
+      </template>
+    </AppDialog>
 
-    <!-- Bulk Delete Confirm Modal（整批只弹一次） -->
-    <div v-if="showBulkConfirm" class="modal-overlay" @click.self="cancelBulkDelete">
-      <div class="modal admin-modal confirm-modal bulk-confirm-modal">
-        <h3 class="danger">{{ $t('admin.bulkConfirmDelete') }}</h3>
-        <div class="admin-detail">
-          <p>{{ $t('admin.bulkConfirmText', { count: selectedCount }) }}</p>
-          <p class="admin-warn">{{ $t('admin.confirmWarn') }}</p>
-          <template v-if="bulkResult">
-            <p class="admin-ok">{{ $t('admin.bulkSummary', { requested: bulkResult.requested, deleted: bulkResult.deleted, failed: bulkResult.failed }) }}</p>
-            <div v-if="bulkResult.results?.some(r => !r.deleted)" class="bulk-failures">
-              <p class="admin-warn">{{ $t('admin.bulkFailures') }}</p>
-              <ul>
-                <li v-for="item in bulkResult.results.filter(r => !r.deleted)" :key="item.userId" class="cell-mono">
-                  {{ item.userId }} — {{ errorCodeLabel(item.errorCode) }}
-                </li>
-              </ul>
-            </div>
-          </template>
-          <div v-else>
-            <label>{{ $t('admin.confirmInput') }}</label>
-            <input v-model="bulkConfirmText" :placeholder="$t('admin.deleteKeyword')" class="admin-confirm-input" />
+    <!-- 批量删除确认（整批只弹一次） -->
+    <AppDialog
+      :open="showBulkConfirm"
+      :title="$t('admin.bulkConfirmDelete')"
+      size="sm"
+      tone="danger"
+      class="admin-modal confirm-modal bulk-confirm-modal"
+      @close="!bulkDeleting && cancelBulkDelete()"
+    >
+      <div class="admin-detail">
+        <p>{{ $t('admin.bulkConfirmText', { count: selectedCount }) }}</p>
+        <p class="admin-warn">{{ $t('admin.confirmWarn') }}</p>
+        <template v-if="bulkResult">
+          <p class="admin-ok">{{ $t('admin.bulkSummary', { requested: bulkResult.requested, deleted: bulkResult.deleted, failed: bulkResult.failed }) }}</p>
+          <div v-if="bulkResult.results?.some(r => !r.deleted)" class="bulk-failures">
+            <p class="admin-warn">{{ $t('admin.bulkFailures') }}</p>
+            <ul>
+              <li v-for="item in bulkResult.results.filter(r => !r.deleted)" :key="item.userId" class="cell-mono">
+                {{ item.userId }} — {{ errorCodeLabel(item.errorCode) }}
+              </li>
+            </ul>
           </div>
-        </div>
-        <div class="modal-actions">
-          <button class="btn-sm" @click="cancelBulkDelete">{{ bulkResult ? $t('admin.close') : $t('admin.cancel') }}</button>
-          <button
-            v-if="!bulkResult"
-            class="btn-sm btn-danger"
-            :disabled="bulkConfirmText !== 'DELETE' || bulkDeleting"
-            @click="confirmBulkDelete"
-          >
-            {{ bulkDeleting ? $t('admin.deleting') : $t('admin.bulkDelete') }}
-          </button>
-        </div>
+        </template>
+        <label v-else class="admin-confirm-field">
+          <span>{{ $t('admin.confirmInput') }}</span>
+          <input v-model="bulkConfirmText" :placeholder="$t('admin.deleteKeyword')" class="admin-confirm-input" />
+        </label>
       </div>
-    </div>
+      <template #actions>
+        <button type="button" class="btn-sm" @click="cancelBulkDelete">{{ bulkResult ? $t('admin.close') : $t('admin.cancel') }}</button>
+        <button
+          v-if="!bulkResult"
+          type="button"
+          class="btn-sm btn-danger"
+          :disabled="bulkConfirmText !== 'DELETE' || bulkDeleting"
+          @click="confirmBulkDelete"
+        >
+          {{ bulkDeleting ? $t('admin.deleting') : $t('admin.bulkDelete') }}
+        </button>
+      </template>
+    </AppDialog>
   </div>
 </template>
 
 <style scoped>
-.admin-page { max-width: 1200px; margin: 0 auto; padding: 24px 20px 64px; }
-.admin-page h2 { font-size: 1.3rem; margin: 0 0 4px; color: #f2ede3; }
-.admin-hint { font-size: .85rem; color: #9aa09c; margin: 0 0 16px; }
-.admin-search { display: flex; gap: 8px; margin-bottom: 16px; }
-.admin-search input { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font-size: .85rem; }
-.admin-search button { padding: 8px 20px; border: none; border-radius: 7px; background: var(--accent); color: var(--accent-text); cursor: pointer; font-size: .85rem; font-weight: 700; }
-.admin-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
-.admin-filter { display: flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--text-sub); }
-.admin-filter select, .admin-filter input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-card); color: var(--text); font-size: .82rem; font-family: inherit; }
-.admin-filter input:disabled { opacity: .5; cursor: not-allowed; }
+/* 设计语言 token（docs/frontend/design-language.md）：本组件是用户管理页样式的唯一 owner，
+ * showcase / classic 不再覆盖内部元素；两套主题只通过语义 token 换色。 */
+.admin-page { padding-block: var(--space-6) var(--space-12); color: var(--color-text-primary); font: var(--type-body); }
+.admin-title { margin: 0 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h1); }
+.admin-hint { margin: 0 0 var(--space-4); color: var(--color-text-secondary); }
+
+.admin-search { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
+
+.admin-page input:not([type="checkbox"]),
+.admin-page select,
+.admin-confirm-input {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+}
+
+.admin-search input { flex: 1 1 auto; }
+
+.admin-search-btn {
+  flex: none;
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-5);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font: var(--type-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.admin-filter { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); }
+.admin-filter input:disabled { cursor: not-allowed; opacity: .5; }
 .admin-filter-hint { margin: 0; padding: 0; text-align: left; }
-.admin-bulk-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card2); }
-.admin-selected { font-size: .82rem; color: var(--text-sub); font-weight: 600; }
-.admin-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); box-shadow: var(--surface-shadow); }
-.admin-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-.admin-table th, .admin-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #263136; white-space: nowrap; }
-.admin-table th { background: var(--bg-card2); font-weight: 600; color: var(--text-sub); font-size: .78rem; position: sticky; top: 0; }
-.admin-table tbody tr:hover { background: var(--bg-list-hover); }
-.admin-table td { color: #d8d5cd; }
-.cell-check { width: 32px; }
-.cell-check input { cursor: pointer; }
-.cell-mono { font-family: monospace; font-size: .78rem; }
+
+.admin-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.admin-selected { color: var(--color-text-primary); font-weight: 600; }
+
+/* 表格：容器横向滚动；操作列（查看 / 删除）吸附在右侧，手机上始终可达（审计 PG-10）。
+ * isolation 建立局部层叠上下文，表头 / 操作列的 z-index 不参与全局竞争（§5） */
+.admin-table-wrap {
+  isolation: isolate;
+  overflow-x: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  box-shadow: var(--elevation-1);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font: var(--type-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-table th,
+.admin-table td {
+  height: var(--row-h);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.admin-table th {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+
+.admin-table td { background: var(--color-surface-1); color: var(--color-text-primary); }
+
+.cell-actions {
+  position: sticky;
+  right: 0;
+  z-index: var(--z-base);
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+td.cell-actions > * + * { margin-left: var(--space-1); }
+
+/* 复选框：放大到控件尺寸 token，label 提供最小点击区域 */
+.cell-check { width: var(--hit-min); padding: 0; text-align: center; }
+
+.check-hit {
+  display: inline-grid;
+  place-items: center;
+  min-width: var(--hit-min);
+  min-height: var(--hit-min);
+  cursor: pointer;
+}
+
+.check-hit input {
+  inline-size: var(--control-check);
+  block-size: var(--control-check);
+  margin: 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.cell-mono { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
 .cell-short { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-.cell-time { font-size: .78rem; color: #9aa09c; }
-.cell-kc-user { font-size: .82rem; }
-.cell-actions { display: flex; gap: 4px; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-card2); color: var(--text-sub); font-size: .72rem; }
-.badge-warn { border-color: #f0c97e; color: #f0c97e; }
-.admin-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
-.admin-page-info { font-size: .82rem; color: var(--text-sub); }
-.btn-sm { padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); cursor: pointer; font-size: .8rem; font-family: inherit; }
-.btn-sm:hover { background: var(--bg-list-hover); }
-.btn-sm:disabled { opacity: .4; cursor: not-allowed; }
-.btn-danger { color: var(--error); border-color: var(--error); }
-.btn-danger:disabled { opacity: .4; cursor: not-allowed; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 200; }
-.modal { background: var(--bg-card); border-radius: 12px; padding: 24px; max-width: 640px; width: 90%; max-height: 80vh; overflow-y: auto; }
-.admin-modal h3 { margin: 0 0 16px; font-size: 1.1rem; }
-.admin-modal h4 { margin: 0 0 8px; font-size: .95rem; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-.detail-section { margin-bottom: 16px; }
-.detail-row { display: flex; gap: 12px; padding: 4px 0; font-size: .85rem; }
-.detail-row .dl { font-weight: 600; color: var(--text-sub); min-width: 110px; flex-shrink: 0; }
-.admin-error { color: #ff8f86; font-size: .85rem; padding: 8px 0; }
-.admin-warn { color: #f0c97e; font-size: .85rem; }
-.admin-ok { color: #9fd39a; font-size: .85rem; font-weight: 700; }
-.admin-muted { color: #9aa09c; font-size: .85rem; padding: 16px 0; text-align: center; }
-.confirm-modal { max-width: 480px; }
-.confirm-modal .danger { color: var(--error); }
-.admin-confirm-input { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; margin-top: 4px; box-sizing: border-box; background: var(--bg-card); color: var(--text); }
-.bulk-failures ul { margin: 4px 0 0; padding-left: 18px; }
-.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.cell-time { color: var(--color-text-secondary); font-size: var(--font-size-caption); }
+
+.badge {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+}
+
+.badge-warn { border-color: var(--color-warning); color: var(--color-warning); }
+
+.admin-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+.admin-page-info { color: var(--color-text-secondary); }
+
+.btn-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  cursor: pointer;
+}
+
+.btn-danger { border-color: var(--color-danger); color: var(--color-danger); }
+.btn-sm:disabled { cursor: not-allowed; opacity: .5; }
+
+.btn-sm:focus-visible,
+.admin-search-btn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+@media (hover: hover) {
+  .admin-table tbody tr:hover td { background: var(--color-surface-2); }
+  .btn-sm:hover:not(:disabled) { background: var(--color-surface-2); }
+  .btn-danger:hover:not(:disabled) { background: color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1)); }
+  .admin-search-btn:hover { background: color-mix(in oklab, var(--color-accent) 88%, var(--color-text-primary)); }
+}
+
+/* 对话框内容（外壳由 AppDialog 负责） */
+.detail-section + .detail-section { margin-top: var(--space-4); }
+
+.detail-heading {
+  margin: 0 0 var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  font-weight: 600;
+}
+
+.detail-list { margin: 0; }
+.detail-row { display: flex; gap: var(--space-3); padding: var(--space-1) 0; }
+.detail-row dt { flex: none; min-width: 110px; color: var(--color-text-secondary); font-weight: 600; }
+.detail-row dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+
+.admin-error { padding: var(--space-2) 0; color: var(--color-danger); }
+.admin-warn { color: var(--color-warning); }
+.admin-ok { color: var(--color-success); font-weight: 600; }
+.admin-muted { padding: var(--space-4) 0; color: var(--color-text-secondary); text-align: center; }
+
+.admin-confirm-field { display: grid; gap: var(--space-1); color: var(--color-text-secondary); }
+.admin-confirm-input { width: 100%; }
+.bulk-failures ul { margin: var(--space-1) 0 0; padding-left: var(--space-5); }
+
+@media (width < 768px) {
+  .admin-page { padding-block: var(--space-3) var(--space-10); }
+  .admin-filter { flex: 1 1 100%; }
+  .admin-filter :is(input, select) { flex: 1 1 auto; }
+  .detail-row { flex-direction: column; gap: 0; }
+}
 </style>

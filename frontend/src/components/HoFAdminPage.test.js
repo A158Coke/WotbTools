@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import HoFAdminPage from './HoFAdminPage.vue'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
 const api = vi.hoisted(() => ({
   login: vi.fn(() => Promise.resolve(undefined))
@@ -167,7 +168,7 @@ describe('HoFAdminPage', () => {
   })
 
   function mountPage() {
-    return mount(HoFAdminPage, { global: { mocks: { $t: translate, $tm: optionMessages } } })
+    return mount(HoFAdminPage, { global: { mocks: { $t: translate, $tm: optionMessages }, provide: { [DIALOG_INLINE_KEY]: true } } })
   }
 
   async function switchToHundred(wrapper) {
@@ -904,5 +905,63 @@ describe('HoFAdminPage', () => {
     await wrapper.find('.hof-mark3 .actions .btn-sm').trigger('click')
     await flushPromises()
     expect(wrapper.find('.hof-review-modal').text()).toContain('EU·game-333')
+  })
+
+  // —— PG-09 / PG-10：对话框统一 AppDialog，图标按钮有可访问名称，Tab 可滚动 ——
+  it('review detail is an accessible modal dialog that closes on Escape', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper)
+    const dialog = wrapper.find('.hof-review-modal')
+    expect(dialog.attributes('role')).toBe('dialog')
+    expect(dialog.attributes('aria-modal')).toBe('true')
+    expect(wrapper.find('#' + dialog.attributes('aria-labelledby')).text()).toBe('hundredAdmin.details')
+
+    await dialog.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('.hof-review-modal').exists()).toBe(false)
+  })
+
+  it('screenshot lightbox is its own dialog; Escape closes only the lightbox', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper)
+    await wrapper.find('.hundred-proof').trigger('click')
+    const lightbox = wrapper.find('.screenshot-zoom [role="dialog"]')
+    expect(lightbox.exists()).toBe(true)
+    await lightbox.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('.screenshot-zoom').exists()).toBe(false)
+    expect(wrapper.find('.hof-review-modal').exists()).toBe(true)
+  })
+
+  it('renders tabs as a tablist and icon-only row actions with accessible names (no emoji glyphs)', async () => {
+    hofAdminApi.hofAdminList.mockResolvedValue({
+      items: [{
+        id: 7, accountId: 111, nickname: 'Player1', tankId: 6481, tankName: 'FV4005',
+        battleType: 'RANDOM', damageDealt: 5000, mapName: 'rockfield', createdAt: '2024-01-01T00:00:00Z',
+        replayHash: 'h', replaySize: 100, replayAvailable: true
+      }],
+      page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const tablist = wrapper.find('.hof-admin-tabs')
+    expect(tablist.attributes('role')).toBe('tablist')
+    const tabs = tablist.findAll('[role="tab"]')
+    expect(tabs).toHaveLength(4)
+    expect(tabs[0].attributes('aria-selected')).toBe('true')
+    await tabs[1].trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.hof-admin-tabs [role="tab"]')[1].attributes('aria-selected')).toBe('true')
+    await wrapper.findAll('.hof-admin-tabs [role="tab"]')[0].trigger('click')
+    await flushPromises()
+
+    const actions = wrapper.findAll('td.actions button')
+    expect(actions.map(button => button.attributes('aria-label'))).toEqual(['hofAdmin.download', 'hofAdmin.delete'])
+    for (const button of actions) {
+      expect(button.find('svg').exists()).toBe(true)
+      expect(button.text()).toBe('')
+    }
+    expect(wrapper.find('.hof-admin-table').text()).not.toMatch(/[⬇🗑✓✗]/u)
+    // 操作列表头与单元格同一 class：吸附在右侧（PG-10），不会被横向滚动带出视口
+    expect(wrapper.find('th.actions').exists()).toBe(true)
   })
 })

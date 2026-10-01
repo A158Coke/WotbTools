@@ -312,6 +312,11 @@
       "hint_touch": "单指旋转 · 双指缩放 · 点击查看装甲 · 打开「炮塔」后拖动转炮塔",
       "world_hint": "拖动旋转 · 滚轮缩放 · 右键拖动平移"
     },
+    "hofAdmin": {
+      "tabsLabel": "管理分区",
+      "valPass": "通过",
+      "valFail": "未通过"
+    },
     "dialog": {
       "confirm": "确定",
       "cancel": "取消"
@@ -638,6 +643,11 @@
       "hint_touch": "Drag to rotate · Pinch to zoom · Tap for armor · Turn on “Turret” to aim",
       "world_hint": "Drag to rotate · Scroll to zoom · Right-drag: pan"
     },
+    "hofAdmin": {
+      "tabsLabel": "Admin sections",
+      "valPass": "Passed",
+      "valFail": "Failed"
+    },
     "dialog": {
       "confirm": "OK",
       "cancel": "Cancel"
@@ -963,6 +973,11 @@
       "hint": "Перетаскивание — вращение · Колесо — масштаб · Клик — броня · ПКМ — башня/орудие",
       "hint_touch": "Палец — вращение · Щипок — масштаб · Тап — броня · Включите «Башня», чтобы наводить",
       "world_hint": "Перетаскивание — вращение · Колесо — масштаб · ПКМ — сдвиг"
+    },
+    "hofAdmin": {
+      "tabsLabel": "Разделы администрирования",
+      "valPass": "Пройдено",
+      "valFail": "Не пройдено"
     },
     "dialog": {
       "confirm": "ОК",

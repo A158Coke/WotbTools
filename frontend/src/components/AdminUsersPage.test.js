@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import AdminUsersPage from './AdminUsersPage.vue'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
 const api = vi.hoisted(() => ({
   searchUsers: vi.fn(),
@@ -81,7 +82,7 @@ describe('AdminUsersPage', () => {
   })
 
   function mountPage() {
-    return mount(AdminUsersPage, { global: { mocks: { $t: i18n.translate } } })
+    return mount(AdminUsersPage, { global: { mocks: { $t: i18n.translate }, provide: { [DIALOG_INLINE_KEY]: true } } })
   }
 
   function rows() {
@@ -168,7 +169,7 @@ describe('AdminUsersPage', () => {
     expect(modal.text()).toContain('admin.bulkConfirmText(count=1)')
 
     // 未输入 DELETE 前不可提交。
-    const confirmButton = modal.find('.modal-actions .btn-danger')
+    const confirmButton = modal.find('.dialog-actions .btn-danger')
     expect(confirmButton.attributes('disabled')).toBeDefined()
     await modal.find('.admin-confirm-input').setValue('DELET')
     expect(confirmButton.attributes('disabled')).toBeDefined()
@@ -199,7 +200,7 @@ describe('AdminUsersPage', () => {
     await wrapper.find('.admin-table thead input[type="checkbox"]').setValue(true)
     await wrapper.find('.admin-bulk-bar .btn-danger').trigger('click')
     await wrapper.find('.bulk-confirm-modal .admin-confirm-input').setValue('DELETE')
-    await wrapper.find('.bulk-confirm-modal .modal-actions .btn-danger').trigger('click')
+    await wrapper.find('.bulk-confirm-modal .dialog-actions .btn-danger').trigger('click')
     await flushPromises()
 
     const modal = wrapper.find('.bulk-confirm-modal')
@@ -210,7 +211,7 @@ describe('AdminUsersPage', () => {
     // 失败项保留选择以便重试，成功项移出选择集。
     expect(wrapper.find('.admin-selected').text()).toBe('admin.selectedCount(count=1)')
 
-    await modal.find('.modal-actions .btn-sm').trigger('click')
+    await modal.find('.dialog-actions .btn-sm').trigger('click')
     expect(wrapper.find('.bulk-confirm-modal').exists()).toBe(false)
   })
 
@@ -234,7 +235,7 @@ describe('AdminUsersPage', () => {
     await wrapper.find('.admin-table thead input[type="checkbox"]').setValue(true)
     await wrapper.find('.admin-bulk-bar .btn-danger').trigger('click')
     await wrapper.find('.bulk-confirm-modal .admin-confirm-input').setValue('DELETE')
-    await wrapper.find('.bulk-confirm-modal .modal-actions .btn-danger').trigger('click')
+    await wrapper.find('.bulk-confirm-modal .dialog-actions .btn-danger').trigger('click')
     await flushPromises()
 
     // 先按 page=2 重新加载，发现 totalPages=1 后回落到最后一个有效页 page=0。
@@ -294,5 +295,45 @@ describe('AdminUsersPage', () => {
     expect(actions[0].attributes('title')).toBe('admin.detailUnavailable')
     expect(actions[1].attributes('disabled')).toBeUndefined()
     expect(rows()[0].findAll('.cell-actions button')[0].attributes('disabled')).toBeUndefined()
+  })
+
+  // —— PG-09 / PG-10：详情与删除确认统一 AppDialog；操作列与复选框在手机上可达 ——
+  it('opens user detail in an accessible dialog and closes it with Escape', async () => {
+    api.getUser.mockResolvedValue({ profile: null, keycloak: { id: 'kc-a', username: 'kc-a-name', email: 'a@example.com', enabled: true }, warnings: [] })
+    wrapper = mountPage()
+    await flushPromises()
+
+    await rows()[0].findAll('.cell-actions button')[0].trigger('click')
+    await flushPromises()
+    const dialog = wrapper.find('.detail-modal')
+    expect(dialog.attributes('role')).toBe('dialog')
+    expect(dialog.attributes('aria-modal')).toBe('true')
+    expect(dialog.text()).toContain('kc-a-name')
+
+    await dialog.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('.detail-modal').exists()).toBe(false)
+  })
+
+  it('confirms a single delete in a danger dialog that Escape cancels without calling the API', async () => {
+    wrapper = mountPage()
+    await flushPromises()
+
+    await rows()[0].find('.cell-actions .btn-danger').trigger('click')
+    const dialog = wrapper.find('.confirm-modal')
+    expect(dialog.attributes('role')).toBe('dialog')
+    expect(dialog.classes()).toContain('is-danger')
+    await dialog.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('.confirm-modal').exists()).toBe(false)
+    expect(api.deleteUsers).not.toHaveBeenCalled()
+  })
+
+  it('keeps the action column sticky and wraps checkboxes in an enlarged hit area', async () => {
+    wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('.admin-table thead th.cell-actions').exists()).toBe(true)
+    for (const row of rows()) {
+      expect(row.find('td.cell-actions').exists()).toBe(true)
+      expect(row.find('td.cell-check label.check-hit input[type="checkbox"]').exists()).toBe(true)
+    }
   })
 })

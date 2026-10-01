@@ -160,39 +160,6 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.lb-wrap thead th', ['background: var(--bg-card2) !important'])
   })
 
-  it('HoF Admin：Tabs(默认+active)/Filters/Table/Pagination 浅色 !important', () => {
-    has('.hof-admin-tabs button', ['color: var(--text-sub) !important'])
-    has('.hof-admin-tabs button.active', ['color: var(--accent-dark) !important'])
-    has('.hof-admin-filters :is(input, select)', ['background: var(--bg-card) !important'])
-    has(':is(.hof-admin) thead th', ['background: var(--bg-card2) !important'])
-    has('.hof-admin .pagination button', ['background: var(--bg-card) !important', 'color: var(--text-sub) !important'])
-  })
-
-  it('回归：HoF Admin tbody td 必须 color var(--text) !important（防白底浅字）', () => {
-    has(':is(.hof-admin) tbody td', ['color: var(--text) !important'])
-  })
-
-  it('回归：HoF Admin .tablewrap 必须 background/border-color/color/box-shadow 全带 !important（防浅色主题残留深色边框/阴影）', () => {
-    has(':is(.hof-admin) .tablewrap', [
-      'background: var(--bg-card) !important',
-      'border-color: var(--border) !important',
-      'color: var(--text) !important',
-      'box-shadow: var(--surface-shadow) !important',
-    ])
-  })
-
-  it('回归：HoF Admin 表格行基础背景 / denied 标题 / dmg 值 浅色 token + !important（Blocker 3 收尾）', () => {
-    has('hof-admin-table tbody tr', ['background: var(--bg-card) !important'])
-    has('hof-admin-denied h2', ['color: var(--text-heading) !important'])
-    has(':is(.hof-admin) .dmg', ['color: var(--accent-dark) !important'])
-  })
-
-  it('回归：HoF Admin denied 提示段落 / 登录态 / 表格行分隔线 浅色 token + !important（Blocker 4；.denied/.login 选择器修正为真实类防不命中）', () => {
-    has(':is(.hof-admin) .hof-admin-login', ['color: var(--text) !important'])
-    has(':is(.hof-admin) .hof-admin-denied p', ['color: var(--text-sub) !important'])
-    has(':is(.hof-admin) .hof-admin-table td', ['border-bottom-color: var(--border-light) !important'])
-  })
-
   it('HoF 公开页残留缺口：submit row/普通行基础背景/分隔线/pending/下载/分页 浅色 !important（PR #151 收尾）', () => {
     // 提交记录行（showcase-cohesion .lb-submit-row rgba(10,16,19,.50) !important）
     has('.lb-wrap .lb-submit-row', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
@@ -212,9 +179,17 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.lb-wrap .pagination button', ['background: var(--bg-card) !important', 'color: var(--text-sub) !important'])
   })
 
-  it('Version/Contact/Admin/Player Drawer 浅色 !important', () => {
+  it('Version/Contact 浅色 !important', () => {
     has('.contact-card', ['background: var(--bg-card) !important'])
-    has('.admin-table th', ['background: var(--bg-card2) !important'])
-    has('.player-drawer .pd-vehicle', ['background: var(--bg-card) !important', 'border-color: var(--border-light) !important'])
+  })
+
+  // 用户管理 / 名人堂管理 / 玩家详情抽屉已迁到设计语言语义 token（design-language §13）：
+  // 浅色由 tokens/color.css 的语义映射提供，classic 不得再用 !important 覆盖其内部元素（避免第二个样式 owner）。
+  it('已迁移组件（Admin Users / HoF Admin / Player Drawer）不再有 classic 覆盖', () => {
+    for (const chunk of css.split(/}/).filter((c2) => c2.includes('{'))) {
+      const sel = chunk.slice(0, chunk.indexOf('{'))
+      if (/::(after|before)/.test(sel)) continue // 关闭装饰背景的 content:none 规则保留
+      expect(sel, 'migrated selector: ' + sel.trim().slice(0, 80)).not.toMatch(/\.(admin-page|admin-table|hof-admin|player-drawer)\b/)
+    }
   })
 })

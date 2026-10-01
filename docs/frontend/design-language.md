@@ -163,6 +163,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `--control-h-md` | 32 | 44 | 按钮、输入框、下拉框 |
 | `--control-h-lg` | 40 | 48 | 主操作 |
 | `--row-h` | 36 | 48 | 表格行、列表行 |
+| `--control-check` | 18 | 24 | 复选框 / 单选框的可视尺寸（所在单元格或 label 另保证最小点击区域 `--hit-min`） |
 | 最小点击区域 | 24×24 | **44×44** | WCAG 2.5.8 最低 24；Apple HIG 44pt；Material 48dp |
 
 **圆角**（从 14 种收敛为 4 种）：`--radius-sm: 6px`（标签、小徽章、小控件）· `--radius-md: 8px`（按钮、输入框、卡片）· `--radius-lg: 12px`（弹窗、sheet、抽屉）· `--radius-full: 999px`（胶囊、头像）
