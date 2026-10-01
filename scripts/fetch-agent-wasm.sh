@@ -41,10 +41,6 @@ if [ -n "${WOTB_AGENT_ARTIFACT_FILE:-}" ]; then
     echo "指定的 WOTB_AGENT_ARTIFACT_FILE 不存在: $WOTB_AGENT_ARTIFACT_FILE" >&2
     exit 1
   }
-  [ "$(basename "$WOTB_AGENT_ARTIFACT_FILE")" = "$ASSET" ] || {
-    echo "本地 Agent WASM artifact 文件名与 source.json 不一致" >&2
-    exit 1
-  }
   cp "$WOTB_AGENT_ARTIFACT_FILE" "$TMP/${ASSET}"
   echo "使用本地已暂存 Agent WASM artifact: $WOTB_AGENT_ARTIFACT_FILE"
 else
