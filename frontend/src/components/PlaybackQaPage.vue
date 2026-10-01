@@ -9,7 +9,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import BattlePlayback from './BattlePlayback.vue'
-import Banner from './Banner.vue'
 
 const { t } = useI18n()
 const { initPromise, tokenParsed, authenticated, login } = useAuth()
@@ -168,18 +167,26 @@ function buildScenario(byId) {
 </script>
 
 <template>
-  <div class="layout-content pb-qa-page">
-    <h1 class="pb-qa-title">{{ t('adminPreview.qaPlaybackTitle') }}</h1>
+  <div class="pb-qa-page">
+    <h2>{{ t('adminPreview.qaPlaybackTitle') }}</h2>
     <p class="pb-qa-hint">{{ t('adminPreview.qaPlaybackHint') }}</p>
     <BattlePlayback v-if="ready && overview && playbackV2" :overview="overview" :playback-v2="playbackV2" :loop="true" />
-    <Banner v-if="authPhase === 'login'" class="pb-qa-note">{{ t('adminPreview.loading') }}</Banner>
-    <Banner v-if="denied" tone="warning" class="pb-qa-note">{{ t('adminPreview.denied') }}</Banner>
+    <p v-if="authPhase === 'login'" class="pb-qa-note">{{ t('adminPreview.loading') }}</p>
+    <p v-if="denied" class="pb-qa-note">{{ t('adminPreview.denied') }}</p>
   </div>
 </template>
 
 <style scoped>
-/* 设计语言 token（docs/frontend/design-language.md） */
-.pb-qa-title { margin: 0 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h1); }
-.pb-qa-hint { margin: 0 0 var(--space-4); color: var(--color-text-secondary); font: var(--type-body); }
-.pb-qa-note { margin-top: var(--space-4); }
+.pb-qa-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+.pb-qa-hint {
+  color: var(--text-muted, #999);
+  font-size: .85rem;
+}
+.pb-qa-note {
+  color: var(--text-muted, #999);
+}
 </style>
