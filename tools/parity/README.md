@@ -25,3 +25,6 @@ Windows 注意：回放目录名含中文时，Java 的命令行参数会乱码�
 - 2026-10-01 · v0.3.1：37 字段 32 一致；差异（xp/credits、地图代号、击杀者账号、survived）由上游
   fanypcd/WoT-Blitz-Agent#1 补齐。
 - 2026-10-01 · v0.3.2：23 场 / 322 名战斗者，38 字段全部一致。
+- 2026-10-01 · v0.3.3：仓库 fixture（普通 / 联赛 / CW / 9.8 训练室 / 损坏文件）发现无胜方被报成 1 队胜，
+  由 fanypcd/WoT-Blitz-Agent#2 修复；fixture 与冠军赛语料全部一致。fixture 侧的回归在
+  `frontend/src/replay-local/__golden__`（CI 常驻）。
