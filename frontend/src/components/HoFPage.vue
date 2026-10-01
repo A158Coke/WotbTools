@@ -1,12 +1,17 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
+import { parseHofQuery, sameHofQuery, serializeHofQuery } from '../utils/hofQuery.js'
 import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import * as api from '../utils/api.js'
 import ImageDataUploader from './ImageDataUploader.vue'
+import FilterChips from './FilterChips.vue'
+import AppButton from './AppButton.vue'
+import { useBreakpoint } from '../composables/useBreakpoint.js'
 
 const { locale, t, te } = useI18n()
 const rows = ref([])
@@ -57,6 +62,7 @@ const filteredSingleVehicles = computed(() => singleVehicleOptions.value
   .sort((a, b) => (a.tankName || '').localeCompare(b.tankName || '')))
 
 async function load() {
+  writeHofQuery()
   const generation = ++loadGeneration
   loading.value = true
   error.value = ''
@@ -154,6 +160,7 @@ function searchNickname() {
 function goPage(p) {
   page.value = p
   load()
+  scrollBoardIntoView()
 }
 
 async function upload(file) {
@@ -221,8 +228,141 @@ function onDrop(e) {
   if (f) upload(f)
 }
 
-onMounted(() => {
+// ── URL 状态（审计 PG-08）：Tab / 筛选 / 页码写进 query；前进 / 后退 / 刷新 / 分享都能恢复 ──
+// 页面可能被 KeepAlive 保留，只在 view=hof 时读写，离开后不改别的页面的 URL。
+const route = useRoute()
+const router = useRouter()
+const onHofView = () => route?.query?.view === 'hof'
+
+function hofQueryState() {
+  if (activeTab.value === 'hundred') {
+    return { tab: 'hundred', page: h100Page.value, tank: h100VehicleId.value, nation: h100Nation.value, type: h100VehicleType.value }
+  }
+  if (activeTab.value === 'mark3') {
+    return { tab: 'mark3', page: mark3Page.value, tank: mark3VehicleId.value, nation: mark3Nation.value, type: mark3VehicleType.value }
+  }
+  return {
+    tab: 'single', page: page.value, tank: selectedTankId.value, nation: singleNation.value, type: singleVehicleType.value,
+    tier: singleVehicleTier.value, bt: battleType.value, nick: nickname.value.trim(), limit: limit.value,
+  }
+}
+
+function writeHofQuery() {
+  if (!router || !onHofView()) return
+  const next = { view: 'hof', ...serializeHofQuery(hofQueryState()) }
+  if (sameHofQuery(route.query, next)) return
+  router.replace({ query: next })
+}
+
+/** 把 URL 状态应用到本地状态并加载对应榜单（首次进入 / 前进后退）。 */
+function applyHofQuery(query) {
+  const q = parseHofQuery(query)
+  activeTab.value = q.tab
+  if (q.tab === 'hundred') {
+    h100Nation.value = q.nation
+    h100VehicleType.value = q.type
+    h100VehicleId.value = q.tank
+    h100VehicleName.value = tier10Vehicles.find(v => v.id === q.tank)?.name || ''
+    h100Page.value = q.page
+    loadHundredList()
+    loadPending()
+    return
+  }
+  if (q.tab === 'mark3') {
+    mark3Nation.value = q.nation
+    mark3VehicleType.value = q.type
+    mark3VehicleId.value = q.tank
+    mark3VehicleName.value = mark3Vehicles.find(v => v.id === q.tank)?.name || ''
+    mark3Page.value = q.page
+    loadMark3List()
+    loadMark3Status()
+    return
+  }
+  singleNation.value = q.nation
+  singleVehicleType.value = q.type
+  singleVehicleTier.value = q.tier
+  selectedTankId.value = q.tank
+  selectedTankName.value = singleVehicleOptions.value.find(v => v.tankId === q.tank)?.tankName || ''
+  battleType.value = q.bt
+  nickname.value = q.nick
+  limit.value = q.limit
+  page.value = q.page
   load()
+}
+
+// 车辆名在选项加载后才能解析（直接打开带 tank 的链接时）
+watch(singleVehicleOptions, (options) => {
+  if (selectedTankId.value && !selectedTankName.value) {
+    selectedTankName.value = options.find(v => v.tankId === Number(selectedTankId.value))?.tankName || ''
+  }
+})
+
+if (route) {
+  watch(() => route.query, (query) => {
+    if (query?.view !== 'hof' || sameHofQuery(query, { view: 'hof', ...serializeHofQuery(hofQueryState()) })) return
+    applyHofQuery(query)
+  })
+}
+
+// ── 手机筛选（审计 PG-05 / design-language §9）：筛选收进底部 sheet，已生效条件显示为 chip ──
+const { isCompact } = useBreakpoint()
+const filterSheet = ref(null) // null | 'single' | 'hundred' | 'mark3'
+function toggleFilterSheet(tab) {
+  filterSheet.value = filterSheet.value === tab ? null : tab
+}
+
+function vehicleChips(nation, type, vehicleName) {
+  return [
+    nation && { key: 'nation', label: vehicleValueLabel(nation) },
+    type && { key: 'type', label: vehicleValueLabel(type) },
+    vehicleName && { key: 'vehicle', label: vehicleName },
+  ].filter(Boolean)
+}
+const singleChips = computed(() => [
+  ...vehicleChips(singleNation.value, singleVehicleType.value, '').filter(Boolean),
+  singleVehicleTier.value && { key: 'tier', label: `T${singleVehicleTier.value}` },
+  selectedTankId.value && { key: 'vehicle', label: selectedTankName.value || `#${selectedTankId.value}` },
+  battleType.value && { key: 'bt', label: battleTypeLabel(battleType.value) },
+  nickname.value.trim() && { key: 'nick', label: nickname.value.trim() },
+].filter(Boolean))
+const hundredChips = computed(() => vehicleChips(h100Nation.value, h100VehicleType.value, h100VehicleId.value ? h100VehicleName.value : ''))
+const mark3Chips = computed(() => vehicleChips(mark3Nation.value, mark3VehicleType.value, mark3VehicleId.value ? mark3VehicleName.value : ''))
+
+function removeSingleFilter(key) {
+  if (key === 'nation') singleNation.value = ''
+  if (key === 'type') singleVehicleType.value = ''
+  if (key === 'tier') singleVehicleTier.value = ''
+  if (key === 'nation' || key === 'type' || key === 'tier') return onSingleVehicleConditionChange()
+  if (key === 'vehicle') return clearFilter()
+  if (key === 'bt') { battleType.value = ''; return onBattleTypeChange() }
+  if (key === 'nick') { nickname.value = ''; return searchNickname() }
+}
+function removeHundredFilter(key) {
+  if (key === 'nation') h100Nation.value = ''
+  if (key === 'type') h100VehicleType.value = ''
+  if (key === 'vehicle') { h100VehicleId.value = null; return onHundredVehicleChange() }
+  onHundredVehicleFilterChange()
+}
+function removeMark3Filter(key) {
+  if (key === 'nation') mark3Nation.value = ''
+  if (key === 'type') mark3VehicleType.value = ''
+  if (key === 'vehicle') { mark3VehicleId.value = null; return onMark3VehicleChange() }
+  onMark3VehicleFilterChange()
+}
+
+/** 翻页后回到榜单顶部（审计 PG-07）；榜单顶部已在视口内时不滚动。 */
+const boardTop = ref(null)
+function scrollBoardIntoView() {
+  nextTick(() => {
+    const el = boardTop.value
+    if (!el || typeof el.getBoundingClientRect !== 'function') return
+    if (el.getBoundingClientRect().top < 0) el.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+  })
+}
+
+onMounted(() => {
+  if (route && onHofView()) applyHofQuery(route.query)
+  else load()
   loadSingleVehicleOptions()
 })
 
@@ -243,6 +383,10 @@ const activeTab = ref('single')
 
 function switchTab(tab) {
   activeTab.value = tab
+  filterSheet.value = null
+  writeHofQuery()
+  // 直接打开百场 / 三环链接时单场榜还没加载过
+  if (tab === 'single' && !rows.value.length && !loading.value) load()
   if (tab === 'hundred') {
     loadHundredList()
     loadPending()
@@ -289,6 +433,7 @@ const currentPendingDamage = computed(() => currentPending.value?.claimedAverage
 const currentPendingBattles = computed(() => currentPending.value?.claimedBattleCount)
 
 async function loadHundredList() {
+  writeHofQuery()
   const generation = ++h100LoadGeneration
   h100Loading.value = true
   h100Error.value = ''
@@ -349,6 +494,7 @@ async function loadPending() {
 function goHundredPage(p) {
   h100Page.value = p
   loadHundredList()
+  scrollBoardIntoView()
 }
 
 // ── 百场：提交弹窗 ──────────────────────────────────────────────
@@ -602,6 +748,7 @@ function findMark3Status(items, vehicleId) {
 }
 
 async function loadMark3List() {
+  writeHofQuery()
   const generation = ++mark3LoadGeneration
   mark3Loading.value = true
   mark3Error.value = ''
@@ -665,6 +812,7 @@ async function loadMark3Status() {
 function goMark3Page(nextPage) {
   mark3Page.value = nextPage
   loadMark3List()
+  scrollBoardIntoView()
 }
 
 // ── 三环：人工提交弹窗 ─────────────────────────────────────────
@@ -942,7 +1090,8 @@ function fmtDate(s) {
 </script>
 
 <template>
-  <div class="lb-wrap">
+  <div ref="boardTop" class="lb-wrap">
+    <div v-if="isCompact && filterSheet" class="lb-sheet-scrim" aria-hidden="true" @click="filterSheet = null"></div>
     <div class="tabs">
       <button type="button" :class="{ active: activeTab === 'single' }" @click="switchTab('single')">{{ $t('hof.singleTab') }}</button>
       <button type="button" :class="{ active: activeTab === 'hundred' }" @click="switchTab('hundred')">{{ $t('hundred.tab') }}</button>
@@ -989,7 +1138,13 @@ function fmtDate(s) {
         </div>
       </div>
 
-      <div class="lb-toolbar">
+      <FilterChips v-if="isCompact" :chips="singleChips" :open="filterSheet === 'single'" @toggle="toggleFilterSheet('single')" @remove="removeSingleFilter" />
+      <div v-if="!isCompact || filterSheet === 'single'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }">
+        <div v-if="isCompact" class="lb-sheet-head">
+          <strong>{{ $t('filters.title') }}</strong>
+          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="filterSheet = null">{{ $t('filters.done') }}</AppButton>
+        </div>
+        <div class="lb-toolbar">
         <label class="lb-limit"><span class="lb-label">{{ $t('hof.nation') }}</span>
           <select v-model="singleNation" :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleConditionChange">
             <option value="">{{ $t('hof.allNations') }}</option>
@@ -1042,15 +1197,16 @@ function fmtDate(s) {
 
       <p v-if="singleVehicleOptionsError" class="error">{{ singleVehicleOptionsError }}</p>
 
-      <p v-if="selectedTankId" class="lb-filter-hint">
+      </div>
+      <p v-if="selectedTankId && !isCompact" class="lb-filter-hint">
         {{ $t('hof.filter_tank') }}: <strong>{{ selectedTankName }}</strong>
       </p>
 
       <p v-if="downloadErr" class="lb-upload-msg err">{{ downloadErr }}</p>
       <p v-if="error" class="error">{{ $t('hof.error') }}: {{ error }}</p>
-      <p v-else-if="loading" class="muted">{{ $t('hof.loading') }}</p>
+      <p v-else-if="loading && !rows.length" class="muted">{{ $t('hof.loading') }}</p>
       <p v-else-if="!rows.length" class="muted">{{ $t('hof.empty') }}</p>
-      <div v-else class="tablewrap">
+      <div v-else-if="!isCompact" class="tablewrap" :class="{ 'is-stale': loading }" :aria-busy="loading">
         <table>
           <thead>
             <tr>
@@ -1104,6 +1260,30 @@ function fmtDate(s) {
           </tbody>
         </table>
       </div>
+      <!-- 手机：卡片列表（审计 PG-05：10 列表格在 375 宽下要横向滚动，下载按钮被挤到屏幕外） -->
+      <ol v-else class="lb-cards" :class="{ 'is-stale': loading }" :aria-busy="loading" data-testid="hof-cards">
+        <li v-for="r in rows" :key="r.id" class="lb-card">
+          <span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span>
+          <div class="lb-card-main">
+            <strong class="lb-card-name">{{ r.nickname }}</strong>
+            <button v-if="!selectedTankId" type="button" class="lb-card-tank" @click="filterByTank(r.tankId, r.tankName)">{{ r.tankName }}</button>
+            <span v-else class="lb-card-tank">{{ r.tankName }}</span>
+            <span class="lb-card-meta">
+              <span class="bt-badge" :class="r.battleType === 'RATING' ? 'bt-rating' : 'bt-random'">{{ battleTypeLabel(r.battleType) }}</span>
+              {{ mapLabel(r.mapName, locale) }} · {{ fmtTime(r.battleTime) || '-' }}
+            </span>
+          </div>
+          <span class="lb-card-value">{{ r.damageDealt.toLocaleString() }}<small>{{ $t('hof.damage_dealt') }}</small></span>
+          <button
+            v-if="r.replayAvailable"
+            type="button"
+            class="lb-card-download"
+            :disabled="downloadingId === r.id"
+            :aria-label="downloadingId === r.id ? $t('hof.downloading') : $t('hof.download')"
+            @click="download(r.id)"
+          ><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 15l4 4 4-4M12 3v16" /></svg></button>
+        </li>
+      </ol>
       <div v-if="totalPages > 1" class="pagination">
         <button type="button" :disabled="page <= 1" @click="goPage(page - 1)">{{ $t('hof.prev') }}</button>
         <span>{{ $t('hof.page_info', { page, total: totalPages }) }}</span>
@@ -1118,7 +1298,20 @@ function fmtDate(s) {
         <p>{{ $t('hundred.subtitle') }}</p>
       </header>
 
-      <div class="lb-toolbar h100-toolbar">
+      <!-- 审计 BZ-16：三个榜的提交入口统一放在页头下方同一位置 -->
+      <div class="lb-submit-row">
+        <button type="button" class="filebtn h100-submit-btn" :disabled="!!currentPending || h100Loading" @click="openSubmit">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('hundred.submit') }}
+        </button>
+      </div>
+
+      <FilterChips v-if="isCompact" :chips="hundredChips" :open="filterSheet === 'hundred'" @toggle="toggleFilterSheet('hundred')" @remove="removeHundredFilter" />
+      <div v-if="!isCompact || filterSheet === 'hundred'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }">
+        <div v-if="isCompact" class="lb-sheet-head">
+          <strong>{{ $t('filters.title') }}</strong>
+          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="filterSheet = null">{{ $t('filters.done') }}</AppButton>
+        </div>
+        <div class="lb-toolbar h100-toolbar">
         <label class="lb-limit h100-filter"><span class="lb-label">{{ $t('hundred.nation') }}</span>
           <select v-model="h100Nation" @change="onHundredVehicleFilterChange">
             <option value="">{{ $t('hundred.allNations') }}</option>
@@ -1140,12 +1333,10 @@ function fmtDate(s) {
         <button type="button" class="ghost sm" :disabled="h100Loading" @click="loadHundredList">
           <svg class="ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v6h-6" /></svg>{{ $t('hof.refresh') }}
         </button>
-        <button type="button" class="ghost sm h100-submit-btn" :disabled="!!currentPending || h100Loading" @click="openSubmit">
-          {{ $t('hundred.submit') }}
-        </button>
+      </div>
       </div>
 
-      <p v-if="h100VehicleId" class="lb-filter-hint">
+      <p v-if="h100VehicleId && !isCompact" class="lb-filter-hint">
         {{ $t('hundred.selectVehicle') }}: <strong>{{ h100VehicleName }}</strong>
       </p>
 
@@ -1166,9 +1357,12 @@ function fmtDate(s) {
       <p v-if="h100Msg" class="lb-upload-msg" :class="{ err: h100MsgErr }">{{ h100Msg }}</p>
 
       <p v-if="h100Error" class="error">{{ h100Error }}</p>
-      <p v-else-if="h100Loading" class="muted">{{ $t('hundred.loading') }}</p>
-      <p v-else-if="!h100Rows.length" class="muted">{{ $t(h100VehicleId ? 'hundred.empty' : 'hundred.emptyDefault') }}</p>
-      <div v-else class="tablewrap">
+      <p v-else-if="h100Loading && !h100Rows.length" class="muted">{{ $t('hundred.loading') }}</p>
+      <div v-else-if="!h100Rows.length" class="lb-empty" data-testid="hundred-empty">
+        <p class="lb-empty-title">{{ $t(h100VehicleId ? 'hundred.empty' : 'hundred.emptyDefault') }}</p>
+        <p class="lb-empty-how">{{ $t('hofHowTo.hundred', { action: $t('hundred.submit') }) }}</p>
+      </div>
+      <div v-else-if="!isCompact" class="tablewrap" :class="{ 'is-stale': h100Loading }" :aria-busy="h100Loading">
         <table>
           <thead>
             <tr>
@@ -1192,6 +1386,17 @@ function fmtDate(s) {
           </tbody>
         </table>
       </div>
+      <ol v-else class="lb-cards" :class="{ 'is-stale': h100Loading }" :aria-busy="h100Loading" data-testid="hundred-cards">
+        <li v-for="r in h100Rows" :key="r.id" class="lb-card">
+          <span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span>
+          <div class="lb-card-main">
+            <strong class="lb-card-name">{{ r.nickname }}</strong>
+            <span class="lb-card-tank">{{ r.vehicleName }}</span>
+            <span class="lb-card-meta">{{ $t('hundred.battleCount') }} {{ r.approvedBattleCount }} · {{ fmtDate(r.approvedAt) || '-' }}</span>
+          </div>
+          <span class="lb-card-value">{{ r.approvedAverageDamage.toLocaleString() }}<small>{{ $t('hundred.avgDamage') }}</small></span>
+        </li>
+      </ol>
       <div v-if="h100TotalPages > 1" class="pagination">
         <button type="button" :disabled="h100Page <= 1" @click="goHundredPage(h100Page - 1)">{{ $t('hundred.prev') }}</button>
         <span>{{ $t('hundred.pageInfo', { page: h100Page, total: h100TotalPages }) }}</span>
@@ -1206,7 +1411,20 @@ function fmtDate(s) {
         <p>{{ $t('mark3.subtitle') }}</p>
       </header>
 
-      <div class="lb-toolbar h100-toolbar">
+      <div class="lb-submit-row">
+        <button type="button" class="filebtn h100-submit-btn mark3-submit-btn"
+                :disabled="!!selectedMark3Current || !!selectedMark3Pending || mark3Loading" @click="openMark3Submit">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('mark3.submit') }}
+        </button>
+      </div>
+
+      <FilterChips v-if="isCompact" :chips="mark3Chips" :open="filterSheet === 'mark3'" @toggle="toggleFilterSheet('mark3')" @remove="removeMark3Filter" />
+      <div v-if="!isCompact || filterSheet === 'mark3'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }">
+        <div v-if="isCompact" class="lb-sheet-head">
+          <strong>{{ $t('filters.title') }}</strong>
+          <AppButton size="sm" variant="primary" data-testid="filter-done" @click="filterSheet = null">{{ $t('filters.done') }}</AppButton>
+        </div>
+        <div class="lb-toolbar h100-toolbar">
         <label class="lb-limit mark3-filter"><span class="lb-label">{{ $t('mark3.nation') }}</span>
           <select v-model="mark3Nation" @change="onMark3VehicleFilterChange">
             <option value="">{{ $t('mark3.allNations') }}</option>
@@ -1228,13 +1446,10 @@ function fmtDate(s) {
         <button type="button" class="ghost sm" :disabled="mark3Loading" @click="loadMark3List">
           <svg class="ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v6h-6" /></svg>{{ $t('hof.refresh') }}
         </button>
-        <button type="button" class="ghost sm h100-submit-btn mark3-submit-btn"
-                :disabled="!!selectedMark3Current || !!selectedMark3Pending || mark3Loading" @click="openMark3Submit">
-          {{ $t('mark3.submit') }}
-        </button>
+      </div>
       </div>
 
-      <p v-if="mark3VehicleId" class="lb-filter-hint">
+      <p v-if="mark3VehicleId && !isCompact" class="lb-filter-hint">
         {{ $t('mark3.selectVehicle') }}: <strong>{{ mark3VehicleName }}</strong>
       </p>
 
@@ -1266,9 +1481,12 @@ function fmtDate(s) {
       <p v-if="mark3Msg" class="lb-upload-msg" :class="{ err: mark3MsgErr }">{{ mark3Msg }}</p>
 
       <p v-if="mark3Error" class="error">{{ mark3Error }}</p>
-      <p v-else-if="mark3Loading" class="muted">{{ $t('mark3.loading') }}</p>
-      <p v-else-if="!mark3Rows.length" class="muted">{{ $t(mark3VehicleId ? 'mark3.empty' : 'mark3.emptyDefault') }}</p>
-      <div v-else class="tablewrap">
+      <p v-else-if="mark3Loading && !mark3Rows.length" class="muted">{{ $t('mark3.loading') }}</p>
+      <div v-else-if="!mark3Rows.length" class="lb-empty" data-testid="mark3-empty">
+        <p class="lb-empty-title">{{ $t(mark3VehicleId ? 'mark3.empty' : 'mark3.emptyDefault') }}</p>
+        <p class="lb-empty-how">{{ $t('hofHowTo.mark3', { action: $t('mark3.submit') }) }}</p>
+      </div>
+      <div v-else-if="!isCompact" class="tablewrap" :class="{ 'is-stale': mark3Loading }" :aria-busy="mark3Loading">
         <table>
           <thead>
             <tr>
@@ -1294,6 +1512,17 @@ function fmtDate(s) {
           </tbody>
         </table>
       </div>
+      <ol v-else class="lb-cards" :class="{ 'is-stale': mark3Loading }" :aria-busy="mark3Loading" data-testid="mark3-cards">
+        <li v-for="row in mark3Rows" :key="row.id" class="lb-card">
+          <span class="rk" :class="rankClass(row.rank)">{{ row.rank }}</span>
+          <div class="lb-card-main">
+            <strong class="lb-card-name">{{ row.nickname }}</strong>
+            <span class="lb-card-tank">{{ row.vehicleName }}</span>
+            <span class="lb-card-meta">{{ $t('mark3.battleCount') }} {{ formatMark3Number(row.approvedBattleCount) }} · {{ $t('mark3.winRate') }} {{ formatMark3WinRate(row.approvedWinRate) }} · {{ fmtDate(row.approvedAt) || '-' }}</span>
+          </div>
+          <span class="lb-card-value">{{ formatMark3Number(row.approvedAverageDamage) }}<small>{{ $t('mark3.avgDamage') }}</small></span>
+        </li>
+      </ol>
       <div v-if="mark3TotalPages > 1" class="pagination">
         <button type="button" :disabled="mark3Page <= 1" @click="goMark3Page(mark3Page - 1)">{{ $t('mark3.prev') }}</button>
         <span>{{ $t('mark3.pageInfo', { page: mark3Page, total: mark3TotalPages }) }}</span>
@@ -1464,6 +1693,76 @@ function fmtDate(s) {
 </template>
 
 <style scoped>
+/* 手机筛选 sheet（审计 PG-05）：工具栏本身的网格样式沿用旧样式表，这里只负责把它放进底部 sheet */
+.lb-sheet-scrim { position: fixed; inset: 0; z-index: var(--z-sheet); background: var(--color-scrim); }
+.lb-toolbar-host.is-sheet {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-sheet);
+  display: grid;
+  gap: var(--space-3);
+  max-height: 80dvh;
+  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--color-surface-3);
+  box-shadow: var(--elevation-3);
+}
+.lb-sheet-head { display: flex; align-items: center; justify-content: space-between; color: var(--color-text-primary); font: var(--type-h3); }
+/* 手机卡片列表（审计 PG-05 / PG-19：下载按钮与车辆链接满足 44px 点击区域） */
+.lb-cards { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; padding: 0; list-style: none; }
+.lb-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+}
+.lb-card-main { display: grid; gap: var(--space-0); min-width: 0; }
+.lb-card-name { overflow: hidden; font: var(--type-body); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.lb-card-tank {
+  justify-self: start;
+  /* 行内链接：满足 WCAG 2.2 的 24px 下限即可，不按 44px 撑高整张卡 */
+  min-height: var(--control-h-sm);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent-text);
+  font: var(--type-body);
+  text-align: start;
+}
+button.lb-card-tank { cursor: pointer; }
+span.lb-card-tank { min-height: 0; color: var(--color-text-secondary); }
+.lb-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); }
+.lb-card-value { display: grid; justify-items: end; font: var(--type-h3); font-variant-numeric: tabular-nums; }
+.lb-card-value small { color: var(--color-text-secondary); font: var(--type-caption); }
+.lb-card-download {
+  display: inline-grid;
+  place-items: center;
+  min-width: var(--hit-min);
+  min-height: var(--hit-min);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.lb-card-download:disabled { cursor: progress; opacity: .5; }
+.lb-card-tank:focus-visible,
+.lb-card-download:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+/* 审计 BZ-15：空榜说明怎样上榜 */
+.lb-empty { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-6) var(--space-4); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); text-align: center; }
+.lb-empty-title { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
+.lb-empty-how { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
+/* 审计 PG-07：翻页 / 改筛选时保留旧数据并变暗，不整表替换成一行文字导致跳动 */
+.tablewrap.is-stale,
+.lb-cards.is-stale { opacity: .55; transition: opacity var(--duration-base) var(--ease-standard); }
 .lb-wrap { max-width: var(--wide-max, 1600px); margin: 0 auto; padding: 24px 20px 56px; }
 .lb-head { margin: 0 0 14px; }
 .lb-kicker { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 6px; background: var(--bg-rating); color: var(--accent-dark); font-size: 12px; font-weight: 800; }
