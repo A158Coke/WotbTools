@@ -19,6 +19,16 @@ node tools/parity/wasm-dump.mjs <回放目录> <out>/wasm.json
 node tools/parity/compare.mjs <out>/java.json <out>/wasm.json
 ```
 
+批次计算的 golden（去重 → League Rating → 指标 → Preview 投影），classpath 换成
+`wotb-replay-coordinator`（`mvn ... -pl wotb-replay-coordinator -am install` 后 `dependency:build-classpath`）：
+
+```bash
+# 不带清单：根目录一批 + 每个子目录一批 + 每个回放单场一批（本地语料）
+java -cp "<coordinator classpath>" tools/parity/JavaPreviewDump.java <回放目录> <out>/java-preview.json
+# 带清单：仓库 fixture golden（frontend/src/replay-local/__golden__/batches.json，路径相对仓库根）
+java -cp "<coordinator classpath>" tools/parity/JavaPreviewDump.java <repo> <golden>/java-preview.json <golden>/batches.json
+```
+
 Windows 注意：回放目录名含中文时，Java 的命令行参数会乱码——先 `cd` 进回放目录再传 `.`。
 
 ## 记录
