@@ -27,18 +27,34 @@ export const ADMIN_ONLY_VIEWS = Object.freeze([
 ])
 
 /**
- * 主导航（design-language §9 / 审计 §8.1）：桌面 / 平板顶栏与手机 / App 底部 Tab 栏共用同一份清单。
- * 账户（个人中心 / 登录登出）不在主导航里，由顶栏右侧的头像入口进入 `profile`。
+ * 主导航（design-language §9）：
+ * - 手机 / App（compact）：底部 Tab 栏渲染 PRIMARY_NAV。
+ * - 平板 / 桌面：左侧边栏渲染 PRIMARY_NAV 中除"更多"外的栏目 + 管理组（ADMIN_NAV）；
+ *   "更多"在侧边栏底部是弹出面板（显示设置 + 关于与支持），不再是一个整页。
+ * 账户（个人中心 / 登录登出）不在主导航里：手机在顶栏右侧，平板 / 桌面在侧边栏底部。
  * `homeHostOnly`：首页只在 wotbtools.com 上存在（本地开发默认进入回放）。
  */
 export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'home', view: 'home', labelKey: 'nav.home', homeHostOnly: true }),
   Object.freeze({ id: 'replay', view: 'replay', labelKey: 'nav.replay' }),
   Object.freeze({ id: 'hof', view: 'hof', labelKey: 'nav.hof' }),
+  Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia' }),
   Object.freeze({ id: 'more', view: 'more', labelKey: 'nav.more' }),
 ])
 
-// 视图 → 所属栏目。个人中心属于账户入口；未列出的视图（设置、关于、管理、工具等）都归入"更多"。
+/**
+ * 侧边栏管理组（平板 / 桌面）。`role`：'admin' = wotbtools-admin；'hofAdmin' = HoF-admin 或全站管理员。
+ * 手机没有侧边栏，这些入口留在"更多"页的管理分组里。
+ */
+export const ADMIN_NAV = Object.freeze([
+  Object.freeze({ id: 'admin-users', view: 'admin-users', labelKey: 'admin.title', role: 'admin' }),
+  Object.freeze({ id: 'hof-admin', view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', role: 'hofAdmin' }),
+  Object.freeze({ id: 'rating-v2', view: 'rating-v2', labelKey: 'ratingV2.title', role: 'admin' }),
+  Object.freeze({ id: 'playback-qa', view: 'playback-qa', labelKey: 'more.playbackQa', role: 'admin' }),
+])
+
+// 视图 → 所属栏目。个人中心属于账户入口；管理视图各自是侧边栏的一项；
+// 未列出的视图（设置、关于等）都归入"更多"。
 const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   home: 'home',
   replay: 'replay',
@@ -47,6 +63,12 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'agent-replay': 'replay',
   'agent-shots': 'replay',
   hof: 'hof',
+  'agent-tankopedia': 'tankopedia',
+  'agent-armor': 'tankopedia',
+  'admin-users': 'admin-users',
+  'hof-admin': 'hof-admin',
+  'rating-v2': 'rating-v2',
+  'playback-qa': 'playback-qa',
   profile: 'account',
 })
 
@@ -125,6 +147,6 @@ export function locationForView(view, route) {
 /** 当前页面所属一级区块的标题 key（顶栏紧凑标题与 document.title 共用）；不属于任何区块时为 null。 */
 export function sectionTitleKey(view) {
   const section = primarySection(view)
-  const item = primaryNavItems().find(entry => entry.id === section)
+  const item = [...primaryNavItems(), ...ADMIN_NAV].find(entry => entry.id === section)
   return item?.labelKey ?? (section === 'account' ? 'nav.account' : null)
 }

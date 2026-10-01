@@ -1,71 +1,21 @@
 <script setup>
-import { computed, getCurrentInstance, inject } from 'vue'
-import {
-  BookOpen, Box, ChevronRight, Cpu, Crosshair, Download, ExternalLink, FileText, FlaskConical, Gauge,
-  Heart, History, Mail, MessageSquare, ShieldCheck, Users,
-} from 'lucide-vue-next'
-import { useAuth } from '../composables/useAuth.js'
-import { useUiProfile } from '../composables/useUiProfile.js'
-import { isAndroidApp } from '../composables/usePlatformBridge.js'
+import { computed, inject } from 'vue'
+import { ChevronRight, ExternalLink, MessageSquare } from 'lucide-vue-next'
+import { FEEDBACK_URL, LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import PageHeader from './PageHeader.vue'
 import SegmentedControl from './SegmentedControl.vue'
 
-// "更多"：显示设置、工具、管理、关于与支持（审计 §8.1）。
-// 账户（登录 / 个人中心 / 登出）不在这里，由顶栏头像进入 profile。
+// "更多"页：手机 / App 的低频入口（显示设置、内测工具、管理、关于与支持）。
+// 平板 / 桌面的同一份内容在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）；
+// 坦克百科是主导航栏目，不在这里重复。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const { isAdmin, isHofAdmin } = useAuth()
-const { uiProfilePreference, setUiProfile } = useUiProfile()
-// Capture the component instance during setup, but read $i18n only when the user acts.
-// In vue-i18n legacy mode, the mixin installs $i18n after setup has run.
-const instance = getCurrentInstance()
-
-const FEEDBACK_URL = 'https://github.com/A158Coke/WotbTools/issues/new'
-const LANGUAGES = [
-  { value: 'zh', label: '中文' },
-  { value: 'en', label: 'English' },
-  { value: 'ru', label: 'Русский' },
-]
-
-function setLocale(value) {
-  instance.proxy.$i18n.locale = value
-  localStorage.setItem('wotb-lang', value)
-}
+const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, betaToolLinks, adminLinks, aboutLinks } = useMoreMenu()
 
 const groups = computed(() => [
-  {
-    id: 'tools',
-    titleKey: 'more.sections.tools',
-    // 坦克百科公开；3D 回放 / 射击分析仍仅管理员内测
-    links: [
-      isAdmin.value && { view: 'agent-replay', labelKey: 'agentNav.replay', icon: Box },
-      isAdmin.value && { view: 'agent-shots', labelKey: 'agentNav.shots', icon: Crosshair },
-      { view: 'agent-tankopedia', labelKey: 'agentNav.tanks', icon: BookOpen },
-    ].filter(Boolean),
-  },
-  {
-    id: 'admin',
-    titleKey: 'more.sections.admin',
-    links: [
-      isAdmin.value && { view: 'admin-users', labelKey: 'admin.title', icon: Users },
-      isHofAdmin.value && { view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', icon: ShieldCheck },
-      isAdmin.value && { view: 'rating-v2', labelKey: 'ratingV2.title', icon: Gauge },
-      isAdmin.value && { view: 'playback-qa', labelKey: 'more.playbackQa', icon: FlaskConical },
-    ].filter(Boolean),
-  },
-  {
-    id: 'about',
-    titleKey: 'more.sections.about',
-    links: [
-      { view: 'history', labelKey: 'history.btn', icon: History },
-      { view: 'technical-evolution', labelKey: 'technicalEvolution.btn', icon: Cpu },
-      { view: 'rating-docs', labelKey: 'more.ratingDocs', icon: FileText },
-      { view: 'contact', labelKey: 'contact.nav', icon: Mail },
-      { view: 'sponsor', labelKey: 'more.sponsor', icon: Heart },
-      !isAndroidApp() && { view: 'android', labelKey: 'android.nav', icon: Download },
-    ].filter(Boolean),
-    feedback: true,
-  },
+  { id: 'tools', titleKey: 'more.sections.tools', links: betaToolLinks.value },
+  { id: 'admin', titleKey: 'more.sections.admin', links: adminLinks.value },
+  { id: 'about', titleKey: 'more.sections.about', links: aboutLinks.value, feedback: true },
 ].filter(group => group.links.length))
 </script>
 
@@ -80,7 +30,7 @@ const groups = computed(() => [
           <span class="more-setting-label">{{ $t('uiProfile.title') }}</span>
           <SegmentedControl
             :model-value="uiProfilePreference"
-            :options="[{ value: 'showcase', label: $t('uiProfile.showcase') }, { value: 'classic', label: $t('uiProfile.classic') }, { value: 'auto', label: $t('uiProfile.auto') }]"
+            :options="uiProfileOptions($t)"
             :aria-label="$t('uiProfile.title')"
             data-testid="more-ui-profile"
             @update:model-value="setUiProfile"
