@@ -3,9 +3,9 @@ import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { defaultView, locationForView, primaryNavItems, primarySection, viewFromRoute } from './navigation.js'
-import { PRIMARY_NAV_ICONS } from './navIcons.js'
+import { ACCOUNT_ICON, PRIMARY_NAV_ICONS } from './navIcons.js'
 
-// 桌面 / 平板：logo · 主导航 · 账户入口。手机（compact）：logo · 当前栏目名，主导航交给底部 Tab 栏。
+// 桌面 / 平板：logo · 主导航 · 更多 · 账户。手机（compact）：logo · 当前栏目名 · 账户，主导航交给底部 Tab 栏。
 const props = defineProps({ compact: { type: Boolean, default: false } })
 
 const route = useRoute()
@@ -13,8 +13,10 @@ const { isAdmin, isAuthenticated, displayName } = useAuth()
 const activeView = computed(() => viewFromRoute(route, { allowAdminViews: isAdmin.value }))
 const activeSection = computed(() => primarySection(activeView.value))
 const items = primaryNavItems()
-const sectionItems = items.filter(item => item.id !== 'me')
+const sectionItems = items.filter(item => item.id !== 'more')
+const moreItem = items.find(item => item.id === 'more')
 const activeItem = computed(() => items.find(item => item.id === activeSection.value))
+const sectionTitleKey = computed(() => activeItem.value?.labelKey ?? (activeSection.value === 'account' ? 'nav.account' : null))
 const brandTarget = computed(() => locationForView(defaultView(), route))
 const accountLabel = computed(() => (isAuthenticated() && displayName.value) || null)
 const showDevEnvironmentNotice = import.meta.env.DEV
@@ -33,7 +35,7 @@ function to(view) {
       <img class="brand-logo" src="/wotbtoolslogo.png" alt="" aria-hidden="true">
     </RouterLink>
 
-    <span v-if="props.compact && activeItem" class="section-title">{{ $t(activeItem.labelKey) }}</span>
+    <span v-if="props.compact && sectionTitleKey" class="section-title">{{ $t(sectionTitleKey) }}</span>
 
     <nav v-else-if="!props.compact" class="primary-nav" :aria-label="$t('nav.primary')">
       <RouterLink
@@ -57,17 +59,30 @@ function to(view) {
       {{ $t('environment.label') }}<template v-if="!props.compact"> · {{ $t(devEnvironmentNoticeKey) }}</template>
     </span>
 
-    <RouterLink
-      v-if="!props.compact"
-      class="account-link"
-      :class="{ 'is-active': activeSection === 'me' }"
-      :to="to('me')"
-      :aria-current="activeSection === 'me' ? 'page' : undefined"
-      data-testid="nav-me"
-    >
-      <component :is="PRIMARY_NAV_ICONS.me" :size="20" aria-hidden="true" />
-      <span class="account-label">{{ accountLabel ?? $t('nav.me') }}</span>
-    </RouterLink>
+    <div class="end-actions">
+      <RouterLink
+        v-if="!props.compact"
+        class="primary-nav-link"
+        :class="{ 'is-active': activeSection === 'more' }"
+        :to="to(moreItem.view)"
+        :aria-current="activeSection === 'more' ? 'page' : undefined"
+        data-testid="nav-more"
+      >
+        <component :is="PRIMARY_NAV_ICONS.more" :size="20" aria-hidden="true" />
+        <span>{{ $t(moreItem.labelKey) }}</span>
+      </RouterLink>
+      <RouterLink
+        class="account-link"
+        :class="{ 'is-active': activeSection === 'account' }"
+        :to="to('profile')"
+        :aria-current="activeSection === 'account' ? 'page' : undefined"
+        :aria-label="props.compact ? $t('nav.account') : undefined"
+        data-testid="nav-account"
+      >
+        <component :is="ACCOUNT_ICON" :size="20" aria-hidden="true" />
+        <span v-if="!props.compact" class="account-label">{{ accountLabel ?? $t('app.login') }}</span>
+      </RouterLink>
+    </div>
   </header>
 </template>
 
@@ -126,7 +141,9 @@ function to(view) {
 .account-link:focus-visible,
 .brand:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
-.account-link { align-self: stretch; margin-inline-start: auto; }
+.end-actions { display: flex; align-self: stretch; gap: var(--space-1); margin-inline-start: auto; }
+.is-compact .end-actions { align-self: center; }
+.is-compact .account-link { min-width: var(--hit-min); min-height: var(--hit-min); justify-content: center; padding: 0; border-bottom: 0; }
 .account-label { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; }
 
 .dev-notice {
@@ -139,6 +156,7 @@ function to(view) {
 }
 
 .is-compact .dev-notice { margin-inline-start: auto; }
+.is-compact .dev-notice + .end-actions { margin-inline-start: 0; }
 
 @media (hover: hover) {
   .primary-nav-link:not(.is-active):hover,

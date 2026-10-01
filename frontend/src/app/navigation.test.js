@@ -66,18 +66,19 @@ describe('primary navigation', () => {
     }
   })
 
-  it('maps settings, about, admin and tool pages to 我的', () => {
-    for (const view of ['me', 'profile', 'history', 'technical-evolution', 'contact', 'sponsor', 'android',
+  it('maps settings, about, admin and tool pages to 更多', () => {
+    for (const view of ['more', 'history', 'technical-evolution', 'contact', 'sponsor', 'android',
       'admin-users', 'hof-admin', 'rating-v2', 'rating-docs', 'playback-qa', 'agent-tankopedia', 'agent-armor']) {
-      expect(primarySection(view)).toBe('me')
+      expect(primarySection(view)).toBe('more')
     }
+    expect(primarySection('profile')).toBe('account')
     expect(primarySection('hof')).toBe('hof')
     expect(primarySection('home')).toBe('home')
   })
 
   it('only offers Home on the production home host', () => {
-    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'me'])
-    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'me'])
+    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'more'])
+    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'more'])
   })
 
   it('points every primary item at a registered view', () => {

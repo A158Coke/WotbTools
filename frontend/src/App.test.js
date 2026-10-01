@@ -25,6 +25,7 @@ vi.mock('./components/HomePage.vue', () => ({ default: { template: '<div data-te
 vi.mock('./components/HoFPage.vue', () => ({ default: { template: '<div data-test="view-hof" />' } }))
 vi.mock('./components/AndroidDownloadPage.vue', () => ({ default: { template: '<div data-test="view-android" />' } }))
 vi.mock('./components/SponsorPage.vue', () => ({ default: { template: '<main data-test="view-sponsor" />' } }))
+vi.mock('./components/ProfilePage.vue', () => ({ default: { template: '<div data-test="view-profile" />' } }))
 vi.mock('./components/HistoryPage.vue', () => ({ default: { template: '<div data-test="view-history" />' } }))
 vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ default: { template: '<div data-test="view-technical-evolution" />' } }))
 // Agent 数据平面（admin-only）：详情/场景组件用轻量替身，断言可见性边界即可。
@@ -145,18 +146,18 @@ describe('App routing', () => {
     beforeEach(() => { authState.isAdminRef.value = false })
     afterEach(() => { authState.isAdminRef.value = false })
 
-    it('hides the Agent tool entries in 我的 from non-admins', async () => {
-      const { wrapper } = await mountApp('/?view=me')
+    it('hides the Agent tool entries in 更多 from non-admins', async () => {
+      const { wrapper } = await mountApp('/?view=more')
       for (const view of ['agent-replay', 'agent-tankopedia', 'agent-shots']) {
-        expect(wrapper.find(`[data-testid="me-link-${view}"]`).exists()).toBe(false)
+        expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists()).toBe(false)
       }
     })
 
-    it('shows the Agent tool entries in 我的 to admins', async () => {
+    it('shows the Agent tool entries in 更多 to admins', async () => {
       authState.isAdminRef.value = true
-      const { wrapper } = await mountApp('/?view=me')
+      const { wrapper } = await mountApp('/?view=more')
       for (const view of ['agent-replay', 'agent-tankopedia', 'agent-shots']) {
-        expect(wrapper.find(`[data-testid="me-link-${view}"]`).exists()).toBe(true)
+        expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists()).toBe(true)
       }
     })
 
@@ -253,8 +254,8 @@ describe('App routing', () => {
 
   it('drops the current view query when navigating to Android', async () => {
     setAuthState('authenticated', true)
-    const { wrapper, router } = await mountApp('/?view=me')
-    await wrapper.get('[data-testid="me-link-android"]').trigger('click')
+    const { wrapper, router } = await mountApp('/?view=more')
+    await wrapper.get('[data-testid="more-link-android"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/download/android')
     expect(router.currentRoute.value.query.view).toBeUndefined()
@@ -431,7 +432,7 @@ describe('Business user bootstrap', () => {
   })
 })
 
-describe('App shell navigation and 我的', () => {
+describe('App shell navigation, 更多 and account', () => {
   afterEach(() => {
     mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
     setAuthState('unauthenticated', false)
@@ -447,9 +448,16 @@ describe('App shell navigation and 我的', () => {
     expect(wrapper.get('[data-testid="nav-hof"]').attributes('aria-current')).toBeUndefined()
   })
 
-  it('treats settings and about pages as part of 我的', async () => {
+  it('treats settings and about pages as part of 更多', async () => {
     const { wrapper } = await mountApp('/?view=history')
-    expect(wrapper.get('[data-testid="nav-me"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('[data-testid="nav-more"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('[data-testid="nav-account"]').attributes('aria-current')).toBeUndefined()
+  })
+
+  it('treats the profile page as the account entry, not 更多', async () => {
+    const { wrapper } = await mountApp('/?view=profile')
+    expect(wrapper.get('[data-testid="nav-account"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('[data-testid="nav-more"]').attributes('aria-current')).toBeUndefined()
   })
 
   it('navigates between primary sections through router links', async () => {
@@ -460,20 +468,32 @@ describe('App shell navigation and 我的', () => {
     expect(wrapper.find('[data-test="view-hof"]').exists()).toBe(true)
   })
 
-  it('shows the authenticated display name on the account entry', async () => {
+  it('labels the account entry with the display name, or 登录 when signed out', async () => {
+    const signedOut = await mountApp()
+    expect(signedOut.wrapper.get('[data-testid="nav-account"]').text()).toContain('app.login')
+    signedOut.wrapper.unmount()
     setAuthState('authenticated', true)
     authState.displayName = '158布丁'
     const { wrapper } = await mountApp()
-    expect(wrapper.get('[data-testid="nav-me"]').text()).toContain('158布丁')
+    expect(wrapper.get('[data-testid="nav-account"]').text()).toContain('158布丁')
   })
 
-  it('uses a bottom tab bar instead of top navigation on compact layouts', async () => {
+  it('opens the account page from the account entry', async () => {
+    const { wrapper, router } = await mountApp('/?view=replay')
+    await wrapper.get('[data-testid="nav-account"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.view).toBe('profile')
+  })
+
+  it('uses a bottom tab bar and an icon-only account entry on compact layouts', async () => {
     layoutState.isCompact.value = true
     const { wrapper } = await mountApp('/?view=hof')
     expect(wrapper.find('[data-testid="app-tab-bar"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-hof"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nav-more"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="tab-hof"]').attributes('aria-current')).toBe('page')
-    expect(wrapper.find('[data-testid="tab-me"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tab-more"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="nav-account"]').attributes('aria-label')).toBe('nav.account')
   })
 
   it('does not render the tab bar on wider layouts', async () => {
@@ -481,24 +501,11 @@ describe('App shell navigation and 我的', () => {
     expect(wrapper.find('[data-testid="app-tab-bar"]').exists()).toBe(false)
   })
 
-  it('logs in from 我的 and returns to 我的', async () => {
-    const { wrapper } = await mountApp('/?view=me')
-    await wrapper.get('[data-testid="me-login"]').trigger('click')
-    expect(authState.login).toHaveBeenCalledWith('me')
-  })
-
-  it('opens the project history view from 我的', async () => {
-    const { wrapper, router } = await mountApp('/?view=me')
-    await wrapper.get('[data-testid="me-link-history"]').trigger('click')
+  it('opens the project history view from 更多', async () => {
+    const { wrapper, router } = await mountApp('/?view=more')
+    await wrapper.get('[data-testid="more-link-history"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.view).toBe('history')
     expect(wrapper.find('[data-test="view-history"]').exists()).toBe(true)
-  })
-
-  it('logs out from 我的 when authenticated', async () => {
-    setAuthState('authenticated', true)
-    const { wrapper } = await mountApp('/?view=me')
-    await wrapper.get('[data-testid="me-logout"]').trigger('click')
-    expect(authState.logout).toHaveBeenCalled()
   })
 })

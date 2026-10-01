@@ -160,14 +160,12 @@
       "home": "首页",
       "replay": "回放",
       "hof": "名人堂",
-      "me": "我的"
+      "more": "更多",
+      "account": "账户"
     },
-    "me": {
-      "title": "我的",
-      "signedOutTitle": "未登录",
-      "signedOutHint": "登录后可以提交名人堂记录、同步个人资料。解析回放不需要登录。",
+    "more": {
+      "title": "更多",
       "sections": {
-        "account": "账户",
         "display": "显示设置",
         "tools": "工具",
         "admin": "管理",
@@ -177,6 +175,10 @@
       "sponsor": "支持项目",
       "ratingDocs": "Rating 文档",
       "playbackQa": "回放 QA"
+    },
+    "account": {
+      "signedOutTitle": "登录 WoTBTools",
+      "signedOutHint": "登录后可以绑定游戏账号、提交名人堂记录、查看你的记录。解析回放不需要登录。"
     }
   },
   "en": {
@@ -340,14 +342,12 @@
       "home": "Home",
       "replay": "Replays",
       "hof": "Hall of Fame",
-      "me": "Me"
+      "more": "More",
+      "account": "Account"
     },
-    "me": {
-      "title": "Me",
-      "signedOutTitle": "Not signed in",
-      "signedOutHint": "Sign in to submit Hall of Fame records and sync your profile. Parsing replays does not require an account.",
+    "more": {
+      "title": "More",
       "sections": {
-        "account": "Account",
         "display": "Display",
         "tools": "Tools",
         "admin": "Administration",
@@ -357,6 +357,10 @@
       "sponsor": "Support the project",
       "ratingDocs": "Rating docs",
       "playbackQa": "Playback QA"
+    },
+    "account": {
+      "signedOutTitle": "Sign in to WoTBTools",
+      "signedOutHint": "Sign in to link your game account, submit Hall of Fame records and see your records. Parsing replays does not require an account."
     }
   },
   "ru": {
@@ -520,14 +524,12 @@
       "home": "Главная",
       "replay": "Реплеи",
       "hof": "Зал славы",
-      "me": "Профиль"
+      "more": "Ещё",
+      "account": "Аккаунт"
     },
-    "me": {
-      "title": "Профиль",
-      "signedOutTitle": "Вход не выполнен",
-      "signedOutHint": "Войдите, чтобы отправлять записи в Зал славы и синхронизировать профиль. Для разбора реплеев вход не нужен.",
+    "more": {
+      "title": "Ещё",
       "sections": {
-        "account": "Аккаунт",
         "display": "Отображение",
         "tools": "Инструменты",
         "admin": "Администрирование",
@@ -537,6 +539,10 @@
       "sponsor": "Поддержать проект",
       "ratingDocs": "Документация Rating",
       "playbackQa": "QA повтора"
+    },
+    "account": {
+      "signedOutTitle": "Вход в WoTBTools",
+      "signedOutHint": "Войдите, чтобы привязать игровой аккаунт, отправлять записи в Зал славы и видеть свои записи. Для разбора реплеев вход не нужен."
     }
   }
 }
