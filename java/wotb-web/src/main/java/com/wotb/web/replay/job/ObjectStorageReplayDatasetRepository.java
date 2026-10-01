@@ -5,6 +5,8 @@ import com.wotb.contracts.ObjectStorage;
 import com.wotb.core.model.Battle;
 import com.wotb.core.parse.Replays;
 import com.wotb.storage.ObjectStorageKeys;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.event.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tools.jackson.core.JacksonException;
@@ -73,20 +75,27 @@ public final class ObjectStorageReplayDatasetRepository
         final ObjectKey key = ObjectStorageKeys.tempJobObject(job.jobId(), FINALIZED_DATASET_PATH);
         try {
             if (!storage.exists(key)) {
-                LOGGER.error("event=replay_processing_dataset_absent jobId={} key={}", job.jobId(), key.value());
+                ApplicationLogger.event(LOGGER, Level.ERROR, "replay_processing_dataset_absent")
+                    .addKeyValue("jobId", job.jobId())
+                    .addKeyValue("key", key.value()).log("Replay processing lifecycle");
                 return null;
             }
             final FinalizedDataset dataset = MAPPER.readValue(readAll(key), FinalizedDataset.class);
             if (!FinalizedDataset.SCHEMA_VERSION.equals(dataset.schemaVersion())) {
-                LOGGER.error("event=replay_processing_dataset_version_mismatch jobId={} got={}",
-                        job.jobId(), dataset.schemaVersion());
+                ApplicationLogger.event(LOGGER, Level.ERROR, "replay_processing_dataset_version_mismatch")
+                    .addKeyValue("jobId", job.jobId())
+                    .addKeyValue("got", dataset.schemaVersion()).log("Replay processing lifecycle");
                 return null;
             }
-            LOGGER.info("event=replay_processing_dataset_read jobId={} battles={}",
-                    job.jobId(), dataset.battles().size());
+            ApplicationLogger.event(LOGGER, Level.INFO, "replay_processing_dataset_read")
+                    .addKeyValue("jobId", job.jobId())
+                    .addKeyValue("battles", dataset.battles().size()).log("Replay processing lifecycle");
             return dataset.toProcessedDataset();
         } catch (final IOException | JacksonException | IllegalArgumentException e) {
-            LOGGER.error("event=replay_processing_dataset_unreadable jobId={} key={}", job.jobId(), key.value(), e);
+            ApplicationLogger.event(LOGGER, Level.ERROR, "replay_processing_dataset_unreadable")
+                    .addKeyValue("jobId", job.jobId())
+                    .addKeyValue("key", key.value())
+                    .setCause(ApplicationLogger.diagnosticCause(e)).log("Replay processing lifecycle");
             return null;
         }
     }
@@ -126,8 +135,11 @@ public final class ObjectStorageReplayDatasetRepository
         final ProcessedDataset dataset =
                 ReplayBatchFinalizer.finalizeBatch(perSourceEntries(job), null, null);
         writeFinalized(job.jobId(), dataset);
-        LOGGER.info("event=replay_processing_dataset_finalized jobId={} battles={} duplicates={} failures={}",
-                job.jobId(), dataset.battles().size(), dataset.duplicates().size(), dataset.failures().size());
+        ApplicationLogger.event(LOGGER, Level.INFO, "replay_processing_dataset_finalized")
+                    .addKeyValue("jobId", job.jobId())
+                    .addKeyValue("battles", dataset.battles().size())
+                    .addKeyValue("duplicates", dataset.duplicates().size())
+                    .addKeyValue("failures", dataset.failures().size()).log("Replay processing lifecycle");
         return dataset;
     }
 
@@ -170,20 +182,27 @@ public final class ObjectStorageReplayDatasetRepository
         final ObjectKey key = ObjectStorageKeys.tempJobObject(jobId, SOURCE_DATASET_PREFIX + sourceIndex + ".json");
         try {
             if (!storage.exists(key)) {
-                LOGGER.error("event=replay_processing_source_dataset_absent jobId={} sourceIndex={} key={}",
-                        jobId, sourceIndex, key.value());
+                ApplicationLogger.event(LOGGER, Level.ERROR, "replay_processing_source_dataset_absent")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex)
+                    .addKeyValue("key", key.value()).log("Replay processing lifecycle");
                 return null;
             }
             final RemoteSourceDataset dataset = MAPPER.readValue(readAll(key), RemoteSourceDataset.class);
             if (!RemoteSourceDataset.SCHEMA_VERSION.equals(dataset.schemaVersion())) {
-                LOGGER.error("event=replay_processing_source_dataset_version_mismatch jobId={} sourceIndex={} got={}",
-                        jobId, sourceIndex, dataset.schemaVersion());
+                ApplicationLogger.event(LOGGER, Level.ERROR, "replay_processing_source_dataset_version_mismatch")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex)
+                    .addKeyValue("got", dataset.schemaVersion()).log("Replay processing lifecycle");
                 return null;
             }
             return dataset;
         } catch (final IOException | JacksonException | IllegalArgumentException e) {
-            LOGGER.error("event=replay_processing_source_dataset_unreadable jobId={} sourceIndex={} key={}",
-                    jobId, sourceIndex, key.value(), e);
+            ApplicationLogger.event(LOGGER, Level.ERROR, "replay_processing_source_dataset_unreadable")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex)
+                    .addKeyValue("key", key.value())
+                    .setCause(ApplicationLogger.diagnosticCause(e)).log("Replay processing lifecycle");
             return null;
         }
     }

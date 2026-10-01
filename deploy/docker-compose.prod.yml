@@ -71,6 +71,14 @@ services:
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 64m
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.27.0
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./deploy/observability/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 64m
   prometheus:
     image: prom/prometheus:v2.55.1
     command:
@@ -82,6 +90,7 @@ services:
       - prometheus_data:/prometheus
     depends_on:
       - node-exporter
+      - blackbox-exporter
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 384m

@@ -20,6 +20,7 @@ for CONFIG in "${CONFIGS[@]}"; do
     exit 1
   fi
 
+  grep -Fq 'loki.process "android_download"' "$CONFIG" || continue
   bad_config="$(mktemp)"
   trap 'rm -f "$bad_config"' EXIT
   cp "$CONFIG" "$bad_config"

@@ -21,6 +21,7 @@ on:
         default: all
         options:
           - all
+          - blackbox-exporter
           - node-exporter
           - prometheus
           - loki
@@ -78,6 +79,7 @@ jobs:
           declare -A selected=()
           add_service() { selected["$1"]=1; }
           add_all() {
+            add_service blackbox-exporter
             add_service node-exporter
             add_service prometheus
             add_service loki
@@ -87,7 +89,7 @@ jobs:
           if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
             case "$SCOPE" in
               all) add_all ;;
-              node-exporter|prometheus|loki|alloy|grafana) add_service "$SCOPE" ;;
+              blackbox-exporter|node-exporter|prometheus|loki|alloy|grafana) add_service "$SCOPE" ;;
               *) echo "Unsupported Observability scope: $SCOPE" >&2; exit 1 ;;
             esac
           else
@@ -101,6 +103,7 @@ jobs:
                     add_all
                     ;;
                   deploy/observability/prometheus/*) add_service prometheus ;;
+                  deploy/observability/blackbox/*) add_service blackbox-exporter ;;
                   deploy/observability/loki/*) add_service loki ;;
                   deploy/observability/alloy/*) add_service alloy ;;
                   deploy/observability/grafana/provisioning/*) add_service grafana ;;
@@ -114,7 +117,7 @@ jobs:
           fi
 
           runtime_services=''
-          for service in node-exporter prometheus loki alloy grafana; do
+          for service in blackbox-exporter node-exporter prometheus loki alloy grafana; do
             if [[ -n "${selected[$service]:-}" ]]; then
               [[ -z "$runtime_services" ]] || runtime_services+=","
               runtime_services+="$service"
@@ -202,7 +205,7 @@ jobs:
             fi
             for service in "${selected_services[@]}"; do
               case "$service" in
-                node-exporter|prometheus|loki|alloy|grafana) ;;
+                blackbox-exporter|node-exporter|prometheus|loki|alloy|grafana) ;;
                 *) echo "Unexpected Observability runtime selection: $service" >&2; exit 2 ;;
               esac
               export WOTB_DEPLOY_SERVICE="$service"

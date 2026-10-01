@@ -12,6 +12,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.event.Level;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageDeliveryMode;
@@ -106,8 +108,9 @@ public final class RabbitReplayProcessingDispatcher implements ReplayProcessingD
                     + " was unroutable: replyCode=" + returned.getReplyCode()
                     + ", routingKey=" + returned.getRoutingKey());
         }
-        LOG.info("dispatched replay processing job {} as attempt {} (broker confirmed)",
-                command.jobId(), command.attempt());
+        ApplicationLogger.event(LOG, Level.INFO, "parser_dispatch_confirmed")
+                .addKeyValue("jobId", command.jobId()).addKeyValue("attempt", command.attempt())
+                .addKeyValue("outcome", "confirmed").log("Parser dispatch confirmed");
     }
 
     /**
@@ -130,7 +133,9 @@ public final class RabbitReplayProcessingDispatcher implements ReplayProcessingD
     @Override
     public CancellationResult cancelQueued(final String jobId) {
         final String job = ParserEnvelopeValues.text("jobId", jobId);
-        LOG.info("queued cancellation for job {} is expressed through PostgreSQL job state, not AMQP", job);
+        ApplicationLogger.event(LOG, Level.INFO, "parser_cancellation_pending")
+                .addKeyValue("jobId", job).addKeyValue("outcome", "active_completion_pending")
+                .log("Cancellation recorded in authoritative job state");
         return CancellationResult.ACTIVE_COMPLETION_PENDING;
     }
 

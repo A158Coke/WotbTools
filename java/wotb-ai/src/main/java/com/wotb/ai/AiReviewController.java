@@ -8,7 +8,11 @@ import com.wotb.core.replay.processing.ReplayAnalysisScope;
 import com.wotb.core.replay.processing.UnsupportedBattleCategoryException;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
+import com.wotb.web.replay.ai.AiReviewEventLog;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
+import com.wotb.core.observability.LogContext;
 import com.wotb.web.replay.ai.AllowedLanguage;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.TacticalReviewHarness;
@@ -46,6 +50,7 @@ import tools.jackson.databind.json.JsonMapper;
 @RestController
 @RequestMapping("/api/ai/reviews")
 public class AiReviewController {
+    private static final Logger LOGGER = LoggerFactory.getLogger(AiReviewController.class);
     private static final long SSE_TIMEOUT_MS = 1_120_000L;
     private static final int MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 
@@ -147,7 +152,7 @@ public class AiReviewController {
         final SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         emitter.onTimeout(() -> cancellations.cancel(request.correlationId()));
         emitter.onError(error -> cancellations.cancel(request.correlationId()));
-        try {
+        try (final var ignored = LogContext.with("correlationId", request.correlationId())) {
             workerExecutor.execute(() -> runReview(request, language, scope, cancellation, emitter));
         } catch (final RejectedExecutionException error) {
             cancellations.unregister(request.correlationId(), cancellation);
@@ -171,6 +176,9 @@ public class AiReviewController {
                            final ReplayAnalysisScope scope,
                            final AiCancellationToken cancellation, final SseEmitter emitter) {
         AiRequestContext.set(request.correlationId(), cancellation);
+        final long startedNanos = System.nanoTime();
+        AiReviewEventLog.info(LOGGER, "ai_review_started", request.correlationId(),
+                "scope", scope, "provider", "deepseek");
         meterRegistry.counter("wotb_ai_review_requests_total").increment();
         final Timer.Sample durationSample = Timer.start(meterRegistry);
         String result = "success";
@@ -228,6 +236,8 @@ public class AiReviewController {
         } catch (final RuntimeException error) {
             result = isRejected(error) ? "rejected" : "failure";
             errorType = errorCodeOf(error);
+            AiReviewEventLog.upstreamFailure(LOGGER, "ai_review_failed", request.correlationId(), error,
+                    "errorCode", errorType, "outcome", result);
             if (error instanceof ClientDisconnectedException) {
                 cancellations.cancel(request.correlationId());
             }
@@ -246,6 +256,9 @@ public class AiReviewController {
             if (errorType != null) {
                 meterRegistry.counter("wotb_ai_review_errors_total", "type", errorType).increment();
             }
+            AiReviewEventLog.info(LOGGER, "ai_review_finished", request.correlationId(),
+                    "outcome", result, "errorCode", errorType,
+                    "durationMs", (System.nanoTime() - startedNanos) / 1_000_000L);
             AiRequestContext.clear();
             cancellations.unregister(request.correlationId(), cancellation);
         }

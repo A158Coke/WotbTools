@@ -58,3 +58,26 @@ scrape_configs:
           - grafana:3000
         labels:
           service: grafana
+
+  # Actual public endpoints, including trusted TLS; never infer worker health.
+  - job_name: public-endpoints
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: [https://wotbtools.com/]
+        labels:
+          service: web
+      - targets: [https://wotbtools.com/api/health]
+        labels:
+          service: business-api
+      - targets: [https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration]
+        labels:
+          service: auth-endpoint
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

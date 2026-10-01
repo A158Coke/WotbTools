@@ -17,6 +17,11 @@
          本模块刻意不声明任何 stereotype/@Component：spring-context 只供调用方
          以构造器注入装配（拓扑声明仍是 infra/tofu/rabbitmq 的唯一职责）。 -->
     <dependencies>
+        <!-- Shared safe diagnostics; topology/wire authority remains in this adapter. -->
+        <dependency>
+            <groupId>com.wotb</groupId>
+            <artifactId>wotb-core</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.wotb</groupId>
             <artifactId>wotb-contracts</artifactId>

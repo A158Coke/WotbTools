@@ -29,6 +29,7 @@ import './styles/playback-fullscreen-form-contract.css'
 import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
 import router from './app/router.js'
+import { reportClientFailure } from './api/client-events.js'
 
 // Build identity（vite define 注入）：生产环境可立即确认实际运行的 bundle 版本，
 // 避免"我刚部署了"式猜测（对应同源 /version.json 可查）。
@@ -64,4 +65,7 @@ async function bootstrap() {
   }
 }
 
-bootstrap()
+bootstrap().catch(error => {
+  console.error('Application bootstrap failed', error)
+  reportClientFailure('client.bootstrap_failed', 'CLIENT_BOOTSTRAP_FAILED')
+})

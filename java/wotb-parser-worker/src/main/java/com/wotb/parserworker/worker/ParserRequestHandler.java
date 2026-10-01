@@ -27,6 +27,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.event.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -106,6 +108,9 @@ public class ParserRequestHandler {
     public void handle(final ParserRequestMessage request) throws IOException {
         final ParserRequestMessage envelope = Objects.requireNonNull(request, "request");
         final String jobId = envelope.jobId();
+        ApplicationLogger.event(LOG, Level.INFO, "parser_worker_request_started")
+                .addKeyValue("jobId", jobId).addKeyValue("attempt", envelope.attempt())
+                .addKeyValue("sourceCount", envelope.sources().size()).log("Parser request started");
         final ReplayProcessingSourceRunner runner =
                 new ReplayProcessingSourceRunner(new ParserArtifactSink(storage, jobId), lifecycle);
         final List<ParserSourceOutcome> outcomes = new ArrayList<>();
@@ -119,6 +124,11 @@ public class ParserRequestHandler {
                 envelope.attempt(),
                 Instant.now(),
                 outcomes));
+        ApplicationLogger.event(LOG, Level.INFO, "parser_worker_result_confirmed")
+                .addKeyValue("jobId", jobId).addKeyValue("attempt", envelope.attempt())
+                .addKeyValue("readyCount", outcomes.stream().filter(outcome -> outcome.status() == ParserSourceStatus.READY).count())
+                .addKeyValue("failedCount", outcomes.stream().filter(outcome -> outcome.status() == ParserSourceStatus.FAILED).count())
+                .addKeyValue("outcome", "confirmed").log("Parser result confirmed");
     }
 
     /**
@@ -179,8 +189,10 @@ public class ParserRequestHandler {
         try (InputStream stream = storage.get(inputKey(jobId, sourceIndex, sourceName))) {
             replayBytes = stream.readAllBytes();
         }
-        LOG.info("event=parser_worker_input_read jobId={} sourceIndex={} bytes={}",
-                jobId, sourceIndex, replayBytes.length);
+        ApplicationLogger.event(LOG, Level.INFO, "parser_worker_input_read")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex)
+                    .addKeyValue("bytes", replayBytes.length).log("parser_worker_input_read");
 
         final ReplayProcessingSourceOutcome outcome = runner.processSource(
                 jobId, sourceIndex, sourceName,
@@ -192,12 +204,15 @@ public class ParserRequestHandler {
                 // The replay was readable and the parse succeeded; only the artifact write failed.
                 // That is infrastructure, not a property of the bytes, so it must leave through the
                 // retryable parser.failed path instead of becoming a terminal per-source FAILED.
-                LOG.error("event=parser_worker_artifact_storage_failed jobId={} sourceIndex={} sourceName={}",
-                        jobId, sourceIndex, sourceName);
+                ApplicationLogger.event(LOG, Level.ERROR, "parser_worker_artifact_storage_failed")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex).log("parser_worker_artifact_storage_failed");
                 throw new ParserArtifactStorageException(code, outcome.entry().failureMessage());
             }
-            LOG.warn("event=parser_worker_source_failed jobId={} sourceIndex={} sourceName={} failure={}",
-                    jobId, sourceIndex, sourceName, outcome.entry().failureMessage());
+            ApplicationLogger.event(LOG, Level.WARN, "parser_worker_source_failed")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex).addKeyValue("errorCode", code)
+                    .addKeyValue("outcome", "failed").log("parser_worker_source_failed");
             return new ParserSourceOutcome(sourceIndex, sourceName, ParserSourceStatus.FAILED, code);
         }
         writeDataset(jobId, sourceIndex, sourceName, outcome);
@@ -249,8 +264,10 @@ public class ParserRequestHandler {
         final byte[] body = dataset.toBytes();
         storage.put(ObjectStorageKeys.tempJobObject(jobId, RESULT_PREFIX + sourceIndex + ".json"),
                 new ByteArrayInputStream(body), body.length, CONTENT_TYPE);
-        LOG.info("event=parser_worker_dataset_written jobId={} sourceIndex={} bytes={}",
-                jobId, sourceIndex, body.length);
+        ApplicationLogger.event(LOG, Level.INFO, "parser_worker_dataset_written")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex)
+                    .addKeyValue("bytes", body.length).log("parser_worker_dataset_written");
     }
 
     private static ObjectKey inputKey(final String jobId, final int sourceIndex, final String sourceName) {

@@ -4,7 +4,6 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
-import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider.AuthenticationCallback;
 import org.keycloak.models.KeycloakSession;
@@ -20,8 +19,6 @@ import org.keycloak.sessions.AuthenticationSessionModel;
  * 任何一环失败都终止登录；token 不落库、不进属性/JWT/日志。</p>
  */
 final class WargamingEndpoint {
-
-    private static final Logger log = Logger.getLogger(WargamingEndpoint.class);
 
     private final KeycloakSession session;
     private final WargamingIdentityProvider provider;
@@ -51,25 +48,30 @@ final class WargamingEndpoint {
 
         // ── 1. 会话校验（state 缺失/无效/过期/被篡改一律拒绝） ────────
         if (WargamingIdentityProvider.isBlank(state)) {
+            AuthEventLog.rejected("wargaming", "callback", "WG_STATE_MISSING");
             return WargamingIdentityProvider.errorResponse();
         }
         final AuthenticationSessionModel authenticationSession =
                 authCallback.getAndVerifyAuthenticationSession(state);
         if (authenticationSession == null) {
+            AuthEventLog.rejected("wargaming", "callback", "WG_STATE_INVALID");
             return WargamingIdentityProvider.errorResponse();
         }
         session.getContext().setAuthenticationSession(authenticationSession);
 
         final String applicationId = WargamingIdentityProvider.applicationId();
         if (WargamingIdentityProvider.isBlank(applicationId)) {
+            AuthEventLog.rejected("wargaming", "callback", "WG_NOT_CONFIGURED");
             return WargamingIdentityProvider.errorResponse();
         }
 
         // ── 2. 基础校验 ──────────────────────────────────────────────
         if (!"ok".equals(status)) {
+            AuthEventLog.rejected("wargaming", "callback", "WG_PROVIDER_DENIED");
             return WargamingIdentityProvider.errorResponse();
         }
         if (WargamingIdentityProvider.isBlank(accessToken)) {
+            AuthEventLog.rejected("wargaming", "callback", "WG_TOKEN_MISSING");
             return WargamingIdentityProvider.errorResponse();
         }
 
@@ -88,6 +90,7 @@ final class WargamingEndpoint {
                 final Long callbackAccountId = parseAccountId(accountId);
                 if (callbackAccountId == null
                         || callbackAccountId.longValue() != trustedAccountId) {
+                    AuthEventLog.rejected("wargaming", "callback", "WG_ACCOUNT_MISMATCH");
                     return WargamingIdentityProvider.errorResponse();
                 }
             }
@@ -97,10 +100,12 @@ final class WargamingEndpoint {
             final String officialNickname =
                     apiClient.fetchOfficialNickname(applicationId, trustedAccountId, wgToken);
             if (WargamingIdentityProvider.isBlank(officialNickname)) {
+            AuthEventLog.rejected("wargaming", "callback", "WG_NICKNAME_MISSING");
                 return WargamingIdentityProvider.errorResponse();
             }
             stage = "callback-nickname-check";
             if (!WargamingIdentityProvider.isBlank(nickname) && !nickname.equals(officialNickname)) {
+            AuthEventLog.rejected("wargaming", "callback", "WG_NICKNAME_MISMATCH");
                 return WargamingIdentityProvider.errorResponse();
             }
 
@@ -124,16 +129,16 @@ final class WargamingEndpoint {
             context.setUserAttribute("wotb.nickname", officialNickname);
             context.setUserAttribute("wotb.verified", "true");
 
-            return authCallback.authenticated(context);
+            Response response = authCallback.authenticated(context);
+            AuthEventLog.success("wargaming");
+            return response;
         } catch (final WargamingApiClient.WargamingApiException e) {
-            // 安全错误日志：允许 stage / 错误码 / message / field，不含 token /
-            // application_id / state / 完整响应 / error.value。
-            log.warnf("Wargaming login rejected at stage=%s: %s", stage, safeMessage(e));
+            // Preserve diagnostics with OAuth messages redacted.
+            AuthEventLog.failure("wargaming", stage, "WG_UPSTREAM_REJECTED", e);
             return WargamingIdentityProvider.errorResponse();
         } catch (final RuntimeException e) {
-            // 非预期异常：只记录安全的异常类名，不吞掉 JVM Error。
-            log.warnf("Wargaming login failed at stage=%s: %s",
-                    stage, e.getClass().getSimpleName());
+            // Unexpected exceptions retain stack frames and the full cause chain.
+            AuthEventLog.failure("wargaming", stage, "WG_UNEXPECTED_FAILURE", e);
             return WargamingIdentityProvider.errorResponse();
         } finally {
             // ── 7. 成功或失败路径都尽力立即销毁 token ────────────────
@@ -146,14 +151,17 @@ final class WargamingEndpoint {
 
     private void logoutBestEffort(final String applicationId, final String accessToken) {
         if (WargamingIdentityProvider.isBlank(accessToken)) {
+            AuthEventLog.rejected("wargaming", "callback", "WG_TOKEN_MISSING");
             return;
         }
         try {
             apiClient.logout(applicationId, accessToken);
         } catch (final WargamingApiClient.WargamingApiException e) {
             // token 值绝不进日志。
-            log.warnf("Wargaming token logout failed (status-level warning only): %s",
-                    safeMessage(e));
+            AuthEventLog.degraded("wargaming", "token-cleanup", "WG_LOGOUT_DEGRADED");
+            AuthEventLog.failure("wargaming", "logout", "WG_LOGOUT_DEGRADED", e);
+        } catch (final RuntimeException e) {
+            AuthEventLog.failure("wargaming", "logout", "WG_LOGOUT_UNEXPECTED", e);
         }
     }
 
@@ -169,8 +177,4 @@ final class WargamingEndpoint {
         }
     }
 
-    private static String safeMessage(final Throwable e) {
-        final String message = e.getMessage();
-        return message != null && !message.isBlank() ? message : e.getClass().getSimpleName();
-    }
 }

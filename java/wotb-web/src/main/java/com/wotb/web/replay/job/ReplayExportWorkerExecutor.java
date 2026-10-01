@@ -1,5 +1,7 @@
 package com.wotb.web.replay.job;
 
+import com.wotb.core.observability.LogContext;
+
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -73,13 +75,13 @@ public class ReplayExportWorkerExecutor implements AutoCloseable {
      * {@code EXPORT_QUEUE_FULL}）。保存可移除句柄供 QUEUED 取消使用。
      */
     public void submit(final String jobId, final Runnable task) {
-        final Runnable wrapped = () -> {
-            try {
+        final Runnable wrapped = LogContext.capture().wrap(() -> {
+            try (final LogContext.Scope ignored = LogContext.with("jobId", jobId)) {
                 task.run();
             } finally {
                 queued.remove(jobId);
             }
-        };
+        });
         // 先登记再提交：任务在 execute 前不会被 worker 拾取，避免完成后才 put 造成残留条目。
         queued.put(jobId, wrapped);
         try {

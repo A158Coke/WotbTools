@@ -3,6 +3,8 @@ package com.wotb.web.replay.job;
 import com.wotb.contracts.ObjectKey;
 import com.wotb.contracts.ObjectStorage;
 import com.wotb.storage.ObjectStorageKeys;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.event.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
@@ -53,8 +55,11 @@ public final class MinioReplayProcessingInputStore implements ReplayProcessingIn
                 storage.put(key, content, file.getSize(), contentTypeOf(file));
             }
             sourceNames.add(safe);
-            LOGGER.info("event=replay_processing_input_stored jobId={} sourceIndex={} key={} bytes={}",
-                    jobId, i, key.value(), file.getSize());
+            ApplicationLogger.event(LOGGER, Level.INFO, "replay_processing_input_stored")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", i)
+                    .addKeyValue("key", key.value())
+                    .addKeyValue("bytes", file.getSize()).log("Replay processing lifecycle");
         }
         return sourceNames;
     }
@@ -65,8 +70,10 @@ public final class MinioReplayProcessingInputStore implements ReplayProcessingIn
             // 与 store 同一推导：半途失败时后面的键可能从未创建，delete 对不存在的对象是成功。
             final ObjectKey key = ObjectStorageKeys.tempJobObject(jobId, inputPath(i, safeNameOf(files[i])));
             storage.delete(key);
-            LOGGER.info("event=replay_processing_input_discarded jobId={} sourceIndex={} key={}",
-                    jobId, i, key.value());
+            ApplicationLogger.event(LOGGER, Level.INFO, "replay_processing_input_discarded")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", i)
+                    .addKeyValue("key", key.value()).log("Replay processing lifecycle");
         }
     }
 

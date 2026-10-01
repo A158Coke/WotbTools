@@ -203,7 +203,8 @@ class DistributedReplayProcessingPathsTest {
     /** 恰好一条含该 event 的日志；多于/少于一条都直接失败（避免重复记录或吞掉）。 */
     private static ILoggingEvent singleEvent(final ListAppender<ILoggingEvent> appender, final String event) {
         final List<ILoggingEvent> matched = appender.list.stream()
-                .filter(e -> e.getFormattedMessage().contains("event=" + event))
+                .filter(e -> e.getKeyValuePairs() != null && e.getKeyValuePairs().stream().anyMatch(
+                        field -> field.key.equals("event") && event.equals(field.value)))
                 .toList();
         assertEquals(1, matched.size(), "event=" + event + " 必须恰好一次，实际日志: " + appender.list);
         return matched.getFirst();

@@ -139,7 +139,7 @@ public class TacticalReviewHarness {
             features = new DefaultPlayerBattleFeatureExtractor().extract(
                     reconstruction, recorder, battle);
         } catch (final RuntimeException e) {
-            LOGGER.info("Harness feature extraction failed, falling back: {}", e.getMessage());
+            AiReviewEventLog.fallback(LOGGER, "ai_feature_extraction_failed", e, "without_extracted_features");
             return new HarnessOutcome(fallback(battle, reconstruction, language, "FEATURES_FAILED", listener), null);
         }
         if (!features.hasFeatures()) {
@@ -217,7 +217,8 @@ public class TacticalReviewHarness {
                                    final AllowedLanguage language,
                                    final String reason,
                                    final AiReviewStreamListener listener) {
-        LOGGER.info("Harness fell back to old path: {}", reason);
+        AiReviewEventLog.warn(LOGGER, "ai_harness_fallback", AiReviewEventLog.correlationId(),
+                "outcome", "degraded", "fallbackPath", "player_review", "reason", reason);
         count(reason);
         return playerService.analyzePlayerOrFallback(battle, reconstruction, language, listener);
     }

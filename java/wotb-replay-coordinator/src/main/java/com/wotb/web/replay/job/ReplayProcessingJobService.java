@@ -21,13 +21,15 @@ import com.wotb.web.replay.mapper.Mapper;
 import com.wotb.web.replay.service.ReplayService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.event.Level;
+import org.slf4j.spi.LoggingEventBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -194,13 +196,13 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
             // 一旦回滚也不可用，最初的 put 失败原因就再没有任何地方能看到（生产排障现状）。
             // 必须走 SLF4J Throwable overload 而不是只打印 getMessage()：MinIO/S3 的真实错误
             // 只存在于 cause chain 里（io.minio 的异常类型 + S3 error message + 栈帧）。
-            LOGGER.warn("event=replay_processing_input_persist_failed jobId={} error={}",
-                    jobId, e.getMessage(), e);
+            logEvent(Level.WARN, "replay_processing_input_persist_failed", jobId,
+                    "errorCode", "PROCESSING_JOB_STORAGE_UNAVAILABLE").setCause(e).log("Replay input persistence failed");
             // 半途失败同样要回滚：已经写入的对象存储输入不能变成没有 job 引用的孤儿
             // （本地落点由 removeAndCleanup 删除，分布式落点由输入端口删除）。
             discardInputs(jobId, files);
             removeJobStateQuietly(jobId);
-            throw new IllegalStateException("PROCESSING_JOB_STORAGE_UNAVAILABLE");
+            throw new IllegalStateException("PROCESSING_JOB_STORAGE_UNAVAILABLE", e);
         }
         final ReplayProcessingJob job = new ReplayProcessingJob(jobId, sourceNames);
         try {
@@ -228,7 +230,7 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
             throw e;
         }
         recordCreated(files.length);
-        LOGGER.info(logLine("processing_job_created", jobId, "files", files.length));
+        logEvent(Level.INFO, "processing_job_created", jobId, "files", files.length).log();
         return jobId;
     }
 
@@ -245,8 +247,9 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
             // 回滚失败只记录、绝不抛出（否则会替换 create 正在抛出的那个原始失败），
             // 但同样必须保留完整 Throwable/cause chain：MinIO/S3 的底层错误类型与 error message
             // 只在 cause 里，只打印 getMessage() 无法定位。
-            LOGGER.warn("event=replay_processing_input_discard_failed jobId={} error={}",
-                    jobId, cleanupFailure.getMessage(), cleanupFailure);
+            logEvent(Level.WARN, "replay_processing_input_discard_failed", jobId,
+                    "outcome", "degraded", "fallbackPath", "operator_cleanup").setCause(cleanupFailure)
+                    .log("Replay input cleanup failed");
         }
     }
 
@@ -255,8 +258,9 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         try {
             store.removeAndCleanup(jobId);
         } catch (final RuntimeException cleanupFailure) {
-            LOGGER.warn("processing_job_cleanup_failed jobId={} error={}",
-                    jobId, cleanupFailure.getMessage());
+            logEvent(Level.WARN, "processing_job_cleanup_failed", jobId,
+                    "outcome", "degraded", "fallbackPath", "operator_cleanup").setCause(cleanupFailure)
+                    .log("Replay job state cleanup failed");
         }
     }
 
@@ -369,7 +373,7 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         final ReplayProcessingJob job = store.get(jobId);
         if (job != null && job.startProcessing()) {
             recordQueueWait(job.submittedNanos(), System.nanoTime());
-            LOGGER.info(logLine("processing_job_started", jobId, "total", job.total()));
+            logEvent(Level.INFO, "processing_job_started", jobId, "total", job.total()).log();
         }
     }
 
@@ -436,11 +440,11 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
                 list.add(entries.get(i));
             }
             final ReplayProcessingJob.Snapshot parseSnap = job.snapshot();
-            LOGGER.info(logLine("processing_job_parse_done", job.jobId(),
+            logEvent(Level.INFO, "processing_job_parse_done", job.jobId(),
                     "parseCompleted", parseSnap.parseCompleted(),
                     "parseSucceeded", parseSnap.parseSucceeded(),
                     "parseFailed", parseSnap.parseFailed(),
-                    "total", job.total()));
+                    "total", job.total()).log();
             job.advancePhase(ReplayProcessingJob.PHASE_FINALIZING_BATCH);
             // dedupe / League / Rating / 聚合 / enrichment 本体在 ReplayBatchFinalizer ——
             // 分布式控制面在同一个 FINALIZING_BATCH 阶段调用**同一个实现**，批次语义只有一份；
@@ -456,6 +460,9 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
             job.markCancelled();
             finishTerminal(job, startNanos);
         } catch (final Exception e) {
+            logEvent(Level.ERROR, "processing_job_unexpected_failure", job.jobId(),
+                    "errorCode", errorCodeOf(e))
+                    .setCause(ApplicationLogger.diagnosticCause(e)).log();
             if (job.isCancelled()) {
                 job.markCancelled();
             } else {
@@ -464,7 +471,7 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
             finishTerminal(job, startNanos);
         } catch (final Error e) {
             // 未预期 JVM 级错误也必须终态，绝不把 job 留在 PROCESSING。
-            LOGGER.error(logLine("processing_job_aborted", job.jobId(), "error", e.getClass().getSimpleName()), e);
+            logEvent(Level.ERROR, "processing_job_aborted", job.jobId(), "error", e.getClass().getSimpleName()).setCause(e).log();
             if (job.isCancelled()) {
                 job.markCancelled();
             } else {
@@ -500,13 +507,13 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
 
     private void logTerminal(final ReplayProcessingJob.Snapshot snap) {
         switch (snap.status()) {
-            case READY -> LOGGER.info(logLine("processing_job_ready", snap.jobId(),
+            case READY -> logEvent(Level.INFO, "processing_job_ready", snap.jobId(),
                     "valid", snap.valid(), "duplicates", snap.duplicates(),
-                    "failures", snap.failures(), "processed", snap.processed(), "total", snap.total()));
-            case FAILED -> LOGGER.warn(logLine("processing_job_failed", snap.jobId(),
-                    "errorCode", snap.errorCode(), "processed", snap.processed(), "total", snap.total()));
-            case CANCELLED -> LOGGER.info(logLine("processing_job_cancelled", snap.jobId(),
-                    "processed", snap.processed(), "total", snap.total()));
+                    "failures", snap.failures(), "processed", snap.processed(), "total", snap.total()).log();
+            case FAILED -> logEvent(Level.WARN, "processing_job_failed", snap.jobId(),
+                    "errorCode", snap.errorCode(), "processed", snap.processed(), "total", snap.total()).log();
+            case CANCELLED -> logEvent(Level.INFO, "processing_job_cancelled", snap.jobId(),
+                    "processed", snap.processed(), "total", snap.total()).log();
             default -> { }
         }
     }
@@ -557,19 +564,23 @@ public class ReplayProcessingJobService implements ReplayProcessingLifecycle {
         }
         if (e instanceof IllegalArgumentException) {
             final String message = e.getMessage();
-            if (StringUtils.hasText(message)) {
+            if (message != null && java.util.Set.of("NO_BATTLE_DATA", "REPLAY_PACKET_LIMIT_EXCEEDED",
+                    "NO_REPLAY_FILES", "NO_REPLAY_FILE", "INVALID_REPLAY_FILE_TYPE", "FILE_TOO_LARGE",
+                    "TOTAL_REQUEST_TOO_LARGE", "TOO_MANY_REPLAY_FILES", "SOURCE_NOT_FOUND").contains(message)) {
                 return message;
             }
         }
         return "PROCESSING_JOB_FAILED";
     }
 
-    private static String logLine(final String event, final String jobId, final Object... kv) {
-        final StringBuilder sb = new StringBuilder("event=").append(event).append(" jobId=").append(jobId);
+    private static LoggingEventBuilder logEvent(final Level level, final String event,
+                                                 final String jobId, final Object... kv) {
+        final LoggingEventBuilder builder = ApplicationLogger.event(LOGGER, level, event)
+                .addKeyValue("jobId", jobId).setMessage("event=" + event + " jobId=" + jobId);
         for (int i = 0; i + 1 < kv.length; i += 2) {
-            sb.append(' ').append(kv[i]).append('=').append(kv[i + 1]);
+            builder.addKeyValue(String.valueOf(kv[i]), kv[i + 1]);
         }
-        return sb.toString();
+        return builder;
     }
 
     /** 协作取消 checkpoint 信号（finalize 阶段间检查，统一转 CANCELLED）。 */

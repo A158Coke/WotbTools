@@ -290,8 +290,8 @@ public class SpringAiChatGateway implements AiChatGateway {
                 } catch (final RuntimeException e) {
                     failure = new AiUpstreamException(
                             "AI_UPSTREAM_UNAVAILABLE", null, correlationId, e);
-                    logProviderFailure(null, failure.code(), request.analysisMode(),
-                            correlationId, e.getClass().getSimpleName());
+                    logProviderFailure((Integer) null, failure.code(), request.analysisMode(),
+                            correlationId);
                 } finally {
                     watchdog.cancel(false);
                     if (cancellation != null) {
@@ -456,7 +456,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                 }
                 if (text.isEmpty()) {
                     throw providerFailure(null, "AI_EMPTY_RESPONSE", request.analysisMode(),
-                            correlationId, "blank streaming completion content");
+                            correlationId);
                 }
                 final ChatResponse aggregated =
                         toAggregatedResponse(text.toString(), lastResponse.get(), model);
@@ -711,13 +711,11 @@ public class SpringAiChatGateway implements AiChatGateway {
                                   final String correlationId) {
         if (response == null || response.getResult() == null
                 || response.getResult().getOutput() == null) {
-            throw providerFailure(null, "AI_RESPONSE_INVALID", analysisMode, correlationId,
-                    "invalid completion envelope");
+            throw providerFailure(null, "AI_RESPONSE_INVALID", analysisMode, correlationId);
         }
         final String content = response.getResult().getOutput().getText();
         if (!StringUtils.hasText(content)) {
-            throw providerFailure(null, "AI_EMPTY_RESPONSE", analysisMode, correlationId,
-                    "blank completion content");
+            throw providerFailure(null, "AI_EMPTY_RESPONSE", analysisMode, correlationId);
         }
         return content;
     }
@@ -736,8 +734,8 @@ public class SpringAiChatGateway implements AiChatGateway {
 
     private AiUpstreamException providerFailure(
             final Integer status, final String code, final String analysisMode,
-            final String correlationId, final String summary) {
-        logProviderFailure(status, code, analysisMode, correlationId, summary);
+            final String correlationId) {
+        logProviderFailure(status, code, analysisMode, correlationId);
         return new AiUpstreamException(code, status, correlationId);
     }
 
@@ -907,28 +905,17 @@ public class SpringAiChatGateway implements AiChatGateway {
             final String code,
             final String analysisMode,
             final String correlationId) {
-        final String summary = error instanceof OpenAIServiceException serviceError
-                ? safeProviderSummary(errorBody(serviceError))
-                : error.getClass().getSimpleName();
-        logProviderFailure(providerStatus(error), code, analysisMode, correlationId, summary);
+        logProviderFailure(providerStatus(error), code, analysisMode, correlationId);
     }
 
     private void logProviderFailure(
             final Integer status,
             final String code,
             final String analysisMode,
-            final String correlationId,
-            final String summary) {
-        LOGGER.warn(
-                "AI provider failure provider={} model={} status={} code={} "
-                        + "mode={} correlationId={} summary={}",
-                PROVIDER_NAME,
-                defaultModel,
-                status == null ? "N/A" : status,
-                code,
-                analysisMode,
-                correlationId,
-                AiSecretRedactor.redact(summary));
+            final String correlationId) {
+        AiReviewEventLog.warn(LOGGER, "ai_provider_failure", correlationId,
+                "provider", PROVIDER_NAME, "model", defaultModel,
+                "providerStatus", status, "errorCode", code, "mode", analysisMode);
     }
 
     private void logUsage(final Usage usage,
@@ -955,7 +942,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     private void logUpstreamStarted(final AiChatRequest request, final String model,
                                     final String correlationId, final int attempt,
                                     final long remainingNanos) {
-        LOGGER.info(AiReviewEventLog.line("ai_upstream_call_started", correlationId,
+        AiReviewEventLog.info(LOGGER, "ai_upstream_call_started", correlationId,
                 "stage", stageOf(request.analysisMode()),
                 "mode", request.analysisMode(),
                 "attempt", attempt,
@@ -963,7 +950,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                 "responseFormat", request.responseFormat(),
                 "thinking", request.thinkingEnabled(),
                 "maxOutputTokens", request.maxOutputTokens(),
-                "remainingBudgetSec", nanosToSec(remainingNanos)));
+                "remainingBudgetSec", nanosToSec(remainingNanos));
     }
 
     /**
@@ -974,13 +961,13 @@ public class SpringAiChatGateway implements AiChatGateway {
     private void logUpstreamCompleted(final String correlationId, final int attempt,
                                       final long attemptStartNanos,
                                       final AiChatResponse result) {
-        LOGGER.info(AiReviewEventLog.line("ai_upstream_call_completed", correlationId,
+        AiReviewEventLog.info(LOGGER, "ai_upstream_call_completed", correlationId,
                 "attempt", attempt,
                 "durationMs", Math.max(0L,
                         (nanoTimeSource.getAsLong() - attemptStartNanos) / NANOS_PER_MILLI),
                 "promptTokens", result.inputTokens(),
                 "completionTokens", result.outputTokens(),
-                "totalTokens", result.totalTokens()));
+                "totalTokens", result.totalTokens());
     }
 
     /**
@@ -994,26 +981,26 @@ public class SpringAiChatGateway implements AiChatGateway {
                                    final int retryNumber,
                                    final AiUpstreamException failure,
                                    final long backoffMillis) {
-        LOGGER.warn(AiReviewEventLog.line("ai_transport_retry", correlationId,
+        AiReviewEventLog.warn(LOGGER, "ai_transport_retry", correlationId,
                 "stage", stageOf(request.analysisMode()),
                 "mode", request.analysisMode(),
                 "retryNumber", retryNumber,
                 "reason", failure.code(),
-                "backoffMs", backoffMillis));
+                "backoffMs", backoffMillis);
     }
 
     /** 终态失败事件：attempt 为已执行的尝试数（含失败这一次）。 */
     private void logUpstreamFailed(final AiChatRequest request,
                                    final AiUpstreamException failure,
                                    final int attempt) {
-        LOGGER.warn(AiReviewEventLog.line("ai_upstream_call_failed", failure.correlationId(),
+        AiReviewEventLog.upstreamFailure(LOGGER, "ai_upstream_call_failed", failure.correlationId(), failure,
                 "stage", stageOf(request.analysisMode()),
                 "mode", request.analysisMode(),
                 "attempt", attempt,
                 "errorCode", failure.code(),
                 "providerStatus", failure.providerStatus() == null
                         ? "N/A" : String.valueOf(failure.providerStatus()),
-                "retryable", retryPolicy.isRetryable(failure)));
+                "retryable", retryPolicy.isRetryable(failure));
     }
 
     /** analysisMode → 稳定 stage 标签（低基数口径）。 */
@@ -1029,13 +1016,6 @@ public class SpringAiChatGateway implements AiChatGateway {
 
     private static long nanosToSec(final long nanos) {
         return Math.max(0L, nanos / 1_000_000_000L);
-    }
-
-    static String safeProviderSummary(final String raw) {
-        if (!StringUtils.hasText(raw)) {
-            return "empty provider error body";
-        }
-        return "[PROVIDER_BODY_REDACTED]";
     }
 
     /**

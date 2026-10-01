@@ -160,11 +160,13 @@ public class PlayerReplayAnalysisService {
             features = new DefaultPlayerBattleFeatureExtractor()
                     .extract(reconstruction, recorder, battle);
         } catch (RuntimeException e) {
-            LOGGER.warn("Feature extraction failed, falling back: {}", e.getMessage());
+            AiReviewEventLog.fallback(LOGGER, "ai_feature_extraction_failed", e, "without_extracted_features");
             return analyze(battle, reconstruction, language, listener);
         }
 
         if (!features.hasFeatures()) {
+            AiReviewEventLog.warn(LOGGER, "ai_features_unavailable", AiReviewEventLog.correlationId(),
+                    "outcome", "degraded", "fallbackPath", "without_extracted_features");
             return analyze(battle, reconstruction, language, listener);
         }
 

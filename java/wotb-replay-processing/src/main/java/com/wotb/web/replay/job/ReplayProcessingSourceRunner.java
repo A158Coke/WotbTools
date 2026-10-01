@@ -12,6 +12,8 @@ import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.replay.ai.BattlePlaybackProjector;
 import com.wotb.web.replay.ai.MapOverviewBuilder;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.event.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
@@ -104,14 +106,22 @@ public final class ReplayProcessingSourceRunner {
         if (v2.dataset() != null) {
             artifactSink.write(sourceIndex, ReplayArtifactWriter.BATTLE_PLAYBACK_V2_NAME,
                     ReplayArtifactWriter.battlePlaybackV2Content(v2.dataset()));
-            LOGGER.info("event=processing_job_v2_available jobId={} sourceIndex={} sourceName={}",
-                    jobId, sourceIndex, sourceName);
+            ApplicationLogger.event(LOGGER, Level.INFO, "processing_job_v2_available")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex).log("event=processing_job_v2_available");
         } else if (v2.failure() != null) {
-            LOGGER.error("event=processing_job_v2_error jobId={} sourceIndex={} sourceName={} reason={}",
-                    jobId, sourceIndex, sourceName, v2.reason(), v2.failure());
+            ApplicationLogger.event(LOGGER, Level.ERROR, "processing_job_v2_error")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex)
+                    .addKeyValue("reason", v2.reason())
+                    .setCause(v2.failure())
+                    .addKeyValue("outcome", "degraded").addKeyValue("fallbackPath", "without_playback_v2").log("event=processing_job_v2_error");
         } else {
-            LOGGER.info("event=processing_job_v2_unavailable jobId={} sourceIndex={} sourceName={} reason={}",
-                    jobId, sourceIndex, sourceName, v2.reason());
+            ApplicationLogger.event(LOGGER, Level.INFO, "processing_job_v2_unavailable")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex)
+                    .addKeyValue("reason", v2.reason())
+                    .addKeyValue("outcome", "degraded").addKeyValue("fallbackPath", "without_playback_v2").log("event=processing_job_v2_unavailable");
         }
     }
 
@@ -119,16 +129,21 @@ public final class ReplayProcessingSourceRunner {
     public static String failureMessage(final String jobId, final int sourceIndex, final String sourceName,
                                         final Exception failure) {
         if (failure instanceof IOException) {
-            LOGGER.warn("event=processing_job_storage_failed jobId={} sourceIndex={} sourceName={}",
-                    jobId, sourceIndex, sourceName, failure);
+            ApplicationLogger.event(LOGGER, Level.WARN, "processing_job_storage_failed")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex)
+                    .setCause(ApplicationLogger.diagnosticCause(failure)).log("event=processing_job_storage_failed");
             return "PROCESSING_JOB_STORAGE_UNAVAILABLE";
         }
         final String errorCode = failure instanceof ReplayProcessingSourceException sourceError
                 ? sourceError.errorCode() : "REPLAY_PROCESSING_FAILED";
         final String message = StringUtils.hasText(failure.getMessage()) ? failure.getMessage() : errorCode;
         final String result = errorCode.equals(message) ? errorCode : errorCode + ": " + message;
-        LOGGER.warn("event=processing_job_source_failed jobId={} sourceIndex={} sourceName={} errorCode={} error={}",
-                jobId, sourceIndex, sourceName, errorCode, message);
+        ApplicationLogger.event(LOGGER, Level.WARN, "processing_job_source_failed")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sourceIndex", sourceIndex)
+                    .addKeyValue("errorCode", errorCode)
+                    .setCause(ApplicationLogger.diagnosticCause(failure)).log("event=processing_job_source_failed");
         return result;
     }
 

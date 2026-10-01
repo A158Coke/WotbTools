@@ -1,6 +1,7 @@
 # TX frontend nginx: public traffic reaches this container only through Caddy
 # on wotb_tx_internal. API traffic is served by the TX business runtime.
 limit_req_zone $binary_remote_addr zone=replay_api:10m rate=1r/s;
+limit_req_zone $binary_remote_addr zone=client_events:1m rate=10r/m;
 limit_conn_zone $binary_remote_addr zone=replay_api_conn:10m;
 
 server {
@@ -121,6 +122,22 @@ server {
         add_header X-Accel-Buffering no always;
         proxy_read_timeout 1120s;
         proxy_send_timeout 1120s;
+    }
+
+    # Per-client telemetry budget uses the trusted Caddy real-IP contract above.
+    location = /api/observability/client-events {
+        client_max_body_size 4k;
+        client_body_timeout 5s;
+        limit_req zone=client_events burst=3 nodelay;
+        limit_req_status 429;
+        proxy_pass ${BACKEND_UPSTREAM}/api/observability/client-events;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 5s;
+        proxy_send_timeout 5s;
     }
 
     location /api/ {

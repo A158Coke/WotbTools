@@ -20,6 +20,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.apache.catalina.connector.ClientAbortException;
 import org.apache.tomcat.util.http.fileupload.impl.FileSizeLimitExceededException;
 import org.apache.tomcat.util.http.fileupload.impl.SizeLimitExceededException;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.event.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -290,18 +292,15 @@ public class GlobalExceptionHandler {
             final ApiErrorResponse error, final Throwable exception,
             final HttpServletRequest request) {
         final String method = request == null ? "UNKNOWN" : request.getMethod();
-        final String path = request == null ? "UNKNOWN" : request.getRequestURI();
         final String traceId = RequestTrace.resolve(request);
         final String responseId = error.id();
-        final String responseErrorMsg = error.errorMsg();
-        if (error.status() >= 500) {
-            log.error("api_request_failed traceId={} id={} errorCode={} status={} method={} path={} errorMsg={}",
-                    traceId, responseId, error.errorCode(), error.status(), method, path,
-                    responseErrorMsg, exception);
-        } else {
-            log.info("api_request_rejected traceId={} id={} errorCode={} status={} method={} path={} errorMsg={}",
-                    traceId, responseId, error.errorCode(), error.status(), method, path, responseErrorMsg);
-        }
+        ApplicationLogger.event(log, error.status() >= 500 ? Level.ERROR : Level.INFO,
+                        error.status() >= 500 ? "api_request_failed" : "api_request_rejected")
+                .addKeyValue("requestId", traceId).addKeyValue("id", responseId)
+                .addKeyValue("errorCode", error.errorCode()).addKeyValue("status", error.status())
+                .addKeyValue("method", method)
+                .setCause(error.status() >= 500 ? exception : null)
+                .log(error.status() >= 500 ? "event=api_request_failed" : "event=api_request_rejected");
         return ResponseEntity.status(error.status()).body(error);
     }
 

@@ -8,6 +8,8 @@ import com.wotb.broker.rabbitmq.ParserSourceStatus;
 import com.wotb.contracts.ReplayProcessingDispatcher;
 import com.wotb.contracts.ReplayProcessingRequest;
 import com.wotb.contracts.ReplayProcessingSource;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.event.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,19 +98,24 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
     public Outcome handleResult(final ParserResultMessage message) {
         final ReplayProcessingJob job = store.get(message.jobId());
         if (job == null) {
-            LOGGER.warn("event=replay_processing_outcome_unknown_job jobId={} attempt={}",
-                    message.jobId(), message.attempt());
+            ApplicationLogger.event(LOGGER, Level.WARN, "replay_processing_outcome_unknown_job")
+                    .addKeyValue("jobId", message.jobId())
+                    .addKeyValue("attempt", message.attempt()).log("Replay processing lifecycle");
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
         final int watermark = authority.attemptWatermark(message.jobId());
         if (message.attempt() < watermark) {
-            LOGGER.warn("event=replay_processing_outcome_stale jobId={} attempt={} attemptWatermark={}",
-                    message.jobId(), message.attempt(), watermark);
+            ApplicationLogger.event(LOGGER, Level.WARN, "replay_processing_outcome_stale")
+                    .addKeyValue("jobId", message.jobId())
+                    .addKeyValue("attempt", message.attempt())
+                    .addKeyValue("attemptWatermark", watermark).log("Replay processing lifecycle");
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
         if (terminal(job)) {
-            LOGGER.info("event=replay_processing_outcome_duplicate jobId={} attempt={} status={}",
-                    message.jobId(), message.attempt(), job.snapshot().status().name());
+            ApplicationLogger.event(LOGGER, Level.INFO, "replay_processing_outcome_duplicate")
+                    .addKeyValue("jobId", message.jobId())
+                    .addKeyValue("attempt", message.attempt())
+                    .addKeyValue("status", job.snapshot().status().name()).log("Replay processing lifecycle");
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
         if (job.isCancelled()) {
@@ -116,8 +123,9 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
         if (!applySources(job, message.sources())) {
-            LOGGER.info("event=replay_processing_outcome_duplicate jobId={} attempt={} reason=all_sources_terminal",
-                    message.jobId(), message.attempt());
+            ApplicationLogger.event(LOGGER, Level.INFO, "replay_processing_outcome_duplicate")
+                    .addKeyValue("jobId", message.jobId())
+                    .addKeyValue("attempt", message.attempt()).log("Replay processing lifecycle");
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
         authority.advanceAttemptWatermark(job.jobId(), message.attempt());
@@ -135,19 +143,26 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
     public Outcome handleFailed(final ParserFailedMessage message) {
         final ReplayProcessingJob job = store.get(message.jobId());
         if (job == null) {
-            LOGGER.warn("event=replay_processing_failure_unknown_job jobId={} attempt={} errorCode={}",
-                    message.jobId(), message.attempt(), message.errorCode());
+            ApplicationLogger.event(LOGGER, Level.WARN, "replay_processing_failure_unknown_job")
+                    .addKeyValue("jobId", message.jobId())
+                    .addKeyValue("attempt", message.attempt())
+                    .addKeyValue("errorCode", message.errorCode()).log("Replay processing lifecycle");
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
         final int watermark = authority.attemptWatermark(message.jobId());
         if (message.attempt() < watermark) {
-            LOGGER.warn("event=replay_processing_failure_stale jobId={} attempt={} attemptWatermark={} errorCode={}",
-                    message.jobId(), message.attempt(), watermark, message.errorCode());
+            ApplicationLogger.event(LOGGER, Level.WARN, "replay_processing_failure_stale")
+                    .addKeyValue("jobId", message.jobId())
+                    .addKeyValue("attempt", message.attempt())
+                    .addKeyValue("attemptWatermark", watermark)
+                    .addKeyValue("errorCode", message.errorCode()).log("Replay processing lifecycle");
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
         if (terminal(job)) {
-            LOGGER.info("event=replay_processing_failure_duplicate jobId={} attempt={} status={}",
-                    message.jobId(), message.attempt(), job.snapshot().status().name());
+            ApplicationLogger.event(LOGGER, Level.INFO, "replay_processing_failure_duplicate")
+                    .addKeyValue("jobId", message.jobId())
+                    .addKeyValue("attempt", message.attempt())
+                    .addKeyValue("status", job.snapshot().status().name()).log("Replay processing lifecycle");
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
         if (job.isCancelled()) {
@@ -176,21 +191,29 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
         dispatcher.submit(retry);
         if (!authority.advanceAttemptWatermark(job.jobId(), nextAttempt)) {
             // 另一个控制面实例已经把水位线推进到 >= nextAttempt：本次重派只是重复工作，丢弃报告。
-            LOGGER.warn("event=replay_processing_failure_retry_raced jobId={} attempt={} nextAttempt={}",
-                    job.jobId(), message.attempt(), nextAttempt);
+            ApplicationLogger.event(LOGGER, Level.WARN, "replay_processing_failure_retry_raced")
+                    .addKeyValue("jobId", job.jobId())
+                    .addKeyValue("attempt", message.attempt())
+                    .addKeyValue("nextAttempt", nextAttempt).log("Replay processing lifecycle");
             return Outcome.IGNORED_STALE_OR_DUPLICATE;
         }
-        LOGGER.warn("event=replay_processing_failure_retry_dispatched jobId={} failedAttempt={}"
-                        + " nextAttempt={} maxAttempts={} errorCode={}",
-                job.jobId(), message.attempt(), nextAttempt, maxAttempts, message.errorCode());
+        ApplicationLogger.event(LOGGER, Level.WARN, "replay_processing_failure_retry_dispatched")
+                    .addKeyValue("jobId", job.jobId())
+                    .addKeyValue("failedAttempt", message.attempt())
+                    .addKeyValue("nextAttempt", nextAttempt)
+                    .addKeyValue("maxAttempts", maxAttempts)
+                    .addKeyValue("errorCode", message.errorCode()).log("Replay processing lifecycle");
         return Outcome.APPLIED;
     }
 
     /** 重试不可用（预算用尽或 worker 宣告不可重试）：整个 attempt 落成终态 FAILED。 */
     private Outcome failTerminal(final ReplayProcessingJob job, final ParserFailedMessage message) {
-        LOGGER.warn("event=replay_processing_failure_terminal jobId={} attempt={} maxAttempts={}"
-                        + " retryable={} errorCode={}",
-                job.jobId(), message.attempt(), maxAttempts, message.retryable(), message.errorCode());
+        ApplicationLogger.event(LOGGER, Level.WARN, "replay_processing_failure_terminal")
+                    .addKeyValue("jobId", job.jobId())
+                    .addKeyValue("attempt", message.attempt())
+                    .addKeyValue("maxAttempts", maxAttempts)
+                    .addKeyValue("retryable", message.retryable())
+                    .addKeyValue("errorCode", message.errorCode()).log("Replay processing lifecycle");
         // QUEUED → PROCESSING：终态迁移的状态机前提要求先进入 PROCESSING（分布式下没有
         // worker-start 事件，失败报告本身就是「执行发生过」的可观察事实）。
         job.startProcessing();
@@ -203,7 +226,7 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
         }
         authority.advanceAttemptWatermark(job.jobId(), message.attempt());
         job.markFailed(message.errorCode());
-        recordTerminal(job, "processing_job_failed jobId=" + job.jobId() + " errorCode=" + message.errorCode());
+        recordTerminal(job, "processing_job_failed");
         return Outcome.APPLIED;
     }
 
@@ -224,8 +247,9 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
         final Map<Integer, ReplayProcessingJob.SourceState> sources = sourceIndex(job);
         for (final ParserSourceOutcome outcome : outcomes) {
             if (!sources.containsKey(outcome.sourceIndex())) {
-                LOGGER.warn("event=replay_processing_outcome_unknown_source jobId={} sourceIndex={}",
-                        job.jobId(), outcome.sourceIndex());
+                ApplicationLogger.event(LOGGER, Level.WARN, "replay_processing_outcome_unknown_source")
+                    .addKeyValue("jobId", job.jobId())
+                    .addKeyValue("sourceIndex", outcome.sourceIndex()).log("Replay processing lifecycle");
             }
         }
         final List<ParserSourceOutcome> applicable = outcomes.stream()
@@ -263,12 +287,12 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
         // 读回 per-source canonical dataset → dedupe / 冲突判定 / League Rating / 聚合 / enrichment
         // → 写 finalized batch dataset 到对象存储。READY 之后的一切读取都只读那一个对象。
         job.advancePhase(ReplayProcessingJob.PHASE_FINALIZING_BATCH);
-        final ProcessedDataset dataset;
+
         try {
-            dataset = finalization.finalizeBatch(job);
+            finalization.finalizeBatch(job);
         } catch (final ReplayBatchFinalizer.NoValidReplaysException e) {
             job.markFailed(NO_VALID_REPLAYS);
-            recordTerminal(job, "processing_job_failed jobId=" + job.jobId() + " errorCode=" + NO_VALID_REPLAYS);
+            recordTerminal(job, "processing_job_failed");
             return;
         } catch (final IOException e) {
             // 收尾阶段的存储故障是**基础设施**故障：本次投递不 settle（listener nack 不重入队 →
@@ -283,19 +307,23 @@ public final class PostgresParserOutcomeHandler implements ParserOutcomeHandler 
         }
         // dataset 权威在 MinIO：进程内刻意不保留 ProcessedDataset（与本地路径的唯一差别）。
         job.markReady();
-        recordTerminal(job, "processing_job_ready jobId=" + job.jobId() + " battles=" + dataset.battles().size());
+        recordTerminal(job, "processing_job_ready");
     }
 
     /** 取消竞态：worker 仍活跃、结果迟到 → 状态机收尾为 CANCELLED，结果丢弃。 */
     private void cancel(final ReplayProcessingJob job) {
         job.markCancelled();
-        recordTerminal(job, "processing_job_cancelled jobId=" + job.jobId());
+        recordTerminal(job, "processing_job_cancelled");
     }
 
     /** 终态 observability exactly-once（状态机的 markTerminalRecorded 是唯一 CAS 边界）。 */
-    private static void recordTerminal(final ReplayProcessingJob job, final String message) {
+    private static void recordTerminal(final ReplayProcessingJob job, final String event) {
         if (job.markTerminalRecorded()) {
-            LOGGER.info("event={}", message);
+            ApplicationLogger.event(LOGGER, "FAILED".equals(job.snapshot().status().name()) ? Level.WARN : Level.INFO, event)
+                    .addKeyValue("jobId", job.jobId())
+                    .addKeyValue("outcome", job.snapshot().status().name())
+                    .addKeyValue("errorCode", job.snapshot().errorCode())
+                    .log("Replay processing terminal outcome");
         }
     }
 

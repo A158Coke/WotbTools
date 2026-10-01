@@ -222,3 +222,13 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 
 `INTERNET`、`ACCESS_NETWORK_STATE`、`REQUEST_INSTALL_PACKAGES` + FileProvider URI grant。
 不申请 `READ_EXTERNAL_STORAGE` / `MANAGE_EXTERNAL_STORAGE` / Contacts / Location / Camera / Microphone。
+
+## Critical client telemetry
+
+Native runtime 1.4.10 reports the first main-frame WebView loading failure per Activity to
+`POST /api/observability/client-events` using the fixed `client.android_webview_failed` /
+`CLIENT_WEBVIEW_FAILED` event. The report is anonymous: no cookies, token, auth-return URL,
+raw WebView error, replay content, or client userId is copied. Connect/read timeouts are five
+seconds; failed telemetry is dropped without retry or recursive reporting. The native bridge
+protocol is unchanged. Frontend bootstrap and WASM initialization failures use separate fixed
+events; these signals describe critical failures, not native/parser worker health.

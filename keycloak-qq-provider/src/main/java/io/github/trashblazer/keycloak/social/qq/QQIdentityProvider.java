@@ -83,6 +83,9 @@ public class QQIdentityProvider
                 throw new IdentityBrokerException("QQ user information request was rejected");
             }
 
+            if (!userInfo.hasNonNull("nickname") || userInfo.get("nickname").asText().isBlank()) {
+                AuthEventLog.degraded("qq", "default-display-name", "QQ_NICKNAME_MISSING");
+            }
             String nickname = userInfo.has("nickname")
                     ? userInfo.get("nickname").asText()
                     : "qq_user";
@@ -122,12 +125,15 @@ public class QQIdentityProvider
             context.setIdp(this);
             context.setToken(accessToken);
 
+            AuthEventLog.success("qq");
             return context;
 
         } catch (IdentityBrokerException e) {
+            AuthEventLog.rejected("qq", "identity", "QQ_IDENTITY_REJECTED");
             throw e;
         } catch (Exception e) {
-            throw new IdentityBrokerException("QQ login failed");
+            AuthEventLog.failure("qq", "identity", "QQ_UPSTREAM_FAILURE", e);
+            throw new IdentityBrokerException("QQ login failed", AuthEventLog.safeThrowable(e));
         }
     }
 

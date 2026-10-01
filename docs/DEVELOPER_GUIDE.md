@@ -804,6 +804,8 @@ Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-confi
 
 ## 专题文档
 
+观测 runtime 使用共享 `ApplicationLogger` / `LogContext`，SecurityContext JWT `sub` 是日志 `userId` 的唯一身份来源。新增客户端 telemetry 必须先改 `contracts/http/openapi.yaml`，只允许固定事件与 bounded metadata；不能记录 raw errors/payload。TX/Yecao canonical Loki service、blackbox Web/API/Auth 探针、日志安全与生产验证见 `docs/operations/observability.md`。
+
 | 主题 | 文档 |
 |---|---|
 | 前端应用架构 / Replay Workspace / UI system | `docs/frontend/architecture.md`、`docs/frontend/replay-workspace.md`、`docs/frontend/ui-system.md` |

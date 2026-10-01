@@ -35,6 +35,11 @@ discovery.relabel "backend" {
 		target_label  = "container_name"
 		replacement   = "wotb-backend"
 	}
+
+	rule {
+		target_label = "service"
+		replacement  = "business-api"
+	}
 }
 
 loki.source.docker "backend" {
@@ -70,7 +75,20 @@ discovery.relabel "keycloak" {
 loki.source.docker "keycloak" {
 	host       = "unix:///var/run/docker.sock"
 	targets    = discovery.relabel.keycloak.output
+	forward_to = [loki.process.auth_json.receiver]
+}
+
+// Flatten only our canonical fields, preserving native exceptions and operational logs.
+loki.process "auth_json" {
 	forward_to = [loki.write.default.receiver]
+	stage.json {
+		expressions = {
+			canonical = "mdc.event && merge(@, {event: mdc.event, provider: mdc.provider, errorCode: mdc.errorCode, stage: mdc.stage, outcome: mdc.outcome, service: mdc.service})",
+		}
+	}
+	stage.output {
+		source = "canonical"
+	}
 }
 
 // Android APK 由 frontend nginx 直接静态托管，不经过 Spring Boot。
@@ -96,7 +114,7 @@ discovery.relabel "frontend" {
 		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
 		regex         = "(.*)"
 		target_label  = "service"
-		replacement   = "wotb-frontend"
+		replacement   = "frontend"
 	}
 }
 

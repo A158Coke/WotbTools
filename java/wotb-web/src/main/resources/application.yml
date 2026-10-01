@@ -87,6 +87,13 @@ logging:
   structured:
     format:
       console: logstash
+    json:
+      rename:
+        "[@timestamp]": timestamp
+      add:
+        service: business-api
+        environment: ${OBSERVABILITY_ENVIRONMENT:production}
+        build: ${BUILD_COMMIT:unknown}
 
 keycloak:
   admin:

@@ -1,7 +1,6 @@
 package com.wotbtools.keycloak.wargaming;
 
 import jakarta.ws.rs.core.Response;
-import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -25,8 +24,6 @@ import java.nio.charset.StandardCharsets;
  */
 public class WargamingIdentityProvider
         extends AbstractIdentityProvider<WargamingIdentityProviderConfig> {
-
-    private static final Logger log = Logger.getLogger(WargamingIdentityProvider.class);
 
     /**
      * 测试钩子：非空时优先返回，绕开只读的 {@link System#getenv()}。
@@ -52,6 +49,7 @@ public class WargamingIdentityProvider
     public Response performLogin(final AuthenticationRequest request) {
         final String applicationId = applicationId();
         if (isBlank(applicationId)) {
+            AuthEventLog.rejected("wargaming", "initialization", "WG_NOT_CONFIGURED");
             return Response.status(500)
                     .entity("Wargaming login not configured. Please contact administrator.")
                     .build();
@@ -59,6 +57,7 @@ public class WargamingIdentityProvider
 
         final String state = request.getState().getEncoded();
         if (isBlank(state)) {
+            AuthEventLog.rejected("wargaming", "initialization", "WG_STATE_MISSING");
             return errorResponse();
         }
         return buildLoginResponseSafely(applicationId, state);
@@ -72,9 +71,11 @@ public class WargamingIdentityProvider
         try {
             return buildLoginResponse(applicationId, state);
         } catch (final WargamingApiClient.WargamingApiException e) {
-            // 只记录安全错误信息（code/message/field），不含 token / application_id /
-            // 完整响应正文 / error.value / 跳转 URL。
-            log.warnf("Wargaming login initialization failed: %s", e.getMessage());
+            // Preserve safe cause chains without response text or redirect URLs.
+            AuthEventLog.failure("wargaming", "initialization", "WG_INITIALIZATION_FAILED", e);
+            return errorResponse();
+        } catch (final RuntimeException e) {
+            AuthEventLog.failure("wargaming", "initialization", "WG_INITIALIZATION_UNEXPECTED", e);
             return errorResponse();
         }
     }

@@ -7,6 +7,9 @@ import com.wotb.broker.rabbitmq.ParserRequestMessage;
 import com.wotb.broker.rabbitmq.ParserTopology;
 import java.io.IOException;
 import java.util.Objects;
+import com.wotb.core.observability.ApplicationLogger;
+import com.wotb.core.observability.LogContext;
+import org.slf4j.event.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -86,12 +89,16 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
             // No jobId/attempt exists to report and re-delivering undecodable bytes can never
             // succeed, so this is the one delivery the worker settles without a control-plane
             // round trip: park the original bytes for an operator and finish it.
-            LOG.error("event=parser_worker_undecodable_request routingKey={} bytes={} parkedOn={}",
-                    routingKey, message.getBody().length, ParserTopology.PARSER_DLQ, e);
+            ApplicationLogger.event(LOG, Level.ERROR, "parser_worker_undecodable_request")
+                    .addKeyValue("routingKey", routingKey)
+                    .addKeyValue("bytes", message.getBody().length)
+                    .addKeyValue("parkedOn", ParserTopology.PARSER_DLQ)
+                    .setCause(ApplicationLogger.diagnosticCause(e)).log("parser_worker_undecodable_request");
             parkOnDlq(message.getBody(), channel, deliveryTag, routingKey);
             return;
         }
-        try {
+        try (final var jobContext = LogContext.with("jobId", request.jobId());
+             final var attemptContext = LogContext.with("attempt", String.valueOf(request.attempt()))) {
             handler.handle(request);
         } catch (final ParserOutcomePublishException uncertainOutcome) {
             // A lost/timed-out confirm does NOT prove the outcome was not routed: the broker may
@@ -100,15 +107,20 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
             // attempt whose real outcome is unknown. Settle nothing: the transport redelivers the
             // same attempt and the worker reproduces the same parser.result, which the control plane
             // is required to apply idempotently.
-            LOG.error("event=parser_worker_outcome_publish_uncertain jobId={} attempt={} routingKey={};"
-                            + " not reporting a second outcome and not acknowledging the request",
-                    request.jobId(), request.attempt(), routingKey, uncertainOutcome);
+            ApplicationLogger.event(LOG, Level.ERROR, "parser_worker_outcome_publish_uncertain")
+                    .addKeyValue("jobId", request.jobId())
+                    .addKeyValue("attempt", request.attempt())
+                    .addKeyValue("routingKey", routingKey)
+                    .addKeyValue("outcome", "unacknowledged").addKeyValue("fallbackPath", "transport_redelivery")
+                    .setCause(ApplicationLogger.diagnosticCause(uncertainOutcome)).log("parser_worker_outcome_publish_uncertain");
             return;
         } catch (final Exception failure) {
             reportInfrastructureFailure(request, message, channel, deliveryTag, routingKey, failure);
             return;
         }
-        LOG.info("parser request for job {} acknowledged (routing key {})", request.jobId(), routingKey);
+        ApplicationLogger.event(LOG, Level.INFO, "parser_worker_request_acknowledged")
+                .addKeyValue("jobId", request.jobId()).addKeyValue("attempt", request.attempt())
+                .addKeyValue("outcome", "acknowledged").log("Parser request acknowledged");
         channel.basicAck(deliveryTag, false);
     }
 
@@ -132,15 +144,20 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
             // Confirmed delivery: returns only once the broker acknowledged the publish.
             handler.publishFailed(request, errorCode, true);
         } catch (final RuntimeException undelivered) {
-            LOG.error("event=parser_worker_failure_report_undelivered jobId={} attempt={} routingKey={}"
-                            + " errorCode={}; leaving the request unacknowledged so the transport"
-                            + " redelivers the same attempt",
-                    request.jobId(), request.attempt(), routingKey, errorCode, undelivered);
+            ApplicationLogger.event(LOG, Level.ERROR, "parser_worker_failure_report_undelivered")
+                    .addKeyValue("jobId", request.jobId())
+                    .addKeyValue("attempt", request.attempt())
+                    .addKeyValue("routingKey", routingKey)
+                    .addKeyValue("errorCode", errorCode)
+                    .addKeyValue("outcome", "unacknowledged").setCause(ApplicationLogger.diagnosticCause(undelivered)).log("parser_worker_failure_report_undelivered");
             return;
         }
-        LOG.error("event=parser_worker_infrastructure_failure jobId={} attempt={} routingKey={} errorCode={}"
-                        + " reported=true retryDecision=control-plane",
-                request.jobId(), request.attempt(), routingKey, errorCode, failure);
+        ApplicationLogger.event(LOG, Level.ERROR, "parser_worker_infrastructure_failure")
+                    .addKeyValue("jobId", request.jobId())
+                    .addKeyValue("attempt", request.attempt())
+                    .addKeyValue("routingKey", routingKey)
+                    .addKeyValue("errorCode", errorCode)
+                    .setCause(ApplicationLogger.diagnosticCause(failure)).log("parser_worker_infrastructure_failure");
         channel.basicAck(deliveryTag, false);
     }
 
@@ -156,11 +173,15 @@ public class ParserRequestListener implements ChannelAwareMessageListener {
         try {
             handler.parkTerminalRequest(body);
         } catch (final RuntimeException undelivered) {
-            LOG.error("event=parser_worker_terminal_park_undelivered routingKey={} bytes={};"
-                            + " leaving the delivery unacknowledged",
-                    routingKey, body.length, undelivered);
+            ApplicationLogger.event(LOG, Level.ERROR, "parser_worker_terminal_park_undelivered")
+                    .addKeyValue("routingKey", routingKey)
+                    .addKeyValue("bytes", body.length)
+                    .setCause(ApplicationLogger.diagnosticCause(undelivered)).log("parser_worker_terminal_park_undelivered");
             return;
         }
+        ApplicationLogger.event(LOG, Level.WARN, "parser_worker_terminal_park_confirmed")
+                .addKeyValue("outcome", "deadletter").addKeyValue("bytes", body.length)
+                .log("Undecodable request parked on DLQ");
         channel.basicAck(deliveryTag, false);
     }
 }

@@ -1,6 +1,9 @@
 package com.wotb.broker.rabbitmq;
 
 import com.rabbitmq.client.Channel;
+import com.wotb.core.observability.ApplicationLogger;
+import com.wotb.core.observability.LogContext;
+import org.slf4j.event.Level;
 import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,16 +55,21 @@ public final class ParserResultListener implements ChannelAwareMessageListener {
         try {
             outcome = dispatch(routingKey, message.getBody());
         } catch (final ParserMessageCodecException e) {
-            LOG.error("undecodable parser outcome on routing key {} rejected to the DLQ", routingKey, e);
+            ApplicationLogger.event(LOG, Level.ERROR, "parser_outcome_undecodable")
+                    .addKeyValue("routingKey", routingKey).addKeyValue("outcome", "dead_lettered")
+                    .setCause(ApplicationLogger.diagnosticCause(e)).log("Parser outcome rejected to DLQ");
             channel.basicNack(deliveryTag, false, false);
             return;
         } catch (final RuntimeException e) {
-            LOG.error("parser outcome handler failed for routing key {}; rejected to the DLQ", routingKey, e);
+            ApplicationLogger.event(LOG, Level.ERROR, "parser_outcome_apply_failed")
+                    .addKeyValue("routingKey", routingKey).addKeyValue("outcome", "dead_lettered")
+                    .setCause(ApplicationLogger.diagnosticCause(e)).log("Parser outcome application failed");
             channel.basicNack(deliveryTag, false, false);
             return;
         }
 
-        LOG.info("parser outcome {} acknowledged (routing key {})", outcome, routingKey);
+        ApplicationLogger.event(LOG, Level.INFO, "parser_outcome_acknowledged")
+                .addKeyValue("outcome", outcome).addKeyValue("routingKey", routingKey).log("Parser outcome acknowledged");
         channel.basicAck(deliveryTag, false);
     }
 
@@ -69,12 +77,16 @@ public final class ParserResultListener implements ChannelAwareMessageListener {
         if (ParserTopology.PARSER_RESULT_ROUTING_KEY.equals(routingKey)) {
             final ParserResultMessage result = codec.decodeResult(body);
             LOG.debug("consumed parser result for job {} attempt {}", result.jobId(), result.attempt());
-            return handler.handleResult(result);
+            try (final LogContext.Scope context = LogContext.with("jobId", result.jobId())) {
+                return handler.handleResult(result);
+            }
         }
         if (ParserTopology.PARSER_FAILED_ROUTING_KEY.equals(routingKey)) {
             final ParserFailedMessage failed = codec.decodeFailed(body);
             LOG.debug("consumed parser failure for job {} attempt {}", failed.jobId(), failed.attempt());
-            return handler.handleFailed(failed);
+            try (final LogContext.Scope context = LogContext.with("jobId", failed.jobId())) {
+                return handler.handleFailed(failed);
+            }
         }
         throw new ParserMessageCodecException(
                 "parser outcome queue received an unbound routing key: " + routingKey,

@@ -1,6 +1,9 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.Logger;
+import org.slf4j.event.Level;
 import org.springframework.util.StringUtils;
 
 /**
@@ -18,6 +21,41 @@ public final class AiReviewEventLog {
     private AiReviewEventLog() {
     }
 
+    public static void info(final Logger logger, final String event, final String correlationId,
+                            final Object... fields) {
+        log(logger, Level.INFO, event, correlationId, null, fields);
+    }
+
+    public static void warn(final Logger logger, final String event, final String correlationId,
+                            final Object... fields) {
+        log(logger, Level.WARN, event, correlationId, null, fields);
+    }
+
+    public static void fallback(final Logger logger, final String event, final Throwable failure,
+                                final String path) {
+        log(logger, Level.WARN, event, correlationId(), failure,
+                "outcome", "degraded", "fallbackPath", path);
+    }
+
+    private static void log(final Logger logger, final Level level, final String event,
+                            final String correlationId, final Throwable failure, final Object... fields) {
+        final var builder = ApplicationLogger.event(logger, level, event)
+                .addKeyValue("correlationId", StringUtils.hasText(correlationId) ? correlationId : correlationId());
+        for (int i = 0; i + 1 < fields.length; i += 2) {
+            builder.addKeyValue(String.valueOf(fields[i]), fields[i + 1]);
+        }
+        if (failure != null) {
+            builder.setCause(ApplicationLogger.diagnosticCause(failure));
+        }
+        builder.log(line(event, correlationId, fields));
+    }
+
+    public static void upstreamFailure(final Logger logger, final String event,
+                                       final String correlationId, final Throwable cause,
+                                       final Object... fields) {
+        log(logger, Level.WARN, event, correlationId, cause, fields);
+    }
+
     /** 当前线程的 correlationId（由 Controller worker 设置），缺失时为 {@code -}。 */
     public static String correlationId() {
         final String cid = AiRequestContext.correlationId();
@@ -29,7 +67,7 @@ public final class AiReviewEventLog {
      * <p>{@code kv} 为扁平 key/value 对（奇数长度按 key-only 处理）。
      * 显式 correlationId 优先（Gateway 等自行解析 id 的组件传入），否则回退 ThreadLocal。</p>
      */
-    public static String line(final String event, final String correlationId, final Object... kv) {
+    private static String line(final String event, final String correlationId, final Object... kv) {
         final StringBuilder sb = new StringBuilder("event=").append(event);
         sb.append(" correlationId=").append(StringUtils.hasText(correlationId) ? correlationId : correlationId());
         for (int i = 0; i + 1 < kv.length; i += 2) {

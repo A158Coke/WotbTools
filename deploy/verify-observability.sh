@@ -173,6 +173,19 @@ prom_query="$(query_prometheus 'min(up{job="wotb-backend"})')" || fail "PROMETHE
 prometheus_value_is_one <<<"$prom_query" || fail "PROMETHEUS_TARGET" "Prometheus backend up query is not healthy (up != 1)"
 echo "PASS: Prometheus data query"
 
+# Scrape availability is distinct from endpoint availability: require probe_success.
+for probe_service in web business-api auth-endpoint; do
+  probe_ready=false
+  for attempt in $(seq 1 "$RETRIES"); do
+    sample="$(query_prometheus "min(probe_success{job=\"public-endpoints\",service=\"$probe_service\"})" 2>/dev/null || true)"
+    if prometheus_value_is_one <<<"$sample"; then probe_ready=true; break; fi
+    [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
+  done
+  "$probe_ready" || fail "PUBLIC_PROBE" "public endpoint probe unsuccessful for service=$probe_service"
+done
+echo "PASS: public Web/API/Auth trusted TLS probes"
+
+
 wait_for_grafana_datasource "Grafana Prometheus datasource" \
   "/api/datasources/uid/prometheus/health"
 wait_for_grafana_datasource "Grafana Loki datasource" \
@@ -198,8 +211,8 @@ fi
 echo "PASS: Grafana datasources and all provisioned dashboards"
 
 canary_id="$(date +%s)-$$-${RANDOM:-0}"
-backend_name="wotb-backend-observability-canary-${canary_id}"
-keycloak_name="keycloak-observability-canary-${canary_id}"
+backend_name="ai-service-observability-canary-${canary_id}"
+keycloak_name="parser-worker-observability-canary-${canary_id}"
 backend_marker="wotb-backend-canary-${canary_id}"
 keycloak_marker="wotb-keycloak-canary-${canary_id}"
 frontend_apk="observability-canary-${canary_id}.apk"
@@ -210,13 +223,11 @@ cleanup_canaries() {
 }
 trap cleanup_canaries EXIT
 
-# Both canaries are plain alpine containers on wotb_internal: their names carry
-# the service identity the Yecao Alloy keep-rules match on, so the streams get
-# the same container_name labels the queries below (and the dashboards) use.
-docker run -d --network "$NETWORK" --name "$backend_name" alpine:3.22 \
+# Both Yecao canaries use exact Compose labels; no retired application is collected.
+docker run -d --network "$NETWORK" --name "$backend_name" --label com.docker.compose.service=ai-service alpine:3.22 \
   sh -c "printf '%s\\n' '$backend_marker'; sleep $((RETRIES * INTERVAL_SEC + 30))" >/dev/null \
   || fail "LOKI_INGESTION" "could not start backend deployment canary"
-docker run -d --network "$NETWORK" --name "$keycloak_name" alpine:3.22 \
+docker run -d --network "$NETWORK" --name "$keycloak_name" --label com.docker.compose.service=parser-worker alpine:3.22 \
   sh -c "printf '%s\\n' '$keycloak_marker'; sleep $((RETRIES * INTERVAL_SEC + 30))" >/dev/null \
   || fail "LOKI_INGESTION" "could not start Keycloak deployment canary"
 
@@ -230,17 +241,17 @@ query_range_has_values() {
 
 for attempt in $(seq 1 "$RETRIES"); do
   end_ns="$(( $(date +%s) + 2 ))000000000"
-  backend_query="http://loki:3100/loki/api/v1/query_range?query=%7Bcontainer_name%3D%22wotb-backend%22%7D%20%7C%3D%20%22${backend_marker}%22&start=${canary_start_ns}&end=${end_ns}&limit=1"
-  keycloak_query="http://loki:3100/loki/api/v1/query_range?query=%7Bcontainer_name%3D%22keycloak%22%7D%20%7C%3D%20%22${keycloak_marker}%22&start=${canary_start_ns}&end=${end_ns}&limit=1"
+  backend_query="http://loki:3100/loki/api/v1/query_range?query=%7Bservice%3D%22ai-service%22%7D%20%7C%3D%20%22${backend_marker}%22&start=${canary_start_ns}&end=${end_ns}&limit=1"
+  keycloak_query="http://loki:3100/loki/api/v1/query_range?query=%7Bservice%3D%22parser-worker%22%7D%20%7C%3D%20%22${keycloak_marker}%22&start=${canary_start_ns}&end=${end_ns}&limit=1"
   backend_body="$(net_exec "$backend_query" 2>/dev/null || true)"
   keycloak_body="$(net_exec "$keycloak_query" 2>/dev/null || true)"
   if query_range_has_values "$backend_body" "$backend_marker" \
     && query_range_has_values "$keycloak_body" "$keycloak_marker"; then
-    echo "PASS: Loki backend and Keycloak deployment canaries"
+    echo "PASS: Loki Yecao AI and parser deployment canaries"
     break
   fi
   [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
-    [ "$attempt" -eq "$RETRIES" ] && fail "LOKI_INGESTION" "Loki backend or Keycloak canary was not ingested"
+    [ "$attempt" -eq "$RETRIES" ] && fail "LOKI_INGESTION" "Loki AI or parser canary was not ingested"
 done
 
 # This request may return 404: it verifies the real nginx access-log path on TX

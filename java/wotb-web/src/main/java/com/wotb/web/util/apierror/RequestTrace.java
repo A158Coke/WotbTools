@@ -1,5 +1,7 @@
 package com.wotb.web.util.apierror;
 
+import com.wotb.core.observability.LogContext;
+
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.MDC;
 import org.springframework.util.StringUtils;
@@ -18,14 +20,7 @@ public final class RequestTrace {
     }
 
     public static String sanitize(final String value) {
-        final StringBuilder safe = new StringBuilder(Math.min(value.length(), 128));
-        for (int index = 0; index < value.length() && safe.length() < 128; index++) {
-            final char current = value.charAt(index);
-            if (Character.isLetterOrDigit(current) || current == '-' || current == '_' || current == '.') {
-                safe.append(current);
-            }
-        }
-        return safe.isEmpty() ? UUID.randomUUID().toString() : safe.toString();
+        return LogContext.requestId(value);
     }
 
     /**

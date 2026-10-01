@@ -11,15 +11,17 @@ ALLOY="wotb-observability-alloy-${GITHUB_RUN_ID:-local}-$$"
 ALLOY_TX="wotb-observability-alloy-tx-${GITHUB_RUN_ID:-local}-$$"
 BACKEND="wotb-backend-smoke-${GITHUB_RUN_ID:-local}-$$"
 BACKEND_TX="business-api-tx-smoke-${GITHUB_RUN_ID:-local}-$$"
-KEYCLOAK="keycloak-smoke-${GITHUB_RUN_ID:-local}-$$"
+KEYCLOAK="parser-worker-smoke-${GITHUB_RUN_ID:-local}-$$"
 FRONTEND="wotb-frontend-smoke-${GITHUB_RUN_ID:-local}-$$"
 MARKER="observability-e2e-${GITHUB_RUN_ID:-local}-$$"
 MARKER_TX="tx-alloy-e2e-${GITHUB_RUN_ID:-local}-$$"
 KEYCLOAK_MARKER="keycloak-${MARKER}"
 APK="observability-canary-${MARKER}.apk"
+AUTH="keycloak-auth-smoke-${GITHUB_RUN_ID:-local}-$$"
+AUTH_DB="keycloak-postgres-smoke-${GITHUB_RUN_ID:-local}-$$"
 
 cleanup() {
-  docker rm -f "$ALLOY" "$ALLOY_TX" "$BACKEND" "$BACKEND_TX" "$KEYCLOAK" "$FRONTEND" "$LOKI" >/dev/null 2>&1 || true
+  docker rm -f "$ALLOY" "$ALLOY_TX" "$BACKEND" "$BACKEND_TX" "$KEYCLOAK" "$AUTH" "$AUTH_DB" "$FRONTEND" "$LOKI" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -51,11 +53,11 @@ docker run -d --name "$LOKI" --network "$NETWORK" --network-alias loki \
   -v "$ROOT/deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro" \
   grafana/loki:3.3.2 -config.file=/etc/loki/loki-config.yml >/dev/null
 
-docker run -d --name "$BACKEND" --network "$NETWORK" \
+docker run -d --name "$BACKEND" --network "$NETWORK" --label com.docker.compose.service=ai-service \
   alpine:3.22 sh -c "while true; do echo event=backend_smoke marker=$MARKER; sleep 1; done" >/dev/null
-docker run -d --name "$KEYCLOAK" --network "$NETWORK" \
+docker run -d --name "$KEYCLOAK" --network "$NETWORK" --label com.docker.compose.service=parser-worker \
   alpine:3.22 sh -c "while true; do echo event=keycloak_smoke marker=$KEYCLOAK_MARKER; sleep 1; done" >/dev/null
-docker run -d --name "$FRONTEND" --network "$NETWORK" -p 127.0.0.1::80 \
+docker run -d --name "$FRONTEND" --network "$NETWORK" --label com.docker.compose.service=wotb-frontend -p 127.0.0.1::80 \
   nginx:1.27-alpine >/dev/null
 
 docker run -d --name "$ALLOY" --network "$NETWORK" \
@@ -89,15 +91,15 @@ loki_response_has_sample() {
 }
 
 backend_query() {
-  body="$(query_range '{container_name="wotb-backend"}')"
+  body="$(query_range '{service="ai-service"}')"
   loki_response_has_sample "$body" && grep -Fq "$MARKER" <<<"$body"
 }
 keycloak_query() {
-  body="$(query_range '{container_name="keycloak"}')"
+  body="$(query_range '{service="parser-worker"}')"
   loki_response_has_sample "$body" && grep -Fq "$KEYCLOAK_MARKER" <<<"$body"
 }
 frontend_query() {
-  body="$(query_range '{container_name="wotb-frontend",event="android_apk_download"}')"
+  body="$(query_range '{service="frontend",container_name="wotb-frontend",event="android_apk_download"}')"
   loki_response_has_sample "$body" \
     && grep -Fq 'event=android_apk_download' <<<"$body" \
     && grep -Fq "apk=$APK" <<<"$body" \
@@ -109,9 +111,8 @@ frontend_query() {
     && ! grep -Fq 'Referer' <<<"$body"
 }
 
-wait_until "backend Docker stream reaches Loki" backend_query
-wait_until "Keycloak Docker stream reaches Loki" keycloak_query
-wait_until "sanitized Android frontend stream reaches Loki" frontend_query
+wait_until "Yecao AI Docker stream reaches Loki" backend_query
+wait_until "Yecao parser Docker stream reaches Loki" keycloak_query
 
 # TX lane: the production TX config matches by Compose service label (container
 # names are project-prefixed there) and must normalize the stream to the legacy
@@ -123,6 +124,10 @@ wait_until "sanitized Android frontend stream reaches Loki" frontend_query
 docker run -d --name "$BACKEND_TX" --network "$NETWORK" \
   --label com.docker.compose.service=business-api \
   alpine:3.22 sh -c "while true; do echo event=backend_tx_smoke marker=$MARKER_TX; sleep 1; done" >/dev/null
+docker run -d --name "$AUTH" --network "$NETWORK" --label com.docker.compose.service=keycloak \
+  alpine:3.22 sh -c "while true; do echo '{\"level\":\"ERROR\",\"message\":\"auth-$MARKER_TX\",\"mdc\":{\"event\":\"auth_failure\",\"provider\":\"qq\",\"errorCode\":\"QQ_UPSTREAM_FAILURE\",\"service\":\"keycloak\"},\"exception\":{\"message\":\"sanitized cause\",\"frames\":[{\"class\":\"AuthEventLog\"}]}}'; sleep 1; done" >/dev/null
+docker run -d --name "$AUTH_DB" --network "$NETWORK" --label com.docker.compose.service=keycloak-postgres \
+  alpine:3.22 sh -c "while true; do echo event=excluded_database marker=db-$MARKER_TX; sleep 1; done" >/dev/null
 docker run -d --name "$ALLOY_TX" --network "$NETWORK" \
   -p 127.0.0.1::12345 \
   -e WOTB_LOKI_URL="http://loki:3100/loki/api/v1/push" \
@@ -166,11 +171,11 @@ dump_tx_relabel_targets() {
 }
 
 backend_tx_query() {
-  body="$(query_range '{container_name="wotb-backend"}')"
+  body="$(query_range '{service="business-api",container_name="wotb-backend"}')"
   loki_response_has_sample "$body" && grep -Fq "$MARKER_TX" <<<"$body"
 }
 unlabeled_stream_not_collected_by_tx_lane() {
-  body="$(query_range '{container_name="keycloak"}')"
+  body="$(query_range '{service="parser-worker"}')"
   loki_response_has_sample "$body" && grep -Fq "$KEYCLOAK_MARKER" <<<"$body"
 }
 backend_tx_seen=0
@@ -188,6 +193,16 @@ if [ "$backend_tx_seen" != 1 ]; then
   dump_tx_relabel_targets
   fail "TX Compose-label stream reaches Loki as wotb-backend"
 fi
-wait_until "Yecao name-matched Keycloak stream still reaches Loki" unlabeled_stream_not_collected_by_tx_lane
+wait_until "Yecao parser stream still reaches Loki" unlabeled_stream_not_collected_by_tx_lane
+wait_until "TX sanitized frontend stream reaches Loki" frontend_query
 
+auth_query() {
+  body="$(query_range '{service="keycloak"} | json | event="auth_failure" | provider="qq" | errorCode="QQ_UPSTREAM_FAILURE"')"
+  loki_response_has_sample "$body" && grep -Fq "auth-$MARKER_TX" <<<"$body" \
+    && grep -Fq 'exception' <<<"$body" && grep -Fq 'sanitized cause' <<<"$body" \
+    && grep -Fq 'AuthEventLog' <<<"$body"
+}
+wait_until "TX Keycloak canonical stream reaches Loki" auth_query
+body="$(query_range '{service="keycloak"}')"
+! grep -Fq "db-$MARKER_TX" <<<"$body" || fail "Keycloak PostgreSQL logs leaked into auth stream"
 echo "OK: production Alloy Docker discovery, normalization, redaction, and Loki ingestion passed"

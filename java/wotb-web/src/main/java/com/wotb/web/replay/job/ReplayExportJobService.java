@@ -8,6 +8,9 @@ import com.wotb.web.replay.ReplayExportNames;
 import com.wotb.web.replay.ReplayLegacyEndpoints;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.event.Level;
+import org.slf4j.spi.LoggingEventBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -185,7 +188,7 @@ public class ReplayExportJobService {
                 Files.createDirectories(inputDir);
             } catch (final IOException e) {
                 store.removeAndCleanup(jobId);
-                throw new IllegalStateException("EXPORT_JOB_STORAGE_UNAVAILABLE");
+                throw new IllegalStateException("EXPORT_JOB_STORAGE_UNAVAILABLE", e);
             }
             final ExportJob job = new ExportJob(jobId, each ? "each" : "aggregate", total, processingJobId, teamNames);
             store.register(job);
@@ -197,8 +200,8 @@ public class ReplayExportJobService {
                 throw new ExportQueueFullException();
             }
             ownershipTransferred = true;
-            LOGGER.info(logLine("export_job_created", jobId, "mode", job.mode(), "total", total,
-                    "processingJobId", processingJobId));
+            logEvent(Level.INFO, "export_job_created", jobId, "mode", job.mode(), "total", total,
+                    "processingJobId", processingJobId).log();
             return jobId;
         } finally {
             if (acquired && !ownershipTransferred) {
@@ -270,8 +273,10 @@ public class ReplayExportJobService {
         final long startNanos = System.nanoTime();
         recordQueueWait(submittedNanos, startNanos, job.mode());
         // 方法作用域：失败日志需要 dataset 上下文（parsed/rated/duplicates/league failures）
-        final ProcessedDataset ds = dataset.readReadyDataset(processingJob);
+        ProcessedDataset ds = null;
         try {
+            ds = dataset.readReadyDataset(processingJob);
+            if (ds == null) throw new IllegalStateException("PROCESSING_DATASET_UNAVAILABLE");
             if (!job.startProcessing()) {
                 // QUEUED 期间被取消 → 已终态 CANCELLED；worker 负责终态统计。
                 finishTerminal(job, startNanos);
@@ -282,8 +287,8 @@ public class ReplayExportJobService {
                 finishTerminal(job, startNanos);
                 return;
             }
-            LOGGER.info(logLine("export_job_started", job.jobId(), "mode", job.mode(), "total", job.total(),
-                    "reuse_processing_job", processingJob.jobId()));
+            logEvent(Level.INFO, "export_job_started", job.jobId(), "mode", job.mode(), "total", job.total(),
+                    "reuse_processing_job", processingJob.jobId()).log();
             if (each) {
                 processEachFromResult(job, ds);
             } else {
@@ -299,21 +304,20 @@ public class ReplayExportJobService {
             } else {
                 // 结构化失败上下文（安全字段：无 replay 二进制 / Authorization / token）：
                 // mode / reuse / processing job 状态 / parsed / rated / duplicates / league failures
-                LOGGER.warn(logLine("export_job_failed_detail", job.jobId(),
+                logEvent(Level.WARN, "export_job_failed_detail", job.jobId(),
                         "mode", job.mode(),
                         "reuse_processing_job", processingJob.jobId(),
                         "processing_job_status", processingJob.snapshot().status().name(),
-                        "parsed_battles", ds.battles().size(),
-                        "rated_battles", ds.isLeague() ? ds.league().battleResults().size() : 0,
-                        "duplicates", ds.duplicates().size(),
-                        "league_failures", ds.isLeague() ? ds.league().failures().size() : 0,
-                        "error", e.getClass().getSimpleName(),
-                        "message", String.valueOf(e.getMessage())), e);
+                        "parsed_battles", ds == null ? 0 : ds.battles().size(),
+                        "rated_battles", ds != null && ds.isLeague() ? ds.league().battleResults().size() : 0,
+                        "duplicates", ds == null ? 0 : ds.duplicates().size(),
+                        "league_failures", ds != null && ds.isLeague() ? ds.league().failures().size() : 0,
+                        "error", e.getClass().getSimpleName()).setCause(e).log();
                 job.markFailed(errorCodeOf(e));
             }
             finishTerminal(job, startNanos);
         } catch (final Error e) {
-            LOGGER.error(logLine("export_job_aborted", job.jobId(), "error", e.getClass().getSimpleName()), e);
+            logEvent(Level.ERROR, "export_job_aborted", job.jobId(), "error", e.getClass().getSimpleName()).setCause(e).log();
             if (job.isCancelled()) {
                 job.markCancelled();
             } else {
@@ -462,13 +466,13 @@ public class ReplayExportJobService {
 
     private void logTerminal(final ExportJob.Snapshot snap) {
         switch (snap.status()) {
-            case READY -> LOGGER.info(logLine("export_job_ready", snap.jobId(),
+            case READY -> logEvent(Level.INFO, "export_job_ready", snap.jobId(),
                     "mode", snap.mode(), "filename", snap.filename(), "duplicates", snap.duplicates(),
-                    "failures", snap.failures(), "processed", snap.processed(), "total", snap.total()));
-            case FAILED -> LOGGER.warn(logLine("export_job_failed", snap.jobId(),
-                    "errorCode", snap.errorCode(), "processed", snap.processed(), "total", snap.total()));
-            case CANCELLED -> LOGGER.info(logLine("export_job_cancelled", snap.jobId(),
-                    "processed", snap.processed(), "total", snap.total()));
+                    "failures", snap.failures(), "processed", snap.processed(), "total", snap.total()).log();
+            case FAILED -> logEvent(Level.WARN, "export_job_failed", snap.jobId(),
+                    "errorCode", snap.errorCode(), "processed", snap.processed(), "total", snap.total()).log();
+            case CANCELLED -> logEvent(Level.INFO, "export_job_cancelled", snap.jobId(),
+                    "processed", snap.processed(), "total", snap.total()).log();
             default -> { }
         }
     }
@@ -498,7 +502,9 @@ public class ReplayExportJobService {
         }
         if (e instanceof IllegalArgumentException) {
             final String message = e.getMessage();
-            if (StringUtils.hasText(message)) {
+            if (message != null && java.util.Set.of("NO_BATTLE_DATA", "REPLAY_PACKET_LIMIT_EXCEEDED",
+                    "NO_REPLAY_FILES", "NO_REPLAY_FILE", "INVALID_REPLAY_FILE_TYPE", "FILE_TOO_LARGE",
+                    "TOTAL_REQUEST_TOO_LARGE", "TOO_MANY_REPLAY_FILES", "SOURCE_NOT_FOUND").contains(message)) {
                 return message;
             }
         }
@@ -534,18 +540,20 @@ public class ReplayExportJobService {
             try {
                 Files.deleteIfExists(artifact);
             } catch (final IOException e) {
-                LOGGER.warn("export_job_artifact_delete_failed jobId={} path={} error={}",
-                        job.jobId(), artifact, e.getMessage());
+                ApplicationLogger.event(LOGGER, Level.WARN, "export_job_artifact_delete_failed")
+                        .addKeyValue("jobId", job.jobId()).setCause(e).log("Export artifact cleanup failed");
             }
         }
     }
 
-    private static String logLine(final String event, final String jobId, final Object... kv) {
-        final StringBuilder sb = new StringBuilder("event=").append(event).append(" jobId=").append(jobId);
+    private static LoggingEventBuilder logEvent(final Level level, final String event,
+                                                 final String jobId, final Object... kv) {
+        final LoggingEventBuilder builder = ApplicationLogger.event(LOGGER, level, event)
+                .addKeyValue("jobId", jobId).setMessage("event=" + event + " jobId=" + jobId);
         for (int i = 0; i + 1 < kv.length; i += 2) {
-            sb.append(' ').append(kv[i]).append('=').append(kv[i + 1]);
+            builder.addKeyValue(String.valueOf(kv[i]), kv[i + 1]);
         }
-        return sb.toString();
+        return builder;
     }
 
     private static String uniqueName(final String preferred, final Set<String> usedNames) {

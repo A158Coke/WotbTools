@@ -58,5 +58,15 @@ wotb:
 # OpenAiChatModel 在 provider 返回空 choices 时会以 WARN 打印完整 prompt（含回放证据文本），
 # 因此独立 ai-service 必须把该类压到 ERROR；不得用全局 ERROR 静默整个服务。
 logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      rename:
+        "[@timestamp]": timestamp
+      add:
+        service: ai-service
+        environment: ${OBSERVABILITY_ENVIRONMENT:production}
+        build: ${BUILD_COMMIT:unknown}
   level:
     org.springframework.ai.openai.OpenAiChatModel: ERROR

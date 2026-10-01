@@ -4,6 +4,21 @@ info:
   version: 1.0.0
   description: FE ↔ BE wire contract. Domain models and Control/Worker contracts are separate authorities.
 paths:
+  /api/observability/client-events:
+    post:
+      operationId: reportClientEvent
+      summary: Report a bounded allowlisted critical client failure
+      description: Single event, maximum 4096 bytes. No client identity, free text, payload or credentials. Verified JWT sub alone supplies userId. Maximum 10 reports per minute per authenticated user and 300 globally; ingress separately limits anonymous client IPs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClientEvent' }
+      responses:
+        '204': { description: Accepted }
+        '400': { description: Invalid event, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '413': { description: Body too large, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '429': { description: Rate limited, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/hof/hundred:
     get:
       operationId: listHundredLeaderboard
@@ -359,6 +374,15 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    ClientEvent:
+      type: object
+      additionalProperties: false
+      required: [event, platform, errorCode]
+      properties:
+        event: { type: string, enum: [client.bootstrap_failed, client.wasm_load_failed, client.android_webview_failed] }
+        platform: { type: string, enum: [web, android] }
+        errorCode: { type: string, enum: [CLIENT_BOOTSTRAP_FAILED, CLIENT_WASM_LOAD_FAILED, CLIENT_WEBVIEW_FAILED] }
+        correlationId: { type: string, format: uuid }
     HundredCreateResult:
       type: object
       additionalProperties: false

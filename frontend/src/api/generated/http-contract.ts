@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/observability/client-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report a bounded allowlisted critical client failure
+         * @description Single event, maximum 4096 bytes. No client identity, free text, payload or credentials. Verified JWT sub alone supplies userId. Maximum 10 reports per minute per authenticated user and 300 globally; ingress separately limits anonymous client IPs.
+         */
+        post: operations["reportClientEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hof/hundred": {
         parameters: {
             query?: never;
@@ -354,6 +374,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ClientEvent: {
+            /** @enum {string} */
+            event: "client.bootstrap_failed" | "client.wasm_load_failed" | "client.android_webview_failed";
+            /** @enum {string} */
+            platform: "web" | "android";
+            /** @enum {string} */
+            errorCode: "CLIENT_BOOTSTRAP_FAILED" | "CLIENT_WASM_LOAD_FAILED" | "CLIENT_WEBVIEW_FAILED";
+            /** Format: uuid */
+            correlationId?: string;
+        };
         HundredCreateResult: {
             /** Format: int64 */
             id: number;
@@ -930,6 +960,55 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    reportClientEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientEvent"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid event */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Body too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     listHundredLeaderboard: {
         parameters: {
             query?: {

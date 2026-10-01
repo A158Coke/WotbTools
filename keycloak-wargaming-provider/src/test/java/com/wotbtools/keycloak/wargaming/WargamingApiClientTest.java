@@ -99,7 +99,7 @@ class WargamingApiClientTest {
         final WargamingApiException e = assertThrows(WargamingApiException.class,
                 () -> client.fetchLoginRedirectUrl("app-1", "https://auth.wotbtools.com/endpoint"));
         assertTrue(e.getMessage().contains("code=404"));
-        assertTrue(e.getMessage().contains("METHOD_NOT_FOUND"));
+        assertFalse(e.getMessage().contains("METHOD_NOT_FOUND"));
         assertFalse(e.getMessage().contains("/wot/auth/login/"));
         assertFalse(e.getMessage().contains("app-1"));
     }

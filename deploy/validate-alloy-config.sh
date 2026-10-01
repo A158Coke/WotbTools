@@ -15,7 +15,7 @@ fi
 required_selector='selector            = "{container_name=\"wotb-frontend\"} !~ \"GET /download/android/[^ ]+[.]apk\""'
 legacy_selector='GET /download/android/[^ ]+\\.apk'
 
-if ! grep -Fq "$required_selector" "$CONFIG_FILE"; then
+if grep -Fq 'loki.process "android_download"' "$CONFIG_FILE" && ! grep -Fq "$required_selector" "$CONFIG_FILE"; then
   echo "ERROR: Alloy Android download selector must use the LogQL-safe [.] form." >&2
   exit 1
 fi

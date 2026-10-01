@@ -37,5 +37,15 @@ wotb:
       write-timeout-seconds: ${MINIO_WRITE_TIMEOUT_SEC:60}
 
 logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      rename:
+        "[@timestamp]": timestamp
+      add:
+        service: parser-worker
+        environment: ${OBSERVABILITY_ENVIRONMENT:production}
+        build: ${BUILD_COMMIT:unknown}
   level:
     com.wotb: INFO

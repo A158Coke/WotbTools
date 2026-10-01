@@ -82,7 +82,7 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      node-exporter|prometheus|loki|alloy|grafana|parser-worker|ai-service) ;;
+      blackbox-exporter|node-exporter|prometheus|loki|alloy|grafana|parser-worker|ai-service) ;;
       *) die "unsupported deployment service: $service" ;;
     esac
   done
@@ -124,7 +124,7 @@ stage_and_validate() {
   local observability_selected=false service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      prometheus|loki|alloy|grafana|node-exporter) observability_selected=true ;;
+      prometheus|loki|alloy|grafana|node-exporter|blackbox-exporter) observability_selected=true ;;
     esac
   done
   if [ "$observability_selected" = true ]; then
@@ -169,7 +169,7 @@ promote_files() {
   fi
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      prometheus|loki|alloy|grafana|node-exporter) observability_selected=true ;;
+      prometheus|loki|alloy|grafana|node-exporter|blackbox-exporter) observability_selected=true ;;
     esac
   done
   if [ "$observability_selected" = true ]; then
@@ -265,7 +265,7 @@ observability_service_list() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      node-exporter|prometheus|loki|alloy|grafana) printf '%s\n' "$service" ;;
+      blackbox-exporter|node-exporter|prometheus|loki|alloy|grafana) printf '%s\n' "$service" ;;
     esac
   done
 }

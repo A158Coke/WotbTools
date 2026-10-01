@@ -2,6 +2,13 @@ package com.wotb.ai;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -32,7 +39,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://127.0.0.1:9/jwks",
                 "wotb.ai.api-key="
         })
+@ExtendWith(OutputCaptureExtension.class)
 class AiReviewHttpBoundaryTest {
+
+    @Test
+    void runtimeJsonContainsCanonicalFieldsAndCause(final CapturedOutput output) {
+        ApplicationLogger.event(LoggerFactory.getLogger("runtime-json-contract"), Level.ERROR, "runtime_json_contract")
+                .setCause(new IllegalStateException("diagnostic", new java.io.IOException("root cause")))
+                .log("Runtime logging contract");
+        final String line = output.getOut().lines().filter(value -> value.startsWith("{")
+                && value.contains("runtime_json_contract")).reduce((first, last) -> last).orElseThrow();
+        final var json = JsonMapper.builder().build().readTree(line);
+        org.junit.jupiter.api.Assertions.assertTrue(json.has("timestamp"));
+        org.junit.jupiter.api.Assertions.assertEquals("ERROR", json.path("level").asText());
+        org.junit.jupiter.api.Assertions.assertEquals("ai-service", json.path("service").asText());
+        org.junit.jupiter.api.Assertions.assertTrue(json.has("environment"));
+        org.junit.jupiter.api.Assertions.assertTrue(json.has("build"));
+        org.junit.jupiter.api.Assertions.assertTrue(json.path("stack_trace").asText().contains("root cause"));
+    }
 
     private static final String ENDPOINT = "/api/ai/reviews";
     private static final String USER = "ROLE_wotbtools-user";

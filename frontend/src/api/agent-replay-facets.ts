@@ -20,6 +20,8 @@
  * 数值零只在该字段语义就是零时出现。本模块不修改上游形状，只做形状校验与装载。
  */
 
+import { reportClientFailure } from './client-events.js'
+
 // ---------- 结果能力：BattleResult（BattleSummary wire 形状，DTO 冻结） ----------
 
 /** 单战斗者结算行（关键字段标注消费面；未知键透传保留） */
@@ -313,6 +315,7 @@ export function loadAgentWasm(): Promise<AgentWasmModule> {
       return mod
     })()
     wasmPromise.catch(() => {
+      reportClientFailure('client.wasm_load_failed', 'CLIENT_WASM_LOAD_FAILED')
       wasmPromise = null // 失败可重试
     })
   }

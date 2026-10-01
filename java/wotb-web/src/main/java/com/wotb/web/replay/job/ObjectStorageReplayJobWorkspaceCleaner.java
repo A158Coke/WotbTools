@@ -3,6 +3,8 @@ package com.wotb.web.replay.job;
 import com.wotb.contracts.ObjectKey;
 import com.wotb.contracts.ObjectStorage;
 import com.wotb.storage.ObjectStorageKeys;
+import com.wotb.core.observability.ApplicationLogger;
+import org.slf4j.event.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,8 +59,9 @@ public final class ObjectStorageReplayJobWorkspaceCleaner implements ReplayJobWo
                     + ReplayArtifactWriter.BATTLE_PLAYBACK_V2_NAME));
             storage.delete(key(jobId, INPUT_PREFIX + index + "/" + source.sourceName()));
         }
-        LOGGER.info("event=replay_job_workspace_deleted jobId={} sources={}",
-                jobId, job.sourceStates().size());
+        ApplicationLogger.event(LOGGER, Level.INFO, "replay_job_workspace_deleted")
+                    .addKeyValue("jobId", jobId)
+                    .addKeyValue("sources", job.sourceStates().size()).log("Replay processing lifecycle");
     }
 
     private static ObjectKey key(final String jobId, final String relativePath) {

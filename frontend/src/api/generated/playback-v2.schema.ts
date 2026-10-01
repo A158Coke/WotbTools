@@ -3,6 +3,44 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "ClientEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "platform",
+        "errorCode"
+      ],
+      "properties": {
+        "event": {
+          "type": "string",
+          "enum": [
+            "client.bootstrap_failed",
+            "client.wasm_load_failed",
+            "client.android_webview_failed"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "web",
+            "android"
+          ]
+        },
+        "errorCode": {
+          "type": "string",
+          "enum": [
+            "CLIENT_BOOTSTRAP_FAILED",
+            "CLIENT_WASM_LOAD_FAILED",
+            "CLIENT_WEBVIEW_FAILED"
+          ]
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
     "HundredCreateResult": {
       "type": "object",
       "additionalProperties": false,

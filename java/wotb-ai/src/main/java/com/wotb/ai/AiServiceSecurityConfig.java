@@ -1,5 +1,15 @@
 package com.wotb.ai;
 
+import com.wotb.core.observability.LogContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.web.filter.OncePerRequestFilter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
@@ -30,6 +40,19 @@ public class AiServiceSecurityConfig {
                                 "/actuator/prometheus").permitAll()
                         .requestMatchers("/api/ai/**").hasAnyRole("wotbtools-user", "wotbtools-admin")
                         .anyRequest().denyAll());
+        http.addFilterAfter(new OncePerRequestFilter() {
+            @Override
+            protected void doFilterInternal(final HttpServletRequest request,
+                    final HttpServletResponse response, final FilterChain chain)
+                    throws ServletException, IOException {
+                final var authentication = SecurityContextHolder.getContext().getAuthentication();
+                final String userId = authentication instanceof JwtAuthenticationToken jwt
+                        && jwt.isAuthenticated() ? jwt.getToken().getSubject() : null;
+                try (final var ignored = LogContext.with("userId", userId)) {
+                    chain.doFilter(request, response);
+                }
+            }
+        }, BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

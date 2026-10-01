@@ -97,6 +97,7 @@ class MainActivity : Activity() {
     private lateinit var apkUpdater: ApkUpdater
     private lateinit var nativeBridge: NativeBridge
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var webFailureReported = false
 
     @Volatile private var pendingReplay: PendingReplay? = null
     @Volatile private var pendingReplayEligible = true
@@ -325,10 +326,38 @@ class MainActivity : Activity() {
                 request: WebResourceRequest,
                 error: WebResourceError
             ) {
-                if (request.isForMainFrame) showWebError()
+                if (request.isForMainFrame) {
+                    reportWebFailure()
+                    showWebError()
+                }
             }
         }
         return true
+    }
+
+    private fun reportWebFailure() {
+        if (webFailureReported) return
+        webFailureReported = true
+        executor.execute {
+            // Anonymous fixed-code report: never copy WebView cookies, auth URLs, or raw errors.
+            val connection = java.net.URL("$BASE_URL/api/observability/client-events")
+                .openConnection() as java.net.HttpURLConnection
+            try {
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                connection.instanceFollowRedirects = false
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json")
+                val body = """{"event":"client.android_webview_failed","platform":"android","errorCode":"CLIENT_WEBVIEW_FAILED"}"""
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                connection.responseCode
+            } catch (_: java.io.IOException) {
+                // Best effort, no retries or telemetry about telemetry.
+            } finally {
+                connection.disconnect()
+            }
+        }
     }
 
     /**

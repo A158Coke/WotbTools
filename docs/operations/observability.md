@@ -13,7 +13,7 @@
 `8087/api/health`。完整
 Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 smoke，不在此记录静态推测。
 
-## 0. 当前拓扑（2026-09 observability realignment 后）
+## 0. 当前拓扑（2026-10 Observability vNext PR A）
 
 双主机分工与观测数据路径（旧单机架构的历史记录见下文各节，与现状冲突时以本节为准）：
 
@@ -30,8 +30,10 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
   `job="wotb-backend"`（目标 `10.20.0.1:8088/actuator/prometheus`）跨 WireGuard 抓取；job 名与
   `service` 标签保持不变，所有 dashboard PromQL 无需改动。
 - **日志**：TX 侧 `alloy-tx`（`deploy/tx/alloy/config.alloy`）按 `com.docker.compose.service`
-  标签采集 business-api/keycloak/wotb-frontend，标签归一化为旧名 `wotb-backend`/`keycloak`/
-  `wotb-frontend` 后经 WireGuard 推给 Yecao Loki；部署车道是 `.github/workflows/alloy-tx.yml`，
+  标签采集 business-api/keycloak/wotb-frontend，canonical `service` 分别为
+  `business-api`/`keycloak`/`frontend`；兼容旧 dashboard 的 `container_name` 保持
+  `wotb-backend`/`keycloak`/`wotb-frontend`，经 WireGuard 推给 Yecao Loki。
+  Yecao Alloy 同时采集本机 `ai-service` 与 `parser-worker`；部署车道是 `.github/workflows/alloy-tx.yml`，
   deploy gate 用带生产标签的 canary 证明三条流端到端可达。
 - **公网 monitor**：`monitor.wotbtools.com` DNS 指向 **TX（118.25.18.105）**，由 TX `Caddyfile`
   的站点块反代到 `10.20.0.2:3000`；TX-local 就绪路由 `http://caddy/_wotb/monitor/*` 供无 DNS 部署
@@ -652,4 +654,81 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 
 ## 11. 日志安全
 
-结构化日志**不会**包含：Authorization Header、Token、API Key、密码、Replay 文件内容、解析后的完整战斗数据、完整 Prompt/AI 响应、请求体、用户个人信息。AI 上游错误体被 `[PROVIDER_BODY_REDACTED]` 脱敏；`X-Request-ID` 限制 128 字符防注入。
+结构化日志**不会**包含：Authorization Header、Token、API Key、密码、Replay 文件内容、解析后的完整战斗数据、Prompt/Completion、请求体、OAuth code/raw state 或 cookie。可信 JWT `sub` 可作为诊断用 `userId`，不记录用户名、昵称或其它用户资料。AI/解析/OAuth 的 payload-bearing exception message 被移除，但保留原始异常类型名、堆栈、cause 与 suppressed 链；安全的稳定 error code、provider status、阶段与重试次数单独记录。普通 unexpected exception 保留原始 Throwable。`X-Request-ID` 限制 128 字符防注入。
+
+
+### Observability vNext PR A runtime foundation
+
+Loki uses canonical `service` labels: TX `business-api`, `keycloak`, `frontend`;
+Yecao `ai-service`, `parser-worker`. Docker discovery selects exact Compose
+service labels, excluding Keycloak PostgreSQL. Legacy `container_name` labels on
+TX remain compatible with the six existing dashboards until PR B; no dashboard
+is deleted or renamed in PR A. Frontend nginx collection remains restricted to
+sanitized APK download events; selective browser/Android events enter through
+Business API and retain their platform field.
+
+A Docker-internal `blackbox-exporter` supplies only three public GET probes:
+Web `/`, Business API `/api/health`, and Auth realm OpenID metadata. Prometheus
+scrapes `public-endpoints` with `service=web|business-api|auth-endpoint`;
+`probe_success` measures actual HTTP/TLS success, separately from scrape `up`.
+No parser health is inferred from logs or container existence. Deploy verification
+requires all three probes to succeed. Loki/Prometheus retention stays seven days,
+and the Prometheus size cap stays `2GB`.
+
+Keycloak console uses native JSON output; AuthEventLog writes canonical fields into
+JBoss MDC and restores previous MDC after every event. TX Alloy flattens only
+these canonical fields to the top-level JSON, preserving native exception objects,
+stack traces and messages. Non-event operational logs pass through unchanged.
+QQ and WG provider JARs emit bounded AuthEventLog events for broker verification,
+validation rejection, upstream/unexpected failure and degraded token logout.
+User identity is deliberately absent before a SecurityContext JWT `sub` exists.
+OAuth exception diagnostics retain class names, stack frames, cause and suppressed
+chains while redacting all exception messages, which may contain request URLs,
+tokens or response bodies. Auth success means upstream broker verification, not
+proof of a completed Keycloak login.
+
+Production acceptance for PR A: verify TX/Yecao actual application streams using
+canonical service selectors, trigger QQ/WG rejection without exposing OAuth data,
+confirm three `probe_success` series equal one, and run the existing observability
+gate. PR B starts only after PR A merge and these checks.
+
+Keycloak JSON console format reference: https://www.keycloak.org/server/logging/console.
+
+### Structured runtime / identity / client contract
+
+Business API, AI Service and Parser Worker emit console JSON with `timestamp`,
+`level`, `service`, `environment` (`OBSERVABILITY_ENVIRONMENT`, default production)
+and `build` (`BUILD_COMMIT`, unknown for local builds). ApplicationLogger supplies
+`event`; request/review/job boundaries add `requestId`, `correlationId`, `jobId`,
+`errorCode`, `provider`, `platform`, `outcome`, `durationMs` and `attempt` where
+applicable. These fields remain JSON fields, not high-cardinality Loki labels.
+
+Business/AI security filters read `userId` exclusively from the authenticated
+SecurityContext JWT `sub`, after bearer validation. Anonymous and non-JWT
+principals have no userId. LogContext captures MDC at submission and restores the
+worker's prior state on completion or failure; export workers also scope jobId.
+An AMQP jobId is diagnostic metadata, never proof of authenticated user identity.
+
+`POST /api/observability/client-events` permits anonymous reports and authenticated
+JWT reports. The OpenAPI schema is authoritative. The closed body accepts only
+`event`, `platform`, `errorCode` and optional UUID `correlationId`; userId, unknown
+fields, duplicate keys, trailing JSON and arbitrary error messages are rejected.
+The maximum body is 4096 bytes. Nginx limits trusted client IPs to 10 requests per
+minute (burst 3); the service adds a global 300/minute bound and verified JWT-sub
+10/minute bound, without trusting forwarded headers as its own identity source.
+Valid reports return 204; invalid shape 400, oversize 413, throttled 429. Client
+reports are explicitly untrusted failure signals, not authoritative service health.
+
+Only bootstrap failure, Agent WASM load failure and native main-frame WebView
+failure are reported. Browser reports are deduplicated per event per page; native
+reports once per Activity. Reporting is best effort, time bounded and does not
+retry or recursively report its own failure. Android release version is 1.4.10;
+bridge version and business replay wire shapes are unchanged.
+
+PR A production verification also requires authenticated→anonymous identity
+isolation, actual async review/export correlation, safe validation/retry/fallback
+and parser DLQ events, and a redaction check of representative JSON/exception
+records. Run Android failure handling on a device. PR CI supplies the Docker
+Alloy/Loki, Keycloak and parser/broker/PostgreSQL integration checks unavailable
+when the local Docker daemon is absent. PR A does not change Grafana Home or the
+six-dashboard OpenTofu map; PR B remains gated on merge and runtime verification.

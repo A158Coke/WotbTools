@@ -92,7 +92,7 @@ public class PreBattleStrategicService {
                     PRE_BATTLE_MAX_OUTPUT_TOKENS,
                     config.promptSafetyMarginTokens());
         } catch (final IllegalArgumentException e) {
-            LOGGER.warn("Pre-battle prompt exceeds budget, skipping Call #1: {}", e.getMessage());
+            AiReviewEventLog.fallback(LOGGER, "ai_prebattle_budget_fallback", e, "skip_prebattle");
             return null;
         }
 
@@ -114,7 +114,7 @@ public class PreBattleStrategicService {
         try {
             prior = PreBattleStrategicParser.parse(gateway.chat(request).completionText());
         } catch (final RuntimeException e) {
-            LOGGER.warn("Pre-battle Call #1 failed, skipping: {}", e.getMessage());
+            AiReviewEventLog.fallback(LOGGER, "ai_prebattle_failed", e, "skip_prebattle");
             if (meterRegistry != null) {
                 meterRegistry.counter("wotb_ai_review_prebattle_total", "result", "failure").increment();
             }
@@ -123,7 +123,8 @@ public class PreBattleStrategicService {
             listener.onStage("call1_done");
         }
         if (prior == null || !prior.hasContent()) {
-            LOGGER.info("Pre-battle Call #1 returned unparsable/empty prior, skipping");
+            AiReviewEventLog.warn(LOGGER, "ai_prebattle_invalid", AiReviewEventLog.correlationId(),
+                    "outcome", "degraded", "fallbackPath", "skip_prebattle", "errorCode", "AI_PREBATTLE_UNPARSABLE");
             if (meterRegistry != null) {
                 meterRegistry.counter("wotb_ai_review_prebattle_total", "result", "unparsable").increment();
             }

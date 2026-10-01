@@ -131,7 +131,7 @@ public class TeamAutopsyService {
                     AUTOPSY_MAX_OUTPUT_TOKENS,
                     config.promptSafetyMarginTokens());
         } catch (final IllegalArgumentException e) {
-            LOGGER.warn("Team autopsy prompt exceeds budget, skipping: {}", e.getMessage());
+            AiReviewEventLog.fallback(LOGGER, "ai_autopsy_budget_fallback", e, "skip_autopsy");
             count("budget");
             return null;
         }
@@ -168,11 +168,11 @@ public class TeamAutopsyService {
             if ("AI_CANCELLED".equals(e.code())) {
                 throw e;
             }
-            LOGGER.warn("Team autopsy call failed, skipping section: {}", e.getMessage());
+            AiReviewEventLog.fallback(LOGGER, "ai_autopsy_failed", e, "skip_autopsy");
             count("failure");
             return null;
         } catch (final RuntimeException e) {
-            LOGGER.warn("Team autopsy call failed, skipping section: {}", e.getMessage());
+            AiReviewEventLog.fallback(LOGGER, "ai_autopsy_failed", e, "skip_autopsy");
             count("failure");
             return null;
         } finally {

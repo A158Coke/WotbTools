@@ -18,6 +18,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.http.HttpMethod;
 
 import java.util.Collection;
 import java.util.List;
@@ -65,6 +67,7 @@ public class SecurityConfig {
         final CanonicalAccessDeniedHandler accessDeniedHandler =
                 new CanonicalAccessDeniedHandler(errorFactory, errorWriter);
         http
+            .addFilterAfter(new AuthenticatedLogContextFilter(), BearerTokenAuthenticationFilter.class)
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .oauth2ResourceServer(rs -> rs.jwt(jwt -> jwt
@@ -76,6 +79,7 @@ public class SecurityConfig {
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests(auth -> auth
                 // --- 公开接口 ---
+                .requestMatchers(HttpMethod.POST, "/api/observability/client-events").permitAll()
                 .requestMatchers(HEALTH, COLUMNS,
                         PREVIEW, EXPORT).permitAll()
                 // 名人堂查询公开；上传/下载需登录（必须置于 HOF_PATTERN permitAll 之前）

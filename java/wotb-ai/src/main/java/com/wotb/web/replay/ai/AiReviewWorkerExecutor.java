@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
+import com.wotb.core.observability.LogContext;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -162,12 +163,13 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
      * 启动时预算耗尽由服务层直接抛 {@code AI_TIMEOUT}。</p>
      */
     public void execute(final Runnable task) {
+        final LogContext logContext = LogContext.capture();
         final long submittedNanos = System.nanoTime();
         if (closed.get()) {
             throw new RejectedExecutionException("AI review worker is shut down");
         }
         if (!virtualThreads) {
-            executor.execute(() -> runTask(task, submittedNanos));
+            executor.execute(logContext.wrap(() -> runTask(task, submittedNanos)));
             return;
         }
 
@@ -180,7 +182,7 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
         }
         virtualQueueDepth.incrementAndGet();
         try {
-            executor.execute(() -> runVirtualTask(task, submittedNanos));
+            executor.execute(logContext.wrap(() -> runVirtualTask(task, submittedNanos)));
         } catch (final RejectedExecutionException error) {
             virtualQueueDepth.decrementAndGet();
             admissionPermits.release();

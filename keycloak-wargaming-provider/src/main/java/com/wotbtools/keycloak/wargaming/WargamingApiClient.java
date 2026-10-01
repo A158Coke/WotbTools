@@ -18,7 +18,7 @@ import java.time.Duration;
  * 账号（account/info）走 {@code api.wotblitz.* /wotb/account/}，不接受调用方传入 URL。
  *
  * <p>安全约定：连接超时 5 秒、总请求超时 10 秒；token 不进入异常正文与日志；
- * 错误正文不回显给浏览器；日志仅含错误码/消息/字段，不含 {@code error.value}。</p>
+ * 错误正文不回显给浏览器；日志仅含服务端定义的阶段与错误码，不含原始响应字符串。</p>
  */
 final class WargamingApiClient {
 
@@ -112,6 +112,7 @@ final class WargamingApiClient {
             if (legacyUrl.isEmpty()) {
                 throw new WargamingApiException("WG login response missing data.location");
             }
+            AuthEventLog.degraded("wargaming", "legacy-login-url", "WG_LEGACY_REDIRECT");
             return legacyUrl;
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -226,16 +227,8 @@ final class WargamingApiClient {
 
         final JsonNode error = json.path("error");
         final int code = error.path("code").asInt(0);
-        final String message = error.path("message").asText("UNKNOWN");
-        final String field = error.path("field").asText("");
-
-        // 安全错误信息：不含 error.value / application_id / access_token / 完整响应 JSON。
-        final String safeMessage = field.isBlank()
-                ? "WG API rejected request: code=" + code + ", message=" + message
-                : "WG API rejected request: code=" + code
-                        + ", message=" + message
-                        + ", field=" + field;
-        throw new WargamingApiException(safeMessage);
+        // Provider response strings are untrusted and may echo OAuth secrets.
+        throw new WargamingApiException("WG API rejected request: code=" + code);
     }
 
     private static String encode(final String value) {

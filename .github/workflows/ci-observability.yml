@@ -25,6 +25,14 @@ jobs:
         run: bash scripts/ci/run-with-network-retry.sh "Pull Loki image" docker pull grafana/loki:3.3.2
       - name: Pull Alloy image with bounded network retry
         run: bash scripts/ci/run-with-network-retry.sh "Pull Alloy image" docker pull grafana/alloy:v1.4.2
+      - name: Pull Blackbox image with bounded network retry
+        run: bash scripts/ci/run-with-network-retry.sh "Pull Blackbox image" docker pull prom/blackbox-exporter:v0.27.0
+      - name: Blackbox config validation
+        run: >-
+          docker run --rm
+          -v "$PWD/deploy/observability/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro"
+          prom/blackbox-exporter:v0.27.0
+          --config.file=/etc/blackbox/blackbox.yml --config.check
       - name: Prometheus config validation
         run: >-
           docker run --rm --entrypoint promtool

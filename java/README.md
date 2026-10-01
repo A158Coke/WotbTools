@@ -280,3 +280,7 @@ wotb:
 
 - 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `GET /api/replay/processing-jobs/{jobId}/result` 响应获取列定义，不在前端硬编码业务字段。
 - 车辆库单一来源在 `common/tankopedia-tier{7,8,9,10}.json`（由 `common/python/update_tankopedia.py` 从 blitzkit 游戏客户端数据同步，按等级拆分 4 个文件，`vehicles` 数组全英文格式，含手工 `extraInfo` 每车知识点与每车可用物资/消耗品/装备）；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。
+
+## Runtime observability
+
+Business API / AI Service / Parser Worker use structured JSON, shared ApplicationLogger and scoped LogContext. Authenticated log identity comes only from SecurityContext JWT sub. The bounded client-events endpoint and canonical fields, privacy rules, host coverage and production checks are documented in [Observability](../docs/operations/observability.md).
