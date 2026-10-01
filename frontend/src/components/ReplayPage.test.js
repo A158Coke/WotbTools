@@ -274,7 +274,7 @@ vi.mock('../composables/useColumns.js', async () => {
         playerOrder: ref([]), aggOrder: ref([]),
         cwVisibleKeys: ref([...cwKeys]),
         cwOrder: ref([...cwOrder]),
-        showColPicker: ref(false), pickerScope: ref('player'),
+        showColPicker: ref(false), pickerScope: ref('player'), colScope: computed(() => 'player'),
         currentOrder: computed(() => []),
         // 测试 seam：当前视图列（PNG 所见即所得断言用）
         shownCols: computed(() => window.__testShownCols || []),

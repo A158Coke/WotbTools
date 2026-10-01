@@ -145,19 +145,19 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
   it('Playback 首次 READY 后第一次进入 Data 即完成 columns/result hydration，且只创建一个 Processing Job', async () => {
     const wrapper = await runReadyFlow(baseResp({
       battles: [twoBattles[0]],
-      aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
+      aggregate: [{ cells: { nickname: 'P1', damage_avg: 5000 } }],
       playerColumns: [
         { key: 'nickname', label: '昵称' },
         { key: 'damage_dealt', label: '伤害' },
       ],
       aggregateColumns: [
         { key: 'nickname', label: '昵称' },
-        { key: 'damage_dealt', label: '伤害' },
+        { key: 'damage_avg', label: '场均伤害' },
       ],
     }))
 
     // READY response is already authoritative before the first Data sub-view click.
-    expect(wrapper.find('[data-testid="agg-col-damage_dealt"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="agg-col-damage_avg"]').exists()).toBe(true)
     await wrapper.find('[data-testid="data-view-single"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="battle-col-damage_dealt"]').exists()).toBe(true)
