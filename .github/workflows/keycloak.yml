@@ -61,6 +61,7 @@ jobs:
       image: ${{ steps.identity.outputs.image }}
       commit_sha: ${{ steps.identity.outputs.commit_sha }}
       digest: ${{ steps.verify.outputs.digest }}
+      latest_published: ${{ steps.latest.outputs.published }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -156,6 +157,7 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Publish latest only from current main
+        id: latest
         env:
           SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
           IMAGE: ${{ steps.identity.outputs.image }}
@@ -164,12 +166,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash "$GITHUB_WORKSPACE/deploy/check-latest-main.sh" "$SOURCE_SHA"
-          crane cp "$IMAGE@$DIGEST" "$REPOSITORY:latest"
+          # 10 = main 已前进且改了本服务输入：交给更新的那次运行发布，本次跳过但不判红
+          status=0
+          bash "$GITHUB_WORKSPACE/deploy/check-latest-main.sh" "$SOURCE_SHA" || status=$?
+          case "$status" in
+            0) crane cp "$IMAGE@$DIGEST" "$REPOSITORY:latest"; echo 'published=true' >> "$GITHUB_OUTPUT" ;;
+            10) echo 'published=false' >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
 
 
   smoke:
     needs: [build]
+    # 被更新的 main 取代（published=false）时跳过：不部署旧镜像，也不判红
+    if: needs.build.outputs.latest_published == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -209,6 +219,8 @@ jobs:
       cancel-in-progress: false
       queue: max
     needs: [build, smoke]
+    # 被更新的 main 取代（published=false）时跳过：不部署旧镜像，也不判红
+    if: needs.build.outputs.latest_published == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: tx-production

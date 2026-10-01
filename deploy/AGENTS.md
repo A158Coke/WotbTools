@@ -4,7 +4,7 @@
 
 ## 镜像与产物（服务 workflow + Dockerfile）
 
-- **镜像身份**：`.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml`、`ai-service.yml` 与 `minio.yml` 分别构建并部署一个应用服务。每个 workflow 保留 SHA tag 供诊断，并在确认远端 main HEAD 后发布 `latest`；部署使用 `latest`。TX 镜像只用 TCR，Yecao 镜像只用 GHCR；TX registry prefix 必须从 `vars.TCR_REGISTRY/TCR_NAMESPACE` 传给 host，不可依赖默认 namespace。
+- **镜像身份**：`.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml`、`ai-service.yml` 与 `minio.yml` 分别构建并部署一个应用服务。每个 workflow 保留 SHA tag 供诊断，并在发布前重新核对远端 main：本服务输入未变（main 未动，或只动了别的服务）才发布 `latest`；main 已改动本服务输入则本次被取代——跳过 `latest` 与部署但不判红，由更新的那次运行发布（`deploy/check-latest-main.sh` exit 10）。部署使用 `latest`。TX 镜像只用 TCR，Yecao 镜像只用 GHCR；TX registry prefix 必须从 `vars.TCR_REGISTRY/TCR_NAMESPACE` 传给 host，不可依赖默认 namespace。
 - TX 业务运行时定义在 `deploy/tx/business-api.compose.yml`，由 `deploy/tx/docker-compose.yml` 汇总：镜像为 `wotbtools-business-api`，承载业务 API + 分布式回放控制面（PostgreSQL 是唯一 replay job authority，无后端选择器），仅将 management :8088 绑定到 WireGuard `10.20.0.1` 供 Yecao Prometheus 抓取；app :8087 只被 TX-internal frontend/Caddy/health-probe 访问。
 - **独立发布闭环**：PR 的 `CI / Required Gate` 是唯一代码验证门禁；六个应用 owner 在每次 main push 运行，固定基础设施按各自路径触发，手动入口只作用于所属服务。不要新增跨服务 planner、reusable Build/Deploy/Tofu DAG、`workflow_run` 链、deployment manifest 或 all selector。应用按当前 main 部署，持久状态校验必须 fail-closed，失败不自动回滚。
 - **PR 快速上线**：计划已明确且用户要求直接上线时，完成实现后直接提交、推送并开 PR，由 PR CI 验证；本地测试不是推送前阻塞条件。部署脚本仍必须保留静态配置校验、`verify-observability.sh` 数据链路 gate、失败诊断与无自动恢复路径。
