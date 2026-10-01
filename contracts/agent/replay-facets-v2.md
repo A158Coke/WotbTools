@@ -64,6 +64,22 @@ WotBTools
   `gun_pitch` 走车体 pitch 兜底、无俯仰极限锚定（质量标记如实透传）；
   `map_name` 为解析器枚举名（前端按 `map_id` 键控）。
 
+## 4b. Playback contract v2（上游 v0.2.0：Supremacy / 点数 / 瞄准帧）
+
+- `PlaybackData.version` 1 → **2**（版本显式门禁：错版 WASM 在
+  `validateAgentPlayback` 拒绝，不允许静默半残解析）。
+- 新增字段（skip-when-empty：非争霸场缺省，消费端 `?:` 可选）：
+  - `supremacy_bases[]`: `{clock, base_id(0..3=A..D), owner_team?, capturing_team?, capture_progress?}`
+    ——wrapper12/root11 sparse 更新重建；absent=维持前值、显式 0=清空、占领中 owner
+    变更清 capture。seek 消费 = 取 ≤t 每基地最后一条。
+  - `supremacy_points[]`: `{clock, team, points}` ——wrapper13/root12 真实广播，
+    消费取 ≤t 最后值；禁止按游戏规则推算、禁止由点数反推基地归属。
+  - `aim_frames[]`: `{time_sec, world_yaw, world_pitch, ray_point}` ——Type39 投影，
+    **仅作者/recorder**；缺帧省略不外推；存活期按 deaths 门控；禁止给其他车伪造。
+- provenance 全文：上游 `docs/replay-contract-v2-supremacy-type39.md`。
+- gameplay mode 纪律：`arenaBonusType` 非 objective mode 权威；Supremacy 存在性
+  以 `supremacy_bases` 非空为强事实；Assault/Encounter 多 candidate 无证据 fail-closed。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——
