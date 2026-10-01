@@ -1,5 +1,7 @@
 <script setup>
 import { computed, nextTick, reactive, watch } from 'vue'
+import BaseStatusBar from './BaseStatusBar.vue'
+import { baseView } from '../utils/baseStatus.js'
 defineOptions({ name: 'BattlePlaybackHud' })
 
 const props = defineProps({
@@ -105,12 +107,8 @@ function trackHp(team, hp) {
 watch(() => props.friendlyHp, (hp) => trackHp('friendly', hp), { immediate: true })
 watch(() => props.enemyHp, (hp) => trackHp('enemy', hp), { immediate: true })
 
-function baseStatus(state) {
-  if (state.capturingTeam != null) return 'capturing'
-  if (state.ownerTeam == null) return 'neutral'
-  if (props.friendlyTeam == null) return 'controlled'
-  return state.ownerTeam === props.friendlyTeam ? 'friendly_controlled' : 'enemy_controlled'
-}
+// 基地状态条与 3D 共用（BaseStatusBar + utils/baseStatus.js 同一口径）
+const baseViews = computed(() => props.baseStates.map((state) => baseView(state, props.friendlyTeam)))
 
 </script>
 
@@ -139,11 +137,7 @@ function baseStatus(state) {
         </strong>
       </div>
       <div v-if="props.baseStates.length" class="pb-hud-bases" data-test="pb-hud-bases">
-        <span v-for="state in props.baseStates" :key="state.baseId" class="pb-hud-base" :class="`pb-hud-base-${baseStatus(state)}`" :title="$t(`recon.map.playback.base_status_${baseStatus(state)}`)">
-          <b>{{ state.baseId }}</b>
-          <span class="pb-hud-base-status">{{ $t(`recon.map.playback.base_status_${baseStatus(state)}`) }}</span>
-          <i v-if="state.captureProgress != null" class="pb-hud-base-progress" :style="{ '--pb-base-progress': `${state.captureProgress}%` }" :aria-label="$t('recon.map.playback.base_progress', { progress: state.captureProgress })"></i>
-        </span>
+        <BaseStatusBar :bases="baseViews" />
       </div>
     </div>
     <div class="pb-hud-team pb-hud-enemy pb-hud-column-enemy pb-hp-row" data-test="pb-hud-enemy">
@@ -162,6 +156,7 @@ function baseStatus(state) {
 </template>
 
 <style scoped>
+.pb-hud-bases { display: flex; justify-content: center; }
 .pb-hud { padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--bg-card2) 86%, transparent); color: var(--text-label); }
 .pb-hud-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: clamp(8px, 2vw, 28px); }
 .pb-hud-column-friendly { grid-column: 1; }
@@ -187,17 +182,6 @@ function baseStatus(state) {
 .pb-hud-partial { background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--text) 28%, transparent) 0 3px, transparent 3px 6px); }
 .pb-hud-center { display: grid; justify-items: center; gap: 3px; min-width: 7ch; color: var(--text-heading); font-variant-numeric: tabular-nums; }
 .pb-hud-center strong { font-size: clamp(.9rem, 2vw, 1.2rem); white-space: nowrap; }
-.pb-hud-bases { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; }
-.pb-hud-base { display: inline-flex; align-items: center; gap: 3px; min-width: 2.2em; padding: 2px 4px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 4px; font-size: .68rem; }
-.pb-hud-base b { font-size: .78rem; }
-.pb-hud-base-status { color: var(--text-muted); }
-.pb-hud-base-friendly_controlled { color: var(--map-spawn-friendly); }
-.pb-hud-base-enemy_controlled { color: var(--map-spawn-enemy); }
-.pb-hud-base-capturing { color: var(--accent); }
-.pb-hud-base-neutral { color: var(--text-muted); }
-.pb-hud-base-controlled { color: var(--text-label); }
-.pb-hud-base-progress { display: inline-block; width: 22px; height: 4px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 22%, transparent); }
-.pb-hud-base-progress::before { display: block; width: var(--pb-base-progress); height: 100%; background: currentColor; content: ''; }
 .pb-hud-medium, .pb-hud-compact { display: none; }
 @media (768px <= width < 1200px) {
   .pb-hud-wide { display: none; }
@@ -232,8 +216,6 @@ function baseStatus(state) {
   .pb-hud-enemy .pb-hud-track { grid-column: 1; grid-row: 2; }
   .pb-hud-center { min-width: 6ch; }
   .pb-hud-center strong { font-size: .82rem; }
-  .pb-hud-base-status { display: none; }
-  .pb-hud-base { min-width: 1.8em; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) {
   .pb-hud-fill, .pb-hud-lag { transition: none; }

@@ -239,7 +239,7 @@ function onTwoFingerTouch(event) {
           />
         </g>
         <g class="pb-bases" data-test="pb-bases">
-          <g v-for="base in props.bases" :key="base.baseId" :class="`pb-base-${base.status}`" :data-test="`pb-base-${base.baseId}`">
+          <g v-for="base in props.bases" :key="base.baseId" :class="[`pb-base-${base.status}`, { 'pb-base-assault': base.baseId === 'BASE' }]" :data-test="`pb-base-${base.baseId}`">
             <circle :cx="projectedX(base.x, base.y)" :cy="projectedY(base.x, base.y)" :r="baseRadius(base)" class="pb-base-circle" />
             <circle
               v-if="base.progress != null"
@@ -348,16 +348,19 @@ function onTwoFingerTouch(event) {
 .pb-base-circle { fill: color-mix(in srgb, currentColor 18%, transparent); stroke: currentColor; stroke-width: 1.6; }
 .pb-base-label { fill: currentColor; font-size: 13px; font-weight: 700; paint-order: stroke; stroke: rgba(0,0,0,.55); stroke-width: 2.5; }
 /* 圆圈颜色 = 当前归属；进度弧颜色 = 正在占领的一方。两个信息都要看得出来。 */
-.pb-base-neutral { color: #fff; }
-.pb-base-friendly_controlled { color: var(--map-spawn-friendly, #ffd166); }
-.pb-base-enemy_controlled { color: var(--map-spawn-enemy, #ff8d8d); }
+/* 基地配色与 3D / 顶部基地状态条统一：友绿 / 敌红 / 中立白（阵营 token，design-language §3.3） */
+.pb-base-neutral { color: var(--color-team-neutral); }
+.pb-base-friendly_controlled { color: var(--color-team-ally); }
+.pb-base-enemy_controlled { color: var(--color-team-enemy); }
 .pb-base-controlled { color: var(--text, #e8e8e8); }
 /* 占领进度：水位从下往上涨，100% 时整圆铺满占领方颜色。 */
 .pb-base-fill { stroke: none; animation: pb-base-pulse 1.3s ease-in-out infinite; }
 .pb-base-fill-clip { transition: y .35s linear, height .35s linear; }
-.pb-capture-friendly { fill: var(--map-spawn-friendly, #ffd166); }
-.pb-capture-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
-.pb-capture-unknown { fill: #fff; }
+.pb-capture-friendly { fill: var(--color-team-ally); }
+.pb-capture-enemy { fill: var(--color-team-enemy); }
+.pb-capture-unknown { fill: var(--color-team-neutral); }
+/* 单基地协议不给占领方：进度只表示"有进度"，用目标色，不承载阵营 */
+.pb-base-assault .pb-capture-unknown { fill: var(--color-objective); }
 @keyframes pb-base-pulse { 0%, 100% { opacity: .95; } 50% { opacity: .6; } }
 @media (prefers-reduced-motion: reduce) {
   .pb-base-fill { animation: none; }

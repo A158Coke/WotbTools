@@ -42,6 +42,11 @@
     --color-team-ally: var(--green-400);
     --color-team-enemy: var(--red-400);
     --color-team-enemy-cb: #c38bf0;
+    /* 中立（无主基地等）：3D 场景与 2D 地图上都画在深色地面之上，两套主题同值 */
+    --color-team-neutral: #f5f5f5;
+    --color-on-team-neutral: #1c1f1d;
+    /* 单基地（攻防 / 遭遇战）占领进度：协议不给占领方，只表示"有进度"，不承载阵营语义 */
+    --color-objective: #ffc24b;
 
     --color-scrim: rgb(0 0 0 / .6);
 
@@ -78,6 +83,9 @@
     --color-team-ally: var(--green-700);
     --color-team-enemy: var(--red-700);
     --color-team-enemy-cb: #7b3fb3;
+    --color-team-neutral: #f5f5f5;
+    --color-on-team-neutral: #1c1f1d;
+    --color-objective: #ffc24b;
 
     --color-scrim: rgb(0 0 0 / .35);
 
