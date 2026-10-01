@@ -43,10 +43,12 @@ esac
 DOCKER
 chmod 700 "$WORK/bin/ip" "$WORK/bin/docker"
 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+FRONTEND_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend@sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd
 run_frontend() {
   env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
     WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \
     TX_RUNTIME_ROOT="$WORK/host" WOTB_DEPLOY_SERVICE=frontend WOTB_DEPLOY_CONFIG_SHA="$SHA" \
+    TX_FRONTEND_IMAGE_REF="$FRONTEND_IMAGE_REF" \
     WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 "$@" \
     bash "$WORK/incoming/deploy/tx/deploy.sh"
 }
@@ -54,8 +56,15 @@ run_frontend FAKE_DOCKER_LOG="$WORK/docker.log" >/dev/null
 grep -q '^pull wotb-frontend$' "$WORK/docker.log"
 grep -q '^up -d --no-deps --force-recreate wotb-frontend$' "$WORK/docker.log"
 ! grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/docker.log"
-grep -Fq 'wotbtools-frontend:latest' "$WORK/host/deploy/frontend.compose.yml"
+grep -Fq 'image: ${TX_FRONTEND_IMAGE_REF:?TX_FRONTEND_IMAGE_REF is required}' "$WORK/host/deploy/frontend.compose.yml"
 [ ! -e "$WORK/host/production-release.json" ]
+
+if run_frontend TX_FRONTEND_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:latest \
+  FAKE_DOCKER_LOG="$WORK/frontend-tag-ref.log" >/dev/null 2>&1; then
+  echo 'TX deployment accepted a mutable frontend image tag' >&2
+  exit 1
+fi
+! grep -q '^up ' "$WORK/frontend-tag-ref.log" 2>/dev/null
 
 # The live TX edge is this promoted template: Caddy terminates TLS and proxies the
 # whole wotbtools.com site to wotb-frontend:80, where the nginx template entrypoint
@@ -163,4 +172,4 @@ env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
 grep -q '^up -d --no-deps --force-recreate alloy-tx$' "$WORK/alloy.log"
 grep -Fq 'alloy-tx: PASS' "$WORK/alloy.out"
 cmp -s "$ROOT/deploy/tx/alloy/config.alloy" "$WORK/host/deploy/alloy/config.alloy"
-echo 'TX owner deployment uses latest without release metadata: PASS'
+echo 'TX owner deployment contracts and frontend immutable image pin: PASS'
