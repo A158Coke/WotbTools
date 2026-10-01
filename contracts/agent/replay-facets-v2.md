@@ -54,6 +54,12 @@ WotBTools
   `players[]` 为 `PlayerSummary` 结算行（`damage_dealt / damage_blocked /
   damage_assisted_1|2 / n_enemies_destroyed / base_xp / credits_earned / mm_rating? …`，
   字段语义见上游 `crates/replay-core/src/models/battle.rs`）。
+- **v0.3.2 新增（可选，向后兼容）**：顶层 `map_key`（meta.json 原始 `mapName` 地图代号，底图 / 语义 /
+  i18n 按此键控；`map_name` 是枚举名，未知地图退化为 `map_{id}`）；`players[]` 的 `xp` / `credits`
+  （#301 f23 / f106——crate 的 `base_xp` / `credits_earned` 在 11.19 语料中为 0，**消费方只读新字段**）、
+  `result_id`（#301 外层 f1）与 `killer_account_id`（`killer_id` 经同场 `result_id` 联表）。
+  `survived` 语义订正：`death_reason` 缺省 = 普通击毁 → `false`，整条结算缺失才缺省。
+  这组字段与服务端 Java `ReplayParser` 的 `Battle` 模型逐字段一致（`tools/parity`，23 场 / 322 名战斗者）。
 - 样例：`samples/result.sample.json`（与 ai-review 样例同场，真实匿名回放经 v0.1.7 重导出）。
 
 ## 4. 时序能力（PlaybackData）
@@ -163,3 +169,6 @@ WotBTools
   **P2**：`tankNamesJson` 可选注入、第 4 入口 `parseAiReview`、AiReview `Shot.target_eid`
   改用弹道自带身份、`PlaybackData` 版本注释订正；Release 附件随 tag 发布
   （`wotb-replay-wasm-v0.3.1.zip`）。
+- v0.3.2（2026-10-01，agent 仓库 `7fa0dc5`，fanypcd/WoT-Blitz-Agent#1）：Result 结算 parity 补齐
+  （见 §3「v0.3.2 新增」）；meta.json 统一 UTF-8 lossy 读取，非法字节不再让 `arena_bonus_type` 整体丢失。
+  Release 附件 `wotb-replay-wasm-v0.3.2.zip`。
