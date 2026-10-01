@@ -24,6 +24,10 @@
     /* 应用外壳（§9）：顶栏 / 底部 Tab 栏高度。所有吸顶偏移都读 --header-h */
     --header-h: 48px;
     --tabbar-h: 56px;
+    /* 侧边栏（平板 / 桌面）：图标栏宽 / 展开宽；--sidebar-w 是布局唯一读取的当前宽度（手机为 0） */
+    --sidebar-rail-w: 72px;
+    --sidebar-full-w: 240px;
+    --sidebar-w: 0px;
 
     /* 字号阶梯（§4），最小 12px。
      * 原子 token：font-size / line-height 只能引用 --font-size-* / --line-height-*；
@@ -90,13 +94,16 @@
   @media (width >= 768px) {
     :root {
       --gutter: 24px;
-      --header-h: 56px;
+      /* 平板 / 桌面没有顶栏与底部 Tab 栏：导航在左侧边栏，吸顶偏移从视口顶部算起 */
+      --header-h: 0px;
       --tabbar-h: 0px;
+      --sidebar-w: var(--sidebar-rail-w);
     }
   }
 
   @media (width >= 1200px) {
     :root { --gutter: 32px; }
+    :root:not([data-sidebar="collapsed"]) { --sidebar-w: var(--sidebar-full-w); }
   }
 
   @media (pointer: coarse) {

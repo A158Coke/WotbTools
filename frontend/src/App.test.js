@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory } from 'vue-router'
 import { nextTick, inject, ref, computed } from 'vue'
 import App from './App.vue'
+import { DIALOG_INLINE_KEY } from './shared/dialog.js'
 import { NAVIGATE_VIEW_KEY } from './shared/navigation.js'
 import { createAppRouter } from './app/router.js'
 import { ALLOWED_VIEWS } from './app/navigation.js'
@@ -112,6 +113,7 @@ async function mountApp(path = '/') {
   const wrapper = mount(App, {
     global: {
       plugins: [router],
+      provide: { [DIALOG_INLINE_KEY]: true },
       mocks: {
         $t: key => key === 'home.icpFiling' ? '闽ICP备2026036303号-1' : key,
         $i18n: { locale: 'zh' },
@@ -154,18 +156,18 @@ describe('App routing', () => {
     beforeEach(() => { authState.isAdminRef.value = false })
     afterEach(() => { authState.isAdminRef.value = false })
 
-    it('hides the internal-beta Agent entries in 更多 from non-admins, but shows 坦克百科', async () => {
+    it('hides the internal-beta Agent entries in 更多 from non-admins; 坦克百科 is a primary nav item', async () => {
       const { wrapper } = await mountApp('/?view=more')
       for (const view of ['agent-replay', 'agent-shots']) {
         expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists()).toBe(false)
       }
-      expect(wrapper.find('[data-testid="more-link-agent-tankopedia"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="nav-tankopedia"]').exists()).toBe(true)
     })
 
-    it('shows the Agent tool entries in 更多 to admins', async () => {
+    it('shows the internal-beta Agent entries in 更多 to admins', async () => {
       authState.isAdminRef.value = true
       const { wrapper } = await mountApp('/?view=more')
-      for (const view of ['agent-replay', 'agent-tankopedia', 'agent-shots']) {
+      for (const view of ['agent-replay', 'agent-shots']) {
         expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists()).toBe(true)
       }
     })
@@ -515,9 +517,42 @@ describe('App shell navigation, 更多 and account', () => {
     expect(wrapper.get('[data-testid="nav-account"]').attributes('aria-label')).toBe('nav.account')
   })
 
-  it('does not render the tab bar on wider layouts', async () => {
+  it('does not render the tab bar or top bar on wider layouts; the sidebar carries navigation', async () => {
     const { wrapper } = await mountApp('/?view=hof')
     expect(wrapper.find('[data-testid="app-tab-bar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-top-bar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="nav-hof"]').attributes('aria-current')).toBe('page')
+  })
+
+  it('opens the 更多 panel from the sidebar with display settings and about links, and closes on Escape', async () => {
+    const { wrapper, router } = await mountApp('/?view=replay')
+    const trigger = wrapper.get('[data-testid="nav-more"]')
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+    await trigger.trigger('click')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    const panel = wrapper.get('[data-testid="more-panel"]')
+    expect(panel.find('[data-testid="more-panel-ui-profile"]').exists()).toBe(true)
+    expect(panel.find('[data-testid="more-panel-language"]').exists()).toBe(true)
+    await panel.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('[data-testid="more-panel"]').exists()).toBe(false)
+
+    await trigger.trigger('click')
+    await wrapper.get('[data-testid="more-link-history"]').trigger('click')
+    await settle()
+    expect(router.currentRoute.value.query.view).toBe('history')
+    expect(wrapper.find('[data-testid="more-panel"]').exists()).toBe(false)
+  })
+
+  it('shows the admin group in the sidebar only for the matching roles', async () => {
+    const plain = await mountApp('/?view=replay')
+    expect(plain.wrapper.find('[data-testid="nav-admin-users"]').exists()).toBe(false)
+    plain.wrapper.unmount()
+    authState.isAdminRef.value = true
+    const { wrapper } = await mountApp('/?view=replay')
+    expect(wrapper.get('[data-testid="nav-admin-users"]').attributes('aria-current')).toBeUndefined()
+    expect(wrapper.find('[data-testid="nav-hof-admin"]').exists()).toBe(true)
+    authState.isAdminRef.value = false
   })
 
   it('opens the project history view from 更多', async () => {

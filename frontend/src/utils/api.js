@@ -36,25 +36,6 @@ async function downloadResponse(response, fallbackName) {
 
 /** 名人堂统一公开查询：nation / vehicleType / tier / tankId 可独立使用并取交集。 */
 
-/**
- * Historical Rating V2 gray analysis for an existing READY processing dataset.
- * The endpoint is admin-only; 401 returns the user to the hidden deep link.
- */
-export async function ratingV2Admin(jobId) {
-  const { token, ensureToken, login } = useAuth()
-  await ensureToken(30)
-  const r = await apiFetch(`/api/admin/rating-v2/processing-jobs/${encodeURIComponent(jobId)}`, {
-    method: 'POST',
-    headers: token() ? { Authorization: `Bearer ${token()}` } : {},
-  })
-  if (r.status === 401) {
-    login('rating-v2')
-    throw await apiErrorFromResponse(r)
-  }
-  await requireOk(r)
-  return r.json()
-}
-
 export async function hofList(params = {}) {
   const r = await requireOk(await apiFetch(withQuery('/api/hof', params)))
   return r.json()

@@ -450,15 +450,12 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
   - `?view=rating-docs`：League Rating V6 算法说明页（构建期以 `?raw` 读取
   `docs/WotBTools_League_Rating_V6.md`，canonical 单一事实源；ReplayPage League 模式
   「算法说明」按钮跳转进入，返回时经 KeepAlive 保留解析状态）。
-- `?view=playback-qa`：隐藏 QA 页（admin）。
-- `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）；
-  选中结果表玩家后在右侧非模态抽屉查看 V2 六轴雷达（移动端为遮罩面板）。V2 保持相对当前批次的
-  `平均=75 / 2×平均=100 / 4×=125 / 8×=150` 标尺；V6 七维改用 `0→0 / 当前 Battle/Global
-  Average→75 / 后端维度满分→150` 的分段线性标尺，100 对应平均到满分区间的三分之一。玩家顶点显示
-  0–150 视觉分，明细默认分数并可切换原始值；共享图形支持 50%–150% 缩放（只影响页面 SVG，窄屏由
-  radar viewport 横向滚动），V2 桌面抽屉宽 560px，V6 继续使用可拖拽持久化侧栏。V6 Rating Profile PNG
-  同步 bounded geometry 但保持固定导出尺寸。移动端模态抽屉锁定 Tab 焦点，桌面非模态不锁；后端 raw
-  score/评分公式与 API 不变。
+- 玩家详情抽屉的 V6 七维雷达：`0→0 / 当前 Battle/Global Average→75 / 后端维度满分→150` 的分段线性标尺，
+  100 对应平均到满分区间的三分之一。玩家顶点显示 0–150 视觉分，明细默认分数并可切换原始值；共享图形支持
+  50%–150% 缩放（只影响页面 SVG，窄屏由 radar viewport 横向滚动），桌面为可拖拽持久化侧栏。V6 Rating
+  Profile PNG 同步 bounded geometry 但保持固定导出尺寸。移动端模态抽屉锁定 Tab 焦点，桌面非模态不锁。
+- 已退役（2026-10-02）：`?view=playback-qa`（隐藏 QA 页）与 `?view=rating-v2`（历史 Rating V2 灰度页，
+  连同 `/api/admin/rating-v2/**` 与 `RatingV2Calculator`）。旧深链回落到默认视图。
 - `?view=ai-review` / `?view=battle-playback`：与 `?view=replay` 共用同一个 `ReplayWorkspace`，
   仅默认 `activeCapability` 不同（ai / playback）。三者不是三个隔离业务页。
 
@@ -812,7 +809,6 @@ Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-confi
 | 回放重建流水线 | `docs/architecture/replay-pipeline.md` |
 | 地图鸟瞰 / 战局回放 | `docs/features/battle-playback.md` |
 | 战斗表现 | `docs/features/performance.md` |
-| 历史 Rating V2（管理员灰度） | `docs/features/rating-v2.md` |
 | League Rating | `docs/features/league-rating.md` |
 | 名人堂 / 百场 | `docs/features/hall-of-fame.md` |
 | Team AI Review | `docs/features/team-ai-review.md` |
