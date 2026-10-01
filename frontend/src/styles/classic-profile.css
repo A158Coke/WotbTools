@@ -132,13 +132,9 @@ html[data-ui-profile="classic"] {
 [data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.homepage-showcase)::before {content: none}
 
 /* 5) 装饰性 hero / 上传 / profile-hero 表面:去掉 AI 图,落回浅色(保留结构) */
-[data-ui-profile="classic"] .layout-data-workspace .uploadwrap,
-[data-ui-profile="classic"] .layout-data-workspace .uploadcard,
 [data-ui-profile="classic"] .profile-page .profile-hero {background: none !important; box-shadow: none !important}
 
 /* 6) showcase-cohesion.css 的装饰性 ::after/::before 叠加层 */
-[data-ui-profile="classic"] .layout-data-workspace .uploadwrap::after,
-[data-ui-profile="classic"] .layout-data-workspace .uploadcard::before {content: none}
 
 /* 7) 首页 Home:Classic 去掉四张 AI 装饰卡片图 + 装饰渐变,保留卡片/标题/编号/跳转结构 */
 [data-ui-profile="classic"] .homepage-showcase .showcase-hero {background: var(--bg-card) !important}
@@ -204,24 +200,11 @@ html[data-ui-profile="classic"] .feature-card {border-color: var(--showcase-tact
 
 /* ---- Replay 上传区（showcase-cohesion/workspaces 写死浅字/深底） ---- */
 html[data-ui-profile="classic"] .layout-data-workspace {color: var(--text) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .uploadwrap {background: var(--bg-card) !important; border-color: color-mix(in srgb, var(--accent) 30%, var(--border)) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .uploadhead h1 {color: var(--text-heading) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .uploadhead p {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .upload-kicker {color: var(--accent-dark) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .upload-points span {background: color-mix(in srgb, var(--accent) 8%, var(--bg-card2)) !important; border-color: color-mix(in srgb, var(--accent) 25%, var(--border)) !important; color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .uploadcard {border-color: var(--border) !important; background: var(--bg-upload) !important; color: var(--text) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .uploadcard.dragging {border-color: var(--accent) !important; background: color-mix(in srgb, var(--accent) 10%, var(--bg-upload)) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .uploadcard .up-title {color: var(--text-heading) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .uploadcard .up-sub,
-html[data-ui-profile="classic"] .layout-data-workspace .uploadcard .muted {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .uploadcard .up-icon {color: var(--accent) !important; background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important; opacity: 1}
-html[data-ui-profile="classic"] .layout-data-workspace .filebtn,
-html[data-ui-profile="classic"] .layout-data-workspace .actionrow .lg {background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important; border-color: var(--accent) !important; color: var(--accent-text) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .filebtn {background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important; border-color: var(--accent) !important; color: var(--accent-text) !important}
 html[data-ui-profile="classic"] .layout-data-workspace .filebtn.ghost,
 html[data-ui-profile="classic"] .layout-data-workspace button.ghost {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
 html[data-ui-profile="classic"] .layout-data-workspace .filebtn.ghost:hover,
 html[data-ui-profile="classic"] .layout-data-workspace button.ghost:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .filebar {background: var(--bg-upload) !important; border-color: var(--border) !important}
 html[data-ui-profile="classic"] .layout-data-workspace .chip {background: color-mix(in srgb, var(--accent) 6%, var(--bg-chip)) !important; border-color: color-mix(in srgb, var(--accent) 22%, var(--border)) !important; color: var(--text-sub) !important}
 html[data-ui-profile="classic"] .layout-data-workspace .restoolbar {background: color-mix(in srgb, var(--bg-card) 96%, transparent) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
 html[data-ui-profile="classic"] .layout-data-workspace .tablewrap {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}

@@ -116,7 +116,7 @@ function capabilityStateProbe() {
   const tabs = Array.from(document.querySelectorAll('[data-testid="ws-tab"]')).map((tab) => ({
     cap: tab.dataset.cap,
     selected: tab.getAttribute('aria-selected') === 'true',
-    active: tab.classList.contains('active'),
+    active: tab.classList.contains('is-active'),
   }))
   const dialog = document.querySelector('.global-error-modal')
   const overlay = dialog ? dialog.closest('.modal-overlay') : null
@@ -503,7 +503,8 @@ async function runAppScenario(env, scenario) {
     const state = await page.probe(capabilityStateProbe)
     check(failures, !state.playback.visible, 'unauthenticated tap switched capability instead of starting login')
     const attempts = await page.evaluate('window.__wsAuth.loginCalls.length')
-    check(failures, attempts >= 2, `expected a login attempt from the tap (mount auto-login + tap), loginCalls=${attempts}`)
+    // 挂载时不再自动登录（说明卡 + 登录按钮）：这次 tap 就是第一次登录尝试
+    check(failures, attempts === 1, `expected exactly one login attempt from the tap (no mount auto-login), loginCalls=${attempts}`)
     check(failures, !!state.errorDialog && state.errorDialog.visible,
       `login failure produced no observable error surface (dialog=${JSON.stringify(state.errorDialog)})`)
     // 错误文案必须真的解析成翻译，而不是把 i18n key 原样显示给用户。

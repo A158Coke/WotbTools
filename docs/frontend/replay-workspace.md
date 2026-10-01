@@ -5,7 +5,7 @@
 ## 当前实现
 
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`ai`、`playback` 三种能力的统一工作台。
-- Workspace 页面本身是 orchestration layer：`ReplayWorkspaceHeader.vue` 负责标题与清空命令，`ReplayCapabilityTabs.vue` 负责能力 tab 展示与选择事件，`ReplaySourcePanel.vue` 负责批次/当前回放 selector 展示。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
+- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责模式切换（数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘，* 仅管理员；3D / 射击目前导航到各自独立页面），`FileUploader.vue` 负责空 / 已选择 / 解析完成三种上传状态（解析完成后折叠为一行，清空需确认，是唯一的清空入口），`ReplaySourcePanel.vue` 负责批次/当前回放 selector 展示。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
 - `frontend/src/composables/useReplaySession.ts` 是唯一 session state owner，持有 selection、当前 battle、Processing/Result identity、Export state 与 Workspace view state。
 - `frontend/src/composables/useProcessingJob.ts` 持有 Processing Job 的上传、single-flight、轮询、source-ready、取消与 Dataset recovery lifecycle；它只消费 session refs。
 - `frontend/src/composables/useReplay.ts` 是 compatibility facade/orchestrator，组合 session、Processing 与 Export，不再持有 Processing lifecycle 闭包。
@@ -18,7 +18,7 @@
 
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision`、`sourceId` 与 Processing 状态作为唯一 identity。
 - Source panel 的 selector 只负责展示 `battleOptions` 和发出 `select-battle`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。
-- AI 复盘 tab 与深链显示维护提示，不挂载 AI 面板、不准备 AI dataset，也不要求登录；Playback 仍消费 Workspace 的 authoritative dataset。切换 capability 不应重传或重建基础 Processing Job。
+- AI 复盘 tab 与深链显示维护说明卡（`EmptyState`，含跳到数据 / 2D 回放的入口），不挂载 AI 面板、不准备 AI dataset；维护期间不设登录门禁，恢复后需要登录；Playback 仍消费 Workspace 的 authoritative dataset。切换 capability 不应重传或重建基础 Processing Job。
 - Replay Workspace 的登录门禁、Dataset-only 交接和 AI/Playback 详细接口以以下文档为准，不在本索引重复维护：
   - [`docs/architecture/ai-review.md`](../architecture/ai-review.md)
   - [`docs/features/team-ai-review.md`](../features/team-ai-review.md)
@@ -45,7 +45,7 @@ Authentication 是数据解析与战局回放的**真实 UI gate**，不是 moun
 - `useAuth.login(view)` 只对「同一个进行中的 redirect」去重：`loginInFlight` 是短生命周期 ref，在
   `finally` 释放；不存在 component-lifetime 一次性锁，因此取消/失败后 tabs、登录按钮与「账户」页（个人中心）登录入口
   都能重新发起新的 login transaction。
-- 未登录 mount 到 data/playback 时仍自动发起一次 login（保留既有 UX），失败或取消后停留在 `ws-auth-required` 可重试状态；直接进入 AI 维护页不自动登录。
+- 未登录进入 data/playback 时显示 `ws-auth-required` 说明卡与登录按钮，不自动发起 login（design-language §10）；点击登录或切换到需要登录的模式时才发起，失败后仍可重试；AI 维护页不发起登录。
 - Android pending 字节通过固定同源 HTTPS Native resource 读取；header 校验 pending identity，响应不缓存。fetch/blob 失败复用 Replay 错误区与重试，不启动 Job、不 ACK。
 - Android pending replay 只在 `authInitState === 'authenticated' && authenticated` 时消费；未登录或 init 失败期间 Native pending 原样保留
   （见 [`docs/android/replay-intent.md`](../android/replay-intent.md)）。
