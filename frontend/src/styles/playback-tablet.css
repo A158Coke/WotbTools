@@ -171,3 +171,8 @@
     margin-inline: auto;
   }
 }
+
+/* 窄平板为堆叠形态：右侧栏排在地图下方，阵容会把控制栏推出首屏，这里不显示 */
+@media (width < 860px) {
+  .battle-playback.pb-form-tablet:not(:fullscreen) .pb-shell-roster { display: none; }
+}
