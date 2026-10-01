@@ -58,14 +58,14 @@ assert affected("infra/tofu/minio/main.tf") == {"minio"}
 assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgres"}
 assert affected("docs/README.md") == set()
 assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend", "android"}
-assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment", "frontend"}
+assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment"}
 assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
-# The frontend publish owns these as production inputs: the Agent WASM pin, the script
-# that fetches it, the immutable-image reuse gate helper, the bounded-retry helper used
-# by the TCR publication step and the freshness gate the publication re-checks.
+# Frontend production builds now publish from TX through the Gitee exact-SHA builder.
+# The GitHub-runner registry-list/retry helpers are no longer frontend-owned inputs;
+# the Agent WASM pin/fetch contract and freshness gate remain production inputs.
 assert affected("deploy/agent/source.json") == {"frontend"}
 assert affected("scripts/fetch-agent-wasm.sh") == {"frontend"}
-assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment", "frontend"}
+assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment"}
 assert affected("deploy/check-production-freshness.sh") == {"deployment", "frontend"}
 for owner in jobs["changes"]["outputs"]:
     caller = jobs[owner]
