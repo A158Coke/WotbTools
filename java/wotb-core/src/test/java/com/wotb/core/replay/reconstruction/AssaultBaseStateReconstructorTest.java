@@ -37,6 +37,17 @@ class AssaultBaseStateReconstructorTest {
     }
 
     @Test
+    void canonicalTransitionAloneProvesObjective() {
+        // 调用方只递 canonical 事件时的门槛：canonical 迁移只可能由 field3 存在产生，
+        // 故其存在即证明目标存在——只看原始更新会误判为无目标（CI 抓到的漏项）。
+        final List<ReplayEvent> events = List.of(
+                raw(1, 2, 1, null, null),
+                new AssaultBaseStateTransition(2, new ReplayTimestamp(2, null), 8,
+                        DecodeConfidence.EXACT, 100));
+        assertEquals(true, AssaultBaseStateReconstructor.hasObjective(events));
+    }
+
+    @Test
     void progressIsAcceptedFromEitherField1Side() {
         // 遭遇战（Naval Frontier 真实样本）里进度**只**由 field1=1 承载，
         // field1=2 族只有常量 field4=1；旧判据 field1==2 会得到空时间线。

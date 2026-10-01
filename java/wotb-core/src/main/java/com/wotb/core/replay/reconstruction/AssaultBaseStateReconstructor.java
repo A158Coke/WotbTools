@@ -60,10 +60,22 @@ public final class AssaultBaseStateReconstructor {
         if (events == null || events.stream().anyMatch(RawSupremacyBaseUpdate.class::isInstance)) {
             return false;
         }
-        return events.stream()
-                .filter(RawAssaultBaseUpdate.class::isInstance)
-                .map(RawAssaultBaseUpdate.class::cast)
-                .anyMatch(AssaultBaseStateReconstructor::isObjectiveActivity);
+        return events.stream().anyMatch(AssaultBaseStateReconstructor::isObjectiveEvidence);
+    }
+
+    /**
+     * 目标证据：目标族发出裸初始化对以外的字段（原始更新），**或**已重建出的 canonical
+     * 迁移。后者只可能由 {@code field3} 存在产生（见 {@link #isProgressFamily}），故同样
+     * 证明目标存在——只看原始更新会在"调用方只递 canonical 事件"时误判为无目标。
+     */
+    private static boolean isObjectiveEvidence(final ReplayEvent event) {
+        if (event instanceof AssaultBaseStateTransition) {
+            return true;
+        }
+        if (event instanceof RawAssaultBaseUpdate update) {
+            return isObjectiveActivity(update);
+        }
+        return false;
     }
 
     /** 单基地族：{@code field2==1} 且 {@code field1 ∈ {1,2}}（field1 = 该方的进度，非族判别子）。 */
