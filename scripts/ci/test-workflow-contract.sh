@@ -59,6 +59,7 @@ assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgre
 assert affected("docs/README.md") == set()
 assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend", "android"}
 assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment"}
+assert affected("deploy/tx/publish-loaded-image-to-tcr.sh") == {"deployment"}
 assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
 # Frontend production builds now publish from TX through the Gitee exact-SHA builder.
 # The GitHub-runner registry-list/retry helpers are no longer frontend-owned inputs;
@@ -161,6 +162,10 @@ expected_frontend_ref = (
 )
 assert frontend_deploy["env"]["TX_FRONTEND_IMAGE_REF"] == expected_frontend_ref
 assert "needs.build.outputs.image" not in frontend_deploy["env"]["TX_FRONTEND_IMAGE_REF"]
+
+legacy_tcr_publisher = (root / "deploy/tx/publish-loaded-image-to-tcr.sh").read_text(encoding="utf-8")
+assert "<backend|frontend|keycloak>" not in legacy_tcr_publisher
+assert "backend|frontend|keycloak)" not in legacy_tcr_publisher
 for owner in owners:
     workflow = load(workflow_dir / f"{owner}.yml")
     events = workflow.get("on", workflow.get(True, {}))
