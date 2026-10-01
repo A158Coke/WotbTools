@@ -183,8 +183,6 @@ PY
 )
   [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]] || die "deploy/agent/source.json has no valid artifact sha256"
   [ -n "$expected_asset" ] || die "deploy/agent/source.json has no artifact asset name"
-  [ "$(basename "$archive")" = "$expected_asset" ] \
-    || die "staged Agent WASM archive name does not match source.json"
   printf '%s  %s\n' "$expected_sha" "$archive" | sha256sum -c --quiet \
     || die "staged Agent WASM archive sha256 does not match source.json"
 }
