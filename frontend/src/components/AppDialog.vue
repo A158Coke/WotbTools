@@ -26,6 +26,23 @@ defineOptions({ inheritAttrs: false })
 
 const inline = inject(DIALOG_INLINE_KEY, false)
 const panel = ref(null)
+
+// Multiple dialogs can overlap (for example an editor dialog opening useConfirm()).
+// Keep the body lock until the last open dialog closes.
+let bodyLockCount = 0
+function acquireBodyLock() {
+  if (typeof document === 'undefined') return
+  bodyLockCount += 1
+  document.body.classList.add('dialog-open')
+}
+function releaseBodyLock() {
+  if (typeof document === 'undefined') return
+  bodyLockCount = Math.max(0, bodyLockCount - 1)
+  if (bodyLockCount === 0) document.body.classList.remove('dialog-open')
+}
+
+const bodyLockHeld = ref(false)
+const titleId
 const titleId = `dialog-title-${useId()}`
 let opener = null
 
@@ -62,15 +79,26 @@ watch(() => props.open, async (open) => {
     const items = focusables()
     const preferred = panel.value?.querySelector('[autofocus], [data-autofocus]')
     ;(preferred || items.find(el => el.tagName !== 'BUTTON' || !el.classList.contains('dialog-close')) || panel.value)?.focus()
-    document.body.classList.add('dialog-open')
+    if (!bodyLockHeld.value) {
+      acquireBodyLock()
+      bodyLockHeld.value = true
+    }
   } else {
-    document.body.classList.remove('dialog-open')
+    if (bodyLockHeld.value) {
+      releaseBodyLock()
+      bodyLockHeld.value = false
+    }
     if (opener && typeof opener.focus === 'function') opener.focus()
     opener = null
   }
 }, { immediate: true })
 
-onBeforeUnmount(() => { if (props.open) document.body.classList.remove('dialog-open') })
+onBeforeUnmount(() => {
+  if (bodyLockHeld.value) {
+    releaseBodyLock()
+    bodyLockHeld.value = false
+  }
+})
 </script>
 
 <template>
