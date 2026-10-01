@@ -14,6 +14,8 @@ import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
 import { loadPlaybackData } from '../scene/replaySource.js'
 import { assetProvider } from '../scene/assetProvider.js'
+import { detectWebGL } from '../scene/webglSupport.js'
+import Scene3DStatus from './Scene3DStatus.vue'
 
 const { t } = useI18n()
 
@@ -28,6 +30,12 @@ function clock(sec) {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
 }
 let sceneApi = null
+// 审计 3D-23：渲染器创建前做 WebGL 预检；不支持时不初始化场景，整页换成说明
+const webgl = detectWebGL()
+/** 最近一次选择的文件：失败后"重试"直接重新解析，不必再选一次 */
+let lastFile = null
+const lastFileName = ref('')
+const loadingMessage = computed(() => t(store.assetStage ? 'agentReplay.loading_assets' : 'agentReplay.parsing'))
 
 // 画质徽标按 qualityKey 三语计算（store.qualityLabel 为上游兼容中文字段）
 const qualityBadge = computed(() =>
@@ -44,18 +52,29 @@ const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
 // 资产平面状态提示：回放解析不依赖资产；地图/地形/车模 GLB 需要 ?assets=
 const assetsReady = assetProvider.configured()
 
-async function onFilePicked(event) {
-  const file = event.target.files && event.target.files[0]
-  event.target.value = ''
-  if (!file) return
+async function loadFile(file) {
+  if (!file || !sceneApi) return
+  lastFile = file
+  lastFileName.value = file.name || 'replay'
   store.loading = true
   try {
     await sceneApi.loadData({ kind: 'local', file })
   } catch (e) {
-    store.err = (t('agentReplay.error_parse') || '解析失败') + ' ' + String(e?.message || e).slice(0, 160)
+    store.err = String(e?.message || e).slice(0, 160)
   } finally {
     store.loading = false
   }
+}
+
+function onFilePicked(event) {
+  const file = event.target.files && event.target.files[0]
+  event.target.value = ''
+  return loadFile(file)
+}
+
+function retryLoad() {
+  if (lastFile) return loadFile(lastFile)
+  store.err = ''
 }
 
 function onSeekInput(e) {
@@ -80,7 +99,7 @@ function killfeedText(kf) {
 }
 
 onMounted(() => {
-  sceneApi = initPlayback(stage.value, store)
+  if (webgl.supported) sceneApi = initPlayback(stage.value, store)
 })
 onBeforeUnmount(() => {
   sceneApi?.destroy?.()
@@ -88,7 +107,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="pb-root" :class="{ 'roster-open': rosterOpen }">
+  <Scene3DStatus v-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
+  <div v-else class="pb-root" :class="{ 'roster-open': rosterOpen }">
     <div class="scene" ref="stage"></div>
 
     <div v-if="store.hasData" class="topbar panel">
@@ -174,7 +194,6 @@ onBeforeUnmount(() => {
           <input type="file" accept=".wotbreplay" @change="onFilePicked" />
           {{ t('agentReplay.local_file') }}
         </label>
-        <span v-if="store.loading">{{ store.assetStage ? t('agentReplay.loading_assets') : t('agentReplay.parsing') }}</span>
       </div>
       <div class="row" v-if="!store.hasData">
         <span class="dim">{{ t('agentReplay.quality') }}</span>
@@ -187,8 +206,24 @@ onBeforeUnmount(() => {
       <p class="hint">{{ t('agentReplay.pick_hint') }}</p>
       <p v-if="!assetsReady" class="hint assets-warn">{{ t('agentReplay.assets_hint') }}</p>
       <p class="hint">{{ t('agentReplay.pb_hint') }}</p>
-      <p v-if="store.err" class="err">{{ store.err }}</p>
     </div>
+
+    <!-- 审计 3D-23：解析为不确定进度，地图资产阶段按段 / 字节推进；失败给出原因与重试 -->
+    <Scene3DStatus
+      v-if="store.loading"
+      mode="loading"
+      :progress="store.assetStage ? store.assetProgress : null"
+      :message="loadingMessage"
+    />
+    <Scene3DStatus
+      v-else-if="store.err"
+      mode="error"
+      :message="t('agentReplay.error_load', { msg: store.err })"
+      :retryable="!!lastFileName"
+      dismissible
+      @retry="retryLoad"
+      @dismiss="store.err = ''"
+    />
   </div>
 </template>
 
