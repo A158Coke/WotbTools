@@ -271,6 +271,10 @@
       "confirm": "确定",
       "cancel": "取消"
     },
+    "doc": {
+      "toc": "目录",
+      "back_to_top": "回到顶部"
+    },
     "account": {
       "signedOutTitle": "登录 WoTBTools",
       "signedOutHint": "登录后可以绑定游戏账号、提交名人堂记录、查看你的记录。解析回放不需要登录。"
@@ -548,6 +552,10 @@
       "confirm": "OK",
       "cancel": "Cancel"
     },
+    "doc": {
+      "toc": "Contents",
+      "back_to_top": "Back to top"
+    },
     "account": {
       "signedOutTitle": "Sign in to WoTBTools",
       "signedOutHint": "Sign in to link your game account, submit Hall of Fame records and see your records. Parsing replays does not require an account."
@@ -824,6 +832,10 @@
     "dialog": {
       "confirm": "ОК",
       "cancel": "Отмена"
+    },
+    "doc": {
+      "toc": "Содержание",
+      "back_to_top": "Наверх"
     },
     "account": {
       "signedOutTitle": "Вход в WoTBTools",
