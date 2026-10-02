@@ -27,7 +27,7 @@
 4. `research-completion-audit-11.19.md` — completion gate / remaining-boundary audit。
 5. `WOTB_REPLAY_PROTOCOL_11_19_COMPLETE_REFERENCE.md` — 较早英文综合参考；若与 1–4 冲突，以 1–4 为准。
 6. `protocol.md` 和早期 broad probe notes — 研究轨迹与历史上下文。
-7. `external-wot-blitz-agent-cross-validation.md` — 外部 WoT-Blitz-Agent 研究的 clean-room 交叉验证与待本地闭合候选；**external evidence 不能单独提升 canonical evidence grade**。2026-10-02 已按对方后续证据修订，且**固定了两个不可混淆的快照**（线上产物 = `v0.3.8` / `f35baa46`；研究引文 = commit `1c2a3e5` + 各文档 blob 号）：§3 因对方源集自相矛盾改为**冲突标注**（其权威段落收回旧读法、客户端报告段落未同步），§6 记 method27 args\[21..33) 为**弹道末段速度方向向量**（其受控裁决 0/79 位置、79/79 方向），§5 按载荷长度分族并撤回 24/25B 的"模块损伤百分比"，§7 记搭载选择为**分层证据**（仅 comp blob 为确定性，末档取顶级属启发式），§10 队列逐项加注（标注 ≠ 本地闭合）。
+7. `external-wot-blitz-agent-cross-validation.md` — 外部 WoT-Blitz-Agent 研究的 clean-room 交叉验证与待本地闭合候选；**external evidence 不能单独提升 canonical evidence grade**。2026-10-02 已按对方后续证据修订，且**固定了两个不可混淆的快照**（线上产物 = `v0.3.8` / `f35baa46`；研究引文 = commit `e37e6a7d` + 各文档 blob 号）：§3 记录上游已显式整理 supersede 链并统一为 method8 hash6 两点 AABB 编码的当前结论，但 WotbTools 仍保持 **EXTERNAL_CANDIDATE**，必须本地复现后才能提升；§6 记 method27 args\[21..33) 为**弹道末段速度方向向量**（其受控裁决 0/79 位置、79/79 方向），§5 按载荷长度分族并撤回 24/25B 的"模块损伤百分比"，§7 记搭载选择为**分层证据**（仅 comp blob 为确定性，末档取顶级属启发式），§10 队列逐项加注（标注 ≠ 本地闭合）。
 
 `main/docs/reference/replay-data.md` 等 11.18-era production docs 不能覆盖 PR147 current controlled evidence；其中部分 Type4、Type10 tail、legacy direct-damage 解释已被后续研究推翻或收敛。
 
