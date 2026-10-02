@@ -112,7 +112,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 ### PR CI validation gate
 
-`.github/workflows/ci-gate.yml` 是唯一 PR 入口：校验 PR/base/head SHA 身份，用 `dorny/paths-filter` 将变更映射到 owner，调用相应 reusable CI workflow，最后由稳定的 `CI / Required Gate` 汇总。未受影响的 owner 跳过；四个 OpenTofu root 只在各自 owner 受影响时验证。PR trigger 不设置 paths，确保 required check 始终产生。PR CI 不接触 production credentials、host、state 或 authenticated plan。
+`.github/workflows/ci-gate.yml` 是唯一 PR 入口：校验 PR/base/head SHA 身份，用 `dorny/paths-filter` 将变更映射到 owner，调用相应 reusable CI workflow，最后由稳定的 `CI / Required Gate` 汇总。未受影响的 owner 跳过；五个 OpenTofu root 只在各自 owner 受影响时验证。PR trigger 不设置 paths，确保 required check 始终产生。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
 
@@ -131,6 +131,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 | Keycloak PostgreSQL | root config、backup | TX Compose、local state | backup safety、Tofu | `postgres-keycloak` | `keycloak-postgres.yml` |
 | Observability | Prometheus/Loki/Alloy/Grafana config | Yecao Compose、local state | config/runtime、Tofu | `grafana` | `observability.yml` |
 | Caddy / TX Alloy | gateway / TX shipper config | TX Compose | config validation | — | `caddy.yml` / `alloy-tx.yml` |
+| Komodo 控制平面 | Core/Mongo Compose、plan guard | Yecao Core/Mongo runtime、`/opt/komodo` local state、DNSPod | Compose 契约、Tofu validation | `komodo` | `komodo-controller.yml` |
 | Deployment / Python | shared deploy policy / common Python tools | shared scripts | contract smokes / unit tests | — | — |
 ---
 
@@ -458,13 +459,15 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 
 Production OpenTofu roots 按 owner 在所属主机使用固定 local-state 文件；per-SHA staging 只承载
 source，不能承载 state。TX state 位于 `/opt/wotb-tx/{postgres-business,postgres-keycloak,keycloak}-tofu-state/`，
-Yecao Grafana state 位于 `/opt/wotb/grafana-tofu-state/`。Business PostgreSQL 保留现有 authoritative local
+Yecao Grafana state 位于 `/opt/wotb/grafana-tofu-state/`，Komodo 控制平面 state 位于
+`/opt/komodo/tofu-state/`。Business PostgreSQL 保留现有 authoritative local
 state；postgres-keycloak、Keycloak 与 Grafana 的新 local state 需由 owner 手工 adopt 既有生产对象、
-验证 zero-change plan 并创建 bootstrap marker 后才能部署。正常 workflow 在 init 前拒绝未 bootstrap 的 state。历史 COS state 被放弃，不执行
+验证 zero-change plan 并创建 bootstrap marker 后才能部署；Komodo 是全新 root，首次 bootstrap 直接
+create DNSPod 记录，同样要求 zero-change second plan 后才写 marker。正常 workflow 在 init 前拒绝未 bootstrap 的 state。历史 COS state 被放弃，不执行
 读取或迁移。COS state backend、legacy COS artifact root、Lighthouse 和 firewall IaC ownership 已从仓库移除，
 不会触发真实云资源 destroy。详见 `docs/operations/opentofu-local-state.md`。
 
-PR 侧只做 validation：四个 OpenTofu root 均运行 `tofu fmt -check`、`tofu init -backend=false`、
+PR 侧只做 validation：五个 OpenTofu root 均运行 `tofu fmt -check`、`tofu init -backend=false`、
 `tofu validate` 与适用的本地 safety fixture。PR 不 SSH 任何生产宿主、不读取生产 local
 state、也不接收 host-local 生产凭据；五个需要 production-local provider 的 root，其 plan 只在
 对应 main-only service workflow 运行中产生。PR workflow 与
@@ -589,7 +592,7 @@ bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 
 
 Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurrency，`cancel-in-progress: false`（`queue: max` 只排队、不丢弃已开始的生产写入）；服务器脚本另用 `flock` 串行化 production mutation。TX 人工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`（源文件 `deploy/tx/with-deploy-lock.sh`）让锁 FD 只存在于命令进程树，禁止在交互 SSH shell 直接 `exec 9>` 持锁；冲突时 wrapper 会输出当前 holder 诊断。Build 与 Release 不占用该队列，但每个 lane 都在 mutation 前核对 source 仍是当前 main。这不是 distributed lock。
 
-生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 调用 TX owner 的 `deploy/tx/business-postgres-backup.sh` 与 `deploy/tx/keycloak-postgres-backup.sh` 备份；两者只访问已运行的 owner service，并在 pg_dump 前核对固定 Compose project、卷标签与实际挂载卷。同一维护队列随后备份 TX/Yecao owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256。Business PostgreSQL 归档只能用 `deploy/tx/business-postgres-restore.sh` 校验并恢复到经确认的 disposable 数据库；Keycloak PostgreSQL 归档不能传给 Business restore 工具。
+生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 调用 TX owner 的 `deploy/tx/business-postgres-backup.sh` 与 `deploy/tx/keycloak-postgres-backup.sh` 备份；两者只访问已运行的 owner service，并在 pg_dump 前核对固定 Compose project、卷标签与实际挂载卷。同一维护队列随后备份 TX/Yecao/Komodo 三个 owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256（`deploy/tofu-local-state-backup.sh tx|yecao|komodo`）。Business PostgreSQL 归档只能用 `deploy/tx/business-postgres-restore.sh` 校验并恢复到经确认的 disposable 数据库；Keycloak PostgreSQL 归档不能传给 Business restore 工具。
 
 Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-config.json` 与 `/opt/wotb-tx/config/sponsor/{alipay,wechat}.png` 只读挂载，Vue 页面从 `/sponsor-config.json` 按 no-store 读取运行时配置。二维码加载失败时页面必须隐藏失败方式；全部方式不可用时回退到“暂未配置”，不得显示 broken image。
 

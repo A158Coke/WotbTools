@@ -67,7 +67,7 @@ assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
 assert affected("deploy/agent/source.json") == {"frontend"}
 assert affected("scripts/fetch-agent-wasm.sh") == {"frontend"}
 assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment"}
-assert affected("deploy/check-production-freshness.sh") == {"deployment", "frontend"}
+assert affected("deploy/check-production-freshness.sh") == {"deployment", "frontend", "komodo_controller"}
 for owner in jobs["changes"]["outputs"]:
     caller = jobs[owner]
     assert caller["if"] == f"needs.changes.outputs.{owner} == 'true'", owner
@@ -91,7 +91,7 @@ for workflow in [ci] + [load(path) for path in workflow_dir.glob("ci-*.yml")]:
         assert not any(line.lstrip().startswith(("ssh ", "scp ", "docker login", "docker push"))
                        for line in run.splitlines()), "PR CI must not run production mutation commands"
 
-for owner in ("keycloak", "business-postgres", "keycloak-postgres", "observability"):
+for owner in ("keycloak", "business-postgres", "keycloak-postgres", "observability", "komodo-controller"):
     tofu = load(workflow_dir / f"ci-{owner}.yml")["jobs"]["tofu_plans"]
     tofu_text = json.dumps(tofu, ensure_ascii=False)
     assert "tofu fmt -check -recursive" in tofu_text
@@ -112,6 +112,7 @@ for script in ("business-postgres-backup.sh", "keycloak-postgres-backup.sh", "to
 owners = (
     "business-api", "frontend", "keycloak", "caddy",
     "business-postgres", "keycloak-postgres", "observability", "alloy-tx",
+    "komodo-controller",
 )
 pr_owner_for_production = {
     "business-api": "business_api",
@@ -122,6 +123,7 @@ pr_owner_for_production = {
     "keycloak-postgres": "keycloak_postgres",
     "observability": "observability",
     "alloy-tx": "alloy_tx",
+    "komodo-controller": "komodo_controller",
 }
 assert set(pr_owner_for_production) == set(owners)
 image_owners = {"business-api", "frontend", "keycloak"}

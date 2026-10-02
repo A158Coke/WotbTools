@@ -14,7 +14,7 @@ root = Path(sys.argv[1])
 owners = {
     "keycloak": "keycloak",
     "business-postgres": "business-postgres", "keycloak-postgres": "keycloak-postgres",
-    "observability": "grafana",
+    "observability": "grafana", "komodo-controller": "komodo",
 }
 jobs = {
     owner: yaml.load((root / f".github/workflows/ci-{owner}.yml").read_text(encoding="utf-8"),
@@ -29,6 +29,7 @@ for owner, job in jobs.items():
         "keycloak": "infra/tofu/keycloak",
         "business-postgres": "infra/tofu/postgres-business", "keycloak-postgres": "infra/tofu/postgres-keycloak",
         "observability": "infra/tofu/grafana",
+        "komodo-controller": "infra/tofu/komodo",
     }[owner]
     assert "tofu fmt -check -recursive" in validation["run"]
     assert "tofu init -backend=false -input=false" in validation["run"]
@@ -58,12 +59,14 @@ expected = {
     "postgres-keycloak": ("infra/tofu/postgres-keycloak", "/opt/wotb-tx/postgres-keycloak-tofu-state", True),
     "keycloak": ("infra/tofu/keycloak", "/opt/wotb-tx/keycloak-tofu-state", True),
     "grafana": ("infra/tofu/grafana", "/opt/wotb/grafana-tofu-state", True),
+    "komodo": ("infra/tofu/komodo", "/opt/komodo/tofu-state", True),
 }
 workflow_roots = {
     "postgres-business": ".github/workflows/business-postgres.yml",
     "postgres-keycloak": ".github/workflows/keycloak-postgres.yml",
     "keycloak": ".github/workflows/keycloak.yml",
     "grafana": ".github/workflows/observability.yml",
+    "komodo": ".github/workflows/komodo-controller.yml",
 }
 for name, (relative, state_dir, requires_marker) in expected.items():
     state_path = f"{state_dir}/terraform.tfstate"
@@ -72,17 +75,64 @@ for name, (relative, state_dir, requires_marker) in expected.items():
     assert state_path in root_text, name
     assert "tofu_state" not in root_text, name
     assert 'backend "pg"' not in root_text and 'backend "s3"' not in root_text, name
+    # Komodo keeps its mutation logic and its safety guards in `deploy/komodo/*.sh`
+    # instead of a giant YAML script, so that owner's contract spans the workflow
+    # plus every staged controller script as one ownership boundary.
     workflow_text = (root / workflow_roots[name]).read_text(encoding="utf-8")
-    assert state_dir in workflow_text, name
-    assert "local opentofu state is not bootstrapped" in workflow_text.lower(), name
-    assert "! -L \"$state_file\"" in workflow_text, name
-    assert "-f \"$state_file\"" in workflow_text, name
+    safety_text = workflow_text
+    if name == "komodo":
+        safety_text += "\n" + "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((root / "deploy/komodo").glob("*.sh"))
+        )
+    assert state_dir in safety_text, name
+    assert "local opentofu state is not bootstrapped" in safety_text.lower(), name
+    assert "! -L \"$state_file\"" in safety_text, name
+    assert "-f \"$state_file\"" in safety_text, name
     assert "$SOURCE_SHA" not in state_dir
     if requires_marker:
-        assert "bootstrap-complete" in workflow_text, name
-        assert "local-tofu-state-bootstrap-v1" in workflow_text, name
-    for credential in ("TENCENTCLOUD_SECRET_ID", "TENCENTCLOUD_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
-        assert credential not in workflow_text, (name, credential)
+        assert "bootstrap-complete" in safety_text, name
+        assert "local-tofu-state-bootstrap-v1" in safety_text, name
+    if name == "komodo":
+        # State without its marker is corruption, not a fresh install: the
+        # controller plane must fail closed instead of re-initializing.
+        assert "state exists without a completed bootstrap marker" in safety_text
+        # The whole state-root invariant must be established before any runtime
+        # mutation. Judging the state/marker pair before the state directory would
+        # let a symlinked `tofu-state` holding a valid-looking pair pass and the
+        # runtime be mutated first.
+        reconcile_text = (root / "deploy/komodo/reconcile.sh").read_text(encoding="utf-8")
+        mutation = reconcile_text.index('bash "$runtime/deploy.sh"')
+        for guard in (
+            'require_real_dir "$root"',
+            'exec 9>"$root/.deploy.lock"',
+            'require_real_dir "$state_dir"',
+            'require_bootstrap_state "$state_dir"',
+        ):
+            assert reconcile_text.index(guard) < mutation, guard
+        # The guard is also self-contained: an unsafe state root is refused by
+        # `require_bootstrap_state` itself, not only by caller ordering.
+        assert 'require_real_dir "$state_dir"' in (
+            root / "deploy/komodo/lib.sh"
+        ).read_text(encoding="utf-8")
+        # A fixture must drive the real script, not just the helpers in isolation.
+        ci_komodo = (root / ".github/workflows/ci-komodo-controller.yml").read_text(encoding="utf-8")
+        assert "test-reconcile-preflight.sh" in ci_komodo
+        # The Yecao staging root is only ever prepared, verified, or removed
+        # through the audited helper; the workflow must never fall back to inline
+        # `mkdir -p` or an unguarded `rm -rf` against the owner root.
+        assert "script_path: deploy/komodo/staging-root.sh" in workflow_text
+        assert "KOMODO_STAGING_ACTION: prepare" in workflow_text
+        assert "KOMODO_STAGING_ACTION: cleanup" in workflow_text
+        assert "rm -rf" not in workflow_text
+        assert "mkdir -p /opt" not in workflow_text
+        assert "TENCENTCLOUD_SECRET_ID" in workflow_text
+        assert "TENCENTCLOUD_SECRET_KEY" in workflow_text
+        assert "AWS_ACCESS_KEY_ID" not in workflow_text
+        assert "AWS_SECRET_ACCESS_KEY" not in workflow_text
+    else:
+        for credential in ("TENCENTCLOUD_SECRET_ID", "TENCENTCLOUD_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+            assert credential not in workflow_text, (name, credential)
 
 for retired in (
     "deploy/tofu-cos-to-local.sh",
@@ -113,6 +163,7 @@ for path in (
     root / ".github/workflows/keycloak-postgres.yml",
     root / ".github/workflows/keycloak.yml",
     root / ".github/workflows/observability.yml",
+    root / ".github/workflows/komodo-controller.yml",
     root / "deploy/docker-compose.prod.yml",
     root / "deploy/tx/docker-compose.yml",
 ):
@@ -127,20 +178,28 @@ for path in (
     ):
         assert forbidden not in text, (path, forbidden)
 
+# Owner-host local state is inventoried per host root, so the Komodo controller
+# state is a third target rather than a pretend child of /opt/wotb.
 backup = (root / "deploy/tofu-local-state-backup.sh").read_text(encoding="utf-8")
-for suffix in (
-    "postgres-business-tofu-state/terraform.tfstate",
-    "postgres-keycloak-tofu-state/terraform.tfstate",
-    "keycloak-tofu-state/terraform.tfstate",
-    "grafana-tofu-state/terraform.tfstate",
-):
-    assert suffix in backup, suffix
+for target, suffixes in {
+    "tx": (
+        "postgres-business-tofu-state/terraform.tfstate",
+        "postgres-keycloak-tofu-state/terraform.tfstate",
+        "keycloak-tofu-state/terraform.tfstate",
+    ),
+    "yecao": ("grafana-tofu-state/terraform.tfstate",),
+    "komodo": ("tofu-state/terraform.tfstate",),
+}.items():
+    assert f"\n  {target})" in backup, target
+    for suffix in suffixes:
+        assert suffix in backup, (target, suffix)
 assert "-L" in backup and "-s" in backup
 assert "chmod 600" in backup and "sha256sum" in backup and "tar -tzf" in backup
 assert "bootstrap_markers" in backup
 assert "local-tofu-state-bootstrap-v1" in backup
 backup_workflow = (root / ".github/workflows/database-backup.yml").read_text(encoding="utf-8")
 assert "tofu-local-state-backup.sh yecao" in backup_workflow
+assert "tofu-local-state-backup.sh komodo" in backup_workflow
 assert "tofu-local-state-backup.sh tx" in backup_workflow
 
 for workflow in ("keycloak.yml", "keycloak-postgres.yml", "observability.yml"):

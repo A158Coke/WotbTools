@@ -1,0 +1,142 @@
+name: Komodo Controller
+
+# Independent bootstrap and break-glass owner for the Komodo control plane.
+# Komodo never owns its own Core lifecycle: this workflow can always reconcile
+# Core/Mongo and the dedicated DNSPod root even when Komodo itself is unavailable.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/komodo-controller.yml
+      - deploy/check-production-freshness.sh
+      - deploy/komodo/**
+      - infra/tofu/komodo/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/komodo-controller.yml
+    deploy/check-production-freshness.sh
+    deploy/komodo/**
+    infra/tofu/komodo/**
+
+jobs:
+  deploy:
+    name: Reconcile Komodo controller on Yecao
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Freeze current main
+        id: source
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'Komodo controller workflow requires main.' >&2; exit 1; }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'The event SHA must be a full lowercase commit SHA.' >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo 'Checkout SHA differs from the event SHA.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      # The staging root is reached before any other controller code exists on the
+      # host, so the audited helper runs straight from the checkout: `/opt/komodo`,
+      # `/opt/komodo/incoming`, and the SHA directory must all be real directories
+      # (mode 700) before SCP is allowed to write into them.
+      - name: Prepare safe Komodo staging root on Yecao
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 2m
+          script_path: deploy/komodo/staging-root.sh
+          envs: SOURCE_SHA,KOMODO_STAGING_ACTION
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          KOMODO_STAGING_ACTION: prepare
+
+      - name: Stage exact Komodo controller inputs on Yecao
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: deploy/komodo,infra/tofu/komodo
+          target: /opt/komodo/incoming/${{ steps.source.outputs.source_sha }}
+          overwrite: true
+
+      - name: Reject stale main before Yecao mutation
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+      # All mutation logic lives in the staged `reconcile.sh`; this step only
+      # forwards the exact SHA and the owner's secrets under the host lock.
+      - name: Reconcile Core, apply the exact DNS plan, and verify
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 35m
+          envs: SOURCE_SHA,KOMODO_DATABASE_PASSWORD,KOMODO_INIT_ADMIN_PASSWORD,KOMODO_JWT_SECRET,KOMODO_WEBHOOK_SECRET,TENCENTCLOUD_SECRET_ID,TENCENTCLOUD_SECRET_KEY
+          script: |
+            set -Eeuo pipefail
+            stage="/opt/komodo/incoming/$SOURCE_SHA"
+            chmod 700 "$stage/deploy/komodo/"*.sh "$stage/infra/tofu/komodo/"*.sh
+            bash "$stage/deploy/komodo/reconcile.sh" "$SOURCE_SHA" "$stage"
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          KOMODO_DATABASE_PASSWORD: ${{ secrets.KOMODO_DATABASE_PASSWORD }}
+          KOMODO_INIT_ADMIN_PASSWORD: ${{ secrets.KOMODO_INIT_ADMIN_PASSWORD }}
+          KOMODO_JWT_SECRET: ${{ secrets.KOMODO_JWT_SECRET }}
+          KOMODO_WEBHOOK_SECRET: ${{ secrets.KOMODO_WEBHOOK_SECRET }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+
+      # Only the SHA-scoped staging directory is ever removed, and only after the
+      # helper re-proved `/opt/komodo` and `/opt/komodo/incoming` are real
+      # directories. `/opt/komodo/compose.yml`, `/opt/komodo/tofu-state`, and
+      # `/opt/komodo/backups` are out of reach here.
+      - name: Cleanup staged Komodo controller inputs
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 2m
+          script_path: deploy/komodo/staging-root.sh
+          envs: SOURCE_SHA,KOMODO_STAGING_ACTION
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          KOMODO_STAGING_ACTION: cleanup
