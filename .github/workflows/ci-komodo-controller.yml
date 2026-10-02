@@ -51,7 +51,7 @@ jobs:
           print("Komodo controller Compose boundary: PASS")
           PY
       - name: Bash syntax
-        run: bash -n deploy/komodo/deploy.sh deploy/komodo/verify.sh infra/tofu/komodo/validate-plan.sh infra/tofu/komodo/test-validate-plan.sh
+        run: bash -n deploy/komodo/deploy.sh deploy/komodo/reconcile.sh deploy/komodo/verify.sh infra/tofu/komodo/validate-plan.sh infra/tofu/komodo/test-validate-plan.sh
 
   tofu_plans:
     name: OpenTofu validation / komodo
