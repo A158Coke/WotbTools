@@ -7,6 +7,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
+import { AgentWasmVersionMismatchError } from '../api/agent-replay-facets.js'
 import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
 import { AiProjectionUnavailableError, buildLocalAiReviewInput } from '../replay-local/ai/index.js'
 import type { AiReviewProjection } from '../types/ai-review.js'
@@ -49,9 +50,11 @@ async function build() {
     if (mine !== seq) return
     console.warn('[ai-local] projection failed', e)
     builtFile = null
-    errorKey.value = e instanceof ReplayEngineUnavailableError ? 'workspace.ai_engine_unavailable'
-      : e instanceof AiProjectionUnavailableError ? 'workspace.ai_projection_unavailable'
-        : 'workspace.ai_projection_failed'
+    // 版本不一致优先于通用引擎错误：刷新页面即可拿到与本 build 同身份的 Agent 产物
+    errorKey.value = e instanceof AgentWasmVersionMismatchError ? 'workspace.ai_engine_version_mismatch'
+      : e instanceof ReplayEngineUnavailableError ? 'workspace.ai_engine_unavailable'
+        : e instanceof AiProjectionUnavailableError ? 'workspace.ai_projection_unavailable'
+          : 'workspace.ai_projection_failed'
   }
 }
 

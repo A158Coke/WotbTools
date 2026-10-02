@@ -11,16 +11,18 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import {
+  normalizeAgentShotsOutcome,
   validateAgentAiReview,
   validateAgentBattleResult,
   validateAgentPlayback,
   type AgentAiReviewFacet,
   type AgentBattleResult,
   type AgentPlaybackFacet,
+  type AgentShotsOutcome,
 } from '../../api/agent-replay-facets.js'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
-const WASM_DIR = join(REPO, 'common/assets/wasm')
+const PIN_JSON = join(REPO, 'deploy/agent/source.json')
 
 /** 仓库 fixture 回放（相对仓库根） */
 export const FIXTURE_REPLAYS: Record<string, string> = {
@@ -35,23 +37,30 @@ interface WasmModule {
   parseResult: (bytes: Uint8Array) => string
   parsePlayback: (bytes: Uint8Array) => string
   parseAiReview: (bytes: Uint8Array) => string
+  parseShotReplays: (bytes: Uint8Array, limits?: string, shells?: string) => string
 }
 
 let mod: WasmModule | null = null
 
-async function wasm(): Promise<WasmModule> {
+/**
+ * 锁定产物装载（pin 的 `common/assets/wasm/<ref>/`，fingerprint 与 source.json 一致才装载）。
+ * 导出给 smoke/回归测试复用同一装载路径，避免测试各自拼产物路径。
+ */
+export async function wasm(): Promise<WasmModule> {
   if (mod) return mod
-  const pin = JSON.parse(readFileSync(join(REPO, 'deploy/agent/source.json'), 'utf8')) as { ref: string; artifact: { release: string } }
-  const fingerprintPath = join(WASM_DIR, 'fingerprint.json')
+  const pin = JSON.parse(readFileSync(PIN_JSON, 'utf8')) as { ref: string; artifact: { release: string } }
+  // 产物落位是 commit-addressed 目录（stable `/wasm/wotb_replay_wasm.js` 已废除）
+  const wasmDir = join(REPO, 'common/assets/wasm', pin.ref)
+  const fingerprintPath = join(wasmDir, 'fingerprint.json')
   if (!existsSync(fingerprintPath)) {
     throw new Error('agent WASM 缺失：先运行 `bash scripts/fetch-agent-wasm.sh`（按 deploy/agent/source.json 拉取锁定产物）')
   }
   const fp = JSON.parse(readFileSync(fingerprintPath, 'utf8')) as { tag: string; upstream_commit: string }
   if (fp.tag !== pin.artifact.release || fp.upstream_commit !== pin.ref) {
-    throw new Error(`本地 agent WASM（${fp.tag}）与锁定版本（${pin.artifact.release}）不符：重新运行 scripts/fetch-agent-wasm.sh`)
+    throw new Error(`本地 agent WASM（${fp.tag}@${fp.upstream_commit}）与锁定版本（${pin.artifact.release}@${pin.ref}）不符：重新运行 scripts/fetch-agent-wasm.sh`)
   }
-  const loaded = (await import(/* @vite-ignore */ pathToFileURL(join(WASM_DIR, 'wotb_replay_wasm.js')).href)) as WasmModule
-  loaded.initSync({ module: readFileSync(join(WASM_DIR, 'wotb_replay_wasm_bg.wasm')) })
+  const loaded = (await import(/* @vite-ignore */ pathToFileURL(join(wasmDir, 'wotb_replay_wasm.js')).href)) as WasmModule
+  loaded.initSync({ module: readFileSync(join(wasmDir, 'wotb_replay_wasm_bg.wasm')) })
   mod = loaded
   return loaded
 }
@@ -115,4 +124,24 @@ export function requireFixtures(f: FixtureFacets): FixtureFacets & {
     throw new Error(`agent facets: fixture ${f.result.file_name} aiReview 契约校验失败——${f.aiReviewError}`)
   }
   return f as FixtureFacets & { playback: AgentPlaybackFacet; aiReview: AgentAiReviewFacet }
+}
+
+/** 用锁定产物解析**任意**回放文件（smoke/opt-in 回归；不走 fixture 缓存） */
+export async function replayFacets(path: string): Promise<FixtureFacets> {
+  const m = await wasm()
+  const bytes = new Uint8Array(readFileSync(path))
+  const result = validateAgentBattleResult(JSON.parse(m.parseResult(bytes)))
+  let playback: AgentPlaybackFacet | null = null
+  let playbackError: string | null = null
+  try { playback = validateAgentPlayback(JSON.parse(m.parsePlayback(bytes))) } catch (e) { playbackError = String(e) }
+  let aiReview: AgentAiReviewFacet | null = null
+  let aiReviewError: string | null = null
+  try { aiReview = validateAgentAiReview(JSON.parse(m.parseAiReview(bytes))) } catch (e) { aiReviewError = String(e) }
+  return { bytes, result, playback, playbackError, aiReview, aiReviewError }
+}
+
+/** 射击链入口（`parseShotReplays`）的同步包装：与 `normalizeAgentShotsOutcome` 同一归一化 */
+export async function shotsViaPinnedWasm(bytes: Uint8Array): Promise<AgentShotsOutcome> {
+  const m = await wasm()
+  return normalizeAgentShotsOutcome(JSON.parse(m.parseShotReplays(bytes)) as unknown)
 }

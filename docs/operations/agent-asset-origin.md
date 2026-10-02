@@ -83,8 +83,11 @@ Verify Tencent TCR digest               只证 registry 上该 immutable tag 的
 Publish latest only from current main   确认 source SHA 仍是远端 main 后 crane cp -> :latest
 ```
 
-- **校验前置**：内容校验（source SHA / 资产源 / WASM magic / 期望静态文件）在**任何 registry
-  写入之前**完成，校验对象是"即将被推送的那份字节"。发布后不再把整镜像从 TCR 拉回复检，
+- **校验前置**：内容校验（source SHA / 资产源 / WASM / 期望静态文件）在**任何 registry
+  写入之前**完成，校验对象是"即将被推送的那份字节"。WASM 一项不是"文件存在 + magic"而是
+  **commit-addressed 身份核对**：从该 source commit 的 `deploy/agent/source.json` 读 `ref` 与
+  `artifact.release`，再要求镜像内恰好只有 `/wasm/<ref>/`，其 `fingerprint.json` 的
+  `upstream_commit` / `tag` 与之一致，且 stable `/wasm/wotb_replay_wasm.js` 不存在。发布后不再把整镜像从 TCR 拉回复检，
   只证 digest 对应关系（manifest digest 相等）；失败不留垃圾 tag。
 - **有界重试**：`docker push` 对 immutable tag 是幂等的（registry 内容寻址，重试只补传上次
   未完成的 blob，不重建镜像、不重复构建）；超时或重试预算用尽即 fail closed。

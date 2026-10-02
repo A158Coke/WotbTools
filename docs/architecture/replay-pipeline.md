@@ -6,13 +6,36 @@
 > xlsx 导出、2D 回放数据）也都在客户端完成；服务端只负责存储、去重键、授权、名人堂记录与 AI 编排。
 > 迁移过程见 [client-replay-engine-migration.md](client-replay-engine-migration.md)。
 
+## Agent 产物身份（content-addressed）
+
+- **identity SSOT**：`deploy/agent/source.json:ref`（上游完整 commit）。`artifact.release` 是同一份
+  Release 的 tag，二者必须同时匹配产物自带的 `fingerprint.json`（`upstream_commit` / `tag`）。
+- **运行时 URL 是 content-addressed**：`/wasm/<ref>/wotb_replay_wasm.js`、`/wasm/<ref>/wotb_replay_wasm_bg.wasm`、
+  `/wasm/<ref>/fingerprint.json`（wasm-bindgen wrapper 从同目录加载 `_bg.wasm`，所以三者必须同一目录）。
+- **stable `/wasm/wotb_replay_wasm.js` 被禁止**：固定 URL 会让浏览器把**别的 build 的 Agent** 长期缓存下来，
+  同一个 frontend 用错版引擎解析，直到 AI Review 才以 `ai_review.poses 缺失` 暴露。构建/发布两侧都断言它不存在
+  （`frontend/scripts/verify-agent-wasm-dist.mjs`、`deploy/tx/build-frontend-from-gitee.sh`）。
+- **浏览器缓存靠 URL identity 失效，不靠 no-cache**：新 Agent → 新 URL，旧 URL 永不覆盖，因此
+  `location ~ ^/wasm/[0-9a-f]{40}/` 反而是长期 `immutable` 缓存（用户普通刷新即可拿到新建对应的产物，
+  不需要 Ctrl+F5 / 清站点数据）。只锁 40 位 hex 目录，不给 `/wasm/` 根目录统一 immutable。
+- **装载顺序 fail closed**：先校验 fingerprint（commit 与 tag 都要等于 build 期 pin）→ 再 dynamic import
+  版本化 JS → 才装载 `_bg.wasm`。任一不一致抛 `AgentWasmVersionMismatchError`
+  （带 `expectedRelease` / `expectedCommit` / `actualRelease` / `actualCommit`），UI 提示刷新页面重试。
+- **build 期注入**：`frontend/vite.config.js:agentWasmIdentity()` 读 `deploy/agent/source.json` 并通过
+  `define` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`（不在 TypeScript 里手写版本号）。
+  Docker 通过 `COPY deploy/agent/source.json /deploy/agent/source.json` 保持与仓库同一相对布局。
+- **落位与证据链**：`scripts/fetch-agent-wasm.sh`（Release 直取，sha256 + fingerprint 校验；
+  `scripts/agent-wasm-artifact.py` 是唯一 ingest 实现）与 `scripts/build-agent-wasm.sh`（源码自建后备）
+  都产出 `common/assets/wasm/<ref>/`，经 Vite publicDir 进 `dist/wasm/<ref>/`，再由 TX 发布脚本
+  从该 source commit 的 `source.json` 逐字段回验镜像内产物。
+
 ## 数据流
 
 ```text
 .wotbreplay（用户本机，文件不上传）
     │
     ▼
-上游 Rust Core WASM（/wasm/wotb_replay_wasm.js）
+上游 Rust Core WASM（/wasm/<source.json ref>/wotb_replay_wasm.js）
     ├── parseResult      结算：花名册 / 胜负 / 地图 / 全员统计（毫秒级，不读包流）
     ├── parsePlayback    时序：位姿网格 / 弹道 / 击杀 / 阶段 / 可见性 / 基地
     ├── parseShotReplays 射击复现
