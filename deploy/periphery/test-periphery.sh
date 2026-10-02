@@ -271,14 +271,43 @@ mkdir -p "$state"
 marker_note() {
   if [[ -f "${STUB_MARKER:?}" ]]; then printf 'marker=present'; else printf 'marker=absent'; fi
 }
+# The process environment systemd produces for the unit: the EnvironmentFile is
+# copied into it, and STUB_ENVIRON_MODE models the degraded variants.
+write_environ() {
+  local target="$1"
+  case "${STUB_ENVIRON_MODE:-clean}" in
+    dirty) printf 'PERIPHERY_ONBOARDING_KEY=%s\0' 'stale-key' > "$target" ;;
+    missing) rm -f "$target" ;;
+    directory) rm -f "$target"; mkdir -p "$target" ;;
+    *) printf 'PATH=/usr/bin\0' > "$target" ;;
+  esac
+}
 command="${1:-}"; shift || true
 case "$command" in
   daemon-reload) exit 0 ;;
   enable) : > "$state/enabled"; printf 'enable %s\n' "$(marker_note)" >> "$state/events"; exit 0 ;;
   is-enabled) [[ -f "$state/enabled" ]] && exit 0 || exit 1 ;;
   is-active) [[ -f "$state/active" ]] && exit 0 || exit 1 ;;
-  show) if [[ -f "$state/active" ]]; then echo "${STUB_MAIN_PID:-4242}"; else echo 0; fi ;;
-  stop) rm -f "$state/active"; printf 'stop %s\n' "$(marker_note)" >> "$state/events"; exit 0 ;;
+  show)
+    if [[ " $* " == *" -p User "* ]]; then echo "${STUB_UNIT_USER:-root}"; exit 0; fi
+    if [[ -f "$state/active" ]]; then echo "${STUB_MAIN_PID:-4242}"; else echo 0; fi
+    ;;
+  stop)
+    printf 'stop %s\n' "$(marker_note)" >> "$state/events"
+    if [[ "${STUB_STOP_FAILS:-false}" == true ]]; then
+      printf 'stop-failed %s\n' "$(marker_note)" >> "$state/events"
+      exit 1
+    fi
+    rm -f "$state/active"
+    ;;
+  kill)
+    printf 'kill\n' >> "$state/events"
+    if [[ "${STUB_KILL_FAILS:-false}" == true ]]; then
+      exit 1
+    fi
+    rm -f "$state/active"
+    ;;
+  status) echo 'fixture periphery status'; exit 0 ;;
   start|restart)
     # A restart replaces the process: the previous instance stops first, so the
     # outbound connection has to be re-established afterwards.
@@ -297,13 +326,7 @@ case "$command" in
       : > "$state/active"
     else
       printf 'restart-without-bootstrap %s\n' "$(marker_note)" >> "$state/events"
-      if [[ "${STUB_DIRTY_ENVIRON:-false}" == true ]]; then
-        # The credential outlived the EnvironmentFile, as it does whenever the
-        # process is not restarted after the file is removed.
-        printf 'PERIPHERY_ONBOARDING_KEY=%s\0' 'stale-key' > "$proc_env"
-      else
-        printf 'PATH=/usr/bin\0' > "$proc_env"
-      fi
+      write_environ "$proc_env"
       # A credential-free start that cannot hold the connection must not be
       # mistaken for a committed bootstrap.
       if [[ "${STUB_BREAK_CREDENTIAL_FREE:-false}" != true ]]; then
@@ -337,11 +360,14 @@ prepare_case() {
   local name="$1"
   case_dir="$work/case-$name"
   rm -rf "$case_dir"
-  mkdir -p "$case_dir"/{etc/keys,bin,unit,run,opt,state,stage}
+  mkdir -p "$case_dir"/{etc/keys,bin,unit,run,opt,state,stage,proc}
   mkdir -p "$case_dir/stage/deploy"
   cp -a "$ROOT" "$case_dir/stage/deploy/periphery"
   artifact="$case_dir/stage/periphery-x86_64"
-  printf '#!/bin/sh\necho fixture-periphery\n' > "$artifact"
+  # The stub binary reports the manifest's own version so verify.sh can run it.
+  manifest_version="$(sed -n 's/^PERIPHERY_VERSION=//p' "$ROOT/periphery.release")"
+  printf '#!/bin/sh\nif [ "${1:-}" = "--version" ]; then echo "periphery %s"; exit 0; fi\necho fixture-periphery\n' \
+    "$manifest_version" > "$artifact"
   chmod 0755 "$artifact"
   # Fixture manifest: identical contract, but pinned to the fake artifact.
   local artifact_sha
@@ -355,6 +381,13 @@ prepare_case() {
   marker="$case_dir/etc/keys/onboarding-complete"
   bootstrap_env="$case_dir/run/periphery-bootstrap.env"
   events="$case_dir/state/events"
+  proc_environ="$case_dir/proc/4242/environ"
+  # Stub knobs, set by a case before it calls run_install.
+  stub_environ_mode=clean
+  stub_stop_fails=false
+  stub_kill_fails=false
+  stub_simulate=true
+  stub_break_free=false
 }
 
 # The fixture writes the same marker the host does: reviewed content, mode 0600.
@@ -370,9 +403,12 @@ marker_is_valid() {
   return 0
 }
 
-# run_install [onboarding-key] [simulate-onboarding] [break-credential-free] [dirty-environ]
+# run_install [onboarding-key]
+#
+# Behaviour knobs come from the per-case `stub_*` variables set by prepare_case,
+# so a case reads as a list of assignments followed by one call.
 run_install() {
-  local key="${1:-}" simulate="${2:-true}" break_free="${3:-false}" dirty="${4:-false}"
+  local key="${1:-}"
   env \
     PATH="$stub:$PATH" \
     PERIPHERY_ETC_DIR="$case_dir/etc" \
@@ -395,9 +431,11 @@ run_install() {
     STUB_CORE_PUB="$core_pub" \
     STUB_MARKER="$marker" \
     STUB_PROC="$case_dir/proc" \
-    STUB_SIMULATE_ONBOARDING="$simulate" \
-    STUB_BREAK_CREDENTIAL_FREE="$break_free" \
-    STUB_DIRTY_ENVIRON="$dirty" \
+    STUB_SIMULATE_ONBOARDING="$stub_simulate" \
+    STUB_BREAK_CREDENTIAL_FREE="$stub_break_free" \
+    STUB_ENVIRON_MODE="$stub_environ_mode" \
+    STUB_STOP_FAILS="$stub_stop_fails" \
+    STUB_KILL_FAILS="$stub_kill_fails" \
     KOMODO_YECAO_ONBOARDING_KEY="$key" \
     bash "$runtime/install.sh" "$sha" "$runtime" "$artifact" >"$case_dir/install.log" 2>&1
 }
@@ -534,7 +572,8 @@ pass 'corrupt-completed-state fails-closed without regenerating anything'
 
 # D7. Onboarding never completes: bounded wait, credential removed, service stopped.
 prepare_case onboarding-timeout
-if run_install "$fixture_secret" false; then
+stub_simulate=false
+if run_install "$fixture_secret"; then
   die 'a Periphery that never onboarded must fail the reconcile'
 fi
 [[ ! -e "$bootstrap_env" ]] || die 'the bootstrap credential was left behind after a failed onboarding'
@@ -548,7 +587,8 @@ pass 'incomplete-onboarding stops the service and leaves no live credential'
 
 # D8. The credential-free restart fails: the marker must stay absent.
 prepare_case credential-free-failure
-if run_install "$fixture_secret" true true; then
+stub_break_free=true
+if run_install "$fixture_secret"; then
   die 'a failed credential-free restart must fail the reconcile'
 fi
 [[ ! -e "$marker" ]] || die 'the marker was committed although the credential-free restart never connected'
@@ -559,13 +599,59 @@ pass 'credential-free-restart-failure leaves the commit marker absent'
 # D8b. The credential survives in the process environment after the file is
 # removed: the bootstrap must not commit, and the service must be stopped.
 prepare_case credential-in-process-env
-if run_install "$fixture_secret" true false true; then
+stub_environ_mode=dirty
+if run_install "$fixture_secret"; then
   die 'a process still carrying the bootstrap credential must fail the reconcile'
 fi
 [[ ! -e "$marker" ]] || die 'the marker was committed while the process still carried the credential'
 [[ ! -e "$bootstrap_env" ]] || die 'the bootstrap credential file was left behind'
 grep -q '^stop ' "$events" || die 'a process still carrying the credential was left running'
 pass 'credential-left-in-process-env fails the bootstrap and stops the service'
+
+# D8c/D8d. The process environment cannot be inspected: that is not evidence of
+# absence, so the bootstrap must fail closed and stop the service.
+for mode in missing directory; do
+  prepare_case "env-unreadable-$mode"
+  stub_environ_mode="$mode"
+  if run_install "$fixture_secret"; then
+    die "an uninspectable process environment ($mode) must fail the reconcile"
+  fi
+  [[ ! -e "$marker" ]] || die "the marker was committed with an uninspectable environment ($mode)"
+  [[ ! -e "$bootstrap_env" ]] || die "the bootstrap credential file was left behind ($mode)"
+  grep -q '^stop ' "$events" || die "an uninspectable environment left the service running ($mode)"
+  [[ ! -f "$case_dir/state/active" ]] || die "an uninspectable environment left an active process ($mode)"
+done
+pass 'uninspectable-process-env fails-closed and stops the service'
+
+# D8e. A plain stop that does not take effect must be followed by a force-kill,
+# because the running process may still hold the bootstrap credential.
+prepare_case stop-ineffective
+stub_simulate=false
+stub_stop_fails=true
+if run_install "$fixture_secret"; then
+  die 'a failed onboarding whose stop did not take effect must fail the reconcile'
+fi
+grep -q '^stop-failed ' "$events" || die 'the fixture never exercised an ineffective stop'
+grep -q '^kill$' "$events" || die 'an ineffective stop was not followed by a force-kill'
+[[ ! -f "$case_dir/state/active" ]] || die 'the force-kill did not clear the active state'
+[[ ! -e "$bootstrap_env" ]] || die 'the bootstrap credential file was left behind'
+[[ ! -e "$marker" ]] || die 'the marker was committed after a failed bootstrap'
+pass 'ineffective-stop is escalated to a force-kill that clears the process'
+
+# D8f. If even the force-kill cannot clear the unit, cleanup must say so loudly.
+prepare_case kill-ineffective
+stub_simulate=false
+stub_stop_fails=true
+stub_kill_fails=true
+if run_install "$fixture_secret"; then
+  die 'a failed onboarding that cannot be terminated must fail the reconcile'
+fi
+grep -q '^kill$' "$events" || die 'the fixture never attempted the force-kill'
+grep -q 'CRITICAL' "$case_dir/install.log" \
+  || { cat "$case_dir/install.log" >&2; die 'an unterminated credential-bearing process was not reported as CRITICAL'; }
+[[ ! -e "$bootstrap_env" ]] || die 'the bootstrap credential file was left behind'
+[[ ! -e "$marker" ]] || die 'the marker was committed after a failed bootstrap'
+pass 'unterminated-credential-process is reported as CRITICAL'
 
 # D9. Unsafe or unexpected markers must fail closed.
 prepare_case marker-symlink
@@ -652,7 +738,11 @@ for expected in \
   'PASS periphery-systemd' \
   'PASS periphery-persistent-identity' \
   'PASS periphery-onboarding-complete' \
+  'PASS periphery-process-env-clean' \
   'periphery_marker_state' \
+  'process_env_is_clean' \
+  'process_env_state_label' \
+  'periphery_docker_socket' \
   'PASS periphery-outbound-connected' \
   'PASS periphery-no-inbound-8120' \
   'PASS periphery-config-outbound-only' \
@@ -666,9 +756,7 @@ for expected in \
   'require_real_file "$periphery_core_pub"' \
   'established_core_connections' \
   'listener_on_8120' \
-  'process_env_has_onboarding_key' \
   '^PERIPHERY_ONBOARDING_KEY=' \
-  '/var/run/docker.sock' \
   'docker info' \
   'Requires=docker.service'; do
   grep -Fq -- "$expected" "$verify_script" "$ROOT/periphery.service" "$ROOT/lib.sh" \
@@ -693,5 +781,82 @@ grep -Fq 'marker_state="$(periphery_marker_state)"' "$ROOT/install.sh" \
 grep -Fq 'case "$marker_state" in' "$ROOT/install.sh" \
   || die 'install.sh must branch on the durable marker state'
 pass 'verification-contract all ten checks keep real probes'
+
+# The inspection root and the Docker socket must default to the production paths;
+# the overrides exist only so this fixture can drive the real code.
+default_proc="$(env -u PERIPHERY_PROC_ROOT bash -c 'source "$1/lib.sh"; printf "%s" "$periphery_proc_root"' _ "$ROOT")"
+[[ "$default_proc" == '/proc' ]] || die "the process-inspection root is not /proc: $default_proc"
+default_socket="$(env -u PERIPHERY_DOCKER_SOCKET bash -c 'source "$1/lib.sh"; printf "%s" "$periphery_docker_socket"' _ "$ROOT")"
+[[ "$default_socket" == '/var/run/docker.sock' ]] \
+  || die "the Docker socket default is not /var/run/docker.sock: $default_socket"
+pass 'production defaults for the /proc root and the Docker socket'
+
+# ---------------------------------------------------------------------------
+# G. production verify.sh, executed against a fixture host tree
+# ---------------------------------------------------------------------------
+# verify.sh is the last line of defence, so it is run for real rather than only
+# grepped: once against a provably credential-free process (must pass) and once
+# with an environment that cannot be inspected (must fail hard).
+verify_case() {
+  local name="$1" mode="$2" attempt
+  prepare_case "verify-$name"
+  install -m 0755 "$artifact" "$bin_path"
+  printf '%s\n' 'fixture-periphery-identity' > "$identity"
+  printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+  write_marker
+  install -m 600 "$ROOT/periphery.config.toml" "$case_dir/etc/periphery.config.toml"
+  : > "$case_dir/state/active"
+  : > "$case_dir/state/enabled"
+  mkdir -p "$case_dir/proc/4242"
+  case "$mode" in
+    missing) rm -f "$proc_environ" ;;
+    *) printf 'PATH=/usr/bin\0' > "$proc_environ" ;;
+  esac
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$stub/docker"
+  chmod +x "$stub/docker"
+  # A real unix socket, so the Docker access check is exercised honestly.
+  python3 -c 'import socket, sys, time
+s = socket.socket(socket.AF_UNIX)
+s.bind(sys.argv[1])
+time.sleep(30)' "$case_dir/docker.sock" &
+  local sock_pid=$!
+  for attempt in $(seq 1 20); do
+    [[ -S "$case_dir/docker.sock" ]] && break
+    sleep 0.5
+  done
+  env \
+    PATH="$stub:$PATH" \
+    PERIPHERY_ETC_DIR="$case_dir/etc" \
+    PERIPHERY_BIN_PATH="$bin_path" \
+    PERIPHERY_UNIT_DIR="$case_dir/unit" \
+    PERIPHERY_RUN_DIR="$case_dir/run" \
+    PERIPHERY_PROC_ROOT="$case_dir/proc" \
+    PERIPHERY_DOCKER_SOCKET="$case_dir/docker.sock" \
+    PERIPHERY_SYSTEMCTL="$stub/systemctl" \
+    PERIPHERY_VERIFY_ATTEMPTS=2 \
+    PERIPHERY_VERIFY_SLEEP_SECONDS=0 \
+    STUB_STATE="$case_dir/state" \
+    STUB_MARKER="$marker" \
+    STUB_PROC="$case_dir/proc" \
+    bash "$ROOT/verify.sh" "$runtime" >"$case_dir/verify.log" 2>&1
+  local status=$?
+  kill "$sock_pid" 2>/dev/null || true
+  wait "$sock_pid" 2>/dev/null || true
+  return "$status"
+}
+
+if ! verify_case clean clean; then
+  cat "$case_dir/verify.log" >&2
+  die 'verify.sh must pass against a credential-free fixture host'
+fi
+grep -q 'PASS periphery-process-env-clean' "$case_dir/verify.log" \
+  || die 'verify.sh did not report the credential-free process environment'
+if verify_case unreadable missing; then
+  cat "$case_dir/verify.log" >&2
+  die 'verify.sh must fail when the process environment cannot be inspected'
+fi
+grep -q 'cannot prove the running Periphery process is credential-free' "$case_dir/verify.log" \
+  || { cat "$case_dir/verify.log" >&2; die 'the uninspectable-environment diagnostic was not reported'; }
+pass 'verify.sh fails-closed on an uninspectable process environment'
 
 echo 'Komodo Periphery contract fixtures: PASS'

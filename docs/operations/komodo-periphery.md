@@ -132,16 +132,23 @@ runtime dependency.
 3. It waits (bounded) until Periphery has generated its persistent identity,
    pinned the Core public key, and holds a live outbound connection to Core.
 4. It deletes the transient file and restarts Periphery **without** the credential,
-   then proves the connection came back, the process environment holds no
-   `PERIPHERY_ONBOARDING_KEY`, and the service is still active.
+   then proves the connection came back, the process environment is **provably**
+   credential-free, and the service is still active.
 5. Only then, and **last**, it atomically writes `keys/onboarding-complete` and
    enables the unit — so the unit is never enabled before onboarding has committed,
    and the marker can never claim more than what was actually proven.
-6. Any unsuccessful bootstrap exit *after the service was started* stops Periphery
-   (and verifies it is inactive) in addition to removing the transient file.
-   systemd has already copied the credential into the process environment, and
-   deleting the `EnvironmentFile` cannot remove it from `/proc/<pid>/environ`, so
-   the only safe outcome is a stopped service.
+6. The process-environment probe has three outcomes: `0` readable and credential
+   absent, `1` the credential is still there, `2` the environment cannot be
+   inspected. **`1` and `2` both block the commit** — an unreadable `/proc` entry is
+   never treated as evidence of absence, and production verification fails hard on
+   it with a diagnostic.
+7. Any unsuccessful bootstrap exit *after the service was started* removes the
+   transient file and then terminates the service, because systemd copied the
+   credential into the process environment and deleting the `EnvironmentFile`
+   cannot remove it from `/proc/<pid>/environ`. The sequence is `stop` → bounded
+   wait → `kill --kill-who=all --signal=KILL` → bounded wait; if the unit still
+   will not die, the run ends with a loud `CRITICAL` diagnostic naming the
+   possibly-live credential-bearing process instead of continuing quietly.
 
 The credential is never written to the config, the unit, a persistent
 `EnvironmentFile`, the repository, or a log. Periphery itself redacts it in the
@@ -161,6 +168,8 @@ reconciles.
 | Marker valid but identity or `core.pub` missing/unsafe | **Fail closed**: corrupted completed state is never silently repaired |
 | Marker unsafe (symlink, dangling, wrong owner/mode, wrong content) | **Fail closed** |
 | Onboarding never completes, or the credential-free restart never reconnects | Bounded wait, then fail closed with the unit status and journal tail: the transient credential is removed, the service is **stopped**, and the marker stays absent |
+| The process environment cannot be inspected | **Fail closed**: `stop` → bounded wait → `kill --kill-who=all --signal=KILL` → bounded wait; an uninspectable `/proc` entry is never evidence of absence |
+| `stop` does not take effect after a failed bootstrap | Escalated to a forced kill; if the unit still will not die, the run ends with a `CRITICAL` diagnostic instead of continuing quietly |
 | Symlinked/irregular `/etc/komodo`, keys, binary, unit, or staged path | Refused; the install never follows a link |
 | Staged artifact SHA mismatch | Refused before installation |
 | Another Yecao host mutation holds `/opt/wotb/.deploy.lock` | The reconcile aborts instead of racing it |
@@ -191,8 +200,8 @@ Komodo credential:
    address, `server_enabled = false`, and `root_directory = "/etc/komodo"`.
 8. No onboarding key is persisted in the config or the unit, and the transient
    `/run` file is gone.
-9. `/proc/<MainPID>/environ` contains no `PERIPHERY_ONBOARDING_KEY` and the service
-   is still active after the credential-free restart.
+9. `/proc/<MainPID>/environ` is **provably** credential-free: an environment that
+   cannot be inspected is a hard failure, never evidence that the key is absent.
 10. Docker is reachable for the container discovery Periphery performs
     (`/var/run/docker.sock` readable and writable, daemon answering, root context).
 

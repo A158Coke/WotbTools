@@ -56,9 +56,14 @@ pid="$(main_pid 2>/dev/null || true)"
 if [[ -e "$periphery_bootstrap_env" ]]; then
   fail "the transient bootstrap credential survived: $periphery_bootstrap_env"
 fi
-if process_env_has_onboarding_key "$pid"; then
-  fail "the running Periphery process still carries PERIPHERY_ONBOARDING_KEY in its environment."
+# Fail closed: an environment that cannot be inspected is NOT evidence that the
+# credential is absent, so it is a hard verification failure.
+process_env_state=0
+process_env_is_clean "$pid" || process_env_state=$?
+if [[ "$process_env_state" != 0 ]]; then
+  fail "cannot prove the running Periphery process is credential-free: $(process_env_state_label "$process_env_state")."
 fi
+echo 'PASS periphery-process-env-clean'
 connected=false
 for attempt in $(seq 1 "$verify_attempts"); do
   if [[ -n "$(established_core_connections "$pid")" ]]; then
@@ -98,9 +103,10 @@ fi
 echo 'PASS periphery-no-persisted-onboarding-key'
 
 # 10. Docker is reachable for the container discovery Periphery performs.
-[[ -S /var/run/docker.sock ]] || fail '/var/run/docker.sock is missing: Periphery cannot discover containers.'
-[[ -r /var/run/docker.sock && -w /var/run/docker.sock ]] \
-  || fail '/var/run/docker.sock is not readable and writable for the Periphery context.'
+[[ -S "$periphery_docker_socket" ]] \
+  || fail "$periphery_docker_socket is missing: Periphery cannot discover containers."
+[[ -r "$periphery_docker_socket" && -w "$periphery_docker_socket" ]] \
+  || fail "$periphery_docker_socket is not readable and writable for the Periphery context."
 docker info >/dev/null 2>&1 || fail 'the Docker daemon is not reachable from the Periphery host context.'
 unit_user="$("$systemctl_bin" show periphery -p User --value 2>/dev/null || true)"
 [[ -z "$unit_user" || "$unit_user" == root ]] \
