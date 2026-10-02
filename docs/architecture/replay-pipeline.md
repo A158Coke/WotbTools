@@ -64,14 +64,15 @@ frontend/src/replay-local/
 | 2D 战局回放 | `components/BattlePlaybackPanel.vue` | 目标文件本机 `parseLocalPlayback`（三切面 → canonical facts），主线程一次性解析 |
 | AI 复盘 | `components/AiReviewWorkspacePane.vue` | 目标文件本机 `buildLocalAiReviewInput` → `AiReviewRequest`（gzip）→ ai-service |
 | 3D 回放 / 射击复现 / 装甲查看 | `scene/*`、`AgentShots.vue` | 直接消费 WASM 时序 / 射击切面 |
-
-射击复现的产品计数口径与上游 Shot 身份一致：**一次开火 = 一个 unique `shotId` = 表格一行**。
-同一炮弹如果出现多条 method29、多个 type=32 命中段或多次装甲接触，仍属于同一个 Shot；
-WotbTools 不把 interaction / trajectory segment 展开成额外“射击”，也不在消费端重新解释原始包流。
-多段事件的关联与归并属于上游 Agent parser 的职责。
 | 名人堂 / 百场 / 三环提交 | `utils/api.js` → `replay-local/submissionFacts.ts` | 本机解析得到 `Battle` 事实 JSON（`facts` 字段）+ 原始回放（证据附件） |
 | 账号验证 | `ProfilePage.vue` | 本机解析出录像者 accountId，提交给 `POST /api/users/wotb-account/verify-replay` |
 | Android | `useNativeReplayImport.js` | Native 只交接字节；本机分析完成后 ACK pending |
+
+射击复现的产品计数口径与上游 Shot 身份一致：**一次开火 = 一个 unique `shotId` = 表格一行**。
+同一 `shotId` 如果关联多条 method29、多个 type=32 命中段或多次装甲接触，仍属于同一个 Shot；
+WotbTools 不把 interaction / segment 展开成额外“射击”，也不在消费端重新解释原始包流。
+这些事件的关联与归并属于上游 Agent parser 的职责——后续 method29 在物理上究竟是什么，
+上游仍标记为未定，WotbTools 不做公开定义。
 
 ## 服务端边界
 

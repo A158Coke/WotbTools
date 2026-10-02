@@ -7,8 +7,8 @@
  * 契约 v0.1.9：输出 {shots, author_path, others} 包装——作者严格路径失败
  * fail-visible（警示条），不再静默吞空。
  * 数据面：api/agent-replay-facets.ts parseAgentShotsFromBytes + scene/agentData.js 交接。
- * 顶层计数口径：1 row = 1 unique shotId = 一次开火；同一炮弹的多次装甲交互/续段
- * 仍属于同一发，不在消费端展开成额外“射击”。
+ * 顶层计数口径：1 row = 1 unique shotId = 一次开火；同一 shotId 下的后续事件或多次装甲交互
+ * 仍属于同一个 Shot，不在消费端展开成额外“射击”。
  */
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
