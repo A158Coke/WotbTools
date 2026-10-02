@@ -40,7 +40,9 @@ export function validateBattlePlaybackDataset(value: unknown): {
     return { data, diagnostics: [] }
   }
   const diagnostics = (validator.errors || []).map(error => ({
-    endpoint: '/api/replay/battle-playback-v2',
+    // Server has no replay parser: this schema now validates a locally produced dataset
+    // (frontend/src/replay-local/playback), not the deleted `/api/replay/battle-playback-v2` response.
+    endpoint: 'local replay dataset (client-side projection)',
     schema: 'BattlePlaybackDataset',
     path: error.instancePath || '$',
     expected: error.message || 'schema match',

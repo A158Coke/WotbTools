@@ -7,7 +7,6 @@ import com.wotb.web.mark3.dto.Mark3SubmissionSummaryDto;
 import com.wotb.web.mark3.service.Mark3SubmissionService;
 import com.wotb.web.util.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,7 +21,6 @@ import java.util.List;
 /** 三环公开排行榜（匿名）与人工申请/取消（需登录）HTTP 映射。 */
 @RestController
 @RequestMapping(ApiPaths.HOF_MARK3)
-@CrossOrigin(origins = "*")
 public class Mark3Controller {
 
     private final Mark3SubmissionService service;

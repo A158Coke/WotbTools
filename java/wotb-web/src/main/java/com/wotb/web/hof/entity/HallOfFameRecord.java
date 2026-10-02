@@ -14,7 +14,9 @@ import java.time.OffsetDateTime;
 /**
  * 名人堂单场成绩。列结构与 Flyway V1__init_leaderboard.sql → V16__rename_leaderboard_to_hall_of_fame.sql
  * 逐列对齐（ddl-auto=validate, 改任一列必须同步迁移）。
- * 成绩唯一 creation authority 是 .wotbreplay → ReplayParser → authoritative facts；admin 不可人工修改。
+ * 成绩唯一 creation authority 是 {@code .wotbreplay} → 客户端本地解析（上游 Rust Core WASM
+ * {@code parseResult} → {@code frontend/src/replay-local/battleFacts.ts} 的 canonical facts）→
+ * 服务端结构校验；admin 不可人工修改。（原 Java {@code ReplayParser} 服务端解析路径已于 2026-10-02 退役。）
  */
 @Entity
 @Table(name = "hall_of_fame_record",
