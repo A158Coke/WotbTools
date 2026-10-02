@@ -37,6 +37,8 @@ ai_service:
   - 'java/wotb-core/**'
   - 'java/wotb-ai/**'
   - 'contracts/http/**'
+  - 'common/fixtures/ai-projection/**'
+  - 'common/fixtures/replay-facts/**'
   - 'common/tankopedia-tier7.json'
   - 'common/tankopedia-tier8.json'
   - 'common/tankopedia-tier9.json'
