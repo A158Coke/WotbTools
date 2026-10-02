@@ -9,46 +9,55 @@ HISTORY.md 记录项目整体产品与工程历史；本文只聚焦架构、数
 ## 当前架构一览
 
 ~~~text
-Internet
-   |
-   v
+User device
++---------------------------------------------------------+
+| Browser / Android WebView                               |
+| .wotbreplay                                             |
+|   -> pinned WoT-Blitz-Agent Rust Core WASM             |
+|   -> WotbTools replay-local canonical facts            |
+|      -> Data / League Rating / Export                   |
+|      -> 2D Playback                                     |
+|      -> AI projection                                   |
+|   -> 3D Playback / shot replay consume Agent facets    |
++--------------------------+------------------------------+
+                           |
+                         HTTPS
+                           |
+                           v
 Tencent Cloud
-+--------------------------------------+
-| Caddy / Public Edge                  |
-| Frontend                             |
-| Keycloak                             |
-| Business API + Replay Control Plane  |
-| Business PostgreSQL                  |
-| RabbitMQ                             |
-+------------------+-------------------+
-                   |
-                WireGuard
-                   |
-+------------------v-------------------+
-| Yecao Cloud                          |
-| Replay Parser Worker                 |
-| MinIO temporary workspace            |
-| Observability                        |
-+--------------------------------------+
++---------------------------------------------------------+
+| Caddy / Public Edge                                     |
+| Frontend                                                |
+| Keycloak                                                |
+| Business API                                            |
+| Business PostgreSQL                                     |
++--------------------------+------------------------------+
+                           |
+                        WireGuard
+                           |
++--------------------------v------------------------------+
+| Yecao Cloud                                             |
+| AI Service                                              |
+| Observability                                           |
++---------------------------------------------------------+
 ~~~
 
 当前 Replay 主链路：
 
 ~~~text
-Replay -> Processing Job -> RabbitMQ -> Yecao Parser Worker
-       -> Processed Dataset / MinIO
-       -> Canonical Replay Facts
-       -> Replay Reconstruction
-       -> Canonical BattleTimeline
-            -> Data
-            -> Battle Playback
-            -> Evidence -> AI Review
+.wotbreplay (parsing is local; bytes leave the device only for explicit evidence upload, e.g. HoF)
+   -> pinned Agent WASM
+   -> frontend trust-boundary validation
+   -> WotbTools canonical replay facts
+        +-> batch compute / League Rating / export
+        +-> 2D playback projection
+        +-> AI projection --gzip--> Yecao ai-service
+        +-> HoF submission facts + replay evidence attachment
 ~~~
 
-核心原则是：每一种事实只有一个明确 authority。RabbitMQ 负责 delivery，不拥有 Job State；LLM 负责战术解释，不拥有 Replay Facts。
+服务器**没有 Replay parser，也没有 Replay Processing Job / Parser Worker / RabbitMQ / MinIO temporary dataset 链路**。上游 Agent Rust Core 负责锁定版本下的字节解码；WotbTools 的 `replay-local/canonical` 负责领域语义与消费边界。外部 Agent 研究材料是 provenance，不因其同时提供生产 parser 而自动成为 WotbTools canonical authority。LLM 只负责战术解释，不拥有 Replay Facts。
 
 ---
-
 ## 1. 2026-06-23 — 从 Python Replay Extractor 到 Java Application
 
 WotbTools 起点是 Python Replay 数据提取工具。Git 仓库建立后，主实现迁移到 Java 21，并形成共享的 wotb-core；Spring Boot、Vue、Docker 与 jpackage 承担不同交付形态。
@@ -320,28 +329,79 @@ Migration invariant != Runtime invariant
 
 ---
 
+
+## 13. 2026-09-30～10-02 — Replay Execution 从跨云服务迁回客户端，服务器 parser 归零
+
+仓库内 `replay-engine/` Rust 移植最初用于把 Java Replay Parser 带到 Web / Android，但上游 WoT-Blitz-Agent 已经维护同一问题域的 Rust Core，并为结算、Playback、射击复现和 AI Review 提供 WASM facet。继续维护第二套 parser 会重新制造双事实源，因此 WotbTools 先退役仓库内 Rust 移植，再把上游 Agent 作为唯一字节解析依赖。
+
+依赖不是浮动跟随 upstream main。生产前端只消费 `deploy/agent/source.json` 锁定的 Release artifact；#447 合并时锁定 `v0.3.8` / `f35baa46…`，并校验 Release asset SHA-256。WASM 升级必须重新通过仓库 fixture 上的真实 replay → WASM → WotbTools projection parity gate。
+
+客户端解析完成后，原先的 Distributed Replay Processing 不再有长期职责：
+
+~~~text
+旧：
+Replay upload
+   -> TX Business API / Processing Job
+   -> RabbitMQ
+   -> Yecao Parser Worker
+   -> MinIO Processed Dataset
+   -> consumers
+
+新：
+Replay stays on user device
+   -> Agent WASM
+   -> WotbTools canonical facts / projections
+   -> local consumers
+   -> only explicit server-side capability payloads cross the network (for example AI projection or HoF evidence)
+~~~
+
+#447 因此删除服务端 Java parser、Processing Job / Dataset API、Parser Worker、RabbitMQ、MinIO temporary replay workspace 以及相关 processing tables、deployment、CI 与 IaC。这里不是把 executor 从 Yecao 搬到 TX，而是**删除服务器侧 Replay execution 这个职责本身**。
+
+WotbTools 没有把上游 facet 当作领域模型直接传播。边界固定为：
+
+~~~text
+Agent facet DTO
+   -> version / shape trust-boundary validation
+   -> frontend/src/replay-local/canonical
+   -> consumer-specific projection
+~~~
+
+2D Playback 与 AI Review 共用 canonical facts；3D / shot replay 可以直接消费其专用 Agent facet，但不能因此把渲染态或上游私有字段提升为 WotbTools canonical truth。缺失的 Replay 字段向上游补，不在服务端恢复 parser，也不在消费端复制一套启发式解码。
+
+AI Review 也随之退出 Processed Dataset 模型：浏览器本地建立 `ClientAiReviewProjection`，gzip 提交给 Yecao 独立 `ai-service`；服务端 adapter 只做结构校验与确定性内存归约，不读取 Replay 字节。Hall of Fame 则明确采用另一种信任边界：client facts 只做结构校验，原始 Replay 作为 evidence attachment，真实性由管理员审核承担；它不是认证或授权事实。
+
+同一轮还把**运行依赖 provenance**与**研究证据 provenance**分开。生产依赖由 `deploy/agent/source.json` 锁 Release commit + artifact hash；外部交叉验证文档则锁具体 upstream research commit / blob。上游项目既是 parser producer 又是 research source，但这两个身份不改变 WotbTools evidence promotion rule：external-only claim 仍需本地 corpus 或 controlled probe 独立复现。
+
+**Git evidence:** `82f1e26c`（上游 WASM 成为客户端解析方向）、`0dc4767e`（#447：服务端 parser 与 distributed replay pipeline 退役）；upstream release `v0.3.8` = `f35baa46…`。
+
+
 ## Current Authority Model
 
 | Concern | Authority |
 |---|---|
 | Authentication identity | Keycloak |
-| Business user binding | user_profile / PostgreSQL |
-| Game identity | (server, WotB accountId) |
-| Replay operation identity | (subject, operationId) |
-| Processing Job lifecycle | PostgreSQL |
-| Battle settlement facts | battle_results.dat |
-| Replay protocol facts | version-scoped protocol decoder |
-| Canonical battle timeline | Replay Reconstruction / deterministic backend |
-| Temporary processed dataset | MinIO |
-| Distributed delivery | RabbitMQ — transport only |
-| Replay execution | Yecao Parser Worker |
+| Business user binding | `user_profile` / PostgreSQL |
+| Game identity | `(server, WotB accountId)` |
+| Replay bytes | user device, except explicit business evidence uploads |
+| Replay byte decoding | pinned WoT-Blitz-Agent Rust Core WASM (`deploy/agent/source.json`) |
+| Battle settlement facts | `battle_results.dat`, decoded by the pinned Agent parser |
+| WotbTools replay-domain semantics | `frontend/src/replay-local/canonical` + version-gated consumer contract |
+| Batch compute / League Rating / export | deterministic client compute under `frontend/src/replay-local/` |
+| 2D playback facts | WotbTools canonical facts + playback projection |
+| AI request facts | `ClientAiReviewProjection` produced from client canonical facts |
+| AI canonical timeline | deterministic `ClientAiProjectionAdapter` / reconstruction inside `ai-service` |
+| Hall of Fame authenticity decision | replay evidence + administrator review; client facts are intentionally untrusted |
 | Tactical interpretation | LLM — interpretation only |
 
 ## Retired / Transitional Architecture
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。
+- **In-repo `replay-engine/` Rust parser** — Java→Rust 客户端迁移的过渡实现；确认上游 Agent Rust Core 为唯一 parser 后删除，避免双解析权威。
+- **Service-side Java Replay Parser / Reconstruction input pipeline** — #447 后服务器不再读取 Replay bytes。
+- **Distributed Replay Processing** — PostgreSQL Processing Job、RabbitMQ delivery、Yecao Parser Worker、MinIO temporary dataset workspace 曾是唯一生产执行架构；客户端解析完成后整体退役。
+- **Processed Dataset as cross-feature boundary** — Data / Playback / AI 曾复用服务器 Processed Dataset；现在由 client canonical facts + consumer projection 取代。
 - **Local Replay Execution** — Distributed Replay 迁移期间的 compatibility path，分布式链路完成后删除。
-- **Memory Replay Job Authority** — 迁移/开发时期 fallback；production 最终只允许 PostgreSQL authority。
+- **Memory Replay Job Authority** — 迁移/开发时期 fallback；production 后来只允许 PostgreSQL authority，并最终随 Processing Job 域整体删除。
 - **wotb-control** — standalone Control Plane POC；最终 production control responsibility 留在 Business API。
 - **Yecao legacy application runtime** — 原 production application host；TX cutover 后退役。
 - **PRE/POST cutover machinery** — 一次性 migration verification；迁移完成后删除。
@@ -349,14 +409,16 @@ Migration invariant != Runtime invariant
 
 ## 从演进中形成的长期原则
 
-1. **Facts before interpretation.** Backend 决定事实，LLM 解释事实。
-2. **Authority must be explicit.** Transport、storage、identity 与 business state 不互相冒充 authority。
-3. **Processed Dataset is a capability boundary.** Replay 解析一次，Data / AI / Playback 复用。
+1. **Facts before interpretation.** Canonical facts 层决定可陈述的事实；LLM 只解释事实。
+2. **Authority must be explicit.** Parser、domain semantics、storage、identity 与 business state 不互相冒充 authority。
+3. **Client canonical facts are the Replay capability boundary.** Replay 在用户设备解析一次，再投影给 Data / Rating / Export / Playback / AI；不恢复服务器 Processed Dataset。
 4. **Authentication identity is not game identity.** Keycloak lifecycle 不拥有长期游戏数据生命周期。
-5. **Execution placement is not coordinator responsibility.** Coordinator 通过 contract dispatch，executor 可以位于另一台服务器。
-6. **Compatibility exists to enable migration, not to become permanent architecture.**
-7. **Migration checks should retire after migration.** 长期只保留 live runtime invariants。
-8. **Unknown stays unknown.** 无法从 Replay 或 Git 历史证明的事实与决策理由不补写猜测。
+5. **The server has no Replay parser.** 缺字段向锁定的上游 parser 补；解析失败不回退服务端，也不在消费端复制第二套协议解码。
+6. **Pinned parser is not semantic authority.** Agent Release 决定“实际运行哪份 decoder”；WotbTools canonical 层决定领域语义。上游研究结论不会因为来自 parser producer 就自动提升 evidence grade。
+7. **Runtime provenance and research provenance are separate.** Production artifact 用 release commit + hash 锁定；研究引用用独立 commit / blob 锁定，避免“运行版本”与“研究文本”混为一谈。
+8. **Compatibility exists to enable migration, not to become permanent architecture.**
+9. **Migration checks should retire after migration.** 长期只保留 live runtime invariants。
+10. **Unknown stays unknown.** 无法从 Replay 或 Git 历史证明的事实与决策理由不补写猜测。
 
 ## Known Historical Uncertainties
 

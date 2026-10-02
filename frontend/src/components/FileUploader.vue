@@ -41,7 +41,7 @@ const addFilesInput = ref(null)
 const addFolderInput = ref(null)
 const compactAddInput = ref(null)
 function openPicker(input) {
-  input.value?.click()
+  input?.click?.()
 }
 
 const totalBytes = computed(() => props.files.reduce((sum, f) => sum + (f.size || 0), 0))

@@ -31,7 +31,7 @@ jobs:
       - name: Bash syntax for deploy entrypoints and local policy fixtures
         run: >-
           bash -n deploy/deploy.sh
-          deploy/verify-observability.sh deploy/tx/deploy.sh
+          deploy/verify-observability.sh deploy/tx/deploy.sh deploy/tx/with-deploy-lock.sh
           deploy/tx/build-frontend-from-gitee.sh scripts/fetch-agent-wasm.sh
           deploy/tx/validate-caddy-config.sh deploy/list-image-tags.sh
           deploy/tx/business-postgres-backup.sh deploy/tx/business-postgres-restore.sh
@@ -43,7 +43,7 @@ jobs:
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
           deploy/test-nginx-real-ip.sh
-          deploy/check-latest-main.sh deploy/test-check-latest-main.sh
+          deploy/check-latest-main.sh deploy/test-check-latest-main.sh deploy/test-tx-deploy-lock.sh
           infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
           deploy/test-business-postgres-runtime.sh
           scripts/ci/test-postgres-business-tofu-contract.sh
@@ -78,6 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           bash deploy/test-check-latest-main.sh
+          bash deploy/test-tx-deploy-lock.sh
           bash deploy/test-tx-runtime-config.sh
           bash deploy/test-yecao-wireguard-boundary.sh
           bash deploy/test-tx-runtime-check.sh
