@@ -24,15 +24,15 @@
  *   `burst_size` = 弹夹容量 N（0 = 单发）；**`burst_interval` = 夹内"射击间隔"**；
  *   **`burst_reloads[]` = 弹鼓逐槽位的装填时长**（为空 = 该炮整夹一次性装填，即弹夹）。
  *
- * ── 相位语义（arena subtype 15/17；f1=eid, f2=phase, f3=时长, f4=计数）──
+ * ── 相位语义（arena subtype 15/16/17；f1=eid, f2=phase, f3=时长, f4=计数）──
  *   f2=1  **剩余弹数更新**：`f4` = 弹夹/弹鼓**剩余发数**（实测 16/16 条与同车开火同刻、
  *         且 `max(f4)+1` == 客户端 `burst_size`）→ 作为"在膛发数"的**权威快照**并入时间线，
  *         即使开火事件漏报也能给出正确的在膛发数。
- *   f2=3  整夹装填：弹夹/单发的整夹重装，时长 = 整夹时长。**逐格推进**呈现（每格自带
- *         `#Reload` 进度；客户端静态数据亦为逐发时长 `reloadingShellTime0..5`）。
+ *   f2=3  整夹装填：弹夹/单发的整夹重装，时长 = 整夹时长；期间整夹不可用。
+ *         3D OTM 显示为**一整条不分割**的进度，完成后恢复 N 格满弹状态。
  *   f2=6  弹鼓逐发装填：**每个事件真正装填一发**，时长 = 该槽位的装填时长
  *         （= `burst_reloads` 对应槽位；实测 tank 4481 的 6.56/9.38 ≈ 7/10）。
- *   f2=7  夹内**小装填**（= `burst_interval`，推下一发上膛的间隔）：期间"正推上膛"的那格显示 B、
+ *   f2=7  夹内**推弹/射击间隔**（= `burst_interval`）：期间"正推上膛"的那格显示 B、
  *         完成后该格变 A，**不补弹**（弹夹/弹鼓一致——弹夹打掉一发后为 A|A|C 而非 A|A|A）；
  *         弹鼓另由 f2=6 逐发补回空槽。
  *   f2=4  装填中途时长变更：`f3` = **新生效的完整装填配置时长**（非倒计时；实测每车仅少数几档，
@@ -71,8 +71,8 @@ const MAX_PLAUSIBLE_MAG = 10;
 
 const clamp01 = (x) => Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0));
 
-/** 该相位是否"真装填"（会补发）；f2=7 只是射击间隔，不算 */
-export function isReloadPhase(e) {
+/** 是否为有明确结束时刻的弹药阶段。f2=3/6 会在结束时改变弹量；f2=7 只结束推弹视觉，**不补弹**。 */
+export function isTimedAmmoPhase(e) {
   return !!e && (e.phase === PHASE_START || e.phase === PHASE_DRUM_SHELL || e.phase === PHASE_MAG_INTERVAL);
 }
 
@@ -165,8 +165,8 @@ export function inferMagazineSize(events) {
 }
 
 /**
- * 某条装填相位（f2=3/6）的**就绪时刻**：从 `clock + duration_s` 起，把其后每条
- * f2=4（新生效的完整配置时长）按"缩放剩余"折进去，直到就绪或遇到下一条装填相位。
+ * 某条定时弹药相位（f2=3/6/7）的**结束时刻**：从 `clock + duration_s` 起，把其后每条
+ * f2=4（新生效的完整配置时长）按"缩放剩余"折进去，直到结束或遇到下一条定时弹药相位。
  * 与下面 shellStatesAt 里进度基准的推进方式**同一公式**，二者必须一致。
  */
 function scheduledReady(usable, i, effAt) {
@@ -181,7 +181,7 @@ function scheduledReady(usable, i, effAt) {
     if (e.phase === PHASE_DURATION_CHANGE && e.duration_s > 0) {
       ready = e.clock + Math.max(0, ready - e.clock) * (e.duration_s / dur);
       dur = e.duration_s;
-    } else if (isReloadPhase(e)) {
+    } else if (isTimedAmmoPhase(e)) {
       break;                                          // 新装填取代本次
     }
   }
@@ -224,7 +224,8 @@ export function shellStatesAt(events, fires, t, size = 1, durations = null) {
   if (!events || !events.length) return full();
 
   // 归并「开火 / 相位开始 / 相位结束」三类时间标记（均 ≤ t）；只用可用相位建标记。
-  // 装填相位（f2=3/6）的结束时刻要**折进其后的 f2=4 时长变更**（否则长档位会被按旧时长提前结算）。
+  // 定时弹药相位（f2=3/6/7）的结束时刻要折进其后的 f2=4 时长变更；只有 f2=3/6
+  // 会在结束时改变弹量，f2=7 结束只代表推弹/射击间隔完成。
   const marks = [];
   // 方法 35：权威"当前生效完整装填时长"（**长装填刻度**）——只用于 f2=3 的进度/结算基准
   const effList = durations || [];
@@ -241,7 +242,7 @@ export function shellStatesAt(events, fires, t, size = 1, durations = null) {
     const e = usable[i];
     if (e.clock > t) break;
     marks.push({ t: e.clock, kind: 'begin', e });
-    if (!isReloadPhase(e)) continue;                  // f2=4 不产生"结束结算"
+    if (!isTimedAmmoPhase(e)) continue;                  // f2=4 不产生独立结束标记
     const end = scheduledReady(usable, i, effAt);     // 结束时刻折进其后的 f2=4/35 变更
     if (end <= t) marks.push({ t: end, kind: 'end', e });
   }
@@ -268,7 +269,7 @@ export function shellStatesAt(events, fires, t, size = 1, durations = null) {
   const perShell = hasPerShellReloads(events);   // 弹鼓：空槽 = locked（排队待装），非弹鼓 = used
   const emptyState = () => (perShell ? { state: 'locked', progress: 0 } : { state: 'empty', progress: 0 });
   let loaded = n;          // 在膛发数（0..N）
-  let active = null;       // 当前未结束的装填相位（f2=3/6；f2=7 只作节奏，不进 active）
+  let active = null;       // 当前未结束的定时弹药相位（f2=3/6/7；f2=7 仅视觉上膛，不补弹）
   // 进度用「预测就绪时刻 ready + 当前生效完整时长 dur」表示：progress = 1 − max(0, ready−t)/dur。
   // 用 ready（而非开始时刻）是为了让 f2=4 能**按比例缩放剩余时间**（见下）。
   let ready = 0;
@@ -314,7 +315,7 @@ export function shellStatesAt(events, fires, t, size = 1, durations = null) {
       ready = m.e.clock + dur;
       continue;
     }
-    // end：只结算"没被打断"的那条相位（被打断则没有发到位）
+    // end：只结束没被开火打断的那条定时相位；f2=3/6 继续结算弹量，f2=7 只清视觉上膛态
     if (active !== m.e) continue;
     active = null; ready = 0; dur = 0;
     if (m.e.phase === PHASE_DRUM_SHELL) {
@@ -356,7 +357,20 @@ export function fillOf(states) {
   return sum / states.length;
 }
 
-/** 聚合视图（门控/兼容）：{ active, fill, kind, shells } */
+/**
+ * 逐格视觉签名：状态拓扑 + loading 的 1% 进度桶。
+ * 不能只用 aggregate fill 做重绘门控：例如整夹 loading=99.6% 与完成后的 A|A|A
+ * 都会把聚合 fill 四舍五入到 100%，但前者是一整条、后者是 N 个分格，必须重绘。
+ */
+export function reloadVisualKey(states) {
+  if (!states || !states.length) return 'none';
+  return states.map((s) => {
+    const state = s && s.state ? s.state : 'empty';
+    return state === 'loading' ? `loading:${Math.round(clamp01(Number(s.progress)) * 100)}` : state;
+  }).join('|');
+}
+
+/** 聚合视图（兼容/诊断）：{ active, fill, kind, shells } */
 export function reloadViewAt(events, fires, t, size = 1) {
   const shells = shellStatesAt(events, fires, t, size);
   const anyLoading = shells.some((s) => s.state === 'loading');
