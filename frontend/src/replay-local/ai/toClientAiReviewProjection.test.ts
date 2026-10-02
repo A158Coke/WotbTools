@@ -23,7 +23,9 @@ const FIXTURES = ['random-battle-example', 'cw-training-15-14-example', 'tournam
 const UPDATE = process.env.WOTB_UPDATE_AI_PROJECTION_GOLDEN === '1'
 
 function engineOf(): { release: string; commit: string } {
-  const fp = JSON.parse(readFileSync(join(REPO, 'common/assets/wasm/fingerprint.json'), 'utf8'))
+  // 产物落位是 commit-addressed 目录（stable `/wasm/fingerprint.json` 已废除）
+  const pin = JSON.parse(readFileSync(join(REPO, 'deploy/agent/source.json'), 'utf8'))
+  const fp = JSON.parse(readFileSync(join(REPO, 'common/assets/wasm', pin.ref, 'fingerprint.json'), 'utf8'))
   return { release: fp.tag, commit: fp.upstream_commit }
 }
 
