@@ -41,6 +41,15 @@ fresh="$work/state/fresh"
 mkdir -p "$fresh"
 accepts require_bootstrap_state "$fresh"
 
+# A completely absent state directory is still a legitimate first bootstrap: the
+# guard creates it (0700) instead of refusing.
+absent="$work/state/absent"
+accepts require_bootstrap_state "$absent"
+[[ -d "$absent" && ! -L "$absent" && "$(stat -c '%a' "$absent")" == 700 ]] || {
+  echo 'require_bootstrap_state did not create a safe state directory' >&2
+  exit 1
+}
+
 bootstrapped="$work/state/bootstrapped"
 mkdir -p "$bootstrapped"
 state_ok "$bootstrapped"
@@ -56,6 +65,23 @@ for case in state-without-marker marker-without-state; do
   fi
   rejects require_bootstrap_state "$dir"
 done
+
+# The state directory itself is part of the invariant: a valid-looking pair
+# reached through a symlinked `tofu-state` must not satisfy the guard.
+behind_symlink="$work/state/behind-symlink"
+mkdir -p "$behind_symlink"
+state_ok "$behind_symlink"
+linked_state="$work/state/linked-state"
+ln -s "$behind_symlink" "$linked_state"
+rejects require_bootstrap_state "$linked_state"
+
+dangling_state="$work/state/dangling-state"
+ln -s "$work/state/absent-target" "$dangling_state"
+rejects require_bootstrap_state "$dangling_state"
+
+file_state="$work/state/file-state"
+: > "$file_state"
+rejects require_bootstrap_state "$file_state"
 
 empty_state="$work/state/empty-state"
 mkdir -p "$empty_state"

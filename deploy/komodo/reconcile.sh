@@ -13,12 +13,21 @@ SOURCE_SHA="${1:?usage: reconcile.sh <source-sha> <staged-root>}"
 stage="${2:?usage: reconcile.sh <source-sha> <staged-root>}"
 runtime="$stage/deploy/komodo"
 tofu_root="$stage/infra/tofu/komodo"
-root=/opt/komodo
-# Persistent controller state root. The literal path (rather than `${root}/...`)
-# is what `scripts/ci/test-tofu-workflow-contract.sh` asserts verbatim, and it is
-# the only place production OpenTofu state may live.
-state_dir=/opt/komodo/tofu-state
+root="${KOMODO_CONTROLLER_ROOT:-/opt/komodo}"
+# Persistent controller state root. The literal default is what
+# `scripts/ci/test-tofu-workflow-contract.sh` asserts verbatim, and it is the only
+# place production OpenTofu state may live.
+state_dir="${KOMODO_CONTROLLER_STATE_DIR:-/opt/komodo/tofu-state}"
 state_marker="$state_dir/bootstrap-complete"
+
+# The two overrides above exist only so `deploy/komodo/test-reconcile-preflight.sh`
+# can drive this exact script against a disposable tree. The workflow never sets
+# them, and the state root must always live inside the controller root.
+[[ "$root" == /* && "$root" != *..* ]] || { echo "Refusing unsafe Komodo root: $root" >&2; exit 2; }
+[[ "$state_dir" == "$root"/* && "$state_dir" != *..* ]] || {
+  echo "Refusing unsafe Komodo state directory: $state_dir" >&2
+  exit 2
+}
 
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid Komodo source SHA.' >&2; exit 2; }
 # The TencentCloud credentials are required up front: without them the bootstrap
@@ -48,7 +57,12 @@ exec 9>"$root/.deploy.lock"
 flock -n 9 || { echo 'Another Komodo controller mutation is running.' >&2; exit 1; }
 export KOMODO_DEPLOY_LOCK_FD=9
 
-# Fail closed on a corrupt or half-bootstrapped state before any mutation.
+# Establish the whole state-root invariant before any runtime mutation: the owner
+# root (above) and the persistent state root must be real directories, and only
+# then is the state/marker bootstrap pair judged. Checking the pair first would
+# let a symlinked `tofu-state` holding a valid-looking pair pass, mutate the
+# Compose runtime, and only afterwards be rejected.
+require_real_dir "$state_dir"
 require_bootstrap_state "$state_dir"
 
 # 1. Runtime: validate, pull, promote, start, and prove the private controller.
@@ -56,8 +70,8 @@ bash "$runtime/deploy.sh" "$SOURCE_SHA" "$runtime"
 bash "$runtime/verify.sh"
 
 # 2. DNS: only the single Komodo A record, only from an exact saved plan, and
-#    only while the private controller is healthy.
-require_real_dir "$state_dir"
+#    only while the private controller is healthy. The state root was already
+#    established above and must not be re-created here.
 export TF_IN_AUTOMATION=true
 export CHECKPOINT_DISABLE=1
 cd "$tofu_root"

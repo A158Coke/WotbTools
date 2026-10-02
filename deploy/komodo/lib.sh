@@ -29,8 +29,16 @@ require_real_dir() {
 # empty file, or any symlink is corruption: fail closed instead of silently
 # initializing empty production state. Only a completely absent pair is a
 # legitimate first bootstrap.
+#
+# The state directory itself is part of the invariant, and it is re-proved here
+# rather than trusted to call ordering: a symlinked (or otherwise non-directory)
+# `tofu-state` could hold a valid-looking state/marker pair somewhere else, so
+# judging the pair without checking the directory would let a caller mutate the
+# runtime before noticing the unsafe root. Every caller therefore fails closed
+# on an unsafe state root even if it forgets its own `require_real_dir`.
 require_bootstrap_state() {
   local state_dir="$1"
+  require_real_dir "$state_dir"
   local state_file="$state_dir/terraform.tfstate"
   local state_marker="$state_dir/bootstrap-complete"
   if [[ -e "$state_marker" || -L "$state_marker" ]]; then

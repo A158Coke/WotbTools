@@ -97,6 +97,27 @@ for name, (relative, state_dir, requires_marker) in expected.items():
         # State without its marker is corruption, not a fresh install: the
         # controller plane must fail closed instead of re-initializing.
         assert "state exists without a completed bootstrap marker" in safety_text
+        # The whole state-root invariant must be established before any runtime
+        # mutation. Judging the state/marker pair before the state directory would
+        # let a symlinked `tofu-state` holding a valid-looking pair pass and the
+        # runtime be mutated first.
+        reconcile_text = (root / "deploy/komodo/reconcile.sh").read_text(encoding="utf-8")
+        mutation = reconcile_text.index('bash "$runtime/deploy.sh"')
+        for guard in (
+            'require_real_dir "$root"',
+            'exec 9>"$root/.deploy.lock"',
+            'require_real_dir "$state_dir"',
+            'require_bootstrap_state "$state_dir"',
+        ):
+            assert reconcile_text.index(guard) < mutation, guard
+        # The guard is also self-contained: an unsafe state root is refused by
+        # `require_bootstrap_state` itself, not only by caller ordering.
+        assert 'require_real_dir "$state_dir"' in (
+            root / "deploy/komodo/lib.sh"
+        ).read_text(encoding="utf-8")
+        # A fixture must drive the real script, not just the helpers in isolation.
+        ci_komodo = (root / ".github/workflows/ci-komodo-controller.yml").read_text(encoding="utf-8")
+        assert "test-reconcile-preflight.sh" in ci_komodo
         # The Yecao staging root is only ever prepared, verified, or removed
         # through the audited helper; the workflow must never fall back to inline
         # `mkdir -p` or an unguarded `rm -rf` against the owner root.
