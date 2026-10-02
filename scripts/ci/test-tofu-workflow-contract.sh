@@ -76,14 +76,17 @@ for name, (relative, state_dir, requires_marker) in expected.items():
     assert "tofu_state" not in root_text, name
     assert 'backend "pg"' not in root_text and 'backend "s3"' not in root_text, name
     workflow_text = (root / workflow_roots[name]).read_text(encoding="utf-8")
-    assert state_dir in workflow_text, name
-    assert "local opentofu state is not bootstrapped" in workflow_text.lower(), name
-    assert "! -L \"$state_file\"" in workflow_text, name
-    assert "-f \"$state_file\"" in workflow_text, name
+    safety_text = workflow_text
+    if name == "komodo":
+        safety_text += "\n" + (root / "deploy/komodo/reconcile.sh").read_text(encoding="utf-8")
+    assert state_dir in safety_text, name
+    assert "local opentofu state is not bootstrapped" in safety_text.lower(), name
+    assert "! -L \"$state_file\"" in safety_text, name
+    assert "-f \"$state_file\"" in safety_text, name
     assert "$SOURCE_SHA" not in state_dir
     if requires_marker:
-        assert "bootstrap-complete" in workflow_text, name
-        assert "local-tofu-state-bootstrap-v1" in workflow_text, name
+        assert "bootstrap-complete" in safety_text, name
+        assert "local-tofu-state-bootstrap-v1" in safety_text, name
     if name == "komodo":
         assert "TENCENTCLOUD_SECRET_ID" in workflow_text
         assert "TENCENTCLOUD_SECRET_KEY" in workflow_text
