@@ -77,6 +77,9 @@ jobs:
           cd "$ROOT_DIR"
           tofu fmt -check -recursive
           tofu init -backend=false -input=false
+          echo '---KOMODO_LOCK_BEGIN---'
+          cat .terraform.lock.hcl
+          echo '---KOMODO_LOCK_END---'
           tofu validate
       - name: Validate local-root safety policy fixtures
         run: bash infra/tofu/komodo/test-validate-plan.sh
