@@ -59,7 +59,7 @@ WotBTools
   （#301 f23 / f106——crate 的 `base_xp` / `credits_earned` 在 11.19 语料中为 0，**消费方只读新字段**）、
   `result_id`（#301 外层 f1）与 `killer_account_id`（`killer_id` 经同场 `result_id` 联表）。
   `survived` 语义订正：`death_reason` 缺省 = 普通击毁 → `false`，整条结算缺失才缺省。
-  这组字段与服务端 Java `ReplayParser` 的 `Battle` 模型逐字段一致（`tools/parity`，23 场 / 322 名战斗者）。
+  这组字段与已退役的服务端 Java `ReplayParser` 的 `Battle` 模型逐字段一致（迁移期对比 23 场 / 322 名战斗者；回归基线 `frontend/src/replay-local/__golden__`）。
 - 样例：`samples/result.sample.json`（与 ai-review 样例同场，真实匿名回放经 v0.1.7 重导出）。
 
 ## 4. 时序能力（PlaybackData）

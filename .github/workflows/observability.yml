@@ -227,7 +227,7 @@ jobs:
             export TF_IN_AUTOMATION=true
             export CHECKPOINT_DISABLE=1
             # Grafana uses its committed provider lockfile and the default registry install;
-            # do not inherit the Yecao MinIO root's provider-specific CLI mirror config.
+            # do not inherit another root's provider-specific CLI mirror config.
             unset TF_CLI_CONFIG_FILE
             umask 077
             cd "$root"
