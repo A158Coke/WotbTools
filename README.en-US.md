@@ -6,7 +6,7 @@ Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://gi
 
 ## What it does
 
-- **Replay parsing & Excel export**: upload a `.wotbreplay` in the browser, extract authoritative settlement (damage / received / assisted / blocked / kills / death times) plus event-stream features (movement / engagements / 3x3 grid regions).
+- **Replay parsing & Excel export**: parse a `.wotbreplay` on your device (upstream Rust Core WASM; the file is not uploaded), extract authoritative settlement (damage / received / assisted / blocked / kills / death times) plus event-stream features (movement / engagements / 3x3 grid regions).
 - **Hall of Fame**: per-battle damage ranking for Random and Rating battles, plus Tier X career-average leaderboards through screenshot + 5-replay manual review.
 - **Battle performance**: derived metrics computed from a single authoritative replay-facts source (contribution, KAST, Impact, potential damage, assist, kills, multi-damage rate, survival rate, trades) — no composite rating anymore.
 - **AI tactical review**: pre-battle prediction + evidence-chain review, streamed token-by-token over SSE; the review keeps running while you switch pages or background the tab (including long team reviews with an ~1100s budget, with results or progress ready on return); points victories state how they ended (time expired / reached 1000 points early) and HP-loss descriptions include time ranges with resolved attacker counts (a single attacker is never called focus fire; only 2+ resolved attackers within a short window (total span ≤ 15s) may be cited as multi-vehicle focus fire); results include a "Map Overview" (friendly/enemy heatmaps + routes + battle playback with progress bar / event jumps / clickable AI-report times / two-layer hull-turret markers rotating by heading and gun direction + brightness-adaptive colors, 28 maps with assets) and a one-click "Copy" button for the final review body (excluding the pre-battle prediction and map overview).
@@ -16,12 +16,12 @@ Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://gi
 
 ```mermaid
 flowchart LR
-    A["Upload .wotbreplay"] --> B["POST /api/replay/processing-jobs (exactly one Processing Job per selection)"]
-    B --> C["Yecao parser-worker (exactly one processFull per source: parse + reconstruction + enrich)"]
-    C --> D["Derived Dataset (ProcessedDataset + map-overview.json)"]
-    D --> E["Preview result (GET processing-jobs/{jobId}/result)"]
-    D --> F["Export Job (reuse result; no re-upload / no second processFull)"]
-    D --> H["Battle playback (cached map-overview.json)"]
+    A["Pick .wotbreplay (stays on the device)"] --> B["Upstream Rust Core WASM (Web Worker)"]
+    B --> C["Batch computation: dedup / League Rating / metrics / columns (frontend/src/replay-local)"]
+    C --> E["Workspace tables"]
+    C --> F["Excel export (built in the browser)"]
+    B --> H["2D / 3D battle playback"]
+    B --> I["Hall of Fame: settlement facts + replay attachment → server storage"]
 ```
 
 ## AI evidence chain
@@ -30,7 +30,7 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 
 ## Key engineering trade-offs
 
-0. **Parse once / consume many**: upload `.wotbreplay` → `POST /api/replay/processing-jobs` (exactly one Processing Job per selection) → the Yecao parser worker performs exactly one `processFull` per source → shared Derived Dataset (`ProcessedDataset` + `map-overview.json`); Preview / Export / Battle Playback all read the same dataset. There is no multipart Playback fallback path that reprocesses the replay.
+0. **The server has no parser**: the only replay parser is the upstream [WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) Rust Core (WASM, pinned in `deploy/agent/source.json`); aggregation, rating, export and 2D data are computed in the browser too. The server only stores, deduplicates, authorizes, records the Hall of Fame and orchestrates AI; missing fields are added upstream.
 1. **Authoritative settlement > observed event stream**: damage / deaths come from `battle_results`; the event stream is only an observed subset, and its numbers are suppressed when coverage is partial (`OBSERVED_DAMAGE_IS_PARTIAL`).
 2. **AI review is its own service**: `POST /api/ai/reviews` (`text/event-stream`) is served by a standalone stateless `ai-service` on Yecao, reached over the private WireGuard path behind the TX `/api/ai/**` ingress route. The Business Backend no longer participates in AI requests and the legacy `/api/replay/analyze` endpoint is removed. Cancellation is `POST /api/ai/reviews/{correlationId}/cancel`; admission is bounded and saturation returns 503 `AI_REVIEW_BUSY`. The frontend entry stays in maintenance until every release gate passes.
 3. **3x3 grid + map semantics**: canonical 500×500 grid regions 1-9; AREA semantics are decoded from client SC2 / heightmap and are not treated as verified facts before manual review.

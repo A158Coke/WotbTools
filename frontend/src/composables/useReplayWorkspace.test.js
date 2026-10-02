@@ -21,7 +21,7 @@ function newReplay() {
     ...session,
     session,
     updateFiles: vi.fn(),
-    startProcessingJob: vi.fn(),
+    analyze: vi.fn(),
   }
 }
 

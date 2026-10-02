@@ -38,6 +38,19 @@ public final class ReplayFactsCodec {
     }
 
     /** Decodes the browser projection using the same ReplayEvent type registry as the wire contract. */
+    /** client canonical AI 投影（{@code ClientAiReviewProjection}）。未知字段拒绝（契约 additionalProperties: false）。 */
+    public static com.wotb.core.replay.projection.ClientAiProjection projectionFromJson(final JsonNode node) throws IOException {
+        if (node == null || !node.isObject()) {
+            throw new IllegalArgumentException("projection missing");
+        }
+        return PROJECTION_MAPPER.treeToValue(node, com.wotb.core.replay.projection.ClientAiProjection.class);
+    }
+
+    private static final ObjectMapper PROJECTION_MAPPER = JsonMapper.builder()
+            .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+            .build();
+
     public static Battle battleFromJson(final JsonNode node) throws IOException {
         return MAPPER.treeToValue(node, Battle.class);
     }

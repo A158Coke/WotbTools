@@ -186,8 +186,7 @@ Business PostgreSQL 是权威业务状态，因此检查同样要求它完全就
 `docs/operations/business-postgres.md`。
 
 检查读取的 live Compose 现在也包含 TX 业务运行时 `business-api`，因此它的必需输入同样要在
-环境中提供（应用数据库凭据 `TX_BUSINESS_DB_*`、`TX_RABBITMQ_CONTROL_API_PASSWORD`、
-MinIO `control_api` key pair、`KEYCLOAK_ADMIN_CLIENT_SECRET`），缺失时检查在
+环境中提供（应用数据库凭据 `TX_BUSINESS_DB_*`、`KEYCLOAK_ADMIN_CLIENT_SECRET`），缺失时检查在
 渲染阶段立即拒绝，而不是给出误导性的 ready。该运行时不再携带任何 AI provider 变量
 （AI 配置归属 Yecao `ai-service`），因此检查也不需要 `AI_API_KEY`。检查本身仍只读：这些值
 只用于 Compose 渲染与就绪判定，不写盘、不落日志。
@@ -208,19 +207,16 @@ KEYCLOAK_E2E_CLIENT_SECRET   wotbtools-e2e 机器身份的 client secret（GitHu
 WOTB_E2E_REPLAY_PATH         探针容器内的回放 fixture（默认 /e2e/random-battle-example.wotbreplay，
                              由 Deploy 从 common/fixtures/replays staged 到 /opt/wotb-tx/e2e）
 WOTB_E2E_PUBLIC_IP           公网边缘必须由其应答的 TX 地址（默认 118.25.18.105）
-WOTB_E2E_JOB_TIMEOUT_SEC     processing/export job 轮询上限（默认 300）
 ```
 
-检查用 `wotbtools-e2e`（client_credentials）驱动真实链路并逐项输出 `processing-e2e`、
-`dataset-result`、`map-overview`、`battle-playback-v2`、`minio`、`export`、
-`hof-replay-storage`、`parser-worker`、`admin-authz`、`anonymous-rejected`。
+检查用 `wotbtools-e2e`（client_credentials）驱动真实链路并逐项输出
+`hof-replay-storage`、`admin-authz`、`anonymous-rejected`（回放解析相关检查随服务端解析一起删除）。
 任何一项 FAIL 都输出 `TX_RUNTIME_NOT_READY`：**这是「TX runtime
 不是业务可用状态」的机械含义**。
 
 - 检查不做付费 AI 调用：AI Review 已迁至独立 `ai-service`，本检查不再消费 `ai-facts.json`
-  （该 artifact 随 AI 解耦退役）；MinIO 可读性由 `minio` token（`finalized.json`）覆盖。
-- 检查对基础设施与用户数据只读；唯一写入是一个 30 分钟 TTL 自动回收的瞬时 processing job
-  与 export job（属于一次性安全操作，不改任何真实用户数据）。
+  （该 artifact 随 AI 解耦退役）。
+- 检查对基础设施与用户数据只读。
 - `business-data-integrity` 已**随 cutover machinery 一并退役**：它的输入是 X1 搬迁前从 Yecao
   只读导出的逐表行数快照（`WOTB_E2E_DATA_SNAPSHOT`），Yecao 业务库退役后无法再生，冻结行数
   也会随生产数据增长永久 FAIL，因此连同该 token 一起删除，不保留替代检查。
@@ -260,36 +256,6 @@ TX_RUNTIME_READY
 - frontend nginx 的 `set_real_ip_from` 改为信任整个 `wotb_tx_internal` 子网
   （`172.29.0.0/16`），因为信任边界不再是某个固定对端地址；该子网只包含本 TX 应用栈的容器，
   Caddy 仍是其中唯一的公网入口。
-
-### parser DLQ 非空时的 operator 动作
-
-`parser-worker` token 在 `wotb.parser.dlq` 不为空时 FAIL（非空 DLQ 意味着至少一条回放永久失败或
-无法解码）。这是**必须人工处置**的状态，不允许通过删除证据让检查变绿：
-
-1. 只读确认权威状态：`docker compose -p deploy -f /opt/wotb-tx/deploy/rabbitmq.compose.yml exec -T rabbitmq
-   rabbitmqctl -q list_queues name messages consumers`，并确认 PostgreSQL 中没有该 job 的未终态
-   投影（job 权威在 PG，不在 broker）。
-2. 在 TX loopback 的 Management UI（`http://127.0.0.1:15672/`，`wotb.parser.dlq` 队列）逐条查看
-   被 park 的消息：`parser.dead` 表示终态失败（含错误码），原始字节 park 表示无法解码。
-3. 分类处置：解码缺陷 → 保留样本并在修复后**重新投递**（用同 `jobId` 重新创建 processing job，
-   或把消息重新发布到 `wotb.jobs` / `parser.request`）；瞬时基础设施故障 → 同样重新投递；
-   确实无法处理的旧格式 → 明确记录为「永久失败样本」并由你批准是否接受。
-4. 处置后队列必须回到空，然后重新运行检查。**不要**用 purge 作为「修复」；purge 只在你已记录
-   每条消息的结论之后才允许。
-
-检查以只读 Keycloak Admin API 检查 `idp-qq`：必须唯一、`providerId=qq`、`enabled=true`、
-client ID 非 placeholder，且 QQ endpoint/config contract 完整；裸 `qq` alias 会阻断（alias 集合必须恰好匹配）。
-全部通过后输出 `QQ_IDP_STATUS=idp-qq=READY`；不再接受 `WAITING_EXTERNAL` 豁免。检查不再探测
-Yecao backend 路径：公开 API 流量已在 TX 内部终结（frontend nginx → `business-api:8087`），
-改为两条只读 token：`tx-internal-api-route`（frontend upstream 必须是 TX 内部业务运行时、
-`business-api` 不发布任何端口、任何服务都不得发布 8087）与 `distributed-execution-plane`
-（`business-api` 不得出现已退役的回放执行模式开关与 job-repository 选择器；PostgreSQL 是唯一
-replay job authority）。任一不满足即 `TX_RUNTIME_NOT_READY`。
-
-TX deploy 在修改 runtime 前只检查 Docker/Compose、`wg0` 地址与到 `10.20.0.2` 的路由（后者仍服务
-MinIO 与 broker 链路）；staging 阶段先 fail-closed 拒绝「引用/发布已退役 8087」或「重新启用本地
-执行面」的 staged Compose，再进入 pull/promote，因此不会出现「已切到 TX 内部路由但仍依赖
-Yecao backend」或反向的中间状态。
 
 ## Keycloak PostgreSQL backup owner
 

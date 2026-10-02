@@ -11,6 +11,31 @@ on:
 permissions:
   contents: read
 jobs:
+  test:
+    name: AI Service modules
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: actions/cache@v4
+        with:
+          path: java/.m2repo
+          key: ${{ runner.os }}-maven-${{ hashFiles('java/**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+      # AI Review 生产链（client canonical projection → gzip HTTP → ClientAiProjectionAdapter → AI）的
+      # 契约 / parity 测试只在 wotb-ai 里：wotb-web 不依赖 wotb-ai，Business API job 的 -am 拉不到它。
+      - name: Maven test for AI Service and dependencies
+        working-directory: java
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn --batch-mode --no-transfer-progress -s settings-ci.xml -Dmaven.repo.local=.m2repo -pl wotb-ai -am test
   image:
     name: AI Service image
     runs-on: ubuntu-latest

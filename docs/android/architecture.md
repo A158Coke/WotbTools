@@ -68,8 +68,8 @@ Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability �
   仅 `https://wotbtools.com` / `https://www.wotbtools.com` 可调，不暴露给 Keycloak / IdP /
   任意第三方 frame（替代 `addJavascriptInterface` 的全 frame 暴露）
 - APK 下载、SHA-256 校验、installer、未知来源授权
-- 复用现有 Web upload transport（`/api/replay/processing-jobs`，后端要求已登录的
-  `wotbtools-user` / `wotbtools-admin`；Android 不实现第二套上传/解析，也不携带任何自有凭据）
+- 复用 Web 的本机解析（上游 Rust Core WASM，服务器没有 parser；Android 不实现第二套解析，
+  也不携带任何自有凭据）
 
 Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`/`replay-open`/
 `app-update`），不涉及 replay 业务 capability 判断（FULL/DEGRADED/PERFORMANCE 等由 Web 端接入）。

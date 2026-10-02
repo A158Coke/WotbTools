@@ -230,9 +230,10 @@ public class DefaultTeamBattleFeatureExtractor {
         final boolean fullFeaturesAvailable = reconstructionAvailable
                 && mappedMembers > 0
                 && (observedPositionEventCount > 0 || !engagements.isEmpty());
-        final double decodedRatio = reconstructionAvailable
+        // 新引擎不提供包解码覆盖率（unavailable，不是 0）
+        final Double decodedRatio = reconstructionAvailable
                 && reconstruction.coverage() != null
-                ? reconstruction.coverage().decodedPacketRatio() : 0.0;
+                ? Double.valueOf(reconstruction.coverage().decodedPacketRatio()) : null;
         final TeamFeatureCoverage coverage = new TeamFeatureCoverage(
                 authoritativeAggregate != null,
                 reconstructionAvailable,

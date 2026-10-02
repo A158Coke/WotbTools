@@ -55,10 +55,10 @@
 | `frontend/layout-audit-2026-09-30.md` | 查看多端布局与 UI/UX 审计快照（问题清单、改版方案、路线图） |
 | `architecture/TECHNICAL_EVOLUTION.md` | 查技术决策、authority / boundary、分布式 Replay 与双云架构的 canonical 演进时 |
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / Team Autopsy 时 |
-| `architecture/replay-pipeline.md` | 改回放重建 / decoder / 事件流时 |
+| `architecture/replay-pipeline.md` | 改客户端回放管线（上游 Rust Core WASM → 批次计算 / 导出 / 2D）或名人堂客户端事实时 |
+| `architecture/client-replay-engine-migration.md` | 了解服务端解析器退役（2026-10-02）的决策、结果与后续待办时 |
 | `architecture/battle-timeline.md` | 改 battle timeline 事件模型 / 时间轴聚合时 |
 | `architecture/http-contracts.md` | 改 HTTP OpenAPI 契约、生成 transport 或 runtime schema 时 |
-| `architecture/async-contracts.md` | 改异步 Control / Worker 契约或 future async foundation 时 |
 | `architecture/grafana-opentofu.md` | 改 Grafana OpenTofu API 管理方式时 |
 | `architecture/opentofu-postgres-keycloak.md` | 改 TX Keycloak PostgreSQL OpenTofu root、state 或本地执行边界时 |
 | `architecture/tankopedia-reference-data.md` | 改 Tankopedia reference data 同步 / 单一来源时 |
@@ -102,8 +102,6 @@
 | 文档 | 何时读 |
 |---|---|
 | `operations/observability.md` | 监控 / 日志 / Grafana / 保留策略 / 排障时 |
-| `operations/minio.md` | Yecao 临时作业对象存储、OpenTofu ownership、密钥与手动部署前置条件时 |
-| `operations/rabbitmq.md` | TX RabbitMQ runtime/OpenTofu ownership、credentials、provider mirror 与 provisioning gate 时 |
 | `operations/business-postgres.md` | TX Business PostgreSQL runtime/OpenTofu ownership、凭据、备份/恢复与名人堂迁移前置时 |
 | `operations/opentofu-local-state.md` | OpenTofu owner-host persistent local state、bootstrap/adoption 与备份时 |
 | `operations/observability-runbook.md` | 生产观测链路排障和人工 runbook 时 |

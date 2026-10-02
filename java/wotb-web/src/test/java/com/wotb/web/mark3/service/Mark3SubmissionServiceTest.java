@@ -2,12 +2,12 @@ package com.wotb.web.mark3.service;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.web.mark3.dto.Mark3LeaderboardPageDto;
 import com.wotb.web.mark3.entity.Mark3Submission;
 import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
+import com.wotb.web.testsupport.ReplayFactsJson;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.user.service.WotbAccountIdentity;
@@ -34,7 +34,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,7 +44,6 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -101,18 +99,11 @@ class Mark3SubmissionServiceTest {
     @Test
     void validManualSubmissionFreezesClaimsAndBothScreenshots() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-        try (final var parser = mockStatic(ReplayParser.class)) {
-            parser.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(invocation -> {
-                final byte[] data = invocation.getArgument(0);
-                return battle(new String(data));
-            });
+        final var result = service.createSubmission(
+                USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
+                List.of(IMAGE_ONE, IMAGE_TWO), fiveReplays(), facts(fiveReplays()));
 
-            final var result = service.createSubmission(
-                    USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
-                    List.of(IMAGE_ONE, IMAGE_TWO), fiveReplays());
-
-            assertThat(result.status()).isEqualTo("PENDING");
-        }
+        assertThat(result.status()).isEqualTo("PENDING");
 
         final ArgumentCaptor<Mark3Submission> captor = ArgumentCaptor.forClass(Mark3Submission.class);
         verify(repository).saveAndFlush(captor.capture());
@@ -140,7 +131,7 @@ class Mark3SubmissionServiceTest {
 
         assertThatThrownBy(() -> service.createSubmission(
                 USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
-                List.of(IMAGE_ONE), fiveReplays()))
+                List.of(IMAGE_ONE), fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("MARK3_CURRENT_EXISTS");
 
@@ -210,7 +201,7 @@ class Mark3SubmissionServiceTest {
 
         assertThatThrownBy(() -> service.createSubmission(
                 USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.251"),
-                List.of(IMAGE_ONE), fiveReplays()))
+                List.of(IMAGE_ONE), fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("MARK3_INVALID_WIN_RATE");
     }
@@ -220,16 +211,9 @@ class Mark3SubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         final int encodedPayloadChars = ((4 * 1024 * 1024 + 2) / 3) * 4;
         final String screenshot = "data:image/png;base64," + "A".repeat(encodedPayloadChars);
-        try (final var parser = mockStatic(ReplayParser.class)) {
-            parser.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(invocation -> {
-                final byte[] data = invocation.getArgument(0);
-                return battle(new String(data));
-            });
-
-            service.createSubmission(
-                    USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
-                    List.of(screenshot), fiveReplays());
-        }
+        service.createSubmission(
+                USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
+                List.of(screenshot), fiveReplays(), facts(fiveReplays()));
 
         verify(evidenceService).storeAll(anyList());
     }
@@ -252,14 +236,11 @@ class Mark3SubmissionServiceTest {
             assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
             when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-            try (final var parser = mockStatic(ReplayParser.class)) {
-                assertThatThrownBy(() -> limitedService.createSubmission(
-                        USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
-                        List.of(IMAGE_ONE), fiveReplays()))
-                        .isInstanceOf(ReplayBusyException.class)
-                        .hasMessage("REPLAY_BUSY");
-                parser.verifyNoInteractions();
-            }
+            assertThatThrownBy(() -> limitedService.createSubmission(
+                    USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
+                    List.of(IMAGE_ONE), fiveReplays(), facts(fiveReplays())))
+                    .isInstanceOf(ReplayBusyException.class)
+                    .hasMessage("REPLAY_BUSY");
             verify(evidenceService, never()).storeAll(anyList());
             verify(repository, never()).saveAndFlush(any());
 
@@ -278,45 +259,74 @@ class Mark3SubmissionServiceTest {
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(false, true);
 
-        try (final var parser = mockStatic(ReplayParser.class)) {
+        assertThatThrownBy(() -> service.createSubmission(
+                USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
+                List.of(IMAGE_ONE), fiveReplays(), facts(fiveReplays())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("MARK3_CURRENT_EXISTS");
+        verify(evidenceService, never()).storeAll(anyList());
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void releasesGlobalReplayCapacityAfterReplayValidationFailure() throws Exception {
+        final Mark3SubmissionService limitedService = newService(new ReplayCapacityLimiter(1));
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+        // 容量许可内失败（首个回放的 facts 不含本人账号）→ 许可必须释放，下一次提交仍可进入
+        final List<String> firstForeign = new ArrayList<>(facts(fiveReplays()));
+        final Battle foreign = battle("a1");
+        foreign.players.getFirst().accountId = 999L;
+        firstForeign.set(0, ReplayFactsJson.of(foreign));
+        assertThatThrownBy(() -> limitedService.createSubmission(
+                USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
+                List.of(IMAGE_ONE), fiveReplays(), firstForeign))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("MARK3_REPLAY_GAME_ID_MISMATCH");
+
+        assertThat(limitedService.createSubmission(
+                USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
+                List.of(IMAGE_ONE), fiveReplays(), facts(fiveReplays())).status()).isEqualTo("PENDING");
+
+        verify(evidenceService).storeAll(anyList());
+    }
+
+    @Test
+    void rejectsMissingOrMiscountedReplayFactsBeforePersistence() {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+        // 服务器没有 parser：facts 必填且与回放一一对应
+        for (final List<String> facts : java.util.Arrays.asList(null, List.<String>of(),
+                facts(fiveReplays()).subList(0, 4))) {
             assertThatThrownBy(() -> service.createSubmission(
                     USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
-                    List.of(IMAGE_ONE), fiveReplays()))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("MARK3_CURRENT_EXISTS");
-            parser.verifyNoInteractions();
+                    List.of(IMAGE_ONE), fiveReplays(), facts))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("REPLAY_FACTS_COUNT_MISMATCH");
         }
         verify(evidenceService, never()).storeAll(anyList());
         verify(repository, never()).saveAndFlush(any());
     }
 
     @Test
-    void releasesGlobalReplayCapacityAfterParseFailure() throws Exception {
-        final Mark3SubmissionService limitedService = newService(new ReplayCapacityLimiter(1));
-        final AtomicInteger parseCalls = new AtomicInteger();
+    void rejectsInvalidReplayFactsBeforePersistence() {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var parser = mockStatic(ReplayParser.class)) {
-            parser.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(invocation -> {
-                if (parseCalls.getAndIncrement() == 0) {
-                    throw new IllegalArgumentException("invalid replay");
-                }
-                final byte[] data = invocation.getArgument(0);
-                return battle(new String(data));
-            });
-
-            assertThatThrownBy(() -> limitedService.createSubmission(
+        final List<String> broken = new ArrayList<>(facts(fiveReplays()));
+        final Battle noTank = battle("a4");
+        noTank.players.getFirst().tankId = 0;
+        broken.set(3, ReplayFactsJson.of(noTank));
+        final List<String> notJson = new ArrayList<>(facts(fiveReplays()));
+        notJson.set(1, "not json");
+        for (final List<String> facts : List.of(broken, notJson)) {
+            assertThatThrownBy(() -> service.createSubmission(
                     USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
-                    List.of(IMAGE_ONE), fiveReplays()))
+                    List.of(IMAGE_ONE), fiveReplays(), facts))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("INVALID_REPLAY_FILE");
-
-            assertThat(limitedService.createSubmission(
-                    USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
-                    List.of(IMAGE_ONE), fiveReplays()).status()).isEqualTo("PENDING");
+                    .hasMessage("INVALID_REPLAY_FACTS");
         }
-
-        verify(evidenceService).storeAll(anyList());
+        verify(evidenceService, never()).storeAll(anyList());
+        verify(repository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -545,8 +555,22 @@ class Mark3SubmissionServiceTest {
         battle.arenaId = arenaId;
         final PlayerResult player = new PlayerResult();
         player.accountId = GAME_ID;
+        player.nickname = "PlayerOne";
         player.tankId = TIER10_VEHICLE;
+        player.team = 1;
+        battle.recorder = player.nickname;
         battle.players = new ArrayList<>(List.of(player));
         return battle;
+    }
+
+    /** 客户端 facts：每个回放按其字节（= arenaId）映射到 {@code battle(arenaId)}，与回放同序。 */
+    private static List<String> facts(final List<MultipartFile> files) {
+        return files.stream().map(file -> {
+            try {
+                return ReplayFactsJson.of(battle(new String(file.getBytes())));
+            } catch (final java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        }).toList();
     }
 }

@@ -12,9 +12,9 @@ import yaml
 
 root = Path(sys.argv[1])
 owners = {
-    "keycloak": "keycloak", "rabbitmq": "rabbitmq",
+    "keycloak": "keycloak",
     "business-postgres": "business-postgres", "keycloak-postgres": "keycloak-postgres",
-    "minio": "minio", "observability": "grafana",
+    "observability": "grafana",
 }
 jobs = {
     owner: yaml.load((root / f".github/workflows/ci-{owner}.yml").read_text(encoding="utf-8"),
@@ -26,9 +26,9 @@ assert all("${{ secrets." not in json.dumps(job) for job in jobs.values())
 for owner, job in jobs.items():
     validation = next(step for step in job["steps"] if step.get("name") == "Format, initialize without production state, and validate")
     assert validation["env"]["ROOT_DIR"] == {
-        "keycloak": "infra/tofu/keycloak", "rabbitmq": "infra/tofu/rabbitmq",
+        "keycloak": "infra/tofu/keycloak",
         "business-postgres": "infra/tofu/postgres-business", "keycloak-postgres": "infra/tofu/postgres-keycloak",
-        "minio": "infra/tofu/minio", "observability": "infra/tofu/grafana",
+        "observability": "infra/tofu/grafana",
     }[owner]
     assert "tofu fmt -check -recursive" in validation["run"]
     assert "tofu init -backend=false -input=false" in validation["run"]
@@ -36,7 +36,7 @@ for owner, job in jobs.items():
 assert all(not re.search(r"(?i)\btofu(?:\s+-[^\s]+)*\s+(?:plan|apply)\b", json.dumps(job)) for job in jobs.values())
 assert all("init -reconfigure" not in json.dumps(job) for job in jobs.values())
 
-for owner in ("rabbitmq", "minio", "business-postgres"):
+for owner in ("business-postgres",):
     fixture = next(step for step in jobs[owner]["steps"] if step.get("name") == "Validate local-root safety policy fixtures")
     assert "test-validate-plan.sh" in fixture["run"]
 assert "bash deploy/test-business-postgres-runtime.sh" in fixture["run"]
@@ -90,6 +90,13 @@ for retired in (
     "infra/tofu/environments/prod/cos.tf",
     "infra/tofu/environments/prod/lighthouse.tf",
     "scripts/ci/test-tofu-prod-plan-guard.sh",
+    # Replay parsing runs in the browser: the broker and object-store roots are retired.
+    "infra/tofu/rabbitmq",
+    "infra/tofu/minio",
+    "deploy/tx/rabbitmq.tofurc",
+    "deploy/minio",
+    ".github/workflows/ci-rabbitmq.yml",
+    ".github/workflows/ci-minio.yml",
 ):
     assert not (root / retired).exists(), retired
 

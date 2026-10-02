@@ -7,10 +7,10 @@
 生产有两个宿主，先确认你在哪一个（业务运行时在 TX，观测栈在 Yecao）：
 
 ```bash
-# Yecao 宿主：观测栈 + parser-worker
+# Yecao 宿主：观测栈 + ai-service
 cd /opt/wotb
 docker compose -f /opt/wotb/docker-compose.yml ps
-docker compose -f /opt/wotb/docker-compose.yml logs --tail=100 alloy prometheus loki parser-worker
+docker compose -f /opt/wotb/docker-compose.yml logs --tail=100 alloy prometheus loki ai-service
 
 # TX 宿主：business-api / wotb-frontend / keycloak / caddy / 两个 PostgreSQL / rabbitmq
 cd /opt/wotb-tx
@@ -74,9 +74,9 @@ Deploy 只把 GitHub Secrets 作为 SSH 运行时环境变量注入目标 servic
 docker compose -f /opt/wotb-tx/docker-compose.yml ps -a
 docker compose -f /opt/wotb-tx/docker-compose.yml logs --tail=300 keycloak business-api wotb-frontend
 
-# Yecao 宿主：解析执行面 + 观测栈
+# Yecao 宿主：AI service + 观测栈
 docker compose -f /opt/wotb/docker-compose.yml ps -a
-docker compose -f /opt/wotb/docker-compose.yml logs --tail=300 parser-worker alloy prometheus
+docker compose -f /opt/wotb/docker-compose.yml logs --tail=300 ai-service alloy prometheus
 ```
 
 应用部署失败不会自动恢复旧镜像。各 owner workflow 输出目标服务、Compose 状态、容器日志和可读取的 Flyway schema，再停止确认失败的目标服务；Prometheus/Loki/Alloy/Grafana 失败只记录 `OBSERVABILITY DEGRADED`，不改变已健康的应用服务。失败不回滚其它已成功服务。

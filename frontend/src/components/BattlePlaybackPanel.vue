@@ -1,22 +1,11 @@
 <!--
-  战局回放 / 战局重建能力面板。
-  Dataset-only：读已解析 Processing Job 的 cached artifacts，不重新上传 replay / 不重新 full process。
-  Endpoint/auth/runtime-contract ownership 统一在 api/replay-capabilities.ts；本组件只维护 capability
-  生命周期、竞态 generation 与显式 UI 状态机。
+  战局回放能力面板：目标回放在本机解析（上游 Rust Core WASM → BattlePlaybackDataset + MapOverview，
+  replay-local/playback），服务器没有 parser。本组件只维护解析生命周期、竞态序号与显式 UI 状态机。
 -->
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useAuth } from '../composables/useAuth.js'
-import {
-  fetchBattlePlaybackDataset,
-  fetchMapOverviewArtifact,
-  type ReplayAuthSession,
-  type ReplayDatasetRef,
-} from '../api/replay-capabilities.js'
-import { isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
-import { apiErrorLabel } from '../utils/display.js'
-import { normalizeApiError } from '../utils/http.js'
+import { parseLocalPlayback } from '../replay-local/playback/index.js'
+import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
 import type { BattlePlaybackDataset } from '../types/playback-v2.js'
 import MapOverview from './MapOverview.vue'
 import BattlePlayback from './BattlePlayback.vue'
@@ -24,31 +13,19 @@ import BattlePlayback from './BattlePlayback.vue'
 const BattleMap3D = defineAsyncComponent(() => import('./BattleMap3D.vue'))
 
 const props = defineProps({
+  /** 目标回放文件：本地解析（上游 Rust Core WASM），文件不出本机 */
   file: { type: Object, default: null },
-  processingJobId: { type: String, default: null },
-  sourceId: { type: String, default: null },
   active: { type: Boolean, default: false },
   seekTo: { type: Number, default: null },
-  datasetError: { type: String, default: '' }
+  /** 工作台给出的不可用原因（如多文件未选场次）；非空时不解析 */
+  blockedReason: { type: String, default: '' },
 })
-
-const emit = defineEmits(['dataset-recover'])
-
-const { t, te } = useI18n()
-const auth = useAuth() as ReplayAuthSession
-const datasetReady = computed(() => !!props.processingJobId && !!props.sourceId)
-
-function datasetRef(): ReplayDatasetRef | null {
-  if (!props.processingJobId || !props.sourceId) return null
-  return { processingJobId: props.processingJobId, sourceId: props.sourceId }
-}
 
 const mapOverview = ref<Record<string, any> | null>(null)
 const mapPlaybackV2 = ref<BattlePlaybackDataset | null>(null)
+/** LOADING | FULL | PARTIAL | UNAVAILABLE | ERROR */
 const playbackV2State = ref('LOADING')
 const playbackV2Error = ref('')
-const playbackV2Retryable = ref(false)
-const playbackV2UnavailableReason = ref('')
 
 /** V2 是 playback 核心事实源；MapOverview 只补 optional overlay。 */
 const pbOverview = computed(() => {
@@ -65,235 +42,124 @@ const pbOverview = computed(() => {
 })
 
 const panelView = ref('playback')
-// 2.5D is the upgraded map presentation. The underlying 2D raster remains only
-// as a fail-safe while local/legal height data is unavailable; users do not switch modes.
-const mapLoading = ref(false)
-const mapLoaded = ref(false)
-const mapError = ref('')
 const mapSeek = ref<number | null>(null)
-let mapRequestSeq = 0
-let mapAbortController: AbortController | null = null
+/** 在途解析的认领序号：文件切换 / 卸载后迟到的结果一律丢弃 */
+let parseSeq = 0
+/** 已完成（或正在）解析的文件：同一文件不重复解析 */
+let parsedFile: unknown = null
 
-async function loadMapOverview() {
-  if (mapLoading.value) return
-  const refValue = datasetRef()
-  if (!refValue) return
-
-  const controller = new AbortController()
-  mapAbortController = controller
-  const requestSeq = ++mapRequestSeq
-  mapLoading.value = true
-  mapError.value = ''
-  try {
-    const artifact = await fetchMapOverviewArtifact(auth, refValue, controller.signal)
-    if (requestSeq !== mapRequestSeq) return
-    mapOverview.value = artifact.available
-      ? artifact.data as Record<string, any>
-      : null
-    if (requestSeq !== mapRequestSeq) return
-    mapLoaded.value = true
-  } catch (e) {
-    if (requestSeq !== mapRequestSeq) return
-    const apiError = normalizeApiError(e)
-    if (apiError.code === 'REQUEST_ABORTED') return
-    if (isRecoverableDatasetCode(apiError.code)) {
-      emit('dataset-recover', apiError.code)
-      mapLoaded.value = false
-      return
-    }
-    mapError.value = apiErrorLabel(t, te, apiError)
-    mapLoaded.value = true
-  } finally {
-    if (requestSeq === mapRequestSeq) {
-      mapLoading.value = false
-      if (mapAbortController === controller) mapAbortController = null
-    }
-  }
-}
-
-let playbackV2Seq = 0
-let playbackV2AbortController: AbortController | null = null
-async function loadPlaybackV2() {
-  const refValue = datasetRef()
-  if (!refValue) return
-  if (playbackV2AbortController) playbackV2AbortController.abort()
-
-  const controller = new AbortController()
-  playbackV2AbortController = controller
-  const seq = ++playbackV2Seq
-  playbackV2State.value = 'LOADING'
-  playbackV2Error.value = ''
-  playbackV2Retryable.value = false
-  playbackV2UnavailableReason.value = ''
-  const logBase = refValue
-
-  try {
-    const artifact = await fetchBattlePlaybackDataset(auth, refValue, controller.signal)
-    if (seq !== playbackV2Seq) return
-    if (!artifact.available) {
-      mapPlaybackV2.value = null
-      playbackV2State.value = 'UNAVAILABLE'
-      playbackV2UnavailableReason.value = t('recon.playback.unavailable')
-      console.warn('[playback-v2] unavailable (204 / no artifact / timeline not usable)', logBase)
-      return
-    }
-
-    const dataset = artifact.data
-    mapPlaybackV2.value = dataset
-    playbackV2State.value = dataset.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
-    console.info('[playback-v2] ok', {
-      ...logBase,
-      status: artifact.status,
-      capability: dataset.capability,
-      limitations: dataset.limitations
-    })
-  } catch (e) {
-    if (seq !== playbackV2Seq) return
-    const apiError = normalizeApiError(e)
-    if (apiError.code === 'REQUEST_ABORTED') {
-      playbackV2State.value = 'LOADING'
-      return
-    }
-    if (isRecoverableDatasetCode(apiError.code)) {
-      emit('dataset-recover', apiError.code)
-      return
-    }
-    mapPlaybackV2.value = null
-    playbackV2State.value = 'ERROR'
-    playbackV2Error.value = apiErrorLabel(t, te, apiError)
-    playbackV2Retryable.value = apiError.retryable
-    console.warn('[playback-v2] exception', {
-      ...logBase,
-      failureCode: apiError.code
-    })
-  } finally {
-    if (playbackV2AbortController === controller) playbackV2AbortController = null
-  }
-}
-
-function retryPlaybackV2() {
-  if (!datasetReady.value) return
-  loadPlaybackV2()
-}
-
-function resetMap() {
-  mapRequestSeq++
-  playbackV2Seq++
-  if (playbackV2AbortController) {
-    playbackV2AbortController.abort()
-    playbackV2AbortController = null
-  }
-  if (mapAbortController) {
-    mapAbortController.abort()
-    mapAbortController = null
-  }
+function reset() {
+  parseSeq++
+  parsedFile = null
   mapOverview.value = null
   mapPlaybackV2.value = null
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
-  playbackV2Retryable.value = false
-  playbackV2UnavailableReason.value = ''
   panelView.value = 'playback'
-  mapLoading.value = false
-  mapLoaded.value = false
-  mapError.value = ''
   mapSeek.value = null
 }
 
-function effectiveDatasetKey() {
-  return `${props.processingJobId || ''}|${props.sourceId || ''}`
-}
-
-watch(effectiveDatasetKey, () => {
-  resetMap()
-  maybeAutoLoadMap()
-}, { immediate: true })
-
-watch(() => props.active, () => {
-  maybeAutoLoadMap()
-}, { immediate: true })
-
-function maybeAutoLoadMap() {
-  if (props.active && datasetReady.value && !mapLoaded.value && !mapLoading.value) {
-    loadMapOverview()
-    if (playbackV2State.value === 'LOADING') loadPlaybackV2()
+async function load() {
+  const file = props.file
+  if (!file || props.blockedReason || parsedFile === file) return
+  parsedFile = file
+  const seq = ++parseSeq
+  playbackV2State.value = 'LOADING'
+  playbackV2Error.value = ''
+  try {
+    const { dataset, overview } = await parseLocalPlayback(file as File)
+    if (seq !== parseSeq) return
+    mapPlaybackV2.value = dataset
+    mapOverview.value = overview as Record<string, any> | null
+    playbackV2State.value = !dataset ? 'UNAVAILABLE' : dataset.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
+  } catch (e) {
+    if (seq !== parseSeq) return
+    // 服务器没有 parser：解析失败只显示原因，不回退服务端
+    console.warn('[playback-local] parse failed', e)
+    parsedFile = null
+    mapPlaybackV2.value = null
+    playbackV2State.value = 'ERROR'
+    playbackV2Error.value = e instanceof ReplayEngineUnavailableError
+      ? 'recon.playback.engine_unavailable'
+      : 'recon.playback.parse_failed'
   }
 }
 
+function retry() {
+  parsedFile = null
+  load()
+}
+
+watch(() => props.file, () => {
+  reset()
+  if (props.active) load()
+})
+
+watch(() => props.active, (active) => {
+  if (active) load()
+}, { immediate: true })
+
 watch(() => props.seekTo, async (sec) => {
   if (!Number.isFinite(sec)) return
-  if (!mapOverview.value && !mapLoading.value) await loadMapOverview()
   mapSeek.value = null
   await nextTick()
   mapSeek.value = sec
 })
 
 onBeforeUnmount(() => {
-  mapRequestSeq++
-  playbackV2Seq++
-  if (playbackV2AbortController) playbackV2AbortController.abort()
-  if (mapAbortController) mapAbortController.abort()
-  playbackV2AbortController = null
-  mapAbortController = null
+  parseSeq++
 })
 </script>
 
 <template>
   <div>
-    <p v-if="!file && !datasetReady" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
+    <p v-if="blockedReason" class="ws-note map-dataset-error" data-test="map-dataset-status">{{ blockedReason }}</p>
+    <p v-else-if="!file" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
     <div v-else class="panel map-panel" data-test="map-panel">
-      <div v-if="!datasetReady" class="map-dataset-status" data-test="map-dataset-status">
-        <span v-if="!datasetError" class="map-status-spinner" aria-hidden="true"></span>
-        <span :class="{ 'map-dataset-error': !!datasetError }">{{ datasetError || $t('workspace.dataset_preparing') }}</span>
+      <div class="pb-panel-head">
+        <h2>{{ $t('recon.playback.title') }}</h2>
+        <div class="pb-view-toggle" role="tablist" aria-label="Replay playback views">
+          <button type="button" class="pb-view-tab" :class="{ active: panelView === 'playback' }" data-test="pb-view-playback" @click="panelView = 'playback'">{{ $t('recon.playback.view_playback') }}</button>
+          <button type="button" class="pb-view-tab" :class="{ active: panelView === 'map' }" data-test="pb-view-map" @click="panelView = 'map'">{{ $t('recon.playback.view_map') }}</button>
+        </div>
       </div>
-      <template v-else>
-        <div class="pb-panel-head">
-          <h2>{{ $t('recon.playback.title') }}</h2>
-          <div class="pb-view-toggle" role="tablist" aria-label="Replay playback views">
-            <button type="button" class="pb-view-tab" :class="{ active: panelView === 'playback' }" data-test="pb-view-playback" @click="panelView = 'playback'">{{ $t('recon.playback.view_playback') }}</button>
-            <button type="button" class="pb-view-tab" :class="{ active: panelView === 'map' }" data-test="pb-view-map" @click="panelView = 'map'">{{ $t('recon.playback.view_map') }}</button>
-          </div>
-          <button v-if="!mapOverview" type="button" class="map-load-btn" data-test="map-load-btn" :disabled="mapLoading" @click="loadMapOverview">{{ $t(mapLoading ? 'recon.map.loading' : 'recon.map.load') }}</button>
-        </div>
-        <p v-if="mapError" class="error map-error" data-test="map-error">{{ mapError }}</p>
 
-        <div v-show="panelView === 'playback'" data-test="pb-primary">
-          <template v-if="playbackV2State === 'FULL' || playbackV2State === 'PARTIAL'">
-            <p v-if="playbackV2State === 'PARTIAL'" class="pb-capability-note" data-test="pb-capability-partial">{{ $t('recon.playback.partial') }}</p>
-            <BattlePlayback
-              v-if="pbOverview"
-              :overview="pbOverview || undefined"
-              :playback-v2="mapPlaybackV2 || undefined"
-              :seek-to="mapSeek ?? undefined"
-              :active="active && panelView === 'playback'"
-            />
+      <div v-show="panelView === 'playback'" data-test="pb-primary">
+        <template v-if="playbackV2State === 'FULL' || playbackV2State === 'PARTIAL'">
+          <p v-if="playbackV2State === 'PARTIAL'" class="pb-capability-note" data-test="pb-capability-partial">{{ $t('recon.playback.partial') }}</p>
+          <BattlePlayback
+            v-if="pbOverview"
+            :overview="pbOverview || undefined"
+            :playback-v2="mapPlaybackV2 || undefined"
+            :seek-to="mapSeek ?? undefined"
+            :active="active && panelView === 'playback'"
+          />
 
-            <!-- 2.5D directly upgrades the map background. BattleMap still owns all
-                 replay overlays/time/state; if local height data is unavailable the
-                 original raster simply remains visible as a technical fallback. -->
-            <Teleport
-              v-if="pbOverview"
-              defer
-              to="[data-test='pb-primary'] .pb-viewport"
-            >
-              <BattleMap3D :map-code="String(mapPlaybackV2?.mapCode || '')" />
-            </Teleport>
-          </template>
-          <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">{{ playbackV2UnavailableReason }}</div>
-          <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error" :data-retryable="playbackV2Retryable">
-            <span>{{ playbackV2Error }}</span>
-            <button type="button" class="ghost sm" data-test="pb-retry" @click="retryPlaybackV2">{{ $t('recon.playback.retry') }}</button>
-          </div>
-          <div v-else-if="playbackV2State === 'LOADING'" class="pb-status" data-test="pb-loading">
-            <span class="map-status-spinner" aria-hidden="true"></span>{{ $t('recon.playback.loading') }}
-          </div>
+          <!-- 2.5D directly upgrades the map background. BattleMap still owns all
+               replay overlays/time/state; if local height data is unavailable the
+               original raster simply remains visible as a technical fallback. -->
+          <Teleport
+            v-if="pbOverview"
+            defer
+            to="[data-test='pb-primary'] .pb-viewport"
+          >
+            <BattleMap3D :map-code="String(mapPlaybackV2?.mapCode || '')" />
+          </Teleport>
+        </template>
+        <div v-else-if="playbackV2State === 'UNAVAILABLE'" class="pb-status pb-unavailable" data-test="pb-unavailable">{{ $t('recon.playback.unavailable') }}</div>
+        <div v-else-if="playbackV2State === 'ERROR'" class="pb-status pb-error" data-test="pb-error">
+          <span>{{ $t(playbackV2Error) }}</span>
+          <button type="button" class="ghost sm" data-test="pb-retry" @click="retry">{{ $t('recon.playback.retry') }}</button>
         </div>
+        <div v-else-if="playbackV2State === 'LOADING'" class="pb-status" data-test="pb-loading">
+          <span class="map-status-spinner" aria-hidden="true"></span>{{ $t('recon.playback.loading') }}
+        </div>
+      </div>
 
-        <div v-show="panelView === 'map'" data-test="pb-map-secondary">
-          <MapOverview v-if="mapOverview" :overview="mapOverview" />
-          <p v-else-if="mapLoaded && !mapLoading" class="map-unavailable" data-test="map-unavailable">{{ $t('recon.map.unavailable') }}</p>
-        </div>
-      </template>
+      <div v-show="panelView === 'map'" data-test="pb-map-secondary">
+        <MapOverview v-if="mapOverview" :overview="mapOverview" />
+        <p v-else-if="playbackV2State !== 'LOADING'" class="map-unavailable" data-test="map-unavailable">{{ $t('recon.map.unavailable') }}</p>
+      </div>
     </div>
   </div>
 </template>

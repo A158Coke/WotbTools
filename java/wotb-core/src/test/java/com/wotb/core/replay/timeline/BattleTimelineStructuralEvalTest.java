@@ -2,16 +2,12 @@ package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.testsupport.FrozenReplayFacts;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -24,20 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class BattleTimelineStructuralEvalTest {
 
-    private static Path fixture() throws Exception {
-        final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")
-                .normalize();
-        try (Stream<Path> s = Files.list(dir)) {
-            return s.filter(p -> p.getFileName().toString().contains("random-battle-example"))
-                    .findFirst().orElseThrow();
-        }
-    }
-
     @Test
     void deterministicRebuildProducesIdenticalFrames() throws Exception {
-        final byte[] bytes = Files.readAllBytes(fixture());
-        final Battle battle = ReplayParser.parse(bytes);
-        final ReplayReconstruction recon = new ReplayReconstructionService().reconstruct(bytes);
+        final FrozenReplayFacts.Facts facts = FrozenReplayFacts.load(FrozenReplayFacts.RANDOM_BATTLE);
+        final Battle battle = facts.battle();
+        final ReplayReconstruction recon = facts.reconstruction();
         final PlayerResult recorder = battle.recorderResult();
         final TimelinePerspective perspective = TimelinePerspective.personal(
                 recorder.accountId > 0 ? recorder.accountId : null, recorder.team);
@@ -63,9 +50,9 @@ class BattleTimelineStructuralEvalTest {
 
     @Test
     void eventsAreLosslessAndNonDuplicatedAcrossFrames() throws Exception {
-        final byte[] bytes = Files.readAllBytes(fixture());
-        final Battle battle = ReplayParser.parse(bytes);
-        final ReplayReconstruction recon = new ReplayReconstructionService().reconstruct(bytes);
+        final FrozenReplayFacts.Facts facts = FrozenReplayFacts.load(FrozenReplayFacts.RANDOM_BATTLE);
+        final Battle battle = facts.battle();
+        final ReplayReconstruction recon = facts.reconstruction();
         final PlayerResult recorder = battle.recorderResult();
         if (recon.battleStartRawClockSec() == null) {
             final BattleTimelineResult r = BattleTimelineBuilder.build(
@@ -109,9 +96,9 @@ class BattleTimelineStructuralEvalTest {
 
     @Test
     void episodesCoverWholeBattleDeterministically() throws Exception {
-        final byte[] bytes = Files.readAllBytes(fixture());
-        final Battle battle = ReplayParser.parse(bytes);
-        final ReplayReconstruction recon = new ReplayReconstructionService().reconstruct(bytes);
+        final FrozenReplayFacts.Facts facts = FrozenReplayFacts.load(FrozenReplayFacts.RANDOM_BATTLE);
+        final Battle battle = facts.battle();
+        final ReplayReconstruction recon = facts.reconstruction();
         final PlayerResult recorder = battle.recorderResult();
         if (recon.battleStartRawClockSec() == null) {
             final BattleTimelineResult r = BattleTimelineBuilder.build(

@@ -11,15 +11,7 @@
     <name>WotBTools</name>
 
     <modules>
-        <module>wotb-contracts</module>
-        <module>wotb-object-storage-minio</module>
-        <module>wotb-broker-rabbitmq</module>
         <module>wotb-core</module>
-        <module>wotb-result</module>
-        <module>wotb-playback</module>
-        <module>wotb-replay-coordinator</module>
-        <module>wotb-replay-processing</module>
-        <module>wotb-parser-worker</module>
         <module>wotb-ai</module>
         <module>wotb-web</module>
     </modules>
@@ -27,21 +19,14 @@
     <properties>
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <poi.version>5.3.0</poi.version>
         <javafx.version>21.0.4</javafx.version>
         <springboot.version>4.1.1</springboot.version>
         <springai.version>2.0.0</springai.version>
         <archunit.version>1.4.2</archunit.version>
-        <minio.version>8.5.17</minio.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <dependency>
-                <groupId>com.wotb</groupId>
-                <artifactId>wotb-contracts</artifactId>
-                <version>1.0.0</version>
-            </dependency>
             <dependency>
                 <groupId>com.wotb</groupId>
                 <artifactId>wotb-core</artifactId>
@@ -49,55 +34,8 @@
             </dependency>
             <dependency>
                 <groupId>com.wotb</groupId>
-                <artifactId>wotb-result</artifactId>
-                <version>1.0.0</version>
-            </dependency>
-            <dependency>
-                <groupId>com.wotb</groupId>
-                <artifactId>wotb-playback</artifactId>
-                <version>1.0.0</version>
-            </dependency>
-            <dependency>
-                <groupId>com.wotb</groupId>
-                <artifactId>wotb-replay-coordinator</artifactId>
-                <version>1.0.0</version>
-            </dependency>
-            <dependency>
-                <groupId>com.wotb</groupId>
-                <artifactId>wotb-replay-processing</artifactId>
-                <version>1.0.0</version>
-            </dependency>
-            <dependency>
-                <groupId>com.wotb</groupId>
                 <artifactId>wotb-ai</artifactId>
                 <version>1.0.0</version>
-            </dependency>
-            <dependency>
-                <groupId>com.wotb</groupId>
-                <artifactId>wotb-parser-worker</artifactId>
-                <version>1.0.0</version>
-            </dependency>
-            <dependency>
-                <groupId>com.wotb</groupId>
-                <artifactId>wotb-object-storage-minio</artifactId>
-                <version>1.0.0</version>
-            </dependency>
-            <dependency>
-                <groupId>com.wotb</groupId>
-                <artifactId>wotb-broker-rabbitmq</artifactId>
-                <version>1.0.0</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.poi</groupId>
-                <artifactId>poi-ooxml</artifactId>
-                <version>${poi.version}</version>
-            </dependency>
-            <!-- MinIO Java SDK：8.5 维护线（okhttp 4.12.0）。
-                 9.x 会连带升级到 okhttp 5 大版本，不在本 PR 引入。 -->
-            <dependency>
-                <groupId>io.minio</groupId>
-                <artifactId>minio</artifactId>
-                <version>${minio.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
