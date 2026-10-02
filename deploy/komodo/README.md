@@ -64,16 +64,25 @@ Compose mutation, the OpenTofu plan/apply, the second plan, and both runtime
 verifications:
 
 1. Preflight the source SHA, the four Komodo secrets, the two TencentCloud
-   credentials, the staged inputs, the staging root, and the local state
-   bootstrap contract.
-2. `docker compose config` then `pull`, and only then promote the staged Compose
+   credentials, the staged inputs, and the staging root.
+2. Take the host lock, then establish the **whole state-root invariant** —
+   `/opt/komodo` and `/opt/komodo/tofu-state` must both already be real
+   directories — and only then judge the state/marker bootstrap pair. Nothing is
+   mutated until all of that holds.
+3. `docker compose config` then `pull`, and only then promote the staged Compose
    to `/opt/komodo/compose.yml` and `up -d`.
-3. Verify the private controller.
-4. `tofu fmt` / `init -lockfile=readonly` / `validate` / saved `plan` /
+4. Verify the private controller.
+5. `tofu fmt` / `init -lockfile=readonly` / `validate` / saved `plan` /
    plan-guard / `apply` / saved second plan / `--require-no-changes`.
-5. Write `bootstrap-complete`, then verify the controller a final time.
-6. Write `source-sha` last, atomically. It means *last successfully reconciled
+6. Write `bootstrap-complete`, then verify the controller a final time.
+7. Write `source-sha` last, atomically. It means *last successfully reconciled
    source*, so a failed run never advances it.
+
+The state-root check must precede the bootstrap-pair check, and both must precede
+step 3: a symlinked `tofu-state` can hold a valid-looking state/marker pair
+somewhere else, so judging the pair first would mutate the Compose runtime before
+the unsafe root was noticed. `require_bootstrap_state` re-proves the state
+directory itself, so a caller cannot lose the invariant by ordering alone.
 
 ## Verification
 
@@ -84,6 +93,7 @@ strings, and so are the staging root and the DNS plan guard:
 ```sh
 bash deploy/komodo/test-guards.sh                  # path + state-bootstrap guards
 bash deploy/komodo/test-staging-root.sh            # prepare/verify/cleanup staging root
+bash deploy/komodo/test-reconcile-preflight.sh     # real reconcile.sh call ordering
 bash infra/tofu/komodo/test-validate-plan.sh       # DNS plan guard
 ```
 
@@ -93,11 +103,15 @@ symlinked and dangling state/marker/directory, and a non-directory path.
 `test-staging-root.sh` covers a fresh root, an existing safe root, a symlinked or
 dangling root/incoming/SHA directory, a regular file where a directory belongs,
 malformed SHAs, unsafe roots, and proves a refused cleanup leaves the symlink
-target untouched. `test-validate-plan.sh` locks all eight record fields — domain,
-sub_domain, record_type, record_line, value, ttl, status, and remark — so a
-changed DNS line, TTL, or remark is rejected alongside deletes, replacements, and
-unexpected resources. `.github/workflows/ci-komodo-controller.yml` runs all three
-suites on every pull request that touches this owner.
+target untouched. `test-reconcile-preflight.sh` drives the real `reconcile.sh`
+against a disposable controller root with a stubbed `deploy.sh`, so it proves an
+unsafe or corrupt state root is rejected **before** the runtime mutation phase
+starts — including a symlinked `tofu-state` that holds a valid-looking pair.
+`test-validate-plan.sh` locks all eight record fields — domain, sub_domain,
+record_type, record_line, value, ttl, status, and remark — so a changed DNS line,
+TTL, or remark is rejected alongside deletes, replacements, and unexpected
+resources. `.github/workflows/ci-komodo-controller.yml` runs all four suites on
+every pull request that touches this owner.
 
 ## Failure semantics
 
