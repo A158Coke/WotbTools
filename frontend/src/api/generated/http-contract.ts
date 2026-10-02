@@ -308,7 +308,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Stream an AI replay review */
+        /**
+         * Stream an AI replay review
+         * @description The request carries the client canonical AI projection (the server has no replay parser). Clients SHOULD send the JSON body with `Content-Encoding: gzip`; the server inflates it with a 16 MiB decompressed-size limit (exceeding the transport or the inflated limit → 413).
+         */
         post: operations["createAiReview"];
         delete?: never;
         options?: never;
@@ -556,15 +559,123 @@ export interface components {
             failed: number;
             results: components["schemas"]["DeleteUserResult"][];
         };
-        AiReviewRequestV1: {
+        AiReviewRequestV2: {
             /** @constant */
-            schemaVersion: 1;
+            schemaVersion: 2;
             /** @enum {string} */
             locale: "zh-CN" | "en-US" | "ru-RU";
             /** Format: uuid */
             correlationId: string;
             battle: components["schemas"]["AiReviewBattle"];
-            reconstruction: components["schemas"]["AiReviewReconstruction"];
+            projection: components["schemas"]["ClientAiReviewProjection"];
+        };
+        /** @description WotbTools client canonical AI projection (frontend/src/replay-local/ai). Built from the pinned upstream Agent facets through WotbTools canonical replay facts, never the raw Agent DTO. Clocks are raw replay clocks in seconds; battle-relative time = rawClockSec - clock.battleStartRawClockSec. Only combatant entities appear. Evidence the engine does not provide is listed in unavailableEvidence. */
+        ClientAiReviewProjection: {
+            /** @constant */
+            projectionVersion: 1;
+            engine: components["schemas"]["AiProjectionEngine"];
+            clock: components["schemas"]["AiProjectionClock"];
+            perspective: components["schemas"]["AiProjectionPerspective"];
+            participants: components["schemas"]["AiProjectionParticipant"][];
+            observationWindows: components["schemas"]["AiProjectionObservationWindow"][];
+            positions: components["schemas"]["AiProjectionSampleTrack"][];
+            turrets: components["schemas"]["AiProjectionSampleTrack"][];
+            prop3Health: components["schemas"]["AiProjectionProp3Health"][];
+            healthEvents: components["schemas"]["AiProjectionHealthEvent"][];
+            damageNotices: components["schemas"]["AiProjectionDamageNotice"][];
+            periods: components["schemas"]["AiProjectionPeriod"][];
+            objectives: components["schemas"]["AiProjectionObjectives"];
+            /** @description Capability-affecting limitations; non-empty means the timeline is limited. */
+            limitations: string[];
+            /** @description Evidence classes the engine does not provide; consumers render them as unavailable, never as empty truth. */
+            unavailableEvidence: ("PACKET_DECODE_COVERAGE" | "SHOT_LIFECYCLE" | "TARGETING" | "AMMUNITION")[];
+        };
+        AiProjectionEngine: {
+            agentRelease: string;
+            agentCommit: string;
+        };
+        AiProjectionClock: {
+            battleStartRawClockSec: number;
+            battleDurationSec: number;
+            estimated: boolean;
+            battleEndRawClockSec: number | null;
+            streamEndRawClockSec: number | null;
+        };
+        AiProjectionPerspective: {
+            /** Format: int64 */
+            recorderAccountId: number | null;
+            perspectiveTeam: number | null;
+            recorderEntityIds: number[];
+            winnerTeam: number | null;
+        };
+        AiProjectionParticipant: {
+            entityId: number;
+            /** Format: int64 */
+            accountId: number;
+            nickname: string;
+            /** @enum {integer} */
+            team: 1 | 2;
+            tankId: number;
+            recorder: boolean;
+        };
+        AiProjectionObservationWindow: {
+            entityId: number;
+            fromRawClockSec: number;
+            toRawClockSec: number | null;
+            materializationHp: number | null;
+        };
+        /** @description Raw observations of one entity, flat and clock-ordered. positions: [rawClockSec, x, y, z, hullYawRad] x N (unfiltered type-10 world poses). turrets: [rawClockSec, turretRelativeYawDeg] x N (prop2 coarse yaw). */
+        AiProjectionSampleTrack: {
+            entityId: number;
+            /** @enum {integer} */
+            stride: 2 | 5;
+            samples: number[];
+        };
+        AiProjectionProp3Health: {
+            entityId: number;
+            rawClockSec: number;
+            hpRaw: number;
+        };
+        AiProjectionHealthEvent: {
+            entityId: number;
+            rawClockSec: number;
+            hpRaw: number;
+            sourceEntityId: number;
+            causeFlag: number;
+        };
+        AiProjectionDamageNotice: {
+            rawClockSec: number;
+            /** @enum {string} */
+            kind: "HIT" | "UNDECODED_VARIANT" | "SHORT_VARIANT";
+            envelopeEntityId: number;
+            attackerEntityId: number;
+            victimEntityId: number;
+            primaryResult: number | null;
+            secondaryResult: number | null;
+        };
+        AiProjectionPeriod: {
+            rawClockSec: number;
+            period: number;
+        };
+        AiProjectionObjectives: {
+            supremacyPoints: {
+                rawClockSec: number;
+                team: number;
+                points: number;
+            }[];
+            supremacyBases: {
+                rawClockSec: number;
+                /** @enum {string} */
+                baseId: "A" | "B" | "C" | "D";
+                ownerTeam: number | null;
+                capturingTeam: number | null;
+                captureProgress: number | null;
+            }[];
+            assaultObjectivePresent: boolean;
+            assaultBases: {
+                rawClockSec: number;
+                captureProgress: number;
+            }[];
         };
         AiReviewBattle: {
             arenaId?: string | null;
@@ -638,48 +749,6 @@ export interface components {
             raw?: {
                 [key: string]: unknown[];
             } | null;
-        };
-        AiReviewReconstruction: {
-            battleDurationSec?: number;
-            battleStartRawClockSec?: number | null;
-            participants: components["schemas"]["AiReviewParticipant"][];
-            events: components["schemas"]["AiReviewEvent"][];
-            checkpoints?: {
-                [key: string]: unknown;
-            }[] | null;
-            finalState?: {
-                [key: string]: unknown;
-            } | null;
-            coverage: components["schemas"]["AiReviewCoverage"];
-        };
-        AiReviewParticipant: {
-            /** Format: int64 */
-            accountId: number;
-            nickname: string;
-            team: number;
-            tankId: number;
-            tankCode: string | null;
-            recorder: boolean;
-        };
-        AiReviewEvent: {
-            /** @enum {string} */
-            type: "AimRayStateEvent" | "AmmunitionSelectionChangedEvent" | "AmmunitionStateEvent" | "ArenaPeriodChangedEvent" | "AttachedTransformEvent" | "ConsumableLifecycleEvent" | "DamageEvent" | "EntityAuxiliaryBlobEvent" | "EntityCreatedEvent" | "EntityRemovedEvent" | "GunMarkerSizeEvent" | "HealthChangedEvent" | "MaterializationAnnouncedEvent" | "MaterializationEvent" | "ParticipantMappingEvent" | "PositionChangedEvent" | "ProjectileLaunchedEvent" | "ProjectileResolutionEvent" | "ProjectileTerminalEvent" | "RawSupremacyBaseUpdate" | "RecorderHealthChangedEvent" | "ReplayStreamClosedEvent" | "RoundFinishedEvent" | "SessionDecisecondLowByteEvent" | "ShotResultEvent" | "SupremacyBaseStateTransition" | "SupremacyPointsChangedEvent" | "TargetingInfoSnapshotEvent" | "TurretDirectionChangedEvent" | "UnknownReplayEvent" | "UnsupportedDamageEvent" | "VehicleDestroyedEvent" | "VehicleFiredEvent" | "VehicleHealthStateEvent" | "VehicleHitEvent" | "VehicleModuleCrewStateEvent" | "VehicleVehicleCollisionEvent";
-            sequence: number;
-        } & {
-            [key: string]: unknown;
-        };
-        AiReviewCoverage: {
-            totalPackets: number;
-            decodedPackets: number;
-            partiallyDecodedPackets: number;
-            unknownPackets: number;
-            failedPackets: number;
-            decodedPacketRatio: number;
-            packetTypes: {
-                [key: string]: {
-                    [key: string]: unknown;
-                };
-            };
         };
         AiReviewStageEventPayload: Record<string, never>;
         AiReviewTokenEventPayload: {
@@ -1485,7 +1554,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AiReviewRequestV1"];
+                "application/json": components["schemas"]["AiReviewRequestV2"];
             };
         };
         responses: {
@@ -1534,7 +1603,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Request exceeds the 16 MiB limit */
+            /** @description Request (transport or gzip-inflated) exceeds the 16 MiB limit */
             413: {
                 headers: {
                     [name: string]: unknown;

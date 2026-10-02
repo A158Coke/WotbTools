@@ -1,5 +1,8 @@
 package com.wotb.ai;
 
+import com.wotb.core.replay.projection.ClientAiProjection;
+import com.wotb.core.replay.projection.ClientAiProjectionAdapter;
+
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.facts.ReplayFactsCodec;
 import com.wotb.core.replay.processing.BattleCategoryUtils;
@@ -38,6 +41,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
 import tools.jackson.databind.JsonNode;
@@ -79,8 +83,14 @@ public class AiReviewController {
                 .register(meterRegistry);
     }
 
-    public record AiReviewRequestV1(int schemaVersion, String locale, String correlationId,
-                                    Battle battle, ReplayReconstruction reconstruction) {
+    public static final int SCHEMA_VERSION = 2;
+
+    /**
+     * 解码后的请求：{@code reconstruction} 由 {@link ClientAiProjectionAdapter} 从客户端 canonical AI 投影装配
+     * （服务器没有 replay parser），{@code limitations} 为投影声明的能力缺口。
+     */
+    public record AiReviewRequest(int schemaVersion, String locale, String correlationId,
+                                  Battle battle, ReplayReconstruction reconstruction, List<String> limitations) {
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -90,45 +100,85 @@ public class AiReviewController {
         }
         final JsonNode body;
         try {
-            final byte[] bytes = request.getInputStream().readNBytes(MAX_REQUEST_BYTES + 1);
-            if (bytes.length > MAX_REQUEST_BYTES) {
-                throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE, "AI_REQUEST_TOO_LARGE");
-            }
+            final byte[] bytes = readBody(request);
             body = JsonMapper.builder().build().readTree(bytes);
         } catch (final IOException error) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_AI_REQUEST");
         }
-        if (body == null || !body.isObject() || body.path("schemaVersion").asInt() != 1) {
+        if (body == null || !body.isObject() || body.path("schemaVersion").asInt() != SCHEMA_VERSION) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_AI_REQUEST_SCHEMA");
         }
+        // 信封先于投影：locale / correlationId 的契约错误不被投影结构错误掩盖
+        languageOf(body.path("locale").asString(""));
+        if (!AiCancellationRegistry.isValidCorrelationId(body.path("correlationId").asString(""))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_CORRELATION_ID");
+        }
         try {
-            return review(new AiReviewRequestV1(1,
+            final Battle battle = ReplayFactsCodec.battleFromJson(body.path("battle"));
+            final ClientAiProjection projection = ReplayFactsCodec.projectionFromJson(body.path("projection"));
+            final ReplayReconstruction reconstruction = ClientAiProjectionAdapter.toReconstruction(battle, projection);
+            ClientAiProjectionAdapter.enrichBattle(battle, reconstruction);
+            return review(new AiReviewRequest(SCHEMA_VERSION,
                     body.path("locale").asString(""),
                     body.path("correlationId").asString(""),
-                    ReplayFactsCodec.battleFromJson(body.path("battle")),
-                    ReplayFactsCodec.reconstructionFromJson(body.path("reconstruction"))));
-        } catch (final IOException | IllegalArgumentException error) {
+                    battle,
+                    reconstruction,
+                    List.copyOf(projection.limitations())));
+        } catch (final IOException | tools.jackson.core.JacksonException | IllegalArgumentException
+                       | NullPointerException error) {
+            // Jackson 3 的映射异常是 unchecked：结构不合法的投影必须是 400 INVALID_AI_REQUEST，不是 500
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_AI_REQUEST");
         }
     }
 
-    public SseEmitter review(final AiReviewRequestV1 request) {
-        if (request == null || request.schemaVersion() != 1) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_AI_REQUEST_SCHEMA");
+    /**
+     * 读取请求体：{@code Content-Encoding: gzip} 时限额解压（传输体与解压后都不得超过 16 MiB，
+     * 超限 413——防 zip bomb）。其它编码拒绝。
+     */
+    static byte[] readBody(final HttpServletRequest request) throws IOException {
+        final byte[] raw = request.getInputStream().readNBytes(MAX_REQUEST_BYTES + 1);
+        if (raw.length > MAX_REQUEST_BYTES) {
+            throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE, "AI_REQUEST_TOO_LARGE");
         }
-        if (request.battle() == null || request.battle().players == null
-                || request.reconstruction() == null
-                || request.reconstruction().participants() == null
-                || request.reconstruction().events() == null
-                || request.reconstruction().coverage() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_AI_REQUEST");
+        final String encoding = request.getHeader("Content-Encoding");
+        if (encoding == null || encoding.isBlank() || "identity".equalsIgnoreCase(encoding.trim())) {
+            return raw;
         }
-        final AllowedLanguage language = switch (request.locale() == null ? "" : request.locale()) {
+        if (!"gzip".equalsIgnoreCase(encoding.trim())) {
+            throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_CONTENT_ENCODING");
+        }
+        try (java.util.zip.GZIPInputStream in = new java.util.zip.GZIPInputStream(
+                new java.io.ByteArrayInputStream(raw))) {
+            final byte[] inflated = in.readNBytes(MAX_REQUEST_BYTES + 1);
+            if (inflated.length > MAX_REQUEST_BYTES) {
+                throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE, "AI_REQUEST_TOO_LARGE");
+            }
+            return inflated;
+        } catch (final java.util.zip.ZipException error) {
+            throw new IOException("gzip body corrupt", error);
+        }
+    }
+
+    private static AllowedLanguage languageOf(final String locale) {
+        return switch (locale == null ? "" : locale) {
             case "zh-CN" -> AllowedLanguage.ZH;
             case "en-US" -> AllowedLanguage.EN;
             case "ru-RU" -> AllowedLanguage.RU;
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "UNKNOWN_LOCALE");
         };
+    }
+
+    public SseEmitter review(final AiReviewRequest request) {
+        if (request == null || request.schemaVersion() != SCHEMA_VERSION) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_AI_REQUEST_SCHEMA");
+        }
+        if (request.battle() == null || request.battle().players == null
+                || request.reconstruction() == null
+                || request.reconstruction().participants() == null
+                || request.reconstruction().events() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_AI_REQUEST");
+        }
+        final AllowedLanguage language = languageOf(request.locale());
         if (!AiCancellationRegistry.isValidCorrelationId(request.correlationId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_CORRELATION_ID");
         }
@@ -167,7 +217,7 @@ public class AiReviewController {
         return ResponseEntity.noContent().build();
     }
 
-    private void runReview(final AiReviewRequestV1 request, final AllowedLanguage language,
+    private void runReview(final AiReviewRequest request, final AllowedLanguage language,
                            final ReplayAnalysisScope scope,
                            final AiCancellationToken cancellation, final SseEmitter emitter) {
         AiRequestContext.set(request.correlationId(), cancellation);
@@ -221,6 +271,7 @@ public class AiReviewController {
                 done.put("teamPlayers", outcome.teamPlayers());
             }
             done.put("capability", request.reconstruction().battleStartRawClockSec() == null
+                    || (request.limitations() != null && !request.limitations().isEmpty())
                     ? AnalyzeResponse.Capability.AVAILABLE_WITH_LIMITED_TIMELINE
                     : AnalyzeResponse.Capability.AVAILABLE);
             send(emitter, cancellation, "done", done);

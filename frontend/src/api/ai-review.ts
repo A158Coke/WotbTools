@@ -9,14 +9,15 @@
  *  - `/api/replay/*`（Dataset / Playback / MapOverview）由 `replay-capabilities.ts` 拥有；
  *    `/api/ai/**` 由本模块拥有。两者共用 `authedReplayPost` 的 bearer 约定，
  *    组件不得自行拼 endpoint、鉴权头或错误解析。
- *  - 请求体只承载**客户端投影**（`battle` + `reconstruction`）；本模块既不接收、
- *    也不序列化整份 canonical replay——投影由本地解析层产出。
+ *  - 请求体只承载 **client canonical AI projection**（`battle` + `projection`，
+ *    `replay-local/ai`）；本模块既不接收也不序列化 Agent 原始切面。请求体 gzip 压缩发送
+ *    （`Content-Encoding: gzip`，服务端限额解压——服务器没有 parser，传的是投影不是回放）。
  *  - SSE 流解析留在 `utils/aiReviewSse.ts`；本模块只负责打开响应与显式取消。
  */
 import type {
   AiReviewLocale,
   AiReviewProjection,
-  AiReviewRequestV1,
+  AiReviewRequestV2,
 } from '../types/ai-review.js'
 import { authedReplayPost, type ReplayAuthSession } from './replay-capabilities.js'
 
@@ -27,24 +28,24 @@ export interface AiReviewRequestInput extends AiReviewProjection {
   correlationId: string
 }
 
-/** 组装 wire 请求；`schemaVersion` 恒为契约常量 1。 */
-export function buildAiReviewRequest(input: AiReviewRequestInput): AiReviewRequestV1 {
+/** 组装 wire 请求；`schemaVersion` 恒为契约常量 2。 */
+export function buildAiReviewRequest(input: AiReviewRequestInput): AiReviewRequestV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     locale: input.locale,
     correlationId: input.correlationId,
     battle: input.battle,
-    reconstruction: input.reconstruction,
+    projection: input.projection,
   }
 }
 
 /** 打开 AI Review SSE 响应（调用方负责读取 body 与分发事件）。 */
 export function openAiReviewStream(
   auth: ReplayAuthSession,
-  request: AiReviewRequestV1,
+  request: AiReviewRequestV2,
   signal?: AbortSignal,
 ): Promise<Response> {
-  return authedReplayPost(auth, AI_REVIEWS_PATH, request, { signal })
+  return authedReplayPost(auth, AI_REVIEWS_PATH, request, { signal, gzip: true })
 }
 
 /** 取消端点 URL：`correlationId` 是 path 参数，不再是 query 参数。 */

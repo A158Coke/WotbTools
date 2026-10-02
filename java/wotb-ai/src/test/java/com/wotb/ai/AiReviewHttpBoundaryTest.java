@@ -63,7 +63,7 @@ class AiReviewHttpBoundaryTest {
     @Test
     void returnsContractEnvelopeForUnsupportedSchemaVersion() throws Exception {
         mockMvc.perform(post(ENDPOINT).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"schemaVersion\":2}").with(jwt().authorities(new SimpleGrantedAuthority(USER))))
+                        .content("{\"schemaVersion\":1}").with(jwt().authorities(new SimpleGrantedAuthority(USER))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errorCode").value("UNSUPPORTED_AI_REQUEST_SCHEMA"))
                 .andExpect(jsonPath("$.status").value(400))
@@ -93,12 +93,50 @@ class AiReviewHttpBoundaryTest {
         return body(locale, "6f1e6f1e-0000-4000-8000-000000000001");
     }
 
-    /** 最小但结构合法的客户端投影：battle/reconstruction 必填段齐备，其余留空由 null 容忍兜底。 */
+    /** V2 信封：投影段留空（信封错误先于投影结构校验返回）。 */
     private static String body(final String locale, final String correlationId) {
-        return "{\"schemaVersion\":1,\"locale\":\"" + locale + "\",\"correlationId\":\"" + correlationId + "\","
-                + "\"battle\":{\"players\":[]},"
-                + "\"reconstruction\":{\"participants\":[],\"events\":[],"
-                + "\"coverage\":{\"totalPackets\":0,\"decodedPackets\":0,\"partiallyDecodedPackets\":0,"
-                + "\"unknownPackets\":0,\"failedPackets\":0,\"decodedPacketRatio\":0,\"packetTypes\":{}}}}";
+        return "{\"schemaVersion\":2,\"locale\":\"" + locale + "\",\"correlationId\":\"" + correlationId + "\","
+                + "\"battle\":{\"players\":[]},\"projection\":{}}";
+    }
+
+    @Test
+    void malformedProjectionIsAnInvalidRequestNotAServerError() throws Exception {
+        mockMvc.perform(post(ENDPOINT).contentType(MediaType.APPLICATION_JSON).content(validBody("zh-CN"))
+                        .with(jwt().authorities(new SimpleGrantedAuthority(USER))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("INVALID_AI_REQUEST"));
+    }
+
+    @Test
+    void gzipBodyIsInflatedBeforeValidation() throws Exception {
+        mockMvc.perform(post(ENDPOINT).contentType(MediaType.APPLICATION_JSON).header("Content-Encoding", "gzip")
+                        .content(gzip(body("de-DE", "6f1e6f1e-0000-4000-8000-000000000001")))
+                        .with(jwt().authorities(new SimpleGrantedAuthority(USER))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("UNKNOWN_LOCALE"));
+    }
+
+    @Test
+    void inflatedSizeIsCappedAt16MiB() throws Exception {
+        // 17 MiB 的空白在 gzip 下只有几十 KB：传输体合规，解压后超限 → 413（防 zip bomb）
+        final byte[] bomb = gzip("{\"schemaVersion\":2" + " ".repeat(17 * 1024 * 1024) + "}");
+        mockMvc.perform(post(ENDPOINT).contentType(MediaType.APPLICATION_JSON).header("Content-Encoding", "gzip")
+                        .content(bomb).with(jwt().authorities(new SimpleGrantedAuthority(USER))))
+                .andExpect(status().isPayloadTooLarge());
+    }
+
+    @Test
+    void unsupportedContentEncodingIsRejected() throws Exception {
+        mockMvc.perform(post(ENDPOINT).contentType(MediaType.APPLICATION_JSON).header("Content-Encoding", "br")
+                        .content(validBody("zh-CN")).with(jwt().authorities(new SimpleGrantedAuthority(USER))))
+                .andExpect(status().isUnsupportedMediaType());
+    }
+
+    private static byte[] gzip(final String text) throws java.io.IOException {
+        final java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.GZIPOutputStream gz = new java.util.zip.GZIPOutputStream(out)) {
+            gz.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        return out.toByteArray();
     }
 }

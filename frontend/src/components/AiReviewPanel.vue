@@ -2,7 +2,7 @@
   AI 复盘能力面板：SSE 分析流（call1/evidence/call2）+ 流式进度 + 结果面板。
   不负责页面级登录门禁/自动跳转（由宿主入口把关）。HTTP endpoint / auth / canonical
   error handling 由 api/ai-review.ts 统一拥有；本组件只编排 run lifecycle 与 SSE 展示状态。
-  输入是**客户端 AI 投影**（battle + reconstruction），不是完整回放、也不再是 dataset 引用。
+  输入是 client canonical AI projection（battle + projection，replay-local/ai），不是完整回放。
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -26,7 +26,7 @@ type AiPanelAuth = ReplayAuthSession & { tokenParsed: { value: AuthTokenParsed }
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
   file: { type: Object, default: null },
-  /** 客户端 AI 投影（battle + reconstruction）：由本地解析层产出；null = 尚未就绪。 */
+  /** 客户端 AI 输入（battle + canonical projection）：由本地解析层产出；null = 尚未就绪。 */
   projection: { type: Object as () => AiReviewProjection | null, default: null },
   /** 投影准备失败时的已本地化错误；空 = 无。 */
   projectionError: { type: String, default: '' }
@@ -48,7 +48,7 @@ const canUseAiReview = computed(() => {
 
 /**
  * 投影就绪守卫（defense-in-depth）：AI Analyze 只有在客户端投影
- * （authoritative battle + reconstruction）已绑定时才能执行。
+ * （battle + canonical projection）已绑定时才能执行。
  * file 已选但投影缺失 = 本地解析/投影未完成（状态机问题），不是用户错误。
  */
 const projectionReady = computed(() => !!props.projection)
@@ -144,7 +144,7 @@ function analyzeRequest(correlationId: string) {
   }
   return buildAiReviewRequest({
     battle: props.projection.battle,
-    reconstruction: props.projection.reconstruction,
+    projection: props.projection.projection,
     locale: toAiReviewLocale(locale.value),
     correlationId,
   })

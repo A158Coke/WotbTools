@@ -1,7 +1,6 @@
 <script setup>
 import { computed, defineAsyncComponent, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Sparkles } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { mapLabel } from '../utils/helpers.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -15,8 +14,9 @@ import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
 import AppButton from './AppButton.vue'
 // 审计 PF-02：2D 回放（含约 2.5MB 的地图语义数据）只在进入 2D 回放模式时加载，不进主包。
 const BattlePlaybackPanel = defineAsyncComponent(() => import('./BattlePlaybackPanel.vue'))
+// AI 复盘面板（本机建立 canonical AI 投影 + SSE 流）同样按需加载。
+const AiReviewWorkspacePane = defineAsyncComponent(() => import('./AiReviewWorkspacePane.vue'))
 import Banner from './Banner.vue'
-import EmptyState from './EmptyState.vue'
 import PageHeader from './PageHeader.vue'
 import BattlePicker from './BattlePicker.vue'
 import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
@@ -88,6 +88,8 @@ const activeCapability = workspace.activeWorkspaceTab
 /** 2D 回放面板首次进入时才挂载（之后保留状态，切走只是隐藏），它的代码块因此不随工作台加载。 */
 const playbackMounted = ref(activeCapability.value === 'playback')
 watch(activeCapability, (cap) => { if (cap === 'playback') playbackMounted.value = true })
+const aiMounted = ref(activeCapability.value === 'ai')
+watch(activeCapability, (cap) => { if (cap === 'ai') aiMounted.value = true })
 
 /** 模板直接消费的 workspace 权威 ref（顶层绑定，模板自动解包 ref）。 */
 const currentBattleId = workspace.currentBattleId
@@ -102,7 +104,7 @@ function onBattleSelect(sourceId) {
   workspace.selectBattle(sourceId)
 }
 
-/** 2D 回放的目标文件：单文件直接用；多文件须先选场次（本机解析单场） */
+/** 2D 回放 / AI 复盘的目标文件：单文件直接用；多文件须先选场次（本机解析单场） */
 const playbackFile = computed(() => workspace.currentTargetFile.value)
 const playbackBlockedReason = computed(() =>
   files.value.length > 1 && !playbackFile.value ? t('workspace.single_replay_required') : '')
@@ -160,72 +162,76 @@ watch(() => props.initialCapability, (val) => {
     <PageHeader :title="$t('workspace.title')" />
     <ReplayCapabilityTabs :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
 
-    <EmptyState
-      v-if="activeCapability === 'ai'"
-      data-testid="ws-ai"
-      :icon="Sparkles"
-      :title="$t('workspace.ai_title')"
-      :description="$t('workspace.ai_description')"
-    >
-      <AppButton data-testid="ws-ai-go-data" @click="setCapability('data')">{{ $t('workspace.go_data') }}</AppButton>
-      <AppButton data-testid="ws-ai-go-playback" @click="setCapability('playback')">{{ $t('workspace.go_playback') }}</AppButton>
-    </EmptyState>
+    <div class="workspace-source">
+      <FileUploader
+        :files="files"
+        :loading="loading"
+        :confirm-remove="!!resp"
+        :compact="!!resp"
+        :allow-folder="activeCapability === 'data'"
+        @update:files="onFilesUpdate"
+        @preview="onPreview"
+        @remove-request="onFileRemoveRequest"
+      />
+      <ReplayProcessingPanel
+        :analysis="analysis"
+        :result="resp"
+        @cancel="cancelAnalysis"
+        @dismiss="dismissAnalysis"
+      />
+      <Banner v-if="error" tone="danger" data-testid="ws-error">
+        <p>{{ error }}</p>
+        <template v-if="error === t('workspace.native_replay_read_failed')" #actions>
+          <AppButton size="sm" data-testid="ws-native-retry" @click="consumePendingWhenReady">{{ $t('workspace.native_replay_retry') }}</AppButton>
+        </template>
+      </Banner>
+    </div>
 
-    <template v-else>
-      <div class="workspace-source">
-        <FileUploader
-          :files="files"
-          :loading="loading"
-          :confirm-remove="!!resp"
-          :compact="!!resp"
-          :allow-folder="activeCapability === 'data'"
-          @update:files="onFilesUpdate"
-          @preview="onPreview"
-          @remove-request="onFileRemoveRequest"
+    <div class="workspace-content">
+      <ReplayPage
+        v-show="activeCapability === 'data'"
+        data-testid="ws-data"
+        :embedded="true"
+        :replay-context="workspace.replay"
+        :workspace-context="workspace"
+      />
+      <div v-show="activeCapability === 'playback'" class="capability-pane" data-testid="ws-playback">
+        <BattlePicker
+          v-if="playbackBattleOptions.length > 1"
+          class="playback-picker"
+          :options="playbackBattleOptions"
+          :model-value="currentBattleId"
+          :aria-label="$t('workspace.battle_picker')"
+          data-testid="playback-battle-picker"
+          @update:model-value="onBattleSelect"
         />
-        <ReplayProcessingPanel
-          :analysis="analysis"
-          :result="resp"
-          @cancel="cancelAnalysis"
-          @dismiss="dismissAnalysis"
+        <BattlePlaybackPanel
+          v-if="playbackMounted"
+          :file="playbackFile"
+          :active="activeCapability === 'playback'"
+          :blocked-reason="playbackBlockedReason"
         />
-        <Banner v-if="error" tone="danger" data-testid="ws-error">
-          <p>{{ error }}</p>
-          <template v-if="error === t('workspace.native_replay_read_failed')" #actions>
-            <AppButton size="sm" data-testid="ws-native-retry" @click="consumePendingWhenReady">{{ $t('workspace.native_replay_retry') }}</AppButton>
-          </template>
-        </Banner>
       </div>
-
-      <div class="workspace-content">
-        <ReplayPage
-          v-show="activeCapability === 'data'"
-          data-testid="ws-data"
-          :embedded="true"
-          :replay-context="workspace.replay"
-          :workspace-context="workspace"
+      <div v-show="activeCapability === 'ai'" class="capability-pane">
+        <BattlePicker
+          v-if="playbackBattleOptions.length > 1"
+          class="playback-picker"
+          :options="playbackBattleOptions"
+          :model-value="currentBattleId"
+          :aria-label="$t('workspace.battle_picker')"
+          data-testid="ai-battle-picker"
+          @update:model-value="onBattleSelect"
         />
-        <div v-show="activeCapability === 'playback'" class="capability-pane" data-testid="ws-playback">
-          <BattlePicker
-            v-if="playbackBattleOptions.length > 1"
-            class="playback-picker"
-            :options="playbackBattleOptions"
-            :model-value="currentBattleId"
-            :aria-label="$t('workspace.battle_picker')"
-            data-testid="playback-battle-picker"
-            @update:model-value="onBattleSelect"
-          />
-          <BattlePlaybackPanel
-            v-if="playbackMounted"
-            :file="playbackFile"
-            :active="activeCapability === 'playback'"
-            :blocked-reason="playbackBlockedReason"
-          />
-        </div>
+        <AiReviewWorkspacePane
+          v-if="aiMounted"
+          :file="playbackFile"
+          :active="activeCapability === 'ai'"
+          :blocked-reason="playbackBlockedReason"
+        />
       </div>
+    </div>
 
-      <RemoveConfirmModal :pending="workspace.replay.pendingRemove.value" @confirm="confirmRemove" @cancel="workspace.replay.cancelRemove" />
-    </template>
+    <RemoveConfirmModal :pending="workspace.replay.pendingRemove.value" @confirm="confirmRemove" @cancel="workspace.replay.cancelRemove" />
   </div>
 </template>
 

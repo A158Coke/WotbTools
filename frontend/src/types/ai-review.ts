@@ -9,19 +9,18 @@ export type AiReviewCapability =
 export type TeamAiReviewResult = components['schemas']['TeamAiReviewResult']
 export type TeamAiPlayerIdentity = components['schemas']['TeamAiPlayerIdentity']
 
-export type AiReviewRequestV1 = components['schemas']['AiReviewRequestV1']
+export type AiReviewRequestV2 = components['schemas']['AiReviewRequestV2']
 export type AiReviewBattle = components['schemas']['AiReviewBattle']
-export type AiReviewReconstruction = components['schemas']['AiReviewReconstruction']
-export type AiReviewLocale = AiReviewRequestV1['locale']
+export type ClientAiReviewProjection = components['schemas']['ClientAiReviewProjection']
+export type AiReviewLocale = AiReviewRequestV2['locale']
 
 /**
- * 客户端 AI 投影：本地解析层（canonical ParsedReplay 的客户端投影）产出的契约字段子集，
- * 只含 `battle` + `reconstruction`——`metadata` / `streamHeader` / `diagnostics` 按契约
- * 永不进入 HTTP（见 docs/architecture/ai-review.md 字段一致性表）。
+ * AI 复盘输入：结算事实（`battle`）+ client canonical AI projection（`projection`，
+ * `replay-local/ai`）。均由本机 WASM 解析产出；服务端不解析回放。
  */
 export interface AiReviewProjection {
   battle: AiReviewBattle
-  reconstruction: AiReviewReconstruction
+  projection: ClientAiReviewProjection
 }
 
 /** 契约 locale 白名单（`AiReviewRequestV1.locale` enum 的运行时镜像）。 */

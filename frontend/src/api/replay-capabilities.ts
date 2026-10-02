@@ -1,3 +1,4 @@
+import { gzipSync, strToU8 } from 'fflate'
 import { ApiError, apiErrorFromResponse, apiFetch } from '../utils/http.js'
 
 export interface ReplayAuthSession {
@@ -24,7 +25,14 @@ export async function authedReplayPost(
   auth: ReplayAuthSession,
   url: string,
   body: unknown,
-  options: { signal?: AbortSignal; allowNoContent?: boolean; keepalive?: boolean; optionalAuth?: boolean } = {},
+  options: {
+    signal?: AbortSignal
+    allowNoContent?: boolean
+    keepalive?: boolean
+    optionalAuth?: boolean
+    /** JSON 体以 `Content-Encoding: gzip` 发送（服务端限额解压；AI 复盘投影用） */
+    gzip?: boolean
+  } = {},
 ): Promise<Response> {
   let authHeader: Record<string, string>
   if (options.optionalAuth) {
@@ -42,11 +50,18 @@ export async function authedReplayPost(
     'Content-Type': 'application/json',
     ...authHeader,
   }
+  const json = JSON.stringify(body)
+  let payload: BodyInit = json
+  if (options.gzip) {
+    // 同步压缩：请求在同一 tick 发出（取消 / 超时的 run ownership 语义不因压缩引入异步窗口）
+    payload = new Blob([gzipSync(strToU8(json), { level: 6 })], { type: 'application/json' })
+    headers['Content-Encoding'] = 'gzip'
+  }
 
   const response = await apiFetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify(body),
+    body: payload,
     signal: options.signal,
     keepalive: options.keepalive,
   })
