@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
  * <p>生产 Gateway 实现为 {@link SpringAiChatGateway}（Spring AI 2.0.0
  * OpenAI-compatible adapter + {@code https://api.deepseek.com}）。
  * {@link AiReplayAnalysisConfig} 集中持有模型/预算选项与 token estimator，供
- * {@code PlayerReplayAnalysisService} / {@code TeamReplayAnalysisService} / 兼容 facade 复用。</p>
+ * {@code PlayerReplayAnalysisService} / {@code TeamReplayAnalysisService} 复用。</p>
  */
 @Configuration
 public class AiGatewayConfig {

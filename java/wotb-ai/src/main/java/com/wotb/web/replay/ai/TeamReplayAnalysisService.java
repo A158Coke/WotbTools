@@ -3,13 +3,9 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.evidence.TeamAiReviewResult;
-import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
-import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.core.replay.processing.FriendlyEnemyResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -22,7 +18,7 @@ import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiResponseFormat;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.ai.gateway.StreamConsumer;
-import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.dto.AiReviewDonePayload;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -30,7 +26,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,8 +35,8 @@ import java.util.function.LongSupplier;
 
 /**
  * 团队 AI 复盘编排（team perspective：训练房/联赛）。
- * <p>职责：兼容 facade 路径的单团队入口、{@link #analyzeTeam} 的完整编排（Call #1 prior、
- * 逐 context 的 Team Prompt 调用）；roster 校验/Context 组装/团队 Prompt 规则
+ * <p>职责：{@link #analyzeTeam} 的完整编排（Call #1 prior、逐 context 的 Team Prompt 调用）；
+ * roster 校验/Context 组装/团队 Prompt 规则
  * 分别由 {@link TeamRosterResolver} / {@link TeamContextBuilder} /
  * {@link TeamPromptLocalizer} 负责。Prompt 文本由 {@link TeamAiPromptBuilder} 产出，
  * HTTP/DTO/异常分类由 {@link AiChatGateway} 负责，预算由 {@link AiPromptBudgetGuard} 守。</p>
@@ -67,8 +62,6 @@ public class TeamReplayAnalysisService {
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
     private final PreBattleStrategicService preBattleService;
-    /** Legacy dependency retained for constructor compatibility; v0.5 never invokes it. */
-    private final TeamAutopsyService teamAutopsyService;
     private final LongSupplier nanoTimeSource;
     private final MeterRegistry meterRegistry;
 
@@ -76,69 +69,24 @@ public class TeamReplayAnalysisService {
     public TeamReplayAnalysisService(final AiChatGateway gateway,
                                      final AiReplayAnalysisConfig config,
                                      final PreBattleStrategicService preBattleService,
-                                     final TeamAutopsyService teamAutopsyService,
                                      @Autowired(required = false) final MeterRegistry meterRegistry) {
-        this(gateway, config, preBattleService, teamAutopsyService, System::nanoTime, meterRegistry);
+        this(gateway, config, preBattleService, System::nanoTime, meterRegistry);
     }
 
     TeamReplayAnalysisService(final AiChatGateway gateway,
                               final AiReplayAnalysisConfig config,
                               final PreBattleStrategicService preBattleService,
-                              final TeamAutopsyService teamAutopsyService,
                               final LongSupplier nanoTimeSource,
                               final MeterRegistry meterRegistry) {
         this.gateway = gateway;
         this.config = config;
         this.preBattleService = preBattleService;
-        this.teamAutopsyService = teamAutopsyService;
         this.nanoTimeSource = nanoTimeSource;
         this.meterRegistry = meterRegistry;
     }
 
     public boolean isConfigured() {
         return gateway.isConfigured();
-    }
-
-    /**
-     * 单场团队上下文入口（<b>非 production AI Review entrypoint</b>：仅供兼容 facade /
-     * 历史契约测试引用；production Team AI 必须走 {@link #analyzeTeam}，后者在
-     * 任何 LLM 调用前执行 canonical Timeline hard gate）。
-     * <p>本入口保持旧语义（Call #1 → prompt 构建 → Call #2 + Autopsy），不执行 timeline
-     * hard gate，也不渲染 TACTICAL TIMELINE 段（未提供 validated timeline）；不得被
-     * production 编排引用（否则构成 hard-gate bypass，见 PR #102 ）。</p>
-     */
-    public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context) {
-        return analyzeSingleTeamContext(context, AllowedLanguage.ZH);
-    }
-
-    public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context,
-                                                  final AllowedLanguage language) {
-        return analyzeSingleTeamContext(context, language, AiReviewStreamListener.NOOP);
-    }
-
-    public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context,
-                                                  final AllowedLanguage language,
-                                                  final AiReviewStreamListener listener) {
-        if (!isConfigured()) {
-            throw new AiNotConfiguredException();
-        }
-        final long startNanos = budgetStartNanos();
-        if (remainingBudget(startNanos) <= 0) {
-            // 预算起点回溯到提交时刻（now + overall）：排队计入剩余预算，
-            // 启动时剩余不足直接干净失败 AI_TIMEOUT。
-            throw new AiUpstreamException("AI_TIMEOUT", 504, AiRequestContext.correlationId());
-        }
-        final PreBattleStrategicPrior prior = call1Prior(context.battle(), listener);
-        final TeamRosterResolver.RosterEvidence evidence = TeamRosterResolver.RosterEvidence.from(context);
-        final List<String> extraLimitations = evidence != null ? evidence.limitations() : List.of();
-        final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(
-                context, extraLimitations, prior, config.estimator(), config.singleReplayMaxInputTokens());
-        // 兼容入口无已验证 timeline：Grounding Facts 只含结算可推导事实（该稳定模块不动）。
-        // Historical facade compatibility only; production uses analyzeTeam below and
-        // therefore never reaches the legacy envelope/autopsy path.
-        final String legacy = callLegacyValidatedTeamReview(
-                context, input, language, startNanos, listener, null);
-        return new AnalyzeResult(appendTeamAutopsy(context, legacy, language, startNanos, listener));
     }
 
     /**
@@ -159,18 +107,21 @@ public class TeamReplayAnalysisService {
 
     /**
      * Production entry for the standalone service: no processing result or group wrapper.
+     * <p>返回 SSE {@code done} 的唯一 transport 形状（{@link AiReviewDonePayload}）。
+     * {@code capability} 是 request 级判定（依赖客户端投影声明的 limitations），编排层不可见，
+     * 由 controller 在发送前填充，因此这里恒为 {@code null}。</p>
      */
-    public TeamAnalyzeResult analyzeTeam(final Battle battle,
-                                         final ReplayReconstruction reconstruction,
-                                         final AllowedLanguage language,
-                                         final AiReviewStreamListener listener) {
+    public AiReviewDonePayload analyzeTeam(final Battle battle,
+                                           final ReplayReconstruction reconstruction,
+                                           final AllowedLanguage language,
+                                           final AiReviewStreamListener listener) {
         return analyzeTeamContexts(List.of(TeamContextBuilder.buildSingleTeamContext(battle, reconstruction)),
                 language, listener);
     }
 
-    private TeamAnalyzeResult analyzeTeamContexts(final List<SingleTeamBattleAnalysisContext> contexts,
-                                                   final AllowedLanguage language,
-                                                   final AiReviewStreamListener listener) {
+    private AiReviewDonePayload analyzeTeamContexts(final List<SingleTeamBattleAnalysisContext> contexts,
+                                                    final AllowedLanguage language,
+                                                    final AiReviewStreamListener listener) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
@@ -235,7 +186,7 @@ public class TeamReplayAnalysisService {
                         TeamRosterResolver.resolveDisplayLabel(firstContext.battle(), firstContext.perspectiveTeam()),
                         language,
                         firstContext.battle() == null ? null : firstContext.battle().mapName);
-        return new TeamAnalyzeResult(firstAnalysis.analysis(), preBattleSection,
+        return new AiReviewDonePayload(firstAnalysis.analysis().analysis(), preBattleSection, null,
                 firstAnalysis.structuredResult(), TeamRosterResolver.playerIdentities(firstContext));
     }
 
@@ -270,7 +221,7 @@ public class TeamReplayAnalysisService {
         }
     }
 
-    // ===== 拆分后的协作入口：以下 forwarder 供 facade 与契约测试引用 =====
+    // ===== 协作入口：Team Prompt 常量 / 本地化 / 单团队 Context 构建（契约测试引用） =====
 
     static final String SINGLE_TEAM_PROMPT = TeamPromptLocalizer.SINGLE_TEAM_PROMPT;
 
@@ -281,187 +232,6 @@ public class TeamReplayAnalysisService {
     public SingleTeamBattleAnalysisContext buildSingleTeamContext(final Battle battle,
                                                                   final ReplayReconstruction reconstruction) {
         return TeamContextBuilder.buildSingleTeamContext(battle, reconstruction);
-    }
-
-    /** Legacy grounding facade 的历史重写预算；production structured Team Review 不使用它。 */
-    static final int MAX_VALIDATION_ATTEMPTS = 4;
-
-    /**
-     * Historical compatibility facade：旧 Natural Coach envelope 解析 + 事实一致性校验 + LLM 自修循环。
-     * 生产 Team AI Review v0.5 不调用此方法。
-     * <p>流程（Draft → validate；FAIL → targeted rewrite；
-     * FAIL → full rewrite；仍 FAIL → conservative safe rewrite；再次完整校验后仍 FAIL
-     * → fail-safe（{@code AI_REVIEW_GROUNDING_FAILED}）。
-     * Backend 绝不代改句子；校验通过后才把 {@code reviewMarkdown} 以 token 增量转给前端
-     * （避免把待改写的草稿暴露给用户）。</p>
-     */
-    private String callLegacyValidatedTeamReview(
-            final SingleTeamBattleAnalysisContext context,
-            final TeamAiPromptBuilder.PromptInput input,
-            final AllowedLanguage language,
-            final long startNanos,
-            final AiReviewStreamListener listener,
-            final BattleTimeline timeline
-    ) {
-        final String systemPrompt = TeamPromptLocalizer.localizeTeamSystemPrompt(
-                TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language);
-        // 死亡时刻时钟契约——production（timeline 非 null）用 timeline 全量构建
-        // （关注窗口/位置快照/敌方位置知识）并转 battle-relative；兼容入口（timeline 为 null）
-        // 用 reconstruction 的 battleStartRawClockSec 转 battle-relative，避免结算 deathTimeMillis
-        // （原始时钟域）以原始值进入 Grounding Facts。
-        final TeamGroundingFacts.GroundingFacts facts = timeline != null
-                ? TeamGroundingFacts.build(context.battle(), timeline, context.perspectiveTeam())
-                : TeamGroundingFacts.build(context.battle(),
-                        context.reconstruction() == null
-                                || context.reconstruction().battleStartRawClockSec() == null
-                                ? null
-                                : context.reconstruction().battleStartRawClockSec().doubleValue(),
-                        context.perspectiveTeam());
-        final String correlationId = AiRequestContext.correlationId();
-        final long reviewStartNanos = nanoTimeSource.getAsLong();
-        // 只记录低基数 grounding facts 计数（不打印事实内容）。
-        logGroundingReady(facts, correlationId);
-        final String groundingSection = TeamGroundingFacts.renderGroundingSection(facts);
-        final String baseUser = input.content()
-                + (groundingSection.isEmpty() ? "" : "\n" + groundingSection);
-        String userContent = baseUser;
-        String feedback = "";
-        long cumulativePromptTokens = 0L;
-        long cumulativeCompletionTokens = 0L;
-        for (int attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
-            if (attempt > 1) {
-                final String rewrite = rewriteStage(attempt);
-                final StringBuilder fb = new StringBuilder();
-                fb.append("上一轮输出未通过事实一致性校验。请修改后重新输出完整的 JSON envelope；")
-                        .append("不要改变你的主判断（除非事实不允许），只修正与 GROUNDING FACTS 冲突的表述。\n");
-                fb.append("本次重写阶段：").append(rewrite).append("。\n");
-                fb.append(feedback);
-                appendRewriteRequirements(fb, rewrite);
-                userContent = baseUser + "\n\n=== 事实一致性校验反馈 ===\n" + fb;
-            }
-            final AiChatResponse response = callRaw(systemPrompt, userContent,
-                    "SINGLE_TEAM_BATTLE", remainingBudget(startNanos), attempt);
-            final String raw = response.completionText();
-            cumulativePromptTokens += response.inputTokens();
-            cumulativeCompletionTokens += response.outputTokens();
-            // 每个 validation attempt 完成后记录累计 token（先记录每次调用，不重构 Gateway 聚合）。
-            LOGGER.info(AiReviewEventLog.line("team_review_validation_attempt_completed", correlationId,
-                    "attempt", attempt,
-                    "promptTokens", response.inputTokens(),
-                    "completionTokens", response.outputTokens(),
-                    "cumulativePromptTokens", cumulativePromptTokens,
-                    "cumulativeCompletionTokens", cumulativeCompletionTokens));
-            final TeamReviewEnvelopeParser.ParseResult parseResult =
-                    TeamReviewEnvelopeParser.parseDetailed(raw);
-            if (parseResult.failed()) {
-                LOGGER.info(AiReviewEventLog.line("team_review_parse_result", correlationId,
-                        "attempt", attempt,
-                        "responseFormat", AiResponseFormat.JSON_OBJECT,
-                        "result", "FAIL",
-                        "reason", parseResult.failureReason()));
-                countValidationAttempt("parser_invalid");
-                // envelope / structured claims schema 违反（fail-close）——
-                // 给 LLM 明确 schema 提示，让它自修，而非静默降级为 text-only
-                feedback = "输出不是合法 JSON envelope 或 claims 违反 machine schema："
-                        + "必须包含 primaryDiagnosis（title + reasoning 非空）与 reviewMarkdown；"
-                        + "每条 claim 必须携带合法 claimType（DEATH / ALIVE_TRANSITION / "
-                        + "POSITION_REGION / ENEMY_POSITION / TACTICAL）及对应机器字段："
-                        + "DEATH=subject+timeSec(数字)+evidenceIds；"
-                        + "ALIVE_TRANSITION=value(机器格式 7v7 -> 4v6)+evidenceIds；"
-                        + "POSITION_REGION=timeSec+region(1-9)+count(数字)+side(FRIENDLY/ENEMY)"
-                        + "+countSemantics(EXACT/AT_LEAST/SUBSET)+evidenceIds；"
-                        + "ENEMY_POSITION=subject(+可选subjectAccountId账号ID稳定身份)+timeSec+region"
-                        + "+knowledge(CURRENT/LAST_KNOWN)+evidenceIds；"
-                        + "TACTICAL 无机器字段要求；机器字段类型必须正确（数字字段不能用字符串），"
-                        + "禁止 LOS/SPOTTING/VISION/LINE_OF_SIGHT claimType。"
-                        + "evidenceIds 必须引用真正支撑该 claim 的证据（类型/身份/时间/数值/区域/knowledge 一致），"
-                        + "不能借用无关编号。";
-                continue;
-            }
-            LOGGER.info(AiReviewEventLog.line("team_review_parse_result", correlationId,
-                    "attempt", attempt,
-                    "responseFormat", AiResponseFormat.JSON_OBJECT,
-                    "result", "PASS"));
-            final TeamReviewEnvelope envelope = parseResult.envelope();
-            final long validationStartNanos = nanoTimeSource.getAsLong();
-            final List<TeamFactualConsistencyValidator.FactConflict> conflicts =
-                    TeamFactualConsistencyValidator.validate(envelope, facts);
-            if (conflicts.isEmpty()) {
-                LOGGER.info(AiReviewEventLog.line("team_review_validation", correlationId,
-                        "attempt", attempt,
-                        "result", "PASS",
-                        "conflictCount", 0,
-                        "durationMs", elapsedMillis(validationStartNanos)));
-                countValidationAttempt("pass");
-                logTeamReviewCompleted(correlationId, attempt, cumulativePromptTokens,
-                        cumulativeCompletionTokens, "PASS", reviewStartNanos);
-                forwardTokens(listener, envelope.reviewMarkdown());
-                return envelope.reviewMarkdown();
-            }
-            final String checks = conflicts.stream()
-                    .map(TeamFactualConsistencyValidator.FactConflict::checkId)
-                    .distinct().sorted()
-                    .collect(java.util.stream.Collectors.joining(","));
-            final boolean hardConflicts =
-                    TeamFactualConsistencyValidator.hasHardConflict(conflicts);
-            LOGGER.info(AiReviewEventLog.line("team_review_validation", correlationId,
-                    "attempt", attempt,
-                    "result", hardConflicts ? "FAIL" : "PASS_METADATA",
-                    "conflictCount", conflicts.size(),
-                    "hardConflictCount", hardConflicts
-                            ? (int) conflicts.stream()
-                                    .filter(c -> c.severity() == TeamFactualConsistencyValidator.Severity.HARD_FACT)
-                                    .count()
-                            : 0,
-                    "checks", checks,
-                    "durationMs", elapsedMillis(validationStartNanos)));
-            countValidationAttempt(hardConflicts ? "validation_failed" : "metadata_only_pass");
-            // INFO 级安全化冲突明细：生产默认级别必须能定位 grounding failure；只记录
-            // check/reasonCode 低基数分类，不记录完整冲突 message / AI 原句 / Grounding Fact 内容。
-            for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
-                LOGGER.info(AiReviewEventLog.line("team_review_validation_conflict", correlationId,
-                        "attempt", attempt,
-                        "check", c.checkId(),
-                        "reasonCode", c.reasonCode() == null ? "UNCLASSIFIED" : c.reasonCode(),
-                        "severity", c.severity().name()));
-            }
-            // P0-14：conflict 低基数指标（每类冲突累计，供 availability dashboard）。
-            for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
-                countGroundingConflict(c.checkId(),
-                        c.severity() == TeamFactualConsistencyValidator.Severity.HARD_FACT
-                                ? "HARD" : "METADATA");
-            }
-            // P0-2/P0-6：structured metadata 冲突（evidence binding 类型/时间细节、coverage 缺失、
-            // 非关键 machine 字段）不阻塞输出——正文事实正确时直接放行，不浪费 LLM retry。
-            // 只有 HARD_FACT 冲突（用户可见事实错误）才进入 targeted → full → safe → fail-safe。
-            if (!hardConflicts) {
-                LOGGER.info(AiReviewEventLog.line("team_review_metadata_passed", correlationId,
-                        "attempt", attempt,
-                        "conflictCount", conflicts.size(),
-                        "checks", checks));
-                logTeamReviewCompleted(correlationId, attempt, cumulativePromptTokens,
-                        cumulativeCompletionTokens, "PASS_METADATA", reviewStartNanos);
-                forwardTokens(listener, envelope.reviewMarkdown());
-                return envelope.reviewMarkdown();
-            }
-            if (attempt >= MAX_VALIDATION_ATTEMPTS) {
-                LOGGER.warn("Team Call #2 grounding validation exhausted after {} attempts ({} conflicts)",
-                        MAX_VALIDATION_ATTEMPTS, conflicts.size());
-                logTeamReviewCompleted(correlationId, attempt, cumulativePromptTokens,
-                        cumulativeCompletionTokens, "GROUNDING_FAILED", reviewStartNanos);
-                throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
-            }
-            feedback = formatConflicts(conflicts);
-            // validation retry（业务返工）与 transport retry（网关退避）区分记录。
-            final String rewrite = rewriteStage(attempt + 1);
-            LOGGER.warn(AiReviewEventLog.line("ai_validation_retry", correlationId,
-                    "stage", "TEAM_CALL_2",
-                    "validationAttempt", attempt + 1,
-                    "rewrite", rewrite,
-                    "reason", "VALIDATION_FAILED"));
-            countValidationRetry("TEAM_CALL_2", rewrite);
-        }
-        throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
     }
 
     /** Call #2：严格解析结构化 JSON；技术 contract 失败时最多 fresh retry 一次。 */
@@ -486,6 +256,8 @@ public class TeamReplayAnalysisService {
         final Set<String> rosterKeys = TeamRosterResolver.playerKeys(context);
         final String correlationId = AiRequestContext.correlationId();
         final long reviewStartNanos = nanoTimeSource.getAsLong();
+        // 只记录低基数 grounding facts 计数（不打印事实内容）。
+        logGroundingReady(facts, correlationId);
         final AiChatResponse primaryResponse;
         try {
             primaryResponse = callRaw(systemPrompt, baseUser,
@@ -749,78 +521,6 @@ public class TeamReplayAnalysisService {
     private record TeamCallResult(AnalyzeResult analysis, TeamAiReviewResult structuredResult) {
     }
 
-    private static String rewriteStage(final int attempt) {
-        return switch (attempt) {
-            case 2 -> "TARGETED";
-            case 3 -> "FULL";
-            case 4 -> "SAFE";
-            default -> "NONE";
-        };
-    }
-
-    private static void appendRewriteRequirements(final StringBuilder feedback, final String rewrite) {
-        switch (rewrite) {
-            case "TARGETED" -> feedback.append("要求：只针对列出的 HARD_FACT 冲突修正相关 claim，"
-                    + "仍须输出完整 JSON envelope；不要删除有证据支持的战术判断。\n");
-            case "FULL" -> feedback.append("要求：整体重写完整 JSON envelope（不是局部修补）；"
-                    + "每条数值/时间/位置/玩家事件表述都必须与 GROUNDING FACTS 一致；"
-                    + "无法满足时删除该具体事实或改为证据允许的降级表达。\n");
-            case "SAFE" -> feedback.append("要求：执行 conservative safe rewrite。只保留给定 evidence 明确证明的事实；"
-                    + "删除或概括所有仍被 validator 标记的具体时间、人数、位置、spotting/LOS、CURRENT 等 claim；"
-                    + "不要补充新事实，不要发明替代事实；尽量保留有证据支撑的 tactical judgment、"
-                    + "position/tempo、objectives、local engagement reasoning。输出完整 JSON envelope，"
-                    + "并接受下一次完整 validator 校验。\n");
-            default -> { }
-        }
-    }
-
-    private static String formatConflicts(
-            final List<TeamFactualConsistencyValidator.FactConflict> conflicts) {
-        final StringBuilder sb = new StringBuilder();
-        for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
-            sb.append('[').append(c.checkId()).append(' ').append(c.reasonCode()).append("] ")
-                    .append(c.message()).append('\n')
-                    .append("约束：").append(rewriteConstraint(c)).append('\n');
-        }
-        return sb.toString();
-    }
-
-    private static String rewriteConstraint(final TeamFactualConsistencyValidator.FactConflict conflict) {
-        return switch (conflict.reasonCode() == null ? "" : conflict.reasonCode()) {
-            case "KNOWLEDGE_MISMATCH" -> "不要把 LAST_KNOWN 写成 CURRENT；删除该断言，或改为“最后已知位置……，之后位置未知”，不得补充未知后续位置。";
-            case "UNSUPPORTED_HARD_FACT" -> "没有 dedicated LOS/spotting evidence；删除具体点亮、spotter attribution、LOS 或瞄准断言，"
-                    + "仅保留 evidence 明确支持的更概括观察或战术结论，不得发明替代事实。";
-            case "SUBJECT_MISMATCH" -> "不得把事实归因给错误玩家/车辆；删除该 claim，或改为 evidence 明确绑定的主体。";
-            case "TIME_MISMATCH", "TEMPORAL_OWNERSHIP" -> "只保留 evidence 明确支持的时间或时间窗口；无法证明时删除具体时间，不得猜测。";
-            case "REGION_MISMATCH", "COUNT_MISMATCH" -> "只保留 evidence 明确支持的区域/人数；无法证明时删除具体数值或概括表达，不得替换成猜测。";
-            default -> "只保留给定 evidence 明确支持的内容；删除无法证明的具体事实，不得发明替代事实。";
-        };
-    }
-
-    /** 把reviewMarkdown 按段落/句子边界切成 ≤400 字符增量转给前端（单线程顺序）。 */
-    private static void forwardTokens(final AiReviewStreamListener listener, final String markdown) {
-        if (listener == null || markdown == null || markdown.isEmpty()) {
-            return;
-        }
-        final List<String> chunks = new ArrayList<>();
-        final StringBuilder cur = new StringBuilder();
-        for (int i = 0; i < markdown.length(); i++) {
-            cur.append(markdown.charAt(i));
-            final char ch = markdown.charAt(i);
-            final boolean boundary = ch == '\n' || ch == '。';
-            if ((boundary && cur.length() >= 60) || cur.length() >= 400) {
-                chunks.add(cur.toString());
-                cur.setLength(0);
-            }
-        }
-        if (!cur.isEmpty()) {
-            chunks.add(cur.toString());
-        }
-        for (final String chunk : chunks) {
-            listener.onToken(chunk);
-        }
-    }
-
     /**
      * 原始传输调用：<b>authoritative response source = {@code completionText()}</b>
      * 。
@@ -829,7 +529,7 @@ public class TeamReplayAnalysisService {
      * 正常结束时 {@code SpringAiChatGateway} 用内部累加的全部 delta 构造返回响应；
      * 失败（timeout / cancel / 上游错误 / 空响应）一律抛 {@link AiUpstreamException}，
      * <b>绝不返回 partial completion</b>。因此这里传 no-op consumer（校验通过前不向用户
-     * 暴露草稿 token），只以 {@code completionText()} 作为 envelope parser 输入；
+     * 暴露草稿 token），只以 {@code completionText()} 作为 structured result parser 输入；
      * 每轮 attempt 都是独立的一次 {@code stream()} 调用，不共享任何 buffer。</p>
      * Team Call #2 独立输出上限保持不变。
      */
@@ -878,56 +578,9 @@ public class TeamReplayAnalysisService {
         return gateway.stream(request, IGNORED_STREAM);
     }
 
-    /** no-op consumer：draft token 不转发给用户（校验通过后由 {@link #forwardTokens} 转发）。 */
+    /** no-op consumer：主复盘 token 由 controller 侧 SSE 通道推进，Call #2 只取聚合结果。 */
     private static final StreamConsumer IGNORED_STREAM = delta -> {
     };
-
-
-    private String appendTeamAutopsy(final SingleTeamBattleAnalysisContext context,
-                                     final String reviewText,
-                                     final AllowedLanguage language,
-                                     final long startNanos,
-                                     final AiReviewStreamListener listener) {
-        if (language != AllowedLanguage.ZH || context == null || context.battle() == null) {
-            return reviewText;
-        }
-        // 团队赛恒为争霸赛（supremacy）：结算 winnerTeam 缺失时，
-        // 一方全灭 → 结算推导；双方均未全灭 → 点数胜利（比较占点得分推断；
-        // 结束方式由 pointsEndReason 区分：任一方 ≥1000 提前获胜，均 <1000 为时间耗尽）。
-        final TeamBattleWinner winner = FriendlyEnemyResult.resolveTeamBattle(
-                context.battle(), context.perspectiveTeam());
-        if (!winner.resolved()) {
-            return reviewText;
-        }
-        final long remaining = remainingSeconds(startNanos);
-        final long autopsyBudget = Math.min(
-                TeamAutopsyService.AUTOPSY_CALL_TIMEOUT_SEC,
-                remaining - SAFETY_MARGIN_SEC);
-        if (autopsyBudget <= 0) {
-            count("budget_exhausted");
-            return reviewText;
-        }
-        // display label（无可靠 clan → 空串）：Autopsy 渲染侧 fallback「本方」，绝不出现 队伍-XXXX
-        final String teamLabel = TeamRosterResolver.resolveDisplayLabel(
-                context.battle(), context.perspectiveTeam());
-        final TeamAutopsyOutcome outcome = teamAutopsyService.analyze(
-                context.battle(),
-                context.reconstruction(),
-                hasObservedDamagePartial(context),
-                context.perspectiveTeam(),
-                AllowedLanguage.ZH,
-                winner,
-                teamLabel,
-                (int) Math.min(autopsyBudget, Integer.MAX_VALUE),
-                listener);
-        if (outcome == null) {
-            return reviewText;
-        }
-        // renderSection 不再接收胜负/队名参数——Autopsy 不重复胜负，
-        // 只渲染「重点复查/高贡献者」两块（无 standout 时为空串）；playerKey 仅作内部 lookup。
-        return reviewText + TeamAutopsyPromptBuilder.renderSection(
-                outcome.result(), outcome.roster());
-    }
 
     /**
      * 预算起点（nanoTime）：有 worker 整体 deadline（提交时刻 + overall）时
@@ -948,13 +601,6 @@ public class TeamReplayAnalysisService {
 
     private long remainingBudget(final long startNanos) {
         return Math.max(0L, remainingSeconds(startNanos) - SAFETY_MARGIN_SEC);
-    }
-
-    private void count(final String reason) {
-        if (meterRegistry != null) {
-            meterRegistry.counter("wotb_ai_review_team_autopsy_total", "result", reason)
-                    .increment();
-        }
     }
 
     // ===== AI Review 全链路事件日志与指标 =====
@@ -989,7 +635,7 @@ public class TeamReplayAnalysisService {
                 "result", result));
     }
 
-    /** Team Call #2 validation attempt 低基数指标（result=pass/parser_invalid/validation_failed）。 */
+    /** Team Call #2 validation attempt 低基数指标（result=pass/salvaged/schema_invalid）。 */
     private void countValidationAttempt(final String result) {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_validation_attempt_total", "result", result)
@@ -997,35 +643,8 @@ public class TeamReplayAnalysisService {
         }
     }
 
-    /** validation retry 的有限值分布（不携带 request/user 标识）。 */
-    private void countValidationRetry(final String stage, final String rewrite) {
-        if (meterRegistry != null) {
-            meterRegistry.counter("wotb_ai_team_review_validation_retry_total",
-                    "stage", stage, "rewrite", rewrite).increment();
-        }
-    }
-
-    /** grounding conflict 低基数指标（check=稳定 checkId；severity=HARD/metadata）。 */
-    private void countGroundingConflict(final String checkId, final String severity) {
-        if (meterRegistry != null) {
-            meterRegistry.counter("wotb_ai_team_review_grounding_conflict_total",
-                    "check", checkId == null ? "UNCLASSIFIED" : checkId,
-                    "severity", severity).increment();
-        }
-    }
-
     private long elapsedMillis(final long startNanos) {
         return Math.max(0L, (nanoTimeSource.getAsLong() - startNanos) / 1_000_000L);
-    }
-
-
-    /** OBSERVED_DAMAGE_IS_PARTIAL：上下文或特征集任一命中即抑制观测伤害数字（与 Team/Player 一致口径）。 */
-    private static boolean hasObservedDamagePartial(final SingleTeamBattleAnalysisContext context) {
-        if (context.limitations() != null && context.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL")) {
-            return true;
-        }
-        return context.features() != null && context.features().limitations() != null
-                && context.features().limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL");
     }
 
 }

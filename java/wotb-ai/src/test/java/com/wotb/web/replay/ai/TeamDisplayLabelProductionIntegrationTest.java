@@ -16,7 +16,7 @@ import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayStreamDiagnostics;
-import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.dto.AiReviewDonePayload;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -103,7 +103,7 @@ class TeamDisplayLabelProductionIntegrationTest {
         battle.players.getFirst().nickname = "Alice";
         battle.recorder = "Alice";
 
-        final List<AnalyzeResponse.TeamPlayer> identities =
+        final List<AiReviewDonePayload.TeamPlayer> identities =
                 TeamRosterResolver.playerIdentities(contextOf(battle));
 
         assertEquals("P1", identities.getFirst().playerKey());
