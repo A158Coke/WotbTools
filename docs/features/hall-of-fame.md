@@ -4,6 +4,20 @@
 
 名人堂只接受**随机战斗（RANDOM）**与**评级战斗（RATING）**回放；训练房 / 联赛 / 锦标赛 / 娱乐 / 未知模式一律拒绝（上传 → HTTP 400 `UNSUPPORTED_BATTLE_TYPE`，零持久化）。**服务器没有 parser**：浏览器本机用上游 Rust Core 解析回放 → 结算事实（`Battle` 形状，`facts` 字段）→ 服务端 `ClientReplayFacts` 结构校验 → battle-type policy → 名人堂；原始回放作为证据附件存档。服务端无法从字节验证事实，**防伪造靠管理员审核与回放附件**；**禁止人工修改 replay-derived facts**（admin 是 governance，不是数据编辑器）。
 
+## 信任模型（产品决策，2026-10）
+
+**client facts are intentionally untrusted; server validates structure, not authenticity.**
+
+- 名人堂 / 百场 / 三环接受客户端提交的、**不可信**的结算事实（`facts`，`Battle` 形状）。浏览器本机用锁定版本的上游
+  Agent WASM 解析回放得出它们；服务器没有 parser。
+- 服务器**只**做 schema / shape / required-field / size 格式校验（`ClientReplayFacts`：arenaId、录像者、1..64 名战斗者、
+  账号 / 车辆 ID、队伍取值、无重复账号、JSON ≤ 64 KiB），再走 battle-type policy 与去重。
+- 服务器**不**证明 facts 由上传的回放推导而来：不重新解析回放、不比较回放与 facts、不做密码学证明、不做抽样解析。
+- 原始回放只作为存档 / 人工审核材料（证据附件，管理员可下载对照）。
+- 管理员人工审核是唯一的防伪造手段——接受客户端伪造风险是**有意的产品决策**，不是待修的缺陷。不要把它「修复」成
+  服务端验真。守卫：`ClientReplayFactsTrustModelTest`（结构合法但明显伪造的 facts 被接受；结构读取 API 不接受任何
+  回放字节）。
+
 - **数据库配置**：`application.yml` 始终启用 DataSource/JPA/Flyway，`ddl-auto: validate`；本地开发需提供 PostgreSQL 与 `POSTGRES_PASSWORD`。
 - **Schema 来源**：Flyway 迁移 `V1__init_leaderboard.sql` → `V15__add_leaderboard_replay_file.sql`（历史 immutable），`V16__rename_leaderboard_to_hall_of_fame.sql`（表/约束/索引 rename-in-place + battle_type/arena_bonus_type + backfill），`V17__create_hall_of_fame_admin_log.sql`（admin 审计表），`V18`–`V20`（百场申请、回放证据、WG 审核快照）、`V21__create_mark3_submission.sql`（三环申请与回放证据）以及 `V22__hof_ownership_by_wotb_account.sql`（百场/三环 ownership 由 Keycloak 身份切换为 **WotB 游戏账号 + 区服**：`game_account_id_snapshot` → `wotb_account_id`、新增 `wotb_server` 快照列、删除 `user_keycloak_id`、唯一索引与查询索引改按 `(wotb_server, wotb_account_id)`；迁移内含 fail-fast preflight，不做任何自动消解，详见下文「V22 迁移契约」）。**改表结构必须新增迁移**，不要改已应用的版本；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
 - **战斗模式数据模型**：`hall_of_fame_record` 同时保存 `battle_type varchar(16) NOT NULL`（业务归一值 `RANDOM`/`RATING`，CHECK 约束，非 PG ENUM）与 `arena_bonus_type integer NOT NULL`（replay 解析出的 authoritative raw integer，protocol provenance / 调试 / 未来扩展）。历史数据 backfill 为 `RANDOM/1`（旧系统 PR #97 前只允许 Random；PR #97 起允许 Rating，历史行无法逐行推导，统一按 `RANDOM/1`，带 replay_hash 的行可由客户端重新解析附件后修正）。
