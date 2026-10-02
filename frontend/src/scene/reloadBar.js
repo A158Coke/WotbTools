@@ -165,24 +165,47 @@ export function inferMagazineSize(events) {
 }
 
 /**
- * 某条定时弹药相位（f2=3/6/7）的**结束时刻**：从 `clock + duration_s` 起，把其后每条
- * f2=4（新生效的完整配置时长）按"缩放剩余"折进去，直到结束或遇到下一条定时弹药相位。
- * 与下面 shellStatesAt 里进度基准的推进方式**同一公式**，二者必须一致。
+ * 某条定时弹药相位（f2=3/6/7）的**结束时刻**：从 `clock + duration_s` 起，将后续
+ * f2=4 与 method 35 按时间顺序折入同一 ready 时间线，直到结束或被下一条定时弹药相位取代。
+ * method 35 仍只作用于 f2=3；缩放公式必须与 shellStatesAt 的运行时状态机完全一致。
  */
-function scheduledReady(usable, i, effAt) {
+function scheduledReady(usable, i, effList, effAt) {
   const s = usable[i];
   let dur = s.duration_s;
-  // 与 shellStatesAt 的进度基准同一规则：方法 35（长装填刻度）只作用于整夹装填 f2=3
   if (s.phase === PHASE_START && effAt) dur = effAt(s.clock) ?? dur;
   let ready = s.clock + dur;
+
+  // 预计算 end mark 时不能只看 f2=4：method 35 会在运行时动态修改 ready。
+  // 将两类变化合并排序，确保静态 end mark 与下面 marks 归并得到同一个结束时刻。
+  const changes = [];
   for (let j = i + 1; j < usable.length; j++) {
     const e = usable[j];
-    if (e.clock >= ready) break;                     // 已就绪：后面的相位不属于本次
+    if (e.phase === PHASE_DURATION_CHANGE || isTimedAmmoPhase(e)) {
+      changes.push({ clock: e.clock, kind: 'phase', e });
+    }
+  }
+  if (s.phase === PHASE_START) {
+    for (const d of effList || []) {
+      if (d.clock > s.clock && d.duration_s > 0) changes.push({ clock: d.clock, kind: 'eff', e: d });
+    }
+  }
+  // 与 shellStatesAt marks 的稳定顺序一致：同一时刻 phase/begin 先于 eff。
+  changes.sort((a, b) => (a.clock - b.clock) || (a.kind === 'phase' ? -1 : 1));
+
+  for (const change of changes) {
+    if (change.clock >= ready) break;                 // 当前装填已在变化到来前完成
+    if (change.kind === 'eff') {
+      const next = change.e.duration_s;
+      ready = change.clock + Math.max(0, ready - change.clock) * (next / dur);
+      dur = next;
+      continue;
+    }
+    const e = change.e;
     if (e.phase === PHASE_DURATION_CHANGE && e.duration_s > 0) {
       ready = e.clock + Math.max(0, ready - e.clock) * (e.duration_s / dur);
       dur = e.duration_s;
     } else if (isTimedAmmoPhase(e)) {
-      break;                                          // 新装填取代本次
+      break;                                          // 新定时相位取代本次
     }
   }
   return ready;
@@ -243,7 +266,7 @@ export function shellStatesAt(events, fires, t, size = 1, durations = null) {
     if (e.clock > t) break;
     marks.push({ t: e.clock, kind: 'begin', e });
     if (!isTimedAmmoPhase(e)) continue;                  // f2=4 不产生独立结束标记
-    const end = scheduledReady(usable, i, effAt);     // 结束时刻折进其后的 f2=4/35 变更
+    const end = scheduledReady(usable, i, effList, effAt); // end 与运行时 ready 共用 f2=4 + method35 时间线
     if (end <= t) marks.push({ t: end, kind: 'end', e });
   }
   for (const f of fires || []) {
