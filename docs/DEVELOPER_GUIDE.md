@@ -133,6 +133,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 | Observability | Prometheus/Loki/Alloy/Grafana config | Yecao Compose、local state | config/runtime、Tofu | `grafana` | `observability.yml` |
 | Caddy / TX Alloy | gateway / TX shipper config | TX Compose | config validation | — | `caddy.yml` / `alloy-tx.yml` |
 | Komodo 控制平面 | Core/Mongo Compose、plan guard | Yecao Core/Mongo runtime、`/opt/komodo` local state、DNSPod | Compose 契约、Tofu validation | `komodo` | `komodo-controller.yml` |
+| Komodo Periphery (Yecao) | pinned release manifest、config、systemd unit | Yecao `/usr/local/bin/periphery`、`/etc/komodo`、systemd unit | release/config/unit 契约、onboarding 生命周期 fixture | — | `komodo-periphery.yml` |
 | Deployment / Python | shared deploy policy / common Python tools | shared scripts | contract smokes / unit tests | — | — |
 ---
 
