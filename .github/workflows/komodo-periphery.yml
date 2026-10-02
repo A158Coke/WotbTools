@@ -1,0 +1,184 @@
+name: Komodo Periphery
+
+# Independent owner for the Yecao Komodo Periphery agent (K3.1).
+#
+# GitHub Actions owns the Periphery systemd lifecycle; Komodo Core owns only the
+# Server relationship. This workflow never touches Core, Mongo, DNS, Caddy, or the
+# Komodo controller runtime, and the host never downloads a binary: the runner
+# fetches the pinned release, verifies its SHA256, and stages the verified bytes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/komodo-periphery.yml
+      - deploy/check-production-freshness.sh
+      - deploy/periphery/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/komodo-periphery.yml
+    deploy/check-production-freshness.sh
+    deploy/periphery/**
+
+jobs:
+  deploy:
+    name: Reconcile Komodo Periphery on Yecao
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Freeze current main
+        id: source
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'Komodo Periphery workflow requires main.' >&2; exit 1; }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'The event SHA must be a full lowercase commit SHA.' >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo 'Checkout SHA differs from the event SHA.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      # The manifest is the single source of truth for the pinned release; the
+      # runner validates its internal consistency before trusting any of it.
+      - name: Read the pinned Periphery release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source deploy/periphery/periphery.release
+          [[ "$PERIPHERY_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid PERIPHERY_VERSION.' >&2; exit 1; }
+          [[ "$PERIPHERY_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid PERIPHERY_SHA256.' >&2; exit 1; }
+          [[ "$PERIPHERY_ASSET" == periphery-x86_64 ]] || { echo "Unsupported PERIPHERY_ASSET: $PERIPHERY_ASSET" >&2; exit 1; }
+          [[ "$PERIPHERY_RELEASE_TAG" == "v$PERIPHERY_VERSION" ]] || { echo 'PERIPHERY_RELEASE_TAG must be v${PERIPHERY_VERSION}.' >&2; exit 1; }
+          [[ "$PERIPHERY_URL" == "https://github.com/moghtech/komodo/releases/download/$PERIPHERY_RELEASE_TAG/$PERIPHERY_ASSET" ]] \
+            || { echo 'PERIPHERY_URL does not match the pinned tag and asset.' >&2; exit 1; }
+          {
+            echo "version=$PERIPHERY_VERSION"
+            echo "asset=$PERIPHERY_ASSET"
+            echo "sha256=$PERIPHERY_SHA256"
+            echo "url=$PERIPHERY_URL"
+          } >> "$GITHUB_OUTPUT"
+
+      # Yecao never downloads a Periphery binary. Only the verified bytes travel.
+      - name: Download and verify the pinned Periphery artifact
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.release.outputs.url }}
+          ARTIFACT_SHA256: ${{ steps.release.outputs.sha256 }}
+          ARTIFACT_NAME: ${{ steps.release.outputs.asset }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_NAME" == periphery-x86_64 ]] || { echo "Unexpected artifact name: $ARTIFACT_NAME" >&2; exit 1; }
+          curl --fail --location --silent --show-error --retry 3 --retry-delay 5 \
+            --output "$ARTIFACT_NAME" "$ARTIFACT_URL"
+          printf '%s  %s\n' "$ARTIFACT_SHA256" "$ARTIFACT_NAME" | sha256sum --check --strict -
+          echo "Verified $ARTIFACT_NAME ($ARTIFACT_SHA256)"
+
+      # The staging root is reached before any other Periphery code exists on the
+      # host, so the audited helper runs straight from the checkout: /opt/periphery,
+      # /opt/periphery/incoming, and the SHA directory must all be real directories
+      # (mode 700) before SCP is allowed to write into them.
+      - name: Prepare safe Periphery staging root on Yecao
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 2m
+          script_path: deploy/periphery/staging-root.sh
+          envs: SOURCE_SHA,PERIPHERY_STAGING_ACTION
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          PERIPHERY_STAGING_ACTION: prepare
+
+      # Only the production inputs are staged: the owner's fixtures stay in CI.
+      - name: Stage exact Periphery inputs on Yecao
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: >-
+            deploy/periphery/lib.sh,deploy/periphery/staging-root.sh,
+            deploy/periphery/install.sh,deploy/periphery/verify.sh,
+            deploy/periphery/reconcile.sh,deploy/periphery/periphery.release,
+            deploy/periphery/periphery.config.toml,deploy/periphery/periphery.service,
+            periphery-x86_64
+          target: /opt/periphery/incoming/${{ steps.source.outputs.source_sha }}
+          overwrite: true
+
+      - name: Reject stale main before Yecao mutation
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+      # All mutation logic lives in the staged `reconcile.sh`; this step only
+      # forwards the exact SHA and the bootstrap credential under the Yecao host
+      # lock. The credential is a one-time onboarding value: it is consumed from a
+      # transient /run file and is never required again once the persistent
+      # Periphery identity exists, so the operator may delete this secret after the
+      # first successful K3.1 run.
+      - name: Reconcile Periphery under the Yecao host lock
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 15m
+          envs: SOURCE_SHA,KOMODO_YECAO_ONBOARDING_KEY
+          script: |
+            set -Eeuo pipefail
+            stage="/opt/periphery/incoming/$SOURCE_SHA"
+            chmod 700 "$stage/deploy/periphery/"*.sh
+            bash "$stage/deploy/periphery/reconcile.sh" "$SOURCE_SHA" "$stage"
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          KOMODO_YECAO_ONBOARDING_KEY: ${{ secrets.KOMODO_YECAO_ONBOARDING_KEY }}
+
+      # Only the SHA-scoped staging directory is ever removed, and only after the
+      # helper re-proved /opt/periphery and /opt/periphery/incoming are real
+      # directories. The installed binary, config, keys, and unit are out of reach.
+      - name: Cleanup staged Periphery inputs
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 2m
+          script_path: deploy/periphery/staging-root.sh
+          envs: SOURCE_SHA,PERIPHERY_STAGING_ACTION
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          PERIPHERY_STAGING_ACTION: cleanup
