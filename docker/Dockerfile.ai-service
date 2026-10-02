@@ -9,21 +9,10 @@ COPY common/map_names.json common/map_names.json
 COPY common/tank_tactical_profiles.json common/tank_tactical_profiles.json
 COPY common/map-semantics common/map-semantics
 COPY java/pom.xml java/settings-docker.xml java/
-COPY java/wotb-contracts/pom.xml java/wotb-contracts/pom.xml
-COPY java/wotb-object-storage-minio/pom.xml java/wotb-object-storage-minio/pom.xml
-COPY java/wotb-broker-rabbitmq/pom.xml java/wotb-broker-rabbitmq/pom.xml
 COPY java/wotb-core/pom.xml java/wotb-core/pom.xml
-COPY java/wotb-result/pom.xml java/wotb-result/pom.xml
-COPY java/wotb-playback/pom.xml java/wotb-playback/pom.xml
-COPY java/wotb-replay-coordinator/pom.xml java/wotb-replay-coordinator/pom.xml
-COPY java/wotb-replay-processing/pom.xml java/wotb-replay-processing/pom.xml
-COPY java/wotb-parser-worker/pom.xml java/wotb-parser-worker/pom.xml
 COPY java/wotb-ai/pom.xml java/wotb-ai/pom.xml
 COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
-COPY java/wotb-contracts/src java/wotb-contracts/src
 COPY java/wotb-core/src java/wotb-core/src
-COPY java/wotb-result/src java/wotb-result/src
-COPY java/wotb-playback/src java/wotb-playback/src
 COPY java/wotb-ai/src java/wotb-ai/src
 WORKDIR /build/java
 RUN mvn -s settings-docker.xml -pl wotb-ai -am -DskipTests clean package -q

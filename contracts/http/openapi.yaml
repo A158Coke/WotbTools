@@ -239,71 +239,6 @@ paths:
       responses:
         '200': { description: Per-user delete result, content: { application/json: { schema: { $ref: '#/components/schemas/DeleteUsersResponse' } } } }
         '400': { description: Missing confirmation or too many ids, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-  /api/replay/battle-playback-v2:
-    post:
-      operationId: getBattlePlaybackV2
-      summary: Read the cached Battle Playback V2 dataset for a ready processing source
-      description: Anonymous access allowed; a valid bearer token is accepted but not required.
-      security:
-        - {}
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DatasetReference'
-      responses:
-        '200':
-          description: Canonical sparse playback projection
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BattlePlaybackDataset'
-        '204':
-          description: Playback capability unavailable for this source
-        '400':
-          description: Invalid dataset reference
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
-        '401':
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
-        '403':
-          description: Access denied
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
-        '404':
-          description: Processing job was not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
-        '409':
-          description: Source is not ready
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
-        '503':
-          description: Dataset storage is unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
-        '500':
-          description: Unexpected server failure
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
   /api/ai/reviews:
     post:
       operationId: createAiReview
@@ -600,17 +535,6 @@ components:
         deleted: { type: integer }
         failed: { type: integer }
         results: { type: array, items: { $ref: '#/components/schemas/DeleteUserResult' } }
-    DatasetReference:
-      type: object
-      additionalProperties: false
-      required: [processingJobId, sourceId]
-      properties:
-        processingJobId:
-          type: string
-          minLength: 1
-        sourceId:
-          type: string
-          pattern: '^r[0-9]+$'
     AiReviewRequestV1:
       type: object
       additionalProperties: false

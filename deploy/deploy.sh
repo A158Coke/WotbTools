@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Staged selective production deployment for the Yecao host.
 #
-# The Yecao runtime is the parser execution plane plus the shared observability stack. The business
+# The Yecao runtime is the AI review service plus the shared observability stack. The business
 # runtime (`business-api`), its PostgreSQL, Keycloak, Keycloak's PostgreSQL, and the public frontend
 # live on TX and are deployed by deploy/tx/deploy.sh; they are not selectable here any more.
 # Failure is fail-closed and operator-led.
@@ -49,26 +49,6 @@ is_selected() {
   return 1
 }
 
-# The Yecao parser-worker is the only execution-plane service on that host and must stay stateless:
-# no database credentials, no local replay job directory, no in-process execution mode and no
-# replay backend-selection switch. A future
-# edit that gave it any of these would silently create a second, non-authoritative replay runtime
-# (PostgreSQL is the job authority on TX and MinIO holds the datasets), so the deploy refuses to
-# stage such a worker instead of starting it.
-assert_parser_worker_execution_plane() {
-  local compose_file="$1"
-  is_selected parser-worker || return 0
-  local block
-  block="$(awk '/^  parser-worker:/{flag=1;next} /^  [A-Za-z0-9_-]+:/{flag=0} flag' "$compose_file")"
-  [ -n "$block" ] || die "staged compose is missing the parser-worker service definition."
-  local entry
-  for entry in POSTGRES_HOST POSTGRES_PASSWORD SPRING_DATASOURCE \
-    REPLAY_PROCESSING_JOB_DIR WOTB_REPLAY_EXECUTION_MODE WOTB_REPLAY_PROCESSING_JOB_REPOSITORY; do
-    ! grep -Fq "$entry" <<< "$block" \
-      || die "parser-worker must stay stateless; the staged compose must not define $entry for it."
-  done
-}
-
 validate_inputs() {
   is_safe_path "$WOTB_DIR" || die "unsafe WOTB_DIR."
   is_safe_path "$INCOMING_DIR" || die "unsafe WOTB_INCOMING_DIR."
@@ -82,20 +62,10 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      node-exporter|prometheus|loki|alloy|grafana|parser-worker|ai-service) ;;
+      node-exporter|prometheus|loki|alloy|grafana|ai-service) ;;
       *) die "unsupported deployment service: $service" ;;
     esac
   done
-  # The worker is the only Yecao service that talks to two remote planes (the TX broker and the
-  # Yecao MinIO). Its credentials are required exactly when it is selected, so a
-  # observability-only deploy keeps working while the worker path stays fail-closed instead of
-  # starting with empty settings.
-  if is_selected parser-worker; then
-    for service in TX_RABBITMQ_PARSER_WORKER_PASSWORD YECAO_MINIO_WORKER_ACCESS_KEY \
-      YECAO_MINIO_WORKER_SECRET_KEY; do
-      require_env "$service"
-    done
-  fi
   if is_selected ai-service; then
     require_env AI_API_KEY
   fi
@@ -117,7 +87,6 @@ stage_and_validate() {
   mkdir -p "$INCOMING_DIR"
   cp -f "$staged_source" "$EFFECTIVE_COMPOSE"
   chmod 600 "$EFFECTIVE_COMPOSE"
-  assert_parser_worker_execution_plane "$EFFECTIVE_COMPOSE"
   if ! docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null; then
     die "staged compose config is invalid; live deployment was not changed."
   fi
@@ -152,7 +121,7 @@ pull_images() {
 promote_files() {
   local next_deploy="$WOTB_DIR/deploy.next.$$" next_compose="$WOTB_DIR/docker-compose.next.$$"
   local old_deploy="$WOTB_DIR/deploy.old.$$" old_compose="$WOTB_DIR/docker-compose.old.$$"
-  local worker_file observability_file observability_selected=false service
+  local observability_file observability_selected=false service
   rm -rf -- "$next_deploy"
   rm -f -- "$next_compose"
   mkdir -p "$next_deploy" || return 1
@@ -161,12 +130,6 @@ promote_files() {
   fi
   [ -f "$INCOMING_DIR/deploy/deploy.sh" ] || die "staged deployment tree is missing deploy.sh."
   cp -f "$INCOMING_DIR/deploy/deploy.sh" "$next_deploy/deploy.sh" || return 1
-  if is_selected parser-worker; then
-    for worker_file in dependency-readiness.sh dependency-readiness.py; do
-      [ -f "$INCOMING_DIR/deploy/$worker_file" ] || die "staged deployment tree is missing $worker_file."
-      cp -f "$INCOMING_DIR/deploy/$worker_file" "$next_deploy/$worker_file" || return 1
-    done
-  fi
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
       prometheus|loki|alloy|grafana|node-exporter) observability_selected=true ;;
@@ -209,21 +172,6 @@ promote_files() {
 
 compose_service_list() {
   printf '%s\n' "${DEPLOY_SERVICES[@]}"
-}
-
-worker_health() {
-  is_selected parser-worker || return 0
-  local attempt
-  for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
-    if docker compose -f "$LIVE_COMPOSE" ps -a parser-worker | grep -Eq 'Up|running'; then
-      echo "parser-worker: PASS"
-      return 0
-    fi
-    FAILED_SERVICE=parser-worker
-    [ "$attempt" -lt "$HEALTH_ATTEMPTS" ] && sleep "$HEALTH_INTERVAL_SEC"
-  done
-  echo "parser-worker: FAIL" >&2
-  return 1
 }
 
 ai_health() {
@@ -296,7 +244,6 @@ run_observability_checks() {
 diagnostics() {
   echo "== DEPLOY DIAGNOSTICS =="
   echo "sourceSha=$CONFIG_SHA_VALUE"
-  [ "$DEPLOY_SERVICES_RAW" != parser-worker ] || echo "image=latest"
   echo "deployServices=$DEPLOY_SERVICES_RAW"
   docker compose -f "$LIVE_COMPOSE" ps -a || true
   local -a diagnostic_services=("${APPLY_SERVICES[@]}")
@@ -319,7 +266,7 @@ stop_failed_service() {
   local service="$FAILED_SERVICE"
   [ -n "$service" ] || return 0
   case "$service" in
-    parser-worker|ai-service) ;;
+    ai-service) ;;
     *)
       echo "Not stopping non-application health dependency: $service" >&2
       return 0
@@ -360,14 +307,6 @@ main() {
   if ! apply_services; then
     diagnostics
     stop_failed_service
-    exit 1
-  fi
-  # The worker exposes no HTTP endpoint, so its gate is the container staying up: a crash loop from
-  # a missing credential or an unreachable broker must fail the deployment, not pass silently.
-  if ! worker_health; then
-    diagnostics
-    stop_failed_service
-    echo "ERROR: parser-worker did not stay running; no automatic application recovery was attempted." >&2
     exit 1
   fi
   if ! ai_health; then
