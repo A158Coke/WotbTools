@@ -264,66 +264,124 @@ assert '[ "$komodo_public" = "$komodo_private" ]' in caddy_script, \
 caddy_tokens = {token for line in caddy_script.splitlines() for token in line.split()}
 assert "-k" not in caddy_tokens, "curl -k is forbidden in the Caddy gateway verification"
 assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy gateway verification"
-# K3.1: the Yecao Periphery agent is repo-owned and outbound-only. GitHub Actions
-# owns its systemd lifecycle, the host never downloads an artifact, the bootstrap
-# credential only ever lives in a transient /run file, and the agent connects to
-# Core's private WireGuard address rather than the public name.
+# K3.2: one Komodo Periphery owner serves every reviewed target host. GitHub
+# Actions owns each agent's systemd lifecycle, the hosts never download an
+# artifact, the bootstrap credential only ever lives in a transient /run file, and
+# every agent connects to Core's private WireGuard address rather than a public
+# name. One lifecycle implementation, per-host reviewed profiles.
 periphery_workflow = load(workflow_dir / "komodo-periphery.yml")
 periphery_events = periphery_workflow.get("on", periphery_workflow.get(True, {}))
 assert periphery_events["push"]["paths"] == periphery_workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
-periphery_deploy = periphery_workflow["jobs"]["deploy"]
-assert periphery_deploy["name"] == "Reconcile Komodo Periphery on Yecao"
-assert "environment" not in periphery_deploy, "K3.1 uses repository-level secrets, never a GitHub Environment"
-periphery_steps = {step.get("name"): step for step in periphery_deploy["steps"]}
-release_step = periphery_steps["Read the pinned Periphery release"]["run"]
-assert "deploy/periphery/periphery.release" in release_step, release_step
-assert "PERIPHERY_SHA256" in release_step and "PERIPHERY_URL" in release_step
-artifact_step = periphery_steps["Download and verify the pinned Periphery artifact"]["run"]
-assert "sha256sum --check --strict" in artifact_step, artifact_step
-assert "--retry 3" in artifact_step, artifact_step
-periphery_reconcile = periphery_steps["Reconcile Periphery under the Yecao host lock"]
-assert periphery_reconcile["with"]["envs"] == "SOURCE_SHA,KOMODO_YECAO_ONBOARDING_KEY"
-assert periphery_reconcile["env"]["KOMODO_YECAO_ONBOARDING_KEY"] == \
-    "${{ secrets.KOMODO_YECAO_ONBOARDING_KEY }}"
-periphery_script = periphery_reconcile["with"]["script"]
-assert 'bash "$stage/deploy/periphery/reconcile.sh" "$SOURCE_SHA" "$stage"' in periphery_script
-# The host must never fetch or execute an unverified artifact.
-for token in ("curl", "wget"):
-    assert token not in periphery_script, token
-# The bootstrap credential must never be echoed into the workflow log.
-assert "KOMODO_YECAO_ONBOARDING_KEY" not in periphery_script.replace("$KOMODO_YECAO_ONBOARDING_KEY", "")
-for staging_step in ("Prepare safe Periphery staging root on Yecao", "Cleanup staged Periphery inputs"):
-    assert periphery_steps[staging_step]["with"]["script_path"] == "deploy/periphery/staging-root.sh"
-assert periphery_steps["Cleanup staged Periphery inputs"]["if"] == "always()"
-# Exactly the production inputs plus the verified artifact are staged; the owner's
-# fixtures stay in CI.
-staged = " ".join(periphery_steps["Stage exact Periphery inputs on Yecao"]["with"]["source"].split())
-staged_files = {part for part in staged.replace(" ", "").split(",") if part}
-assert staged_files == {
-    "deploy/periphery/lib.sh",
-    "deploy/periphery/staging-root.sh",
-    "deploy/periphery/install.sh",
-    "deploy/periphery/verify.sh",
-    "deploy/periphery/reconcile.sh",
-    "deploy/periphery/periphery.release",
-    "deploy/periphery/periphery.config.toml",
-    "deploy/periphery/periphery.service",
-    "periphery-x86_64",
-}, sorted(staged_files)
-# The persistent config is outbound only: private Core address, exact connect_as,
-# no inbound server, and no credential.
-periphery_config_text = (root / "deploy/periphery/periphery.config.toml").read_text(encoding="utf-8")
-for invariant in (
-    'root_directory = "/etc/komodo"',
-    'core_addresses = ["http://10.20.0.2:9120"]',
-    'connect_as = "yecao"',
-    "server_enabled = false",
-    'private_key = "file:/etc/komodo/keys/periphery.key"',
-    'core_public_keys = ["file:/etc/komodo/keys/core.pub"]',
-):
-    assert invariant in periphery_config_text, invariant
-assert "45.136.14.101" not in periphery_config_text
-assert "0.0.0.0" not in periphery_config_text
+periphery_jobs = periphery_workflow["jobs"]
+assert set(periphery_jobs) == {"reconcile_yecao", "reconcile_tx1"}, sorted(periphery_jobs)
+assert periphery_jobs["reconcile_yecao"]["name"] == "Reconcile Komodo Periphery on Yecao"
+assert periphery_jobs["reconcile_tx1"]["name"] == "Reconcile Komodo Periphery on TX1"
+# Yecao must be proven compatible with the multi-target refactor before TX1 is
+# mutated for the first time.
+assert periphery_jobs["reconcile_tx1"]["needs"] == ["reconcile_yecao"], periphery_jobs["reconcile_tx1"]["needs"]
+periphery_hosts = {
+    "yecao": {"job": "reconcile_yecao", "profile": "yecao", "label": "Yecao",
+              "secrets": ("VPS_HOST", "VPS_USER", "VPS_PORT", "VPS_SSH_KEY")},
+    "tx1": {"job": "reconcile_tx1", "profile": "tx1", "label": "TX1",
+            "secrets": ("TX_VPS_HOST", "TX_VPS_USER", "TX_VPS_PORT", "TX_VPS_SSH_KEY")},
+}
+for host, spec in periphery_hosts.items():
+    job = periphery_jobs[spec["job"]]
+    label = spec["label"]
+    assert "environment" not in job, f"K3.2 uses repository-level secrets, never a GitHub Environment: {host}"
+    steps = {step.get("name"): step for step in job["steps"]}
+    # The pinned release manifest and the same SHA-verified artifact, per job.
+    release_step = steps["Read the pinned Periphery release"]["run"]
+    assert "deploy/periphery/periphery.release" in release_step, release_step
+    assert "PERIPHERY_SHA256" in release_step and "PERIPHERY_URL" in release_step
+    artifact_step = steps["Download and verify the pinned Periphery artifact"]["run"]
+    assert "sha256sum --check --strict" in artifact_step, artifact_step
+    assert "--retry 3" in artifact_step, artifact_step
+    # Host parameters come from the reviewed profile, never from inline YAML.
+    profile_step = steps[f"Read the {label} target profile"]
+    assert profile_step["env"]["TARGET"] == spec["profile"], profile_step["env"]
+    assert "read-target-profile.sh" in profile_step["run"], profile_step["run"]
+    # Host credentials.
+    for secret in spec["secrets"]:
+        assert secret in json.dumps(job), (host, secret)
+    # Every SSH/SCP step targets this host's own secrets.
+    ssh_steps = [step for step in job["steps"] if step.get("uses", "").startswith(("appleboy/ssh-action", "appleboy/scp-action"))]
+    assert ssh_steps, host
+    for step in ssh_steps:
+        assert step["with"]["host"] == f"${{{{ secrets.{spec['secrets'][0]} }}}}", (host, step["with"]["host"])
+    # Staging root handed to the pre-SCP helper and the cleanup step.
+    for staging_name in (f"Prepare safe {label} staging root", f"Cleanup staged {label} inputs"):
+        staging_step = steps[staging_name]
+        assert staging_step["with"]["script_path"] == "deploy/periphery/staging-root.sh", staging_name
+        assert staging_step["env"]["PERIPHERY_STAGING_ROOT"] == "${{ steps.target.outputs.staging_root }}", staging_name
+    assert steps[f"Cleanup staged {label} inputs"]["if"] == "always()"
+    # Exactly the production inputs plus this target's own profile and the verified
+    # artifact are staged: fixtures and other hosts' profiles stay in CI.
+    staged = " ".join(steps[f"Stage exact Periphery inputs on {label}"]["with"]["source"].split())
+    staged_files = {part for part in staged.replace(" ", "").split(",") if part}
+    assert staged_files == {
+        "deploy/periphery/lib.sh",
+        "deploy/periphery/staging-root.sh",
+        "deploy/periphery/install.sh",
+        "deploy/periphery/verify.sh",
+        "deploy/periphery/reconcile.sh",
+        "deploy/periphery/periphery.release",
+        "deploy/periphery/periphery.service",
+        f"deploy/periphery/targets/{spec['profile']}/target.env",
+        f"deploy/periphery/targets/{spec['profile']}/periphery.config.toml",
+        "periphery-x86_64",
+    }, (host, sorted(staged_files))
+    # The reconcile step runs the shared lifecycle with the target as data, and
+    # never fetches or executes an unverified artifact.
+    reconcile = steps[f"Reconcile {label} Periphery under the {label} host lock"]
+    assert 'bash "$stage/deploy/periphery/reconcile.sh" "$PERIPHERY_TARGET" "$SOURCE_SHA" "$stage"' in reconcile["with"]["script"], host
+    assert reconcile["env"]["PERIPHERY_TARGET"] == spec["profile"], host
+    for token in ("curl", "wget"):
+        assert token not in reconcile["with"]["script"], (host, token)
+# Yecao's onboarding credential has been deleted: its job must not reference any
+# onboarding secret at all, because it must reconcile from the committed marker.
+yecao_json = json.dumps(periphery_jobs["reconcile_yecao"], ensure_ascii=False)
+assert "ONBOARDING_KEY" not in yecao_json, "the Yecao job must not reference an onboarding secret"
+assert "KOMODO_YECAO_ONBOARDING_KEY" not in json.dumps(periphery_workflow, ensure_ascii=False)
+# TX1's first onboarding maps only its own secret into the generic runtime variable.
+tx1_reconcile = next(step for step in periphery_jobs["reconcile_tx1"]["steps"]
+                     if step.get("name") == "Reconcile TX1 Periphery under the TX1 host lock")
+assert tx1_reconcile["with"]["envs"].split(",") == ["SOURCE_SHA", "PERIPHERY_TARGET", "KOMODO_PERIPHERY_ONBOARDING_KEY"]
+assert tx1_reconcile["env"]["KOMODO_PERIPHERY_ONBOARDING_KEY"] == "${{ secrets.KOMODO_TX1_ONBOARDING_KEY }}"
+tx1_script = tx1_reconcile["with"]["script"]
+assert "KOMODO_PERIPHERY_ONBOARDING_KEY" not in tx1_script.replace("$KOMODO_PERIPHERY_ONBOARDING_KEY", "")
+# The per-host parameters are reviewed data, not workflow text.
+for profile, expected in {
+    "yecao": {"connect_as": "yecao", "lock_root": "/opt/wotb", "staging_root": "/opt/periphery", "privilege": "root"},
+    "tx1": {"connect_as": "tx1", "lock_root": "/opt/wotb-tx", "staging_root": "/opt/wotb-tx/periphery", "privilege": "sudo"},
+}.items():
+    text = (root / f"deploy/periphery/targets/{profile}/target.env").read_text(encoding="utf-8")
+    assert f"PERIPHERY_TARGET={profile}" in text, profile
+    assert f"PERIPHERY_CONNECT_AS={expected['connect_as']}" in text, profile
+    assert f"PERIPHERY_LOCK_ROOT:={expected['lock_root']}" in text, profile
+    assert f"PERIPHERY_STAGING_ROOT:={expected['staging_root']}" in text, profile
+    assert f"PERIPHERY_PRIVILEGE={expected['privilege']}" in text, profile
+    # A profile is data: it may never assign a credential (comments excluded, and
+    # `load_target_profile` enforces the same rule at runtime).
+    effective_profile = "\n".join(line for line in text.splitlines() if not line.strip().startswith("#"))
+    assert not re.search(r"(?i)(secret|password|passwd|token|private_key|onboarding_key)\s*=", effective_profile), profile
+# Each target's config is outbound only, with its own Server identity.
+for profile, connect_as in (("yecao", "yecao"), ("tx1", "tx1")):
+    config_text = (root / f"deploy/periphery/targets/{profile}/periphery.config.toml").read_text(encoding="utf-8")
+    for invariant in (
+        'root_directory = "/etc/komodo"',
+        'core_addresses = ["http://10.20.0.2:9120"]',
+        f'connect_as = "{connect_as}"',
+        "server_enabled = false",
+        'private_key = "file:/etc/komodo/keys/periphery.key"',
+        'core_public_keys = ["file:/etc/komodo/keys/core.pub"]',
+    ):
+        assert invariant in config_text, (profile, invariant)
+    for forbidden in ("45.136.14.101", "0.0.0.0", "onboarding_key", "image_registry", "git_provider"):
+        assert forbidden not in config_text, (profile, forbidden)
+# No per-host lifecycle script may exist: only reviewed profiles differ.
+for path in sorted((root / "deploy/periphery").glob("*.sh")):
+    assert "yecao" not in path.name and "tx1" not in path.name, path.name
 periphery_unit_text = (root / "deploy/periphery/periphery.service").read_text(encoding="utf-8")
 for invariant in (
     "EnvironmentFile=-/run/komodo/periphery-bootstrap.env",

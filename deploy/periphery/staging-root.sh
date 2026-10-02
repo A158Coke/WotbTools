@@ -1,29 +1,36 @@
 #!/usr/bin/env bash
-# Audited staging-root helper for the Komodo Periphery owner (K3.1).
+# Audited staging-root helper for the Komodo Periphery owner (K3.2), shared by
+# every target.
 #
 # GitHub Actions reaches the staging root before any other Periphery code exists
 # on the host, so this file is fed to the remote as a script (`script_path` in
 # `.github/workflows/komodo-periphery.yml`) and is also staged with the rest of
-# `deploy/periphery`. It is the single implementation of the staging path rule:
+# `deploy/periphery`. It is the single implementation of the staging path rule,
+# with the target's root passed in (Yecao `/opt/periphery`, TX1
+# `/opt/wotb-tx/periphery`):
 #
-#   /opt/periphery, /opt/periphery/incoming, and
-#   /opt/periphery/incoming/<SOURCE_SHA> must all be real directories.
+#   <root>, <root>/incoming, and <root>/incoming/<SOURCE_SHA> must all be real
+#   directories, created mode 700.
 #
 # A symlinked component (including a dangling one), a regular file, or any other
 # path type fails closed. Without that rule SCP could write, and cleanup could
 # delete, outside the Periphery staging root.
 #
+# The root's parent belongs to the host's deploy owner, so a non-root SSH account
+# can stage under it without a privileged write under /opt.
+#
 # Arguments may be positional (staged invocation) or environment-driven (the
 # pre-SCP `script_path` invocation passes no argv):
 #
 #   staging-root.sh <prepare|verify|cleanup> <source-sha> [root]
-#   PERIPHERY_STAGING_ACTION=... SOURCE_SHA=... [PERIPHERY_STAGING_ROOT=...] staging-root.sh
+#   PERIPHERY_STAGING_ACTION=... SOURCE_SHA=... PERIPHERY_STAGING_ROOT=... staging-root.sh
 set -Eeuo pipefail
 umask 077
 
 action="${1:-${PERIPHERY_STAGING_ACTION:-}}"
 SOURCE_SHA="${2:-${SOURCE_SHA:-}}"
-root="${3:-${PERIPHERY_STAGING_ROOT:-/opt/periphery}}"
+root="${3:-${PERIPHERY_STAGING_ROOT:-}}"
+[[ -n "$root" ]] || { echo 'A Komodo Periphery staging root is required.' >&2; exit 2; }
 staging="$root/incoming/$SOURCE_SHA"
 
 case "$action" in
