@@ -334,7 +334,7 @@ Migration invariant != Runtime invariant
 
 仓库内 `replay-engine/` Rust 移植最初用于把 Java Replay Parser 带到 Web / Android，但上游 WoT-Blitz-Agent 已经维护同一问题域的 Rust Core，并为结算、Playback、射击复现和 AI Review 提供 WASM facet。继续维护第二套 parser 会重新制造双事实源，因此 WotbTools 先退役仓库内 Rust 移植，再把上游 Agent 作为唯一字节解析依赖。
 
-依赖不是浮动跟随 upstream main。生产前端只消费 `deploy/agent/source.json` 锁定的 Release artifact；#447 合并时锁定 `v0.3.8` / `f35baa46…`，并校验 Release asset SHA-256。WASM 升级必须重新通过仓库 fixture 上的真实 replay → WASM → WotbTools projection parity gate。
+依赖不是浮动跟随 upstream main。生产前端只消费 `deploy/agent/source.json` 锁定的 Release artifact；#447 cutover 初始锁定 `v0.3.8` / `f35baa46…`，#451 为 additive 装填遥测升级到 `v0.3.9` / `b4e50e13…`，两者都校验 Release asset SHA-256。WASM 升级必须重新通过仓库 fixture 上的真实 replay → WASM → WotbTools projection parity gate。
 
 客户端解析完成后，原先的 Distributed Replay Processing 不再有长期职责：
 
@@ -368,11 +368,17 @@ Agent facet DTO
 
 2D Playback 与 AI Review 共用 canonical facts；3D / shot replay 可以直接消费其专用 Agent facet，但不能因此把渲染态或上游私有字段提升为 WotbTools canonical truth。缺失的 Replay 字段向上游补，不在服务端恢复 parser，也不在消费端复制一套启发式解码。
 
+#451 把这一边界扩展到实时装填：Agent v0.3.9 的 `PlaybackData.reloads` / `reload_effective`
+只作为 3D OTM 的专用输入。前者保留本方 arena 装填族与服务器弹量快照，后者保留 method 35
+的当前有效完整装填时长；WotbTools 只解释经真实回放和客户端 UI 交叉闭环的相位子集，并用
+纯时间函数保证 seek 确定性。协议没有敌方装填流，因此敌方不绘制装填状态，缺失继续表示 unknown。
+这些字段没有进入 `frontend/src/replay-local/canonical`，避免把呈现专用语义升级成全局事实 authority。
+
 AI Review 也随之退出 Processed Dataset 模型：浏览器本地建立 `ClientAiReviewProjection`，gzip 提交给 Yecao 独立 `ai-service`；服务端 adapter 只做结构校验与确定性内存归约，不读取 Replay 字节。Hall of Fame 则明确采用另一种信任边界：client facts 只做结构校验，原始 Replay 作为 evidence attachment，真实性由管理员审核承担；它不是认证或授权事实。
 
 同一轮还把**运行依赖 provenance**与**研究证据 provenance**分开。生产依赖由 `deploy/agent/source.json` 锁 Release commit + artifact hash；外部交叉验证文档则锁具体 upstream research commit / blob。上游项目既是 parser producer 又是 research source，但这两个身份不改变 WotbTools evidence promotion rule：external-only claim 仍需本地 corpus 或 controlled probe 独立复现。
 
-**Git evidence:** `82f1e26c`（上游 WASM 成为客户端解析方向）、`0dc4767e`（#447：服务端 parser 与 distributed replay pipeline 退役）；upstream release `v0.3.8` = `f35baa46…`。
+**Git evidence:** `82f1e26c`（上游 WASM 成为客户端解析方向）、`0dc4767e`（#447：服务端 parser 与 distributed replay pipeline 退役）、PR #451（3D 装填遥测消费）；upstream releases `v0.3.8` = `f35baa46…`、`v0.3.9` = `b4e50e13…`。
 
 
 ## Current Authority Model

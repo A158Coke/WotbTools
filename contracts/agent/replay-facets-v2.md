@@ -1,9 +1,9 @@
 # WoT-Blitz-Agent 回放数据能力契约（replay facets）v2
 
 > Producer: [`fanypcd/WoT-Blitz-Agent`](https://github.com/fanypcd/WoT-Blitz-Agent)（MIT）
-> · 状态：生产方行为契约。上游 `main` 已于 2026-09-30 随 commit
->   [`f3684fc`](https://github.com/fanypcd/WoT-Blitz-Agent/commit/f3684fca454a50858943093a03d5f4106befe6aa)（tag `v0.1.7`）发布；
->   样例可从该 SHA 重导出复现。
+> · 状态：生产消费契约。WotbTools 当前通过 `deploy/agent/source.json` 锁定
+>   上游 Release `v0.3.9` / commit `b4e50e13581b8383b1332fbc7ba7b402116533bd`，
+>   并校验 Release WASM asset SHA-256；升级不得浮动跟随 upstream `main`。
 >
 > **性质声明**：本文档规定预期的公开消费 DTO 形状与能力边界，
 > 供 WotBTools 消费侧对表。它**不是协议证据主张**：
@@ -110,6 +110,27 @@ WotBTools
 - provenance 全文：WotbTools `docs/research/replay/assault-base-state.md`（含 2026-10-01
   判据修正通告）。
 
+## 4d. 实时装填遥测（PlaybackData additive；上游 v0.3.9）
+
+这两项只属于 **PlaybackData / 3D Playback 的专用时序输入**，不自动提升为
+WotbTools canonical ReplayFacts。字段均为 additive、skip-when-empty；缺失必须保持
+unknown，不允许恢复服务端解析或为敌方推算装填状态。
+
+- `reloads[]`: `{clock, eid, phase, duration_s: number|null, count: number|null}`。来源为
+  arena update subtype 15/16/17 的原始装填族；`phase` = 原始 f2，`duration_s` = f3 秒数
+  （不是倒计时；缺失时序列化为 `null`），`count` = 原始 f4（缺失时为 `null`）。
+  生产者按 clock 升序输出，并且协议只给**本方全队**。
+- `reload_effective[]`: `{clock, eid, duration_s}`。来源为 method 35（0x23），表示该时刻
+  **当前生效的完整装填配置时长**；同样仅本方可见、按 clock 升序。
+- WotbTools 3D 当前只解释已在真实回放与客户端 OTM 交叉闭环的子集：
+  `f2=1` = 剩余发数快照；`3` = 整夹装填；`4` = 当前装填时长变更；
+  `5` 的 `f4=1` = 就绪/取消标志（**不是**剩余发数）；`6` = 弹鼓逐发补槽；
+  `7` = 夹内推弹/射击间隔，**有定时视觉但不补弹**。未闭环码继续原样保留，不赋语义。
+- 方法 35 只校准整夹 `f2=3` 的长装填刻度；`f2=6/7` 使用相位自身 `duration_s`。
+  求值按时间归并而不是累加计时器，因此 seek / 拖动时间轴必须得到相同状态。
+- 敌方没有该遥测：3D OTM 只为 friendly team 绘制装填条。无数据时不得把“未知”渲染成
+  推测的敌方满弹/空弹状态。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——
@@ -198,3 +219,6 @@ canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`heal
 - v0.3.6（2026-10-02，fanypcd/WoT-Blitz-Agent#5）：AI 切面 `Health`（prop3 血量属性广播原始值）。
 - v0.3.7（2026-10-02，fanypcd/WoT-Blitz-Agent#6）：`AiReviewFacet.poses` / `turrets`（原始 type10 世界位姿与 prop2，列式）。
 - v0.3.8（2026-10-02，fanypcd/WoT-Blitz-Agent#7）：结果能力 `roster_complete` / `author_vehicle_codename`。
+- v0.3.9（2026-10-02，agent commit `b4e50e13`）：PlaybackData additive 增加
+  `reloads` / `reload_effective` 装填遥测，并补收 arena subtype 16；WotbTools
+  `deploy/agent/source.json` 同步 pin 到该 Release，字段契约见 §4d。
