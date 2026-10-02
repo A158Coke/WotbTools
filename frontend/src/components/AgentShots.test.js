@@ -115,6 +115,36 @@ describe('AgentShots author_path fail-visible（评审 blocker 回归）', () =>
     expect(options.some((t) => t.startsWith('eid:300'))).toBe(true)
   })
 
+  it('上游已聚合的单个 Shot 在消费端只渲染一行，不按 hit_flags/interaction 展开', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [{
+        index: 1,
+        shot_id: 45509301,
+        time_s: 110.26,
+        damage: 0,
+        target_name: 'target',
+        target_eid: 200,
+        is_kill: false,
+        shooter_eid: 100,
+        shooter_name: 'author',
+        is_author: true,
+        // 上游已经把同一发内的 ricochet(0x08) + non-penetration(0x20) 聚合到这个 Shot；
+        // 本测试锁消费端不再按 flags / interaction 二次展开，真正的 shotId 去重由 Agent parser 回归覆盖。
+        hit_flags: 0x28,
+        game_hit_result: 0,
+        shell_id: 79242,
+      }],
+      author_path: 'ok',
+      author_eid: 100,
+      others: { total_launches: 0, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 },
+    })
+
+    const wrapper = await mountAndPick()
+    expect(wrapper.findAll('table.shot-table tbody tr')).toHaveLength(1)
+    expect(wrapper.findAll('.stat-box')[0].find('.val').text()).toBe('1')
+    expect(wrapper.text()).toContain('agentShots.res_ric')
+  })
+
   it('author_path=error 但他人路径有 shots → 警示与表格并存', async () => {
     parseAgentShotsFromBytes.mockResolvedValue({
       shots: [{
