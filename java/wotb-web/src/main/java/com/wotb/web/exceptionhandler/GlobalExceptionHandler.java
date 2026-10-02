@@ -1,16 +1,9 @@
 package com.wotb.web.exceptionhandler;
 
-import com.wotb.core.replay.processing.MixedAnalysisScopesException;
-import com.wotb.core.replay.processing.MixedRandomBattleRecordersException;
-import com.wotb.core.replay.processing.PerspectiveTeamNotResolvedException;
-import com.wotb.core.replay.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.replay.exception.ReplayBusyException;
-import com.wotb.web.replay.exception.ReplayFileCountExceededException;
-import com.wotb.web.replay.job.ExportQueueFullException;
-import com.wotb.web.replay.job.ProcessingQueueFullException;
 import com.wotb.web.replayfile.HallOfFameStorageException;
 import com.wotb.web.util.apierror.ApiErrorFactory;
 import com.wotb.web.util.apierror.ApiErrorResponse;
@@ -141,55 +134,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleReplayBusy(
             final ReplayBusyException exception, final HttpServletRequest request) {
         return response("REPLAY_BUSY", HttpStatus.SERVICE_UNAVAILABLE, exception, request);
-    }
-
-    @ExceptionHandler(ProcessingQueueFullException.class)
-    public ResponseEntity<ApiErrorResponse> handleProcessingQueueFull(
-            final ProcessingQueueFullException exception, final HttpServletRequest request) {
-        return response("PROCESSING_QUEUE_FULL", HttpStatus.SERVICE_UNAVAILABLE, exception, request);
-    }
-
-    @ExceptionHandler(ExportQueueFullException.class)
-    public ResponseEntity<ApiErrorResponse> handleExportQueueFull(
-            final ExportQueueFullException exception, final HttpServletRequest request) {
-        return response("EXPORT_QUEUE_FULL", HttpStatus.SERVICE_UNAVAILABLE, exception, request);
-    }
-
-    @ExceptionHandler(ReplayFileCountExceededException.class)
-    public ResponseEntity<ApiErrorResponse> handleReplayFileCount(
-            final ReplayFileCountExceededException exception, final HttpServletRequest request) {
-        final Map<String, Object> details = Map.of(
-                "maxFiles", exception.getMaxFiles(),
-                "actualFiles", exception.getActualFiles());
-        final ApiErrorResponse error = factory.create(
-                "REPLAY_FILE_COUNT_EXCEEDED", HttpStatus.BAD_REQUEST, details, request);
-        return response(error, exception, request);
-    }
-
-    @ExceptionHandler(UnsupportedReplayAnalysisModeException.class)
-    public ResponseEntity<ApiErrorResponse> handleUnsupportedMode(
-            final UnsupportedReplayAnalysisModeException exception, final HttpServletRequest request) {
-        return response(errorCode(exception.getMessage(), "UNSUPPORTED_ANALYSIS_MODE"),
-                HttpStatus.UNPROCESSABLE_ENTITY, exception, request);
-    }
-
-    @ExceptionHandler(PerspectiveTeamNotResolvedException.class)
-    public ResponseEntity<ApiErrorResponse> handlePerspectiveTeam(
-            final PerspectiveTeamNotResolvedException exception, final HttpServletRequest request) {
-        return response(errorCode(exception.getMessage(), "PERSPECTIVE_TEAM_NOT_RESOLVED"),
-                HttpStatus.UNPROCESSABLE_ENTITY, exception, request);
-    }
-
-    @ExceptionHandler(MixedAnalysisScopesException.class)
-    public ResponseEntity<ApiErrorResponse> handleMixedScopes(
-            final MixedAnalysisScopesException exception, final HttpServletRequest request) {
-        return response("MIXED_ANALYSIS_SCOPES", HttpStatus.BAD_REQUEST, exception, request);
-    }
-
-    @ExceptionHandler(MixedRandomBattleRecordersException.class)
-    public ResponseEntity<ApiErrorResponse> handleMixedRecorders(
-            final MixedRandomBattleRecordersException exception, final HttpServletRequest request) {
-        return response("MIXED_RANDOM_BATTLE_RECORDERS", HttpStatus.BAD_REQUEST, exception, request);
     }
 
     @ExceptionHandler(HallOfFameStorageException.class)

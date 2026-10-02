@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -138,7 +139,7 @@ class HallOfFameControllerTest {
     void uploadDelegatesToServiceAndReturnsSkippedReasonCode() throws Exception {
         final HallOfFameService service = mock(HallOfFameService.class);
         final HallOfFameUploadService uploadService = mock(HallOfFameUploadService.class);
-        when(uploadService.upload(any())).thenReturn(Map.of(
+        when(uploadService.upload(any(), any())).thenReturn(Map.of(
                 "status", "skipped",
                 "arenaId", "arena-1",
                 "reasonCode", "DUPLICATE_OR_UNKNOWN_RECORDER"
@@ -147,12 +148,13 @@ class HallOfFameControllerTest {
         final String json = mvc(service, uploadService)
                 .perform(multipart("/api/hof/upload")
                         .file(new MockMultipartFile("file", "battle.wotbreplay",
-                                "application/octet-stream", new byte[]{1})))
+                                "application/octet-stream", new byte[]{1}))
+                        .param("facts", "{\"arenaId\":\"arena-1\"}"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
         Assertions.assertThat(json).contains("\"reasonCode\":\"DUPLICATE_OR_UNKNOWN_RECORDER\"");
-        verify(uploadService).upload(any());
+        verify(uploadService).upload(any(), eq("{\"arenaId\":\"arena-1\"}"));
     }
 
     /**
@@ -163,16 +165,50 @@ class HallOfFameControllerTest {
     void uploadUnsupportedBattleTypeRejectsWith400() throws Exception {
         final HallOfFameService service = mock(HallOfFameService.class);
         final HallOfFameUploadService uploadService = mock(HallOfFameUploadService.class);
-        when(uploadService.upload(any())).thenThrow(new IllegalArgumentException("UNSUPPORTED_BATTLE_TYPE"));
+        when(uploadService.upload(any(), any())).thenThrow(new IllegalArgumentException("UNSUPPORTED_BATTLE_TYPE"));
 
         final String json = mvc(service, uploadService)
                 .perform(multipart("/api/hof/upload")
                         .file(new MockMultipartFile("file", "battle.wotbreplay",
-                                "application/octet-stream", new byte[]{1})))
+                                "application/octet-stream", new byte[]{1}))
+                        .param("facts", "{\"arenaId\":\"arena-1\"}"))
                 .andExpect(status().isBadRequest())
                 .andReturn().getResponse().getContentAsString();
 
         Assertions.assertThat(json).contains("\"errorCode\":\"UNSUPPORTED_BATTLE_TYPE\"");
-        verify(uploadService).upload(any());
+        verify(uploadService).upload(any(), eq("{\"arenaId\":\"arena-1\"}"));
+    }
+
+    /** facts 必填：浏览器本地解析的结算事实缺失时直接 400，不进入上传编排。 */
+    @Test
+    void uploadWithoutFactsRejectsWith400() throws Exception {
+        final HallOfFameService service = mock(HallOfFameService.class);
+        final HallOfFameUploadService uploadService = mock(HallOfFameUploadService.class);
+
+        mvc(service, uploadService)
+                .perform(multipart("/api/hof/upload")
+                        .file(new MockMultipartFile("file", "battle.wotbreplay",
+                                "application/octet-stream", new byte[]{1})))
+                .andExpect(status().isBadRequest());
+
+        verify(uploadService, never()).upload(any(), any());
+    }
+
+    /** 非法 facts（结构校验失败）→ canonical 400 {errorCode: INVALID_REPLAY_FACTS}。 */
+    @Test
+    void uploadInvalidFactsRejectsWith400() throws Exception {
+        final HallOfFameService service = mock(HallOfFameService.class);
+        final HallOfFameUploadService uploadService = mock(HallOfFameUploadService.class);
+        when(uploadService.upload(any(), any())).thenThrow(new IllegalArgumentException("INVALID_REPLAY_FACTS"));
+
+        final String json = mvc(service, uploadService)
+                .perform(multipart("/api/hof/upload")
+                        .file(new MockMultipartFile("file", "battle.wotbreplay",
+                                "application/octet-stream", new byte[]{1}))
+                        .param("facts", "{}"))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+
+        Assertions.assertThat(json).contains("\"errorCode\":\"INVALID_REPLAY_FACTS\"");
     }
 }

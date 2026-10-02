@@ -3,7 +3,6 @@ package com.wotb.web.mark3.service;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.ref.VehicleCodes;
 import com.wotb.web.mark3.dto.Mark3AdminDetailDto;
@@ -17,7 +16,8 @@ import com.wotb.web.mark3.enums.Mark3Status;
 import com.wotb.web.hof.dto.BulkDeleteItemResult;
 import com.wotb.web.hof.dto.BulkDeleteResultDto;
 import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
-import com.wotb.web.replay.ReplayUploadValidator;
+import com.wotb.web.replayfile.ReplayUploadValidator;
+import com.wotb.web.replayfile.ClientReplayFacts;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.web.replayfile.ReplayHashLock;
@@ -111,7 +111,8 @@ public class Mark3SubmissionService {
             final int claimedAverageDamage,
             final BigDecimal claimedWinRate,
             final List<String> proofScreenshots,
-            final List<MultipartFile> replays) {
+            final List<MultipartFile> replays,
+            final List<String> replayFacts) {
         final UserProfile profile = userProfileService.findEntityByKeycloakUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
         final Long gameId = profile.getWotbAccountId();
@@ -130,13 +131,15 @@ public class Mark3SubmissionService {
         if (replays == null || replays.size() != REPLAY_COUNT) {
             throw new IllegalArgumentException("MARK3_REPLAY_COUNT");
         }
+        // 服务器没有 parser：结算事实由客户端本地解析后与回放一一对应提交，回放只作证据存档
+        final List<Battle> battles = ClientReplayFacts.readAll(replayFacts, replays.size());
         requireNoActiveSubmission(wotbServer, gameId, vehicleId);
 
         try {
             return capacityLimiter.execute(() -> createSubmissionWithinReplayCapacity(
                     vehicleId, gameId, wotbServer, vehicle.name(), profile.getWotbNickname().trim(),
                     claimedBattleCount, claimedAverageDamage, normalizedWinRate,
-                    normalizedScreenshots, replays));
+                    normalizedScreenshots, replays, battles));
         } catch (final RuntimeException e) {
             throw e;
         } catch (final Exception e) {
@@ -158,7 +161,8 @@ public class Mark3SubmissionService {
             final int claimedAverageDamage,
             final BigDecimal claimedWinRate,
             final List<String> normalizedScreenshots,
-            final List<MultipartFile> replays) {
+            final List<MultipartFile> replays,
+            final List<Battle> battles) {
         requireNoActiveSubmission(wotbServer, gameId, vehicleId);
         ReplayUploadValidator.validate(replays.toArray(new MultipartFile[0]));
 
@@ -168,7 +172,7 @@ public class Mark3SubmissionService {
         for (final MultipartFile file : replays) {
             slot++;
             final byte[] bytes = readBytes(file);
-            final Battle battle = parse(bytes);
+            final Battle battle = battles.get(slot - 1);
             if (!StringUtils.hasText(battle.arenaId)) {
                 throw new IllegalArgumentException("INVALID_REPLAY_FILE");
             }
@@ -660,14 +664,6 @@ public class Mark3SubmissionService {
         try {
             return file.getBytes();
         } catch (final IOException e) {
-            throw new IllegalArgumentException("INVALID_REPLAY_FILE");
-        }
-    }
-
-    private static Battle parse(final byte[] bytes) {
-        try {
-            return ReplayParser.parse(bytes);
-        } catch (final Exception e) {
             throw new IllegalArgumentException("INVALID_REPLAY_FILE");
         }
     }

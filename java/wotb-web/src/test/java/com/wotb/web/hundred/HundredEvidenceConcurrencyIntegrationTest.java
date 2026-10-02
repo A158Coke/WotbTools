@@ -2,7 +2,6 @@ package com.wotb.web.hundred;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
 import com.wotb.web.hof.service.HallOfFameAdminService;
@@ -16,11 +15,11 @@ import com.wotb.web.hundred.service.HundredBattleSubmissionService;
 import com.wotb.web.hundred.service.HundredReplayEvidenceService;
 import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import com.wotb.web.replayfile.ReplayDownload;
+import com.wotb.web.testsupport.ReplayFactsJson;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
@@ -55,14 +54,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 
 /**
  * 百场 evidence 跨域引用计数与锁协议的真实 PostgreSQL + filesystem 并发回归（PR #101 review blockers）。
  * 不靠 Mockito 证明 PostgreSQL transaction semantics：所有用例走真实 PG（Testcontainers）+ 真实
  * 内容寻址存储（data/replays-concurrency-it）+ 真实 ReplayHashLock（session 级 advisory lock）。
- * ReplayParser 静态 mock 只用于绕过「真实可解析回放 fixture 不足 5 份」的限制——解析发生在锁协议
- * 之前，不属于本次验证范围；锁 → store → DB tx → commit 全部真实执行。
+ * 服务器没有 parser：回放结算事实由客户端提交（facts JSON，按回放字节=arenaId 构造），facts 校验发生在
+ * 锁协议之前，不属于本次验证范围；锁 → store → DB tx → commit 全部真实执行。
  *
  * <p>覆盖：</p>
  * <ul>
@@ -229,14 +227,16 @@ class HundredEvidenceConcurrencyIntegrationTest {
         p.accountId = GAME_ID;
         p.nickname = "PlayerOne";
         p.tankId = VEHICLE;
+        p.team = 1;
         p.damageDealt = 3200;
+        b.recorder = p.nickname;
         b.players = new ArrayList<>(List.of(p));
         return b;
     }
 
     /**
      * 真实走 createSubmission 全流程（真实锁 + 真实 store + 真实 DB 事务 + commit）；
-     * 仅 ReplayParser 静态 mock（thread-local，解析在锁协议之前，非本次验证范围）。
+     * 客户端 facts 与回放一一对应（每份按回放字节=arenaId 构造）。
      */
     private HundredCreateResult createWithReplays(final String userId, final List<byte[]> contents) {
         final List<MultipartFile> files = new ArrayList<>();
@@ -244,12 +244,11 @@ class HundredEvidenceConcurrencyIntegrationTest {
             files.add(new MockMultipartFile("replays", "b" + (i + 1) + ".wotbreplay",
                     "application/octet-stream", contents.get(i)));
         }
-        try (final MockedStatic<ReplayParser> mocked = org.mockito.Mockito.mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-            return submissionService.createSubmission(userId, VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", files);
-        }
+        final List<String> facts = contents.stream()
+                .map(bytes -> ReplayFactsJson.of(battle(new String(bytes))))
+                .toList();
+        return submissionService.createSubmission(userId, VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", files, facts);
     }
 
     private static String sha256(final byte[] data) {
