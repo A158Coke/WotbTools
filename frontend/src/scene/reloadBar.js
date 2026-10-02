@@ -190,7 +190,12 @@ function scheduledReady(usable, i, effList, effAt) {
     }
   }
   // 与 shellStatesAt marks 的稳定顺序一致：同一时刻 phase/begin 先于 eff。
-  changes.sort((a, b) => (a.clock - b.clock) || (a.kind === 'phase' ? -1 : 1));
+  changes.sort((a, b) => {
+    const byClock = a.clock - b.clock;
+    if (byClock) return byClock;
+    if (a.kind === b.kind) return 0;
+    return a.kind === 'phase' ? -1 : 1;
+  });
 
   for (const change of changes) {
     if (change.clock >= ready) break;                 // 当前装填已在变化到来前完成
