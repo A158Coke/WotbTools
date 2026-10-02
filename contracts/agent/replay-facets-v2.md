@@ -2,7 +2,7 @@
 
 > Producer: [`fanypcd/WoT-Blitz-Agent`](https://github.com/fanypcd/WoT-Blitz-Agent)（MIT）
 > · 状态：生产消费契约。WotbTools 当前通过 `deploy/agent/source.json` 锁定
->   上游 Release `v0.3.9` / commit `b4e50e13581b8383b1332fbc7ba7b402116533bd`，
+>   上游 Release `v0.3.10` / commit `5029e1031393df4e1502b9e626d2e37fa248104b`，
 >   并校验 Release WASM asset SHA-256；升级不得浮动跟随 upstream `main`。
 >
 > **性质声明**：本文档规定预期的公开消费 DTO 形状与能力边界，
@@ -31,6 +31,25 @@ WotBTools
   CLI/服务端通道（`facets --parts ai`）继续保留，两者逐字段同构。
 - 消费方接口：`frontend/src/api/agent-replay-facets.ts`（三能力装载 + 形状校验
   + `projectHoF` 投影；样例锁定测试同目录）。
+
+### 1a. 装载边界（artifact identity；content-addressed）
+
+产物 identity 的 SSOT 是 `deploy/agent/source.json`（`ref` = 上游完整 commit，
+`artifact.release` = Release tag，`artifact.sha256` = 附件校验）：
+
+- **文件名与目录是契约的一部分**：`/wasm/<ref>/wotb_replay_wasm.js`、
+  `/wasm/<ref>/wotb_replay_wasm_bg.wasm`、`/wasm/<ref>/fingerprint.json`。
+  wasm-bindgen wrapper 自行加载同目录的 `_bg.wasm`，因此三者必须同一 commit 目录。
+- **stable `/wasm/wotb_replay_wasm.js` 禁止回归**：固定 URL 会让浏览器把别的 build
+  的产物长期缓存下来，同一 frontend 用错版引擎解析（症状：AI Review 报
+  `ai_review.poses 缺失`）。测试、Docker build 与 TX 发布校验都断言它不存在。
+- **装载顺序 fail closed**：fetch versioned `fingerprint.json` → 校验
+  `upstream_commit` / `tag` 等于 build 期 pin（Vite `define` 注入的
+  `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`）→ dynamic import versioned JS →
+  wrapper 从同目录装载 `_bg.wasm`。任一不一致抛 `AgentWasmVersionMismatchError`
+  （携带 expected/actual 的 release 与 commit），不进入形状校验。
+- **缓存**：`/wasm/<40 位 commit>/` 可长期 `immutable`——URL 即内容身份，新 Agent
+  换 URL，普通刷新即生效；不使用 no-cache。
 
 ## 2. 契约形状总则
 
@@ -130,6 +149,13 @@ unknown，不允许恢复服务端解析或为敌方推算装填状态。
   求值按时间归并而不是累加计时器，因此 seek / 拖动时间轴必须得到相同状态。
 - 敌方没有该遥测：3D OTM 只为 friendly team 绘制装填条。无数据时不得把“未知”渲染成
   推测的敌方满弹/空弹状态。
+- **无遥测 = 整条不画（`unknown ≠ full`）**：`reloads` 缺失或该车没有任何闭环相位时，
+  消费方（`frontend/src/scene/reloadBar.js#shellStatesAt`）返回 `null`，渲染侧隐藏整条
+  装填 UI。**不允许**把"没有遥测"兜底成满弹——2026-10-02 线上故障正是错版 WASM
+  （`reloads = 0`）导致每台车画出一根永远不动的白条。有遥测且当前确实满弹的车照常显示。
+- `reload_effective` 对 **autoreloader 多段装填 profile** 仍可能整场为空（method 35 当前
+  只解码 `[eid][single duration]` 形状）。这属于**上游 producer 语义**，消费方不得据坦克
+  型号/burst size 推断，也不得用 shots 反推时长；需要时在上游修并发新 Release。
 
 ## 5. 射击复现能力（ShotReplays）
 
@@ -222,3 +248,7 @@ canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`heal
 - v0.3.9（2026-10-02，agent commit `b4e50e13`）：PlaybackData additive 增加
   `reloads` / `reload_effective` 装填遥测，并补收 arena subtype 16；WotbTools
   `deploy/agent/source.json` 同步 pin 到该 Release，字段契约见 §4d。
+- v0.3.10（2026-10-02，agent commit `5029e103`）：射击复现多 interaction 关联修复；
+  `unique shotId = 一次开火 = 一个 Shot`，同一炮弹的跳弹、续飞、二次装甲接触仍聚合为同一 Shot；
+  作者严格路径在同 victim / 同时窗存在多个 type32 segment 时优先以 `method8.hash6 ↔ type32.hash6`
+  做 interaction 关联，重复 method8 广播按 hash 去重，证据不足继续 fail-fast。WotbTools production pin 同步到该 Release。

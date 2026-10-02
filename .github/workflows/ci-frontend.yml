@@ -52,13 +52,15 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
-      # dist 存在性 smoke：Agent WASM 产物必须经 publicDir 进 dist
-      #（三维回放/装甲查看器/射击复现的运行前提；Vite 对 @vite-ignore 动态 import
-      # 不做存在性检查，缺产物构建仍绿——在此显式把住）
-      - name: Agent WASM dist existence smoke
+      # dist 契约 smoke：Agent WASM 产物必须是 commit-addressed 的
+      #（`/wasm/<deploy/agent/source.json ref>/`），fingerprint 与 pin 逐字段一致，且
+      # stable `/wasm/wotb_replay_wasm.js` 不再存在。校验实现与生产 Docker build 共用
+      # `frontend/scripts/verify-agent-wasm-dist.mjs`（单一实现，不重复写检查）。
+      # 三维回放/装甲查看器/射击复现的运行前提；Vite 对 @vite-ignore 动态 import
+      # 不做存在性检查，缺产物构建仍绿——在此显式把住。
+      - name: Agent WASM dist contract smoke
         working-directory: frontend
-        run: |
-          node -e 'const fs=require("fs");const js="dist/wasm/wotb_replay_wasm.js";const bin="dist/wasm/wotb_replay_wasm_bg.wasm";for(const f of [js,bin]){if(!fs.existsSync(f))throw new Error("agent wasm artifact missing from dist: "+f);if(!fs.statSync(f).size)throw new Error("agent wasm artifact empty: "+f)}if(fs.readFileSync(bin).subarray(0,4).toString("hex")!=="0061736d")throw new Error("wotb_replay_wasm_bg.wasm lacks wasm magic");console.log("agent wasm artifacts present in dist")'
+        run: node scripts/verify-agent-wasm-dist.mjs --dist dist
       - name: Bundle separation check
         working-directory: frontend
         run: node scripts/check-bundle-separation.mjs
