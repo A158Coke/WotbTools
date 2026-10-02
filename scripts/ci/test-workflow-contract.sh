@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python3 - "$ROOT" <<'PY'
 import json
 import fnmatch
+import re
 import sys
 from pathlib import Path
 
@@ -61,6 +62,14 @@ assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend",
 assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment"}
 assert affected("deploy/tx/publish-loaded-image-to-tcr.sh") == {"deployment"}
 assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
+# Owner-boundary guards for the Komodo control plane:
+# - the Caddy gateway publishes Komodo but must never depend on Komodo-owned
+#   inputs (a Core release bump may not re-run, or fail, the gateway on its own);
+# - K2 documentation must live outside every production owner, so a docs-only
+#   change cannot trigger a Komodo Core/Mongo/DNS reconciliation.
+assert affected("deploy/komodo/verify.sh") == {"komodo_controller"}
+assert affected("deploy/tx/Caddyfile") == {"caddy"}
+assert affected("docs/operations/komodo-public-ingress.md") == set()
 # Frontend production builds now publish from TX through the Gitee exact-SHA builder.
 # The GitHub-runner registry-list/retry helpers are no longer frontend-owned inputs;
 # the Agent WASM pin/fetch contract and freshness gate remain production inputs.
@@ -205,6 +214,45 @@ assert not any("-pl wotb-ai" in run and ("skipTests" in run or "maven.test.skip"
 legacy_tcr_publisher = (root / "deploy/tx/publish-loaded-image-to-tcr.sh").read_text(encoding="utf-8")
 assert "<backend|frontend|keycloak>" not in legacy_tcr_publisher
 assert "backend|frontend|keycloak)" not in legacy_tcr_publisher
+
+# Caddy owns public ingress. The Komodo route (K2) must be verified in two
+# layers so a failure distinguishes a gateway problem from a Yecao/WireGuard one,
+# and it must NOT depend on which Komodo release the Komodo owner has deployed:
+# comparing the public answer with the private one keeps a Core upgrade from
+# failing the gateway on its own.
+caddy_workflow = load(workflow_dir / "caddy.yml")
+caddy_events = caddy_workflow.get("on", caddy_workflow.get(True, {}))
+caddy_paths = caddy_events["push"]["paths"]
+caddy_freshness = caddy_workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
+for owner_paths in (caddy_paths, caddy_freshness):
+    assert not any(
+        path.startswith("deploy/komodo/") or path.startswith("infra/tofu/komodo/")
+        for path in owner_paths
+    ), owner_paths
+assert "komodo" not in " ".join(filters["caddy"]), filters["caddy"]
+caddy_text = (workflow_dir / "caddy.yml").read_text(encoding="utf-8")
+assert "pinned_core_version" not in caddy_text, "Caddy must not read the Komodo release pin"
+assert not re.search(r"\bKOMODO_[A-Z0-9_]+", caddy_text), \
+    "Caddy must not carry a Komodo runtime constant"
+caddy_deploy = next(
+    step for step in caddy_workflow["jobs"]["deploy"]["steps"]
+    if step.get("name") == "Reconcile and verify Caddy under one TX host lock"
+)
+caddy_script = caddy_deploy["with"]["script"]
+assert "http://10.20.0.2:9120/version" in caddy_script
+assert "https://komodo.wotbtools.com/version" in caddy_script
+assert "https://komodo.wotbtools.com/" in caddy_script
+assert caddy_script.index("http://10.20.0.2:9120/version") \
+    < caddy_script.index("https://komodo.wotbtools.com/version"), \
+    "the private WireGuard upstream must be verified before the public route"
+assert r"^[0-9]+\.[0-9]+\.[0-9]+$" in caddy_script, "the private answer must be a semantic version"
+assert '[ "$komodo_public" = "$komodo_private" ]' in caddy_script, \
+    "the public answer must be compared with the private one"
+# TLS verification must never be weakened. Match whole tokens: `.well-known`
+# contains "-k" but is not the curl insecure flag.
+caddy_tokens = {token for line in caddy_script.splitlines() for token in line.split()}
+assert "-k" not in caddy_tokens, "curl -k is forbidden in the Caddy gateway verification"
+assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy gateway verification"
 for owner in owners:
     workflow = load(workflow_dir / f"{owner}.yml")
     events = workflow.get("on", workflow.get(True, {}))
