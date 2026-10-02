@@ -27,7 +27,7 @@
 | 账号验证 | 个人主页「用回放验证」→ `POST /api/users/wotb-account/verify-replay` |
 | Android | 本机分析完成即 ACK pending（无需新 APK：WebView 加载同一前端） |
 | 服务端删除 | Maven 模块 contracts / minio / rabbitmq / result / playback / replay-coordinator / replay-processing / parser-worker；wotb-core parse / decoder / stream / export / rating / stats；processing-jobs / export-jobs / 2D 端点；Flyway V27 删除 processing 表；部署 / CI / OpenTofu 中的 parser-worker、RabbitMQ（MinIO 视用途） |
-| AI 复盘（维护中） | 服务端只剩客户端投影解码；测试改用冻结投影 `common/fixtures/replay-facts/*.json.gz` |
+| AI 复盘 | 服务端只剩客户端投影解码（`ClientAiProjectionAdapter`）；测试改用冻结投影 `common/fixtures/replay-facts/*.json.gz`；前端维护门已于提交 `83884790` 解除 |
 
 ## 后续（不阻塞）
 
@@ -52,7 +52,7 @@
 
 - `parseAiReview` 单独不够：位置 / 炮塔 / checkpoints / finalState / 占点只能从 `parsePlayback` 推导。
 - **两个与方案无关的阻断**：
-  1. 契约矛盾：openapi `AiReviewReconstruction` 与 `ai-review.md` 不传 `metadata` / `diagnostics`，但
+  1. 契约矛盾：openapi 的请求 schema（当时名为 `AiReviewReconstruction`，现为 `ClientAiReviewProjection` 投影）与 `ai-review.md` 不传 `metadata` / `diagnostics`，但
      `BattleTimelineBuilder.validate` 要求二者存在，按契约发出的请求必被拒（`TIMELINE_META_INVALID` / `STREAM_CORRUPTED`）。
   2. 体积：冻结 fixture 解压 46 MB（events 31.7 MB、checkpoints 14.3 MB），只留被消费的事件仍 14.3 MB，
      超过 16 MiB 请求上限且未启用 gzip 请求体。

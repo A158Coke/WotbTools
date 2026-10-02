@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * request 线程执行 AI Review，重新引入 SSE blocking bug）。</p>
  *
  * <p><b>整体 deadline（E）</b>：请求在提交时刻计算 {@code now + overall-deadline-sec}
- * （默认 1100s，覆盖团队 3 次 AI 调用（Call #1 + Call #2 + Autopsy，每次 ≤315s）
+ * （默认 1100s，覆盖团队多次 AI 调用（Call #1 + Call #2 + 至多一次 recovery，每次 ≤315s）
  * 加余量；对齐前端 1100s / nginx 1120s），经 {@link AiRequestContext} 暴露给
  * worker；排队等待计入剩余预算，启动时预算耗尽直接干净失败 {@code AI_TIMEOUT}。</p>
  */

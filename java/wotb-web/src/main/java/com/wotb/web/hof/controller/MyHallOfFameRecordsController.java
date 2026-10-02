@@ -5,7 +5,6 @@ import com.wotb.web.hof.dto.HallOfFameRecordDto;
 import com.wotb.web.hof.service.HallOfFameService;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.util.JwtUtil;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,7 +18,6 @@ import java.util.List;
  */
 @RestController
 @RequestMapping(ApiPaths.USERS)
-@CrossOrigin(origins = "*")
 public class MyHallOfFameRecordsController {
 
     private final UserProfileService userProfileService;

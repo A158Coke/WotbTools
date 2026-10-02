@@ -7,7 +7,7 @@ import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.dto.AiReviewDonePayload;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,7 +40,7 @@ final class TeamRosterResolver {
      * 为 Team v0.5 生成 authoritative playerKey 映射。顺序必须与 prompt 中的 P1..Pn
      * 一致：按已提取本队成员的 accountId 稳定排序；LLM 只看到 playerKey，名称只在这里提供给 UI。
      */
-    static List<AnalyzeResponse.TeamPlayer> playerIdentities(
+    static List<AiReviewDonePayload.TeamPlayer> playerIdentities(
             final SingleTeamBattleAnalysisContext ctx) {
         if (ctx == null || ctx.features() == null) return List.of();
         final List<TeamMemberFeatureSet> members = ctx.features().members().stream()
@@ -49,10 +49,10 @@ final class TeamRosterResolver {
                         .thenComparing(TeamMemberFeatureSet::nickname,
                                 Comparator.nullsLast(String::compareTo)))
                 .toList();
-        final List<AnalyzeResponse.TeamPlayer> result = new ArrayList<>(members.size());
+        final List<AiReviewDonePayload.TeamPlayer> result = new ArrayList<>(members.size());
         for (int index = 0; index < members.size(); index++) {
             final TeamMemberFeatureSet member = members.get(index);
-            result.add(new AnalyzeResponse.TeamPlayer(
+            result.add(new AiReviewDonePayload.TeamPlayer(
                     "P" + (index + 1),
                     member.nickname() == null ? "" : member.nickname(),
                     ReplayDisplayNames.tankName(member.tankId(), member.tankName())));
@@ -62,7 +62,7 @@ final class TeamRosterResolver {
 
     static Set<String> playerKeys(final SingleTeamBattleAnalysisContext ctx) {
         return playerIdentities(ctx).stream()
-                .map(AnalyzeResponse.TeamPlayer::playerKey)
+                .map(AiReviewDonePayload.TeamPlayer::playerKey)
                 .collect(Collectors.toUnmodifiableSet());
     }
 

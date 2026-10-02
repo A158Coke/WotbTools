@@ -110,6 +110,26 @@ api_line="$(grep -n '^    location /api/ {' "$TEMPLATE" | head -n1 | cut -d: -f1
 grep -Fq 'proxy_pass ${BACKEND_UPSTREAM}/api/;' "$TEMPLATE" \
   || { echo 'FAIL: the generic /api/ route must stay on the TX business runtime' >&2; exit 1; }
 
+# Agent WASM is served from a commit-addressed directory (/wasm/<40-hex commit>/);
+# the directory name IS the content identity, so immutable long caching is correct
+# (a new Agent gets a new URL and a plain refresh picks it up). The regex must stay
+# pinned to the 40-hex commit segment: a bare `/wasm/` location would freeze
+# whatever else lands in that directory. The regex contains `{}` and must stay quoted,
+# otherwise nginx ends the location header at `{` (emerg: unknown directive "40}/").
+WASM_ROUTE="$WORK/wasm-route.conf"
+awk '/^    location ~ "\^\/wasm\/\[0-9a-f\]\{40\}\/" \{/{inside=1} inside{print} inside&&/^    \}$/{exit}' \
+  "$TEMPLATE" > "$WASM_ROUTE"
+grep -Fq 'location ~ "^/wasm/[0-9a-f]{40}/" {' "$WASM_ROUTE" \
+  || { echo 'FAIL: the staged TX template has no commit-addressed (quoted) /wasm/<40-hex>/ route' >&2; exit 1; }
+grep -Fq 'add_header Cache-Control "public, max-age=31536000, immutable" always;' "$WASM_ROUTE" \
+  || { echo 'FAIL: the /wasm/<commit>/ route must be immutable-cacheable' >&2; exit 1; }
+grep -Fq 'try_files $uri =404;' "$WASM_ROUTE" \
+  || { echo 'FAIL: the /wasm/<commit>/ route must not fall back to the SPA index' >&2; exit 1; }
+if grep -Eq '^    location /wasm/ \{' "$TEMPLATE"; then
+  echo 'FAIL: a bare /wasm/ location would freeze non-versioned files; keep it commit-addressed' >&2
+  exit 1
+fi
+
 # Fail closed: a wrong AI upstream (the TX business runtime, a public host, another
 # port) or a staged template that drops / rewrites the AI route must stop the deploy
 # before the live frontend is recreated.

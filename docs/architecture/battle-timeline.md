@@ -126,12 +126,15 @@ consumable 的 `invalidation=true` 是 runtime 全局失效边界，前端不解
 - **Personal AI hard gate（§3）**：TacticalReviewHarness / analyzePlayerOrFallback 在 Call #1 之前
   构建并验证 canonical timeline（无重建 / 录像者未解析 / timeline 不可用 → AI_TIMELINE_UNUSABLE，
   AI Gateway requests = 0）。
-- **Team AI hard gate（§3，PR #102 ）**：TeamReplayAnalysisService.analyzeTeamGroups（Team AI
-  唯一 production 编排入口）在 Call #1 / Call #2 / Team Autopsy 之前为每个 context 构建并验证 canonical
-  timeline（一次 build、一次 validation）：reconstruction 缺失 / timeline 不可用 → AI_TIMELINE_UNUSABLE，
-  AI Gateway requests = 0；验证通过后同一 validated timeline 下传 TeamAiPromptBuilder 渲染 TACTICAL
-  TIMELINE 段（PromptBuilder 不重复 build、不 catch 降级）。analyzeSingleTeamContext / analyzePlayerContext
-  为兼容/测试入口（非 production AI Review entrypoint）。
+- **Team AI hard gate（§3，PR #102 ）**：`TeamReplayAnalysisService.analyzeTeam`（Team AI
+  唯一 production 编排入口）→ `analyzeTeamContexts` 在 Call #1 / Call #2 之前为每个 context 构建并验证
+  canonical timeline（`validatedTeamTimeline`，一次 build、一次 validation）：reconstruction 缺失 /
+  timeline 不可用 → `AI_TIMELINE_UNUSABLE`，AI Gateway requests = 0；验证通过后同一 validated timeline
+  下传 `TeamAiPromptBuilder` 渲染 TACTICAL TIMELINE 段（PromptBuilder 不重复 build、不 catch 降级）。
+  生产链没有 Team Autopsy 阶段（第三次模型调用与 `TeamAutopsy*` 已随 2026-10 legacy 契约收敛删除）；
+  `TeamReplayAnalysisService` 已无 `analyzeSingleTeamContext` 兼容入口，个人侧的
+  `PlayerReplayAnalysisService.analyzePlayerContext` 仍在，但只是兼容/测试入口
+  （非 production entrypoint：production 个人复盘走 `analyzePlayerOrFallback`）。
 - Context 可观测性（§38/§39）：wotb_ai_review_context_section_tokens{section} 低基数指标 +
   Call #2 预算日志。
 

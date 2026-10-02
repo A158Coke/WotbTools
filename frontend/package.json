@@ -14,6 +14,7 @@
     "test:browser-interaction": "node scripts/browser-workspace-interaction.mjs",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
     "build": "vite build",
+    "verify:agent-wasm": "node scripts/verify-agent-wasm-dist.mjs --dist dist",
     "preview": "vite preview",
     "api:generate": "openapi-typescript ../contracts/http/openapi.yaml -o src/api/generated/http-contract.ts && node scripts/generate-api-contract.mjs",
     "api:check": "npm run api:generate && git diff --exit-code -- src/api/generated/http-contract.ts src/api/generated/playback-v2.schema.ts src/api/generated/api-error-codes.ts",

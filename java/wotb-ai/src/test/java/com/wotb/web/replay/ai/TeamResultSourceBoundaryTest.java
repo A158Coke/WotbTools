@@ -4,7 +4,6 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.processing.FriendlyEnemyResult;
 import com.wotb.core.replay.processing.FriendlyEnemyResult.PointsEndReason;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.replay.processing.FriendlyEnemyResult.WinnerSource;
 import org.junit.jupiter.api.Test;
@@ -71,11 +70,6 @@ class TeamResultSourceBoundaryTest {
         return players;
     }
 
-    private static TeamBattleWinner win(final Winner winner) {
-        return new TeamBattleWinner(winner, WinnerSource.BATTLE_RESULTS, false,
-                PointsEndReason.NOT_APPLICABLE);
-    }
-
     @Test
     void annihilationSuffixFailClosedOnBoundaryInputs() {
         assertTrue(FriendlyEnemyResult.annihilationSuffix(null, 1, Winner.FRIENDLY_WIN).isEmpty());
@@ -114,33 +108,6 @@ class TeamResultSourceBoundaryTest {
     }
 
     @Test
-    void autopsyResultLineNeverReportsAnnihilationOnBoundaryInputs() {
-        assertFalse(TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.FRIENDLY_WIN), "CHRD", null, 1).contains("全歼"));
-        assertFalse(TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.FRIENDLY_WIN), "CHRD", battle(null, 1), 1).contains("全歼"));
-        assertFalse(TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.FRIENDLY_WIN), "CHRD", battle(List.of(), 1), 1).contains("全歼"));
-        assertFalse(TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.FRIENDLY_WIN), "CHRD", battle(friendlyRoster(false), 1), 1).contains("全歼"));
-        assertFalse(TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.ENEMY_WIN), "CHRD", battle(enemyRoster(false), 2), 1).contains("全歼"));
-        assertFalse(TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.FRIENDLY_WIN), "CHRD", battle(bothRosters(false, true), 1), 0).contains("全歼"));
-        assertFalse(TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.FRIENDLY_WIN), "CHRD", battle(bothRosters(false, true), 1), 3).contains("全歼"));
-    }
-
-    @Test
-    void autopsyUserContentResultRowCarriesSourceButNoAnnihilationOnBoundary() {
-        final String content = TeamAutopsyPromptBuilder.buildUserContent(
-                List.of(), null, List.of(),
-                win(Winner.FRIENDLY_WIN), "CHRD", battle(List.of(), 1), null, 1, false);
-        assertTrue(content.contains("resultSource=BATTLE_RESULTS"), content);
-        assertFalse(content.contains("全歼"), content);
-    }
-
-    @Test
     void realAnnihilationStillReportsWhenBothRostersPresent() {
         // 双方 roster 齐全且对方 0 存活 → 全歼敌方
         final Battle enemyWiped = completeBattle(bothRosters(true, false), 1);
@@ -148,18 +115,12 @@ class TeamResultSourceBoundaryTest {
                 FriendlyEnemyResult.annihilationSuffix(enemyWiped, 1, Winner.FRIENDLY_WIN));
         assertEquals("CHRD获胜（全歼敌方）",
                 TeamEvidenceFormatter.resolveTeamResult(enemyWiped, 1, "CHRD"));
-        assertEquals("CHRD获胜（全歼敌方）",
-                TeamAutopsyPromptBuilder.winnerLabel(
-                        win(Winner.FRIENDLY_WIN), "CHRD", enemyWiped, 1));
         // 双方 roster 齐全且本方 0 存活 → 被敌方全歼
         final Battle friendlyWiped = completeBattle(bothRosters(false, true), 2);
         assertEquals("（被敌方全歼）",
                 FriendlyEnemyResult.annihilationSuffix(friendlyWiped, 1, Winner.ENEMY_WIN));
         assertEquals("CHRD落败（被敌方全歼）",
                 TeamEvidenceFormatter.resolveTeamResult(friendlyWiped, 1, "CHRD"));
-        assertEquals("CHRD落败（被敌方全歼）",
-                TeamAutopsyPromptBuilder.winnerLabel(
-                        win(Winner.ENEMY_WIN), "CHRD", friendlyWiped, 1));
     }
 
     @Test
@@ -175,16 +136,12 @@ class TeamResultSourceBoundaryTest {
         assertEquals(WinnerSource.BATTLE_RESULTS,
                 FriendlyEnemyResult.resolveTeamBattle(withWinner, 1).source());
         assertEquals("CHRD获胜", TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
-        assertEquals("CHRD获胜", TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.FRIENDLY_WIN), "CHRD", withWinner, 1));
         // winnerTeam 缺失：不得推导为 SURVIVOR_SETTLEMENT 胜利
         final Battle noWinner = battle(players, null);
         final var resolved = FriendlyEnemyResult.resolveTeamBattle(noWinner, 1);
         assertEquals(Winner.DRAW_OR_UNKNOWN, resolved.winner());
         assertEquals(WinnerSource.UNKNOWN, resolved.source());
         assertEquals("平局或未知", TeamEvidenceFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
-        assertEquals("CHRD获胜", TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.FRIENDLY_WIN), "CHRD", noWinner, 1));
     }
 
     @Test
@@ -200,8 +157,6 @@ class TeamResultSourceBoundaryTest {
         assertEquals(WinnerSource.BATTLE_RESULTS,
                 FriendlyEnemyResult.resolveTeamBattle(withWinner, 1).source());
         assertEquals("CHRD落败", TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
-        assertEquals("CHRD落败", TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.ENEMY_WIN), "CHRD", withWinner, 1));
         // winnerTeam 缺失：不得推导为 SURVIVOR_SETTLEMENT 落败
         final Battle noWinner = battle(players, null);
         final var resolved = FriendlyEnemyResult.resolveTeamBattle(noWinner, 1);
@@ -225,8 +180,6 @@ class TeamResultSourceBoundaryTest {
                 FriendlyEnemyResult.annihilationSuffix(withWinner, 1, Winner.FRIENDLY_WIN));
         assertEquals("CHRD获胜（全歼敌方）",
                 TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
-        assertEquals("CHRD获胜（全歼敌方）", TeamAutopsyPromptBuilder.winnerLabel(
-                win(Winner.FRIENDLY_WIN), "CHRD", withWinner, 1));
         // winnerTeam 缺失且完整 3v3：仍可推导 SURVIVOR_SETTLEMENT
         final Battle noWinner = completeBattle(players, null);
         final var resolved = FriendlyEnemyResult.resolveTeamBattle(noWinner, 1);
@@ -263,10 +216,6 @@ class TeamResultSourceBoundaryTest {
         assertEquals(PointsEndReason.UNKNOWN, resolved.pointsEndReason());
         assertEquals("CHRD获胜（点数判定）",
                 TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
-        final TeamBattleWinner unknownPoints = new TeamBattleWinner(
-                Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, true, PointsEndReason.UNKNOWN);
-        assertEquals("CHRD获胜（点数判定）",
-                TeamAutopsyPromptBuilder.winnerLabel(unknownPoints, "CHRD", withWinner, 1));
     }
 
     @Test

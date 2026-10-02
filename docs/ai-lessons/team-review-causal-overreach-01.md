@@ -58,6 +58,6 @@
 ## 回归
 
 - 单元：`TimelineFocusWindowSelectorTest`（连续减员窗口）、`TeamReviewQualityGateContractTest`（prompt contract）、
-  `TeamAutopsyPromptBuilderTest`（重点复查对象/归因降级）
+  `TeamAutopsyPromptBuilderTest`（重点复查对象/归因降级；该类与测试已随 2026-10 legacy 契约收敛删除）
 - 真实回放：`TeamReviewRealReplayProbeTest`（common/data 样本，可重复运行、无样本自动跳过）
 - eval：`ai-eval/cases/team-review-causal-overreach-01.json`

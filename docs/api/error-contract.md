@@ -51,12 +51,17 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `METHOD_NOT_ALLOWED` | 405 | false | protocol | HTTP method 不支持 |
 | `RESOURCE_NOT_FOUND` | 404 | false | resource | 通用资源不存在 |
 | `REPLAY_BUSY` | 503 | true | capacity | Replay worker 暂时繁忙 |
-| `PROCESSING_QUEUE_FULL` | 503 | true | capacity | Processing queue 已满 |
-| `EXPORT_QUEUE_FULL` | 503 | true | capacity | Export queue 已满 |
+| `PROCESSING_QUEUE_FULL` | 503 | true | capacity | **已退役（无生产者）**：Processing queue 已满；enum 值保留以避免动 wire |
+| `EXPORT_QUEUE_FULL` | 503 | true | capacity | **已退役（无生产者）**：Export queue 已满；enum 值保留以避免动 wire |
 | `AI_REVIEW_BUSY` | 503 | true | capacity | AI Review worker 暂时繁忙 |
 | `AI_REVIEW_SCHEMA_FAILED` | 502 | true | ai-schema | Team Call #2 的 primary 与唯一一次 fresh JSON recovery 均未满足 `TeamAiReviewResult` contract 后的最终错误 |
 | `INTERNAL_ERROR` | 500 | true | internal | 未分类服务端异常 |
-| `DATASET_REFERENCE_REQUIRED` | 400 | false | validation | Playback/AI Dataset reference 缺失 |
+| `DATASET_REFERENCE_REQUIRED` | 400 | false | validation | **已退役（无生产者）**：Playback/AI Dataset reference 缺失；enum 值保留以避免动 wire |
+
+> 服务器没有回放解析器（`/api/replay/processing-jobs`、`/api/replay/export-jobs`、`/api/preview`、
+> `/api/export` 等已于 2026-10-02 删除），因此上表三条 Processing/Export/Dataset 时代错误码当前
+> 没有任何生产者：保留 enum 值只为不改 wire contract（不要从 `contracts/http/openapi.yaml` 的 enum 删值）；
+> 若日后要清理，属独立的 wire 变更任务。
 
 既有 Replay、AI、Profile、HoF、Admin domain codes 在 Phase 1 保持 errorCode/status 兼容，并统一获得 `id`、`errorCode`、`retryable`、`details` 与 `timestamp`。`ApiErrorCode` 是从 OpenAPI 生成的 known-server registry，不会把 `NETWORK_ERROR`、`REQUEST_ABORTED`、`MALFORMED_ERROR_RESPONSE`、`UNKNOWN_ERROR` 或 `HTTP_<status>` 等浏览器/application fallback 当成服务端码；`ApiError.errorCode` 仍保持 string，以容纳尚未注册的稳定 legacy domain code。新增 error code 必须同时更新 registry、后端测试与三语前端 locale；禁止为不同语义复用同一 errorCode。
 

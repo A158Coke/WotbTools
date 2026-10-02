@@ -6,13 +6,36 @@
 > xlsx 导出、2D 回放数据）也都在客户端完成；服务端只负责存储、去重键、授权、名人堂记录与 AI 编排。
 > 迁移过程见 [client-replay-engine-migration.md](client-replay-engine-migration.md)。
 
+## Agent 产物身份（content-addressed）
+
+- **identity SSOT**：`deploy/agent/source.json:ref`（上游完整 commit）。`artifact.release` 是同一份
+  Release 的 tag，二者必须同时匹配产物自带的 `fingerprint.json`（`upstream_commit` / `tag`）。
+- **运行时 URL 是 content-addressed**：`/wasm/<ref>/wotb_replay_wasm.js`、`/wasm/<ref>/wotb_replay_wasm_bg.wasm`、
+  `/wasm/<ref>/fingerprint.json`（wasm-bindgen wrapper 从同目录加载 `_bg.wasm`，所以三者必须同一目录）。
+- **stable `/wasm/wotb_replay_wasm.js` 被禁止**：固定 URL 会让浏览器把**别的 build 的 Agent** 长期缓存下来，
+  同一个 frontend 用错版引擎解析，直到 AI Review 才以 `ai_review.poses 缺失` 暴露。构建/发布两侧都断言它不存在
+  （`frontend/scripts/verify-agent-wasm-dist.mjs`、`deploy/tx/build-frontend-from-gitee.sh`）。
+- **浏览器缓存靠 URL identity 失效，不靠 no-cache**：新 Agent → 新 URL，旧 URL 永不覆盖，因此
+  `location ~ ^/wasm/[0-9a-f]{40}/` 反而是长期 `immutable` 缓存（用户普通刷新即可拿到新建对应的产物，
+  不需要 Ctrl+F5 / 清站点数据）。只锁 40 位 hex 目录，不给 `/wasm/` 根目录统一 immutable。
+- **装载顺序 fail closed**：先校验 fingerprint（commit 与 tag 都要等于 build 期 pin）→ 再 dynamic import
+  版本化 JS → 才装载 `_bg.wasm`。任一不一致抛 `AgentWasmVersionMismatchError`
+  （带 `expectedRelease` / `expectedCommit` / `actualRelease` / `actualCommit`），UI 提示刷新页面重试。
+- **build 期注入**：`frontend/vite.config.js:agentWasmIdentity()` 读 `deploy/agent/source.json` 并通过
+  `define` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`（不在 TypeScript 里手写版本号）。
+  Docker 通过 `COPY deploy/agent/source.json /deploy/agent/source.json` 保持与仓库同一相对布局。
+- **落位与证据链**：`scripts/fetch-agent-wasm.sh`（Release 直取，sha256 + fingerprint 校验；
+  `scripts/agent-wasm-artifact.py` 是唯一 ingest 实现）与 `scripts/build-agent-wasm.sh`（源码自建后备）
+  都产出 `common/assets/wasm/<ref>/`，经 Vite publicDir 进 `dist/wasm/<ref>/`，再由 TX 发布脚本
+  从该 source commit 的 `source.json` 逐字段回验镜像内产物。
+
 ## 数据流
 
 ```text
 .wotbreplay（用户本机，文件不上传）
     │
     ▼
-上游 Rust Core WASM（/wasm/wotb_replay_wasm.js）
+上游 Rust Core WASM（/wasm/<source.json ref>/wotb_replay_wasm.js）
     ├── parseResult      结算：花名册 / 胜负 / 地图 / 全员统计（毫秒级，不读包流）
     ├── parsePlayback    时序：位姿网格 / 弹道 / 击杀 / 阶段 / 可见性 / 基地
     ├── parseShotReplays 射击复现
@@ -72,6 +95,22 @@ WotbTools 不把 interaction / trajectory segment 展开成额外“射击”，
 2D 回放与 AI 复盘都经过 `replay-local/canonical` 消费上游切面：`api/agent-replay-facets.ts` 只做信任边界的形状校验
 （含 canonical 必需证据的版本门禁，缺失即拒绝），语义决定（参战者 / 录像者 / 观测段 / 可信血量 / 归属证据 / 终态）
 只在 canonical 层发生一次。Agent DTO 字段名、钳 0 的显示值、渲染滤波网格等都不得直接进入 WotbTools 的展示或领域模型。
+
+## 遥测缺失时 UI 必须 fail-closed（`unknown ≠ full`）
+
+上游只对本方全队广播装填遥测（`reloads` / `reload_effective`）。**没有遥测不等于满弹**：
+`frontend/src/scene/reloadBar.js#shellStatesAt` 在无可用相位时返回 `null`，3D 标签直接不画装填条；
+只有"有遥测且当前状态算出来是满弹"才画满条。
+
+2026-10-02 线上故障是这条规则的直接反例：错版 WASM 让 `reloads = 0`，旧实现把"无遥测"兜底成
+`full()`，于是每台车都画出一根**永远不动的白条**。修复分两层——artifact identity 让错版产物根本装载不进来
+（见「Agent 产物身份」），UI 层则保证即使拿到空遥测也不会伪造满弹。回归见
+`frontend/src/scene/reloadBar.test.js`（fake-full 用例）与 `agent-wasm-smoke.test.ts`
+（真实 replay 的作者车 reload timeline + 状态随相位变化）。
+
+上游已知缺口：method 35 目前只解码 `[eid][single duration]`，autoreloader 的多段装填 profile
+（如 Kranvagn）整场 `reload_effective` 为空。这属 **producer 语义**，消费方不得按车型/burst size
+推断或用 shots 反推——需要时在上游修并发新 Release。
 
 ## 缺字段怎么办
 

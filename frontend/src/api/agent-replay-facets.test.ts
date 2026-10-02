@@ -154,6 +154,121 @@ describe('时序能力（PlaybackData 校验）', () => {
     expect(() => validateAgentPlayback(bad)).toThrow(/playback\.supremacy_bases 必须是数组/)
   })
 
+  it('装填遥测（v0.3.9）：缺省合法、合法 shape 通过、数组/元素 primitive 漂移 fail closed', () => {
+    const ok = minimalPlayback()
+    ;(ok as Record<string, unknown>).reloads = [
+      { clock: 10, eid: 7, phase: 3, duration_s: 8, count: null },
+      { clock: 14, eid: 7, phase: 1, duration_s: null, count: 2 },
+    ]
+    ;(ok as Record<string, unknown>).reload_effective = [
+      { clock: 9.5, eid: 7, duration_s: 8 },
+      { clock: 14, eid: 7, duration_s: 4 },
+    ]
+    const validated = validateAgentPlayback(ok)
+    expect(validated.reloads).toHaveLength(2)
+    expect(validated.reload_effective).toHaveLength(2)
+
+    expect(() => validateAgentPlayback({ ...minimalPlayback(), reloads: { clock: 1 } }))
+      .toThrow(/playback\.reloads 必须是数组/)
+    expect(() => validateAgentPlayback({ ...minimalPlayback(), reloads: [42] }))
+      .toThrow(/playback\.reloads\[0\] 必须是对象/)
+    expect(() => validateAgentPlayback({
+      ...minimalPlayback(),
+      reloads: [{ clock: 10, eid: 7, phase: '3', duration_s: 8, count: null }],
+    })).toThrow(/reloads\[0\]\.phase/)
+    expect(() => validateAgentPlayback({
+      ...minimalPlayback(),
+      reloads: [{ clock: 10, eid: 7, phase: 3, duration_s: undefined, count: null }],
+    })).toThrow(/reloads\[0\]\.duration_s/)
+    expect(() => validateAgentPlayback({
+      ...minimalPlayback(),
+      reload_effective: [{ clock: 14, eid: 7, duration_s: null }],
+    })).toThrow(/reload_effective\[0\]\.duration_s/)
+  })
+
+  /**
+   * raw `reloads[]` = producer 的原始透传（arena update subtype 15/16/17 的原始 f3）。
+   * producer **没有**「正时长」invariant：真实 `cw-training-15-14-example.wotbreplay`
+   * 就含 `duration_s: -0.03939394`（`reloads[50]`，phase=4 的时长变更差值）。
+   * trust boundary 只锁定 producer 真正保证的线形状 = **`null` 或有限数值**；
+   * `> 0` 是消费方（`scene/reloadBar.js#isUsablePhase`）的语义规则，不得提升成 wire contract。
+   */
+  it('raw reloads[].duration_s（v0.3.9 producer 原始透传）：null / 0 / 负 finite / 正 finite 全部接受', () => {
+    const cases: Array<number | null> = [null, 0, -0.03939394, -3, 0.89, 8]
+    for (const duration_s of cases) {
+      const pb = minimalPlayback()
+      ;(pb as Record<string, unknown>).reloads = [{ clock: 10, eid: 7, phase: 3, duration_s, count: null }]
+      const validated = validateAgentPlayback(pb)
+      // 忠实保留：trust boundary 不得改写 / 丢弃原始 producer 事实
+      expect(validated.reloads?.[0].duration_s, `duration_s=${String(duration_s)}`).toBe(duration_s)
+    }
+  })
+
+  it('raw reloads[].duration_s：非有限 / 非数值一律 fail closed（不得静默降级）', () => {
+    const rejects: Array<[unknown, RegExp]> = [
+      [Number.NaN, /reloads\[0\]\.duration_s 必须是有限数值或 null/],
+      [Number.POSITIVE_INFINITY, /reloads\[0\]\.duration_s 必须是有限数值或 null/],
+      [Number.NEGATIVE_INFINITY, /reloads\[0\]\.duration_s 必须是有限数值或 null/],
+      ['8', /reloads\[0\]\.duration_s 必须是有限数值或 null/],
+      [undefined, /reloads\[0\]\.duration_s 必须是有限数值或 null/],
+      [true, /reloads\[0\]\.duration_s 必须是有限数值或 null/],
+    ]
+    for (const [duration_s, pattern] of rejects) {
+      expect(() => validateAgentPlayback({
+        ...minimalPlayback(),
+        reloads: [{ clock: 10, eid: 7, phase: 3, duration_s, count: null }],
+      }), `duration_s=${String(duration_s)}`).toThrow(pattern)
+    }
+  })
+
+  it('raw reloads[] 其余字段（v0.3.9）：clock/eid/phase/count 漂移一律 fail closed', () => {
+    const base = { clock: 10, eid: 7, phase: 3, duration_s: 8, count: null }
+    const rejects: Array<[Record<string, unknown>, RegExp]> = [
+      [{ ...base, clock: Number.NaN }, /reloads\[0\]\.clock/],
+      [{ ...base, clock: '10' }, /reloads\[0\]\.clock/],
+      [{ ...base, eid: -1 }, /reloads\[0\]\.eid/],
+      [{ ...base, eid: 1.5 }, /reloads\[0\]\.eid/],
+      [{ ...base, eid: '7' }, /reloads\[0\]\.eid/],
+      [{ ...base, phase: 256 }, /reloads\[0\]\.phase/],
+      [{ ...base, phase: null }, /reloads\[0\]\.phase/],
+      [{ ...base, count: -1 }, /reloads\[0\]\.count/],
+      [{ ...base, count: 2.5 }, /reloads\[0\]\.count/],
+      [{ ...base, count: '2' }, /reloads\[0\]\.count/],
+    ]
+    for (const [event, pattern] of rejects) {
+      expect(() => validateAgentPlayback({ ...minimalPlayback(), reloads: [event] }), JSON.stringify(event))
+        .toThrow(pattern)
+    }
+  })
+
+  /**
+   * `reload_effective[]`（method 35）与 raw `reloads[]` 不是同一个东西：它表示「当前生效的
+   * **完整装填配置时长**」，`finite && > 0` 是 producer 自己的 invariant——这里继续严格锁定。
+   */
+  it('reload_effective[].duration_s（method 35）保持严格：finite 且 > 0', () => {
+    const base = { clock: 14, eid: 7 }
+    const rejects: Array<[unknown, RegExp]> = [
+      [0, /reload_effective\[0\]\.duration_s 必须为正数/],
+      [-1, /reload_effective\[0\]\.duration_s 必须为正数/],
+      [Number.NaN, /reload_effective\[0\]\.duration_s 必须是有限数值/],
+      [Number.POSITIVE_INFINITY, /reload_effective\[0\]\.duration_s 必须是有限数值/],
+      [null, /reload_effective\[0\]\.duration_s 必须是有限数值/],
+      ['8', /reload_effective\[0\]\.duration_s 必须是有限数值/],
+      [undefined, /reload_effective\[0\]\.duration_s 必须是有限数值/],
+    ]
+    for (const [duration_s, pattern] of rejects) {
+      expect(() => validateAgentPlayback({
+        ...minimalPlayback(),
+        reload_effective: [{ ...base, duration_s }],
+      }), `duration_s=${String(duration_s)}`).toThrow(pattern)
+    }
+    // method 35 只存在于本方；`eid` 越界同样 fail closed
+    expect(() => validateAgentPlayback({
+      ...minimalPlayback(),
+      reload_effective: [{ clock: 14, eid: -1, duration_s: 4 }],
+    })).toThrow(/reload_effective\[0\]\.eid/)
+  })
+
   it('单基地键（v0.3.1）：缺省合法、assault_bases 非数组拒绝、objective 非布尔拒绝', () => {
     const ok = validateAgentPlayback(minimalPlayback())
     expect(ok.assault_bases).toBeUndefined()

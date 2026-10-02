@@ -11,7 +11,6 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
@@ -24,6 +23,7 @@ import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiResponseFormat;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.ai.gateway.StreamConsumer;
+import com.wotb.web.replay.dto.AiReviewDonePayload;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -37,162 +37,118 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Natural Coach 轮：Team Call #2 事实一致性校验 + LLM 自修循环编排契约。
- * <p>流程：Draft → validate；FAIL → targeted rewrite；
- * FAIL → full rewrite；仍 FAIL → conservative safe rewrite；再次完整校验后仍 FAIL
- * → fail-safe（AI_REVIEW_GROUNDING_FAILED）。Backend 绝不代改句子。</p>
+ * Team Call #2（v0.5 structured result）的 transport 契约：
+ * <ul>
+ *   <li>合法 structured JSON → 恰好 1 次 {@code SINGLE_TEAM_BATTLE} 请求；</li>
+ *   <li>contract 失败 → 恰好 1 次 {@code SINGLE_TEAM_BATTLE_RECOVERY}（全新 stream() 调用，不串 buffer）；</li>
+ *   <li>{@code completionText()} 是唯一 authoritative source（stream callback 只是 progress）；</li>
+ *   <li>上游失败原样传播（绝不产出 partial 结果）；</li>
+ *   <li>Team Call #2 显式 {@code JSON_OBJECT}，Call #1 保持 TEXT。</li>
+ * </ul>
  */
 class TeamReviewRetryContractTest {
 
     private static final float START_RAW = 1000f;
 
-    private static final String GOOD_ENVELOPE = "{"
-            + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
-            + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\",\"claims\":[]}";
-    /** V6 冲突：无 LOS 证据的硬事实断言（this draft must fail validation）。 */
-    private static final String BAD_ENVELOPE = "{"
-            + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
-            + "\"reviewMarkdown\":\"这波对方所有车辆都拥有直接炮线。\",\"claims\":[]}";
-    /** wrong-player hard fact：不能靠 availability recovery 放行。 */
-    private static final String WRONG_PLAYER_ENVELOPE = "{"
-            + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
-            + "\"reviewMarkdown\":\"WrongPlayer 在 10 秒阵亡。\","
-            + "\"claims\":[{\"text\":\"WrongPlayer 在 10 秒阵亡。\","
-            + "\"evidenceIds\":[\"E101\"],\"claimType\":\"DEATH\","
-            + "\"timeSec\":10,\"subject\":\"WrongPlayer\"}]}";
+    /** 合法 v0.5 structured result。 */
+    private static final String STRUCTURED_RESULT = "{"
+            + "\"summary\":{\"verdict\":\"结论\",\"primaryDiagnosis\":\"诊断\"},"
+            + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}";
 
     @Test
-    void passOnFirstDraftUsesSingleCall2Request() {
-        final RetryGateway gateway = new RetryGateway(List.of(GOOD_ENVELOPE));
-        final TeamReplayAnalysisService service = service(gateway);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertNotNull(result);
-        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
-        assertEquals(1, gateway.teamCall2Requests(),
-                "首次通过只允许 1 次 Call #2 请求");
-    }
-
-    @Test
-    void conflictTriggersTargetedRewriteThenPasses() {
-        // Draft FAIL（V6）→ 反馈后重写 PASS
-        final RetryGateway gateway = new RetryGateway(List.of(BAD_ENVELOPE, GOOD_ENVELOPE));
-        final TeamReplayAnalysisService service = service(gateway);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertNotNull(result);
-        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
-        assertEquals(2, gateway.teamCall2Requests(),
-                "Draft FAIL 后必须有一次 LLM 自修重写");
-        // 第二次请求的用户输入必须包含 validator 反馈（LLM 自行改写，Backend 不代改）
-        final AiChatRequest rewrite = gateway.requests().stream()
-                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
-                .reduce((a, b) -> b).orElseThrow();
-        assertTrue(rewrite.userPrompt().contains("事实一致性校验反馈"),
-                "重写请求必须携带 validator 反馈: " + rewrite.userPrompt());
-        assertTrue(rewrite.userPrompt().contains("[V6 UNSUPPORTED_HARD_FACT]"),
-                "重写请求反馈必须包含具体冲突 checkId: " + rewrite.userPrompt());
-    }
-
-    @Test
-    void repeatedConflictsExhaustRetriesAndFailSafe() {
-        final RetryGateway gateway = new RetryGateway(
-                List.of(BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE));
-        final TeamReplayAnalysisService service = service(gateway);
-        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
-                () -> service.analyzeSingleTeamContext(context(gateway, service), AllowedLanguage.ZH));
-        assertEquals("AI_REVIEW_GROUNDING_FAILED", e.code(),
-                "重试耗尽必须 fail-safe 为 AI_REVIEW_GROUNDING_FAILED");
-        assertEquals(TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS, gateway.teamCall2Requests(),
-                "必须恰好 4 次尝试（draft + targeted + full + safe）后 fail-safe");
-    }
-
-    @Test
-    void safeRewriteIsFinalBoundedRecoveryAndIsValidatedBeforeReturning() {
-        final RetryGateway gateway = new RetryGateway(
-                List.of(BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE, GOOD_ENVELOPE));
+    void structuredPrimaryUsesExactlyOneCall2Request() {
+        final RetryGateway gateway = new RetryGateway(List.of(STRUCTURED_RESULT));
         final TeamReplayAnalysisService service = service(gateway);
 
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
+        final AiReviewDonePayload result = analyze(service);
 
-        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
-        final List<AiChatRequest> call2 = gateway.requests().stream()
-                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode())).toList();
-        assertEquals(4, call2.size(), "SAFE recovery 必须是第 4 次、且仍须完整 validate");
-        assertTrue(call2.get(1).userPrompt().contains("本次重写阶段：TARGETED"));
-        assertTrue(call2.get(1).userPrompt().contains("[V6 UNSUPPORTED_HARD_FACT]"));
-        assertTrue(call2.get(1).userPrompt().contains("dedicated LOS/spotting evidence"));
-        assertTrue(call2.get(2).userPrompt().contains("本次重写阶段：FULL"));
-        assertTrue(call2.get(3).userPrompt().contains("本次重写阶段：SAFE"));
-        assertTrue(call2.get(3).userPrompt().contains("不要补充新事实，不要发明替代事实"));
-        assertTrue(call2.get(3).userPrompt().contains("尽量保留有证据支撑的 tactical judgment"));
+        assertNotNull(result.teamReview(), "v0.5 structured result must reach the done payload");
+        assertEquals("结论", result.analysis(), "文本摘要取 structured result 的 verdict");
+        assertEquals(1, gateway.teamCall2Requests(), "合法 structured JSON 只允许 1 次 Call #2 请求");
     }
 
-    @Test
-    void parseFailureAlsoTriggersRewrite() {
-        // 非 JSON 输出（旧自由文本）→ parse FAIL → 反馈重写
-        final RetryGateway gateway = new RetryGateway(List.of("team review 自由文本", GOOD_ENVELOPE));
-        final TeamReplayAnalysisService service = service(gateway);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertNotNull(result);
-        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
-        assertEquals(2, gateway.teamCall2Requests());
-    }
-
-    // ===== ：callRaw authoritative response source = completionText() =====
+    // ===== callRaw authoritative response source = completionText() =====
 
     @Test
     void completionTextIsAuthoritativeOverPartialCallbackChunks() {
-        // stream() 回调只给零散 chunk（{ / "primary / Diagnosis...），completionText 是完整 envelope
+        // stream() 回调只给零散 chunk，completionText 才是完整 structured result
         final StreamingGateway gateway = new StreamingGateway(
-                List.of(GOOD_ENVELOPE), List.of("{", "\"primary", "Diagnosis\"..."), null);
+                List.of(STRUCTURED_RESULT), List.of("{", "\"summary", "\"verdict\"..."), null);
         final TeamReplayAnalysisService service = service(gateway);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis(),
-                "envelope parser 必须以 completionText() 为唯一 authoritative source（非 callback 拼接）");
+
+        final AiReviewDonePayload result = analyze(service);
+
+        assertEquals("结论", result.analysis(),
+                "parser 必须以 completionText() 为唯一 authoritative source（非 callback 拼接）");
     }
 
     @Test
     void garbageCallbackDoesNotPolluteParse() {
-        // 回调发出非 JSON 垃圾，completionText 是合法 envelope → 仍正确解析
         final StreamingGateway gateway = new StreamingGateway(
-                List.of(GOOD_ENVELOPE), List.of("garbage chunk not json"), null);
+                List.of(STRUCTURED_RESULT), List.of("garbage chunk not json"), null);
         final TeamReplayAnalysisService service = service(gateway);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis(),
-                "callback 内容不得影响 completionText 的解析");
+
+        final AiReviewDonePayload result = analyze(service);
+
+        assertEquals("结论", result.analysis(), "callback 内容不得影响 completionText 的解析");
+        assertEquals(1, gateway.teamReviewRequests(), "垃圾 callback 不得触发 recovery");
     }
 
     @Test
-    void upstreamErrorNeverYieldsPartialEnvelope() {
-        // 上游失败（AI_TIMEOUT）→ 直接抛 AiUpstreamException，绝不返回 partial envelope
+    void upstreamErrorNeverYieldsPartialResult() {
+        // 上游失败（AI_TIMEOUT）→ 直接抛 AiUpstreamException，绝不返回 partial 结果
         final StreamingGateway gateway = new StreamingGateway(
-                List.of(GOOD_ENVELOPE), List.of(), new AiUpstreamException("AI_TIMEOUT", 504, "corr-1"));
+                List.of(STRUCTURED_RESULT), List.of(), new AiUpstreamException("AI_TIMEOUT", 504, "corr-1"));
         final TeamReplayAnalysisService service = service(gateway);
-        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
-                () -> service.analyzeSingleTeamContext(context(gateway, service), AllowedLanguage.ZH));
+
+        final AiUpstreamException e = assertThrows(AiUpstreamException.class, () -> analyze(service));
+
         assertEquals("AI_TIMEOUT", e.code(),
-                "upstream error 必须原样传播（不是 AI_REVIEW_GROUNDING_FAILED，也不产出部分结果）");
+                "upstream error 必须原样传播（不是 AI_REVIEW_SCHEMA_FAILED，也不产出部分结果）");
     }
 
     @Test
-    void retryUsesFreshIndependentResponsesNoBufferCarry() {
-        // 每轮 attempt 独立 stream()：attempt1 冲突 → attempt2 全新 GOOD envelope（无前一轮 buffer 串扰）
+    void recoveryUsesFreshIndependentResponseNoBufferCarry() {
+        // attempt1 = "{}"（contract 失败）→ 唯一一次 recovery 用全新 stream() 响应成功
         final StreamingGateway gateway = new StreamingGateway(
-                List.of(BAD_ENVELOPE, GOOD_ENVELOPE), List.of("{", "\"primary", "Diagnosis\"..."), null);
+                List.of("{}", STRUCTURED_RESULT), List.of("{", "\"summary", "\"..."), null);
         final TeamReplayAnalysisService service = service(gateway);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
-        assertEquals(2, gateway.teamCall2Requests(),
-                "Draft FAIL 后必须用全新响应重写，不串前一轮 buffer");
+
+        final AiReviewDonePayload result = analyze(service);
+
+        assertNotNull(result.teamReview(), "recovery 必须用全新响应重建 structured result");
+        assertEquals(2, gateway.teamReviewRequests(), "contract 失败只允许一次 recovery");
+        assertEquals("SINGLE_TEAM_BATTLE_RECOVERY", gateway.lastTeamMode());
+    }
+
+    // ===== 只有 Team Call #2 使用 JSON_OBJECT =====
+
+    @Test
+    void teamCall2ExplicitlyUsesJsonObjectWhilePreBattleStaysText() {
+        final RetryGateway gateway = new RetryGateway(List.of(STRUCTURED_RESULT));
+        final TeamReplayAnalysisService service = service(gateway);
+        analyze(service);
+
+        final AiChatRequest teamCall2 = gateway.requests().stream()
+                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
+                .findFirst().orElseThrow();
+        assertEquals(AiResponseFormat.JSON_OBJECT, teamCall2.responseFormat(),
+                "Team Call #2 必须显式请求 JSON_OBJECT");
+
+        // Call #1（Pre-Battle Strategic Prior）保持 TEXT，不得因本任务进入 JSON mode。
+        final AiChatRequest preBattle = gateway.requests().stream()
+                .filter(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode()))
+                .findFirst().orElseThrow();
+        assertEquals(AiResponseFormat.TEXT, preBattle.responseFormat(),
+                "PRE_BATTLE_STRATEGIC_PRIOR 必须保持 TEXT");
     }
 
     // ---- fixture ----
+
+    private static AiReviewDonePayload analyze(final TeamReplayAnalysisService service) {
+        return service.analyzeTeam(teamBattle("arena-retry", "Ally", 1001L, 1), validRecon(),
+                AllowedLanguage.ZH, AiReviewStreamListener.NOOP);
+    }
 
     private static TeamReplayAnalysisService service(final AiChatGateway gateway) {
         final AiReplayAnalysisConfig config = new AiReplayAnalysisConfig(
@@ -201,22 +157,7 @@ class TeamReviewRetryContractTest {
         return new TeamReplayAnalysisService(
                 gateway, config,
                 new PreBattleStrategicService(gateway, config, null),
-                new TeamAutopsyService(gateway, config, null),
                 System::nanoTime, null);
-    }
-
-    private static SingleTeamBattleAnalysisContext context(final AiChatGateway gateway,
-                                                           final TeamReplayAnalysisService service) {
-        return service.buildSingleTeamContext(teamBattle("arena-retry", "Ally", 1001L, 1), validRecon());
-    }
-
-    private static SingleTeamBattleAnalysisContext contextWithDeath(final AiChatGateway gateway,
-                                                                     final TeamReplayAnalysisService service) {
-        final Battle battle = teamBattle("arena-retry-death", "Ally", 1001L, 1);
-        final PlayerResult dead = battle.players.getFirst();
-        dead.survived = false;
-        dead.settlementLifeTimeSec = 10.0;
-        return service.buildSingleTeamContext(battle, validRecon());
     }
 
     private static Battle teamBattle(final String arenaId,
@@ -300,7 +241,7 @@ class TeamReviewRetryContractTest {
     }
 
     /**
-     *  流式替身：{@code stream()} 按调用顺序返回预设 completionText，
+     * 流式替身：{@code stream()} 按调用顺序返回预设 completionText，
      * 并先向 callback 发出预设 chunk（可为零散 JSON / 垃圾）——验证 callRaw 只用
      * completionText()（authoritative），callback 仅为 progress。
      */
@@ -330,7 +271,7 @@ class TeamReviewRetryContractTest {
             if (upstreamError != null) {
                 throw upstreamError;
             }
-            if (!"SINGLE_TEAM_BATTLE".equals(request.analysisMode())) {
+            if (!isTeamMode(request)) {
                 return new AiChatResponse("{}", "DeepSeek", "test-model",
                         0, 0, 0, 0, 0, 0, "stop");
             }
@@ -349,10 +290,24 @@ class TeamReviewRetryContractTest {
             });
         }
 
+        int teamReviewRequests() {
+            return (int) requests.stream().filter(StreamingGateway::isTeamMode).count();
+        }
+
         int teamCall2Requests() {
             return (int) requests.stream()
                     .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
                     .count();
+        }
+
+        String lastTeamMode() {
+            return requests.stream().filter(StreamingGateway::isTeamMode)
+                    .reduce((first, second) -> second).orElseThrow().analysisMode();
+        }
+
+        static boolean isTeamMode(final AiChatRequest request) {
+            return "SINGLE_TEAM_BATTLE".equals(request.analysisMode())
+                    || "SINGLE_TEAM_BATTLE_RECOVERY".equals(request.analysisMode());
         }
     }
 
@@ -374,10 +329,10 @@ class TeamReviewRetryContractTest {
         @Override
         public AiChatResponse chat(final AiChatRequest request) {
             requests.add(request);
-            // 预设响应序列只供 Team Call #2（SINGLE_TEAM_BATTLE）消费；
-            // Call #1 / Autopsy 的解析器不消费该序列（返回不可解析空对象即可）。
+            // 预设响应序列只供 Team Call #2 消费；Call #1 的解析器不消费该序列（返回不可解析空对象即可）。
             final String response;
-            if ("SINGLE_TEAM_BATTLE".equals(request.analysisMode())) {
+            if ("SINGLE_TEAM_BATTLE".equals(request.analysisMode())
+                    || "SINGLE_TEAM_BATTLE_RECOVERY".equals(request.analysisMode())) {
                 response = responses.get(Math.min(index, responses.size() - 1));
                 index++;
             } else {
@@ -396,110 +351,5 @@ class TeamReviewRetryContractTest {
                     .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
                     .count();
         }
-    }
-    // ===== P0-2/P0-6：structured metadata 冲突不阻塞输出（production availability） =====
-
-    /** 仅 metadata 冲突（引用不存在的证据编号，正文无事实错误）→ 直接放行，不发起 LLM retry。 */
-    @Test
-    void metadataOnlyConflictsPassWithoutRetry() {
-        // claim 引用不存在的证据编号 → EVIDENCE（STRUCTURED_METADATA）；正文无 V2/V3/V4/V5/V6 硬事实。
-        final String metadataEnvelope = "{"
-                + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
-                + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\","
-                + "\"claims\":[{"
-                + "\"text\":\"1分20秒-1分40秒这段时间是转折。\","
-                + "\"evidenceIds\":[\"E999\"]"
-                + "}]}";
-        final RetryGateway gateway = new RetryGateway(List.of(metadataEnvelope));
-        final TeamReplayAnalysisService service = service(gateway);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertNotNull(result);
-        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
-        assertEquals(1, gateway.teamCall2Requests(),
-                "P0-2: metadata-only 冲突必须 1 次 Call #2 直接放行（不触发 LLM retry）");
-    }
-
-    /** 连续多次 metadata-only 冲突也不得 fail-safe 502（旧行为 3 次全量重写后 502）。 */
-    @Test
-    void repeatedMetadataConflictsNeverFailSafe() {
-        final String metadataEnvelope = "{"
-                + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
-                + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\","
-                + "\"claims\":[{"
-                + "\"text\":\"1分20秒-1分40秒这段时间是转折。\","
-                + "\"evidenceIds\":[\"E999\"]"
-                + "}]}";
-        final RetryGateway gateway = new RetryGateway(
-                List.of(metadataEnvelope, metadataEnvelope, metadataEnvelope));
-        final TeamReplayAnalysisService service = service(gateway);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertNotNull(result);
-        assertEquals(1, gateway.teamCall2Requests(),
-                "P0-6: 多次 metadata-only 冲突必须 1 次调用放行，绝不 3 次重写后 502");
-    }
-
-    /** HARD 事实冲突仍必须 retry（V6 无 LOS 证据硬事实），不得被 metadata 放行吞掉。 */
-    @Test
-    void hardFactConflictStillRetries() {
-        final RetryGateway gateway = new RetryGateway(List.of(BAD_ENVELOPE, GOOD_ENVELOPE));
-        final TeamReplayAnalysisService service = service(gateway);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertNotNull(result);
-        assertEquals(2, gateway.teamCall2Requests(),
-                "P0-2: HARD 事实冲突（V6）仍必须触发 LLM retry");
-    }
-
-    /** HARD 事实冲突连续 4 次 → 仍 fail-safe 502（保留）。 */
-    @Test
-    void hardFactConflictsStillFailSafeAfterExhaustion() {
-        final RetryGateway gateway = new RetryGateway(
-                List.of(BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE));
-        final TeamReplayAnalysisService service = service(gateway);
-        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
-                () -> service.analyzeSingleTeamContext(context(gateway, service), AllowedLanguage.ZH));
-        assertEquals("AI_REVIEW_GROUNDING_FAILED", e.code(),
-                "HARD 事实冲突重试耗尽仍必须 fail-safe（不静默输出矛盾）");
-        assertEquals(TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS, gateway.teamCall2Requests(),
-                "HARD 冲突仍恰好 4 次尝试后 fail-safe");
-    }
-
-    @Test
-    void trueWrongPlayerHardFactStillFailsAfterSafeRecovery() {
-        final RetryGateway gateway = new RetryGateway(List.of(
-                WRONG_PLAYER_ENVELOPE, WRONG_PLAYER_ENVELOPE,
-                WRONG_PLAYER_ENVELOPE, WRONG_PLAYER_ENVELOPE));
-        final TeamReplayAnalysisService service = service(gateway);
-
-        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
-                () -> service.analyzeSingleTeamContext(contextWithDeath(gateway, service), AllowedLanguage.ZH));
-
-        assertEquals("AI_REVIEW_GROUNDING_FAILED", e.code());
-        assertEquals(4, gateway.teamCall2Requests(),
-                "wrong-player HARD_FACT 只能在 SAFE 后最终 fail-safe，不能 availability 放行");
-    }
-
-    // ===== 只有 Team Call #2 使用 JSON_OBJECT =====
-
-    @Test
-    void teamCall2ExplicitlyUsesJsonObjectWhilePreBattleStaysText() {
-        final RetryGateway gateway = new RetryGateway(List.of(GOOD_ENVELOPE));
-        final TeamReplayAnalysisService service = service(gateway);
-        service.analyzeSingleTeamContext(context(gateway, service), AllowedLanguage.ZH);
-
-        final AiChatRequest teamCall2 = gateway.requests().stream()
-                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
-                .findFirst().orElseThrow();
-        assertEquals(AiResponseFormat.JSON_OBJECT, teamCall2.responseFormat(),
-                "Team Call #2 必须显式请求 JSON_OBJECT");
-
-        // Call #1（Pre-Battle Strategic Prior）保持 TEXT，不得因本任务进入 JSON mode。
-        final AiChatRequest preBattle = gateway.requests().stream()
-                .filter(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode()))
-                .findFirst().orElseThrow();
-        assertEquals(AiResponseFormat.TEXT, preBattle.responseFormat(),
-                "PRE_BATTLE_STRATEGIC_PRIOR 必须保持 TEXT");
     }
 }

@@ -18,6 +18,7 @@ import com.wotb.core.replay.reconstruction.ReplayStreamDiagnostics;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
+import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -26,7 +27,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
@@ -150,29 +150,28 @@ class AllowedLanguagePromptTest {
     }
 
     @Test
-    void teamSingleContextAndGroupsUseLocalizedSystemPrompts() {
+    void teamReviewUsesLocalizedSystemPrompts() {
         final AtomicReference<AiChatRequest> captured = new AtomicReference<>();
         final AiChatGateway gateway = capturingGateway(captured);
-        final AiReplayAnalysisService facade = new AiReplayAnalysisService(
-                gateway, "test-model", 200000, new ConservativeDeepSeekTokenEstimator());
+        final TeamReplayAnalysisService service = new TeamReplayAnalysisService(
+                gateway, config(), new PreBattleStrategicService(gateway, config(), null), null);
         final Battle teamBattle = teamBattle();
         final ReplayReconstruction teamRecon = teamRecon();
-        final var context = TeamContextBuilder.buildSingleTeamContext(teamBattle, teamRecon);
 
-        facade.analyzeSingleTeamContext(context, AllowedLanguage.EN);
+        service.analyzeTeam(teamBattle, teamRecon, AllowedLanguage.EN, AiReviewStreamListener.NOOP);
         assertTrue(captured.get().systemPrompt().contains("natural, fluent English"));
         assertFalse(containsAny(captured.get().systemPrompt(), CHINESE_OUTPUT_MANDATES));
         assertFalse(containsAny(captured.get().systemPrompt(), LOCALIZED_OUTPUT_MANDATES));
 
-        facade.analyzeSingleTeamContext(context, AllowedLanguage.RU);
+        service.analyzeTeam(teamBattle, teamRecon, AllowedLanguage.RU, AiReviewStreamListener.NOOP);
         assertTrue(captured.get().systemPrompt().contains("естественном русском языке"));
         assertFalse(containsAny(captured.get().systemPrompt(), CHINESE_OUTPUT_MANDATES));
         assertFalse(containsAny(captured.get().systemPrompt(), LOCALIZED_OUTPUT_MANDATES));
+    }
 
-        facade.analyzeTeam(teamBattle, teamRecon, AllowedLanguage.EN, AiReviewStreamListener.NOOP);
-        assertTrue(captured.get().systemPrompt().contains("natural, fluent English"));
-        assertFalse(containsAny(captured.get().systemPrompt(), CHINESE_OUTPUT_MANDATES));
-        assertFalse(containsAny(captured.get().systemPrompt(), LOCALIZED_OUTPUT_MANDATES));
+    private static AiReplayAnalysisConfig config() {
+        return new AiReplayAnalysisConfig(new ConservativeDeepSeekTokenEstimator(), "test-model",
+                200000, 131072, 8192, 1000, true, "high", 315, 4096);
     }
 
     private static Stream<Arguments> playerBases() {
@@ -191,19 +190,17 @@ class AllowedLanguagePromptTest {
     }
 
     private static AiChatGateway capturingGateway(final AtomicReference<AiChatRequest> captured) {
-        final AtomicInteger teamResponses = new AtomicInteger();
         return new AiChatGateway() {
             @Override
             public AiChatResponse chat(final AiChatRequest request) {
                 captured.set(request);
                 if ("SINGLE_TEAM_BATTLE".equals(request.analysisMode())
-                        && teamResponses.incrementAndGet() >= 3) {
+                        || "SINGLE_TEAM_BATTLE_RECOVERY".equals(request.analysisMode())) {
                     return new AiChatResponse("{\"summary\":{\"verdict\":\"结论\",\"primaryDiagnosis\":\"诊断\"},"
                             + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}",
                             "DeepSeek", "test-model", 0, 0, 0, 0, 0, 0, "stop");
                 }
-                // Legacy facade calls retain the historical envelope for compatibility tests.
-                return new AiChatResponse("{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},\"reviewMarkdown\":\"ok\",\"claims\":[]}", "DeepSeek", "test-model",
+                return new AiChatResponse("{}", "DeepSeek", "test-model",
                         0, 0, 0, 0, 0, 0, "stop");
             }
 

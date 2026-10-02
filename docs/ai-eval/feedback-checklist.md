@@ -21,7 +21,8 @@
 1. 判断可复现：现象能否用 `AiEvalFixtures` 的 synthetic 场景复现。
 2. 写 lesson：`docs/ai-lessons/<case-id>.md`（场景 / AI 常见误判 / 正确判定 / 判定依据 / 对应 case / 规则引用）。
 3. 写 case：`ai-eval/cases/<case-id>.json`，`fixtureKey` 指向新增/现有 fixture，`lessonRef` 回指 lesson，`checks` 用 `prompt_contains` / `prompt_omits`。
-4. 跑回归：`cd java && JAVA_HOME=<jdk21> mvn -s settings.xml -pl wotb-web -am test -Dtest=AiEvalHarnessTest`。
+4. 跑回归：`cd java && JAVA_HOME=<jdk25> mvn -s settings.xml -pl wotb-ai -am test -Dtest=AiEvalHarnessTest`
+   （主工程 JDK 25；`AiEvalHarnessTest` 在 `wotb-ai` 模块，不在 `wotb-web`）。
 5. 修复循环：CI 报告 MISS → 改证据/prompt → 重跑 harness → 生产验证。
 
 ## 判定口径速查（B1 + 图控 + 占点）

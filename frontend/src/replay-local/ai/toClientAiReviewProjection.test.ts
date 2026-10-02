@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { fixtureFacets, type FixtureFacets } from '../__golden__/agentWasmNode.js'
+import { fixtureFacets, requireFixtures, type FixtureFacets } from '../__golden__/agentWasmNode.js'
 import { toBattleFacts } from '../battleFacts.js'
 import { toClientAiReviewProjection, UNAVAILABLE_EVIDENCE, type ClientAiReviewProjection } from './toClientAiReviewProjection.js'
 
@@ -23,12 +23,16 @@ const FIXTURES = ['random-battle-example', 'cw-training-15-14-example', 'tournam
 const UPDATE = process.env.WOTB_UPDATE_AI_PROJECTION_GOLDEN === '1'
 
 function engineOf(): { release: string; commit: string } {
-  const fp = JSON.parse(readFileSync(join(REPO, 'common/assets/wasm/fingerprint.json'), 'utf8'))
+  // 产物落位是 commit-addressed 目录（stable `/wasm/fingerprint.json` 已废除）
+  const pin = JSON.parse(readFileSync(join(REPO, 'deploy/agent/source.json'), 'utf8'))
+  const fp = JSON.parse(readFileSync(join(REPO, 'common/assets/wasm', pin.ref, 'fingerprint.json'), 'utf8'))
   return { release: fp.tag, commit: fp.upstream_commit }
 }
 
+/** 经 [`requireFixtures`] 严格读取：契约校验失败时抛出原始 validation error，而不是 `null.meta`。 */
 function project(f: FixtureFacets): ClientAiReviewProjection | null {
-  return toClientAiReviewProjection({ result: f.result, playback: f.playback!, aiReview: f.aiReview!, engine: engineOf() })
+  const { result, playback, aiReview } = requireFixtures(f)
+  return toClientAiReviewProjection({ result, playback, aiReview, engine: engineOf() })
 }
 
 describe('client canonical AI projection', () => {
@@ -94,25 +98,29 @@ describe('client canonical AI projection', () => {
   }
 
   it('视角无法解析 / 回放截断 → limitations（不缺省队伍、不假装完整）', () => {
-    const f = facets['random-battle-example']
-    const p1 = toClientAiReviewProjection({ result: { ...f.result, author_account_id: 0 }, playback: f.playback!, aiReview: f.aiReview!, engine: engineOf() })!
+    const f = requireFixtures(facets['random-battle-example'])
+    const p1 = toClientAiReviewProjection({ result: { ...f.result, author_account_id: 0 }, playback: f.playback, aiReview: f.aiReview, engine: engineOf() })!
     expect(p1.perspective.perspectiveTeam).toBeNull()
     expect(p1.limitations).toContain('PERSPECTIVE_TEAM_UNRESOLVED')
 
-    const start = f.aiReview!.battle.periods.find((x) => x.period === 3)!.clock
+    const start = f.aiReview.battle.periods.find((x) => x.period === 3)!.clock
     const cut = start + 90
     const ai = {
-      ...f.aiReview!,
-      battle: { ...f.aiReview!.battle, periods: f.aiReview!.battle.periods.filter((x) => x.period !== 4) },
+      ...f.aiReview,
+      battle: { ...f.aiReview.battle, periods: f.aiReview.battle.periods.filter((x) => x.period !== 4) },
     }
-    const pb = { ...f.playback!, meta: { ...f.playback!.meta, duration: cut } }
+    const pb = { ...f.playback, meta: { ...f.playback.meta, duration: cut } }
     const p2 = toClientAiReviewProjection({ result: f.result, playback: pb, aiReview: ai, engine: engineOf() })!
     expect(p2.limitations).toContain('REPLAY_STREAM_TRUNCATED')
     expect(p2.clock.battleEndRawClockSec).toBeNull()
   })
 
   it('时间轴不可用（9.8 训练室无 period 广播）→ null，AI 复盘不可执行', async () => {
-    const room = await fixtureFacets('training-room-example.wotbreplay')
-    expect(room.playback && room.aiReview ? project(room) : null).toBeNull()
+    const raw = await fixtureFacets('training-room-example.wotbreplay')
+    // 切面本身必须校验通过：null 如果来自 trust boundary 拒绝（而非「时间轴不可用」），
+    // 这个测试就会把 contract 错误伪装成预期结果——先钉死原始错误为空。
+    expect(raw.playbackError, String(raw.playbackError)).toBeNull()
+    expect(raw.aiReviewError, String(raw.aiReviewError)).toBeNull()
+    expect(project(requireFixtures(raw))).toBeNull()
   })
 })

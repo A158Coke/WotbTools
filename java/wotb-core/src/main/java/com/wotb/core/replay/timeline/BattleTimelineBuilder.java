@@ -45,7 +45,8 @@ public final class BattleTimelineBuilder {
     static final double POSITION_CHANGE_THRESHOLD_M = 5.0;
     /** 防御性帧数上限（450s 战斗约 451 帧；超长异常拒绝而非 OOM）。 */
     static final int MAX_FRAMES = 2400;
-    /** active-battle 时长上限（秒），与 ReplayParser {@code durationS} 的 420 cap 同口径。 */
+    /** active-battle 时长上限（秒），与已退役 Java {@code ReplayParser} 的 {@code durationS} 420 cap 同口径
+     * （客户端对应 `frontend/src/replay-local/battleFacts.ts` 的 {@code MAX_DURATION_SEC}）。 */
     static final double MAX_BATTLE_DURATION_SEC = 420.0;
 
     private BattleTimelineBuilder() {
@@ -335,9 +336,12 @@ public final class BattleTimelineBuilder {
                     }
                 }
             }
-            // The battle-start is resolved once in ReplayReconstructionService (incl. an ESTIMATED
-            // lastClock - duration fallback), so recon.battleStartRawClockSec is the single agreed start;
-            // the timeline reuses it directly (IDENTIFIED) and never derives a different one.
+            // The battle-start is resolved once upstream of the timeline (originally
+            // ReplayReconstructionService — historical Java implementation, retired 2026-10-02 with the
+            // server-side parser; the client side derives it from the upstream Rust Core WASM parseResult /
+            // canonical facts, incl. an ESTIMATED lastClock - duration fallback), so
+            // recon.battleStartRawClockSec is the single agreed start; the timeline reuses it directly
+            // (IDENTIFIED) and never derives a different one.
         }
         return new ClockResult(Double.NaN, BattleTimelineClock.UNRESOLVED);
     }
@@ -345,7 +349,8 @@ public final class BattleTimelineBuilder {
     /**
      * Timeline/playback active-battle 时长权威链（docs/features/battle-playback.md「时长契约」）：
      * <ol>
-     *   <li>battle_results root5 {@code settlementDurationSec}（权威；cap 420s，与 ReplayParser 同口径）；</li>
+     *   <li>battle_results root5 {@code settlementDurationSec}（权威；cap 420s，与已退役 Java
+     *       {@code ReplayParser} 同口径）；</li>
      *   <li>{@code RoundFinishedEvent}（method4 = AFTERBATTLE）battle-relative 时间，即
      *       round-finished rawClock − battle-period 开始 rawClock（finite &gt; 0；cap 420s）；</li>
      *   <li>legacy {@code battle.durationS}（无 settlement 时来自 meta.json#battleDuration，cap 420s）——

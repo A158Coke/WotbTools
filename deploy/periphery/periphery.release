@@ -1,0 +1,13 @@
+# Komodo Periphery release pin — single source of truth for the Yecao agent.
+#
+# Read by:
+#   - .github/workflows/komodo-periphery.yml (runner download + SHA verification)
+#   - deploy/periphery/reconcile.sh / install.sh / verify.sh (host-side verification)
+#   - deploy/periphery/test-contract.sh (contract fixtures)
+#
+# Shell-sourceable `KEY=value` lines only. Never put a credential here.
+PERIPHERY_VERSION=2.3.3
+PERIPHERY_RELEASE_TAG=v2.3.3
+PERIPHERY_ASSET=periphery-x86_64
+PERIPHERY_SHA256=40b78f377626799afad8331246a501f077d4ebcfb6d9096894cf55b64f6dcf13
+PERIPHERY_URL=https://github.com/moghtech/komodo/releases/download/v2.3.3/periphery-x86_64

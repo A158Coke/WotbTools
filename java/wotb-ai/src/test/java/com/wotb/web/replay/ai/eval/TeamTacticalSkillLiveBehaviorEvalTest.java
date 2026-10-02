@@ -2,16 +2,15 @@ package com.wotb.web.replay.ai.eval;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
-import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
+import com.wotb.core.replay.evidence.TeamAiReviewResult;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
-import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.config.AiModelProperties;
 import com.wotb.web.replay.ai.AiPromptLibrary;
-import com.wotb.web.replay.ai.TeamReviewEnvelopeParser;
+import com.wotb.web.replay.ai.TeamAiReviewResultParser;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiResponseFormat;
@@ -28,6 +27,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
@@ -39,9 +39,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>This is deliberately a live-provider test, not a default CI test or merge
  * gate. It sends
  * the existing Team Call #2 JSON request through {@link SpringAiChatGateway},
- * parses the final envelope, and checks the final model text against explicit
+ * parses the final v0.5 structured result, and checks the final model text against explicit
  * behavior contracts. The A-H prompt golden cases remain a separate static
  * contract suite and are not treated as behavior evidence.</p>
+ *
+ * <p>Historical grounding validator check（legacy Team Review envelope + 事实一致性 validator）
+ * 已随 legacy 契约层删除：v0.5 production 只做技术
+ * JSON/schema/引用解析，不提供后端 tactical grounding verdict，因此本 probe 不再重复它。</p>
  *
  * <p>Run from {@code java} after supplying the key out of band:
  * {@code $env:AI_API_KEY = "..."; mvn -pl wotb-web -am test
@@ -139,7 +143,7 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
                 + "\n\n=== LIVE BEHAVIOR EVALUATION SCENARIO ===\n"
                 + spec.scenario() + "\n"
                 + "这是评估用的额外、明确标注的场景事实；只据此和上面的后端证据作答。"
-                + "请仍然输出唯一 JSON envelope，不要输出 JSON 之外的解释。";
+                + "请仍然输出唯一 JSON object（v0.5 structured result），不要输出 JSON 之外的解释。";
         final AiChatRequest request = new AiChatRequest(
                 systemPrompt, userPrompt, model, null, TEAM_REVIEW_MAX_OUTPUT_TOKENS, false, null, null,
                 "SINGLE_TEAM_BATTLE", REQUEST_COMPLETION_TOKENS, AiResponseFormat.JSON_OBJECT);
@@ -151,13 +155,16 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
             return LiveResult.failed(caseId, reason, "", "", List.of());
         }
         final String raw = response.completionText() == null ? "" : response.completionText();
-        final TeamReviewEnvelopeParser.ParseResult parsed = TeamReviewEnvelopeParser.parseDetailed(raw);
-        if (parsed.failed()) {
-            return LiveResult.failed(caseId, "parse: " + parsed.failureReason(), raw, "", List.of());
+        // v0.5 structured result：本 probe 只读正文语义，因此不做 roster playerKey 校验
+        // （normative roster 校验由 TeamAiReviewResultParserTest / TeamReplayAnalysisServiceTest 覆盖）。
+        final TeamAiReviewResultParser.ParseResult parsed =
+                TeamAiReviewResultParser.parse(raw, Set.of());
+        if (!parsed.usable()) {
+            return LiveResult.failed(caseId, "parse: " + parsed.failure(), raw, "", List.of());
         }
-        final TeamReviewEnvelope envelope = parsed.envelope();
-        final String finalText = finalText(envelope);
-        final List<CheckResult> checks = checks(finalText, envelope, facts, spec);
+        final TeamAiReviewResult structured = parsed.result();
+        final String finalText = finalText(structured);
+        final List<CheckResult> checks = checks(finalText, structured, spec);
         final String reason = checks.stream().filter(check -> !check.passed())
                 .map(CheckResult::reason).findFirst().orElse("");
         return new LiveResult(caseId, checks.stream().allMatch(CheckResult::passed),
@@ -166,19 +173,15 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
 
     private static List<CheckResult> checks(
             final String text,
-            final TeamReviewEnvelope envelope,
-            final TeamGroundingFacts.GroundingFacts facts,
+            final TeamAiReviewResult structured,
             final BehaviorSpec spec
     ) {
         final List<CheckResult> checks = new ArrayList<>();
-        checks.add(check("primaryDiagnosis present", envelope.primaryDiagnosis() != null
-                && envelope.primaryDiagnosis().hasContent(), "primaryDiagnosis missing or empty"));
-        checks.add(check("natural team review", text.contains("## 团队复盘"),
-                "final reviewMarkdown lacks required team-review heading"));
-        final List<TeamFactualConsistencyValidator.FactConflict> conflicts =
-                TeamFactualConsistencyValidator.validate(envelope, facts);
-        checks.add(check("grounding validator", conflicts.isEmpty(),
-                "grounding conflicts: " + conflicts));
+        checks.add(check("primaryDiagnosis present", structured.summary() != null
+                && hasText(structured.summary().primaryDiagnosis()),
+                "primaryDiagnosis missing or empty"));
+        checks.add(check("natural team review text present", hasText(text),
+                "final structured result carries no review text"));
         checks.add(check("no communication/call attribution", !hasCommunicationAttribution(text),
                 "final output guesses communication/call/command responsibility"));
         final String forbiddenLabels = "GOOD_TRADE|BAD_PUSH|HALF_COMMIT_ERROR";
@@ -190,9 +193,30 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
         return checks;
     }
 
-    private static String finalText(final TeamReviewEnvelope envelope) {
-        final TeamReviewEnvelope.PrimaryDiagnosis diagnosis = envelope.primaryDiagnosis();
-        return diagnosis.title() + "\n" + diagnosis.reasoning() + "\n" + envelope.reviewMarkdown();
+    /** v0.5 structured result 的自然语言正文（legacy reviewMarkdown 的等价载体）。 */
+    private static String finalText(final TeamAiReviewResult structured) {
+        final StringBuilder text = new StringBuilder();
+        if (structured.summary() != null) {
+            text.append(nullSafe(structured.summary().primaryDiagnosis())).append('\n')
+                    .append(nullSafe(structured.summary().verdict())).append('\n');
+        }
+        for (final TeamAiReviewResult.Episode episode : structured.episodes()) {
+            text.append(nullSafe(episode.title())).append('\n')
+                    .append(nullSafe(episode.analysis())).append('\n');
+        }
+        for (final TeamAiReviewResult.TrainingSuggestion suggestion : structured.trainingSuggestions()) {
+            text.append(nullSafe(suggestion.title())).append('\n')
+                    .append(nullSafe(suggestion.content())).append('\n');
+        }
+        return text.toString();
+    }
+
+    private static boolean hasText(final String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private static String nullSafe(final String value) {
+        return value == null ? "" : value;
     }
 
     private static CheckResult check(final String name, final boolean passed, final String reason) {

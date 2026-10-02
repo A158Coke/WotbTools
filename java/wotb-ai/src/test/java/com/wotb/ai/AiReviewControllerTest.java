@@ -4,7 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.TacticalReviewHarness;
-import com.wotb.web.replay.ai.AiReplayAnalysisService;
+import com.wotb.web.replay.ai.TeamReplayAnalysisService;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -27,7 +27,7 @@ import static org.mockito.Mockito.when;
 class AiReviewControllerTest {
     private final AiReviewWorkerExecutor worker = mock(AiReviewWorkerExecutor.class);
     private final AiReviewController controller = new AiReviewController(
-            mock(TacticalReviewHarness.class), mock(AiReplayAnalysisService.class), worker,
+            mock(TacticalReviewHarness.class), mock(TeamReplayAnalysisService.class), worker,
             new AiCancellationRegistry(), new SimpleMeterRegistry());
 
     @Test
@@ -102,7 +102,7 @@ class AiReviewControllerTest {
 
     /** 让 team 分支在 worker 线程内确定性失败，用于验证指标分类。 */
     private static final class AiReviewAnalysisServiceStub {
-        private final AiReplayAnalysisService service = mock(AiReplayAnalysisService.class);
+        private final TeamReplayAnalysisService service = mock(TeamReplayAnalysisService.class);
         private RuntimeException failure;
 
         private AiReviewAnalysisServiceStub() {
