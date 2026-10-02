@@ -36,8 +36,10 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 - **公网 monitor**：`monitor.wotbtools.com` DNS 指向 **TX（118.25.18.105）**，由 TX `Caddyfile`
   的站点块反代到 `10.20.0.2:3000`；TX-local 就绪路由 `http://caddy/_wotb/monitor/*` 供无 DNS 部署
   验证。Yecao 宿主上的 Grafana Tofu root 走本机 `http://10.20.0.2:3000`，不依赖公网 DNS。
-- **验证**：`deploy/verify-observability.sh` 在一次性 alpine 容器内执行全部检查（不再引用退役的
-  `wotb-backend` 容器），覆盖 backend、ai-service、node-exporter、Prometheus、Loki、Grafana 六类 target `up==1`、datasource/dashboard API、双 canary 与 APK
+- **验证**：`deploy/verify-observability.sh` 在一次性 alpine 容器内执行全部检查。它不依赖已退役的 Yecao
+  `wotb-backend` 容器：backend 指标从 TX WireGuard 管理端点 `10.20.0.1:8088/actuator/prometheus` 读取，
+  `ai-service` 指标走 `wotb_internal` 网络；Loki 断言里的 canary 容器刻意复用 `wotb-backend-observability-canary-*`
+  名称，只为命中 Yecao Alloy 的 keep 标签、验证部署采集路径。覆盖 backend、ai-service、node-exporter、Prometheus、Loki、Grafana 六类 target `up==1`、datasource/dashboard API、双 canary 与 APK
   脱敏 canary；Yecao 部署在数据链路失败时仍只输出非阻塞的 `OBSERVABILITY DEGRADED`。
 
 ## 1. 架构总览
@@ -252,7 +254,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 - Grafana Prometheus/Loki datasource health 只有 JSON `status: "OK"` 才算成功；其他值（包括旧版兼容的 `success`）一律失败。
 - backend/Keycloak canary 启动前记录固定 Loki `start`，每次重试只更新 `end`。Keycloak canary 使用加入 `wotb_internal` 的 Alpine 3.22 独立 emitter，容器名仍带 `keycloak-observability-canary-`，用于确认 Alloy ownership 规则，不启动第二个 Keycloak。
 - Loki gate 必须同时确认 API `status=success`、`data.result` 非空、stream 的 `values` 非空以及 marker 在实际日志值中；空数组不能被“`values` 字段存在”误判为成功。
-- Production Overview 顶部将 Backend、Host、Prometheus、Loki、Grafana 分成五张独立观测健康卡；缺失数据显示“无数据 / 未知”且不映射为绿色。Keycloak 登录/IdP 状态通过日志面板观察。下方 Overall 查询同时要求五类 target 数量完整且 `min(up)==1`。
+- Production Overview 顶部把 Backend、Host、Prometheus、Loki、Grafana 分成五张独立观测健康卡，并由「生产状态（全部六类 target）」Overall 卡统一覆盖 Backend、ai-service、node-exporter、Prometheus、Loki、Grafana 六类 target；缺失数据显示“无数据 / 未知”且不映射为绿色。Overall 查询同时要求六类 target 数量完整（`count(up{job=~...}) == 6`）且 `min(up)==1`，因此 `ai-service` 宕机会直接反映在该卡上。Keycloak 不在 Prometheus metrics contract，登录/IdP 状态通过 Loki 日志面板观察。
 - Backend production gate 还确认至少一个稳定的 Hikari 指标（`hikaricp_connections_active`），避免连接池遥测在 dashboard 中静默失效。
 - Keycloak production gate 确认应用 realm metadata / OIDC discovery；Keycloak 镜像使用 PostgreSQL 与 `start --optimized` runtime，且不启用或暴露 management health/metrics 端点。登录、QQ callback、broker/IdP 错误与 WARN/ERROR 事件通过 Alloy → Loki 观测。
 
@@ -318,7 +320,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
        - **WotBTools · 生产总览**（uid `wotbtools-production-overview`）— 最近 1 小时的生产健康、HTTP 摘要、回放/AI 状态与主机资源摘要。
        - **WotBTools · JVM 与基础设施**（uid `wotbtools-backend-overview`）— CPU、heap、memory pool、GC、线程、Hikari、磁盘、进程与主机运行时细节。
        - **WotBTools · HTTP 与事故诊断**（uid `wotbtools-error-explorer`）— HTTP 状态/性能、URI 与错误码分布，以及按 service、correlationId、errorId、errorCode、jobId 检索 Incident 生命周期。
-       - **WotBTools · 回放与 AI 诊断**（uid `wotbtools-ai-review`）— 回放处理、AI 结果与延迟、Schema 失败分类、Recovery、Validator Breakdown 和按 correlationId 的深度诊断。
+       - **WotBTools · 回放与 AI 诊断**（uid `wotbtools-ai-review`）— 回放处理、AI 结果与延迟、Schema 失败分类、Recovery、AI 错误与团队结果契约分类和按 correlationId 的深度诊断。
        - **WotBTools · 使用统计与 Android**（uid `wotbtools-usage`）— 最近 24 小时的回放/AI 使用量与 Android APK 200/206/失败下载统计。
        - **WotBTools · Keycloak**（uid `wotbtools-keycloak`）— LOGIN/LOGIN_ERROR、QQ callback、broker authentication、IdP 故障与 WARN/ERROR 日志。
 
@@ -327,7 +329,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 | `wotbtools-production-overview` | WotBTools · 生产总览 | 生产健康、HTTP 摘要、回放/AI 状态与资源摘要 |
 | `wotbtools-backend-overview` | WotBTools · JVM 与基础设施 | JVM、连接池、磁盘、进程与主机运行时 |
 | `wotbtools-error-explorer` | WotBTools · HTTP 与事故诊断 | HTTP 性能、错误码与 Incident 检索 |
-| `wotbtools-ai-review` | WotBTools · 回放与 AI 诊断 | 回放、AI、Schema/Validator 与 correlation trace |
+| `wotbtools-ai-review` | WotBTools · 回放与 AI 诊断 | 回放、AI、Schema/Recovery 与 correlation trace |
 | `wotbtools-usage` | WotBTools · 使用统计与 Android | 回放/AI 使用量与 APK 下载统计 |
 | `wotbtools-keycloak` | WotBTools · Keycloak | 登录、QQ callback、IdP 与 Keycloak 日志 |
 
@@ -343,7 +345,7 @@ Spring Security 的 401/403（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`）也会
 
 - Prometheus Counter 会在 Backend 重启或重新部署后归零，Dashboard 中的"次数"均为 **Grafana 所选时间范围内的估算增量**（`increase()` + `round()`），不是历史累计。
 - **AI Review 启动数**：使用 `wotb_ai_review_requests_total` 统计进入 Review 处理边界的请求次数。
-- **AI 平均每次调用 Token**：`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量（分母含失败调用，失败计 0 token），即「平均每次发起的 AI 上游调用消耗的 token」；按模式面板可区分单机复盘（`PRE_BATTLE_STRATEGIC_PRIOR` + `TACTICAL_REVIEW_HARNESS`）与团队复盘（`SINGLE_TEAM_BATTLE` + `TEAM_AUTOPSY`）各阶段消耗。
+- **AI 平均每次调用 Token**：`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量（分母含失败调用，失败计 0 token），即「平均每次发起的 AI 上游调用消耗的 token」；按模式面板可区分单机复盘（`PRE_BATTLE_STRATEGIC_PRIOR` + `TACTICAL_REVIEW_HARNESS`）与团队复盘（`SINGLE_TEAM_BATTLE` + recovery 的 `SINGLE_TEAM_BATTLE_RECOVERY`）各阶段消耗。
 - **数据保留**：Prometheus 仅保留约 7 天，不提供网站历史永久累计；如未来需要永久累计，应写入 PostgreSQL（当前不引入），而非依赖 Counter。
 
 **生产总览面板清单**
@@ -401,8 +403,11 @@ Prometheus（错误分类计数，固定枚举）：
 sum by (type) (rate(wotb_ai_review_errors_total[5m]))
 ```
 
-错误类型枚举（低基数，与代码 `classifyHttpError/classifyClientFailure` 一致）：
-`AI_TIMEOUT`、`AI_CANCELLED`（客户端取消，上游调用被中断，不产生新请求）、`AI_UPSTREAM_UNAVAILABLE`、`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、`AI_RESPONSE_INVALID`、`AI_EMPTY_RESPONSE`。
+错误类型枚举（低基数，与 `AiReviewController.errorCodeOf` + `SpringAiChatGateway` 的错误码映射一致）：
+`AI_TIMELINE_UNUSABLE`、`AI_NOT_CONFIGURED`、`AI_PROMPT_MANDATORY_SECTION_TOO_LARGE`、`AI_REVIEW_SCHEMA_FAILED`、
+`AI_TIMEOUT`、`AI_CANCELLED`（客户端取消，上游调用被中断，不产生新请求）、`AI_UPSTREAM_UNAVAILABLE`、
+`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、
+`AI_RESPONSE_INVALID`、`AI_EMPTY_RESPONSE`。
 
 > **AI 全链路超时与无效消耗**：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 review 安全超时 1100s → TX ingress `/api/ai/**` 1120s → `ai-service` AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量。**host 级 Caddy/Nginx 反代必须允许 ≥1120s**（Nginx 默认 60s 会提前 504，用户重试即产生重复 API 消耗）。取消语义：**应用内路由切换因 `App.vue` 的 `<KeepAlive>` 缓存 AI 复盘页而不会取消进行中的复盘**（SSE 流继续）；只有**手动取消按钮、关闭/刷新浏览器页面（`beforeunload`）或前端安全超时**才会经 `POST /api/ai/reviews/{correlationId}/cancel` 中断 in-flight 上游调用。`AI_TIMEOUT` 不再自动重试（上游可能已计费）。Broken pipe 已在 `ai-service` 侧降级为 WARN，不再产生 Unhandled exception 堆栈。
 ### AI Review 全链路事件日志（按 correlationId 追踪）
@@ -432,50 +437,58 @@ docker compose logs wotb-backend --since 30m 2>&1 | grep "correlationId=<id>"
 {container_name="wotb-backend"} | json | message=~"correlationId=<id>.*"
 ```
 
+以下仅列**当前在 `java/*/src/main/**` 有生产者**的事件；已随 2026-10 legacy 契约收敛删除或当前无生产者的事件见下文「当前无生产者的事件」。
+
 典型一条成功时间线（team 模式）：
 
 ```text
-event=ai_review_sse_opened correlationId=...
-event=ai_review_started correlationId=... language=ZH fileCount=1
 event=ai_upstream_call_started correlationId=... stage=PRE_BATTLE mode=PRE_BATTLE_STRATEGIC_PRIOR attempt=1 responseFormat=TEXT
 event=ai_upstream_call_completed correlationId=... attempt=1 promptTokens=... completionTokens=...
 event=team_review_grounding_ready correlationId=... factsTotal=... deathFacts=...
 event=ai_prompt_budget correlationId=... stage=TEAM_CALL_2 attempt=1 estimatedInputTokens=... maxOutputTokens=...
 event=ai_upstream_call_started correlationId=... stage=TEAM_CALL_2 attempt=1 responseFormat=JSON_OBJECT
-event=team_review_validation_attempt_completed correlationId=... attempt=1 promptTokens=... cumulativePromptTokens=...
-event=team_review_parse_result correlationId=... attempt=1 responseFormat=JSON_OBJECT result=PASS
-event=team_review_validation correlationId=... attempt=1 result=FAIL conflictCount=2 checks=BINDING,V5
-event=team_review_validation_conflict correlationId=... attempt=1 check=V5 reasonCode=TIME_MISMATCH severity=HARD_FACT
-event=ai_validation_retry correlationId=... stage=TEAM_CALL_2 validationAttempt=2 rewrite=TARGETED reason=VALIDATION_FAILED
-event=team_review_validation correlationId=... attempt=2 result=PASS conflictCount=0
-event=team_review_completed correlationId=... validationAttempts=2 totalPromptTokens=... result=PASS
-event=ai_review_sse_completed correlationId=... durationMs=...
-event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
+event=ai_review_contract_salvage_started correlationId=... failureCategory=... failureCode=... failurePath=...
+event=ai_review_contract_salvage_completed correlationId=... result=SUCCESS removedReferences=... removedEntries=...
+event=team_review_completed correlationId=... validationAttempts=1 totalPromptTokens=... result=pass
+```
+
+contract 失败并走唯一一次 fresh recovery 时：
+
+```text
+event=ai_review_contract_failed correlationId=... attempt=1 failureCategory=... failureCode=... failurePath=...
+event=ai_review_recovery_triggered correlationId=... reason=UNPARSEABLE_RESPONSE primaryResponseLength=...
+event=ai_review_recovery_failed correlationId=... reason=...
 ```
 
 #### 事件清单（低基数，禁止高基数字段）
 
 | event | 关键字段 | 含义 |
 |---|---|---|
-| `ai_review_sse_opened` / `ai_review_sse_completed` | durationMs | SSE 生命周期 |
-| `ai_review_started` | language, fileCount | 请求开始 |
-| `ai_review_finished` | result=SUCCESS/FAILED/CANCELLED, errorCode（FAILED）, source（CANCELLED）, durationMs | **唯一终态，exactly once**（每个真正开始执行的 worker 请求恰好一次；FAILED 带稳定 errorCode，CANCELLED 带稳定 source） |
-| `ai_review_failed` | errorCode, exceptionClass, elapsedMs | 失败诊断事件（随 FAILED 终态一起出现，非终态本身） |
-| `ai_review_cancelled` | source=CANCELLED_WHILE_QUEUED / SSE_DISCONNECT | 取消诊断事件（INFO 非 ERROR，随 CANCELLED 终态一起出现） |
 | `ai_upstream_call_started` | stage, mode, attempt, model, responseFormat, thinking, maxOutputTokens, remainingBudgetSec | 每次上游调用 |
 | `ai_upstream_call_completed` | attempt, durationMs, promptTokens, completionTokens, totalTokens | 上游成功（不记录硬编码 providerStatus——成功响应无真实 transport status metadata，真实 status 只在失败事件） |
-| `ai_upstream_call_failed` | attempt, errorCode, providerStatus, retryable | 上游终态失败（providerStatus 为异常携带的真实 status） |
-| `ai_transport_retry` | stage, retryNumber, reason, backoffMs | 传输层退避重试（与 validation retry 区分；retryNumber 为 1 基重试序号，retryNumber=1 → 下一次上游调用 attempt=2） |
+| `ai_upstream_call_failed` | stage, mode, attempt, errorCode, providerStatus, retryable | 上游终态失败（providerStatus 为异常携带的真实 status，缺失为 `N/A`） |
+| `ai_transport_retry` | stage, mode, retryNumber, reason, backoffMs | 传输层退避重试（retryNumber 为 1 基重试序号，retryNumber=1 → 下一次上游调用 attempt=2） |
 | `ai_prompt_budget` | stage, attempt, estimatedInputTokens, maxOutputTokens, contextWindowTokens, remainingBudgetSec | 发送前预算（token amplification 观测） |
 | `team_review_grounding_ready` | factsTotal, deathFacts, aliveTransitions, focusWindows, positionSnapshots, enemyPositionFacts | grounding 事实计数 |
-| `team_review_validation_attempt_completed` | attempt, promptTokens, completionTokens, cumulativePromptTokens, cumulativeCompletionTokens | 每轮 token 累计 |
-| `team_review_parse_result` | attempt, responseFormat, result=PASS/FAIL, reason | parser 结果分类 |
-| `team_review_validation` | attempt, result=PASS/FAIL, conflictCount, checks, durationMs | validator 结果 |
-| `team_review_validation_conflict`（INFO） | attempt, check, reasonCode, severity | 冲突机器分类明细；INFO 是生产默认级别，便于 grounding failure 诊断 |
-| `ai_validation_retry` | stage, validationAttempt, rewrite=TARGETED/FULL/SAFE, reason | 业务返工重试；SAFE 是最终 bounded conservative recovery，之后必须再次完整校验 |
 | `team_review_completed` | validationAttempts, totalPromptTokens, totalCompletionTokens, durationMs, result | Team Call #2 阶段汇总 |
 | `ai_review_contract_failed`（WARN） | attempt, failureCategory, failureCode, failurePath | JSON/schema contract 失败；不含 prompt/completion/正文 |
+| `ai_review_contract_salvage_started`（INFO） | failureCategory, failureCode, failurePath | 确定性 salvage / normalization 开始 |
+| `ai_review_contract_salvage_completed`（INFO） | failureCategory, failureCode, failurePath, removedReferences, removedEntries, normalizationCount, result=SUCCESS/STILL_INVALID | 确定性 salvage 结果；`SUCCESS` 表示规范化后满足最低 contract，直接作为生产成功路径（不触发额外模型调用） |
 | `ai_review_recovery_triggered` / `ai_review_recovery_failed`（WARN） | reason, primaryResponseLength | 无可展示正文时最多一次 recovery 的生命周期；不记录正文 |
+
+#### 当前无生产者的事件（不要用它们排障）
+
+以下事件在 `java/*/src/main/**` 中**没有任何生产者**，查询它们不会返回任何日志：
+
+- **已随 2026-10 legacy 契约收敛删除**：`team_review_parse_result`、`team_review_validation`、
+  `team_review_validation_conflict`、`team_review_validation_attempt_completed`、`ai_validation_retry`；
+  对应指标 `wotb_ai_team_review_validation_retry_total`、`wotb_ai_team_review_grounding_conflict_total`、
+  `wotb_ai_review_team_autopsy_total` 同时删除，`TeamReviewEnvelope*` / `TeamFactualConsistencyValidator` /
+  `TeamAutopsy*` 机制本身也已删除。
+- **历史遗留（早于本次收敛即无生产者，属代码缺口，未在本次收敛中修复）**：`ai_review_sse_opened`、
+  `ai_review_sse_completed`、`ai_review_started`、`ai_review_finished`、`ai_review_failed`、
+  `ai_review_cancelled`。终态 `ai_review_finished` 的「exactly once」契约目前只存在于本文档与
+  `TeamReplayAnalysisService` 的 javadoc 中（两个看板都已不再查询它），尚未有 emitter；在补上 emitter 前不要依赖它定位终态。
 
 #### parser 失败分类（低基数枚举）
 
@@ -483,9 +496,13 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 `CARDINALITY_EXCEEDED` · `INVALID_REFERENCE`
 
 每条 failure 带稳定 `path` 与 `FailureCategory`；Prometheus 仅使用 `reason` / `path_class` 枚举，
-不写入用户或玩家标识。解析器不再把 normalization/salvage 结果作为生产成功模式。
+不写入用户或玩家标识。规范化（salvage）后仍满足最低 contract（`summary` + `episodes`）时**是合法的生产成功路径**
+（`wotb_ai_team_review_validation_attempt_total{result="salvaged"}`），不触发额外模型调用。
 
-#### validator conflict reasonCode（机器分类）
+#### validator conflict reasonCode（已随 2026-10 legacy 契约收敛删除）
+
+以下枚举属于已删除的 `TeamFactualConsistencyValidator`（legacy envelope 的 HARD_FACT 冲突分类），
+当前 `java/*/src/main/**` 已无生产者，仅作历史记录保留：
 
 `UNKNOWN_EVIDENCE` · `EVIDENCE_TYPE_MISMATCH` · `SUBJECT_MISMATCH` · `TIME_MISMATCH` · `REGION_MISMATCH` ·
 `KNOWLEDGE_MISMATCH` · `COUNT_MISMATCH` · `UNSUPPORTED_HARD_FACT` · `TEMPORAL_OWNERSHIP` · `IDENTITY_AMBIGUITY` ·
@@ -493,17 +510,17 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 
 #### 常见错误码排障
 
-- **`AI_REVIEW_GROUNDING_FAILED`**（502）：Team Call #2 draft、TARGETED、FULL、SAFE 四次 validation attempt 仍有 HARD_FACT 冲突后 fail-safe。
-  查 `event=team_review_validation` 的 `checks` 与 `event=team_review_validation_conflict` 的 `reasonCode` 判断是哪个 check 反复失败；
-  `event=team_review_validation_attempt_completed` 看 token 放大（`cumulativePromptTokens`）；若 SAFE 已通过，最终
-  `team_review_validation attempt=4 result=PASS`，不会返回该错误。
 - **`AI_REVIEW_SCHEMA_FAILED`**（502）：初始结果和最多一次 recovery 都不是有效 TeamAiReviewResult。
   这表示模型有响应，但最终 structured contract 无法形成可消费的 `TeamAiReviewResult`；它不是
   `AI_UPSTREAM_UNAVAILABLE`（后者表示 transport/provider availability failure）。按下方 runbook
   使用 AI Review dashboard 的 correlation trace 还原两次 contract attempt 与最终终态。
 - **`AI_TIMEOUT`**：分 provider read timeout / 整体预算耗尽 / SSE timeout 三种；查 `event=ai_upstream_call_failed` 与调用耗时、remainingBudgetSec。
 - **`AI_UPSTREAM_UNAVAILABLE`**：上游 5xx / 连接失败；`event=ai_transport_retry` 记录退避重试。
-- **`AI_CANCELLED`**：客户端取消（cancel 端点 / SSE 断开）；查 `event=ai_review_cancelled` 的 `source`。
+- **`AI_CANCELLED`**：客户端取消（cancel 端点 / SSE 断开）；`result=rejected` + `type=AI_CANCELLED` 可在
+  `wotb_ai_review_errors_total` 观察（`ai_review_cancelled` 事件当前无生产者，见上文）。
+- **`AI_REVIEW_GROUNDING_FAILED`**：已删除。它由 legacy `TeamFactualConsistencyValidator` 的
+  HARD_FACT 冲突 fail-safe 产生，随 2026-10 legacy 契约收敛一并移除；`java/*/src/main/**` 中不再有该错误码，
+  排障时请改看 `AI_REVIEW_SCHEMA_FAILED`（contract 路径）与上游错误码。
 
 #### `AI_REVIEW_SCHEMA_FAILED` runbook
 
@@ -515,7 +532,8 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 6. 查看 `ai_review_recovery_triggered` 的 `reason`，确认是否启动了唯一一次 fresh recovery。
 7. 查看 recovery 后的 `ai_review_contract_failed attempt=2`，对比两次的 category/code/path。
 8. 查看 `ai_review_recovery_failed` 与 `team_review_completed`，确认 recovery 和 Team Call #2 汇总结果。
-9. 最后查看 `ai_review_failed` 与 `ai_review_finished` 的 `errorCode=AI_REVIEW_SCHEMA_FAILED`，确认最终失败终态。
+9. 终态：`ai_review_failed` / `ai_review_finished` 当前**没有生产者**（见上文「当前无生产者的事件」），
+   改用 SSE `error` 事件与 `wotb_ai_review_errors_total{type="AI_REVIEW_SCHEMA_FAILED"}` 确认最终失败终态。
 
 `AI_REVIEW_SCHEMA_FAILED` != `AI_UPSTREAM_UNAVAILABLE`：前者是模型有响应但无法形成可消费的 structured
 `TeamAiReviewResult`；后者是 transport/provider availability failure。不要用上游可用性告警替代 schema
@@ -526,15 +544,20 @@ failure 的 contract diagnosis，也不要在日志中寻找 raw completion、pr
 1. 用户提供错误 UI 中的 `errorId`（AI SSE 中为 `id`，值与 `correlationId` 相同；普通 HTTP 错误使用 canonical `error.id`）。
 2. 打开 `WotBTools · HTTP 与事故诊断`，填入 `errorId`；必要时同时填写 `service`、`errorCode` 或 Replay `jobId`。
 3. 先看「近期事故」确认服务、事件、错误码和阶段，再看「单次 Incident 生命周期」的时间顺序。
-4. 若为 `AI_REVIEW_GROUNDING_FAILED`，依次检查 `team_review_parse_result`、`team_review_validation`、`team_review_validation_conflict`、`ai_validation_retry` 与 `team_review_validation_attempt_completed`，即可定位 parse、check/reasonCode、TARGETED/FULL/SAFE rewrite 和最终失败；若 SAFE 成功，则最后一次 validation 为 PASS 且不会返回该错误。
+4. AI 侧失败按错误码分流：`AI_REVIEW_SCHEMA_FAILED` 走 `ai_review_contract_failed` → `ai_review_recovery_triggered` /
+   `ai_review_recovery_failed` → `team_review_completed`（见上文 runbook）；上游失败走 `ai_upstream_call_started` /
+   `ai_upstream_call_completed` / `ai_upstream_call_failed` / `ai_transport_retry`。legacy 的
+   `team_review_parse_result` / `team_review_validation` / `team_review_validation_conflict` / `ai_validation_retry` /
+   `team_review_validation_attempt_completed` 与 `AI_REVIEW_GROUNDING_FAILED` 已随 2026-10 legacy 契约收敛删除，
+   不要再用它们排障。
 
-看板只用 Prometheus 做计数/速率/延迟/低基数 breakdown；`correlationId`、`errorId`、`jobId` 和完整生命周期只进入 Loki 查询。冲突日志只保留 event、correlationId、attempt、check、reasonCode、severity，不记录 prompt、原始模型输出、回放内容、账号或 token。
+看板只用 Prometheus 做计数/速率/延迟/低基数 breakdown；`correlationId`、`errorId`、`jobId` 和完整生命周期只进入 Loki 查询。冲突日志只保留 event、correlationId、attempt、failureCategory、failureCode、failurePath，不记录 prompt、原始模型输出、回放内容、账号或 token。
 
 ### 生产验收清单（部署后）
 
-- 成功复盘：能看到 request → upstream → parse → validation PASS → success。
-- 校验返工：能看到 validation FAIL → `ai_validation_retry`（TARGETED → FULL → SAFE）→ 最终 validation PASS 或 fail-safe。
-- `AI_REVIEW_GROUNDING_FAILED`：从 UI error ID 可定位同一 correlationId，并能看到每次 attempt 的 conflictCount、check/reasonCode、总耗时和上游状态。
+- 成功复盘：能看到 upstream → grounding facts → prompt budget → contract salvage/completed → `team_review_completed`。
+- contract 失败：能看到 `ai_review_contract_failed` → `ai_review_recovery_triggered` →（失败时）`ai_review_recovery_failed` → `team_review_completed`，或最终以 `AI_REVIEW_SCHEMA_FAILED` 结束。
+- `AI_REVIEW_SCHEMA_FAILED`：从 UI error ID 可定位同一 correlationId，并能看到 contract failure 分类、recovery 次数、Team Call #2 汇总与上游状态。
 - 在 `monitor.wotbtools.com` 实际检查 AI Review 与 Incident Explorer 的真实数据、筛选结果和空数据提示；本地 JSON/PromQL 校验不能替代该生产验收。
 
 ---
@@ -595,7 +618,7 @@ docker compose rm -sf prometheus loki alloy grafana
 docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana_data
 ```
 
-主业务四容器（postgres / keycloak / wotb-backend / wotb-frontend）不受影响；`postgres_data` volume 永不触碰。
+Yecao 只运行 `ai-service` 与观测栈（prometheus / loki / alloy / grafana / node-exporter），停止或移除观测容器不影响 TX 业务运行时（business-postgres / keycloak-postgres / keycloak / business-api / wotb-frontend）；TX 侧的数据 volume 永不触碰。
 
 ---
 
@@ -610,12 +633,12 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_review_errors_total{type=<固定枚举>}` — 错误分类（仅流内失败，与 `failure` 一致；HTTP 4xx 预校验失败不在此处计数）
   - `wotb_ai_review_duration_seconds` — Review 完整总耗时（Timer，histogram，成功与异常都结束，覆盖文件验证→解析→分析→AI 调用→响应处理）
   - `wotb_ai_review_in_flight` — 当前处理中的 Review 数（Gauge，即"已进入 worker、尚未完成"的请求数；不含队列中等待的请求，也不含被 `AI_REVIEW_BUSY` 回绝的请求）
-   - `wotb_ai_review_queue_wait_seconds` — worker 排队等待时长（Timer，histogram；由 `wotb_ai_review_queue_wait_seconds_bucket` 支撑 P95）
+  - `wotb_ai_review_queue_wait_seconds` — worker 排队等待时长（Timer，histogram；由 `wotb_ai_review_queue_wait_seconds_bucket` 支撑 P95）
   - `wotb_ai_review_queue_depth` — 当前等待执行的 AI Review worker 数（Gauge；不含正在执行与已拒绝请求）
-  - `wotb_ai_team_review_validation_attempt_total{result=pass|parser_invalid|validation_failed|metadata_only_pass}` — Team Call #2 validation attempt 分类；`parser_invalid` 与 `validation_failed` 表示 rework/失败尝试
-  - `wotb_ai_team_review_validation_retry_total{stage=TEAM_CALL_2,rewrite=TARGETED|FULL|SAFE}` — validation retry 的低基数阶段与改写类型分布
+  - `wotb_ai_team_review_validation_attempt_total{result=pass|salvaged|schema_invalid}` — Team Call #2 contract attempt 分类（`salvaged` = parser 规范化后满足最低 contract 且直接成功；`schema_invalid` = 该 attempt 无法形成可消费结果）
   - `wotb_ai_team_review_schema_failure_total{reason,path_class}` — Team Call #2 JSON/schema contract 失败；仅使用低基数失败原因和路径类别，不记录 prompt/output
-  - `wotb_ai_team_review_repair_total{result=triggered|success|failed}` — recovery 生命周期；不记录 prompt/output
+  - `wotb_ai_team_review_repair_total{result=triggered|started|success|failed}` — recovery 生命周期；不记录 prompt/output
+  - 已随 2026-10 legacy 契约收敛删除：`wotb_ai_team_review_validation_retry_total`、`wotb_ai_team_review_grounding_conflict_total`、`wotb_ai_review_team_autopsy_total`（无生产者，看板中已移除；不要新增同名指标）
 - **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
   - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
   - `wotb_ai_upstream_success_total{mode}` — 成功调用数（一次逻辑调用 +1）

@@ -82,3 +82,38 @@ heap/GC and pinning must not regress.
 The backend build uses Eclipse Temurin 25, an OpenJDK 25 distribution. The
 Docker Official `openjdk:25-*` tags were checked and are not published, so the
 repository must not invent those image names.
+
+## 历史实测结果（2026，harness `AiVirtualThreadBenchmarkTest` 仍存在）
+
+Salvaged verbatim from the deleted `docs/development/replay-performance-results.md` (section
+"AI Platform vs Virtual Thread benchmark"). Only the host document was retired: it recorded the
+server-side Java replay baseline (`ReplayParser`, `DefaultReplayProcessingFacade`, `ReplayHpTimeline`,
+all deleted 2026-10-02 with the server-side parser). This measurement itself is independent of that
+baseline — its input is real provider calls, not replay parsing, and the harness
+`AiVirtualThreadBenchmarkTest` still exists. It is kept as a historical record; the 2026 run used an
+earlier matrix (warmup 1, measurement 5, paired concurrencies `1,2,4`) than the `## Contract` / `## Run`
+matrix above, so the two are not directly comparable. As stated at the top of this document, these
+numbers must not be combined with replay CPU throughput into a single performance claim.
+
+The separate real-provider benchmark was executed with Java 25, model
+`deepseek-v4-flash`, fixed prompt `Return exactly: OK`, warmup 1, measurement 5,
+and paired concurrencies `1,2,4`. Every request completed successfully with
+the expected `OK` response and no provider errors/status failures. The JFR
+contained zero `jdk.VirtualThreadPinned` events; blocking HTTPS calls parked
+virtual threads without verified pinning.
+
+| Concurrency | Variant | Wall ms | Total p50/p95/p99 ms | Provider p50/p95/p99 ms | Platform count / peak | VT scheduler peak pool/mounted/queued |
+|---:|---|---:|---|---|---:|---|
+| 1 | Platform | 3,846.6 | 2,228.9 / 3,845.0 / 3,845.0 | 776.1 / 939.5 / 939.5 | 24 / 25 | 2 / 1 / 0 |
+| 1 | Virtual | 5,294.2 | 3,363.5 / 5,293.6 / 5,293.6 | 990.5 / 1,367.5 / 1,367.5 | 24 / 24 | 2 / 2 / 1 |
+| 2 | Platform | 2,365.6 | 1,377.2 / 2,364.0 / 2,364.0 | 867.3 / 1,444.2 / 1,444.2 | 24 / 26 | 2 / 1 / 0 |
+| 2 | Virtual | 2,469.2 | 1,650.0 / 2,468.8 / 2,468.8 | 830.5 / 986.0 / 986.0 | 24 / 24 | 2 / 2 / 4 |
+| 4 | Platform | 1,726.6 | 1,237.9 / 1,725.7 / 1,725.7 | 1,007.3 / 1,723.8 / 1,723.8 | 24 / 28 | 2 / 1 / 0 |
+| 4 | Virtual | 1,504.5 | 1,163.5 / 1,504.0 / 1,504.0 | 938.6 / 1,329.6 / 1,329.6 | 24 / 24 | 2 / 2 / 1 |
+
+The small provider sample is noisy and is not a DeepSeek speedup claim. The
+reliable result for this run is resource behavior: platform mode created no
+virtual tasks and increased the reset per-variant platform peak by up to four;
+virtual mode created one VT per request, held active work at the requested
+concurrency, and kept platform-thread count at the 24-thread baseline. The
+benchmark did not change production admission values or replay concurrency.

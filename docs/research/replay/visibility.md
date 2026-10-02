@@ -162,9 +162,10 @@ mvn -s settings.xml -pl wotb-core test -Dtest=VisibilitySignalProbeTest -Dsurefi
 
 ## 8. 附注：过程中发现的生产代码问题（仅报告，未改）
 
-- `EventStreamReader.extractArenaSnapshots`（updateArena sub 47 存活名册）在 5 样本上全部返回 0 条：
+- `EventStreamReader.extractArenaSnapshots`（历史 Java 实现，2026-10-02 已退役；updateArena sub 47 存活名册）在 5 样本上全部返回 0 条：
   子类型 47 的负载布局（`49 000000 ffffffff… 0000 <double> …`）与解析假设不符，解析在 quirky-length 阶段失败。
-  这不影响本门禁结论（存活名册与点亮无关），但若团队后续要权威死亡时间线，需修复该解析器。
+  这不影响本门禁结论（存活名册与点亮无关），但若团队后续要权威死亡时间线，需在上游 Rust Core
+  （pin `deploy/agent/source.json`）侧确认该布局（原 Java 解析器已退役，不再修复）。
 - `java/wotb-core/src/test/java/com/wotb/core/TurretDirectionProbeTest.java`（并行门禁 B 产物）当时有两处编译错误
   （缺 `import java.util.Set`；`.orElse(0).floatValue()` 对 double 解引用），已做最小修复（只补 import 与类型转换，
   未动其逻辑），以恢复 testCompile。

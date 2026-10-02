@@ -21,7 +21,7 @@
 
 ## AI Review Harness（双 Call + Team structured result）
 
-随机战个人复盘（ZH）在重建与特征可用时走 `TacticalReviewHarness`（双 Call）：Call #1 用双方阵容 + `common/tank_tactical_profiles.json` + 地图语义（`common/map-semantics/*.semantic.json`，由 `map-semanticizer` 从 Wot Blitz 客户端 SC2 + heightmap 解码生成）建立赛前战略基线（不含任何战斗结果），Backend Evidence Skills（HpMomentum / EngagementTrade / LocalSupport / DeathCascade / Route / CriticalWindow）输出确定性战术证据，Call #2 按 Priority Bookends 对照「预期 vs 实际」输出复盘，输入含走位/区域时间线、逐次对炮明细、≤8 个关键决策窗口完整证据与口语化语气约束；随机战斗不评判 MVP/战犯。任何前提不满足自动降级旧单 Call 路径；EN/RU 保持旧路径。地图战术语义层（`MapTacticalSemanticsRegistry`）：按 `mapCodes` / `mapId` / token 边界别名查询，未收录地图明确 UNKNOWN（禁止编造区域语义）；语义数据 `displayName` 用 `map_names.json` 的 en 名（未收录回退 mapId），Call #1 语义段显示可读地图名 + 内部 code；语义 AREA 标注 `gridRegions`（GRID_REGION_1~9），与 `MapRegionResolver` 同一坐标约定（±250 m → 500×500 → 3×3），回放定位与地图语义共用同一九宫格；Call #1 有独立 45s stage 预算，Call #2 使用剩余预算并留安全余量，整体不超过 `AI_CALL_TIMEOUT_SEC`。**结构化 JSON 小调用关闭 thinking**：Call #1 与团队 Call #2 在请求层按各自 JSON contract 发送（Call #2 使用 `TeamAiReviewResult`；`TeamAutopsyService` 仅为 legacy compatibility path，不属于 production Team Review）；Call #2 生产结果在 SSE `done.teamReview` 一次性传输，前端负责标题和可选区块渲染。团队复盘（训练房/联赛，`TeamReplayAnalysisService`）与随机战一样**先执行 Call #1**（地图 + 双方阵容赛前先验，按视角队伍重标 TEAM_A=你的队伍 / TEAM_B=对方队伍 后注入团队 Prompt）；该 prior 只是战略基线/可能性空间，不是队伍实际计划，Call #2 只按可观察执行与确定性证据判断，Call #1 失败仅缺 prior 段不阻断复盘。团队输入含每名成员整场路线序列（九宫格）；production Team Review 不调用或追加 settlement-only Autopsy，Call #2 technical parser 只校验 JSON/schema/roster/episode references。
+随机战个人复盘（ZH）在重建与特征可用时走 `TacticalReviewHarness`（双 Call）：Call #1 用双方阵容 + `common/tank_tactical_profiles.json` + 地图语义（`common/map-semantics/*.semantic.json`，由 `map-semanticizer` 从 Wot Blitz 客户端 SC2 + heightmap 解码生成）建立赛前战略基线（不含任何战斗结果），Backend Evidence Skills（HpMomentum / EngagementTrade / LocalSupport / DeathCascade / Route / CriticalWindow）输出确定性战术证据，Call #2 按 Priority Bookends 对照「预期 vs 实际」输出复盘，输入含走位/区域时间线、逐次对炮明细、≤8 个关键决策窗口完整证据与口语化语气约束；随机战斗不评判 MVP/战犯。任何前提不满足自动降级旧单 Call 路径；EN/RU 保持旧路径。地图战术语义层（`MapTacticalSemanticsRegistry`）：按 `mapCodes` / `mapId` / token 边界别名查询，未收录地图明确 UNKNOWN（禁止编造区域语义）；语义数据 `displayName` 用 `map_names.json` 的 en 名（未收录回退 mapId），Call #1 语义段显示可读地图名 + 内部 code；语义 AREA 标注 `gridRegions`（GRID_REGION_1~9），与 `MapRegionResolver` 同一坐标约定（±250 m → 500×500 → 3×3），回放定位与地图语义共用同一九宫格；Call #1 有独立 45s stage 预算，Call #2 使用剩余预算并留安全余量，整体不超过 `AI_CALL_TIMEOUT_SEC`。**结构化 JSON 小调用关闭 thinking**：Call #1 与团队 Call #2 在请求层按各自 JSON contract 发送（Call #2 使用 `TeamAiReviewResult` + `TeamAiReviewResultParser`，含确定性 salvage / normalization；生产链没有 Team Autopsy、没有 legacy envelope / claims validator）；Call #2 生产结果在 SSE `done.teamReview` 一次性传输，前端负责标题和可选区块渲染。团队复盘（训练房/联赛，`TeamReplayAnalysisService`）与随机战一样**先执行 Call #1**（地图 + 双方阵容赛前先验，按视角队伍重标 TEAM_A=你的队伍 / TEAM_B=对方队伍 后注入团队 Prompt）；该 prior 只是战略基线/可能性空间，不是队伍实际计划，Call #2 只按可观察执行与确定性证据判断，Call #1 失败仅缺 prior 段不阻断复盘。团队输入含每名成员整场路线序列（九宫格）；production Team Review 没有第三次模型调用，也没有 settlement-only autopsy 阶段；Call #2 由 `TeamAiReviewResultParser` 校验 JSON/schema/roster/episode references。
 
 ## Web 版（本地开发）
 
@@ -94,7 +94,17 @@ AI Review 已从 Business Backend 拆出，运行在 Yecao 的独立无状态 `a
 战局回放（2D）的数据在浏览器本机生成（`frontend/src/replay-local/playback`）；AI 复盘只消费客户端投影，
 服务端不再有重建器（恢复 AI 复盘时基于上游 `parseAiReview` 重建投影）。
 
-- `POST /api/ai/reviews`（独立 `ai-service`）— JSON body `{schemaVersion, locale, correlationId, battle, reconstruction}`（`AiReviewRequestV1`）：`schemaVersion` 必须为 `1`，`locale` 白名单 `zh-CN`/`en-US`/`ru-RU`，`correlationId` 为 canonical UUID。客户端负责解析与事实投影，服务端不读 Processing Dataset。稳定错误码：`UNSUPPORTED_AI_REQUEST_SCHEMA` / `INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` / `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`（409）/ `UNSUPPORTED_BATTLE_CATEGORY`（422）/ `AI_REQUEST_TOO_LARGE`（413，16 MiB 上限）/ `AI_REVIEW_BUSY`（503，有界准入饱和）。取消：`POST /api/ai/reviews/{correlationId}/cancel`（`204`，未注册 `404`）。公开入口经 TX `/api/ai/**` 私网反代，服务本身无公网端口。完整协议见 `docs/features/team-ai-review.md`。
+- `POST /api/ai/reviews`（独立 `ai-service`）— JSON body `AiReviewRequest = {locale, correlationId, battle, projection}`
+  （唯一事实源 `contracts/http/openapi.yaml`，required 恰为这四个字段；**没有** `schemaVersion`）：
+  `locale` 白名单 `zh-CN`/`en-US`/`ru-RU`，`correlationId` 为 canonical UUID，`battle` 与 `projection`
+  分别是客户端 canonical 结算事实与 AI 投影（`ClientAiReviewProjection`）。`AiReviewController` 只校验
+  locale + correlationId，投影/战斗结构不合法统一 → `INVALID_AI_REQUEST`。客户端负责解析与事实投影，
+  服务端不读 processing dataset。稳定错误码：`INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` /
+  `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`（409）/
+  `UNSUPPORTED_BATTLE_CATEGORY`（422）/ `AI_REQUEST_TOO_LARGE`（413，16 MiB 上限，gzip 解压后同样受限）/
+  `AI_REVIEW_BUSY`（503，有界准入饱和）。取消：`POST /api/ai/reviews/{correlationId}/cancel`
+  （`204`，未注册 `404`）。公开入口经 TX `/api/ai/**` 私网反代，服务本身无公网端口。
+  完整协议见 `contracts/http/openapi.yaml` 与 `docs/features/team-ai-review.md`。
 
 **策略**：系统按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
 
@@ -156,13 +166,15 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 
 ```bash
 cd java
-set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1
+set JAVA_HOME=<JDK 25 安装目录>
 mvn -s settings.xml test
 ```
 
 测试覆盖：
 
-- `wotb-core` 的 `ParityTest`：集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
+- `wotb-ai` 的 AI 契约测试：三语 prompt、v0.5 recovery、output cap、timeline gate，以及 `ClientAiProjectionParityTest`（客户端 AI 投影 parity，读 `common/fixtures/ai-projection/`）。Java 侧的解析 / 字段不变量 / 去重 / 汇总 / xlsx 导出集成测试已随服务端解析器退役。
+- `wotb-core` 的单测覆盖 canonical 事实模型与领域规则（`SettlementCanonicalModelTest`、`PointsSituationSkillTest` 等）。
+- 客户端 golden 基线在 `frontend/src/replay-local/__golden__/`（`compute.golden.test.ts` / `export.golden.test.ts` / `playback.golden.test.ts`）。
 - `wotb-web` 的 hof / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
 - 架构测试：`CoreArchitectureTest` / `WebArchitectureTest`（ArchUnit）守护模块边界与分层，随 `mvn test` 自动执行。
 - `WebApiTest` 只保留 PostgreSQL/真实回放集成路径；无 Docker 或无 `common/data` 时按条件跳过。

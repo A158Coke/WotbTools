@@ -44,18 +44,19 @@ class ObservabilityDashboardContractTest {
             "wotbtools_http_errors",
             "wotbtools_replay_parser",
             "wotbtools_android_downloads");
+    /**
+     * AI 看板必须覆盖的生命周期事件 == 该看板查询的、在后端 main 源码中有生产者的事件。
+     * 2026-10 legacy 契约收敛后，{@code team_review_parse_result} / {@code team_review_validation} /
+     * {@code team_review_validation_conflict} / {@code ai_validation_retry} /
+     * {@code team_review_validation_attempt_completed} 已无任何生产者；
+     * {@code ai_review_started} / {@code ai_review_failed} / {@code ai_review_finished} 亦从无 emitter。
+     * 两组都已从看板查询与本集合中移除，并由 forbidden 断言防止回归。
+     */
     private static final Set<String> REQUIRED_AI_REVIEW_EVENTS = Set.of(
             "ai_review_contract_failed",
             "ai_review_recovery_triggered",
             "ai_review_recovery_failed",
-            "team_review_completed",
-            "ai_review_failed",
-            "ai_review_finished",
-            "team_review_parse_result",
-            "team_review_validation",
-            "team_review_validation_conflict",
-            "ai_validation_retry",
-            "team_review_validation_attempt_completed");
+            "team_review_completed");
     private static final Set<String> FORBIDDEN_PROMETHEUS_LABELS = Set.of(
             "correlationId", "errorId", "jobId", "accountId", "nickname", "filename");
     /** Micrometer Timer names gain a _seconds suffix in Prometheus exposition. */
@@ -99,15 +100,16 @@ class ObservabilityDashboardContractTest {
         for (final String event : REQUIRED_AI_REVIEW_EVENTS) {
             assertTrue(serialized.contains(event), "AI Dashboard must cover " + event);
         }
-        for (final String event : Set.of("ai_prompt_budget", "ai_review_failed", "ai_review_cancelled",
-                "ai_upstream_call_failed")) {
+        for (final String event : Set.of("ai_prompt_budget", "ai_upstream_call_failed")) {
             assertTrue(serialized.contains(event), "AI Dashboard must cover " + event);
         }
         assertTrue(serialized.contains("\"uid\":\"prometheus\""));
         assertTrue(serialized.contains("\"uid\":\"loki\""));
         assertTrue(hasVariable(dashboard, "correlationId"));
-        assertTrue(serialized.contains("TARGETED|FULL|SAFE"),
-                "AI dashboard must distinguish all bounded validation rewrite stages");
+        assertTrue(serialized.contains("wotb_ai_team_review_validation_attempt_total"),
+                "AI dashboard must retain the Team Call #2 contract result breakdown metric");
+        assertTrue(serialized.contains("sum by (result)"),
+                "Team Call #2 contract results must be broken down by the real result label");
         assertFalse(serialized.contains("|~ \"error|failed\""),
                 "generic error-only Loki query must not replace lifecycle coverage");
 
@@ -208,6 +210,33 @@ class ObservabilityDashboardContractTest {
         }
     }
 
+    /**
+     * Production Overview 的「生产状态」卡必须覆盖全部六类 target
+     * （wotb-backend / ai-service / node-exporter / prometheus / loki / grafana），
+     * 与 {@code deploy/AGENTS.md} 和 {@code deploy/verify-observability.sh} 的六类 gate 同口径。
+     * 此前只算五类（缺 ai-service），ai-service 宕机不会反映到总健康卡。
+     *
+     * <p>刻意不在这里断言「Loki 查询标签必须指向真实 emitter 容器」：AI 生命周期事件由 Yecao
+     * {@code ai-service} 产出，而仓库当前没有任何 Alloy 规则采集该容器；只按 {@code container_name}
+     * 做标签交叉校验会命中确实有 Alloy 规则的 {@code wotb-backend} 标签并通过，属于虚假守护。
+     * 该缺口以看板描述与 runbook 记录，待真正补上采集链路后再升级为断言。
+     */
+    @Test
+    void productionOverviewHealthCardCoversEveryScrapedTargetClass() throws Exception {
+        final JsonNode panel = panel(readDashboard("wotbtools-production-overview.json"),
+                "生产状态（全部六类 target）");
+        final String expression = panel.path("targets").path(0).path("expr").asText();
+        for (final String job : Set.of("wotb-backend", "ai-service", "node-exporter",
+                "prometheus", "loki", "grafana")) {
+            assertTrue(expression.contains(job),
+                    "Production Overview target-set card must cover job=" + job);
+        }
+        assertTrue(expression.contains("== 6"),
+                "Production Overview target-set card must require all six targets");
+        assertTrue(expression.contains("min(up"),
+                "Production Overview target-set card must require min(up)==1");
+    }
+
     @Test
     void schemaFailureRequestTraceIsChronologicalAndCorrelationScoped() throws Exception {
         final JsonNode dashboard = readDashboard("wotbtools-ai-review.json");
@@ -218,23 +247,24 @@ class ObservabilityDashboardContractTest {
         final String query = panel.path("targets").path(0).path("expr").asText();
         assertTrue(query.contains("${correlationId:raw}"));
         for (final String event : Set.of("ai_review_contract_failed", "ai_review_recovery_triggered",
-                "ai_review_recovery_failed", "team_review_completed", "ai_review_failed",
-                "ai_review_finished")) {
+                "ai_review_recovery_failed", "team_review_completed")) {
             assertTrue(query.contains(event), "Request trace must cover " + event);
+        }
+        for (final String removed : Set.of("ai_review_started", "ai_review_failed", "ai_review_finished")) {
+            assertFalse(dashboard.toString().contains(removed),
+                    "Schema Failure Request Trace must not query producer-less event " + removed);
         }
     }
 
     @Test
-    void validationDiagnosticsRetainsBroadParserValidatorAndUpstreamCoverage() throws Exception {
+    void contractDiagnosticsRetainsRecoveryAndUpstreamCoverage() throws Exception {
         final JsonNode dashboard = readDashboard("wotbtools-ai-review.json");
-        final String query = panelQuery(dashboard, "AI Validation Diagnostics（按 correlationId）");
-        for (final String event : Set.of("team_review_parse_result", "team_review_validation",
-                "team_review_validation_conflict", "ai_validation_retry",
-                "team_review_validation_attempt_completed", "ai_prompt_budget",
-                "ai_upstream_call_failed", "ai_review_cancelled", "ai_review_contract_failed",
-                "ai_review_recovery_triggered", "ai_review_recovery_failed", "team_review_completed",
-                "ai_review_failed", "ai_review_finished")) {
-            assertTrue(query.contains(event), "AI Validation Diagnostics must cover " + event);
+        final String query = panelQuery(dashboard, "AI 契约与上游诊断（按 correlationId）");
+        // 2026-10 legacy 契约收敛后仅保留有生产者的 AI 事件；validation/parser 事件已删除。
+        for (final String event : Set.of("ai_review_contract_failed", "ai_review_recovery_triggered",
+                "ai_review_recovery_failed", "team_review_completed", "ai_prompt_budget",
+                "ai_upstream_call_failed")) {
+            assertTrue(query.contains(event), "AI contract diagnostics must cover " + event);
         }
         assertTrue(query.contains("${correlationId:raw}"));
     }
@@ -270,19 +300,27 @@ class ObservabilityDashboardContractTest {
         }
         final String serialized = dashboard.toString();
         assertTrue(serialized.contains("api_request_failed"));
-        assertTrue(serialized.contains("ai_review_failed"));
-        assertTrue(serialized.contains("team_review_validation_conflict"));
+        assertTrue(serialized.contains("ai_review_contract_failed"));
+        assertTrue(serialized.contains("ai_review_recovery_failed"));
         // 服务器没有 parser：processing-job 生命周期事件随服务端解析一起删除，看板不得再查询它们
         assertFalse(serialized.contains("processing_job_"), "retired processing-job events must not be queried");
+        // 2026-10 legacy 契约收敛：Incident 生命周期只断言仍有生产者的事件
+        // （validation/parser 系列已随 legacy 契约删除；ai_review_started/finished/failed/cancelled 从无 emitter）。
         for (final String event : Set.of(
-                "ai_review_started", "ai_upstream_call_started", "ai_upstream_call_completed",
-                "ai_upstream_call_failed", "team_review_parse_result", "team_review_validation",
-                "team_review_validation_conflict", "team_review_validation_attempt_completed",
-                "ai_validation_retry", "ai_review_contract_failed", "ai_review_recovery_triggered",
-                "ai_review_recovery_failed", "team_review_completed", "ai_review_failed",
-                "ai_review_finished", "ai_review_cancelled", "api_request_failed",
+                "ai_upstream_call_started", "ai_upstream_call_completed", "ai_upstream_call_failed",
+                "ai_review_contract_failed", "ai_review_recovery_triggered", "ai_review_recovery_failed",
+                "team_review_completed", "ai_prompt_budget", "api_request_failed",
                 "api_request_rejected")) {
             assertTrue(serialized.contains(event), "Incident lifecycle must cover " + event);
+        }
+        for (final String removed : Set.of(
+                "ai_review_sse_opened", "ai_review_sse_completed", "ai_review_started",
+                "ai_review_finished", "ai_review_failed", "ai_review_cancelled",
+                "team_review_parse_result", "team_review_validation",
+                "team_review_validation_conflict", "team_review_validation_attempt_completed",
+                "ai_validation_retry")) {
+            assertFalse(serialized.contains(removed),
+                    "Incident lifecycle must not query producer-less event " + removed);
         }
         assertTrue(serialized.contains("\"sortOrder\":\"Ascending\""),
                 "single incident lifecycle must be chronological");
@@ -332,29 +370,34 @@ class ObservabilityDashboardContractTest {
                     "errorId must not be embedded in an OR identifier group");
         }
 
-        assertFalse(matchesLokiTextFilters(recentQuery, "event=ai_review_failed jobId=unrelated-job",
+        // 样本日志行必须使用查询里真实存在的事件名，否则事件正则先失配，断言会退化为永真。
+        assertFalse(matchesLokiTextFilters(recentQuery, "event=api_request_failed jobId=unrelated-job",
                 "err-123", ".*", ".*", ".*"));
-        assertFalse(matchesLokiTextFilters(recentQuery, "event=ai_review_failed id=unrelated-error",
+        assertFalse(matchesLokiTextFilters(recentQuery, "event=api_request_failed id=unrelated-error",
                 ".*", "job-123", ".*", ".*"));
-        assertFalse(matchesLokiTextFilters(lifecycleQuery, "event=ai_review_started correlationId=corr-other",
+        assertFalse(matchesLokiTextFilters(lifecycleQuery, "event=ai_review_contract_failed correlationId=corr-other",
                 ".*", ".*", "corr-123", ".*"));
         assertTrue(matchesLokiTextFilters(lifecycleQuery,
-                "event=ai_review_started correlationId=corr-123", ".*", ".*", "corr-123", ".*"));
+                "event=ai_review_contract_failed correlationId=corr-123", ".*", ".*", "corr-123", ".*"));
     }
 
     @Test
     void teamReviewLoggingContractIsInfoLevelAndDoesNotLogRawAiContent() throws Exception {
         final String source = Files.readString(resolve("java", "wotb-ai", "src", "main", "java",
                 "com", "wotb", "web", "replay", "ai", "TeamReplayAnalysisService.java"));
-        assertTrue(source.contains("LOGGER.info(AiReviewEventLog.line(\"team_review_validation_conflict\""));
-        assertFalse(source.contains("LOGGER.debug(AiReviewEventLog.line(\"team_review_validation_conflict\""));
-        assertTrue(source.contains("\"rewrite\", rewrite"));
-        assertTrue(source.contains("wotb_ai_team_review_validation_retry_total"));
-        assertTrue(source.contains("case 4 -> \"SAFE\""));
-        assertTrue(source.contains("\"team_review_parse_result\""));
-        assertTrue(source.contains("\"team_review_validation\""));
-        assertTrue(source.contains("\"team_review_validation_attempt_completed\""));
-        assertTrue(source.contains("\"ai_validation_retry\""));
+        // 2026-10 legacy 契约收敛：validator 冲突事件、validation retry 事件及其指标已删除，
+        // 此处改为守护收敛后真实存在的 v0.5 contract / salvage 日志与指标（断言数量与强度不变）。
+        // 刻意不在此写出已删除的指标名：本文件会被 prometheusQueriesReferenceMetricsDeclaredByBackend
+        // 当作“后端声明”全文扫描，写出旧名会让看板重新引用它时不再被拦下。
+        assertTrue(source.contains("LOGGER.info(AiReviewEventLog.line(\"ai_review_contract_salvage_completed\""));
+        assertFalse(source.contains("LOGGER.debug(AiReviewEventLog.line(\"ai_review_contract_salvage_completed\""));
+        assertTrue(source.contains("\"failureCategory\", failureCategories(parsed)"));
+        assertTrue(source.contains("wotb_ai_team_review_validation_attempt_total"));
+        assertTrue(source.contains("countValidationAttempt(salvaged ? \"salvaged\" : \"pass\")"));
+        assertTrue(source.contains("\"ai_review_contract_failed\""));
+        assertTrue(source.contains("\"ai_review_contract_salvage_started\""));
+        assertTrue(source.contains("\"team_review_grounding_ready\""));
+        assertTrue(source.contains("\"team_review_completed\""));
     }
 
     private static JsonNode readDashboard(final String name) throws Exception {

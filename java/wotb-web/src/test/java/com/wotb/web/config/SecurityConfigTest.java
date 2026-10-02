@@ -222,18 +222,15 @@ class SecurityConfigTest {
      * 服务器没有 parser：preview / export / columns、Processing Job、Export Job、playback-v2 /
      * map-overview、reconstruct-batch / process 端点全部删除，不再有专属安全规则，落回
      * 「未显式声明的 API 默认拒绝」（anonymous → 401 canonical envelope；任何已认证身份 → 403）。
-     * ProbeController 仍挂着这些路径，证明拒绝来自安全层而不是缺少 handler。
+     * 每种 HTTP method 只留一条代表路径（GET / POST / DELETE）；ProbeController 仍挂着这些
+     * 路径，证明拒绝来自安全层而不是缺少 handler。
      */
     @Test
     void removedReplayProcessingEndpointsFallThroughToDefaultApiDenyAll() throws Exception {
         final List<Supplier<MockHttpServletRequestBuilder>> requests = List.of(
-                () -> get("/api/preview"), () -> get("/api/export"), () -> get("/api/columns"),
-                () -> post("/api/replay/processing-jobs"), () -> get("/api/replay/processing-jobs/job-1"),
-                () -> get("/api/replay/processing-jobs/job-1/result"), () -> delete("/api/replay/processing-jobs/job-1"),
-                () -> post("/api/replay/export-jobs"), () -> get("/api/replay/export-jobs/job-1"),
-                () -> get("/api/replay/export-jobs/job-1/download"), () -> delete("/api/replay/export-jobs/job-1"),
-                () -> post("/api/replay/battle-playback-v2"), () -> post("/api/replay/map-overview"),
-                () -> post("/api/replay/reconstruct-batch"), () -> post("/api/replay/process"));
+                () -> get("/api/columns"),
+                () -> post("/api/replay/processing-jobs"),
+                () -> delete("/api/replay/export-jobs/job-1"));
         for (final Supplier<MockHttpServletRequestBuilder> request : requests) {
             mvc.perform(request.get())
                     .andExpect(status().isUnauthorized())
@@ -273,12 +270,6 @@ class SecurityConfigTest {
                 "/api/unmatched",
                 "/api/health",
                 "/api/users/probe",
-                "/api/replay/processing-jobs/{jobId}",
-                "/api/replay/processing-jobs/{jobId}/result",
-                "/api/replay/export-jobs/{jobId}",
-                "/api/replay/export-jobs/{jobId}/download",
-                "/api/preview",
-                "/api/export",
                 "/api/columns",
                 "/api/hof/upload",
                 "/api/hof/1/replay",
@@ -292,40 +283,13 @@ class SecurityConfigTest {
             return "ok";
         }
 
-        @PostMapping({
-                "/api/replay/battle-playback-v2",
-                "/api/replay/map-overview"
-        })
-        String battlePlaybackV2() {
-            return "ok";
-        }
-
-        /** 已删除的批量重建 / 同步处理端点探针（只用于证明默认拒绝）。 */
-        @PostMapping({
-                "/api/replay/reconstruct-batch",
-                "/api/replay/process"
-        })
-        String replayRoleGatedProbe() {
-            return "ok";
-        }
-
-        /** 已删除的 Replay Processing Job 端点探针（只用于证明默认拒绝）。 */
+        /** 已删除的 Replay Processing Job 创建端点探针（只用于证明默认拒绝）。 */
         @PostMapping("/api/replay/processing-jobs")
         String replayProcessingJobCreate() {
             return "ok";
         }
 
-        @DeleteMapping("/api/replay/processing-jobs/{jobId}")
-        String replayProcessingJobCancel() {
-            return "ok";
-        }
-
-        /** 已删除的 Replay Export Job 端点探针（只用于证明默认拒绝）。 */
-        @PostMapping("/api/replay/export-jobs")
-        String replayExportJobCreate() {
-            return "ok";
-        }
-
+        /** 已删除的 Replay Export Job 取消端点探针（只用于证明默认拒绝）。 */
         @DeleteMapping("/api/replay/export-jobs/{jobId}")
         String replayExportJobCancel() {
             return "ok";

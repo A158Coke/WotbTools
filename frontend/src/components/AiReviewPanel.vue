@@ -61,7 +61,7 @@ const errorId = ref('')
 const copiedErrorId = ref(false)
 const analyzing = ref(false)
 const analysisResult = ref<AiReviewResult | null>(null)
-/** AI 复盘 capability（AnalyzeResponse.capability：AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE / UNAVAILABLE）。 */
+/** AI 复盘 capability（AiReviewDonePayload.capability：AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE / UNAVAILABLE）。 */
 const analysisCapability = computed<AiReviewCapability | null>(() => analysisResult.value?.capability || null)
 const limitedTimelineNote = computed(() =>
   analysisCapability.value === 'AVAILABLE_WITH_LIMITED_TIMELINE'

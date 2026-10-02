@@ -7,7 +7,6 @@ import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
 import com.wotb.web.util.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,7 +23,6 @@ import java.util.List;
  */
 @RestController
 @RequestMapping(ApiPaths.HOF_HUNDRED)
-@CrossOrigin(origins = "*")
 public class HundredBattleController {
 
     private final HundredBattleSubmissionService service;

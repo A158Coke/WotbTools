@@ -13,17 +13,16 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.AllowedLanguage;
-import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.TacticalReviewHarness;
 import com.wotb.web.replay.ai.AnalysisUnitAssembler;
 import com.wotb.web.replay.ai.PlayerReviewOutputCorrector;
 import com.wotb.web.replay.ai.PreBattleSectionRenderer;
-import com.wotb.web.replay.ai.TeamAnalyzeResult;
+import com.wotb.web.replay.ai.TeamReplayAnalysisService;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiCancellationToken;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
-import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.dto.AiReviewDonePayload;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,7 +39,6 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
@@ -54,7 +52,7 @@ public class AiReviewController {
     private static final int MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 
     private final TacticalReviewHarness tacticalReviewHarness;
-    private final AiReplayAnalysisService aiReplayAnalysisService;
+    private final TeamReplayAnalysisService teamReplayAnalysisService;
     private final AiReviewWorkerExecutor workerExecutor;
     private final AiCancellationRegistry cancellations;
     /**
@@ -66,12 +64,12 @@ public class AiReviewController {
     private final Timer reviewDuration;
 
     public AiReviewController(final TacticalReviewHarness tacticalReviewHarness,
-                              final AiReplayAnalysisService aiReplayAnalysisService,
+                              final TeamReplayAnalysisService teamReplayAnalysisService,
                               final AiReviewWorkerExecutor workerExecutor,
                               final AiCancellationRegistry cancellations,
                               final MeterRegistry meterRegistry) {
         this.tacticalReviewHarness = tacticalReviewHarness;
-        this.aiReplayAnalysisService = aiReplayAnalysisService;
+        this.teamReplayAnalysisService = teamReplayAnalysisService;
         this.workerExecutor = workerExecutor;
         this.cancellations = cancellations;
         this.meterRegistry = meterRegistry;
@@ -239,7 +237,14 @@ public class AiReviewController {
                             send(emitter, cancellation, "call2_token", Map.of("delta", delta));
                         }
                     };
-            final Map<String, Object> done = new HashMap<>();
+            // capability 是 request 级判定（投影时钟 + 投影声明的 limitations），两个分支共用；
+            // Team 编排返回同一 transport 形状（capability 空位由本层填充）。
+            final AiReviewDonePayload.Capability capability =
+                    request.reconstruction().battleStartRawClockSec() == null
+                            || (request.limitations() != null && !request.limitations().isEmpty())
+                            ? AiReviewDonePayload.Capability.AVAILABLE_WITH_LIMITED_TIMELINE
+                            : AiReviewDonePayload.Capability.AVAILABLE;
+            final AiReviewDonePayload done;
             if (scope == ReplayAnalysisScope.PLAYER_FOCUSED) {
                 requireUsableTimeline(request.battle(), request.reconstruction());
                 final TacticalReviewHarness.HarnessOutcome outcome = tacticalReviewHarness.analyzeWithPrior(
@@ -253,22 +258,14 @@ public class AiReviewController {
                 // （坦克名纠正 → 「簇」兜底 → 三语免责句）必须继续生效。
                 final PlayerReviewOutputCorrector.Corrected corrected = PlayerReviewOutputCorrector.apply(
                         outcome.result().analysis(), preBattleSection, request.battle(), language);
-                done.put("analysis", corrected.analysis());
-                done.put("preBattleSection", corrected.preBattleSection());
-                done.put("teamReview", null);
-                done.put("teamPlayers", java.util.List.of());
+                done = new AiReviewDonePayload(corrected.analysis(), corrected.preBattleSection(),
+                        capability, null, List.of());
             } else {
-                final TeamAnalyzeResult outcome = aiReplayAnalysisService.analyzeTeam(
+                final AiReviewDonePayload team = teamReplayAnalysisService.analyzeTeam(
                         request.battle(), request.reconstruction(), language, listener);
-                done.put("analysis", outcome.analysis() == null ? null : outcome.analysis().analysis());
-                done.put("preBattleSection", outcome.preBattleSection());
-                done.put("teamReview", outcome.structuredResult());
-                done.put("teamPlayers", outcome.teamPlayers());
+                done = new AiReviewDonePayload(team.analysis(), team.preBattleSection(), capability,
+                        team.teamReview(), team.teamPlayers());
             }
-            done.put("capability", request.reconstruction().battleStartRawClockSec() == null
-                    || (request.limitations() != null && !request.limitations().isEmpty())
-                    ? AnalyzeResponse.Capability.AVAILABLE_WITH_LIMITED_TIMELINE
-                    : AnalyzeResponse.Capability.AVAILABLE);
             send(emitter, cancellation, "done", done);
             emitter.complete();
         } catch (final RuntimeException error) {
@@ -339,7 +336,7 @@ public class AiReviewController {
     }
 
     private static void send(final SseEmitter emitter, final AiCancellationToken cancellation,
-                             final String event, final Map<String, Object> body) {
+                             final String event, final Object body) {
         if (cancellation.isCancelled()) {
             throw new ClientDisconnectedException();
         }

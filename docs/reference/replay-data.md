@@ -1,6 +1,10 @@
 # WOTB replay 回放数据字典
 
 > **Authoritative production replay contract.**
+> **解析权威是上游实现，不是本文件的字段结论来源**：解析由上游 Rust Core WASM（pin
+> `deploy/agent/source.json`）执行，本仓库消费端在 `frontend/src/replay-local/canonical/facts.ts` 与
+> `frontend/src/replay-local/battleFacts.ts`。服务端 Java `ReplayParser`、`ReplayPacketStreamReader`、
+> `EventStreamReader` 已于 2026-10-02 退役删除；下文中它们只作为历史 provenance 出现（协议/字段结论不变）。
 > Primary evidence: **PR147 11.19 corpus**（`11.19.0_china` + `11.19.0_china_apple`）。
 > 历史 11.18 观察（`docs/research/replay/`）<b>不自动等于生产语义</b>；每个 capability 均需独立证据（fixture / research / known invariant）。
 > 生产状态：文件结构/字段按已证明事实（AFFIRMED）；未证明语义标 UNKNOWN（见 `docs/reference/replay-parsed-fields.md`）。
@@ -20,10 +24,14 @@
 | 条目                   | 说明                          | 本工具使用                |
 |----------------------|-----------------------------|----------------------|
 | `meta.json`          | JSON 元数据（战斗信息/录像者）          | 是                    |
-| `data.wotreplay`     | 原始游戏事件数据（BigWorld 包序列）      | 是（ReplayPacketStreamReader 生产 framing + canonical decoder；EventStreamReader 仅研究/probe 工具） |
+| `data.wotreplay`     | 原始游戏事件数据（BigWorld 包序列）      | 是（上游 Rust Core WASM framing + canonical decoder → `frontend/src/replay-local/canonical/facts.ts`；原 Java `ReplayPacketStreamReader`/`EventStreamReader` 已于 2026-10-02 退役，仅作历史 provenance） |
 | `battle_results.dat` | Python pickle → protobuf 战绩 | 是                    |
 
 ### 解析安全预算
+
+> 下列预算记录的是原型（已退役 Java 解析器，2026-10-02）边界的阈值与 fail-closed 口径，作为协议安全包络保留；
+> 当前生效的边界是上传侧 size/type 契约（`java/wotb-web/.../replayfile/ReplayUploadValidator.java`）与
+> 上游 Rust Core WASM 自身的解码上限。
 
 - 压缩包不超过 20 MiB，只允许表中 3 个标准条目，目录、额外条目和重复文件名一律拒绝。
 - `meta.json` / `battle_results.dat` / `data.wotreplay` 分别不超过 1 / 8 / 20 MiB，总解压不超过 24 MiB。
@@ -32,8 +40,9 @@
 - 单回放 `#201` 名册与 `#301` 战绩各最多 64 项；事件流最多保留 200000 个包（高于已观察约 112K 合法样本）。
   事件流解析使用<b>严格连续 framing</b>：包长度非法、时钟异常、payload 截断、或尾部剩余不足一个完整包
   时直接失败（fail closed），不做逐字节 resync，也不「继续寻找下一个看起来合理的包」。
-- ZIP/结构错误抛稳定英文 `IOException`；pickle/protobuf 的非法长度、截断和溢出在 `ReplayParser` 边界统一包装为
-  `Invalid replay data: ...`。
+- ZIP/结构错误抛稳定英文 `IOException`；pickle/protobuf 的非法长度、截断和溢出在原 Java `ReplayParser`
+  边界统一包装为 `Invalid replay data: ...`（该 Java 边界已于 2026-10-02 退役；当前解析由上游
+  Rust Core WASM 执行，客户端消费端在 `frontend/src/replay-local/canonical/**`）。
 
 ---
 
@@ -135,7 +144,9 @@ value:     [u8; value_len]
 `UNKNOWN`，绝不臆断血量/存活。
 
 > **可靠的血量/伤害/助攻/格挡/击杀/存活及业务死亡秒值请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准**；
-> `field24 lifeTime` 是唯一死亡秒值 authority。逐帧 HP 时间线由 canonical HP facts（`ReplayHpTimeline`）提供，
+> `field24 lifeTime` 是唯一死亡秒值 authority。逐帧 HP 时间线由 canonical HP facts 提供（客户端
+> `frontend/src/replay-local/canonical/hpRawState.ts` + `canonical/facts.ts` 的 `hpSamples`；Java
+> `ReplayHpTimeline` 仍在 `wotb-core`，只服务 AI 侧证据链），
 > live reconstruction 仅用于 Playback/HP/动画/诊断。
 
 > **死亡时刻口径（AI 复盘）**：只消费 settlement `field24 lifeTime`；`PlayerResult` 上的 `deathTimeMillis`/`survivalTimeSec` 只是兼容投影。EntityLeave / 最后位置 / damage threshold 不是死亡 authority；结算秒值无效时相关推理必须 fail-closed。
@@ -249,7 +260,8 @@ attachment parent entity id；最后 1 字节 trailing byte 的 semantic **UNKNO
 
 ### 第 1 包 vs 错误容忍
 
-**严格连续 framing**：生产 reader（`ReplayPacketStreamReader`）按「头 → 包 → 下一个包正好在上一个包结束处」
+**严格连续 framing**：生产 framing 由上游 Rust Core WASM 执行（扮演同一角色的原 Java
+`ReplayPacketStreamReader` 已于 2026-10-02 退役），按「头 → 包 → 下一个包正好在上一个包结束处」
 连续解析直到 terminator（type `0xFFFFFFFF`）。任何 framing 损坏（长度非法 / 截断 / 时钟异常 / 尾部垃圾）
 都<b>直接失败</b>并记录诊断，不再「跳 1 字节重同步」，也不再维护 1,000,000 次扫描上限。因此正常路径下
 不会只读前 ~28KB——整场包序列被完整、严格地消费，Type 10/4/7/31/35 数据按 production decoder 结果可用。
@@ -502,7 +514,10 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 ## 当前解析字段总表
 
-### 单场展示列（Columns.java）
+> 列 key 与来源字段的当前实现是客户端 canonical 列契约（原服务端 Java `Columns` / `AggregateSheets` /
+> `AGG_COLS` 已随解析器于 2026-10-02 退役）；下表键名与语义不变。
+
+### 单场展示列（`frontend/src/replay-local/compute/columns.ts` + `export/sheets.ts`）
 
 | 列 key                         | 类型  | 来源字段                                     | 单位/格式 | 说明                                                                              |
 |-------------------------------|-----|------------------------------------------|-------|---------------------------------------------------------------------------------|
@@ -534,7 +549,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 > 结构化身份字段 `vehicleId`（= `PlayerResult.tankId`，#103）/ `accountId`（#101）承载
 > （内部能力保留，用于归属与身份校验）。派生指标未退役的只有汇总 `multi_damage_rate`。
 
-### 汇总列（AggregateSheets / AGG_COLS）
+### 汇总列（`frontend/src/replay-local/compute/performance.ts` 的 `Agg` 系列 + `export/sheets.ts` 的 aggregate 工作簿）
 
 | 列 key                 | 类型  | 计算方式                     | 单位   |
 |-----------------------|-----|--------------------------|------|

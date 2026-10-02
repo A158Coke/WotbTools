@@ -11,7 +11,6 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
@@ -21,6 +20,8 @@ import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
+import com.wotb.web.replay.ai.gateway.AiResponseFormat;
+import com.wotb.web.replay.dto.AiReviewDonePayload;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -30,7 +31,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Team Call #2 独立输出上限。
@@ -47,9 +47,10 @@ class TeamReviewOutputCapTest {
         // global=32768, team=4096 → Team Call #2 maxOutputTokens = 4096
         final CapGateway gateway = new CapGateway();
         final TeamReplayAnalysisService service = service(gateway, 32_768, 4_096);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertNotNull(result);
+        final AiReviewDonePayload result = service.analyzeTeam(
+                teamBattle("arena-cap", "Ally", 1001L, 1), validRecon(), AllowedLanguage.ZH,
+                AiReviewStreamListener.NOOP);
+        assertNotNull(result.teamReview());
         final AiChatRequest call2 = gateway.teamRequests().getLast();
         assertEquals(4_096, call2.maxOutputTokens(),
                 "Team Call #2 must use the dedicated team cap when it is below the global cap");
@@ -60,22 +61,27 @@ class TeamReviewOutputCapTest {
         // global=2048, team=4096 → effective = min(2048, 4096) = 2048
         final CapGateway gateway = new CapGateway();
         final TeamReplayAnalysisService service = service(gateway, 2_048, 4_096);
-        final AnalyzeResult result = service.analyzeSingleTeamContext(
-                context(gateway, service), AllowedLanguage.ZH);
-        assertNotNull(result);
+        final AiReviewDonePayload result = service.analyzeTeam(
+                teamBattle("arena-cap", "Ally", 1001L, 1), validRecon(), AllowedLanguage.ZH,
+                AiReviewStreamListener.NOOP);
+        assertNotNull(result.teamReview());
         final AiChatRequest call2 = gateway.teamRequests().getLast();
         assertEquals(2_048, call2.maxOutputTokens(),
                 "Team Call #2 effective cap must be min(global, team) = global when global is lower");
     }
 
     @Test
-    void teamCapBelowGlobalStillBudgetGuarded() {
-        // 预算守卫与 request 使用同一 effective 值：构造超预算输入会抛 AI_TOKEN_BUDGET_EXCEEDED
-        // （这里只验证 effective 计算被 request 承接；budget guard 的 min 语义由上述两测试覆盖）。
+    void teamCapBelowGlobalStillProducesStructuredReview() {
+        // 预算守卫与 request 使用同一 effective 值：team cap < global 时仍然完整走完
+        // Call #2（JSON_OBJECT）并产出 v0.5 structured result。
         final CapGateway gateway = new CapGateway();
         final TeamReplayAnalysisService service = service(gateway, 32_768, 4_096);
-        final SingleTeamBattleAnalysisContext ctx = context(gateway, service);
-        assertTrue(ctx.battle() != null, "fixture battle must be present");
+        final AiReviewDonePayload result = service.analyzeTeam(
+                teamBattle("arena-cap", "Ally", 1001L, 1), validRecon(), AllowedLanguage.ZH,
+                AiReviewStreamListener.NOOP);
+        assertNotNull(result.teamReview(), "structured result must survive the team output cap");
+        assertEquals("结论", result.analysis(), "summary text must carry the structured verdict");
+        assertEquals(AiResponseFormat.JSON_OBJECT, gateway.teamRequests().getLast().responseFormat());
     }
 
     // ---- fixture ----
@@ -89,13 +95,7 @@ class TeamReviewOutputCapTest {
         return new TeamReplayAnalysisService(
                 gateway, config,
                 new PreBattleStrategicService(gateway, config, null),
-                new TeamAutopsyService(gateway, config, null),
                 System::nanoTime, null);
-    }
-
-    private static SingleTeamBattleAnalysisContext context(final CapGateway gateway,
-                                                           final TeamReplayAnalysisService service) {
-        return service.buildSingleTeamContext(teamBattle("arena-cap", "Ally", 1001L, 1), validRecon());
     }
 
     private static Battle teamBattle(final String arenaId,
@@ -191,8 +191,9 @@ class TeamReviewOutputCapTest {
         public AiChatResponse chat(final AiChatRequest request) {
             requests.add(request);
             return new AiChatResponse(
-                    "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
-                            + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\",\"claims\":[]}",
+                    "{\"summary\":{\"verdict\":\"结论\",\"primaryDiagnosis\":\"诊断\"},"
+                            + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],"
+                            + "\"highContributors\":[]}",
                     "DeepSeek", "test-model",
                     0, 0, 0, 0, 0, 0, "stop");
         }

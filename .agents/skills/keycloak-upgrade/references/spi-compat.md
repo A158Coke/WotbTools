@@ -36,7 +36,9 @@ fully supported API 的 minor 向后兼容。升级后第一步永远是重编�
 ## 检查步骤
 
 1. **同步版本**：两个 pom 的 `<keycloak.version>` 一起改为目标版本（与 Dockerfile FROM tag 一致）。
-2. **重编译**：`JAVA_HOME=<jdk21> mvn -s java/settings.xml test`（两个 provider 目录各一次）。
+2. **重编译**：两个 provider 目录各跑一次 `mvn -s java/settings.xml test`，`JAVA_HOME` 指向
+   **provider 目录 `AGENTS.md` 规定的 JDK 版本**（`keycloak-wargaming-provider/AGENTS.md`：JDK 21；
+   两个 provider pom 的 `maven.compiler.release` 均为 21）——**不是** 仓库主工程的 JDK 25。
    - 编译错误 = 接口变化；逐个对照官方源码/迁移指南修复。
    - 常见修复点：`create(KeycloakSession, IdentityProviderModel)` 返回类型、`AuthenticationCallback` 方法签名、
      `BrokeredIdentityContext` 的 getter/setter、`IdentityProviderModel` 构造器。

@@ -4,7 +4,7 @@ import com.wotb.core.ai.EvidenceDensity;
 
 /**
  * Player Replay Prompt 与确定性证据构建结果，由 {@link PlayerReplayPromptBuilder}
- * 一次性产出，供 {@code AiReplayAnalysisService} 做 token 预算检查后交给
+ * 一次性产出，供 {@link PlayerReplayAnalysisService} 做 token 预算检查后交给
  * {@code AiChatGateway}。
  *
  * <p>不含 Spring AI 类型；不携带 API key 或任何 {@code Map<String,Object>} 请求体。</p>
