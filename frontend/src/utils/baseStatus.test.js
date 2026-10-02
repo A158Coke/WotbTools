@@ -15,9 +15,11 @@ describe('baseStatus', () => {
     expect(baseView({ baseId: 'B', ownerTeam: 1, capturingTeam: null, captureProgress: 35 }, 1).progress).toBeNull()
   })
 
-  it('单基地：恒为中性，不推断归属，只保留进度', () => {
+  it('单基地：恒为中性，canonical 0 作为 reset 在 presentation 回到 idle', () => {
     expect(baseView({ baseId: 'BASE', ownerTeam: 2, capturingTeam: 2, captureProgress: 72 }, 1))
       .toEqual({ baseId: 'BASE', kind: 'assault', owner: 'neutral', capturing: null, progress: 72 })
+    expect(baseView({ baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 0 }, 1))
+      .toEqual({ baseId: 'BASE', kind: 'assault', owner: 'neutral', capturing: null, progress: null })
   })
 
   it('3D 折叠：每基地取 clock ≤ t 的最后一条，未出现的基地无主', () => {
@@ -31,5 +33,15 @@ describe('baseStatus', () => {
     expect(at35[0]).toMatchObject({ ownerTeam: 1, capturingTeam: null })
     expect(at35[2]).toMatchObject({ ownerTeam: null, capturingTeam: null })
     expect(foldAssaultProgress([{ clock: 5, progress: 10 }, { clock: 50, progress: 90 }], 20).captureProgress).toBe(10)
+
+    const resetTrack = [
+      { clock: 5, progress: 35 },
+      { clock: 10, progress: 0 },
+      { clock: 15, progress: 12 },
+    ]
+    // Folding preserves the protocol fact (0); only the shared presentation model hides it.
+    expect(foldAssaultProgress(resetTrack, 12).captureProgress).toBe(0)
+    expect(baseView(foldAssaultProgress(resetTrack, 12), 1).progress).toBeNull()
+    expect(baseView(foldAssaultProgress(resetTrack, 16), 1).progress).toBe(12)
   })
 })

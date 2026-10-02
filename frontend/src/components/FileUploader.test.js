@@ -42,6 +42,21 @@ function pickFiles(wrapper, files, testId = 'select-files-input') {
   return input.trigger('change')
 }
 
+function pickerButton(wrapper, labelKey) {
+  const btn = wrapper.findAll('button').find(b => b.text().includes(labelKey))
+  if (!btn) throw new Error(`picker button not found: ${labelKey}`)
+  return btn
+}
+
+/** 点击真实按钮 → 断言目标隐藏 input 的 native click() 被调用（不 mock whole input，不触发 change）。 */
+async function expectNativePickerClick(wrapper, labelKey, testId) {
+  const input = wrapper.get(`[data-testid="${testId}"]`).element
+  const clickSpy = vi.spyOn(input, 'click').mockImplementation(() => {})
+  await pickerButton(wrapper, labelKey).trigger('click')
+  expect(clickSpy).toHaveBeenCalledOnce()
+  clickSpy.mockRestore()
+}
+
 describe('FileUploader 文件列表与回放工作台', () => {
   it('34 个文件默认折叠：只显示 summary，不铺开 filename', () => {
     const { wrapper } = mountUploader(makeFiles(34))
@@ -324,6 +339,64 @@ describe('FileUploader 文件列表与回放工作台', () => {
     await wrapper.find('.uploadwrap').trigger('drop', { dataTransfer: { files: a } })
     await flushPromises()
     expect(wrapper.text()).toContain('upload.single_only')
+  })
+})
+
+// ---- native picker：真实按钮点击必须落到对应隐藏 input 的 click()（WS-07）----
+// 回归：openPicker() 曾对 template ref 再取 .value（`input.value?.click()`），
+// 实际对 file input 的 value 字符串调 click() → 生产环境 "P.click is not a function"。
+
+describe('FileUploader native picker（真实按钮 → 隐藏 input.click）', () => {
+  function mountCompact(files) {
+    return mount(FileUploader, {
+      props: { files, loading: false, confirmRemove: true, compact: true },
+      global: { mocks: { $t: key => key } }
+    })
+  }
+
+  it('空态：Select files → select-files-input.click()', async () => {
+    const { wrapper } = mountUploader([])
+    await expectNativePickerClick(wrapper, 'upload.select_files', 'select-files-input')
+  })
+
+  it('空态：Select folder → select-folder-input.click()', async () => {
+    const { wrapper } = mountUploader([])
+    await expectNativePickerClick(wrapper, 'upload.select_folder', 'select-folder-input')
+  })
+
+  it('已有文件：Add files → add-files-input.click()', async () => {
+    const { wrapper } = mountUploader(makeFiles(2))
+    await expectNativePickerClick(wrapper, 'upload.add', 'add-files-input')
+  })
+
+  it('已有文件：Add folder → add-folder-input.click()', async () => {
+    const { wrapper } = mountUploader(makeFiles(2))
+    await expectNativePickerClick(wrapper, 'upload.folder', 'add-folder-input')
+  })
+
+  it('compact：Add files → compact-add-files-input.click()', async () => {
+    const wrapper = mountCompact(makeFiles(1))
+    await expectNativePickerClick(wrapper, 'upload.add', 'compact-add-files-input')
+  })
+
+  it('allowFolder=true：select-files 支持 multiple，folder input 带 webkitdirectory', () => {
+    const { wrapper } = mountUploader([])
+    expect(wrapper.get('[data-testid="select-files-input"]').attributes('multiple')).toBeDefined()
+    expect(wrapper.get('[data-testid="select-folder-input"]').attributes('webkitdirectory')).toBeDefined()
+  })
+
+  it('allowFolder=false：Select files 仍是同一条 openPicker 路径，folder 按钮不存在', async () => {
+    const { wrapper } = mountUploader([], false, { allowFolder: false })
+    await expectNativePickerClick(wrapper, 'upload.select_files', 'select-files-input')
+    expect(wrapper.find('[data-testid="select-folder-input"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').some(b => b.text().includes('upload.select_folder'))).toBe(false)
+  })
+
+  it('allowFolder=false + 已有文件：Add files（多次 replace 语义）可用，Add folder 不出现', async () => {
+    const { wrapper } = mountUploader(makeFiles(1), false, { allowFolder: false })
+    await expectNativePickerClick(wrapper, 'upload.add', 'add-files-input')
+    expect(wrapper.find('[data-testid="add-folder-input"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').some(b => b.text().includes('upload.folder'))).toBe(false)
   })
 })
 
