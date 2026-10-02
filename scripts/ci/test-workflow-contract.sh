@@ -187,6 +187,13 @@ for invariant in (
 ):
     assert invariant in business_script, invariant
 
+# AI Service 的 CI 必须真正跑 wotb-ai 测试（不能退化成只 build image / -DskipTests）
+ai_service_ci = load(workflow_dir / "ci-ai-service.yml")
+ai_runs = [step.get("run", "") for job in ai_service_ci["jobs"].values() for step in job.get("steps", [])]
+assert any("-pl wotb-ai -am test" in run for run in ai_runs), "ci-ai-service.yml must run wotb-ai tests"
+assert not any("-pl wotb-ai" in run and ("skipTests" in run or "maven.test.skip" in run) for run in ai_runs), \
+    "ci-ai-service.yml must not skip wotb-ai tests"
+
 legacy_tcr_publisher = (root / "deploy/tx/publish-loaded-image-to-tcr.sh").read_text(encoding="utf-8")
 assert "<backend|frontend|keycloak>" not in legacy_tcr_publisher
 assert "backend|frontend|keycloak)" not in legacy_tcr_publisher
