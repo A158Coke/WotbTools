@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   PHASE_AMMO_COUNT, PHASE_DRUM_SHELL, PHASE_DURATION_CHANGE, PHASE_MAG_INTERVAL, PHASE_START, fillOf, groupByVehicle,
-  hasPerShellReloads, inferMagazineSize, isReloadPhase, magazineSizeFromTank, resolveMagazineSize, shellStatesAt,
-  usablePhases,
+  hasPerShellReloads, inferMagazineSize, isTimedAmmoPhase, magazineSizeFromTank, reloadVisualKey, resolveMagazineSize,
+  shellStatesAt, usablePhases,
 } from './reloadBar.js'
 
 // 相位条目（facet `reloads` 的形状）：{ clock, eid, phase, duration_s, count }
@@ -21,11 +21,11 @@ describe('reloadBar · 相位语义与筛选', () => {
     expect(usablePhases(list).map((e) => [e.clock, e.phase])).toEqual([[1, 3], [2, 6], [2.5, 7], [3.5, 4]])
   })
 
-  it('"真装填"算 f2=3/6/7（7 = 夹内小装填，也补一发）；f2=4 只是时长变更', () => {
-    expect(isReloadPhase(clip(1, 7, 12))).toBe(true)
-    expect(isReloadPhase(drum(1, 7, 6.5))).toBe(true)
-    expect(isReloadPhase(gap(1, 7, 2.7))).toBe(true)
-    expect(isReloadPhase(chg(1, 7, 5))).toBe(false)
+  it('f2=3/6/7 都有定时结束；只有 3/6 在结束时补弹，7 只是夹内推弹间隔', () => {
+    expect(isTimedAmmoPhase(clip(1, 7, 12))).toBe(true)
+    expect(isTimedAmmoPhase(drum(1, 7, 6.5))).toBe(true)
+    expect(isTimedAmmoPhase(gap(1, 7, 2.7))).toBe(true)
+    expect(isTimedAmmoPhase(chg(1, 7, 5))).toBe(false)
   })
 
   it('分组按 eid（保留全量条目：未闭环相位码上的 f4 也要用于 N 推断）', () => {
@@ -38,6 +38,23 @@ describe('reloadBar · 相位语义与筛选', () => {
   it('只有未闭环相位的车：条目在，但状态恒满（不给未闭环码赋时长语义）', () => {
     const ev = [{ clock: 1, eid: 7, phase: 1, duration_s: null, count: 5 }]
     expect(shellStatesAt(ev, [], 100, 1)).toEqual([{ state: 'full', progress: 1 }])
+  })
+})
+
+describe('reloadBar · 重绘视觉签名', () => {
+  it('aggregate fill 同为 100% 时仍区分整条 loading 与完成后的 N 格 full', () => {
+    const loading = [{ state: 'loading', progress: 0.996 }]
+    const full = Array.from({ length: 3 }, () => ({ state: 'full', progress: 1 }))
+    expect(Math.round(fillOf(loading) * 100)).toBe(100)
+    expect(Math.round(fillOf(full) * 100)).toBe(100)
+    expect(reloadVisualKey(loading)).not.toBe(reloadVisualKey(full))
+  })
+
+  it('loading 进度在同一 1% 桶内保持稳定，跨桶才变化', () => {
+    expect(reloadVisualKey([{ state: 'loading', progress: 0.501 }]))
+      .toBe(reloadVisualKey([{ state: 'loading', progress: 0.504 }]))
+    expect(reloadVisualKey([{ state: 'loading', progress: 0.504 }]))
+      .not.toBe(reloadVisualKey([{ state: 'loading', progress: 0.506 }]))
   })
 })
 

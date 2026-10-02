@@ -23,7 +23,7 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
-import { fillOf, groupByVehicle, inferMagazineSize, resolveMagazineSize, shellStatesAt } from './reloadBar.js'
+import { groupByVehicle, inferMagazineSize, reloadVisualKey, resolveMagazineSize, shellStatesAt } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
@@ -1235,11 +1235,12 @@ export function initPlayback(container, store) {
       const target = v.labelOccluded ? LABEL_BLOCKED_OPACITY : LABEL_OPACITY;
       if (v.label.material.opacity !== target) v.label.material.opacity = target;
       // 装填条：按 T 时间归并求值（不累加计时器）→ **逐发状态**（客户端 Full/Active/Inactive）。
-      // 重绘门控：聚合比量化成 1% 桶才重绘整张 canvas 并传纹理，否则 14 车会每帧重绘。
+      // 重绘门控必须保留状态拓扑：aggregate fill 会把 loading≈100% 与完成后的 A|A|A
+      // 都压成 100%，导致整条 loading 永久卡住。视觉签名 = 每格 state + loading 的 1% 进度桶。
       const shells = shellStatesAt(v.reloadEvents, v.reloadFires, T, v.reloadSize, v.reloadDurations);
       v.reloadShells = shells;
-      const bucket = Math.round(fillOf(shells) * 100);
-      if (bucket !== v.reloadBucket) { v.reloadBucket = bucket; v.labelDirty = true; drawLabel(v); }
+      const visualKey = reloadVisualKey(shells);
+      if (visualKey !== v.reloadVisualKey) { v.reloadVisualKey = visualKey; v.labelDirty = true; drawLabel(v); }
     }
   }
 
@@ -2326,8 +2327,9 @@ export function initPlayback(container, store) {
     buildVehicles();
     buildRoster();
     // 实时装填相位（`DATA.reloads`，arena subtype 15/17；**仅本方全队**）→ 按 eid 归到车。
-    // 采用**逐发状态**模型（对齐客户端 OTM 的 ShellItem）：开火消耗一发、弹夹内间隔补一发、
-    // 整夹重装重填整个弹夹，故还需要本车的开火时刻。求值是纯函数（时间归并），
+    // 采用**逐发状态**模型（对齐客户端 OTM 的 ShellItem）：开火消耗一发；f2=7 只表示
+    // 夹内推弹/射击间隔，不补弹；f2=6 弹鼓逐发补槽；f2=3 整夹重装补满。故还需要
+    // 本车的开火时刻。求值是纯函数（时间归并），
     // 不做累加计时器 → seek / 拖动进度条天然正确。无相位流的车保持空数组（= 满条，不猜）。
     {
       const reloadByEid = groupByVehicle(DATA.reloads);
@@ -2347,7 +2349,7 @@ export function initPlayback(container, store) {
         v.reloadDurations = effByEid.get(v.def.eid) || [];
         v.reloadSize = inferMagazineSize(v.reloadEvents);
         v.reloadShells = null;
-        v.reloadBucket = -1;    // 置脏：首帧按 N 格重绘一次（否则开局一直是一根未分割的条）
+        v.reloadVisualKey = null;    // 置脏：首帧按 N 格重绘一次（否则开局一直是一根未分割的条）
         v.labelDirty = true;
       }
       // N 以**客户端静态数据**为主（`configs[].burst_size` == 客户端 XML 的 `<clip><count>`，
@@ -2358,7 +2360,7 @@ export function initPlayback(container, store) {
         assetProvider.json(`/tank/${v.def.tank_id}.json`).then((t) => {
           const n = resolveMagazineSize(t, v.reloadEvents);
           if (n !== v.reloadSize) {
-            v.reloadSize = n; v.reloadBucket = -1; v.labelDirty = true;   // 下一帧按新 N 重绘
+            v.reloadSize = n; v.reloadVisualKey = null; v.labelDirty = true;   // 下一帧按新 N 重绘
           }
         }).catch(() => {});
       }
