@@ -1,0 +1,53 @@
+name: komodo
+
+services:
+  mongo:
+    image: mongo:8.0.32-noble
+    restart: unless-stopped
+    command:
+      - --quiet
+      - --wiredTigerCacheSizeGB
+      - "0.25"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: komodo
+      MONGO_INITDB_ROOT_PASSWORD: "${KOMODO_DATABASE_PASSWORD:?KOMODO_DATABASE_PASSWORD is required}"
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+
+  core:
+    image: ghcr.io/moghtech/komodo-core@sha256:bca73d0eee143066228fb9b80c38a5a2726e573ad2758f7aa92b5c91a8aef1c7
+    init: true
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      KOMODO_DATABASE_ADDRESS: mongo:27017
+      KOMODO_DATABASE_USERNAME: komodo
+      KOMODO_DATABASE_PASSWORD: "${KOMODO_DATABASE_PASSWORD:?KOMODO_DATABASE_PASSWORD is required}"
+      KOMODO_HOST: https://komodo.wotbtools.com
+      KOMODO_TITLE: WotBTools Ops
+      KOMODO_LOCAL_AUTH: "true"
+      KOMODO_INIT_ADMIN_USERNAME: admin
+      KOMODO_INIT_ADMIN_PASSWORD: "${KOMODO_INIT_ADMIN_PASSWORD:?KOMODO_INIT_ADMIN_PASSWORD is required}"
+      KOMODO_DISABLE_USER_REGISTRATION: "true"
+      KOMODO_ENABLE_NEW_USERS: "false"
+      KOMODO_DISABLE_NON_ADMIN_CREATE: "true"
+      KOMODO_TRANSPARENT_MODE: "false"
+      KOMODO_JWT_SECRET: "${KOMODO_JWT_SECRET:?KOMODO_JWT_SECRET is required}"
+      KOMODO_JWT_TTL: 1-day
+      KOMODO_WEBHOOK_SECRET: "${KOMODO_WEBHOOK_SECRET:?KOMODO_WEBHOOK_SECRET is required}"
+      TZ: Europe/Madrid
+    ports:
+      - "10.20.0.2:9120:9120"
+    volumes:
+      - core-keys:/config/keys
+      - /opt/komodo/backups:/backups
+
+volumes:
+  mongo-data:
+    name: komodo_mongo_data
+  mongo-config:
+    name: komodo_mongo_config
+  core-keys:
+    name: komodo_core_keys

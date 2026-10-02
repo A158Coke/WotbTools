@@ -1,0 +1,82 @@
+name: CI / komodo-controller
+
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  compose_config:
+    name: Komodo Compose contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Validate controller Compose without production credentials
+        shell: bash
+        env:
+          KOMODO_DATABASE_PASSWORD: ci-database-password
+          KOMODO_INIT_ADMIN_PASSWORD: ci-admin-password
+          KOMODO_JWT_SECRET: ci-jwt-secret
+          KOMODO_WEBHOOK_SECRET: ci-webhook-secret
+        run: |
+          set -euo pipefail
+          docker compose -p komodo -f deploy/komodo/compose.yml config --format json > /tmp/komodo-compose.json
+          python3 - <<'PY'
+          import json
+          c = json.load(open("/tmp/komodo-compose.json", encoding="utf-8"))
+          assert set(c["services"]) == {"mongo", "core"}
+          assert c["name"] == "komodo"
+          core = c["services"]["core"]
+          assert core["image"].startswith("ghcr.io/moghtech/komodo-core@sha256:")
+          assert core["environment"]["KOMODO_HOST"] == "https://komodo.wotbtools.com"
+          assert core["environment"]["KOMODO_DISABLE_USER_REGISTRATION"] == "true"
+          assert core["environment"]["KOMODO_DISABLE_NON_ADMIN_CREATE"] == "true"
+          published = core.get("ports", [])
+          assert len(published) == 1
+          assert published[0]["host_ip"] == "10.20.0.2"
+          assert int(published[0]["published"]) == 9120
+          assert "periphery" not in c["services"]
+          assert c["volumes"]["mongo-data"]["name"] == "komodo_mongo_data"
+          assert c["volumes"]["core-keys"]["name"] == "komodo_core_keys"
+          print("Komodo controller Compose boundary: PASS")
+          PY
+      - name: Bash syntax
+        run: bash -n deploy/komodo/deploy.sh deploy/komodo/verify.sh infra/tofu/komodo/validate-plan.sh infra/tofu/komodo/test-validate-plan.sh
+
+  tofu_plans:
+    name: OpenTofu validation / komodo
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TF_IN_AUTOMATION: "true"
+      CHECKPOINT_DISABLE: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+      - name: Format, initialize without production state, and validate
+        env:
+          ROOT_DIR: infra/tofu/komodo
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+          tofu fmt -check -recursive
+          tofu init -backend=false -input=false
+          tofu validate
+      - name: Validate local-root safety policy fixtures
+        run: bash infra/tofu/komodo/test-validate-plan.sh
