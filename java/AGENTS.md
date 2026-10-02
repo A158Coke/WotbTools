@@ -1,4 +1,4 @@
-# java/ — 后端指令（Maven 聚合：wotb-core + wotb-web）
+# java/ — 后端指令（Maven 聚合：wotb-core + wotb-ai + wotb-web）
 
 > 仓库级硬约定见 `.agents/AGENTS.md`；环境/命令/部署背景见 `docs/DEVELOPER_GUIDE.md`。
 
@@ -29,10 +29,11 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 ## 模块边界（真实职责）
 
 - **wotb-core**：纯 Java 库，**无 Spring Web/Boot 与容器注解依赖**（`spring-core` 工具类
-  `StringUtils`/`Resource` 允许）。包 `com.wotb.core`：`parse/`（解析）、`stats/`、`export/`（POI）、
-  `ref/`（车辆库/地图名查表）、`model/`（record 模型；不得反向依赖上层包）、`replay/`
-  （stream/decoder/event/reconstruction/feature/evidence/map/**processing**——统一门面与视角解析
-  已并入 replay）。确定性战斗语义只放这里。
+  `StringUtils`/`Resource` 允许）。顶层包只有 `ai/ model/ ref/ replay/ util/`：
+  `ref/`（车辆库/地图名/显示名查表）、`model/`（record 模型；不得反向依赖上层包）、
+  `replay/` 内含 `event/ evidence/ facts/ feature/ map/ processing/ projection/ reconstruction/
+  timeline/`（统一事实/投影/时间线语义）、`ai/`（prompt 规划/预算/token 估算）、`util/`（格式化助手）。
+  确定性战斗语义只放这里。
 - **wotb-web**：Spring Boot 4（入口 `WotbWebApplication`）。**domain 分包**：`user/ hof/ replay/ admin/`
   （+ `hundred/ mark3/`），每域内 `controller/ service/ entity/ repository/ dto/`
   （+ `mapper/ enums/ exception/` 按需）；共享例外包：`config/`（含 KeycloakAdminUserService）、
@@ -59,15 +60,15 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 
 ## AI Review 边界（wotb-ai/.../replay/ai + wotb-core/.../replay）
 
-AI Review 由 `java/wotb-ai` 产出的独立无状态 Yecao `ai-service` 承载（无数据库 / MinIO / Business Backend 依赖）。TX ingress 现以 `location ^~ /api/ai/` 把 `/api/ai/**` 反代到 WireGuard 上的 `10.20.0.2:8089`（服务无公网端口、不重写 path）；取消为 `POST /api/ai/reviews/{correlationId}/cancel`。Business Backend 不再承载或代理 AI 请求：旧 `/api/replay/analyze` 端点与 dataset-backed `AiReplayReviewService` 已删除；AI 链路不再依赖 `ReplayProcessingResult` / `ReplayPerspectiveGroup` / `processingJobId` / `sourceId` / `ai-facts.json` / Dataset lease，输入只有 `Battle` + `ReplayReconstruction`（由客户端投影）。前端入口在 Release Gate 全绿前维持「维护中」——客户端 Rust/WASM AI 投影依赖上游 Agent WASM 的 `ai` 入口。部署与超时边界见 `docs/operations/ai-service.md` 与 `docs/architecture/ai-review.md`。
+AI Review 由 `java/wotb-ai` 产出的独立无状态 Yecao `ai-service` 承载（无数据库 / MinIO / Business Backend 依赖）。TX ingress 现以 `location ^~ /api/ai/` 把 `/api/ai/**` 反代到 WireGuard 上的 `10.20.0.2:8089`（服务无公网端口、不重写 path）；取消为 `POST /api/ai/reviews/{correlationId}/cancel`。Business Backend 不再承载或代理 AI 请求：旧 `/api/replay/analyze` 端点与 dataset-backed `AiReplayReviewService` 已删除；AI 链路不再依赖 `ReplayProcessingResult` / `ReplayPerspectiveGroup` / `processingJobId` / `sourceId` / `ai-facts.json` / Dataset lease，输入是客户端 canonical AI projection（`AiReviewRequest = {locale, correlationId, battle, projection}`，required 恰为这四个字段），由 `ClientAiProjectionAdapter`（`wotb-core` `replay/projection`）装配成内存 `ReplayReconstruction`。前端已无维护门（提交 `83884790` 解除；`ai_maintenance` 三语 key 无消费者），AI tab / 深链直接挂载 `AiReviewPanel.vue`。部署与超时边界见 `docs/operations/ai-service.md` 与 `docs/architecture/ai-review.md`。
 
 - 单文件策略：`POST /api/ai/reviews` 每次请求只承载一场战斗（一个 `battle` + 一个 `reconstruction`），结构上不存在多文件/多视角批量形态；多文件批量端点 `/process`、`/reconstruct-batch` 仍 410，批量分析模式 `MULTI_*` 已删除。
-- 编排归属：`AiReplayAnalysisService` 是**兼容 facade**（无真实编排）；随机战双 Call 在 `TacticalReviewHarness`，团队复盘在 `TeamReplayAnalysisService`，赛前基线 `PreBattleStrategicService`。Team Call #2 的 v0.5 结果为 `TeamAiReviewResult`；`TeamAutopsyService` 仅保留历史兼容实现，不进入生产链。
+- 编排归属：`AiReviewController` 直接注入领域服务，不存在兼容 facade。随机战双 Call 在 `TacticalReviewHarness.analyzeWithPrior`（Call #1 `PreBattleStrategicService` → `EvidenceSkillEngine` → `TacticalReviewPromptBuilder` → Call #2）；团队复盘在 `TeamReplayAnalysisService.analyzeTeam` → `analyzeTeamContexts`（timeline hard gate）→ `callSingleTeamContext` → `callStructuredTeamReview`，contract 失败时恰好一次 `recoverTeamReview`（`SINGLE_TEAM_BATTLE_RECOVERY`）。Team Call #2 的结果契约是 `TeamAiReviewResult` + `TeamAiReviewResultParser`（含确定性 salvage / normalization）；生产链没有第三次模型调用、没有 Team Autopsy、没有 legacy envelope / claims validator。
 - Team AI Review v0.6 只升级 prompt 的 tactical reasoning order 与 causal contract：先权威事实/信息状态/目标义务，再 local participation、episode propagation 与 HP 下游验证；v0.5 wire schema 保持不变，不新增 LLM call、Team Autopsy、后端 tactical semantic validator 或第二套 episode 模型。
-- transport 唯一生产实现：`SpringAiChatGateway`（Spring AI OpenAI-compatible → api.deepseek.com）；业务只依赖 `AiChatGateway` 接口。Prompt 文本单一来源 `wotb-ai/src/main/resources/prompts/**/*.zh.md`（`common/`、`player/`、`prebattle/`、`team/`、`tactical-skills/`；`AiPromptLibrary.zh("player/tactical" 等 key)` 按 `classpath:/prompts/<key>.zh.md` 加载，如 `player/fallback`、`player/single`、`player/tactical`、`prebattle/system`、`prebattle/user-header`、`prebattle/confidence-legend`、`team/single`、`team/autopsy`；md 支持 `{{key}}` 占位包含（`AiPromptLibrary` 加载时递归展开，公共规则块在 `prompts/common/*.zh.md` 复用，循环包含 fail loud）；展开后 md 内 ZH 规则片段与 Java 常量必须逐字一致（`PromptRuleContractTest` 强制），否则 EN/RU `.replace` 锚点静默失效、残留中文规则段）。
+- transport 唯一生产实现：`SpringAiChatGateway`（Spring AI OpenAI-compatible → api.deepseek.com）；业务只依赖 `AiChatGateway` 接口。Prompt 文本单一来源 `wotb-ai/src/main/resources/prompts/**/*.zh.md`（`common/`、`player/`、`prebattle/`、`team/`、`tactical-skills/`；`AiPromptLibrary.zh("player/tactical" 等 key)` 按 `classpath:/prompts/<key>.zh.md` 加载，如 `player/fallback`、`player/single`、`player/tactical`、`prebattle/system`、`prebattle/user-header`、`prebattle/confidence-legend`、`team/single`、`team/reasoning-contract`；md 支持 `{{key}}` 占位包含（`AiPromptLibrary` 加载时递归展开，公共规则块在 `prompts/common/*.zh.md` 复用，循环包含 fail loud）；展开后 md 内 ZH 规则片段与 Java 常量必须逐字一致（`PromptRuleContractTest` 强制），否则 EN/RU `.replace` 锚点静默失效、残留中文规则段）。
 - 超时链：worker 整体 1100s（`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 单次 AI call 315s；SSE `SseEmitter` 1120s 对齐 nginx；改任何一层都要同步 `AiTimeoutChainContractTest` 与 deploy 校验。
 - 回放证据语义：位置流（type-10）≠ 点亮（`POSITION_REPORTED/POSITION_STALE` 只是位置覆盖）；炮塔方向 `type-7 propId=2 = u16*360/65536-180` 已证明，勿改编码常量；证据与解码结论见 `docs/research/replay/protocol.md` 与 `docs/research/replay/turret-direction.md`。
-- 探针测试（`*ProbeTest`）可重复运行、无样本自动跳过；本地特殊样本放 `common/data/` 子目录（不进 ParityTest）。
+- 样本/密钥相关测试可重复运行：夹具或 key 缺失时用 `Assumptions.assumeTrue` 跳过（如 `WebApiTest` 的训练房夹具、`AiVirtualThreadBenchmarkTest` / `TeamReplayQualityBenchmarkRunner` / `TeamTacticalSkillLiveBehaviorEvalTest` 的 `AI_API_KEY`），不会变成失败；本地特殊样本放 `common/data/` 子目录（避免与提交入库的 `common/fixtures/replays/` 夹具冲突）；客户端 golden 基线在 `frontend/src/replay-local/__golden__/`（流程见其 `README.md`）。
 
 ### Live external-service tests
 

@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 直接对生产端生成的证据文本断言，不经过 HTTP。
- * <p>{@code AiReplayAnalysisServiceTest} 依赖本机 loopback 才能起 mock server，
+ * <p>{@link PlayerReplayAnalysisServiceTest} 走 Service → Gateway 装配（含 mock server 场景），
  * 在部分开发机上无法执行；本类覆盖同一批契约（人称、阵容归属、事件类型中文化），
  * 让这些回归在本地也能被抓住。</p>
  */

@@ -1,3 +1,13 @@
+---
+name: frontend-architecture
+description: >
+  前端结构改造 / 状态 ownership / API 边界的架构守卫。用于路由与页面归属、composable 状态 owner、
+  跨 feature import、`src/api/` transport 边界的判断与重构。
+  Trigger: 改动前端目录/文件结构、新增或迁移 feature/app 边界、调整路由与深链、重排业务状态 owner、
+  改动 API/transport 归属或跨 feature 依赖时；发生在编码前（与 plan-designer 配合）与编码后（与
+  review-with-docs 配合）。
+---
+
 # Frontend Architecture Skill
 
 Use this skill for structural frontend work. Preserve product behavior and existing contracts unless the task explicitly changes them.
@@ -18,6 +28,6 @@ Use this skill for structural frontend work. Preserve product behavior and exist
 
 - Vue Router owns browser navigation, deep links, redirects, and Back/Forward. Do not reintroduce manual `popstate` or history synchronization in components.
 - Preserve `wotb-ui-profile` as the only presentation-profile persistence key. UI profiles never fork business state or components.
-- Replay protocol facts and processing-dataset identity remain authoritative. Do not invent missing battle facts or recreate an upload/processing flow to simplify an architectural change.
+- Replay protocol facts remain authoritative. Do not invent missing battle facts or recreate an upload/processing flow to simplify an architectural change.
 - Feature components use feature APIs or explicit injected/public contracts; generic HTTP behavior belongs in shared infrastructure.
-- `AiReviewPanel.vue` / `BattlePlaybackPanel.vue` must not own raw `/api/replay/*` transport; their transport boundary is `src/api/replay-capabilities.ts`.
+- `AiReviewPanel.vue` / `BattlePlaybackPanel.vue` must not own raw transport. `src/api/replay-capabilities.ts` is only the shared Bearer/transport helper (`ReplayAuthSession` / `optionalBearer` / `authedReplayPost`) consumed by the `/api/ai/**` callers; AI wire assembly lives in `src/api/ai-review.ts`.

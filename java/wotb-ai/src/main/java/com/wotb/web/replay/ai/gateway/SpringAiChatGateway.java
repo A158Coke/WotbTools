@@ -984,8 +984,10 @@ public class SpringAiChatGateway implements AiChatGateway {
     }
 
     /**
-     * Transport retry（与 validation retry 区分）：上游 429/5xx/连接失败后的退避重试。
-     * 由 Gateway 单点执行；业务层的 validation retry 用 ai_validation_retry 事件。
+     * Transport retry（与业务层的 contract recovery 区分）：上游 429/5xx/连接失败后的退避重试。
+     * 由 Gateway 单点执行；业务层的 contract recovery 记 {@code ai_review_contract_failed} /
+     * {@code ai_review_recovery_triggered} / {@code ai_review_recovery_failed} 事件
+     * （原 {@code ai_validation_retry} 已随 2026-10 legacy 契约收敛删除）。
      * <p>字段语义：{@code retryNumber} = 本次退避重试的 1 基序号
      * （retryNumber=1 表示第一次重试，其后的下一次上游调用是 {@code attempt=2}）；
      * 不使用易歧义的 {@code transportAttempt}（该值常被误读为刚失败的 attempt 号）。</p>
@@ -1022,7 +1024,6 @@ public class SpringAiChatGateway implements AiChatGateway {
             case "SINGLE_TEAM_BATTLE" -> "TEAM_CALL_2";
             case "PRE_BATTLE_STRATEGIC_PRIOR" -> "PRE_BATTLE";
             case "TACTICAL_REVIEW_HARNESS" -> "TACTICAL_HARNESS";
-            case "TEAM_AUTOPSY" -> "AUTOPSY";
             default -> "PLAYER";
         };
     }

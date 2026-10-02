@@ -3,9 +3,15 @@
 #
 # Execution vehicle: every HTTP check runs inside a disposable alpine container
 # attached to wotb_internal (the same BusyBox wget path the Grafana API helper
-# always assumed). The retired `wotb-backend` container is no longer referenced:
-# business metrics are scraped by Prometheus from the TX WireGuard endpoint, and
-# Keycloak plus both public domains are proven end to end over trusted TLS.
+# always assumed). No retired Yecao `wotb-backend` container is required:
+# business metrics are scraped by Prometheus from the TX WireGuard endpoint and
+# ai-service metrics come from the shared Docker network. The Loki checks below
+# do start disposable canaries named `wotb-backend-observability-canary-*` /
+# `keycloak-observability-canary-*`; reusing those service identities in the
+# container name is deliberate — it is the label the Yecao Alloy keep-rules match
+# on, so the assertion proves the deployment ingestion path rather than a
+# long-running business container. Keycloak plus both public domains are proven
+# end to end over trusted TLS.
 set -euo pipefail
 
 readonly RETRIES="${WOTB_OBSERVABILITY_RETRIES:-20}"

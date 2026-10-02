@@ -112,8 +112,8 @@ git log -5 --oneline
 
 ```text
 Blocker 1 — leagueMode contract
-Symbols: leagueMode, PreviewResponse, leagueData
-Likely files: PreviewResponse.java, Mapper.java, ReplayPage.vue, useColumns.js
+Symbols: leagueMode, LeagueRatingResult, leagueData
+Likely files: frontend/src/replay-local/compute/league-rating.ts, ReplayPage.vue, useColumns.js
 Direct deps: 相关 tests only
 ```
 
@@ -265,7 +265,8 @@ Blocker: PlayerRatingRadar size prop
 
 Blocker: leagueMode contract
 → rg leagueMode
-→ read PreviewResponse / Mapper / ReplayPage / useColumns / 直接相关 tests
+→ read frontend/src/replay-local/compute/league-rating.ts / frontend/src/api/ai-review.ts /
+  frontend/src/replay-local/analyzeReplays.ts / ReplayPage.vue / useColumns.js / 直接相关 tests
 → stop
 ```
 

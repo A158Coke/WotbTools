@@ -28,7 +28,9 @@ public class Battle {
     public List<PlayerResult> players;
 
     /**
-     * 结算阵容完整性证据（ReplayParser 设置，<b>严格 fail-closed 全局契约</b>）：
+     * 结算阵容完整性证据（由客户端 canonical facts 提供——settlement #201 名册与 #301 战绩的
+     * 账号/队伍集合一致性校验，见 `frontend/src/replay-local/battleFacts.ts`；原服务端
+     * Java {@code ReplayParser} 已于 2026-10-02 退役）。<b>严格 fail-closed 全局契约</b>：
      * 名册(#201) 与战绩(#301) 的账号集合完全一致（所有参战成员都有结算记录），且名册提供的
      * 队伍字段(#201→#2→#3)与结算队伍一致（存在时）。null/false 表示未知或不完整
      * （非回放解析路径或数据缺失）。

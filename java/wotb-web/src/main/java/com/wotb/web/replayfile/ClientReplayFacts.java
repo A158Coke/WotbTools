@@ -14,14 +14,15 @@ import java.util.Set;
 /**
  * 客户端提交的回放结算事实（服务器没有 parser）。
  *
- * <p>名人堂 / 百场 / 三环提交时，浏览器用上游 Rust Core 本地解析回放，把结算事实按 {@link Battle}
- * 形状（{@code frontend/src/replay-local/battleFacts.ts}，与已退役的 Java ReplayParser 逐字段一致）
- * 随原始回放一并提交；原始回放只作证据附件存档。服务端只做<b>结构校验</b>——无法从字节验证事实，
- * 防伪造由管理员审核兜底。</p>
+ * <p>名人堂 / 百场 / 三环提交时，成绩事实的 creation authority 是<b>客户端本地解析</b>：浏览器用上游
+ * Rust Core WASM（pin {@code deploy/agent/source.json}）解析 {@code .wotbreplay}，把结算事实按
+ * {@link Battle} 形状（{@code frontend/src/replay-local/battleFacts.ts}，与已退役的 Java
+ * {@code ReplayParser} 逐字段一致）随原始回放一并提交；原始回放只作证据附件存档。服务端只做
+ * <b>结构校验</b>（identity / 数值 / 名册一致性），无法从字节重新验证事实，防伪造由管理员审核兜底。</p>
  */
 public final class ClientReplayFacts {
 
-    /** 单场名册上限（与已退役 Java ReplayParser 的 MAX_PLAYERS_PER_REPLAY 一致） */
+    /** 单场名册结构上限（沿用已退役 Java {@code ReplayParser} 的 {@code MAX_PLAYERS_PER_REPLAY}） */
     static final int MAX_PLAYERS = 64;
     /** 单份 facts JSON 上限：14 名战斗者的结算事实远小于此 */
     static final int MAX_JSON_CHARS = 64 * 1024;

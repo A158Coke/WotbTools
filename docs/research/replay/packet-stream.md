@@ -45,7 +45,7 @@ All 44 Type 17 records are followed immediately by Type 23.
 
 When zero-length packets are accepted, every one of the 44 files parses contiguously from the header to the `0xFFFFFFFF` terminator with **zero byte-wise resynchronization**.
 
-This disproves the current `ReplayPacketStreamReader` assumption that `payloadLen <= 0` is invalid. Rejecting Type 17 shifts the scanner into the following payload bytes and creates false packet headers with nonsensical huge type IDs and clock regressions. Such records are parser artifacts, not replay protocol packet types.
+This disproves the assumption encoded by the then-current `ReplayPacketStreamReader` (Java production reader, retired 2026-10-02) that `payloadLen <= 0` is invalid. Rejecting Type 17 shifts the scanner into the following payload bytes and creates false packet headers with nonsensical huge type IDs and clock regressions. Such records are parser artifacts, not replay protocol packet types.
 
 ### Consequence for research
 

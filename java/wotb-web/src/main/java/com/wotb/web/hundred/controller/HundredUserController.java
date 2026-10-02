@@ -4,7 +4,6 @@ import com.wotb.web.config.ApiPaths;
 import com.wotb.web.hundred.dto.HundredUserStatusDto;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
 import com.wotb.web.util.JwtUtil;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -12,7 +11,6 @@ import org.springframework.web.bind.annotation.RestController;
 /** 个人中心百场状态（/api/users/hundred/**，需登录）。 */
 @RestController
 @RequestMapping(ApiPaths.USERS_HUNDRED)
-@CrossOrigin(origins = "*")
 public class HundredUserController {
 
     private final HundredBattleSubmissionService service;
