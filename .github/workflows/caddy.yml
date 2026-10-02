@@ -12,10 +12,6 @@ on:
       - deploy/tx/validate-caddy-config.sh
       - deploy/tx/Caddyfile
       - deploy/tx/assets/**
-      # The Komodo owner's canonical release pin: this workflow verifies the public
-      # Komodo route against that exact release, so a version bump must re-run the
-      # gateway verification too.
-      - deploy/komodo/verify.sh
   workflow_dispatch:
 
 permissions:
@@ -36,7 +32,6 @@ env:
     deploy/tx/validate-caddy-config.sh
     deploy/tx/Caddyfile
     deploy/tx/assets/**
-    deploy/komodo/verify.sh
 
 jobs:
   deploy:
@@ -112,18 +107,6 @@ jobs:
           set -euo pipefail
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
-      - name: Read the pinned Komodo Core release
-        id: komodo
-        shell: bash
-        run: |
-          set -euo pipefail
-          # `deploy/komodo/verify.sh` holds the Komodo owner's canonical release
-          # pin. The public Komodo route is verified against that exact release, so
-          # the value is derived instead of duplicated here.
-          core_version="$(sed -n 's/^pinned_core_version=\([0-9][0-9.]*\)$/\1/p' deploy/komodo/verify.sh)"
-          [[ "$core_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-            || { echo 'Unable to read the pinned Komodo Core release from deploy/komodo/verify.sh.' >&2; exit 1; }
-          echo "core_version=$core_version" >> "$GITHUB_OUTPUT"
       - name: Reconcile and verify Caddy under one TX host lock
         uses: appleboy/ssh-action@v1
         with:
@@ -132,7 +115,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 30m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,CADDY_ACME_EMAIL,KOMODO_CORE_VERSION
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,CADDY_ACME_EMAIL
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -187,44 +170,54 @@ jobs:
             # Komodo public ingress (K2). Two layers, in this order on purpose:
             # the WireGuard upstream is proved first, so a failure below can be
             # attributed to Caddy/TLS/DNS rather than to Yecao or Komodo Core.
-            komodo_upstream=
-            for attempt in $(seq 1 15); do
-              if komodo_upstream="$(tx_probe --fail --silent --show-error --max-time 10 \
-                  http://10.20.0.2:9120/version 2>/dev/null)" && [ -n "$komodo_upstream" ]; then
+            #
+            # Caddy owns "does public traffic reach the private Core correctly",
+            # NOT "which Core release is deployed" - that is the Komodo owner's
+            # invariant, and this workflow must not read any Komodo source pin. The
+            # public answer is therefore compared with the private one, so a Core
+            # upgrade never fails the gateway on its own.
+            #
+            # Retry budget (bounded, see `command_timeout: 30m`):
+            #   private 10 x (10s + 2s) = 120s, public 20 x (10s + 2s) = 240s,
+            #   plus the pre-existing checks. Keep any change inside that budget.
+            komodo_private=
+            for attempt in $(seq 1 10); do
+              if komodo_private="$(tx_probe --fail --silent --show-error --max-time 10 \
+                  http://10.20.0.2:9120/version 2>/dev/null)" \
+                 && [[ "$komodo_private" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 break
               fi
-              komodo_upstream=
-              [ "$attempt" -lt 15 ] && sleep 2
+              komodo_private=
+              [ "$attempt" -lt 10 ] && sleep 2
             done
-            [ "$komodo_upstream" = "$KOMODO_CORE_VERSION" ] || {
-              echo "TX cannot reach the Komodo Core WireGuard upstream http://10.20.0.2:9120/version: expected $KOMODO_CORE_VERSION, got '${komodo_upstream:-<unreachable>}'. This is a WireGuard / Yecao / Komodo Core problem, not a Caddy configuration problem." >&2
+            [[ "$komodo_private" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+              echo "TX cannot reach the Komodo Core WireGuard upstream http://10.20.0.2:9120/version, or it did not report a semantic version (got '${komodo_private:-<unreachable>}'). This is a WireGuard / Yecao / Komodo Core problem, not a Caddy configuration problem." >&2
               exit 1
             }
-            echo "Komodo Core private upstream reports: $komodo_upstream"
+            echo "Komodo Core private upstream reports: $komodo_private"
 
             # Certificates for a new site are issued on first use, so bound the
             # retries instead of assuming the first handshake succeeds.
             komodo_public=
-            for attempt in $(seq 1 45); do
-              if komodo_public="$(tx_probe --fail --silent --show-error --max-time 15 \
+            for attempt in $(seq 1 20); do
+              if komodo_public="$(tx_probe --fail --silent --show-error --max-time 10 \
                   https://komodo.wotbtools.com/version 2>/dev/null)" && [ -n "$komodo_public" ]; then
                 break
               fi
               komodo_public=
-              [ "$attempt" -lt 45 ] && sleep 2
+              [ "$attempt" -lt 20 ] && sleep 2
             done
-            [ "$komodo_public" = "$KOMODO_CORE_VERSION" ] || {
-              echo "Public Komodo route https://komodo.wotbtools.com/version did not return $KOMODO_CORE_VERSION (got '${komodo_public:-<unreachable>}') although the private upstream was verified over WireGuard. This is a Caddy / TLS / DNS problem." >&2
+            [ "$komodo_public" = "$komodo_private" ] || {
+              echo "Public Komodo route https://komodo.wotbtools.com/version returned '${komodo_public:-<unreachable>}' but the private WireGuard upstream reports '$komodo_private'. This is a Caddy / TLS / DNS problem." >&2
               caddy_container="$(docker ps --format '{{.Names}}' | grep -m1 caddy || true)"
               [ -z "$caddy_container" ] || docker logs --tail 80 "$caddy_container" >&2 || true
               exit 1
             }
-            tx_probe --fail --silent --show-error --max-time 15 --output /dev/null \
+            tx_probe --fail --silent --show-error --max-time 10 --output /dev/null \
               https://komodo.wotbtools.com/ \
               || { echo 'The Komodo frontend did not answer over the public route.' >&2; exit 1; }
-            echo "Komodo public ingress verified: $komodo_public"
+            echo "Komodo public ingress verified for Core $komodo_public"
         env:
           WOTB_DEPLOY_SERVICE: caddy
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
-          KOMODO_CORE_VERSION: ${{ steps.komodo.outputs.core_version }}

@@ -9,43 +9,7 @@ is broken.
 | Docker runtime (`mongo`, `core`) | Docker Compose (`deploy/komodo/compose.yml`) |
 | Bootstrap, reconcile, break-glass | `.github/workflows/komodo-controller.yml` |
 | Public DNS `komodo.wotbtools.com` | OpenTofu (`infra/tofu/komodo`) |
-| Public HTTPS ingress | TX Caddy (`.github/workflows/caddy.yml`) |
-
-## Public ingress (K2)
-
-Caddy on TX is the only public way in, and it reaches Core over WireGuard:
-
-```text
-Browser → https://komodo.wotbtools.com → TX Caddy :443 → 10.20.0.2:9120 → Komodo Core
-```
-
-- `deploy/tx/Caddyfile` owns the route: `komodo.wotbtools.com { reverse_proxy 10.20.0.2:9120 }`.
-  The Host header is untouched because `KOMODO_HOST` is already the public URL.
-- Nothing about Komodo is published on Yecao: Core still binds only the WireGuard
-  address and MongoDB still publishes no host port.
-- `caddy.yml` proves the route in two layers, in this order, so a failure is
-  attributable: first the **private upstream** (`http://10.20.0.2:9120/version`
-  must report the pinned release — a WireGuard/Yecao/Core problem), then the
-  **public route** (`https://komodo.wotbtools.com/version` must report the same
-  release over trusted TLS, and `/` must answer — a Caddy/TLS/DNS problem). No
-  check disables TLS verification, and no admin credential is used.
-- The expected release is read from `pinned_core_version` in
-  `deploy/komodo/verify.sh`, which is therefore a declared Caddy production
-  input: bumping the Komodo release re-runs the gateway verification.
-- `deploy/tx/validate-caddy-config.sh` asserts the public site inventory before
-  every staged Caddy validation (PR and production), so a missing site or a wrong
-  upstream fails before the gateway is reloaded.
-
-Manual acceptance after a deploy:
-
-```sh
-curl -fsS https://komodo.wotbtools.com/version   # 2.3.3
-curl -fsSI https://komodo.wotbtools.com/         # successful HTTP response
-```
-
-Then open `https://komodo.wotbtools.com` and sign in as `admin` with the existing
-`KOMODO_INIT_ADMIN_PASSWORD`. Expected inventory after K1+K2: admin user created,
-Servers / Stacks / Deployments / Procedures all 0.
+| Public ingress | TX Caddy (separate owner, K2) |
 
 ## Deployed state
 
