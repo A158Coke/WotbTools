@@ -361,3 +361,166 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           PERIPHERY_STAGING_ACTION: cleanup
           PERIPHERY_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
+
+  # TX2 is the third host. It follows the same per-host shape as TX1, and is only
+  # mutated after both established hosts have reconciled credential-free, so a
+  # regression in either of them stops this job before it runs.
+  reconcile_tx2:
+    name: Reconcile Komodo Periphery on TX2
+    needs: [reconcile_tx1]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Freeze current main
+        id: source
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'Komodo Periphery workflow requires main.' >&2; exit 1; }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'The event SHA must be a full lowercase commit SHA.' >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo 'Checkout SHA differs from the event SHA.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Read the pinned Periphery release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source deploy/periphery/periphery.release
+          [[ "$PERIPHERY_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid PERIPHERY_VERSION.' >&2; exit 1; }
+          [[ "$PERIPHERY_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid PERIPHERY_SHA256.' >&2; exit 1; }
+          [[ "$PERIPHERY_ASSET" == periphery-x86_64 ]] || { echo "Unsupported PERIPHERY_ASSET: $PERIPHERY_ASSET" >&2; exit 1; }
+          [[ "$PERIPHERY_RELEASE_TAG" == "v$PERIPHERY_VERSION" ]] || { echo 'PERIPHERY_RELEASE_TAG must be v${PERIPHERY_VERSION}.' >&2; exit 1; }
+          [[ "$PERIPHERY_URL" == "https://github.com/moghtech/komodo/releases/download/$PERIPHERY_RELEASE_TAG/$PERIPHERY_ASSET" ]] \
+            || { echo 'PERIPHERY_URL does not match the pinned tag and asset.' >&2; exit 1; }
+          {
+            echo "version=$PERIPHERY_VERSION"
+            echo "asset=$PERIPHERY_ASSET"
+            echo "sha256=$PERIPHERY_SHA256"
+            echo "url=$PERIPHERY_URL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download and verify the pinned Periphery artifact
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.release.outputs.url }}
+          ARTIFACT_SHA256: ${{ steps.release.outputs.sha256 }}
+          ARTIFACT_NAME: ${{ steps.release.outputs.asset }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_NAME" == periphery-x86_64 ]] || { echo "Unexpected artifact name: $ARTIFACT_NAME" >&2; exit 1; }
+          curl --fail --location --silent --show-error --retry 3 --retry-delay 5 \
+            --output "$ARTIFACT_NAME" "$ARTIFACT_URL"
+          printf '%s  %s\n' "$ARTIFACT_SHA256" "$ARTIFACT_NAME" | sha256sum --check --strict -
+          echo "Verified $ARTIFACT_NAME ($ARTIFACT_SHA256)"
+
+      - name: Read the TX2 target profile
+        id: target
+        shell: bash
+        env:
+          TARGET: tx2
+        run: |
+          set -euo pipefail
+          bash deploy/periphery/read-target-profile.sh "$TARGET" "$GITHUB_OUTPUT"
+
+      # The TX2 SSH account is not assumed to be root, so the staging root lives
+      # under TX2's deploy-owned root and this step needs no privilege. The root
+      # still has to be a real directory before SCP may write into it.
+      - name: Prepare safe TX2 staging root
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          command_timeout: 2m
+          script_path: deploy/periphery/staging-root.sh
+          envs: SOURCE_SHA,PERIPHERY_STAGING_ACTION,PERIPHERY_STAGING_ROOT
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          PERIPHERY_STAGING_ACTION: prepare
+          PERIPHERY_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
+
+      - name: Stage exact Periphery inputs on TX2
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: >-
+            deploy/periphery/lib.sh,deploy/periphery/staging-root.sh,
+            deploy/periphery/install.sh,deploy/periphery/verify.sh,
+            deploy/periphery/reconcile.sh,deploy/periphery/periphery.release,
+            deploy/periphery/periphery.service,
+            deploy/periphery/targets/tx2/target.env,
+            deploy/periphery/targets/tx2/periphery.config.toml,
+            periphery-x86_64
+          target: ${{ steps.target.outputs.staging_root }}/incoming/${{ steps.source.outputs.source_sha }}
+          overwrite: true
+
+      - name: Reject stale main before TX2 mutation
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+      # The first TX2 onboarding maps only the TX2 onboarding secret into the
+      # generic runtime variable. `reconcile.sh` re-executes itself through
+      # non-interactive sudo and preserves that one variable through the
+      # environment, so the credential never reaches argv, disk, or the log. On
+      # later runs the secret may already be deleted: the committed marker plus the
+      # persistent identity then make the reconcile succeed without it.
+      - name: Reconcile TX2 Periphery under the TX2 host lock
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          command_timeout: 15m
+          envs: SOURCE_SHA,PERIPHERY_TARGET,KOMODO_PERIPHERY_ONBOARDING_KEY
+          script: |
+            set -Eeuo pipefail
+            stage="${{ steps.target.outputs.staging_root }}/incoming/$SOURCE_SHA"
+            chmod 700 "$stage/deploy/periphery/"*.sh
+            bash "$stage/deploy/periphery/reconcile.sh" "$PERIPHERY_TARGET" "$SOURCE_SHA" "$stage"
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          PERIPHERY_TARGET: tx2
+          KOMODO_PERIPHERY_ONBOARDING_KEY: ${{ secrets.KOMODO_TX2_ONBOARDING_KEY }}
+
+      - name: Cleanup staged TX2 inputs
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          command_timeout: 2m
+          script_path: deploy/periphery/staging-root.sh
+          envs: SOURCE_SHA,PERIPHERY_STAGING_ACTION,PERIPHERY_STAGING_ROOT
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          PERIPHERY_STAGING_ACTION: cleanup
+          PERIPHERY_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
