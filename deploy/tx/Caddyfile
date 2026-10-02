@@ -72,3 +72,14 @@ auth.wotbtools.com {
 monitor.wotbtools.com {
 	reverse_proxy 10.20.0.2:3000
 }
+
+# The Komodo control-plane surface. Komodo Core runs on Yecao under its own owner
+# (deploy/komodo, .github/workflows/komodo-controller.yml) and publishes only the
+# WireGuard address 10.20.0.2:9120; Caddy terminates TLS and proxies over
+# WireGuard, so no Komodo port is ever exposed on Yecao. The Host header is left
+# untouched because KOMODO_HOST is already https://komodo.wotbtools.com. DNS for
+# this name is owned by the Komodo OpenTofu root (infra/tofu/komodo) and must
+# point at the TX address (118.25.18.105) for the certificate to issue.
+komodo.wotbtools.com {
+	reverse_proxy 10.20.0.2:9120
+}

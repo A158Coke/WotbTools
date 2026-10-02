@@ -566,7 +566,8 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
   有界瞬态重试，发布后只校验 digest 对应关系；每段独立步级超时，禁止把 push 合回构建步骤。
   该 workflow 不使用 GHA 构建缓存（仅前端决策，不适用于其他应用 owner）。
 - `.github/workflows/caddy.yml` 独立负责 TX 网关：staged Caddy 配置与 assets 校验后只 reconcile
-  Caddy，并验证 trusted TLS、redirect、前端/API、Keycloak 与 auth asset 路由。它不 build 应用镜像、
+  Caddy，并验证 trusted TLS、redirect、前端/API、Keycloak、auth asset 与 Komodo
+  （`komodo.wotbtools.com` → `10.20.0.2:9120`，先验私有上游再验公网）路由。它不 build 应用镜像、
   不依赖数据库或 Keycloak admin credentials。
 - `.github/workflows/business-postgres.yml`、`keycloak-postgres.yml` 与
   `observability.yml` 分别拥有两个 PostgreSQL 和 Yecao 观测运行时/Grafana root。

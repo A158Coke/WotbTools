@@ -205,6 +205,41 @@ assert not any("-pl wotb-ai" in run and ("skipTests" in run or "maven.test.skip"
 legacy_tcr_publisher = (root / "deploy/tx/publish-loaded-image-to-tcr.sh").read_text(encoding="utf-8")
 assert "<backend|frontend|keycloak>" not in legacy_tcr_publisher
 assert "backend|frontend|keycloak)" not in legacy_tcr_publisher
+
+# Caddy owns public ingress. The Komodo route (K2) must be verified in two
+# layers so a failure distinguishes a gateway problem from a Yecao/WireGuard one,
+# and the expected release is derived from the Komodo owner's pin rather than
+# duplicated here.
+caddy_workflow = load(workflow_dir / "caddy.yml")
+caddy_events = caddy_workflow.get("on", caddy_workflow.get(True, {}))
+assert "deploy/komodo/verify.sh" in caddy_events["push"]["paths"]
+assert "deploy/komodo/verify.sh" in caddy_workflow["env"]["PRODUCTION_INPUT_PATHS"]
+caddy_steps = caddy_workflow["jobs"]["deploy"]["steps"]
+caddy_version = next(
+    step for step in caddy_steps
+    if step.get("name") == "Read the pinned Komodo Core release"
+)
+# The expected release is derived from the Komodo owner's pin, never duplicated here.
+assert "sed -n 's/^pinned_core_version=" in caddy_version["run"]
+assert 'echo "core_version=$core_version" >> "$GITHUB_OUTPUT"' in caddy_version["run"]
+caddy_deploy = next(
+    step for step in caddy_steps
+    if step.get("name") == "Reconcile and verify Caddy under one TX host lock"
+)
+assert caddy_deploy["env"]["KOMODO_CORE_VERSION"] == "${{ steps.komodo.outputs.core_version }}"
+assert "KOMODO_CORE_VERSION" in caddy_deploy["with"]["envs"]
+caddy_script = caddy_deploy["with"]["script"]
+assert "http://10.20.0.2:9120/version" in caddy_script
+assert "https://komodo.wotbtools.com/version" in caddy_script
+assert "https://komodo.wotbtools.com/" in caddy_script
+assert caddy_script.index("http://10.20.0.2:9120/version") \
+    < caddy_script.index("https://komodo.wotbtools.com/version"), \
+    "the private WireGuard upstream must be verified before the public route"
+# TLS verification must never be weakened. Match whole tokens: `.well-known`
+# contains "-k" but is not the curl insecure flag.
+caddy_tokens = {token for line in caddy_script.splitlines() for token in line.split()}
+assert "-k" not in caddy_tokens, "curl -k is forbidden in the Caddy gateway verification"
+assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy gateway verification"
 for owner in owners:
     workflow = load(workflow_dir / f"{owner}.yml")
     events = workflow.get("on", workflow.get(True, {}))
