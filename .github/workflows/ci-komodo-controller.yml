@@ -1,0 +1,170 @@
+name: CI / komodo-controller
+
+# Pull-request validation for the Komodo controller owner. This workflow never
+# reads production secrets, never SSHes Yecao, never touches production state,
+# and never plans or applies OpenTofu.
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  compose_config:
+    name: Komodo Compose contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Validate controller Compose without production credentials
+        shell: bash
+        env:
+          KOMODO_DATABASE_PASSWORD: ci-database-password
+          KOMODO_INIT_ADMIN_PASSWORD: ci-admin-password
+          KOMODO_JWT_SECRET: ci-jwt-secret
+          KOMODO_WEBHOOK_SECRET: ci-webhook-secret
+        run: |
+          set -euo pipefail
+          docker compose -p komodo -f deploy/komodo/compose.yml config --format json > /tmp/komodo-compose.json
+          python3 - <<'PY'
+          import json
+
+          with open("/tmp/komodo-compose.json", encoding="utf-8") as handle:
+              compose = json.load(handle)
+
+          assert compose["name"] == "komodo"
+          assert set(compose["services"]) == {"mongo", "core"}, sorted(compose["services"])
+          core = compose["services"]["core"]
+          mongo = compose["services"]["mongo"]
+
+          # Pinned control-plane images: Core by digest, Mongo by exact patch tag
+          # plus digest. No moving tag may appear anywhere in the rendering.
+          assert core["image"] == (
+              "ghcr.io/moghtech/komodo-core@sha256:"
+              "bca73d0eee143066228fb9b80c38a5a2726e573ad2758f7aa92b5c91a8aef1c7"
+          ), core["image"]
+          assert mongo["image"] == (
+              "mongo:8.0.32-noble@sha256:"
+              "0393ab544cbbe92b2dd64719205ecb14a8b3824b17ea75051e2f22482c3e4e66"
+          ), mongo["image"]
+
+          # Stable explicit volume identities.
+          assert compose["volumes"]["mongo-data"]["name"] == "komodo_mongo_data"
+          assert compose["volumes"]["mongo-config"]["name"] == "komodo_mongo_config"
+          assert compose["volumes"]["core-keys"]["name"] == "komodo_core_keys"
+
+          # Network boundary: Core on the Yecao WireGuard address only, Mongo with
+          # no host port at all.
+          assert not mongo.get("ports"), mongo.get("ports")
+          published = core.get("ports") or []
+          assert len(published) == 1, published
+          assert published[0]["host_ip"] == "10.20.0.2", published[0]
+          assert str(published[0]["published"]) == "9120", published[0]
+
+          assert "periphery" not in json.dumps(compose).lower()
+          assert set(core["depends_on"]) == {"mongo"}, core["depends_on"]
+          assert core["volumes"] and any(
+              str(volume.get("source")) == "/opt/komodo/backups" for volume in core["volumes"]
+          ), core["volumes"]
+
+          # Both services opt out of Komodo self-management, so a future Komodo
+          # instance cannot stop its own control plane via StopAllContainers.
+          assert core["labels"].get("komodo.skip") == "", core["labels"]
+          assert mongo["labels"].get("komodo.skip") == "", mongo["labels"]
+
+          # Runtime configuration verified against the installed Komodo v2.3.3
+          # `config/core.config.toml` schema.
+          environment = core["environment"]
+          for key, value in {
+              "KOMODO_DATABASE_ADDRESS": "mongo:27017",
+              "KOMODO_DATABASE_USERNAME": "komodo",
+              "KOMODO_HOST": "https://komodo.wotbtools.com",
+              "KOMODO_TITLE": "WotBTools Ops",
+              "KOMODO_LOCAL_AUTH": "true",
+              "KOMODO_INIT_ADMIN_USERNAME": "admin",
+              "KOMODO_DISABLE_USER_REGISTRATION": "true",
+              "KOMODO_ENABLE_NEW_USERS": "false",
+              "KOMODO_DISABLE_NON_ADMIN_CREATE": "true",
+              "KOMODO_TRANSPARENT_MODE": "false",
+              # Permanent K1 ownership invariant: the controller plane must start
+              # empty, with no seeded system Procedures.
+              "KOMODO_DISABLE_INIT_RESOURCES": "true",
+              "KOMODO_JWT_TTL": "1-day",
+          }.items():
+              assert environment.get(key) == value, (key, environment.get(key))
+
+          # Every secret must be interpolated from the documented variable, never
+          # inlined into the committed Compose file.
+          for key, fixture in {
+              "KOMODO_DATABASE_PASSWORD": "ci-database-password",
+              "KOMODO_INIT_ADMIN_PASSWORD": "ci-admin-password",
+              "KOMODO_JWT_SECRET": "ci-jwt-secret",
+              "KOMODO_WEBHOOK_SECRET": "ci-webhook-secret",
+          }.items():
+              assert environment.get(key) == fixture, (key, environment.get(key))
+          assert mongo["environment"]["MONGO_INITDB_ROOT_PASSWORD"] == "ci-database-password"
+
+          # The runtime check asserts reachability and the pinned Core release, so
+          # the version it compares against must never disappear silently.
+          with open("deploy/komodo/verify.sh", encoding="utf-8") as handle:
+              verify_script = handle.read()
+          assert "pinned_core_version=2.3.3" in verify_script, "verify.sh must assert the pinned Core release"
+
+          print("Komodo controller Compose boundary: PASS")
+          PY
+      - name: Bash syntax
+        run: >-
+          bash -n deploy/komodo/lib.sh deploy/komodo/staging-root.sh
+          deploy/komodo/deploy.sh deploy/komodo/reconcile.sh
+          deploy/komodo/verify.sh deploy/komodo/test-guards.sh
+          deploy/komodo/test-staging-root.sh
+          deploy/komodo/test-reconcile-preflight.sh
+          infra/tofu/komodo/validate-plan.sh
+          infra/tofu/komodo/test-validate-plan.sh
+      - name: Validate local controller safety-guard fixtures
+        run: |
+          set -euo pipefail
+          bash deploy/komodo/test-guards.sh
+          bash deploy/komodo/test-staging-root.sh
+          bash deploy/komodo/test-reconcile-preflight.sh
+
+  tofu_plans:
+    name: OpenTofu validation / komodo
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TF_IN_AUTOMATION: "true"
+      CHECKPOINT_DISABLE: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+      - name: Format, initialize without production state, and validate
+        env:
+          ROOT_DIR: infra/tofu/komodo
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ROOT_DIR"
+          tofu fmt -check -recursive
+          # The committed lockfile is the only accepted provider selection:
+          # `-lockfile=readonly` refuses to add or upgrade providers, and the
+          # post-init diff refuses a lockfile that was silently rewritten.
+          cp -p .terraform.lock.hcl "$RUNNER_TEMP/komodo.lock.hcl"
+          tofu init -backend=false -input=false -lockfile=readonly
+          diff -u "$RUNNER_TEMP/komodo.lock.hcl" .terraform.lock.hcl
+          tofu validate
+      - name: Validate local-root safety policy fixtures
+        run: bash infra/tofu/komodo/test-validate-plan.sh

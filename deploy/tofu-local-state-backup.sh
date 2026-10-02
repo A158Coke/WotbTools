@@ -21,7 +21,16 @@ case "${1:-}" in
     state_paths=(grafana-tofu-state/terraform.tfstate)
     bootstrap_markers=(grafana-tofu-state/bootstrap-complete)
     ;;
-  *) echo "Usage: $0 <tx|yecao>" >&2; exit 2 ;;
+  komodo)
+    # The Komodo controller state is its own owner root under /opt/komodo, so it
+    # is backed up as a third target instead of being pretended into /opt/wotb.
+    # Taking /opt/komodo/.deploy.lock means a controller mutation and its backup
+    # can never overlap.
+    host_root=/opt/komodo
+    state_paths=(tofu-state/terraform.tfstate)
+    bootstrap_markers=(tofu-state/bootstrap-complete)
+    ;;
+  *) echo "Usage: $0 <tx|yecao|komodo>" >&2; exit 2 ;;
 esac
 [[ -d "$host_root" && ! -L "$host_root" ]] || { echo 'Owner-host state root is unavailable.' >&2; exit 1; }
 command -v flock >/dev/null || { echo 'flock is required.' >&2; exit 2; }
