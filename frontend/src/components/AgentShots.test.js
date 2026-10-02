@@ -115,7 +115,7 @@ describe('AgentShots author_path fail-visible（评审 blocker 回归）', () =>
     expect(options.some((t) => t.startsWith('eid:300'))).toBe(true)
   })
 
-  it('射击数按顶层 Shot/unique shotId 计，多装甲交互聚合仍只算一发', async () => {
+  it('上游已聚合的单个 Shot 在消费端只渲染一行，不按 hit_flags/interaction 展开', async () => {
     parseAgentShotsFromBytes.mockResolvedValue({
       shots: [{
         index: 1,
@@ -128,7 +128,8 @@ describe('AgentShots author_path fail-visible（评审 blocker 回归）', () =>
         shooter_eid: 100,
         shooter_name: 'author',
         is_author: true,
-        // 同一发内聚合：ricochet(0x08) + non-penetration(0x20)
+        // 上游已经把同一发内的 ricochet(0x08) + non-penetration(0x20) 聚合到这个 Shot；
+        // 本测试锁消费端不再按 flags / interaction 二次展开，真正的 shotId 去重由 Agent parser 回归覆盖。
         hit_flags: 0x28,
         game_hit_result: 0,
         shell_id: 79242,
