@@ -1485,7 +1485,7 @@
   },
   "agentShots": {
     "title": "Shot Replay (Agent)",
-    "hint": "Pick a local .wotbreplay — the full shot chain is parsed in-browser via WebAssembly (file never leaves your machine). Shot count follows one trigger event (unique shotId); ricochets, continuation paths, or repeated armor contacts by the same projectile remain one shot. Click a row to reproduce it in the 3D armor viewer.",
+    "hint": "Pick a local .wotbreplay — the full shot chain is parsed in-browser via WebAssembly (file never leaves your machine). Shot count follows one firing event (unique shotId); subsequent events or multiple armor interactions associated with the same shotId remain part of the same shot. Click a row to reproduce it in the 3D armor viewer.",
     "pick": "Pick replay file",
     "parsing": "Parsing…",
     "error_parse": "Parse failed: ",
