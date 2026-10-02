@@ -14,7 +14,7 @@ root = Path(sys.argv[1])
 owners = {
     "keycloak": "keycloak", "rabbitmq": "rabbitmq",
     "business-postgres": "business-postgres", "keycloak-postgres": "keycloak-postgres",
-    "minio": "minio", "observability": "grafana",
+    "minio": "minio", "observability": "grafana", "komodo-controller": "komodo",
 }
 jobs = {
     owner: yaml.load((root / f".github/workflows/ci-{owner}.yml").read_text(encoding="utf-8"),
@@ -29,6 +29,7 @@ for owner, job in jobs.items():
         "keycloak": "infra/tofu/keycloak", "rabbitmq": "infra/tofu/rabbitmq",
         "business-postgres": "infra/tofu/postgres-business", "keycloak-postgres": "infra/tofu/postgres-keycloak",
         "minio": "infra/tofu/minio", "observability": "infra/tofu/grafana",
+        "komodo-controller": "infra/tofu/komodo",
     }[owner]
     assert "tofu fmt -check -recursive" in validation["run"]
     assert "tofu init -backend=false -input=false" in validation["run"]
@@ -58,12 +59,14 @@ expected = {
     "postgres-keycloak": ("infra/tofu/postgres-keycloak", "/opt/wotb-tx/postgres-keycloak-tofu-state", True),
     "keycloak": ("infra/tofu/keycloak", "/opt/wotb-tx/keycloak-tofu-state", True),
     "grafana": ("infra/tofu/grafana", "/opt/wotb/grafana-tofu-state", True),
+    "komodo": ("infra/tofu/komodo", "/opt/komodo/tofu-state", True),
 }
 workflow_roots = {
     "postgres-business": ".github/workflows/business-postgres.yml",
     "postgres-keycloak": ".github/workflows/keycloak-postgres.yml",
     "keycloak": ".github/workflows/keycloak.yml",
     "grafana": ".github/workflows/observability.yml",
+    "komodo": ".github/workflows/komodo-controller.yml",
 }
 for name, (relative, state_dir, requires_marker) in expected.items():
     state_path = f"{state_dir}/terraform.tfstate"
@@ -81,8 +84,14 @@ for name, (relative, state_dir, requires_marker) in expected.items():
     if requires_marker:
         assert "bootstrap-complete" in workflow_text, name
         assert "local-tofu-state-bootstrap-v1" in workflow_text, name
-    for credential in ("TENCENTCLOUD_SECRET_ID", "TENCENTCLOUD_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
-        assert credential not in workflow_text, (name, credential)
+    if name == "komodo":
+        assert "TENCENTCLOUD_SECRET_ID" in workflow_text
+        assert "TENCENTCLOUD_SECRET_KEY" in workflow_text
+        assert "AWS_ACCESS_KEY_ID" not in workflow_text
+        assert "AWS_SECRET_ACCESS_KEY" not in workflow_text
+    else:
+        for credential in ("TENCENTCLOUD_SECRET_ID", "TENCENTCLOUD_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+            assert credential not in workflow_text, (name, credential)
 
 for retired in (
     "deploy/tofu-cos-to-local.sh",
