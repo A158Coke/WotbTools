@@ -23,7 +23,7 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
-import { fillOf, groupByVehicle, inferMagazineSize, shellStatesAt } from './reloadBar.js'
+import { fillOf, groupByVehicle, inferMagazineSize, resolveMagazineSize, shellStatesAt } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
@@ -193,6 +193,7 @@ export function initPlayback(container, store) {
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio, Q.maxDpr));
     if (DEBUG) window.__renderer = renderer;   // 诊断钩子（renderer 创建后才可引用；仅 ?debug）
+    if (DEBUG) window.__camera = camera;       // 诊断钩子：跟随相机定位（创建后引用）
     // three r165+ 恒为物理光照单位（Lambert 除以 π），旧强度会让建筑/车模暗到发黑；
     // 与装甲查看器一致：ACES 色调映射 + ×π 级别的光强
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -211,6 +212,8 @@ export function initPlayback(container, store) {
     container.appendChild(labelRenderer.domElement);
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true; controls.maxPolarAngle = Math.PI / 2 - 0.02;
+    if (DEBUG) window.__controls = controls;   // 诊断钩子（controls 创建后才可引用）
+    if (DEBUG) window.__setFollow = setFollow;   // 诊断钩子：跟随问题定位（函数声明提升）
     clock = new THREE.Clock();
     raycaster = new THREE.Raycaster();
     scene.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2f36, 2.4));
@@ -333,6 +336,7 @@ export function initPlayback(container, store) {
 
   // 相机目标钳制在战场范围内（拖到天边会让地形/边界消失、只剩背景色）
   function clampCameraTarget() {
+    if (FOLLOW_EID) return;   // 跟随中：target 钉在坦克上（坦克恒在图内），不钳制
     const { cx, cz, ext } = WORLD_CENTER;
     const lim = ext * 1.1;
     const t = controls.target;
@@ -353,8 +357,17 @@ export function initPlayback(container, store) {
     const ex = Math.max(q(xs, .98) - q(xs, .02), 200) * 0.65;
     const ez = Math.max(q(zs, .98) - q(zs, .02), 200) * 0.65;
     const m = Math.max(ex, ez);
-    const ext = isFinite(m) && m > 0 ? Math.ceil(m / 50) * 50 : 300;
-    const cx = (q(xs, .98) + q(xs, .02)) / 2, cz = (q(zs, .98) + q(zs, .02)) / 2;
+    let ext = isFinite(m) && m > 0 ? Math.ceil(m / 50) * 50 : 300;
+    let cx = -((q(xs, .98) + q(xs, .02)) / 2), cz = (q(zs, .98) + q(zs, .02)) / 2;   // 云心后备：x 要镜像（场景系 x = -回放 x）
+    // 相机中心用**地图可玩矩形**（车辆云心只作后备）——交火偏一侧的图（如运河）云心
+    // 会大幅偏离地图中心：俯视/初始机位对不准，钳制框还会把跟随目标拽离坦克。
+    // currentMapKey 由 startPlayback 在 buildWorld 之前解析（loadMapImage 幂等重用）。
+    const pb = playableBoundsFor();
+    if (pb) {
+      cx = pb.cx; cz = pb.cz;
+      const me = Math.ceil(Math.max(pb.hx, pb.hz) * 1.15 / 50) * 50;
+      if (me > ext) ext = me;
+    }
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(ext * 2 + 100, ext * 2 + 100),
@@ -1223,7 +1236,7 @@ export function initPlayback(container, store) {
       if (v.label.material.opacity !== target) v.label.material.opacity = target;
       // 装填条：按 T 时间归并求值（不累加计时器）→ **逐发状态**（客户端 Full/Active/Inactive）。
       // 重绘门控：聚合比量化成 1% 桶才重绘整张 canvas 并传纹理，否则 14 车会每帧重绘。
-      const shells = shellStatesAt(v.reloadEvents, v.reloadFires, T, v.reloadSize);
+      const shells = shellStatesAt(v.reloadEvents, v.reloadFires, T, v.reloadSize, v.reloadDurations);
       v.reloadShells = shells;
       const bucket = Math.round(fillOf(shells) * 100);
       if (bucket !== v.reloadBucket) { v.reloadBucket = bucket; v.labelDirty = true; drawLabel(v); }
@@ -1290,13 +1303,13 @@ export function initPlayback(container, store) {
     ctx.save();
     // shadowBlur/shadowOffset 不随 CTM 缩放，需按 ls 手动等比（否则小贴图下投影相对过重）
     ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 14 * ls; ctx.shadowOffsetY = 5 * ls;
-    rrPath(ctx, 26, 6, 460, 128, 18);
+    rrPath(ctx, 26, 6, 460, 116, 18);
     ctx.fillStyle = 'rgba(0, 0, 0, .55)';   // 2D 同款底色（半透明黑；阴影一次填充落其下）
     ctx.fill();
     ctx.restore();
     // 受击闪（FLASH_MS）：描边瞬亮，弱化而非隐藏
     const flashing = (flashByEid.get(v.def.eid) || 0) > performance.now();
-    rrPath(ctx, 26, 6, 460, 128, 18);
+    rrPath(ctx, 26, 6, 460, 116, 18);
     ctx.lineWidth = flashing ? 10 : 6;
     ctx.strokeStyle = flashing ? 'rgba(255,255,255,.5)' : 'rgba(255,255,255,.14)';
     ctx.stroke();
@@ -1364,24 +1377,44 @@ export function initPlayback(container, store) {
     // 客户端靠弹壳美术自带留白分隔；我们没有美术，改为把分格间隙做够（≈2 屏幕 px）——
     // **满弹时也要能数出发数**（此前 4 设计 px ≈ 0.6 屏幕 px，满条看着就是一整条）。
     // 相位流只覆盖**本方全队**：无相位流的车保持满条（= 已装填），不猜。
-    const sx = 56, sy = 112, sw = 400, sh = 16;
-    rrPath(ctx, sx, sy, sw, sh, sh / 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, .56)'; ctx.fill();              // 与客户端整条暗底 0.565 同档
-    const shells = (v.reloadShells && v.reloadShells.length) ? v.reloadShells : [{ state: 'full', progress: 1 }];
+    // 几何对齐客户端（`VehicleUIObjectMarker.yaml` + `VehicleUIObjectMarkerHealth.style.yaml`）：
+    //   血条 70×14，装填条框（GunStatusBattle）70×3，条本体（ShellBack）**68×2**、位置 [1,0]，
+    //   即：**条高/血条高 = 2/14 ≈ 0.143**、左右各内缩 1px、BottomUp 紧贴血条下方。
+    //   我们血条高 44 设计 px → 条高 44×0.143 ≈ **6**；2px 高的块谈不上圆角 → 近方角。
+    //   暗底仍是客户端 `GunStatus` 的 fill rgba(0,0,0,.565) 那一根整条。
+    // 只给**本方**画：装填相位（subtype 15/16/17）与方法 35 都**只广播本方全队**，
+    // 给敌方画出来的只是"假满条"；客户端同样按标记角色挂 `marker-no-reload-status` 隐藏。
+    const friendly = DATA.meta && v.def.team === DATA.meta.friendly_team;
+    const sx = 56, sy = 104, sw = 400, sh = 6;
+    if (friendly) {
+      rrPath(ctx, sx, sy, sw, sh, 1.5);
+      ctx.fillStyle = 'rgba(0, 0, 0, .56)'; ctx.fill();            // 与客户端整条暗底 0.565 同档
+    }
+    // 兜底也要按 **N 格**画（客户端开局即 A|A|A）；否则首帧只有一格，而重绘门控又不触发，
+    // 就会一直是一根未分割的条，直到第一次开火才变形。
+    const fallbackN = Math.max(1, Math.round(v.reloadSize) || 1);
+    const shells = (v.reloadShells && v.reloadShells.length)
+      ? v.reloadShells
+      : Array.from({ length: fallbackN }, () => ({ state: 'full', progress: 1 }));
     const rn = shells.length;
     const gap = rn > 1 ? 14 : 0;                                   // 固定条宽 ÷ N（客户端同式）+ 可见间隙
-    const segW = (sw - gap * (rn - 1)) / rn;
-    for (let k = 0; k < rn; k++) {
+    const inX = 1, inY = 1;                                        // 客户端 68 = 70−2 的内缩
+    const innerW = sw - inX * 2;
+    const segW = (innerW - gap * (rn - 1)) / rn;
+    for (let k = 0; friendly && k < rn; k++) {
       const st = shells[k] || { state: 'empty', progress: 0 };
-      const x = sx + k * (segW + gap);
+      const x = sx + inX + k * (segW + gap);
       const f = st.state === 'full' ? 1
         : st.state === 'loading' ? Math.max(0, Math.min(1, st.progress)) : 0;
-      if (st.state === 'empty') {
-        // 客户端 used = 底图 alpha .250980（**仍可见**：用户就是靠它数还剩几发）
-        rrPath(ctx, x, sy, segW, sh, sh / 2);
-        ctx.fillStyle = 'rgba(244,248,252,.25)'; ctx.fill();
+      if (st.state === 'locked' || st.state === 'empty') {
+        // 空位 = 暗槽 + 极淡填充（读作"空条" C）。注意：客户端 used(.25)/locked(.69) 是**弹壳
+        // 美术**的 alpha，不是纯色填充——把 .69 抄到纯白填充上会亮得像"已装填"（弹鼓空槽曾被
+        // 看成 A）。我们无美术，两档统一 .18：能数格、但明确是空。
+        rrPath(ctx, x, sy + inY, segW, sh - inY * 2, 1);
+        ctx.fillStyle = 'rgba(244,248,252,.18)';
+        ctx.fill();
       } else if (f > 0) {
-        rrPath(ctx, x, sy, Math.max(2, segW * f), sh, sh / 2);
+        rrPath(ctx, x, sy + inY, Math.max(1.5, segW * f), sh - inY * 2, 1);
         ctx.fillStyle = st.state === 'loading' ? 'rgba(244,248,252,.82)' : '#f4f8fc';
         ctx.fill();
       }
@@ -1964,6 +1997,9 @@ export function initPlayback(container, store) {
   // ---------- 主循环 ----------
   const tmpV = new THREE.Vector3();
   let followAnchor = null;             // 跟随模式：上一帧坦克位置（位移增量基准）
+  const tmpDir = new THREE.Vector3();  // 进入跟随：相机方向临时量
+  const FOLLOW_SNAP_DIST = 26;         // 进入跟随：相机沿当前方向收拢到此距离（米；坦克约 7m 长）
+  const FOLLOW_MIN_HEIGHT = 9;         // 进入跟随：相机至少高于坦克此高度（米，保证俯角不贴地）
   function applyPose(v) {
     const dead = deathAt(v, T);
     // 死亡后模型不消失：coverage 在阵亡处截止，但残骸应留在最后已知位置
@@ -2021,7 +2057,18 @@ export function initPlayback(container, store) {
       if (v && v.group.visible) {
         posAt(v, T, tmpV);
         if (!followAnchor) {
-          controls.target.copy(tmpV);          // 进入跟随：视点先对准车体
+          controls.target.copy(tmpV);          // 进入跟随：视点先对准车体（旋转中心 = 坦克）
+          // 拉近：沿**当前观察方向**把相机收到跟随距离——此前进入跟随只挪视点、相机留在
+          // 开局全景位（数百米外），旋转看起来绕着别处转。仅当当前更远时收拢（用户已手动
+          // 贴近则不打扰），且不低于 minDistance+2（否则 controls.update 会再推出去）。
+          const off = tmpDir.subVectors(camera.position, tmpV);
+          const snap = Math.max(FOLLOW_SNAP_DIST, (controls.minDistance || 0) + 2);
+          if (off.length() > snap) {
+            camera.position.copy(tmpV).addScaledVector(off.normalize(), snap);
+          }
+          if (camera.position.y < tmpV.y + FOLLOW_MIN_HEIGHT) {
+            camera.position.y = tmpV.y + FOLLOW_MIN_HEIGHT;
+          }
         } else {
           const dx = tmpV.x - followAnchor.x, dy = tmpV.y - followAnchor.y,
                 dz = tmpV.z - followAnchor.z;
@@ -2253,6 +2300,16 @@ export function initPlayback(container, store) {
   async function startPlayback() {
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
     store.mapName = DATA.meta.map_name || ('map_' + DATA.meta.map_id);
+    // 提前解析资产面 mapKey：buildWorld 要用 playableBoundsFor（依赖 currentMapKey）；
+    // loadMapImage 里的 resolveMapKey 幂等（索引有缓存），不会重复请求。
+    {
+      const mid0 = DATA.meta.map_id || 0;
+      const mq0 = mid0 ? ('id=' + mid0) : ('name=' + encodeURIComponent(DATA.meta.map_name || ''));
+      // 注意：resolveMapKey 只写 replaySource 内部的 currentMapKey；场景自己的
+      // currentMapKey（playableBoundsFor 读这个）必须在此赋值——只调不接曾让
+      // buildWorld 拿不到可玩矩形、中心回退到车辆云心。
+      currentMapKey = await resolveMapKey(mq0).catch(() => null);
+    }
     buildWorld();
     // 进入场景前等待运行所需全部资产（评审要求：地图/地形/分层地表/场景 GLB 按
     // 画质档全部就绪后才进场，不再先进场后异步补图）。各段内部已 try/catch——
@@ -2274,6 +2331,7 @@ export function initPlayback(container, store) {
     // 不做累加计时器 → seek / 拖动进度条天然正确。无相位流的车保持空数组（= 满条，不猜）。
     {
       const reloadByEid = groupByVehicle(DATA.reloads);
+      const effByEid = groupByVehicle(DATA.reload_effective);   // 方法 35：权威有效装填时长
       const firesByEid = new Map();
       for (const s of DATA.shots || []) {
         const eid = s.shooter_eid != null ? s.shooter_eid : s.shooter;
@@ -2286,9 +2344,23 @@ export function initPlayback(container, store) {
       for (const v of V) {
         v.reloadEvents = reloadByEid.get(v.def.eid) || [];
         v.reloadFires = firesByEid.get(v.def.eid) || [];
+        v.reloadDurations = effByEid.get(v.def.eid) || [];
         v.reloadSize = inferMagazineSize(v.reloadEvents);
         v.reloadShells = null;
-        v.reloadBucket = 100;   // 与初值（满夹）一致，避免首帧无谓重绘
+        v.reloadBucket = -1;    // 置脏：首帧按 N 格重绘一次（否则开局一直是一根未分割的条）
+        v.labelDirty = true;
+      }
+      // N 以**客户端静态数据**为主（`configs[].burst_size` == 客户端 XML 的 `<clip><count>`，
+      // 已对 30 台车验证一致），相位推断取较大者（回放真值可纠正配置歧义）；都没有 → 1，不猜。
+      // 这样敌方车 / 尚未装填过的车开局也是 N 格，而不是一根整条。
+      for (const v of V) {
+        if (!(v.def.tank_id > 0)) continue;
+        assetProvider.json(`/tank/${v.def.tank_id}.json`).then((t) => {
+          const n = resolveMagazineSize(t, v.reloadEvents);
+          if (n !== v.reloadSize) {
+            v.reloadSize = n; v.reloadBucket = -1; v.labelDirty = true;   // 下一帧按新 N 重绘
+          }
+        }).catch(() => {});
       }
     }
     buildTransientSources();   // 战斗反馈事件源（伤害/击毁）
@@ -2327,7 +2399,7 @@ export function initPlayback(container, store) {
       teardownSession();             // 会话资源（车辆/地图/特效/GLB 模板）全量 dispose
       removeEventListener('resize', onResize);
       if (DEBUG) {
-        delete window.__scene; delete window.__renderer;
+        delete window.__scene; delete window.__camera; delete window.__controls; delete window.__setFollow; delete window.__renderer;
         delete window.__pbV; delete window.__gdbg;
       }
       if (controls) { try { controls.dispose(); } catch (_) {} }
