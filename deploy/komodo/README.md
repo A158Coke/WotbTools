@@ -100,6 +100,14 @@ can never run during a controller mutation.
 MongoDB backup policy is intentionally not part of K1; the mounted
 `/opt/komodo/backups` directory reserves that ownership for a later phase.
 
+Because the controller state is a *required* backup target — the same rule the
+other owner roots already follow — the nightly `yecao_tofu_state` job fails until
+`/opt/komodo/tofu-state` exists. Configure `TENCENTCLOUD_SECRET_ID` and
+`TENCENTCLOUD_SECRET_KEY` before or with this change so the first production
+reconcile can bootstrap the state and write `bootstrap-complete`; otherwise the
+nightly state-backup job stays red (TX database backups are unaffected, they run
+in their own job).
+
 ## Upgrades
 
 Komodo image upgrades are ordinary pull requests: edit the pinned digest or tag,
