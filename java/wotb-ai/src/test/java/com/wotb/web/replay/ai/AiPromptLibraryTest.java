@@ -14,7 +14,6 @@ class AiPromptLibraryTest {
         assertLoaded("player/single", PlayerPromptRules.SINGLE_PLAYER_PROMPT);
         assertLoaded("player/tactical", TacticalReviewPromptBuilder.TACTICAL_SYSTEM_PROMPT);
         assertLoaded("team/single", TeamPromptLocalizer.SINGLE_TEAM_PROMPT);
-        assertLoaded("team/autopsy", TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY);
         assertLoaded("prebattle/system", PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT);
         assertLoaded("prebattle/user-header", PreBattlePromptBuilder.PRE_BATTLE_USER_HEADER);
         assertLoaded("prebattle/confidence-legend", PreBattlePromptBuilder.CONFIDENCE_LEGEND);

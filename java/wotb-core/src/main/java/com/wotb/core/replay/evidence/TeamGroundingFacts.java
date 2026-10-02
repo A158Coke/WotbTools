@@ -23,14 +23,13 @@ import java.util.Set;
  * Team Review Grounding Facts（确定性，Backend 唯一事实源投影，docs/features/team-ai-review.md
  * Natural Coach 轮）。
  * <p>从权威结算 + 已验证 canonical {@link BattleTimeline} 提取<b>带稳定证据编号</b>的
- * 事实清单，供：① 输入 prompt（渲染 GROUNDING FACTS 段，LLM 在 structured claims 中引用
- * 证据编号）；② {@link TeamFactualConsistencyValidator} 做事实一致性校验。</p>
+ * 事实清单，作为 prompt 的 GROUNDING FACTS 段输入（LLM 的战术表述只能使用这些
+ * 带编号事实支撑的内容）。</p>
  * <p>事实类型：PLAYER_DESTROYED（阵亡）/ ALIVE_COUNT_TRANSITION（存活变化）/
  * FOCUS_WINDOW（关注窗口）/ POSITION_REGION（位置区域快照）/
  * ENEMY_POSITION_KNOWN（敌方位置知识 CURRENT / LAST_KNOWN）。</p>
- * <p>边界：只输出确定性事实与确定性派生测量，不做战术裁决；timeline 为 null（兼容入口）
- * 时只输出 canonical death/result 可推导事实（阵亡/存活变化），位置/窗口类事实缺失
- * （对应 validator 检查自动 no-op）。</p>
+ * <p>边界：只输出确定性事实与确定性派生测量，不做战术裁决；timeline 为 null
+ * 时只输出 canonical death/result 可推导事实（阵亡/存活变化），位置/窗口类事实缺失。</p>
  */
 public final class TeamGroundingFacts {
 
