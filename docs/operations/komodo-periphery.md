@@ -1,40 +1,92 @@
-# Komodo Periphery on Yecao (K3.1)
+# Komodo Periphery on Yecao and TX1 (K3.1 + K3.2)
 
-K3.1 installs the Komodo **Periphery** agent on Yecao as a repository-owned,
-systemd-managed host agent, so Komodo Core can present the host as a Server.
-Workload adoption (stacks, deployments, repos, builds, procedures) is a later
-phase and is deliberately **not** part of this change.
+Komodo **Periphery** runs on each production host as a repository-owned,
+systemd-managed agent, so Komodo Core can present those hosts as Servers. One
+lifecycle implementation serves every host; the per-host differences are reviewed
+data under `deploy/periphery/targets/<target>`. Workload adoption (stacks,
+deployments, repos, builds, procedures) is a later phase and is deliberately
+**not** part of this change.
 
 ```text
-Yecao
-  periphery                 systemd unit, owned by GitHub Actions
-      |
-      |  outbound WebSocket + Noise handshake
-      v
-  Komodo Core               http://10.20.0.2:9120  (WireGuard only)
-      |
-      v
-  Komodo UI                 Servers → yecao → Online
+Yecao  periphery v2.3.3 ──┐
+                          ├──>  Komodo Core  http://10.20.0.2:9120  (WireGuard only)
+TX1    periphery v2.3.3 ──┘                 │
+                                            v
+                          Komodo UI → Servers → yecao OK / tx1 OK
 ```
+
+Both agents use **Periphery v2.3.3**, connect **outbound only** to
+`http://10.20.0.2:9120`, and never open an inbound port.
+
+| Phase | Host | State |
+| --- | --- | --- |
+| K3.1 | Yecao | complete; its onboarding credential was deleted after success |
+| K3.2 | TX1 | first onboarding, after Yecao re-proved compatibility with the multi-target refactor |
 
 ## Ownership
 
 | Concern | Owner |
 | --- | --- |
-| Periphery binary, config, keys, systemd unit | `.github/workflows/komodo-periphery.yml` + `deploy/periphery/**` |
+| Periphery binary, config, keys, systemd unit, per-host profile | `.github/workflows/komodo-periphery.yml` + `deploy/periphery/**` |
 | Komodo Core / MongoDB runtime and the deployed Core release | `.github/workflows/komodo-controller.yml` + `deploy/komodo/**` |
 | Public HTTP ingress (`https://komodo.wotbtools.com`) | `.github/workflows/caddy.yml` (`deploy/tx/Caddyfile`) |
 | DNS for the control plane | `infra/tofu/komodo` (Komodo controller owner) |
 | Server communication and future workload orchestration | Komodo Core |
 
-The boundaries are enforced by contract tests:
+The boundaries are enforced by contract tests: `deploy/periphery/**` is the only
+input of the Periphery owner, so a Periphery change triggers neither the Komodo
+Core/Mongo/DNS reconcile nor the Caddy gateway, and a Core or gateway change never
+re-runs the agent install. GitHub Actions owns each agent's systemd lifecycle;
+Komodo Core never installs, restarts, or manages the agent that talks to it.
 
-- `deploy/periphery/**` is the **only** input of the Periphery owner. A Periphery
-  change triggers neither the Komodo Core/Mongo/DNS reconcile nor the Caddy
-  gateway, and a Komodo Core upgrade never re-runs the Periphery install.
-- GitHub Actions owns the Periphery systemd lifecycle. Komodo Core never installs,
-  restarts, or manages the agent that talks to it, and this workflow never touches
-  Core, Caddy, DNS, or the Komodo controller runtime.
+## One lifecycle, per-host profiles
+
+`deploy/periphery/{lib,install,verify,reconcile,staging-root}.sh` are
+target-agnostic. Everything host-specific lives in
+`deploy/periphery/targets/<target>/`:
+
+| Target | `connect_as` | Host mutation lock | Staging root | Privilege |
+| --- | --- | --- | --- | --- |
+| `yecao` | `yecao` | `/opt/wotb/.deploy.lock` | `/opt/periphery` | `root` (the SSH account is root) |
+| `tx1` | `tx1` | `/opt/wotb-tx/.deploy.lock` | `/opt/wotb-tx/periphery` | `sudo` (non-interactive) |
+
+`target.env` is validated by the same `load_target_profile` code on the host and in
+the workflow: the target name must match its directory, `connect_as` must equal the
+target name, the roots must be absolute, and a profile that assigns a credential is
+refused. `install.sh` additionally refuses, **before touching the host**, a staged
+config whose `connect_as` is not this target's, so one host can never install
+another host's Server identity.
+
+Adding a host later (TX2) means adding one reviewed target directory and two
+workflow jobs mirroring the existing ones — never a second lifecycle
+implementation. Filesystem paths are identical on both hosts on purpose: they are
+separate machines, so `/etc/komodo` and `/usr/local/bin/periphery` are host-local.
+
+## Host locks
+
+Periphery mutates a host, so it serializes on **that host's existing** mutation lock
+and never creates its own:
+
+- **Yecao:** `/opt/wotb/.deploy.lock`, shared with `deploy/deploy.sh`,
+  `observability.yml`, and `ai-service.yml`.
+- **TX1:** `/opt/wotb-tx/.deploy.lock`, shared with Business API, Frontend, Caddy,
+  and Alloy, so no two TX mutations can overlap.
+
+The lock root and its lock file belong to the host's deploy owner, so the reconcile
+**requires them to already exist** and fails closed if they do not. Creating the
+file as root would leave a root-only lock that the host's own non-root deploy user
+could no longer take.
+
+## Privilege model
+
+- **Yecao** runs the reconcile directly as its (root) SSH account; the script
+  asserts it is root.
+- **TX1** does not assume root. `reconcile.sh` re-executes itself through
+  **non-interactive sudo** (`sudo -n`) and requires that to be available, failing
+  closed otherwise. Only the generic onboarding variable is preserved
+  (`sudo --preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY`), so the credential travels
+  in the environment — never in argv, on disk, or in a log. A deterministic `PATH`
+  is set for the privileged half.
 
 ## Binary pin
 
@@ -48,35 +100,33 @@ PERIPHERY_SHA256=40b78f377626799afad8331246a501f077d4ebcfb6d9096894cf55b64f6dcf1
 PERIPHERY_URL=https://github.com/moghtech/komodo/releases/download/v2.3.3/periphery-x86_64
 ```
 
-The **runner** downloads that exact asset, verifies its SHA256, and stages only the
-verified bytes. **Yecao never downloads a binary**: `install.sh` re-verifies the
-staged artifact against the same manifest before installing it, and the host fails
-closed if `uname -m` is not an x86_64 equivalent. Nothing in the workflow uses
-`latest`, a floating tag, or an image.
+Each workflow job downloads that exact asset, verifies its SHA256, and stages only
+the verified bytes. **No target host downloads a binary**: `install.sh` re-verifies
+the staged artifact against the same manifest, and a host fails closed if
+`uname -m` is not an x86_64 equivalent. Nothing uses `latest`, a floating tag, or an
+image.
 
-## Installation layout
+## Installation layout (host-local, identical on both hosts)
 
 | Path | Content |
 | --- | --- |
 | `/usr/local/bin/periphery` | The pinned binary (root-owned, mode 0755, replaced atomically) |
-| `/etc/komodo/periphery.config.toml` | Persistent config, copied verbatim from this repository (mode 0600) |
+| `/etc/komodo/periphery.config.toml` | Persistent config, copied verbatim from the target directory (mode 0600) |
 | `/etc/komodo/keys/periphery.key` | Persistent Periphery Noise identity (generated by Periphery during startup) |
 | `/etc/komodo/keys/core.pub` | Pinned Core public key (written by Periphery on the first successful handshake) |
 | `/etc/komodo/keys/onboarding-complete` | Durable onboarding commit marker: `komodo-periphery-onboarding-v1`, root-owned, mode 0600 |
 | `/etc/systemd/system/periphery.service` | Repository-owned systemd unit (mode 0644) |
-| `/opt/periphery/incoming/<SHA>` | SHA-scoped staging root, removed by the workflow |
+| `<staging root>/incoming/<SHA>` | SHA-scoped staging root, removed by the workflow |
 
 **The identity file is not proof of onboarding.** Periphery v2.3.3 initialises
 `periphery_keys().load()` during startup, so `keys/periphery.key` is generated
-**before** Server onboarding can have succeeded — a first attempt that fails to
-onboard still leaves an identity behind. Onboarding completion is therefore
-recorded by the separate durable marker above, and only that marker (together with
-a valid identity and a valid `core.pub`) means the bootstrap credential is no
-longer needed.
+**before** Server onboarding can have succeeded — a first attempt that fails still
+leaves an identity behind. Only the marker, together with a valid identity and a
+valid `core.pub`, means the bootstrap credential is no longer needed.
 
-The unit runs in the root systemd context (the current host administration model),
-starts after `network-online.target` and `docker.service`, restarts on failure, and
-is enabled on boot:
+The shared unit starts after `network-online.target` and `docker.service`, restarts
+on failure, is enabled on boot, runs in the root systemd context, and reads the
+transient credential through `EnvironmentFile=-/run/komodo/periphery-bootstrap.env`:
 
 ```ini
 ExecStart=/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.toml
@@ -84,12 +134,13 @@ ExecStart=/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.to
 
 ## Outbound only
 
-The persistent config expresses exactly one connection mode:
+Both target configs express exactly one connection mode and differ only in
+`connect_as`:
 
 ```toml
 root_directory = "/etc/komodo"
 core_addresses = ["http://10.20.0.2:9120"]
-connect_as = "yecao"
+connect_as = "yecao"        # or "tx1"
 server_enabled = false
 private_key = "file:/etc/komodo/keys/periphery.key"
 core_public_keys = ["file:/etc/komodo/keys/core.pub"]
@@ -98,137 +149,132 @@ disable_container_terminals = false
 ```
 
 - Core is reached on the **private WireGuard address**. The public name
-  (`https://komodo.wotbtools.com`), the Yecao public address, and any wildcard bind
-  are forbidden and asserted absent in both the config and the staging contract.
+  (`https://komodo.wotbtools.com`), any host public address, and any wildcard bind
+  are forbidden and asserted absent.
 - `server_enabled = false` means Periphery never opens its inbound port, so **no
-  listener exists on `:8120`**. Production verification proves the absence at
-  runtime, and the fixture proves the probe detects a deliberately bound port.
-- No git provider, image registry, Komodo `[secrets]`, stack path override, or
-  build infrastructure is configured. Those belong to later migration phases.
+  listener exists on `:8120`** on either host. Production verification proves the
+  absence at runtime, and the fixture proves the probe detects a deliberately bound
+  port.
+- No git provider, image registry, Komodo `[secrets]`, stack path override, build
+  infrastructure, provider credential, or registry credential is configured.
 
-The config file is the Komodo v2.3.3 schema: the field is `core_addresses` (a
-list), with `core_address` kept only as a legacy alias.
+The config file is the Komodo v2.3.3 schema: the field is `core_addresses` (a list),
+with `core_address` kept only as a legacy alias.
 
 ## Onboarding credential lifecycle
 
-`KOMODO_YECAO_ONBOARDING_KEY` is a **one-time bootstrap credential**, never a
-runtime dependency.
+The runtime variable is generic: **`KOMODO_PERIPHERY_ONBOARDING_KEY`**. The workflow
+maps each host's own GitHub secret into it (TX1: `KOMODO_TX1_ONBOARDING_KEY`), and
+the scripts never know a provider-specific secret name.
+
+**Yecao's credential has been deleted** (the GitHub secret and the UI onboarding key),
+so its job forwards no secret at all and must succeed from `onboarding-complete` +
+`periphery.key` + `core.pub`. TX1's secret should likewise be deleted after its first
+successful onboarding.
 
 1. `install.sh` decides from the host state, never from the identity file:
    - **marker valid + identity valid + `core.pub` valid** → onboarding is complete
-     and the secret is neither read nor required;
-   - **marker absent + secret available** → bootstrap, *or retry a previous failed
-     bootstrap reusing the identity it already generated* (the identity is never
-     deleted or regenerated because a previous attempt failed);
-   - **marker absent + no secret** → fail closed before any host mutation;
+     and the credential is neither read nor required;
+   - **marker absent + credential available** → bootstrap, *or retry a previous
+     failed bootstrap reusing the identity it already generated* (the identity is
+     never deleted or regenerated because a previous attempt failed);
+   - **marker absent + no credential** → fail closed before any host mutation;
    - **marker present but identity or `core.pub` missing/unsafe** → corrupted
      completed state; fail closed instead of regenerating anything;
    - **marker is a symlink, dangling, wrongly owned, wrongly permissioned, or holds
      unexpected content** → fail closed.
-2. On a bootstrap it writes the secret to `/run/komodo/periphery-bootstrap.env`
-   (tmpfs, mode 0600, root-owned). The unit loads it through
-   `EnvironmentFile=-/run/komodo/periphery-bootstrap.env`; the leading `-` keeps the
-   unit valid once the file is gone.
-3. It waits (bounded) until Periphery has generated its persistent identity,
-   pinned the Core public key, and holds a live outbound connection to Core.
-4. It deletes the transient file and restarts Periphery **without** the credential,
+2. On a bootstrap it writes the credential to `/run/komodo/periphery-bootstrap.env`
+   (tmpfs, mode 0600, root-owned) and waits (bounded) until Periphery has generated
+   its identity, pinned the Core public key, and holds a live outbound connection.
+3. It deletes the transient file and restarts Periphery **without** the credential,
    then proves the connection came back, the process environment is **provably**
    credential-free, and the service is still active.
-5. Only then, and **last**, it atomically writes `keys/onboarding-complete` and
-   enables the unit — so the unit is never enabled before onboarding has committed,
-   and the marker can never claim more than what was actually proven.
-6. The process-environment probe has three outcomes: `0` readable and credential
+4. Only then, and **last**, it atomically writes `keys/onboarding-complete` and
+   enables the unit — so the unit is never enabled before onboarding has committed.
+5. The process-environment probe has three outcomes: `0` readable and credential
    absent, `1` the credential is still there, `2` the environment cannot be
-   inspected. **`1` and `2` both block the commit** — an unreadable `/proc` entry is
-   never treated as evidence of absence, and production verification fails hard on
-   it with a diagnostic.
-7. Any unsuccessful bootstrap exit *after the service was started* removes the
-   transient file and then terminates the service, because systemd copied the
-   credential into the process environment and deleting the `EnvironmentFile`
-   cannot remove it from `/proc/<pid>/environ`. The sequence is `stop` → bounded
-   wait → `kill --kill-who=all --signal=KILL` → bounded wait; if the unit still
-   will not die, the run ends with a loud `CRITICAL` diagnostic naming the
-   possibly-live credential-bearing process instead of continuing quietly.
+   inspected. **`1` and `2` both block the commit**; production verification fails
+   hard on `2` with a diagnostic.
+6. Any unsuccessful bootstrap exit *after the service was started* removes the
+   transient file and then terminates the service: `stop` → bounded wait →
+   `kill --kill-who=all --signal=KILL` → bounded wait; if the unit still will not
+   die, the run ends with a loud `CRITICAL` diagnostic naming the possibly-live
+   credential-bearing process.
 
 The credential is never written to the config, the unit, a persistent
 `EnvironmentFile`, the repository, or a log. Periphery itself redacts it in the
-startup config it logs (v2.3.3 `PeripheryConfig::sanitized`), and this workflow
-never echoes it. After the first successful K3.1 run the operator may delete the
-repository secret and disable the UI onboarding key without breaking future
-reconciles.
+startup config it logs (v2.3.3 `PeripheryConfig::sanitized`), and the workflow never
+echoes it.
 
 ## Recovery behaviour
 
 | Situation | Behaviour |
 | --- | --- |
-| Onboarding marker valid (every later reconcile or upgrade) | Binary/config/unit are reconciled from the staged source; the identity, the Core trust anchor, and the marker are **never** regenerated or overwritten |
-| Marker absent, identity left over from a failed attempt, secret available | Bootstrap is retried with the existing identity (never regenerated) |
-| Marker absent + secret available | One bootstrap onboarding: credential consumed, credential-free reconnect proven, marker committed last |
-| Marker absent + no secret | **Fail closed** before any host mutation: nothing installed, no identity generated, no re-onboarding |
-| Marker valid but identity or `core.pub` missing/unsafe | **Fail closed**: corrupted completed state is never silently repaired |
-| Marker unsafe (symlink, dangling, wrong owner/mode, wrong content) | **Fail closed** |
-| Onboarding never completes, or the credential-free restart never reconnects | Bounded wait, then fail closed with the unit status and journal tail: the transient credential is removed, the service is **stopped**, and the marker stays absent |
-| The process environment cannot be inspected | **Fail closed**: `stop` → bounded wait → `kill --kill-who=all --signal=KILL` → bounded wait; an uninspectable `/proc` entry is never evidence of absence |
-| `stop` does not take effect after a failed bootstrap | Escalated to a forced kill; if the unit still will not die, the run ends with a `CRITICAL` diagnostic instead of continuing quietly |
+| Onboarding marker valid | Binary/config/unit are reconciled from the staged source; the identity, the Core trust anchor, and the marker are **never** regenerated or overwritten. No credential is required |
+| Marker absent, identity left over from a failed attempt, credential available | Bootstrap is retried with the existing identity |
+| Marker absent + no credential | **Fail closed** before any host mutation |
+| Marker valid but identity or `core.pub` missing/unsafe, or the marker itself unsafe | **Fail closed**; corrupted state is never silently repaired |
+| Onboarding never completes, or the credential-free restart never reconnects | Bounded wait, then fail closed: credential removed, service **stopped**, marker stays absent |
+| The process environment cannot be inspected | **Fail closed** (never treated as evidence of absence) |
+| `stop` does not take effect after a failed bootstrap | Escalated to a forced kill; a `CRITICAL` diagnostic if the unit still will not die |
 | Symlinked/irregular `/etc/komodo`, keys, binary, unit, or staged path | Refused; the install never follows a link |
-| Staged artifact SHA mismatch | Refused before installation |
-| Another Yecao host mutation holds `/opt/wotb/.deploy.lock` | The reconcile aborts instead of racing it |
-| Periphery down or Core unreachable | `verify.sh` fails the workflow with the observable reason; nothing auto-recreates the identity |
+| Staged artifact SHA mismatch, or a staged config for another target | Refused before installation |
+| Another mutation holds the target's host lock | The reconcile aborts instead of racing it |
+| A host's lock root or lock file is missing | **Fail closed**: that host's deploy owner must own them |
 
-Re-running the workflow is always safe and idempotent: it validates the staging
-root, takes the Yecao host lock, verifies the artifact, reconciles the
-binary/config/unit, and re-runs the full verification. A failed bootstrap is
-recoverable by simply re-running the workflow while the bootstrap secret is still
-available — a half-finished host is retried, not wedged.
+Re-running the workflow is always safe and idempotent. A failed bootstrap is
+recoverable by re-running while that host's credential is still available; a host
+whose marker committed needs no credential ever again.
 
 ## Production verification
 
-`deploy/periphery/verify.sh` runs after every reconcile and checks, without any
-Komodo credential:
+`deploy/periphery/verify.sh <target>` runs after every reconcile, per host and
+without any Komodo credential:
 
 1. `/usr/local/bin/periphery` SHA256 equals the pinned digest.
 2. The binary reports the pinned version.
 3. `systemctl is-enabled periphery` and `is-active periphery` both succeed.
 4. `keys/periphery.key` and `keys/core.pub` exist, are non-empty, real, non-symlink.
-4b. `keys/onboarding-complete` is a valid root-owned mode 0600 marker holding the
-   reviewed content — the durable proof that onboarding committed (never inferred
+5. `keys/onboarding-complete` is a valid root-owned mode 0600 marker (never inferred
    from the identity file).
-5. An established outbound connection exists from the Periphery main PID to
+6. An established outbound connection exists from the Periphery main PID to
    `10.20.0.2:9120` (bounded retries).
-6. No listener exists on `:8120`.
-7. The persistent config still declares `connect_as = "yecao"`, the private Core
-   address, `server_enabled = false`, and `root_directory = "/etc/komodo"`.
-8. No onboarding key is persisted in the config or the unit, and the transient
-   `/run` file is gone.
-9. `/proc/<MainPID>/environ` is **provably** credential-free: an environment that
-   cannot be inspected is a hard failure, never evidence that the key is absent.
+7. No listener exists on `:8120`.
+8. The effective config is **byte-identical** to this target's reviewed config, and
+   still declares `connect_as = "<target>"`, the private Core address,
+   `server_enabled = false`, and `root_directory = "/etc/komodo"`.
+9. No onboarding credential is persisted in the config or the unit, the transient
+   `/run` file is gone, and the process environment is provably credential-free.
 10. Docker is reachable for the container discovery Periphery performs
     (`/var/run/docker.sock` readable and writable, daemon answering, root context).
 
-The Server's own `Online` status in the UI is confirmed manually after the merge,
-because it is Core-side state and intentionally not probed with the admin API.
+Each Server's own `Online` status is confirmed manually after the merge, because it
+is Core-side state and intentionally not probed with the admin API.
 
 ## Manual acceptance
 
+Per host:
+
 ```sh
 systemctl is-enabled periphery && systemctl is-active periphery
-/usr/local/bin/periphery --version          # 2.3.3
-sha256sum /usr/local/bin/periphery          # 40b78f377626799afad8331246a501f077d4ebcfb6d9096894cf55b64f6dcf13
-ss -ltn | grep -c ':8120' || true           # must print 0 / nothing
-ls -l /etc/komodo/keys/periphery.key /etc/komodo/keys/core.pub
-cat /etc/komodo/keys/onboarding-complete    # komodo-periphery-onboarding-v1
+/usr/local/bin/periphery --version           # 2.3.3
+sha256sum /usr/local/bin/periphery           # 40b78f377626799afad8331246a501f077d4ebcfb6d9096894cf55b64f6dcf13
+cat /etc/komodo/keys/onboarding-complete     # komodo-periphery-onboarding-v1
+grep '^connect_as' /etc/komodo/periphery.config.toml   # "yecao" on Yecao, "tx1" on TX1
+ss -ltn | grep ':8120' || true               # must print nothing
 ```
 
 Then open `https://komodo.wotbtools.com` and confirm:
 
 ```text
 Servers
-└── yecao   Online
+├── yecao   OK   v2.3.3
+└── tx1     OK   v2.3.3
 ```
 
 ## Rollback
 
-Stop and remove the agent; the host returns to its pre-K3.1 state:
+Per host, stop and remove the agent:
 
 ```sh
 systemctl disable --now periphery
@@ -237,15 +283,15 @@ systemctl daemon-reload
 ```
 
 Removing `/usr/local/bin/periphery` and `/etc/komodo` is optional and deletes the
-Server identity *and* the onboarding marker: a later reconcile would then need the
-bootstrap credential again (and would re-onboard). Keeping `/etc/komodo` lets a
-later reconcile reattach the same Server without any credential. The Komodo
-Core/Mongo runtime, the public ingress, and DNS are untouched by either choice, and
-the `yecao` Server entry can be deleted from the UI independently.
+Server identity *and* the onboarding marker: a later reconcile would then need that
+host's bootstrap credential again. Keeping `/etc/komodo` lets a later reconcile
+reattach the same Server without any credential. Komodo Core/Mongo, the public
+ingress, and DNS are untouched by either choice, and a Server entry can be deleted
+from the UI independently.
 
 ## Out of scope
 
-TX1 onboarding, Business API / frontend / Keycloak / AI service migration, stacks,
+TX2 onboarding, Business API / Frontend / Keycloak / AI service migration, stacks,
 deployments, repos, builds, procedures, actions, resource sync, automatic updates,
 OIDC/SSO, registry or git credentials, Mongo backup changes, Komodo Core changes,
 Caddy changes, and DNS changes.

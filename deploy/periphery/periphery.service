@@ -1,4 +1,6 @@
-# Repository-owned systemd unit for the Yecao Komodo Periphery agent (K3.1).
+# Repository-owned systemd unit for the Komodo Periphery agent (K3.2), shared by
+# every target host. The Server this agent registers as comes from the per-target
+# config at /etc/komodo/periphery.config.toml, not from this unit.
 #
 # GitHub Actions owns this unit's lifecycle (`.github/workflows/komodo-periphery.yml`).
 # Komodo Core never installs, restarts, or manages Periphery: Komodo must not own
@@ -6,7 +8,7 @@
 #
 # Installed to /etc/systemd/system/periphery.service, root-owned, mode 0644.
 [Unit]
-Description=Komodo Periphery agent (Yecao)
+Description=Komodo Periphery agent
 Documentation=https://github.com/A158Coke/WotbTools/blob/main/docs/operations/komodo-periphery.md
 Wants=network-online.target
 After=network-online.target docker.service

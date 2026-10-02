@@ -1,11 +1,12 @@
-# Komodo Periphery configuration for the Yecao host (K3.1).
+# Komodo Periphery configuration for the Yecao host (target: yecao).
 #
 # Repository-owned: `.github/workflows/komodo-periphery.yml` copies this file
 # verbatim to /etc/komodo/periphery.config.toml on every reconcile, so the host
-# file is never hand-edited and never carries a credential.
+# file is never hand-edited and never carries a credential. `verify.sh` compares
+# the installed file with this one byte for byte.
 #
 # Outbound only: Periphery dials Core over WireGuard and never listens for an
-# inbound connection, so Yecao publishes no Periphery port.
+# inbound connection, so this host publishes no Periphery port.
 #
 # Key reference: Komodo v2.3.3 `config/periphery.config.toml` and
 # `client/core/rs/src/entities/config/periphery.rs` (where the field is
@@ -16,11 +17,12 @@
 root_directory = "/etc/komodo"
 
 ## Outbound mode: dial Core on the private WireGuard address only. Never the
-## public name (https://komodo.wotbtools.com), never the Yecao public address,
-## never a wildcard bind.
+## public name (https://komodo.wotbtools.com), never a host public address, never
+## a wildcard bind.
 core_addresses = ["http://10.20.0.2:9120"]
 
-## The Server this agent registers as in Komodo.
+## The Server this agent registers as in Komodo. This value is the per-target
+## difference and must match PERIPHERY_CONNECT_AS in `targets/yecao/target.env`.
 connect_as = "yecao"
 
 ## Inbound connection server stays disabled: Periphery never binds :8120.
