@@ -7,17 +7,6 @@ spring:
   threads:
     virtual:
       enabled: ${WOTB_VIRTUAL_THREADS_ENABLED:true}
-  autoconfigure:
-    exclude:
-      # Spring AI OpenAI auto-configurations create SDK model beans even without
-      # an API key and would fail startup. AiGatewayConfig builds the single
-      # SpringAiChatGateway / OpenAiChatModel explicitly instead.
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
   servlet:
     multipart:
       max-file-size: 20MB
@@ -78,12 +67,6 @@ management:
           ignore-trailing-slash: true
 
 logging:
-  level:
-    org.apache.poi: WARN
-    # Spring AI logs the full prompt at WARN when the provider returns empty
-    # choices; suppress prompt/completion output while keeping the rest of the
-    # application logs at their default levels.
-    org.springframework.ai.openai.OpenAiChatModel: ERROR
   structured:
     format:
       console: logstash
@@ -97,54 +80,8 @@ keycloak:
 
 wotb:
   replay:
+    # 回放证据上传（名人堂 / 百场 / 三环）的全局并发许可（ReplayCapacityLimiter）；服务器没有 parser
     max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
-    # 回放控制面：MinIO 工作区（桶内 temp/jobs/<jobId>/{input,artifacts,result}/，
-    # 前缀生命周期与身份策略由 infra/tofu/minio 拥有）。
-    object-storage:
-      endpoint: ${YECAO_MINIO_ENDPOINT:10.20.0.2:9000}
-      bucket: ${YECAO_MINIO_BUCKET:wotbtools-temp}
-      access-key: ${YECAO_MINIO_CONTROL_API_ACCESS_KEY:}
-      secret-key: ${YECAO_MINIO_CONTROL_API_SECRET_KEY:}
-      connect-timeout-seconds: ${YECAO_MINIO_CONNECT_TIMEOUT_SECONDS:10}
-      write-timeout-seconds: ${YECAO_MINIO_WRITE_TIMEOUT_SECONDS:60}
-    # distributed 专用：RabbitMQ 连接与确认超时（exchange/queue/binding 由 infra/tofu/rabbitmq 拥有，
-    # 应用只发布/消费，绝不声明拓扑）。
-    broker:
-      host: ${TX_RABBITMQ_HOST:}
-      port: ${TX_RABBITMQ_PORT:5672}
-      vhost: ${TX_RABBITMQ_VHOST:/}
-      username: ${TX_RABBITMQ_CONTROL_API_USER:}
-      password: ${TX_RABBITMQ_CONTROL_API_PASSWORD:}
-      # 结果消费的 prefetch 与消费者数（控制面固定单消费者：权威投影是全量替换）
-      prefetch: ${TX_RABBITMQ_CONTROL_API_PREFETCH:1}
-      # parser.request 等待 broker confirm 的超时；超时即 create 失败（绝不留下无绑定的 job）
-      confirm-timeout-seconds: ${TX_RABBITMQ_CONFIRM_TIMEOUT_SECONDS:10}
-    # distributed 专用：控制面所有的逻辑重试预算（含首次）。
-    # worker 基础设施失败只报告 parser.failed(retryable=true)（从不 nack、从不走 broker 重试队列），
-    # 由控制面按 PG 权威状态决定：attempt < max-attempts ⇒ 立即重派 attempt+1；用尽 ⇒ 终态 FAILED。
-    retry:
-      max-attempts: ${REPLAY_PARSER_MAX_ATTEMPTS:3}
-    artifact:
-      # Excel/ZIP artifact 构建并发（与 parse 分离，2C 默认 1）
-      max-concurrent: ${REPLAY_ARTIFACT_MAX_CONCURRENT:1}
-    export-job:
-      # 导出 Job 临时目录（上传输入 + 最终 artifact；TTL 自动清理，见 ExportJobStore）
-      dir: ${REPLAY_EXPORT_JOB_DIR:${java.io.tmpdir}/wotb-export-jobs}
-      ttl-minutes: ${REPLAY_EXPORT_JOB_TTL_MINUTES:30}
-      # worker 线程数（与全局 replay 容量同值，job 不绕过 max-concurrent-jobs）
-      max-concurrent: ${REPLAY_EXPORT_JOB_MAX_CONCURRENT:2}
-      # 有界等待队列；满载 503 EXPORT_QUEUE_FULL（不建无限队列）
-      queue-capacity: ${REPLAY_EXPORT_JOB_QUEUE_CAPACITY:4}
-    processing-job:
-      # Replay Processing Job 临时输入目录（上传持久化；result 为内存态 dataset，TTL 自动清理）
-      dir: ${REPLAY_PROCESSING_JOB_DIR:${java.io.tmpdir}/wotb-replay-processing-jobs}
-      ttl-minutes: ${REPLAY_PROCESSING_JOB_TTL_MINUTES:30}
-      # job/source/operationId 权威状态固定为 PostgreSQL（无运行时后端选择器）：
-      # 要求业务库 schema 至少到 V23（replay_processing_* 三表 + operation 索引），Flyway 启动迁移即满足。
-      # 与 export-job 共用同一有界 worker 池（max-concurrent/queue-capacity 见上；不复制两套 executor）
-    coordinate:
-      half-extent: ${REPLAY_COORDINATE_HALF_EXTENT:250}
-      clamp-tolerance: ${REPLAY_COORDINATE_CLAMP_TOLERANCE:12.5}
   hof:
     # 名人堂回放文件内容寻址存储目录（生产挂 volume /data/replays）
     replay-dir: ${HOF_REPLAY_DIR:data/replays}

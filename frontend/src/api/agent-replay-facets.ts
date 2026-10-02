@@ -138,6 +138,36 @@ export interface AgentVehicleTrack {
   turret_index: number | null
   gun_index: number | null
   coverage: number[]
+  /**
+   * Type5 战斗装载描述符（6 × 14 字节：`[wire, state, ...12 payload]`；前 3 = consumable、
+   * 后 3 = provision）。无 0A06/0B09 framing 的车辆缺省。
+   */
+  loadout_items?: number[][]
+  /** Type5 装备 9 字节（equipment id 原值，位置序）；与 loadout_items 同缺省 */
+  equipment?: number[]
+}
+
+/** Type32 消耗品生命周期（state：1=INITIALIZED 2=ACTIVATED 3=ACTIVE_ENDED_OR_COOLDOWN 255=TEARDOWN） */
+export interface AgentConsumableEvent {
+  clock: number
+  eid: number
+  wire_code: number
+  state: number
+  body_clock: number
+  param: number
+}
+
+/** method16 模块/乘员状态（recorder-visible telemetry；仅作者车辆） */
+export interface AgentModuleCrewState {
+  clock: number
+  vehicle_eid: number
+  state_code: number
+  component_code: number
+  /** snake_case 组件名（left_track / engine / commander …）；未知为 "unknown" */
+  component: string
+  /** snake_case 状态（damaged_degraded / critical_disabled / auto_repaired_to_damaged / full_repaired_clear …） */
+  state: string
+  related_eid: number
 }
 
 export interface AgentPlaybackShot {
@@ -242,6 +272,10 @@ export interface AgentPlaybackFacet {
   assault_objective_present?: boolean
   /** 单基地占领进度时间线（skip-when-empty：非单基地场次缺省） */
   assault_bases?: AgentAssaultBaseTransition[]
+  /** Type32 消耗品生命周期（全员，AoI 内可见部分） */
+  consumables?: AgentConsumableEvent[]
+  /** method16 模块/乘员状态（recorder-only） */
+  module_crew_states?: AgentModuleCrewState[]
 }
 
 // ---------- 射击复现通道（parseShotReplays；上游 shots 数组同构透传） ----------

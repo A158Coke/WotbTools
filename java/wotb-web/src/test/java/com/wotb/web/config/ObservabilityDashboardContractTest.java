@@ -184,20 +184,28 @@ class ObservabilityDashboardContractTest {
     @Test
     void usageDashboardOwnsUsageAndAndroidMetricsOnly() throws Exception {
         final String usage = readDashboard("wotbtools-usage.json").toString();
-        assertFalse(usage.contains("wotb_replay_processing_job_result_total"));
         assertFalse(usage.contains("wotb_ai_review_results_total"));
         assertFalse(usage.contains("回放 / AI 结果趋势"));
         for (final String metric : Set.of(
-                "wotb_replay_processing_job_files_total",
-                "wotb_replay_processing_job_total",
                 "wotb_ai_review_requests_total",
                 "android_apk_download")) {
             assertTrue(usage.contains(metric), "Usage dashboard must retain " + metric);
         }
 
         final String aiReview = readDashboard("wotbtools-ai-review.json").toString();
-        assertTrue(aiReview.contains("wotb_replay_processing_job_result_total"));
         assertTrue(aiReview.contains("wotb_ai_review_results_total"));
+    }
+
+    /**
+     * 服务器没有 parser：回放处理 Job（wotb-replay-processing / coordinator）已删除，
+     * 其 {@code wotb_replay_processing_*} 指标不再有任何后端声明，看板不得继续引用。
+     */
+    @Test
+    void dashboardsDoNotReferenceRemovedReplayProcessingMetrics() throws Exception {
+        for (final String file : REQUIRED_DASHBOARD_FILES) {
+            assertFalse(readDashboard(file).toString().contains("wotb_replay_processing_"),
+                    "dashboard still references removed replay processing metrics: " + file);
+        }
     }
 
     @Test

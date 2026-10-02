@@ -62,7 +62,7 @@ public class ApiErrorFactory {
 
     private static boolean retryable(final String code, final HttpStatus status) {
         return switch (code) {
-            case "REPLAY_BUSY", "PROCESSING_QUEUE_FULL", "EXPORT_QUEUE_FULL", "AI_REVIEW_BUSY",
+            case "REPLAY_BUSY", "AI_REVIEW_BUSY",
                  "AI_QUEUE_FULL", "AI_RATE_LIMITED", "AI_UPSTREAM_TIMEOUT", "AI_UPSTREAM_UNAVAILABLE",
                  "UPSTREAM_TIMEOUT", "UPSTREAM_UNAVAILABLE",
                  "SERVICE_UNAVAILABLE", "INTERNAL_ERROR", "ADMIN_INTERNAL_ERROR", "STORAGE_ERROR" -> true;

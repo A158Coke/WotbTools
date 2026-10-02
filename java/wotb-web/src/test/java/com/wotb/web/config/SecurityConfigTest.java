@@ -12,6 +12,7 @@ import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,6 +23,7 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -131,51 +133,6 @@ class SecurityConfigTest {
                 .andExpect(status().isForbidden());
     }
 
-    /**
-     * battle-playback-v2 / map-overview 已对匿名开放（Dataset-only，只消费调用方以不可猜测 jobId 引用的
-     * ProcessedDataset）：匿名、已登录无角色、wotbtools-user / wotbtools-admin 均 → 2xx。
-     */
-    @Test
-    void battlePlaybackV2AndMapOverviewArePublic() throws Exception {
-        for (final String path : List.of("/api/replay/battle-playback-v2", "/api/replay/map-overview")) {
-            // 匿名 → 2xx
-            mvc.perform(post(path)).andExpect(status().isOk());
-            // 已登录但无角色 → 2xx（不再有角色门）
-            mvc.perform(post(path).with(jwt())).andExpect(status().isOk());
-            // wotbtools-user / wotbtools-admin → 2xx
-            mvc.perform(post(path).with(jwt().authorities(
-                            new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
-                    .andExpect(status().isOk());
-            mvc.perform(post(path).with(jwt().authorities(
-                            new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
-                    .andExpect(status().isOk());
-        }
-    }
-
-    /**
-     * 批量重建 / 同步处理仍保留 wotbtools-user / wotbtools-admin 角色门（不随赛果解析一起放开）：
-     * 匿名 → 401 canonical envelope；已登录无角色 → 403；wotbtools-user / wotbtools-admin → 2xx。
-     */
-    @Test
-    void reconstructBatchAndProcessStillRequireReplayRole() throws Exception {
-        for (final String path : List.of("/api/replay/reconstruct-batch", "/api/replay/process")) {
-            mvc.perform(post(path))
-                    .andExpect(status().isUnauthorized())
-                    .andExpect(content().contentTypeCompatibleWith("application/json"))
-                    .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"))
-                    .andExpect(jsonPath("$.status").value(401));
-            mvc.perform(post(path).with(jwt()))
-                    .andExpect(status().isForbidden())
-                    .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"));
-            mvc.perform(post(path).with(jwt().authorities(
-                            new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
-                    .andExpect(status().is2xxSuccessful());
-            mvc.perform(post(path).with(jwt().authorities(
-                            new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
-                    .andExpect(status().is2xxSuccessful());
-        }
-    }
-
     @Test
     void adminUsersShouldStillRequireAdminRole() throws Exception {
         // wotbtools-user → 403 for /api/admin/users
@@ -262,102 +219,33 @@ class SecurityConfigTest {
     }
 
     /**
-     * Replay Processing Job（POST 创建）已对匿名开放：匿名 / 已登录无角色 / 任意角色均 → 2xx。
-     * 携带有效 Bearer 时 subject 照常解析（operationId 幂等分域）；匿名时 subject 为空，只是跳过幂等。
-     * probe handler 无参：真实创建端点的 multipart 解析不属于安全门测试范围。
+     * 服务器没有 parser：preview / export / columns、Processing Job、Export Job、playback-v2 /
+     * map-overview、reconstruct-batch / process 端点全部删除，不再有专属安全规则，落回
+     * 「未显式声明的 API 默认拒绝」（anonymous → 401 canonical envelope；任何已认证身份 → 403）。
+     * ProbeController 仍挂着这些路径，证明拒绝来自安全层而不是缺少 handler。
      */
     @Test
-    void replayProcessingJobCreateIsPublic() throws Exception {
-        final String path = "/api/replay/processing-jobs";
-
-        // 匿名 → 2xx（probe 返回 200；真实端点返回 202）
-        mvc.perform(post(path))
-                .andExpect(status().is2xxSuccessful());
-
-        // 已登录但无角色 → 2xx
-        mvc.perform(post(path).with(jwt()))
-                .andExpect(status().is2xxSuccessful());
-
-        // wotbtools-user / wotbtools-admin / HoF-admin → 2xx
+    void removedReplayProcessingEndpointsFallThroughToDefaultApiDenyAll() throws Exception {
+        final List<Supplier<MockHttpServletRequestBuilder>> requests = List.of(
+                () -> get("/api/preview"), () -> get("/api/export"), () -> get("/api/columns"),
+                () -> post("/api/replay/processing-jobs"), () -> get("/api/replay/processing-jobs/job-1"),
+                () -> get("/api/replay/processing-jobs/job-1/result"), () -> delete("/api/replay/processing-jobs/job-1"),
+                () -> post("/api/replay/export-jobs"), () -> get("/api/replay/export-jobs/job-1"),
+                () -> get("/api/replay/export-jobs/job-1/download"), () -> delete("/api/replay/export-jobs/job-1"),
+                () -> post("/api/replay/battle-playback-v2"), () -> post("/api/replay/map-overview"),
+                () -> post("/api/replay/reconstruct-batch"), () -> post("/api/replay/process"));
+        for (final Supplier<MockHttpServletRequestBuilder> request : requests) {
+            mvc.perform(request.get())
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"));
+        }
         for (final String role : List.of("ROLE_wotbtools-user", "ROLE_wotbtools-admin", "ROLE_HoF-admin")) {
-            mvc.perform(post(path).with(jwt().authorities(new SimpleGrantedAuthority(role))))
-                    .andExpect(status().is2xxSuccessful());
+            for (final Supplier<MockHttpServletRequestBuilder> request : requests) {
+                mvc.perform(request.get().with(jwt().authorities(new SimpleGrantedAuthority(role))))
+                        .andExpect(status().isForbidden())
+                        .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"));
+            }
         }
-    }
-
-    /** GET 状态 / GET result / DELETE 取消三条端点与 POST 创建同样公开（匿名可用）。 */
-    @Test
-    void replayProcessingJobStatusResultAndCancelArePublic() throws Exception {
-        final String statusPath = "/api/replay/processing-jobs/job-1";
-        final String resultPath = "/api/replay/processing-jobs/job-1/result";
-
-        // 匿名 → 2xx
-        mvc.perform(get(statusPath)).andExpect(status().is2xxSuccessful());
-        mvc.perform(get(resultPath)).andExpect(status().is2xxSuccessful());
-        mvc.perform(delete(statusPath)).andExpect(status().is2xxSuccessful());
-
-        // 已登录但无角色 → 2xx
-        mvc.perform(get(statusPath).with(jwt())).andExpect(status().is2xxSuccessful());
-        mvc.perform(get(resultPath).with(jwt())).andExpect(status().is2xxSuccessful());
-        mvc.perform(delete(statusPath).with(jwt())).andExpect(status().is2xxSuccessful());
-
-        // wotbtools-user / wotbtools-admin → 2xx
-        for (final String role : List.of("ROLE_wotbtools-user", "ROLE_wotbtools-admin")) {
-            final SimpleGrantedAuthority authority = new SimpleGrantedAuthority(role);
-            mvc.perform(get(statusPath).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
-            mvc.perform(get(resultPath).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
-            mvc.perform(delete(statusPath).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
-        }
-    }
-
-    /** /api/preview 保持公开（独立 legacy contract）；processing-jobs 同样公开（匿名可用）。 */
-    @Test
-    void previewAndProcessingJobsAreBothPublic() throws Exception {
-        mvc.perform(get("/api/preview"))
-                .andExpect(status().isOk());
-        mvc.perform(post("/api/replay/processing-jobs"))
-                .andExpect(status().is2xxSuccessful());
-    }
-
-    /**
-     * Replay Export Job 与 Processing Job 同级开放：Export 只消费调用方以不可猜测 processingJobId 引用的
-     * {@code ProcessedDataset}，create / status / cancel / download 四条端点匿名可用。
-     */
-    @Test
-    void replayExportJobEndpointsArePublic() throws Exception {
-        final String create = "/api/replay/export-jobs";
-        final String status = "/api/replay/export-jobs/job-1";
-        final String download = "/api/replay/export-jobs/job-1/download";
-
-        // 匿名 → 2xx（覆盖 create / status / cancel / download 四条端点）
-        mvc.perform(post(create)).andExpect(status().is2xxSuccessful());
-        mvc.perform(get(status)).andExpect(status().is2xxSuccessful());
-        mvc.perform(delete(status)).andExpect(status().is2xxSuccessful());
-        mvc.perform(get(download)).andExpect(status().is2xxSuccessful());
-
-        // 已登录但无角色 → 2xx
-        mvc.perform(post(create).with(jwt())).andExpect(status().is2xxSuccessful());
-        mvc.perform(get(status).with(jwt())).andExpect(status().is2xxSuccessful());
-        mvc.perform(delete(status).with(jwt())).andExpect(status().is2xxSuccessful());
-        mvc.perform(get(download).with(jwt())).andExpect(status().is2xxSuccessful());
-
-        // wotbtools-user / wotbtools-admin → 2xx
-        for (final String role : List.of("ROLE_wotbtools-user", "ROLE_wotbtools-admin")) {
-            final SimpleGrantedAuthority authority = new SimpleGrantedAuthority(role);
-            mvc.perform(post(create).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
-            mvc.perform(get(status).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
-            mvc.perform(delete(status).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
-            mvc.perform(get(download).with(jwt().authorities(authority))).andExpect(status().is2xxSuccessful());
-        }
-    }
-
-    /** legacy /api/export 是独立 public contract；export-jobs 同样公开（匿名可用）。 */
-    @Test
-    void legacyExportAndExportJobsAreBothPublic() throws Exception {
-        mvc.perform(get("/api/export"))
-                .andExpect(status().isOk());
-        mvc.perform(get("/api/replay/export-jobs/job-1"))
-                .andExpect(status().is2xxSuccessful());
     }
 
     @Configuration
@@ -391,6 +279,7 @@ class SecurityConfigTest {
                 "/api/replay/export-jobs/{jobId}/download",
                 "/api/preview",
                 "/api/export",
+                "/api/columns",
                 "/api/hof/upload",
                 "/api/hof/1/replay",
                 "/api/hof",
@@ -411,7 +300,7 @@ class SecurityConfigTest {
             return "ok";
         }
 
-        /** 批量重建 / 同步处理探针：仍受 wotbtools-user / wotbtools-admin 角色门保护。 */
+        /** 已删除的批量重建 / 同步处理端点探针（只用于证明默认拒绝）。 */
         @PostMapping({
                 "/api/replay/reconstruct-batch",
                 "/api/replay/process"
@@ -420,10 +309,7 @@ class SecurityConfigTest {
             return "ok";
         }
 
-        /**
-         * Replay Processing Job 创建探针：不声明参数，避免测试依赖真实 multipart 解析
-         * （真实端点返回 202 + {jobId, status, total}；此处只验证安全放行）。
-         */
+        /** 已删除的 Replay Processing Job 端点探针（只用于证明默认拒绝）。 */
         @PostMapping("/api/replay/processing-jobs")
         String replayProcessingJobCreate() {
             return "ok";
@@ -434,7 +320,7 @@ class SecurityConfigTest {
             return "ok";
         }
 
-        /** Replay Export Job 创建探针（Dataset-only；此处只验证安全放行）。 */
+        /** 已删除的 Replay Export Job 端点探针（只用于证明默认拒绝）。 */
         @PostMapping("/api/replay/export-jobs")
         String replayExportJobCreate() {
             return "ok";

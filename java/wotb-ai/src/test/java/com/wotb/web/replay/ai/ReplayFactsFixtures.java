@@ -9,11 +9,13 @@ import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.zip.GZIPInputStream;
 
 /**
- * 冻结的客户端投影夹具：{@code common/fixtures/replays} 的回放在服务端 parser 退役前由
- * {@code tools/parity/JavaAiFactsDump.java} 冻结成 AI 服务生产入口接收的 JSON（{@code {battle, reconstruction}}），
+ * 冻结的客户端投影夹具（{@code common/fixtures/replay-facts}）：{@code common/fixtures/replays} 的回放在服务端 parser 退役前由
+ * 迁移期工具（已随 parser 删除）冻结成 AI 服务生产入口接收的 JSON（{@code {battle, reconstruction}}），
  * 经与生产相同的 {@link ReplayFactsCodec} 解码。服务器没有 parser：AI 测试不再解析回放。
  */
 final class ReplayFactsFixtures {
@@ -40,12 +42,10 @@ final class ReplayFactsFixtures {
     }
 
     private static Facts read(final String name) {
-        final String resource = "/replay-facts/" + name + ".json.gz";
-        try (InputStream in = ReplayFactsFixtures.class.getResourceAsStream(resource)) {
-            if (in == null) {
-                throw new IllegalArgumentException("frozen replay facts fixture missing: " + resource);
-            }
-            final JsonNode root = JsonMapper.builder().build().readTree(new GZIPInputStream(in));
+        final Path file = Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures",
+                "replay-facts", name + ".json.gz").normalize();
+        try (InputStream in = new GZIPInputStream(Files.newInputStream(file))) {
+            final JsonNode root = JsonMapper.builder().build().readTree(in);
             return new Facts(ReplayFactsCodec.battleFromJson(root.get("battle")),
                     ReplayFactsCodec.reconstructionFromJson(root.get("reconstruction")));
         } catch (IOException e) {
