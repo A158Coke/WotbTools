@@ -30,7 +30,7 @@ export async function buildLocalAiReviewInput(input: Blob | Uint8Array): Promise
   const aiReview = await parseAgentAiReviewFromBytes(bytes)
   const fp = await loadAgentWasmFingerprint()
   const projection = toClientAiReviewProjection({
-    result, playback, aiReview, engine: { release: fp?.tag ?? 'unknown', commit: fp?.upstream_commit ?? 'unknown' },
+    result, playback, aiReview, engine: { release: fp.tag, commit: fp.upstream_commit },
   })
   if (!projection) throw new AiProjectionUnavailableError()
   return { battle: toBattleFacts(result) as unknown as AiReviewBattle, projection }

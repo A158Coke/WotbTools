@@ -1,0 +1,29 @@
+# Repository-owned systemd unit for the Yecao Komodo Periphery agent (K3.1).
+#
+# GitHub Actions owns this unit's lifecycle (`.github/workflows/komodo-periphery.yml`).
+# Komodo Core never installs, restarts, or manages Periphery: Komodo must not own
+# the agent lifecycle that talks to it.
+#
+# Installed to /etc/systemd/system/periphery.service, root-owned, mode 0644.
+[Unit]
+Description=Komodo Periphery agent (Yecao)
+Documentation=https://github.com/A158Coke/WotbTools/blob/main/docs/operations/komodo-periphery.md
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+# First onboarding only. The bootstrap credential is written to a transient file
+# under /run (mode 0600) by `install.sh`, consumed here, and deleted again before
+# the final restart. The leading `-` keeps the unit valid once it is gone, and the
+# key never reaches the persistent config or this unit's own environment.
+EnvironmentFile=-/run/komodo/periphery-bootstrap.env
+ExecStart=/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.toml
+Restart=on-failure
+RestartSec=5
+# Bootstrapping waits on the first Core handshake; do not let systemd time it out.
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

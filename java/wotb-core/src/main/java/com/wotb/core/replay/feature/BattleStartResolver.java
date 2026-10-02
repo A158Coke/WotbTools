@@ -11,7 +11,9 @@ import java.util.List;
  * a {@code RoundFinishedEvent} (method4/AFTERBATTLE) raw clock minus the settlement duration.
  *
  * <p>PR147/PR162: the single battle-start authority is {@code ReplayReconstruction.battleStartRawClockSec}
- * (resolved via {@code ReplayReconstructionService.resolveBattleStartRawClock}). {@code ReplayStreamDiagnostics}
+ * (originally resolved by {@code ReplayReconstructionService.resolveBattleStartRawClock} — historical Java
+ * implementation, retired 2026-10-02 with the server-side parser; the client side derives battle start from
+ * the upstream Rust Core WASM {@code parseResult} / canonical facts). {@code ReplayStreamDiagnostics}
  * carries no battle-start authority, so this resolver no longer consults diagnostics.</p>
  */
 public final class BattleStartResolver {

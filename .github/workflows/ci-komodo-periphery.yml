@@ -1,0 +1,38 @@
+name: CI / komodo-periphery
+
+# Pull-request validation for the Komodo Periphery owner (K3.1). This workflow
+# never reads production secrets, never SSHes Yecao, never touches production
+# state, and never downloads or executes the Periphery artifact.
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Komodo Periphery contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Bash syntax
+        run: |
+          set -euo pipefail
+          for script in deploy/periphery/*.sh; do
+            bash -n "$script"
+          done
+      # The owner's single fixture entrypoint: staging-root path safety, the
+      # release/config/unit contract, the onboarding-credential lifecycle driven
+      # through the real install.sh, and a real ":8120 has no listener" probe.
+      - name: Validate the Periphery owner contract and safety fixtures
+        run: bash deploy/periphery/test-periphery.sh

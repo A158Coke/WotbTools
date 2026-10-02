@@ -13,6 +13,7 @@ import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
+import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -59,9 +60,10 @@ class PlayerGatewayPromptContractTest {
         gateway = new CapturingGateway();
     }
 
-    private AiReplayAnalysisService service() {
-        return new AiReplayAnalysisService(gateway, "test-model", 200000,
-                new ConservativeDeepSeekTokenEstimator());
+    private PlayerReplayAnalysisService service() {
+        return new PlayerReplayAnalysisService(gateway, new AiReplayAnalysisConfig(
+                new ConservativeDeepSeekTokenEstimator(), "test-model",
+                200000, 131072, 8192, 1000, true, "high", 315, 4096));
     }
 
     private AiChatRequest last() {

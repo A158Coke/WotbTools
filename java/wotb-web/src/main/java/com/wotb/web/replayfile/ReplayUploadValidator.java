@@ -5,7 +5,8 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * 共享回放上传校验器：文件类型 / 单文件 20MiB / 总大小 200MiB / 空文件。
  *
- * <p>通用校验不限制文件数量（live {@code POST /api/replay/processing-jobs} 支持多文件）。
+ * <p>通用校验不限制文件数量（服务器没有回放解析器：处理/导出任务端点已于 2026-10-02 删除，
+ * 回放在浏览器本地解析；本校验器只服务仍存在的上传端点——名人堂 / 百场 / 三环 submission）。
  * AI 的单文件策略由 AI 边界负责，百场 submission 复用本校验器的 size/type contract。</p>
  *
  * <p>错误码与既有端点保持一致：{@code NO_REPLAY_FILES} / {@code NO_REPLAY_FILE} /

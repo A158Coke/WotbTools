@@ -41,7 +41,8 @@
 # Java 分层测试
 # Targeted（改单个 class/function）：mvn -pl wotb-core -Dtest=<TestClass> test
 # Module（单模块/一个 feature）：mvn -pl wotb-core test 或 mvn -pl wotb-web -am test
-# Full（PR CI authoritative validation，Agent 默认不跑）：cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test
+# Full（PR CI authoritative validation，Agent 默认不跑）：cd java && JAVA_HOME=<jdk25> mvn -s settings.xml test
+# JAVA_HOME 指向 JDK 25 安装目录（主工程 JDK 25；只有 keycloak provider 子工程用 JDK 21）。
 # 注意：wotb-web 的真实外部 AI probe 标记为 ai-live，默认被 Surefire 排除；不要仅因环境存在 AI_API_KEY 就解除排除。
 
 # 前端分层测试
@@ -123,7 +124,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 | Owner | Source / shared inputs | Runtime inputs | PR validation | OpenTofu root | Production workflow |
 |---|---|---|---|---|---|
 | Business API | Java web/core modules、HTTP contract、shared common data | business-api image、TX Compose、dependency readiness | Maven、HTTP contract | — | `business-api.yml` |
-| AI Service（预部署） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端仍维护中 | Maven、AI image build、Compose | — | `ai-service.yml` |
+| AI Service（预部署） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端已解除维护（`AiReviewWorkspacePane` 直接挂载，无维护门） | Maven、AI image build、Compose | — | `ai-service.yml` |
 | Frontend | Vue、HTTP contract、shared assets/map/tier data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
 | Keycloak | QQ/Wargaming providers、Keycloak image | realm runtime、TX Compose | provider/runtime、Tofu | `keycloak` | `keycloak.yml` |
 | Android | Android source、native bridge、release helpers | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |
@@ -132,6 +133,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 | Observability | Prometheus/Loki/Alloy/Grafana config | Yecao Compose、local state | config/runtime、Tofu | `grafana` | `observability.yml` |
 | Caddy / TX Alloy | gateway / TX shipper config | TX Compose | config validation | — | `caddy.yml` / `alloy-tx.yml` |
 | Komodo 控制平面 | Core/Mongo Compose、plan guard | Yecao Core/Mongo runtime、`/opt/komodo` local state、DNSPod | Compose 契约、Tofu validation | `komodo` | `komodo-controller.yml` |
+| Komodo Periphery (Yecao) | pinned release manifest、config、systemd unit | Yecao `/usr/local/bin/periphery`、`/etc/komodo`、systemd unit | release/config/unit 契约、onboarding 生命周期 fixture | — | `komodo-periphery.yml` |
 | Deployment / Python | shared deploy policy / common Python tools | shared scripts | contract smokes / unit tests | — | — |
 ---
 
@@ -145,7 +147,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
  wotb-core     model（Battle / PlayerResult 事实形状）/ ref（Tankopedia）/ util /
                replay/{event,facts,feature,evidence,map,processing,reconstruction,timeline}（AI 复盘的客户端投影解码与分析）
        ↓
- wotb-ai       独立 ai-service（AI 复盘，消费客户端投影；维护中）
+ wotb-ai       独立 ai-service（AI 复盘，消费客户端投影；前端已解除维护）
  wotb-web      single Spring Boot composition root：controller → feature service → mapper → dto
        ↓
  Vue SPA（frontend/src/replay-local：WASM 解析 + 批次计算 + 导出 + 2D 数据）
@@ -166,7 +168,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 `.wotbreplay` 的唯一解析器是上游 [fanypcd/WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) 的 Rust Core（作者同为 WotbTools 贡献者，可以直接改上游、发版）。本仓库**不维护第二份解析器**：此前的 `replay-engine/` 移植已于 2026-09-30 退役；服务端 Java `ReplayParser`、parser-worker、parser MQ、processing-jobs、导出任务与 2D 产物已于 2026-10-02 删除（[迁移记录](architecture/client-replay-engine-migration.md)）。
 
-- **产物锁定**：`deploy/agent/source.json` 记录上游 repo、ref 与 Release 附件 sha256；`scripts/fetch-agent-wasm.sh` 下载并校验到 `common/assets/wasm/`（经 Vite publicDir 进入 `dist/wasm/`）。`scripts/build-agent-wasm.sh` 是按源码自建的后备路径。CI（`ci-frontend.yml`）与发布（`frontend.yml`）都会执行同一校验。
+- **产物锁定（content-addressed）**：`deploy/agent/source.json` 是 Agent identity 的**唯一来源**（`ref` = 上游完整 commit，`artifact.release` = Release tag，`artifact.sha256` = 附件校验）。`scripts/fetch-agent-wasm.sh` 下载 Release 附件、校验 sha256 与产物自带 `fingerprint.json` 后落位到 `common/assets/wasm/<ref>/`；`scripts/build-agent-wasm.sh` 是按源码自建的后备路径，产出同一形状。落位目录名就是 URL identity：运行期加载 `/wasm/<ref>/wotb_replay_wasm.js`（wrapper 从同目录取 `_bg.wasm`），**stable `/wasm/wotb_replay_wasm.js` 已废除且由测试/构建/发布三处断言不存在**。`frontend/vite.config.js:agentWasmIdentity()` 在 build 时把 `ref`/`release` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载器据此拼 URL 并先校验 fingerprint，不一致抛 `AgentWasmVersionMismatchError`（fail closed，UI 提示刷新）。缓存失效靠 URL identity，`/wasm/<40 位 commit>/` 因此是长期 `immutable`——普通刷新即可生效，不需要 Ctrl+F5。CI（`ci-frontend.yml`）与发布（`frontend.yml`）执行同一校验；细节见 [replay-pipeline.md](architecture/replay-pipeline.md)「Agent 产物身份」。
 - **消费契约**：`contracts/agent/replay-facets-v2.md`。四个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影；可选 `tankNamesJson` 注入车型名）、`parsePlayback`（时序与花名册；可选 `tankNamesJson`）、`parseShotReplays`（射击复现；可选俯仰锚定表与弹种反解表）、`parseAiReview`（AI 事件数据）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
 - **消费方**：回放工作台（数据 / 导出 / 2D 回放）、三维回放、射击复现、装甲查看器、名人堂 / 百场 / 三环提交、个人主页账号验证、Android（WebView 同一套前端）。
 - **一致性基线**：`frontend/src/replay-local/__golden__/` 是 Java 删除前在仓库 fixture 上的最后输出（只读），CI 常驻断言客户端全链路逐字段一致；上游升级后重新导出 `wasm-*` 再跑同一组测试。
@@ -320,7 +322,7 @@ Showcase Topbar 为 60px。跨页面高优先级修复集中在 `showcase-regres
 
 ### Replay capabilities
 
-`?view=replay` 专注批量解析、结果预览和汇总；`?view=battle-playback` 是同一工作台的 2D 模式，`?view=ai-review` 为 AI 复盘（维护中）。工作台持有唯一一份文件选择与本机分析结果（`useReplaySession` + `useLocalReplayAnalysis`）：选择一次、分析一次，数据 / 导出 / 2D 共用。
+`?view=replay` 专注批量解析、结果预览和汇总；`?view=battle-playback` 是同一工作台的 2D 模式，`?view=ai-review` 为 AI 复盘（已解除维护，见 `AiReviewWorkspacePane`）。工作台持有唯一一份文件选择与本机分析结果（`useReplaySession` + `useLocalReplayAnalysis`）：选择一次、分析一次，数据 / 导出 / 2D 共用。
 
 规则：
 

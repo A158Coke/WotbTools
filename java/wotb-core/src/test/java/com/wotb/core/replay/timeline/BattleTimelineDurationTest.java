@@ -21,7 +21,8 @@ class BattleTimelineDurationTest {
     private static final double START = TimelineTestFixtures.START_RAW;
     private static final double EPS = 1e-3;
 
-    /** 无 settlement：durationS 视为 ReplayParser 的 meta.json#battleDuration fallback。 */
+    /** 无 settlement：durationS 视为已退役 Java {@code ReplayParser} 的 meta.json#battleDuration fallback
+     * （客户端同口径见 {@code frontend/src/replay-local/battleFacts.ts}）。 */
     private static Battle metaOnlyBattle(final Double metaDurationSec) {
         final Battle b = TimelineTestFixtures.battle(0.0);
         b.durationS = metaDurationSec;

@@ -1258,7 +1258,6 @@
       "call1": "赛前预测中…",
       "evidence": "证据分析中…",
       "call2": "战术复盘生成中…",
-      "autopsy": "团队剖析中…",
       "done": "完成"
     },
     "ai_error_http": "AI 分析失败（HTTP {status}）",
@@ -1311,6 +1310,7 @@
     "dataset_expired": "回放数据已过期，正在重新准备…",
     "ai_login_required": "AI 复盘需要登录。回放在本机解析，只上传复盘所需的结构化事实。",
     "ai_engine_unavailable": "回放解析引擎加载失败，请刷新页面重试",
+    "ai_engine_version_mismatch": "回放解析组件版本不一致，请刷新页面后重试",
     "ai_projection_unavailable": "这场回放无法建立战斗时间轴，不能进行 AI 复盘",
     "ai_projection_failed": "这场回放解析失败，无法进行 AI 复盘"
   },

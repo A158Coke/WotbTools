@@ -70,13 +70,23 @@ assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
 assert affected("deploy/komodo/verify.sh") == {"komodo_controller"}
 assert affected("deploy/tx/Caddyfile") == {"caddy"}
 assert affected("docs/operations/komodo-public-ingress.md") == set()
+# K3.1 owner boundary: the Yecao Periphery agent has its own owner, so a Periphery
+# change can neither trigger the Komodo Core/Mongo/DNS reconcile nor the Caddy
+# gateway, and its documentation lives outside every production owner.
+assert affected("deploy/periphery/install.sh") == {"komodo_periphery"}
+assert affected("deploy/periphery/periphery.release") == {"komodo_periphery"}
+assert affected(".github/workflows/komodo-periphery.yml") == {"komodo_periphery"}
+assert not (affected("deploy/periphery/install.sh") & {"komodo_controller", "caddy"})
+assert affected("docs/operations/komodo-periphery.md") == set()
 # Frontend production builds now publish from TX through the Gitee exact-SHA builder.
 # The GitHub-runner registry-list/retry helpers are no longer frontend-owned inputs;
 # the Agent WASM pin/fetch contract and freshness gate remain production inputs.
 assert affected("deploy/agent/source.json") == {"frontend"}
 assert affected("scripts/fetch-agent-wasm.sh") == {"frontend"}
 assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment"}
-assert affected("deploy/check-production-freshness.sh") == {"deployment", "frontend", "komodo_controller"}
+assert affected("deploy/check-production-freshness.sh") == {
+    "deployment", "frontend", "komodo_controller", "komodo_periphery",
+}
 for owner in jobs["changes"]["outputs"]:
     caller = jobs[owner]
     assert caller["if"] == f"needs.changes.outputs.{owner} == 'true'", owner
@@ -121,7 +131,7 @@ for script in ("business-postgres-backup.sh", "keycloak-postgres-backup.sh", "to
 owners = (
     "business-api", "frontend", "keycloak", "caddy",
     "business-postgres", "keycloak-postgres", "observability", "alloy-tx",
-    "komodo-controller",
+    "komodo-controller", "komodo-periphery",
 )
 pr_owner_for_production = {
     "business-api": "business_api",
@@ -133,6 +143,7 @@ pr_owner_for_production = {
     "observability": "observability",
     "alloy-tx": "alloy_tx",
     "komodo-controller": "komodo_controller",
+    "komodo-periphery": "komodo_periphery",
 }
 assert set(pr_owner_for_production) == set(owners)
 image_owners = {"business-api", "frontend", "keycloak"}
@@ -253,6 +264,80 @@ assert '[ "$komodo_public" = "$komodo_private" ]' in caddy_script, \
 caddy_tokens = {token for line in caddy_script.splitlines() for token in line.split()}
 assert "-k" not in caddy_tokens, "curl -k is forbidden in the Caddy gateway verification"
 assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy gateway verification"
+# K3.1: the Yecao Periphery agent is repo-owned and outbound-only. GitHub Actions
+# owns its systemd lifecycle, the host never downloads an artifact, the bootstrap
+# credential only ever lives in a transient /run file, and the agent connects to
+# Core's private WireGuard address rather than the public name.
+periphery_workflow = load(workflow_dir / "komodo-periphery.yml")
+periphery_events = periphery_workflow.get("on", periphery_workflow.get(True, {}))
+assert periphery_events["push"]["paths"] == periphery_workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
+periphery_deploy = periphery_workflow["jobs"]["deploy"]
+assert periphery_deploy["name"] == "Reconcile Komodo Periphery on Yecao"
+assert "environment" not in periphery_deploy, "K3.1 uses repository-level secrets, never a GitHub Environment"
+periphery_steps = {step.get("name"): step for step in periphery_deploy["steps"]}
+release_step = periphery_steps["Read the pinned Periphery release"]["run"]
+assert "deploy/periphery/periphery.release" in release_step, release_step
+assert "PERIPHERY_SHA256" in release_step and "PERIPHERY_URL" in release_step
+artifact_step = periphery_steps["Download and verify the pinned Periphery artifact"]["run"]
+assert "sha256sum --check --strict" in artifact_step, artifact_step
+assert "--retry 3" in artifact_step, artifact_step
+periphery_reconcile = periphery_steps["Reconcile Periphery under the Yecao host lock"]
+assert periphery_reconcile["with"]["envs"] == "SOURCE_SHA,KOMODO_YECAO_ONBOARDING_KEY"
+assert periphery_reconcile["env"]["KOMODO_YECAO_ONBOARDING_KEY"] == \
+    "${{ secrets.KOMODO_YECAO_ONBOARDING_KEY }}"
+periphery_script = periphery_reconcile["with"]["script"]
+assert 'bash "$stage/deploy/periphery/reconcile.sh" "$SOURCE_SHA" "$stage"' in periphery_script
+# The host must never fetch or execute an unverified artifact.
+for token in ("curl", "wget"):
+    assert token not in periphery_script, token
+# The bootstrap credential must never be echoed into the workflow log.
+assert "KOMODO_YECAO_ONBOARDING_KEY" not in periphery_script.replace("$KOMODO_YECAO_ONBOARDING_KEY", "")
+for staging_step in ("Prepare safe Periphery staging root on Yecao", "Cleanup staged Periphery inputs"):
+    assert periphery_steps[staging_step]["with"]["script_path"] == "deploy/periphery/staging-root.sh"
+assert periphery_steps["Cleanup staged Periphery inputs"]["if"] == "always()"
+# Exactly the production inputs plus the verified artifact are staged; the owner's
+# fixtures stay in CI.
+staged = " ".join(periphery_steps["Stage exact Periphery inputs on Yecao"]["with"]["source"].split())
+staged_files = {part for part in staged.replace(" ", "").split(",") if part}
+assert staged_files == {
+    "deploy/periphery/lib.sh",
+    "deploy/periphery/staging-root.sh",
+    "deploy/periphery/install.sh",
+    "deploy/periphery/verify.sh",
+    "deploy/periphery/reconcile.sh",
+    "deploy/periphery/periphery.release",
+    "deploy/periphery/periphery.config.toml",
+    "deploy/periphery/periphery.service",
+    "periphery-x86_64",
+}, sorted(staged_files)
+# The persistent config is outbound only: private Core address, exact connect_as,
+# no inbound server, and no credential.
+periphery_config_text = (root / "deploy/periphery/periphery.config.toml").read_text(encoding="utf-8")
+for invariant in (
+    'root_directory = "/etc/komodo"',
+    'core_addresses = ["http://10.20.0.2:9120"]',
+    'connect_as = "yecao"',
+    "server_enabled = false",
+    'private_key = "file:/etc/komodo/keys/periphery.key"',
+    'core_public_keys = ["file:/etc/komodo/keys/core.pub"]',
+):
+    assert invariant in periphery_config_text, invariant
+assert "45.136.14.101" not in periphery_config_text
+assert "0.0.0.0" not in periphery_config_text
+periphery_unit_text = (root / "deploy/periphery/periphery.service").read_text(encoding="utf-8")
+for invariant in (
+    "EnvironmentFile=-/run/komodo/periphery-bootstrap.env",
+    "ExecStart=/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.toml",
+    "Requires=docker.service",
+    "WantedBy=multi-user.target",
+):
+    assert invariant in periphery_unit_text, invariant
+assert "PERIPHERY_ONBOARDING_KEY" not in periphery_unit_text, \
+    "the bootstrap credential must only reach Periphery through the transient /run file"
+# The pinned release is a sha256 manifest, never a floating tag or image.
+periphery_release_text = (root / "deploy/periphery/periphery.release").read_text(encoding="utf-8")
+assert "latest" not in periphery_release_text.lower()
+assert "40b78f377626799afad8331246a501f077d4ebcfb6d9096894cf55b64f6dcf13" in periphery_release_text
 for owner in owners:
     workflow = load(workflow_dir / f"{owner}.yml")
     events = workflow.get("on", workflow.get(True, {}))

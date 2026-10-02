@@ -36,6 +36,18 @@ server {
         try_files $uri =404;
     }
 
+    # Agent WASM 产物：commit-addressed 目录（`/wasm/<40 位 upstream commit>/`）。
+    # 目录名就是内容身份——同一个 frontend build 只引用自己 pin 的 commit，新 Agent
+    # → 新 URL，旧 URL 永不覆盖，因此长期 immutable 缓存是**正确**行为（刷新即拿到
+    # 新 build 对应的产物，不需要 Ctrl+F5 / 清站点数据）。只锁 40 位 hex 目录，不给
+    # `/wasm/` 根目录统一 immutable（根目录不得再放 stable 产物）。
+    # 正则含 `{}`：必须加引号，否则 nginx 在 `{` 处提前结束 location 头
+    #（`nginx: [emerg] unknown directive "40}/"`）。
+    location ~ "^/wasm/[0-9a-f]{40}/" {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
     location = /download/android {
         try_files /index.html =404;
     }

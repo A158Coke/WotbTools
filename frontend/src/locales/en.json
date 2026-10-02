@@ -1258,7 +1258,6 @@
       "call1": "Pre-battle prediction…",
       "evidence": "Analyzing evidence…",
       "call2": "Generating tactical review…",
-      "autopsy": "Team autopsy…",
       "done": "Done"
     },
     "ai_error_http": "AI analysis failed (HTTP {status})",
@@ -1311,6 +1310,7 @@
     "dataset_expired": "Replay data has expired. Re-preparing…",
     "ai_login_required": "Sign in to use AI review. The replay is parsed on this device; only the structured facts the review needs are uploaded.",
     "ai_engine_unavailable": "The replay engine failed to load. Refresh and try again.",
+    "ai_engine_version_mismatch": "The replay engine version does not match this WotBTools build. Please refresh the page and try again.",
     "ai_projection_unavailable": "A battle timeline cannot be established for this replay, so AI review is unavailable",
     "ai_projection_failed": "This replay could not be parsed for AI review"
   },

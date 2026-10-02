@@ -60,7 +60,7 @@ describe('HTTP contract runtime validator', () => {
     const result = validateBattlePlaybackDataset(dataset('EXACT'))
     expect(result.data).toBeNull()
     expect(result.diagnostics[0]).toMatchObject({
-      endpoint: '/api/replay/battle-playback-v2',
+      endpoint: 'local replay dataset (client-side projection)',
       schema: 'BattlePlaybackDataset',
       path: '/vehicles/0/loadout/confidence',
     })

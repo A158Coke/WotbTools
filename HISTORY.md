@@ -486,6 +486,49 @@ Hall of Fame 的信任模型也随之明确：客户端提交的 Replay facts **
 
 **Git 证据：** `0dc4767e`（#447 合入主线）；上游 Release `v0.3.8` commit `f35baa46`。
 
+## 2026-10-02 — 3D Playback 接入上游实时装填遥测
+
+服务端 Replay Parser 退役后，3D Playback 继续作为 Agent `PlaybackData` 的专用客户端消费者。
+上游 `WoT-Blitz-Agent v0.3.9` 增加 `reloads` 与 `reload_effective` 两个 additive facet：
+前者保留本方车辆的装填相位与服务器剩余发数快照，后者提供 method 35 的当前有效完整装填时长。
+WotbTools 将 production pin 从 v0.3.8 升到 v0.3.9，并继续通过 Release artifact SHA-256 固定运行字节。
+
+这次接入没有把装填相位提升成跨产品 canonical ReplayFacts。3D 只在客户端按已交叉验证的 OTM
+语义解释所需子集：整夹装填、弹鼓逐发补槽、夹内推弹间隔和服务器弹量快照；seek 通过纯时间函数
+重建状态，不维护累加计时器。协议没有敌方装填遥测，因此敌方不绘制装填条，缺失数据保持 unknown。
+
+这条变化延续了客户端解析后的边界：**上游 Agent 扩展原始能力，WotbTools 在具体 consumer 内
+建立经过证据约束的呈现语义；专用渲染事实不会因为 UI 需要而自动变成全局领域 authority。**
+
+**Git 证据：** PR #451；upstream `v0.3.9` / `b4e50e13`。
+
+## Agent 产物身份改为 content-addressed（stale WASM 修复）
+
+上游 WASM 此前一直以**固定 URL** `/wasm/wotb_replay_wasm.js` 伺服。前端 build 换了，
+浏览器却可能仍持有旧 Agent 产物：同一个页面用旧引擎解析新回放，症状要等到 AI Review
+报 `ai_review.poses 缺失` 才暴露——修复也因此容易被误判成 parser 或 validator 的问题。
+
+修复不是加 `?v=<commit>` 查询串：wasm-bindgen wrapper 会自行加载 `_bg.wasm`，只给 JS
+加版本参数无法为「JS + WASM」建立统一 identity。这次把产物落位改成**目录即身份**：
+`common/assets/wasm/<upstream commit>/`，运行时固定访问 `/wasm/<commit>/…`，
+`deploy/agent/source.json` 仍是唯一 identity SSOT，build 期由 Vite 注入
+`__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载前先校验产物 `fingerprint.json`
+的 commit 与 tag，不一致抛 `AgentWasmVersionMismatchError`（fail closed）。
+
+由此得到的长期性质：**URL 就是内容身份**。新 Agent 换新 URL，旧 URL 永不覆盖，
+`/wasm/<40 位 commit>/` 可以放心长期 `immutable` 缓存——「普通刷新即生效」不再依赖
+强制 no-cache；stable 路径被废除并由测试、Docker build 与 TX 发布校验三处断言不存在。
+
+同一次排查暴露了第二个独立缺陷：**"没有证据"被渲染成"满弹"**。生产上 3D 装填条一直显示为
+一根不动的白条，根因是错版引擎给出 `reloads = 0`，而客户端把"无遥测"兜底成 `full()`。
+修复后无遥测一律读作 unknown 并隐藏整条装填 UI，只有"有遥测且状态算出来是满弹"才画满条。
+两条 fail-closed 是两个层面：URL identity 保证 UI 拿到的是本 build 的引擎，遥测语义保证
+UI 不会把未知说成满弹。生产 pin 同时升到 `v0.3.10`（`5029e103…`）：同一 replay 的装填遥测
+从 0 条恢复为 121 条，作者车 28 条，装填条随真实相位推进。
+
+**Git 证据：** 本 PR；`deploy/agent/source.json`、`scripts/fetch-agent-wasm.sh`、
+`frontend/src/api/agent-replay-facets.ts`、`frontend/src/scene/reloadBar.js`。
+
 ## 当前架构形成的三条长期主线
 
 回看整个演进过程，WotbTools 的变化并不是简单的功能累积，而主要沿三条长期主线收敛。

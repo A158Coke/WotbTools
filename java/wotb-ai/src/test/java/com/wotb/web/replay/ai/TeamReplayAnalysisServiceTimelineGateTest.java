@@ -20,6 +20,7 @@ import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
+import com.wotb.web.replay.dto.AiReviewDonePayload;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,7 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * orchestration path，非 Mockito）。
  * <p>通过 {@link TeamReplayAnalysisService#analyzeTeam}（Team AI 唯一 production 编排
  * 入口）验证：timeline invalid / reconstruction 缺失 → {@link AiTimelineUnusableException}
- * 且 AI Gateway requests = 0（Call #1 / Call #2 / Team Autopsy 均不执行）；valid timeline →
+ * 且 AI Gateway requests = 0（Call #1 / Call #2 均不执行）；valid timeline →
  * Call #2 prompt 必含 TACTICAL TIMELINE 与确定性 battle-relative 事实；
  * {@link TeamAiPromptBuilder} 不引用 {@code BattleTimelineBuilder}（build 唯一入口在 orchestration）。</p>
  */
@@ -62,7 +63,6 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         service = new TeamReplayAnalysisService(
                 gateway, config,
                 new PreBattleStrategicService(gateway, config, null),
-                new TeamAutopsyService(gateway, config, null),
                 System::nanoTime, null);
     }
 
@@ -80,7 +80,7 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         assertTrue(e.getMessage().contains("AI_TIMELINE_UNUSABLE"), e.getMessage());
         assertTrue(e.getMessage().contains("TIMELINE_CLOCK_UNRESOLVED"), e.getMessage());
         assertTrue(gateway.requests.isEmpty(),
-                "timeline invalid must reject before any LLM call (Call #1/Call #2/Autopsy = 0): "
+                "timeline invalid must reject before any LLM call (Call #1/Call #2 = 0): "
                         + gateway.requests);
     }
 
@@ -104,7 +104,7 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         final TeamCase teamCase = teamResult(
                 "arena-valid", "Ally", 1001L, 1, validRecon());
 
-        final TeamAnalyzeResult result = service.analyzeTeam(teamCase.battle(), teamCase.recon(),
+        final AiReviewDonePayload result = service.analyzeTeam(teamCase.battle(), teamCase.recon(),
                 AllowedLanguage.ZH, AiReviewStreamListener.NOOP);
 
         assertNotNull(result.analysis());

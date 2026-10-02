@@ -1,9 +1,8 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
-import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
+import com.wotb.core.replay.evidence.TeamAiReviewResult;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
-import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -31,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 
 import com.wotb.web.replay.ai.eval.TeamQualityGoldEvaluator;
-import com.wotb.web.replay.ai.eval.TeamQualityShortcutValidator;
 import com.wotb.web.replay.ai.eval.TeamReplayQualityCase;
 import com.wotb.web.replay.ai.eval.TeamReplayQualityCaseLoader;
 
@@ -139,26 +137,19 @@ public class TeamReplayQualityBenchmarkRunner {
             return BenchmarkResult.failed(qualityCase, model, run,
                     e.getClass().getSimpleName() + ": " + safeMessage(e));
         }
-        final TeamReviewEnvelopeParser.ParseResult parsed = TeamReviewEnvelopeParser.parseDetailed(
-                response.completionText());
-        if (parsed.failed()) {
-            return BenchmarkResult.failed(qualityCase, model, run,
-                    "parse: " + parsed.failureReason());
+        final TeamAiReviewResultParser.ParseResult parsed = TeamAiReviewResultParser.parse(
+                response.completionText(), TeamRosterResolver.playerKeys(context));
+        if (!parsed.usable()) {
+            return BenchmarkResult.failed(qualityCase, model, run, "parse: " + parsed.failure());
         }
-        final TeamReviewEnvelope envelope = parsed.envelope();
-        final List<TeamFactualConsistencyValidator.FactConflict> conflicts =
-                TeamFactualConsistencyValidator.validate(envelope, facts);
-        final List<TeamQualityShortcutValidator.Violation> shortcuts =
-                TeamQualityShortcutValidator.validate(envelope);
-        final boolean groundingPass = conflicts.stream()
-                .noneMatch(conflict -> conflict.severity() == TeamFactualConsistencyValidator.Severity.HARD_FACT);
+        final TeamAiReviewResult structured = parsed.result();
+        final boolean contractPass = parsed.usable();
         final Map<String, Object> scores = new LinkedHashMap<>();
-        scores.put("grounding", groundingPass ? 1 : 0);
-        scores.put("structural", shortcuts.isEmpty() ? 1 : 0);
-        scores.put("evidenceBasis", envelope.primaryDiagnosis().evidenceBasis().isEmpty() ? 0 : 1);
-        scores.put("semantic", null);
-        final String review = envelope.primaryDiagnosis().title() + "\n"
-                + envelope.primaryDiagnosis().reasoning() + "\n" + envelope.reviewMarkdown();
+        // v0.5 contract：parser 可产出 minimum contract（summary + episodes）即为通过；
+        // normalized 表示发生了确定性 salvage。legacy envelope 的 grounding validator /
+        // structural shortcut validator 已随 legacy 契约层删除，不再参与评分（见 ai-evaluation 文档）。
+        scores.put("contract", parsed.normalized() ? 1 : 2);
+        final String review = reviewText(structured);
         final TeamQualityGoldEvaluator.Evaluation gold = TeamQualityGoldEvaluator.evaluate(qualityCase, review);
         scores.put("informationReasoning", score(review, "信息|information|vision|视野"));
         scores.put("objectiveReasoning", score(review, "目标|占点|点数|objective|points"));
@@ -170,11 +161,35 @@ public class TeamReplayQualityBenchmarkRunner {
         scores.put("coachingUsefulness", review.contains("建议") || review.contains("复查")
                 || review.toLowerCase(java.util.Locale.ROOT).contains("recommend") ? 2 : 0);
         scores.put("naturalChinese", review.codePoints().anyMatch(value -> value >= 0x4E00 && value <= 0x9FFF) ? 2 : 0);
-        return new BenchmarkResult(qualityCase.id(), model, run, groundingPass,
-                conflicts.stream().map(TeamFactualConsistencyValidator.FactConflict::reasonCode).distinct().toList(),
-                shortcuts.stream().map(TeamQualityShortcutValidator.Violation::code).toList(),
+        return new BenchmarkResult(qualityCase.id(), model, run, contractPass,
+                parsed.failures().stream().map(failure -> failure.code().name()).distinct().toList(),
                 scores, average(scores), gold.mustNoticeHits(), gold.mustNoticeMisses(),
                 gold.mustNotViolations(), review, "");
+    }
+
+    /**
+     * v0.5 structured result → 参与 gold / lexical 评分的正文文本：
+     * summary 摘要 + episode 标题与分析 + 训练建议（legacy {@code reviewMarkdown} 的等价载体）。
+     */
+    private static String reviewText(final TeamAiReviewResult result) {
+        final StringBuilder text = new StringBuilder();
+        if (result.summary() != null) {
+            text.append(nullSafe(result.summary().verdict())).append('\n')
+                    .append(nullSafe(result.summary().primaryDiagnosis())).append('\n');
+        }
+        for (final TeamAiReviewResult.Episode episode : result.episodes()) {
+            text.append(nullSafe(episode.title())).append('\n')
+                    .append(nullSafe(episode.analysis())).append('\n');
+        }
+        for (final TeamAiReviewResult.TrainingSuggestion suggestion : result.trainingSuggestions()) {
+            text.append(nullSafe(suggestion.title())).append('\n')
+                    .append(nullSafe(suggestion.content())).append('\n');
+        }
+        return text.toString();
+    }
+
+    private static String nullSafe(final String value) {
+        return value == null ? "" : value;
     }
 
     private static void writeReports(final String model, final int runs,
@@ -219,11 +234,10 @@ public class TeamReplayQualityBenchmarkRunner {
                     .append(" |\n");
         }
         markdown.append("\n");
-        markdown.append("| case | run | grounding | shortcuts | overall |\n|---|---:|---|---|---:|\n");
+        markdown.append("| case | run | contract | overall |\n|---|---:|---|---:|\n");
         for (final BenchmarkResult result : results) {
             markdown.append("| ").append(result.caseId()).append(" | ").append(result.run())
-                    .append(" | ").append(result.groundingPass() ? "PASS" : "FAIL")
-                    .append(" | ").append(result.shortcutViolations())
+                    .append(" | ").append(result.contractPass() ? "PASS" : "FAIL")
                     .append(" | ").append(result.overall()).append(" |\n");
         }
         markdown.append("\nGold must_notice hits/misses and must_not violations are report-only lexical preflight;\n")
@@ -304,9 +318,8 @@ public class TeamReplayQualityBenchmarkRunner {
             String caseId,
             String model,
             int run,
-            boolean groundingPass,
-            List<String> groundingConflicts,
-            List<String> shortcutViolations,
+            boolean contractPass,
+            List<String> contractFailures,
             Map<String, Object> dimensionScores,
             double overall,
             List<String> mustNoticeHits,
@@ -316,8 +329,7 @@ public class TeamReplayQualityBenchmarkRunner {
             String error
     ) {
         public BenchmarkResult {
-            groundingConflicts = groundingConflicts == null ? List.of() : List.copyOf(groundingConflicts);
-            shortcutViolations = shortcutViolations == null ? List.of() : List.copyOf(shortcutViolations);
+            contractFailures = contractFailures == null ? List.of() : List.copyOf(contractFailures);
             dimensionScores = dimensionScores == null ? Map.of()
                     : Collections.unmodifiableMap(new LinkedHashMap<>(dimensionScores));
             mustNoticeHits = mustNoticeHits == null ? List.of() : List.copyOf(mustNoticeHits);
@@ -328,11 +340,8 @@ public class TeamReplayQualityBenchmarkRunner {
         static BenchmarkResult failed(final TeamReplayQualityCase qualityCase,
                                       final String model, final int run, final String error) {
             final Map<String, Object> scores = new LinkedHashMap<>();
-            scores.put("grounding", 0);
-            scores.put("structural", 0);
-            scores.put("evidenceBasis", 0);
-            scores.put("semantic", null);
-            return new BenchmarkResult(qualityCase.id(), model, run, false, List.of(), List.of(),
+            scores.put("contract", 0);
+            return new BenchmarkResult(qualityCase.id(), model, run, false, List.of(),
                     scores, 0, List.of(), qualityCase.mustNotice(), qualityCase.mustNot(), "", error);
         }
     }

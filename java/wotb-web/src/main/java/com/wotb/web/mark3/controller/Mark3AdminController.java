@@ -18,7 +18,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,7 +32,6 @@ import java.util.List;
 /** 三环管理审核 API；SecurityConfig 的 HOF_ADMIN_PATTERN 要求 HoF-admin 或 wotbtools-admin。 */
 @RestController
 @RequestMapping(ApiPaths.HOF_MARK3_ADMIN)
-@CrossOrigin(origins = "*")
 public class Mark3AdminController {
 
     private final Mark3SubmissionService service;

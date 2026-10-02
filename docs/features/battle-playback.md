@@ -88,7 +88,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 ### 反未来信息泄漏（anti-future-leak，硬性 invariant）
 
 > 在 UI 时间 `t`，任何展示出来的事实只能来自 `timeSec <= t` 的证据。这是 Battle Playback V2
-> 的硬性不变式（canonical 解码器 / battle-start / BattleTimeline / BattlePlaybackProjector 不改，
+> 的硬性不变式（canonical 解码器 / battle-start / BattleTimeline 不改——当时服务端的
+> BattlePlaybackProjector 已随解析器于 2026-10-02 退役，现为客户端 `replay-local/playback/**`；
 > 只修 query-at-time 与 presentation 层）。
 
 - `positionAtV2` / `orientationAtV2` 增加守卫：整个 segment `startSec > t` 对当前查询完全不可见；
@@ -116,10 +117,15 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 
 ### 数据链路
 
-- **数据源**：`MapGridRegistry`（core）从 `map-semantics/*.semantic.json` 读取
-  `playableBoundsMeters` / `analysisGrid.cells`(6x6) / `sceneEvidence.battlePoints`（出生点）；
-  `MapOverviewBuilder`（web）从 `Battle`（权威名册/阵亡时刻/地图名）+ `ReplayReconstruction`
-  （type-10 位置流 / 伤害事件 / 实体→账号映射，经 `TeamEntityMapper`）聚合。
+- **数据源**：客户端 `frontend/src/replay-local/playback/toMapOverview.ts` 直接读
+  `common/map-semantics/*.semantic.json` 的
+  `playableBoundsMeters` / `analysisGrid.cells`(6x6) / `sceneEvidence.battlePoints`（出生点），
+  并从本地解析产出的 `BattlePlaybackDataset`（客户端 canonical facts：
+  `frontend/src/replay-local/canonical/facts.ts` 的位置流 / 伤害事件 / 实体→账号映射，
+  经 `frontend/src/replay-local/playback/toBattlePlaybackDataset.ts` 投影）与结算 `Battle`
+  （权威名册/阵亡时刻/地图名）聚合。原服务端 `MapOverviewBuilder`(web) / `MapGridRegistry`(core)
+  与 `ReplayReconstructionService` 已于 2026-10-02 退役删除（`ReplayReconstruction` 模型类型仍在
+  `wotb-core`，只服务 AI timeline 侧；`TeamEntityMapper` 同样仍在 `wotb-core`，只服务 AI 侧）。
 - **坐标约定**：分析坐标与 `playableBounds` 同系——`x` = 地图横向 = 回放 x，`y` = 地图纵向 =
   回放 z（同一原点同一米制）；`playableBounds` 用于 6×6 分析网格、热力分桶与可玩区域判断。
   图片渲染边界独立为 `coordinateBounds`（地图图片对应的世界坐标范围，见「图片素材与对齐约定」）：
@@ -129,8 +135,14 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 - **标题三语**：`MapOverview` 携带 `displayNames{zh,en,ru}`（来自 `common/map_names.json`，
   未收录时三语同 code）；前端按 vue-i18n 当前 locale 取标题，缺失回退 `displayName`（en）。
 - **模式与录像者**：`MapOverview` 继续携带 `arenaBonusType`（meta.json 原值；1=随机战斗，其他=训练/联赛等，
-  未知为 null）与 `recorderAccountId`（经 `Battle.recorderResult()` 解析，录像者昵称已在
-  `ReplayParser.resolveRecorderNickname` 归一化为纯昵称；未解析为 null）。这些字段仍供 Battle Playback
+  未知为 null）与 `recorderAccountId`（客户端由上游 `author_account_id` 归一化，
+  `frontend/src/replay-local/canonical/facts.ts`；服务端 Java `Battle.recorderResult()` 按昵称匹配）。
+  录像者昵称由上游 Rust Core（pin `deploy/agent/source.json`）在 `parseResult.author_nickname` 提供，
+  客户端 `frontend/src/replay-local/battleFacts.ts` 原样写入 `Battle.recorder`（导出「录像者」单元格用）；
+  原 Java `ReplayParser.resolveRecorderNickname` 的「先精确匹配 roster 昵称、再按 clan+分隔符唯一匹配」
+  归一化实现已于 2026-10-02 退役，客户端当前没有等价实现（注意：上游值可能是「军团-昵称」拼接，
+  如冻结 golden `frontend/src/replay-local/__golden__/wasm-results.json` 的 `CHRD-A158布丁`；
+  权威录像者身份以 `author_account_id` 为准）。这些字段仍供 Battle Playback
   编排和事件事实使用；路线聚合仍按既有 wire contract 生成，但不再在 MapOverview 中提供用户视图。
 - **自适应配色**：前端 `frontend/src/utils/mapPalette.js` 将底图降采样 64×64 后计算平均相对亮度
   （sRGB 线性化后按 0.2126/0.7152/0.0722 加权），阈值 0.45——低于视为暗图用亮色系、否则用深饱和色系；
@@ -318,13 +330,13 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   - **时间格式**：`formatClock` 先对总秒数统一取整再分解分钟/秒（杜绝 59.6s 显示为 00:60）。
   **AI 报告时间跳转**：`MarkdownContent` 把明确时间文本（`03:20` / `3分20秒` / `3m 20s` /
   `3 мин 20 с`）转成 `#seek=<秒>` 链接（不识别普通数字/比分）；结果面板把 seek 事件上抛给页面，
-  页面确保独立地图区块已加载（未加载自动拉取 /api/replay/map-overview）并把 seek 传给 MapOverview——
+  页面确保独立地图区块已加载（`MapOverview` 由同一次本机解析产出，无网络请求）并把 seek 传给 MapOverview——
   自动切换到战局回放并 seek 到该时刻暂停；随后页面 scrollIntoView 回滚到地图区块（地图在结果面板上方，
   点报告底部时间链接即可直接看到对应时刻的回放）。
 - **阶段切片**：opening = OPENING + FIRST_CONTACT 合并；mid = 中间段；late = 战斗末
   `BattlePhaseSummary.DENSE_KILL_WINDOW_SEC`（15s）窗口（残局）。
 - **降级**：未知地图 / 无语义网格 / 无名册 / 无观测 / 视角未解析 → `mapOverview = null`，
-  前端不渲染（加载按钮返回 204 并显示不可用提示）。
+  前端不渲染（本机投影返回 null 并显示不可用提示）。
 
 ### 图片素材与对齐约定
 
@@ -414,8 +426,11 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   unsupported 变体、或 victim 无法解析的 unsupported 证据（解码层已用可靠 outer entityId 回退，
   仍无法解析的不得静默视为「无冲突」）→ 掉血数值事实保留、attacker=null、attackerReliable=false、
   observedHpLoss=null（cumulative dealt / 伤害日志 / 事件级掉血均不得归给窗口内 direct DAMAGE）；
-  destroyed 事实保留并去重，不因 killer 未知删除 HP=0/击毁。每 KILL 由同炮 DAMAGE 支撑的断言在
-  `BattlePlaybackAdapterParityTest` 真实 fixture 上强制执行。
+  destroyed 事实保留并去重，不因 killer 未知删除 HP=0/击毁。KILL / DAMAGE / DESTROYED 事件
+  多重集（含 observedHpLoss）与掉血明细在真实 fixture 上与冻结的 Java golden
+  （`frontend/src/replay-local/__golden__/java-playback.json`）精确比对，由
+  `frontend/src/replay-local/playback/playback.golden.test.ts` 强制执行（原 Java
+  `BattlePlaybackAdapterParityTest` 已随服务端解析器退役）。
 
 ## 车辆标记尺寸（真实车体比例）
 

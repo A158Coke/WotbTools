@@ -44,9 +44,9 @@ v0.4 不改变 v0.3 的输出长度、自由正文或 evidence model，而是约
 
 「重点复查」「高贡献者」和「关键威胁」只能绑定正文中已经展开的 tactical episode，不能重新从 settlement leaderboard 选择。重点复查要给出时间/窗口、局部位置、实际角色和决策/执行问题；高贡献者要回答「他改变了什么」，仅有伤害、击杀或存活数据时省略。传播需要检查，但不要求每次都找到传播；缺证据时保持不确定，也不猜测敌方意图。
 
-Team review 的质量验证不依赖默认 CI 调用模型。deterministic contract tests 校验 prompt 的推理顺序、结构化输出边界和反 settlement-shortcut 规则；历史 offline harness 对真实 `.wotbreplay` 走生产 parser、reconstruction、canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型；已有 synthetic golden cases 只证明 prompt contract，不证明真实 LLM 行为。
+Team review 的质量验证不依赖默认 CI 调用模型。deterministic contract tests 校验 prompt 的推理顺序、结构化输出边界和反 settlement-shortcut 规则；offline harness（`TeamReplayOfflineEvalHarnessTest`）用冻结的客户端投影夹具（`common/fixtures/replay-facts/*.json.gz`）走 canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型；已有 synthetic golden cases 只证明 prompt contract，不证明真实 LLM 行为。
 
-手动 benchmark 使用非默认 `ai-live` 的 `TeamReplayQualityBenchmarkRunner`，显式选择 case/all 后才会创建 provider gateway。它不注入 synthetic scenario，运行次数默认 1，报告包含 model/prompt version/git SHA/date、grounding/shortcut/结构化 basis 结果、`must_notice`/`must_not`、最终 review 和可选 baseline 对比；不持久化 prompt、API key 或用户 token usage。
+手动 benchmark 使用非默认 `ai-live` 的 `TeamReplayQualityBenchmarkRunner`，显式选择 case/all 后才会创建 provider gateway。它不注入 synthetic scenario，运行次数默认 1，报告包含 model/prompt version/git SHA/date、grounding/结构化 basis 结果、`must_notice`/`must_not`、最终 review 和可选 baseline 对比；不持久化 prompt、API key 或用户 token usage。它原本依赖 legacy envelope（`primaryDiagnosis.evidenceBasis`）与 test-only `TeamQualityShortcutValidator`；后者已随 2026-10 legacy 契约收敛删除，runner 迁移到 v0.5 结构化解析或退役（以最终实现为准）。
 
 ## 概述
 
@@ -94,33 +94,30 @@ Team Review 不再以尽可能短为目标，而是采用 selective but complete
 
 ```
 Replay selection（本地文件，不上传）
-  -> 客户端 Rust/WASM 解析 → canonical ParsedReplay → AiReviewProjection
-  -> AiReviewRequestV1 = { schemaVersion, locale, correlationId, battle, reconstruction }
-       reconstruction = battleDurationSec / battleStartRawClockSec / participants / events
-                        / coverage / checkpoints / finalState（不含 metadata / streamHeader / diagnostics）
+  -> 客户端 Rust/WASM 解析 → canonical replay facts → ClientAiReviewProjection
+  -> AiReviewRequest = { locale, correlationId, battle, projection }（`openapi#AiReviewRequest`，required 恰为这四个字段）
 
 AI（独立 ai-service，无 DB / MinIO / Business Backend 依赖）：
   ReplayPage Workspace -> AiReviewPanel
-  -> POST /api/ai/reviews   (Content-Type: application/json)
+  -> POST /api/ai/reviews   (Content-Type: application/json, Content-Encoding: gzip)
   -> TX ingress /api/ai/** → WireGuard 私网 → Yecao ai-service
-  -> AiReviewController：信封校验（schemaVersion / locale / canonical UUID correlationId）+ 战斗模式与视角判定
-  -> TacticalReviewHarness（个人）/ TeamReplayAnalysisService（团队）
-   -> SSE 流式响应（call1 / evidence / call2 阶段事件；Team v0.5 在 done 一次性返回结构化结果）
+  -> AiReviewController.reviewJson：信封校验（locale 白名单 / canonical UUID correlationId）
+     + ClientAiProjectionAdapter 装配 + BattleCategoryUtils.resolveScope 视角判定
+  -> TacticalReviewHarness.analyzeWithPrior（个人）/ TeamReplayAnalysisService.analyzeTeam（团队）
+   -> SSE 流式响应（call1_start / call1_done / evidence_done / call2_token / done / error；
+      Team v0.5 在 done 一次性返回结构化 teamReview + teamPlayers）
 ```
 
-- AI Review 不再消费 Processing Dataset：`ai-facts.json`、`processingJobId`、`sourceId`、Dataset lease 全部退出 AI 链路；Battle Playback / Export 仍各自消费 Processing Dataset。
+- AI Review 不再消费 Processing Dataset：`ai-facts.json`、`processingJobId`、`sourceId`、Dataset lease 全部退出 AI 链路；Processing Job 域本身也已随服务端解析器退役（`V27__drop_replay_processing_job.sql`），Battle Playback / Export / 2D 回放均在本机进行。
 - 旧 `POST /api/replay/analyze`（含 multipart legacy shim）与 `AiReplayReviewService` 已移除；Business Backend 不承载也不代理 AI 请求。
-- 客户端投影依赖上游 Agent WASM 的 `ai` 入口（`contracts/agent/replay-facets-v2.md` §6 目前仍把 AI 事件数据标注为服务端/CLI 能力、不在 WASM 浏览器面），在该入口发布前前端维持「维护中」。
+- 前端「维护中」门已解除（提交 `83884790`）：当前前端没有维护状态卡，`ai_maintenance` 三语 key 全仓无消费者；AI tab / 深链直接挂载 `AiReviewPanel.vue`，受登录门控与客户端投影可用性约束。
 
-## 3. 上传边界 / Dataset 边界
+## 3. AI 输入 = client canonical AI projection
 
-- 用户选择回放 → 创建 Processing Job（multipart 上传在此发生一次；upload/process once → derived artifacts 复用）
-- Battle Playback / Export 单次消费 1 个 source（`sourceId` 形如 `r0`，对应 Processing Job sources[i]）；AI Review 已不在 Dataset 路径上
-- source 未 READY → `PREPARING_DATASET`（前端禁用对应入口，显示「正在准备回放数据…」）
-- Dataset 过期（`JOB_NOT_FOUND`）→ 前端可自动恢复一次（exactly-once + generation-owned + authoritative invalidation，保留已有 `resp`）
-- `DATASET_UNAVAILABLE` / `DATASET_REFERENCE_REQUIRED` / `SOURCE_NOT_FOUND` 不是可恢复的过期信号：本地化展示，绝不静默 full-process
-- `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` 保持稳定语义
-- AI Review 走 `/api/ai/reviews`（客户端投影），与 Dataset 引用完全解耦
+- AI Review 的输入只有客户端投影：`projection` 由 `frontend/src/replay-local/ai/toClientAiReviewProjection.ts` 从 canonical replay facts 生成（上游 Agent WASM typed facets → `replay-local/canonical`），`ai-service` 侧由 `ClientAiProjectionAdapter` 装配成内存 `ReplayReconstruction`。
+- 投影内容与 canonical 规则（`participants` / `perspective` / `clock` / `observationWindows` / `positions` / `turrets` / `prop3Health`·`healthEvents` / `damageNotices` / `objectives` / `limitations` / `unavailableEvidence`）见 [`docs/architecture/ai-review.md`](../architecture/ai-review.md)「投影内容（`openapi#ClientAiReviewProjection`）」。
+- 服务端不解析回放，投影不携带包解码覆盖率：`coverage = null`，prompt 显示 `decodedPacketRatio=UNAVAILABLE`。
+- AI Review 走 `POST /api/ai/reviews`（客户端投影），与任何服务端 Dataset 引用完全解耦。
 
 ## 4. Grouping 与 Partition
 
@@ -249,13 +246,13 @@ Enemy-only damage 不得延长 Team phase。
 | `evidence_done` | `{}` | 后端证据分析完成（随机战 harness 与团队路径均发射；团队路径在 `TeamReplayAnalysisService.analyzeTeam` 首轮 Call #2 前补发，前端阶段指示随之推进） |
 | `call2_token` | `{"delta":"..."}` | 主复盘 token 增量 |
 | `done` | `{"analysis":null,"preBattleSection":"...","teamReview":{...}}` | Team v0.5 结构化结果一次性完成；个人旧文本结果仍可使用 `analysis` |
-| `error` | `{"code":"AI_..."}` | 流中途失败（稳定错误码） |
+| `error` | `{"id":"...","errorCode":"AI_..."}` | 流中途失败（稳定错误码；`id` 复用 `correlationId`） |
 
-异常传达规则：request-envelope 校验（`UNKNOWN_LOCALE` / `NO_REPLAY_FILES` /
-`NO_REPLAY_FILE` / `REPLAY_FILE_COUNT_EXCEEDED` / `INVALID_REPLAY_FILE_TYPE` /
-`FILE_TOO_LARGE` / `TOTAL_REQUEST_TOO_LARGE`）与 worker 池饱和
+异常传达规则：request-envelope 校验（`INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` /
+`INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID` / `UNSUPPORTED_BATTLE_CATEGORY` /
+`AI_REQUEST_TOO_LARGE`）与 worker 池饱和
 （`AI_REVIEW_BUSY`）在返回 `SseEmitter` 前由 `@ExceptionHandler` 映射 HTTP
-400 / 503；worker 启动后的运行时/业务失败（`NO_BATTLE_DATA` /
+400 / 409 / 413 / 415 / 422 / 503；worker 启动后的运行时/业务失败（`NO_BATTLE_DATA` /
 `PERSPECTIVE_TEAM_*` / `TEAM_FEATURES_UNAVAILABLE` / `AI_NOT_CONFIGURED` /
 `AI_*` 等）经 `error` 事件传达（HTTP 已 200），客户端断开时终止上游调用不向
 已断开的连接写入。`AiChatGateway.stream` 单次尝试不流内重试，
@@ -268,7 +265,9 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
 按句切分（≤128 字符/片、间隔 ~20ms、上限 512 片）兜底，保证前端 `stream-text` 在 `done`
 前持续出字。
 
-**Historical Natural Coach Mode + Factual Consistency Guard（legacy，2026-08）**：
+**Historical Natural Coach Mode + Factual Consistency Guard（legacy，2026-08；相关类已随 2026-10 契约收敛删除）**：
+> 以下条目描述的是**已删除的旧设计**（只用于解释历史演化），不是当前生产行为；当前生产行为见紧随其后的
+> 「Technical schema resilience（当前生产行为）」。
 - Team Call #2 输出改为 JSON envelope（`primaryDiagnosis` / `reviewMarkdown` / `claims`，
   由 `TeamReviewEnvelopeParser` 解析）；`done.analysis` 仍为 `reviewMarkdown`（用户看到的
   完整自然语言复盘，主标题 `## 团队复盘`），structured 字段为内部 grounding 契约，不进正文。
@@ -289,6 +288,8 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
   前端保持「战术复盘生成中…」）。
 - 校验失败 → LLM 自修循环（targeted rewrite → full rewrite → fail-safe），Backend 绝不
   代改句子；重试耗尽 → `error` 事件 `AI_REVIEW_GROUNDING_FAILED`（HTTP 已 200）。
+  （`AI_REVIEW_GROUNDING_FAILED` 与执行它的 `TeamFactualConsistencyValidator` 已随 2026-10 契约收敛删除，
+  `java/*/src/main/**` 已无生产者。）
 **Technical schema resilience（当前生产行为）**：Team Call #2 保持 v0.5 JSON/API 契约，backend
 parser 对局部 optional reference/field 做确定性过滤或规范化，并在形成最低可用 contract 时直接
 返回结果；不会因为 `INVALID_REFERENCE` 触发额外模型调用。空响应、不可解析 JSON、非 object 或
@@ -301,7 +302,7 @@ recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`。对应事件和低基数
 
 **Team Call #2 严格 JSON contract（当前生产行为）**：Team Call #2 使用 provider
 `response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`；Player /
-Pre-battle / Harness / Autopsy 保持 TEXT），并且 backend 只接受严格、技术上有效的
+Pre-battle / Harness 保持 TEXT），并且 backend 只接受严格、技术上有效的
 `TeamAiReviewResult` JSON。provider 负责 JSON 语法层，`TeamAiReviewResultParser` 负责 DTO、
 字段类型、数量上限及 roster/episode 引用等技术 contract；局部可安全修复的 reference 由 backend
 确定性 salvage，root/nested unknown field 不进入最终 DTO；后端不判断战术结论是否正确，也不
@@ -360,9 +361,9 @@ prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集�
 
 ## 11. 前端展示
 
-- `ReconstructionPage`：登录门控 + 编排，触发分析并展示结果
-- `ReplayInputPanel`：单文件选择（替换而非追加），超限拒绝，单文件删除，clear all
-- `AnalysisResultPanel`：仅渲染最终 Markdown 报告（`MarkdownContent`）
+- `ReplayWorkspace.vue`：工作台编排层，`initialCapability=ai` 的 tab / 深链直接挂载 `AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`（登录门控 + 客户端投影可用性），触发分析并展示结果
+- `FileUploader.vue`：单文件选择（替换而非追加），超限拒绝，单文件删除，clear all
+- `AnalysisResultPanel.vue`：仅渲染最终 Markdown 报告（`MarkdownContent.vue`）
 - `MarkdownContent`：渲染前对 `^(#{1,6})(?!#|\s)` 行补空格（跳过围栏代码块），修复 AI 输出 `##一、` 导致 `##` 字面显示的问题；归一化逻辑在 `utils/markdownHeadingNormalize.js`（happy-dom 下 DOMPurify 会剥掉 h1-h6，组件测试断言文本，语义由 utils 单测 + markdown-it 断言）
 - `analysis` 末尾由后端统一追加三语免责句（AI复盘仅供参考 / This AI review is for reference only / Разбор ИИ приведён только для справки）
 - limitation code 由后端合并去重写入报告；前端不再逐单元渲染 limitation 明细

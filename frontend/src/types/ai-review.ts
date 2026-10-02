@@ -36,7 +36,7 @@ export interface AiReviewResult {
   analysis?: string | null
   /** Older SSE payloads omit this field when the pre-battle call is unavailable. */
   preBattleSection?: string | null
-  /** The current SSE writer may omit capability; the AnalyzeResponse still owns its contract. */
+  /** The current SSE writer may omit capability; AiReviewDonePayload still owns its contract. */
   capability?: AiReviewCapability
   /** Structured Team Review v0.5. */
   teamReview?: TeamAiReviewResult
@@ -81,7 +81,7 @@ export type AiReviewEvent =
   | AiReviewDoneEvent
   | AiReviewErrorEvent
 
-/** Runtime boundary for the stable capability values emitted by AnalyzeResponse. */
+/** Runtime boundary for the stable capability values emitted by AiReviewDonePayload. */
 export function isAiReviewCapability(value: unknown): value is AiReviewCapability {
   return value === 'AVAILABLE'
     || value === 'AVAILABLE_WITH_LIMITED_TIMELINE'

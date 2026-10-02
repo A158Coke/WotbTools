@@ -177,15 +177,17 @@ public class WebApiTest {
         return replays().getFirst();
     }
 
-    /** 服务器没有 parser：同步 preview/export 与回放处理/导出 Job 端点已删除，匿名访问落到 /api/** 默认拒绝。 */
+    /**
+     * 服务器没有 parser：同步 preview/export 与回放处理/导出 Job 端点已删除，匿名访问落到
+     * /api/** 默认拒绝。只留一条 GET 与一条写方法作为集成级 oracle（细粒度 method 覆盖在
+     * {@code SecurityConfigTest}）。
+     */
     @Test
     void removedReplayProcessingEndpointsAreDenied() throws Exception {
-        for (final String path : List.of("/api/preview", "/api/export", "/api/columns",
-                "/api/replay/processing-jobs", "/api/replay/export-jobs", "/api/replay/process",
-                "/api/replay/map-overview", "/api/replay/battle-playback-v2", "/api/replay/reconstruct-batch")) {
-            mvc().perform(multipart(path).file(file(standardRandomFixture())))
-                    .andExpect(status().isUnauthorized());
-        }
+        mvc().perform(get("/api/columns"))
+                .andExpect(status().isUnauthorized());
+        mvc().perform(multipart("/api/replay/processing-jobs").file(file(standardRandomFixture())))
+                .andExpect(status().isUnauthorized());
     }
 
     private static MockMultipartFile hofFile(final Path p) throws Exception {

@@ -221,12 +221,15 @@ its future objective consumer must use this same dataset, without decoding wrapp
 
 ### Implementation and regression references
 
-- Decoder: `java/wotb-core/.../replay/decoder/EntityMethodDecoder.java`
-  (`parseRawAssaultBaseUpdates`); tests: `EntityMethodDecoderTest`.
-- Reconstruction: `java/wotb-core/.../replay/reconstruction/AssaultBaseStateReconstructor.java`;
-  tests: `AssaultBaseStateReconstructorTest`.
-- Projection: `java/wotb-playback/.../replay/ai/BattlePlaybackProjector.java`;
-  tests: `java/wotb-web/.../replay/ai/BattlePlaybackProjectorTest.java`.
+- Decoder: upstream Rust Core WASM（pin `deploy/agent/source.json`）产出 `assault_bases` facet；
+  wire types `RawAssaultBaseUpdate` / `AssaultBaseStateTransition` 仍在 `wotb-core`。
+  (Historical: the Java `EntityMethodDecoder.parseRawAssaultBaseUpdates` + `EntityMethodDecoderTest`
+  were deleted with the server-side parser on 2026-10-02.)
+- Reconstruction / projection: `frontend/src/replay-local/playback/toBattlePlaybackDataset.ts`
+  (`baseStates`); tests: `frontend/src/replay-local/playback/playback.golden.test.ts`
+  (frozen Java golden `frontend/src/replay-local/__golden__/java-playback.json`).
+  (Historical: `AssaultBaseStateReconstructor` / `wotb-playback/.../BattlePlaybackProjector.java`
+  and their tests were deleted on 2026-10-02 with the `wotb-playback` module.)
 - Wire authority: `contracts/http/openapi.yaml`, `BaseStateTransition`;
   runtime boundary tests: `frontend/src/api/contract-runtime.test.ts`.
 - 2D rendering and seek: `frontend/src/components/BattlePlayback.vue` and
