@@ -1595,6 +1595,12 @@ export function initPlayback(container, store) {
   const TRAJ_OPACITY = 0.35;   // 与上游 Agent 同值（细且半透明；淡出阶段在其上再乘）
   const TRACER_RADIUS = 0.22;   // 飞行段粗细
   const TRAJ_RADIUS = 0.11;     // 轨迹线粗细
+  // 战斗反馈显示时长倍率（**只作用于 3D 场景**）：炮线（全弹道轨迹线）、命中特效、
+  // 掉血飘字、HP 条幽灵/受击闪、击毁爆散统一乘这个系数——回放里这些反馈需要更长的可读
+  // 时间，否则 1x 下弹道/数字一闪即逝。乘在下面 transient 段的 2D SSOT 常量之上，
+  // 因此 **2D 回放时序不受影响**；1 = 与 2D 逐值一致。
+  // 不作用于飞行段（tracers：位置由 t_fire/flight_secs 决定，拉长会让炮弹看起来变慢）。
+  const FX_SCALE = 2;
   let trajLines = [];
   function spawnShot(s) {
     const from = new THREE.Vector3(-s.from[0], s.from[1], s.from[2]);
@@ -1609,7 +1615,8 @@ export function initPlayback(container, store) {
     const t1 = s.t_fire + Math.max(0.22, s.flight_secs);
     tracers.push({ mesh, from, to, t0: s.t_fire, t1, shot: s, color });
     // 全弹道轨迹线（队伍色：友军蓝/敌军红，与飞行段的命中结果色区分）：
-    // 开火即显整条弹道；消失节奏与弹着点特效同步——t1+2.2s 移除、最后 1.2s 淡出
+    // 开火即显整条弹道；消失节奏与弹着点特效同步——基准 t1+2.2s 移除、最后 1.2s 淡出，
+    // 二者同乘 FX_SCALE（=2 → t1+4.4s 移除、最后 2.4s 淡出）
     const traj = new THREE.Mesh(
       new THREE.BoxGeometry(TRAJ_RADIUS, TRAJ_RADIUS, from.distanceTo(to)),
       new THREE.MeshBasicMaterial({
@@ -1618,7 +1625,7 @@ export function initPlayback(container, store) {
     traj.position.copy(from.clone().add(to).multiplyScalar(0.5));
     traj.lookAt(to);
     scene.add(traj);
-    trajLines.push({ mesh: traj, until: t1 + 1.0, fadeEnd: t1 + 2.2, base: TRAJ_OPACITY });
+    trajLines.push({ mesh: traj, until: t1 + 1.0 * FX_SCALE, fadeEnd: t1 + 2.2 * FX_SCALE, base: TRAJ_OPACITY });
   }
   // 阵营色见文件顶部调色常量（唯一规则：按射手阵营 → green / red / white）
   function shotTeamColor(s) {
@@ -1663,7 +1670,7 @@ export function initPlayback(container, store) {
     scene.add(g);
     // impact 属于 UI feedback transient：寿命按真实壁钟计，而不是 replay clock。
     // 这样 0.5x / 16x 下可读时长一致；暂停时自然淡出；seek 由 clearEffects 直接清空。
-    const durationMs = kind === 'nonpen' ? 650 : kind === 'ricochet' ? 550 : 450;
+    const durationMs = (kind === 'nonpen' ? 650 : kind === 'ricochet' ? 550 : 450) * FX_SCALE;
     impacts.push({ g, bornMs: performance.now(), durationMs, ball, ring, sparks, kind });
   }
 
@@ -1722,7 +1729,8 @@ export function initPlayback(container, store) {
   // 关键语义：**壁钟（真实 ms）寿命**，而非回放时钟——任意倍速下可读时长相近
   // （2D battlePlayback.js 同款常量与注释）。因用壁钟，暂停时 transient 自然走完，
   // 无需特殊处理；seek 则清空并重置事件游标（不补播历史动画）。
-  // FLOAT_DMG_MS / GHOST_MS / FLASH_MS / BURST_MS 来自 ../utils/battlePlayback.js（2D SSOT）
+  // FLOAT_DMG_MS / GHOST_MS / FLASH_MS / BURST_MS 来自 ../utils/battlePlayback.js（2D SSOT）；
+  // 3D 侧统一在**使用点**乘 FX_SCALE（不改进 SSOT 常量 → 2D 时序不动）
   const ghostByEid = new Map();  // eid -> { fromFrac, toFrac, untilMs }
   const flashByEid = new Map();  // eid -> untilMs
   let floatDmgs = [];          // { sp, tex, born, baseY, group }
@@ -1750,7 +1758,7 @@ export function initPlayback(container, store) {
 
   function vehicleByEid(eid) { return V.find((x) => x.def.eid === eid); }
 
-  // 伤害飘字：受击车上方浮出 "-<lost>"，上浮 + 淡出（1s）
+  // 伤害飘字：受击车上方浮出 "-<lost>"，上浮 + 淡出（基准 1s × FX_SCALE）
   function spawnFloatDmg(eid, hpLoss) {
     const v = vehicleByEid(eid);
     if (!v || !v.group.visible) return;
@@ -1782,13 +1790,13 @@ export function initPlayback(container, store) {
       const curHp = Math.max(0, hpAt(v, T));
       const fromFrac = Math.max(0, Math.min(1, curHp / maxHp));
       const toFrac = Math.max(0, fromFrac + hpLoss / maxHp);   // 损失前比例（幽灵显示刚丢的量）
-      ghostByEid.set(eid, { fromFrac, toFrac, untilMs: nowMs + GHOST_MS });
+      ghostByEid.set(eid, { fromFrac, toFrac, untilMs: nowMs + GHOST_MS * FX_SCALE });
     }
-    flashByEid.set(eid, nowMs + FLASH_MS);
+    flashByEid.set(eid, nowMs + FLASH_MS * FX_SCALE);
     v.labelDirty = true;   // 标签重绘由反馈触发（否则只在 HP 整数变化时重绘）
   }
 
-  // 击毁爆散：双层扩散环 + 中心球，700ms 内扩张并淡出
+  // 击毁爆散：双层扩散环 + 中心球，基准 700ms × FX_SCALE 内扩张并淡出
   function spawnBurst(eid) {
     const v = vehicleByEid(eid);
     if (!v || !v.group.visible) return;
@@ -1826,7 +1834,7 @@ export function initPlayback(container, store) {
     }
     for (let i = floatDmgs.length - 1; i >= 0; i--) {
       const f = floatDmgs[i];
-      const k = (now - f.born) / FLOAT_DMG_MS;
+      const k = (now - f.born) / (FLOAT_DMG_MS * FX_SCALE);
       if (k >= 1) {
         scene.remove(f.sp); f.sp.material.dispose(); f.tex.dispose(); f.sp.material.map = null;
         floatDmgs.splice(i, 1);
@@ -1840,7 +1848,7 @@ export function initPlayback(container, store) {
     }
     for (let i = burstFx.length - 1; i >= 0; i--) {
       const b = burstFx[i];
-      const k = (now - b.born) / BURST_MS;
+      const k = (now - b.born) / (BURST_MS * FX_SCALE);
       if (k >= 1) {
         scene.remove(b.g);
         for (const rr of b.rings) { rr.geometry.dispose(); rr.material.dispose(); }
