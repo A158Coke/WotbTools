@@ -12,7 +12,15 @@ import sys
 import tempfile
 from pathlib import Path
 
-from android_contract import contract_result, parse_version, runtime_path, validate_native_sources, version_code
+from android_contract import (
+    auth_surface,
+    contract_result,
+    parse_version,
+    runtime_path,
+    validate_frontend_sources,
+    validate_native_sources,
+    version_code,
+)
 
 root = Path(sys.argv[1])
 assert version_code(parse_version("1.4.2")) == 1_004_002
@@ -41,6 +49,14 @@ validate_native_sources(base := json.loads((root / "contracts/android-native-bri
     str(root / "android/app/src/main/java/com/wotbtools/app/MainActivity.kt"),
     str(root / "android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt"),
 ])
+validate_frontend_sources(base, [
+    str(root / "frontend/src/platform/nativeBridgeContract.js"),
+    str(root / "frontend/src/platform/androidAuthProvider.js"),
+])
+auth_methods, auth_capabilities, auth_globals = auth_surface(base)
+assert sorted(auth_methods) == ["authGetAccessToken", "authGetState", "authLogin", "authLogout"], auth_methods
+assert auth_capabilities == ["native-auth"], auth_capabilities
+assert auth_globals == ["wotbtoolsOnAuthChanged"], auth_globals
 
 base["bridgeVersion"] = 1
 

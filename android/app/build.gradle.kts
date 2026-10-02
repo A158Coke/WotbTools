@@ -52,6 +52,9 @@ android {
         versionCode = resolvedVersionCode
         versionName = resolvedWotbVersion
         buildConfigField("int", "NATIVE_BRIDGE_VERSION", contractBridgeVersion.toString())
+        // AppAuth 库 manifest 用 ${appAuthRedirectScheme} 声明回程 filter；不注入占位符 manifest 合并直接失败。
+        // 值只取 scheme 段：库的 filter 只声明 scheme，精确 path 由我们自己的 filter 补充（见 AndroidManifest）。
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.wotbtools.app"
     }
 
     buildFeatures { buildConfig = true }
@@ -98,6 +101,10 @@ dependencies {
     // origin-scoped Native Bridge：WebView WebMessageListener（带 origin allowlist），
     // 替代 addJavascriptInterface 的全 frame 暴露。
     implementation("androidx.webkit:webkit:1.11.0")
-    // AuthNavigationPolicy JVM tests；不引入 Activity/instrumentation 测试框架。
+    // 原生认证（RFC 8252 external user-agent + PKCE S256 + Custom Tabs + App Links）：
+    // 库只经浏览器完成授权、**从不使用 WebView**；固定 0.11.1 是因为上游发布节奏停滞
+    // （审计记录在 docs/current-plan.md），升级需单独评审。
+    implementation("net.openid:appauth:0.11.1")
+    // 纯 JVM 单测（认证策略 / 会话过期判定 / 回程选择）；不引入 Activity/instrumentation 测试框架。
     testImplementation("junit:junit:4.13.2")
 }

@@ -1,15 +1,27 @@
-import Keycloak from 'keycloak-js'
 import { computed, ref } from 'vue'
+import { NATIVE_AUTH_CAPABILITY } from '../platform/nativeBridgeContract.js'
+import { createBrowserAuthProvider } from '../platform/browserAuthProvider.js'
+import {
+  createAndroidAuthProvider,
+  createUnsupportedAuthProvider,
+} from '../platform/androidAuthProvider.js'
+import {
+  getNativeBridgeVersion,
+  isAndroidApp,
+  isNativeBridgeCompatible,
+  supports,
+} from './usePlatformBridge.js'
 
 const AUTH_INIT_WATCHDOG_MS = 12_000
+/**
+ * Android 的 init 要走 bridge：版本 / 能力查询（各 5s）之后还有 authGetState 与
+ * authGetAccessToken（各上限 20s，含 OIDC discovery / refresh）。12s 会把正常但缓慢的
+ * native 初始化误判成超时，所以 watchdog 必须覆盖整条链路——但仍是硬上限，
+ * authInitState 绝不会永远停在 initializing。
+ */
+const AUTH_INIT_WATCHDOG_NATIVE_MS = 60_000
 const AUTH_INIT_PENDING_LOG_MS = 5_000
-const KEYCLOAK_CONFIG = Object.freeze({
-  url: 'https://auth.wotbtools.com',
-  realm: 'wotbtools',
-  clientId: 'wotbtools-web',
-})
 
-let keycloak = null
 let currentTransaction = null
 let authGeneration = 0
 
@@ -27,13 +39,30 @@ const initFailureReason = ref(null)
  */
 const loginInFlight = ref(false)
 
-function ensureKeycloak() {
-  if (!keycloak) keycloak = new Keycloak(KEYCLOAK_CONFIG)
-  return keycloak
+function platformName() {
+  return isAndroidApp() ? 'android' : 'web'
 }
 
-function platformName() {
-  return typeof window !== 'undefined' && window.WotbNative ? 'android' : 'web'
+/**
+ * 运行时 provider 选择（**绝不回退**）：
+ * - 没有 `window.WotbNative`（普通浏览器）→ BrowserAuthProvider（keycloak-js 仍在页面内）。
+ * - Android 壳且 bridge v2 + 广告 `native-auth` → AndroidAuthProvider（Native 拥有 OIDC 会话）。
+ * - Android 壳但 bridge v1 / 版本未知 / 缺能力 → unsupported provider：只暴露失败，
+ *   绝不退化成「WebView 里跑 keycloak-js」——那正是本次 cutover 要消灭的路径。
+ */
+async function resolveAuthProvider() {
+  if (!isAndroidApp()) return createBrowserAuthProvider()
+
+  const bridgeVersion = await getNativeBridgeVersion()
+  if (!isNativeBridgeCompatible(bridgeVersion)) {
+    return createUnsupportedAuthProvider(
+      Number.isInteger(bridgeVersion) ? `bridge-v${bridgeVersion}` : 'bridge-version-unknown',
+    )
+  }
+  if (!(await supports(NATIVE_AUTH_CAPABILITY))) {
+    return createUnsupportedAuthProvider('native-auth-capability-missing')
+  }
+  return createAndroidAuthProvider()
 }
 
 function errorType(error) {
@@ -53,19 +82,27 @@ function logInitStarted(transaction) {
   )
 }
 
+function resolveTransaction(transaction, result) {
+  if (transaction.publicResolved) return
+  transaction.publicResolved = true
+  transaction.resolve(result)
+}
+
+/** 退订 Native 推送：transaction 一旦不再是 owner（被放弃或被新一代取代）就必须解除。 */
+function releaseProvider(transaction) {
+  if (!transaction?.unsubscribe) return
+  transaction.unsubscribe()
+  transaction.unsubscribe = null
+}
+
 function abandonTransaction(transaction) {
   if (!transaction || transaction.settled || transaction.abandoned) return
   transaction.abandoned = true
   clearTimeout(transaction.watchdog)
   clearTimeout(transaction.pendingLog)
+  releaseProvider(transaction)
   resolveTransaction(transaction, false)
   console.debug(`[auth] init_abandoned generation=${transaction.generation}`)
-}
-
-function resolveTransaction(transaction, result) {
-  if (transaction.publicResolved) return
-  transaction.publicResolved = true
-  transaction.resolve(result)
 }
 
 function markFailed(transaction, error, reason) {
@@ -92,17 +129,25 @@ function markFailed(transaction, error, reason) {
   resolveTransaction(transaction, false)
 }
 
-function completeTransaction(transaction, isLoggedIn) {
+/**
+ * 把 provider 的当前状态投影到组件可见的 refs。init 落定、Native 推送
+ * （`wotbtoolsOnAuthChanged`）与 Android logout 共用这一条投影路径：只有一个状态 owner。
+ */
+function applyProviderState(provider) {
+  authenticated.value = Boolean(provider.authenticated)
+  tokenParsed.value = provider.tokenParsed || null
+  authInitState.value = authenticated.value ? 'authenticated' : 'unauthenticated'
+}
+
+function completeTransaction(transaction) {
   if (currentTransaction !== transaction || transaction.settled || transaction.abandoned) return
   transaction.settled = true
   clearTimeout(transaction.watchdog)
   clearTimeout(transaction.pendingLog)
-  authenticated.value = Boolean(isLoggedIn && transaction.keycloak.authenticated)
-  tokenParsed.value = transaction.keycloak.tokenParsed || null
+  applyProviderState(transaction.provider)
   initialized.value = true
   initError.value = null
   initFailureReason.value = null
-  authInitState.value = authenticated.value ? 'authenticated' : 'unauthenticated'
   console.debug(
     `[auth] init_completed generation=${transaction.generation} `
     + `authenticated=${authenticated.value} elapsedMs=${elapsedMs(transaction)}`,
@@ -110,29 +155,15 @@ function completeTransaction(transaction, isLoggedIn) {
   resolveTransaction(transaction, authenticated.value)
 }
 
-function initOptions(mode) {
-  if (mode === 'login-recovery') {
-    // Fresh adapter recovery avoids repeating the bootstrap that the watchdog abandoned.
-    // Normal browser/WebView SSO keeps check-sso below.
-    return {
-      pkceMethod: 'S256',
-      checkLoginIframe: false,
-    }
-  }
-  return {
-    onLoad: 'check-sso',
-    pkceMethod: 'S256',
-    silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
-    checkLoginIframe: false,
-  }
-}
-
 function startAuthInit({ mode = 'normal', reason = 'startup' } = {}) {
   if (currentTransaction && !currentTransaction.settled) abandonTransaction(currentTransaction)
+  // 上一代（含已落定的一代）必须先退订：Native 的 authChanged 全局只有一个槽位。
+  releaseProvider(currentTransaction)
 
   const transaction = {
     generation: ++authGeneration,
-    keycloak: new Keycloak(KEYCLOAK_CONFIG),
+    provider: null,
+    unsubscribe: null,
     reason,
     startedAt: Date.now(),
     settled: false,
@@ -144,7 +175,6 @@ function startAuthInit({ mode = 'normal', reason = 'startup' } = {}) {
     resolve: null,
     promise: null,
   }
-  keycloak = transaction.keycloak
   currentTransaction = transaction
   authInitState.value = 'initializing'
   initialized.value = false
@@ -158,30 +188,39 @@ function startAuthInit({ mode = 'normal', reason = 'startup' } = {}) {
 
   transaction.watchdog = setTimeout(() => {
     if (currentTransaction !== transaction || transaction.settled || transaction.abandoned) return
-    // The raw keycloak promise is intentionally left alone; its late completion is ignored by
-    // generation/abandoned checks. A later retry always receives a new adapter instance.
+    // Provider 的迟到完成由 generation/abandoned 检查忽略；retry 总是拿到新的 provider。
     transaction.timeoutLogged = true
     console.warn(
       `[auth] init_timeout generation=${transaction.generation} elapsedMs=${elapsedMs(transaction)}`,
     )
     abandonTransaction(transaction)
     markFailed(transaction, new Error('AUTH_INIT_WATCHDOG_TIMEOUT'), 'init-timeout')
-  }, AUTH_INIT_WATCHDOG_MS)
+  }, isAndroidApp() ? AUTH_INIT_WATCHDOG_NATIVE_MS : AUTH_INIT_WATCHDOG_MS)
   transaction.pendingLog = setTimeout(() => {
     if (currentTransaction !== transaction || transaction.settled || transaction.abandoned) return
     console.debug(`[auth] init_pending generation=${transaction.generation} elapsedMs=${elapsedMs(transaction)}`)
   }, AUTH_INIT_PENDING_LOG_MS)
 
-  let rawPromise
-  try {
-    // init() installs the adapter synchronously. login() is only called after this fresh
-    // transaction settles, never on an uninitialized adapter.
-    rawPromise = transaction.keycloak.init(initOptions(mode))
-  } catch (error) {
-    rawPromise = Promise.reject(error)
-  }
-  Promise.resolve(rawPromise).then(
-    result => completeTransaction(transaction, result),
+  // provider 解析本身是异步的（Android 要读 bridge 版本与能力），但 watchdog 已开始计时：
+  // 解析失败 / init 失败 / 超时都落到 failed，绝不会停在 initializing。
+  const run = (async () => {
+    const provider = await resolveAuthProvider()
+    if (currentTransaction !== transaction || transaction.settled || transaction.abandoned) return
+    transaction.provider = provider
+    // Native 在 external browser 里完成 login / logout 后推送：WebView 停在原页面，
+    // 这里就地把最新状态投影回 refs，不需要 reload。
+    transaction.unsubscribe = provider.onAuthChanged(() => {
+      if (currentTransaction !== transaction || transaction.abandoned) return
+      applyProviderState(provider)
+      console.debug(
+        `[auth] auth_changed generation=${transaction.generation} authenticated=${authenticated.value}`,
+      )
+    })
+    // provider 已落定；login() 只会在本 transaction settle 之后调用，绝不在未初始化的 provider 上调用。
+    await provider.init({ mode })
+  })()
+  run.then(
+    () => completeTransaction(transaction),
     error => markFailed(transaction, error, 'init-error'),
   )
 
@@ -199,16 +238,27 @@ async function retryAuth() {
   return promise
 }
 
+/** 浏览器 redirect 回到本页后要恢复的目的地（`?view=`）。 */
 function loginRedirectUri(view) {
   const url = new URL(window.location.origin + window.location.pathname)
   url.searchParams.set('view', view)
   return url.toString()
 }
 
+/** OIDC end-session 之后回到本页（浏览器专用；Android 不导航，回跳地址被忽略）。 */
+function logoutRedirectUri() {
+  return window.location.origin + window.location.pathname
+}
+
 /**
- * Normal login uses the settled current adapter. If bootstrap is still running or has failed,
- * abandon that generation and perform a fresh, non-silent adapter init; the stale promise can
- * never block this redirect or write back into current auth state.
+ * 两个 provider 的 login 都接受 redirectUri，但语义刻意不对称：
+ * - 浏览器：redirect 真的会回到本页，必须带 `?view=<view>` 才能恢复目的地。
+ * - Android：OIDC 在 external browser 里完成、WebView 从不导航，provider 直接忽略该 URI；
+ *   登录结果由 `wotbtoolsOnAuthChanged` 就地把状态同步回来，页面停在原地，
+ *   当前 view 天然保留，所以 `view` 对 Native 侧没有任何意义。
+ *
+ * bootstrap 仍在进行或已失败时：放弃那一代并重建（浏览器走不带 check-sso 的
+ * login-recovery），旧 promise 既不能阻塞本次跳转，也不能写回当前状态。
  */
 async function login(view = 'profile') {
   if (loginInFlight.value) {
@@ -224,18 +274,25 @@ async function login(view = 'profile') {
       if (authInitState.value === 'failed') throw initError.value || new Error('AUTH_INIT_FAILED')
     }
     const transaction = currentTransaction
-    if (!transaction || transaction.abandoned || !transaction.keycloak) {
+    if (!transaction || transaction.abandoned || !transaction.provider) {
       throw new Error('AUTH_INIT_NOT_READY')
     }
-    return await transaction.keycloak.login({ redirectUri: loginRedirectUri(view) })
+    return await transaction.provider.login(loginRedirectUri(view))
   } finally {
     loginInFlight.value = false
   }
 }
 
 async function logout() {
-  const kc = ensureKeycloak()
-  return kc.logout({ redirectUri: window.location.origin + window.location.pathname })
+  const provider = currentTransaction?.provider
+  if (!provider) {
+    console.warn('[auth] logout_skipped reason=no-provider')
+    return
+  }
+  await provider.logout(logoutRedirectUri())
+  // 浏览器 provider 立刻导航到 OIDC end-session，refs 无需更新；
+  // Android 的 WebView 不导航（Native 清会话），必须把本地状态落回未登录。
+  if (provider.name === 'android') applyProviderState(provider)
 }
 
 function isAuthenticated() {
@@ -264,31 +321,36 @@ const displayName = computed(
   () => tokenParsed.value?.displayName || tokenParsed.value?.preferred_username || '',
 )
 
+/** 当前 provider 缓存的 access token（Android 侧由 authGetAccessToken 续期并回写）。 */
 function token() {
-  return keycloak?.token || ''
+  return currentTransaction?.provider?.token() || ''
 }
 
 /** Keep the token valid for at least minValidity seconds when the user is signed in. */
 async function ensureToken(minValidity = 30) {
-  const kc = ensureKeycloak()
-  if (!kc.authenticated) return false
+  const provider = currentTransaction?.provider
+  if (!provider || !provider.authenticated) return false
+  let refreshed
   try {
-    const refreshed = await kc.updateToken(minValidity)
-    if (refreshed) tokenParsed.value = kc.tokenParsed
-    return true
+    refreshed = await provider.ensureToken(minValidity)
   } catch {
+    refreshed = false
+  }
+  if (!refreshed) {
+    // 与迁移前一致：刷新失败（浏览器 updateToken 抛错 / Android refresh-failed）
+    // 一律退回未登录；现有调用方（api/replay-capabilities.ts）依赖这个 false。
     authenticated.value = false
     tokenParsed.value = null
     authInitState.value = 'unauthenticated'
     return false
   }
+  // 刷新后 claims 可能变化（角色 / displayName）：重新投影 provider 的当前 claims。
+  tokenParsed.value = provider.tokenParsed || null
+  return true
 }
 
 export function useAuth() {
   return {
-    get keycloak() {
-      return currentTransaction?.keycloak || ensureKeycloak()
-    },
     initAuth,
     initPromise: initAuth(),
     retryAuth,

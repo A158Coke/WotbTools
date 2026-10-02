@@ -1,20 +1,21 @@
 package com.wotbtools.app
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * [ReplayDispatchPolicy] 的纯 JVM 测试：分发决策不得依赖 Android framework 类型，
  * 因此「是否分发 / 怎么分发」可以在 testDebugUnitTest 下完整覆盖（无需 Robolectric）。
+ *
+ * 认证已不在输入里（Native 拥有 auth，登录跑在 external user-agent）：决策只剩「有没有 pending /
+ * 容器是否可见 / 是否已在 replay view」三件事。
  */
 class ReplayDispatchPolicyTest {
 
     @Test
-    fun pendingReplayInNonAuthFlowNavigatesToReplayView() {
+    fun pendingReplayNavigatesToReplayView() {
         assertDispatch(
             hasPendingReplay = true,
-            inAuthFlow = false,
             webViewVisible = true,
             currentUrl = "https://wotbtools.com",
             expected = ReplayDispatchAction.NAVIGATE_REPLAY
@@ -22,14 +23,12 @@ class ReplayDispatchPolicyTest {
         // 冷启动后 URL 仍为空（webView.url == null）：同样切到 replay canonical view。
         assertDispatch(
             hasPendingReplay = true,
-            inAuthFlow = false,
             webViewVisible = true,
             currentUrl = null,
             expected = ReplayDispatchAction.NAVIGATE_REPLAY
         )
         assertDispatch(
             hasPendingReplay = true,
-            inAuthFlow = false,
             webViewVisible = true,
             currentUrl = "",
             expected = ReplayDispatchAction.NAVIGATE_REPLAY
@@ -46,7 +45,6 @@ class ReplayDispatchPolicyTest {
         ).forEach { url ->
             assertDispatch(
                 hasPendingReplay = true,
-                inAuthFlow = false,
                 webViewVisible = true,
                 currentUrl = url,
                 expected = ReplayDispatchAction.NOTIFY_WEB
@@ -59,14 +57,12 @@ class ReplayDispatchPolicyTest {
         // WebView 容器被门禁 / 错误 / 更新页接管时，既不导航也不 JS 回调。
         assertDispatch(
             hasPendingReplay = true,
-            inAuthFlow = false,
             webViewVisible = false,
             currentUrl = "https://wotbtools.com",
             expected = ReplayDispatchAction.NONE
         )
         assertDispatch(
             hasPendingReplay = true,
-            inAuthFlow = false,
             webViewVisible = false,
             currentUrl = "https://wotbtools.com/?view=replay",
             expected = ReplayDispatchAction.NONE
@@ -77,88 +73,14 @@ class ReplayDispatchPolicyTest {
     fun noPendingReplayNeverDispatches() {
         assertDispatch(
             hasPendingReplay = false,
-            inAuthFlow = false,
             webViewVisible = true,
             currentUrl = "https://wotbtools.com",
             expected = ReplayDispatchAction.NONE
         )
         assertDispatch(
             hasPendingReplay = false,
-            inAuthFlow = false,
             webViewVisible = true,
             currentUrl = "https://wotbtools.com/?view=replay",
-            expected = ReplayDispatchAction.NONE
-        )
-    }
-
-    @Test
-    fun replayIntentDuringAuthFlowIsDeferredNeverDispatched() {
-        // RC5 navigation ownership：inAuthFlow=true 时 replay 只入队 —— 既不 loadUrl 也不
-        // evaluateJavascript，且与「是否已在 replay view」「容器是否可见」无关。
-        assertDispatch(
-            hasPendingReplay = true,
-            inAuthFlow = true,
-            webViewVisible = true,
-            currentUrl = "https://wotbtools.com",
-            expected = ReplayDispatchAction.NONE
-        )
-        assertDispatch(
-            hasPendingReplay = true,
-            inAuthFlow = true,
-            webViewVisible = true,
-            currentUrl = "https://wotbtools.com/?view=replay",
-            expected = ReplayDispatchAction.NONE
-        )
-        assertDispatch(
-            hasPendingReplay = true,
-            inAuthFlow = true,
-            webViewVisible = true,
-            currentUrl = "https://auth.wotbtools.com",
-            expected = ReplayDispatchAction.NONE
-        )
-        assertDispatch(
-            hasPendingReplay = true,
-            inAuthFlow = true,
-            webViewVisible = true,
-            currentUrl = null,
-            expected = ReplayDispatchAction.NONE
-        )
-        assertDispatch(
-            hasPendingReplay = true,
-            inAuthFlow = true,
-            webViewVisible = false,
-            currentUrl = "https://wotbtools.com",
-            expected = ReplayDispatchAction.NONE
-        )
-    }
-
-    @Test
-    fun verifiedAuthReturnOwnsNavigationAndReplayNeverDispatches() {
-        // 验收点「auth return 优先于 replay」：onNewIntent 的「先 auth 后 replay」顺序本身写在 MainActivity
-        // （handleAuthReturnHot 命中即 return，JVM 无 Robolectric 无法测该顺序），所以这里用现有纯策略表达
-        // 同一语义：
-        //   1. verified auth return 一定把 auth transaction 置为进行中（cold/hot 都置 inAuthFlow=true）；
-        //   2. inAuthFlow=true 时 decide() 恒为 NONE。
-        // 因此 auth return 到达的 intent 绝不触发 replay 导航，紧随其后的 replay intent 也只能入队 —— 既不会
-        // 打断 / 绕过认证，也不会被认证流程丢进第二套导航来源。
-        assertTrue(
-            AuthReturnPolicy.isVerifiedBrokerReturn(
-                scheme = "https",
-                host = "auth.wotbtools.com",
-                path = "/realms/wotbtools/broker/idp-qq/endpoint",
-                hasState = true,
-                hasCode = true
-            )
-        )
-        val authTransaction = AuthNavigationPolicy.decide("https", "auth.wotbtools.com", inAuthFlow = false)
-        assertEquals(AuthNavigationAction.ALLOW_AUTH_WEBVIEW, authTransaction.action)
-        assertEquals(true, authTransaction.inAuthFlow)
-
-        assertDispatch(
-            hasPendingReplay = true,
-            inAuthFlow = authTransaction.inAuthFlow,
-            webViewVisible = true,
-            currentUrl = "https://wotbtools.com",
             expected = ReplayDispatchAction.NONE
         )
     }
@@ -172,7 +94,6 @@ class ReplayDispatchPolicyTest {
 
     private fun assertDispatch(
         hasPendingReplay: Boolean,
-        inAuthFlow: Boolean,
         webViewVisible: Boolean,
         currentUrl: String?,
         expected: ReplayDispatchAction
@@ -181,7 +102,6 @@ class ReplayDispatchPolicyTest {
             expected,
             ReplayDispatchPolicy.decide(
                 hasPendingReplay = hasPendingReplay,
-                inAuthFlow = inAuthFlow,
                 webViewVisible = webViewVisible,
                 currentUrl = currentUrl
             )

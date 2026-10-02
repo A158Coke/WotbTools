@@ -30,8 +30,8 @@
 - 必须发布更新 APK 和 Web；仅部署 Web 无法修复旧 APK 的 content transport。
 
 真机发布验收（不能用 JVM/Vitest 代替）：未登录打开 replay → 本机分析 → Data（不发出任何回放相关后端请求）；
-已登录同样直接导入；process death 后 callback 冷启动恢复会重新分析同一份 pending（本机分析无副作用，
-结果相同）。记录低敏 `replay-pending stream requested/served`、auth-return、analysis completed；
+已登录同样直接导入；process death 后重开会恢复并重新分析同一份 pending（本机分析无副作用，
+结果相同）。记录低敏 `replay-pending stream requested/served`、analysis completed；
 勿保存完整请求头、OAuth URL 或 pending identity。清 App 数据须由测试者明确同意。
 
 ```text
@@ -55,23 +55,24 @@ uploader。
 与 app-owned FileProvider URI 兼容：字节经 `WebViewClient.shouldInterceptRequest` 以文件流返回给
 Web，不依赖 WebView 直接读取 external content URI，也不放宽 WebView 安全边界。
 
-## 导航所有权（auth flow 恒优先）
+## 导航所有权（与认证完全解耦）
 
-- **verified auth return 优先级最高**：`onNewIntent` 先走 `handleAuthReturnHot`（冷启动走
-  `handleAuthReturnColdStart`），命中即结束，绝不进入 replay ingress / 分发；auth return 会把
-  `inAuthFlow` 置 true，因此也不可能触发 replay 导航。
-- 其余 intent 先进 replay ingress 入队；**是否分发、如何分发**由纯策略
-  `ReplayDispatchPolicy.decide(hasPendingReplay, inAuthFlow, webViewVisible, currentUrl)` 唯一决定：
+Android 2.0 起认证由 Native 在**外部浏览器**完成，WebView 不再承载任何 OIDC 导航，因此 replay
+ingress 与认证之间**不存在**所有权冲突：replay 意图没有 auth-return 分支，认证也没有任何
+WebView navigation 可以「优先」。
+
+- intent 分类只做一件事：非 replay intent 返回 false，replay candidate 入队；**是否分发、如何分发**
+  由纯策略 `ReplayDispatchPolicy.decide(hasPendingReplay, webViewVisible, currentUrl)` 唯一决定：
 
 | 条件 | 动作 |
 |---|---|
-| 无 pending / `inAuthFlow=true` / WebView 容器不可见 | `NONE`——只入队，不 `loadUrl`，不 `evaluateJavascript` |
+| 无 pending / WebView 容器不可见（门禁 / 错误 / 更新页接管） | `NONE`——只入队，不 `loadUrl`，不 `evaluateJavascript` |
 | 已在 replay workspace（URL 含 `view=replay`） | `NOTIFY_WEB` → `window.wotbtoolsOnReplay()` |
 | 其它 | `NAVIGATE_REPLAY` → `loadUrl(https://wotbtools.com?view=replay)` |
 
-- auth flow 期间收到新 replay 只记录 `replay-pending deferred reason=auth-flow`，**绝不打断当前
-  authentication transaction**（不抢 WebView navigation）。auth 结束后刻意不新增「重新导航 replay」
-  的第二套来源：登录完成后 Web 应用会重新加载并经 Native Bridge 自行消费 pending。
+- **登录期间收到 replay**：正常持久化并分发（WebView 没有被认证占用）；正在进行的 OIDC 事务在外部
+  浏览器里，不会被 replay 打断。**登录失败 / 取消 / 未登录**时 pending replay 原样保留且仍可用——
+  认证不是 replay 的前置条件。
 - 非 replay intent（例如 launcher `ACTION_MAIN`）不清空既有 pending：pending 只由 Web consume、
   TTL/损坏判断或另一份更新的 replay 取代。
 - `ReplayDispatchPolicy.REPLAY_VIEW_MARKER` 同时用于构造 `REPLAY_URL` 与识别「已在 replay view」，
@@ -126,27 +127,25 @@ getPendingReplay → fetch(synthetic HTTPS resource) → await onPendingFile(fil
 
 ## 生命周期
 
-- **Cold Start**：`onCreate` → 恢复持久 pending → 按引用清理 orphan → intent 分类（auth return 优先）
-  → 启动门禁（网络/版本）→ Web ready → auth init 落定后消费（无需登录）。
-- **Warm Start**：`onNewIntent` → auth return 优先 → replay 入队 → 按 `ReplayDispatchPolicy` 分发
+- **Cold Start**：`onCreate` → 恢复持久 pending → 按引用清理 orphan → intent 分类（非 replay intent
+  早退）→ 启动门禁（网络/版本）→ Web ready → Web 应用经 Native Bridge 消费 pending（无需登录）。
+- **Warm Start**：`onNewIntent` → replay 入队 → 按 `ReplayDispatchPolicy` 分发
   （已在 replay view 就地通知，否则切到 canonical replay view）。
-- **Background Resume / auth 期间 process death**：pending 在 private storage 存活 → QQ 完成后
-  App Link cold start → 登录完成 → 消费 pending exactly once。
+- **Background Resume / process death**：pending 在 private storage 存活 → 重新进入 App 后恢复并消费
+  exactly once；原生登录在外部浏览器里，与 pending 的存活互不影响。
 
 ## 日志白名单
 
 允许（低敏感、低噪音）：`replay-pending stored ref=<short>`、
-`replay-pending restored ref=<short>`、`replay-pending deferred reason=auth-flow`、
+`replay-pending restored ref=<short>`、
 `replay-pending dispatched`、`replay-pending ack success ref=<short>`、
 `replay-pending ack mismatch expected=<short> current=<short|none>`、
-`replay-pending ack rejected reason=missing-identity`、
-`auth-return action=ALLOW_AUTH_RETURN source=app-link cold=true|false`，以及既有的
-`nav scheme/host/action/source` 认证导航 trace。
+`replay-pending ack rejected reason=missing-identity`。
 
 `<short>` 一律是完整 `pendingId` 的前 8 位（`pendingLogRef` / `PendingReplay.logRef`）。
 
-绝不记录：完整 pendingId、原文件完整路径、文件名、replay 内容、QQ code、OIDC state、token、
-完整 callback URI。
+绝不记录：完整 pendingId、原文件完整路径、文件名、replay 内容、OAuth code、OIDC state/nonce、
+token、refresh token、完整 callback URI。
 
 ## 待真机验证（规格 §35 / §84）
 
@@ -154,6 +153,6 @@ getPendingReplay → fetch(synthetic HTTPS resource) → await onPendingFile(fil
 `action / mime / scheme / URI / displayName / size / flags` 调优 Intent Filter；
 禁止未经验证用 `*/*`，避免出现在无关分享菜单。模拟器不能代表真机 Intent 行为。
 
-外部 replay + auth 的 acceptance 必须在真机覆盖：清数据后未登录打开 replay、已有 SSO 打开 replay、
-登录中取消/返回、登录失败、QQ 登录期间 kill 进程后 App Link 冷启动、auth 进行中再打开一个 replay
-（只 pending、不抢导航）。
+外部 replay 与认证的 acceptance 必须在真机覆盖：清数据后未登录打开 replay、已有 SSO 打开 replay、
+原生登录进行中再打开一个 replay（正常 pending + 正常分发）、登录取消 / 登录失败后 replay 仍可用、
+登录期间 kill 进程后 replay 仍能从 private storage 恢复。

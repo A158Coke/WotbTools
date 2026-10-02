@@ -24,7 +24,7 @@ plan，然后 apply，最后要求第二次 plan 全 no-op。因此删除保护�
 |---|---|---|
 | `keycloak_role.realm`（realm 角色集合） | 无 `prevent_destroy`；plan guard 无 role 删除规则 | 角色成员是期望状态：增删角色是必须由 `tofu plan` 可见、可审计的正常变更，**不存在任何按角色名的例外**（含 Boost 专用白名单） |
 | `keycloak_realm.wotbtools` | `prevent_destroy` + `terraform_deletion_protection` | 保护身份根：删除 realm 会连带删除全部用户、凭据、client 与角色 |
-| `keycloak_openid_client.{web,admin_api,e2e}` | `prevent_destroy` | 保护身份凭据：删除/重建会轮换 client id 与 write-only secret，打断登录与门禁身份 |
+| `keycloak_openid_client.{web,android,admin_api,e2e}` | `prevent_destroy` | 保护身份凭据：删除/重建会轮换 client id 与 write-only secret，打断登录与门禁身份 |
 | `keycloak_oidc_identity_provider.qq` | `prevent_destroy` | 保护外部身份绑定：删除会让已绑定用户无法登录 |
 | `keycloak_default_roles.wotbtools` | `prevent_destroy` | 保护 realm 级不变量：新用户自动获得 `wotbtools-user` |
 | realm/client 与 IdP 的 delete/replace | `validate-plan.sh` | 与上面同一批身份资源，在 plan 层 fail-closed |
@@ -97,7 +97,8 @@ Wargaming IdP representation 与 Keycloak runtime 共用**同一个**已存在�
 
 ## Identity Provider 启动顺序
 
-1. 让 OpenTofu 创建 fresh realm，确认 `wotbtools-web`、`wotbtools-admin-api`、角色与 JWT mapper 已存在。
+1. 让 OpenTofu 创建 fresh realm，确认 `wotbtools-web`、`wotbtools-android`、`wotbtools-admin-api`、角色与
+   JWT mapper 已存在。
 2. 由 OpenTofu 创建 `wargaming-asia`、`wargaming-eu`、`wargaming-na` 三个实例（`provider_id=wargaming`，
    `client_id` = 同一 `WG_APPLICATION_ID`），并在 Keycloak runtime 继续注入 `WG_APPLICATION_ID` 供自定义 SPI 读取。
 3. 镜像构建 `keycloak-qq-provider` 与 `keycloak-wargaming-provider`；运行时验收必须确认
@@ -105,9 +106,9 @@ Wargaming IdP representation 与 Keycloak runtime 共用**同一个**已存在�
    这两个 provider 的源码（镜像内不存在第三个 QQ provider），历史聚合 provider 已完全退役。
 4. OpenTofu 创建唯一官方 QQ alias `idp-qq`（provider id `qq`，enabled）；TX 不创建
    任何聚合 QQ fallback，也不创建裸 alias `qq`。固定 production broker callback 为
-   `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint`；QQ Open Platform、
-   Android exact callback allowlist 与 Web 登录流必须使用此唯一 callback，不得引入
-   `/qq/endpoint` 或 `idp-qq-v2`。
+   `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint`；QQ Open Platform 与
+   所有客户端（Web 与 Android 原生 OIDC 的外部浏览器）都走这一个 callback，不得引入
+   `/qq/endpoint` 或 `idp-qq-v2`。Android 侧不再有 QQ 专用 App Link / callback 重写机制。
 
 ## wotbtools-web 浏览器客户端生产对齐
 
@@ -143,6 +144,36 @@ Keycloak 默认值一致，不会产生漂移。
 `wotbtools-admin-api` 是 confidential service-account client，不声明任何浏览器流、theme
 或 consent 设置；`security-admin-console` 等内置 client 由 Keycloak 自己拥有，OpenTofu 不管理。
 
+## wotbtools-android 原生客户端（Android 2.0）
+
+Android 2.0 起认证由 Native 独占（OIDC Authorization Code + PKCE，外部 user-agent），因此需要
+**独立 client**；它不修改也不复用 `wotbtools-web` 的认证语义。
+
+| 生产行为 | OpenTofu 声明 |
+|---|---|
+| client type: OpenID Connect | 资源类型 `keycloak_openid_client`（protocol 固定 `openid-connect`） |
+| client authentication: off | `access_type = "PUBLIC"`（public client + PKCE 是 RFC 8252 的原生应用形态） |
+| standard flow: on | `standard_flow_enabled = true` |
+| implicit flow: off | `implicit_flow_enabled = false` |
+| direct access grants: off | `direct_access_grants_enabled = false`（禁止用密码模式绕过外部 user-agent） |
+| service account roles: off | `service_accounts_enabled = false` |
+| **PKCE required: S256** | `pkce_code_challenge_method = "S256"`（Keycloak 强制校验 code_challenge_method，拒绝 plain / 缺失） |
+| redirect URIs（精确，无通配） | `https://auth.wotbtools.com/android/oauth/callback` 与 `com.wotbtools.app:/oauth2redirect` |
+| post-logout redirect URIs | 同上两条（RP-initiated logout 回到 App） |
+| login theme: wotbtools | `login_theme = "wotbtools"`（IdP 选择发生在主题内，因此增删 IdP 不需要发 APK） |
+| consent required: off | `consent_required = false` |
+| front-channel logout | 不启用（App 的生命周期由 OIDC end-session 与本地清理负责） |
+| displayName / wotb_* claims | 新增 `keycloak_openid_user_attribute_protocol_mapper.wotbtools_android`，与 `.wotbtools_web` 共用 `local.protocol_mappers` |
+| realm roles（`wotbtools-user` / `wotbtools-admin` / `HoF-admin`） | 不额外声明：realm 默认 client scope 已包含 `roles`，两个 client 因此得到同一套授权模型；后端资源服务器只校验 issuer + realm roles，不按 `azp` 复制授权规则 |
+
+`infra/tofu/keycloak/validate-plan.sh` 在 plan 层锁定以上契约（client 出现且只出现一次、不是
+delete/replace、flow/PKCE/redirect 精确匹配、android mapper 存在），`deploy/test-keycloak-tofu.sh`
+在 disposable realm 上对 apply 后的真实配置再断言一次。
+
+**刻意不做的事**：不把既有 web mapper 迁到 client scope、不重构 `protocol-mappers.tf` 的 web 资源地址 ——
+一次 auth cutover 不应该顺带触发对生产 web client mapper 的 destroy/recreate（迁移路径见
+[`keycloak-mapper-guide.md`](keycloak-mapper-guide.md)）。
+
 ## 导入后的验收
 
 - Keycloak 使用 `start --optimized`，启动时没有 augmentation；
@@ -154,7 +185,8 @@ Keycloak 默认值一致，不会产生漂移。
   update、apply 后再次 plan 必须回到 no-op（证明没有 version 也能收敛）。**该 secret 无法回读
   断言**：Keycloak 在 list 与 single-instance 两个 Admin API representation 里都把 IdP client
   secret 掩码为 `**********`，所以验收边界就是 plan → apply；
-- OIDC discovery、三个 Wargaming 登录、前端 public client redirect URI 均可验证；
+- OIDC discovery、三个 Wargaming 登录、前端 public client redirect URI、
+  `wotbtools-android` 的 PUBLIC/S256/精确 redirect 均可验证；
 - QQ Connect 凭据缺失、空值或 placeholder 时 fail-closed，不通过猜测配置绕过。
 - DNS cutover 前，受控 TX runtime 必须记录一次真实 QQ E2E：Web Login → QQ authorize →
   `idp-qq` callback → Keycloak broker → 新 TX Keycloak user → WotBTools session/token；同时确认

@@ -9,11 +9,14 @@ const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.
 /**
  * Native 侧替身：`consumePendingReplay` 实现 **compare-and-clear**
  * （只有 expected pendingId 与当前 pending 完全一致才清理），与 Android 侧一致。
+ *
+ * 默认 bridge 版本是本前端支持的 v2；`bridgeVersion === null` 走 PR290 legacy 契约
+ * （无版本号 + 已知能力 + 固定 synthetic resource）。
  */
 function stubNative(
   pending,
   consumeResult = true,
-  bridgeVersion = 1,
+  bridgeVersion = 2,
   capabilities = bridgeVersion === null ? ['replay-open', 'replay-share'] : [],
 ) {
   const listeners = []
@@ -93,8 +96,10 @@ describe('useNativeReplayImport', () => {
     expect(onReadError).not.toHaveBeenCalledWith('native-client-upgrade-required')
   })
 
-  it('fails safely when Native Bridge version is incompatible', async () => {
-    const native = stubNative(PENDING_A, true, 2)
+  it.each([1, 3])('rejects unsupported bridge version v%s before touching any pending replay', async (bridgeVersion) => {
+    const native = stubNative(PENDING_A, true, bridgeVersion)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
     const onPendingFile = vi.fn(async () => true)
     const onReadError = vi.fn()
     const { consumePendingWhenReady } = useNativeReplayImport({
@@ -104,9 +109,12 @@ describe('useNativeReplayImport', () => {
     })
 
     await expect(consumePendingWhenReady()).resolves.toBe(false)
+    // 版本号是权威的：不 get、不 fetch、不 ACK，pending 原样留在 Native。
+    expect(native.methods).toEqual(['getBridgeVersion'])
+    expect(fetchMock).not.toHaveBeenCalled()
     expect(onPendingFile).not.toHaveBeenCalled()
+    expect(native.consumeRequests).toEqual([])
     expect(onReadError).toHaveBeenCalledWith('native-client-upgrade-required')
-    expect(native.methods).not.toContain('getPendingReplay')
     expect(native.getCurrent()).toEqual(PENDING_A)
   })
 

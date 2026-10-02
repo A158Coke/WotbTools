@@ -2,79 +2,278 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const kcLogin = vi.fn(() => Promise.resolve(undefined))
-const kcInit = vi.fn(() => Promise.resolve(true))
+const kcLogin = vi.fn(() => Promise.resolve(true))
 const kcLogout = vi.fn(() => Promise.resolve(undefined))
 const kcUpdateToken = vi.fn(() => Promise.resolve(false))
-const kcConfigs = []
+const kcInit = vi.fn()
+const kcInstances = []
+
+/**
+ * keycloak-js 替身 scenario：
+ * - `initResult` 同时决定 init() 的 resolve 值与落定后的 `adapter.authenticated`
+ *   （真实 keycloak-js 中两者同源：check-sso 命中 → true + tokenParsed）；
+ * - `initImpl` 覆盖 init 返回的 promise，用于悬挂 / reject 场景；
+ * - `tokenParsed` 是 check-sso 命中时 adapter 上的 claims。
+ */
+const kcScenario = {
+  initResult: false,
+  tokenParsed: null,
+  initImpl: null,
+}
 
 vi.mock('keycloak-js', () => ({
   default: class {
     constructor(config) {
-      kcConfigs.push(config)
+      this.config = config
+      this.authenticated = false
+      this.tokenParsed = null
+      this.token = 'kc-access-token'
+      kcInstances.push(this)
     }
-    authenticated = true
-    init = kcInit
+    init = (options) => {
+      kcInit(options)
+      const settle = (value) => {
+        this.authenticated = value === true
+        this.tokenParsed = value === true ? kcScenario.tokenParsed : null
+        return value
+      }
+      if (kcScenario.initImpl) return Promise.resolve(kcScenario.initImpl()).then(settle)
+      return Promise.resolve(kcScenario.initResult).then(settle)
+    }
     login = kcLogin
     logout = kcLogout
     updateToken = kcUpdateToken
-  }
+  },
 }))
 
 import { useAuth } from './useAuth.js'
 
+const ADMIN_CLAIMS = Object.freeze({
+  displayName: 'A158布丁',
+  realm_access: { roles: ['wotbtools-admin'] },
+})
+const USER_CLAIMS = Object.freeze({
+  displayName: 'CN Player',
+  realm_access: { roles: ['wotbtools-user'] },
+})
+
+/** 模拟 origin-scoped bridge：postMessage → native reply → 'message' 事件（同 id）。 */
+function stubNative(results = {}) {
+  const listeners = []
+  const calls = []
+  window.WotbNative = {
+    postMessage: vi.fn((json) => {
+      const msg = JSON.parse(json)
+      calls.push({ method: msg.method, params: msg.params })
+      listeners.forEach(cb =>
+        cb({ data: JSON.stringify({ id: msg.id, result: results[msg.method] ?? null }) })
+      )
+    }),
+    addEventListener: vi.fn((type, cb) => listeners.push(cb)),
+    removeEventListener: vi.fn((type, cb) => {
+      const i = listeners.indexOf(cb)
+      if (i >= 0) listeners.splice(i, 1)
+    }),
+  }
+  return { calls, results }
+}
+
+function androidBridge(overrides = {}) {
+  return stubNative({
+    getBridgeVersion: 2,
+    getCapabilities: ['native-auth'],
+    authGetState: { authenticated: false, expiresAt: null },
+    ...overrides,
+  })
+}
+
 describe('useAuth', () => {
   afterEach(() => {
     vi.useRealTimers()
-    kcInit.mockReset().mockImplementation(() => Promise.resolve(true))
-    kcLogin.mockReset().mockImplementation(() => Promise.resolve(undefined))
+    delete window.WotbNative
+    delete window.wotbtoolsOnAuthChanged
+    kcInit.mockClear()
+    kcLogin.mockReset().mockImplementation(() => Promise.resolve(true))
+    kcLogout.mockReset().mockImplementation(() => Promise.resolve(undefined))
+    kcUpdateToken.mockReset().mockImplementation(() => Promise.resolve(false))
+    kcScenario.initResult = false
+    kcScenario.tokenParsed = null
+    kcScenario.initImpl = null
   })
 
-  it('reuses the production Keycloak issuer configuration', () => {
+  it('普通浏览器 → BrowserAuthProvider：生产 issuer 配置 + check-sso，initPromise 正常落定', async () => {
     const auth = useAuth()
 
-    expect(auth.keycloak).toBeTruthy()
-    expect(kcConfigs[0]).toEqual({
+    await expect(auth.initPromise).resolves.toBe(false)
+
+    expect(kcInstances).toHaveLength(1)
+    expect(kcInstances[0].config).toEqual({
       url: 'https://auth.wotbtools.com',
       realm: 'wotbtools',
       clientId: 'wotbtools-web',
     })
+    expect(kcInit).toHaveBeenCalledWith({
+      onLoad: 'check-sso',
+      pkceMethod: 'S256',
+      silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
+      checkLoginIframe: false,
+    })
+    expect(auth.authInitState.value).toBe('unauthenticated')
+    expect(auth.authenticated.value).toBe(false)
+    expect(auth.initialized.value).toBe(true)
+    expect(auth.initError.value).toBe(null)
   })
 
-  it('login() redirects to the Keycloak login page with the profile view', async () => {
+  it('check-sso 命中时把 adapter 的 authenticated / tokenParsed 投影到 refs', async () => {
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = ADMIN_CLAIMS
     const auth = useAuth()
-    await auth.initPromise
+
+    await expect(auth.retryAuth()).resolves.toBe(true)
+
+    expect(auth.authInitState.value).toBe('authenticated')
+    expect(auth.authenticated.value).toBe(true)
+    expect(auth.isAuthenticated()).toBe(true)
+    expect(auth.tokenParsed.value).toEqual(ADMIN_CLAIMS)
+    expect(auth.isAdmin.value).toBe(true)
+    expect(auth.token()).toBe('kc-access-token')
+  })
+
+  it('Android bridge v2 + native-auth 能力 → AndroidAuthProvider，绝不构造 keycloak-js', async () => {
+    const keycloakBefore = kcInstances.length
+    const native = androidBridge({
+      authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
+      authGetAccessToken: {
+        token: 'native-token',
+        expiresAt: 1_700_000_000,
+        claims: ADMIN_CLAIMS,
+        error: null,
+      },
+    })
+    const auth = useAuth()
+
+    await expect(auth.retryAuth()).resolves.toBe(true)
+
+    expect(native.calls.map(call => call.method)).toEqual([
+      'getBridgeVersion',
+      'getCapabilities',
+      'authGetState',
+      'authGetAccessToken',
+    ])
+    expect(auth.authInitState.value).toBe('authenticated')
+    expect(auth.authenticated.value).toBe(true)
+    expect(auth.tokenParsed.value).toEqual(ADMIN_CLAIMS)
+    expect(auth.token()).toBe('native-token')
+    expect(auth.isAdmin.value).toBe(true)
+    expect(kcInstances.length).toBe(keycloakBefore)
+    expect(kcInit).not.toHaveBeenCalled()
+  })
+
+  it('Android bridge v2 但缺 native-auth 能力 → unsupported（绝不回退 keycloak-js）', async () => {
+    const keycloakBefore = kcInstances.length
+    const native = stubNative({ getBridgeVersion: 2, getCapabilities: ['replay-open', 'app-update'] })
+    const auth = useAuth()
+
+    await expect(auth.retryAuth()).resolves.toBe(false)
+
+    expect(auth.authInitState.value).toBe('failed')
+    expect(auth.initFailureReason.value).toBe('init-error')
+    expect(auth.initError.value.code).toBe('NATIVE_AUTH_UNSUPPORTED')
+    expect(auth.initError.value.reason).toBe('native-auth-capability-missing')
+    expect(auth.authenticated.value).toBe(false)
+    expect(native.calls.map(call => call.method)).toEqual(['getBridgeVersion', 'getCapabilities'])
+    expect(kcInstances.length).toBe(keycloakBefore)
+  })
+
+  it('Android bridge v1 → unsupported：显式失败，且绝不构造 keycloak-js / 不调用 auth 方法', async () => {
+    const keycloakBefore = kcInstances.length
+    const native = stubNative({
+      getBridgeVersion: 1,
+      getCapabilities: ['replay-open', 'replay-share', 'app-update'],
+      authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
+    })
+    const auth = useAuth()
+
+    await expect(auth.retryAuth()).resolves.toBe(false)
+
+    expect(auth.authInitState.value).toBe('failed')
+    expect(auth.initFailureReason.value).toBe('init-error')
+    expect(auth.initError.value.name).toBe('NATIVE_AUTH_UNSUPPORTED')
+    expect(auth.initError.value.code).toBe('NATIVE_AUTH_UNSUPPORTED')
+    expect(auth.initError.value.reason).toBe('bridge-v1')
+    expect(auth.authenticated.value).toBe(false)
+    expect(auth.tokenParsed.value).toBe(null)
+    expect(auth.token()).toBe('')
+    expect(native.calls.map(call => call.method)).toEqual(['getBridgeVersion'])
+    expect(kcInstances.length).toBe(keycloakBefore)
+    expect(kcInit).not.toHaveBeenCalled()
+  })
+
+  it('Android 报不出 bridge 版本（null）→ unsupported：原因显式，不猜能力', async () => {
+    const native = stubNative({ getBridgeVersion: null })
+    const auth = useAuth()
+
+    await expect(auth.retryAuth()).resolves.toBe(false)
+
+    expect(auth.initError.value.code).toBe('NATIVE_AUTH_UNSUPPORTED')
+    expect(auth.initError.value.reason).toBe('bridge-version-unknown')
+    expect(native.calls.map(call => call.method)).toEqual(['getBridgeVersion'])
+  })
+
+  it('Native 推送 wotbtoolsOnAuthChanged 就地同步登录态（WebView 不重载）', async () => {
+    const native = androidBridge()
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(false)
+    expect(typeof window.wotbtoolsOnAuthChanged).toBe('function')
+
+    native.results.authGetState = { authenticated: true, expiresAt: 1_700_000_100 }
+    native.results.authGetAccessToken = {
+      token: 'fresh-token',
+      expiresAt: 1_700_000_100,
+      claims: USER_CLAIMS,
+      error: null,
+    }
+    window.wotbtoolsOnAuthChanged()
+
+    await vi.waitFor(() => expect(auth.authenticated.value).toBe(true))
+    expect(auth.authInitState.value).toBe('authenticated')
+    expect(auth.tokenParsed.value).toEqual(USER_CLAIMS)
+    expect(auth.token()).toBe('fresh-token')
+    expect(auth.displayName.value).toBe('CN Player')
+  })
+
+  it('login(view) 在浏览器里带 ?view= 回到本页，且不注入 idpHint', async () => {
+    const auth = useAuth()
+    await auth.retryAuth()
 
     await auth.login('profile')
 
     expect(kcLogin).toHaveBeenCalledWith(expect.objectContaining({
-      redirectUri: expect.stringContaining('view=profile')
+      redirectUri: expect.stringContaining('view=profile'),
     }))
     expect(kcLogin).not.toHaveBeenCalledWith(
       expect.objectContaining({ idpHint: expect.any(String) }))
   })
 
-  it('logout() delegates to keycloak', async () => {
+  it('Android login() 走 native external user-agent：不导航 WebView、不构造 keycloak-js', async () => {
+    const keycloakBefore = kcInstances.length
+    const native = androidBridge({ authLogin: true })
+    const hrefBefore = window.location.href
     const auth = useAuth()
-    await auth.logout()
-    expect(kcLogout).toHaveBeenCalled()
-  })
+    await auth.retryAuth()
 
-  it('hasRole() reads the reactive realm roles without granting access to other roles', async () => {
-    const auth = useAuth()
-    await auth.initPromise
+    await expect(auth.login('profile')).resolves.toBe(true)
 
-    auth.tokenParsed.value = { realm_access: { roles: ['wotbtools-admin'] } }
-    expect(auth.hasRole('wotbtools-admin')).toBe(true)
-    expect(auth.hasRole('HoF-admin')).toBe(false)
-    expect(auth.hasRole('')).toBe(false)
-
-    auth.tokenParsed.value = null
+    expect(native.calls.at(-1)).toEqual({ method: 'authLogin', params: {} })
+    expect(window.location.href).toBe(hrefBefore)
+    expect(kcInstances.length).toBe(keycloakBefore)
+    expect(kcInit).not.toHaveBeenCalled()
   })
 
   it('login() 只对「同一进行中的 redirect」去重，失败/取消后必须能重新发起', async () => {
     const auth = useAuth()
-    await auth.initPromise
+    await auth.retryAuth()
 
     let rejectFirst
     kcLogin.mockImplementationOnce(() => new Promise((_, reject) => { rejectFirst = reject }))
@@ -97,32 +296,22 @@ describe('useAuth', () => {
     expect(auth.loginInFlight.value).toBe(false)
   })
 
-  it('正常 anonymous init settles as unauthenticated', async () => {
-    const auth = useAuth()
-    kcInit.mockImplementationOnce(() => Promise.resolve(false))
-
-    await auth.retryAuth()
-
-    expect(auth.authInitState.value).toBe('unauthenticated')
-    expect(auth.authenticated.value).toBe(false)
-    expect(auth.initError.value).toBe(null)
-  })
-
   it('init reject becomes an explicit failed recovery state', async () => {
+    kcScenario.initImpl = () => Promise.reject(new Error('fixture init failed'))
     const auth = useAuth()
-    kcInit.mockImplementationOnce(() => Promise.reject(new Error('fixture init failed')))
 
     await expect(auth.retryAuth()).resolves.toBe(false)
 
     expect(auth.authInitState.value).toBe('failed')
     expect(auth.initFailureReason.value).toBe('init-error')
+    expect(auth.initError.value.message).toBe('fixture init failed')
     expect(auth.initialized.value).toBe(true)
   })
 
   it('watchdog settles a permanently pending init without changing auth to anonymous', async () => {
     vi.useFakeTimers()
+    kcScenario.initImpl = () => new Promise(() => {})
     const auth = useAuth()
-    kcInit.mockImplementationOnce(() => new Promise(() => {}))
 
     const pending = auth.retryAuth()
     await vi.advanceTimersByTimeAsync(12_000)
@@ -135,11 +324,15 @@ describe('useAuth', () => {
 
   it('retry before the watchdog settles the abandoned public promise', async () => {
     vi.useFakeTimers()
+    kcScenario.initImpl = () => new Promise(() => {})
     const auth = useAuth()
-    kcInit.mockImplementationOnce(() => new Promise(() => {}))
 
     const oldInit = auth.retryAuth()
-    kcInit.mockImplementationOnce(() => Promise.resolve(false))
+    // provider 解析本身是异步的一步：先让上一代真正进入 init，否则它会在 init 之前就被放弃。
+    await Promise.resolve()
+    expect(kcInit).toHaveBeenCalledTimes(1)
+
+    kcScenario.initImpl = null
     const newInit = auth.retryAuth()
 
     await expect(oldInit).resolves.toBe(false)
@@ -150,48 +343,152 @@ describe('useAuth', () => {
   it('late completion from an abandoned generation cannot overwrite the new generation', async () => {
     vi.useFakeTimers()
     const auth = useAuth()
-    let resolveOld
-    kcInit.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
 
+    let resolveOld
+    kcScenario.initImpl = () => new Promise(resolve => { resolveOld = resolve })
     const oldInit = auth.retryAuth()
-    const abandonedAdapter = auth.keycloak
     await vi.advanceTimersByTimeAsync(12_000)
+    const abandonedAdapter = kcInstances.at(-1)
     await oldInit
 
-    kcInit.mockImplementationOnce(() => Promise.resolve(false))
+    // 被放弃的一代晚到，而且带着「已登录」的 adapter 状态。
+    abandonedAdapter.authenticated = true
+    abandonedAdapter.tokenParsed = { displayName: 'stale' }
+    kcScenario.initImpl = null
     await auth.retryAuth()
-    expect(auth.keycloak).not.toBe(abandonedAdapter)
+
     resolveOld(true)
+    await Promise.resolve()
     await Promise.resolve()
 
     expect(auth.authInitState.value).toBe('unauthenticated')
     expect(auth.authenticated.value).toBe(false)
+    expect(auth.tokenParsed.value).toBe(null)
   })
 
   it('login after timeout creates a fresh non-silent adapter transaction', async () => {
     vi.useFakeTimers()
+    kcScenario.initImpl = () => new Promise(() => {})
     const auth = useAuth()
-    kcInit.mockImplementationOnce(() => new Promise(() => {}))
 
     const oldInit = auth.retryAuth()
     await vi.advanceTimersByTimeAsync(12_000)
     await oldInit
+    expect(auth.initFailureReason.value).toBe('init-timeout')
 
-    kcInit.mockImplementationOnce(() => Promise.resolve(false))
+    kcScenario.initImpl = null
+    const instancesBefore = kcInstances.length
     kcLogin.mockResolvedValueOnce(true)
     await expect(auth.login('replay')).resolves.toBe(true)
 
-    expect(kcInit).toHaveBeenCalledTimes(2)
     expect(kcInit).toHaveBeenLastCalledWith({ pkceMethod: 'S256', checkLoginIframe: false })
+    expect(kcInstances.length).toBe(instancesBefore + 1)
     expect(kcLogin).toHaveBeenCalledWith(expect.objectContaining({
       redirectUri: expect.stringContaining('view=replay'),
     }))
     expect(auth.loginInFlight.value).toBe(false)
   })
 
-  it('displayName 优先 Keycloak displayName claim，登录名只作兜底', async () => {
+  it('logout() 在浏览器里把回跳地址交给 keycloak', async () => {
     const auth = useAuth()
-    await auth.initPromise
+    await auth.retryAuth()
+
+    await auth.logout()
+
+    expect(kcLogout).toHaveBeenCalledWith({
+      redirectUri: window.location.origin + window.location.pathname,
+    })
+  })
+
+  it('logout() 在 Android 上调用 native 会话终结并把本地状态落回未登录', async () => {
+    const native = androidBridge({
+      authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
+      authGetAccessToken: {
+        token: 'native-token',
+        expiresAt: 1_700_000_000,
+        claims: ADMIN_CLAIMS,
+        error: null,
+      },
+      authLogout: true,
+    })
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    await auth.logout()
+
+    expect(native.calls.at(-1)).toEqual({ method: 'authLogout', params: {} })
+    expect(auth.authenticated.value).toBe(false)
+    expect(auth.tokenParsed.value).toBe(null)
+    expect(auth.authInitState.value).toBe('unauthenticated')
+    expect(auth.token()).toBe('')
+    expect(auth.isAuthenticated()).toBe(false)
+  })
+
+  it('ensureToken() 刷新失败时退回未登录并返回 false（调用方依赖这个 false）', async () => {
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = USER_CLAIMS
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    kcUpdateToken.mockRejectedValueOnce(new Error('refresh failed'))
+
+    await expect(auth.ensureToken(30)).resolves.toBe(false)
+
+    expect(kcUpdateToken).toHaveBeenCalledWith(30)
+    expect(auth.authenticated.value).toBe(false)
+    expect(auth.tokenParsed.value).toBe(null)
+    expect(auth.authInitState.value).toBe('unauthenticated')
+  })
+
+  it('ensureToken() 在 Android 上返回 false 时同样清空本地会话状态', async () => {
+    const native = androidBridge({
+      authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
+      authGetAccessToken: {
+        token: 'native-token',
+        expiresAt: 1_700_000_000,
+        claims: ADMIN_CLAIMS,
+        error: null,
+      },
+    })
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    native.results.authGetAccessToken = {
+      token: null,
+      expiresAt: null,
+      claims: null,
+      error: 'refresh-failed',
+    }
+
+    await expect(auth.ensureToken(30)).resolves.toBe(false)
+
+    expect(auth.authenticated.value).toBe(false)
+    expect(auth.tokenParsed.value).toBe(null)
+    expect(auth.authInitState.value).toBe('unauthenticated')
+  })
+
+  it('hasRole / isAdmin / isHofAdmin / displayName 都来自 tokenParsed claims', async () => {
+    const auth = useAuth()
+    await auth.retryAuth()
+
+    auth.tokenParsed.value = { realm_access: { roles: ['wotbtools-admin'] } }
+    expect(auth.hasRole('wotbtools-admin')).toBe(true)
+    expect(auth.hasRole('HoF-admin')).toBe(false)
+    expect(auth.hasRole('')).toBe(false)
+    expect(auth.isAdmin.value).toBe(true)
+    // 全站管理员同时具备 HoF 审核权限。
+    expect(auth.isHofAdmin.value).toBe(true)
+
+    auth.tokenParsed.value = { realm_access: { roles: ['HoF-admin'] } }
+    expect(auth.isAdmin.value).toBe(false)
+    expect(auth.isHofAdmin.value).toBe(true)
+
+    auth.tokenParsed.value = { realm_access: { roles: ['wotbtools-user'] } }
+    expect(auth.isAdmin.value).toBe(false)
+    expect(auth.isHofAdmin.value).toBe(false)
 
     // WG / QQ 登录：displayName = 官方昵称 / QQ 昵称，preferred_username 是内部登录名。
     auth.tokenParsed.value = { displayName: 'A158布丁', preferred_username: 'wg_eu_572253806' }

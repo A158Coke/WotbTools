@@ -529,6 +529,36 @@ UI 不会把未知说成满弹。生产 pin 同时升到 `v0.3.10`（`5029e103�
 **Git 证据：** 本 PR；`deploy/agent/source.json`、`scripts/fetch-agent-wasm.sh`、
 `frontend/src/api/agent-replay-facets.ts`、`frontend/src/scene/reloadBar.js`。
 
+## 2026-10-03 — Android 认证 owner 从 WebView 迁到 Native
+
+Android 壳此前一直沿用 Web 的认证链：Keycloak 登录页、IdP 跳转、broker callback 全部发生在同一个
+WebView 里，认证状态因此由「一个被当作浏览器用的客户端」持有。为了让它在这种形态下可用，仓库积累了
+一整层只服务于该形态的代码：provider hostname 的精确 allowlist、QQ native handoff 与
+`schemacallback` 改写骨架、broker callback 的 Verified App Link 路由、App Link 健康诊断与 OEM
+recovery 提示，以及贯穿 WebView navigation 的 `inAuthFlow` 状态机。
+
+Android 2.0 把认证 owner 换成 Native：AppAuth（RFC 8252）+ 外部 user-agent + Authorization Code +
+PKCE S256 对 Keycloak 取 token，QQ / Wargaming ASIA / EU / NA 仍由 Keycloak 做 identity brokering。
+结果是上面那一层**全部被删除**，而不是被重构 —— Native 侧只认识 Keycloak 的一个 client
+（`wotbtools-android`），根本不认识 IdP：`idp-qq`、`wargaming-*` 只是 Keycloak 的内部 alias，
+增删 IdP、临时关闭某地区、更换 provider 都不再需要发 APK。
+
+认证身份与业务身份的边界也随之更清楚：PKCE verifier、授权码、refresh token、state/nonce 与刷新
+生命周期全部留在 Native（Keystore AES-GCM 加密持久化），WebView 只通过 Native Bridge 拿到短生命
+周期 access token、登录状态、access token 解码后的 claims 与过期时间。前端 `useAuth` 从
+「Auth == keycloak-js」变成 AuthProvider 抽象：浏览器仍走 keycloak-js（行为不变），Android 走
+Bridge v2 的 `native-auth`；Android 壳若报告 bridge v1，前端只会显式失败并提示更新，
+**绝不**回退到 WebView 里跑 keycloak-js。
+
+代价与配套：Native Bridge 升到 v2（新增 `auth*` 方法、`native-auth` 能力、异步 reply 与
+`wotbtoolsOnAuthChanged` 事件），认证改造因此是一次强制更新 cutover —— 旧客户端由
+`version.json:minSupportedVersionCode` 收敛，`version.json` 仍是唯一的发布 commit point，并在
+发布前先探测 Keycloak 侧的 runtime client 是否真的可用。Replay ingress 也顺势与认证彻底解耦：
+登录不再是 replay 的前置条件，登录过程中收到回放不再需要让出 navigation。
+
+**Git 证据：** 本 PR；`contracts/android-native-bridge.json`、`android/app/src/main/java/com/wotbtools/app/auth/`、
+`frontend/src/platform/{browserAuthProvider,androidAuthProvider}.js`、`infra/tofu/keycloak/client.tf`。
+
 ## 当前架构形成的三条长期主线
 
 回看整个演进过程，WotbTools 的变化并不是简单的功能累积，而主要沿三条长期主线收敛。

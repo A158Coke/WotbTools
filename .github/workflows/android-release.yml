@@ -34,7 +34,9 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 构建 + 签名/上传约 35 分钟，末尾还要为「等 Keycloak 的 android client 上线」预留
+    # 最多约 22 分钟的探测窗口（30 × 45s），因此 job 上限必须高于两者之和。
+    timeout-minutes: 75
     steps:
       - name: Checkout release source
         uses: actions/checkout@v5
@@ -64,7 +66,9 @@ jobs:
             --frontend frontend/src/platform/nativeBridgeContract.js \
             --native-source android/app/src/main/java/com/wotbtools/app/NativeBridge.kt \
             --native-source android/app/src/main/java/com/wotbtools/app/MainActivity.kt \
-            --native-source android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt
+            --native-source android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt \
+            --frontend-source frontend/src/platform/nativeBridgeContract.js \
+            --frontend-source frontend/src/platform/androidAuthProvider.js
 
       - name: Validate source is main (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
@@ -112,6 +116,25 @@ jobs:
               ;;
           esac
           guard_min_supported "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "$VERSION_CODE"
+
+          # 一个前端已不再支持的 bridge 版本必须靠 minSupportedVersionCode 强制更新：
+          # 否则发布出去的是一个「看起来兼容」的 manifest，而线上旧客户端继续用一个本
+          # 前端已经无法服务的 wire contract（version.json 的 nativeBridgeVersion 就是
+          # 线上客户端当前使用的 bridge 世代）。
+          PROD_BRIDGE=""
+          if [ -s "$PROD_JSON" ]; then
+            PROD_BRIDGE="$(jq -r '.nativeBridgeVersion // empty' "$PROD_JSON" 2>/dev/null || true)"
+          fi
+          FE_VERSIONS="$(python3 - <<'PY'
+          import re
+          text = open('frontend/src/platform/nativeBridgeContract.js', encoding='utf-8').read()
+          match = re.search(r'SUPPORTED_NATIVE_BRIDGE_VERSIONS\s*=\s*Object\.freeze\(\[([^\]]*)\]\)', text)
+          print(','.join(re.findall(r'\b[0-9]+\b', match.group(1))) if match else '')
+          PY
+          )"
+          guard_bridge_covered "$PROD_BRIDGE" "${{ steps.version.outputs.nativeBridgeVersion }}" \
+            "$FE_VERSIONS" "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "$VERSION_CODE"
+          echo "Frontend-supported bridge versions: ${FE_VERSIONS:-none}; production bridge: ${PROD_BRIDGE:-none}"
 
           # Reject an immutable release-tag conflict before expensive builds or any
           # production APK mutation. A retry is allowed only when the tag is absent
@@ -397,6 +420,40 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: Verify the wotbtools-android runtime client before advertising the manifest
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # version.json 是发布的 commit point：一旦它指向 2.x，旧客户端就会被强制更新
+          # 到一个新客户端。因此在这里先证明 Keycloak 侧的 wotbtools-android 已经可用
+          # （A15 顺序：APK staging → KC apply → 验证 runtime client → 才发布 manifest）。
+          # 探测是只读 GET：客户端存在且 redirect URI 已注册时 Keycloak 返回 200 登录页；
+          # 客户端不存在返回 Client not found，redirect 未注册返回 Invalid parameter:
+          # redirect_uri，因此断言「200 且不含错误页标记」同时覆盖这两条契约。
+          AUTH_ENDPOINT="https://auth.wotbtools.com/realms/wotbtools/protocol/openid-connect/auth"
+          STATE="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          NONCE="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          CHALLENGE="$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=' | cut -c1-43)"
+          PROBE_URL="$AUTH_ENDPOINT?client_id=wotbtools-android&response_type=code&scope=openid"
+          PROBE_URL="$PROBE_URL&redirect_uri=com.wotbtools.app%3A%2Foauth2redirect"
+          PROBE_URL="$PROBE_URL&code_challenge=$CHALLENGE&code_challenge_method=S256"
+          PROBE_URL="$PROBE_URL&state=$STATE&nonce=$NONCE"
+          attempts=30
+          for attempt in $(seq 1 "$attempts"); do
+            code="$(curl -sS -o "$RUNNER_TEMP/android-client-probe.html" -w '%{http_code}' \
+              --connect-timeout 5 --max-time 15 "$PROBE_URL" || true)"
+            if [ "$code" = "200" ] && ! grep -qiE 'Client not found|Invalid parameter: redirect_uri|invalid_client|We are sorry' \
+              "$RUNNER_TEMP/android-client-probe.html"; then
+              echo "wotbtools-android runtime client verified (attempt $attempt)."
+              exit 0
+            fi
+            echo "wotbtools-android not usable yet (attempt $attempt/$attempts, http=$code); waiting for the Keycloak apply."
+            sleep 45
+          done
+          echo "::error::wotbtools-android is not a usable Keycloak client yet (client missing or its redirect URI is not registered). Refusing to publish version.json: the mandatory update must not point clients at an auth path that is not live." >&2
+          exit 1
 
       - name: Write version.json (APK 可访问后才发布, LAST)
         if: steps.preflight.outputs.releaseAction == 'publish'

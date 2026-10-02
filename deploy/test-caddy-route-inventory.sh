@@ -104,6 +104,36 @@ readiness_missing="$(caddyfile readiness-missing)"
 sed -i 's|handle /_wotb/ready|handle /_wotb/health|' "$readiness_missing/Caddyfile"
 rejects 'TX-local readiness surface removed' "$readiness_missing" '/_wotb/ready readiness surface is missing'
 
+# --- the Android App Link callback must exist, answer, and stay reachable -----
+# A browser that returns to the HTTPS redirect URI without the app installed must
+# land on the WotBTools-owned page instead of Keycloak's catch-all 404. Every case
+# below is decided by the inventory guard, before the runtime validation runs.
+callback_missing="$(caddyfile android-callback-missing)"
+awk '/^\thandle \/android\/oauth\/callback \{/ { skip = 1 }
+     skip && /^\t\}/ { skip = 0; next }
+     skip { next }
+     { print }' "$ROOT/deploy/tx/Caddyfile" > "$callback_missing/Caddyfile"
+rejects 'android callback route removed' "$callback_missing" \
+  'auth.wotbtools.com must declare handle /android/oauth/callback'
+
+callback_proxied="$(caddyfile android-callback-proxied)"
+# The route keeps a respond (so only the "answer from Caddy" rule can reject it)
+# but also proxies the same path into Keycloak.
+awk '/^\thandle \/android\/oauth\/callback \{/ { print; print "\t\treverse_proxy keycloak:8080"; next }
+     { print }' "$ROOT/deploy/tx/Caddyfile" > "$callback_proxied/Caddyfile"
+rejects 'android callback handed back to Keycloak' "$callback_proxied" \
+  'must answer from Caddy, never reverse_proxy an upstream'
+
+# The route is only an answer while it is the most specific match: once it no
+# longer exists on that host, the guard must fail on it.
+callback_removed_entirely="$(caddyfile android-callback-gone)"
+awk '/^\thandle \/android\/oauth\/callback \{/ { skip = 1 }
+     skip && /^\t\}$/ { skip = 0; next }
+     skip { next }
+     { print }' "$ROOT/deploy/tx/Caddyfile" > "$callback_removed_entirely/Caddyfile"
+rejects 'android callback absent from the inventory' "$callback_removed_entirely" \
+  'auth.wotbtools.com must declare handle /android/oauth/callback'
+
 unreviewed="$(caddyfile unreviewed-upstream)"
 printf '\n%sunreviewed.example.com {\n%sreverse_proxy example.invalid:1234\n%s}\n' \
   '' "$(printf '\t')" '' >> "$unreviewed/Caddyfile"

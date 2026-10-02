@@ -3,8 +3,7 @@ package com.wotbtools.app
 /**
  * What MainActivity may do with a pending replay when a replay intent arrives.
  *
- * [NONE] is the navigation-ownership boundary (RC5): inside an authentication transaction a new
- * replay intent is only enqueued, and must never change WebView navigation.
+ * [NONE] is the only "do nothing" outcome: no loadUrl, no evaluateJavascript.
  */
 internal enum class ReplayDispatchAction {
     /** Enqueue only: no loadUrl, no evaluateJavascript. */
@@ -22,17 +21,17 @@ internal enum class ReplayDispatchAction {
  *
  * Kept completely free of Android framework types (no Uri / Context / WebView / View) so the whole
  * decision is a plain JVM unit test under `testDebugUnitTest`; MainActivity only reads the inputs
- * (`pendingReplay`, `inAuthFlow`, container visibility, `WebView.url`) and performs the action.
+ * (`pendingReplay`, container visibility, `WebView.url`) and performs the action.
  *
- * Ownership rules, in order (equivalent to the previous inline branches in `onNewIntent`):
+ * Ownership rules, in order:
  *  1. no pending replay  -> NONE
- *  2. `inAuthFlow`       -> NONE (authentication owns navigation; replay is deferred, not dropped)
- *  3. WebView invisible  -> NONE (the container is taken over by a gate / error / update screen)
- *  4. already on the replay view -> NOTIFY_WEB, otherwise NAVIGATE_REPLAY
+ *  2. WebView invisible  -> NONE (the container is taken over by a gate / error / update screen)
+ *  3. already on the replay view -> NOTIFY_WEB, otherwise NAVIGATE_REPLAY
  *
- * The verified auth-return path (`handleAuthReturnHot` / `handleAuthReturnColdStart`) is not part of
- * this decision: it always sets `inAuthFlow = true` first, so rule 2 already guarantees an auth
- * return never triggers replay navigation.
+ * Authentication is deliberately **not** an input any more: Native owns auth and the login runs in
+ * an external user-agent (Custom Tabs), so an auth transaction can never own — or be disturbed by —
+ * WebView navigation. A replay intent that arrives while the user is logging in is dispatched
+ * normally; the page consumes it through the Native Bridge when it is ready.
  */
 internal object ReplayDispatchPolicy {
 
@@ -45,12 +44,10 @@ internal object ReplayDispatchPolicy {
 
     fun decide(
         hasPendingReplay: Boolean,
-        inAuthFlow: Boolean,
         webViewVisible: Boolean,
         currentUrl: String?
     ): ReplayDispatchAction {
         if (!hasPendingReplay) return ReplayDispatchAction.NONE
-        if (inAuthFlow) return ReplayDispatchAction.NONE
         if (!webViewVisible) return ReplayDispatchAction.NONE
         return if (currentUrl != null && currentUrl.contains(REPLAY_VIEW_MARKER)) {
             // Already on the replay workspace: notify in place instead of reloading (a reload would

@@ -76,7 +76,9 @@ jobs:
             --frontend frontend/src/platform/nativeBridgeContract.js \
             --native-source android/app/src/main/java/com/wotbtools/app/NativeBridge.kt \
             --native-source android/app/src/main/java/com/wotbtools/app/MainActivity.kt \
-            --native-source android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt
+            --native-source android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt \
+            --frontend-source frontend/src/platform/nativeBridgeContract.js \
+            --frontend-source frontend/src/platform/androidAuthProvider.js
           bash scripts/android-release/test-android-contract.sh
       - name: Enforce version and bridge compatibility against base
         env:
