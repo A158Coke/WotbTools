@@ -1,5 +1,8 @@
 name: Komodo Controller
 
+# Independent bootstrap and break-glass owner for the Komodo control plane.
+# Komodo never owns its own Core lifecycle: this workflow can always reconcile
+# Core/Mongo and the dedicated DNSPod root even when Komodo itself is unavailable.
 on:
   push:
     branches: [main]
@@ -33,21 +36,25 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
           ref: ${{ github.sha }}
+          fetch-depth: 0
 
       - name: Freeze current main
+        id: source
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
-          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'Komodo controller workflow requires main.' >&2; exit 1; }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'The event SHA must be a full lowercase commit SHA.' >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo 'Checkout SHA differs from the event SHA.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Stage exact Komodo controller inputs on Yecao
         uses: appleboy/scp-action@v1
@@ -57,7 +64,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           source: deploy/komodo,infra/tofu/komodo
-          target: /opt/komodo/incoming/${{ github.sha }}
+          target: /opt/komodo/incoming/${{ steps.source.outputs.source_sha }}
           overwrite: true
 
       - name: Reject stale main before Yecao mutation
@@ -66,12 +73,15 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
         run: |
           set -euo pipefail
-          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
-      - name: Reconcile Core and apply exact DNS plan
+      # All mutation logic lives in the staged `reconcile.sh`; this step only
+      # forwards the exact SHA and the owner's secrets under the host lock.
+      - name: Reconcile Core, apply the exact DNS plan, and verify
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -86,7 +96,7 @@ jobs:
             chmod 700 "$stage/deploy/komodo/"*.sh "$stage/infra/tofu/komodo/"*.sh
             bash "$stage/deploy/komodo/reconcile.sh" "$SOURCE_SHA" "$stage"
         env:
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           KOMODO_DATABASE_PASSWORD: ${{ secrets.KOMODO_DATABASE_PASSWORD }}
           KOMODO_INIT_ADMIN_PASSWORD: ${{ secrets.KOMODO_INIT_ADMIN_PASSWORD }}
           KOMODO_JWT_SECRET: ${{ secrets.KOMODO_JWT_SECRET }}
@@ -94,6 +104,8 @@ jobs:
           TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
 
+      # Only the SHA-scoped staging directory is ever removed. `/opt/komodo/compose.yml`,
+      # `/opt/komodo/tofu-state`, and `/opt/komodo/backups` are out of reach here.
       - name: Cleanup staged Komodo controller inputs
         if: always()
         uses: appleboy/ssh-action@v1
@@ -109,4 +121,4 @@ jobs:
             [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
             rm -rf -- "/opt/komodo/incoming/$SOURCE_SHA"
         env:
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
