@@ -9,12 +9,14 @@
 > - **Released artifact snapshot** (what this repo actually consumes): tag **`v0.3.8`** = commit
 >   `f35baa46ec4d069c8d68cfad66cafcd166e0a492`, pinned in `deploy/agent/source.json`.
 > - **Research source snapshot** (documents quoted below): commit
->   `1c2a3e51970a3b54e73219140eefb0fa4fd8d0db`
->   - `回放射击事件逆向分析.md` blob `899f6a490214489a163ef5ca30b861fd506cdff7`
+>   `e37e6a7d9ce93adb289ba13d6b25aa5aa47fe7ed`
+>   - `回放射击事件逆向分析.md` blob `eb838731730d09d8db3ae5a2b3e45a6925dc7613`
 >   - `回放未解析数据清单.md` blob `e1427a482988a895233c1281e4cf5ab0938a40d8`
->   - `客户端弹道与命中位置逆向报告.md` blob `ded1ffcbf870564247372c26e237e79d16373c8f`
+>   - `客户端弹道与命中位置逆向报告.md` blob `77fa549a5db938adc6a832d6086c9a852880019d`
 >   - `WI射击参数与命中位置分析.md` blob `b0cd657e4e6963111a46b943e08649f5a6fbb4d0`
 >     (byte-identical to the blob read in the original 2026-09-26 review)
+>   - `docs/wotbtools-cross-reference.md` blob `7b5ed0085cfe7c6e453a3e1e8101a0ed4d7aab78`
+>   - `游戏回放数据处理分析报告.md` blob `3ed75c33047745f011d0c003e2eb99dcd943a2d3`
 >
 > Original review snapshots (2026-09-26, **superseded**): `回放射击事件逆向分析.md` blob
 > `2dca7b669ac91196885ee2f45fa8a58db6e60040`, `WI射击参数与命中位置分析.md` blob `b0cd657e…`.
@@ -145,23 +147,21 @@ The result must remain distinct from an exact world-space impact coordinate. Qua
 
 Status: **EXTERNAL_CANDIDATE — high priority.**
 
-External status (2026-10-02) — **the external source set is internally inconsistent here, so nothing below
-is stated as unconditional fact.** Three statements exist in the research snapshot
-(`1c2a3e5`), all traceable, two of them contradicting each other:
+External status (2026-10-02) — the external project has now **explicitly resolved its own earlier
+contradiction** in the immutable research snapshot above. This resolves the external project's document
+history; it does **not** promote the claim inside WotbTools.
 
-| Source (blob) | Statement |
+The current upstream source set is internally consistent on the following distinction:
+
+| Source (blob) | Current statement |
 |---|---|
-| `回放射击事件逆向分析.md` `899f6a49…` §4.1 + §7 | terminal position: the six-byte payload **is** the client's `DecodeShotSegment` two-point AABB encoding (entry/exit), and the earlier `[shell u16][yaw u16][pitch u16]` reading is explicitly retracted; the removal of its 3D hit-decal replay is attributed to a wrong box source / axis order, **not** to falsified coordinate semantics |
-| `客户端弹道与命中位置逆向报告.md` `ded1ffcb…` §2.4 | the same document family still carries the earlier conclusion as a blockquote ("四轮定论"): hash6 = `[shell u16][bearing yaw u16][arrival pitch u16]` and "method8 hash6 的坐标语义" is described as falsified; a later blockquote ("六轮") adds that *player-measured* in-game decals contradict the mechanical decode and that the visible decal comes from the tracer line × model intersection |
-| `WI射击参数与命中位置分析.md` `b0cd657e…` §5.1 (blob unchanged since the original review) | supports the two-point AABB reading |
+| `回放射击事件逆向分析.md` `eb838731…` §4.1 + §7 | terminal position: the six-byte payload is the client's `DecodeShotSegment` two-point AABB encoding (entry/exit); the earlier `[shell u16][yaw u16][pitch u16]` and "effect bytes" readings are explicitly retracted; the failed early 3D reconstruction is attributed to the wrong box source / axis order |
+| `客户端弹道与命中位置逆向报告.md` `77fa549a…` supersede note + §2.4 | historical "fourth/sixth round" blockquotes are retained as research history but are now explicitly marked as superseded where they claimed that hash6 coordinate semantics were false; the report separately preserves the observation that the **visible in-game decal** is produced from the client tracer/model path, which is a rendering statement rather than a packet-byte interpretation |
+| `WI射击参数与命中位置分析.md` `b0cd657e…` §5.1 | supports the same two-point AABB reading |
 
-So the external project's **authoritative segment reference** states the two-point encoding as terminal
-and itself declares the retraction of the older reading, while its **client-side report paragraph was not
-updated** to match. This archive must not pick a side: treat "two-point encoding" as the external project's
-*stated current position* — not as verified fact — until the local reproduction in §10 item 2 settles it.
-The "visible in-game decal" observation (tracer × model) and the segment-byte decoding are not mutually
-exclusive; they concern different things (what the client renders vs. what the server put in the packet),
-but neither is resolved here.
+Therefore the two-point encoding is the external project's **stated current conclusion**, not a fact that
+WotbTools has independently closed. The local reproduction in §10 item 2 remains mandatory before any
+promotion to WotbTools canonical evidence.
 
 The external project's reported byte mapping follows. Use it as the hypothesis to test, not as a
 canonical fact model:
@@ -359,7 +359,7 @@ Status: **CORROBORATED architectural rule.**
 The following external conclusions are intentionally **not** promoted here:
 
 - exact Type32 tail layout: the "conflicting variants" of the original review are explained by the family split (§5), but the residual bytes (26/27-byte bytes 5–6, 27-byte byte 10/11) stay unnamed;
-- **any adoption of the two-point hit-segment encoding while the external source set still contradicts itself** (§3): its authoritative reference states the two-point reading and retracts the older one, but its client-side report paragraph still carries the retracted reading and reports player-measured decals inconsistent with a mechanical AABB decode;
+- **any promotion of the two-point hit-segment encoding solely because the external project now states it consistently** (§3): the upstream supersede chain is resolved, but WotbTools still has not independently reproduced the encoding on its own corpus / controlled probe;
 - any loadout selection produced by the external project's tier 2/3 path (shell / HP filters, top-tier preference) as if it were deterministic evidence — only the composition-blob match is deterministic (§7);
 - any reading of method27 args\[21..33) as a **position** — the external project's own controlled test falsified it (§6);
 - exact private names for unresolved method8 tail bytes;
@@ -379,11 +379,11 @@ reproduction against the WotbTools corpus or a controlled probe):
    *External:* decode unchanged, but read yaw from the high 10 bits only, and use a **sectorised** pitch
    limit table (§2), otherwise the comparison will disagree by design.
 2. **P0 — method8 six-byte hit segment + component selector** using controlled collision targets.
-   *External:* the external project's *stated* reading is the two-point AABB quantisation with a fixed
-   byte/axis mapping, but its own source set contradicts itself there (§3) — so this item now has a concrete
-   byproduct: settling the conflict. The component selector has height-stratification evidence and
-   reappears at Type32 byte 11 (§4). Highest value of the queue — the mapping is specific enough to test
-   directly, and a positive result would let this archive state the reading without the conflict note.
+   *External:* the external project's current source set now consistently states the two-point AABB
+   quantisation with a fixed byte/axis mapping (§3), after explicitly marking its earlier contrary blockquotes
+   as superseded. That resolves the upstream documentation history, **not** WotbTools evidence. The component
+   selector has height-stratification evidence and reappears at Type32 byte 11 (§4). Highest value of the
+   queue — the mapping is specific enough to reproduce directly against the WotbTools corpus / controlled probe.
 3. **P1 — updateArena actual gun/turret loadout** using alternate-module vehicles.
    *External:* blob layout reported cracked; note the external project's chain is **tiered** and only the
    composition-blob tier is deterministic — tier 2 (shell/HP) is fallback evidence and tier 3 is a
@@ -411,13 +411,13 @@ Snapshots (immutable, as declared at the top of this document):
 | Role | Identifier |
 |---|---|
 | released artifact consumed by this repo | tag `v0.3.8` = `f35baa46ec4d069c8d68cfad66cafcd166e0a492` (older: this repo previously pinned `v0.3.1` = `b64bfd13…`), pinned in `deploy/agent/source.json` |
-| research source quoted below | commit `1c2a3e51970a3b54e73219140eefb0fa4fd8d0db`; doc blobs listed at the top |
+| research source quoted below | commit `e37e6a7d9ce93adb289ba13d6b25aa5aa47fe7ed`; doc blobs listed at the top |
 | original 2026-09-26 review | `回放射击事件逆向分析.md` blob `2dca7b66…`; `WI射击参数与命中位置分析.md` blob `b0cd657e…` (this one is still current) |
 
 Relevant source documents (research snapshot):
 - `回放射击事件逆向分析.md` — the project's authoritative packet-segment reference (§4.1 hash6, §7 retraction list)
 - `回放未解析数据清单.md` — one-page status table for every packet segment
-- `客户端弹道与命中位置逆向报告.md` — client-binary report; §2.4 is the paragraph that still carries the retracted statement discussed in §3
+- `客户端弹道与命中位置逆向报告.md` — client-binary report; its 2026-10-02 supersede note explicitly marks the old §2.4 coordinate-semantics rejection as historical/retracted while preserving the visible-decal rendering observation
 - `WI射击参数与命中位置分析.md` — WI-side simulation analysis (§5.1 supports the two-point reading)
 - `游戏回放数据处理分析报告.md` — historical report (reviewed originally, unchanged relevance)
 
