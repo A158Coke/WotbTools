@@ -152,7 +152,7 @@ describe('BattlePlaybackPanel local playback parse', () => {
     const parseB = deferred()
     const fileA = new File(['a'], 'a.wotbreplay')
     const fileB = new File(['b'], 'b.wotbreplay')
-    playback.parseLocalPlayback.mockImplementation(f => (f === fileA ? parseA.promise : parseB.promise))
+    playback.parseLocalPlayback.mockImplementation(f => (f.name === fileA.name ? parseA.promise : parseB.promise))
     const wrapper = mountPanel({ file: fileA })
 
     await wrapper.setProps({ file: fileB })
@@ -167,7 +167,7 @@ describe('BattlePlaybackPanel local playback parse', () => {
 
     const parseC = deferred()
     const fileC = new File(['c'], 'c.wotbreplay')
-    playback.parseLocalPlayback.mockImplementation(f => (f === fileC
+    playback.parseLocalPlayback.mockImplementation(f => (f.name === fileC.name
       ? parseC.promise
       : Promise.resolve({ dataset: dataset({ mapCode: 'B2' }), overview: null, result: {} })))
     await wrapper.setProps({ file: fileC })
