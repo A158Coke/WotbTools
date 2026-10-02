@@ -17,7 +17,17 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.head_sha }}
-      - name: Validate Caddy configuration
+      # Runs the same entry point production staging runs: the public site
+      # inventory guard (every reviewed host, its exact upstream, and no Yecao
+      # public address) followed by `caddy validate` through the real compose
+      # service definition. PR CI and production therefore validate the identical
+      # thing, including the Komodo public ingress.
+      - name: Validate the public site inventory and the Caddy configuration
         env:
           CADDY_ACME_EMAIL: ci@example.invalid
-        run: docker run --rm --entrypoint caddy -e CADDY_ACME_EMAIL -v "$PWD/deploy/tx/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10.2-alpine validate --config /etc/caddy/Caddyfile --adapter caddyfile
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-network-retry.sh "Pull Caddy image" docker pull caddy:2.10.2-alpine
+          bash deploy/tx/validate-caddy-config.sh deploy/tx
+          docker compose -p deploy -f deploy/tx/common.compose.yml -f deploy/tx/caddy.compose.yml \
+            down --volumes --remove-orphans >/dev/null 2>&1 || true
