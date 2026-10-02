@@ -16,7 +16,7 @@ import java.util.Set;
 /**
  * 把受击者视角的权威 HP loss（Type-7 推导）按时间间隙聚类成「掉血窗口」，供 Player/Team 证据复用。
  *
- * <p>真实 {@link com.wotb.core.replay.decoder.EntityMethodDecoder} 生成的 {@link DamageEvent} 中
+ * <p>已退役的服务端 EntityMethodDecoder（现由客户端投影提供）生成的 {@link DamageEvent} 中
  * {@code attackerAccountId/victimAccountId} 恒为 null，必须沿
  * {@link com.wotb.core.replay.event.ParticipantMappingEvent} 建立 entityId → accountId 映射
  * （复用 {@link com.wotb.core.replay.processing.TeamEntityMapper} 的确定性解析）后，

@@ -20,7 +20,8 @@ public record TeamFeatureCoverage(
         int clampedPositionEventCount,
         int ignoredOutOfBoundsPositionEventCount,
         int ignoredInvalidTimestampEventCount,
-        double decodedPacketRatio,
+        /** 包解码覆盖率；null = 引擎不提供该证据（客户端 canonical 投影 unavailableEvidence=PACKET_DECODE_COVERAGE） */
+        Double decodedPacketRatio,
         boolean fullFeaturesAvailable
 ) {
 
@@ -73,13 +74,13 @@ public record TeamFeatureCoverage(
                 + ", clampedPositionEventCount=" + clampedPositionEventCount
                 + ", ignoredOutOfBoundsPositionEventCount=" + ignoredOutOfBoundsPositionEventCount
                 + ", ignoredInvalidTimestampEventCount=" + ignoredInvalidTimestampEventCount
-                + ", decodedPacketRatio=" + decodedPacketRatio
+                + ", decodedPacketRatio=" + (decodedPacketRatio == null ? "UNAVAILABLE" : decodedPacketRatio)
                 + ", fullFeaturesAvailable=" + fullFeaturesAvailable + "]";
     }
 
     public static TeamFeatureCoverage empty() {
         return new TeamFeatureCoverage(
                 false, false, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0.0, false);
+                0, 0, 0, 0, 0, 0, null, false);
     }
 }

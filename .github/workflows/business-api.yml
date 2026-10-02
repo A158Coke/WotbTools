@@ -17,18 +17,10 @@ on:
       - java/pom.xml
       - java/**/pom.xml
       - java/settings-docker.xml
-      - java/wotb-contracts/**
-      - java/wotb-object-storage-minio/**
-      - java/wotb-broker-rabbitmq/**
       - java/wotb-core/**
-      - java/wotb-result/**
-      - java/wotb-playback/**
-      - java/wotb-replay-coordinator/**
-      - java/wotb-replay-processing/**
       - java/wotb-ai/**
       - java/wotb-web/**
       - contracts/http/**
-      - contracts/mq/**
       - deploy/dependency-readiness.sh
       - deploy/dependency-readiness.py
       - deploy/tx/business-api.compose.yml
@@ -57,18 +49,10 @@ env:
     java/pom.xml
     java/**/pom.xml
     java/settings-docker.xml
-    java/wotb-contracts/**
-    java/wotb-object-storage-minio/**
-    java/wotb-broker-rabbitmq/**
     java/wotb-core/**
-    java/wotb-result/**
-    java/wotb-playback/**
-    java/wotb-replay-coordinator/**
-    java/wotb-replay-processing/**
     java/wotb-ai/**
     java/wotb-web/**
     contracts/http/**
-    contracts/mq/**
     deploy/dependency-readiness.sh
     deploy/dependency-readiness.py
     deploy/tx/business-api.compose.yml
@@ -342,7 +326,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION,TX_RABBITMQ_CONTROL_API_PASSWORD,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY,KEYCLOAK_ADMIN_CLIENT_SECRET,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION,KEYCLOAK_ADMIN_CLIENT_SECRET,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -368,11 +352,6 @@ jobs:
           TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
           TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
           TX_BUSINESS_DB_PASSWORD_VERSION: ${{ vars.TX_BUSINESS_DB_PASSWORD_VERSION || '1' }}
-          TX_RABBITMQ_CONTROL_API_PASSWORD: ${{ secrets.TX_RABBITMQ_CONTROL_API_PASSWORD }}
-          YECAO_MINIO_CONTROL_API_ACCESS_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_ACCESS_KEY }}
-          YECAO_MINIO_CONTROL_API_SECRET_KEY: ${{ secrets.YECAO_MINIO_CONTROL_API_SECRET_KEY }}
           KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
-          REPLAY_COORDINATE_HALF_EXTENT: ${{ vars.REPLAY_COORDINATE_HALF_EXTENT || '250' }}
-          REPLAY_COORDINATE_CLAMP_TOLERANCE: ${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}
           BOOST_AUTO_CONFIRM_HOURS: ${{ vars.BOOST_AUTO_CONFIRM_HOURS || '72' }}
           BOOST_AUTO_CONFIRM_SCAN_MS: ${{ vars.BOOST_AUTO_CONFIRM_SCAN_MS || '300000' }}

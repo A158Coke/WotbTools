@@ -2,7 +2,7 @@ package com.wotb.web.replay.ai.eval;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.parse.ReplayStreamHeader;
+import com.wotb.core.replay.reconstruction.ReplayStreamHeader;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -39,7 +39,7 @@ import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.replay.reconstruction.VehicleState;
-import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
+import com.wotb.core.replay.reconstruction.ReplayStreamDiagnostics;
 
 import java.util.ArrayList;
 import java.util.HashMap;

@@ -18,36 +18,6 @@
             <artifactId>wotb-core</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.wotb</groupId>
-            <artifactId>wotb-result</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.wotb</groupId>
-            <artifactId>wotb-playback</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.wotb</groupId>
-            <artifactId>wotb-replay-coordinator</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.wotb</groupId>
-            <artifactId>wotb-replay-processing</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.wotb</groupId>
-            <artifactId>wotb-contracts</artifactId>
-        </dependency>
-        <!-- 回放控制面：对象存储键布局 + AMQP 投递/消费适配器。两个模块都刻意不带任何
-             stereotype，装配只发生在 com.wotb.web.replay.config.ReplayDistributedConfig。 -->
-        <dependency>
-            <groupId>com.wotb</groupId>
-            <artifactId>wotb-object-storage-minio</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.wotb</groupId>
-            <artifactId>wotb-broker-rabbitmq</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
@@ -161,19 +131,6 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.0</version>
-                <configuration>
-                    <!-- 生产总是装配分布式回放控制面（ReplayDistributedConfig 不再有条件门控），
-                         因此全上下文 @SpringBootTest 必须像生产一样提供控制面配置，否则 fail-closed
-                         的 MinioObjectStorageProperties/RabbitBrokerProperties 会让 context 启动失败。
-                         取值只用于启动装配；测试不连接真实 MinIO/RabbitMQ。 -->
-                    <systemPropertyVariables>
-                        <wotb.replay.object-storage.access-key>test-access-key</wotb.replay.object-storage.access-key>
-                        <wotb.replay.object-storage.secret-key>test-secret-key</wotb.replay.object-storage.secret-key>
-                        <wotb.replay.broker.host>localhost</wotb.replay.broker.host>
-                        <wotb.replay.broker.username>test-control-api</wotb.replay.broker.username>
-                        <wotb.replay.broker.password>test-control-api</wotb.replay.broker.password>
-                    </systemPropertyVariables>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

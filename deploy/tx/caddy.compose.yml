@@ -12,9 +12,8 @@ services:
     ports:
       # Caddy is the TX production public ingress and owns 80/443 on every TX
       # interface by default. It is the only service in this stack allowed to
-      # publish publicly: the two PostgreSQL ports, the Keycloak admin port and
-      # the RabbitMQ management port stay on 127.0.0.1, AMQP stays on the
-      # WireGuard address; business-api exposes only management on WireGuard,
+      # publish publicly: the two PostgreSQL ports and the Keycloak admin port
+      # stay on 127.0.0.1; business-api exposes only management on WireGuard,
       # while frontend publishes nothing.
       # An operator can still move the bind address with CADDY_HTTP_BIND or
       # CADDY_HTTPS_BIND without editing this file.

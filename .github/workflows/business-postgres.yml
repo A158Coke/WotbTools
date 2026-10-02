@@ -127,7 +127,6 @@ jobs:
               TX_BUSINESS_DB_USERNAME=not-configured \
               TX_BUSINESS_DB_PASSWORD=not-configured \
               TX_BUSINESS_DB_PASSWORD_VERSION=1 \
-              TX_RABBITMQ_CONTROL_API_PASSWORD=not-configured \
               bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
             test -f /opt/wotb-tx/deploy/business-postgres.tofurc
             export TF_CLI_CONFIG_FILE=/opt/wotb-tx/deploy/business-postgres.tofurc

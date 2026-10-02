@@ -58,7 +58,7 @@ class Mark3ControllerTest {
         final Mark3SubmissionService service = mock(Mark3SubmissionService.class);
         when(service.createSubmission(
                 eq("kc-user"), eq(385L), eq(36), eq(4_203), eq(new BigDecimal("78")),
-                eq(List.of("data:image/jpeg;base64,AAAA")), anyList()))
+                eq(List.of("data:image/jpeg;base64,AAAA")), anyList(), eq(FACTS)))
                 .thenReturn(new Mark3CreateResult(6L, "PENDING"));
         final Jwt jwt = Jwt.withTokenValue("t").header("alg", "none").subject("kc-user").build();
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(jwt, null));
@@ -74,7 +74,8 @@ class Mark3ControllerTest {
                 .param("battleCount", "36")
                 .param("averageDamage", "4203")
                 .param("winRate", "78")
-                .param("proofScreenshots", "data:image/jpeg;base64,AAAA");
+                .param("proofScreenshots", "data:image/jpeg;base64,AAAA")
+                .param("facts", FACTS.toArray(new String[0]));
         mvc.perform(request)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(6))
@@ -82,7 +83,7 @@ class Mark3ControllerTest {
 
         verify(service).createSubmission(
                 eq("kc-user"), eq(385L), eq(36), eq(4_203), eq(new BigDecimal("78")),
-                eq(List.of("data:image/jpeg;base64,AAAA")), anyList());
+                eq(List.of("data:image/jpeg;base64,AAAA")), anyList(), eq(FACTS));
     }
 
     @Test
@@ -90,7 +91,7 @@ class Mark3ControllerTest {
         final Mark3SubmissionService service = mock(Mark3SubmissionService.class);
         when(service.createSubmission(
                 eq("kc-user"), eq(385L), eq(123), eq(3_456), eq(new BigDecimal("55.25")),
-                eq(List.of("data:image/png;base64,AAAA", "data:image/jpeg;base64,BBBB")), anyList()))
+                eq(List.of("data:image/png;base64,AAAA", "data:image/jpeg;base64,BBBB")), anyList(), eq(List.of())))
                 .thenReturn(new Mark3CreateResult(7L, "PENDING"));
         final Jwt jwt = Jwt.withTokenValue("t").header("alg", "none").subject("kc-user").build();
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(jwt, null));
@@ -115,8 +116,13 @@ class Mark3ControllerTest {
 
         verify(service).createSubmission(
                 eq("kc-user"), eq(385L), eq(123), eq(3_456), eq(new BigDecimal("55.25")),
-                eq(List.of("data:image/png;base64,AAAA", "data:image/jpeg;base64,BBBB")), anyList());
+                eq(List.of("data:image/png;base64,AAAA", "data:image/jpeg;base64,BBBB")), anyList(), eq(List.of()));
     }
+
+    /** 每个回放一份 facts JSON（含逗号），必须按多值参数逐份透传、不被逗号拆分。 */
+    private static final List<String> FACTS = List.of("a", "b", "c", "d", "e").stream()
+            .map(arena -> "{\"arenaId\":\"" + arena + "\",\"recorder\":\"P\"}")
+            .toList();
 
     private static MockMultipartFile replay(final String content) {
         return new MockMultipartFile(

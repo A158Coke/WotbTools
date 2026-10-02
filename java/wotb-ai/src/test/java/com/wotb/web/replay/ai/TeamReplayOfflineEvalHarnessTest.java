@@ -1,11 +1,7 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.model.Source;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.replay.processing.ReplayProcessingOptions;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -14,9 +10,6 @@ import com.wotb.web.replay.ai.eval.TeamReplayQualityCase;
 import com.wotb.web.replay.ai.eval.TeamReplayQualityCaseLoader;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -25,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Zero-token real-replay harness. It deliberately stops before any gateway:
- * production parser → reconstruction → timeline → team context → prompt →
+ * frozen client projection (ReplayFactsFixtures) → timeline → team context → prompt →
  * grounding facts. Gold files constrain evidence availability only; they do not
  * contain or get appended to a model prompt.
  */
@@ -34,11 +27,7 @@ class TeamReplayOfflineEvalHarnessTest {
     @Test
     void everyGoldCaseUsesTheProductionOfflineEvidenceChain() throws Exception {
         for (final TeamReplayQualityCase qualityCase : TeamReplayQualityCaseLoader.loadAll()) {
-            final Path replay = resolveReplay(qualityCase.replay());
-            assertTrue(Files.isRegularFile(replay), qualityCase.id() + " replay missing: " + replay);
-            final ReplayProcessingResult processed = new DefaultReplayProcessingFacade().process(
-                    new Source(replay.getFileName().toString(), Files.readAllBytes(replay)),
-                    ReplayProcessingOptions.full());
+            final ReplayFactsFixtures.Facts processed = ReplayFactsFixtures.load(qualityCase.replay());
             assertNotNull(processed.battle(), qualityCase.id() + " battle was not parsed");
             assertNotNull(processed.reconstruction(), qualityCase.id() + " reconstruction was not built");
 
@@ -76,14 +65,5 @@ class TeamReplayOfflineEvalHarnessTest {
                         qualityCase.id() + " missing required evidence type " + requirement);
             }
         }
-    }
-
-    private static Path resolveReplay(final String replay) throws IOException {
-        final Path cwd = Path.of(System.getProperty("user.dir"));
-        final List<Path> candidates = List.of(
-                cwd.resolve(replay).normalize(),
-                cwd.resolve("..").resolve(replay).normalize(),
-                cwd.resolve("..").resolve("..").resolve(replay).normalize());
-        return candidates.stream().filter(Files::isRegularFile).findFirst().orElse(candidates.getFirst());
     }
 }

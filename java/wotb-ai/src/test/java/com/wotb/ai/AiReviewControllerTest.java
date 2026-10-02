@@ -2,7 +2,6 @@ package com.wotb.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.TacticalReviewHarness;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
@@ -32,19 +31,8 @@ class AiReviewControllerTest {
             new AiCancellationRegistry(), new SimpleMeterRegistry());
 
     @Test
-    void rejectsUnsupportedSchemaBeforeStartingWorker() {
-        final var error = assertThrows(ResponseStatusException.class,
-                () -> controller.review(new AiReviewController.AiReviewRequestV1(
-                        2, "zh-CN", UUID.randomUUID().toString(), new Battle(),
-                        mock(ReplayReconstruction.class))));
-        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
-        assertEquals("UNSUPPORTED_AI_REQUEST_SCHEMA", error.getReason());
-    }
-
-    @Test
     void acceptsTeamModeAndSchedulesDirectAnalysis() {
-        final var emitter = controller.review(new AiReviewController.AiReviewRequestV1(
-                1, "zh-CN", UUID.randomUUID().toString(), teamBattle(), teamReconstruction()));
+        final var emitter = controller.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(), teamBattle(), teamReconstruction(), List.of()));
         assertNotNull(emitter);
         verify(worker).execute(any(Runnable.class));
     }
@@ -55,9 +43,7 @@ class AiReviewControllerTest {
         battle.arenaBonusType = 1;
         battle.players = List.of();
         final var error = assertThrows(ResponseStatusException.class,
-                () -> controller.review(new AiReviewController.AiReviewRequestV1(
-                        1, "zh-CN", UUID.randomUUID().toString(), battle,
-                        mock(ReplayReconstruction.class))));
+                () -> controller.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(), battle, null, List.of())));
         assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
         assertEquals("INVALID_AI_REQUEST", error.getReason());
     }
@@ -77,8 +63,7 @@ class AiReviewControllerTest {
                 mock(TacticalReviewHarness.class), stub.service, synchronousWorker(),
                 new AiCancellationRegistry(), registry);
 
-        metricsController.review(new AiReviewController.AiReviewRequestV1(
-                1, "zh-CN", UUID.randomUUID().toString(), teamBattle(), teamReconstruction()));
+        metricsController.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(), teamBattle(), teamReconstruction(), List.of()));
 
         assertEquals(1.0, registry.get("wotb_ai_review_requests_total").counter().count(),
                 "each accepted review must increment requests_total");
@@ -112,7 +97,6 @@ class AiReviewControllerTest {
         final ReplayReconstruction reconstruction = mock(ReplayReconstruction.class);
         when(reconstruction.participants()).thenReturn(List.of());
         when(reconstruction.events()).thenReturn(List.of());
-        when(reconstruction.coverage()).thenReturn(mock(ReplayCoverage.class));
         return reconstruction;
     }
 

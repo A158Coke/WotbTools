@@ -22,61 +22,73 @@ const h2c = vi.hoisted(() => {
     resetCalls: () => { calls.length = 0 },
     call: (...args) => { calls.push(args); if (!impl) throw new Error('html2canvas not initialized'); return impl(...args) },
   }
-describe('ReplayPage export job flow', () => {
+describe('ReplayPage Excel export menu (client-side xlsx)', () => {
   // 导出统一收进「导出 ▾」菜单（design-language §7 Menu）：菜单项只在打开后渲染。
   async function openExportMenu(wrapper) {
     await wrapper.get('[data-testid="export-menu"]').trigger('click')
     await flushPromises()
   }
-  function exportButtons(wrapper) {
-    return ['export-aggregate', 'export-each'].map(id => wrapper.get(`[data-testid="${id}"]`))
-  }
 
-  it('export aggregate button calls startExportJob with aggregate', async () => {
-    state.init.resp = makeResp()
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: makeResp(), error: '', loading: false, locale: 'en', files: [] }
+  })
+
+  it('aggregate calls exportExcel("aggregate", null) when no team names are overridden', async () => {
     const wrapper = mountPage()
     await openExportMenu(wrapper)
-    await exportButtons(wrapper)[0].trigger('click')
+    await wrapper.get('[data-testid="export-aggregate"]').trigger('click')
+    await flushPromises()
     // 无覆盖时 teamNamesPayload() = null（名称必须经 payload 传递）
-    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', null)
+    expect(state.replay.exportExcel).toHaveBeenCalledWith('aggregate', null)
+    wrapper.unmount()
   })
 
-  it('export each button calls startExportJob with each', async () => {
-    state.init.resp = makeResp()
+  it('each calls exportExcel("each", null)', async () => {
     const wrapper = mountPage()
     await openExportMenu(wrapper)
-    await exportButtons(wrapper)[1].trigger('click')
-    expect(state.replay.startExportJob).toHaveBeenCalledWith('each', null)
+    await wrapper.get('[data-testid="export-each"]').trigger('click')
+    await flushPromises()
+    expect(state.replay.exportExcel).toHaveBeenCalledWith('each', null)
+    wrapper.unmount()
   })
 
-  it('renders ReplayTaskCard when export job exists', async () => {
-    state.init.resp = makeResp()
+  it('while exporting: menu label shows replay.excel_exporting, Excel items disabled, no second export', async () => {
+    let finish
     const wrapper = mountPage()
-    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
-    jobState.setJob({ jobId: 'j1', status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', total: 2, processed: 1, duplicates: 0, failures: 0 })
-    await flushPromises()
-    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(true)
-  })
-
-  it('disables export buttons while a job is active', async () => {
-    state.init.resp = makeResp()
-    const wrapper = mountPage()
-    jobState.setActive(true)
-    await flushPromises()
+    state.replay.exportExcel.mockImplementation(() => new Promise((res) => { finish = res }))
     await openExportMenu(wrapper)
-    for (const btn of exportButtons(wrapper)) {
-      expect(btn.attributes('disabled')).toBeDefined()
-    }
+    await wrapper.get('[data-testid="export-aggregate"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="export-menu"]').text()).toContain('replay.excel_exporting')
+
+    await openExportMenu(wrapper)
+    const aggregate = wrapper.get('[data-testid="export-aggregate"]')
+    expect(aggregate.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="export-each"]').attributes('disabled')).toBeDefined()
+    await aggregate.trigger('click')
+    expect(state.replay.exportExcel).toHaveBeenCalledTimes(1)
+
+    finish()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="export-menu"]').text()).not.toContain('replay.excel_exporting')
+    wrapper.unmount()
   })
 
-  it('does not create export job when active (guard in page)', async () => {
-    state.init.resp = makeResp()
+  it('failure surfaces replay.excel_export_failed and re-enables the menu', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const wrapper = mountPage()
-    jobState.setActive(true)
-    await flushPromises()
+    state.replay.exportExcel.mockRejectedValue(new Error('exceljs failed'))
     await openExportMenu(wrapper)
-    await exportButtons(wrapper)[0].trigger('click')
-    expect(state.replay.startExportJob).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="export-each"]').trigger('click')
+    await flushPromises()
+
+    expect(state.getError()).toBe('replay.excel_export_failed')
+    expect(consoleError).toHaveBeenCalled()
+    await openExportMenu(wrapper)
+    expect(wrapper.get('[data-testid="export-each"]').attributes('disabled')).toBeUndefined()
+    consoleError.mockRestore()
+    wrapper.unmount()
   })
 })
 
@@ -117,6 +129,7 @@ const state = vi.hoisted(() => {
     capture: (r) => { _activeTab = r.activeTab; _resp = r.resp; _error = r.error; _loading = r.loading; _locale = r.locale; _files = r.files },
     captureFns: (fns) => { _fns = fns },
     get replay() { return _fns || {} },
+    getError: () => _error?.value,
     clear: () => { _activeTab = null; _resp = null; _error = null; _loading = null; _locale = null },
     setActiveTab, setResp, setError, setLoading, setLocale,
     // Default initial values
@@ -125,53 +138,11 @@ const state = vi.hoisted(() => {
 })
 
 
-const jobState = vi.hoisted(() => {
-  let _exportJob
-  let _exportActive
-  return {
-    capture: (job, active) => { _exportJob = job; _exportActive = active },
-    clear: () => { _exportJob = null; _exportActive = null },
-    setJob: (v) => { if (_exportJob) _exportJob.value = v },
-    setActive: (v) => { if (_exportActive) _exportActive.value = v },
-  }
-})
-
 const columnsState = vi.hoisted(() => ({
   calls: [],
   reset() { this.calls.length = 0 },
 }))
 
-const pJobState = vi.hoisted(() => {
-  let _processingJob
-  let _processingActive
-  let _processingJobId
-  return {
-    capture: (job, active, id) => { _processingJob = job; _processingActive = active; _processingJobId = id },
-    clear: () => { _processingJob = null; _processingActive = null; _processingJobId = null },
-    setJob: (v) => { if (_processingJob) _processingJob.value = v },
-    setActive: (v) => { if (_processingActive) _processingActive.value = v },
-    setId: (v) => { if (_processingJobId) _processingJobId.value = v },
-  }
-})
-
-/** requestDirectAction 可控制 impl（deferred Promise 决定 resolve 顺序）。 */
-const directActionHolder = vi.hoisted(() => {
-  let impl = async () => ({ processingJobId: 'p1', sourceId: 'r0' })
-  return {
-    setImpl: (fn) => { impl = fn },
-    fn: () => vi.fn(impl),
-    reset: () => { impl = async () => ({ processingJobId: 'p1', sourceId: 'r0' }) }
-  }
-})
-
-/** stale 失败不得写 processingError（持有 useReplay mock 的 error ref）。 */
-const wsErrState = vi.hoisted(() => {
-  let ref = null
-  return {
-    capture: (r) => { ref = r },
-    get value() { return ref ? ref.value : undefined }
-  }
-})
 vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
   const locale = ref('en')
@@ -183,17 +154,6 @@ vi.mock('vue-i18n', async () => {
 // We need locale ref from i18n mock. Store it in a shared module var.
 const localeHolder = vi.hoisted(() => ({ ref: null }))
 
-// 真实 BattlePlaybackPanel（playback 加载门控用例）的鉴权 seam：ensureToken 恒成功、token 恒定。
-vi.mock('../composables/useAuth.js', () => ({
-  useAuth: () => ({
-    tokenParsed: { value: { realm_access: { roles: ['wotbtools-user'] } } },
-    token: () => 'test-token',
-    ensureToken: vi.fn(async () => true),
-    login: vi.fn(),
-    authenticated: { value: true },
-    initPromise: Promise.resolve(true)
-  })
-}))
 
 vi.mock('../composables/useReplay.js', async () => {
   const { ref, computed } = await import('vue')
@@ -224,33 +184,19 @@ vi.mock('../composables/useReplay.js', async () => {
       }
       state.capture({ activeTab, resp, error, loading, locale: localeRef })
       state.init = null
-      const exportJobRef = ref(null)
-      const exportActiveRef = ref(false)
-      const processingJobRef = ref(null)
-      const processingActiveRef = ref(false)
-      const processingJobIdRef = ref(null)
-      const processingErrorRef = ref('')
-      jobState.capture(exportJobRef, exportActiveRef)
-      pJobState.capture(processingJobRef, processingActiveRef, processingJobIdRef)
-      wsErrState.capture(processingErrorRef)
-      const startExportJob = vi.fn()
-      const startProcessingJob = vi.fn()
+      const exportExcel = vi.fn(async () => {})
+      const analyze = vi.fn(async () => ({ completed: true }))
       const updateFiles = vi.fn(() => { selectionRevision.value++ })
-      state.captureFns({ startExportJob, startProcessingJob, updateFiles })
+      state.captureFns({ exportExcel, analyze, updateFiles })
       return {
         files, loading, error, resp, activeTab,
         aggStats: computed(() => null),
         selectionRevision,
         pendingRemove, updateFiles, playerCols, aggCols,
-        exportJob: exportJobRef, exportError: ref(''), exportActive: exportActiveRef,
-        processingJob: processingJobRef, processingError: processingErrorRef, processingActive: processingActiveRef,
-        processingJobId: processingJobIdRef,
-        uploadState: ref(null), cancelProcessing: vi.fn(),
-        requestDirectAction: directActionHolder.fn(),
-        startProcessingJob, cancelProcessingJob: vi.fn(),
-        dismissProcessingJob: vi.fn(), invalidateExpiredProcessingDataset: vi.fn(),
-        startExportJob, cancelExportJob: vi.fn(),
-        downloadExportResult: vi.fn(), dismissExportJob: vi.fn(),
+        analysis: ref({ phase: 'idle', done: 0, total: 0, failure: null }),
+        analysisActive: computed(() => false),
+        analyze, cancelAnalysis: vi.fn(), dismissAnalysis: vi.fn(),
+        exportExcel, parsedFiles: vi.fn(() => []),
         askRemoveBattle: vi.fn(), askRemoveFile: vi.fn(),
         cancelRemove: vi.fn(), confirmRemove: vi.fn(),
       }
@@ -315,15 +261,6 @@ function mountPage(overrides = {}) {
         [NAVIGATE_VIEW_KEY]: navigate,
       },
       stubs: {
-        FileUploader: {
-          props: ['files'],
-          template: '<div class="file-uploader-stub"><button class="preview-stub" @click="$emit(&quot;preview&quot;)">action.preview</button>' +
-            '<button class="ai-action-stub" @click="$emit(&quot;workspace-action&quot;, { file: files[0], mode: &apos;ai&apos; })">ai</button></div>'
-        },
-        AiReviewPanel: { name: 'AiReviewPanel', props: ['file'], template: '<div class="ai-panel-stub" />' },
-        ...(overrides.realPlayback
-          ? (overrides.mapStub ? { MapOverview: overrides.mapStub } : {})
-          : { BattlePlaybackPanel: { name: 'BattlePlaybackPanel', props: ['file', 'active', 'seekTo'], template: '<div class="playback-panel-stub" />' } }),
         ColumnPicker: { template: '<div class="col-picker-stub" />' },
         AggregateTable: {
           template: '<div class="agg-table-stub" data-export-role="aggregate">' +
@@ -344,7 +281,6 @@ function mountPage(overrides = {}) {
             '</tbody></table></div>' +
             '<p class="scroll-hint">Scroll</p></div>'
         },
-        RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' },
         PlayerDetailDrawer: { props: ['context', 'player'], template: '<div class="drawer-stub">{{ context ? "open:" + context.accountId + ":" + JSON.stringify(player || {}) : "closed" }}</div>' },
         ...(overrides.stubs || {})
       }
@@ -409,46 +345,20 @@ function stripOffscreen() {
 
 afterEach(() => columnsState.reset())
 
-describe('ReplayPage processing job flow', () => {
+describe('ReplayPage data hydration (embedded-only)', () => {
   beforeEach(() => {
     state.clear()
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] }
   })
 
-  it('renders inline processing panel with real 18/34 parse progress', async () => {
-    state.init.resp = null
-    const wrapper = mountPage()
-    expect(wrapper.find('[data-testid="replay-processing-panel"]').exists()).toBe(false)
-    pJobState.setJob({ jobId: 'p1', status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', total: 34, processed: 18, valid: 16, duplicates: 2, failures: 1, currentFile: 'x.wotbreplay' })
-    await flushPromises()
-    const panel = wrapper.find('[data-testid="replay-processing-panel"]')
-    expect(panel.exists()).toBe(true)
-    expect(panel.text()).toContain('replay.processing_job.title')
-    expect(panel.text()).toContain('replay.processing_job.progress')
-  })
-
-  it('processing panel and export card coexist (no mutual exclusion)', async () => {
-    state.init.resp = null
-    const wrapper = mountPage()
-    pJobState.setJob({ jobId: 'p1', status: 'READY', phase: null, total: 34, processed: 34, valid: 31, duplicates: 2, failures: 1 })
-    jobState.setJob({ jobId: 'e1', status: 'PROCESSING', phase: 'BUILDING_EXCEL', total: 34, processed: 34, duplicates: 0, failures: 0 })
-    await flushPromises()
-    const panel = wrapper.find('[data-testid="replay-processing-panel"]')
-    expect(panel.exists()).toBe(true, "Export 存在时 Processing 进度不得被隐藏")
-    const cards = wrapper.findAll('[data-testid="replay-task-card"]')
-    expect(cards.length).toBe(1, "Export 仍使用独立任务卡")
-    expect(cards[0].text()).toContain('replay.export_job.title')
-  })
-
-  it('preview button triggers startProcessingJob', async () => {
-    state.init.resp = null
+  it('embedded-only: no standalone uploader / processing panel / task card', async () => {
     state.init.files = [new File(['x'], 'a.wotbreplay')]
     const wrapper = mountPage()
-    const previewBtn = wrapper.findAll('button').find(b => b.text().includes('action.preview'))
-    expect(previewBtn).toBeDefined()
-    await previewBtn.trigger('click')
     await flushPromises()
-    expect(state.replay.startProcessingJob).toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'FileUploader' }).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay-processing-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('hydrates Data columns immediately when a READY response already exists', async () => {
@@ -460,15 +370,13 @@ describe('ReplayPage processing job flow', () => {
     wrapper.unmount()
   })
 
-  it('hydrates Data columns when AI/Playback-owned Processing commits resp, including League columns', async () => {
+  it('hydrates Data columns when a later local analysis commits resp, including League columns', async () => {
     const result = makeResp({
       leagueMode: true,
       league: { playerSummaryColumns: [{ key: 'league_rating', label: 'Rating' }], playerSummaries: [] },
     })
     const wrapper = mountPage()
     expect(columnsState.calls).toHaveLength(0)
-    state.replay.startProcessingJob()
-    expect(state.replay.startProcessingJob).toHaveBeenCalledTimes(1)
     state.setResp(result)
     await flushPromises()
     expect(columnsState.calls.at(-1)).toEqual(result)
@@ -1259,532 +1167,6 @@ describe('ReplayPage PNG export', () => {
 })
 
 
-describe.skip('ReplayPage Battle context actions（旧 Workspace，已迁移至独立 capability views）', () => {
-  function makeRespWithSource() {
-    return {
-      aggregate: [{ cells: { nickname: 'Player1', damage_dealt: 5000 } }],
-      battles: [
-        { mapName: 'Lagoon', sourceName: 'lagoon.wotbreplay', players: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] }
-      ],
-      duplicates: [], failures: [],
-      playerColumns: [{ key: 'nickname', label: '昵称' }],
-      aggregateColumns: [{ key: 'nickname', label: '昵称' }]
-    }
-  }
-
-  afterEach(async () => {
-    state.clear()
-    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en' }
-    vi.restoreAllMocks()
-  })
-
-  function mountWithBattle(resp, auth, nav) {
-    const files = resp.battles.map(b => {
-      const f = new File(['replay'], b.sourceName, { type: 'application/octet-stream' })
-      return f
-    })
-    state.init = { activeTab: 'b0', resp, error: '', loading: false, locale: 'en', files }
-    return mountPage({ auth, navigate: nav || vi.fn() })
-  }
-
-  it('Summary（aggregate）context 不渲染战局回放 / AI 复盘按钮', () => {
-    state.init = { activeTab: 'aggregate', resp: makeRespWithSource(), error: '', loading: false, locale: 'en' }
-    const wrapper = mountPage()
-    expect(wrapper.find('[data-testid="battle-playback-btn"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="battle-ai-btn"]').exists()).toBe(false)
-  })
-
-  it('已登录点击「战局回放」→ 原地切到 Workspace playback，目标文件为当前 battle（不跨视图）', async () => {
-    const navigate = vi.fn()
-    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: true, login: vi.fn() }, navigate)
-    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
-    await flushPromises()
-    expect(navigate).not.toHaveBeenCalled()
-    expect(panelDisplay(wrapper, 'workspace-playback-panel')).not.toBe('none')
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
-    const panel = wrapper.findComponent({ name: 'BattlePlaybackPanel' })
-    expect(panel.props('file')?.name).toBe('lagoon.wotbreplay')
-    expect(panel.props('active')).toBe(true)
-  })
-
-  it('已登录点击「AI 复盘」→ 原地切到 Workspace ai（不自动发起 AI、不跨视图）', async () => {
-    const navigate = vi.fn()
-    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: true, login: vi.fn() }, navigate)
-    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
-    await flushPromises()
-    expect(navigate).not.toHaveBeenCalled()
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
-    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
-    const panel = wrapper.findComponent({ name: 'AiReviewPanel' })
-    expect(panel.props('file')?.name).toBe('lagoon.wotbreplay')
-  })
-
-  it('未登录点击「战局回放」→ confirm 提示 + login，不切换 Workspace（不静默丢文件）', async () => {
-    const navigate = vi.fn()
-    const login = vi.fn()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: false, login }, navigate)
-    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
-    await flushPromises()
-    expect(confirmSpy).toHaveBeenCalled()
-    expect(login).toHaveBeenCalledWith('replay')
-    expect(navigate).not.toHaveBeenCalled()
-    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
-    confirmSpy.mockRestore()
-  })
-
-  it('未登录取消 confirm → 不 login 不 navigate', async () => {
-    const navigate = vi.fn()
-    const login = vi.fn()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: false, login }, navigate)
-    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
-    await flushPromises()
-    expect(confirmSpy).toHaveBeenCalled()
-    expect(login).not.toHaveBeenCalled()
-    expect(navigate).not.toHaveBeenCalled()
-    confirmSpy.mockRestore()
-  })
-
-  it('battle 无对应文件（files 中无匹配 sourceName）→ 点击无操作', async () => {
-    const navigate = vi.fn()
-    const resp = makeRespWithSource()
-    // files 为空：currentBattleFile 找不到 battle.sourceName 对应文件
-    state.init = { activeTab: 'b0', resp, error: '', loading: false, locale: 'en', files: [] }
-    const wrapper = mountPage({ auth: { authenticated: true, login: vi.fn() }, navigate })
-    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
-    await flushPromises()
-    expect(navigate).not.toHaveBeenCalled()
-  })
-})
-
-describe.skip('ReplayPage 单页 Workspace（已删除：AI/Playback 为独立 views）', () => {
-  function mountWithFiles(files, resp = null) {
-    state.init = { activeTab: 'aggregate', resp, error: '', loading: false, locale: 'en', files }
-    return mountPage({ auth: { authenticated: true, login: vi.fn() } })
-  }
-
-  it('有文件时显示三个 Workspace tab，默认解析结果面板', () => {
-    const wrapper = mountWithFiles([new File(['r'], 'a.wotbreplay')])
-    expect(wrapper.find('[data-testid="workspace-results-tab"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="workspace-ai-tab"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="workspace-playback-tab"]').exists()).toBe(true)
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
-    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
-  })
-
-  it('Workspace 一级导航是独立 .workspace-tabs，不携带二级 .tabs class（不继承全局 .tabs contract）', () => {
-    const wrapper = mountWithFiles([new File(['r'], 'nav.wotbreplay')])
-    const nav = wrapper.find('.workspace-tabs')
-    expect(nav.exists()).toBe(true)
-    expect(nav.classes()).not.toContain('tabs')
-    expect(nav.attributes('role')).toBe('tablist')
-    // 三个一级能力按钮仍完整存在
-    expect(nav.find('[data-testid="workspace-results-tab"]').exists()).toBe(true)
-    expect(nav.find('[data-testid="workspace-ai-tab"]').exists()).toBe(true)
-    expect(nav.find('[data-testid="workspace-playback-tab"]').exists()).toBe(true)
-  })
-
-  it('无文件时不渲染 Workspace（只有上传面板）', () => {
-    const wrapper = mountWithFiles([])
-    expect(wrapper.find('[data-testid="workspace-ai-tab"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="workspace-ai-panel"]').exists()).toBe(false)
-  })
-
-  it('一级 tab active class 跟随切换，业务状态不被 UI 修复改变', async () => {
-    const files = [new File(['r'], 'active.wotbreplay')]
-    const wrapper = mountWithFiles(files)
-    const resultsTab = wrapper.find('[data-testid="workspace-results-tab"]')
-    const aiTab = wrapper.find('[data-testid="workspace-ai-tab"]')
-    expect(resultsTab.classes()).toContain('active')
-    expect(aiTab.classes()).not.toContain('active')
-    await aiTab.trigger('click')
-    await flushPromises()
-    expect(aiTab.classes()).toContain('active')
-    expect(resultsTab.classes()).not.toContain('active')
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
-  })
-
-  it('FileUploader 直接入口（workspace-action ai）→ 原地切到 AI 面板并传入目标文件', async () => {
-    const files = [new File(['r'], 'direct.wotbreplay')]
-    const wrapper = mountWithFiles(files)
-    await wrapper.find('.ai-action-stub').trigger('click')
-    await flushPromises()
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
-    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
-    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('file')?.name).toBe('direct.wotbreplay')
-  })
-
-  it('切走再切回：AI 面板保持挂载（v-show 不销毁，file 未变 = 状态保留）', async () => {
-    const files = [new File(['r'], 'keep.wotbreplay')]
-    const wrapper = mountWithFiles(files)
-    await wrapper.find('.ai-action-stub').trigger('click')
-    await flushPromises()
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
-    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('file')?.name).toBe('keep.wotbreplay')
-
-    // 切回解析结果 → AI 面板隐藏
-    await wrapper.find('[data-testid="workspace-results-tab"]').trigger('click')
-    await flushPromises()
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
-
-    // 再切回 AI：同一面板实例（file prop 未变）
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
-    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('file')?.name).toBe('keep.wotbreplay')
-  })
-
-  it('解析预览 → 切回解析结果面板并启动解析 Job', async () => {
-    const files = [new File(['r'], 'a.wotbreplay')]
-    const wrapper = mountWithFiles(files)
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await wrapper.find('.preview-stub').trigger('click')
-    await flushPromises()
-    expect(state.replay.startProcessingJob).toHaveBeenCalled()
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
-    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
-  })
-})
-describe.skip('ReplayPage Workspace target resolution（已删除：独立 capability 页负责目标选择）', () => {
-  function makeBattleResp(sourceName) {
-    return {
-      aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
-      battles: [
-        { mapName: 'Lagoon', sourceName, players: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] }
-      ],
-      duplicates: [], failures: [],
-      playerColumns: [{ key: 'nickname', label: '昵称' }],
-      aggregateColumns: [{ key: 'nickname', label: '昵称' }]
-    }
-  }
-
-  function mountWs(files, resp = null, auth = { authenticated: true, login: vi.fn() }, activeTab = 'aggregate') {
-    state.init = { activeTab, resp, error: '', loading: false, locale: 'en', files }
-    return mountPage({ auth })
-  }
-
-  function aiPanel(wrapper) {
-    return wrapper.findComponent({ name: 'AiReviewPanel' })
-  }
-
-  function playbackPanel(wrapper) {
-    return wrapper.findComponent({ name: 'BattlePlaybackPanel' })
-  }
-
-  it('Case A: 唯一文件直接点击「AI 复盘」Tab → 自动以该文件为 target（复用原始 File reference，不重新上传/解析）', async () => {
-    const f = new File(['r'], 'single.wotbreplay')
-    const wrapper = mountWs([f])
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
-    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(f)
-  })
-
-  it('Case B: 唯一文件直接点击「战局回放」Tab → 自动以该文件为 target，active 语义正确', async () => {
-    const f = new File(['r'], 'single.wotbreplay')
-    const wrapper = mountWs([f])
-    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
-    await flushPromises()
-    expect(panelDisplay(wrapper, 'workspace-playback-panel')).not.toBe('none')
-    expect(toRaw(playbackPanel(wrapper).props('file'))).toBe(f)
-    expect(playbackPanel(wrapper).props('active')).toBe(true)
-  })
-
-  it('Case C: 多文件未显式选择 target → 直接点击 AI/playback Tab 不 fallback 第一场（保持空态）', async () => {
-    const a = new File(['r'], 'a.wotbreplay')
-    const b = new File(['r'], 'b.wotbreplay')
-    const wrapper = mountWs([a, b])
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(aiPanel(wrapper).props('file')).toBeNull()
-    expect(aiPanel(wrapper).props('file')).not.toBe(a)
-    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
-    await flushPromises()
-    expect(playbackPanel(wrapper).props('file')).toBeNull()
-    expect(playbackPanel(wrapper).props('file')).not.toBe(a)
-  })
-
-  it('Case D: 显式选择 b 后 AI → results → AI：target 仍是 b，面板不销毁', async () => {
-    const a = new File(['r'], 'a.wotbreplay')
-    const b = new File(['r'], 'b.wotbreplay')
-    const wrapper = mountWs([a, b], makeBattleResp('b.wotbreplay'), { authenticated: true, login: vi.fn() }, 'b0')
-    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
-    await flushPromises()
-    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(b)
-    const vmBefore = aiPanel(wrapper).vm
-    // AI → results → AI：workspaceFile 不被清空，v-show 不销毁组件
-    await wrapper.find('[data-testid="workspace-results-tab"]').trigger('click')
-    await flushPromises()
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(b)
-    expect(aiPanel(wrapper).vm).toBe(vmBefore)
-  })
-
-  it('Case E: 显式 target=b 后删除 b → workspaceFile 失效为空态，不自动切到 a', async () => {
-    const a = new File(['r'], 'a.wotbreplay')
-    const b = new File(['r'], 'b.wotbreplay')
-    const wrapper = mountWs([a, b], makeBattleResp('b.wotbreplay'), { authenticated: true, login: vi.fn() }, 'b0')
-    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
-    await flushPromises()
-    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(b)
-    // 删除 b：真实 files ref 变化触发 watch(files) 失效 target，不得改指 a
-    wrapper.vm.files = [a]
-    await flushPromises()
-    expect(aiPanel(wrapper).props('file')).toBeNull()
-    expect(aiPanel(wrapper).props('file')).not.toBe(a)
-  })
-
-  it('Case F: 唯一文件 AI → playback → AI：同一 File reference，AI 面板不因切 Tab 重建', async () => {
-    const f = new File(['r'], 'single.wotbreplay')
-    const wrapper = mountWs([f])
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(f)
-    const vmBefore = aiPanel(wrapper).vm
-    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
-    await flushPromises()
-    expect(toRaw(playbackPanel(wrapper).props('file'))).toBe(f)
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none') // v-show 隐藏而非销毁
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(f)
-    expect(aiPanel(wrapper).vm).toBe(vmBefore) // 未重建
-  })
-
-  it('唯一文件未登录直接点击「AI 复盘」Tab → 与快捷入口统一登录门禁（confirm + login，不切换、不设置 target）', async () => {
-    const f = new File(['r'], 'single.wotbreplay')
-    const login = vi.fn()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const wrapper = mountWs([f], null, { authenticated: false, login })
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(confirmSpy).toHaveBeenCalled()
-    expect(login).toHaveBeenCalledWith('replay')
-    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none') // 不切换
-    expect(aiPanel(wrapper).props('file')).toBeNull() // 不设置 target
-    confirmSpy.mockRestore()
-  })
-
-  it('多文件未登录直接点击「战局回放」Tab → 无 target 保持空态，不触发登录门禁', async () => {
-    const a = new File(['r'], 'a.wotbreplay')
-    const b = new File(['r'], 'b.wotbreplay')
-    const login = vi.fn()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const wrapper = mountWs([a, b], null, { authenticated: false, login })
-    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
-    await flushPromises()
-    expect(confirmSpy).not.toHaveBeenCalled() // 无目标无需门禁（与快捷按钮禁用态一致）
-    expect(login).not.toHaveBeenCalled()
-    expect(playbackPanel(wrapper).props('file')).toBeNull()
-    confirmSpy.mockRestore()
-  })
-})
-
-describe.skip('ReplayPage playback 加载门控（已迁移至 BattlePlaybackPage）', () => {
-  /** /api/replay/map-overview 成功响应 mock（Playback Dataset 契约）。 */
-  function mapJsonResponse(overview) {
-    return { ok: true, status: 200, json: vi.fn().mockResolvedValue(overview) }
-  }
-
-  function mapOverviewFixture(mapCode = 'desert_train') {
-    return {
-      mapCode, displayName: 'Map', displayNames: { zh: '图', en: 'Map', ru: 'Карта' },
-      friendlyTeam: 1, playableBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 },
-      gridCells: [], spawnPoints: [], phases: [],
-      heatmaps: { friendly: { dwell: [], damage: [], deaths: [] }, enemy: { dwell: [], damage: [], deaths: [] } },
-      routes: [], arenaBonusType: 1, recorderAccountId: null, playback: null
-    }
-  }
-
-  /** 记录 MapOverview seekTo 的 stub（含初始值与 watch 变化）。 */
-  function mapSeekStub(seen) {
-    return {
-      name: 'MapOverview',
-      props: ['overview', 'seekTo'],
-      setup(props) {
-        seen.push(props.seekTo)
-        watch(() => props.seekTo, v => seen.push(v))
-        return () => null
-      }
-    }
-  }
-
-  /** 记录 MapOverview 挂载/卸载生命周期（折叠/切 tab 应为 v-show 语义，不销毁组件）。 */
-  function mapLifecycleStub(seen, lifecycle) {
-    return {
-      name: 'MapOverview',
-      props: ['overview', 'seekTo'],
-      setup(props) {
-        seen.push(props.seekTo)
-        watch(() => props.seekTo, v => seen.push(v))
-        onMounted(() => lifecycle.push('mount'))
-        onUnmounted(() => lifecycle.push('unmount'))
-        return () => null
-      }
-    }
-  }
-
-  /** 记录 MapOverview overview.mapCode 的 stub（分辨 A/B 数据）。 */
-  function mapCodeStub(seenCodes) {
-    return {
-      name: 'MapOverview',
-      props: ['overview', 'seekTo'],
-      setup(props) {
-        seenCodes.push(props.overview ? props.overview.mapCode : null)
-        return () => null
-      }
-    }
-  }
-
-  /** 可控 deferred fetch：按调用顺序记录 resolver；可选收集 AbortSignal。 */
-  function deferredFetch(signals = []) {
-    const resolvers = []
-    const mock = vi.fn((url, opts = {}) => {
-      if (opts.signal) signals.push(opts.signal)
-      return new Promise(resolve => { resolvers.push(resolve) })
-    })
-    mock.resolvers = resolvers
-    return mock
-  }
-
-  function mountWsReal(files, { resp = null, activeTab = 'aggregate', mapStub = null, auth } = {}) {
-    state.init = { activeTab, resp, error: '', loading: false, locale: 'en', files }
-    const overrides = { realPlayback: true, mapStub }
-    if (auth) overrides.auth = auth
-    return mountPage(overrides)
-  }
-
-  function mapCalls(fetchMock) {
-    return fetchMock.mock.calls.filter(([u]) => String(u) === '/api/replay/map-overview').length
-  }
-
-  function makeTwoBattleResp() {
-    return {
-      aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
-      battles: [
-        { mapName: 'Lagoon', sourceName: 'a.wotbreplay', players: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] },
-        { mapName: 'Frozen', sourceName: 'b.wotbreplay', players: [{ cells: { nickname: 'P2', damage_dealt: 4000 } }] }
-      ],
-      duplicates: [], failures: [],
-      playerColumns: [{ key: 'nickname', label: '昵称' }],
-      aggregateColumns: [{ key: 'nickname', label: '昵称' }]
-    }
-  }
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('Case 1: 唯一文件直接点击「AI 复盘」→ AiReviewPanel 拿到文件，但 map-overview 请求 = 0', async () => {
-    const f = new File(['r'], 'single.wotbreplay')
-    const fetchMock = vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture()))
-    vi.stubGlobal('fetch', fetchMock)
-    const wrapper = mountWsReal([f])
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(toRaw(wrapper.findComponent({ name: 'AiReviewPanel' }).props('file'))).toBe(f)
-    expect(mapCalls(fetchMock)).toBe(0)
-  })
-
-  it('Case 2: 唯一文件直接点击「战局回放」→ map-overview 请求 = 1', async () => {
-    const f = new File(['r'], 'single.wotbreplay')
-    const fetchMock = vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture()))
-    vi.stubGlobal('fetch', fetchMock)
-    const wrapper = mountWsReal([f])
-    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
-    await flushPromises()
-    expect(mapCalls(fetchMock)).toBe(1)
-  })
-
-  it('Case 3: AI → Playback：AI 阶段无 map 请求，切 Playback 后才出现第 1 次', async () => {
-    const f = new File(['r'], 'single.wotbreplay')
-    const fetchMock = vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture()))
-    vi.stubGlobal('fetch', fetchMock)
-    const wrapper = mountWsReal([f])
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(mapCalls(fetchMock)).toBe(0)
-    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
-    await flushPromises()
-    expect(mapCalls(fetchMock)).toBe(1)
-  })
-
-  it('Case 4: Playback 完成 → AI → Playback：map 请求总数仍 = 1，MapOverview 不销毁', async () => {
-    const f = new File(['r'], 'single.wotbreplay')
-    const seen = []
-    const lifecycle = []
-    const fetchMock = vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture()))
-    vi.stubGlobal('fetch', fetchMock)
-    const wrapper = mountWsReal([f], { mapStub: mapLifecycleStub(seen, lifecycle) })
-    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
-    await flushPromises()
-    expect(mapCalls(fetchMock)).toBe(1)
-    expect(lifecycle).toEqual(['mount'])
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none') // v-show 隐藏而非销毁
-    expect(lifecycle).toEqual(['mount'])
-    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
-    await flushPromises()
-    expect(mapCalls(fetchMock)).toBe(1) // 已加载同文件：不重复请求
-    expect(lifecycle).toEqual(['mount']) // 同一 MapOverview 实例
-  })
-
-  it('Case 5: AI 报告时间链接 seek → 自动切 Playback、未加载则请求 map、seek 传给 MapOverview', async () => {
-    const f = new File(['r'], 'single.wotbreplay')
-    const seen = []
-    const fetchMock = vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture()))
-    vi.stubGlobal('fetch', fetchMock)
-    const wrapper = mountWsReal([f], { mapStub: mapSeekStub(seen) })
-    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
-    await flushPromises()
-    expect(mapCalls(fetchMock)).toBe(0)
-    // AI 报告时间链接：由 AiReviewPanel 上抛 seek 事件
-    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('seek', 200)
-    await flushPromises()
-    expect(panelDisplay(wrapper, 'workspace-playback-panel')).not.toBe('none') // 已切到 Playback
-    expect(mapCalls(fetchMock)).toBe(1) // 未加载：自动请求
-    expect(seen).toContain(200) // seek 传给 MapOverview
-  })
-
-  it('Case 6: A 正在 map load → 切换 target B：A abort、迟到响应不覆盖、B 进入 Playback 后才加载', async () => {
-    const a = new File(['r'], 'a.wotbreplay')
-    const b = new File(['r'], 'b.wotbreplay')
-    const seenCodes = []
-    const signals = []
-    const fetchMock = deferredFetch(signals)
-    vi.stubGlobal('fetch', fetchMock)
-    const wrapper = mountWsReal([a, b], { resp: makeTwoBattleResp(), activeTab: 'b0', mapStub: mapCodeStub(seenCodes) })
-    // 显式选 A（battle toolbar）进入 Playback：A 请求 in-flight
-    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
-    await flushPromises()
-    expect(fetchMock.resolvers.length).toBe(1)
-    // 切换到 battle B（AI tab，未进入 Playback）：A 请求被 abort，B 不加载
-    state.setActiveTab('b1')
-    await flushPromises()
-    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
-    await flushPromises()
-    await flushPromises() // 新 async dataset 步骤（requestDirectAction）settle
-    expect(signals[0].aborted).toBe(true) // A 在途请求已取消
-    expect(fetchMock.resolvers.length).toBe(1) // B 未进入 Playback 前不发起请求
-    // A 迟到响应不得覆盖 B（generation 失效）
-    fetchMock.resolvers[0](mapJsonResponse(mapOverviewFixture('rift')))
-    await flushPromises()
-    expect(seenCodes.filter(c => c === 'rift')).toHaveLength(0) // A 从未显示
-    // 进入 Playback：B 开始加载并显示
-    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
-    await flushPromises()
-    expect(fetchMock.resolvers.length).toBe(2) // B 请求
-    fetchMock.resolvers[1](mapJsonResponse(mapOverviewFixture('desert_train')))
-    await flushPromises()
-    expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
-    expect(seenCodes).toContain('desert_train')
-  })
-})
-
 describe('ReplayPage League Rating', () => {
   beforeEach(() => {
     state.clear()
@@ -1898,7 +1280,8 @@ describe('ReplayPage League Rating', () => {
     await flushPromises()
     const exportBtn = wrapper.get('[data-testid="export-aggregate"]')
     await exportBtn.trigger('click')
-    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', {
+    await flushPromises()
+    expect(state.replay.exportExcel).toHaveBeenCalledWith('aggregate', {
       battle: { '111:1': 'CHRD' },
       summary: { 'clan:CHRD': 'CHRD A队' }
     })
@@ -1912,7 +1295,7 @@ describe('ReplayPage League Rating', () => {
     wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
     expect(wrapper.vm.battleTeamNames).not.toEqual({})
     // 触发真实 selection 变化（统一 updateFiles 入口 → selectionRevision++）
-    wrapper.vm.updateFiles(['b.wotbreplay'])
+    state.replay.updateFiles(['b.wotbreplay'])
     await nextTick()
     expect(wrapper.vm.battleTeamNames).toEqual({})
     expect(wrapper.vm.summaryTeamNames).toEqual({})
@@ -1925,20 +1308,20 @@ describe('ReplayPage League Rating', () => {
     wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
     wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
     // 删除单个 replay：同样走 updateFiles → selection 变化
-    wrapper.vm.updateFiles(['a.wotbreplay'])
+    state.replay.updateFiles(['a.wotbreplay'])
     await nextTick()
     expect(wrapper.vm.battleTeamNames).toEqual({})
     expect(wrapper.vm.summaryTeamNames).toEqual({})
   })
 
-  it('re-processing same selection does NOT clear overrides', async () => {
+  it('re-analysing the same selection does NOT clear overrides', async () => {
     state.init.resp = makeResp({ leagueMode: true, league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
     const wrapper = mountPage()
     await flushPromises()
     wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
     wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
     // 同一 selection 重新解析：selectionRevision 不变 → overrides 保留
-    wrapper.vm.startProcessingJob()
+    await state.replay.analyze()
     await nextTick()
     expect(wrapper.vm.battleTeamNames['arenaA:1']).toBe('CHRD')
     expect(wrapper.vm.summaryTeamNames['clan:CHRD']).toBe('CHRD A队')
@@ -2495,18 +1878,14 @@ describe('ReplayPage League failure UX separation', () => {
     return out
   }
 
-  it('Test 1: valid=30 duplicate=5 failed=0 + leagueFailures=30 → 卡片计数正确，无红色「文件解析失败」，League 汇总为 warning', async () => {
+  it('Test 1: valid=30 duplicate=5 failed=0 + leagueFailures=30 → 无红色「文件解析失败」，League 汇总为 warning', async () => {
     state.init.resp = makeResp({
       battles: manyBattles(30, true),
       leagueMode: true,
       league: { mode: 'LEAGUE_RATING', failures: manyLeagueFailures(30, 'LEAGUE_ROSTER_INCOMPLETE') }
     })
     const wrapper = mountPage()
-    pJobState.setJob({ jobId: 'p1', status: 'READY', phase: null, total: 35, processed: 35, valid: 30, duplicates: 5, failures: 0 })
     await flushPromises()
-    const card = wrapper.find('[data-testid="replay-processing-panel"]')
-    expect(card.exists()).toBe(true)
-    expect(card.text()).toContain('replay.processing_job.valid_summary:30,5,0')
     // 不得出现红色解析失败块（result.failures 只用于真正 parser failure）
     expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('result.failures')
@@ -2616,312 +1995,6 @@ describe('ReplayPage League failure UX separation', () => {
 })
 
 // ---- Workspace Dataset stale response ownership（generation/revision）----
-
-describe.skip('ReplayPage Workspace Dataset generation ownership（已迁移至独立 capability 页）', () => {
-  function mountWithFilesLocal(files) {
-    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files }
-    return mountPage({ auth: { authenticated: true, login: vi.fn() } })
-  }
-
-  function deferred() {
-    let resolve
-    let reject
-    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
-    return { promise, resolve, reject }
-  }
-
-  afterEach(() => {
-    directActionHolder.reset()
-  })
-
-  it('AI：B 先 READY、A 迟到 → datasetRef 永远属于当前 workspaceFile（A 被丢弃）', async () => {
-    const fileA = new File(['a'], 'a.wotbreplay')
-    const fileB = new File(['b'], 'b.wotbreplay')
-    const dA = deferred()
-    const dB = deferred()
-    let call = 0
-    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
-    const wrapper = mountWithFilesLocal([fileA, fileB])
-
-    const pA = wrapper.vm.openWorkspaceAi(fileA) // A pending（不 await，等 B 先行）
-    const pB = wrapper.vm.openWorkspaceAi(fileB) // B pending
-
-    dB.resolve({ processingJobId: 'pB', sourceId: 'r1' })
-    await flushPromises()
-    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
-
-    dA.resolve({ processingJobId: 'pA', sourceId: 'r0' }) // A 迟到
-    await flushPromises()
-    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' },
-      'A 的迟到响应不得把 datasetRef 绑回 A')
-    await pA
-    await pB
-    wrapper.unmount()
-  })
-
-  it('Playback：同一竞态下 B 胜出、A 迟到被丢弃', async () => {
-    const fileA = new File(['a'], 'a.wotbreplay')
-    const fileB = new File(['b'], 'b.wotbreplay')
-    const dA = deferred()
-    const dB = deferred()
-    let call = 0
-    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
-    const wrapper = mountWithFilesLocal([fileA, fileB])
-
-    const pA = wrapper.vm.openWorkspacePlayback(fileA)
-    const pB = wrapper.vm.openWorkspacePlayback(fileB)
-
-    dB.resolve({ processingJobId: 'pB', sourceId: 'r1' })
-    await flushPromises()
-    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
-
-    dA.resolve({ processingJobId: 'pA', sourceId: 'r0' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
-    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
-    await pA
-    await pB
-    wrapper.unmount()
-  })
-
-  it('stale failure 不写 processingError、不污染当前 workspace', async () => {
-    const fileA = new File(['a'], 'a.wotbreplay')
-    const fileB = new File(['b'], 'b.wotbreplay')
-    const dA = deferred()
-    const dB = deferred()
-    let call = 0
-    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
-    const wrapper = mountWithFilesLocal([fileA, fileB])
-
-    const pA = wrapper.vm.openWorkspaceAi(fileA)
-    const pB = wrapper.vm.openWorkspaceAi(fileB)
-    dB.resolve({ processingJobId: 'pB', sourceId: 'r1' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
-
-    dA.reject(new Error('STALE_DATASET_FAILURE')) // A 迟到失败
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
-    expect(wsErrState.value).toBe('', 'stale 错误不得写入当前 selection 的 processingError')
-    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
-    await pA
-    await pB
-    wrapper.unmount()
-  })
-
-  it('本地 source poll 取消（SOURCE_POLL_CANCELLED）即使属于当前 generation 也不写 processingError', async () => {
-    const fileA = new File(['a'], 'a.wotbreplay')
-    directActionHolder.setImpl(() =>
-      Promise.reject(Object.assign(new Error('SOURCE_POLL_CANCELLED'), { name: 'LocalCancellation' })))
-    const wrapper = mountWithFilesLocal([fileA])
-
-    await wrapper.vm.openWorkspaceAi(fileA)
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toBeNull()
-    expect(wsErrState.value).toBe('', '本地取消不得显示成用户业务错误')
-    wrapper.unmount()
-  })
-
-  it('dataset-recover（JOB_NOT_FOUND）→ onDatasetRecover 清空旧引用并重新绑定 p2（不回退 p1）', async () => {
-    const fileA = new File(['a'], 'a.wotbreplay')
-    const dA = deferred()
-    const dB = deferred()
-    let call = 0
-    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
-    const wrapper = mountWithFilesLocal([fileA])
-
-    const pA = wrapper.vm.openWorkspaceAi(fileA)
-    dA.resolve({ processingJobId: 'p1', sourceId: 'r0' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
-    expect(wrapper.vm.datasetError).toBe('')
-
-    // AiReviewPanel 在 analyze 收到 backend JOB_NOT_FOUND → emit dataset-recover。
-    // （AiReviewPanel 的真实 emit 由 AiReviewPanel.test.js 覆盖；此处验证 ReplayPage 恢复链。）
-    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
-    await flushPromises()
-
-    // onDatasetRecover 应先清空旧引用与旧错误，再重新走 requestDirectAction（第 2 次调用返回 p2）
-    expect(wrapper.vm.datasetRef).toBeNull('恢复开始时应先清空旧 dataset 引用')
-    expect(wrapper.vm.datasetError).toBe('')
-
-    dB.resolve({ processingJobId: 'p2', sourceId: 'r0' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p2', sourceId: 'r0' },
-      '恢复后必须绑定重建的 p2，绝不能再回退过期 p1')
-    await pA
-    wrapper.unmount()
-  })
-
-  it('workspaceFile 切换：旧 datasetRef 与旧 datasetError 同时清空（A 的失败不在 B 期间显示）', async () => {
-    const fileA = new File(['a'], 'a.wotbreplay')
-    const fileB = new File(['b'], 'b.wotbreplay')
-    directActionHolder.setImpl(() => ({ processingJobId: 'p1', sourceId: 'r0' }))
-    const wrapper = mountWithFilesLocal([fileA, fileB])
-
-    await wrapper.vm.openWorkspaceAi(fileA)
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
-    wrapper.vm.datasetError = 'A_PREP_FAILED' // 模拟 A 的 Dataset preparation failure
-
-    // 切到 B：workspaceFile 变化 → 旧引用 + 旧错误同时清空，A 的失败不得在 B 期间显示
-    await wrapper.vm.openWorkspaceAi(fileB)
-    expect(wrapper.vm.datasetError).toBe('', 'A 的准备失败不得在 B 期间显示')
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
-    wrapper.unmount()
-  })
-
-  it('Playback exactly-once：第一次 JOB_NOT_FOUND recover p2、第二次不再 create p3、结束为本地化 FAILURE', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }))
-    const file = new File(['a'], 'a.wotbreplay')
-    let call = 0
-    directActionHolder.setImpl(() => (++call === 1
-      ? Promise.resolve({ processingJobId: 'p1', sourceId: 'r0' })
-      : call === 2
-        ? Promise.resolve({ processingJobId: 'p2', sourceId: 'r0' })
-        : Promise.resolve({ processingJobId: 'p3', sourceId: 'r0' })))
-    const wrapper = mountWithFilesLocal([file])
-
-    await wrapper.vm.openWorkspacePlayback(file)
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
-
-    // 第一次 JOB_NOT_FOUND → 自动恢复 p2
-    wrapper.findComponent({ name: 'BattlePlaybackPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p2', sourceId: 'r0' })
-
-    // 第二次 JOB_NOT_FOUND（p2 也过期）→ 不再 create p3，结束为本地化 FAILURE
-    wrapper.findComponent({ name: 'BattlePlaybackPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toBeNull('第二次必须清空引用，不再绑定新 dataset')
-    expect(wrapper.vm.datasetRef).not.toEqual({ processingJobId: 'p3', sourceId: 'r0' })
-    expect(wrapper.vm.datasetError).toBe('workspace.dataset_prepare_failed')
-    vi.unstubAllGlobals()
-    wrapper.unmount()
-  })
-
-  it('两面板快速 emit dataset-recover → recovery single-flight（只触发一次恢复，不双创建）', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }))
-    const file = new File(['a'], 'a.wotbreplay')
-    const d1 = deferred()
-    const d2 = deferred()
-    const d3 = deferred()
-    let call = 0
-    directActionHolder.setImpl(() => (++call === 1 ? d1.promise : call === 2 ? d2.promise : d3.promise))
-    const wrapper = mountWithFilesLocal([file])
-    const p1 = wrapper.vm.openWorkspacePlayback(file)
-    d1.resolve({ processingJobId: 'p1', sourceId: 'r0' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
-
-    // 两个面板几乎同时 emit dataset-recover：recovery in-flight，第二个合并/忽略
-    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
-    wrapper.findComponent({ name: 'BattlePlaybackPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
-    await flushPromises()
-
-    d2.resolve({ processingJobId: 'p2', sourceId: 'r0' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p2', sourceId: 'r0' })
-    expect(wrapper.vm.datasetRef).not.toEqual({ processingJobId: 'p3', sourceId: 'r0' },
-      '不得触发第二次恢复（若双创建会走到 d3 → p3）')
-    await p1
-    vi.unstubAllGlobals()
-    wrapper.unmount()
-  })
-
-  it('selection A recovery in-flight 时切 B：A 迟到结果 pure discard、B 不绑定 A、A 不消耗 B 的 budget', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }))
-    const fileA = new File(['a'], 'a.wotbreplay')
-    const fileB = new File(['b'], 'b.wotbreplay')
-    const d1 = deferred()
-    const dARec = deferred()
-    const dB = deferred()
-    let call = 0
-    directActionHolder.setImpl(() => (++call === 1 ? d1.promise : call === 2 ? dARec.promise : dB.promise))
-    const wrapper = mountWithFilesLocal([fileA, fileB])
-    const pA = wrapper.vm.openWorkspaceAi(fileA)
-    d1.resolve({ processingJobId: 'p1', sourceId: 'r0' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
-
-    // A 触发 recovery（in-flight，dARec pending）
-    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
-    await flushPromises()
-
-    // A recovery 未返回前切到 B（workspaceFile 变化 → 重置 budget；B 使用第 3 次调用）
-    const pB = wrapper.vm.openWorkspaceAi(fileB)
-    dB.resolve({ processingJobId: 'pB', sourceId: 'r0' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r0' })
-
-    // A 的 recovery 迟到返回 → pure discard（revision guard），不得覆盖 B / 回指 A
-    dARec.resolve({ processingJobId: 'pA2', sourceId: 'r0' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r0' }, 'A 的迟到恢复不得覆盖 B')
-    await pA
-    await pB
-    vi.unstubAllGlobals()
-    wrapper.unmount()
-  })
-
-  it('recovery context generation-owned：A stale finally 不清 B inFlight、B duplicate 仍被 single-flight 拦截', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }))
-    const fileA = new File(['a'], 'a.wotbreplay')
-    const fileB = new File(['b'], 'b.wotbreplay')
-    const d1 = deferred()
-    const dARec = deferred()
-    const dB = deferred()
-    const dBRec = deferred()
-    const dStray = deferred()
-    let call = 0
-    directActionHolder.setImpl(() => (++call === 1 ? d1.promise
-      : call === 2 ? dARec.promise
-        : call === 3 ? dB.promise
-          : call === 4 ? dBRec.promise
-            : dStray.promise))
-    const wrapper = mountWithFilesLocal([fileA, fileB])
-    const pA = wrapper.vm.openWorkspaceAi(fileA)
-    d1.resolve({ processingJobId: 'p1', sourceId: 'r0' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
-
-    // A 触发 recovery（pending, call2 → dARec；A 是当前 recovery owner）
-    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
-    await flushPromises()
-
-    // 切 B（workspaceFile 变化 → 重置 budget；B 首次 dataset 用 call3 → dB）
-    const pB = wrapper.vm.openWorkspaceAi(fileB)
-    dB.resolve({ processingJobId: 'pB1', sourceId: 'r0' })
-    await flushPromises()
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB1', sourceId: 'r0' })
-
-    // B 触发 recovery（pending, call4 → dBRec；B 是当前 recovery owner）
-    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
-    await flushPromises()
-
-    // A 的 stale recovery finally 执行（resolve）——不得清 B 的 inFlight
-    dARec.resolve({ processingJobId: 'pA2', sourceId: 'r0' })
-    await flushPromises()
-
-    // B 的 duplicate dataset-recover 必须仍被 inFlight guard 拦截（不得触发第 5 次 requestDirectAction）
-    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
-    await flushPromises()
-
-    dBRec.resolve({ processingJobId: 'pB2', sourceId: 'r0' })
-    await flushPromises()
-    // 若 B 的 inFlight 被 A 的 stale finally 误清，B duplicate 会走 2nd branch → datasetRef 被清空、
-    // 不会绑定 pB2；这里必须绑定 B 自己的 pB2。
-    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB2', sourceId: 'r0' },
-      'A 的 stale finally 不得清 B 的 inFlight / 不得让 B duplicate 走错误分支')
-    await pA
-    await pB
-    vi.unstubAllGlobals()
-    wrapper.unmount()
-  })
-})
 
 describe('ReplayPage League 算法说明入口', () => {
   afterEach(() => {

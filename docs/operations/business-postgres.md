@@ -1,8 +1,9 @@
 # TX Business PostgreSQL infrastructure boundary
 
-PostgreSQL is the authoritative business and job state. RabbitMQ is delivery,
-retry, and backpressure only. MinIO is a temporary workspace. Business
-PostgreSQL is deliberately independent from Keycloak PostgreSQL:
+PostgreSQL is the authoritative business state (the server has no replay parser:
+the replay job tables, RabbitMQ and MinIO were removed on 2026-10-02; Flyway V27
+drops the job tables). Business PostgreSQL is deliberately independent from
+Keycloak PostgreSQL:
 
 ```text
 Compose        business-postgres.compose.yml             keycloak-postgres.compose.yml
@@ -74,9 +75,8 @@ not persisted as a state attribute. Sensitive local state lives at
 `/opt/wotb-tx/postgres-business-tofu-state/terraform.tfstate` under a 0700
 parent directory, separate from the Keycloak PostgreSQL state.
 
-A `business-postgres`-only deployment requires none of the Keycloak, RabbitMQ,
-frontend image, or Caddy inputs. RabbitMQ remains reachable only through
-`10.20.0.1:5672`; Business PostgreSQL publishes nothing outside loopback.
+A `business-postgres`-only deployment requires none of the Keycloak, frontend
+image, or Caddy inputs. Business PostgreSQL publishes nothing outside loopback.
 
 ## TX provisioning sequence
 

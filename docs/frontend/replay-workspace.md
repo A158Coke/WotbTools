@@ -10,20 +10,19 @@
 - 玩家表默认只显示 6–8 个核心列（`utils/helpers.js` 的 `*_DEFAULT_VISIBLE`），其余在「列 N/M」面板里；localStorage 可见列与旧默认值完全相同时视为未自定义，迁到新默认值。手机（<768）默认用 `PlayerCardList` 卡片列表（可切回表格，排序与表格共用）；卡片模式下表格仍在 DOM 中隐藏，PNG 导出始终导出表格。
 - 玩家详情 `PlayerDetailDrawer`：桌面可拖宽的推开式侧栏，平板固定 360px 推开式侧栏（都写 `--pd-drawer-offset` 让工作台让位），手机全屏 sheet，可左右滑动切换玩家。
 - 系列赛比分与场次选项由纯函数 `utils/replaySeries.js` 从 ReplayResult 派生：战队身份只认 League 批次 `teamSummaries` 的 `clan:` teamKey 与 `arenaTeams`；任何一方是 `arenaId:team` 兜底键、或不是恰好两支队伍时不推算比分；无法归属的（未评分）场次如实计数并说明，不计入比分。场次选项显示「第 N 场 · 地图」与「胜方 · 时间」，可按文件名检索。
-- `frontend/src/composables/useReplaySession.ts` 是唯一 session state owner，持有 selection、当前 battle、Processing/Result identity、Export state 与 Workspace view state。
-- `frontend/src/composables/useProcessingJob.ts` 持有 Processing Job 的上传、single-flight、轮询、source-ready、取消与 Dataset recovery lifecycle；它只消费 session refs。
-- `frontend/src/composables/useReplay.ts` 是 compatibility facade/orchestrator，组合 session、Processing 与 Export，不再持有 Processing lifecycle 闭包。
-- `frontend/src/composables/useExportJob.ts` 持有 Export Job 的创建、轮询、取消和下载 lifecycle；它只消费 session 的 READY `processingJobId`。
-- `frontend/src/composables/useCapabilityReplay.js` 当前仅为 Playback 持有 capability dataset 状态；AI 复盘维护期间不创建 AI dataset 状态。
+- `frontend/src/composables/useReplaySession.ts` 是唯一 session state owner，持有 selection、当前 battle、本地分析状态（`analysis: { phase, done, total, failure }`）、结果与 Workspace view state。
+- `frontend/src/composables/useLocalReplayAnalysis.ts` 持有本机分析生命周期：Worker 解析（上游 Rust Core WASM）→ 批次计算 → 提交结果；选择变化 / 取消作废在途分析；`exportExcel` 复用最近一次的批次结果在客户端生成 xlsx / zip。服务器没有 parser，失败只显示原因（`ENGINE_UNAVAILABLE` / `NO_VALID_REPLAYS` / `UNKNOWN`），不回退服务端。
+- `frontend/src/composables/useReplay.ts` 是 facade/orchestrator，组合 session 与本地分析。
+- `BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时显示 `workspace.single_replay_required`。
 - `frontend/src/app/viewRegistry.js` 将 `replay`、`ai-review`、`battle-playback` URL 映射到同一个 `ReplayWorkspace`，由 `initialCapability` 决定初始 tab；`ViewHost.vue` 用 `KeepAlive` 保留工作台实例。
 - `frontend/src/app/router.js` 是历史与深链 owner。页面组件通过注入的 `navigate` 改变 URL，不直接操作浏览器 history。
 
 ## 稳定边界
 
-- 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision`、`sourceId` 与 Processing 状态作为唯一 identity。
+- 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision` 与 `sourceId`（`r{文件序号}`）作为唯一 identity。
 - 场次选择器（数据模式在 `ReplayPage` 工具栏、2D 回放在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。
-- AI 复盘 tab 与深链显示维护说明卡（`EmptyState`，含跳到数据 / 2D 回放的入口），不挂载 AI 面板、不准备 AI dataset；维护期间不设登录门禁，恢复后需要登录；Playback 仍消费 Workspace 的 authoritative dataset。切换 capability 不应重传或重建基础 Processing Job。
-- Replay Workspace 的访问控制、Dataset-only 交接和 AI/Playback 详细接口以以下文档为准，不在本索引重复维护：
+- AI 复盘 tab 与深链显示维护说明卡（`EmptyState`，含跳到数据 / 2D 回放的入口），不挂载 AI 面板、不准备 AI dataset；维护期间不设登录门禁，恢复后需要登录。切换 capability 不重新分析数据模式的结果。
+- AI/Playback 详细接口与回放管线以以下文档为准，不在本索引重复维护：
   - [`docs/architecture/ai-review.md`](../architecture/ai-review.md)
   - [`docs/features/team-ai-review.md`](../features/team-ai-review.md)
   - [`docs/features/battle-playback.md`](../features/battle-playback.md)
@@ -31,32 +30,9 @@
 
 若上述实现路径或 owner 发生变化，先更新本索引与 [`docs/frontend/architecture.md`](architecture.md)，再更新目录级硬规则。
 
-## 匿名访问与 Processing 授权
+## 匿名访问
 
-赛果解析（数据模式、导出）与 2D 回放**对匿名开放**（2026-10-01 起）；登录只是可选增强。AI 复盘维护页优先显示：
+服务器没有 parser：解析、汇总、导出与 2D 回放全部在本机进行，工作台挂载即可用、不等登录、没有登录门禁，也不发出任何回放相关的后端请求。AI 复盘（维护中）与名人堂等写操作才需要登录。
 
-| 状态 | 渲染 |
-|---|---|
-| auth init 未完成（`idle` / `initializing`） | `data-testid="ws-auth-loading"`（检查登录态） |
-| 其余（已登录 / 未登录 / init 失败） | 完整工作台（FileUploader / Processing 面板 / data·Playback 面板（含场次选择器）/ Export 卡片 / 确认弹窗） |
-
-- 仍等 auth init 落定再展示工作台：避免已登录用户在 Keycloak 初始化完成前以匿名身份建 Job。init 失败也照常放行，不显示登录门禁；`setCapability()` 不再发起 login。
-- Android pending 字节通过固定同源 HTTPS Native resource 读取；header 校验 pending identity，响应不缓存。fetch/blob 失败复用 Replay 错误区与重试，不启动 Job、不 ACK。
-- Android pending replay 在 auth init 落定（`isReady`）后消费，登录与否都会消费；落定前 Native pending 原样保留
-  （见 [`docs/android/replay-intent.md`](../android/replay-intent.md)）。
-- **Processing / Export 传输边界**（`src/api/replay.ts`）统一用 `optionalBearer()`（`replay-capabilities.ts`）：
-  `ensureToken(30)` 成功时附带 `Authorization: Bearer`，否则匿名请求，不抛 `AUTH_UNAUTHENTICATED`。
-  `createProcessingJob` 保留 XHR 上传进度（绝不手工设置 multipart `Content-Type`，boundary 由浏览器生成）。
-  download 走 fetch（blob → object URL），以便已登录时附带 Bearer。map-overview / battle-playback-v2 用
-  `authedReplayPost(..., { optionalAuth: true })`；AI 端点仍强制登录。
-- **后端授权**：`/api/replay/processing-jobs/**`、`/api/replay/export-jobs/**`、`/api/replay/map-overview`、
-  `/api/replay/battle-playback-v2` 均 `permitAll`。它们只消费调用方自己上传、以不可猜测 `jobId` 引用的
-  `ProcessedDataset`。携带有效 Bearer 时照常解析 subject（idempotency 分域、绑定账号验证）；匿名时 subject 为空，
-  只是失去 `operationId` 幂等。滥用防护：nginx 对两个创建端点按 IP 限流（`replay_api` zone）+ 服务端
-  `PROCESSING_QUEUE_FULL`。`reconstruct-batch` / `process` 仍要求 `wotbtools-user` / `wotbtools-admin`。
-- `startProcessingJob()` 返回 `{ accepted: true, jobId }` 或 `{ accepted: false, reason }`
-  （`EMPTY_SELECTION` / `ALREADY_ACTIVE` / `SUPERSEDED` / `ABORTED` / `REQUEST_FAILED`），该结果同时是
-  Android pending replay 是否 ACK 的唯一判定依据。
-- **Android pending 的 create 幂等**（仅已登录时生效）：`startProcessingJob({ operationId })` 会把 pending identity
-  作为 multipart 字段 `operationId` 交给后端；同一 subject + 同一 `operationId` 幂等返回同一个 job，
-  覆盖「server 已接受但 Native ACK 前进程被杀 → 冷启动重新导入」。普通手工上传不带该字段。
+- Android pending 字节通过固定同源 HTTPS Native resource 读取；header 校验 pending identity，响应不缓存。fetch/blob 失败复用 Replay 错误区与重试，不分析、不 ACK。
+- Android pending replay 在工作台挂载后消费；ACK 边界是「本机分析已完成」（`analyze()` 返回 `{ completed: true }`，无论有没有有效场次）；回放引擎装载失败返回 `{ completed: false, reason: 'ENGINE_UNAVAILABLE' }`，Native pending 原样保留可重试（见 [`docs/android/replay-intent.md`](../android/replay-intent.md)）。

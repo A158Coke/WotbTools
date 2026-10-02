@@ -9,7 +9,6 @@ LIVE_COMPOSE="$LIVE_DEPLOY_DIR/docker-compose.yml"
 readonly LIVE_COMMON="$LIVE_DEPLOY_DIR/common.compose.yml"
 readonly TX_RUNTIME_ROOT="${TX_RUNTIME_ROOT:-$WOTB_DIR}"
 readonly TOFU_PROVISION_MARKER="${WOTB_TX_TOFU_PROVISION_MARKER:-$WOTB_DIR/keycloak.tofu-provisioned}"
-readonly RABBITMQ_TOFU_PROVISION_MARKER="${WOTB_TX_RABBITMQ_TOFU_PROVISION_MARKER:-$WOTB_DIR/rabbitmq.tofu-provisioned}"
 readonly BUSINESS_POSTGRES_TOFU_PROVISION_MARKER="${WOTB_TX_BUSINESS_POSTGRES_TOFU_PROVISION_MARKER:-$WOTB_DIR/business-postgres.tofu-provisioned}"
 readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://business-api:8087}"
@@ -75,9 +74,8 @@ is_selected() {
 }
 
 # One credential group is required only when a service in that group is
-# selected. Keeping the groups explicit is what keeps RabbitMQ-only,
-# Keycloak-only, and business-postgres-only deployments isolated from each
-# other's secrets.
+# selected. Keeping the groups explicit is what keeps Keycloak-only and
+# business-postgres-only deployments isolated from each other's secrets.
 is_keycloak_postgres_group_selected() {
   is_selected keycloak-postgres || is_selected keycloak
 }
@@ -86,19 +84,14 @@ is_keycloak_runtime_selected() {
   is_selected keycloak
 }
 
-is_rabbitmq_group_selected() {
-  is_selected rabbitmq
-}
-
 is_business_postgres_group_selected() {
   is_selected business-postgres
 }
 
-# The TX business runtime owns the application database role and the distributed
-# replay control plane, so it is the only group that requires the application
-# credentials and the MinIO control-plane identity. AI provider configuration
+# The TX business runtime owns the application database role, so it is the only
+# group that requires the application credentials. AI provider configuration
 # belongs to the Yecao ai-service, so this group never requires an AI key. A
-# RabbitMQ-only or database-only deployment must never depend on them.
+# database-only deployment must never depend on them.
 is_business_api_group_selected() {
   is_selected business-api
 }
@@ -115,7 +108,7 @@ validate_inputs() {
   is_positive_integer "$PROBE_MAX_TIME_SEC" || die "WOTB_PROBE_MAX_TIME_SEC must be a positive integer."
   case "$DEPLOY_SERVICE_VALUE" in
     frontend) DEPLOY_SERVICES=(wotb-frontend) ;;
-    keycloak-postgres|business-postgres|rabbitmq|keycloak|business-api|caddy|alloy-tx)
+    keycloak-postgres|business-postgres|keycloak|business-api|caddy|alloy-tx)
       DEPLOY_SERVICES=("$DEPLOY_SERVICE_VALUE") ;;
     *) die "unsupported TX deployment service: $DEPLOY_SERVICE_VALUE" ;;
   esac
@@ -149,7 +142,7 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      keycloak-postgres|business-postgres|rabbitmq|keycloak|wotb-frontend|business-api|caddy|alloy-tx) ;;
+      keycloak-postgres|business-postgres|keycloak|wotb-frontend|business-api|caddy|alloy-tx) ;;
       *) die "unsupported TX deployment service: $service" ;;
     esac
   done
@@ -157,9 +150,8 @@ validate_inputs() {
     0|1) ;;
     *) die "WOTB_TX_BOOTSTRAP_KEYCLOAK must be 0 or 1." ;;
   esac
-  # Only selected runtime services may require their credentials. RabbitMQ-only
-  # and business-postgres-only reconciliation must not depend on each other or
-  # on Keycloak/PostgreSQL application inputs.
+  # Only selected runtime services may require their credentials.
+  # Business-postgres-only reconciliation must not depend on Keycloak inputs.
   if is_keycloak_postgres_group_selected; then
     for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD; do
       require_env "$required"
@@ -172,12 +164,6 @@ validate_inputs() {
   fi
   if is_selected caddy; then
     require_env CADDY_ACME_EMAIL
-  fi
-  if is_rabbitmq_group_selected; then
-    for required in TX_RABBITMQ_ADMIN_USER TX_RABBITMQ_ADMIN_PASSWORD \
-      TX_RABBITMQ_CONTROL_API_PASSWORD TX_RABBITMQ_PARSER_WORKER_PASSWORD; do
-      require_env "$required"
-    done
   fi
   if is_business_postgres_group_selected; then
     for required in TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD \
@@ -195,13 +181,10 @@ validate_inputs() {
     local business_api_digest="${TX_BUSINESS_API_IMAGE_REF_VALUE##*@sha256:}"
     [[ "$business_api_digest" =~ ^[0-9a-f]{64}$ ]]       || die "TX_BUSINESS_API_IMAGE_REF must contain a 64-character lowercase sha256 digest."
     # The business runtime is TX-internal, so it consumes exactly the
-    # credentials below: the OpenTofu-owned application database role, the
-    # RabbitMQ control-api identity, the MinIO control_api identity, and the
+    # credentials below: the OpenTofu-owned application database role and the
     # Keycloak Admin API client. It carries no AI provider configuration: AI
     # Review runs in the standalone Yecao ai-service.
     for required in TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
-      TX_RABBITMQ_CONTROL_API_PASSWORD \
-      YECAO_MINIO_CONTROL_API_ACCESS_KEY YECAO_MINIO_CONTROL_API_SECRET_KEY \
       KEYCLOAK_ADMIN_CLIENT_SECRET; do
       require_env "$required"
     done
@@ -255,9 +238,6 @@ stage_and_validate() {
       die "TX sponsor config must be a regular file: $TX_RUNTIME_ROOT/config/sponsor-config.json"
     fi
   fi
-  # The runtime E2E check mounts this directory into the health-probe container;
-  # its content (the staged replay fixtures) is optional and staged separately.
-  mkdir -p "$TX_RUNTIME_ROOT/e2e"
   export TX_RUNTIME_ROOT
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"
   export TX_AI_UPSTREAM="$AI_UPSTREAM_VALUE"
@@ -284,12 +264,6 @@ assert_stateful_volume_identity() {
       volume_key=keycloak_postgres_data
       volume_name=deploy_keycloak_postgres_data
       volume_target=/var/lib/postgresql
-      ;;
-    rabbitmq)
-      fragment="$INCOMING_DIR/rabbitmq.compose.yml"
-      volume_key=rabbitmq_data
-      volume_name=deploy_rabbitmq_data
-      volume_target=/var/lib/rabbitmq
       ;;
     business-api)
       fragment="$INCOMING_DIR/business-api.compose.yml"
@@ -347,10 +321,9 @@ if not valid:
 #   1. the frontend proxies public API traffic to the TX-internal business
 #      runtime while /api/ai/ goes to the Yecao ai-service over WireGuard, and no
 #      staged service publishes the retired Yecao port;
-#   2. the business runtime's replay execution plane is the distributed one
-#      (PostgreSQL job authority + RabbitMQ dispatch), so a future edit cannot
-#      silently re-enable local parsing, local job authority, or in-process
-#      dispatch in production.
+#   2. the business runtime has no replay execution plane at all (replay parsing
+#      runs in the browser), so a future edit cannot silently re-introduce a
+#      server-side replay job switch in production.
 assert_routing_boundary() {
   local compose_file="$1"
   if is_selected wotb-frontend; then
@@ -362,7 +335,7 @@ assert_routing_boundary() {
   ! grep -Eq '8087:8087|10\.20\.0\.2:8087' "$compose_file" \
     || die "staged TX compose must not publish or reference the retired Yecao backend port."
   if is_selected business-api; then
-    # PostgreSQL 是唯一 replay job authority：执行模式与后端选择器两个已退役开关都不得出现。
+    # 服务端没有回放解析：已退役的执行模式与 job 后端选择器开关都不得出现。
     ! grep -Fq 'WOTB_REPLAY_EXECUTION_MODE' "$compose_file" \
       || die "the retired replay execution-mode switch must not appear in production."
     ! grep -Fq 'WOTB_REPLAY_PROCESSING_JOB_REPOSITORY' "$compose_file" \
@@ -391,7 +364,7 @@ promote_files() {
   cp -f "$INCOMING_DIR/runtime-check-lib.sh" "$next_deploy/runtime-check-lib.sh" || return 1
   cp -f "$INCOMING_DIR/docker-compose.yml" "$next_deploy/docker-compose.yml" || return 1
   cp -f "$INCOMING_DIR/common.compose.yml" "$next_deploy/common.compose.yml" || return 1
-  for compose_fragment in frontend business-api keycloak rabbitmq caddy alloy-tx; do
+  for compose_fragment in frontend business-api keycloak caddy alloy-tx; do
     cp -f "$INCOMING_DIR/$compose_fragment.compose.yml" "$next_deploy/$compose_fragment.compose.yml" || return 1
   done
   if [ "$DEPLOY_SERVICES_RAW" = business-postgres ] || [ ! -f "$next_deploy/business-postgres.compose.yml" ]; then
@@ -414,9 +387,6 @@ promote_files() {
       ;;
     keycloak)
       cp -f "$INCOMING_DIR/keycloak-tofu.sh" "$next_deploy/keycloak-tofu.sh" || return 1
-      ;;
-    rabbitmq)
-      cp -f "$INCOMING_DIR/rabbitmq.tofurc" "$next_deploy/rabbitmq.tofurc" || return 1
       ;;
     business-postgres)
       cp -f "$INCOMING_DIR/business-postgres.tofurc" "$next_deploy/business-postgres.tofurc" || return 1
@@ -540,21 +510,6 @@ wait_for_database() {
   return 1
 }
 
-wait_for_rabbitmq() {
-  local attempt
-  for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
-    if docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" exec -T rabbitmq \
-      rabbitmq-diagnostics -q ping >/dev/null 2>&1; then
-      echo "rabbitmq: PASS"
-      return 0
-    fi
-    FAILED_SERVICE="rabbitmq"
-    [ "$attempt" -lt "$HEALTH_ATTEMPTS" ] && sleep "$HEALTH_INTERVAL_SEC"
-  done
-  echo "rabbitmq: FAIL" >&2
-  return 1
-}
-
 wait_for_business_database() {
   local attempt
   for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
@@ -662,9 +617,6 @@ blocking_health() {
   fi
   if is_selected business-postgres; then
     wait_for_business_database || return 1
-  fi
-  if is_selected rabbitmq; then
-    wait_for_rabbitmq || return 1
   fi
   if is_selected keycloak; then
     if [ "$BOOTSTRAP_KEYCLOAK" = 1 ]; then

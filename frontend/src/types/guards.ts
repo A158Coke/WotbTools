@@ -1,13 +1,4 @@
 import type { ApiErrorWirePayload, ApplicationErrorCode, JsonObject, KnownServerErrorCode } from './api.js'
-import type {
-  ActiveSource,
-  ExportJob,
-  ExportJobCreateResponse,
-  ProcessingJob,
-  ProcessingJobCreateResponse,
-  ProcessingSource,
-  SourceStatus,
-} from './jobs.js'
 import type { AggregateRow, Battle, ColumnDef, ReplayResult } from './replay.js'
 import { API_ERROR_CODES } from '../api/generated/api-error-codes'
 import { validateApiError } from '../api/contract-runtime.js'
@@ -32,10 +23,6 @@ export function isInteger(value: unknown): value is number {
   return isFiniteNumber(value) && Number.isInteger(value)
 }
 
-export function isJobId(value: unknown): value is string {
-  return isString(value) && value.trim().length > 0
-}
-
 export function isSourceId(value: unknown): value is string {
   return isString(value) && /^r\d+$/.test(value)
 }
@@ -54,15 +41,6 @@ export function isKnownErrorCode(value: unknown): value is KnownServerErrorCode 
   return isString(value) && KNOWN_ERROR_CODES.has(value)
 }
 
-export function isSourceStatus(value: unknown): value is SourceStatus {
-  return value === 'PENDING' || value === 'PROCESSING' || value === 'READY' || value === 'FAILED'
-}
-
-export function isProcessingStatus(value: unknown): value is ProcessingJob['status'] {
-  return value === 'QUEUED' || value === 'PROCESSING' || value === 'READY'
-    || value === 'FAILED' || value === 'CANCELLED'
-}
-
 function isNullableFiniteNumber(value: unknown): value is number | null {
   return value === null || isFiniteNumber(value)
 }
@@ -73,45 +51,6 @@ function isStringArray(value: unknown): value is string[] {
 
 function isColumnDef(value: unknown): value is ColumnDef {
   return isRecord(value) && isString(value.key) && typeof value.num === 'boolean'
-}
-
-function isSource(value: unknown): value is ProcessingSource {
-  return isRecord(value) && isSourceId(value.sourceId) && isInteger(value.sourceIndex)
-    && isString(value.displayName) && isSourceStatus(value.status)
-    && isNullableString(value.errorCode)
-}
-
-function isActiveSource(value: unknown): value is ActiveSource {
-  return isRecord(value) && isSourceId(value.sourceId) && isInteger(value.sourceIndex)
-    && isString(value.displayName)
-}
-
-export function isProcessingJob(value: unknown): value is ProcessingJob {
-  return isRecord(value) && isJobId(value.jobId) && isProcessingStatus(value.status)
-    && isNullableString(value.phase) && isInteger(value.total) && isInteger(value.processed)
-    && isInteger(value.valid) && isInteger(value.duplicates) && isInteger(value.failures)
-    && isNullableString(value.errorCode) && isNullableString(value.currentFile)
-    && isInteger(value.parseCompleted) && isInteger(value.parseSucceeded)
-    && isInteger(value.parseFailed) && Array.isArray(value.sources) && value.sources.every(isSource)
-    && Array.isArray(value.activeSources) && value.activeSources.every(isActiveSource)
-}
-
-export function isExportJob(value: unknown): value is ExportJob {
-  return isRecord(value) && isJobId(value.jobId) && isProcessingStatus(value.status)
-    && isNullableString(value.phase) && isInteger(value.total) && isInteger(value.processed)
-    && isInteger(value.duplicates) && isInteger(value.failures)
-    && isNullableString(value.errorCode) && isNullableString(value.filename)
-    && isNullableString(value.contentType)
-}
-
-export function isJobCreateResponse(value: unknown): value is ProcessingJobCreateResponse {
-  return isRecord(value) && isJobId(value.jobId) && isProcessingStatus(value.status)
-    && isInteger(value.total)
-}
-
-export function isExportJobCreateResponse(value: unknown): value is ExportJobCreateResponse {
-  return isRecord(value) && isJobId(value.jobId) && isProcessingStatus(value.status)
-    && isInteger(value.total)
 }
 
 export function isApiErrorWirePayload(value: unknown): value is ApiErrorWirePayload {

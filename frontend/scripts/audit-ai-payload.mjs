@@ -4,7 +4,7 @@
 // 收集并打印：
 //   - 原始 .wotbreplay 字节数，以及 zip 内每个成员的压缩/未压缩字节（含 data.wotreplay）
 //   - 一个 AiReviewRequest JSON 的总字节、gzip 后字节（level 6/9）、按 section 的字节
-//     （battle / reconstruction 及其 participants、events、coverage、checkpoints、finalState）
+//     （battle / projection 及其 participants、observationWindows、positions、prop3Health、healthEvents …）
 //   - 事件按 type 的计数与序列化字节
 //
 // 无第三方依赖：zip 只读 central directory 取成员名与压缩/未压缩字节。
@@ -93,9 +93,9 @@ function reportRequest(path) {
   }
   const gzip6 = gzipSync(raw, { level: 6 }).length
   const gzip9 = gzipSync(raw, { level: 9 }).length
-  // AiReviewRequestV1 把事实放在 reconstruction 下；上游 facet 样例把 events 放在顶层。
-  // 两种形状都支持，按顶层键逐项计量。
-  const reconstruction = parsed?.reconstruction
+  // AiReviewRequest 的事实在 projection 下（client canonical AI projection，按 section 计量）；
+  // 上游 facet 样例把 events 放在顶层。
+  const reconstruction = parsed?.projection
   const eventList = Array.isArray(reconstruction?.events)
     ? reconstruction.events
     : (Array.isArray(parsed?.events) ? parsed.events : [])
@@ -110,7 +110,7 @@ function reportRequest(path) {
   const sections = {}
   for (const key of Object.keys(parsed ?? {})) sections[key] = bytesOf(parsed[key])
   if (reconstruction && typeof reconstruction === 'object') {
-    for (const key of Object.keys(reconstruction)) sections[`reconstruction.${key}`] = bytesOf(reconstruction[key])
+    for (const key of Object.keys(reconstruction)) sections[`projection.${key}`] = bytesOf(reconstruction[key])
   }
   const eventCount = eventList.length
   const lines = []

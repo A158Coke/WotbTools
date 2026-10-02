@@ -10,10 +10,7 @@ on:
       - java/pom.xml
       - java/**/pom.xml
       - java/settings-docker.xml
-      - java/wotb-contracts/**
       - java/wotb-core/**
-      - java/wotb-result/**
-      - java/wotb-playback/**
       - java/wotb-ai/**
       - contracts/http/**
       - deploy/deploy.sh
@@ -33,10 +30,7 @@ env:
     java/pom.xml
     java/**/pom.xml
     java/settings-docker.xml
-    java/wotb-contracts/**
     java/wotb-core/**
-    java/wotb-result/**
-    java/wotb-playback/**
     java/wotb-ai/**
     contracts/http/**
     deploy/deploy.sh

@@ -6,8 +6,8 @@
 
 边界保持分离：
 
-- `java/wotb-core` 继续拥有 replay domain truth；Web 层通过显式 mapper 投影到 HTTP DTO。
-- `java/wotb-contracts` 继续只负责 Control ↔ Worker async contract，不与公开 Web API 合并。
+- 回放事实的权威是上游 Rust Core（客户端 WASM）；`java/wotb-core` 只保留共享模型，Web 层通过显式 mapper 投影到 HTTP DTO。
+- `BattlePlaybackDataset` 等 schema component 在端点删除后保留，作为客户端本机数据的形状契约。
 - Vue 组件消费 generated transport types，经 adapter/runtime validation 后再进入 view/application model。
 
 ## Generation and validation

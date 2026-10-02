@@ -26,8 +26,6 @@ import java.util.Map;
 import static com.wotb.web.config.ApiPaths.ADMIN_PATTERN;
 import static com.wotb.web.config.ApiPaths.ADMIN_USERS_PATTERN;
 import static com.wotb.web.config.ApiPaths.API_PATTERN;
-import static com.wotb.web.config.ApiPaths.COLUMNS;
-import static com.wotb.web.config.ApiPaths.EXPORT;
 import static com.wotb.web.config.ApiPaths.HEALTH;
 import static com.wotb.web.config.ApiPaths.HOF_ADMIN_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_HUNDRED_SUBMISSIONS_PATTERN;
@@ -35,13 +33,6 @@ import static com.wotb.web.config.ApiPaths.HOF_MARK3_SUBMISSIONS_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_REPLAY_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_UPLOAD;
-import static com.wotb.web.config.ApiPaths.PREVIEW;
-import static com.wotb.web.config.ApiPaths.REPLAY_BATTLE_PLAYBACK_V2;
-import static com.wotb.web.config.ApiPaths.REPLAY_EXPORT_JOBS_PATTERN;
-import static com.wotb.web.config.ApiPaths.REPLAY_MAP_OVERVIEW;
-import static com.wotb.web.config.ApiPaths.REPLAY_PROCESS;
-import static com.wotb.web.config.ApiPaths.REPLAY_PROCESSING_JOBS_PATTERN;
-import static com.wotb.web.config.ApiPaths.REPLAY_RECONSTRUCT_BATCH;
 import static com.wotb.web.config.ApiPaths.USERS_PATTERN;
 
 /**
@@ -76,8 +67,7 @@ public class SecurityConfig {
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests(auth -> auth
                 // --- 公开接口 ---
-                .requestMatchers(HEALTH, COLUMNS,
-                        PREVIEW, EXPORT).permitAll()
+                .requestMatchers(HEALTH).permitAll()
                 // 名人堂查询公开；上传/下载需登录（必须置于 HOF_PATTERN permitAll 之前）
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
                 // 百场：排行榜公开；提交/取消需登录（必须置于 HOF_PATTERN permitAll 之前）
@@ -85,22 +75,6 @@ public class SecurityConfig {
                 // 三环：排行榜公开；人工提交/取消需登录（必须置于 HOF_PATTERN permitAll 之前）
                 .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_PATTERN).permitAll()
-
-                // --- 赛果解析与 2D 回放：公开（匿名可用） ---
-                // Processing Job（POST 创建 / GET 状态 / GET result / DELETE 取消）、其衍生的 Export Job
-                // （创建 / 状态 / 取消 / download）与 Dataset-only 的 map-overview / battle-playback-v2
-                // 同属一档：都只消费调用方自己上传、以不可猜测 jobId 引用的 ProcessedDataset。
-                // 携带有效 Bearer 时照常解析 subject（idempotency 分域、绑定账号验证）；匿名时 subject 为空，
-                // 只是失去 operationId 幂等。滥用防护：nginx 对创建端点按 IP 限流 + 服务端 PROCESSING_QUEUE_FULL。
-                .requestMatchers(REPLAY_PROCESSING_JOBS_PATTERN,
-                        REPLAY_EXPORT_JOBS_PATTERN,
-                        REPLAY_MAP_OVERVIEW,
-                        REPLAY_BATTLE_PLAYBACK_V2).permitAll()
-
-                // --- 批量重建 / 同步处理 (wotbtools-user / wotbtools-admin) ---
-                .requestMatchers(REPLAY_RECONSTRUCT_BATCH,
-                        REPLAY_PROCESS)
-                    .hasAnyRole("wotbtools-user", "wotbtools-admin")
 
                 // --- 管理员用户管理 (仅 wotbtools-admin) ---
                 .requestMatchers(ADMIN_USERS_PATTERN)
