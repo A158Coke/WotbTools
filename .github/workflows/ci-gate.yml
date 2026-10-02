@@ -164,6 +164,7 @@ jobs:
       caddy: ${{ steps.filter.outputs.caddy }}
       alloy_tx: ${{ steps.filter.outputs.alloy_tx }}
       komodo_controller: ${{ steps.filter.outputs.komodo_controller }}
+      komodo_periphery: ${{ steps.filter.outputs.komodo_periphery }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -270,6 +271,13 @@ jobs:
     with:
       base_sha: ${{ needs.pr_identity.outputs.base_sha }}
       head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  komodo_periphery:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.komodo_periphery == 'true'
+    uses: ./.github/workflows/ci-komodo-periphery.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
   required:
     needs:
       - pr_identity
@@ -287,6 +295,7 @@ jobs:
       - caddy
       - alloy_tx
       - komodo_controller
+      - komodo_periphery
     if: always()
     name: CI / Required Gate
     runs-on: ubuntu-latest

@@ -1,0 +1,45 @@
+# Komodo Periphery configuration for the Yecao host (K3.1).
+#
+# Repository-owned: `.github/workflows/komodo-periphery.yml` copies this file
+# verbatim to /etc/komodo/periphery.config.toml on every reconcile, so the host
+# file is never hand-edited and never carries a credential.
+#
+# Outbound only: Periphery dials Core over WireGuard and never listens for an
+# inbound connection, so Yecao publishes no Periphery port.
+#
+# Key reference: Komodo v2.3.3 `config/periphery.config.toml` and
+# `client/core/rs/src/entities/config/periphery.rs` (where the field is
+# `core_addresses`, a list, with `core_address` kept only as an alias).
+
+## Periphery root directory. Stacks / repos / builds live under it in later
+## workload-migration phases.
+root_directory = "/etc/komodo"
+
+## Outbound mode: dial Core on the private WireGuard address only. Never the
+## public name (https://komodo.wotbtools.com), never the Yecao public address,
+## never a wildcard bind.
+core_addresses = ["http://10.20.0.2:9120"]
+
+## The Server this agent registers as in Komodo.
+connect_as = "yecao"
+
+## Inbound connection server stays disabled: Periphery never binds :8120.
+## (Periphery already defaults this to false when `core_addresses` is set; it is
+## stated explicitly so the intent survives an upstream default change.)
+server_enabled = false
+
+## Persistent Noise identity. Periphery generates this file on first onboarding;
+## `install.sh` preserves it across every later reconcile and upgrade.
+private_key = "file:/etc/komodo/keys/periphery.key"
+
+## Trust anchor for the Core public key. Periphery writes it during the first
+## successful handshake and reloads it afterwards, pinning Core's identity.
+core_public_keys = ["file:/etc/komodo/keys/core.pub"]
+
+## Operator capabilities stay enabled for this validation phase.
+disable_terminals = false
+disable_container_terminals = false
+
+## Deliberately absent: git providers, image registries, Komodo `[secrets]`,
+## stack paths outside the default root, and build infrastructure. Those belong
+## to later workload-migration phases.
