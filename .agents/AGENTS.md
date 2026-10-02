@@ -26,7 +26,7 @@
 3. **改动即更新文档** — 影响界面、导出、数据、构建、用法或运维时，同提交更新对应的 canonical 专题文档、DEVELOPER_GUIDE 或 README。`HISTORY.md` 只记录具有长期产品、架构或工程意义的演进，不作为逐提交 CHANGELOG；临时计划只在任务确实需要时维护。
 4. **跨层一致** — 列 key（snake_case）API/前端/导出三方一致；显示名前端三语 locale + 导出两处一致。跨层改动走 `.agents/skills/wotb-sync/SKILL.md`（单一事实源）；增删列再走 `column-sync`。
 5. **API 纯英文** — 只回 key+数据；中文归前端/导出。
-5a. **HTTP Contract First** — FE ↔ BE 序列化契约唯一事实源是 `contracts/http/openapi.yaml`；generated FE transport 不手改，domain enum 必须显式映射，旧 artifact 兼容只放读取边界。`java/wotb-contracts` 仍是独立 Control ↔ Worker contract。
+5a. **HTTP Contract First** — FE ↔ BE 序列化契约唯一事实源是 `contracts/http/openapi.yaml`；generated FE transport 不手改，domain enum 必须显式映射，旧 artifact 兼容只放读取边界。服务器没有回放解析器，不存在 Control ↔ Worker / MQ 契约。
 6. **测试策略 — Fast Feedback First** — 开发过程中禁止无理由重复运行 repository-level full test。
    默认分层验证：
    1. **Targeted**：修改后运行与改动直接相关的最小测试集（单个测试类 / 单个组件测试）；

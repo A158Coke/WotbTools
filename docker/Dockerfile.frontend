@@ -11,8 +11,10 @@ COPY frontend/ .
 COPY common/map_names.json /common/map_names.json
 # Assault static geometry is resolved by mapCode from semantic JSON at build time.
 COPY common/map-semantics /common/map-semantics
-# 隐藏 QA 页（?view=vehicle-models）动态 import Tankopedia 车辆库（仅 tier10）
-COPY common/tankopedia-tier10.json /common/tankopedia-tier10.json
+# Tankopedia 车辆库：本机回放计算（replay-local/compute/tankopedia.ts）按需 import tier7–10，
+# 百场 / 隐藏 QA 页用 tier10。common/ 是唯一事实源，按仓库相对路径放到 /common；
+# frontend/src/docker-build-context.contract.test.js 断言前端引用的每个仓库外构建输入都在这里 COPY。
+COPY common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json /common/
 COPY common/assets /common/assets
 # 站点直接展示的 Markdown：HistoryPage / TechnicalEvolutionPage 构建期以 ?raw 读取
 COPY HISTORY.md /HISTORY.md

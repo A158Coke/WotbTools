@@ -153,7 +153,6 @@ jobs:
     outputs:
       business_api: ${{ steps.filter.outputs.business_api }}
       ai_service: ${{ steps.filter.outputs.ai_service }}
-      parser_worker: ${{ steps.filter.outputs.parser_worker }}
       frontend: ${{ steps.filter.outputs.frontend }}
       keycloak: ${{ steps.filter.outputs.keycloak }}
       android: ${{ steps.filter.outputs.android }}
@@ -162,8 +161,6 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       business_postgres: ${{ steps.filter.outputs.business_postgres }}
       keycloak_postgres: ${{ steps.filter.outputs.keycloak_postgres }}
-      rabbitmq: ${{ steps.filter.outputs.rabbitmq }}
-      minio: ${{ steps.filter.outputs.minio }}
       caddy: ${{ steps.filter.outputs.caddy }}
       alloy_tx: ${{ steps.filter.outputs.alloy_tx }}
       komodo_controller: ${{ steps.filter.outputs.komodo_controller }}
@@ -193,13 +190,6 @@ jobs:
     needs: [pr_identity, changes]
     if: needs.changes.outputs.ai_service == 'true'
     uses: ./.github/workflows/ci-ai-service.yml
-    with:
-      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
-      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
-  parser_worker:
-    needs: [pr_identity, changes]
-    if: needs.changes.outputs.parser_worker == 'true'
-    uses: ./.github/workflows/ci-parser-worker.yml
     with:
       base_sha: ${{ needs.pr_identity.outputs.base_sha }}
       head_sha: ${{ needs.pr_identity.outputs.head_sha }}
@@ -259,20 +249,6 @@ jobs:
     with:
       base_sha: ${{ needs.pr_identity.outputs.base_sha }}
       head_sha: ${{ needs.pr_identity.outputs.head_sha }}
-  rabbitmq:
-    needs: [pr_identity, changes]
-    if: needs.changes.outputs.rabbitmq == 'true'
-    uses: ./.github/workflows/ci-rabbitmq.yml
-    with:
-      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
-      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
-  minio:
-    needs: [pr_identity, changes]
-    if: needs.changes.outputs.minio == 'true'
-    uses: ./.github/workflows/ci-minio.yml
-    with:
-      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
-      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
   caddy:
     needs: [pr_identity, changes]
     if: needs.changes.outputs.caddy == 'true'
@@ -300,7 +276,6 @@ jobs:
       - changes
       - business_api
       - ai_service
-      - parser_worker
       - frontend
       - keycloak
       - android
@@ -309,8 +284,6 @@ jobs:
       - python
       - business_postgres
       - keycloak_postgres
-      - rabbitmq
-      - minio
       - caddy
       - alloy_tx
       - komodo_controller

@@ -13,13 +13,23 @@ vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => auth,
 }))
 
+// 服务器没有 parser：HoF 提交前在本机解析回放得到结算事实。mock 最底层的 WASM 解析入口，
+// 保留真实 submissionFacts（facts 顺序 / 失败映射都在那里）。
+const localParse = vi.hoisted(() => ({
+  parseAgentResultFromBytes: vi.fn(async (bytes) => ({ text: new TextDecoder().decode(bytes) })),
+}))
+vi.mock('../api/agent-replay-facets.js', () => localParse)
+vi.mock('../replay-local/battleFacts.js', () => ({
+  toBattleFacts: (result) => ({ source: result.text }),
+}))
+
 import {
   hofAdminHundredApprove,
   hofAdminMark3Approve,
   hofDownload,
   hofMark3Submit,
+  hofHundredSubmit,
   hofUpload,
-  createProcessingJob,
 } from './api.js'
 
 function jsonResponse(status, body) {
@@ -35,6 +45,8 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
 
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    localParse.parseAgentResultFromBytes.mockClear()
     auth.login.mockClear()
     auth.ensureToken.mockClear()
     auth.token.mockClear()
@@ -42,6 +54,7 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('resolves parsed JSON on HTTP 200 — must catch old requireOk(r).json() Promise bug', async () => {
@@ -165,135 +178,57 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
     expect(options).not.toHaveProperty('body')
     expect(options.headers).not.toHaveProperty('Content-Type')
   })
-})
 
-// ── Replay Processing Job create：XHR 真实上传进度──
+  it('hofUpload appends locally parsed facts next to the raw replay', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { status: 'ok' }))
 
-/** 可控的 XHR 替身：手动触发 progress / load / abort。 */
-class FakeXhr {
-  constructor() {
-    this.upload = {}
-    this.status = 0
-    this.responseText = ''
-    this.headers = {}
-    this.aborted = false
-  }
+    await hofUpload(file)
 
-  open(method, url) {
-    this.method = method
-    this.url = url
-  }
+    const [, options] = vi.mocked(fetch).mock.calls[0]
+    expect(options.body.get('file')).toBe(file)
+    expect(JSON.parse(options.body.get('facts'))).toEqual({ source: 'bytes' })
+  })
 
-  setRequestHeader(name, value) {
-    this.headers[name] = value
-  }
+  it('hofUpload maps a local parse failure to INVALID_REPLAY_FILE and never hits the server', async () => {
+    localParse.parseAgentResultFromBytes.mockRejectedValueOnce(new Error('wasm: bad replay'))
 
-  send(body) {
-    this.body = body
-  }
+    const error = await hofUpload(file).catch(e => e)
 
-  abort() {
-    this.aborted = true
-    if (typeof this.onabort === 'function') this.onabort()
-  }
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.code).toBe('INVALID_REPLAY_FILE')
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled()
+  })
 
-  progress(loaded, total) {
-    if (typeof this.upload.onprogress === 'function') {
-      this.upload.onprogress({ lengthComputable: true, loaded, total })
+  it('hofHundredSubmit appends one facts entry per replay in the same order', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { id: 5, status: 'PENDING' }))
+    const formData = new FormData()
+    formData.append('vehicleId', '385')
+    for (const name of ['r1', 'r2', 'r3']) {
+      formData.append('replays', new File([name], `${name}.wotbreplay`))
     }
-  }
 
-  respond(status, text) {
-    this.status = status
-    this.responseText = text
-    if (typeof this.onload === 'function') this.onload()
-  }
-}
+    await hofHundredSubmit(formData)
 
-describe('createProcessingJob XHR upload progress', () => {
-  let xhr
-
-  beforeEach(() => {
-    xhr = null
-    vi.stubGlobal('XMLHttpRequest', class {
-      constructor() {
-        xhr = new FakeXhr()
-        return xhr
-      }
-    })
+    expect(formData.getAll('facts').map(f => JSON.parse(f).source)).toEqual(['r1', 'r2', 'r3'])
+    const [url, options] = vi.mocked(fetch).mock.calls[0]
+    expect(url).toBe('/api/hof/hundred/submissions')
+    expect(options.body).toBe(formData)
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
+  it('hofMark3Submit replaces stale facts and maps a parse failure to INVALID_REPLAY_FILE', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { id: 1 }))
+    const formData = new FormData()
+    formData.append('facts', 'stale')
+    formData.append('replays', new File(['a'], 'a.wotbreplay'))
+    formData.append('replays', new File(['b'], 'b.wotbreplay'))
 
-  it('reports real upload progress 0→100 and resolves on 202', async () => {
-    const progressCalls = []
-    const fd = new FormData()
-    const promise = createProcessingJob(auth, fd, {
-      onProgress: (p) => progressCalls.push(p)
-    })
-    // token 校验是异步的：XHR 只在认证边界通过后才建立。
-    await vi.waitFor(() => expect(xhr).not.toBeNull())
-    expect(xhr.method).toBe('POST')
-    expect(xhr.url).toBe('/api/replay/processing-jobs')
+    await hofMark3Submit(formData)
+    expect(formData.getAll('facts').map(f => JSON.parse(f).source)).toEqual(['a', 'b'])
 
-    xhr.progress(33_554_432, 67_108_864)
-    xhr.progress(67_108_864, 67_108_864)
-    expect(progressCalls).toEqual([
-      { loaded: 33_554_432, total: 67_108_864, percent: 50 },
-      { loaded: 67_108_864, total: 67_108_864, percent: 100 },
-    ])
-
-    xhr.respond(202, JSON.stringify({ jobId: 'p1', status: 'QUEUED', total: 2 }))
-    await expect(promise).resolves.toEqual({ jobId: 'p1', status: 'QUEUED', total: 2 })
-    expect(xhr.body).toBe(fd)
-  })
-
-  it('carries the Bearer token and never overrides the multipart Content-Type', async () => {
-    const promise = createProcessingJob(auth, new FormData())
-    await vi.waitFor(() => expect(xhr).not.toBeNull())
-    expect(auth.ensureToken).toHaveBeenCalledWith(30)
-    expect(xhr.headers.Authorization).toBe('Bearer test-token')
-    // multipart boundary 必须由浏览器负责：手工设置 Content-Type 会破坏上传。
-    expect(xhr.headers['Content-Type']).toBeUndefined()
-    xhr.respond(202, JSON.stringify({ jobId: 'p2', status: 'QUEUED', total: 1 }))
-    await expect(promise).resolves.toMatchObject({ jobId: 'p2' })
-  })
-
-  it('未登录（ensureToken=false）时匿名上传：不带 Authorization', async () => {
-    auth.ensureToken.mockResolvedValueOnce(false)
-    const promise = createProcessingJob(auth, new FormData())
-    await vi.waitFor(() => expect(xhr).not.toBeNull())
-    expect(xhr.headers.Authorization).toBeUndefined()
-    xhr.respond(202, JSON.stringify({ jobId: 'p3', status: 'QUEUED', total: 1 }))
-    await expect(promise).resolves.toMatchObject({ jobId: 'p3' })
-  })
-
-  it('rejects with stable ApiError code on non-2xx', async () => {
-    const promise = createProcessingJob(auth, new FormData())
-    await vi.waitFor(() => expect(xhr).not.toBeNull())
-    xhr.respond(503, JSON.stringify({ code: 'PROCESSING_QUEUE_FULL' }))
-    await expect(promise).rejects.toMatchObject({ code: 'PROCESSING_QUEUE_FULL', status: 503 })
-  })
-
-  it('aborts the XHR when signal fires and rejects with canonical ApiError', async () => {
-    const controller = new AbortController()
-    const promise = createProcessingJob(auth, new FormData(), { signal: controller.signal })
-    await vi.waitFor(() => expect(xhr.method).toBe('POST'))
-    controller.abort()
-    expect(xhr.aborted).toBe(true)
-    await expect(promise).rejects.toMatchObject({
-      name: 'ApiError', code: 'REQUEST_ABORTED', status: null, retryable: false
-    })
-  })
-
-  it('已取消的 signal 不会发出 XHR', async () => {
-    const controller = new AbortController()
-    controller.abort()
-    await expect(createProcessingJob(auth, new FormData(), { signal: controller.signal })).rejects.toMatchObject({
-      name: 'ApiError', code: 'REQUEST_ABORTED', status: null, retryable: false
-    })
-    expect(xhr).toBeNull()
+    vi.mocked(fetch).mockClear()
+    localParse.parseAgentResultFromBytes.mockRejectedValueOnce(new Error('corrupt'))
+    const error = await hofMark3Submit(formData).catch(e => e)
+    expect(error.code).toBe('INVALID_REPLAY_FILE')
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled()
   })
 })

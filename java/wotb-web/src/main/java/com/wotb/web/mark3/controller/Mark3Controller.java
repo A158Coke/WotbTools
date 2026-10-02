@@ -58,8 +58,11 @@ public class Mark3Controller {
         final List<String> proofScreenshots = proofScreenshotValues == null
                 ? List.of()
                 : List.of(proofScreenshotValues);
+        // facts：每个回放一份结算事实 JSON（与 replays 同序）；JSON 含逗号，同样按多值参数读取。
+        final String[] factValues = request.getParameterValues("facts");
         return service.createSubmission(
-                JwtUtil.requireUserId(), vehicleId, battleCount, averageDamage, winRate, proofScreenshots, replays);
+                JwtUtil.requireUserId(), vehicleId, battleCount, averageDamage, winRate, proofScreenshots, replays,
+                factValues == null ? List.of() : List.of(factValues));
     }
 
     @PostMapping("/submissions/{id}/cancel")

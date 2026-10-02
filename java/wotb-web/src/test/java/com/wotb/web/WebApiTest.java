@@ -11,12 +11,12 @@ import com.wotb.web.hof.service.HallOfFameService;
 import com.wotb.web.hof.service.RecordOutcome;
 import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import com.wotb.web.replayfile.ReplayHashLock;
+import com.wotb.web.testsupport.ReplayFactsJson;
 import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -155,6 +155,14 @@ public class WebApiTest {
                 "application/octet-stream", Files.readAllBytes(p));
     }
 
+    /** CW 训练房夹具（arenaBonusType=2），HoF 必须以 UNSUPPORTED_BATTLE_TYPE 拒绝。 */
+    private static Path trainingRoomFixture() throws Exception {
+        final Path p = Path.of(System.getProperty("user.dir"), "..", "..",
+                "common", "fixtures", "replays", "cw-training-15-14-example.wotbreplay").normalize();
+        Assumptions.assumeTrue(Files.isRegularFile(p), "训练房夹具缺失，跳过");
+        return p;
+    }
+
     /**
      * HoF/标准导出场景使用的随机战 fixture（random-battle-example，arenaBonusType=1）。
      * 不依赖 replays() 排序——fixtures/replays 现含 CW 训练房（arenaBonusType=2），
@@ -169,46 +177,15 @@ public class WebApiTest {
         return replays().getFirst();
     }
 
+    /** 服务器没有 parser：同步 preview/export 与回放处理/导出 Job 端点已删除，匿名访问落到 /api/** 默认拒绝。 */
     @Test
-    void legacyPreviewReturnsGone() throws Exception {
-        final List<Path> files = replays();
-        var req = multipart("/api/preview");
-        for (final Path p : files) {
-            req = req.file(file(p));
+    void removedReplayProcessingEndpointsAreDenied() throws Exception {
+        for (final String path : List.of("/api/preview", "/api/export", "/api/columns",
+                "/api/replay/processing-jobs", "/api/replay/export-jobs", "/api/replay/process",
+                "/api/replay/map-overview", "/api/replay/battle-playback-v2", "/api/replay/reconstruct-batch")) {
+            mvc().perform(multipart(path).file(file(standardRandomFixture())))
+                    .andExpect(status().isUnauthorized());
         }
-        // 同步 multipart preview 已废弃 → 稳定 410 REPLAY_LEGACY_DEPRECATED，
-        // 不在 scheduler 之外做任何 full processing。
-        mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
-                .andExpect(status().isGone())
-                .andExpect(jsonPath("$.errorCode").value("REPLAY_LEGACY_DEPRECATED"));
-    }
-
-    @Test
-    void previewMetricsAndAggregateContractMovedToProcessingJobResult() throws Exception {
-        // metrics/dedupe/aggregate 契约已由 Processing Job result 提供（ReplayProcessingJobServiceTest
-        // 覆盖）；同步 /api/preview 一律 410，绝不绕过 scheduler。
-        final var req = multipart("/api/preview").file(file(replays().getFirst()));
-        mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
-                .andExpect(status().isGone())
-                .andExpect(jsonPath("$.errorCode").value("REPLAY_LEGACY_DEPRECATED"));
-    }
-
-    @Test
-    void legacyExportReturnsGone() throws Exception {
-        final var req = multipart("/api/export").file(file(replays().getFirst()));
-        mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
-                .andExpect(status().isGone())
-                .andExpect(jsonPath("$.errorCode").value("REPLAY_LEGACY_DEPRECATED"));
-    }
-
-    @Test
-    void exportEachLegacyReturnsGone() throws Exception {
-        // xlsx/zip 导出契约已由 Export Job dataset 路径覆盖（ReplayExportJobServiceTest）；
-        // 同步 /api/export 一律 410。
-        final var req = multipart("/api/export").param("mode", "each").file(file(replays().getFirst()));
-        mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
-                .andExpect(status().isGone())
-                .andExpect(jsonPath("$.errorCode").value("REPLAY_LEGACY_DEPRECATED"));
     }
 
     private static MockMultipartFile hofFile(final Path p) throws Exception {
@@ -216,9 +193,16 @@ public class WebApiTest {
                 "application/octet-stream", Files.readAllBytes(p));
     }
 
+    /** 浏览器随回放一并提交的 facts：与夹具同源的冻结客户端投影（服务器没有 parser）。 */
+    private static String facts(final Path replay) {
+        final String name = replay.getFileName().toString();
+        return ReplayFactsJson.fixture(name.substring(0, name.length() - ".wotbreplay".length()));
+    }
+
     private String hofUpload(final Path p) throws Exception {
         return mvc().perform(multipart("/api/hof/upload")
                         .file(hofFile(p))
+                        .param("facts", facts(p))
                         .with(jwt()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
@@ -278,15 +262,13 @@ public class WebApiTest {
     }
 
     /**
-     * Blocker 契约（真实训练房夹具 + 真实 parser + 真实 PG/storage）：
+     * Blocker 契约（真实训练房夹具 + 同源冻结客户端 facts + 真实 PG/storage）：
      * arenaBonusType=2 → HTTP 400 UNSUPPORTED_BATTLE_TYPE；hall_of_fame DB 零新增/零修改；
      * replay storage 不产生任何 .wotbreplay 文件。
      */
     @Test
     void hofUploadRejectsTrainingRoomReplay() throws Exception {
-        final Path training = Path.of(System.getProperty("user.dir"), "..", "..",
-                "common", "fixtures", "hall-of-fame", "training-room-example.wotbreplay").normalize();
-        Assumptions.assumeTrue(Files.isRegularFile(training), "训练房夹具缺失，跳过");
+        final Path training = trainingRoomFixture();
 
         final long rowsBefore = hallOfFameRecordRepository.count();
         final long filesBefore = Files.isDirectory(REPLAY_DIR)
@@ -295,6 +277,7 @@ public class WebApiTest {
 
         final String json = mvc().perform(multipart("/api/hof/upload")
                         .file(hofFile(training))
+                        .param("facts", facts(training))
                         .with(jwt()))
                 .andExpect(status().isBadRequest())
                 .andReturn().getResponse().getContentAsString();
@@ -309,14 +292,29 @@ public class WebApiTest {
     }
 
     @Test
-    void hofUploadRejectsCorruptFile() throws Exception {
-        final MockMultipartFile bad = new MockMultipartFile("file", "bad.wotbreplay",
-                "application/octet-stream", new byte[]{0, 1, 2, 3});
+    void hofUploadRejectsInvalidFactsWithoutPersistence() throws Exception {
+        final Path replay = standardRandomFixture();
+        final long rowsBefore = hallOfFameRecordRepository.count();
+        for (final String bad : List.of("{", "{}", "[1,2,3]")) {
+            final String json = mvc().perform(multipart("/api/hof/upload")
+                            .file(hofFile(replay))
+                            .param("facts", bad)
+                            .with(jwt()))
+                    .andExpect(status().isBadRequest())
+                    .andReturn().getResponse().getContentAsString();
+            assertEquals("INVALID_REPLAY_FACTS", om.readTree(json).get("errorCode").asText(), bad);
+        }
+        assertEquals(rowsBefore, hallOfFameRecordRepository.count(), "非法 facts 不得新增 hall_of_fame 记录");
+    }
+
+    @Test
+    void hofUploadRequiresFacts() throws Exception {
         final String json = mvc().perform(multipart("/api/hof/upload")
-                        .file(bad).with(jwt()))
+                        .file(hofFile(standardRandomFixture()))
+                        .with(jwt()))
                 .andExpect(status().isBadRequest())
                 .andReturn().getResponse().getContentAsString();
-        assertTrue(json.contains("INVALID_REPLAY_FILE"));
+        assertEquals("MISSING_PARAM", om.readTree(json).get("errorCode").asText());
     }
 
     @Test

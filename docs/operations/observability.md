@@ -192,19 +192,19 @@ dashboard 与运行时链路由 CI 的独立 runtime smoke 验证；生产运行
 
 ### 生产（CI 自动）
 
-每次 main push 都触发五个应用 image owner；固定基础设施 owner 按各自路径规则独立触发。应用 image owner 是
-`business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 与 `minio.yml`；固定 runtime
-与 root owner 是 `caddy.yml`、`rabbitmq.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、
+每次 main push 都触发应用 image owner；固定基础设施 owner 按各自路径规则独立触发。应用 image owner 是
+`business-api.yml`、`frontend.yml`、`keycloak.yml` 与 `ai-service.yml`；固定 runtime
+与 root owner 是 `caddy.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、
 `alloy-tx.yml`（TX 日志采集）与本 `observability.yml`。每个 workflow 使用自己的 staging、当前 main SHA 检查、
-验证和手动入口；TX 的 TCR 镜像只属于前三个 TX 应用，Yecao 的 GHCR 镜像只属于 parser-worker/MinIO。
+验证和手动入口；TX 的 TCR 镜像只属于前三个 TX 应用，Yecao 的 GHCR 镜像只属于 ai-service。
 不相关服务不会因统一 release planner 被选择。应用 owner 在新 main 到来时取消旧运行，
 固定基础设施保留生产维护队列；host mutation 另有 `flock` 串行化，过期 SHA 在 mutation 前 fail closed。
 
 ### Application gate 与镜像身份
 
 TX 应用 owner workflow 由 `deploy/tx/deploy.sh` 验证各自的 API/frontend/OIDC readiness；Business
-API 的 mutation 前检查还以只读 consumer 身份验证 PostgreSQL、Keycloak、RabbitMQ 与 MinIO，
-parser-worker 检查 RabbitMQ 与 MinIO，再由容器存活判定 worker 运行健康。观测组件、datasource/
+API 的 mutation 前检查还以只读 consumer 身份验证 PostgreSQL 与 Keycloak（服务器没有 parser：
+RabbitMQ / MinIO / parser-worker 已删除）。观测组件、datasource/
 dashboard 与日志 ingestion 失败只记 `OBSERVABILITY DEGRADED`，不让健康应用回退。部署失败由所属
 workflow 输出该服务诊断并停止确认失败的目标服务；不自动恢复旧镜像。
 
@@ -333,18 +333,15 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 
 看板使用现有 Prometheus/Loki 数据源，并增加低基数 node-exporter 主机指标；Keycloak 观测保持 Alloy → Loki 日志链路，不增加或依赖 management metrics。生产总览只放摘要，HTTP 与事故诊断、回放与 AI 诊断、JVM 与基础设施、使用统计与 Android 分别承接下钻职责。未引入 cAdvisor、Postgres exporter 或 Alertmanager。
 
-Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`errorId` 对 AI SSE 映射为 `correlationId`，对普通 HTTP 错误映射为 canonical error 的 `id`，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode` 与 `jobId`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
+Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`errorId` 对 AI SSE 映射为 `correlationId`，对普通 HTTP 错误映射为 canonical error 的 `id`，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
 
 Spring Security 的 401/403（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`）也会以 INFO 级 `api_request_rejected` 写入同一组 `traceId`、`id`、`errorCode`、`status`、`method`、`path` 字段，因此可直接用 response body 的 `id` 在 Error Explorer 定位。
 
-Production Overview 的 Replay 统计使用线上实际暴露的 `wotb_replay_processing_job_total`、`wotb_replay_full_processing_total`、`wotb_replay_processing_job_result_total` 与 `wotb_replay_processing_file_duration_seconds_*`；不使用当前线上无样本的 legacy `wotb_replay_requests_total` / `wotb_replay_parse_duration_seconds_*` 作为 V2 Processing Job 信号。
-
-Processing Job 终态口径：`ready` 表示 Processing Job 已正常完成 finalization；一个 `ready` Job 仍可能包含 source-level replay failures，因此“已完成”不等于所有 replay 解析成功。`failed` 表示 Job 未完成正常 finalization，也不等于 replay 文件解析失败数。当前没有 authoritative 的 per-source success/failure Prometheus metric，Dashboard 与告警不得把 Job 终态描述成 replay parse success / failure。
+回放解析与计算在客户端完成（服务器没有 parser），Prometheus 没有回放解析指标；Production Overview / Usage 中的 Replay 面板已随服务端解析删除。
 
 **统计口径说明（WotBTools 使用统计与 Android）**
 
 - Prometheus Counter 会在 Backend 重启或重新部署后归零，Dashboard 中的"次数"均为 **Grafana 所选时间范围内的估算增量**（`increase()` + `round()`），不是历史累计。
-- **Replay jobs / files**：当前 V2 使用 `wotb_replay_processing_job_total`、`wotb_replay_processing_job_files_total` 与 `wotb_replay_full_processing_total`；其中 `processing_job_files_total` 表示提交到 Job 的输入文件数（Replay files submitted），`full_processing_total` 表示实际执行 full processing 的文件数（Replay files processed），不再把 legacy operation 请求误当作当前处理入口。
 - **AI Review 启动数**：使用 `wotb_ai_review_requests_total` 统计进入 Review 处理边界的请求次数。
 - **AI 平均每次调用 Token**：`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量（分母含失败调用，失败计 0 token），即「平均每次发起的 AI 上游调用消耗的 token」；按模式面板可区分单机复盘（`PRE_BATTLE_STRATEGIC_PRIOR` + `TACTICAL_REVIEW_HARNESS`）与团队复盘（`SINGLE_TEAM_BATTLE` + `TEAM_AUTOPSY`）各阶段消耗。
 - **数据保留**：Prometheus 仅保留约 7 天，不提供网站历史永久累计；如未来需要永久累计，应写入 PostgreSQL（当前不引入），而非依赖 Counter。
@@ -627,16 +624,6 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_upstream_retries_total{mode}` — retry 重试次数
   - `wotb_ai_upstream_retry_outcome_total{mode,outcome=no_retry|success_after_retry|failure_after_retry}` — 重试结果
   - `wotb_ai_upstream_tokens_total{mode,token_type=input|output|total|reasoning|cache_hit|cache_miss}` — token 用量（usage 缺失时不记录）
-- **Replay 解析**（自定义）：
-  - `wotb_replay_processing_job_total` — 线上 Prometheus 暴露的 Processing Job 创建数（Java 逻辑名为 `wotb_replay_processing_job_created_total`，Micrometer 运行时规范化为该名称）
-  - `wotb_replay_processing_job_files_total` — Processing Job 输入文件数（Replay files submitted；低基数，无 jobId/文件名 tag）
-  - `wotb_replay_processing_job_queue_wait_seconds` / `wotb_replay_processing_job_duration_seconds` — 排队等待与总耗时（Timer）
-  - `wotb_replay_processing_job_result_total{result=ready|failed|cancelled}` — Processing Job 终态计数（exactly once）；`ready` 表示正常完成 finalization，可能包含 source-level replay failures，不是 per-source replay parse success 数；`failed` 也不是 replay 文件解析失败数
-  - `wotb_replay_full_processing_total` — 当前 V2 full processing 文件数（Replay files processed）
-  - `wotb_replay_processing_file_duration_seconds` — 当前 V2 单个 replay full processing 耗时（Timer，histogram）
-  - `wotb_replay_in_flight` — 当前处理中的解析请求数；解析执行面的并发由 Yecao parser-worker 的 AMQP consumer 数表达（无进程内 gauge）
-  - `wotb_replay_in_flight` — legacy 解析入口当前处理数（Gauge）
-  - `wotb_replay_requests_total{operation}` / `wotb_replay_files_total{operation}` / `wotb_replay_parse_duration_seconds{operation}` — legacy operation 指标，保留用于兼容入口，不被当前 V2 dashboard 作为主信号
 
 > 当前没有 authoritative 的 per-source replay success/failure Prometheus metric；不要用 Processing Job 的 `READY` / `FAILED` 终态替代 source-level 解析结果。
 > legacy `wotb_replay_results_total` 不统计，避免把异常路径或 Job 终态误解为逐文件解析 success/failure。

@@ -9,8 +9,10 @@ import {
   getUserHofRecords,
   getUserProfile,
   syncUserWotbAccountFromLogin,
-  updateUserWotbAccount
+  updateUserWotbAccount,
+  verifyUserWotbAccountFromReplay
 } from '../utils/api-user.js'
+import { replayRecorderAccountId } from '../replay-local/submissionFacts.js'
 import { hofHundredCancel, hofHundredMyStatus } from '../utils/api.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
@@ -179,6 +181,27 @@ async function saveAccount() {
   }
 }
 
+/** 用回放验证：本机解析选中的回放，提交录像者 accountId（服务器不解析回放） */
+const verifyInput = ref(null)
+const verifyPending = ref(false)
+const verifyError = ref('')
+
+async function verifyWithReplay(event) {
+  const file = event?.target?.files?.[0]
+  if (event?.target) event.target.value = ''
+  if (!file || verifyPending.value) return
+  verifyPending.value = true
+  verifyError.value = ''
+  try {
+    const recorderAccountId = await replayRecorderAccountId(file)
+    profile.value = await verifyUserWotbAccountFromReplay(recorderAccountId)
+  } catch (e) {
+    verifyError.value = apiError(e)
+  } finally {
+    verifyPending.value = false
+  }
+}
+
 async function loadRecords() {
   recordsError.value = ''
   try {
@@ -328,7 +351,16 @@ async function removeAccount() {
                 <span v-if="profile.wotbAccountVerifiedAt" class="badge-ok">✓ {{ $t('profile.verifiedBadge') }}</span>
                 <span v-else class="badge-pending">{{ $t('profile.notVerified') }}</span>
               </div>
-              <p v-if="!profile.wotbAccountVerifiedAt" class="text-muted">{{ $t('profile.notVerifiedHint') }}</p>
+              <template v-if="!profile.wotbAccountVerifiedAt">
+                <p class="text-muted">{{ $t('profile.notVerifiedHint') }}</p>
+                <div class="edit-row">
+                  <input ref="verifyInput" type="file" accept=".wotbreplay" hidden data-testid="profile-verify-input" @change="verifyWithReplay">
+                  <button class="btn-ghost btn-sm" :disabled="verifyPending" data-testid="profile-verify-replay" @click="verifyInput?.click()">
+                    {{ verifyPending ? $t('profile.verifyingReplay') : $t('profile.verifyWithReplay') }}
+                  </button>
+                  <span v-if="verifyError" class="error" data-testid="profile-verify-error">{{ verifyError }}</span>
+                </div>
+              </template>
             </div>
             <p v-else class="profile-empty">{{ $t('profile.wotbNotBound') }}</p>
           </div>

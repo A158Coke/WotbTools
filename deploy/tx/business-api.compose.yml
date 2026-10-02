@@ -30,49 +30,12 @@ services:
       KEYCLOAK_ADMIN_REALM: wotbtools
       KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?KEYCLOAK_ADMIN_CLIENT_SECRET is required}
-      # Replay control plane: never parse in this process, always dispatch through
-      # RabbitMQ, always read and write datasets through MinIO. PostgreSQL is the only
-      # job authority, so there is no repository-selection variable to set here.
-      # MinIO stays on Yecao and is reached over the existing WireGuard link with
-      # the dedicated control_api identity (temp/jobs/* only).
-      YECAO_MINIO_ENDPOINT: ${YECAO_MINIO_ENDPOINT:-10.20.0.2:9000}
-      YECAO_MINIO_BUCKET: ${YECAO_MINIO_BUCKET:-wotbtools-temp}
-      YECAO_MINIO_CONTROL_API_ACCESS_KEY: ${YECAO_MINIO_CONTROL_API_ACCESS_KEY:?YECAO_MINIO_CONTROL_API_ACCESS_KEY is required}
-      YECAO_MINIO_CONTROL_API_SECRET_KEY: ${YECAO_MINIO_CONTROL_API_SECRET_KEY:?YECAO_MINIO_CONTROL_API_SECRET_KEY is required}
-      YECAO_MINIO_CONNECT_TIMEOUT_SECONDS: "${YECAO_MINIO_CONNECT_TIMEOUT_SECONDS:-10}"
-      YECAO_MINIO_WRITE_TIMEOUT_SECONDS: "${YECAO_MINIO_WRITE_TIMEOUT_SECONDS:-60}"
-      # RabbitMQ runs in this same Compose project. The topology itself stays
-      # owned by infra/tofu/rabbitmq and is never declared by the application.
-      TX_RABBITMQ_HOST: rabbitmq
-      TX_RABBITMQ_PORT: "${TX_RABBITMQ_PORT:-5672}"
-      TX_RABBITMQ_VHOST: "${TX_RABBITMQ_VHOST:-/wotbtools}"
-      TX_RABBITMQ_CONTROL_API_USER: "${TX_RABBITMQ_CONTROL_API_USER:-control-api}"
-      TX_RABBITMQ_CONTROL_API_PASSWORD: ${TX_RABBITMQ_CONTROL_API_PASSWORD:?TX_RABBITMQ_CONTROL_API_PASSWORD is required}
-      TX_RABBITMQ_CONTROL_API_PREFETCH: "${TX_RABBITMQ_CONTROL_API_PREFETCH:-1}"
-      TX_RABBITMQ_CONFIRM_TIMEOUT_SECONDS: "${TX_RABBITMQ_CONFIRM_TIMEOUT_SECONDS:-10}"
-      # Control-plane-owned logical retry budget (the worker never nacks into a
-      # broker retry loop).
-      REPLAY_PARSER_MAX_ATTEMPTS: "${REPLAY_PARSER_MAX_ATTEMPTS:-3}"
       # AI provider configuration deliberately does not exist here: AI Review runs
       # in the standalone stateless Yecao ai-service (deploy/docker-compose.prod.yml),
       # and TX only routes /api/ai/** to its WireGuard endpoint.
-      REPLAY_COORDINATE_HALF_EXTENT: "${REPLAY_COORDINATE_HALF_EXTENT:-250}"
-      REPLAY_COORDINATE_CLAMP_TOLERANCE: "${REPLAY_COORDINATE_CLAMP_TOLERANCE:-12.5}"
-      REPLAY_ARTIFACT_MAX_CONCURRENT: "${REPLAY_ARTIFACT_MAX_CONCURRENT:-1}"
-      # Export artifacts are single-container temporary data: the generating
-      # process and /download live in this same container, so no object storage
-      # is involved.
-      REPLAY_EXPORT_JOB_DIR: "${REPLAY_EXPORT_JOB_DIR:-/tmp/wotb-export-jobs}"
-      REPLAY_EXPORT_JOB_TTL_MINUTES: "${REPLAY_EXPORT_JOB_TTL_MINUTES:-30}"
-      REPLAY_EXPORT_JOB_MAX_CONCURRENT: "${REPLAY_EXPORT_JOB_MAX_CONCURRENT:-2}"
-      REPLAY_EXPORT_JOB_QUEUE_CAPACITY: "${REPLAY_EXPORT_JOB_QUEUE_CAPACITY:-4}"
-      # The processing-job directory is only a distributed-mode scratch path;
-      # PostgreSQL remains the job/source authority.
-      REPLAY_PROCESSING_JOB_DIR: "${REPLAY_PROCESSING_JOB_DIR:-/tmp/wotb-replay-processing-jobs}"
-      REPLAY_PROCESSING_JOB_TTL_MINUTES: "${REPLAY_PROCESSING_JOB_TTL_MINUTES:-30}"
       # HoF replay originals are permanent content-addressed files migrated onto
-      # this TX volume by the operator. They are deliberately not part of the
-      # MinIO dataset workspace.
+      # this TX volume by the operator. Replay parsing itself runs in the browser;
+      # the server only stores these files for admin review and download.
       HOF_REPLAY_DIR: "${HOF_REPLAY_DIR:-/data/replays}"
       HOF_REPLAY_MIN_FREE_BYTES: "${HOF_REPLAY_MIN_FREE_BYTES:-536870912}"
       BOOST_AUTO_CONFIRM_HOURS: "${BOOST_AUTO_CONFIRM_HOURS:-72}"

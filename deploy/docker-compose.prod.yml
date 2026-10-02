@@ -1,8 +1,8 @@
-# Yecao runtime. After the production cutover this host owns exactly two responsibilities: the
-# parser execution plane (`parser-worker`) and the shared observability stack. The business runtime
-# (`business-api`), its PostgreSQL, Keycloak, its PostgreSQL, and the public frontend run on TX and
-# are deployed by deploy/tx/deploy.sh; none of them is declared here any more.
-# MinIO is a separate standalone deployment (deploy/docker-compose.minio.yml + deploy/minio-deploy.sh).
+# Yecao runtime. This host owns exactly two responsibilities: the AI review service (`ai-service`)
+# and the shared observability stack. The business runtime (`business-api`), its PostgreSQL,
+# Keycloak, its PostgreSQL, and the public frontend run on TX and are deployed by
+# deploy/tx/deploy.sh; none of them is declared here. Replay parsing runs in the browser, so there
+# is no parser execution plane, message broker, or object store on either host.
 x-logging: &default-logging
   driver: json-file
   options:
@@ -27,36 +27,6 @@ services:
     logging: *default-logging
     mem_limit: 1536m
     cpus: 1.5
-  # Yecao execution plane: consumes wotb.parser, reads/writes MinIO temp/jobs/*, publishes the
-  # outcome. No public port, no database credentials, no mounted job directory — PostgreSQL stays
-  # the job authority on TX and RabbitMQ remains the delivery path.
-  parser-worker:
-    image: ghcr.io/a158coke/wotbtools-parser-worker:latest
-    environment:
-      RABBITMQ_HOST: "${PARSER_WORKER_RABBITMQ_HOST:-10.20.0.1}"
-      RABBITMQ_PORT: "${PARSER_WORKER_RABBITMQ_PORT:-5672}"
-      RABBITMQ_VHOST: "${PARSER_WORKER_RABBITMQ_VHOST:-/wotbtools}"
-      RABBITMQ_USERNAME: "${PARSER_WORKER_RABBITMQ_USERNAME:-parser-worker}"
-      # Credentials default to empty so that a deploy which does not select this service keeps
-      # working; deploy.sh fails closed on them whenever parser-worker is selected.
-      RABBITMQ_PASSWORD: "${TX_RABBITMQ_PARSER_WORKER_PASSWORD:-}"
-      # Endpoint ownership: this container shares the `wotb_internal` network with the MinIO
-      # runtime, so it resolves MinIO through Docker service discovery. `10.20.0.2:9000` is the
-      # TX control plane's endpoint (WireGuard → published port); reaching it from here would
-      # require a container → host → published-port hairpin that does not exist.
-      MINIO_ENDPOINT: "${PARSER_WORKER_MINIO_ENDPOINT:-minio:9000}"
-      MINIO_BUCKET: "${PARSER_WORKER_MINIO_BUCKET:-wotbtools-temp}"
-      MINIO_ACCESS_KEY: "${YECAO_MINIO_WORKER_ACCESS_KEY:-}"
-      MINIO_SECRET_KEY: "${YECAO_MINIO_WORKER_SECRET_KEY:-}"
-      # Concurrency is the number of consumers (parallel parses); prefetch is the per-consumer
-      # unacked backlog. Retry policy is control-plane owned: the worker never nacks into a broker
-      # retry loop, so there is no worker-side retry budget setting.
-      PARSER_WORKER_CONCURRENCY: "${PARSER_WORKER_CONCURRENCY:-2}"
-      PARSER_WORKER_PREFETCH: "${PARSER_WORKER_PREFETCH:-1}"
-      PARSER_WORKER_CONFIRM_TIMEOUT_SEC: "${PARSER_WORKER_CONFIRM_TIMEOUT_SEC:-10}"
-      PARSER_WORKER_SHUTDOWN_TIMEOUT_SEC: "${PARSER_WORKER_SHUTDOWN_TIMEOUT_SEC:-30}"
-    restart: unless-stopped
-    logging: *default-logging
   # Observability stack: Prometheus / Loki / Alloy / Grafana / node-exporter (docker-internal only)
   node-exporter:
     image: prom/node-exporter:v1.12.1
@@ -93,7 +63,7 @@ services:
       - loki_data:/loki
     ports:
       # WireGuard-only ingestion endpoint for the TX-side alloy-tx log shipper.
-      # Never published publicly; same class as the MinIO 10.20.0.2:9000 bind.
+      # Never published publicly; same class as the Grafana 10.20.0.2:3000 bind.
       - "10.20.0.2:3100:3100"
     restart: unless-stopped
     logging: *default-logging

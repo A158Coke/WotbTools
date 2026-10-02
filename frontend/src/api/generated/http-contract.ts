@@ -299,26 +299,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/replay/battle-playback-v2": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Read the cached Battle Playback V2 dataset for a ready processing source
-         * @description Anonymous access allowed; a valid bearer token is accepted but not required.
-         */
-        post: operations["getBattlePlaybackV2"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/ai/reviews": {
         parameters: {
             query?: never;
@@ -328,7 +308,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Stream an AI replay review */
+        /**
+         * Stream an AI replay review
+         * @description The request carries the client canonical AI projection (the server has no replay parser). Clients SHOULD send the JSON body with `Content-Encoding: gzip`; the server inflates it with a 16 MiB decompressed-size limit (exceeding the transport or the inflated limit → 413).
+         */
         post: operations["createAiReview"];
         delete?: never;
         options?: never;
@@ -576,19 +559,119 @@ export interface components {
             failed: number;
             results: components["schemas"]["DeleteUserResult"][];
         };
-        DatasetReference: {
-            processingJobId: string;
-            sourceId: string;
-        };
-        AiReviewRequestV1: {
-            /** @constant */
-            schemaVersion: 1;
+        AiReviewRequest: {
             /** @enum {string} */
             locale: "zh-CN" | "en-US" | "ru-RU";
             /** Format: uuid */
             correlationId: string;
             battle: components["schemas"]["AiReviewBattle"];
-            reconstruction: components["schemas"]["AiReviewReconstruction"];
+            projection: components["schemas"]["ClientAiReviewProjection"];
+        };
+        /** @description WotbTools client canonical AI projection (frontend/src/replay-local/ai). Built from the pinned upstream Agent facets through WotbTools canonical replay facts, never the raw Agent DTO. Clocks are raw replay clocks in seconds; battle-relative time = rawClockSec - clock.battleStartRawClockSec. Only combatant entities appear. Evidence the engine does not provide is listed in unavailableEvidence. */
+        ClientAiReviewProjection: {
+            engine: components["schemas"]["AiProjectionEngine"];
+            clock: components["schemas"]["AiProjectionClock"];
+            perspective: components["schemas"]["AiProjectionPerspective"];
+            participants: components["schemas"]["AiProjectionParticipant"][];
+            observationWindows: components["schemas"]["AiProjectionObservationWindow"][];
+            positions: components["schemas"]["AiProjectionSampleTrack"][];
+            turrets: components["schemas"]["AiProjectionSampleTrack"][];
+            prop3Health: components["schemas"]["AiProjectionProp3Health"][];
+            healthEvents: components["schemas"]["AiProjectionHealthEvent"][];
+            damageNotices: components["schemas"]["AiProjectionDamageNotice"][];
+            periods: components["schemas"]["AiProjectionPeriod"][];
+            objectives: components["schemas"]["AiProjectionObjectives"];
+            /** @description Capability-affecting limitations; non-empty means the timeline is limited. */
+            limitations: string[];
+            /** @description Evidence classes the engine does not provide; consumers render them as unavailable, never as empty truth. */
+            unavailableEvidence: ("PACKET_DECODE_COVERAGE" | "SHOT_LIFECYCLE" | "TARGETING" | "AMMUNITION")[];
+        };
+        AiProjectionEngine: {
+            agentRelease: string;
+            agentCommit: string;
+        };
+        AiProjectionClock: {
+            battleStartRawClockSec: number;
+            battleDurationSec: number;
+            estimated: boolean;
+            battleEndRawClockSec: number | null;
+            streamEndRawClockSec: number | null;
+        };
+        AiProjectionPerspective: {
+            /** Format: int64 */
+            recorderAccountId: number | null;
+            perspectiveTeam: number | null;
+            recorderEntityIds: number[];
+            winnerTeam: number | null;
+        };
+        AiProjectionParticipant: {
+            entityId: number;
+            /** Format: int64 */
+            accountId: number;
+            nickname: string;
+            /** @enum {integer} */
+            team: 1 | 2;
+            tankId: number;
+            recorder: boolean;
+        };
+        AiProjectionObservationWindow: {
+            entityId: number;
+            fromRawClockSec: number;
+            toRawClockSec: number | null;
+            materializationHp: number | null;
+        };
+        /** @description Raw observations of one entity, flat and clock-ordered. positions: [rawClockSec, x, y, z, hullYawRad] x N (unfiltered type-10 world poses). turrets: [rawClockSec, turretRelativeYawDeg] x N (prop2 coarse yaw). */
+        AiProjectionSampleTrack: {
+            entityId: number;
+            /** @enum {integer} */
+            stride: 2 | 5;
+            samples: number[];
+        };
+        AiProjectionProp3Health: {
+            entityId: number;
+            rawClockSec: number;
+            hpRaw: number;
+        };
+        AiProjectionHealthEvent: {
+            entityId: number;
+            rawClockSec: number;
+            hpRaw: number;
+            sourceEntityId: number;
+            causeFlag: number;
+        };
+        AiProjectionDamageNotice: {
+            rawClockSec: number;
+            /** @enum {string} */
+            kind: "HIT" | "UNDECODED_VARIANT" | "SHORT_VARIANT";
+            envelopeEntityId: number;
+            attackerEntityId: number;
+            victimEntityId: number;
+            primaryResult: number | null;
+            secondaryResult: number | null;
+        };
+        AiProjectionPeriod: {
+            rawClockSec: number;
+            period: number;
+        };
+        AiProjectionObjectives: {
+            supremacyPoints: {
+                rawClockSec: number;
+                team: number;
+                points: number;
+            }[];
+            supremacyBases: {
+                rawClockSec: number;
+                /** @enum {string} */
+                baseId: "A" | "B" | "C" | "D";
+                ownerTeam: number | null;
+                capturingTeam: number | null;
+                captureProgress: number | null;
+            }[];
+            assaultObjectivePresent: boolean;
+            assaultBases: {
+                rawClockSec: number;
+                captureProgress: number;
+            }[];
         };
         AiReviewBattle: {
             arenaId?: string | null;
@@ -662,48 +745,6 @@ export interface components {
             raw?: {
                 [key: string]: unknown[];
             } | null;
-        };
-        AiReviewReconstruction: {
-            battleDurationSec?: number;
-            battleStartRawClockSec?: number | null;
-            participants: components["schemas"]["AiReviewParticipant"][];
-            events: components["schemas"]["AiReviewEvent"][];
-            checkpoints?: {
-                [key: string]: unknown;
-            }[] | null;
-            finalState?: {
-                [key: string]: unknown;
-            } | null;
-            coverage: components["schemas"]["AiReviewCoverage"];
-        };
-        AiReviewParticipant: {
-            /** Format: int64 */
-            accountId: number;
-            nickname: string;
-            team: number;
-            tankId: number;
-            tankCode: string | null;
-            recorder: boolean;
-        };
-        AiReviewEvent: {
-            /** @enum {string} */
-            type: "AimRayStateEvent" | "AmmunitionSelectionChangedEvent" | "AmmunitionStateEvent" | "ArenaPeriodChangedEvent" | "AttachedTransformEvent" | "ConsumableLifecycleEvent" | "DamageEvent" | "EntityAuxiliaryBlobEvent" | "EntityCreatedEvent" | "EntityRemovedEvent" | "GunMarkerSizeEvent" | "HealthChangedEvent" | "MaterializationAnnouncedEvent" | "MaterializationEvent" | "ParticipantMappingEvent" | "PositionChangedEvent" | "ProjectileLaunchedEvent" | "ProjectileResolutionEvent" | "ProjectileTerminalEvent" | "RawSupremacyBaseUpdate" | "RecorderHealthChangedEvent" | "ReplayStreamClosedEvent" | "RoundFinishedEvent" | "SessionDecisecondLowByteEvent" | "ShotResultEvent" | "SupremacyBaseStateTransition" | "SupremacyPointsChangedEvent" | "TargetingInfoSnapshotEvent" | "TurretDirectionChangedEvent" | "UnknownReplayEvent" | "UnsupportedDamageEvent" | "VehicleDestroyedEvent" | "VehicleFiredEvent" | "VehicleHealthStateEvent" | "VehicleHitEvent" | "VehicleModuleCrewStateEvent" | "VehicleVehicleCollisionEvent";
-            sequence: number;
-        } & {
-            [key: string]: unknown;
-        };
-        AiReviewCoverage: {
-            totalPackets: number;
-            decodedPackets: number;
-            partiallyDecodedPackets: number;
-            unknownPackets: number;
-            failedPackets: number;
-            decodedPacketRatio: number;
-            packetTypes: {
-                [key: string]: {
-                    [key: string]: unknown;
-                };
-            };
         };
         AiReviewStageEventPayload: Record<string, never>;
         AiReviewTokenEventPayload: {
@@ -923,7 +964,7 @@ export interface components {
             timestamp: string | null;
         };
         /** @enum {string} */
-        ApiErrorCode: "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNSUPPORTED_AI_REQUEST_SCHEMA" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
+        ApiErrorCode: "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
     };
     responses: never;
     parameters: never;
@@ -1500,100 +1541,6 @@ export interface operations {
             };
         };
     };
-    getBattlePlaybackV2: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DatasetReference"];
-            };
-        };
-        responses: {
-            /** @description Canonical sparse playback projection */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BattlePlaybackDataset"];
-                };
-            };
-            /** @description Playback capability unavailable for this source */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid dataset reference */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Access denied */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Processing job was not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Source is not ready */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Unexpected server failure */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Dataset storage is unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     createAiReview: {
         parameters: {
             query?: never;
@@ -1603,7 +1550,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AiReviewRequestV1"];
+                "application/json": components["schemas"]["AiReviewRequest"];
             };
         };
         responses: {
@@ -1652,7 +1599,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Request exceeds the 16 MiB limit */
+            /** @description Request (transport or gzip-inflated) exceeds the 16 MiB limit */
             413: {
                 headers: {
                     [name: string]: unknown;

@@ -20,7 +20,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 按领域事件重建战场状态；只消费 canonical world-position / HP / terminal semantics。
+ * 按领域事件重建战场状态（checkpoints / finalState）；只消费 canonical world-position / HP / terminal semantics。
+ *
+ * <p>纯事件归约，不读字节：服务器没有 replay parser，输入事件由
+ * {@link com.wotb.core.replay.projection.ClientAiProjectionAdapter} 从客户端 canonical AI 投影装配。</p>
  *
  * <p>This is NOT a second terminal/death authority. Destroyed/death life state is derived
  * only from the canonical terminal surfaces {@code ReplayTerminalLifecycle} consumes — the

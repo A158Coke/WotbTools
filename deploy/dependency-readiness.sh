@@ -49,43 +49,8 @@ check_business_api() {
 
   check_business_postgres
 
-  export TX_RABBITMQ_HOST="${TX_RABBITMQ_HOST:-rabbitmq}"
-  export TX_RABBITMQ_PORT="${TX_RABBITMQ_PORT:-5672}"
-  export TX_RABBITMQ_VHOST="${TX_RABBITMQ_VHOST:-/wotbtools}"
-  export TX_RABBITMQ_CONTROL_API_USER="${TX_RABBITMQ_CONTROL_API_USER:-control-api}"
-  require_env TX_RABBITMQ_CONTROL_API_PASSWORD
-  require_env YECAO_MINIO_CONTROL_API_ACCESS_KEY
-  require_env YECAO_MINIO_CONTROL_API_SECRET_KEY
   require_env KEYCLOAK_ADMIN_CLIENT_SECRET
-  export YECAO_MINIO_ENDPOINT="${YECAO_MINIO_ENDPOINT:-10.20.0.2:9000}"
-  export YECAO_MINIO_BUCKET="${YECAO_MINIO_BUCKET:-wotbtools-temp}"
-  run_protocol_probe business-api wotb_tx_internal \
-    --env TX_RABBITMQ_HOST --env TX_RABBITMQ_PORT --env TX_RABBITMQ_VHOST \
-    --env TX_RABBITMQ_CONTROL_API_USER --env TX_RABBITMQ_CONTROL_API_PASSWORD \
-    --env YECAO_MINIO_ENDPOINT --env YECAO_MINIO_BUCKET \
-    --env YECAO_MINIO_CONTROL_API_ACCESS_KEY --env YECAO_MINIO_CONTROL_API_SECRET_KEY \
-    --env KEYCLOAK_ADMIN_CLIENT_SECRET
-}
-
-check_parser_worker() {
-  docker network inspect wotb_internal >/dev/null 2>&1 \
-    || die "Yecao application network wotb_internal is unavailable."
-
-  export PARSER_WORKER_RABBITMQ_HOST="${PARSER_WORKER_RABBITMQ_HOST:-10.20.0.1}"
-  export PARSER_WORKER_RABBITMQ_PORT="${PARSER_WORKER_RABBITMQ_PORT:-5672}"
-  export PARSER_WORKER_RABBITMQ_VHOST="${PARSER_WORKER_RABBITMQ_VHOST:-/wotbtools}"
-  export PARSER_WORKER_RABBITMQ_USERNAME="${PARSER_WORKER_RABBITMQ_USERNAME:-parser-worker}"
-  export PARSER_WORKER_MINIO_ENDPOINT="${PARSER_WORKER_MINIO_ENDPOINT:-minio:9000}"
-  export PARSER_WORKER_MINIO_BUCKET="${PARSER_WORKER_MINIO_BUCKET:-wotbtools-temp}"
-  require_env TX_RABBITMQ_PARSER_WORKER_PASSWORD
-  require_env YECAO_MINIO_WORKER_ACCESS_KEY
-  require_env YECAO_MINIO_WORKER_SECRET_KEY
-  run_protocol_probe parser-worker wotb_internal \
-    --env PARSER_WORKER_RABBITMQ_HOST --env PARSER_WORKER_RABBITMQ_PORT \
-    --env PARSER_WORKER_RABBITMQ_VHOST --env PARSER_WORKER_RABBITMQ_USERNAME \
-    --env TX_RABBITMQ_PARSER_WORKER_PASSWORD \
-    --env PARSER_WORKER_MINIO_ENDPOINT --env PARSER_WORKER_MINIO_BUCKET \
-    --env YECAO_MINIO_WORKER_ACCESS_KEY --env YECAO_MINIO_WORKER_SECRET_KEY
+  run_protocol_probe business-api wotb_tx_internal --env KEYCLOAK_ADMIN_CLIENT_SECRET
 }
 
 check_keycloak_postgres() {
@@ -102,6 +67,5 @@ check_keycloak_postgres() {
 case "${1:-}" in
   business-api) check_business_api ;;
   keycloak) check_keycloak_postgres ;;
-  parser-worker) check_parser_worker ;;
-  *) die "usage: dependency-readiness.sh business-api|keycloak|parser-worker" ;;
+  *) die "usage: dependency-readiness.sh business-api|keycloak" ;;
 esac

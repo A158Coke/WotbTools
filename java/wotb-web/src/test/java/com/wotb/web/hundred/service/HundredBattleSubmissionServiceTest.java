@@ -2,12 +2,12 @@ package com.wotb.web.hundred.service;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.web.hundred.dto.HundredLeaderboardPageDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.replayfile.HallOfFameStorageException;
+import com.wotb.web.testsupport.ReplayFactsJson;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.user.service.WotbAccountIdentity;
@@ -29,6 +29,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,7 +39,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -147,9 +147,38 @@ class HundredBattleSubmissionServiceTest {
         p.accountId = gameId;
         p.nickname = "PlayerOne";
         p.tankId = vehicleId;
+        p.team = 1;
         p.damageDealt = 3200;
+        b.recorder = p.nickname;
         b.players = new ArrayList<>(List.of(p));
         return b;
+    }
+
+    /** 客户端 facts：每个回放按其字节（= arenaId）映射到 {@code battle(arenaId)}，与回放同序。 */
+    private static List<String> facts(final List<MultipartFile> files) {
+        return facts(files, HundredBattleSubmissionServiceTest::battle);
+    }
+
+    private static List<String> facts(final List<MultipartFile> files, final Function<String, Battle> toBattle) {
+        return files.stream().map(f -> ReplayFactsJson.of(toBattle.apply(arenaOf(f)))).toList();
+    }
+
+    /** 每个回放都对应同一份 battle facts。 */
+    private static List<String> sameFacts(final List<MultipartFile> files, final Battle battle) {
+        return files.stream().map(f -> ReplayFactsJson.of(battle)).toList();
+    }
+
+    /** 每个回放都对应一份非法 facts（非 JSON）。 */
+    private static List<String> invalidFacts(final List<MultipartFile> files) {
+        return files.stream().map(f -> "not json").toList();
+    }
+
+    private static String arenaOf(final MultipartFile file) {
+        try {
+            return new String(file.getBytes());
+        } catch (final java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
     }
 
     private static List<MultipartFile> replays(final int count, final String... arenaIds) {
@@ -161,6 +190,11 @@ class HundredBattleSubmissionServiceTest {
                     "application/octet-stream", arena.getBytes()));
         }
         return files;
+    }
+
+    /** 第 2 份与第 1 份同 arena 的 5 个 replay。 */
+    private static List<MultipartFile> duplicateArenaReplays() {
+        return replays(5, "a1", "a1", "a3", "a4", "a5");
     }
 
     /** 默认 5 场不同 battle 的 replay 列表。 */
@@ -200,15 +234,8 @@ class HundredBattleSubmissionServiceTest {
     void validSubmissionCreatesPendingWithFrozenSnapshot() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv -> {
-                final byte[] bytes = inv.getArgument(0);
-                return battle(new String(bytes));
-            });
-
-            service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays());
-        }
+        service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
 
         final ArgumentCaptor<HundredBattleSubmission> captor =
                 ArgumentCaptor.forClass(HundredBattleSubmission.class);
@@ -237,17 +264,10 @@ class HundredBattleSubmissionServiceTest {
                 .thenReturn(Optional.empty(), Optional.of(profile()));
         when(userProfileService.hasTrustedWargamingIdentity()).thenReturn(true);
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv -> {
-                final byte[] bytes = inv.getArgument(0);
-                return battle(new String(bytes));
-            });
+        final var result = service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
 
-            final var result = service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays());
-
-            assertThat(result.status()).isEqualTo("PENDING");
-        }
+        assertThat(result.status()).isEqualTo("PENDING");
 
         verify(userProfileService).syncFromLogin(USER);
         verify(userProfileService, org.mockito.Mockito.times(2)).findEntityByKeycloakUserId(USER);
@@ -260,7 +280,7 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.hasTrustedWargamingIdentity()).thenReturn(false);
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                "data:image/png;base64,AAAA", fiveReplays()))
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("PROFILE_NOT_FOUND");
 
@@ -273,7 +293,7 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profileWithoutGameId()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                "data:image/png;base64,AAAA", fiveReplays()))
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_PROFILE_GAME_ID_REQUIRED");
     }
@@ -283,7 +303,7 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profileWithoutNickname()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                "data:image/png;base64,AAAA", fiveReplays()))
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_PROFILE_NICKNAME_REQUIRED");
     }
@@ -293,11 +313,11 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 0, 136,
-                "data:image/png;base64,AAAA", fiveReplays()))
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_INVALID_CLAIM");
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, -1,
-                "data:image/png;base64,AAAA", fiveReplays()))
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_INVALID_CLAIM");
     }
@@ -307,7 +327,7 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER7_VEHICLE, 4200, 136,
-                "data:image/png;base64,AAAA", fiveReplays()))
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_NON_TIER_X");
     }
@@ -317,7 +337,7 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, 999999L, 4200, 136,
-                "data:image/png;base64,AAAA", fiveReplays()))
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_NON_TIER_X");
     }
@@ -327,7 +347,7 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                "  ", fiveReplays()))
+                "  ", fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("PROOF_SCREENSHOT_REQUIRED");
     }
@@ -337,7 +357,7 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                "not-a-data-url", fiveReplays()))
+                "not-a-data-url", fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("INVALID_IMAGE_DATA");
     }
@@ -348,7 +368,7 @@ class HundredBattleSubmissionServiceTest {
 
         final String huge = "data:image/png;base64," + "x".repeat(5_500_000);
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                huge, fiveReplays()))
+                huge, fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("IMAGE_TOO_LARGE");
     }
@@ -358,7 +378,7 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                "data:image/png;base64,AAAA", replays(3)))
+                "data:image/png;base64,AAAA", replays(3), facts(replays(3))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_REPLAY_COUNT");
     }
@@ -368,40 +388,70 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                "data:image/png;base64,AAAA", replays(7)))
+                "data:image/png;base64,AAAA", replays(7), facts(replays(7))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_REPLAY_COUNT");
     }
 
     @Test
-    void rejectsReplayParseFailure() {
+    void rejectsMissingReplayFacts() {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class)))
-                    .thenThrow(new RuntimeException("bad file"));
-
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays()))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("INVALID_REPLAY_FILE");
-        }
+        // 服务器没有 parser：facts 必填，且与回放一一对应
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("REPLAY_FACTS_COUNT_MISMATCH");
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("REPLAY_FACTS_COUNT_MISMATCH");
         verify(repository, never()).saveAndFlush(any());
+        verify(evidenceService, never()).storeAll(anyList());
+    }
+
+    @Test
+    void rejectsReplayFactsCountMismatch() {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(replays(4, "a1", "a2", "a3", "a4"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("REPLAY_FACTS_COUNT_MISMATCH");
+        verify(repository, never()).saveAndFlush(any());
+        verify(evidenceService, never()).storeAll(anyList());
+    }
+
+    @Test
+    void rejectsInvalidReplayFacts() {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), invalidFacts(fiveReplays())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("INVALID_REPLAY_FACTS");
+        // 单份结构非法（缺 team）也整单拒绝
+        final List<String> oneBroken = new ArrayList<>(facts(fiveReplays()));
+        final Battle noTeam = battle("a3");
+        noTeam.players.getFirst().team = 0;
+        oneBroken.set(2, ReplayFactsJson.of(noTeam));
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), oneBroken))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("INVALID_REPLAY_FACTS");
+        verify(repository, never()).saveAndFlush(any());
+        verify(evidenceService, never()).storeAll(anyList());
     }
 
     @Test
     void rejectsWrongGameIdInReplay() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class)))
-                    .thenReturn(battle("a1", 999L, TIER10_VEHICLE));
-
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays()))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("HUNDRED_REPLAY_GAME_ID_MISMATCH");
-        }
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(),
+                sameFacts(fiveReplays(), battle("a1", 999L, TIER10_VEHICLE))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("HUNDRED_REPLAY_GAME_ID_MISMATCH");
         verify(repository, never()).saveAndFlush(any());
     }
 
@@ -409,15 +459,11 @@ class HundredBattleSubmissionServiceTest {
     void rejectsWrongVehicleInReplay() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class)))
-                    .thenReturn(battle("a1", GAME_ID, 999L));
-
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays()))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("HUNDRED_REPLAY_VEHICLE_MISMATCH");
-        }
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(),
+                sameFacts(fiveReplays(), battle("a1", GAME_ID, 999L))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("HUNDRED_REPLAY_VEHICLE_MISMATCH");
         verify(repository, never()).saveAndFlush(any());
     }
 
@@ -425,17 +471,12 @@ class HundredBattleSubmissionServiceTest {
     void rejectsDuplicateBattleAmongFiveReplays() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            // 第二份与第一份同 arena（a2 重复）→ 不是 5 场不同 battle
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            final List<MultipartFile> files = replays(5, "a1", "a2", "a2", "a3", "a4");
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", files))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("HUNDRED_REPLAY_DUPLICATE_BATTLE");
-        }
+        // 第二份与第一份同 arena（a2 重复）→ 不是 5 场不同 battle
+        final List<MultipartFile> files = replays(5, "a1", "a2", "a2", "a3", "a4");
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", files, facts(files)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("HUNDRED_REPLAY_DUPLICATE_BATTLE");
         verify(repository, never()).saveAndFlush(any());
     }
 
@@ -451,7 +492,7 @@ class HundredBattleSubmissionServiceTest {
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                "data:image/png;base64,AAAA", fiveReplays()))
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_PENDING_EXISTS");
         verify(repository, never()).saveAndFlush(any());
@@ -466,21 +507,9 @@ class HundredBattleSubmissionServiceTest {
                         WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "PENDING"))
                 .thenReturn(true);
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv -> {
-                final Battle b = new Battle();
-                b.arenaId = new String((byte[]) inv.getArgument(0));
-                final PlayerResult p = new PlayerResult();
-                p.accountId = GAME_ID;
-                p.tankId = TIER10_VEHICLE_2;
-                b.players = new ArrayList<>(List.of(p));
-                return b;
-            });
-
-            // IS-7 (385) 已有 PENDING，提交另一辆 Tier X (3649) 允许
-            service.createSubmission(USER, TIER10_VEHICLE_2, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays());
-        }
+        // IS-7 (385) 已有 PENDING，提交另一辆 Tier X (3649) 允许
+        service.createSubmission(USER, TIER10_VEHICLE_2, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays(), arena -> battle(arena, GAME_ID, TIER10_VEHICLE_2)));
         verify(repository).saveAndFlush(any());
     }
 
@@ -490,13 +519,8 @@ class HundredBattleSubmissionServiceTest {
         // 因此 create 的 PENDING 预检与 CURRENT 门槛都必须带上 profile 的区服。
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays());
-        }
+        service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
 
         verify(repository).existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "PENDING");
@@ -510,15 +534,10 @@ class HundredBattleSubmissionServiceTest {
         when(repository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("uk_hundred_battle_pending_user_vehicle"));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays()))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("HUNDRED_PENDING_EXISTS");
-        }
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_PENDING_EXISTS");
         // 锁内失败 → rollback 后引用计数保护清理（不允许留下无 DB 引用的孤儿文件常态）
         verify(evidenceService).storeAll(anyList());
         verify(evidenceService).cleanupStoredFiles(anyList());
@@ -532,12 +551,8 @@ class HundredBattleSubmissionServiceTest {
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(Optional.of(currentSubmission(4000)));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-            service.createSubmission(USER, TIER10_VEHICLE, 4001, 136,
-                    "data:image/png;base64,AAAA", fiveReplays());
-        }
+        service.createSubmission(USER, TIER10_VEHICLE, 4001, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
         verify(repository).saveAndFlush(any());
     }
 
@@ -548,15 +563,10 @@ class HundredBattleSubmissionServiceTest {
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(Optional.of(currentSubmission(4000)));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4000, 136,
-                    "data:image/png;base64,AAAA", fiveReplays()))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("HUNDRED_NOT_HIGHER");
-        }
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4000, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_NOT_HIGHER");
         verify(repository, never()).saveAndFlush(any());
     }
 
@@ -567,28 +577,19 @@ class HundredBattleSubmissionServiceTest {
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(Optional.of(currentSubmission(4000)));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 3999, 136,
-                    "data:image/png;base64,AAAA", fiveReplays()))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("HUNDRED_NOT_HIGHER");
-        }
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 3999, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_NOT_HIGHER");
     }
 
     @Test
     void noCurrentWithHistoricalDeletedOrSupersededAllowsRestart() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-            // CURRENT 不存在（历史 DELETED/SUPERSEDED 由 repository 查询自然排除）
-            service.createSubmission(USER, TIER10_VEHICLE, 4000, 136,
-                    "data:image/png;base64,AAAA", fiveReplays());
-        }
+        // CURRENT 不存在（历史 DELETED/SUPERSEDED 由 repository 查询自然排除）
+        service.createSubmission(USER, TIER10_VEHICLE, 4000, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
         verify(repository).saveAndFlush(any());
     }
 
@@ -1158,16 +1159,11 @@ class HundredBattleSubmissionServiceTest {
     void createFailureNeverPersistsSubmission() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            // 第 2 份与第 1 份同 arena → 失败；已解析的前面文件不应产生任何持久化
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", replays(5, "a1", "a1", "a3", "a4", "a5")))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("HUNDRED_REPLAY_DUPLICATE_BATTLE");
-        }
+        // 第 2 份与第 1 份同 arena → 失败；已解析的前面文件不应产生任何持久化
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", duplicateArenaReplays(), facts(duplicateArenaReplays())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("HUNDRED_REPLAY_DUPLICATE_BATTLE");
         verify(repository, never()).saveAndFlush(any());
         verify(repository, never()).save(any());
     }
@@ -1178,13 +1174,8 @@ class HundredBattleSubmissionServiceTest {
     void validSubmissionStoresAndAttachesAllFiveEvidence() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays());
-        }
+        service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
 
         // 锁协议：整段临界区在 sorted distinct hash locks 内（Blocker 2）
         @SuppressWarnings("unchecked")
@@ -1222,16 +1213,11 @@ class HundredBattleSubmissionServiceTest {
     void validationFailureNeverStoresOrAttachesEvidence() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            // 第 2 份与第 1 份同 arena → 硬门禁失败，整单拒绝
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", replays(5, "a1", "a1", "a3", "a4", "a5")))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("HUNDRED_REPLAY_DUPLICATE_BATTLE");
-        }
+        // 第 2 份与第 1 份同 arena → 硬门禁失败，整单拒绝
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", duplicateArenaReplays(), facts(duplicateArenaReplays())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("HUNDRED_REPLAY_DUPLICATE_BATTLE");
         verify(evidenceService, never()).storeAll(anyList());
         verify(evidenceService, never()).attach(anyLong(), anyList());
         verify(evidenceService, never()).cleanupStoredFiles(anyList());
@@ -1245,14 +1231,9 @@ class HundredBattleSubmissionServiceTest {
                 org.springframework.http.HttpStatus.INSUFFICIENT_STORAGE, "disk full"))
                 .when(evidenceService).storeAll(anyList());
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays()))
-                    .isInstanceOf(HallOfFameStorageException.class);
-        }
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
+                .isInstanceOf(HallOfFameStorageException.class);
         // 任意文件存储失败 → submission 绝不创建、evidence 绝不写入
         verify(repository, never()).saveAndFlush(any());
         verify(evidenceService, never()).attach(anyLong(), anyList());
@@ -1264,15 +1245,10 @@ class HundredBattleSubmissionServiceTest {
         when(repository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("uk_hundred_battle_pending_user_vehicle"));
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays()))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("HUNDRED_PENDING_EXISTS");
-        }
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_PENDING_EXISTS");
         // DB 写入失败 → 已落盘文件 best-effort 清理（不允许留下无 DB 引用的孤儿文件常态）
         verify(evidenceService).storeAll(anyList());
         verify(evidenceService).cleanupStoredFiles(anyList());

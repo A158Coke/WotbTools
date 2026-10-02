@@ -5,7 +5,6 @@ import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.config.RequestIdFilter;
 import com.wotb.web.replay.exception.ReplayBusyException;
-import com.wotb.web.replay.job.ExportQueueFullException;
 import com.wotb.web.replayfile.HallOfFameStorageException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,7 +50,8 @@ class GlobalExceptionHandlerContractTest {
         assertEnvelope(get("/contract/illegal-unsafe"), 400, "INVALID_ARGUMENT", false);
         assertEnvelope(get("/contract/state"), 409, "INVALID_STATE", false);
         assertEnvelope(get("/contract/replay-busy"), 503, "REPLAY_BUSY", true);
-        assertEnvelope(get("/contract/export-full"), 503, "EXPORT_QUEUE_FULL", true);
+        assertEnvelope(get("/contract/invalid-facts"), 400, "INVALID_REPLAY_FACTS", false);
+        assertEnvelope(get("/contract/facts-count"), 400, "REPLAY_FACTS_COUNT_MISMATCH", false);
         assertEnvelope(get("/contract/hof-storage"), 500, "STORAGE_ERROR", true);
         assertEnvelope(get("/contract/multipart"), 400, "MULTIPART_ERROR", false);
         assertEnvelope(get("/contract/response-status"), 404, "RESOURCE_NOT_FOUND", false);
@@ -113,8 +113,11 @@ class GlobalExceptionHandlerContractTest {
         @GetMapping("/contract/replay-busy")
         void replayBusy() { throw new ReplayBusyException(); }
 
-        @GetMapping("/contract/export-full")
-        void exportFull() { throw new ExportQueueFullException(); }
+        @GetMapping("/contract/invalid-facts")
+        void invalidFacts() { throw new IllegalArgumentException("INVALID_REPLAY_FACTS"); }
+
+        @GetMapping("/contract/facts-count")
+        void factsCount() { throw new IllegalArgumentException("REPLAY_FACTS_COUNT_MISMATCH"); }
 
         @GetMapping("/contract/hof-storage")
         void hofStorage() {

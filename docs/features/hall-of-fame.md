@@ -2,11 +2,25 @@
 
 > MVP 只记录录像者本人单场伤害成绩；schema 由 Flyway 管理。实现见 `wotb-web/.../hof/`。
 
-名人堂只接受**随机战斗（RANDOM）**与**评级战斗（RATING）**回放；训练房 / 联赛 / 锦标赛 / 娱乐 / 未知模式一律拒绝（上传 → HTTP 400 `UNSUPPORTED_BATTLE_TYPE`，零持久化）。Replay 文件是 authoritative source：`.wotbreplay` → `ReplayParser` → authoritative battle facts → battle-type policy → 名人堂；**禁止人工修改 replay-derived authoritative facts**（admin 是 governance，不是数据编辑器）。
+名人堂只接受**随机战斗（RANDOM）**与**评级战斗（RATING）**回放；训练房 / 联赛 / 锦标赛 / 娱乐 / 未知模式一律拒绝（上传 → HTTP 400 `UNSUPPORTED_BATTLE_TYPE`，零持久化）。**服务器没有 parser**：浏览器本机用上游 Rust Core 解析回放 → 结算事实（`Battle` 形状，`facts` 字段）→ 服务端 `ClientReplayFacts` 结构校验 → battle-type policy → 名人堂；原始回放作为证据附件存档。服务端无法从字节验证事实，**防伪造靠管理员审核与回放附件**；**禁止人工修改 replay-derived facts**（admin 是 governance，不是数据编辑器）。
+
+## 信任模型（产品决策，2026-10）
+
+**client facts are intentionally untrusted; server validates structure, not authenticity.**
+
+- 名人堂 / 百场 / 三环接受客户端提交的、**不可信**的结算事实（`facts`，`Battle` 形状）。浏览器本机用锁定版本的上游
+  Agent WASM 解析回放得出它们；服务器没有 parser。
+- 服务器**只**做 schema / shape / required-field / size 格式校验（`ClientReplayFacts`：arenaId、录像者、1..64 名战斗者、
+  账号 / 车辆 ID、队伍取值、无重复账号、JSON ≤ 64 KiB），再走 battle-type policy 与去重。
+- 服务器**不**证明 facts 由上传的回放推导而来：不重新解析回放、不比较回放与 facts、不做密码学证明、不做抽样解析。
+- 原始回放只作为存档 / 人工审核材料（证据附件，管理员可下载对照）。
+- 管理员人工审核是唯一的防伪造手段——接受客户端伪造风险是**有意的产品决策**，不是待修的缺陷。不要把它「修复」成
+  服务端验真。守卫：`ClientReplayFactsTrustModelTest`（结构合法但明显伪造的 facts 被接受；结构读取 API 不接受任何
+  回放字节）。
 
 - **数据库配置**：`application.yml` 始终启用 DataSource/JPA/Flyway，`ddl-auto: validate`；本地开发需提供 PostgreSQL 与 `POSTGRES_PASSWORD`。
 - **Schema 来源**：Flyway 迁移 `V1__init_leaderboard.sql` → `V15__add_leaderboard_replay_file.sql`（历史 immutable），`V16__rename_leaderboard_to_hall_of_fame.sql`（表/约束/索引 rename-in-place + battle_type/arena_bonus_type + backfill），`V17__create_hall_of_fame_admin_log.sql`（admin 审计表），`V18`–`V20`（百场申请、回放证据、WG 审核快照）、`V21__create_mark3_submission.sql`（三环申请与回放证据）以及 `V22__hof_ownership_by_wotb_account.sql`（百场/三环 ownership 由 Keycloak 身份切换为 **WotB 游戏账号 + 区服**：`game_account_id_snapshot` → `wotb_account_id`、新增 `wotb_server` 快照列、删除 `user_keycloak_id`、唯一索引与查询索引改按 `(wotb_server, wotb_account_id)`；迁移内含 fail-fast preflight，不做任何自动消解，详见下文「V22 迁移契约」）。**改表结构必须新增迁移**，不要改已应用的版本；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
-- **战斗模式数据模型**：`hall_of_fame_record` 同时保存 `battle_type varchar(16) NOT NULL`（业务归一值 `RANDOM`/`RATING`，CHECK 约束，非 PG ENUM）与 `arena_bonus_type integer NOT NULL`（replay 解析出的 authoritative raw integer，protocol provenance / 调试 / 未来扩展）。历史数据 backfill 为 `RANDOM/1`（旧系统 PR #97 前只允许 Random；PR #97 起允许 Rating，历史行无法逐行推导，统一按 `RANDOM/1`，带 replay_hash 的行未来可重解析修正）。
+- **战斗模式数据模型**：`hall_of_fame_record` 同时保存 `battle_type varchar(16) NOT NULL`（业务归一值 `RANDOM`/`RATING`，CHECK 约束，非 PG ENUM）与 `arena_bonus_type integer NOT NULL`（replay 解析出的 authoritative raw integer，protocol provenance / 调试 / 未来扩展）。历史数据 backfill 为 `RANDOM/1`（旧系统 PR #97 前只允许 Random；PR #97 起允许 Rating，历史行无法逐行推导，统一按 `RANDOM/1`，带 replay_hash 的行可由客户端重新解析附件后修正）。
 - **支持的战斗模式**：判断集中在 `HallOfFameBattleTypePolicy`（`HallOfFameBattleType` 单一事实源，禁止散落两处漂移）。证据等级明确区分「本项目真实回放证据」与「外部 replay tooling 证据」：
 
   | 模式 | raw arenaBonusType | 归一值 | 证据 | 名人堂 |
@@ -19,14 +33,14 @@
   | 未知/其他 | — | UNSUPPORTED | policy 测试 | ❌ |
 
   **fixture gap**：仓内暂无真实 Rating 回放 —— Rating=7 目前由已入库文档 + 外部 tooling 证据支撑（生产已随 PR #97 生效）；未来拿到真实当前版本 Rating replay 后补 parser → RATING → upload success 的真实 fixture integration 验证（follow-up，不阻塞）。
-- **录像者识别**：`meta.json` 无录像者 `accountId`，`ReplayParser` 仅给出 `Battle.recorder`（昵称）。`HallOfFameService` 按 `nickname.equals(battle.recorder)` 在 `players` 中匹配；匹配不到则跳过（不猜）。成绩归**录像者（Player B）**；`uploadedBy` 只表示谁上传了回放，不覆盖成绩所有权。
+- **录像者识别**：结算事实里录像者以 `Battle.recorder`（昵称）给出。`HallOfFameService` 按 `nickname.equals(battle.recorder)` 在 `players` 中匹配；匹配不到则跳过（不猜）。成绩归**录像者（Player B）**；`uploadedBy` 只表示谁上传了回放，不覆盖成绩所有权。
 - **去重与 replay 状态机（DB 原子）**：唯一键 `(arena_id, account_id)`（不含 battle_type —— 同一场+同一玩家即一条真实 battle result；mode conflict 视为数据不一致，不允许双记录）。`recordRecorder` 返回 `RecordOutcome`：新建 → `SAVED`；已存在且 `replay_hash` NULL → 原子 conditional UPDATE → `ATTACHED`，败者 re-read winner 后分类；已存在且同 hash → `IDEMPOTENT`；已存在且异 hash → `SKIPPED_HASH_CONFLICT`（保留已有 hash，绝不覆盖）；insert unique 竞态 → re-read winner 重新分类。并发由 DB 行锁保证（多实例安全）。
 - **归属维度（已知遗留）**：单场 `hall_of_fame_record` 只按 `account_id` 归属，**没有区服维度**，`GET /api/users/profile/records` 同样只按账号 ID 返回个人成绩；跨服同号（`(CN, 123456)` 与 `(EU, 123456)`）在单场域仍可能被视作同一人。详见下文「单场 HoF 的区服限制（已知遗留 / follow-up debt）」。
-- **回放文件存储（V15 → hof）**：`HallOfFameReplayStorage` 内容寻址存储到 `{HOF_REPLAY_DIR:data/replays}/{sha256}.wotbreplay`（生产挂 `replay_data` volume → `/data/replays`）。流程：校验（复用 `ReplayUploadValidator`，类型+.wotbreplay+20MB）→ 登录（`JwtUtil.requireUserId`）→ 解析（失败 400 `INVALID_REPLAY_FILE`）→ **battle-type policy（不支持模式 → 400 `UNSUPPORTED_BATTLE_TYPE`，在 SHA-256 / preflight / storage / DB 任何持久化之前拒绝，DB=0 / metadata=0 / 文件=0）** → SHA-256 → 临时文件 `.tmp/` → `ATOMIC_MOVE` 原子发布 → 记录入库。上传的「落盘 + 入库」与 admin delete 的「删除事务 + 文件清理」由 `ReplayHashLock`（PostgreSQL advisory lock，session 级，hash 前 16 hex 为 key）串行化，保证不变量：**任何记录引用 hash H → 物理 H.wotbreplay 必须存在**（delete/upload 同 hash 并发见 WebApiTest）。磁盘保护：`usable - incoming < HOF_REPLAY_MIN_FREE_BYTES`（默认 512MiB）→ 507 `REPLAY_STORAGE_FULL`；文件系统失败 → 500 `REPLAY_STORAGE_ERROR`。`replay_hash/file_name/size/uploaded_by` 四列可空（老记录 NULL → 无下载按钮，tolerance）。
+- **回放文件存储（V15 → hof）**：`HallOfFameReplayStorage` 内容寻址存储到 `{HOF_REPLAY_DIR:data/replays}/{sha256}.wotbreplay`（生产挂 `replay_data` volume → `/data/replays`）。流程：校验（复用 `ReplayUploadValidator`，类型+.wotbreplay+20MB）→ 登录（`JwtUtil.requireUserId`）→ 客户端事实结构校验（缺失 / 非法 400 `INVALID_REPLAY_FACTS`；浏览器本机解析失败在前端即报 `INVALID_REPLAY_FILE`，不会提交）→ **battle-type policy（不支持模式 → 400 `UNSUPPORTED_BATTLE_TYPE`，在 SHA-256 / preflight / storage / DB 任何持久化之前拒绝，DB=0 / metadata=0 / 文件=0）** → SHA-256 → 临时文件 `.tmp/` → `ATOMIC_MOVE` 原子发布 → 记录入库。上传的「落盘 + 入库」与 admin delete 的「删除事务 + 文件清理」由 `ReplayHashLock`（PostgreSQL advisory lock，session 级，hash 前 16 hex 为 key）串行化，保证不变量：**任何记录引用 hash H → 物理 H.wotbreplay 必须存在**（delete/upload 同 hash 并发见 WebApiTest）。磁盘保护：`usable - incoming < HOF_REPLAY_MIN_FREE_BYTES`（默认 512MiB）→ 507 `REPLAY_STORAGE_FULL`；文件系统失败 → 500 `REPLAY_STORAGE_ERROR`。`replay_hash/file_name/size/uploaded_by` 四列可空（老记录 NULL → 无下载按钮，tolerance）。
 - **下载**：`GET /api/hof/{id}/replay`（需登录，任意已登录用户可下载任何带 replay 的记录；不要求 uploadedBy==current user 或 recorder==current user）。无 hash / 文件丢失（best-effort 语义）→ 404 `REPLAY_FILE_NOT_FOUND`；原始文件名仅进 `Content-Disposition`（UTF-8 安全编码，绝不参与路径）。前端用 authenticated fetch → blob → `createObjectURL` 触发下载（禁止裸 `<a href>`）。
 - **统一公开查询**：`GET /api/hof?battleType=RANDOM|RATING&nation=&vehicleType=&tier=&tankId=&nickname=&page=&size=`（匿名可访问；`battleType` 未知值 → 400 `INVALID_BATTLE_TYPE_FILTER`）。`nation` / `vehicleType` / `tier` 任一项无需先选车辆即可直接过滤榜单，多个非空车辆条件与 `tankId` 取交集。排序 deterministic：`damage_dealt DESC` → **battle type 优先 RATING > RANDOM** → `battle_time ASC NULLS LAST` → `created_at ASC` → `id ASC`（后三者仅 deterministic pagination tie-breaker）。rank 为完整 filter 交集上下文的位置排名（`(page-1)*size+i+1`，不落库、无 shared rank）。公开字段边界：**不暴露** accountId / arenaId / replayHash / uploadedBy / admin audit data；显示 rank/nickname/tank/damage/battleType/map/version/battleTime/uploadTime/replayAvailable。旧 `/api/leaderboard/top-damage`、`/api/leaderboard/tanks/{tankId}/top-damage` 已移除（HomePage 最高伤害改读 `/api/hof?page=1&size=1`）。
 - **数据列**（V2 新增 `version`/`battle_time`）：`version` 来自 `meta.json#version`，`battle_time` 来自 `meta.json#battleStartTime` epoch ms，`created_at` 为上传时间。
-- **集成点**：`POST /api/hof/upload`（需登录）→ `HallOfFameUploadService`（校验 → `ReplayCapacityLimiter` → `ReplayParser` → eligibility 不支持模式 400 → SHA-256 → preflight → `ReplayHashLock` 内 [`HallOfFameReplayStorage.store` → `HallOfFameService.recordRecorder`]）。
+- **集成点**：`POST /api/hof/upload`（需登录；multipart `file` = 回放附件，`facts` = 客户端结算事实 JSON）→ `HallOfFameUploadService`（校验 → `ReplayCapacityLimiter` → `ClientReplayFacts.read` → eligibility 不支持模式 400 → SHA-256 → preflight → `ReplayHashLock` 内 [`HallOfFameReplayStorage.store` → `HallOfFameService.recordRecorder`]）。
 - **API**：
   - `GET /api/hof`（统一公开查询，匿名）
   - `GET /api/hof/vehicle-options`（匿名；当前名人堂实际存在车辆的名称、国家/系别、车种、等级与内部 `tankId`）
@@ -43,7 +57,7 @@
 - **单场车辆筛选**：`arena_id` 与 raw `arena_bonus_type` 继续保留在记录和审计快照中，供去重与追溯，但不作为业务页面的展示或筛选项。管理页与公开页共用当前名人堂实际车辆选项；国家/系别、车种、等级是三个无序可选条件，所有非空条件既对车辆名称候选取交集，也作为真实榜单查询条件独立生效；选中具体车辆时再与 `tankId` 继续取交集。
 - **Admin hard delete**：真实 hard delete（无 soft delete / tombstone / blocklist）。**audit + record delete 单事务**（`BEGIN → validate → audit snapshot(DELETE_ENTRY) → delete record → COMMIT`；audit 失败 → 记录不删；删除失败 → 无假审计）。commit 后：`replay_hash` 非空且无其他记录引用 → 删除 `{sha256}.wotbreplay`；仍有引用 → 保留；清理失败 → 仅 WARN（orphan 保留，不回滚已 commit 的删除）。删除后同一回放未来可重新上传（正常校验后重新 SAVED）。审计快照保存 timestamp / admin sub+username / action / recordId / arenaId / accountId / nickname / tankId / tankName / damage / battleType / arenaBonusType / replayHash（record 删除后原记录已不存在，不能只存 record_id FK）。第一版无 audit retention / cleanup scheduler。批量删除（`POST /api/admin/hof/records/bulk-delete`）**逐条复用同一语义**：每条独立事务（`TransactionTemplate`）+ commit 后跨域引用计数清理物理文件，允许 partial success；不存在的 id 以 `HOF_ENTRY_NOT_FOUND` 逐条失败，其余继续；单批去重后上限 100，超出整批 400 `BULK_LIMIT_EXCEEDED`。
 - **备份决策**：回放文件为 **best-effort 可丢数据**——Business PostgreSQL 归档只涵盖数据库，不包含 `replay_data` 持久卷中的文件；若该卷损坏或迁移失败，可能出现下载 404（tolerance 设计）。
-- **解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务。容量满返回 503 `REPLAY_BUSY`。
+- **上传边界**：单文件 20 MiB、总请求 200 MiB（`ReplayUploadValidator`）；单实例默认同时处理 2 个提交（`ReplayCapacityLimiter`），容量满返回 503 `REPLAY_BUSY`。
 
 
 ---
@@ -66,7 +80,7 @@
 2. 车辆必须为 authoritative Tier X（`Tankopedia.info(vehicleId).tier()==10`，`HUNDRED_NON_TIER_X`）。
 3. 固定 1 张成绩截图（base64 data URL，复用既有申请表单校验模式：`data:image/` 前缀 + 550 万字符上限）。
 4. 正好 5 个 `.wotbreplay`（复用 `ReplayUploadValidator` 大小/类型校验 + `HUNDRED_REPLAY_COUNT`）。
-5. 5 个回放**全部解析成功**，且每个回放内存在 accountId == 冻结的 `wotb_account_id` 的玩家（`HUNDRED_REPLAY_GAME_ID_MISMATCH`）、其 tankId == 所选 vehicleId（`HUNDRED_REPLAY_VEHICLE_MISMATCH`）、5 个 `arenaId` 互不相同（`HUNDRED_REPLAY_DUPLICATE_BATTLE`）。不校验 server/region。
+5. 5 个回放各附一份客户端结算事实（`facts`，与 `replays` 同序；数量不符 400 `REPLAY_FACTS_COUNT_MISMATCH`，非法 400 `INVALID_REPLAY_FACTS`），且每份事实内存在 accountId == 冻结的 `wotb_account_id` 的玩家（`HUNDRED_REPLAY_GAME_ID_MISMATCH`）、其 tankId == 所选 vehicleId（`HUNDRED_REPLAY_VEHICLE_MISMATCH`）、5 个 `arenaId` 互不相同（`HUNDRED_REPLAY_DUPLICATE_BATTLE`）。不校验 server/region。
 6. 新成绩必须严格高于当前 CURRENT（`HUNDRED_NOT_HIGHER`）；无 CURRENT 时历史 SUPERSEDED/DELETED 不限制重新提交。
 
 ## WG 登录与百场边界
@@ -135,12 +149,12 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 2. 车辆必须是 authoritative Tier X。
 3. 需提交 `battleCount`、`averageDamage` 与 `winRate`；`winRate` 为 0–100 的百分数，最多两位小数。
 4. 截图只能为 1–2 张有效图片，单张不超过 4 MiB。新车从 0 场开始打三环可以只提供一张；其余申请应提供记录开始与结束的 0% 和 95% 截图。后端只校验数量与图片格式，证据内容由管理员人工判断。
-5. 正好 5 个 `.wotbreplay`；全部解析成功，均匹配提交时的账号和车辆，且 5 个 `arenaId` 互不相同。
+5. 正好 5 个 `.wotbreplay`，各附一份同序的客户端结算事实（`facts`）；均匹配提交时的账号和车辆，且 5 个 `arenaId` 互不相同。
 6. 同一 `(区服, WotB 账号)` 同一车辆已有 CURRENT 时永远不能再创建或通过新申请；PENDING 已存在时也不能重复提交。
 
 ## 审核、证据与并发
 
-- 创建时的 replay 校验、读入五个 byte[]、解析、hash 锁、落盘和事务共用全局 `ReplayCapacityLimiter`；容量已满时在解析前返回 503 `REPLAY_BUSY`，任何 success、校验失败、解析失败、存储失败或 DB 失败都会释放许可。
+- 创建时的 replay 校验、读入五个 byte[]、hash 锁、落盘和事务共用全局 `ReplayCapacityLimiter`；容量已满时返回 503 `REPLAY_BUSY`，任何 success、校验失败、存储失败或 DB 失败都会释放许可。
 - `findByIdForUpdate`（PESSIMISTIC_WRITE）使 APPROVE / REJECT / CANCEL 从 PENDING 到终态只成功一次；APPROVE 事务内重查该 `(区服, WotB 账号)` 该车的 CURRENT，存在即拒绝，绝不产生替代记录。
 - 管理员只能在详情中通过、拒绝或删除：通过无请求体，直接冻结原申报数值；拒绝与删除均要求原因。没有任何修改场数、场均或胜率的接口或控件。
 - 1–2 张截图和 5 个 replay evidence 只在 PENDING 期间对 HoF-admin / wotbtools-admin 可见。回放以 SHA-256 内容寻址保存在隔离的 `${wotb.hof.replay-dir}/mark3` 子目录（默认 `data/replays/mark3`），沿用 ownership 校验但不与单场/百场共用 hash 引用计数；APPROVE / REJECT / CANCEL / DELETE 到终态后清空截图、删除 evidence，随后 best-effort 清理该目录中无引用的物理文件。
@@ -199,7 +213,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 ```
 
 - HoF 数据属于 **WotB 游戏账号**，不属于 Keycloak 用户：V22 后百场/三环的 canonical owner 是 `(wotb_server, wotb_account_id)`，单场 `hall_of_fame_record` 从一开始就按 `account_id` 归属（**无区服维度**，见下文「单场 HoF 的区服限制」）。
-- 仓库中**没有任何 FK 指向 `user_profile`**；`on delete cascade` 只出现在 replay processing 权威状态的域内组合关系上。因此删除 Keycloak 用户不会连带删除任何 HoF 行。
+- 仓库中**没有任何 FK 指向 `user_profile`**；`on delete cascade` 曾只出现在已删除的 replay processing 表（V27 删除）上，现在仓库没有任何级联外键。因此删除 Keycloak 用户不会连带删除任何 HoF 行。
 - **删除用户必须走 WotBTools admin API**：`AdminUserService` 会先删本地 profile 再删 Keycloak 用户。绕过它直连 Keycloak 删除会留下**孤儿 profile**并阻塞后续重绑（`(wotb_server, wotb_account_id)` 唯一槽位仍被占用）；此时用 Admin Users 的 `segment=local` 找到这些孤儿绑定（行上 `keycloakUserMissing=true`）并删除以释放槽位。
 - 用户以全新 Keycloak 身份（例如旧第三方 IdP 用户被删除后改用 Official QQ 重建）重新绑定**同一个 `(区服, WotB 账号)`** 后，其百场/三环数据自然重新关联，不需要任何数据修复；单场 `hall_of_fame_record` 只认账号 ID，因此换服同号会被误关联（见下节）。
 

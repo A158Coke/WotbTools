@@ -29,12 +29,12 @@ jobs:
             cd /opt/wotb
             echo "== docker compose ps =="
             docker compose ps
-            # The Yecao host runs the parser execution plane plus the shared observability stack; the
+            # The Yecao host runs the AI review service plus the shared observability stack; the
             # retired application runtime (backend/frontend/Keycloak/PostgreSQL) has no containers to
             # inspect here any more, and the business runtime's logs live on TX.
-            echo "== parser-worker inspect =="
-            docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' wotb-parser-worker-1 2>/dev/null || true
-            echo "== parser-worker logs =="
-            docker compose logs --tail 220 parser-worker
+            echo "== ai-service inspect =="
+            docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' ai-service 2>/dev/null || true
+            echo "== ai-service logs =="
+            docker compose logs --tail 220 ai-service
             echo "== observability logs =="
             docker compose logs --tail 80 alloy prometheus loki grafana

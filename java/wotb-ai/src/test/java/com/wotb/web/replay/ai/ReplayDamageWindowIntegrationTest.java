@@ -4,7 +4,6 @@ import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.model.Source;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
@@ -14,15 +13,10 @@ import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
-import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
-import com.wotb.core.replay.processing.ReplayProcessingOptions;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -46,21 +40,13 @@ class ReplayDamageWindowIntegrationTest {
                 ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315, 4096);
     }
 
-    private static Path fixture() {
-        return Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures",
-                "replays", "random-battle-example.wotbreplay").normalize();
-    }
-
-    private static ReplayProcessingResult processFixture() throws Exception {
-        final byte[] bytes = Files.readAllBytes(fixture());
-        return new DefaultReplayProcessingFacade()
-                .process(new Source(fixture().getFileName().toString(), bytes),
-                        ReplayProcessingOptions.full());
+    private static ReplayFactsFixtures.Facts processFixture() {
+        return ReplayFactsFixtures.load("random-battle-example");
     }
 
     @Test
     void realReplayDamageWindowsResolvedThroughEntityMapping() throws Exception {
-        final ReplayProcessingResult result = processFixture();
+        final ReplayFactsFixtures.Facts result = processFixture();
         final Battle battle = result.battle();
         assertNotNull(battle);
         assertNotNull(result.reconstruction());
@@ -129,7 +115,7 @@ class ReplayDamageWindowIntegrationTest {
 
     @Test
     void harnessAndFallbackPromptsIncludeRealDamageWindows() throws Exception {
-        final ReplayProcessingResult result = processFixture();
+        final ReplayFactsFixtures.Facts result = processFixture();
         final Battle battle = result.battle();
         final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result.battle(), result.reconstruction());
         assertTrue(recorder.resolved());
@@ -197,7 +183,7 @@ class ReplayDamageWindowIntegrationTest {
 
     @Test
     void fallbackPromptSuppressesAllEventStreamDamageNumbersWhenPartial() throws Exception {
-        final ReplayProcessingResult result = processFixture();
+        final ReplayFactsFixtures.Facts result = processFixture();
         final Battle battle = result.battle();
         final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result.battle(), result.reconstruction());
         assertTrue(recorder.resolved());
@@ -240,7 +226,7 @@ class ReplayDamageWindowIntegrationTest {
 
     @Test
     void killAttributionIdentityRetainedFromCanonicalTerminalWhenPartial() throws Exception {
-        final ReplayProcessingResult result = processFixture();
+        final ReplayFactsFixtures.Facts result = processFixture();
         final Battle battle = result.battle();
         final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result.battle(), result.reconstruction());
         assertTrue(recorder.resolved());
@@ -300,7 +286,7 @@ class ReplayDamageWindowIntegrationTest {
 
     @Test
     void teamPathProducesWindowsForRealMembers() throws Exception {
-        final ReplayProcessingResult result = processFixture();
+        final ReplayFactsFixtures.Facts result = processFixture();
         final Battle battle = result.battle();
         final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result.battle(), result.reconstruction());
         assertTrue(recorder.resolved());

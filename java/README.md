@@ -2,7 +2,7 @@
 
 `java/` 是项目主线。基于同一套 Java 核心能力交付：
 
-- **Web 版**：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览、下载。
+- **Web 版**：Spring Boot 4 后端，Vue 3 前端。**服务器没有 parser**：回放解析（上游 Rust Core WASM）与汇总 / 评分 / 导出 / 2D 数据都在浏览器完成，后端只负责存储、去重、授权、名人堂记录与 AI 编排（见 `../docs/architecture/replay-pipeline.md`）。
 
 当前 Web 版已实现。路线图见 [docs/ROADMAP.md](../docs/ROADMAP.md)。
 
@@ -10,8 +10,8 @@
 
 | 模块/目录       | 说明                                                           |
 |-------------|--------------------------------------------------------------|
-| `wotb-contracts` | 纯 Java 异步基础 contract：Batch/Job/Event/Worker/Storage 边界；不依赖 Spring、RabbitMQ 或 COS SDK |
-| `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
+| `wotb-core` | 共享模型（`Battle` / `PlayerResult` 事实形状）、车辆库映射、AI 复盘用的客户端投影解码（`ReplayFactsCodec`）与分析（evidence / feature / timeline）；不解析回放 |
+| `wotb-ai`   | 独立 ai-service（AI 复盘，维护中） |
 | `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
 | `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net 登录 SPI（Provider ID `wargaming`，region 配置 ASIA/EU/NA → 官方 host 白名单：认证 `api.worldoftanks.*/wot/auth/`、账号 `api.wotblitz.*/wotb/account/`；ASIA/EU/NA 三个实例） |
@@ -36,7 +36,7 @@ state 中独立验证，不访问 production state。
 
 `ci-gate.yml` 是唯一的 Pull Request 验证入口，并负责 `CI / Required Gate`。它按变更选择后端、前端、契约、Android、部署和 OpenTofu 验证，不读取生产凭据，也不执行生产部署。
 
-推送到 `main` 后由独立 workflow 负责各自服务：`business-api.yml`、`frontend.yml`、`keycloak.yml`、`parser-worker.yml` 和 `minio.yml` 分别构建或复用并部署一个精确镜像身份。`caddy.yml` 单独保证 TX 网关可用。RabbitMQ、两个 PostgreSQL root、COS 和 Observability 也各有独立 owner workflow。三个数据更新 workflow 继续独立运行，并为生成的精确 head 创建或更新 PR，再触发 CI 验证。
+推送到 `main` 后由独立 workflow 负责各自服务：`business-api.yml`、`frontend.yml`、`keycloak.yml` 和 `ai-service.yml` 分别构建或复用并部署一个精确镜像身份。`caddy.yml` 单独保证 TX 网关可用。两个 PostgreSQL root、COS 和 Observability 也各有独立 owner workflow。三个数据更新 workflow 继续独立运行，并为生成的精确 head 创建或更新 PR，再触发 CI 验证。
 
 Online diagnostics remain available through prod-diagnostics.yml. Yecao runs only the parser worker and observability stack; Business API, Keycloak, Business PostgreSQL, Frontend, and Caddy run on TX.
 
@@ -72,94 +72,31 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 未显式声明的 `/api/**` 默认拒绝；其他 admin 域一律要求 `wotbtools-admin`。
 
 
-列定义由后端 `GET /api/replay/processing-jobs/{jobId}/result` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）。
-前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`）映射显示名，
-导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，
-并在后端新增列时自动补齐缺失键。详见 [DEVELOPER_GUIDE.md](../docs/DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+列定义、汇总、League Rating、战斗表现与 xlsx 导出都在客户端 `frontend/src/replay-local/`（移植自已删除的 Java
+`Columns` / `AggregateColumns` / rating / export，逐字段对齐 golden）；前端用 `vue-i18n` 三语 locale 映射显示名。
 
+地图名由共享字典 `common/map_names.json` 提供 `zh/en/ru` 三语映射；前端 `mapLabel()` 按当前 locale 取值。
 
-地图名由共享字典 `common/map_names.json` 提供 `zh/en/ru` 三语映射；前端 `mapLabel()` 按当前 locale 取值，导出层 `MapNames.cn()` 继续固定使用中文。
+已删除（2026-10-02，服务器没有 parser）：`/api/replay/processing-jobs*`、`/api/replay/export-jobs*`、
+`/api/replay/map-overview`、`/api/replay/battle-playback-v2`、`/api/replay/process`、`/api/replay/reconstruct-batch`、
+`/api/preview`、`/api/export`、`/api/columns`。AI Review 的旧 `POST /api/replay/analyze` 也已移除，新入口是独立
+`ai-service` 的 `POST /api/ai/reviews`（见 `docs/operations/ai-service.md`）。
 
+全局 `ReplayCapacityLimiter`（`REPLAY_MAX_CONCURRENT_JOBS`，默认 2）只用于名人堂 / 百场 / 三环提交的回放证据落盘，
+容量满返回 `503 REPLAY_BUSY`。
 
-战斗表现（Performance Metrics）由 Replay Processing V2 的
-`GET /api/replay/processing-jobs/{jobId}/result` 统一返回。完整链：
-`POST /api/replay/processing-jobs` → Processing Job → parser-worker →
-共享 `ProcessedDataset` → `GET .../result`。League Rating / base replay facts
-都来自同一 result。单场玩家表与汇总表的列集是 canonical `Columns` / `AggregateColumns`
-key 宇宙；`contribution`/`kast`/`impact`/`alpha_damage`/`traded_deaths`/`account_id`/
-`tank_id`/`victory_points_seized` 已随 B6 退役（汇总仅保留 `multi_damage_rate`），
-`survival_avg` 改名 `survival_time_avg`；账号 / 车辆 ID 改由响应行结构化
-`accountId`/`vehicleId` 承载。不存在独立 `/extended` 页面、`/api/performance`
-端点或「战斗表现」tab。
-
-### Legacy（已废弃）
-
-以下同步端点已随 Replay Processing V2 移除，一律返回 `410 REPLAY_LEGACY_DEPRECATED`：
-
-`POST /api/preview`、`POST /api/export`、
-multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
-`POST /api/replay/reconstruct-batch`。
-
-AI Review 的旧 `POST /api/replay/analyze`（含 multipart 形态）已随迁移整体移除，**不再返回 410**；
-新入口是独立 `ai-service` 的 `POST /api/ai/reviews`（见 `docs/operations/ai-service.md`）。
-
-当前 V2 只有：Processing Dataset → Export Job → XLSX/ZIP（`GET .../result` +
-`POST /api/replay/export-jobs`），不再有 raw replay → Export 路径。历史契约见
-`HISTORY.md` 与 git history（当前 README 只描述 current state）。
-
-
-### Replay Export Job（需登录：wotbtools-user / wotbtools-admin，长任务导出）
-
-大文件量导出（如 34+ 个回放）走异步 Job，页面不再阻塞等待同步 HTTP 响应：
-
-- `POST /api/replay/export-jobs`（**Dataset-only**，`?mode=aggregate|each`；`processingJobId` 语义必填，缺失/空 → 410 `REPLAY_LEGACY_DEPRECATED`；可传 `teamNames` JSON（`{battle:{arenaId:team:名}, summary:{teamKey:名}}`：单场 vs 批次战队 identity 两种独立 override，仅本次调用内使用）result，**不接收 replay files / 不重新上传 / 不重新 processFull**）— 复用 READY Processing Job 的 ProcessedDataset 直接生成 artifact（无上传输入），返回 `202 {jobId, status, total}`。引用不存在的解析任务 → 404 `PROCESSING_JOB_NOT_FOUND`，未 READY → 409 `PROCESSING_JOB_NOT_READY`。
-- `GET /api/replay/export-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, duplicates, failures, errorCode, filename, contentType}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` ∈ PROCESSING_REPLAYS / BUILDING_EXCEL / BUILDING_ARCHIVE。0 场有效 → FAILED `NO_VALID_REPLAYS`（不生成空 Excel）。
-- `DELETE /api/replay/export-jobs/{jobId}` — 取消（QUEUED 立即终态；PROCESSING 协作取消，安全 checkpoint 后终态）。
-- `GET /api/replay/export-jobs/{jobId}/download` — READY 后流式下载 artifact（单场/汇总 xlsx 或 each zip；`FileSystemResource` streaming，不 `readAllBytes`）。
-- **权限**：以上四条端点（create / status / cancel / download）统一要求 `wotbtools-user` 或 `wotbtools-admin`——Export 消费的是 Processing Job 的 `ProcessedDataset`，匿名可调用等于绕过 `GET /api/replay/processing-jobs/{jobId}/result` 的认证保护。legacy 同步导出 `POST /api/export` 是独立 public contract，与本节无关（现已废弃返回 410）。
-
-容量：内存态 job store（单实例部署）+ 有界 worker 池（`REPLAY_EXPORT_JOB_MAX_CONCURRENT=2` / `REPLAY_EXPORT_JOB_QUEUE_CAPACITY=4`，满载 503 `EXPORT_QUEUE_FULL`）；Export 只消费已解析 result，**不执行 replay 解析，故不获取全局 `ReplayCapacityLimiter` 许可**。终态 job 与临时目录由 TTL（`REPLAY_EXPORT_JOB_TTL_MINUTES=30`）清理，启动清理孤儿目录。旧同步 `POST /api/export` 已随 V2 废弃（410）；当前只保留 `/api/replay/export-jobs`。
-
-### Replay Processing Job（需登录：wotbtools-user / wotbtools-admin，解析预览异步化）
-
-「上传多个回放 → 解析预览」从长同步 HTTP 改为异步 Processing Job：HTTP request 立即返回 202 + jobId，source 任务确认式投递给 RabbitMQ，由 Yecao parser-worker 消费（`PARSER_WORKER_CONCURRENCY` = AMQP consumer 数，默认 2），每个 replay 恰好 `processFull` 一次，产出**共享的 ProcessedDataset** 供 Preview / Export / AI / 战局回放复用（同一批 34 个回放不再 Preview ×34 / AI ×34 / Playback ×34，总 `processFull` 调用数 = 文件数）。**READY 后消费者只读**：facts 层 enrich（populateBattle）只在 dataset 创建时执行一次，Preview result / from-result Export 不再二次 mutate 共享 Battle（并发 Preview / aggregate / each Export 同一 dataset 无 shared mutable write）；`validCount() > 0` 即允许 from-result 导出（failures 只用于进度/统计，不与有效场数相减）。
-
-- `POST /api/replay/processing-jobs`（multipart `files`，可选表单字段 `prioritySourceIndex` 指定直接进入 AI/Playback 的目标 source，可选表单字段 `operationId` 用于幂等）— 校验并立即持久化上传输入，返回 `202 {jobId, status, total}`。
-- **Idempotency**：同一已认证 subject 用同一 `operationId` 重复提交返回**同一个** `jobId`（不重复上传 / 不重复登记 / 不重复提交调度器），用于覆盖「server 已接受但客户端 ACK 前进程被杀 → 重新导入同一份回放」的 exactly-once。identity 按 subject 分域（绝不跨用户复用），索引为内存态、生命周期跟随 Job（TTL 清理后同一 `operationId` 会创建新 job——此时旧 dataset 已不可读）。字段缺失（普通 Web 手工上传）时保持「每次提交都是新 job」语义。
-- **并发同 identity**：Store 维护单一权威 operation 状态机（`ABSENT` / `IN_FLIGHT(future)` / `COMMITTED(jobId)`），committed 判定与 creator 领取在同一个 `ConcurrentHashMap#compute` 内完成——不存在「先查 committed、再领取 reservation」的两阶段 TOCTOU 窗口。唯一 creator 创建并提交，其余 duplicate 等待同一 future；只有 `dispatcher.submit` **成功之后**才进入 `COMMITTED`，因此 creator 失败（如 `PROCESSING_QUEUE_FULL`）时所有 caller 一起失败，绝不返回随后被清理的 jobId，也不会各自 submit 出两个 job；失败后状态回到 `ABSENT`，doomed job 与临时存储全部清理，后续同 identity 请求可重新创建有效 job。不使用全局锁。
-- `GET /api/replay/processing-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile, parseCompleted, parseSucceeded, parseFailed, sources[], activeSources[]}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` ∈ WAITING_FOR_WORKER / PROCESSING_REPLAYS / FINALIZING_BATCH（parse 进度 = `parseCompleted/total`，与 dedupe/finalize 解耦；`valid/duplicates/failures` 只在 FINALIZING 后确定）；`sources[]` 为轻量 per-source 状态（`sourceId`（`r{index}`）/`sourceIndex`/`displayName`/`status`/`errorCode`），`activeSources[]` 为当前并行处理中的 source（≤2）。0 场有效 → FAILED `NO_VALID_REPLAYS`。
-- `DELETE /api/replay/processing-jobs/{jobId}` — 取消（QUEUED 立即终态并释放派发 pending 容量；PROCESSING 置协作取消标志，已派发 source 完成安全 unit 后终态；FINALIZING 阶段间 checkpoint）。
-- `GET /api/replay/processing-jobs/{jobId}/result` — READY 后返回 Preview 数据（battles / aggregate / duplicates / failures / playerColumns / aggregateColumns；**不再重新 process replay**）；未 READY → 409 `JOB_NOT_READY`。
-- **权限**：以上四条端点（创建 / 状态 / result / 取消）统一要求 `wotbtools-user` 或 `wotbtools-admin`——匿名 → 401 `AUTH_UNAUTHENTICATED`，已登录但无角色 → 403 `AUTH_FORBIDDEN`。前端 Replay Workspace 的登录门禁只是 UX，后端才是 authorization authority；`/api/preview` 与 `/api/export` 是独立 legacy 公共端点，其匿名契约不受影响。
-
-容量与生命周期：解析 CPU 预算在 Yecao `parser-worker`（`PARSER_WORKER_CONCURRENCY` = AMQP
-consumer 数，默认 2）；TX backend 内的 Excel/ZIP artifact 构建并发独立为
-`REPLAY_ARTIFACT_MAX_CONCURRENT`（默认 1）。ProcessedDataset 为**内存态短生命周期缓存**
-（TTL `REPLAY_PROCESSING_JOB_TTL_MINUTES=30`）：只缓存已 enrich 的 Battle 结算战绩
-（不携带 reconstruction 事件流）；per-source derived artifact（`map-overview.json`）写对象存储
-`temp/jobs/<jobId>/artifacts/<i>/`（先写后 READY，
-TTL 随 job 工作区清理）。Dataset Lease：Export / Playback 读取前 `acquire`（引用计数
-+1，TTL 清理跳过），结束后 `release`；acquire 后任何失败都释放引用（不泄漏 refcount）。
-Job 工作区由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）；上传输入落对象存储。旧同步
-`POST /api/preview` / `POST /api/export` 已随 V2 移除（返回 `410 REPLAY_LEGACY_DEPRECATED`；
-导出改走 `/api/replay/export-jobs` 异步 Job）。
-
-> **容量边界**：Processing V2 的解析 CPU 预算在 Yecao `parser-worker`（`PARSER_WORKER_CONCURRENCY`，AMQP consumer 数）；TX backend 不存在进程内解析预算。全局 `ReplayCapacityLimiter`（`REPLAY_MAX_CONCURRENT_JOBS`，默认 2，与 HoF/Hundred/Mark3 等**非 Processing** 业务共享）是「同一实例同一时刻执行其它领域回放解析任务」的独立许可，容量满由对应业务接口返回 `503 REPLAY_BUSY`；它**不是** Processing V2（`/api/replay/processing-jobs`）的容量 authority，二者不重复计费、不存在第二套并行处理。
-
-### AI 复盘（独立 ai-service）与战局回放（wotbtools-user / wotbtools-admin）
+### AI 复盘（独立 ai-service，wotbtools-user / wotbtools-admin）
 
 AI Review 已从 Business Backend 拆出，运行在 Yecao 的独立无状态 `ai-service`（Maven module 仍叫
 `wotb-ai`，镜像 `ghcr.io/a158coke/ai-service`）：无数据库、无 MinIO、无 Business Backend 依赖，
 只保留内存态的活跃请求 / 取消注册表 / 准入状态。**Business Backend 不再承载或代理 AI 请求**。
 
-完整战斗重建仍由 Processing Job 的 per-source 阶段在 parser-worker 内完成，产出 `map-overview.json`
-等 derived artifact，供**战局回放**读取；AI 复盘不再消费任何 Dataset artifact。
+战局回放（2D）的数据在浏览器本机生成（`frontend/src/replay-local/playback`）；AI 复盘只消费客户端投影，
+服务端不再有重建器（恢复 AI 复盘时基于上游 `parseAiReview` 重建投影）。
 
 - `POST /api/ai/reviews`（独立 `ai-service`）— JSON body `{schemaVersion, locale, correlationId, battle, reconstruction}`（`AiReviewRequestV1`）：`schemaVersion` 必须为 `1`，`locale` 白名单 `zh-CN`/`en-US`/`ru-RU`，`correlationId` 为 canonical UUID。客户端负责解析与事实投影，服务端不读 Processing Dataset。稳定错误码：`UNSUPPORTED_AI_REQUEST_SCHEMA` / `INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` / `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`（409）/ `UNSUPPORTED_BATTLE_CATEGORY`（422）/ `AI_REQUEST_TOO_LARGE`（413，16 MiB 上限）/ `AI_REVIEW_BUSY`（503，有界准入饱和）。取消：`POST /api/ai/reviews/{correlationId}/cancel`（`204`，未注册 `404`）。公开入口经 TX `/api/ai/**` 私网反代，服务本身无公网端口。完整协议见 `docs/features/team-ai-review.md`。
 
-- `POST /api/replay/map-overview` — Dataset 路径 JSON body `{processingJobId, sourceId}` 读 cached `map-overview.json`（不重新 full process）；legacy multipart 路径已废弃（410 `REPLAY_LEGACY_DEPRECATED`）。地图不可构建返回 `204`。战局回放与 AI 复盘解耦：回放只依赖 Dataset artifact，AI 只依赖客户端投影。
-
-**策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
+**策略**：系统按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
 
 团队总伤害、承伤、助攻、格挡、击杀、存活和业务死亡秒值来自 `battle_results.dat` 权威结算（`#301 field24 lifeTime`）；Playback/live reconstruction 仅服务播放、HP/动画与诊断，不能覆盖或回写 settlement `PlayerResult`。`deathTimeMillis`/`survivalTimeSec` 仅保留兼容投影，legacy 启发式不作为死亡 authority；事件流伤害只作为观测子集。重建可用时补充每名队员独立移动、阵型、交火和关键事件；重建不可用时仍可生成明确标注的权威结算 fallback。AI 输入不包含原始事件流，prompt 长度由 token 估算器（`AiTokenEstimator`）按 `AiModelProperties` 预算控制（`singleReplayMaxInputTokens` 等），不再使用固定成员数/事件数/字符数截断；超限时返回 `AI_INPUT_TRUNCATED` limitation。
 
@@ -171,7 +108,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 
 - `GET /api/hof?battleType=RANDOM|RATING&nation=&vehicleType=&tier=&tankId=&nickname=&page=&size=` — 统一公开查询（匿名；国家/车种/等级无需先选车辆即可独立过滤，所有非空车辆条件与 `tankId` 取交集；排序 damage DESC → RATING 优先 → battleTime ASC NULLS LAST → createdAt → id；rank = 完整 filter 上下文位置排名）。
 - `GET /api/hof/vehicle-options` — 匿名车辆选项（当前单场名人堂实际存在车辆的名称、国家/系别、车种、等级），供公开页与管理页无序交集筛选复用。
-- `POST /api/hof/upload` — 上传单场回放（**需登录**）；不支持战斗模式 → 400 `UNSUPPORTED_BATTLE_TYPE`；其余跳过时返回英文 `reasonCode`（`DUPLICATE_OR_UNKNOWN_RECORDER` / `REPLAY_HASH_CONFLICT`），由前端本地化。
+- `POST /api/hof/upload` — 上传单场回放（**需登录**；multipart `file` = 回放附件，`facts` = 浏览器本机解析的结算事实 `Battle` JSON，服务端只做结构校验 `INVALID_REPLAY_FACTS`，防伪造靠管理员审核）；不支持战斗模式 → 400 `UNSUPPORTED_BATTLE_TYPE`；其余跳过时返回英文 `reasonCode`（`DUPLICATE_OR_UNKNOWN_RECORDER` / `REPLAY_HASH_CONFLICT`），由前端本地化。
 - `GET /api/hof/{id}/replay` — 下载该记录原始回放文件（**需登录**，任意已登录用户；无文件 → 404 `REPLAY_FILE_NOT_FOUND`）。
 - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof`（国家/车种/等级可独立真实筛选并与具体车辆取交集，另支持搜索/排序/分页；不暴露 Arena ID 或原始 `arenaBonusType`）、`GET /api/admin/hof/vehicle-options`（复用公开车辆选项实现）、`GET /api/admin/hof/audit`（操作日志，只读）、`GET /api/admin/hof/{id}/replay`（下载）、`DELETE /api/admin/hof/{id}`（hard delete，audit+delete 单事务，最后引用清理物理文件；删除后同一回放可重新上传）、`POST /api/admin/hof/records/bulk-delete`（body `{ids}`，**无 reason**——单场删除没有 reason 语义；逐条复用单条 hard delete 语义，每条独立事务 + commit 后引用计数清理物理文件，允许 partial success，去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`；不存在的 id 逐条以 `HOF_ENTRY_NOT_FOUND` 失败）。
 - 原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（默认 `data/replays`，生产 volume `/data/replays`）；老记录无文件不显示下载按钮。
@@ -199,7 +136,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `PATCH /api/users/wotb-account` — CN 手动绑定（仅允许 `wotbServer=CN`）；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
 - `PUT /api/users/wotb-account/from-login` — WG 登录后的幂等同步（无 body，只读 JWT）；Profile 不存在时原子创建 WARGAMING、空 Profile 升级为 WARGAMING、同 (region, account_id) 刷新官方昵称（不刷新 verified_at）。已绑定 CN 覆盖或跨区服返回 409 `PROFILE_REGION_MISMATCH`、换账号返回 409 `WOTB_ACCOUNT_MISMATCH`、账号被他人占用返回 409 `WOTB_ACCOUNT_ALREADY_USED`、Claims 缺失返回 400 `WOTB_CLAIMS_INVALID`。
 - `DELETE /api/users/wotb-account` — 解绑；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
-- **回放录制者验证（无独立端点）** — 复用既有回放流程：`GET /api/replay/processing-jobs/{jobId}/result` 在返回 Preview 前，用已认证 subject 与**同一份** READY dataset 比较「canonical 录像者 accountId」（`PlayerResultFormat.recorderAccountId`）与当前绑定账号；**数值相等**才把 `wotb_account_verified_at` 置为首次验证时间（已验证则保留原时间戳、不重写）。fail-closed：解析不出数值 accountId / 未绑定账号 / 账号不同 → 什么都不做；nickname 相同、或账号只是出现在同局名册都不算。验证是 best-effort 旁路，失败只记日志、**绝不影响**回放结果响应。换绑（`(wotb_server, wotb_account_id)` 任一变化）与解绑会清空验证，与账号身份无关的编辑（如昵称）不清空。无专用验证上传端点、无新增表；列由 `V12__add_wotb_asia_fields.sql` 引入。
+- **用回放验证** — `POST /api/users/wotb-account/verify-replay`（body `{recorderAccountId}`）：个人主页按钮在浏览器本机解析回放（服务器没有 parser），只提交录像者数值 accountId；与当前绑定账号**数值相等**才把 `wotb_account_verified_at` 置为首次验证时间（已验证则原样返回）；不一致 409 `REPLAY_RECORDER_MISMATCH`，未绑定 400 `WOTB_ACCOUNT_NOT_BOUND`，缺录像者 400 `REPLAY_RECORDER_REQUIRED`。录像者 accountId 来自客户端，已验证状态只用于主页徽章、不授予权限。换绑（`(wotb_server, wotb_account_id)` 任一变化）与解绑会清空验证，与账号身份无关的编辑（如昵称）不清空。列由 `V12__add_wotb_asia_fields.sql` 引入。
 
 资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 5 个 protocol mapper 提供（另含 `displayName→displayName`；业务 claims 为 `region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；WG 登录所需 `WG_APPLICATION_ID` 仅注入 Keycloak，backend 不再调用 WG stats。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md) 与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
 
@@ -278,5 +215,5 @@ wotb:
 
 ## 维护注意
 
-- 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `GET /api/replay/processing-jobs/{jobId}/result` 响应获取列定义，不在前端硬编码业务字段。
+- 列定义在客户端 `frontend/src/replay-local/compute/columns.ts` 集中管理（移植自已删除的 Java `Columns`），批次计算的 Preview 结果携带列定义，表格不硬编码业务字段。
 - 车辆库单一来源在 `common/tankopedia-tier{7,8,9,10}.json`（由 `common/python/update_tankopedia.py` 从 blitzkit 游戏客户端数据同步，按等级拆分 4 个文件，`vehicles` 数组全英文格式，含手工 `extraInfo` 每车知识点与每车可用物资/消耗品/装备）；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。
