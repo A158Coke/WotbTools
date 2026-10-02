@@ -113,7 +113,7 @@ jobs:
             install -d -m 700 "$state_dir"
             if [[ -e "$state_marker" || -L "$state_marker" ]]; then
               [[ -f "$state_marker" && -s "$state_marker" && ! -L "$state_marker" ]]                 && grep -qx 'local-tofu-state-bootstrap-v1' "$state_marker"                 || { echo 'Komodo OpenTofu bootstrap marker is unsafe.' >&2; exit 1; }
-              [[ -f "$state_file" && -s "$state_file" && ! -L "$state_file" ]]                 || { echo 'Komodo OpenTofu state is missing or unsafe.' >&2; exit 1; }
+              [[ -f "$state_file" && -s "$state_file" && ! -L "$state_file" ]]                 || { echo 'Local OpenTofu state is not bootstrapped or unsafe for Komodo.' >&2; exit 1; }
             elif [[ -e "$state_file" || -L "$state_file" ]]; then
               echo 'Komodo OpenTofu state exists without a completed bootstrap marker; manual recovery is required.' >&2
               exit 1
