@@ -1,0 +1,83 @@
+# Komodo control-plane runtime for Yecao.
+#
+# Ownership: Docker Compose owns these two containers, GitHub Actions
+# (`.github/workflows/komodo-controller.yml`) owns reconciliation, and OpenTofu
+# (`infra/tofu/komodo`) owns the public DNS record. Komodo must never own its own
+# Core lifecycle, so both containers carry the upstream `komodo.skip` label and
+# no Periphery agent is deployed in this phase.
+#
+# Network boundary: Core publishes the Yecao WireGuard address only and MongoDB
+# publishes no host port, so the controller is unreachable from the public
+# internet. Public ingress stays with the independent TX Caddy owner.
+name: komodo
+
+services:
+  mongo:
+    image: mongo:8.0.32-noble@sha256:0393ab544cbbe92b2dd64719205ecb14a8b3824b17ea75051e2f22482c3e4e66
+    restart: unless-stopped
+    labels:
+      komodo.skip: ""
+    command:
+      - --quiet
+      - --wiredTigerCacheSizeGB
+      - "0.25"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: komodo
+      MONGO_INITDB_ROOT_PASSWORD: "${KOMODO_DATABASE_PASSWORD:?KOMODO_DATABASE_PASSWORD is required}"
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+
+  core:
+    image: ghcr.io/moghtech/komodo-core@sha256:bca73d0eee143066228fb9b80c38a5a2726e573ad2758f7aa92b5c91a8aef1c7
+    init: true
+    restart: unless-stopped
+    labels:
+      komodo.skip: ""
+    depends_on:
+      - mongo
+    environment:
+      # Database (see `config/core.config.toml` in Komodo v2.3.3).
+      KOMODO_DATABASE_ADDRESS: mongo:27017
+      KOMODO_DATABASE_USERNAME: komodo
+      KOMODO_DATABASE_PASSWORD: "${KOMODO_DATABASE_PASSWORD:?KOMODO_DATABASE_PASSWORD is required}"
+      # Public identity: reached through TX Caddy over WireGuard, never directly.
+      KOMODO_HOST: https://komodo.wotbtools.com
+      KOMODO_TITLE: WotBTools Ops
+      # Local auth only, with a fixed first admin. Registration is closed and
+      # only admins may create resources until workload ownership migrates.
+      KOMODO_LOCAL_AUTH: "true"
+      KOMODO_INIT_ADMIN_USERNAME: admin
+      KOMODO_INIT_ADMIN_PASSWORD: "${KOMODO_INIT_ADMIN_PASSWORD:?KOMODO_INIT_ADMIN_PASSWORD is required}"
+      KOMODO_DISABLE_USER_REGISTRATION: "true"
+      KOMODO_ENABLE_NEW_USERS: "false"
+      KOMODO_DISABLE_NON_ADMIN_CREATE: "true"
+      KOMODO_TRANSPARENT_MODE: "false"
+      # K1 bootstraps an EMPTY controller plane. Komodo v2.3.3 defaults
+      # `disable_init_resources=false`, which on a fresh database seeds the system
+      # Procedures "Backup Core Database", "Global Auto Update", and "Rotate
+      # Server Keys". None of those belong to K1: no replacement Procedure or
+      # backup automation is created either. Admin initialization above stays on.
+      KOMODO_DISABLE_INIT_RESOURCES: "true"
+      # Persistent secrets supplied by GitHub. They must never be Core-generated,
+      # or every restart would invalidate sessions and git webhooks.
+      KOMODO_JWT_SECRET: "${KOMODO_JWT_SECRET:?KOMODO_JWT_SECRET is required}"
+      KOMODO_JWT_TTL: "1-day"
+      KOMODO_WEBHOOK_SECRET: "${KOMODO_WEBHOOK_SECRET:?KOMODO_WEBHOOK_SECRET is required}"
+      TZ: Asia/Hong_Kong
+    ports:
+      # Yecao WireGuard address only: never 0.0.0.0 and never a public Yecao port.
+      - "10.20.0.2:9120:9120"
+    volumes:
+      # Persistent Core/Periphery identity keys, plus the reserved controller
+      # backup directory owner.
+      - core-keys:/config/keys
+      - /opt/komodo/backups:/backups
+
+volumes:
+  mongo-data:
+    name: komodo_mongo_data
+  mongo-config:
+    name: komodo_mongo_config
+  core-keys:
+    name: komodo_core_keys
