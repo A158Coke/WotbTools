@@ -314,8 +314,9 @@ describe('2D canonical 场景', () => {
   })
 
   it('基地存在但全程无占领：目标存在性独立于进度，不因没有迁移就判定无基地', () => {
-    const pb = { ...random.playback!, assault_bases: [] }
-    const d = toBattlePlaybackDataset(pb, random.result, random.aiReview!, { tankopedia })!
+    const { playback, result, aiReview } = requireFixtures(random)
+    const pb = { ...playback, assault_bases: [] }
+    const d = toBattlePlaybackDataset(pb, result, aiReview, { tankopedia })!
     expect(d.assaultObjectivePresent).toBe(true)
     expect(d.baseStates).toEqual([])
     expect(d.capability).toBe('FULL')
