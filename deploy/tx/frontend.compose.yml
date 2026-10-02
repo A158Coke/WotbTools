@@ -8,7 +8,7 @@ x-logging: &default-logging
 
 services:
   wotb-frontend:
-    image: ${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}/wotbtools-frontend:latest
+    image: ${TX_FRONTEND_IMAGE_REF:?TX_FRONTEND_IMAGE_REF is required}
     environment:
       # nginx's official template entrypoint expands this value before nginx
       # starts. It is the TX-internal business runtime: the generic /api/ traffic is

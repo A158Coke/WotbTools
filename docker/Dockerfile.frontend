@@ -37,7 +37,7 @@ RUN node -e 'const fs=require("fs"),path=require("path");const v=(process.env.VI
 # 图片（地图底图 / 坦克图标等，占前端产物约 90%，文件名带内容哈希、很少变）单独成层，
 # 并把产物 mtime 归零：配合构建时的 SOURCE_DATE_EPOCH + rewrite-timestamp，图片不变时该层
 # 逐字节一致，registry 已有同 digest 的 blob，docker push 直接跳过——每次发布只需上传
-# 几 MB 的 JS/CSS 层（TCR 跨境推送慢，整层 45MB 经常超时）。
+# 几 MB 的 JS/CSS 层；即使改为 TX→TCR 国内发布，也继续减少每次 registry 上传与本地磁盘 I/O。
 RUN mkdir -p /out/media/assets \
  && find /app/dist/assets -maxdepth 1 -type f \
       \( -name '*.webp' -o -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.svg' -o -name '*.glb' \) \

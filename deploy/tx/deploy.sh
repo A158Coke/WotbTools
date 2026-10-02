@@ -16,6 +16,7 @@ readonly AI_UPSTREAM_VALUE="${TX_AI_UPSTREAM:-http://10.20.0.2:8089}"
 readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
 readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
 readonly TX_IMAGE_REGISTRY_PREFIX_VALUE="${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}"
+readonly TX_FRONTEND_IMAGE_REF_VALUE="${TX_FRONTEND_IMAGE_REF:-}"
 readonly TX_BUSINESS_API_IMAGE_REF_VALUE="${TX_BUSINESS_API_IMAGE_REF:-}"
 readonly HEALTH_ATTEMPTS="${WOTB_HEALTH_ATTEMPTS:-60}"
 readonly HEALTH_INTERVAL_SEC="${WOTB_HEALTH_INTERVAL_SEC:-2}"
@@ -122,6 +123,14 @@ validate_inputs() {
       || die "TX_IMAGE_REGISTRY_PREFIX must be a Tencent TCR registry and namespace."
   fi
   if is_selected wotb-frontend; then
+    require_env TX_FRONTEND_IMAGE_REF
+    case "$TX_FRONTEND_IMAGE_REF_VALUE" in
+      "$TX_IMAGE_REGISTRY_PREFIX_VALUE/wotbtools-frontend@sha256:"*) ;;
+      *) die "TX_FRONTEND_IMAGE_REF must pin wotbtools-frontend by TCR sha256 digest." ;;
+    esac
+    local frontend_digest="${TX_FRONTEND_IMAGE_REF_VALUE##*@sha256:}"
+    [[ "$frontend_digest" =~ ^[0-9a-f]{64}$ ]] \
+      || die "TX_FRONTEND_IMAGE_REF must contain a 64-character lowercase sha256 digest."
     [ "$BACKEND_UPSTREAM_VALUE" = "http://business-api:8087" ] \
       || die "TX_BACKEND_UPSTREAM must be the TX-internal business runtime http://business-api:8087."
     # /api/ai/ is the only route that leaves TX: the standalone AI service runs on
@@ -656,7 +665,8 @@ diagnostics() {
   echo "configSha=$CONFIG_SHA_VALUE"
   case "$DEPLOY_SERVICES_RAW" in
     business-api) echo "image=$TX_BUSINESS_API_IMAGE_REF_VALUE" ;;
-    keycloak|wotb-frontend) echo "image=latest" ;;
+    wotb-frontend) echo "image=$TX_FRONTEND_IMAGE_REF_VALUE" ;;
+    keycloak) echo "image=latest" ;;
   esac
   echo "deployServices=$DEPLOY_SERVICES_RAW"
   if [ -n "$PROBE_LAST_SERVICE" ]; then
