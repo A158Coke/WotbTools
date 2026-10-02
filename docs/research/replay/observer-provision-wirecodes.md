@@ -22,7 +22,7 @@ Type5 materialization entityId
   -> battle_results.dat #301 settled combatants
 ```
 
-The parser boundaries used by production support this distinction: `ReplayParser` builds `Battle.players` from settlement `#301`, while method48 participant mappings can also contain non-settled observer entities.
+The parser boundaries used by production support this distinction: the production parse (upstream Rust Core WASM `parseResult`, consumed by `frontend/src/replay-local/battleFacts.ts`; formerly the Java `ReplayParser`, retired 2026-10-02) builds `Battle.players` from settlement `#301`, while method48 participant mappings can also contain non-settled observer entities.
 
 Observed full combat-loadout Type5 materializations in this re-analysis:
 

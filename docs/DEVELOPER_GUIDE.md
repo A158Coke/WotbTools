@@ -41,7 +41,8 @@
 # Java 分层测试
 # Targeted（改单个 class/function）：mvn -pl wotb-core -Dtest=<TestClass> test
 # Module（单模块/一个 feature）：mvn -pl wotb-core test 或 mvn -pl wotb-web -am test
-# Full（PR CI authoritative validation，Agent 默认不跑）：cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test
+# Full（PR CI authoritative validation，Agent 默认不跑）：cd java && JAVA_HOME=<jdk25> mvn -s settings.xml test
+# JAVA_HOME 指向 JDK 25 安装目录（主工程 JDK 25；只有 keycloak provider 子工程用 JDK 21）。
 # 注意：wotb-web 的真实外部 AI probe 标记为 ai-live，默认被 Surefire 排除；不要仅因环境存在 AI_API_KEY 就解除排除。
 
 # 前端分层测试
@@ -123,7 +124,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 | Owner | Source / shared inputs | Runtime inputs | PR validation | OpenTofu root | Production workflow |
 |---|---|---|---|---|---|
 | Business API | Java web/core modules、HTTP contract、shared common data | business-api image、TX Compose、dependency readiness | Maven、HTTP contract | — | `business-api.yml` |
-| AI Service（预部署） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端仍维护中 | Maven、AI image build、Compose | — | `ai-service.yml` |
+| AI Service（预部署） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端已解除维护（`AiReviewWorkspacePane` 直接挂载，无维护门） | Maven、AI image build、Compose | — | `ai-service.yml` |
 | Frontend | Vue、HTTP contract、shared assets/map/tier data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
 | Keycloak | QQ/Wargaming providers、Keycloak image | realm runtime、TX Compose | provider/runtime、Tofu | `keycloak` | `keycloak.yml` |
 | Android | Android source、native bridge、release helpers | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |
@@ -145,7 +146,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
  wotb-core     model（Battle / PlayerResult 事实形状）/ ref（Tankopedia）/ util /
                replay/{event,facts,feature,evidence,map,processing,reconstruction,timeline}（AI 复盘的客户端投影解码与分析）
        ↓
- wotb-ai       独立 ai-service（AI 复盘，消费客户端投影；维护中）
+ wotb-ai       独立 ai-service（AI 复盘，消费客户端投影；前端已解除维护）
  wotb-web      single Spring Boot composition root：controller → feature service → mapper → dto
        ↓
  Vue SPA（frontend/src/replay-local：WASM 解析 + 批次计算 + 导出 + 2D 数据）
@@ -320,7 +321,7 @@ Showcase Topbar 为 60px。跨页面高优先级修复集中在 `showcase-regres
 
 ### Replay capabilities
 
-`?view=replay` 专注批量解析、结果预览和汇总；`?view=battle-playback` 是同一工作台的 2D 模式，`?view=ai-review` 为 AI 复盘（维护中）。工作台持有唯一一份文件选择与本机分析结果（`useReplaySession` + `useLocalReplayAnalysis`）：选择一次、分析一次，数据 / 导出 / 2D 共用。
+`?view=replay` 专注批量解析、结果预览和汇总；`?view=battle-playback` 是同一工作台的 2D 模式，`?view=ai-review` 为 AI 复盘（已解除维护，见 `AiReviewWorkspacePane`）。工作台持有唯一一份文件选择与本机分析结果（`useReplaySession` + `useLocalReplayAnalysis`）：选择一次、分析一次，数据 / 导出 / 2D 共用。
 
 规则：
 

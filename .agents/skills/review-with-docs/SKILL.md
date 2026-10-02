@@ -329,7 +329,7 @@ Tool failure 必须：
 核查基线：`git diff origin/main...HEAD --stat` 与本次变更文件清单；逐项对照：
 
 - HISTORY（仅长期演进）/ canonical 专题文档 / DEVELOPER_GUIDE / README / java/README / map-semanticizer README；
-- 前端 i18n（新增列 → `frontend/src/locales/{zh,en,ru}.json` 三语）、导出列（`Columns.java` / `AggregateSheets.java`）、API DTO 与注释；
+- 前端 i18n（新增列 → `frontend/src/locales/{zh,en,ru}.json` 三语）、客户端导出表头/标签（`frontend/src/replay-local/export/sheets.ts`）、API DTO 与注释；
 - 代码注释 / TODO / FIXME；
 - 配置依赖文档（`pom.xml` 新依赖注释 / `application.yml` 环境变量注释 / Dockerfile 注释）；
 - `docs/current-plan.md`（如存在且与本次变更相关，任务状态需一致）；
@@ -414,7 +414,7 @@ Blocker count: N   （0 才允许判定完成）
 
 ### 4. API 文档 / i18n
 - [ ] 新增列 → `frontend/src/locales/{zh,en,ru}.json` 三语同步
-- [ ] 新增列 → `Columns.java` / `AggregateSheets.java` 导出标签同步
+- [ ] 新增列 → `frontend/src/replay-local/export/sheets.ts` 导出表头/标签同步（`PLAYER_PRESENTATION` / `SUMMARY_PRESENTATION` / `DIMENSION_TITLES`）
 - [ ] API 端点变更 → 对应 DTO 和文档注释更新
 
 ### 5. 代码注释

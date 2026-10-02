@@ -40,8 +40,6 @@
 | 文档 | 何时读 |
 |---|---|
 | `development/contribution-map.md` | 想加新功能、找后端/前端/契约入口或判断贡献点归属时 |
-| `development/replay-performance.md` | 运行 replay core 本地性能基准、JFR 或规划生产 one-shot 测量时 |
-| `development/replay-performance-results.md` | 查看最近一次本地性能基线、JFR 证据与优化决策时 |
 | `development/ai-virtual-thread-benchmark.md` | 运行真实 provider 的 Platform vs Virtual blocking-call A/B 时 |
 
 ## Architecture（架构）
@@ -54,7 +52,7 @@
 | `frontend/design-language.md` | 改任何界面前：颜色 / 字号 / 间距 / 组件 / 文案的设计规则与 stylelint 守护 |
 | `frontend/layout-audit-2026-09-30.md` | 查看多端布局与 UI/UX 审计快照（问题清单、改版方案、路线图） |
 | `architecture/TECHNICAL_EVOLUTION.md` | 查技术决策、authority / boundary、分布式 Replay 与双云架构的 canonical 演进时 |
-| `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / Team Autopsy 时 |
+| `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / 结构化团队结果（`TeamAiReviewResult`）时 |
 | `architecture/replay-pipeline.md` | 改客户端回放管线（上游 Rust Core WASM → 批次计算 / 导出 / 2D）或名人堂客户端事实时 |
 | `architecture/client-replay-engine-migration.md` | 了解服务端解析器退役（2026-10-02）的决策、结果与后续待办时 |
 | `architecture/battle-timeline.md` | 改 battle timeline 事件模型 / 时间轴聚合时 |

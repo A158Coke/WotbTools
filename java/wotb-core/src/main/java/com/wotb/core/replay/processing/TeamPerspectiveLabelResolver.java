@@ -69,7 +69,7 @@ public final class TeamPerspectiveLabelResolver {
     /**
      * 内部稳定身份键：基于排序 roster 昵称/账号 hash 的 {@code 队伍-<code>}。
      * <p><b>internal only</b>：可用于内部 identity 比较，<b>禁止</b>出现在任何
-     * 用户可见输出（Prompt 正文 / UI / PreBattleSectionRenderer / Autopsy 渲染）。</p>
+     * 用户可见输出（Prompt 正文 / UI / PreBattleSectionRenderer）。</p>
      */
     public static String resolveStableKey(final List<PlayerResult> players) {
         if (players == null || players.isEmpty()) {

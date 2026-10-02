@@ -99,7 +99,7 @@ Type8
 - 最终领先方与 battle_results winnerTeam **5/5 一致**
 - 示例（1555 样本）：56.233s team1=303、58.234s team1=306；击毁 ±40 点（78.534s team1 345→305 / team2 321→361；130.322s 反向）；最终 797:232
 
-**解码器**：`EntityMethodDecoder.parseSupremacyPoints`（生产门禁 wrapperFieldNumber==13 且 root field12 存在，保守结构校验；team∈{1,2}、points∈[0,100000] 才 EXACT，结构不合法/数值非法跳过；`readWrapperFieldNumber` 供探针复用同一提取路径）。前端 `teamPointsAt` 取最近一次 ≤ currentTime 的广播值，拖动时间轴时点数实时变化；非争霸赛/无广播不显示，battle_results 结算值不得冒充实时比分。
+**解码器**：点数广播样本由上游 Rust Core WASM 提供（原 Java `EntityMethodDecoder.parseSupremacyPoints` 的门禁口径——wrapperFieldNumber==13 且 root field12 存在，保守结构校验；team∈{1,2}、points∈[0,100000] 才 EXACT，结构不合法/数值非法跳过；`readWrapperFieldNumber` 供探针复用同一提取路径——已随服务端解析器于 2026-10-02 退役，协议结论保留），客户端投影在 `frontend/src/replay-local/playback/toBattlePlaybackDataset.ts` 的 `pointsSamples`。前端 `teamPointsAt` 取最近一次 ≤ currentTime 的广播值，拖动时间轴时点数实时变化；非争霸赛/无广播不显示，battle_results 结算值不得冒充实时比分。
 
 **跨版本字段稳定性**：暂记 **PARTIAL**（11.18/11.19 已验证，未来客户端版本不假设永久不变）。
 
@@ -119,7 +119,11 @@ Type8
 - **0xFFFF（signed -1）**：UNKNOWN/不可用/未初始化 sentinel（1535 样本 11.102s 出现，时刻无 ±40 kill points、无死亡证据）；不得当 HP、不得直接变成死亡 0
 - **其它 ≤0 高位值**：UNKNOWN sentinel，不臆测语义
 
-**落点**：`EntityPropertyDecoder`（signed 解码 + sentinel 归一化）、`HealthChangedEvent.isPlausibleHp`（>0 且 <0xFF00）、`ObservedMaxHp` / `MapOverviewBuilder.hpSamplesByAccount`（sentinel 永不进入 maxHp/hpSamples）。
+**落点**：客户端 `frontend/src/replay-local/canonical/hpRawState.ts`（signed 解读 + sentinel 归一化：
+`0xFFFD` → 已证明阵亡终态但**血量未知**，`0xFFFF`/`0xFFFE`/其余负值 → 未知；`isPlausibleHp` = `0 < hp < 0xFF00`）
+→ `frontend/src/replay-local/canonical/facts.ts` 的 `hpSamples`（哨兵永不进入 HP 数值）。原 Java
+`EntityPropertyDecoder` 与 `MapOverviewBuilder.hpSamplesByAccount` 已于 2026-10-02 退役（历史 Java 实现）；
+`HealthChangedEvent.isPlausibleHp` 与 `ObservedMaxHp` 仍在 `wotb-core`，只服务 AI 侧证据链。
 
 **遗留**：需扫描全部真实 fixtures/replays 的 propId3 高位值，确认是否还有 FFFC/FFFE 等其它负值 sentinel。
 
@@ -210,8 +214,10 @@ spectator 的 extra（如 #201=4 / #301=3）时不得视为完整。League Ratin
    绝不保留被证伪的值、也不伪造新时刻
 ```
 
-**落地**：`DeathTimeReconciler`（`DefaultReplayProcessingFacade` 重建成功后对
-`deathTimeMillis==0` 且非存活的玩家校准 `survivalTimeSec`）。**身份只复用**
+**落地**：`DeathTimeReconciler`（历史 Java 实现，2026-10-02 已随 `DefaultReplayProcessingFacade` 退役——它曾在重建成功后对
+`deathTimeMillis==0` 且非存活的玩家校准 `survivalTimeSec`）。当前客户端不做 live 校准：业务死亡秒值直接取
+settlement `field24 lifeTime`（`frontend/src/replay-local/battleFacts.ts` 的 `settlementLifeTimeSec` /
+`survivalTimeSec` / `deathTimeMillis` 投影）。**身份只复用**
 `TeamEntityMapper` 产出的权威 `TeamEntityMapping`：冲突实体（同一 entity 归属多账号 → 整体排除）
 与低置信映射（PARTIAL/UNKNOWN → 不可用）的证据一律拒绝；nickname fallback（accountId=0 + 唯一昵称
 → 权威账号）直接复用——死亡校准的身份可信度与 playback 其它功能一致。damage-threshold 启发式只看
@@ -219,15 +225,17 @@ spectator 的 extra（如 #201=4 / #301=3）时不得视为完整。League Ratin
 「残血仍存活」误判为「已阵亡」（真实样本：IS-4 96.9s 被判死、实际 HP=102 alive、128.12s 才 HP=0）。
 位置/方向/伤害事件不参与推断（阵亡后服务器仍广播死车位置）。
 
-**覆盖范围**：校准只发生在重建路径（`ReplayProcessingOptions.full()`，即 playback 与 AI 复盘）；
+**覆盖范围**（历史 Java 口径，2026-10-02 随解析器退役）：校准只发生在重建路径
+（`ReplayProcessingOptions.full()`，即 playback 与 AI 复盘）；
 `summaryOnly()` 预览/导出路径不跑重建（无事件源），其死亡时刻保留 legacy 估算——文档与产品侧
-描述不得夸大「导出全局一致」。
+描述不得夸大「导出全局一致」。（当前客户端没有 live 校准与 summary/full 分流：所有路径都只取
+settlement `field24 lifeTime`，该「不得夸大」的告诫仍成立。）
 
 ## 关键结论
 
 - 两种战斗模式（7v7 团队 / 30 人随机）类型集一致，频率也一致 → type 31/35/39 是**全局/录像者流**，不是按实体广播。
 - **位置覆盖（2026-08-11 修正 team 标签后）**：本方（录像者队伍，本样本 CHRD=team 2）7 车全部从 1.1s 有 type-10 位置；**敌方（BSK-T=team 1）开局 0~30-50s 无位置包**（各车首包 30.5~51.9s≈首次移动时刻）。此前「本方开局缺失」是把 team 1/2 弄反——正确结论：**本方位置开局完整；敌方静止时不上报 type-10 位置**（移动/交火后才出现）。回放为服务器下发完整实体流（与点亮无关）。
-- type 0 pickle 的 `accountDatabaseIds` / `clanTags` / `teamTitles` 可作**权威名册与队名来源**（优于 updateArena2 映射）；已落地：`PickleDecoder`（协议 2 精简解码器）+ `EventStreamReader.extractArenaInfo` + 真实载荷单测。
+- type 0 pickle 的 `accountDatabaseIds` / `clanTags` / `teamTitles` 可作**权威名册与队名来源**（优于 updateArena2 映射）；当时落地为 `PickleDecoder`（协议 2 精简解码器）+ `EventStreamReader.extractArenaInfo` + 真实载荷单测（**历史 Java 实现，2026-10-02 已退役**）；当前实现是上游 Rust Core WASM `parseResult`，客户端在 `frontend/src/replay-local/battleFacts.ts` 消费。
 - HP 仍未定位；候选：type 39 某 float、type 8 field 18（初始满血比例）、type 13 玩家统计块、battle_results。
 
 ## 2026-08-12 进展

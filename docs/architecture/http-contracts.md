@@ -39,6 +39,10 @@ OpenAPI → generated FE transport → BE serialization/mapper → runtime valid
 - `204` 表示 capability unavailable，不是 JSON schema failure；`200` response 无法通过 schema 才是 transport contract failure。
 - ApiError 使用统一 envelope：稳定 `errorCode`、HTTP/body status、`retryable`、安全 `details`、timestamp 与诊断 `id`。SSE 是另一种传输形状，后续单独建模，不把它伪装成 JSON response。
 
+## CORS
+
+API 只服务同源前端：生产由 nginx `/api/` 反代到 `wotb-backend`（`deploy/nginx/nginx.conf`），本地走 Vite dev proxy（`changeOrigin: true`），Android WebView 直接同源加载前端。因此不存在跨域契约，不保留任何 controller 级 `@CrossOrigin` 注解。若将来出现真实跨域消费者，在 `java/wotb-web/.../config/` 集中声明**单一** `CorsConfigurationSource`，不回退注解。
+
 ## Review checklist
 
 涉及 HTTP shape 的 PR 必须说明 authoritative source、生成产物、序列化测试、runtime/fixture 验证和兼容性边界；同时检查是否新增了重复手写 transport interface、domain enum 泄漏、required/nullable 漂移或把客户端 fallback code 当成服务端 error registry。
