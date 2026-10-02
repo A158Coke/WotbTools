@@ -154,6 +154,36 @@ describe('时序能力（PlaybackData 校验）', () => {
     expect(() => validateAgentPlayback(bad)).toThrow(/playback\.supremacy_bases 必须是数组/)
   })
 
+  it('装填遥测（v0.3.9）：缺省合法、合法 shape 通过、数组/元素 primitive 漂移 fail closed', () => {
+    const ok = minimalPlayback()
+    ;(ok as Record<string, unknown>).reloads = [
+      { clock: 10, eid: 7, phase: 3, duration_s: 8, count: null },
+      { clock: 14, eid: 7, phase: 1, duration_s: null, count: 2 },
+    ]
+    ;(ok as Record<string, unknown>).reload_effective = [
+      { clock: 9.5, eid: 7, duration_s: 8 },
+      { clock: 14, eid: 7, duration_s: 4 },
+    ]
+    const validated = validateAgentPlayback(ok)
+    expect(validated.reloads).toHaveLength(2)
+    expect(validated.reload_effective).toHaveLength(2)
+
+    expect(() => validateAgentPlayback({ ...minimalPlayback(), reloads: { clock: 1 } }))
+      .toThrow(/playback\.reloads 必须是数组/)
+    expect(() => validateAgentPlayback({
+      ...minimalPlayback(),
+      reloads: [{ clock: 10, eid: 7, phase: '3', duration_s: 8, count: null }],
+    })).toThrow(/reloads\[0\]\.phase/)
+    expect(() => validateAgentPlayback({
+      ...minimalPlayback(),
+      reloads: [{ clock: 10, eid: 7, phase: 3, duration_s: undefined, count: null }],
+    })).toThrow(/reloads\[0\]\.duration_s/)
+    expect(() => validateAgentPlayback({
+      ...minimalPlayback(),
+      reload_effective: [{ clock: 14, eid: 7, duration_s: null }],
+    })).toThrow(/reload_effective\[0\]\.duration_s/)
+  })
+
   it('单基地键（v0.3.1）：缺省合法、assault_bases 非数组拒绝、objective 非布尔拒绝', () => {
     const ok = validateAgentPlayback(minimalPlayback())
     expect(ok.assault_bases).toBeUndefined()

@@ -183,11 +183,22 @@ describe('reloadBar · 方法 35（权威有效装填时长）驱动进度', () 
     expect(shellStatesAt(ev, [], 12, 1, dur)[0].progress).toBeCloseTo(0.25, 6)   // (12−10)/8
     expect(shellStatesAt(ev, [], 12, 1)[0].progress).toBeCloseTo(0.5, 6)          // 无 35 时用相位 4s
   })
-  it('中途来一条权威时长变更 → 缩放剩余（M2，硬约束检验最优）', () => {
+  it('中途 method 35 缩短时长 → end mark 同步提前，到新 ready 立即完成', () => {
     const ev = [clip(10, 7, 8)]
     const dur = [{ clock: 0, eid: 7, duration_s: 8 }, { clock: 14, eid: 7, duration_s: 4 }]
-    // t=14 时就绪仍在 18；剩余 4s × (4/8)=2s → 新就绪 16 → t=15 进度 = 1 − 1/4 = 0.75
-    expect(shellStatesAt(ev, [], 15, 1, dur)[0].progress).toBeCloseTo(0.75, 6)
+    // 原 ready=18；14s 时剩余 4s × (4/8)=2s → 新 ready=16。
+    expect(shellStatesAt(ev, [], 15, 3, dur)[0].progress).toBeCloseTo(0.75, 6)
+    expect(states(shellStatesAt(ev, [], 16, 3, dur))).toEqual(['full', 'full', 'full'])
+    expect(states(shellStatesAt(ev, [], 16.5, 3, dur))).toEqual(['full', 'full', 'full'])
+  })
+  it('中途 method 35 延长时长 → 旧 ready 不得提前结算，直到新 ready 才完成', () => {
+    const ev = [clip(10, 7, 8)]
+    const dur = [{ clock: 0, eid: 7, duration_s: 8 }, { clock: 14, eid: 7, duration_s: 16 }]
+    // 原 ready=18；14s 时剩余 4s × (16/8)=8s → 新 ready=22。
+    const mid = shellStatesAt(ev, [], 18.5, 3, dur)
+    expect(states(mid)).toEqual(['loading'])
+    expect(mid[0].progress).toBeCloseTo(1 - (22 - 18.5) / 16, 6)
+    expect(states(shellStatesAt(ev, [], 22, 3, dur))).toEqual(['full', 'full', 'full'])
   })
 })
 

@@ -260,6 +260,22 @@ export interface AgentAimFrame {
   ray_point: [number, number, number]
 }
 
+/** arena subtype 15/16/17 原始装填事件（仅本方；null = 上游字段缺失） */
+export interface AgentReloadEvent {
+  clock: number
+  eid: number
+  phase: number
+  duration_s: number | null
+  count: number | null
+}
+
+/** method 35 当前生效完整装填时长（仅本方） */
+export interface AgentReloadEffectiveEvent {
+  clock: number
+  eid: number
+  duration_s: number
+}
+
 export interface AgentPlaybackFacet {
   version: number
   meta: AgentPlaybackMeta
@@ -286,6 +302,10 @@ export interface AgentPlaybackFacet {
   consumables?: AgentConsumableEvent[]
   /** method16 模块/乘员状态（recorder-only） */
   module_crew_states?: AgentModuleCrewState[]
+  /** v0.3.9：arena subtype 15/16/17 原始装填时间线（仅本方） */
+  reloads?: AgentReloadEvent[]
+  /** v0.3.9：method 35 当前生效完整装填时长（仅本方） */
+  reload_effective?: AgentReloadEffectiveEvent[]
 }
 
 // ---------- AI 事件数据：AiReviewFacet（v1；上游 v0.3.5 起含原始 HP 与 method8 证据） ----------
@@ -490,6 +510,38 @@ function assertArray(v: unknown, path: string): unknown[] {
   return v
 }
 
+function assertFiniteNumber(v: unknown, path: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`agent facets: ${path} 必须是有限数值`)
+  return v
+}
+
+function assertNonNegativeInteger(v: unknown, path: string, max: number = Number.MAX_SAFE_INTEGER): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > max) {
+    throw new Error(`agent facets: ${path} 必须是非负整数`)
+  }
+  return v
+}
+
+function validateReloadEvent(value: unknown, path: string): void {
+  const e = assertObject(value, path)
+  assertFiniteNumber(e.clock, `${path}.clock`)
+  assertNonNegativeInteger(e.eid, `${path}.eid`, 0xffffffff)
+  assertNonNegativeInteger(e.phase, `${path}.phase`, 0xff)
+  if (e.duration_s !== null) {
+    const d = assertFiniteNumber(e.duration_s, `${path}.duration_s`)
+    if (d <= 0) throw new Error(`agent facets: ${path}.duration_s 必须为正数或 null`)
+  }
+  if (e.count !== null) assertNonNegativeInteger(e.count, `${path}.count`)
+}
+
+function validateReloadEffectiveEvent(value: unknown, path: string): void {
+  const e = assertObject(value, path)
+  assertFiniteNumber(e.clock, `${path}.clock`)
+  assertNonNegativeInteger(e.eid, `${path}.eid`, 0xffffffff)
+  const d = assertFiniteNumber(e.duration_s, `${path}.duration_s`)
+  if (d <= 0) throw new Error(`agent facets: ${path}.duration_s 必须为正数`)
+}
+
 /** 切面契约版本锁定（v1 切面字段口径沿用；能力拆分见契约 v2 文档） */
 function assertFacetVersion(v: unknown, path: string, expected: number = CONTRACT_VERSION): void {
   if (v !== expected) {
@@ -522,9 +574,17 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
     assertArray(pb[key], `playback.${key}`)
   }
-  // contract v2 新能力（上游 v0.2.0 / v0.3.1；skip-when-empty 语义）：在场时必须为数组
+  // contract v2 additive 能力：在场时必须为数组
   for (const key of ['supremacy_bases', 'supremacy_points', 'aim_frames', 'assault_bases']) {
     if (pb[key] !== undefined) assertArray(pb[key], `playback.${key}`)
+  }
+  if (pb.reloads !== undefined) {
+    const events = assertArray(pb.reloads, 'playback.reloads')
+    events.forEach((event, i) => validateReloadEvent(event, `playback.reloads[${i}]`))
+  }
+  if (pb.reload_effective !== undefined) {
+    const events = assertArray(pb.reload_effective, 'playback.reload_effective')
+    events.forEach((event, i) => validateReloadEffectiveEvent(event, `playback.reload_effective[${i}]`))
   }
   // 目标存在性必须是布尔（跳空键按"无已证实目标"解读，与 assaultObjectivePresent 同义）
   if (pb.assault_objective_present !== undefined && typeof pb.assault_objective_present !== 'boolean') {
