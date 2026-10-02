@@ -100,13 +100,27 @@ cleanup_bootstrap() {
     echo 'Komodo Periphery bootstrap did not commit: stopping periphery.service so no live process keeps the bootstrap credential.' >&2
     "$systemctl_bin" stop periphery >/dev/null 2>&1 || true
     for attempt in $(seq 1 "$stop_attempts"); do
-      if ! service_active; then
+      if service_inactive; then
         break
       fi
       [[ "$stop_sleep" -gt 0 ]] && sleep "$stop_sleep"
     done
     if service_active; then
-      echo 'komodo-periphery: periphery.service is still active after a failed bootstrap.' >&2
+      # A plain stop was not enough. Force-kill before giving up: a live process
+      # whose environment still holds the bootstrap credential is worse than a
+      # failed workflow.
+      echo 'komodo-periphery: periphery.service is still active after stop; force-killing it because the bootstrap credential must not stay live.' >&2
+      "$systemctl_bin" kill --kill-who=all --signal=KILL periphery >/dev/null 2>&1 || true
+      for attempt in $(seq 1 "$stop_attempts"); do
+        if service_inactive; then
+          break
+        fi
+        [[ "$stop_sleep" -gt 0 ]] && sleep "$stop_sleep"
+      done
+    fi
+    if service_active; then
+      echo 'CRITICAL: komodo-periphery could not terminate periphery.service after a failed bootstrap. A Periphery process whose environment may still contain PERIPHERY_ONBOARDING_KEY can be alive on this host. Kill it before retrying, for example: systemctl kill --kill-who=all --signal=KILL periphery; ps -ef | grep [p]eriphery' >&2
+      status=1
     fi
   fi
   return "$status"
@@ -128,17 +142,30 @@ bootstrap_ready() {
 }
 
 # The credential-free restart is good when the service is active, the transient
-# file is gone, the process environment holds no onboarding key, and the outbound
-# connection came back purely from the persistent identity.
+# file is gone, the process environment is provably credential-free, and the
+# outbound connection came back purely from the persistent identity.
+credential_free_env_state=-1
 credential_free_ready() {
   local pid
   pid="$(main_pid 2>/dev/null || true)"
   if [[ ! "$pid" =~ ^[0-9]+$ ]] || [[ "$pid" -le 0 ]]; then
+    credential_free_env_state=-1
     return 1
   fi
-  service_active || return 1
-  [[ ! -e "$periphery_bootstrap_env" ]] || return 1
-  if process_env_has_onboarding_key "$pid"; then
+  if ! service_active; then
+    credential_free_env_state=-1
+    return 1
+  fi
+  if [[ -e "$periphery_bootstrap_env" ]]; then
+    credential_free_env_state=-1
+    return 1
+  fi
+  # Fail closed. 1 = the credential is still in the environment, 2 = the
+  # environment cannot be inspected. Both block the onboarding commit; neither is
+  # evidence that the process is credential-free.
+  credential_free_env_state=0
+  process_env_is_clean "$pid" || credential_free_env_state=$?
+  if [[ "$credential_free_env_state" != 0 ]]; then
     return 1
   fi
   [[ -n "$(established_core_connections "$pid")" ]] || return 1
@@ -253,7 +280,7 @@ if [[ "$onboarding_required" == true ]]; then
   if ! wait_for "$verify_attempts" "$verify_sleep" credential_free_ready; then
     "$systemctl_bin" status periphery --no-pager >&2 || true
     journalctl -u periphery --no-pager -n 80 >&2 || true
-    fail 'Komodo Periphery did not reconnect without the bootstrap credential, or still exposes it in its process environment.'
+    fail "Komodo Periphery did not reconnect without the bootstrap credential, or its process environment is not provably clean: $(process_env_state_label "$credential_free_env_state")."
   fi
 
   # Commit point, written last.

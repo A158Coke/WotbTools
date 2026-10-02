@@ -17,6 +17,8 @@ periphery_opt_root="${PERIPHERY_OPT_ROOT:-/opt/periphery}"
 # Read-only inspection root for process environments, so the fixtures can prove
 # the credential-free check in both directions.
 periphery_proc_root="${PERIPHERY_PROC_ROOT:-/proc}"
+# Docker socket used for the container-discovery check.
+periphery_docker_socket="${PERIPHERY_DOCKER_SOCKET:-/var/run/docker.sock}"
 # The Yecao host-level mutation lock, shared with the observability / ai-service
 # owners that mutate the same host and Docker daemon.
 periphery_wotb_root="${PERIPHERY_WOTB_ROOT:-/opt/wotb}"
@@ -32,7 +34,7 @@ stop_attempts="${PERIPHERY_STOP_ATTEMPTS:-15}"
 stop_sleep="${PERIPHERY_STOP_SLEEP_SECONDS:-2}"
 
 for path_name in periphery_etc periphery_bin periphery_unit_dir periphery_run_dir \
-  periphery_opt_root periphery_wotb_root periphery_proc_root; do
+  periphery_opt_root periphery_wotb_root periphery_proc_root periphery_docker_socket; do
   path_value="${!path_name}"
   [[ "$path_value" == /* && "$path_value" != *..* ]] || {
     echo "Refusing unsafe Komodo Periphery path ($path_name): $path_value" >&2
@@ -148,6 +150,7 @@ periphery_marker_state() {
 }
 
 service_active() { "$systemctl_bin" is-active --quiet periphery; }
+service_inactive() { ! service_active; }
 service_enabled() { "$systemctl_bin" is-enabled --quiet periphery; }
 
 main_pid() { "$systemctl_bin" show periphery -p MainPID --value; }
@@ -164,13 +167,33 @@ listener_on_8120() {
   ss -Hltn 'sport = :8120' 2>/dev/null || true
 }
 
-# process_env_has_onboarding_key <pid>: does the live process still carry the
-# bootstrap credential? systemd copies the EnvironmentFile into the process
-# environment, so deleting that file does NOT clear /proc/<pid>/environ. An
-# unreadable environment cannot disprove the presence of the key, so it is
-# reported as "not present" and the caller's other checks still apply.
-process_env_has_onboarding_key() {
-  local pid="$1" environ="$periphery_proc_root/$pid/environ"
-  [[ -r "$environ" ]] || return 1
-  tr '\0' '\n' < "$environ" | grep -q '^PERIPHERY_ONBOARDING_KEY='
+# process_env_is_clean <pid>
+#   0 = the process environment is readable and holds no onboarding key
+#   1 = the credential is still present in the process environment
+#   2 = the environment cannot be read or is not a regular file, so a
+#       credential-free process cannot be proven
+#
+# Fail closed: "cannot prove clean" is never reported as clean. systemd copies the
+# EnvironmentFile into the process environment, and only a successful inspection
+# can show that the credential is really gone.
+process_env_is_clean() {
+  local pid="$1" environ="$periphery_proc_root/$pid/environ" content
+  [[ -r "$environ" ]] || return 2
+  # A non-regular path is not an inspectable environment, and must be rejected
+  # before the read: a FIFO here would otherwise block the check forever.
+  [[ -f "$environ" ]] || return 2
+  content="$(tr '\0' '\n' < "$environ")" || return 2
+  if grep -q '^PERIPHERY_ONBOARDING_KEY=' <<<"$content"; then
+    return 1
+  fi
+  return 0
+}
+
+# process_env_state_label <code>: the diagnostic for a non-zero probe result.
+process_env_state_label() {
+  case "$1" in
+    1) printf 'PERIPHERY_ONBOARDING_KEY is still present in the process environment' ;;
+    2) printf 'the process environment cannot be inspected, so a credential-free process cannot be proven' ;;
+    *) printf 'the process environment was not inspected' ;;
+  esac
 }
