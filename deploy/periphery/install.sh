@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Install / reconcile the Komodo Periphery agent on Yecao (K3.1).
+# Install / reconcile the Komodo Periphery agent on one reviewed target (K3.2).
+#
+# The lifecycle is target-agnostic: the per-host differences (Server name, host
+# mutation lock, staging root, privilege model) come from
+# `targets/<target>/target.env` through `lib.sh`, so Yecao and TX1 share exactly
+# this implementation.
 #
 # Idempotent reconciliation: the binary, the persistent config, and the systemd
 # unit always come from the staged repository source, while the persistent Noise
@@ -13,24 +18,27 @@
 # credential is required on every attempt, so a half-finished first run is retried
 # with the existing identity instead of wedging the host.
 #
-# The onboarding key is a BOOTSTRAP credential only. It is written to a transient
-# /run file (mode 0600, root-owned) for the handshake, deleted before the
-# credential-free restart, and a bootstrap that fails after the service was
-# started leaves Periphery STOPPED, so no live process can keep the credential.
+# The onboarding key is a BOOTSTRAP credential only, passed in as the generic
+# KOMODO_PERIPHERY_ONBOARDING_KEY. It is written to a transient /run file (mode
+# 0600, root-owned) for the handshake, deleted before the credential-free restart,
+# and a bootstrap that fails after the service was started leaves Periphery
+# STOPPED, so no live process can keep the credential.
 set -Eeuo pipefail
 umask 077
 
-SOURCE_SHA="${1:?usage: install.sh <source-sha> <runtime-dir> <artifact-path>}"
-runtime="${2:?usage: install.sh <source-sha> <runtime-dir> <artifact-path>}"
-artifact="${3:?usage: install.sh <source-sha> <runtime-dir> <artifact-path>}"
+TARGET="${1:?usage: install.sh <target> <source-sha> <runtime-dir> <artifact-path>}"
+SOURCE_SHA="${2:?usage: install.sh <target> <source-sha> <runtime-dir> <artifact-path>}"
+runtime="${3:?usage: install.sh <target> <source-sha> <runtime-dir> <artifact-path>}"
+artifact="${4:?usage: install.sh <target> <source-sha> <runtime-dir> <artifact-path>}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=deploy/periphery/lib.sh
 source "$script_dir/lib.sh"
 
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'Invalid Komodo Periphery source SHA.'
 assert_x86_64
+load_target_profile "$TARGET" "$runtime"
 load_release_manifest "$runtime/periphery.release"
-for staged in periphery.config.toml periphery.service; do
+for staged in "targets/$TARGET/target.env" "targets/$TARGET/periphery.config.toml" periphery.service; do
   require_real_file "$runtime/$staged" "Staged $staged"
 done
 require_real_file "$artifact" 'Staged Komodo Periphery artifact'
@@ -38,24 +46,30 @@ require_real_file "$artifact" 'Staged Komodo Periphery artifact'
 # Defense in depth, before anything on the host is mutated: a staged config or
 # unit that carries the bootstrap credential must never be installed, even if the
 # commit that produced it was wrong.
-grep -q 'onboarding_key' "$runtime/periphery.config.toml" \
+grep -q 'onboarding_key' "$periphery_config_source" \
   && fail 'The staged Komodo Periphery config must not contain an onboarding key.'
 grep -q 'PERIPHERY_ONBOARDING_KEY' "$runtime/periphery.service" \
   && fail 'The staged Komodo Periphery unit must not embed the onboarding key.'
+# Target isolation: one host must never be able to install another host's Server
+# identity, and that must fail before anything on the host changes.
+grep -Eq "^connect_as = \"$periphery_connect_as\"\$" "$periphery_config_source" \
+  || fail "the staged $periphery_target config must set connect_as = \"$periphery_connect_as\"."
 
 # --- host lock ---------------------------------------------------------------
-# The Yecao host-level lock, shared with the observability / ai-service owners
-# that mutate the same host and Docker daemon. `reconcile.sh` acquires it and
-# passes the descriptor down so the whole transaction is serialized; a standalone
-# run acquires it here.
-require_real_dir "$periphery_wotb_root"
+# The target host's own mutation lock, shared with every other owner that mutates
+# that host (Yecao: observability / ai-service; TX1: Business API / Frontend /
+# Caddy / Alloy). `reconcile.sh` acquires it and passes the descriptor down so the
+# whole transaction is serialized; a standalone run acquires it here. The lock and
+# its root belong to the host's deploy owner, so Periphery never creates them.
+require_existing_real_dir "$periphery_lock_root" "the $periphery_target host mutation lock root"
+require_existing_lock_file "$periphery_lock_file"
 if [[ -n "${PERIPHERY_DEPLOY_LOCK_FD:-}" ]]; then
   [[ "$PERIPHERY_DEPLOY_LOCK_FD" == 9 ]] || fail 'Unsupported inherited Periphery lock fd.'
   { true >&9; } 2>/dev/null || fail 'Inherited Periphery lock fd is unavailable.'
 else
-  exec 9>"$periphery_wotb_root/.deploy.lock"
+  exec 9>"$periphery_lock_file"
 fi
-flock -n 9 || fail 'Another Yecao host mutation is running.'
+flock -n 9 || fail "Another $periphery_target host mutation is running."
 
 # --- artifact verification (the runner verified it too; the host re-verifies) --
 artifact_sha="$(sha256sum "$artifact" | awk '{print $1}')"
@@ -199,7 +213,7 @@ commit_onboarding() {
 # --- onboarding state machine -------------------------------------------------
 # A) marker valid + identity valid + core.pub valid  -> onboarding is complete and
 #    the bootstrap credential is neither required nor read, so the operator may
-#    delete KOMODO_YECAO_ONBOARDING_KEY from GitHub and the UI onboarding key.
+#    delete the host's onboarding secret from GitHub and the UI onboarding key.
 # B) marker absent + credential available            -> bootstrap, or retry a
 #    previous failed bootstrap reusing the identity it already generated.
 # C) marker absent + no credential                   -> fail closed before any
@@ -215,13 +229,13 @@ case "$marker_state" in
     periphery_core_pub_present || fail \
       'Corrupted Komodo Periphery state: onboarding is marked complete but the pinned Core public key is missing or unsafe.'
     rm -f -- "$periphery_bootstrap_env"
-    echo 'Komodo Periphery onboarding already complete: the bootstrap credential is not required.'
+    echo "Komodo Periphery onboarding already complete on $periphery_target: the bootstrap credential is not required."
     ;;
   absent)
     onboarding_required=true
-    onboarding_key="${KOMODO_YECAO_ONBOARDING_KEY:-}"
+    onboarding_key="${KOMODO_PERIPHERY_ONBOARDING_KEY:-}"
     [[ -n "$onboarding_key" ]] || fail \
-      'Komodo Periphery onboarding has not completed and no KOMODO_YECAO_ONBOARDING_KEY is available. Refusing to generate a Server identity or to re-onboard automatically.'
+      "Komodo Periphery onboarding has not completed on $periphery_target and no KOMODO_PERIPHERY_ONBOARDING_KEY is available. Refusing to generate a Server identity or to re-onboard automatically."
     if periphery_identity_present; then
       echo 'Reusing the Komodo Periphery identity left by a previous attempt; onboarding will be retried.'
     fi
@@ -236,7 +250,7 @@ file_sha() { [[ -f "$1" && ! -L "$1" ]] && sha256sum "$1" | awk '{print $1}' || 
 config_before="$(file_sha "$periphery_config")"
 unit_before="$(file_sha "$periphery_unit")"
 binary_before="$(file_sha "$periphery_bin")"
-install -m 600 "$runtime/periphery.config.toml" "$periphery_config.incoming"
+install -m 600 "$periphery_config_source" "$periphery_config.incoming"
 mv -f -- "$periphery_config.incoming" "$periphery_config"
 install -m 644 "$runtime/periphery.service" "$periphery_unit.incoming"
 mv -f -- "$periphery_unit.incoming" "$periphery_unit"
@@ -298,4 +312,4 @@ else
   fi
 fi
 
-echo "Komodo Periphery install complete: $periphery_bin (v$PERIPHERY_VERSION, $SOURCE_SHA)"
+echo "Komodo Periphery install complete on $periphery_target: $periphery_bin (v$PERIPHERY_VERSION, $SOURCE_SHA)"

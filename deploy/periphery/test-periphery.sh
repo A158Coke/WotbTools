@@ -185,32 +185,39 @@ fi
 pass 'release-manifest version+tag+asset+sha256'
 
 # ---------------------------------------------------------------------------
-# B. persistent config contract: outbound only, exact Core, no secret
+# B. per-target persistent config contract: outbound only, exact Core, no secret
 # ---------------------------------------------------------------------------
-config="$ROOT/periphery.config.toml"
-for expected in \
-  '^root_directory = "/etc/komodo"$' \
-  '^core_addresses = \["http://10\.20\.0\.2:9120"\]$' \
-  '^connect_as = "yecao"$' \
-  '^server_enabled = false$' \
-  '^private_key = "file:/etc/komodo/keys/periphery\.key"$' \
-  '^core_public_keys = \["file:/etc/komodo/keys/core\.pub"\]$' \
-  '^disable_terminals = false$' \
-  '^disable_container_terminals = false$'; do
-  effective "$config" | grep -Eq "$expected" || die "persistent config is missing: $expected"
+for target in yecao tx1; do
+  config="$ROOT/targets/$target/periphery.config.toml"
+  [[ -f "$config" ]] || die "missing the $target config: $config"
+  for expected in \
+    '^root_directory = "/etc/komodo"$' \
+    '^core_addresses = \["http://10\.20\.0\.2:9120"\]$' \
+    "^connect_as = \"$target\"\$" \
+    '^server_enabled = false$' \
+    '^private_key = "file:/etc/komodo/keys/periphery\.key"$' \
+    '^core_public_keys = \["file:/etc/komodo/keys/core\.pub"\]$' \
+    '^disable_terminals = false$' \
+    '^disable_container_terminals = false$'; do
+    effective "$config" | grep -Eq "$expected" || die "the $target config is missing: $expected"
+  done
+  # Exactly one address, and it is the private WireGuard Core.
+  [[ "$(effective "$config" | grep -cE 'https?://')" == 1 ]] \
+    || die "the $target config must name exactly one address"
+  # No inbound server, no public/host address, no wildcard bind, no credentials.
+  for forbidden in '^bind_ip' '^port[[:space:]]*=' '^allowed_ips[[:space:]]*=[[:space:]]*\[.+\]' \
+    '45\.136\.14\.101' 'komodo\.wotbtools\.com' '0\.0\.0\.0' 'onboarding_key' 'passkeys' \
+    '\[secrets\]' 'git_provider' 'image_registry' '45\.136\.' '118\.25\.'; do
+    if effective "$config" | grep -Eq "$forbidden"; then
+      die "the $target config must not contain: $forbidden"
+    fi
+  done
 done
-# Exactly one address, and it is the private WireGuard Core.
-[[ "$(effective "$config" | grep -cE 'https?://')" == 1 ]] \
-  || die 'the persistent config must name exactly one address'
-# No inbound server, no public/Jecao address, no wildcard bind, no credentials.
-for forbidden in '^bind_ip' '^port[[:space:]]*=' '^allowed_ips[[:space:]]*=[[:space:]]*\[.+\]' \
-  '45\.136\.14\.101' 'komodo\.wotbtools\.com' '0\.0\.0\.0' 'onboarding_key' 'passkeys' \
-  '\[secrets\]' 'git_provider' 'image_registry'; do
-  if effective "$config" | grep -Eq "$forbidden"; then
-    die "persistent config must not contain: $forbidden"
-  fi
-done
-pass 'config-outbound-only exact-core-address no-secrets'
+# The two targets' effective settings differ only in connect_as.
+diff <(effective "$ROOT/targets/yecao/periphery.config.toml" | sed 's/^connect_as = .*/connect_as = X/') \
+     <(effective "$ROOT/targets/tx1/periphery.config.toml" | sed 's/^connect_as = .*/connect_as = X/') >/dev/null \
+  || die 'the yecao and tx1 configs must differ only in connect_as'
+pass 'per-target-config outbound-only exact-core-address no-secrets'
 
 # ---------------------------------------------------------------------------
 # C. systemd unit contract
@@ -355,12 +362,30 @@ exit 0
 STUB
 chmod +x "$stub/ss"
 
-# prepare_case <name>: a disposable host tree plus a staged runtime + artifact.
+# read_profile <target>: the effective reviewed parameters of a target profile,
+# exactly as the workflow derives them (no fixture overrides in scope).
+read_profile() {
+  local out="$work/profile-$1.out"
+  rm -f "$out"
+  env -u PERIPHERY_LOCK_ROOT -u PERIPHERY_STAGING_ROOT \
+    bash "$ROOT/read-target-profile.sh" "$1" "$out" >/dev/null \
+    || die "reading the $1 target profile failed"
+  cat "$out"
+}
+
+profile_field() { sed -n "s/^$2=//p" <<<"$1"; }
+
+# prepare_case <name> [target]: a disposable host tree plus a staged runtime +
+# artifact for one target. The lock root and staging root are fixture-local, so no
+# real host path is touched; the profile's own values are asserted separately.
 prepare_case() {
-  local name="$1"
-  case_dir="$work/case-$name"
+  local name="$1" target="${2:-yecao}"
+  case_target="$target"
+  case_dir="$work/case-$name-$target"
   rm -rf "$case_dir"
-  mkdir -p "$case_dir"/{etc/keys,bin,unit,run,opt,state,stage,proc}
+  mkdir -p "$case_dir"/{etc/keys,bin,unit,run,opt,state,stage,proc,lock,staging}
+  # The host's deploy owner owns the mutation lock; Periphery only ever locks it.
+  : > "$case_dir/lock/.deploy.lock"
   mkdir -p "$case_dir/stage/deploy"
   cp -a "$ROOT" "$case_dir/stage/deploy/periphery"
   artifact="$case_dir/stage/periphery-x86_64"
@@ -382,6 +407,13 @@ prepare_case() {
   bootstrap_env="$case_dir/run/periphery-bootstrap.env"
   events="$case_dir/state/events"
   proc_environ="$case_dir/proc/4242/environ"
+  # Target-specific values, straight from the reviewed profile.
+  local profile
+  profile="$(read_profile "$target")"
+  case_connect_as="$(profile_field "$profile" connect_as)"
+  case_lock_root="$case_dir/lock"
+  case_lock_file="$case_lock_root/.deploy.lock"
+  case_staging_root="$case_dir/staging"
   # Stub knobs, set by a case before it calls run_install.
   stub_environ_mode=clean
   stub_stop_fails=false
@@ -415,8 +447,8 @@ run_install() {
     PERIPHERY_BIN_PATH="$bin_path" \
     PERIPHERY_UNIT_DIR="$case_dir/unit" \
     PERIPHERY_RUN_DIR="$case_dir/run" \
-    PERIPHERY_OPT_ROOT="$case_dir/opt" \
-    PERIPHERY_WOTB_ROOT="$case_dir/wotb" \
+    PERIPHERY_LOCK_ROOT="$case_lock_root" \
+    PERIPHERY_STAGING_ROOT="$case_staging_root" \
     PERIPHERY_PROC_ROOT="$case_dir/proc" \
     PERIPHERY_SYSTEMCTL="$stub/systemctl" \
     PERIPHERY_ONBOARD_ATTEMPTS=3 \
@@ -436,8 +468,9 @@ run_install() {
     STUB_ENVIRON_MODE="$stub_environ_mode" \
     STUB_STOP_FAILS="$stub_stop_fails" \
     STUB_KILL_FAILS="$stub_kill_fails" \
-    KOMODO_YECAO_ONBOARDING_KEY="$key" \
-    bash "$runtime/install.sh" "$sha" "$runtime" "$artifact" >"$case_dir/install.log" 2>&1
+    KOMODO_PERIPHERY_ONBOARDING_KEY="$key" \
+    bash "$runtime/install.sh" "$case_target" "$sha" "$runtime" "$artifact" \
+    >"$case_dir/install.log" 2>&1
 }
 
 # marker_fingerprint: a value that changes if the marker is created, replaced, or
@@ -487,7 +520,7 @@ cmp -s "$bin_path" "$artifact" || die 'the installed binary does not match the s
 [[ -f "$case_dir/state/enabled" ]] || die 'the unit was not enabled'
 grep -q '^restart-without-bootstrap marker=present$' "$events" \
   || die 'the completed service was left stopped after the binary was replaced'
-pass 'completed-install reconciles-without-secret and preserves identity+marker'
+pass 'yecao-completed reconciles-without-secret and preserves identity+marker after the K3.2 refactor'
 
 # D2. Half-bootstrap (identity present, marker absent) and no secret: fail closed.
 prepare_case half-bootstrap-no-secret
@@ -729,8 +762,8 @@ fi
 # ---------------------------------------------------------------------------
 # F. production verification contract
 # ---------------------------------------------------------------------------
-# Every K3.1 production check must keep its own observable evidence line and its
-# real probe, so a verification step cannot be dropped silently.
+# Every production check must keep its own observable evidence line and its real
+# probe, so a verification step cannot be dropped silently.
 verify_script="$ROOT/verify.sh"
 for expected in \
   'PASS periphery-binary-sha256' \
@@ -743,9 +776,11 @@ for expected in \
   'process_env_is_clean' \
   'process_env_state_label' \
   'periphery_docker_socket' \
+  'periphery_connect_as' \
+  'periphery_config_source' \
   'PASS periphery-outbound-connected' \
   'PASS periphery-no-inbound-8120' \
-  'PASS periphery-config-outbound-only' \
+  'PASS periphery-config-$periphery_target' \
   'PASS periphery-no-persisted-onboarding-key' \
   'PASS periphery-docker-access' \
   'sha256sum "$periphery_bin"' \
@@ -762,6 +797,9 @@ for expected in \
   grep -Fq -- "$expected" "$verify_script" "$ROOT/periphery.service" "$ROOT/lib.sh" \
     || die "production verification lost: $expected"
 done
+# The effective config must be compared with the reviewed per-target config.
+grep -Fq 'cmp -s "$periphery_config" "$periphery_config_source"' "$verify_script" \
+  || die 'verify.sh must compare the effective config with the target config'
 # Verification must never reach for a Komodo admin credential.
 if grep -Eq 'KOMODO_(INIT_ADMIN_PASSWORD|JWT_SECRET|WEBHOOK_SECRET|DATABASE_PASSWORD)' "$verify_script"; then
   die 'production verification must not use a Komodo admin/API credential'
@@ -780,7 +818,24 @@ grep -Fq 'marker_state="$(periphery_marker_state)"' "$ROOT/install.sh" \
   || die 'install.sh must derive onboarding completion from the durable marker'
 grep -Fq 'case "$marker_state" in' "$ROOT/install.sh" \
   || die 'install.sh must branch on the durable marker state'
-pass 'verification-contract all ten checks keep real probes'
+# One lifecycle implementation: no per-host script may exist.
+if compgen -G "$ROOT/*yecao*" >/dev/null || compgen -G "$ROOT/*tx1*" >/dev/null; then
+  die 'per-host lifecycle scripts must not exist; only reviewed target profiles may'
+fi
+# The TX1 privilege path must exist and must never put the credential in argv: the
+# runtime scripts may only ever read the generic variable, never assign it inline.
+reconcile_script="$ROOT/reconcile.sh"
+grep -Fq 'sudo -n true' "$reconcile_script" \
+  || die 'reconcile.sh must fail closed when non-interactive sudo is unavailable'
+grep -Fq -- '--preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY' "$reconcile_script" \
+  || die 'reconcile.sh must preserve only the generic credential through the environment'
+grep -Fq 'PERIPHERY_PRIVILEGE' "$ROOT/lib.sh" || die 'lib.sh must read the privilege model'
+for script in lib.sh install.sh verify.sh reconcile.sh; do
+  if grep -q 'KOMODO_PERIPHERY_ONBOARDING_KEY=' "$ROOT/$script"; then
+    die "the shared $script must never assign the credential inline (argv/disk leak)"
+  fi
+done
+pass 'verification-contract all checks keep real probes and one lifecycle'
 
 # The inspection root and the Docker socket must default to the production paths;
 # the overrides exist only so this fixture can drive the real code.
@@ -795,21 +850,26 @@ pass 'production defaults for the /proc root and the Docker socket'
 # G. production verify.sh, executed against a fixture host tree
 # ---------------------------------------------------------------------------
 # verify.sh is the last line of defence, so it is run for real rather than only
-# grepped: once against a provably credential-free process (must pass) and once
-# with an environment that cannot be inspected (must fail hard).
+# grepped, for both targets: against a provably credential-free process (must pass)
+# and with an environment that cannot be inspected (must fail hard).
 verify_case() {
-  local name="$1" mode="$2" attempt
-  prepare_case "verify-$name"
+  local name="$1" mode="$2" target="${3:-yecao}" attempt
+  prepare_case "verify-$name" "$target"
   install -m 0755 "$artifact" "$bin_path"
   printf '%s\n' 'fixture-periphery-identity' > "$identity"
   printf '%s\n' 'fixture-core-public-key' > "$core_pub"
   write_marker
-  install -m 600 "$ROOT/periphery.config.toml" "$case_dir/etc/periphery.config.toml"
+  install -m 600 "$ROOT/targets/$target/periphery.config.toml" "$case_dir/etc/periphery.config.toml"
   : > "$case_dir/state/active"
   : > "$case_dir/state/enabled"
   mkdir -p "$case_dir/proc/4242"
   case "$mode" in
     missing) rm -f "$proc_environ" ;;
+    swapped)
+      # Another target's config installed on this host.
+      install -m 600 "$ROOT/targets/$( [[ "$target" == yecao ]] && echo tx1 || echo yecao )/periphery.config.toml" \
+        "$case_dir/etc/periphery.config.toml"
+      printf 'PATH=/usr/bin\0' > "$proc_environ" ;;
     *) printf 'PATH=/usr/bin\0' > "$proc_environ" ;;
   esac
   printf '#!/usr/bin/env bash\nexit 0\n' > "$stub/docker"
@@ -830,6 +890,8 @@ time.sleep(30)' "$case_dir/docker.sock" &
     PERIPHERY_BIN_PATH="$bin_path" \
     PERIPHERY_UNIT_DIR="$case_dir/unit" \
     PERIPHERY_RUN_DIR="$case_dir/run" \
+    PERIPHERY_LOCK_ROOT="$case_lock_root" \
+    PERIPHERY_STAGING_ROOT="$case_staging_root" \
     PERIPHERY_PROC_ROOT="$case_dir/proc" \
     PERIPHERY_DOCKER_SOCKET="$case_dir/docker.sock" \
     PERIPHERY_SYSTEMCTL="$stub/systemctl" \
@@ -838,25 +900,170 @@ time.sleep(30)' "$case_dir/docker.sock" &
     STUB_STATE="$case_dir/state" \
     STUB_MARKER="$marker" \
     STUB_PROC="$case_dir/proc" \
-    bash "$ROOT/verify.sh" "$runtime" >"$case_dir/verify.log" 2>&1
+    bash "$ROOT/verify.sh" "$target" "$runtime" >"$case_dir/verify.log" 2>&1
   local status=$?
   kill "$sock_pid" 2>/dev/null || true
   wait "$sock_pid" 2>/dev/null || true
   return "$status"
 }
 
-if ! verify_case clean clean; then
-  cat "$case_dir/verify.log" >&2
-  die 'verify.sh must pass against a credential-free fixture host'
-fi
-grep -q 'PASS periphery-process-env-clean' "$case_dir/verify.log" \
-  || die 'verify.sh did not report the credential-free process environment'
+for target in yecao tx1; do
+  if ! verify_case "clean-$target" clean "$target"; then
+    cat "$case_dir/verify.log" >&2
+    die "verify.sh must pass against a credential-free $target fixture host"
+  fi
+  grep -q "PASS periphery-config-$target" "$case_dir/verify.log" \
+    || die "verify.sh did not report the $target config check"
+  grep -q 'PASS periphery-process-env-clean' "$case_dir/verify.log" \
+    || die 'verify.sh did not report the credential-free process environment'
+done
 if verify_case unreadable missing; then
   cat "$case_dir/verify.log" >&2
   die 'verify.sh must fail when the process environment cannot be inspected'
 fi
 grep -q 'cannot prove the running Periphery process is credential-free' "$case_dir/verify.log" \
   || { cat "$case_dir/verify.log" >&2; die 'the uninspectable-environment diagnostic was not reported'; }
-pass 'verify.sh fails-closed on an uninspectable process environment'
+if verify_case swapped swapped tx1; then
+  cat "$case_dir/verify.log" >&2
+  die 'verify.sh must fail when another target profile is installed'
+fi
+grep -q 'is not the reviewed tx1 config' "$case_dir/verify.log" \
+  || { cat "$case_dir/verify.log" >&2; die 'the cross-target config diagnostic was not reported'; }
+pass 'verify.sh runs per target and fails-closed on unreadable env and swaps'
+
+# ---------------------------------------------------------------------------
+# H. multi-target contract (K3.2)
+# ---------------------------------------------------------------------------
+# 1. The reviewed profiles are the single source of per-host parameters.
+yecao_profile="$(read_profile yecao)"
+tx1_profile="$(read_profile tx1)"
+for pairs in \
+  "yecao:$(profile_field "$yecao_profile" connect_as):yecao" \
+  "yecao:$(profile_field "$yecao_profile" lock_root):/opt/wotb" \
+  "yecao:$(profile_field "$yecao_profile" staging_root):/opt/periphery" \
+  "yecao:$(profile_field "$yecao_profile" privilege):root" \
+  "tx1:$(profile_field "$tx1_profile" connect_as):tx1" \
+  "tx1:$(profile_field "$tx1_profile" lock_root):/opt/wotb-tx" \
+  "tx1:$(profile_field "$tx1_profile" staging_root):/opt/wotb-tx/periphery" \
+  "tx1:$(profile_field "$tx1_profile" privilege):sudo"; do
+  target="${pairs%%:*}"; rest="${pairs#*:}"; actual="${rest%%:*}"; want="${rest#*:}"
+  [[ "$actual" == "$want" ]] || die "the $target profile must declare '$want', not '$actual'"
+done
+[[ "$(profile_field "$yecao_profile" lock_root)" != "$(profile_field "$tx1_profile" lock_root)" ]] \
+  || die 'each target must serialize on its own host lock'
+pass 'target-profiles reviewed-lock-staging-privilege'
+
+# 2. Profiles are data: a credential or a mismatched declaration is refused.
+# The synthetic profiles carry complete roots on purpose, so the rejection can only
+# come from the declaration being wrong, never from an unrelated missing field.
+bad_roots=': "${PERIPHERY_LOCK_ROOT:=/tmp/fixture-lock}"
+: "${PERIPHERY_STAGING_ROOT:=/tmp/fixture-staging}"
+'
+for bad_profile in credential mismatched-name mismatched-connect-as; do
+  bad="$work/bad-profile-$bad_profile"
+  rm -rf "$bad"
+  mkdir -p "$bad/targets/bad"
+  cp "$ROOT/lib.sh" "$ROOT/read-target-profile.sh" "$bad/"
+  case "$bad_profile" in
+    credential)
+      printf 'PERIPHERY_TARGET=bad\nPERIPHERY_CONNECT_AS=bad\nPERIPHERY_PRIVILEGE=root\n%sPERIPHERY_DB_PASSWORD=x\n' "$bad_roots" ;;
+    mismatched-name)
+      printf 'PERIPHERY_TARGET=other\nPERIPHERY_CONNECT_AS=bad\nPERIPHERY_PRIVILEGE=root\n%s' "$bad_roots" ;;
+    mismatched-connect-as)
+      printf 'PERIPHERY_TARGET=bad\nPERIPHERY_CONNECT_AS=tx1\nPERIPHERY_PRIVILEGE=root\n%s' "$bad_roots" ;;
+  esac > "$bad/targets/bad/target.env"
+  if bash "$bad/read-target-profile.sh" bad "$work/bad.out" >/dev/null 2>&1; then
+    die "an invalid target profile was accepted: $bad_profile"
+  fi
+done
+pass 'target-profiles reject credentials and mismatches'
+
+# 3. Target isolation: another target's config must be refused before mutation.
+prepare_case isolation-swap yecao
+cp "$ROOT/targets/tx1/periphery.config.toml" "$runtime/targets/yecao/periphery.config.toml"
+fail_closed 'a staged config for another target' "$fixture_secret"
+grep -q 'must set connect_as' "$case_dir/install.log" \
+  || { cat "$case_dir/install.log" >&2; die 'the cross-target config was not reported'; }
+pass 'cross-target-config fails-closed before mutation'
+
+# 4. The host lock is the profile's, and a held lock stops the reconcile.
+prepare_case lock-contract yecao
+printf '%s\n' 'fixture-periphery-identity' > "$identity"
+printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+write_marker
+flock -n "$case_lock_file" -c 'sleep 10' &
+lock_pid=$!
+for attempt in $(seq 1 20); do
+  flock -n "$case_lock_file" -c true 2>/dev/null || break
+  sleep 0.2
+done
+if run_install; then
+  kill "$lock_pid" 2>/dev/null || true
+  die 'a reconcile must refuse to run while the host lock is held'
+fi
+kill "$lock_pid" 2>/dev/null || true
+wait "$lock_pid" 2>/dev/null || true
+grep -q 'Another yecao host mutation is running' "$case_dir/install.log" \
+  || { cat "$case_dir/install.log" >&2; die 'the held-lock failure was not reported'; }
+# The lock belongs to the host's deploy owner: a missing one is a misconfiguration,
+# and Periphery must not create it as root.
+rm -f "$case_lock_file"
+if run_install; then
+  die 'a missing host mutation lock must fail closed instead of being created'
+fi
+grep -q 'the host mutation lock is missing or unsafe' "$case_dir/install.log" \
+  || { cat "$case_dir/install.log" >&2; die 'the missing-lock failure was not reported'; }
+[[ ! -e "$case_lock_file" ]] || die 'Periphery must never create the host mutation lock'
+pass 'host-lock serialization is taken from the target profile'
+
+# 5. TX1 first onboarding, then a later secret-free reconcile.
+prepare_case tx1-first-onboarding tx1
+run_install "$fixture_secret" || {
+  cat "$case_dir/install.log" >&2
+  die 'TX1 first onboarding with the TX1 credential failed'
+}
+marker_is_valid || die 'TX1 onboarding did not commit a valid marker'
+cmp -s "$case_dir/etc/periphery.config.toml" "$ROOT/targets/tx1/periphery.config.toml" \
+  || die 'TX1 must install the reviewed TX1 config'
+grep -q '^connect_as = "tx1"$' "$case_dir/etc/periphery.config.toml" \
+  || die 'TX1 must install connect_as = "tx1"'
+[[ ! -e "$bootstrap_env" ]] || die 'the TX1 bootstrap credential survived onboarding'
+grep -q '^restart-with-bootstrap marker=absent$' "$events" || die 'TX1 never used the bootstrap credential'
+if grep -q 'marker=present' <(grep '^restart-' "$events"); then
+  die 'the TX1 marker was written before a restart'
+fi
+grep -q '^enable marker=present$' "$events" || die 'TX1 enabled the unit before committing'
+if grep -rq -- "$fixture_secret" "$case_dir/etc" "$case_dir/unit" "$case_dir/run" "$case_dir/state"; then
+  die 'the TX1 onboarding key was persisted or logged'
+fi
+pass 'tx1-first-onboarding commits the marker last with connect_as=tx1'
+
+prepare_case tx1-completed tx1
+printf '%s\n' 'fixture-periphery-identity' > "$identity"
+printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+write_marker
+state_before="$(sha256sum "$identity" "$core_pub" "$marker" | sha256sum)"
+if ! run_install; then
+  cat "$case_dir/install.log" >&2
+  die 'a completed TX1 install must reconcile without any onboarding secret'
+fi
+[[ "$(sha256sum "$identity" "$core_pub" "$marker" | sha256sum)" == "$state_before" ]] \
+  || die 'the secret-free TX1 reconcile modified the identity, the Core key, or the marker'
+if grep -q 'restart-with-bootstrap' "$events"; then
+  die 'the secret-free TX1 reconcile used a bootstrap credential'
+fi
+pass 'tx1-completed reconciles without any onboarding secret'
+
+# 6. One lifecycle implementation: no host identity may leak into the shared code.
+for script in lib.sh install.sh verify.sh reconcile.sh staging-root.sh read-target-profile.sh; do
+  if grep -Eq '"yecao"|"tx1"' "$ROOT/$script"; then
+    die "the shared $script must not hardcode a host identity"
+  fi
+done
+for script in lib.sh install.sh verify.sh reconcile.sh; do
+  grep -Fq 'periphery_target' "$ROOT/$script" \
+    || die "the shared $script must be target-driven"
+done
+pass 'one-lifecycle shared implementation with per-host profiles'
 
 echo 'Komodo Periphery contract fixtures: PASS'

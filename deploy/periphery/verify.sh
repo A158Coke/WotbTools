@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
-# Production verification for the Yecao Komodo Periphery agent (K3.1).
+# Production verification for one Komodo Periphery target (K3.2).
+#
+# Target-agnostic: the expected Server identity comes from the reviewed target
+# profile, and the effective config is compared byte for byte with that target's
+# staged config, so one host can never silently run another host's profile.
 #
 # Read-only, and deliberately credential-free: onboarding is proven by the
 # agent's own outbound connection to the pinned Core address and by the persistent
 # identity it generated, never by the Komodo admin API.
 set -Eeuo pipefail
 
-runtime="${1:?usage: verify.sh <runtime-dir>}"
+TARGET="${1:?usage: verify.sh <target> <runtime-dir>}"
+runtime="${2:?usage: verify.sh <target> <runtime-dir>}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=deploy/periphery/lib.sh
 source "$script_dir/lib.sh"
 
+load_target_profile "$TARGET" "$runtime"
 load_release_manifest "$runtime/periphery.release"
+require_real_file "$periphery_config_source" "Staged $TARGET config"
 
 reported_version() {
   local out
@@ -82,16 +89,18 @@ listeners="$(listener_on_8120)"
 [[ -z "$listeners" ]] || fail "Periphery must not listen on :8120, found: $listeners"
 echo 'PASS periphery-no-inbound-8120'
 
-# 7. The persistent config still expresses the reviewed outbound intent.
+# 7. The effective config is exactly this target's reviewed config.
+cmp -s "$periphery_config" "$periphery_config_source" || fail \
+  "the effective config is not the reviewed $periphery_target config: $periphery_config differs from $periphery_config_source"
 grep -Eq '^core_addresses = \["http://10\.20\.0\.2:9120"\]$' "$periphery_config" \
   || fail "persistent config must set core_addresses to the WireGuard Core address: $periphery_config"
-grep -Eq '^connect_as = "yecao"$' "$periphery_config" \
-  || fail "persistent config must set connect_as = \"yecao\": $periphery_config"
+grep -Eq "^connect_as = \"$periphery_connect_as\"\$" "$periphery_config" \
+  || fail "target $periphery_target must never install another target's Server identity: $periphery_config must set connect_as = \"$periphery_connect_as\""
 grep -Eq '^server_enabled = false$' "$periphery_config" \
   || fail "persistent config must set server_enabled = false: $periphery_config"
 grep -Eq '^root_directory = "/etc/komodo"$' "$periphery_config" \
   || fail "persistent config must set root_directory = \"/etc/komodo\": $periphery_config"
-echo 'PASS periphery-config-outbound-only'
+echo "PASS periphery-config-$periphery_target"
 
 # 8. No onboarding key is persisted anywhere that outlives the bootstrap.
 if grep -Eq '(^|[^_])onboarding_key|PERIPHERY_ONBOARDING_KEY' "$periphery_config"; then
@@ -110,7 +119,7 @@ echo 'PASS periphery-no-persisted-onboarding-key'
 docker info >/dev/null 2>&1 || fail 'the Docker daemon is not reachable from the Periphery host context.'
 unit_user="$("$systemctl_bin" show periphery -p User --value 2>/dev/null || true)"
 [[ -z "$unit_user" || "$unit_user" == root ]] \
-  || fail "periphery.service runs as '$unit_user'; K3.1 expects the root systemd context with Docker access."
+  || fail "periphery.service runs as '$unit_user'; K3.2 expects the root systemd context with Docker access."
 echo 'PASS periphery-docker-access'
 
-echo "Komodo Periphery verification: PASS (v$PERIPHERY_VERSION, pid $pid)"
+echo "Komodo Periphery verification: PASS (target $periphery_target, v$PERIPHERY_VERSION, pid $pid)"
