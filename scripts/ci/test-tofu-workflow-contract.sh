@@ -97,6 +97,14 @@ for name, (relative, state_dir, requires_marker) in expected.items():
         # State without its marker is corruption, not a fresh install: the
         # controller plane must fail closed instead of re-initializing.
         assert "state exists without a completed bootstrap marker" in safety_text
+        # The Yecao staging root is only ever prepared, verified, or removed
+        # through the audited helper; the workflow must never fall back to inline
+        # `mkdir -p` or an unguarded `rm -rf` against the owner root.
+        assert "script_path: deploy/komodo/staging-root.sh" in workflow_text
+        assert "KOMODO_STAGING_ACTION: prepare" in workflow_text
+        assert "KOMODO_STAGING_ACTION: cleanup" in workflow_text
+        assert "rm -rf" not in workflow_text
+        assert "mkdir -p /opt" not in workflow_text
         assert "TENCENTCLOUD_SECRET_ID" in workflow_text
         assert "TENCENTCLOUD_SECRET_KEY" in workflow_text
         assert "AWS_ACCESS_KEY_ID" not in workflow_text

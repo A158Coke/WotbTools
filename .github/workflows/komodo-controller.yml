@@ -56,6 +56,24 @@ jobs:
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
+      # The staging root is reached before any other controller code exists on the
+      # host, so the audited helper runs straight from the checkout: `/opt/komodo`,
+      # `/opt/komodo/incoming`, and the SHA directory must all be real directories
+      # (mode 700) before SCP is allowed to write into them.
+      - name: Prepare safe Komodo staging root on Yecao
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 2m
+          script_path: deploy/komodo/staging-root.sh
+          envs: SOURCE_SHA,KOMODO_STAGING_ACTION
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          KOMODO_STAGING_ACTION: prepare
+
       - name: Stage exact Komodo controller inputs on Yecao
         uses: appleboy/scp-action@v1
         with:
@@ -104,8 +122,10 @@ jobs:
           TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
 
-      # Only the SHA-scoped staging directory is ever removed. `/opt/komodo/compose.yml`,
-      # `/opt/komodo/tofu-state`, and `/opt/komodo/backups` are out of reach here.
+      # Only the SHA-scoped staging directory is ever removed, and only after the
+      # helper re-proved `/opt/komodo` and `/opt/komodo/incoming` are real
+      # directories. `/opt/komodo/compose.yml`, `/opt/komodo/tofu-state`, and
+      # `/opt/komodo/backups` are out of reach here.
       - name: Cleanup staged Komodo controller inputs
         if: always()
         uses: appleboy/ssh-action@v1
@@ -115,10 +135,8 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 2m
-          envs: SOURCE_SHA
-          script: |
-            set -Eeuo pipefail
-            [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
-            rm -rf -- "/opt/komodo/incoming/$SOURCE_SHA"
+          script_path: deploy/komodo/staging-root.sh
+          envs: SOURCE_SHA,KOMODO_STAGING_ACTION
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          KOMODO_STAGING_ACTION: cleanup
