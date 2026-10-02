@@ -7,6 +7,8 @@
  * 契约 v0.1.9：输出 {shots, author_path, others} 包装——作者严格路径失败
  * fail-visible（警示条），不再静默吞空。
  * 数据面：api/agent-replay-facets.ts parseAgentShotsFromBytes + scene/agentData.js 交接。
+ * 顶层计数口径：1 row = 1 unique shotId = 一次开火；同一 shotId 下的后续事件或多次装甲交互
+ * 仍属于同一个 Shot，不在消费端展开成额外“射击”。
  */
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -214,7 +216,8 @@ const filteredShots = computed(() => {
   return shots.value.filter((s) => (s.shooter_name || `eid:${s.shooter_eid}`) === shooter.value)
 })
 
-// 汇总摘要（随筛选联动）：命中率 = 有 flags 或非作者命中的比例；穿透率 = 击穿/命中（不含跳弹）
+// 汇总摘要（随筛选联动）：total 按上游顶层 Shot 行计（unique shotId / 一次开火），
+// 绝不按 method29/type32 的 interaction 数膨胀；命中率 = 命中/开火，穿透率 = 击穿/命中。
 const shotSummary = computed(() => {
   const rows = filteredShots.value
   // 命中判定唯一权威 = target_eid 在案（isShotHit；作者与非作者同规则）

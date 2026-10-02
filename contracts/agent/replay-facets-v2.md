@@ -249,6 +249,7 @@ canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`heal
   `reloads` / `reload_effective` 装填遥测，并补收 arena subtype 16；WotbTools
   `deploy/agent/source.json` 同步 pin 到该 Release，字段契约见 §4d。
 - v0.3.10（2026-10-02，agent commit `5029e103`）：射击复现多 interaction 关联修复；
-  `unique shotId = 一次开火 = 一个 Shot`，同一炮弹的跳弹、续飞、二次装甲接触仍聚合为同一 Shot；
+  `unique shotId = 一次开火 = 一个 Shot`，同一 `shotId` 关联的后续事件与多次装甲接触仍聚合为同一 Shot
+  （后续 method29 在物理上是什么，上游仍未定，此处只记录身份规则）；
   作者严格路径在同 victim / 同时窗存在多个 type32 segment 时优先以 `method8.hash6 ↔ type32.hash6`
   做 interaction 关联，重复 method8 广播按 hash 去重，证据不足继续 fail-fast。WotbTools production pin 同步到该 Release。
