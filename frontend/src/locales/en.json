@@ -1308,7 +1308,11 @@
     "ai_empty": "Select a replay to start AI review",
     "playback_empty": "Select a replay to view battle playback",
     "dataset_preparing": "Preparing replay data…",
-    "dataset_expired": "Replay data has expired. Re-preparing…"
+    "dataset_expired": "Replay data has expired. Re-preparing…",
+    "ai_login_required": "Sign in to use AI review. The replay is parsed on this device; only the structured facts the review needs are uploaded.",
+    "ai_engine_unavailable": "The replay engine failed to load. Refresh and try again.",
+    "ai_projection_unavailable": "A battle timeline cannot be established for this replay, so AI review is unavailable",
+    "ai_projection_failed": "This replay could not be parsed for AI review"
   },
   "league": {
     "title": "League Rating",

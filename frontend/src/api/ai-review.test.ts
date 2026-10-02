@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { gunzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AI_REVIEWS_PATH,
@@ -19,18 +20,22 @@ const CORRELATION_ID = '5c2b1f4e-9a0d-4f6b-8f1e-2b3c4d5e6f70'
 
 const projection: AiReviewProjection = {
   battle: { players: [] },
-  reconstruction: {
-    participants: [],
-    events: [],
-    coverage: {
-      totalPackets: 10,
-      decodedPackets: 9,
-      partiallyDecodedPackets: 1,
-      unknownPackets: 0,
-      failedPackets: 0,
-      decodedPacketRatio: 0.9,
-      packetTypes: {},
-    },
+  projection: {
+    projectionVersion: 1,
+    engine: { agentRelease: 'v0.3.8', agentCommit: 'abc' },
+    clock: { battleStartRawClockSec: 10, battleDurationSec: 120, estimated: false, battleEndRawClockSec: 130, streamEndRawClockSec: 131 },
+    perspective: { recorderAccountId: 1, perspectiveTeam: 1, recorderEntityIds: [7], winnerTeam: 1 },
+    participants: [{ entityId: 7, accountId: 1, nickname: 'a', team: 1, tankId: 1, recorder: true }],
+    observationWindows: [],
+    positions: [],
+    turrets: [],
+    prop3Health: [],
+    healthEvents: [],
+    damageNotices: [],
+    periods: [],
+    objectives: { supremacyPoints: [], supremacyBases: [], assaultObjectivePresent: false, assaultBases: [] },
+    limitations: [],
+    unavailableEvidence: ['PACKET_DECODE_COVERAGE'],
   },
 }
 
@@ -62,14 +67,14 @@ describe('buildAiReviewRequest', () => {
       correlationId: CORRELATION_ID,
     })
 
-    expect(request.schemaVersion).toBe(1)
+    expect(request.schemaVersion).toBe(2)
     expect(request.locale).toBe('zh-CN')
     expect(request.correlationId).toBe(CORRELATION_ID)
     expect(request.battle).toBe(projection.battle)
-    expect(request.reconstruction).toBe(projection.reconstruction)
-    // metadata / streamHeader / diagnostics 永不进入 HTTP。
+    expect(request.projection).toBe(projection.projection)
+    // 只有结算事实 + client canonical 投影：不携带回放字节，也不携带 Agent 原始切面
     expect(Object.keys(request).sort()).toEqual([
-      'battle', 'correlationId', 'locale', 'reconstruction', 'schemaVersion',
+      'battle', 'correlationId', 'locale', 'projection', 'schemaVersion',
     ])
   })
 })
@@ -99,7 +104,12 @@ describe('AI Review transport', () => {
     expect(init.method).toBe('POST')
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-token')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
-    expect(JSON.parse(init.body as string).correlationId).toBe(CORRELATION_ID)
+    // 请求体 gzip 压缩发送，服务端限额解压后得到原样 JSON
+    expect((init.headers as Record<string, string>)['Content-Encoding']).toBe('gzip')
+    const inflated = gunzipSync(new Uint8Array(await (init.body as Blob).arrayBuffer())).toString('utf8')
+    expect(JSON.parse(inflated)).toEqual(JSON.parse(JSON.stringify(buildAiReviewRequest({
+      ...projection, locale: 'zh-CN', correlationId: CORRELATION_ID,
+    }))))
   })
 
   it('cancels by correlationId path parameter (not the retired query form)', async () => {

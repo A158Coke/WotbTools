@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { gunzipSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -30,9 +31,9 @@ const AI_REVIEWS_URL = '/api/ai/reviews'
  */
 const AI_WIRE_LOCALE = 'zh-CN'
 
-/** 客户端 AI 投影（battle + reconstruction）——两个 identity（A / B）用于 run ownership 测试。 */
-const projectionA = { battle: { id: 'battle-A' }, reconstruction: { id: 'recon-A' } }
-const projectionB = { battle: { id: 'battle-B' }, reconstruction: { id: 'recon-B' } }
+/** 客户端 AI 输入（battle + canonical projection）——两个 identity（A / B）用于 run ownership 测试。 */
+const projectionA = { battle: { id: 'battle-A' }, projection: { id: 'proj-A' } }
+const projectionB = { battle: { id: 'battle-B' }, projection: { id: 'proj-B' } }
 
 /**
  * 统一的挂载 helper：
@@ -79,7 +80,8 @@ function cancelCalls(fetchMock) {
 
 const cancelUrl = correlationId => `${AI_REVIEWS_URL}/${encodeURIComponent(correlationId)}/cancel`
 
-const requestBody = call => JSON.parse(call[1].body)
+/** 请求体以 gzip Blob 发送：解压回原样 JSON */
+const requestBody = async call => JSON.parse(gunzipSync(new Uint8Array(await call[1].body.arrayBuffer())).toString('utf8'))
 
 /** 空 SSE 响应（立即 done）。 */
 function emptySseResponse() {
@@ -161,34 +163,34 @@ describe('AiReviewPanel workspace layout ownership', () => {
   })
 })
 
-// ---- 客户端投影路径：POST /api/ai/reviews，body 恰为 AiReviewRequestV1（不再上传 dataset 引用）----
+// ---- 客户端投影路径：POST /api/ai/reviews，body 恰为 AiReviewRequestV2（gzip，不上传回放）----
 
 describe('AiReviewPanel projection request', () => {
-  it('请求体恰为 AiReviewRequestV1 客户端投影（无 processingJobId/sourceId/lang）', async () => {
+  it('请求体恰为 AiReviewRequestV2：结算事实 + canonical 投影，gzip 发送（无回放字节 / dataset 引用）', async () => {
     const fetchMock = vi.fn().mockResolvedValue(emptySseResponse())
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountPanel({ projection: projectionA })
 
     await wrapper.find('.ai-analyze').trigger('click')
-    await nextTick()
-    await nextTick()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
 
     const [url, options] = fetchMock.mock.calls[0]
     expect(url).toBe(AI_REVIEWS_URL)
     expect(url).not.toContain('?')
     expect(options.method).toBe('POST')
     expect(options.headers['Content-Type']).toBe('application/json')
-    const body = JSON.parse(options.body)
+    expect(options.headers['Content-Encoding']).toBe('gzip')
+    const body = await requestBody(fetchMock.mock.calls[0])
     expect(body).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       locale: AI_WIRE_LOCALE,
       correlationId: expect.any(String),
       battle: projectionA.battle,
-      reconstruction: projectionA.reconstruction,
+      projection: projectionA.projection,
     })
     // dataset 时代的 wire shape 不得回归：键集精确等于契约字段。
     expect(Object.keys(body).sort()).toEqual([
-      'battle', 'correlationId', 'locale', 'reconstruction', 'schemaVersion',
+      'battle', 'correlationId', 'locale', 'projection', 'schemaVersion',
     ])
     expect(body).not.toHaveProperty('processingJobId')
     expect(body).not.toHaveProperty('sourceId')
@@ -215,8 +217,7 @@ describe('AiReviewPanel projection request', () => {
     }))
     const wrapper = mountPanel({ projection: projectionA })
     await wrapper.find('.ai-analyze').trigger('click')
-    await flushPromises()
-    expect(wrapper.vm.error).toContain(messageKey)
+    await vi.waitFor(() => expect(wrapper.vm.error).toContain(messageKey))
     expect(wrapper.vm.error).toContain(`err-${status}`)
     vi.unstubAllGlobals()
   })
@@ -462,9 +463,9 @@ describe('AiReviewPanel projection identity ownership', () => {
     expect(wrapper.vm.analyzing).toBe(true)
     const calls = analyzeCalls(fetchMock)
     expect(calls.length).toBe(2)
-    const body = requestBody(calls[1])
+    const body = await requestBody(calls[1])
     expect(body.battle).toEqual(projectionB.battle)
-    expect(body.reconstruction).toEqual(projectionB.reconstruction)
+    expect(body.projection).toEqual(projectionB.projection)
 
     // 旧 A 流迟到收尾（done:true，无事件）：不得清掉 B 的 analyzing/结果
     sseA._release({ done: true, value: undefined })
@@ -537,7 +538,7 @@ describe('AiReviewPanel per-run context', () => {
 
     await wrapper.find('.ai-analyze').trigger('click') // A
     await nextTick()
-    const aCorr = requestBody(analyzeCalls(fetchMock)[0]).correlationId
+    const aCorr = (await requestBody(analyzeCalls(fetchMock)[0])).correlationId
 
     await wrapper.setProps({ projection: projectionB }) // A 被 cancel（watcher）
     await nextTick()
@@ -546,7 +547,7 @@ describe('AiReviewPanel per-run context', () => {
     await wrapper.find('.ai-analyze').trigger('click') // B 启动（B timer 已安装）
     await nextTick()
     expect(wrapper.vm.analyzing).toBe(true)
-    const bCorr = requestBody(analyzeCalls(fetchMock)[1]).correlationId
+    const bCorr = (await requestBody(analyzeCalls(fetchMock)[1])).correlationId
     expect(bCorr).not.toBe(aCorr)
 
     // A 的 async unwind 最后执行（fetch resolve + stream 收尾 → A finally）：
@@ -580,13 +581,13 @@ describe('AiReviewPanel per-run context', () => {
 
     await wrapper.find('.ai-analyze').trigger('click') // A
     await nextTick()
-    const aCorr = requestBody(analyzeCalls(fetchMock)[0]).correlationId
+    const aCorr = (await requestBody(analyzeCalls(fetchMock)[0])).correlationId
 
     await wrapper.setProps({ projection: projectionB }) // watcher 只 cancel A
     await nextTick()
     await wrapper.find('.ai-analyze').trigger('click') // B
     await nextTick()
-    const bCorr = requestBody(analyzeCalls(fetchMock)[1]).correlationId
+    const bCorr = (await requestBody(analyzeCalls(fetchMock)[1])).correlationId
 
     // B 活跃期间：A 不得触发任何 B_ID 的 cancel（A 只能操作 A_ID）
     const urlsBefore = cancelCalls(fetchMock)

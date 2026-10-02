@@ -43,11 +43,13 @@ vi.mock('./ReplayPage.vue', () => ({
     template: '<div data-test="data-pane" />',
   },
 }))
-vi.mock('./AiReviewPanel.vue', () => ({
+// AI 复盘工作台面板（本机建立 canonical 投影 + AiReviewPanel）：异步组件，测试只验证工作台的接线
+vi.mock('./AiReviewWorkspacePane.vue', () => ({
+  __esModule: true,
   default: {
     name: 'AiReviewPanelMock',
-    props: ['file'],
-    template: '<div data-test="ai-pane" />',
+    props: ['file', 'active', 'blockedReason'],
+    template: '<div data-test="ai-pane" data-testid="ws-ai">{{ file && file.name }}|{{ blockedReason }}</div>',
   },
 }))
 // __esModule：BattlePlaybackPanel 在工作台里是异步组件（审计 PF-02），Vue 需要它来解包 default
@@ -182,24 +184,26 @@ describe('ReplayWorkspace', () => {
     expect(dataVm.props('workspaceContext')).toBeTruthy()
   })
 
-  it('切到 AI 能力时只显示维护提示，不分析或挂载 AI 面板', async () => {
+  it('切到 AI 能力：挂载 AI 面板并传入同一份目标回放，不自动启动分析', async () => {
     replayState.files.value = [new File(['x'], 'a.wotbreplay')]
     const wrapper = mountWorkspace('data')
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="ws-ai"]').text()).toContain('workspace.ai_title')
-    expect(wrapper.find('[data-test="ai-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(false)
+    const ai = wrapper.findComponent({ name: 'AiReviewPanelMock' })
+    expect(ai.exists()).toBe(true)
+    expect(ai.props('file')?.name).toBe('a.wotbreplay')
+    expect(ai.props('active')).toBe(true)
+    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(true)
     expect(replayState.analyze).not.toHaveBeenCalled()
   })
 
-  it('AI 维护页不隐藏 Playback tab，也不触发分析', async () => {
+  it('AI 页不隐藏 Playback tab，也不触发分析', async () => {
     replayState.files.value = [new File(['x'], 'a.wotbreplay')]
     const wrapper = mountWorkspace('data')
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="ai-pane"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="ai-pane"]').exists()).toBe(true)
     expect(replayState.analyze).not.toHaveBeenCalled()
   })
 
@@ -211,13 +215,13 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
   })
 
-  it('AI 维护页不挂载复盘面板，且不切到 Playback', async () => {
+  it('AI 页挂载复盘面板，且不切到 Playback', async () => {
     replayState.files.value = [new File(['x'], 'a.wotbreplay')]
     const wrapper = mountWorkspace('data')
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
     await flushPromises()
     const aiPanelVm = wrapper.findComponent({ name: 'AiReviewPanelMock' })
-    expect(aiPanelVm.exists()).toBe(false)
+    expect(aiPanelVm.exists()).toBe(true)
     await flushPromises()
     expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').classes()).toContain('is-active')
     expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').classes()).not.toContain('is-active')
@@ -245,11 +249,11 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('AI 维护页提供跳到数据 / 2D 回放的入口', async () => {
+  it('多文件未选场次：AI 面板收到与 2D 回放相同的阻断原因（本机只解析单场）', async () => {
+    replayState.files.value = [new File(['x'], 'a.wotbreplay'), new File(['x'], 'b.wotbreplay')]
     const wrapper = mountWorkspace('ai')
     await flushPromises()
-    expect(wrapper.find('[data-testid="ws-ai-go-data"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="ws-ai-go-playback"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'AiReviewPanelMock' }).props('blockedReason')).toBe('workspace.single_replay_required')
     wrapper.unmount()
   })
 
@@ -279,7 +283,7 @@ describe('ReplayWorkspace', () => {
     return wrapper.findAll('[data-testid="battle-picker-option"]')
   }
 
-  it('回归：选 #8 → 经 AI 维护页切到 Playback 仍消费 #8', async () => {
+  it('回归：选 #8 → 经 AI 页切到 Playback 仍消费 #8', async () => {
     const files = Array.from({ length: 9 }, (_, i) => new File(['x'], `f${i}.wotbreplay`))
     replayState.files.value = files
     replayState.resp.value = {
@@ -293,7 +297,7 @@ describe('ReplayWorkspace', () => {
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="ws-ai"]').exists()).toBe(true)
-    expect(wrapper.findComponent({ name: 'AiReviewPanelMock' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'AiReviewPanelMock' }).props('file')?.name).toBe('f7.wotbreplay')
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
     await flushPromises()
     const pbVm = wrapper.findComponent({ name: 'BattlePlaybackPanelMock' })
@@ -351,7 +355,7 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('[data-testid="ws-data"] [data-testid="playback-battle-picker"]').exists()).toBe(false)
   })
 
-  it('Data → FileUploader allowFolder=true；AI 无上传器；Playback allowFolder=false', async () => {
+  it('Data → FileUploader allowFolder=true；AI 有上传器（单场）；Playback allowFolder=false', async () => {
     const files = [new File(['x'], 'a.wotbreplay')]
     replayState.files.value = files
     const wrapper = mountWorkspace('data')
@@ -361,14 +365,14 @@ describe('ReplayWorkspace', () => {
 
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(true)
 
     await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').trigger('click')
     await flushPromises()
     expect(wrapper.findComponent({ name: 'FileUploaderMock' }).props('allowFolder')).toBe(false)
   })
 
-  it('已有 34-file batch → 切 AI 维护页：selection 不变且不挂载 AI 面板', async () => {
+  it('已有 34-file batch → 切 AI 页：selection 不变，AI 面板拿到已选场次', async () => {
     const files = Array.from({ length: 34 }, (_, i) => new File(['x'], `f${i}.wotbreplay`))
     replayState.files.value = files
     replayState.resp.value = {
@@ -384,7 +388,7 @@ describe('ReplayWorkspace', () => {
     await flushPromises()
     expect(replayState.files.value.length).toBe(34)
     expect(wrapper.find('[data-testid="ws-ai"]').exists()).toBe(true)
-    expect(wrapper.findComponent({ name: 'AiReviewPanelMock' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'AiReviewPanelMock' }).props('file')?.name).toBe('f7.wotbreplay')
   })
 
   it('Playback 主动选择新 single replay → updateFiles 收到仅该 replay', async () => {

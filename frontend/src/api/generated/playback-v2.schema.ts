@@ -922,7 +922,7 @@ export default {
         }
       }
     },
-    "AiReviewRequestV1": {
+    "AiReviewRequestV2": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -930,12 +930,12 @@ export default {
         "locale",
         "correlationId",
         "battle",
-        "reconstruction"
+        "projection"
       ],
       "properties": {
         "schemaVersion": {
           "type": "integer",
-          "const": 1
+          "const": 2
         },
         "locale": {
           "type": "string",
@@ -952,8 +952,517 @@ export default {
         "battle": {
           "$ref": "#/$defs/AiReviewBattle"
         },
-        "reconstruction": {
-          "$ref": "#/$defs/AiReviewReconstruction"
+        "projection": {
+          "$ref": "#/$defs/ClientAiReviewProjection"
+        }
+      }
+    },
+    "ClientAiReviewProjection": {
+      "description": "WotbTools client canonical AI projection (frontend/src/replay-local/ai). Built from the pinned upstream Agent facets through WotbTools canonical replay facts, never the raw Agent DTO. Clocks are raw replay clocks in seconds; battle-relative time = rawClockSec - clock.battleStartRawClockSec. Only combatant entities appear. Evidence the engine does not provide is listed in unavailableEvidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectionVersion",
+        "engine",
+        "clock",
+        "perspective",
+        "participants",
+        "observationWindows",
+        "positions",
+        "turrets",
+        "prop3Health",
+        "healthEvents",
+        "damageNotices",
+        "periods",
+        "objectives",
+        "limitations",
+        "unavailableEvidence"
+      ],
+      "properties": {
+        "projectionVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "engine": {
+          "$ref": "#/$defs/AiProjectionEngine"
+        },
+        "clock": {
+          "$ref": "#/$defs/AiProjectionClock"
+        },
+        "perspective": {
+          "$ref": "#/$defs/AiProjectionPerspective"
+        },
+        "participants": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/AiProjectionParticipant"
+          }
+        },
+        "observationWindows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AiProjectionObservationWindow"
+          }
+        },
+        "positions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AiProjectionSampleTrack"
+          }
+        },
+        "turrets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AiProjectionSampleTrack"
+          }
+        },
+        "prop3Health": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AiProjectionProp3Health"
+          }
+        },
+        "healthEvents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AiProjectionHealthEvent"
+          }
+        },
+        "damageNotices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AiProjectionDamageNotice"
+          }
+        },
+        "periods": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AiProjectionPeriod"
+          }
+        },
+        "objectives": {
+          "$ref": "#/$defs/AiProjectionObjectives"
+        },
+        "limitations": {
+          "description": "Capability-affecting limitations; non-empty means the timeline is limited.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unavailableEvidence": {
+          "description": "Evidence classes the engine does not provide; consumers render them as unavailable, never as empty truth.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "PACKET_DECODE_COVERAGE",
+              "SHOT_LIFECYCLE",
+              "TARGETING",
+              "AMMUNITION"
+            ]
+          }
+        }
+      }
+    },
+    "AiProjectionEngine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentRelease",
+        "agentCommit"
+      ],
+      "properties": {
+        "agentRelease": {
+          "type": "string"
+        },
+        "agentCommit": {
+          "type": "string"
+        }
+      }
+    },
+    "AiProjectionClock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "battleStartRawClockSec",
+        "battleDurationSec",
+        "estimated",
+        "battleEndRawClockSec",
+        "streamEndRawClockSec"
+      ],
+      "properties": {
+        "battleStartRawClockSec": {
+          "type": "number"
+        },
+        "battleDurationSec": {
+          "type": "number"
+        },
+        "estimated": {
+          "type": "boolean"
+        },
+        "battleEndRawClockSec": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "streamEndRawClockSec": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "AiProjectionPerspective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recorderAccountId",
+        "perspectiveTeam",
+        "recorderEntityIds",
+        "winnerTeam"
+      ],
+      "properties": {
+        "recorderAccountId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "perspectiveTeam": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "recorderEntityIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "winnerTeam": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "AiProjectionParticipant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityId",
+        "accountId",
+        "nickname",
+        "team",
+        "tankId",
+        "recorder"
+      ],
+      "properties": {
+        "entityId": {
+          "type": "integer"
+        },
+        "accountId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "team": {
+          "type": "integer",
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "tankId": {
+          "type": "integer"
+        },
+        "recorder": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AiProjectionObservationWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityId",
+        "fromRawClockSec",
+        "toRawClockSec",
+        "materializationHp"
+      ],
+      "properties": {
+        "entityId": {
+          "type": "integer"
+        },
+        "fromRawClockSec": {
+          "type": "number"
+        },
+        "toRawClockSec": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "materializationHp": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "AiProjectionSampleTrack": {
+      "description": "Raw observations of one entity, flat and clock-ordered. positions: [rawClockSec, x, y, z, hullYawRad] x N (unfiltered type-10 world poses). turrets: [rawClockSec, turretRelativeYawDeg] x N (prop2 coarse yaw).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityId",
+        "stride",
+        "samples"
+      ],
+      "properties": {
+        "entityId": {
+          "type": "integer"
+        },
+        "stride": {
+          "type": "integer",
+          "enum": [
+            2,
+            5
+          ]
+        },
+        "samples": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "AiProjectionProp3Health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityId",
+        "rawClockSec",
+        "hpRaw"
+      ],
+      "properties": {
+        "entityId": {
+          "type": "integer"
+        },
+        "rawClockSec": {
+          "type": "number"
+        },
+        "hpRaw": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      }
+    },
+    "AiProjectionHealthEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityId",
+        "rawClockSec",
+        "hpRaw",
+        "sourceEntityId",
+        "causeFlag"
+      ],
+      "properties": {
+        "entityId": {
+          "type": "integer"
+        },
+        "rawClockSec": {
+          "type": "number"
+        },
+        "hpRaw": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "sourceEntityId": {
+          "type": "integer"
+        },
+        "causeFlag": {
+          "type": "integer"
+        }
+      }
+    },
+    "AiProjectionDamageNotice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rawClockSec",
+        "kind",
+        "envelopeEntityId",
+        "attackerEntityId",
+        "victimEntityId",
+        "primaryResult",
+        "secondaryResult"
+      ],
+      "properties": {
+        "rawClockSec": {
+          "type": "number"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "HIT",
+            "UNDECODED_VARIANT",
+            "SHORT_VARIANT"
+          ]
+        },
+        "envelopeEntityId": {
+          "type": "integer"
+        },
+        "attackerEntityId": {
+          "type": "integer"
+        },
+        "victimEntityId": {
+          "type": "integer"
+        },
+        "primaryResult": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "secondaryResult": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "AiProjectionPeriod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rawClockSec",
+        "period"
+      ],
+      "properties": {
+        "rawClockSec": {
+          "type": "number"
+        },
+        "period": {
+          "type": "integer"
+        }
+      }
+    },
+    "AiProjectionObjectives": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supremacyPoints",
+        "supremacyBases",
+        "assaultObjectivePresent",
+        "assaultBases"
+      ],
+      "properties": {
+        "supremacyPoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "rawClockSec",
+              "team",
+              "points"
+            ],
+            "properties": {
+              "rawClockSec": {
+                "type": "number"
+              },
+              "team": {
+                "type": "integer"
+              },
+              "points": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "supremacyBases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "rawClockSec",
+              "baseId",
+              "ownerTeam",
+              "capturingTeam",
+              "captureProgress"
+            ],
+            "properties": {
+              "rawClockSec": {
+                "type": "number"
+              },
+              "baseId": {
+                "type": "string",
+                "enum": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ]
+              },
+              "ownerTeam": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "capturingTeam": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "captureProgress": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "assaultObjectivePresent": {
+          "type": "boolean"
+        },
+        "assaultBases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "rawClockSec",
+              "captureProgress"
+            ],
+            "properties": {
+              "rawClockSec": {
+                "type": "number"
+              },
+              "captureProgress": {
+                "type": "integer"
+              }
+            }
+          }
         }
       }
     },
@@ -1234,189 +1743,6 @@ export default {
           "additionalProperties": {
             "type": "array",
             "items": {}
-          }
-        }
-      }
-    },
-    "AiReviewReconstruction": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "participants",
-        "events",
-        "coverage"
-      ],
-      "properties": {
-        "battleDurationSec": {
-          "type": "number"
-        },
-        "battleStartRawClockSec": {
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "participants": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/AiReviewParticipant"
-          }
-        },
-        "events": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/AiReviewEvent"
-          }
-        },
-        "checkpoints": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "object",
-            "additionalProperties": true
-          }
-        },
-        "finalState": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
-        },
-        "coverage": {
-          "$ref": "#/$defs/AiReviewCoverage"
-        }
-      }
-    },
-    "AiReviewParticipant": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "accountId",
-        "nickname",
-        "team",
-        "tankId",
-        "tankCode",
-        "recorder"
-      ],
-      "properties": {
-        "accountId": {
-          "type": "integer",
-          "format": "int64"
-        },
-        "nickname": {
-          "type": "string"
-        },
-        "team": {
-          "type": "integer"
-        },
-        "tankId": {
-          "type": "integer"
-        },
-        "tankCode": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "recorder": {
-          "type": "boolean"
-        }
-      }
-    },
-    "AiReviewEvent": {
-      "type": "object",
-      "required": [
-        "type",
-        "sequence"
-      ],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "AimRayStateEvent",
-            "AmmunitionSelectionChangedEvent",
-            "AmmunitionStateEvent",
-            "ArenaPeriodChangedEvent",
-            "AttachedTransformEvent",
-            "ConsumableLifecycleEvent",
-            "DamageEvent",
-            "EntityAuxiliaryBlobEvent",
-            "EntityCreatedEvent",
-            "EntityRemovedEvent",
-            "GunMarkerSizeEvent",
-            "HealthChangedEvent",
-            "MaterializationAnnouncedEvent",
-            "MaterializationEvent",
-            "ParticipantMappingEvent",
-            "PositionChangedEvent",
-            "ProjectileLaunchedEvent",
-            "ProjectileResolutionEvent",
-            "ProjectileTerminalEvent",
-            "RawSupremacyBaseUpdate",
-            "RecorderHealthChangedEvent",
-            "ReplayStreamClosedEvent",
-            "RoundFinishedEvent",
-            "SessionDecisecondLowByteEvent",
-            "ShotResultEvent",
-            "SupremacyBaseStateTransition",
-            "SupremacyPointsChangedEvent",
-            "TargetingInfoSnapshotEvent",
-            "TurretDirectionChangedEvent",
-            "UnknownReplayEvent",
-            "UnsupportedDamageEvent",
-            "VehicleDestroyedEvent",
-            "VehicleFiredEvent",
-            "VehicleHealthStateEvent",
-            "VehicleHitEvent",
-            "VehicleModuleCrewStateEvent",
-            "VehicleVehicleCollisionEvent"
-          ]
-        },
-        "sequence": {
-          "type": "integer"
-        }
-      },
-      "additionalProperties": true
-    },
-    "AiReviewCoverage": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "totalPackets",
-        "decodedPackets",
-        "partiallyDecodedPackets",
-        "unknownPackets",
-        "failedPackets",
-        "decodedPacketRatio",
-        "packetTypes"
-      ],
-      "properties": {
-        "totalPackets": {
-          "type": "integer"
-        },
-        "decodedPackets": {
-          "type": "integer"
-        },
-        "partiallyDecodedPackets": {
-          "type": "integer"
-        },
-        "unknownPackets": {
-          "type": "integer"
-        },
-        "failedPackets": {
-          "type": "integer"
-        },
-        "decodedPacketRatio": {
-          "type": "number"
-        },
-        "packetTypes": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "additionalProperties": true
           }
         }
       }
