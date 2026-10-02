@@ -146,13 +146,15 @@ jobs:
                   ]
                   assert overall_exprs, "production overview overall health panel missing"
                   overall_expr = "".join(overall_exprs[0].split())
-                  required_jobs = "wotb-backend|node-exporter|prometheus|loki|grafana"
+                  # 六类 scraped target（deploy/AGENTS.md 与 docs/operations/observability.md 的
+                  # metrics contract）：ai-service 必须计入，否则 ai-service 宕机不进总健康卡。
+                  required_jobs = "wotb-backend|ai-service|node-exporter|prometheus|loki|grafana"
                   expected_overall = (
                       f'min(up{{job=~"{required_jobs}"}})and('
-                      f'count(up{{job=~"{required_jobs}"}})==5)'
+                      f'count(up{{job=~"{required_jobs}"}})==6)'
                   )
                   assert overall_expr == expected_overall, \
-                      "production overview overall health must use min(up) as the value and count(up)==5 as the presence guard"
+                      "production overview overall health must use min(up) as the value and count(up)==6 as the presence guard"
                   assert "orvector(0)" not in overall_expr, \
                       "production overview overall health must not mask no-data"
               for i, panel in enumerate(d.get("panels", [])):
