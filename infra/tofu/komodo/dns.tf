@@ -1,3 +1,6 @@
+# The single resource this root owns. Public ingress belongs to the independent
+# TX Caddy owner, which terminates TLS and proxies to the Yecao WireGuard
+# address; this record only publishes the TX ingress address.
 resource "tencentcloud_dnspod_record" "komodo" {
   domain      = var.domain
   sub_domain  = var.subdomain
