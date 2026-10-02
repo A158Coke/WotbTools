@@ -151,7 +151,7 @@ External status (2026-10-02) — the external project has now **explicitly resol
 contradiction** in the immutable research snapshot above. This resolves the external project's document
 history; it does **not** promote the claim inside WotbTools.
 
-The current upstream source set is internally consistent on the following distinction:
+At the pinned research snapshot, the upstream source set is internally consistent on the following distinction:
 
 | Source (blob) | Current statement |
 |---|---|
@@ -159,7 +159,7 @@ The current upstream source set is internally consistent on the following distin
 | `客户端弹道与命中位置逆向报告.md` `77fa549a…` supersede note + §2.4 | historical "fourth/sixth round" blockquotes are retained as research history but are now explicitly marked as superseded where they claimed that hash6 coordinate semantics were false; the report separately preserves the observation that the **visible in-game decal** is produced from the client tracer/model path, which is a rendering statement rather than a packet-byte interpretation |
 | `WI射击参数与命中位置分析.md` `b0cd657e…` §5.1 | supports the same two-point AABB reading |
 
-Therefore the two-point encoding is the external project's **stated current conclusion**, not a fact that
+Therefore the two-point encoding is the external project's **stated conclusion at the pinned snapshot**, not a fact that
 WotbTools has independently closed. The local reproduction in §10 item 2 remains mandatory before any
 promotion to WotbTools canonical evidence.
 
@@ -379,7 +379,7 @@ reproduction against the WotbTools corpus or a controlled probe):
    *External:* decode unchanged, but read yaw from the high 10 bits only, and use a **sectorised** pitch
    limit table (§2), otherwise the comparison will disagree by design.
 2. **P0 — method8 six-byte hit segment + component selector** using controlled collision targets.
-   *External:* the external project's current source set now consistently states the two-point AABB
+   *External:* at the pinned research snapshot, the external project's source set consistently states the two-point AABB
    quantisation with a fixed byte/axis mapping (§3), after explicitly marking its earlier contrary blockquotes
    as superseded. That resolves the upstream documentation history, **not** WotbTools evidence. The component
    selector has height-stratification evidence and reappears at Type32 byte 11 (§4). Highest value of the
