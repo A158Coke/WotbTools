@@ -273,17 +273,22 @@ periphery_workflow = load(workflow_dir / "komodo-periphery.yml")
 periphery_events = periphery_workflow.get("on", periphery_workflow.get(True, {}))
 assert periphery_events["push"]["paths"] == periphery_workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
 periphery_jobs = periphery_workflow["jobs"]
-assert set(periphery_jobs) == {"reconcile_yecao", "reconcile_tx1"}, sorted(periphery_jobs)
+assert set(periphery_jobs) == {"reconcile_yecao", "reconcile_tx1", "reconcile_tx2"}, sorted(periphery_jobs)
 assert periphery_jobs["reconcile_yecao"]["name"] == "Reconcile Komodo Periphery on Yecao"
 assert periphery_jobs["reconcile_tx1"]["name"] == "Reconcile Komodo Periphery on TX1"
-# Yecao must be proven compatible with the multi-target refactor before TX1 is
-# mutated for the first time.
+assert periphery_jobs["reconcile_tx2"]["name"] == "Reconcile Komodo Periphery on TX2"
+# Each established host must be proven compatible before the next new host is
+# mutated for the first time, so the chain is strictly ordered.
+assert "needs" not in periphery_jobs["reconcile_yecao"], periphery_jobs["reconcile_yecao"]
 assert periphery_jobs["reconcile_tx1"]["needs"] == ["reconcile_yecao"], periphery_jobs["reconcile_tx1"]["needs"]
+assert periphery_jobs["reconcile_tx2"]["needs"] == ["reconcile_tx1"], periphery_jobs["reconcile_tx2"]["needs"]
 periphery_hosts = {
     "yecao": {"job": "reconcile_yecao", "profile": "yecao", "label": "Yecao",
               "secrets": ("VPS_HOST", "VPS_USER", "VPS_PORT", "VPS_SSH_KEY")},
     "tx1": {"job": "reconcile_tx1", "profile": "tx1", "label": "TX1",
             "secrets": ("TX_VPS_HOST", "TX_VPS_USER", "TX_VPS_PORT", "TX_VPS_SSH_KEY")},
+    "tx2": {"job": "reconcile_tx2", "profile": "tx2", "label": "TX2",
+            "secrets": ("TX2_VPS_HOST", "TX2_VPS_USER", "TX2_VPS_PORT", "TX2_VPS_SSH_KEY")},
 }
 for host, spec in periphery_hosts.items():
     job = periphery_jobs[spec["job"]]
@@ -343,17 +348,26 @@ for host, spec in periphery_hosts.items():
 yecao_json = json.dumps(periphery_jobs["reconcile_yecao"], ensure_ascii=False)
 assert "ONBOARDING_KEY" not in yecao_json, "the Yecao job must not reference an onboarding secret"
 assert "KOMODO_YECAO_ONBOARDING_KEY" not in json.dumps(periphery_workflow, ensure_ascii=False)
-# TX1's first onboarding maps only its own secret into the generic runtime variable.
-tx1_reconcile = next(step for step in periphery_jobs["reconcile_tx1"]["steps"]
-                     if step.get("name") == "Reconcile TX1 Periphery under the TX1 host lock")
-assert tx1_reconcile["with"]["envs"].split(",") == ["SOURCE_SHA", "PERIPHERY_TARGET", "KOMODO_PERIPHERY_ONBOARDING_KEY"]
-assert tx1_reconcile["env"]["KOMODO_PERIPHERY_ONBOARDING_KEY"] == "${{ secrets.KOMODO_TX1_ONBOARDING_KEY }}"
-tx1_script = tx1_reconcile["with"]["script"]
-assert "KOMODO_PERIPHERY_ONBOARDING_KEY" not in tx1_script.replace("$KOMODO_PERIPHERY_ONBOARDING_KEY", "")
+# Every sudo host maps only its own onboarding secret into the generic runtime
+# variable, and never echoes it.
+for host, spec in periphery_hosts.items():
+    if host == "yecao":
+        continue
+    label = spec["label"]
+    reconcile = next(step for step in periphery_jobs[spec["job"]]["steps"]
+                     if step.get("name") == f"Reconcile {label} Periphery under the {label} host lock")
+    assert reconcile["with"]["envs"].split(",") == [
+        "SOURCE_SHA", "PERIPHERY_TARGET", "KOMODO_PERIPHERY_ONBOARDING_KEY",
+    ], host
+    secret_name = f"KOMODO_{host.upper()}_ONBOARDING_KEY"
+    assert reconcile["env"]["KOMODO_PERIPHERY_ONBOARDING_KEY"] == f"${{{{ secrets.{secret_name} }}}}", host
+    script = reconcile["with"]["script"]
+    assert "KOMODO_PERIPHERY_ONBOARDING_KEY" not in script.replace("$KOMODO_PERIPHERY_ONBOARDING_KEY", ""), host
 # The per-host parameters are reviewed data, not workflow text.
 for profile, expected in {
     "yecao": {"connect_as": "yecao", "lock_root": "/opt/wotb", "staging_root": "/opt/periphery", "privilege": "root"},
     "tx1": {"connect_as": "tx1", "lock_root": "/opt/wotb-tx", "staging_root": "/opt/wotb-tx/periphery", "privilege": "sudo"},
+    "tx2": {"connect_as": "tx2", "lock_root": "/opt/wotb-tx2", "staging_root": "/opt/wotb-tx2/periphery", "privilege": "sudo"},
 }.items():
     text = (root / f"deploy/periphery/targets/{profile}/target.env").read_text(encoding="utf-8")
     assert f"PERIPHERY_TARGET={profile}" in text, profile
@@ -365,8 +379,10 @@ for profile, expected in {
     # `load_target_profile` enforces the same rule at runtime).
     effective_profile = "\n".join(line for line in text.splitlines() if not line.strip().startswith("#"))
     assert not re.search(r"(?i)(secret|password|passwd|token|private_key|onboarding_key)\s*=", effective_profile), profile
-# Each target's config is outbound only, with its own Server identity.
-for profile, connect_as in (("yecao", "yecao"), ("tx1", "tx1")):
+# Each target's config is outbound only, with its own Server identity, and the
+# effective bodies are otherwise identical.
+normalized_configs = {}
+for profile, connect_as in (("yecao", "yecao"), ("tx1", "tx1"), ("tx2", "tx2")):
     config_text = (root / f"deploy/periphery/targets/{profile}/periphery.config.toml").read_text(encoding="utf-8")
     for invariant in (
         'root_directory = "/etc/komodo"',
@@ -377,11 +393,16 @@ for profile, connect_as in (("yecao", "yecao"), ("tx1", "tx1")):
         'core_public_keys = ["file:/etc/komodo/keys/core.pub"]',
     ):
         assert invariant in config_text, (profile, invariant)
-    for forbidden in ("45.136.14.101", "0.0.0.0", "onboarding_key", "image_registry", "git_provider"):
+    for forbidden in ("45.136.14.101", "118.89.176.91", "10.20.0.3", "0.0.0.0",
+                      "onboarding_key", "image_registry", "git_provider"):
         assert forbidden not in config_text, (profile, forbidden)
+    effective_config = "\n".join(line for line in config_text.splitlines()
+                                 if line.strip() and not line.strip().startswith("#"))
+    normalized_configs[profile] = effective_config.replace(f'connect_as = "{connect_as}"', 'connect_as = "X"')
+assert len(set(normalized_configs.values())) == 1, sorted(normalized_configs)
 # No per-host lifecycle script may exist: only reviewed profiles differ.
 for path in sorted((root / "deploy/periphery").glob("*.sh")):
-    assert "yecao" not in path.name and "tx1" not in path.name, path.name
+    assert not any(host in path.name for host in periphery_hosts), path.name
 periphery_unit_text = (root / "deploy/periphery/periphery.service").read_text(encoding="utf-8")
 for invariant in (
     "EnvironmentFile=-/run/komodo/periphery-bootstrap.env",
