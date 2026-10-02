@@ -114,7 +114,7 @@ public class GlobalExceptionHandler {
         final String code = errorCode(exception.getMessage(), "INVALID_ARGUMENT");
         final HttpStatus status = switch (code) {
             case "WOTB_ACCOUNT_ALREADY_USED", "PROFILE_REGION_MISMATCH",
-                 "WOTB_ACCOUNT_MISMATCH" -> HttpStatus.CONFLICT;
+                 "WOTB_ACCOUNT_MISMATCH", "REPLAY_RECORDER_MISMATCH" -> HttpStatus.CONFLICT;
             case "PROFILE_NOT_FOUND", "USER_PROFILE_NOT_FOUND",
                  "REQUEST_NOT_FOUND" -> HttpStatus.NOT_FOUND;
             default -> HttpStatus.BAD_REQUEST;

@@ -1,14 +1,10 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
-import com.wotb.core.model.Source;
 import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
 import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.replay.processing.ReplayProcessingOptions;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
@@ -117,10 +113,7 @@ public class TeamReplayQualityBenchmarkRunner {
                                             final String model,
                                             final TeamReplayQualityCase qualityCase,
                                             final int run) throws IOException {
-        final Path replay = resolveReplay(qualityCase.replay());
-        final ReplayProcessingResult processed = new DefaultReplayProcessingFacade().process(
-                new Source(replay.getFileName().toString(), Files.readAllBytes(replay)),
-                ReplayProcessingOptions.full());
+        final ReplayFactsFixtures.Facts processed = ReplayFactsFixtures.load(qualityCase.replay());
         final SingleTeamBattleAnalysisContext context = TeamContextBuilder.buildSingleTeamContext(
                 processed.battle(), processed.reconstruction());
         final BattleTimelineResult timelineResult = BattleTimelineBuilder.build(
@@ -289,14 +282,6 @@ public class TeamReplayQualityBenchmarkRunner {
         final String text = review == null ? "" : review.toLowerCase(java.util.Locale.ROOT);
         return text.matches("(?s).*?(?:" + markers + ").*?(?:" + markers + ").*?") ? 2
                 : text.matches("(?s).*?(?:" + markers + ").*?") ? 1 : 0;
-    }
-
-    private static Path resolveReplay(final String replay) {
-        final Path cwd = Path.of(System.getProperty("user.dir"));
-        return List.of(cwd.resolve(replay), cwd.resolve("..").resolve(replay),
-                        cwd.resolve("..").resolve("..").resolve(replay)).stream()
-                .map(Path::normalize).filter(Files::isRegularFile).findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("replay missing: " + replay));
     }
 
     private static String gitSha() {
