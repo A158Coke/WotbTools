@@ -922,21 +922,16 @@ export default {
         }
       }
     },
-    "AiReviewRequestV2": {
+    "AiReviewRequest": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "schemaVersion",
         "locale",
         "correlationId",
         "battle",
         "projection"
       ],
       "properties": {
-        "schemaVersion": {
-          "type": "integer",
-          "const": 2
-        },
         "locale": {
           "type": "string",
           "enum": [
@@ -962,7 +957,6 @@ export default {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "projectionVersion",
         "engine",
         "clock",
         "perspective",
@@ -979,10 +973,6 @@ export default {
         "unavailableEvidence"
       ],
       "properties": {
-        "projectionVersion": {
-          "type": "integer",
-          "const": 1
-        },
         "engine": {
           "$ref": "#/$defs/AiProjectionEngine"
         },
@@ -2918,7 +2908,6 @@ export default {
         "AI_REVIEW_BUSY",
         "AI_REQUEST_TOO_LARGE",
         "INVALID_AI_REQUEST",
-        "UNSUPPORTED_AI_REQUEST_SCHEMA",
         "UNKNOWN_LOCALE",
         "INVALID_CORRELATION_ID",
         "DUPLICATE_CORRELATION_ID",

@@ -83,13 +83,11 @@ public class AiReviewController {
                 .register(meterRegistry);
     }
 
-    public static final int SCHEMA_VERSION = 2;
-
     /**
      * 解码后的请求：{@code reconstruction} 由 {@link ClientAiProjectionAdapter} 从客户端 canonical AI 投影装配
      * （服务器没有 replay parser），{@code limitations} 为投影声明的能力缺口。
      */
-    public record AiReviewRequest(int schemaVersion, String locale, String correlationId,
+    public record AiReviewRequest(String locale, String correlationId,
                                   Battle battle, ReplayReconstruction reconstruction, List<String> limitations) {
     }
 
@@ -105,8 +103,8 @@ public class AiReviewController {
         } catch (final IOException error) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_AI_REQUEST");
         }
-        if (body == null || !body.isObject() || body.path("schemaVersion").asInt() != SCHEMA_VERSION) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_AI_REQUEST_SCHEMA");
+        if (body == null || !body.isObject()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_AI_REQUEST");
         }
         // 信封先于投影：locale / correlationId 的契约错误不被投影结构错误掩盖
         languageOf(body.path("locale").asString(""));
@@ -118,7 +116,7 @@ public class AiReviewController {
             final ClientAiProjection projection = ReplayFactsCodec.projectionFromJson(body.path("projection"));
             final ReplayReconstruction reconstruction = ClientAiProjectionAdapter.toReconstruction(battle, projection);
             ClientAiProjectionAdapter.enrichBattle(battle, reconstruction);
-            return review(new AiReviewRequest(SCHEMA_VERSION,
+            return review(new AiReviewRequest(
                     body.path("locale").asString(""),
                     body.path("correlationId").asString(""),
                     battle,
@@ -169,9 +167,6 @@ public class AiReviewController {
     }
 
     public SseEmitter review(final AiReviewRequest request) {
-        if (request == null || request.schemaVersion() != SCHEMA_VERSION) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_AI_REQUEST_SCHEMA");
-        }
         if (request.battle() == null || request.battle().players == null
                 || request.reconstruction() == null
                 || request.reconstruction().participants() == null

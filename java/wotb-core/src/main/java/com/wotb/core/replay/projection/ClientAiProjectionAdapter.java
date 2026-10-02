@@ -234,7 +234,6 @@ public final class ClientAiProjectionAdapter {
 
     static void validate(final ClientAiProjection p) {
         require(p != null, "projection missing");
-        require(p.projectionVersion() == ClientAiProjection.VERSION, "unsupported projectionVersion");
         require(p.clock() != null && Double.isFinite(p.clock().battleStartRawClockSec())
                 && Double.isFinite(p.clock().battleDurationSec()) && p.clock().battleDurationSec() > 0, "clock invalid");
         require(p.perspective() != null && p.perspective().recorderEntityIds() != null, "perspective invalid");

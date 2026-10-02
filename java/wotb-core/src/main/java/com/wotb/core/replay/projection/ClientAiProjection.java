@@ -11,7 +11,6 @@ import java.util.List;
  * 所有时钟为原始回放时钟（秒）。只含参战实体。</p>
  */
 public record ClientAiProjection(
-        int projectionVersion,
         Engine engine,
         Clock clock,
         Perspective perspective,
@@ -27,8 +26,6 @@ public record ClientAiProjection(
         List<String> limitations,
         List<String> unavailableEvidence
 ) {
-    public static final int VERSION = 1;
-
     public record Engine(String agentRelease, String agentCommit) {
     }
 

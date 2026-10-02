@@ -1,7 +1,7 @@
 # AI Review 架构（随机战双 Call / 团队复盘）
 
 > 输入边界（2026-10，A158Coke/WotbTools#447）：**服务器没有 parser**。浏览器用锁定版本的上游 Agent WASM 解析回放，
-> 经 WotbTools canonical replay facts 产出 **client canonical AI projection**，以 `AiReviewRequestV2`（gzip）提交给
+> 经 WotbTools canonical replay facts 产出 **client canonical AI projection**，以 `AiReviewRequest`（gzip）提交给
 > Yecao 独立 `ai-service`；ai-service 把投影装配成内存 canonical 事件流后走原有 BattleTimeline / 证据 / prompt 链。
 > 详见下文「AI 复盘输入：client canonical AI projection」。部署边界见 `docs/operations/ai-service.md`。
 
@@ -538,7 +538,7 @@ completion、回放内容或用户/玩家标识。
 .wotbreplay（本机）→ 上游 Agent WASM：parseResult + parsePlayback + parseAiReview（typed facets，pin = deploy/agent/source.json）
   → frontend/src/replay-local/canonical：WotbTools canonical replay facts（身份 / 视角 / AoI / 血量 / 归属 / 终态）
   → frontend/src/replay-local/ai：ClientAiReviewProjection（+ battle 结算事实）
-  → AiReviewRequestV2（schemaVersion=2 / locale / correlationId / battle / projection）
+  → AiReviewRequest（schemaVersion=2 / locale / correlationId / battle / projection）
   → POST /api/ai/reviews（application/json，Content-Encoding: gzip）
 
 POST /api/ai/reviews → TX ingress /api/ai/** → WireGuard 私网 → Yecao 独立 ai-service
@@ -565,7 +565,7 @@ POST /api/ai/reviews → TX ingress /api/ai/** → WireGuard 私网 → Yecao �
 - **观测伤害抑制**：事件流覆盖未达 100% 时 `DefaultTeam/PlayerBattleFeatureExtractor` 条件标记 `OBSERVED_DAMAGE_IS_PARTIAL`，prompt 层抑制观测数字（`TeamAiPromptBuilder.appendObserved` / 随机战交火段），以权威结算为唯一口径；覆盖补齐后自动恢复。
 - **赛前预测渲染**：`PreBattleSectionRenderer` 覆盖 TEAM 变体（A队/B队/A 队/队伍1 等）、AREA ID → 中文名 + 九宫格（复用 `MapTacticalSemanticsRegistry`）、composition 键值三语翻译。
 
-## AI 复盘输入：client canonical AI projection（`AiReviewRequestV2`）
+## AI 复盘输入：client canonical AI projection（`AiReviewRequest`）
 
 ### 为什么不是「Agent JSON 直接上传」
 
@@ -636,4 +636,4 @@ RoundFinished / Supremacy*），由 `BattleStateReconstructor`（纯事件归约
 
 前端 `authedReplayPost(..., { gzip: true })` 同步压缩（不引入取消 / 超时的异步窗口），`Content-Encoding: gzip`；
 `AiReviewController.readBody` 限额解压（传输体 / 解压后任一超过 16 MiB → 413，非 gzip / identity 编码 → 415）。
-审计工具：`node frontend/scripts/audit-ai-payload.mjs --request <AiReviewRequestV2.json>`。
+审计工具：`node frontend/scripts/audit-ai-payload.mjs --request <AiReviewRequest.json>`。

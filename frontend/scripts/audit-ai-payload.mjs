@@ -93,7 +93,7 @@ function reportRequest(path) {
   }
   const gzip6 = gzipSync(raw, { level: 6 }).length
   const gzip9 = gzipSync(raw, { level: 9 }).length
-  // AiReviewRequestV2 的事实在 projection 下（client canonical AI projection，按 section 计量）；
+  // AiReviewRequest 的事实在 projection 下（client canonical AI projection，按 section 计量）；
   // 上游 facet 样例把 events 放在顶层。
   const reconstruction = parsed?.projection
   const eventList = Array.isArray(reconstruction?.events)

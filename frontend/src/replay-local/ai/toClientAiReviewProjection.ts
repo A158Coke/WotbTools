@@ -84,7 +84,6 @@ function project(facts: CanonicalReplayFacts, input: ProjectionInput): ClientAiR
 
   const pb = input.playback
   return {
-    projectionVersion: 1,
     engine: { agentRelease: input.engine.release, agentCommit: input.engine.commit },
     clock: {
       battleStartRawClockSec: start,
