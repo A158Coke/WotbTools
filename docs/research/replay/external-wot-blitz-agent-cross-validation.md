@@ -53,7 +53,7 @@ The external project reaches the same operational conclusions as current WotbToo
 | raw packet clock | ordering/delivery surface, not exact projectile simulation time | same-clock launch/hit families observed; not treated as physical flight time | CORROBORATED |
 | single-POV boundary | hidden/remote state can be absent | playback explicitly tracks AoI gaps and remote-shot degradation | CORROBORATED |
 
-This independent implementation evidence increases confidence that the WotbTools canonical interpretation is not an artifact of one decoder or one analysis pipeline. It does **not** change the evidence grade of already-PROVEN facts.
+This independent implementation evidence increases confidence that the WotbTools canonical interpretation is not an artifact of one decoder or one analysis pipeline. It does **not** change the evidence state of facts already established by WotbTools.
 
 ## 2. Type7 prop2 packed gun-angle candidate
 
@@ -215,9 +215,9 @@ The external project reports a Type32 hit-notification family carrying a compact
 - shell global ID;
 - component/segment-related bytes.
 
-It also reports multiple 26/27-byte variants and explicitly records an unresolved layout conflict for the tail bytes.
+At the original 2026-09-26 review snapshot, it also reported multiple 26/27-byte variants and recorded an unresolved layout conflict for the tail bytes.
 
-Therefore only the existence of a shell/result-bearing Type32 hit family should be imported as a research lead; the exact tail layout is **not closed**.
+At that original snapshot, only the existence of a shell/result-bearing Type32 hit family could safely be imported as a research lead; the exact tail layout was **not closed**. The update below records the later external reclassification without retroactively turning it into WotbTools-local closure.
 
 External status (2026-10-02): the external project has since **split the family by payload length** and
 the split accounts for the earlier "layout conflict" — it was a comparison across different families.
@@ -235,7 +235,7 @@ The `result` byte is reported to share the method8 result domain. Per this docum
 byte layout still needs local reproduction before promotion; the family split and the retraction in row 2
 are corrections of external-only claims, not changes to any WotbTools fact.
 
-Status: **EXTERNAL_CANDIDATE / PARTIAL.**
+Status: **EXTERNAL_CANDIDATE — partial external decoding, not locally closed.**
 
 Do not promote a fixed byte layout until variants are separated by version/method/length and independently closed.
 
