@@ -301,8 +301,6 @@ class Page {
       return {
         authStubLoaded: typeof window.__wsAuth === 'object' && window.__wsAuth !== null,
         appMounted: !!document.querySelector('#app')?.firstElementChild,
-        authLoading: present('[data-testid="ws-auth-loading"]'),
-        authRequired: present('[data-testid="ws-auth-required"]'),
         tabs: document.querySelectorAll('[data-testid="ws-tab"]').length,
         dataPane: present('[data-testid="ws-data"]'),
         playbackPane: present('[data-testid="ws-playback"]'),
@@ -407,10 +405,11 @@ const APP_SCENARIOS = [
   { name: 'capability-740x360-landscape-coarse', width: 740, height: 360, touch: true, authenticated: true, login: 'resolve' },
   { name: 'capability-1024x768-tablet', width: 1024, height: 768, touch: false, authenticated: true, login: 'resolve' },
   { name: 'capability-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve' },
-  // 赛果解析 / 2D 回放对匿名开放：未登录、auth init 挂起 / 失败时工作台都照常可用，且不发起登录。
+  // 服务器没有 parser，工作台没有 auth gating：未登录、auth init 挂起 / 失败时都立即可用，且不发起登录。
+  // pending 的 watchdog 设得远长于场景本身——工作台必须在 auth init 仍挂起时就渲染（不能等超时兜底）。
   { name: 'anonymous-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'reject' },
-  { name: 'auth-init-pending-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'pending', authTimeout: 300 },
-  { name: 'auth-init-reject-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'reject', authTimeout: 300 },
+  { name: 'auth-init-pending-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'pending', authTimeout: 120_000 },
+  { name: 'auth-init-reject-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'reject', authTimeout: 120_000 },
 ]
 
 const PLAYBACK_SCENARIOS = [
@@ -449,14 +448,17 @@ async function runAppScenario(env, scenario) {
   await page.goto(url)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="playback"]'), { label: 'capability tabs' })
 
-  // auth init 挂起会先经 watchdog 超时落成 failed：等待时间要覆盖该超时
-  const readyTimeout = scenario.authInit ? (scenario.authTimeout ?? 12_000) + 2_000 : undefined
+  // 无 auth gating：auth init 挂起 / 失败时数据面板也必须马上出现（远早于 auth watchdog）
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-data"]'), {
-    ...(readyTimeout ? { timeout: readyTimeout } : {}),
+    ...(scenario.authInit ? { timeout: 3_000 } : {}),
     label: 'data pane',
   })
+  if (scenario.authInit === 'pending') {
+    check(failures, await page.evaluate(`window.__wsAuth?.authInitState?.value !== 'authenticated'`),
+      'auth init unexpectedly settled; the pending scenario no longer proves the workspace ignores auth')
+  }
   check(failures, !(await page.evaluate(`!!document.querySelector('[data-testid="ws-auth-loading"]')`)),
-    'workspace remained in auth checking state')
+    'workspace shows a removed auth-checking state')
 
   // —— B. 无透明 blocker：真实 hit-testing ——
   const hit = await page.probe(capabilityHitProbe)

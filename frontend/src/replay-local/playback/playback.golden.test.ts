@@ -140,6 +140,9 @@ function measure(j: BattlePlaybackDataset, l: BattlePlaybackDataset, jo: LocalMa
   for (const jv of j.vehicles) {
     const lv = byId.get(jv.accountId)!
     const errs: number[] = []
+    // 阵亡后：上游写 0（已击毁），Java 保留最后观测值（未观测到致命一击时停在旧值）——
+    // 阵亡时刻另由 destroyedMaxDiffSec 比较，终局血量由「终局状态一致」用例按同一口径比较
+    const deathSec = jv.lifeTransitions.find((x) => x.lifeState === 'DESTROYED')?.destroyedKnownAtSec ?? Infinity
     for (let t = 0; t <= j.durationSec; t++) {
       const jk = knowledgeAt(jv, t)
       // Java 段在整秒帧上，跨 AoI 边界 ±1 s 的帧不计入 knowledge 一致率
@@ -157,7 +160,7 @@ function measure(j: BattlePlaybackDataset, l: BattlePlaybackDataset, jo: LocalMa
         if (ha !== null && hb !== null) hullErr.push(angle(ha, hb))
       }
       const jh = hpAt(jv, t)
-      if (jh !== null && !edge) {
+      if (jh !== null && !edge && t < deathSec - 1) {
         hpTotal++
         // 血量样本在 Java 被量化到下一整秒帧：允许 ±1 s
         if ([t - 1, t, t + 1].some((u) => hpAt(lv, u) === jh)) hpAgree++
@@ -251,8 +254,9 @@ describe('2D 战局回放本地投影 ↔ Java golden', () => {
     expect(Object.keys(java).sort()).toEqual(Object.keys(wasm).sort())
     // 9.8 训练室：Java 不产出回放（timeline 不可用），WASM 能解析
     expect(java['training-room-example.wotbreplay'].battlePlaybackV2).toBeNull()
-    // 联赛 14-14：上游 v0.3.3 parsePlayback 在 type 0 包 Pickle 解码失败（上游缺陷，已列入报告）
-    expect(wasm['tournament-14-14-example.wotbreplay'].playbackError).toMatch(/Pickle/)
+    // 联赛 14-14：上游 v0.3.3 parsePlayback 在 type 0 包 Pickle 解码失败；v0.3.4 自行分帧后可解析
+    expect(wasm['tournament-14-14-example.wotbreplay'].playbackError).toBeUndefined()
+    expect(wasm['tournament-14-14-example.wotbreplay'].playback).toBeTruthy()
   })
 
   const comparable = Object.keys(java).filter((f) => java[f].battlePlaybackV2 && wasm[f].playback)
@@ -340,11 +344,11 @@ describe('2D 战局回放本地投影 ↔ Java golden', () => {
 })
 
 /**
- * 容差（2026-10-02 · 上游 v0.3.3 实测：random / CW 两场）。每项都对应一条已知口径差异：
+ * 容差（2026-10-02 · 上游 v0.3.4 实测：random / CW / 联赛 14-14 三场）。每项都对应一条已知口径差异：
  *  - 位置：Java 1 Hz 帧 vs 上游 0.1 s 网格（本地抽 0.5 s）→ 每车 RMS 实测 ≤ 1.98 m（中位 0.59–0.79 m）；
  *  - knowledge：只在 AoI 边界 ±1 s 外比较 → 实测 0.9995 / 1.0；
  *  - 车体朝向：Java 取整秒位置包 yaw，上游取网格 → P95 实测 5.6° / 7.8°；
- *  - 血量：样本在 Java 被量化到下一整秒帧（±1 s 比较）；Type5 入场血量与哨兵阵亡差异 → 实测 0.959 / 1.0；
+ *  - 血量：样本在 Java 被量化到下一整秒帧（±1 s 比较），只比存活期（阵亡后上游写 0、Java 停在最后观测值）；
  *  - 掉血 toSec / 阵亡时刻 / 点数 / 基地：同一原始时钟，只差 0.01 s 舍入 → 实测 ≤ 0.006 s；
  *  - 归因：AiReview 伤害事件 → 实测 1.0 / 1.0（只用 shots[] 时 0.929 / 0.828）；
  *  - 热力：层内 max 归一化后每格平均 |Δ| 实测 0.032 / 0.087（Java 按原始位置包计数）。

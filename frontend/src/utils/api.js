@@ -1,16 +1,6 @@
 import { apiErrorFromResponse, apiFetch, requireOk } from './http.js'
 import { useAuth } from '../composables/useAuth.js'
-// Replay Processing/Export implementations live in the typed API boundary.
-export {
-  createProcessingJob,
-  getProcessingJob,
-  cancelProcessingJob,
-  getProcessingJobResult,
-  createExportJob,
-  getExportJob,
-  cancelExportJob,
-  downloadExportJob,
-} from '../api/replay.js'
+import { appendReplayFacts, replayFactsJson } from '../replay-local/submissionFacts.js'
 
 function withQuery(path, params = {}) {
   const query = new URLSearchParams()
@@ -50,11 +40,16 @@ export async function hofVehicleOptions() {
 /**
  * 名人堂上传（需登录）：携带 Bearer token；401 时跳转登录页（登录后回到 ?view=hof）。
  */
+/**
+ * 名人堂单场上传：本机解析回放得到结算事实（服务器没有 parser），事实 + 原始回放（证据附件）一并提交。
+ */
 export async function hofUpload(file) {
   const { token, ensureToken, login } = useAuth()
+  const facts = await replayFactsJson(file)
   await ensureToken(30)
   const fd = new FormData()
   fd.append('file', file)
+  fd.append('facts', facts)
   const r = await apiFetch('/api/hof/upload', {
     method: 'POST',
     headers: token() ? { Authorization: `Bearer ${token()}` } : {},
@@ -186,6 +181,7 @@ export async function hofHundredList(params = {}) {
  */
 export async function hofHundredSubmit(formData) {
   const { token, ensureToken, login } = useAuth()
+  await appendReplayFacts(formData)
   await ensureToken(30)
   const r = await apiFetch('/api/hof/hundred/submissions', {
     method: 'POST',
@@ -289,6 +285,7 @@ export async function hofMark3List(params = {}) {
  * proofScreenshots(×1–2 base64) / replays(×5)。
  */
 export async function hofMark3Submit(formData) {
+  await appendReplayFacts(formData)
   const r = await hofAuthRequest('/api/hof/mark3/submissions', { method: 'POST', body: formData })
   return r.json()
 }

@@ -174,3 +174,6 @@ WotBTools
   Release 附件 `wotb-replay-wasm-v0.3.2.zip`。
 - v0.3.3（2026-10-01，agent 仓库 `cdce004`，fanypcd/WoT-Blitz-Agent#2）：`winner_team` 读结算原始字段，
   无胜方（平局 / 结算缺胜方）= `0`，不再伪装成 1 队胜（Result 与 PlaybackData `meta.winner_team` 同步）。
+- v0.3.4（2026-10-02，agent 仓库 `9437f6d`，fanypcd/WoT-Blitz-Agent#3）：包流自行分帧（`replay::packets`），不再经 crate
+  `read_data()` 反序列化 payload——单个包的 pickle 形状偏差（如 type 0 的 bool 字段为整数 0）不再让 Playback / AiReview /
+  ShotReplays 整场失败。阵亡车辆 `hp` 末值为 0（Java 曾保留最后观测值）。

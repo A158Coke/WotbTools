@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 
-// 端到端：ReplayPage 挂载真实 useReplay + useColumns（仅 mock api / i18n / 重型子组件）。
-// 验证 Processing READY 后**同一提交周期内**：resp、League 模式、aggregate 可见性与 activeTab
-// 一致，正确结果 panel 第一帧即渲染——不需要用户再点 tab、不需要第二次 poll、
+// 端到端：ReplayPage 挂载真实 useReplay + useColumns（仅 mock 本机解析 / 计算边界、i18n、重型子组件）。
+// 验证本机分析 READY 后**同一提交周期内**：resp、League 模式、aggregate 可见性与 activeTab
+// 一致，正确结果 panel 第一帧即渲染——不需要用户再点 tab、不需要重新分析、
 // 不需要等待 column preference 初始化。
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { h, ref } from 'vue'
+import { defineComponent, h } from 'vue'
+import { useReplay } from '../composables/useReplay.js'
 import ReplayPage from './ReplayPage.vue'
 
 const i18n = vi.hoisted(() => ({
@@ -24,24 +25,21 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-const api = vi.hoisted(() => ({
-  createProcessingJob: vi.fn(),
-  getProcessingJob: vi.fn(),
-  getProcessingJobResult: vi.fn(),
-  cancelProcessingJob: vi.fn(),
+// 服务器没有 parser：分析 = 本机 Worker 解析 + 批次计算。只 mock 这两个边界。
+const local = vi.hoisted(() => ({
+  parseReplayFiles: vi.fn(),
+  analyzeReplayBatch: vi.fn(),
+  loadTankopedia: vi.fn(async () => ({})),
 }))
-
-vi.mock('../utils/api.js', () => api)
-
-// ReplayPage 会实例化真实 useReplay（→ useAuth）：只 mock auth 边界，避免 Keycloak init。
-vi.mock('../composables/useAuth.js', () => ({
-  useAuth: () => ({ ensureToken: async () => true, token: () => 'test-token' }),
+vi.mock('../replay-local/parseReplays.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  parseReplayFiles: local.parseReplayFiles,
 }))
-
-function pJob(overrides = {}) {
-  return { jobId: 'p1', status: 'QUEUED', phase: null, total: 2, processed: 0, valid: 0,
-    duplicates: 0, failures: 0, errorCode: null, currentFile: null, ...overrides }
-}
+vi.mock('../replay-local/analyzeReplays.js', () => ({ analyzeReplayBatch: local.analyzeReplayBatch }))
+vi.mock('../replay-local/compute/index.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  loadTankopedia: local.loadTankopedia,
+}))
 
 function baseResp(overrides = {}) {
   return {
@@ -64,19 +62,17 @@ const league = { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSu
 
 const TEST_FILES = [new File(['x'], 'a.wotbreplay'), new File(['y'], 'b.wotbreplay')]
 
-const FileUploaderStub = {
-  name: 'FileUploader',
-  emits: ['update:files', 'preview', 'remove-request'],
-  setup(_, { emit }) {
-    return () => h('div', { class: 'fu-stub' }, [
-      h('button', { class: 'fu-add', onClick: () => emit('update:files', TEST_FILES) }, 'add'),
-      h('button', { class: 'fu-preview', onClick: () => emit('preview') }, 'preview'),
-    ])
+/** Workspace 角色：持有唯一 useReplay，并把它显式传给嵌入的 ReplayPage */
+let replay
+const Host = defineComponent({
+  setup() {
+    replay = useReplay()
+    return () => h(ReplayPage, { embedded: true, replayContext: replay })
   },
-}
+})
 
 function mountPage() {
-  return mount(ReplayPage, {
+  return mount(Host, {
     global: {
       mocks: { $t: i18n.t },
       provide: {
@@ -85,7 +81,6 @@ function mountPage() {
         login: vi.fn(),
       },
       stubs: {
-        FileUploader: FileUploaderStub,
         ColumnPicker: { template: '<div class="col-picker-stub" />' },
         AggregateTable: {
           props: ['shownCols'],
@@ -97,8 +92,6 @@ function mountPage() {
         },
         LeagueSummaryTable: { template: '<div class="league-summary-stub" />' },
         CwPlayerSummaryTable: { template: '<div class="cw-player-summary-stub" />' },
-        RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' },
-        ReplayTaskCard: { template: '<div class="replay-task-stub" />' },
         PlayerDetailDrawer: { props: ['context', 'player'], template: '<div class="drawer-stub" />' },
       },
     },
@@ -109,32 +102,22 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
   beforeEach(() => {
     // 列偏好存在 localStorage 里：每个用例从干净的存档开始，避免互相影响
     localStorage.clear()
-    vi.useFakeTimers()
     vi.clearAllMocks()
   })
 
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
   async function runReadyFlow(result) {
-    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 2 })
-    api.getProcessingJob
-      .mockResolvedValueOnce(pJob({ status: 'PROCESSING', processed: 1, valid: 1 }))
-      .mockResolvedValueOnce(pJob({ status: 'READY', processed: 2, valid: 2 }))
-    api.getProcessingJobResult.mockResolvedValue(result)
+    local.parseReplayFiles.mockImplementation(async files => files.map(f => ({ name: f.name, result: {}, error: null })))
+    local.analyzeReplayBatch.mockReturnValue({ dataset: {}, preview: result })
 
     const wrapper = mountPage()
-    await wrapper.find('.fu-add').trigger('click')
+    replay.updateFiles(TEST_FILES)
     await flushPromises()
-    await wrapper.find('.fu-preview').trigger('click')
-    await flushPromises() // createProcessingJob + 首次轮询（PROCESSING）
-    await vi.advanceTimersByTimeAsync(1500) // interval → READY → 拉取 result → 设置 resp + activeTab
+    await expect(replay.analyze()).resolves.toEqual({ completed: true })
     await flushPromises() // Vue 渲染 flush：同一提交周期内结果 panel 立即可见
     return wrapper
   }
 
-  it('多场 + aggregate 空 + 无 league：READY 后 Battle #1 立即可见（无点击、无二次 poll、不空白）', async () => {
+  it('多场 + aggregate 空 + 无 league：READY 后 Battle #1 立即可见（无点击、无重新分析、不空白）', async () => {
     const wrapper = await runReadyFlow(baseResp({ battles: twoBattles, aggregate: [] }))
     // 不需要用户点击 tab：b0 面板已可见
     expect(wrapper.find('.battle-table-stub').element.parentElement.style.display).not.toBe('none')
@@ -144,7 +127,7 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
     wrapper.unmount()
   })
 
-  it('Playback 首次 READY 后第一次进入 Data 即完成 columns/result hydration，且只创建一个 Processing Job', async () => {
+  it('READY 后第一次进入 Data 即完成 columns/result hydration，且只解析一次', async () => {
     const wrapper = await runReadyFlow(baseResp({
       battles: [twoBattles[0]],
       aggregate: [{ cells: { nickname: 'P1', damage_avg: 5000 } }],
@@ -163,11 +146,11 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
     await wrapper.find('[data-testid="data-view-single"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="battle-col-damage_dealt"]').exists()).toBe(true)
-    expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
+    expect(local.parseReplayFiles).toHaveBeenCalledTimes(1)
 
     // No parse/tab refresh is required to keep the hydrated presentation.
     await flushPromises()
-    expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
+    expect(local.parseReplayFiles).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 

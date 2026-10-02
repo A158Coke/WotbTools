@@ -39,7 +39,17 @@ vi.mock('../utils/api-user.js', () => ({
   syncUserWotbAccountFromLogin: () => syncImpl(),
   updateUserWotbAccount: () => Promise.resolve(currentProfile),
   deleteUserWotbAccount: () => Promise.resolve(currentProfile),
-  getUserHofRecords: () => Promise.resolve([])
+  getUserHofRecords: () => Promise.resolve([]),
+  verifyUserWotbAccountFromReplay: (...args) => verifyApi.verifyUserWotbAccountFromReplay(...args)
+}))
+
+// 「用回放验证账号」：本机解析回放拿录像者 accountId（服务器没有 parser），再交服务端比对。
+const verifyApi = vi.hoisted(() => ({
+  replayRecorderAccountId: vi.fn(),
+  verifyUserWotbAccountFromReplay: vi.fn()
+}))
+vi.mock('../replay-local/submissionFacts.js', () => ({
+  replayRecorderAccountId: verifyApi.replayRecorderAccountId
 }))
 
 const hundredApi = vi.hoisted(() => ({
@@ -57,7 +67,7 @@ vi.mock('../utils/helpers.js', () => ({
 }))
 
 vi.mock('../utils/display.js', () => ({
-  apiErrorLabel: () => 'api-error'
+  apiErrorLabel: (t, te, error) => (error?.code ? `api-error:${error.code}` : 'api-error')
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -421,5 +431,79 @@ describe('ProfilePage as the account page', () => {
     await flushPromises()
     await wrapper.get('[data-testid="profile-logout"]').trigger('click')
     expect(api.logout).toHaveBeenCalled()
+  })
+})
+
+describe('ProfilePage verify with replay', () => {
+  const unverified = () => ({
+    wotbAccountSource: 'MANUAL',
+    wotbServer: 'CN',
+    wotbAccountId: 1001,
+    wotbNickname: 'CNName',
+    wotbAccountVerifiedAt: null,
+    displayName: 'CN Player'
+  })
+
+  async function pickReplay(wrapper, file) {
+    const input = wrapper.get('[data-testid="profile-verify-input"]')
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+  }
+
+  beforeEach(() => {
+    api.authenticated = true
+    tokenRef.value = null
+    currentProfile = unverified()
+    hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
+    verifyApi.replayRecorderAccountId.mockReset()
+    verifyApi.verifyUserWotbAccountFromReplay.mockReset()
+  })
+
+  it('parses the replay locally, submits the recorder id and shows the verified badge', async () => {
+    let finish
+    verifyApi.replayRecorderAccountId.mockResolvedValue(1001)
+    verifyApi.verifyUserWotbAccountFromReplay.mockImplementation(() => new Promise((res) => { finish = res }))
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="profile-verify-replay"]').text()).toContain('profile.verifyWithReplay')
+
+    const file = new File(['replay'], 'mine.wotbreplay')
+    await pickReplay(wrapper, file)
+    await flushPromises()
+    expect(verifyApi.replayRecorderAccountId).toHaveBeenCalledWith(file)
+    expect(verifyApi.verifyUserWotbAccountFromReplay).toHaveBeenCalledWith(1001)
+    const button = wrapper.get('[data-testid="profile-verify-replay"]')
+    expect(button.text()).toContain('profile.verifyingReplay')
+    expect(button.attributes('disabled')).toBeDefined()
+
+    finish({ ...unverified(), wotbAccountVerifiedAt: '2026-10-02T00:00:00Z' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.verifiedBadge')
+    expect(wrapper.find('[data-testid="profile-verify-replay"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="profile-verify-error"]').exists()).toBe(false)
+  })
+
+  it('recorder mismatch from the server shows the stable error and keeps the profile unverified', async () => {
+    verifyApi.replayRecorderAccountId.mockResolvedValue(2002)
+    verifyApi.verifyUserWotbAccountFromReplay.mockRejectedValue({ code: 'REPLAY_RECORDER_MISMATCH', status: 409 })
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    await pickReplay(wrapper, new File(['replay'], 'other.wotbreplay'))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="profile-verify-error"]').text()).toBe('api-error:REPLAY_RECORDER_MISMATCH')
+    expect(wrapper.text()).toContain('profile.notVerified')
+    expect(wrapper.get('[data-testid="profile-verify-replay"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('a replay that fails to parse locally never reaches the server', async () => {
+    verifyApi.replayRecorderAccountId.mockRejectedValue({ code: 'INVALID_REPLAY_FILE', status: 400 })
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    await pickReplay(wrapper, new File(['junk'], 'bad.wotbreplay'))
+    await flushPromises()
+    expect(verifyApi.verifyUserWotbAccountFromReplay).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="profile-verify-error"]').text()).toBe('api-error:INVALID_REPLAY_FILE')
   })
 })

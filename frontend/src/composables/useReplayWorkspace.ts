@@ -21,7 +21,6 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
     currentBattleIndex: session.currentBattleIndex,
     currentTargetBattleId: session.currentTargetBattleId,
     currentSourceId: session.currentSourceId,
-    currentProcessingJobId: session.currentProcessingJobId,
     currentTargetFile: session.currentTargetFile,
     singleReplay: session.singleReplay,
     setWorkspaceTab: session.setWorkspaceTab,
