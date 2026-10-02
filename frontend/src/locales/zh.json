@@ -1258,7 +1258,6 @@
       "call1": "赛前预测中…",
       "evidence": "证据分析中…",
       "call2": "战术复盘生成中…",
-      "autopsy": "团队剖析中…",
       "done": "完成"
     },
     "ai_error_http": "AI 分析失败（HTTP {status}）",

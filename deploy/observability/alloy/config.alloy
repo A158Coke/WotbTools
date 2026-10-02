@@ -1,6 +1,12 @@
 // Alloy 配置 — WotBTools 观测栈
 // 采集 wotb-backend、keycloak，以及经过脱敏的 Android APK 下载日志，转发到 Loki。
 // 需要挂载 /var/run/docker.sock（见 docker-compose）。
+//
+// 作用域：下面 backend / keycloak 规则只服务 deploy/verify-observability.sh 的部署 canary
+// （一次性 alpine canary 容器刻意复用同名服务标签，用于验证采集路径）。Yecao 上没有业务容器，
+// 生产 TX 业务日志由 TX 侧 alloy-tx 采集后经 WireGuard 推入本 Loki（deploy/tx/alloy/config.alloy）。
+// 不要因为这些规则“看起来没有生产容器可采”而删除——删除会让 verify-observability.sh 的
+// Loki 断言失去覆盖。
 
 // Discover all containers once. Docker discovery filter values are exact match
 // selectors in some Alloy versions; keeping the authoritative service match in

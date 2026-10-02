@@ -74,8 +74,8 @@ class SecurityErrorLoggingContractTest {
 
     @Test
     void forbiddenResponseIdMatchesSafeRejectionLog() throws Exception {
-        // processing-jobs 已对匿名开放（不再有角色门）；此处改用管理员用户管理端点
-        // （仅 wotbtools-admin）作为「已认证但无角色 → 403」样本。
+        // 已删除的回放处理 / 导出 Job 端点曾用于取「已认证但无角色 → 403」样本；现改用仍
+        // 显式声明的管理员用户管理端点（仅 wotbtools-admin）。
         final String responseId = performAndReadId(
                 get("/api/admin/users/probe")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_other")))

@@ -1258,7 +1258,6 @@
       "call1": "Pre-battle prediction…",
       "evidence": "Analyzing evidence…",
       "call2": "Generating tactical review…",
-      "autopsy": "Team autopsy…",
       "done": "Done"
     },
     "ai_error_http": "AI analysis failed (HTTP {status})",
