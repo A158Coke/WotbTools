@@ -45,7 +45,7 @@ Tencent Cloud
 当前 Replay 主链路：
 
 ~~~text
-.wotbreplay (local only)
+.wotbreplay (parsing is local; bytes leave the device only for explicit evidence upload, e.g. HoF)
    -> pinned Agent WASM
    -> frontend trust-boundary validation
    -> WotbTools canonical replay facts
@@ -352,7 +352,7 @@ Replay stays on user device
    -> Agent WASM
    -> WotbTools canonical facts / projections
    -> local consumers
-   -> only business-specific payloads cross the network
+   -> only explicit server-side capability payloads cross the network (for example AI projection or HoF evidence)
 ~~~
 
 #447 因此删除服务端 Java parser、Processing Job / Dataset API、Parser Worker、RabbitMQ、MinIO temporary replay workspace 以及相关 processing tables、deployment、CI 与 IaC。这里不是把 executor 从 Yecao 搬到 TX，而是**删除服务器侧 Replay execution 这个职责本身**。
