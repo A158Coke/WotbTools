@@ -1,0 +1,111 @@
+# Declarative Komodo Server desired state (K4.1) — read by the ResourceSync
+# `wotbtools-main` from `infra/komodo/resources`.
+#
+# These are EXISTING production Servers. Resource Sync adopts them by name; it must
+# never recreate them with a different identity, and nothing here may change how
+# Periphery authenticates.
+#
+# The one invariant that matters most: **Periphery dials Core outbound**, so Core
+# must not dial Periphery. `address` stays empty and no inbound `:8120` endpoint may
+# ever appear here. Periphery inbound mode is disabled in production.
+#
+# Komodo v2.3.3 turns a partial `[server.config]` into a full config through the
+# schema defaults before diffing, so an omitted field is NOT "leave the live value
+# alone". Every operational field of the v2.3.3 `ServerConfig` is therefore declared
+# explicitly below, at its documented default, so the first diff is reviewable and
+# cannot silently reset a production setting.
+#
+# Deliberately absent: tags (an omitted `tags` and `tags = []` mean the same thing to
+# Komodo, and this repository does not manage tags), `template`/`deploy`/`after`
+# (default false/empty), Periphery private keys, Periphery public-key identity, the
+# Core trust key, onboarding credentials, and the onboarding marker. Identity and
+# onboarding stay under the Periphery owner (`deploy/periphery/**` + systemd).
+#
+# See docs/operations/komodo-resource-sync.md before applying any diff.
+
+[[server]]
+name = "yecao"
+description = "Yecao production host — Komodo Periphery outbound, declared by the wotbtools-main Resource Sync"
+
+[server.config]
+address = ""                 # outbound mode: Core never dials Periphery
+insecure_tls = true          # v2.3.3 default; unused while `address` is empty
+external_address = ""
+region = ""
+enabled = true               # v2.3.3 default is false; these Servers are live
+auto_rotate_keys = true
+passkey = ""                 # legacy inbound auth is not used
+ignore_mounts = []
+auto_prune = true
+links = []
+stats_monitoring = true
+send_unreachable_alerts = true
+send_cpu_alerts = true
+send_mem_alerts = true
+send_disk_alerts = true
+send_version_mismatch_alerts = true
+cpu_warning = 90.0
+cpu_critical = 99.0
+mem_warning = 75.0
+mem_critical = 95.0
+disk_warning = 75.0
+disk_critical = 95.0
+maintenance_windows = []
+
+[[server]]
+name = "tx1"
+description = "TX1 production host — Komodo Periphery outbound, declared by the wotbtools-main Resource Sync"
+
+[server.config]
+address = ""                 # outbound mode: Core never dials Periphery
+insecure_tls = true          # v2.3.3 default; unused while `address` is empty
+external_address = ""
+region = ""
+enabled = true               # v2.3.3 default is false; these Servers are live
+auto_rotate_keys = true
+passkey = ""                 # legacy inbound auth is not used
+ignore_mounts = []
+auto_prune = true
+links = []
+stats_monitoring = true
+send_unreachable_alerts = true
+send_cpu_alerts = true
+send_mem_alerts = true
+send_disk_alerts = true
+send_version_mismatch_alerts = true
+cpu_warning = 90.0
+cpu_critical = 99.0
+mem_warning = 75.0
+mem_critical = 95.0
+disk_warning = 75.0
+disk_critical = 95.0
+maintenance_windows = []
+
+[[server]]
+name = "tx2"
+description = "TX2 production host — Komodo Periphery outbound, declared by the wotbtools-main Resource Sync"
+
+[server.config]
+address = ""                 # outbound mode: Core never dials Periphery
+insecure_tls = true          # v2.3.3 default; unused while `address` is empty
+external_address = ""
+region = ""
+enabled = true               # v2.3.3 default is false; these Servers are live
+auto_rotate_keys = true
+passkey = ""                 # legacy inbound auth is not used
+ignore_mounts = []
+auto_prune = true
+links = []
+stats_monitoring = true
+send_unreachable_alerts = true
+send_cpu_alerts = true
+send_mem_alerts = true
+send_disk_alerts = true
+send_version_mismatch_alerts = true
+cpu_warning = 90.0
+cpu_critical = 99.0
+mem_warning = 75.0
+mem_critical = 95.0
+disk_warning = 75.0
+disk_critical = 95.0
+maintenance_windows = []
