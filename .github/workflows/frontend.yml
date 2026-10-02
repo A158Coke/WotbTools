@@ -18,10 +18,8 @@ on:
       - docs/WotBTools_League_Rating_V6.md
       - deploy/nginx/nginx.conf
       - deploy/tx/nginx/**
-      - deploy/check-latest-main.sh
       - deploy/check-production-freshness.sh
-      - deploy/list-image-tags.sh
-      - scripts/ci/run-with-network-retry.sh
+      - deploy/tx/build-frontend-from-gitee.sh
       - deploy/tx/frontend.compose.yml
       - deploy/tx/deploy.sh
       - deploy/tx/common.compose.yml
@@ -48,10 +46,8 @@ env:
     docs/WotBTools_League_Rating_V6.md
     deploy/nginx/nginx.conf
     deploy/tx/nginx/**
-    deploy/check-latest-main.sh
     deploy/check-production-freshness.sh
-    deploy/list-image-tags.sh
-    scripts/ci/run-with-network-retry.sh
+    deploy/tx/build-frontend-from-gitee.sh
     deploy/tx/frontend.compose.yml
     deploy/tx/deploy.sh
     deploy/tx/common.compose.yml
@@ -61,23 +57,65 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  mirror_gitee:
+    name: Mirror exact GitHub source to Gitee
+    concurrency:
+      group: production-gitee-mirror
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 20
     permissions:
       contents: read
-      packages: write
+    steps:
+      - name: Reject non-main invocation
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            push|workflow_dispatch) ;;
+            *) echo "Unsupported mirror event: $EVENT_NAME" >&2; exit 1 ;;
+          esac
+          [ "$EVENT_REF" = refs/heads/main ] || {
+            echo "Gitee production mirror must run from main." >&2
+            exit 1
+          }
+
+      - name: Mirror WotbTools to Gitee
+        uses: Yikun/hub-mirror-action@ec47170fa9d126a4bee5a1ab9359845bb1395248
+        with:
+          src: github/A158Coke
+          dst: gitee/A158Coke
+          dst_key: ${{ secrets.GITEE_PRIVATE_KEY }}
+          dst_token: ${{ secrets.GITEE_TOKEN }}
+          static_list: WotbTools
+          account_type: user
+          force_update: true
+          timeout: 10m
+
+  build:
+    concurrency:
+      group: tx-production-build
+      cancel-in-progress: false
+      queue: max
+    needs: [mirror_gitee]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: tx-production
+    permissions:
+      contents: read
     outputs:
-      image: ${{ steps.identity.outputs.image }}
       commit_sha: ${{ steps.identity.outputs.commit_sha }}
-      digest: ${{ steps.verify.outputs.digest }}
-      latest_published: ${{ steps.latest.outputs.published }}
+      digest: ${{ steps.remote_build.outputs.digest }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-      # 先于身份计算校验：身份含 ASSET_BASE_URL，非法值不应参与 tag 推导
+
       - name: Validate production asset origin
         env:
           ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
@@ -85,16 +123,11 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "$ASSET_BASE_URL" ] || { echo 'Repository variable ASSET_BASE_URL is required.' >&2; exit 1; }
-          case "$ASSET_BASE_URL" in
-            https://*) ;;
-            *) echo 'ASSET_BASE_URL must be an https:// origin.' >&2; exit 1 ;;
-          esac
-          # 空白会既破坏"烘焙进 bundle"的可验证性，又产生无效 origin
-          case "$ASSET_BASE_URL" in
-            *[[:space:]]*) echo 'ASSET_BASE_URL must not contain whitespace.' >&2; exit 1 ;;
-          esac
+          case "$ASSET_BASE_URL" in https://*) ;; *) echo 'ASSET_BASE_URL must be an https:// origin.' >&2; exit 1 ;; esac
+          case "$ASSET_BASE_URL" in *[[:space:]]*) echo 'ASSET_BASE_URL must not contain whitespace.' >&2; exit 1 ;; esac
           [ "${ASSET_BASE_URL%/}" = "$ASSET_BASE_URL" ] || { echo 'ASSET_BASE_URL must not end with /.' >&2; exit 1; }
-      - name: Freeze current main and image identity
+
+      - name: Freeze current main
         id: identity
         env:
           EVENT_REF: ${{ github.ref }}
@@ -104,7 +137,6 @@ jobs:
           REF_NAME: ${{ github.ref }}
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
-          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
         shell: bash
         run: |
           set -euo pipefail
@@ -116,237 +148,156 @@ jobs:
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
-          [ -n "$TCR_NAMESPACE" ] || { echo 'TCR_NAMESPACE is required.' >&2; exit 1; }
-          # 镜像身份 = source SHA + ASSET_BASE_URL。资产源是**构建期输入**（Vite 把它烘焙进
-          # JS bundle），若身份只取 source SHA，则"仅改资产源 + 重跑"会命中已存在的 tag 而被
-          # 复用、跳过构建，线上仍是旧 origin，而 origin 校验只看当前变量 → CI 绿但 artifact
-          # 陈旧（provenance 不完整）。把两者折进同一个 12 位身份哈希即可保持既有
-          # `sha-<12 lowercase hex>` tag 契约（deploy/tx/publish-loaded-image-to-tcr.sh 与
-          # 其余组件共用该格式）：同源同 tag 可复用，换源即换 tag 必然重建。
-          identity="$(printf '%s\n%s' "$SOURCE_SHA" "$ASSET_BASE_URL" | sha256sum | cut -c1-12)"
-          image="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-frontend:sha-$identity"
+          [[ "$TCR_NAMESPACE" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo 'TCR_NAMESPACE is invalid.' >&2; exit 1; }
+          echo "commit_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Download pinned Agent WASM release asset
+        id: agent
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          eval "$(python3 - "$GITHUB_WORKSPACE/deploy/agent/source.json" <<'PY'
+          import json, shlex, sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          artifact = data.get("artifact") or {}
+          repo = data.get("repo", "")
+          release = artifact.get("release", "")
+          asset = artifact.get("asset", "")
+          sha = artifact.get("sha256", "")
+          if not (repo and release and asset and len(sha) == 64):
+              raise SystemExit("deploy/agent/source.json has incomplete artifact metadata")
+          base = repo if repo.startswith("http") else "https://github.com/" + repo
+          values = {
+              "AGENT_URL": f"{base}/releases/download/{release}/{asset}",
+              "AGENT_ASSET": asset,
+              "AGENT_SHA": sha,
+          }
+          for key, value in values.items():
+              print(f"{key}={shlex.quote(value)}")
+          PY
+          )"
+          target="$RUNNER_TEMP/$AGENT_ASSET"
+          curl --fail --silent --show-error --location --retry 3 "$AGENT_URL" -o "$target"
+          printf '%s  %s\n' "$AGENT_SHA" "$target" | sha256sum -c --quiet
           {
-            echo "commit_sha=$SOURCE_SHA"
-            echo "image=$image"
-            echo "repository=${image%:*}"
-            echo "tag=sha-$identity"
+            echo "asset=$AGENT_ASSET"
+            echo "sha256=$AGENT_SHA"
+            echo "file=$target"
           } >> "$GITHUB_OUTPUT"
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ vars.TCR_REGISTRY }}
-          username: ${{ secrets.TCR_USERNAME }}
-          password: ${{ secrets.TCR_PASSWORD }}
-      - uses: imjasonh/setup-crane@v0.7
-      - name: Reuse only an existing immutable image with this source + asset-origin identity
-        id: immutable
-        timeout-minutes: 15
+
+      - name: Configure TX SSH
+        shell: bash
         env:
-          IMAGE: ${{ steps.identity.outputs.image }}
-          REPOSITORY: ${{ steps.identity.outputs.repository }}
-          TAG: ${{ steps.identity.outputs.tag }}
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          : "${TX_HOST:?TX_VPS_HOST is required}"
+          : "${TX_PORT:?TX_VPS_PORT is required}"
+          : "${TX_KEY:?TX_VPS_SSH_KEY is required}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$TX_KEY" | tr -d '\r' > ~/.ssh/tx-frontend-build
+          chmod 600 ~/.ssh/tx-frontend-build
+          ssh-keyscan -T 15 -p "$TX_PORT" "$TX_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Stage TX frontend builder and pinned Agent WASM artifact
+        shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          AGENT_FILE: ${{ steps.agent.outputs.file }}
+          AGENT_ASSET: ${{ steps.agent.outputs.asset }}
+        run: |
+          set -euo pipefail
+          remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
+          remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
+          scp -i ~/.ssh/tx-frontend-build -P "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$GITHUB_WORKSPACE/deploy/tx/build-frontend-from-gitee.sh" "$TX_USER@$TX_HOST:$remote_script"
+          scp -i ~/.ssh/tx-frontend-build -P "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$AGENT_FILE" "$TX_USER@$TX_HOST:$remote_agent"
+          ssh -i ~/.ssh/tx-frontend-build -p "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$TX_USER@$TX_HOST" "chmod 700 '$remote_script' && chmod 600 '$remote_agent'"
+
+      - name: Build and publish immutable frontend image on TX
+        id: remote_build
+        shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
           SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
           ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
-        shell: bash
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          AGENT_ASSET: ${{ steps.agent.outputs.asset }}
         run: |
           set -euo pipefail
-          # 复用判定必须走 deploy/list-image-tags.sh：只有 registry 明确返回 NAME_UNKNOWN
-          # （仓库尚不存在＝首次发布）才按空仓库继续 build；401/403/5xx/网络一律仍然 fatal。
-          # 裸 `crane ls` 在首次发布会因 set -e 直接失败，且把 registry 故障与空仓库混为一谈。
-          tags="$(bash "$GITHUB_WORKSPACE/deploy/list-image-tags.sh" "$REPOSITORY")"
-          if grep -Fxq "$TAG" <<< "$tags"; then
-            source "$GITHUB_WORKSPACE/scripts/ci/run-with-network-retry.sh"
-            # 300s：可复用镜像约 175MB 的跨境内网拉取，仍比构建+发布整条链路短一个量级
-            NETWORK_RETRY_TIMEOUT_SECONDS=300 run_with_network_retry \
-              "pull reusable immutable frontend image from Tencent TCR" docker pull "$IMAGE"
-            container="$(docker create "$IMAGE")"
-            temp="$(mktemp -d)"
-            trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$temp"' EXIT
-            docker cp "$container:/usr/share/nginx/html" "$temp/html"
-            grep -Fq "\"buildCommit\": \"$SOURCE_SHA\"" "$temp/html/version.json" \
-              || { echo 'Existing immutable tag does not carry this source commit in version.json.' >&2; exit 1; }
-            grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/html/assets" \
-              || { echo 'Existing immutable tag does not contain this source commit in the frontend bundle.' >&2; exit 1; }
-            # 身份含资产源：复用前再按 bundle 内容自证，防陈旧/手工 tag 让旧 origin 蒙混复用
-            grep -R --binary-files=text -Fq "$ASSET_BASE_URL" "$temp/html/assets" \
-              || { echo 'Existing immutable image was not built with the current ASSET_BASE_URL; refusing to reuse it.' >&2; exit 1; }
-            # 60s：单次 tag→digest 查询（与 deploy/tx/publish-loaded-image-to-tcr.sh 的
-            # TAG_LOOKUP_TIMEOUT_SECONDS 同值），本步骤内是纯只读小请求
-            NETWORK_RETRY_TIMEOUT_SECONDS=60 run_with_network_retry \
-              "read back the reusable immutable tag digest from Tencent TCR" \
-              crane digest "$IMAGE" > "$temp/digest.out"
-            digest="$(tail -n1 "$temp/digest.out" | tr -d '[:space:]')"
-            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-            echo "existing_digest=$digest" >> "$GITHUB_OUTPUT"
-          else
-            echo 'existing_digest=' >> "$GITHUB_OUTPUT"
-          fi
-      - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
-        timeout-minutes: 5
-        run: bash scripts/fetch-agent-wasm.sh
+          remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
+          remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
+          log="$RUNNER_TEMP/tx-frontend-build.log"
 
-      - uses: docker/setup-buildx-action@v4
-      # BUILD / VERIFY / PUBLISH / PROMOTE 四段分离。构建只产出本地镜像；所有 registry 写入都在
-      # 后面的具名步骤里，且每个边界都有步级超时——不再出现"单个 step 静默跑 60 分钟"。
-      # 这里不写 cache-from / cache-to：type=gha,mode=max 要求把整个 build stage（node_modules
-      # 与含 dist 的构建层）上传到 GitHub cache，是本 step 内无法单独设超时、且与镜像同量级的
-      # 上传边界（本次事故的候选挂点之一）；mode=min 不缓存 build stage、省不下 npm ci，却被同一
-      # 失败面支配。故前端不使用外部 cache（此决策不外推到其他应用 owner）。
-      - name: Build immutable frontend image
-        if: steps.immutable.outputs.existing_digest == ''
-        # 健康基线：同一范围（构建+导出+发布）实测 6m04s。去掉外部缓存后每次要跑 npm ci，
-        # 25m 仍留 3-4x 余量；它只用于给"构建本身挂住"设界，不承担发布边界的约束。
-        timeout-minutes: 25
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/Dockerfile.frontend
-          # 单平台（本 workflow 不声明 platforms）→ docker exporter（load）是最简的"可复用本地
-          # 镜像"方案，无需引入 OCI tar / artifact 机制。
-          push: false
-          load: true
-          tags: ${{ steps.identity.outputs.image }}
-          build-args: |
-            BUILD_COMMIT=${{ steps.identity.outputs.commit_sha }}
-            ASSET_BASE_URL=${{ vars.ASSET_BASE_URL }}
-          provenance: false
-          sbom: false
-      - name: Verify local frontend artifact before any registry write
-        if: steps.immutable.outputs.existing_digest == ''
-        timeout-minutes: 10
-        env:
-          IMAGE: ${{ steps.identity.outputs.image }}
-          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
-          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          container="$(docker create "$IMAGE")"
-          temp="$(mktemp -d)"
-          trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$temp"' EXIT
-          docker cp "$container:/usr/share/nginx/html" "$temp/html"
-          # 1) 确定性身份：version.json 由构建期 BUILD_COMMIT 生成，必须与冻结的 source SHA 精确相等
-          grep -Fq "\"buildCommit\": \"$SOURCE_SHA\"" "$temp/html/version.json" \
-            || { echo 'Local frontend image does not carry the frozen source commit in version.json.' >&2; exit 1; }
-          # 2) bundle 自证：source SHA 与资产源都必须烘焙进 assets。原本是"发布后把镜像拉回来
-          #    复检"；现在前移到任何 registry 写入之前，失败不再留下垃圾 tag。
-          grep -R --binary-files=text -Fq "$SOURCE_SHA" "$temp/html/assets" \
-            || { echo 'Local frontend bundle does not contain the frozen source commit.' >&2; exit 1; }
-          grep -R --binary-files=text -Fq "$ASSET_BASE_URL" "$temp/html/assets" \
-            || { echo 'Local frontend bundle was not built with the current ASSET_BASE_URL.' >&2; exit 1; }
-          # 3) Agent WASM 产物存在性 smoke：3D 回放/装甲查看器/射击复现的运行前提。
-          #    镜像里必须有非空的 glue JS 与 .wasm（magic 0x0061736d），缺失 = 发布不可用镜像。
-          for f in wotb_replay_wasm.js wotb_replay_wasm_bg.wasm; do
-            [ -s "$temp/html/wasm/$f" ] || { echo "Local frontend image misses agent wasm artifact: $f" >&2; exit 1; }
-          done
-          [ "$(head -c4 "$temp/html/wasm/wotb_replay_wasm_bg.wasm" | od -An -tx1 | tr -d ' \n')" = "0061736d" ] \
-            || { echo 'wotb_replay_wasm_bg.wasm lacks wasm magic (truncated/HTML error page).' >&2; exit 1; }
-          # 4) 期望静态文件与镜像内烘焙的 nginx 配置
-          for f in index.html version.json sponsor-bg.webp icon.ico icon.png wotbtoolslogo.png; do
-            [ -s "$temp/html/$f" ] || { echo "Local frontend image misses expected static file: $f" >&2; exit 1; }
-          done
-          docker cp "$container:/etc/nginx/conf.d/default.conf" "$temp/default.conf"
-          [ -s "$temp/default.conf" ] || { echo 'Local frontend image misses its baked nginx configuration.' >&2; exit 1; }
-          echo "local frontend artifact verified for source $SOURCE_SHA"
-      - name: Report frontend image and layer sizes
-        if: steps.immutable.outputs.existing_digest == ''
-        timeout-minutes: 5
-        env:
-          IMAGE: ${{ steps.identity.outputs.image }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # 发布边界的容量证据：镜像/分层/目录体积。用于确认"一次发布实际上传多少"，
-          # 并为发布超时是否足够提供数据，而不是靠猜。
-          docker image inspect --format 'image_id={{.Id}}' "$IMAGE"
-          docker image inspect --format 'total_size_bytes={{.Size}}' "$IMAGE"
-          echo '== layers (this is what one publish uploads) =='
-          docker history --no-trunc --format '{{.Size}}\t{{.CreatedBy}}' "$IMAGE" > "$RUNNER_TEMP/image-history.txt"
-          sed -n '1,40p' "$RUNNER_TEMP/image-history.txt"
-          echo '== payload inside the final image =='
-          docker run --rm --entrypoint sh "$IMAGE" -c '
-            set -e
-            du -sh /usr/share/nginx/html
-            du -sh /usr/share/nginx/html/assets /usr/share/nginx/html/wasm
-            du -sk /usr/share/nginx/html/assets/* 2>/dev/null | sort -n | tail -15
-          '
-      - name: Reject stale main before registry publication
-        if: steps.immutable.outputs.existing_digest == ''
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_REF: ${{ github.ref }}
-          EVENT_SHA: ${{ github.sha }}
-          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
-            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
-      - name: Publish immutable image to Tencent TCR
-        id: publish
-        if: steps.immutable.outputs.existing_digest == ''
-        timeout-minutes: 35
-        env:
-          IMAGE: ${{ steps.identity.outputs.image }}
-          # 每次尝试 600s（与 deploy/tx/publish-loaded-image-to-tcr.sh 的 TCR_PUSH_TIMEOUT_SECONDS
-          # 同值）、最多 3 次、仅瞬态失败重试：registry 内容寻址，重试只补传上次未完成的 blob，
-          # 既不重建镜像也不重复构建。超时/重试都用尽即 fail closed，不再有 60-90 分钟静默等待。
-          NETWORK_RETRY_TIMEOUT_SECONDS: "600"
-          NETWORK_RETRY_KILL_AFTER_SECONDS: "30"
-          NETWORK_RETRY_MAX_ATTEMPTS: "3"
-        shell: bash
-        run: |
-          set -euo pipefail
-          source "$GITHUB_WORKSPACE/scripts/ci/run-with-network-retry.sh"
-          push_log="$RUNNER_TEMP/tcr-push.log"
-          run_with_network_retry "publish immutable frontend image to Tencent TCR" \
-            docker push "$IMAGE" 2>&1 | tee "$push_log"
-          # docker push 只在 manifest 落地后打印 digest，故最后一条即本次发布结果
-          digest="$(grep -oE 'digest: sha256:[0-9a-f]{64}' "$push_log" | tail -n1 | awk '{print $2}' || true)"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
-            || { echo 'docker push did not report a manifest digest for the immutable tag.' >&2; exit 1; }
-          echo "immutable frontend image published: digest=$digest"
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
-      - name: Verify Tencent TCR digest for the published immutable image
-        id: verify
-        timeout-minutes: 8
-        env:
-          IMAGE: ${{ steps.identity.outputs.image }}
-          EXISTING_DIGEST: ${{ steps.immutable.outputs.existing_digest }}
-          PUBLISHED_DIGEST: ${{ steps.publish.outputs.digest }}
-          NETWORK_RETRY_TIMEOUT_SECONDS: "60"
-        shell: bash
-        run: |
-          set -euo pipefail
-          source "$GITHUB_WORKSPACE/scripts/ci/run-with-network-retry.sh"
-          digest="${EXISTING_DIGEST:-$PUBLISHED_DIGEST}"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Missing or invalid image digest.' >&2; exit 1; }
-          # 这里只证一件事：registry 上 immutable tag 的 manifest digest 就是本 run 刚发布的那一个。
-          # 内容校验（source SHA / 资产源 / WASM）已在推送前、在"即将被推送的那份字节"上完成，
-          # 因此不再把整镜像从 TCR 拉回来复检（那只是重复本 run 已证过的事实）。
-          run_with_network_retry "read back the published immutable tag from Tencent TCR" \
-            bash -c 'test "$(crane digest "$1")" = "$2"' readback "$IMAGE" "$digest"
-          echo "registry digest=$digest matches the immutable image published by this run"
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          ssh \
+            -i ~/.ssh/tx-frontend-build \
+            -p "$TX_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=10 \
+            -o ServerAliveCountMax=6 \
+            "$TX_USER@$TX_HOST" \
+            "bash '$remote_script' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE' '$ASSET_BASE_URL' '$remote_agent'" \
+            | tee "$log"
 
-      - name: Publish latest only from current main
-        id: latest
-        env:
-          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
-          IMAGE: ${{ steps.identity.outputs.image }}
-          REPOSITORY: ${{ steps.identity.outputs.repository }}
-          DIGEST: ${{ steps.verify.outputs.digest }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # 10 = main 已前进且改了本服务输入：交给更新的那次运行发布，本次跳过但不判红
-          status=0
-          bash "$GITHUB_WORKSPACE/deploy/check-latest-main.sh" "$SOURCE_SHA" || status=$?
-          case "$status" in
-            0) crane cp "$IMAGE@$DIGEST" "$REPOSITORY:latest"; echo 'published=true' >> "$GITHUB_OUTPUT" ;;
-            10) echo 'published=false' >> "$GITHUB_OUTPUT" ;;
-            *) exit "$status" ;;
-          esac
+          python3 - "$log" >> "$GITHUB_OUTPUT" <<'PY'
+          import pathlib
+          import sys
 
+          values = {}
+          for line in pathlib.Path(sys.argv[1]).read_text(errors="replace").splitlines():
+              if not line.startswith("RESULT "):
+                  continue
+              key, value = line[7:].split("=", 1)
+              values[key] = value
+
+          required = {
+              "source_sha", "image", "digest", "reused",
+              "build_commit_verified", "asset_base_url_verified", "wasm_verified",
+          }
+          missing = required - values.keys()
+          if missing:
+              raise SystemExit(f"missing remote frontend build outputs: {sorted(missing)}")
+          for key in ("build_commit_verified", "asset_base_url_verified", "wasm_verified"):
+              if values[key] != "true":
+                  raise SystemExit(f"remote frontend verification failed: {key}")
+
+          for key, value in values.items():
+              print(f"{key}={value}")
+          PY
+
+      - name: Cleanup staged TX frontend build inputs
+        if: always()
+        shell: bash
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          AGENT_ASSET: ${{ steps.agent.outputs.asset }}
+        run: |
+          set -u
+          remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
+          remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
+          ssh -i ~/.ssh/tx-frontend-build -p "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=10 \
+            "$TX_USER@$TX_HOST" "rm -f -- '$remote_script' '$remote_agent'" || \
+            echo "WARNING: failed to clean staged TX frontend build inputs"
 
   deploy:
     concurrency:
@@ -354,8 +305,6 @@ jobs:
       cancel-in-progress: false
       queue: max
     needs: [build]
-    # 被更新的 main 取代（published=false）时跳过：不部署旧镜像，也不判红
-    if: needs.build.outputs.latest_published == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment: tx-production
@@ -364,6 +313,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ needs.build.outputs.commit_sha }}
+
       - name: Reject stale main before staging production inputs
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -375,6 +325,7 @@ jobs:
           set -euo pipefail
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
       - name: Prepare TX staging directories
         uses: appleboy/ssh-action@v1
         with:
@@ -388,6 +339,7 @@ jobs:
             mkdir -p "$root/deploy.incoming/deploy" "$root/deploy.incoming/deploy/tx"
             rm -rf -- "$root/deploy.incoming/deploy/tx"
             mkdir -p "$root/deploy.incoming/deploy/tx"
+
       - name: Stage TX runtime files
         uses: appleboy/scp-action@v1
         with:
@@ -398,6 +350,7 @@ jobs:
           source: deploy/tx
           target: /opt/wotb-tx/deploy.incoming
           overwrite: true
+
       - name: Reject stale main before TX mutation
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -409,6 +362,7 @@ jobs:
           set -euo pipefail
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
       - name: Reconcile only Frontend under the TX host lock
         uses: appleboy/ssh-action@v1
         with:
@@ -417,7 +371,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 30m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,TX_FRONTEND_IMAGE_REF
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -426,8 +380,10 @@ jobs:
             export WOTB_DEPLOY_SERVICE=frontend
             export WOTB_DEPLOY_CONFIG_SHA='${{ needs.build.outputs.commit_sha }}'
             export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
+            export TX_FRONTEND_IMAGE_REF='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}/wotbtools-frontend@${{ needs.build.outputs.digest }}'
             bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
         env:
           WOTB_DEPLOY_SERVICE: frontend
           WOTB_DEPLOY_CONFIG_SHA: ${{ needs.build.outputs.commit_sha }}
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
+          TX_FRONTEND_IMAGE_REF: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}/wotbtools-frontend@${{ needs.build.outputs.digest }}

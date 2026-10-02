@@ -36,8 +36,17 @@ URL="${RELEASE_URL}/releases/download/${RELEASE}/${ASSET}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "下载 ${URL}"
-curl --fail --silent --location --retry 3 "$URL" -o "$TMP/${ASSET}"
+if [ -n "${WOTB_AGENT_ARTIFACT_FILE:-}" ]; then
+  [ -f "$WOTB_AGENT_ARTIFACT_FILE" ] || {
+    echo "指定的 WOTB_AGENT_ARTIFACT_FILE 不存在: $WOTB_AGENT_ARTIFACT_FILE" >&2
+    exit 1
+  }
+  cp "$WOTB_AGENT_ARTIFACT_FILE" "$TMP/${ASSET}"
+  echo "使用本地已暂存 Agent WASM artifact: $WOTB_AGENT_ARTIFACT_FILE"
+else
+  echo "下载 ${URL}"
+  curl --fail --silent --location --retry 3 "$URL" -o "$TMP/${ASSET}"
+fi
 
 echo "${EXPECT_SHA}  ${TMP}/${ASSET}" | sha256sum -c --quiet
 
