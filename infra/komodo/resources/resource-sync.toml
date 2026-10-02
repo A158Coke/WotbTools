@@ -1,0 +1,41 @@
+# Declarative Komodo ResourceSync (K4.1) — the sync that reads this very directory.
+#
+# Ownership:
+#   - Komodo Core + Mongo lifecycle: GitHub Actions + deploy/komodo/**
+#   - Komodo DNS:                    OpenTofu under infra/tofu/komodo/**
+#   - Periphery agents:              GitHub Actions + deploy/periphery/** + systemd
+#   - Public ingress:                TX Caddy owner
+#   - Declarative Komodo resources:  infra/komodo/resources/**  (this file)
+#
+# Komodo never manages its own Core/Mongo lifecycle, and it never manages the
+# Periphery systemd service. A change under `infra/komodo/resources/**` must not
+# trigger the Komodo controller deployment workflow: that workflow is owned by
+# `deploy/komodo/**` + `infra/tofu/komodo/**` and is not wired to this path.
+#
+# Safety posture (all three are deliberate and asserted by
+# `scripts/ci/test-komodo-resources.py`):
+#   managed = false          Core never writes back to this repository
+#   delete = false           a sync can never delete an undeclared resource
+#   webhook_enabled = false  no push-triggered apply; Git -> diff -> manual review -> manual apply
+#
+# The sync is bootstrapped once by hand in the Komodo UI (see
+# docs/operations/komodo-resource-sync.md); after that its own Git declaration keeps
+# it in the reviewed state. Omitting `git_account`/`webhook_secret` is intentional:
+# the repository is public and no credential may live here.
+
+[[resource_sync]]
+name = "wotbtools-main"
+
+[resource_sync.config]
+git_provider = "github.com"
+git_https = true
+repo = "A158Coke/WotBTools"
+branch = "main"
+resource_path = ["infra/komodo/resources"]
+managed = false
+delete = false
+webhook_enabled = false
+include_resources = true
+include_variables = false
+include_user_groups = false
+pending_alert = true

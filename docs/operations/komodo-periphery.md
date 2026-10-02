@@ -20,13 +20,32 @@ Every agent uses **Periphery v2.3.3**, connects **outbound only** to
 
 | Phase | Host | State |
 | --- | --- | --- |
-| K3.1 | Yecao | complete and production-proven; its onboarding credential was deleted after success |
-| K3.2 | TX1 | complete and production-proven; onboarding credential deleted, reconciles credential-free |
-| K3.3 | TX2 | **onboarding implemented, not yet complete**: it still needs the production first-onboarding run, then credential deletion, then a credential-free second run |
+| K3.1 | Yecao | **COMPLETE**, production-proven; onboarding credential deleted after success |
+| K3.2 | TX1 | **COMPLETE**, production-proven; onboarding credential deleted, reconciles credential-free |
+| K3.3 | TX2 | **COMPLETE**, production-proven; first onboarding committed the marker, the credential was then deleted, and the follow-up credential-free run reconciled to the desired state with the running service untouched |
+
+All three Servers are online in Komodo and reconcile credential-free. The declarative
+desired state for them now lives in `infra/komodo/resources/servers.toml` (K4.1),
+under the review-before-apply Resource Sync — see
+[`komodo-resource-sync.md`](komodo-resource-sync.md).
+
+## TX2 WireGuard MTU precondition
 
 TX2's WireGuard link (`10.20.0.3/24` → Core at `10.20.0.2`) was established **before**
 this phase and is **not** owned or managed by the Periphery change; nothing here
-touches `/etc/wireguard`.
+touches `/etc/wireguard`. It does, however, carry the Periphery→Core RPC traffic, so
+its MTU is a production precondition for TX2:
+
+| WireGuard MTU | Observed behaviour |
+| --- | --- |
+| `1420` | **PMTU black hole** to Core: TCP retransmissions, `Send-Q` accumulating on the Periphery→Core socket, and a ~10 s Core/Periphery reconnect loop |
+| `1380` | stable RPC connectivity restored; TX2 reconciles and stays connected |
+
+Treat `MTU = 1380` on TX2's WireGuard interface as a documented production
+requirement. It is a **network** property, not a Periphery setting: `install.sh`,
+the unit, and the config never set or inspect an MTU, and a Periphery reconcile can
+neither fix nor break it. Diagnosing it is `ss -tin` (retransmits, `Send-Q`) plus
+`wg show` on the host — see also the verification limitation below.
 
 ## Ownership
 
@@ -178,12 +197,13 @@ The runtime variable is generic: **`KOMODO_PERIPHERY_ONBOARDING_KEY`**. The work
 maps each host's own GitHub secret into it (TX1: `KOMODO_TX1_ONBOARDING_KEY`, TX2:
 `KOMODO_TX2_ONBOARDING_KEY`), and the scripts never know a host-specific secret name.
 
-**Yecao's and TX1's credentials have been deleted** (the GitHub secrets and the UI
-onboarding keys), so those jobs forward no secret at all and must succeed from
-`onboarding-complete` + `periphery.key` + `core.pub`. TX2 still needs its credential
-for the first onboarding; the operator deletes `KOMODO_TX2_ONBOARDING_KEY` and the
-`tx2-periphery-bootstrap` UI key after that run succeeds, and the following
-`workflow_dispatch` must then succeed credential-free.
+**All three hosts' onboarding credentials have been deleted** (the GitHub secrets and
+the UI onboarding keys, including `KOMODO_TX2_ONBOARDING_KEY` and
+`tx2-periphery-bootstrap` after TX2's first onboarding succeeded), so no job forwards a
+secret and every host reconciles from `onboarding-complete` + `periphery.key` +
+`core.pub`. That is the steady state: a reconcile on a completed host never needs a
+credential, and the workflow deliberately has no check that would require one to exist
+again.
 
 1. `install.sh` decides from the host state, never from the identity file:
    - **marker valid + identity valid + `core.pub` valid** → onboarding is complete
@@ -279,6 +299,21 @@ without any Komodo credential:
 
 Each Server's own `Online` status is confirmed manually after the merge, because it
 is Core-side state and intentionally not probed with the admin API.
+
+### Known verification limitation (tracked debt, not fixed here)
+
+Check 6 proves that an **ESTABLISHED TCP connection** exists from the Periphery main
+PID to `10.20.0.2:9120`. That is necessary but **not sufficient** proof of a healthy
+Komodo RPC session: a connection can remain ESTABLISHED while the session is
+black-holed (the TX2 MTU `1420` incident looked exactly like that — retransmissions
+and growing `Send-Q` on an established socket, with a ~10 s reconnect loop).
+
+So a green `verify.sh` means "the agent is running, configured as reviewed, and holds
+a socket to Core", not "Core and Periphery are exchanging healthy RPC". Hardening
+this probe (for example by observing RPC-level liveness or retransmit/`Send-Q`
+counters) is **deliberately out of scope for K4.1** and remains separate technical
+debt. Until it lands, an MTU-class incident must be diagnosed on the host with
+`ss -tin` (retransmits, `Send-Q`) and `wg show`, and confirmed by a real reconcile.
 
 ## Manual acceptance
 

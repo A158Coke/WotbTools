@@ -78,6 +78,16 @@ assert affected("deploy/periphery/periphery.release") == {"komodo_periphery"}
 assert affected(".github/workflows/komodo-periphery.yml") == {"komodo_periphery"}
 assert not (affected("deploy/periphery/install.sh") & {"komodo_controller", "caddy"})
 assert affected("docs/operations/komodo-periphery.md") == set()
+# K4.1 owner boundary: the declarative Komodo resource root is reviewed data that CI
+# only validates. Touching it must not reach the Komodo controller (whose production
+# workflow reconciles Core/Mongo/DNS) nor any other production owner, and the
+# controller's own production filter must not cover the new path.
+assert affected("infra/komodo/resources/servers.toml") == {"deployment"}
+assert affected("infra/komodo/resources/resource-sync.toml") == {"deployment"}
+assert not (affected("infra/komodo/resources/servers.toml") & {"komodo_controller", "komodo_periphery", "caddy"})
+komodo_controller_events = load(workflow_dir / "komodo-controller.yml")
+for production_path in komodo_controller_events["on"]["push"]["paths"]:
+    assert not fnmatch.fnmatchcase("infra/komodo/resources/servers.toml", production_path), production_path
 # Frontend production builds now publish from TX through the Gitee exact-SHA builder.
 # The GitHub-runner registry-list/retry helpers are no longer frontend-owned inputs;
 # the Agent WASM pin/fetch contract and freshness gate remain production inputs.
