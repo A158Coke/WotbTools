@@ -2,19 +2,14 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -25,20 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class PersonalAiContextCompilerTest {
 
-    private static Path fixture() throws Exception {
-        final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")
-                .normalize();
-        try (Stream<Path> s = Files.list(dir)) {
-            return s.filter(p -> p.getFileName().toString().contains("random-battle-example"))
-                    .findFirst().orElseThrow();
-        }
-    }
-
     @Test
     void realFixtureRendersEpisodeTimelineSection() throws Exception {
-        final byte[] bytes = Files.readAllBytes(fixture());
-        final Battle battle = ReplayParser.parse(bytes);
-        final ReplayReconstruction recon = new ReplayReconstructionService().reconstruct(bytes);
+        final ReplayFactsFixtures.Facts facts = ReplayFactsFixtures.load("random-battle-example");
+        final Battle battle = facts.battle();
+        final ReplayReconstruction recon = facts.reconstruction();
         final PlayerResult recorder = battle.recorderResult();
         assertNotNull(recorder);
 

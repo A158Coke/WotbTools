@@ -1,7 +1,5 @@
 package com.wotb.web.user.service;
 
-import com.wotb.core.model.Battle;
-import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
@@ -327,53 +325,37 @@ public class UserProfileService {
     }
 
     /**
-     * 回放录制者验证：把「这份回放确实由该账号录制」这一事实落到当前绑定账号上。
+     * 用回放验证绑定账号：客户端本地解析出回放录像者的数值 accountId，提交到这里与当前绑定账号比对。
      *
-     * <p><b>fail-closed</b>：只有 canonical 解析
-     * （{@link PlayerResultFormat#recorderAccountId(Battle)}，经
-     * {@link Battle#recorderResult()} 定位录像者名册行）给出的<em>数值</em> recorder accountId
-     * 与当前绑定账号**相等**时才标记已验证。批次里<b>任一场</b>由该账号录制即成立；
-     * 解析不出数值 accountId、未认证、无 profile、未绑定账号、账号不同一律什么都不做——
-     * 绝不按昵称比对，也绝不以「账号出现在名册里」为依据。</p>
+     * <p>服务器没有 parser——录像者 accountId 由客户端（上游 Rust Core）给出。已验证状态只用于个人主页
+     * 徽章展示，不授予任何权限。</p>
      *
-     * <p><b>幂等</b>：已 verified 时直接返回，保留首次成功验证的时间戳，不重写、不新增任何行。</p>
+     * <p><b>只比数值 accountId</b>：绝不按昵称、绝不以「账号出现在名册里」为依据。
+     * <b>幂等</b>：已 verified 直接返回，保留首次成功验证时间。</p>
      *
-     * <p><b>best-effort</b>：本方法是回放结果边界上的旁路副作用，调用方必须保证它失败也不影响
-     * 回放本身的成功语义。</p>
-     *
-     * @param keycloakUserId 已认证 subject；null → 不做任何事
-     * @param battles        已成功解析的 Battle（READY dataset）；null/空 → 不做任何事
+     * @throws IllegalArgumentException PROFILE_NOT_FOUND / WOTB_ACCOUNT_NOT_BOUND /
+     *                                  REPLAY_RECORDER_REQUIRED / REPLAY_RECORDER_MISMATCH
      */
     @Transactional
-    public void verifyBoundAccountFromReplay(final String keycloakUserId, final List<Battle> battles) {
-        final Set<Long> recorderAccountIds = recorderAccountIds(battles);
-        if (keycloakUserId == null || recorderAccountIds.isEmpty()) {
-            return;
+    public UserProfileDto verifyWotbAccountFromReplay(final String keycloakUserId, final Long recorderAccountId) {
+        if (recorderAccountId == null || recorderAccountId <= 0) {
+            throw new IllegalArgumentException("REPLAY_RECORDER_REQUIRED");
         }
-        final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId).orElse(null);
-        if (profile == null
-                || !recorderAccountIds.contains(profile.getWotbAccountId())
-                || profile.getWotbAccountVerifiedAt() != null) {
-            return;
+        final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
+                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
+        if (profile.getWotbAccountId() == null) {
+            throw new IllegalArgumentException("WOTB_ACCOUNT_NOT_BOUND");
         }
-        profile.setWotbAccountVerifiedAt(OffsetDateTime.now());
-        profile.setUpdatedAt(OffsetDateTime.now());
-        repository.save(profile);
-    }
-
-    /** 批次内所有能可靠解析出的录像者 accountId（解析不出的场次不贡献任何值）。 */
-    private static Set<Long> recorderAccountIds(final List<Battle> battles) {
-        final Set<Long> recorderAccountIds = new HashSet<>();
-        if (battles == null) {
-            return recorderAccountIds;
+        if (!recorderAccountId.equals(profile.getWotbAccountId())) {
+            throw new IllegalArgumentException("REPLAY_RECORDER_MISMATCH");
         }
-        for (final Battle battle : battles) {
-            final Long recorderAccountId = PlayerResultFormat.recorderAccountId(battle);
-            if (recorderAccountId != null) {
-                recorderAccountIds.add(recorderAccountId);
-            }
+        if (profile.getWotbAccountVerifiedAt() == null) {
+            final OffsetDateTime now = OffsetDateTime.now();
+            profile.setWotbAccountVerifiedAt(now);
+            profile.setUpdatedAt(now);
+            repository.save(profile);
         }
-        return recorderAccountIds;
+        return mapper.toDto(profile);
     }
 
     /** 可信 WG claims：verified == true && region ∈ {ASIA, EU, NA} && accountId 有效 && 昵称非空。 */
