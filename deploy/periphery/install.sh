@@ -245,27 +245,42 @@ case "$marker_state" in
     ;;
 esac
 
-# --- persistent config + systemd unit (repo-owned, replaced deterministically) --
+# --- desired-state changes ---------------------------------------------------
+# Recorded explicitly, and BEFORE anything is replaced, so an idempotent reconcile
+# can leave an already-correct, healthy service completely untouched. Stopping the
+# service preemptively is not an option: the restart decision below would then have
+# nothing left to distinguish "already active" from "left stopped".
+service_was_active=false
+if service_active; then
+  service_was_active=true
+fi
 file_sha() { [[ -f "$1" && ! -L "$1" ]] && sha256sum "$1" | awk '{print $1}' || true; }
 config_before="$(file_sha "$periphery_config")"
 unit_before="$(file_sha "$periphery_unit")"
 binary_before="$(file_sha "$periphery_bin")"
+
+# --- persistent config + systemd unit (repo-owned, replaced deterministically) --
 install -m 600 "$periphery_config_source" "$periphery_config.incoming"
 mv -f -- "$periphery_config.incoming" "$periphery_config"
 install -m 644 "$runtime/periphery.service" "$periphery_unit.incoming"
 mv -f -- "$periphery_unit.incoming" "$periphery_unit"
 
-# --- binary (atomic replace with the service stopped) ------------------------
-service_was_active=false
-if service_active; then
-  service_was_active=true
-  "$systemctl_bin" stop periphery
-fi
+# --- binary (atomic replace) --------------------------------------------------
+# Safe to replace while Periphery runs: the running process keeps the inode it
+# started from, so availability is preserved and the restart decision below is what
+# makes the new binary take effect.
 install -m 0755 "$artifact" "$periphery_bin.incoming"
 mv -f -- "$periphery_bin.incoming" "$periphery_bin"
 installed_sha="$(sha256sum "$periphery_bin" | awk '{print $1}')"
 [[ "$installed_sha" == "$PERIPHERY_SHA256" ]] || fail \
   "Installed $periphery_bin does not match the pinned release (got $installed_sha)."
+
+binary_changed=false
+config_changed=false
+unit_changed=false
+[[ "$binary_before" == "$PERIPHERY_SHA256" ]] || binary_changed=true
+[[ "$config_before" == "$(file_sha "$periphery_config")" ]] || config_changed=true
+[[ "$unit_before" == "$(file_sha "$periphery_unit")" ]] || unit_changed=true
 
 "$systemctl_bin" daemon-reload
 
@@ -305,10 +320,14 @@ if [[ "$onboarding_required" == true ]]; then
 else
   "$systemctl_bin" enable periphery >/dev/null
   # Ordinary reconcile: no bootstrap credential is involved anywhere. Restart only
-  # when something the running agent consumes changed, or when it is not running.
-  if [[ "$binary_before" != "$PERIPHERY_SHA256" || "$config_before" != "$(file_sha "$periphery_config")" \
-     || "$unit_before" != "$(file_sha "$periphery_unit")" || "$service_was_active" != true ]]; then
+  # when the running agent's desired state actually changed or it is not running, so
+  # a completed, healthy host stays active and is not disturbed — and can never be
+  # left stopped by an idempotent run.
+  if [[ "$binary_changed" == true || "$config_changed" == true || "$unit_changed" == true \
+     || "$service_was_active" != true ]]; then
     "$systemctl_bin" restart periphery
+  else
+    echo "Komodo Periphery already at the desired state on $periphery_target: the running service is untouched."
   fi
 fi
 
