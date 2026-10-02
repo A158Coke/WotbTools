@@ -42,6 +42,13 @@ require_real_file "$periphery_identity" 'Persistent Komodo Periphery identity'
 require_real_file "$periphery_core_pub" 'Pinned Komodo Core public key'
 echo 'PASS periphery-persistent-identity'
 
+# 4b. Onboarding committed. The identity file alone proves nothing: Periphery
+# generates it during startup, before Server onboarding has succeeded.
+marker_state="$(periphery_marker_state)"
+[[ "$marker_state" == valid ]] || fail \
+  "the durable Komodo Periphery onboarding marker is missing or unsafe (state: $marker_state): $periphery_marker"
+echo 'PASS periphery-onboarding-complete'
+
 # 5 + 9. Outbound connectivity from the running PID, after the final restart that
 # no longer has the bootstrap credential available.
 pid="$(main_pid 2>/dev/null || true)"
@@ -49,7 +56,7 @@ pid="$(main_pid 2>/dev/null || true)"
 if [[ -e "$periphery_bootstrap_env" ]]; then
   fail "the transient bootstrap credential survived: $periphery_bootstrap_env"
 fi
-if [[ -r "/proc/$pid/environ" ]] && tr '\0' '\n' < "/proc/$pid/environ" | grep -q '^PERIPHERY_ONBOARDING_KEY='; then
+if process_env_has_onboarding_key "$pid"; then
   fail "the running Periphery process still carries PERIPHERY_ONBOARDING_KEY in its environment."
 fi
 connected=false

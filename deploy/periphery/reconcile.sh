@@ -20,6 +20,8 @@ source "$script_dir/lib.sh"
 
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'Invalid Komodo Periphery source SHA.'
 assert_x86_64
+# K3.1 installs a root-owned systemd unit and root-owned key material.
+[[ "$(id -u)" == 0 ]] || fail 'Komodo Periphery reconcile must run as root to install the systemd unit and key material.'
 [[ "$stage" == "$periphery_opt_root/incoming/$SOURCE_SHA" ]] \
   || fail "Unexpected Komodo Periphery staging root: $stage"
 for command_name in sha256sum ss flock journalctl; do
