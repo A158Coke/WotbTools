@@ -1066,4 +1066,84 @@ for script in lib.sh install.sh verify.sh reconcile.sh; do
 done
 pass 'one-lifecycle shared implementation with per-host profiles'
 
+# ---------------------------------------------------------------------------
+# I. consecutive reconcile of a completed host (production run 37069234437)
+# ---------------------------------------------------------------------------
+# Production regression: the second reconcile of an already-completed host stopped
+# Periphery in order to "atomically" replace an unchanged binary, and then decided
+# no restart was needed — leaving the service down. This drives the real install
+# twice per target and requires the second run to be a no-op for a healthy service.
+#
+# events_since <line-count-before>: the stub systemd events added by one run.
+events_since() {
+  tail -n "+$(( $1 + 1 ))" "$events"
+}
+
+for target in yecao tx1; do
+  prepare_case "consecutive-$target" "$target"
+  printf '%s\n' 'fixture-periphery-identity' > "$identity"
+  printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+  write_marker
+
+  # First reconcile converges: exact binary/config/unit, service up, unit enabled.
+  if ! run_install; then
+    cat "$case_dir/install.log" >&2
+    die "the first $target reconcile failed"
+  fi
+  [[ -f "$case_dir/state/active" ]] || die "the first $target reconcile left the service inactive"
+  [[ -f "$case_dir/state/enabled" ]] || die "the first $target reconcile left the unit disabled"
+  cmp -s "$bin_path" "$artifact" || die "the first $target reconcile installed the wrong binary"
+  cmp -s "$case_dir/etc/periphery.config.toml" "$ROOT/targets/$target/periphery.config.toml" \
+    || die "the first $target reconcile installed the wrong config"
+  cmp -s "$case_dir/unit/periphery.service" "$ROOT/periphery.service" \
+    || die "the first $target reconcile installed the wrong unit"
+  grep -q '^restart-without-bootstrap marker=present$' "$events" \
+    || die "the first $target reconcile did not bring the service up"
+  state_before="$(sha256sum "$identity" "$core_pub" "$marker" | sha256sum)"
+  events_before="$(wc -l < "$events")"
+
+  # Second reconcile: identical inputs, no onboarding credential, service already
+  # active and already at the desired state.
+  if ! run_install; then
+    cat "$case_dir/install.log" >&2
+    die "the idempotent second $target reconcile failed"
+  fi
+  [[ -f "$case_dir/state/active" ]] \
+    || die "the idempotent second $target reconcile left the service stopped (production run 37069234437)"
+  [[ -f "$case_dir/state/enabled" ]] || die "the idempotent second $target reconcile disabled the unit"
+  [[ "$(sha256sum "$identity" "$core_pub" "$marker" | sha256sum)" == "$state_before" ]] \
+    || die "the idempotent second $target reconcile modified identity/core.pub/marker"
+  [[ ! -e "$bootstrap_env" ]] || die "the idempotent second $target reconcile created a bootstrap credential"
+  second_events="$(events_since "$events_before")"
+  if grep -qE '^(restart|stop|kill)' <<<"$second_events"; then
+    die "the idempotent second $target reconcile disturbed the service: $second_events"
+  fi
+  if grep -q 'restart-with-bootstrap' <<<"$second_events"; then
+    die "the idempotent second $target reconcile attempted onboarding"
+  fi
+
+  # The other direction must still hold: a real desired-state change is applied.
+  events_before="$(wc -l < "$events")"
+  printf '\n# desired-state change for the fixture\n' >> "$runtime/periphery.service"
+  if ! run_install; then
+    cat "$case_dir/install.log" >&2
+    die "the $target reconcile after a desired-state change failed"
+  fi
+  grep -q '^restart-without-bootstrap marker=present$' <<<"$(events_since "$events_before")" \
+    || die "a changed unit for $target must restart the service"
+  [[ -f "$case_dir/state/active" ]] || die "the $target service is inactive after applying a change"
+
+  # And a stopped service with otherwise-correct state must still be brought up.
+  events_before="$(wc -l < "$events")"
+  rm -f "$case_dir/state/active"
+  if ! run_install; then
+    cat "$case_dir/install.log" >&2
+    die "the $target reconcile of a stopped service failed"
+  fi
+  [[ -f "$case_dir/state/active" ]] || die "an inactive $target service must be started by the reconcile"
+  grep -q '^restart-without-bootstrap marker=present$' <<<"$(events_since "$events_before")" \
+    || die "the $target reconcile must restart an inactive service"
+done
+pass 'consecutive-reconcile keeps a completed service active and untouched'
+
 echo 'Komodo Periphery contract fixtures: PASS'

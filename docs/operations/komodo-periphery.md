@@ -226,6 +226,22 @@ Re-running the workflow is always safe and idempotent. A failed bootstrap is
 recoverable by re-running while that host's credential is still available; a host
 whose marker committed needs no credential ever again.
 
+### Idempotency and availability
+
+An already-completed host whose binary, config, and unit already match the staged
+desired state, and whose service is already active, is **left running untouched**:
+the reconcile never stops a healthy service, and it restarts only when something the
+running agent consumes actually changed or when the service is not running. Replacing
+the binary is safe while Periphery runs — the process keeps the inode it started
+from — so no preemptive stop is needed. The two directions are both required and
+covered by the fixture:
+
+| State observed | Reconcile behaviour |
+| --- | --- |
+| marker valid, service active, binary/config/unit already exact | no stop, no restart; the service stays active |
+| marker valid, binary/config/unit changed | restart, so the new binary/config/unit takes effect |
+| marker valid, any of binary/config/unit already exact but the service is **not** active | restart, so a stopped agent is brought back up |
+
 ## Production verification
 
 `deploy/periphery/verify.sh <target>` runs after every reconcile, per host and
