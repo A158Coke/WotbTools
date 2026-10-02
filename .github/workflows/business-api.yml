@@ -131,10 +131,6 @@ jobs:
     environment: tx-production
     permissions:
       contents: read
-    outputs:
-      image: ${{ steps.remote_build.outputs.image }}
-      commit_sha: ${{ steps.identity.outputs.commit_sha }}
-      digest: ${{ steps.remote_build.outputs.digest }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -142,7 +138,6 @@ jobs:
           ref: ${{ github.sha }}
 
       - name: Freeze current main and image identity
-        id: identity
         env:
           EVENT_REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
@@ -163,10 +158,6 @@ jobs:
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
           [[ "$TCR_NAMESPACE" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo 'TCR_NAMESPACE is invalid.' >&2; exit 1; }
-          {
-            echo "commit_sha=$SOURCE_SHA"
-            echo "tag=sha-${SOURCE_SHA:0:12}"
-          } >> "$GITHUB_OUTPUT"
 
       - name: Configure TX SSH
         shell: bash
@@ -218,7 +209,7 @@ jobs:
           TX_HOST: ${{ secrets.TX_VPS_HOST }}
           TX_USER: ${{ secrets.TX_VPS_USER }}
           TX_PORT: ${{ secrets.TX_VPS_PORT }}
-          SOURCE_SHA: ${{ steps.identity.outputs.commit_sha }}
+          SOURCE_SHA: ${{ github.sha }}
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
           RUN_ID: ${{ github.run_id }}
@@ -297,13 +288,13 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          ref: ${{ needs.build.outputs.commit_sha }}
+          ref: ${{ github.sha }}
       - name: Reject stale main before staging production inputs
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
-          SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
+          SOURCE_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -337,7 +328,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
-          SOURCE_SHA: ${{ needs.build.outputs.commit_sha }}
+          SOURCE_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -351,22 +342,28 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,TX_BUSINESS_API_IMAGE_REF,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION,TX_RABBITMQ_CONTROL_API_PASSWORD,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY,KEYCLOAK_ADMIN_CLIENT_SECRET,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,TX_BUSINESS_DB_PASSWORD_VERSION,TX_RABBITMQ_CONTROL_API_PASSWORD,YECAO_MINIO_CONTROL_API_ACCESS_KEY,YECAO_MINIO_CONTROL_API_SECRET_KEY,KEYCLOAK_ADMIN_CLIENT_SECRET,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
             flock -n 9 || { echo 'Another TX production deployment is running.' >&2; exit 1; }
             export WOTB_DEPLOY_LOCK_FD=9
             export WOTB_DEPLOY_SERVICE=business-api
-            export WOTB_DEPLOY_CONFIG_SHA='${{ needs.build.outputs.commit_sha }}'
+            export WOTB_DEPLOY_CONFIG_SHA='${{ github.sha }}'
             export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
+            immutable_ref="$TX_IMAGE_REGISTRY_PREFIX/wotbtools-business-api:sha-${WOTB_DEPLOY_CONFIG_SHA:0:12}"
+            digest="$(timeout --kill-after=30s 60s docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$immutable_ref")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+              echo "Invalid Business API TCR digest for $immutable_ref" >&2
+              exit 1
+            }
+            export TX_BUSINESS_API_IMAGE_REF="$TX_IMAGE_REGISTRY_PREFIX/wotbtools-business-api@$digest"
             bash /opt/wotb-tx/deploy.incoming/deploy/dependency-readiness.sh business-api
             bash /opt/wotb-tx/deploy.incoming/deploy/tx/deploy.sh
         env:
           WOTB_DEPLOY_SERVICE: business-api
-          WOTB_DEPLOY_CONFIG_SHA: ${{ needs.build.outputs.commit_sha }}
+          WOTB_DEPLOY_CONFIG_SHA: ${{ github.sha }}
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
-          TX_BUSINESS_API_IMAGE_REF: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}/wotbtools-business-api@${{ needs.build.outputs.digest }}
           TX_BUSINESS_DB_NAME: ${{ vars.TX_BUSINESS_DB_NAME }}
           TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
           TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
