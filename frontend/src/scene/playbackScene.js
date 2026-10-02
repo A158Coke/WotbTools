@@ -1386,23 +1386,20 @@ export function initPlayback(container, store) {
     // 只给**本方**画：装填相位（subtype 15/16/17）与方法 35 都**只广播本方全队**，
     // 给敌方画出来的只是"假满条"；客户端同样按标记角色挂 `marker-no-reload-status` 隐藏。
     const friendly = DATA.meta && v.def.team === DATA.meta.friendly_team;
+    // **无装填遥测 = unknown，整条不画**（`shellStatesAt` 返回 null）。绝不兜底成满条：
+    // reloads = 0 时旧实现画出一根永远不动的白条（2026-10-02 线上故障）。
+    const shells = v.reloadShells;
     const sx = 56, sy = 104, sw = 400, sh = 6;
-    if (friendly) {
+    if (friendly && shells && shells.length) {
       rrPath(ctx, sx, sy, sw, sh, 1.5);
       ctx.fillStyle = 'rgba(0, 0, 0, .56)'; ctx.fill();            // 与客户端整条暗底 0.565 同档
     }
-    // 兜底也要按 **N 格**画（客户端开局即 A|A|A）；否则首帧只有一格，而重绘门控又不触发，
-    // 就会一直是一根未分割的条，直到第一次开火才变形。
-    const fallbackN = Math.max(1, Math.round(v.reloadSize) || 1);
-    const shells = (v.reloadShells && v.reloadShells.length)
-      ? v.reloadShells
-      : Array.from({ length: fallbackN }, () => ({ state: 'full', progress: 1 }));
-    const rn = shells.length;
+    const rn = shells ? shells.length : 0;
     const gap = rn > 1 ? 14 : 0;                                   // 固定条宽 ÷ N（客户端同式）+ 可见间隙
     const inX = 1, inY = 1;                                        // 客户端 68 = 70−2 的内缩
     const innerW = sw - inX * 2;
-    const segW = (innerW - gap * (rn - 1)) / rn;
-    for (let k = 0; friendly && k < rn; k++) {
+    const segW = rn > 1 ? (innerW - gap * (rn - 1)) / rn : innerW;
+    for (let k = 0; friendly && shells && k < rn; k++) {
       const st = shells[k] || { state: 'empty', progress: 0 };
       const x = sx + inX + k * (segW + gap);
       const f = st.state === 'full' ? 1
@@ -2330,7 +2327,8 @@ export function initPlayback(container, store) {
     // 采用**逐发状态**模型（对齐客户端 OTM 的 ShellItem）：开火消耗一发；f2=7 只表示
     // 夹内推弹/射击间隔，不补弹；f2=6 弹鼓逐发补槽；f2=3 整夹重装补满。故还需要
     // 本车的开火时刻。求值是纯函数（时间归并），
-    // 不做累加计时器 → seek / 拖动进度条天然正确。无相位流的车保持空数组（= 满条，不猜）。
+    // 不做累加计时器 → seek / 拖动进度条天然正确。无相位流的车 = **无遥测 → 不画装填条**
+    // （`shellStatesAt` 返回 null），不得兜底成满条。
     {
       const reloadByEid = groupByVehicle(DATA.reloads);
       const effByEid = groupByVehicle(DATA.reload_effective);   // 方法 35：权威有效装填时长
@@ -2348,13 +2346,13 @@ export function initPlayback(container, store) {
         v.reloadFires = firesByEid.get(v.def.eid) || [];
         v.reloadDurations = effByEid.get(v.def.eid) || [];
         v.reloadSize = inferMagazineSize(v.reloadEvents);
-        v.reloadShells = null;
+        v.reloadShells = null;       // 首帧前空值 = 不画（有遥测时由 updateLabels 求值）
         v.reloadVisualKey = null;    // 置脏：首帧按 N 格重绘一次（否则开局一直是一根未分割的条）
         v.labelDirty = true;
       }
       // N 以**客户端静态数据**为主（`configs[].burst_size` == 客户端 XML 的 `<clip><count>`，
       // 已对 30 台车验证一致），相位推断取较大者（回放真值可纠正配置歧义）；都没有 → 1，不猜。
-      // 这样敌方车 / 尚未装填过的车开局也是 N 格，而不是一根整条。
+      // 这决定**有遥测**时画几格；无遥测的车不画条，与 N 无关。
       for (const v of V) {
         if (!(v.def.tank_id > 0)) continue;
         assetProvider.json(`/tank/${v.def.tank_id}.json`).then((t) => {

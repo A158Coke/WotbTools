@@ -20,6 +20,7 @@ import {
   type AgentPlaybackFacet,
   type AgentShotsOutcome,
 } from '../../api/agent-replay-facets.js'
+import { groupByVehicle, inferMagazineSize, shellStatesAt, usablePhases, type ShellState } from '../../scene/reloadBar.js'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 const PIN_JSON = join(REPO, 'deploy/agent/source.json')
@@ -144,4 +145,52 @@ export async function replayFacets(path: string): Promise<FixtureFacets> {
 export async function shotsViaPinnedWasm(bytes: Uint8Array): Promise<AgentShotsOutcome> {
   const m = await wasm()
   return normalizeAgentShotsOutcome(JSON.parse(m.parseShotReplays(bytes)) as unknown)
+}
+
+/** 作者车的装填遥测（生产装配的同款形状 + 逐发状态采样） */
+export interface ReloadTelemetrySmoke {
+  authorEid: number
+  /** 作者车的装填条目总数（facet `reloads` 按 eid 归组后） */
+  authorReloadEvents: number
+  /** 作者车可用于逐发状态机的条目数（有正时长的 f2=3/4/6/7） */
+  authorUsablePhases: number
+  /** 相位 + 计数推断出的弹夹容量（无证据 → 1，不猜） */
+  magazineSize: number
+  /** 采样时刻的逐发状态（无遥测 → `null`，调用方据此不画装填条） */
+  samples: Array<{ t: number; states: ShellState[] | null }>
+}
+
+/**
+ * 用**生产同款**装配（`scene/reloadBar`）从 PlaybackData 取作者车装填遥测 + 采样逐发状态。
+ *
+ * 采样点只取**稳定**时刻：每条定时相位的 50% 进度点。这样既覆盖"无遥测 → null"，
+ * 也覆盖"有遥测 → 非 null 状态"，且不把某一场的相位时刻写死进断言。
+ */
+export function reloadTelemetryFor(playback: AgentPlaybackFacet): ReloadTelemetrySmoke {
+  const byEid = groupByVehicle(playback.reloads)
+  const fires = new Map<number, number[]>()
+  for (const shot of playback.shots ?? []) {
+    const eid = shot.shooter_eid
+    if (eid == null || !Number.isFinite(shot.t_fire)) continue
+    const list = fires.get(eid) ?? []
+    list.push(shot.t_fire)
+    fires.set(eid, list)
+  }
+  for (const list of fires.values()) list.sort((a, b) => a - b)
+
+  const authorEid = playback.meta.author_eid
+  const events = byEid.get(authorEid) ?? []
+  const magazineSize = inferMagazineSize(events)
+  const authorFires = fires.get(authorEid) ?? []
+  const samples = usablePhases(events).map((event) => {
+    const t = event.clock + Number(event.duration_s) / 2
+    return { t, states: shellStatesAt(events, authorFires, t, magazineSize) }
+  })
+  return {
+    authorEid,
+    authorReloadEvents: events.length,
+    authorUsablePhases: usablePhases(events).length,
+    magazineSize,
+    samples,
+  }
 }

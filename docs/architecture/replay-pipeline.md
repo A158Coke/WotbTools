@@ -91,6 +91,22 @@ frontend/src/replay-local/
 （含 canonical 必需证据的版本门禁，缺失即拒绝），语义决定（参战者 / 录像者 / 观测段 / 可信血量 / 归属证据 / 终态）
 只在 canonical 层发生一次。Agent DTO 字段名、钳 0 的显示值、渲染滤波网格等都不得直接进入 WotbTools 的展示或领域模型。
 
+## 遥测缺失时 UI 必须 fail-closed（`unknown ≠ full`）
+
+上游只对本方全队广播装填遥测（`reloads` / `reload_effective`）。**没有遥测不等于满弹**：
+`frontend/src/scene/reloadBar.js#shellStatesAt` 在无可用相位时返回 `null`，3D 标签直接不画装填条；
+只有"有遥测且当前状态算出来是满弹"才画满条。
+
+2026-10-02 线上故障是这条规则的直接反例：错版 WASM 让 `reloads = 0`，旧实现把"无遥测"兜底成
+`full()`，于是每台车都画出一根**永远不动的白条**。修复分两层——artifact identity 让错版产物根本装载不进来
+（见「Agent 产物身份」），UI 层则保证即使拿到空遥测也不会伪造满弹。回归见
+`frontend/src/scene/reloadBar.test.js`（fake-full 用例）与 `agent-wasm-smoke.test.ts`
+（真实 replay 的作者车 reload timeline + 状态随相位变化）。
+
+上游已知缺口：method 35 目前只解码 `[eid][single duration]`，autoreloader 的多段装填 profile
+（如 Kranvagn）整场 `reload_effective` 为空。这属 **producer 语义**，消费方不得按车型/burst size
+推断或用 shots 反推——需要时在上游修并发新 Release。
+
 ## 缺字段怎么办
 
 后端或前端需要的回放字段，一律向上游 Rust Core 要（直接改上游、发版、升级 `deploy/agent/source.json`），

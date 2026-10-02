@@ -5,7 +5,7 @@
 // WASM 产物由 CI 依据 deploy/agent/source.json 锁定的上游 Release 产物直取
 //（fetch-agent-wasm.sh，sha256 + fingerprint 双重校验）到 common/assets/wasm/<ref>/，
 // 经 publicDir 进 dist，线上由 /wasm/<ref>/ 伺服；产物缺失时本地通道拒绝并提示。
-// 装载器与 AI/表格通道共用 `api/agent-replay-facets` 的 `loadAgentWasm`：versioned URL
+// 装载器与 AI/表格通道共用 `api/agent-replay-facets` 的 `loadAgentWasmModule`：versioned URL
 //（URL identity = upstream commit）+ fingerprint 版本门禁，错版产物在装载阶段就抛
 // `AgentWasmVersionMismatchError`，不会把别的 build 的 Agent 静默喂给渲染层。
 

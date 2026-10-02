@@ -4,7 +4,8 @@
  * 三个切面缺一不可：AiReview 承载血量 / 归属 / 终态的原始证据，失败即整体失败（fail closed，
  * 不退化成弱证据归因）。
  *
- * 在主线程跑（与 3D `AgentReplay3D` 同一装载器 `loadAgentWasm`）；单场解析是一次性成本，
+ * 在主线程跑（与 3D `AgentReplay3D` 同一装载器 `loadAgentWasmModule`：commit-addressed
+ * URL + fingerprint 版本门禁）；单场解析是一次性成本，
  * 不需要 Worker。返回值与服务端 `fetchBattlePlaybackDataset` / `fetchMapOverviewArtifact`
  * 的 `data` 同形状，可直接喂给 BattlePlaybackPanel 现有的 `mapPlaybackV2` / `mapOverview`。
  */

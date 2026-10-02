@@ -519,8 +519,15 @@ WotbTools 将 production pin 从 v0.3.8 升到 v0.3.9，并继续通过 Release 
 `/wasm/<40 位 commit>/` 可以放心长期 `immutable` 缓存——「普通刷新即生效」不再依赖
 强制 no-cache；stable 路径被废除并由测试、Docker build 与 TX 发布校验三处断言不存在。
 
+同一次排查暴露了第二个独立缺陷：**"没有证据"被渲染成"满弹"**。生产上 3D 装填条一直显示为
+一根不动的白条，根因是错版引擎给出 `reloads = 0`，而客户端把"无遥测"兜底成 `full()`。
+修复后无遥测一律读作 unknown 并隐藏整条装填 UI，只有"有遥测且状态算出来是满弹"才画满条。
+两条 fail-closed 是两个层面：URL identity 保证 UI 拿到的是本 build 的引擎，遥测语义保证
+UI 不会把未知说成满弹。生产 pin 同时升到 `v0.3.10`（`5029e103…`）：同一 replay 的装填遥测
+从 0 条恢复为 121 条，作者车 28 条，装填条随真实相位推进。
+
 **Git 证据：** 本 PR；`deploy/agent/source.json`、`scripts/fetch-agent-wasm.sh`、
-`frontend/src/api/agent-replay-facets.ts`。
+`frontend/src/api/agent-replay-facets.ts`、`frontend/src/scene/reloadBar.js`。
 
 ## 当前架构形成的三条长期主线
 
