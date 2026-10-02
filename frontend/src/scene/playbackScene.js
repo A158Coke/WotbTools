@@ -2265,6 +2265,29 @@ export function initPlayback(container, store) {
     }
     buildVehicles();
     buildRoster();
+    // 实时装填相位（`DATA.reloads`，arena subtype 15/17；**仅本方全队**）→ 按 eid 归到车。
+    // 采用**逐发状态**模型（对齐客户端 OTM 的 ShellItem）：开火消耗一发、弹夹内间隔补一发、
+    // 整夹重装重填整个弹夹，故还需要本车的开火时刻。求值是纯函数（时间归并），
+    // 不做累加计时器 → seek / 拖动进度条天然正确。无相位流的车保持空数组（= 满条，不猜）。
+    {
+      const reloadByEid = groupByVehicle(DATA.reloads);
+      const firesByEid = new Map();
+      for (const s of DATA.shots || []) {
+        const eid = s.shooter_eid != null ? s.shooter_eid : s.shooter;
+        if (eid == null || !Number.isFinite(s.t_fire)) continue;
+        let a = firesByEid.get(eid);
+        if (!a) { a = []; firesByEid.set(eid, a); }
+        a.push(s.t_fire);
+      }
+      for (const a of firesByEid.values()) a.sort((x, y) => x - y);
+      for (const v of V) {
+        v.reloadEvents = reloadByEid.get(v.def.eid) || [];
+        v.reloadFires = firesByEid.get(v.def.eid) || [];
+        v.reloadSize = inferMagazineSize(v.reloadEvents);
+        v.reloadShells = null;
+        v.reloadBucket = 100;   // 与初值（满夹）一致，避免首帧无谓重绘
+      }
+    }
     buildTransientSources();   // 战斗反馈事件源（伤害/击毁）
     buildBases();   // 基地贴地标记（争霸 A–D / 单基地）
     T = DATA.meta.t_start;
