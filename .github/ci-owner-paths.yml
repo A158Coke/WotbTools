@@ -150,6 +150,9 @@ caddy:
   - 'deploy/tx/caddy.compose.yml'
   - 'deploy/tx/Caddyfile'
   - 'deploy/tx/validate-caddy-config.sh'
+  # The Komodo owner's canonical release pin. The gateway verification asserts the
+  # public Komodo route against that exact release, so it is a Caddy-owned input.
+  - 'deploy/komodo/verify.sh'
   - 'deploy/tx/assets/**'
   - '.github/workflows/ci-caddy.yml'
 alloy_tx:
