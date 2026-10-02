@@ -10,7 +10,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 /**
  * {@link DamageEvent} 攻击者/受击者身份解析（Player/Team 共用，唯一实现）。
  *
- * <p>真实 {@link com.wotb.core.replay.decoder.EntityMethodDecoder} 生成的 DamageEvent
+ * <p>已退役的服务端 EntityMethodDecoder（现由客户端投影提供）生成的 DamageEvent
  * 直填账号字段恒为 null，必须沿
  * {@link com.wotb.core.replay.event.ParticipantMappingEvent} 的 entityId→accountId 映射
  * （复用 {@link com.wotb.core.replay.processing.TeamEntityMapper} 的确定性解析）按

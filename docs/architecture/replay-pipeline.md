@@ -1,220 +1,62 @@
-# 完整回放重建（Replay Pipeline）
+# 回放管线（Replay Pipeline）
 
-> 从 `data.wotreplay` 完整扫描事件流并重建战场状态的独立能力。开发入口见 `docs/DEVELOPER_GUIDE.md`；
-> 数据字典见 `docs/reference/replay-data.md`；AI 分析数据流见 `docs/architecture/ai-review.md`。
+> **服务器没有 parser。** 唯一的回放解析器是上游 [WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent)
+> Rust Core，编译成 WASM 在浏览器 / Android WebView 里运行（版本与 sha256 锁定在 `deploy/agent/source.json`，
+> 消费契约 `contracts/agent/replay-facets-v2.md`）。对解析结果的一切计算（去重、League Rating、指标、列投影、
+> xlsx 导出、2D 回放数据）也都在客户端完成；服务端只负责存储、去重键、授权、名人堂记录与 AI 编排。
+> 迁移过程见 [client-replay-engine-migration.md](client-replay-engine-migration.md)。
 
-### 架构
+## 数据流
 
 ```text
-.wotbreplay
+.wotbreplay（用户本机，文件不上传）
     │
     ▼
-Replay archive reader (ReplayReconstructionService)
+上游 Rust Core WASM（/wasm/wotb_replay_wasm.js）
+    ├── parseResult      结算：花名册 / 胜负 / 地图 / 全员统计（毫秒级，不读包流）
+    ├── parsePlayback    时序：位姿网格 / 弹道 / 击杀 / 阶段 / 可见性 / 基地
+    ├── parseShotReplays 射击复现
+    └── parseAiReview    AI 事件流（伤害归因等）
     │
     ▼
-ReplayPacketStreamReader  (stream 包)
-    │  ├── ReplayStreamHeader 解析
-    │  ├── 从头到尾扫描所有合法包
-    │  ├── 头部版本读出（仅作为 metadata，不参与 decoder/business gate）
-    │  └── ReplayStreamDiagnostics 输出
-    │
-    ▼
-ReplayPacketDecoderRegistry  (decoder 包)
-    │  ├── ReplayPacketDecoder 接口
-    │  ├── PositionDecoder (Type 10)
-    │  ├── EntityMethodDecoder (Type 8, method0/1/4/5/8/17/20/27/29/36/38)
-    │  ├── EntityLeaveDecoder (Type 4)
-    │  ├── BattleEndDecoder (Type 14 → ReplayStreamClosedEvent，仅流关闭)
-    │  ├── EntityCreateDecoder (Type 0/1/2)
-    │  ├── MaterializationDecoder (Type 5) + MaterializationAnnouncedDecoder (Type 33)
-    │  ├── EntityPropertyDecoder (Type 7, prop2/prop3 HP)
-    │  ├── GunMarkerSizeDecoder (Type 31) / AimRayStateDecoder (Type 39)
-    │  ├── SessionDecisecondLowByteDecoder (Type 35) / AmmunitionSelectionDecoder
-    │  └── VehicleModuleCrewStateDecoder (method8 专用子型前置)
-    │
-    ▼
-BattleStateReconstructor  (reconstruction 包)
-    │  ├── BattleState (可变状态)
-    │  ├── VehicleState (每车状态)
-    │  ├── 事件 applier
-    │  └── Checkpoint (每秒/每 500 事件)
-    │
-    ▼
-ReplayReconstruction 输出
-    ├── 事件时间线
-    ├── 实体状态时间线
-    ├── stateAt(time) 查询
-    ├── ReplayCoverage
-    └── ReplayStreamDiagnostics
+frontend/src/replay-local/
+    ├── parse.worker.ts / parseReplays.ts   批量 parseResult 跑在 Web Worker，逐文件进度
+    ├── battleFacts.ts                      parseResult → Battle 事实（与已退役 Java ReplayParser 逐字段一致）
+    ├── compute/                            去重 → League Rating → 指标 → Preview 列投影
+    ├── analyzeReplays.ts                   全链路：逐文件失败隔离，0 场有效 → NoValidReplaysError
+    ├── export/                             xlsx 汇总 / 逐场 zip（exceljs、fflate 按需加载）
+    ├── playback/                           parsePlayback (+ parseAiReview 伤害) → BattlePlaybackDataset + MapOverview
+    └── submissionFacts.ts                  名人堂 / 百场 / 三环提交的结算事实
 ```
 
-### 新增/修改文件 (wotb-core)
+## 消费面
 
-**stream 包**:
+| 能力 | 入口 | 说明 |
+|---|---|---|
+| 回放工作台 · 数据 | `composables/useLocalReplayAnalysis.ts` | 选择文件 → Worker 解析 → 批次计算 → 表格；失败只显示原因，不回退服务端 |
+| 回放工作台 · 导出 | 同上 `exportExcel(mode)` | 复用最近一次分析的批次结果，客户端生成 xlsx / zip |
+| 2D 战局回放 | `components/BattlePlaybackPanel.vue` | 目标文件本机 `parseLocalPlayback`，主线程一次性解析 |
+| 3D 回放 / 射击复现 / 装甲查看 | `scene/*`、`AgentShots.vue` | 直接消费 WASM 时序 / 射击切面 |
+| 名人堂 / 百场 / 三环提交 | `utils/api.js` → `replay-local/submissionFacts.ts` | 本机解析得到 `Battle` 事实 JSON（`facts` 字段）+ 原始回放（证据附件） |
+| 账号验证 | `ProfilePage.vue` | 本机解析出录像者 accountId，提交给 `POST /api/users/wotb-account/verify-replay` |
+| Android | `useNativeReplayImport.js` | Native 只交接字节；本机分析完成后 ACK pending |
 
-- `replay/stream/RawReplayPacket.java` — 原始包 record（共享 source 数组）
-- `replay/stream/ReplayStreamHeader.java` — 流头部模型
-- `replay/stream/ReplayHeaderException.java` — 头部异常
-- `replay/stream/PacketTypeDiagnostics.java` — 类型诊断
-- `replay/stream/ReplayStreamDiagnostics.java` — 流诊断
-- `replay/stream/ReplayPacketStreamReader.java` — 流读取器
+## 服务端边界
 
-**event 包**:
+- **名人堂**（`com.wotb.web.replayfile.ClientReplayFacts`）：只做结构校验（arenaId / 录像者 / 1..64 名战斗者 /
+  账号与车辆 ID / 队伍）。无法从字节验证事实——防伪造靠管理员审核与回放附件；SHA-256 去重、`(arena_id, account_id)`
+  唯一键、准入策略（`HallOfFameBattleTypePolicy`）照旧作用于提交的事实。
+- **账号验证**：只比较提交的录像者数值 accountId 与当前绑定账号；已验证状态只用于主页徽章，不授予权限。
+- **AI 复盘**（维护中）：服务端 `ReplayFactsCodec` 只有解码方向，接收客户端投影；测试输入是冻结的
+  `common/fixtures/replay-facts/*.json.gz`。恢复 AI 复盘时基于上游 `parseAiReview` 重建投影。
 
-- `replay/event/ReplayTimestamp.java` — 双时间模型（raw + battle）
-- `replay/event/DecodeConfidence.java` — 解码置信度
-- `replay/event/ReplayEvent.java` — 领域事件接口
-- `replay/event/PositionChangedEvent.java` — 位置更新
-- `replay/event/HealthChangedEvent.java` — 血量变化
-- `replay/event/DamageEvent.java` — 伤害事件
-- `replay/event/EntityCreatedEvent.java` — 实体创建
-- `replay/event/EntityRemovedEvent.java` — 实体移除
-- `replay/event/VehicleDestroyedEvent.java` — 车辆击毁
-- `replay/event/RoundFinishedEvent.java` — 战斗结束（Avatar method4 / wrapper3 AFTERBATTLE；`ReplayStreamClosedEvent`(Type14) 只表达 stream-close）
-- `replay/event/UnknownReplayEvent.java` — 未知事件
-- `replay/event/ParticipantMappingEvent.java` — 账号映射
+## 一致性基线
 
-**decoder 包**:
+`frontend/src/replay-local/__golden__/` 保存服务端 Java 解析器 / 批次计算 / 导出 / 2D 回放在仓库 fixture 回放上的
+最后一份输出（Java 删除前生成，只读），CI 常驻断言客户端全链路与之逐字段一致（2D 时序数据按文档化的容差）。
+上游 Rust Core 升级后重新导出 `wasm-*` 文件，再跑同一组测试。
 
-- `replay/decoder/ReplayDecodeContext.java` — 解码上下文
-- `replay/decoder/DecodeStatus.java` — 解码状态
-- `replay/decoder/ReplayDecodeWarning.java` — 解码警告
-- `replay/decoder/ReplayDecodeResult.java` — 解码结果
-- `replay/decoder/ReplayPacketDecoder.java` — 解码器接口
-- `replay/decoder/ReplayPacketDecoderRegistry.java` — 解码器注册中心
-- `replay/decoder/ProtobufDecoder.java` — protobuf 解码工具
-- `replay/decoder/PositionDecoder.java` — Type 10 解码器
-- `replay/decoder/EntityMethodDecoder.java` — Type 8 解码器（damage + mapping）
-- `replay/decoder/EntityLeaveDecoder.java` — Type 4 解码器
-- `replay/decoder/BattleEndDecoder.java` — Type 14 解码器
-- `replay/decoder/EntityCreateDecoder.java` — Type 0/1/2 解码器
-- `replay/decoder/EntityPropertyDecoder.java` — Type 7 解码器（占位）
-- `replay/decoder/PlaceholderDecoder.java` — 占位解码器（Type 5/31/35/39）
+## 缺字段怎么办
 
-**reconstruction 包**:
-
-- `replay/reconstruction/LifeState.java` — 存活状态枚举
-- `replay/reconstruction/ObservationState.java` — 观测状态枚举
-- `replay/reconstruction/BattleLifecycle.java` — 战斗阶段枚举
-- `replay/reconstruction/Vector3.java` — 三维向量
-- `replay/reconstruction/Rotation.java` — 三维旋转
-- `replay/reconstruction/VehicleState.java` — 车辆状态
-- `replay/reconstruction/BattleState.java` — 可变战场状态
-- `replay/reconstruction/BattleStateSnapshot.java` — 不可变快照
-- `replay/reconstruction/BattleStateCheckpoint.java` — 检查点
-- `replay/reconstruction/BattleParticipant.java` — 参与者
-- `replay/reconstruction/ReplayMetadata.java` — 回放元数据
-- `replay/reconstruction/ReplayCoverage.java` — 覆盖率
-- `replay/reconstruction/ReplayReconstruction.java` — 重建结果
-- `replay/reconstruction/BattleStateReconstructor.java` — 状态重建器
-- `replay/reconstruction/ReplayReconstructionService.java` — 服务编排
-
-### 修改文件 (wotb-web)
-
-- `config/SecurityConfig.java` — `/api/replay/analyze`、`/reconstruct-batch`、`/process` 需 `wotbtools-user` 或 `wotbtools-admin`
-- `replay/controller/ReconstructionController.java` — 新建 controller
-
-> 2026-07 更新：`POST /api/replay/reconstruct` 与 `POST /api/replay/state-at` 两个端点已随前端简化一并移除
-> （`ReconstructSummary` / `StateAtResponse` DTO 和 `ReplayReconstructionService.stateAt()` 同时删除）。
-> 重建能力保留在 core，由 `/api/replay/analyze` 在内部调用；`BattleStateReconstructor.stateAt(...)` 仍是 core 公共 API。
-> 下文对这两个端点的请求/响应示例仅作历史记录。
->
-> 2026-09 更新：AI Review 已拆为独立无状态 `ai-service`（`POST /api/ai/reviews`，经 TX `/api/ai/**` 私网反代）。
-> Business Backend 的 `/api/replay/analyze` 端点、`ReplaySseWriter` 与 `AiReplayReviewService` 已移除，
-> AI 不再消费 Processing Dataset（`ai-facts.json` / `processingJobId` / `sourceId` 退出 AI 链路）。
-> 重建能力仍保留在 core，现由回放 dataset 路径（`/api/replay/map-overview`、`battle-playback-v2`）消费。
-
-### 测试文件
-
-- `replay/stream/ReplayPacketStreamReaderTest.java` — 流读取单元测试
-
-### 已支持的 packet type
-
-| Type | 含义                   | 解码状态          | 说明                       |
-|------|----------------------|---------------|--------------------------|
-| 0    | BasePlayerCreate     | PARTIAL       | 实体创建，payload 格式待深度解析     |
-| 1    | CellCreate           | PARTIAL       | 同上                       |
-| 2    | Control/PlayerCreate | PARTIAL       | 同上                       |
-| 4    | EntityLeave          | EXACT         | entityId 精确提取            |
-| 8    | EntityMethod         | EXACT         | damage + updateArena2 映射 |
-| 10   | Position             | EXACT         | 完整位置解析，NaN/Infinity 验证   |
-| 14   | StreamClose         | EXACT         | data.wotreplay 流关闭（ReplayStreamClosedEvent） |
-
-### 部分支持的 packet type
-
-| Type | 含义                 | 状态      | 说明                |
-|------|--------------------|---------|-------------------|
-| 7    | EntityProperty     | EXACT   | propId=3 当前 HP / propId=2 炮塔方向（已证明） |
-| 5    | Materialization    | EXACT/PARTIAL | Type 5 实体物化（payload 长度门禁，非 Spotting） |
-| 31   | GunMarkerSize      | EXACT   | 炮口大小（closed semantics 需局部 evidence） |
-| 35   | SessionDecisecond  | EXACT   | 秒级 decisecond 低字节（已证明） |
-| 39   | AimRayState        | EXACT   | 瞄准射线状态（method36 protobuf） |
-
-### 尚未支持的 packet type
-
-11 (EntityMethod 未知), 23 (Game-specific), 29 (Game-specific), 32 (Game-specific), 以及其他未观察到的类型。
-
-### 时间模型
-
-- `rawClockSec` — 来自 `data.wotreplay` 的原始时钟，永久保留
-- `battleClockSec` — 战斗相对时间（= raw - battleStartRawClockSec）
-- 战斗开始时刻识别：由 `BattleStartResolver` 完成，返回 IDENTIFIED / ESTIMATED / UNRESOLVED；`battleClockSec` 通过 `battleRelative(rawClock)` 计算
-
-### 450 秒限制
-
-- 默认 `maxClockSec=450`, `clockToleranceSec=5`
-- 允许范围 = 0 ~ 455 秒
-- 超出时返回 `REPLAY_DURATION_EXCEEDED`
-- 不 clamp、不修改事件时间
-
-### 状态查询
-
-```java
-BattleStateSnapshot stateAt(float rawClockSec, List<ReplayEvent>, List<BattleStateCheckpoint>);
-```
-
-- 默认 checkpoint 间隔 1 秒 或 500 事件
-- 查询时从最近 checkpoint 恢复后继续应用事件
-- 同一回放同一时间产生确定性一致结果
-
-### 位置查询
-
-- 默认使用最后一次已知位置
-- 不默认线性插值
-- 敌人失去数据更新后保留 `lastKnownPosition`，标记 `STALE`
-
-### API 接口
-
-```http
-POST /api/replay/reconstruct
-Content-Type: multipart/form-data
-Body: file=<单个 .wotbreplay>
-```
-
-默认响应（摘要）：
-
-```json
-{
-  "battleDurationSec": 327.42,
-  "battleStartRawClockSec": null,
-  "packetCount": 98341,
-  "decodedPacketCount": 52100,
-  "participantCount": 14,
-  "entityCount": 16,
-  "eventCount": 48322,
-  "checkpointCount": 328,
-  "finalState": {},
-  "coverage": {},
-  "diagnostics": {}
-}
-```
-
-状态查询：
-
-```http
-POST /api/replay/state-at?time=135.5
-Content-Type: multipart/form-data
-Body: file=<单个 .wotbreplay>
-```
-
----
+后端或前端需要的回放字段，一律向上游 Rust Core 要（直接改上游、发版、升级 `deploy/agent/source.json`），
+不在客户端启发式推导，也不在服务端解析。已知待补项见 [client-replay-engine-migration.md](client-replay-engine-migration.md)。
