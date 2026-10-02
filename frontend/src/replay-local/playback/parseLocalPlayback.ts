@@ -1,6 +1,8 @@
 /**
- * 2D 战局回放的本地数据入口：.wotbreplay → 上游 WASM（parseResult + parsePlayback + parseAiReview
- * 的伤害事件）→ `BattlePlaybackDataset` + `MapOverview`。文件不出本机，服务器不参与。
+ * 2D 战局回放的本地数据入口：.wotbreplay → 上游 WASM（parseResult + parsePlayback + parseAiReview）
+ * → WotbTools canonical facts → `BattlePlaybackDataset` + `MapOverview`。文件不出本机，服务器不参与。
+ * 三个切面缺一不可：AiReview 承载血量 / 归属 / 终态的原始证据，失败即整体失败（fail closed，
+ * 不退化成弱证据归因）。
  *
  * 在主线程跑（与 3D `AgentReplay3D` 同一装载器 `loadAgentWasm`）；单场解析是一次性成本，
  * 不需要 Worker。返回值与服务端 `fetchBattlePlaybackDataset` / `fetchMapOverviewArtifact`
@@ -15,7 +17,7 @@ import {
 } from '../../api/agent-replay-facets.js'
 import type { BattlePlaybackDataset } from '../../types/playback-v2.js'
 import { loadTankopedia, type Tankopedia } from '../compute/tankopedia.js'
-import { damageEventsFromAiReview, toBattlePlaybackDataset, type AgentDamageEvent } from './toBattlePlaybackDataset.js'
+import { toBattlePlaybackDataset } from './toBattlePlaybackDataset.js'
 import { indexMapGridProfiles, toMapOverview, type LocalMapOverview, type MapGridProfile } from './toMapOverview.js'
 
 export interface LocalPlayback {
@@ -59,15 +61,9 @@ export async function parseLocalPlayback(
   const tankopedia = options.tankopedia ?? await tankopediaPromise!
   const result = await parseAgentResultFromBytes(bytes)
   const playback = await parseAgentPlaybackFromBytes(bytes)
-  // 伤害归因流只在 AiReview 入口（PlaybackData v2 未携带）；失败不阻断回放，退化为 shots[] 归因
-  let damageEvents: AgentDamageEvent[] | null = null
-  try {
-    damageEvents = damageEventsFromAiReview(await parseAgentAiReviewFromBytes(bytes))
-  } catch {
-    damageEvents = null
-  }
-  const dataset = toBattlePlaybackDataset(playback, result, {
-    tankopedia, damageEvents, sampleStepSec: options.sampleStepSec,
+  const aiReview = await parseAgentAiReviewFromBytes(bytes)
+  const dataset = toBattlePlaybackDataset(playback, result, aiReview, {
+    tankopedia, sampleStepSec: options.sampleStepSec,
   })
   const overview = dataset ? toMapOverview(dataset, mapProfiles(), result) : null
   return { dataset, overview, result }

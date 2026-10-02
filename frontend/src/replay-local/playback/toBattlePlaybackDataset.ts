@@ -1,18 +1,24 @@
 /**
- * 上游 Rust Core `parsePlayback`（PlaybackData v2）+ `parseResult`（BattleResult）→ 2D 战局回放
- * 消费的 `BattlePlaybackDataset`（`contracts/http/openapi.yaml`，与服务端 battle-playback-v2 同形状）。
+ * WotbTools canonical replay facts（`replay-local/canonical`）+ 上游 PlaybackData 位姿网格 →
+ * 2D 战局回放消费的 `BattlePlaybackDataset`（`contracts/http/openapi.yaml`）。
  *
- * 纯投影：不读字节、不推断协议语义。每一步对应 Java `BattlePlaybackProjector` /
- * `BattleTimelineBuilder` / `PlaybackCombatReconstruction` 的同名规则（注释标注出处），
- * 时间轴口径与 Java 一致：`timeSec = 原始时钟 − 战斗开始（period 3 时钟）`，`[0, durationSec]`。
+ * 纯投影，语义逐条对应已退役 Java `BattlePlaybackProjector` / `BattleTimelineBuilder.frameVehicle`：
+ *  - 位置 / 朝向：t 处于 AoI 观测段 [observedFrom, absentFrom) 且位置样本来自本段 → OBSERVED/CURRENT；
+ *    否则沿用最后一次位置 → LAST_KNOWN（不插值、不前进）；从未有位置 → 无样本；
+ *  - 血量：canonical 血量采样（prop3 + 每次物化快照）；哨兵 = 血量未知，不改写为 0、不产生迁移；
+ *    友方开局 = 结算血量（HIGH），敌方开局 = 车辆库血量（MEDIUM、临时），首个回放血量后永久回放权威；
+ *  - 掉血 / 归属 / 击杀者：canonical combat（method8 直击 = 证据，其它变体 = 冲突，fail-closed）；
+ *  - 生命：prop3 alive=false（终态）→ DESTROYED；可信血量 / alive → ALIVE；
+ *  - limitations：映射 / 时钟 / 车辆轨迹缺失 + 视角未解析 / 回放在战斗结束前截断（缺证据即 PARTIAL）。
  *
- * 与 Java 的已知差异（golden 测试量化，见 `playback.golden.test.ts`）：
- *  - Java 帧是 1 Hz 整秒采样；这里直接用上游 0.1 s 网格（按 `sampleStepSec` 抽样），段起止精确到网格；
- *  - DESTROYED/KILL 的击杀者取上游 `kills[]`（服务器击杀流），Java 由致命掉血窗口内唯一命中者推导；
- *  - 命中归因用上游 `shots[]`（`target_eid` 在案 = 命中），Java 用 method8 VehicleHitEvent。
+ * 与 Java 的已知口径差异（`playback.golden.test.ts` 逐项固定，`docs/features/battle-playback.md` 记录）：
+ *  - Java 帧是 1 Hz 整秒；这里位姿按 battle-relative `sampleStepSec` 对齐采样（默认 0.5 s，含整秒与
+ *    durationSec 终点），血量 / 生命迁移用事件精确时刻（Java 量化到下一整秒帧）；
+ *  - 位置来自上游渲染滤波网格（0.1 s），Java 取整秒前最后一个原始位置包。
  */
 
 import type {
+  AgentAiReviewFacet,
   AgentBattleResult,
   AgentPlaybackFacet,
   AgentResultPlayer,
@@ -27,137 +33,51 @@ import type {
   HealthTransition,
   LifeTransition,
   ModuleCrewTransition,
-  OrientationSegment,
   OrientationSample,
+  OrientationSegment,
   PlaybackConfidence,
   PointsSample,
-  PositionSegment,
   PositionSample,
+  PositionSegment,
   VehicleBattleLoadout,
   VehiclePlaybackTrack,
 } from '../../types/playback-v2.js'
+import {
+  buildCanonicalReplayFacts,
+  displayCapacityAt,
+  EPS,
+  lastHpSampleAtOrBefore,
+  lastPoseIndexAtOrBefore,
+  observationAt,
+  resolveReplayClock,
+  type CanonicalReplayFacts,
+  type ReplayClock,
+} from '../canonical/facts.js'
 import type { Tankopedia } from '../compute/tankopedia.js'
 import { consumableItemId, consumableStateName, provisionItemId } from './itemCodes.js'
 
 export interface ToDatasetOptions {
   /** 车辆库（车名/车种/等级/敌方开局血量）；缺省时车名回退结算名、车种「未知」、等级 null、敌方无开局种子 */
   tankopedia?: Tankopedia | null
-  /** 位置/朝向采样间隔（秒，取上游网格整数倍；默认 0.5） */
+  /** 位姿采样间隔（秒，battle-relative 对齐；默认 0.5，须整除 1 才含全部整秒帧） */
   sampleStepSec?: number
-  /**
-   * 伤害归因事件（上游 `parseAiReview` 的 `events[type=damage]`：服务器下发的受击方/来源实体）。
-   * PlaybackData v2 不含这条流；缺省时退化为 `shots[]`（他人宽松路径解不出 target 的命中会丢归因）。
-   */
-  damageEvents?: readonly AgentDamageEvent[] | null
 }
 
-/** `parseAiReview` 事件流里的伤害事件（t = 原始时钟；source_eid 缺省 = 来源未知）。 */
-export interface AgentDamageEvent {
-  t: number
-  victim_eid: number
-  source_eid?: number | null
-}
+/** 2D 投影新增的显式降级（Java 当年静默）：见 `docs/features/battle-playback.md` */
+export const PERSPECTIVE_TEAM_UNRESOLVED = 'PERSPECTIVE_TEAM_UNRESOLVED'
+export const REPLAY_STREAM_TRUNCATED = 'REPLAY_STREAM_TRUNCATED'
 
-/** 从 `parseAiReview` 输出里取伤害事件（形状不符的条目跳过）。 */
-export function damageEventsFromAiReview(aiReview: unknown): AgentDamageEvent[] {
-  const events = (aiReview as { events?: unknown } | null)?.events
-  if (!Array.isArray(events)) return []
-  return events.filter((e): e is AgentDamageEvent => !!e && typeof e === 'object'
-    && (e as { type?: unknown }).type === 'damage'
-    && typeof (e as AgentDamageEvent).t === 'number' && typeof (e as AgentDamageEvent).victim_eid === 'number')
-    .map((e) => ({ t: e.t, victim_eid: e.victim_eid, source_eid: typeof e.source_eid === 'number' ? e.source_eid : null }))
-}
-
-/** Java `BattleTimelineBuilder.MAX_BATTLE_DURATION_SEC`。 */
-const MAX_BATTLE_DURATION_SEC = 420
-const EPS = 1e-6
 const BASE_IDS = ['A', 'B', 'C', 'D'] as const
 
-// ---------- 时间轴 ----------
+// ---------- 时间轴（兼容出口：时钟规则在 canonical 层） ----------
 
-export interface PlaybackClock {
-  /** 战斗开始的原始时钟（period 3 = BATTLE） */
-  startRaw: number
-  durationSec: number
-  /** 战斗开始无 period 3 广播、按结算时长反推 */
-  estimated: boolean
-}
+export type PlaybackClock = ReplayClock
 
-/**
- * 战斗开始 + 时长（Java `BattleTimelineBuilder.resolveClock / resolveDurationSec` 同优先级）：
- * 时长 ① 结算 root5（cap 420）② RoundFinished（period 4）− 开始 ③ meta battleDuration（cap 420）
- * ④ 上游流末时钟 − 开始。
- */
 export function resolvePlaybackClock(pb: AgentPlaybackFacet, result?: AgentBattleResult | null): PlaybackClock | null {
-  const battleStart = pb.periods.find((p) => p.period === 3)
-  const roundFinished = pb.periods.find((p) => p.period === 4)
-  const settlement = positive(result?.result_duration_secs)
-  let startRaw: number
-  let estimated = false
-  if (battleStart && Number.isFinite(battleStart.clock)) {
-    startRaw = battleStart.clock
-  } else if (roundFinished && settlement !== null) {
-    startRaw = roundFinished.clock - settlement
-    estimated = true
-  } else {
-    return null
-  }
-  let durationSec: number | null = null
-  if (settlement !== null) durationSec = Math.min(settlement, MAX_BATTLE_DURATION_SEC)
-  else if (roundFinished && roundFinished.clock - startRaw > 0) durationSec = roundFinished.clock - startRaw
-  else if (positive(result?.battle_duration_secs) !== null) {
-    durationSec = Math.min(result!.battle_duration_secs, MAX_BATTLE_DURATION_SEC)
-  } else if (pb.meta.duration - startRaw > 0) durationSec = Math.min(pb.meta.duration - startRaw, MAX_BATTLE_DURATION_SEC)
-  if (durationSec === null || !(durationSec > 0)) return null
-  return { startRaw, durationSec, estimated }
+  return resolveReplayClock(pb.periods, result, pb.meta.duration)
 }
 
-function positive(v: unknown): number | null {
-  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
-}
-
-// ---------- 车辆窗口（AoI 可见性 / 位置覆盖） ----------
-
-interface Window { from: number; to: number }
-
-interface VehicleContext {
-  vehicles: AgentVehicleTrack[]
-  /** AoI 观测段（battle-relative；未关闭 = +∞） */
-  aoi: Window[]
-  /** 已关闭 AoI 段的离开时刻（battle-relative） */
-  aoiCloses: number[]
-  deathSec: number | null
-}
-
-function rel(raw: number, clock: PlaybackClock): number {
-  return raw - clock.startRaw
-}
-
-function pairs(flat: number[] | undefined, clock: PlaybackClock): Window[] {
-  const out: Window[] = []
-  if (!flat) return out
-  for (let i = 0; i + 1 < flat.length; i += 2) out.push({ from: rel(flat[i], clock), to: rel(flat[i + 1], clock) })
-  return out
-}
-
-function inWindows(windows: Window[], t: number): Window | null {
-  for (const w of windows) if (t >= w.from - EPS && t <= w.to + EPS) return w
-  return null
-}
-
-// ---------- 采样网格 ----------
-
-interface Grid { t0: number; step: number; samples: number }
-
-function gridOf(pb: AgentPlaybackFacet): Grid {
-  const { t_start: t0, samples, duration } = pb.meta
-  const step = samples > 1 ? (duration - t0) / (samples - 1) : 0.1
-  return { t0, step: step > 0 ? step : 0.1, samples }
-}
-
-function gridIndex(grid: Grid, raw: number): number {
-  return Math.round((raw - grid.t0) / grid.step)
-}
+// ---------- 采样 ----------
 
 function normDeg(deg: number): number {
   let d = ((deg + 180) % 360 + 360) % 360 - 180
@@ -167,9 +87,19 @@ function normDeg(deg: number): number {
 
 const RAD2DEG = 180 / Math.PI
 
+/** battle-relative 对齐的采样时刻：k·step（k = 0..⌊duration/step⌋）+ durationSec 终点 */
+function sampleTimes(durationSec: number, stepSec: number): number[] {
+  const out: number[] = []
+  const n = Math.floor(durationSec / stepSec + EPS)
+  for (let k = 0; k <= n; k++) out.push(Number((k * stepSec).toFixed(6)))
+  if (durationSec - out[out.length - 1] > EPS) out.push(durationSec)
+  return out
+}
+
 interface PoseSample {
   t: number
-  observed: boolean
+  /** 位置观测时刻（battle-relative；原始 type=10 包） */
+  observedAt: number
   x: number
   y: number
   hull: number | null
@@ -177,62 +107,45 @@ interface PoseSample {
 }
 
 /**
- * 位姿采样（Java `BattleTimelineBuilder.frameVehicle` 规则）：t 落在 AoI 观测段且该段内已有位置数据
- * → OBSERVED/CURRENT，否则沿用最后一次位置 → LAST_KNOWN；从未有位置 → 无样本。
- * 位置数据只取覆盖段内的网格值（段外不信网格值，保持最后覆盖值）。
+ * 单个实体的位姿采样（Java `lastPositionAtOrBefore` / `lastTurretAtOrBefore`）：位置事实 = 上游原始
+ * type=10 世界位姿观测（不是渲染滤波网格——AoI 重入后网格有收敛滞后），采样值取 ≤ t 的最后一个观测；
+ * 从未有位置 → 无样本。车体偏航取同一位姿包，炮塔相对偏航取 ≤ t 的最后一个 prop2。
  */
-function poseSamples(ctx: VehicleContext, grid: Grid, clock: PlaybackClock, stepSec: number): PoseSample[] {
+function poseSamplesOf(facts: CanonicalReplayFacts, entityId: number, times: number[]): PoseSample[] {
+  const pose = facts.poses.get(entityId)
+  const turret = facts.turrets.get(entityId)
   const out: PoseSample[] = []
-  const stride = Math.max(1, Math.round(stepSec / grid.step))
-  let last: Omit<PoseSample, 't' | 'observed'> | null = null
-  let lastFrom = Number.NEGATIVE_INFINITY // 最后一次位置数据的时间（battle-relative）
-  // 从开战前的最后一个网格点起逐点推进（开战前位置是 t=0 帧的合法 carry-forward）
-  const firstIdx = 0
-  const lastIdx = Math.min(grid.samples - 1, gridIndex(grid, clock.startRaw + clock.durationSec))
-  const startIdx = Math.max(0, Math.ceil((clock.startRaw - grid.t0) / grid.step - EPS))
-  const v = ctx.vehicles.map((vehicle) => ({ vehicle, coverage: pairs(vehicle.coverage, clock) }))
-  for (let i = firstIdx; i <= lastIdx; i++) {
-    const t = rel(grid.t0 + i * grid.step, clock)
-    for (const { vehicle, coverage } of v) {
-      if (!inWindows(coverage, t)) continue
-      const x = vehicle.pos[3 * i]
-      const z = vehicle.pos[3 * i + 2]
-      if (!Number.isFinite(x) || !Number.isFinite(z)) continue
-      const hullRad = vehicle.hull_yaw[i]
-      const turretRad = vehicle.turret_yaw[i]
-      const hull = Number.isFinite(hullRad) ? normDeg(hullRad * RAD2DEG) : null
-      const turretRel = hull !== null && Number.isFinite(turretRad)
-        ? normDeg(turretRad * RAD2DEG - hullRad * RAD2DEG) : null
-      last = { x, y: z, hull, turretRel }
-      lastFrom = t
-      break
-    }
-    if (i < startIdx || last === null) continue
-    const atStep = (i - startIdx) % stride === 0 || i === lastIdx
-    if (!atStep) continue
-    const w = inWindows(ctx.aoi, t)
-    const observed = w !== null && lastFrom >= w.from - EPS
-    out.push({ t: Math.max(0, t), observed, ...last })
+  for (const t of times) {
+    const i = lastPoseIndexAtOrBefore(pose, t)
+    if (i < 0 || !pose) continue
+    const x = pose.x[i], z = pose.z[i]
+    if (!Number.isFinite(x) || !Number.isFinite(z)) continue
+    const hull = Number.isFinite(pose.yaw[i]) ? normDeg(pose.yaw[i] * RAD2DEG) : null
+    const ti = lastPoseIndexAtOrBefore(turret, t)
+    out.push({
+      t, observedAt: pose.t[i], x, y: z, hull,
+      turretRel: hull !== null && ti >= 0 && turret ? normDeg(turret.relYawDeg[ti]) : null,
+    })
   }
   return out
 }
 
-function positionSegments(samples: PoseSample[]): PositionSegment[] {
+/** Java frameVehicle：观测段内且位置来自本段 → CURRENT，否则 LAST_KNOWN */
+function isCurrent(facts: CanonicalReplayFacts, entityId: number, t: number, observedAt: number): boolean {
+  const w = observationAt(facts, entityId, t)
+  return w !== null && observedAt >= w.fromSec - 1e-9
+}
+
+function positionSegments(facts: CanonicalReplayFacts, entityId: number, samples: PoseSample[]): PositionSegment[] {
   const out: PositionSegment[] = []
   let cur: PositionSample[] = []
   let knowledge: 'OBSERVED' | 'LAST_KNOWN' | null = null
   const flush = () => {
     if (cur.length === 0 || knowledge === null) return
-    out.push({
-      startSec: cur[0].timeSec,
-      endSec: cur[cur.length - 1].timeSec,
-      knowledge,
-      interpolationAllowed: knowledge === 'OBSERVED',
-      samples: cur,
-    })
+    out.push({ startSec: cur[0].timeSec, endSec: cur[cur.length - 1].timeSec, knowledge, interpolationAllowed: knowledge === 'OBSERVED', samples: cur })
   }
   for (const s of samples) {
-    const next = s.observed ? 'OBSERVED' : 'LAST_KNOWN'
+    const next = isCurrent(facts, entityId, s.t, s.observedAt) ? 'OBSERVED' : 'LAST_KNOWN'
     if (knowledge !== null && knowledge !== next) {
       flush()
       cur = []
@@ -244,7 +157,7 @@ function positionSegments(samples: PoseSample[]): PositionSegment[] {
   return out
 }
 
-function orientationSegments(samples: PoseSample[]): OrientationSegment[] {
+function orientationSegments(facts: CanonicalReplayFacts, entityId: number, samples: PoseSample[]): OrientationSegment[] {
   const out: OrientationSegment[] = []
   let cur: OrientationSample[] = []
   let knowledge: 'CURRENT' | 'LAST_KNOWN' | null = null
@@ -259,7 +172,7 @@ function orientationSegments(samples: PoseSample[]): OrientationSegment[] {
       knowledge = null
       continue
     }
-    const next = s.observed ? 'CURRENT' : 'LAST_KNOWN'
+    const next = isCurrent(facts, entityId, s.t, s.observedAt) ? 'CURRENT' : 'LAST_KNOWN'
     if (knowledge !== null && knowledge !== next) {
       flush()
       cur = []
@@ -271,16 +184,7 @@ function orientationSegments(samples: PoseSample[]): OrientationSegment[] {
   return out
 }
 
-// ---------- 血量 ----------
-
-interface HpPoint { t: number; hp: number }
-
-/** 账号的血量样本（battle-relative，升序；含开战前样本）。 */
-function hpPoints(ctx: VehicleContext, clock: PlaybackClock): HpPoint[] {
-  const out: HpPoint[] = []
-  for (const v of ctx.vehicles) for (const [raw, hp] of v.hp) out.push({ t: rel(raw, clock), hp })
-  return out.sort((a, b) => a.t - b.t)
-}
+// ---------- 血量 / 生命（Java healthTransitions / lifeTransitions，事件精确时刻） ----------
 
 /** Java `ReplayHpTimeline.settlementInitialHp`：结算剩余血量（signed field1）+ 承受伤害。 */
 export function settlementInitialHp(player: AgentResultPlayer | undefined): number | null {
@@ -291,66 +195,60 @@ export function settlementInitialHp(player: AgentResultPlayer | undefined): numb
   return Math.max(left ?? 0, 0) + Math.max(received, 0)
 }
 
-/**
- * Java `BattlePlaybackProjector.healthTransitions`：友方开局 = 结算血量（HIGH），敌方开局 =
- * 车辆库血量（MEDIUM，临时）；之后每个回放血量样本 → CURRENT（AoI 观测段内）/ LAST_KNOWN，
- * AoI 关闭时刻降为 LAST_KNOWN。容量：友方 = 开局血量，敌方 = 截至 t 的观测最大值。
- */
+/** 账号在 t 的活动实体（Java `vehicleInAny`：首个已出现的实体） */
+function activeEntityAt(facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number>, t: number): number | null {
+  for (const id of entityIds) {
+    const first = firstSeen.get(id)
+    if (first !== undefined && first <= t + 1e-9) return id
+  }
+  return null
+}
+
+/** 状态可能变化的时刻：血量采样、观测段起止、0（开战前事实并入 t=0） */
+function changePoints(facts: CanonicalReplayFacts, entityIds: number[], durationSec: number): number[] {
+  const set = new Set<number>([0])
+  for (const id of entityIds) {
+    for (const s of facts.hpSamples.get(id) ?? []) set.add(Math.max(0, s.t))
+    for (const w of facts.observation.get(id) ?? []) {
+      set.add(Math.max(0, w.fromSec))
+      if (w.toSec !== null) set.add(Math.max(0, w.toSec))
+    }
+  }
+  return [...set].filter((t) => t <= durationSec + EPS).sort((a, b) => a - b)
+}
+
 function healthTransitions(
-  ctx: VehicleContext, points: HpPoint[], clock: PlaybackClock, friendly: boolean, openingSeed: number | null,
+  facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number>, durationSec: number,
+  friendly: boolean, openingSeed: number | null,
 ): HealthTransition[] {
   const out: HealthTransition[] = []
   let previous: HealthTransition | null = null
   if (openingSeed !== null && openingSeed > 0) {
     previous = {
-      timeSec: 0,
-      currentHp: openingSeed,
-      knowledge: 'CURRENT',
+      timeSec: 0, currentHp: openingSeed, knowledge: 'CURRENT',
       source: friendly ? 'SETTLEMENT_OPENING_HP_EXACT' : 'TANKOPEDIA_BASE_PROVISIONAL',
-      displayCapacityHp: openingSeed,
-      relativeFull: false,
-      confidence: friendly ? 'HIGH' : 'MEDIUM',
+      displayCapacityHp: openingSeed, relativeFull: false, confidence: friendly ? 'HIGH' : 'MEDIUM',
     }
     out.push(previous)
   }
-  // 事件：血量样本（开战前的并入 t=0）+ AoI 关闭
-  type Ev = { t: number; hp?: number; close?: boolean }
-  const events: Ev[] = []
-  let preBattle: HpPoint | null = null
-  for (const p of points) {
-    if (p.t < 0) preBattle = p
-    else if (p.t <= clock.durationSec + EPS) events.push({ t: p.t, hp: p.hp })
-  }
-  if (preBattle && !events.some((e) => e.t <= EPS)) events.unshift({ t: 0, hp: preBattle.hp })
-  for (const close of ctx.aoiCloses) {
-    if (close >= 0 && close <= clock.durationSec + EPS) events.push({ t: close, close: true })
-  }
-  events.sort((a, b) => a.t - b.t || (a.close ? 1 : 0) - (b.close ? 1 : 0))
-
-  let maxSeen = 0
-  for (const p of points) if (p.t < 0 && p.hp > maxSeen) maxSeen = p.hp
-  let currentHp: number | null = null
-  let lastSampleT = Number.NEGATIVE_INFINITY
-  let capacity: number | null = null
-  for (const e of events) {
-    if (e.hp !== undefined) {
-      currentHp = e.hp
-      lastSampleT = e.t
-      if (e.hp > maxSeen) maxSeen = e.hp
-    }
-    if (currentHp === null) continue
-    const w = e.close ? null : inWindows(ctx.aoi, e.t)
-    const current = w !== null && lastSampleT >= w.from - EPS
-    if (friendly) capacity = openingSeed !== null && openingSeed > 0 ? openingSeed : (maxSeen > 0 ? maxSeen : currentHp)
-    else if (maxSeen > 0) capacity = maxSeen
+  let replayCapacity: number | null = null
+  for (const t of changePoints(facts, entityIds, durationSec)) {
+    const eid = activeEntityAt(facts, entityIds, firstSeen, t)
+    if (eid === null) continue
+    const sample = lastHpSampleAtOrBefore(facts, eid, t)
+    // 无可信血量（未观测 / 哨兵）= 保持上一 canonical 状态；绝不回落到车辆库种子
+    if (!sample || sample.hp === null) continue
+    const capacity = displayCapacityAt(facts, eid, t)
+    if (friendly) replayCapacity = openingSeed !== null && openingSeed > 0 ? openingSeed : capacity ?? sample.hp
+    else if (capacity !== null && capacity > 0) replayCapacity = capacity
     const next: HealthTransition = {
-      timeSec: e.t,
-      currentHp,
-      knowledge: current ? 'CURRENT' : 'LAST_KNOWN',
-      source: 'EXACT_BATTLE_EVENT',
-      displayCapacityHp: capacity,
+      timeSec: t,
+      currentHp: sample.hp,
+      knowledge: isCurrent(facts, eid, t, sample.t) ? 'CURRENT' : 'LAST_KNOWN',
+      source: sample.exact ? 'EXACT_BATTLE_EVENT' : 'INFERRED',
+      displayCapacityHp: replayCapacity,
       relativeFull: false,
-      confidence: 'HIGH',
+      confidence: sample.exact ? 'HIGH' : 'MEDIUM',
     }
     if (!sameHealth(previous, next)) {
       out.push(next)
@@ -365,74 +263,29 @@ function sameHealth(a: HealthTransition | null, b: HealthTransition): boolean {
     && a.displayCapacityHp === b.displayCapacityHp && a.relativeFull === b.relativeFull && a.confidence === b.confidence
 }
 
-/** 生命状态：首个回放血量（>0）→ ALIVE；上游 death_t → DESTROYED（destroyedKnownAtSec 同刻）。 */
-function lifeTransitions(ctx: VehicleContext, points: HpPoint[], clock: PlaybackClock): LifeTransition[] {
+/** Java frameVehicle lifeState：prop3 alive=false（终态，EXACT）→ DESTROYED；可信血量 / alive → ALIVE */
+function lifeTransitions(
+  facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number>, durationSec: number,
+): LifeTransition[] {
   const out: LifeTransition[] = []
-  const firstAlive = points.find((p) => p.hp > 0 && p.t <= clock.durationSec + EPS)
-  const death = ctx.deathSec
-  if (firstAlive && (death === null || firstAlive.t < death)) {
-    out.push({ timeSec: Math.max(0, firstAlive.t), lifeState: 'ALIVE', destroyedKnownAtSec: null })
-  }
-  if (death !== null && death >= 0 && death <= clock.durationSec + EPS) {
-    out.push({ timeSec: death, lifeState: 'DESTROYED', destroyedKnownAtSec: death })
-  }
-  return out
-}
-
-// ---------- 掉血（Java PlaybackCombatReconstruction.deriveLosses） ----------
-
-interface Loss {
-  fromSec: number
-  toSec: number
-  hpLoss: number
-  attackerAccountId: number | null
-  attackerReliable: boolean
-  damageEventCount: number
-  fromHp: number
-  toHp: number
-}
-
-function collapseSameClock(points: HpPoint[]): HpPoint[] {
-  const out: HpPoint[] = []
-  let i = 0
-  while (i < points.length) {
-    const { t, hp } = points[i]
-    let conflict = false
-    let j = i + 1
-    while (j < points.length && Math.abs(points[j].t - t) <= EPS) {
-      if (points[j].hp !== hp) conflict = true
-      j++
+  let previous: LifeTransition | null = null
+  for (const t of changePoints(facts, entityIds, durationSec)) {
+    const eid = activeEntityAt(facts, entityIds, firstSeen, t)
+    if (eid === null) continue
+    let destroyedAt: number | null = null
+    for (const s of facts.hpSamples.get(eid) ?? []) {
+      if (s.t > t) break
+      if (s.kind === 'PROP3' && s.exact && s.alive === false) destroyedAt = s.t
     }
-    if (!conflict) out.push({ t, hp })
-    i = j
-  }
-  return out
-}
-
-function deriveLosses(points: HpPoint[], hits: Array<{ t: number; attacker: number }>, clock: PlaybackClock): Loss[] {
-  const list = collapseSameClock(points.filter((p) => p.t >= 0 && p.t <= clock.durationSec + EPS))
-  const out: Loss[] = []
-  for (let i = 1; i < list.length; i++) {
-    const prev = list[i - 1]
-    const cur = list[i]
-    if (prev.hp <= 0 || cur.hp >= prev.hp) continue
-    let sole: number | null = null
-    let inWindow = 0
-    let mixed = false
-    for (const h of hits) {
-      if (h.t > prev.t + EPS && h.t <= cur.t + EPS) {
-        inWindow++
-        if (h.attacker <= 0) mixed = true
-        else if (sole === null) sole = h.attacker
-        else if (sole !== h.attacker) mixed = true
-      }
+    const sample = lastHpSampleAtOrBefore(facts, eid, t)
+    const lifeState = destroyedAt !== null ? 'DESTROYED'
+      : sample && (sample.alive === true || (sample.hp !== null && sample.hp > 0)) ? 'ALIVE' : null
+    if (lifeState === null) continue
+    const next: LifeTransition = { timeSec: t, lifeState, destroyedKnownAtSec: destroyedAt }
+    if (!previous || previous.lifeState !== next.lifeState || previous.destroyedKnownAtSec !== next.destroyedKnownAtSec) {
+      out.push(next)
+      previous = next
     }
-    const reliable = !mixed && inWindow >= 1 && sole !== null
-    out.push({
-      fromSec: prev.t, toSec: cur.t, hpLoss: prev.hp - cur.hp,
-      attackerAccountId: reliable ? sole : null, attackerReliable: reliable,
-      damageEventCount: inWindow, fromHp: prev.hp, toHp: cur.hp,
-    })
   }
   return out
 }
@@ -481,16 +334,16 @@ function consumableSlot(loadout: VehicleBattleLoadout | null, wire: number | nul
 
 /** Java `BattlePlaybackProjector.consumableTransitions`（开战前 INITIALIZED 种子 + AoI 关闭失效）。 */
 function consumableTransitions(
-  pb: AgentPlaybackFacet, ctx: VehicleContext, clock: PlaybackClock, loadout: VehicleBattleLoadout | null,
+  pb: AgentPlaybackFacet, facts: CanonicalReplayFacts, entityIds: number[], clock: ReplayClock, loadout: VehicleBattleLoadout | null,
 ): ConsumableTransition[] {
-  const eids = new Set(ctx.vehicles.map((v) => v.eid))
+  const eids = new Set(entityIds)
   const obs = (pb.consumables ?? [])
     .filter((c) => eids.has(c.eid))
     .map((c) => {
       const logicalItemId = consumableItemId(c.wire_code)
       const state = consumableStateName(c.state)
       const proven = logicalItemId !== null && state !== 'UNKNOWN'
-      return { t: rel(c.clock, clock), eid: c.eid, wire: c.wire_code, logicalItemId, state, confidence: (proven ? 'HIGH' : 'LOW') as PlaybackConfidence }
+      return { t: c.clock - clock.startRaw, eid: c.eid, wire: c.wire_code, logicalItemId, state, confidence: (proven ? 'HIGH' : 'LOW') as PlaybackConfidence }
     })
     .sort((a, b) => a.t - b.t || a.eid - b.eid)
   const out: ConsumableTransition[] = []
@@ -520,13 +373,14 @@ function consumableTransitions(
       wireCode: o.wire, state: 'INITIALIZED', invalidation: false, confidence: o.confidence,
     })
   }
-  for (const absent of ctx.aoiCloses) {
-    const hadKnownBefore = obs.some((o) => o.t < absent - EPS && (o.logicalItemId !== null || o.state !== 'UNKNOWN'))
-    if (hadKnownBefore && Number.isFinite(absent) && absent >= 0) {
-      out.push({
-        timeSec: absent, consumableSlot: null, logicalItemId: null, wireCode: null,
-        state: 'UNKNOWN', invalidation: true, confidence: 'UNKNOWN',
-      })
+  for (const id of entityIds) {
+    for (const w of facts.observation.get(id) ?? []) {
+      const absent = w.toSec
+      if (absent === null || !Number.isFinite(absent) || absent < 0) continue
+      const hadKnownBefore = obs.some((o) => o.t < absent - EPS && (o.logicalItemId !== null || o.state !== 'UNKNOWN'))
+      if (hadKnownBefore) {
+        out.push({ timeSec: absent, consumableSlot: null, logicalItemId: null, wireCode: null, state: 'UNKNOWN', invalidation: true, confidence: 'UNKNOWN' })
+      }
     }
   }
   return out
@@ -542,14 +396,14 @@ const MODULE_COMPONENTS = new Set([
 
 /** Java `BattlePlaybackProjector.moduleCrewTransitions`：仅录像者车辆（recorder-visible）。 */
 function moduleCrewTransitions(
-  pb: AgentPlaybackFacet, ctx: VehicleContext, clock: PlaybackClock, recorderVisible: boolean,
+  pb: AgentPlaybackFacet, entityIds: number[], clock: ReplayClock, recorderVisible: boolean,
 ): ModuleCrewTransition[] {
   if (!recorderVisible) return []
-  const eids = new Set(ctx.vehicles.map((v) => v.eid))
+  const eids = new Set(entityIds)
   const out: ModuleCrewTransition[] = []
   for (const m of pb.module_crew_states ?? []) {
     if (!eids.has(m.vehicle_eid)) continue
-    const t = rel(m.clock, clock)
+    const t = m.clock - clock.startRaw
     if (!Number.isFinite(t) || t < 0) continue
     const component = String(m.component ?? '').toUpperCase()
     if (!MODULE_COMPONENTS.has(component)) continue
@@ -579,147 +433,104 @@ function validTankName(name: unknown): name is string {
 }
 
 /**
- * 投影入口。`result` 提供结算名册/开局血量/地图代号/模式；缺省时退化为 PlaybackData 自带名册
- * （友方开局血量未知 → 无 SETTLEMENT 种子）。时间轴不可用（无 period 3 且无法由结算反推）→ null。
+ * 投影入口：上游三切面（结算 / 时序 / AI 事件）→ canonical facts → dataset。
+ * 时间轴不可用（无 period 3 且无法由结算反推）或无任何可映射参战实体 → null（与 Java 204 同义）。
  */
 export function toBattlePlaybackDataset(
   pb: AgentPlaybackFacet,
-  result?: AgentBattleResult | null,
+  result: AgentBattleResult | null | undefined,
+  aiReview: AgentAiReviewFacet,
   options: ToDatasetOptions = {},
 ): BattlePlaybackDataset | null {
-  const clock = resolvePlaybackClock(pb, result)
-  if (!clock) return null
-  const grid = gridOf(pb)
+  const facts = buildCanonicalReplayFacts({
+    result, aiReview, streamEndRaw: pb.meta.duration,
+  })
+  if (!facts) return null
+  const { clock } = facts
   const tankopedia = options.tankopedia ?? null
-  const stepSec = options.sampleStepSec ?? 0.5
+  const times = sampleTimes(clock.durationSec, options.sampleStepSec ?? 0.5)
+  const recorderAccountId = facts.recorderAccountId
+  const friendlyTeam = facts.perspectiveTeam
 
-  const authorVehicle = pb.vehicles.find((v) => v.is_author)
-  const recorderAccountId = positive(result?.author_account_id) ?? positive(authorVehicle?.account_id) ?? null
+  const vehicleByEid = new Map(pb.vehicles.map((v) => [v.eid, v]))
   const settlementPlayers = new Map<number, AgentResultPlayer>()
   for (const p of result?.players ?? []) if (p.account_id > 0) settlementPlayers.set(p.account_id, p)
-  const recorderTeam = recorderAccountId === null ? null
-    : settlementPlayers.get(recorderAccountId)?.team ?? pb.vehicles.find((v) => v.account_id === recorderAccountId)?.team ?? null
-  const friendlyTeam = recorderTeam === 1 || recorderTeam === 2 ? recorderTeam : null
-
-  // eid → account（身份域主键 = 上游 vehicles[].eid）
-  const accountByEid = new Map<number, number>()
-  const vehiclesByAccount = new Map<number, AgentVehicleTrack[]>()
-  for (const v of pb.vehicles) {
-    if (!(v.account_id > 0) || !(v.team === 1 || v.team === 2)) continue
-    if (settlementPlayers.size > 0 && !settlementPlayers.has(v.account_id)) continue
-    accountByEid.set(v.eid, v.account_id)
-    const list = vehiclesByAccount.get(v.account_id) ?? []
-    list.push(v)
-    vehiclesByAccount.set(v.account_id, list)
-  }
-
-  // 伤害归因：优先 AiReview 伤害事件（服务器受击流，Java VehicleHitEvent 同源），否则 shots[]
-  // （target_eid 在案 = 命中）
-  const sources = options.damageEvents
-    // AiReview 时钟是全精度，PlaybackData 时钟（hp/shots/kills）舍入到 0.01 s：对齐到同一量化，
-    // 否则恰在血量样本时刻的伤害会落进下一个掉血窗口
-    ? options.damageEvents.map((d) => ({ raw: Math.round(d.t * 100) / 100, victimEid: d.victim_eid, sourceEid: d.source_eid ?? null }))
-    : pb.shots.filter((s) => s.target_eid != null).map((s) => ({ raw: s.t_fire, victimEid: s.target_eid!, sourceEid: s.shooter_eid }))
-  const hitsByVictim = new Map<number, Array<{ t: number; attacker: number }>>()
-  const damageEvents: BattleEvent[] = []
-  for (const s of sources) {
-    const victim = accountByEid.get(s.victimEid)
-    if (victim === undefined) continue
-    const t = rel(s.raw, clock)
-    if (!Number.isFinite(t) || t < 0 || t > clock.durationSec + EPS) continue
-    const attacker = (s.sourceEid !== null ? accountByEid.get(s.sourceEid) : undefined) ?? 0
-    const list = hitsByVictim.get(victim) ?? []
-    list.push({ t, attacker })
-    hitsByVictim.set(victim, list)
-    damageEvents.push({ type: 'DAMAGE', timeSec: t, accountId: attacker > 0 ? attacker : null, targetAccountId: victim, observedHpLoss: null })
-  }
-
-  const visibilityByEid = new Map<number, Window[]>()
-  const closesByEid = new Map<number, number[]>()
-  for (const p of pb.visibility) {
-    const from = rel(p.t_in, clock)
-    const to = p.t_out == null ? Number.POSITIVE_INFINITY : rel(p.t_out, clock)
-    const list = visibilityByEid.get(p.eid) ?? []
-    list.push({ from, to })
-    visibilityByEid.set(p.eid, list)
-    if (p.t_out != null) closesByEid.set(p.eid, [...(closesByEid.get(p.eid) ?? []), to])
-  }
 
   const tracks: VehiclePlaybackTrack[] = []
-  const lossesByAccount = new Map<number, Loss[]>()
-  for (const [accountId, vehicles] of vehiclesByAccount) {
-    const player = settlementPlayers.get(accountId)
-    const head = vehicles[0]
-    const team = player?.team ?? head.team
-    const tankId = player?.tank_id ?? head.tank_id
-    const deaths = vehicles.map((v) => v.death_t).filter((d): d is number => typeof d === 'number')
-    const ctx: VehicleContext = {
-      vehicles,
-      aoi: vehicles.flatMap((v) => visibilityByEid.get(v.eid) ?? []),
-      aoiCloses: vehicles.flatMap((v) => closesByEid.get(v.eid) ?? []),
-      deathSec: deaths.length ? rel(Math.max(...deaths), clock) : null,
+  for (const player of settlementPlayers.values()) {
+    if (!(player.team > 0)) continue
+    const entityIds = facts.entityIdsByAccount.get(player.account_id) ?? []
+    if (entityIds.length === 0) continue
+    const vehicles = entityIds.map((id) => vehicleByEid.get(id)).filter((v): v is AgentVehicleTrack => !!v)
+    const tankId = player.tank_id > 0 ? player.tank_id : vehicles[0]?.tank_id ?? 0
+    const friendly = friendlyTeam === null ? null : player.team === friendlyTeam
+
+    // 每实体独立分段（Java 按 entityId 逐个投影后按起点合并）
+    const firstSeen = new Map<number, number>()
+    const posSegs: PositionSegment[] = []
+    const oriSegs: OrientationSegment[] = []
+    for (const id of entityIds) {
+      const poses = poseSamplesOf(facts, id, times)
+      posSegs.push(...positionSegments(facts, id, poses))
+      oriSegs.push(...orientationSegments(facts, id, poses))
+      const firsts = [poses[0]?.observedAt, facts.hpSamples.get(id)?.[0]?.t, facts.observation.get(id)?.[0]?.fromSec]
+        .filter((x): x is number => typeof x === 'number')
+      if (firsts.length) firstSeen.set(id, Math.min(...firsts))
     }
-    const friendly = friendlyTeam === null ? null : team === friendlyTeam
-    const poses = poseSamples(ctx, grid, clock, stepSec)
-    const posSegs = positionSegments(poses)
-    const points = hpPoints(ctx, clock)
+    posSegs.sort((a, b) => a.startSec - b.startSec)
+    oriSegs.sort((a, b) => a.startSec - b.startSec)
+
     const info = tankopedia && tankId > 0 ? tankopedia.info(tankId) : null
     const openingSeed = friendly === true
       ? settlementInitialHp(player)
       : (info?.maxHp != null && info.maxHp > 0 ? info.maxHp : null)
-    const health = healthTransitions(ctx, points, clock, friendly === true, openingSeed)
-    const losses = deriveLosses(points, hitsByVictim.get(accountId) ?? [], clock)
-    lossesByAccount.set(accountId, losses)
+    const health = healthTransitions(facts, entityIds, firstSeen, clock.durationSec, friendly === true, openingSeed)
+    const losses = facts.lossesByVictim.get(player.account_id) ?? []
     const loadout = toLoadout(vehicles, result?.client_version ?? null)
     tracks.push({
-      accountId,
-      playerName: player?.nickname ?? head.nickname ?? '',
+      accountId: player.account_id,
+      playerName: player.nickname || vehicles[0]?.nickname || '',
       tankId,
-      tankName: validTankName(info?.name) ? info!.name : validTankName(player?.tank_name) ? player!.tank_name
-        : validTankName(head.tank_name) ? head.tank_name : UNKNOWN_TANK_NAME,
+      tankName: validTankName(info?.name) ? info!.name : validTankName(player.tank_name) ? player.tank_name
+        : validTankName(vehicles[0]?.tank_name) ? vehicles[0].tank_name : UNKNOWN_TANK_NAME,
       tankClass: info?.type ? info.type : UNKNOWN_TANK_CLASS,
       tankTier: typeof info?.tier === 'number' ? info.tier : null,
-      team,
+      team: player.team,
       friendly,
       loadout,
       positionSegments: posSegs,
-      orientationSegments: orientationSegments(poses),
+      orientationSegments: oriSegs,
       healthTransitions: health,
-      lifeTransitions: lifeTransitions(ctx, points, clock),
+      lifeTransitions: lifeTransitions(facts, entityIds, firstSeen, clock.durationSec),
       damageLosses: losses.map((l): DamageLoss => ({
         ...l,
-        displayCapacityHp: capacityAt(health, l.toSec),
+        displayCapacityHp: lossCapacity(facts, entityIds, l.toSec),
         transientAllowed: posSegs.some((s) => s.knowledge === 'OBSERVED' && s.startSec <= l.toSec + EPS && s.endSec >= l.toSec - EPS),
       })),
-      consumableTransitions: consumableTransitions(pb, ctx, clock, loadout),
-      moduleCrewTransitions: moduleCrewTransitions(pb, ctx, clock, recorderAccountId !== null && accountId === recorderAccountId),
+      consumableTransitions: consumableTransitions(pb, facts, entityIds, clock, loadout),
+      moduleCrewTransitions: moduleCrewTransitions(pb, entityIds, clock, recorderAccountId !== null && player.account_id === recorderAccountId),
     })
   }
   if (tracks.length === 0) return null
   tracks.sort((a, b) => a.accountId - b.accountId)
 
-  // observedHpLoss（Java PlaybackCombatReconstruction.observedHpLossAt）
-  for (const e of damageEvents) {
-    const losses = lossesByAccount.get(e.targetAccountId!) ?? []
-    const l = losses.find((x) => x.damageEventCount === 1 && x.attackerReliable && e.timeSec > x.fromSec + EPS && e.timeSec <= x.toSec + EPS)
-    e.observedHpLoss = l ? l.hpLoss : null
+  const events: BattleEvent[] = []
+  // DAMAGE：method8 直击（Java VehicleHitEvent），受击方须可映射；攻击者未映射 = null（未知，不猜）
+  for (const n of facts.damageNotices) {
+    if (n.kind !== 'HIT' || !(n.t >= 0)) continue
+    const victim = facts.entities.get(n.victimEntityId)?.accountId
+    if (victim === undefined) continue
+    const attacker = n.attackerEntityId > 0 ? facts.entities.get(n.attackerEntityId)?.accountId ?? null : null
+    const loss = (facts.lossesByVictim.get(victim) ?? []).find((x) => x.damageEventCount === 1 && x.attackerReliable
+      && n.t > x.fromSec + EPS && n.t <= x.toSec + EPS)
+    events.push({ type: 'DAMAGE', timeSec: n.t, accountId: attacker, targetAccountId: victim, observedHpLoss: loss ? loss.hpLoss : null })
   }
-
-  const events: BattleEvent[] = [...damageEvents]
-  // DESTROYED / KILL：上游 death_t + kills[]（击杀者 = 服务器击杀流）
-  const killerByVictim = new Map<number, number>()
-  for (const k of pb.kills) {
-    const victim = accountByEid.get(k.victim_eid)
-    const killer = accountByEid.get(k.killer_eid)
-    if (victim !== undefined && killer !== undefined) killerByVictim.set(victim, killer)
-  }
-  for (const track of tracks) {
-    const destroyed = track.lifeTransitions.find((l) => l.lifeState === 'DESTROYED')
-    if (!destroyed) continue
-    events.push({ type: 'DESTROYED', timeSec: destroyed.timeSec, accountId: track.accountId, targetAccountId: null, observedHpLoss: null })
-    const killer = killerByVictim.get(track.accountId)
-    if (killer !== undefined && killer !== track.accountId) {
-      events.push({ type: 'KILL', timeSec: destroyed.timeSec, accountId: killer, targetAccountId: track.accountId, observedHpLoss: null })
+  // DESTROYED / KILL：canonical 终态 + 致死窗口唯一攻击者（fail-closed：证据冲突 → 无击杀者）
+  for (const d of facts.destroyed) {
+    if (!(d.timeSec >= 0)) continue
+    events.push({ type: 'DESTROYED', timeSec: d.timeSec, accountId: d.accountId, targetAccountId: null, observedHpLoss: null })
+    if (d.killerAccountId !== null && d.killerAccountId !== d.accountId) {
+      events.push({ type: 'KILL', timeSec: d.timeSec, accountId: d.killerAccountId, targetAccountId: d.accountId, observedHpLoss: null })
     }
   }
   // POSITION_*：OBSERVED 段起止；录像者自身不广播
@@ -735,10 +546,14 @@ export function toBattlePlaybackDataset(
   }
   events.sort((a, b) => a.timeSec - b.timeSec)
 
-  const limitations: string[] = []
-  if (clock.estimated) limitations.push('CLOCK_ESTIMATED')
+  // limitations：Java 顺序（映射 → 时钟 → 轨迹缺失），再追加 2D 新增的显式降级
+  const limitations = new Set<string>(facts.mappingLimitations)
+  if (clock.estimated) limitations.add('CLOCK_ESTIMATED')
   const combatants = new Set([...settlementPlayers.values()].filter((p) => p.team > 0).map((p) => p.account_id))
-  if (combatants.size > tracks.length) limitations.push('PLAYBACK_COMBATANT_TRACK_INCOMPLETE')
+  if (combatants.size > new Set(tracks.map((t) => t.accountId)).size) limitations.add('PLAYBACK_COMBATANT_TRACK_INCOMPLETE')
+  if (friendlyTeam === null) limitations.add(PERSPECTIVE_TEAM_UNRESOLVED)
+  if (facts.streamTruncated) limitations.add(REPLAY_STREAM_TRUNCATED)
+  const limitationList = [...limitations]
 
   const mapKey = typeof result?.map_key === 'string' && result.map_key.trim() ? result.map_key.trim().toLowerCase() : null
   return {
@@ -751,29 +566,33 @@ export function toBattlePlaybackDataset(
     pointsSamples: pointsSamples(pb, clock),
     assaultObjectivePresent: pb.assault_objective_present === true,
     baseStates: baseStates(pb, clock),
-    limitations,
-    capability: limitations.length > 0 ? 'PARTIAL' : 'FULL',
+    limitations: limitationList,
+    capability: limitationList.length > 0 ? 'PARTIAL' : 'FULL',
     arenaBonusType: typeof result?.arena_bonus_type === 'number' ? result.arena_bonus_type : null,
   }
 }
 
-function capacityAt(health: HealthTransition[], t: number): number | null {
-  let cap: number | null = null
-  for (const h of health) {
-    if (h.timeSec > t + EPS) break
-    if (h.source !== 'TANKOPEDIA_BASE_PROVISIONAL' && h.source !== 'SETTLEMENT_OPENING_HP_EXACT') cap = h.displayCapacityHp
+/**
+ * Java `displayCapacityForLoss`：只有某个整秒帧的 FrameHealth 恰好观测到掉血终点那条采样时才有量程
+ * （同一秒内又有新采样 → 该终点从未成为帧状态 → null）。presentation-only，按 Java 帧语义固定。
+ */
+function lossCapacity(facts: CanonicalReplayFacts, entityIds: number[], toSec: number): number | null {
+  const frameT = Math.ceil(toSec - 1e-9)
+  for (const id of entityIds) {
+    const s = lastHpSampleAtOrBefore(facts, id, frameT)
+    if (s && Math.abs(s.t - toSec) <= 1e-6) return displayCapacityAt(facts, id, frameT)
   }
-  return cap
+  return null
 }
 
 /** Java `BattlePlaybackProjector.pointsSamples`：开战前每队最后一条并入 t=0。 */
-function pointsSamples(pb: AgentPlaybackFacet, clock: PlaybackClock): PointsSample[] {
+function pointsSamples(pb: AgentPlaybackFacet, clock: ReplayClock): PointsSample[] {
   const out: PointsSample[] = []
   const preBattle = new Map<number, PointsSample>()
   const zeroTeams = new Set<number>()
   for (const p of pb.supremacy_points ?? []) {
     if (p.team !== 1 && p.team !== 2) continue
-    const t = rel(p.clock, clock)
+    const t = p.clock - clock.startRaw
     if (!Number.isFinite(t)) continue
     if (t < 0) {
       const prev = preBattle.get(p.team)
@@ -788,19 +607,19 @@ function pointsSamples(pb: AgentPlaybackFacet, clock: PlaybackClock): PointsSamp
 }
 
 /** Java `BattlePlaybackProjector.baseStates`：争霸 A–D + 单基地 BASE；开战前每基地最后一条并入 t=0。 */
-function baseStates(pb: AgentPlaybackFacet, clock: PlaybackClock): BaseStateTransition[] {
+function baseStates(pb: AgentPlaybackFacet, clock: ReplayClock): BaseStateTransition[] {
   const projected: BaseStateTransition[] = []
   for (const b of pb.supremacy_bases ?? []) {
     const baseId = BASE_IDS[b.base_id]
     if (!baseId) continue
     projected.push({
-      timeSec: rel(b.clock, clock), baseId,
+      timeSec: b.clock - clock.startRaw, baseId,
       ownerTeam: teamOrNull(b.owner_team), capturingTeam: teamOrNull(b.capturing_team),
       captureProgress: typeof b.capture_progress === 'number' ? b.capture_progress : null,
     })
   }
   for (const a of pb.assault_bases ?? []) {
-    projected.push({ timeSec: rel(a.clock, clock), baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: a.progress })
+    projected.push({ timeSec: a.clock - clock.startRaw, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: a.progress })
   }
   const out: BaseStateTransition[] = []
   const preBattle = new Map<string, BaseStateTransition>()
