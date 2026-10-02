@@ -260,6 +260,27 @@ export interface AgentAimFrame {
   ray_point: [number, number, number]
 }
 
+/**
+ * arena subtype 15/16/17 原始装填事件（仅本方；null = 上游字段缺失）。
+ *
+ * `duration_s` 是 producer 的**原始透传**（原始 f3 秒数），不是倒计时，也**不保证为正**：
+ * 时长变更（phase=4）会给出负 finite 值。它是原始事实，是否可解释成定时相位由消费层决定。
+ */
+export interface AgentReloadEvent {
+  clock: number
+  eid: number
+  phase: number
+  duration_s: number | null
+  count: number | null
+}
+
+/** method 35 当前生效完整装填时长（仅本方） */
+export interface AgentReloadEffectiveEvent {
+  clock: number
+  eid: number
+  duration_s: number
+}
+
 export interface AgentPlaybackFacet {
   version: number
   meta: AgentPlaybackMeta
@@ -286,6 +307,10 @@ export interface AgentPlaybackFacet {
   consumables?: AgentConsumableEvent[]
   /** method16 模块/乘员状态（recorder-only） */
   module_crew_states?: AgentModuleCrewState[]
+  /** v0.3.9：arena subtype 15/16/17 原始装填时间线（仅本方） */
+  reloads?: AgentReloadEvent[]
+  /** v0.3.9：method 35 当前生效完整装填时长（仅本方） */
+  reload_effective?: AgentReloadEffectiveEvent[]
 }
 
 // ---------- AI 事件数据：AiReviewFacet（v1；上游 v0.3.5 起含原始 HP 与 method8 证据） ----------
@@ -490,6 +515,58 @@ function assertArray(v: unknown, path: string): unknown[] {
   return v
 }
 
+function assertFiniteNumber(v: unknown, path: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`agent facets: ${path} 必须是有限数值`)
+  return v
+}
+
+function assertNonNegativeInteger(v: unknown, path: string, max: number = Number.MAX_SAFE_INTEGER): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > max) {
+    throw new Error(`agent facets: ${path} 必须是非负整数`)
+  }
+  return v
+}
+
+/**
+ * 可空有限数值（producer 的 `Option<f32>` 线形状）：`null`（上游缺省）或**任何有限数值**。
+ *
+ * 这里**不施加 `> 0`**：该字段是 producer 的原始透传（arena update subtype 15/16/17 的
+ * 原始 f3），producer 没有「正时长」这个 invariant——真实回放会给出 `-0.039` 这样的负
+ * finite 值（时长变更事件相对上一刻的差值）。把消费方「可解释定时相位」的语义规则提升成
+ * wire contract 会让真实 producer 输出被拒。语义过滤属于消费层（见 `scene/reloadBar.js`
+ * 的 `isUsablePhase`），不属于 trust boundary。
+ */
+function assertNullableFiniteNumber(v: unknown, path: string): number | null {
+  if (v === null) return null
+  try {
+    return assertFiniteNumber(v, path)
+  } catch {
+    throw new Error(`agent facets: ${path} 必须是有限数值或 null`)
+  }
+}
+
+function validateReloadEvent(value: unknown, path: string): void {
+  const e = assertObject(value, path)
+  assertFiniteNumber(e.clock, `${path}.clock`)
+  assertNonNegativeInteger(e.eid, `${path}.eid`, 0xffffffff)
+  assertNonNegativeInteger(e.phase, `${path}.phase`, 0xff)
+  assertNullableFiniteNumber(e.duration_s, `${path}.duration_s`)
+  if (e.count !== null) assertNonNegativeInteger(e.count, `${path}.count`)
+}
+
+/**
+ * method 35（0x23）「当前生效完整装填时长」：`finite && > 0` 是 **producer 自己的**
+ * invariant（它表示一个完整装填配置的时长，取值必然为正），故这里是 wire contract 的
+ * 合法收紧，与上面 raw `reloads[].duration_s` 的宽松口径不矛盾——两者不是同一个东西。
+ */
+function validateReloadEffectiveEvent(value: unknown, path: string): void {
+  const e = assertObject(value, path)
+  assertFiniteNumber(e.clock, `${path}.clock`)
+  assertNonNegativeInteger(e.eid, `${path}.eid`, 0xffffffff)
+  const d = assertFiniteNumber(e.duration_s, `${path}.duration_s`)
+  if (d <= 0) throw new Error(`agent facets: ${path}.duration_s 必须为正数`)
+}
+
 /** 切面契约版本锁定（v1 切面字段口径沿用；能力拆分见契约 v2 文档） */
 function assertFacetVersion(v: unknown, path: string, expected: number = CONTRACT_VERSION): void {
   if (v !== expected) {
@@ -522,9 +599,17 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
     assertArray(pb[key], `playback.${key}`)
   }
-  // contract v2 新能力（上游 v0.2.0 / v0.3.1；skip-when-empty 语义）：在场时必须为数组
+  // contract v2 additive 能力：在场时必须为数组
   for (const key of ['supremacy_bases', 'supremacy_points', 'aim_frames', 'assault_bases']) {
     if (pb[key] !== undefined) assertArray(pb[key], `playback.${key}`)
+  }
+  if (pb.reloads !== undefined) {
+    const events = assertArray(pb.reloads, 'playback.reloads')
+    events.forEach((event, i) => validateReloadEvent(event, `playback.reloads[${i}]`))
+  }
+  if (pb.reload_effective !== undefined) {
+    const events = assertArray(pb.reload_effective, 'playback.reload_effective')
+    events.forEach((event, i) => validateReloadEffectiveEvent(event, `playback.reload_effective[${i}]`))
   }
   // 目标存在性必须是布尔（跳空键按"无已证实目标"解读，与 assaultObjectivePresent 同义）
   if (pb.assault_objective_present !== undefined && typeof pb.assault_objective_present !== 'boolean') {
