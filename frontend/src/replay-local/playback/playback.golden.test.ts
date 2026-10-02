@@ -11,7 +11,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import javaGolden from '../__golden__/java-playback.json'
-import { fixtureFacets, FIXTURE_REPLAYS, type FixtureFacets } from '../__golden__/agentWasmNode.js'
+import { fixtureFacets, requireFixtures, FIXTURE_REPLAYS, type FixtureFacets } from '../__golden__/agentWasmNode.js'
 import tier7 from '../../../../common/tankopedia-tier7.json'
 import tier8 from '../../../../common/tankopedia-tier8.json'
 import tier9 from '../../../../common/tankopedia-tier9.json'
@@ -40,8 +40,13 @@ const java = javaGolden as unknown as Record<string, JavaEntry>
  */
 const PINNED_KNOWLEDGE_DIFFS: Array<{ file: string; accountId: number; t: number; java: string | null; local: string | null; reason: string }> = []
 
-function datasetOf(f: FixtureFacets, aiReview: AgentAiReviewFacet = f.aiReview!) {
-  return toBattlePlaybackDataset(f.playback!, f.result, aiReview, { tankopedia })
+/**
+ * fixture 三切面 → canonical dataset。经 [`requireFixtures`] 严格读取：被 trust boundary 拒绝的
+ * producer 输出在此抛出**原始 validation error**，而不是降级成 `null.meta` 的二次症状。
+ */
+function datasetOf(f: FixtureFacets): ReturnType<typeof toBattlePlaybackDataset> {
+  const { playback, result, aiReview } = requireFixtures(f)
+  return toBattlePlaybackDataset(playback, result, aiReview, { tankopedia })
 }
 
 // ---------- 整秒帧语义 ----------
@@ -98,8 +103,12 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
     expect(Object.keys(java).sort()).toEqual(Object.keys(FIXTURE_REPLAYS).sort())
     const room = await fixtureFacets('training-room-example.wotbreplay')
     expect(java['training-room-example.wotbreplay'].battlePlaybackV2).toBeNull()
+    // 切面本身必须校验通过：null 如果来自 trust boundary 拒绝（而非「时间轴不可用」），
+    // 这个测试就会把 contract 错误伪装成预期结果——先钉死原始错误为空。
+    expect(room.playbackError, String(room.playbackError)).toBeNull()
+    expect(room.aiReviewError, String(room.aiReviewError)).toBeNull()
     // 9.8 训练室没有 period 广播、也无法由结算反推开战时刻 → 时间轴不可用（与 Java 204 同义）
-    expect(room.playback && room.aiReview ? datasetOf(room) : null).toBeNull()
+    expect(datasetOf(room)).toBeNull()
   })
 
   for (const file of comparable) {

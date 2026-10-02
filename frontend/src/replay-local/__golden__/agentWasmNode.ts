@@ -56,6 +56,16 @@ async function wasm(): Promise<WasmModule> {
   return loaded
 }
 
+/**
+ * fixture 三切面。校验被 trust boundary 拒绝时 `playback` / `aiReview` 为 `null`，原始错误
+ * 保留在 `*Error` 上。
+ *
+ * 消费方若直接读 `f.playback!.meta`（或任何 `!` 断言），得到的只会是二次症状
+ * `Cannot read properties of null (reading 'meta')`——真正被 trust boundary 拒绝的 producer
+ * contract 错误被彻底吞掉。凡是要**解释** fixture 的测试，必须走 [`requireFixtures()`]：
+ * producer 契约与 WotbTools validator 再次漂移时，CI 直接显示
+ * `agent facets: playback.reloads[123].duration_s ...`，而不是 null 解引用。
+ */
 export interface FixtureFacets {
   bytes: Uint8Array
   result: AgentBattleResult
@@ -85,4 +95,24 @@ export async function fixtureFacets(file: string): Promise<FixtureFacets> {
   const out = { bytes, result, playback, playbackError, aiReview, aiReviewError }
   cache.set(file, out)
   return out
+}
+
+/**
+ * `fixtureFacets()` 的**严格**读取路径（测试解释 fixture 的默认入口）：任一被 trust
+ * boundary 拒绝的切面直接抛出**原始 validation error**，绝不降级成 `null` 让下游崩在
+ * `null.meta` 上。这条断言是「producer ⇄ validator 漂移」的 fail-visible 闸门。
+ *
+ * `fixtureFacets()` 本身仍保留失败态（供「不该解析成功」的负向测试显式检查）。
+ */
+export function requireFixtures(f: FixtureFacets): FixtureFacets & {
+  playback: AgentPlaybackFacet
+  aiReview: AgentAiReviewFacet
+} {
+  if (!f.playback) {
+    throw new Error(`agent facets: fixture ${f.result.file_name} playback 契约校验失败——${f.playbackError}`)
+  }
+  if (!f.aiReview) {
+    throw new Error(`agent facets: fixture ${f.result.file_name} aiReview 契约校验失败——${f.aiReviewError}`)
+  }
+  return f as FixtureFacets & { playback: AgentPlaybackFacet; aiReview: AgentAiReviewFacet }
 }

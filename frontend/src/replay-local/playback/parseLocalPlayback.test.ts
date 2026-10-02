@@ -6,7 +6,7 @@ import tier9 from '../../../../common/tankopedia-tier9.json'
 import tier10 from '../../../../common/tankopedia-tier10.json'
 import { createTankopedia } from '../compute/tankopedia.js'
 import { validateBattlePlaybackDataset } from '../../api/contract-runtime.js'
-import { fixtureFacets } from '../__golden__/agentWasmNode.js'
+import { fixtureFacets, requireFixtures } from '../__golden__/agentWasmNode.js'
 
 const facets = vi.hoisted(() => ({
   parseAgentResultFromBytes: vi.fn(),
@@ -24,7 +24,12 @@ const { toBattlePlaybackDataset } = await import('./toBattlePlaybackDataset.js')
 const tankopedia = createTankopedia([tier7, tier8, tier9, tier10])
 
 async function arrange(file: string) {
-  const f = await fixtureFacets(file)
+  const raw = await fixtureFacets(file)
+  // 严格读取：fixture 被 trust boundary 拒绝时在此抛出**原始 validation error**，
+  // 而不是把 null 灌进 mock、让下游崩在 `null.meta` 的二次症状上。
+  expect(raw.playbackError, String(raw.playbackError)).toBeNull()
+  expect(raw.aiReviewError, String(raw.aiReviewError)).toBeNull()
+  const f = requireFixtures(raw)
   facets.parseAgentResultFromBytes.mockResolvedValue(f.result)
   facets.parseAgentPlaybackFromBytes.mockResolvedValue(f.playback)
   facets.parseAgentAiReviewFromBytes.mockResolvedValue(f.aiReview)
