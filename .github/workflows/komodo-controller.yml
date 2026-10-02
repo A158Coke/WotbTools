@@ -1,0 +1,166 @@
+name: Komodo Controller
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/komodo-controller.yml
+      - deploy/check-production-freshness.sh
+      - deploy/komodo/**
+      - infra/tofu/komodo/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/komodo-controller.yml
+    deploy/check-production-freshness.sh
+    deploy/komodo/**
+    infra/tofu/komodo/**
+
+jobs:
+  deploy:
+    name: Reconcile Komodo controller on Yecao
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Freeze current main
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh"             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+      - name: Stage exact Komodo controller inputs on Yecao
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: deploy/komodo,infra/tofu/komodo
+          target: /opt/komodo/incoming/${{ github.sha }}
+          overwrite: true
+
+      - name: Reject stale main before Yecao mutation
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh"             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+      - name: Reconcile Core and apply exact DNS plan under one controller lock
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 35m
+          envs: SOURCE_SHA,KOMODO_DATABASE_PASSWORD,KOMODO_INIT_ADMIN_PASSWORD,KOMODO_JWT_SECRET,KOMODO_WEBHOOK_SECRET,TENCENTCLOUD_SECRET_ID,TENCENTCLOUD_SECRET_KEY
+          script: |
+            set -Eeuo pipefail
+            [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+            for name in KOMODO_DATABASE_PASSWORD KOMODO_INIT_ADMIN_PASSWORD KOMODO_JWT_SECRET KOMODO_WEBHOOK_SECRET TENCENTCLOUD_SECRET_ID TENCENTCLOUD_SECRET_KEY; do
+              test -n "$(printenv "$name")" || { echo "$name is required." >&2; exit 2; }
+            done
+
+            stage="/opt/komodo/incoming/$SOURCE_SHA"
+            runtime="$stage/deploy/komodo"
+            tofu_root="$stage/infra/tofu/komodo"
+            test -f "$runtime/compose.yml"
+            test -f "$runtime/deploy.sh"
+            test -f "$runtime/verify.sh"
+            test -f "$tofu_root/validate-plan.sh"
+            command -v docker >/dev/null
+            command -v tofu >/dev/null
+            command -v jq >/dev/null
+            command -v flock >/dev/null
+
+            install -d -m 700 /opt/komodo
+            exec 9>/opt/komodo/.deploy.lock
+            flock -n 9 || { echo 'Another Komodo controller mutation is running.' >&2; exit 1; }
+            export KOMODO_DEPLOY_LOCK_FD=9
+
+            bash "$runtime/deploy.sh" "$SOURCE_SHA" "$runtime"
+            bash "$runtime/verify.sh"
+
+            state_dir=/opt/komodo/tofu-state
+            state_file="$state_dir/terraform.tfstate"
+            state_marker="$state_dir/bootstrap-complete"
+            install -d -m 700 "$state_dir"
+            if [[ -e "$state_marker" || -L "$state_marker" ]]; then
+              [[ -f "$state_marker" && -s "$state_marker" && ! -L "$state_marker" ]]                 && grep -qx 'local-tofu-state-bootstrap-v1' "$state_marker"                 || { echo 'Komodo OpenTofu bootstrap marker is unsafe.' >&2; exit 1; }
+              [[ -f "$state_file" && -s "$state_file" && ! -L "$state_file" ]]                 || { echo 'Komodo OpenTofu state is missing or unsafe.' >&2; exit 1; }
+            elif [[ -e "$state_file" || -L "$state_file" ]]; then
+              echo 'Komodo OpenTofu state exists without a completed bootstrap marker; manual recovery is required.' >&2
+              exit 1
+            fi
+
+            export TF_IN_AUTOMATION=true
+            export CHECKPOINT_DISABLE=1
+            cd "$tofu_root"
+            trap 'rm -f -- plan.tfplan second-plan.tfplan' EXIT
+            tofu fmt -check -recursive
+            tofu init -reconfigure -input=false
+            tofu validate
+            tofu plan -input=false -no-color -out=plan.tfplan
+            bash ./validate-plan.sh plan.tfplan
+            tofu apply -input=false -auto-approve plan.tfplan
+            tofu plan -input=false -no-color -out=second-plan.tfplan
+            bash ./validate-plan.sh second-plan.tfplan --require-no-changes
+            if [[ ! -e "$state_marker" ]]; then
+              printf '%s
+' local-tofu-state-bootstrap-v1 > "$state_marker"
+              chmod 600 "$state_marker"
+            fi
+
+            bash "$runtime/verify.sh"
+            echo "Komodo controller reconcile: PASS ($SOURCE_SHA)"
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          KOMODO_DATABASE_PASSWORD: ${{ secrets.KOMODO_DATABASE_PASSWORD }}
+          KOMODO_INIT_ADMIN_PASSWORD: ${{ secrets.KOMODO_INIT_ADMIN_PASSWORD }}
+          KOMODO_JWT_SECRET: ${{ secrets.KOMODO_JWT_SECRET }}
+          KOMODO_WEBHOOK_SECRET: ${{ secrets.KOMODO_WEBHOOK_SECRET }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+
+      - name: Cleanup staged Komodo controller inputs
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 2m
+          envs: SOURCE_SHA
+          script: |
+            set -Eeuo pipefail
+            [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
+            rm -rf -- "/opt/komodo/incoming/$SOURCE_SHA"
+        env:
+          SOURCE_SHA: ${{ github.sha }}
