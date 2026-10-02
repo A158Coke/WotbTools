@@ -14,6 +14,9 @@ periphery_unit="$periphery_unit_dir/periphery.service"
 periphery_run_dir="${PERIPHERY_RUN_DIR:-/run/komodo}"
 periphery_bootstrap_env="$periphery_run_dir/periphery-bootstrap.env"
 periphery_opt_root="${PERIPHERY_OPT_ROOT:-/opt/periphery}"
+# Read-only inspection root for process environments, so the fixtures can prove
+# the credential-free check in both directions.
+periphery_proc_root="${PERIPHERY_PROC_ROOT:-/proc}"
 # The Yecao host-level mutation lock, shared with the observability / ai-service
 # owners that mutate the same host and Docker daemon.
 periphery_wotb_root="${PERIPHERY_WOTB_ROOT:-/opt/wotb}"
@@ -24,16 +27,20 @@ onboard_sleep="${PERIPHERY_ONBOARD_SLEEP_SECONDS:-2}"
 # Bounded verification wait for the outbound connection to re-establish.
 verify_attempts="${PERIPHERY_VERIFY_ATTEMPTS:-30}"
 verify_sleep="${PERIPHERY_VERIFY_SLEEP_SECONDS:-2}"
+# Bounded wait that a failed bootstrap really stops the service.
+stop_attempts="${PERIPHERY_STOP_ATTEMPTS:-15}"
+stop_sleep="${PERIPHERY_STOP_SLEEP_SECONDS:-2}"
 
 for path_name in periphery_etc periphery_bin periphery_unit_dir periphery_run_dir \
-  periphery_opt_root periphery_wotb_root; do
+  periphery_opt_root periphery_wotb_root periphery_proc_root; do
   path_value="${!path_name}"
   [[ "$path_value" == /* && "$path_value" != *..* ]] || {
     echo "Refusing unsafe Komodo Periphery path ($path_name): $path_value" >&2
     exit 2
   }
 done
-for count_name in onboard_attempts onboard_sleep verify_attempts verify_sleep; do
+for count_name in onboard_attempts onboard_sleep verify_attempts verify_sleep \
+  stop_attempts stop_sleep; do
   [[ "${!count_name}" =~ ^[0-9]+$ ]] || {
     echo "Refusing non-numeric $count_name: ${!count_name}" >&2
     exit 2
@@ -43,6 +50,12 @@ done
 periphery_identity="$periphery_etc/keys/periphery.key"
 periphery_core_pub="$periphery_etc/keys/core.pub"
 periphery_config="$periphery_etc/periphery.config.toml"
+# The durable onboarding commit point. `keys/periphery.key` is NOT proof that
+# onboarding completed: Komodo Periphery v2.3.3 generates it during startup
+# (`state::periphery_keys().load()` from `main.rs`) before any Server onboarding
+# can have succeeded, so a failed first attempt leaves an identity behind.
+periphery_marker="$periphery_etc/keys/onboarding-complete"
+periphery_marker_content='komodo-periphery-onboarding-v1'
 
 fail() { echo "$*" >&2; exit 1; }
 
@@ -101,6 +114,39 @@ periphery_identity_present() {
   [[ -f "$periphery_identity" && -s "$periphery_identity" && ! -L "$periphery_identity" ]]
 }
 
+# periphery_core_pub_present: pinned Core trust anchor already on the host?
+periphery_core_pub_present() {
+  [[ -f "$periphery_core_pub" && -s "$periphery_core_pub" && ! -L "$periphery_core_pub" ]]
+}
+
+# periphery_marker_state: valid | absent | corrupt
+#
+# The marker is the only durable proof that onboarding committed. Anything that
+# is not exactly a root-owned, mode 0600, regular, non-symlink file holding the
+# reviewed content counts as `corrupt`, so a tampered or partially written marker
+# fails closed instead of being silently repaired.
+periphery_marker_state() {
+  if [[ ! -e "$periphery_marker" && ! -L "$periphery_marker" ]]; then
+    printf 'absent'
+    return 0
+  fi
+  if [[ ! -f "$periphery_marker" || ! -s "$periphery_marker" || -L "$periphery_marker" ]]; then
+    printf 'corrupt'
+    return 0
+  fi
+  local mode owner content
+  mode="$(stat -c '%a' "$periphery_marker" 2>/dev/null || true)"
+  owner="$(stat -c '%u' "$periphery_marker" 2>/dev/null || true)"
+  content="$(cat "$periphery_marker" 2>/dev/null || true)"
+  # Production runs this install as root, so the marker is root-owned; the
+  # comparison uses the installing account so the fixtures can drive it too.
+  if [[ "$mode" != 600 || "$owner" != "$(id -u)" || "$content" != "$periphery_marker_content" ]]; then
+    printf 'corrupt'
+    return 0
+  fi
+  printf 'valid'
+}
+
 service_active() { "$systemctl_bin" is-active --quiet periphery; }
 service_enabled() { "$systemctl_bin" is-enabled --quiet periphery; }
 
@@ -116,4 +162,15 @@ established_core_connections() {
 # listener_on_8120: any host listener on the Periphery inbound port (must be none).
 listener_on_8120() {
   ss -Hltn 'sport = :8120' 2>/dev/null || true
+}
+
+# process_env_has_onboarding_key <pid>: does the live process still carry the
+# bootstrap credential? systemd copies the EnvironmentFile into the process
+# environment, so deleting that file does NOT clear /proc/<pid>/environ. An
+# unreadable environment cannot disprove the presence of the key, so it is
+# reported as "not present" and the caller's other checks still apply.
+process_env_has_onboarding_key() {
+  local pid="$1" environ="$periphery_proc_root/$pid/environ"
+  [[ -r "$environ" ]] || return 1
+  tr '\0' '\n' < "$environ" | grep -q '^PERIPHERY_ONBOARDING_KEY='
 }

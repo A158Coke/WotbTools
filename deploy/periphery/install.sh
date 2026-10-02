@@ -3,13 +3,20 @@
 #
 # Idempotent reconciliation: the binary, the persistent config, and the systemd
 # unit always come from the staged repository source, while the persistent Noise
-# identity (`keys/periphery.key`) and the pinned Core trust anchor
-# (`keys/core.pub`) are never regenerated, overwritten, or re-onboarded.
+# identity (`keys/periphery.key`), the pinned Core trust anchor (`keys/core.pub`),
+# and the onboarding completion marker are never regenerated or overwritten.
+#
+# Onboarding completion is recorded by an explicit durable marker and NEVER
+# inferred from the identity file: Komodo Periphery v2.3.3 generates
+# `periphery.key` during startup (`state::periphery_keys().load()`), before Server
+# onboarding can have succeeded. While the marker is absent the bootstrap
+# credential is required on every attempt, so a half-finished first run is retried
+# with the existing identity instead of wedging the host.
 #
 # The onboarding key is a BOOTSTRAP credential only. It is written to a transient
-# /run file (mode 0600, root-owned) for the first handshake, then deleted before
-# the final restart, so it never reaches the persistent config, this unit's own
-# environment, or the final process environment.
+# /run file (mode 0600, root-owned) for the handshake, deleted before the
+# credential-free restart, and a bootstrap that fails after the service was
+# started leaves Periphery STOPPED, so no live process can keep the credential.
 set -Eeuo pipefail
 umask 077
 
@@ -74,32 +81,128 @@ require_replaceable_file "$periphery_config"
 require_replaceable_file "$periphery_unit"
 require_replaceable_file "$periphery_bin"
 
-# --- onboarding decision -----------------------------------------------------
-# A valid persistent identity means onboarding is finished for good: the
-# bootstrap secret is neither required nor read, so the operator may delete
-# KOMODO_YECAO_ONBOARDING_KEY from GitHub and the UI onboarding key afterwards.
-onboarding_required=false
-onboarding_key=
+# --- helpers -----------------------------------------------------------------
 bootstrap_written=false
-# Safety net for the failure paths only. The successful path below removes the
-# credential explicitly, *before* the final restart, because the ordering is the
-# point: the last Periphery start must not be able to read it at all.
+bootstrap_started=false
+bootstrap_committed=false
+onboarding_key=
+
+# Any exit that did not commit onboarding must leave no usable credential behind:
+# the transient file is removed AND the service is stopped, because systemd
+# already copied the credential into the running process environment and deleting
+# the EnvironmentFile cannot take it back out of /proc/<pid>/environ.
 cleanup_bootstrap() {
+  local status=$? attempt
   if [[ "$bootstrap_written" == true ]]; then
     rm -f -- "$periphery_bootstrap_env"
   fi
+  if [[ "$bootstrap_started" == true && "$bootstrap_committed" != true ]]; then
+    echo 'Komodo Periphery bootstrap did not commit: stopping periphery.service so no live process keeps the bootstrap credential.' >&2
+    "$systemctl_bin" stop periphery >/dev/null 2>&1 || true
+    for attempt in $(seq 1 "$stop_attempts"); do
+      if ! service_active; then
+        break
+      fi
+      [[ "$stop_sleep" -gt 0 ]] && sleep "$stop_sleep"
+    done
+    if service_active; then
+      echo 'komodo-periphery: periphery.service is still active after a failed bootstrap.' >&2
+    fi
+  fi
+  return "$status"
 }
 trap cleanup_bootstrap EXIT
-if periphery_identity_present; then
-  # Defensive: never leave a bootstrap credential behind once an identity exists.
-  rm -f -- "$periphery_bootstrap_env"
-  echo 'Persistent Komodo Periphery identity present: onboarding is not required.'
-else
-  onboarding_required=true
-  onboarding_key="${KOMODO_YECAO_ONBOARDING_KEY:-}"
-  [[ -n "$onboarding_key" ]] || fail \
-    'No persistent Komodo Periphery identity and no KOMODO_YECAO_ONBOARDING_KEY. Refusing to generate a new Server identity or re-onboard automatically.'
-fi
+
+# The first handshake is done when Periphery has an identity, has pinned the Core
+# public key, and holds a live outbound connection to Core.
+bootstrap_ready() {
+  local pid
+  pid="$(main_pid 2>/dev/null || true)"
+  if [[ ! "$pid" =~ ^[0-9]+$ ]] || [[ "$pid" -le 0 ]]; then
+    return 1
+  fi
+  periphery_identity_present || return 1
+  periphery_core_pub_present || return 1
+  [[ -n "$(established_core_connections "$pid")" ]] || return 1
+  return 0
+}
+
+# The credential-free restart is good when the service is active, the transient
+# file is gone, the process environment holds no onboarding key, and the outbound
+# connection came back purely from the persistent identity.
+credential_free_ready() {
+  local pid
+  pid="$(main_pid 2>/dev/null || true)"
+  if [[ ! "$pid" =~ ^[0-9]+$ ]] || [[ "$pid" -le 0 ]]; then
+    return 1
+  fi
+  service_active || return 1
+  [[ ! -e "$periphery_bootstrap_env" ]] || return 1
+  if process_env_has_onboarding_key "$pid"; then
+    return 1
+  fi
+  [[ -n "$(established_core_connections "$pid")" ]] || return 1
+  return 0
+}
+
+wait_for() {
+  local attempts="$1" sleep_seconds="$2" check="$3" attempt
+  for attempt in $(seq 1 "$attempts"); do
+    if "$check"; then
+      return 0
+    fi
+    [[ "$sleep_seconds" -gt 0 ]] && sleep "$sleep_seconds"
+  done
+  return 1
+}
+
+# Commit the bootstrap transaction. Written LAST and atomically, only after the
+# credential-free restart has been proven healthy.
+commit_onboarding() {
+  local incoming="$periphery_marker.incoming"
+  [[ ! -L "$incoming" ]] \
+    || fail "Refusing to write the Komodo Periphery onboarding marker through a symlinked staging path: $incoming"
+  ( umask 077; printf '%s\n' "$periphery_marker_content" > "$incoming" )
+  chmod 600 "$incoming"
+  mv -f -- "$incoming" "$periphery_marker"
+  [[ "$(periphery_marker_state)" == valid ]] \
+    || fail 'The Komodo Periphery onboarding marker is not a valid root-owned regular file.'
+}
+
+# --- onboarding state machine -------------------------------------------------
+# A) marker valid + identity valid + core.pub valid  -> onboarding is complete and
+#    the bootstrap credential is neither required nor read, so the operator may
+#    delete KOMODO_YECAO_ONBOARDING_KEY from GitHub and the UI onboarding key.
+# B) marker absent + credential available            -> bootstrap, or retry a
+#    previous failed bootstrap reusing the identity it already generated.
+# C) marker absent + no credential                   -> fail closed before any
+#    host mutation: no identity is generated and nothing is re-onboarded.
+# D) marker present but the identity or core.pub is missing/unsafe -> corrupted
+#    completed state; fail closed instead of silently regenerating anything.
+onboarding_required=false
+marker_state="$(periphery_marker_state)"
+case "$marker_state" in
+  valid)
+    periphery_identity_present || fail \
+      'Corrupted Komodo Periphery state: onboarding is marked complete but the persistent identity is missing or unsafe.'
+    periphery_core_pub_present || fail \
+      'Corrupted Komodo Periphery state: onboarding is marked complete but the pinned Core public key is missing or unsafe.'
+    rm -f -- "$periphery_bootstrap_env"
+    echo 'Komodo Periphery onboarding already complete: the bootstrap credential is not required.'
+    ;;
+  absent)
+    onboarding_required=true
+    onboarding_key="${KOMODO_YECAO_ONBOARDING_KEY:-}"
+    [[ -n "$onboarding_key" ]] || fail \
+      'Komodo Periphery onboarding has not completed and no KOMODO_YECAO_ONBOARDING_KEY is available. Refusing to generate a Server identity or to re-onboard automatically.'
+    if periphery_identity_present; then
+      echo 'Reusing the Komodo Periphery identity left by a previous attempt; onboarding will be retried.'
+    fi
+    ;;
+  *)
+    fail 'Corrupted Komodo Periphery onboarding marker (unsafe path type, wrong mode or owner, or unexpected content). Refusing to continue.'
+    ;;
+esac
 
 # --- persistent config + systemd unit (repo-owned, replaced deterministically) --
 file_sha() { [[ -f "$1" && ! -L "$1" ]] && sha256sum "$1" | awk '{print $1}' || true; }
@@ -124,53 +227,44 @@ installed_sha="$(sha256sum "$periphery_bin" | awk '{print $1}')"
   "Installed $periphery_bin does not match the pinned release (got $installed_sha)."
 
 "$systemctl_bin" daemon-reload
-"$systemctl_bin" enable periphery >/dev/null
 
-# --- first onboarding ---------------------------------------------------------
 if [[ "$onboarding_required" == true ]]; then
-  # Transient bootstrap credential: tmpfs under /run, 0600, root-owned, and
-  # removed again below. It is never written to the config, the unit, or the
-  # process environment of the final restart.
+  # The service is deliberately NOT enabled yet: it only starts for the bootstrap
+  # handshake, and it is enabled once onboarding has fully committed.
   ( umask 077; printf 'PERIPHERY_ONBOARDING_KEY=%s\n' "$onboarding_key" > "$periphery_bootstrap_env" )
   chmod 600 "$periphery_bootstrap_env"
   bootstrap_written=true
   unset onboarding_key
 
+  bootstrap_started=true
   "$systemctl_bin" restart periphery
 
-  # Onboarding succeeded only when Periphery has generated its persistent
-  # identity, pinned the Core public key, and holds a live outbound connection to
-  # Core. The identity file appears at startup, so the connection is what proves
-  # the handshake actually completed.
-  onboarded=false
-  for attempt in $(seq 1 "$onboard_attempts"); do
-    pid="$(main_pid 2>/dev/null || true)"
-    if [[ "$pid" =~ ^[0-9]+$ ]] && [[ "$pid" -gt 0 ]] \
-       && periphery_identity_present \
-       && [[ -f "$periphery_core_pub" && -s "$periphery_core_pub" && ! -L "$periphery_core_pub" ]] \
-       && [[ -n "$(established_core_connections "$pid")" ]]; then
-      onboarded=true
-      break
-    fi
-    [[ "$onboard_sleep" -gt 0 ]] && sleep "$onboard_sleep"
-  done
-  if [[ "$onboarded" != true ]]; then
+  if ! wait_for "$onboard_attempts" "$onboard_sleep" bootstrap_ready; then
     "$systemctl_bin" status periphery --no-pager >&2 || true
     journalctl -u periphery --no-pager -n 80 >&2 || true
-    rm -f -- "$periphery_bootstrap_env"
-    fail 'Komodo Periphery did not complete onboarding (no persistent identity, pinned Core key, or outbound connection).'
+    fail 'Komodo Periphery onboarding did not complete (no identity, no pinned Core key, or no outbound connection to Core).'
   fi
 
-  # The bootstrap credential has done its job. Drop it before the final restart,
-  # which then relies purely on the persistent Periphery identity.
+  # Drop the credential, then prove a credential-free start still reaches Core.
   rm -f -- "$periphery_bootstrap_env"
   bootstrap_written=false
   "$systemctl_bin" restart periphery
-  echo 'Komodo Periphery onboarded; bootstrap credential removed.'
+
+  if ! wait_for "$verify_attempts" "$verify_sleep" credential_free_ready; then
+    "$systemctl_bin" status periphery --no-pager >&2 || true
+    journalctl -u periphery --no-pager -n 80 >&2 || true
+    fail 'Komodo Periphery did not reconnect without the bootstrap credential, or still exposes it in its process environment.'
+  fi
+
+  # Commit point, written last.
+  commit_onboarding
+  bootstrap_committed=true
+  "$systemctl_bin" enable periphery >/dev/null
+  echo 'Komodo Periphery onboarded: credential removed, credential-free reconnect proven, onboarding marker committed.'
 else
-  # Ordinary reconcile: the persistent identity is already in place, so no
-  # bootstrap credential is involved anywhere. Restart only when something the
-  # running agent actually consumes changed, or when it is not running at all.
+  "$systemctl_bin" enable periphery >/dev/null
+  # Ordinary reconcile: no bootstrap credential is involved anywhere. Restart only
+  # when something the running agent consumes changed, or when it is not running.
   if [[ "$binary_before" != "$PERIPHERY_SHA256" || "$config_before" != "$(file_sha "$periphery_config")" \
      || "$unit_before" != "$(file_sha "$periphery_unit")" || "$service_was_active" != true ]]; then
     "$systemctl_bin" restart periphery

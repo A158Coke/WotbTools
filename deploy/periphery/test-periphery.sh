@@ -249,9 +249,15 @@ pass 'bootstrap-env-path-is-tmpfs'
 
 # ---------------------------------------------------------------------------
 # D. onboarding lifecycle, driven through the real install.sh
+#
+# Completion is a durable marker, never the identity file: Periphery v2.3.3
+# generates periphery.key during startup, so a failed first attempt leaves an
+# identity behind. These cases pin the whole state machine, including the
+# half-bootstrap retry that identity-only logic would wedge.
 # ---------------------------------------------------------------------------
 sha=0123456789abcdef0123456789abcdef01234567
 fixture_secret='fixture-onboarding-key-do-not-persist'
+marker_content='komodo-periphery-onboarding-v1'
 stub="$work/bin"
 mkdir -p "$stub"
 
@@ -260,25 +266,50 @@ cat > "$stub/systemctl" <<'STUB'
 set -Eeuo pipefail
 state="${STUB_STATE:?}"
 mkdir -p "$state"
+# Record whether the durable completion marker already exists, so a fixture can
+# prove the marker is written LAST.
+marker_note() {
+  if [[ -f "${STUB_MARKER:?}" ]]; then printf 'marker=present'; else printf 'marker=absent'; fi
+}
 command="${1:-}"; shift || true
 case "$command" in
   daemon-reload) exit 0 ;;
-  enable) : > "$state/enabled"; exit 0 ;;
+  enable) : > "$state/enabled"; printf 'enable %s\n' "$(marker_note)" >> "$state/events"; exit 0 ;;
   is-enabled) [[ -f "$state/enabled" ]] && exit 0 || exit 1 ;;
   is-active) [[ -f "$state/active" ]] && exit 0 || exit 1 ;;
   show) if [[ -f "$state/active" ]]; then echo "${STUB_MAIN_PID:-4242}"; else echo 0; fi ;;
-  stop) rm -f "$state/active"; printf 'stop\n' >> "$state/events"; exit 0 ;;
+  stop) rm -f "$state/active"; printf 'stop %s\n' "$(marker_note)" >> "$state/events"; exit 0 ;;
   start|restart)
+    # A restart replaces the process: the previous instance stops first, so the
+    # outbound connection has to be re-established afterwards.
+    rm -f "$state/active"
+    pid="${STUB_MAIN_PID:-4242}"
+    proc_env="${STUB_PROC:?}/$pid/environ"
+    mkdir -p "$(dirname "$proc_env")"
     if [[ -f "${STUB_BOOTSTRAP_ENV:?}" ]]; then
-      printf 'restart-with-bootstrap\n' >> "$state/events"
+      printf 'restart-with-bootstrap %s\n' "$(marker_note)" >> "$state/events"
       if [[ "${STUB_SIMULATE_ONBOARDING:-true}" == true ]]; then
         printf '%s\n' 'fixture-periphery-identity' > "${STUB_IDENTITY:?}"
         printf '%s\n' 'fixture-core-public-key' > "${STUB_CORE_PUB:?}"
       fi
+      # systemd copies the bootstrap EnvironmentFile into the process environment.
+      printf 'PERIPHERY_ONBOARDING_KEY=%s\0' "${STUB_BOOTSTRAP_VALUE:-fixture-key}" > "$proc_env"
+      : > "$state/active"
     else
-      printf 'restart-without-bootstrap\n' >> "$state/events"
+      printf 'restart-without-bootstrap %s\n' "$(marker_note)" >> "$state/events"
+      if [[ "${STUB_DIRTY_ENVIRON:-false}" == true ]]; then
+        # The credential outlived the EnvironmentFile, as it does whenever the
+        # process is not restarted after the file is removed.
+        printf 'PERIPHERY_ONBOARDING_KEY=%s\0' 'stale-key' > "$proc_env"
+      else
+        printf 'PATH=/usr/bin\0' > "$proc_env"
+      fi
+      # A credential-free start that cannot hold the connection must not be
+      # mistaken for a committed bootstrap.
+      if [[ "${STUB_BREAK_CREDENTIAL_FREE:-false}" != true ]]; then
+        : > "$state/active"
+      fi
     fi
-    : > "$state/active"
     exit 0
     ;;
 esac
@@ -321,12 +352,27 @@ prepare_case() {
   bin_path="$case_dir/bin/periphery"
   identity="$case_dir/etc/keys/periphery.key"
   core_pub="$case_dir/etc/keys/core.pub"
+  marker="$case_dir/etc/keys/onboarding-complete"
   bootstrap_env="$case_dir/run/periphery-bootstrap.env"
   events="$case_dir/state/events"
 }
 
+# The fixture writes the same marker the host does: reviewed content, mode 0600.
+write_marker() {
+  printf '%s\n' "$marker_content" > "$marker"
+  chmod 600 "$marker"
+}
+
+marker_is_valid() {
+  [[ -f "$marker" && -s "$marker" && ! -L "$marker" ]] || return 1
+  [[ "$(stat -c '%a' "$marker")" == 600 ]] || return 1
+  [[ "$(cat "$marker")" == "$marker_content" ]] || return 1
+  return 0
+}
+
+# run_install [onboarding-key] [simulate-onboarding] [break-credential-free] [dirty-environ]
 run_install() {
-  local key="${1:-}" simulate="${2:-true}"
+  local key="${1:-}" simulate="${2:-true}" break_free="${3:-false}" dirty="${4:-false}"
   env \
     PATH="$stub:$PATH" \
     PERIPHERY_ETC_DIR="$case_dir/etc" \
@@ -335,32 +381,65 @@ run_install() {
     PERIPHERY_RUN_DIR="$case_dir/run" \
     PERIPHERY_OPT_ROOT="$case_dir/opt" \
     PERIPHERY_WOTB_ROOT="$case_dir/wotb" \
+    PERIPHERY_PROC_ROOT="$case_dir/proc" \
     PERIPHERY_SYSTEMCTL="$stub/systemctl" \
     PERIPHERY_ONBOARD_ATTEMPTS=3 \
     PERIPHERY_ONBOARD_SLEEP_SECONDS=0 \
+    PERIPHERY_VERIFY_ATTEMPTS=3 \
+    PERIPHERY_VERIFY_SLEEP_SECONDS=0 \
+    PERIPHERY_STOP_ATTEMPTS=3 \
+    PERIPHERY_STOP_SLEEP_SECONDS=0 \
     STUB_STATE="$case_dir/state" \
     STUB_BOOTSTRAP_ENV="$bootstrap_env" \
     STUB_IDENTITY="$identity" \
     STUB_CORE_PUB="$core_pub" \
+    STUB_MARKER="$marker" \
+    STUB_PROC="$case_dir/proc" \
     STUB_SIMULATE_ONBOARDING="$simulate" \
+    STUB_BREAK_CREDENTIAL_FREE="$break_free" \
+    STUB_DIRTY_ENVIRON="$dirty" \
     KOMODO_YECAO_ONBOARDING_KEY="$key" \
     bash "$runtime/install.sh" "$sha" "$runtime" "$artifact" >"$case_dir/install.log" 2>&1
 }
 
-# D1. Existing identity: onboarding is not required and the identity is preserved.
-prepare_case existing-identity
+# marker_fingerprint: a value that changes if the marker is created, replaced, or
+# modified, including by a symlink.
+marker_fingerprint() {
+  if [[ -e "$marker" || -L "$marker" ]]; then
+    sha256sum "$marker" 2>/dev/null || printf 'unsafe-or-unreadable'
+  else
+    printf 'absent'
+  fi
+}
+
+# fail_closed <label> [onboarding-key]: the run must fail before any host mutation.
+# Passing a key proves the credential cannot rescue an unsafe or corrupted state.
+fail_closed() {
+  local label="$1" key="${2:-}" marker_before marker_after
+  marker_before="$(marker_fingerprint)"
+  if run_install "$key"; then
+    die "$label must fail closed"
+  fi
+  [[ ! -e "$bin_path" ]] || die "$label installed the binary"
+  [[ ! -e "$case_dir/etc/periphery.config.toml" ]] || die "$label installed the config"
+  [[ ! -e "$bootstrap_env" ]] || die "$label wrote a bootstrap credential"
+  marker_after="$(marker_fingerprint)"
+  [[ "$marker_before" == "$marker_after" ]] || die "$label modified the onboarding marker"
+}
+
+# D1. Completed install (marker + identity + core.pub), no GitHub secret.
+prepare_case completed
 printf '%s\n' 'fixture-periphery-identity' > "$identity"
 printf '%s\n' 'fixture-core-public-key' > "$core_pub"
-identity_before="$(sha256sum "$identity" | awk '{print $1}')"
-core_before="$(sha256sum "$core_pub" | awk '{print $1}')"
+write_marker
+state_before="$(sha256sum "$identity" "$core_pub" "$marker" | sha256sum)"
 if ! run_install; then
   cat "$case_dir/install.log" >&2
-  die 'reconcile with an existing identity must not require the onboarding secret'
+  die 'a completed install must reconcile without the onboarding secret'
 fi
-[[ "$(sha256sum "$identity" | awk '{print $1}')" == "$identity_before" ]] \
-  || die 'ordinary reconcile modified the persistent Periphery identity'
-[[ "$(sha256sum "$core_pub" | awk '{print $1}')" == "$core_before" ]] \
-  || die 'ordinary reconcile modified the pinned Core public key'
+[[ "$(sha256sum "$identity" "$core_pub" "$marker" | sha256sum)" == "$state_before" ]] \
+  || die 'ordinary reconcile modified the identity, the pinned Core key, or the completion marker'
+marker_is_valid || die 'ordinary reconcile damaged the completion marker'
 [[ ! -e "$bootstrap_env" ]] || die 'ordinary reconcile created a bootstrap credential'
 if grep -q 'restart-with-bootstrap' "$events"; then
   die 'ordinary reconcile restarted Periphery with a bootstrap credential'
@@ -368,24 +447,24 @@ fi
 [[ -x "$bin_path" ]] || die 'ordinary reconcile did not install the binary'
 cmp -s "$bin_path" "$artifact" || die 'the installed binary does not match the staged artifact'
 [[ -f "$case_dir/state/enabled" ]] || die 'the unit was not enabled'
-grep -q 'restart-without-bootstrap' "$events" || die 'the service was left stopped after the binary was replaced'
-pass 'reconcile-preserves-identity without-onboarding-secret'
+grep -q '^restart-without-bootstrap marker=present$' "$events" \
+  || die 'the completed service was left stopped after the binary was replaced'
+pass 'completed-install reconciles-without-secret and preserves identity+marker'
 
-# D2. Missing identity and missing onboarding secret: fail closed, before mutation.
-prepare_case missing-identity-no-secret
-if run_install; then
-  die 'a missing identity without an onboarding key must fail closed'
-fi
-grep -q 'Refusing to generate a new Server identity' "$case_dir/install.log" \
+# D2. Half-bootstrap (identity present, marker absent) and no secret: fail closed.
+prepare_case half-bootstrap-no-secret
+printf '%s\n' 'fixture-periphery-identity' > "$identity"
+printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+identity_before="$(sha256sum "$identity" | awk '{print $1}')"
+fail_closed 'half-bootstrap without an onboarding key'
+grep -q 'onboarding has not completed' "$case_dir/install.log" \
   || { cat "$case_dir/install.log" >&2; die 'the fail-closed reason was not reported'; }
-[[ ! -e "$identity" ]] || die 'a new identity was generated without onboarding'
-[[ ! -e "$bootstrap_env" ]] || die 'a bootstrap credential was written without a key'
-[[ ! -e "$bin_path" ]] || die 'the binary was installed even though onboarding could not proceed'
-[[ ! -e "$case_dir/etc/periphery.config.toml" ]] || die 'the config was installed before the onboarding decision'
-pass 'missing-identity-missing-secret fails-closed before mutation'
+[[ "$(sha256sum "$identity" | awk '{print $1}')" == "$identity_before" ]] \
+  || die 'the fail-closed path regenerated the identity'
+pass 'half-bootstrap-missing-secret fails-closed without touching the identity'
 
-# D3. Missing identity with the bootstrap secret: onboard once, then drop it.
-prepare_case onboarding
+# D3. Fresh install: bootstrap, drop the credential, prove the reconnect, commit LAST.
+prepare_case fresh
 run_install "$fixture_secret" || {
   cat "$case_dir/install.log" >&2
   die 'first onboarding with a valid onboarding key failed'
@@ -393,26 +472,132 @@ run_install "$fixture_secret" || {
 [[ -f "$identity" && -s "$identity" ]] || die 'onboarding did not produce a persistent identity'
 [[ -f "$core_pub" && -s "$core_pub" ]] || die 'onboarding did not pin the Core public key'
 [[ ! -e "$bootstrap_env" ]] || die 'the bootstrap credential survived onboarding'
-grep -q 'restart-with-bootstrap' "$events" || die 'onboarding never used the bootstrap credential'
-grep -q 'restart-without-bootstrap' "$events" || die 'Periphery was not restarted again without the credential'
+marker_is_valid || die 'onboarding did not commit a valid completion marker'
+[[ -f "$case_dir/state/enabled" ]] || die 'the unit was not enabled after commit'
+grep -q '^restart-with-bootstrap marker=absent$' "$events" || die 'onboarding never used the bootstrap credential'
+grep -q '^restart-without-bootstrap marker=absent$' "$events" \
+  || die 'Periphery was not restarted credential-free before the marker was written'
+if grep -q 'marker=present' <(grep '^restart-' "$events"); then
+  die 'the onboarding marker was written before a Periphery restart'
+fi
+grep -q '^enable marker=present$' "$events" || die 'the unit was enabled before onboarding committed'
+if grep -q '^enable marker=absent$' "$events"; then
+  die 'the unit was enabled before onboarding committed'
+fi
 # The credential must never reach persistent state or a log. The staged tree is
 # excluded: it is transient git content, and this very fixture lives in it.
 if grep -rq -- "$fixture_secret" "$case_dir/etc" "$case_dir/unit" "$case_dir/run" \
    "$case_dir/state" "$case_dir/install.log"; then
   die 'the onboarding key was persisted or logged'
 fi
-pass 'first-onboarding uses-then-removes the bootstrap credential'
+pass 'fresh-install bootstraps then commits the marker last'
 
-# D4. Onboarding that never completes: bounded wait, then fail closed cleanly.
+# D4. Failed bootstrap already produced an identity: the next reconcile MUST retry
+# with the secret, reusing that identity instead of wedging the host.
+for variant in with-core-pub identity-only; do
+  prepare_case "half-bootstrap-retry-$variant"
+  printf '%s\n' 'fixture-periphery-identity' > "$identity"
+  if [[ "$variant" == with-core-pub ]]; then
+    printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+  fi
+  identity_before="$(sha256sum "$identity" | awk '{print $1}')"
+  run_install "$fixture_secret" || {
+    cat "$case_dir/install.log" >&2
+    die "a half-bootstrap ($variant) must be retried with the onboarding key"
+  }
+  grep -q '^restart-with-bootstrap marker=absent$' "$events" \
+    || die "a half-bootstrap ($variant) did not retry onboarding"
+  [[ "$(sha256sum "$identity" | awk '{print $1}')" == "$identity_before" ]] \
+    || die "the retry regenerated the identity ($variant)"
+  marker_is_valid || die "the retry did not commit the marker ($variant)"
+  grep -q 'Reusing the Komodo Periphery identity' "$case_dir/install.log" \
+    || die "the retry did not report identity reuse ($variant)"
+done
+pass 'half-bootstrap-with-secret retries onboarding and reuses the identity'
+
+# D5/D6. Corrupted completed state: marker present, key material missing.
+for missing in identity core-pub; do
+  prepare_case "corrupt-completed-$missing"
+  printf '%s\n' 'fixture-periphery-identity' > "$identity"
+  printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+  write_marker
+  if [[ "$missing" == identity ]]; then
+    rm -f "$identity"
+  else
+    rm -f "$core_pub"
+  fi
+  fail_closed "a completed marker with a missing $missing" "$fixture_secret"
+  grep -q 'Corrupted Komodo Periphery state' "$case_dir/install.log" \
+    || { cat "$case_dir/install.log" >&2; die "the corrupted-state reason was not reported ($missing)"; }
+done
+pass 'corrupt-completed-state fails-closed without regenerating anything'
+
+# D7. Onboarding never completes: bounded wait, credential removed, service stopped.
 prepare_case onboarding-timeout
 if run_install "$fixture_secret" false; then
   die 'a Periphery that never onboarded must fail the reconcile'
 fi
 [[ ! -e "$bootstrap_env" ]] || die 'the bootstrap credential was left behind after a failed onboarding'
+[[ ! -e "$marker" ]] || die 'a failed onboarding committed the marker'
+grep -q '^stop ' "$events" || die 'a failed onboarding left the service running'
+[[ ! -f "$case_dir/state/active" ]] || die 'a failed onboarding left an active process holding the credential'
 if grep -rq -- "$fixture_secret" "$case_dir/etc" "$case_dir/unit"; then
   die 'the onboarding key was persisted after a failed onboarding'
 fi
-pass 'incomplete-onboarding fails-closed and removes the credential'
+pass 'incomplete-onboarding stops the service and leaves no live credential'
+
+# D8. The credential-free restart fails: the marker must stay absent.
+prepare_case credential-free-failure
+if run_install "$fixture_secret" true true; then
+  die 'a failed credential-free restart must fail the reconcile'
+fi
+[[ ! -e "$marker" ]] || die 'the marker was committed although the credential-free restart never connected'
+[[ ! -e "$bootstrap_env" ]] || die 'the bootstrap credential was left behind'
+grep -q '^stop ' "$events" || die 'the failed credential-free restart left the service running'
+pass 'credential-free-restart-failure leaves the commit marker absent'
+
+# D8b. The credential survives in the process environment after the file is
+# removed: the bootstrap must not commit, and the service must be stopped.
+prepare_case credential-in-process-env
+if run_install "$fixture_secret" true false true; then
+  die 'a process still carrying the bootstrap credential must fail the reconcile'
+fi
+[[ ! -e "$marker" ]] || die 'the marker was committed while the process still carried the credential'
+[[ ! -e "$bootstrap_env" ]] || die 'the bootstrap credential file was left behind'
+grep -q '^stop ' "$events" || die 'a process still carrying the credential was left running'
+pass 'credential-left-in-process-env fails the bootstrap and stops the service'
+
+# D9. Unsafe or unexpected markers must fail closed.
+prepare_case marker-symlink
+printf '%s\n' 'fixture-periphery-identity' > "$identity"
+printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+printf '%s\n' "$marker_content" > "$work/real-marker"
+chmod 600 "$work/real-marker"
+ln -s "$work/real-marker" "$marker"
+fail_closed 'a symlinked completion marker' "$fixture_secret"
+
+prepare_case marker-dangling
+printf '%s\n' 'fixture-periphery-identity' > "$identity"
+printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+ln -s "$case_dir/etc/keys/absent-marker" "$marker"
+fail_closed 'a dangling completion marker symlink' "$fixture_secret"
+
+prepare_case marker-wrong-content
+printf '%s\n' 'fixture-periphery-identity' > "$identity"
+printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+printf '%s\n' 'komodo-periphery-onboarding-v0' > "$marker"
+chmod 600 "$marker"
+fail_closed 'a completion marker with unexpected content' "$fixture_secret"
+
+prepare_case marker-wrong-mode
+printf '%s\n' 'fixture-periphery-identity' > "$identity"
+printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+printf '%s\n' "$marker_content" > "$marker"
+chmod 644 "$marker"
+fail_closed 'a completion marker with unsafe permissions' "$fixture_secret"
+grep -q 'Corrupted Komodo Periphery onboarding marker' "$case_dir/install.log" \
+  || { cat "$case_dir/install.log" >&2; die 'the unsafe-marker reason was not reported'; }
+pass 'unsafe-or-unexpected-markers fail-closed'
 
 # ---------------------------------------------------------------------------
 # E. ":8120 has no listener" is a real probe, not a string assertion
@@ -466,6 +651,8 @@ for expected in \
   'PASS periphery-version' \
   'PASS periphery-systemd' \
   'PASS periphery-persistent-identity' \
+  'PASS periphery-onboarding-complete' \
+  'periphery_marker_state' \
   'PASS periphery-outbound-connected' \
   'PASS periphery-no-inbound-8120' \
   'PASS periphery-config-outbound-only' \
@@ -479,18 +666,32 @@ for expected in \
   'require_real_file "$periphery_core_pub"' \
   'established_core_connections' \
   'listener_on_8120' \
-  '/proc/$pid/environ' \
+  'process_env_has_onboarding_key' \
   '^PERIPHERY_ONBOARDING_KEY=' \
   '/var/run/docker.sock' \
   'docker info' \
   'Requires=docker.service'; do
-  grep -Fq -- "$expected" "$verify_script" "$ROOT/periphery.service" \
+  grep -Fq -- "$expected" "$verify_script" "$ROOT/periphery.service" "$ROOT/lib.sh" \
     || die "production verification lost: $expected"
 done
 # Verification must never reach for a Komodo admin credential.
 if grep -Eq 'KOMODO_(INIT_ADMIN_PASSWORD|JWT_SECRET|WEBHOOK_SECRET|DATABASE_PASSWORD)' "$verify_script"; then
   die 'production verification must not use a Komodo admin/API credential'
 fi
+# The durable commit point has exactly one definition, and no code path may treat
+# the identity file as proof that onboarding completed.
+grep -Fq 'komodo-periphery-onboarding-v1' "$ROOT/lib.sh" \
+  || die 'the onboarding marker content is not pinned in lib.sh'
+grep -Fq 'periphery_marker="$periphery_etc/keys/onboarding-complete"' "$ROOT/lib.sh" \
+  || die 'the onboarding marker path is not pinned in lib.sh'
+grep -Fq 'must run as root' "$ROOT/reconcile.sh" \
+  || die 'reconcile.sh must assert that it runs as root'
+# Completion is derived from the durable marker, never from the identity file; the
+# half-bootstrap cases above prove the behaviour dynamically.
+grep -Fq 'marker_state="$(periphery_marker_state)"' "$ROOT/install.sh" \
+  || die 'install.sh must derive onboarding completion from the durable marker'
+grep -Fq 'case "$marker_state" in' "$ROOT/install.sh" \
+  || die 'install.sh must branch on the durable marker state'
 pass 'verification-contract all ten checks keep real probes'
 
 echo 'Komodo Periphery contract fixtures: PASS'
