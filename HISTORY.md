@@ -502,6 +502,26 @@ WotbTools 将 production pin 从 v0.3.8 升到 v0.3.9，并继续通过 Release 
 
 **Git 证据：** PR #451；upstream `v0.3.9` / `b4e50e13`。
 
+## Agent 产物身份改为 content-addressed（stale WASM 修复）
+
+上游 WASM 此前一直以**固定 URL** `/wasm/wotb_replay_wasm.js` 伺服。前端 build 换了，
+浏览器却可能仍持有旧 Agent 产物：同一个页面用旧引擎解析新回放，症状要等到 AI Review
+报 `ai_review.poses 缺失` 才暴露——修复也因此容易被误判成 parser 或 validator 的问题。
+
+修复不是加 `?v=<commit>` 查询串：wasm-bindgen wrapper 会自行加载 `_bg.wasm`，只给 JS
+加版本参数无法为「JS + WASM」建立统一 identity。这次把产物落位改成**目录即身份**：
+`common/assets/wasm/<upstream commit>/`，运行时固定访问 `/wasm/<commit>/…`，
+`deploy/agent/source.json` 仍是唯一 identity SSOT，build 期由 Vite 注入
+`__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载前先校验产物 `fingerprint.json`
+的 commit 与 tag，不一致抛 `AgentWasmVersionMismatchError`（fail closed）。
+
+由此得到的长期性质：**URL 就是内容身份**。新 Agent 换新 URL，旧 URL 永不覆盖，
+`/wasm/<40 位 commit>/` 可以放心长期 `immutable` 缓存——「普通刷新即生效」不再依赖
+强制 no-cache；stable 路径被废除并由测试、Docker build 与 TX 发布校验三处断言不存在。
+
+**Git 证据：** 本 PR；`deploy/agent/source.json`、`scripts/fetch-agent-wasm.sh`、
+`frontend/src/api/agent-replay-facets.ts`。
+
 ## 当前架构形成的三条长期主线
 
 回看整个演进过程，WotbTools 的变化并不是简单的功能累积，而主要沿三条长期主线收敛。

@@ -32,6 +32,25 @@ WotBTools
 - 消费方接口：`frontend/src/api/agent-replay-facets.ts`（三能力装载 + 形状校验
   + `projectHoF` 投影；样例锁定测试同目录）。
 
+### 1a. 装载边界（artifact identity；content-addressed）
+
+产物 identity 的 SSOT 是 `deploy/agent/source.json`（`ref` = 上游完整 commit，
+`artifact.release` = Release tag，`artifact.sha256` = 附件校验）：
+
+- **文件名与目录是契约的一部分**：`/wasm/<ref>/wotb_replay_wasm.js`、
+  `/wasm/<ref>/wotb_replay_wasm_bg.wasm`、`/wasm/<ref>/fingerprint.json`。
+  wasm-bindgen wrapper 自行加载同目录的 `_bg.wasm`，因此三者必须同一 commit 目录。
+- **stable `/wasm/wotb_replay_wasm.js` 禁止回归**：固定 URL 会让浏览器把别的 build
+  的产物长期缓存下来，同一 frontend 用错版引擎解析（症状：AI Review 报
+  `ai_review.poses 缺失`）。测试、Docker build 与 TX 发布校验都断言它不存在。
+- **装载顺序 fail closed**：fetch versioned `fingerprint.json` → 校验
+  `upstream_commit` / `tag` 等于 build 期 pin（Vite `define` 注入的
+  `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`）→ dynamic import versioned JS →
+  wrapper 从同目录装载 `_bg.wasm`。任一不一致抛 `AgentWasmVersionMismatchError`
+  （携带 expected/actual 的 release 与 commit），不进入形状校验。
+- **缓存**：`/wasm/<40 位 commit>/` 可长期 `immutable`——URL 即内容身份，新 Agent
+  换 URL，普通刷新即生效；不使用 no-cache。
+
 ## 2. 契约形状总则
 
 - 各切面顶层带 `version`：Result / AI 切面为 **1**；**PlaybackData 自上游 v0.3.1 起为 2**
