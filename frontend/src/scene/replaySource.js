@@ -3,39 +3,16 @@
 //（评审 P0-3）；地图/地形/场景等渲染资产经 assetProvider 走配置的 remote asset origin。
 //
 // WASM 产物由 CI 依据 deploy/agent/source.json 锁定的上游 Release 产物直取
-//（fetch-agent-wasm.sh，sha256 校验）到 common/assets/wasm/，经 publicDir 进
-// dist 伺服 /wasm/；产物缺失时本地通道拒绝并提示。
+//（fetch-agent-wasm.sh，sha256 + fingerprint 双重校验）到 common/assets/wasm/<ref>/，
+// 经 publicDir 进 dist，线上由 /wasm/<ref>/ 伺服；产物缺失时本地通道拒绝并提示。
+// 装载器与 AI/表格通道共用 `api/agent-replay-facets` 的 `loadAgentWasmModule`：versioned URL
+//（URL identity = upstream commit）+ fingerprint 版本门禁，错版产物在装载阶段就抛
+// `AgentWasmVersionMismatchError`，不会把别的 build 的 Agent 静默喂给渲染层。
 
 // 契约校验复用 api/agent-replay-facets 的 validateAgentPlayback（trust-boundary
 // 单一实现）：3D 路径此前只做 JSON.parse，错版 WASM 可静默载入 v1 数据（缺
 // supremacy_bases/points/aim_frames），版本门禁形同虚设。
-import { validateAgentPlayback } from '../api/agent-replay-facets.js'
-
-let wasmPromise = null
-
-async function loadWasm() {
-  if (!wasmPromise) {
-    wasmPromise = (async () => {
-      // 运行时 URL：@vite-ignore 阻止构建期解析（产物由 CI fetch 步骤落位 publicDir）
-      const spec = '/wasm/wotb_replay_wasm.js'
-      const mod = await import(/* @vite-ignore */ spec)
-      if (mod.default) await mod.default() // target web：初始化 .wasm 实例
-      return mod
-    })()
-    wasmPromise.catch(() => {
-      wasmPromise = null // 失败可重试
-    })
-  }
-  return wasmPromise
-}
-
-/**
- * 测试注入点：以桩替换 WASM 模块加载（回归测试需在不依赖真实产物的前提下
- * 走完 loadFromLocalFile 全路径）。生产代码不调用；传 null 可复位。
- */
-export function __setWasmForTest(mod) {
-  wasmPromise = mod ? Promise.resolve(mod) : null
-}
+import { loadAgentWasmModule, validateAgentPlayback } from '../api/agent-replay-facets.js'
 
 /**
  * 本地通道（唯一通道）：File/Blob → 浏览器文件接口 → WASM parsePlayback →
@@ -61,7 +38,7 @@ function tankNamesStatic() {
 }
 
 export async function loadFromLocalFile(fileObject) {
-  const mod = await loadWasm()
+  const mod = await loadAgentWasmModule()
   if (typeof mod.parsePlayback !== 'function') {
     throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
   }

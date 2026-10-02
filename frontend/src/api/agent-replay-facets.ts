@@ -621,11 +621,75 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
 // ---------- WASM 装载（本地通道；build-time 固定产物，运行时不选择版本） ----------
 
 /**
- * build-time 固定的本地产物路径：WotBTools CI 依据 `deploy/agent/source.json`
- * 锁定的上游 Release 产物（sha256 校验）打包进前端 release。运行时不选择
- * upstream artifact——版本决策发生在 build/release 边界（可复现构建）。
+ * build-time 固化的 Agent identity（Vite `define`，来源 `deploy/agent/source.json`，
+ * 见 `frontend/vite.config.js:agentWasmIdentity`）。运行期 URL 一律由它拼出：
+ *
+ *   /wasm/<upstream_commit>/wotb_replay_wasm.js
+ *   /wasm/<upstream_commit>/wotb_replay_wasm_bg.wasm   ← wasm-bindgen wrapper 自行加载
+ *   /wasm/<upstream_commit>/fingerprint.json
+ *
+ * **stable `/wasm/wotb_replay_wasm.js` 已废除且禁止回归**：旧 URL 会被浏览器长期缓存，
+ * 新 build 与旧产物混用就会出现「同一个 frontend 加载到别人的 Agent」——错版解析要等到
+ * AI Review 才以 `poses` 缺失暴露。commit-addressed 目录让 URL 与内容同身份：新 Agent
+ * → 新 URL，旧 URL 永不覆盖；缓存失效靠 URL identity，不靠强制 no-cache。
+ *
+ * `typeof` 兜底：e2e 直接跑 `src/`（无 bundler 替换 define）时退化为占位身份，
+ * 产物路径 `/wasm/unknown/` 必然 404 → `AgentWasmVersionMismatchError`，仍然 fail closed。
  */
-const AGENT_WASM_URL = '/wasm/wotb_replay_wasm.js'
+declare const __AGENT_WASM_COMMIT__: string | undefined
+declare const __AGENT_WASM_RELEASE__: string | undefined
+
+export const AGENT_WASM_COMMIT = typeof __AGENT_WASM_COMMIT__ === 'string' ? __AGENT_WASM_COMMIT__ : 'unknown'
+export const AGENT_WASM_RELEASE = typeof __AGENT_WASM_RELEASE__ === 'string' ? __AGENT_WASM_RELEASE__ : 'unknown'
+
+/**
+ * Agent identity 与产物不一致（fail-closed）。
+ *
+ * 场景：fingerprint 缺失/格式错误、`upstream_commit` 与 build 期 pin 不一致、
+ * `tag` 与 pin 的 release 不一致——即浏览器里躺着别的 build 的 Agent 产物。
+ * content-addressed 改造完成后用户不应再遇到它；它是最后一道 fail-safe，
+ * 不允许继续执行到「AI Review 报 `poses` 缺失」才发现错版。
+ */
+export class AgentWasmVersionMismatchError extends Error {
+  readonly expectedRelease: string
+  readonly expectedCommit: string
+  readonly actualRelease: string
+  readonly actualCommit: string
+
+  constructor(init: {
+    expectedRelease: string
+    expectedCommit: string
+    actualRelease: string
+    actualCommit: string
+    reason: string
+  }) {
+    super(
+      `agent wasm identity mismatch (${init.reason}): `
+      + `build pins ${init.expectedRelease}@${init.expectedCommit}, `
+      + `served ${init.actualRelease}@${init.actualCommit}`,
+    )
+    this.name = 'AgentWasmVersionMismatchError'
+    this.expectedRelease = init.expectedRelease
+    this.expectedCommit = init.expectedCommit
+    this.actualRelease = init.actualRelease
+    this.actualCommit = init.actualCommit
+  }
+}
+
+/** 本 build 固化的 Agent 产物的 commit-addressed 目录（URL identity） */
+export function agentWasmBase(commit: string = AGENT_WASM_COMMIT): string {
+  return `/wasm/${commit}`
+}
+
+/** 本 build 固化的 Agent 产物入口（wasm-bindgen wrapper 从同目录加载 `_bg.wasm`） */
+export function agentWasmModuleUrl(commit: string = AGENT_WASM_COMMIT): string {
+  return `${agentWasmBase(commit)}/wotb_replay_wasm.js`
+}
+
+/** 本 build 固化的 Agent 产物清单 URL */
+export function agentWasmFingerprintUrl(commit: string = AGENT_WASM_COMMIT): string {
+  return `${agentWasmBase(commit)}/fingerprint.json`
+}
 
 interface AgentWasmModule {
   /** tankNamesJson 可选：`{tank_id: name}` 车型名表（上游 v0.3.1 起） */
@@ -638,49 +702,196 @@ interface AgentWasmModule {
   initSync?: () => void
 }
 
+/** 产物清单（`<commit>/fingerprint.json`，与产物同目录发布） */
+export interface AgentWasmFingerprint {
+  /** 上游 Release tag（必须等于 `deploy/agent/source.json:artifact.release`） */
+  tag: string
+  /** 上游源码 commit（必须等于 `deploy/agent/source.json:ref`） */
+  upstream_commit: string
+}
+
+/** 一次装载的 Agent 产物身份（URL identity + 校验过的产物清单） */
+export interface AgentWasmIdentity {
+  release: string
+  commit: string
+  fingerprint: AgentWasmFingerprint
+}
+
 let wasmPromise: Promise<AgentWasmModule> | null = null
+let loadedIdentity: AgentWasmIdentity | null = null
+
+const fingerprintPromises = new Map<string, Promise<AgentWasmFingerprint>>()
+
+function mismatch(
+  expected: AgentWasmIdentityPin,
+  actual: { release: string; commit: string },
+  reason: string,
+): AgentWasmVersionMismatchError {
+  return new AgentWasmVersionMismatchError({
+    expectedRelease: expected.release,
+    expectedCommit: expected.commit,
+    actualRelease: actual.release,
+    actualCommit: actual.commit,
+    reason,
+  })
+}
+
+/** build 期 pin 的 Agent identity（可显式注入，便于对装载路径做契约测试） */
+export interface AgentWasmIdentityPin {
+  release: string
+  commit: string
+}
 
 /**
- * 惰性装载 wasm-bindgen 产物（web target：default() 异步初始化）。
- * 保证：单次初始化、并发调用共享 Promise、失败清空缓存可重试。
+ * 读取并校验产物清单：`upstream_commit` / `tag` 必须与 build 期 pin 逐字段一致。
+ *
+ * 任何不一致（缺失、不可读、非法 JSON、commit/tag 不匹配）都抛
+ * [`AgentWasmVersionMismatchError`]——fail closed，绝不继续解析。
  */
-export function loadAgentWasm(): Promise<AgentWasmModule> {
-  if (!wasmPromise) {
+export async function verifyAgentWasmFingerprint(
+  expected: AgentWasmIdentityPin,
+  commit: string = expected.commit,
+): Promise<AgentWasmFingerprint> {
+  const url = agentWasmFingerprintUrl(commit)
+  const cached = fingerprintPromises.get(url)
+  if (cached) return cached
+
+  const pending = (async (): Promise<AgentWasmFingerprint> => {
+    let response: Response
+    try {
+      response = await fetch(url)
+    } catch (e) {
+      throw mismatch(expected, { release: 'unknown', commit: 'unknown' }, `fingerprint ${url} 不可读：${String(e)}`)
+    }
+    if (!response.ok) {
+      throw mismatch(expected, { release: 'unknown', commit: 'unknown' }, `fingerprint ${url} 返回 HTTP ${response.status}`)
+    }
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch {
+      throw mismatch(expected, { release: 'unknown', commit: 'unknown' }, `fingerprint ${url} 不是合法 JSON`)
+    }
+    const doc = isObject(raw) ? raw : {}
+    const actualTag = typeof doc.tag === 'string' ? doc.tag : ''
+    const actualCommit = typeof doc.upstream_commit === 'string' ? doc.upstream_commit : ''
+    if (!actualTag || !actualCommit) {
+      throw mismatch(
+        expected,
+        { release: actualTag || 'unknown', commit: actualCommit || 'unknown' },
+        `fingerprint ${url} 缺 tag/upstream_commit`,
+      )
+    }
+    if (actualCommit !== expected.commit) {
+      throw mismatch(expected, { release: actualTag, commit: actualCommit }, 'upstream_commit 与 build 期 pin 不一致')
+    }
+    if (actualTag !== expected.release) {
+      throw mismatch(expected, { release: actualTag, commit: actualCommit }, 'tag 与 build 期 pin 的 release 不一致')
+    }
+    return { tag: actualTag, upstream_commit: actualCommit }
+  })()
+
+  fingerprintPromises.set(url, pending)
+  pending.catch(() => { fingerprintPromises.delete(url) }) // 失败可重试
+  return pending
+}
+
+/**
+ * 装载并校验 wasm-bindgen 产物（web target：default() 异步初始化）。
+ * 保证：单次初始化、并发调用共享 Promise、失败清空缓存可重试。
+ *
+ * 顺序固定：**先校验 fingerprint，再 dynamic import versioned JS**（wasm-bindgen
+ * wrapper 会从同一目录加载 `<commit>/wotb_replay_wasm_bg.wasm`）——错版产物在装载
+ * 阶段就失败，而不是等到 AI Review 投影才发现 `poses` 缺失。
+ *
+ * 生产入口是 [`loadAgentWasmModule`]（它在调用本函数前先做同一份门禁 + 测试可注桩）；
+ * 本函数保留导出以便契约测试直接驱动**真实**装载路径（versioned URL + dynamic import）。
+ */
+export function loadAgentWasm(
+  expected: AgentWasmIdentityPin = { release: AGENT_WASM_RELEASE, commit: AGENT_WASM_COMMIT },
+): Promise<AgentWasmModule> {
+  if (!wasmPromise || !loadedIdentity
+    || loadedIdentity.commit !== expected.commit || loadedIdentity.release !== expected.release) {
     wasmPromise = (async () => {
-      // 运行时 URL：常量形式 + @vite-ignore 避免 bundler 构建期解析
-      const mod = (await import(/* @vite-ignore */ AGENT_WASM_URL)) as AgentWasmModule
+      const fingerprint = await verifyAgentWasmFingerprint(expected)
+      // 运行期 URL：常量形式 + @vite-ignore 避免 bundler 构建期解析
+      const mod = (await import(/* @vite-ignore */ agentWasmModuleUrl(expected.commit))) as AgentWasmModule
       if (mod.default) await mod.default()
+      loadedIdentity = { release: expected.release, commit: expected.commit, fingerprint }
+      // 排障用：用户报「解析结果不对」时，这条日志能直接证明页面实际加载的是哪个 Agent
+      console.info('[agent-wasm] loaded', {
+        release: loadedIdentity.release,
+        commit: loadedIdentity.commit,
+        url: agentWasmModuleUrl(expected.commit),
+      })
       return mod
     })()
     wasmPromise.catch(() => {
       wasmPromise = null // 失败可重试
+      loadedIdentity = null
     })
   }
   return wasmPromise
 }
 
+/** 已装载 Agent 产物的身份（未装载 → null）；与 [`loadAgentWasm`] 同一校验结果 */
+export function agentWasmIdentity(): AgentWasmIdentity | null {
+  return loadedIdentity
+}
+
+/**
+ * 测试注入点：以桩替换 WASM 模块解析（回归测试需在不依赖真实产物的前提下
+ * 走完解析路径）。生产代码不调用；传 null 复位。
+ */
+let wasmModuleResolver: ((expected: AgentWasmIdentityPin) => Promise<AgentWasmModule>) | null = null
+
+export function __setAgentWasmResolverForTest(
+  resolver: ((expected: AgentWasmIdentityPin) => Promise<AgentWasmModule>) | null,
+): void {
+  wasmModuleResolver = resolver
+}
+
+/** 测试注入点：清空装载/清单缓存（每个用例独立驱动装载路径）。生产代码不调用。 */
+export function __resetAgentWasmForTest(): void {
+  wasmModuleResolver = null
+  wasmPromise = null
+  loadedIdentity = null
+  fingerprintPromises.clear()
+}
+
+/**
+ * 装载模块：**先校验 fingerprint（URL identity），再解析模块**——表格 / 3D / AI
+ * 三个通道共用这一个入口，版本门禁只有一份实现。测试可注入模块桩（resolver），
+ * 但 fingerprint 门禁仍然生效（桩只替换"模块从哪来"，不替换"产物身份对不对"）。
+ */
+export async function loadAgentWasmModule(
+  expected: AgentWasmIdentityPin = { release: AGENT_WASM_RELEASE, commit: AGENT_WASM_COMMIT },
+): Promise<AgentWasmModule> {
+  await verifyAgentWasmFingerprint(expected)
+  const resolver = wasmModuleResolver
+  if (resolver) return resolver(expected)
+  return loadAgentWasm(expected)
+}
+
+/**
+ * 已装载 WASM 产物的来源（`/wasm/<commit>/fingerprint.json`，与产物同目录发布）。
+ * 先装载再读，返回值一定已过 build 期 pin 校验——不一致时抛
+ * [`AgentWasmVersionMismatchError`]，不再返回 null 让调用方"猜"产物版本。
+ */
+export async function loadAgentWasmFingerprint(): Promise<AgentWasmFingerprint> {
+  await loadAgentWasm()
+  const identity = loadedIdentity
+  if (!identity) throw new Error('agent wasm: identity 未建立')
+  return identity.fingerprint
+}
+
 async function wasmFn<K extends keyof AgentWasmModule>(name: K): Promise<Exclude<AgentWasmModule[K], undefined>> {
-  const mod = await loadAgentWasm()
+  const mod = await loadAgentWasmModule({ release: AGENT_WASM_RELEASE, commit: AGENT_WASM_COMMIT })
   const fn = mod[name]
   if (typeof fn !== 'function') {
     throw new Error(`agent wasm: ${String(name)} 缺失（产物版本不匹配契约 v2）`)
   }
   return fn as Exclude<AgentWasmModule[K], undefined>
-}
-
-/** 已装载 WASM 产物的来源（`/wasm/fingerprint.json`，与产物同包发布；不可读 → null） */
-export interface AgentWasmFingerprint { tag: string; upstream_commit: string }
-
-let fingerprintPromise: Promise<AgentWasmFingerprint | null> | null = null
-
-export function loadAgentWasmFingerprint(): Promise<AgentWasmFingerprint | null> {
-  if (!fingerprintPromise) {
-    fingerprintPromise = fetch('/wasm/fingerprint.json')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => (j && typeof j.tag === 'string' && typeof j.upstream_commit === 'string' ? j as AgentWasmFingerprint : null))
-      .catch(() => null)
-  }
-  return fingerprintPromise
 }
 
 // ---------- 本地通道：bytes → WASM → 校验过的能力数据 ----------

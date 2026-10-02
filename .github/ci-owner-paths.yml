@@ -56,6 +56,9 @@ frontend:
   - 'common/assets/**'
   - 'deploy/agent/source.json'
   - 'scripts/fetch-agent-wasm.sh'
+  # Agent 产物 ingest 校验与源码自建后备：改它们必须重跑 frontend CI（dist 契约 smoke）
+  - 'scripts/agent-wasm-artifact.py'
+  - 'scripts/build-agent-wasm.sh'
   - 'HISTORY.md'
   - 'docs/architecture/TECHNICAL_EVOLUTION.md'
   - 'docs/WotBTools_League_Rating_V6.md'
