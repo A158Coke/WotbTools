@@ -1,4 +1,4 @@
-# Komodo Periphery on Yecao and TX1 (K3.1 + K3.2)
+# Komodo Periphery on Yecao, TX1 and TX2 (K3.1 + K3.2 + K3.3)
 
 Komodo **Periphery** runs on each production host as a repository-owned,
 systemd-managed agent, so Komodo Core can present those hosts as Servers. One
@@ -9,19 +9,24 @@ deployments, repos, builds, procedures) is a later phase and is deliberately
 
 ```text
 Yecao  periphery v2.3.3 ──┐
-                          ├──>  Komodo Core  http://10.20.0.2:9120  (WireGuard only)
-TX1    periphery v2.3.3 ──┘                 │
+TX1    periphery v2.3.3 ──┼──>  Komodo Core  http://10.20.0.2:9120  (WireGuard only)
+TX2    periphery v2.3.3 ──┘                 │
                                             v
-                          Komodo UI → Servers → yecao OK / tx1 OK
+                          Komodo UI → Servers → yecao OK / tx1 OK / tx2 OK
 ```
 
-Both agents use **Periphery v2.3.3**, connect **outbound only** to
-`http://10.20.0.2:9120`, and never open an inbound port.
+Every agent uses **Periphery v2.3.3**, connects **outbound only** to
+`http://10.20.0.2:9120`, and never opens an inbound port.
 
 | Phase | Host | State |
 | --- | --- | --- |
-| K3.1 | Yecao | complete; its onboarding credential was deleted after success |
-| K3.2 | TX1 | first onboarding, after Yecao re-proved compatibility with the multi-target refactor |
+| K3.1 | Yecao | complete and production-proven; its onboarding credential was deleted after success |
+| K3.2 | TX1 | complete and production-proven; onboarding credential deleted, reconciles credential-free |
+| K3.3 | TX2 | **onboarding implemented, not yet complete**: it still needs the production first-onboarding run, then credential deletion, then a credential-free second run |
+
+TX2's WireGuard link (`10.20.0.3/24` → Core at `10.20.0.2`) was established **before**
+this phase and is **not** owned or managed by the Periphery change; nothing here
+touches `/etc/wireguard`.
 
 ## Ownership
 
@@ -49,6 +54,7 @@ target-agnostic. Everything host-specific lives in
 | --- | --- | --- | --- | --- |
 | `yecao` | `yecao` | `/opt/wotb/.deploy.lock` | `/opt/periphery` | `root` (the SSH account is root) |
 | `tx1` | `tx1` | `/opt/wotb-tx/.deploy.lock` | `/opt/wotb-tx/periphery` | `sudo` (non-interactive) |
+| `tx2` | `tx2` | `/opt/wotb-tx2/.deploy.lock` | `/opt/wotb-tx2/periphery` | `sudo` (non-interactive) |
 
 `target.env` is validated by the same `load_target_profile` code on the host and in
 the workflow: the target name must match its directory, `connect_as` must equal the
@@ -57,10 +63,11 @@ refused. `install.sh` additionally refuses, **before touching the host**, a stag
 config whose `connect_as` is not this target's, so one host can never install
 another host's Server identity.
 
-Adding a host later (TX2) means adding one reviewed target directory and two
-workflow jobs mirroring the existing ones — never a second lifecycle
-implementation. Filesystem paths are identical on both hosts on purpose: they are
-separate machines, so `/etc/komodo` and `/usr/local/bin/periphery` are host-local.
+Adding a host means adding one reviewed target directory and one workflow job
+mirroring the existing ones — never a second lifecycle implementation; the contract
+tests enumerate every reviewed target, so a new host cannot be added silently.
+Filesystem paths are identical on all hosts on purpose: they are separate machines,
+so `/etc/komodo` and `/usr/local/bin/periphery` are host-local.
 
 ## Host locks
 
@@ -71,22 +78,26 @@ and never creates its own:
   `observability.yml`, and `ai-service.yml`.
 - **TX1:** `/opt/wotb-tx/.deploy.lock`, shared with Business API, Frontend, Caddy,
   and Alloy, so no two TX mutations can overlap.
+- **TX2:** `/opt/wotb-tx2/.deploy.lock`, the host's own deploy-owned lock, so no two
+  TX2 mutations can overlap.
 
 The lock root and its lock file belong to the host's deploy owner, so the reconcile
 **requires them to already exist** and fails closed if they do not. Creating the
 file as root would leave a root-only lock that the host's own non-root deploy user
-could no longer take.
+could no longer take. Each target's lock root is distinct, and the contract tests
+assert that no two targets share one.
 
 ## Privilege model
 
 - **Yecao** runs the reconcile directly as its (root) SSH account; the script
   asserts it is root.
-- **TX1** does not assume root. `reconcile.sh` re-executes itself through
+- **TX1** and **TX2** do not assume root. The same generic `PERIPHERY_PRIVILEGE=sudo`
+  path applies to both: `reconcile.sh` re-executes itself through
   **non-interactive sudo** (`sudo -n`) and requires that to be available, failing
   closed otherwise. Only the generic onboarding variable is preserved
   (`sudo --preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY`), so the credential travels
   in the environment — never in argv, on disk, or in a log. A deterministic `PATH`
-  is set for the privileged half.
+  is set for the privileged half. There is no per-host sudo implementation.
 
 ## Binary pin
 
@@ -164,13 +175,15 @@ with `core_address` kept only as a legacy alias.
 ## Onboarding credential lifecycle
 
 The runtime variable is generic: **`KOMODO_PERIPHERY_ONBOARDING_KEY`**. The workflow
-maps each host's own GitHub secret into it (TX1: `KOMODO_TX1_ONBOARDING_KEY`), and
-the scripts never know a provider-specific secret name.
+maps each host's own GitHub secret into it (TX1: `KOMODO_TX1_ONBOARDING_KEY`, TX2:
+`KOMODO_TX2_ONBOARDING_KEY`), and the scripts never know a host-specific secret name.
 
-**Yecao's credential has been deleted** (the GitHub secret and the UI onboarding key),
-so its job forwards no secret at all and must succeed from `onboarding-complete` +
-`periphery.key` + `core.pub`. TX1's secret should likewise be deleted after its first
-successful onboarding.
+**Yecao's and TX1's credentials have been deleted** (the GitHub secrets and the UI
+onboarding keys), so those jobs forward no secret at all and must succeed from
+`onboarding-complete` + `periphery.key` + `core.pub`. TX2 still needs its credential
+for the first onboarding; the operator deletes `KOMODO_TX2_ONBOARDING_KEY` and the
+`tx2-periphery-bootstrap` UI key after that run succeeds, and the following
+`workflow_dispatch` must then succeed credential-free.
 
 1. `install.sh` decides from the host state, never from the identity file:
    - **marker valid + identity valid + `core.pub` valid** → onboarding is complete
@@ -285,7 +298,8 @@ Then open `https://komodo.wotbtools.com` and confirm:
 ```text
 Servers
 ├── yecao   OK   v2.3.3
-└── tx1     OK   v2.3.3
+├── tx1     OK   v2.3.3
+└── tx2     OK   v2.3.3
 ```
 
 ## Rollback
@@ -307,7 +321,8 @@ from the UI independently.
 
 ## Out of scope
 
-TX2 onboarding, Business API / Frontend / Keycloak / AI service migration, stacks,
-deployments, repos, builds, procedures, actions, resource sync, automatic updates,
-OIDC/SSO, registry or git credentials, Mongo backup changes, Komodo Core changes,
-Caddy changes, and DNS changes.
+Any further host (TX3+), TX2 workload deployments, Business API / Frontend /
+Keycloak / AI service migration, stacks, deployments, repos, builds, procedures,
+actions, resource sync, automatic updates, OIDC/SSO, registry or git credentials,
+WireGuard management (TX2's tunnel predates this phase), Mongo backup changes,
+Komodo Core changes, Caddy changes, and DNS changes.

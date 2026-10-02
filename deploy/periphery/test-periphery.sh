@@ -187,7 +187,8 @@ pass 'release-manifest version+tag+asset+sha256'
 # ---------------------------------------------------------------------------
 # B. per-target persistent config contract: outbound only, exact Core, no secret
 # ---------------------------------------------------------------------------
-for target in yecao tx1; do
+targets=(yecao tx1 tx2)
+for target in "${targets[@]}"; do
   config="$ROOT/targets/$target/periphery.config.toml"
   [[ -f "$config" ]] || die "missing the $target config: $config"
   for expected in \
@@ -206,18 +207,24 @@ for target in yecao tx1; do
     || die "the $target config must name exactly one address"
   # No inbound server, no public/host address, no wildcard bind, no credentials.
   for forbidden in '^bind_ip' '^port[[:space:]]*=' '^allowed_ips[[:space:]]*=[[:space:]]*\[.+\]' \
-    '45\.136\.14\.101' 'komodo\.wotbtools\.com' '0\.0\.0\.0' 'onboarding_key' 'passkeys' \
-    '\[secrets\]' 'git_provider' 'image_registry' '45\.136\.' '118\.25\.'; do
+    '45\.136\.14\.101' '118\.89\.176\.91' '10\.20\.0\.3' 'komodo\.wotbtools\.com' '0\.0\.0\.0' \
+    'onboarding_key' 'passkeys' '\[secrets\]' 'git_provider' 'image_registry' \
+    '45\.136\.' '118\.25\.' '118\.89\.'; do
     if effective "$config" | grep -Eq "$forbidden"; then
       die "the $target config must not contain: $forbidden"
     fi
   done
 done
-# The two targets' effective settings differ only in connect_as.
-diff <(effective "$ROOT/targets/yecao/periphery.config.toml" | sed 's/^connect_as = .*/connect_as = X/') \
-     <(effective "$ROOT/targets/tx1/periphery.config.toml" | sed 's/^connect_as = .*/connect_as = X/') >/dev/null \
-  || die 'the yecao and tx1 configs must differ only in connect_as'
-pass 'per-target-config outbound-only exact-core-address no-secrets'
+# Every target's effective settings are identical once connect_as is normalized,
+# so no target can silently drift from the reviewed shared contract.
+baseline="$work/config-baseline.toml"
+effective "$ROOT/targets/yecao/periphery.config.toml" | sed 's/^connect_as = .*/connect_as = X/' > "$baseline"
+for target in "${targets[@]}"; do
+  diff "$baseline" \
+    <(effective "$ROOT/targets/$target/periphery.config.toml" | sed 's/^connect_as = .*/connect_as = X/') >/dev/null \
+    || die "the $target effective config differs from the shared contract beyond connect_as"
+done
+pass "per-target-config outbound-only exact-core-address no-secrets (${targets[*]})"
 
 # ---------------------------------------------------------------------------
 # C. systemd unit contract
@@ -907,7 +914,7 @@ time.sleep(30)' "$case_dir/docker.sock" &
   return "$status"
 }
 
-for target in yecao tx1; do
+for target in "${targets[@]}"; do
   if ! verify_case "clean-$target" clean "$target"; then
     cat "$case_dir/verify.log" >&2
     die "verify.sh must pass against a credential-free $target fixture host"
@@ -934,24 +941,42 @@ pass 'verify.sh runs per target and fails-closed on unreadable env and swaps'
 # ---------------------------------------------------------------------------
 # H. multi-target contract (K3.2)
 # ---------------------------------------------------------------------------
-# 1. The reviewed profiles are the single source of per-host parameters.
+# 1. The reviewed profiles are the single source of per-host parameters. Every
+# target's values are pinned here independently of the profile text, so a new host
+# cannot be added, or an existing one changed, without this contract noticing.
 yecao_profile="$(read_profile yecao)"
 tx1_profile="$(read_profile tx1)"
+tx2_profile="$(read_profile tx2)"
 for pairs in \
-  "yecao:$(profile_field "$yecao_profile" connect_as):yecao" \
-  "yecao:$(profile_field "$yecao_profile" lock_root):/opt/wotb" \
-  "yecao:$(profile_field "$yecao_profile" staging_root):/opt/periphery" \
-  "yecao:$(profile_field "$yecao_profile" privilege):root" \
-  "tx1:$(profile_field "$tx1_profile" connect_as):tx1" \
-  "tx1:$(profile_field "$tx1_profile" lock_root):/opt/wotb-tx" \
-  "tx1:$(profile_field "$tx1_profile" staging_root):/opt/wotb-tx/periphery" \
-  "tx1:$(profile_field "$tx1_profile" privilege):sudo"; do
-  target="${pairs%%:*}"; rest="${pairs#*:}"; actual="${rest%%:*}"; want="${rest#*:}"
-  [[ "$actual" == "$want" ]] || die "the $target profile must declare '$want', not '$actual'"
+  "yecao:connect_as:yecao" "yecao:lock_root:/opt/wotb" \
+  "yecao:staging_root:/opt/periphery" "yecao:privilege:root" \
+  "tx1:connect_as:tx1" "tx1:lock_root:/opt/wotb-tx" \
+  "tx1:staging_root:/opt/wotb-tx/periphery" "tx1:privilege:sudo" \
+  "tx2:connect_as:tx2" "tx2:lock_root:/opt/wotb-tx2" \
+  "tx2:staging_root:/opt/wotb-tx2/periphery" "tx2:privilege:sudo"; do
+  target="${pairs%%:*}"; rest="${pairs#*:}"; field="${rest%%:*}"; want="${rest#*:}"
+  case "$target" in
+    yecao) profile="$yecao_profile" ;;
+    tx1) profile="$tx1_profile" ;;
+    tx2) profile="$tx2_profile" ;;
+    *) die "unexpected target in the profile contract: $target" ;;
+  esac
+  actual="$(profile_field "$profile" "$field")"
+  [[ "$actual" == "$want" ]] || die "the $target profile must declare $field='$want', not '$actual'"
 done
-[[ "$(profile_field "$yecao_profile" lock_root)" != "$(profile_field "$tx1_profile" lock_root)" ]] \
+# Every target serializes on its own host lock; none may share or borrow one.
+yecao_lock="$(profile_field "$yecao_profile" lock_root)"
+tx1_lock="$(profile_field "$tx1_profile" lock_root)"
+tx2_lock="$(profile_field "$tx2_profile" lock_root)"
+[[ "$yecao_lock" != "$tx1_lock" && "$tx1_lock" != "$tx2_lock" && "$yecao_lock" != "$tx2_lock" ]] \
   || die 'each target must serialize on its own host lock'
-pass 'target-profiles reviewed-lock-staging-privilege'
+# Every target has its own staging root as well.
+yecao_staging="$(profile_field "$yecao_profile" staging_root)"
+tx1_staging="$(profile_field "$tx1_profile" staging_root)"
+tx2_staging="$(profile_field "$tx2_profile" staging_root)"
+[[ "$yecao_staging" != "$tx1_staging" && "$tx1_staging" != "$tx2_staging" && "$yecao_staging" != "$tx2_staging" ]] \
+  || die 'each target must have its own staging root'
+pass "target-profiles reviewed-lock-staging-privilege (${targets[*]})"
 
 # 2. Profiles are data: a credential or a mismatched declaration is refused.
 # The synthetic profiles carry complete roots on purpose, so the rejection can only
@@ -1016,47 +1041,52 @@ grep -q 'the host mutation lock is missing or unsafe' "$case_dir/install.log" \
 [[ ! -e "$case_lock_file" ]] || die 'Periphery must never create the host mutation lock'
 pass 'host-lock serialization is taken from the target profile'
 
-# 5. TX1 first onboarding, then a later secret-free reconcile.
-prepare_case tx1-first-onboarding tx1
-run_install "$fixture_secret" || {
-  cat "$case_dir/install.log" >&2
-  die 'TX1 first onboarding with the TX1 credential failed'
-}
-marker_is_valid || die 'TX1 onboarding did not commit a valid marker'
-cmp -s "$case_dir/etc/periphery.config.toml" "$ROOT/targets/tx1/periphery.config.toml" \
-  || die 'TX1 must install the reviewed TX1 config'
-grep -q '^connect_as = "tx1"$' "$case_dir/etc/periphery.config.toml" \
-  || die 'TX1 must install connect_as = "tx1"'
-[[ ! -e "$bootstrap_env" ]] || die 'the TX1 bootstrap credential survived onboarding'
-grep -q '^restart-with-bootstrap marker=absent$' "$events" || die 'TX1 never used the bootstrap credential'
-if grep -q 'marker=present' <(grep '^restart-' "$events"); then
-  die 'the TX1 marker was written before a restart'
-fi
-grep -q '^enable marker=present$' "$events" || die 'TX1 enabled the unit before committing'
-if grep -rq -- "$fixture_secret" "$case_dir/etc" "$case_dir/unit" "$case_dir/run" "$case_dir/state"; then
-  die 'the TX1 onboarding key was persisted or logged'
-fi
-pass 'tx1-first-onboarding commits the marker last with connect_as=tx1'
+# 5/6. First onboarding, then a later secret-free reconcile, for every sudo target.
+# K3.2 proved it for TX1; K3.3 requires exactly the same for TX2 through the same
+# lifecycle code, so the cases are driven by the reviewed target list.
+for target in tx1 tx2; do
+  prepare_case "$target-first-onboarding" "$target"
+  run_install "$fixture_secret" || {
+    cat "$case_dir/install.log" >&2
+    die "$target first onboarding with the $target credential failed"
+  }
+  marker_is_valid || die "$target onboarding did not commit a valid marker"
+  cmp -s "$case_dir/etc/periphery.config.toml" "$ROOT/targets/$target/periphery.config.toml" \
+    || die "$target must install the reviewed $target config"
+  grep -q "^connect_as = \"$target\"\$" "$case_dir/etc/periphery.config.toml" \
+    || die "$target must install connect_as = \"$target\""
+  [[ ! -e "$bootstrap_env" ]] || die "the $target bootstrap credential survived onboarding"
+  grep -q '^restart-with-bootstrap marker=absent$' "$events" \
+    || die "$target never used the bootstrap credential"
+  if grep -q 'marker=present' <(grep '^restart-' "$events"); then
+    die "the $target marker was written before a restart"
+  fi
+  grep -q '^enable marker=present$' "$events" || die "$target enabled the unit before committing"
+  if grep -rq -- "$fixture_secret" "$case_dir/etc" "$case_dir/unit" "$case_dir/run" "$case_dir/state"; then
+    die "the $target onboarding key was persisted or logged"
+  fi
+  pass "$target-first-onboarding commits the marker last with connect_as=$target"
 
-prepare_case tx1-completed tx1
-printf '%s\n' 'fixture-periphery-identity' > "$identity"
-printf '%s\n' 'fixture-core-public-key' > "$core_pub"
-write_marker
-state_before="$(sha256sum "$identity" "$core_pub" "$marker" | sha256sum)"
-if ! run_install; then
-  cat "$case_dir/install.log" >&2
-  die 'a completed TX1 install must reconcile without any onboarding secret'
-fi
-[[ "$(sha256sum "$identity" "$core_pub" "$marker" | sha256sum)" == "$state_before" ]] \
-  || die 'the secret-free TX1 reconcile modified the identity, the Core key, or the marker'
-if grep -q 'restart-with-bootstrap' "$events"; then
-  die 'the secret-free TX1 reconcile used a bootstrap credential'
-fi
-pass 'tx1-completed reconciles without any onboarding secret'
+  prepare_case "$target-completed" "$target"
+  printf '%s\n' 'fixture-periphery-identity' > "$identity"
+  printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+  write_marker
+  state_before="$(sha256sum "$identity" "$core_pub" "$marker" | sha256sum)"
+  if ! run_install; then
+    cat "$case_dir/install.log" >&2
+    die "a completed $target install must reconcile without any onboarding secret"
+  fi
+  [[ "$(sha256sum "$identity" "$core_pub" "$marker" | sha256sum)" == "$state_before" ]] \
+    || die "the secret-free $target reconcile modified the identity, the Core key, or the marker"
+  if grep -q 'restart-with-bootstrap' "$events"; then
+    die "the secret-free $target reconcile used a bootstrap credential"
+  fi
+  pass "$target-completed reconciles without any onboarding secret"
+done
 
-# 6. One lifecycle implementation: no host identity may leak into the shared code.
+# 7. One lifecycle implementation: no host identity may leak into the shared code.
 for script in lib.sh install.sh verify.sh reconcile.sh staging-root.sh read-target-profile.sh; do
-  if grep -Eq '"yecao"|"tx1"' "$ROOT/$script"; then
+  if grep -Eq '"yecao"|"tx1"|"tx2"' "$ROOT/$script"; then
     die "the shared $script must not hardcode a host identity"
   fi
 done
@@ -1079,7 +1109,7 @@ events_since() {
   tail -n "+$(( $1 + 1 ))" "$events"
 }
 
-for target in yecao tx1; do
+for target in "${targets[@]}"; do
   prepare_case "consecutive-$target" "$target"
   printf '%s\n' 'fixture-periphery-identity' > "$identity"
   printf '%s\n' 'fixture-core-public-key' > "$core_pub"
@@ -1144,6 +1174,6 @@ for target in yecao tx1; do
   grep -q '^restart-without-bootstrap marker=present$' <<<"$(events_since "$events_before")" \
     || die "the $target reconcile must restart an inactive service"
 done
-pass 'consecutive-reconcile keeps a completed service active and untouched'
+pass "consecutive-reconcile keeps a completed service active and untouched (${targets[*]})"
 
 echo 'Komodo Periphery contract fixtures: PASS'
