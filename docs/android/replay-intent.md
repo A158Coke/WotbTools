@@ -20,18 +20,18 @@
 - Bridge 的 `uri` 固定为 `https://wotbtools.com/__native/replay-pending`；这是 Native resource，不是后端 API。
   App canonical origin 是 `https://wotbtools.com`；URL 不含 query、pendingId、文件名、本地路径或凭据。
 - Web 用 `X-Wotb-Pending-Id` request header 传 metadata identity；Native 比较当前 snapshot 的 identity，
-  再打开同一 snapshot 的 backing file，防止新 replay B 替换 A 后，B 的内容被关联到 A 的 operationId。
+  再打开同一 snapshot 的 backing file，防止新 replay B 替换 A 后，B 的内容被关联到 A 的 pendingId。
 - Exact URL 始终 Native-owned：文件存在返回 200 octet-stream + FileInputStream；无 pending/文件返回 404；
   identity 缺失或不匹配返回 409；打开文件异常返回 500。错误不能 return null 或落到真实网络。
 - 所有响应 `Cache-Control: no-store`；Web fetch 使用 `cache: no-store`，防固定 URL 复用旧内容。
-- fetch/blob 失败复用 Replay 错误区和重试按钮，不启动 Job、不 ACK、不删除 metadata。
-  接受后的 compare-and-clear ACK、operationId 幂等和 deferred drain 保持原有顺序。
+- fetch/blob 失败复用 Replay 错误区和重试按钮，不分析、不 ACK、不删除 metadata。
+  分析完成后的 compare-and-clear ACK 与 deferred drain 保持原有顺序。
 - 阶段日志只允许 event/status/已有 short ref；禁止 full ID、文件名、路径、异常原文、OAuth code/state、token/cookie。
 - 必须发布更新 APK 和 Web；仅部署 Web 无法修复旧 APK 的 content transport。
 
-真机发布验收（不能用 JVM/Vitest 代替）：未登录打开 replay → 自动 POST processing-jobs 202（匿名）→ Data；
-已有 SSO 直接导入（带 Bearer，operationId 幂等）；已登录时 process death 后 callback 冷启动恢复，
-同一 pending 恰好一个 Job（匿名导入没有 subject，冷启动重导可能新建 Job）。记录低敏 `replay-pending stream requested/served`、auth-return、processing accepted；
+真机发布验收（不能用 JVM/Vitest 代替）：未登录打开 replay → 本机分析 → Data（不发出任何回放相关后端请求）；
+已登录同样直接导入；process death 后 callback 冷启动恢复会重新分析同一份 pending（本机分析无副作用，
+结果相同）。记录低敏 `replay-pending stream requested/served`、auth-return、analysis completed；
 勿保存完整请求头、OAuth URL 或 pending identity。清 App 数据须由测试者明确同意。
 
 ```text
@@ -40,10 +40,10 @@ ACTION_SEND / ACTION_VIEW
   → 最小验证(.wotbreplay) + 复制到 app private cache
   → private cache backing file + pendingId（完整 UUID，authoritative identity）+ createdAt
   → pending slot（single slot：最新 replay 取代旧 pending）+ SharedPreferences metadata
-  → Web auth init 落定后经 NativeBridge getPendingReplay() 取回 pendingId/name/size/uri
+  → 工作台挂载后经 NativeBridge getPendingReplay() 取回 pendingId/name/size/uri
   → Web fetch 固定同源 HTTPS synthetic resource 读字节构造 File → 现有 FileUploader/validate 管线
-  → POST /api/replay/processing-jobs（匿名可用；已登录时带 Bearer，operationId = pendingId 按 subject 幂等）
-  → server 接受（202 + jobId）后 Web 调 consumePendingReplay(pendingId) ACK（compare-and-clear）
+  → 本机分析（上游 Rust Core WASM；服务器没有 parser，不上传回放）
+  → 分析完成后 Web 调 consumePendingReplay(pendingId) ACK（compare-and-clear）
 ```
 
 Android 外部 replay **只有这一条** ingress。曾经的第二条路径——WebView `onShowFileChooser`
@@ -107,28 +107,22 @@ getPendingReplay → fetch(synthetic HTTPS resource) → await onPendingFile(fil
   Native 执行 **compare-and-clear**（纯策略 `PendingReplayAckPolicy`）：
   - `expected == current` → 清 pending slot + metadata，返回 `true`（`ack success ref=<short>`）；
   - `expected != current`（处理期间已被更新的 replay 取代）→ **绝不清掉当前 pending**，返回 `false`
-    （`ack mismatch expected=<short> current=<short>`）；已受理的那个 job 仍然有效；
+    （`ack mismatch expected=<short> current=<short>`）；
   - `expected` 缺失/空白 → 拒绝且不清理（`ack rejected reason=missing-identity`）。
   严禁「无参数清掉当前 pending」的路径存在。
-- `onPendingFile` 返回 `true` 的唯一条件：`POST /api/replay/processing-jobs` 已返回 `jobId`
-  （server accepted）——ACK 边界**不是** job READY：字节一旦进入后端 Processing Job lifecycle，
-  Native 不再负责重试。
-- **可重放安全**：Web 把 `pendingId` 作为 create 的 multipart 字段 `operationId` 传给后端；同一已认证
-  subject + 同一 `operationId` 幂等返回同一个 job。因此「server 已接受 → ACK 前 process death →
-  冷启动重新导入同一份 pending」不会创建第二个 Processing Job。后端 identity 由 Store 的单一权威状态机
-  （`ABSENT` / `IN_FLIGHT(future)` / `COMMITTED(jobId)`，转换都在同一个 `compute` 线性化边界内）持有：
-  「committed 判定」与「creator 领取」是同一次原子操作，不存在 TOCTOU；只有调度器接受
-  （`dispatcher.submit` 成功）之后才进入 `COMMITTED`，creator 失败（如 `PROCESSING_QUEUE_FULL`）时
-  所有 caller 一起失败，绝不返回随后被清理的 jobId，也不产生两个 job。
+- `onPendingFile` 返回 `true` 的唯一条件：本机分析已完成（`analyze()` 返回 `{ completed: true }`，
+  无论有没有有效场次）。回放引擎装载失败（`ENGINE_UNAVAILABLE`，可重试）不 ACK，保留 pending。
+- **可重放安全**：本机分析没有任何服务端副作用，「分析完成 → ACK 前 process death → 冷启动重新导入同一份
+  pending」只会把同一份文件再分析一次、得到相同结果，不需要服务端幂等键。
 - **单飞 + deferred drain**：Web 同时最多跑一个 import；import 进行中到达的 Native 通知
   （`window.wotbtoolsOnReplay()`）绝不被丢弃——只 coalesce 成一次 rerun，当前 import 结束后立即再
   drain 一次 Native pending。因此「A 处理中 Android 又收到 replay B，Native 只通知一次」时，B 会在 A
   完成后自动被处理：不需要用户再打开一次文件，也不需要外部第二次触发。
-- auth init 未落定、未受理、读取失败或抛错：**不 ACK**，Native pending 原样保留供重试；Web 侧以 `inflight`
+- 引擎不可用、读取失败或抛错：**不 ACK**，Native pending 原样保留供重试；Web 侧以 `inflight`
   防并发、以 `pendingId` 集合防同一份 pending 重复注入。同一 pending 的重复回调只允许一次
-  in-flight processing create。
-- auth init 落定前 pending 既不消费也不丢失：落定后（登录与否）由 Replay Workspace 触发消费；
-  赛果解析对匿名开放（2026-10-01 起），未登录不再阻塞导入。
+  in-flight 分析。
+- 工作台挂载前 pending 既不消费也不丢失：挂载后由 Replay Workspace 触发消费；分析在本机进行，
+  不依赖登录状态。
 
 ## 生命周期
 
@@ -149,10 +143,9 @@ getPendingReplay → fetch(synthetic HTTPS resource) → await onPendingFile(fil
 `auth-return action=ALLOW_AUTH_RETURN source=app-link cold=true|false`，以及既有的
 `nav scheme/host/action/source` 认证导航 trace。
 
-`<short>` 一律是完整 `pendingId` 的前 8 位（`pendingLogRef` / `PendingReplay.logRef`）；后端幂等日志同理只打
-`operationId` 前 8 位。
+`<short>` 一律是完整 `pendingId` 的前 8 位（`pendingLogRef` / `PendingReplay.logRef`）。
 
-绝不记录：完整 pendingId / operationId、原文件完整路径、文件名、replay 内容、QQ code、OIDC state、token、
+绝不记录：完整 pendingId、原文件完整路径、文件名、replay 内容、QQ code、OIDC state、token、
 完整 callback URI。
 
 ## 待真机验证（规格 §35 / §84）
