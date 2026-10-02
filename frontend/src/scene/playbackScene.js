@@ -1356,31 +1356,34 @@ export function initPlayback(container, store) {
     ctx.lineWidth = 5; ctx.strokeStyle = '#000000';
     ctx.strokeText(txt, 256, by + bh / 2 + 1);
     ctx.fillStyle = '#fff'; ctx.fillText(txt, 256, by + bh / 2 + 1);
-    // —— 实时装填条（血量条下方，细长白条）：单发车整条 = 一发；弹夹/弹鼓车 1/N 条 = 一发
-    // （N 由相位数据推导，见 scene/reloadBar.js）。相位流只覆盖**本方全队**：无相位流的车
-    // 保持满条（= 已装填），不猜。
-    // —— 装填条：**逐发**绘制，对齐客户端 OTM 标记的 `GunStatus`
-    //（`VehicleUIObjectMarker.yaml` 的 GunNHealthContainer 里，血量条之下的 70×3 细条）——
-    // 客户端结构：整条一根暗底（fill rgba(0,0,0,.565)）+ `ShellBack` 里 **每发一枚 `ShellItem`**
-    //（等分父宽、无间距），每枚自带 fill（该发状态）与嵌套 `Reload`（该发装填进度）。
-    // 我们同构：固定条宽 ÷ N 逐发均分；full=整条白 / loading=按进度填 / empty=仅暗槽。
+    // —— 实时装填条（血量条下方）：**逐发**绘制，对齐客户端 OTM 标记的 `GunStatus`
+    // 客户端：`VehicleUIObjectMarker.yaml` 的 GunNHealthContainer 里、血量条之下的 70×3 细条；
+    // 结构 = 一根整条暗底（fill rgba(0,0,0,.565)）+ `ShellBack` 里 N 枚 `ShellItem`（等分父宽），
+    // 每枚按状态染色（`GunStatusAtlas.style.yaml`）：loaded 1.0 / used 0.250980 /
+    // loading 底图隐去 + `#Reload` 进度 0.815686。
+    // 客户端靠弹壳美术自带留白分隔；我们没有美术，改为把分格间隙做够（≈2 屏幕 px）——
+    // **满弹时也要能数出发数**（此前 4 设计 px ≈ 0.6 屏幕 px，满条看着就是一整条）。
+    // 相位流只覆盖**本方全队**：无相位流的车保持满条（= 已装填），不猜。
     const sx = 56, sy = 112, sw = 400, sh = 16;
+    rrPath(ctx, sx, sy, sw, sh, sh / 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, .56)'; ctx.fill();              // 与客户端整条暗底 0.565 同档
     const shells = (v.reloadShells && v.reloadShells.length) ? v.reloadShells : [{ state: 'full', progress: 1 }];
     const rn = shells.length;
-    // 客户端 ShellBack 的间距为 0（靠每枚自身 fill/描边>区分）；我们留 ~1 屏幕 px 空隙便于数发数
-    const gap = rn > 1 ? 4 : 0;
-    const segW = (sw - gap * (rn - 1)) / rn;                      // 固定条宽 ÷ N（客户端同式）
+    const gap = rn > 1 ? 14 : 0;                                   // 固定条宽 ÷ N（客户端同式）+ 可见间隙
+    const segW = (sw - gap * (rn - 1)) / rn;
     for (let k = 0; k < rn; k++) {
       const st = shells[k] || { state: 'empty', progress: 0 };
       const x = sx + k * (segW + gap);
-      rrPath(ctx, x, sy, segW, sh, 7);
-      ctx.fillStyle = 'rgba(0, 0, 0, .56)'; ctx.fill();           // 与客户端 0.565 同档
-      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.32)'; ctx.stroke();
       const f = st.state === 'full' ? 1
         : st.state === 'loading' ? Math.max(0, Math.min(1, st.progress)) : 0;
-      if (f > 0) {
-        rrPath(ctx, x + 2, sy + 2, Math.max(2, (segW - 4) * f), sh - 4, 5);
-        ctx.fillStyle = '#f4f8fc'; ctx.fill();
+      if (st.state === 'empty') {
+        // 客户端 used = 底图 alpha .250980（**仍可见**：用户就是靠它数还剩几发）
+        rrPath(ctx, x, sy, segW, sh, sh / 2);
+        ctx.fillStyle = 'rgba(244,248,252,.25)'; ctx.fill();
+      } else if (f > 0) {
+        rrPath(ctx, x, sy, Math.max(2, segW * f), sh, sh / 2);
+        ctx.fillStyle = st.state === 'loading' ? 'rgba(244,248,252,.82)' : '#f4f8fc';
+        ctx.fill();
       }
     }
     v.label.material.map.needsUpdate = true;
