@@ -64,7 +64,5 @@ docker compose -p komodo -f "$STAGED_RUNTIME/compose.yml" pull
 tmp="$root/compose.yml.incoming.$SOURCE_SHA"
 install -m 600 "$STAGED_RUNTIME/compose.yml" "$tmp"
 mv -f -- "$tmp" "$live_compose"
-printf '%s\n' "$SOURCE_SHA" > "$root/source-sha"
-chmod 600 "$root/source-sha"
 
 docker compose -p komodo -f "$live_compose" up -d --remove-orphans

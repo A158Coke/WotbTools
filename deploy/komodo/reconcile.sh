@@ -27,7 +27,8 @@ for name in KOMODO_DATABASE_PASSWORD KOMODO_INIT_ADMIN_PASSWORD KOMODO_JWT_SECRE
   KOMODO_WEBHOOK_SECRET TENCENTCLOUD_SECRET_ID TENCENTCLOUD_SECRET_KEY; do
   test -n "$(printenv "$name")" || { echo "$name is required." >&2; exit 2; }
 done
-for file in "$runtime/compose.yml" "$runtime/lib.sh" "$runtime/deploy.sh" "$runtime/verify.sh" \
+for file in "$runtime/compose.yml" "$runtime/lib.sh" "$runtime/staging-root.sh" \
+  "$runtime/deploy.sh" "$runtime/verify.sh" \
   "$tofu_root/validate-plan.sh" "$tofu_root/versions.tf" "$tofu_root/.terraform.lock.hcl"; do
   [[ -f "$file" && ! -L "$file" ]] || { echo "Staged Komodo input is missing or unsafe: $file" >&2; exit 1; }
 done
@@ -36,6 +37,11 @@ for command_name in docker tofu jq flock ip; do
 done
 # shellcheck source=deploy/komodo/lib.sh
 source "$runtime/lib.sh"
+
+# Re-prove the staging root the workflow handed over: the SHA directory and both
+# of its parents must still be real directories, never symlinks.
+[[ "$stage" == "$root/incoming/$SOURCE_SHA" ]] || { echo "Unexpected Komodo staging root: $stage" >&2; exit 1; }
+bash "$runtime/staging-root.sh" verify "$SOURCE_SHA" "$root"
 
 require_real_dir "$root"
 exec 9>"$root/.deploy.lock"
@@ -72,4 +78,12 @@ fi
 
 # 3. Final private health check, still under the controller lock.
 bash "$runtime/verify.sh"
+
+# 4. Provenance last: `source-sha` means "last successfully reconciled controller
+#    source", so a failed run must never advance it. Written atomically, and the
+#    fixed temporary name is overwritten by the next attempt under the same lock.
+tmp="$root/source-sha.incoming"
+printf '%s\n' "$SOURCE_SHA" > "$tmp"
+chmod 600 "$tmp"
+mv -f -- "$tmp" "$root/source-sha"
 echo "Komodo controller reconcile: PASS ($SOURCE_SHA)"

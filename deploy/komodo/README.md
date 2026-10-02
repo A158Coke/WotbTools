@@ -28,7 +28,7 @@ is broken.
 ```text
 /opt/komodo/
 ├── compose.yml            # live runtime, promoted only after config+pull pass
-├── source-sha             # last successfully promoted source SHA
+├── source-sha             # last successfully reconciled controller source SHA
 ├── .deploy.lock           # host lock shared by reconcile and state backup
 ├── backups/               # reserved controller backup directory (mounted in Core)
 ├── incoming/<SOURCE_SHA>/ # staged inputs, removed after reconciliation
@@ -37,6 +37,26 @@ is broken.
     └── bootstrap-complete # `local-tofu-state-bootstrap-v1`
 ```
 
+## Staging root
+
+Every host-side path the workflow touches is created or removed only through
+`staging-root.sh`, which is fed to the host straight from the checkout
+(`script_path`) because the staging root is reached before any other controller
+code exists there:
+
+```text
+prepare  →  /opt/komodo, /opt/komodo/incoming, /opt/komodo/incoming/<SHA>
+        ↓      must all be real directories (mode 700); symlinks fail closed
+SCP exact files into the validated SHA directory
+        ↓
+verify   →  reconcile refuses to run if the handed-over root is not that path
+        ↓
+cleanup  →  removes only the SHA directory, after re-proving both parents
+```
+
+`prepare` runs *before* SCP, so SCP can never write through a symlinked
+`/opt/komodo` or `/opt/komodo/incoming`; `cleanup` can never follow one either.
+
 ## Transaction order
 
 `reconcile.sh` runs under one `flock` on `/opt/komodo/.deploy.lock`, covering the
@@ -44,30 +64,40 @@ Compose mutation, the OpenTofu plan/apply, the second plan, and both runtime
 verifications:
 
 1. Preflight the source SHA, the four Komodo secrets, the two TencentCloud
-   credentials, the staged inputs, and the local state bootstrap contract.
+   credentials, the staged inputs, the staging root, and the local state
+   bootstrap contract.
 2. `docker compose config` then `pull`, and only then promote the staged Compose
    to `/opt/komodo/compose.yml` and `up -d`.
 3. Verify the private controller.
 4. `tofu fmt` / `init -lockfile=readonly` / `validate` / saved `plan` /
    plan-guard / `apply` / saved second plan / `--require-no-changes`.
 5. Write `bootstrap-complete`, then verify the controller a final time.
+6. Write `source-sha` last, atomically. It means *last successfully reconciled
+   source*, so a failed run never advances it.
 
 ## Verification
 
 Both safety rules in `lib.sh` — refuse a symlinked/unsafe owner path, and fail
 closed on a corrupt state bootstrap — are executable fixtures, not just contract
-strings:
+strings, and so are the staging root and the DNS plan guard:
 
 ```sh
 bash deploy/komodo/test-guards.sh                  # path + state-bootstrap guards
+bash deploy/komodo/test-staging-root.sh            # prepare/verify/cleanup staging root
 bash infra/tofu/komodo/test-validate-plan.sh       # DNS plan guard
 ```
 
 `test-guards.sh` covers a fresh directory, a complete bootstrap, state without a
 marker, marker without state, an empty state or marker, wrong marker content,
 symlinked and dangling state/marker/directory, and a non-directory path.
-`.github/workflows/ci-komodo-controller.yml` runs both suites on every pull
-request that touches this owner.
+`test-staging-root.sh` covers a fresh root, an existing safe root, a symlinked or
+dangling root/incoming/SHA directory, a regular file where a directory belongs,
+malformed SHAs, unsafe roots, and proves a refused cleanup leaves the symlink
+target untouched. `test-validate-plan.sh` locks all eight record fields — domain,
+sub_domain, record_type, record_line, value, ttl, status, and remark — so a
+changed DNS line, TTL, or remark is rejected alongside deletes, replacements, and
+unexpected resources. `.github/workflows/ci-komodo-controller.yml` runs all three
+suites on every pull request that touches this owner.
 
 ## Failure semantics
 

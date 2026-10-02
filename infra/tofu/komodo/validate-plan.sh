@@ -2,9 +2,11 @@
 # Komodo DNS plan guard.
 #
 # This root owns exactly one resource: the public DNSPod A record for the
-# controller hostname pointing at the TX ingress address. Anything else - an
-# extra resource, a delete, a replacement, or a record that resolves somewhere
-# else - is rejected before `tofu apply` is allowed to run.
+# controller hostname pointing at the TX ingress address. A create, update, or
+# no-op is accepted only when the resulting record matches every intended field
+# (domain, sub_domain, record_type, record_line, value, ttl, status, remark).
+# Anything else - an extra resource, a delete, a replacement, or a record that
+# differs in any locked field - is rejected before `tofu apply` is allowed to run.
 #
 # The expected record values intentionally repeat `dns.tf`, so the guard is an
 # independent statement of intent rather than a restatement of whatever the
@@ -42,8 +44,13 @@ jq -e '
     and (.change.after.domain == "wotbtools.com")
     and (.change.after.sub_domain == "komodo")
     and (.change.after.record_type == "A")
+    and (.change.after.record_line == "默认")
     and (.change.after.value == "118.25.18.105")
-    and (.change.after.status == "ENABLE");
+    # `ttl` may be encoded as a JSON number or a string depending on the provider
+    # schema encoding; both must denote the intended 600.
+    and ((.change.after.ttl | tostring) == "600")
+    and (.change.after.status == "ENABLE")
+    and (.change.after.remark == "WotBTools Komodo controller ingress");
 
   [ .resource_changes[]? ] as $changes
   | (($changes | length) <= 1) and (all($changes[]; controller_record))
