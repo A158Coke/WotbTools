@@ -100,8 +100,8 @@ export function toBattleFacts(result: AgentBattleResult): Battle {
     recorder: result.author_nickname,
     clientVersion: result.client_version ?? '',
     players: result.players.map((p) => playerFacts(p, durationS)),
-    // 上游未提供：录制者车辆只有 xlsx 导出用（待补上游字段）；阵容完整性批次计算与投影都不消费
-    recorderVehicle: '',
-    rosterComplete: null,
+    // 上游 v0.3.8：meta playerVehicleName / 结算花名册与战绩账号集合一致性（AI 结束方式推导的守卫）
+    recorderVehicle: result.author_vehicle_codename ?? '',
+    rosterComplete: typeof result.roster_complete === 'boolean' ? result.roster_complete : null,
   }
 }

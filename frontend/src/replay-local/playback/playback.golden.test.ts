@@ -1,26 +1,28 @@
 /**
- * 2D 战局回放本地投影 ↔ 服务端 Java golden（`__golden__/java-playback.json`）对比。
+ * 2D 战局回放 canonical 语义 ↔ 已退役 Java `BattlePlaybackProjector` golden（`__golden__/java-playback.json`，
+ * Java 删除前在同一批 fixture 回放上生成，只读）。
  *
- * 两个解析器重建时间轴的方式不同（Java 1 Hz 整秒帧 + 自有 AoI/HP 事件；WASM 0.1 s 网格），
- * 所以分两档：
- *  - 身份 / 名册 / 元数据 / 终局状态 / 地图档案：逐字段相等；
- *  - 位置、朝向、血量、掉血、事件、点数、基地、消耗品、热力：按文档化容差比较，实测值打印出来。
- * 每个容差都对应一条 README 记录的已知口径差异，而不是放水。
+ * 输入是现场跑 `deploy/agent/source.json` 锁定版本的上游 WASM（`agentWasmNode`），不是手工导出的中间件。
+ * 比较的是语义而不是「字段差不多」：Java 帧是 1 Hz 整秒，所以在**每个整秒**上逐项比较 Java 帧语义
+ * （位置/朝向 knowledge、血量值 + knowledge + provenance + 置信度 + 量程、生命状态），掉血 / 归属 / 击杀 /
+ * 伤害事件按多重集精确相等。唯一放行的差异逐条列在 `PINNED_KNOWLEDGE_DIFFS`，每条写明原因。
  */
 
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import javaGolden from '../__golden__/java-playback.json'
-import wasmGolden from '../__golden__/wasm-playback.json'
+import { fixtureFacets, FIXTURE_REPLAYS, type FixtureFacets } from '../__golden__/agentWasmNode.js'
 import tier7 from '../../../../common/tankopedia-tier7.json'
 import tier8 from '../../../../common/tankopedia-tier8.json'
 import tier9 from '../../../../common/tankopedia-tier9.json'
 import tier10 from '../../../../common/tankopedia-tier10.json'
 import { createTankopedia } from '../compute/tankopedia.js'
 import { validateBattlePlaybackDataset } from '../../api/contract-runtime.js'
-import { validateAgentPlayback, type AgentBattleResult } from '../../api/agent-replay-facets.js'
-import type { BattlePlaybackDataset, PositionSegment, VehiclePlaybackTrack } from '../../types/playback-v2.js'
-import { toBattlePlaybackDataset, type AgentDamageEvent } from './toBattlePlaybackDataset.js'
+import { validateAgentAiReview, type AgentAiReviewFacet } from '../../api/agent-replay-facets.js'
+import type {
+  BattlePlaybackDataset, HealthTransition, LifeTransition, PositionSegment, VehiclePlaybackTrack,
+} from '../../types/playback-v2.js'
+import { PERSPECTIVE_TEAM_UNRESOLVED, REPLAY_STREAM_TRUNCATED, toBattlePlaybackDataset } from './toBattlePlaybackDataset.js'
 import { indexMapGridProfiles, toMapOverview, type LocalMapOverview } from './toMapOverview.js'
 
 const semantics = Object.values(import.meta.glob('../../../../common/map-semantics/*.semantic.json', {
@@ -29,29 +31,35 @@ const semantics = Object.values(import.meta.glob('../../../../common/map-semanti
 const profiles = indexMapGridProfiles(semantics)
 const tankopedia = createTankopedia([tier7, tier8, tier9, tier10])
 
-interface JavaEntry { battlePlaybackV2?: BattlePlaybackDataset | null; mapOverview?: LocalMapOverview | null; error?: string }
-interface WasmEntry { result?: AgentBattleResult; playback?: unknown; playbackError?: string; aiDamage?: AgentDamageEvent[] }
+interface JavaEntry { battlePlaybackV2?: BattlePlaybackDataset | null; mapOverview?: LocalMapOverview | null }
 const java = javaGolden as unknown as Record<string, JavaEntry>
-const wasm = wasmGolden as unknown as Record<string, WasmEntry>
 
-function local(file: string, withAiDamage = true) {
-  const w = wasm[file]
-  if (!w.playback) return null
-  const dataset = toBattlePlaybackDataset(validateAgentPlayback(w.playback), w.result,
-    { tankopedia, damageEvents: withAiDamage ? w.aiDamage : null })
-  const overview = dataset ? toMapOverview(dataset, profiles, w.result) : null
-  return { dataset, overview }
+/**
+ * 固定下来的 knowledge 差异（整秒帧）。位置事实取上游原始 type=10 观测（v0.3.7）后与 Java 帧逐帧一致，
+ * 目前为空；新增条目必须写明原因。
+ */
+const PINNED_KNOWLEDGE_DIFFS: Array<{ file: string; accountId: number; t: number; java: string | null; local: string | null; reason: string }> = []
+
+function datasetOf(f: FixtureFacets, aiReview: AgentAiReviewFacet = f.aiReview!) {
+  return toBattlePlaybackDataset(f.playback!, f.result, aiReview, { tankopedia })
 }
 
-// ---------- 度量 ----------
+// ---------- 整秒帧语义 ----------
 
-type Knowledge = 'OBSERVED' | 'LAST_KNOWN' | null
-
-function segmentAt(segments: PositionSegment[], t: number): PositionSegment | null {
-  let hit: PositionSegment | null = null
+function segmentAt<T extends { startSec: number; endSec: number }>(segments: T[], t: number): T | null {
+  let hit: T | null = null
   for (const s of segments) if (s.startSec <= t + 1e-6 && s.endSec >= t - 1e-6) hit = s
   return hit
 }
+
+function lastAt<T extends { timeSec: number }>(list: T[], t: number): T | null {
+  let hit: T | null = null
+  for (const x of list) if (x.timeSec <= t + 1e-6) hit = x
+  return hit
+}
+
+const healthKey = (h: HealthTransition | null) => h && [h.currentHp, h.knowledge, h.source, h.confidence, h.displayCapacityHp, h.relativeFull].join('|')
+const lifeKey = (l: LifeTransition | null) => l?.lifeState ?? null
 
 function positionAt(seg: PositionSegment, t: number): { x: number; y: number } {
   const s = seg.samples
@@ -66,215 +74,53 @@ function positionAt(seg: PositionSegment, t: number): { x: number; y: number } {
   return s[s.length - 1]
 }
 
-function knowledgeAt(track: VehiclePlaybackTrack, t: number): Knowledge {
-  return (segmentAt(track.positionSegments, t)?.knowledge as Knowledge) ?? null
-}
+const angle = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180)
+const lossKey = (l: VehiclePlaybackTrack['damageLosses'][number]) =>
+  [l.fromHp, l.toHp, l.hpLoss, l.attackerAccountId, l.attackerReliable, l.damageEventCount, l.displayCapacityHp, l.transientAllowed].join('|')
 
-function angle(a: number, b: number): number {
-  return Math.abs(((a - b + 540) % 360) - 180)
-}
-
-function hullAt(track: VehiclePlaybackTrack, t: number): number | null {
-  let best: number | null = null
-  for (const seg of track.orientationSegments) {
-    if (seg.knowledge !== 'CURRENT' || seg.startSec > t + 1e-6 || seg.endSec < t - 1e-6) continue
-    let prev = seg.samples[0]
-    for (const s of seg.samples) {
-      if (s.timeSec > t + 1e-6) break
-      prev = s
-    }
-    best = prev.hullYawDeg
+function multisetDiff(a: string[], b: string[]): { missing: string[]; extra: string[] } {
+  const pool = [...b]
+  const missing: string[] = []
+  for (const x of a) {
+    const i = pool.indexOf(x)
+    if (i >= 0) pool.splice(i, 1)
+    else missing.push(x)
   }
-  return best
+  return { missing, extra: pool }
 }
 
-function hpAt(track: VehiclePlaybackTrack, t: number): number | null {
-  let hp: number | null = null
-  for (const h of track.healthTransitions) if (h.timeSec <= t + 1e-6) hp = h.currentHp
-  return hp
-}
+// ---------- golden ----------
 
-const rms = (xs: number[]) => (xs.length ? Math.sqrt(xs.reduce((s, x) => s + x * x, 0) / xs.length) : 0)
-const pct = (n: number, d: number) => (d ? n / d : 1)
+const comparable = Object.keys(java).filter((f) => java[f].battlePlaybackV2)
 
-interface Report {
-  vehicles: number
-  posRmsMaxM: number
-  posRmsMedianM: number
-  posKnowledgeAgree: number
-  hullErrP95Deg: number
-  hpAgree: number
-  lossCountJava: number
-  lossCountLocal: number
-  lossMatched: number
-  lossToSecMaxDiff: number
-  attackerAgree: number
-  destroyedMaxDiffSec: number
-  killPairsJava: number
-  killPairsLocal: number
-  killPairsCommon: number
-  damageEventsJava: number
-  damageEventsLocal: number
-  pointsJava: number
-  pointsLocal: number
-  pointsMaxDiffSec: number
-  basesJava: number
-  basesLocal: number
-  basesMaxDiffSec: number
-  consumablesJava: number
-  consumablesLocal: number
-  consumablesMatched: number
-  moduleJava: number
-  moduleLocal: number
-  heatmapMaxL1: number
-}
-
-function measure(j: BattlePlaybackDataset, l: BattlePlaybackDataset, jo: LocalMapOverview, lo: LocalMapOverview): Report {
-  const byId = new Map(l.vehicles.map((v) => [v.accountId, v]))
-  const posRms: number[] = []
-  const hullErr: number[] = []
-  let kAgree = 0, kTotal = 0, hpAgree = 0, hpTotal = 0
-  let lossJ = 0, lossL = 0, lossM = 0, lossDt = 0, attAgree = 0, attTotal = 0
-  let consJ = 0, consL = 0, consM = 0, modJ = 0, modL = 0
-  let destroyedDiff = 0
-  for (const jv of j.vehicles) {
-    const lv = byId.get(jv.accountId)!
-    const errs: number[] = []
-    // 阵亡后：上游写 0（已击毁），Java 保留最后观测值（未观测到致命一击时停在旧值）——
-    // 阵亡时刻另由 destroyedMaxDiffSec 比较，终局血量由「终局状态一致」用例按同一口径比较
-    const deathSec = jv.lifeTransitions.find((x) => x.lifeState === 'DESTROYED')?.destroyedKnownAtSec ?? Infinity
-    for (let t = 0; t <= j.durationSec; t++) {
-      const jk = knowledgeAt(jv, t)
-      // Java 段在整秒帧上，跨 AoI 边界 ±1 s 的帧不计入 knowledge 一致率
-      const edge = [t - 1, t + 1].some((u) => knowledgeAt(jv, u) !== jk)
-      if (!edge) {
-        kTotal++
-        if (knowledgeAt(lv, t) === jk) kAgree++
-      }
-      const js = segmentAt(jv.positionSegments, t)
-      const ls = segmentAt(lv.positionSegments, t)
-      if (js?.knowledge === 'OBSERVED' && ls?.knowledge === 'OBSERVED' && !edge) {
-        const a = positionAt(js, t), b = positionAt(ls, t)
-        errs.push(Math.hypot(a.x - b.x, a.y - b.y))
-        const ha = hullAt(jv, t), hb = hullAt(lv, t)
-        if (ha !== null && hb !== null) hullErr.push(angle(ha, hb))
-      }
-      const jh = hpAt(jv, t)
-      if (jh !== null && !edge && t < deathSec - 1) {
-        hpTotal++
-        // 血量样本在 Java 被量化到下一整秒帧：允许 ±1 s
-        if ([t - 1, t, t + 1].some((u) => hpAt(lv, u) === jh)) hpAgree++
-      }
-    }
-    if (errs.length) posRms.push(rms(errs))
-    lossJ += jv.damageLosses.length
-    lossL += lv.damageLosses.length
-    for (const jl of jv.damageLosses) {
-      const m = lv.damageLosses.find((x) => x.fromHp === jl.fromHp && x.toHp === jl.toHp)
-      if (!m) continue
-      lossM++
-      lossDt = Math.max(lossDt, Math.abs(m.toSec - jl.toSec))
-      if (jl.attackerReliable) {
-        attTotal++
-        if (m.attackerAccountId === jl.attackerAccountId) attAgree++
-      }
-    }
-    consJ += jv.consumableTransitions.length
-    consL += lv.consumableTransitions.length
-    const pool = lv.consumableTransitions.map((c) => `${c.state}|${c.logicalItemId}|${Math.round(c.timeSec)}`)
-    for (const c of jv.consumableTransitions) {
-      const key = `${c.state}|${c.logicalItemId}|${Math.round(c.timeSec)}`
-      const i = pool.indexOf(key)
-      if (i >= 0) { consM++; pool.splice(i, 1) }
-    }
-    modJ += jv.moduleCrewTransitions.length
-    modL += lv.moduleCrewTransitions.length
-    const jd = jv.lifeTransitions.find((x) => x.lifeState === 'DESTROYED')?.destroyedKnownAtSec
-    const ld = lv.lifeTransitions.find((x) => x.lifeState === 'DESTROYED')?.destroyedKnownAtSec
-    if (jd != null && ld != null) destroyedDiff = Math.max(destroyedDiff, Math.abs(jd - ld))
-  }
-  const kills = (d: BattlePlaybackDataset) => new Set(d.events.filter((e) => e.type === 'KILL').map((e) => `${e.accountId}>${e.targetAccountId}`))
-  const kj = kills(j), kl = kills(l)
-  const seqDiff = <T extends { timeSec: number }>(a: T[], b: T[], same: (x: T, y: T) => boolean) => {
-    let max = 0
-    for (const x of a) {
-      const m = b.filter((y) => same(x, y))
-      if (m.length === 0) return Number.POSITIVE_INFINITY
-      max = Math.max(max, Math.min(...m.map((y) => Math.abs(y.timeSec - x.timeSec))))
-    }
-    return max
-  }
-  const heat = (o: LocalMapOverview) => (['friendly', 'enemy'] as const).flatMap((side) =>
-    (['dwell', 'damage', 'deaths'] as const).map((k) => {
-      const xs = o.heatmaps[side][k]
-      const max = Math.max(...xs, 0)
-      return xs.map((x) => (max > 0 ? x / max : 0))
-    }))
-  const hj = heat(jo), hl = heat(lo)
-  const sorted = [...posRms].sort((a, b) => a - b)
-  const sortedHull = [...hullErr].sort((a, b) => a - b)
-  return {
-    vehicles: j.vehicles.length,
-    posRmsMaxM: Math.max(...posRms),
-    posRmsMedianM: sorted[Math.floor(sorted.length / 2)],
-    posKnowledgeAgree: pct(kAgree, kTotal),
-    hullErrP95Deg: sortedHull[Math.floor(sortedHull.length * 0.95)] ?? 0,
-    hpAgree: pct(hpAgree, hpTotal),
-    lossCountJava: lossJ,
-    lossCountLocal: lossL,
-    lossMatched: lossM,
-    lossToSecMaxDiff: lossDt,
-    attackerAgree: pct(attAgree, attTotal),
-    destroyedMaxDiffSec: destroyedDiff,
-    killPairsJava: kj.size,
-    killPairsLocal: kl.size,
-    killPairsCommon: [...kj].filter((k) => kl.has(k)).length,
-    damageEventsJava: j.events.filter((e) => e.type === 'DAMAGE').length,
-    damageEventsLocal: l.events.filter((e) => e.type === 'DAMAGE').length,
-    pointsJava: j.pointsSamples.length,
-    pointsLocal: l.pointsSamples.length,
-    pointsMaxDiffSec: seqDiff(j.pointsSamples, l.pointsSamples, (x, y) => x.team === y.team && x.points === y.points),
-    basesJava: (j.baseStates ?? []).length,
-    basesLocal: (l.baseStates ?? []).length,
-    basesMaxDiffSec: seqDiff(j.baseStates ?? [], l.baseStates ?? [], (x, y) => x.baseId === y.baseId
-      && x.ownerTeam === y.ownerTeam && x.capturingTeam === y.capturingTeam && x.captureProgress === y.captureProgress),
-    consumablesJava: consJ,
-    consumablesLocal: consL,
-    consumablesMatched: consM,
-    moduleJava: modJ,
-    moduleLocal: modL,
-    heatmapMaxL1: Math.max(...hj.map((layer, i) => layer.reduce((s, x, c) => s + Math.abs(x - hl[i][c]), 0) / Math.max(1, layer.length))),
-  }
-}
-
-// ---------- 用例 ----------
-
-describe('2D 战局回放本地投影 ↔ Java golden', () => {
-  it('golden 覆盖全部 fixture；Java 不可用 / WASM 失败如实记录', () => {
-    expect(Object.keys(java).sort()).toEqual(Object.keys(wasm).sort())
-    // 9.8 训练室：Java 不产出回放（timeline 不可用），WASM 能解析
+describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
+  it('golden 覆盖全部 fixture；Java 不可用的场次本地同样不可用', async () => {
+    expect(Object.keys(java).sort()).toEqual(Object.keys(FIXTURE_REPLAYS).sort())
+    const room = await fixtureFacets('training-room-example.wotbreplay')
     expect(java['training-room-example.wotbreplay'].battlePlaybackV2).toBeNull()
-    // 联赛 14-14：上游 v0.3.3 parsePlayback 在 type 0 包 Pickle 解码失败；v0.3.4 自行分帧后可解析
-    expect(wasm['tournament-14-14-example.wotbreplay'].playbackError).toBeUndefined()
-    expect(wasm['tournament-14-14-example.wotbreplay'].playback).toBeTruthy()
+    // 9.8 训练室没有 period 广播、也无法由结算反推开战时刻 → 时间轴不可用（与 Java 204 同义）
+    expect(room.playback && room.aiReview ? datasetOf(room) : null).toBeNull()
   })
-
-  const comparable = Object.keys(java).filter((f) => java[f].battlePlaybackV2 && wasm[f].playback)
 
   for (const file of comparable) {
     describe(file, () => {
       const j = java[file].battlePlaybackV2!
       const jo = java[file].mapOverview!
-      const out = local(file)!
-      const l = out.dataset!
-      const lo = out.overview!
-
-      it('通过 HTTP 契约运行时校验（drop-in）', () => {
-        const v = validateBattlePlaybackDataset(JSON.parse(JSON.stringify(l)))
-        expect(v.diagnostics).toEqual([])
+      let l: BattlePlaybackDataset
+      let lo: LocalMapOverview
+      let byId: Map<number, VehiclePlaybackTrack>
+      beforeAll(async () => {
+        const f = await fixtureFacets(file)
+        l = datasetOf(f)!
+        lo = toMapOverview(l, profiles, f.result)!
+        byId = new Map(l.vehicles.map((v) => [v.accountId, v]))
       })
 
-      it('身份 / 元数据 / 名册逐字段一致', () => {
+      it('通过 HTTP 契约运行时校验（drop-in）', () => {
+        expect(validateBattlePlaybackDataset(JSON.parse(JSON.stringify(l))).diagnostics).toEqual([])
+      })
+
+      it('身份 / 元数据 / 名册 / capability / limitations 逐字段一致', () => {
         for (const k of ['durationSec', 'mapCode', 'friendlyTeam', 'recorderAccountId', 'arenaBonusType',
           'assaultObjectivePresent', 'capability', 'limitations'] as const) {
           expect(l[k], k).toEqual(j[k])
@@ -286,22 +132,132 @@ describe('2D 战局回放本地投影 ↔ Java golden', () => {
         expect(roster(l)).toEqual(roster(j))
       })
 
-      it('终局状态一致：阵亡集合、终局血量', () => {
-        const end = (d: BattlePlaybackDataset) => d.vehicles.map((v) => ({
-          accountId: v.accountId,
-          destroyed: v.lifeTransitions.some((x) => x.lifeState === 'DESTROYED'),
-          finalHp: v.healthTransitions[v.healthTransitions.length - 1]?.currentHp ?? null,
-        }))
-        const je = end(j), le = end(l)
-        expect(le.map((x) => [x.accountId, x.destroyed])).toEqual(je.map((x) => [x.accountId, x.destroyed]))
-        // 唯一允许的差异：Java 对「终结哨兵」不改写 HP=0（保留最后观测值），上游血量链在阵亡时刻给 0
-        je.forEach((x, i) => {
-          if (le[i].finalHp !== x.finalHp) expect([x.destroyed, le[i].finalHp]).toEqual([true, 0])
-        })
+      it('位置 / 朝向 knowledge：每个整秒帧一致（仅固定差异放行）', () => {
+        const diffs: Array<{ accountId: number; t: number; java: string | null; local: string | null }> = []
+        for (const jv of j.vehicles) {
+          const lv = byId.get(jv.accountId)!
+          for (let t = 0; t <= j.durationSec; t++) {
+            const jk = segmentAt(jv.positionSegments, t)?.knowledge ?? null
+            const lk = segmentAt(lv.positionSegments, t)?.knowledge ?? null
+            if (jk !== lk) diffs.push({ accountId: jv.accountId, t, java: jk, local: lk })
+            // 朝向段与位置段同一 knowledge 规则（OBSERVED ⇔ CURRENT）
+            const jo2 = segmentAt(jv.orientationSegments, t)?.knowledge ?? null
+            const lo2 = segmentAt(lv.orientationSegments, t)?.knowledge ?? null
+            if (jk === lk) expect([jv.accountId, t, lo2]).toEqual([jv.accountId, t, jo2])
+          }
+        }
+        expect(diffs).toEqual(PINNED_KNOWLEDGE_DIFFS.filter((p) => p.file === file)
+          .map(({ accountId, t, java: jk, local: lk }) => ({ accountId, t, java: jk, local: lk })))
+      })
+
+      it('位置 / 车体朝向：OBSERVED 帧上与 Java 原始位置包的偏差在网格分辨率内', () => {
+        let worstRms = 0
+        const hull: number[] = []
+        for (const jv of j.vehicles) {
+          const lv = byId.get(jv.accountId)!
+          const errs: number[] = []
+          for (let t = 0; t <= j.durationSec; t++) {
+            const js = segmentAt(jv.positionSegments, t)
+            const ls = segmentAt(lv.positionSegments, t)
+            if (js?.knowledge !== 'OBSERVED' || ls?.knowledge !== 'OBSERVED') continue
+            const a = positionAt(js, t), b = positionAt(ls, t)
+            errs.push(Math.hypot(a.x - b.x, a.y - b.y))
+            const jh = lastAt(segmentAt(jv.orientationSegments, t)?.samples ?? [], t)?.hullYawDeg
+            const lh = lastAt(segmentAt(lv.orientationSegments, t)?.samples ?? [], t)?.hullYawDeg
+            if (jh != null && lh != null) hull.push(angle(jh, lh))
+          }
+          if (errs.length) worstRms = Math.max(worstRms, Math.sqrt(errs.reduce((s, e) => s + e * e, 0) / errs.length))
+        }
+        hull.sort((a, b) => a - b)
+        // 上游 = 渲染滤波 0.1 s 网格；Java = 整秒前最后一个原始位置包（实测 RMS ≤ 2 m、车体 P95 ≤ 8°）
+        expect(worstRms).toBeLessThan(3)
+        expect(hull[Math.floor(hull.length * 0.95)]).toBeLessThan(10)
+      })
+
+      it('LAST_KNOWN 不前进：段内位置恒定、不允许插值；OBSERVED 段之外不存在 CURRENT 朝向', () => {
+        for (const v of l.vehicles) {
+          for (const s of v.positionSegments.filter((x) => x.knowledge === 'LAST_KNOWN')) {
+            expect(s.interpolationAllowed).toBe(false)
+            for (const p of s.samples) expect([p.x, p.y]).toEqual([s.samples[0].x, s.samples[0].y])
+          }
+          for (const o of v.orientationSegments.filter((x) => x.knowledge === 'CURRENT')) {
+            for (const smp of o.samples) expect(segmentAt(v.positionSegments, smp.timeSec)?.knowledge).toBe('OBSERVED')
+          }
+        }
+      })
+
+      it('血量：每个整秒帧的 当前血量 / knowledge / provenance / 置信度 / 量程 / relativeFull 一致', () => {
+        for (const jv of j.vehicles) {
+          const lv = byId.get(jv.accountId)!
+          for (let t = 0; t <= j.durationSec; t++) {
+            expect([jv.accountId, t, healthKey(lastAt(lv.healthTransitions, t))])
+              .toEqual([jv.accountId, t, healthKey(lastAt(jv.healthTransitions, t))])
+          }
+        }
+      })
+
+      it('生命：每个整秒帧的生命状态一致；击毁时刻差 ≤ 0.01 s（Java 舍入）', () => {
+        for (const jv of j.vehicles) {
+          const lv = byId.get(jv.accountId)!
+          for (let t = 0; t <= j.durationSec; t++) {
+            expect([jv.accountId, t, lifeKey(lastAt(lv.lifeTransitions, t))])
+              .toEqual([jv.accountId, t, lifeKey(lastAt(jv.lifeTransitions, t))])
+          }
+          const jd = jv.lifeTransitions.find((x) => x.lifeState === 'DESTROYED')?.destroyedKnownAtSec ?? null
+          const ld = lv.lifeTransitions.find((x) => x.lifeState === 'DESTROYED')?.destroyedKnownAtSec ?? null
+          expect(ld === null, `${jv.accountId} destroyed`).toBe(jd === null)
+          if (jd !== null && ld !== null) expect(Math.abs(jd - ld)).toBeLessThan(0.01)
+        }
+      })
+
+      it('掉血：区间 / 血量 / 攻击者 / 可靠性 / 证据条数 / 量程 / transientAllowed 多重集精确相等', () => {
+        for (const jv of j.vehicles) {
+          const lv = byId.get(jv.accountId)!
+          expect(multisetDiff(jv.damageLosses.map(lossKey), lv.damageLosses.map(lossKey)), String(jv.accountId))
+            .toEqual({ missing: [], extra: [] })
+          const jt = jv.damageLosses.map((x) => [x.fromSec, x.toSec]).sort((a, b) => a[0] - b[0])
+          const lt = lv.damageLosses.map((x) => [x.fromSec, x.toSec]).sort((a, b) => a[0] - b[0])
+          jt.forEach(([f, t], i) => {
+            expect(Math.abs(f - lt[i][0])).toBeLessThan(0.01)
+            expect(Math.abs(t - lt[i][1])).toBeLessThan(0.01)
+          })
+        }
+      })
+
+      it('事件：DAMAGE（攻击者→受击者）/ KILL / DESTROYED 多重集一致', () => {
+        const key = (d: BattlePlaybackDataset, type: string) => d.events.filter((e) => e.type === type)
+          .map((e) => `${e.accountId}>${e.targetAccountId}|${e.observedHpLoss}`)
+        for (const type of ['DAMAGE', 'KILL', 'DESTROYED']) {
+          expect(multisetDiff(key(j, type), key(l, type)), type).toEqual({ missing: [], extra: [] })
+        }
+        const times = (d: BattlePlaybackDataset) => d.events.filter((e) => e.type === 'DESTROYED')
+          .map((e) => [e.accountId, e.timeSec] as const).sort((a, b) => a[0]! - b[0]!)
+        times(j).forEach(([, t], i) => expect(Math.abs(t - times(l)[i][1])).toBeLessThan(0.01))
+      })
+
+      it('点数 / 基地：同序列、同时刻（≤ 0.01 s）；消耗品 / 模块迁移一致', () => {
+        const pts = (d: BattlePlaybackDataset) => d.pointsSamples.map((p) => `${p.team}:${p.points}`)
+        expect(pts(l)).toEqual(pts(j))
+        l.pointsSamples.forEach((p, i) => expect(Math.abs(p.timeSec - j.pointsSamples[i].timeSec)).toBeLessThan(0.01))
+        const bases = (d: BattlePlaybackDataset) => (d.baseStates ?? []).map((b) => `${b.baseId}:${b.ownerTeam}:${b.capturingTeam}:${b.captureProgress}`)
+        expect(bases(l)).toEqual(bases(j))
+        ;(l.baseStates ?? []).forEach((b, i) => expect(Math.abs(b.timeSec - j.baseStates![i].timeSec)).toBeLessThan(0.02))
+        for (const jv of j.vehicles) {
+          const lv = byId.get(jv.accountId)!
+          const c = (v: VehiclePlaybackTrack) => v.consumableTransitions.map((x) => `${x.state}|${x.logicalItemId}|${Math.round(x.timeSec)}`)
+          expect(multisetDiff(c(jv), c(lv)).missing).toEqual([])
+          // 模块/乘员：Java 冻结样本里 method16 一条都没解出（解码器 raw-preserve），本地按 Java 同一投影规则
+          // 消费上游证据——固定的证据可得性差异：只允许出现在录像者车辆、且全部 recorderVisible
+          const m = (v: VehiclePlaybackTrack) => v.moduleCrewTransitions.map((x) => `${x.component}|${x.state}|${Math.round(x.timeSec)}`)
+          if (jv.moduleCrewTransitions.length > 0) expect(m(lv)).toEqual(m(jv))
+          else if (lv.moduleCrewTransitions.length > 0) {
+            expect(jv.accountId).toBe(j.recorderAccountId)
+            expect(lv.moduleCrewTransitions.every((x) => x.recorderVisible)).toBe(true)
+          }
+        }
       })
 
       it('地图档案逐字段一致（MapOverview 非时序部分）', () => {
-        // golden 坐标已舍入到 0.01（见 tools/parity/playback-golden.mjs），本地值同样舍入后比较
         const r2 = (v: unknown): unknown => (typeof v === 'number' && !Number.isInteger(v) ? Number(v.toFixed(2))
           : Array.isArray(v) ? v.map(r2) : v && typeof v === 'object'
             ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, r2(x)])) : v)
@@ -309,33 +265,6 @@ describe('2D 战局回放本地投影 ↔ Java golden', () => {
           'image', 'spawnPoints', 'arenaBonusType', 'recorderAccountId'] as const) {
           expect(r2(lo[k]), k).toEqual(jo[k])
         }
-      })
-
-      it('时序数据在文档化容差内', () => {
-        const r = measure(j, l, jo, lo)
-        // 退化路径（不注入 AiReview 伤害事件，只用 shots[] 归因）的实测值一并打印
-        const fallback = local(file, false)!
-        const rShots = measure(j, fallback.dataset!, jo, fallback.overview!)
-        console.info(`[playback parity] ${file}\n${JSON.stringify(r, null, 2)}\n`
-          + `shots-only attribution: attackerAgree=${rShots.attackerAgree.toFixed(3)} damageEvents=${rShots.damageEventsLocal}\n`
-          + `phases java=${JSON.stringify(jo.phases)} local=${JSON.stringify(lo.phases)}`)
-        expect(r.posRmsMaxM).toBeLessThan(TOL.posRmsMaxM)
-        expect(r.posKnowledgeAgree).toBeGreaterThan(TOL.posKnowledgeAgree)
-        expect(r.hullErrP95Deg).toBeLessThan(TOL.hullErrP95Deg)
-        expect(r.hpAgree).toBeGreaterThan(TOL.hpAgree)
-        expect(r.lossMatched).toBe(r.lossCountJava)
-        expect(r.lossToSecMaxDiff).toBeLessThan(TOL.lossToSecMaxDiff)
-        expect(r.attackerAgree).toBeGreaterThan(TOL.attackerAgree)
-        expect(r.destroyedMaxDiffSec).toBeLessThan(TOL.destroyedMaxDiffSec)
-        expect(r.killPairsCommon).toBe(r.killPairsJava)
-        expect(r.pointsLocal).toBe(r.pointsJava)
-        expect(r.pointsMaxDiffSec).toBeLessThan(TOL.eventTimeSec)
-        expect(r.basesLocal).toBe(r.basesJava)
-        expect(r.basesMaxDiffSec).toBeLessThan(TOL.eventTimeSec)
-        expect(r.consumablesMatched / Math.max(1, r.consumablesJava)).toBeGreaterThan(TOL.consumableMatch)
-        expect(r.heatmapMaxL1).toBeLessThan(TOL.heatmapMaxL1)
-        // phases：UI 不读（MapOverview.vue 只读 heatmaps/gridCells/spawnPoints/名称/边界），只比 late 段
-        // （同一时长口径）；opening 终点 Java 取 legacy DamageEvent（本组 fixture 为空 → 固定 45 s），本地取首次伤害
         const late = (o: LocalMapOverview) => o.phases.find((p) => p.key === 'late')
         expect(late(lo)).toEqual(late(jo))
       })
@@ -343,25 +272,146 @@ describe('2D 战局回放本地投影 ↔ Java golden', () => {
   }
 })
 
-/**
- * 容差（2026-10-02 · 上游 v0.3.4 实测：random / CW / 联赛 14-14 三场）。每项都对应一条已知口径差异：
- *  - 位置：Java 1 Hz 帧 vs 上游 0.1 s 网格（本地抽 0.5 s）→ 每车 RMS 实测 ≤ 1.98 m（中位 0.59–0.79 m）；
- *  - knowledge：只在 AoI 边界 ±1 s 外比较 → 实测 0.9995 / 1.0；
- *  - 车体朝向：Java 取整秒位置包 yaw，上游取网格 → P95 实测 5.6° / 7.8°；
- *  - 血量：样本在 Java 被量化到下一整秒帧（±1 s 比较），只比存活期（阵亡后上游写 0、Java 停在最后观测值）；
- *  - 掉血 toSec / 阵亡时刻 / 点数 / 基地：同一原始时钟，只差 0.01 s 舍入 → 实测 ≤ 0.006 s；
- *  - 归因：AiReview 伤害事件 → 实测 1.0 / 1.0（只用 shots[] 时 0.929 / 0.828）；
- *  - 热力：层内 max 归一化后每格平均 |Δ| 实测 0.032 / 0.087（Java 按原始位置包计数）。
- */
-const TOL = {
-  posRmsMaxM: 3,
-  posKnowledgeAgree: 0.99,
-  hullErrP95Deg: 10,
-  hpAgree: 0.95,
-  lossToSecMaxDiff: 0.01,
-  attackerAgree: 0.99,
-  destroyedMaxDiffSec: 0.01,
-  eventTimeSec: 0.01,
-  consumableMatch: 0.999,
-  heatmapMaxL1: 0.1,
-}
+// ---------- 场景（每个都落在真实 fixture 或其上的单点扰动） ----------
+
+describe('2D canonical 场景', () => {
+  let random: FixtureFacets, cw: FixtureFacets, tournament: FixtureFacets
+  beforeAll(async () => {
+    [random, cw, tournament] = await Promise.all([
+      fixtureFacets('random-battle-example.wotbreplay'),
+      fixtureFacets('cw-training-15-14-example.wotbreplay'),
+      fixtureFacets('tournament-14-14-example.wotbreplay'),
+    ])
+  })
+
+  it('随机战（攻防图）：单基地目标存在 + 占领进度（BASE，无队伍语义）', () => {
+    const d = datasetOf(random)!
+    expect(d.arenaBonusType).toBe(1)
+    expect(d.assaultObjectivePresent).toBe(true)
+    expect(d.baseStates!.every((b) => b.baseId === 'BASE' && b.ownerTeam === null && b.capturingTeam === null)).toBe(true)
+    expect(d.baseStates!.map((b) => b.captureProgress)).toEqual([1, 2, 3])
+  })
+
+  it('联赛（arenaBonusType 4）与 CW（2）：争霸点数 + A–D 基地归属迁移', () => {
+    for (const f of [cw, tournament]) {
+      const d = datasetOf(f)!
+      expect(d.pointsSamples.length).toBeGreaterThan(0)
+      expect(new Set(d.pointsSamples.map((p) => p.team))).toEqual(new Set([1, 2]))
+      expect(d.baseStates!.some((b) => b.ownerTeam !== null)).toBe(true)
+      expect(d.baseStates!.every((b) => ['A', 'B', 'C', 'D'].includes(b.baseId))).toBe(true)
+    }
+    expect(datasetOf(tournament)!.arenaBonusType).toBe(4)
+    expect(datasetOf(cw)!.arenaBonusType).toBe(2)
+  })
+
+  it('基地存在但全程无占领：目标存在性独立于进度，不因没有迁移就判定无基地', () => {
+    const pb = { ...random.playback!, assault_bases: [] }
+    const d = toBattlePlaybackDataset(pb, random.result, random.aiReview!, { tankopedia })!
+    expect(d.assaultObjectivePresent).toBe(true)
+    expect(d.baseStates).toEqual([])
+    expect(d.capability).toBe('FULL')
+  })
+
+  it('录像者阵亡：DESTROYED 生命迁移 + DESTROYED 事件，阵亡后不再有 ALIVE', () => {
+    for (const f of [cw, tournament]) {
+      const d = datasetOf(f)!
+      const rec = d.vehicles.find((v) => v.accountId === d.recorderAccountId)!
+      const death = rec.lifeTransitions.find((x) => x.lifeState === 'DESTROYED')!
+      expect(death.destroyedKnownAtSec).not.toBeNull()
+      expect(rec.lifeTransitions.filter((x) => x.timeSec > death.timeSec).every((x) => x.lifeState === 'DESTROYED')).toBe(true)
+      expect(d.events.some((e) => e.type === 'DESTROYED' && e.accountId === d.recorderAccountId)).toBe(true)
+    }
+  })
+
+  it('录像者被击中：method8 在录像者 Avatar 实体上不是伤害通知 → 掉血无直击证据（固定的旧口径）', () => {
+    const d = datasetOf(tournament)!
+    const rec = d.vehicles.find((v) => v.accountId === d.recorderAccountId)!
+    expect(rec.damageLosses.length).toBeGreaterThan(0)
+    expect(rec.damageLosses.every((x) => !x.attackerReliable && x.attackerAccountId === null && x.damageEventCount === 0)).toBe(true)
+  })
+
+  it('临时离开视野 → LAST_KNOWN；重新观测 → CURRENT（段边界 = AoI 观测段边界）', () => {
+    const f = cw
+    const d = datasetOf(f)!
+    const start = f.aiReview!.battle.periods.find((p) => p.period === 3)!.clock
+    let checked = 0
+    for (const v of d.vehicles) {
+      const segs = v.positionSegments
+      for (let i = 1; i + 1 < segs.length; i++) {
+        if (segs[i - 1].knowledge !== 'OBSERVED' || segs[i].knowledge !== 'LAST_KNOWN' || segs[i + 1].knowledge !== 'OBSERVED') continue
+        const eids = f.aiReview!.rosters.filter((r) => r.account_id === v.accountId).map((r) => r.eid)
+        const windows = f.aiReview!.events.filter((e) => e.type === 'visibility' && eids.includes(e.eid))
+          .map((e) => e as { t_in: number; t_out?: number }).map((e) => [e.t_in - start, e.t_out === undefined ? Infinity : e.t_out - start])
+        // LAST_KNOWN 始于某个观测段关闭之后（一个采样步内）；重新 OBSERVED 必须落在下一观测段内，
+        // 且不早于开段（新段的第一个原始位置观测可能晚于开段）
+        expect(windows.some(([, out]) => segs[i].startSec >= out - 1e-6 && segs[i].startSec - out <= 0.5 + 1e-6)).toBe(true)
+        expect(windows.some(([inn, out]) => segs[i + 1].startSec >= inn - 1e-6 && segs[i + 1].startSec < out)).toBe(true)
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(0)
+  })
+
+  it('掉血归属三态：确认攻击者 / 证据冲突（≥1 条但不可靠）/ 无证据（0 条）并存，未知攻击者绝不强行归因', () => {
+    const all = [random, cw, tournament].flatMap((f) => datasetOf(f)!.vehicles.flatMap((v) => v.damageLosses))
+    expect(all.some((x) => x.attackerReliable && x.attackerAccountId !== null && x.damageEventCount >= 1)).toBe(true)
+    expect(all.some((x) => !x.attackerReliable && x.damageEventCount >= 1)).toBe(true)
+    expect(all.some((x) => !x.attackerReliable && x.damageEventCount === 0)).toBe(true)
+    expect(all.filter((x) => !x.attackerReliable).every((x) => x.attackerAccountId === null)).toBe(true)
+  })
+
+  it('终态哨兵 0xFFFD：血量未知、不改写为 0（与 Java 同为停在最后一个可信值），也不产生致死掉血', () => {
+    const d = datasetOf(tournament)!
+    const v = d.vehicles.find((x) => x.accountId === 3101365552)!
+    expect(v.lifeTransitions.some((x) => x.lifeState === 'DESTROYED')).toBe(true)
+    expect(v.healthTransitions.at(-1)!.currentHp).toBe(33)
+    expect(v.damageLosses.some((x) => x.toHp === 0)).toBe(false)
+  })
+
+  it('回放在战斗结束前截断（无 AFTERBATTLE、流末早于时长）→ REPLAY_STREAM_TRUNCATED / PARTIAL', () => {
+    const f = random
+    const start = f.aiReview!.battle.periods.find((p) => p.period === 3)!.clock
+    const cut = start + 100
+    const ai: AgentAiReviewFacet = {
+      ...f.aiReview!,
+      battle: { ...f.aiReview!.battle, periods: f.aiReview!.battle.periods.filter((p) => p.period !== 4) },
+      events: f.aiReview!.events.filter((e) => ('t' in e ? e.t : e.t_in) <= cut),
+    }
+    const pb = { ...f.playback!, periods: f.playback!.periods.filter((p) => p.period !== 4), meta: { ...f.playback!.meta, duration: cut } }
+    const d = toBattlePlaybackDataset(pb, f.result, ai, { tankopedia })!
+    expect(d.limitations).toContain(REPLAY_STREAM_TRUNCATED)
+    expect(d.capability).toBe('PARTIAL')
+  })
+
+  it('参战者缺实体映射 → PLAYBACK_COMBATANT_TRACK_INCOMPLETE；视角无法解析 → 不缺省队伍、PARTIAL', () => {
+    const f = random
+    const missing = f.result.players.find((p) => p.account_id !== f.result.author_account_id)!.account_id
+    const ai = { ...f.aiReview!, rosters: f.aiReview!.rosters.filter((r) => r.account_id !== missing) }
+    const d1 = toBattlePlaybackDataset(f.playback!, f.result, ai, { tankopedia })!
+    expect(d1.limitations).toContain('PLAYBACK_COMBATANT_TRACK_INCOMPLETE')
+    expect(d1.vehicles.some((v) => v.accountId === missing)).toBe(false)
+
+    const d2 = toBattlePlaybackDataset(f.playback!, { ...f.result, author_account_id: 0 }, f.aiReview!, { tankopedia })!
+    expect(d2.friendlyTeam).toBeNull()
+    expect(d2.vehicles.every((v) => v.friendly === null)).toBe(true)
+    expect(d2.limitations).toContain(PERSPECTIVE_TEAM_UNRESOLVED)
+    expect(d2.capability).toBe('PARTIAL')
+  })
+
+  it('实体自报队伍与结算矛盾 → 该实体不进 canonical、TEAM_ENTITY_MAPPING_CONFLICT', () => {
+    const f = random
+    const victim = f.aiReview!.rosters.find((r) => r.account_id && r.team && r.account_id !== f.result.author_account_id)!
+    const ai = { ...f.aiReview!, rosters: f.aiReview!.rosters.map((r) => (r === victim ? { ...r, team: r.team === 1 ? 2 : 1 } : r)) }
+    const d = toBattlePlaybackDataset(f.playback!, f.result, ai, { tankopedia })!
+    expect(d.limitations).toContain('TEAM_ENTITY_MAPPING_CONFLICT')
+    expect(d.vehicles.some((v) => v.accountId === victim.account_id)).toBe(false)
+  })
+
+  it('畸形 / 旧版 AiReview 切面（缺 hp_raw 或 prop3 health）在信任边界被拒绝，不降级猜测', () => {
+    const ai = random.aiReview!
+    const noRaw = { ...ai, events: ai.events.map((e) => (e.type === 'damage' ? { ...e, hp_raw: undefined } : e)) }
+    expect(() => validateAgentAiReview(JSON.parse(JSON.stringify(noRaw)))).toThrow(/hp_raw/)
+    const noProp3 = { ...ai, events: ai.events.filter((e) => e.type !== 'health') }
+    expect(() => validateAgentAiReview(noProp3)).toThrow(/health/)
+  })
+})

@@ -9,11 +9,11 @@
  */
 export { parseLocalPlayback, type LocalPlayback, type ParseLocalPlaybackOptions } from './parseLocalPlayback.js'
 export {
-  damageEventsFromAiReview,
+  PERSPECTIVE_TEAM_UNRESOLVED,
+  REPLAY_STREAM_TRUNCATED,
   resolvePlaybackClock,
   settlementInitialHp,
   toBattlePlaybackDataset,
-  type AgentDamageEvent,
   type PlaybackClock,
   type ToDatasetOptions,
 } from './toBattlePlaybackDataset.js'

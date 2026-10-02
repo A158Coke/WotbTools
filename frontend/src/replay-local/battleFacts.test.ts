@@ -10,11 +10,8 @@ type JavaBattle = Record<string, unknown> & { players?: Record<string, unknown>[
 const wasm = wasmResults as unknown as Record<string, AgentBattleResult & { error?: string }>
 const java = javaBattles as unknown as Record<string, JavaBattle>
 
-/**
- * 已知缺口（上游未提供，且批次计算 / 投影不消费）：录制者车辆（仅 xlsx 导出）、阵容完整性。
- * 其余每个键都必须与 Java Battle 同名同值。
- */
-const KNOWN_GAPS = new Set(['recorderVehicle', 'rosterComplete'])
+/** 已知缺口：无（上游 v0.3.8 补齐录像者车辆与阵容完整性）。每个键都必须与 Java Battle 同名同值。 */
+const KNOWN_GAPS = new Set<string>()
 
 function pick(source: Record<string, unknown>, keys: string[]) {
   return Object.fromEntries(keys.map((k) => [k, source[k] ?? null]))
