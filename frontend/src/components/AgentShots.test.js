@@ -115,6 +115,35 @@ describe('AgentShots author_path fail-visible（评审 blocker 回归）', () =>
     expect(options.some((t) => t.startsWith('eid:300'))).toBe(true)
   })
 
+  it('射击数按顶层 Shot/unique shotId 计，多装甲交互聚合仍只算一发', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [{
+        index: 1,
+        shot_id: 45509301,
+        time_s: 110.26,
+        damage: 0,
+        target_name: 'target',
+        target_eid: 200,
+        is_kill: false,
+        shooter_eid: 100,
+        shooter_name: 'author',
+        is_author: true,
+        // 同一发内聚合：ricochet(0x08) + non-penetration(0x20)
+        hit_flags: 0x28,
+        game_hit_result: 0,
+        shell_id: 79242,
+      }],
+      author_path: 'ok',
+      author_eid: 100,
+      others: { total_launches: 0, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 },
+    })
+
+    const wrapper = await mountAndPick()
+    expect(wrapper.findAll('table.shot-table tbody tr')).toHaveLength(1)
+    expect(wrapper.findAll('.stat-box')[0].find('.val').text()).toBe('1')
+    expect(wrapper.text()).toContain('agentShots.res_ric')
+  })
+
   it('author_path=error 但他人路径有 shots → 警示与表格并存', async () => {
     parseAgentShotsFromBytes.mockResolvedValue({
       shots: [{
