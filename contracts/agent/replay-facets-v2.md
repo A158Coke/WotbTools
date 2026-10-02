@@ -2,7 +2,7 @@
 
 > Producer: [`fanypcd/WoT-Blitz-Agent`](https://github.com/fanypcd/WoT-Blitz-Agent)（MIT）
 > · 状态：生产消费契约。WotbTools 当前通过 `deploy/agent/source.json` 锁定
->   上游 Release `v0.3.9` / commit `b4e50e13581b8383b1332fbc7ba7b402116533bd`，
+>   上游 Release `v0.3.10` / commit `5029e1031393df4e1502b9e626d2e37fa248104b`，
 >   并校验 Release WASM asset SHA-256；升级不得浮动跟随 upstream `main`。
 >
 > **性质声明**：本文档规定预期的公开消费 DTO 形状与能力边界，
@@ -241,3 +241,7 @@ canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`heal
 - v0.3.9（2026-10-02，agent commit `b4e50e13`）：PlaybackData additive 增加
   `reloads` / `reload_effective` 装填遥测，并补收 arena subtype 16；WotbTools
   `deploy/agent/source.json` 同步 pin 到该 Release，字段契约见 §4d。
+- v0.3.10（2026-10-02，agent commit `5029e103`）：射击复现多 interaction 关联修复；
+  `unique shotId = 一次开火 = 一个 Shot`，同一炮弹的跳弹、续飞、二次装甲接触仍聚合为同一 Shot；
+  作者严格路径在同 victim / 同时窗存在多个 type32 segment 时优先以 `method8.hash6 ↔ type32.hash6`
+  做 interaction 关联，重复 method8 广播按 hash 去重，证据不足继续 fail-fast。WotbTools production pin 同步到该 Release。
