@@ -54,13 +54,12 @@ anti-future-leak 或现有 tank-marker 资产契约。
   `assaultObjectivePresent` 需目标族发出**裸初始化对以外**的字段（field3 或 field4）——裸初始化对
   `1=1,2=1` + `1=2,2=1` 是通用广播、普通对局同样会发，不得据此确认；field3 未出现时 `baseStates=[]`，
   仍按 mapCode 从 verified semantic 数据渲染静态 BASE，LEFT JOIN 可为空的 runtime state。
-  无 runtime progress 时不画水位；`arenaBonusType=2` 仅表示训练房，不是 Assault mode。
+  canonical 显式 `progress=0` 必须保留在 timeline；presentation 将 0 视为 reset/idle：BASE 本体继续显示，但 2D/3D 的水位、进度环和百分比立即清空，后续正值可重新开始显示。无 runtime progress 时同样不画水位；`arenaBonusType=2` 仅表示训练房，不是 Assault mode。
   Malinovka 无占领与 Neptune 满占领共用泛化路径，不按地图名称分支。
   查询 UI 时间点时只消费 `timeSec <= currentTime` 的最新状态。前端不接触 raw protobuf update，
   不负责合并缺失字段或协议 index，也不合成进度或阵营结论。协议证据见
   `docs/research/replay/assault-base-state.md` 与 `supremacy-base-state.md`。
-  Assault state authority 是 `BattlePlaybackDataset.baseStates`；3D objective consumer
-  pending，后续直接消费同一 `BASE` timeline，不新增 wrapper8 协议解析路径。
+  Assault state authority 是 `BattlePlaybackDataset.baseStates`；2D HUD/地图与 3D HUD/贴地标记共用 `utils/baseStatus.js` 的 presentation 语义，3D 不新增 wrapper8 协议解析路径。
   前端另以 canonical `positionSegments` 的 OBSERVED
   samples 派生最近 2 秒轨迹：不跨 segment/AoI gap，不使用 LAST_KNOWN，不读取未来样本，暂停
   冻结、seek 重算、倍速只改变时间推进语义。

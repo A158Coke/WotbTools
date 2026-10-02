@@ -7,7 +7,8 @@
  * 输出视图模型 { baseId, kind, owner, capturing, progress }：
  * - owner：'friendly' | 'enemy' | 'neutral'（友方队伍未知时一律 neutral，不猜阵营）；
  * - capturing：'friendly' | 'enemy' | null；
- * - progress：0–100 | null。争霸基地只有存在占领方时才给进度（离开基地后旧进度不再挂着）。
+ * - progress：0–100 | null。Assault canonical 的显式 0 仍由 timeline 保留，但 presentation 特例映射为
+ *   reset/idle（null）；争霸基地只有存在占领方时才给进度，合法的起始 0 可以保留。
  * 单基地（攻防 / 遭遇战，baseId 'BASE'）协议不给 owner / capturing（恒为 null），
  * 一律中性，不据静态 scene 推断归属（docs/research/replay/assault-base-state.md）。
  */
@@ -28,7 +29,16 @@ function clampProgress(value) {
 export function baseView(state, friendlyTeam) {
   const baseId = state?.baseId
   if (baseId === ASSAULT_BASE_ID) {
-    return { baseId, kind: 'assault', owner: 'neutral', capturing: null, progress: clampProgress(state?.captureProgress) }
+    const progress = clampProgress(state?.captureProgress)
+    return {
+      baseId,
+      kind: 'assault',
+      owner: 'neutral',
+      capturing: null,
+      // Protocol/canonical 0 means the capture has reset. Keep that fact in the timeline,
+      // but render the objective as idle until a later positive progress update arrives.
+      progress: progress != null && progress > 0 ? progress : null,
+    }
   }
   const capturingSide = state?.capturingTeam == null ? null : baseSide(state.capturingTeam, friendlyTeam)
   const capturing = capturingSide === 'neutral' ? null : capturingSide
