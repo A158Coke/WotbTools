@@ -129,7 +129,20 @@ WotBTools
   `shots.rs` "合并后由调用方重编号" 注记）。WotBTools 消费端由
   `normalizeAgentShotIndices` 收敛。
 
-## 6. AI 事件数据（Agent 服务端/CLI 能力；DTO 冻结）
+## 6. AI 事件数据（`parseAiReview`；DTO 冻结 v1，同版本只加字段 / 事件类型）
+
+**WotbTools 消费方式**：不直接使用本 DTO 的字段语义——`frontend/src/api/agent-replay-facets.ts#validateAgentAiReview`
+做信任边界校验后，只由 `frontend/src/replay-local/canonical/facts.ts` 投影成 WotbTools canonical replay facts，
+2D 回放与 AI 复盘都只消费那一层（见 `docs/architecture/replay-pipeline.md`「Agent 切面不是领域契约」）。
+canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`health` 事件、`poses` / `turrets`（≥ v0.3.7）。
+
+| 证据（上游版本） | 形状 | canonical 用途 |
+|---|---|---|
+| `damage.hp_raw`（v0.3.5） | method1 原始 u16 | `HpRawState`：0 = HP 归零；0xFFFD = 终态哨兵（血量未知）；`hp` 的钳 0 只是显示值 |
+| `visibility.hp_raw`（v0.3.5） | 开段 Type5 物化快照原始 HP（仅战斗车辆，每次重入） | 物化血量采样；战斗车辆类证据（Type5 entityTypeId=2） |
+| `hit_notice`（v0.3.5） | method8 全变体（eid / payload_len / shooter / victim / result / secondary），**不分类** | WotbTools 按旧口径分类：payload < 26 = 短体变体；result=3 = 直击；其余 = 未解码变体（冲突证据） |
+| `health`（v0.3.6） | prop3 原始 u16 | 血量帧与掉血推导的采样源（录像者自身血量常只有这一路） |
+| `poses` / `turrets`（v0.3.7） | 原始 type10 世界位姿（attachmentParent=0）/ prop2 原始 u16，列式 | 位置 / 朝向证据（PlaybackData 网格是渲染滤波输出，不是观测） |
 
 - `AiReviewFacet`（花名册 + 类型化事件流 spawn/shot/damage/kill/visibility/
   counter/damage_tick + 结算锚点）经 `wotb-agent facets --parts ai`、服务端通道
@@ -141,6 +154,9 @@ WotBTools
   `hit` 的定义随之统一为「target_eid 存在」。
 - 样例 `samples/ai-review.sample.json` 保留作 DTO 对照（与 result 样例同场，
   GravityMode / map 13）。
+
+- **v0.3.8 结果能力**：`roster_complete`（结算花名册与战绩账号集合一致）、`author_vehicle_codename`（meta
+  `playerVehicleName`）→ `Battle.rosterComplete` / `Battle.recorderVehicle`。
 
 ## 7. HoF（WotBTools 产品域；非 Agent 能力）
 
@@ -177,3 +193,8 @@ WotBTools
 - v0.3.4（2026-10-02，agent 仓库 `9437f6d`，fanypcd/WoT-Blitz-Agent#3）：包流自行分帧（`replay::packets`），不再经 crate
   `read_data()` 反序列化 payload——单个包的 pickle 形状偏差（如 type 0 的 bool 字段为整数 0）不再让 Playback / AiReview /
   ShotReplays 整场失败。阵亡车辆 `hp` 末值为 0（Java 曾保留最后观测值）。
+- v0.3.5（2026-10-02，fanypcd/WoT-Blitz-Agent#4）：AI 切面 `Damage.hp_raw`、`Visibility.hp_raw`（`AoiPresence.hp_raw`，PlaybackData
+  visibility 同步获得）、`HitNotice`（method8 全变体原始通知）。
+- v0.3.6（2026-10-02，fanypcd/WoT-Blitz-Agent#5）：AI 切面 `Health`（prop3 血量属性广播原始值）。
+- v0.3.7（2026-10-02，fanypcd/WoT-Blitz-Agent#6）：`AiReviewFacet.poses` / `turrets`（原始 type10 世界位姿与 prop2，列式）。
+- v0.3.8（2026-10-02，fanypcd/WoT-Blitz-Agent#7）：结果能力 `roster_complete` / `author_vehicle_codename`。

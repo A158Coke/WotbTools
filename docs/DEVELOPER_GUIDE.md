@@ -402,7 +402,7 @@ IdP 部署步骤见 `docs/auth/wargaming-asia-deployment.md`。
 `user_profile.wotb_account_verified_at`（`V12__add_wotb_asia_fields.sql` 引入，可空）是「**当前**绑定账号是否已验证」的唯一表达：NULL = 未验证，非 NULL = 已验证（保留**首次**成功验证时间，不重写）。写入方只有两个：
 
 1. 可信 WG claims 的 canonical provisioning / 空 Profile 升级（`wotb_account_source=WARGAMING`，见上文）；
-2. **用回放验证**——个人主页「用回放验证」按钮：浏览器本机解析选中的回放（服务器没有 parser），只把录像者数值 accountId 提交到 `POST /api/users/wotb-account/verify-replay`。
+2. **用回放验证**——个人主页「用回放验证」按钮：浏览器本机解析选中的回放（服务器没有 parser），只把录像者数值 accountId 提交到 `POST /api/users/wotb-account/verify-replay`。这是**客户端声称、可伪造的便利徽章**：不授予权限、不参与授权、不是身份安全边界（产品决策，见 `docs/features/user-profile.md`）。
 
 判定比较的是**数值账号**而不是身外之物：
 

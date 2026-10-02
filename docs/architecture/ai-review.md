@@ -1,6 +1,9 @@
 # AI Review 架构（随机战双 Call / 团队复盘）
 
-> 前端状态：迁移 AI 后端至野草云独立服务期间，AI 复盘页面暂时显示“维护中”，不启动分析。当前阶段已预部署 Yecao `ai-service`，并在 TX ingress 配置更具体的 `/api/ai/**` 反代（不重写 path，SSE 1120s）；旧后端接口及下文的生产 AI 契约仍是流量路径。部署边界见 `docs/operations/ai-service.md`。
+> 输入边界（2026-10，A158Coke/WotbTools#447）：**服务器没有 parser**。浏览器用锁定版本的上游 Agent WASM 解析回放，
+> 经 WotbTools canonical replay facts 产出 **client canonical AI projection**，以 `AiReviewRequestV2`（gzip）提交给
+> Yecao 独立 `ai-service`；ai-service 把投影装配成内存 canonical 事件流后走原有 BattleTimeline / 证据 / prompt 链。
+> 详见下文「AI 复盘输入：client canonical AI projection」。部署边界见 `docs/operations/ai-service.md`。
 
 ## Team AI Review v0.6：推理顺序与因果边界
 
@@ -532,12 +535,16 @@ completion、回放内容或用户/玩家标识。
 ### 视角分组与模式判定
 
 ```
-.wotbreplay → 客户端解析（Rust/WASM canonical ParsedReplay）
-  → AiReviewProjection → AiReviewRequestV1（schemaVersion / locale / correlationId / battle / reconstruction）
-  → POST /api/ai/reviews（application/json，可选 Content-Encoding: gzip）
+.wotbreplay（本机）→ 上游 Agent WASM：parseResult + parsePlayback + parseAiReview（typed facets，pin = deploy/agent/source.json）
+  → frontend/src/replay-local/canonical：WotbTools canonical replay facts（身份 / 视角 / AoI / 血量 / 归属 / 终态）
+  → frontend/src/replay-local/ai：ClientAiReviewProjection（+ battle 结算事实）
+  → AiReviewRequestV2（schemaVersion=2 / locale / correlationId / battle / projection）
+  → POST /api/ai/reviews（application/json，Content-Encoding: gzip）
 
 POST /api/ai/reviews → TX ingress /api/ai/** → WireGuard 私网 → Yecao 独立 ai-service
-  → AiReviewController：信封校验（schemaVersion / locale / canonical UUID correlationId）+ 战斗模式解析
+  → AiReviewController：限额 gzip 解压（传输体与解压后都 ≤ 16 MiB）→ 信封校验（schemaVersion / locale /
+    canonical UUID correlationId）→ ClientAiProjectionAdapter（结构校验 + 装配 canonical 事件流 + checkpoints）
+    → ObservedMaxHp 回填 → 战斗模式解析
   → 视角判定（PLAYER_FOCUSED / TEAM_PERSPECTIVE）
         ├─ PLAYER_FOCUSED → TacticalReviewHarness（Call #1 → Call #2）
         └─ TEAM_PERSPECTIVE → TeamReplayAnalysisService（Team #2 为 structured result）
@@ -546,9 +553,8 @@ POST /api/ai/reviews → TX ingress /api/ai/** → WireGuard 私网 → Yecao �
   → 取消：POST /api/ai/reviews/{correlationId}/cancel（传播到 in-flight 上游 provider 调用）
 ```
 
-> **Phase D 依赖（D-2 路线）**：客户端投影需要上游 WoT-Blitz-Agent 把**已有的** `AiReviewFacet`（花名册 + 类型化事件流 + 结算锚点，DTO 冻结 v1，样例见 `contracts/agent/samples/ai-review.sample.json`）从「服务端/CLI 能力」扩展为第 4 个 WASM 浏览器入口。`contracts/agent/replay-facets-v2.md` §6 目前明确把它标为**不在 WASM 浏览器面**，因此在该入口发布、且 Rust 投影与 Java 事实 parity 通过之前，AI Review 前端保持「维护中」，Release Gate 不通过。本仓不新建第二套解析器（不 reviving `replay-engine/`），以维持 plan §6「parse once → 多投影」的单一 canonical parse。
->
-> Business Backend 不再承载 AI Review：旧 `/api/replay/analyze` 端点与 `AiReplayReviewService` 已移除，服务端回放 dataset 路径已删除（服务器没有 parser）；AI 只消费客户端投影，恢复时基于上游 `parseAiReview` 重建投影。
+> Business Backend 不承载 AI Review：旧 `/api/replay/analyze` 端点与 `AiReplayReviewService` 已移除，服务端回放
+> dataset 路径已删除（服务器没有 parser）。AI 只消费 client canonical AI projection（见下节）。
 
 ### Team Perspective 语义
 
@@ -559,68 +565,75 @@ POST /api/ai/reviews → TX ingress /api/ai/** → WireGuard 私网 → Yecao �
 - **观测伤害抑制**：事件流覆盖未达 100% 时 `DefaultTeam/PlayerBattleFeatureExtractor` 条件标记 `OBSERVED_DAMAGE_IS_PARTIAL`，prompt 层抑制观测数字（`TeamAiPromptBuilder.appendObserved` / 随机战交火段），以权威结算为唯一口径；覆盖补齐后自动恢复。
 - **赛前预测渲染**：`PreBattleSectionRenderer` 覆盖 TEAM 变体（A队/B队/A 队/队伍1 等）、AREA ID → 中文名 + 九宫格（复用 `MapTacticalSemanticsRegistry`）、composition 键值三语翻译。
 
-## AI payload 审计（plan §9）
+## AI 复盘输入：client canonical AI projection（`AiReviewRequestV2`）
 
-审计工具（无第三方依赖，纯 Node + `zlib`）：`frontend/scripts/audit-ai-payload.mjs`
+### 为什么不是「Agent JSON 直接上传」
 
-```bash
-cd frontend
-node scripts/audit-ai-payload.mjs --replay ../common/fixtures/replays/random-battle-example.wotbreplay
-node scripts/audit-ai-payload.mjs --request <AiReviewRequestV1.json> [--json]
+上游 Agent 切面（`AiReviewFacet` / `PlaybackData`）是**协议事实的载体**，不是 WotbTools 的领域契约。旧 Java canonical
+层（`TeamEntityMapper` / `ReplayAoiLifecycle` / `EntityIndex` / `PlaybackCombatReconstruction` / `ReplayTerminalLifecycle` /
+`EntityClassRegistry`）里的语义决定——谁是参战者、录像者是谁、观测段边界、哪些血量是可信采样、哪些 method8 通知是
+归属证据还是冲突证据——必须在一个明确、可测试的边界里完成，而不是让每个消费方各自 reshape。这个边界就是：
+
+```text
+typed facets（api/agent-replay-facets.ts，信任边界校验）
+  → canonical replay facts（replay-local/canonical/facts.ts，2D 回放与 AI 共用）
+  → ClientAiReviewProjection（replay-local/ai/toClientAiReviewProjection.ts）
 ```
 
-采集：原始 `.wotbreplay` 字节；zip 内各成员（含 `data.wotreplay`）压缩/未压缩字节；请求 JSON 总字节、
-gzip(level 6/9) 字节与压缩比、按 section 字节、事件按 type 的计数与序列化字节。
+### 投影内容（`contracts/http/openapi.yaml#ClientAiReviewProjection`）
 
-### 已测基线（2026-09-30，仓库代表样本）
+| 部分 | 内容 | canonical 规则 |
+|---|---|---|
+| `participants` | 结算实际参战者的实体 → 账号 / 队伍 / 车辆 / 是否录像者 | 结算花名册是队伍权威；实体自报队伍与结算矛盾 → 剔除 + `TEAM_ENTITY_MAPPING_CONFLICT` |
+| `perspective` | 录像者账号 / 视角队伍 / 录像者实体 / 胜方 | 视角无法解析 → `perspectiveTeam=null` + `PERSPECTIVE_TEAM_UNRESOLVED`，绝不缺省成某一队 |
+| `clock` | 开战（period 3）/ 时长 / 战斗结束（AFTERBATTLE）/ 流末 | 无 period 3 时按 AFTERBATTLE − 结算时长反推（`CLOCK_ESTIMATED`）；时间轴不可用 → 不产生投影 |
+| `observationWindows` | AoI 观测段 [Type5 物化, Type4 离开) + 开段物化血量 | 半开区间；每次重入各自携带物化血量 |
+| `positions` / `turrets` | 原始 type10 世界位姿 / prop2 原始炮塔（列式） | 只收 attachmentParent=0；不是渲染滤波网格（重入后网格有收敛滞后） |
+| `prop3Health` / `healthEvents` | prop3 血量广播 / method1 血量-来源-原因，**原始 u16** | `HpRawState` 由服务端按原值分类：0 = HP 归零，0xFFFD = 终态哨兵（血量未知，不改写为 0） |
+| `damageNotices` | method8 通知：`HIT`（result=3）/ `UNDECODED_VARIANT` / `SHORT_VARIANT` | 只对战斗车辆实体（Type5 entityTypeId=2）分类；录像者实体按 Avatar 角色分派，不产生伤害通知 |
+| `objectives` | 争霸点数 / A–D 基地 / 单基地目标存在性与进度 | 目标存在性独立于是否有占领进度 |
+| `limitations` | 影响能力的缺口 | 非空 → `AVAILABLE_WITH_LIMITED_TIMELINE` |
+| `unavailableEvidence` | 引擎不提供的证据类 | `PACKET_DECODE_COVERAGE` / `SHOT_LIFECYCLE` / `TARGETING` / `AMMUNITION`：渲染为不可用，不当作「没有发生」 |
 
-回放侧（仓库现有全部 `.wotbreplay` fixture，覆盖随机战 / 训练房 / 锦标赛）：
+ai-service 侧 `ClientAiProjectionAdapter`（wotb-core `replay/projection`）只做结构校验与**编码装配**：把投影按旧 canonical
+事件语义装回 `ReplayReconstruction`（ParticipantMapping / Materialization + EntityRemoved / PositionChanged /
+TurretDirectionChanged / HealthChanged / VehicleHealthState / VehicleHit / UnsupportedDamage / ArenaPeriodChanged +
+RoundFinished / Supremacy*），由 `BattleStateReconstructor`（纯事件归约）生成 checkpoints / finalState，再按旧处理链
+同一函数 `ObservedMaxHp.populate` 回填实测血量。它不读任何回放字节——server has no replay parser。包解码覆盖率不存在：
+`coverage = null`，prompt 显示 `decodedPacketRatio=UNAVAILABLE`。
 
-| fixture | 原始字节 | `data.wotreplay`（未压缩 / 已压缩） | `battle_results.dat`（未压缩） |
+### 上游补齐的原始证据（upstream-first）
+
+| 上游版本 | 字段 | 用途 |
+|---|---|---|
+| v0.3.5 | `Damage.hp_raw`、`Visibility.hp_raw`（每次物化）、`HitNotice`（method8 全变体） | 终态哨兵 vs HP 归零；重入血量；归属 fail-closed |
+| v0.3.6 | `Health`（prop3 原始值） | 录像者自身血量常只走 prop3（3 场分别 4 / 17 / 11 条无 method1） |
+| v0.3.7 | `AiReviewFacet.poses` / `turrets`（原始 type10 / prop2） | 位置证据（渲染网格重入后单帧偏差可达 276 m） |
+| v0.3.8 | `BattleSummary.roster_complete` / `author_vehicle_codename` | 「一方全员阵亡 → 全歼」推导的守卫；录像者车辆 |
+
+### 语义 parity（永久测试）
+
+`java/wotb-ai/.../ClientAiProjectionParityTest`：三场 fixture（随机 / CW / 联赛）上，Java 删除前冻结的 canonical 重建
+（`common/fixtures/replay-facts`）与「锁定 WASM → canonical facts → 投影（`common/fixtures/ai-projection`，前端测试保证与
+现场 WASM 逐字段一致）→ adapter」两条输入走同一套下游，逐层断言：
+
+- 实体映射、开战时钟（≤ 1e-3 s）、时长；
+- 掉血（区间 / 血量 / 攻击者 / 可靠性 / 证据条数）、击毁（时刻 ≤ 0.01 s / 击杀者）——**完全相等**；
+- BattleTimeline 每秒每车：位置 knowledge（CURRENT / LAST_KNOWN）、车辆 knowledge、朝向 knowledge、位置（≤ 1 mm）、
+  生命、血量、血量 knowledge、HP bar 量程、地图区域——**完全相等**（3 场共 7 374 个帧-车辆）；
+- grounding facts（formation / clustering / relative depth / map region 的上游输入）——**完全相等**；
+- 团队 / 个人 prompt 全文（生产路径：客户端结算事实 + 投影）——仅三处固定差异：内部事件条数（新链路只装配被消费的
+  事件类型）、`decodedPacketRatio=UNAVAILABLE`、同 tick 内争霸点数与基地迁移的相对顺序（上游两类事件分列、时钟舍入
+  0.01 s，包序不可恢复；行内容逐字一致）。
+
+### 请求体量与传输
+
+| fixture | V2 请求 JSON | gzip（level 6） | 旧 V1 `ReplayReconstruction` JSON |
 |---|---|---|---|
-| `random-battle-example.wotbreplay` | 1,632,348 | 4,066,776 / 1,613,981 | 54,444 |
-| `cw-training-15-14-example.wotbreplay` | 1,264,822 | 3,015,849 / 1,248,730 | 52,987 |
-| `tournament-14-14-example.wotbreplay` | 944,399 | 2,462,805 / 927,878 | 53,209 |
+| random-battle-example | 1,642,047 | 491,184 | 46,046,004 |
+| cw-training-15-14-example | 1,372,784 | 477,709 | 28,770,763 |
+| tournament-14-14-example | 1,133,015 | 380,115 | 25,625,002 |
 
-请求侧（上游 AI facet 样例，作为事件体量的真实代理）：
-
-| 指标 | 实测 |
-|---|---|
-| `contracts/agent/samples/ai-review.sample.json` 原始 JSON | 48,859 |
-| └ gzip level 6 / level 9 | 4,993（ratio 0.102）/ 4,639（0.095） |
-| └ `events` section 占比 | 24,771（229 事件 / 7 类型，占 51%） |
-
-> **fixture 缺口（plan §9 要求的长战 / 高位置事件样本）**：仓库内**不存在**长战与高位置事件回放，
-> 本机也没有可提升为共享 fixture 的样本（`common/data/` 为空）。这与 plan 风险 #2 记录一致；
-> plan 明确禁止以推测值填结果，因此该缺口在拿到真实样本前保持开放，不得用现有三个 fixture 冒名充数。
-
-**结论（gzip 决策）**：事件占主导的 AI payload 在 JSON+gzip 下即获得约 **10×** 压缩，因此 plan §8/§9
-允许的结论成立——**不引入** multipart / zip envelope / base64 compressed payload / protobuf /
-messagepack / CBOR，也**不发明**紧凑事件编码。canonical wire format 保持 `application/json`；
-`Content-Encoding: gzip` 仅作为可选传输优化，在「浏览器 → TX → ai-service」全链路实测请求体解压
-可用后再启用（Spring Boot 不自动解压请求体，需显式配置）。
-
-**诚实边界**：facet 样例的 DTO 比 `ReplayReconstruction.events` 粗（229 个 facet 事件 / 7 类型，而
-canonical 事件流有 37 个 sealed 类型且字段更丰富），故上表压缩比不等于 `AiReviewRequestV1` 的最终值。
-真实请求必须在 Rust 投影可用后重跑本工具，并在解除维护模式前记录真实 request/gzip 字节与 16 MiB 上限余量。
-
-### 契约 ↔ Java 模型字段一致性（2026-09-30 核对）
-
-`ReplayFactsCodec.battleFromJson` / `reconstructionFromJson` 以字段可见性直接反序列化 `wotb-core` 模型，
-因此契约属性与服务端模型必须逐字段对齐——契约里有、服务端没有的字段会被**静默丢弃**。核对结果：
-
-| 契约 schema | 契约属性数 | 服务端成员数 | 契约有而服务端无 |
-|---|---|---|---|
-| `AiReviewBattle` | 15 | 15 | 无 |
-| `AiReviewPlayerResult` | 42 | 42 | 无 |
-| `AiReviewParticipant` | 6 | 6 | 无 |
-| `AiReviewCoverage` | 7 | 7（另有嵌套 per-type 记录） | 无 |
-| `AiReviewReconstruction` | 7 | 10 | 无 |
-
-结论：**没有任何契约字段在服务端缺失**（无静默丢数据）。`AiReviewReconstruction` 的服务端模型多出
-`metadata` / `streamHeader` / `diagnostics`，正是 plan §4 明令排除在 HTTP 之外的三项技术元数据——
-契约侧已不含它们，服务端在缺省时留空，不影响反序列化。
-
-事件类型枚举已另行核对：契约 `AiReviewEvent.type` 的 37 项与 `ReplayEvent` sealed 层级
-（`getPermittedSubclasses()` 的简单类名集合）**完全一致**（含不以 `Event` 结尾的
-`RawSupremacyBaseUpdate`、`SupremacyBaseStateTransition`）。
+前端 `authedReplayPost(..., { gzip: true })` 同步压缩（不引入取消 / 超时的异步窗口），`Content-Encoding: gzip`；
+`AiReviewController.readBody` 限额解压（传输体 / 解压后任一超过 16 MiB → 413，非 gzip / identity 编码 → 415）。
+审计工具：`node frontend/scripts/audit-ai-payload.mjs --request <AiReviewRequestV2.json>`。
