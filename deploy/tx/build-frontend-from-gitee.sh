@@ -193,6 +193,18 @@ PY
 verify_frontend_image() {
   local image="$1" source_sha="$2" asset_base_url="$3"
   local container temp
+  # Agent identity 从**该 source commit 自己的** deploy/agent/source.json 读取：发布证据
+  # 链 = source.json ref/release → ZIP fingerprint → common/assets/wasm/<ref>/ →
+  # dist/wasm/<ref>/ → 镜像。镜像里必须正好是这个 commit 的产物。
+  local agent_ref agent_release
+  read -r agent_ref agent_release < <(git -C "$REPO_DIR" show "$source_sha:deploy/agent/source.json" \
+    | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+print(data.get("ref", ""), (data.get("artifact") or {}).get("release", ""))
+')
+  [[ "$agent_ref" =~ ^[0-9a-f]{40}$ ]] || die "source.json at $source_sha has no valid ref"
+  [ -n "$agent_release" ] || die "source.json at $source_sha has no artifact.release"
 
   container="$(docker create "$image")" || die "cannot create verification container from $image"
   temp="$(mktemp -d)"
@@ -203,15 +215,42 @@ verify_frontend_image() {
     grep -Fq "\"buildCommit\": \"$source_sha\"" "$temp/html/version.json"
     grep -R --binary-files=text -Fq "$source_sha" "$temp/html/assets"
     grep -R --binary-files=text -Fq "$asset_base_url" "$temp/html/assets"
-    for file in wotb_replay_wasm.js wotb_replay_wasm_bg.wasm; do
-      [ -s "$temp/html/wasm/$file" ]
+    # commit-addressed 产物目录：恰好是 source commit 的 ref，且没有 stable 路径
+    [ -d "$temp/html/wasm/$agent_ref" ]
+    for file in wotb_replay_wasm.js wotb_replay_wasm_bg.wasm fingerprint.json; do
+      [ -s "$temp/html/wasm/$agent_ref/$file" ]
     done
-    [ "$(head -c4 "$temp/html/wasm/wotb_replay_wasm_bg.wasm" | od -An -tx1 | tr -d ' \n')" = "0061736d" ]
+    [ "$(head -c4 "$temp/html/wasm/$agent_ref/wotb_replay_wasm_bg.wasm" | od -An -tx1 | tr -d ' \n')" = "0061736d" ]
+    [ ! -e "$temp/html/wasm/wotb_replay_wasm.js" ]
+    [ ! -e "$temp/html/wasm/wotb_replay_wasm_bg.wasm" ]
+    [ ! -e "$temp/html/wasm/fingerprint.json" ]
+    # 目录集合只能是 <ref> 一个（别的 build 的 Agent 不得混进同一镜像）
+    [ "$(find "$temp/html/wasm" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | tr '\n' ' ')" = "$agent_ref " ]
+    AGENT_FINGERPRINT="$temp/html/wasm/$agent_ref/fingerprint.json" \
+      AGENT_REF="$agent_ref" AGENT_RELEASE="$agent_release" \
+      python3 -c '
+import json, os, sys
+path = os.environ["AGENT_FINGERPRINT"]
+ref = os.environ["AGENT_REF"]
+release = os.environ["AGENT_RELEASE"]
+try:
+    fingerprint = json.load(open(path, encoding="utf-8"))
+except Exception as exc:
+    raise SystemExit("frontend image fingerprint is not readable JSON: %s" % exc)
+if fingerprint.get("upstream_commit") != ref:
+    raise SystemExit("frontend image fingerprint upstream_commit %r != source.json ref %r" % (fingerprint.get("upstream_commit"), ref))
+if fingerprint.get("tag") != release:
+    raise SystemExit("frontend image fingerprint tag %r != source.json artifact.release %r" % (fingerprint.get("tag"), release))
+'
     for file in index.html version.json sponsor-bg.webp icon.ico icon.png wotbtoolslogo.png; do
       [ -s "$temp/html/$file" ]
     done
     docker cp "$container:/etc/nginx/conf.d/default.conf" "$temp/default.conf"
     [ -s "$temp/default.conf" ]
+    # 镜像内 nginx 必须给 commit-addressed 目录 immutable 长缓存（刷新即生效的机制）
+    grep -Fq '/wasm/[0-9a-f]{40}/' "$temp/default.conf" \
+      || { echo 'frontend image nginx has no commit-addressed /wasm/ cache rule' >&2; exit 1; }
+    grep -Fq 'immutable' "$temp/default.conf"
   ); then
     docker rm -f "$container" >/dev/null 2>&1 || true
     rm -rf -- "$temp"

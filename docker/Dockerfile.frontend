@@ -16,6 +16,10 @@ COPY common/map-semantics /common/map-semantics
 # frontend/src/docker-build-context.contract.test.js 断言前端引用的每个仓库外构建输入都在这里 COPY。
 COPY common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json /common/
 COPY common/assets /common/assets
+# Agent WASM identity SSOT：Vite 构建期从这里取 ref/release 并注入 __AGENT_WASM_COMMIT__ /
+# __AGENT_WASM_RELEASE__（`frontend/src/docker-build-context.contract.test.js` 断言这条 COPY）。
+# 路径与仓库布局一致（/app = frontend/，故 ../deploy/agent/source.json → /deploy/agent/source.json）。
+COPY deploy/agent/source.json /deploy/agent/source.json
 # 站点直接展示的 Markdown：HistoryPage / TechnicalEvolutionPage 构建期以 ?raw 读取
 COPY HISTORY.md /HISTORY.md
 # Canonical 技术演进：TechnicalEvolutionPage 构建期以 ?raw 读取
@@ -25,10 +29,13 @@ COPY docs/WotBTools_League_Rating_V6.md /docs/WotBTools_League_Rating_V6.md
 ENV BUILD_COMMIT=${BUILD_COMMIT}
 ENV VITE_ASSET_BASE_URL=${ASSET_BASE_URL}
 RUN npm run build
-# 构建后断言：Agent WASM 产物（CI 里 fetch-agent-wasm.sh 落到 publicDir ../common/assets/wasm）
-# 必须已随构建进 dist——3D 回放/装甲查看器/射击复现的运行前提。缺失时 fail-fast，
-# 而不是发布一个页面打开即 "Failed to fetch dynamically imported module" 的镜像。
-RUN node -e 'const fs=require("fs");const js="/app/dist/wasm/wotb_replay_wasm.js";const bin="/app/dist/wasm/wotb_replay_wasm_bg.wasm";for(const f of [js,bin]){if(!fs.existsSync(f))throw new Error("agent wasm artifact missing from dist: "+f);if(!fs.statSync(f).size)throw new Error("agent wasm artifact empty: "+f)}if(fs.readFileSync(bin).subarray(0,4).toString("hex")!=="0061736d")throw new Error("wotb_replay_wasm_bg.wasm lacks wasm magic");console.log("agent wasm artifacts present in dist")'
+# 构建后断言：Agent WASM 产物必须已随构建进 dist 且是 **commit-addressed** 的
+# （`/wasm/<source.json ref>/`）——3D 回放/装甲查看器/射击复现的运行前提。校验实现与
+# CI dist smoke 共用 `frontend/scripts/verify-agent-wasm-dist.mjs`：缺文件、fingerprint
+# 与 source.json 不一致、wasm magic 缺失、或 stable 路径偷偷回归都会 fail-fast，
+# 而不是发布一个打开即 "Failed to fetch dynamically imported module"（或加载到错版
+# Agent）的镜像。
+RUN node /app/scripts/verify-agent-wasm-dist.mjs --dist /app/dist --pin /deploy/agent/source.json
 # 构建后断言：资产 origin 确实写进了 bundle。防"变量设了却未生效"的静默失败——
 # ENV 名 / Vite 前缀（VITE_）/ 代码读取名（import.meta.env.VITE_ASSET_BASE_URL）三者
 # 任一处漂移，都会得到"WORKFLOW 绿、线上仍提示未配置"的假成功。

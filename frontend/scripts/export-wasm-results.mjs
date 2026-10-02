@@ -11,11 +11,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(here, '../..')
 const golden = join(repo, 'frontend/src/replay-local/__golden__')
-const wasmDir = join(repo, 'common/assets/wasm')
 const pin = JSON.parse(readFileSync(join(repo, 'deploy/agent/source.json'), 'utf8'))
+// 产物落位是 commit-addressed 目录（stable `/wasm/wotb_replay_wasm.js` 已废除）
+const wasmDir = join(repo, 'common/assets/wasm', pin.ref)
 const fp = JSON.parse(readFileSync(join(wasmDir, 'fingerprint.json'), 'utf8'))
-if (fp.tag !== pin.artifact.release) {
-  console.error(`本地 WASM ${fp.tag} ≠ 锁定 ${pin.artifact.release}：先运行 scripts/fetch-agent-wasm.sh`)
+if (fp.tag !== pin.artifact.release || fp.upstream_commit !== pin.ref) {
+  console.error(`本地 WASM ${fp.tag}@${fp.upstream_commit} ≠ 锁定 ${pin.artifact.release}@${pin.ref}：先运行 scripts/fetch-agent-wasm.sh`)
   process.exit(1)
 }
 const mod = await import(pathToFileURL(join(wasmDir, 'wotb_replay_wasm.js')).href)

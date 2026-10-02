@@ -1,0 +1,85 @@
+// @vitest-environment happy-dom
+/**
+ * AI 复盘 pane 的错误归属：Agent 产物身份不一致必须是**独立**文案
+ * （`workspace.ai_engine_version_mismatch`），不能被通用
+ * 「引擎加载失败 / 解析失败」吞掉——用户按提示刷新即可拿到与本 build
+ * 同 identity 的 Agent 产物。stale WASM 的原始症状是 AI Review 报
+ * `ai_review.poses 缺失`，本测试锁定它不再走到那一步。
+ */
+import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+
+import { AgentWasmVersionMismatchError } from '../api/agent-replay-facets.js'
+import { AiProjectionUnavailableError } from '../replay-local/ai/index.js'
+import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
+import AiReviewWorkspacePane from './AiReviewWorkspacePane.vue'
+
+const buildLocalAiReviewInput = vi.fn()
+
+vi.mock('../composables/useAuth.js', () => ({
+  useAuth: () => ({ authenticated: { value: true }, login: vi.fn() }),
+}))
+
+// pane 用 useI18n().t 解析 errorKey；组件本体不挂 i18n 插件，这里返回 key 本身
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({ t: (key) => key, te: () => true, locale: { value: 'zh' } }),
+}))
+
+vi.mock('../replay-local/ai/index.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    buildLocalAiReviewInput: (...args) => buildLocalAiReviewInput(...args),
+  }
+})
+
+function mountPane() {
+  return mount(AiReviewWorkspacePane, {
+    props: { file: { name: 'a.wotbreplay' }, active: true },
+    global: {
+      mocks: { $t: (key) => key },
+      stubs: {
+        AiReviewPanel: {
+          props: ['projectionError'],
+          template: '<div class="panel-stub" :data-error="projectionError" />',
+        },
+      },
+    },
+  })
+}
+
+async function projectionErrorFor(error) {
+  buildLocalAiReviewInput.mockReset()
+  buildLocalAiReviewInput.mockRejectedValue(error)
+  const wrapper = mountPane()
+  await flushPromises()
+  return wrapper.find('.panel-stub').attributes('data-error')
+}
+
+describe('AiReviewWorkspacePane 错误归属', () => {
+  it('Agent 版本不一致 → workspace.ai_engine_version_mismatch（独立文案，优先于通用引擎错误）', async () => {
+    const mismatch = new AgentWasmVersionMismatchError({
+      expectedRelease: 'v0.3.9',
+      expectedCommit: 'b4e50e13581b8383b1332fbc7ba7b402116533bd',
+      actualRelease: 'v0.3.8',
+      actualCommit: 'f35baa46ec4d069c8d68cfad66cafcd166e0a492',
+      reason: 'upstream_commit 与 build 期 pin 不一致',
+    })
+    expect(await projectionErrorFor(mismatch)).toBe('workspace.ai_engine_version_mismatch')
+    // 错误对象必须携带可诊断的四个字段（日志/排障用）
+    expect(mismatch.expectedRelease).toBe('v0.3.9')
+    expect(mismatch.expectedCommit).toBe('b4e50e13581b8383b1332fbc7ba7b402116533bd')
+    expect(mismatch.actualRelease).toBe('v0.3.8')
+    expect(mismatch.actualCommit).toBe('f35baa46ec4d069c8d68cfad66cafcd166e0a492')
+  })
+
+  it('引擎装载失败 → workspace.ai_engine_unavailable', async () => {
+    expect(await projectionErrorFor(new ReplayEngineUnavailableError('wasm missing')))
+      .toBe('workspace.ai_engine_unavailable')
+  })
+
+  it('时间轴不可用 → workspace.ai_projection_unavailable', async () => {
+    expect(await projectionErrorFor(new AiProjectionUnavailableError()))
+      .toBe('workspace.ai_projection_unavailable')
+  })
+})
