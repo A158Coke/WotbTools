@@ -144,21 +144,48 @@ for owner in ("business-api", "frontend"):
         "group": "tx-production-build", "cancel-in-progress": "false", "queue": "max",
     }, owner
 
-# The runtime digest reference is deliberately tagless. A value such as
-# repo:sha-<tag>@sha256:<digest> is content-addressed for Docker, but deploy.sh
-# intentionally rejects tags so production identity has one canonical shape.
+# Release identity must not cross the GitHub job-output boundary. GitHub may
+# redact arbitrary SHA/digest values when they happen to match a configured secret,
+# so deploy reconstructs the immutable tag from github.sha and resolves its digest
+# on TX immediately before mutation.
+for owner in ("business-api", "frontend"):
+    workflow = load(workflow_dir / f"{owner}.yml")
+    assert "outputs" not in workflow["jobs"]["build"], owner
+    assert "needs.build.outputs" not in json.dumps(workflow, ensure_ascii=False), owner
+
 frontend_workflow = load(workflow_dir / "frontend.yml")
-assert set(frontend_workflow["jobs"]["build"]["outputs"]) == {"commit_sha", "digest"}
 frontend_deploy = next(
     step for step in frontend_workflow["jobs"]["deploy"]["steps"]
     if step.get("name") == "Reconcile only Frontend under the TX host lock"
 )
-expected_frontend_ref = (
-    "${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}/"
-    "wotbtools-frontend@${{ needs.build.outputs.digest }}"
+frontend_env = frontend_deploy["env"]
+assert frontend_env["WOTB_DEPLOY_CONFIG_SHA"] == "${{ github.sha }}"
+assert frontend_env["ASSET_BASE_URL"] == "${{ vars.ASSET_BASE_URL }}"
+assert "TX_FRONTEND_IMAGE_REF" not in frontend_env
+frontend_script = frontend_deploy["with"]["script"]
+for invariant in (
+    "identity=\"$(printf '%s\\n%s' \"$source_sha\" \"$ASSET_BASE_URL\" | sha256sum | cut -c1-12)\"",
+    "wotbtools-frontend:sha-$identity",
+    "docker buildx imagetools inspect --format '{{.Manifest.Digest}}'",
+    'export TX_FRONTEND_IMAGE_REF="$TX_IMAGE_REGISTRY_PREFIX/wotbtools-frontend@$digest"',
+):
+    assert invariant in frontend_script, invariant
+
+business_workflow = load(workflow_dir / "business-api.yml")
+business_deploy = next(
+    step for step in business_workflow["jobs"]["deploy"]["steps"]
+    if step.get("name") == "Read dependencies and deploy Business API under one host lock"
 )
-assert frontend_deploy["env"]["TX_FRONTEND_IMAGE_REF"] == expected_frontend_ref
-assert "needs.build.outputs.image" not in frontend_deploy["env"]["TX_FRONTEND_IMAGE_REF"]
+business_env = business_deploy["env"]
+assert business_env["WOTB_DEPLOY_CONFIG_SHA"] == "${{ github.sha }}"
+assert "TX_BUSINESS_API_IMAGE_REF" not in business_env
+business_script = business_deploy["with"]["script"]
+for invariant in (
+    'wotbtools-business-api:sha-${WOTB_DEPLOY_CONFIG_SHA:0:12}',
+    "docker buildx imagetools inspect --format '{{.Manifest.Digest}}'",
+    'export TX_BUSINESS_API_IMAGE_REF="$TX_IMAGE_REGISTRY_PREFIX/wotbtools-business-api@$digest"',
+):
+    assert invariant in business_script, invariant
 
 legacy_tcr_publisher = (root / "deploy/tx/publish-loaded-image-to-tcr.sh").read_text(encoding="utf-8")
 assert "<backend|frontend|keycloak>" not in legacy_tcr_publisher
