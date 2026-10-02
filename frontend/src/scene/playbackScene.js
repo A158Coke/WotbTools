@@ -23,6 +23,7 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
+import { fillOf, groupByVehicle, inferMagazineSize, shellStatesAt } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
@@ -1175,9 +1176,9 @@ export function initPlayback(container, store) {
   // 名牌 = 一行「车型名 · 玩家昵称」；血量条在卡片内、名字下方，**沿用最初版血条的格式**
   //（暗槽 #0a0e13 / #3a4450 描边 + 队色纵向渐变填充 + 浅灰 ghost + 条内白字黑描边）。
   // 卡片与文字的样式对齐 WotbTools 2D 版（.pb-labels）：半透明黑底 + 极淡白边 + 阵营色文字。
-  const LABEL_FRAC = 0.0275;        // 卡片高 ≈ 视口高的 2.75%（653px 视口 → 72×18 CSS px）
-  const LABEL_ASPECT = 4;           // 512×128（4:1，与最初版同一版式）
-  const LABEL_TEX_BASE_H = 128;     // 设计高度：drawLabel 里的绝对像素都以此为准
+  const LABEL_FRAC = 0.0302;        // 卡片高 ≈ 视口高的 3.02%（653px 视口 → 72×19.7 CSS px）
+  const LABEL_ASPECT = 512 / 140;   // 512×140：名牌一行 + 血量条 + **实时装填条**（最下一行）
+  const LABEL_TEX_BASE_H = 140;     // 设计高度：drawLabel 里的绝对像素都以此为准
   const TEX_SS = 1.5;               // 贴图超采样：略高于 1:1，兼顾清晰与显存
 
   // 贴图分辨率跟随**实际屏幕尺寸**（修「发糊」）：卡片在屏上恒为视口高的 LABEL_FRAC，贴图只需
@@ -1220,6 +1221,12 @@ export function initPlayback(container, store) {
       // 软遮挡：被地形/静态场景挡住时弱化（永不隐藏，下限 LABEL_BLOCKED_OPACITY）
       const target = v.labelOccluded ? LABEL_BLOCKED_OPACITY : LABEL_OPACITY;
       if (v.label.material.opacity !== target) v.label.material.opacity = target;
+      // 装填条：按 T 时间归并求值（不累加计时器）→ **逐发状态**（客户端 Full/Active/Inactive）。
+      // 重绘门控：聚合比量化成 1% 桶才重绘整张 canvas 并传纹理，否则 14 车会每帧重绘。
+      const shells = shellStatesAt(v.reloadEvents, v.reloadFires, T, v.reloadSize);
+      v.reloadShells = shells;
+      const bucket = Math.round(fillOf(shells) * 100);
+      if (bucket !== v.reloadBucket) { v.reloadBucket = bucket; v.labelDirty = true; drawLabel(v); }
     }
   }
 
@@ -1283,13 +1290,13 @@ export function initPlayback(container, store) {
     ctx.save();
     // shadowBlur/shadowOffset 不随 CTM 缩放，需按 ls 手动等比（否则小贴图下投影相对过重）
     ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 14 * ls; ctx.shadowOffsetY = 5 * ls;
-    rrPath(ctx, 26, 6, 460, 116, 18);
+    rrPath(ctx, 26, 6, 460, 128, 18);
     ctx.fillStyle = 'rgba(0, 0, 0, .55)';   // 2D 同款底色（半透明黑；阴影一次填充落其下）
     ctx.fill();
     ctx.restore();
     // 受击闪（FLASH_MS）：描边瞬亮，弱化而非隐藏
     const flashing = (flashByEid.get(v.def.eid) || 0) > performance.now();
-    rrPath(ctx, 26, 6, 460, 116, 18);
+    rrPath(ctx, 26, 6, 460, 128, 18);
     ctx.lineWidth = flashing ? 10 : 6;
     ctx.strokeStyle = flashing ? 'rgba(255,255,255,.5)' : 'rgba(255,255,255,.14)';
     ctx.stroke();
@@ -1320,7 +1327,7 @@ export function initPlayback(container, store) {
     ctx.shadowBlur = 0;
     // —— 血量条（**最初版格式**）：暗槽 + 队色纵向渐变填充 + 浅灰 ghost + 条内白字黑描边 ——
     const frac = v.def.max_hp > 0 ? Math.max(0, Math.min(1, hp / v.def.max_hp)) : 0;
-    const bx = 56, by = 68, bw = 400, bh = 44;
+    const bx = 56, by = 60, bw = 400, bh = 44;
     rrPath(ctx, bx, by, bw, bh, 11);
     ctx.fillStyle = '#0a0e13'; ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = '#3a4450'; ctx.stroke();
@@ -1349,6 +1356,33 @@ export function initPlayback(container, store) {
     ctx.lineWidth = 5; ctx.strokeStyle = '#000000';
     ctx.strokeText(txt, 256, by + bh / 2 + 1);
     ctx.fillStyle = '#fff'; ctx.fillText(txt, 256, by + bh / 2 + 1);
+    // —— 实时装填条（血量条下方，细长白条）：单发车整条 = 一发；弹夹/弹鼓车 1/N 条 = 一发
+    // （N 由相位数据推导，见 scene/reloadBar.js）。相位流只覆盖**本方全队**：无相位流的车
+    // 保持满条（= 已装填），不猜。
+    // —— 装填条：**逐发**绘制，对齐客户端 OTM 标记的 `GunStatus`
+    //（`VehicleUIObjectMarker.yaml` 的 GunNHealthContainer 里，血量条之下的 70×3 细条）——
+    // 客户端结构：整条一根暗底（fill rgba(0,0,0,.565)）+ `ShellBack` 里 **每发一枚 `ShellItem`**
+    //（等分父宽、无间距），每枚自带 fill（该发状态）与嵌套 `Reload`（该发装填进度）。
+    // 我们同构：固定条宽 ÷ N 逐发均分；full=整条白 / loading=按进度填 / empty=仅暗槽。
+    const sx = 56, sy = 112, sw = 400, sh = 16;
+    const shells = (v.reloadShells && v.reloadShells.length) ? v.reloadShells : [{ state: 'full', progress: 1 }];
+    const rn = shells.length;
+    // 客户端 ShellBack 的间距为 0（靠每枚自身 fill/描边>区分）；我们留 ~1 屏幕 px 空隙便于数发数
+    const gap = rn > 1 ? 4 : 0;
+    const segW = (sw - gap * (rn - 1)) / rn;                      // 固定条宽 ÷ N（客户端同式）
+    for (let k = 0; k < rn; k++) {
+      const st = shells[k] || { state: 'empty', progress: 0 };
+      const x = sx + k * (segW + gap);
+      rrPath(ctx, x, sy, segW, sh, 7);
+      ctx.fillStyle = 'rgba(0, 0, 0, .56)'; ctx.fill();           // 与客户端 0.565 同档
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.32)'; ctx.stroke();
+      const f = st.state === 'full' ? 1
+        : st.state === 'loading' ? Math.max(0, Math.min(1, st.progress)) : 0;
+      if (f > 0) {
+        rrPath(ctx, x + 2, sy + 2, Math.max(2, (segW - 4) * f), sh - 4, 5);
+        ctx.fillStyle = '#f4f8fc'; ctx.fill();
+      }
+    }
     v.label.material.map.needsUpdate = true;
   }
 
