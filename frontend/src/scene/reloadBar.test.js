@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   PHASE_AMMO_COUNT, PHASE_DRUM_SHELL, PHASE_DURATION_CHANGE, PHASE_MAG_INTERVAL, PHASE_START, fillOf, groupByVehicle,
-  hasPerShellReloads, inferMagazineSize, isTimedAmmoPhase, magazineSizeFromTank, reloadVisualKey, resolveMagazineSize,
-  shellStatesAt, usablePhases,
+  hasReloadTelemetry, hasPerShellReloads, inferMagazineSize, isTimedAmmoPhase, magazineSizeFromTank, reloadViewAt,
+  reloadVisualKey, resolveMagazineSize, shellStatesAt, usablePhases,
 } from './reloadBar.js'
 
 // 相位条目（facet `reloads` 的形状）：{ clock, eid, phase, duration_s, count }
@@ -35,9 +35,15 @@ describe('reloadBar · 相位语义与筛选', () => {
     expect(m.get(11).length).toBe(2)
   })
 
-  it('只有未闭环相位的车：条目在，但状态恒满（不给未闭环码赋时长语义）', () => {
+  it('只有未闭环相位的车（f2=1 计数也算了）：条目在，但状态恒满（不给未闭环码赋时长语义）', () => {
     const ev = [{ clock: 1, eid: 7, phase: 1, duration_s: null, count: 5 }]
     expect(shellStatesAt(ev, [], 100, 1)).toEqual([{ state: 'full', progress: 1 }])
+  })
+
+  it('只有 f2=5（就绪/取消）不算装填遥测：无时长也无计数 → 不画', () => {
+    const ev = [{ clock: 1, eid: 7, phase: 5, duration_s: null, count: 1 }]
+    expect(hasReloadTelemetry(ev)).toBe(false)
+    expect(shellStatesAt(ev, [], 100, 1)).toBeNull()
   })
 })
 
@@ -235,9 +241,9 @@ describe('reloadBar · 服务器剩余发数快照（任意相位的 f4 纠开�
 })
 
 describe('reloadBar · 逐发状态（对齐客户端 Full / Active / Inactive）', () => {
-  it('无相位流（敌方/零起点车）→ 恒满，不猜', () => {
-    expect(states(shellStatesAt([], [], 100, 1))).toEqual(['full'])
-    expect(states(shellStatesAt([], [50], 100, 3))).toEqual(['full', 'full', 'full'])
+  it('无相位流 = 无遥测 → null（不画条；"未知 ≠ 满弹"，见 fake-full 回归）', () => {
+    expect(shellStatesAt([], [], 100, 1)).toBeNull()
+    expect(shellStatesAt([], [50], 100, 3)).toBeNull()
   })
 
   it('单发车整夹装填：整条按进度填（0 → 1）', () => {
@@ -337,5 +343,55 @@ describe('reloadBar · 逐发状态（对齐客户端 Full / Active / Inactive�
     expect(fillOf(shellStatesAt(ev, [15], 30, 3))).toBeCloseTo(2 / 3, 6)
     expect(fillOf(shellStatesAt(ev, [15, 25], 30, 3))).toBeCloseTo(1 / 3, 6)
     expect(fillOf(shellStatesAt(ev, [], 12, 3))).toBeCloseTo(0.5, 6)   // 整夹一起装填：聚合 = 进度
+  })
+})
+
+/**
+ * fake-full 回归（2026-10-02 线上故障）：**absence of evidence ≠ full ammo**。
+ *
+ * 症状：`reloads = 0`（错版 WASM）时旧实现 `if (!events.length) return full()`，
+ * 于是每台车都画出一根**永远不动的白条**；同一份 replay 装上 v0.3.10 后
+ * `reloads = 121`——即"没有遥测"与"确实满弹"曾被混为一谈。
+ */
+describe('reloadBar · 无遥测不得伪造满弹（fake-full 回归）', () => {
+  it('events = [] 且 fires = [] → null（不可绘制），不是满弹', () => {
+    expect(hasReloadTelemetry([])).toBe(false)
+    expect(shellStatesAt([], [], 100, 1)).toBeNull()
+    expect(shellStatesAt([], [], 100, 3)).toBeNull()
+    // 聚合视图同样不给出可绘制状态（shells = null）
+    expect(reloadViewAt([], [], 100, 3).shells).toBeNull()
+  })
+
+  it('events = [] 但 fires > 0 → 同样不得伪造满弹（开火不能凭空造出弹量）', () => {
+    expect(shellStatesAt([], [10, 20, 30], 100, 3)).toBeNull()
+    expect(reloadViewAt([], [10], 100, 3).active).toBe(false)
+  })
+
+  it('有真实遥测且当前确实满弹 → 仍正常显示 full（不误伤）', () => {
+    // 真实整夹装填走完 + 服务器计数确认满夹：这是"有证据的满"，必须画
+    const ev = [clip(10, 7, 4), ammo(14, 7, 3)]
+    expect(hasReloadTelemetry(ev)).toBe(true)
+    expect(states(shellStatesAt(ev, [], 20, 3))).toEqual(['full', 'full', 'full'])
+    // 单发车同理：相位走完 = 已就绪
+    expect(states(shellStatesAt([clip(10, 7, 4)], [], 14, 1))).toEqual(['full'])
+  })
+
+  it('只有敌方车没有遥测（本方全队广播）→ 不画；敌方永远拿不到 full 条', () => {
+    // 敌方 = producer 不广播 → events 为空 → null（渲染侧 friendly 门禁也会跳过）
+    expect(shellStatesAt([], [5, 15], 60, 3)).toBeNull()
+  })
+
+  it('友方车有遥测 → 正常显示装填条（弹鼓逐发：locked 空槽 + loading 进度）', () => {
+    const ev = [gap(39.97, 7, 2.63, 2), drum(42.56, 7, 6.56, 2)]
+    expect(hasReloadTelemetry(ev)).toBe(true)
+    const mid = shellStatesAt(ev, [39.86], 46.0, 3)
+    expect(states(mid)).toEqual(['full', 'full', 'loading'])
+    expect(mid[2].progress).toBeCloseTo((46.0 - 42.56) / 6.56, 6)
+  })
+
+  it('视觉签名区分"不画"与任何真实状态（隐藏装填条也会触发重绘）', () => {
+    expect(reloadVisualKey(null)).toBe('none')
+    expect(reloadVisualKey([{ state: 'full', progress: 1 }])).not.toBe('none')
+    expect(fillOf(null)).toBe(1)
   })
 })

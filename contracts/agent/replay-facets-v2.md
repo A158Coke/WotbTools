@@ -149,6 +149,13 @@ unknown，不允许恢复服务端解析或为敌方推算装填状态。
   求值按时间归并而不是累加计时器，因此 seek / 拖动时间轴必须得到相同状态。
 - 敌方没有该遥测：3D OTM 只为 friendly team 绘制装填条。无数据时不得把“未知”渲染成
   推测的敌方满弹/空弹状态。
+- **无遥测 = 整条不画（`unknown ≠ full`）**：`reloads` 缺失或该车没有任何闭环相位时，
+  消费方（`frontend/src/scene/reloadBar.js#shellStatesAt`）返回 `null`，渲染侧隐藏整条
+  装填 UI。**不允许**把"没有遥测"兜底成满弹——2026-10-02 线上故障正是错版 WASM
+  （`reloads = 0`）导致每台车画出一根永远不动的白条。有遥测且当前确实满弹的车照常显示。
+- `reload_effective` 对 **autoreloader 多段装填 profile** 仍可能整场为空（method 35 当前
+  只解码 `[eid][single duration]` 形状）。这属于**上游 producer 语义**，消费方不得据坦克
+  型号/burst size 推断，也不得用 shots 反推时长；需要时在上游修并发新 Release。
 
 ## 5. 射击复现能力（ShotReplays）
 

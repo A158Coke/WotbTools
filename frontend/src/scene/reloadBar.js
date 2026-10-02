@@ -69,6 +69,12 @@ export const PHASE_MAG_INTERVAL = 7;
 /** N 的合理上限：超过即视为脏数据，退回启发式（实测最大值 6） */
 const MAX_PLAUSIBLE_MAG = 10;
 
+/**
+ * 单发装填状态：`full`（在膛）/ `loading`（装填中，`progress` 0..1，横向条左→右填充）/
+ * `locked`（空槽但排队待装，弹鼓）/ `empty`（空槽等整夹重装，弹夹）。客户端 Full/Active/Inactive 同义。
+ * @typedef {{ state: 'full'|'loading'|'locked'|'empty', progress: number }} ShellState
+ */
+
 const clamp01 = (x) => Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0));
 
 /** 是否为有明确结束时刻的弹药阶段。f2=3/6 会在结束时改变弹量；f2=7 只结束推弹视觉，**不补弹**。 */
@@ -115,6 +121,23 @@ export function isUsablePhase(e) {
   if (p !== PHASE_START && p !== PHASE_DRUM_SHELL && p !== PHASE_MAG_INTERVAL && p !== PHASE_DURATION_CHANGE) return false;
   const d = Number(e.duration_s);
   return Number.isFinite(d) && d > 0;
+}
+
+/**
+ * 该车是否**有可信装填遥测**——画不画装填条的唯一判据。
+ *
+ * 客户端只对本方全队广播装填遥测（arena subtype 15/16/17）与方法 35；没有遥测的车
+ * （敌方、或整场未产生任何相位）必须读作 **unknown**，绝不画成"满弹"。
+ * 这条区分是 2026-10-02 线上故障的根因：`reloads = 0` 时旧实现返回 `full()`，
+ * 于是每台车都画出一根**永远不动的白条**（"unknown == full" 的 fail-open）。
+ *
+ * 判据 = 至少存在一条**闭环装填语义**的条目：
+ *   - 有正时长的 f2=3/4/6/7（真正在装填），或
+ *   - f2=1 的服务器剩余发数快照（权威计数）。
+ * 只有 f2=5（就绪/取消）不算：它不带时长也不改弹量，单凭它无法断言在膛发数。
+ */
+export function hasReloadTelemetry(events) {
+  return (events || []).some((e) => isUsablePhase(e) || (!!e && e.phase === PHASE_AMMO_COUNT));
 }
 
 /** 取可用相位（保持原顺序；facet 已按 clock 升序） */
@@ -229,6 +252,9 @@ export function lastIndexAtOrBefore(events, t) {
 /**
  * t 时刻的**逐发状态**：[{ state: 'full'|'loading'|'empty', progress }]（下标 0 = 第一发）
  *
+ * **无装填遥测 → 返回 `null`**（`unknown ≠ full`）：调用方必须隐藏整条装填 UI，
+ * 不得退化成满条。`hasReloadTelemetry()` 是同一判据的显式版本，供渲染侧预检。
+ *
  * `durations`（可选）= 该方法 35 的"当前生效完整装填时长"序列（{clock, eid, duration_s}）。
  * 有它时：装填**起点**采用该时刻已知的权威时长；中途再来一条（消耗品/乘员/配件生效）时按
  * **缩放剩余**（M2：ready ← t + (ready−t)·新/旧）刷新——硬约束检验「开火不得早于就绪」在
@@ -245,11 +271,13 @@ export function lastIndexAtOrBefore(events, t) {
  *
  * @param {Array} events 该车的相位条目（升序；可用相位由内部筛）
  * @param {Array<number>} fires 该车的开火时刻（升序）——每开火消耗一发
+ * @returns {ShellState[]|null} 无遥测 → `null`（不画）
  */
 export function shellStatesAt(events, fires, t, size = 1, durations = null) {
   const n = Math.max(1, Math.round(size) || 1);
+  // 没有可信装填遥测 = unknown：绝不返回可绘制的满弹状态（"absence of evidence ≠ full ammo"）
+  if (!hasReloadTelemetry(events)) return null;
   const full = () => Array.from({ length: n }, () => ({ state: 'full', progress: 1 }));
-  if (!events || !events.length) return full();
 
   // 归并「开火 / 相位开始 / 相位结束」三类时间标记（均 ≤ t）；只用可用相位建标记。
   // 定时弹药相位（f2=3/6/7）的结束时刻要折进其后的 f2=4 时长变更；只有 f2=3/6
@@ -377,7 +405,7 @@ export function shellStatesAt(events, fires, t, size = 1, durations = null) {
   return Array.from({ length: n }, (_, i) => (i < loaded ? { state: 'full', progress: 1 } : emptyState()));
 }
 
-/** 逐发状态 → 聚合填充比（重绘门控与旧口径兼容用） */
+/** 逐发状态 → 聚合填充比（重绘门控与旧口径兼容用）；无遥测（`null`）→ 1（不影响重绘门控） */
 export function fillOf(states) {
   if (!states || !states.length) return 1;
   let sum = 0;
@@ -389,6 +417,7 @@ export function fillOf(states) {
  * 逐格视觉签名：状态拓扑 + loading 的 1% 进度桶。
  * 不能只用 aggregate fill 做重绘门控：例如整夹 loading=99.6% 与完成后的 A|A|A
  * 都会把聚合 fill 四舍五入到 100%，但前者是一整条、后者是 N 个分格，必须重绘。
+ * 无遥测（`null`）→ `'none'`：与任何真实状态都不同，保证"隐藏装填条"也会触发重绘。
  */
 export function reloadVisualKey(states) {
   if (!states || !states.length) return 'none';
@@ -398,9 +427,9 @@ export function reloadVisualKey(states) {
   }).join('|');
 }
 
-/** 聚合视图（兼容/诊断）：{ active, fill, kind, shells } */
+/** 聚合视图（兼容/诊断）：{ active, fill, kind, shells }；无遥测 → shells = null（不画） */
 export function reloadViewAt(events, fires, t, size = 1) {
   const shells = shellStatesAt(events, fires, t, size);
-  const anyLoading = shells.some((s) => s.state === 'loading');
+  const anyLoading = !!shells && shells.some((s) => s.state === 'loading');
   return { active: anyLoading, fill: fillOf(shells), kind: anyLoading ? 'loading' : null, shells };
 }
