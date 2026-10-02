@@ -1,8 +1,11 @@
 # League Rating（训练赛/联赛评分）
 
 > 训练赛（Training）与联赛/锦标赛（Tournament）回放的 0–1000 综合评分，作为现有「回放解析」
-> 功能的条件能力存在——没有独立入口、没有独立上传页。实现见
-> `wotb-core/.../league/`（纯 Java 评分 core）与 `wotb-web/.../replay/`（模式判定 / DTO / 导出）。
+> 功能的条件能力存在——没有独立入口、没有独立上传页。实现见客户端
+> `frontend/src/replay-local/compute/league-rating.ts`（纯函数评分 core：模式判定 / 完整性校验 /
+> 冲突指纹 / 归一化 / 评分 / 战队命名）与 `frontend/src/replay-local/compute/league-batch.ts`
+> （V6 批次汇总：选手/战队 summary 与维度均值）。原服务端 Java 评分包（`wotb-core/.../league/` 与
+> `wotb-web/.../replay/`）已随解析器退役（2026-10-02）删除。
 
 **这不是旧 Rating V2 综合评分**：Rating V2 已随「战斗表现」重构移除；本功能是全新的、只消费
 当前上传回放可证明事实的内存级评分，与排行榜、名人堂、AI 复盘均无关系。
@@ -31,7 +34,9 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 
 ## 数据来源与内存级生命周期
 
-- 只使用当前上传回放解析出的权威事实（`ReplayParser` → `Battle` / `PlayerResult`）：
+- 只使用当前上传回放解析出的权威事实（上游 Rust Core WASM（pin `deploy/agent/source.json`）
+  `parseResult` → 客户端 `frontend/src/replay-local/battleFacts.ts` 的 `Battle` / `PlayerResult`；
+  原 Java `ReplayParser` 数据来源已于 2026-10-02 退役）：
   team、tankId、winnerTeam、damageDealt、damageAssisted、damageReceived、damageBlocked、
   kills、survived、survivalTimeSec、nShots、nHitsDealt、nPenetrationsDealt、
   victoryPointsEarned、victoryPointsSeized、accountId、nickname、clan、arenaId、arenaBonusType。
@@ -124,14 +129,15 @@ settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即
 - **争霸占点（不评分）**：`victoryPointsEarned/Seized` 仅作为客观统计展示；**不参与任何
   Rating 维度**。单场 UI 显示「获取点数」（raw `victoryPointsEarned`），批次汇总显示
   「获取点数/场」（`earnedTotal / battles` 算术平均）。`victoryPointsSeized` 保留为
-  backend fact，CW Rating 主 UI 不展示。不得用这两个字段推断胜方、终局比分、实时点数
+  结算事实（`PlayerResult` 内部字段，见 `frontend/src/replay-local/compute/model.ts`），CW Rating 主 UI 不展示。不得用这两个字段推断胜方、终局比分、实时点数
   或占点时间线。
 - 某项指标全场为零 → 该维度全员 0，不把权重重新分配。
 - **最终分**：base = 七维之和；胜方 min(1000, base × 1.05)，败方 = base（不扣分）。
   最终计算保留高精度；API 返回未取整值；**总 Rating 页面以 1 位小数展示（如 `927.4`）**，
   不显示 /1000 换算的冗余完成度百分比（`927 · 92.7%` 会被误读为百分位/胜率）；
-  七维维度仍显示 `实际分 / 维度满分 · 百分比`（如 `342 / 365 · 93.7%`，满分来自后端
-  `league.columns` metadata）。排名 / MVP / 汇总一律使用未取整分数；展示层只负责格式化。
+  七维维度仍显示 `实际分 / 维度满分 · 百分比`（如 `342 / 365 · 93.7%`，满分来自本机
+  preview response 的 `league.columns` metadata —— `frontend/src/replay-local/compute/preview.ts`，
+  `max` 取自 `compute/columns.ts` 的 `LEAGUE_DIM_MAX`）。排名 / MVP / 汇总一律使用未取整分数；展示层只负责格式化。
 
 ### V4.1 冻结规范速查
 
@@ -169,7 +175,7 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   arena 聚合；否则使用 `arenaId:team`，不自动跨 arena 聚合。用户输入的战队名称只是现有
   `teamKey` 的显示/导出覆盖，不改变 `teamKey`，也不合并不同 arena 的 unnamed teams。名称只
   保存在当前页面内存，刷新消失；修改立即反映在单场战队 Rating 区域、批次合并汇总、PNG
-  导出与 Excel 导出（经导出请求 metadata 传递，服务端仅本次调用内使用，不保存）。
+  导出与 Excel 导出（经客户端导出调用 metadata 传递，仅本次导出内使用，不保存）。
 
 ## 批次汇总（V6 pooled Rating）
 
@@ -202,9 +208,10 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 
 ## Excel 导出
 
-- **XLSX = 数据导出**：导出**当前 canonical 字段集**（`Columns` / `AggregateColumns` /
-  `LeagueColumns` 的 key 宇宙），完全不受当前 UI ColumnPicker 影响
-  （与前端显示偏好解耦；backend export 不读取任何前端列偏好）。
+- **XLSX = 数据导出**：导出**当前 canonical 字段集**（`frontend/src/replay-local/compute/columns.ts`
+  的 `PLAYER_COLUMNS` / `AGGREGATE_*_COLUMNS` / `LEAGUE_DIM_KEYS` key 宇宙 —— 原 Java
+  `Columns` / `AggregateColumns` / `LeagueColumns` 已随解析器于 2026-10-02 退役），完全不受当前 UI ColumnPicker 影响
+  （与前端显示偏好解耦；客户端导出基于本机 `ProcessedDataset`，不读取任何前端列偏好）。
 - **已退役指标不再导出**：`contribution` / `kast` / `impact` / `alpha_damage` /
   `victory_points_seized` / `traded_deaths` / `account_id` / `tank_id` 已随 B6 从公共列与
   Excel 移除，导出层不再输出；`survival_avg` 已改名 `survival_time_avg`。
@@ -261,7 +268,8 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   已退役，不在任何列 universe 中。
 - **选手 Drawer 雷达**：只允许七维 League Rating，用户可自定义维度与顺序（min 3 / max 7），
   偏好独立 localStorage（`wotb-radar-metric-order`），Summary 与 Battle 共用。每个玩家顶点常驻标注 0–150 视觉分；明细默认显示玩家/平均视觉分，
-  可切换为 raw `score/max` 与真实平均值，切换不改变几何。维度 raw score 与权威 `max` 均来自后端 metadata；
+  可切换为 raw `score/max` 与真实平均值，切换不改变几何。维度 raw score 与权威 `max` 均来自本机
+  preview metadata（`frontend/src/replay-local/compute/preview.ts` 的 `league.columns` / `LEAGUE_DIM_MAX`）；
   V6 最终几何把 `0..当前 Battle/Global Average` 线性映射到 `0..75`，把 `average..max` 线性映射到
   `75..150`。max 缺失/非法或 average 不在 `(0,max)` 时整轴 fail-closed，不回退旧相对公式。Rating Profile
   PNG 与页面复用同一 bounded series、顶点分数定位并默认导出分数明细。
@@ -326,14 +334,16 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
    （已退役的表现派生指标不在其中）；League 模式**新增** Rating
    维度列（league_*），且只有「玩家 + 总 Rating」固定。若不模式化，两种模式会互相污染列配置
    （ColumnPicker 偏好、Excel 表头、PNG），且用户会把「伤害」与「伤害评分」混淆。模式化后：
-   API 按模式返回列集合、前端按模式隔离 storage scope、导出按模式选择 writer。
+   API 按模式返回列集合、前端按模式隔离 storage scope、导出按模式选择 writer。（当前这些都在客户端：
+  `compute/preview.ts` 产出列集合，`export/` 按模式选 writer，服务端 Java 对应实现已退役。）
 7. **为什么 Radar 指标需要 Registry 而不是组件硬编码**：不同指标取值语义不同（League 维度
-   满分由后端 metadata 提供），组件不应现场猜 raw source 或维度顺序。Registry 负责稳定取数与明细，
+   满分由本机 preview metadata（`league.columns`）提供），组件不应现场猜 raw source 或维度顺序。Registry 负责稳定取数与明细，
    共用 `radarScale` 负责相对当前比较组的几何；因此形状会随 Battle/Global Average 改变，必须明确标注
    比较范围，不能宣称跨批次绝对可比。Radar 是 visualization preference，永远不改 Rating。
-7. **如何避免 preview / Excel / PNG 出现三套算法**：评分 core（`LeagueRatingCalculator`）
-   是纯 Java 单点实现；preview 与 Excel 都由 `LeagueReplays.collect` 产出同一
-   `LeagueRatingBatch`（Excel 从 ProcessedDataset 复用，不二次解析/不二次计算）；
+7. **如何避免 preview / Excel / PNG 出现三套算法**：评分 core（`frontend/src/replay-local/compute/league-rating.ts`）
+   是纯函数单点实现（原 Java `LeagueRatingCalculator` 已退役）；preview 与 Excel 都由
+   `frontend/src/replay-local/analyzeReplays.ts` 的同一次批次结果（`compute/finalize.ts` 的 `ProcessedDataset`
+   → `compute/league-batch.ts` 的批次）产出（Excel 复用 `ProcessedDataset`，不二次解析/不二次计算）；
    PNG 的数值直接来自 preview DTO 的同一 cells。任何公式改动只改 core 一处。
 ## 原始射击比例（raw shooting rates）
 
@@ -350,7 +360,7 @@ pen_rate  = penetrations / hits （击穿率——分母是命中次数，不是
   不是各场比例的简单平均。
 - **UI raw rate ≠ Rating shooting score**：League Rating 射击维度内部使用
   Soft Wilson（90% Wilson 95% 置信下界 + 10% raw rate，命中 30% / 击穿 70%，
-  见 LeagueRatingCalculator），不因 UI 显示真实百分比而改成纯裸比例。
+  见 `frontend/src/replay-local/compute/league-rating.ts`），不因 UI 显示真实百分比而改成纯裸比例。
 
 ## Player Radar 数据契约（Summary mean / Battle 单场）
 
@@ -377,9 +387,9 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
   取数（summary → `dimensionMeans`，battle → `dimensionScores`），
   禁止 summary 数据污染 battle radar 或 battle 数据污染 summary radar。
 - **missing / invalid ≠ 真实 0**：`dimensionScores` 非 7 维、null、NaN、Infinity 是
-  invariant violation（`LeagueRatingBatchAggregator` 的 pooled accumulator
+  invariant violation（`frontend/src/replay-local/compute/league-batch.ts` 的 pooled accumulator
   对残缺 stride fail fast）；Radar 轴缺失显示 `--`，不冒充 0/0%。
-- **几何标尺**：League 维度满分来自后端 `resp.league.columns`（key/max），frontend 不硬编码 domain max。
+- **几何标尺**：League 维度满分来自本机 preview response 的 `resp.league.columns`（key/max），frontend 不硬编码 domain max。
   设玩家维度分 `p`、当前 Battle/Global Average `a`、权威满分 `m`：`p<=a` 时
   `visual=75*p/a`；`p>a` 时 `visual=75+75*(p-a)/(m-a)`。因此 `0→0`、`a→75`、`m→150`，
   100 对应 `a+(m-a)/3`。缺 player/reference/max、非有限值、`a<=0`、`a>=m` 或 `p>m` 时整轴
@@ -407,10 +417,11 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
 - **Battle**：直接显示该场玩家行的 `tank_name` 列与结构化 `vehicleId`
   （来源 `PlayerResult.tankId`；B6 后 `tank_id` 不再是列），
   不执行统计、不显示无意义的 `1 场 · 100%`。
-- **数据流**：Core 聚合器在 rated-only 循环中把 `(tankId, 场次)` 直方图累计进
-  `PlayerLeagueSummary.vehicleUsage`（`List<PlayerVehicleUsage>`，只有 tankId + battles，
-  Core 不复制 Tankopedia）；Web `Mapper` 消费现有 `Tankopedia` 单一事实源做最终选择并
-  生成 `LeagueVehicleUsageDto(tankId, tankName, battles)`。API 只回 key + 数据；
+- **数据流**：`frontend/src/replay-local/compute/league-batch.ts` 在 rated-only 循环中把 `(tankId, 场次)`
+  直方图累计进 `PlayerLeagueSummary.vehicleUsage`（只有 tankId + battles，
+  评分 core 不复制 Tankopedia）；导出/DTO 层（`frontend/src/replay-local/compute/preview.ts`）消费现有
+  `compute/tankopedia.ts` 单一事实源做最终选择并
+  生成 `(tankId, tankName, battles)` 车辆用量行。只回 key + 数据；
   **无可靠车辆数据时返回 null，不得伪造坦克**。
 - **贴图**：只用随前端发布的本地 WebP（`frontend/src/assets/tank-portraits/tier-x/`，经
   `vehicle-portraits/runtime.js` 的 `loadVehiclePortrait` 按 tankId 懒加载），

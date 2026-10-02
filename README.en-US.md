@@ -26,7 +26,7 @@ flowchart LR
 
 ## AI evidence chain
 
-Replay → **authoritative settlement** (`battle_results.dat`: damage / received / death times) and **event stream** (`data.wotreplay`: movement / engagements / damage events / grid regions) → deterministic features (phase survival counts "at phase end", per-vehicle death timeline for both teams, engagement & focus-fire evidence) → the prompt contains backend evidence only → the AI reviews against the pre-battle baseline (times in Xm Xs, grid regions, our/opponent view) → results stream incrementally with a team autopsy (MVP / liabilities).
+Replay → **authoritative settlement** (`battle_results.dat`: damage / received / death times) and **event stream** (`data.wotreplay`: movement / engagements / damage events / grid regions) → deterministic features (phase survival counts "at phase end", per-vehicle death timeline for both teams, engagement & focus-fire evidence) → the prompt contains backend evidence only → the AI reviews against the pre-battle baseline (times in Xm Xs, grid regions, our/opponent view) → results stream incrementally as a structured team review (`TeamAiReviewResult` v0.5: `summary` / `episodes` / `trainingSuggestions` / `reviewFocus` / `highContributors`), with `teamPlayers` carrying the authoritative `playerKey` → display identity mapping. The production chain has no third model call and no team autopsy.
 
 ## Key engineering trade-offs
 

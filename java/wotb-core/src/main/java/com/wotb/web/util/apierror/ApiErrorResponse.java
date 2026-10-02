@@ -12,10 +12,10 @@ import java.util.Map;
  * (enum name for {@code ApiErrorCode} paths), and {@code errorMsg} is the optional safe
  * diagnostic text. No competing {@code code}/{@code messageKey}/{@code traceId} fields.</p>
  *
- * <p>Lives in {@code wotb-result} so both the Business Backend ({@code wotb-web}) and the
- * standalone {@code ai-service} ({@code wotb-ai}) can share one envelope instead of each
- * declaring its own copy; the shape itself is owned by {@code contracts/http/openapi.yaml}
- * ({@code ApiError}).</p>
+ * <p>Lives in {@code wotb-core} (package {@code com.wotb.web.util.apierror}) so both the Business
+ * Backend ({@code wotb-web}) and the standalone {@code ai-service} ({@code wotb-ai}) can share one
+ * envelope instead of each declaring its own copy; the shape itself is owned by
+ * {@code contracts/http/openapi.yaml} ({@code ApiError}).</p>
  */
 public record ApiErrorResponse(
         String id,
