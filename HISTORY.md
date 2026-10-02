@@ -472,21 +472,35 @@ AI 复盘此前完全运行在业务后端内：先由服务端的回放处理�
 
 **Git 证据：** `4ad54b58`（仓库内 Rust 移植达成 Java parity）、`af7ca594`（退役 `replay-engine/`、接入上游 WASM 产物）、`82f1e26c`（#397 合入主线）。
 
+## 2026-10-02 — 服务端 Replay Parser 退役，客户端解析成为唯一生产路径
+
+09-30 确立“以上游 Agent Rust Core 作为唯一客户端解析权威”后，#447 完成了真正的 production cutover：WotbTools 将上游 `WoT-Blitz-Agent` 的 WASM Release 作为唯一 Replay 字节解析器，当前发布锁定在 `deploy/agent/source.json`（当时为 `v0.3.8` / `f35baa46…`，同时校验 Release asset SHA-256）。Web 与 Android WebView 都在用户设备本地解析 `.wotbreplay`，失败时不再回退服务端 parser。
+
+客户端随后承担过去由 Java Replay Processing 链路完成的确定性工作：结算事实、批次去重、League Rating、统计指标、xlsx/zip 导出、2D Playback，以及供 AI Review 使用的 canonical projection。WotbTools 在 `frontend/src/replay-local/canonical` 保留自己的领域语义边界；上游 Agent facet 是 version-gated 输入，不直接等同于 WotbTools canonical truth。
+
+服务端 Replay Processing 因此退出生产架构。Java parser 与相关 Maven 模块、Processing Job / Dataset 端点、Parser Worker、RabbitMQ delivery、MinIO temporary workspace 以及对应 processing tables / deployment / CI / IaC 被删除。TX Business API 回到业务职责：认证后的业务写入、持久状态、Hall of Fame 记录与证据附件、结构校验和去重；Yecao 不再承担 Replay execution，保留独立 AI Service 与观测运行面。
+
+Hall of Fame 的信任模型也随之明确：客户端提交的 Replay facts **有意视为不可信输入**，服务端只验证结构，不重新解析文件；真实性由原始 Replay 证据附件与管理员审核承担。个人主页的“用回放验证”同样只影响已验证徽章，不进入授权边界。
+
+同一天，Replay 研究治理进一步区分了两类 provenance：**production artifact snapshot** 与 **research source snapshot**。前者由 `deploy/agent/source.json` 锁定真正运行的 Agent Release；后者在外部交叉验证文档中锁定具体 upstream commit / blob。Agent 是生产解析器的提供方，不因此自动成为 WotbTools 协议语义 authority；外部研究结论仍需在 WotbTools 语料或受控探针上独立复现后才能提升 canonical evidence state。
+
+**Git 证据：** `0dc4767e`（#447 合入主线）；上游 Release `v0.3.8` commit `f35baa46`。
+
 ## 当前架构形成的三条长期主线
 
 回看整个演进过程，WotbTools 的变化并不是简单的功能累积，而主要沿三条长期主线收敛。
 
 ### Replay 与 Evidence
 
-`最终战果 → Event Stream → Reconstruction → Canonical Replay Facts → Evidence Contract → Playback / AI / Rating / Hall of Fame → Identity Evidence`
+`最终战果 → Event Stream → Reconstruction → Canonical Replay Facts → Client Projections → Playback / AI / Rating / Hall of Fame → Identity Evidence`
 
-Replay 从上传文件逐渐成为多个业务域共同依赖的事实证据来源。长期原则是：**没有证据就保持未知；AI 解释证据，而不创造证据。**
+Replay 从上传文件逐渐成为多个业务域共同依赖的事实证据来源。当前实现由用户设备上的锁定 Agent WASM 负责字节解析，再由 WotbTools canonical 层建立领域事实与消费投影。长期原则是：**没有证据就保持未知；AI 解释证据，而不创造证据。**
 
 ### 生产运行架构
 
-`单体 Web → Observability → Immutable Release → Release Contract → 双服务器 → Control / Execution Boundary → RabbitMQ + MinIO → Distributed Replay Processing → TX / Yecao 稳定职责`
+`单体 Web → Observability → Immutable Release → Release Contract → 双服务器 → Control / Execution Boundary → RabbitMQ + MinIO → Distributed Replay Processing → TX / Yecao 稳定职责 → Client-side Replay Parsing → Parser Worker / RabbitMQ / MinIO Replay Pipeline 退役`
 
-生产架构从单服务器应用逐步发展为具有明确状态权威、Artifact 边界、消息协议、恢复契约和跨节点职责的系统。
+生产架构从单服务器应用逐步发展为具有明确状态权威、Artifact 边界、消息协议、恢复契约和跨节点职责的系统；当 Replay execution 迁回客户端后，曾经必要的跨云解析基础设施也被主动删除，TX 保留业务运行面，Yecao 保留独立 AI Service 与观测能力。
 
 ### 身份模型
 
