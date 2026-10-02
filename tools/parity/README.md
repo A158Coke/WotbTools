@@ -29,6 +29,12 @@ java -cp "<coordinator classpath>" tools/parity/JavaPreviewDump.java <回放目�
 java -cp "<coordinator classpath>" tools/parity/JavaPreviewDump.java <repo> <golden>/java-preview.json <golden>/batches.json
 ```
 
+xlsx 导出的 golden（同一 coordinator classpath；输入直接取 `java-battles.json`，不重新解析回放）：
+
+```bash
+java -Duser.timezone=Asia/Shanghai -cp "<coordinator classpath>" tools/parity/JavaExportDump.java   <golden>/batches.json <golden>/java-battles.json <golden>/java-export.json
+```
+
 Windows 注意：回放目录名含中文时，Java 的命令行参数会乱码——先 `cd` 进回放目录再传 `.`。
 
 ## 记录
