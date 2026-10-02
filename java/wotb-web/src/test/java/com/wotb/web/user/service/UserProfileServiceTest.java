@@ -488,6 +488,25 @@ class UserProfileServiceTest {
     }
 
     // ── 用回放验证绑定账号：只有「数值 accountId 相等」才通过 ──────────────────
+    //
+    // 信任模型（产品决策，docs/features/user-profile.md）：录像者 accountId 由浏览器本地解析得出，
+    // 服务端只比较「客户端声称的录像者」与当前绑定账号。这是可伪造的便利徽章，不是身份证明，
+    // 不授予任何权限（见 ReplayVerificationBadgeBoundaryTest）。
+
+    @Test
+    void verificationIsAClientAssertedComparisonNotAReplayAuthenticityCheck() {
+        // 服务端不接收回放字节、不重新解析：任何客户端声称的录像者 accountId 只要等于绑定账号即点亮徽章
+        final UserProfile profile = cnProfile(123L, "CNName", null);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        service.verifyWotbAccountFromReplay("kc-user", 123L);
+
+        assertNotNull(profile.getWotbAccountVerifiedAt());
+        assertEquals(java.util.List.of(String.class, Long.class), java.util.Arrays.asList(
+                java.util.Arrays.stream(UserProfileService.class.getDeclaredMethods())
+                        .filter(m -> m.getName().equals("verifyWotbAccountFromReplay"))
+                        .findFirst().orElseThrow().getParameterTypes()));
+    }
 
     @Test
     void replayRecordedByTheBoundAccountVerifiesIt() {
