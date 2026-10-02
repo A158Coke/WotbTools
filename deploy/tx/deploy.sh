@@ -354,12 +354,18 @@ promote_files() {
     cp -a "$LIVE_DEPLOY_DIR/." "$next_deploy/" || return 1
   fi
   [ -f "$INCOMING_DIR/deploy.sh" ] || die "staged TX deployment script is missing."
+  if is_selected wotb-frontend; then
+    [ -f "$INCOMING_DIR/with-deploy-lock.sh" ] || die "staged TX deployment lock wrapper is missing."
+  fi
   [ -f "$INCOMING_DIR/business-postgres.compose.yml" ] || die "staged Business PostgreSQL compose fragment is missing."
   [ -f "$INCOMING_DIR/keycloak-postgres.compose.yml" ] || die "staged Keycloak PostgreSQL compose fragment is missing."
   [ -f "$INCOMING_DIR/runtime-check.sh" ] || die "staged TX runtime check is missing."
   [ -f "$INCOMING_DIR/runtime-check-lib.sh" ] || die "staged TX runtime check library is missing."
   [ -f "$INCOMING_DIR/docker-compose.yml" ] || die "staged TX compose file is missing."
   cp -f "$INCOMING_DIR/deploy.sh" "$next_deploy/deploy.sh" || return 1
+  if is_selected wotb-frontend; then
+    cp -f "$INCOMING_DIR/with-deploy-lock.sh" "$next_deploy/with-deploy-lock.sh" || return 1
+  fi
   cp -f "$INCOMING_DIR/runtime-check.sh" "$next_deploy/runtime-check.sh" || return 1
   cp -f "$INCOMING_DIR/runtime-check-lib.sh" "$next_deploy/runtime-check-lib.sh" || return 1
   cp -f "$INCOMING_DIR/docker-compose.yml" "$next_deploy/docker-compose.yml" || return 1

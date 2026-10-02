@@ -125,38 +125,71 @@ describe('Supremacy 基地 overlay', () => {
     expect(Number(clipRects[2].attributes('height'))).toBeCloseTo(diameter * 0.4, 3)
   })
 
-  it('renders the Assault single base and accepts protocol progress 100', async () => {
+  it('renders Assault reset as idle in map/HUD, then resumes later progress and still accepts 100', async () => {
     const overview = { ...makeOverview(), mapCode: 'neptune' }
     const dataset = {
       ...makePlaybackV2({
         baseStates: [
           { timeSec: 0, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 0 },
-          { timeSec: 10, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 50 },
-          { timeSec: 20, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 100 },
+          { timeSec: 10, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 35 },
+          { timeSec: 20, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 0 },
+          { timeSec: 30, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 12 },
+          { timeSec: 40, baseId: 'BASE', ownerTeam: null, capturingTeam: null, captureProgress: 100 },
         ],
       }),
       mapCode: 'neptune',
       assaultObjectivePresent: true,
     }
-    const wrapper = await mountPlayback(overview, 20, dataset)
+    const wrapper = await mountPlayback(overview, 40, dataset)
     await flushPromises()
 
     expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(1)
     expect(wrapper.find('[data-test="pb-base-BASE"]').text()).toContain('BASE')
     expect(wrapper.findComponent({ name: 'BattleMap' }).props('bases')[0]).toMatchObject({
-      x: 49.5339, y: 8.5291, baseId: 'BASE', radius: 20,
+      x: 49.5339,
+      y: 8.5291,
+      baseId: 'BASE',
+      radius: 20,
+      status: 'neutral',
+      capturedBy: 'unknown',
+      progress: 100,
     })
-    const fill = wrapper.find('[data-test="pb-base-fill"]')
-    expect(fill.exists()).toBe(true)
-    expect(fill.classes()).toContain('pb-capture-unknown')
-    const rect = wrapper.find('clipPath rect')
+    expect(wrapper.find('[data-test="pb-base-fill"]').exists()).toBe(true)
+    let rect = wrapper.find('clipPath rect')
     expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')), 3)
+
     await wrapper.setProps({ seekTo: 10 })
     await flushPromises()
-    expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')) * 0.5, 3)
-    await wrapper.setProps({ seekTo: 0 })
+    rect = wrapper.find('clipPath rect')
+    expect(wrapper.find('[data-test="pb-base-fill"]').exists()).toBe(true)
+    expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')) * 0.35, 3)
+
+    // Explicit protocol 0 is a reset: objective remains visible, progress visuals return to idle.
+    await wrapper.setProps({ seekTo: 20 })
     await flushPromises()
-    expect(Number(rect.attributes('height'))).toBe(0)
+    expect(wrapper.find('[data-test="pb-base-BASE"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-base-fill"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="base-badge-BASE"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="base-badge-ring"]').exists()).toBe(false)
+    expect(wrapper.find('.base-objective-progress').exists()).toBe(false)
+
+    // A later positive update starts a new visible capture after the reset.
+    await wrapper.setProps({ seekTo: 30 })
+    await flushPromises()
+    rect = wrapper.find('clipPath rect')
+    expect(wrapper.find('[data-test="pb-base-fill"]').exists()).toBe(true)
+    expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')) * 0.12, 3)
+    expect(wrapper.find('.base-objective-progress').text()).toBe('12%')
+
+    // Backward/forward seeks deterministically restore reset vs active presentation.
+    await wrapper.setProps({ seekTo: 20 })
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-base-fill"]').exists()).toBe(false)
+    await wrapper.setProps({ seekTo: 10 })
+    await flushPromises()
+    rect = wrapper.find('clipPath rect')
+    expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')) * 0.35, 3)
+
     expect(wrapper.find('[data-test="pb-base-A"]').exists()).toBe(false)
     await wrapper.setProps({ playbackV2: { ...dataset, assaultObjectivePresent: false } })
     expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(0)
