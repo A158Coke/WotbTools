@@ -135,12 +135,20 @@ if run_frontend FAKE_DOCKER_LOG="$WORK/frontend-ai-rewrite.log" >/dev/null 2>&1;
 fi
 ! grep -q '^up ' "$WORK/frontend-ai-rewrite.log" 2>/dev/null
 cp "$WORK/frontend.conf.template.bak" "$STAGED_TEMPLATE"
+
+# Frontend owns the live lock wrapper. A later deployment from another owner may
+# stage older wrapper bytes, but it must preserve the already-promoted live copy.
+printf '%s\n' '# live-wrapper-sentinel' > "$WORK/host/deploy/with-deploy-lock.sh"
+printf '%s\n' '# stale-staged-wrapper' > "$WORK/incoming/deploy/tx/with-deploy-lock.sh"
+
 env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \
   TX_RUNTIME_ROOT="$WORK/host" WOTB_DEPLOY_SERVICE=caddy WOTB_DEPLOY_CONFIG_SHA="$SHA" \
   WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1 CADDY_ACME_EMAIL=ci@example.invalid \
   FAKE_DOCKER_LOG="$WORK/caddy.log" bash "$WORK/incoming/deploy/tx/deploy.sh" >/dev/null
 grep -q '^up -d --no-deps --force-recreate caddy$' "$WORK/caddy.log"
+grep -Fxq '# live-wrapper-sentinel' "$WORK/host/deploy/with-deploy-lock.sh" \
+  || { echo 'non-frontend deployment replaced the frontend-owned TX lock wrapper' >&2; exit 1; }
 # The staged gateway config must be validated by the real Caddy executable before
 # the gateway is recreated: the published image has no ENTRYPOINT, so the
 # validation has to pin `--entrypoint caddy` explicitly.
