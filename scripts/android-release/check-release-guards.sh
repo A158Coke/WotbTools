@@ -16,6 +16,38 @@ guard_min_supported() {
   return 1
 }
 
+# guard_bridge_covered <prod_bridge> <head_bridge> <frontend_versions_csv> <min_supported_code> <new_code>
+#
+# The frontend declares which Native Bridge versions it can still serve. When a
+# release drops the bridge version that production clients currently report, those
+# clients can no longer be served correctly, so `version.json` must force them to
+# update - otherwise publishing a client-compatible-looking manifest silently leaves
+# them on an unsupported wire contract (the exact failure mode "publish the manifest
+# before the cutover is configured" produces).
+#
+# Returns 0 when a cutover is not needed (no production bridge yet, bridge version
+# unchanged, or the frontend still supports the production bridge version) or when
+# it is needed AND minSupportedVersionCode already covers the new release. Returns
+# non-zero with an actionable error when the cutover is needed but not configured.
+guard_bridge_covered() {
+  local prod_bridge="$1" head_bridge="$2" fe_versions="$3" min_supported="$4" new_code="$5"
+  case "$prod_bridge" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  case "$head_bridge" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  [ "$prod_bridge" -lt "$head_bridge" ] || return 0
+  case ",$fe_versions," in
+    *",$prod_bridge,"*) return 0 ;;
+  esac
+  if [ "$min_supported" -ge "$new_code" ]; then
+    return 0
+  fi
+  echo "::error::Native Bridge $prod_bridge is no longer supported by the frontend (supports: ${fe_versions:-none}) but ANDROID_MIN_SUPPORTED_VERSION_CODE=$min_supported does not force those clients to update to versionCode $new_code. Set the GitHub Actions variable ANDROID_MIN_SUPPORTED_VERSION_CODE=$new_code (versionCode of $new_code) before this release; otherwise old clients keep using a wire contract this frontend can no longer serve." >&2
+  return 1
+}
+
 # classify_prod <path_to_prod_version.json> <version_code> <version_name> <apk_name> <min_supported> [bridge_version] [source_sha]
 # Sets PROD_STATE:
 #   prod_older            prod latestVersionCode < new    -> proceed to publish

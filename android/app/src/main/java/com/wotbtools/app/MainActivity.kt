@@ -2,16 +2,12 @@ package com.wotbtools.app
 
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.ActivityInfo
-import android.content.pm.verify.domain.DomainVerificationManager
-import android.content.pm.verify.domain.DomainVerificationUserState
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -30,10 +26,13 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.annotation.RequiresApi
 import androidx.webkit.WebViewFeature
 import androidx.webkit.WebViewCompat
+import com.wotbtools.app.auth.AuthFailureReason
+import com.wotbtools.app.auth.AuthManager
+import com.wotbtools.app.auth.AuthResult
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -45,15 +44,15 @@ import java.util.concurrent.Executors
  * 现有 Web upload pipeline（**唯一** ingress：Native Bridge）；origin-scoped Native Bridge
  * （仅 wotbtools.com/www 可用）。
  *
- * Navigation ownership（RC5）：verified auth return 恒为最高优先级；`inAuthFlow == true` 期间新来的
- * replay intent 只入队，绝不改变 WebView navigation（分发决策见纯策略 `ReplayDispatchPolicy`）。
- * Pending replay 跨 process death 由 metadata 恢复（RC7）：冷启动先恢复 active pending，再清理 orphan。
+ * Navigation ownership：pending replay 的分发完全由纯策略 `ReplayDispatchPolicy` 决定；认证不再参与
+ * 这个决策 —— 登录跑在 external user-agent 里，永远不会占用 WebView navigation。
+ * Pending replay 跨 process death 由 metadata 恢复：冷启动先恢复 active pending，再清理 orphan。
  * Pending replay 的 ACK 是 identity-matched 的 compare-and-clear（决策见纯策略 `PendingReplayAckPolicy`）：
  * 只有命名了当前 pending 的 ACK 才清，绝不接受无 identity 的 ACK。
  *
- * Auth 边界：QQ native handoff 是否允许改写 return callback 由纯策略 `QqNativeHandoffPolicy` 决定
- * （真机证据缺失时恒为 DO_NOT_REWRITE，沿用 QQ 原 URI）；App Link 健康状态（domain verification）见
- * `AuthLinkHealth`，只做一次安全诊断与一次性 OEM recovery 提示 —— 绝不 gate 登录，也绝不自动修改系统设置。
+ * Auth ownership：**Native 拥有认证**（AppAuth / RFC 8252，见 `auth/AuthManager`）。WebView 只保留
+ * 一个 residual origin boundary：主 frame 导航到 app 自有 host 之外一律交给系统浏览器并阻断在
+ * WebView 内，所以 Keycloak / provider 页面永远不会在 WebView 里渲染。
  */
 class MainActivity : Activity() {
 
@@ -65,17 +64,22 @@ class MainActivity : Activity() {
         private const val FILE_CHOOSER_REQUEST = 1001
         private const val BRIDGE_NAME = "WotbNative"
 
-        /** Auth navigation 诊断日志 tag。 */
+        /** 日志 tag（导航 / replay / auth 诊断共用）。 */
         private const val TAG = "WotbAuth"
 
-        /** recovery banner 的收起原因：诊断日志只允许这两个 token，绝不把不同原因混成一个。 */
-        private const val REASON_TRUSTED_AUTH_RETURN = "trusted-auth-return"
-        private const val REASON_OPEN_SETTINGS = "open-settings"
+        /** 原生认证变更后推给页面的全局（与 contracts/android-native-bridge.json 的 events 一致）。 */
+        private const val AUTH_CHANGED_GLOBAL = "wotbtoolsOnAuthChanged"
 
         /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
         private val BRIDGE_ORIGINS = setOf(
             "https://wotbtools.com",
             "https://www.wotbtools.com"
+        )
+
+        /** app 自有 host：主 frame 导航里唯一允许留在 WebView 的集合（大小写不敏感 + 去尾部点）。 */
+        private val APP_HOSTS = setOf(
+            "wotbtools.com",
+            "www.wotbtools.com"
         )
     }
 
@@ -92,28 +96,21 @@ class MainActivity : Activity() {
     private lateinit var versionPrimaryButton: Button
     private lateinit var versionLaterButton: Button
     private lateinit var webErrorTitle: TextView
-    private lateinit var authLinkRecoveryBanner: LinearLayout
 
     private lateinit var apkUpdater: ApkUpdater
     private lateinit var nativeBridge: NativeBridge
-    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private lateinit var authManager: AuthManager
+    private val executor: ExecutorService = Executors.newFixedThreadPool(2)
 
     @Volatile private var pendingReplay: PendingReplay? = null
     @Volatile private var pendingReplayEligible = true
     @Volatile private var latestManifest: VersionManifest? = null
     @Volatile private var downloadedApk: File? = null
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
-    @Volatile private var inAuthFlow = false
     @Volatile private var awaitingUnknownSourcesPermission = false
 
-    /**
-     * App Link 健康状态：process 内只探测一次（含一次安全诊断日志）。**不** gate 登录 —— 任何取值都
-     * 允许用户继续走 QQ 登录，[AuthLinkState.NONE] 只额外给一次 recovery 提示。
-     */
-    @Volatile private var authLinkState: AuthLinkState? = null
-
-    /** OEM App Link recovery 提示的 process 级一次性门控（「一次 session 最多提示一次」）。 */
-    @Volatile private var authLinkRecoveryShown = false
+    /** WebView 是否已销毁：晚到的 bridge 回复 / JS 通知都必须先看这一位。 */
+    @Volatile private var destroyedWebView = false
 
     /** HTML Fullscreen API 在 Android WebView 中通过 WebChromeClient custom-view 回调落地。 */
     private var fullscreenView: View? = null
@@ -121,8 +118,8 @@ class MainActivity : Activity() {
     private var fullscreenPreviousOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var fullscreenPreviousSystemUiVisibility: Int = View.SYSTEM_UI_FLAG_VISIBLE
 
-    /** 冷启动验证的 QQ broker callback；进入 startup gate 后作为 entry URL 一次性加载并清空。 */
-    @Volatile private var pendingAuthReturn: Uri? = null
+    /** 认证变更监听：`AuthManager` 的 listener 需要能注销，所以留一个稳定引用。 */
+    private val authChangedListener = AuthManager.Listener { notifyAuthChanged() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -141,20 +138,22 @@ class MainActivity : Activity() {
         webErrorTitle = findViewById(R.id.webErrorTitle)
         versionPrimaryButton = findViewById(R.id.versionPrimaryButton)
         versionLaterButton = findViewById(R.id.versionLaterButton)
-        authLinkRecoveryBanner = findViewById(R.id.authLinkRecoveryBanner)
 
         apkUpdater = ApkUpdater(this)
         nativeBridge = NativeBridge(this)
+        authManager = AuthManager.getInstance(applicationContext, MainActivity::class.java)
+        authManager.addListener(authChangedListener)
+        // discovery 只预热一次（进程内缓存），让 authLogin 能真正同步启动 external user-agent。
+        authManager.warmUp()
 
         findViewById<Button>(R.id.retryButton).setOnClickListener { hideAllGates(); startStartupFlow() }
         webErrorRetryButton.setOnClickListener { hideAllGates(); loadWeb() }
         versionPrimaryButton.setOnClickListener { onUpdatePrimary() }
         versionLaterButton.setOnClickListener { loadWeb() }
-        findViewById<Button>(R.id.authLinkRecoveryAction).setOnClickListener { openAppLinkSettings() }
 
         val webViewOk = configureWebView()
-        // 冷启动顺序（RC7）：先恢复 active pending（跨 QQ 登录期间 process death 存活），再清理不再被它
-        // 引用的 orphan replay cache —— active backing file 绝不能删除。
+        // 冷启动顺序：先恢复 active pending（跨进程重建存活），再清理不再被它引用的 orphan replay cache
+        // —— active backing file 绝不能删除。
         val restoredReplay = ReplayIntentHandler.restorePending(this)
         if (restoredReplay != null) {
             pendingReplay = restoredReplay
@@ -162,12 +161,9 @@ class MainActivity : Activity() {
             Log.d(TAG, "replay-pending restored ref=${restoredReplay.logRef}")
         }
         ReplayIntentHandler.cleanupOrphans(this, restoredReplay?.file)
-        // 冷启动 intent 分类：verified auth return（QQ broker callback）优先于 replay ingress。
-        if (intent != null && handleAuthReturnColdStart(intent)) {
-            // pendingAuthReturn 已记录；startup gate 通过后作为 entry URL 加载。
-        } else {
-            handleIncomingIntent(intent)
-        }
+        // 冷启动 intent 先看是不是授权回程（external user-agent 回来，进程可能已被重建），
+        // 其余一律走 replay ingress。
+        if (!handleAuthorizationIntent(intent)) handleIncomingIntent(intent)
         if (webViewOk) startStartupFlow()
     }
 
@@ -178,7 +174,8 @@ class MainActivity : Activity() {
             return false
         }
         val settings = webView.settings
-        // Keycloak 与 provider 的跨站认证必须共享当前 WebView cookie jar；不读取或复制 Cookie。
+        // WebView 仍需要 cookie jar 才能维持 wotbtools.com 自己的会话；认证已不在 WebView 内发生，
+        // 因此不再需要为跨站 IdP 打开 third-party cookie。
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
@@ -197,7 +194,9 @@ class MainActivity : Activity() {
             WebViewCompat.WebMessageListener { _, message, _, _, replyProxy ->
                 val data = message.data
                 if (data != null) {
-                    replyProxy.postMessage(nativeBridge.handleMessage(data))
+                    // 认证方法会稍后才完成：replyProxy 必须按次捕获，由 postReply 兜住「回复时页面已销毁」，
+                    // 绝不把已失效的 proxy 交给后台线程。
+                    nativeBridge.handleMessage(data) { reply -> postReply(replyProxy, reply) }
                 }
             }
         )
@@ -242,52 +241,33 @@ class MainActivity : Activity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                val host = url?.let { Uri.parse(it).host }
-                val scheme = url?.let { Uri.parse(it).scheme }
-                val before = inAuthFlow
-                val decision = AuthNavigationPolicy.decide(scheme, host, inAuthFlow)
-                inAuthFlow = decision.inAuthFlow
+                val uri = url?.let { Uri.parse(it) }
                 Log.d(
                     TAG,
-                    "pageStart scheme=${scheme ?: "null"} host=${host ?: "null"} action=${decision.action} " +
-                        "inAuthFlow=$before->$inAuthFlow mainFrame=true " +
-                        "source=${AuthNavigationPolicy.sourceCategory(scheme, host)}"
+                    "pageStart scheme=${uri?.scheme ?: "null"} host=${uri?.host ?: "null"} " +
+                        "category=${originCategory(uri?.host)} mainFrame=true"
                 )
             }
 
+            /**
+             * residual origin boundary（App 自有 origin 边界）：主 frame 导航只允许留在 app 自有 host；
+             * 其它一切（Keycloak / provider / 普通外链 / 无 host 的怪 URI）交给系统浏览器并在 WebView 内
+             * 阻断 —— 认证页面因此永远不会在 App 的 WebView 里渲染。
+             */
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if (!request.isForMainFrame) return false
-                val host = request.url.host
-                val scheme = request.url.scheme
-                val before = inAuthFlow
-                val decision = AuthNavigationPolicy.decide(scheme, host, inAuthFlow)
-                inAuthFlow = decision.inAuthFlow
-                val source = AuthNavigationPolicy.sourceCategory(scheme, host)
-                Log.d(
-                    TAG,
-                    "nav scheme=${scheme ?: "null"} host=${host ?: "null"} action=${decision.action} " +
-                        "inAuthFlow=$before->$inAuthFlow mainFrame=true source=$source"
-                )
-                return when (decision.action) {
-                    AuthNavigationAction.AUTH_FAILURE -> {
-                        // 未验证 host 进入 auth flow：阻断该导航并进入 auth-failure recovery。
-                        enterAuthFailureRecovery(host)
-                        true
-                    }
-                    AuthNavigationAction.NATIVE_AUTH_HANDOFF -> {
-                        // 已验证 QQ native handoff：交给 QQ App，保留当前 WebView auth transaction。
-                        launchNativeAuthHandoff(request.url, scheme, host)
-                        true
-                    }
-                    AuthNavigationAction.OPEN_EXTERNAL -> {
-                        try {
-                            startActivity(Intent(Intent.ACTION_VIEW, request.url))
-                        } catch (_: Exception) {
-                            // 无可用 browser 时忽略，留在原页。
-                        }
-                        true
-                    }
-                    else -> false // ALLOW_WEBVIEW / ALLOW_AUTH_WEBVIEW 留在 WebView
+                val uri = request.url
+                if (isAppHost(uri.host)) {
+                    Log.d(TAG, "nav in-app scheme=${uri.scheme ?: "null"} host=${uri.host ?: "null"}")
+                    return false
+                }
+                Log.d(TAG, "nav external scheme=${uri.scheme ?: "null"} host=${uri.host ?: "null"}")
+                return try {
+                    startActivity(Intent(Intent.ACTION_VIEW, uri))
+                    true
+                } catch (_: Exception) {
+                    // 无可用 browser 时同样阻断：宁可停在这一页，也不在 WebView 内加载非 app origin。
+                    true
                 }
             }
 
@@ -416,202 +396,16 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun entryUrl(): String {
-        // 优先级：verified auth return > replay > BASE_URL。
-        pendingAuthReturn?.let { return it.toString() }
-        if (pendingReplay != null) return REPLAY_URL
-        return BASE_URL
-    }
+    /** Entry URL：有 pending replay 就进 replay canonical view，否则首页。认证回程不经这里。 */
+    private fun entryUrl(): String = if (pendingReplay != null) REPLAY_URL else BASE_URL
 
     private fun loadWeb() {
         hideAllGates()
         webView.visibility = View.VISIBLE
         if (webView.url.isNullOrEmpty()) {
-            val url = entryUrl()
-            // callback 开始加载后清空，防止再次 loadWeb 重复加载同一 callback。
-            pendingAuthReturn = null
-            webView.loadUrl(url)
+            webView.loadUrl(entryUrl())
         } else {
             webView.reload()
-        }
-    }
-
-    /**
-     * auth transaction 失败恢复：退出 auth flow，不无限 reload、不停留在空白 WebView，
-     * 返回可操作的 WotBTools 首页并给出明确的「登录失败，请重试」提示。
-     * 仅此路径导航回首页；普通 WebView error（含任意 HTTP 500）保持既有行为，不触发本恢复。
-     */
-    private fun enterAuthFailureRecovery(reasonHost: String?) {
-        val wasInAuthFlow = inAuthFlow
-        inAuthFlow = false
-        Log.d(
-            TAG,
-            "auth-recovery host=${reasonHost ?: "null"} inAuthFlow=$wasInAuthFlow->false"
-        )
-        toast(getString(R.string.auth_login_failed_retry))
-        // 明确回首页，而不是 reload 当前（可能损坏的）auth URL，避免无限循环。
-        webView.loadUrl(BASE_URL)
-    }
-
-    /**
-     * Verified native login handoff (e.g. QQ `wtloginmqq://ptlogin`): hand the URI to the app
-     * that owns it (ACTION_VIEW) while keeping the current WebView auth transaction alive.
-     *
-     * - Never enters auth-failure recovery, never reloads BASE_URL, never clears the auth-flow
-     *   marker, and never falls back to the system browser.
-     * - On no handler (QQ not installed) we show a clear prompt and stay in the current state;
-     *   the user can install the app and retry, or back out manually.
-     * - 是否允许改写 QQ 的 return callback 由纯策略 [QqNativeHandoffPolicy] 决定；在拿到真机 URI 形状
-     *   证据前一律 `DO_NOT_REWRITE`，**原样**交给 QQ（行为与改动前逐字节一致）。
-     * - App Link 不可靠（[AuthLinkState.NONE]）时不 fail closed：QQ 登录照常进行，只在 handoff 之后
-     *   给一次 recovery 提示。
-     * - Logs only scheme/host/error category/safe tokens — never the full URI, query, code, or token.
-     */
-    private fun launchNativeAuthHandoff(uri: Uri, scheme: String?, host: String?) {
-        // handoff 之前记录一次 App Link 诊断（process 内只探测一次），不 gate 登录。
-        val linkState = authLinkHealth()
-        val plan = nativeHandoffPlan(uri, scheme, host)
-        if (BuildConfig.DEBUG) {
-            // DEBUG-only 取证：只输出**结构**（path 是否存在 / segment 数量 / query key 名 / schemacallback
-            // 是否存在）。raw path 与任何 value 都不进入这个 helper（签名里就没有），因为 QQ 私有 contract
-            // 未取证时无法证明 path 不携带 opaque / session-like value。
-            Log.d(
-                TAG,
-                "native-qq-shape " + describeQqHandoffShape(
-                    pathPresent = !uri.path.isNullOrEmpty(),
-                    pathSegmentCount = uri.pathSegments.size,
-                    queryNames = uri.queryParameterNames,
-                    hasSchemaCallback = plan.hasSchemaCallback
-                )
-            )
-        }
-        val rewriteToken = if (plan.rewrite == QqHandoffRewrite.REWRITE_ALLOWED) "applied" else "fallback"
-        Log.d(TAG, "native-handoff rewrite=$rewriteToken reason=${plan.reason} category=${plan.callbackCategory}")
-        var handoffStarted = false
-        try {
-            // 证据落地（PR B）前不存在 rewrite 分支：始终沿用 QQ 原始 URI。
-            startActivity(Intent(Intent.ACTION_VIEW, uri))
-            handoffStarted = true
-        } catch (_: ActivityNotFoundException) {
-            Log.d(TAG, "native-handoff-failed scheme=${scheme ?: "null"} host=${host ?: "null"} category=no-qq-app")
-            toast(getString(R.string.qq_client_missing_retry))
-        } catch (e: Exception) {
-            Log.d(TAG, "native-handoff-failed scheme=${scheme ?: "null"} host=${host ?: "null"} category=${e.javaClass.simpleName}")
-            toast(getString(R.string.qq_client_missing_retry))
-        }
-        // recovery 提示只在「QQ 真的接管了这次 handoff，回程可能回不来」时有意义：QQ 未安装 / 启动失败时
-        // 提示「打开支持的链接」毫无帮助，只会与「未检测到 QQ 客户端」叠成两条互相干扰的提示。
-        if (handoffStarted && linkState == AuthLinkState.NONE) showAuthLinkRecovery()
-    }
-
-    /** native handoff 决策：只把 QQ URI 的**形状**（存在性 / scheme 分类）交给纯策略。 */
-    private fun nativeHandoffPlan(uri: Uri, scheme: String?, host: String?): QqHandoffPlan {
-        val (hasSchemaCallback, schemaCallbackScheme) = schemaCallbackOf(uri)
-        return QqNativeHandoffPolicy.plan(
-            // 走到这里时 AuthNavigationPolicy 已判定 NATIVE_AUTH_HANDOFF，该字段必为 true；仍传真实值，
-            // 让策略的 outside-auth-flow 分支保持可判而非摆设。
-            inAuthFlow = inAuthFlow,
-            scheme = scheme,
-            host = host,
-            hasSchemaCallback = hasSchemaCallback,
-            schemaCallbackScheme = schemaCallbackScheme
-        )
-    }
-
-    /**
-     * 只读取 `schemacallback` 的**存在性**与其值的 scheme 段；value 本身绝不落日志、绝不持久化。
-     * 畸形 / opaque URI 一律当作「没有 schemacallback」，不因为诊断失败影响 handoff。
-     */
-    private fun schemaCallbackOf(uri: Uri): Pair<Boolean, String?> = try {
-        val raw = uri.getQueryParameter(QqNativeHandoffPolicy.SCHEMA_CALLBACK_PARAM)
-        (raw != null) to raw?.let { Uri.parse(it).scheme }
-    } catch (_: Exception) {
-        false to null
-    }
-
-    // ── App Link 健康诊断 + OEM recovery（不 gate 登录）──
-
-    /**
-     * App Link 健康状态：process 内只探测一次，并记录一次安全诊断
-     * （`auth-link-health host=auth.wotbtools.com state=...`，只有 4 个允许 token + 固定 host）。
-     */
-    private fun authLinkHealth(): AuthLinkState {
-        authLinkState?.let { return it }
-        val probed = probeAuthLinkHealth()
-        authLinkState = probed
-        Log.d(TAG, "auth-link-health host=${AuthLinkHealth.HOST} state=$probed")
-        return probed
-    }
-
-    private fun probeAuthLinkHealth(): AuthLinkState {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return AuthLinkState.UNAVAILABLE
-        return try {
-            probeAuthLinkHealthApi31()
-        } catch (_: Exception) {
-            // 平台服务异常 / ROM 行为差异：只当作「无法判断」，绝不影响登录。
-            AuthLinkState.UNAVAILABLE
-        }
-    }
-
-    /**
-     * Android 12+ (API 31) 的 domain verification 读取。刻意独立成方法：新 API 类型
-     * （[DomainVerificationManager] / [DomainVerificationUserState]）只出现在这个方法体内，
-     * 老设备永远不会解析到它们。
-     */
-    @RequiresApi(Build.VERSION_CODES.S)
-    private fun probeAuthLinkHealthApi31(): AuthLinkState {
-        val manager = getSystemService(DomainVerificationManager::class.java)
-            ?: return AuthLinkState.UNAVAILABLE
-        val userState = manager.getDomainVerificationUserState(packageName)
-            ?: return AuthLinkState.UNAVAILABLE
-        val domainState = when (userState.hostToStateMap[AuthLinkHealth.HOST]) {
-            DomainVerificationUserState.DOMAIN_STATE_VERIFIED -> AuthLinkDomainState.VERIFIED
-            DomainVerificationUserState.DOMAIN_STATE_SELECTED -> AuthLinkDomainState.SELECTED
-            DomainVerificationUserState.DOMAIN_STATE_NONE -> AuthLinkDomainState.NONE
-            else -> AuthLinkDomainState.UNKNOWN
-        }
-        return AuthLinkHealth.resolve(domainState, userState.isLinkHandlingAllowed)
-    }
-
-    /**
-     * OEM recovery：App Link 不可靠时**不** fail closed，只在 handoff 之后提示一次
-     * （process 级一次性，重启后可再提示一次）。不自动修改任何系统设置。
-     */
-    private fun showAuthLinkRecovery() {
-        if (authLinkRecoveryShown) return
-        authLinkRecoveryShown = true
-        authLinkRecoveryBanner.visibility = View.VISIBLE
-        Log.d(TAG, "auth-link-recovery shown state=NONE")
-    }
-
-    /**
-     * 收起 recovery 提示（幂等）。
-     *
-     * 提示只在「当前 QQ auth transaction 可能回不到本 App」时有意义；一旦本 App 真的收到了受信任的
-     * auth return，这个前提就不成立，UI 必须撤回，否则会误导用户去改系统设置。
-     * 刻意**不**在普通页面 reload / gate 切换时调用：那时用户可能仍处在有风险的 auth flow 中。
-     *
-     * @param reason 固定 token（[REASON_TRUSTED_AUTH_RETURN] / [REASON_OPEN_SETTINGS]）——诊断日志不能
-     *   把两种截然不同的收起原因混成一个。
-     */
-    private fun dismissAuthLinkRecovery(reason: String) {
-        if (authLinkRecoveryBanner.visibility != View.VISIBLE) return
-        authLinkRecoveryBanner.visibility = View.GONE
-        Log.d(TAG, "auth-link-recovery dismissed reason=$reason")
-    }
-
-    /** 打开本 App 的「打开支持的链接」设置页；仅用户点击触发，不自动跳转、不自动改设置。 */
-    private fun openAppLinkSettings() {
-        dismissAuthLinkRecovery(REASON_OPEN_SETTINGS)
-        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, Uri.parse("package:$packageName"))
-        } else {
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
-        }
-        try {
-            startActivity(intent)
-        } catch (_: Exception) {
-            Log.d(TAG, "auth-link-recovery settings=unavailable")
         }
     }
 
@@ -728,14 +522,9 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // 热启动返回：verified auth return（QQ broker callback）恒为最高优先级，归 auth 所有，
-        // 绝不进入 replay ingress / 分发（handleAuthReturnHot 语义未变）。
-        if (handleAuthReturnHot(intent)) return
-        val storedReplay = handleIncomingIntent(intent)
-        if (storedReplay && inAuthFlow) {
-            // RC5 navigation ownership：auth flow 期间 replay 只入队，绝不 loadUrl / evaluateJavascript。
-            Log.d(TAG, "replay-pending deferred reason=auth-flow")
-        }
+        // 授权回程（external user-agent 回来）归 auth 所有，绝不进入 replay ingress / 分发。
+        if (handleAuthorizationIntent(intent)) return
+        handleIncomingIntent(intent)
         dispatchPendingReplayIfAllowed()
     }
 
@@ -743,14 +532,14 @@ class MainActivity : Activity() {
      * pending replay 的唯一分发点。
      *
      * 「是否分发 / 怎么分发」完全由纯策略 [ReplayDispatchPolicy] 决定（JVM 单测覆盖），这里只执行动作：
-     * 无 pending / auth flow 内 / WebView 不可见（门禁 / 错误 / 更新页接管中）→ 不分发；已在 replay workspace → 通知 Web；否则切到
-     * replay canonical view。auth 结束后刻意不新增「重新导航 replay」的第二套来源：登录完成后 Web 应用会
-     * 重新加载并经 Native Bridge 自行消费 pending。
+     * 无 pending / WebView 不可见（门禁 / 错误 / 更新页接管中）→ 不分发；已在 replay workspace → 通知 Web；
+     * 否则切到 replay canonical view。认证不再参与这个决策：登录在 external user-agent 里进行，不会占用
+     * WebView navigation，因此 replay 无需为 auth 让路。登录完成后 Web 应用会重新加载并经 Native Bridge
+     * 自行消费 pending。
      */
     private fun dispatchPendingReplayIfAllowed() {
         val action = ReplayDispatchPolicy.decide(
             hasPendingReplay = pendingReplay != null,
-            inAuthFlow = inAuthFlow,
             webViewVisible = webView.visibility == View.VISIBLE,
             currentUrl = webView.url
         )
@@ -772,7 +561,7 @@ class MainActivity : Activity() {
      * replay ingress：存入新 pending（single pending slot，最新 replay 取代旧 pending）并落盘 metadata。
      *
      * 非 replay intent 不清空既有 pending：pending 只由 Web consume、TTL/损坏判断或更新的一份取代 —— 否则
-     * 登录期间被杀后恢复出来的 replay 会被一个无关 intent（如 launcher ACTION_MAIN）立刻丢掉。
+     * 后台被系统杀掉后恢复出来的 replay 会被一个无关 intent（如 launcher ACTION_MAIN）立刻丢掉。
      *
      * @return true 表示本次 intent 确实存入了新的 pending replay。
      */
@@ -800,58 +589,68 @@ class MainActivity : Activity() {
         ReplayIntentHandler.clearPendingMetadata(this)
     }
 
-    // ── Auth return（QQ native 登录 → verified App Link → 原 WebView）──
+    // ── Native 认证（owner 是 auth/AuthManager；这里只做接线与投影）──
 
     /**
-     * 冷启动：QQ App 在前台期间本进程被杀，App Link 经 onCreate(intent) 进入。
-     * 记录 verified auth return 为 pendingAuthReturn 并置 inAuthFlow=true；
-     * startup gate（网络/版本/强制更新）通过后由 entryUrl() 加载，不绕过强制更新。
+     * 授权回程 intent 判定：AppAuth 的回程 intent 一定带 [net.openid.appauth.AuthorizationResponse]
+     * 或 [net.openid.appauth.AuthorizationException] extra。两者都没有就不是 auth 回程，交给 replay ingress。
+     *
+     * 注意：回程经 PendingIntent 投递，因此冷启动落在 `onCreate`、热启动落在 `onNewIntent`；
+     * `onActivityResult` 只是防御性兜底（同一份处理逻辑，不重复实现）。
      */
-    private fun handleAuthReturnColdStart(intent: Intent): Boolean {
-        val uri = intent.data ?: return false
-        if (!verifyAuthReturn(intent, uri)) return false
-        pendingAuthReturn = uri
-        inAuthFlow = true
-        dismissAuthLinkRecovery(REASON_TRUSTED_AUTH_RETURN)
-        Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link cold=true")
+    private fun handleAuthorizationIntent(intent: Intent?): Boolean {
+        // 判定归 AuthManager（单一实现）：三类生命周期入口共用同一条「是不是 auth 回程」规则。
+        if (!AuthManager.isAuthorizationIntent(intent)) return false
+        handleAuthorizationResult(intent)
         return true
     }
 
     /**
-     * 热启动：App 已在运行（QQ 在前台期间未被杀），App Link 经 onNewIntent(intent) 进入。
-     * 复用当前 WebView / CookieManager，把 callback URI 载回原 WebView，inAuthFlow 保持 true。
+     * 处理一次授权响应：结果归 [AuthManager]，这里只做 UI 反馈。
+     *
+     * 会话真正建立是异步的（token endpoint 往返），所以这里只处理**失败**的即时反馈：弹出「登录失败，
+     * 请重试」；成功路径由 `wotbtoolsOnAuthChanged` 通知页面，绝不在这里抢先 loadUrl。
+     * 取消与失败都必须回到「可复用的未认证」——不 reload、不导航、不停留在空白页。
      */
-    private fun handleAuthReturnHot(intent: Intent): Boolean {
-        val uri = intent.data ?: return false
-        if (!verifyAuthReturn(intent, uri)) return false
-        inAuthFlow = true
-        hideAllGates()
-        webView.visibility = View.VISIBLE
-        // 受信任 auth return 已到达 ⇒ recovery 提示的前提消失。
-        dismissAuthLinkRecovery(REASON_TRUSTED_AUTH_RETURN)
-        Log.d(TAG, "auth-return action=ALLOW_AUTH_RETURN source=app-link hot=true")
-        webView.post { webView.loadUrl(uri.toString()) }
-        return true
+    private fun handleAuthorizationResult(intent: Intent?) {
+        val result = try {
+            authManager.handleAuthorizationResult(intent)
+        } catch (e: Exception) {
+            Log.d(TAG, "auth-result crashed category=${e.javaClass.simpleName}")
+            null
+        }
+        if (result !is AuthResult.Failure) return
+        // 两种失败不需要用户干预：
+        //  - cancelled：用户主动放弃，页面保持未认证即可；
+        //  - already-processed：系统把同一个回程 intent 又交付了一次，不是一次新的登录失败。
+        if (result.detail == AuthManager.ALREADY_PROCESSED_DETAIL) return
+        if (result.reason == AuthFailureReason.CANCELLED) return
+        toast(getString(R.string.auth_login_failed_retry))
     }
 
-    /** defense-in-depth 路由边界：仅接受验证的 QQ broker callback。 */
-    private fun verifyAuthReturn(intent: Intent, uri: Uri): Boolean {
-        if (intent.action != Intent.ACTION_VIEW) return false
-        return AuthReturnPolicy.isVerifiedBrokerReturn(
-            scheme = uri.scheme,
-            host = uri.host,
-            path = uri.path,
-            hasState = !uri.getQueryParameter("state").isNullOrBlank(),
-            hasCode = !uri.getQueryParameter("code").isNullOrBlank(),
-            hasError = !uri.getQueryParameter("error").isNullOrBlank()
-        )
+    /**
+     * Native 认证变更 → 通知页面（全局 `wotbtoolsOnAuthChanged`），并顺带同步一次页面可见的会话状态。
+     * 只在 WebView 真的加载了页面时发送；没有页面就没有可通知的消费者。
+     */
+    private fun notifyAuthChanged() {
+        // 这个 listener 可能由后台线程触发（bridge 的认证线程 / 库回调）：WebView 的任何方法都必须在
+        // 它自己的线程上调用，所以连「有没有页面」这个判断也放进 post 里，绝不在调用线程碰 WebView。
+        webView.post {
+            if (destroyedWebView || webView.url.isNullOrEmpty()) return@post
+            // 全局名来自 wire 契约（events.authChanged.global），页面据此重新拉 authGetState / authGetAccessToken。
+            webView.evaluateJavascript(
+                "window.$AUTH_CHANGED_GLOBAL && window.$AUTH_CHANGED_GLOBAL()",
+                null
+            )
+        }
     }
 
     // ── Native Bridge 白名单能力（供 Vue 端；origin-scoped）──
 
     fun bridgeVersion(): Int = BuildConfig.NATIVE_BRIDGE_VERSION
 
-    fun bridgeCapabilities(): List<String> = listOf("replay-share", "replay-open", "app-update")
+    fun bridgeCapabilities(): List<String> =
+        listOf("native-auth", "replay-share", "replay-open", "app-update")
 
     /**
      * pending replay 的 wire contract（`getPendingReplay` 的 result）：`pendingId` 是这份 pending 的
@@ -911,6 +710,62 @@ class MainActivity : Activity() {
         runOnUiThread { onUpdatePrimary() }
     }
 
+    // ── 认证 bridge 投影（在后台线程调用，结果经 reply 回调）──
+
+    /** `authGetState`：会话快照，绝不触发网络。 */
+    fun bridgeAuthGetState(): org.json.JSONObject {
+        val session = authManager.currentSession()
+        return org.json.JSONObject()
+            .put("authenticated", session.authenticated)
+            .put("expiresAt", session.expiresAtSeconds ?: org.json.JSONObject.NULL)
+    }
+
+    /**
+     * `authLogin`：先补齐 discovery，再启动 external user-agent（Custom Tabs），
+     * 并持久化含 PKCE verifier 的交易状态。返回 true 只在真的把它交给了浏览器时。
+     */
+    fun bridgeAuthLogin(): Boolean = authManager.login()
+
+    /** `authLogout`：先清本地会话（内存 + 加密存储），再 best-effort 结束 Keycloak SSO 会话。 */
+    fun bridgeAuthLogout(): Boolean = authManager.logout()
+
+    /**
+     * `authGetAccessToken`：满足 minValiditySeconds 直接返回；否则单飞 refresh。
+     *
+     * `claims` 是 access token 解码后的 JWT payload（roles / preferred_username），供前端与
+     * keycloak-js `tokenParsed` 对齐；refresh token / 授权码 / verifier 永不出现。
+     */
+    fun bridgeAuthGetAccessToken(minValiditySeconds: Long): org.json.JSONObject =
+        when (val result = authManager.accessTokenOrRefresh(minValiditySeconds)) {
+            is AuthResult.Success -> sessionJson(result.session)
+            is AuthResult.Failure -> tokenFailureJson(result.wireError)
+            // `accessTokenOrRefresh` 只可能给出 Success / Failure（ExchangeStarted 属于授权回程路径）；
+            // 新增结果类型时这里保持 fail-closed 的未认证投影，绝不静默当成已登录。
+            else -> tokenFailureJson("unauthenticated")
+        }
+
+    /** `authGetAccessToken` 的失败形状（契约封闭集合：null 字段 + error）。 */
+    private fun tokenFailureJson(error: String): org.json.JSONObject = org.json.JSONObject()
+        .put("token", org.json.JSONObject.NULL)
+        .put("expiresAt", org.json.JSONObject.NULL)
+        .put("claims", org.json.JSONObject.NULL)
+        .put("error", error)
+
+    private fun sessionJson(session: com.wotbtools.app.auth.AuthSession): org.json.JSONObject =
+        org.json.JSONObject()
+            .put("token", session.accessToken ?: org.json.JSONObject.NULL)
+            .put("expiresAt", session.expiresAtSeconds ?: org.json.JSONObject.NULL)
+            .put("claims", claimsJson(session.claims))
+            .put("error", org.json.JSONObject.NULL)
+
+    /** claims 只做 JSON 投影；Map 里的 null 值保留为 JSON null，不改写、不过滤。 */
+    private fun claimsJson(claims: Map<String, Any?>?): Any {
+        if (claims == null) return org.json.JSONObject.NULL
+        val json = org.json.JSONObject()
+        claims.forEach { (key, value) -> json.put(key, value ?: org.json.JSONObject.NULL) }
+        return json
+    }
+
     // ── 通用 ──
 
     /**
@@ -946,8 +801,45 @@ class MainActivity : Activity() {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
+    /** 主 frame 导航边界用：host 归一化（去尾部点 + 小写）后是否属于 app 自有 host。 */
+    private fun isAppHost(host: String?): Boolean {
+        val normalized = host?.trim()?.trimEnd('.')?.takeIf { it.isNotEmpty() }
+            ?.lowercase(Locale.ROOT) ?: return false
+        return normalized in APP_HOSTS
+    }
+
+    /** 导航日志用的分类：只暴露 host 归属，不落完整 URI。 */
+    private fun originCategory(host: String?): String = when {
+        isAppHost(host) -> "app"
+        host.isNullOrBlank() -> "hostless"
+        else -> "external"
+    }
+
+    /**
+     * bridge 回复投递：认证方法在后台线程完成，回调可能晚于页面销毁。
+     *
+     * 因此回复通过**本次消息自己的** `JavaScriptReplyProxy` 投递（页面侧 listener 仍然有效时才会送达），
+     * 并且只在 WebView 尚未销毁时尝试；投递失败一律丢弃 —— JS 侧有自己的超时，绝不能因为回复而碰到
+     * 已销毁的 WebView 或让原生崩溃。
+     */
+    private fun postReply(replyProxy: androidx.webkit.JavaScriptReplyProxy, json: String) {
+        // JavaScriptReplyProxy 是 @UiThread（当前未强制，但契约要求）：认证回复来自后台线程，
+        // 因此统一投递到主线程 —— 主线程上 runOnUiThread 就是立即执行，同步路径延迟不变。
+        runOnUiThread {
+            if (isDestroyed || destroyedWebView) return@runOnUiThread
+            try {
+                replyProxy.postMessage(json)
+            } catch (e: Exception) {
+                Log.d(TAG, "bridge-reply dropped category=${e.javaClass.simpleName}")
+            }
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        // 授权回程的防御性兜底：正常投递路径是 PendingIntent → onCreate/onNewIntent，
+        // 但只要 intent 里带响应/异常就按授权结果处理（同一份逻辑，不重复实现）。
+        if (handleAuthorizationIntent(data)) return
         if (requestCode == FILE_CHOOSER_REQUEST && fileChooserCallback != null) {
             val uris = when {
                 resultCode == RESULT_OK && data?.clipData != null ->
@@ -970,6 +862,8 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         if (fullscreenView != null) hideFullscreenView(notifyWeb = true)
+        destroyedWebView = true
+        authManager.removeListener(authChangedListener)
         webViewContainer.removeAllViews()
         webView.destroy()
         executor.shutdown()

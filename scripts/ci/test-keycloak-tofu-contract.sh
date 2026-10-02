@@ -386,6 +386,8 @@ assert_guard_rejects() {
 readonly REALM_CLIENT_RULE="deletes or replaces a protected realm/client resource"
 readonly IDP_RULE="deletes an identity provider"
 readonly MASS_REPLACEMENT_RULE="unexpected mass resource replacement"
+readonly ANDROID_ACTIONS_RULE="only the plan that creates or settles this client is approved"
+readonly ANDROID_MAPPER_RULE="deletes or replaces an Android protocol mapper"
 
 # The production Boost retirement shape: two roles leave desired state, the
 # surviving roles are no-ops, and nothing else moves.
@@ -422,8 +424,87 @@ write_guard_plan mass-replacement '{"resource_changes":[
   {"address":"keycloak_openid_user_attribute_protocol_mapper.wotbtools_web[\"nickname\"]","change":{"actions":["delete","create"]}}
 ]}'
 
+# --- Android client contract (the native PKCE client) ------------------------
+# These fixtures are built as JSON with jq because the same body has to be reused
+# across four cases and a fifth copy of it would only invite drift.
+android_mapper_entry() {
+  local key="$1" name="$2" actions="$3"
+  jq -nc --arg address "keycloak_openid_user_attribute_protocol_mapper.wotbtools_android[\"$key\"]" \
+    --arg name "$name" --argjson actions "$actions" \
+    '{address: $address, change: {actions: $actions, after: {name: $name}}}'
+}
+android_mappers_json() {
+  local actions="$1"
+  jq -nc --argjson a "$(android_mapper_entry display_name display-name-mapper "$actions")" \
+    --argjson b "$(android_mapper_entry region wotb-region-mapper "$actions")" \
+    --argjson c "$(android_mapper_entry account_id wotb-account-id-mapper "$actions")" \
+    --argjson d "$(android_mapper_entry nickname wotb-nickname-mapper "$actions")" \
+    --argjson e "$(android_mapper_entry verified wotb-verified-mapper "$actions")" \
+    '[$a, $b, $c, $d, $e]'
+}
+android_client_json() {
+  jq -nc --argjson actions "$1" '{
+    address: "keycloak_openid_client.android",
+    change: {
+      actions: $actions,
+      after: {
+        client_id: "wotbtools-android",
+        access_type: "PUBLIC",
+        standard_flow_enabled: true,
+        implicit_flow_enabled: false,
+        direct_access_grants_enabled: false,
+        service_accounts_enabled: false,
+        consent_required: false,
+        login_theme: "wotbtools",
+        always_display_in_console: true,
+        frontchannel_logout_enabled: false,
+        pkce_code_challenge_method: "S256",
+        valid_redirect_uris: [
+          "https://auth.wotbtools.com/android/oauth/callback",
+          "com.wotbtools.app:/oauth2redirect"
+        ],
+        valid_post_logout_redirect_uris: [
+          "https://auth.wotbtools.com/android/oauth/callback",
+          "com.wotbtools.app:/oauth2redirect"
+        ]
+      }
+    }
+  }'
+}
+write_guard_plan android-client-contract "$(jq -nc --argjson client "$(android_client_json '["create"]')" \
+  --argjson mappers "$(android_mappers_json '["create"]')" '{resource_changes: ([$client] + $mappers)}')"
+write_guard_plan android-client-pkce-plain "$(jq -nc --argjson client "$(android_client_json '["create"]')" \
+  --argjson mappers "$(android_mappers_json '["create"]')" \
+  '{resource_changes: ([$client | .change.after.pkce_code_challenge_method = "plain"] + $mappers)}')"
+write_guard_plan android-client-wildcard-redirect "$(jq -nc --argjson client "$(android_client_json '["create"]')" \
+  --argjson mappers "$(android_mappers_json '["create"]')" \
+  '{resource_changes: ([$client | .change.after.valid_redirect_uris += ["https://*.wotbtools.com/*"]] + $mappers)}')"
+# The post-apply second plan `deploy/tx/keycloak-tofu.sh` requires to be all no-op:
+# `resource_changes` is not diff-only, so a settled client and its mappers appear
+# here as no-ops carrying their full `after` state. This must pass - requiring a
+# create/non-no-op action would block every future Keycloak deploy forever.
+write_guard_plan android-client-all-noop "$(jq -nc --argjson client "$(android_client_json '["no-op"]')" \
+  --argjson mappers "$(android_mappers_json '["no-op"]')" '{resource_changes: ([$client] + $mappers)}')"
+write_guard_plan android-client-delete "$(jq -nc --argjson client "$(android_client_json '["delete"]' | jq -c '.change.after = null')" \
+  --argjson mappers "$(android_mappers_json '["no-op"]')" '{resource_changes: ([$client] + $mappers)}')"
+write_guard_plan android-client-replace "$(jq -nc --argjson client "$(android_client_json '["delete","create"]' | jq -c '.change.after = null')" \
+  --argjson mappers "$(android_mappers_json '["no-op"]')" '{resource_changes: ([$client] + $mappers)}')"
+write_guard_plan android-mapper-missing "$(jq -nc --argjson client "$(android_client_json '["create"]')" \
+  --argjson mappers "$(android_mappers_json '["create"]' | jq -c '.[0:4]')" '{resource_changes: ([$client] + $mappers)}')"
+write_guard_plan android-mapper-delete "$(jq -nc --argjson client "$(android_client_json '["create"]')" \
+  --argjson mappers "$(android_mappers_json '["create"]' | jq -c '.[0].change.actions = ["delete"]')" \
+  '{resource_changes: ([$client] + $mappers)}')"
+
 assert_guard_passes boost-role-retirement
 assert_guard_passes other-role-retirement
+assert_guard_passes android-client-contract
+assert_guard_passes android-client-all-noop
+assert_guard_rejects android-client-pkce-plain 'pkce_code_challenge_method=plain'
+assert_guard_rejects android-client-wildcard-redirect 'valid_redirect_uris='
+assert_guard_rejects android-client-delete "$ANDROID_ACTIONS_RULE"
+assert_guard_rejects android-client-replace "$ANDROID_ACTIONS_RULE"
+assert_guard_rejects android-mapper-missing 'missing the planned Android protocol mapper'
+assert_guard_rejects android-mapper-delete "$ANDROID_MAPPER_RULE"
 assert_guard_rejects realm-delete "$REALM_CLIENT_RULE"
 assert_guard_rejects e2e-client-delete "$REALM_CLIENT_RULE"
 assert_guard_rejects idp-delete "$IDP_RULE"

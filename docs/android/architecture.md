@@ -3,16 +3,18 @@
 ## 定位
 
 WotBTools Android 是现有 Vue/Web 的**纯联网 Thin Client**（用户规格 §8）。它不是第二套 WotBTools：
-所有业务运算（replay 解析、Rating、AI、战局重建）仍在服务器；Android 只负责设备能力、文件入口、
-Web 容器、网络门禁与 APK 更新。
+所有业务运算（replay 解析、Rating、AI、战局重建）仍在客户端 Agent WASM / 服务端；Android 只负责
+设备能力、文件入口、Web 容器、认证、网络门禁与 APK 更新。
 
 ```text
 Android App (Native shell)
+   ├── AuthManager ──> 外部 user-agent ──> Keycloak ──> QQ / WG IdP
    └── WebView ──> https://wotbtools.com
 ```
 
-普通业务更新 = Web deploy → Android 自动获得，无需重发 APK；只有 Native 层变化（Intent/
-WebView/manifest/bridge/updater/shell）才重发 APK。
+Android 2.0 起**认证由 Native 独占**（见下面的 Authentication Boundary）。普通业务更新 = Web deploy
+→ Android 自动获得，无需重发 APK；只有 Native 层变化（Intent/WebView/manifest/bridge/updater/shell/auth）
+才重发 APK。
 
 ## 工程结构
 
@@ -20,24 +22,31 @@ WebView/manifest/bridge/updater/shell）才重发 APK。
 android/
   settings.gradle.kts
   build.gradle.kts            # plugin 版本
-  gradle.properties
+  gradle.properties           # Version-as-Code：wotbVersion / wotbNativeBridgeVersion
   app/
-    build.gradle.kts          # namespace com.wotbtools.app, minSdk 26
+    build.gradle.kts          # namespace com.wotbtools.app, minSdk 26, appauth
     src/main/
       AndroidManifest.xml
       java/com/wotbtools/app/
-        MainActivity.kt       # 编排（门禁/web/back/意图/file-chooser/bridge）
+        MainActivity.kt       # Android 生命周期 / intent 分发 / WebView / bridge 接线
         StartupGate.kt        # 网络 + version.json（fail-closed）
         VersionManifest.kt    # version.json 解析
         ApkUpdater.kt         # 下载 / SHA-256 / installer
         ReplayIntentHandler.kt# ACTION_SEND/ACTION_VIEW → PendingReplay（+ metadata 持久化/恢复）
         ReplayDispatchPolicy.kt # pending replay 分发决策（纯逻辑，JVM 单测）
-        NativeBridge.kt       # getCapabilities / getPendingReplay / ...（白名单）
+        NativeBridge.kt       # 方法白名单分发（含 auth*）
+        auth/
+          AuthManager.kt          # login/logout/token 编排（AppAuth），单飞 refresh
+          AuthStateStore.kt       # Keystore AES-GCM 加密的持久认证状态
+          AuthSession.kt          # 当前会话快照 + 过期判定（纯逻辑）
+          OidcConfiguration.kt    # issuer / clientId / redirect URIs / scope
+          OidcRedirectStrategy.kt # HTTPS App Link vs private scheme（纯决策 + API31 探测）
+          AuthResponseGuard.kt    # 事务归属校验（redirect / code / error，纯逻辑）
+          AuthResult.kt           # 显式 result / error 模型
       res/
         layout/activity_main.xml         # webView + networkGate + versionGate + webError
         values/{strings,colors,themes}.xml
         xml/file_paths.xml               # FileProvider cache-path
-        drawable/ic_launcher_foreground.xml
         mipmap-anydpi-v26/{ic_launcher,ic_launcher_round}.xml
 ```
 
@@ -61,9 +70,11 @@ Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability �
 这些由 Vue 提供。Android 只实现 Web 之外的系统能力：
 
 - 网络/版本门禁、WebView 加载、splash、back、生命周期、错误屏
+- 原生 OIDC 认证（Authorization Code + PKCE S256，外部 user-agent）与 token 生命周期
 - Replay 意图入口（ACTION_SEND / ACTION_VIEW → content URI）
-- 极薄 Native Bridge（`getCapabilities`/`getPendingReplay`/`consumePendingReplay`/
-  `checkForUpdate`/`startUpdate`；禁止 readFile/http/execute/launch）——
+- Native Bridge（`getCapabilities`/`getPendingReplay`/`consumePendingReplay`/`checkForUpdate`/
+  `startUpdate`/`authGetState`/`authLogin`/`authLogout`/`authGetAccessToken`；禁止
+  readFile/http/execute/launch、禁止任何 refresh token 出口）——
   **origin-scoped**：经 AndroidX WebKit `WebMessageListener`（`addWebMessageListener`），
   仅 `https://wotbtools.com` / `https://www.wotbtools.com` 可调，不暴露给 Keycloak / IdP /
   任意第三方 frame（替代 `addJavascriptInterface` 的全 frame 暴露）
@@ -71,152 +82,132 @@ Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability �
 - 复用 Web 的本机解析（上游 Rust Core WASM，服务器没有 parser；Android 不实现第二套解析，
   也不携带任何自有凭据）
 
-Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`/`replay-open`/
+Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`native-auth`/`replay-share`/`replay-open`/
 `app-update`），不涉及 replay 业务 capability 判断（FULL/DEGRADED/PERFORMANCE 等由 Web 端接入）。
+wire contract 的 SSOT 是 `contracts/android-native-bridge.json`（`bridgeVersion` 由
+`android/gradle.properties:wotbNativeBridgeVersion` 锁定，CI 用 `scripts/android-release/android_contract.py`
+校验 Native 实现、FE 声明与契约三方一致）。
 
-## Authentication Boundary
+## Authentication Boundary（Android 2.0 起：Native owns auth）
 
-- Android 沿用 Web Keycloak/OIDC，不实现 native OAuth client、token store 或第二套登录状态。
-- Keycloak → QQ/IdP → Keycloak callback 的一次 authentication transaction 必须始终运行在同一个
-  WebView cookie jar 中。`MainActivity.configureWebView()` 显式启用 WebView CookieManager 的
-  first-party 与认证所需 third-party cookies；应用不读取、复制或持久化 Cookie。
-- `auth.wotbtools.com` 只在 WebView 内启动/保持 `inAuthFlow`。认证期间，provider 仅按
-  `AuthNavigationPolicy.AUTH_PROVIDER_HOSTS` 的精确 hostname allowlist 留在 WebView；当前有仓库
-  证据的 QQ host 是 `graph.qq.com` 与 `xui.ptlogin2.qq.com`（后者基于 Android 1.0.8 真机 ADB
-  生产链 evidence：Keycloak → graph.qq.com → xui.ptlogin2.qq.com → callback，见
-  `AuthNavigationPolicyTest.productionQqAuthChainStaysInWebViewUntilAppCallback`）。
-  `ssl.ptlogin2.qq.com`、`ptlogin2.qq.com` 等只有在真实 top-level
-  navigation evidence 确认后才可逐个加入，并必须同步 regression test；禁止 `*.qq.com` 或整个
-  `qq.com` 通配。
-- **Native auth handoff**：Android 1.0.9 真机 ADB 证据显示 `xui.ptlogin2.qq.com` 之后 QQ 登录会发起
-  native 跳转 `wtloginmqq://ptlogin/...`。这里 `ptlogin` **不是**普通 HTTPS hostname，而是 QQ native
-  login handoff 的 URI host。用 `AuthNavigationPolicy.NATIVE_AUTH_TARGETS` 以精确 (scheme, host) 建模
-  （当前 evidence-backed 目标为 `scheme=wtloginmqq` `host=ptlogin`），并严格区分：
-   - **Web authentication hosts**（`AUTH_PROVIDER_HOSTS`）：`graph.qq.com` / `xui.ptlogin2.qq.com`
-     → `ALLOW_AUTH_WEBVIEW`，仅在 `inAuthFlow=true`。
-   - **Native authentication handoff**（`NATIVE_AUTH_TARGETS`）：`wtloginmqq://ptlogin` 在
-     `inAuthFlow=true` 时 `NATIVE_AUTH_HANDOFF`，交给 QQ App（ACTION_VIEW）并保留当前 WebView
-     auth transaction 与 cookie jar；**不**进入 `auth-recovery`、不 reload 首页、不打开系统浏览器、
-     不复制 cookie。QQ App 未安装时 fail closed（提示安装后重试），不 silent fallback。
-  native handoff 不做 scheme 前缀 / host 后缀 / `mqq*` / `*.qq.com` 通配信任；未观察到的 native
-  scheme/host（含 host=null 的未知 custom scheme）在 auth flow 内仍 `AUTH_FAILURE` 且不退出 auth flow
-  （fail closed）。日志只记录 `scheme`/`host`/`source`，不记录
-  完整 URI/query/token/code/state（见 `AuthNavigationPolicyTest.verifiedNativeQqHandoffOnlyDuringAuthFlow`）。
-- **QQ native login return：Primary（app-owned native return）+ Fallback（Verified App Link）**：QQ App
-  完成授权后回程有两类通道，终点都必须是原 WotBTools App —— 同一 MainActivity（singleTask）/ 同一
-  WebView / 同一 cookie jar，`inAuthFlow` 保持，绝不用系统浏览器处理 broker callback（否则
-  Browser B != 原 WebView A，getAndVerifyAuthenticationSession 无法恢复原 auth transaction →
-  already_logged_in）。
-  - **Fallback（当前唯一在产机制）**：
-    `WebView → native QQ → HTTPS broker callback → Verified App Link → 同一 MainActivity → 原 WebView.loadUrl(callback)`。
-    **Verified App Link is fallback, not the sole auth-continuity mechanism**：它的实际可用性依赖设备 /
-    ROM 的 domain verification，不能作为唯一回程。App Link 只接管以下**唯一** exact callback
-    （`idp-qq` 是唯一生产 QQ alias；聚合数据 provider 已从镜像与 Android 侧退役）：
-    `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint`，不接管整个
-    `auth.wotbtools.com` / 其它 realm / 其它 IdP provider。`AuthReturnPolicy` 严格校验 scheme/host/path、
-    `state`。成功回调要求 `code`（OAuth error 回调则有 `error`）；历史聚合 provider 的
-    `type` / `ticket` 参数不再被识别，其 callback path 直接判定为非本 App 的 broker return；
-    `auth.wotbtools.com/.well-known/assetlinks.json` 由 nginx 直接返回 application/json（非代理 Keycloak）。
-    热返回走 `onNewIntent`（`handleAuthReturnHot`），冷返回（进程被杀）走 `pendingAuthReturn` + startup gate
-    后加载（`handleAuthReturnColdStart`），不绕过网络/版本/强制更新门禁。日志只记录
-    `auth-return action=... source=app-link`，不记录完整 callback URI/query/state/code（见 `AuthReturnPolicyTest`）。
-  - **Primary（app-owned native return mechanism；future / not enabled）**：让 QQ 的 native 登录回程
-    直接回到本 App，而不是经过系统浏览器。**具体 return mechanism 尚未决定**：把 `schemacallback`
-    指向 App 自有的 custom scheme 只是**候选之一**，PR A 刻意不冻结任何 scheme、也不冻结任何具体
-    URI 形态 —— 启用前必须先做单独 security review（custom scheme hijacking 风险、是否存在
-    package-bound / 其它更强绑定形式、callback 是否携带可被第三方窃取的 credential，若有更强机制应
-    优先评估），并且必须拿到真机 URI 证据（见下面的 evidence 小节）。
-    **当前生产恒不启用**：`QqNativeHandoffPolicy.RECOGNIZED_SHAPE_EVIDENCE = false` ⇒
-    `plan(...).rewrite` 一律 `DO_NOT_REWRITE` ⇒ handoff 逐字节沿用 QQ 原始 URI
-    （`startActivity(Intent(ACTION_VIEW, originalUri))`，production 不做任何 URI mutation），并记录
-    `native-handoff rewrite=fallback reason=<token> category=<browser|unknown>`。
-    原因：QQ 的 `wtloginmqq://ptlogin/...` 参数形状属于**未经证实的私有 contract**，猜测性改写会让
-    QQ 不再回调 HTTPS broker callback ⇒ 全量登录失败。决策边界独立成纯策略
-    `QqNativeHandoffPolicy`（JVM 单测覆盖）：它**不**复制第二份 (scheme, host) 信任表，而是直接读
-    `AuthNavigationPolicy.NATIVE_AUTH_TARGETS`；`schemacallback` 只判断**存在性**并按其**值的 scheme 段**
-    分类（`browser`／其它一律 `unknown`），value 本身不返回、不落日志。
-  - **App Link 健康诊断 + OEM recovery（`AuthLinkHealth`，只诊断、不 gate 登录）**：Android 12+
-    （API 31）用 `DomainVerificationManager.getDomainVerificationUserState()` 读取 `auth.wotbtools.com`
-    的状态，归一化为 `VERIFIED` / `SELECTED` / `NONE` / `UNAVAILABLE`（`UNAVAILABLE` = API 不支持 /
-    平台返回未知取值 / 系统服务异常；用户关闭「打开支持的链接」时，即使 host 已 VERIFIED / SELECTED 也
-    归一化为 `NONE`）。纯归一化逻辑（`AuthLinkHealth`，JVM 单测覆盖）与 Android adapter
-    （`MainActivity.probeAuthLinkHealth`，用平台常量翻译成本地枚举、不比较裸数字）分离；process 内只探测
-    一次并记录一次 `auth-link-health host=auth.wotbtools.com state=<token>`。`NONE` **不** fail closed：
-    QQ 登录照常继续；只有当 QQ handoff **真的**交给了外部 App（`startActivity` 成功）后才显示一次
-    （process 级一次性）recovery banner —— QQ 未安装 / 启动失败时只提示「未检测到 QQ 客户端」，
-    不叠一条无意义的 app-link 提示。按钮跳
-    `Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS`（API 31+）或 `ACTION_APPLICATION_DETAILS_SETTINGS` 的
-    `package:com.wotbtools.app` 页；App **不自动修改任何系统设置**，也不循环提示。banner 的生命周期只
-    绑定「本次 QQ auth transaction 可能回不来」这一前提：一旦收到**受信任的** auth return
-    （`handleAuthReturnHot` / `handleAuthReturnColdStart` 通过 `AuthReturnPolicy` 校验）就立即
-    `dismissAuthLinkRecovery(reason=trusted-auth-return)`（用户点按钮则是
-    `reason=open-settings`，两个 token 不混用）；普通页面 reload / 门禁切换**不**清除提示
-    （用户可能仍在有风险的 auth flow 中）。
-  - **`UNAVAILABLE` 的语义边界**：只记录诊断，**不**显示「未开启 supported links」这类可能误导的提示
-    （该状态的含义是「无法判断」，不是「未验证」）。
+Android **不再**沿用 Web 的 keycloak-js 认证链：WebView 不参与 OIDC，也不存在 provider 级
+WebView navigation allowlist。
 
-### QQ native handoff evidence（PR A 记录；Primary 通道启用的前置条件）
+```text
+Vue login() ──bridge──▶ authLogin() ──▶ AuthManager
+                                          │ AppAuth AuthorizationService（PKCE S256）
+                                          ▼
+                             外部 user-agent（Custom Tab / 浏览器）
+                                          │
+                              keycloak.wotbtools.com 登录页（主题内选 IdP）
+                                          │
+                        QQ / WG ASIA / WG EU / WG NA（Keycloak identity brokering）
+                                          │
+                    HTTPS App Link  或  com.wotbtools.app:/oauth2redirect
+                                          │
+                     RedirectUriReceiverActivity → MainActivity.onActivityResult
+                                          │
+                        AuthManager 换 code → Keystore 加密持久化 → authChanged 通知 Web
+```
 
-已证实（Android 1.0.9 真机 ADB）：
+- **Android 不认识 IdP**：`idp-qq` / `wargaming-asia|eu|na` 全部只属于 Keycloak。Android 只有一个
+  「Login」入口，provider 选择发生在 Keycloak 登录主题里，因此**增加 / 删除 IdP、临时关闭某地区、
+  更换 provider 都不需要发 APK**。
+- **协议不手写**：使用 `net.openid:appauth`（RFC 8252 外部 user-agent、Custom Tabs、PKCE、App Links、
+  private-use redirect，且明确不使用 WebView 做 OAuth）。**版本固定 `0.11.1`**：这是 Maven Central
+  上的最新发布，上游 release 节奏停滞属于已知维护风险，依赖审计结论记录在
+  `docs/current-plan.md`；升级路径是评估 maintained 的 RFC 8252 兼容实现，永远不是自己实现 OAuth。
+- **Chrome Auth Tab 不是 2.0 的前置条件**（上游对它的 first-class 支持尚未完成）。
 
-- `scheme = wtloginmqq`、`host = ptlogin`（`AuthNavigationPolicy.NATIVE_AUTH_TARGETS`，唯一可信目标）。
+### Redirect transport（两条，同一套实现）
 
-尚未证实（**必须**先取得真机证据才能启用 rewrite）：
+| transport | URI | 使用条件 |
+|---|---|---|
+| 首选：HTTPS App Link | `https://auth.wotbtools.com/android/oauth/callback` | domain verification 判定**已知可用**：API 31+ 的 `DomainVerificationManager` 给出 `DOMAIN_STATE_VERIFIED` 且 `isLinkHandlingAllowed` |
+| 回退：private-use scheme | `com.wotbtools.app:/oauth2redirect` | 其它一切情况（API < 31、探测异常、用户关闭 supported links） |
 
-- path 形状（现有记录只到 `wtloginmqq://ptlogin/...`）；
-- query **key 名**集合；
-- `schemacallback` 是否存在、其值形态、QQ 是否真的按它回调；
-- QQ 是否把可恢复的 HTTPS continuation 交给该 callback（否则改写只会中断登录）。
+两者共用同一个 Keycloak client、同一份 PKCE 实现、同一个 `AuthSession` 与同一个 token store ——
+**不存在两套 auth implementation**。private scheme 使用 application-id namespace，不使用过于泛化的
+`wotbtools://`。HTTPS transport 的 domain association 由既有
+`auth.wotbtools.com/.well-known/assetlinks.json`（package + 生产签名证书指纹）承载，因此 ROM 差异
+不会让登录不可用，只会退回 private scheme。
 
-DEBUG-only 取证：debug 构建下 native handoff 会多打一行
-`native-qq-shape pathPresent=true pathSegmentCount=2 keys=[...] schemacallback=true|false` —— 只输出
-**结构**：path 是否存在、path segment 的**数量**、query **key 名**、`schemacallback` 是否存在。
-`describeQqHandoffShape` 的签名里既没有 raw path、也没有任何 value，因此 raw path / path segment 内容 /
-query value / `schemacallback` value / `p` / `state` / `code` / `ticket` / `token` 在物理上无法进入日志
-（path 只记结构计数，因为 QQ 私有 contract 未取证，无法证明 path 不携带 opaque / session-like value）。
-取证完成后该诊断与 `describeQqHandoffShape` 整体删除。
+App **未安装**（或该设备没走 App Link）时，浏览器会真的停在
+`https://auth.wotbtools.com/android/oauth/callback`：`deploy/tx/Caddyfile` 在该 host 上用一个最小
+落地页回答这个精确路径（不再落到 Keycloak 的 catch-all 404），并提供下载入口。Keycloak 自身的
+路径（`/realms/...`、`/resources/...`）行为不变。
 
-> domain verification may differ by device / ROM：同一份 manifest + assetlinks.json 在不同 OEM / ROM 上
-> 可能得到不同的 `DomainVerificationUserState`，因此 App Link 不能作为唯一 auth-continuity 机制。
+### 校验边界（谁负责什么）
 
-- 返回 `wotbtools.com` / `www.wotbtools.com` 表示 callback 成功并结束 auth flow。认证外直接访问
-  provider host 不获得 privileged WebView handling；其它 top-level host 由系统浏览器打开。
-- Native Bridge 与 OAuth navigation 是两个独立安全边界。Bridge origins 仍严格限于
-  `https://wotbtools.com` 与 `https://www.wotbtools.com`，不暴露给 Keycloak、QQ/IdP 或第三方 frame。
-- 禁止在 WebView 与系统 browser 之间同步 Cookie。真机发现新 provider hostname 时，只记录不含
-  query/code/Cookie/token 的 host evidence，判断其是否属于实际认证链后最小追加 allowlist。
+- **AppAuth 负责**：响应 `state` 与请求 `state` 的比较（`AuthorizationManagementActivity` 不匹配即丢弃
+  并回 `STATE_MISMATCH`）、nonce 断言、以及 code verifier 的归属 —— verifier 只存在于
+  `AuthorizationRequest` 内，随响应对象回到本进程后才用于交换，应用层拿不到也不需要拿。
+- **本 App 负责**（`AuthResponseGuard`，JVM 单测覆盖）：response 携带的 redirect URI 必须等于**本次事务
+  实际使用的那一条**（不一致 fail closed）；成功路径必须有 code；OAuth `error`（含用户取消）分类为
+  显式失败；取消/失败后必须仍可重新登录（不得留下卡死的 auth 状态）。
+- **PKCE 必须显式声明 S256**：AppAuth 单参数 `setCodeVerifier()` 会算出 challenge 但**不设置**
+  `code_challenge_method`，只带 `code_challenge` 时 Keycloak 按 `plain` 处理 —— 那是真实的 PKCE 降级，
+  因此必须用三参数 `setCodeVerifier(verifier, challenge, S256)`。
+
+### Token 安全边界
+
+- **Native 独占**：authorization code、PKCE verifier、refresh token、OIDC state/nonce、refresh 生命周期、
+  持久认证会话。
+- **Vue 可以拿到**：短生命周期 access token（`authGetAccessToken(minValiditySeconds)`）、`authenticated`
+  状态、access token 解码后的 claims（realm roles / `displayName` / `wotb_*`）、expiry。
+- **Vue 永远拿不到**：refresh token、authorization code、PKCE verifier、state/nonce secret。Bridge 不提供
+  `getRefreshToken` / `setToken` / `setCookie` / `executeAuthUrl` / 任意 OAuth 请求入口。
+- **持久化只经 `AuthStateStore`**：Android Keystore 的 AES-256-GCM 密钥加密 AppAuth `AuthState` JSON
+  （含 refresh token）后写入 app private `SharedPreferences`；解密/解析失败或数据损坏一律清空并回到
+  未登录。明确禁止：明文 SharedPreferences refresh token、WebView localStorage refresh token、
+  Cookie → Native token 复制、Native → JS refresh token 暴露。
+- **单飞 refresh**：并发 `authGetAccessToken` 只触发一次 refresh；refresh 无效时清空 Native 会话并回报
+  `unauthenticated`（`authGetAccessToken` 的 `error` 字段），Web 侧据此回到未登录态。
+
+### 登录 / 登出语义
+
+- `authLogin()` 只启动外部 user-agent；**WebView 不导航、不重载**，登录完成后 Native 通知页面
+  （`window.wotbtoolsOnAuthChanged()`），SPA 保持在原视图并重新同步状态。
+- `authLogout()` = 清 Native 会话 + 发起 Keycloak OIDC end-session（带 id-token hint）。**不**删除 Chrome
+  cookie、**不**强制登出 QQ / Wargaming、**不**操作 provider session：下一次登录时若系统浏览器仍保有
+  IdP session，那是 provider/browser 的正常 SSO 行为。
+
+### Bridge 是独立边界
+
+Native Bridge 与 OAuth 是两个独立安全边界。Bridge origins 仍严格限于 `https://wotbtools.com` 与
+`https://www.wotbtools.com`，不暴露给 Keycloak、QQ/IdP 或第三方 frame；禁止在 WebView 与系统浏览器
+之间同步 Cookie。
 
 ## Replay 意图与认证的导航边界
 
 外部 replay 是一个 **pending action**，不是特殊应用模式：Android 只负责安全接收、持久化与通知
 Web，绝不自行决定「是否解析」「是否绕过登录」。
 
-- **认证是唯一 navigation authority**：`inAuthFlow=true` 期间到达的 replay intent 只入队
-  （`ReplayDispatchPolicy` → `NONE`），不 `loadUrl`、不 `evaluateJavascript`，当前 Keycloak/QQ
-  authentication transaction 不被 replay 打断；auth return（当前为 verified HTTPS App Link）恒为最高
-  优先级；`ReplayDispatchPolicy` 在门禁 / 错误页接管（WebView 不可见）时同样不分发。
-- **单一 ingress**：只有 Intent → private cache → Native Bridge → Web fetch 固定同源 HTTPS synthetic resource 一条路径；
-  已删除 `onShowFileChooser` 对 pending replay 的注入分支。
+- **认证不再参与 navigation**：登录发生在外部浏览器，WebView 不承载 OIDC，因此 replay intent 与认证
+  之间没有所有权冲突 —— 登录期间收到 replay 正常持久化并按 `ReplayDispatchPolicy` 分发，正在进行的
+  OIDC 事务不会被 replay 打断。分发只在 WebView 容器被门禁 / 错误页 / 更新页接管时暂缓。
+- **单一 ingress**：只有 Intent → private cache → Native Bridge → Web fetch 固定同源 HTTPS synthetic
+  resource 一条路径；已删除 `onShowFileChooser` 对 pending replay 的注入分支。
 - **跨 process death 存活**：pending metadata 落在 app private storage（24h TTL），启动时先恢复
   active pending、再按引用清理 orphan cache。
-- **identity-aware ACK**：pending identity 是完整 UUID（`pendingId`）。Web 在 server 接受 processing
-  request 之后调用 `consumePendingReplay(pendingId)`，Native 执行 compare-and-clear（纯策略
-  `PendingReplayAckPolicy`）：只有 identity 与当前 pending 完全一致才清 slot + metadata；identity
-  缺失或已被更新的 replay 取代（stale）一律不清理，保证 exactly-once 且绝不误清新 pending。Web 同时把
-  `pendingId` 作为 processing create 的 `operationId`，使「server 已接受但 ACK 前 process death」的
-  重放拿回同一个 job（不产生 duplicate Processing Job）。
-- **未登录不解析**：未登录时 pending 原样保留且不消费，登录完成前不会发出 processing 请求。
+- **identity-aware ACK**：pending identity 是完整 UUID（`pendingId`）。Web 在本机分析完成后调用
+  `consumePendingReplay(pendingId)`，Native 执行 compare-and-clear（纯策略 `PendingReplayAckPolicy`）：
+  只有 identity 与当前 pending 完全一致才清 slot + metadata；identity 缺失或已被更新的 replay 取代
+  （stale）一律不清理，保证 exactly-once 且绝不误清新 pending。
+- **登录不是 replay 的前置条件**：本机分析在本机完成，未登录同样可打开、解析与导出；认证失败 / 取消
+  不会让已接收的 pending replay 失效。
 
 细节契约与日志白名单见 [`replay-intent.md`](replay-intent.md)。
 
 ## WebView 安全（规格 §28–§29 / §86–§88）
 
-- app host 始终允许留在 WebView；Keycloak 与 provider 仅按上面的 Authentication Boundary 在认证
-  flow 中允许留在 WebView；其它外链走系统浏览器。
+- app host（`wotbtools.com` / `www.wotbtools.com`）始终允许留在 WebView；其它外链走系统浏览器。
+  WebView 不再承载任何 OIDC / IdP 导航，因此不存在认证专用的 host allowlist。
 - `usesCleartextTraffic=false`；`mixedContentMode=NEVER_ALLOW`；`allowFileAccess=false`；
   `allowContentAccess=false`；`setGeolocationEnabled(false)`。
 - 禁用 `allowUniversalAccessFromFileURLs` / `ignoreSslErrors`；SSL 错误必须失败。
 - Native Bridge 只加到 `wotbtools.com` 页面，第三方页不可调用。
+- WebView 的 CookieManager 不再承担认证语义（认证由 Native 持有）；App 不读取、不复制、不持久化 Cookie。
 
 ## 权限（least privilege，规格 §69）
 

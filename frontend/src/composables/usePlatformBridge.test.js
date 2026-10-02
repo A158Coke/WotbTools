@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
+  callBridge,
   consumePendingReplay,
   getCapabilities,
   getNativeBridgeVersion,
@@ -14,12 +15,12 @@ import {
 } from './usePlatformBridge.js'
 
 /** 模拟 origin-scoped bridge：postMessage → native reply → 'message' 事件。 */
-function stubNative(capabilities, pending, consumeResult = true) {
+function stubNative(capabilities, pending, consumeResult = true, bridgeVersion = 2) {
   const listeners = []
   const calls = []
   const results = {
     getCapabilities: capabilities,
-    getBridgeVersion: 1,
+    getBridgeVersion: bridgeVersion,
     getPendingReplay: pending ?? null,
     consumePendingReplay: consumeResult,
     checkForUpdate: true,
@@ -44,6 +45,7 @@ function stubNative(capabilities, pending, consumeResult = true) {
 
 describe('usePlatformBridge', () => {
   afterEach(() => {
+    vi.useRealTimers()
     delete window.WotbNative
   })
 
@@ -61,9 +63,9 @@ describe('usePlatformBridge', () => {
     await expect(getCapabilities()).resolves.toEqual(['replay-share', 'replay-open', 'app-update'])
     await expect(supports('replay-share')).resolves.toBe(true)
     await expect(supports('does-not-exist')).resolves.toBe(false)
-    await expect(getNativeBridgeVersion()).resolves.toBe(1)
-    expect(isNativeBridgeCompatible(1)).toBe(true)
-    expect(isNativeBridgeCompatible(2)).toBe(false)
+    await expect(getNativeBridgeVersion()).resolves.toBe(2)
+    expect(isNativeBridgeCompatible(2)).toBe(true)
+    expect(isNativeBridgeCompatible(1)).toBe(false)
     expect(isLegacyNativeReplayContractCompatible({
       bridgeVersion: null,
       capabilities: ['replay-open', 'replay-share'],
@@ -101,5 +103,39 @@ describe('usePlatformBridge', () => {
   it('Native compare-and-clear 返回 false（identity 不匹配）时如实透传 false', async () => {
     stubNative(['replay-share'], { pendingId: 'pid-2', name: 'a.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 1 }, false)
     await expect(consumePendingReplay('pid-1')).resolves.toBe(false)
+  })
+
+  it('callBridge 是唯一 RPC transport：超时按 per-call 预算解析为 null，绝不挂起', async () => {
+    vi.useFakeTimers()
+    const methods = []
+    window.WotbNative = {
+      postMessage: vi.fn((json) => { methods.push(JSON.parse(json).method) }), // native 永不回复
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+
+    let settled = ''
+    const defaultBudget = callBridge('getBridgeVersion').then(value => {
+      settled += 'default'
+      return value
+    })
+    const authBudget = callBridge('authGetState', {}, { timeoutMs: 20_000 }).then(value => {
+      settled += '|auth'
+      return value
+    })
+
+    // 通用方法保持 5s 预算；native-auth 的长预算由调用方逐次传入。
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(settled).toBe('default')
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(settled).toBe('default|auth')
+
+    await expect(defaultBudget).resolves.toBeNull()
+    await expect(authBudget).resolves.toBeNull()
+    expect(methods).toEqual(['getBridgeVersion', 'authGetState'])
+  })
+
+  it('callBridge 在没有 bridge（普通浏览器）时直接解析 null', async () => {
+    await expect(callBridge('authGetState', {}, { timeoutMs: 20_000 })).resolves.toBeNull()
   })
 })
