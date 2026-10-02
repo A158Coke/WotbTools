@@ -43,6 +43,7 @@ jobs:
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
           deploy/test-nginx-real-ip.sh
+          deploy/test-caddy-route-inventory.sh
           deploy/check-latest-main.sh deploy/test-check-latest-main.sh deploy/test-tx-deploy-lock.sh
           infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
           deploy/test-business-postgres-runtime.sh
@@ -84,6 +85,7 @@ jobs:
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
           bash deploy/test-deploy-contract.sh
+          bash deploy/test-caddy-route-inventory.sh
       - name: Keycloak PostgreSQL backup runtime smoke
         run: bash deploy/test-keycloak-postgres-backup.sh
       - name: Production Compose configuration contract
