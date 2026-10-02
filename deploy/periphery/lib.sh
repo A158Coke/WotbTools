@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# Shared Komodo Periphery helpers (K3.1), sourced by `install.sh`, `verify.sh`,
-# `reconcile.sh`, and the local fixtures. Keeping the path rules and the release
-# pin parsing here gives them exactly one audited implementation.
+# Shared Komodo Periphery helpers (K3.2), sourced by `install.sh`, `verify.sh`,
+# `reconcile.sh`, and the local fixtures. One lifecycle implementation serves
+# every reviewed host target; per-host differences live in
+# `targets/<target>/target.env` and are loaded through `load_target_profile`.
 set -Eeuo pipefail
 
-# --- production paths --------------------------------------------------------
-# The PERIPHERY_* overrides exist only so `deploy/periphery/test-*.sh` can drive
-# the real scripts against a disposable tree. The workflow never sets them.
+# --- host-local runtime paths ------------------------------------------------
+# Identical on every target: the hosts are separate machines, so /etc/komodo,
+# /usr/local/bin/periphery, the systemd unit, and the transient /run credential
+# all keep the same absolute paths. The PERIPHERY_* overrides exist only so
+# `deploy/periphery/test-periphery.sh` can drive the real scripts against a
+# disposable tree; the production workflow never sets them.
 periphery_etc="${PERIPHERY_ETC_DIR:-/etc/komodo}"
 periphery_bin="${PERIPHERY_BIN_PATH:-/usr/local/bin/periphery}"
 periphery_unit_dir="${PERIPHERY_UNIT_DIR:-/etc/systemd/system}"
 periphery_unit="$periphery_unit_dir/periphery.service"
 periphery_run_dir="${PERIPHERY_RUN_DIR:-/run/komodo}"
 periphery_bootstrap_env="$periphery_run_dir/periphery-bootstrap.env"
-periphery_opt_root="${PERIPHERY_OPT_ROOT:-/opt/periphery}"
 # Read-only inspection root for process environments, so the fixtures can prove
 # the credential-free check in both directions.
 periphery_proc_root="${PERIPHERY_PROC_ROOT:-/proc}"
 # Docker socket used for the container-discovery check.
 periphery_docker_socket="${PERIPHERY_DOCKER_SOCKET:-/var/run/docker.sock}"
-# The Yecao host-level mutation lock, shared with the observability / ai-service
-# owners that mutate the same host and Docker daemon.
-periphery_wotb_root="${PERIPHERY_WOTB_ROOT:-/opt/wotb}"
 systemctl_bin="${PERIPHERY_SYSTEMCTL:-systemctl}"
 # Bounded first-onboarding wait. Tunable so the fixtures do not sleep for real.
 onboard_attempts="${PERIPHERY_ONBOARD_ATTEMPTS:-60}"
@@ -34,7 +34,7 @@ stop_attempts="${PERIPHERY_STOP_ATTEMPTS:-15}"
 stop_sleep="${PERIPHERY_STOP_SLEEP_SECONDS:-2}"
 
 for path_name in periphery_etc periphery_bin periphery_unit_dir periphery_run_dir \
-  periphery_opt_root periphery_wotb_root periphery_proc_root periphery_docker_socket; do
+  periphery_proc_root periphery_docker_socket; do
   path_value="${!path_name}"
   [[ "$path_value" == /* && "$path_value" != *..* ]] || {
     echo "Refusing unsafe Komodo Periphery path ($path_name): $path_value" >&2
@@ -59,6 +59,15 @@ periphery_config="$periphery_etc/periphery.config.toml"
 periphery_marker="$periphery_etc/keys/onboarding-complete"
 periphery_marker_content='komodo-periphery-onboarding-v1'
 
+# --- target profile state (set by load_target_profile) -----------------------
+periphery_target=
+periphery_connect_as=
+periphery_privilege=
+periphery_lock_root=
+periphery_lock_file=
+periphery_staging_root=
+periphery_config_source=
+
 fail() { echo "$*" >&2; exit 1; }
 
 # require_real_dir <path>
@@ -75,6 +84,27 @@ require_real_dir() {
   [[ -d "$path" && ! -L "$path" ]] || fail "Refusing unsafe Komodo Periphery path: $path"
 }
 
+# require_existing_real_dir <path> <label>
+#
+# For directories owned by another host owner (the mutation lock root). Periphery
+# must never create, or tighten the mode of, a root that the host's own deploy
+# owner is responsible for.
+require_existing_real_dir() {
+  local path="$1" label="$2"
+  [[ -d "$path" && ! -L "$path" ]] || fail "$label is missing or unsafe: $path"
+}
+
+# require_existing_lock_file <path>
+#
+# The host mutation lock must already exist, owned by the host's deploy owner.
+# Creating it here as root would leave a root-only file that the host's own
+# non-root deploy user could no longer lock.
+require_existing_lock_file() {
+  local path="$1"
+  [[ -f "$path" && ! -L "$path" ]] \
+    || fail "the host mutation lock is missing or unsafe: $path (the host's deploy owner must own it)"
+}
+
 # require_real_file <path> <label>
 #
 # Production state (the Periphery identity, the Core trust anchor, a staged
@@ -83,6 +113,47 @@ require_real_file() {
   local path="$1" label="$2"
   [[ -f "$path" && -s "$path" && ! -L "$path" ]] \
     || fail "$label is missing, empty, or unsafe: $path"
+}
+
+# load_target_profile <target> <runtime-dir>
+#
+# Sources the reviewed per-host profile and derives everything target-specific.
+# The profile is data: no credential may appear in it, `connect_as` must equal the
+# target name (so one host can never install another host's Server identity), and
+# the lock and staging roots must be absolute.
+load_target_profile() {
+  local target="$1" runtime="$2"
+  [[ -z "$periphery_target" ]] || fail 'A Komodo Periphery target profile was already loaded.'
+  [[ "$target" =~ ^[a-z0-9][a-z0-9-]*$ ]] || fail "Invalid Komodo Periphery target name: $target"
+  local profile="$runtime/targets/$target/target.env"
+  require_real_file "$profile" "Komodo Periphery target profile for '$target'"
+  if grep -Eqi '(secret|password|passwd|token|onboarding_key|private_key)[[:space:]]*=' "$profile"; then
+    fail "the Komodo Periphery target profile must not carry a credential: $profile"
+  fi
+  # The profile only supplies defaults, so the fixtures can still override the
+  # lock and staging roots for a disposable tree.
+  # shellcheck disable=SC1090
+  source "$profile"
+  [[ "${PERIPHERY_TARGET:-}" == "$target" ]] \
+    || fail "the target profile in $profile declares PERIPHERY_TARGET=${PERIPHERY_TARGET:-<unset>}"
+  [[ "${PERIPHERY_CONNECT_AS:-}" == "$target" ]] \
+    || fail "the target profile must set PERIPHERY_CONNECT_AS to '$target', not '${PERIPHERY_CONNECT_AS:-<unset>}'"
+  case "${PERIPHERY_PRIVILEGE:-}" in
+    root|sudo) ;;
+    *) fail "the target profile must declare PERIPHERY_PRIVILEGE as root or sudo: $profile" ;;
+  esac
+  periphery_target="$target"
+  periphery_connect_as="$PERIPHERY_CONNECT_AS"
+  periphery_privilege="$PERIPHERY_PRIVILEGE"
+  periphery_lock_root="${PERIPHERY_LOCK_ROOT:-}"
+  periphery_staging_root="${PERIPHERY_STAGING_ROOT:-}"
+  for path_name in periphery_lock_root periphery_staging_root; do
+    path_value="${!path_name}"
+    [[ "$path_value" == /* && "$path_value" != *..* ]] \
+      || fail "Refusing unsafe $path_name for target '$target': ${path_value:-<unset>}"
+  done
+  periphery_lock_file="$periphery_lock_root/.deploy.lock"
+  periphery_config_source="$runtime/targets/$target/periphery.config.toml"
 }
 
 # load_release_manifest <path>: source and validate the pinned release contract.
