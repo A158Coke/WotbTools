@@ -12,6 +12,7 @@ source by this repository.
 | TX | `infra/tofu/postgres-keycloak` | `/opt/wotb-tx/postgres-keycloak-tofu-state/terraform.tfstate` |
 | TX | `infra/tofu/keycloak` | `/opt/wotb-tx/keycloak-tofu-state/terraform.tfstate` |
 | Yecao | `infra/tofu/grafana` | `/opt/wotb/grafana-tofu-state/terraform.tfstate` |
+| Yecao | `infra/tofu/komodo` | `/opt/komodo/tofu-state/terraform.tfstate` |
 
 ## Owner-host prerequisites
 
@@ -25,8 +26,11 @@ workflow before any plan is produced. Both hosts were verified on 2026-09-28
 
 `deploy/tofu-local-state-backup.sh` (invoked by `.github/workflows/database-backup.yml`)
 requires **every** state file listed above plus the `bootstrap-complete` marker for each
-adopted root. A missing `keycloak-tofu-state` (TX) or `grafana-tofu-state` (Yecao)
-therefore fails the state-backup jobs as well, not only the owner deploy workflows.
+adopted root. A missing `keycloak-tofu-state` (TX), `grafana-tofu-state` (Yecao), or
+`tofu-state` (Komodo) therefore fails the state-backup jobs as well, not only the owner
+deploy workflows. The Komodo target is the third backup root
+(`deploy/tofu-local-state-backup.sh komodo`); it takes `/opt/komodo/.deploy.lock`, so a
+controller mutation and its state backup can never overlap.
 
 ## Bootstrap boundary
 
@@ -40,7 +44,11 @@ same persistent directory. Create that marker manually only after every
 existing resource is imported and the authenticated plan reports zero add,
 change, and destroy. A partial import therefore remains blocked even when it
 has already written a non-empty state file. The existing `postgres-business`
-state does not use or require this marker.
+state does not use or require this marker. The Komodo root uses the same marker
+contract but is not an adoption: `infra/tofu/komodo` is new and its first
+bootstrap creates the controller DNS record. `deploy/komodo/reconcile.sh` writes
+the marker itself after the first clean second plan, and fails closed on a state
+file without a marker (or a marker without its state) instead of re-initializing.
 
 After the final zero-change plan, the owner may write the marker on that host:
 
@@ -80,10 +88,12 @@ the actual owner-host API, stop and resolve that inventory before importing.
 ## Backup
 
 `database-backup.yml` invokes `deploy/tofu-local-state-backup.sh` on each owner
-host. TX archives all three TX state files; Yecao archives Grafana state. The
+host. TX archives all three TX state files; Yecao archives Grafana state and, as a
+separate root, the Komodo controller state (`deploy/tofu-local-state-backup.sh
+komodo` → `/opt/komodo/backups/opentofu-state/`). The
 script shares the host deployment lock, rejects missing, empty, non-regular, or
 symlink state files/directories, requires the three adopted-root completion
-markers, and archives those markers with the states. It writes under
+markers plus the Komodo marker, and archives those markers with the states. It writes under
 `backups/opentofu-state` with restrictive permissions, validates the tar
 archive and SHA-256 checksum, and does not print state contents or upload raw
 state to GitHub artifacts.
