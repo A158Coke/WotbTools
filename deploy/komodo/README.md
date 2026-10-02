@@ -52,6 +52,23 @@ verifications:
    plan-guard / `apply` / saved second plan / `--require-no-changes`.
 5. Write `bootstrap-complete`, then verify the controller a final time.
 
+## Verification
+
+Both safety rules in `lib.sh` — refuse a symlinked/unsafe owner path, and fail
+closed on a corrupt state bootstrap — are executable fixtures, not just contract
+strings:
+
+```sh
+bash deploy/komodo/test-guards.sh                  # path + state-bootstrap guards
+bash infra/tofu/komodo/test-validate-plan.sh       # DNS plan guard
+```
+
+`test-guards.sh` covers a fresh directory, a complete bootstrap, state without a
+marker, marker without state, an empty state or marker, wrong marker content,
+symlinked and dangling state/marker/directory, and a non-directory path.
+`.github/workflows/ci-komodo-controller.yml` runs both suites on every pull
+request that touches this owner.
+
 ## Failure semantics
 
 - Missing TencentCloud credentials: the run fails closed before any mutation. No
