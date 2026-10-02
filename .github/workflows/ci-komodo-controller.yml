@@ -121,8 +121,11 @@ jobs:
         run: >-
           bash -n deploy/komodo/lib.sh deploy/komodo/deploy.sh
           deploy/komodo/reconcile.sh deploy/komodo/verify.sh
+          deploy/komodo/test-guards.sh
           infra/tofu/komodo/validate-plan.sh
           infra/tofu/komodo/test-validate-plan.sh
+      - name: Validate local controller safety-guard fixtures
+        run: bash deploy/komodo/test-guards.sh
 
   tofu_plans:
     name: OpenTofu validation / komodo

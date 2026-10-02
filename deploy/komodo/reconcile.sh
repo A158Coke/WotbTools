@@ -14,10 +14,11 @@ stage="${2:?usage: reconcile.sh <source-sha> <staged-root>}"
 runtime="$stage/deploy/komodo"
 tofu_root="$stage/infra/tofu/komodo"
 root=/opt/komodo
-state_dir="$root/tofu-state"
-state_file="$state_dir/terraform.tfstate"
+# Persistent controller state root. The literal path (rather than `${root}/...`)
+# is what `scripts/ci/test-tofu-workflow-contract.sh` asserts verbatim, and it is
+# the only place production OpenTofu state may live.
+state_dir=/opt/komodo/tofu-state
 state_marker="$state_dir/bootstrap-complete"
-bootstrap_marker_value=local-tofu-state-bootstrap-v1
 
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid Komodo source SHA.' >&2; exit 2; }
 # The TencentCloud credentials are required up front: without them the bootstrap
@@ -41,20 +42,8 @@ exec 9>"$root/.deploy.lock"
 flock -n 9 || { echo 'Another Komodo controller mutation is running.' >&2; exit 1; }
 export KOMODO_DEPLOY_LOCK_FD=9
 
-# Production state is owner-host local, and its bootstrap is irreversible. An
-# existing state without a completed marker, a marker without its state, an
-# empty file, or any symlink is corruption: fail closed instead of silently
-# initializing empty production state.
-if [[ -e "$state_marker" || -L "$state_marker" ]]; then
-  [[ -f "$state_marker" && -s "$state_marker" && ! -L "$state_marker" ]] &&
-    grep -qx "$bootstrap_marker_value" "$state_marker" ||
-    { echo 'Komodo OpenTofu bootstrap marker is unsafe.' >&2; exit 1; }
-  [[ -f "$state_file" && -s "$state_file" && ! -L "$state_file" ]] ||
-    { echo 'Local OpenTofu state is not bootstrapped or unsafe for Komodo.' >&2; exit 1; }
-elif [[ -e "$state_file" || -L "$state_file" ]]; then
-  echo 'Komodo OpenTofu state exists without a completed bootstrap marker; manual recovery is required.' >&2
-  exit 1
-fi
+# Fail closed on a corrupt or half-bootstrapped state before any mutation.
+require_bootstrap_state "$state_dir"
 
 # 1. Runtime: validate, pull, promote, start, and prove the private controller.
 bash "$runtime/deploy.sh" "$SOURCE_SHA" "$runtime"

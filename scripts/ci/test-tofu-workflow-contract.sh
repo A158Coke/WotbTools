@@ -75,12 +75,16 @@ for name, (relative, state_dir, requires_marker) in expected.items():
     assert state_path in root_text, name
     assert "tofu_state" not in root_text, name
     assert 'backend "pg"' not in root_text and 'backend "s3"' not in root_text, name
-    # Komodo keeps its mutation logic in `deploy/komodo/reconcile.sh` instead of a
-    # giant YAML script, so that owner's safety contract spans workflow + script.
+    # Komodo keeps its mutation logic and its safety guards in `deploy/komodo/*.sh`
+    # instead of a giant YAML script, so that owner's contract spans the workflow
+    # plus every staged controller script as one ownership boundary.
     workflow_text = (root / workflow_roots[name]).read_text(encoding="utf-8")
     safety_text = workflow_text
     if name == "komodo":
-        safety_text += "\n" + (root / "deploy/komodo/reconcile.sh").read_text(encoding="utf-8")
+        safety_text += "\n" + "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((root / "deploy/komodo").glob("*.sh"))
+        )
     assert state_dir in safety_text, name
     assert "local opentofu state is not bootstrapped" in safety_text.lower(), name
     assert "! -L \"$state_file\"" in safety_text, name
