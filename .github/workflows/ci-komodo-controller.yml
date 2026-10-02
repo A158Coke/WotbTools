@@ -94,6 +94,9 @@ jobs:
               "KOMODO_ENABLE_NEW_USERS": "false",
               "KOMODO_DISABLE_NON_ADMIN_CREATE": "true",
               "KOMODO_TRANSPARENT_MODE": "false",
+              # Permanent K1 ownership invariant: the controller plane must start
+              # empty, with no seeded system Procedures.
+              "KOMODO_DISABLE_INIT_RESOURCES": "true",
               "KOMODO_JWT_TTL": "1-day",
           }.items():
               assert environment.get(key) == value, (key, environment.get(key))

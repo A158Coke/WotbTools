@@ -53,6 +53,12 @@ services:
       KOMODO_ENABLE_NEW_USERS: "false"
       KOMODO_DISABLE_NON_ADMIN_CREATE: "true"
       KOMODO_TRANSPARENT_MODE: "false"
+      # K1 bootstraps an EMPTY controller plane. Komodo v2.3.3 defaults
+      # `disable_init_resources=false`, which on a fresh database seeds the system
+      # Procedures "Backup Core Database", "Global Auto Update", and "Rotate
+      # Server Keys". None of those belong to K1: no replacement Procedure or
+      # backup automation is created either. Admin initialization above stays on.
+      KOMODO_DISABLE_INIT_RESOURCES: "true"
       # Persistent secrets supplied by GitHub. They must never be Core-generated,
       # or every restart would invalidate sessions and git webhooks.
       KOMODO_JWT_SECRET: "${KOMODO_JWT_SECRET:?KOMODO_JWT_SECRET is required}"

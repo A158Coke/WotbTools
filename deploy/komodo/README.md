@@ -19,6 +19,15 @@ is broken.
   MongoDB publishes no host port. Neither container carries a public listener.
 - Both containers carry the upstream `komodo.skip` label so a future Komodo
   instance cannot stop its own control plane through `StopAllContainers`.
+- K1 bootstraps an **empty** controller plane. Komodo v2.3.3 defaults
+  `disable_init_resources=false`, which seeds the system Procedures
+  "Backup Core Database", "Global Auto Update", and "Rotate Server Keys" on a
+  fresh database; `KOMODO_DISABLE_INIT_RESOURCES=true` suppresses all of them.
+  No replacement Procedure, schedule, or backup automation is created in their
+  place, and the CI Compose contract asserts the flag permanently. Admin
+  initialization stays enabled, so the bootstrap admin user still exists.
+  Expected initial inventory: admin user created, Servers / Stacks /
+  Deployments / Procedures all 0.
 - Images are pinned: Core by digest, MongoDB by exact patch tag plus digest. The
   TencentCloud provider is pinned in `versions.tf` and locked in
   `.terraform.lock.hcl`. Control-plane releases never float.
@@ -141,8 +150,10 @@ every pull request that touches this owner.
 by `sha256sum` and `tar -tzf`. It takes the same `/opt/komodo/.deploy.lock`, so it
 can never run during a controller mutation.
 
-MongoDB backup policy is intentionally not part of K1; the mounted
-`/opt/komodo/backups` directory reserves that ownership for a later phase.
+MongoDB backup policy is intentionally not part of K1, and the system "Backup Core
+Database" Procedure that Komodo would otherwise seed is disabled, so nothing in
+K1 backs up the controller database. The mounted `/opt/komodo/backups` directory
+only reserves that ownership for a later phase.
 
 Because the controller state is a *required* backup target — the same rule the
 other owner roots already follow — the nightly `yecao_tofu_state` job fails until
