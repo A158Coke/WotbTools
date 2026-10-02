@@ -52,6 +52,14 @@ stage_artifact() {
   for stale in wotb_replay_wasm.js wotb_replay_wasm_bg.wasm fingerprint.json source.json; do
     rm -f "$WASM_ROOT/$stale"
   done
+  # 只保留当前 pin 的 commit 目录：旧版本目录会随 Vite publicDir 一起进 dist，而
+  # dist/Docker/TX 三处校验都要求 `/wasm/` 下**恰好一个** ref 目录——本地升级 pin 后
+  # 残留的旧目录会让下一次 build 以"必须只含 pin 的 commit 目录"失败。
+  # 这些目录是 gitignored 的可再生产物，删掉只会让下一次 fetch 重新下载。
+  for dir in "$WASM_ROOT"/*/; do
+    [ -d "$dir" ] || continue
+    [ "$(basename "$dir")" = "$REF" ] || rm -rf "$dir"
+  done
   echo "WASM 产物已就位: $WASM_ROOT/$REF（/wasm/$REF/）"
 }
 
