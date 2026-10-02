@@ -31,19 +31,8 @@ class AiReviewControllerTest {
             new AiCancellationRegistry(), new SimpleMeterRegistry());
 
     @Test
-    void rejectsUnsupportedSchemaBeforeStartingWorker() {
-        final var error = assertThrows(ResponseStatusException.class,
-                () -> controller.review(new AiReviewController.AiReviewRequest(
-                        1, "zh-CN", UUID.randomUUID().toString(), new Battle(),
-                        mock(ReplayReconstruction.class), List.of())));
-        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
-        assertEquals("UNSUPPORTED_AI_REQUEST_SCHEMA", error.getReason());
-    }
-
-    @Test
     void acceptsTeamModeAndSchedulesDirectAnalysis() {
-        final var emitter = controller.review(new AiReviewController.AiReviewRequest(
-                2, "zh-CN", UUID.randomUUID().toString(), teamBattle(), teamReconstruction(), List.of()));
+        final var emitter = controller.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(), teamBattle(), teamReconstruction(), List.of()));
         assertNotNull(emitter);
         verify(worker).execute(any(Runnable.class));
     }
@@ -54,8 +43,7 @@ class AiReviewControllerTest {
         battle.arenaBonusType = 1;
         battle.players = List.of();
         final var error = assertThrows(ResponseStatusException.class,
-                () -> controller.review(new AiReviewController.AiReviewRequest(
-                        2, "zh-CN", UUID.randomUUID().toString(), battle, null, List.of())));
+                () -> controller.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(), battle, null, List.of())));
         assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
         assertEquals("INVALID_AI_REQUEST", error.getReason());
     }
@@ -75,8 +63,7 @@ class AiReviewControllerTest {
                 mock(TacticalReviewHarness.class), stub.service, synchronousWorker(),
                 new AiCancellationRegistry(), registry);
 
-        metricsController.review(new AiReviewController.AiReviewRequest(
-                2, "zh-CN", UUID.randomUUID().toString(), teamBattle(), teamReconstruction(), List.of()));
+        metricsController.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(), teamBattle(), teamReconstruction(), List.of()));
 
         assertEquals(1.0, registry.get("wotb_ai_review_requests_total").counter().count(),
                 "each accepted review must increment requests_total");

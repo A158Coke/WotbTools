@@ -559,9 +559,7 @@ export interface components {
             failed: number;
             results: components["schemas"]["DeleteUserResult"][];
         };
-        AiReviewRequestV2: {
-            /** @constant */
-            schemaVersion: 2;
+        AiReviewRequest: {
             /** @enum {string} */
             locale: "zh-CN" | "en-US" | "ru-RU";
             /** Format: uuid */
@@ -571,8 +569,6 @@ export interface components {
         };
         /** @description WotbTools client canonical AI projection (frontend/src/replay-local/ai). Built from the pinned upstream Agent facets through WotbTools canonical replay facts, never the raw Agent DTO. Clocks are raw replay clocks in seconds; battle-relative time = rawClockSec - clock.battleStartRawClockSec. Only combatant entities appear. Evidence the engine does not provide is listed in unavailableEvidence. */
         ClientAiReviewProjection: {
-            /** @constant */
-            projectionVersion: 1;
             engine: components["schemas"]["AiProjectionEngine"];
             clock: components["schemas"]["AiProjectionClock"];
             perspective: components["schemas"]["AiProjectionPerspective"];
@@ -968,7 +964,7 @@ export interface components {
             timestamp: string | null;
         };
         /** @enum {string} */
-        ApiErrorCode: "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNSUPPORTED_AI_REQUEST_SCHEMA" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
+        ApiErrorCode: "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
     };
     responses: never;
     parameters: never;
@@ -1554,7 +1550,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AiReviewRequestV2"];
+                "application/json": components["schemas"]["AiReviewRequest"];
             };
         };
         responses: {

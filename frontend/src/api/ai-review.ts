@@ -17,7 +17,7 @@
 import type {
   AiReviewLocale,
   AiReviewProjection,
-  AiReviewRequestV2,
+  AiReviewRequest,
 } from '../types/ai-review.js'
 import { authedReplayPost, type ReplayAuthSession } from './replay-capabilities.js'
 
@@ -28,10 +28,9 @@ export interface AiReviewRequestInput extends AiReviewProjection {
   correlationId: string
 }
 
-/** 组装 wire 请求；`schemaVersion` 恒为契约常量 2。 */
-export function buildAiReviewRequest(input: AiReviewRequestInput): AiReviewRequestV2 {
+/** 组装 wire 请求（单一 DTO、单一端点，不做版本协商）。 */
+export function buildAiReviewRequest(input: AiReviewRequestInput): AiReviewRequest {
   return {
-    schemaVersion: 2,
     locale: input.locale,
     correlationId: input.correlationId,
     battle: input.battle,
@@ -42,7 +41,7 @@ export function buildAiReviewRequest(input: AiReviewRequestInput): AiReviewReque
 /** 打开 AI Review SSE 响应（调用方负责读取 body 与分发事件）。 */
 export function openAiReviewStream(
   auth: ReplayAuthSession,
-  request: AiReviewRequestV2,
+  request: AiReviewRequest,
   signal?: AbortSignal,
 ): Promise<Response> {
   return authedReplayPost(auth, AI_REVIEWS_PATH, request, { signal, gzip: true })

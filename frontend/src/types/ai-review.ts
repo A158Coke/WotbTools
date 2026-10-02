@@ -9,10 +9,10 @@ export type AiReviewCapability =
 export type TeamAiReviewResult = components['schemas']['TeamAiReviewResult']
 export type TeamAiPlayerIdentity = components['schemas']['TeamAiPlayerIdentity']
 
-export type AiReviewRequestV2 = components['schemas']['AiReviewRequestV2']
+export type AiReviewRequest = components['schemas']['AiReviewRequest']
 export type AiReviewBattle = components['schemas']['AiReviewBattle']
 export type ClientAiReviewProjection = components['schemas']['ClientAiReviewProjection']
-export type AiReviewLocale = AiReviewRequestV2['locale']
+export type AiReviewLocale = AiReviewRequest['locale']
 
 /**
  * AI 复盘输入：结算事实（`battle`）+ client canonical AI projection（`projection`，

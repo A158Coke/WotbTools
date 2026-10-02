@@ -163,10 +163,10 @@ describe('AiReviewPanel workspace layout ownership', () => {
   })
 })
 
-// ---- 客户端投影路径：POST /api/ai/reviews，body 恰为 AiReviewRequestV2（gzip，不上传回放）----
+// ---- 客户端投影路径：POST /api/ai/reviews，body 恰为 AiReviewRequest（gzip，不上传回放）----
 
 describe('AiReviewPanel projection request', () => {
-  it('请求体恰为 AiReviewRequestV2：结算事实 + canonical 投影，gzip 发送（无回放字节 / dataset 引用）', async () => {
+  it('请求体恰为 AiReviewRequest：结算事实 + canonical 投影，gzip 发送（无回放字节 / dataset 引用）', async () => {
     const fetchMock = vi.fn().mockResolvedValue(emptySseResponse())
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountPanel({ projection: projectionA })
@@ -182,7 +182,6 @@ describe('AiReviewPanel projection request', () => {
     expect(options.headers['Content-Encoding']).toBe('gzip')
     const body = await requestBody(fetchMock.mock.calls[0])
     expect(body).toEqual({
-      schemaVersion: 2,
       locale: AI_WIRE_LOCALE,
       correlationId: expect.any(String),
       battle: projectionA.battle,
@@ -190,7 +189,7 @@ describe('AiReviewPanel projection request', () => {
     })
     // dataset 时代的 wire shape 不得回归：键集精确等于契约字段。
     expect(Object.keys(body).sort()).toEqual([
-      'battle', 'correlationId', 'locale', 'projection', 'schemaVersion',
+      'battle', 'correlationId', 'locale', 'projection',
     ])
     expect(body).not.toHaveProperty('processingJobId')
     expect(body).not.toHaveProperty('sourceId')

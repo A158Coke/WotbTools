@@ -252,7 +252,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/AiReviewRequestV2' }
+            schema: { $ref: '#/components/schemas/AiReviewRequest' }
       responses:
         '200':
           description: SSE stream. Stage events have empty payloads; call2_token carries delta; done carries the review result; error carries a stable error code.
@@ -539,12 +539,11 @@ components:
         deleted: { type: integer }
         failed: { type: integer }
         results: { type: array, items: { $ref: '#/components/schemas/DeleteUserResult' } }
-    AiReviewRequestV2:
+    AiReviewRequest:
       type: object
       additionalProperties: false
-      required: [schemaVersion, locale, correlationId, battle, projection]
+      required: [locale, correlationId, battle, projection]
       properties:
-        schemaVersion: { type: integer, const: 2 }
         locale: { type: string, enum: [zh-CN, en-US, ru-RU] }
         correlationId: { type: string, format: uuid }
         battle: { $ref: '#/components/schemas/AiReviewBattle' }
@@ -557,9 +556,8 @@ components:
         Only combatant entities appear. Evidence the engine does not provide is listed in unavailableEvidence.
       type: object
       additionalProperties: false
-      required: [projectionVersion, engine, clock, perspective, participants, observationWindows, positions, turrets, prop3Health, healthEvents, damageNotices, periods, objectives, limitations, unavailableEvidence]
+      required: [engine, clock, perspective, participants, observationWindows, positions, turrets, prop3Health, healthEvents, damageNotices, periods, objectives, limitations, unavailableEvidence]
       properties:
-        projectionVersion: { type: integer, const: 1 }
         engine: { $ref: '#/components/schemas/AiProjectionEngine' }
         clock: { $ref: '#/components/schemas/AiProjectionClock' }
         perspective: { $ref: '#/components/schemas/AiProjectionPerspective' }
@@ -1191,7 +1189,6 @@ components:
         - AI_REVIEW_BUSY
         - AI_REQUEST_TOO_LARGE
         - INVALID_AI_REQUEST
-        - UNSUPPORTED_AI_REQUEST_SCHEMA
         - UNKNOWN_LOCALE
         - INVALID_CORRELATION_ID
         - DUPLICATE_CORRELATION_ID

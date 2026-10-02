@@ -21,7 +21,6 @@ const CORRELATION_ID = '5c2b1f4e-9a0d-4f6b-8f1e-2b3c4d5e6f70'
 const projection: AiReviewProjection = {
   battle: { players: [] },
   projection: {
-    projectionVersion: 1,
     engine: { agentRelease: 'v0.3.8', agentCommit: 'abc' },
     clock: { battleStartRawClockSec: 10, battleDurationSec: 120, estimated: false, battleEndRawClockSec: 130, streamEndRawClockSec: 131 },
     perspective: { recorderAccountId: 1, perspectiveTeam: 1, recorderEntityIds: [7], winnerTeam: 1 },
@@ -60,21 +59,20 @@ afterEach(() => {
 })
 
 describe('buildAiReviewRequest', () => {
-  it('freezes schemaVersion at the contract constant and carries only the projection', () => {
+  it('carries only battle facts and the canonical projection (no version field)', () => {
     const request = buildAiReviewRequest({
       ...projection,
       locale: 'zh-CN',
       correlationId: CORRELATION_ID,
     })
 
-    expect(request.schemaVersion).toBe(2)
     expect(request.locale).toBe('zh-CN')
     expect(request.correlationId).toBe(CORRELATION_ID)
     expect(request.battle).toBe(projection.battle)
     expect(request.projection).toBe(projection.projection)
     // 只有结算事实 + client canonical 投影：不携带回放字节，也不携带 Agent 原始切面
     expect(Object.keys(request).sort()).toEqual([
-      'battle', 'correlationId', 'locale', 'projection', 'schemaVersion',
+      'battle', 'correlationId', 'locale', 'projection',
     ])
   })
 })

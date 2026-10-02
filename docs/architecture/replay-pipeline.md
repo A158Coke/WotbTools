@@ -39,7 +39,7 @@ frontend/src/replay-local/
 | 回放工作台 · 数据 | `composables/useLocalReplayAnalysis.ts` | 选择文件 → Worker 解析 → 批次计算 → 表格；失败只显示原因，不回退服务端 |
 | 回放工作台 · 导出 | 同上 `exportExcel(mode)` | 复用最近一次分析的批次结果，客户端生成 xlsx / zip |
 | 2D 战局回放 | `components/BattlePlaybackPanel.vue` | 目标文件本机 `parseLocalPlayback`（三切面 → canonical facts），主线程一次性解析 |
-| AI 复盘 | `components/AiReviewWorkspacePane.vue` | 目标文件本机 `buildLocalAiReviewInput` → `AiReviewRequestV2`（gzip）→ ai-service |
+| AI 复盘 | `components/AiReviewWorkspacePane.vue` | 目标文件本机 `buildLocalAiReviewInput` → `AiReviewRequest`（gzip）→ ai-service |
 | 3D 回放 / 射击复现 / 装甲查看 | `scene/*`、`AgentShots.vue` | 直接消费 WASM 时序 / 射击切面 |
 | 名人堂 / 百场 / 三环提交 | `utils/api.js` → `replay-local/submissionFacts.ts` | 本机解析得到 `Battle` 事实 JSON（`facts` 字段）+ 原始回放（证据附件） |
 | 账号验证 | `ProfilePage.vue` | 本机解析出录像者 accountId，提交给 `POST /api/users/wotb-account/verify-replay` |
@@ -52,7 +52,7 @@ frontend/src/replay-local/
   不比对回放与 facts。防伪造靠管理员审核与回放附件（有意的产品决策，见 `docs/features/hall-of-fame.md`「信任模型」）。
 - **账号验证**：客户端声称的便利徽章——只比较客户端提交的录像者数值 accountId 与当前绑定账号；不授予权限、不参与
   授权、不是身份安全边界（`docs/features/user-profile.md`）。
-- **AI 复盘**：`AiReviewRequestV2` 只承载 client canonical AI projection；ai-service 的 `ClientAiProjectionAdapter` 结构校验后
+- **AI 复盘**：`AiReviewRequest` 只承载 client canonical AI projection；ai-service 的 `ClientAiProjectionAdapter` 结构校验后
   装配内存 canonical 事件流（纯归约，不读字节），下游 BattleTimeline / 证据 / prompt 不变。与 Java 删除前冻结重建的
   语义 parity 见 `docs/architecture/ai-review.md`「AI 复盘输入」。
 
