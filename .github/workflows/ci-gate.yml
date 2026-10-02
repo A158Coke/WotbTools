@@ -166,6 +166,7 @@ jobs:
       minio: ${{ steps.filter.outputs.minio }}
       caddy: ${{ steps.filter.outputs.caddy }}
       alloy_tx: ${{ steps.filter.outputs.alloy_tx }}
+      komodo_controller: ${{ steps.filter.outputs.komodo_controller }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -286,6 +287,13 @@ jobs:
     with:
       base_sha: ${{ needs.pr_identity.outputs.base_sha }}
       head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  komodo_controller:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.komodo_controller == 'true'
+    uses: ./.github/workflows/ci-komodo-controller.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
   required:
     needs:
       - pr_identity
@@ -305,6 +313,7 @@ jobs:
       - minio
       - caddy
       - alloy_tx
+      - komodo_controller
     if: always()
     name: CI / Required Gate
     runs-on: ubuntu-latest

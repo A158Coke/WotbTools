@@ -19,6 +19,8 @@
 - **Frontend 发布边界（`frontend.yml`）**：GitHub 是 release authority，不再承担 Frontend Docker build/TCR 大镜像上传。workflow 先把 exact GitHub SHA 主动 mirror 到 Gitee，并下载/校验 `deploy/agent/source.json` 锁定的轻量 Agent WASM archive；只把 TX builder 脚本与该小 artifact 暂存到 TX。TX 的 `deploy/tx/build-frontend-from-gitee.sh` 复用 production Gitee clone 与 Business API 共用的 host build lock，创建 exact-SHA worktree、用 SHA256 验证 WASM、构建镜像并在任何 registry 写入前校验 source SHA / `ASSET_BASE_URL` / WASM / 静态文件，随后在国内链路发布 immutable TCR image 并回读 digest。生产必须通过 `TX_FRONTEND_IMAGE_REF=...@sha256:...` 部署该 digest；Frontend 不再发布或依赖 `latest`，也不再使用 GitHub runner 的 `deploy/list-image-tags.sh` / `run-with-network-retry.sh` 发布路径。
 - 本地完整 Docker Compose 开发环境已退役；Keycloak realm 集成验证仅使用 `deploy/test-keycloak-tofu.sh` 的 disposable PostgreSQL、Keycloak 与 local OpenTofu state。
 
+- **Komodo 控制平面**：Komodo Core/Mongo 的 bootstrap、升级和 break-glass recovery 由 `.github/workflows/komodo-controller.yml` 独立拥有，runtime 定义在 `deploy/komodo/compose.yml`，DNSPod 声明在 `infra/tofu/komodo`。Komodo 不得管理自己的 Core 生命周期；Core 仅绑定 Yecao WireGuard `10.20.0.2:9120`，公网入口仍由 TX Caddy 独立拥有。首阶段不安装 Periphery，也不迁移任何 workload owner。
+
 ## 运维（安全）
 
 - 备份：`.github/workflows/database-backup.yml` 运行 TX owner 的 `business-postgres-backup.sh` 与 `keycloak-postgres-backup.sh`，随后备份 TX/Yecao local Tofu state；normal Deploy 不调用 backup，也不把本地备份描述为 COS。Business restore 只允许校验或恢复到 disposable 数据库，禁止覆盖 authoritative `wotb`；Keycloak 归档不得交给 Business restore 工具。

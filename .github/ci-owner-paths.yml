@@ -216,3 +216,10 @@ alloy_tx:
   - 'deploy/tx/deploy.sh'
   - 'deploy/validate-alloy-config.sh'
   - '.github/workflows/ci-alloy-tx.yml'
+
+komodo_controller:
+  - '.github/workflows/komodo-controller.yml'
+  - '.github/workflows/ci-komodo-controller.yml'
+  - 'deploy/check-production-freshness.sh'
+  - 'deploy/komodo/**'
+  - 'infra/tofu/komodo/**'
