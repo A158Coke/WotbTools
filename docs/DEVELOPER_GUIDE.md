@@ -372,7 +372,7 @@ Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标�
 Assault 单基地形成
 `baseId=BASE` 的 progress transition（0..100，阵营 unknown；判据为 field2==1 且 field3 存在，
 **不锁 field1**——携带进度的族会在 field1=1/2 间切换）；`assaultObjectivePresent` 需目标族发出
-裸初始化对以外的字段（裸初始化对是通用广播，普通对局也发），无 field3 时保留空 progress timeline。2D 按 mapCode 从 verified semantic
+裸初始化对以外的字段（裸初始化对是通用广播，普通对局也发），无 field3 时保留空 progress timeline。显式 `progress=0` 作为 canonical reset 继续保留，但共享 `baseView` 在 2D/3D presentation 中把它投影为 idle（不画水位/进度环/百分比），后续正值可恢复显示。2D 按 mapCode 从 verified semantic
 数据解析静态 BASE，并 LEFT JOIN runtime state；训练房 arenaBonusType 不参与 Assault 判定。
 前端不合并 protobuf sparse update；坦克 marker sizing 优先使用可靠 hull metadata，model overlap 只通过有界
 presentation offset 软避让，canonical 坐标和命中判定语义保持一致。
@@ -590,7 +590,7 @@ bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 
 
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
-Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurrency，`cancel-in-progress: false`（`queue: max` 只排队、不丢弃已开始的生产写入）；服务器脚本另用 `flock` 串行化 production mutation。Build 与 Release 不占用该队列，但每个 lane 都在 mutation 前核对 source 仍是当前 main。这不是 distributed lock。
+Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurrency，`cancel-in-progress: false`（`queue: max` 只排队、不丢弃已开始的生产写入）；服务器脚本另用 `flock` 串行化 production mutation。TX 人工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`（源文件 `deploy/tx/with-deploy-lock.sh`）让锁 FD 只存在于命令进程树，禁止在交互 SSH shell 直接 `exec 9>` 持锁；冲突时 wrapper 会输出当前 holder 诊断。Build 与 Release 不占用该队列，但每个 lane 都在 mutation 前核对 source 仍是当前 main。这不是 distributed lock。
 
 生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 调用 TX owner 的 `deploy/tx/business-postgres-backup.sh` 与 `deploy/tx/keycloak-postgres-backup.sh` 备份；两者只访问已运行的 owner service，并在 pg_dump 前核对固定 Compose project、卷标签与实际挂载卷。同一维护队列随后备份 TX/Yecao/Komodo 三个 owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256（`deploy/tofu-local-state-backup.sh tx|yecao|komodo`）。Business PostgreSQL 归档只能用 `deploy/tx/business-postgres-restore.sh` 校验并恢复到经确认的 disposable 数据库；Keycloak PostgreSQL 归档不能传给 Business restore 工具。
 

@@ -51,6 +51,7 @@ import { projectVehicleState } from '../utils/playbackVehicleState'
 import { computeVehicleMarkerSize } from '../utils/vehicleMarkerSizing'
 import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
 import { playbackSafeInsetOwnership } from '../utils/playbackSafeInsets.js'
+import { baseView } from '../utils/baseStatus.js'
 import {
   MARKER_CORE_PX,
   computeLabelLayout,
@@ -2010,6 +2011,7 @@ const basesAt = computed(() => {
   // Objective existence is independent of capture activity; geometry never infers mode.
   const states = new Map(baseStatesAt.value.map((state) => [state.baseId, state]))
   const assaultState = states.get('BASE')
+  const assaultView = baseView(assaultState || { baseId: 'BASE' }, friendlyTeam.value)
   if (playback.value?.assaultObjectivePresent === true) {
     const mapCode = pbOverview.value?.mapCode
     const semantics = mapSemantics.find(map => map.verified && map.mapCodes?.includes(mapCode))
@@ -2024,9 +2026,11 @@ const basesAt = computed(() => {
       // 部分 client scene 未声明 controlpoint radius。20m 仅是 presentation fallback，
       // 不进入 protocol/canonical truth，也不根据车辆距离推导半径。
       radius: base.radius ?? ASSAULT_BASE_RADIUS_FALLBACK_M,
-      status: baseStatus(assaultState),
-      progress: assaultState?.captureProgress ?? null,
-      capturedBy: capturedBy(assaultState),
+      status: assaultView.owner === 'friendly'
+        ? 'friendly_controlled'
+        : (assaultView.owner === 'enemy' ? 'enemy_controlled' : 'neutral'),
+      progress: assaultView.progress,
+      capturedBy: assaultView.capturing ?? 'unknown',
     }))
   }
 
