@@ -1,34 +1,18 @@
 import { computed, ref, watch } from 'vue'
-import type { ExportJob, ProcessingJob, UploadProgress } from '../types/jobs.js'
 import { sourceId as makeSourceId } from '../types/replay.js'
-import type { Battle, ColumnDef, ProcessingJobId, ReplayResult, SourceId } from '../types/replay.js'
-import type { DataViewMode, ReplayCapability } from '../types/workspace.js'
+import type { Battle, ColumnDef, ReplayResult, SourceId } from '../types/replay.js'
+import type { DataViewMode, ReplayAnalysis, ReplayCapability } from '../types/workspace.js'
 
 export type PendingRemove =
   | { type: 'battle'; battle: Battle; label: string }
   | { type: 'file'; file: File; label: string }
 
-const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
-
-const PROCESSING_UI_STATES = Object.freeze({
-  EMPTY: 'EMPTY',
-  FILES_SELECTED: 'FILES_SELECTED',
-  UPLOADING: 'UPLOADING',
-  REGISTERING: 'REGISTERING',
-  QUEUED: 'QUEUED',
-  PROCESSING: 'PROCESSING',
-  FINALIZING: 'FINALIZING',
-  READY: 'READY',
-  FAILED: 'FAILED',
-  CANCELLED: 'CANCELLED',
-})
-
 /**
  * Replay 的唯一 session state owner。
  *
- * API/轮询/上传副作用由 useReplay 驱动；本 composable 只拥有 selection、
- * processing/result/export identity 以及 Workspace view state，避免同一状态在
- * useReplay 与 useReplayWorkspace 各有一份可写副本。
+ * 本地解析副作用由 useLocalReplayAnalysis 驱动；本 composable 只拥有 selection、
+ * 分析状态 / 结果以及 Workspace view state，避免同一状态在多处各有一份可写副本。
+ * 服务器没有 parser：分析完全在本机完成，没有 job / 上传 / 轮询状态。
  */
 export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   const files = ref<File[]>([])
@@ -39,13 +23,7 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   const activeTab = ref('aggregate')
   const pendingRemove = ref<PendingRemove | null>(null)
 
-  const processingJob = ref<ProcessingJob | null>(null)
-  const processingError = ref('')
-  const uploadState = ref<UploadProgress | null>(null)
-  const processingJobId = ref<ProcessingJobId | null>(null)
-
-  const exportJob = ref<ExportJob | null>(null)
-  const exportError = ref('')
+  const analysis = ref<ReplayAnalysis>({ phase: 'idle', done: 0, total: 0, failure: null })
 
   const activeWorkspaceTab = ref(initialCapability === 'playback' || initialCapability === 'ai'
     ? initialCapability
@@ -65,23 +43,7 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     }))
     return { battles: battles.length, players: agg.length, maxDmg }
   })
-  const processingActive = computed(() => processingJob.value && JOB_ACTIVE.has(processingJob.value.status))
-  const exportActive = computed(() => exportJob.value && JOB_ACTIVE.has(exportJob.value.status))
-  const processingUiState = computed(() => {
-    if (uploadState.value) return uploadState.value.phase
-    const job = processingJob.value
-    if (!job) return files.value.length ? PROCESSING_UI_STATES.FILES_SELECTED : PROCESSING_UI_STATES.EMPTY
-    switch (job.status) {
-      case 'QUEUED': return PROCESSING_UI_STATES.QUEUED
-      case 'PROCESSING':
-        return job.phase === 'FINALIZING_BATCH' ? PROCESSING_UI_STATES.FINALIZING : PROCESSING_UI_STATES.PROCESSING
-      case 'READY': return PROCESSING_UI_STATES.READY
-      case 'FAILED': return PROCESSING_UI_STATES.FAILED
-      case 'CANCELLED': return PROCESSING_UI_STATES.CANCELLED
-      default: return PROCESSING_UI_STATES.FILES_SELECTED
-    }
-  })
-  const resultMatchesSelection = computed(() => !!processingJobId.value && !!resp.value)
+  const analysisActive = computed(() => analysis.value.phase === 'parsing')
 
   const parsedBattles = computed<Battle[]>(() => Array.isArray(resp.value?.battles) ? resp.value.battles : [])
   const replayBatch = computed(() => files.value)
@@ -99,7 +61,6 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     return singleReplay.value ? 'r0' : null
   })
   const currentSourceId = computed(() => currentTargetBattleId.value)
-  const currentProcessingJobId = computed(() => processingJobId.value)
   const currentTargetFile = computed(() => {
     const id = currentTargetBattleId.value
     if (!id) return null
@@ -112,20 +73,16 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   function replaceSelection(next: File[]) {
     files.value = next
     selectionRevision.value++
-    processingJobId.value = null
     resp.value = null
     activeTab.value = 'aggregate'
-    processingError.value = ''
-    processingJob.value = null
-    uploadState.value = null
+    analysis.value = { phase: 'idle', done: 0, total: 0, failure: null }
     loading.value = false
     currentBattleId.value = null
     dataViewMode.value = 'SUMMARY'
   }
 
-  function commitReadyResult(result: ReplayResult, jobId: ProcessingJobId) {
+  function commitReadyResult(result: ReplayResult) {
     resp.value = result
-    processingJobId.value = jobId
     activeTab.value = chooseInitialResultTab(result)
   }
 
@@ -171,13 +128,11 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
 
   return {
     files, selectionRevision, loading, error, resp, activeTab, pendingRemove,
-    processingJob, processingError, uploadState, processingJobId,
-    exportJob, exportError,
-    playerCols, aggCols, aggStats, processingActive, exportActive,
-    processingUiState, resultMatchesSelection,
+    analysis, analysisActive,
+    playerCols, aggCols, aggStats,
     replayBatch, parsedBattles, singleReplay, currentBattleId, dataViewMode,
     activeWorkspaceTab, currentBattle, currentBattleIndex,
-    currentTargetBattleId, currentSourceId, currentProcessingJobId, currentTargetFile,
+    currentTargetBattleId, currentSourceId, currentTargetFile,
     replaceSelection, commitReadyResult,
     setWorkspaceTab, selectBattle, setDataViewMode,
   }

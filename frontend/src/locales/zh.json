@@ -739,10 +739,12 @@
     "verified": "验证状态",
     "verifiedBadge": "账号已验证",
     "notVerified": "未验证",
-    "notVerifiedHint": "上传一场由该账号录制的回放即可自动验证",
+    "notVerifiedHint": "选择一场由该账号录制的回放即可验证（回放在本机解析，不会上传）",
     "wgSyncFailed": "Wargaming 账号同步失败，请刷新或重新登录",
     "wgSyncRetry": "重试同步",
-    "wgSyncing": "正在同步 Wargaming 账号"
+    "wgSyncing": "正在同步 Wargaming 账号",
+    "verifyWithReplay": "用回放验证",
+    "verifyingReplay": "验证中…"
   },
   "replay": {
     "no_files": "请先选择回放文件或文件夹",
@@ -752,46 +754,21 @@
     "png_export_failed": "PNG 导出失败",
     "png_exporting": "正在导出 PNG…",
     "login_required_for_battle": "战局回放 / AI 复盘需要登录。登录后请重新选择回放文件。",
-    "export_job": {
-      "title": "正在导出战斗数据",
-      "queued": "正在准备导出…",
-      "preparing": "已创建导出任务，共 {total} 场",
-      "progress": "已处理 {processed}/{total} 场",
-      "phase_processing": "正在解析回放…",
-      "phase_excel": "正在生成 Excel…",
-      "phase_archive": "正在逐场导出并打包 ZIP…",
-      "duplicates_failures": "重复 {d} · 失败 {f}",
-      "valid_summary": "有效 {v} 场 · 重复 {d} · 失败 {f}",
-      "ready": "Excel 已生成",
-      "download": "下载文件",
-      "cancel": "取消",
-      "dismiss": "关闭",
-      "failed": "导出失败",
-      "failed_no_valid": "没有可导出的有效回放。",
-      "failed_generic": "导出失败，请重试。",
-      "require_processing": "请先完成解析后再导出。",
-      "cancelled": "已取消"
-    },
-    "processing_job": {
-      "uploading": "正在上传…",
-      "uploading_progress": "已上传 {loaded} / {total}",
-      "registering": "上传完成，服务器正在准备任务…",
-      "queued": "等待解析资源…",
-      "queued_total": "已创建解析任务，共 {total} 场",
-      "title": "正在解析回放",
-      "progress": "已解析 {processed} / {total}",
-      "active_sources": "正在并行解析 {count} 个回放",
-      "current_file": "当前文件：{file}",
-      "counts": "成功 {v} · 失败 {f}",
-      "finalizing": "正在整理解析结果…",
-      "finalizing_detail": "去重 / 联赛校验 / Rating / 汇总",
+    "analysis": {
+      "parsing": "正在本机解析回放",
+      "progress": "已解析 {done} / {total}",
       "ready": "解析完成",
-      "valid_summary": "有效 {v} 场 · 重复 {d} · 失败 {f}",
+      "summary": "有效 {v} · 重复 {d} · 失败 {f}",
       "failed": "解析失败",
       "cancelled": "已取消",
-      "no_valid_replays": "没有可用的有效回放。",
-      "mixed_league_standard": "检测到混合上传：普通回放与训练赛/联赛回放不能同时解析"
-    }
+      "cancel": "取消",
+      "dismiss": "关闭",
+      "engine_unavailable": "回放解析引擎加载失败，请刷新页面重试（解析在本机进行，文件不会上传）",
+      "no_valid_replays": "没有可分析的回放：全部解析失败或重复",
+      "failed_unknown": "分析时发生意外错误，请重试"
+    },
+    "excel_exporting": "正在生成 Excel…",
+    "excel_export_failed": "Excel 导出失败，请重试"
   },
   "api_codes": {
     "SENSITIVE_INFO_WARNING": "请勿填写账号密码、验证码等敏感信息。",
@@ -953,7 +930,12 @@
     "LEAGUE_ROSTER_INCOMPLETE": "名册与结算不一致（名册不完整）",
     "LEAGUE_NO_DECISIVE_WINNER": "平局或未知胜方，不产生 Rating",
     "LEAGUE_INVALID_STAT_FACTS": "结算数据存在非法数值关系",
-    "CONFLICTING_REPLAYS_FOR_ARENA": "同一场比赛的多份回放关键数据不一致，全部拒绝评分"
+    "CONFLICTING_REPLAYS_FOR_ARENA": "同一场比赛的多份回放关键数据不一致，全部拒绝评分",
+    "INVALID_REPLAY_FACTS": "回放结算数据不合法，请重新选择回放",
+    "REPLAY_FACTS_COUNT_MISMATCH": "回放与结算数据数量不一致，请重新提交",
+    "REPLAY_RECORDER_MISMATCH": "这场回放不是由当前绑定账号录制的",
+    "REPLAY_RECORDER_REQUIRED": "无法从回放中识别录像者账号",
+    "WOTB_ACCOUNT_NOT_BOUND": "请先绑定游戏账号"
   },
   "admin": {
     "title": "用户管理",
@@ -1088,9 +1070,11 @@
       "view_map": "地图鸟瞰",
       "loading": "战局回放加载中…",
       "partial": "部分观测缺失：仅基于可信观测/最后已知状态播放，不猜测未观测事实",
-      "unavailable": "该回放的战局回放不可用（后端未生成 timeline / 数据缺失）",
+      "unavailable": "这场回放无法生成战局回放（时间线数据缺失）",
       "error": "战局回放加载失败",
-      "retry": "重试"
+      "retry": "重试",
+      "engine_unavailable": "回放解析引擎加载失败，请刷新页面重试",
+      "parse_failed": "这场回放解析失败"
     },
     "copy": "复制",
     "copied": "已复制",
@@ -1319,14 +1303,12 @@
     }
   },
   "workspace": {
-    "auth_checking": "正在检查登录状态…",
     "tab_results": "解析结果",
     "results_hint": "点击「解析预览」后，解析结果将显示在这里",
     "ai_empty": "选择一场回放后开始 AI 复盘",
     "playback_empty": "选择一场回放后查看战局回放",
     "dataset_preparing": "正在准备回放数据…",
-    "dataset_expired": "回放数据已过期，正在重新准备…",
-    "dataset_prepare_failed": "无法准备回放数据，请重试。"
+    "dataset_expired": "回放数据已过期，正在重新准备…"
   },
   "league": {
     "title": "League Rating",

@@ -21,18 +21,15 @@
       "classicDescription": "简约浅色主题，去除 AI/装饰背景，视觉更克制",
       "showcaseDescription": "丰富的视觉层级与展示效果"
     },
-
     "environment": {
       "label": "开发模式",
       "local": "API → 本地后端",
       "productionRemote": "API → 生产后端；请勿上传测试或敏感数据"
     },
-
     "bootstrap": {
       "profileFailed": "账号资料初始化失败，部分功能暂不可用。稍后重试或刷新页面即可。",
       "retry": "重试"
     },
-
     "android": {
       "nav": "下载 Android 版",
       "kicker": "WotBTools Android",
@@ -49,7 +46,6 @@
       "loading": "正在加载…",
       "login_required": "请先登录 WotBTools 账号后再下载 Android 安装包"
     },
-
     "home": {
       "replayParse": "回放解析",
       "replayParseDesc": "批量解析回放，查看汇总、单场数据与 League Rating。",
@@ -63,20 +59,6 @@
       "cancel": "取消",
       "action_replay_selector": "选择用于 AI 复盘或战局回放的回放",
       "action_replay_placeholder": "请选择一份回放"
-    },
-    "replay": {
-      "processing_job": {
-        "queued": "等待解析",
-        "preparing": "正在准备解析 {total} 个回放…",
-        "title": "正在解析回放",
-        "progress": "解析进度：{processed}/{total}",
-        "current_file": "当前文件：{file}",
-        "counts": "有效 {v} · 重复 {d} · 失败 {f}",
-        "ready": "回放解析完成",
-        "failed": "回放解析失败",
-        "no_valid_replays": "没有可用的回放文件",
-        "cancelled": "解析已取消"
-      }
     },
     "workspace": {
       "battle_picker": "选择场次",
@@ -121,7 +103,6 @@
       "tab_ai": "AI 复盘",
       "ai_maintenance": "AI 复盘维护中",
       "tab_playback": "2D 回放",
-      "auth_checking": "正在确认登录状态…",
       "native_replay_read_failed": "无法读取待解析的回放文件，请重试或重新从文件管理器打开该回放。",
       "native_client_upgrade_required": "当前 Android 客户端需要升级后才能导入回放。",
       "native_replay_retry": "重试读取回放",
@@ -252,7 +233,8 @@
       }
     },
     "agentReplay": {
-      "title": "3D 回放", "roster": "阵容",
+      "title": "3D 回放",
+      "roster": "阵容",
       "error_load": "回放加载失败：{msg}",
       "pick_hint": "选择本地 .wotbreplay 文件——在浏览器内本地解析，文件不会上传。"
     },
@@ -395,18 +377,15 @@
       "classicDescription": "Simplified light theme; drops AI/decorative backgrounds for a calmer look",
       "showcaseDescription": "Rich visual hierarchy and showcase effect"
     },
-
     "environment": {
       "label": "Development",
       "local": "API → local backend",
       "productionRemote": "API → production backend; do not upload test or sensitive data"
     },
-
     "bootstrap": {
       "profileFailed": "Account profile setup failed, so some features are unavailable. Retry or refresh the page.",
       "retry": "Retry"
     },
-
     "android": {
       "nav": "Download Android",
       "kicker": "WotBTools Android",
@@ -423,7 +402,6 @@
       "loading": "Loading…",
       "login_required": "Please sign in to your WotBTools account before downloading the Android package"
     },
-
     "home": {
       "replayParse": "Replay Analysis",
       "replayParseDesc": "Batch-parse replays and inspect summaries, battles, and League Rating.",
@@ -437,20 +415,6 @@
       "cancel": "Cancel",
       "action_replay_selector": "Select a replay for AI review or battle playback",
       "action_replay_placeholder": "Select a replay"
-    },
-    "replay": {
-      "processing_job": {
-        "queued": "Waiting to parse",
-        "preparing": "Preparing {total} replays…",
-        "title": "Parsing replays",
-        "progress": "Progress: {processed}/{total}",
-        "current_file": "Current file: {file}",
-        "counts": "Valid {v} · duplicates {d} · failed {f}",
-        "ready": "Replay parsing complete",
-        "failed": "Replay parsing failed",
-        "no_valid_replays": "No valid replay files were found",
-        "cancelled": "Parsing cancelled"
-      }
     },
     "workspace": {
       "battle_picker": "Choose battle",
@@ -495,7 +459,6 @@
       "tab_ai": "AI Review",
       "ai_maintenance": "AI Review is under maintenance",
       "tab_playback": "2D replay",
-      "auth_checking": "Checking your sign-in status…",
       "native_replay_read_failed": "Unable to read the pending replay. Retry or reopen it from your file manager.",
       "native_client_upgrade_required": "Please upgrade the Android client before importing replays.",
       "native_replay_retry": "Retry reading replay",
@@ -626,7 +589,8 @@
       }
     },
     "agentReplay": {
-      "title": "3D replay", "roster": "Rosters",
+      "title": "3D replay",
+      "roster": "Rosters",
       "error_load": "Couldn't load the replay: {msg}",
       "pick_hint": "Pick a local .wotbreplay — it is parsed in your browser and never uploaded."
     },
@@ -769,18 +733,15 @@
       "classicDescription": "Упрощённая светлая тема, без AI/декоративных фонов, сдержаннее",
       "showcaseDescription": "Богатая визуальная иерархия и эффект показа"
     },
-
     "environment": {
       "label": "Режим разработки",
       "local": "API → локальный backend",
       "productionRemote": "API → production backend; не загружайте тестовые или чувствительные данные"
     },
-
     "bootstrap": {
       "profileFailed": "Не удалось подготовить профиль аккаунта, поэтому часть функций недоступна. Повторите попытку или обновите страницу.",
       "retry": "Повторить"
     },
-
     "android": {
       "nav": "Скачать Android",
       "kicker": "WotBTools Android",
@@ -797,7 +758,6 @@
       "loading": "Загрузка…",
       "login_required": "Войдите в аккаунт WotBTools перед загрузкой Android-пакета"
     },
-
     "home": {
       "replayParse": "Анализ реплеев",
       "replayParseDesc": "Пакетная обработка реплеев, сводки, бои и League Rating.",
@@ -811,20 +771,6 @@
       "cancel": "Отмена",
       "action_replay_selector": "Выберите реплей для ИИ-разбора или просмотра боя",
       "action_replay_placeholder": "Выберите реплей"
-    },
-    "replay": {
-      "processing_job": {
-        "queued": "Ожидание обработки",
-        "preparing": "Подготовка {total} реплеев…",
-        "title": "Обработка реплеев",
-        "progress": "Прогресс: {processed}/{total}",
-        "current_file": "Текущий файл: {file}",
-        "counts": "Успешно {v} · дубликаты {d} · ошибки {f}",
-        "ready": "Обработка реплеев завершена",
-        "failed": "Ошибка обработки реплеев",
-        "no_valid_replays": "Подходящие файлы реплеев не найдены",
-        "cancelled": "Обработка отменена"
-      }
     },
     "workspace": {
       "battle_picker": "Выбрать бой",
@@ -869,7 +815,6 @@
       "tab_ai": "AI-разбор",
       "ai_maintenance": "ИИ-разбор на техническом обслуживании",
       "tab_playback": "2D-повтор",
-      "auth_checking": "Проверяем статус входа…",
       "native_replay_read_failed": "Не удалось прочитать ожидающий повтор. Повторите попытку или откройте его заново из файлового менеджера.",
       "native_client_upgrade_required": "Перед импортом повторов обновите Android-клиент.",
       "native_replay_retry": "Повторить чтение повтора",
@@ -1000,7 +945,8 @@
       }
     },
     "agentReplay": {
-      "title": "3D-повтор", "roster": "Составы",
+      "title": "3D-повтор",
+      "roster": "Составы",
       "error_load": "Не удалось загрузить повтор: {msg}",
       "pick_hint": "Выберите локальный .wotbreplay — он разбирается в браузере и никуда не загружается."
     },

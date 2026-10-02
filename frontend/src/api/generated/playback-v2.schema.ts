@@ -922,24 +922,6 @@ export default {
         }
       }
     },
-    "DatasetReference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "processingJobId",
-        "sourceId"
-      ],
-      "properties": {
-        "processingJobId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "sourceId": {
-          "type": "string",
-          "pattern": "^r[0-9]+$"
-        }
-      }
-    },
     "AiReviewRequestV1": {
       "type": "object",
       "additionalProperties": false,

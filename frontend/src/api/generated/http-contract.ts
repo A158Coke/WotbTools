@@ -299,26 +299,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/replay/battle-playback-v2": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Read the cached Battle Playback V2 dataset for a ready processing source
-         * @description Anonymous access allowed; a valid bearer token is accepted but not required.
-         */
-        post: operations["getBattlePlaybackV2"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/ai/reviews": {
         parameters: {
             query?: never;
@@ -575,10 +555,6 @@ export interface components {
             deleted: number;
             failed: number;
             results: components["schemas"]["DeleteUserResult"][];
-        };
-        DatasetReference: {
-            processingJobId: string;
-            sourceId: string;
         };
         AiReviewRequestV1: {
             /** @constant */
@@ -1491,100 +1467,6 @@ export interface operations {
             };
             /** @description Missing confirmation or too many ids */
             400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    getBattlePlaybackV2: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DatasetReference"];
-            };
-        };
-        responses: {
-            /** @description Canonical sparse playback projection */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BattlePlaybackDataset"];
-                };
-            };
-            /** @description Playback capability unavailable for this source */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid dataset reference */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Access denied */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Processing job was not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Source is not ready */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Unexpected server failure */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Dataset storage is unavailable */
-            503: {
                 headers: {
                     [name: string]: unknown;
                 };

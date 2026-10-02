@@ -14,7 +14,6 @@ import {
   downloadBlob,
   maxFiniteDimension
 } from '../utils/exportReplayPng.js'
-import FileUploader from './FileUploader.vue'
 import ColumnPicker from './ColumnPicker.vue'
 import AggregateTable from './AggregateTable.vue'
 import BattleTable from './BattleTable.vue'
@@ -22,9 +21,6 @@ import LeagueSummaryTable from './LeagueSummaryTable.vue'
 import CwPlayerSummaryTable from './CwPlayerSummaryTable.vue'
 import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
 import { mergeCwPlayerRows, mergeCwPlayerColumns, CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
-import RemoveConfirmModal from './RemoveConfirmModal.vue'
-import ReplayTaskCard from './ReplayTaskCard.vue'
-import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import { BookOpen, Columns3, Download } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
@@ -48,13 +44,7 @@ const props = defineProps({
 const { locale, t, te } = useI18n()
 const replay = props.replayContext || useReplay()
 const replayWorkspace = props.workspaceContext
-const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
-  processingJob, processingError,
-  uploadState, cancelProcessing,
-  exportJob, exportError, exportActive,
-  startProcessingJob, dismissProcessingJob,
-  startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
-  askRemoveFile, cancelRemove, confirmRemove } = replay
+const { files, loading, error, resp, activeTab, aggStats, selectionRevision, exportExcel } = replay
 /**
  * 页面级 CW（League）模式：唯一事实源 resp.leagueMode（后端显式标记，普通/混合批次为 false）。
  * Batch contract：leagueMode=true ⟺ 纯 CW 批次，resp.league envelope 始终存在
@@ -314,15 +304,29 @@ const columnCounts = computed(() => {
   return { shown: shownCols.value.length, total: playerOrder.value.length }
 })
 
+/** 客户端 xlsx 导出在进行中（exceljs 首次按需加载 + 生成工作簿） */
+const exportingExcel = ref(false)
 const exportItems = computed(() => [
-  { key: 'aggregate', label: t('workspace.export_excel_summary'), disabled: !!exportActive.value, testid: 'export-aggregate' },
-  { key: 'each', label: t('workspace.export_excel_each'), disabled: !!exportActive.value, testid: 'export-each' },
+  { key: 'aggregate', label: t('workspace.export_excel_summary'), disabled: exportingExcel.value, testid: 'export-aggregate' },
+  { key: 'each', label: t('workspace.export_excel_each'), disabled: exportingExcel.value, testid: 'export-each' },
   { key: 'png', label: t('workspace.export_png'), testid: 'export-png' },
 ])
 
-function onExport(key) {
-  if (key === 'png') downloadResultPng()
-  else startExportJob(key, teamNamesPayload())
+async function onExport(key) {
+  if (key === 'png') {
+    downloadResultPng()
+    return
+  }
+  if (exportingExcel.value) return
+  exportingExcel.value = true
+  try {
+    await exportExcel(key, teamNamesPayload())
+  } catch (e) {
+    console.error('[Replay Excel Export] failed', e)
+    error.value = t('replay.excel_export_failed')
+  } finally {
+    exportingExcel.value = false
+  }
 }
 const battleTeamNames = ref({})
 const summaryTeamNames = ref({})
@@ -526,31 +530,10 @@ function openRatingDocs() {
   navigate && navigate('rating-docs')
 }
 
-async function preview() {
-  await startProcessingJob()
-}
-
-function onFileRemoveRequest(f) { askRemoveFile(f) }
-
 </script>
 
 <template>
   <div :class="props.embedded ? 'replay-data-embedded' : 'layout-data-workspace'">
-    <FileUploader v-if="!props.embedded" :files="files" :loading="loading" :confirm-remove="!!resp"
-      @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest"
-      />
-
-    <!-- 嵌入工作台时由工作台统一显示错误 Banner，这里不重复 -->
-    <Banner v-if="error && !props.embedded" tone="danger" data-testid="replay-error"><p>{{ error }}</p></Banner>
-
-    <ReplayProcessingPanel
-      v-if="!props.embedded && (uploadState || processingJob)"
-      :upload-state="uploadState"
-      :job="processingJob"
-      :error="processingError"
-      @cancel="cancelProcessing"
-      @dismiss="dismissProcessingJob" />
-
     <template v-if="files.length || resp">
       <div>
         <p v-if="!resp" class="replay-empty-note">{{ $t('workspace.results_hint') }}</p>
@@ -633,7 +616,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
                 @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
             </Teleport>
             <MenuButton
-              :label="exportingPng ? $t('replay.png_exporting') : $t('workspace.export')"
+              :label="exportingPng ? $t('replay.png_exporting') : exportingExcel ? $t('replay.excel_exporting') : $t('workspace.export')"
               :icon="Download"
               :items="exportItems"
               :disabled="loading || exportingPng"
@@ -685,11 +668,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 
     </template>
 
-    <ReplayTaskCard v-if="!props.embedded && exportJob" :job="exportJob" :error="exportError"
-      kind="export"
-      @cancel="cancelExportJob" @download="downloadExportResult" @dismiss="dismissExportJob" />
-
-    <RemoveConfirmModal v-if="!props.embedded" :pending="pendingRemove" @confirm="confirmRemove" @cancel="cancelRemove" />
     <PlayerDetailDrawer :context="drawerOpen ? selectedPlayerContext : null" :player="drawerPlayer"
                         :league-columns="leagueData?.columns || []"
                         :scope-players="drawerScopePlayers" :has-prev="hasPrevPlayer" :has-next="hasNextPlayer"

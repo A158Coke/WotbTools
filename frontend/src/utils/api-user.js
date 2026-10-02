@@ -49,6 +49,16 @@ export async function deleteUserWotbAccount() {
   return userHandle(await apiFetch('/api/users/wotb-account', { method: 'DELETE', headers: await userJsonHeaders() }))
 }
 
+/**
+ * 用回放验证绑定账号：回放在本机解析（服务器没有 parser），只提交录像者数值 accountId，
+ * 服务端与当前绑定账号比对（不一致 409 REPLAY_RECORDER_MISMATCH）。
+ */
+export async function verifyUserWotbAccountFromReplay(recorderAccountId) {
+  return userHandle(await apiFetch('/api/users/wotb-account/verify-replay', {
+    method: 'POST', headers: await userJsonHeaders(), body: JSON.stringify({ recorderAccountId }),
+  }))
+}
+
 /** WG ASIA 登录后的幂等同步：只读当前 JWT，昵称变化时刷新资料。 */
 export async function syncUserWotbAccountFromLogin() {
   return userHandle(await apiFetch('/api/users/wotb-account/from-login', { method: 'PUT', headers: await userJsonHeaders() }))

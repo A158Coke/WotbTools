@@ -739,10 +739,12 @@
     "verified": "Verification",
     "verifiedBadge": "Verified",
     "notVerified": "Not verified",
-    "notVerifiedHint": "Upload a replay recorded by this account to verify it automatically",
+    "notVerifiedHint": "Pick a replay recorded by this account to verify it (parsed on this device, not uploaded)",
     "wgSyncFailed": "Wargaming account sync failed. Please refresh or sign in again.",
     "wgSyncRetry": "Retry sync",
-    "wgSyncing": "Syncing Wargaming account"
+    "wgSyncing": "Syncing Wargaming account",
+    "verifyWithReplay": "Verify with a replay",
+    "verifyingReplay": "Verifying…"
   },
   "replay": {
     "no_files": "Select replay files or a folder first",
@@ -752,46 +754,21 @@
     "png_export_failed": "PNG export failed",
     "png_exporting": "Exporting PNG…",
     "login_required_for_battle": "Battle Replay / AI Review require sign-in. Please re-select your replay after signing in.",
-    "export_job": {
-      "title": "Exporting battle data",
-      "queued": "Preparing export…",
-      "preparing": "Export job created · {total} files",
-      "progress": "{processed}/{total} processed",
-      "phase_processing": "Parsing replays…",
-      "phase_excel": "Building Excel…",
-      "phase_archive": "Exporting per-replay files into ZIP…",
-      "duplicates_failures": "{d} duplicate · {f} failed",
-      "valid_summary": "{v} valid · {d} duplicate · {f} failed",
-      "ready": "Excel ready",
-      "download": "Download file",
+    "analysis": {
+      "parsing": "Parsing replays on this device",
+      "progress": "{done} / {total} parsed",
+      "ready": "Analysis complete",
+      "summary": "{v} valid · {d} duplicate · {f} failed",
+      "failed": "Analysis failed",
+      "cancelled": "Cancelled",
       "cancel": "Cancel",
       "dismiss": "Dismiss",
-      "failed": "Export failed",
-      "failed_no_valid": "No valid replays to export.",
-      "failed_generic": "Export failed, please try again.",
-      "require_processing": "Please finish parsing before exporting.",
-      "cancelled": "Cancelled"
+      "engine_unavailable": "The replay engine failed to load. Refresh and try again (parsing runs on this device; files are not uploaded).",
+      "no_valid_replays": "No analyzable replays: all failed to parse or were duplicates",
+      "failed_unknown": "Unexpected error during analysis. Please try again."
     },
-    "processing_job": {
-      "uploading": "Uploading…",
-      "uploading_progress": "Uploaded {loaded} / {total}",
-      "registering": "Upload complete, preparing task…",
-      "queued": "Waiting for parse resources…",
-      "queued_total": "Processing task created, {total} replays",
-      "title": "Parsing replays",
-      "progress": "Parsed {processed} / {total}",
-      "active_sources": "Parsing {count} replays in parallel",
-      "current_file": "Current file: {file}",
-      "counts": "OK {v} · Failed {f}",
-      "finalizing": "Finalizing results…",
-      "finalizing_detail": "Dedupe / League validation / Rating / Aggregation",
-      "ready": "Parse complete",
-      "valid_summary": "Valid {v} · Duplicate {d} · Failed {f}",
-      "failed": "Parse failed",
-      "cancelled": "Cancelled",
-      "no_valid_replays": "No valid replays found.",
-      "mixed_league_standard": "Mixed upload detected: standard and training/tournament replays cannot be parsed together"
-    }
+    "excel_exporting": "Building Excel…",
+    "excel_export_failed": "Excel export failed. Please try again."
   },
   "api_codes": {
     "SENSITIVE_INFO_WARNING": "Do not enter passwords, verification codes, or other sensitive data.",
@@ -953,7 +930,12 @@
     "LEAGUE_ROSTER_INCOMPLETE": "Roster does not match results (incomplete roster)",
     "LEAGUE_NO_DECISIVE_WINNER": "Draw or unknown winner — no rating",
     "LEAGUE_INVALID_STAT_FACTS": "Results contain invalid value relationships",
-    "CONFLICTING_REPLAYS_FOR_ARENA": "Multiple replays of the same battle disagree on key facts — all copies rejected"
+    "CONFLICTING_REPLAYS_FOR_ARENA": "Multiple replays of the same battle disagree on key facts — all copies rejected",
+    "INVALID_REPLAY_FACTS": "Invalid replay settlement data. Please pick the replay again.",
+    "REPLAY_FACTS_COUNT_MISMATCH": "Replay and settlement data counts do not match. Please resubmit.",
+    "REPLAY_RECORDER_MISMATCH": "This replay was not recorded by the bound account",
+    "REPLAY_RECORDER_REQUIRED": "Could not identify the recording account from the replay",
+    "WOTB_ACCOUNT_NOT_BOUND": "Bind a game account first"
   },
   "admin": {
     "title": "User Management",
@@ -1088,9 +1070,11 @@
       "view_map": "Map Overview",
       "loading": "Loading battle playback…",
       "partial": "Some observations are missing: playing only trusted/last-known data, not guessing unobserved facts",
-      "unavailable": "Battle playback unavailable for this replay (backend did not produce a timeline / data missing)",
+      "unavailable": "Battle playback is unavailable for this replay (timeline data missing)",
       "error": "Failed to load battle playback",
-      "retry": "Retry"
+      "retry": "Retry",
+      "engine_unavailable": "The replay engine failed to load. Refresh and try again.",
+      "parse_failed": "This replay could not be parsed"
     },
     "copy": "Copy",
     "copied": "Copied",
@@ -1319,14 +1303,12 @@
     }
   },
   "workspace": {
-    "auth_checking": "Checking sign-in status…",
     "tab_results": "Parse Results",
     "results_hint": "Run 'Parse & Preview' to see the parsed results here",
     "ai_empty": "Select a replay to start AI review",
     "playback_empty": "Select a replay to view battle playback",
     "dataset_preparing": "Preparing replay data…",
-    "dataset_expired": "Replay data has expired. Re-preparing…",
-    "dataset_prepare_failed": "Could not prepare replay data. Please try again."
+    "dataset_expired": "Replay data has expired. Re-preparing…"
   },
   "league": {
     "title": "League Rating",

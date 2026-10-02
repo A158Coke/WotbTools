@@ -1,17 +1,15 @@
 <script setup>
-import { computed, defineAsyncComponent, inject, nextTick, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Sparkles } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { mapLabel } from '../utils/helpers.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
-import { useCapabilityReplay } from '../composables/useCapabilityReplay.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import ReplayPage from './ReplayPage.vue'
 import FileUploader from './FileUploader.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
-import ReplayTaskCard from './ReplayTaskCard.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
 import AppButton from './AppButton.vue'
@@ -32,46 +30,38 @@ const props = defineProps({
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const { t, locale } = useI18n()
-const { authInitState, isAdmin } = useAuth()
-/**
- * 赛果解析与 2D 回放对匿名开放；登录只是可选增强（已登录时请求附带 Bearer）。
- * 仍等 auth init 落定再展示工作台：避免已登录用户在 Keycloak 初始化完成前以匿名身份建 Job。
- * init 失败也照常放行（匿名使用），不再显示登录门禁。
- */
-const authSettled = computed(() => authInitState.value !== 'idle' && authInitState.value !== 'initializing')
+const { isAdmin } = useAuth()
 
 /**
- * Workspace 持有唯一一份 replay selection / Processing Job。
- * data / ai / playback 三个能力共享这份状态——选择一次、只建一次 Job。
+ * Workspace 持有唯一一份 replay selection 与本地分析结果（服务器没有 parser：文件不出本机，
+ * 匿名即可用，不等登录）。data / ai / playback 三个能力共享这份状态——选择一次、只分析一次。
  * 直接子组件通过显式 props 消费，不再通过 string provide/inject 隐藏依赖。
  */
 const workspace = useReplayWorkspace(props.initialCapability || 'data')
 
 const {
   files, loading, error, resp, updateFiles,
-  processingJob, processingError, uploadState,
-  startProcessingJob, cancelProcessing, dismissProcessingJob,
+  analysis, analyze, cancelAnalysis, dismissAnalysis,
 } = workspace.replay
 
 /**
  * Android 外部 replay 完整自动解析契约：
- * pending File 导入 → 替换当前 selection → 自动创建一次 Processing Job → READY 后 data tab 展示结果。
+ * pending File 导入 → 替换当前 selection → 本机分析一次 → data tab 展示结果。
  * 仅在 Android external intent 触发（isAndroidApp()); 普通 Web/FileUploader 手动选文件不经过此回调，
  * 保持现有手动 UX。绝不自动启动 AI Review。
  *
- * `pending.pendingId` 作为 processing create 的 operationId 传给后端：同一 subject + 同一 operationId
- * 幂等返回同一个 job，覆盖「server 已接受但 Native ACK 前进程被杀 → 冷启动重新导入」的 exactly-once。
- * 返回值是 Native pending 的 ACK 唯一依据：只有 server 已接受该 processing request 才返回 true。
+ * 返回值是 Native pending 的 ACK 唯一依据：本机分析完成（无论有没有有效场次）才返回 true——
+ * 重新导入同一份不会有不同结果；回放引擎装载失败（可重试）不 ACK，保留 pending。
  */
-async function importPendingFile(file, pending) {
+async function importPendingFile(file) {
   workspace.setWorkspaceTab('data')
   updateFiles([file])
-  const result = await startProcessingJob({ operationId: pending?.pendingId })
-  return result?.accepted === true
+  const result = await analyze()
+  return result?.completed === true
 }
 
 const { consumePendingWhenReady } = useNativeReplayImport({
-  isReady: () => authSettled.value,
+  isReady: () => true,
   onPendingFile: importPendingFile,
   onReadError: (reason) => {
     error.value = reason === 'native-client-upgrade-required'
@@ -112,28 +102,10 @@ function onBattleSelect(sourceId) {
   workspace.selectBattle(sourceId)
 }
 
-const playbackReplay = useCapabilityReplay(workspace.replay)
-
-watch(
-  [
-    activeCapability,
-    workspace.currentBattleId,
-    workspace.currentProcessingJobId,
-    workspace.currentTargetFile,
-    workspace.replay.selectionRevision,
-    workspace.replay.files,
-  ],
-  () => {
-    if (activeCapability.value !== 'playback') return
-    const file = workspace.currentTargetFile.value
-    if (workspace.replay.files.value.length > 1 && !file) {
-      playbackReplay.setLimitError()
-      return
-    }
-    playbackReplay.reconcile({ file, selectionRevision: workspace.replay.selectionRevision.value })
-  },
-  { immediate: true },
-)
+/** 2D 回放的目标文件：单文件直接用；多文件须先选场次（本机解析单场） */
+const playbackFile = computed(() => workspace.currentTargetFile.value)
+const playbackBlockedReason = computed(() =>
+  files.value.length > 1 && !playbackFile.value ? t('workspace.single_replay_required') : '')
 
 const VIEW_BY_CAPABILITY = Object.freeze({ data: 'replay', ai: 'ai-review', playback: 'battle-playback' })
 
@@ -153,7 +125,7 @@ async function setCapability(key) {
 }
 
 async function onPreview() {
-  await startProcessingJob()
+  await analyze()
 }
 
 function onFileRemoveRequest(f) {
@@ -166,7 +138,6 @@ function confirmRemove() {
 
 function clearSelection() {
   updateFiles([])
-  playbackReplay.reset()
 }
 
 /** 上传条是唯一的清空入口（带确认）；清空时同时复位 2D 回放引用。 */
@@ -175,13 +146,8 @@ function onFilesUpdate(next) {
   else updateFiles(next)
 }
 
-/**
- * auth init 落定后（无论是否登录）消费 Android pending replay：
- * 已登录时 operationId 幂等按 subject 分域；匿名时每次导入都是新 job。
- */
-watch(authSettled, (settled) => {
-  if (settled) nextTick(() => consumePendingWhenReady())
-}, { immediate: true })
+/** 挂载后消费 Android pending replay（本机分析，不依赖登录状态）。 */
+onMounted(() => nextTick(() => consumePendingWhenReady()))
 
 watch(() => props.initialCapability, (val) => {
   if (val) workspace.setWorkspaceTab(val)
@@ -205,13 +171,6 @@ watch(() => props.initialCapability, (val) => {
       <AppButton data-testid="ws-ai-go-playback" @click="setCapability('playback')">{{ $t('workspace.go_playback') }}</AppButton>
     </EmptyState>
 
-    <p
-      v-else-if="!authSettled"
-      class="workspace-status"
-      data-testid="ws-auth-loading"
-      aria-live="polite"
-    >{{ $t('workspace.auth_checking') }}</p>
-
     <template v-else>
       <div class="workspace-source">
         <FileUploader
@@ -225,12 +184,10 @@ watch(() => props.initialCapability, (val) => {
           @remove-request="onFileRemoveRequest"
         />
         <ReplayProcessingPanel
-          v-if="uploadState || processingJob"
-          :upload-state="uploadState"
-          :job="processingJob"
-          :error="processingError"
-          @cancel="cancelProcessing"
-          @dismiss="dismissProcessingJob"
+          :analysis="analysis"
+          :result="resp"
+          @cancel="cancelAnalysis"
+          @dismiss="dismissAnalysis"
         />
         <Banner v-if="error" tone="danger" data-testid="ws-error">
           <p>{{ error }}</p>
@@ -260,18 +217,13 @@ watch(() => props.initialCapability, (val) => {
           />
           <BattlePlaybackPanel
             v-if="playbackMounted"
-            :file="playbackReplay.targetFile.value"
-            :processing-job-id="playbackReplay.datasetRef.value?.processingJobId ?? null"
-            :source-id="playbackReplay.datasetRef.value?.sourceId ?? null"
+            :file="playbackFile"
             :active="activeCapability === 'playback'"
-            :dataset-error="playbackReplay.datasetError.value || ''"
-            @dataset-recover="playbackReplay.recover"
+            :blocked-reason="playbackBlockedReason"
           />
         </div>
       </div>
 
-      <ReplayTaskCard v-if="workspace.replay.exportJob.value" :job="workspace.replay.exportJob.value" :error="workspace.replay.exportError.value"
-        kind="export" @cancel="workspace.replay.cancelExportJob" @download="workspace.replay.downloadExportResult" @dismiss="workspace.replay.dismissExportJob" />
       <RemoveConfirmModal :pending="workspace.replay.pendingRemove.value" @confirm="confirmRemove" @cancel="workspace.replay.cancelRemove" />
     </template>
   </div>

@@ -15,11 +15,15 @@ describe('Replay capability API ownership', () => {
     expect(source).not.toMatch(/fetch\s*\(\s*['"]\/api\/(?:replay|ai)\//)
   })
 
-  it('keeps replay capability endpoints inside the API boundary', () => {
+  it('no longer fetches server-side replay artifacts (server has no parser)', () => {
     const source = read('src/api/replay-capabilities.ts')
-    expect(source).toContain("'/api/replay/map-overview'")
-    expect(source).toContain("'/api/replay/battle-playback-v2'")
-    expect(source).toContain('validateBattlePlaybackDataset')
+    expect(source).not.toContain('/api/replay/map-overview')
+    expect(source).not.toContain('/api/replay/battle-playback-v2')
+    expect(source).not.toMatch(/fetchMapOverviewArtifact|fetchBattlePlaybackDataset|ReplayDatasetRef/)
+
+    const panel = read('src/components/BattlePlaybackPanel.vue')
+    expect(panel).toContain('parseLocalPlayback')
+    expect(panel).not.toMatch(/processing-jobs|processingJobId/)
   })
 
   it('keeps AI Review on its own transport boundary and out of the dataset era', () => {
