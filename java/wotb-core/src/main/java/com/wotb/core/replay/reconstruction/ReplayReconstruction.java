@@ -1,8 +1,8 @@
 package com.wotb.core.replay.reconstruction;
 
-import com.wotb.core.parse.ReplayStreamHeader;
+import com.wotb.core.replay.reconstruction.ReplayStreamHeader;
 import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
+import com.wotb.core.replay.reconstruction.ReplayStreamDiagnostics;
 
 import java.util.List;
 

@@ -31,22 +31,6 @@ public final class ApiPaths {
     // ---- 精确端点（SecurityConfig 与 Controller 共用） ----
     public static final String HOF_UPLOAD = "/api/hof/upload";
     public static final String HEALTH = "/api/health";
-    public static final String COLUMNS = "/api/columns";
-    public static final String PREVIEW = "/api/preview";
-    public static final String EXPORT = "/api/export";
-    public static final String REPLAY_MAP_OVERVIEW = "/api/replay/map-overview";
-    /** V2 battle playback dataset（canonical timeline 稀疏投影；timeline 不可用 → 204）。 */
-    public static final String REPLAY_BATTLE_PLAYBACK_V2 = "/api/replay/battle-playback-v2";
-    public static final String REPLAY_RECONSTRUCT_BATCH = "/api/replay/reconstruct-batch";
-    public static final String REPLAY_PROCESS = "/api/replay/process";
-    public static final String REPLAY_EXPORT_JOBS = "/api/replay/export-jobs";
-    public static final String REPLAY_EXPORT_JOB_STATUS = "/api/replay/export-jobs/{jobId}";
-    public static final String REPLAY_EXPORT_JOB_DOWNLOAD = "/api/replay/export-jobs/{jobId}/download";
-    public static final String REPLAY_EXPORT_JOBS_PATTERN = "/api/replay/export-jobs/**";
-    public static final String REPLAY_PROCESSING_JOBS = "/api/replay/processing-jobs";
-    public static final String REPLAY_PROCESSING_JOB_STATUS = "/api/replay/processing-jobs/{jobId}";
-    public static final String REPLAY_PROCESSING_JOB_RESULT = "/api/replay/processing-jobs/{jobId}/result";
-    public static final String REPLAY_PROCESSING_JOBS_PATTERN = "/api/replay/processing-jobs/**";
 
     // ---- 安全匹配模式（/** 通配，仅 SecurityConfig 使用） ----
     public static final String API_PATTERN = "/api/**";

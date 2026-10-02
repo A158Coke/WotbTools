@@ -3,7 +3,6 @@ package com.wotb.web.hundred.service;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.ref.VehicleCodes;
 import com.wotb.web.hundred.dto.HundredAdminDetailDto;
@@ -17,7 +16,8 @@ import com.wotb.web.hundred.enums.HundredBattleStatus;
 import com.wotb.web.hof.dto.BulkDeleteItemResult;
 import com.wotb.web.hof.dto.BulkDeleteResultDto;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
-import com.wotb.web.replay.ReplayUploadValidator;
+import com.wotb.web.replayfile.ReplayUploadValidator;
+import com.wotb.web.replayfile.ClientReplayFacts;
 import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.user.entity.UserProfile;
@@ -130,7 +130,8 @@ public class HundredBattleSubmissionService {
                                                 final int claimedAverageDamage,
                                                 final int claimedBattleCount,
                                                 final String proofScreenshot,
-                                                final List<MultipartFile> replays) {
+                                                final List<MultipartFile> replays,
+                                                final List<String> replayFacts) {
         final UserProfile profile = findProfileForSubmission(userId);
         final Long gameId = profile.getWotbAccountId();
         if (gameId == null || gameId <= 0) {
@@ -151,6 +152,8 @@ public class HundredBattleSubmissionService {
             throw new IllegalArgumentException("HUNDRED_REPLAY_COUNT");
         }
         ReplayUploadValidator.validate(replays.toArray(new MultipartFile[0]));
+        // 服务器没有 parser：结算事实由客户端本地解析后与回放一一对应提交，回放只作证据存档
+        final List<Battle> battles = ClientReplayFacts.readAll(replayFacts, replays.size());
 
         // PENDING 唯一性 cheap check：明知已有同车 PENDING 时不再解析 5 个 replay；
         // 并发竞态仍由 DB partial unique index 兜底（见 createLocked 内 saveAndFlush 的 catch）。
@@ -164,7 +167,7 @@ public class HundredBattleSubmissionService {
         for (final MultipartFile file : replays) {
             slot++;
             final byte[] bytes = readBytes(file);
-            final Battle battle = parse(bytes);
+            final Battle battle = battles.get(slot - 1);
             if (!StringUtils.hasText(battle.arenaId)) {
                 throw new IllegalArgumentException("INVALID_REPLAY_FILE");
             }
@@ -697,15 +700,6 @@ public class HundredBattleSubmissionService {
         try {
             return file.getBytes();
         } catch (final IOException e) {
-            throw new IllegalArgumentException("INVALID_REPLAY_FILE");
-        }
-    }
-
-    /** 解析失败 → 稳定 400 INVALID_REPLAY_FILE。 */
-    private static Battle parse(final byte[] bytes) {
-        try {
-            return ReplayParser.parse(bytes);
-        } catch (final Exception e) {
             throw new IllegalArgumentException("INVALID_REPLAY_FILE");
         }
     }

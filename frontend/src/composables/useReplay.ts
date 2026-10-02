@@ -1,33 +1,21 @@
-import { onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { displayName, mapLabel, fileKey } from '../utils/helpers.js'
-import { useAuth } from './useAuth.js'
 import { useReplaySession, chooseInitialResultTab } from './useReplaySession.js'
-import { useProcessingJob } from './useProcessingJob.js'
-import { useExportJob } from './useExportJob.js'
+import { useLocalReplayAnalysis } from './useLocalReplayAnalysis.js'
 import type { ReplayCapability } from '../types/workspace.js'
 import type { Battle } from '../types/replay.js'
 
 export { chooseInitialResultTab }
 
 /**
- * Replay compatibility facade/orchestrator.
- * Shared state is owned by useReplaySession; Processing and Export lifecycles
- * are delegated to their respective composables while this facade preserves
- * the public composable contract used by existing pages and capability panels.
+ * Replay facade/orchestrator。共享状态由 useReplaySession 持有；分析（本机 WASM 解析 + 批次计算）
+ * 与导出（客户端 xlsx）委托 useLocalReplayAnalysis。服务器没有 parser，也没有 job / 轮询。
  */
 export function useReplay(initialCapability: ReplayCapability = 'data') {
-  const { locale, t, te } = useI18n()
-  // Processing Job 需要 authenticated session：composition root 只解析一次，显式传给 transport 边界。
-  const auth = useAuth()
+  const { locale, t } = useI18n()
   const session = useReplaySession(initialCapability)
-  const processingController = useProcessingJob(session, { t, te }, auth)
-  const exportController = useExportJob(session, auth)
-  const {
-    files, loading, error, resp, playerCols, aggCols, aggStats, activeTab, pendingRemove,
-    selectionRevision, processingJob, processingError, processingActive, processingJobId,
-    uploadState, processingUiState, exportJob, exportError, exportActive,
-  } = session
+  const analysis = useLocalReplayAnalysis(session, { t })
+  const { files, pendingRemove } = session
 
   function askRemoveBattle(battle: Battle, idx: number): void {
     pendingRemove.value = { type: 'battle', battle, label: `${mapLabel(battle.mapName, locale.value)} #${idx + 1}` }
@@ -48,8 +36,8 @@ export function useReplay(initialCapability: ReplayCapability = 'data') {
     const next = pending.type === 'battle'
       ? files.value.filter(f => displayName(f) !== pending.battle.sourceName)
       : files.value.filter(f => fileKey(f) !== fileKey(pending.file))
-    processingController.updateFiles(next)
-    if (next.length) processingController.startProcessingJob()
+    analysis.updateFiles(next)
+    if (next.length) analysis.analyze()
   }
 
   function confirmRemoveBattle(): void {
@@ -57,18 +45,26 @@ export function useReplay(initialCapability: ReplayCapability = 'data') {
     else pendingRemove.value = null
   }
 
-  onUnmounted(() => {
-    exportController.stopPolling()
-  })
-
   return {
     session,
-    files, loading, error, resp, playerCols, aggCols, activeTab, aggStats, pendingRemove,
-    selectionRevision,
-    updateFiles: processingController.updateFiles,
-    processingJob, processingError, processingActive, processingJobId,
-    uploadState, processingUiState,
-    exportJob, exportError, exportActive,
+    files,
+    loading: session.loading,
+    error: session.error,
+    resp: session.resp,
+    playerCols: session.playerCols,
+    aggCols: session.aggCols,
+    activeTab: session.activeTab,
+    aggStats: session.aggStats,
+    pendingRemove,
+    selectionRevision: session.selectionRevision,
+    analysis: session.analysis,
+    analysisActive: session.analysisActive,
+    updateFiles: analysis.updateFiles,
+    analyze: analysis.analyze,
+    cancelAnalysis: analysis.cancel,
+    dismissAnalysis: analysis.dismiss,
+    exportExcel: analysis.exportExcel,
+    parsedFiles: analysis.parsedFiles,
     replayBatch: session.replayBatch,
     parsedBattles: session.parsedBattles,
     singleReplay: session.singleReplay,
@@ -79,21 +75,10 @@ export function useReplay(initialCapability: ReplayCapability = 'data') {
     currentBattleIndex: session.currentBattleIndex,
     currentTargetBattleId: session.currentTargetBattleId,
     currentSourceId: session.currentSourceId,
-    currentProcessingJobId: session.currentProcessingJobId,
     currentTargetFile: session.currentTargetFile,
     setWorkspaceTab: session.setWorkspaceTab,
     selectBattle: session.selectBattle,
     setDataViewMode: session.setDataViewMode,
-    startProcessingJob: processingController.startProcessingJob,
-    cancelProcessingJob: processingController.cancelProcessingJob,
-    cancelProcessing: processingController.cancelProcessing,
-    dismissProcessingJob: processingController.dismissProcessingJob,
-    invalidateExpiredProcessingDataset: processingController.invalidateExpiredProcessingDataset,
-    requestDirectAction: processingController.requestDirectAction,
-    startExportJob: exportController.start,
-    cancelExportJob: exportController.cancel,
-    downloadExportResult: exportController.download,
-    dismissExportJob: exportController.dismiss,
     askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove, confirmRemoveBattle,
   }
 }

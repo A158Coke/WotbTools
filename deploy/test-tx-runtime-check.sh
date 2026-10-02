@@ -24,8 +24,11 @@ grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "$RUNTIME_
 grep -Fq 'https://graph.qq.com/user/get_user_info' "$RUNTIME_CHECK_LIB"
 grep -Fq 'tx-internal-api-route: PASS' "$RUNTIME_CHECK_LIB"
 grep -Fq 'tx-alloy-config: PASS' "$RUNTIME_CHECK_LIB"
-grep -Fq 'distributed-execution-plane: PASS' "$RUNTIME_CHECK_LIB"
+grep -Fq 'retired-replay-switches: PASS' "$RUNTIME_CHECK_LIB"
 ! grep -Fq 'wireguard-backend' "$RUNTIME_CHECK_LIB"
+# Replay parsing runs in the browser: the server-side replay chain (broker,
+# object store, parser worker, processing/export jobs) must not come back.
+! grep -Eiq 'rabbitmq|minio|parser-worker|processing-jobs|export-jobs|map-overview|battle-playback-v2' "$RUNTIME_CHECK_LIB"
 grep -Fq 'keycloak-qq-provider.jar' "$RUNTIME_CHECK_LIB"
 grep -Fq 'keycloak-wargaming-provider.jar' "$RUNTIME_CHECK_LIB"
 grep -Fq 'com.wotbtools.app' "$RUNTIME_CHECK_LIB"
@@ -68,7 +71,6 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/deploy" "$WORK/bin" "$WORK/runtime/config/sponsor" "$WORK/runtime/android-release"
 cp "$ROOT/deploy/tx/docker-compose.yml" "$WORK/deploy/docker-compose.yml"
 printf '{}\n' > "$WORK/runtime/config/sponsor-config.json"
-printf 'tx-local-opentofu-rabbitmq\n' > "$WORK/rabbitmq.tofu-provisioned"
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -101,7 +103,7 @@ business_api_ports='[{"host_ip":"10.20.0.1","published":8088,"target":8088}]'
 [ -z "${FAKE_BUSINESS_API_PUBLISHED_PORT:-}" ] || business_api_ports="$FAKE_BUSINESS_API_PUBLISHED_PORT"
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"rabbitmq":{"ports":[{"host_ip":"10.20.0.1","published":5672,"target":5672},{"host_ip":"127.0.0.1","published":15672,"target":15672}]},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s","AI_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s","AI_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
       "$business_ports" "$frontend_upstream" "$frontend_ai_upstream" "$business_api_ports" "$extra_env"
     ;;
   ps)
@@ -117,11 +119,6 @@ case "${1:-}" in
     printf 'healthy\n'
     ;;
   exec)
-    if [[ "$*" == *list_queues* ]]; then
-      printf 'wotb.parser\t%s\t0\nwotb.parser.result\t1\t0\nwotb.parser.dlq\t0\t0\n' \
-        "${FAKE_PARSER_CONSUMERS:-2}"
-      exit 0
-    fi
     if [[ "$*" == *business-postgres* ]] && [ "${FAKE_BUSINESS_PG_NOT_READY:-0}" = 1 ]; then
       exit 1
     fi
@@ -168,47 +165,19 @@ case "${1:-}" in
         respond '{"errorCode":"AUTH_UNAUTHORIZED"}' "${FAKE_ADMIN_ANON_STATUS:-401}"
       fi
     elif [[ "$*" == *"/api/users/profile"* ]]; then
-      respond '{"nickname":"e2e"}' "${FAKE_PROFILE_STATUS:-200}"
+      if [ "$authenticated" = 1 ]; then
+        respond '{"nickname":"e2e"}' "${FAKE_PROFILE_STATUS:-200}"
+      else
+        respond '{"errorCode":"AUTH_UNAUTHORIZED"}' "${FAKE_PROFILE_ANON_STATUS:-401}"
+      fi
     elif [[ "$*" == *"/api/hof?"* ]]; then
       if [ "${FAKE_HOF_LIST_EMPTY:-0}" = 1 ]; then
         respond '{"records":[]}' "${FAKE_HOF_STATUS:-200}"
       else
         respond '{"records":[{"id":348,"nickname":"e2e"}]}' "${FAKE_HOF_STATUS:-200}"
       fi
-    elif [[ "$*" == *"/download"* && "$write_out" == *size_download* ]]; then
-      printf '%s %s\n' "${FAKE_EXPORT_DOWNLOAD_STATUS:-200}" "${FAKE_EXPORT_BYTES:-4096}"
     elif [[ "$*" == *"/replay"* && "$write_out" == *size_download* ]]; then
       printf '%s %s\n' "${FAKE_HOF_REPLAY_STATUS:-200}" "${FAKE_HOF_REPLAY_BYTES:-2048}"
-    elif [[ "$*" == *"X-Amz-Signature"* ]]; then
-      respond '{"schemaVersion":"1"}' "${FAKE_MINIO_STATUS:-200}"
-    elif [[ "$*" == *"/api/replay/processing-jobs/"*"/result"* ]]; then
-      respond '{"battles":[{"battleId":"b1"}],"battleSourceNames":["a.wotbreplay"]}' "${FAKE_DATASET_STATUS:-200}"
-    elif [[ "$*" == *"/api/replay/processing-jobs/00000000-0000-4000-8000-000000000000"* ]]; then
-      if [ "$authenticated" = 1 ]; then
-        respond '{"errorCode":"JOB_NOT_FOUND"}' "${FAKE_CONTROL_PLANE_STATUS:-404}"
-      else
-        respond '{"errorCode":"JOB_NOT_FOUND"}' "${FAKE_CONTROL_PLANE_ANON_STATUS:-401}"
-      fi
-    elif [[ "$*" == *"/api/replay/processing-jobs/"* ]]; then
-      respond '{"jobId":"e2e-job-1","status":"'${FAKE_E2E_JOB_STATUS:-READY}'"}' "${FAKE_CONTROL_PLANE_JOB_STATUS:-200}"
-    elif [[ "$*" == *"/api/replay/processing-jobs"* && "$*" == *--form* ]]; then
-      respond '{"jobId":"e2e-job-1","status":"QUEUED","total":1}' "${FAKE_E2E_CREATE_STATUS:-202}"
-    elif [[ "$*" == *"/api/replay/export-jobs/"* ]]; then
-      respond '{"jobId":"e2e-export-1","status":"'${FAKE_EXPORT_JOB_STATUS:-READY}'"}' "${FAKE_EXPORT_STATUS_STATUS:-200}"
-    elif [[ "$*" == *"/api/replay/export-jobs"* ]]; then
-      respond '{"jobId":"e2e-export-1","status":"QUEUED"}' "${FAKE_EXPORT_CREATE_STATUS:-202}"
-    elif [[ "$*" == *"/api/replay/map-overview"* ]]; then
-      if [ "${FAKE_MAP_STATUS:-200}" = 204 ]; then
-        printf '%s\n' "${FAKE_MAP_STATUS}"
-      else
-        respond '{"mapName":"rockfield","cells":[]}' "${FAKE_MAP_STATUS:-200}"
-      fi
-    elif [[ "$*" == *"/api/replay/battle-playback-v2"* ]]; then
-      if [ "${FAKE_PLAYBACK_STATUS:-200}" = 204 ]; then
-        printf '%s\n' "${FAKE_PLAYBACK_STATUS}"
-      else
-        respond '{"battle":{"frames":[]}}' "${FAKE_PLAYBACK_STATUS:-200}"
-      fi
     elif [[ "$*" == *"https://wotbtools.com"* ]]; then
       if [[ "$write_out" == *remote_ip* ]]; then
         # Real curl prints the write-out even when the TLS handshake is rejected,
@@ -242,8 +211,6 @@ CHECK_ENV=(
   TX_BUSINESS_POSTGRES_ADMIN_USER=tx-business-admin
   TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=not-real
   TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=control_api TX_BUSINESS_DB_PASSWORD=not-real
-  TX_RABBITMQ_CONTROL_API_PASSWORD=not-real
-  YECAO_MINIO_CONTROL_API_ACCESS_KEY=not-real YECAO_MINIO_CONTROL_API_SECRET_KEY=not-real
   KEYCLOAK_ADMIN_CLIENT_SECRET=not-real
   KEYCLOAK_E2E_CLIENT_SECRET=not-real-e2e
   WOTB_HEALTH_ATTEMPTS=1 WOTB_HEALTH_INTERVAL_SEC=1
@@ -262,22 +229,14 @@ grep -Fq 'TX_RUNTIME_READY' <<< "$ready_output"
 grep -Fq 'tx-internal-api-route: PASS' <<< "$ready_output"
 grep -Fq 'tx-alloy-config: PASS' <<< "$ready_output"
 grep -Fq 'caddy-monitor: PASS' <<< "$ready_output"
-grep -Fq 'distributed-execution-plane: PASS' <<< "$ready_output"
+grep -Fq 'retired-replay-switches: PASS' <<< "$ready_output"
 grep -Fq 'tx-business-api: PASS' <<< "$ready_output"
 grep -Fq 'auth-token: PASS' <<< "$ready_output"
-grep -Fq 'tx-control-plane: PASS' <<< "$ready_output"
 grep -Fq 'anonymous-rejected: PASS' <<< "$ready_output"
 grep -Fq 'admin-authz: PASS' <<< "$ready_output"
 grep -Fq 'business-profile: PASS' <<< "$ready_output"
 grep -Fq 'business-hof: PASS' <<< "$ready_output"
 grep -Fq 'hof-replay-storage: PASS' <<< "$ready_output"
-grep -Fq 'parser-worker: PASS' <<< "$ready_output"
-grep -Fq 'processing-e2e: PASS' <<< "$ready_output"
-grep -Fq 'dataset-result: PASS' <<< "$ready_output"
-grep -Fq 'map-overview: PASS' <<< "$ready_output"
-grep -Fq 'battle-playback-v2: PASS' <<< "$ready_output"
-grep -Fq 'minio: PASS' <<< "$ready_output"
-grep -Fq 'export: PASS' <<< "$ready_output"
 # The public edge is a single trusted-TLS assertion, never an SNI-only phase.
 grep -Fq 'public-tls-web: PASS' <<< "$ready_output"
 grep -Fq 'public-tls-auth: PASS' <<< "$ready_output"
@@ -287,7 +246,6 @@ grep -Fq 'public-tls-auth: PASS' <<< "$ready_output"
 ! grep -Fq 'cutover-safety-boundary' <<< "$ready_output"
 grep -Fq 'qq-idp-admin-api: PASS' <<< "$ready_output"
 grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$ready_output"
-grep -Fq 'rabbitmq-provisioning: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-loopback: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-provisioning: PASS' <<< "$ready_output"
@@ -301,7 +259,6 @@ cp "$ROOT/deploy/tx/deploy.sh" "$RELOCATED_ROOT/deploy/deploy.sh"
 cp "$ROOT/deploy/tx/runtime-check-lib.sh" "$RELOCATED_ROOT/deploy/runtime-check-lib.sh"
 cp "$ROOT/deploy/tx/docker-compose.yml" "$RELOCATED_ROOT/deploy/docker-compose.yml"
 printf '{}\n' > "$RELOCATED_ROOT/config/sponsor-config.json"
-printf 'tx-local-opentofu-rabbitmq\n' > "$RELOCATED_ROOT/rabbitmq.tofu-provisioned"
 printf 'tx-local-opentofu-business-postgres\n' > "$RELOCATED_ROOT/business-postgres.tofu-provisioned"
 
 relocated_ready_output="$(run_check "" "$RELOCATED_ROOT/deploy/runtime-check.sh")"
@@ -345,9 +302,9 @@ run_gate_failure "business-api-extra-management-bind" 'tx-internal-api-route: FA
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"10.20.0.1","published":8088,"target":8088},{"host_ip":"127.0.0.1","published":8088,"target":8088}]'
 run_gate_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
   "" "$RELOCATED_ROOT/deploy/runtime-check.sh" env FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
-run_gate_failure "retired-execution-mode-switch" 'distributed-execution-plane: FAIL' \
+run_gate_failure "retired-execution-mode-switch" 'retired-replay-switches: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_EXECUTION_MODE=distributed
-run_gate_failure "retired-job-repository-switch" 'distributed-execution-plane: FAIL' \
+run_gate_failure "retired-job-repository-switch" 'retired-replay-switches: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_JOB_REPOSITORY=memory
 
 # Every business token must independently block readiness, so a green check cannot
@@ -355,10 +312,8 @@ run_gate_failure "retired-job-repository-switch" 'distributed-execution-plane: F
 source_root_env=(env WOTB_SOURCE_ROOT="$ROOT")
 run_gate_failure "e2e-identity-missing" 'business-e2e: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" KEYCLOAK_E2E_CLIENT_SECRET=
-run_gate_failure "control-plane-contract" 'tx-control-plane: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_CONTROL_PLANE_STATUS=500
 run_gate_failure "anonymous-not-rejected" 'anonymous-rejected: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_CONTROL_PLANE_ANON_STATUS=200
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_PROFILE_ANON_STATUS=200
 run_gate_failure "admin-boundary-open" 'admin-authz: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_ADMIN_TOKEN_STATUS=200
 run_gate_failure "profile-api-error" 'business-profile: FAIL' \
@@ -367,24 +322,6 @@ run_gate_failure "hof-list-error" 'business-hof: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_STATUS=500
 run_gate_failure "hof-replay-missing" 'hof-replay-storage: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_LIST_EMPTY=1
-run_gate_failure "parser-worker-idle" 'parser-worker: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_PARSER_CONSUMERS=0
-run_gate_failure "processing-e2e-create" 'processing-e2e: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_E2E_CREATE_STATUS=503
-run_gate_failure "processing-e2e-failed" 'processing-e2e: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_E2E_JOB_STATUS=FAILED
-run_gate_failure "dataset-result-error" 'dataset-result: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_DATASET_STATUS=503
-run_gate_failure "map-overview-missing-artifact" 'map-overview: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_MAP_STATUS=204
-run_gate_failure "battle-playback-missing-artifact" 'battle-playback-v2: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_PLAYBACK_STATUS=204
-run_gate_failure "minio-unreadable" 'minio: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_MINIO_STATUS=403
-run_gate_failure "export-job-failed" 'export: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_EXPORT_JOB_STATUS=FAILED
-run_gate_failure "export-download-error" 'export: FAIL' \
-  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_EXPORT_DOWNLOAD_STATUS=500
 # An untrusted certificate is a hard failure: TLS verification is never disabled.
 run_gate_failure "public-tls-untrusted-certificate" 'public-tls-web: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=60

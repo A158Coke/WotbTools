@@ -4,17 +4,19 @@
 > （热力 + 战局回放），**不依赖 AI 复盘**——不跑 AI 也能看图。
 > 数据来源与素材权威见 `docs/reference/maps.md`（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）。
 > 生产状态：回放 timeline 事实按 canonical 语义（AFFIRMED）；AoI hidden=UNKNOWN、禁止跨 AoI gap 插值、死亡 clamp 到权威死亡时刻。
+>
+> **2026-10-02 起数据在本机生成**（服务器没有 parser）：`frontend/src/replay-local/playback/` 把上游 Rust Core
+> `parsePlayback`（+ `parseResult`、`parseAiReview` 伤害事件）转换为同一份 `BattlePlaybackDataset` / `MapOverview`。
+> 原服务端 `battle-playback-v2` / `map-overview` 端点、`BattlePlaybackProjector`、`MapOverviewQueryService` 已删除；
+> 下文中「后端 / artifact / projector」描述的数据语义由本机转换层继承，与 Java 输出的对比数字见
+> `frontend/src/replay-local/playback/playback.golden.test.ts`。
 
 ## Battle Playback V2（canonical 稀疏投影）
 
-HTTP wire shape 的唯一事实源是 `contracts/http/openapi.yaml`；前端 transport types 与 runtime
-schema 从该文件生成。Java domain facts 通过显式 mapper 投影为 wire enum，旧 playback artifact
-只在读取边界做兼容 normalization；新写入与 live response 不接受 legacy `DecodeConfidence` 值。
-
-> 增加 V2 契约 `BattlePlaybackDataset`：`POST /api/replay/battle-playback-v2`
-> （`Content-Type: application/json`，body `{ processingJobId, sourceId }`）→
-> `MapOverviewQueryService.buildBattlePlaybackFromDataset` → `ReplayArtifactWriter.decodeBattlePlaybackV2`
-> → 前端 `BattlePlayback.vue` 的 V2 检查器（`V2VehicleInspector`）。
+`BattlePlaybackDataset` 的形状仍以 `contracts/http/openapi.yaml` 的 schema component 为唯一事实源（端点已删除，
+schema 保留）；前端 types 与 runtime 校验从该文件生成，本机转换层的输出必须通过同一校验。数据流：
+`.wotbreplay` → `parseLocalPlayback`（`replay-local/playback`）→ `BattlePlaybackPanel` → `BattlePlayback.vue`
+的 V2 检查器（`V2VehicleInspector`）。
 
 ### 前端职责边界
 
@@ -68,10 +70,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 `playbackTestHarness.js`。`BattlePlayback.test.js` 与 `BattlePlayback.integration.test.js`
 只保留跨组件/domain 的编排回归，避免把已由 focused suite 覆盖的 presentation 断言重新堆回编排器测试。
 
-- **数据源**：processing 阶段当 canonical `BattleTimeline` 可用时写出
-  `battle-playback-v2.json`（`BattlePlaybackProjector.project` 纯投影）；timeline 不可用
-  → 不写 artifact → 204（capability unavailable，非 parse failure）。
-- **前端 V2-only**：`BattlePlaybackPanel` 拉取 V2 dataset 并注入 `playbackV2`；
+- **数据源**：`parseLocalPlayback` 本机生成；时间线不可用 → `dataset = null` → UNAVAILABLE
+  （capability unavailable，不是解析失败）；解析失败 / 引擎不可用 → ERROR（可重试，不回退服务端）。
+- **前端 V2-only**：`BattlePlaybackPanel` 本机生成 V2 dataset 并注入 `playbackV2`；
   `BattlePlayback.vue` 的 marker / HP HUD / Details Panel / team HP / 事件 feed 全部直接消费
   canonical tracks（`healthDisplayAt` / `friendlyHealthAt` / `healthAt` / `lifeAt` /
   `positionAtV2` / `orientationAtV2`），不再经过 compatibility view 或回退
@@ -109,16 +110,10 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 
 ## 地图鸟瞰（Map Overview，Dataset-only）
 
-战局回放面板读取同一 Processing Dataset 的 `map-overview.json` derived artifact：
-`POST /api/replay/map-overview`（`Content-Type: application/json`，body `{ processingJobId, sourceId }`）
-→ `MapOverviewQueryService.buildOverviewFromDataset` → `ReplayArtifactWriter.decodeMapOverview` →
-前端 `MapOverview.vue` 纯 SVG 渲染热力辅助视图。后端 overview 中的 `routes` 聚合字段及其
-采样合同继续保留，供后续能力与兼容消费者使用；本轮只移除用户可见的路线视图、筛选和图例。
-- **不重新上传 replay、不单独 full-process**：AI Review / Battle Playback / Export 共用同一 Processing Dataset。
-- 地图不可构建（未知地图/无语义网格/无名册/无观测/视角未解析）→ `mapOverview = null` → 204。
-- `JOB_NOT_FOUND`（Processing Job / Dataset identity 已被 TTL 清理）→ 触发前端 Dataset recovery（exactly-once + generation-owned + authoritative invalidation）。
-- map-overview artifact 缺失 = capability unavailable → 204（不是 `JOB_NOT_FOUND`，不触发 recovery）；artifact 读/解码/存储故障 → `DATASET_UNAVAILABLE`（503，不可恢复，不重新 full-process）。`SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` → 稳定错误码，经 i18n 本地化，不裸展示。
-- 旧的 multipart `POST /api/replay/map-overview`（`MultipartFile[]`）已废弃为 legacy 410 compatibility shim（`ReplayLegacyEndpoints`），不是业务入口。
+战局回放面板与 2D dataset 在同一次本机解析中生成 `MapOverview`（`toMapOverview`，地图档案取自
+`common/map-semantics`）→ 前端 `MapOverview.vue` 纯 SVG 渲染热力辅助视图。
+- 地图不可构建（未知地图 / 无语义网格 / 无观测）→ `overview = null` → 「无地图视图」。
+- `routes` 聚合字段随服务端一起删除（没有组件消费）。
 
 ### 数据链路
 

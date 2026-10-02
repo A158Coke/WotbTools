@@ -54,7 +54,7 @@ def covers_production_path(production_path, owner_pattern):
     return (owner_pattern.endswith("/**")
             and production_path.startswith(owner_pattern[:-2]))
 assert affected("frontend/src/styles/base.css") == {"frontend"}
-assert affected("infra/tofu/minio/main.tf") == {"minio"}
+assert affected("infra/tofu/postgres-business/main.tf") == {"business_postgres"}
 assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgres"}
 assert affected("docs/README.md") == set()
 assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend", "android"}
@@ -67,7 +67,7 @@ assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
 assert affected("deploy/agent/source.json") == {"frontend"}
 assert affected("scripts/fetch-agent-wasm.sh") == {"frontend"}
 assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment"}
-assert affected("deploy/check-production-freshness.sh") == {"deployment", "frontend", "komodo_controller"}
+assert affected("deploy/check-production-freshness.sh") == {"deployment", "frontend"}
 for owner in jobs["changes"]["outputs"]:
     caller = jobs[owner]
     assert caller["if"] == f"needs.changes.outputs.{owner} == 'true'", owner
@@ -91,7 +91,7 @@ for workflow in [ci] + [load(path) for path in workflow_dir.glob("ci-*.yml")]:
         assert not any(line.lstrip().startswith(("ssh ", "scp ", "docker login", "docker push"))
                        for line in run.splitlines()), "PR CI must not run production mutation commands"
 
-for owner in ("keycloak", "rabbitmq", "business-postgres", "keycloak-postgres", "minio", "observability", "komodo-controller"):
+for owner in ("keycloak", "business-postgres", "keycloak-postgres", "observability"):
     tofu = load(workflow_dir / f"ci-{owner}.yml")["jobs"]["tofu_plans"]
     tofu_text = json.dumps(tofu, ensure_ascii=False)
     assert "tofu fmt -check -recursive" in tofu_text
@@ -110,26 +110,21 @@ for script in ("business-postgres-backup.sh", "keycloak-postgres-backup.sh", "to
 # Production owner routing and freshness inputs are paired contracts. A workflow
 # may only proceed when its triggering SHA is still current for every owned input.
 owners = (
-    "business-api", "frontend", "keycloak", "parser-worker", "minio", "caddy",
-    "rabbitmq", "business-postgres", "keycloak-postgres", "observability", "alloy-tx",
-    "komodo-controller",
+    "business-api", "frontend", "keycloak", "caddy",
+    "business-postgres", "keycloak-postgres", "observability", "alloy-tx",
 )
 pr_owner_for_production = {
     "business-api": "business_api",
     "frontend": "frontend",
     "keycloak": "keycloak",
-    "parser-worker": "parser_worker",
-    "minio": "minio",
     "caddy": "caddy",
-    "rabbitmq": "rabbitmq",
     "business-postgres": "business_postgres",
     "keycloak-postgres": "keycloak_postgres",
     "observability": "observability",
     "alloy-tx": "alloy_tx",
-    "komodo-controller": "komodo_controller",
 }
 assert set(pr_owner_for_production) == set(owners)
-image_owners = {"business-api", "frontend", "keycloak", "parser-worker", "minio"}
+image_owners = {"business-api", "frontend", "keycloak"}
 queue = {"group": "production-maintenance", "cancel-in-progress": "false", "queue": "max"}
 
 # Business API and Frontend both mirror the same GitHub repository to Gitee and
@@ -192,6 +187,13 @@ for invariant in (
 ):
     assert invariant in business_script, invariant
 
+# AI Service 的 CI 必须真正跑 wotb-ai 测试（不能退化成只 build image / -DskipTests）
+ai_service_ci = load(workflow_dir / "ci-ai-service.yml")
+ai_runs = [step.get("run", "") for job in ai_service_ci["jobs"].values() for step in job.get("steps", [])]
+assert any("-pl wotb-ai -am test" in run for run in ai_runs), "ci-ai-service.yml must run wotb-ai tests"
+assert not any("-pl wotb-ai" in run and ("skipTests" in run or "maven.test.skip" in run) for run in ai_runs), \
+    "ci-ai-service.yml must not skip wotb-ai tests"
+
 legacy_tcr_publisher = (root / "deploy/tx/publish-loaded-image-to-tcr.sh").read_text(encoding="utf-8")
 assert "<backend|frontend|keycloak>" not in legacy_tcr_publisher
 assert "backend|frontend|keycloak)" not in legacy_tcr_publisher
@@ -219,6 +221,17 @@ for owner in owners:
         assert workflow["jobs"]["deploy"]["concurrency"] == queue, owner
     else:
         assert workflow["concurrency"] == queue, owner
+
+# Replay parsing runs in the browser: the server-side parser plane, broker, and object store
+# (and their CI/production owners) are retired and must not come back.
+for retired in (
+    "parser-worker.yml", "ci-parser-worker.yml", "rabbitmq.yml", "ci-rabbitmq.yml",
+    "minio.yml", "ci-minio.yml",
+):
+    assert not (workflow_dir / retired).exists(), retired
+for retired_owner in ("parser_worker", "rabbitmq", "minio"):
+    assert retired_owner not in filters, retired_owner
+    assert retired_owner not in jobs, retired_owner
 
 freshness = (root / "deploy/check-production-freshness.sh").read_text(encoding="utf-8")
 for invariant in (

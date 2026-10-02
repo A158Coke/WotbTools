@@ -13,8 +13,9 @@
  *  4. `projectHoF(result)`          → HoF 提交行（Result 的消费方投影，纯函数）
  * 预解析 JSON 通道（`*FromJson`）用于部署面静态托管的同形状文件。
  *
- * AI 事件数据（AiReviewFacet）保持 Agent 服务端/CLI 能力（DTO 冻结 v1），
- * 不在 WASM 浏览器面——本模块不再建模。
+ * AI 事件数据（AiReviewFacet v1，`parseAiReview`）：本模块只建模与做形状校验；
+ * 语义投影在 `replay-local/canonical`（WotbTools canonical facts）——Agent DTO 不是
+ * WotbTools 的领域契约。
  *
  * 语义原则：unknown ≠ 0 ≠ false —— 观测缺失一律 undefined/null；
  * 数值零只在该字段语义就是零时出现。本模块不修改上游形状，只做形状校验与装载。
@@ -55,6 +56,19 @@ export interface AgentResultPlayer {
   destruction_assistance?: number
   gun_marks?: number
   killer_id?: number
+  /** v0.3.2：#301 f23 经验（crate `base_xp` 在 11.19 语料为 0，消费方只读本字段）；结算缺该字段时缺省 */
+  xp?: number
+  /** v0.3.2：#301 f106 银币（同上，取代 `credits_earned`） */
+  credits?: number
+  /** v0.3.2：本战斗者的结算 result/entity ID（`killer_id` 引用此命名空间） */
+  result_id?: number
+  /** v0.3.2：击杀者账号（`killer_id` 经同场 `result_id` 联表；联不上缺省） */
+  killer_account_id?: number
+  damage_received?: number
+  victory_points_earned?: number | null
+  victory_points_seized?: number | null
+  hitpoints_left?: number | null
+  rank?: number | null
   [key: string]: unknown
 }
 
@@ -64,9 +78,23 @@ export interface AgentBattleResult {
   timestamp: number
   datetime: string
   room_type: string
+  /** meta.json arenaBonusType（名人堂准入 / 联赛模式判定） */
+  arena_id?: string | null
+  arena_bonus_type?: number | null
+  finish_reason?: number | null
+  /** 结算层整秒时长（root f5，权威）；`battle_duration_secs` 是 meta 口径 */
+  result_duration_secs?: number | null
+  client_version?: string | null
   map_id: number
   map_name: string
+  /** v0.3.2：meta.json 原始地图代号（底图 / 语义 / i18n 键）；`map_name` 是枚举名 */
+  map_key?: string | null
+  /** v0.3.8：结算花名册与战绩账号集合完全一致（未读到结算 = 缺省） */
+  roster_complete?: boolean | null
+  /** v0.3.8：meta.json 原始 playerVehicleName（录像者车辆代号） */
+  author_vehicle_codename?: string | null
   battle_duration_secs: number
+  /** 1 / 2；0 = 无胜方（v0.3.3 起平局不再报成 1） */
   winner_team: number
   author_account_id: number
   author_nickname: string
@@ -115,6 +143,36 @@ export interface AgentVehicleTrack {
   turret_index: number | null
   gun_index: number | null
   coverage: number[]
+  /**
+   * Type5 战斗装载描述符（6 × 14 字节：`[wire, state, ...12 payload]`；前 3 = consumable、
+   * 后 3 = provision）。无 0A06/0B09 framing 的车辆缺省。
+   */
+  loadout_items?: number[][]
+  /** Type5 装备 9 字节（equipment id 原值，位置序）；与 loadout_items 同缺省 */
+  equipment?: number[]
+}
+
+/** Type32 消耗品生命周期（state：1=INITIALIZED 2=ACTIVATED 3=ACTIVE_ENDED_OR_COOLDOWN 255=TEARDOWN） */
+export interface AgentConsumableEvent {
+  clock: number
+  eid: number
+  wire_code: number
+  state: number
+  body_clock: number
+  param: number
+}
+
+/** method16 模块/乘员状态（recorder-visible telemetry；仅作者车辆） */
+export interface AgentModuleCrewState {
+  clock: number
+  vehicle_eid: number
+  state_code: number
+  component_code: number
+  /** snake_case 组件名（left_track / engine / commander …）；未知为 "unknown" */
+  component: string
+  /** snake_case 状态（damaged_degraded / critical_disabled / auto_repaired_to_damaged / full_repaired_clear …） */
+  state: string
+  related_eid: number
 }
 
 export interface AgentPlaybackShot {
@@ -151,6 +209,11 @@ export interface AgentAoiPresence {
   eid: number
   t_in: number
   t_out?: number
+  /**
+   * 开段 Type5 物化快照的原始 HP u16（上游 v0.3.5；仅战斗车辆）。每次重入各自携带——
+   * 隐藏期间的掉血在重入时兑现。原样未分类：0 / ≥0xFF00 哨兵由消费方按 HpRawState 口径处理。
+   */
+  hp_raw?: number
 }
 
 /** Supremacy 基地状态迁移（上游 v0.2.0 wrapper12/root11 PROVEN；sparse 重建产物） */
@@ -219,6 +282,123 @@ export interface AgentPlaybackFacet {
   assault_objective_present?: boolean
   /** 单基地占领进度时间线（skip-when-empty：非单基地场次缺省） */
   assault_bases?: AgentAssaultBaseTransition[]
+  /** Type32 消耗品生命周期（全员，AoI 内可见部分） */
+  consumables?: AgentConsumableEvent[]
+  /** method16 模块/乘员状态（recorder-only） */
+  module_crew_states?: AgentModuleCrewState[]
+}
+
+// ---------- AI 事件数据：AiReviewFacet（v1；上游 v0.3.5 起含原始 HP 与 method8 证据） ----------
+
+export interface AgentAiRosterEntry {
+  eid: number
+  account_id?: number
+  nickname?: string
+  team?: number
+  tank_id?: number
+  tank_name: string
+  is_author: boolean
+}
+
+export interface AgentArenaPeriod {
+  clock: number
+  /** updateArena PERIOD 原始值（1=WAITING 2=PREBATTLE 3=BATTLE 4=AFTERBATTLE） */
+  period: number
+  remaining_s?: number
+  duration_s?: number
+  [key: string]: unknown
+}
+
+/** 归一化事件（`type` 内部标签；t = 回放原始时钟秒） */
+export type AgentAiEvent =
+  | { type: 'spawn'; t: number; eid: number; max_hp: number }
+  | {
+    type: 'shot'; t: number; shooter_eid: number; target_eid?: number; hit: boolean; ricochet: boolean
+    game_hit_result: number; damage: number; is_kill: boolean; is_author: boolean; shell_kind?: string
+  }
+  /** method1：hp = 钳 0 的显示值；hp_raw = 原始 u16（v0.3.5，终态哨兵族原样） */
+  | { type: 'damage'; t: number; victim_eid: number; hp: number; hp_raw: number; source_eid: number; cause: number }
+  | { type: 'kill'; t: number; killer_eid: number; victim_eid: number; cause: number; assister_eid?: number }
+  | { type: 'visibility'; t_in: number; eid: number; t_out?: number; hp_raw?: number }
+  /** prop3（type=7 sub=3）血量属性广播原始值（v0.3.6；录像者自身血量常只走这一路） */
+  | { type: 'health'; t: number; eid: number; hp_raw: number }
+  /** method8 原始通知（v0.3.5；全变体不分类，载荷不足的字段缺省） */
+  | {
+    type: 'hit_notice'; t: number; eid: number; payload_len: number
+    shooter_eid?: number; victim_eid?: number; result?: number; secondary?: number
+  }
+  | { type: 'counter'; t: number; code: number; count: number; value: number }
+  | { type: 'damage_tick'; t: number; eid: number; cumulative: number }
+
+export interface AgentAiBattleHeader {
+  start_time: number
+  map_id: number
+  map_name: string
+  room_type: string
+  winner: number
+  duration_secs: number | null
+  meta_duration_secs?: number
+  periods: AgentArenaPeriod[]
+}
+
+/** 原始世界位姿观测（type=10 未滤波，列式等长；v0.3.7） */
+export interface AgentRawPoseTrack {
+  eid: number
+  t: number[]
+  x: number[]
+  y: number[]
+  z: number[]
+  /** 车体偏航 rad（原始域） */
+  yaw: number[]
+}
+
+/** 原始 prop2 炮塔广播（u16：高 10 位相对偏航 coarse、低 6 位俯仰比例；v0.3.7） */
+export interface AgentRawTurretTrack {
+  eid: number
+  t: number[]
+  raw: number[]
+}
+
+export interface AgentAiReviewFacet {
+  version: 1
+  battle: AgentAiBattleHeader
+  rosters: AgentAiRosterEntry[]
+  events: AgentAiEvent[]
+  settlements: unknown[]
+  poses: AgentRawPoseTrack[]
+  turrets: AgentRawTurretTrack[]
+}
+
+/** AiReviewFacet 契约版本（上游 DTO 冻结 v1；同版本只加字段/事件类型） */
+export const AI_REVIEW_CONTRACT_VERSION = 1
+
+/**
+ * AiReviewFacet 形状校验（trust boundary）。除结构外还锁定 canonical 语义**必需**的
+ * v0.3.5 证据：`damage.hp_raw`（区分 HP=0 与终态哨兵）。缺失即拒绝——旧产物不得被
+ * 静默投影成「哨兵 = 血量 0」的错误事实（fail closed，而不是降级猜测）。
+ */
+export function validateAgentAiReview(value: unknown): AgentAiReviewFacet {
+  const doc = assertObject(value, 'ai_review')
+  assertFacetVersion(doc.version, 'ai_review.version', AI_REVIEW_CONTRACT_VERSION)
+  const battle = assertObject(doc.battle, 'ai_review.battle')
+  assertArray(battle.periods, 'ai_review.battle.periods')
+  for (const key of ['rosters', 'events', 'settlements']) assertArray(doc[key], `ai_review.${key}`)
+  // 原始位姿是位置证据的唯一来源（回放网格是渲染滤波输出，不是观测）
+  for (const key of ['poses', 'turrets']) {
+    if (!Array.isArray(doc[key])) throw new Error(`agent facets: ai_review.${key} 缺失（canonical 投影需要上游 ≥ v0.3.7）`)
+  }
+  for (const e of doc.events as unknown[]) {
+    if (!isObject(e) || typeof e.type !== 'string') throw new Error('agent facets: ai_review.events[] 必须是带 type 的对象')
+    if (e.type === 'damage' && typeof e.hp_raw !== 'number') {
+      throw new Error('agent facets: ai_review damage.hp_raw 缺失（canonical 投影需要上游 ≥ v0.3.7）')
+    }
+  }
+  // prop3 血量广播是录像者血量帧的唯一来源：整场没有任何 health 事件 = 旧产物，拒绝而不是缺帧投影
+  const evts = doc.events as Array<Record<string, unknown>>
+  if (evts.some((e) => e.type === 'damage') && !evts.some((e) => e.type === 'health')) {
+    throw new Error('agent facets: ai_review 缺 health（prop3）事件（canonical 投影需要上游 ≥ v0.3.7）')
+  }
+  return value as unknown as AgentAiReviewFacet
 }
 
 // ---------- 射击复现通道（parseShotReplays；上游 shots 数组同构透传） ----------
@@ -403,6 +583,21 @@ async function wasmFn<K extends keyof AgentWasmModule>(name: K): Promise<Exclude
   return fn as Exclude<AgentWasmModule[K], undefined>
 }
 
+/** 已装载 WASM 产物的来源（`/wasm/fingerprint.json`，与产物同包发布；不可读 → null） */
+export interface AgentWasmFingerprint { tag: string; upstream_commit: string }
+
+let fingerprintPromise: Promise<AgentWasmFingerprint | null> | null = null
+
+export function loadAgentWasmFingerprint(): Promise<AgentWasmFingerprint | null> {
+  if (!fingerprintPromise) {
+    fingerprintPromise = fetch('/wasm/fingerprint.json')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => (j && typeof j.tag === 'string' && typeof j.upstream_commit === 'string' ? j as AgentWasmFingerprint : null))
+      .catch(() => null)
+  }
+  return fingerprintPromise
+}
+
 // ---------- 本地通道：bytes → WASM → 校验过的能力数据 ----------
 
 /** 结果能力（毫秒级）：.wotbreplay 字节 → BattleResult。文件不出本机。 */
@@ -427,22 +622,10 @@ export async function parseAgentPlaybackFromBytes(
   return validateAgentPlayback(JSON.parse(parse(bytes, tankNames)) as unknown)
 }
 
-/**
- * AI 事件数据（第 4 入口；上游 v0.3.1）：.wotbreplay 字节 → AiReviewFacet。
- * DTO 冻结 v1；仅做最小形状校验（version + 四个顶层键 + 事件为数组），
- * 字段级语义由上游契约持有。注意：上报为 JSON 字符串而非 DTO 类型——
- * 消费方按需投影，不在此层教条化形状。
- */
-export async function parseAgentAiReviewFromBytes(bytes: Uint8Array): Promise<unknown> {
+/** AI 事件数据（第 4 入口）：.wotbreplay 字节 → 校验过的 AiReviewFacet。文件不出本机。 */
+export async function parseAgentAiReviewFromBytes(bytes: Uint8Array): Promise<AgentAiReviewFacet> {
   const parse = await wasmFn('parseAiReview')
-  const doc = JSON.parse(parse(bytes)) as Record<string, unknown>
-  if (!isObject(doc)) throw new Error('agent ai review: 顶层必须是对象')
-  if (doc.version !== 1) throw new Error(`agent ai review: 契约版本应为 1，实为 ${String(doc.version)}`)
-  for (const key of ['battle', 'rosters', 'events', 'settlements']) {
-    if (doc[key] === undefined) throw new Error(`agent ai review: 缺键 ${key}`)
-  }
-  for (const key of ['rosters', 'events', 'settlements']) assertArray(doc[key], `ai review.${key}`)
-  return doc
+  return validateAgentAiReview(JSON.parse(parse(bytes)) as unknown)
 }
 
 function assertShotArray(v: unknown): AgentShotReplay[] {

@@ -12,9 +12,9 @@ import yaml
 
 root = Path(sys.argv[1])
 owners = {
-    "keycloak": "keycloak", "rabbitmq": "rabbitmq",
+    "keycloak": "keycloak",
     "business-postgres": "business-postgres", "keycloak-postgres": "keycloak-postgres",
-    "minio": "minio", "observability": "grafana", "komodo-controller": "komodo",
+    "observability": "grafana",
 }
 jobs = {
     owner: yaml.load((root / f".github/workflows/ci-{owner}.yml").read_text(encoding="utf-8"),
@@ -26,10 +26,9 @@ assert all("${{ secrets." not in json.dumps(job) for job in jobs.values())
 for owner, job in jobs.items():
     validation = next(step for step in job["steps"] if step.get("name") == "Format, initialize without production state, and validate")
     assert validation["env"]["ROOT_DIR"] == {
-        "keycloak": "infra/tofu/keycloak", "rabbitmq": "infra/tofu/rabbitmq",
+        "keycloak": "infra/tofu/keycloak",
         "business-postgres": "infra/tofu/postgres-business", "keycloak-postgres": "infra/tofu/postgres-keycloak",
-        "minio": "infra/tofu/minio", "observability": "infra/tofu/grafana",
-        "komodo-controller": "infra/tofu/komodo",
+        "observability": "infra/tofu/grafana",
     }[owner]
     assert "tofu fmt -check -recursive" in validation["run"]
     assert "tofu init -backend=false -input=false" in validation["run"]
@@ -37,7 +36,7 @@ for owner, job in jobs.items():
 assert all(not re.search(r"(?i)\btofu(?:\s+-[^\s]+)*\s+(?:plan|apply)\b", json.dumps(job)) for job in jobs.values())
 assert all("init -reconfigure" not in json.dumps(job) for job in jobs.values())
 
-for owner in ("rabbitmq", "minio", "business-postgres"):
+for owner in ("business-postgres",):
     fixture = next(step for step in jobs[owner]["steps"] if step.get("name") == "Validate local-root safety policy fixtures")
     assert "test-validate-plan.sh" in fixture["run"]
 assert "bash deploy/test-business-postgres-runtime.sh" in fixture["run"]
@@ -59,14 +58,12 @@ expected = {
     "postgres-keycloak": ("infra/tofu/postgres-keycloak", "/opt/wotb-tx/postgres-keycloak-tofu-state", True),
     "keycloak": ("infra/tofu/keycloak", "/opt/wotb-tx/keycloak-tofu-state", True),
     "grafana": ("infra/tofu/grafana", "/opt/wotb/grafana-tofu-state", True),
-    "komodo": ("infra/tofu/komodo", "/opt/komodo/tofu-state", True),
 }
 workflow_roots = {
     "postgres-business": ".github/workflows/business-postgres.yml",
     "postgres-keycloak": ".github/workflows/keycloak-postgres.yml",
     "keycloak": ".github/workflows/keycloak.yml",
     "grafana": ".github/workflows/observability.yml",
-    "komodo": ".github/workflows/komodo-controller.yml",
 }
 for name, (relative, state_dir, requires_marker) in expected.items():
     state_path = f"{state_dir}/terraform.tfstate"
@@ -76,25 +73,16 @@ for name, (relative, state_dir, requires_marker) in expected.items():
     assert "tofu_state" not in root_text, name
     assert 'backend "pg"' not in root_text and 'backend "s3"' not in root_text, name
     workflow_text = (root / workflow_roots[name]).read_text(encoding="utf-8")
-    safety_text = workflow_text
-    if name == "komodo":
-        safety_text += "\n" + (root / "deploy/komodo/reconcile.sh").read_text(encoding="utf-8")
-    assert state_dir in safety_text, name
-    assert "local opentofu state is not bootstrapped" in safety_text.lower(), name
-    assert "! -L \"$state_file\"" in safety_text, name
-    assert "-f \"$state_file\"" in safety_text, name
+    assert state_dir in workflow_text, name
+    assert "local opentofu state is not bootstrapped" in workflow_text.lower(), name
+    assert "! -L \"$state_file\"" in workflow_text, name
+    assert "-f \"$state_file\"" in workflow_text, name
     assert "$SOURCE_SHA" not in state_dir
     if requires_marker:
-        assert "bootstrap-complete" in safety_text, name
-        assert "local-tofu-state-bootstrap-v1" in safety_text, name
-    if name == "komodo":
-        assert "TENCENTCLOUD_SECRET_ID" in workflow_text
-        assert "TENCENTCLOUD_SECRET_KEY" in workflow_text
-        assert "AWS_ACCESS_KEY_ID" not in workflow_text
-        assert "AWS_SECRET_ACCESS_KEY" not in workflow_text
-    else:
-        for credential in ("TENCENTCLOUD_SECRET_ID", "TENCENTCLOUD_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
-            assert credential not in workflow_text, (name, credential)
+        assert "bootstrap-complete" in workflow_text, name
+        assert "local-tofu-state-bootstrap-v1" in workflow_text, name
+    for credential in ("TENCENTCLOUD_SECRET_ID", "TENCENTCLOUD_SECRET_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+        assert credential not in workflow_text, (name, credential)
 
 for retired in (
     "deploy/tofu-cos-to-local.sh",
@@ -102,6 +90,13 @@ for retired in (
     "infra/tofu/environments/prod/cos.tf",
     "infra/tofu/environments/prod/lighthouse.tf",
     "scripts/ci/test-tofu-prod-plan-guard.sh",
+    # Replay parsing runs in the browser: the broker and object-store roots are retired.
+    "infra/tofu/rabbitmq",
+    "infra/tofu/minio",
+    "deploy/tx/rabbitmq.tofurc",
+    "deploy/minio",
+    ".github/workflows/ci-rabbitmq.yml",
+    ".github/workflows/ci-minio.yml",
 ):
     assert not (root / retired).exists(), retired
 

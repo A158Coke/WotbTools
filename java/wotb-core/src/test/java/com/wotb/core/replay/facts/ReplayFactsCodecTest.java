@@ -3,10 +3,7 @@ package com.wotb.core.replay.facts;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.Source;
-import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.replay.processing.ReplayProcessingOptions;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.testsupport.FrozenReplayFacts;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ShotResultEvent;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
@@ -18,8 +15,6 @@ import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -31,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * {@link ReplayFactsCodec} 保留的客户端投影解码契约（{@code Battle} + {@code ReplayReconstruction}）。
  *
- * <p>stored facts 的写入侧（{@code AiReplayFacts} / {@code toBytes} / {@code fromBytes}）已随
+ * <p>输入来自冻结的真实 fixture 投影（{@code common/fixtures/replay-facts}）。stored facts 的写入侧（{@code AiReplayFacts} / {@code toBytes} / {@code fromBytes}）已随
  * ai-facts artifact 移除，因此这里锁定 standalone ai-service 仍然消费的解码方向：真实 fixture 的
  * 解析结果按客户端投影 wire 形态（{@code ReplayEvent} 带 {@code {"type": <简单类名>}} 多态标记）
  * 重新编码，再经保留的 {@code battleFromJson} / {@code reconstructionFromJson} 解回。</p>
@@ -51,22 +46,14 @@ class ReplayFactsCodecTest {
                     PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY))
             .build();
 
-    private static ReplayProcessingResult result;
+    private static FrozenReplayFacts.Facts result;
 
     @BeforeAll
-    static void processFixtureOnce() throws Exception {
-        final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays");
-        final List<Path> files;
-        try (var stream = Files.list(dir)) {
-            files = stream.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay")).toList();
-        }
-        assertFalse(files.isEmpty(), "common/fixtures/replays 必须存在（CI 无条件执行）");
-        final Path fixture = files.getFirst();
-        result = new DefaultReplayProcessingFacade().process(
-                new Source(fixture.getFileName().toString(), Files.readAllBytes(fixture)),
-                ReplayProcessingOptions.full());
+    static void loadFixtureOnce() {
+        // 冻结的真实 fixture 投影（服务器没有 parser）；本测试把它重新编码再解回，锁定 wire 契约。
+        result = FrozenReplayFacts.load(FrozenReplayFacts.RANDOM_BATTLE);
         assertNotNull(result.battle());
-        assertNotNull(result.reconstruction(), "full() 必须产生 reconstruction");
+        assertNotNull(result.reconstruction());
     }
 
     @Test

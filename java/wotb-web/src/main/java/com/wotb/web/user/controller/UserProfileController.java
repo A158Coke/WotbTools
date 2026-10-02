@@ -3,12 +3,14 @@ package com.wotb.web.user.controller;
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.user.dto.UpdateWotbAccountRequest;
 import com.wotb.web.user.dto.UserProfileDto;
+import com.wotb.web.user.dto.VerifyWotbAccountFromReplayRequest;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -58,6 +60,15 @@ public class UserProfileController {
     @PutMapping("/wotb-account/from-login")
     public UserProfileDto syncFromLogin() {
         return service.syncFromLogin(JwtUtil.requireUserId());
+    }
+
+    /**
+     * 个人主页「用回放验证」：客户端本地解析回放，只提交录像者 accountId；与当前绑定账号相等才标记已验证。
+     * 身份只取自 JWT。
+     */
+    @PostMapping("/wotb-account/verify-replay")
+    public UserProfileDto verifyWotbAccountFromReplay(@RequestBody final VerifyWotbAccountFromReplayRequest body) {
+        return service.verifyWotbAccountFromReplay(JwtUtil.requireUserId(), body.recorderAccountId());
     }
 
     @DeleteMapping("/wotb-account")

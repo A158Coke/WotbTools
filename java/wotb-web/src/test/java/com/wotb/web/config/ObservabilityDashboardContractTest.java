@@ -184,20 +184,28 @@ class ObservabilityDashboardContractTest {
     @Test
     void usageDashboardOwnsUsageAndAndroidMetricsOnly() throws Exception {
         final String usage = readDashboard("wotbtools-usage.json").toString();
-        assertFalse(usage.contains("wotb_replay_processing_job_result_total"));
         assertFalse(usage.contains("wotb_ai_review_results_total"));
         assertFalse(usage.contains("回放 / AI 结果趋势"));
         for (final String metric : Set.of(
-                "wotb_replay_processing_job_files_total",
-                "wotb_replay_processing_job_total",
                 "wotb_ai_review_requests_total",
                 "android_apk_download")) {
             assertTrue(usage.contains(metric), "Usage dashboard must retain " + metric);
         }
 
         final String aiReview = readDashboard("wotbtools-ai-review.json").toString();
-        assertTrue(aiReview.contains("wotb_replay_processing_job_result_total"));
         assertTrue(aiReview.contains("wotb_ai_review_results_total"));
+    }
+
+    /**
+     * 服务器没有 parser：回放处理 Job（wotb-replay-processing / coordinator）已删除，
+     * 其 {@code wotb_replay_processing_*} 指标不再有任何后端声明，看板不得继续引用。
+     */
+    @Test
+    void dashboardsDoNotReferenceRemovedReplayProcessingMetrics() throws Exception {
+        for (final String file : REQUIRED_DASHBOARD_FILES) {
+            assertFalse(readDashboard(file).toString().contains("wotb_replay_processing_"),
+                    "dashboard still references removed replay processing metrics: " + file);
+        }
     }
 
     @Test
@@ -264,7 +272,8 @@ class ObservabilityDashboardContractTest {
         assertTrue(serialized.contains("api_request_failed"));
         assertTrue(serialized.contains("ai_review_failed"));
         assertTrue(serialized.contains("team_review_validation_conflict"));
-        assertTrue(serialized.contains("processing_job_failed"));
+        // 服务器没有 parser：processing-job 生命周期事件随服务端解析一起删除，看板不得再查询它们
+        assertFalse(serialized.contains("processing_job_"), "retired processing-job events must not be queried");
         for (final String event : Set.of(
                 "ai_review_started", "ai_upstream_call_started", "ai_upstream_call_completed",
                 "ai_upstream_call_failed", "team_review_parse_result", "team_review_validation",
@@ -272,9 +281,7 @@ class ObservabilityDashboardContractTest {
                 "ai_validation_retry", "ai_review_contract_failed", "ai_review_recovery_triggered",
                 "ai_review_recovery_failed", "team_review_completed", "ai_review_failed",
                 "ai_review_finished", "ai_review_cancelled", "api_request_failed",
-                "api_request_rejected", "processing_job_created", "processing_job_started",
-                "processing_job_parse_done", "processing_job_source_failed", "processing_job_v2_error",
-                "processing_job_ready", "processing_job_failed")) {
+                "api_request_rejected")) {
             assertTrue(serialized.contains(event), "Incident lifecycle must cover " + event);
         }
         assertTrue(serialized.contains("\"sortOrder\":\"Ascending\""),

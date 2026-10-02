@@ -19,8 +19,8 @@
 | 新增或修改 HTTP 接口 | `../../contracts/http/openapi.yaml` | 后端 `../../java/wotb-web/.../controller`、`service`、`dto`、`mapper`；前端 `../../frontend/src/api/` 或生成的 `../../frontend/src/api/generated/` |
 | 调整 API path / security | `../../java/wotb-web/src/main/java/com/wotb/web/config/ApiPaths.java` | `SecurityConfig`、Controller、`ApiException` / `ApiErrorCode`、`../api/error-contract.md` |
 | 新增数据库字段或表 | 目标 domain 的 `entity` / `repository` | `../../java/wotb-web/src/main/resources/db/migration` 新增 Flyway migration；不要改历史 migration |
-| 新增 Replay 派生指标或导出列 | `../../java/wotb-core/src/main/java/com/wotb/core/...` | `wotb-replay-processing`、`wotb-result`、`wotb-playback`、相关 fixture / golden output |
-| 新增 Replay Workspace 能力 | `../frontend/replay-workspace.md` | `../../frontend/src/composables/useReplay*.ts`、`../../frontend/src/api/replay*.ts`、Replay 相关页面组件 |
+| 新增 Replay 派生指标或导出列 | `../../frontend/src/replay-local/compute/`（导出在 `export/`） | 相关 golden（`../../frontend/src/replay-local/__golden__`）；缺回放字段先改上游 Rust Core |
+| 新增 Replay Workspace 能力 | `../frontend/replay-workspace.md` | `../../frontend/src/composables/useReplay*.ts`、`useLocalReplayAnalysis.ts`、`../../frontend/src/replay-local/`、Replay 相关页面组件 |
 | 改名人堂 / Hundred / Mark3 | 对应 `../features/*.md` | `../../java/wotb-web/src/main/java/com/wotb/web/hof`、`hundred`、`mark3`，以及前端对应页面 |
 | 改登录、用户档案、WG 账号绑定 | `../auth/*.md` | `../../java/wotb-web/src/main/java/com/wotb/web/user`、Keycloak 配置、`../../frontend/src/composables/useAuth.js` |
 | 新增前端页面或视图 | `../frontend/architecture.md` | `../../frontend/src/app/router.js`、`../../frontend/src/components/*Page.vue`、`../../frontend/src/locales/*.json` |
@@ -30,7 +30,7 @@
 
 后端优先按 domain 找包：`user`、`hof`、`replay`、`admin`、`hundred`、`mark3`。典型路径是 Controller 接 HTTP、Service 放业务编排、Repository 管持久化、Mapper 管 DTO 转换。
 
-Replay 相关功能要先区分“确定性事实”和“产品编排”：确定性解析、统计、导出优先落在 `../../java/wotb-core`；异步处理、派生产物和任务生命周期再进入 `wotb-replay-processing`、`wotb-replay-coordinator`、`wotb-playback`、`wotb-ai`、`wotb-result` 或 `wotb-web`。
+服务器没有 parser：回放解析在上游 Rust Core（WASM），汇总 / 评分 / 导出 / 2D 数据在 `../../frontend/src/replay-local`；后端 `replay` 只剩健康检查与名人堂共用的容量许可，`wotb-core` 只保留共享模型与 AI 复盘的客户端投影分析。
 
 ## Frontend map
 

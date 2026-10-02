@@ -73,9 +73,8 @@ class NoCascadeGuardTest {
                             + "  on tc.constraint_name = rc.constraint_name and tc.constraint_schema = rc.constraint_schema "
                             + "where rc.delete_rule = 'CASCADE' "
                             + "order by tc.constraint_name");
-            assertEquals(List.of(
-                            "fk_replay_processing_operation_job",
-                            "fk_replay_processing_source_job"),
+            // V27 删除回放处理 Job 三表后，库内不再有任何 ON DELETE CASCADE。
+            assertEquals(List.of(),
                     cascades,
                     "出现新的级联删除关系时必须显式评审：IAM / HoF 路径禁止级联删除");
 

@@ -6,6 +6,7 @@ import com.wotb.web.hundred.dto.HundredLeaderboardPageDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
 import com.wotb.web.util.JwtUtil;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -57,9 +58,14 @@ public class HundredBattleController {
             @RequestParam(name = "averageDamage") final int averageDamage,
             @RequestParam(name = "battleCount") final int battleCount,
             @RequestParam(name = "screenshot") final String screenshot,
-            @RequestParam(name = "replays") final List<MultipartFile> replays) {
+            @RequestParam(name = "replays") final List<MultipartFile> replays,
+            final HttpServletRequest request) {
+        // facts：每个回放一份结算事实 JSON（与 replays 同序）。JSON 含逗号，必须按多值参数读取，
+        // 不能让 Spring 把单值按逗号拆成 List<String>。
+        final String[] facts = request.getParameterValues("facts");
         return service.createSubmission(JwtUtil.requireUserId(),
-                vehicleId, averageDamage, battleCount, screenshot, replays);
+                vehicleId, averageDamage, battleCount, screenshot, replays,
+                facts == null ? List.of() : List.of(facts));
     }
 
     /** 用户取消自己的 PENDING submission。 */

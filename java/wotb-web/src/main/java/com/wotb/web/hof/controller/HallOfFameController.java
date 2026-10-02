@@ -45,8 +45,9 @@ public class HallOfFameController {
 
     /** 上传单场回放，写入名人堂。 */
     @PostMapping("/upload")
-    public Map<String, Object> upload(@RequestParam(name = "file") final MultipartFile file) throws Exception {
-        return uploadService.upload(file);
+    public Map<String, Object> upload(@RequestParam(name = "file") final MultipartFile file,
+                                      @RequestParam(name = "facts") final String facts) throws Exception {
+        return uploadService.upload(file, facts);
     }
 
     /** 统一公开查询：车辆分类条件 nation / vehicleType / tier 可独立使用并按交集处理。 */

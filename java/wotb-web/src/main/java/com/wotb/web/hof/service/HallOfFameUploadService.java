@@ -1,11 +1,11 @@
 package com.wotb.web.hof.service;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.hof.dto.ReplayFileMeta;
-import com.wotb.web.replay.ReplayUploadValidator;
+import com.wotb.web.replayfile.ReplayUploadValidator;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
+import com.wotb.web.replayfile.ClientReplayFacts;
 import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.web.replayfile.ReplayHashLock;
@@ -45,12 +45,16 @@ public class HallOfFameUploadService {
         this.replayHashLock = replayHashLock;
     }
 
-    public Map<String, Object> upload(final MultipartFile file) throws Exception {
+    /**
+     * @param factsJson 客户端本地解析（上游 Rust Core）的结算事实（{@link ClientReplayFacts}）；
+     *                  {@code file} 只作证据附件存档，服务器没有 parser。
+     */
+    public Map<String, Object> upload(final MultipartFile file, final String factsJson) throws Exception {
         final String uploadedBy = JwtUtil.requireUserId();
         return capacityLimiter.execute(() -> {
             ReplayUploadValidator.validate(new MultipartFile[]{file});
             final byte[] bytes = file.getBytes();
-            final Battle battle = parse(bytes);
+            final Battle battle = ClientReplayFacts.read(factsJson);
 
             // Blocker：不支持战斗模式（训练房/联赛/娱乐/未知等，见 HallOfFameBattleTypePolicy
             // 单一事实源）在 SHA-256、preflight、storage、DB 任何持久化之前直接拒绝
@@ -96,15 +100,6 @@ public class HallOfFameUploadService {
                 "arenaId", battle.arenaId == null ? "" : battle.arenaId,
                 "reasonCode", outcome.getReasonCode()
         );
-    }
-
-    /** 解析失败 → 稳定 400 INVALID_REPLAY_FILE（区别于 storage 的 5xx）。 */
-    private static Battle parse(final byte[] bytes) {
-        try {
-            return ReplayParser.parse(bytes);
-        } catch (final Exception e) {
-            throw new IllegalArgumentException("INVALID_REPLAY_FILE");
-        }
     }
 
     private static String sha256(final byte[] data) {
