@@ -22,7 +22,7 @@ grep -Fq 'clientAuthMethod' "$RUNTIME_CHECK_LIB"
 grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "$RUNTIME_CHECK_LIB"
 grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "$RUNTIME_CHECK_LIB"
 grep -Fq 'https://graph.qq.com/user/get_user_info' "$RUNTIME_CHECK_LIB"
-grep -Fq 'tx-internal-api-route: PASS' "$RUNTIME_CHECK_LIB"
+grep -Fq 'tx-logical-endpoints: PASS' "$RUNTIME_CHECK_LIB"
 grep -Fq 'tx-alloy-config: PASS' "$RUNTIME_CHECK_LIB"
 grep -Fq 'retired-replay-switches: PASS' "$RUNTIME_CHECK_LIB"
 ! grep -Fq 'wireguard-backend' "$RUNTIME_CHECK_LIB"
@@ -104,13 +104,13 @@ if [ -n "${FAKE_JOB_REPOSITORY:-}" ]; then
 fi
 # 组合成保留 Docker-local dependency 的 business-api environment 主体。
 extra_env="${job_repository_field}${execution_mode_field}"
-extra_env="\"POSTGRES_HOST\":\"business-postgres\",\"KEYCLOAK_ADMIN_SERVER_URL\":\"http://keycloak:8080\"${extra_env}"
+extra_env="\"POSTGRES_HOST\":\"${FAKE_BUSINESS_DB_HOST:-business-postgres}\",\"POSTGRES_PORT\":\"${FAKE_BUSINESS_DB_PORT:-5432}\",\"KEYCLOAK_ISSUER_URI\":\"https://auth.wotbtools.com/realms/wotbtools\",\"KEYCLOAK_ADMIN_SERVER_URL\":\"${FAKE_KEYCLOAK_ADMIN_SERVER_URL:-http://keycloak:8080}\"${extra_env}"
 business_api_ports='[{"host_ip":"10.20.0.1","published":8087,"target":8087},{"host_ip":"10.20.0.1","published":8088,"target":8088}]'
 [ -z "${FAKE_BUSINESS_API_PUBLISHED_PORT:-}" ] || business_api_ports="$FAKE_BUSINESS_API_PUBLISHED_PORT"
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432},{"host_ip":"10.20.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"keycloak":{"environment":{"KC_DB_URL":"jdbc:postgresql://keycloak-postgres:5432/keycloak"},"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080},{"host_ip":"10.20.0.1","published":8080,"target":8080}]},"wotb-frontend":{"ports":[{"host_ip":"10.20.0.1","published":8081,"target":80}],"environment":{"BACKEND_UPSTREAM":"%s","AI_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
-      "$business_ports" "$frontend_upstream" "$frontend_ai_upstream" "$business_api_ports" "$extra_env" | python3 -c '
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432},{"host_ip":"10.20.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"keycloak":{"environment":{"KC_DB_URL":"%s"},"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080},{"host_ip":"10.20.0.1","published":8080,"target":8080}]},"wotb-frontend":{"ports":[{"host_ip":"10.20.0.1","published":8081,"target":80}],"environment":{"BACKEND_UPSTREAM":"%s","AI_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
+      "$business_ports" "${FAKE_KEYCLOAK_DB_URL:-jdbc:postgresql://keycloak-postgres:5432/keycloak}" "$frontend_upstream" "$frontend_ai_upstream" "$business_api_ports" "$extra_env" | python3 -c '
 import json, os, sys
 data = json.load(sys.stdin)
 removed = os.environ.get("FAKE_BINDING_REMOVED")
@@ -256,7 +256,15 @@ run_check() {
 printf 'tx-local-opentofu-business-postgres\n' > "$WORK/business-postgres.tofu-provisioned"
 ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
 grep -Fq 'TX_RUNTIME_READY' <<< "$ready_output"
-grep -Fq 'tx-internal-api-route: PASS' <<< "$ready_output"
+grep -Fq 'tx-logical-endpoints: PASS' <<< "$ready_output"
+
+wg_ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_FRONTEND_UPSTREAM=http://10.20.0.1:8087 \
+  FAKE_BUSINESS_DB_HOST=10.20.0.1 FAKE_BUSINESS_DB_PORT=25432 \
+  FAKE_KEYCLOAK_ADMIN_SERVER_URL=http://10.20.0.1:8080 \
+  FAKE_KEYCLOAK_DB_URL=jdbc:postgresql://10.20.0.1:15432/keycloak)"
+grep -Fq 'TX_RUNTIME_READY' <<< "$wg_ready_output"
+grep -Fq 'tx-logical-endpoints: PASS' <<< "$wg_ready_output"
 grep -Fq 'tx-alloy-config: PASS' <<< "$ready_output"
 grep -Fq 'caddy-monitor: PASS' <<< "$ready_output"
 grep -Fq 'retired-replay-switches: PASS' <<< "$ready_output"
@@ -335,15 +343,15 @@ run_gate_failure() {
     || { echo "FAIL: $label must report '$expected' (output: $output)" >&2; exit 1; }
 }
 
-run_gate_failure "frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
+run_gate_failure "frontend-upstream-yecao" 'tx-logical-endpoints: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
-run_gate_failure "frontend-upstream-public" 'tx-internal-api-route: FAIL' \
+run_gate_failure "frontend-upstream-public" 'tx-logical-endpoints: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=https://example.test
 # The AI route must reach the Yecao ai-service over WireGuard: pointing it at the TX
 # business runtime or a public host reintroduces exactly the boundary this check owns.
-run_gate_failure "frontend-ai-upstream-business-api" 'tx-internal-api-route: FAIL' \
+run_gate_failure "frontend-ai-upstream-business-api" 'tx-logical-endpoints: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=http://business-api:8087
-run_gate_failure "frontend-ai-upstream-public" 'tx-internal-api-route: FAIL' \
+run_gate_failure "frontend-ai-upstream-public" 'tx-logical-endpoints: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=https://ai.example.test
 run_gate_failure "business-api-published-port" 'wireguard-service-plane: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
@@ -357,13 +365,13 @@ for binding in wotb-frontend:0 business-api:0 business-api:1 keycloak:0 keycloak
     "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_BINDING_REMOVED="$binding"
 done
 for dependency in \
-  'business-api|POSTGRES_HOST|10.20.0.1' \
-  'business-api|KEYCLOAK_ADMIN_SERVER_URL|http://10.20.0.1:8080' \
-  'keycloak|KC_DB_URL|jdbc:postgresql://10.20.0.1:15432/keycloak'; do
-  run_gate_failure "changed-$dependency" 'tx-internal-api-route: FAIL' \
+  'business-api|POSTGRES_HOST|10.20.0.2' \
+  'business-api|KEYCLOAK_ADMIN_SERVER_URL|https://auth.wotbtools.com' \
+  'keycloak|KC_DB_URL|jdbc:postgresql://10.20.0.2:15432/keycloak'; do
+  run_gate_failure "changed-$dependency" 'tx-logical-endpoints: FAIL' \
     "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_DOCKER_LOCAL_DEPENDENCY="$dependency"
 done
-run_gate_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
+run_gate_failure "relocated-frontend-upstream-yecao" 'tx-logical-endpoints: FAIL' \
   "" "$RELOCATED_ROOT/deploy/runtime-check.sh" env FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
 run_gate_failure "retired-execution-mode-switch" 'retired-replay-switches: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_EXECUTION_MODE=distributed

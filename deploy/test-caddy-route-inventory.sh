@@ -114,6 +114,18 @@ rejects() {
 # Komodo public ingress added for K2.
 accepts 'repository Caddyfile' "$(caddyfile repository)"
 
+wg_upstreams="$(caddyfile wg-upstreams)"
+CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081 CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080 \
+  accepts 'reviewed TX1 WireGuard upstreams' "$wg_upstreams"
+
+unsafe_upstream="$(caddyfile unsafe-upstream)"
+if CADDY_FRONTEND_UPSTREAM=frontend.example.invalid:8081 guard "$unsafe_upstream"; then
+  echo 'invalid Caddy logical endpoint was accepted: public frontend upstream' >&2
+  exit 1
+fi
+[ ! -s "$stub_log" ] || { echo 'runtime validation ran despite an unsafe Caddy endpoint' >&2; exit 1; }
+grep -q 'CADDY_FRONTEND_UPSTREAM must be' "$work/out.log"
+
 # --- komodo.wotbtools.com is mandatory and must target the WireGuard address ---
 missing="$(caddyfile komodo-missing)"
 awk '/^komodo\.wotbtools\.com \{/ { skip = 1 }

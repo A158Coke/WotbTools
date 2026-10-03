@@ -413,17 +413,28 @@ import json, sys
 data = json.load(sys.stdin)
 services = data["services"]
 frontend = services["wotb-frontend"].get("environment") or {}
-assert frontend.get("BACKEND_UPSTREAM") == "http://business-api:8087", frontend.get("BACKEND_UPSTREAM")
+assert frontend.get("BACKEND_UPSTREAM") in {
+    "http://business-api:8087", "http://10.20.0.1:8087", "http://10.20.0.3:8087"
+}, frontend.get("BACKEND_UPSTREAM")
 assert frontend.get("AI_UPSTREAM") == "http://10.20.0.2:8089", frontend.get("AI_UPSTREAM")
 environment = services["business-api"].get("environment") or {}
-assert environment.get("POSTGRES_HOST") == "business-postgres"
-assert environment.get("KEYCLOAK_ADMIN_SERVER_URL") == "http://keycloak:8080"
+db = (environment.get("POSTGRES_HOST"), str(environment.get("POSTGRES_PORT", "")))
+assert db in {("business-postgres", "5432"), ("10.20.0.1", "25432"), ("10.20.0.3", "25432")}, db
+assert environment.get("KEYCLOAK_ADMIN_SERVER_URL") in {
+    "http://keycloak:8080", "http://10.20.0.1:8080", "http://10.20.0.3:8080"
+}
+assert environment.get("KEYCLOAK_ISSUER_URI") == "https://auth.wotbtools.com/realms/wotbtools"
 keycloak = services["keycloak"].get("environment") or {}
-assert keycloak.get("KC_DB_URL", "").startswith("jdbc:postgresql://keycloak-postgres:5432/")
+db_url = keycloak.get("KC_DB_URL", "")
+assert db_url.startswith((
+    "jdbc:postgresql://keycloak-postgres:5432/",
+    "jdbc:postgresql://10.20.0.1:15432/",
+    "jdbc:postgresql://10.20.0.3:15432/",
+)), db_url
 ' <<< "$compose_json"; then
-    echo "tx-internal-api-route: PASS"
+    echo "tx-logical-endpoints: PASS"
   else
-    echo "tx-internal-api-route: FAIL (frontend must use TX-internal business-api plus the Yecao ai-service WireGuard endpoint, and production database/auth dependencies must stay Docker-local)" >&2
+    echo "tx-logical-endpoints: FAIL (consumer dependencies must use reviewed Docker-local or TX1/TX2 WireGuard endpoints; the issuer stays public and AI stays on Yecao WireGuard)" >&2
     failures=1
   fi
 
