@@ -147,6 +147,7 @@ business_postgres:
 keycloak_postgres:
   - '.github/workflows/keycloak-postgres.yml'
   - 'deploy/tx/keycloak-postgres.compose.yml'
+  - 'deploy/tx/runtime-check-lib.sh'
   - 'infra/tofu/postgres-keycloak/**'
   - '.github/workflows/ci-keycloak-postgres.yml'
 caddy:

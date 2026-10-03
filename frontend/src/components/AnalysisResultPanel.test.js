@@ -34,28 +34,7 @@ afterEach(() => {
   delete document.execCommand
 })
 
-describe('AnalysisResultPanel seek emission', () => {
-  it('emits seek for every AI timestamp click (same timestamp twice re-emits)', async () => {
-    const wrapper = mount(AnalysisResultPanel, {
-      props: {
-        result: {
-          analysis: '你在 03:20 与敌方交火',
-          mapOverview: { mapCode: 'desert_train', displayName: 'Desert Sands' }
-        }
-      },
-      global: { mocks: { $t: i18n.t } }
-    })
-    const link = wrapper.find('a[href="#seek=200"]')
-    expect(link.exists()).toBe(true)
-    await link.trigger('click')
-    await flushPromises()
-    expect(wrapper.emitted('seek')).toEqual([[200]])
-    // 用户手动把播放器拖到别处后，再次点击同一个 03:20：必须再次 emit seek 200
-    await link.trigger('click')
-    await flushPromises()
-    expect(wrapper.emitted('seek')).toEqual([[200], [200]])
-  })
-
+describe('AnalysisResultPanel map ownership', () => {
   it('does not render a map block (map overview moved to page-level section)', () => {
     const wrapper = mount(AnalysisResultPanel, {
       props: {

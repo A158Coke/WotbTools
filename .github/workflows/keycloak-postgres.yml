@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/keycloak-postgres.yml
       - deploy/tx/keycloak-postgres.compose.yml
+      - deploy/tx/runtime-check-lib.sh
       - infra/tofu/postgres-keycloak/**
   workflow_dispatch:
 
@@ -21,6 +22,7 @@ env:
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/keycloak-postgres.yml
     deploy/tx/keycloak-postgres.compose.yml
+    deploy/tx/runtime-check-lib.sh
     infra/tofu/postgres-keycloak/**
 
 jobs:
@@ -58,7 +60,7 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx/keycloak-postgres.compose.yml,infra/tofu/postgres-keycloak
+          source: deploy/tx/keycloak-postgres.compose.yml,deploy/tx/runtime-check-lib.sh,infra/tofu/postgres-keycloak
           target: /opt/wotb-tx/tofu.incoming/${{ steps.source.outputs.source_sha }}
           overwrite: true
 
@@ -90,8 +92,10 @@ jobs:
             stage="/opt/wotb-tx/tofu.incoming/$SOURCE_SHA"
             root="$stage/infra/tofu/postgres-keycloak"
             compose="$stage/deploy/tx/keycloak-postgres.compose.yml"
+            validator="$stage/deploy/tx/runtime-check-lib.sh"
             test -d "$root"
             test -f "$compose"
+            test -f "$validator"
 
             state_dir=/opt/wotb-tx/postgres-keycloak-tofu-state
             state_file="$state_dir/terraform.tfstate"
@@ -106,16 +110,31 @@ jobs:
               test -n "$(printenv "$name")" || { echo "$name is required." >&2; exit 2; }
             done
             command -v docker >/dev/null
+            docker compose version >/dev/null
             command -v flock >/dev/null
             command -v tofu >/dev/null
             command -v jq >/dev/null
+            command -v python3 >/dev/null
+            command -v ip >/dev/null
 
             exec 9>/opt/wotb-tx/.deploy.lock
             flock -n 9 || { echo 'Another TX production mutation is running.' >&2; exit 1; }
 
+            ip link show wg0 >/dev/null
+            ip -4 addr show dev wg0 | grep -Eq 'inet 10\.20\.0\.1/24([[:space:]]|$)' || {
+              echo 'wg0 must have 10.20.0.1/24.' >&2
+              exit 1
+            }
+            ip route get 10.20.0.2 >/dev/null
+
+            source "$validator"
             compose_json="$(KC_POSTGRES_ADMIN_USER="$KC_POSTGRES_ADMIN_USER" \
               KC_POSTGRES_ADMIN_PASSWORD="$KC_POSTGRES_ADMIN_PASSWORD" \
               docker compose -p deploy -f "$compose" config --format json)"
+            assert_tx_service_ports keycloak-postgres <<< "$compose_json" || {
+              echo 'Keycloak PostgreSQL service bindings are invalid; live runtime was not changed.' >&2
+              exit 1
+            }
             jq -e '
               .name == "deploy" and
               .volumes.keycloak_postgres_data.name == "deploy_keycloak_postgres_data" and

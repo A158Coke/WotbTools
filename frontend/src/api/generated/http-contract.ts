@@ -1639,7 +1639,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Cancellation accepted */
+            /** @description Cancellation accepted or no active review remains */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -1666,15 +1666,6 @@ export interface operations {
             };
             /** @description AI review role required */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description No active review for this correlation ID */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
