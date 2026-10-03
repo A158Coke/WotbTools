@@ -55,7 +55,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * </ul>
  * 两条输入走同一套下游，逐层比较：实体映射 → 掉血 / 归属 / 击毁 → BattleTimeline 每秒每车
  * （位置 knowledge、位置、生命、血量、血量 knowledge、地图区域）→ grounding facts → 团队 / 个人 prompt 全文。
- * 放行的差异只有 {@link #normalizePrompt} 里三条，每条写明原因。
+ * 放行的差异只有 {@link #normalizePrompt} 里四条，每条写明原因。
  */
 class ClientAiProjectionParityTest {
 
@@ -65,6 +65,18 @@ class ClientAiProjectionParityTest {
     private static final Pattern DECODE_RATIO = Pattern.compile("decodedPacketRatio=[^,\\]]+");
     /** 基地迁移的分秒：上游 PlaybackData 目标时钟舍入到 0.01 s，跨整秒边界时 mm:ss 可差 1 s（时刻差 ≤ 0.01 s）。 */
     private static final Pattern BASE_EVENT_TIME = Pattern.compile("^\\[\\d+分\\d+秒\\] (BASE [A-D] )");
+    /**
+     * 争霸基地占领状态行的 {@code capturing} / {@code captureProgress} 字段
+     * （{@code [t] BASE A owner=... capturing=... captureProgress=...}，渲染点
+     * {@code TeamAiContextCompiler} 的 OBJECTIVE_STATE_TIMELINE）：
+     *
+     * <p>上游 v0.3.11 契约补正后，「占领中断」（车辆出圈 / 被击毁）以双缺省块表达——进度作废、占领方归零，
+     * 而冻结于 parser 删除前的 Java canonical 仍按旧语义把最后一条进度与占领方挂着（同段时间线上两边的
+     * 行内容与行尾状态不同）。该类语义由前端 {@code playback.golden.test.ts} 的
+     * {@code PINNED_BASE_ABORT_CLEARS} / {@code PINNED_ASSAULT_RESET_ROWS} 两张冻结表逐条看守
+     * （条数漂移即失败），此处只归一化这两个字段；行数、时刻与 {@code owner} 仍必须逐字一致。
+     */
+    private static final Pattern BASE_CAPTURE_FIELDS = Pattern.compile(" capturing=\\S+ captureProgress=\\S+");
     /**
      * 只比较集合、不比较相对顺序的连续行段：
      * <ul>
@@ -166,7 +178,7 @@ class ClientAiProjectionParityTest {
         assertEquals(groundingKeys(gj), groundingKeys(gn), "grounding facts");
     }
 
-    /** 生产路径：客户端结算事实 + 投影 → 团队 / 个人 prompt 与 Java canonical 输入的 prompt 一致（仅三条固定差异）。 */
+    /** 生产路径：客户端结算事实 + 投影 → 团队 / 个人 prompt 与 Java canonical 输入的 prompt 一致（仅四条固定差异）。 */
     @ParameterizedTest
     @ValueSource(strings = {"random-battle-example", "cw-training-15-14-example", "tournament-14-14-example"})
     void renderedPromptsMatchJavaCanonical(final String name) {
@@ -202,6 +214,7 @@ class ClientAiProjectionParityTest {
             String l = EVENT_COUNT.matcher(line).replaceAll("位置时间线: 可用（N 个领域事件");
             l = DECODE_RATIO.matcher(l).replaceAll("decodedPacketRatio=*");
             l = BASE_EVENT_TIME.matcher(l).replaceAll("[t] $1");
+            l = BASE_CAPTURE_FIELDS.matcher(l).replaceAll(" capturing=* captureProgress=*");
             if (ORDER_FREE_LINE.matcher(l).find()) {
                 run.add(l);
                 continue;

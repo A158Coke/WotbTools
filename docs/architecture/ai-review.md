@@ -474,9 +474,12 @@ RoundFinished / Supremacy*），由 `BattleStateReconstructor`（纯事件归约
 - BattleTimeline 每秒每车：位置 knowledge（CURRENT / LAST_KNOWN）、车辆 knowledge、朝向 knowledge、位置（≤ 1 mm）、
   生命、血量、血量 knowledge、HP bar 量程、地图区域——**完全相等**（3 场共 7 374 个帧-车辆）；
 - grounding facts（formation / clustering / relative depth / map region 的上游输入）——**完全相等**；
-- 团队 / 个人 prompt 全文（生产路径：客户端结算事实 + 投影）——仅三处固定差异：内部事件条数（新链路只装配被消费的
-  事件类型）、`decodedPacketRatio=UNAVAILABLE`、同 tick 内争霸点数与基地迁移的相对顺序（上游两类事件分列、时钟舍入
-  0.01 s，包序不可恢复；行内容逐字一致）。
+- 团队 / 个人 prompt 全文（生产路径：客户端结算事实 + 投影）——仅四处固定差异（`normalizePrompt` 每条写明原因）：
+  内部事件条数（新链路只装配被消费的事件类型）、`decodedPacketRatio=UNAVAILABLE`、同 tick 内争霸点数与基地迁移的
+  相对顺序 + 基地迁移的分秒（上游两类事件分列数组、目标时钟舍入 0.01 s，包序不可恢复；行内容逐字一致）、争霸基地
+  占领状态行（`[t] BASE A owner=... capturing=... captureProgress=...`）的 `capturing` / `captureProgress` 字段
+  （v0.3.11「占领中断归零」契约补正 vs 冻结基线的旧语义；行数 / 时刻 / `owner` 仍逐字一致，逐条语义由前端
+  `playback.golden.test.ts` 的 `PINNED_BASE_ABORT_CLEARS` / `PINNED_ASSAULT_RESET_ROWS` 冻结表看守）。
 
 ### 请求体量与传输
 
