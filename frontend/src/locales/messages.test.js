@@ -72,4 +72,21 @@ describe('locale message composition', () => {
       }
     }
   })
+
+  it('ships distinct connectivity copy for unknown / degraded / service-unavailable', () => {
+    // review P1：这三种状态**不能**复用 offline 文案，否则用户会被错误告知「你现在离线」。
+    for (const locale of ['zh', 'en', 'ru']) {
+      const notice = messages[locale].connectivityNotice
+      expect(notice, `${locale} connectivityNotice`).toBeTruthy()
+      for (const key of ['unknownTitle', 'unknown', 'degradedTitle', 'degraded',
+        'serviceUnavailableTitle', 'serviceUnavailable', 'retry']) {
+        expect(notice[key], `${locale} connectivityNotice.${key}`).toBeTruthy()
+      }
+      // 三种状态三套文案，且都不得与 offline 标题重复。
+      expect(new Set([notice.unknown, notice.degraded, notice.serviceUnavailable]).size, `${locale} bodies`).toBe(3)
+      const titles = new Set([notice.unknownTitle, notice.degradedTitle, notice.serviceUnavailableTitle])
+      expect(titles.size, `${locale} titles`).toBe(3)
+      expect(titles.has(messages[locale].featureOffline.title), `${locale} titles vs offline`).toBe(false)
+    }
+  })
 })

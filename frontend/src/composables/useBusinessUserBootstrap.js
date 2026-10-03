@@ -1,5 +1,6 @@
 import { computed, readonly, ref } from 'vue'
 import { ensureUserProfile } from '../utils/api-user.js'
+import { Feature, getFeatureAvailability } from '../app/featureCapabilities.js'
 
 /**
  * WotBTools 业务用户 bootstrap（KC User → user_profile 的 eventual self-healing）。
@@ -16,6 +17,11 @@ import { ensureUserProfile } from '../utils/api-user.js'
  * 失败**不会**被永久缓存，也**不会**把 authenticate 结果改成 false：刷新 / 下一次
  * app bootstrap / 显式 `retry()` 都会重新尝试。刻意不做自动重试循环——一次
  * bootstrap 只调用一次。</p>
+ *
+ * <p>**离线语义（PR B review blocker）**：profile ensure 是一次 backend 调用，因此它的准入
+ * 由 capability SSOT（[Feature.ACCOUNT_PROFILE] 是 ONLINE_REQUIRED）决定，而不是另写一套
+ * `connectivity === 'online'` 业务规则。离线 / 状态未知时**不发请求**、不进入 `failed`、
+ * 不显示失败横幅；恢复在线后再补一次（仍由下面的 in-flight / ready 去重保护）。</p>
  */
 
 /** idle | pending | ready | failed */
@@ -44,6 +50,22 @@ async function run() {
   } finally {
     inFlight = null
   }
+}
+
+/** 业务资料功能当前的可用性（capability SSOT：ONLINE_REQUIRED）。 */
+export function businessProfileAvailability(connectivity) {
+  return getFeatureAvailability(Feature.ACCOUNT_PROFILE, { connectivity })
+}
+
+/**
+ * 是否允许发起 profile backend 调用（**纯函数**，因此可确定性测试）。
+ *
+ * 只有「已认证 + ACCOUNT_PROFILE 可用」才允许。`offline` / `unknown` / `degraded` /
+ * `service-unavailable` 一律拒绝 —— 后三种**不是**「你离线」，但同样不能访问 backend。
+ */
+export function shouldEnsureBusinessUser({ authInitState, authenticated, connectivity } = {}) {
+  if (authInitState !== 'authenticated' || authenticated !== true) return false
+  return businessProfileAvailability(connectivity).available
 }
 
 /**

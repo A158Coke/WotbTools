@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConnectivityState } from '../platform/connectivity.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { evaluateFeatureGate, useFeatureGate } from './useFeatureGate.js'
-import { useOfflineNotice } from './useOfflineNotice.js'
+import { useConnectivityNotice } from './useConnectivityNotice.js'
 import { useConnectivity } from './useConnectivity.js'
 
 function stubNative(results) {
@@ -27,7 +27,7 @@ function stubNative(results) {
 /** 重置连通性单例与提示状态（避免测试之间互相污染）。 */
 function reset() {
   useConnectivity().stop()
-  useOfflineNotice().close()
+  useConnectivityNotice().close()
   delete window.WotbNative
 }
 
@@ -41,19 +41,34 @@ describe('feature gate (pure)', () => {
     }
   })
 
-  it('ONLINE_REQUIRED features fail fast offline and notify once with the feature key', () => {
-    const notify = vi.fn()
-    expect(evaluateFeatureGate(Feature.AI_REVIEW, ConnectivityState.OFFLINE, notify)).toBe(false)
-    expect(notify).toHaveBeenCalledTimes(1)
-    expect(notify).toHaveBeenCalledWith('featureOffline.aiReview')
+  it('ONLINE_REQUIRED features fail fast and notify with the reason-specific availability', () => {
+    // offline：功能专属文案（「需要联网」）
+    const offlineNotify = vi.fn()
+    expect(evaluateFeatureGate(Feature.AI_REVIEW, ConnectivityState.OFFLINE, offlineNotify)).toBe(false)
+    expect(offlineNotify).toHaveBeenCalledTimes(1)
+    expect(offlineNotify.mock.calls[0][0]).toMatchObject({
+      messageKey: 'featureOffline.aiReview',
+      titleKey: 'featureOffline.title',
+      hintKey: 'featureOffline.retry',
+      reason: ConnectivityState.OFFLINE,
+    })
 
-    const notifyHof = vi.fn()
-    expect(evaluateFeatureGate(Feature.HALL_OF_FAME, ConnectivityState.OFFLINE, notifyHof)).toBe(false)
-    expect(notifyHof).toHaveBeenCalledWith('featureOffline.hallOfFame')
-
-    const notify3d = vi.fn()
-    expect(evaluateFeatureGate(Feature.PLAYBACK_3D, ConnectivityState.OFFLINE, notify3d)).toBe(false)
-    expect(notify3d).toHaveBeenCalledWith('featureOffline.playback3d')
+    // unknown / degraded / service-unavailable：**不得**说成「你离线」
+    const cases = [
+      [Feature.HALL_OF_FAME, ConnectivityState.UNKNOWN, 'connectivityNotice.unknown', 'connectivityNotice.unknownTitle'],
+      [Feature.PLAYBACK_3D, ConnectivityState.DEGRADED, 'connectivityNotice.degraded', 'connectivityNotice.degradedTitle'],
+      [Feature.AI_REVIEW, ConnectivityState.SERVICE_UNAVAILABLE, 'connectivityNotice.serviceUnavailable', 'connectivityNotice.serviceUnavailableTitle'],
+    ]
+    for (const [feature, state, messageKey, titleKey] of cases) {
+      const notify = vi.fn()
+      expect(evaluateFeatureGate(feature, state, notify), `${state}`).toBe(false)
+      expect(notify.mock.calls[0][0], `${state}`).toMatchObject({
+        messageKey,
+        titleKey,
+        hintKey: 'connectivityNotice.retry',
+        reason: state,
+      })
+    }
   })
 
   it('ONLINE_REQUIRED features pass online without touching the notice', () => {
@@ -84,9 +99,13 @@ describe('feature gate (wired to the connectivity singleton)', () => {
     await useConnectivity().start()
 
     expect(requireFeature(Feature.AI_REVIEW)).toBe(false)
-    const notice = useOfflineNotice()
+    const notice = useConnectivityNotice()
     expect(notice.visible.value).toBe(true)
-    expect(notice.noticeKey.value).toBe('featureOffline.aiReview')
+    expect(notice.notice.value).toMatchObject({
+      titleKey: 'featureOffline.title',
+      messageKey: 'featureOffline.aiReview',
+      hintKey: 'featureOffline.retry',
+    })
     expect(availability(Feature.REPLAY_RESULT).available).toBe(true)
   })
 

@@ -136,6 +136,21 @@ backup_text = json.dumps(backup, ensure_ascii=False)
 for script in ("business-postgres-backup.sh", "keycloak-postgres-backup.sh", "tofu-local-state-backup.sh"):
     assert script in backup_text, f"scheduled production backup must retain {script}"
 
+# PR #467 review: APK/bundle content assertions must never pipe into `grep -q`.
+# Under `set -o pipefail` a hit makes grep exit early, the producer takes SIGPIPE (141), and the
+# whole pipeline reports failure — i.e. a real file gets reported as missing.
+for android_workflow in ("ci-android.yml", "android-release.yml"):
+  android_text = (workflow_dir / android_workflow).read_text(encoding="utf-8")
+  # 注释里可以解释这个坑，真实命令里不允许再出现（YAML 注释以 # 开头）。
+  offenders = [
+    line.strip() for line in android_text.splitlines()
+    if "| grep -q" in line and not line.lstrip().startswith("#")
+  ]
+  assert not offenders, \
+    f"{android_workflow} must not pipe into grep -q (SIGPIPE false negative under pipefail): {offenders[:2]}"
+  assert "listing_file" in android_text and "unzip -Z1" in android_text, \
+    f"{android_workflow} must assert APK contents from a listing file"
+
 # Production owner routing and freshness inputs are paired contracts. A workflow
 # may only proceed when its triggering SHA is still current for every owned input.
 owners = (

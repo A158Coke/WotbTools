@@ -123,6 +123,47 @@ describe('connectivity sources', () => {
     expect(window[NATIVE_CONNECTIVITY_CHANGED_GLOBAL]).toBeUndefined()
   })
 
+  it('a failing or malformed native reply degrades to UNKNOWN and keeps processing later events', async () => {
+    // review §12：事件 handler 的返回值没人接 ⇒ 桥报错 / 回复畸形 / 超时都必须自己兜住，
+    // 规范化为 UNKNOWN（绝不算在线），且不能中断后续事件。
+    let mode = 'null'
+    const listeners = []
+    window.WotbNative = {
+      postMessage: (json) => {
+        const msg = JSON.parse(json)
+        if (msg.method !== 'connectivityGetState') return
+        if (mode === 'throw') throw new Error('bridge exploded')
+        const result = mode === 'malformed' ? { unexpected: true } : null
+        listeners.forEach(cb => cb({ data: JSON.stringify({ id: msg.id, result }) }))
+      },
+      addEventListener: (type, cb) => listeners.push(cb),
+      removeEventListener: () => {},
+    }
+
+    const source = createAndroidConnectivitySource()
+    const seen = []
+    const unsubscribe = source.subscribe(next => seen.push(next))
+
+    // null / malformed / throw 三种失败形态 → 全部 UNKNOWN，且不抛 unhandled rejection。
+    for (const failing of ['null', 'malformed', 'throw']) {
+      mode = failing
+      await expect(window[NATIVE_CONNECTIVITY_CHANGED_GLOBAL]()).resolves.toBeUndefined()
+    }
+    expect(seen).toEqual([ConnectivityState.UNKNOWN, ConnectivityState.UNKNOWN, ConnectivityState.UNKNOWN])
+
+    // 后续事件仍然被处理：桥恢复后能重新报告 online。
+    mode = 'online'
+    window.WotbNative.postMessage = (json) => {
+      const msg = JSON.parse(json)
+      if (msg.method === 'connectivityGetState') {
+        listeners.forEach(cb => cb({ data: JSON.stringify({ id: msg.id, result: 'online' }) }))
+      }
+    }
+    await window[NATIVE_CONNECTIVITY_CHANGED_GLOBAL]()
+    expect(seen[3]).toBe(ConnectivityState.ONLINE)
+    unsubscribe()
+  })
+
   it('missing bridge resolves to UNKNOWN instead of guessing online', async () => {
     const source = createAndroidConnectivitySource()
     await expect(source.read()).resolves.toBe(ConnectivityState.UNKNOWN)
