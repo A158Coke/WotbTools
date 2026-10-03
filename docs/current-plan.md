@@ -1,6 +1,6 @@
 # K6B-1：TX logical endpoints 可配置化
 
-状态：已批准 / 执行中  
+状态：实现完成 / Review-Fix 中  
 批准来源：用户 2026-10-03 明确“开工”。
 
 ## 目标
@@ -43,7 +43,7 @@ K6B-1 完成后，K6B-2 只需要变更已审核的 endpoint variables，就能�
 
 - K6A endpoint contract 继续由 `docs/operations/tx-service-plane.md` 与 `deploy/tx/runtime-check-lib.sh:assert_tx_service_ports` 守护。
 - logical endpoint 只复用现有 Compose env + deploy validation，不新增第二套配置文件或 endpoint registry。
-- production endpoint variables 由各 owner workflow 的 `tx-production` GitHub Variables 注入；未设置时使用 Docker-local 默认值。
+- K6B-1 的 owner workflows **显式注入 Docker-local active values**，不读取同名 repository variables，保证本 PR 合并不会因为既有变量而暗中 cutover；K6B-2 再逐 consumer 把对应 workflow 提升为 reviewed endpoint value/variable。
 - `KEYCLOAK_ISSUER_URI` 永远保持 public issuer。
 - Caddy 仍是唯一公网 80/443 ingress。
 
@@ -59,10 +59,10 @@ K6B-1 完成后，K6B-2 只需要变更已审核的 endpoint variables，就能�
 | 步骤 | 状态 | 内容 |
 |---|---|---|
 | 1 | 完成 | 审计当前 Docker-local dependency、workflow env、runtime/deploy validator |
-| 2 | 进行中 | 实现 logical endpoint variables 与 fail-closed validation |
-| 3 | 待执行 | 更新 runtime/dependency/readiness fixtures 与 regression tests |
-| 4 | 待执行 | 同步 canonical docs / env example |
-| 5 | 待执行 | Review-Fix + Review-With-Docs，零 blocker 后开 PR |
+| 2 | 完成 | 实现 logical endpoint variables 与 fail-closed validation |
+| 3 | 完成 | 更新 runtime/dependency/readiness fixtures 与 regression tests |
+| 4 | 完成 | 同步 canonical docs / env example |
+| 5 | 进行中 | Review-Fix + Review-With-Docs，零 blocker 后开 PR |
 
 ## 验收标准
 
