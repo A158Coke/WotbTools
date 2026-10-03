@@ -1,7 +1,15 @@
 import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConnectivityState } from '../platform/connectivity.js'
-import { businessProfileAvailability, resetBusinessUserBootstrap, shouldEnsureBusinessUser, useBusinessUserBootstrap } from './useBusinessUserBootstrap.js'
+import {
+  businessProfileAvailability,
+  ensureBusinessUserIfAllowed,
+  resetBusinessUserBootstrap,
+  retryBusinessUserIfAllowed,
+  shouldEnsureBusinessUser,
+  useBusinessUserBootstrap,
+  whenBusinessUserSettled,
+} from './useBusinessUserBootstrap.js'
 
 vi.mock('../utils/api-user.js', () => ({
   ensureUserProfile: vi.fn(async () => ({})),
@@ -77,9 +85,10 @@ describe('business profile bootstrap driver (policy + dedupe)', () => {
   })
 
   /** 复现 AppShell 的 watch 回调：只有策略允许才 ensure。 */
-  async function drive({ authInitState, authenticated, connectivity }) {
-    if (!shouldEnsureBusinessUser({ authInitState, authenticated, connectivity })) return null
-    return useBusinessUserBootstrap().ensure()
+  async function drive(context) {
+    // 真实调用点（AppShell watch）就是这样传 context 的。
+    if (!shouldEnsureBusinessUser(context)) return null
+    return useBusinessUserBootstrap().ensure(context)
   }
 
   it('authenticated + online → ensure runs exactly once', async () => {
@@ -120,7 +129,8 @@ describe('business profile bootstrap driver (policy + dedupe)', () => {
 
   it('concurrent triggers share one in-flight request', async () => {
     const bootstrap = useBusinessUserBootstrap()
-    await Promise.all([bootstrap.ensure(), bootstrap.ensure(), bootstrap.ensure()])
+    const context = { authInitState: 'authenticated', authenticated: true, connectivity: ConnectivityState.ONLINE }
+    await Promise.all([bootstrap.ensure(context), bootstrap.ensure(context), bootstrap.ensure(context)])
     expect(ensureUserProfile).toHaveBeenCalledTimes(1)
   })
 
@@ -151,5 +161,87 @@ describe('browser-interaction stub surface', () => {
     const realNames = names(real).sort()
     expect(realNames.length).toBeGreaterThan(0)
     expect(names(stub).sort()).toEqual(expect.arrayContaining(realNames))
+  })
+})
+
+/**
+ * **每一个** backend bootstrap 入口都必须过连通性策略（PR #467 review blocker）。
+ *
+ * 真实缺陷：页面调用 `whenBusinessUserSettled()` 时，它内部会触发 ensure → ensureUserProfile，
+ * 于是「已认证 + 离线 + 打开 Profile」照样发 backend 请求。这里把「offline / unknown /
+ * degraded / service-unavailable 时任何入口都不得进入 run()」变成确定性断言。
+ */
+describe('business bootstrap entrypoints are connectivity-gated', () => {
+  const offlineStates = [
+    ConnectivityState.OFFLINE,
+    ConnectivityState.UNKNOWN,
+    ConnectivityState.DEGRADED,
+    ConnectivityState.SERVICE_UNAVAILABLE,
+  ]
+
+  afterEach(() => {
+    resetBusinessUserBootstrap()
+    vi.mocked(ensureUserProfile).mockClear()
+  })
+
+  it('whenBusinessUserSettled never calls ensureUserProfile while backend is unavailable', async () => {
+    for (const connectivity of offlineStates) {
+      resetBusinessUserBootstrap()
+      vi.mocked(ensureUserProfile).mockClear()
+      const settled = await whenBusinessUserSettled({
+        authInitState: 'authenticated',
+        authenticated: true,
+        connectivity,
+      })
+      expect(settled, String(connectivity)).toBe(false)
+      expect(ensureUserProfile, String(connectivity)).not.toHaveBeenCalled()
+    }
+  })
+
+  it('whenBusinessUserSettled without a context is fail-closed (no request)', async () => {
+    await expect(whenBusinessUserSettled()).resolves.toBe(false)
+    expect(ensureUserProfile).not.toHaveBeenCalled()
+  })
+
+  it('whenBusinessUserSettled runs ensure when online', async () => {
+    const settled = await whenBusinessUserSettled({
+      authInitState: 'authenticated',
+      authenticated: true,
+      connectivity: ConnectivityState.ONLINE,
+    })
+    expect(settled).toBe(true)
+    expect(ensureUserProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('gated ensure / retry primitives refuse to touch the backend while unavailable', async () => {
+    for (const connectivity of offlineStates) {
+      resetBusinessUserBootstrap()
+      vi.mocked(ensureUserProfile).mockClear()
+      const context = { authInitState: 'authenticated', authenticated: true, connectivity }
+
+      await expect(ensureBusinessUserIfAllowed(context), String(connectivity)).resolves.toBe(false)
+      await expect(retryBusinessUserIfAllowed(context), String(connectivity)).resolves.toBe(false)
+      expect(ensureUserProfile, String(connectivity)).not.toHaveBeenCalled()
+      // 也没有把状态机推进到 pending/failed（离线不是失败）。
+      expect(useBusinessUserBootstrap().state.value).toBe('idle')
+      expect(useBusinessUserBootstrap().failed.value).toBe(false)
+    }
+  })
+
+  it('gated ensure / retry work when online', async () => {
+    const context = { authInitState: 'authenticated', authenticated: true, connectivity: ConnectivityState.ONLINE }
+    await expect(ensureBusinessUserIfAllowed(context)).resolves.toBe(true)
+    expect(ensureUserProfile).toHaveBeenCalledTimes(1)
+    resetBusinessUserBootstrap()
+    vi.mocked(ensureUserProfile).mockClear()
+    await expect(retryBusinessUserIfAllowed(context)).resolves.toBe(true)
+    expect(ensureUserProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('the hook only exposes gated entrypoints', () => {
+    const bootstrap = useBusinessUserBootstrap()
+    // ensure/retry 指向 gated 版本：页面无法误用 raw backend primitive。
+    expect(bootstrap.ensure).toBe(ensureBusinessUserIfAllowed)
+    expect(bootstrap.retry).toBe(retryBusinessUserIfAllowed)
   })
 })

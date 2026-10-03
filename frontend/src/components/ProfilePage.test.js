@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import ProfilePage from './ProfilePage.vue'
+import { useConnectivity } from '../composables/useConnectivity.js'
+import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 
 const confirmDialog = vi.hoisted(() => ({ confirm: vi.fn(() => Promise.resolve(true)) }))
 vi.mock('../composables/useConfirm.js', () => ({ confirm: confirmDialog.confirm }))
@@ -32,15 +34,26 @@ vi.mock('../composables/useAuth.js', () => ({
   })
 }))
 
+const userApi = vi.hoisted(() => ({
+  ensureUserProfile: vi.fn(() => Promise.resolve(null)),
+  getUserProfile: vi.fn(() => Promise.resolve(null)),
+  syncUserWotbAccountFromLogin: vi.fn(() => Promise.resolve(null)),
+  updateUserWotbAccount: vi.fn(() => Promise.resolve(null)),
+  deleteUserWotbAccount: vi.fn(() => Promise.resolve(null)),
+  getUserHofRecords: vi.fn(() => Promise.resolve([])),
+  verifyUserWotbAccountFromReplay: vi.fn(() => Promise.resolve(null))
+}))
+
 vi.mock('../utils/api-user.js', () => ({
-  getUserProfile: () => (profileFailures-- > 0 ? Promise.reject(new Error('boom')) : Promise.resolve(currentProfile)),
   // 全局 bootstrap 才是 profile ensure 的 owner；页面只等待其结果。
-  ensureUserProfile: () => Promise.resolve(currentProfile),
-  syncUserWotbAccountFromLogin: () => syncImpl(),
-  updateUserWotbAccount: () => Promise.resolve(currentProfile),
-  deleteUserWotbAccount: () => Promise.resolve(currentProfile),
-  getUserHofRecords: () => Promise.resolve([]),
-  verifyUserWotbAccountFromReplay: (...args) => verifyApi.verifyUserWotbAccountFromReplay(...args)
+  ensureUserProfile: userApi.ensureUserProfile,
+  getUserProfile: (...args) =>
+    (profileFailures-- > 0 ? Promise.reject(new Error('boom')) : userApi.getUserProfile(...args)),
+  syncUserWotbAccountFromLogin: () => userApi.syncUserWotbAccountFromLogin(),
+  updateUserWotbAccount: (...args) => userApi.updateUserWotbAccount(...args),
+  deleteUserWotbAccount: (...args) => userApi.deleteUserWotbAccount(...args),
+  getUserHofRecords: (...args) => userApi.getUserHofRecords(...args),
+  verifyUserWotbAccountFromReplay: (...args) => userApi.verifyUserWotbAccountFromReplay(...args)
 }))
 
 // 「用回放验证账号」：本机解析回放拿录像者 accountId（服务器没有 parser），再交服务端比对。
@@ -78,11 +91,34 @@ vi.mock('vue-i18n', () => ({
   })
 }))
 
+const mountedWrappers = []
+
 function mountProfile() {
-  return mount(ProfilePage, {
+  const wrapper = mount(ProfilePage, {
     global: { mocks: { $t: key => key } }
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
+
+/** 连通性默认在线：ProfilePage 的 backend 动作现在都过 capability 门禁。 */
+function setOnline(value) {
+  Object.defineProperty(window.navigator, 'onLine', { value, configurable: true })
+}
+
+beforeEach(async () => {
+  useConnectivity().stop()
+  setOnline(true)
+  await useConnectivity().start()
+})
+
+afterEach(() => {
+  // 卸载本轮挂载的组件：否则它们残留的 connectivity watcher 会在后续测试里继续发请求。
+  while (mountedWrappers.length) mountedWrappers.pop().unmount()
+  useConnectivity().stop()
+  useConnectivityNotice().close()
+  setOnline(true)
+})
 
 function wargamingProfile(server, accountId) {
   return {
@@ -99,6 +135,13 @@ describe('ProfilePage Wargaming regions', () => {
     currentProfile = null
     tokenRef.value = null
     syncImpl = () => Promise.resolve(null)
+    userApi.getUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.ensureUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.syncUserWotbAccountFromLogin.mockImplementation(() => syncImpl())
+    userApi.updateUserWotbAccount.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.deleteUserWotbAccount.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.getUserHofRecords.mockResolvedValue([])
+    userApi.verifyUserWotbAccountFromReplay.mockImplementation((...args) => verifyApi.verifyUserWotbAccountFromReplay(...args))
     hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
     hundredApi.hofHundredCancel.mockReset()
   })
@@ -505,5 +548,148 @@ describe('ProfilePage verify with replay', () => {
     await flushPromises()
     expect(verifyApi.verifyUserWotbAccountFromReplay).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="profile-verify-error"]').text()).toBe('api-error:INVALID_REPLAY_FILE')
+  })
+})
+
+/**
+ * ProfilePage 的连通性门禁（PR #467 review blocker）。
+ *
+ * 页面所有 backend 动作都必须经 capability 门禁（ACCOUNT_PROFILE / HALL_OF_FAME），
+ * offline / unknown / degraded / service-unavailable 一律**不发请求**、不进入 error 态，
+ * 恢复在线后自动加载且不产生请求风暴。
+ */
+describe('ProfilePage connectivity gating', () => {
+  function resetApi() {
+    for (const spy of Object.values(userApi)) spy.mockClear()
+    hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
+    hundredApi.hofHundredCancel.mockReset()
+    verifyApi.replayRecorderAccountId.mockReset()
+    verifyApi.verifyUserWotbAccountFromReplay.mockReset()
+    useConnectivityNotice().close()
+  }
+
+  beforeEach(async () => {
+    currentProfile = wargamingProfile('ASIA', 123)
+    tokenRef.value = { displayName: 'PlayerOne' }
+    syncImpl = () => Promise.resolve(null)
+    userApi.getUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.ensureUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.syncUserWotbAccountFromLogin.mockImplementation(() => syncImpl())
+    userApi.getUserHofRecords.mockResolvedValue([])
+    resetApi()
+    useConnectivity().stop()
+    setOnline(false)
+    await useConnectivity().start()
+  })
+
+  afterEach(() => {
+    useConnectivity().stop()
+    useConnectivityNotice().close()
+    setOnline(true)
+  })
+
+  it('offline mount issues zero backend requests and shows the neutral connectivity state', async () => {
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(userApi.ensureUserProfile).not.toHaveBeenCalled()
+    expect(userApi.getUserProfile).not.toHaveBeenCalled()
+    expect(userApi.syncUserWotbAccountFromLogin).not.toHaveBeenCalled()
+    expect(userApi.getUserHofRecords).not.toHaveBeenCalled()
+    expect(hundredApi.hofHundredMyStatus).not.toHaveBeenCalled()
+    // 中性状态（不是 error / 不是 signedOut），文案来自 capability 模型。
+    expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('featureOffline.accountProfile')
+    expect(wrapper.text()).not.toContain('profile.error')
+  })
+
+  it('offline retry stays gated: no request, connectivity notice instead of a business error', async () => {
+    const wrapper = mountProfile()
+    await flushPromises()
+    resetApi()
+
+    await wrapper.get('[data-testid="profile-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(userApi.ensureUserProfile).not.toHaveBeenCalled()
+    expect(userApi.getUserProfile).not.toHaveBeenCalled()
+    expect(useConnectivityNotice().visible.value).toBe(true)
+    expect(useConnectivityNotice().notice.value.messageKey).toBe('featureOffline.accountProfile')
+    expect(wrapper.text()).not.toContain('profile.error')
+  })
+
+  it('losing connectivity blocks every backend action the page would otherwise fire', async () => {
+    // CN 手工填写 + 已绑定 + 未验证：edit / unbind / verify-with-replay 三块都会渲染。
+    currentProfile = {
+      wotbAccountSource: 'USER_FILLED',
+      wotbServer: 'CN',
+      wotbAccountId: 456,
+      wotbNickname: 'PlayerOne',
+      displayName: 'PlayerOne',
+      wotbAccountVerifiedAt: null
+    }
+    setOnline(true)
+    useConnectivity().stop()
+    await useConnectivity().start()
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
+
+    // 掉线后（页面已渲染）逐个动作都必须被门禁挡住。
+    setOnline(false)
+    window.dispatchEvent(new Event('offline'))
+    await flushPromises()
+    resetApi()
+
+    // unbind（profile 已绑定 → 「解绑」按钮存在）
+    const unbind = wrapper.findAll('button').find(b => b.text().includes('profile.unbind'))
+    expect(unbind).toBeTruthy()
+    await unbind.trigger('click')
+    await flushPromises()
+    expect(userApi.deleteUserWotbAccount).not.toHaveBeenCalled()
+
+    // 用回放验证：本地解析也不会被触发（门禁在最前，避免用户选完文件才发现无法提交）
+    const input = wrapper.get('[data-testid="profile-verify-input"]')
+    Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'a.wotbreplay')], configurable: true })
+    await input.trigger('change')
+    await flushPromises()
+    expect(verifyApi.replayRecorderAccountId).not.toHaveBeenCalled()
+    expect(verifyApi.verifyUserWotbAccountFromReplay).not.toHaveBeenCalled()
+
+    // edit → save：不得调用 updateUserWotbAccount（放最后：进入编辑态会隐藏 verify 区）
+    const edit = wrapper.findAll('button').find(b => b.text().includes('profile.edit'))
+    expect(edit).toBeTruthy()
+    await edit.trigger('click')
+    await flushPromises()
+    const save = wrapper.findAll('button').find(b => b.text().includes('profile.save'))
+    expect(save).toBeTruthy()
+    await save.trigger('click')
+    await flushPromises()
+    expect(userApi.updateUserWotbAccount).not.toHaveBeenCalled()
+
+    // 掉线期间页面不会重新触发 ensure / get / hof（retry 的离线路径由上一个用例覆盖）
+    expect(userApi.ensureUserProfile).not.toHaveBeenCalled()
+    expect(userApi.getUserProfile).not.toHaveBeenCalled()
+    expect(userApi.getUserHofRecords).not.toHaveBeenCalled()
+    expect(hundredApi.hofHundredMyStatus).not.toHaveBeenCalled()
+  })
+
+  it('reconnect loads the profile exactly once (no request storm on repeated events)', async () => {
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(true)
+    resetApi()
+
+    setOnline(true)
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(false)
+
+    // 重复的 online 通知（推送抖动）不得再触发第二次加载
+    window.dispatchEvent(new Event('online'))
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
   })
 })

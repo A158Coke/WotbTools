@@ -25,12 +25,25 @@ export function ensureBusinessUser() {
   return Promise.resolve(true)
 }
 
-export async function whenBusinessUserSettled() {
+/** gated 版本（与真实实现同名同语义）：离线时不得进入 ensure。 */
+export function ensureBusinessUserIfAllowed(context = {}) {
+  if (!profileBackendAllowed(context)) return Promise.resolve(false)
+  return ensureBusinessUser()
+}
+
+export async function whenBusinessUserSettled(context = {}) {
+  if (!profileBackendAllowed(context)) return false
   return true
 }
 
 export function retryBusinessUser() {
   return Promise.resolve(true)
+}
+
+/** gated retry（与真实实现同名同语义）。 */
+export function retryBusinessUserIfAllowed(context = {}) {
+  if (!profileBackendAllowed(context)) return Promise.resolve(false)
+  return retryBusinessUser()
 }
 
 export function resetBusinessUserBootstrap() {

@@ -139,6 +139,15 @@ for script in ("business-postgres-backup.sh", "keycloak-postgres-backup.sh", "to
 # PR #467 review: APK/bundle content assertions must never pipe into `grep -q`.
 # Under `set -o pipefail` a hit makes grep exit early, the producer takes SIGPIPE (141), and the
 # whole pipeline reports failure — i.e. a real file gets reported as missing.
+# stage 里 setup-node 只能有一个：重复声明是 review 发现的真实冗余（PR #467 P2）。
+_stage_sources = []
+for _name in ("ci-android.yml", "android-release.yml"):
+  _stage_sources.append((_name, (workflow_dir / _name).read_text(encoding="utf-8")))
+_release_source = dict(_stage_sources)["android-release.yml"]
+_stage_block = _release_source.split("\n  publish:", 1)[0]
+assert _stage_block.count("actions/setup-node@v4") == 1, \
+  f"android-release.yml stage must declare actions/setup-node@v4 exactly once, got {_stage_block.count('actions/setup-node@v4')}"
+
 for android_workflow in ("ci-android.yml", "android-release.yml"):
   android_text = (workflow_dir / android_workflow).read_text(encoding="utf-8")
   # 注释里可以解释这个坑，真实命令里不允许再出现（YAML 注释以 # 开头）。
