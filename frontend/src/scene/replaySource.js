@@ -74,6 +74,20 @@ function parseWorkerInstance() {
   return parseWorker;
 }
 
+/**
+ * Worker 传输载荷：Worker 契约是 ArrayBuffer（`playbackParse.worker.ts` 自己 `new Uint8Array`）。
+ * 若 bytes 是 backing buffer 上的切片，必须只发这一段——否则会把无关字节一起交给解析器。
+ * 不转移所有权（`transfer`）：Worker 失败时主线程还要用同一份字节回退解析。
+ */
+export function playbackParsePayload(bytes) {
+  if (!(bytes instanceof Uint8Array)) {
+    throw new TypeError('playback parse payload expects Uint8Array')
+  }
+  return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+    ? bytes.buffer
+    : bytes.slice().buffer;
+}
+
 async function parsePlaybackJsonOffThread(bytes) {
   const worker = parseWorkerInstance();
   if (worker) {
@@ -82,7 +96,7 @@ async function parsePlaybackJsonOffThread(bytes) {
         const id = ++parseSeq;
         parsePending.set(id, { resolve, reject });
         // 不转移所有权：失败回退时主线程仍需这份字节（结构化克隆 1–2MB 成本可忽略）
-        worker.postMessage({ id, bytes });
+        worker.postMessage({ id, bytes: playbackParsePayload(bytes) });
       });
     } catch (err) {
       console.warn('[playback] 解析 Worker 不可用，回退主线程解析:', err);
@@ -93,18 +107,25 @@ async function parsePlaybackJsonOffThread(bytes) {
   if (typeof mod.parsePlayback !== 'function') {
     throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
   }
-  return mod.parsePlayback(new Uint8Array(bytes));
+  return mod.parsePlayback(bytes);
 }
 
 /** 缓存键：文件名 + 字节数 + mtime + **采样指纹**（首/中/尾各 ≤4KB 的 FNV-1a）。
- *  只靠文件名/长度/mtime 会让「同名同长但内容不同」的两份回放互相串用；
- *  全量哈希 1–2MB 又要几毫秒，采样窗口足够区分真实回放（成本 ~0.05ms）。 */
+ *  只靠文件名/长度/mtime 会让「同名同长同 mtime 但内容不同」的两份回放互相串用；
+ *  全量哈希 1–2MB 又要几毫秒，采样窗口足够区分真实回放（成本 ~0.05ms）。
+ *  `bytes` 必须是 Uint8Array：ArrayBuffer 没有 `length` 与索引语义，采样会退化成常量
+ *  指纹（正是本函数此前失效的原因），所以这里显式 fail loud。 */
 function fileCacheKey(fileObject, bytes) {
-  const n = bytes.length;
+  if (!(bytes instanceof Uint8Array)) {
+    throw new TypeError('fileCacheKey expects Uint8Array replay bytes')
+  }
+  const n = bytes.byteLength;
   let h = 2166136261;
+  const window = 4096;
   const step = Math.max(1, Math.floor(n / 3));
-  for (const start of [0, step, Math.max(0, n - 4096)]) {
-    const end = Math.min(n, start + 4096);
+  // 去重 start：小文件（n < 3×window）三个窗口会重叠，重复读同一段纯属浪费
+  for (const start of new Set([0, step, Math.max(0, n - window)])) {
+    const end = Math.min(n, start + window);
     for (let i = start; i < end; i++) { h ^= bytes[i]; h = Math.imul(h, 16777619); }
   }
   h = (h >>> 0).toString(36);
@@ -117,8 +138,12 @@ function fileCacheKey(fileObject, bytes) {
 export function __resetPlaybackJsonCacheForTest() { playbackJsonCache.clear(); }
 
 export async function loadFromLocalFile(fileObject) {
-  const bytes = await fileObject.arrayBuffer()
-  // 解析结果缓存：以（文件名, 字节数, mtime）为键缓存 JSON 字符串。重复打开同一场
+  const arrayBuffer = await fileObject.arrayBuffer()
+  // 进入指纹 / Worker / 回退解析前统一 bytes 类型：三条路径都只认 Uint8Array
+  //（此前把 ArrayBuffer 直接当字节数组用，缓存指纹恒为常量 → 同名同 mtime 的不同
+  //  回放会命中彼此的结果）。
+  const bytes = new Uint8Array(arrayBuffer)
+  // 解析结果缓存：以（文件名, 字节数, mtime, 采样指纹）为键缓存 JSON 字符串。重复打开同一场
   // （换标签页/重进页面/重新加载同一文件）直接命中，省掉一次完整 WASM 解析；
   // 命中仍走主线程 JSON.parse（约 15ms）与契约校验，形状门禁不绕过。
   const cacheKey = fileCacheKey(fileObject, bytes)

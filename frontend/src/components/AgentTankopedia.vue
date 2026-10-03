@@ -572,9 +572,10 @@ onMounted(() => {
 .tp-card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .tp-card.is-premium { border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border-subtle)); }
 /* 收藏车：蓝框（`--color-info` 是本组件既有的中性蓝；主题测试要求 Agent 组件只用
- * 已定义 token，故不写裸色）。与金币车的警告色边框区分开——两者在数据上互斥
- * （tanks.pb field13：1=金币 2=收藏）。 */
-.tp-card.is-collector { border-color: color-mix(in oklab, var(--color-info) 55%, var(--color-border-subtle)); }
+ * 已定义 token，故不写裸色）。与金币车警告色边框区分开：上游数据两者互斥
+ * （tanks.pb field13：1=金币 2=收藏），但 consumer 不依赖上游保证——异常双 true 时
+ * **premium 优先**，由 `:not(.is-premium)` 显式确定，而不是靠规则先后顺序。 */
+.tp-card.is-collector:not(.is-premium) { border-color: color-mix(in oklab, var(--color-info) 55%, var(--color-border-subtle)); }
 
 @media (hover: hover) {
   .tp-card:hover { border-color: var(--color-accent); background: var(--color-surface-2); }

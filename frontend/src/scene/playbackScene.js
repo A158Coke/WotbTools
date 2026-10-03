@@ -1046,9 +1046,10 @@ export function initPlayback(container, store) {
   // null，静态 scene 的 `team` 字段语义 UNKNOWN——一律不据此上色/推断归属；环与 HUD 用中性
   // 色，进度条用呈现强调色（仅表示"有占领进度"，不代表阵营）。半径不做车辆距离推算。
   //
-  // 目标存在性判据：assault_objective_present（上游 v0.3.1；目标族发出裸初始化对以外的
-  // 字段）优先，旧产物回退"有进度广播"。裸初始化对 1=1,2=1 + 1=2,2=1 是通用广播，
-  // 普通对局同样会发，不得据此判定。
+  // 目标存在性判据：assault_objective_present 优先（上游 v0.3.11 = **目标族存在性**：
+  // wrapper8 目标族 field2==1 且 field1∈{1,2} 出现即 true，不要求进度字段），旧产物
+  // 回退"有进度广播"。存在性只是前提——真正落地的标记还要求该地图 verified semantics
+  // 给出**唯一**单基地 controlpoint（多 candidate fail-closed，见 buildBases）。
   const ASSAULT_RADIUS_FALLBACK = 20;      // 客户端 scene 常不声明 radius：20m 仅呈现兜底
   const ASSAULT_PROGRESS_COLOR = 0xffc24b; // 呈现强调色（非阵营语义）
   function assaultHasObjective() {

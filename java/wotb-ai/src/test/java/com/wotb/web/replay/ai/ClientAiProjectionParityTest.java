@@ -55,7 +55,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * </ul>
  * 两条输入走同一套下游，逐层比较：实体映射 → 掉血 / 归属 / 击毁 → BattleTimeline 每秒每车
  * （位置 knowledge、位置、生命、血量、血量 knowledge、地图区域）→ grounding facts → 团队 / 个人 prompt 全文。
- * 放行的差异只有 {@link #normalizePrompt} 里四条，每条写明原因。
+ * 放行的差异只有 {@link #normalizePrompt} 里三条（内部事件条数 / 解码覆盖率 / 基地迁移分秒与时序），
+ * 外加 {@link #PINNED_BASE_CAPTURE_JAVA_ONLY} 与 {@link #PINNED_BASE_CAPTURE_CLIENT_ONLY} 逐条冻结的
+ * v0.3.11「占领中断归零」差异（按 fixture 限定、条数冻结，不做字段通配）。
  */
 class ClientAiProjectionParityTest {
 
@@ -66,17 +68,32 @@ class ClientAiProjectionParityTest {
     /** 基地迁移的分秒：上游 PlaybackData 目标时钟舍入到 0.01 s，跨整秒边界时 mm:ss 可差 1 s（时刻差 ≤ 0.01 s）。 */
     private static final Pattern BASE_EVENT_TIME = Pattern.compile("^\\[\\d+分\\d+秒\\] (BASE [A-D] )");
     /**
-     * 争霸基地占领状态行的 {@code capturing} / {@code captureProgress} 字段
-     * （{@code [t] BASE A owner=... capturing=... captureProgress=...}，渲染点
-     * {@code TeamAiContextCompiler} 的 OBJECTIVE_STATE_TIMELINE）：
+     * v0.3.11「占领中断归零」在**已知 fixture** 上产生的**逐条**差异（Java 冻结基线独有行）。
      *
-     * <p>上游 v0.3.11 契约补正后，「占领中断」（车辆出圈 / 被击毁）以双缺省块表达——进度作废、占领方归零，
-     * 而冻结于 parser 删除前的 Java canonical 仍按旧语义把最后一条进度与占领方挂着（同段时间线上两边的
-     * 行内容与行尾状态不同）。该类语义由前端 {@code playback.golden.test.ts} 的
-     * {@code PINNED_BASE_ABORT_CLEARS} / {@code PINNED_ASSAULT_RESET_ROWS} 两张冻结表逐条看守
-     * （条数漂移即失败），此处只归一化这两个字段；行数、时刻与 {@code owner} 仍必须逐字一致。
+     * <p>语义：占领中止（车辆出圈 / 被击毁）后，上游 v0.3.11 把进度与占领方一起清零，而冻结于
+     * parser 删除前的 Java canonical 仍按旧语义保留最后一条进度（并在随后的广播里重复它）。
+     * 这里**不通配字段**：每条差异行逐字列出，且必须在归一化时被精确消耗 pinned 次数——
+     * 数量漂移（多一条 / 少一条）、行内容变化（时刻 / owner / 进度任一不同）都会失败，
+     * 因此任何**其它** capture 回归仍由逐行比较抓住。
+     *
+     * <p>同一次契约补正的另一侧看守在前端 {@code playback.golden.test.ts} 的
+     * {@code PINNED_BASE_ABORT_CLEARS} / {@code PINNED_ASSAULT_RESET_ROWS}。
      */
-    private static final Pattern BASE_CAPTURE_FIELDS = Pattern.compile(" capturing=\\S+ captureProgress=\\S+");
+    private static final Map<String, List<String>> PINNED_BASE_CAPTURE_JAVA_ONLY = Map.of(
+            "tournament-14-14-example", List.of(
+                    // 中断前的最后一条敌方进度：新版不再保留（该时刻两边都以 6 起步）
+                    "[t] BASE B owner=NONE capturing=ENEMY captureProgress=30",
+                    // 旧语义把最后进度挂到行尾的重复行：新版以 NONE/UNKNOWN 取代
+                    "[t] BASE B owner=NONE capturing=FRIENDLY captureProgress=42"));
+    /**
+     * 同一次补正在客户端（新链路）侧独有的行：占领中断后的清零状态。
+     * 键与 {@link #PINNED_BASE_CAPTURE_JAVA_ONLY} 对应；只对团队 prompt 生效
+     * （该段由 {@code TeamAiContextCompiler#renderObjectiveStateSection} 渲染，个人 prompt 不含）。
+     */
+    private static final Map<String, List<String>> PINNED_BASE_CAPTURE_CLIENT_ONLY = Map.of(
+            "tournament-14-14-example", List.of(
+                    "[t] BASE B owner=NONE capturing=NONE captureProgress=UNKNOWN",
+                    "[t] BASE B owner=NONE capturing=NONE captureProgress=UNKNOWN"));
     /**
      * 只比较集合、不比较相对顺序的连续行段：
      * <ul>
@@ -178,15 +195,43 @@ class ClientAiProjectionParityTest {
         assertEquals(groundingKeys(gj), groundingKeys(gn), "grounding facts");
     }
 
-    /** 生产路径：客户端结算事实 + 投影 → 团队 / 个人 prompt 与 Java canonical 输入的 prompt 一致（仅四条固定差异）。 */
+    /** 生产路径：客户端结算事实 + 投影 → 团队 / 个人 prompt 与 Java canonical 输入的 prompt 一致（仅 normalizePrompt 三条 + 已冻结的占领中断归零表）。 */
     @ParameterizedTest
     @ValueSource(strings = {"random-battle-example", "cw-training-15-14-example", "tournament-14-14-example"})
     void renderedPromptsMatchJavaCanonical(final String name) {
         final Inputs in = inputs(name);
-        assertEquals(List.of(), lineDiff(normalizePrompt(teamPrompt(in.javaBattle(), in.javaRecon())),
-                normalizePrompt(teamPrompt(in.clientBattle(), in.newRecon()))), "team prompt");
+        final String javaTeam = dropPinnedCaptureDeltas(name, normalizePrompt(teamPrompt(in.javaBattle(), in.javaRecon())),
+                PINNED_BASE_CAPTURE_JAVA_ONLY.getOrDefault(name, List.of()));
+        final String clientTeam = dropPinnedCaptureDeltas(name, normalizePrompt(teamPrompt(in.clientBattle(), in.newRecon())),
+                PINNED_BASE_CAPTURE_CLIENT_ONLY.getOrDefault(name, List.of()));
+        assertEquals(List.of(), lineDiff(javaTeam, clientTeam), "team prompt");
+        // 个人 prompt 不含 OBJECTIVE_STATE_TIMELINE（基地状态段只由团队 prompt 渲染），
+        // 因此不参与该定向表；若将来它开始渲染基地行，未列入冻结表即失败。
         assertEquals(List.of(), lineDiff(normalizePrompt(personalPrompt(in.javaBattle(), in.javaRecon())),
                 normalizePrompt(personalPrompt(in.clientBattle(), in.newRecon()))), "personal prompt");
+    }
+
+    /**
+     * 从已归一化的 prompt 中精确移除 pinned 的差异行（每条消耗一次出现），
+     * 并要求每条都**恰好出现 pinned 次数**：少一条（producer 不再发该行）或多一条
+     * （新差异）都会失败。移除只发生在逐条列出的文本上——不做任何字段级通配。
+     */
+    static String dropPinnedCaptureDeltas(final String fixture, final String prompt, final List<String> pinned) {
+        if (pinned.isEmpty()) {
+            return prompt;
+        }
+        final List<String> remaining = new ArrayList<>(pinned);
+        final List<String> out = new ArrayList<>();
+        for (final String line : prompt.split("\n", -1)) {
+            final int at = remaining.indexOf(line);
+            if (at >= 0) {
+                remaining.remove(at);
+                continue;
+            }
+            out.add(line);
+        }
+        assertEquals(List.of(), remaining, fixture + " 冻结的占领中断归零差异行未按 pinned 次数出现（数量漂移即失败）");
+        return String.join("\n", out);
     }
 
     // ---------- helpers ----------
@@ -214,7 +259,6 @@ class ClientAiProjectionParityTest {
             String l = EVENT_COUNT.matcher(line).replaceAll("位置时间线: 可用（N 个领域事件");
             l = DECODE_RATIO.matcher(l).replaceAll("decodedPacketRatio=*");
             l = BASE_EVENT_TIME.matcher(l).replaceAll("[t] $1");
-            l = BASE_CAPTURE_FIELDS.matcher(l).replaceAll(" capturing=* captureProgress=*");
             if (ORDER_FREE_LINE.matcher(l).find()) {
                 run.add(l);
                 continue;
