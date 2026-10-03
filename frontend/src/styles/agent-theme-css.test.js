@@ -192,6 +192,16 @@ describe('Agent 视觉面配色契约', () => {
     }
   })
 
+  describe('E) 金币 / 收藏车边框 precedence：异常双 true 也不依赖 CSS 规则顺序', () => {
+    it('收藏车边框规则带 `:not(.is-premium)`——premium > collector 由选择器确定', () => {
+      const css = read(AGENT_FILES['AgentTankopedia.vue'])
+      expect(css).toContain('.tp-card.is-collector:not(.is-premium)')
+      // 上游数据两者互斥（tanks.pb field13：1=金币 2=收藏），但 consumer 不依赖上游保证：
+      // 双 true 的行必须确定性地落回金币（警告色）边框。
+      expect(css, '出现无门槛的收藏车规则会让双 true 行的边框取决于规则先后顺序').not.toMatch(/\.tp-card\.is-collector\s*\{/)
+    })
+  })
+
   describe('D) tankViewer 内联色只用标记/图例白名单', () => {
     it('内联 color 均为 three.js 标记/图例色', () => {
       const src = read(AGENT_FILES['tankViewer.js'])

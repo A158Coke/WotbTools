@@ -123,7 +123,7 @@ describe('AI Review transport', () => {
     expect(init.keepalive).toBe(true)
   })
 
-  it('treats an already-finished review (404) as a best-effort no-op', async () => {
+  it('keeps older 404 cancel responses as a best-effort no-op during rollout', async () => {
     stubFetch(responseStub(404, '{"errorCode":"RESOURCE_NOT_FOUND","status":404}'))
 
     await expect(cancelAiReview(auth, CORRELATION_ID)).resolves.toBeUndefined()
