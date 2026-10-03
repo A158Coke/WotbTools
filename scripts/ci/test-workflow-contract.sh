@@ -128,6 +128,45 @@ for owner in ("keycloak", "business-postgres", "keycloak-postgres", "observabili
     assert "tofu validate" in tofu_text
     assert "tofu apply" not in tofu_text and "secrets." not in tofu_text
 
+tx_runtime = load(workflow_dir / "tx-runtime-check.yml")
+tx_runtime_events = tx_runtime.get("on", tx_runtime.get(True, {}))
+assert set(tx_runtime_events) == {"workflow_dispatch"}
+assert tx_runtime["permissions"] == {"contents": "read"}
+assert tx_runtime["concurrency"] == {
+    "group": "production-maintenance", "cancel-in-progress": "false", "queue": "max",
+}
+tx_runtime_job = tx_runtime["jobs"]["runtime_check"]
+assert tx_runtime_job["environment"] == "tx-production"
+assert tx_runtime_job["name"] == "TX_RUNTIME_READY"
+tx_runtime_text = json.dumps(tx_runtime, ensure_ascii=False)
+for required in (
+    "TX_KC_POSTGRES_ADMIN_PASSWORD",
+    "TX_KC_BOOTSTRAP_ADMIN_PASSWORD",
+    "TX_KC_DB_PASSWORD",
+    "WG_APPLICATION_ID",
+    "TX_BUSINESS_POSTGRES_ADMIN_PASSWORD",
+    "TX_BUSINESS_DB_PASSWORD",
+    "KEYCLOAK_ADMIN_CLIENT_SECRET",
+    "KEYCLOAK_E2E_CLIENT_SECRET",
+):
+    assert f"secrets.{required}" in tx_runtime_text, required
+for invariant in (
+    "/opt/wotb-tx/deploy/runtime-check.sh",
+    "/opt/wotb-tx/deploy/with-deploy-lock.sh",
+    "TX_FRONTEND_IMAGE_REF",
+    "TX_BUSINESS_API_IMAGE_REF",
+    "grep -Fxq 'TX_RUNTIME_READY'",
+):
+    assert invariant in tx_runtime_text, invariant
+for forbidden in (
+    "appleboy/scp-action",
+    "tofu apply",
+    "docker push",
+    "docker compose up",
+    "deploy.incoming",
+):
+    assert forbidden not in tx_runtime_text, f"TX runtime check must stay read-only: {forbidden}"
+
 backup = load(workflow_dir / "database-backup.yml")
 assert backup["concurrency"] == {
     "group": "production-maintenance", "cancel-in-progress": "false", "queue": "max",
