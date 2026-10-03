@@ -67,6 +67,7 @@
 - source/architecture guard 只锁定 dependency/API ownership；真实 CSS/layout/fullscreen/pointer 行为优先由 browser-level test 覆盖，不得用正则测试冒充浏览器验证。
 - 修改 Playback layout 时至少保持 `npm run test:browser-layout` 通过；该 gate 覆盖 PC / tablet / mobile 实际 CSS geometry 与 form isolation。
 - 修改 Playback / Replay Workspace **交互**（hit target、pointer-events、capability 切换、认证门禁、播放控件）时保持 `npm run test:browser-interaction` 通过；该 gate 用真实 Chrome + 设备指标（含 coarse pointer）与**原始输入事件**驱动真实应用，并以页面内事件记录证明真实 click 的 target。它不模拟真实硬件、Fullscreen API 或真实捏合手势——这些仍需人工/真机复核。
+- 修改装甲查看器（`AgentArmorView.vue` 样式 / 模板或 `tankViewer.js` 的常驻 UI）时保持 `npm run test:browser-armor-mobile` 通过；该 gate 驱动真实应用断言手机（390/360 触屏、767 断点内侧、资产不可达态）/ 平板 / 桌面三档的 chrome 几何（顶栏 / 底栏 / 参数面板 / 选车弹窗）、44px 触控目标、无横向溢出与真实触摸接线。通用页面外壳在两个浏览器 gate 间共享：`scripts/browser-page.mjs` + `scripts/browser-fixtures/fixture-server.mjs`。
 - 修改架构边界时覆盖受影响的深链、历史导航、认证目的地或共享状态；修改 build/dependency 时运行 `npm run build`。
 - 变更后执行 review-fix；影响界面、构建或文档时再执行 review-with-docs。
 
