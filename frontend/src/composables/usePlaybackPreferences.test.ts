@@ -1,11 +1,16 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it } from 'vitest'
-import { nextTick } from 'vue'
-import { usePlaybackPreferences } from './usePlaybackPreferences.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, nextTick } from 'vue'
+import { mount } from '@vue/test-utils'
+let usePlaybackPreferences: typeof import('./usePlaybackPreferences.js').usePlaybackPreferences
 
 describe('usePlaybackPreferences', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(async () => {
+    localStorage.clear()
+    vi.resetModules()
+    usePlaybackPreferences = (await import('./usePlaybackPreferences.js')).usePlaybackPreferences
+  })
 
   it('uses the existing product defaults', () => {
     const prefs = usePlaybackPreferences()
@@ -17,6 +22,52 @@ describe('usePlaybackPreferences', () => {
     })
     expect({ ...prefs.paneWidths }).toEqual({ rail: null, details: null })
     expect(prefs.railCollapsed.value).toBe(false)
+  })
+
+  it('shares immediate state and merged persistence between two mounted consumers', async () => {
+    const consumers: ReturnType<typeof usePlaybackPreferences>[] = []
+    const Consumer = defineComponent({
+      setup() {
+        consumers.push(usePlaybackPreferences())
+        return () => null
+      },
+    })
+    const first = mount(Consumer)
+    const second = mount(Consumer)
+    const [a, b] = consumers
+    expect(a).toBe(b)
+    expect(a.labelPrefs).toBe(b.labelPrefs)
+    expect(a.hpPrefs).toBe(b.hpPrefs)
+    expect(a.uiPrefs).toBe(b.uiPrefs)
+
+    a.labelPrefs.showTankName = false
+    expect(b.labelPrefs.showTankName).toBe(false)
+    b.labelPrefs.showPlayerName = true
+    expect(a.labelPrefs.showPlayerName).toBe(true)
+    await nextTick()
+    expect(JSON.parse(localStorage.getItem('wotb.pb.label-prefs') || '{}')).toEqual({
+      showPlayerName: true, showTankName: false, showReload: true,
+    })
+
+    // Persistence belongs to the module, not the first mounted caller's scope.
+    first.unmount()
+    b.labelPrefs.showReload = false
+    await nextTick()
+    expect(JSON.parse(localStorage.getItem('wotb.pb.label-prefs') || '{}')).toEqual({
+      showPlayerName: true, showTankName: false, showReload: false,
+    })
+    second.unmount()
+  })
+
+  it('hydrates a new module session independently of the previous singleton', async () => {
+    const old = usePlaybackPreferences()
+    old.labelPrefs.showPlayerName = true
+    await nextTick()
+    localStorage.clear()
+    vi.resetModules()
+    const { usePlaybackPreferences: freshSession } = await import('./usePlaybackPreferences.js')
+    expect(freshSession().labelPrefs).not.toBe(old.labelPrefs)
+    expect(freshSession().labelPrefs.showPlayerName).toBe(false)
   })
 
   it('hydrates and persists all playback presentation preferences through one owner', async () => {

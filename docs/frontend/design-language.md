@@ -130,6 +130,12 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 - 游戏本身有色盲模式，把敌方改成紫色。我们提供同样的开关，与玩家的习惯保持一致。
 - 2D、3D、表格、雷达图共用这几个 token，不再各自定义红绿。
 
+Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图定位和 3D 相机投影
+只负责 anchor，不各自维护字色、背景、HP/装填样式。姓名/车型、HP 数值与百分比、逐发装填
+共用语义 CSS token，使用文字阴影与克制的视觉辅助保持可读，不铺整卡不透明黑底。
+3D 使用屏幕空间 HTML，因此直接消费 CSS token，无需 Canvas 色值副本。标签 overlay
+不得以空白区域截获场景指针；长姓名/车型必须受限并截断，不能撑宽战场。
+
 ### 3.4 数据可视化
 
 - 分类色板：8 色，对色盲友好（参考 Okabe–Ito），两套主题各一份，都要在 `surface-1` 上 ≥ 3:1。

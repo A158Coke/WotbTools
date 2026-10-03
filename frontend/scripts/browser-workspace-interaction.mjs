@@ -405,6 +405,16 @@ class Page {
   resetInputTrace() {
     return this.evaluate('window.__wsInput = { primary: null, click: null, clickCount: 0 }; window.__wsInput')
   }
+
+  async pressH() {
+    await this.client.send('Input.dispatchKeyEvent', {
+      type: 'keyDown', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72,
+    }, this.sessionId)
+    await this.client.send('Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72,
+    }, this.sessionId)
+    await delay(100)
+  }
 }
 
 const results = []
@@ -877,21 +887,51 @@ async function runRosterGeometryScenario(env, scenario) {
       }
     }
 
-    // 「隐藏全部 UI」：HUD / 阵容 / 控件全部让位，且恢复按钮可点（不得不可逆）
+    // H respects interactive targets, then closes an already-open Display panel and hides
+    // result presentation without deleting its underlying state. Real keyboard input is
+    // required: a synthetic event dispatched on window would bypass the focus/target guard.
+    await page.evaluate(`(() => {
+      window.__pbPane.store.banner = { text: 'Fixture battle result' }
+      document.querySelector('[data-testid="disp-tank"]').focus()
+    })()`)
+    await page.pressH()
+    check(failures, await page.evaluate(`!!document.querySelector('[data-testid="display-panel"]:not([hidden])')
+      && !document.querySelector('[data-testid="show-all-ui"]')`), 'H on a checkbox must not hide UI')
+    await page.evaluate('document.activeElement?.blur()')
+    await page.pressH()
+    await page.waitFor(() => {
+      const root = document.querySelector('.pb-root')
+      const panel = root?.querySelector('[data-testid="display-panel"]')
+      return !!root && !root.querySelector('.hud') && !root.querySelector('.team-lane')
+        && !root.querySelector('.controls') && !root.querySelector('.banner')
+        && (!panel || panel.hidden) && !!root.querySelector('[data-testid="show-all-ui"]')
+    }, { label: 'H hides all UI and closes Display' })
+    check(failures, await page.evaluate('window.__pbPane.store.banner?.text === "Fixture battle result"'),
+      'hide all UI must preserve underlying result state')
+    const restoreAfterH = await clickElement(page, '[data-testid="show-all-ui"]')
+    check(failures, clicked(restoreAfterH), `restore button after H not clickable: ${restoreAfterH}`)
+    await page.waitFor(() => !!document.querySelector('.controls') && !!document.querySelector('.banner')
+      && !document.querySelector('[data-testid="display-panel"]:not([hidden])'), { label: 'restore returns result, keeps Display closed' })
+    const reopenDisplay = await clickElement(page, '[data-testid="display-toggle"]')
+    check(failures, clicked(reopenDisplay), `display toggle after restore not clickable: ${reopenDisplay}`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]:not([hidden])'), { label: 'Display reopens' })
+
+    // The inverse path uses the same transition: button hides, H restores.
     const hideBtn = await clickElement(page, '[data-testid="hide-all-ui"]')
     check(failures, clicked(hideBtn), `hide-all-ui button not clickable: ${hideBtn}`)
     if (clicked(hideBtn)) {
       await page.waitFor(() => {
         const root = document.querySelector('.pb-root')
         return !!root && !root.querySelector('.hud') && !root.querySelector('.team-lane')
-          && !root.querySelector('.controls') && !!root.querySelector('[data-testid="show-all-ui"]')
+          && !root.querySelector('.controls') && !root.querySelector('.banner')
+          && !root.querySelector('[data-testid="display-panel"]:not([hidden])')
+          && !!root.querySelector('[data-testid="show-all-ui"]')
       }, { label: 'all UI hidden' })
-      const restoreBtn = await clickElement(page, '[data-testid="show-all-ui"]')
-      check(failures, clicked(restoreBtn), `restore button not clickable: ${restoreBtn}`)
-      if (clicked(restoreBtn)) {
-        await page.waitFor(() => !!document.querySelector('.controls')
-          && !document.querySelector('[data-testid="show-all-ui"]'), { label: 'UI restored' })
-      }
+      await page.evaluate('document.activeElement?.blur()')
+      await page.pressH()
+      await page.waitFor(() => !!document.querySelector('.controls') && !!document.querySelector('.banner')
+        && !document.querySelector('[data-testid="show-all-ui"]')
+        && !document.querySelector('[data-testid="display-panel"]:not([hidden])'), { label: 'H restores UI after button hides it' })
     }
   }
 

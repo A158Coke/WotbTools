@@ -20,6 +20,7 @@ import { uiProfile } from '../composables/useUiProfile.js'
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
+import PlaybackVehicleLabels3D from './PlaybackVehicleLabels3D.vue'
 import BaseStatusBar from './BaseStatusBar.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
@@ -53,7 +54,11 @@ const { labelPrefs, hpPrefs, uiPrefs } = usePlaybackPreferences()
 const uiHidden = ref(false)
 /** 「显示」面板开合（局部视图状态，不持久化） */
 const displayOpen = ref(false)
-function toggleUiHidden() { uiHidden.value = !uiHidden.value }
+function setUiHidden(hidden) {
+  uiHidden.value = hidden
+  if (hidden) displayOpen.value = false
+}
+function toggleUiHidden() { setUiHidden(!uiHidden.value) }
 /**
  * `H` 切换「隐藏全部 UI」。在输入 / 可操作控件上不响应（复用播放传输的同一判据：
  * 输入框里打字不该把界面藏起来）。
@@ -72,7 +77,7 @@ function onUiToggleKeydown(event) {
   toggleUiHidden()
 }
 
-/** 战场 UI 分块：隐藏全部 UI 时整块关掉（面板自身与恢复按钮不受影响） */
+/** 战场 UI 分块：隐藏全部 UI 时整块关掉（只保留恢复按钮） */
 const showTopbar = computed(() => !uiHidden.value && uiPrefs.showTopbar)
 const showRoster = computed(() => !uiHidden.value && uiPrefs.showRoster)
 const showKillfeed = computed(() => !uiHidden.value && uiPrefs.showKillfeed)
@@ -80,6 +85,7 @@ const showBaseStatus = computed(() => !uiHidden.value && uiPrefs.showBaseStatus)
 
 const store = createPlaybackStore()
 const stage = ref(null)
+const labelOverlay = ref(null)
 /** 审计 3D-15：手机上两队名单默认收起（原来两块 240px 面板互相重叠、盖住场景），按需打开 */
 const rosterOpen = ref(false)
 let sceneApi = null
@@ -287,7 +293,7 @@ function shouldHaveScene() {
 /** 需要则建场景（返回是否新建）；已存在则复用，不重建、不重解析 */
 function ensureScene() {
   if (sceneApi || !shouldHaveScene()) return false
-  sceneApi = initPlayback(stage.value, store)
+  sceneApi = initPlayback(stage.value, store, labelOverlay.value)
   sceneApi?.setPaused?.(!props.active)
   pushLabelPrefs();   // 新场景默认吃共享偏好（含"隐藏全部 UI"的当前状态）
   return true
@@ -369,7 +375,7 @@ watch(controlsEl, (el) => {
  *  store 引用与车道 DOM，不改变任何行为）。browser 几何门禁据此注入 roster / killfeed，
  *  在真实 Chrome 里断言车道的非交叉几何。 */
 if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) {
-  window.__pbPane = { store }
+  window.__pbPane = { store, get labelOverlay() { return labelOverlay.value } }
 }
 
 /**
@@ -443,6 +449,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <p v-else-if="!file" class="pb-note" data-testid="replay3d-empty">{{ $t('agentReplay.no_file') }}</p>
     <div v-else class="pb-root" ref="rootEl" :class="{ 'roster-open': rosterOpen }">
       <div ref="stage" class="scene"></div>
+      <PlaybackVehicleLabels3D ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :hidden="uiHidden || !store.hasData" />
 
       <!-- 顶部 HUD 列：顶栏 → 基地状态条 → 击杀流。整列在没有任何子块可显示时消失
            （不是留一个空 .hud 占位——那会让"隐藏全部 UI"看起来没生效，也让车道定界白留高度）。 -->
@@ -540,7 +547,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         </div>
       </template>
 
-      <div v-if="store.banner" class="banner" :style="{ color: bannerColor }">{{ bannerText() }}</div>
+      <div v-if="!uiHidden && store.banner" class="banner" :style="{ color: bannerColor }">{{ bannerText() }}</div>
 
       <!-- 隐藏全部 UI：连底部播放控件一起让位（这是「只看战场」的语义）；
            `H` 键或右上角常驻按钮随时恢复。resize 观测对 null 元素是安全的（watch(controlsEl)）。 -->
@@ -591,7 +598,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
            关键取舍：面板**绝不参与工具条布局**——一旦让它撑高 .controls，底部控件就会长到
            占掉半个战场，阵容车道随之越界（矮窗口实测）。浮动面板 + 内部滚动是稳定的做法：
            高度上限由 measureDisplayPanel 实测写进 --pb-display-panel-h，宽度按断点由 CSS 给。 -->
-      <div class="display-panel panel" data-testid="display-panel" :hidden="!displayOpen">
+      <div class="display-panel panel" data-testid="display-panel" :hidden="uiHidden || !displayOpen">
         <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
@@ -608,7 +615,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         </label>
         <button
           type="button" class="tool-btn dp-hide" data-testid="hide-all-ui"
-          @click="toggleUiHidden(); displayOpen = false"
+          @click="setUiHidden(true)"
         >{{ t('agentReplay.hide_all_ui') }}</button>
       </div>
 
@@ -617,11 +624,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
       <button
         v-if="uiHidden" type="button" class="ui-restore tool-btn panel"
         data-testid="show-all-ui" :title="t('agentReplay.show_all_ui_hint')"
-        @click="toggleUiHidden()"
+        @click="setUiHidden(false)"
       >{{ t('agentReplay.show_all_ui') }}</button>
 
       <!-- 待开播：画质先定型再解析 + 拉资产（内核在 startPlayback 惰性建渲染器、首帧按当前档位） -->
-      <div v-if="file !== startedFile" class="pre-start" data-test="replay3d-pending">
+      <div v-if="!uiHidden && file !== startedFile" class="pre-start" data-test="replay3d-pending">
         <div class="pre-start-card">
           <h3>{{ t('agentReplay.title') }}</h3>
           <p class="pre-start-file">{{ t('agentReplay.ready_file', { name: file.name || 'replay' }) }}</p>
@@ -638,13 +645,13 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
       <!-- 审计 3D-23：解析为不确定进度，地图资产阶段按段 / 字节推进；失败给出原因与重试 -->
       <Scene3DStatus
-        v-if="store.loading"
+        v-if="!uiHidden && store.loading"
         mode="loading"
         :progress="store.assetStage ? store.assetProgress : null"
         :message="loadingMessage"
       />
       <Scene3DStatus
-        v-else-if="store.err"
+        v-else-if="!uiHidden && store.err"
         mode="error"
         :message="t('agentReplay.error_load', { msg: store.err })"
         :retryable="!!lastFileName"

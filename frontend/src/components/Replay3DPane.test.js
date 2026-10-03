@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
-import Replay3DPane from './Replay3DPane.vue'
+let Replay3DPane
 
 const playback = vi.hoisted(() => ({ api: null, init: null, apis: [] }))
 /**
@@ -103,12 +103,14 @@ function mountPane(props = {}) {
   })
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   playback.api = null
   playback.apis.length = 0
   playback.init?.mockClear()
   // 呈现偏好是持久化的：逐例清空，否则「显示」面板用例的改动会渗到后续用例
   localStorage.clear()
+  vi.resetModules()
+  Replay3DPane = (await import('./Replay3DPane.vue')).default
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -444,6 +446,55 @@ describe('Replay3DPane', () => {
     expect(wrapper.find('.team-lane').exists()).toBe(false)
     // 底部传输控件不属于"战场 UI"分块：仍可操作
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('H closes an open Display panel and preserves the result for UI restoration', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const { store } = playback.api
+    store.banner = { outcome: 'win' }
+    await nextTick()
+    expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_win')
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(false)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
+    await nextTick()
+    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.get('[data-testid="show-all-ui"]').exists()).toBe(true)
+    expect(wrapper.find('.banner').exists()).toBe(false)
+    expect(store.banner).toEqual({ outcome: 'win' })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'H', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.get('[data-testid="display-toggle"]').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_win')
+    wrapper.unmount()
+  })
+
+  it('button hide and H restore share the full UI transition', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    playback.api.store.banner = { outcome: 'lose' }
+    await nextTick()
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="hide-all-ui"]').trigger('click')
+    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.find('.banner').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="show-all-ui"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(false)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
+    await nextTick()
+    expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_lose')
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
     wrapper.unmount()
   })
 

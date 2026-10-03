@@ -9,11 +9,13 @@
  */
 
 import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import BattlePlayback from './BattlePlayback.vue'
+import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import { makeOverview, makePlaybackV2 } from './playbackTestHarness.js'
 import { preloadBattleModels } from '../vehicle-models/runtime.js'
 import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
@@ -300,6 +302,24 @@ function setLife(dataset, accountId, timeSec) {
 let rafCb
 const mountedWrappers = []
 
+beforeEach(async () => {
+  // Preferences have one persistent in-memory owner. Clearing storage alone does not
+  // reset that owner between tests; restore its logical defaults before each mount.
+  const prefs = usePlaybackPreferences()
+  Object.assign(prefs.labelPrefs, { showPlayerName: false, showTankName: true, showReload: true })
+  Object.assign(prefs.hpPrefs, { showHp: true })
+  Object.assign(prefs.trailPrefs, { showTrail: true })
+  Object.assign(prefs.uiPrefs, { showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true })
+  Object.assign(prefs.paneWidths, { rail: null, details: null })
+  prefs.railCollapsed.value = false
+  await nextTick()
+  localStorage.clear()
+})
+
+afterEach(() => {
+  mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
+})
+
 function stubRaf() {
   vi.stubGlobal('requestAnimationFrame', (cb) => {
     rafCb = cb
@@ -517,6 +537,55 @@ describe('BattlePlayback', () => {
     expect(enemy.classes()).not.toContain('pb-destroyed')
   })
 
+})
+
+describe('2D Playback reload telemetry', () => {
+  const telemetry = () => ({
+    timeOrigin: 40,
+    friendlyTeam: 1,
+    vehicles: [
+      { eid: 7, account_id: 1001, team: 1, tank_id: 1 },
+      { eid: 8, account_id: 2001, team: 2, tank_id: 2 },
+    ],
+    reloads: [
+      { eid: 7, clock: 50, phase: 3, duration_s: 8, count: null },
+      { eid: 8, clock: 50, phase: 3, duration_s: 4, count: null },
+    ],
+    reload_effective: [{ eid: 7, clock: 40, duration_s: 4 }],
+    shots: [],
+  })
+  const marker = (wrapper, accountId) => wrapper.findAllComponents({ name: 'VehicleMarker' })
+    .find((component) => component.props('marker').vehicle.accountId === accountId)
+
+  it('passes authoritative friendly reload to labels with canonical time; enemy stays unknown', async () => {
+    const wrapper = mountBattlePlayback({ overview: makeOverview(), playbackV2: makePlaybackV2(), reloadTelemetry: telemetry(), seekTo: 12 })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toEqual([{ state: 'loading', progress: 0.5 }])
+    expect(marker(wrapper, 1001).props('label').showReload).toBe(true)
+    expect(marker(wrapper, 2001).props('marker').reloadShells).toBeNull()
+    await wrapper.setProps({ seekTo: 20 })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toEqual([{ state: 'full', progress: 1 }])
+    await wrapper.setProps({ seekTo: 12 })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toEqual([{ state: 'loading', progress: 0.5 }])
+    // wall-clock time advancing while playback stays paused cannot change gun progress.
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toEqual([{ state: 'loading', progress: 0.5 }])
+  })
+
+  it('missing telemetry and unresolved/ambiguous identity remain hidden', async () => {
+    const wrapper = mountBattlePlayback({ overview: makeOverview(), playbackV2: makePlaybackV2(), seekTo: 12 })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toBeNull()
+    const raw = telemetry()
+    await wrapper.setProps({ reloadTelemetry: { ...raw, friendlyTeam: null } })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toBeNull()
+    await wrapper.setProps({ reloadTelemetry: { ...raw, vehicles: [...raw.vehicles, { eid: 17, account_id: 1001, team: 1, tank_id: 1 }] } })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toBeNull()
+  })
 })
 
 
@@ -2484,4 +2553,3 @@ describe('V2 HP regression (restored critical coverage)', () => {
     expect(enemy[1].text()).toContain('NeverSeen')
   })
 })
-

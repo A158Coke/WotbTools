@@ -211,8 +211,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     tankopedia，如 29985 → "SPHT"，不再是空串/纯数字；标签自身按 `1/view.scale` 反缩放 → 字号不随地图缩放、任意缩放下可见）。
    - **玩家/坦克名标签与碰撞**：控制栏「显示玩家名 / 显示坦克名」checkbox
     （默认 玩家名关 / 坦克名开，`localStorage` 持久化 `wotb.pb.label-prefs`）；PlayerName + TankName
-    共用一个半透明深色背景块（自适应宽度、team 文字色 `--pb-team-text`/`--pb-enemy-text`、
-    destroyed/last-known 只弱化文字）；PlayerName 按实际像素截断（max-width+ellipsis），截断才有
+    由与 3D 共用的 `PlaybackVehicleLabel.vue` 呈现（team 文字色消费语义 token、
+    无整卡不透明黑底、destroyed/last-known 弱化）；PlayerName 按实际像素截断（max-width+ellipsis），截断才有
     完整名 tooltip；碰撞纯函数 `utils/labelLayout.js`（screen px，仅 tank model box 参与，离开 viewport 时自然裁剪）——
     TankName 冲突**从下往上** greedy 上移让位（下方先 finalized、上限一行，3+ 连锁不重新产生
     overlap）、PlayerName 冲突经时间阈值（hide 250ms / show 300ms，`performance.now` **UI wall
@@ -360,8 +360,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 - 3D 模型、纹理及地图资产继续经 `frontend/src/scene/assetProvider.js` 读取 remote asset origin（生产 COS），与 2D 本地静态底图分开。此次退役增强地图不改变 3D provider、缓存策略或资产托管。
 - 3D 回放运行特征（2026-10-03 性能批）：解析在 Worker 内跑（`scene/playbackParse.worker.ts`，
   失败自动回退主线程），同一文件（名+长+mtime+采样指纹）的解析结果缓存最近 3 场；渲染按需刷新
-  （暂停且无在飞特效、相机静止时不重绘）；标签与伤害飘字并入主画布**单 WebGL 上下文**
-  （清晰度随画质档 DPR，不再固定 `min(dpr,2)`）；特效（炮线/命中/爆散/飘字）走对象池，
+  （暂停且无在飞特效、相机静止时不重绘）；伤害飘字留在主画布**单 WebGL 上下文**
+  （清晰度随画质档 DPR，不再固定 `min(dpr,2)`），车辆标签使用共享 HTML 呈现；特效（炮线/命中/爆散/飘字）走对象池，
   仅在会话结束时整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
   HUD/进度条按 ~10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
 - 3D 顶栏双方总血量（2026-10-03 补回）：`scene/teamHpTotals.js` 按各队 `max_hp` 汇总剩余量与
@@ -391,16 +391,31 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （`tabular-nums`、不截断），血条只是次要视觉；没有可信 `maxHp` 时百分比渲染成 `—`（unknown ≠ 0）。
   **seek 必须重投影**：`seekTo()` 在 `tick()` 之后显式补一次 `updateRoster()`——`tick()` 在暂停 /
   相机静止时会走「非 busy 提前返回」，不补这一次名册血量会停在拖动前的值。
-- **3D 名牌 = 共享标签偏好的投影**：`usePlaybackPreferences` 的 `labelPrefs.showPlayerName /
-  showTankName / showReload` 与 `hpPrefs.showHp` 经 `sceneApi.setLabelPrefs()` 推给场景内核
-  （唯一方向：偏好 → 场景，场景只读、不持久化）；行默认值定义在 `scene/labelStyle.js`
-  `vehicleLabelRows()`（昵称关 / 车型开 / 血量开 / 装填开）。名牌**不得**再自带第二份 localStorage。
-  绘制上：不再铺整卡不透明黑底（旧 `rgba(0,0,0,.55)`、阵亡 `.78` 已退役），对比度由文字描边 +
-  柔光承担；卡片定标 = `max(距离屏占比, 屏上可读下限 26px)`，字号仍随距离恒定。
+- **共享 2D / 3D 名牌**：`PlaybackVehicleLabel.vue` 统一姓名、车型、HP 数值/百分比/血条、
+  装填分段及 destroyed/last-known 视觉。`VehicleMarker.vue` 消费同一组件并负责 2D marker
+  位置与标签碰撞；`PlaybackVehicleLabels3D.vue` 将同一组件放在相机投影的屏幕 anchor 上。
+  `usePlaybackPreferences` 是模块级唯一 reactive owner，所有存活的面板消费同一份
+  `labelPrefs.showPlayerName / showTankName / showReload` 与 `hpPrefs.showHp`；默认昵称关、
+  车型/血量/装填开，旧持久化 key 与迁移语义保留。任一面板改变偏好，另一面板立即观察到。
+  名牌直接使用语义 CSS token，不铺整卡不透明黑底，字体保持屏幕空间可读大小，长名称受限截断。
+  3D 车辆标签不再创建 CanvasTexture/Sprite；独立的伤害飘字仍可使用 Three.js sprite。
+  场景按帧投影 world position，隔离的轻量 DOM bridge 只更新 anchor transform/visibility，
+  内容状态按 HUD cadence（约 10Hz）发布给标签子组件，seek 立即刷新，不驱动整个
+  `Replay3DPane` reactive tree。背向相机、出屏、未可见车辆隐藏，既有遮挡语义保留；
+  标签 overlay 的空白区域不截获场景 pointer 输入。
+- **共享装填求值**：2D 的 `parseLocalPlayback` 从本地 WASM `parsePlayback` 结果保留独立
+  `reloadTelemetry`，经面板传给 Playback；3D 消费同一上游 PlaybackData 字段。两者都调用
+  `scene/reloadBar.js#createReloadStateResolver` 的 `reloadStateAt(vehicleId, time)`，
+  基于当前 playback time 确定性重建，暂停不漂移、前后 seek 结果相同。
+  只解释已闭环的本方遥测与 magazine 相位；敌方、未知 relation 或无遥测时隐藏装填，
+  不根据车型/射击推算，不提升为通用 ReplayFacts，也不扩展 HTTP dataset schema。
 - **3D 显示控制**：`Replay3DPane` 工具条的「显示」面板锚在 `.pb-root` 右下角（**不参与工具条布局**
   ——让它撑高 `.controls` 会把底部控件顶到半个战场、把阵容车道挤出界），可分别开关顶栏 / 名册 /
   击杀流 / 基地条 / 四类标签行 / GLB 车模，并提供「隐藏全部 UI」（`H` 键等效）。
-  隐藏全部 UI 时保留右上角常驻恢复按钮；该状态**不写入持久化偏好**，刷新即回到常规界面。
+  按钮与 H 都调用同一 `setUiHidden()` 转换；进入隐藏模式立即关闭 Display，隐藏顶栏、名册、
+  击杀流、基地、车辆标签、播放控件、结果 banner 与其余呈现 overlay，只保留右上角恢复按钮。
+  恢复后原有结果 banner 重新显示（底层 state 不清空）；输入框/按钮等交互目标不触发 H。
+  该状态**不写入持久化偏好**，刷新即回到常规界面。
 - 3D 车体位姿：yaw/pitch 取自渲染滤波网格；**横滚取网格新增的 `vehicles[].hull_roll`**
   （上游 2026-10-03 起产出，additive；值来自原始 type=10 volatile 采样的最近邻——滤波层不输出侧倾）。
   消费端镜像约定：游戏系→场景系是「x 取负」的镜像，故 yaw 与 roll 取负、pitch 不变；

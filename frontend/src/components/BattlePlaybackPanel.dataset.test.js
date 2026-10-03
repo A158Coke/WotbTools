@@ -34,7 +34,7 @@ function mountPanel(props = {}) {
       mocks: { $t: key => key },
       stubs: {
         MapOverview: { props: ['overview'], template: '<div class="map-stub" data-test="map-stub">{{ overview.mapCode }}</div>' },
-        BattlePlayback: { props: ['overview', 'playbackV2'], template: '<div data-test="pb-stub">{{ overview.mapCode }}</div>' },
+        BattlePlayback: { props: ['overview', 'playbackV2', 'reloadTelemetry'], template: '<div data-test="pb-stub">{{ overview.mapCode }}</div>' },
         BattleMap3D: true,
         teleport: true,
       },
@@ -82,6 +82,19 @@ describe('BattlePlaybackPanel local playback parse', () => {
     expect(find(wrapper, 'pb-stub').exists()).toBe(true)
     // 没有 overview：地图副视图显式不可用
     expect(find(wrapper, 'map-unavailable').exists()).toBe(true)
+  })
+
+  it('passes Playback reload telemetry to the 2D consumer and discards it on file changes', async () => {
+    const reloadTelemetry = { timeOrigin: 40, friendlyTeam: 1, vehicles: [{ eid: 7, account_id: 42, team: 1 }], reloads: [] }
+    playback.parseLocalPlayback.mockResolvedValueOnce({ dataset: dataset(), overview: null, reloadTelemetry })
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'BattlePlayback' }).props('reloadTelemetry')).toEqual(reloadTelemetry)
+    playback.parseLocalPlayback.mockResolvedValueOnce({ dataset: dataset(), overview: null, reloadTelemetry: null })
+    await wrapper.setProps({ file: new File(['b'], 'b.wotbreplay') })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'BattlePlayback' }).props('reloadTelemetry')).toBeUndefined()
+    wrapper.unmount()
   })
 
   it('null dataset → explicit UNAVAILABLE without retry; overview still usable in map view', async () => {

@@ -1,9 +1,9 @@
-import { reactive, ref, watch } from 'vue'
+import { effectScope, reactive, ref, watch } from 'vue'
 
 export interface PlaybackLabelPreferences {
   showPlayerName: boolean
   showTankName: boolean
-  /** 实时装填状态（3D 逐发装填格）——只在有可信遥测时才有内容，无遥测不画 */
+  /** 实时装填状态（2D / 3D 共享）——只在有可信遥测时才有内容，无遥测不画 */
   showReload: boolean
 }
 
@@ -59,7 +59,7 @@ function persistJson(key: string, value: unknown): void {
   }
 }
 
-export function usePlaybackPreferences() {
+function createPlaybackPreferences() {
   const labelPrefs = reactive<PlaybackLabelPreferences>(readJson(
     LABEL_PREFS_KEY,
     { showPlayerName: false, showTankName: true, showReload: true },
@@ -139,4 +139,15 @@ export function usePlaybackPreferences() {
   })
 
   return { labelPrefs, hpPrefs, trailPrefs, uiPrefs, paneWidths, railCollapsed }
+}
+
+// Initialize lazily so persisted values hydrate on the first consumer. A detached
+// scope owns persistence: unmounting that consumer must not stop session writes.
+let sharedPreferences: ReturnType<typeof createPlaybackPreferences> | undefined
+
+export function usePlaybackPreferences() {
+  if (!sharedPreferences) {
+    sharedPreferences = effectScope(true).run(createPlaybackPreferences)!
+  }
+  return sharedPreferences
 }

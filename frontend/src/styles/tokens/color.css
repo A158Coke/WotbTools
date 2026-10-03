@@ -8,6 +8,12 @@
  */
 @layer tokens {
   :root {
+    /* Over-map text has a stable light foreground and outline in both profiles. */
+    --color-playback-label-text: #ffffff;
+    --color-playback-label-destroyed: #9aa3ad;
+    --color-playback-label-track: rgb(0 0 0 / .45);
+    --color-playback-label-locked: rgb(255 255 255 / .25);
+    --text-shadow-playback-label: 0 1px 2px rgb(0 0 0 / .95), 0 0 3px rgb(0 0 0 / .95);
     --green-400: #5cc280;
     --green-700: #16703c;
     --red-400: #f2786d;
