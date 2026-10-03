@@ -61,6 +61,23 @@ vi.mock('./BattlePlaybackPanel.vue', () => ({
     template: '<div data-test="playback-pane">{{ file && file.name }}|{{ blockedReason }}</div>',
   },
 }))
+// 3D 回放 / 射击分析同为工作台 pane（懒加载 + 共用 session）：测试只验证工作台的接线
+vi.mock('./AgentReplay3D.vue', () => ({
+  __esModule: true,
+  default: {
+    name: 'AgentReplay3DMock',
+    props: ['file', 'active', 'blockedReason'],
+    template: '<div data-test="replay3d-pane">{{ file && file.name }}|{{ blockedReason }}</div>',
+  },
+}))
+vi.mock('./AgentShots.vue', () => ({
+  __esModule: true,
+  default: {
+    name: 'AgentShotsMock',
+    props: ['file', 'active', 'blockedReason'],
+    template: '<div data-test="shots-pane">{{ file && file.name }}|{{ blockedReason }}</div>',
+  },
+}))
 vi.mock('./FileUploader.vue', () => ({
   default: {
     name: 'FileUploaderMock',
@@ -119,11 +136,13 @@ function mountWorkspace(capability = 'data', { authenticated = true } = {}) {
   return mount(ReplayWorkspace, {
     props: { initialCapability: capability },
     global: {
-      provide: { [NAVIGATE_VIEW_KEY]: vi.fn() },
+      provide: { [NAVIGATE_VIEW_KEY]: navigateSpy },
       mocks: { $t: (k) => k },
     },
   })
 }
+
+const navigateSpy = vi.hoisted(() => vi.fn())
 
 describe('ReplayWorkspace', () => {
   it('shows native read failures in the replay error surface and retries without starting analysis', async () => {
@@ -150,6 +169,8 @@ describe('ReplayWorkspace', () => {
     replayState = buildState()
     hold.state = replayState
     authState.authenticated.value = true
+    // 管理员开关按用例复位：3D / 射击 tab 的用例会临时打开它，泄漏会污染后续 tab 断言
+    authState.isAdmin.value = false
     authState.login = vi.fn()
     const { error: globalError, showError } = useError()
     showError.value = false
@@ -195,6 +216,52 @@ describe('ReplayWorkspace', () => {
     expect(ai.props('active')).toBe(true)
     expect(wrapper.find('[data-test="uploader"]').exists()).toBe(true)
     expect(replayState.analyze).not.toHaveBeenCalled()
+  })
+
+  it('切到 3D 回放：在工作台内渲染 pane（不再跳独立页），共用同一份回放并按需懒挂载', async () => {
+    authState.isAdmin.value = true
+    replayState.files.value = [new File(['x'], 'a.wotbreplay')]
+    const wrapper = mountWorkspace('data')
+    await flushPromises()
+    // 未进入前不挂载（重代码块不随工作台加载）
+    expect(wrapper.find('[data-test="replay3d-pane"]').exists()).toBe(false)
+
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="3d"]').trigger('click')
+    await flushPromises()
+    // 上层导航（工作台 tab 栏 + 数据 pane）仍在：不是跳走的新界面
+    expect(wrapper.find('.workspace-tabs').exists()).toBe(true)
+    expect(wrapper.find('[data-test="uploader"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ws-3d"]').isVisible()).toBe(true)
+    const pane = wrapper.findComponent({ name: 'AgentReplay3DMock' })
+    expect(pane.exists()).toBe(true)
+    expect(pane.props('file')?.name).toBe('a.wotbreplay')
+    expect(pane.props('active')).toBe(true)
+    // URL 只写 capability 对应的 view
+    expect(navigateSpy).toHaveBeenLastCalledWith('agent-replay')
+
+    // 切走再回来：pane 保留（状态不丢），active 随之变化
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="data"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'AgentReplay3DMock' }).props('active')).toBe(false)
+    // v-show 隐藏（happy-dom 的 isVisible 不读内联 display，这里断言 style 本身）
+    expect(wrapper.find('[data-testid="ws-3d"]').attributes('style')).toContain('display: none')
+    expect(wrapper.findComponent({ name: 'AgentReplay3DMock' }).exists()).toBe(true)
+  })
+
+  it('切到射击分析：同样留在工作台内，并用工作台的 blockedReason 说明不可用原因', async () => {
+    // 多文件未选场次 → 工作台给出 blockedReason（与 2D / AI 同一口径）
+    authState.isAdmin.value = true
+    replayState.files.value = [new File(['x'], 'a.wotbreplay'), new File(['y'], 'b.wotbreplay')]
+    const wrapper = mountWorkspace('data')
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="shots"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.workspace-tabs').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ws-shots"]').isVisible()).toBe(true)
+    const pane = wrapper.findComponent({ name: 'AgentShotsMock' })
+    expect(pane.exists()).toBe(true)
+    expect(pane.props('active')).toBe(true)
+    expect(pane.props('blockedReason')).toBe('workspace.single_replay_required')
+    expect(navigateSpy).toHaveBeenLastCalledWith('agent-shots')
   })
 
   it('AI 页不隐藏 Playback tab，也不触发分析', async () => {

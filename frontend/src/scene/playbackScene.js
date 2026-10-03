@@ -2697,6 +2697,31 @@ export function initPlayback(container, store) {
 
   return {
     loadData,
+    /**
+     * 撤下当前回放（工作台清空选择 / 多文件未选场次 / 玩家换选）：回到「无数据」等待态。
+     * 渲染器、画质档与相机保持——重新选回放时不必重建 WebGL 上下文、也不必重选画质；
+     * 新数据就位的加载仍走 `loadData` 自己的 loading / asset 阶段（先解析、资产就绪后才
+     * `hasData`），所以这里只负责把上一场彻底清干净，不留下任何「还在呈现旧回放」的残留。
+     */
+    reset() {
+      teardownSession();               // 车辆/地图/地形/特效/GLB 模板全量释放 + roster/HP/点数归零
+      setPlaying(false);
+      store.hasData = false;
+      store.loading = false;
+      store.assetStage = false;
+      store.assetProgress = null;
+      store.err = '';
+      store.timer = '--:--';
+      store.scoreFriend = 0;
+      store.scoreEnemy = 0;
+      store.mapName = '';
+      store.mapKey = null;
+      store.startTime = 0;
+      store.duration = 0;
+      store.time = 0;
+      store.seekFrac = 0;
+      invalidate();
+    },
     togglePlay: () => setPlaying(!PLAYING),
     setPlaying,
     setSpeed,

@@ -14,21 +14,21 @@ const ContactPage = defineAsyncComponent(() => import('../components/ContactPage
 const AndroidDownloadPage = defineAsyncComponent(() => import('../components/AndroidDownloadPage.vue'))
 const SponsorPage = defineAsyncComponent(() => import('../components/SponsorPage.vue'))
 const MorePage = defineAsyncComponent(() => import('../components/MorePage.vue'))
-const AgentReplay3DPage = defineAsyncComponent(() => import('../components/AgentReplay3D.vue'))
 const AgentTankopediaPage = defineAsyncComponent(() => import('../components/AgentTankopedia.vue'))
 const AgentArmorViewPage = defineAsyncComponent(() => import('../components/AgentArmorView.vue'))
-const AgentShotsPage = defineAsyncComponent(() => import('../components/AgentShots.vue'))
 const RatingDocsPage = defineAsyncComponent(() => import('../components/RatingDocsPage.vue'))
 
+// 3D 回放 / 射击分析是工作台能力（与 2D / AI 同一条 session、同一个 pane 壳），不再有独立页面：
+// 深链 ?view=agent-replay / ?view=agent-shots 解析为带对应 capability 的 ReplayWorkspace。
 export const VIEW_COMPONENTS = Object.freeze({
   home: HomePage,
   replay: ReplayWorkspace,
   'ai-review': ReplayWorkspace,
   'battle-playback': ReplayWorkspace,
-  'agent-replay': AgentReplay3DPage,
+  'agent-replay': ReplayWorkspace,
+  'agent-shots': ReplayWorkspace,
   'agent-tankopedia': AgentTankopediaPage,
   'agent-armor': AgentArmorViewPage,
-  'agent-shots': AgentShotsPage,
   hof: HoFPage,
   more: MorePage,
   'hof-admin': HoFAdminPage,
@@ -45,5 +45,7 @@ export const VIEW_COMPONENTS = Object.freeze({
 export function replayInitialCapability(view) {
   if (view === 'ai-review') return 'ai'
   if (view === 'battle-playback') return 'playback'
+  if (view === 'agent-replay') return '3d'
+  if (view === 'agent-shots') return 'shots'
   return 'data'
 }

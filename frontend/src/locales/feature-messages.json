@@ -233,6 +233,8 @@
     "agentReplay": {
       "title": "3D 回放",
       "roster": "阵容",
+      "start": "开始",
+      "ready_file": "待开播：{name}——先选画质，再开始",
       "hp_friendly": "己方总血量",
       "hp_enemy": "敌方总血量",
       "error_load": "回放加载失败：{msg}",
@@ -298,7 +300,7 @@
     },
     "agentShots": {
       "title": "射击分析",
-      "hint": "选择本地 .wotbreplay——在浏览器内本地解析全员射击（文件不会上传），点击一行即可在装甲查看器里复现这一发的弹道与命中判定。"
+      "hint": "在上方选择 .wotbreplay——在浏览器内本地解析全员射击（文件不会上传），点击一行即可在装甲查看器里复现这一发的弹道与命中判定。"
     },
     "armor": {
       "back": "返回",
@@ -590,6 +592,8 @@
     "agentReplay": {
       "title": "3D replay",
       "roster": "Rosters",
+      "start": "Start",
+      "ready_file": "Ready: {name} — pick a quality preset, then start",
       "hp_friendly": "Friendly total HP",
       "hp_enemy": "Enemy total HP",
       "error_load": "Couldn't load the replay: {msg}",
@@ -655,7 +659,7 @@
     },
     "agentShots": {
       "title": "Shot analysis",
-      "hint": "Pick a local .wotbreplay — every shot is parsed in your browser (never uploaded). Click a row to replay that shot’s trajectory and hit check in the armor viewer."
+      "hint": "Pick a local .wotbreplay above — every shot is parsed in your browser (never uploaded). Click a row to replay that shot’s trajectory and hit check in the armor viewer."
     },
     "armor": {
       "back": "Back",
@@ -947,6 +951,8 @@
     "agentReplay": {
       "title": "3D-повтор",
       "roster": "Составы",
+      "start": "Начать",
+      "ready_file": "Готово: {name} — выберите качество и начните",
       "hp_friendly": "Всего HP у союзников",
       "hp_enemy": "Всего HP у противника",
       "error_load": "Не удалось загрузить повтор: {msg}",
@@ -1012,7 +1018,7 @@
     },
     "agentShots": {
       "title": "Анализ выстрелов",
-      "hint": "Выберите локальный .wotbreplay — все выстрелы разбираются в браузере (файл не загружается). Клик по строке воспроизводит траекторию и попадание в просмотрщике брони."
+      "hint": "Выберите .wotbreplay выше — все выстрелы разбираются в браузере (файл не загружается). Клик по строке воспроизводит траекторию и попадание в просмотрщике брони."
     },
     "armor": {
       "back": "Назад",

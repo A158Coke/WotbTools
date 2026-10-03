@@ -1,7 +1,9 @@
 import type { ComputedRef, Ref } from 'vue'
 import type { Battle, ReplayResult, SourceId } from './replay.js'
 
-export type ReplayCapability = 'data' | 'ai' | 'playback'
+// 工作台能力：数据 / AI 复盘 / 2D 回放 / 3D 回放 / 射击分析。
+// 五种能力都在工作台内渲染（各自一个 pane），URL view 经 replayInitialCapability 映射。
+export type ReplayCapability = 'data' | 'ai' | 'playback' | '3d' | 'shots'
 export type DataViewMode = 'SUMMARY' | 'SINGLE'
 
 /**
