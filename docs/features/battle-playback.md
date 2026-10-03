@@ -51,8 +51,8 @@ anti-future-leak 或现有 tank-marker 资产契约。
   wrapper12/root11（`baseId=A|B|C|D`），Assault 单基地来自 wrapper8/root8
   （`baseId=BASE`）。Assault controlled 11.20 样本证明 progress 会真实广播到 `100`；
   当前只提升 progress 语义，`ownerTeam/capturingTeam` 保持 null，禁止从 wrapper8 field4 猜阵营。
-  `assaultObjectivePresent` 需目标族发出**裸初始化对以外**的字段（field3 或 field4）——裸初始化对
-  `1=1,2=1` + `1=2,2=1` 是通用广播、普通对局同样会发，不得据此确认；field3 未出现时 `baseStates=[]`，
+  `assaultObjectivePresent` 是**目标族存在性**（wrapper8/root8 目标族出现即 true，与是否发生过占领无关；
+  v0.3.11 字段契约补正）：有目标但全程无人进圈也必须是 true。field3 未出现时 `baseStates=[]`，
   仍按 mapCode 从 verified semantic 数据渲染静态 BASE，LEFT JOIN 可为空的 runtime state。
   canonical 显式 `progress=0` 必须保留在 timeline；presentation 将 0 视为 reset/idle：BASE 本体继续显示，但 2D/3D 的水位、进度环和百分比立即清空，后续正值可重新开始显示。无 runtime progress 时同样不画水位；`arenaBonusType=2` 仅表示训练房，不是 Assault mode。
   Malinovka 无占领与 Neptune 满占领共用泛化路径，不按地图名称分支。

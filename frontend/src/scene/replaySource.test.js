@@ -12,7 +12,12 @@ import {
   __resetAgentWasmForTest,
   __setAgentWasmResolverForTest,
 } from '../api/agent-replay-facets.js'
-import { __resetPlaybackJsonCacheForTest, loadFromLocalFile, loadPlaybackData } from './replaySource.js'
+import {
+  __resetPlaybackJsonCacheForTest,
+  loadFromLocalFile,
+  loadPlaybackData,
+  playbackParsePayload,
+} from './replaySource.js'
 
 // 最小合法 v2 PlaybackData（字段齐备且版本为 2）
 function v2Doc() {
@@ -92,6 +97,96 @@ describe('3D 路径（loadFromLocalFile / loadPlaybackData）契约门禁', () =
   it('错版（version=3）同样被拒', async () => {
     setWasm({ ...v2Doc(), version: 3 })
     await expect(loadFromLocalFile(blob())).rejects.toThrow(/不支持的契约版本/)
+  })
+})
+
+describe('解析结果缓存的 key 正确性（metadata 相同 ≠ 同一场）', () => {
+  const fileWith = (bytes, name = 'same.wotbreplay', lastModified = 123456) =>
+    new File([new Uint8Array(bytes)], name, { lastModified })
+
+  it('同 name / 同 mtime / 同长度但内容不同 → 绝不命中（不得串用另一场的结果）', async () => {
+    let parseCalls = 0
+    const docs = [
+      { ...v2Doc(), meta: { ...v2Doc().meta, map_name: 'A' } },
+      { ...v2Doc(), meta: { ...v2Doc().meta, map_name: 'B' } },
+    ]
+    __setAgentWasmResolverForTest(() => Promise.resolve({
+      parsePlayback: () => JSON.stringify(docs[parseCalls++]),
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ tag: AGENT_WASM_RELEASE, upstream_commit: AGENT_WASM_COMMIT }),
+    })))
+
+    const a = fileWith([1, 2, 3, 4])
+    const b = fileWith([1, 2, 9, 4])
+    // 前提：三者（name / lastModified / 长度）确实相同——旧实现据此认为「同一场」
+    expect(b.name).toBe(a.name)
+    expect(b.lastModified).toBe(a.lastModified)
+    expect(b.size).toBe(a.size)
+
+    const first = await loadFromLocalFile(a)
+    const second = await loadFromLocalFile(b)
+    expect(parseCalls).toBe(2)               // 旧实现这里是 1（常量指纹 → 误命中）
+    expect(first.meta.map_name).toBe('A')
+    expect(second.meta.map_name).toBe('B')   // 第二次必须返回 B，不得复用 A
+  })
+
+  it('同一文件对象第二次打开 → 命中缓存（保留原语义）', async () => {
+    let parseCalls = 0
+    __setAgentWasmResolverForTest(() => Promise.resolve({
+      parsePlayback: () => { parseCalls += 1; return JSON.stringify(v2Doc()) },
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ tag: AGENT_WASM_RELEASE, upstream_commit: AGENT_WASM_COMMIT }),
+    })))
+    const file = fileWith([7, 7, 7, 7])
+    await loadFromLocalFile(file)
+    await loadFromLocalFile(file)
+    expect(parseCalls).toBe(1)
+  })
+
+  it('LRU 仍为最近 3 场：第 4 场挤出最旧，被触碰过的保留', async () => {
+    let parseCalls = 0
+    __setAgentWasmResolverForTest(() => Promise.resolve({
+      parsePlayback: () => { parseCalls += 1; return JSON.stringify(v2Doc()) },
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ tag: AGENT_WASM_RELEASE, upstream_commit: AGENT_WASM_COMMIT }),
+    })))
+    // 同名同 mtime，只靠内容指纹区分（同时压测指纹必须真的参与 key）
+    const one = fileWith([1, 1, 1, 1]); const two = fileWith([2, 2, 2, 2])
+    const three = fileWith([3, 3, 3, 3]); const four = fileWith([4, 4, 4, 4])
+
+    await loadFromLocalFile(one); await loadFromLocalFile(two); await loadFromLocalFile(three)
+    expect(parseCalls).toBe(3)
+    await loadFromLocalFile(one)          // 命中并把 one 推到最新
+    expect(parseCalls).toBe(3)
+    await loadFromLocalFile(four)         // 第 4 场 → 挤出最旧（two）
+    expect(parseCalls).toBe(4)
+    await loadFromLocalFile(one)          // one 被触碰过 → 仍在
+    expect(parseCalls).toBe(4)
+    await loadFromLocalFile(two)          // two 已被挤出 → 重新解析
+    expect(parseCalls).toBe(5)
+  })
+})
+
+describe('playbackParsePayload（Worker 传输载荷）', () => {
+  it('整段 buffer：直接复用同一 ArrayBuffer（不复制）', () => {
+    const bytes = new Uint8Array([1, 2, 3])
+    expect(playbackParsePayload(bytes)).toBe(bytes.buffer)
+  })
+
+  it('切片视图：只发这一段，不带 backing buffer 的无关字节', () => {
+    const backing = new Uint8Array([9, 9, 1, 2, 3, 9, 9])
+    const view = backing.subarray(2, 5)
+    expect(Array.from(new Uint8Array(playbackParsePayload(view)))).toEqual([1, 2, 3])
+  })
+
+  it('非 Uint8Array fail loud（类型语义必须明确）', () => {
+    expect(() => playbackParsePayload(new ArrayBuffer(4))).toThrow(TypeError)
   })
 })
 

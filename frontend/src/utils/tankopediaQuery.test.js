@@ -106,8 +106,18 @@ describe('normalizeTankCache', () => {
 
   it('收藏车（is_collector）透传到行上——百科据此上蓝色边框', () => {
     expect(normalizeTankCache([{ id: 49, name: 'Type 59', is_collector: true }])[0].is_collector).toBe(true)
-    // 与金币车互斥：同一行不会是两者
-    expect(normalizeTankCache([{ id: 49, name: 'Type 59', is_collector: 1, is_premium: 1 }])[0]).toMatchObject({ is_collector: true, is_premium: true })
+  })
+
+  it('金币车（is_premium）透传到行上——百科据此上警告色边框', () => {
+    expect(normalizeTankCache([{ id: 49, name: 'Type 59', is_premium: true }])[0].is_premium).toBe(true)
+  })
+
+  it('异常输入双 true 时 normalize 不改写上游字段（互斥不在这里伪造）', () => {
+    // 上游正常数据两者互斥（tanks.pb field13：1=金币 2=收藏），但 projection 的职责只是
+    // 布尔归一化：两个 flag 都原样透传。视觉 precedence 由样式层确定（premium > collector，
+    // 见 AgentTankopedia.vue 的 `.tp-card.is-collector:not(.is-premium)` 及其 source 级 gate）。
+    expect(normalizeTankCache([{ id: 49, name: 'Type 59', is_collector: 1, is_premium: 1 }])[0])
+      .toMatchObject({ is_collector: true, is_premium: true })
   })
 
   it('丢掉无效条目', () => {
