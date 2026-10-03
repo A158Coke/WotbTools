@@ -5,21 +5,40 @@
 ```json
 {
   "schemaVersion": 1,
-  "latestVersionCode": 1004002,
-  "latestVersionName": "1.4.2",
-  "minSupportedVersionCode": 1000000,
-  "nativeBridgeVersion": 1,
+  "latestVersionCode": 2000000,
+  "latestVersionName": "2.0.0",
+  "minSupportedVersionCode": 2000000,
+  "nativeBridgeVersion": 2,
   "sourceSha": "<40-char commit sha>",
-  "apkUrl": "https://wotbtools.com/download/android/wotbtools-android-v1.4.2.apk",
+  "apkUrl": "https://wotbtools.com/download/android/wotbtools-android-v2.0.0.apk",
   "sha256": "<64-char lowercase hex>",
-  "publishedAt": "2026-09-11T00:00:00Z",
+  "publishedAt": "2026-01-01T00:00:00Z",
   "releaseNotes": ""
 }
 ```
 
 `latestVersionCode`、`latestVersionName` 来自 committed `android/gradle.properties`；
 `nativeBridgeVersion` 来自 `contracts/android-native-bridge.json`；`sourceSha` 是生成 APK
-所 checkout 的精确 commit。workflow 只有在 APK 可访问且 SHA 校验通过后才写入 manifest。
+所 checkout 的精确 commit。workflow 只有在**两阶段**都通过之后才写入 manifest：
+
+1. **stage**（main 合并后自动）：构建/签名/上传 immutable APK、建 tag，并写一份 staging evidence
+   `/download/android/wotbtools-android-v<版本>.staging.json`（记录 versionCode/versionName/
+   sourceSha/tag/apkUrl/sha256/stagedAt）；**此时 production `version.json` 不变**。
+2. **publish**（真机 A14 验证后手工 `mode=publish`）：以 **staged release 身份**为发布权威 ——
+   immutable tag → staged source commit → staging evidence → 线上 APK 字节逐一比对（绝不重建、
+   绝不 repoint tag、绝不改 evidence），再校验 Keycloak 的 `wotbtools-android` 可用、production
+   frontend 支持本次 bridge 版本 + `native-auth` 且 ancestry 满足
+   `staged source ─ frontend build ─ main`、`minSupportedVersionCode` 覆盖 breaking bridge cutover，
+   全部成立后才写 `version.json`（`sourceSha` 记录 **APK 的 staged source**，不是发布当刻的 main
+   HEAD）并回读核验。真机验证期间 main 前进不会作废已 staged 的版本。
+
+因此 `version.json` 是**唯一**的强制更新 commit point：真机验证未做或失败时，旧客户端读到的仍是
+上一份 manifest。协议细节见 [`release-process.md`](release-process.md)。
+
+> 上面的 `minSupportedVersionCode=2000000` 是 Android 2.0 的 cutover 取值：manifest 一旦指向
+> bridge v2 的客户端，前端就不再服务 bridge v1，因此旧版必须是强制更新。该值来自 GitHub Actions
+> variable `ANDROID_MIN_SUPPORTED_VERSION_CODE`（不在仓库内），设置时机见
+> [`release-process.md`](release-process.md)。
 
 | 字段 | 必填 | 说明 |
 |---|---|---|

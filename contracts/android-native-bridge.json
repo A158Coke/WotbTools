@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "bridgeVersion": 1,
+  "bridgeVersion": 2,
   "origin": "https://wotbtools.com",
   "allowedOrigins": [
     "https://wotbtools.com",
@@ -17,6 +17,12 @@
       "result": "unknown"
     }
   },
+  "capabilities": [
+    "native-auth",
+    "replay-share",
+    "replay-open",
+    "app-update"
+  ],
   "methods": {
     "getBridgeVersion": {
       "request": { "fields": {} },
@@ -54,6 +60,46 @@
     "startUpdate": {
       "request": { "fields": {} },
       "response": { "type": "boolean" }
+    },
+    "authGetState": {
+      "request": { "fields": {} },
+      "response": {
+        "type": "object",
+        "fields": {
+          "authenticated": { "type": "boolean", "required": true },
+          "expiresAt": { "type": "integer", "nullable": true, "required": true }
+        }
+      }
+    },
+    "authLogin": {
+      "request": { "fields": {} },
+      "response": { "type": "boolean" }
+    },
+    "authLogout": {
+      "request": { "fields": {} },
+      "response": { "type": "boolean" }
+    },
+    "authGetAccessToken": {
+      "request": {
+        "fields": {
+          "minValiditySeconds": { "type": "integer", "required": false }
+        }
+      },
+      "response": {
+        "type": "object",
+        "nullable": true,
+        "fields": {
+          "token": { "type": "string", "nullable": true, "required": true },
+          "expiresAt": { "type": "integer", "nullable": true, "required": true },
+          "claims": { "type": "object", "nullable": true, "required": true },
+          "error": { "type": "string", "nullable": true, "required": true }
+        }
+      }
+    }
+  },
+  "events": {
+    "authChanged": {
+      "global": "wotbtoolsOnAuthChanged"
     }
   },
   "syntheticResources": {

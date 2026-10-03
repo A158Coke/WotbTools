@@ -1,6 +1,25 @@
 // The JSON contract is authoritative. This is the FE compatibility declaration;
 // CI fails if it drifts from contracts/android-native-bridge.json.
-export const SUPPORTED_NATIVE_BRIDGE_VERSIONS = Object.freeze([1])
+//
+// Bridge v2 is the native-auth bridge. Bridge v1 (Android 1.4.x, WebView-owned
+// auth) is deliberately NOT supported by this frontend: an Android shell that
+// reports it must show the upgrade requirement, never silently fall back to
+// keycloak-js inside the WebView.
+export const SUPPORTED_NATIVE_BRIDGE_VERSIONS = Object.freeze([2])
+
+/** Capability that makes the native OIDC session (not the WebView) the auth owner. */
+export const NATIVE_AUTH_CAPABILITY = 'native-auth'
+
+/** Bridge methods the native-auth provider depends on (mirrors the JSON contract). */
+export const NATIVE_AUTH_METHODS = Object.freeze({
+  getState: 'authGetState',
+  login: 'authLogin',
+  logout: 'authLogout',
+  getAccessToken: 'authGetAccessToken',
+})
+
+/** Native → Web auth state change notification (mirrors the JSON contract `events`). */
+export const NATIVE_AUTH_CHANGED_GLOBAL = 'wotbtoolsOnAuthChanged'
 
 export const LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES = Object.freeze([
   'replay-open',

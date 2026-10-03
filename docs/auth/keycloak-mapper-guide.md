@@ -66,9 +66,11 @@ WG 登录成功
 
 ```text
 Client 级：
-  wotbtools-web ──┬── mapper: region → wotb_region
-                  └── mapper: wotb.account_id → wotb_account_id
-  → 只有 wotbtools-web 的 token 有这些 claims
+  wotbtools-web     ──┬── mapper: region → wotb_region
+                      └── mapper: wotb.account_id → wotb_account_id
+  wotbtools-android ──┬── mapper: region → wotb_region
+                      └── mapper: wotb.account_id → wotb_account_id
+  → 只有这两个 client 的 token 有这些 claims（各挂一份，内容相同）
 
 Client Scope 级：
   wotb-claims (Client Scope) ──┬── mapper: region → wotb_region
@@ -87,9 +89,17 @@ Client Scope 级：
 | 适合场景 | 只有 1 个 client，或某 client 独有 claims | 多个 client 需要同一组 claims |
 | 冲突 | 不冲突 | 若 client 同时挂 scope 与同名 mapper，claim 会互相覆盖 |
 
-**WotBTools 现状**：目前只有 `wotbtools-web` 一个前端 client 需要 WG claims，直接挂在 client 上，由 TX-local OpenTofu 管理。
+**WotBTools 现状**：需要 WG claims 的前端 client 有两个 —— `wotbtools-web`（浏览器）与
+`wotbtools-android`（Android 2.0 原生 OIDC）。二者都用 **client 级 mapper**，由 TX-local OpenTofu 管理：
+`keycloak_openid_user_attribute_protocol_mapper.wotbtools_web` 与 `.wotbtools_android` 各自
+`for_each = local.protocol_mappers`，即**同一份 mapper 定义**（`protocol-mappers.tf` 的
+`local.protocol_mappers`）投影到两个 client。
 
-**何时迁到 Client Scope**：以后加管理端、移动端等也要 `wotb_*` claims 时，把 4 个 mapper 挪进一个 `wotb-claims` client scope，让各 client 关联它；默认 scope 可做到自动应用。
+**何时迁到 Client Scope**：现在已进入「多个 client 需要同一组 claims」的局面，迁到一个 `wotb-claims`
+client scope 在结构上更优。但 Android 2.0 认证改造刻意**不**顺手做这次迁移：把既有 web mapper 资源
+改成 scope 关联，会在一次 auth cutover 里引入对生产 web client mapper 的 destroy/recreate 风险，
+收益只是配置更整齐。要做就单独开一个 PR，先 `tofu plan` 确认 web mapper 不出现 delete/replace，
+并同步 `validate-plan.sh` 的保护规则。
 
 > 注：Keycloak 自带默认 scopes（`profile` / `email` / `roles`…），你常见的 `preferred_username`、`realm_access.roles` 就来自它们——这也是为什么没配 mapper 也能看到这些 claim。
 

@@ -31,6 +31,15 @@ server {
         try_files $uri =404;
     }
 
+    # 前端 build 身份 + native 运行面（由 vite build 生成，内容取自
+    # frontend/src/platform/nativeBridgeContract.js）。它是「线上前端是否支持 Bridge v2 /
+    # native-auth」这条发布门禁的机器可读来源，因此绝不允许被缓存层返回旧副本。
+    location = /version.json {
+        default_type application/json;
+        add_header Cache-Control "no-store, max-age=0" always;
+        try_files $uri =404;
+    }
+
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         try_files $uri =404;

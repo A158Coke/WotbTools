@@ -49,7 +49,7 @@
 - `docker/Dockerfile.keycloak`（构建已批准 Provider 的镜像）
 - `infra/tofu/keycloak/`（roles + clients + mapper + IdP 的 TX-local OpenTofu 唯一声明）
 - Keycloak 生产部署配置（生产 realm 不使用 `--import-realm`）
-- `frontend/src/composables/useAuth.js`（登录统一走 `kc.login` 跳转 Keycloak 托管登录页，无 idpHint 白名单）
+- `frontend/src/composables/useAuth.js`（**浏览器端**登录统一走 `kc.login` 跳转 Keycloak 托管登录页，无 idpHint 白名单；Android 2.0 起前端在原生壳内不再初始化 keycloak-js，原生 OIDC 走外部 user-agent，见 `docs/android/architecture.md`）
 - 登录页与个人资料页（当前**没有**前端登录页，`ProfilePage` 未登录时直接跳 Keycloak）
 - `UserProfileController` / `UserProfileService` / `UserProfile` Entity、Repository、DTO（`create()` 当前硬编码 `wotbServer=CN`）
 - `JwtUtil`（读 `sub` / `preferred_username` / `displayName`）
