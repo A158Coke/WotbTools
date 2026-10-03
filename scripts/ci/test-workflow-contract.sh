@@ -439,25 +439,25 @@ assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy g
 # own apply step.
 #
 # CURRENT_K6B_CUTOVERS is the reviewed production placement of the cut-over consumers:
-# K6B-2A moved Frontend -> Business API onto the TX1 WireGuard service endpoint and
+# K6B-2A moved Frontend -> Business API onto the TX1 WireGuard service endpoint,
 # K6B-2B moved Business API -> Business PostgreSQL onto the TX1 WireGuard service
-# endpoint at port 25432. Everything not listed here is still Docker-local, and the
-# assertions below are the guard that a later PR cannot cut a consumer over (or revert
-# an earlier cutover) without an explicit, reviewed edit of this file.
+# endpoint at port 25432, and K6B-2C moved Business API -> Keycloak Admin onto the TX1
+# WireGuard endpoint at port 8080. Everything not listed here is still Docker-local, and
+# the assertions below are the guard that a later PR cannot cut a consumer over (or
+# revert an earlier cutover) without an explicit, reviewed edit of this file.
 CURRENT_K6B_CUTOVERS = {
     "frontend": {"TX_BACKEND_UPSTREAM": "http://10.20.0.1:8087"},
     "business-api": {
         "TX_BUSINESS_DB_HOST": "10.20.0.1",
         "TX_BUSINESS_DB_PORT": "25432",
+        "TX_KEYCLOAK_ADMIN_SERVER_URL": "http://10.20.0.1:8080",
     },
 }
 K6B_DOCKER_LOCAL_PLACEMENTS = {
     "frontend": (frontend_deploy, {
         "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
     }),
-    "business-api": (business_deploy, {
-        "TX_KEYCLOAK_ADMIN_SERVER_URL": "http://keycloak:8080",
-    }),
+    "business-api": (business_deploy, {}),
     "caddy": (caddy_deploy, {
         "CADDY_FRONTEND_UPSTREAM": "wotb-frontend:80",
         "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
