@@ -1,0 +1,33 @@
+// 装甲查看器 ↔ 场景内核的 DOM 契约守卫（审计 3D-14 移动端重排的护栏）。
+//
+// tankViewer.js 不看 props、不响应组件状态：它按固定 ID 在 .armor-view 子树里查节点
+// （getElementById），查不到时静默跳过（null 保护）——重排布局、搬动/删除元素时漏一个 ID，
+// 表现只是「某个控件点了没反应」，没有任何报错。这里锁定：内核查找的每个静态 ID 都必须由
+// 组件模板提供；内核自己创建的节点（调试面板 / 世界模式滑块等）不属于模板契约。
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+
+const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
+
+describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
+  const template = read('./AgentArmorView.vue')
+  const kernel = read('../scene/tankViewer.js')
+
+  it('内核 getElementById 的静态 ID 全部由模板提供', () => {
+    const kernelLookups = new Set([...kernel.matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]))
+    expect(kernelLookups.size).toBeGreaterThan(30)   // 防契约测试自身空跑
+    const kernelCreated = new Set([
+      ...[...kernel.matchAll(/\.id\s*=\s*'([^']+)'/g)].map((m) => m[1]),
+      ...[...kernel.matchAll(/id="([^"]+)"/g)].map((m) => m[1]),
+    ])
+    const templateIds = new Set([...template.matchAll(/id="([^"]+)"/g)].map((m) => m[1]))
+    const missing = [...kernelLookups]
+      .filter((id) => !templateIds.has(id) && !kernelCreated.has(id))
+      .sort()
+    expect(
+      missing,
+      '内核按 ID 查找的节点在模板里不存在——该路径会静默失效（控件点了没反应）',
+    ).toEqual([])
+  })
+})
