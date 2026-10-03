@@ -75,13 +75,24 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 12m
-          envs: TX_RUNTIME_ROOT,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET
+          envs: VERIFIER_DIR,WOTB_TX_DIR,TX_RUNTIME_ROOT,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET
           script: |
             set -Eeuo pipefail
-            runtime=/opt/wotb-tx/deploy/runtime-check.sh
-            lock_wrapper=/opt/wotb-tx/deploy/with-deploy-lock.sh
-            test -f "$runtime"
-            test -f "$lock_wrapper"
+            case "$VERIFIER_DIR" in
+              /tmp/wotb-tx-runtime-check-*) ;;
+              *) echo "Unsafe verifier directory: $VERIFIER_DIR" >&2; exit 2 ;;
+            esac
+            test -d "$VERIFIER_DIR"
+            test ! -L "$VERIFIER_DIR"
+
+            runtime="$VERIFIER_DIR/runtime-check.sh"
+            lock_wrapper="$VERIFIER_DIR/with-deploy-lock.sh"
+            deploy_helper="$VERIFIER_DIR/deploy.sh"
+            runtime_lib="$VERIFIER_DIR/runtime-check-lib.sh"
+            for file in "$runtime" "$lock_wrapper" "$deploy_helper" "$runtime_lib"; do
+              test -f "$file"
+              test ! -L "$file"
+            done
 
             running_image() {
               local service="$1" id
@@ -116,6 +127,8 @@ jobs:
             [ "$status" -eq 0 ] || exit "$status"
             grep -Fxq 'TX_RUNTIME_READY' <<< "$output"
         env:
+          VERIFIER_DIR: /tmp/wotb-tx-runtime-check-${{ github.run_id }}-${{ github.run_attempt }}
+          WOTB_TX_DIR: /opt/wotb-tx
           TX_RUNTIME_ROOT: /opt/wotb-tx
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
           KC_POSTGRES_ADMIN_USER: kc_admin
