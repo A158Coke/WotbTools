@@ -83,14 +83,18 @@ function abandonParseWorker(error) {
 }
 
 function wireParseWorker(worker) {
+  // 返回值 = **本回包是否被认领**（true=结算了在途请求，false=迟到回包被忽略）。
+  // 真实 Worker 忽略返回值；这个契约存在的意义是让注入的假 Worker（unit / browser
+  // 回归）能直接观察「迟到回包无人认领」，而不是只能间接推断。
   worker.onmessage = (event) => {
     const { id, json, error } = event.data || {};
     const pending = parsePending.get(id);
-    if (!pending) return;   // 迟到回包（已被 abort / 看门狗结算）：无人认领，忽略
+    if (!pending) return false;   // 迟到回包（已被 abort / 看门狗结算）：无人认领，忽略
     parsePending.delete(id);
     if (pending.watchdog) clearTimeout(pending.watchdog);
     pending.signal?.removeEventListener('abort', pending.onAbort);
     if (error) pending.reject(new Error(error)); else pending.resolve(json);
+    return true;
   };
   // 崩溃/初始化失败：在飞请求全部失败、worker 置空待下次重建（不回退主线程——
   // 崩溃是整体性的，调用方按错误处理并可重试）
@@ -107,10 +111,20 @@ export function __setParseWorkerForTest(worker) {
   testParseWorker = worker;
 }
 
+// `?debug`（与 Replay3DPane 的 `window.__pbPane` 同一口径）：把上面这个注入点暴露给
+// browser 回归。A → 清空 → B 的真实在途生命周期必须在**真浏览器**里验证，而 A 要确定性地
+// 停在解析中，就不能用真产物（fixture server 没有 WASM）。暴露的只有「Worker 从哪来」，
+// 结算 / abort / 看门狗全部仍是生产代码。
+if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) {
+  window.__pbReplaySource = { __setParseWorkerForTest };
+}
+
 function parseWorkerInstance() {
   if (parseWorker) return parseWorker;
   try {
-    const worker = testParseWorker ?? new Worker(new URL('./playbackParse.worker.ts', import.meta.url), { type: 'module' });
+    // 注入点可以是工厂（每次调用产出**新的**假 Worker，模拟真实 Worker 在 terminate 后重建）
+    const worker = typeof testParseWorker === 'function' ? testParseWorker() : testParseWorker
+      ?? new Worker(new URL('./playbackParse.worker.ts', import.meta.url), { type: 'module' });
     wireParseWorker(worker);
     parseWorker = worker;
   } catch { parseWorker = null; }
