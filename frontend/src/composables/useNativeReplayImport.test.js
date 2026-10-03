@@ -3,14 +3,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useNativeReplayImport } from './useNativeReplayImport.js'
 
-const PENDING_A = { pendingId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'a.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 5 }
-const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 5 }
+const PENDING_A = { pendingId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'a.wotbreplay', uri: 'https://appassets.androidplatform.net/__native/replay-pending', size: 5 }
+const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.wotbreplay', uri: 'https://appassets.androidplatform.net/__native/replay-pending', size: 5 }
 
 /**
  * Native 侧替身：`consumePendingReplay` 实现 **compare-and-clear**
  * （只有 expected pendingId 与当前 pending 完全一致才清理），与 Android 侧一致。
  *
- * 默认 bridge 版本是本前端支持的 v2；`bridgeVersion === null` 走 PR290 legacy 契约
+ * 默认 bridge 版本是本前端支持的 v2；任何未知/旧版本 fail closed。
  * （无版本号 + 已知能力 + 固定 synthetic resource）。
  */
 function stubNative(
@@ -70,7 +70,7 @@ function stubNative(
 /** 模拟 Native shouldInterceptRequest 以 synthetic HTTPS resource 返回缓存文件字节。 */
 function stubFetchBlob() {
   vi.stubGlobal('fetch', vi.fn(async (uri) => {
-    if (uri === 'https://wotbtools.com/__native/replay-pending') {
+    if (uri === 'https://appassets.androidplatform.net/__native/replay-pending') {
       return { ok: true, blob: async () => new Blob(['replay-bytes'], { type: 'application/octet-stream' }) }
     }
     return { ok: false, status: 404 }
@@ -79,24 +79,7 @@ function stubFetchBlob() {
 
 describe('useNativeReplayImport', () => {
 
-  it('supports production legacy 1.4.2 Native via its known replay capabilities', async () => {
-    const native = stubNative(PENDING_A, true, null)
-    stubFetchBlob()
-    const onPendingFile = vi.fn(async () => true)
-    const onReadError = vi.fn()
-    const { consumePendingWhenReady } = useNativeReplayImport({
-      isReady: () => true,
-      onPendingFile,
-      onReadError,
-    })
-
-    await expect(consumePendingWhenReady()).resolves.toBe(true)
-    expect(onPendingFile).toHaveBeenCalledTimes(1)
-    expect(native.consumeRequests).toEqual([{ expectedPendingId: PENDING_A.pendingId }])
-    expect(onReadError).not.toHaveBeenCalledWith('native-client-upgrade-required')
-  })
-
-  it.each([1, 3])('rejects unsupported bridge version v%s before touching any pending replay', async (bridgeVersion) => {
+  it.each([null, 1, 3])('rejects unsupported bridge version v%s before touching any pending replay', async (bridgeVersion) => {
     const native = stubNative(PENDING_A, true, bridgeVersion)
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
@@ -144,7 +127,7 @@ describe('useNativeReplayImport', () => {
     expect(onReadError).toHaveBeenCalledWith('native-client-upgrade-required')
   })
 
-  it('defers a legacy client with no pending replay without upgrade error', async () => {
+  it('rejects an unversioned client even without pending replay', async () => {
     const native = stubNative(null, true, null, ['replay-open', 'replay-share', 'app-update'])
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
@@ -157,8 +140,26 @@ describe('useNativeReplayImport', () => {
     await expect(consumePendingWhenReady()).resolves.toBe(false)
     expect(fetchMock).not.toHaveBeenCalled()
     expect(native.consumeRequests).toEqual([])
-    expect(onReadError).not.toHaveBeenCalledWith('native-client-upgrade-required')
+    expect(onReadError).toHaveBeenCalledWith('native-client-upgrade-required')
     expect(native.getCurrent()).toBeNull()
+  })
+
+  it.each([
+    'https://wotbtools.com/__native/replay-pending',
+    'https://evil.example/replay',
+    'https://appassets.androidplatform.net/__native/replay-pending?other=1',
+    'content://com.wotbtools/replay/file',
+  ])('rejects a noncanonical resource %s before any fetch or ACK', async (uri) => {
+    const native = stubNative({ ...PENDING_A, uri })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const onPendingFile = vi.fn()
+    const importer = useNativeReplayImport({ isReady: () => true, onPendingFile })
+    await expect(importer.consumePendingWhenReady()).resolves.toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(onPendingFile).not.toHaveBeenCalled()
+    expect(native.consumeRequests).toEqual([])
+    expect(native.getCurrent()).toEqual({ ...PENDING_A, uri })
   })
 
   it.each(['http', 'network', 'body'])('retains pending on %s read failure and succeeds on retry', async (failure) => {
@@ -252,7 +253,7 @@ describe('useNativeReplayImport', () => {
   })
 
   it('missing identity：没有 pendingId 的 pending 绝不消费、绝不 ACK', async () => {
-    const native = stubNative({ name: 'legacy.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 5 })
+    const native = stubNative({ name: 'legacy.wotbreplay', uri: 'https://appassets.androidplatform.net/__native/replay-pending', size: 5 })
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
     const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile })

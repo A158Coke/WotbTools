@@ -23,6 +23,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
@@ -33,9 +38,55 @@ jobs:
           if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
           fi
+      # PR B §30：APK 里必须真的带着可离线运行的前端 bundle（index + JS/CSS + Agent WASM + 本地资源）。
+      # 只断言「能构建」不够 —— 这里构建 bundle、校验 commit-addressed WASM 产物，再把 bundle 复制进
+      # assets，最后在 assembleDebug 之后直接检查 APK 内容。
+      - name: Build the local-first frontend bundle into APK assets
+        run: |
+          set -euo pipefail
+          bash scripts/fetch-agent-wasm.sh
+          npm --prefix frontend ci --no-audit --no-fund
+          npm --prefix frontend run build:android
       - name: Assemble debug APK and run Android JVM unit tests
         working-directory: android
         run: bash ../scripts/ci/run-with-network-retry.sh "Android Gradle dependency resolution" gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon
+      - name: Assert the APK carries the offline frontend bundle
+        run: |
+          set -euo pipefail
+          ref="$(python3 -c 'import json;print(json.load(open("deploy/agent/source.json"))["ref"])')"
+          manifest_ref="$(python3 -c 'import json;print(json.load(open("android/app/src/main/assets/web/bundle-manifest.json"))["agentWasm"]["commit"])')"
+          test "$ref" = "$manifest_ref" || {
+            echo "::error::bundle manifest 的 Agent 身份与 deploy/agent/source.json 不一致"
+            exit 1
+          }
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          # 先落成 listing 文件再断言：`producer | grep -q` 在 `set -o pipefail` 下会因为 grep 提前
+          # 退出、producer 收到 SIGPIPE（141）而把「命中」误判成失败（本步骤第一版踩过这个坑）。
+          listing_file="$RUNNER_TEMP/debug-apk-listing.txt"
+          unzip -Z1 "$apk" > "$listing_file"
+          for required in \
+            assets/web/index.html \
+            assets/web/bundle-manifest.json \
+            "assets/web/wasm/$ref/wotb_replay_wasm.js" \
+            "assets/web/wasm/$ref/wotb_replay_wasm_bg.wasm"; do
+            grep -Fxq "$required" "$listing_file" || {
+              echo "::error::APK 缺少离线前端 bundle 文件：$required"
+              # 失败要能自解释：把 APK 里实际的 assets/web 前若干项打出来，而不是只留一句结论。
+              grep '^assets/web/' "$listing_file" | head -n 10 || true
+              echo "assets/web total: $(grep -c '^assets/web/' "$listing_file" || true)"
+              exit 1
+            }
+          done
+          echo "APK carries the offline frontend bundle: $(grep -c '^assets/web/' "$listing_file") files"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+          test -x "$AAPT"
+          "$AAPT" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
+          python3 scripts/android-release/android_contract.py bundle \
+            --apk "$apk" --badging "$RUNNER_TEMP/apk-badging.txt" --contract contracts/android-native-bridge.json \
+            --pin deploy/agent/source.json --source "$(git rev-parse HEAD)" \
+            --version "$(sed -n 's/^wotbVersion=//p' android/gradle.properties)"
+
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -77,8 +128,10 @@ jobs:
             --native-source android/app/src/main/java/com/wotbtools/app/NativeBridge.kt \
             --native-source android/app/src/main/java/com/wotbtools/app/MainActivity.kt \
             --native-source android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt \
+            --native-source android/app/src/main/java/com/wotbtools/app/ConnectivityMonitor.kt \
             --frontend-source frontend/src/platform/nativeBridgeContract.js \
-            --frontend-source frontend/src/platform/androidAuthProvider.js
+            --frontend-source frontend/src/platform/androidAuthProvider.js \
+            --frontend-source frontend/src/platform/connectivity.js
           bash scripts/android-release/test-android-contract.sh
       - name: Enforce version and bridge compatibility against base
         env:

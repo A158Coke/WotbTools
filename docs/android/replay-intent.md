@@ -17,17 +17,17 @@
 旧链路在 `allowContentAccess=false` 的 WebView 中 `fetch(content://...)`，登录成功后可能无法读取字节，
 因此无法创建 Processing Job。修复保留 `allowFileAccess=false` / `allowContentAccess=false`。
 
-- Bridge 的 `uri` 固定为 `https://wotbtools.com/__native/replay-pending`；这是 Native resource，不是后端 API。
-  App canonical origin 是 `https://wotbtools.com`；URL 不含 query、pendingId、文件名、本地路径或凭据。
+- Bridge 的 `uri` 固定为 `https://appassets.androidplatform.net/__native/replay-pending`；这是 Native resource，不是后端 API。
+  App canonical origin 是 `https://appassets.androidplatform.net`；URL 不含 query、pendingId、文件名、本地路径或凭据。
 - Web 用 `X-Wotb-Pending-Id` request header 传 metadata identity；Native 比较当前 snapshot 的 identity，
   再打开同一 snapshot 的 backing file，防止新 replay B 替换 A 后，B 的内容被关联到 A 的 pendingId。
 - Exact URL 始终 Native-owned：文件存在返回 200 octet-stream + FileInputStream；无 pending/文件返回 404；
-  identity 缺失或不匹配返回 409；打开文件异常返回 500。错误不能 return null 或落到真实网络。
+  identity 缺失或不匹配返回 409；非 GET 返回 405；打开文件异常返回 500。错误不能 return null 或落到真实网络。
 - 所有响应 `Cache-Control: no-store`；Web fetch 使用 `cache: no-store`，防固定 URL 复用旧内容。
 - fetch/blob 失败复用 Replay 错误区和重试按钮，不分析、不 ACK、不删除 metadata。
   分析完成后的 compare-and-clear ACK 与 deferred drain 保持原有顺序。
 - 阶段日志只允许 event/status/已有 short ref；禁止 full ID、文件名、路径、异常原文、OAuth code/state、token/cookie。
-- 必须发布更新 APK 和 Web；仅部署 Web 无法修复旧 APK 的 content transport。
+- APK 以 fresh Android bundle 发布；生产 Web deploy 与 APK 是独立产物，旧 remote-WebView APK 需要更新到 2.x。
 
 真机发布验收（不能用 JVM/Vitest 代替）：未登录打开 replay → 本机分析 → Data（不发出任何回放相关后端请求）；
 已登录同样直接导入；process death 后重开会恢复并重新分析同一份 pending（本机分析无副作用，
@@ -68,7 +68,7 @@ WebView navigation 可以「优先」。
 |---|---|
 | 无 pending / WebView 容器不可见（门禁 / 错误 / 更新页接管） | `NONE`——只入队，不 `loadUrl`，不 `evaluateJavascript` |
 | 已在 replay workspace（URL 含 `view=replay`） | `NOTIFY_WEB` → `window.wotbtoolsOnReplay()` |
-| 其它 | `NAVIGATE_REPLAY` → `loadUrl(https://wotbtools.com?view=replay)` |
+| 其它 | `NAVIGATE_REPLAY` → `loadUrl(https://appassets.androidplatform.net/index.html?view=replay)` |
 
 - **登录期间收到 replay**：正常持久化并分发（WebView 没有被认证占用）；正在进行的 OIDC 事务在外部
   浏览器里，不会被 replay 打断。**登录失败 / 取消 / 未登录**时 pending replay 原样保留且仍可用——
@@ -128,7 +128,7 @@ getPendingReplay → fetch(synthetic HTTPS resource) → await onPendingFile(fil
 ## 生命周期
 
 - **Cold Start**：`onCreate` → 恢复持久 pending → 按引用清理 orphan → intent 分类（非 replay intent
-  早退）→ 启动门禁（网络/版本）→ Web ready → Web 应用经 Native Bridge 消费 pending（无需登录）。
+  早退）→ 立即加载 bundled Vue（版本异步 best-effort）→ Web ready → Web 应用经 Native Bridge 消费 pending（无需登录）。
 - **Warm Start**：`onNewIntent` → replay 入队 → 按 `ReplayDispatchPolicy` 分发
   （已在 replay view 就地通知，否则切到 canonical replay view）。
 - **Background Resume / process death**：pending 在 private storage 存活 → 重新进入 App 后恢复并消费

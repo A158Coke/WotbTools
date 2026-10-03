@@ -1,8 +1,9 @@
 {
   "schemaVersion": 1,
   "bridgeVersion": 2,
-  "origin": "https://wotbtools.com",
+  "origin": "https://appassets.androidplatform.net",
   "allowedOrigins": [
+    "https://appassets.androidplatform.net",
     "https://wotbtools.com",
     "https://www.wotbtools.com"
   ],
@@ -21,7 +22,8 @@
     "native-auth",
     "replay-share",
     "replay-open",
-    "app-update"
+    "app-update",
+    "connectivity"
   ],
   "methods": {
     "getBridgeVersion": {
@@ -91,21 +93,34 @@
         "fields": {
           "token": { "type": "string", "nullable": true, "required": true },
           "expiresAt": { "type": "integer", "nullable": true, "required": true },
-          "claims": { "type": "object", "nullable": true, "required": true },
+          "claims": { "type": "object", "nullable": true, "required": true, "notes": "On refresh-failed a retained Native session may project cached claims for local UI; token remains null and API authorization requires a fresh token." },
           "error": { "type": "string", "nullable": true, "required": true }
         }
+      }
+    },
+    "connectivityGetState": {
+      "request": { "fields": {} },
+      "response": {
+        "type": "string",
+        "enum": ["online", "offline"],
+        "notes": "System authority (ConnectivityManager INTERNET + VALIDATED). Reserved future tokens: degraded, service-unavailable. The page must re-read this method after connectivityChanged instead of trusting navigator.onLine."
       }
     }
   },
   "events": {
     "authChanged": {
       "global": "wotbtoolsOnAuthChanged"
+    },
+    "connectivityChanged": {
+      "global": "wotbtoolsOnConnectivityChanged",
+      "payload": "none",
+      "notes": "Notification only: the page re-reads connectivityGetState, so there is no second source of truth."
     }
   },
   "syntheticResources": {
     "pendingReplay": {
       "method": "GET",
-      "url": "https://wotbtools.com/__native/replay-pending",
+      "url": "https://appassets.androidplatform.net/__native/replay-pending",
       "requiredHeaders": ["X-Wotb-Pending-Id"],
       "failure": "never-fallback-to-network"
     }

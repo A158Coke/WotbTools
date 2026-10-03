@@ -19,6 +19,13 @@ const hold = vi.hoisted(() => ({ state: null }))
 const authState = vi.hoisted(() => ({ authenticated: null, isAdmin: null, login: vi.fn() }))
 const nav = vi.hoisted(() => ({ navigate: null }))
 
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
+
 vi.mock('../composables/useReplay.js', () => ({
   useReplay: () => hold.state,
   chooseInitialResultTab: () => 'aggregate',
@@ -163,6 +170,7 @@ describe('ReplayWorkspace', () => {
   })
 
   beforeEach(() => {
+    connectivityState.state.value = 'online'
     replayState = buildState()
     hold.state = replayState
     authState.authenticated.value = true
@@ -172,6 +180,59 @@ describe('ReplayWorkspace', () => {
     showError.value = false
     globalError.value = ''
     vi.clearAllMocks()
+  })
+
+  it.each(['3d', 'ai'])('offline deep link keeps %s discoverable but never mounts its online pane', async (cap) => {
+    connectivityState.state.value = 'offline'
+    authState.isAdmin.value = true
+    withBattles(1)
+    const file = replayState.files.value[0]
+    const wrapper = mountWorkspace(cap, { authenticated: false })
+    await flushPromises()
+    expect(capKeys(wrapper)).toEqual(['data', 'playback', '3d', 'shots', 'ai'])
+    // 匿名 + 离线：连通性提示优先于登录门禁，且不触发任何 login。
+    expect(wrapper.find(`[data-testid="ws-${cap}-connectivity"]`).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
+    expect(wrapper.find(`[data-test="ws-${cap}-pane"]`).exists()).toBe(false)
+    expect(authState.login).not.toHaveBeenCalled()
+    // 本地能力（2D / 射击）在离线 + 未登录时仍可用；射击是登录门禁，不是连通性门禁。
+    await switchTo(wrapper, 'playback')
+    expect(wrapper.find('[data-test="ws-playback-pane"]').exists()).toBe(true)
+    await switchTo(wrapper, 'shots')
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="ws-shots-pane"]').exists()).toBe(false)
+    expect(replayState.files.value[0]).toBe(file)
+    wrapper.unmount()
+  })
+
+  it.each(['3d', 'ai'])('offline %s pane shows connectivity (not the auth gate) even when authenticated', async (cap) => {
+    connectivityState.state.value = 'offline'
+    authState.isAdmin.value = true
+    withBattles(1)
+    const wrapper = mountWorkspace(cap)
+    await flushPromises()
+    expect(wrapper.find(`[data-testid="ws-${cap}-connectivity"]`).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
+    expect(wrapper.find(`[data-test="ws-${cap}-pane"]`).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('reconnect activates a blocked pane once; disconnect preserves the replay and disables its active props', async () => {
+    connectivityState.state.value = 'offline'
+    authState.isAdmin.value = true
+    withBattles(1)
+    const file = replayState.files.value[0]
+    const wrapper = mountWorkspace('3d')
+    await flushPromises()
+    connectivityState.state.value = 'online'
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="ws-3d-pane"]')).toHaveLength(1)
+    connectivityState.state.value = 'offline'
+    await flushPromises()
+    expect(wrapper.get('[data-test="ws-3d-pane"]').text()).toContain('false')
+    expect(replayState.files.value[0]).toBe(file)
+    expect(replayState.analyze).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it.each([

@@ -1,16 +1,15 @@
 import {
   consumePendingReplay,
-  getCapabilities,
   getNativeBridgeVersion,
   getPendingReplay,
   isAndroidApp,
   isNativeBridgeCompatible,
-  isLegacyNativeReplayContractCompatible,
 } from './usePlatformBridge.js'
+import { NATIVE_REPLAY_RESOURCE_URL } from '../platform/nativeBridgeContract.js'
 
 /**
  * 端侧 Replay 导入钩子：把 Native 收到（并已复制到 app cache）的 share/open replay
- * 注入现有 Web 上传管线，并**自动触发解析**。
+ * 注入共享本地 replay selection，并**自动触发解析**。
  *
  * 机制（不再依赖 synthetic input.click()）：Native 经 WebView `shouldInterceptRequest`
  * 以固定 same-origin HTTPS resource stream 私有缓存文件；Web 侧 `fetch(pending.uri)` 读字节构造
@@ -35,7 +34,7 @@ import {
  * - 多次 inflight 通知 coalesce 成一次 rerun；没有 pending 时 drain 直接结束，不空转。
  * - Web 端以 `consumedIds`（pendingId）防同一份重复注入。
  *
- * 跨 auth 保留：`window.wotbtoolsOnReplay` 读实际的 init 落定状态，`isReady` 缺省为 false，绝不默认放行。
+ * Workspace 就绪门槛：`window.wotbtoolsOnReplay` 读实际的 workspace-ready 状态，`isReady` 缺省为 false，绝不默认放行。
  *
  * @param onPendingFile async (file, pending) => boolean
  *        业务受理结果：`true` = 本机分析已完成（可 ACK Native），否则不得 ACK。
@@ -66,40 +65,22 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
   async function drainOnce() {
     if (!isAndroidApp()) return false
     if (!isReady()) {
-      // auth init 未落定：pending 原样留在 Native，落定后再消费。
-      console.debug('[replay-native] pending deferred reason=auth-pending')
+      // Workspace 未就绪：pending 原样留在 Native，就绪后再消费。
+      console.debug('[replay-native] pending deferred reason=workspace-pending')
       return false
     }
     const nativeBridgeVersion = await getNativeBridgeVersion()
-    let pending
-    if (isNativeBridgeCompatible(nativeBridgeVersion)) {
-      pending = await getPendingReplay()
-    } else if (nativeBridgeVersion !== null) {
-      // Explicit versions are authoritative: reject before touching pending.
+    if (!isNativeBridgeCompatible(nativeBridgeVersion)) {
       console.warn('[replay-native] pending skipped reason=bridge-version-mismatch')
       onReadError?.('native-client-upgrade-required')
       return false
-    } else {
-      const nativeCapabilities = await getCapabilities()
-      pending = await getPendingReplay()
-      // A legacy client without a pending replay is simply deferred; it is not
-      // an upgrade failure and must not trigger fetch or ACK activity.
-      if (!pending) return false
-      if (!isLegacyNativeReplayContractCompatible({
-        bridgeVersion: nativeBridgeVersion,
-        capabilities: nativeCapabilities,
-        pending,
-      })) {
-        console.warn('[replay-native] pending skipped reason=bridge-version-mismatch')
-        onReadError?.('native-client-upgrade-required')
-        return false
-      }
     }
+    const pending = await getPendingReplay()
     // 当前没有 pending（可能从未有，也可能 Native 尚未产生）→ 不清零 eligible，留待 warm resume。
     if (!pending) return false
     // 没有 identity 就无法 ACK（也绝不消费）：旧 Native 或畸形 payload 一律跳过。
-    if (!pending.pendingId) {
-      console.debug('[replay-native] pending skipped reason=missing-identity')
+    if (!pending.pendingId || pending.uri !== NATIVE_REPLAY_RESOURCE_URL) {
+      console.debug('[replay-native] pending skipped reason=invalid-metadata')
       return false
     }
     // 这份 pending 已在本会话消费并成功注入 → 不再重复（exactly-once for this replay）。

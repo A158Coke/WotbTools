@@ -4,6 +4,9 @@ import { useI18n } from 'vue-i18n'
 import { confirm } from '../composables/useConfirm.js'
 import { useRoute, useRouter } from 'vue-router'
 import { parseHofQuery, sameHofQuery, serializeHofQuery } from '../utils/hofQuery.js'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
+import Banner from './Banner.vue'
 import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
@@ -36,8 +39,13 @@ const downloadingId = ref(null)
 const downloadErr = ref('')
 
 const { isAuthenticated, login } = useAuth()
+const { availability, requireFeature } = useFeatureGate()
+const hofAvailability = computed(() => availability(Feature.HALL_OF_FAME))
+let connectivityEpoch = 0
+function requireHofOnline() { return requireFeature(Feature.HALL_OF_FAME) }
 
 function requireLogin() {
+  if (!requireHofOnline()) return false
   if (isAuthenticated()) return true
   login('hof')
   return false
@@ -94,6 +102,8 @@ const selectedTankLabel = computed(() => {
 })
 
 async function load() {
+  if (!hofAvailability.value.available) return
+  const epoch = connectivityEpoch
   writeHofQuery()
   const generation = ++loadGeneration
   loading.value = true
@@ -110,11 +120,13 @@ async function load() {
       nickname: nickname.value.trim(),
     }
     const res = await api.hofList(params)
+    if (epoch !== connectivityEpoch) return
     if (generation !== loadGeneration) return
     rows.value = res.items || []
     totalPages.value = res.totalPages || 0
     totalItems.value = pageTotalItems(res)
   } catch (e) {
+    if (epoch !== connectivityEpoch) return
     if (generation === loadGeneration) error.value = apiErrorLabel(t, te, e)
   } finally {
     if (generation === loadGeneration) loading.value = false
@@ -137,14 +149,19 @@ function filterByTank(tankId, tankName) {
 }
 
 async function loadSingleVehicleOptions() {
+  if (!hofAvailability.value.available) return
+  const epoch = connectivityEpoch
   singleVehicleOptionsLoading.value = true
   singleVehicleOptionsError.value = ''
   try {
-    singleVehicleOptions.value = (await api.hofVehicleOptions()) || []
+    const options = await api.hofVehicleOptions()
+    if (epoch !== connectivityEpoch) return
+    singleVehicleOptions.value = options || []
   } catch (e) {
+    if (epoch !== connectivityEpoch) return
     singleVehicleOptionsError.value = apiErrorLabel(t, te, e)
   } finally {
-    singleVehicleOptionsLoading.value = false
+    if (epoch === connectivityEpoch) singleVehicleOptionsLoading.value = false
   }
 }
 
@@ -423,6 +440,7 @@ function scrollBoardIntoView() {
 }
 
 onMounted(() => {
+  if (!hofAvailability.value.available) requireHofOnline()
   if (route && onHofView()) applyHofQuery(route.query)
   else load()
   loadSingleVehicleOptions()
@@ -504,6 +522,8 @@ const currentPendingDamage = computed(() => currentPending.value?.claimedAverage
 const currentPendingBattles = computed(() => currentPending.value?.claimedBattleCount)
 
 async function loadHundredList() {
+  if (!hofAvailability.value.available) return
+  const epoch = connectivityEpoch
   writeHofQuery()
   const generation = ++h100LoadGeneration
   h100Loading.value = true
@@ -517,11 +537,13 @@ async function loadHundredList() {
       vehicleId: h100VehicleId.value,
     }
     const res = await api.hofHundredList(params)
+    if (epoch !== connectivityEpoch) return
     if (generation !== h100LoadGeneration) return
     h100Rows.value = res.items || []
     h100TotalPages.value = res.totalPages || 0
     h100TotalItems.value = pageTotalItems(res)
   } catch (e) {
+    if (epoch !== connectivityEpoch) return
     if (generation === h100LoadGeneration) h100Error.value = apiErrorLabel(t, te, e)
   } finally {
     if (generation === h100LoadGeneration) h100Loading.value = false
@@ -551,6 +573,8 @@ function onHundredVehicleFilterChange() {
 
 // 个人中心百场状态（需登录）：仅登录后拉取，避免匿名浏览触发 401 跳登录。
 async function loadPending() {
+  if (!hofAvailability.value.available) return
+  const epoch = connectivityEpoch
   if (!isAuthenticated()) {
     pendingList.value = []
     h100CurrentList.value = []
@@ -558,9 +582,11 @@ async function loadPending() {
   }
   try {
     const status = await api.hofHundredMyStatus()
+    if (epoch !== connectivityEpoch) return
     pendingList.value = status.pending || []
     h100CurrentList.value = Array.isArray(status.current) ? status.current : []
   } catch {
+    if (epoch !== connectivityEpoch) return
     pendingList.value = []
     h100CurrentList.value = []
   }
@@ -741,6 +767,7 @@ function removeReplay(index) {
 }
 
 async function submitHundred() {
+  if (!requireLogin()) return
   if (submitting.value) return
   const damage = Number(submitForm.averageDamage)
   const battles = Number(submitForm.battleCount)
@@ -791,8 +818,10 @@ async function submitHundred() {
 }
 
 async function withdrawPending(p) {
+  if (!requireHofOnline()) return
   if (withdrawingId.value) return
   if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return
+  if (!requireHofOnline()) return
   withdrawingId.value = p.id
   h100Msg.value = ''
   try {
@@ -846,6 +875,8 @@ function findMark3Status(items, vehicleId) {
 }
 
 async function loadMark3List() {
+  if (!hofAvailability.value.available) return
+  const epoch = connectivityEpoch
   writeHofQuery()
   const generation = ++mark3LoadGeneration
   mark3Loading.value = true
@@ -859,11 +890,13 @@ async function loadMark3List() {
       vehicleId: mark3VehicleId.value,
     }
     const res = await api.hofMark3List(params)
+    if (epoch !== connectivityEpoch) return
     if (generation !== mark3LoadGeneration) return
     mark3Rows.value = res.items || []
     mark3TotalPages.value = res.totalPages || 0
     mark3TotalItems.value = pageTotalItems(res)
   } catch (e) {
+    if (epoch !== connectivityEpoch) return
     if (generation === mark3LoadGeneration) mark3Error.value = apiErrorLabel(t, te, e)
   } finally {
     if (generation === mark3LoadGeneration) mark3Loading.value = false
@@ -893,6 +926,8 @@ function onMark3VehicleFilterChange() {
 
 // 个人三环状态仅在已登录时读取，匿名看榜单不会触发登录跳转。
 async function loadMark3Status() {
+  if (!hofAvailability.value.available) return
+  const epoch = connectivityEpoch
   if (!isAuthenticated()) {
     mark3CurrentList.value = []
     mark3PendingList.value = []
@@ -900,9 +935,11 @@ async function loadMark3Status() {
   }
   try {
     const status = await api.hofMark3MyStatus()
+    if (epoch !== connectivityEpoch) return
     mark3CurrentList.value = Array.isArray(status.current) ? status.current : []
     mark3PendingList.value = Array.isArray(status.pending) ? status.pending : []
   } catch {
+    if (epoch !== connectivityEpoch) return
     mark3CurrentList.value = []
     mark3PendingList.value = []
   }
@@ -1136,6 +1173,7 @@ function isMark3ProfileError(error) {
 }
 
 async function submitMark3() {
+  if (!requireLogin()) return
   if (mark3Submitting.value) return
   const values = mark3SubmissionValues()
   const validationKey = mark3SubmissionValidationKey(values)
@@ -1167,8 +1205,10 @@ async function submitMark3() {
 }
 
 async function withdrawMark3Pending(submission) {
+  if (!requireHofOnline()) return
   if (mark3WithdrawingId.value) return
   if (!(await confirm({ title: t('mark3.withdrawConfirm'), confirmLabel: t('mark3.withdraw'), danger: true }))) return
+  if (!requireHofOnline()) return
   mark3WithdrawingId.value = submission.id
   mark3Msg.value = ''
   try {
@@ -1203,10 +1243,30 @@ function fmtDate(s) {
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
+// Only availability recovery resumes the visible board; business errors remain explicit retries.
+watch(() => hofAvailability.value.available, (available, previous) => {
+  if (!available) {
+    connectivityEpoch++
+    loadGeneration++
+    h100LoadGeneration++
+    mark3LoadGeneration++
+    loading.value = h100Loading.value = mark3Loading.value = singleVehicleOptionsLoading.value = false
+    return
+  }
+  if (previous !== false || (route && !onHofView())) return
+  if (route && onHofView()) applyHofQuery(route.query)
+  else if (activeTab.value === 'hundred') { loadHundredList(); loadPending() }
+  else if (activeTab.value === 'mark3') { loadMark3List(); loadMark3Status() }
+  else load()
+  loadSingleVehicleOptions()
+})
 </script>
 
 <template>
   <div ref="boardTop" class="lb-wrap">
+    <Banner v-if="!hofAvailability.available" tone="info" data-testid="hof-connectivity">
+      <p>{{ $t(hofAvailability.messageKey) }}</p>
+    </Banner>
     <div v-if="isCompact && filterSheet" class="lb-sheet-scrim" aria-hidden="true" @click="closeFilterSheet"></div>
     <div class="tabs">
       <button type="button" :class="{ active: activeTab === 'single' }" @click="switchTab('single')">{{ $t('hof.singleTab') }}</button>

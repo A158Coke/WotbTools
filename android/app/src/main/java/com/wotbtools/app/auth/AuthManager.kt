@@ -108,7 +108,9 @@ internal class AuthManager private constructor(context: Context) {
 
     /** 单飞 refresh：true 表示已有一个 refresh 在飞，后续调用只排队等结果。 */
     private var refreshInFlight = false
-    private val refreshWaiters = mutableListOf<CountDownLatch>()
+    private var sessionGeneration = 0L
+    private var refreshGeneration: Long? = null
+    private val refreshWaiters = mutableListOf<Pair<Long, CountDownLatch>>()
 
     /**
      * 宿主 `Activity` 类：只用于构造回程 `Intent`，避免 `auth` 包反向依赖 `MainActivity`。
@@ -162,7 +164,7 @@ internal class AuthManager private constructor(context: Context) {
      * 刻意不读交易域：`authGetState` 是页面最常调用的一次 bridge 调用，它绝不能因为「有一份
      * 正在进行的登录交易」而解析失败，更不能把那笔交易清掉。
      */
-    private fun restoreSession(): AuthSession? {
+    private fun restoreSession(): AuthSession? = synchronized(lock) {
         val authStateJson = sessions.load() ?: return null
         // 显式标注类型：catch 分支非局部 return，try 表达式因此是 AuthSession（非 null）。
         val restored: AuthSession = try {
@@ -174,7 +176,7 @@ internal class AuthManager private constructor(context: Context) {
             return null
         }
         // 只有真的解析出 access token 才缓存；空状态不占内存，下次仍会重读存储。
-        if (restored.authenticated) synchronized(lock) { session = restored }
+        if (restored.authenticated) session = restored
         return restored
     }
 
@@ -554,21 +556,21 @@ internal class AuthManager private constructor(context: Context) {
                 tokenResponse,
                 null as AuthorizationException?
             )
-            // 换 token 可能轮换 refresh token / 更新到期时间：整体覆盖写回会话域。
-            val persisted = sessions.save(authState.jsonSerializeString())
+            val persisted = synchronized(lock) {
+                val saved = sessions.save(authState.jsonSerializeString())
+                if (!saved) sessions.clear("persist-failed")
+                session = if (saved) sessionOf(authState) else null
+                advanceSessionGenerationLocked()
+                saved
+            }
             if (!persisted) {
-                // 落盘失败不能让用户以为已登录：清会话、并消费这笔无法重试的交易。
-                sessions.clear("persist-failed")
                 val consumed = transactions.clearIfState(transactionState, "persist-failed")
-                synchronized(lock) { session = null }
                 Log.d(TAG, "auth-exchange outcome=persist-failed " +
                     "transaction=${if (consumed) "consumed" else "preserved"}")
                 notifyListeners()
                 return@performTokenRequest
             }
-            // 会话已落盘 → 这笔交易完成使命；若 slot 里已是更新的交易，则保留它。
             val consumed = transactions.clearIfState(transactionState, "exchanged")
-            synchronized(lock) { session = sessionOf(authState) }
             Log.d(TAG, "auth-exchange outcome=success transaction=${if (consumed) "consumed" else "preserved"}")
             notifyListeners()
         }
@@ -635,9 +637,21 @@ internal class AuthManager private constructor(context: Context) {
      * 登录覆盖）。这样两者互不牵连 —— 会话域的缺失/损坏永远不会作废一笔进行中的登录。
      */
     internal fun clearLocalSession() {
-        synchronized(lock) { session = null }
-        sessions.clear("logout")
+        synchronized(lock) {
+            session = null
+            sessions.clear("logout")
+            advanceSessionGenerationLocked()
+        }
         notifyListeners()
+    }
+
+    /** Called with lock held: logout/account replacement retires only the old refresh generation. */
+    private fun advanceSessionGenerationLocked() {
+        sessionGeneration++
+        refreshGeneration = null
+        refreshInFlight = false
+        refreshWaiters.forEach { it.second.countDown() }
+        refreshWaiters.clear()
     }
 
     // ── access token + 单飞 refresh ──
@@ -645,7 +659,7 @@ internal class AuthManager private constructor(context: Context) {
     /**
      * 取 access token：满足 [minValiditySeconds] 直接返回；否则经**单飞** refresh 后返回。
      *
-     * 失败语义（与 wire 契约一致）：刷新失败清会话并回 `refresh-failed`；本就没有会话回
+     * 失败语义（与 wire 契约一致）：永久 token 拒绝清会话；网络/服务失败保留 cached session 并回 `refresh-failed`；本就没有会话回
      * `unauthenticated`。**必须**在非主线程调用（会阻塞等待 refresh 结果）。
      */
     internal fun accessTokenOrRefresh(minValiditySeconds: Long): AuthResult {
@@ -661,15 +675,21 @@ internal class AuthManager private constructor(context: Context) {
 
         val latch = CountDownLatch(1)
         var isOwner = false
-        synchronized(lock) {
-            refreshWaiters.add(latch)
+        val generation = synchronized(lock) {
+            // The snapshot may have been replaced between currentSession and registration.
+            if (session?.accessToken != existing.accessToken) {
+                return AuthResult.Failure(AuthFailureReason.REFRESH_FAILED, "session-replaced")
+            }
+            refreshWaiters.add(sessionGeneration to latch)
             if (!refreshInFlight) {
                 refreshInFlight = true
+                refreshGeneration = sessionGeneration
                 isOwner = true
             }
+            sessionGeneration
         }
 
-        if (isOwner) startRefresh() else Log.d(TAG, "auth-refresh joined")
+        if (isOwner) startRefresh(generation) else Log.d(TAG, "auth-refresh joined")
 
         val completed = try {
             latch.await(REFRESH_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -678,12 +698,17 @@ internal class AuthManager private constructor(context: Context) {
             false
         }
         if (!completed) {
-            synchronized(lock) { refreshWaiters.remove(latch) }
+            synchronized(lock) { refreshWaiters.removeAll { it.second === latch } }
             Log.d(TAG, "auth-refresh outcome=timeout")
             return AuthResult.Failure(AuthFailureReason.REFRESH_FAILED, "timeout")
         }
 
-        val refreshed = synchronized(lock) { session }
+        val refreshed = synchronized(lock) {
+            if (sessionGeneration != generation) {
+                return AuthResult.Failure(AuthFailureReason.REFRESH_FAILED, "session-replaced")
+            }
+            session
+        }
         if (refreshed != null && refreshed.isValidFor(minValiditySeconds, System.currentTimeMillis())) {
             return AuthResult.Success(refreshed)
         }
@@ -694,40 +719,43 @@ internal class AuthManager private constructor(context: Context) {
      * 触发刷新。`AuthState.performActionWithFreshTokens` 内部已是「先判断再请求」，本类的
      * `refreshInFlight` 只保证**并发调用者共享一次请求**（库的 pending-action 队列不跨调用者聚合）。
      */
-    private fun startRefresh() {
-        val authState = loadAuthStateForRefresh()
+    private fun startRefresh(generation: Long) {
+        val authState = synchronized(lock) {
+            if (sessionGeneration != generation) null else loadAuthStateForRefresh()
+        }
         if (authState == null) {
-            // 会话域里没有可用状态：没有什么可刷新的，直接按未认证收尾。
-            synchronized(lock) { session = null }
-            sessions.clear("no-refresh-state")
-            completeRefresh(false)
+            synchronized(lock) {
+                applyCurrentSessionUpdate(generation, sessionGeneration) {
+                    session = null
+                    sessions.clear("no-refresh-state")
+                }
+            }
+            completeRefresh(generation, false)
             return
         }
-        authState.performActionWithFreshTokens(
-            authorizationService()
-        ) { accessToken, _, ex ->
-            if (ex != null || accessToken.isNullOrBlank()) {
-                // 刷新失败：会话不可再信。清会话，让页面回到未认证并可重新登录。
-                sessions.clear("refresh-failed")
-                synchronized(lock) { session = null }
-                Log.d(TAG, "auth-refresh outcome=failure category=${ex?.error ?: "empty-token"}")
-                completeRefresh(false)
-                return@performActionWithFreshTokens
+        authState.performActionWithFreshTokens(authorizationService()) { accessToken, _, ex ->
+            var success = false
+            val applied = synchronized(lock) {
+                // The guard and persistence share the logout/login lock: no stale write can race it.
+                applyCurrentSessionUpdate(generation, sessionGeneration) {
+                    if (ex != null || accessToken.isNullOrBlank()) {
+                        if (shouldClearSessionAfterRefresh(
+                                ex?.type == AuthorizationException.TYPE_OAUTH_TOKEN_ERROR, ex?.error
+                            )) {
+                            sessions.clear("refresh-rejected")
+                            session = null
+                        }
+                    } else if (sessions.save(authState.jsonSerializeString())) {
+                        session = sessionOf(authState)
+                        success = true
+                    } else {
+                        sessions.clear("refresh-persist-failed")
+                        session = null
+                    }
+                }
             }
-            val refreshed = sessionOf(authState)
-            // 刷新后的 AuthState（新 access token / 可能轮换的 refresh token）整体写回会话域。
-            val persisted = sessions.save(authState.jsonSerializeString())
-            if (!persisted) {
-                // 新 token 没能落盘：不能只用内存里的会话（下次启动就没了），按刷新失败收尾。
-                sessions.clear("refresh-persist-failed")
-                synchronized(lock) { session = null }
-                Log.d(TAG, "auth-refresh outcome=persist-failed")
-                completeRefresh(false)
-                return@performActionWithFreshTokens
-            }
-            synchronized(lock) { session = refreshed }
-            Log.d(TAG, "auth-refresh outcome=success")
-            completeRefresh(true)
+            Log.d(TAG, "auth-refresh outcome=${if (!applied) "stale" else if (success) "success" else "failure"}")
+            completeRefresh(generation, success)
         }
     }
 
@@ -743,16 +771,19 @@ internal class AuthManager private constructor(context: Context) {
     }
 
     /** 单飞收尾：释放所有 waiter 并结束本次 refresh。 */
-    private fun completeRefresh(success: Boolean) {
-        val waiters = synchronized(lock) {
-            refreshInFlight = false
-            val pending = refreshWaiters.toList()
-            refreshWaiters.clear()
-            pending
+    private fun completeRefresh(generation: Long, success: Boolean) {
+        val (waiters, changed) = synchronized(lock) {
+            if (refreshGeneration == generation) {
+                refreshInFlight = false
+                refreshGeneration = null
+            }
+            val pending = refreshWaiters.filter { it.first == generation }.map { it.second }
+            refreshWaiters.removeAll { it.first == generation }
+            pending to (!success && sessionGeneration == generation && session == null)
         }
         waiters.forEach { it.countDown() }
-        // 刷新失败已经清掉会话 → 页面必须知道（这是契约里「refresh 清会话后通知」的路径）。
-        if (!success) notifyListeners()
+        // Retained transient failure emits no authChanged retry loop; stale callbacks notify nobody.
+        if (changed) notifyListeners()
     }
 
     // ── 回程 URI 解析（归一化 + 身份）──
@@ -824,6 +855,18 @@ internal class AuthManager private constructor(context: Context) {
                     .also { instance = it }
             }
         }
+
+        /** The caller holds the session lock, so the check and store mutation are one operation. */
+        internal fun applyCurrentSessionUpdate(expectedGeneration: Long, currentGeneration: Long,
+            update: () -> Unit): Boolean {
+            if (expectedGeneration != currentGeneration) return false
+            update()
+            return true
+        }
+
+        /** OAuth rejection is evidence of unusable credentials; transport/service failures are not. */
+        internal fun shouldClearSessionAfterRefresh(isOAuthTokenError: Boolean, error: String?): Boolean =
+            isOAuthTokenError && error in setOf("invalid_grant", "invalid_client", "unauthorized_client")
 
         /**
          * 恢复结果 → 会话快照的**唯一**投影：没有可用状态（条目缺失 / 解密失败 / JSON 损坏 / 超时）

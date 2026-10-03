@@ -59,6 +59,7 @@ assert affected("infra/tofu/postgres-business/main.tf") == {"business_postgres"}
 assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgres"}
 assert affected("docs/README.md") == set()
 assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend", "android"}
+assert "android" in affected(".github/workflows/android-release.yml"), "release protocol changes must run Android helper tests"
 assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment"}
 assert affected("deploy/tx/publish-loaded-image-to-tcr.sh") == {"deployment"}
 assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
@@ -216,6 +217,79 @@ assert backup["concurrency"] == {
 backup_text = json.dumps(backup, ensure_ascii=False)
 for script in ("business-postgres-backup.sh", "keycloak-postgres-backup.sh", "tofu-local-state-backup.sh"):
     assert script in backup_text, f"scheduled production backup must retain {script}"
+
+# PR #467 review: APK/bundle content assertions must never pipe into `grep -q`.
+# Under `set -o pipefail` a hit makes grep exit early, the producer takes SIGPIPE (141), and the
+# whole pipeline reports failure — i.e. a real file gets reported as missing.
+# stage 里 setup-node 只能有一个：重复声明是 review 发现的真实冗余（PR #467 P2）。
+_stage_sources = []
+for _name in ("ci-android.yml", "android-release.yml"):
+  _stage_sources.append((_name, (workflow_dir / _name).read_text(encoding="utf-8")))
+_release_source = dict(_stage_sources)["android-release.yml"]
+_stage_block = _release_source.split("\n  publish:", 1)[0]
+assert _stage_block.count("actions/setup-node@v4") == 1, \
+  f"android-release.yml stage must declare actions/setup-node@v4 exactly once, got {_stage_block.count('actions/setup-node@v4')}"
+
+for android_workflow in ("ci-android.yml", "android-release.yml"):
+  android_text = (workflow_dir / android_workflow).read_text(encoding="utf-8")
+  # 注释里可以解释这个坑，真实命令里不允许再出现（YAML 注释以 # 开头）。
+  offenders = [
+    line.strip() for line in android_text.splitlines()
+    if "| grep -q" in line and not line.lstrip().startswith("#")
+  ]
+  assert not offenders, \
+    f"{android_workflow} must not pipe into grep -q (SIGPIPE false negative under pipefail): {offenders[:2]}"
+  assert "listing_file" in android_text and "unzip -Z1" in android_text, \
+    f"{android_workflow} must assert APK contents from a listing file"
+
+_publish_block = _release_source.split("\n  publish:", 1)[1]
+assert "https://wotbtools.com/version.json" not in _publish_block
+assert "FE_COMMIT" not in _publish_block
+assert "android_contract.py bundle" in _stage_block and "android_contract.py bundle" in _publish_block
+assert "android_contract.py cors" in _publish_block
+
+# PR #467 review P2: publish 的候选版本必须由 workflow_dispatch 的显式 version 输入决定，
+# 不能从「当前 main 的 android/gradle.properties」推导。这两条断言的 owner 是 YAML wiring，
+# 只测 shell helper 是锁不住的（helper 单测见 scripts/android-release/test-release.sh）。
+_release_yaml = yaml.safe_load(_release_source)
+_release_dispatch_inputs = _release_yaml.get(True, _release_yaml.get("on", {}))["workflow_dispatch"]["inputs"]
+assert "version" in _release_dispatch_inputs, \
+  "android-release.yml must expose an explicit workflow_dispatch version input for publish"
+_version_input = _release_dispatch_inputs["version"]
+assert _version_input.get("type") == "string" and _version_input.get("required") is False, _version_input
+_publish_job = _release_yaml["jobs"]["publish"]
+assert "inputs.version" in json.dumps(_publish_job, ensure_ascii=False), \
+  "the publish job must consume the explicit version input"
+_publish_run_text = "\n".join(step.get("run") or "" for step in _publish_job["steps"])
+# 候选身份只能来自显式版本 + immutable tag target。
+assert "steps.version.outputs" not in _publish_run_text, \
+  "publish must not derive the candidate from the current main committed version"
+assert "resolve-staged-version.sh" in _publish_run_text, \
+  "publish must resolve the staged version from the tag target"
+assert 'TAG="android-v$REQUESTED_VERSION"' in _publish_run_text and "git archive" in _publish_run_text
+# staged versionCode：唯一来源是 stagedref 输出，且不得把 Python 局部变量当 shell 变量
+# （`$expected` 在 set -euo pipefail 下会 unbound variable，直接炸掉整个 publish）。
+_staged_step = next(step for step in _publish_job["steps"] if step.get("id") == "staged")
+assert _staged_step.get("env", {}).get("STAGED_VERSION_CODE") == "${{ steps.stagedref.outputs.versionCode }}", \
+  _staged_step.get("env", {})
+_staged_shell_lines = [line for line in (_staged_step.get("run") or "").splitlines()
+                       if not line.lstrip().startswith("#")]
+assert any('echo "versionCode=$STAGED_VERSION_CODE" >> "$GITHUB_OUTPUT"' in line
+           for line in _staged_shell_lines), \
+  "publish must write the staged versionCode from STAGED_VERSION_CODE"
+assert not any("$expected" in line or "${expected}" in line for line in _staged_shell_lines), \
+  "publish shell must not read the Python-local `expected` variable"
+# publish 绝不重建 / 重新签名。
+for _forbidden in ("assembleRelease", "wotbKeystorePath", "keystore.jks", "ANDROID_KEYSTORE_BASE64"):
+  assert _forbidden not in _publish_run_text, f"publish must not rebuild or re-sign ({_forbidden})"
+# version.json 是最后一个 mutation，且只由 staged 身份写出。
+_publish_step_names = [step.get("name", "") for step in _publish_job["steps"]]
+_write_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Write version.json"))
+_upload_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Upload version.json"))
+_verify_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Verify production version.json"))
+assert _write_i < _upload_i < _verify_i, _publish_step_names
+assert "steps.staged.outputs" in _publish_job["steps"][_write_i]["run"], \
+  "version.json must be written from the staged identity"
 
 # Production owner routing and freshness inputs are paired contracts. A workflow
 # may only proceed when its triggering SHA is still current for every owned input.

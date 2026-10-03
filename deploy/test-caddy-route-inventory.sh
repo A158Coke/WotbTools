@@ -196,4 +196,103 @@ printf '\n%sunreviewed.example.com {\n%sreverse_proxy example.invalid:1234\n%s}\
   '' "$(printf '\t')" '' >> "$unreviewed/Caddyfile"
 rejects 'unreviewed upstream added' "$unreviewed" 'unreviewed Caddy upstream'
 
+# Adapted invariants protect both real ordering and the exact-origin boundary.
+for mutation in wildcard missing-preflight missing-exposed-header reversed-gateway; do
+  cors_dir="$(caddyfile "android-cors-$mutation")"
+  if [ "$mutation" = wildcard ]; then
+    sed -i 's|Access-Control-Allow-Origin https://appassets.androidplatform.net|Access-Control-Allow-Origin *|' "$cors_dir/Caddyfile"
+  elif [ "$mutation" = missing-preflight ]; then
+    sed -i '/respond @androidPreflight/d' "$cors_dir/Caddyfile"
+  elif [ "$mutation" = missing-exposed-header ]; then
+    sed -i 's/, X-Map-Meta//' "$cors_dir/Caddyfile"
+  else
+    python3 - "$cors_dir/Caddyfile" <<'PY_REVERSE'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1]); source = path.read_text()
+start = source.index("\thandle_path /agent-assets/* {")
+end = source.index("\thandle {", start)
+gateway = source[start:end]
+# Move the gateway after the following catch-all, retaining every directive.
+catch_end = source.index("\n\t}\n", end) + len("\n\t}\n")
+source = source[:start] + source[end:catch_end] + gateway + source[catch_end:]
+path.write_text(source)
+PY_REVERSE
+  fi
+  if guard "$cors_dir"; then echo "invalid Android CORS accepted: $mutation" >&2; exit 1; fi
+  grep -q 'adapted Android CORS' "$work/out.log" || { cat "$work/out.log" >&2; exit 1; }
+done
+
+# Real Caddy HTTP routing: fixture upstreams return distinguishable responses,
+# proving preflight, gateway selection, path stripping and exposed map metadata.
+python3 - "$ROOT" "$work" <<'PY_HTTP'
+import http.client, json, os, pathlib, subprocess, sys, time
+root, work = map(pathlib.Path, sys.argv[1:])
+image = "caddy:2.10.2-alpine"
+# 逻辑上游必须与生产 compose 的默认值一致地传进来：Caddyfile 用 {$CADDY_*_UPSTREAM} 占位符，
+# 空占位符会让 adapt 产出**没有 upstreams** 的 reverse_proxy 节点（isolate() 因此拿不到 dial）。
+env_args = []
+for name, default in (("CADDY_FRONTEND_UPSTREAM", "wotb-frontend:80"), ("CADDY_KEYCLOAK_UPSTREAM", "keycloak:8080")):
+    env_args += ["-e", f"{name}={os.environ.get(name) or default}"]
+config = json.loads(subprocess.check_output(["docker", "run", "--rm", "-e", "CADDY_ACME_EMAIL=ci@example.invalid", *env_args, "-v", f"{root}/deploy/tx/Caddyfile:/etc/caddy/Caddyfile:ro", image, "caddy", "adapt", "--config", "/etc/caddy/Caddyfile"], stderr=subprocess.DEVNULL))
+server = config["apps"]["http"]["servers"]["srv0"]
+server["routes"] = [route for route in server["routes"] if route.get("match") == [{"host": ["wotbtools.com"]}]]
+server["listen"] = [":8080"]
+server["automatic_https"] = {"disable": True}
+server.pop("tls_connection_policies", None)
+def isolate(node):
+    if isinstance(node, dict):
+        if node.get("handler") == "reverse_proxy":
+            asset = node["upstreams"] == [{"dial": "wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com:443"}]
+            node["upstreams"] = [{"dial": "127.0.0.1:8081" if asset else "127.0.0.1:8082"}]
+            node.pop("transport", None)  # Fixture upstreams speak plain HTTP.
+        for value in node.values(): isolate(value)
+    elif isinstance(node, list):
+        for value in node: isolate(value)
+isolate(server)
+asset = {"listen": [":8081"], "routes": [{"handle": [{"handler": "static_response", "status_code": 200, "body": "asset:{http.request.uri}", "headers": {"X-Map-Meta": ["fixture-map-metadata"]}}]}]}
+web = {"listen": [":8082"], "routes": [{"match": [{"path": ["/index.json"]}], "handle": [{"handler": "static_response", "status_code": 200, "body": "web:{http.request.uri}"}]}, {"handle": [{"handler": "static_response", "status_code": 502}]}]}
+config = {"admin": {"disabled": True}, "apps": {"http": {"servers": {"cors": server, "asset-fixture": asset, "web-fixture": web}}}}
+path = work / "cors-runtime.json"; path.write_text(json.dumps(config))
+container = subprocess.check_output(["docker", "run", "-d", "--rm", "-p", "127.0.0.1::8080", "-v", f"{path}:/config.json:ro", image, "caddy", "run", "--config", "/config.json"], text=True).strip()
+try:
+    for attempt in range(30):
+        mapping = subprocess.check_output(["docker", "port", container, "8080/tcp"], text=True).strip()
+        if mapping: break
+        if subprocess.check_output(["docker", "inspect", "--format", "{{.State.Running}}", container], text=True).strip() != "true":
+            raise RuntimeError(subprocess.check_output(["docker", "logs", container], stderr=subprocess.STDOUT, text=True))
+        time.sleep(.1)
+    assert mapping, "Caddy container did not publish 8080/tcp"
+    port = int(mapping.splitlines()[0].rsplit(":", 1)[-1])
+    def request(origin, method="OPTIONS", path="/api/users/profile"):
+        for attempt in range(30):
+            try:
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+                connection.request(method, path, headers={"Host": "wotbtools.com", "Origin": origin, "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "authorization,content-encoding"})
+                response = connection.getresponse(); body = response.read().decode()
+                return response.status, dict((key.lower(), value) for key, value in response.getheaders()), body
+            except (OSError, http.client.HTTPException):
+                if attempt == 29: raise
+                time.sleep(.1)
+    origin = "https://appassets.androidplatform.net"
+    status, headers, _ = request(origin)
+    assert status == 204, status
+    assert headers["access-control-allow-origin"] == origin, headers
+    assert "authorization" in headers["access-control-allow-headers"].lower()
+    assert "access-control-allow-credentials" not in headers
+    _, untrusted, _ = request("https://untrusted.example")
+    assert "access-control-allow-origin" not in untrusted, untrusted
+    status, actual, _ = request(origin, "GET")
+    assert status == 502 and actual["access-control-allow-origin"] == origin, (status, actual)
+    status, asset_headers, body = request(origin, "GET", "/agent-assets/index.json")
+    assert status == 200 and body == "asset:/index.json", (status, body)
+    assert asset_headers["x-map-meta"] == "fixture-map-metadata", asset_headers
+    assert {"content-disposition", "x-request-id", "x-map-meta"}.issubset({value.strip().lower() for value in asset_headers["access-control-expose-headers"].split(",")}), asset_headers
+    assert asset_headers["access-control-allow-origin"] == origin
+    status, _, body = request(origin, "GET", "/index.json")
+    assert status == 200 and body == "web:/index.json", (status, body)
+finally:
+    subprocess.run(["docker", "rm", "-f", container], stdout=subprocess.DEVNULL, check=True)
+print("Caddy HTTP preflight / rejected origin / upstream failure / asset gateway path and exposed metadata: PASS")
+PY_HTTP
+
 echo 'Caddy public-site inventory fixtures: PASS'

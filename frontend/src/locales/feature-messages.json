@@ -359,6 +359,25 @@
     "account": {
       "signedOutTitle": "登录 WoTBTools",
       "signedOutHint": "登录后可以绑定游戏账号、提交名人堂记录、查看你的记录。解析回放不需要登录。"
+    },
+    "featureOffline": {
+      "title": "当前处于离线状态",
+      "retry": "请联网后重试。",
+      "aiReview": "AI 复盘需要连接 WotbTools AI 服务。",
+      "hallOfFame": "名人堂需要联网读取和提交数据。",
+      "playback3d": "3D 播放需要联网加载地图和模型资源。",
+      "accountProfile": "账号资料需要联网读取。",
+      "adminUsers": "用户管理需要联网读取 Keycloak 与本地资料。",
+      "syncPaused": "离线状态，数据同步已暂停。"
+    },
+    "connectivityNotice": {
+      "unknownTitle": "暂时无法确认网络状态",
+      "unknown": "暂时无法确认网络连接状态，请稍后重试。",
+      "degradedTitle": "网络连接不稳定",
+      "degraded": "当前网络连接不稳定，部分在线功能暂不可用。",
+      "serviceUnavailableTitle": "在线服务暂不可用",
+      "serviceUnavailable": "在线服务当前暂不可用，请稍后重试。",
+      "retry": "请检查网络连接后重试。"
     }
   },
   "en": {
@@ -721,6 +740,25 @@
     "account": {
       "signedOutTitle": "Sign in to WoTBTools",
       "signedOutHint": "Sign in to link your game account, submit Hall of Fame records and see your records. Parsing replays does not require an account."
+    },
+    "featureOffline": {
+      "title": "You are offline",
+      "retry": "Reconnect and try again.",
+      "aiReview": "AI review needs the WotbTools AI service.",
+      "hallOfFame": "The Hall of Fame needs a connection to read and submit data.",
+      "playback3d": "3D playback needs a connection to load maps and models.",
+      "accountProfile": "Account data needs a connection.",
+      "adminUsers": "User management needs a connection to read Keycloak and local profiles.",
+      "syncPaused": "Offline: syncing is paused."
+    },
+    "connectivityNotice": {
+      "unknownTitle": "Network status unavailable",
+      "unknown": "The network connection status could not be determined. Please try again shortly.",
+      "degradedTitle": "Unstable connection",
+      "degraded": "The network connection is currently unstable. Some online features are temporarily unavailable.",
+      "serviceUnavailableTitle": "Online service unavailable",
+      "serviceUnavailable": "The online service is temporarily unavailable. Please try again later.",
+      "retry": "Check your connection and try again."
     }
   },
   "ru": {
@@ -1083,6 +1121,25 @@
     "account": {
       "signedOutTitle": "Вход в WoTBTools",
       "signedOutHint": "Войдите, чтобы привязать игровой аккаунт, отправлять записи в Зал славы и видеть свои записи. Для разбора реплеев вход не нужен."
+    },
+    "featureOffline": {
+      "title": "Нет подключения",
+      "retry": "Подключитесь к сети и повторите.",
+      "aiReview": "Для ИИ-разбора нужно подключение к сервису WotbTools AI.",
+      "hallOfFame": "Для Зала славы нужно подключение для чтения и отправки данных.",
+      "playback3d": "Для 3D-воспроизведения нужно подключение для загрузки карт и моделей.",
+      "accountProfile": "Для данных аккаунта нужно подключение.",
+      "adminUsers": "Для управления пользователями нужно подключение к Keycloak и локальным профилям.",
+      "syncPaused": "Нет сети: синхронизация приостановлена."
+    },
+    "connectivityNotice": {
+      "unknownTitle": "Не удалось определить состояние сети",
+      "unknown": "Не удалось определить состояние сетевого подключения. Повторите попытку позже.",
+      "degradedTitle": "Нестабильное подключение",
+      "degraded": "Соединение сейчас нестабильно. Часть онлайн-функций временно недоступна.",
+      "serviceUnavailableTitle": "Онлайн-сервис недоступен",
+      "serviceUnavailable": "Онлайн-сервис временно недоступен. Повторите попытку позже.",
+      "retry": "Проверьте подключение и повторите попытку."
     }
   }
 }

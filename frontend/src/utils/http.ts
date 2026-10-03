@@ -1,3 +1,6 @@
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { resolveApiUrl, isAndroidRuntime } from '../platform/runtime.js'
 import type {
   ApiErrorApplicationModel,
   ApiErrorInit,
@@ -210,10 +213,55 @@ export async function requireOk(response: Response): Promise<Response> {
   return response
 }
 
-/** Fetch wrapper guaranteeing transport failures are also canonical ApiError instances. */
+/**
+ * REST 前缀 → 功能 id 的**纯映射**（无 Vue、无 connectivity、无副作用，可确定性单测）。
+ *
+ * 前缀边界必须按 segment 判定：`/api/admin/users-evil` 不是 `/api/admin/users` 的子资源，
+ * 因此 `startsWith` 式的字符串前缀在这里是错的，用「等于自身 或 后接 `/`」。
+ * 判定顺序从最具体到最一般，`/api/admin/hof` 先于 `/api/hof`、`/api/admin/users` 先于 `/api/users`。
+ *
+ * 未登记的前缀返回 null（**不** fail-closed 成某个功能）：未知路由由后端 404 表达，
+ * 不该被这里伪造成「功能不可用」。
+ */
+const API_PATH_FEATURES: readonly (readonly [string, string])[] = Object.freeze([
+  ['/api/admin/users', Feature.ADMIN_USERS],
+  ['/api/admin/hof', Feature.HALL_OF_FAME],
+  ['/api/users', Feature.ACCOUNT_PROFILE],
+  ['/api/hof', Feature.HALL_OF_FAME],
+  ['/api/ai', Feature.AI_REVIEW],
+].map(pair => Object.freeze(pair) as readonly [string, string]))
+
+export function featureForApiPath(pathname: string): string | null {
+  const path = typeof pathname === 'string' ? pathname : ''
+  for (const [prefix, feature] of API_PATH_FEATURES) {
+    if (path === prefix || path.startsWith(`${prefix}/`)) return feature
+  }
+  return null
+}
+
+/**
+ * Fetch wrapper guaranteeing transport failures are also canonical ApiError instances.
+ *
+ * 连通性门禁的分工（review P2）：
+ *  - **业务策略的 owner 是页面 / 组件**：页面用 `useFeatureGate()` + `Feature.*` 决定是否发起动作，
+ *    并给出中性状态与提示（见 ProfilePage / AdminUsersPage）。这是唯一的功能准入 SSOT。
+ *  - **这里的 transport 映射只是 defense-in-depth**：万一某个页面漏了门禁，Android 运行时也
+ *    不会把请求发到一个已知不可达的后端；它**不**参与产品决策，也**不**负责提示文案。
+ */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
-    return init === undefined ? await fetch(input) : await fetch(input, init)
+    const resolved = resolveApiUrl(input)
+    if (isAndroidRuntime()) {
+      const url = new URL(typeof resolved === 'string' ? resolved : resolved instanceof URL ? resolved.href : resolved.url, window.location.href)
+      const feature = featureForApiPath(url.pathname)
+      if (feature && !useFeatureGate().requireFeature(feature)) {
+        throw new ApiError({ code: 'NETWORK_ERROR', retryable: true })
+      }
+    }
+    // Native Bearer owns Android authentication; never send cross-origin cookies.
+    return isAndroidRuntime()
+      ? await fetch(resolved, { ...init, credentials: 'omit' })
+      : init === undefined ? await fetch(resolved) : await fetch(resolved, init)
   } catch (error) {
     throw normalizeApiError(error)
   }

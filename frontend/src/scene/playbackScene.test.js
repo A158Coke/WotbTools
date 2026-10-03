@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { assetProvider } from './assetProvider.js'
 import { createPlaybackStore } from './playbackStore.js'
 
 const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
@@ -90,6 +91,7 @@ function track(d) {
 }
 
 beforeEach(() => {
+  vi.spyOn(assetProvider, 'fetch').mockImplementation((...args) => fetch(...args))
   source.loadPlaybackData.mockReset()
   source.resolveMapKey.mockReset()
   source.mapStaticUrl.mockReset()

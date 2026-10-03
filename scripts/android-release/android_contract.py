@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
+import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
@@ -98,7 +101,17 @@ def field_breaking(prefix: str, base: dict, head: dict, breaking: list[str]) -> 
 
 def contract_breaking_changes(base: dict, head: dict) -> list[str]:
     breaking: list[str] = []
-    if base.get("origin") != head.get("origin"):
+    # Bridge v2 returns the resource URI in pending metadata. The reviewed local
+    # runtime adds an origin while retaining both production compatibility origins;
+    # it does not change the RPC or resource path/header/method semantics.
+    local_origin_addition = (
+        base.get("bridgeVersion") == head.get("bridgeVersion") == 2
+        and base.get("origin") == "https://wotbtools.com"
+        and head.get("origin") == "https://appassets.androidplatform.net"
+        and {base["origin"], head["origin"], "https://www.wotbtools.com"}
+        <= set(head.get("allowedOrigins", []))
+    )
+    if base.get("origin") != head.get("origin") and not local_origin_addition:
         breaking.append("changed bridge origin")
     if not set(base.get("allowedOrigins", [])) <= set(head.get("allowedOrigins", [])):
         breaking.append("removed allowed bridge origin")
@@ -138,6 +151,10 @@ def contract_breaking_changes(base: dict, head: dict) -> list[str]:
             continue
         for key in ("method", "url", "failure"):
             if old.get(key) != new.get(key):
+                if (key == "url" and name == "pendingReplay" and local_origin_addition
+                        and old.get("url") == base["origin"] + "/__native/replay-pending"
+                        and new.get("url") == head["origin"] + "/__native/replay-pending"):
+                    continue
                 breaking.append(f"changed synthetic resource {name}.{key}")
         old_headers = set(old.get("requiredHeaders", []))
         new_headers = set(new.get("requiredHeaders", []))
@@ -160,6 +177,16 @@ def auth_surface(contract: dict) -> tuple[list[str], list[str], list[str]]:
 
 def validate_native_sources(contract: dict, paths: list[str]) -> None:
     source = "\n".join(Path(path).read_text(encoding="utf-8") for path in paths)
+    # Resolve the actual canonical Kotlin reference, rather than demanding that
+    # Native duplicate a full URL literal in ReplayIntentHandler.
+    local = re.search(r'const\s+val\s+LOCAL_APP_ORIGIN\s*=\s*"([^"]+)"', source)
+    resource_source = source
+    if local:
+        resource_source = re.sub(
+            r'MainActivity\.LOCAL_APP_ORIGIN\s*\+\s*"([^"]+)"',
+            lambda match: '"' + local.group(1) + match.group(1) + '"',
+            source,
+        )
     for method in contract.get("methods", {}):
         if f'"{method}"' not in source:
             fail(f"Native source does not implement contract method: {method}")
@@ -174,7 +201,7 @@ def validate_native_sources(contract: dict, paths: list[str]) -> None:
         if event.get("global") and event["global"] not in source:
             fail(f"Native source does not emit contract event: {event['global']}")
     for resource in contract.get("syntheticResources", {}).values():
-        if resource.get("url") and resource["url"] not in source:
+        if resource.get("url") and resource["url"] not in resource_source:
             fail(f"Native source is missing synthetic resource URL: {resource['url']}")
         for header in resource.get("requiredHeaders", []):
             if header not in source:
@@ -272,9 +299,132 @@ def command_gate(args: argparse.Namespace) -> None:
     print(json.dumps(result, sort_keys=True))
 
 
+def apk_bundle_identity(apk_path: str, contract: dict, pin: dict, source: str, version: str) -> dict:
+    """Prove the bundle from APK bytes, rather than trusting a workspace manifest."""
+    if not re.fullmatch(r"[0-9a-f]{40}", source):
+        fail("APK source must be a full commit SHA")
+    with zipfile.ZipFile(apk_path) as apk:
+        entries = [name for name in apk.namelist() if name.startswith("assets/web/") and not name.endswith("/")]
+        if len(entries) != len(set(entries)):
+            fail("APK bundle contains duplicate paths")
+        manifest_bytes = apk.read("assets/web/bundle-manifest.json")
+        manifest = json.loads(manifest_bytes)
+        expected = {
+            "schemaVersion": 2, "target": "android", "buildCommit": source,
+            "runtimeOrigin": contract["origin"], "apiOrigin": "https://wotbtools.com",
+            "assetOrigin": "https://wotbtools.com/agent-assets", "entry": "index.html",
+            "agentWasm": {"commit": pin["ref"], "release": pin["artifact"]["release"]},
+        }
+        if contract["origin"] != "https://appassets.androidplatform.net":
+            fail("APK runtime contract must use the trusted local origin")
+        for key, value in expected.items():
+            if manifest.get(key) != value:
+                fail(f"APK bundle identity mismatch: {key}")
+        runtime = manifest.get("nativeRuntime", {})
+        if not isinstance(runtime, dict):
+            fail("APK bundle must declare its native runtime")
+        auth_methods, _, _ = auth_surface(contract)
+        auth_event = contract.get("events", {}).get("authChanged", {}).get("global")
+        if (runtime.get("supportedBridgeVersions") != [contract["bridgeVersion"]]
+                or runtime.get("nativeAuthCapability") != "native-auth"
+                or sorted(runtime.get("nativeAuthMethods", [])) != sorted(auth_methods)
+                or runtime.get("authChangedGlobal") != auth_event):
+            fail("APK native-auth / bridge surface does not match the staged contract")
+        records = manifest.get("files", [])
+        paths = [record["path"] for record in records]
+        actual = {name[len("assets/web/"):] for name in entries} - {"bundle-manifest.json"}
+        if len(paths) != len(set(paths)) or set(paths) != actual or manifest.get("fileCount") != len(actual):
+            fail("APK bundle file inventory does not match its manifest")
+        total = 0
+        for record in records:
+            data = apk.read("assets/web/" + record["path"])
+            if record.get("size") != len(data) or record.get("sha256") != hashlib.sha256(data).hexdigest():
+                fail(f"APK bundle file integrity mismatch: {record['path']}")
+            total += len(data)
+        if manifest.get("totalBytes") != total:
+            fail("APK bundle total byte count does not match its manifest")
+        for name, digest_key in [("index.html", "entrySha256"), (f"wasm/{pin['ref']}/wotb_replay_wasm_bg.wasm", "agentWasmSha256")]:
+            if hashlib.sha256(apk.read("assets/web/" + name)).hexdigest() != manifest.get(digest_key):
+                fail(f"APK bundle required file hash mismatch: {name}")
+        apk.read(f"assets/web/wasm/{pin['ref']}/wotb_replay_wasm.js")
+    with open(apk_path, "rb") as apk_file:
+        apk_sha = hashlib.sha256(apk_file.read()).hexdigest()
+    apk_name = f"wotbtools-android-v{version}.apk"
+    return {
+        "schemaVersion": 2, "versionCode": version_code(parse_version(version)), "versionName": version,
+        "nativeBridgeVersion": contract["bridgeVersion"], "sourceSha": source,
+        "tag": f"android-v{version}", "apkName": apk_name,
+        "apkUrl": f"https://wotbtools.com/download/android/{apk_name}",
+        "sha256": apk_sha,
+        "bundleManifestSha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "bundleFileCount": len(entries), "agentWasmRelease": pin["artifact"]["release"],
+        "agentWasmCommit": pin["ref"], "runtimeOrigin": manifest["runtimeOrigin"],
+        "apiOrigin": manifest["apiOrigin"], "assetOrigin": manifest["assetOrigin"], "nativeRuntime": runtime,
+    }
+
+
+def command_bundle(args: argparse.Namespace) -> None:
+    validate_apk_version(Path(args.badging).read_text(encoding="utf-8"), args.version)
+    identity = apk_bundle_identity(args.apk, load_json(args.contract), load_json(args.pin), args.source, args.version)
+    if args.evidence:
+        evidence = load_json(args.evidence)
+        for key, value in identity.items():
+            if evidence.get(key) != value:
+                fail(f"Staging evidence does not match APK bytes: {key}")
+        try:
+            datetime.strptime(evidence["stagedAt"], "%Y-%m-%dT%H:%M:%SZ")
+        except (KeyError, ValueError, TypeError):
+            fail("Staging evidence has no valid stagedAt timestamp")
+        identity = evidence
+    else:
+        identity["stagedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    result = json.dumps(identity, indent=2) + "\n"
+    if args.output:
+        Path(args.output).write_text(result, encoding="utf-8")
+    else:
+        print(result, end="")
+
+
+def validate_apk_version(badging: str, version: str) -> None:
+    package = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']+)'", badging, re.MULTILINE)
+    if not package or package.groups() != ("com.wotbtools.app", str(version_code(parse_version(version))), version):
+        fail("APK AndroidManifest package/version differs from the committed release")
+
+
+def validate_cors(status: int, headers: dict, origin: str, methods: list[str], request_headers: list[str], expected_status: int | None = None) -> None:
+    if (expected_status is None and not 200 <= status < 300) or (expected_status is not None and status != expected_status):
+        fail(f"CORS readiness returned HTTP {status}")
+    if headers.get("access-control-allow-origin") != origin:
+        fail("CORS readiness must return the exact trusted local origin")
+    if headers.get("access-control-allow-credentials", "").lower() == "true":
+        fail("Native Bearer API must not enable credentialed CORS")
+    exposed = {value.strip().lower() for value in headers.get("access-control-expose-headers", "").split(",")}
+    if not {"content-disposition", "x-request-id", "x-map-meta"}.issubset(exposed):
+        fail("CORS readiness is missing required exposed response headers")
+    allowed_methods = {value.strip().upper() for value in headers.get("access-control-allow-methods", "").split(",")}
+    allowed_headers = {value.strip().lower() for value in headers.get("access-control-allow-headers", "").split(",")}
+    if not set(methods).issubset(allowed_methods) or not set(request_headers).issubset(allowed_headers):
+        fail("CORS readiness is missing required methods or headers")
+
+
+def command_cors(args: argparse.Namespace) -> None:
+    headers = {}
+    for line in Path(args.headers).read_text(encoding="utf-8").splitlines():
+        if line.startswith("HTTP/"):
+            headers = {}  # curl may include an intermediary CONNECT response.
+        elif ":" in line:
+            name, value = line.split(":", 1)
+            name = name.lower().strip()
+            headers[name] = headers.get(name, "") + (", " if name in headers else "") + value.strip()
+    validate_cors(int(args.status), headers, args.origin, args.methods.split(",") if args.methods else [], args.request_headers.split(",") if args.request_headers else [], args.expected_status)
+    print("Exact-origin CORS readiness verified")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser("bundle"); p.add_argument("--apk", required=True); p.add_argument("--badging", required=True); p.add_argument("--contract", required=True); p.add_argument("--pin", required=True); p.add_argument("--source", required=True); p.add_argument("--version", required=True); p.add_argument("--evidence"); p.add_argument("--output"); p.set_defaults(func=command_bundle)
+    p = sub.add_parser("cors"); p.add_argument("--headers", required=True); p.add_argument("--status", required=True); p.add_argument("--origin", required=True); p.add_argument("--methods", default=""); p.add_argument("--request-headers", default=""); p.add_argument("--expected-status", type=int); p.set_defaults(func=command_cors)
     p = sub.add_parser("version"); p.add_argument("version"); p.set_defaults(func=command_version)
     p = sub.add_parser("validate"); p.add_argument("--contract", required=True); p.add_argument("--gradle-properties", required=True); p.add_argument("--frontend", required=True); p.add_argument("--native-source", action="append", default=[]); p.add_argument("--frontend-source", action="append", default=[]); p.set_defaults(func=command_validate)
     p = sub.add_parser("version-bump"); p.add_argument("--base-version", required=True); p.add_argument("--head-version", required=True); p.add_argument("--paths", required=True); p.set_defaults(func=command_bump)

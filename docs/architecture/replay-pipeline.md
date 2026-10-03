@@ -117,3 +117,17 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 
 后端或前端需要的回放字段，一律向上游 Rust Core 要（直接改上游、发版、升级 `deploy/agent/source.json`），
 不在客户端启发式推导，也不在服务端解析。已知待补项见 [client-replay-engine-migration.md](client-replay-engine-migration.md)。
+
+## Android bundled runtime
+
+Android runs the same ReplayWorkspace at `https://appassets.androidplatform.net/index.html`.
+Replay import, Rust/WASM parsing, Result/Rating, 2D maps and shooting inspection use bundled resources.
+`common/shot-tank-data.json` supplies the reviewed asset plane's compact pitch/config shell identity;
+`python common/python/update_shot_tank_data.py --asset-base <reviewed HTTPS asset base>` regenerates it
+with cache/source hashes and rejects missing entries. It contains no second tankopedia or models.
+Pending intents stream only from the exact local `/__native/replay-pending` resource with UUID header
+and compare-and-clear ACK after analysis completion. Parser-load failure preserves pending for retry.
+AI, HoF, remote Profile and remote 3D assets require connectivity before auth or requests.
+The runtime URL boundary sends Android business requests to production with native Bearer and no cookies;
+ordinary Web requests retain their same-origin behavior. Release validates the APK's frontend identity,
+not the production Web deployment's commit. See `docs/android/architecture.md` and `release-process.md`.

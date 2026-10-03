@@ -6,6 +6,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
 import AiReviewPanel from './AiReviewPanel.vue'
 
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
+
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key, params) => key === 'errors.diagnostic_id' ? `diagnostic:${params.id}` : key,
@@ -754,4 +761,19 @@ describe('AiReviewPanel per-run context', () => {
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
+})
+
+it('offline Analyze issues zero requests; reconnect requires another explicit Analyze action', async () => {
+  const fetchMock = vi.fn()
+  vi.stubGlobal('fetch', fetchMock)
+  connectivityState.state.value = 'offline'
+  const wrapper = mountPanel({ projection: projectionA })
+  await wrapper.find('.ai-analyze').trigger('click')
+  await flushPromises()
+  expect(fetchMock).not.toHaveBeenCalled()
+  connectivityState.state.value = 'online'
+  await flushPromises()
+  expect(fetchMock).not.toHaveBeenCalled()
+  wrapper.unmount()
+  vi.unstubAllGlobals()
 })

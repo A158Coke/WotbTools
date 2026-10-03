@@ -13,6 +13,13 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
 const i18n = vi.hoisted(() => ({ t: vi.fn((key) => key) }))
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
+
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: i18n.t }) }))
 
 const parseAgentShotsFromBytes = vi.hoisted(() => vi.fn())
@@ -30,6 +37,7 @@ vi.mock('../scene/agentData.js', () => ({
   tankImageUrl: (id) => `img:${id}`,
   storeShotsForViewer: vi.fn(),
   fetchTankData: vi.fn(async () => ({ configs: [] })),
+  fetchLocalShotTankData: async () => ({ configs: [] }),
 }))
 
 /** happy-dom 没有 ResizeObserver：记录回调以便按容器宽度驱动 Master–Detail 分档 */
@@ -71,6 +79,7 @@ async function mountPane(props = {}) {
 }
 
 beforeEach(() => {
+    connectivityState.state.value = 'online'
   observers.length = 0
   parseAgentShotsFromBytes.mockReset()
   parseAgentPlaybackFromBytes.mockReset()
@@ -626,4 +635,24 @@ describe('ReplayShotsPane → 装甲查看器交接', () => {
     expect(navigate).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+})
+
+it('bundled shooting inputs preserve config identity and all global shells without remote fallback', async () => {
+  const { default: snapshot } = await import('../../../common/shot-tank-data.json')
+  const { default: shellKinds } = await import('../scene/shellKinds.json')
+  const { fetchLocalShotTankData } = await vi.importActual('../scene/agentData.js')
+  const noNetwork = vi.fn(() => { throw new Error('shooting inspection attempted network') })
+  vi.stubGlobal('fetch', noNetwork)
+  try {
+    const [tankId, expected] = Object.entries(snapshot.tanks).find(([, tank]) => tank.configs.some(config => config.pitch_limits))
+    expect(await fetchLocalShotTankData(tankId)).toEqual(expected)
+    expect(expected.configs.some(config => Number.isFinite(config.pitch_limits?.max))).toBe(true)
+    for (const tank of Object.values(snapshot.tanks)) {
+      for (const config of tank.configs) {
+        for (const shellId of config.shell_global_ids || []) expect(shellKinds[String(shellId)], `global shell ${shellId}`).toBeDefined()
+      }
+    }
+    await expect(fetchLocalShotTankData('not-a-tank')).rejects.toThrow('Local shooting inputs unavailable')
+    expect(noNetwork).not.toHaveBeenCalled()
+  } finally { vi.unstubAllGlobals() }
 })

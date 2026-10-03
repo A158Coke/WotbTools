@@ -49,6 +49,7 @@ android {
         applicationId = "com.wotbtools.app"
         minSdk = 26
         targetSdk = 34
+        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
         versionCode = resolvedVersionCode
         versionName = resolvedWotbVersion
         buildConfigField("int", "NATIVE_BRIDGE_VERSION", contractBridgeVersion.toString())
@@ -58,6 +59,8 @@ android {
     }
 
     buildFeatures { buildConfig = true }
+    // Test APK reuses canonical anonymous replays; no fixture copy in production assets.
+    sourceSets.getByName("androidTest").assets.srcDir("../../common/fixtures/replays")
 
     signingConfigs {
         if (keystorePath != null) {
@@ -96,7 +99,12 @@ kotlin {
 }
 
 dependencies {
-    // Phase 2 极薄壳：WebView shell 只依赖 Android framework。后续 Phase 按需引入 androidx。
+    // Framework JUnit3 instrumentation is an optional SDK library on API28+; test-only compile stubs.
+    androidTestCompileOnly(files(
+        android.sdkDirectory.resolve("platforms/android-${android.compileSdk}/optional/android.test.base.jar"),
+        android.sdkDirectory.resolve("platforms/android-${android.compileSdk}/optional/android.test.runner.jar")
+    ))
+    // Android framework + AndroidX WebKit asset loader / origin-scoped bridge.
     implementation("androidx.core:core-ktx:1.13.1")
     // origin-scoped Native Bridge：WebView WebMessageListener（带 origin allowlist），
     // 替代 addJavascriptInterface 的全 frame 暴露。
@@ -105,6 +113,6 @@ dependencies {
     // 库只经浏览器完成授权、**从不使用 WebView**；固定 0.11.1 是因为上游发布节奏停滞
     // （审计记录在 docs/current-plan.md），升级需单独评审。
     implementation("net.openid:appauth:0.11.1")
-    // 纯 JVM 单测（认证策略 / 会话过期判定 / 回程选择）；不引入 Activity/instrumentation 测试框架。
+    // Pure JVM policy tests; device smoke uses the optional SDK framework runner above.
     testImplementation("junit:junit:4.13.2")
 }
