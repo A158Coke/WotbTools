@@ -370,7 +370,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 30m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,ASSET_BASE_URL
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,TX_IMAGE_REGISTRY_PREFIX,ASSET_BASE_URL,TX_BACKEND_UPSTREAM,TX_AI_UPSTREAM
           script: |
             set -euo pipefail
             bash /opt/wotb-tx/deploy.incoming/deploy/tx/with-deploy-lock.sh bash -s <<'LOCKED'
@@ -394,3 +394,6 @@ jobs:
           WOTB_DEPLOY_CONFIG_SHA: ${{ github.sha }}
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
           ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
+          # K6B-1 keeps the current dependency path active; K6B-2 switches it.
+          TX_BACKEND_UPSTREAM: http://business-api:8087
+          TX_AI_UPSTREAM: http://10.20.0.2:8089

@@ -1,8 +1,8 @@
-# TX1 WireGuard service plane（K6A）
+# TX WireGuard service plane（K6A / K6B）
 
-K6A 在 TX1 现有 Docker-local production plane 之外增加私有跨宿主入口。
-这些 Compose 定义需合并后经各服务 owner 部署；本文件是验收流程，不是生产已完成证明。
-K6A COMPLETE 必须同时证明新 WG plane 与原有 production plane 正常。
+K6A 已在 TX1 Docker-local production plane 之外建立并验收私有跨宿主入口。
+K6B-1 在不切换生产流量的前提下，把消费者依赖改为 fail-closed logical endpoints；
+owner workflows 仍显式注入当前 Docker-local 值。K6B-2 才逐项切换到 WireGuard endpoint。
 
 ## Endpoint contract
 
@@ -20,12 +20,29 @@ ingress 仍是 Caddy 的 80/443。UFW inactive 不允许使用 wildcard/public b
 服务入口只接受表中精确 TCP 绑定，禁止 `0.0.0.0`、`::`、公网 IP 或裸 `5432` 发布。
 两套 PostgreSQL 可同时在不同宿主地址上使用相同的各自 host port。
 
-现有生产依赖仍为 frontend → `http://business-api:8087`、business-api →
-`business-postgres` / `http://keycloak:8080`、Keycloak →
-`jdbc:postgresql://keycloak-postgres:5432/...`。Caddy 的 Web/Auth upstream 保持
-`wotb-frontend:80` / `keycloak:8080`；monitor/komodo upstream 保持
-`10.20.0.2:3000` / `10.20.0.2:9120`。Yecao AI `10.20.0.2:8089` 与 Loki
-`10.20.0.2:3100` 也保持原样。K6A 不引入 logical endpoint 变量，不迁移任何 workload。
+K6B-1 logical endpoint contract（active workflow value 仍为 Docker-local default）：
+
+| Consumer | Variable(s) | Docker-local default | Reviewed WG values |
+|---|---|---|---|
+| Frontend → Business API | `TX_BACKEND_UPSTREAM` | `http://business-api:8087` | `http://10.20.0.1:8087`, `http://10.20.0.3:8087` |
+| Business API → Business PostgreSQL | `TX_BUSINESS_DB_HOST/PORT` | `business-postgres:5432` | `10.20.0.1:25432`, `10.20.0.3:25432` |
+| Business API → Keycloak Admin | `TX_KEYCLOAK_ADMIN_SERVER_URL` | `http://keycloak:8080` | `http://10.20.0.1:8080`, `http://10.20.0.3:8080` |
+| Keycloak → Keycloak PostgreSQL | `TX_KEYCLOAK_DB_HOST/PORT` | `keycloak-postgres:5432` | `10.20.0.1:15432`, `10.20.0.3:15432` |
+| Caddy → Frontend | `CADDY_FRONTEND_UPSTREAM` | `wotb-frontend:80` | `10.20.0.1:8081`, `10.20.0.3:8081` |
+| Caddy → Keycloak | `CADDY_KEYCLOAK_UPSTREAM` | `keycloak:8080` | `10.20.0.1:8080`, `10.20.0.3:8080` |
+
+`KEYCLOAK_ISSUER_URI` 不是 placement endpoint，始终保持
+`https://auth.wotbtools.com/realms/wotbtools`。Yecao AI 仍固定
+`http://10.20.0.2:8089`；monitor/Komodo/Loki 边界不变。公网 host、未审核 WG 地址、
+错误协议或错误端口在 live mutation 前 fail closed。K6B-1 不迁移任何 workload。
+
+同一套 canonical validator（`deploy/tx/deploy.sh:validate_http_endpoint` /
+`validate_database_endpoint` / `validate_caddy_upstream`）同时守护三个入口，仓库里没有第二份
+allowlist：staged deploy、只读 dependency readiness，以及 runtime gate。因此
+`deploy/dependency-readiness.sh` 在启动任何容器之前就拒绝未审核 endpoint——携带
+`TX_BUSINESS_DB_PASSWORD` 的 psql 探针与携带 `KEYCLOAK_ADMIN_CLIENT_SECRET` 的
+Keycloak Admin 请求都不会先发出去再等 `deploy.sh` 拒绝。probe 自身也不再为
+`TX_KEYCLOAK_ADMIN_SERVER_URL` 取默认值：没有经过校验的显式值就直接失败。
 
 ## Repository acceptance
 
@@ -34,7 +51,19 @@ host IP、published port、target、protocol 与数量，声明顺序不影响�
 staged deploy 对 selected owner 在 live promote/recreate 前使用同一校验；runtime readiness
 使用 `wireguard-service-plane` token 检查全部五个 owner。它替代旧的
 `postgres-loopback` / `business-postgres-loopback` / `keycloak-admin-loopback` token。
-原有 Docker-local HTTP/DB/业务 E2E 与受信任公网 TLS 探针继续使用；配置通过不代表 WG 实际可达。
+
+K6B logical endpoint 由两条 token 分别证明两个不同事实，两者都必须 PASS：
+
+- `tx-logical-endpoints-declared`：当前环境 render 出来的 Compose 值 ∈ reviewed allowlist
+  且等于 deploy helper 现在会选择的 placement。
+- `tx-logical-endpoints-active`：**正在运行**的容器自己的 `Config.Env`（`docker inspect`，
+  frontend/business-api/keycloak/caddy 四个 owner）同样满足上述两个条件。
+
+只断言 rendered Compose 会给出假绿：workflow 期望与 render 都是 `10.20.0.3`，而运行中的
+容器仍在 dial Docker-local，两侧都 healthy 时旧 gate 仍会输出 `TX_RUNTIME_READY`。active
+token 直接读取运行容器的真实环境，因此这种不一致一定 FAIL。
+`wireguard-service-plane` 继续守护 K6A published bindings。业务 E2E 与受信任公网 TLS
+探针继续验证真实运行链。配置通过本身不代表 WG 实际可达。
 
 复用的 CI 入口：
 
@@ -98,5 +127,6 @@ curl -fsS https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configu
 回退 K6A 提交，经同一批服务 owner 重新部署，移除新增 WG 绑定并保留原有管理入口。
 消费者尚未切换，卷、DNS、Caddy 与数据不变，因此无需数据迁移。遵守现有宿主部署锁，
 手工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`。
-生产验收通过后，K6B 才引入 configurable logical endpoints 并切换消费者；
-之后 K7 才进行首个真实 Komodo workload migration。
+K6B-1 合并后仍保持 Docker-local active values。K6B-2 按 consumer 逐项把 owner workflow
+切到对应 endpoint variable/value；每一步单独部署并要求 `TX_RUNTIME_READY`，失败即恢复该
+consumer 的 Docker-local value。K6B 完成后，K7 才进行首个真实 Komodo workload migration。

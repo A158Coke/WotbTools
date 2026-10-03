@@ -384,8 +384,192 @@ public_tls_check() {
   [ "$failures" -eq 0 ]
 }
 
+# --- K6B logical endpoints ---------------------------------------------------
+# One contract, two sources. `declared` reads what the staged Compose project
+# renders from the current environment; `active` reads the Config.Env of the
+# container that is running. Only the second one is runtime truth, and both must
+# agree with the placement the TX deploy helper would choose right now: the same
+# canonical fail-closed validators guard the deployment, the read-only readiness
+# probe, and this gate, so there is exactly one reviewed allowlist.
+#
+# Only values are extracted here; every allowlist decision is delegated to
+# deploy.sh (sourced by runtime-check.sh, which is the only caller).
+tx_endpoint_violation() {
+  local message
+  if message="$("$@" 2>&1)"; then
+    return 0
+  fi
+  printf '%s' "$message"
+}
+
+tx_logical_endpoint_violations() {
+  local mode="$1" document="$2" key first second third message
+  local violations=""
+  while IFS= read -r line; do
+    message=""
+    IFS=$'\t' read -r key first second third <<< "$line"
+    case "$key" in
+      error) message="$first" ;;
+      frontend.backend-upstream)
+        message="$(tx_endpoint_violation validate_http_endpoint TX_BACKEND_UPSTREAM \
+          "$first" http://business-api:8087 8087)"
+        if [ -z "$message" ] && [ "$first" != "$BACKEND_UPSTREAM_VALUE" ]; then
+          message="BACKEND_UPSTREAM=$first is not the expected placement $BACKEND_UPSTREAM_VALUE"
+        fi
+        ;;
+      # /api/ai/ is the only route that leaves TX: exactly one reviewed endpoint.
+      frontend.ai-upstream)
+        if [ "$first" != "$AI_UPSTREAM_VALUE" ]; then
+          message="AI_UPSTREAM=$first is not the expected Yecao ai-service endpoint $AI_UPSTREAM_VALUE"
+        fi
+        ;;
+      business-api.postgres)
+        message="$(tx_endpoint_violation validate_database_endpoint TX_BUSINESS_DB \
+          "$first" "$second" business-postgres 5432 25432)"
+        if [ -z "$message" ] \
+          && { [ "$first" != "$BUSINESS_DB_HOST_VALUE" ] || [ "$second" != "$BUSINESS_DB_PORT_VALUE" ]; }; then
+          message="POSTGRES_HOST/POSTGRES_PORT=$first:$second is not the expected placement $BUSINESS_DB_HOST_VALUE:$BUSINESS_DB_PORT_VALUE"
+        fi
+        ;;
+      business-api.keycloak-admin)
+        message="$(tx_endpoint_violation validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL \
+          "$first" http://keycloak:8080 8080)"
+        if [ -z "$message" ] && [ "$first" != "$KEYCLOAK_ADMIN_SERVER_URL_VALUE" ]; then
+          message="KEYCLOAK_ADMIN_SERVER_URL=$first is not the expected placement $KEYCLOAK_ADMIN_SERVER_URL_VALUE"
+        fi
+        ;;
+      # The issuer is not a placement endpoint: Keycloak mints `iss` from its
+      # public hostname, so this value never moves with the service plane.
+      business-api.keycloak-issuer)
+        if [ "$first" != "https://auth.wotbtools.com/realms/wotbtools" ]; then
+          message="KEYCLOAK_ISSUER_URI=$first is not the public canonical issuer"
+        fi
+        ;;
+      keycloak.db-url)
+        message="$(tx_endpoint_violation validate_database_endpoint TX_KEYCLOAK_DB \
+          "$first" "$second" keycloak-postgres 5432 15432)"
+        if [ -z "$message" ] && [ -z "$third" ]; then
+          message="KC_DB_URL=$first:$second names no database"
+        elif [ -z "$message" ] \
+          && { [ "$first" != "$KEYCLOAK_DB_HOST_VALUE" ] || [ "$second" != "$KEYCLOAK_DB_PORT_VALUE" ]; }; then
+          message="KC_DB_URL points at $first:$second instead of the expected placement $KEYCLOAK_DB_HOST_VALUE:$KEYCLOAK_DB_PORT_VALUE"
+        fi
+        ;;
+      keycloak.db-url.invalid)
+        message="KC_DB_URL=$first is not a jdbc:postgresql://host:port/database URL"
+        ;;
+      caddy.frontend-upstream)
+        message="$(tx_endpoint_violation validate_caddy_upstream CADDY_FRONTEND_UPSTREAM \
+          "$first" wotb-frontend:80 8081)"
+        if [ -z "$message" ] && [ "$first" != "$CADDY_FRONTEND_UPSTREAM_VALUE" ]; then
+          message="CADDY_FRONTEND_UPSTREAM=$first is not the expected placement $CADDY_FRONTEND_UPSTREAM_VALUE"
+        fi
+        ;;
+      caddy.keycloak-upstream)
+        message="$(tx_endpoint_violation validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM \
+          "$first" keycloak:8080 8080)"
+        if [ -z "$message" ] && [ "$first" != "$CADDY_KEYCLOAK_UPSTREAM_VALUE" ]; then
+          message="CADDY_KEYCLOAK_UPSTREAM=$first is not the expected placement $CADDY_KEYCLOAK_UPSTREAM_VALUE"
+        fi
+        ;;
+      *) message="unhandled logical endpoint record: $key" ;;
+    esac
+    [ -z "$message" ] || violations+="$message"$'\n'
+  done < <(python3 -c '
+import json, sys
+
+mode = sys.argv[1]
+document = json.load(sys.stdin)
+records = []
+missing = set()
+
+
+def emit(*fields):
+    records.append("\t".join(str(field) for field in fields))
+
+
+def environment(service):
+    if mode == "declared":
+        rendered = (document.get("services") or {}).get(service)
+        if rendered is None:
+            return None
+        return {str(key): str(value) for key, value in (rendered.get("environment") or {}).items()}
+    entries = document.get(service)
+    if entries is None:
+        return None
+    return dict(entry.split("=", 1) for entry in entries if "=" in entry)
+
+
+def extract(record, service, *keys):
+    env = environment(service)
+    if env is None:
+        if service not in missing:
+            missing.add(service)
+            emit("error", "%s has no %s environment to inspect" % (service, mode))
+        return
+    emit(record, *(env.get(key, "") for key in keys))
+
+
+extract("frontend.backend-upstream", "wotb-frontend", "BACKEND_UPSTREAM")
+extract("frontend.ai-upstream", "wotb-frontend", "AI_UPSTREAM")
+extract("business-api.postgres", "business-api", "POSTGRES_HOST", "POSTGRES_PORT")
+extract("business-api.keycloak-admin", "business-api", "KEYCLOAK_ADMIN_SERVER_URL")
+extract("business-api.keycloak-issuer", "business-api", "KEYCLOAK_ISSUER_URI")
+extract("caddy.frontend-upstream", "caddy", "CADDY_FRONTEND_UPSTREAM")
+extract("caddy.keycloak-upstream", "caddy", "CADDY_KEYCLOAK_UPSTREAM")
+
+keycloak_env = environment("keycloak")
+if keycloak_env is None:
+    emit("error", "keycloak has no %s environment to inspect" % mode)
+else:
+    prefix = "jdbc:postgresql://"
+    url = keycloak_env.get("KC_DB_URL", "")
+    authority, _, database = url[len(prefix):].partition("/") if url.startswith(prefix) else ("", "", "")
+    host, _, port = authority.rpartition(":")
+    if host and port and database:
+        emit("keycloak.db-url", host, port, database)
+    else:
+        emit("keycloak.db-url.invalid", url)
+
+print("\n".join(records))
+' "$mode" <<< "$document")
+  printf '%s' "${violations%$'\n'}"
+}
+
+tx_logical_endpoint_report() {
+  local token="$1" mode="$2" document="$3" violations status=0
+  # A broken evaluator (unreadable document, missing TX deploy helper state) must
+  # fail closed instead of reporting the empty violation list as success.
+  violations="$(tx_logical_endpoint_violations "$mode" "$document")" || status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "$token: FAIL (the $mode endpoint contract could not be evaluated: ${violations:-no output})" >&2
+    return 1
+  fi
+  if [ -z "$violations" ]; then
+    echo "$token: PASS"
+    return 0
+  fi
+  echo "$token: FAIL (${violations//$'\n'/; })" >&2
+  return 1
+}
+
+# The active contract, read from the running containers themselves. `docker
+# compose config` would only re-render a hypothetical file from the caller's own
+# environment, so it cannot prove what the live containers were started with.
+tx_active_endpoint_document() {
+  local service container entries document="{"
+  for service in wotb-frontend business-api keycloak caddy; do
+    container="$(docker compose -f "$LIVE_COMPOSE" ps -q "$service" 2>/dev/null | head -n1 || true)"
+    [ -n "$container" ] || { echo "$service has no running container"; return 1; }
+    entries="$(docker inspect --format '{{json .Config.Env}}' "$container" 2>/dev/null || true)"
+    [ -n "$entries" ] || { echo "the running $service container exposes no environment"; return 1; }
+    document+="\"$service\":$entries,"
+  done
+  printf '%s}' "${document%,}"
+}
+
 tx_runtime_check() {
-  local source_root="${WOTB_SOURCE_ROOT:-}" compose_json health business_container
+  local source_root="${WOTB_SOURCE_ROOT:-}" compose_json active_endpoints health business_container
   local failures=0 provider
   DEPLOY_SERVICES=(keycloak-postgres business-postgres keycloak wotb-frontend business-api caddy alloy-tx)
 
@@ -408,22 +592,18 @@ tx_runtime_check() {
     return 1
   fi
 
-  if python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-services = data["services"]
-frontend = services["wotb-frontend"].get("environment") or {}
-assert frontend.get("BACKEND_UPSTREAM") == "http://business-api:8087", frontend.get("BACKEND_UPSTREAM")
-assert frontend.get("AI_UPSTREAM") == "http://10.20.0.2:8089", frontend.get("AI_UPSTREAM")
-environment = services["business-api"].get("environment") or {}
-assert environment.get("POSTGRES_HOST") == "business-postgres"
-assert environment.get("KEYCLOAK_ADMIN_SERVER_URL") == "http://keycloak:8080"
-keycloak = services["keycloak"].get("environment") or {}
-assert keycloak.get("KC_DB_URL", "").startswith("jdbc:postgresql://keycloak-postgres:5432/")
-' <<< "$compose_json"; then
-    echo "tx-internal-api-route: PASS"
+  # K6B logical endpoints are asserted twice, from two independent sources:
+  #   declared - the Compose project the current environment renders right now
+  #   active   - the environment of the containers that are actually running
+  # A rendered file alone is not runtime truth: the gate workflow can carry the
+  # reviewed placement while production still dials the previous one, and both
+  # sides would stay healthy. Each value must therefore be inside the reviewed
+  # allowlist *and* equal to the placement this invocation expects.
+  tx_logical_endpoint_report tx-logical-endpoints-declared declared "$compose_json" || failures=1
+  if active_endpoints="$(tx_active_endpoint_document)"; then
+    tx_logical_endpoint_report tx-logical-endpoints-active active "$active_endpoints" || failures=1
   else
-    echo "tx-internal-api-route: FAIL (frontend must use TX-internal business-api plus the Yecao ai-service WireGuard endpoint, and production database/auth dependencies must stay Docker-local)" >&2
+    echo "tx-logical-endpoints-active: FAIL ($active_endpoints)" >&2
     failures=1
   fi
 

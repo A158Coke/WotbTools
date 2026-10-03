@@ -4,9 +4,9 @@
 	email {$CADDY_ACME_EMAIL}
 }
 
-# TX-local readiness surface. Docker Compose resolves the Caddy service name,
-# so the loaded config and both upstream routes can be validated without public
-# HTTP redirects or ACME certificates; Caddy itself is the production public
+# TX-local readiness surface. K6B resolves the same reviewed logical upstreams
+# used by the public routes, so readiness keeps proving the active placement
+# without public HTTP redirects or ACME certificates; Caddy itself is the production public
 # ingress and owns 80/443 by default (see docker-compose.yml).
 http://caddy {
 	handle /.well-known/assetlinks.json {
@@ -19,13 +19,13 @@ http://caddy {
 	}
 
 	handle_path /_wotb/frontend/* {
-		reverse_proxy wotb-frontend:80 {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {
 			header_up Host wotbtools.com
 		}
 	}
 
 	handle_path /_wotb/keycloak/* {
-		reverse_proxy keycloak:8080 {
+		reverse_proxy {$CADDY_KEYCLOAK_UPSTREAM} {
 			header_up Host auth.wotbtools.com
 		}
 	}
@@ -74,7 +74,7 @@ wotbtools.com {
 		}
 	}
 	handle {
-		reverse_proxy wotb-frontend:80 {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {
 			header_up Host {host}
 		}
 	}
@@ -118,7 +118,7 @@ HTML
 	}
 
 	handle {
-		reverse_proxy keycloak:8080 {
+		reverse_proxy {$CADDY_KEYCLOAK_UPSTREAM} {
 			header_up Host {host}
 		}
 	}
