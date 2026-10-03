@@ -2,7 +2,9 @@
 
 K6A 已在 TX1 Docker-local production plane 之外建立并验收私有跨宿主入口。
 K6B-1 在不切换生产流量的前提下，把消费者依赖改为 fail-closed logical endpoints；
-owner workflows 仍显式注入当前 Docker-local 值。K6B-2 才逐项切换到 WireGuard endpoint。
+owner workflows 当时仍显式注入 Docker-local 值。K6B-2 才开始逐 consumer 切换，
+**K6B-2A 已把 Frontend → Business API 切到 TX1 WireGuard endpoint**；其余 consumer
+在各自步骤前保持 Docker-local。
 
 ## Endpoint contract
 
@@ -15,26 +17,28 @@ owner workflows 仍显式注入当前 Docker-local 值。K6B-2 才逐项切换�
 | Keycloak PostgreSQL | 10.20.0.1:15432 | 5432 | 127.0.0.1:15432 |
 | Business PostgreSQL | 10.20.0.1:25432 | 5432 | 127.0.0.1:25432 |
 
-Loopback 供宿主本地管理/OpenTofu；WG endpoint 供私有跨宿主访问。唯一公网 HTTP/HTTPS
+Loopback 供宿主本地管理/OpenTofu；WG endpoint 供私有跨宿主访问，也是 K6B logical
+placement 的可选目标地址。唯一公网 HTTP/HTTPS
 ingress 仍是 Caddy 的 80/443。UFW inactive 不允许使用 wildcard/public bind；
 服务入口只接受表中精确 TCP 绑定，禁止 `0.0.0.0`、`::`、公网 IP 或裸 `5432` 发布。
 两套 PostgreSQL 可同时在不同宿主地址上使用相同的各自 host port。
 
-K6B-1 logical endpoint contract（active workflow value 仍为 Docker-local default）：
+K6B logical endpoint contract（`Active value` 为当前生产实际 placement）：
 
-| Consumer | Variable(s) | Docker-local default | Reviewed WG values |
-|---|---|---|---|
-| Frontend → Business API | `TX_BACKEND_UPSTREAM` | `http://business-api:8087` | `http://10.20.0.1:8087`, `http://10.20.0.3:8087` |
-| Business API → Business PostgreSQL | `TX_BUSINESS_DB_HOST/PORT` | `business-postgres:5432` | `10.20.0.1:25432`, `10.20.0.3:25432` |
-| Business API → Keycloak Admin | `TX_KEYCLOAK_ADMIN_SERVER_URL` | `http://keycloak:8080` | `http://10.20.0.1:8080`, `http://10.20.0.3:8080` |
-| Keycloak → Keycloak PostgreSQL | `TX_KEYCLOAK_DB_HOST/PORT` | `keycloak-postgres:5432` | `10.20.0.1:15432`, `10.20.0.3:15432` |
-| Caddy → Frontend | `CADDY_FRONTEND_UPSTREAM` | `wotb-frontend:80` | `10.20.0.1:8081`, `10.20.0.3:8081` |
-| Caddy → Keycloak | `CADDY_KEYCLOAK_UPSTREAM` | `keycloak:8080` | `10.20.0.1:8080`, `10.20.0.3:8080` |
+| Consumer | Variable(s) | Docker-local default | Reviewed WG values | Active value |
+|---|---|---|---|---|
+| Frontend → Business API | `TX_BACKEND_UPSTREAM` | `http://business-api:8087` | `http://10.20.0.1:8087`, `http://10.20.0.3:8087` | **`http://10.20.0.1:8087`（K6B-2A 已切换）** |
+| Business API → Business PostgreSQL | `TX_BUSINESS_DB_HOST/PORT` | `business-postgres:5432` | `10.20.0.1:25432`, `10.20.0.3:25432` | Docker-local |
+| Business API → Keycloak Admin | `TX_KEYCLOAK_ADMIN_SERVER_URL` | `http://keycloak:8080` | `http://10.20.0.1:8080`, `http://10.20.0.3:8080` | Docker-local |
+| Keycloak → Keycloak PostgreSQL | `TX_KEYCLOAK_DB_HOST/PORT` | `keycloak-postgres:5432` | `10.20.0.1:15432`, `10.20.0.3:15432` | Docker-local |
+| Caddy → Frontend | `CADDY_FRONTEND_UPSTREAM` | `wotb-frontend:80` | `10.20.0.1:8081`, `10.20.0.3:8081` | Docker-local |
+| Caddy → Keycloak | `CADDY_KEYCLOAK_UPSTREAM` | `keycloak:8080` | `10.20.0.1:8080`, `10.20.0.3:8080` | Docker-local |
 
 `KEYCLOAK_ISSUER_URI` 不是 placement endpoint，始终保持
 `https://auth.wotbtools.com/realms/wotbtools`。Yecao AI 仍固定
-`http://10.20.0.2:8089`；monitor/Komodo/Loki 边界不变。公网 host、未审核 WG 地址、
-错误协议或错误端口在 live mutation 前 fail closed。K6B-1 不迁移任何 workload。
+`http://10.20.0.2:8089`，不随任何 TX placement 切换移动；monitor/Komodo/Loki 边界不变。
+公网 host、未审核 WG 地址、
+错误协议或错误端口在 live mutation 前 fail closed。K6B 不迁移任何 workload。
 
 同一套 canonical validator（`deploy/tx/deploy.sh:validate_http_endpoint` /
 `validate_database_endpoint` / `validate_caddy_upstream`）同时守护三个入口，仓库里没有第二份
@@ -43,6 +47,29 @@ allowlist：staged deploy、只读 dependency readiness，以及 runtime gate。
 `TX_BUSINESS_DB_PASSWORD` 的 psql 探针与携带 `KEYCLOAK_ADMIN_CLIENT_SECRET` 的
 Keycloak Admin 请求都不会先发出去再等 `deploy.sh` 拒绝。probe 自身也不再为
 `TX_KEYCLOAK_ADMIN_SERVER_URL` 取默认值：没有经过校验的显式值就直接失败。
+
+## K6B-2A：同宿主 hairpin 是刻意的 placement 验证
+
+Frontend、Business API、Keycloak、Caddy 与两套 PostgreSQL **当前都在 TX1**，因此
+K6B-2A 的 Frontend → Business API 是**同宿主**切换：容器不再走 Docker bridge 的
+`business-api:8087`，而是连到 TX1 自己的 WG 地址 `10.20.0.1:8087`，再经宿主的
+published port 回到同一台机器上的 Business API 容器。这在网络上是 hairpin，且是有意为之：
+
+- **目的**：K6B 的目标是 logical placement abstraction / migration readiness，不是"为了使用
+  WireGuard"。把该 consumer 的值改成 service-plane 地址后，placement 由 Git 里的一个已评审值
+  表达，未来把 Business API 移到 TX2（`10.20.0.3:8087`）只需改这一个值；如果同宿主 consumer
+  永远保持 Docker-local，K6B-2 的整套 allowlist 与 runtime token 就永远得不到真实验证。
+- **代价**：`/api/**` 比走 bridge 多一次宿主 NAT 跳；公网 API 路径新增一个依赖——TX1 自己的
+  `wg0` 地址必须存在（TX deploy 的 `preflight_host` 本来就要求 `wg0`）。它**不**意味着
+  TX1 → TX1 的流量会走到远端 WG peer：流量没有离开宿主机，因此 WG peer 不可达不会影响它，
+  只有 `wg0` 地址本身消失才会。
+- **可观测性**：frontend owner deploy 用 `frontend-api` 探针**穿过 frontend**
+  （`http://wotb-frontend/api/health`，nginx → `BACKEND_UPSTREAM`）验证该 placement；探针直接打
+  Business API 会在运行容器 dial 别处时仍然通过，属于本步骤要拒绝的 false green。探针失败时
+  deploy 失败并把 `wotb-frontend` 当作受影响服务处理（与 `frontend-static` 同一策略）。
+- **只有这一个 consumer 切换**：其余五个 placement 在各自步骤前保持 Docker-local，并由
+  `scripts/ci/test-workflow-contract.sh` 的 pin、runtime gate 的 expectation 与
+  `deploy/test-tx-runtime-check.sh` 的 "accidental-second-consumer-cutover" fixture 三重守护。
 
 ## Repository acceptance
 
@@ -125,8 +152,18 @@ curl -fsS https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configu
 ## Rollback and next phase
 
 回退 K6A 提交，经同一批服务 owner 重新部署，移除新增 WG 绑定并保留原有管理入口。
-消费者尚未切换，卷、DNS、Caddy 与数据不变，因此无需数据迁移。遵守现有宿主部署锁，
+卷、DNS、Caddy 与数据不变，因此无需数据迁移。遵守现有宿主部署锁，
 手工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`。
-K6B-1 合并后仍保持 Docker-local active values。K6B-2 按 consumer 逐项把 owner workflow
-切到对应 endpoint variable/value；每一步单独部署并要求 `TX_RUNTIME_READY`，失败即恢复该
-consumer 的 Docker-local value。K6B 完成后，K7 才进行首个真实 Komodo workload migration。
+
+K6B-2 按 consumer 逐项把 owner workflow 切到对应 endpoint variable/value；每一步单独部署并要求
+`TX_RUNTIME_READY`，失败即恢复该 consumer 的 Docker-local value。
+
+**K6B-2A rollback（只回退 Frontend → Business API）**：在同一个 revert 里把
+`.github/workflows/frontend.yml` 与 `.github/workflows/tx-runtime-check.yml` 的
+`TX_BACKEND_UPSTREAM` 一起改回 `http://business-api:8087`，合并后 Frontend owner 会自动重新
+部署，随后重新 dispatch `Ops / TX Runtime Check` 并期望同一组 token 通过。只回退一侧不可行：
+owner 值与 gate expectation 不一致时，`tx-logical-endpoints-declared` /
+`tx-logical-endpoints-active` 必然 FAIL，因此不存在"回退掩盖问题"的假绿。该回退不涉及数据库、
+Keycloak、Caddy、AI service、WireGuard 配置、持久卷或 DNS，也不需要恢复整个生产栈。
+
+K6B 全部 consumer 完成后，K7 才进行首个真实 Komodo workload migration。
