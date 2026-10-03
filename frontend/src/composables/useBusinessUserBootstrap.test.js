@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConnectivityState } from '../platform/connectivity.js'
 import { businessProfileAvailability, resetBusinessUserBootstrap, shouldEnsureBusinessUser, useBusinessUserBootstrap } from './useBusinessUserBootstrap.js'
@@ -131,5 +132,24 @@ describe('business profile bootstrap driver (policy + dedupe)', () => {
     expect(bootstrap.failed.value).toBe(false)
     expect(bootstrap.state.value).toBe('idle')
     expect(ensureUserProfile).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * 浏览器交互 harness 用 alias 把本模块替换成 `scripts/browser-fixtures/use-business-user-bootstrap-stub.js`。
+ * 只要真实模块新增一个被 AppShell 使用的导出而 fixture 没跟上，整个 mobile 交互回归会因为
+ * `does not provide an export named ...` 直接挂掉（PR #467 上真实发生过）。这里把「两个文件导出面一致」
+ * 变成确定性断言。
+ */
+describe('browser-interaction stub surface', () => {
+  it('exports every named export the real module provides', async () => {
+    const real = await readFile(new URL('./useBusinessUserBootstrap.js', import.meta.url), 'utf8')
+    const stub = await readFile(
+      new URL('../../scripts/browser-fixtures/use-business-user-bootstrap-stub.js', import.meta.url), 'utf8')
+    const names = source => (source.match(/export (?:async )?function (\w+)/g) || [])
+      .map(match => match.replace(/export (?:async )?function /, ''))
+    const realNames = names(real).sort()
+    expect(realNames.length).toBeGreaterThan(0)
+    expect(names(stub).sort()).toEqual(expect.arrayContaining(realNames))
   })
 })

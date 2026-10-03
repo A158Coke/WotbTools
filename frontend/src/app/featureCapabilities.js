@@ -122,6 +122,18 @@ export function featuresByRequirement(requirement) {
 }
 
 /**
+ * profile backend 准入的**纯策略**（业务 bootstrap 与浏览器测试替身共用同一实现，避免漂移）。
+ *
+ * 只有「已认证 + [Feature.ACCOUNT_PROFILE] 可用」才允许访问 profile backend：
+ * offline / unknown / degraded / service-unavailable 一律拒绝 —— 后三者不是「用户离线」，
+ * 但同样不能对着不可达的服务发请求。
+ */
+export function profileBackendAllowed({ authInitState, authenticated, connectivity } = {}) {
+  if (authInitState !== 'authenticated' || authenticated !== true) return false
+  return getFeatureAvailability(Feature.ACCOUNT_PROFILE, { connectivity }).available
+}
+
+/**
  * 统一可用性判定（计划 §2 的 API）。
  *
  * ```js

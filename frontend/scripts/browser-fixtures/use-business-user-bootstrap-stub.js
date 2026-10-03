@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { Feature, getFeatureAvailability, profileBackendAllowed } from '../../src/app/featureCapabilities.js'
 
 /**
  * `src/composables/useBusinessUserBootstrap.js` 的浏览器测试替身（见 use-auth-stub.js 说明）。
@@ -9,6 +10,16 @@ import { computed, ref } from 'vue'
  */
 const state = ref('ready')
 const error = ref(null)
+
+/** 与真实实现同源的准入判定（策略在 capability SSOT，避免 fixture 与实现漂移）。 */
+export function shouldEnsureBusinessUser(context = {}) {
+  return profileBackendAllowed(context)
+}
+
+/** 与真实实现同名导出：浏览器 harness 里 AppShell 会读它。 */
+export function businessProfileAvailability(connectivity) {
+  return getFeatureAvailability(Feature.ACCOUNT_PROFILE, { connectivity })
+}
 
 export function ensureBusinessUser() {
   return Promise.resolve(true)
