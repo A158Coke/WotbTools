@@ -3,7 +3,9 @@
 This root owns only the Keycloak PostgreSQL application role, its dedicated
 database, and the database-level grant. Docker Compose owns the
 `keycloak-postgres` runtime container and must publish its administration port
-only as `127.0.0.1:15432:5432` on TX.
+as `127.0.0.1:15432:5432` on TX for local administration, plus the private
+WireGuard service binding `10.20.0.1:15432:5432` (K6A). This root continues
+using loopback; no production dependency is switched.
 
 ## Execution boundary
 

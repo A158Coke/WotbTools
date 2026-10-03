@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Contract for the read-only TX_RUNTIME_READY entrypoint. Business PostgreSQL is
 # authoritative business state, so the check must refuse readiness when its
-# runtime, loopback administration port, or TX-local OpenTofu marker is wrong.
+# runtime, reviewed loopback/WireGuard bindings, or OpenTofu marker is wrong.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -52,11 +52,11 @@ grep -Fq 'com.wotbtools.app' "$RUNTIME_CHECK_LIB"
 ! grep -Fq 'pre-cutover' "$CHECK"
 
 # Business PostgreSQL is authoritative state: the check must own its health,
-# loopback binding, and provisioning marker before it may report readiness.
+# reviewed loopback/WireGuard bindings, and provisioning marker before readiness.
 grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_USER' "$RUNTIME_CHECK_LIB"
 grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_PASSWORD' "$RUNTIME_CHECK_LIB"
-grep -Fq 'business-postgres-loopback: PASS' "$RUNTIME_CHECK_LIB"
-grep -Fq 'business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)' "$RUNTIME_CHECK_LIB"
+grep -Fq 'wireguard-service-plane: PASS' "$RUNTIME_CHECK_LIB"
+grep -Fq 'wireguard-service-plane: FAIL (core services must preserve exactly the reviewed WireGuard and loopback bindings)' "$RUNTIME_CHECK_LIB"
 grep -Fq 'business-postgres: PASS' "$RUNTIME_CHECK_LIB"
 grep -Fq 'business-postgres: FAIL (container is missing or not healthy)' "$RUNTIME_CHECK_LIB"
 grep -Fq 'business-postgres-provisioning: PASS' "$RUNTIME_CHECK_LIB"
@@ -77,7 +77,7 @@ set -Eeuo pipefail
 [ "${1:-}" = compose ] || exit 0
 shift
 while [ "${1:-}" = -f ]; do shift 2; done
-business_ports='[{"host_ip":"127.0.0.1","published":25432,"target":5432}]'
+business_ports='[{"host_ip":"127.0.0.1","published":25432,"target":5432},{"host_ip":"10.20.0.1","published":25432,"target":5432}]'
 if [ "${FAKE_BUSINESS_PORT_EXPOSED:-0}" = 1 ]; then
   business_ports='[{"host_ip":"0.0.0.0","published":25432,"target":5432}]'
 fi
@@ -96,15 +96,27 @@ job_repository_field=""
 if [ -n "${FAKE_JOB_REPOSITORY:-}" ]; then
   job_repository_field=",\"WOTB_REPLAY_PROCESSING_JOB_REPOSITORY\":\"${FAKE_JOB_REPOSITORY}\""
 fi
-# 组合成 business-api 的 environment 主体（去掉首个逗号，空集时是合法 JSON {}）。
+# 组合成保留 Docker-local dependency 的 business-api environment 主体。
 extra_env="${job_repository_field}${execution_mode_field}"
-extra_env="${extra_env#,}"
-business_api_ports='[{"host_ip":"10.20.0.1","published":8088,"target":8088}]'
+extra_env="\"POSTGRES_HOST\":\"business-postgres\",\"KEYCLOAK_ADMIN_SERVER_URL\":\"http://keycloak:8080\"${extra_env}"
+business_api_ports='[{"host_ip":"10.20.0.1","published":8087,"target":8087},{"host_ip":"10.20.0.1","published":8088,"target":8088}]'
 [ -z "${FAKE_BUSINESS_API_PUBLISHED_PORT:-}" ] || business_api_ports="$FAKE_BUSINESS_API_PUBLISHED_PORT"
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"keycloak":{"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080}]},"wotb-frontend":{"environment":{"BACKEND_UPSTREAM":"%s","AI_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
-      "$business_ports" "$frontend_upstream" "$frontend_ai_upstream" "$business_api_ports" "$extra_env"
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432},{"host_ip":"10.20.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"keycloak":{"environment":{"KC_DB_URL":"jdbc:postgresql://keycloak-postgres:5432/keycloak"},"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080},{"host_ip":"10.20.0.1","published":8080,"target":8080}]},"wotb-frontend":{"ports":[{"host_ip":"10.20.0.1","published":8081,"target":80}],"environment":{"BACKEND_UPSTREAM":"%s","AI_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
+      "$business_ports" "$frontend_upstream" "$frontend_ai_upstream" "$business_api_ports" "$extra_env" | python3 -c '
+import json, os, sys
+data = json.load(sys.stdin)
+removed = os.environ.get("FAKE_BINDING_REMOVED")
+if removed:
+    name, index = removed.split(":")
+    data["services"][name]["ports"].pop(int(index))
+dependency = os.environ.get("FAKE_DOCKER_LOCAL_DEPENDENCY")
+if dependency:
+    name, key, value = dependency.split("|", 2)
+    data["services"][name]["environment"][key] = value
+json.dump(data, sys.stdout)
+'
     ;;
   ps)
     if [[ "$*" == *business-postgres* ]]; then
@@ -247,7 +259,7 @@ grep -Fq 'public-tls-auth: PASS' <<< "$ready_output"
 grep -Fq 'qq-idp-admin-api: PASS' <<< "$ready_output"
 grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$ready_output"
-grep -Fq 'business-postgres-loopback: PASS' <<< "$ready_output"
+grep -Fq 'wireguard-service-plane: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-provisioning: PASS' <<< "$ready_output"
 
 # Exercise the actual promoted TX layout: the wrapper and deploy helper are
@@ -294,12 +306,24 @@ run_gate_failure "frontend-ai-upstream-business-api" 'tx-internal-api-route: FAI
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=http://business-api:8087
 run_gate_failure "frontend-ai-upstream-public" 'tx-internal-api-route: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=https://ai.example.test
-run_gate_failure "business-api-published-port" 'tx-internal-api-route: FAIL' \
+run_gate_failure "business-api-published-port" 'wireguard-service-plane: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8087,"target":8087}]'
-run_gate_failure "business-api-extra-management-bind" 'tx-internal-api-route: FAIL' \
+run_gate_failure "business-api-extra-management-bind" 'wireguard-service-plane: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"10.20.0.1","published":8088,"target":8088},{"host_ip":"127.0.0.1","published":8088,"target":8088}]'
+for binding in wotb-frontend:0 business-api:0 business-api:1 keycloak:0 keycloak:1 \
+  keycloak-postgres:0 keycloak-postgres:1 business-postgres:0 business-postgres:1; do
+  run_gate_failure "missing-$binding" 'wireguard-service-plane: FAIL' \
+    "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_BINDING_REMOVED="$binding"
+done
+for dependency in \
+  'business-api|POSTGRES_HOST|10.20.0.1' \
+  'business-api|KEYCLOAK_ADMIN_SERVER_URL|http://10.20.0.1:8080' \
+  'keycloak|KC_DB_URL|jdbc:postgresql://10.20.0.1:15432/keycloak'; do
+  run_gate_failure "changed-$dependency" 'tx-internal-api-route: FAIL' \
+    "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_DOCKER_LOCAL_DEPENDENCY="$dependency"
+done
 run_gate_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
   "" "$RELOCATED_ROOT/deploy/runtime-check.sh" env FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
 run_gate_failure "retired-execution-mode-switch" 'retired-replay-switches: FAIL' \
@@ -369,7 +393,7 @@ run_business_failure "business-postgres-missing" 'business-postgres: FAIL (conta
   "$WORK" "$CHECK" env FAKE_BUSINESS_MISSING=1
 run_business_failure "business-postgres-not-ready" 'business-postgres: FAIL (container is missing or not healthy)' \
   "$WORK" "$CHECK" env FAKE_BUSINESS_PG_NOT_READY=1
-run_business_failure "business-postgres-port-exposed" 'business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)' \
+run_business_failure "business-postgres-port-exposed" 'wireguard-service-plane: FAIL (core services must preserve exactly the reviewed WireGuard and loopback bindings)' \
   "$WORK" "$CHECK" env FAKE_BUSINESS_PORT_EXPOSED=1
 
 # A missing or invalid OpenTofu marker must block readiness even when the

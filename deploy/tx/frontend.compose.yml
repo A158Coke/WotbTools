@@ -9,6 +9,8 @@ x-logging: &default-logging
 services:
   wotb-frontend:
     image: ${TX_FRONTEND_IMAGE_REF:?TX_FRONTEND_IMAGE_REF is required}
+    ports:
+      - "10.20.0.1:8081:80"
     environment:
       # nginx's official template entrypoint expands this value before nginx
       # starts. It is the TX-internal business runtime: the generic /api/ traffic is
@@ -26,12 +28,6 @@ services:
       - ${TX_RUNTIME_ROOT:?TX_RUNTIME_ROOT is required}/android-release:/usr/share/nginx/html/download/android:ro
     restart: unless-stopped
     logging: *default-logging
-
-  # TX business runtime: one Spring Boot process that serves every public
-  # business endpoint and owns the distributed replay control plane (the
-  # single-runtime decision). It publishes no port at all; only TX-internal
-  # peers (frontend nginx, the Caddy readiness surface, the deployment
-  # health-probe) may reach it on wotb_tx_internal.
 
 networks:
   default:

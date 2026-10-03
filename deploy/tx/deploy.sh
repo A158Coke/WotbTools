@@ -242,8 +242,16 @@ stage_and_validate() {
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"
   export TX_AI_UPSTREAM="$AI_UPSTREAM_VALUE"
   assert_routing_boundary "$EFFECTIVE_COMPOSE"
-  docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" config >/dev/null \
+  local compose_json
+  compose_json="$(docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" config --format json)" \
     || die "staged TX compose config is invalid; live TX deployment was not changed."
+  case "$DEPLOY_SERVICES_RAW" in
+    wotb-frontend|business-api|keycloak|keycloak-postgres|business-postgres)
+      source "$INCOMING_DIR/runtime-check-lib.sh"
+      assert_tx_service_ports "$DEPLOY_SERVICES_RAW" <<< "$compose_json" \
+        || die "staged TX service bindings are invalid; live TX deployment was not changed."
+      ;;
+  esac
   if is_selected caddy; then
     bash "$INCOMING_DIR/validate-caddy-config.sh" "$INCOMING_DIR" \
       || die "staged Caddy configuration is invalid; the live gateway was not changed."
@@ -320,7 +328,7 @@ if not valid:
 # Fail closed on the two production invariants this routing boundary establishes:
 #   1. the frontend proxies public API traffic to the TX-internal business
 #      runtime while /api/ai/ goes to the Yecao ai-service over WireGuard, and no
-#      staged service publishes the retired Yecao port;
+#      staged service references the retired Yecao backend endpoint;
 #   2. the business runtime has no replay execution plane at all (replay parsing
 #      runs in the browser), so a future edit cannot silently re-introduce a
 #      server-side replay job switch in production.
@@ -332,8 +340,8 @@ assert_routing_boundary() {
     grep -Fq 'AI_UPSTREAM: ${TX_AI_UPSTREAM:-http://10.20.0.2:8089}' "$compose_file" \
       || die "staged TX frontend must default /api/ai/ to the Yecao ai-service WireGuard endpoint."
   fi
-  ! grep -Eq '8087:8087|10\.20\.0\.2:8087' "$compose_file" \
-    || die "staged TX compose must not publish or reference the retired Yecao backend port."
+  ! grep -Eq '10\.20\.0\.2:8087' "$compose_file" \
+    || die "staged TX compose must not reference the retired Yecao backend endpoint."
   if is_selected business-api; then
     # 服务端没有回放解析：已退役的执行模式与 job 后端选择器开关都不得出现。
     ! grep -Fq 'WOTB_REPLAY_EXECUTION_MODE' "$compose_file" \
