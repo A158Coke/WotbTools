@@ -202,6 +202,13 @@ if env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   exit 1
 fi
 ! grep -q '^up ' "$WORK/caddy-fail.log"
+
+# The delegated `caddy adapt` runs the real Compose project (`-p deploy`), which allocates a Docker
+# network from the daemon's default address pool. Release it here so later fixtures in the same job
+# keep the full pool (the nginx/Grafana fixture needs an explicit 172.29.0.0/16 subnet).
+if [ -n "$REAL_DOCKER" ]; then
+  "$REAL_DOCKER" network rm deploy_default >/dev/null 2>&1 || true
+fi
 env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \
   TX_RUNTIME_ROOT="$WORK/host" WOTB_DEPLOY_SERVICE=keycloak WOTB_DEPLOY_CONFIG_SHA="$SHA" \
