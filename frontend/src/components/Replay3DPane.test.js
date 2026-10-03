@@ -12,13 +12,28 @@ import { mount } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
 import Replay3DPane from './Replay3DPane.vue'
 
-const playback = vi.hoisted(() => ({ api: null, init: null }))
+const playback = vi.hoisted(() => ({ api: null, init: null, apis: [] }))
+/**
+ * 模拟 `playbackScene.initPlayback` 的**真实契约**：加载状态与就绪状态由场景层唯一持有
+ * （见 frontend/src/scene/playbackScene.js 的 loadData / teardownSession）。
+ * 组件层不再镜像这些状态，所以 mock 必须自己承担，否则测试会验证一个不存在的 owner。
+ */
 vi.mock('../scene/playbackScene.js', () => {
   playback.init = vi.fn((container, store) => {
-    playback.api = {
+    const api = {
       store,
-      loadData: vi.fn(async () => {}),
-      destroy: vi.fn(),
+      loadData: vi.fn(async () => {
+        // 真实契约：新会话被接受即 loading=true / hasData=false，完成后反向翻转
+        store.hasData = false
+        store.loading = true
+        store.loading = false
+        store.hasData = true
+      }),
+      destroy: vi.fn(() => {
+        // 会话终止 = 不再有可用回放数据（与生产 teardownSession 一致）
+        store.hasData = false
+        store.loading = false
+      }),
       setPlaying: vi.fn(),
       seekBy: vi.fn(),
       setSpeed: vi.fn(),
@@ -30,7 +45,9 @@ vi.mock('../scene/playbackScene.js', () => {
       setQuality: vi.fn(),
       setPaused: vi.fn(),
     }
-    return playback.api
+    playback.api = api
+    playback.apis.push(api)
+    return api
   })
   return { initPlayback: playback.init, QUALITY_PRESETS: { low: { label: 'Low' }, mid: { label: 'Mid' }, high: { label: 'High' } } }
 })
@@ -73,6 +90,7 @@ function mountPane(props = {}) {
 
 beforeEach(() => {
   playback.api = null
+  playback.apis.length = 0
   playback.init?.mockClear()
 })
 afterEach(() => {
@@ -149,9 +167,18 @@ describe('Replay3DPane', () => {
     const { store } = playback.api
 
     let finish
-    playback.api.loadData.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    // 挂载时的首次加载已经用掉了默认实现，这里让**第二次**（换文件触发的）加载保持挂起：
+    // 加载状态由场景层拥有，所以 mock 也要按场景契约翻转 loading / hasData。
+    playback.api.loadData.mockImplementationOnce(() => {
+      store.hasData = false
+      store.loading = true
+      return new Promise((resolve) => { finish = resolve })
+        .finally(() => { store.loading = false })   // 场景契约：加载结束必落下 loading
+    })
     await wrapper.setProps({ file: mkFile('c.wotbreplay') })
     await flush()
+    expect(store.loading).toBe(true)
+    expect(store.hasData).toBe(false)
     expect(wrapper.get('[data-testid="scene3d-loading"]').text()).toContain('agentReplay.parsing')
     expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBeUndefined()
 
@@ -328,5 +355,89 @@ describe('Replay3DPane 场景生命周期', () => {
     await flush()
     expect(playback.init).not.toHaveBeenCalled()
     wrapper.unmount()
+  })
+})
+
+/**
+ * 就绪态（store.hasData）契约：它是 HUD 与播放传输的 authoritative gate
+ * （`usePlaybackTransport({ isReady: () => store.hasData })`），因此必须在
+ * 「新会话被接受」与「会话终止」两个时点落下，绝不能让上一场的 ready 泄漏到新会话。
+ */
+describe('Replay3DPane 就绪态（hasData）', () => {
+  /** 让下一次加载保持挂起（按场景契约翻转 loading / hasData），返回完成句柄 */
+  function pendNextLoad(api) {
+    let settle
+    api.loadData.mockImplementationOnce(() => {
+      const store = api.store
+      store.hasData = false
+      store.loading = true
+      return new Promise((resolve) => {
+        settle = () => { store.loading = false; store.hasData = true; resolve() }
+      })
+    })
+    return () => settle?.()
+  }
+
+  it('A：file=null 销毁会话后就绪态落下', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    const api = playback.api
+    expect(api.store.hasData).toBe(true)      // 挂载加载已完成
+
+    await wrapper.setProps({ file: null })
+    await flush()
+    expect(api.destroy).toHaveBeenCalledTimes(1)
+    expect(api.store.hasData).toBe(false)
+    expect(api.store.loading).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('B：被工作台阻断时就绪态落下', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    const api = playback.api
+    expect(api.store.hasData).toBe(true)
+
+    await wrapper.setProps({ blockedReason: 'workspace.single_replay_required' })
+    await flush()
+    expect(api.destroy).toHaveBeenCalledTimes(1)
+    expect(api.store.hasData).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('C：切到新文件时新加载窗口不得继承上一场的 ready', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    const api = playback.api
+    expect(api.store.hasData).toBe(true)
+
+    const settle = pendNextLoad(api)
+    await wrapper.setProps({ file: mkFile('b.wotbreplay') })
+    await flush()
+
+    // 新加载窗口：HUD / 播放传输都不得按 ready 渲染
+    expect(api.store.loading).toBe(true)
+    expect(api.store.hasData).toBe(false)
+    expect(wrapper.find('[data-testid="replay3d-toolbar"]').exists()).toBe(false)
+
+    settle()
+    await flush()
+    expect(api.store.hasData).toBe(true)
+    expect(api.store.loading).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('卸载销毁会话后就绪态落下', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    const api = playback.api
+    expect(api.store.hasData).toBe(true)
+
+    wrapper.unmount()
+    expect(api.store.hasData).toBe(false)
   })
 })
