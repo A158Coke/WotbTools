@@ -2488,10 +2488,10 @@ export function initPlayback(container, store) {
     store.playing = p;
     invalidate();
   }
-  /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时从当前帧重启并丢弃暂停期间的时间差。
-   *  渲染器/时钟是惰性创建的（首次 startPlayback 才 initScene）：待开播 / 解析期间场景
-   *  尚不存在，此刻没有帧循环可停可重启——只记录闸门状态即可，恢复分支必须以 `clock`
-   *  存在为前提（否则切走再切回在读 `clock.getDelta()` 时抛 TypeError，线上实测）。 */
+  /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时重挂帧循环；已初始化场景还要
+   *  丢弃暂停期间的时间差。渲染器/时钟是惰性创建的（首次 startPlayback 才 initScene），
+   *  所以 pre-init resume 不能读 `clock`，但必须把 pause 取消掉的唯一 rAF 重新挂回去；
+   *  `animate()` 在 renderer 尚不存在时本身就是安全的空转等待。 */
   function setPaused(next) {
     const value = !!next;
     if (value === paused) return;
