@@ -42,7 +42,7 @@ function ensureStore(source) {
 
 export function useConnectivity() {
   return {
-    /** 响应式状态 token（online / offline / unknown / …）。 */
+    /** 响应式状态 token（online / offline / unknown / degraded / service-unavailable）。 */
     connectivity: readonly(state),
     isOnline() {
       return state.value === ConnectivityState.ONLINE
@@ -56,6 +56,18 @@ export function useConnectivity() {
         })()
       }
       return startPromise
+    },
+    /**
+     * **仅测试**注入一次状态（生产代码没有任何调用点，也不会替代真实来源）。
+     *
+     * 存在的理由：浏览器来源只能表达 online/offline，`degraded` / `service-unavailable`
+     * 由 Native 报告（计划 §4），因此纯 Web 单测无法自然产生这两种状态。真正需要区分
+     * 「谁读了连通性」的断言仍然走 `connectivity` / 门禁，这里只移动事实源。
+     * 未 start 时是空操作（没有 store 可注入）。
+     */
+    setStateForTest(next) {
+      if (!store) return state.value
+      return store.setState(next)
     },
     /** 仅供测试 / 登出重置：释放订阅与单例。 */
     stop() {

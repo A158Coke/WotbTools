@@ -248,6 +248,37 @@ assert "FE_COMMIT" not in _publish_block
 assert "android_contract.py bundle" in _stage_block and "android_contract.py bundle" in _publish_block
 assert "android_contract.py cors" in _publish_block
 
+# PR #467 review P2: publish 的候选版本必须由 workflow_dispatch 的显式 version 输入决定，
+# 不能从「当前 main 的 android/gradle.properties」推导。这两条断言的 owner 是 YAML wiring，
+# 只测 shell helper 是锁不住的（helper 单测见 scripts/android-release/test-release.sh）。
+_release_yaml = yaml.safe_load(_release_source)
+_release_dispatch_inputs = _release_yaml.get(True, _release_yaml.get("on", {}))["workflow_dispatch"]["inputs"]
+assert "version" in _release_dispatch_inputs, \
+  "android-release.yml must expose an explicit workflow_dispatch version input for publish"
+_version_input = _release_dispatch_inputs["version"]
+assert _version_input.get("type") == "string" and _version_input.get("required") is False, _version_input
+_publish_job = _release_yaml["jobs"]["publish"]
+assert "inputs.version" in json.dumps(_publish_job, ensure_ascii=False), \
+  "the publish job must consume the explicit version input"
+_publish_run_text = "\n".join(step.get("run") or "" for step in _publish_job["steps"])
+# 候选身份只能来自显式版本 + immutable tag target。
+assert "steps.version.outputs" not in _publish_run_text, \
+  "publish must not derive the candidate from the current main committed version"
+assert "resolve-staged-version.sh" in _publish_run_text, \
+  "publish must resolve the staged version from the tag target"
+assert 'TAG="android-v$REQUESTED_VERSION"' in _publish_run_text and "git archive" in _publish_run_text
+# publish 绝不重建 / 重新签名。
+for _forbidden in ("assembleRelease", "wotbKeystorePath", "keystore.jks", "ANDROID_KEYSTORE_BASE64"):
+  assert _forbidden not in _publish_run_text, f"publish must not rebuild or re-sign ({_forbidden})"
+# version.json 是最后一个 mutation，且只由 staged 身份写出。
+_publish_step_names = [step.get("name", "") for step in _publish_job["steps"]]
+_write_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Write version.json"))
+_upload_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Upload version.json"))
+_verify_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Verify production version.json"))
+assert _write_i < _upload_i < _verify_i, _publish_step_names
+assert "steps.staged.outputs" in _publish_job["steps"][_write_i]["run"], \
+  "version.json must be written from the staged identity"
+
 # Production owner routing and freshness inputs are paired contracts. A workflow
 # may only proceed when its triggering SHA is still current for every owned input.
 owners = (

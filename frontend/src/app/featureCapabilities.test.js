@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ConnectivityState } from '../platform/connectivity.js'
+import { messages } from '../locales/messages.js'
 import {
   Feature,
   FeatureRequirement,
@@ -159,14 +160,62 @@ describe('feature capability model', () => {
     expect(featureRequirement('not-a-feature')).toBeNull()
   })
 
-  it('classifies the PR B feature set exactly once (no page-local lists)', () => {
-    expect(featureRequirement(Feature.AI_REVIEW)).toBe(FeatureRequirement.ONLINE_REQUIRED)
+  it('classifies the PR B feature set exactly once (no page-local lists)', () => {    expect(featureRequirement(Feature.AI_REVIEW)).toBe(FeatureRequirement.ONLINE_REQUIRED)
     expect(featureRequirement(Feature.HALL_OF_FAME)).toBe(FeatureRequirement.ONLINE_REQUIRED)
     expect(featureRequirement(Feature.PLAYBACK_3D)).toBe(FeatureRequirement.ONLINE_REQUIRED)
+    expect(featureRequirement(Feature.ACCOUNT_PROFILE)).toBe(FeatureRequirement.ONLINE_REQUIRED)
+    expect(featureRequirement(Feature.ADMIN_USERS)).toBe(FeatureRequirement.ONLINE_REQUIRED)
     expect(featureRequirement(Feature.PLAYBACK_2D)).toBe(FeatureRequirement.LOCAL)
     expect(featureRequirement(Feature.SHOOTING_INSPECTION)).toBe(FeatureRequirement.LOCAL)
     expect(featureRequirement(Feature.RATING)).toBe(FeatureRequirement.LOCAL)
     expect(featureRequirement(Feature.REPLAY_PARSING)).toBe(FeatureRequirement.LOCAL)
     expect(featureRequirement(Feature.TELEMETRY_UPLOAD)).toBe(FeatureRequirement.ONLINE_OPTIONAL)
+  })
+})
+
+/**
+ * capability 模型给出的每个 messageKey 必须真的能翻译出来。
+ *
+ * 这条断言的存在理由（PR 467 review P1）：新增 `Feature.ADMIN_USERS` 时如果只注册需求而不补
+ * `featureOffline.adminUsers`，门禁会显示一个裸 key（或空白提示）—— 而 capability 测试本身
+ * 只断言 key 存在，不会发现翻译缺失。这里把「注册表」与「三语 locale」钉在一起。
+ */
+describe('capability message keys resolve in every locale', () => {
+  const states = [
+    ConnectivityState.OFFLINE,
+    ConnectivityState.UNKNOWN,
+    ConnectivityState.DEGRADED,
+    ConnectivityState.SERVICE_UNAVAILABLE,
+  ]
+
+  function lookup(locale, key) {
+    return key.split('.').reduce((node, part) => (node ? node[part] : undefined), messages[locale])
+  }
+
+  it('every feature availability key has zh/en/ru copy', () => {
+    const features = Object.values(Feature)
+    for (const state of states) {
+      for (const feature of features) {
+        const { messageKey, titleKey, hintKey } = getFeatureAvailability(feature, { connectivity: state })
+        for (const key of [messageKey, titleKey, hintKey]) {
+          if (!key) continue
+          for (const locale of ['zh', 'en', 'ru']) {
+            expect(lookup(locale, key), `${locale} ${feature} @${state} → ${key}`).toBeTruthy()
+          }
+        }
+      }
+    }
+  })
+
+  it('every ONLINE_REQUIRED feature has its own offline copy (never a bare key)', () => {
+    for (const feature of featuresByRequirement(FeatureRequirement.ONLINE_REQUIRED)) {
+      for (const locale of ['zh', 'en', 'ru']) {
+        expect(lookup(locale, `featureOffline.${feature}`), `${locale} featureOffline.${feature}`).toBeTruthy()
+      }
+    }
+    // 每个功能一份文案：拿掉任何一个功能的离线说明都必须让本用例失败。
+    const offlineCopy = featuresByRequirement(FeatureRequirement.ONLINE_REQUIRED)
+      .map(feature => lookup('zh', `featureOffline.${feature}`))
+    expect(new Set(offlineCopy).size).toBe(offlineCopy.length)
   })
 })

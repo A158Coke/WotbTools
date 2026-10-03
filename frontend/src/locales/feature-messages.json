@@ -364,6 +364,7 @@
       "hallOfFame": "名人堂需要联网读取和提交数据。",
       "playback3d": "3D 播放需要联网加载地图和模型资源。",
       "accountProfile": "账号资料需要联网读取。",
+      "adminUsers": "用户管理需要联网读取 Keycloak 与本地资料。",
       "syncPaused": "离线状态，数据同步已暂停。"
     },
     "connectivityNotice": {
@@ -741,6 +742,7 @@
       "hallOfFame": "The Hall of Fame needs a connection to read and submit data.",
       "playback3d": "3D playback needs a connection to load maps and models.",
       "accountProfile": "Account data needs a connection.",
+      "adminUsers": "User management needs a connection to read Keycloak and local profiles.",
       "syncPaused": "Offline: syncing is paused."
     },
     "connectivityNotice": {
@@ -1118,6 +1120,7 @@
       "hallOfFame": "Для Зала славы нужно подключение для чтения и отправки данных.",
       "playback3d": "Для 3D-воспроизведения нужно подключение для загрузки карт и моделей.",
       "accountProfile": "Для данных аккаунта нужно подключение.",
+      "adminUsers": "Для управления пользователями нужно подключение к Keycloak и локальным профилям.",
       "syncPaused": "Нет сети: синхронизация приостановлена."
     },
     "connectivityNotice": {

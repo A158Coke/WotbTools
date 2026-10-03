@@ -38,6 +38,7 @@ export const Feature = Object.freeze({
   HALL_OF_FAME: 'hallOfFame',
   PLAYBACK_3D: 'playback3d',
   ACCOUNT_PROFILE: 'accountProfile',
+  ADMIN_USERS: 'adminUsers',
   TELEMETRY_UPLOAD: 'telemetryUpload',
   STATISTICS_CONTRIBUTION: 'statisticsContribution',
   BACKGROUND_SYNC: 'backgroundSync',
@@ -55,6 +56,9 @@ const REQUIREMENTS = Object.freeze({
   [Feature.HALL_OF_FAME]: FeatureRequirement.ONLINE_REQUIRED,
   [Feature.PLAYBACK_3D]: FeatureRequirement.ONLINE_REQUIRED,
   [Feature.ACCOUNT_PROFILE]: FeatureRequirement.ONLINE_REQUIRED,
+  // 用户管理（Admin Users）整页由 Keycloak Admin + 本地 user_profile 组成，没有任何本地数据可降级：
+  // 没有 backend 就没有列表、详情与删除，因此是 ONLINE_REQUIRED（入口仍可见，点击给统一提示）。
+  [Feature.ADMIN_USERS]: FeatureRequirement.ONLINE_REQUIRED,
   [Feature.TELEMETRY_UPLOAD]: FeatureRequirement.ONLINE_OPTIONAL,
   [Feature.STATISTICS_CONTRIBUTION]: FeatureRequirement.ONLINE_OPTIONAL,
   [Feature.BACKGROUND_SYNC]: FeatureRequirement.ONLINE_OPTIONAL,

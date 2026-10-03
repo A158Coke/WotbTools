@@ -1,8 +1,11 @@
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
+import { useConnectivity } from '../composables/useConnectivity.js'
 import { useError } from '../composables/useError.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { Feature } from '../app/featureCapabilities.js'
 import { apiErrorCodeLabel, apiErrorLabel } from '../utils/display.js'
 import { ApiError } from '../utils/http.js'
 import * as api from '../utils/api.js'
@@ -43,6 +46,30 @@ let userLoadGeneration = 0
 let detailLoadGeneration = 0
 
 const { initPromise, ensureToken: ensureAuthToken, login } = useAuth()
+const { availability, requireFeature } = useFeatureGate()
+const { connectivity } = useConnectivity()
+
+/**
+ * 本页所有 backend 动作的**唯一**门禁（PR 467 review blocker）。
+ *
+ * 用户管理整页都是 Keycloak Admin + 本地 user_profile 的聚合，没有任何可离线的本地投影，
+ * 因此整体是 ONLINE_REQUIRED —— 但判定只能来自 capability SSOT（`useFeatureGate`），
+ * 页面**不写** `connectivity === 'online'`、也不读 `navigator.onLine`：
+ *
+ * ```text
+ * 门禁 → 认证（ensureToken / login） → backend
+ * ```
+ *
+ * 顺序很关键：非-online 时**先**被门禁挡住，所以既不会触发 `login()` 跳转、也不会走 token
+ * refresh 的失败路径，更不会发出 admin API 请求（`adminSearchUsers` / `adminGetUser` /
+ * `adminDeleteUsers` 调用数恒为 0），用户立刻看到统一 connectivity notice。
+ *
+ * 已缓存的过期 admin session 仍然保留 claims/role（见 useAuth 的本地投影），因此「Admin Users」
+ * 入口继续可见；只是这个页面在离线时不能登录、不能请求 backend。
+ */
+function requireAdminUsersOnline() {
+  return requireFeature(Feature.ADMIN_USERS)
+}
 
 function apiError(error) {
   return apiErrorLabel(t, te, error)
@@ -60,7 +87,18 @@ async function ensureToken() {
   }
 }
 
+/** 首次被门禁挡下的加载：只有「确实什么都没加载过」才允许 reconnect 自动补一次。 */
+const blockedByConnectivity = ref(false)
+
+/** 当前 capability 判定（页面只读它渲染中性提示，不据此自己拼文案；四态措辞由模型决定）。 */
+const adminAvailability = computed(() => availability(Feature.ADMIN_USERS))
+
 onMounted(async () => {
+  // 门禁先于认证：非-online 时既不 ensureToken（不发 token refresh）、也不 login()、也不请求 backend。
+  if (!requireAdminUsersOnline()) {
+    blockedByConnectivity.value = true
+    return
+  }
   try {
     await ensureToken()
     loadUsers()
@@ -69,11 +107,27 @@ onMounted(async () => {
   }
 })
 
+/**
+ * 恢复在线后，只补「因为离线从来没加载过」的列表，且只补一次：
+ *  - 已加载过的数据 / 搜索条件 / 分页 / 选择集原样保留，掉线不清空；
+ *  - **不**重放任何破坏性动作（删除 / 批量删除）或上一次详情 / 搜索，用户的下一次点击才算数；
+ *  - `loading` + 一次性 flag 双重去重，重复 online 通知不会形成请求风暴。
+ */
+watch(connectivity, () => {
+  if (users.value.length || loading.value || !blockedByConnectivity.value) return
+  if (!availability(Feature.ADMIN_USERS).available) return
+  blockedByConnectivity.value = false
+  loadUsers()
+})
+
 function clearSelection() {
   selectedIds.value = []
 }
 
 async function loadUsers() {
+  // 门禁在所有 backend 入口的第一行：搜索 / 换 segment / 换 IdP / 换页长 / 翻页 / 删除后 reload
+  // 都只经过这一个函数，因此非-online 时 adminSearchUsers 调用数恒为 0。
+  if (!requireAdminUsersOnline()) return
   const generation = ++userLoadGeneration
   loading.value = true
   try {
@@ -156,6 +210,7 @@ function toggleSelectAllPage(checked) {
 }
 
 async function loadDetail(u) {
+  if (!requireAdminUsersOnline()) return
   const generation = ++detailLoadGeneration
   try {
     const result = await api.adminGetUser(u.keycloakUserId)
@@ -183,6 +238,9 @@ function startDelete(u) { deleteUserId.value = u.keycloakUserId; deleteConfirmTe
 function cancelDelete() { deleteUserId.value = null; deleteConfirmText.value = ''; deleteResult.value = '' }
 
 async function confirmDelete() {
+  // TOCTOU：删除对话框可以在「在线」时打开、在「离线」后才确认，所以判定必须放在
+  // 真正的 API boundary（而不是只放在 startDelete）；否则离线时仍会发出破坏性请求。
+  if (!requireAdminUsersOnline()) return
   deleting.value = true
   deleteResult.value = ''
   try {
@@ -216,6 +274,9 @@ function cancelBulkDelete() {
 async function confirmBulkDelete() {
   const ids = [...selectedIds.value]
   if (!ids.length || bulkConfirmText.value !== 'DELETE') return
+  // 同单个删除的 TOCTOU：批量确认框可能跨过一次掉线，因此在最后的执行边界再判一次，
+  // 非-online 时 adminDeleteUsers 一次都不发。
+  if (!requireAdminUsersOnline()) return
   bulkDeleting.value = true
   try {
     const res = await api.adminDeleteUsers(ids, true)
@@ -245,6 +306,14 @@ function fmtTime(s) {
   <div class="admin-page">
     <h1 class="admin-title">{{ $t('admin.title') }}</h1>
     <p class="admin-hint">{{ $t('admin.hint') }}</p>
+
+    <!-- 非-online 的中性状态（不是错误态）：文案来自 capability 模型，四态各有措辞。
+         已加载的列表 / 搜索条件 / 选择集一律保留，只是新的 ONLINE_REQUIRED 动作被挡住。 -->
+    <p
+      v-if="!adminAvailability.available"
+      class="admin-connectivity"
+      data-testid="admin-connectivity-unavailable"
+    >{{ $t(adminAvailability.messageKey) }}</p>
 
     <div class="admin-search">
       <input v-model="searchQuery" :placeholder="$t('admin.search')" @keyup.enter="onSearch" />
@@ -660,6 +729,16 @@ td.cell-actions > * + * { margin-left: var(--space-1); }
 .admin-warn { color: var(--color-warning); }
 .admin-ok { color: var(--color-success); font-weight: 600; }
 .admin-muted { padding: var(--space-4) 0; color: var(--color-text-secondary); text-align: center; }
+
+/* 连通性中性提示：与 admin-muted 同一语气（不是 danger），只表达「现在拿不到远端数据」。 */
+.admin-connectivity {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
 
 .admin-confirm-field { display: grid; gap: var(--space-1); color: var(--color-text-secondary); }
 .admin-confirm-input { width: 100%; }
