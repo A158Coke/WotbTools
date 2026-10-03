@@ -373,9 +373,10 @@ Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标�
 `VehicleDetailsPanel.vue` 渲染。基地 runtime state 由本机 2D 转换层（`replay-local/playback`，取自上游 PlaybackData 的 `supremacy_bases` / `assault_bases`）统一提供 `baseStates`，前端只按当前回放时间查询，
 不从静态地图或最终结果推导。Supremacy 形成 `baseId=A/B/C/D` 的完整 canonical state；
 Assault 单基地形成
-`baseId=BASE` 的 progress transition（0..100，阵营 unknown；判据为 field2==1 且 field3 存在，
-**不锁 field1**——携带进度的族会在 field1=1/2 间切换）；`assaultObjectivePresent` 需目标族发出
-裸初始化对以外的字段（裸初始化对是通用广播，普通对局也发），无 field3 时保留空 progress timeline。显式 `progress=0` 作为 canonical reset 继续保留，但共享 `baseView` 在 2D/3D presentation 中把它投影为 idle（不画水位/进度环/百分比），后续正值可恢复显示。2D 按 mapCode 从 verified semantic
+`baseId=BASE` 的 progress transition（0..100，阵营 unknown；进度判据为 field2==1 且 field3 存在，
+**不锁 field1**——携带进度的族会在 field1=1/2 间切换）；`assaultObjectivePresent` 是**目标族存在性**
+（wrapper8 目标族出现、field2==1 且 field1∈{1,2} 即为 true，与是否已有进度无关；v0.3.11 字段契约补正），
+无 field3 时保留空 progress timeline。显式 `progress=0` 作为 canonical reset 继续保留，但共享 `baseView` 在 2D/3D presentation 中把它投影为 idle（不画水位/进度环/百分比），后续正值可恢复显示。2D 按 mapCode 从 verified semantic
 数据解析静态 BASE，并 LEFT JOIN runtime state；训练房 arenaBonusType 不参与 Assault 判定。
 前端不合并 protobuf sparse update；坦克 marker sizing 优先使用可靠 hull metadata，model overlap 只通过有界
 presentation offset 软避让，canonical 坐标和命中判定语义保持一致。

@@ -18,8 +18,9 @@ export function pointsAt(samples, t, friendlyTeam) {
   if (friendlyTeam !== 1 && friendlyTeam !== 2) return out
   if (!samples || !samples.length) return out
   const enemyTeam = friendlyTeam === 1 ? 2 : 1
+  // 采样按 clock 升序（契约保证）：越过 t 即可停——此前用 continue 会把整表扫完（每 tick 一次）
   for (const sp of samples) {
-    if (sp.clock > t) continue
+    if (sp.clock > t) break
     if (sp.team === friendlyTeam) out.friend = sp.points
     else if (sp.team === enemyTeam) out.enemy = sp.points
   }

@@ -17,7 +17,13 @@
 >    发 182 个包（116 次 `field4=1` 标志流 + `field3` 进度）。故目标存在性要求目标族发出过
 >    **裸初始化对以外的**字段（`field3` 或 `field4`）。
 >
-> 下方正文保留原始取证过程与受控样本数据；与上述两条冲突处以上述修正为准。
+> 3. **（2026-10-03 追加）v0.3.11 字段契约补正**：第 2 条「目标存在性要求目标族发出裸初始化对
+>    以外的字段」已被上游改回**目标族存在性**本身——`field2==1 && field1 ∈ {1,2}` 出现即
+>    `assault_objective_present = true`，不要求进度字段（有目标但全程无人进圈也必须为 true）。
+>    第 2 条的取证（裸初始化对是通用广播）仍成立，但不再作为存在性判据；当前契约口径见
+>    `contracts/agent/replay-facets-v2.md` §4c。
+>
+> 下方正文保留原始取证过程与受控样本数据；与上述修正处以上述修正为准。
 
 > Status: controlled protocol closure for the realtime capture-progress surface.
 >
@@ -207,7 +213,7 @@ These bytes illustrate **nested children**, not complete captured packets:
 | Canonical/wire field | Source / rule |
 |---|---|
 | `sequence`, `timestamp`, `packetType`, `confidence` | Preserved from the decoded packet; structural exactness does not prove unknown field semantics |
-| `assaultObjectivePresent` | 目标族发出裸初始化对**以外**的字段（field3/field4）——裸初始化对是通用广播，普通对局也发（2026-10-01 修正）；与 arenaBonusType 无关 |
+| `assaultObjectivePresent` | 目标族发出裸初始化对**以外**的字段（field3/field4）——裸初始化对是通用广播，普通对局也发（2026-10-01 修正；**2026-10-03 v0.3.11 起该判据回退为「目标族存在性」，见文首修正通告 3**）；与 arenaBonusType 无关 |
 | `baseStates[].timeSec` | Existing projector battle-relative clock: raw clock minus resolved battle start |
 | `baseStates[].baseId` | Literal `BASE` for Assault; no breaking rename of `baseStates` |
 | `baseStates[].captureProgress` | Explicit decoded field3, unchanged; 100 is accepted |

@@ -65,6 +65,10 @@ export const PHASE_READY = 5;
 export const PHASE_DRUM_SHELL = 6;
 /** f2 = 夹内射击间隔（**不装填**；时长 = burst_interval） */
 export const PHASE_MAG_INTERVAL = 7;
+// 相位码 8：语义未定（禁猜）——9 场样本 527 条里仅 11 条，全部来自 tank 21793
+//（Sheridan Missile，单发炮），无 f3/f4，且 11/11 紧随该车 f2=3 前 0.5~3.2 s。
+// 不参与渲染：下面 isUsablePhase 不含 8，其 count 为空也不会进入 N 推断。
+// 现存相位码分布：{1:16, 3:251, 4:74, 5:77, 6:47, 7:62, 8:11}（2 从未出现）。
 
 /** N 的合理上限：超过即视为脏数据，退回启发式（实测最大值 6） */
 const MAX_PLAUSIBLE_MAG = 10;

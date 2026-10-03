@@ -23,18 +23,41 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
+import { labelVisual } from './labelStyle.js'
+import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
 import { groupByVehicle, inferMagazineSize, reloadVisualKey, resolveMagazineSize, shellStatesAt } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { playableBounds } from '../data/playableBounds.js'
 import { createLoadProgress } from './loadProgress.js'
-import { poseFromYPR, neutralizeDefaultMetalness } from './glbRig.js'
+import { advancePlaybackTime } from '../utils/playbackClock'
+import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
+import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 const GRID_DT = 0.1
+
+// 资产加载并发上限：全串行（9 张地表贴图 / 逐张 await）白等网络往返；无限并发
+// （14 台坦克 GLB 同时 fetch + 主线程 parse）又会把主线程解析排满。取 4。
+const ASSET_CONCURRENCY = 4
+
+/** 有限并发映射（保持结果顺序）；用于资产下载/解析 */
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length)
+  let next = 0
+  const worker = async () => {
+    for (;;) {
+      const i = next++
+      if (i >= items.length) return
+      out[i] = await fn(items[i], i)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return out
+}
 
 // 三档渲染预设（面板与场景共用；桌面默认高，Tauri/移动 WebView 默认低）。
 // 抗锯齿/DPR/场景资源在渲染器与场景首次创建时一次性定型，加载后改档需整页刷新。
@@ -64,7 +87,7 @@ export function initPlayback(container, store) {
   let shotPtr = 0, killPtr = 0;
   const tracers = [], impacts = [];
   let renderer = null, scene, camera, controls, clock, raycaster;
-  let labelScene = null, labelRenderer = null;
+  let labelScene = null;
   let glbCache = new Map(), glbOn = false;
   let mapPlane = null;
   let mapTexture = null, mapMetaInfo = null;          // 底图贴图 + 铺设参数
@@ -162,6 +185,13 @@ export function initPlayback(container, store) {
     const f = Math.max(0, Math.min(1, (t - DATA.meta.t_start) / GRID_DT - i0));
     return arr[i0] + (arr[i1] - arr[i0]) * f;
   }
+  // 车体侧倾（rad）。数据侧 hull_roll 取自**原始 type=10 volatile 采样**（滤波层不输出侧倾，
+  // 与 hull_pitch 不同源）；旧产物无该列 → 0 = 水平（fail-safe，绝不拿 pitch 顶替）。
+  // 符号约定：游戏系→场景系是「x 取负」的镜像，镜像下绕 z（偏航）与绕 y（横滚=车体前向轴）
+  // 的角度取负、绕 x（俯仰）不变——这正是既有 `-yaw` 与 `+pitch` 的来源，故横滚取 `-roll`。
+  // （若实机目视发现侧倾方向相反，只翻这一个符号，并同步更新此处注释与守卫测试。）
+  const rollAt = (v, t) => (v.def.hull_roll && v.def.hull_roll.length ? arrAt(v.def.hull_roll, t) : 0);
+
   function hpAt(v, t) {
     const hp = v.def.hp; let cur = v.def.max_hp;
     for (const [ht, hv] of hp) { if (ht <= t) cur = hv; else break; }
@@ -199,17 +229,12 @@ export function initPlayback(container, store) {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     container.appendChild(renderer.domElement);
-    // 昵称标签独立覆盖画布：按设备像素比满分辨率渲染，清晰度不受画质档 maxDpr 影响
-    //（低档锁主画布 DPR=1 会让 HiDPI 屏上的标签文字发糊）。alpha 透明叠在主画布上，
-    // pointer-events 穿透，标签恒在主场景之上（与原 depthTest:false 语义一致）。
+    // 标签/飘字覆盖层：**不再单起第二个 WebGL 上下文**，而是在同一 renderer 上做第二次
+    // render（见 animate）。此前的独立画布要维护两块 GPU 表面 + 浏览器逐帧两画布合成；
+    // 覆盖层全是 depthTest:false 的 Sprite（标签 999 / 伤害飘字 1001），合到同一画布后
+    // 绘制顺序与遮挡关系逐字不变；标签清晰度改由主画布 DPR（画质档）决定，
+    // labelTexSize 同步跟主渲染器取比例，不再单独按 min(dpr,2) 超采样。
     labelScene = new THREE.Scene();
-    labelRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
-    labelRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    labelRenderer.setSize(container.clientWidth, container.clientHeight);
-    labelRenderer.domElement.style.position = 'absolute';
-    labelRenderer.domElement.style.inset = '0';
-    labelRenderer.domElement.style.pointerEvents = 'none';
-    container.appendChild(labelRenderer.domElement);
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true; controls.maxPolarAngle = Math.PI / 2 - 0.02;
     if (DEBUG) window.__controls = controls;   // 诊断钩子（controls 创建后才可引用）
@@ -224,11 +249,14 @@ export function initPlayback(container, store) {
   }
   function onResize() {
     if (!renderer) return;
-    camera.aspect = container.clientWidth / container.clientHeight;
+    // 尺寸取整一次（单画布，标签/飘字同层同尺寸）
+    const w = Math.max(1, Math.round(container.clientWidth));
+    const h = Math.max(1, Math.round(container.clientHeight));
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    if (labelRenderer) labelRenderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setSize(w, h);
     resizeLabelCanvases();   // 标签贴图分辨率随视口高度重算（卡片屏幕占比恒定）
+    invalidate();            // 视口变化：下一帧必须重绘
   }
   function onScenePointerDown(e) {
     if (e.button !== 0) return;
@@ -401,16 +429,45 @@ export function initPlayback(container, store) {
   // 输出 = albedo × SH(标定 1.77) × (遮挡/遮挡均值)——按均值归一化保留内暗外亮
   // 的纵深变化，又不会把整体亮度压到校准水平之下（各图贴图明暗差异大，固定
   // 系数会把暗色贴图的灌木压成黑色）。风摆为动态效果，静态导出不参与。
+  //
+  // 场景 GLB 材质实例缓存（对齐上游）：同一（name,map,color,alphaTest,transparent,
+  // opacity,occMean）复用同一材质对象。此前每个 mesh 各建一份——材质/着色器实例与
+  // program 切换随 mesh 数线性膨胀，是场景侧最大的开销来源。
+  // 生命周期：teardown 时随 mapScenery dispose 并清空本表（勿复用已 dispose 实例）。
+  const sceneryMatCache = new Map();
+  function cachedSceneryMat(key, factory) {
+    let m = sceneryMatCache.get(key);
+    if (!m) { m = factory(); sceneryMatCache.set(key, m); }
+    return m;
+  }
+  // 叶卡 alpha 裁切阈值。客户端 AlphaBlend 软边缘 + 0.05 低阈值会让近透明像素仍写
+  // 深度（叶片互相遮挡 → 破洞/闪烁）；提到 MASK 量级消除，并保留软边缘。
+  const CARD_ALPHA_CUT = 0.33;
+  // 场景 Lambert 材质的曝光修整（只作用于 convMat 建出的场景材质；代理车/GLB 车模不受影响）。
+  // 这套光照是按坦克 GLB 调的，场景降级到 Lambert 后朝上面过曝；系数 <1 压回过曝而不动光照。
+  const SCENERY_LAMBERT_EXPOSURE = 0.75;
+  // 水体判定（GLB mesh/材质名启发式：seaplane/water/fountain/lake/river）
+  const isWaterName = (n) => /water|sea|lake|river|fountain/i.test(n || '');
+
   function makeBillboardMaterial(m) {
-    const occMean = (m.userData && m.userData.extras && m.userData.extras.occMean) || 0.8;
+    // GLB 的 material.extras 由 GLTFLoader 的 assignExtrasToUserData 用 Object.assign
+    // 平铺进 userData（不是嵌在 userData.extras 下）——写成 userData.extras.occMean 会
+    // 恒取到 undefined，退化成 0.8 固定值，使各材质"按自身贴图均值归一化遮挡"的标定失效。
+    const occRaw = m.userData && Number(m.userData.occMean);
+    const occMean = Number.isFinite(occRaw) && occRaw > 0 ? occRaw : 0.8;
+    // 每实体的 SH(L0) 染色：导出器把它写进 baseColorFactor（松树 1.7725 / 灌木 0.669）。
+    // 客户端是 albedo × 自身 SH(L0)——硬编码 1.77（正好等于松树取值）会让灌木亮 2.65×。
+    const shTintRaw = m.color ? Number(m.color.r) : NaN;
+    const shTint = Number.isFinite(shTintRaw) && shTintRaw > 0 ? shTintRaw : 1.77;
     // 客户端着色器为伽马空间直采直写：关闭 sRGB 纹理解码（自定义着色器无输出
     // 重编码，sRGB 采样得到的线性值直出会整体发黑）
     if (m.map) { m.map.colorSpace = THREE.NoColorSpace; m.map.needsUpdate = true; }
     return new THREE.ShaderMaterial({
       uniforms: {
         map: { value: m.map || null },
-        uSH: { value: 1.77 },
+        uSH: { value: shTint },
         uOccMean: { value: occMean },
+        uAlphaCut: { value: CARD_ALPHA_CUT },
       },
       vertexShader: `
         attribute vec4 _corner;
@@ -426,17 +483,21 @@ export function initPlayback(container, store) {
           vUv = uv;
           vOcc = color.r;
         }`,
-      transparent: true,           // 客户端 SpeedTree 为 AlphaBlend 通道：
-      depthWrite: true,            // 软边缘半透明混合，近全透明才裁剪
+      // 用 discard 裁切走不透明管线（transparent=false）：叶卡之间排序无关，
+      // 消除互遮挡闪烁（此前 transparent=true + depthWrite=true 二者冲突），
+      // 同时省掉透明通道的排序开销
+      transparent: false,
+      depthWrite: true,
       fragmentShader: `
         uniform sampler2D map;
         uniform float uSH;
         uniform float uOccMean;
+        uniform float uAlphaCut;
         varying vec2 vUv;
         varying float vOcc;
         void main() {
           vec4 c = texture2D(map, vUv);
-          if (c.a < 0.05) discard;
+          if (c.a < uAlphaCut) discard;
           float occ = min(vOcc / max(uOccMean, 0.001), 1.25);
           gl_FragColor = vec4(c.rgb * min(occ * uSH, 1.35), c.a);
         }`,
@@ -554,20 +615,28 @@ export function initPlayback(container, store) {
           ? ['cm', 'lm', 'tile0', 'tile1', 'mask0', 'mask1', 'hmap0', 'hmap1']
           : ['cm', 'lm', 'tile0', 'tile1', 'mask0', 'mask1'];
         const texs = {};
-        let ok = true;
-        for (const [i, k] of need.entries()) {
-          progress.update('ground', i, need.length);
+        // 有限并发（4）：此前逐张 await 白等网络往返（6–8 张串行 = 6–8 个 RTT）。
+        // 任一张失败仍整体回退（其余在飞的照常收下，失败分支统一 dispose）。
+        let texDone = 0;
+        const loaded = await mapLimit(need, ASSET_CONCURRENCY, async (k) => {
+          let okOne = false;
           try {
             const texUrl = mapStaticUrl('groundtex', k);
-            if (!texUrl) { ok = false; break; }
-            const r = await fetch(texUrl);
-            if (!r.ok) { ok = false; break; }
-            const u = URL.createObjectURL(await r.blob());
-            texs[k] = await new THREE.TextureLoader().loadAsync(u);
-            URL.revokeObjectURL(u);
-            if (stale()) { texs[k].dispose(); delete texs[k]; ok = false; break; }
-          } catch { ok = false; break; }
-        }
+            if (texUrl) {
+              const r = await fetch(texUrl);
+              if (r.ok) {
+                const u = URL.createObjectURL(await r.blob());
+                const t = await new THREE.TextureLoader().loadAsync(u);
+                URL.revokeObjectURL(u);
+                if (stale()) { t.dispose(); }
+                else { texs[k] = t; okOne = true; }
+              }
+            }
+          } catch { okOne = false; }
+          progress.update('ground', ++texDone, need.length);
+          return okOne;
+        });
+        const ok = loaded.every(Boolean);
         if (ok) {
           const ani = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
           for (const k of ['tile0', 'tile1', 'hmap0', 'hmap1']) if (texs[k]) {
@@ -611,26 +680,49 @@ export function initPlayback(container, store) {
         // GLTFLoader 默认 MeshStandardMaterial（PBR）比场景 Lambert 光照吃光得多，
         // 建筑会渲染成近黑——统一降级为 Lambert 并保留贴图/透明/平直着色。
         // 几何含 _CORNER 属性的叶卡走 billboard 材质（见 makeBillboardMaterial）
-        const convMat = (m, isCard) => (isCard ? makeBillboardMaterial(m) : (() => {
+        const convMat = (m, isCard) => cachedSceneryMat(
+          // alphaTest/transparent 必须进键：GLTFLoader 不暴露 alphaMode，同 name+map
+          // 的 MASK 与 OPAQUE 材质只靠这两项区分，漏掉会串用（先建的赢）
+          // （`m.alphaMode` 当前恒为 undefined，保留仅作将来 GLTFLoader 补上时的保护）
+          // 染色值取原始分量而非 getHexString：后者会把 >1 的 SH(L0) 钳到 ffffff，
+          // 于是"同一张贴图、不同 SH 染色"的材质在键上无法区分（叶卡 uSH 就取它）。
+          [isCard ? 'C' : 'M', m.name || '', m.map ? m.map.uuid : '',
+           m.color ? [m.color.r, m.color.g, m.color.b].map((v) => v.toFixed(4)).join(',') : '',
+           m.alphaMode || '', m.alphaTest ?? 0, !!m.transparent, m.opacity ?? 1,
+           (m.userData && m.userData.occMean) || ''].join('|'),
+          () => (isCard ? makeBillboardMaterial(m) : (() => {
           // ST|（SpeedTree 树/灌木）：客户端 speedtree-materials-fp = albedo × SH，
           // 无场景光照——用不受光材质（染色值经 baseColorFactor→color 传入）
+          // 客户端 SpeedTree = AlphaTest+AlphaBlend 双通道。但导出材质多为
+          // 【不透明度=1 的伪透明】（transparent 却 opacity 1）：这类走混合通道会进
+          // 透明渲染队列，大量重叠植被面按深度排序不稳定 → 成片闪烁。按不透明度分流：
+          //   不透明度≈1 → 不透明管线 + 裁切（排序无关，消除闪烁且更快）
+          //   真透明      → 混合 + 不写深度（减少互遮挡）
+          const opaqueEnough = (m.opacity ?? 1) >= 0.99;
           if ((m.name || '').startsWith('ST|')) {
             const bm = new THREE.MeshBasicMaterial({
               map: m.map || null,
               color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
-              transparent: true,          // 客户端 SpeedTree = AlphaTest+AlphaBlend
-              opacity: m.opacity ?? 1,    // 双通道；此处混合渲染软边缘
+              transparent: !opaqueEnough,
+              opacity: m.opacity ?? 1,
               side: THREE.DoubleSide,
-              depthWrite: true,
+              depthWrite: opaqueEnough ? true : false,
             });
-            bm.alphaTest = 0.05;          // 仅剔近全透明像素
+            bm.alphaTest = opaqueEnough ? 0.33 : 0.05;   // 不透明：按 MASK 量级裁切
             bm.toneMapped = false;
             return bm;
           }
+          // 伪透明（BLEND 但不透明度≈1）一律转不透明 + 裁切，消除透明排序闪烁；
+          // 真透明保持混合但不写深度（避免互遮挡抖动）
+          const pseudoOpaque = !!m.transparent && (m.opacity ?? 1) >= 0.99;
           const nm = new THREE.MeshLambertMaterial({
             map: m.map || null,
-            color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
-            transparent: !!m.transparent,
+            // 曝光修整：这套光照是按坦克 GLB 调的，场景降级到 Lambert 后朝上面过曝
+            // （岩石贴图 87.5/255 却渲染到 137/255、27% 像素近白）。只作用于本函数
+            // 建出的场景材质，代理车/GLB 车模不受影响。
+            color: (m.color ? m.color.clone() : new THREE.Color(0xffffff))
+              .multiplyScalar(SCENERY_LAMBERT_EXPOSURE),
+            transparent: !!m.transparent && !pseudoOpaque,
             opacity: m.opacity ?? 1,
             side: THREE.DoubleSide,
           });
@@ -642,15 +734,57 @@ export function initPlayback(container, store) {
           // 按整片方片照绘，背景没被剔除——那些贴图的背景恰是纯黑（实测 ivy 背景区
           // 亮度 0.0），看上去就是一张实心黑片。
           if (m.alphaTest > 0) nm.alphaTest = m.alphaTest;
+          if (pseudoOpaque) nm.alphaTest = Math.max(nm.alphaTest || 0, 0.33);
+          if (nm.transparent) nm.depthWrite = false;
           nm.flatShading = true;
           return nm;
-        })());
+        })()));
+        // 退化几何隔离（防护）：旧版导出器把树的三角列表误判为 strip 解析，
+        // 产生横跨整个模型的长条三角形（撕裂）并使面数虚高（实测 20–29 面/顶点，
+        // 修正后同批树为 7–10）。阈值 15 恰好区分：已重导出的地图保留树，
+        // 未重导出地图的撕裂批次整批移除（不渲染/不占 draw call/回收显存）。
+        // 允许 ?degrade=N 覆盖（调试用）。
+        const degradedMeshes = [];
+        gltf.scene.traverse((o) => {
+          if (!o.isMesh) return;
+          const g0 = o.geometry;
+          const vc = g0.attributes.position ? g0.attributes.position.count : 0;
+          const ic = g0.index ? g0.index.count : vc;
+          const degLimit = (() => {
+            const q = Number(new URLSearchParams(location.search).get('degrade'));
+            return Number.isFinite(q) && q > 0 ? q : 15;
+          })();
+          if (vc > 0 && (ic / 3) / vc > degLimit) degradedMeshes.push(o);
+        });
+        for (const o of degradedMeshes) {
+          o.removeFromParent();
+          o.geometry.dispose();   // 每 mesh 独立几何；材质为共享（缓存）不在此释放
+        }
+        if (DEBUG) window.__degradedSkipped = degradedMeshes.length;
         gltf.scene.traverse((o) => {
           if (!o.isMesh || !o.material) return;
           // GLTFLoader 会把自定义属性名转小写：GLB 里的 _CORNER → geometry._corner
           const isCard = !!o.geometry.attributes._corner;
           o.material = Array.isArray(o.material) ? o.material.map((m) => convMat(m, isCard))
                                                  : convMat(o.material, isCard);
+          // 水体（海平面等半透明大面）：透明 + depthWrite=true + DoubleSide 会与
+          // 地形/自身共面产生 z-fighting 与透明互遮挡闪烁。实测（erlenberg）：水面为
+          // 恒定高度的水平面，与地形高度差 −6.9~+7.7m、无一采样点接近 0 → 并非与地形
+          // 共面；其几何极简（少数大三角形），depthWrite=false 时大三角形上的深度插值
+          // 精度不足，与 512² 地形逐像素比较会在大面积上帧间交替 → 闪。该面是无厚度
+          // 水平面（双面同深度、不自我遮挡）且为全场唯一透明物 → 让其正常写深度最稳。
+          if (isWaterName(o.name)) {
+            const ms = Array.isArray(o.material) ? o.material : [o.material];
+            for (const mm of ms) {
+              if (!mm || !mm.transparent) continue;
+              mm.depthWrite = true;
+              mm.side = THREE.DoubleSide;
+              mm.depthTest = true;
+              mm.needsUpdate = true;
+            }
+            // 不设 renderOrder：交给 THREE 在透明队列内按摄像机距离排序
+            //（此前设 -1 让水面最先绘制，与其余半透明层遮挡关系错乱，接近时抖）
+          }
           if (isCard) {
             // 包围球按锚点计算，角点向外超出——扩 2m 防视锥剔除边缘闪没
             if (o.geometry.boundingSphere) o.geometry.boundingSphere.radius += 2;
@@ -912,9 +1046,10 @@ export function initPlayback(container, store) {
   // null，静态 scene 的 `team` 字段语义 UNKNOWN——一律不据此上色/推断归属；环与 HUD 用中性
   // 色，进度条用呈现强调色（仅表示"有占领进度"，不代表阵营）。半径不做车辆距离推算。
   //
-  // 目标存在性判据：assault_objective_present（上游 v0.3.1；目标族发出裸初始化对以外的
-  // 字段）优先，旧产物回退"有进度广播"。裸初始化对 1=1,2=1 + 1=2,2=1 是通用广播，
-  // 普通对局同样会发，不得据此判定。
+  // 目标存在性判据：assault_objective_present 优先（上游 v0.3.11 = **目标族存在性**：
+  // wrapper8 目标族 field2==1 且 field1∈{1,2} 出现即 true，不要求进度字段），旧产物
+  // 回退"有进度广播"。存在性只是前提——真正落地的标记还要求该地图 verified semantics
+  // 给出**唯一**单基地 controlpoint（多 candidate fail-closed，见 buildBases）。
   const ASSAULT_RADIUS_FALLBACK = 20;      // 客户端 scene 常不声明 radius：20m 仅呈现兜底
   const ASSAULT_PROGRESS_COLOR = 0xffc24b; // 呈现强调色（非阵营语义）
   function assaultHasObjective() {
@@ -1199,7 +1334,9 @@ export function initPlayback(container, store) {
   // 贴图被 mipmap 缩小 7 倍，昵称落到屏上约 3.7 px 并被三线性平均成一团糊。绘制布局仍按设计
   // 坐标系写，由 drawLabel 用 ctx.scale(px / LABEL_TEX_BASE_H) 映射。
   function labelTexSize() {
-    const pr = Math.min(window.devicePixelRatio || 1, 2);   // 与 labelRenderer 同口径
+    // 与主画布同口径（标签已并入主画布渲染）：按 renderer 的实际像素比取纹理尺寸——
+    // 低画质档不再按 2× 超采样，那份显存与逐帧上传开销随之消失
+    const pr = renderer ? renderer.getPixelRatio() : Math.min(window.devicePixelRatio || 1, 2);
     const cssH = Math.max(0, container.clientHeight) * LABEL_FRAC;
     const h = Math.max(12, Math.min(LABEL_TEX_BASE_H, Math.round(cssH * pr * TEX_SS)));
     return { h, w: Math.round(h * LABEL_ASPECT) };   // canvas 尺寸必须是整数
@@ -1237,10 +1374,15 @@ export function initPlayback(container, store) {
       // 装填条：按 T 时间归并求值（不累加计时器）→ **逐发状态**（客户端 Full/Active/Inactive）。
       // 重绘门控必须保留状态拓扑：aggregate fill 会把 loading≈100% 与完成后的 A|A|A
       // 都压成 100%，导致整条 loading 永久卡住。视觉签名 = 每格 state + loading 的 1% 进度桶。
-      const shells = shellStatesAt(v.reloadEvents, v.reloadFires, T, v.reloadSize, v.reloadDurations);
-      v.reloadShells = shells;
-      const visualKey = reloadVisualKey(shells);
-      if (visualKey !== v.reloadVisualKey) { v.reloadVisualKey = visualKey; v.labelDirty = true; drawLabel(v); }
+      // 求值只服务标签卡片（v.reloadShells 仅 drawLabel 消费）且**只依赖 T**：
+      // 关标签时整段跳过；T 未变（暂停）时复用上次结果——此前两者都照跑，是每帧最大的固定 CPU 项。
+      if (store.labelsOn && v.reloadT !== T) {
+        v.reloadT = T;
+        const shells = shellStatesAt(v.reloadEvents, v.reloadFires, T, v.reloadSize, v.reloadDurations);
+        v.reloadShells = shells;
+        const visualKey = reloadVisualKey(shells);
+        if (visualKey !== v.reloadVisualKey) { v.reloadVisualKey = visualKey; v.labelDirty = true; drawLabel(v); }
+      }
     }
   }
 
@@ -1298,26 +1440,29 @@ export function initPlayback(container, store) {
     ctx.setTransform(ls, 0, 0, ls, 0, 0);
     // 最初版血条用的队色（深绿/深红口径，teamColors.js）与阵亡压暗色
     const team = '#' + new THREE.Color(teamColor(v)).getHexString();
-    const base = dead ? '#4a525c' : team;
+    const base = team;   // 血条填充只在存活时画（阵亡样式见下）
+    // 存活/阵亡两套样式（纯函数，见 scene/labelStyle.js）：阵亡整体去队色 + 卡片删除线
+    // + 数字转灰 + 不画装填条，与存活车一眼可分
+    const st = labelVisual(dead);
     const teamText = LABEL_TEAM_TEXT[labelSide(v)];
     // —— 卡片（2D .pb-labels）：半透明黑底 + 极淡白描边；无阵营色底/描边/左竖条 ——
     ctx.save();
     // shadowBlur/shadowOffset 不随 CTM 缩放，需按 ls 手动等比（否则小贴图下投影相对过重）
     ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 14 * ls; ctx.shadowOffsetY = 5 * ls;
     rrPath(ctx, 26, 6, 460, 116, 18);
-    ctx.fillStyle = 'rgba(0, 0, 0, .55)';   // 2D 同款底色（半透明黑；阴影一次填充落其下）
+    ctx.fillStyle = st.cardFill;            // 存活=2D 同款半透明黑；阵亡=更暗更实
     ctx.fill();
     ctx.restore();
-    // 受击闪（FLASH_MS）：描边瞬亮，弱化而非隐藏
-    const flashing = (flashByEid.get(v.def.eid) || 0) > performance.now();
+    // 受击闪（FLASH_MS）：描边瞬亮，弱化而非隐藏；阵亡不闪（不再掉血）
+    const flashing = st.flash && (flashByEid.get(v.def.eid) || 0) > performance.now();
     rrPath(ctx, 26, 6, 460, 116, 18);
-    ctx.lineWidth = flashing ? 10 : 6;
-    ctx.strokeStyle = flashing ? 'rgba(255,255,255,.5)' : 'rgba(255,255,255,.14)';
+    ctx.lineWidth = flashing ? 10 : st.cardStrokeW;
+    ctx.strokeStyle = flashing ? 'rgba(255,255,255,.5)' : st.cardStroke;
     ctx.stroke();
     // —— 一行文字：车型名 · 玩家昵称（阵营色 + 黑色柔光；同款样式，靠分隔点区分）——
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     ctx.lineJoin = 'round';
-    const name = (dead ? '✝ ' : '') + (v.def.nickname || 'Unknown');
+    const name = st.namePrefix + (v.def.nickname || 'Unknown');
     const tank = v.def.tank_name || (v.def.tank_id ? 'tank_' + v.def.tank_id : '');
     const starW = (v.def.is_author && !dead) ? 40 : 0;
     const rowText = tank ? tank + ' · ' + name : name;
@@ -1329,13 +1474,12 @@ export function initPlayback(container, store) {
     // 文字：阵营色 + 黑色柔光（2D 里 .pb-label-* 用阵营色、.pb-hp-num 用 text-shadow）；
     // 阵亡只把文字压到 65%（2D §24 同款），卡片本身不变
     ctx.shadowColor = 'rgba(0,0,0,.9)'; ctx.shadowBlur = 10 * ls;
-    if (dead) ctx.globalAlpha = 0.65;
     let tx = 256 - rowWidth() / 2;
     if (starW) {
       ctx.fillStyle = '#e8b23c'; ctx.fillText('★', tx, 36);
       tx += starW;
     }
-    ctx.fillStyle = teamText;
+    ctx.fillStyle = st.nameColor || teamText;
     ctx.fillText(rowText, tx, 36);
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
@@ -1343,7 +1487,7 @@ export function initPlayback(container, store) {
     const frac = v.def.max_hp > 0 ? Math.max(0, Math.min(1, hp / v.def.max_hp)) : 0;
     const bx = 56, by = 60, bw = 400, bh = 44;
     rrPath(ctx, bx, by, bw, bh, 11);
-    ctx.fillStyle = '#0a0e13'; ctx.fill();
+    ctx.fillStyle = st.hpTrackFill; ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = '#3a4450'; ctx.stroke();
     if (frac > 0 && !dead) {
       const fg = ctx.createLinearGradient(0, by + 3, 0, by + bh - 3);
@@ -1369,7 +1513,7 @@ export function initPlayback(container, store) {
     ctx.textAlign = 'center';
     ctx.lineWidth = 5; ctx.strokeStyle = '#000000';
     ctx.strokeText(txt, 256, by + bh / 2 + 1);
-    ctx.fillStyle = '#fff'; ctx.fillText(txt, 256, by + bh / 2 + 1);
+    ctx.fillStyle = st.hpTextColor; ctx.fillText(txt, 256, by + bh / 2 + 1);
     // —— 实时装填条（血量条下方）：**逐发**绘制，对齐客户端 OTM 标记的 `GunStatus`
     // 客户端：`VehicleUIObjectMarker.yaml` 的 GunNHealthContainer 里、血量条之下的 70×3 细条；
     // 结构 = 一根整条暗底（fill rgba(0,0,0,.565)）+ `ShellBack` 里 N 枚 `ShellItem`（等分父宽），
@@ -1390,7 +1534,7 @@ export function initPlayback(container, store) {
     // reloads = 0 时旧实现画出一根永远不动的白条（2026-10-02 线上故障）。
     const shells = v.reloadShells;
     const sx = 56, sy = 104, sw = 400, sh = 6;
-    if (friendly && shells && shells.length) {
+    if (st.showReload && friendly && shells && shells.length) {
       rrPath(ctx, sx, sy, sw, sh, 1.5);
       ctx.fillStyle = 'rgba(0, 0, 0, .56)'; ctx.fill();            // 与客户端整条暗底 0.565 同档
     }
@@ -1399,7 +1543,7 @@ export function initPlayback(container, store) {
     const inX = 1, inY = 1;                                        // 客户端 68 = 70−2 的内缩
     const innerW = sw - inX * 2;
     const segW = rn > 1 ? (innerW - gap * (rn - 1)) / rn : innerW;
-    for (let k = 0; friendly && shells && k < rn; k++) {
+    for (let k = 0; st.showReload && friendly && shells && k < rn; k++) {
       const st = shells[k] || { state: 'empty', progress: 0 };
       const x = sx + inX + k * (segW + gap);
       const f = st.state === 'full' ? 1
@@ -1416,6 +1560,19 @@ export function initPlayback(container, store) {
         ctx.fillStyle = st.state === 'loading' ? 'rgba(244,248,252,.82)' : '#f4f8fc';
         ctx.fill();
       }
+    }
+    if (st.strike) {
+      // 删除线：卡片对角一条灰线（"划掉"语义）。**必须最后画**——血条与血量数字是不透明
+      // 内容，先画会被它们整段盖住（此前就是这个 bug：线只在卡面空白处露出来）。
+      ctx.save();
+      rrPath(ctx, 26, 6, 460, 116, 18);
+      ctx.clip();
+      ctx.beginPath();
+      ctx.moveTo(30, 118); ctx.lineTo(482, 10);
+      ctx.lineCap = 'round';
+      ctx.lineWidth = st.strikeW; ctx.strokeStyle = st.strikeColor;
+      ctx.stroke();
+      ctx.restore();
     }
     v.label.material.map.needsUpdate = true;
   }
@@ -1497,6 +1654,9 @@ export function initPlayback(container, store) {
         // 老式车（无 metallicRoughness 贴图）金属度归零——否则无环境贴图下发黑；
         // 在模板上做一次，逐车 clone 共享材质即随带（见 glbRig.js）
         neutralizeDefaultMetalness(model);
+        // 同名几何副本去重：Maus 的根级 mask_01 与 gun_01_mask 是同一块炮盾（实测唯一一台），
+        // rig 不摆位 mask_NN → 炮塔转走后它会留在原地（见 glbRig.dropDuplicateGunMasks）
+        dropDuplicateGunMasks(model);
         // hide_elements 拆件全部渲染（与装甲检视器同规则；位于部件子树内，姿态随父节点自动跟随）
         // 缓存模板 + 部件数据（sd）；每车实例化时 clone 并重收集节点引用
         //（同 tank_id 多车共用一个实例会互相抢对象、位姿互覆盖）
@@ -1553,34 +1713,43 @@ export function initPlayback(container, store) {
     return { turretNode, gunNodes, tP, gP, itr: (sd && sd.initial_turret_rotation) || null };
   }
 
+  // GLB 位姿模块级 scratch：本函数每车每帧执行，原实现每次分配 ~20 个矩阵/欧拉/四元数
+  // （14 车 × 60fps 的 GC 抖动源）。语义与逐次分配完全一致，只是复用容器。
+  const _glbQuat = new THREE.Quaternion();
+  const _glbEuler = new THREE.Euler();
+  const _mRot = new THREE.Matrix4(), _mTmpA = new THREE.Matrix4(), _mTmpB = new THREE.Matrix4();
+  const _mTmpC = new THREE.Matrix4(), _mTmpD = new THREE.Matrix4(), _mT = new THREE.Matrix4();
+  const _mG = new THREE.Matrix4(), _mAcc = new THREE.Matrix4();
+
   // GLB 根位姿 = poseFromYPR(−yaw, pitch, 0)（共享 rig，见 scene/glbRig.js）
   function poseGlb(v) {
     v.glb.position.copy(v.group.position);
-    v.glb.quaternion.copy(poseFromYPR(-yawAt(v, T), arrAt(v.def.hull_pitch, T), 0));
+    v.glb.quaternion.copy(poseFromYPR(-yawAt(v, T), arrAt(v.def.hull_pitch, T), -rollAt(v, T), _glbQuat));
     const p = v.glbParts;
     if (!p) return;
     const rel = wrapPi(turretAbsAt(v, T) - yawAt(v, T));
     const tr = -rel;                       // 镜像系节点旋转角 = −rel
     const gr = gunPitchAt(v, T);           // glb 系 Rx(θ)：θ>0 = 前向(+Y)抬向 +Z = 仰角
-    let turretRot = new THREE.Matrix4().makeRotationZ(tr);
     if (p.itr) {
-      turretRot = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(
-        -THREE.MathUtils.degToRad(p.itr.pitch || 0), -THREE.MathUtils.degToRad(p.itr.roll || 0),
-        tr - THREE.MathUtils.degToRad(p.itr.yaw || 0), 'XYZ'));
+      _glbEuler.set(-THREE.MathUtils.degToRad(p.itr.pitch || 0), -THREE.MathUtils.degToRad(p.itr.roll || 0),
+                    tr - THREE.MathUtils.degToRad(p.itr.yaw || 0), 'XYZ');
+      _mRot.makeRotationFromEuler(_glbEuler);
+    } else {
+      _mRot.makeRotationZ(tr);
     }
-    const mT = new THREE.Matrix4().makeTranslation(p.tP[0], p.tP[1], p.tP[2]).multiply(turretRot)
-      .multiply(new THREE.Matrix4().makeTranslation(-p.tP[0], -p.tP[1], -p.tP[2]));
-    const mG = mT.clone().multiply(new THREE.Matrix4().makeTranslation(p.gP[0], p.gP[1], p.gP[2]))
-      .multiply(new THREE.Matrix4().makeRotationX(gr))
-      .multiply(new THREE.Matrix4().makeTranslation(-p.gP[0], -p.gP[1], -p.gP[2]));
+    const mT = _mT.makeTranslation(p.tP[0], p.tP[1], p.tP[2]).multiply(_mRot)
+      .multiply(_mTmpA.makeTranslation(-p.tP[0], -p.tP[1], -p.tP[2]));
+    const mG = _mG.copy(_mT).multiply(_mTmpB.makeTranslation(p.gP[0], p.gP[1], p.gP[2]))
+      .multiply(_mTmpC.makeRotationX(gr))
+      .multiply(_mTmpD.makeTranslation(-p.gP[0], -p.gP[1], -p.gP[2]));
     const tn = p.turretNode;
     tn.updateMatrix();
     if (!tn.userData.__bake) { tn.userData.__bake = tn.matrix.clone(); tn.matrixAutoUpdate = false; }
-    tn.matrix.copy(mT.clone().multiply(tn.userData.__bake));
+    tn.matrix.copy(_mAcc.copy(mT).multiply(tn.userData.__bake));
     for (const gn of p.gunNodes) {
       gn.updateMatrix();
       if (!gn.userData.__bake) { gn.userData.__bake = gn.matrix.clone(); gn.matrixAutoUpdate = false; }
-      gn.matrix.copy(mG.clone().multiply(gn.userData.__bake));
+      gn.matrix.copy(_mAcc.copy(mG).multiply(gn.userData.__bake));
     }
     v.glb.updateMatrixWorld(true);
   }
@@ -1590,9 +1759,10 @@ export function initPlayback(container, store) {
     glbOn = on;
     store.glbOn = on;
     if (on) {
-      // 并行加载：单个大模型慢解析不阻塞其余车辆；每车 clone 独立实例。
+      // 有限并发加载（上限 4）：单个大模型慢解析不阻塞其余车辆，又不会让 14 台车
+      // 的主线程 GLTF 解析同时排队。每车 clone 独立实例。
       // generation guard：回放替换后迟到的完成不得挂载到新会话场景
-      await Promise.all(V.filter(v => v.def.tank_id > 0).map(async (v) => {
+      await mapLimit(V.filter(v => v.def.tank_id > 0), ASSET_CONCURRENCY, async (v) => {
         if (!v.glb) {
           const loaded = await loadGlb(v.def.tank_id);
           if (gen !== sessionGen) return;   // 迟到：模板留在旧缓存对象里随 GC 回收
@@ -1607,7 +1777,7 @@ export function initPlayback(container, store) {
           }
         }
         if (v.glb) setLowPoly(v, false);
-      }));
+      });
     } else {
       for (const v of V) {
         if (v.glb) { scene.remove(v.glb); v.glb = null; v.glbParts = null; }
@@ -1636,14 +1806,39 @@ export function initPlayback(container, store) {
   // 不作用于飞行段（tracers：位置由 t_fire/flight_secs 决定，拉长会让炮弹看起来变慢）。
   const FX_SCALE = 2;
   let trajLines = [];
+
+  // ---------- 特效对象池 ----------
+  // 此前每发炮线/每次命中/每次击毁都新建 geometry+material 再 dispose（伤害飘字还新建
+  // canvas+CanvasTexture）：FX_SCALE=2 让同时在场数量翻倍，交火高峰即 GPU buffer 分配
+  // 与 GC 的尖峰。池按几何规格复用整套对象（含材质与贴图）：取出时重置颜色/透明度/缩放，
+  // 归还只从场景移除、不 dispose；真正的释放只在会话结束时做一次（disposeFxPool）。
+  const fxPool = new Map();
+  function fxTake(key, make) {
+    const p = fxPool.get(key);
+    if (p && p.length) return p.pop();
+    return make();
+  }
+  function fxGive(key, obj) {
+    let p = fxPool.get(key);
+    if (!p) { p = []; fxPool.set(key, p); }
+    p.push(obj);
+  }
+  function disposeFxPool() {
+    for (const list of fxPool.values()) for (const o of list) disposeObject3D(o);
+    fxPool.clear();
+  }
+
   function spawnShot(s) {
     const from = new THREE.Vector3(-s.from[0], s.from[1], s.from[2]);
     const to = new THREE.Vector3(-s.to[0], s.to[1], s.to[2]);
     // 炮线唯一颜色规则 = 射手阵营（绿/红/白）；命中/跳弹/击毁不改炮线颜色——
     // 结果由弹着点 impact 编码（原实现按结果上色，与上游 Agent 不一致）
     const color = shotTeamColor(s);
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(TRACER_RADIUS, TRACER_RADIUS, TRACER_LEN),
-      new THREE.MeshBasicMaterial({ color }));
+    const mesh = fxTake('tracer', () => new THREE.Mesh(
+      new THREE.BoxGeometry(TRACER_RADIUS, TRACER_RADIUS, TRACER_LEN),
+      new THREE.MeshBasicMaterial({ color })));
+    mesh.material.color.setHex(color);
+    mesh.visible = true;
     scene.add(mesh);
     // WoTB 弹速高、交战近，直飞常 <0.3s——最小显示 0.22s 保证可见性
     const t1 = s.t_fire + Math.max(0.22, s.flight_secs);
@@ -1651,11 +1846,17 @@ export function initPlayback(container, store) {
     // 全弹道轨迹线（队伍色：友军蓝/敌军红，与飞行段的命中结果色区分）：
     // 开火即显整条弹道；消失节奏与弹着点特效同步——基准 t1+2.2s 移除、最后 1.2s 淡出，
     // 二者同乘 FX_SCALE（=2 → t1+4.4s 移除、最后 2.4s 淡出）
-    const traj = new THREE.Mesh(
-      new THREE.BoxGeometry(TRAJ_RADIUS, TRAJ_RADIUS, from.distanceTo(to)),
+    // 单位长盒 + scale.z＝弹道长度：几何可池化（半径不变、长度每发不同）
+    const trajLen = from.distanceTo(to);
+    const traj = fxTake('traj', () => new THREE.Mesh(
+      new THREE.BoxGeometry(TRAJ_RADIUS, TRAJ_RADIUS, 1),
       new THREE.MeshBasicMaterial({
         color: shotTeamColor(s), transparent: true, opacity: TRAJ_OPACITY, depthWrite: false,
-      }));
+      })));
+    traj.material.color.setHex(shotTeamColor(s));
+    traj.material.opacity = TRAJ_OPACITY;
+    traj.scale.set(1, 1, Math.max(0.001, trajLen));
+    traj.visible = true;
     traj.position.copy(from.clone().add(to).multiplyScalar(0.5));
     traj.lookAt(to);
     scene.add(traj);
@@ -1675,9 +1876,8 @@ export function initPlayback(container, store) {
   const IMPACT_WHITE = 0xffffff;
   // impactKind 见 ./impactKind.js（纯函数，可单测）：game_hit_result 枚举里没有"跳弹"
   // 取值（1=未击穿、2=间隙止），只有作者 hit_flags & 0x0008 才是跳弹证据。
-  function spawnImpact(tr) {
-    const kind = impactKind(tr.shot);
-    if (!kind) return;
+  // 命中特效三变体（球径/是否带 sparks 不同）各自成池 key；组内子物体随组复用
+  function makeImpactFx(kind) {
     const g = new THREE.Group();
     const ball = new THREE.Mesh(new THREE.SphereGeometry(kind === 'nonpen' ? 0.42 : 0.72, 10, 10),
       new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true }));
@@ -1685,22 +1885,41 @@ export function initPlayback(container, store) {
       new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, side: THREE.DoubleSide, transparent: true }));
     ring.rotation.x = -Math.PI / 2;
     g.add(ball); g.add(ring);
-    // ricochet：侧向 sparks（两段短射线沿弹道法向散开）
     const sparks = [];
     if (kind === 'ricochet') {
-      const dir = tr.to.clone().sub(tr.from).normalize();
-      const side = new THREE.Vector3(dir.z, 0, -dir.x).normalize();
-      for (const sgn of [1, -1]) {
+      // 侧向 sparks（两段短射线沿弹道法向散开）；局部偏移在 spawn 时按弹道方向设
+      for (const _sgn of [1, -1]) {
         const sp = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 2.2),
           new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true }));
-        // 局部偏移：群组已置于 tr.to，子物体不得再叠加一次世界坐标（否则成 2*tr.to + offset）
-        sp.position.set(side.x * sgn * 1.1, 0, side.z * sgn * 1.1);
-        // 盒体沿 +Z、朝水平 ±side：直接给 yaw，不依赖 lookAt 对父子变换的处理
-        sp.rotation.y = Math.atan2(side.x * sgn, side.z * sgn);
         g.add(sp); sparks.push(sp);
       }
     }
+    return { g, ball, ring, sparks };
+  }
+
+  function spawnImpact(tr) {
+    const kind = impactKind(tr.shot);
+    if (!kind) return;
+    const fx = fxTake('impact-' + kind, () => makeImpactFx(kind));
+    const g = fx.g, ball = fx.ball, ring = fx.ring, sparks = fx.sparks;
+    // 重置为出生状态（池复用：上一次的淡出/缩放必须归位）
+    ball.material.opacity = 1;
+    ring.material.opacity = 1; ring.scale.setScalar(1);
+    for (const sp of sparks) sp.material.opacity = 1;
+    if (kind === 'ricochet') {
+      const dir = tr.to.clone().sub(tr.from).normalize();
+      const side = new THREE.Vector3(dir.z, 0, -dir.x).normalize();
+      // 局部偏移：群组已置于 tr.to，子物体不得再叠加一次世界坐标（否则成 2*tr.to + offset）
+      for (let i = 0; i < sparks.length; i++) {
+        const sgn = i === 0 ? 1 : -1;
+        const sp = sparks[i];
+        sp.position.set(side.x * sgn * 1.1, 0, side.z * sgn * 1.1);
+        // 盒体沿 +Z、朝水平 ±side：直接给 yaw，不依赖 lookAt 对父子变换的处理
+        sp.rotation.y = Math.atan2(side.x * sgn, side.z * sgn);
+      }
+    }
     g.position.copy(tr.to);
+    g.visible = true;
     scene.add(g);
     // impact 属于 UI feedback transient：寿命按真实壁钟计，而不是 replay clock。
     // 这样 0.5x / 16x 下可读时长一致；暂停时自然淡出；seek 由 clearEffects 直接清空。
@@ -1715,9 +1934,7 @@ export function initPlayback(container, store) {
       const k = Math.max(0, Math.min(1, (now - im.bornMs) / im.durationMs));
       if (k >= 1) {
         scene.remove(im.g);
-        im.ball.geometry.dispose(); im.ball.material.dispose();
-        im.ring.geometry.dispose(); im.ring.material.dispose();
-        if (im.sparks) for (const sp of im.sparks) { sp.geometry.dispose(); sp.material.dispose(); }
+        fxGive('impact-' + im.kind, { g: im.g, ball: im.ball, ring: im.ring, sparks: im.sparks || [] });
         impacts.splice(i, 1);
         continue;
       }
@@ -1739,10 +1956,9 @@ export function initPlayback(container, store) {
       tr.mesh.position.copy(head.clone().add(tail).multiplyScalar(0.5));
       tr.mesh.lookAt(head);
       if (f >= 1) {
-        // 与 trajLines 同款释放：只 remove 不 dispose 会泄漏 GPU 侧 geometry/material
-        // （一场数百发 + 反复拖进度条，显存单调增长）
+        // 归还对象池（几何/材质留待复用）；真正的释放见 disposeFxPool（会话结束时一次）
         scene.remove(tr.mesh);
-        tr.mesh.geometry.dispose(); tr.mesh.material.dispose();
+        fxGive('tracer', tr.mesh);
         tracers.splice(i, 1);
         spawnImpact(tr);
       }
@@ -1751,7 +1967,7 @@ export function initPlayback(container, store) {
     for (let i = trajLines.length - 1; i >= 0; i--) {
       const tl = trajLines[i];
       if (T >= tl.fadeEnd) {
-        scene.remove(tl.mesh); tl.mesh.geometry.dispose(); tl.mesh.material.dispose();
+        scene.remove(tl.mesh); fxGive('traj', tl.mesh);
         trajLines.splice(i, 1); continue;
       }
       tl.mesh.material.opacity = T <= tl.until ? tl.base
@@ -1785,6 +2001,9 @@ export function initPlayback(container, store) {
       }
     }
     dmgEvents.sort((a, b) => a.t - b.t);
+    // kills 按 t 升序排一次：击杀流游标与比分游标都以「升序 + 单调推进」为前提
+    // （此前只在 burstEvents 的副本上排序，DATA.kills 自身依赖上游产出顺序）
+    if (DATA.kills) DATA.kills.sort((a, b) => a.t - b.t);
     burstEvents = (DATA.kills || []).map((k) => ({ t: k.t, eid: k.victim_eid }))
       .sort((a, b) => a.t - b.t);
     dmgPtr = 0; burstPtr = 0;
@@ -1792,31 +2011,51 @@ export function initPlayback(container, store) {
 
   function vehicleByEid(eid) { return V.find((x) => x.def.eid === eid); }
 
-  // 伤害飘字：受击车上方浮出 "-<lost>"，上浮 + 淡出（基准 1s × FX_SCALE）
-  function spawnFloatDmg(eid, hpLoss) {
-    const v = vehicleByEid(eid);
-    if (!v || !v.group.visible) return;
-    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128;
-    const c = cv.getContext('2d');
-    // 可读性优先：加粗黑描边 + 外阴影 + 深橙填充（浅黄在黑描边偏薄时，
-    // 落在亮色地形/白车上对比不足）
-    c.font = 'bold 76px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.lineWidth = 12; c.strokeStyle = 'rgba(0,0,0,.95)'; c.lineJoin = 'round';
-    c.shadowColor = 'rgba(0,0,0,.85)'; c.shadowBlur = 14;
-    const text = '-' + hpLoss;
-    c.strokeText(text, 128, 64);
-    c.shadowBlur = 0;                      // 填充不再叠阴影，保持笔画锐利
-    c.fillStyle = '#ff9f1a'; c.fillText(text, 128, 64);
+  // 伤害飘字：受击车上方浮出 "-<lost>"，上浮 + 淡出（基准 1s × FX_SCALE）。
+  // **挂在标签覆盖画布（labelScene）而非主场景**：标签是独立画布、永远叠在主场景之上，
+  // 主场景内的 renderOrder 对它无效——此前飘字画在名牌底下，数字被卡片挡住看不见。
+  // 同层后 1001 > 标签 999，数字恒压在名牌之上（深度语义与标签一致：depthTest 关闭）。
+  // 飘字是最高频的反馈事件（每次掉血一次）：canvas / CanvasTexture / Sprite 全部池化，
+  // 复用时只重画画布内容并置 needsUpdate（贴图上传仍会发生，但对象不再反复创建销毁）
+  function makeFloatDmgFx() {
+    const cv = document.createElement('canvas'); cv.width = DMG_TEX_W; cv.height = DMG_TEX_H;
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({
       map: tex, depthTest: false, depthWrite: false, transparent: true, opacity: 1,
     }));
     sp.renderOrder = 1001;                 // 高于车辆标签（999）
-    sp.scale.set(4, 2, 1);
+    return { sp, tex, cv, ctx: cv.getContext('2d') };
+  }
+
+  function spawnFloatDmg(eid, hpLoss) {
+    const v = vehicleByEid(eid);
+    if (!v || !v.group.visible) return;
+    const fx = fxTake('floatDmg', makeFloatDmgFx);
+    const cv = fx.cv, c = fx.ctx, tex = fx.tex, sp = fx.sp;
+    const cx = DMG_TEX_W / 2, cy = DMG_TEX_H / 2;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, DMG_TEX_W, DMG_TEX_H);
+    c.font = 'bold 100px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    const text = '-' + hpLoss;
+    // 三层（由外到内）保证任意地形/车体/名牌上都读得出：橙光晕 → 黑描边 → 亮橙填充。
+    // 固定 384×192 对小到手机、大到 4K 都够清晰（屏上数字约 1.6% 视口高，贴图字高 100px
+    // 始终过采样；覆盖层的 DPR 上限由主画布画质档决定）：
+    // 屏上数字约 1.6% 视口高 ≈ 最多 ~70 设备像素，贴图字高 100px 始终过采样。
+    c.shadowColor = 'rgba(255,140,0,.95)'; c.shadowBlur = 30;
+    c.fillStyle = '#000'; c.fillText(text, cx, cy);          // 光晕载体（自身被后两层覆盖）
+    c.shadowBlur = 0;
+    c.lineWidth = 16; c.strokeStyle = 'rgba(0,0,0,.95)'; c.strokeText(text, cx, cy);
+    c.fillStyle = '#ffb340'; c.fillText(text, cx, cy);
+    tex.needsUpdate = true;
+    // 池复用：出生状态归位（透明度/尺寸/可见性由 updateTransients 逐帧驱动）
+    sp.material.opacity = 1;
+    sp.visible = true;
+    sp.scale.set(DMG_ASPECT, 1, 1);        // 实际尺寸每帧按距离设定（屏上占比恒定，见 updateTransients）
     sp.position.copy(v.group.position); sp.position.y += 3.2;
-    scene.add(sp);
-    floatDmgs.push({ sp, tex, born: performance.now(), baseY: sp.position.y, group: v.group });
+    labelScene.add(sp);
+    floatDmgs.push({ sp, tex, cv, born: performance.now(), baseY: sp.position.y, group: v.group });
     // 同源触发 HP 条反馈（2D 三件套：飘字 + 幽灵 + 闪，同一 loss 事件驱动）
     const nowMs = performance.now();
     const maxHp = v.def.max_hp > 0 ? v.def.max_hp : 0;
@@ -1831,9 +2070,7 @@ export function initPlayback(container, store) {
   }
 
   // 击毁爆散：双层扩散环 + 中心球，基准 700ms × FX_SCALE 内扩张并淡出
-  function spawnBurst(eid) {
-    const v = vehicleByEid(eid);
-    if (!v || !v.group.visible) return;
+  function makeBurstFx() {
     const g = new THREE.Group();
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffa53a, transparent: true, depthWrite: false, side: THREE.DoubleSide,
@@ -1846,6 +2083,18 @@ export function initPlayback(container, store) {
     }
     const ball = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 10), mat.clone());
     g.add(ball);
+    return { g, rings, ball };
+  }
+
+  function spawnBurst(eid) {
+    const v = vehicleByEid(eid);
+    if (!v || !v.group.visible) return;
+    const fx = fxTake('burst', makeBurstFx);
+    const g = fx.g, rings = fx.rings, ball = fx.ball;
+    // 重置为出生状态（池复用：上一次的扩散/淡出必须归位）
+    for (const rr of rings) { rr.scale.setScalar(1); rr.material.opacity = 0.85; }
+    ball.scale.setScalar(1); ball.material.opacity = 0.7;
+    g.visible = true;
     g.position.copy(v.group.position);
     scene.add(g);
     burstFx.push({ g, born: performance.now(), rings, ball });
@@ -1858,35 +2107,41 @@ export function initPlayback(container, store) {
       if (now >= g.untilMs) {
         ghostByEid.delete(eid);
         const v = vehicleByEid(eid); if (v) v.labelDirty = true;
+        invalidate();   // 到期要重画标签（清幽灵段），否则脏帧会停在这一帧
       }
     }
     for (const [eid, until] of flashByEid) {
       if (now >= until) {
         flashByEid.delete(eid);
         const v = vehicleByEid(eid); if (v) v.labelDirty = true;
+        invalidate();
       }
     }
     for (let i = floatDmgs.length - 1; i >= 0; i--) {
       const f = floatDmgs[i];
       const k = (now - f.born) / (FLOAT_DMG_MS * FX_SCALE);
       if (k >= 1) {
-        scene.remove(f.sp); f.sp.material.dispose(); f.tex.dispose(); f.sp.material.map = null;
+        labelScene.remove(f.sp);
+        fxGive('floatDmg', { sp: f.sp, tex: f.tex, cv: f.cv, ctx: f.cv.getContext('2d') });
         floatDmgs.splice(i, 1);
         continue;
       }
-      // 跟随车辆水平漂移 + 上浮 + 线性淡出
+      // 跟随车辆水平漂移 + 上浮；尺寸按距离反算（屏上占比恒定，拉远看全场也读得出），
+      // 不透明度"先保持后淡出"（线性淡出会让数字来不及读）
       f.sp.position.x = f.group.position.x;
       f.sp.position.z = f.group.position.z;
       f.sp.position.y = f.baseY + k * 4.5;
-      f.sp.material.opacity = 1 - k;
+      const { pop, opacity } = floatDmgAnim(k);
+      const s = dmgWorldHeight(camera.position.distanceTo(f.sp.position), camera.fov) * pop;
+      f.sp.scale.set(s * DMG_ASPECT, s, 1);
+      f.sp.material.opacity = opacity;
     }
     for (let i = burstFx.length - 1; i >= 0; i--) {
       const b = burstFx[i];
       const k = (now - b.born) / (BURST_MS * FX_SCALE);
       if (k >= 1) {
         scene.remove(b.g);
-        for (const rr of b.rings) { rr.geometry.dispose(); rr.material.dispose(); }
-        b.ball.geometry.dispose(); b.ball.material.dispose();
+        fxGive('burst', { g: b.g, rings: b.rings, ball: b.ball });
         burstFx.splice(i, 1);
         continue;
       }
@@ -1900,14 +2155,15 @@ export function initPlayback(container, store) {
   }
 
   function clearTransients() {
+    // 归池而非 dispose：seek/teardown 后这些对象还要复用（真正的释放在 disposeFxPool）
     for (const f of floatDmgs) {
-      scene.remove(f.sp); f.sp.material.dispose(); f.tex.dispose();
+      labelScene.remove(f.sp);
+      fxGive('floatDmg', { sp: f.sp, tex: f.tex, cv: f.cv, ctx: f.cv.getContext('2d') });
     }
     floatDmgs.length = 0;
     for (const b of burstFx) {
       scene.remove(b.g);
-      for (const rr of b.rings) { rr.geometry.dispose(); rr.material.dispose(); }
-      b.ball.geometry.dispose(); b.ball.material.dispose();
+      fxGive('burst', { g: b.g, rings: b.rings, ball: b.ball });
     }
     burstFx.length = 0;
     ghostByEid.clear(); flashByEid.clear();   // 2D seek 同语义：清空且不补播
@@ -1944,15 +2200,18 @@ export function initPlayback(container, store) {
     killPtr = 0;
     while (killPtr < DATA.kills.length && DATA.kills[killPtr].t <= T) killPtr++;
   }
+  // 比分：击杀升序 → 单调游标增量推进（此前每 tick 全量扫描 + 每击杀一次 V.find，随击倒数增长）
+  let scorePtr = 0, score1 = 0, score2 = 0;
+  function resetScore() { scorePtr = 0; score1 = 0; score2 = 0; }
   function updateScore() {
-    let s1 = 0, s2 = 0;
-    for (const k of DATA.kills) {
-      if (k.t > T) continue;
+    while (scorePtr < DATA.kills.length && DATA.kills[scorePtr].t <= T) {
+      const k = DATA.kills[scorePtr++];
       const victim = V.find((x) => x.def.eid === k.victim_eid);
       if (!victim) continue;
-      if (victim.def.team === 1) s2++; else if (victim.def.team === 2) s1++;
+      if (victim.def.team === 1) score2++; else if (victim.def.team === 2) score1++;
     }
-    store.score1 = s1; store.score2 = s2;
+    if (store.score1 !== score1) store.score1 = score1;
+    if (store.score2 !== score2) store.score2 = score2;
   }
 
   // ---------- 名册 ----------
@@ -2013,6 +2272,7 @@ export function initPlayback(container, store) {
     v.group.rotation.order = 'YXZ';
     v.group.rotation.y = -yawAt(v, T);
     v.group.rotation.x = arrAt(v.def.hull_pitch, T);
+    v.group.rotation.z = -rollAt(v, T);   // 横滚（符号约定见 rollAt 注释）
     const rel = wrapPi(turretAbsAt(v, T) - yawAt(v, T));
     v.turretG.rotation.y = -rel;
     v.gunPivot.rotation.x = -gunPitchAt(v, T);
@@ -2036,6 +2296,11 @@ export function initPlayback(container, store) {
     drawLabel(v);
   }
 
+  // 按需渲染的脏标记：状态跳变（seek/换相机/开关节/尺寸变化/特效到期）必须显式置脏，
+  // 否则那一帧的静止状态会一直停留在旧画面上。
+  let frameDirty = true;
+  function invalidate() { frameDirty = true; }
+
   let winnerShown = false;
   function animate() {
     if (destroyed) return;
@@ -2043,8 +2308,9 @@ export function initPlayback(container, store) {
     if (!renderer) return;   // 渲染器惰性创建（首次 startPlayback）：数据加载完成前无场景可渲染
     const dt = Math.min(clock.getDelta(), 0.1);
     if (DATA && PLAYING) {
-      T += dt * SPEED;
-      if (T >= END) { T = END; setPlaying(false); }
+      // 推进 + 钳制合并到纯函数里（NaN/负增量不会污染时钟）；终点是比赛结束 END，不是录像流结束
+      T = advancePlaybackTime(T, END, dt * 1000, SPEED);
+      if (T >= END) setPlaying(false);
       tick();
     }
     // 相机
@@ -2077,14 +2343,28 @@ export function initPlayback(container, store) {
       } else followAnchor = null;
     } else followAnchor = null;
     clampCameraTarget();
-    controls.update();
+    const cameraMoved = controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
+    // ---------- 按需渲染（脏帧）----------
+    // 暂停且没有在飞特效、相机也静止时，跳过整帧工作（标签/基地/transient 重算 + 两次全屏
+    // render）。此前空闲也满速重绘，是移动端发热与笔记本耗电的第一来源。
+    const busy = PLAYING
+      || cameraMoved
+      || frameDirty
+      || tracers.length > 0 || impacts.length > 0 || floatDmgs.length > 0 || burstFx.length > 0
+      || ghostByEid.size > 0 || flashByEid.size > 0;
+    if (!busy) return;
+    frameDirty = false;
     updateLabels();
     updateBases();
     updateImpacts();      // wall-clock transient：暂停时也继续自然淡出
     updateTransients();
     renderer.render(scene, camera);
-    // 标签覆盖画布：同一相机，标签恒在主场景之上
-    if (labelRenderer) labelRenderer.render(labelScene, camera);
+    // 标签/飘字覆盖层：同 renderer 的第二次 render（不清屏、不写深度）。两者都是
+    // depthTest:false 的覆盖精灵，绘制顺序由 renderOrder 决定（飘字 1001 > 标签 999），
+    // 与独立画布时的视觉语义一致；省掉第二个 WebGL 上下文与两画布合成。
+    renderer.autoClear = false;
+    renderer.render(labelScene, camera);
+    renderer.autoClear = true;
   }
 
   function tick() {
@@ -2112,12 +2392,7 @@ export function initPlayback(container, store) {
       store.pointsFriend = pts.friend; store.pointsEnemy = pts.enemy;
     }
     // 顶栏：单基地目标存在性 + 占领进度（取 ≤T 最后一条；无目标证据整行不显示）
-    store.timer = gameTimerLabel(T);
-    store.time = T;
-    store.startTime = DATA.meta.t_start;
-    store.duration = END;
-    const f = (T - DATA.meta.t_start) / Math.max(0.001, END - DATA.meta.t_start);
-    if (!store.seeking) store.seekFrac = Math.round(f * 1000);
+    writeHud();
     if (!winnerShown && T >= END - 1e-3 && DATA.meta.winner_team) {
       winnerShown = true;
       const w = DATA.meta.winner_team, fr = DATA.meta.friendly_team;
@@ -2131,9 +2406,25 @@ export function initPlayback(container, store) {
   }
 
   // ---------- 控制 ----------
+  // HUD 降频：store.time / seekFrac 每帧都变会让页面壳（AgentReplay3D）每帧整页 VDOM patch
+  // 一次（顶栏 + 双名册 + 击杀流 + 传输控件）。3D 平滑度来自场景时钟，HUD 与进度条按
+  // ~10Hz 更新即可；seek / 会话开始等状态跳变时 force 立即补一次，语义不丢。
+  const HUD_INTERVAL_MS = 100;
+  let hudWrittenMs = -Infinity;
+  function writeHud(force = false) {
+    if (!DATA) return;
+    const now = performance.now();
+    if (!force && now - hudWrittenMs < HUD_INTERVAL_MS) return;
+    hudWrittenMs = now;
+    store.timer = gameTimerLabel(T);
+    store.time = T;
+    const f = (T - DATA.meta.t_start) / Math.max(0.001, END - DATA.meta.t_start);
+    if (!store.seeking) store.seekFrac = Math.round(f * 1000);
+  }
   function setPlaying(p) {
     PLAYING = p;
     store.playing = p;
+    invalidate();
   }
   function seekTo(t) {
     T = Math.max(DATA.meta.t_start, Math.min(END, t));
@@ -2144,17 +2435,22 @@ export function initPlayback(container, store) {
     dmgPtr = firstIndexAfter(dmgEvents, T);
     burstPtr = firstIndexAfter(burstEvents, T);
     rebuildFeed();
+    resetScore();     // 比分为单调游标，seek 后必须从头推进（否则分数不回落）
     winnerShown = false; store.banner = null;
     tick();
+    writeHud(true);   // seek 是状态跳变：立即把 HUD/进度条对齐到新 T（不等下一个降频窗口）
+    invalidate();
   }
   function setFollow(eid) {
     FOLLOW_EID = (FOLLOW_EID === eid) ? 0 : eid;
     if (FOLLOW_EID) { setCam('follow'); } else { setCam('free'); }
+    invalidate();
   }
   function setCam(mode) {
     CAM = mode;
     store.cam = mode;
     controls.enabled = true;
+    invalidate();
     if (mode === 'top') {
       FOLLOW_EID = 0;
       const { cx, cz, ext } = WORLD_CENTER;
@@ -2164,7 +2460,8 @@ export function initPlayback(container, store) {
       FOLLOW_EID = 0;
     }
   }
-  function setSpeed(s) { SPEED = s; store.speed = s; }
+  // 只接受档位表内的值：面板按钮与 URL 参数都不该把场景带进"1.37×"这种未定义速度
+  function setSpeed(s) { if (!isPlaybackSpeed(s)) return; SPEED = s; store.speed = s; }
 
   // 键盘（空格 / ←→）由页面经 usePlaybackTransport 统一处理（与 2D 同一套键位与输入框防误触），
   // 场景内核不再自挂全局 keydown：原实现不区分输入框，会吞掉文本框里的空格。
@@ -2196,20 +2493,19 @@ export function initPlayback(container, store) {
 
   // 动态层（弹道/弹着点/轨迹线）清除：与 seekTo 共用一条 dispose 路径
   function clearEffects() {
+    // 与 clearTransients 同款：归池（对象留待复用），会话结束时由 disposeFxPool 统一释放
     for (const tr of tracers) {
       scene.remove(tr.mesh);
-      tr.mesh.geometry.dispose(); tr.mesh.material.dispose();
+      fxGive('tracer', tr.mesh);
     }
     tracers.length = 0;
     for (const im of impacts) {
       scene.remove(im.g);
-      im.ball.geometry.dispose(); im.ball.material.dispose();
-      im.ring.geometry.dispose(); im.ring.material.dispose();
-      if (im.sparks) for (const sp of im.sparks) { sp.geometry.dispose(); sp.material.dispose(); }
+      fxGive('impact-' + im.kind, { g: im.g, ball: im.ball, ring: im.ring, sparks: im.sparks || [] });
     }
     impacts.length = 0;
     for (const tl of trajLines) {
-      scene.remove(tl.mesh); tl.mesh.geometry.dispose(); tl.mesh.material.dispose();
+      scene.remove(tl.mesh); fxGive('traj', tl.mesh);
     }
     trajLines.length = 0;
     clearTransients();   // 战斗反馈（飘字/爆散/幽灵段/受击闪）：seek 后不补播
@@ -2222,6 +2518,7 @@ export function initPlayback(container, store) {
   function teardownSession() {
     sessionGen++;
     clearEffects();
+    disposeFxPool();   // 特效池（几何/材质/飘字画布贴图）随会话一次性释放
     if (boundaryGroup) {
       const shared = boundaryGroup.userData.sharedMaterial;
       if (shared) shared.dispose();
@@ -2248,6 +2545,7 @@ export function initPlayback(container, store) {
       if (o) { scene.remove(o); disposeObject3D(o); }
     }
     mapPlane = null; terrainMesh = null; mapScenery = null; groundMesh = null; gridHelper = null;
+    sceneryMatCache.clear();   // 材质已随 mapScenery dispose，缓存须清空（勿复用已 dispose 实例）
     if (mapTexture) { mapTexture.dispose(); mapTexture = null; }
     if (groundLayers) { for (const k in groundLayers.texs) groundLayers.texs[k]?.dispose?.(); }
     groundLayers = null;
@@ -2370,8 +2668,13 @@ export function initPlayback(container, store) {
     shotPtr = 0; killPtr = 0;
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
     if (glbOn) applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
+    // 会话常量一次写清（此前每 tick 重写，值不变不会触发响应式，但语义上属会话级）
+    store.startTime = DATA.meta.t_start;
+    store.duration = END;
     setPlaying(true);
     tick();
+    writeHud(true);   // 会话开始：立即对齐 HUD（不等降频窗口）
+    invalidate();
   }
 
   // 初始化：事件绑定 + 动画循环（渲染器惰性创建，画质选择先于首帧定型）
@@ -2389,8 +2692,14 @@ export function initPlayback(container, store) {
     seekBy: (delta) => { if (DATA) seekTo(T + delta); },
     setCam,
     setFollow,
-    setGlb: (on) => { if (Q.allowGlb || !on) applyGlbToggle(on); },
-    setLabels: (on) => { store.labelsOn = on; if (labelScene) labelScene.visible = on; },
+    setGlb: (on) => { if (Q.allowGlb || !on) applyGlbToggle(on); invalidate(); },
+    // 标签开关只切名牌精灵，**不整层隐藏**：覆盖层上还有伤害飘字（1001 > 999），
+    // 它是战斗反馈而非名牌——关名牌时数字仍要可见（updateLabels 每帧也会重算同一条件）。
+    setLabels: (on) => {
+      store.labelsOn = on;
+      for (const v of V) if (v.label) v.label.visible = on && v.group.visible;
+      invalidate();
+    },
     setQuality,
     qualityPresets: QUALITY_PRESETS,
     destroy() {
@@ -2407,10 +2716,6 @@ export function initPlayback(container, store) {
         renderer.dispose();
         try { renderer.forceContextLoss(); } catch (_) {}
         renderer.domElement.remove();
-      }
-      if (labelRenderer) {
-        labelRenderer.dispose();
-        labelRenderer.domElement.remove();
       }
     },
   };

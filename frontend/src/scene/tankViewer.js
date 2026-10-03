@@ -12,7 +12,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { poseFromYPR, neutralizeDefaultMetalness } from './glbRig.js'
+import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
     fetchTankData,
     fetchTankFilter,
@@ -1071,8 +1071,15 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         }
 
         function clearModels() {
-            if (tankModel) { scene.remove(tankModel); tankModel = null; }
-            if (armorModel) { scene.remove(armorModel); armorModel = null; }
+            // 释放 GPU 资源：此前只 scene.remove + 置 null，几何/材质/贴图全留在显存里——
+            // 反复切换坦克或复现射击时显存单调增长。disposeDetachedModel 是同文件既有助手
+            // （此前只用于丢弃「迟到的/失败的」gltf）。
+            if (tankModel) { scene.remove(tankModel); disposeDetachedModel(tankModel); tankModel = null; }
+            if (armorModel) { scene.remove(armorModel); disposeDetachedModel(armorModel); armorModel = null; }
+            if (window.__shooterModel) {
+                scene.remove(window.__shooterModel); disposeDetachedModel(window.__shooterModel);
+                window.__shooterModel = null;
+            }
             _armorPrefixCache = null;   // 装甲模型重建后前缀缓存失效
             if (trajGroup) { scene.remove(trajGroup); trajGroup = null; }
             if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
@@ -1170,6 +1177,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 // 老式车（无 metallicRoughness 贴图）的金属度会被 three.js 取 glTF 默认 1.0
                 // 当全金属渲染，无环境贴图下整车发黑（见 glbRig.js）
                 neutralizeDefaultMetalness(tankModel);
+                // 同回放：Maus 的 mask_01 是 gun_01_mask 的几何副本，rig 不摆位它会留在原地
+                dropDuplicateGunMasks(tankModel);
                 scene.add(tankModel);
                     // ?debug=1：标注模型原点（=车体原点=场景原点）与两个包围盒中心（验证定位）
                 if (QP.get('debug') === '1') {
@@ -3127,9 +3136,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             camera = new THREE.PerspectiveCamera(50, view.clientWidth / view.clientHeight, 0.1, 1000);
             camera.position.set(2.5, 3.2, -8);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+            // preserveDrawingBuffer 不再开启：本查看器没有任何像素回读（无 toDataURL/readPixels/
+            // 录屏），开启它只会阻止浏览器做缓冲区交换优化（每帧多一次全分辨率拷贝）。
+            renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(view.clientWidth, view.clientHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
+            // DPR 上限 2：此前直接取 devicePixelRatio（3× 屏上按 3× 全屏渲染，像素数 ×2.25）
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
             renderer.localClippingEnabled = true;
             view.appendChild(renderer.domElement);
             renderer.toneMapping = THREE.ACESFilmicToneMapping;

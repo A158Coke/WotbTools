@@ -2,8 +2,9 @@
 
 > Producer: [`fanypcd/WoT-Blitz-Agent`](https://github.com/fanypcd/WoT-Blitz-Agent)（MIT）
 > · 状态：生产消费契约。WotbTools 当前通过 `deploy/agent/source.json` 锁定
->   上游 Release `v0.3.10` / commit `5029e1031393df4e1502b9e626d2e37fa248104b`，
+>   上游 Release `v0.3.11` / commit `73ea422a774fb6af83eb75ff83b146ba7f5f4c55`，
 >   并校验 Release WASM asset SHA-256；升级不得浮动跟随 upstream `main`。
+>   pin 的 artifact identity SSOT 始终是 `deploy/agent/source.json`，本文档只描述其形状与语义。
 >
 > **性质声明**：本文档规定预期的公开消费 DTO 形状与能力边界，
 > 供 WotBTools 消费侧对表。它**不是协议证据主张**：
@@ -94,21 +95,26 @@ WotBTools
   `gun_pitch` 走车体 pitch 兜底、无俯仰极限锚定（质量标记如实透传）；
   `map_name` 为解析器枚举名（前端按 `map_id` 键控）。
 
-## 4b. Playback contract v2（上游 v0.2.0：Supremacy / 点数 / 瞄准帧）
+## 4b. Playback contract v2（上游 v0.2.0：Supremacy / 点数）
 
 - `PlaybackData.version` 1 → **2**（版本显式门禁：错版 WASM 在
-  `validateAgentPlayback` 拒绝，不允许静默半残解析）。
+  `validateAgentPlayback` 拒绝，不允许静默半残解析）。**v0.3.11 起 version 仍为 2**：
+  该版本只做字段补正与删除（见版本记录），不构成 breaking。
 - 新增字段（skip-when-empty：非争霸场缺省，消费端 `?:` 可选）：
   - `supremacy_bases[]`: `{clock, base_id(0..3=A..D), owner_team?, capturing_team?, capture_progress?}`
     ——wrapper12/root11 sparse 更新重建；absent=维持前值、显式 0=清空、占领中 owner
     变更清 capture。seek 消费 = 取 ≤t 每基地最后一条。
+    **占领中断 = 进度作废**（v0.3.11）：车辆出圈 / 被击毁时服务端发**双缺省块**，进度与
+    占领方一起归零（不再保留最后一次进度）。重建实现据此把缺省行解读为显式清空，
+    而不是「维持前值」。
   - `supremacy_points[]`: `{clock, team, points}` ——wrapper13/root12 真实广播，
     消费取 ≤t 最后值；禁止按游戏规则推算、禁止由点数反推基地归属。
-  - `aim_frames[]`: `{time_sec, world_yaw, world_pitch, ray_point}` ——Type39 投影，
-    **仅作者/recorder**；缺帧省略不外推；存活期按 deaths 门控；禁止给其他车伪造。
 - provenance 全文：上游 `docs/replay-contract-v2-supremacy-type39.md`。
 - gameplay mode 纪律：`arenaBonusType` 非 objective mode 权威；Supremacy 存在性
   以 `supremacy_bases` 非空为强事实；Assault/Encounter 多 candidate 无证据 fail-closed。
+- **历史字段 `aim_frames[]` 已移除**（v0.3.11）：零消费方且占 Playback JSON 大量体积；
+  raw Type39 仍由射击复现相关能力保留。它不是当前 producer output——消费方不得再读，
+  也不得据此在任何路径上做「有/无」判断。
 
 ## 4c. 单基地目标（Assault / Encounter；上游 v0.3.1）
 
@@ -116,11 +122,17 @@ WotBTools
 
 - `assault_objective_present: bool` —— 单基地目标是否存在，**独立于是否已有占领进度**。
   缺省/`false` = 无已证实的单基地目标（缺省按 false 解读，与 `assaultObjectivePresent` 同义）。
-  **判据**：目标族（`field2==1`、`field1 ∈ {1,2}`）发出过**裸初始化对以外的**字段
-  （`field3` 或 `field4`）。裸初始化对 `1=1,2=1` + `1=2,2=1` 是**通用广播**，普通对局
-  同样会发（62 份真实样本里 8 份 Regular/TrainingRoom/Any 只发这一对），故不得据此判定。
+  **判据 = 目标族存在性**：wrapper8/root8 目标族出现（`field2 == 1` 且 `field1 ∈ {1,2}`）即为
+  `true`，**不要求**该族随后发出进度或其它字段。
+  也就是说「**有目标但全程没人进入基地**」仍必须 `"assault_objective_present": true`——
+  该字段回答的是「这一场有没有单基地目标」，不是「有没有发生过占领」。
+  （v0.3.11 为字段契约补正：producer 实现从「要求进度字段」改为与本文档既有定义一致的
+  存在性判定；历史结论见版本记录，当前 contract 只有这一种定义。）
 - `assault_bases[]`: `{clock, progress(0..100)}` —— 单基地占领进度时间线；无该族（非
-  单基地场次）为空。seek 消费 = 取 ≤t 最后一条；**不施加单调性**（回落/重置原样保留）。
+  单基地场次）为空。seek 消费 = 取 ≤t 最后一条。
+  **占领中断 = 进度作废**（v0.3.11）：出圈 / 被击毁后服务端用双缺省块表达重置，重建结果是
+  进度归零（序列出现回落），不再是「维持最后一次进度」；因此消费端**不得施加单调性**，
+  也不得把回落当解析噪声抹平（回落/重置原样保留）。
 - **`field1` 不是进度族判别子**：真实回放中携带 `field3` 的族会在 `field1=1`/`field1=2`
   之间切换（Yukon 两族交替、Malinovka 仅 2、**遭遇战仅 1**、Hellas 评级战 13 条）。
   锁 `field1=2` 会丢事件甚至得到空时间线。`field1` 语义（进度所属方）仍未闭合。
@@ -156,6 +168,17 @@ unknown，不允许恢复服务端解析或为敌方推算装填状态。
 - `reload_effective` 对 **autoreloader 多段装填 profile** 仍可能整场为空（method 35 当前
   只解码 `[eid][single duration]` 形状）。这属于**上游 producer 语义**，消费方不得据坦克
   型号/burst size 推断，也不得用 shots 反推时长；需要时在上游修并发新 Release。
+
+## 4e. 车体横滚（`vehicles[].hull_roll`，PlaybackData additive；上游 v0.3.11）
+
+- `hull_roll?: number[]` —— 与 `hull_pitch` / `hull_yaw` 同形的列式逐帧数组，单位**弧度**，
+  N 对齐 playback grid（与 `vehicles[]` 其它列同长）。
+- **来源与 `hull_pitch` 不同，不得互相代用**：`hull_pitch` 是渲染滤波后的输出，
+  `hull_roll` 取 **raw type=10 的最近邻采样**（片段内不插值，避免在 AoI 间隙两端之间
+  编造姿态）。缺帧即该帧缺省，**不跨 AoI gap 外推**。
+- 消费方契约：字段缺失（旧产物 / 该场无数据）时按 `0`（= 水平）渲染；
+  **不得**用 `hull_pitch` 兜底成 roll，也不得由地形/坡度反推。
+- 与 `frontend/src/api/agent-replay-facets.ts` 的 `hull_roll?: number[]` 逐字对应。
 
 ## 5. 射击复现能力（ShotReplays）
 
@@ -229,6 +252,8 @@ canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`heal
   `field1` 限制（真实回放中携带进度的族在 `field1=1/2` 间切换）、`assaultObjectivePresent`
   收紧为「目标族发出裸初始化对以外的字段」（裸初始化对是通用广播，8/62 普通对局同样发出）；
   新增 `assault_bases[]` 与 `assault_objective_present`（契约见 §4c）。
+  **注**：上一条「收紧为要求进度字段」的判据已于 v0.3.11 修正回字段契约既有的
+  **目标族存在性**（见 v0.3.11 记录 3 与 §4c）——此处保留为「当时是什么」。
   **P2**：`tankNamesJson` 可选注入、第 4 入口 `parseAiReview`、AiReview `Shot.target_eid`
   改用弹道自带身份、`PlaybackData` 版本注释订正；Release 附件随 tag 发布
   （`wotb-replay-wasm-v0.3.1.zip`）。
@@ -253,3 +278,13 @@ canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`heal
   （后续 method29 在物理上是什么，上游仍未定，此处只记录身份规则）；
   作者严格路径在同 victim / 同时窗存在多个 type32 segment 时优先以 `method8.hash6 ↔ type32.hash6`
   做 interaction 关联，重复 method8 广播按 hash 去重，证据不足继续 fail-fast。WotbTools production pin 同步到该 Release。
+- v0.3.11（2026-10-03，agent commit `73ea422a`，fanypcd/WoT-Blitz-Agent#13）：
+  1. **Supremacy 占领中断归零**：占领中止（车辆出圈 / 被击毁）以双缺省块编码，重建不再
+     保留最后一次进度与占领方（`supremacy_bases` 语义见 §4b）；
+  2. **Assault 占领重置**：同上，单基地进度在中断后作废（`assault_bases` 语义见 §4c）；
+  3. **`assault_objective_present` 字段契约补正**：producer 实现改为与本文档既有定义一致
+     的**目标族存在性**判定（出现即 `true`，不要求进度字段）；
+  4. **移除 `aim_frames`**：零消费方且占 Playback JSON 大量体积；`PlaybackData.version`
+     保持 2（additive 删除 + 字段补正，见 §4b）；
+  5. **additive `vehicles[].hull_roll`**：车体横滚列（raw type=10 最近邻，见 §4e）。
+  WotbTools production pin 同步到该 Release（shot reconstruction 的 raw Type39 能力不受影响）。
