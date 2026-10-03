@@ -1,6 +1,7 @@
 <script setup>
 import { shallowRef } from 'vue'
 import PlaybackVehicleLabel from './PlaybackVehicleLabel.vue'
+import { LABEL_OCCLUDED_OPACITY } from '../utils/labelLayout.js'
 
 defineProps({
   labelPrefs: { type: Object, required: true },
@@ -12,6 +13,9 @@ defineProps({
 const labels = shallowRef([])
 const elements = new Map()
 const anchors = new Map()
+// 软遮挡下限的唯一来源在 utils/labelLayout.js；这里只做「常量 → CSS 变量」投影，
+// CSS 不再自带数值（否则同一契约又散成两处）。
+const occludedStyle = { '--pb-label-occluded-opacity': String(LABEL_OCCLUDED_OPACITY) }
 function paint(el, anchor) {
   if (!el || !anchor) return
   el.hidden = !anchor.visible
@@ -32,7 +36,7 @@ defineExpose({ setLabels, setAnchor, clear })
 </script>
 
 <template>
-  <div class="vehicle-label-overlay" :hidden="hidden" data-testid="vehicle-label-overlay">
+  <div class="vehicle-label-overlay" :hidden="hidden" :style="occludedStyle" data-testid="vehicle-label-overlay">
     <div v-for="row in labels" :key="row.eid" :ref="el => bind(row.eid, el)"
       class="vehicle-label-anchor" :data-eid="row.eid" hidden>
       <PlaybackVehicleLabel
@@ -50,5 +54,5 @@ defineExpose({ setLabels, setAnchor, clear })
 .vehicle-label-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: var(--pb-z-canvas); }
 .vehicle-label-overlay[hidden], .vehicle-label-anchor[hidden] { display: none; }
 .vehicle-label-anchor { position: absolute; left: 0; top: 0; pointer-events: none; }
-.label-occluded { opacity: .35; }
+.label-occluded { opacity: var(--pb-label-occluded-opacity, .35); }
 </style>

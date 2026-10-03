@@ -95,7 +95,11 @@ const classes = computed(() => ({
 .pb-label-player { max-width: var(--pb-label-player-width); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .name-tooltip { pointer-events: auto; }
 .label-destroyed .pb-labels { color: var(--color-playback-label-destroyed); text-decoration: line-through; }
-.label-last-known .pb-labels, .pb-hp-lastknown { opacity: .55; }
+/* §25 last-known：**只弱化文字两行**（.65），HP HUD / 血条等背景块保持正常强度。
+   不要写成整块 opacity（那会把背景一起淡化，是重构时丢过一次的契约）。 */
+.label-last-known .pb-label-tank,
+.label-last-known .pb-label-player { opacity: .65; }
+.label-last-known .pb-hp-hud { opacity: .55; }
 .pb-hp-hud { display: flex; flex-direction: column; align-items: center; gap: var(--space-0); }
 .hp-values { display: flex; gap: var(--space-1); font-variant-numeric: tabular-nums; }
 .pb-hp-num { color: var(--color-playback-label-text); }

@@ -1294,9 +1294,10 @@ export function initPlayback(container, store, labelOverlay = null) {
   }
 
   // ---------- 标签软遮挡（fast-pass）----------
-  // camera → 标签锚点做一次视线检测：先撞地形或静态场景 → 弱化到
-  // LABEL_BLOCKED_OPACITY；否则全不透明度。**永不隐藏**（下限 0.35，不是 0）——
-  // 标签始终可见，被挡时只是明显变淡。只把地形与静态场景当 blocker，不含其他车辆。
+  // camera → 标签锚点做一次视线检测：先撞地形或静态场景 → 该车标签被标记为 occluded。
+  // 具体弱化强度由呈现层负责（3D 覆盖层按 utils/labelLayout.js 的
+  // LABEL_OCCLUDED_OPACITY 加 `.label-occluded`）——**永不隐藏**，被挡只是明显变淡。
+  // 只把地形与静态场景当 blocker，不含其他车辆。
   //
   // 成本控制（不让每个标签每帧都检测）：
   //   · 地形用高度场解析步进（LABEL_OCCL_SAMPLES 次 sampleHeight），不 raycast

@@ -7,6 +7,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import VehicleMarker from './VehicleMarker.vue'
 import markerSource from './VehicleMarker.vue?raw'
+// 标签呈现层（2D/3D 共享）：部分标签契约现在住在这里，不再是 marker 的内联样式
+import labelSource from './PlaybackVehicleLabel.vue?raw'
 
 const genericMarker = {
   vehicle: { accountId: 1, playerName: 'You', tankId: 1, tankName: 'Maus' },
@@ -291,13 +293,17 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
   it('last-known：模型淡化 + 仅弱 outline（无 glow）；label 文字弱化、background 正常', () => {
     const src = markerSource
     expect(src).toMatch(/\.pb-last-known\.pb-friendly \.pb-graphics \{[^}]*opacity: 0\.35[^}]*\}/)
-    // PR4 §25：label 块只弱化文字（两行都淡化）、background 保持正常
-    expect(src).toMatch(/\.pb-last-known \.pb-labels \.pb-label-tank,[\s\S]*?opacity: \.65[^}]*\}/)
-    expect(src).toContain('.pb-last-known .pb-labels .pb-label-player')
     expect(src).not.toContain('.pb-last-known { opacity: .3') // root opacity 已移除（✕/name 不被连带淡化）
+    // PR4 §25 的 label 弱化规则随呈现层迁到共享组件 PlaybackVehicleLabel.vue：
+    // 只弱化文字两行（.65），HP HUD / 血条保持正常——契约本身不变，位置变了。
+    expect(labelSource).toMatch(/\.label-last-known \.pb-label-tank,\s*\n\s*\.label-last-known \.pb-label-player \{ opacity: \.65; \}/)
+    expect(labelSource, 'last-known 不得整块淡化（会连背景一起弱化）')
+      .not.toMatch(/\.label-last-known \.pb-labels \{[^}]*opacity/)
     const w = mountMarker({ ...dedicatedMarker, friendly: true, lastKnown: true, destroyed: false })
     expect(w.find('button').classes()).toContain('pb-last-known')
     expect(w.find('button').classes()).toContain('pb-friendly')
+    // 呈现层把 last-known 传成同一个语义类
+    expect(w.find('[data-test="playback-vehicle-label"]').classes()).toContain('label-last-known')
   })
 
   it('selected：红色倒三角渲染（label 上方、浮动动画、reduced-motion 停止）', () => {
@@ -343,7 +349,8 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
   it('destroyed ✕ 与 label 块保持 inverse-scale（不随地图 zoom 异常放大）；✕ 无 filter/opacity', () => {
     const w = mountMarker({ ...genericMarker, destroyed: true, overlayInverseScale: 'scale(0.5)', overlayInverse: 0.5 })
     expect(w.find('.pb-death').attributes('style')).toContain('translate(-50%, -50%) scale(0.5)')
-    expect(w.find('.pb-labels').attributes('style')).toContain('translateX(-50%) scale(0.5)')
+    // 反缩放宿主从 .pb-labels 上移到 .pb-presentation（内含共享呈现组件）
+    expect(w.find('.pb-presentation').attributes('style')).toContain('translateX(-50%) scale(0.5)')
     // ✕ 不套用 .pb-graphics 的 grayscale/opacity（自身规则不含 filter/opacity）
     expect(markerSource).not.toMatch(/\.pb-death[^}]*filter:/)
     expect(markerSource).not.toMatch(/\.pb-death[^}]*opacity:/)
@@ -395,25 +402,34 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
     expect(two.find('.pb-labels').element.contains(two.find('.pb-label-tank').element)).toBe(true)
   })
 
-  it('§29 team 文字色：friendly 用 --pb-team-text、enemy 用 --pb-enemy-text（根元素 CSS vars）', () => {
-    const src = markerSource
-    expect(src).toContain('.pb-friendly .pb-label-tank,')
-    expect(src).toContain('color: var(--pb-team-text, #fff);')
-    expect(src).toContain('.pb-enemy .pb-label-tank,')
-    expect(src).toContain('color: var(--pb-enemy-text, #ff8d8d);')
+  /**
+   * §29 team 文字色：语义类由 marker 判定（friendly/enemy），色值由**共享呈现组件**给出。
+   *
+   * 说明（如实记录，不粉饰）：规则仍是 `var(--pb-team-text, <token>)`，而
+   * `--pb-team-text` 在本仓**从未被任何地方定义**——所以实际生效的一直是 fallback。
+   * 迁到共享组件时 fallback 从硬编码色换成了设计 token（`--color-team-ally/enemy`），
+   * 这是本次重构带来的实际改进（色值回到 token 体系）；那个死变量仍然存在。
+   */
+  it('§29 team 文字色：friendly/enemy 语义类 → 设计 token（fallback 位）', () => {
+    expect(markerSource).toContain("'pb-friendly': st.value.friendly === true")
+    expect(markerSource).toContain("'pb-enemy': st.value.friendly === false")
+    expect(labelSource).toMatch(/\.label-friendly \{ color: var\(--pb-team-text, var\(--color-team-ally\)\); \}/)
+    expect(labelSource).toMatch(/\.label-enemy \{ color: var\(--pb-enemy-text, var\(--color-team-enemy\)\); \}/)
+    // 运行期：friendly 车拿到 label-friendly 类（语义类由 marker 判定后传入）
+    const w = mount(VehicleMarker, { props: { marker: { ...genericMarker, friendly: true }, selected: false, label } })
+    expect(w.find('[data-test="playback-vehicle-label"]').classes()).toContain('label-friendly')
   })
 
   it('§30 tooltip：只有 PlayerName 截断（scrollWidth > clientWidth）才显示完整名 title', async () => {
     const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label: { ...label, showPlayer: true } } })
     await new Promise((r) => setTimeout(r, 0)) // nextTick 测量
     expect(w.find('.pb-label-player').attributes('title')).toBeUndefined() // 未截断 → 无 tooltip
-    // 模拟截断：scrollWidth > clientWidth
+    // 模拟截断：scrollWidth > clientWidth，然后由呈现层的 watch 重测（依赖 playerName）
     Object.defineProperty(w.find('.pb-label-player').element, 'scrollWidth', { value: 200, configurable: true })
     Object.defineProperty(w.find('.pb-label-player').element, 'clientWidth', { value: 60, configurable: true })
-    // watch 依赖（label 对象）变化触发重测
-    await w.setProps({ label: { ...label, showPlayer: true } })
+    await w.setProps({ marker: { ...genericMarker, playerName: 'You (moved)' } })
     await new Promise((r) => setTimeout(r, 0))
-    expect(w.find('.pb-label-player').attributes('title')).toBe('You')
+    expect(w.find('.pb-label-player').attributes('title')).toBe('You (moved)')
   })
 
   it('§32/§33：碰撞永不隐藏 PlayerName——无 v-show、无 fade 类、无 fade CSS', () => {
@@ -428,7 +444,8 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
 
   it('§34 tankDy：标签块 bottom 上移（tankDy×inv），selected 三角同步上移；车体不受影响', () => {
     const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: true, label: { ...label, tankDy: -10 } } })
-    const labelsStyle = w.find('.pb-labels').attributes('style') || ''
+    // 定位/位移宿主是 .pb-presentation（内含共享呈现组件）
+    const labelsStyle = w.find('.pb-presentation').attributes('style') || ''
     expect(labelsStyle).toContain('bottom: calc(100% + -8px)') // 2 + (-10)×1
     const markStyle = w.find('.pb-selected-mark').attributes('style') || ''
     expect(markStyle).toContain('bottom: calc(100% + 9px)') // 19 - 10

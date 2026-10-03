@@ -850,7 +850,7 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     await flushPromises()
     const a = wrapper.find('[data-test="pb-marker-1001"]')
     const b = wrapper.find('[data-test="pb-marker-2001"]')
-    const labelsStyle = (m) => (m.find('.pb-labels').attributes('style') || '')
+    const labelsStyle = (m) => (m.find('.pb-presentation').attributes('style') || '')
     // 标签位移为有限 screen px（稳定 lane），不产生 display:none
     expect(Number.isFinite(parseFloat(labelsStyle(a).match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || 'NaN'))).toBe(true)
     expect(Number.isFinite(parseFloat(labelsStyle(b).match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || 'NaN'))).toBe(true)
@@ -1757,7 +1757,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await openPanel(wrapper, 'display')
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
-    const labelsStyle = () => wrapper.find('[data-test="pb-marker-1001"]').find('.pb-labels').attributes('style') || ''
+    const labelsStyle = () => wrapper.find('[data-test="pb-marker-1001"]').find('.pb-presentation').attributes('style') || ''
     expect(labelsStyle()).toContain('scale(1)') // 1× 反缩放
     // 2× zoom：wheel 锚点 = 车辆所在容器 px（(96,646)，1× 时内容 (95.75,646.2)）——
     // 避免 zoom 的 pan 把车辆移出 viewport 被裁剪（裁剪是真实机制，但本测试验证的是 zoom 后 collision）

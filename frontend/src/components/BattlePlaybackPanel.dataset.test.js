@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
+import BattlePlayback from './BattlePlayback.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 
 vi.mock('vue-i18n', () => ({
@@ -86,14 +87,25 @@ describe('BattlePlaybackPanel local playback parse', () => {
 
   it('passes Playback reload telemetry to the 2D consumer and discards it on file changes', async () => {
     const reloadTelemetry = { timeOrigin: 40, friendlyTeam: 1, vehicles: [{ eid: 7, account_id: 42, team: 1 }], reloads: [] }
-    playback.parseLocalPlayback.mockResolvedValueOnce({ dataset: dataset(), overview: null, reloadTelemetry })
+    // 两点注意：
+    //  1. BattlePlayback 受 `v-if="pbOverview"` 保护（没有地图副视图就不挂载播放器），
+    //     所以必须给 overview，否则找不到组件；
+    //  2. BattlePlayback.vue 没有 name 选项，`findComponent({ name })` 恒为空
+    //     ——按组件定义查找；stub 也带 data-test="pb-stub" 便于断言已挂载。
+    playback.parseLocalPlayback.mockResolvedValueOnce({
+      dataset: dataset(), overview: { mapCode: 'holland-overview' }, result: {}, reloadTelemetry,
+    })
     const wrapper = mountPanel()
     await flushPromises()
-    expect(wrapper.findComponent({ name: 'BattlePlayback' }).props('reloadTelemetry')).toEqual(reloadTelemetry)
-    playback.parseLocalPlayback.mockResolvedValueOnce({ dataset: dataset(), overview: null, reloadTelemetry: null })
+    expect(find(wrapper, 'pb-stub').exists()).toBe(true)
+    expect(wrapper.findComponent(BattlePlayback).props('reloadTelemetry')).toEqual(reloadTelemetry)
+    playback.parseLocalPlayback.mockResolvedValueOnce({
+      dataset: dataset(), overview: { mapCode: 'holland-overview' }, result: {}, reloadTelemetry: null,
+    })
     await wrapper.setProps({ file: new File(['b'], 'b.wotbreplay') })
     await flushPromises()
-    expect(wrapper.findComponent({ name: 'BattlePlayback' }).props('reloadTelemetry')).toBeUndefined()
+    // 换文件必须丢弃上一场的装填遥测（否则会把 A 场的装填画到 B 场上）
+    expect(wrapper.findComponent(BattlePlayback).props('reloadTelemetry')).toBeUndefined()
     wrapper.unmount()
   })
 
