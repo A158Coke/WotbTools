@@ -128,6 +128,10 @@ deployment:
   - 'deploy/deploy.sh'
   - 'deploy/tx/docker-compose.yml'
   - 'deploy/docker-compose.prod.yml'
+  # Declarative Komodo resources: reviewed data validated by a contract test, never
+  # applied from CI, and deliberately NOT part of the Komodo controller owner (whose
+  # production workflow owns deploy/komodo/** + infra/tofu/komodo/** only).
+  - 'infra/komodo/resources/**'
 python:
   - '.github/workflows/ci-python.yml'
   - 'common/python/**'
