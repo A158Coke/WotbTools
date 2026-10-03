@@ -20,6 +20,7 @@ import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
 import BaseStatusBar from './BaseStatusBar.vue'
 import SegmentedControl from './SegmentedControl.vue'
+import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 
@@ -70,12 +71,19 @@ const mapTitle = computed(() => {
   return mapLabel(store.mapName, locale.value) || store.mapName
 })
 
-const CAMERAS = [
+// 相机 / 画质档位文案都是用户可见文本，且本应用支持运行中切语言（MorePanel 的 setLocale 不刷新页面），
+// 所以走 computed 每次重算——不得在 setup 里定死一次，也不用内核预设里的固定中文 label。
+const CAMERAS = computed(() => [
   { value: 'free', label: t('agentReplay.cam_free') },
   { value: 'top', label: t('agentReplay.cam_top') },
   { value: 'follow', label: t('agentReplay.cam_follow') },
-]
+])
 const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
+
+// 顶栏双方总血量：数值用**完整整数**（§11 HUD 禁止 1k / 22.3k 缩写，与 2D HUD 同口径）；
+// 色条宽度用原始百分比（不取整，血量缓慢下降时条仍平滑），title 上给取整百分比。
+const hpText = (n) => String(Math.round(Math.max(0, Number(n) || 0)))
+const hpPctText = (pct) => Math.round(Number(pct) || 0) + '%'
 
 /**
  * 阵营色只在 HUD 里用（three.js 场景本体的阵营色由场景内核按设计 token 处理）：
@@ -119,15 +127,6 @@ const bannerColor = computed(() => {
   if (outcome === 'lose') return teamColors.value.enemy
   return teamColors.value.unknown
 })
-
-/** 阵容三段（未知阵营 team=0 中性 fail-visible，绝不并入任何一队） */
-const rosterSections = computed(() => [
-  { key: 'team1', label: t('agentReplay.team1'), players: rosterGroups.value.ally },
-  { key: 'team2', label: t('agentReplay.team2'), players: rosterGroups.value.enemy },
-  ...(rosterGroups.value.unknown.length
-    ? [{ key: 'unknown', label: t('agentReplay.teamUnknown'), players: rosterGroups.value.unknown }]
-    : []),
-])
 
 /**
  * 把目标文件交给场景内核。
@@ -197,22 +196,91 @@ function ensureScene() {
 
 /** 解析目标回放：同一次会话内同一文件不重复解析 */
 let loadedFile = null
+
+/**
+ * 待开播：文件到位后先让用户选画质，按「开始」才解析 + 拉资产。
+ * 画质必须在渲染器创建前定型（内核 `startPlayback()` 惰性建渲染器、首帧按当前档位），
+ * 所以这一步不能省成"加载中也能切档"。`startedFile` = 用户已按过开始的那一场。
+ */
+const startedFile = ref(null)
+const qualityOptions = computed(() =>
+  QUALITY_ORDER.map((k) => ({ value: k, label: t('agentReplay.q_' + k) })),
+)
+
+function startReplay() {
+  if (!props.file) return
+  startedFile.value = props.file
+  reconcileScene()
+}
+
 function reconcileScene() {
   if (!shouldHaveScene()) {
     destroyScene()
     loadedFile = null
+    startedFile.value = null
     return
   }
   const created = ensureScene()
   const file = props.file
-  if (created || (file && file !== loadedFile)) {
+  // 尚未按开始（含换到另一场）：先把上一场撤下，否则旧场景继续呈现、还会压住待开播面板
+  if (file !== startedFile.value) {
+    if (loadedFile) {
+      sceneApi?.reset?.()
+      loadedFile = null
+    }
+    return
+  }
+  if (created || file !== loadedFile) {
     loadedFile = file
     loadFile(file)
   }
 }
 
-onMounted(reconcileScene)
-onBeforeUnmount(destroyScene)
+/**
+ * 阵容车道（review blocker 修复）：己方 / 敌方各占一条**侧边车道**，未知阵营归左车道、
+ * 在车道内常驻底部（flex: none，不被队伍名单滚出可视区）——三条名单都不与中央 HUD 列
+ * 或底部控制条共用车道。车道上下界**不写死**：ResizeObserver 实测 .hud / .controls 的
+ * 高度写入 --pb-hud-h / --pb-controls-h（.pb-root 上有兜底默认），HUD 长高（基地条 +
+ * 击杀流）或控制条换行（窄屏）时车道自动让位。
+ */
+const rootEl = ref(null)
+const hudEl = ref(null)
+const controlsEl = ref(null)
+let laneBoundsObserver = null
+function observeLaneBounds() {
+  if (typeof ResizeObserver !== 'function') return
+  laneBoundsObserver?.disconnect()
+  laneBoundsObserver = new ResizeObserver(() => {
+    const root = rootEl.value
+    if (!root) return
+    root.style.setProperty('--pb-hud-h', `${Math.ceil(hudEl.value?.offsetHeight ?? 0)}px`)
+    root.style.setProperty('--pb-controls-h', `${Math.ceil(controlsEl.value?.offsetHeight ?? 0)}px`)
+  })
+  if (hudEl.value) laneBoundsObserver.observe(hudEl.value)
+  if (controlsEl.value) laneBoundsObserver.observe(controlsEl.value)
+}
+watch(controlsEl, (el) => {
+  // controls 是 hasData 条件渲染：数据就位才出现，出现即纳入观测
+  if (el && laneBoundsObserver) laneBoundsObserver.observe(el)
+})
+
+/** ?debug：几何门禁 / 人工排查的状态注入点（与场景内核的 ?debug 钩子同一口径，只暴露
+ *  store 引用与车道 DOM，不改变任何行为）。browser 几何门禁据此注入 roster / killfeed，
+ *  在真实 Chrome 里断言车道的非交叉几何。 */
+if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) {
+  window.__pbPane = { store }
+}
+
+onMounted(() => {
+  reconcileScene()
+  observeLaneBounds()
+})
+onBeforeUnmount(() => {
+  destroyScene()
+  laneBoundsObserver?.disconnect()
+  laneBoundsObserver = null
+  if (window.__pbPane?.store === store) delete window.__pbPane
+})
 
 /**
  * file / blockedReason / active 都由工作台派生：
@@ -235,14 +303,28 @@ watch(
     <Scene3DStatus v-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
     <p v-else-if="blockedReason" class="pb-note" data-testid="replay3d-blocked">{{ blockedReason }}</p>
     <p v-else-if="!file" class="pb-note" data-testid="replay3d-empty">{{ $t('agentReplay.no_file') }}</p>
-    <div v-else class="pb-root" :class="{ 'roster-open': rosterOpen }">
+    <div v-else class="pb-root" ref="rootEl" :class="{ 'roster-open': rosterOpen }">
       <div ref="stage" class="scene"></div>
 
-      <div class="hud">
+      <div ref="hudEl" class="hud">
         <div v-if="store.hasData" class="topbar panel">
-          <span class="map">{{ mapTitle }}</span>
-          <span class="timer">{{ store.timer }}</span>
-          <span class="score"><span class="t1">{{ store.score1 }}</span> : <span class="t2">{{ store.score2 }}</span></span>
+          <div class="tb-row">
+            <span class="map">{{ mapTitle }}</span>
+            <span class="timer">{{ store.timer }}</span>
+          </div>
+          <!-- 双方队伍总血量（与上游 3D 视图同布局：数值 + 色条夹住比分，己方在左、敌方在右；
+               整行单一阵营视角：血条与比分都按 friendly_team 映射，见 teamHpTotals/perspectiveScore） -->
+          <div class="tb-row" data-test="hud-team-hp">
+            <em class="hpnum hpnum-f">{{ hpText(store.hpFriend) }} / {{ hpText(store.hpFriendMax) }}</em>
+            <span class="hpbar hp-f" :title="`${t('agentReplay.hp_friendly')} ${hpPctText(store.hpFriendPct)}`">
+              <i :style="{ width: store.hpFriendPct + '%' }"></i>
+            </span>
+            <span class="score" data-test="hud-score"><span class="t1">{{ store.scoreFriend }}</span> : <span class="t2">{{ store.scoreEnemy }}</span></span>
+            <span class="hpbar hp-e" :title="`${t('agentReplay.hp_enemy')} ${hpPctText(store.hpEnemyPct)}`">
+              <i :style="{ width: store.hpEnemyPct + '%' }"></i>
+            </span>
+            <em class="hpnum hpnum-e">{{ hpText(store.hpEnemy) }} / {{ hpText(store.hpEnemyMax) }}</em>
+          </div>
         </div>
 
         <!-- 基地状态条（与 2D 共用）：每基地一枚徽章（底色 = 归属，外环 = 占领进度），两端为争霸积分 -->
@@ -255,25 +337,63 @@ watch(
         </div>
       </div>
 
-      <div v-if="store.hasData" class="roster panel" :class="{ 'is-open': rosterOpen }">
-        <div v-for="group in rosterSections" :key="group.key" class="side" :class="{ 'side-unknown': group.key === 'unknown' }">
-          <h3>{{ group.label }}</h3>
-          <div
-            v-for="p in group.players" :key="p.eid"
-            class="pl" :class="{ dead: p.dead, followed: p.followed }"
-            @click="sceneApi.setFollow(p.eid)"
-          >
-            <span class="dot" :style="{ background: p.dotColor }"></span>
-            <span class="nick">{{ p.nick }}</span>
-            <span class="tank">{{ p.tank }}</span>
-            <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+      <!-- 阵容车道：左右两条侧边车道（不占中央 HUD 车道）；未知阵营归左车道、常驻车道
+           底部（不被队伍名单滚出可视区），与居中的 HUD 列 / 底部控制条互不遮挡 -->
+      <template v-if="store.hasData">
+        <div class="team-lane side-left">
+          <div class="team panel team1">
+            <h3>{{ t('agentReplay.team1') }}</h3>
+            <div class="roster">
+              <div
+                v-for="p in rosterGroups.ally" :key="p.eid"
+                class="pl" :class="{ dead: p.dead, followed: p.followed }"
+                @click="sceneApi.setFollow(p.eid)"
+              >
+                <span class="dot" :style="{ background: p.dotColor }"></span>
+                <span class="nick">{{ p.nick }}</span>
+                <span class="tank">{{ p.tank }}</span>
+                <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+              </div>
+            </div>
+          </div>
+          <div v-if="rosterGroups.unknown.length" class="team panel team-unknown">
+            <h3>{{ t('agentReplay.teamUnknown') }}</h3>
+            <div class="roster">
+              <div
+                v-for="p in rosterGroups.unknown" :key="p.eid"
+                class="pl" :class="{ dead: p.dead, followed: p.followed }"
+                @click="sceneApi.setFollow(p.eid)"
+              >
+                <span class="dot" :style="{ background: p.dotColor }"></span>
+                <span class="nick">{{ p.nick }}</span>
+                <span class="tank">{{ p.tank }}</span>
+                <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+        <div class="team-lane side-right">
+          <div class="team panel team2">
+            <h3>{{ t('agentReplay.team2') }}</h3>
+            <div class="roster">
+              <div
+                v-for="p in rosterGroups.enemy" :key="p.eid"
+                class="pl" :class="{ dead: p.dead, followed: p.followed }"
+                @click="sceneApi.setFollow(p.eid)"
+              >
+                <span class="dot" :style="{ background: p.dotColor }"></span>
+                <span class="nick">{{ p.nick }}</span>
+                <span class="tank">{{ p.tank }}</span>
+                <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
 
       <div v-if="store.banner" class="banner" :style="{ color: bannerColor }">{{ bannerText() }}</div>
 
-      <div v-if="store.hasData" class="controls panel">
+      <div v-if="store.hasData" ref="controlsEl" class="controls panel">
         <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
         <PlaybackTransport
           :playing="store.playing"
@@ -313,6 +433,22 @@ watch(
         </div>
       </div>
 
+      <!-- 待开播：画质先定型再解析 + 拉资产（内核在 startPlayback 惰性建渲染器、首帧按当前档位） -->
+      <div v-if="file !== startedFile" class="pre-start" data-test="replay3d-pending">
+        <div class="pre-start-card">
+          <h3>{{ t('agentReplay.title') }}</h3>
+          <p class="pre-start-file">{{ t('agentReplay.ready_file', { name: file.name || 'replay' }) }}</p>
+          <SegmentedControl
+            :model-value="store.qualityKey"
+            :options="qualityOptions"
+            :aria-label="t('agentReplay.quality')"
+            data-testid="replay3d-quality"
+            @update:model-value="sceneApi.setQuality($event)"
+          />
+          <AppButton variant="primary" data-test="replay3d-start" @click="startReplay">{{ t('agentReplay.start') }}</AppButton>
+        </div>
+      </div>
+
       <!-- 审计 3D-23：解析为不确定进度，地图资产阶段按段 / 字节推进；失败给出原因与重试 -->
       <Scene3DStatus
         v-if="store.loading"
@@ -343,6 +479,10 @@ watch(
 .pb-root {
   position: relative;
   isolation: isolate;               /* 局部层叠上下文：HUD 只用 --pb-z-* 的 1–9 层 */
+  /* 阵容车道定界变量的兜底值：RO 就位后由 observeLaneBounds 写入实测值。
+     必须定义在 .pb-root 上——写在 .team-lane 上会把根元素的实测值遮蔽掉。 */
+  --pb-hud-h: 48px;
+  --pb-controls-h: 130px;
   height: clamp(320px, 62dvh, 720px);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
@@ -362,14 +502,47 @@ watch(
 }
 
 .topbar {
-  display: flex; gap: var(--space-4); align-items: center; white-space: nowrap;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  white-space: nowrap;
   padding: var(--space-1) var(--space-4);
 }
+.topbar .tb-row { display: flex; align-items: center; gap: var(--space-3); }
 .topbar .timer { font: var(--type-h3); font-variant-numeric: tabular-nums; }
 .topbar .score { font: var(--type-h3); }
 .topbar .score .t1 { color: var(--color-team-ally); }
 .topbar .score .t2 { color: var(--color-team-enemy); }
 .topbar .map { color: var(--color-text-secondary); }
+/* 双方队伍总血量：数值 + 色条夹住比分。己方条自右向左、敌方条自左向右（围绕比分对称），
+   条宽用原始百分比（不取整）保证连续下降平滑。 */
+.topbar .hpnum { font-style: normal; color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
+.topbar .hpbar { display: inline-flex; width: 92px; height: 9px; overflow: hidden;
+                 border-radius: var(--radius-full); background: var(--color-surface-3); }
+.topbar .hp-f { justify-content: flex-end; }
+.topbar .hpbar > i { display: block; height: 100%; transition: width var(--duration-base) var(--ease-standard); }
+.topbar .hp-f > i { background: var(--color-team-ally); }
+.topbar .hp-e > i { background: var(--color-team-enemy); }
+
+/* 待开播：半透明遮罩 + 居中卡片（画质档位 + 开始）；点开始才解析 + 拉资产。
+   层级用 --pb-z-scrim（盖住 HUD 面板，加载 / 错误状态仍在其上）。 */
+.pre-start {
+  position: absolute; inset: 0;
+  z-index: var(--pb-z-scrim);
+  display: grid; place-items: center;
+  padding: var(--space-4);
+  background: var(--color-scrim);
+}
+.pre-start-card {
+  display: grid; justify-items: center; gap: var(--space-3);
+  max-inline-size: min(100%, 420px);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-2);
+  box-shadow: var(--elevation-3);
+  text-align: center;
+}
+.pre-start-card h3 { margin: 0; font: var(--type-h3); }
+.pre-start-file { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 
 /* 顶部 HUD 竖排：顶栏 → 基地状态条 → 击杀流；整列不拦截场景操作，
    阵容面板从这一列下方开始，不再靠各自猜的固定 top 值。 */
@@ -380,18 +553,31 @@ watch(
   pointer-events: none;
 }
 
-.roster {
+/* 阵容车道（review blocker 修复）：左右两条**侧边**车道，未知阵营归左车道、在车道内
+   flex 常驻底部——三条名单都不与中央 HUD 列 / 底部控制条共用车道。车道上下界**实测**：
+   ResizeObserver 把 .hud / .controls 的高度写进 --pb-hud-h / --pb-controls-h（下面给
+   兜底默认），HUD 长高或控制条换行时车道自动让位，不再有写死的 top:96px / 底部 reserve。 */
+.team-lane {
   position: absolute;
-  top: 96px; left: var(--space-2); right: var(--space-2);
+  display: flex; flex-direction: column; gap: var(--space-2);
+  top: calc(var(--space-2) + var(--pb-hud-h) + var(--space-3));
+  bottom: calc(var(--pb-controls-h) + var(--space-2) + var(--space-3));
   z-index: var(--pb-z-hud);
-  display: flex; gap: var(--space-2);
-  padding: var(--space-1);
-  max-height: calc(100% - 240px);
-  overflow: hidden;
+  width: 240px;
+  pointer-events: none;              /* 车道只负责定界，空白处不拦截场景操作 */
 }
-.roster .side { flex: 1 1 0; min-width: 0; overflow-y: auto; }
-.roster .side-unknown { flex: 0 1 200px; border-inline-start: 1px solid var(--color-border-subtle); padding-inline-start: var(--space-2); }
-.roster h3 { margin: var(--space-1) var(--space-1) var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); }
+.side-left { position: absolute; left: var(--space-2); }
+.side-right { position: absolute; right: var(--space-2); }
+.team {
+  pointer-events: auto;
+  min-height: 0;                     /* 车道放不下时在面板内部滚动，不越界 */
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+.team1, .team2 { flex: 0 1 auto; }
+.team-unknown { flex: none; max-height: 50%; }   /* 常驻可见：不被队伍名单挤出车道 */
+.team-unknown h3 { color: var(--color-text-secondary); }
+.team h3 { margin: var(--space-1) var(--space-1) var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); }
 
 .pl {
   display: flex; align-items: center; gap: var(--space-1);
@@ -473,11 +659,15 @@ watch(
 
 .roster-toggle { display: none; }
 
-/* 审计 3D-15：紧凑档名单收进「阵容」开关，打开时两队并排、场景仍可见 */
+/* 审计 3D-15：紧凑档名单收进「阵容」开关。打开时两条车道**各占半宽**——旧版两块 240px
+   绝对定位互相重叠、盖住场景（不得回退）；半宽放不下弹种 / 血条，只留圆点 + 昵称。
+   车道上下界仍由 --pb-hud-h / --pb-controls-h 实测定界，与桌面同一套几何安全。 */
 @media (width < 768px) {
   .roster-toggle { display: inline-flex; align-items: center; }
-  .roster { display: none; top: 88px; max-height: calc(100% - 220px); }
-  .pb-root.roster-open .roster { display: flex; }
+  .team-lane { display: none; }
+  .pb-root.roster-open .team-lane { display: flex; }
+  .pb-root.roster-open .side-left { position: absolute; left: var(--space-2); right: 51%; width: auto; }
+  .pb-root.roster-open .side-right { position: absolute; right: var(--space-2); left: 51%; width: auto; }
   .pl .tank, .pl .hpbar { display: none; }
   .topbar { gap: var(--space-2); padding: 0 var(--space-3); }
   .controls { width: calc(100% - var(--space-2)); padding: var(--space-1) var(--space-2); }

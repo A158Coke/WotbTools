@@ -111,6 +111,19 @@
 - 上游 Agent 仓（WoT-Blitz-Agent）的 `frontend/` 已冻结、不再维护：**前端改动与前端测试
   都在本仓**，不要再去上游改前端或在上游跑前端测试。
 
+## 本机测试（全功能联调）
+
+在本机把产品跑成"可测状态"的完整 runbook 见
+[`docs/frontend/local-testing.md`](../docs/frontend/local-testing.md)：Agent 引擎产物
+（`scripts/fetch-agent-wasm.sh`，`deploy/agent/source.json` pin 变更后必须重跑）、资产服务
+（**Agent 仓根目录** `node scripts/serve_asset_pack.mjs 8123`）、自检探针、故障对照、自动化门禁。
+
+- admin 视图的本机旁路参数 `?admin=1` 来自**未提交**的补丁
+  （`frontend/src/composables/useAuth.js`，把 `wotbtools-admin` / `HoF-admin` 视为已持有）：
+  **永不提交**，也不要"顺手清理"工作区里的这个 `M`；提交其它工作时只 stage 目标文件。
+  `viewFromRoute` 的 admin 闸门只认角色，任何 URL 参数都不得放行（曾有一版 dev 旁路被误提交进 PR）。
+- 需要真实 realm 角色的功能（`/api/admin/**`、`/api/ai/**`）本地旁路绕不过，边界见 runbook §5。
+
 ## 禁止
 
 - 改 `target/` `node_modules/` `dist/` `.m2repo/` 内文件
