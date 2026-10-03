@@ -270,7 +270,13 @@ grep -Fq 'business-postgres-provisioning: PASS' <<< "$ready_output"
 # production. Those diagnostics must remain visible without contaminating the
 # JSON/body/status protocol captured from stdout.
 stderr_noise_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_COMPOSE_RUN_STDERR=1)"
-for token in   'TX_RUNTIME_READY'   'qq-idp-admin-api: PASS'   'auth-token: PASS'   'hof-replay-storage: PASS'   'public-tls-web: PASS'   'public-tls-auth: PASS'; do
+for token in \
+  'TX_RUNTIME_READY' \
+  'qq-idp-admin-api: PASS' \
+  'auth-token: PASS' \
+  'hof-replay-storage: PASS' \
+  'public-tls-web: PASS' \
+  'public-tls-auth: PASS'; do
   grep -Fq "$token" <<< "$stderr_noise_output" || {
     echo "FAIL: compose stderr noise broke runtime probe token: $token" >&2
     exit 1
