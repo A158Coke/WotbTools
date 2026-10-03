@@ -559,6 +559,32 @@ Bridge v2 的 `native-auth`；Android 壳若报告 bridge v1，前端只会显�
 **Git 证据：** 本 PR；`contracts/android-native-bridge.json`、`android/app/src/main/java/com/wotbtools/app/auth/`、
 `frontend/src/platform/{browserAuthProvider,androidAuthProvider}.js`、`infra/tofu/keycloak/client.tf`。
 
+## 2026-10-03 — 前端交付从「入口页缓存」推进到「按代码块降级」
+
+SPA 的产物文件名带内容哈希，而部署是整目录替换：`index.html` 早已固定 `no-store`，让刷新立刻拿到新版本，
+但一个**还开着的页面**不会因为部署而重新加载。它随后按需加载某个代码块时，请求的是自己那份旧 bundle 记下的
+文件名——服务器上已经没有这个文件。此前这条路径没有任何错误边界：动态加载失败会把整个工作台的渲染打断，
+用户看到的是「能力不可用」，而实际上请求从未发出，服务器侧也没有任何记录。
+
+这次把懒加载从「一个动态 import」改成显式的可用性边界：加载失败变成一个**可见、可解释、可操作**的状态，
+页面其余部分照常工作（回放数据与其他分析功能不受影响）；主操作是重新加载（内容哈希决定旧地址不可恢复），
+次要操作是重试，只覆盖网络瞬断这类可原地恢复的情况。失败态是持久的——切走再切回仍然显示，不会因为重新
+进入就悄悄消失成一个空白面板。代价是每个懒加载能力都要带上这一层边界，收益是「部署」不再是一次能让活跃
+页面变砖的事件。
+
+边界内部的恢复协议也不是「再 import 一次」：框架的异步组件会把失败的加载 promise 记住，重复调用同一代
+loader 或重新挂载同一份组件定义都只会拿到那个已经失败的 promise，于是错误提示消失了、内容却永远回不来。
+真正的恢复必须换一代异步组件定义，这个 generation 归边界自己所有，调用方不需要（也不应该）参与。
+
+同时补齐 AI 复盘的失败态分类：服务繁忙、服务不可达、超时、返回格式异常、用户取消、未配置各自独立成态，
+并明确区分「登录门禁」「已登录但缺权限」「AI 输入准备失败」——它们不在同一条链上，补救动作也不同。
+权限缺失不再静默隐藏入口，而是说明缺什么以及下一步找谁；用户主动取消不算错误，也不再顺手给一个「重试」，
+未归类的原始异常只进诊断日志、不进界面文案。
+
+**Git 证据：** 本 PR；`frontend/src/utils/lazyModule.ts`、
+`frontend/src/components/{ReplayWorkspace,AiReviewPanel,AiReviewWorkspacePane}.vue`、
+`frontend/src/types/ai-review.ts`。
+
 ## 当前架构形成的三条长期主线
 
 回看整个演进过程，WotbTools 的变化并不是简单的功能累积，而主要沿三条长期主线收敛。
