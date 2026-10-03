@@ -29,31 +29,46 @@ grep -Fq 'tx-logical-endpoints-active' "$RUNTIME_CHECK_LIB"
 grep -Fq 'docker inspect --format' "$RUNTIME_CHECK_LIB"
 grep -Fq 'tx-alloy-config: PASS' "$RUNTIME_CHECK_LIB"
 grep -Fq 'retired-replay-switches: PASS' "$RUNTIME_CHECK_LIB"
-! grep -Fq 'wireguard-backend' "$RUNTIME_CHECK_LIB"
+grep -Fq 'wireguard-backend' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:32' >&2; exit 1; }
 # Replay parsing runs in the browser: the server-side replay chain (broker,
 # object store, parser worker, processing/export jobs) must not come back.
-! grep -Eiq 'rabbitmq|minio|parser-worker|processing-jobs|export-jobs|map-overview|battle-playback-v2' "$RUNTIME_CHECK_LIB"
+grep -Eiq 'rabbitmq|minio|parser-worker|processing-jobs|export-jobs|map-overview|battle-playback-v2' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:36' >&2; exit 1; }
 grep -Fq 'keycloak-qq-provider.jar' "$RUNTIME_CHECK_LIB"
 grep -Fq 'keycloak-wargaming-provider.jar' "$RUNTIME_CHECK_LIB"
 grep -Fq 'com.wotbtools.app' "$RUNTIME_CHECK_LIB"
-! grep -Eiq '(nsupdate|route53|cloudflare|gcloud dns|az network dns)' "$CHECK"
-! grep -Eiq 'docker compose .* (stop|rm|down).*yecao' "$CHECK"
+grep -Eiq '(nsupdate|route53|cloudflare|gcloud dns|az network dns)' "$CHECK" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:41' >&2; exit 1; }
+grep -Eiq 'docker compose .* (stop|rm|down).*yecao' "$CHECK" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:43' >&2; exit 1; }
 
 # The retired cutover machinery must be gone: no phase selector, no SNI-only
 # edge phase, no cutover verdicts or boundary token, no migration-only snapshot,
 # and no business-data-integrity token (its Yecao row-count snapshot input cannot
 # be regenerated, so the token was retired with the machinery).
-! grep -Fq 'WOTB_CUTOVER_PHASE' "$RUNTIME_CHECK_LIB"
-! grep -Fq 'CUTOVER_PHASE' "$RUNTIME_CHECK_LIB"
-! grep -Fq 'public-edge-sni' "$RUNTIME_CHECK_LIB"
-! grep -Fq 'POST_CUTOVER' "$RUNTIME_CHECK_LIB"
-! grep -Fq 'PRE_CUTOVER' "$RUNTIME_CHECK_LIB"
-! grep -Fq 'cutover-safety-boundary' "$RUNTIME_CHECK_LIB"
-! grep -Fq 'pre-cutover' "$RUNTIME_CHECK_LIB"
-! grep -Fq 'WOTB_E2E_DATA_SNAPSHOT' "$RUNTIME_CHECK_LIB"
-! grep -Fq 'business-data-integrity' "$RUNTIME_CHECK_LIB"
-! grep -Fq -- '--post-cutover' "$CHECK"
-! grep -Fq 'pre-cutover' "$CHECK"
+grep -Fq 'WOTB_CUTOVER_PHASE' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:50' >&2; exit 1; }
+grep -Fq 'CUTOVER_PHASE' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:52' >&2; exit 1; }
+grep -Fq 'public-edge-sni' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:54' >&2; exit 1; }
+grep -Fq 'POST_CUTOVER' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:56' >&2; exit 1; }
+grep -Fq 'PRE_CUTOVER' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:58' >&2; exit 1; }
+grep -Fq 'cutover-safety-boundary' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:60' >&2; exit 1; }
+grep -Fq 'pre-cutover' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:62' >&2; exit 1; }
+grep -Fq 'WOTB_E2E_DATA_SNAPSHOT' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:64' >&2; exit 1; }
+grep -Fq 'business-data-integrity' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:66' >&2; exit 1; }
+grep -Fq -- '--post-cutover' "$CHECK" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:68' >&2; exit 1; }
+grep -Fq 'pre-cutover' "$CHECK" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:70' >&2; exit 1; }
 
 # Business PostgreSQL is authoritative state: the check must own its health,
 # reviewed loopback/WireGuard bindings, and provisioning marker before readiness.
@@ -68,13 +83,15 @@ grep -Fq 'business-postgres-provisioning: FAIL (TX-local OpenTofu marker is miss
 grep -Fq 'tx-local-opentofu-business-postgres' "$RUNTIME_CHECK_LIB"
 grep -Fq 'BUSINESS_POSTGRES_TOFU_PROVISION_MARKER' "$RUNTIME_CHECK_LIB"
 grep -Fq '/api/hof?page=1&size=200' "$RUNTIME_CHECK_LIB"
-! grep -Fq '/api/hof?page=0&size=' "$RUNTIME_CHECK_LIB"
+grep -Fq '/api/hof?page=0&size=' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:86' >&2; exit 1; }
 grep -Fq 'e2e_first_replay_id' "$RUNTIME_CHECK_LIB"
 grep -Fq 'replayAvailable' "$RUNTIME_CHECK_LIB"
 grep -Fq 'totalPages' "$RUNTIME_CHECK_LIB"
 grep -Fq 'hof_page=$((hof_page + 1))' "$RUNTIME_CHECK_LIB"
 # The new checks must be read-only: no DDL/DML against the business database.
-! grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alter[[:space:]]+database)' "$RUNTIME_CHECK_LIB"
+grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alter[[:space:]]+database)' "$RUNTIME_CHECK_LIB" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:93' >&2; exit 1; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -325,6 +342,27 @@ grep -Fq 'TX_RUNTIME_READY' <<< "$wg_ready_output"
 grep -Fq 'tx-logical-endpoints-declared: PASS' <<< "$wg_ready_output"
 grep -Fq 'tx-logical-endpoints-active: PASS' <<< "$wg_ready_output"
 
+# K6B-2A production steady state: exactly one consumer is cut over. The rendered
+# contract, the running container, and the gate expectation all carry the reviewed
+# TX1 WireGuard endpoint for Frontend -> Business API, while every other dependency
+# stays Docker-local (their FAKE_* defaults). This is the state the merged K6B-2A
+# must produce, so its acceptance tokens are asserted here, not only in production.
+k6b2a_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_FRONTEND_UPSTREAM=http://10.20.0.1:8087 \
+  FAKE_RUNNING_FRONTEND_UPSTREAM=http://10.20.0.1:8087 \
+  TX_BACKEND_UPSTREAM=http://10.20.0.1:8087)"
+grep -Fq 'TX_RUNTIME_READY' <<< "$k6b2a_output" \
+  || { echo "FAIL: the K6B-2A placement must be ready (output: $k6b2a_output)" >&2; exit 1; }
+for token in \
+  'tx-logical-endpoints-declared: PASS' \
+  'tx-logical-endpoints-active: PASS' \
+  'wireguard-service-plane: PASS' \
+  'frontend: PASS' \
+  'caddy-frontend: PASS'; do
+  grep -Fq "$token" <<< "$k6b2a_output" \
+    || { echo "FAIL: K6B-2A must report '$token' (output: $k6b2a_output)" >&2; exit 1; }
+done
+
 grep -Fq 'tx-alloy-config: PASS' <<< "$ready_output"
 grep -Fq 'caddy-monitor: PASS' <<< "$ready_output"
 grep -Fq 'retired-replay-switches: PASS' <<< "$ready_output"
@@ -338,10 +376,14 @@ grep -Fq 'hof-replay-storage: PASS' <<< "$ready_output"
 # The public edge is a single trusted-TLS assertion, never an SNI-only phase.
 grep -Fq 'public-tls-web: PASS' <<< "$ready_output"
 grep -Fq 'public-tls-auth: PASS' <<< "$ready_output"
-! grep -Fq 'public-edge-sni' <<< "$ready_output"
-! grep -Fq 'DNS_CUTOVER' <<< "$ready_output"
-! grep -Fq 'WAITING_FOR_OPERATOR' <<< "$ready_output"
-! grep -Fq 'cutover-safety-boundary' <<< "$ready_output"
+grep -Fq 'public-edge-sni' <<< "$ready_output" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:379' >&2; exit 1; }
+grep -Fq 'DNS_CUTOVER' <<< "$ready_output" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:381' >&2; exit 1; }
+grep -Fq 'WAITING_FOR_OPERATOR' <<< "$ready_output" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:383' >&2; exit 1; }
+grep -Fq 'cutover-safety-boundary' <<< "$ready_output" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:385' >&2; exit 1; }
 grep -Fq 'qq-idp-admin-api: PASS' <<< "$ready_output"
 grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$ready_output"
@@ -418,6 +460,15 @@ run_gate_failure "frontend-ai-upstream-public" 'tx-logical-endpoints-declared: F
 # instead of being tolerated as "both values are allowlisted".
 run_gate_failure "declared-placement-behind-expectation" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" TX_BACKEND_UPSTREAM=http://10.20.0.1:8087
+# K6B-2A performs exactly one cutover. If a second consumer moves to WireGuard while
+# the gate still expects its Docker-local placement, the declared contract must fail:
+# that is what makes "one consumer at a time" enforced rather than promised.
+run_gate_failure "accidental-second-consumer-cutover" 'tx-logical-endpoints-declared: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_FRONTEND_UPSTREAM=http://10.20.0.1:8087 \
+  FAKE_RUNNING_FRONTEND_UPSTREAM=http://10.20.0.1:8087 \
+  TX_BACKEND_UPSTREAM=http://10.20.0.1:8087 \
+  FAKE_BUSINESS_DB_HOST=10.20.0.1 FAKE_BUSINESS_DB_PORT=25432
 run_gate_failure "active-placement-public-host" 'tx-logical-endpoints-active: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_RUNNING_FRONTEND_UPSTREAM=https://api.example.invalid
 run_gate_failure "active-business-db-public-host" 'tx-logical-endpoints-active: FAIL' \
@@ -458,7 +509,8 @@ stale_active_rc=$?
 set -e
 [ "$stale_active_rc" -ne 0 ] \
   || { echo 'FAIL: a WireGuard expectation rendered but Docker-local containers must block TX_RUNTIME_READY' >&2; exit 1; }
-! grep -Fq 'TX_RUNTIME_READY' <<< "$stale_active_output"
+grep -Fq 'TX_RUNTIME_READY' <<< "$stale_active_output" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:512' >&2; exit 1; }
 grep -Fq 'tx-logical-endpoints-declared: PASS' <<< "$stale_active_output" \
   || { echo "FAIL: the rendered placement was valid, so the declared contract must pass (output: $stale_active_output)" >&2; exit 1; }
 grep -Fq 'tx-logical-endpoints-active: FAIL' <<< "$stale_active_output" \
@@ -583,7 +635,8 @@ qq_idp_blocked_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT"
 qq_idp_blocked_rc=$?
 set -e
 [ "$qq_idp_blocked_rc" -ne 0 ]
-! grep -Fq 'TX_RUNTIME_READY' <<< "$qq_idp_blocked_output"
+grep -Fq 'TX_RUNTIME_READY' <<< "$qq_idp_blocked_output" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:638' >&2; exit 1; }
 grep -Fq 'qq-idp-admin-api: FAIL (idp-qq representation is not production-ready)' <<< "$qq_idp_blocked_output"
 
 # A healthy runtime with a valid marker must still be able to reach readiness,

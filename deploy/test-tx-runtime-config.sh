@@ -97,13 +97,48 @@ validate_endpoint() {
 }
 validate_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://business-api:8087 http://business-api:8087 8087
 validate_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:8087 http://business-api:8087 8087
-! validate_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM https://api.example.invalid http://business-api:8087 8087
-! validate_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:9999 http://business-api:8087 8087
+# A bare `! command` cannot assert anything under `set -e` (bash exempts inverted
+# commands from errexit), so every rejection below is an explicit guard: it fails the
+# fixture when the canonical validator accepts a value it must refuse.
+reject_endpoint() {
+  if validate_endpoint "$@"; then
+    echo "the canonical validator accepted a placement it must refuse: $*" >&2
+    exit 1
+  fi
+}
+reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM https://api.example.invalid http://business-api:8087 8087
+reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:9999 http://business-api:8087 8087
+# Yecao is not a reviewed TX placement host: the retired business runtime address and
+# the management port must both stay rejected, otherwise a cutover could silently send
+# public API traffic to the wrong host or the wrong surface. The runtime gate asserts
+# the same fence with its own `frontend-upstream-yecao` fixture.
+reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.2:8087 http://business-api:8087 8087
+reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:8088 http://business-api:8087 8087
 validate_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.1 25432 business-postgres 5432 25432
 validate_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.3 15432 keycloak-postgres 5432 15432
-! validate_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.2 25432 business-postgres 5432 25432
+reject_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.2 25432 business-postgres 5432 25432
 validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.1:8081 wotb-frontend:80 8081
-! validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM frontend.example.invalid:8081 wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM frontend.example.invalid:8081 wotb-frontend:80 8081
+
+# K6B-2A moves the Frontend -> Business API consumer onto a WireGuard placement, so the
+# frontend owner's own deploy must fail when that placement is unreachable instead of
+# leaving a half-broken consumer for the manual runtime gate. The probe has to traverse
+# the frontend (nginx -> BACKEND_UPSTREAM): probing the Business API directly would stay
+# green while the running container dials something else, which is the false green this
+# step exists to prevent. A failing probe must also be attributed to wotb-frontend so
+# stop_failed_service actually acts on the affected service.
+frontend_health_block="$(sed -n '/if is_selected wotb-frontend; then/,/^  fi$/p' "$ROOT/deploy/tx/deploy.sh")"
+grep -Fq 'wait_for_probe frontend-api http://wotb-frontend/api/health' <<< "$frontend_health_block" \
+  || { echo 'the frontend deploy must probe /api/health through the frontend' >&2; exit 1; }
+grep -Fq 'wait_for_probe frontend-static http://wotb-frontend/' <<< "$frontend_health_block" \
+  || { echo 'the frontend static probe was removed' >&2; exit 1; }
+if grep -Fq 'http://business-api:8087/api/health' <<< "$frontend_health_block"; then
+  echo 'the frontend deploy must prove the rendered placement through the frontend, not by probing the Business API directly' >&2
+  exit 1
+fi
+stop_failed_block="$(sed -n '/^stop_failed_service()/,/^}/p' "$ROOT/deploy/tx/deploy.sh")"
+grep -Fq 'frontend-api' <<< "$stop_failed_block" \
+  || { echo 'a failed frontend api probe must be attributed to wotb-frontend' >&2; exit 1; }
 
 cat > "$WORK/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
@@ -164,15 +199,18 @@ if run_frontend TX_BACKEND_UPSTREAM=https://api.example.invalid FAKE_DOCKER_LOG=
   echo 'TX deployment accepted a public Business API upstream' >&2
   exit 1
 fi
-! grep -q '^up ' "$WORK/frontend-public-upstream.log" 2>/dev/null
+grep -q '^up ' "$WORK/frontend-public-upstream.log" 2>/dev/null \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:202' >&2; exit 1; }
 if run_frontend TX_BACKEND_UPSTREAM=http://10.20.0.1:9999 FAKE_DOCKER_LOG="$WORK/frontend-wrong-port.log" >/dev/null 2>&1; then
   echo 'TX deployment accepted a Business API WireGuard endpoint on the wrong port' >&2
   exit 1
 fi
-! grep -q '^up ' "$WORK/frontend-wrong-port.log" 2>/dev/null
+grep -q '^up ' "$WORK/frontend-wrong-port.log" 2>/dev/null \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:208' >&2; exit 1; }
 grep -q '^pull wotb-frontend$' "$WORK/docker.log"
 grep -q '^up -d --no-deps --force-recreate wotb-frontend$' "$WORK/docker.log"
-! grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/docker.log"
+grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/docker.log" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:212' >&2; exit 1; }
 grep -Fq 'image: ${TX_FRONTEND_IMAGE_REF:?TX_FRONTEND_IMAGE_REF is required}' "$WORK/host/deploy/frontend.compose.yml"
 [ ! -e "$WORK/host/production-release.json" ]
 
@@ -183,7 +221,8 @@ if run_frontend FAKE_DOCKER_LOG="$WORK/frontend-wildcard.log" >/dev/null 2>&1; t
   echo 'TX deployment accepted a wildcard frontend binding' >&2
   exit 1
 fi
-! grep -q '^up ' "$WORK/frontend-wildcard.log" 2>/dev/null
+grep -q '^up ' "$WORK/frontend-wildcard.log" 2>/dev/null \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:224' >&2; exit 1; }
 cp "$WORK/frontend.compose.yml.bak" "$WORK/incoming/deploy/tx/frontend.compose.yml"
 
 if run_frontend TX_FRONTEND_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:latest \
@@ -191,7 +230,8 @@ if run_frontend TX_FRONTEND_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools
   echo 'TX deployment accepted a mutable frontend image tag' >&2
   exit 1
 fi
-! grep -q '^up ' "$WORK/frontend-tag-ref.log" 2>/dev/null
+grep -q '^up ' "$WORK/frontend-tag-ref.log" 2>/dev/null \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:233' >&2; exit 1; }
 
 # The live TX edge is this promoted template: Caddy terminates TLS and proxies the
 # whole wotbtools.com site to wotb-frontend:80, where the nginx template entrypoint
@@ -265,7 +305,8 @@ if run_frontend TX_AI_UPSTREAM=http://business-api:8087 FAKE_DOCKER_LOG="$WORK/f
   echo 'TX deployment accepted a non-ai-service AI upstream' >&2
   exit 1
 fi
-! grep -q '^up ' "$WORK/frontend-ai-upstream.log" 2>/dev/null
+grep -q '^up ' "$WORK/frontend-ai-upstream.log" 2>/dev/null \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:308' >&2; exit 1; }
 STAGED_TEMPLATE="$WORK/incoming/deploy/tx/nginx/frontend.conf.template"
 cp "$STAGED_TEMPLATE" "$WORK/frontend.conf.template.bak"
 sed -i '\#^    location ^~ /api/ai/ {#d' "$STAGED_TEMPLATE"
@@ -273,14 +314,16 @@ if run_frontend FAKE_DOCKER_LOG="$WORK/frontend-ai-route-missing.log" >/dev/null
   echo 'TX deployment accepted a template without the AI route' >&2
   exit 1
 fi
-! grep -q '^up ' "$WORK/frontend-ai-route-missing.log" 2>/dev/null
+grep -q '^up ' "$WORK/frontend-ai-route-missing.log" 2>/dev/null \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:317' >&2; exit 1; }
 cp "$WORK/frontend.conf.template.bak" "$STAGED_TEMPLATE"
 sed -i 's#proxy_pass \${AI_UPSTREAM};#proxy_pass \${AI_UPSTREAM}/api/ai/;#' "$STAGED_TEMPLATE"
 if run_frontend FAKE_DOCKER_LOG="$WORK/frontend-ai-rewrite.log" >/dev/null 2>&1; then
   echo 'TX deployment accepted an AI route that rewrites /api/ai/' >&2
   exit 1
 fi
-! grep -q '^up ' "$WORK/frontend-ai-rewrite.log" 2>/dev/null
+grep -q '^up ' "$WORK/frontend-ai-rewrite.log" 2>/dev/null \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:325' >&2; exit 1; }
 cp "$WORK/frontend.conf.template.bak" "$STAGED_TEMPLATE"
 
 # Frontend owns the live lock wrapper. A later deployment from another owner may
@@ -300,7 +343,8 @@ grep -Fxq '# live-wrapper-sentinel' "$WORK/host/deploy/with-deploy-lock.sh" \
 # the gateway is recreated: the published image has no ENTRYPOINT, so the
 # validation has to pin `--entrypoint caddy` explicitly.
 grep -q '^run .*--entrypoint caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile$' "$WORK/caddy.log"
-! grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/caddy.log"
+grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/caddy.log" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:346' >&2; exit 1; }
 if env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \
   TX_RUNTIME_ROOT="$WORK/host" WOTB_DEPLOY_SERVICE=caddy WOTB_DEPLOY_CONFIG_SHA="$SHA" \
@@ -310,7 +354,8 @@ if env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   echo 'Caddy deployment accepted invalid staged configuration' >&2
   exit 1
 fi
-! grep -q '^up ' "$WORK/caddy-fail.log"
+grep -q '^up ' "$WORK/caddy-fail.log" \
+  && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:357' >&2; exit 1; }
 
 # The delegated `caddy adapt` runs the real Compose project (`-p deploy`), which allocates a Docker
 # network from the daemon's default address pool. Release it here so later fixtures in the same job

@@ -695,6 +695,13 @@ blocking_health() {
     docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" exec -T wotb-frontend nginx -t >/dev/null \
       || { FAILED_SERVICE=frontend-static; echo "frontend nginx config: FAIL" >&2; return 1; }
     wait_for_probe frontend-static http://wotb-frontend/ 'Host: wotbtools.com' || return 1
+    # K6B-2A: nginx proxies /api/ to BACKEND_UPSTREAM, so probing /api/health *through*
+    # the frontend proves the placement the running container actually renders - never
+    # the Business API directly. A cutover whose endpoint does not answer (for example a
+    # WireGuard address that is not reachable) returns 502 here, so the frontend
+    # deployment fails immediately instead of leaving a half-broken consumer behind
+    # until the manual runtime gate runs.
+    wait_for_probe frontend-api http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
   fi
   if is_selected caddy; then
     # The gateway's own process/config readiness is separate from upstream routes.
@@ -755,7 +762,7 @@ stop_failed_service() {
   esac
   case "$service" in
     tx-business-api|business-api-app) service=business-api ;;
-    frontend-static) service=wotb-frontend ;;
+    frontend-static|frontend-api) service=wotb-frontend ;;
     caddy-ready) service=caddy ;;
   esac
   if ! is_selected "$service"; then
