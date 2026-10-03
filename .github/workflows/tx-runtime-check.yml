@@ -136,22 +136,24 @@ jobs:
           KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
           KC_DB_USERNAME: keycloak
           KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
-          TX_KEYCLOAK_DB_HOST: ${{ vars.TX_KEYCLOAK_DB_HOST || 'keycloak-postgres' }}
-          TX_KEYCLOAK_DB_PORT: ${{ vars.TX_KEYCLOAK_DB_PORT || '5432' }}
+          TX_KEYCLOAK_DB_HOST: keycloak-postgres
+          TX_KEYCLOAK_DB_PORT: '5432'
           WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
-          CADDY_FRONTEND_UPSTREAM: ${{ vars.CADDY_FRONTEND_UPSTREAM || 'wotb-frontend:80' }}
-          CADDY_KEYCLOAK_UPSTREAM: ${{ vars.CADDY_KEYCLOAK_UPSTREAM || 'keycloak:8080' }}
+          CADDY_FRONTEND_UPSTREAM: wotb-frontend:80
+          CADDY_KEYCLOAK_UPSTREAM: keycloak:8080
           TX_BUSINESS_POSTGRES_ADMIN_USER: ${{ vars.TX_BUSINESS_POSTGRES_ADMIN_USER }}
           TX_BUSINESS_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_BUSINESS_POSTGRES_ADMIN_PASSWORD }}
           TX_BUSINESS_DB_NAME: ${{ vars.TX_BUSINESS_DB_NAME }}
           TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
           TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
-          TX_BUSINESS_DB_HOST: ${{ vars.TX_BUSINESS_DB_HOST || 'business-postgres' }}
-          TX_BUSINESS_DB_PORT: ${{ vars.TX_BUSINESS_DB_PORT || '5432' }}
-          TX_KEYCLOAK_ADMIN_SERVER_URL: ${{ vars.TX_KEYCLOAK_ADMIN_SERVER_URL || 'http://keycloak:8080' }}
-          TX_BACKEND_UPSTREAM: ${{ vars.TX_BACKEND_UPSTREAM || 'http://business-api:8087' }}
-          TX_AI_UPSTREAM: ${{ vars.TX_AI_UPSTREAM || 'http://10.20.0.2:8089' }}
+          # The gate validates the active K6B-1 Docker-local placement. K6B-2
+          # updates each value with the corresponding consumer cutover.
+          TX_BUSINESS_DB_HOST: business-postgres
+          TX_BUSINESS_DB_PORT: '5432'
+          TX_KEYCLOAK_ADMIN_SERVER_URL: http://keycloak:8080
+          TX_BACKEND_UPSTREAM: http://business-api:8087
+          TX_AI_UPSTREAM: http://10.20.0.2:8089
           KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
           KEYCLOAK_E2E_CLIENT_SECRET: ${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}
 
