@@ -249,23 +249,26 @@ describe('Replay3DPane', () => {
     document.documentElement.style.setProperty('--color-team-ally', 'rgb(1, 2, 3)')
     document.documentElement.style.setProperty('--color-team-enemy', 'rgb(4, 5, 6)')
     await nextTick()
-    const dots = wrapper.findAll('.pl .dot')
-    expect(dots).toHaveLength(3)
-    expect(dots[0].attributes('style')).toContain('rgb(1, 2, 3)')
-    expect(dots[1].attributes('style')).toContain('rgb(4, 5, 6)')
-    // 未加入任何一方（中性色）
-    expect(dots[2].attributes('style')).not.toContain('rgb(1, 2, 3)')
-    expect(dots[2].attributes('style')).not.toContain('rgb(4, 5, 6)')
+    // 车道结构下 DOM 顺序是 team1 → unknown → team2：按各自面板取点，不依赖全局序
+    const dots = (sel) => wrapper.findAll(`${sel} .pl .dot`)
+    expect(dots('.team1')).toHaveLength(1)
+    expect(dots('.team1')[0].attributes('style')).toContain('rgb(1, 2, 3)')
+    expect(dots('.team2')).toHaveLength(1)
+    expect(dots('.team2')[0].attributes('style')).toContain('rgb(4, 5, 6)')
+    // 未知阵营既不并入我方也不并入敌方（用中性色）
+    expect(dots('.team-unknown')).toHaveLength(1)
+    expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(1, 2, 3)')
+    expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(4, 5, 6)')
     // 分组标题三语（未知阵营独立一段）
     expect(wrapper.findAll('.team h3').map(h => h.text())).toEqual([
-      'agentReplay.team1', 'agentReplay.team2', 'agentReplay.teamUnknown',
+      'agentReplay.team1', 'agentReplay.teamUnknown', 'agentReplay.team2',
     ])
     document.documentElement.style.removeProperty('--color-team-ally')
     document.documentElement.style.removeProperty('--color-team-enemy')
     wrapper.unmount()
   })
 
-  it('阵容是两块独立面板（己方 / 敌方各一块），未知阵营另起一块，不合成一条通栏', async () => {
+  it('阵容在左右两条侧边车道上（team1/team2 各一车道，unknown 归左车道常驻底部）', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     const { store } = playback.api
@@ -276,26 +279,29 @@ describe('Replay3DPane', () => {
       unknown: [],
     }
     await nextTick()
-    // 两块面板各自持有自己那队的名单（定位类 team1 / team2 由 CSS 钉在左右两侧）
-    const panels = wrapper.findAll('.pb-root > .team')
-    expect(panels.map(p => p.classes())).toEqual([['team', 'panel', 'team1'], ['team', 'panel', 'team2']])
-    expect(panels[0].findAll('.pl')).toHaveLength(1)
-    expect(panels[0].text()).toContain('A')
-    expect(panels[1].findAll('.pl')).toHaveLength(1)
-    expect(panels[1].text()).toContain('B')
-
-    // 未知阵营非空才多一块（fail-visible），且不混进任何一队
+    // 两条车道都是 pb-root 直接子级；面板在车道**内部**（车道定界，面板不再各自绝对定位散挂）
+    const lanes = wrapper.findAll('.pb-root > .team-lane')
+    expect(lanes.map(l => l.classes())).toEqual([['team-lane', 'side-left'], ['team-lane', 'side-right']])
+    const left = lanes[0]
+    const team1 = wrapper.get('.team1')
+    const team2 = wrapper.get('.team2')
+    expect(team1.element.parentElement).toBe(left.element)
+    expect(team2.element.parentElement).toBe(lanes[1].element)
+    expect(team1.text()).toContain('A')
+    expect(team2.text()).toContain('B')
+    // unknown 非空才渲染，且渲染在**左车道**里（team1 之后）——绝不进中央 / 右车道
+    expect(wrapper.find('.team-unknown').exists()).toBe(false)
     store.roster.unknown = [{ eid: 3, nick: 'C', tank: '', frac: 100, dead: false, followed: false, dot: '#f5f5f5' }]
     await nextTick()
-    expect(wrapper.findAll('.pb-root > .team').map(p => p.classes())).toEqual([
-      ['team', 'panel', 'team1'], ['team', 'panel', 'team2'], ['team', 'panel', 'team-unknown'],
-    ])
-    expect(wrapper.get('.team-unknown').findAll('.pl')).toHaveLength(1)
+    const unknown = wrapper.get('.team-unknown')
+    expect(unknown.element.parentElement).toBe(left.element)
+    expect(unknown.element).toBe(left.element.lastElementChild)
+    expect(unknown.text()).toContain('C')
 
-    // 未就绪时三块都不渲染（与 HUD 其余部分同口径）
+    // 未就绪时车道与面板都不渲染（与 HUD 其余部分同口径）
     store.hasData = false
     await nextTick()
-    expect(wrapper.findAll('.team')).toHaveLength(0)
+    expect(wrapper.findAll('.team-lane')).toHaveLength(0)
     wrapper.unmount()
   })
 

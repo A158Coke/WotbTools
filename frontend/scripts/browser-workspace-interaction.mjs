@@ -424,6 +424,22 @@ const APP_SCENARIOS = [
   { name: 'admin-390x844-portrait-coarse', width: 390, height: 844, touch: true, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
 ]
 
+/**
+ * 3D 阵容车道的**真实几何**回归（review blocker：源码级 CSS 断言证明不了最终渲染）。
+ * 每个场景走真实用户路径：选文件 → 真实点击切 3D 能力 → 真实点击「开始」（走过待开播
+ * 闸门）→ 经 ?debug 注入口喂入就绪态（两队名单非空 / unknown 非空 / killfeed）→ 用
+ * getBoundingClientRect 断言：三块名单两两不重叠、不覆盖 HUD 子面板、不覆盖底部控制条、
+ * 全部位于 pb-root 内。mobile 还要求默认收起 + 真实点击 roster-toggle 展开。
+ * 小高度横屏场景故意用更小的夹具（1 条击杀 / 2 名玩家）——屏幕放不下全部内容时车道按
+ * max-height 收缩（内容截断 / 内部滚动），但**不得与 HUD / controls 交叉**。
+ */
+const ROSTER_GEOMETRY_SCENARIOS = [
+  { name: 'roster-geometry-1600x900-desktop', width: 1600, height: 900, touch: false, players: 7, killfeed: 3 },
+  { name: 'roster-geometry-1024x768-tablet', width: 1024, height: 768, touch: false, players: 7, killfeed: 3 },
+  { name: 'roster-geometry-390x844-portrait-coarse', width: 390, height: 844, touch: true, players: 5, killfeed: 3, mobile: true },
+  { name: 'roster-geometry-740x360-landscape-coarse', width: 740, height: 360, touch: true, players: 2, killfeed: 1, mobile: true },
+]
+
 const PLAYBACK_SCENARIOS = [
   { name: 'play-390x844-coarse', width: 390, height: 844, touch: true, duration: 60, form: 'pb-form-mobile' },
   // §form-factor：手机横屏内宽 >768 仍必须是 mobile 形态，不能落进 tablet/pc。
@@ -443,6 +459,181 @@ const ROTATION_SCENARIO = {
   name: 'orientation-portrait-to-landscape-coarse',
   width: 390, height: 844, touch: true, duration: 60,
   rotateTo: { width: 844, height: 390 },
+}
+
+/** 阵容车道的真实几何断言（getBoundingClientRect，0.5px 容差吸收亚像素舍入）。 */
+function rosterGeometryProbe() {
+  const rect = (el) => (el ? el.getBoundingClientRect() : null)
+  const root = document.querySelector('.pb-root')
+  const out = { root: !!root, errors: [], boxes: {} }
+  if (!root) return out
+  const rr = root.getBoundingClientRect()
+  const overlap = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5
+    && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
+  const panels = {}
+  for (const name of ['team1', 'team2', 'team-unknown']) {
+    const el = document.querySelector('.' + name)
+    const cs = el ? getComputedStyle(el) : null
+    if (!el || cs.display === 'none' || el.getClientRects().length === 0) continue
+    const b = rect(el)
+    panels[name] = b
+    out.boxes[name] = { l: +b.left.toFixed(1), t: +b.top.toFixed(1), r: +b.right.toFixed(1), b: +b.bottom.toFixed(1) }
+    if (b.left < rr.left - 0.5 || b.right > rr.right + 0.5 || b.top < rr.top - 0.5 || b.bottom > rr.bottom + 0.5) {
+      out.errors.push(`${name} is outside pb-root (root=${JSON.stringify({ l: +rr.left.toFixed(1), t: +rr.top.toFixed(1), r: +rr.right.toFixed(1), b: +rr.bottom.toFixed(1) })})`)
+    }
+  }
+  const hudBoxes = [...document.querySelectorAll('.hud > *')].map(rect).filter(Boolean)
+  for (const [name, b] of Object.entries(panels)) {
+    hudBoxes.forEach((h, i) => {
+      if (overlap(b, h)) out.errors.push(`${name} overlaps hud child #${i} (${JSON.stringify(h)})`)
+    })
+  }
+  const controls = rect(document.querySelector('.controls'))
+  if (controls) {
+    for (const [name, b] of Object.entries(panels)) {
+      if (overlap(b, controls)) out.errors.push(`${name} overlaps controls (${JSON.stringify(controls)})`)
+    }
+  }
+  const pairs = [['team1', 'team2'], ['team1', 'team-unknown'], ['team2', 'team-unknown']]
+  for (const [a, c] of pairs) {
+    if (panels[a] && panels[c] && overlap(panels[a], panels[c])) out.errors.push(`${a} overlaps ${c}`)
+  }
+  return out
+}
+
+async function runRosterGeometryScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+
+  // ?debug：Replay3DPane 的状态注入口（与场景内核的 ?debug 钩子同一口径），
+  // 必须在面板 setup 之前就在 URL 上。
+  await page.goto(`${env.origin}/?view=replay&ws-auth=1&ws-login=resolve&ws-roles=wotbtools-admin&debug`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="3d"]'), { label: 'capability tabs' })
+
+  // 单文件选择（DataTransfer 写入真实 input + change 事件）：单文件时 currentTargetFile
+  // 直接派生为该 File，解析成败不影响 3D 面板拿到 file prop（稍后注入就绪态）。
+  await page.evaluate(`(() => {
+    const input = document.querySelector('[data-testid="select-files-input"]')
+    if (!input) throw new Error('file input missing')
+    const dt = new DataTransfer()
+    dt.items.add(new File([new Uint8Array([1, 2, 3, 4])], 'roster-geometry.wotbreplay'))
+    input.files = dt.files
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+
+  // 真实点击切到 3D 能力（工作台内挂载 Replay3DPane）
+  const tabCenter = await page.evaluate(`(() => {
+    const button = document.querySelector('[data-testid="ws-tab"][data-cap="3d"]')
+    if (!button) return null
+    button.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = button.getBoundingClientRect()
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+    return (hit === button || button.contains(hit))
+      ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+      : null
+  })()`)
+  check(failures, !!tabCenter, '3D capability tab not hit-testable')
+  if (!tabCenter) {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+    return
+  }
+  await page.tap({ ...tabCenter, touch: scenario.touch })
+  await page.waitFor(() => !!document.querySelector('.pb-root'), { label: '3D pane root' })
+
+  // 真实点击「开始」：走过待开播闸门；垃圾文件必然解析失败 → 等内核状态收敛（err 落下，
+  // 或极端环境下解析直接成功 hasData）再注入就绪态，此后内核不再有异步写入。
+  const startCenter = await page.evaluate(`(() => {
+    const button = document.querySelector('[data-test="replay3d-start"]')
+    if (!button) return null
+    button.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = button.getBoundingClientRect()
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+    return (hit === button || button.contains(hit))
+      ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+      : null
+  })()`)
+  check(failures, !!startCenter, 'pre-start start button not hit-testable')
+  if (!startCenter) {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+    return
+  }
+  await page.tap({ ...startCenter, touch: scenario.touch })
+  await page.waitForValue(
+    'window.__pbPane && (window.__pbPane.store.err.length > 0 || window.__pbPane.store.hasData === true)',
+    (v) => v === true,
+    { timeout: 30_000, label: 'garbage replay parse rejection' },
+  )
+
+  // 注入 3D 就绪态（reviewer 要求的 fixture：两队非空 / unknown 非空 / killfeed 非空）
+  await page.evaluate(`(() => {
+    const s = window.__pbPane.store
+    const mk = (prefix, n) => Array.from({ length: n }, (_, i) => ({
+      eid: i + 1, nick: prefix + '_' + String(i + 1).padStart(2, '0'), tank: 'Tank ' + (i + 1),
+      frac: Math.min(100, 40 + i * 7), dead: i === 0, followed: false, dot: '#26794a',
+    }))
+    s.hasData = true
+    s.loading = false
+    s.assetStage = false
+    s.err = ''
+    s.timer = '05:12'
+    s.duration = 300
+    s.time = 42
+    s.startTime = 0
+    s.roster = {
+      team1: mk('Ally', ${scenario.players}),
+      team2: mk('Enemy', ${scenario.players}),
+      unknown: mk('Neutral', 2),
+    }
+    s.killfeed = Array.from({ length: ${scenario.killfeed} }, (_, i) => ({
+      id: i + 1, killer: 'Killer_' + i, victim: 'Victim_' + i, kill: true,
+    }))
+  })()`)
+  // ResizeObserver 异步把 hud / controls 的实测高度写进 CSS 变量（车道定界依赖它）
+  await delay(500)
+
+  if (scenario.mobile) {
+    // 紧凑档默认收起（审计 3D-15），真实点击 roster-toggle 展开
+    const collapsed = await page.evaluate(`(() => {
+      const lanes = [...document.querySelectorAll('.team-lane')]
+      return lanes.length === 2 && lanes.every((l) => getComputedStyle(l).display === 'none')
+    })()`)
+    check(failures, collapsed, 'mobile roster lanes must be collapsed by default')
+    const toggleCenter = await page.evaluate(`(() => {
+      const button = document.querySelector('[data-testid="roster-toggle"]')
+      if (!button) return null
+      button.scrollIntoView({ block: 'center', inline: 'nearest' })
+      const r = button.getBoundingClientRect()
+      const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+      return (hit === button || button.contains(hit))
+        ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+        : null
+    })()`)
+    check(failures, !!toggleCenter, 'roster toggle not hit-testable after ready-state injection')
+    if (!toggleCenter) {
+      await env.chrome.client.send('Target.closeTarget', { targetId })
+      results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+      return
+    }
+    await page.tap({ ...toggleCenter, touch: scenario.touch })
+    await page.waitFor(() => {
+      const lane = document.querySelector('.team-lane')
+      return !!lane && getComputedStyle(lane).display !== 'none'
+    }, { label: 'roster lanes visible after toggle' })
+  }
+
+  const geometry = await page.probe(rosterGeometryProbe)
+  check(failures, geometry.root, 'pb-root missing')
+  check(failures, geometry.errors.length === 0, `geometry violations: ${geometry.errors.join('; ')}`)
+  check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
+
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
 async function runAppScenario(env, scenario) {
@@ -746,6 +937,7 @@ try {
   const env = { origin, chrome: chromeCdp }
   const runs = [
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
+    ...ROSTER_GEOMETRY_SCENARIOS.map((scenario) => ({ scenario, run: () => runRosterGeometryScenario(env, scenario) })),
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
     { scenario: ROTATION_SCENARIO, run: () => runRotationScenario(env, ROTATION_SCENARIO) },
     ...MOBILE_FULLSCREEN_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileFullscreenScenario(env, scenario) })),

@@ -62,41 +62,49 @@ describe('Replay3DPane HUD 定位契约', () => {
     expect(controls.body).toContain('z-index: var(--pb-z-hud)')
   })
 
-  it('D) 其余 HUD 区域各自声明定位（阵容面板 / hud / banner）', () => {
-    for (const selector of ['.team', '.hud', '.banner']) {
+  it('D) 其余 HUD 区域各自声明定位（阵容车道 / hud / banner）', () => {
+    for (const selector of ['.team-lane', '.hud', '.banner']) {
       expect(ruleFor(selector).body, `${selector} 缺少 position`).toContain('position: absolute')
     }
-    expect(ruleFor('.team1').body, '.team1 缺少 left').toContain('left:')
-    expect(ruleFor('.team2').body, '.team2 缺少 right').toContain('right:')
-    expect(ruleFor('.team-unknown').body).toContain('left: 50%')
-  })
-
-  /**
-   * 阵容布局回归：双方名单是**两块独立面板**（己方贴左 / 敌方贴右 + 未知阵营居中块）。
-   * 曾经被合成一条通栏（两队塞进一个 flex 容器各占一半），视觉上"双方队伍栏并成一条"；
-   * 这类改动不会让任何行为测试失败，所以在这里锁死结构。紧凑档打开时两块各占半宽——
-   * 旧版两块 240px 绝对定位互相重叠盖住场景（审计 3D-15），不得回退成重叠。
-   */
-  it('F) 阵容是左右两块独立面板；紧凑档打开时各占半宽、不重叠', () => {
-    const all = rules()
-    const bodiesOf = (selector) => all.filter((r) => r.selector === selector).map((r) => r.body).join(' ')
-    // 桌面：两块面板各自贴边、互不覆盖（team1 只声明 left、team2 只声明 right）
-    expect(bodiesOf('.team1')).toContain('left: var(--space-2)')
-    expect(bodiesOf('.team1')).not.toContain('right:')
-    expect(bodiesOf('.team2')).toContain('right: var(--space-2)')
-    expect(bodiesOf('.team2')).not.toContain('left:')
-    // 不再有把两队装进一个容器的 .side 布局
-    expect(all.some((r) => r.selector === '.side' || r.selector.endsWith(' .side'))).toBe(false)
-    // 紧凑档：打开后左右各半（两侧边界都声明），互不重叠
-    expect(bodiesOf('.pb-root.roster-open .team1')).toContain('right: 51%')
-    expect(bodiesOf('.pb-root.roster-open .team2')).toContain('left: 51%')
-    expect(bodiesOf('.pb-root.roster-open .team')).toContain('display: block')
+    expect(ruleFor('.side-left').body, '.side-left 缺少 left').toContain('left:')
+    expect(ruleFor('.side-right').body, '.side-right 缺少 right').toContain('right:')
+    // 车道上下界必须来自实测几何（RO 写入的 CSS 变量），不允许写死像素 top / 固定 reserve：
+    // HUD 长高（基地条 + 击杀流）或控制条换行（窄屏）时车道必须自动让位
+    const lane = ruleFor('.team-lane').body
+    expect(lane).toContain('top: calc(var(--space-2) + var(--pb-hud-h)')
+    expect(lane).toContain('bottom: calc(var(--pb-controls-h)')
   })
 
   it('E) 场景画布铺满并建立局部层叠上下文', () => {
     expect(ruleFor('.scene').body).toContain('position: absolute')
     expect(ruleFor('.scene').body).toContain('inset: 0')
     expect(ruleFor('.pb-root').body).toContain('isolation: isolate')
+  })
+
+  /**
+   * 阵容布局回归：双方名单在**左右两条侧边车道**上（未知阵营归左车道、常驻车道底部）。
+   * 曾经被合成一条通栏（两队塞进一个 flex 容器），也曾把 unknown 放进中央车道与 HUD 相撞
+   * （review blocker）；这类改动不会让行为测试失败，所以在这里锁结构。真实几何安全由
+   * browser-workspace-interaction 的 roster 几何场景在真实 Chrome 里证明，这里只是 smoke。
+   */
+  it('F) 阵容是左右两条侧边车道；unknown 不在中央车道；紧凑档打开时各占半宽', () => {
+    const all = rules()
+    const bodiesOf = (selector) => all.filter((r) => r.selector === selector).map((r) => r.body).join(' ')
+    // 桌面：两条车道各自贴边（side-left 只声明 left、side-right 只声明 right，互不覆盖）
+    expect(bodiesOf('.side-left')).toContain('left: var(--space-2)')
+    expect(bodiesOf('.side-left')).not.toContain('right:')
+    expect(bodiesOf('.side-right')).toContain('right: var(--space-2)')
+    expect(bodiesOf('.side-right')).not.toContain('left:')
+    // unknown 不在中央车道：任何规则不得把它居中（left: 50% / translateX(-50%)）
+    const unknown = all.filter((r) => r.selector.includes('.team-unknown')).map((r) => r.body).join(' ')
+    expect(unknown).not.toContain('left: 50%')
+    expect(unknown).not.toContain('translateX(-50%)')
+    // 不再有把两队装进一个容器的 .side 布局（旧通栏结构）
+    expect(all.some((r) => r.selector === '.side' || r.selector.endsWith(' .side'))).toBe(false)
+    // 紧凑档：打开后左右各半（两侧边界都声明），互不重叠
+    expect(bodiesOf('.pb-root.roster-open .side-left')).toContain('right: 51%')
+    expect(bodiesOf('.pb-root.roster-open .side-right')).toContain('left: 51%')
+    expect(bodiesOf('.pb-root.roster-open .team-lane')).toContain('display: flex')
   })
 })
 
