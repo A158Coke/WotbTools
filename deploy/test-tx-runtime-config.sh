@@ -15,11 +15,73 @@ IP
 # `validate-caddy-config.sh` asserts against the JSON Caddy **adapts** the staged file to
 # (the adapted routes, their order, their handlers and the response they answer with), so
 # a fake `adapt` reply would either hide a real shape regression or reject a valid
-# configuration. This fixture therefore delegates exactly that one invocation to the real
-# Docker CLI - the same pinned caddy image the Caddy validation step already pulls - and
+# configuration. This fixture delegates config rendering and that adapt invocation to the
+# real Docker CLI - the same pinned caddy image the Caddy validation step already pulls - and
 # keeps the fake behaviour for everything else (including the deliberate
 # FAKE_CADDY_VALIDATE_FAIL knob on `validate`, and the canned readiness/log responses).
 REAL_DOCKER="$(command -v docker || true)"
+# Validate native Compose output before installing the deployment fixture CLI.
+# No container starts here; fixtures use dummy credentials and immutable refs.
+export TX_RUNTIME_ROOT="$WORK/runtime"
+export TX_FRONTEND_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend@sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd
+export TX_BUSINESS_API_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools-business-api@sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd
+export KC_POSTGRES_ADMIN_USER=ci KC_POSTGRES_ADMIN_PASSWORD=ci
+export KC_BOOTSTRAP_ADMIN_PASSWORD=ci KC_DB_USERNAME=ci KC_DB_PASSWORD=ci
+export WG_APPLICATION_ID=ci CADDY_ACME_EMAIL=ci@example.invalid
+export TX_BUSINESS_POSTGRES_ADMIN_USER=ci TX_BUSINESS_POSTGRES_ADMIN_PASSWORD=ci
+export TX_BUSINESS_DB_NAME=wotb TX_BUSINESS_DB_USERNAME=ci TX_BUSINESS_DB_PASSWORD=ci
+export KEYCLOAK_ADMIN_CLIENT_SECRET=ci
+docker compose -p deploy -f "$ROOT/deploy/tx/docker-compose.yml" config --format json > "$WORK/tx-compose.json"
+source "$ROOT/deploy/tx/runtime-check-lib.sh"
+assert_tx_service_ports < "$WORK/tx-compose.json"
+for owner in frontend business-api keycloak keycloak-postgres business-postgres; do
+  service="$owner"
+  [ "$owner" != frontend ] || service=wotb-frontend
+  docker compose -p deploy -f "$ROOT/deploy/tx/$owner.compose.yml" config --format json \
+    | assert_tx_service_ports "$service"
+done
+# Exercise the shared production validator against mutations of real rendered
+# JSON: missing endpoints, unreviewed interfaces/ports/protocols, duplicates and
+# app/management target swaps must all fail. Port declaration order is irrelevant.
+python3 - "$WORK/tx-compose.json" "$ROOT/deploy/tx/runtime-check-lib.sh" <<'PY'
+import copy, json, subprocess, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    baseline = json.load(handle)
+lib = sys.argv[2]
+names = ["wotb-frontend", "business-api", "keycloak", "keycloak-postgres", "business-postgres"]
+def check(data):
+    return subprocess.run(
+        ["bash", "-c", 'source "$1"; assert_tx_service_ports', "bash", lib],
+        input=json.dumps(data), text=True, capture_output=True,
+    )
+positive = copy.deepcopy(baseline)
+for name in names:
+    positive["services"][name]["ports"].reverse()
+assert check(positive).returncode == 0, "equivalent binding order rejected"
+count = 0
+for name in names:
+    ports = baseline["services"][name]["ports"]
+    for index, port in enumerate(ports):
+        mutations = [
+            ("host_ip", "0.0.0.0"), ("host_ip", "::"), ("host_ip", "203.0.113.10"),
+            ("host_ip", ""), ("published", "5432"), ("target", 1), ("protocol", "udp"),
+            ("remove", None), ("duplicate", None),
+        ]
+        if name == "business-api":
+            mutations.append(("target", 8088 if port["target"] == 8087 else 8087))
+        for field, value in mutations:
+            data = copy.deepcopy(baseline)
+            changed = data["services"][name]["ports"]
+            if field == "remove":
+                changed.pop(index)
+            elif field == "duplicate":
+                changed.append(copy.deepcopy(port))
+            else:
+                changed[index][field] = value
+            assert check(data).returncode != 0, (name, index, field, value)
+            count += 1
+print(f"TX rendered Compose service-plane contract: PASS ({count} rejected mutations)")
+PY
 cat > "$WORK/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -33,6 +95,9 @@ done
 verb="${1:-}"; shift || true
 printf '%s %s\n' "$verb" "$*" >> "$FAKE_DOCKER_LOG"
 case "$verb" in
+  config)
+    exec "$REAL_DOCKER" "${original[@]}"
+    ;;
   run)
     if [[ "${FAKE_CADDY_VALIDATE_FAIL:-0}" = 1 && "$*" == *"--entrypoint caddy caddy validate"* ]]; then
       exit 1
@@ -76,6 +141,16 @@ grep -q '^up -d --no-deps --force-recreate wotb-frontend$' "$WORK/docker.log"
 ! grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/docker.log"
 grep -Fq 'image: ${TX_FRONTEND_IMAGE_REF:?TX_FRONTEND_IMAGE_REF is required}' "$WORK/host/deploy/frontend.compose.yml"
 [ ! -e "$WORK/host/production-release.json" ]
+
+# The selected owner must reject unsafe rendered binds before any live recreate.
+cp "$WORK/incoming/deploy/tx/frontend.compose.yml" "$WORK/frontend.compose.yml.bak"
+sed -i 's/10.20.0.1:8081:80/0.0.0.0:8081:80/' "$WORK/incoming/deploy/tx/frontend.compose.yml"
+if run_frontend FAKE_DOCKER_LOG="$WORK/frontend-wildcard.log" >/dev/null 2>&1; then
+  echo 'TX deployment accepted a wildcard frontend binding' >&2
+  exit 1
+fi
+! grep -q '^up ' "$WORK/frontend-wildcard.log" 2>/dev/null
+cp "$WORK/frontend.compose.yml.bak" "$WORK/incoming/deploy/tx/frontend.compose.yml"
 
 if run_frontend TX_FRONTEND_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:latest \
   FAKE_DOCKER_LOG="$WORK/frontend-tag-ref.log" >/dev/null 2>&1; then

@@ -73,10 +73,14 @@ assert document["volumes"]["business_postgres_data"]["name"] == "deploy_business
 assert "business-postgres" in services, sorted(services)
 service = services["business-postgres"]
 assert service["image"] == "postgres:18-alpine", service["image"]
-ports = [str(port) for port in service.get("ports", [])]
-assert any("127.0.0.1" in port and "25432" in port and "5432" in port for port in ports), ports
-assert not any("0.0.0.0" in port or "::" in port for port in ports), ports
-assert not any("10.20.0.1" in port for port in ports), ports
+ports = sorted(
+    (str(p.get("host_ip", "")), str(p.get("published")), str(p.get("target")), p.get("protocol", "tcp"))
+    for p in service.get("ports", [])
+)
+assert ports == sorted([
+    ("127.0.0.1", "25432", "5432", "tcp"),
+    ("10.20.0.1", "25432", "5432", "tcp"),
+]), ports
 assert service.get("healthcheck"), "business-postgres healthcheck is required"
 assert service.get("restart") == "unless-stopped", service.get("restart")
 assert str(service.get("mem_limit")) in {"512m", "536870912"}, service.get("mem_limit")

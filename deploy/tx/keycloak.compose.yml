@@ -21,6 +21,7 @@ services:
     ports:
       # OpenTofu runs on TX and manages Keycloak through this loopback-only port.
       - "127.0.0.1:18080:8080"
+      - "10.20.0.1:8080:8080"
     restart: unless-stopped
     logging: *default-logging
 
