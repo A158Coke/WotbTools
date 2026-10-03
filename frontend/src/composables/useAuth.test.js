@@ -479,7 +479,7 @@ describe('useAuth', () => {
     expect(auth.authInitState.value).toBe('unauthenticated')
   })
 
-  it('ensureToken() 在 Android 上返回 false 时同样清空本地会话状态', async () => {
+  it('ensureToken() Native 离线 refresh-failed 保留 session但返回 false', async () => {
     const native = androidBridge({
       authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
       authGetAccessToken: {
@@ -502,9 +502,13 @@ describe('useAuth', () => {
 
     await expect(auth.ensureToken(30)).resolves.toBe(false)
 
+    expect(auth.authenticated.value).toBe(true)
+    expect(auth.tokenParsed.value).toEqual(ADMIN_CLAIMS)
+    expect(auth.authInitState.value).toBe('authenticated')
+    expect(auth.token()).toBe('')
+    native.results.authGetState = { authenticated: false }
+    await expect(auth.ensureToken(30)).resolves.toBe(false)
     expect(auth.authenticated.value).toBe(false)
-    expect(auth.tokenParsed.value).toBe(null)
-    expect(auth.authInitState.value).toBe('unauthenticated')
   })
 
   it('hasRole / isAdmin / isHofAdmin / displayName 都来自 tokenParsed claims', async () => {

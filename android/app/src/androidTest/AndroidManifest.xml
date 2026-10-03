@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <uses-library android:name="android.test.runner" />
+        <uses-library android:name="android.test.base" />
+        <provider
+            android:name="com.wotbtools.app.ReplayFixtureProvider"
+            android:authorities="com.wotbtools.app.test.replays"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

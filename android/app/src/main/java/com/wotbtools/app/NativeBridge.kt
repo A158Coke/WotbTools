@@ -6,7 +6,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * origin-scoped bridge：经 WebView WebMessageListener，仅 wotbtools.com/www 可调。
+ * origin-scoped bridge：经 WebView WebMessageListener，仅 appassets + reviewed production compatibility origins 可调。
  * 只暴露：capability/version discovery、pending replay handoff、app update 触发、native auth。
  * 禁止 arbitrary file/http/command/intent API（规格 §27）。
  *
@@ -40,6 +40,7 @@ class NativeBridge(private val host: MainActivity) {
                 // ── 立即回复（纯本地读 / 无网络）──
                 "getBridgeVersion" -> reply(envelope(id, host.bridgeVersion()))
                 "getCapabilities" -> reply(envelope(id, JSONArray(host.bridgeCapabilities())))
+                "connectivityGetState" -> reply(envelope(id, host.bridgeConnectivityState()))
                 "getPendingReplay" -> reply(envelope(id, host.bridgePendingReplayJson()))
                 "consumePendingReplay" ->
                     reply(envelope(id, host.bridgeConsumePendingReplay(params?.optString("expectedPendingId"))))

@@ -5,8 +5,6 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -26,41 +24,29 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewFeature
 import androidx.webkit.WebViewCompat
 import com.wotbtools.app.auth.AuthFailureReason
 import com.wotbtools.app.auth.AuthManager
 import com.wotbtools.app.auth.AuthResult
 import java.io.File
-import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * WotBTools Android 壳 —— 现有 Vue 的纯联网 Thin Client。
- *
- * 职责：网络/版本门禁（fail-closed）→ 远程加载 https://wotbtools.com（有 pending replay 时加载
- * ?view=replay）；Replay 意图（ACTION_SEND/ACTION_VIEW）经安全 ingress 复制到 app cache 后交给
- * 现有 Web upload pipeline（**唯一** ingress：Native Bridge）；origin-scoped Native Bridge
- * （仅 wotbtools.com/www 可用）。
- *
- * Navigation ownership：pending replay 的分发完全由纯策略 `ReplayDispatchPolicy` 决定；认证不再参与
- * 这个决策 —— 登录跑在 external user-agent 里，永远不会占用 WebView navigation。
- * Pending replay 跨 process death 由 metadata 恢复：冷启动先恢复 active pending，再清理 orphan。
- * Pending replay 的 ACK 是 identity-matched 的 compare-and-clear（决策见纯策略 `PendingReplayAckPolicy`）：
- * 只有命名了当前 pending 的 ACK 才清，绝不接受无 identity 的 ACK。
- *
- * Auth ownership：**Native 拥有认证**（AppAuth / RFC 8252，见 `auth/AuthManager`）。WebView 只保留
- * 一个 residual origin boundary：主 frame 导航到 app 自有 host 之外一律交给系统浏览器并阻断在
- * WebView 内，所以 Keycloak / provider 页面永远不会在 WebView 里渲染。
+ * Bundled Vue local-first shell. Native owns OIDC and replay ingress; Vue Router owns views.
+ * Pending metadata survives process death and only an identity-matched ACK clears it.
+ * Version discovery is bounded best-effort and never delays loading the local document.
  */
 class MainActivity : Activity() {
 
     companion object {
-        private const val BASE_URL = "https://wotbtools.com"
+        internal const val LOCAL_APP_ORIGIN = "https://appassets.androidplatform.net"
+        internal const val LOCAL_APP_ENTRY = LOCAL_APP_ORIGIN + "/index.html"
         // replay canonical view 的 marker 由 ReplayDispatchPolicy 拥有：分发决策所判断的 URL 与这里导航到的
         // URL 共用同一常量，避免两处字面量漂移。
-        private const val REPLAY_URL = BASE_URL + "?" + ReplayDispatchPolicy.REPLAY_VIEW_MARKER
+        private const val REPLAY_URL = LOCAL_APP_ENTRY + "?" + ReplayDispatchPolicy.REPLAY_VIEW_MARKER
         private const val FILE_CHOOSER_REQUEST = 1001
         private const val BRIDGE_NAME = "WotbNative"
 
@@ -70,22 +56,28 @@ class MainActivity : Activity() {
         /** 原生认证变更后推给页面的全局（与 contracts/android-native-bridge.json 的 events 一致）。 */
         private const val AUTH_CHANGED_GLOBAL = "wotbtoolsOnAuthChanged"
 
+        /** 连通性变化后推给页面的全局（与 contracts/android-native-bridge.json 的 events 一致）。 */
+        private const val CONNECTIVITY_CHANGED_GLOBAL = "wotbtoolsOnConnectivityChanged"
+
         /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
-        private val BRIDGE_ORIGINS = setOf(
+        internal val BRIDGE_ORIGINS = setOf(
+            LOCAL_APP_ORIGIN,
             "https://wotbtools.com",
             "https://www.wotbtools.com"
         )
 
-        /** app 自有 host：主 frame 导航里唯一允许留在 WebView 的集合（大小写不敏感 + 去尾部点）。 */
-        private val APP_HOSTS = setOf(
-            "wotbtools.com",
-            "www.wotbtools.com"
-        )
+        /** Only the exact HTTPS local origin can remain the main document. */
+        internal fun isLocalAppUrl(url: String): Boolean = try {
+            val uri = java.net.URI(url)
+            uri.scheme == "https" && uri.rawAuthority == "appassets.androidplatform.net"
+        } catch (_: Exception) {
+            false
+        }
+
     }
 
     private lateinit var webView: WebView
     private lateinit var webViewContainer: FrameLayout
-    private lateinit var networkGateView: LinearLayout
     private lateinit var versionGateView: LinearLayout
     private lateinit var webErrorView: LinearLayout
     private lateinit var versionTitle: TextView
@@ -100,11 +92,13 @@ class MainActivity : Activity() {
     private lateinit var apkUpdater: ApkUpdater
     private lateinit var nativeBridge: NativeBridge
     private lateinit var authManager: AuthManager
+    private lateinit var connectivityMonitor: ConnectivityMonitor
     private val executor: ExecutorService = Executors.newFixedThreadPool(2)
 
     @Volatile private var pendingReplay: PendingReplay? = null
     @Volatile private var pendingReplayEligible = true
     @Volatile private var latestManifest: VersionManifest? = null
+    private var versionCheckInFlight = false
     @Volatile private var downloadedApk: File? = null
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     @Volatile private var awaitingUnknownSourcesPermission = false
@@ -127,7 +121,6 @@ class MainActivity : Activity() {
 
         webView = findViewById(R.id.webView)
         webViewContainer = findViewById(R.id.webViewContainer)
-        networkGateView = findViewById(R.id.networkGateView)
         versionGateView = findViewById(R.id.versionGateView)
         webErrorView = findViewById(R.id.webErrorView)
         versionTitle = findViewById(R.id.versionTitle)
@@ -144,12 +137,18 @@ class MainActivity : Activity() {
         authManager = AuthManager.getInstance(applicationContext, MainActivity::class.java)
         authManager.addListener(authChangedListener)
         // discovery 只预热一次（进程内缓存），让 authLogin 能真正同步启动 external user-agent。
-        authManager.warmUp()
+        // 连通性由系统 ConnectivityManager 权威判定；页面经 bridge 读取（绝不看 navigator.onLine）。
+        connectivityMonitor = ConnectivityMonitor(this) { notifyConnectivityChanged() }
+        connectivityMonitor.start()
+        if (connectivityMonitor.state == "online") authManager.warmUp()
 
-        findViewById<Button>(R.id.retryButton).setOnClickListener { hideAllGates(); startStartupFlow() }
         webErrorRetryButton.setOnClickListener { hideAllGates(); loadWeb() }
         versionPrimaryButton.setOnClickListener { onUpdatePrimary() }
-        versionLaterButton.setOnClickListener { loadWeb() }
+        versionLaterButton.setOnClickListener {
+            hideAllGates()
+            webView.visibility = View.VISIBLE
+            dispatchPendingReplayIfAllowed()
+        }
 
         val webViewOk = configureWebView()
         // 冷启动顺序：先恢复 active pending（跨进程重建存活），再清理不再被它引用的 orphan replay cache
@@ -174,11 +173,8 @@ class MainActivity : Activity() {
             return false
         }
         val settings = webView.settings
-        // WebView 仍需要 cookie jar 才能维持 wotbtools.com 自己的会话；认证已不在 WebView 内发生，
-        // 因此不再需要为跨站 IdP 打开 third-party cookie。
-        val cookieManager = CookieManager.getInstance()
-        cookieManager.setAcceptCookie(true)
-        cookieManager.setAcceptThirdPartyCookies(webView, true)
+        // Authentication uses native Bearer; the local document needs no cross-site cookies.
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -186,12 +182,13 @@ class MainActivity : Activity() {
         settings.allowContentAccess = false
         settings.setGeolocationEnabled(false)
 
-        // origin-scoped Native Bridge：仅 wotbtools.com/www；替代 addJavascriptInterface 的全 frame 暴露。
+        // Exact local origin + reviewed production compatibility origins; never arbitrary frames.
         WebViewCompat.addWebMessageListener(
             webView,
             BRIDGE_NAME,
             BRIDGE_ORIGINS,
-            WebViewCompat.WebMessageListener { _, message, _, _, replyProxy ->
+            WebViewCompat.WebMessageListener { _, message, _, isMainFrame, replyProxy ->
+                if (!isMainFrame) return@WebMessageListener
                 val data = message.data
                 if (data != null) {
                     // 认证方法会稍后才完成：replyProxy 必须按次捕获，由 postReply 兜住「回复时页面已销毁」，
@@ -221,7 +218,7 @@ class MainActivity : Activity() {
             ): Boolean {
                 // 普通 Web file chooser：始终交给 Android 系统 picker（既有 UX 不变）。
                 // Android external replay 绝不在这里注入：唯一 ingress 是 Intent → pending cache →
-                // Native Bridge（getPendingReplay / fetch(content://) / consumePendingReplay）→ 上传管线。
+                // Native Bridge → local synthetic fetch → shared local parser.
                 val intent = try {
                     params.createIntent()
                 } catch (_: Exception) {
@@ -239,29 +236,34 @@ class MainActivity : Activity() {
             }
         }
 
+        // Vite base=/; strip the URL root then read assets/web/<path> from the APK.
+        val bundledAssets = WebViewAssetLoader.AssetsPathHandler(this)
+        val assetLoader = WebViewAssetLoader.Builder()
+            .setDomain("appassets.androidplatform.net")
+            .setHttpAllowed(false)
+            .addPathHandler("/") { path -> bundledAssets.handle("web/" + path.ifEmpty { "index.html" }) }
+            .build()
+
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                 val uri = url?.let { Uri.parse(it) }
                 Log.d(
                     TAG,
                     "pageStart scheme=${uri?.scheme ?: "null"} host=${uri?.host ?: "null"} " +
-                        "category=${originCategory(uri?.host)} mainFrame=true"
+                        "category=${if (url != null && isLocalAppUrl(url)) "local" else "external"} mainFrame=true"
                 )
             }
 
-            /**
-             * residual origin boundary（App 自有 origin 边界）：主 frame 导航只允许留在 app 自有 host；
-             * 其它一切（Keycloak / provider / 普通外链 / 无 host 的怪 URI）交给系统浏览器并在 WebView 内
-             * 阻断 —— 认证页面因此永远不会在 App 的 WebView 里渲染。
-             */
+            /** Main frame stays local; HTTPS/mailto external links use the system browser. */
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if (!request.isForMainFrame) return false
                 val uri = request.url
-                if (isAppHost(uri.host)) {
+                if (isLocalAppUrl(uri.toString())) {
                     Log.d(TAG, "nav in-app scheme=${uri.scheme ?: "null"} host=${uri.host ?: "null"}")
                     return false
                 }
                 Log.d(TAG, "nav external scheme=${uri.scheme ?: "null"} host=${uri.host ?: "null"}")
+                if (uri.scheme !in setOf("https", "mailto")) return true
                 return try {
                     startActivity(Intent(Intent.ACTION_VIEW, uri))
                     true
@@ -279,14 +281,29 @@ class MainActivity : Activity() {
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? {
-                if (request.url.toString() != ReplayIntentHandler.STREAM_URL) return null
+                // shouldOverrideUrlLoading is not called for every navigation (notably POST).
+                if (request.isForMainFrame && !isLocalAppUrl(request.url.toString())) {
+                    return WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden",
+                        mapOf("Cache-Control" to "no-store"), null)
+                }
+                if (request.url.toString() != ReplayIntentHandler.STREAM_URL) {
+                    if (!isLocalAppUrl(request.url.toString())) return null
+                    // Local URLs never escape to DNS/network when a bundled file is missing.
+                    val bundled = assetLoader.shouldInterceptRequest(request.url)
+                    // History navigation is owned by Vue Router; main-frame routes use the same index.
+                    if (request.isForMainFrame && (bundled == null || bundled.statusCode == 404)) {
+                        return bundledAssets.handle("web/index.html")
+                    }
+                    return bundled ?: WebResourceResponse("text/plain", "UTF-8", 404, "Not Found",
+                            mapOf("Cache-Control" to "no-store"), null)
+                }
                 Log.d(TAG, "replay-pending stream requested")
                 val pending = pendingReplay?.takeIf { pendingReplayEligible }
                 val expectedId = request.requestHeaders.entries.firstOrNull {
                     it.key.equals(ReplayIntentHandler.IDENTITY_HEADER, ignoreCase = true)
                 }?.value
                 val response = ReplayIntentHandler.interceptPendingResource(
-                    request.url.toString(), pending?.file, pending?.pendingId, expectedId
+                    request.url.toString(), pending?.file, pending?.pendingId, expectedId, request.method
                 ) ?: error("Synthetic replay resource must be Native-owned")
                 val event = when (response.status) {
                     200 -> "served"
@@ -305,7 +322,14 @@ class MainActivity : Activity() {
                 request: WebResourceRequest,
                 error: WebResourceError
             ) {
-                if (request.isForMainFrame) showWebError()
+                if (request.isForMainFrame && isLocalAppUrl(request.url.toString())) showWebError()
+            }
+            override fun onReceivedHttpError(
+                view: WebView,
+                request: WebResourceRequest,
+                errorResponse: WebResourceResponse
+            ) {
+                if (request.isForMainFrame && isLocalAppUrl(request.url.toString())) showWebError()
             }
         }
         return true
@@ -368,20 +392,22 @@ class MainActivity : Activity() {
         if (notifyWeb) callback?.onCustomViewHidden()
     }
 
-    // ── 启动门禁（fail-closed）──
+    // ── Local startup + bounded best-effort update discovery ──
 
     private fun startStartupFlow() {
+        loadWeb()
+        checkForUpdateAsync()
+    }
+
+    private fun checkForUpdateAsync() {
+        if (connectivityMonitor.state != "online" || versionCheckInFlight) return
+        versionCheckInFlight = true
         executor.execute {
-            if (!isNetworkAvailable()) {
-                runOnUiThread { showNetworkGate() }
-                return@execute
-            }
             val result = StartupGate.checkVersion()
             runOnUiThread {
-                when (result) {
-                    is StartupGate.Result.Ok -> onVersionReady(result.manifest)
-                    is StartupGate.Result.VersionUnavailable -> showNetworkGate()
-                }
+                versionCheckInFlight = false
+                if (isDestroyed || destroyedWebView) return@runOnUiThread
+                if (result is StartupGate.Result.Ok) onVersionReady(result.manifest)
             }
         }
     }
@@ -392,14 +418,19 @@ class MainActivity : Activity() {
         when {
             installed < manifest.minSupportedVersionCode -> showMandatoryUpdate(manifest, installed)
             installed < manifest.latestVersionCode -> showOptionalUpdate(manifest, installed)
-            else -> loadWeb()
+            else -> Unit
         }
     }
 
     /** Entry URL：有 pending replay 就进 replay canonical view，否则首页。认证回程不经这里。 */
-    private fun entryUrl(): String = if (pendingReplay != null) REPLAY_URL else BASE_URL
+    private fun entryUrl(): String = if (pendingReplay != null) REPLAY_URL else LOCAL_APP_ENTRY
 
     private fun loadWeb() {
+        val manifest = latestManifest
+        if (manifest != null && installedVersionCode() < manifest.minSupportedVersionCode) {
+            showMandatoryUpdate(manifest, installedVersionCode())
+            return
+        }
         hideAllGates()
         webView.visibility = View.VISIBLE
         if (webView.url.isNullOrEmpty()) {
@@ -407,11 +438,6 @@ class MainActivity : Activity() {
         } else {
             webView.reload()
         }
-    }
-
-    private fun showNetworkGate() {
-        hideAllGates()
-        networkGateView.visibility = View.VISIBLE
     }
 
     private fun showWebError() {
@@ -427,6 +453,8 @@ class MainActivity : Activity() {
     }
 
     private fun showMandatoryUpdate(manifest: VersionManifest, installed: Int) {
+        // Best-effort discovery can finish after a local replay entered HTML fullscreen.
+        if (fullscreenView != null) hideFullscreenView(notifyWeb = true)
         hideAllGates()
         versionGateView.visibility = View.VISIBLE
         versionTitle.text = getString(R.string.update_mandatory_title)
@@ -534,7 +562,7 @@ class MainActivity : Activity() {
      * 「是否分发 / 怎么分发」完全由纯策略 [ReplayDispatchPolicy] 决定（JVM 单测覆盖），这里只执行动作：
      * 无 pending / WebView 不可见（门禁 / 错误 / 更新页接管中）→ 不分发；已在 replay workspace → 通知 Web；
      * 否则切到 replay canonical view。认证不再参与这个决策：登录在 external user-agent 里进行，不会占用
-     * WebView navigation，因此 replay 无需为 auth 让路。登录完成后 Web 应用会重新加载并经 Native Bridge
+     * WebView navigation，因此 replay 无需为 auth 让路。登录完成后 Web 应用就地同步认证状态，并经 Native Bridge
      * 自行消费 pending。
      */
     private fun dispatchPendingReplayIfAllowed() {
@@ -582,7 +610,7 @@ class MainActivity : Activity() {
      * 逐字符相等之后。这里刻意保持无参：identity 判断归 [PendingReplayAckPolicy]，清理点不复制第二份规则。
      */
     private fun clearPendingReplay() {
-        // 重要：Web `fetch(content://)` 返回后 WebView/Chromium 仍可能读取该文件，不能立即删除 backing file。
+        // 重要：Web synthetic fetch 返回后 WebView/Chromium 仍可能读取该文件，不能立即删除 backing file。
         // 只清 pending slot + 持久 metadata（exactly-once），文件保留到下一次 app startup cleanupOrphans() 清理。
         pendingReplay = null
         pendingReplayEligible = false
@@ -648,16 +676,40 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 连通性变化 → 通知页面（全局 `wotbtoolsOnConnectivityChanged`）。
+     *
+     * 推送**不携带 payload**：页面收到通知后回读 `connectivityGetState`，因此不存在
+     * 「事件说在线、读回来是离线」的双事实源（与 authChanged 同一约定）。回调可能在主线程之外
+     * （binder 线程经 mainHandler 转发，这里仍保守地按 post 处理）。
+     */
+    private fun notifyConnectivityChanged() {
+        if (!destroyedWebView) checkForUpdateAsync()
+        webView.post {
+            if (destroyedWebView || webView.url.isNullOrEmpty()) return@post
+            webView.evaluateJavascript(
+                "window.$CONNECTIVITY_CHANGED_GLOBAL && window.$CONNECTIVITY_CHANGED_GLOBAL()",
+                null
+            )
+        }
+    }
+
     // ── Native Bridge 白名单能力（供 Vue 端；origin-scoped）──
 
     fun bridgeVersion(): Int = BuildConfig.NATIVE_BRIDGE_VERSION
 
     fun bridgeCapabilities(): List<String> =
-        listOf("native-auth", "replay-share", "replay-open", "app-update")
+        listOf("native-auth", "replay-share", "replay-open", "app-update", "connectivity")
+
+    /**
+     * 连通性状态 token（`connectivityGetState` 的 result）：Android 系统 `ConnectivityManager` 的
+     * 权威判定（INTERNET + VALIDATED），页面**不得**用 `navigator.onLine` 代替它。
+     */
+    fun bridgeConnectivityState(): String = connectivityMonitor.state
 
     /**
      * pending replay 的 wire contract（`getPendingReplay` 的 result）：`pendingId` 是这份 pending 的
-     * authoritative identity，Web 必须在 server 接受后原样回传给 `consumePendingReplay`；其余字段与
+     * authoritative identity，Web 必须在本机分析完成后原样回传给 `consumePendingReplay`；其余字段与
      * 既有语义一致（`name` 仅显示名、`size` 仅提示、`uri` 为固定 same-origin HTTPS resource）。
      */
     fun bridgePendingReplayJson(): Any {
@@ -674,7 +726,7 @@ class MainActivity : Activity() {
      *
      * 只有 Web 明确 ACK 的那份 pending（identity = 完整 pendingId）**仍是**当前 pending 时才清理；
      * identity 缺失或已被更新的 replay 取代一律**不清理**（见 [PendingReplayAckPolicy]）—— 否则
-     * 「A 被 server 接受后才发出的 ACK」会误清处理 A 期间新到的 B。刻意不存在无 identity 的 ACK 重载。
+     * 「A 本机分析完成后才发出的 ACK」会误清处理 A 期间新到的 B。刻意不存在无 identity 的 ACK 重载。
      *
      * @return true 仅表示本次 ACK 真的清掉了它命名的那份 pending。
      */
@@ -738,21 +790,28 @@ class MainActivity : Activity() {
      * `claims` 是 access token 解码后的 JWT payload（roles / preferred_username），供前端与
      * keycloak-js `tokenParsed` 对齐；refresh token / 授权码 / verifier 永不出现。
      */
-    fun bridgeAuthGetAccessToken(minValiditySeconds: Long): org.json.JSONObject =
-        when (val result = authManager.accessTokenOrRefresh(minValiditySeconds)) {
+    fun bridgeAuthGetAccessToken(minValiditySeconds: Long): org.json.JSONObject {
+        if (connectivityMonitor.state != "online") {
+            val cached = authManager.currentSession()
+            return if (cached.isValidFor(minValiditySeconds, System.currentTimeMillis())) sessionJson(cached)
+            else tokenFailureJson(if (cached.authenticated) "refresh-failed" else "unauthenticated")
+        }
+        return when (val result = authManager.accessTokenOrRefresh(minValiditySeconds)) {
             is AuthResult.Success -> sessionJson(result.session)
             is AuthResult.Failure -> tokenFailureJson(result.wireError)
-            // `accessTokenOrRefresh` 只可能给出 Success / Failure（ExchangeStarted 属于授权回程路径）；
-            // 新增结果类型时这里保持 fail-closed 的未认证投影，绝不静默当成已登录。
             else -> tokenFailureJson("unauthenticated")
         }
+    }
 
-    /** `authGetAccessToken` 的失败形状（契约封闭集合：null 字段 + error）。 */
-    private fun tokenFailureJson(error: String): org.json.JSONObject = org.json.JSONObject()
-        .put("token", org.json.JSONObject.NULL)
-        .put("expiresAt", org.json.JSONObject.NULL)
-        .put("claims", org.json.JSONObject.NULL)
-        .put("error", error)
+    /** Cached claims on transient failure are a local UI projection, never API authorization. */
+    private fun tokenFailureJson(error: String): org.json.JSONObject {
+        val cached = if (error == "refresh-failed") authManager.currentSession().takeIf { it.authenticated } else null
+        return org.json.JSONObject()
+            .put("token", org.json.JSONObject.NULL)
+            .put("expiresAt", cached?.expiresAtSeconds ?: org.json.JSONObject.NULL)
+            .put("claims", claimsJson(cached?.claims))
+            .put("error", error)
+    }
 
     private fun sessionJson(session: com.wotbtools.app.auth.AuthSession): org.json.JSONObject =
         org.json.JSONObject()
@@ -772,24 +831,16 @@ class MainActivity : Activity() {
     // ── 通用 ──
 
     /**
-     * 隐藏 WebView 内容并收起三个门禁/错误页。
+     * 隐藏 WebView 内容并收起版本/错误页。
      *
-     * 门禁视图（network/version/webError）与 [webView] 是根 FrameLayout 的**兄弟节点**，根容器必须保持
+     * 门禁视图（version/webError）与 [webView] 是根 FrameLayout 的**兄弟节点**，根容器必须保持
      * VISIBLE，否则子节点即便置为 VISIBLE 也不会绘制（父 GONE 连子一起隐藏）。因此这里只隐藏 WebView
      * 本身：门禁视图各自带不透明背景、按 XML 顺序绘制在 WebView 之上，足以完整接管画面。
      */
     private fun hideAllGates() {
-        networkGateView.visibility = View.GONE
         versionGateView.visibility = View.GONE
         webErrorView.visibility = View.GONE
         webView.visibility = View.GONE
-    }
-
-    private fun isNetworkAvailable(): Boolean {
-        val cm = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-        val network = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     private fun installedVersionCode(): Int {
@@ -802,20 +853,6 @@ class MainActivity : Activity() {
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-    }
-
-    /** 主 frame 导航边界用：host 归一化（去尾部点 + 小写）后是否属于 app 自有 host。 */
-    private fun isAppHost(host: String?): Boolean {
-        val normalized = host?.trim()?.trimEnd('.')?.takeIf { it.isNotEmpty() }
-            ?.lowercase(Locale.ROOT) ?: return false
-        return normalized in APP_HOSTS
-    }
-
-    /** 导航日志用的分类：只暴露 host 归属，不落完整 URI。 */
-    private fun originCategory(host: String?): String = when {
-        isAppHost(host) -> "app"
-        host.isNullOrBlank() -> "hostless"
-        else -> "external"
     }
 
     /**
@@ -866,6 +903,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         if (fullscreenView != null) hideFullscreenView(notifyWeb = true)
         destroyedWebView = true
+        connectivityMonitor.stop()
         authManager.removeListener(authChangedListener)
         webViewContainer.removeAllViews()
         webView.destroy()

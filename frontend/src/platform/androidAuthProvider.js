@@ -22,8 +22,10 @@ export function createAndroidAuthProvider() {
   let authenticated = false
   let claims = null
   let accessToken = ''
+  let generation = 0
 
   function clear() {
+    generation += 1
     authenticated = false
     claims = null
     accessToken = ''
@@ -32,9 +34,21 @@ export function createAndroidAuthProvider() {
 
   /**
    * `authGetAccessToken` 的返回值是 token / claims 的唯一事实源：
-   * error 非空或 token 缺失一律视为未登录（不做部分信任，避免留下半登录态）。
+   * Transient refresh failure invalidates the API token, not the Native-owned cached session.
+   * Only a confirmed Native logout or malformed reply clears the local projection.
    */
-  function applyTokenReply(reply) {
+  async function applyTokenReply(reply, expectedGeneration) {
+    if (generation !== expectedGeneration) return false
+    if (reply?.error === 'refresh-failed') {
+      accessToken = ''
+      const state = await callBridge(NATIVE_AUTH_METHODS.getState, {}, AUTH_RPC_OPTIONS)
+      if (generation !== expectedGeneration) return false
+      if (state?.authenticated !== true) return clear()
+      authenticated = true
+      // Cached claims preserve local UI permissions; no expired token is exposed to API callers.
+      if (reply.claims && typeof reply.claims === 'object') claims = reply.claims
+      return false
+    }
     if (reply?.error || typeof reply?.token !== 'string' || !reply.token) return clear()
     authenticated = true
     accessToken = reply.token
@@ -52,12 +66,14 @@ export function createAndroidAuthProvider() {
 
   /**
    * 唯一的状态加载路径：init 与 Native 的 authChanged 推送共用。
-   * 任何 null / error 回复都落到未登录，绝不会停在中间态。
+   * Native reports whether a cached session remains when refreshing cannot reach the server.
    */
   async function syncFromNative() {
+    const expectedGeneration = ++generation
     const state = await callBridge(NATIVE_AUTH_METHODS.getState, {}, AUTH_RPC_OPTIONS)
+    if (generation !== expectedGeneration) return false
     if (state?.authenticated !== true) return clear()
-    return applyTokenReply(await readAccessToken(AUTH_TOKEN_MIN_VALIDITY_SECONDS))
+    return applyTokenReply(await readAccessToken(AUTH_TOKEN_MIN_VALIDITY_SECONDS), expectedGeneration)
   }
 
   return {
@@ -84,17 +100,20 @@ export function createAndroidAuthProvider() {
      * （WebView 不导航，登录结果经 wotbtoolsOnAuthChanged 就地把状态同步回来）。
      */
     async login() {
+      generation += 1
       return (await callBridge(NATIVE_AUTH_METHODS.login, {}, AUTH_RPC_OPTIONS)) === true
     },
 
     async logout() {
-      await callBridge(NATIVE_AUTH_METHODS.logout, {}, AUTH_RPC_OPTIONS)
+      // Invalidate pending token/state replies before the logout RPC can finish.
       clear()
+      await callBridge(NATIVE_AUTH_METHODS.logout, {}, AUTH_RPC_OPTIONS)
     },
 
     async ensureToken(minValidity = AUTH_TOKEN_MIN_VALIDITY_SECONDS) {
       if (!authenticated) return false
-      return applyTokenReply(await readAccessToken(minValidity))
+      const expectedGeneration = generation
+      return applyTokenReply(await readAccessToken(minValidity), expectedGeneration)
     },
 
     /**
@@ -104,12 +123,15 @@ export function createAndroidAuthProvider() {
      */
     onAuthChanged(cb) {
       if (typeof window === 'undefined') return () => {}
+      let subscribed = true
       const handler = async () => {
         await syncFromNative()
-        cb()
+        if (subscribed) cb()
       }
       window[NATIVE_AUTH_CHANGED_GLOBAL] = handler
       return () => {
+        subscribed = false
+        generation += 1
         if (window[NATIVE_AUTH_CHANGED_GLOBAL] === handler) delete window[NATIVE_AUTH_CHANGED_GLOBAL]
       }
     },

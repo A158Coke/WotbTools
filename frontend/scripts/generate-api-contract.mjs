@@ -1,3 +1,7 @@
+import Ajv2020 from 'ajv/dist/2020.js'
+import addFormats from 'ajv-formats'
+import standaloneCode from 'ajv/dist/standalone/index.js'
+import { _ } from 'ajv/dist/compile/codegen/index.js'
 import { readFile, writeFile } from 'node:fs/promises'
 import { parse } from 'yaml'
 
@@ -30,3 +34,13 @@ const errorCodes = components.ApiErrorCode?.enum || []
 await writeFile(errorCodesOutput,
   `// GENERATED FILE - DO NOT EDIT MANUALLY. Source: contracts/http/openapi.yaml\nexport const API_ERROR_CODES = ${JSON.stringify(errorCodes)} as const\n`,
   'utf8')
+
+// Compile once at generation time: WebView CSP never needs runtime eval/new Function.
+const ajv = new Ajv2020({ allErrors: true, strict: false, code: { source: true, esm: true, formats: _`formats` } })
+addFormats(ajv)
+ajv.addSchema({ ...schema, $id: 'wotb-playback' }, 'playback')
+ajv.addSchema({ ...schema, $id: 'wotb-api-error', $ref: '#/$defs/ApiError' }, 'api-error')
+const validators = standaloneCode(ajv, { validator: 'playback', apiErrorValidator: 'api-error' })
+await writeFile(new URL('../src/api/generated/contract-validators.js', import.meta.url),
+  '// GENERATED FILE - DO NOT EDIT MANUALLY. Source: contracts/http/openapi.yaml\n'
+  + "import { fullFormats as formats } from 'ajv-formats/dist/formats.js';\n" + validators + '\n', 'utf8')

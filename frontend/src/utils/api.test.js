@@ -9,6 +9,13 @@ const auth = vi.hoisted(() => ({
   login: vi.fn(),
 }))
 
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
+
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => auth,
 }))
@@ -44,6 +51,7 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
   const file = new File(['bytes'], 'battle.wotbreplay', { type: 'application/octet-stream' })
 
   beforeEach(() => {
+    connectivityState.state.value = 'online'
     vi.stubGlobal('fetch', vi.fn())
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     localParse.parseAgentResultFromBytes.mockClear()
@@ -55,6 +63,22 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it('rejects offline uploads before local parsing, token refresh, login or HTTP', async () => {
+    connectivityState.state.value = 'offline'
+    await expect(hofUpload(file)).rejects.toBeInstanceOf(ApiError)
+    expect(localParse.parseAgentResultFromBytes).not.toHaveBeenCalled()
+    expect(auth.ensureToken).not.toHaveBeenCalled()
+    expect(auth.login).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('rechecks connectivity after token refresh before HTTP', async () => {
+    auth.ensureToken.mockImplementationOnce(async () => { connectivityState.state.value = 'offline'; return true })
+    await expect(hofDownload(1)).rejects.toBeInstanceOf(ApiError)
+    expect(fetch).not.toHaveBeenCalled()
+    expect(auth.login).not.toHaveBeenCalled()
   })
 
   it('resolves parsed JSON on HTTP 200 — must catch old requireOk(r).json() Promise bug', async () => {

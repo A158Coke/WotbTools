@@ -1,5 +1,6 @@
 import { computed, readonly, ref } from 'vue'
 import { ensureUserProfile } from '../utils/api-user.js'
+import { Feature, getFeatureAvailability, profileBackendAllowed } from '../app/featureCapabilities.js'
 
 /**
  * WotBTools 业务用户 bootstrap（KC User → user_profile 的 eventual self-healing）。
@@ -16,6 +17,11 @@ import { ensureUserProfile } from '../utils/api-user.js'
  * 失败**不会**被永久缓存，也**不会**把 authenticate 结果改成 false：刷新 / 下一次
  * app bootstrap / 显式 `retry()` 都会重新尝试。刻意不做自动重试循环——一次
  * bootstrap 只调用一次。</p>
+ *
+ * <p>**离线语义（PR B review blocker）**：profile ensure 是一次 backend 调用，因此它的准入
+ * 由 capability SSOT（[Feature.ACCOUNT_PROFILE] 是 ONLINE_REQUIRED）决定，而不是另写一套
+ * `connectivity === 'online'` 业务规则。离线 / 状态未知时**不发请求**、不进入 `failed`、
+ * 不显示失败横幅；恢复在线后再补一次（仍由下面的 in-flight / ready 去重保护）。</p>
  */
 
 /** idle | pending | ready | failed */
@@ -46,9 +52,29 @@ async function run() {
   }
 }
 
+/** 业务资料功能当前的可用性（capability SSOT：ONLINE_REQUIRED）。 */
+export function businessProfileAvailability(connectivity) {
+  return getFeatureAvailability(Feature.ACCOUNT_PROFILE, { connectivity })
+}
+
 /**
- * 确保当前用户资料存在。并发调用共享同一个 in-flight 请求（两个 tab / 两个组件同时
- * bootstrap 时只会打一个请求）；已 ready 时直接返回，不重复调用。
+ * 是否允许发起 profile backend 调用（**纯函数**，因此可确定性测试）。
+ *
+ * 只有「已认证 + ACCOUNT_PROFILE 可用」才允许。`offline` / `unknown` / `degraded` /
+ * `service-unavailable` 一律拒绝 —— 后三种**不是**「你离线」，但同样不能访问 backend。
+ */
+export function shouldEnsureBusinessUser(context = {}) {
+  // 策略本体在 capability 模块（profileBackendAllowed），浏览器测试替身共用同一实现。
+  return profileBackendAllowed(context)
+}
+
+/**
+ * 确保当前用户资料存在（**canonical primitive，页面不得直接调用**）。
+ *
+ * 并发调用共享同一个 in-flight 请求（两个 tab / 两个组件同时 bootstrap 时只会打一个请求）；
+ * 已 ready 时直接返回，不重复调用。它对连通性**无感知** —— 所有外部入口必须走 gated 版本
+ * （[ensureBusinessUserIfAllowed] / [whenBusinessUserSettled] / [retryBusinessUserIfAllowed]），
+ * 否则离线时就会绕过 capability 策略直接打 backend。
  */
 export function ensureBusinessUser() {
   if (state.value === 'ready') return Promise.resolve(true)
@@ -58,24 +84,40 @@ export function ensureBusinessUser() {
 }
 
 /**
- * 等待本轮 bootstrap 结束，并返回是否 ready。
+ * 等待本轮 bootstrap 结束，并返回是否 ready（**页面唯一允许使用的等待入口**）。
  *
- * <p>页面用它来「等 bootstrap 完成再读资料」，而不是自己创建资料。若 bootstrap 尚未
- * 开始（例如页面比 AppShell 更早挂载、或上一次尝试已失败），这里会主动触发一次
- * ensure —— 仍然是同一个 canonical 实现，不是第二套 provisioning。</p>
+ * `context` = `{ authInitState, authenticated, connectivity }`，缺省视为**不允许**（fail-closed）：
+ * backend 不可达时直接返回 false，**绝不**触发 ensure —— 「离线不发请求」这条不变量必须由
+ * 本模块保证，而不能依赖每个调用方自己先判断一次（PR #467 review blocker）。
+ *
+ * 若 bootstrap 尚未开始（页面比 AppShell 更早挂载、或上一次尝试已失败），允许时仍会主动
+ * 触发一次 ensure —— 同一个 canonical 实现，不是第二套 provisioning。
  */
-export async function whenBusinessUserSettled() {
+export async function whenBusinessUserSettled(context = {}) {
+  if (!profileBackendAllowed(context)) return false
   if (state.value !== 'ready') {
     await ensureBusinessUser()
   }
   return state.value === 'ready'
 }
 
-/** 显式重试（失败提示上的「重试」入口）；不做任何自动循环。 */
+/** gated ensure（页面 / 组件入口）：不允许时返回 false 且**不发请求**。 */
+export function ensureBusinessUserIfAllowed(context = {}) {
+  if (!profileBackendAllowed(context)) return Promise.resolve(false)
+  return ensureBusinessUser()
+}
+
+/** 显式重试（失败提示上的「重试」入口）；不做任何自动循环。raw primitive，页面用 gated 版本。 */
 export function retryBusinessUser() {
   state.value = 'idle'
   error.value = null
   return ensureBusinessUser()
+}
+
+/** gated retry（失败横幅入口）：离线 / 状态未知时返回 false 且**不发请求**，也不重置状态机。 */
+export function retryBusinessUserIfAllowed(context = {}) {
+  if (!profileBackendAllowed(context)) return Promise.resolve(false)
+  return retryBusinessUser()
 }
 
 /** 仅供测试重置模块级状态。 */
@@ -91,8 +133,9 @@ export function useBusinessUserBootstrap() {
     error: readonly(error),
     ready: computed(() => state.value === 'ready'),
     failed: computed(() => state.value === 'failed'),
-    ensure: ensureBusinessUser,
+    // 对外只暴露 gated 版本：页面无法误用 raw backend primitive。
+    ensure: ensureBusinessUserIfAllowed,
     whenSettled: whenBusinessUserSettled,
-    retry: retryBusinessUser,
+    retry: retryBusinessUserIfAllowed,
   }
 }

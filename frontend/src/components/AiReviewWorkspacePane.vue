@@ -6,6 +6,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
 import { AgentWasmVersionMismatchError } from '../api/agent-replay-facets.js'
 import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
@@ -26,6 +28,12 @@ const props = defineProps({
 
 const { t } = useI18n()
 const { authenticated, login } = useAuth()
+const { availability, requireFeature } = useFeatureGate()
+const online = computed(() => availability(Feature.AI_REVIEW))
+/** main 侧把 AI 入口的登录目的地改成 'ai-review'；这里保留该参数，只是先过连通性门禁。 */
+function loginOnline() {
+  if (requireFeature(Feature.AI_REVIEW)) login('ai-review')
+}
 
 const input = ref<AiReviewProjection | null>(null)
 const errorKey = ref('')
@@ -36,7 +44,7 @@ const projectionError = computed(() => (errorKey.value ? t(errorKey.value) : '')
 
 async function build() {
   const file = props.file
-  if (!file || !props.active || props.blockedReason || !authenticated.value || builtFile === file) return
+  if (!online.value.available || !file || !props.active || props.blockedReason || !authenticated.value || builtFile === file) return
   builtFile = file
   const mine = ++seq
   input.value = null
@@ -85,14 +93,15 @@ watch(authenticated, (signedIn) => {
     errorKey.value = ''
   }
 })
-watch(() => [props.file, props.active, props.blockedReason, authenticated.value], () => { void build() }, { immediate: true })
+watch(() => [props.file, props.active, props.blockedReason, authenticated.value, online.value.available], () => { void build() }, { immediate: true })
 </script>
 
 <template>
   <div class="ai-workspace-pane" data-testid="ws-ai">
-    <div v-if="!authenticated" class="ai-login" data-testid="ai-login-required">
+    <p v-if="!online.available" class="ws-note" data-testid="ai-connectivity">{{ $t(online.messageKey) }}</p>
+    <div v-else-if="!authenticated" class="ai-login" data-testid="ai-login-required">
       <p class="ws-note">{{ $t('workspace.ai_login_required') }}</p>
-      <AppButton data-testid="ai-login" @click="login('ai-review')">{{ $t('app.login') }}</AppButton>
+      <AppButton data-testid="ai-login" @click="loginOnline">{{ $t('app.login') }}</AppButton>
     </div>
     <p v-else-if="blockedReason" class="ws-note" data-testid="ai-blocked">{{ blockedReason }}</p>
     <AiReviewPanel

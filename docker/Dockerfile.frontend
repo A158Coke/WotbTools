@@ -15,6 +15,7 @@ COPY common/map-semantics /common/map-semantics
 # 百场 / 隐藏 QA 页用 tier10。common/ 是唯一事实源，按仓库相对路径放到 /common；
 # frontend/src/docker-build-context.contract.test.js 断言前端引用的每个仓库外构建输入都在这里 COPY。
 COPY common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json /common/
+COPY common/shot-tank-data.json /common/shot-tank-data.json
 COPY common/assets /common/assets
 # Agent WASM identity SSOT：Vite 构建期从这里取 ref/release 并注入 __AGENT_WASM_COMMIT__ /
 # __AGENT_WASM_RELEASE__（`frontend/src/docker-build-context.contract.test.js` 断言这条 COPY）。

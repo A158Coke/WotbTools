@@ -30,6 +30,13 @@ const lbApi = vi.hoisted(() => ({
   hofMark3MyStatus: vi.fn(() => Promise.resolve({ current: [], pending: [], rejected: [] }))
 }))
 
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
+
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
     isAuthenticated: () => authenticated,
@@ -79,6 +86,7 @@ describe('HoFPage URL 状态', () => {
   }
 
   beforeEach(() => {
+    connectivityState.state.value = 'online'
     vi.clearAllMocks()
     layout.compact = false
     lbApi.hofList.mockResolvedValue({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 5 })
@@ -150,6 +158,7 @@ describe('HoFPage URL 状态', () => {
 /** 审计 PG-05：手机上筛选收进 sheet、已生效条件显示为 chip、列表改为卡片。 */
 describe('HoFPage 手机布局', () => {
   beforeEach(() => {
+    connectivityState.state.value = 'online'
     vi.clearAllMocks()
     layout.compact = true
     lbApi.hofVehicleOptions.mockResolvedValue([])

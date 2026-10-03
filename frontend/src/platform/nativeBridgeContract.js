@@ -21,13 +21,20 @@ export const NATIVE_AUTH_METHODS = Object.freeze({
 /** Native → Web auth state change notification (mirrors the JSON contract `events`). */
 export const NATIVE_AUTH_CHANGED_GLOBAL = 'wotbtoolsOnAuthChanged'
 
-export const LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES = Object.freeze([
-  'replay-open',
-  'replay-share',
-])
+/**
+ * Capability that makes the native connectivity state (Android `ConnectivityManager`,
+ * INTERNET + VALIDATED) authoritative instead of `navigator.onLine` in the WebView.
+ */
+export const NATIVE_CONNECTIVITY_CAPABILITY = 'connectivity'
 
-// PR290 legacy Native clients expose the replay only through this same-origin
-// HTTPS resource. Older content:// pending entries are not compatible with
-// the browser-side import contract.
-export const LEGACY_PR290_REPLAY_RESOURCE_URL =
-  'https://wotbtools.com/__native/replay-pending'
+/** Bridge methods the connectivity platform source depends on (mirrors the JSON contract). */
+export const NATIVE_CONNECTIVITY_METHODS = Object.freeze({
+  getState: 'connectivityGetState',
+})
+
+/** Native → Web connectivity change notification (mirrors the JSON contract `events`). */
+export const NATIVE_CONNECTIVITY_CHANGED_GLOBAL = 'wotbtoolsOnConnectivityChanged'
+
+/** Exact Native-owned resource; must never become an arbitrary remote fetch. */
+export const NATIVE_REPLAY_RESOURCE_URL =
+  'https://appassets.androidplatform.net/__native/replay-pending'

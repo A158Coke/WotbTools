@@ -59,4 +59,34 @@ describe('locale message composition', () => {
     expect(merged.replay.processing_job).toEqual({ existing: 'keep', added: 'new' })
     expect(base.replay.processing_job).toEqual({ existing: 'keep' })
   })
+
+  it('ships offline-requirement copy for every capability-gated feature in all locales', () => {
+    // capability 模型给 ONLINE_REQUIRED 功能发 `featureOffline.<feature>`、给 ONLINE_OPTIONAL 发
+    // `featureOffline.syncPaused`：这里把「模型里的每个 key 都有译文」变成 CI 断言，
+    // 新增联网功能却忘了文案会直接失败，而不是在界面上显示原始 key。
+    for (const locale of ['zh', 'en', 'ru']) {
+      const offline = messages[locale].featureOffline
+      expect(offline, `${locale} featureOffline`).toBeTruthy()
+      for (const key of ['title', 'retry', 'aiReview', 'hallOfFame', 'playback3d', 'accountProfile', 'syncPaused']) {
+        expect(offline[key], `${locale} featureOffline.${key}`).toBeTruthy()
+      }
+    }
+  })
+
+  it('ships distinct connectivity copy for unknown / degraded / service-unavailable', () => {
+    // review P1：这三种状态**不能**复用 offline 文案，否则用户会被错误告知「你现在离线」。
+    for (const locale of ['zh', 'en', 'ru']) {
+      const notice = messages[locale].connectivityNotice
+      expect(notice, `${locale} connectivityNotice`).toBeTruthy()
+      for (const key of ['unknownTitle', 'unknown', 'degradedTitle', 'degraded',
+        'serviceUnavailableTitle', 'serviceUnavailable', 'retry']) {
+        expect(notice[key], `${locale} connectivityNotice.${key}`).toBeTruthy()
+      }
+      // 三种状态三套文案，且都不得与 offline 标题重复。
+      expect(new Set([notice.unknown, notice.degraded, notice.serviceUnavailable]).size, `${locale} bodies`).toBe(3)
+      const titles = new Set([notice.unknownTitle, notice.degradedTitle, notice.serviceUnavailableTitle])
+      expect(titles.size, `${locale} titles`).toBe(3)
+      expect(titles.has(messages[locale].featureOffline.title), `${locale} titles vs offline`).toBe(false)
+    }
+  })
 })

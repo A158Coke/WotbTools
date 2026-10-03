@@ -16,6 +16,15 @@ import AiReviewWorkspacePane from './AiReviewWorkspacePane.vue'
 
 const buildLocalAiReviewInput = vi.fn()
 
+// 连通性替身（分支侧：AI / 3D 入口先过 capability 门禁）。
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
+
+// 认证替身（main 侧：退出登录会使在途投影失效，重新登录后重建）。
 const auth = vi.hoisted(() => ({ authenticated: null, login: vi.fn() }))
 vi.mock('../composables/useAuth.js', async () => {
   const { ref } = await import('vue')
@@ -57,14 +66,15 @@ async function projectionErrorFor(error) {
   buildLocalAiReviewInput.mockRejectedValue(error)
   const wrapper = mountPane()
   await flushPromises()
-  const key = wrapper.find('.panel-stub').attributes('data-error')
+  const errorKey = wrapper.find('.panel-stub').attributes('data-error')
   wrapper.unmount()
-  return key
+  return errorKey
 }
 
 beforeEach(() => {
   auth.authenticated.value = true
   auth.login.mockReset()
+  connectivityState.state.value = 'online'
   buildLocalAiReviewInput.mockReset()
 })
 
@@ -131,5 +141,22 @@ describe('AiReviewWorkspacePane 错误归属', () => {
   it('时间轴不可用 → workspace.ai_projection_unavailable', async () => {
     expect(await projectionErrorFor(new AiProjectionUnavailableError()))
       .toBe('workspace.ai_projection_unavailable')
+  })
+})
+
+describe('AiReviewWorkspacePane connectivity gating', () => {
+  it('offline AI entry gives connectivity before login/projection, and reconnect never submits AI', async () => {
+    buildLocalAiReviewInput.mockReset().mockResolvedValue({ battle: {}, projection: {} })
+    connectivityState.state.value = 'offline'
+    const wrapper = mountPane()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ai-connectivity"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ai-login"]').exists()).toBe(false)
+    expect(buildLocalAiReviewInput).not.toHaveBeenCalled()
+    connectivityState.state.value = 'online'
+    await flushPromises()
+    expect(buildLocalAiReviewInput).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.panel-stub').exists()).toBe(true)
+    wrapper.unmount()
   })
 })

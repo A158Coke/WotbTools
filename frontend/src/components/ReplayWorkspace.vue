@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { mapLabel } from '../utils/helpers.js'
 import { defineLazyModule, reloadForFreshBundle } from '../utils/lazyModule.js'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
@@ -47,6 +49,12 @@ const props = defineProps({
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const { t, locale } = useI18n()
 const { authenticated } = useAuth()
+const { availability, requireFeature } = useFeatureGate()
+const onlineFeatures = { '3d': Feature.PLAYBACK_3D, ai: Feature.AI_REVIEW }
+const threeAvailability = computed(() => availability(Feature.PLAYBACK_3D))
+const aiAvailability = computed(() => availability(Feature.AI_REVIEW))
+const threeBlocked = computed(() => !threeAvailability.value.available ? t(threeAvailability.value.messageKey) : blockedReason.value)
+const aiBlocked = computed(() => !aiAvailability.value.available ? t(aiAvailability.value.messageKey) : blockedReason.value)
 
 /**
  * Workspace 持有唯一一份 replay selection 与本地分析结果（服务器没有 parser：文件不出本机，
@@ -105,9 +113,13 @@ const capabilityOptions = [
  */
 const activeCapability = workspace.activeWorkspaceTab
 const playbackMounted = useMountedWhenActive(() => activeCapability.value === 'playback')
-const threeMounted = useMountedWhenActive(() => authenticated.value && activeCapability.value === '3d')
+// 远端能力同时受两条独立门禁约束：登录（main：3D / 射击 / AI 登录后使用）与连通性（本分支：
+// ONLINE_REQUIRED 功能在非-online 时连挂载都不做）。两者都必须成立才挂载。
+const threeMounted = useMountedWhenActive(() =>
+  authenticated.value && activeCapability.value === '3d' && threeAvailability.value.available)
 const shotsMounted = useMountedWhenActive(() => authenticated.value && activeCapability.value === 'shots')
-const aiMounted = useMountedWhenActive(() => activeCapability.value === 'ai')
+const aiMounted = useMountedWhenActive(() =>
+  authenticated.value && activeCapability.value === 'ai' && aiAvailability.value.available)
 
 /**
  * 能力模块加载失败态（design-language §10）：说清发生了什么 + 下一步怎么做。
@@ -167,6 +179,7 @@ function viewFor(cap) {
 async function setCapability(key) {
   if (key === activeCapability.value) return
   workspace.setWorkspaceTab(key)
+  if (onlineFeatures[key]) requireFeature(onlineFeatures[key])
   if (navigate) navigate(viewFor(key))
 }
 
@@ -196,7 +209,10 @@ function onFilesUpdate(next) {
 onMounted(() => nextTick(() => consumePendingWhenReady()))
 
 watch(() => props.initialCapability, (val) => {
-  if (val) workspace.setWorkspaceTab(val)
+  if (val) {
+    workspace.setWorkspaceTab(val)
+    if (onlineFeatures[val]) requireFeature(onlineFeatures[val])
+  }
 }, { immediate: true })
 
 </script>
@@ -264,8 +280,13 @@ watch(() => props.initialCapability, (val) => {
         />
       </div>
       <div v-show="activeCapability === '3d'" class="capability-pane" data-testid="ws-3d">
+        <!-- 顺序即优先级：连通性（capability SSOT）→ 登录门禁 → 加载错误 → 面板。
+             非-online 时既不给登录入口、也不挂载 3D（远端资源所需的连接不存在）。 -->
+        <Banner v-if="!threeAvailability.available" tone="info" data-testid="ws-3d-connectivity">
+          <p>{{ $t(threeAvailability.messageKey) }}</p>
+        </Banner>
         <ReplayCapabilityAuthGate
-          v-if="!authenticated && activeCapability === '3d'"
+          v-else-if="!authenticated && activeCapability === '3d'"
           :title="$t('workspace.tab_3d')"
           :description="$t('workspace.login_required_3d')"
           login-destination="agent-replay"
@@ -289,8 +310,8 @@ watch(() => props.initialCapability, (val) => {
         <Replay3DPane
           v-if="authenticated && threeMounted && !threeLoadError"
           :file="targetFile"
-          :active="activeCapability === '3d'"
-          :blocked-reason="blockedReason"
+          :active="activeCapability === '3d' && threeAvailability.available"
+          :blocked-reason="threeBlocked"
         />
       </div>
       <div v-show="activeCapability === 'shots'" class="capability-pane" data-testid="ws-shots">
@@ -325,7 +346,10 @@ watch(() => props.initialCapability, (val) => {
         />
       </div>
       <div v-show="activeCapability === 'ai'" class="capability-pane" data-testid="ws-ai">
-        <Banner v-if="aiLoadError" tone="danger" data-testid="ws-ai-load-error">
+        <Banner v-if="!aiAvailability.available" tone="info" data-testid="ws-ai-connectivity">
+          <p>{{ $t(aiAvailability.messageKey) }}</p>
+        </Banner>
+        <Banner v-else-if="aiLoadError" tone="danger" data-testid="ws-ai-load-error">
           <p>{{ $t(aiLoadError) }}</p>
           <template #actions>
             <AppButton size="sm" data-testid="ws-ai-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
@@ -344,8 +368,8 @@ watch(() => props.initialCapability, (val) => {
         <AiReviewWorkspacePane
           v-if="aiMounted && !aiLoadError"
           :file="targetFile"
-          :active="activeCapability === 'ai'"
-          :blocked-reason="blockedReason"
+          :active="activeCapability === 'ai' && aiAvailability.available"
+          :blocked-reason="aiBlocked"
         />
       </div>
     </div>

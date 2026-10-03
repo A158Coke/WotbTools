@@ -53,6 +53,7 @@ frontend:
   - 'frontend/**'
   - 'common/map_names.json'
   - 'common/tankopedia-tier10.json'
+  - 'common/shot-tank-data.json'
   - 'common/assets/**'
   - 'deploy/agent/source.json'
   - 'scripts/fetch-agent-wasm.sh'
@@ -94,6 +95,7 @@ keycloak:
   - '.github/workflows/ci-keycloak.yml'
 android:
   - '.github/workflows/ci-android.yml'
+  - '.github/workflows/android-release.yml'
   - 'android/**'
   - 'contracts/android-native-bridge.json'
   - 'frontend/src/platform/nativeBridgeContract.js'

@@ -21,7 +21,7 @@ npm run api:check
 npm run api:fixture
 ```
 
-`api:generate` 生成 `src/api/generated/http-contract.ts`、Playback JSON Schema 和 error-code registry；生成文件不得手改。`api:check` 通过重新生成并检查 git diff，作为 drift gate。`api:fixture` 使用生产形状 fixture 验证 required、nullable、enum 和 `$ref`。运行时 Ajv 校验只在 HTTP 边界报告安全诊断元数据，不把响应体、token 或 schema 内部细节展示给用户。
+`api:generate` 生成 `src/api/generated/http-contract.ts`、Playback JSON Schema、error-code registry 与 Ajv standalone ESM validators；生成文件不得手改。`api:check` 通过重新生成并检查 git diff，作为 drift gate。`api:fixture` 使用生产形状 fixture 验证 required、nullable、enum 和 `$ref`。Ajv 只在生成时编译 schema，运行时执行 generated validator，不使用 eval/new Function，兼容 Android 严格 CSP。校验只在数据边界报告安全诊断元数据，不把响应体、token 或 schema 内部细节展示给用户。
 
 标准迁移顺序是：
 
@@ -41,7 +41,9 @@ OpenAPI → generated FE transport → BE serialization/mapper → runtime valid
 
 ## CORS
 
-API 只服务同源前端：生产由 nginx `/api/` 反代到 `wotb-backend`（`deploy/nginx/nginx.conf`），本地走 Vite dev proxy（`changeOrigin: true`），Android WebView 直接同源加载前端。因此不存在跨域契约，不保留任何 controller 级 `@CrossOrigin` 注解。若将来出现真实跨域消费者，在 `java/wotb-web/.../config/` 集中声明**单一** `CorsConfigurationSource`，不回退注解。
+Web 仍由 nginx `/api/` 反代到 `wotb-backend`（`deploy/nginx/nginx.conf`），本地走 Vite dev proxy（`changeOrigin: true`）。Android bundled Vue 的文档 origin 是 `https://appassets.androidplatform.net`，业务请求由 `src/platform/runtime.js` 解析为 `https://wotbtools.com/api/**`，使用 Native Bearer，credentials 为 omit。
+
+公共 ingress `deploy/tx/Caddyfile` 是这条跨源边界的唯一 CORS owner：精确 appassets origin，允许实际 HTTP methods 及 Authorization/Content-Type/Content-Encoding/Accept；匿名 OPTIONS 在 proxy/auth 前直接返回 204，真实响应也携带 CORS，暴露 Content-Disposition/X-Request-ID/X-Map-Meta。不启用 credentialed CORS，也不新增 controller `@CrossOrigin` 或第二份 backend CORS 配置。固定 `/agent-assets/*` gateway 同样受此边界保护。发布前 readiness 探测验证 preflight、真实 profile 401 和 asset index JSON。
 
 ## Review checklist
 

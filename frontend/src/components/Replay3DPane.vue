@@ -11,6 +11,8 @@
  * 键盘播放快捷键同样只在激活时响应。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useI18n } from 'vue-i18n'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
@@ -36,6 +38,8 @@ const props = defineProps({
 })
 
 const { t, locale } = useI18n()
+const { availability, requireFeature } = useFeatureGate()
+const online = computed(() => availability(Feature.PLAYBACK_3D))
 
 const store = createPlaybackStore()
 const stage = ref(null)
@@ -151,7 +155,9 @@ function abortParse() {
 }
 
 async function loadFile(file) {
-  if (!file || !sceneApi) return
+  // 连通性门禁在最前（离线时不启动新的 3D 解析）；随后是 main 的解析生命周期归属：
+  // 每次新解析都要先撤下上一次（abort）并换新的 AbortController。
+  if (!file || !sceneApi || !requireFeature(Feature.PLAYBACK_3D)) return
   abortParse()
   parseController = new AbortController()
   lastFile = file
@@ -199,12 +205,12 @@ function destroyScene() {
 
 /** 当前是否应存在场景（模板 v-else 分支的条件，必须与它逐字一致） */
 function shouldHaveScene() {
-  return !!webgl.supported && !props.blockedReason && !!props.file
+  return online.value.available && !!webgl.supported && !props.blockedReason && !!props.file
 }
 
 /** 需要则建场景（返回是否新建）；已存在则复用，不重建、不重解析 */
 function ensureScene() {
-  if (sceneApi || !shouldHaveScene()) return false
+  if (sceneApi || !props.active || !shouldHaveScene()) return false
   sceneApi = initPlayback(stage.value, store)
   sceneApi?.setPaused?.(!props.active)
   return true
@@ -305,11 +311,11 @@ onBeforeUnmount(() => {
  * 只有 `active` 是「暂停 / 恢复」，其余两个都会改变「场景该不该存在」。
  */
 watch(
-  [() => props.file, () => props.blockedReason, () => props.active],
+  [() => props.file, () => props.blockedReason, () => props.active, () => online.value.available],
   ([, , active], previous = []) => {
     // 先按新的 file/blocked 收敛场景，再处理能力切换
     reconcileScene()
-    const activeChanged = previous.length === 3 && previous[2] !== active
+    const activeChanged = previous.length >= 3 && previous[2] !== active
     if (activeChanged) sceneApi?.setPaused?.(!active)
   },
   { flush: 'post' },
@@ -318,7 +324,8 @@ watch(
 
 <template>
   <div class="pb-pane">
-    <Scene3DStatus v-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
+    <p v-if="!online.available" class="pb-note" data-testid="replay3d-connectivity">{{ $t(online.messageKey) }}</p>
+    <Scene3DStatus v-else-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
     <p v-else-if="blockedReason" class="pb-note" data-testid="replay3d-blocked">{{ blockedReason }}</p>
     <p v-else-if="!file" class="pb-note" data-testid="replay3d-empty">{{ $t('agentReplay.no_file') }}</p>
     <div v-else class="pb-root" ref="rootEl" :class="{ 'roster-open': rosterOpen }">

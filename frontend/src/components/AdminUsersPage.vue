@@ -1,8 +1,11 @@
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
+import { useConnectivity } from '../composables/useConnectivity.js'
 import { useError } from '../composables/useError.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { Feature } from '../app/featureCapabilities.js'
 import { apiErrorCodeLabel, apiErrorLabel } from '../utils/display.js'
 import { ApiError } from '../utils/http.js'
 import * as api from '../utils/api.js'
@@ -43,6 +46,30 @@ let userLoadGeneration = 0
 let detailLoadGeneration = 0
 
 const { initPromise, ensureToken: ensureAuthToken, login } = useAuth()
+const { availability, requireFeature } = useFeatureGate()
+const { connectivity } = useConnectivity()
+
+/**
+ * 本页所有 backend 动作的**唯一**门禁（PR 467 review blocker）。
+ *
+ * 用户管理整页都是 Keycloak Admin + 本地 user_profile 的聚合，没有任何可离线的本地投影，
+ * 因此整体是 ONLINE_REQUIRED —— 但判定只能来自 capability SSOT（`useFeatureGate`），
+ * 页面**不写** `connectivity === 'online'`、也不读 `navigator.onLine`：
+ *
+ * ```text
+ * 门禁 → 认证（ensureToken / login） → backend
+ * ```
+ *
+ * 顺序很关键：非-online 时**先**被门禁挡住，所以既不会触发 `login()` 跳转、也不会走 token
+ * refresh 的失败路径，更不会发出 admin API 请求（`adminSearchUsers` / `adminGetUser` /
+ * `adminDeleteUsers` 调用数恒为 0），用户立刻看到统一 connectivity notice。
+ *
+ * 已缓存的过期 admin session 仍然保留 claims/role（见 useAuth 的本地投影），因此「Admin Users」
+ * 入口继续可见；只是这个页面在离线时不能登录、不能请求 backend。
+ */
+function requireAdminUsersOnline() {
+  return requireFeature(Feature.ADMIN_USERS)
+}
 
 function apiError(error) {
   return apiErrorLabel(t, te, error)
@@ -60,7 +87,18 @@ async function ensureToken() {
   }
 }
 
+/** 首次被门禁挡下的加载：只有「确实什么都没加载过」才允许 reconnect 自动补一次。 */
+const blockedByConnectivity = ref(false)
+
+/** 当前 capability 判定（页面只读它渲染中性提示，不据此自己拼文案；四态措辞由模型决定）。 */
+const adminAvailability = computed(() => availability(Feature.ADMIN_USERS))
+
 onMounted(async () => {
+  // 门禁先于认证：非-online 时既不 ensureToken（不发 token refresh）、也不 login()、也不请求 backend。
+  if (!requireAdminUsersOnline()) {
+    blockedByConnectivity.value = true
+    return
+  }
   try {
     await ensureToken()
     loadUsers()
@@ -69,11 +107,27 @@ onMounted(async () => {
   }
 })
 
+/**
+ * 恢复在线后，只补「因为离线从来没加载过」的列表，且只补一次：
+ *  - 已加载过的数据 / 搜索条件 / 分页 / 选择集原样保留，掉线不清空；
+ *  - **不**重放任何破坏性动作（删除 / 批量删除）或上一次详情 / 搜索，用户的下一次点击才算数；
+ *  - `loading` + 一次性 flag 双重去重，重复 online 通知不会形成请求风暴。
+ */
+watch(connectivity, () => {
+  if (users.value.length || loading.value || !blockedByConnectivity.value) return
+  if (!availability(Feature.ADMIN_USERS).available) return
+  blockedByConnectivity.value = false
+  loadUsers()
+})
+
 function clearSelection() {
   selectedIds.value = []
 }
 
 async function loadUsers() {
+  // 门禁在所有 backend 入口的第一行：搜索 / 换 segment / 换 IdP / 换页长 / 翻页 / 删除后 reload
+  // 都只经过这一个函数，因此非-online 时 adminSearchUsers 调用数恒为 0。
+  if (!requireAdminUsersOnline()) return
   const generation = ++userLoadGeneration
   loading.value = true
   try {
@@ -108,7 +162,21 @@ async function loadUsers() {
 
 // 翻页 / 换页长 / 换数据源 / 换搜索词都会改变可见行集合，
 // 「全选当前页」的选择集不跨这些边界保留（否则会出现看不见的选中项）。
+/**
+ * 会改变「已应用查询」的动作一律**先门禁、后改状态**（review P2）。
+ *
+ * 之前的顺序是「先 mutation，再由 loadUsers 里的门禁挡下」，非-online 时会出现
+ * 「page/segment/size 已经变了、rows 还是上一次的结果」的不一致状态。这里的顺序约定是：
+ *
+ * ```text
+ * 门禁 → 改 applied 状态（page/size/segment/selection） → loadUsers() 发请求
+ * ```
+ *
+ * `loadUsers()` 内部仍保留一次门禁：它还有别的调用方（删除后 reload、reconnect 自动补一次），
+ * 那些路径不能绕过准入。v-model 的 select 另有 handler 级回滚兜底（见模板）。
+ */
 function reloadFirstPage() {
+  if (!requireAdminUsersOnline()) return
   clearSelection()
   page.value = 0
   loadUsers()
@@ -118,7 +186,14 @@ function onSearch() {
   reloadFirstPage()
 }
 
-function onSegmentChange() {
+/** segment=keycloak|local：门禁不通过时把 select 的改动回滚成已应用值（data-applied-value）。 */
+function onSegmentChange(event) {
+  if (!requireAdminUsersOnline()) {
+    if (event?.target) event.target.value = event.target.dataset.appliedValue
+    return
+  }
+  // 已应用状态由事件携带的新值推进（select 是 server-backed，没有本地降级语义）。
+  segment.value = event?.target?.value ?? segment.value
   if (segment.value !== 'keycloak') idpAlias.value = ''
   reloadFirstPage()
 }
@@ -127,11 +202,19 @@ function onIdpAliasChange() {
   reloadFirstPage()
 }
 
-function onSizeChange() {
+/** 每页数量：同上，未通过门禁（或值非法）时保持已应用的 size。 */
+function onSizeChange(event) {
+  const next = Number(event?.target?.value)
+  if (!requireAdminUsersOnline() || !Number.isFinite(next)) {
+    if (event?.target) event.target.value = event.target.dataset.appliedValue
+    return
+  }
+  size.value = next
   reloadFirstPage()
 }
 
 function goPage(nextPage) {
+  if (!requireAdminUsersOnline()) return
   if (nextPage < 0 || nextPage === page.value) return
   if (totalPages.value > 0 && nextPage > totalPages.value - 1) return
   clearSelection()
@@ -156,6 +239,7 @@ function toggleSelectAllPage(checked) {
 }
 
 async function loadDetail(u) {
+  if (!requireAdminUsersOnline()) return
   const generation = ++detailLoadGeneration
   try {
     const result = await api.adminGetUser(u.keycloakUserId)
@@ -183,6 +267,9 @@ function startDelete(u) { deleteUserId.value = u.keycloakUserId; deleteConfirmTe
 function cancelDelete() { deleteUserId.value = null; deleteConfirmText.value = ''; deleteResult.value = '' }
 
 async function confirmDelete() {
+  // TOCTOU：删除对话框可以在「在线」时打开、在「离线」后才确认，所以判定必须放在
+  // 真正的 API boundary（而不是只放在 startDelete）；否则离线时仍会发出破坏性请求。
+  if (!requireAdminUsersOnline()) return
   deleting.value = true
   deleteResult.value = ''
   try {
@@ -216,6 +303,9 @@ function cancelBulkDelete() {
 async function confirmBulkDelete() {
   const ids = [...selectedIds.value]
   if (!ids.length || bulkConfirmText.value !== 'DELETE') return
+  // 同单个删除的 TOCTOU：批量确认框可能跨过一次掉线，因此在最后的执行边界再判一次，
+  // 非-online 时 adminDeleteUsers 一次都不发。
+  if (!requireAdminUsersOnline()) return
   bulkDeleting.value = true
   try {
     const res = await api.adminDeleteUsers(ids, true)
@@ -246,21 +336,37 @@ function fmtTime(s) {
     <h1 class="admin-title">{{ $t('admin.title') }}</h1>
     <p class="admin-hint">{{ $t('admin.hint') }}</p>
 
+    <!-- 非-online 的中性状态（不是错误态）：文案来自 capability 模型，四态各有措辞。
+         已加载的列表 / 搜索条件 / 选择集一律保留，只是新的 ONLINE_REQUIRED 动作被挡住。 -->
+    <p
+      v-if="!adminAvailability.available"
+      class="admin-connectivity"
+      data-testid="admin-connectivity-unavailable"
+    >{{ $t(adminAvailability.messageKey) }}</p>
+
     <div class="admin-search">
       <input v-model="searchQuery" :placeholder="$t('admin.search')" @keyup.enter="onSearch" />
-      <button type="button" class="admin-search-btn" @click="onSearch">{{ $t('admin.searchBtn') }}</button>
+      <button type="button" class="admin-search-btn" :disabled="!adminAvailability.available" @click="onSearch">{{ $t('admin.searchBtn') }}</button>
     </div>
 
     <div class="admin-filters">
       <label class="admin-filter">
         <span>{{ $t('admin.segment') }}</span>
-        <select v-model="segment" @change="onSegmentChange">
+        <!-- 受控 select（:value = 已应用状态）+ data-applied-value：门禁不通过时把改动回滚，
+             绝不出现「select 显示 local 但 rows 还是 keycloak」的假 applied 状态。 -->
+        <select
+          :value="segment"
+          :data-applied-value="segment"
+          :disabled="!adminAvailability.available"
+          @change="onSegmentChange"
+        >
           <option value="keycloak">{{ $t('admin.segmentKeycloak') }}</option>
           <option value="local">{{ $t('admin.segmentLocal') }}</option>
         </select>
       </label>
       <label class="admin-filter">
         <span>{{ $t('admin.idpAlias') }}</span>
+        <!-- idpAlias 是**草稿**输入：非-online 时允许继续编辑（回车不生效），不会被当成已应用条件。 -->
         <input
           v-model="idpAlias"
           :disabled="segment !== 'keycloak'"
@@ -273,7 +379,7 @@ function fmtTime(s) {
 
     <div v-if="selectedCount" class="admin-bulk-bar">
       <span class="admin-selected">{{ $t('admin.selectedCount', { count: selectedCount }) }}</span>
-      <button class="btn-sm btn-danger" @click="startBulkDelete">{{ $t('admin.bulkDelete') }}</button>
+      <button class="btn-sm btn-danger" :disabled="!adminAvailability.available" @click="startBulkDelete">{{ $t('admin.bulkDelete') }}</button>
       <button class="btn-sm" @click="clearSelection">{{ $t('admin.clearSelection') }}</button>
     </div>
 
@@ -337,11 +443,11 @@ function fmtTime(s) {
               <button
                 type="button"
                 class="btn-sm"
-                :disabled="u.keycloakUserMissing"
+                :disabled="u.keycloakUserMissing || !adminAvailability.available"
                 :title="u.keycloakUserMissing ? $t('admin.detailUnavailable') : ''"
                 @click="loadDetail(u)"
               >{{ $t('admin.view') }}</button>
-              <button type="button" class="btn-sm btn-danger" @click="startDelete(u)">{{ $t('admin.delete') }}</button>
+              <button type="button" class="btn-sm btn-danger" :disabled="!adminAvailability.available" @click="startDelete(u)">{{ $t('admin.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -350,12 +456,18 @@ function fmtTime(s) {
     <p v-else-if="!loading" class="admin-muted">{{ $t('admin.empty') }}</p>
 
     <div v-if="totalPages > 0" class="admin-pagination">
-      <button class="btn-sm" :disabled="page <= 0" @click="goPage(page - 1)">{{ $t('admin.prev') }}</button>
+      <button class="btn-sm" :disabled="page <= 0 || !adminAvailability.available" @click="goPage(page - 1)">{{ $t('admin.prev') }}</button>
       <span class="admin-page-info">{{ $t('admin.pageInfo', { page: page + 1, total: totalPages, items: totalItems }) }}</span>
-      <button class="btn-sm" :disabled="page + 1 >= totalPages" @click="goPage(page + 1)">{{ $t('admin.next') }}</button>
+      <button class="btn-sm" :disabled="page + 1 >= totalPages || !adminAvailability.available" @click="goPage(page + 1)">{{ $t('admin.next') }}</button>
       <label class="admin-filter">
         <span>{{ $t('admin.size') }}</span>
-        <select v-model.number="size" @change="onSizeChange">
+        <!-- 受控 select（同 segment）：非-online 时回滚，避免「每页显示 50 但表格还是 25 条」。 -->
+        <select
+          :value="size"
+          :data-applied-value="size"
+          :disabled="!adminAvailability.available"
+          @change="onSizeChange"
+        >
           <option :value="25">25</option>
           <option :value="50">50</option>
           <option :value="100">100</option>
@@ -628,6 +740,8 @@ td.cell-actions > * + * { margin-left: var(--space-1); }
 
 .btn-danger { border-color: var(--color-danger); color: var(--color-danger); }
 .btn-sm:disabled { cursor: not-allowed; opacity: .5; }
+.admin-search-btn:disabled { cursor: not-allowed; opacity: .5; }
+.admin-page select:disabled { cursor: not-allowed; opacity: .5; }
 
 .btn-sm:focus-visible,
 .admin-search-btn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
@@ -660,6 +774,16 @@ td.cell-actions > * + * { margin-left: var(--space-1); }
 .admin-warn { color: var(--color-warning); }
 .admin-ok { color: var(--color-success); font-weight: 600; }
 .admin-muted { padding: var(--space-4) 0; color: var(--color-text-secondary); text-align: center; }
+
+/* 连通性中性提示：与 admin-muted 同一语气（不是 danger），只表达「现在拿不到远端数据」。 */
+.admin-connectivity {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
 
 .admin-confirm-field { display: grid; gap: var(--space-1); color: var(--color-text-secondary); }
 .admin-confirm-input { width: 100%; }

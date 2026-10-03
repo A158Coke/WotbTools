@@ -1,7 +1,6 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
-import vue from '@vitejs/plugin-vue'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 
 /**
@@ -61,11 +60,11 @@ const delay = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise,
 
 async function startFixtureServer() {
   const server = await createServer({
-    configFile: false,
+    configFile: resolve(frontendRoot, 'vite.config.js'),
     root: frontendRoot,
     logLevel: 'error',
-    plugins: [authBoundaryStubPlugin(), vue()],
-    // vite.config.js 的 define 只在读取项目配置时注入；本实例不读 configFile，需显式提供。
+    plugins: [authBoundaryStubPlugin()],
+    // Keep the production WASM pin and safe dev artifact middleware from the real Vite config.
     define: { __BUILD_COMMIT__: '"browser-fixture"', __BUILD_TIME__: '"browser-fixture"' },
     // 与 vite.config.js 一致：logo / icon / silent-check-sso 等 public 资源来自 common/assets。
     publicDir: resolve(frontendRoot, '../common/assets'),
@@ -1311,6 +1310,94 @@ async function runParseLifecycleScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
+/** B13: real local parser/UI with every business HTTP attempt intercepted and counted.
+ * Local fixture resources remain available, as bundled appassets do in airplane mode.
+ * This checks state and requests only; it never inspects or captures a 3D scene.
+ */
+async function runOfflineWorkspaceScenario(env) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  const businessAttempts = []
+  const interceptionErrors = []
+  let closing = false
+  await page.enable()
+  await page.emulate({ width: 1600, height: 900, touch: false })
+  await env.chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `window.__offlineFixtureOnline = false;
+      Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => window.__offlineFixtureOnline });`,
+  }, sessionId)
+  env.chrome.client.on('Fetch.requestPaused', async (params, session) => {
+    if (session !== sessionId) return
+    const url = new URL(params.request.url)
+    const business = url.origin !== env.origin || url.pathname.startsWith('/api/')
+    if (business) businessAttempts.push(params.request.url)
+    try {
+      await env.chrome.client.send(business ? 'Fetch.failRequest' : 'Fetch.continueRequest',
+        business ? { requestId: params.requestId, errorReason: 'InternetDisconnected' } : { requestId: params.requestId }, sessionId)
+    } catch (error) {
+      // Navigation cancels intercepted old-document requests before CDP can continue them.
+      if (!closing && !error.message.includes('Invalid InterceptionId')) interceptionErrors.push(error.message)
+    }
+  })
+  await env.chrome.client.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, sessionId)
+  const params = '&ws-auth=1&ws-roles=wotbtools-admin&ws-login=reject'
+  for (const [view, selector] of [
+    ['agent-replay', '[data-testid="ws-3d-connectivity"]'],
+    ['ai-review', '[data-testid="ws-ai-connectivity"]'],
+    ['hof', '[data-testid="hof-connectivity"]'],
+    ['profile', '[data-testid="profile-connectivity-unavailable"]'],
+  ]) {
+    const viewParams = ['ai-review', 'hof'].includes(view) ? params.replace('ws-auth=1', 'ws-auth=0') : params
+    await page.goto(`${env.origin}/?view=${view}${viewParams}`)
+    await page.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`, Boolean, { label: `offline deep link ${view}` })
+    check(failures, await page.evaluate('window.__wsAuth.loginCalls.length') === 0, `${view} started login offline`)
+  }
+  // Cold start and restart both initialize the ordinary local data workspace.
+  for (let restart = 0; restart < 2; restart++) {
+    await page.goto(`${env.origin}/?view=replay${params}`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="select-files-input"]'), { label: 'offline shell/restart' })
+  }
+  const { root } = await env.chrome.client.send('DOM.getDocument', {}, sessionId)
+  const { nodeId } = await env.chrome.client.send('DOM.querySelector', {
+    nodeId: root.nodeId, selector: '[data-testid="select-files-input"]',
+  }, sessionId)
+  await env.chrome.client.send('DOM.setFileInputFiles', {
+    nodeId, files: [resolve(frontendRoot, '../common/fixtures/replays/tournament-14-14-example.wotbreplay')],
+  }, sessionId)
+  await page.waitFor(() => !!document.querySelector('.replay-primary-actions button'), { label: 'manual replay selected' })
+  await page.evaluate(`document.querySelector('.replay-primary-actions button').click()`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="data-toolbar"]'), { timeout: 60_000, label: 'real WASM local Result' })
+  const ratings = await page.evaluate(`Array.from(document.querySelectorAll('.cw-player-summary tr.player-row td:nth-child(2)')).map(cell => cell.textContent.trim())`)
+  check(failures, ratings.length > 0 && ratings.some(value => /[0-9]/.test(value)), 'deterministic local Rating has no scored rows')
+  await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="playback"]').click()`)
+  await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]'), { timeout: 60_000, label: 'real WASM 2D playback' })
+  await page.waitFor(() => {
+    const map = document.querySelector('[data-test="pb-basemap"]')
+    return !!map && map.complete && map.naturalWidth > 0
+  }, { label: 'bundled local 2D map' })
+  await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="shots"]').click()`)
+  await page.waitFor(() => document.querySelectorAll('.shot-row').length > 0, { timeout: 60_000, label: 'real WASM local shooting inspection' })
+  const shots = await page.evaluate('document.querySelectorAll(".shot-row").length')
+  await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="ai"]').click()`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'offline AI gate' })
+  check(failures, await page.evaluate('window.__wsAuth.loginCalls.length') === 0, 'AI started login offline')
+  // Recovering connectivity may prepare local AI projection but must never submit it.
+  await page.evaluate(`window.__offlineFixtureOnline = true; window.dispatchEvent(new Event('online'))`)
+  await page.waitFor(() => !document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'reconnect capability update' })
+  await delay(300)
+  await page.evaluate(`window.__offlineFixtureOnline = false; window.dispatchEvent(new Event('offline'))`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'disconnect capability update' })
+  await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="shots"]').click()`)
+  check(failures, await page.evaluate('document.querySelectorAll(".shot-row").length') === shots, 'disconnect reset local shooting/replay state')
+  check(failures, businessAttempts.length === 0, `offline/reconnect matrix attempted business HTTP: ${businessAttempts.join(', ')}`)
+  check(failures, interceptionErrors.length === 0, `request interception failed: ${interceptionErrors.join(', ')}`)
+  closing = true
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: 'offline-local-workspace-matrix', failures, viewport: '1600x900' })
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chrome = findChrome()
@@ -1327,6 +1414,7 @@ try {
   })
   const env = { origin, chrome: chromeCdp }
   const runs = [
+    { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...AUTH_CAPABILITY_SCENARIOS.map((scenario) => ({ scenario, run: () => runAuthCapabilityScenario(env, scenario) })),
     ...ROSTER_GEOMETRY_SCENARIOS.map((scenario) => ({ scenario, run: () => runRosterGeometryScenario(env, scenario) })),
