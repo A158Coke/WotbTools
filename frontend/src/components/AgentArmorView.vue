@@ -9,7 +9,7 @@
 import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { ArrowLeft } from 'lucide-vue-next'
+import { ArrowLeft, SlidersHorizontal } from 'lucide-vue-next'
 import { initTankViewer } from '../scene/tankViewer.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { replayValueLabel } from '../utils/display.js'
@@ -22,6 +22,12 @@ const { coarse } = usePointer()
 // 审计 3D-09：从射击分析 / 坦克百科在当前标签页打开，返回走浏览器历史
 const canGoBack = typeof window !== 'undefined' && !!window.history.state?.back
 const hint = computed(() => t(coarse.value ? 'armor.hint_touch' : 'armor.hint'))
+// 手机顶栏的「参数」面板（装备 / 射击方 / 目标 / 配置）：默认收起，不再常驻占掉 3D 视口。
+// 桌面端该按钮由 CSS 隐藏（面板照旧常驻），故默认值不影响桌面布局。
+const toolsOpen = ref(false)
+// ?clean=1 时场景脚本会隐藏全部常驻面板（截图 / 嵌入用）；顶栏卡片与参数开关一并让位
+const cleanQuery = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('clean') === '1'
 
 let viewer = null
 // 审计 3D-23：创建渲染器之前做 WebGL 预检；不支持时整页换成说明，不再抛原始报错
@@ -83,11 +89,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-<div class="armor-view" :class="{ 'is-unsupported': !webgl.supported, 'has-back': canGoBack }">
-    <button v-if="canGoBack" type="button" class="armor-back" data-testid="armor-back" @click="router.back()"><ArrowLeft :size="16" aria-hidden="true" /> {{ $t('armor.back') }}</button>
+<div class="armor-view" :class="{ 'is-unsupported': !webgl.supported, 'has-back': canGoBack, 'is-clean': cleanQuery }">
+    <button v-if="canGoBack" type="button" class="armor-back" data-testid="armor-back" :aria-label="$t('armor.back')" @click="router.back()"><ArrowLeft :size="16" aria-hidden="true" /><span class="armor-back-label">{{ $t('armor.back') }}</span></button>
     <Scene3DStatus v-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
     <!-- 3D 装甲检视器 DOM：自上游 ArmorView.vue 原样平移（JS 按 ID 查找） -->
-    <div v-else :key="attempt" class="armor-stage" data-testid="armor-stage">
+    <div v-else :key="attempt" class="armor-stage" :class="{ 'is-tools-open': toolsOpen }" data-testid="armor-stage">
         <!-- 旧的单行文字加载提示由 Scene3DStatus 取代；节点保留给场景脚本写入（不可见） -->
         <div class="armor-legacy-loading" hidden><div id="loading">{{ $t('armor.loading') }}</div></div>
         <div id="canvas-container"></div>
@@ -98,12 +104,24 @@ onBeforeUnmount(() => {
                 <div class="stat"><span class="label">{{ $t('armor.type') }}</span><span class="value" id="tank-type"></span></div>
                 <div class="stat"><span class="label">{{ $t('armor.nation') }}</span><span class="value" id="tank-nation"></span></div>
             </div>
+            <!-- 手机顶栏的「参数」开关：展开 / 收起装备、射击方、目标、配置（桌面端 CSS 隐藏，面板常驻） -->
+            <button
+                v-if="!cleanQuery"
+                type="button"
+                class="armor-tools"
+                data-testid="armor-tools"
+                aria-controls="tank-selectors"
+                :aria-expanded="toolsOpen ? 'true' : 'false'"
+                :aria-label="$t('armor.tools')"
+                :title="$t('armor.tools')"
+                @click="toolsOpen = !toolsOpen"
+            ><SlidersHorizontal :size="18" aria-hidden="true" /></button>
             <div id="tank-selectors">
                 <div class="sel-row" id="config-row" style="display:none;"><label id="config-label">{{ $t('armor.config') }}</label><select id="config-select"></select></div>
                 <div class="sel-row">
                     <label>{{ $t('armor.equip') }}</label>
-                    <label style="width:auto;display:flex;align-items:center;gap:3px;cursor:pointer;font-size:0.78em;"><input type="checkbox" id="eq-calibrated"> {{ $t('armor.calibrated') }}</label>
-                    <label style="width:auto;display:flex;align-items:center;gap:3px;cursor:pointer;font-size:0.78em;"><input type="checkbox" id="eq-enhanced"> {{ $t('armor.enhanced') }}</label>
+                    <label class="eq-opt"><input type="checkbox" id="eq-calibrated"> <span class="eq-opt-label">{{ $t('armor.calibrated') }}</span></label>
+                    <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
                 </div>
                 <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select">—</button></div>
                 <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select">—</button></div>
@@ -288,6 +306,14 @@ onBeforeUnmount(() => {
     .armor-view #tank-selectors label { width: 58px; color: var(--muted); font-size: 0.8em; }
     /* 全局 input{flex:1;min-width:120px} 会把复选框撑到 120px 导致 Equip 行溢出面板——恢复自然尺寸 */
     .armor-view input[type="checkbox"] { flex: none; min-width: 0; width: auto; margin: 0; }
+    /* 装备复选框外层 label = 真实点击目标（原先靠内联样式；选择器必须 ≥ `#tank-selectors label`
+       的优先级——那条 width:58px / font-size:.8em 是给行首字段标签的，会把 EN/RU 文案压进
+       58px 盒子里溢出重叠） */
+    .armor-view #tank-selectors label.eq-opt {
+        display: inline-flex; align-items: center; gap: 3px;
+        width: auto; cursor: pointer; font-size: 0.78em;
+    }
+    .armor-view #tank-selectors .eq-opt-label { white-space: nowrap; }
     .armor-view #tank-selectors .tank-btn {
             background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm);
             padding: 5px 10px; max-width: 176px; cursor: pointer; font-size: 0.85em;
@@ -343,24 +369,110 @@ onBeforeUnmount(() => {
             background: var(--panel); color: var(--txt); cursor: pointer; backdrop-filter: blur(12px);
         }
     .armor-view #view-toggle button#aim-btn.active { background: linear-gradient(135deg,var(--accent),var(--accent-2)); color: var(--on-accent); border-color: transparent; }
+    /* 手机顶栏的「参数」开关：桌面端不渲染成可见控件（面板照旧常驻四角布局） */
+    .armor-view .armor-tools { display: none; }
     /* 审计 3D-14：触屏控件放大到 44px 点击区域 */
     @media (pointer: coarse) {
         .armor-view #view-toggle button,
         .armor-view #tank-selectors .tank-btn,
         .armor-view #tp-close { min-height: 44px; }
+        /* 参数面板内的真实交互控件同样要 ≥44px（评审 BLOCKER 1：配置下拉与装备复选框 label） */
+        .armor-view #config-select,
+        .armor-view #tank-selectors label.eq-opt { min-height: 44px; }
     }
-    /* 审计 3D-14：手机——四角面板改为上下两条可滚动的窄带，场景留在中间；选车弹窗全屏 */
+    /* 审计 3D-14 + 移动端空间收束：手机 = 顶栏一行（车名 + 参数开关）+ 底栏一行（弹种 + 视图
+       开关），3D 场景占满其余；装备 / 射击方 / 目标 / 配置收进「参数」面板（默认收起），不再
+       像此前那样上下两条窄带常驻、吃掉约三分之一视口。桌面 / 平板布局不受本块影响。 */
     @media (width < 768px) {
-        .armor-view #corner-tl { top: 56px; left: 8px; right: 8px; flex-direction: column; gap: 6px; max-height: 34%; overflow-y: auto; }
-        .armor-view #info-panel { max-width: none; padding: 10px 12px; }
-        .armor-view #info-panel h1 { font-size: 1.1em; margin-bottom: 4px; }
-        .armor-view #tank-selectors { width: auto; padding: 8px 12px; }
-        .armor-view #corner-tr { top: auto; bottom: 8px; right: 8px; left: 8px; align-items: stretch; }
-        .armor-view #view-toggle { justify-content: center; }
+        /* 顶栏：单行卡片；返回键（若有）贴在它左侧同一行 */
+        .armor-view #corner-tl {
+            top: 8px; left: 8px; right: 8px;
+            display: grid; grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center; gap: 4px 8px;
+            padding: 4px 6px 4px 12px; max-height: none; overflow: visible;
+            background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+            box-shadow: var(--shadow); backdrop-filter: blur(12px);
+            /* 高于角度条（见下）：参数面板展开时把它盖住，而不是叠在一起 */
+            z-index: 30;
+        }
+        .armor-view.has-back #corner-tl { top: 8px; left: 60px; }
+        /* 车名 + 等级 / 类型 / 国籍 压成一行：面板收起时这是唯一常驻信息。
+           单行是硬约束（评审「额外关注」）：长车名 + EN/RU 类型/国家在 360px 下不得换行，
+           越界统一由省略号接管；车名自己的 52% 省略号是第二层。 */
+        .armor-view #info-panel {
+            grid-column: 1; grid-row: 1; min-width: 0;
+            max-width: none; max-height: none;
+            overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+            padding: 0; background: none; border: none; box-shadow: none; backdrop-filter: none;
+        }
+        .armor-view #info-panel h1 {
+            display: inline-block; max-width: 52%; vertical-align: bottom;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-size: 1em; margin: 0 8px 0 0;
+        }
+        .armor-view #info-panel .stat { display: inline-flex; gap: 4px; margin: 0; font-size: 0.78em; white-space: nowrap; vertical-align: bottom; }
+        .armor-view #info-panel .stat + .stat::before { content: '·'; color: var(--muted); }
+        /* 手机省略「等级 / 类型 / 国籍」标签：值自明，且与选车卡片 meta 同一约定 */
+        .armor-view #info-panel .label { display: none; }
+        /* 参数面板：收起时不占空间；展开时挂在顶栏下方（内部滚动，不树嵌套滚动容器） */
+        .armor-view #tank-selectors {
+            grid-column: 1 / -1; grid-row: 2; display: none;
+            width: auto; margin-top: 2px; padding: 8px 0 2px;
+            border: none; border-top: 1px solid var(--border); border-radius: 0;
+            background: none; box-shadow: none; backdrop-filter: none;
+            max-height: 46dvh; overflow-y: auto;
+        }
+        .armor-view .armor-stage.is-tools-open #tank-selectors { display: block; }
+        .armor-view #tank-selectors .tank-btn { flex: 1 1 auto; max-width: none; }
+        /* 参数面板内的交互控件在手机档统一 ≥44px（评审 BLOCKER 1：配置下拉与装备复选框 label。
+           本档 <768 包含鼠标窄窗，故不放在 pointer:coarse 里，与该档其它控件规则一致） */
+        .armor-view #config-select,
+        .armor-view #tank-selectors label.eq-opt { min-height: 44px; }
+        .armor-view .armor-tools {
+            grid-column: 2; grid-row: 1;
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 44px; height: 44px; padding: 0;
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            background: var(--input-bg); color: var(--txt); cursor: pointer;
+            transition: border-color .12s ease, background .12s ease, color .12s ease;
+        }
+        .armor-view .armor-tools[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); background: var(--input-bg-hover); }
+        /* 底栏：一行 —— 弹种（有弹种时，下拉限宽）+ 视图开关（三档均分；极窄屏时整组换行，
+           不硬压按钮宽度）。底栏高度随内容，角度条已挪到顶栏下方，不再与之争位置。 */
+        .armor-view #corner-tr {
+            top: auto; bottom: 8px; right: 8px; left: 8px;
+            flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: 8px;
+        }
+        /* 弹种：不限宽（选项文案是「弹种 穿深mm / 伤害dmg」，限宽会把文字截断）。
+           文案长时底栏整组换行：弹种一行、视图开关一行，不硬压按钮宽度。 */
+        .armor-view #shell-selector { flex: none; padding: 6px 10px; }
+        .armor-view #shell-selector select { max-width: 100%; min-height: 44px; }
+        .armor-view #view-toggle { flex: 1 1 180px; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px 8px; }
+        .armor-view #view-toggle button { min-height: 44px; padding: 4px 6px; font-size: 0.8em; line-height: 1.2; white-space: normal; }
+        /* 炮塔 / 炮管角度：贴顶栏下方的单行小条（给「炮塔」开关提供反馈）；世界模式面板
+           显隐仍由内核控制。放在顶侧后不会再与可换行的底栏重叠。 */
+        .armor-view #turret-controls {
+            top: 64px; bottom: auto; left: 8px; right: auto;
+            min-width: 0; max-width: calc(100% - 16px); padding: 6px 12px;
+            max-height: 32dvh; overflow-y: auto;
+        }
+        .armor-view #turret-controls .ctrl-row { display: inline-flex; margin: 0 12px 0 0; }
         .armor-view #corner-br { display: none; }
-        .armor-view #turret-controls { display: none !important; }
-        .armor-view .armor-back { top: 8px; left: 8px; transform: none; }
+        .armor-view.is-clean #corner-tl { display: none; }
+        /* 返回键收成 44px 图标键（文字在手机上省掉；aria-label 已带上名称），
+           顶栏因此可以稳定从 60px 处开始，与返回键同一行 */
+        .armor-view .armor-back { top: 8px; left: 8px; width: 44px; min-height: 44px; padding: 0; justify-content: center; transform: none; }
+        .armor-view .armor-back-label { display: none; }
+        /* 选车弹窗：全屏；头部固定三行（标题 + 计数 + 关闭 / 搜索 / 三个筛选），关闭键 44px 不换行 */
         .armor-view #tank-picker { width: 100%; height: 100%; top: 0; left: 0; transform: none; border-radius: 0; }
+        .armor-view #tp-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; }
+        .armor-view #tp-title { order: 1; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .armor-view #tp-count { order: 2; flex: none; }
+        .armor-view #tp-close { order: 3; flex: none; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+        .armor-view #tp-search { order: 4; flex: 1 1 100%; min-width: 0; min-height: 44px; }
+        .armor-view #tp-header select { order: 5; flex: 1 1 28%; min-width: 0; min-height: 44px; }
+        .armor-view #tp-grid { padding: 8px 10px; gap: 8px; }
         .armor-view .tank-card { flex: 1 1 140px; max-width: none; }
+        .armor-view .tank-card .tc-img { height: 96px; }
     }
 </style>
