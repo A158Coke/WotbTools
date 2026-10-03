@@ -8,7 +8,7 @@
  * q / tier / nation / type / sort 用 replace 写入（不堆历史），?tank= 详情用 push（返回键回到列表），
  * ?config= 记录详情页选中的配置下标并联动装甲查看器入口。
  * 列表增量渲染（审计 3D-18）：首屏一页，滚动到底由 IntersectionObserver 追加，按钮兜底。
- * 装甲查看器（agent-armor）仍仅管理员内测，非管理员不显示入口。
+ * 坦克百科中的 3D 检视入口保留当前角色显示策略；装甲页面本身只要求登录。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

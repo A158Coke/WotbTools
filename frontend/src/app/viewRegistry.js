@@ -22,8 +22,8 @@ const RatingDocsPage = defineAsyncComponent(() => import('../components/RatingDo
 /**
  * 回放工作台是唯一 capability orchestrator：`replay` / `battle-playback` / `ai-review`
  * 与旧深链 `agent-replay` / `agent-shots` 全部落在同一个 `ReplayWorkspace`，由
- * `replayInitialCapability` 决定初始能力（3D / 射击仍受 admin feature flag 约束，
- * 见 `app/navigation.js` 的 `ADMIN_ONLY_VIEWS`）。3D 与射击不再有独立页面，
+ * `replayInitialCapability` 决定初始能力。五种能力均公开可见；3D / 射击 / AI 登录后使用。
+ * 管理员角色不改变工作台能力。3D 与射击不再有独立页面，
  * 深链只是工作台的能力入口。
  *
  * 坦克百科 → 装甲查看器（`agent-armor`）仍是独立页面：装甲查看器属于坦克百科，

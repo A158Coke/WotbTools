@@ -606,6 +606,12 @@ loader 或重新挂载同一份组件定义都只会拿到那个已经失败的 
 `frontend/src/components/{ReplayWorkspace,AiReviewPanel,AiReviewWorkspacePane}.vue`、
 `frontend/src/types/ai-review.ts`。
 
+## 2026-10-03 — 回放能力面向普通登录用户开放
+
+回放工作台的五种能力统一为公开可发现：数据与 2D 回放匿名可用，3D 回放、射击分析 / 复现与 AI 复盘登录后可用。管理员不再拥有额外的回放能力。匿名深链保留原目标并显示登录引导；射击到装甲查看器的复现场景对普通登录用户完整开放，登录返回保留场景参数。
+
+---
+
 ## 当前架构形成的三条长期主线
 
 回看整个演进过程，WotbTools 的变化并不是简单的功能累积，而主要沿三条长期主线收敛。
