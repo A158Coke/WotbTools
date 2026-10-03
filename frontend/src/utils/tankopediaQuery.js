@@ -130,6 +130,8 @@ export function normalizeTankCache(cache) {
         nation: value.nation || 'unknown',
         type: value.type || 'unknown',
         is_premium: !!value.is_premium,
+        // 收藏车（tanks.pb field13 == 2）：与 is_premium（==1）互斥，百科据此上蓝色边框
+        is_collector: !!value.is_collector,
         hp: value.hp ?? null,
         pen_max: penMax || null,
       }

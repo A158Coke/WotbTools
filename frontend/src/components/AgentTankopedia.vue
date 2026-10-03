@@ -429,7 +429,7 @@ onMounted(() => {
             <button
               type="button"
               class="tp-card"
-              :class="{ 'is-premium': tank.is_premium }"
+              :class="{ 'is-premium': tank.is_premium, 'is-collector': tank.is_collector }"
               data-testid="tank-card"
               @click="openDetail(tank.id)"
             >
@@ -571,6 +571,10 @@ onMounted(() => {
 
 .tp-card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .tp-card.is-premium { border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border-subtle)); }
+/* 收藏车：蓝框（`--color-info` 是本组件既有的中性蓝；主题测试要求 Agent 组件只用
+ * 已定义 token，故不写裸色）。与金币车的警告色边框区分开——两者在数据上互斥
+ * （tanks.pb field13：1=金币 2=收藏）。 */
+.tp-card.is-collector { border-color: color-mix(in oklab, var(--color-info) 55%, var(--color-border-subtle)); }
 
 @media (hover: hover) {
   .tp-card:hover { border-color: var(--color-accent); background: var(--color-surface-2); }
