@@ -63,6 +63,8 @@ grep -Fq 'business-postgres-provisioning: PASS' "$RUNTIME_CHECK_LIB"
 grep -Fq 'business-postgres-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)' "$RUNTIME_CHECK_LIB"
 grep -Fq 'tx-local-opentofu-business-postgres' "$RUNTIME_CHECK_LIB"
 grep -Fq 'BUSINESS_POSTGRES_TOFU_PROVISION_MARKER' "$RUNTIME_CHECK_LIB"
+grep -Fq '/api/hof?page=1&size=1' "$RUNTIME_CHECK_LIB"
+! grep -Fq '/api/hof?page=0&size=1' "$RUNTIME_CHECK_LIB"
 # The new checks must be read-only: no DDL/DML against the business database.
 ! grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alter[[:space:]]+database)' "$RUNTIME_CHECK_LIB"
 
@@ -187,7 +189,9 @@ json.dump(data, sys.stdout)
         respond '{"errorCode":"AUTH_UNAUTHORIZED"}' "${FAKE_PROFILE_ANON_STATUS:-401}"
       fi
     elif [[ "$*" == *"/api/hof?"* ]]; then
-      if [ "${FAKE_HOF_LIST_EMPTY:-0}" = 1 ]; then
+      if [[ "$*" == *"page=0"* ]]; then
+        respond '{"errorCode":"INVALID_PAGE"}' 400
+      elif [ "${FAKE_HOF_LIST_EMPTY:-0}" = 1 ]; then
         respond '{"records":[]}' "${FAKE_HOF_STATUS:-200}"
       else
         respond '{"records":[{"id":348,"nickname":"e2e"}]}' "${FAKE_HOF_STATUS:-200}"

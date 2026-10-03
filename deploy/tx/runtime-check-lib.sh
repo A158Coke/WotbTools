@@ -288,7 +288,7 @@ business_e2e_check() {
     e2e_emit business-profile 0 "profile read must answer 200 or a canonical 404, got HTTP $E2E_HTTP_STATUS"
     failures=1
   fi
-  e2e_http GET "http://business-api:8087/api/hof?page=0&size=1"
+  e2e_http GET "http://business-api:8087/api/hof?page=1&size=1"
   local hof_body="$E2E_HTTP_BODY" hof_status="$E2E_HTTP_STATUS"
   if [ "$hof_status" = 200 ]; then
     e2e_emit business-hof 1
