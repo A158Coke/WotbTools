@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:browser-layout": "node scripts/browser-playback-layout.mjs",
     "test:browser-interaction": "node scripts/browser-workspace-interaction.mjs",
+    "test:browser-armor-mobile": "node scripts/browser-armor-mobile.mjs",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
     "build": "vite build",
     "verify:agent-wasm": "node scripts/verify-agent-wasm-dist.mjs --dist dist",

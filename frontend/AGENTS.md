@@ -10,19 +10,19 @@
 - 先跑与改动直接相关的测试：`npx vitest run <related-test-files>`；多文件 feature 再跑对应 feature suite。
 - 不因小改动重复跑全量测试或 build。路由、依赖、Vite、动态 import、资产管线或生产编译改动才在本地扩大验证；repository full validation 由 PR CI 负责。
 
-## Local runs must configure the asset origin
+## Local runs: 本机测试 runbook
 
-前端是 client-only + remote 资产面：dev server 下没有 `VITE_ASSET_BASE_URL` 时 `assetProvider`
-会显式报「资产源未配置」，**地图地形 / 车模 GLB / 坦克数据一律不加载**（回放解析、标签、伤害
-数字仍正常，现象就像"只有模型没了"）。**3D 回放 / 车模 / 地图相关的本机测试一律按这个姿势做**
-（完整说明见 [`docs/frontend/local-production-dev.md`](../docs/frontend/local-production-dev.md) §本机资产面）：
+本机全功能联调（资产面 / Agent 引擎 / admin 视图 / 自检探针 / 故障对照）的权威手册：
+[`docs/frontend/local-testing.md`](../docs/frontend/local-testing.md)。最短路径：
 
-1. 在 WoT-Blitz-Agent 仓执行 `node scripts/serve_asset_pack.mjs 8123`（伺服其 `release/asset_pack/`，带 CORS）。
+1. WoT-Blitz-Agent 仓**根目录**：`node scripts/serve_asset_pack.mjs 8123`（脚本按 cwd 解析 `release/asset_pack`，起错目录会静默 404）。
 2. 本仓 `frontend/.env.local`（gitignored）写 `VITE_ASSET_BASE_URL=http://127.0.0.1:8123`；改后**必须重启 dev server**（env 在 transform 时内联）。
-3. `npm run dev` → `http://localhost:5173/?view=agent-replay&agentViews=1`（管理视图 dev 下需 `?agentViews=1`）。
-4. 自检不看画面：`?debug` 下 `window.__gdbg.layers === true`、`window.__pbV.filter(v => v.glb).length === 车辆数`。
+3. 依赖上游引擎的调试先 `bash scripts/fetch-agent-wasm.sh`（`deploy/agent/source.json` pin 变更后必须重跑）。
+4. `npm run dev` → `http://localhost:5173/?admin=1`。
 
-坑：URL 上的非空 `?assets=` 会持久化到 localStorage 并盖住 `.env.local`；回到默认要带一次空 `?assets=`。
+这个 URL 参数来自**未提交**的本机旁路（`useAuth.js`，见 runbook §4 与附录 A）：
+不要提交它，也不要"顺手清理"工作区里的这个 `M`。admin 视图的放开只认角色——
+`viewFromRoute` 里不得出现任何按 URL 参数放行的分支（漏提交过一次，review blocker）。
 
 ## Architecture boundaries
 
@@ -68,6 +68,7 @@
 - source/architecture guard 只锁定 dependency/API ownership；真实 CSS/layout/fullscreen/pointer 行为优先由 browser-level test 覆盖，不得用正则测试冒充浏览器验证。
 - 修改 Playback layout 时至少保持 `npm run test:browser-layout` 通过；该 gate 覆盖 PC / tablet / mobile 实际 CSS geometry 与 form isolation。
 - 修改 Playback / Replay Workspace **交互**（hit target、pointer-events、capability 切换、认证门禁、播放控件）时保持 `npm run test:browser-interaction` 通过；该 gate 用真实 Chrome + 设备指标（含 coarse pointer）与**原始输入事件**驱动真实应用，并以页面内事件记录证明真实 click 的 target。它不模拟真实硬件、Fullscreen API 或真实捏合手势——这些仍需人工/真机复核。
+- 修改装甲查看器（`AgentArmorView.vue` 样式 / 模板或 `tankViewer.js` 的常驻 UI）时保持 `npm run test:browser-armor-mobile` 通过；该 gate 驱动真实应用断言手机（390/360 触屏、767 断点内侧、资产不可达态）/ 平板 / 桌面三档的 chrome 几何（顶栏 / 底栏 / 参数面板 / 选车弹窗）、44px 触控目标、无横向溢出与真实触摸接线。通用页面外壳在两个浏览器 gate 间共享：`scripts/browser-page.mjs` + `scripts/browser-fixtures/fixture-server.mjs`。
 - 修改架构边界时覆盖受影响的深链、历史导航、认证目的地或共享状态；修改 build/dependency 时运行 `npm run build`。
 - 变更后执行 review-fix；影响界面、构建或文档时再执行 review-with-docs。
 

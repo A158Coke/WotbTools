@@ -364,6 +364,15 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （清晰度随画质档 DPR，不再固定 `min(dpr,2)`）；特效（炮线/命中/爆散/飘字）走对象池，
   仅在会话结束时整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
   HUD/进度条按 ~10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
+- 3D 顶栏双方总血量（2026-10-03 补回）：`scene/teamHpTotals.js` 按各队 `max_hp` 汇总剩余量与
+  上限（未知阵营不计入任一方，unknown ≠ enemy），`playbackScene` 在 HUD 节流写 store，
+  `Replay3DPane.vue` 顶栏第二行渲染「数值 + 阵营色条夹住比分」；数值用完整整数（§11 禁止
+  1k / 22.3k 缩写），条宽用原始百分比保证平滑。顶栏与基地状态条同列堆叠，高度随内容变化。
+  **整行是单一阵营视角**（`friendly_team` = 录像者一方）：左侧血条 = 己方，中间比分左 = 己方
+  ——击杀计数在内核里是物理队伍（score1 = team 1），上屏前经 `perspectiveScore()` 映射成
+  `scoreFriend/scoreEnemy`（`friendly_team = 2` 时交换），否则会出现「己方血条 + 对方比分」的错位；
+  `friendly_team` 未知（≠ 1/2）时**不建立视角**：比分与两队血量一律 0 / 0（与 `pointsAt` 同为
+  fail-closed，unknown ≠ enemy），不得把物理 team1 当「己方」上屏再染成 ally / enemy 两色。
 - 3D 车体位姿：yaw/pitch 取自渲染滤波网格；**横滚取网格新增的 `vehicles[].hull_roll`**
   （上游 2026-10-03 起产出，additive；值来自原始 type=10 volatile 采样的最近邻——滤波层不输出侧倾）。
   消费端镜像约定：游戏系→场景系是「x 取负」的镜像，故 yaw 与 roll 取负、pitch 不变；

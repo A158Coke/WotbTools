@@ -2,6 +2,9 @@
 
 本地可以只运行 Vue/Vite 前端，并通过 Vite 开发代理把相对 `/api` 请求转发到生产站点。这样可以使用本地未发布的前端代码验证生产后端和生产 Keycloak 登录链路。
 
+> 本机测试的完整 runbook（引擎产物 / 资产面 / admin 旁路 / 自检探针 / 故障对照）见
+> [`local-testing.md`](local-testing.md)；本文件只覆盖「连接生产后端」这条链路与其安全边界。
+
 ## 本机资产面（3D 回放 / 车模 / 地图测试必读）
 
 前端是 **client-only + remote 资产面**设计：回放解析在本机 WASM 完成，但地图地形、车模 GLB、
@@ -27,8 +30,9 @@
    VITE_ASSET_BASE_URL=http://127.0.0.1:8123
    ```
 
-3. `npm run dev`，打开 `http://localhost:5173/?view=agent-replay&agentViews=1`
-   （`agent-replay` 等管理视图在 dev 下需要显式 `?agentViews=1` 才可达，见 `app/navigation.js`）。
+3. `npm run dev`，打开 `http://localhost:5173/?view=agent-replay&admin=1`
+   （`agent-replay` 等管理视图的可达性由角色决定；本机 `?admin=1` 旁路把 admin 角色视为已持有，
+   见 [`local-testing.md`](./local-testing.md) §4）。
 
 优先级与坑：`?assets=<URL>` > `localStorage.wotb_asset_base` > `VITE_ASSET_BASE_URL`。
 在 URL 上带过一次非空 `?assets=` 会持久化到 localStorage 并**盖住** `.env.local`；要回到默认，

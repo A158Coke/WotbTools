@@ -49,6 +49,9 @@ jobs:
       - name: Real-browser Playback/Workspace interaction regression
         working-directory: frontend
         run: npm run test:browser-interaction
+      - name: Real-browser Armor viewer mobile layout regression
+        working-directory: frontend
+        run: npm run test:browser-armor-mobile
       - name: Build
         working-directory: frontend
         run: npm run build

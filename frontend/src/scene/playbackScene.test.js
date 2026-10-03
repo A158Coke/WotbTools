@@ -335,6 +335,74 @@ describe('playbackScene 资产阶段过期续体', () => {
   })
 })
 
+/**
+ * `reset()`（工作台清空选择 / 换选场次）也落在**加载途中**：撤下必须让在途续体整体作废，
+ * 而不是等它自己跑完。否则旧场解析完成会绕过 reset 把旧场景画回来，还会把 `DATA` 占住。
+ */
+describe('playbackScene reset：撤下当前回放', () => {
+  it('解析途中撤下：迟到解析不得落成会话，也不得把 DATA 留给下一场', async () => {
+    const store = createPlaybackStore()
+    const late = track(deferred())
+    source.loadPlaybackData.mockImplementationOnce(() => late.promise)
+
+    const only = createInstance(store)
+    api = only
+    const load = only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
+    expect(store.loading).toBe(true)
+
+    only.reset()
+    expect(store.loading).toBe(false)
+    expect(store.hasData).toBe(false)
+
+    // 旧场解析迟到完成：不得落成会话、不得改写等待态
+    late.resolve(minimalData(917, 'map_a'))
+    await load
+    expect(store.hasData).toBe(false)
+    expect(store.loading).toBe(false)
+    expect(store.mapName).toBe('')
+    expect(store.startTime).toBe(0)
+    expect(store.err).toBe('')
+
+    // DATA 也不得被旧场占用：画质选择必须仍是「就地生效」，
+    // 而不是走 `if (DATA)` 的「已在播放 → 整页重载」分支
+    expect(store.qualityKey).toBe('low')
+    only.setQuality('mid')
+    expect(store.qualityKey).toBe('mid')
+  })
+
+  it('资产途中撤下：迟到续体不得触场景，也不得把内部异常当「加载失败」写给用户', async () => {
+    source.loadPlaybackData.mockImplementation(() => Promise.resolve(minimalData(917, 'map_a')))
+    // 第一次是 startPlayback 预解析，第二次（挂起）在资产阶段内部
+    const parked = track(deferred())
+    source.resolveMapKey
+      .mockResolvedValueOnce('map_a')
+      .mockImplementationOnce(() => parked.promise)
+      .mockResolvedValue(null)
+
+    const store = createPlaybackStore()
+    const only = createInstance(store)
+    api = only
+    const load = only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
+    await vi.waitFor(() => expect(source.resolveMapKey).toHaveBeenCalledTimes(2))
+    expect(store.assetStage).toBe(true)
+
+    only.reset()
+    expect(store.assetStage).toBe(false)
+    expect(store.mapName).toBe('')
+
+    parked.resolve('map_a')
+    await load
+    expect(store.mapName).toBe('')       // 不是 'map_a'
+    expect(store.startTime).toBe(0)      // 不是 917
+    expect(store.playing).toBe(false)
+    expect(store.hasData).toBe(false)
+    expect(store.assetStage).toBe(false)
+    // 关键：续体必须「安静地」放弃。撤下已 teardown 掉 DATA（= null），若让它继续跑
+    // buildVehicles，会在 DATA.vehicles 上抛错并把 TypeError 当成「加载失败」写给用户。
+    expect(store.err).toBe('')
+  })
+})
+
 /** 同一实例替换：B 的资源引用与高度场不得被 A 的迟到结果覆盖。 */
 describe('playbackScene 资产发布顺序', () => {
   function prepareAssets(kinds) {
