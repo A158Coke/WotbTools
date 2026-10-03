@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { sourceId as makeSourceId } from '../types/replay.js'
 import type { Battle, ColumnDef, ReplayResult, SourceId } from '../types/replay.js'
 import type { DataViewMode, ReplayAnalysis, ReplayCapability } from '../types/workspace.js'
+import { toReplayCapability } from '../types/workspace.js'
 
 export type PendingRemove =
   | { type: 'battle'; battle: Battle; label: string }
@@ -25,9 +26,7 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
 
   const analysis = ref<ReplayAnalysis>({ phase: 'idle', done: 0, total: 0, failure: null })
 
-  const activeWorkspaceTab = ref(initialCapability === 'playback' || initialCapability === 'ai'
-    ? initialCapability
-    : 'data')
+  const activeWorkspaceTab = ref<ReplayCapability>(toReplayCapability(initialCapability))
   const currentBattleId = ref<SourceId | null>(null)
   const dataViewMode = ref<DataViewMode>('SUMMARY')
 

@@ -70,6 +70,11 @@
     --z-menu: 500;
     --z-dialog: 600;
     --z-toast: 700;
+    /* 回放工作台内的局部叠放（§5）：场景 / HUD 面板各自 `isolation: isolate`，
+       内部只用这些 1–9 的局部层，不参与全局 z-index 竞争 */
+    --pb-z-canvas: 1;
+    --pb-z-hud: 5;
+    --pb-z-modal: 9;
 
     /* 控件尺寸与密度：默认紧凑，触屏自动切换（§5） */
     --control-h-sm: 28px;
