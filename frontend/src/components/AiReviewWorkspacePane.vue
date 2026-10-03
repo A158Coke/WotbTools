@@ -1,7 +1,7 @@
 <!--
   回放工作台 · AI 复盘：为当前目标回放在本机建立 AI 输入（结算事实 + client canonical AI projection，
   replay-local/ai），交给 AiReviewPanel 发起分析。服务器没有 parser——文件不出本机，只上传投影。
-  需要登录（AI 复盘角色由 AiReviewPanel 判定）；时间轴不可用 / 解析失败只显示原因，不回退服务端。
+  公开显示、登录后使用；时间轴不可用 / 解析失败只显示原因，不回退服务端。
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
@@ -30,8 +30,9 @@ const { t } = useI18n()
 const { authenticated, login } = useAuth()
 const { availability, requireFeature } = useFeatureGate()
 const online = computed(() => availability(Feature.AI_REVIEW))
+/** main 侧把 AI 入口的登录目的地改成 'ai-review'；这里保留该参数，只是先过连通性门禁。 */
 function loginOnline() {
-  if (requireFeature(Feature.AI_REVIEW)) login()
+  if (requireFeature(Feature.AI_REVIEW)) login('ai-review')
 }
 
 const input = ref<AiReviewProjection | null>(null)
@@ -83,17 +84,26 @@ watch(() => props.file, () => {
   input.value = null
   errorKey.value = ''
 })
+watch(authenticated, (signedIn) => {
+  if (!signedIn) {
+    // 退出登录使在途结果失效，重新登录仍可为同一文件构建输入。
+    seq++
+    builtFile = null
+    input.value = null
+    errorKey.value = ''
+  }
+})
 watch(() => [props.file, props.active, props.blockedReason, authenticated.value, online.value.available], () => { void build() }, { immediate: true })
 </script>
 
 <template>
   <div class="ai-workspace-pane" data-testid="ws-ai">
     <p v-if="!online.available" class="ws-note" data-testid="ai-connectivity">{{ $t(online.messageKey) }}</p>
-    <p v-else-if="blockedReason" class="ws-note" data-testid="ai-blocked">{{ blockedReason }}</p>
     <div v-else-if="!authenticated" class="ai-login" data-testid="ai-login-required">
       <p class="ws-note">{{ $t('workspace.ai_login_required') }}</p>
       <AppButton data-testid="ai-login" @click="loginOnline">{{ $t('app.login') }}</AppButton>
     </div>
+    <p v-else-if="blockedReason" class="ws-note" data-testid="ai-blocked">{{ blockedReason }}</p>
     <AiReviewPanel
       v-else
       :file="file ?? undefined"

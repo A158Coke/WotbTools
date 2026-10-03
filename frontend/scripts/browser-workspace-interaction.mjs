@@ -16,13 +16,13 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
  * 与 `browser-playback-layout.mjs` 的分工：
  *   - 那个是 file:// + 生产 CSS 的**几何**夹具（布局/尺寸契约）；
  *   - 本文件是 Vite dev server + **真实生产应用**（router/AppShell/ReplayWorkspace/全部 CSS）
- *     的**交互**夹具，只把 Keycloak 网络边界替换掉（见 browser-fixtures/*-stub.js）。
+ *     的**交互**夹具，替换 Keycloak / 解析 / 场景加载边界（browser-fixtures/*-stub.js）。
  */
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
 
 /**
- * 只替换 Keycloak 网络边界与**解析 Worker 的来源**。用 resolveId 插件而不是 `resolve.alias` 正则：
+ * 替换外部运行时边界。用 resolveId 插件而不是 `resolve.alias` 正则：
  * rollup alias 的 RegExp 分支只替换「匹配到的那一段」，先把已解析的真实文件定位出来
  * 再整体换掉，才不会拼出假路径。
  */
@@ -30,6 +30,8 @@ const AUTH_BOUNDARY_STUBS = new Map([
   [resolve(frontendRoot, 'src/composables/useAuth.js'), resolve(here, 'browser-fixtures/use-auth-stub.js')],
   [resolve(frontendRoot, 'src/composables/useBusinessUserBootstrap.js'), resolve(here, 'browser-fixtures/use-business-user-bootstrap-stub.js')],
   [resolve(frontendRoot, 'src/scene/playbackParse.worker.ts'), resolve(here, 'browser-fixtures/playback-parse-worker-stub.mjs')],
+  [resolve(frontendRoot, 'src/api/agent-replay-facets.ts'), resolve(here, 'browser-fixtures/shot-handoff-stub.js')],
+  [resolve(frontendRoot, 'src/scene/tankViewer.js'), resolve(here, 'browser-fixtures/armor-handoff-stub.js')],
 ])
 
 /** Vite 的 module id 在 Windows 上是正斜杠、可能带盘符前导斜杠，且大小写不敏感；比较前统一规整。 */
@@ -415,15 +417,102 @@ const APP_SCENARIOS = [
   { name: 'capability-740x360-landscape-coarse', width: 740, height: 360, touch: true, authenticated: true, login: 'resolve' },
   { name: 'capability-1024x768-tablet', width: 1024, height: 768, touch: false, authenticated: true, login: 'resolve' },
   { name: 'capability-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve' },
-  // 服务器没有 parser，工作台没有 auth gating：未登录、auth init 挂起 / 失败时都立即可用，且不发起登录。
+  // Data / 2D 在未登录、auth init 挂起 / 失败时立即可用；受保护能力停在登录门。
   // pending 的 watchdog 设得远长于场景本身——工作台必须在 auth init 仍挂起时就渲染（不能等超时兜底）。
   { name: 'anonymous-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'reject' },
   { name: 'auth-init-pending-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'pending', authTimeout: 120_000 },
   { name: 'auth-init-reject-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'reject', authTimeout: 120_000 },
-  // 管理员（内测 feature flag）：五能力齐全，3D 能力真实可切（不再导航去独立页面）
+  // Admin 与普通登录用户能力集合相同。
   { name: 'admin-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
   { name: 'admin-390x844-portrait-coarse', width: 390, height: 844, touch: true, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
 ]
+
+const AUTH_CAPABILITY_SCENARIOS = [
+  { name: 'capability-normal-3d-desktop', cap: '3d', view: 'agent-replay', authenticated: true, width: 1600, height: 900, touch: false },
+  { name: 'capability-normal-shots-desktop', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1600, height: 900, touch: false },
+  { name: 'capability-anonymous-3d-coarse', cap: '3d', view: 'agent-replay', authenticated: false, width: 390, height: 844, touch: true },
+  { name: 'capability-anonymous-shots-coarse', cap: 'shots', view: 'agent-shots', authenticated: false, width: 390, height: 844, touch: true },
+  { name: 'capability-normal-shots-armor-handoff', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1600, height: 900, touch: false, reconstruct: true },
+]
+
+async function runAuthCapabilityScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  await page.goto(`${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-shot-fixture=1&assets=${encodeURIComponent(`${env.origin}/fixture-assets`)}`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="ws-data"]'), { label: 'data pane' })
+  await page.evaluate(PARSE_LIFECYCLE_BRIDGE)
+  await page.evaluate('window.__pbSelect("auth-capability.wotbreplay", [1, 2, 3, 4])')
+  await page.installInputTrace()
+  const selector = `[data-testid="ws-tab"][data-cap="${scenario.cap}"]`
+  const center = await page.evaluate(clickCenterExpression(selector))
+  if (!center) throw new Error(`${scenario.cap} tab must be hit-testable`)
+  await page.tap({ ...center, touch: scenario.touch })
+  await page.waitForValue('new URLSearchParams(location.search).get("view")', (view) => view === scenario.view,
+    { label: 'capability destination' })
+  const trace = await page.evaluate('window.__wsInput.click')
+  check(failures, trace?.cap === scenario.cap, `real capability click landed on ${JSON.stringify(trace)}`)
+  const paneSelector = scenario.cap === '3d' ? '.pb-root' : '[data-testid="replay-shots-pane"]'
+  if (!scenario.authenticated) {
+    await page.waitFor(() => !!document.querySelector('[data-testid="capability-auth-gate"]'), { label: 'login gate' })
+    check(failures, !await page.evaluate(`!!document.querySelector(${JSON.stringify(paneSelector)})`),
+      `anonymous ${scenario.cap} must not mount its production pane`)
+    check(failures, await page.evaluate('!window.__wsShotParse || (window.__wsShotParse.playback === 0 && window.__wsShotParse.shots === 0)'),
+      'anonymous capability must not begin playback or shots parsing')
+    check(failures, await page.evaluate('window.__wsAuth.loginCalls.length') === 0,
+      'capability navigation must not initiate login')
+    const loginCenter = await page.evaluate(clickCenterExpression('[data-testid="capability-login"]'))
+    if (!loginCenter) throw new Error('capability login button must be hit-testable')
+    await page.tap({ ...loginCenter, touch: scenario.touch })
+    const loginTrace = await page.evaluate('window.__wsInput.click')
+    check(failures, loginTrace?.testId === 'capability-login', `real login click landed on ${JSON.stringify(loginTrace)}`)
+    check(failures, await page.evaluate('JSON.stringify(window.__wsAuth.loginCalls)') === JSON.stringify([scenario.view]),
+      `login must preserve ${scenario.view} as destination`)
+    const fileToggle = await page.evaluate(clickCenterExpression('.filebar .fb-actions button[aria-expanded="false"]'))
+    if (fileToggle) await page.tap({ ...fileToggle, touch: scenario.touch })
+    check(failures, await page.evaluate('document.querySelector("[data-testid=file-list]")?.textContent.includes("auth-capability.wotbreplay") === true'),
+      'login gate must preserve the chosen replay')
+  } else {
+    await page.waitForValue(`!!document.querySelector(${JSON.stringify(paneSelector)})`, (present) => present === true,
+      { label: 'authenticated production pane' })
+    check(failures, !await page.evaluate('!!document.querySelector("[data-testid=capability-auth-gate]")'),
+      'normal authenticated user must bypass login gate')
+    if (scenario.cap === 'shots') {
+      await page.waitFor(() => !!document.querySelector('[data-testid="shot-row-1"]'), { label: 'parsed shot row' })
+      check(failures, await page.evaluate('window.__wsShotParse.playback === 1 && window.__wsShotParse.shots === 1'),
+        'normal authenticated user must execute the shot parsing chain')
+    }
+    if (scenario.reconstruct) {
+      const row = await page.evaluate(clickCenterExpression('[data-testid="shot-row-1"]'))
+      if (!row) throw new Error('shot row must be hit-testable')
+      await page.tap({ ...row, touch: scenario.touch })
+      check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-row-1',
+        'real selection click must land on the selected shot row')
+      const open = await page.evaluate(clickCenterExpression('[data-testid="shot-open-viewer"]'))
+      if (!open) throw new Error('armor handoff button must be hit-testable')
+      await page.tap({ ...open, touch: scenario.touch })
+      check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-open-viewer',
+        'real armor handoff click must land on its button')
+      await page.waitForValue('window.__wsArmorScene?.shot || null', (shot) => shot?.index === 1,
+        { label: 'armor scene received the selected shot' })
+      const scene = await page.evaluate('window.__wsArmorScene')
+      check(failures, scene.tank === 2 && scene.shooter === 1, `armor scene tank context lost: ${JSON.stringify(scene)}`)
+      const expected = { view: 'agent-armor', tank: '2', shooter: '1', config: '1', shell: '2', shot: '1', world: '1', heatmap: '1' }
+      check(failures, Object.entries(expected).every(([key, value]) => scene.query[key] === value),
+        `armor scene query lost: ${JSON.stringify(scene.query)}`)
+      check(failures, scene.shot.target_eid === 8 && scene.shot.shooter_eid === 7,
+        `armor scene local shot context lost: ${JSON.stringify(scene.shot)}`)
+      check(failures, await page.evaluate('window.__wsAuth.loginCalls.length') === 0,
+        'normal user armor handoff must not request another login')
+    }
+  }
+  check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
 
 /**
  * 3D 阵容车道的**真实几何**回归（review blocker：源码级 CSS 断言证明不了最终渲染）。
@@ -512,7 +601,7 @@ async function runRosterGeometryScenario(env, scenario) {
 
   // ?debug：Replay3DPane 的状态注入口（与场景内核的 ?debug 钩子同一口径），
   // 必须在面板 setup 之前就在 URL 上。
-  await page.goto(`${env.origin}/?view=replay&ws-auth=1&ws-login=resolve&ws-roles=wotbtools-admin&debug`)
+  await page.goto(`${env.origin}/?view=replay&ws-auth=1&ws-login=resolve&debug`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="3d"]'), { label: 'capability tabs' })
 
   // 单文件选择（DataTransfer 写入真实 input + change 事件）：单文件时 currentTargetFile
@@ -762,12 +851,8 @@ async function runAppScenario(env, scenario) {
     check(failures, attempts === 0, `anonymous capability switch must not start login, loginCalls=${attempts}`)
   }
 
-  // —— 能力集合（PR-B：五能力同一工作台）——
-  // 普通用户 = data / playback / ai（AI 是正式能力，不是 admin-only）；
-  // 管理员额外有 3D 回放 / 射击分析。两条集合都必须完整渲染，不因能力不可用而消失。
-  const expectedCaps = scenario.roles?.includes('wotbtools-admin')
-    ? ['data', 'playback', '3d', 'shots', 'ai']
-    : ['data', 'playback', 'ai']
+  // 五项能力对所有身份公开可见，身份只决定受保护能力是否挂载。
+  const expectedCaps = ['data', 'playback', '3d', 'shots', 'ai']
   check(failures, JSON.stringify(state.tabs.map((t) => t.cap)) === JSON.stringify(expectedCaps),
     `capability set=${JSON.stringify(state.tabs.map((t) => t.cap))}, expected ${JSON.stringify(expectedCaps)}`)
   if (scenario.touch) {
@@ -776,29 +861,29 @@ async function runAppScenario(env, scenario) {
       `coarse capability targets below 44px: ${JSON.stringify(small)}`)
   }
 
-  // —— 3D 能力（管理员）：切过去真的落在同一工作台，URL 与面板一起变 ——
-  if (expectedCaps.includes('3d')) {
-    const threeDTab = state.tabs.find((t) => t.cap === '3d')
-    const threeDHit = await page.evaluate(`(() => {
-      const button = document.querySelector('[data-testid="ws-tab"][data-cap="3d"]')
-      if (!button) return null
-      button.scrollIntoView({ block: 'center', inline: 'nearest' })
-      const r = button.getBoundingClientRect()
-      const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
-      const hit = document.elementFromPoint(center.x, center.y)
-      return { center, hitIsButton: hit === button || button.contains(hit) }
-    })()`)
-    check(failures, !!threeDTab && !!threeDHit?.hitIsButton,
-      `3D capability tab not hit-testable: ${JSON.stringify({ threeDTab, threeDHit })}`)
-    if (threeDHit?.hitIsButton) {
-      await page.tap({ ...threeDHit.center, touch: scenario.touch })
-      await page.waitForValue('new URLSearchParams(location.search).get("view")', (value) => value === 'agent-replay',
-        { label: 'route ?view=agent-replay' })
-      const threeDState = await page.probe(capabilityStateProbe)
-      check(failures, threeDState.threeD.visible, `ws-3d not visible after switching (${JSON.stringify(threeDState.threeD)})`)
-      check(failures, !threeDState.playback.visible, 'ws-playback still visible after switching to 3D')
-      check(failures, !threeDState.data.visible, 'ws-data still visible after switching to 3D')
-    }
+  // —— 3D 能力：切过去留在同一工作台，URL 与面板一起变 ——
+  const threeDTab = state.tabs.find((t) => t.cap === '3d')
+  const threeDHit = await page.evaluate(`(() => {
+    const button = document.querySelector('[data-testid="ws-tab"][data-cap="3d"]')
+    if (!button) return null
+    button.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = button.getBoundingClientRect()
+    const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+    const hit = document.elementFromPoint(center.x, center.y)
+    return { center, hitIsButton: hit === button || button.contains(hit) }
+  })()`)
+  check(failures, !!threeDTab && !!threeDHit?.hitIsButton,
+    `3D capability tab not hit-testable: ${JSON.stringify({ threeDTab, threeDHit })}`)
+  if (threeDHit?.hitIsButton) {
+    await page.tap({ ...threeDHit.center, touch: scenario.touch })
+    await page.waitForValue('new URLSearchParams(location.search).get("view")', (value) => value === 'agent-replay',
+      { label: 'route ?view=agent-replay' })
+    const threeDState = await page.probe(capabilityStateProbe)
+    check(failures, threeDState.threeD.visible, `ws-3d not visible after switching (${JSON.stringify(threeDState.threeD)})`)
+    check(failures, !threeDState.playback.visible, 'ws-playback still visible after switching to 3D')
+    check(failures, !threeDState.data.visible, 'ws-data still visible after switching to 3D')
+    const gate = await page.evaluate('!!document.querySelector("[data-testid=capability-auth-gate]")')
+    check(failures, gate === !scenario.authenticated, `3D gate visibility must follow authentication: ${gate}`)
   }
 
   await env.chrome.client.send('Target.closeTarget', { targetId })
@@ -1068,7 +1153,7 @@ async function runParseLifecycleScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  await page.goto(`${env.origin}/?view=replay&ws-auth=1&ws-login=resolve&ws-roles=wotbtools-admin&debug`)
+  await page.goto(`${env.origin}/?view=replay&ws-auth=1&ws-login=resolve&debug`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="3d"]'), { label: 'capability tabs' })
   await page.evaluate(PARSE_LIFECYCLE_BRIDGE)
 
@@ -1331,6 +1416,7 @@ try {
   const runs = [
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
+    ...AUTH_CAPABILITY_SCENARIOS.map((scenario) => ({ scenario, run: () => runAuthCapabilityScenario(env, scenario) })),
     ...ROSTER_GEOMETRY_SCENARIOS.map((scenario) => ({ scenario, run: () => runRosterGeometryScenario(env, scenario) })),
     { scenario: LIFECYCLE_SCENARIO, run: () => runParseLifecycleScenario(env, LIFECYCLE_SCENARIO) },
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),

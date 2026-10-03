@@ -1,7 +1,6 @@
 <script setup>
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { useAuth } from '../composables/useAuth.js'
 import { defaultView, locationForView, primarySection, sectionTitleKey as titleKeyFor, viewFromRoute } from './navigation.js'
 import { ACCOUNT_ICON } from './navIcons.js'
 import BrandMark from '../components/BrandMark.vue'
@@ -9,8 +8,7 @@ import BrandMark from '../components/BrandMark.vue'
 // 手机 / App（compact）的标题栏：logo · 当前栏目名 · 账户。主导航在底部 Tab 栏；
 // 平板 / 桌面没有顶栏，导航在左侧边栏（AppSidebar）。
 const route = useRoute()
-const { isAdmin } = useAuth()
-const activeView = computed(() => viewFromRoute(route, { allowAdminViews: isAdmin.value }))
+const activeView = computed(() => viewFromRoute(route))
 const activeSection = computed(() => primarySection(activeView.value))
 const sectionTitleKey = computed(() => titleKeyFor(activeView.value))
 const brandTarget = computed(() => locationForView(defaultView(), route))

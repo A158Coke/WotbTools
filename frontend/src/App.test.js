@@ -34,7 +34,7 @@ vi.mock('./components/SponsorPage.vue', () => ({ __esModule: true, default: { te
 vi.mock('./components/ProfilePage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-profile" />' } }))
 vi.mock('./components/HistoryPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-history" />' } }))
 vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-technical-evolution" />' } }))
-// Agent 数据平面（admin-only）：3D 回放 / 射击分析收敛进回放工作台的能力，
+// Agent 3D 回放 / 射击分析收敛进回放工作台的能力，
 // 装甲查看器与坦克百科仍是独立视图；用轻量替身断言可见性边界即可。
 // `__esModule: true` 必需——viewRegistry 经 defineAsyncComponent 动态 import，
 // Vue 靠它把命名空间的 `.default` 解包成组件（缺失时会把命名空间本身当组件，
@@ -59,7 +59,7 @@ const authState = vi.hoisted(() => ({
 }))
 authState.authenticatedRef = ref(false)
 authState.authInitState = ref('unauthenticated')
-// admin-only 功能开关（feature flag）：默认非管理员，按用例切换
+// 管理角色仅控制真正管理入口，默认普通用户。
 authState.isAdminRef = ref(false)
 vi.mock('./composables/useAuth.js', () => ({
   useAuth: () => ({
@@ -153,69 +153,55 @@ describe('App routing', () => {
     expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
   })
 
-  // Agent 数据平面内测 feature flag：3D 回放 / 射击分析 / 装甲查看器仅 wotbtools-admin 可见；
-  // 坦克百科已公开（2026-10-01）。
-  // 隐藏导航入口只是 UI 收敛，深链封锁才是边界——两者都要有回归网。
-  describe('admin-only Agent views (feature flag: wotbtools-admin)', () => {
-    beforeEach(() => { authState.isAdminRef.value = false })
-    afterEach(() => { authState.isAdminRef.value = false })
-
-    it('hides the internal-beta Agent entries in 更多 from non-admins; 坦克百科 is a primary nav item', async () => {
-      const { wrapper } = await mountApp('/?view=more')
-      for (const view of ['agent-replay', 'agent-shots']) {
-        expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists()).toBe(false)
-      }
-      expect(wrapper.find('[data-testid="nav-tankopedia"]').exists()).toBe(true)
+  describe('publicly discoverable Agent views', () => {
+    beforeEach(() => {
+      authState.isAdminRef.value = false
+      setAuthState('unauthenticated', false)
+    })
+    afterEach(() => {
+      authState.isAdminRef.value = false
+      setAuthState('unauthenticated', false)
     })
 
-    it('shows the internal-beta Agent entries in 更多 to admins', async () => {
-      authState.isAdminRef.value = true
+    it.each([false, true])('shows 3D and shots tools in 更多 (admin=%s)', async admin => {
+      authState.isAdminRef.value = admin
       const { wrapper } = await mountApp('/?view=more')
       for (const view of ['agent-replay', 'agent-shots']) {
         expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists()).toBe(true)
       }
+      expect(wrapper.find('[data-testid="nav-tankopedia"]').exists()).toBe(true)
     })
 
-    it('falls back to the default view when a non-admin deep-links an Agent view', async () => {
-      for (const view of ['agent-replay', 'agent-armor', 'agent-shots']) {
-        const { wrapper } = await mountApp(`/?view=${view}`)
-        expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
-        expect(wrapper.find(`[data-test="view-${view}"]`).exists()).toBe(false)
+    it.each([false, true])('restores 3D / shots deep links (authenticated=%s)', async authenticated => {
+      setAuthState(authenticated ? 'authenticated' : 'unauthenticated', authenticated)
+      for (const [view, capability] of [['agent-replay', '3d'], ['agent-shots', 'shots']]) {
+        const { wrapper, router } = await mountApp(`/?view=${view}`)
+        expect(router.currentRoute.value.query.view).toBe(view)
+        expect(wrapper.get('[data-test="view-replay"]').attributes('data-cap')).toBe(capability)
         wrapper.unmount()
       }
     })
 
-    it('admin deep links restore the matching workspace capability (3D / 射击)', async () => {
-      authState.isAdminRef.value = true
-      const cases = [
-        ['replay', 'data'],
-        ['battle-playback', 'playback'],
-        ['agent-replay', '3d'],
-        ['agent-shots', 'shots'],
-        ['ai-review', 'ai'],
-      ]
-      for (const [view, capability] of cases) {
-        const { wrapper } = await mountApp(`/?view=${view}`)
-        expect(wrapper.find('[data-test="view-replay"]').attributes('data-cap')).toBe(capability)
-        wrapper.unmount()
-      }
-    })
-
-    it('3D / 射击 capability 对普通用户不可见（深链收敛回数据）', async () => {
-      for (const view of ['agent-replay', 'agent-shots']) {
-        const { wrapper } = await mountApp(`/?view=${view}`)
-        expect(wrapper.find('[data-test="view-replay"]').attributes('data-cap')).toBe('data')
-        wrapper.unmount()
-      }
+    it('anonymous armor deep link stays at a login gate with every scene parameter', async () => {
+      const path = '/?view=agent-armor&tank=13825&shooter=19969&config=1&scfg=0&shell=0&shot=2&world=1&heatmap=1&az=45&h=6&d=12#scene'
+      const { wrapper, router } = await mountApp(path)
+      const sceneQuery = { ...router.currentRoute.value.query }
+      expect(wrapper.find('[data-test="view-agent-armor"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(true)
+      await wrapper.get('[data-testid="capability-login"]').trigger('click')
+      expect(authState.login).toHaveBeenCalledWith({ path: '/', query: sceneQuery, hash: '#scene' })
+      expect(router.currentRoute.value.query).toEqual(sceneQuery)
+      setAuthState('authenticated', true)
+      await settle()
+      expect(wrapper.find('[data-test="view-agent-armor"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
+      expect(router.currentRoute.value.query).toEqual(sceneQuery)
     })
 
     it('lets a non-admin deep-link the public 坦克百科', async () => {
       const { wrapper } = await mountApp('/?view=agent-tankopedia')
       await settle()
-      await nextTick()
-      await settle()
       expect(wrapper.find('[data-test="view-agent-tankopedia"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
     })
   })
 
@@ -309,8 +295,9 @@ describe('App routing', () => {
     expect(wrapper.find('[data-test="view-replay"]').attributes('data-cap')).toBe('ai')
   })
 
-  it('射击 → 装甲查看器的交接参数原样落到 URL（视图私有 key 清理不作用于入场方向）', async () => {
-    authState.isAdminRef.value = true
+  it('普通登录用户射击 → 装甲查看器的交接参数原样落到 URL', async () => {
+    authState.isAdminRef.value = false
+    setAuthState('authenticated', true)
     try {
       const { wrapper, router } = await mountApp('/?view=agent-shots')
       await wrapper.get('[data-testid="ws-armor-handoff"]').trigger('click')
@@ -322,7 +309,7 @@ describe('App routing', () => {
       // 落地的是装甲查看器（不是被收敛回工作台），参数就得是它读的那一份
       expect(wrapper.find('[data-test="view-agent-armor"]').exists()).toBe(true)
     } finally {
-      authState.isAdminRef.value = false
+      setAuthState('unauthenticated', false)
     }
   })
 

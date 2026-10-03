@@ -152,7 +152,7 @@ function hasRole(role) {
   const roles = tokenParsed.value?.realm_access?.roles
   return Boolean(role) && Array.isArray(roles) && roles.includes(role)
 }
-/** 与真实 composable 一致：admin-only 功能开关（feature flag）判定源。 */
+/** 与真实 composable 一致：后台角色边界，Replay Workspace 不依赖此角色。 */
 const isAdmin = computed(() => hasRole('wotbtools-admin'))
 /** 与真实 composable 一致：名人堂审核权限（侧边栏管理组按它显示"名人堂管理"）。 */
 const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)

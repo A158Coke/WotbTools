@@ -499,7 +499,7 @@ RoundFinished / Supremacy*），由 `BattleStateReconstructor`（纯事件归约
 ## 前端交付与失败态契约（2026-10，AI Review 生产可用性）
 
 AI Review 是正式开放能力，入口没有 maintenance gate / admin-only gate：`?view=ai-review` 与
-`?view=replay` 共用 `ReplayWorkspace`，`AiReviewWorkspacePane` 直接挂载（匿名只显示登录提示）。
+`?view=replay` 共用 `ReplayWorkspace`，`AiReviewWorkspacePane` 直接挂载（匿名只显示登录提示，不构建本地投影；登录明确返回 `ai-review`）。AI 与 3D / shots 使用同一产品级权限：publicly discoverable / authenticated-use，管理员不增加回放能力。
 
 **懒加载与部署的关系（生产可用性根因）**：`AiReviewWorkspacePane` / `BattlePlaybackPanel` 是
 `ReplayWorkspace` 的懒加载 chunk（`frontend/src/utils/lazyModule.ts` 的 `defineLazyModule`）。Vite 产物按内容

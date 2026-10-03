@@ -21,7 +21,7 @@ const { collapsed, toggle } = useSidebar()
 
 /** 图标栏：平板一律；桌面在用户折叠时 */
 const rail = computed(() => !isExpanded.value || collapsed.value)
-const activeSection = computed(() => primarySection(viewFromRoute(route, { allowAdminViews: isAdmin.value })))
+const activeSection = computed(() => primarySection(viewFromRoute(route)))
 const items = primaryNavItems()
 const sectionItems = items.filter(item => item.id !== 'more')
 const moreItem = items.find(item => item.id === 'more')
