@@ -1,8 +1,10 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { confirm } from '../composables/useConfirm.js'
 import { useAuth } from '../composables/useAuth.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { Feature } from '../app/featureCapabilities.js'
 import { whenBusinessUserSettled } from '../composables/useBusinessUserBootstrap.js'
 import {
   deleteUserWotbAccount,
@@ -21,9 +23,32 @@ import AppButton from './AppButton.vue'
 const { locale, t, te } = useI18n()
 const { initPromise, login, logout, isAuthenticated, initError, tokenParsed, displayName: authDisplayName } = useAuth()
 
+/**
+ * 本页所有 backend 动作的统一门禁（PR #467 review blocker）。
+ *
+ * profile 数据来自 backend ⇒ 页面整体是 ONLINE_REQUIRED，但**按业务 feature 拆分**：
+ *  - 账号资料读写（get / sync / update / verify / delete）走 [Feature.ACCOUNT_PROFILE]；
+ *  - 名人堂记录 / 百场状态 / 撤销走 [Feature.HALL_OF_FAME]。
+ * 判定一律来自 `useFeatureGate()`（capability SSOT），页面**不写** `connectivity === 'online'`
+ * 这类第二套规则，也不在 transport 层（utils/api-user.js）里塞连通性判断。
+ */
+const { availability, requireFeature, connectivity } = useFeatureGate()
+
+/** 账号资料动作：不允许时弹统一 connectivity notice 并返回 false。 */
+function requireProfileOnline() {
+  return requireFeature(Feature.ACCOUNT_PROFILE)
+}
+
+/** 名人堂动作：同上，但用 HoF 自己的能力语义（B10 接线时不需要返工）。 */
+function requireHofOnline() {
+  return requireFeature(Feature.HALL_OF_FAME)
+}
+
 const phase = ref('init')
 const profile = ref(null)
 const loginStarted = ref(false)
+/** 离线 / 状态未知时的中性提示文案（取自 capability 模型，不另造文案、不当成错误态）。 */
+const unavailableMessageKey = ref('')
 
 const editingAccount = ref(false)
 const editAccountId = ref(null)
@@ -37,6 +62,8 @@ const hundredStatus = ref(null)
 const hundredError = ref('')
 const hundredWithdrawingId = ref(null)
 const hundredMessage = ref('')
+/** loadProfile 进行中标志：reconnect watch 与手动 retry 共用的去重位。 */
+const loading = ref(false)
 
 function apiError(error) {
   return apiErrorLabel(t, te, error)
@@ -60,16 +87,36 @@ onMounted(async () => {
 })
 
 async function loadProfile() {
-  // 等待全局 business bootstrap 完成 ensure；页面不再自己「读不到就创建」。
-  // ensure 失败时 profile 仍可能缺失，此时按错误态展示（可刷新重试），不静默吞掉。
-  await whenBusinessUserSettled()
+  // 门禁必须在最前面：offline / unknown / degraded / service-unavailable 时**不发任何请求**
+  // （既不 ensure 也不 get），进入中性的 connectivity-unavailable 状态而不是错误态。
+  if (!requireProfileOnline()) {
+    enterConnectivityUnavailable()
+    return
+  }
+  loading.value = true
   try {
+    // 等待全局 business bootstrap 完成 ensure；页面不再自己「读不到就创建」。
+    // gated 版本在 backend 不可达时不会触发 ensure（见 useBusinessUserBootstrap）。
+    const settled = await whenBusinessUserSettled({
+      authInitState: 'authenticated',
+      authenticated: true,
+      connectivity: connectivity.value,
+    })
+    if (!settled) {
+      // 期间掉线 / 状态变化：不发请求，落在中性提示上，等恢复在线后自动重试。
+      if (!availability(Feature.ACCOUNT_PROFILE).available) enterConnectivityUnavailable()
+      return
+    }
     profile.value = await getUserProfile()
   } catch {
     profile.value = null
     phase.value = 'error'
     return
+  } finally {
+    loading.value = false
   }
+  phase.value = 'done'
+  unavailableMessageKey.value = ''
   await syncFromLogin()
   if (profile.value?.wotbAccountId) {
     loadRecords()
@@ -77,9 +124,30 @@ async function loadProfile() {
   }
 }
 
+/** 网络不可用时的中性状态：不是错误态，不显示「资料加载失败 / 重试」。 */
+function enterConnectivityUnavailable() {
+  phase.value = 'connectivity-unavailable'
+  unavailableMessageKey.value = availability(Feature.ACCOUNT_PROFILE).messageKey || 'featureOffline.accountProfile'
+}
+
+/**
+ * 恢复在线后自动加载（无需刷新 / 重开页面 / 重新登录），仍然只经 capability 门禁判定：
+ *  - 已加载过 profile（`profile.value` 存在）不再触发；
+ *  - 重复的 online 通知由 `loading` + `profile.value` 双重去重，不会形成请求风暴；
+ *  - 仍处于 init / signedOut 时不抢跑（由 onMounted 的流程负责）。
+ */
+watch(connectivity, () => {
+  if (!isAuthenticated()) return
+  if (profile.value || loading.value) return
+  if (phase.value === 'init' || phase.value === 'signedOut') return
+  if (!availability(Feature.ACCOUNT_PROFILE).available) return
+  void loadProfile()
+})
+
 /** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新；失败不再静默，保留错误状态供重试。 */
 async function syncFromLogin() {
   if (!isWargamingLogin.value) return
+  if (!requireProfileOnline()) return
   syncFromLoginPending.value = true
   syncFromLoginError.value = null
   try {
@@ -151,8 +219,8 @@ function doLogin() {
 /** 出错重试：已登录时重新加载资料；只有确实未登录时才发起登录。 */
 function retry() {
   if (isAuthenticated()) {
-    phase.value = 'done'
-    loadProfile()
+    // 不预设 'done'：loadProfile 自己会在离线时落到中性提示，避免闪一下「已加载」再失败。
+    void loadProfile()
   } else {
     doLogin()
   }
@@ -166,6 +234,7 @@ function startEditAccount() {
 }
 
 async function saveAccount() {
+  if (!requireProfileOnline()) return
   editError.value = ''
   try {
     profile.value = await updateUserWotbAccount({
@@ -190,6 +259,9 @@ async function verifyWithReplay(event) {
   const file = event?.target?.files?.[0]
   if (event?.target) event.target.value = ''
   if (!file || verifyPending.value) return
+  // 门禁放在最前：本地解析是 LOCAL 能力，但「用回放验证账号」最终要打 backend verify，
+  // 离线时先提示，避免用户选完文件才发现无法提交。
+  if (!requireProfileOnline()) return
   verifyPending.value = true
   verifyError.value = ''
   try {
@@ -203,6 +275,7 @@ async function verifyWithReplay(event) {
 }
 
 async function loadRecords() {
+  if (!requireHofOnline()) return
   recordsError.value = ''
   try {
     records.value = await getUserHofRecords()
@@ -213,6 +286,7 @@ async function loadRecords() {
 
 /** 个人中心「我的百场成绩」：当前认证 / 当前申请 / 最近拒绝。 */
 async function loadHundredStatus() {
+  if (!requireHofOnline()) return
   hundredError.value = ''
   try {
     hundredStatus.value = await hofHundredMyStatus()
@@ -224,6 +298,7 @@ async function loadHundredStatus() {
 
 /** 撤销当前待审核申请：确认后调用取消 API，成功后刷新状态。 */
 async function withdrawHundred(id) {
+  if (!requireHofOnline()) return
   if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return
   hundredWithdrawingId.value = id
   hundredMessage.value = ''
@@ -244,6 +319,7 @@ function formatTime(value) {
 }
 
 async function removeAccount() {
+  if (!requireProfileOnline()) return
   if (!(await confirm({ title: t('profile.unbindConfirm'), confirmLabel: t('profile.unbind'), danger: true }))) return
   editError.value = ''
   try {
@@ -268,6 +344,16 @@ async function removeAccount() {
       <h1 class="profile-signed-out-title">{{ $t('account.signedOutTitle') }}</h1>
       <p class="profile-signed-out-hint">{{ $t('account.signedOutHint') }}</p>
       <AppButton variant="primary" size="lg" data-testid="profile-login" @click="doLogin">{{ $t('app.login') }}</AppButton>
+    </div>
+
+    <!--
+      连通性不可用：**中性**空态，不是错误态。文案直接来自 capability 模型（offline 时是
+      「账号资料需要联网读取」，unknown / degraded / service-unavailable 各有自己的说法），
+      即时提示由统一的 ConnectivityNoticeDialog 负责，这里不另造 modal。
+    -->
+    <div v-else-if="phase === 'connectivity-unavailable'" class="profile-card profile-message" data-testid="profile-connectivity-unavailable">
+      <p class="text-sub">{{ $t(unavailableMessageKey) }}</p>
+      <button class="btn-primary" data-testid="profile-retry" @click="retry">{{ $t('profile.retry') }}</button>
     </div>
 
     <div v-else-if="profile" class="profile-main">

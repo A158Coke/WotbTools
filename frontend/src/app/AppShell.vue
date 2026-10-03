@@ -6,8 +6,10 @@ import { shouldEnsureBusinessUser, useBusinessUserBootstrap } from '../composabl
 import { useConnectivity } from '../composables/useConnectivity.js'
 import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useError } from '../composables/useError.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
+import { Feature } from './featureCapabilities.js'
 import { locationForView } from './navigation.js'
 import AppTopBar from './AppTopBar.vue'
 import AppTabBar from './AppTabBar.vue'
@@ -29,6 +31,8 @@ const { isCompact } = useBreakpoint()
  * 浏览器走 navigator.onLine。业务页面不得自行监听 —— 它们只读 capability 门禁的结果。
  */
 const { connectivity, start: startConnectivity } = useConnectivity()
+// 门禁（唯一判定入口）：重试等交互用它 —— 既弹统一 connectivity notice，又给出布尔结果。
+const { requireFeature } = useFeatureGate()
 onMounted(() => {
   void startConnectivity()
 })
@@ -56,8 +60,31 @@ watch([authInitState, authenticated, connectivity], ([state, isLoggedIn, current
     connectivity: currentConnectivity,
   })) return
   // Auth generation changes are authoritative; ensure itself deduplicates ready/in-flight work.
-  void ensure()
+  void ensure({
+    authInitState: state,
+    authenticated: isLoggedIn,
+    connectivity: currentConnectivity,
+  })
 }, { immediate: true })
+
+/**
+ * 失败横幅上的「重试」：必须先过 capability 门禁（`ACCOUNT_PROFILE` 是 ONLINE_REQUIRED）。
+ *
+ * 否则「在线时失败 → 用户断网 → 点重试」会绕过策略再打一次 backend，把离线变成一次新的业务失败。
+ * 不允许时统一走 connectivity notice（`requireFeature` 内部弹层），**绝不**用 profile 业务错误冒充。
+ */
+function retryBusinessBootstrap() {
+  const context = {
+    authInitState: authInitState.value,
+    authenticated: authenticated.value,
+    connectivity: connectivity.value,
+  }
+  if (!shouldEnsureBusinessUser(context)) {
+    requireFeature(Feature.ACCOUNT_PROFILE)
+    return
+  }
+  void retry(context)
+}
 
 function navigate(view) {
   const destination = router.resolve(locationForView(view, route))
@@ -72,7 +99,7 @@ provide(NAVIGATE_VIEW_KEY, navigate)
   <AppSidebar v-else />
   <div v-if="failed" class="business-bootstrap-notice" role="alert" data-testid="business-bootstrap-notice">
     <span>{{ $t('bootstrap.profileFailed') }}</span>
-    <button type="button" class="business-bootstrap-retry" @click="retry">{{ $t('bootstrap.retry') }}</button>
+    <button type="button" class="business-bootstrap-retry" @click="retryBusinessBootstrap">{{ $t('bootstrap.retry') }}</button>
   </div>
   <RouterView />
   <footer class="app-footer" data-testid="app-footer">
