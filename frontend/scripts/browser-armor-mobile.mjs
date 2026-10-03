@@ -105,7 +105,17 @@ function armorLayoutProbe() {
     configSelect: box('#config-select'),
     eqOpts: [...document.querySelectorAll('#tank-selectors .eq-opt')].map((label) => {
       const rect = label.getBoundingClientRect()
-      return { text: label.textContent.trim(), width: Math.round(rect.width), height: Math.round(rect.height) }
+      const requestRect = label.querySelector('.eq-opt-label')?.getBoundingClientRect() || null
+      const inputRect = label.querySelector('input')?.getBoundingClientRect() || null
+      // 文案需要的最小宽度 = 复选框 + gap(3px) + 文案；被 `label{width:58px}` 之类压窄时
+      // scrollWidth 会大于 clientWidth（评审：EN/RU 文案在 58px 盒子里溢出重叠）
+      const needed = requestRect && inputRect ? Math.round(inputRect.width + 3 + requestRect.width) : null
+      return {
+        text: label.textContent.trim(),
+        width: Math.round(rect.width), height: Math.round(rect.height),
+        left: Math.round(rect.left), right: Math.round(rect.right),
+        needed, clipped: label.scrollWidth > label.clientWidth + 1,
+      }
     }),
     /** 顶栏信息行是否被压成多行（行高 ≤ 26px = 单行；多行会把它撑高） */
     infoPanelHeight: (() => {
@@ -160,6 +170,12 @@ function applyLoadedFixture() {
     }
     configRow.style.display = 'flex'
   }
+
+  // 装备复选框文案用最长的俄语变体（评审：EN/RU 文案才照得出 58px 盒子溢出）
+  const eqTexts = ['Калибр. снаряды', 'Усил. броня']
+  document.querySelectorAll('#tank-selectors .eq-opt-label').forEach((span, index) => {
+    if (eqTexts[index]) span.textContent = eqTexts[index]
+  })
   return true
 }
 
@@ -338,6 +354,14 @@ async function runMobileScenario(env, scenario) {
     for (const option of opened.eqOpts) {
       check(failures, option.height >= 43.5,
         `${label}: 装备「${option.text}」label 命中区 ${option.width}x${option.height}，低于 44px`)
+      // 文案盒不得被压窄（width:auto 被 `#tank-selectors label{width:58px}` 按优先级盖回过一轮）
+      check(failures, option.clipped === false,
+        `${label}: 装备「${option.text}」label 文案溢出盒子（width=${option.width} 需要 ≥${option.needed}）`)
+    }
+    if (opened.eqOpts.length === 2) {
+      const [first, second] = opened.eqOpts
+      check(failures, first.right <= second.left + 1,
+        `${label}: 两个装备 label 重叠（第一个 right=${first.right} > 第二个 left=${second.left}）`)
     }
   }
   checkCommonGeometry(failures, opened, `${label} (expanded)`)
@@ -345,7 +369,7 @@ async function runMobileScenario(env, scenario) {
   console.log(`[browser-armor-mobile] ${label} metrics: topBar=${initial.topBar?.height}px infoPanel=${initial.infoPanelHeight}px `
     + `shellClipped=${initial.shellSelectClipped ? initial.shellSelectClipped.clipped : 'n/a'} `
     + `configSelect=${opened.configSelect ? opened.configSelect.height + 'px' : 'n/a'} `
-    + `eqOpts=[${opened.eqOpts.map((option) => option.height).join(',')}] sceneBand=${initial.bottomBar.top - initial.topBar.bottom}px`)
+    + `eqOpts=[${opened.eqOpts.map((option) => option.width + 'x' + option.height).join(',')}] sceneBand=${initial.bottomBar.top - initial.topBar.bottom}px`)
 
   await page.tap({ ...opened.tools.center, touch: scenario.touch })
   const collapsed = await page.probe(armorLayoutProbe)
