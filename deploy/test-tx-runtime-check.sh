@@ -102,7 +102,7 @@ job_repository_field=""
 if [ -n "${FAKE_JOB_REPOSITORY:-}" ]; then
   job_repository_field=",\"WOTB_REPLAY_PROCESSING_JOB_REPOSITORY\":\"${FAKE_JOB_REPOSITORY}\""
 fi
-# 组合成保留 Docker-local dependency 的 business-api environment 主体。
+# 组合成默认 Docker-local、可切 reviewed WG endpoint 的 business-api environment 主体。
 extra_env="${job_repository_field}${execution_mode_field}"
 extra_env="\"POSTGRES_HOST\":\"${FAKE_BUSINESS_DB_HOST:-business-postgres}\",\"POSTGRES_PORT\":\"${FAKE_BUSINESS_DB_PORT:-5432}\",\"KEYCLOAK_ISSUER_URI\":\"https://auth.wotbtools.com/realms/wotbtools\",\"KEYCLOAK_ADMIN_SERVER_URL\":\"${FAKE_KEYCLOAK_ADMIN_SERVER_URL:-http://keycloak:8080}\"${extra_env}"
 business_api_ports='[{"host_ip":"10.20.0.1","published":8087,"target":8087},{"host_ip":"10.20.0.1","published":8088,"target":8088}]'
@@ -265,6 +265,7 @@ wg_ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_KEYCLOAK_DB_URL=jdbc:postgresql://10.20.0.1:15432/keycloak)"
 grep -Fq 'TX_RUNTIME_READY' <<< "$wg_ready_output"
 grep -Fq 'tx-logical-endpoints: PASS' <<< "$wg_ready_output"
+
 grep -Fq 'tx-alloy-config: PASS' <<< "$ready_output"
 grep -Fq 'caddy-monitor: PASS' <<< "$ready_output"
 grep -Fq 'retired-replay-switches: PASS' <<< "$ready_output"
