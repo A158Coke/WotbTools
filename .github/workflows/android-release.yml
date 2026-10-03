@@ -605,7 +605,8 @@ jobs:
             echo ""
             echo "Next: run the real-device A14 matrix (QQ / WG ASIA / WG EU / WG NA + cancel / error /"
             echo "logout / refresh / process death / both redirect transports). Only after that, dispatch"
-            echo "this workflow with \`mode=publish\` to write version.json (the mandatory-update commit point)."
+            echo "this workflow with \`mode=publish\` **and** \`version=${{ steps.version.outputs.versionName }}\`"
+            echo "(the explicit staged version) to write version.json (the mandatory-update commit point)."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write release summary

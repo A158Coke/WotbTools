@@ -614,11 +614,13 @@ bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 
 
 发布分两阶段（`android-release.yml`）：main 合并后自动 **stage**（构建/签名/上传 immutable APK、
 建 tag、写 staging evidence，**不碰** production `version.json`）；真机 A14 验证通过后手工
-`workflow_dispatch(mode=publish)` **publish**（复用 staged APK、校验 staged 身份 + Keycloak client +
+`workflow_dispatch(mode=publish, version=<已 staged 版本>)` **publish**（显式版本决定 tag/APK/evidence
+名，tag target 源码给出 versionCode/bridge/Agent pin，再校验 staged 身份 + Keycloak client +
 APK bundled frontend 身份/Bridge/native-auth + API/资产 exact-origin CORS 就绪 + minSupported
-至少 2000001 的 local-first cutover，最后才写 `version.json`）。Web build commit 不再是 Android
-publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 manifest 核验并在 publish 再验证。
-细节见 `docs/android/release-process.md`。
+至少 2000001 的 local-first cutover，最后才写 `version.json`）。候选身份与当前 main 分离：main 前进
+不会改变要发布的版本，只提供 ancestry/minSupported/compatibility 策略。Web build commit 不再是
+Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 manifest 核验并在 publish
+再验证。细节见 `docs/android/release-process.md`。
 
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
