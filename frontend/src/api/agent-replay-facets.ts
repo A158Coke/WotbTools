@@ -750,6 +750,11 @@ export interface AgentWasmIdentityPin {
   commit: string
 }
 
+/** fingerprint body 非法 JSON 的内部标记错误：把"body 读到了但不是 JSON"与
+ *  "请求/body 停滞或网络失败"分开，前者保留既有 `不是合法 JSON` 文案（不是用户可见错误，
+ *  只进 `AgentWasmVersionMismatchError` 的诊断字段）。 */
+class FingerprintBodyError extends Error {}
+
 /**
  * 读取并校验产物清单：`upstream_commit` / `tag` 必须与 build 期 pin 逐字段一致。
  *
@@ -765,20 +770,33 @@ export async function verifyAgentWasmFingerprint(
   if (cached) return cached
 
   const pending = (async (): Promise<AgentWasmFingerprint> => {
-    let response: Response
+    // **整条 fingerprint request lifecycle 共用一个看门狗**（request → headers → body
+    // consumption → JSON parse）。只包 `fetch()` 是不够的：fetch 在**收到 response headers
+    // 后就 resolve**，CDN / 代理「headers 正常返回、body 永久不结束」时 `response.json()`
+    // 会永久 pending，而这个 pending Promise 会被 `fingerprintPromises` 缓存并复用到整个
+    // 页面会话——原始 P0「解析永久卡住」的 failure mode 原样保留。
+    //
+    // 两个机制缺一不可（见 [`readFingerprintResponse`]）：
+    // 1. **竞速**（下面的 `withLoadTimeout`）：停滞的 body 既不 resolve 也不 reject，
+    //    只在 catch 里判断"是不是超时"永远等不到——必须由外部让整条 await 链 reject；
+    // 2. **真 abort**（`readFingerprintResponse` 内的 AbortController）：把网络请求 /
+    //    body stream 真正切断（清掉连接），而不是留一个仍占着连接的请求在后台跑。
+    let read: { response: Response; raw: unknown }
     try {
-      response = await withLoadTimeout(fetch(url), 'fingerprint 拉取')
+      read = await withLoadTimeout(readFingerprintResponse(url), 'fingerprint 拉取')
     } catch (e) {
+      // 非法 JSON 保留既有诊断文案（不是用户可见错误，只进 mismatch 的 reason）
+      if (e instanceof FingerprintBodyError) {
+        throw mismatch(expected, { release: 'unknown', commit: 'unknown' }, `fingerprint ${url} 不是合法 JSON`)
+      }
+      // 超时 / 网络失败：fail closed
       throw mismatch(expected, { release: 'unknown', commit: 'unknown' }, `fingerprint ${url} 不可读：${String(e)}`)
     }
+    const { response, raw } = read
+    // HTTP 状态在**读 body 之前**判定：与改造前逐字一致（加了 body 看门狗不得改变
+    // 404 / 5xx 的诊断语义，也不对错误响应做无谓的 body 消费）
     if (!response.ok) {
       throw mismatch(expected, { release: 'unknown', commit: 'unknown' }, `fingerprint ${url} 返回 HTTP ${response.status}`)
-    }
-    let raw: unknown
-    try {
-      raw = await response.json()
-    } catch {
-      throw mismatch(expected, { release: 'unknown', commit: 'unknown' }, `fingerprint ${url} 不是合法 JSON`)
     }
     const doc = isObject(raw) ? raw : {}
     const actualTag = typeof doc.tag === 'string' ? doc.tag : ''
@@ -805,6 +823,46 @@ export async function verifyAgentWasmFingerprint(
 }
 
 /**
+ * fingerprint 请求的**可打断读取**：headers 等待 + body 消费 + JSON parse 合成一个单元，
+ * 返回 `{response, raw}`（body 必须在这里读完——`Response.json()` 只能消费一次）。
+ *
+ * 停滞的 `json()` 既不 resolve 也不 reject，**所以本函数自己不可能是超时的判据**：
+ * 让整条链 reject 的是调用方的 `withLoadTimeout` 竞速。这里负责的是另外两件：
+ * - **真 abort**：专属 AbortController 的 signal 贯穿 fetch 与 body 读取，超时到点时把
+ *   网络请求 / body stream 真正切断——否则那个请求会一直占着连接（调用方已经放弃了它）；
+ * - **诊断分流**：非法 JSON 抛 [`FingerprintBodyError`]，与"停滞 / 网络失败"分开归类；
+ *   HTTP 状态在 body 之前就返回，保持既有 404 / 5xx 语义。
+ *
+ * 清理：timer 与 abort listener 都在 `finally` 里撤销——成功 / 失败 / 超时三条路径都不留残留。
+ */
+async function readFingerprintResponse(url: string): Promise<{ response: Response; raw: unknown }> {
+  const timeoutMs = agentWasmLoadTimeoutMs()
+  const controller = new AbortController()
+  const timer = setTimeout(() => {
+    controller.abort(new DOMException(`fingerprint ${url} 超过 ${Math.round(timeoutMs / 1000)}s 未完成`, 'TimeoutError'))
+  }, timeoutMs)
+  // 超时后 body 仍在读：abort 让 body stream 判失败（实现相关，可能同步抛也可能异步抛）。
+  // 本请求已经放弃，这里只负责不把它变成 unhandled rejection。
+  const absorbAbort = () => { try { controller.signal.throwIfAborted() } catch { /* 已放弃本请求 */ } }
+  controller.signal.addEventListener('abort', absorbAbort)
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) return { response, raw: undefined }   // 状态优先：不做无谓的 body 消费
+    let raw: unknown
+    try {
+      raw = await response.json()
+    } catch (e) {
+      // 与"请求/body 停滞"区分开：调用方据此保留 `不是合法 JSON` 的独立诊断语义
+      throw new FingerprintBodyError(String(e))
+    }
+    return { response, raw }
+  } finally {
+    clearTimeout(timer)
+    controller.signal.removeEventListener('abort', absorbAbort)
+  }
+}
+
+/**
  * WASM 装载链路看门狗：fingerprint（几十字节 JSON）、产物 JS（dynamic import）、
  * wasm 初始化都必须在**有限时间**内失败。浏览器 fetch / dynamic import 没有默认超时——
  * CDN / 代理把请求挂起不回包时 await 永远悬着，而 fingerprint / wasmPromise 的会话级
@@ -814,15 +872,26 @@ export async function verifyAgentWasmFingerprint(
  */
 const WASM_LOAD_TIMEOUT_MS = 20_000
 
+/** 测试注入点：缩短看门狗（20s 不可等待），生产代码不调用；见 [`__resetAgentWasmForTest`] 复位。 */
+let wasmLoadTimeoutOverrideMs: number | null = null
+
+function agentWasmLoadTimeoutMs(): number {
+  return wasmLoadTimeoutOverrideMs ?? WASM_LOAD_TIMEOUT_MS
+}
+
+export function __setAgentWasmTimeoutForTest(ms: number | null): void {
+  wasmLoadTimeoutOverrideMs = ms
+}
+
 function withLoadTimeout<T>(promise: Promise<T>, what: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       const error = new Error(
-        `agent wasm: ${what} 超过 ${Math.round(WASM_LOAD_TIMEOUT_MS / 1000)}s 未完成（网络停滞？已放弃本次装载，可重试）`,
+        `agent wasm: ${what} 超过 ${Math.round(agentWasmLoadTimeoutMs() / 1000)}s 未完成（网络停滞？已放弃本次装载，可重试）`,
       ) as Error & { wasmLoadTimeout?: boolean }
       error.wasmLoadTimeout = true
       reject(error)
-    }, WASM_LOAD_TIMEOUT_MS)
+    }, agentWasmLoadTimeoutMs())
     promise.then(
       (value) => { clearTimeout(timer); resolve(value) },
       (error) => { clearTimeout(timer); reject(error) },
@@ -902,6 +971,7 @@ export function __resetAgentWasmForTest(): void {
   wasmModuleResolver = null
   wasmPromise = null
   loadedIdentity = null
+  wasmLoadTimeoutOverrideMs = null
   fingerprintPromises.clear()
 }
 
