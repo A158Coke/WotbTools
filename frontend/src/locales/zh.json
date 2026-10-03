@@ -1262,9 +1262,12 @@
     },
     "ai_error_http": "AI 分析失败（HTTP {status}）",
     "auth_required": "需要登录，正在跳转登录……",
-    "forbidden": "无权限：该功能需要 wotbtools-user 或 wotbtools-admin 角色",
     "cancelled": "已取消",
+    "permission_missing": "当前账号还没有 AI 复盘的权限。请联系管理员为你的账号开通后重试。",
+    "failure_scope_note": "回放数据和其他分析功能不受影响。",
+    "partial_incomplete": "以下内容未生成完整，仅供参考。",
     "errors": {
+      "AI_CLIENT_ERROR": "AI 复盘请求未能完成，请重试。若问题持续，请重新加载页面。",
       "AI_NOT_CONFIGURED": "AI 功能未配置，请联系管理员。",
       "AI_INVALID_REQUEST": "AI 服务拒绝了当前请求，请稍后重试。",
       "AI_AUTHENTICATION_ERROR": "AI 服务认证失败，请联系管理员。",
@@ -1312,7 +1315,10 @@
     "ai_engine_unavailable": "回放解析引擎加载失败，请刷新页面重试",
     "ai_engine_version_mismatch": "回放解析组件版本不一致，请刷新页面后重试",
     "ai_projection_unavailable": "这场回放无法建立战斗时间轴，不能进行 AI 复盘",
-    "ai_projection_failed": "这场回放解析失败，无法进行 AI 复盘"
+    "ai_projection_failed": "这场回放解析失败，无法进行 AI 复盘",
+    "pane_load_failed": "这个面板加载不出来，通常是页面版本已更新。重新加载即可拿到新版本；若只是网络中断，可先重试。",
+    "pane_reload": "重新加载",
+    "pane_retry": "重试"
   },
   "league": {
     "title": "League Rating",
