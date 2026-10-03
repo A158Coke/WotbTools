@@ -27,12 +27,19 @@ describe('Android local resource / remote service boundary', () => {
     expect(ANDROID_APP_ORIGIN).toBe('https://appassets.androidplatform.net')
     expect(ANDROID_ASSET_BASE).toBe(`${PRODUCTION_API_ORIGIN}/agent-assets`)
   })
-  it('rejects AI, HoF, Profile and previously resolved 3D assets before dispatch when offline', async () => {
+  it('rejects AI, HoF, Profile, Admin Users and previously resolved 3D assets before dispatch when offline', async () => {
     vi.stubEnv('MODE', 'android')
     const url = assetProvider.url('/index.json')
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
     gate.available = false
-    for (const path of ['/api/ai/reviews', '/api/hof', '/api/users/profile']) {
+    for (const path of [
+      '/api/ai/reviews',
+      '/api/hof',
+      '/api/users/profile',
+      // Admin Users 是 ONLINE_REQUIRED：列表与详情/删除都不允许在非-online 时离开设备。
+      '/api/admin/users',
+      '/api/admin/users/kc-a',
+    ]) {
       await expect(apiFetch(path)).rejects.toMatchObject({ errorCode: 'NETWORK_ERROR' })
     }
     expect(() => assetProvider.fetch(url)).toThrow('NETWORK_ERROR')

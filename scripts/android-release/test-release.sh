@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RESOLVE="$ROOT/scripts/android-release/resolve-version.sh"
+RESOLVE_STAGED="$ROOT/scripts/android-release/resolve-staged-version.sh"
 GUARDS="$ROOT/scripts/android-release/check-release-guards.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -37,6 +38,89 @@ resolve workflow_dispatch | grep -qx "versionCode=$EXPECTED_CODE" || fail "versi
 resolve workflow_dispatch | grep -qx "nativeBridgeVersion=$EXPECTED_BRIDGE" || fail "bridge version from contract"
 resolve push "android-v$COMMITTED_VERSION" | grep -qx "tagName=android-v$COMMITTED_VERSION" || fail "compatible tag"
 if resolve push android-v9.9.9 >/dev/null 2>&1; then fail "mismatched tag must fail"; fi
+
+# --- publish(version=X)：候选身份只能来自显式版本 + 它的 immutable tag target ---
+# 历史场景（review P2）：stage 2.0.1 → main 后来升到 2.0.2 → publish(version=2.0.1)。
+# 候选必须仍然是 2.0.1：不能因为当前 main 是 2.0.2 就去寻找 2.0.2。
+STAGED_VERSION="2.0.1"
+NEXT_VERSION="2.0.2"
+STAGED_SOURCE="$(printf 'a%.0s' $(seq 40))"
+STAGED_APK="wotbtools-android-v$STAGED_VERSION.apk"
+STAGED_VERSION_CODE=2000001
+
+if ! command -v git >/dev/null 2>&1 || ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  echo "git is unavailable; the staged-candidate cases are CI-only"
+else
+  # 构造一个 staged 源码：目录布局与仓库一致（android/gradle.properties 等），
+  # 因此 `git show <ref>:<path>` 与 workflow 里 `git archive <ref>` 导出的是同一种东西。
+  make_staged_source() {
+    local version="$1" contract="$2"
+    local dir="$TMP/staged-src-$version-$RANDOM"
+    mkdir -p "$dir/android" "$dir/contracts" "$dir/deploy/agent"
+    cp "$contract" "$dir/contracts/android-native-bridge.json"
+    cp "$ROOT/deploy/agent/source.json" "$dir/deploy/agent/source.json"
+    printf 'wotbVersion=%s\nwotbNativeBridgeVersion=%s\n' "$version" \
+      "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1], encoding="utf-8"))["bridgeVersion"])' "$contract")" \
+      > "$dir/android/gradle.properties"
+    git -C "$dir" init -q
+    git -C "$dir" config user.email test@example.invalid
+    git -C "$dir" config user.name test
+    git -C "$dir" add -A
+    git -C "$dir" commit -qm "stage $version"
+    git -C "$dir" tag "android-v$version"
+    printf '%s' "$dir"
+  }
+
+  # 把 tag target 的源码交给 helper（与 workflow 同一条取值路径：只读 ref 的内容）。
+  resolve_staged() {
+    local repo="$1" ref="$2" requested="${3:-}"
+    local dir="$TMP/resolved-$RANDOM"
+    mkdir -p "$dir/android"
+    git -C "$repo" show "$ref:android/gradle.properties" > "$dir/android/gradle.properties"
+    WOTB_ROOT="$ROOT" WOTB_TRIGGER=workflow_dispatch WOTB_TAG_NAME="" \
+      WOTB_COMMIT="$ref" WOTB_STAGED_REF="$ref" \
+      WOTB_STAGED_PROPERTIES="$dir/android/gradle.properties" \
+      WOTB_REQUESTED_VERSION="$requested" \
+      bash "$RESOLVE_STAGED" 2>&1
+  }
+
+  # CASE 1（历史候选）：staged 2.0.1 + publish(version=2.0.1) ⇒ 仍然选中 2.0.1。
+  STAGED_REPO="$(make_staged_source "$STAGED_VERSION" "$ROOT/contracts/android-native-bridge.json")"
+  STAGED_REF="$(git -C "$STAGED_REPO" rev-parse HEAD)"
+
+  OUT="$(resolve_staged "$STAGED_REPO" "$STAGED_REF" "$STAGED_VERSION")"
+  echo "$OUT" | grep -qx "versionName=$STAGED_VERSION" || fail "historical staged candidate must select $STAGED_VERSION: $OUT"
+  echo "$OUT" | grep -qx "versionCode=$STAGED_VERSION_CODE" || fail "staged versionCode must come from the tag target: $OUT"
+  echo "$OUT" | grep -qx "tagName=android-v$STAGED_VERSION" || fail "staged tag must be derived from the requested version: $OUT"
+  echo "$OUT" | grep -qx "apkName=$STAGED_APK" || fail "staged APK name must be derived from the requested version: $OUT"
+
+  # CASE 2：publish 没给版本 ⇒ fail closed（绝不从当前 main 猜候选）。
+  if resolve_staged "$STAGED_REPO" "$STAGED_REF" "" >/dev/null 2>&1; then
+    fail "publish without an explicit version must fail"
+  fi
+
+  # CASE 3：请求 2.0.2 但 staged 源码是 2.0.1（= 没有 2.0.2 的 staging evidence）⇒ fail closed。
+  if resolve_staged "$STAGED_REPO" "$STAGED_REF" "$NEXT_VERSION" >/dev/null 2>&1; then
+    fail "requesting a version that was not staged must fail"
+  fi
+
+  # CASE 4：requested=2.0.1 但 tag target 的 gradle version=2.0.2 ⇒ fail closed。
+  NEXT_REPO="$(make_staged_source "$NEXT_VERSION" "$ROOT/contracts/android-native-bridge.json")"
+  NEXT_REF="$(git -C "$NEXT_REPO" rev-parse HEAD)"
+  if resolve_staged "$NEXT_REPO" "$NEXT_REF" "$STAGED_VERSION" >/dev/null 2>&1; then
+    fail "tag target version differing from the requested version must fail"
+  fi
+
+  # CASE 6：staged 源码自身不自洽（contract bridge 与 gradle 声明不一致）⇒ fail closed。
+  OTHER_CONTRACT="$TMP/other-contract.json"
+  python3 -c 'import json,sys; doc=json.load(open(sys.argv[1], encoding="utf-8")); doc["bridgeVersion"]=int(doc["bridgeVersion"])+1; json.dump(doc, open(sys.argv[2], "w", encoding="utf-8"))' \
+    "$ROOT/contracts/android-native-bridge.json" "$OTHER_CONTRACT"
+  DRIFT_REPO="$(make_staged_source "$STAGED_VERSION" "$OTHER_CONTRACT")"
+  DRIFT_REF="$(git -C "$DRIFT_REPO" rev-parse HEAD)"
+  if resolve_staged "$DRIFT_REPO" "$DRIFT_REF" "$STAGED_VERSION" >/dev/null 2>&1; then
+    fail "staged source whose contract bridge disagrees with its gradle.properties must fail"
+  fi
+fi
 
 # 纯 bash 的 bridge cutover guard，不依赖 jq，因此本机也能跑。
 . "$GUARDS"
@@ -322,6 +406,50 @@ assert "inputs.mode == 'publish'" in publish.get("if", ""), publish.get("if")
 for forbidden in ("assembleRelease", "setup-gradle", "wotbKeystorePath", "keystore.jks",
                   "ANDROID_KEYSTORE_BASE64", "base64 --decode"):
     assert forbidden not in publish_runs, f"publish must reuse the staged APK, not rebuild ({forbidden})"
+
+# --- publish: the candidate identity is the EXPLICIT version, never current main ---
+version_input = trigger["workflow_dispatch"]["inputs"]["version"]
+assert version_input["type"] == "string", version_input
+assert version_input["required"] is False, "GitHub cannot express a conditional required; the job must fail closed"
+# 显式版本是唯一入口：没有它就 fail closed（绝不猜、绝不从当前 main 推导候选）。
+guard_step = next(i for i, name in enumerate(publish_names) if "explicit staged version" in name)
+assert "REQUESTED_VERSION" in publish["steps"][guard_step].get("env", {}), publish["steps"][guard_step]
+guard_runs = publish["steps"][guard_step]["run"]
+assert "${{ inputs.version }}" in publish["steps"][guard_step]["env"]["REQUESTED_VERSION"], \
+    "the guard must read the workflow_dispatch version input"
+assert "exit 1" in guard_runs and "X.Y.Z" in guard_runs, guard_runs
+# 候选 tag / APK / staging evidence 名全部由显式版本推导。
+stagedref_i = next(i for i, step in enumerate(publish["steps"]) if step.get("id") == "stagedref")
+stagedref_runs = publish["steps"][stagedref_i]["run"]
+assert 'TAG="android-v$REQUESTED_VERSION"' in stagedref_runs, stagedref_runs
+assert 'apkName=wotbtools-android-v$REQUESTED_VERSION.apk' in stagedref_runs, stagedref_runs
+assert 'stagingName=wotbtools-android-v$REQUESTED_VERSION.staging.json' in stagedref_runs, stagedref_runs
+assert "resolve-staged-version.sh" in stagedref_runs, \
+    "publish must resolve the staged version from the tag target, not from the workspace"
+# 工作区的 committed 版本不得参与候选身份：publish 里不允许再解析 steps.version 或读它的属性。
+assert "steps.version.outputs" not in publish_runs, \
+    "publish must not derive the candidate from the current main committed version"
+# 当前 main 的 gradle.properties 只能在「当前策略」校验里出现（android_contract.py validate），
+# 不允许作为候选版本 / 候选版本号的来源。
+for step in publish["steps"]:
+    run = step.get("run") or ""
+    if "grep -Fxq" in run and "gradle.properties" in run:
+        assert "$RUNNER_TEMP" in run, f"candidate version must come from the tag target copy: {step.get('name')}"
+# 显式版本必须与 staged 源码的版本一致（CASE 4/5 的强制点），并且 tag 由 staged 版本推导。
+assert "resolve-staged-version.sh" in stagedref_runs and "grep -Fxq \"tagName=$TAG\"" in stagedref_runs
+stagedversion_i = next(i for i, step in enumerate(publish["steps"]) if step.get("id") == "stagedversion")
+stagedversion_runs = publish["steps"][stagedversion_i]["run"]
+assert "git archive" in stagedref_runs, "the staged source must be exported from the tag target"
+assert "$TAG_TARGET" in stagedversion_runs, stagedversion_runs
+assert "cmp -s" in stagedversion_runs, "current main's contract drift must fail closed"
+# version.json 的内容（= 发布结果）只能来自 staged 身份。
+write_runs = publish["steps"][next(i for i, name in enumerate(publish_names)
+                                   if name.startswith("Write version.json"))]["run"]
+for source in ("steps.staged.outputs.versionCode", "steps.staged.outputs.versionName",
+               "steps.staged.outputs.nativeBridgeVersion", "steps.staged.outputs.stagedSource",
+               "steps.staged.outputs.apkSha", "steps.stagedref.outputs.apkName"):
+    assert source in write_runs, f"version.json must be written from {source}"
+assert "steps.version.outputs" not in write_runs, write_runs
 
 # --- publish: the release authority is the STAGED identity, not the checkout SHA ---
 assert "guard_staged_release_identity" in publish_runs, "publish must prove the staged artifact identity"
