@@ -79,6 +79,11 @@ SERVER_CONFIG_FIELDS = {
     "disk_critical": 95.0,
     "maintenance_windows": [],
 }
+# Metadata Komodo compares and applies for every resource type (`ResourceMetaUpdate`
+# in v2.3.3 `sync/execute.rs`): an omitted `tags`/`template` asserts the default, it
+# does not leave the live value alone. Both are therefore declared explicitly on every
+# resource, and Git owns them.
+MANAGED_METADATA = {"tags": [], "template": False}
 RESOURCE_SYNC_CONFIG = {
     "git_provider": "github.com",
     "git_https": True,
@@ -93,6 +98,21 @@ RESOURCE_SYNC_CONFIG = {
     "include_user_groups": False,
     "pending_alert": True,
 }
+# Every ResourceSyncConfig key K4.1 may declare. Anything outside this set is rejected
+# outright (fail-closed), so an unreviewed setting cannot be introduced silently.
+RESOURCE_SYNC_ALLOWED_KEYS = frozenset(RESOURCE_SYNC_CONFIG) | {
+    "files_on_host", "linked_repo", "commit", "match_tags", "file_contents",
+}
+# Keys allowed only at their inert value, so a stray value can never take effect.
+RESOURCE_SYNC_INERT_KEYS = {
+    "files_on_host": False,   # a Git-backed sync, never local files on the Core host
+    "linked_repo": "",        # source straight from Git, not through a Komodo Repo
+    "commit": "",             # track the branch, not a pinned commit
+    "match_tags": [],         # no tag filtering
+    "file_contents": "",      # database-backed file contents are not used
+}
+# Forbidden even when empty: these carry credentials for a private repository.
+RESOURCE_SYNC_FORBIDDEN_KEYS = ("git_account", "webhook_secret")
 
 failures: list[str] = []
 
@@ -174,6 +194,18 @@ def check_resource_types(parsed: dict[Path, dict]) -> dict[str, dict[str, dict]]
     return by_type
 
 
+def check_metadata(table: str, name: str, declaration: dict) -> None:
+    """Both managed metadata fields must be declared, not left to their default."""
+    for key, expected in MANAGED_METADATA.items():
+        if key not in declaration:
+            fail(
+                f"{table} '{name}': '{key}' must be declared explicitly "
+                f"(Komodo compares and applies it; omitting it asserts the default)"
+            )
+        elif declaration[key] != expected:
+            fail(f"{table} '{name}': {key} must be {expected!r}, found {declaration[key]!r}")
+
+
 def check_resource_sync(entries: dict[str, dict]) -> None:
     if len(entries) != 1:
         fail(f"K4.1 declares exactly one resource_sync, found {sorted(entries) or '[]'}")
@@ -181,6 +213,7 @@ def check_resource_sync(entries: dict[str, dict]) -> None:
     name, declaration = next(iter(entries.items()))
     if name != "wotbtools-main":
         fail(f"the resource_sync must be named 'wotbtools-main', found '{name}'")
+    check_metadata("resource_sync", name, declaration)
     config = declaration.get("config")
     if not isinstance(config, dict):
         fail(f"resource_sync '{name}' has no [resource_sync.config] table")
@@ -188,10 +221,13 @@ def check_resource_sync(entries: dict[str, dict]) -> None:
     for key, expected in RESOURCE_SYNC_CONFIG.items():
         if config.get(key) != expected:
             fail(f"resource_sync '{name}': {key} must be {expected!r}, found {config.get(key)!r}")
-    for key in ("git_account", "webhook_secret"):
-        if key in config:
-            fail(f"resource_sync '{name}': '{key}' must not be configured (public repository)")
-    for key, expected in (("files_on_host", False), ("linked_repo", ""), ("commit", ""), ("match_tags", [])):
+    # Fail-closed allowlist: an unreviewed config key must never be able to take effect.
+    for key in sorted(config):
+        if key in RESOURCE_SYNC_FORBIDDEN_KEYS:
+            fail(f"resource_sync '{name}': '{key}' is forbidden even when empty (public repository)")
+        elif key not in RESOURCE_SYNC_ALLOWED_KEYS:
+            fail(f"resource_sync '{name}': unreviewed config key '{key}' is not allowed in K4.1")
+    for key, expected in RESOURCE_SYNC_INERT_KEYS.items():
         if config.get(key, expected) != expected:
             fail(f"resource_sync '{name}': {key} must be {expected!r}, found {config.get(key)!r}")
     # The sync must read the directory that holds its own declaration.
@@ -204,8 +240,9 @@ def check_servers(entries: dict[str, dict]) -> None:
         fail(f"K4.1 declares exactly {sorted(SERVER_NAMES)}, found {sorted(entries)}")
     for name, declaration in sorted(entries.items()):
         context = f"server '{name}'"
-        if declaration.get("template", False) is not False:
-            fail(f"{context}: must not be a template")
+        # Tags/template are reviewed metadata: an omitted tag set would assert the
+        # empty set against live tags, so it must be declared on purpose.
+        check_metadata("server", name, declaration)
         if declaration.get("deploy", False) is not False:
             fail(f"{context}: must not declare deploy = true")
         config = declaration.get("config")
