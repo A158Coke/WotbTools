@@ -15,17 +15,37 @@
 # explicitly below, at its documented default, so the first diff is reviewable and
 # cannot silently reset a production setting.
 #
-# Deliberately absent: tags (an omitted `tags` and `tags = []` mean the same thing to
-# Komodo, and this repository does not manage tags), `template`/`deploy`/`after`
-# (default false/empty), Periphery private keys, Periphery public-key identity, the
-# Core trust key, onboarding credentials, and the onboarding marker. Identity and
-# onboarding stay under the Periphery owner (`deploy/periphery/**` + systemd).
+# The same holds for the resource metadata that sync compares and applies for every
+# resource type — `description`, `tags`, and `template`. In Komodo v2.3.3
+# `bin/core/src/sync/view.rs` only skips a resource when the config diff is empty AND
+# `description`, `template`, and `tags` all match, and `sync/execute.rs` then applies
+# them through `ResourceMetaUpdate { description, template, tags }`. `ResourceToml::tags`
+# defaults to `[]`, so an omitted `tags` asserts the EMPTY tag set — it does not leave
+# live tags alone. **Git owns the tag set**, so a non-empty live tag set would surface
+# as a tag diff: treat that as a STOP condition (see
+# docs/operations/komodo-resource-sync.md), not as noise to apply.
+#
+# No non-empty production tag set is known for these hosts — this repository owns no
+# Komodo API tooling that could read one — so the reviewed tag set is the empty set,
+# declared explicitly. If a host genuinely uses tags, add them here exactly and
+# re-review.
+#
+# Deliberately absent: `deploy` and `after`. They carry no deploy scheduling on a
+# Server (no Stack or Deployment is declared here) and are not part of
+# `ResourceMetaUpdate`, so they cannot silently change this host's identity.
+#
+# Also absent by design: Periphery private keys, Periphery public-key identity, the
+# Core trust key, onboarding credentials, and the onboarding marker. Those are not
+# ServerConfig fields and stay under the Periphery owner (`deploy/periphery/**` +
+# systemd).
 #
 # See docs/operations/komodo-resource-sync.md before applying any diff.
 
 [[server]]
 name = "yecao"
 description = "Yecao production host — Komodo Periphery outbound, declared by the wotbtools-main Resource Sync"
+tags = []                    # Git owns the tag set; empty is the reviewed production tag set
+template = false             # metadata the sync also compares and applies
 
 [server.config]
 address = ""                 # outbound mode: Core never dials Periphery
@@ -55,6 +75,8 @@ maintenance_windows = []
 [[server]]
 name = "tx1"
 description = "TX1 production host — Komodo Periphery outbound, declared by the wotbtools-main Resource Sync"
+tags = []                    # Git owns the tag set; empty is the reviewed production tag set
+template = false             # metadata the sync also compares and applies
 
 [server.config]
 address = ""                 # outbound mode: Core never dials Periphery
@@ -84,6 +106,8 @@ maintenance_windows = []
 [[server]]
 name = "tx2"
 description = "TX2 production host — Komodo Periphery outbound, declared by the wotbtools-main Resource Sync"
+tags = []                    # Git owns the tag set; empty is the reviewed production tag set
+template = false             # metadata the sync also compares and applies
 
 [server.config]
 address = ""                 # outbound mode: Core never dials Periphery

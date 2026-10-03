@@ -57,6 +57,9 @@ Two invariants follow from that table and are enforced by tests, not by conventi
 ```toml
 [[resource_sync]]
 name = "wotbtools-main"
+description = "Declarative Komodo resources for WotbTools, reviewed in Git and applied by hand"
+tags = []
+template = false
 [resource_sync.config]
 git_provider = "github.com"
 git_https = true
@@ -76,11 +79,12 @@ pending_alert = true
 | --- | --- | --- |
 | `managed` | `false` | Core never writes back to this repository; Git stays the only source of truth |
 | `delete` | `false` | a sync can never delete a resource that is not declared here |
-| `webhook_enabled` | `false` | a push computes a diff but never applies it |
+| `webhook_enabled` | `false` | webhook-triggered execution/apply is disabled; Core may still discover Git changes during periodic resource polling (see below) |
 | `include_resources` | `true` | Servers are in scope |
 | `include_variables` / `include_user_groups` | `false` | no variable or user-group management in K4.1 |
 | `pending_alert` | `true` | a pending diff is visible instead of silent |
-| `git_account` / `webhook_secret` | **absent** | the repository is public; no credential may live in Git |
+| `git_account` / `webhook_secret` | **forbidden** | they exist to authenticate a private repository; the repository is public and no credential may live in Git |
+| every other config key | **not allowed** | `[resource_sync.config]` is checked against an explicit reviewed allowlist, so an unreviewed setting cannot take effect |
 
 `infra/komodo/resources/servers.toml` — the three existing production Servers
 (`yecao`, `tx1`, `tx2`) are **adopted by name**, never recreated, and every field of
@@ -99,9 +103,49 @@ through the schema defaults before diffing, so an omitted field does **not** mea
 field set makes the first diff reviewable instead of silently resetting a production
 setting.
 
+### Metadata Git owns: `tags`, `template`, `description`
+
+`ServerConfig` is not the only diffed surface. For every resource type, Komodo v2.3.3
+skips a resource only when the config diff is empty **and** `description`, `template`,
+and `tags` all match, and then applies those three through
+`ResourceMetaUpdate { description, template, tags }` (`bin/core/src/sync/view.rs` and
+`sync/execute.rs`). `ResourceToml::tags` defaults to `[]`, so an **omitted** `tags`
+asserts the *empty* tag set — it does not preserve live tags.
+
+Therefore:
+
+- `tags = []` and `template = false` are declared explicitly on every Server *and* on
+  the ResourceSync itself, and the contract test requires both to be present.
+- **Git owns the Server tag set.** The reviewed tag set for all three hosts is the
+  empty set: this repository owns no Komodo API tooling that could read a live tag
+  set, so no non-empty production tags are known. If a host genuinely uses tags, add
+  them here exactly and re-review.
+- A **tag diff in the first sync is a STOP condition** (see below), never noise to
+  apply: applying it would clear live tags.
+- `deploy` and `after` are deliberately omitted — they schedule deploys only for
+  deployments and stacks (none is declared here) and are not part of
+  `ResourceMetaUpdate`.
+
 Periphery keys, the Core trust anchor, onboarding credentials, and the
 `onboarding-complete` marker are **not** Server desired-state fields and remain owned
 by `deploy/periphery/**` + systemd.
+
+## How a pending diff appears
+
+Three independent things, easy to confuse:
+
+- **Webhook-triggered execution/apply is DISABLED** (`webhook_enabled = false`): a push
+  to `main` never applies anything.
+- **Core polls resources periodically.** Komodo Core's resource refresh loop
+  (`spawn_resource_refresh_loop` → `resource_poll_interval`, shipped v2.3.3 default
+  `1-hr`; this deployment does not override it) calls `RefreshResourceSyncPending`, so
+  Git changes are discovered **on their own** without any webhook and without anyone
+  clicking anything. A pending diff can therefore appear while nobody is watching —
+  it still does nothing until a human applies it.
+- **Manual Refresh forces immediate recomputation**, which is what the procedures below
+  use when you do not want to wait for the next poll.
+
+Apply is manual in K4.1 in every case.
 
 ## Static validation
 
@@ -114,11 +158,19 @@ non-production `deployment` PR gate) fails the build when:
   `deployment`, `build`, `repo`, `procedure`, `action`, `builder`, `swarm`,
   `alerter`, `variable`, `user_group` are rejected by name;
 - a declaration carries an unreviewed key (Komodo would ignore a typo silently);
+- a resource does not declare `tags` and `template` explicitly (they are compared and
+  applied as metadata, so leaving them to the default is not ownership-neutral);
 - the ResourceSync is not exactly `wotbtools-main` with the reviewed, non-destructive
   configuration above;
+- **any** `[resource_sync.config]` key falls outside the explicit reviewed allowlist —
+  the check is fail-closed, so `file_contents`, or any setting not reviewed here, is
+  rejected rather than ignored. `files_on_host`, `linked_repo`, `commit`, `match_tags`
+  and `file_contents` may only appear at their inert values. `git_account` and
+  `webhook_secret` are forbidden even when empty, because they exist to authenticate a
+  private repository;
 - the Servers are not exactly `yecao`/`tx1`/`tx2`, are disabled, carry a non-empty
-  `address` or `passkey`, are declared `template`/`deploy = true`, omit any
-  `ServerConfig` field, or declare a value other than the reviewed default;
+  `address` or `passkey`, are declared `deploy = true`, omit any `ServerConfig` field,
+  or declare a value other than the reviewed default;
 - any key anywhere looks like a credential (`password`, `secret`, `token`,
   `private_key`, `onboarding_key`, `git_account`, `webhook_secret`, …) or any value
   references port `8120` or an `http(s)://` / `ws(s)://` address.
@@ -153,16 +205,19 @@ create itself:
     deletion is acceptable in K4.1.
 11. No Server may gain an inbound `address` (any `http(s)://…:8120` value is wrong).
 12. No Periphery identity/key field may change.
-13. Only after that review: **Apply**.
-14. Refresh again.
-15. Expected result: **zero pending diff**.
+13. **Any tag diff is a STOP condition.** This deployment declares the empty tag set
+    (`tags = []`) on purpose, because Git owns tags; applying a tag diff would clear
+    live tags on a production Server. If tags appear, stop and decide explicitly
+    whether to record the real tag set in Git instead.
+14. Only after that review: **Apply**.
+15. Refresh again.
+16. Expected result: **zero pending diff**.
 
-Expected first diff: the Servers are already running with their defaults, so the only
-entries should be the description text (and possibly an empty-tags or
-ResourceSync-self entry). Anything else — especially a proposed `address`, a
-deletion, or a threshold move — means the live control plane differs from the
-documented baseline: **stop, do not apply**, and reconcile the difference by hand
-first.
+Expected first diff: the Servers already run at these defaults, so the only entries
+should be the description text (and possibly a ResourceSync-self entry). Anything else
+— a proposed `address`, **any tag change**, a deletion, or a threshold move — means the
+live control plane differs from the documented baseline: **stop, do not apply**, and
+reconcile the difference by hand first.
 
 ## Reversible drift proof
 
@@ -179,12 +234,16 @@ Proves the loop end-to-end without touching a workload:
 8. Manually **Apply**.
 9. Refresh → **zero** pending diff.
 
-Reminder: webhook-triggered apply is **off**, so step 3 requires a manual Refresh.
+Reminder: a **manual Refresh** is what makes step 3 immediate. Webhook execution is
+off, but Core's periodic resource polling would also discover the change on its own
+(within `resource_poll_interval`, 1-hr by default here) — the diff appears either way,
+and it is never applied without a human.
 
 ## Routine operation
 
 - A merged change under `infra/komodo/resources/**` produces a pending diff (and a
-  pending alert). Nothing is applied automatically.
+  pending alert) — either on the next periodic resource poll or on a manual Refresh.
+  Nothing is applied automatically, and no webhook is involved.
 - Review, then Apply, then Refresh to confirm zero pending.
 - Rollback is a Git revert plus a manual Apply — the same reviewed path in reverse.
 - If the sync reports an error, the UI stores it on the sync; a Git-side syntax

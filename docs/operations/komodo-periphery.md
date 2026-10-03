@@ -136,7 +136,7 @@ the staged artifact against the same manifest, and a host fails closed if
 `uname -m` is not an x86_64 equivalent. Nothing uses `latest`, a floating tag, or an
 image.
 
-## Installation layout (host-local, identical on both hosts)
+## Installation layout (host-local, identical on every host)
 
 | Path | Content |
 | --- | --- |
@@ -164,13 +164,13 @@ ExecStart=/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.to
 
 ## Outbound only
 
-Both target configs express exactly one connection mode and differ only in
+All three target configs express exactly one connection mode and differ only in
 `connect_as`:
 
 ```toml
 root_directory = "/etc/komodo"
 core_addresses = ["http://10.20.0.2:9120"]
-connect_as = "yecao"        # or "tx1"
+connect_as = "yecao"        # "yecao" / "tx1" / "tx2", one per target
 server_enabled = false
 private_key = "file:/etc/komodo/keys/periphery.key"
 core_public_keys = ["file:/etc/komodo/keys/core.pub"]
@@ -182,7 +182,7 @@ disable_container_terminals = false
   (`https://komodo.wotbtools.com`), any host public address, and any wildcard bind
   are forbidden and asserted absent.
 - `server_enabled = false` means Periphery never opens its inbound port, so **no
-  listener exists on `:8120`** on either host. Production verification proves the
+  listener exists on `:8120`** on any host. Production verification proves the
   absence at runtime, and the fixture proves the probe detects a deliberately bound
   port.
 - No git provider, image registry, Komodo `[secrets]`, stack path override, build
@@ -324,7 +324,7 @@ systemctl is-enabled periphery && systemctl is-active periphery
 /usr/local/bin/periphery --version           # 2.3.3
 sha256sum /usr/local/bin/periphery           # 40b78f377626799afad8331246a501f077d4ebcfb6d9096894cf55b64f6dcf13
 cat /etc/komodo/keys/onboarding-complete     # komodo-periphery-onboarding-v1
-grep '^connect_as' /etc/komodo/periphery.config.toml   # "yecao" on Yecao, "tx1" on TX1
+grep '^connect_as' /etc/komodo/periphery.config.toml   # "yecao" on Yecao, "tx1" on TX1, "tx2" on TX2
 ss -ltn | grep ':8120' || true               # must print nothing
 ```
 
