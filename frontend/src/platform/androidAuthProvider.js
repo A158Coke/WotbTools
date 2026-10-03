@@ -45,6 +45,8 @@ export function createAndroidAuthProvider() {
       if (generation !== expectedGeneration) return false
       if (state?.authenticated !== true) return clear()
       authenticated = true
+      // Cached claims preserve local UI permissions; no expired token is exposed to API callers.
+      if (reply.claims && typeof reply.claims === 'object') claims = reply.claims
       return false
     }
     if (reply?.error || typeof reply?.token !== 'string' || !reply.token) return clear()

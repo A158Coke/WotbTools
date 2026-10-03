@@ -77,6 +77,11 @@ Android API transport 从本地 origin 解析到 `https://wotbtools.com`，以 N
 已缓存 Native session 或离线过期 token 不影响本地回放；API 调用等待联网和可用 token。
 恢复联网不自动提交 AI，也不 reset selection、logout 或 reload。
 
+过期 cached session 离线无法 refresh 时，`authGetAccessToken` 仍返回 `token: null` /
+`error: refresh-failed`，但现有 nullable `claims` / `expiresAt` 保留 Native cached projection，
+仅用于本地 UI 与 admin 能力入口可见性；它不允许过期 token 发 API 请求。真正未认证或永久拒绝
+清空会话后，这些字段仍为 null。仪器测试只注入并恢复内存 fixture，不写认证存储、不使用真实凭据。
+
 ## 能力边界（V2 冻结区）
 
 Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability 业务状态机，
@@ -270,7 +275,7 @@ Bridge v2 / native-auth / offline authority，以及 external content Intent →
 ## PR B 人工交接（2026-10-03）
 
 Automated B13/B14 已验证；Physical B13/B14 为 **PENDING HUMAN VALIDATION**。
-模拟器为 API34，Native JVM 98 项、真实 local Vue/Intent/WASM/ACK smoke 1 项通过。
+模拟器为 API34，Native JVM 98 项、真实 local Vue/Intent/WASM/ACK 与过期缓存角色 smoke 2 项通过。
 Browser offline matrix 使用真实 pinned WASM，覆盖手动导入、Data/Rating/2D/shots、深链门禁与连接切换。
 执行真机矩阵时记录 model/Android/WebView、最终 APK SHA256、bundle buildCommit 和每项 PASS/FAIL。
 
