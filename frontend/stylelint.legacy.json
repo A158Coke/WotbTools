@@ -7,7 +7,6 @@
     "src/components/AgentReplay3D.vue",
     "src/components/AgentShots.vue",
     "src/components/AggregateTable.vue",
-    "src/components/AiReviewPanel.vue",
     "src/components/AnalysisResultPanel.vue",
     "src/components/AndroidDownloadPage.vue",
     "src/components/AnnotationToolbar.vue",

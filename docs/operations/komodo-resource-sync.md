@@ -255,7 +255,9 @@ and it is never applied without a human.
 ## Out of scope in K4.1
 
 Workload migration (Business API, Frontend, Keycloak, AI service), the disposable TX2
-workload (K5), automatic or webhook-triggered apply, `managed = true`, `delete = true`,
-registry or Git credentials, Komodo API service accounts, secret migration, Periphery
-lifecycle changes, WireGuard management, Komodo Core/Mongo lifecycle changes, Caddy,
-DNS, and any change to `deploy/komodo/**` or `infra/tofu/komodo/**`.
+workload (K5; now completed separately and documented in
+[`komodo-k5-runtime-acceptance.md`](komodo-k5-runtime-acceptance.md)), automatic or
+webhook-triggered apply, `managed = true`, `delete = true`, registry or Git credentials,
+Komodo API service accounts, secret migration, Periphery lifecycle changes, WireGuard
+management, Komodo Core/Mongo lifecycle changes, Caddy, DNS, and any change to
+`deploy/komodo/**` or `infra/tofu/komodo/**`.

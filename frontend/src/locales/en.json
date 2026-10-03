@@ -1262,9 +1262,12 @@
     },
     "ai_error_http": "AI analysis failed (HTTP {status})",
     "auth_required": "Sign-in required, redirecting to login…",
-    "forbidden": "Forbidden: this feature requires wotbtools-user or wotbtools-admin role",
     "cancelled": "Cancelled",
+    "permission_missing": "This account does not have access to AI review yet. Ask an administrator to enable it, then try again.",
+    "failure_scope_note": "Replay data and the other analysis features are unaffected.",
+    "partial_incomplete": "The text below is incomplete and for reference only.",
     "errors": {
+      "AI_CLIENT_ERROR": "The AI review request could not be completed. Please retry; if it keeps failing, reload the page.",
       "AI_NOT_CONFIGURED": "AI is not configured. Please contact the administrator.",
       "AI_INVALID_REQUEST": "The AI provider rejected this request. Please try again later.",
       "AI_AUTHENTICATION_ERROR": "AI provider authentication failed. Please contact the administrator.",
@@ -1312,7 +1315,10 @@
     "ai_engine_unavailable": "The replay engine failed to load. Refresh and try again.",
     "ai_engine_version_mismatch": "The replay engine version does not match this WotBTools build. Please refresh the page and try again.",
     "ai_projection_unavailable": "A battle timeline cannot be established for this replay, so AI review is unavailable",
-    "ai_projection_failed": "This replay could not be parsed for AI review"
+    "ai_projection_failed": "This replay could not be parsed for AI review",
+    "pane_load_failed": "This panel could not load, usually because the site was updated. Reload to get the new version; if it was only a network interruption, retry first.",
+    "pane_reload": "Reload",
+    "pane_retry": "Retry"
   },
   "league": {
     "title": "League Rating",

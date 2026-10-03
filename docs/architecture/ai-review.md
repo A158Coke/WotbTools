@@ -496,6 +496,42 @@ RoundFinished / Supremacy*），由 `BattleStateReconstructor`（纯事件归约
 
 ---
 
+## 前端交付与失败态契约（2026-10，AI Review 生产可用性）
+
+AI Review 是正式开放能力，入口没有 maintenance gate / admin-only gate：`?view=ai-review` 与
+`?view=replay` 共用 `ReplayWorkspace`，`AiReviewWorkspacePane` 直接挂载（匿名只显示登录提示）。
+
+**懒加载与部署的关系（生产可用性根因）**：`AiReviewWorkspacePane` / `BattlePlaybackPanel` 是
+`ReplayWorkspace` 的懒加载 chunk（`frontend/src/utils/lazyModule.ts` 的 `defineLazyModule`）。Vite 产物按内容
+哈希命名，而 TX 部署用 `docker compose up -d --force-recreate` 整体替换镜像里的 `/usr/share/nginx/html`
+（`deploy/tx/deploy.sh`），**上一次部署的 chunk 文件随即消失**。因此「部署前打开、部署后仍然存活」的页面
+进入这两个能力时必然 404。`index.html` 固定 `no-store`，重新加载即拿到与新部署一致的 bundle——这是旧
+hashed URL 唯一正确的补救动作。边界契约：
+
+- 动态 import 失败**不得中断整页渲染**：`defineLazyModule` 的 `onError` 调用 Vue 的 `fail()` 明确结束
+  这一代（不调用则 loader promise 永远 pending，渲染无法 settle；`onError` 的返回值不是「恢复协议」）；
+- 失败态复用 `Banner` + `AppButton`（design-language §7/§10），说明发生了什么 + 下一步；
+- 失败态是**持久的**：切走再切回能力仍然显示，只有用户显式选择才算处理过——自动清状态只会把「有提示的
+  失败」变成「没有提示的空白」；
+- 恢复动作有明确主次：「重新加载」是 chunk 失败的唯一可靠恢复（换新 bundle → 新 URL）。「重试」创建
+  **新一代 `defineAsyncComponent`**（Vue 的 async wrapper 会把失败的 promise 记进 `pendingRequest`，
+  重复调用同一代 loader 或重新挂载同一份组件定义都只会复用那个已 reject 的 promise，表现为「错误被清空
+  但面板仍然空白」），但它**不能**让浏览器重新请求一个已失败的 chunk URL——实测（生产构建 + CDP）再次
+  `import()` 同一 URL 直接抛错且**不发网络请求**，所以界面文案必须把重新加载放在首位。
+  generation / recovery 归 `lazyModule` 唯一所有，Workspace 不重复管理。
+
+**失败态分类**（`AiFailure.kind`，`frontend/src/types/ai-review.ts`）：`busy` / `not_configured` /
+`timeout` / `upstream` / `malformed` / `cancelled` / `client`；`not_configured` 与 `cancelled` 不提供重试
+按钮（前者重试无意义，后者是用户主动取消、不是错误，渲染为中性 info）。未归类的原始运行时异常只进
+console 与诊断日志，UI 显示 canonical `AI_CLIENT_ERROR` 文案——不把浏览器异常文本交给用户。
+**登录与权限不在这套归类里**：登录门禁属于宿主（`AiReviewWorkspacePane`，未登录显示登录入口），已登录但缺
+realm role 是渲染前就确定的**前置权限态**（`data-testid="ai-permission-required"`，说明缺什么并给下一步），
+不是一次 run 的失败。权限判定因此存在两层且都必须成立：前端（`tokenParsed.realm_access.roles` 含
+`wotbtools-user` 或 `wotbtools-admin`）与 ai-service（`AiServiceSecurityConfig` 的 `/api/ai/**`
+`hasAnyRole`）。界面只消费 `kind` + 本地化文案，不渲染服务端 message 或异常字符串。
+
+---
+
 ## 历史演进（机制已删除，见 `HISTORY.md`）
 
 > 本节只记录 2026-10 AI domain contract 收敛（S6/S7）中**已删除**的机制，供追溯与理解历史测试命名；
