@@ -23,8 +23,8 @@ bash scripts/fetch-agent-wasm.sh
 npm run dev
 ```
 
-浏览器打开 `http://localhost:5173/?admin=1&agentViews=1`（可加 `&view=agent-armor` 等）。
-两个参数来自本机旁路（§4），**每次都要带在 URL 上**。
+浏览器打开 `http://localhost:5173/?admin=1`（可加 `&view=agent-armor` 等）。
+参数来自本机旁路（§4），**每次都要带在 URL 上**。
 
 ## 1. 系统构成（先理解数据从哪来）
 
@@ -33,7 +33,7 @@ npm run dev
 | 回放解析 | **本机** WASM（Worker 优先） | 文件不出本机 |
 | Agent 引擎 | `common/assets/wasm/<ref>/`（gitignored） | `<ref>` = `deploy/agent/source.json` 的 `.ref`；dev 下由 `vite.config.js` 的 `local-dev-public-wasm-as-module` 中间件按 `/wasm/<ref>/…` 伺服 |
 | 地图 / 车模 / 坦克数据 / 封面 | **Agent 仓** `release/asset_pack/`（gitignored，约 2.8GB） | 本机静态服务 8123 提供；前端经 `assetProvider` + `VITE_ASSET_BASE_URL` 取 |
-| admin 视图可见性 | 本机旁路（**未提交**） | `?admin=1` / `?agentViews=1`，见 §4 |
+| admin 视图可见性 | 本机旁路（**未提交**） | `?admin=1`（把 admin 角色视为已持有），见 §4 |
 | 后端 API / 登录 | 生产（或本机 8087 后端） | 按真实 Keycloak realm 角色鉴权，旁路绕不过，见 §5 |
 
 ## 2. 一次性准备
@@ -54,7 +54,7 @@ npm run dev
    ```
 
    改后必须**重启 dev server**（`import.meta.env.*` 在 transform 时内联，非运行时读取）。
-5. **本机旁路**（§4）：`git status` 应看到 `navigation.js` / `useAuth.js` 两个 modified——这是预期状态。
+5. **本机旁路**（§4）：`git status` 应看到 `useAuth.js` 一个 modified——这是预期状态。
 
 ## 3. 每次测试的启动
 
@@ -78,7 +78,6 @@ npm run dev
    | 参数 | 作用 |
    |---|---|
    | `?admin=1` | 本机旁路：把 `wotbtools-admin` / `HoF-admin` 视为已持有（仅前端可见性） |
-   | `?agentViews=1` | 本机旁路：`agent-replay` / `agent-armor` / `agent-shots` 等管理视图可达 |
    | `?view=<name>` | 直达视图（如 `agent-armor`、`agent-replay`） |
    | `?assets=<URL>` | 覆盖资产面；**非空值会持久化到 localStorage 并盖住 `.env.local`**；回默认要带一次空 `?assets=` |
    | `?debug` | 场景调试探针（见 §6） |
@@ -86,11 +85,14 @@ npm run dev
 4. Keycloak：`http://localhost:5173/*` 必须在生产 client `wotbtools-web` 的 Redirect URIs 里，
    否则登录回跳失败。
 
-## 4. 本机 admin 旁路（两个未提交改动，**永不提交**）
+## 4. 本机 admin 旁路（一个未提交改动，**永不提交**）
 
-**背景**：`main` 的代码没有实现 `?agentViews=1`（但文档已引用该参数），本地账号通常也没有
-`wotbtools-admin` / `HoF-admin` realm 角色——本机用一份**不提交的**补丁打开这两个闸门的前端可见性。
-补丁全文见附录 A。
+**背景**：本地账号通常没有 `wotbtools-admin` / `HoF-admin` realm 角色，admin 视图的入口与深链
+都会被挡下——本机用一份**不提交的**补丁把这两个角色视为已持有（URL 带 `?admin=1`），补丁全文见附录 A。
+
+admin 闸门**只认角色**：`viewFromRoute` 不得出现按 URL 参数放行的分支（曾经有一版 dev 旁路被误提交
+进 PR，review blocker；现在 `navigation.js` 里没有任何旁路分支）。一处 `?admin=1` 即可同时打开导航
+入口与深链，所以本机不需要第二个参数。
 
 - 生效条件：`import.meta.env.DEV` 且 URL 显式带参数；生产构建恒 false（无产品行为变化），
   vitest 环境同样 false（既有门禁断言不受影响）。
@@ -140,7 +142,7 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 | 同上但 `.env.local` 明明是对的 | URL/localStorage 里残留非空 `?assets=` | 带一次空 `?assets=` 清除 |
 | 3D 回放/射击/装甲查看器"引擎加载失败"，`/wasm/<ref>/…` 404 | `source.json` pin 与 `common/assets/wasm/` 不一致（bump 后没重跑） | `bash scripts/fetch-agent-wasm.sh` |
 | dev 下 `/wasm/*.js?import` 500 | Vite 拦截 publicDir 里的 .js（回归） | 检查 `vite.config.js` 的 `local-dev-public-wasm-as-module` 中间件 |
-| 直连 `?view=agent-armor` 被收敛回默认视图 | 旁路未应用 / URL 缺 `?agentViews=1` | 应用附录 A 补丁，URL 带参数 |
+| 直连 `?view=agent-armor` 被收敛回默认视图 | 旁路未应用 / URL 缺 `?admin=1` | 应用附录 A 补丁，URL 带 `?admin=1` |
 | admin 页面能打开但数据 401/403 | 后端按真实 token 鉴权 | §5（需要真角色；本地绕不过，也不应绕） |
 
 ## 8. 自动化测试与门禁
@@ -164,49 +166,18 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 
 ## 附录 A：本机 admin 旁路补丁（不提交）
 
-恢复方式（本机保存的副本：`WotbTools-local-dev-bypass-2026-10-03.patch`，仓库外）：
+只有 `useAuth.js` 一处：admin 视图的入口与深链都由角色决定，`?admin=1` 把两个 admin 角色视为已持有。
+`navigation.js` **不参与**本机旁路——那一版按 `?agentViews=1` 放行的 dev 分支曾被误提交进 PR，
+已从源码删除，`navigation.test.js` 另有回归用例钉住「URL 参数不得放行 admin 视图」。
+
+恢复方式（本机保存的副本：`WotbTools-local-dev-bypass-2026-10-03.patch`，仓库外；副本里还带着
+`navigation.js` 那段 hunk，源码已无对应上下文，`git apply` 前先删掉它）：
 
 ```bash
 git apply /path/to/WotbTools-local-dev-bypass-2026-10-03.patch
 ```
 
 ```diff
-diff --git a/frontend/src/app/navigation.js b/frontend/src/app/navigation.js
-index b8383421..d796bad1 100644
---- a/frontend/src/app/navigation.js
-+++ b/frontend/src/app/navigation.js
-@@ -26,6 +26,21 @@ export const ADMIN_ONLY_VIEWS = Object.freeze([
-   'agent-replay', 'agent-armor', 'agent-shots',
- ])
- 
-+/**
-+ * ⚠️ [本机测试旁路·提交前请还原] `git checkout -- frontend/src/app/navigation.js`
-+ *
-+ * 上面三个视图被 `wotbtools-admin`（Keycloak realm 角色）挡着，本机没有该角色时直连
-+ * `?view=agent-replay` 会被 viewFromRoute 收敛回默认视图。dev 构建下显式带
-+ * `?agentViews=1` 即可直达：
-+ *  - 生产构建 `import.meta.env.DEV === false` → 恒为 false，门禁原样生效（无产品行为变化）；
-+ *  - vitest 环境无 query（jsdom 默认 URL） → 同样为 false，navigation.test.js 的
-+ *    "默认 fail-closed" / "显式 false 即拒绝" 两条断言不受影响。
-+ * 也即：dev 下也必须显式带参数才放开，不是无条件解除。
-+ */
-+const LOCAL_AGENT_VIEWS = import.meta.env.DEV
-+  && typeof window !== 'undefined'
-+  && new URLSearchParams(window.location.search).has('agentViews')
-+
- /**
-  * 主导航（design-language §9）：
-  * - 手机 / App（compact）：底部 Tab 栏渲染 PRIMARY_NAV。
-@@ -113,7 +128,8 @@ export function viewFromRoute(route, { allowAdminViews = false } = {}) {
-     : route.query.view ?? (isAndroidPath(route.path) ? 'android' : null)
-   const view = canonicalView(rawView)
-   if (!ALLOWED_VIEWS.includes(view)) return defaultView()
--  if (isAdminOnlyView(view) && !allowAdminViews) return defaultView()
-+  // LOCAL_AGENT_VIEWS：仅 dev 且显式 `?agentViews=1`（见文件上方说明，提交前还原）
-+  if (isAdminOnlyView(view) && !allowAdminViews && !LOCAL_AGENT_VIEWS) return defaultView()
-   return view
- }
- 
 diff --git a/frontend/src/composables/useAuth.js b/frontend/src/composables/useAuth.js
 index eadca959..280e257f 100644
 --- a/frontend/src/composables/useAuth.js

@@ -27,21 +27,6 @@ export const ADMIN_ONLY_VIEWS = Object.freeze([
 ])
 
 /**
- * ⚠️ [本机测试旁路·提交前请还原] `git checkout -- frontend/src/app/navigation.js`
- *
- * 上面三个视图被 `wotbtools-admin`（Keycloak realm 角色）挡着，本机没有该角色时直连
- * `?view=agent-replay` 会被 viewFromRoute 收敛回默认视图。dev 构建下显式带
- * `?agentViews=1` 即可直达：
- *  - 生产构建 `import.meta.env.DEV === false` → 恒为 false，门禁原样生效（无产品行为变化）；
- *  - vitest 环境无 query（jsdom 默认 URL） → 同样为 false，navigation.test.js 的
- *    "默认 fail-closed" / "显式 false 即拒绝" 两条断言不受影响。
- * 也即：dev 下也必须显式带参数才放开，不是无条件解除。
- */
-const LOCAL_AGENT_VIEWS = import.meta.env.DEV
-  && typeof window !== 'undefined'
-  && new URLSearchParams(window.location.search).has('agentViews')
-
-/**
  * 主导航（design-language §9）：
  * - 手机 / App（compact）：底部 Tab 栏渲染 PRIMARY_NAV。
  * - 平板 / 桌面：左侧边栏渲染 PRIMARY_NAV 中除"更多"外的栏目 + 管理组（ADMIN_NAV）；
@@ -128,8 +113,8 @@ export function viewFromRoute(route, { allowAdminViews = false } = {}) {
     : route.query.view ?? (isAndroidPath(route.path) ? 'android' : null)
   const view = canonicalView(rawView)
   if (!ALLOWED_VIEWS.includes(view)) return defaultView()
-  // LOCAL_AGENT_VIEWS：仅 dev 且显式 `?agentViews=1`（见文件上方说明，提交前还原）
-  if (isAdminOnlyView(view) && !allowAdminViews && !LOCAL_AGENT_VIEWS) return defaultView()
+  // 只有角色能放开 admin 视图：URL 参数（`?agentViews=1` 之类）绝不参与判定
+  if (isAdminOnlyView(view) && !allowAdminViews) return defaultView()
   return view
 }
 

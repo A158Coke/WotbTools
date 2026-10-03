@@ -29,9 +29,13 @@ export function teamHpTotals(vehicles, friendlyTeam) {
  * 顶栏比分的**阵营视角映射**：内核的击杀计数是物理的（score1 = team 1 击杀、score2 = team 2），
  * 而顶栏布局是「己方 HP | 己方比分 : 敌方比分 | 敌方 HP」——比分必须和两侧血条同一视角，
  * 否则 `friendly_team = 2` 时会出现「己方血条 + team1 比分」的错位（颜色也会反）。
- * `friendlyTeam` 未知时保持物理顺序（此时两侧血量都按 0 计，视角标注本身不成立）。
+ *
+ * `friendlyTeam` 未知（≠ 1/2）时**不建立视角**：返回 0 / 0，与 `teamHpTotals`（两队血量都算 0）、
+ * `pointsAt`（friend / enemy 都是 null）同口径。unknown ≠ enemy——把物理 team1 当「己方」上屏，
+ * 等于替用户猜一个不存在的视角，还会被 HUD 染成 ally / enemy 两色。
  */
 export function perspectiveScore(score1, score2, friendlyTeam) {
+  if (friendlyTeam === 1) return { scoreFriend: score1, scoreEnemy: score2 }
   if (friendlyTeam === 2) return { scoreFriend: score2, scoreEnemy: score1 }
-  return { scoreFriend: score1, scoreEnemy: score2 }
+  return { scoreFriend: 0, scoreEnemy: 0 }
 }
