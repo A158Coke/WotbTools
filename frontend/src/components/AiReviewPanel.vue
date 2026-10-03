@@ -89,8 +89,8 @@ const partialAnalysis = ref('')
 // AI 复盘请求生命周期：客户端安全超时 + 取消（AbortController + 后端 cancel 端点）。
 // 超时链对齐：后端整体 deadline=1100s < nginx analyze 1120s；前端 1100s 在 nginx 之前给出干净 AI_TIMEOUT。
 const AI_ANALYZE_TIMEOUT_MS = 1_100_000
-/** 确定性失败重试没有意义（provider 未配置）：不给重试按钮，避免假装可恢复。 */
-const NOT_RETRYABLE: ReadonlySet<AiFailureKind> = new Set<AiFailureKind>(['not_configured'])
+/** 确定性 / 非错误失败不给重试按钮：点了也没用，或用户本来就主动取消过。 */
+const NOT_RETRYABLE: ReadonlySet<AiFailureKind> = new Set<AiFailureKind>(['not_configured', 'cancelled'])
 const canRetry = computed(() => !!failure.value && !NOT_RETRYABLE.has(failure.value.kind))
 
 /**
@@ -201,8 +201,10 @@ function classify(e: unknown, run: AiReviewRunState): AiFailure {
   if (code === 'NETWORK_ERROR' || normalized.status === 502 || normalized.status === 504) {
     return known('upstream', 'recon.errors.AI_UPSTREAM_UNAVAILABLE')
   }
-  const runtimeError = e as AiRuntimeError
-  return { kind: 'client', code, id, message: runtimeError.message || t('recon.errors.AI_RESPONSE_INVALID') }
+  // 兜底：原始运行时异常（`TypeError: Failed to fetch` 之类）只进 console 与诊断日志，
+  // 绝不作为面向用户的文案——用户看不懂，也无法据此行动。
+  console.warn('[ai-review] unclassified failure', e)
+  return known('client', 'recon.errors.AI_CLIENT_ERROR')
 }
 
 async function runAnalyze() {
@@ -344,6 +346,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', onPageLeave)
 })
+
+/** 测试入口（Vue Test Utils 约定的 `__` 前缀）：兜底分类必须可被直接覆盖。 */
+defineExpose({ __classify: classify })
 </script>
 
 <template>

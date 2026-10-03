@@ -430,9 +430,35 @@ describe('AiReviewPanel failure states', () => {
 
     expect(wrapper.vm.failure.kind).toBe('cancelled')
     expect(wrapper.vm.failure.message).toBe('recon.cancelled')
-    expect(wrapper.find('[data-testid="ai-retry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ai-retry"]').exists()).toBe(false)
     vi.unstubAllGlobals()
     vi.useRealTimers()
+  })
+
+  it('未归类的原始运行时错误不进入 UI：只显示 canonical 文案，原文进 console', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const wrapper = mountPanel({ projection: projectionA })
+    const run = {
+      controller: new AbortController(), correlationId: 'corr-raw', startedAt: Date.now(),
+      timeoutTimer: null, cancelRequested: false, timedOut: false,
+    }
+    // 直接覆盖兜底分支：任何不属于契约错误码的原始异常都必须先归类，绝不能把 message 交给用户。
+    const failure = wrapper.vm.__classify(new Error('Component is missing template or render function'), run)
+
+    expect(failure.kind).toBe('client')
+    expect(failure.message).toBe('recon.errors.AI_CLIENT_ERROR')
+    expect(failure.message).not.toContain('missing template')
+    // 原始 Error 不带契约诊断信息 → 不编造 ID；有 id 时才展示
+    expect(failure.id).toBe('')
+    expect(warn).toHaveBeenCalled()
+
+    // 该文案真实渲染到 Banner，且不出现原始异常文本
+    wrapper.vm.failure = failure
+    await nextTick()
+    const banner = wrapper.find('[data-test="ai-error"]')
+    expect(banner.text()).toContain('recon.errors.AI_CLIENT_ERROR')
+    expect(banner.text()).not.toContain('missing template')
+    warn.mockRestore()
   })
 
   it('已登录但缺 realm role → 显式权限态，不渲染 Analyze、不发请求、不给重试', async () => {
