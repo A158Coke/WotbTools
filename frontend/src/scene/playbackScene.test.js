@@ -403,6 +403,61 @@ describe('playbackScene reset：撤下当前回放', () => {
   })
 })
 
+/**
+ * 场景未初始化（渲染器/时钟惰性创建前）的 HUD API 调用安全：待开播 / 解析期间切走能力
+ * 再切回，面板会对 `setPaused(false)`——此时 `clock` 还不存在，恢复分支不得触场景内部
+ * 对象（线上实测 TypeError: Cannot read properties of undefined (reading 'getDelta')）。
+ */
+describe('playbackScene 场景未初始化时的调用安全', () => {
+  it('initScene 之前 pause → resume 会重新挂起被取消的 rAF，且场景 API 不炸', async () => {
+    // 精确锁定线上路径：待开播时 initPlayback 已有一个空转 rAF；切走会 cancel，
+    // 切回时 clock/renderer 仍不存在，但必须重新挂回 rAF。否则之后 Start 虽能 ready，
+    // animation loop 仍是 0，画面与时间永久停死。
+    const raf = vi.fn()
+      .mockReturnValueOnce(101)
+      .mockReturnValueOnce(102)
+      .mockReturnValue(103)
+    const cancel = vi.fn()
+    vi.stubGlobal('requestAnimationFrame', raf)
+    vi.stubGlobal('cancelAnimationFrame', cancel)
+
+    const { store, api } = createScene()   // 只 initPlayback：clock/renderer 尚不存在
+    expect(raf).toHaveBeenCalledTimes(1)
+    expect(() => api.setPaused(true)).not.toThrow()
+    expect(cancel).toHaveBeenCalledWith(101)
+
+    expect(() => api.setPaused(false)).not.toThrow()
+    expect(raf).toHaveBeenCalledTimes(2)   // pre-init resume 必须重新 arm animation loop
+
+    // 后续正常 Start / initScene 仍可落成 ready；不能只是“不抛异常”。
+    source.loadPlaybackData.mockResolvedValueOnce(minimalData())
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+
+    expect(() => api.setPlaying(false)).not.toThrow()
+    expect(() => api.togglePlay()).not.toThrow()
+    expect(store.playing).toBe(true)
+    expect(() => api.togglePlay()).not.toThrow()
+    expect(store.playing).toBe(false)
+  })
+
+  it('初始化之后 setPaused 仍正常停帧 / 恢复（守住修复没有把正常路径关掉）', async () => {
+    source.loadPlaybackData.mockImplementation(() => Promise.resolve(minimalData()))
+    const store = createPlaybackStore()
+    const only = createInstance(store)
+    await only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
+    expect(store.hasData).toBe(true)
+
+    expect(() => only.setPaused(true)).not.toThrow()
+    expect(() => only.setPaused(false)).not.toThrow()
+    // 会话未被闸门破坏：就绪态保持、无错误（minimalData 的 END==t_start，加载完成即播完，
+    // playing 落回 false 属正常，不在此断言播放态）
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+  })
+})
+
 /** 同一实例替换：B 的资源引用与高度场不得被 A 的迟到结果覆盖。 */
 describe('playbackScene 资产发布顺序', () => {
   function prepareAssets(kinds) {
