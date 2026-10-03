@@ -135,9 +135,59 @@ assert tx_runtime["permissions"] == {"contents": "read"}
 assert tx_runtime["concurrency"] == {
     "group": "production-maintenance", "cancel-in-progress": "false", "queue": "max",
 }
+assert tx_runtime["env"]["PRODUCTION_INPUT_PATHS"].splitlines() == [
+    ".github/workflows/tx-runtime-check.yml",
+    "deploy/check-production-freshness.sh",
+    "deploy/tx/runtime-check.sh",
+    "deploy/tx/runtime-check-lib.sh",
+    "deploy/tx/deploy.sh",
+    "deploy/tx/with-deploy-lock.sh",
+]
 tx_runtime_job = tx_runtime["jobs"]["runtime_check"]
 assert tx_runtime_job["environment"] == "tx-production"
 assert tx_runtime_job["name"] == "TX_RUNTIME_READY"
+tx_runtime_steps = tx_runtime_job["steps"]
+tx_runtime_checkout = next(step for step in tx_runtime_steps if step.get("uses") == "actions/checkout@v5")
+assert tx_runtime_checkout["with"]["ref"] == "${{ github.sha }}"
+assert tx_runtime_checkout["with"]["fetch-depth"] == "0"
+tx_runtime_freshness = [
+    step for step in tx_runtime_steps
+    if "deploy/check-production-freshness.sh" in step.get("run", "")
+]
+assert len(tx_runtime_freshness) == 2
+assert all(step.get("env", {}).get("EVENT_SHA") == "${{ github.sha }}" for step in tx_runtime_freshness)
+
+tx_runtime_stage = next(step for step in tx_runtime_steps if step.get("name") == "Stage exact-SHA verifier bundle")
+assert tx_runtime_stage["uses"] == "appleboy/scp-action@v1"
+assert tx_runtime_stage["with"]["source"] == (
+    "deploy/tx/runtime-check.sh,deploy/tx/runtime-check-lib.sh,"
+    "deploy/tx/deploy.sh,deploy/tx/with-deploy-lock.sh"
+)
+assert tx_runtime_stage["with"]["target"] == "/tmp/wotb-tx-runtime-check-${{ github.run_id }}-${{ github.run_attempt }}"
+assert tx_runtime_stage["with"]["strip_components"] == "2"
+
+tx_runtime_run = next(step for step in tx_runtime_steps if step.get("name") == "Run exact-SHA read-only TX runtime gate")
+tx_runtime_run_script = tx_runtime_run["with"]["script"]
+for invariant in (
+    'runtime="$VERIFIER_DIR/runtime-check.sh"',
+    'lock_wrapper="$VERIFIER_DIR/with-deploy-lock.sh"',
+    'deploy_helper="$VERIFIER_DIR/deploy.sh"',
+    'runtime_lib="$VERIFIER_DIR/runtime-check-lib.sh"',
+    "TX_FRONTEND_IMAGE_REF",
+    "TX_BUSINESS_API_IMAGE_REF",
+    "assert_digest_image",
+    "grep -Fxq 'TX_RUNTIME_READY'",
+):
+    assert invariant in tx_runtime_run_script, invariant
+assert tx_runtime_run["env"]["WOTB_TX_DIR"] == "/opt/wotb-tx"
+assert tx_runtime_run["env"]["TX_RUNTIME_ROOT"] == "/opt/wotb-tx"
+assert tx_runtime_run["env"]["VERIFIER_DIR"] == "/tmp/wotb-tx-runtime-check-${{ github.run_id }}-${{ github.run_attempt }}"
+
+tx_runtime_cleanup = next(step for step in tx_runtime_steps if step.get("name") == "Clean up exact-SHA verifier bundle")
+assert tx_runtime_cleanup["if"] == "always()"
+assert tx_runtime_cleanup["uses"] == "appleboy/ssh-action@v1"
+assert 'rmdir -- "$VERIFIER_DIR"' in tx_runtime_cleanup["with"]["script"]
+
 tx_runtime_text = json.dumps(tx_runtime, ensure_ascii=False)
 for required in (
     "TX_KC_POSTGRES_ADMIN_PASSWORD",
@@ -150,24 +200,14 @@ for required in (
     "KEYCLOAK_E2E_CLIENT_SECRET",
 ):
     assert f"secrets.{required}" in tx_runtime_text, required
-for invariant in (
-    "/opt/wotb-tx/deploy/runtime-check.sh",
-    "/opt/wotb-tx/deploy/with-deploy-lock.sh",
-    "TX_RUNTIME_ROOT",
-    "TX_FRONTEND_IMAGE_REF",
-    "TX_BUSINESS_API_IMAGE_REF",
-    "assert_digest_image",
-    "grep -Fxq 'TX_RUNTIME_READY'",
-):
-    assert invariant in tx_runtime_text, invariant
 for forbidden in (
-    "appleboy/scp-action",
     "tofu apply",
     "docker push",
     "docker compose up",
     "deploy.incoming",
+    "target: /opt/wotb-tx",
 ):
-    assert forbidden not in tx_runtime_text, f"TX runtime check must stay read-only: {forbidden}"
+    assert forbidden not in tx_runtime_text, f"TX runtime check must not mutate production: {forbidden}"
 
 backup = load(workflow_dir / "database-backup.yml")
 assert backup["concurrency"] == {
