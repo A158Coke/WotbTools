@@ -23,7 +23,7 @@ def required(name: str) -> str:
 
 
 def check_keycloak() -> None:
-    base = "http://keycloak:8080/realms/wotbtools"
+    base = os.environ.get("TX_KEYCLOAK_ADMIN_SERVER_URL", "http://keycloak:8080").rstrip("/") + "/realms/wotbtools"
     with urllib.request.urlopen(base + "/.well-known/openid-configuration", timeout=8) as response:
         if response.status != 200:
             raise ReadinessError("Keycloak realm discovery did not return HTTP 200")
