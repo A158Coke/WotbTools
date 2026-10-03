@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import {
@@ -143,6 +144,29 @@ describe('3D 名牌样式 · 接线守卫', () => {
     const draw = drawBody()
     expect(draw).not.toMatch(/cardFill/)
     expect(draw).not.toMatch(/cardStroke/)
+  })
+
+  /**
+   * 回归：`LABEL_DESIGN_W is not defined`。
+   *
+   * 场景内核依赖 WebGL，现有测试都只读源码文本，**从不执行 drawLabel**——于是 drawLabel 里
+   * 引用一个没进 import 列表的常量时全部单测照绿，只有真实加载回放才炸
+   * 「回放加载失败：LABEL_DESIGN_W is not defined」。
+   *
+   * 真正的检查在 `scripts/check-label-identifiers.mjs`（声明集比对：import 绑定 + 模块级
+   * const/let/var/function/class vs 绘制区引用的 CONSTANT_CASE 标识符）。这里只负责让它
+   * 进入测试门禁——脚本同样可以在 CI/本地单独跑。
+   */
+  it('名牌绘制区引用的每个模块级常量都有声明（scripts/check-label-identifiers.mjs）', () => {
+    const scriptPath = resolve(here, '../../scripts/check-label-identifiers.mjs')
+    const res = spawnSync(
+      process.execPath,
+      [scriptPath, resolve(here, 'playbackScene.js')],
+      { encoding: 'utf8' },
+    )
+    const out = `${res.stdout || ''}${res.stderr || ''}`.trim()
+    expect(res.status, out).toBe(0)
+    expect(out).toContain('label identifier check OK')
   })
 
   it('删除线必须在所有内容之后绘制（否则被不透明的血条/数字盖住）', () => {

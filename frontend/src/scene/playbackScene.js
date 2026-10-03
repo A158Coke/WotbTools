@@ -24,8 +24,8 @@ import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
 import {
-  LABEL_ASPECT, LABEL_DESIGN, LABEL_DESIGN_H, LABEL_FONT, labelTexHeight, labelVisual,
-  measureTextAt, minLabelFrac, vehicleLabelRows,
+  LABEL_ASPECT, LABEL_DESIGN, LABEL_DESIGN_H, LABEL_DESIGN_W, LABEL_FONT, labelTexHeight,
+  labelVisual, measureTextAt, minLabelFrac, vehicleLabelRows,
 } from './labelStyle.js'
 import { ROSTER_GROUPS, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
