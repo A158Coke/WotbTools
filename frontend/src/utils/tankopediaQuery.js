@@ -130,6 +130,10 @@ export function normalizeTankCache(cache) {
         nation: value.nation || 'unknown',
         type: value.type || 'unknown',
         is_premium: !!value.is_premium,
+        // 收藏车（tanks.pb field13 == 2；与 is_premium == 1 在上游数据里互斥）。
+        // projection 只做布尔归一化，**不**替上游强制互斥；异常双 true 原样透传，
+        // 视觉 precedence 由样式层确定（AgentTankopedia：premium > collector）。
+        is_collector: !!value.is_collector,
         hp: value.hp ?? null,
         pen_max: penMax || null,
       }

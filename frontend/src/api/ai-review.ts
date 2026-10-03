@@ -55,8 +55,8 @@ export function cancelAiReviewUrl(correlationId: string): string {
 /**
  * 显式取消（按钮 / 卸载 / 前端超时的 best-effort 通知）。
  *
- * 404 表示该 correlationId 已无进行中的 review（正常竞态），与网络失败一样不得
- * 变成用户可见错误，因此统一吞掉。
+ * 当前 ai-service 对「已完成 / 已取消 / 未注册」也幂等返回 204；部署滚动期间旧实例仍可能
+ * 返回 404。取消只是通知，兼容旧实例与网络失败时都不得变成用户可见错误。
  */
 export async function cancelAiReview(
   auth: ReplayAuthSession,

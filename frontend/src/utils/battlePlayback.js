@@ -56,29 +56,6 @@ export function teamPointsAt(samples, team, t) {
   return points
 }
 
-/**
- * 识别 AI 报告中的明确时间文本 → 秒；不支持裸数字（防止 854:275 等误识别）。
- * 支持：03:20 / 3分20秒 / 3m 20s / 3 мин 20 с。
- */
-export function parseAiTime(text) {
-  if (text == null) return null
-  const s = String(text).trim()
-  let m
-  if ((m = s.match(/^(\d{1,2}):([0-5]\d)$/))) {
-    return (+m[1]) * 60 + (+m[2])
-  }
-  if ((m = s.match(/^(\d{1,2})分(\d{1,2})秒$/))) {
-    return (+m[1]) * 60 + (+m[2])
-  }
-  if ((m = s.match(/^(\d{1,2})m\s*(\d{1,2})s$/i))) {
-    return (+m[1]) * 60 + (+m[2])
-  }
-  if ((m = s.match(/^(\d{1,2})\s*мин\.?\s*(\d{1,2})\s*с\.?$/i))) {
-    return (+m[1]) * 60 + (+m[2])
-  }
-  return null
-}
-
 /** 角度归一化到 [-180, 180)。 */
 export function normalizeDeg(a) {
   return (((a + 180) % 360) + 360) % 360 - 180

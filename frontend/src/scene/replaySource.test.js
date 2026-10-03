@@ -2,17 +2,28 @@
  * 3D 回放路径的契约门禁回归（PR #411 review blocker）：
  * 真实 3D 路径 = playbackScene → loadPlaybackData → loadFromLocalFile →
  * mod.parsePlayback；此前该路径只做 JSON.parse，错版 WASM 可静默载入 v1 数据
- * （缺 supremacy_bases/supremacy_points/aim_frames），版本门禁形同虚设。
+ * （缺 supremacy_bases/supremacy_points），版本门禁形同虚设。
  * 本测试证明该路径现在复用 validateAgentPlayback：v1 被拒、v2 通过。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import {
   AGENT_WASM_COMMIT,
   AGENT_WASM_RELEASE,
   __resetAgentWasmForTest,
   __setAgentWasmResolverForTest,
 } from '../api/agent-replay-facets.js'
-import { loadFromLocalFile, loadPlaybackData } from './replaySource.js'
+import {
+  __resetPlaybackJsonCacheForTest,
+  exactArrayBuffer,
+  loadFromLocalFile,
+  loadPlaybackData,
+  playbackParsePayload,
+  replayContentDigest,
+} from './replaySource.js'
+
+/** 独立实现（Node 内建）的 SHA-256 hex——用于校验生产代码走的是完整内容摘要 */
+const sha256hex = (bytes) => createHash('sha256').update(Buffer.from(bytes)).digest('hex')
 
 // 最小合法 v2 PlaybackData（字段齐备且版本为 2）
 function v2Doc() {
@@ -20,7 +31,7 @@ function v2Doc() {
     version: 2,
     meta: { map_id: 3, map_name: 'Middleburg', winner_team: 1, friendly_team: 2, author_eid: 7, t_start: 0, samples: 10, duration: 1 },
     vehicles: [], shots: [], kills: [], periods: [], visibility: [],
-    supremacy_bases: [], supremacy_points: [], aim_frames: [],
+    supremacy_bases: [], supremacy_points: [],
   }
 }
 const stub = (doc) => ({ parsePlayback: () => JSON.stringify(doc) })
@@ -41,6 +52,7 @@ function setWasm(doc) {
 beforeEach(() => {
   vi.unstubAllGlobals()
   __resetAgentWasmForTest()
+  __resetPlaybackJsonCacheForTest()   // 同一份字节 + 不同 WASM 桩：跨用例必须清缓存
 })
 
 describe('3D 路径（loadFromLocalFile / loadPlaybackData）契约门禁', () => {
@@ -49,6 +61,31 @@ describe('3D 路径（loadFromLocalFile / loadPlaybackData）契约门禁', () =
     const data = await loadFromLocalFile(blob())
     expect(data.version).toBe(2)
     expect(Array.isArray(data.supremacy_bases)).toBe(true)
+  })
+
+  it('解析结果缓存：同文件第二次打开不再走 WASM 解析，且返回同一结果', async () => {
+    let parseCalls = 0
+    __setAgentWasmResolverForTest(() => Promise.resolve({
+      parsePlayback: () => { parseCalls += 1; return JSON.stringify(v2Doc()) },
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ tag: AGENT_WASM_RELEASE, upstream_commit: AGENT_WASM_COMMIT }),
+    })))
+    const file = blob()
+    const a = await loadFromLocalFile(file)
+    const b = await loadFromLocalFile(file)
+    expect(parseCalls).toBe(1)          // 第二次命中缓存：WASM 解析只跑了一次
+    expect(b.version).toBe(2)
+    expect(a.version).toBe(b.version)
+  })
+
+  it('缓存命中不绕过契约门禁：错版文件两次都被拒', async () => {
+    setWasm({ ...v2Doc(), version: 1 })
+    const file = blob()
+    await expect(loadFromLocalFile(file)).rejects.toThrow(/不支持的契约版本/)
+    // 第二次走缓存（缓存的是解析产物，不是校验结论），仍必须被拒
+    await expect(loadFromLocalFile(file)).rejects.toThrow(/不支持的契约版本/)
   })
 
   it('v1 被拒——经 loadFromLocalFile 抛出版本错误（不再静默通过）', async () => {
@@ -66,6 +103,175 @@ describe('3D 路径（loadFromLocalFile / loadPlaybackData）契约门禁', () =
   it('错版（version=3）同样被拒', async () => {
     setWasm({ ...v2Doc(), version: 3 })
     await expect(loadFromLocalFile(blob())).rejects.toThrow(/不支持的契约版本/)
+  })
+})
+
+describe('解析结果缓存的 key 正确性（metadata 相同 ≠ 同一场）', () => {
+  const fileWith = (bytes, name = 'same.wotbreplay', lastModified = 123456) =>
+    new File([new Uint8Array(bytes)], name, { lastModified })
+
+  /** 已移除的旧实现（首/中/尾各 ≤4KB 采样的 FNV-1a）**test-only 复刻**：
+   *  仅用于证明下面的构造确实命中旧 collision 类；生产代码不得再出现采样身份。 */
+  const legacySampledFingerprint = (bytes) => {
+    const n = bytes.byteLength
+    let h = 2166136261
+    const window = 4096
+    const step = Math.max(1, Math.floor(n / 3))
+    for (const start of new Set([0, step, Math.max(0, n - window)])) {
+      const end = Math.min(n, start + window)
+      for (let i = start; i < end; i++) { h ^= bytes[i]; h = Math.imul(h, 16777619) }
+    }
+    return (h >>> 0).toString(36)
+  }
+
+  /** 统一桩：可计数的 parsePlayback + fingerprint 门禁的 fetch */
+  function countParses(docs) {
+    let parseCalls = 0
+    __setAgentWasmResolverForTest(() => Promise.resolve({
+      parsePlayback: () => JSON.stringify(docs[parseCalls++] ?? docs[docs.length - 1]),
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ tag: AGENT_WASM_RELEASE, upstream_commit: AGENT_WASM_COMMIT }),
+    })))
+    return () => parseCalls
+  }
+
+  it('同 name / 同 mtime / 同长度但内容不同 → 绝不命中（不得串用另一场的结果）', async () => {
+    const docs = [
+      { ...v2Doc(), meta: { ...v2Doc().meta, map_name: 'A' } },
+      { ...v2Doc(), meta: { ...v2Doc().meta, map_name: 'B' } },
+    ]
+    const parseCalls = countParses(docs)
+
+    const a = fileWith([1, 2, 3, 4])
+    const b = fileWith([1, 2, 9, 4])
+    // 前提：三者（name / lastModified / 长度）确实相同
+    expect(b.name).toBe(a.name)
+    expect(b.lastModified).toBe(a.lastModified)
+    expect(b.size).toBe(a.size)
+
+    const first = await loadFromLocalFile(a)
+    const second = await loadFromLocalFile(b)
+    expect(parseCalls()).toBe(2)
+    expect(first.meta.map_name).toBe('A')
+    expect(second.meta.map_name).toBe('B')   // 第二次必须返回 B，不得复用 A
+  })
+
+  it('64KB：只改「旧采样窗口之外」的一个字节 → 必须 miss（旧首/中/尾方案在此必然 collision）', async () => {
+    const size = 64 * 1024
+    const a = new Uint8Array(size).fill(7)
+    const b = new Uint8Array(size).fill(7)
+    const step = Math.max(1, Math.floor(size / 3))
+    const blindSpot = Math.floor(size * 0.7)          // 0.7×size 明确落在三个窗口之外
+    b[blindSpot] = 9
+
+    // 前提 1：metadata 全同（name / mtime / byteLength）
+    const fileA = new File([a], 'blind-spot.wotbreplay', { lastModified: 777 })
+    const fileB = new File([b], 'blind-spot.wotbreplay', { lastModified: 777 })
+    expect(fileB.name).toBe(fileA.name)
+    expect(fileB.lastModified).toBe(fileA.lastModified)
+    expect(fileB.size).toBe(fileA.size)
+
+    // 前提 2：旧采样窗口 [0,4KB) / [n/3,+4KB) / [n-4KB,n) 内逐字节完全相同，
+    // 差异只在窗口之外——这正是概率性指纹无法覆盖的构造
+    const legacyWindows = [[0, 4096], [step, step + 4096], [size - 4096, size]]
+    for (const [s, e] of legacyWindows) {
+      expect(a.subarray(s, e)).toEqual(b.subarray(s, e))
+    }
+    expect(legacyWindows.some(([s, e]) => blindSpot >= s && blindSpot < e)).toBe(false)
+    // 前提 3：旧实现（test-only 复刻）给出**相同**指纹——旧代码在这里会误命中
+    expect(legacySampledFingerprint(a)).toBe(legacySampledFingerprint(b))
+    // 且完整内容摘要必须不同（新身份的依据）
+    expect(await replayContentDigest(a)).not.toBe(await replayContentDigest(b))
+
+    const docs = [
+      { ...v2Doc(), meta: { ...v2Doc().meta, map_name: 'A' } },
+      { ...v2Doc(), meta: { ...v2Doc().meta, map_name: 'B' } },
+    ]
+    const parseCalls = countParses(docs)
+    const first = await loadFromLocalFile(fileA)
+    const second = await loadFromLocalFile(fileB)
+    expect(parseCalls()).toBe(2)                     // 完整内容身份 → cache miss
+    expect(first.meta.map_name).toBe('A')
+    expect(second.meta.map_name).toBe('B')
+  })
+
+  it('同一文件对象第二次打开 → 命中缓存（保留原语义）', async () => {
+    const parseCalls = countParses([v2Doc()])
+    const file = fileWith([7, 7, 7, 7])
+    await loadFromLocalFile(file)
+    await loadFromLocalFile(file)
+    expect(parseCalls()).toBe(1)
+  })
+
+  it('WebCrypto 不可用 → 完全不使用缓存（宁可多解析一次，也不做概率性回退）', async () => {
+    vi.stubGlobal('crypto', {})                      // 无 subtle：非安全上下文形态
+    const parseCalls = countParses([v2Doc()])
+    const file = fileWith([1, 2, 3, 4])
+    const first = await loadFromLocalFile(file)
+    const second = await loadFromLocalFile(file)
+    expect(parseCalls()).toBe(2)                     // 同一文件也不命中（缓存被禁用）
+    expect(first.version).toBe(2)
+    expect(second.version).toBe(2)
+  })
+
+  it('LRU 仍为最近 3 场：第 4 场挤出最旧，被触碰过的保留', async () => {
+    const parseCalls = countParses([v2Doc()])
+    // 同名同 mtime，只靠完整内容摘要区分（同时压测摘要必须真的参与 key）
+    const one = fileWith([1, 1, 1, 1]); const two = fileWith([2, 2, 2, 2])
+    const three = fileWith([3, 3, 3, 3]); const four = fileWith([4, 4, 4, 4])
+
+    await loadFromLocalFile(one); await loadFromLocalFile(two); await loadFromLocalFile(three)
+    expect(parseCalls()).toBe(3)
+    await loadFromLocalFile(one)          // 命中并把 one 推到最新
+    expect(parseCalls()).toBe(3)
+    await loadFromLocalFile(four)         // 第 4 场 → 挤出最旧（two）
+    expect(parseCalls()).toBe(4)
+    await loadFromLocalFile(one)          // one 被触碰过 → 仍在
+    expect(parseCalls()).toBe(4)
+    await loadFromLocalFile(two)          // two 已被挤出 → 重新解析
+    expect(parseCalls()).toBe(5)
+  })
+})
+
+describe('内容身份与精确字节区间（exactArrayBuffer / replayContentDigest）', () => {
+  it('digest 覆盖完整内容，与独立实现（node:crypto）一致', async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4, 5])
+    expect(await replayContentDigest(bytes)).toBe(sha256hex(bytes))
+  })
+
+  it('sliced view：只覆盖 byteOffset..byteOffset+byteLength，不吃 backing buffer', async () => {
+    const backing = new Uint8Array([9, 9, 1, 2, 3, 9, 9])
+    const view = backing.subarray(2, 5)
+    const digest = await replayContentDigest(view)
+    expect(digest).toBe(sha256hex(new Uint8Array([1, 2, 3])))
+    expect(digest).not.toBe(sha256hex(backing))
+  })
+
+  it('exactArrayBuffer：整段零拷贝复用，切片只取该段，非 Uint8Array fail loud', () => {
+    const whole = new Uint8Array([1, 2, 3])
+    expect(exactArrayBuffer(whole)).toBe(whole.buffer)
+    const backing = new Uint8Array([9, 9, 1, 2, 3, 9, 9])
+    expect(Array.from(new Uint8Array(exactArrayBuffer(backing.subarray(2, 5))))).toEqual([1, 2, 3])
+    expect(() => exactArrayBuffer(new ArrayBuffer(4))).toThrow(TypeError)
+  })
+})
+
+describe('playbackParsePayload（Worker 传输载荷）', () => {
+  it('整段 buffer：直接复用同一 ArrayBuffer（不复制）', () => {
+    const bytes = new Uint8Array([1, 2, 3])
+    expect(playbackParsePayload(bytes)).toBe(bytes.buffer)
+  })
+
+  it('切片视图：只发这一段，不带 backing buffer 的无关字节', () => {
+    const backing = new Uint8Array([9, 9, 1, 2, 3, 9, 9])
+    const view = backing.subarray(2, 5)
+    expect(Array.from(new Uint8Array(playbackParsePayload(view)))).toEqual([1, 2, 3])
+  })
+
+  it('非 Uint8Array fail loud（类型语义必须明确）', () => {
+    expect(() => playbackParsePayload(new ArrayBuffer(4))).toThrow(TypeError)
   })
 })
 
