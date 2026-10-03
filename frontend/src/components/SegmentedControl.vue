@@ -111,8 +111,11 @@ function onKeydown(event) {
   .segmented-option:not(.is-active):hover { color: var(--color-text-primary); }
 }
 
-/* 触屏：点击区域抬到 --hit-min（44px），布局不动（design-language §5/§6） */
+/* 触屏：点击区域抬到 44×44（design-language §5，WCAG 2.5.8 下限）。
+   这里用 44px 字面量而不是 --hit-min：该 token 定义在 :root 的 (pointer: coarse) 块里，
+   经由构建后的 chunk 继承时在 CI 的 Chromium 上实测未生效（data 按钮停在 42px）。
+   触屏下限本身就是设计语言的常量，直接写死不引入第二个事实源。 */
 @media (pointer: coarse) {
-  .segmented-option { min-height: var(--hit-min); }
+  .segmented-option { min-height: 44px; min-width: 44px; }
 }
 </style>
