@@ -117,7 +117,9 @@ function capabilityStateProbe() {
     const rect = tab.getBoundingClientRect()
     return {
       cap: tab.dataset.cap,
-      selected: tab.getAttribute('aria-selected') === 'true',
+      role: tab.getAttribute('role'),
+      // 能力切换走 canonical SegmentedControl 的 radiogroup 模型（不是 tablist）
+      selected: tab.getAttribute('aria-checked') === 'true',
       active: tab.classList.contains('is-active'),
       /** 触屏点击区域（design-language §5：coarse 下 ≥ 44px） */
       minSide: Math.round(Math.min(rect.width, rect.height)),

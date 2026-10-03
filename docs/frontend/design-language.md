@@ -230,8 +230,8 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | **IconButton** | — | 图标 20px，点击区域遵守 §5 的最小尺寸 |
 | **Input / Select / Textarea** | — | 标签放在控件上方（不能只靠 placeholder）；下方放说明文字和错误文字；错误态 = 边框用 `danger` + 图标 + 文字 |
 | **SearchSelect** | 单选 / 多选 | 选项超过 15 项时必须可搜索，例如名人堂的选车器 |
-| **FileDrop** | 单文件 / 多文件 | **全站只有这一个上传组件**，替换现在的 3 套；原生 `<input type=file>` 视觉隐藏，但保持键盘可达 |
-| **SegmentedControl** | — | 页面内的视图切换，例如 汇总 / 单场、数据 / 2D / 3D |
+| **FileDrop** | 单文件 / 多文件 | **全站只有这一个上传组件**，替换现在的 3 套。原生 `<input type=file>` 视觉隐藏、**不进 Tab 顺序**（`tabindex="-1"` + `aria-hidden`），由可见的真实按钮 `click()` 触发它——**禁止只有鼠标可点的容器**：键盘用户必须能 Tab 到那个按钮，且按钮是唯一的 picker 触发点（hidden input 不得再进 Tab 顺序，避免同一动作出现两个焦点目标） |
+| **SegmentedControl** | — | 页面内的视图切换，例如 汇总 / 单场、数据 / 2D / 3D / 射击 / AI。键盘：方向键循环、Home / End 跳首尾（radiogroup 模型）；选项多或容器窄时用 `scrollable` 横向滚动，不换行 |
 | **Tabs** | — | 页面级分区。和 SegmentedControl 的区别：Tabs 切换的是内容区域，SegmentedControl 切换的是同一内容的呈现方式 |
 | **Chip** | 筛选 chip · 状态 chip | 已生效的筛选条件显示为可移除的 chip |
 | **Badge** | 中性 / 状态 / 阵营 | 只放短文本（≤ 6 个字） |
