@@ -114,6 +114,8 @@ async function main() {
   execFileSync(process.execPath, [VERIFY, '--dist', DIST, '--pin', PIN_PATH], { stdio: 'inherit' })
 
   verifyAndroidUrlLayout(DIST)
+  // Build-only graph has already been checked. Android excludes dot directories from APK assets.
+  rmSync(join(DIST, '.vite'), { recursive: true, force: true })
 
   // 4) 复制进 APK assets（生成物，不进源码树）。
   rmSync(ASSETS_WEB, { recursive: true, force: true })
