@@ -132,8 +132,17 @@ fi
 # adapted routes, response bodies and status codes - instead of re-parsing
 # Caddyfile text.
 android_adapted_file="$(mktemp)"
+android_adapted_doc="$(mktemp)"
 android_validate_log="$(mktemp)"
-trap 'rm -f -- "$android_adapted_file" "$android_validate_log"' EXIT
+trap 'rm -f -- "$android_adapted_file" "$android_adapted_doc" "$android_validate_log"' EXIT
+
+# Fail closed when jq is absent: the adapted-route assertions below are the only
+# proof of what this route actually answers.
+command -v jq >/dev/null 2>&1 || {
+  echo 'ERROR: jq is required to assert the adapted Caddy routes.' >&2
+  exit 1
+}
+
 if ! docker compose -p deploy \
   -f "$INCOMING_DIR/common.compose.yml" -f "$INCOMING_DIR/caddy.compose.yml" \
   run --rm --no-deps --entrypoint caddy caddy \
@@ -143,12 +152,24 @@ if ! docker compose -p deploy \
   exit 1
 fi
 
-# Fail closed when jq is absent: the adapted-route assertions below are the only
-# proof of what this route actually answers.
-command -v jq >/dev/null 2>&1 || {
-  echo 'ERROR: jq is required to assert the adapted Caddy routes.' >&2
+# `caddy adapt` 把适配结果写到 stdout、日志写到 stderr，但 `docker compose run` 在部分版本/环境下
+# 还会往 stdout 混入自己的输出（实测形态可以是一个裸数字），因此断言必须针对 **adapted JSON
+# 文档**本身，而不是「stdout 恰好只有 JSON」这个假设：这里按 JSON 值流切开输入，取第一个对象，
+# 并把被忽略的非对象值数量记下来（出现时能自解释，而不是让下一个人重新猜）。
+if ! jq -s 'map(select(type == "object")) | first // empty' "$android_adapted_file" > "$android_adapted_doc"; then
+  echo 'ERROR: the adapted Caddy output is not valid JSON.' >&2
+  head -c 2000 "$android_adapted_file" >&2
   exit 1
-}
+fi
+if [ ! -s "$android_adapted_doc" ]; then
+  echo 'ERROR: Caddy produced no adapted JSON document for the staged configuration.' >&2
+  head -c 2000 "$android_adapted_file" >&2
+  exit 1
+fi
+android_noise="$(jq -s 'map(select(type != "object")) | length' "$android_adapted_file")"
+if [ "$android_noise" != "0" ]; then
+  echo "NOTE: ignored $android_noise non-object value(s) alongside the adapted JSON document."
+fi
 
 # The Android callback route in the adapted configuration, not in the text: exactly
 # one route matching that exact path on that exact host, ordered before the single
@@ -180,8 +201,16 @@ if ! jq -e '
     and ($answers == 1)
     and ($answered == 1)
     and (any($callback[] | all_handlers; .handler == "reverse_proxy") | not)
-' "$android_adapted_file" >/dev/null; then
+' "$android_adapted_doc" >/dev/null; then
   echo 'ERROR: the adapted Caddy configuration does not serve /android/oauth/callback as a 200 Caddy-owned page that tells the user to return to the WotBTools app (or it is not ordered before the auth.wotbtools.com catch-all).' >&2
+  # 失败时必须能自解释：把该 host 的路由形状（match + handler 类型）打到 stderr，
+  # 而不是只留一句结论让人重新跑一遍去猜。
+  echo '--- adapted auth.wotbtools.com route shape ---' >&2
+  jq -c '
+    [.apps.http.servers.srv0.routes[] | select([.match[]?.host[]?] | index("auth.wotbtools.com"))]
+    | .[0].handle[0].routes
+    | map({match: (.match // []), handlers: ([.. | objects | select(has("handler")) | .handler] | unique)})
+  ' "$android_adapted_doc" >&2 || head -c 2000 "$android_adapted_doc" >&2
   exit 1
 fi
 
