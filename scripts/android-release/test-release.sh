@@ -4,6 +4,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REAL_GIT="$(command -v git || true)"
+REAL_HEAD="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')"
 RESOLVE="$ROOT/scripts/android-release/resolve-version.sh"
 RESOLVE_STAGED="$ROOT/scripts/android-release/resolve-staged-version.sh"
 GUARDS="$ROOT/scripts/android-release/check-release-guards.sh"
@@ -442,6 +444,26 @@ stagedversion_runs = publish["steps"][stagedversion_i]["run"]
 assert "git archive" in stagedref_runs, "the staged source must be exported from the tag target"
 assert "$TAG_TARGET" in stagedversion_runs, stagedversion_runs
 assert "cmp -s" in stagedversion_runs, "current main's contract drift must fail closed"
+
+# --- staged versionCode：唯一来源 + 不得把 Python 局部变量当 shell 变量（release blocker）---
+staged_i = next(i for i, step in enumerate(publish["steps"]) if step.get("id") == "staged")
+staged_step = publish["steps"][staged_i]
+staged_runs = staged_step["run"]
+staged_env = staged_step.get("env", {})
+# 1) canonical 值来自 stagedref（显式版本 → tag target），不是当前 main。
+assert staged_env.get("STAGED_VERSION_CODE") == "${{ steps.stagedref.outputs.versionCode }}", staged_env
+# 2) 写 $GITHUB_OUTPUT 的 versionCode 必须用那个 env 值。
+assert 'echo "versionCode=$STAGED_VERSION_CODE" >> "$GITHUB_OUTPUT"' in staged_runs, \
+    "staged versionCode output must come from STAGED_VERSION_CODE (the tag target), not a shell copy"
+# 3) 回归锁：`expected` 只存在于 Python 进程内，绝不能出现在 shell 命令里
+#    （set -euo pipefail 下会直接 `expected: unbound variable` 炸掉整个 publish）。
+shell_lines = [line for line in staged_runs.splitlines() if not line.lstrip().startswith("#")]
+assert not any("$expected" in line or "${expected}" in line for line in shell_lines), \
+    "shell must not reference the Python-local `expected` (unbound variable under set -u)"
+assert "${{ steps.version.outputs" not in staged_runs, staged_runs
+# 4) APK badging 校验必须仍然存在，且比对的是 STAGED_VERSION_CODE。
+assert "apk-badging.txt" in staged_runs and "versionCode='" in staged_runs, staged_runs
+assert '"$STAGED_VERSION_CODE"' in staged_runs, "badging validation must compare against the staged versionCode"
 # version.json 的内容（= 发布结果）只能来自 staged 身份。
 write_runs = publish["steps"][next(i for i, name in enumerate(publish_names)
                                    if name.startswith("Write version.json"))]["run"]
@@ -490,5 +512,199 @@ for step in publish["steps"][upload_index + 1:]:
 
 print("Android release two-phase protocol: PASS")
 PY
+
+# --- 用 fixture 真正执行 publish staged identity 脚本的头部（set -u 下验证 $expected 回归）---
+# 为什么必须执行而不是只读 YAML：`expected` 只是 Python 进程内的局部变量，静态检查很容易漏掉
+# 「shell 引用 Python 局部变量」这类错误 —— 它在 `set -euo pipefail` 下会让真实 publish 直接
+# `expected: unbound variable`。
+#
+# 端口范围：从 step 起头到 badging 校验的 heredoc 结束，再接一行与 workflow 完全一致的
+# `echo "versionCode=$STAGED_VERSION_CODE" >> "$GITHUB_OUTPUT"`（它必须与该 step 的 echo 逐字相同，
+# 由下面的断言保证）。之后的 `android_contract.py bundle` 需要真实 APK bundle 字节，由本文件上面的
+# schema2 roundtrip 用例覆盖；这里只证明「脚本头部 + 版本号输出」在 set -u 下可运行且 fail closed。
+if [ "${WOTB_SKIP_PUBLISH_SIMULATION:-0}" = "1" ]; then
+  echo "publish simulation skipped (WOTB_SKIP_PUBLISH_SIMULATION=1)"
+else
+  SIM="$TMP/publish-sim"
+  BIN="$SIM/bin"
+  RUNNER_TEMP="$SIM/runner"
+  SIM_WORK="$SIM/work"
+  # 用已提交的版本，这样「tag target 的 gradle.properties」与 repo 现状一致；升版本号不用改本用例。
+  SIM_VERSION="$COMMITTED_VERSION"
+  SIM_VERSION_CODE="$EXPECTED_CODE"
+  SIM_TAG_TARGET="$REAL_HEAD"
+  mkdir -p "$BIN" "$RUNNER_TEMP/android" "$SIM_WORK/release-staging"
+
+  # stub：aapt 输出 fixture badging；jq 从 fixture contract 里取 bridge（真实 jq 行为单一，够用）。
+  cat > "$BIN/aapt" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+cat "${WOTB_FAKE_BADGING:?}"
+SH
+  cat > "$BIN/jq" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+# 只服务 `jq -r '.bridgeVersion' <file>`：按 filter 里唯一的字段名从 JSON 取值。
+field=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -r) field="$2"; shift 2 ;;
+    -*) shift ;;
+    *) file="$1"; shift ;;
+  esac
+done
+name="$(printf '%s' "$field" | sed -e "s/^\.//" -e "s/['\"]//g")"
+python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))[sys.argv[2]])' "$file" "$name"
+SH
+  cat > "$BIN/sha256sum" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef  $1"
+SH
+  cat > "$BIN/git" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  # `git show <ref>:<path>` 委托给真实 git（必须用绝对路径，否则会再次命中本 stub）。
+  show) exec "${WOTB_SIM_REAL_GIT:?}" --no-pager -C "${WOTB_SIM_REPO:?}" show "$@" ;;
+  *) echo "unexpected git invocation in publish simulation: $cmd $*" >&2; exit 1 ;;
+esac
+SH
+  # curl：只服务本用例的两次下载（staging evidence / staged APK）。
+  cat > "$BIN/curl" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+out=""
+url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+case "${url:-}" in
+  *.staging.json) cp "$WOTB_SIM_STAGING" "$out" ;;
+  *.apk) cp "$WOTB_SIM_APK" "$out" ;;
+  *) echo "unexpected curl url: ${url:-}" >&2; exit 1 ;;
+esac
+SH
+  chmod +x "$BIN/aapt" "$BIN/jq" "$BIN/sha256sum" "$BIN/git" "$BIN/curl"
+  # 让 `. scripts/android-release/check-release-guards.sh` 之类相对路径按 repo 解析。
+  ln -s "$ROOT/scripts" "$SIM_WORK/scripts"
+  # 让 `find "$ANDROID_HOME/build-tools" -name aapt` 命中 stub。
+  mkdir -p "$SIM/android-home/build-tools/34.0.0"
+  cp "$BIN/aapt" "$SIM/android-home/build-tools/34.0.0/aapt"
+
+  # 受控 gradle.properties（tag target 的副本）、contract、evidence 与 fake APK。
+  printf 'wotbVersion=%s\nwotbNativeBridgeVersion=%s\n' "$SIM_VERSION" "$EXPECTED_BRIDGE" > "$RUNNER_TEMP/android/gradle.properties"
+  cp "$ROOT/contracts/android-native-bridge.json" "$RUNNER_TEMP/staged-contract.json"
+  cp "$ROOT/deploy/agent/source.json" "$RUNNER_TEMP/staged-agent.json"
+  printf '{"sourceSha":"%s","sha256":"%s"}' "$SIM_TAG_TARGET" \
+    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" > "$SIM/staging.json"
+  printf 'staged apk bytes' > "$SIM/staged.apk"
+  printf "package: name='com.wotbtools.app' versionCode='%s' versionName='%s'\n" \
+    "$SIM_VERSION_CODE" "$SIM_VERSION" > "$SIM/badging-ok.txt"
+  printf "package: name='com.wotbtools.app' versionCode='%s' versionName='%s'\n" \
+    "$((SIM_VERSION_CODE + 1))" "$SIM_VERSION" > "$SIM/badging-mismatch.txt"
+
+  python3 - "$ROOT/.github/workflows/android-release.yml" "$SIM" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+import yaml
+
+workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+sim = Path(sys.argv[2])
+step = next(s for s in workflow["jobs"]["publish"]["steps"] if s.get("id") == "staged")
+run = step["run"]
+# 展开 GitHub expression（模拟 runner 渲染后的脚本）：先替换被测身份，再用中性字面量吃掉其余
+# 表达式（它们的下游命令都被 stub 掉了，值不影响本用例）。
+run = run.replace("${{ steps.stagedref.outputs.apkName }}", "wotbtools-android-vSTAGED.apk")
+run = run.replace("${{ steps.stagedref.outputs.stagingName }}", "wotbtools-android-vSTAGED.staging.json")
+run = run.replace("${{ inputs.version }}", "STAGED")
+run = re.sub(r"\$\{\{[^}]*\}\}", "sim", run)
+# heredoc 去缩进（补偿 YAML `run: |` 的公共缩进）。
+body = "\n".join(line[10:] if line.startswith(" " * 10) else line for line in run.splitlines())
+lines = body.splitlines()
+
+# badging 校验块 = `python3 - ... <<'PY'` … 顶格 `PY`；这是脚本头部唯一以 heredoc 结尾的块。
+badging_start = next(i for i, line in enumerate(lines) if "apk-badging.txt" in line and "python3 -" in line)
+badging_end = next(i for i in range(badging_start + 1, len(lines)) if lines[i].startswith("PY"))
+(sim / "badging-check.sh").write_text("\n".join(lines[badging_start:badging_end + 1]) + "\n", encoding="utf-8")
+
+# 版本号输出行必须与该 step 的真实输出逐字一致（用真实行，而不是测试里另写一份）。
+version_echo = next(line for line in lines if line.startswith('echo "versionCode='))
+assert version_echo == 'echo "versionCode=$STAGED_VERSION_CODE" >> "$GITHUB_OUTPUT"', version_echo
+(sim / "staged-step-head.sh").write_text(
+    "\n".join(["set -euo pipefail"] + lines[:badging_end + 1] + [version_echo]) + "\n",
+    encoding="utf-8",
+)
+print("simulation fixtures written")
+PY
+
+  run_staged_step_head() {
+    local badging_file="$1" expected_code="$2"
+    (
+      cd "$SIM_WORK"
+      PATH="$BIN:$PATH" \
+      ANDROID_HOME="$SIM/android-home" \
+      RUNNER_TEMP="$RUNNER_TEMP" \
+      GITHUB_OUTPUT="$SIM/github-output.txt" \
+      GITHUB_WORKSPACE="$SIM_WORK" \
+      REQUESTED_VERSION="$SIM_VERSION" \
+      TAG_TARGET="$SIM_TAG_TARGET" \
+      STAGED_VERSION_CODE="$expected_code" \
+      WOTB_FAKE_BADGING="$badging_file" \
+      WOTB_SIM_STAGING="$SIM/staging.json" \
+      WOTB_SIM_APK="$SIM/staged.apk" \
+      WOTB_SIM_REPO="$ROOT" \
+      WOTB_SIM_REAL_GIT="$REAL_GIT" \
+      bash "$SIM/staged-step-head.sh"
+    )
+  }
+
+  # 匹配：脚本头部必须在 set -u 下跑通，并写出 staged versionCode。
+  : > "$SIM/github-output.txt"
+  if ! run_staged_step_head "$SIM/badging-ok.txt" "$SIM_VERSION_CODE" > "$SIM/ok.log" 2>&1; then
+    sed 's/^/    /' "$SIM/ok.log" >&2
+    fail "publish staged identity head must run under set -u when APK badging matches the staged source"
+  fi
+  grep -qx "versionCode=$SIM_VERSION_CODE" "$SIM/github-output.txt" \
+    || { sed 's/^/    /' "$SIM/ok.log" >&2; fail "publish must emit the staged versionCode ($SIM_VERSION_CODE)"; }
+  grep -qi "unbound variable" "$SIM/ok.log" && fail "publish shell must not reference undefined variables"
+
+  # fail closed：APK badging versionCode 与 staged versionCode 不一致。
+  : > "$SIM/github-output.txt"
+  if run_staged_step_head "$SIM/badging-mismatch.txt" "$SIM_VERSION_CODE" > "$SIM/mismatch.log" 2>&1; then
+    fail "APK badging versionCode differing from the staged versionCode must fail closed"
+  fi
+  grep -q "does not match the staged source versionCode" "$SIM/mismatch.log" \
+    || { sed 's/^/    /' "$SIM/mismatch.log" >&2; fail "mismatch must be reported by the badging validator"; }
+  [ ! -s "$SIM/github-output.txt" ] || fail "a failed badging check must not emit outputs"
+
+  # 回归证明：把同一段脚本换成「Python 局部变量泄漏到 shell」的写法（修复前的实现），
+  # 必须在 set -u 下以 unbound variable 失败 —— 否则本用例挡不住这个 release blocker。
+  # 用单引号 sed 脚本，避免 $expected 在生成阶段被 shell 展开。
+  sed 's/versionCode=\$STAGED_VERSION_CODE/versionCode=$expected/' \
+    "$SIM/staged-step-head.sh" > "$SIM/staged-step-regression.sh"
+  grep -q 'versionCode=\$expected' "$SIM/staged-step-regression.sh" \
+    || fail "the regression fixture must reference the pre-fix \`\$expected\` form"
+  if (cd "$SIM_WORK" && PATH="$BIN:$PATH" ANDROID_HOME="$SIM/android-home" RUNNER_TEMP="$RUNNER_TEMP" \
+        GITHUB_OUTPUT="$SIM/regression-output.txt" GITHUB_WORKSPACE="$SIM_WORK" \
+        REQUESTED_VERSION="$SIM_VERSION" TAG_TARGET="$SIM_TAG_TARGET" \
+        STAGED_VERSION_CODE="$SIM_VERSION_CODE" WOTB_FAKE_BADGING="$SIM/badging-ok.txt" \
+        WOTB_SIM_STAGING="$SIM/staging.json" WOTB_SIM_APK="$SIM/staged.apk" \
+        WOTB_SIM_REPO="$ROOT" WOTB_SIM_REAL_GIT="$REAL_GIT" \
+        bash "$SIM/staged-step-regression.sh" > "$SIM/regression.log" 2>&1); then
+    fail "the pre-fix implementation (shell reading the Python-local \`expected\`) must fail under set -u"
+  fi
+  grep -qi "unbound variable" "$SIM/regression.log" \
+    || { sed 's/^/    /' "$SIM/regression.log" >&2; fail "the regression case must fail with an unbound variable"; }
+
+  echo "publish staged-identity shell simulation: PASS (staged versionCode, mismatch fails closed, pre-fix form fails)"
+fi
 
 echo "ALL ANDROID RELEASE TESTS PASSED"

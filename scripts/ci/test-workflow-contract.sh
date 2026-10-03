@@ -267,6 +267,18 @@ assert "steps.version.outputs" not in _publish_run_text, \
 assert "resolve-staged-version.sh" in _publish_run_text, \
   "publish must resolve the staged version from the tag target"
 assert 'TAG="android-v$REQUESTED_VERSION"' in _publish_run_text and "git archive" in _publish_run_text
+# staged versionCode：唯一来源是 stagedref 输出，且不得把 Python 局部变量当 shell 变量
+# （`$expected` 在 set -euo pipefail 下会 unbound variable，直接炸掉整个 publish）。
+_staged_step = next(step for step in _publish_job["steps"] if step.get("id") == "staged")
+assert _staged_step.get("env", {}).get("STAGED_VERSION_CODE") == "${{ steps.stagedref.outputs.versionCode }}", \
+  _staged_step.get("env", {})
+_staged_shell_lines = [line for line in (_staged_step.get("run") or "").splitlines()
+                       if not line.lstrip().startswith("#")]
+assert any('echo "versionCode=$STAGED_VERSION_CODE" >> "$GITHUB_OUTPUT"' in line
+           for line in _staged_shell_lines), \
+  "publish must write the staged versionCode from STAGED_VERSION_CODE"
+assert not any("$expected" in line or "${expected}" in line for line in _staged_shell_lines), \
+  "publish shell must not read the Python-local `expected` variable"
 # publish 绝不重建 / 重新签名。
 for _forbidden in ("assembleRelease", "wotbKeystorePath", "keystore.jks", "ANDROID_KEYSTORE_BASE64"):
   assert _forbidden not in _publish_run_text, f"publish must not rebuild or re-sign ({_forbidden})"

@@ -162,7 +162,21 @@ async function loadUsers() {
 
 // 翻页 / 换页长 / 换数据源 / 换搜索词都会改变可见行集合，
 // 「全选当前页」的选择集不跨这些边界保留（否则会出现看不见的选中项）。
+/**
+ * 会改变「已应用查询」的动作一律**先门禁、后改状态**（review P2）。
+ *
+ * 之前的顺序是「先 mutation，再由 loadUsers 里的门禁挡下」，非-online 时会出现
+ * 「page/segment/size 已经变了、rows 还是上一次的结果」的不一致状态。这里的顺序约定是：
+ *
+ * ```text
+ * 门禁 → 改 applied 状态（page/size/segment/selection） → loadUsers() 发请求
+ * ```
+ *
+ * `loadUsers()` 内部仍保留一次门禁：它还有别的调用方（删除后 reload、reconnect 自动补一次），
+ * 那些路径不能绕过准入。v-model 的 select 另有 handler 级回滚兜底（见模板）。
+ */
 function reloadFirstPage() {
+  if (!requireAdminUsersOnline()) return
   clearSelection()
   page.value = 0
   loadUsers()
@@ -172,7 +186,14 @@ function onSearch() {
   reloadFirstPage()
 }
 
-function onSegmentChange() {
+/** segment=keycloak|local：门禁不通过时把 select 的改动回滚成已应用值（data-applied-value）。 */
+function onSegmentChange(event) {
+  if (!requireAdminUsersOnline()) {
+    if (event?.target) event.target.value = event.target.dataset.appliedValue
+    return
+  }
+  // 已应用状态由事件携带的新值推进（select 是 server-backed，没有本地降级语义）。
+  segment.value = event?.target?.value ?? segment.value
   if (segment.value !== 'keycloak') idpAlias.value = ''
   reloadFirstPage()
 }
@@ -181,11 +202,19 @@ function onIdpAliasChange() {
   reloadFirstPage()
 }
 
-function onSizeChange() {
+/** 每页数量：同上，未通过门禁（或值非法）时保持已应用的 size。 */
+function onSizeChange(event) {
+  const next = Number(event?.target?.value)
+  if (!requireAdminUsersOnline() || !Number.isFinite(next)) {
+    if (event?.target) event.target.value = event.target.dataset.appliedValue
+    return
+  }
+  size.value = next
   reloadFirstPage()
 }
 
 function goPage(nextPage) {
+  if (!requireAdminUsersOnline()) return
   if (nextPage < 0 || nextPage === page.value) return
   if (totalPages.value > 0 && nextPage > totalPages.value - 1) return
   clearSelection()
@@ -317,19 +346,27 @@ function fmtTime(s) {
 
     <div class="admin-search">
       <input v-model="searchQuery" :placeholder="$t('admin.search')" @keyup.enter="onSearch" />
-      <button type="button" class="admin-search-btn" @click="onSearch">{{ $t('admin.searchBtn') }}</button>
+      <button type="button" class="admin-search-btn" :disabled="!adminAvailability.available" @click="onSearch">{{ $t('admin.searchBtn') }}</button>
     </div>
 
     <div class="admin-filters">
       <label class="admin-filter">
         <span>{{ $t('admin.segment') }}</span>
-        <select v-model="segment" @change="onSegmentChange">
+        <!-- 受控 select（:value = 已应用状态）+ data-applied-value：门禁不通过时把改动回滚，
+             绝不出现「select 显示 local 但 rows 还是 keycloak」的假 applied 状态。 -->
+        <select
+          :value="segment"
+          :data-applied-value="segment"
+          :disabled="!adminAvailability.available"
+          @change="onSegmentChange"
+        >
           <option value="keycloak">{{ $t('admin.segmentKeycloak') }}</option>
           <option value="local">{{ $t('admin.segmentLocal') }}</option>
         </select>
       </label>
       <label class="admin-filter">
         <span>{{ $t('admin.idpAlias') }}</span>
+        <!-- idpAlias 是**草稿**输入：非-online 时允许继续编辑（回车不生效），不会被当成已应用条件。 -->
         <input
           v-model="idpAlias"
           :disabled="segment !== 'keycloak'"
@@ -342,7 +379,7 @@ function fmtTime(s) {
 
     <div v-if="selectedCount" class="admin-bulk-bar">
       <span class="admin-selected">{{ $t('admin.selectedCount', { count: selectedCount }) }}</span>
-      <button class="btn-sm btn-danger" @click="startBulkDelete">{{ $t('admin.bulkDelete') }}</button>
+      <button class="btn-sm btn-danger" :disabled="!adminAvailability.available" @click="startBulkDelete">{{ $t('admin.bulkDelete') }}</button>
       <button class="btn-sm" @click="clearSelection">{{ $t('admin.clearSelection') }}</button>
     </div>
 
@@ -406,11 +443,11 @@ function fmtTime(s) {
               <button
                 type="button"
                 class="btn-sm"
-                :disabled="u.keycloakUserMissing"
+                :disabled="u.keycloakUserMissing || !adminAvailability.available"
                 :title="u.keycloakUserMissing ? $t('admin.detailUnavailable') : ''"
                 @click="loadDetail(u)"
               >{{ $t('admin.view') }}</button>
-              <button type="button" class="btn-sm btn-danger" @click="startDelete(u)">{{ $t('admin.delete') }}</button>
+              <button type="button" class="btn-sm btn-danger" :disabled="!adminAvailability.available" @click="startDelete(u)">{{ $t('admin.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -419,12 +456,18 @@ function fmtTime(s) {
     <p v-else-if="!loading" class="admin-muted">{{ $t('admin.empty') }}</p>
 
     <div v-if="totalPages > 0" class="admin-pagination">
-      <button class="btn-sm" :disabled="page <= 0" @click="goPage(page - 1)">{{ $t('admin.prev') }}</button>
+      <button class="btn-sm" :disabled="page <= 0 || !adminAvailability.available" @click="goPage(page - 1)">{{ $t('admin.prev') }}</button>
       <span class="admin-page-info">{{ $t('admin.pageInfo', { page: page + 1, total: totalPages, items: totalItems }) }}</span>
-      <button class="btn-sm" :disabled="page + 1 >= totalPages" @click="goPage(page + 1)">{{ $t('admin.next') }}</button>
+      <button class="btn-sm" :disabled="page + 1 >= totalPages || !adminAvailability.available" @click="goPage(page + 1)">{{ $t('admin.next') }}</button>
       <label class="admin-filter">
         <span>{{ $t('admin.size') }}</span>
-        <select v-model.number="size" @change="onSizeChange">
+        <!-- 受控 select（同 segment）：非-online 时回滚，避免「每页显示 50 但表格还是 25 条」。 -->
+        <select
+          :value="size"
+          :data-applied-value="size"
+          :disabled="!adminAvailability.available"
+          @change="onSizeChange"
+        >
           <option :value="25">25</option>
           <option :value="50">50</option>
           <option :value="100">100</option>
@@ -697,6 +740,8 @@ td.cell-actions > * + * { margin-left: var(--space-1); }
 
 .btn-danger { border-color: var(--color-danger); color: var(--color-danger); }
 .btn-sm:disabled { cursor: not-allowed; opacity: .5; }
+.admin-search-btn:disabled { cursor: not-allowed; opacity: .5; }
+.admin-page select:disabled { cursor: not-allowed; opacity: .5; }
 
 .btn-sm:focus-visible,
 .admin-search-btn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }

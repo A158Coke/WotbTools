@@ -780,6 +780,9 @@ jobs:
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
           TAG_TARGET: ${{ steps.stagedref.outputs.tagTarget }}
+          # staged versionCode 的**唯一**来源：stagedref（= 显式版本 → immutable tag target 的
+          # android/gradle.properties）。绝不在 publish 里从当前 main 重新计算 versionCode。
+          STAGED_VERSION_CODE: ${{ steps.stagedref.outputs.versionCode }}
         run: |
           set -euo pipefail
           . scripts/android-release/check-release-guards.sh
@@ -816,22 +819,21 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
           test -x "$AAPT"
           "$AAPT" dump badging "$RUNNER_TEMP/staged.apk" > "$RUNNER_TEMP/apk-badging.txt"
-          # APK badging 的 versionCode/versionName 必须等于 **staged 源码**的 versionCode/versionName，
-          # 而不是当前 main 的 committed 版本（android_contract.py bundle 内部会断言 badging 版本；
-          # 这里再显式比对 staged versionCode，避免只看名字不看数字）。
-          python3 - "$RUNNER_TEMP/apk-badging.txt" "$RUNNER_TEMP/android/gradle.properties" <<'PY'
+          # APK badging 的 versionCode 必须等于 **staged 源码**（tag target）的 versionCode，
+          # 而不是当前 main 的 committed 版本。这里的 Python 只做「验证」并把值打进日志：
+          # 它的局部变量永远不会泄漏回 shell，所以下游写 $GITHUB_OUTPUT 用的是 env 里的
+          # STAGED_VERSION_CODE（= steps.stagedref.outputs.versionCode），
+          # 在 set -euo pipefail 下不会出现 unbound variable。
+          python3 - "$RUNNER_TEMP/apk-badging.txt" "$STAGED_VERSION_CODE" <<'PY'
           import re
           import sys
 
-          sys.path.insert(0, "scripts/android-release")
-          from android_contract import parse_version, properties, version_code
-
           badging = open(sys.argv[1], encoding="utf-8").read()
-          expected = version_code(parse_version(properties(open(sys.argv[2], encoding="utf-8").read())["wotbVersion"]))
+          expected = sys.argv[2]
           match = re.search(r"versionCode='([0-9]+)'", badging)
           if not match:
               raise SystemExit("APK badging has no versionCode")
-          if int(match.group(1)) != expected:
+          if match.group(1) != expected:
               raise SystemExit(f"Staged APK versionCode {match.group(1)} does not match the staged source versionCode {expected}")
           print(f"Staged APK versionCode matches the staged source: {expected}")
           PY
@@ -845,7 +847,7 @@ jobs:
           }
           echo "Staged release identity verified: $APK_NAME tag=$TAG source=$TAG_TARGET sha256=$ACTUAL_APK_SHA"
           echo "versionName=$REQUESTED_VERSION" >> "$GITHUB_OUTPUT"
-          echo "versionCode=$expected" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$STAGED_VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "nativeBridgeVersion=$STAGED_BRIDGE" >> "$GITHUB_OUTPUT"
           echo "stagedSource=$TAG_TARGET" >> "$GITHUB_OUTPUT"
           echo "apkSha=$ACTUAL_APK_SHA" >> "$GITHUB_OUTPUT"
