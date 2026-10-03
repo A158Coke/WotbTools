@@ -158,8 +158,11 @@ non-production `deployment` PR gate) fails the build when:
   `deployment`, `build`, `repo`, `procedure`, `action`, `builder`, `swarm`,
   `alerter`, `variable`, `user_group` are rejected by name;
 - a declaration carries an unreviewed key (Komodo would ignore a typo silently);
-- a resource does not declare `tags` and `template` explicitly (they are compared and
-  applied as metadata, so leaving them to the default is not ownership-neutral);
+- a resource does not declare `description`, `tags`, and `template` explicitly (all
+  three are compared and applied as metadata, so leaving one to the default is not
+  ownership-neutral: an omitted `description` asserts the empty string and an omitted
+  `tags` asserts the empty tag set). The `description` **content** is deliberately not
+  pinned — the drift proof below edits one — but its presence and string type are;
 - the ResourceSync is not exactly `wotbtools-main` with the reviewed, non-destructive
   configuration above;
 - **any** `[resource_sync.config]` key falls outside the explicit reviewed allowlist —
