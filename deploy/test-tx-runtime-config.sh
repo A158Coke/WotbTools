@@ -114,6 +114,24 @@ reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:9999
 # the same fence with its own `frontend-upstream-yecao` fixture.
 reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.2:8087 http://business-api:8087 8087
 reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:8088 http://business-api:8087 8087
+# K6B-2C moves the Business API -> Keycloak Admin consumer onto the reviewed TX1
+# WireGuard endpoint, guarded by the same canonical HTTP validator. The reviewed
+# values (Docker-local, TX1 WG, TX2 WG) are accepted; a public host, the retired Yecao
+# address, the business app/management port, a non-http scheme, URL credentials, and a
+# path/query/fragment are refused before any Admin request or client secret can leave
+# the host.
+validate_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://keycloak:8080 http://keycloak:8080 8080
+validate_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://10.20.0.1:8080 http://keycloak:8080 8080
+validate_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://10.20.0.3:8080 http://keycloak:8080 8080
+reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL https://auth.wotbtools.com http://keycloak:8080 8080
+reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://keycloak.example.com:8080 http://keycloak:8080 8080
+reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://10.20.0.2:8080 http://keycloak:8080 8080
+reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://10.20.0.1:8088 http://keycloak:8080 8080
+reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL https://10.20.0.1:8080 http://keycloak:8080 8080
+reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://user:secret@10.20.0.1:8080 http://keycloak:8080 8080
+reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://10.20.0.1:8080/realms/wotbtools http://keycloak:8080 8080
+reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL 'http://10.20.0.1:8080?x=1' http://keycloak:8080 8080
+reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL 'http://10.20.0.1:8080#frag' http://keycloak:8080 8080
 validate_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.1 25432 business-postgres 5432 25432
 validate_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.3 15432 keycloak-postgres 5432 15432
 reject_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.2 25432 business-postgres 5432 25432

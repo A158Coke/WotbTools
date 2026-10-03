@@ -342,26 +342,31 @@ grep -Fq 'TX_RUNTIME_READY' <<< "$wg_ready_output"
 grep -Fq 'tx-logical-endpoints-declared: PASS' <<< "$wg_ready_output"
 grep -Fq 'tx-logical-endpoints-active: PASS' <<< "$wg_ready_output"
 
-# K6B-2B production steady state: two consumers are cut over (K6B-2A Frontend ->
-# Business API, K6B-2B Business API -> Business PostgreSQL) and every other dependency
-# is still Docker-local. The rendered contract, the running containers, and the gate
-# expectation all carry the same reviewed endpoints. This is the state the merged
-# K6B-2B must produce, so its acceptance tokens are asserted here, not only in
-# production. `k6b2b_placements` is reused by the false-green cases below so each of
-# them can only fail because of the single change it introduces.
-k6b2b_placements=(
+# K6B-2C production steady state: three consumers are cut over (K6B-2A Frontend ->
+# Business API, K6B-2B Business API -> Business PostgreSQL, K6B-2C Business API ->
+# Keycloak Admin) and every other dependency is still Docker-local. The rendered
+# contract, the running containers, and the gate expectation all carry the same
+# reviewed endpoints. This is the state the merged K6B-2C must produce, so its
+# acceptance tokens are asserted here, not only in production. `k6b2c_placements` is
+# reused by the false-green cases below so each of them can only fail because of the
+# single change it introduces.
+k6b2c_placements=(
   FAKE_FRONTEND_UPSTREAM=http://10.20.0.1:8087
   FAKE_RUNNING_FRONTEND_UPSTREAM=http://10.20.0.1:8087
   FAKE_BUSINESS_DB_HOST=10.20.0.1 FAKE_BUSINESS_DB_PORT=25432
   FAKE_RUNNING_BUSINESS_DB_HOST=10.20.0.1 FAKE_RUNNING_BUSINESS_DB_PORT=25432
+  FAKE_KEYCLOAK_ADMIN_SERVER_URL=http://10.20.0.1:8080
+  FAKE_RUNNING_KEYCLOAK_ADMIN_SERVER_URL=http://10.20.0.1:8080
   TX_BACKEND_UPSTREAM=http://10.20.0.1:8087
   TX_BUSINESS_DB_HOST=10.20.0.1 TX_BUSINESS_DB_PORT=25432
+  TX_KEYCLOAK_ADMIN_SERVER_URL=http://10.20.0.1:8080
 )
-k6b2b_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2b_placements[@]}")"
-grep -Fq 'TX_RUNTIME_READY' <<< "$k6b2b_output" \
-  || { echo "FAIL: the K6B-2B placement must be ready (output: $k6b2b_output)" >&2; exit 1; }
-# The business tokens prove the real read path through the new database placement, not
-# just that the socket is reachable.
+k6b2c_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2c_placements[@]}")"
+grep -Fq 'TX_RUNTIME_READY' <<< "$k6b2c_output" \
+  || { echo "FAIL: the K6B-2C placement must be ready (output: $k6b2c_output)" >&2; exit 1; }
+# The Keycloak/business tokens prove real behaviour behind the new placements: the
+# business read path through the new database placement, the Keycloak auth surface, and
+# the gate's own Keycloak Admin REST query.
 for token in \
   'tx-logical-endpoints-declared: PASS' \
   'tx-logical-endpoints-active: PASS' \
@@ -372,10 +377,16 @@ for token in \
   'business-profile: PASS' \
   'business-hof: PASS' \
   'hof-replay-storage: PASS' \
+  'keycloak: PASS' \
+  'auth-token: PASS' \
+  'anonymous-rejected: PASS' \
+  'admin-authz: PASS' \
+  'qq-idp-admin-api: PASS' \
   'frontend: PASS' \
-  'caddy-frontend: PASS'; do
-  grep -Fq "$token" <<< "$k6b2b_output" \
-    || { echo "FAIL: K6B-2B must report '$token' (output: $k6b2b_output)" >&2; exit 1; }
+  'caddy-frontend: PASS' \
+  'caddy-keycloak: PASS'; do
+  grep -Fq "$token" <<< "$k6b2c_output" \
+    || { echo "FAIL: K6B-2C must report '$token' (output: $k6b2c_output)" >&2; exit 1; }
 done
 
 grep -Fq 'tx-alloy-config: PASS' <<< "$ready_output"
@@ -470,45 +481,47 @@ run_gate_failure "frontend-ai-upstream-business-api" 'tx-logical-endpoints-decla
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=http://business-api:8087
 run_gate_failure "frontend-ai-upstream-public" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=https://ai.example.test
-# K6B-2B declared behind expectation: the gate expects the reviewed WireGuard
-# placement for the database consumer while the staged Compose file still renders
+# K6B-2B reverted: the database consumer is back on Docker-local while its reviewed
+# placement is WireGuard, so the declared contract must fail.
+run_gate_failure "k6b2b-database-reverted" 'tx-logical-endpoints-declared: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2c_placements[@]}" \
+  FAKE_BUSINESS_DB_HOST=business-postgres FAKE_BUSINESS_DB_PORT=5432
+# K6B-2C declared behind expectation: the gate expects the reviewed WireGuard placement
+# for the Keycloak Admin consumer while the staged Compose file still renders
 # Docker-local. The declared contract must fail instead of being tolerated as "both
 # values are allowlisted".
-run_gate_failure "k6b2b-declared-placement-behind-expectation" 'tx-logical-endpoints-declared: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2b_placements[@]}" \
-  FAKE_BUSINESS_DB_HOST=business-postgres FAKE_BUSINESS_DB_PORT=5432
+run_gate_failure "k6b2c-keycloak-admin-declared-behind-expectation" 'tx-logical-endpoints-declared: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2c_placements[@]}" \
+  FAKE_KEYCLOAK_ADMIN_SERVER_URL=http://keycloak:8080
 # K6B-2A reverted: the Frontend consumer is back on Docker-local while its reviewed
 # placement is WireGuard. A silently reverted cutover must fail, not pass.
 run_gate_failure "k6b2a-frontend-reverted" 'tx-logical-endpoints-declared: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2b_placements[@]}" \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2c_placements[@]}" \
   FAKE_FRONTEND_UPSTREAM=http://business-api:8087
 # Consumers that are NOT cut over yet keep their Docker-local placement: an early
-# K6B-2C (Keycloak admin), K6B-2D (Keycloak database) or K6B-2E/2F (Caddy upstreams)
-# cutover is allowlist-legal but not the reviewed placement, so it must fail. Without
-# these, "one consumer per step" would be a promise instead of a contract.
-run_gate_failure "k6b2c-keycloak-admin-cut-over-early" 'tx-logical-endpoints-declared: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2b_placements[@]}" \
-  FAKE_KEYCLOAK_ADMIN_SERVER_URL=http://10.20.0.1:8080
+# K6B-2D (Keycloak database) or K6B-2E/2F (Caddy upstreams) cutover is allowlist-legal
+# but not the reviewed placement, so it must fail. Without these, "one consumer per
+# step" would be a promise instead of a contract.
 run_gate_failure "k6b2d-keycloak-db-cut-over-early" 'tx-logical-endpoints-declared: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2b_placements[@]}" \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2c_placements[@]}" \
   FAKE_KEYCLOAK_DB_URL=jdbc:postgresql://10.20.0.1:15432/keycloak
 run_gate_failure "k6b2e-caddy-frontend-cut-over-early" 'tx-logical-endpoints-declared: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2b_placements[@]}" \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2c_placements[@]}" \
   FAKE_CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081
 run_gate_failure "k6b2f-caddy-keycloak-cut-over-early" 'tx-logical-endpoints-declared: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2b_placements[@]}" \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2c_placements[@]}" \
   FAKE_CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080
 # ... and the running gateway must not be moved ahead of its reviewed placement either.
 run_gate_failure "k6b2e-caddy-frontend-active-cut-over-early" 'tx-logical-endpoints-active: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2b_placements[@]}" \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2c_placements[@]}" \
   FAKE_RUNNING_CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081
 # The Yecao AI upstream is not a TX placement consumer: moving it to a TX WireGuard
 # address must fail on both contracts.
 run_gate_failure "ai-upstream-moved-to-tx-wg" 'tx-logical-endpoints-declared: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2b_placements[@]}" \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2c_placements[@]}" \
   FAKE_FRONTEND_AI_UPSTREAM=http://10.20.0.1:8089
 run_gate_failure "ai-upstream-moved-active" 'tx-logical-endpoints-active: FAIL' \
-  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2b_placements[@]}" \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2c_placements[@]}" \
   FAKE_RUNNING_FRONTEND_AI_UPSTREAM=http://10.20.0.1:8089
 run_gate_failure "active-placement-public-host" 'tx-logical-endpoints-active: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_RUNNING_FRONTEND_UPSTREAM=https://api.example.invalid
@@ -538,16 +551,17 @@ run_gate_failure "active-keycloak-issuer" 'tx-logical-endpoints-active: FAIL' \
 run_gate_failure "active-container-missing" 'tx-logical-endpoints-active: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_NO_RUNNING_CONTAINER=caddy
 
-# The K6B-2B false green this gate exists to refuse: the invocation and the staged
-# Compose file both carry the reviewed WireGuard placement while the containers that
+# The K6B-2C false green this gate exists to refuse: the invocation and the staged
+# Compose file both carry the reviewed WireGuard placements while the containers that
 # are actually running still dial Docker-local. Both sides are healthy, so only the
 # active contract can catch it - and the declared contract must still pass, otherwise
 # the fixture would be failing for the wrong reason.
 set +e
 stale_active_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
-  "${k6b2b_placements[@]}" \
+  "${k6b2c_placements[@]}" \
   FAKE_RUNNING_FRONTEND_UPSTREAM=http://business-api:8087 \
-  FAKE_RUNNING_BUSINESS_DB_HOST=business-postgres FAKE_RUNNING_BUSINESS_DB_PORT=5432)"
+  FAKE_RUNNING_BUSINESS_DB_HOST=business-postgres FAKE_RUNNING_BUSINESS_DB_PORT=5432 \
+  FAKE_RUNNING_KEYCLOAK_ADMIN_SERVER_URL=http://keycloak:8080)"
 stale_active_rc=$?
 set -e
 [ "$stale_active_rc" -ne 0 ] \
