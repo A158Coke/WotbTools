@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -343,6 +344,29 @@ internal class AuthManager private constructor(context: Context) {
     }
 
     /**
+     * AppAuth 回程 `PendingIntent` 的 flag 策略（**只**用于 AppAuth 的回程，不要外推到其它
+     * PendingIntent）。
+     *
+     * AppAuth 的 `AuthorizationManagementActivity` 并不复用调用方给的 Intent：它先组装一个新的
+     * 响应 Intent（`AuthorizationResponse.EXTRA_RESPONSE` / `AuthorizationException.EXTRA_EXCEPTION`
+     * 两个 extra + 完整 redirect URI 作为 data），再用
+     * `callback.send(context, 0, responseData)` 交给调用方的 completion `PendingIntent`。
+     * 因此这个 PendingIntent **必须允许 AppAuth 填入自己的 Intent**：
+     *
+     *  - `FLAG_IMMUTABLE` 冻结创建时的 Intent，`send(..., fillInIntent)` 的填充会被静默忽略 ⇒
+     *    `MainActivity.isAuthorizationIntent()` 看不到 response/exception extra，回程被当成一次普通
+     *    启动，授权码永远不会被交换（真机表现：浏览器里认证成功，App 里始终未登录）。
+     *  - `FLAG_MUTABLE` 自 API 31 起存在；minSdk 26 必须按版本降级 —— 31 以下不存在「不可变」默认，
+     *    `FLAG_UPDATE_CURRENT` 本身就允许填充。
+     *
+     * 基础 Intent 仍然必须是**显式组件**（`Intent(appContext, activityClass())`）：可变的是
+     * 「允许 AppAuth 填 extras」，而不是「允许任意应用隐式解析到这个 PendingIntent」。
+     */
+    private fun appAuthCallbackFlags(): Int =
+        PendingIntent.FLAG_UPDATE_CURRENT or
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+
+    /**
      * 把请求交给 external user-agent。主线程调用：库内部走 `startActivity`。
      *
      * @param transactionState 这笔交易的 `state`：启动失败时用它做身份匹配的清理，绝不误清
@@ -353,7 +377,7 @@ internal class AuthManager private constructor(context: Context) {
             appContext,
             REQUEST_CODE_LOGIN,
             Intent(appContext, activityClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            appAuthCallbackFlags()
         )
         try {
             authorizationService().performAuthorizationRequest(request, completionIntent)
@@ -594,7 +618,7 @@ internal class AuthManager private constructor(context: Context) {
                 appContext,
                 REQUEST_CODE_END_SESSION,
                 Intent(appContext, activityClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                appAuthCallbackFlags()
             )
             authorizationService().performEndSessionRequest(builder.build(), completionIntent)
             Log.d(TAG, "auth-end-session launched")
