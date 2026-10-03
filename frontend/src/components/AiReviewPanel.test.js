@@ -3,7 +3,7 @@
 import { gunzipSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 import AiReviewPanel from './AiReviewPanel.vue'
 
 vi.mock('vue-i18n', () => ({
@@ -14,9 +14,12 @@ vi.mock('vue-i18n', () => ({
   })
 }))
 
+/** 角色由测试改写：`tokenParsed` 是 ref，组件只读 `realm_access.roles`。 */
+const authToken = ref({ realm_access: { roles: ['wotbtools-user'] } })
+
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
-    tokenParsed: { value: { realm_access: { roles: ['wotbtools-user'] } } },
+    tokenParsed: authToken,
     token: () => 'test-token',
     ensureToken: vi.fn().mockResolvedValue(true),
     login: vi.fn(),
@@ -39,7 +42,8 @@ const projectionB = { battle: { id: 'battle-B' }, projection: { id: 'proj-B' } }
  * 统一的挂载 helper：
  *  - ReplayAnalysisAction 被替换为保留相同 DOM 契约（.ai-action > .lg）的 stub，
  *    使「Action 与 Result 同属 .ai-review-panel」布局断言与点击驱动测试共用同一 mount；
- *  - AnalysisResultPanel 同样 stub 以暴露 .result-stub。
+ *  - AnalysisResultPanel 同样 stub 以暴露 .result-stub；
+ *  - Banner / AppButton 用真实组件：失败态文案与动作必须由真实渲染证明（design-language §10）。
  */
 function mountPanel(props = {}) {
   return mount(AiReviewPanel, {
@@ -132,11 +136,12 @@ describe('AiReviewPanel workspace layout ownership', () => {
     const wrapper = mountPanel()
     const panel = wrapper.find('.ai-review-panel')
 
-    // 流式状态：.streaming-panel 渲染在 .ai-review-panel 内部
+    // 流式状态：.ai-streaming 渲染在 .ai-review-panel 内部
     wrapper.vm.analyzing = true
     await nextTick()
-    expect(panel.find('.streaming-panel').exists()).toBe(true)
-    expect(wrapper.find('.streaming-panel').element.parentElement.classList.contains('ai-review-panel')).toBe(true)
+    expect(panel.find('.ai-streaming').exists()).toBe(true)
+    expect(wrapper.find('.ai-streaming').element.parentElement.classList.contains('ai-review-panel')).toBe(true)
+    expect(panel.find('.stream-spinner').exists()).toBe(true)
 
     // 结果状态：AnalysisResultPanel 渲染在 .ai-review-panel 内部
     wrapper.vm.analyzing = false
@@ -204,7 +209,7 @@ describe('AiReviewPanel projection request', () => {
     [503, 'SERVICE_UNAVAILABLE', 'errors.service_unavailable'],
     [504, 'UPSTREAM_TIMEOUT', 'errors.upstream_timeout'],
     [500, 'INTERNAL_ERROR', 'errors.internal_error'],
-    [502, 'AI_REVIEW_SCHEMA_FAILED', 'errors.ai_review_schema_failed'],
+    [502, 'AI_REVIEW_SCHEMA_FAILED', 'recon.errors.AI_REVIEW_SCHEMA_FAILED'],
   ])('HTTP %s renders the canonical AI error category', async (status, code, messageKey) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
@@ -216,8 +221,9 @@ describe('AiReviewPanel projection request', () => {
     }))
     const wrapper = mountPanel({ projection: projectionA })
     await wrapper.find('.ai-analyze').trigger('click')
-    await vi.waitFor(() => expect(wrapper.vm.error).toContain(messageKey))
-    expect(wrapper.vm.error).toContain(`err-${status}`)
+    await vi.waitFor(() => expect(wrapper.vm.failure).toBeTruthy())
+    expect(wrapper.vm.failure.message).toContain(messageKey)
+    expect(wrapper.vm.failure.id).toBe(`err-${status}`)
     vi.unstubAllGlobals()
   })
 
@@ -225,14 +231,16 @@ describe('AiReviewPanel projection request', () => {
     const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) }
     vi.stubGlobal('navigator', { clipboard })
     const wrapper = mountPanel({ projection: projectionA })
-    wrapper.vm.error = 'errors.ai_review_grounding_failed'
-    wrapper.vm.errorId = 'corr-123'
+    wrapper.vm.failure = {
+      kind: 'upstream', code: 'AI_REVIEW_GROUNDING_FAILED', id: 'corr-123',
+      message: 'recon.errors.AI_REVIEW_GROUNDING_FAILED',
+    }
     await nextTick()
 
     const errorPanel = wrapper.find('[data-test="ai-error"]')
-    expect(errorPanel.text()).toContain('errors.ai_review_grounding_failed')
+    expect(errorPanel.text()).toContain('recon.errors.AI_REVIEW_GROUNDING_FAILED')
     expect(errorPanel.text()).toContain('diagnostic:corr-123')
-    await errorPanel.find('button').trigger('click')
+    await errorPanel.find('.ai-failure-copy').trigger('click')
     await flushPromises()
     expect(clipboard.writeText).toHaveBeenCalledWith('corr-123')
     expect(errorPanel.text()).toContain('errors.diagnostic_id_copied')
@@ -248,8 +256,8 @@ describe('AiReviewPanel projection request', () => {
     await wrapper.find('.ai-analyze').trigger('click')
     await flushPromises()
 
-    expect(wrapper.vm.error).toContain('errors.ai_review_grounding_failed')
-    expect(wrapper.vm.errorId).toBe('corr-123')
+    expect(wrapper.vm.failure.message).toContain('recon.errors.AI_REVIEW_GROUNDING_FAILED')
+    expect(wrapper.vm.failure.id).toBe('corr-123')
     vi.unstubAllGlobals()
   })
 
@@ -272,7 +280,8 @@ describe('AiReviewPanel projection request', () => {
     await vi.advanceTimersByTimeAsync(1_100_000)
     await flushPromises()
 
-    expect(wrapper.vm.error).toBe('recon.errors.AI_TIMEOUT')
+    expect(wrapper.vm.failure.kind).toBe('timeout')
+    expect(wrapper.vm.failure.message).toBe('recon.errors.AI_TIMEOUT')
     expect(wrapper.vm.analyzing).toBe(false)
     vi.unstubAllGlobals()
     vi.useRealTimers()
@@ -293,7 +302,7 @@ describe('AiReviewPanel projection request', () => {
 
     expect(fetchMock).not.toHaveBeenCalled()
     expect(wrapper.vm.analyzing).toBe(false)
-    expect(wrapper.find('.error').exists()).toBe(false)
+    expect(wrapper.find('[data-test="ai-error"]').exists()).toBe(false)
     const status = wrapper.find('[data-test="ai-projection-status"]')
     expect(status.exists()).toBe(true)
     expect(status.text()).toContain('workspace.dataset_preparing')
@@ -309,17 +318,22 @@ describe('AiReviewPanel projection readiness', () => {
     const status = wrapper.find('[data-test="ai-projection-status"]')
     expect(status.exists()).toBe(true)
     expect(status.text()).toContain('workspace.dataset_preparing')
-    expect(status.find('.stream-spinner').exists()).toBe(true)
     expect(wrapper.find('.ai-projection-error').exists()).toBe(false)
   })
 
-  it('projectionError 存在 → 展示该已本地化文案并带 ai-projection-error class（不再显示 spinner）', () => {
+  it('projectionError 存在 → 展示该已本地化文案并提供重建投影动作', async () => {
     const wrapper = mountPanel({ projection: null, projectionError: 'errors.replay_parse_failed' })
     const status = wrapper.find('[data-test="ai-projection-status"]')
     expect(status.exists()).toBe(true)
-    expect(status.text()).toBe('errors.replay_parse_failed')
-    expect(status.find('.ai-projection-error').exists()).toBe(true)
-    expect(status.find('.stream-spinner').exists()).toBe(false)
+    expect(status.text()).toContain('errors.replay_parse_failed')
+    expect(status.classes()).toContain('is-danger')
+    await wrapper.find('[data-testid="ai-projection-retry"]').trigger('click')
+    expect(wrapper.emitted('rebuild-projection')).toHaveLength(1)
+  })
+
+  it('投影准备中 → info 语气（不是错误）', () => {
+    const wrapper = mountPanel({ projection: null })
+    expect(wrapper.find('[data-test="ai-projection-status"]').classes()).toContain('is-info')
   })
 
   it('projection 就绪后不再渲染准备态状态块', () => {
@@ -338,14 +352,149 @@ describe('AiReviewPanel projection readiness', () => {
     await flushPromises()
 
     // 用户可见文案被本地化，且诊断 ID 可用于排障。
-    expect(wrapper.vm.error).toContain('errors.ai_timeline_unusable')
-    expect(wrapper.vm.error).toContain('diagnostic:corr-404')
-    expect(wrapper.vm.errorId).toBe('corr-404')
+    expect(wrapper.vm.failure.message).toContain('errors.ai_timeline_unusable')
+    expect(wrapper.vm.failure.id).toBe('corr-404')
     expect(wrapper.find('[data-test="ai-error"]').text()).toContain('errors.ai_timeline_unusable')
     expect(wrapper.vm.analyzing).toBe(false)
     // 投影（dataset identity）已由本地解析层拥有：组件不得再发 recover 事件。
     expect(wrapper.emitted('dataset-recover')).toBeFalsy()
     expect(wrapper.emitted('seek')).toBeFalsy()
+    vi.unstubAllGlobals()
+  })
+})
+
+// ---- 失败态归类（design-language §10）：每个失败必须说清发生了什么 + 下一步 ----
+
+describe('AiReviewPanel failure states', () => {
+  it.each([
+    [503, 'AI_REVIEW_BUSY', 'busy', 'recon.errors.AI_REVIEW_BUSY'],
+    [502, 'AI_UPSTREAM_UNAVAILABLE', 'upstream', 'errors.ai_upstream_unavailable'],
+    [502, 'AI_NOT_CONFIGURED', 'not_configured', 'recon.errors.AI_NOT_CONFIGURED'],
+  ])('HTTP %s %s → kind=%s 文案=%s', async (status, code, kind, messageKey) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status,
+      text: async () => JSON.stringify({
+        errorCode: code, errorMsg: null, status, id: `err-${status}`,
+        retryable: false, details: {}, timestamp: '2026-08-30T15:30:00Z'
+      })
+    }))
+    const wrapper = mountPanel({ projection: projectionA })
+    await wrapper.find('.ai-analyze').trigger('click')
+    await vi.waitFor(() => expect(wrapper.vm.failure).toBeTruthy())
+    expect(wrapper.vm.failure.kind).toBe(kind)
+    expect(wrapper.vm.failure.message).toContain(messageKey)
+    vi.unstubAllGlobals()
+  })
+
+  it('网络不可达 → upstream 失败态，并声明其它分析功能不受影响', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    const wrapper = mountPanel({ projection: projectionA })
+    await wrapper.find('.ai-analyze').trigger('click')
+    await vi.waitFor(() => expect(wrapper.vm.failure).toBeTruthy())
+    expect(wrapper.vm.failure.kind).toBe('upstream')
+    const banner = wrapper.find('[data-test="ai-error"]')
+    expect(banner.text()).toContain('errors.network_error')
+    expect(banner.text()).toContain('recon.failure_scope_note')
+    vi.unstubAllGlobals()
+  })
+
+  it('成功响应但未收到 done（断流）→ 返回格式异常，不静默成功', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(emptySseResponse()))
+    const wrapper = mountPanel({ projection: projectionA })
+    await wrapper.find('.ai-analyze').trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.failure.kind).toBe('malformed')
+    expect(wrapper.vm.failure.message).toBe('recon.errors.AI_RESPONSE_INVALID')
+    expect(wrapper.vm.analysisResult).toBeNull()
+    vi.unstubAllGlobals()
+  })
+
+  it('用户取消 → 中性 info 失败态，不是错误；可重试', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
+      if (String(url).includes('/cancel')) return Promise.resolve({ ok: true, status: 200 })
+      return new Promise((resolve, reject) => {
+        options.signal.addEventListener('abort', () => {
+          const aborted = new Error('aborted')
+          aborted.name = 'AbortError'
+          reject(aborted)
+        }, { once: true })
+      })
+    }))
+    const wrapper = mountPanel({ projection: projectionA })
+    await wrapper.find('.ai-analyze').trigger('click')
+    await nextTick()
+    await wrapper.find('.ai-cancel').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.vm.failure.kind).toBe('cancelled')
+    expect(wrapper.vm.failure.message).toBe('recon.cancelled')
+    expect(wrapper.find('[data-testid="ai-retry"]').exists()).toBe(false)
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('未归类的原始运行时错误不进入 UI：只显示 canonical 文案，原文进 console', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const wrapper = mountPanel({ projection: projectionA })
+    const run = {
+      controller: new AbortController(), correlationId: 'corr-raw', startedAt: Date.now(),
+      timeoutTimer: null, cancelRequested: false, timedOut: false,
+    }
+    // 直接覆盖兜底分支：任何不属于契约错误码的原始异常都必须先归类，绝不能把 message 交给用户。
+    const failure = wrapper.vm.__classify(new Error('Component is missing template or render function'), run)
+
+    expect(failure.kind).toBe('client')
+    expect(failure.message).toBe('recon.errors.AI_CLIENT_ERROR')
+    expect(failure.message).not.toContain('missing template')
+    // 原始 Error 不带契约诊断信息 → 不编造 ID；有 id 时才展示
+    expect(failure.id).toBe('')
+    expect(warn).toHaveBeenCalled()
+
+    // 该文案真实渲染到 Banner，且不出现原始异常文本
+    wrapper.vm.failure = failure
+    await nextTick()
+    const banner = wrapper.find('[data-test="ai-error"]')
+    expect(banner.text()).toContain('recon.errors.AI_CLIENT_ERROR')
+    expect(banner.text()).not.toContain('missing template')
+    warn.mockRestore()
+  })
+
+  it('已登录但缺 realm role → 显式权限态，不渲染 Analyze、不发请求、不给重试', async () => {
+    authToken.value = { realm_access: { roles: ['some-other-role'] } }
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountPanel({ projection: projectionA })
+    await nextTick()
+
+    const permission = wrapper.find('[data-testid="ai-permission-required"]')
+    expect(permission.exists()).toBe(true)
+    expect(permission.text()).toContain('recon.permission_missing')
+    expect(wrapper.find('.ai-action-row').exists()).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    // 权限恢复后必须立刻可用（不是被永久藏起来）
+    authToken.value = { realm_access: { roles: ['wotbtools-admin'] } }
+    await nextTick()
+    expect(wrapper.find('.ai-action-row').exists()).toBe(true)
+    authToken.value = { realm_access: { roles: ['wotbtools-user'] } }
+    vi.unstubAllGlobals()
+  })
+
+  it('失败后已到达的部分正文不丢弃，但明确标注不完整', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseFromFrames(
+      sseFrame('call2_token', { delta: '已生成的一半' }),
+      sseFrame('error', { id: 'corr-9', errorCode: 'AI_UPSTREAM_UNAVAILABLE', errorMsg: null }),
+    )))
+    const wrapper = mountPanel({ projection: projectionA })
+    await wrapper.find('.ai-analyze').trigger('click')
+    await flushPromises()
+
+    const partial = wrapper.find('[data-testid="ai-partial"]')
+    expect(partial.exists()).toBe(true)
+    expect(partial.text()).toContain('已生成的一半')
+    expect(partial.text()).toContain('recon.partial_incomplete')
     vi.unstubAllGlobals()
   })
 })
@@ -413,7 +562,7 @@ describe('AiReviewPanel projection identity ownership', () => {
     expect(wrapper.vm.analysisResult).toBeNull('旧 A 的 analysisResult 不得写回')
     expect(wrapper.vm.partialAnalysis).toBe('')
     expect(wrapper.vm.progressStage).toBe('', '旧 A 的迟到事件不得写 progressStage')
-    expect(wrapper.vm.error).toBe('')
+    expect(wrapper.vm.failure).toBeNull()
     vi.unstubAllGlobals()
   })
 
@@ -430,7 +579,7 @@ describe('AiReviewPanel projection identity ownership', () => {
 
     dA.reject(new Error('OLD_A_ERROR'))
     await flushPromises()
-    expect(wrapper.vm.error).toBe('', 'stale A 的错误不得污染新投影')
+    expect(wrapper.vm.failure).toBeNull('stale A 的错误不得污染新投影')
     expect(wrapper.vm.analysisResult).toBeNull()
     vi.unstubAllGlobals()
   })
@@ -560,7 +709,7 @@ describe('AiReviewPanel per-run context', () => {
     sseB._release({ done: false, value: new TextEncoder().encode('') }) // 唤醒流循环检查墙钟 deadline
     await flushPromises()
 
-    expect(wrapper.vm.error).toBe('recon.errors.AI_TIMEOUT', 'B 的 timeout 语义必须保留')
+    expect(wrapper.vm.failure.message).toBe('recon.errors.AI_TIMEOUT', 'B 的 timeout 语义必须保留')
     expect(wrapper.vm.analyzing).toBe(false)
     const urls = cancelCalls(fetchMock)
     expect(urls).toContain(cancelUrl(bCorr))
