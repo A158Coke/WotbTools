@@ -1,0 +1,97 @@
+name: Ops / TX Runtime Check
+run-name: Ops / TX runtime check by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  runtime_check:
+    name: TX_RUNTIME_READY
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: tx-production
+    steps:
+      - name: Reject non-main dispatch
+        shell: bash
+        env:
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [ "$EVENT_REF" = refs/heads/main ] || {
+            echo 'TX runtime check must be dispatched from main.' >&2
+            exit 1
+          }
+
+      - name: Run read-only TX runtime gate
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 12m
+          envs: TX_RUNTIME_ROOT,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET
+          script: |
+            set -Eeuo pipefail
+            runtime=/opt/wotb-tx/deploy/runtime-check.sh
+            lock_wrapper=/opt/wotb-tx/deploy/with-deploy-lock.sh
+            test -f "$runtime"
+            test -f "$lock_wrapper"
+
+            running_image() {
+              local service="$1" id
+              id="$(docker ps --filter label=com.docker.compose.project=deploy --filter "label=com.docker.compose.service=$service" --format '{{.ID}}' | head -n 1)"
+              [ -n "$id" ] || { echo "TX runtime service is not running: $service" >&2; return 1; }
+              docker inspect --format '{{.Config.Image}}' "$id"
+            }
+
+            export TX_FRONTEND_IMAGE_REF="$(running_image wotb-frontend)"
+            export TX_BUSINESS_API_IMAGE_REF="$(running_image business-api)"
+
+            assert_digest_image() {
+              local actual="$1" repository="$2" digest
+              case "$actual" in
+                "$TX_IMAGE_REGISTRY_PREFIX/$repository@sha256:"*) ;;
+                *) echo "Running image is not the expected TCR digest-pinned image: $repository" >&2; return 1 ;;
+              esac
+              digest="$(printf '%s' "$actual" | sed -n 's/^.*@sha256://p')"
+              [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || {
+                echo "Running image has an invalid sha256 digest: $repository" >&2
+                return 1
+              }
+            }
+            assert_digest_image "$TX_FRONTEND_IMAGE_REF" wotbtools-frontend
+            assert_digest_image "$TX_BUSINESS_API_IMAGE_REF" wotbtools-business-api
+
+            set +e
+            output="$(bash "$lock_wrapper" bash "$runtime" 2>&1)"
+            status=$?
+            set -e
+            printf '%s\n' "$output"
+            [ "$status" -eq 0 ] || exit "$status"
+            grep -Fxq 'TX_RUNTIME_READY' <<< "$output"
+        env:
+          TX_RUNTIME_ROOT: /opt/wotb-tx
+          TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
+          KC_POSTGRES_ADMIN_USER: kc_admin
+          KC_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}
+          KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
+          KC_DB_USERNAME: keycloak
+          KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
+          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+          CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
+          TX_BUSINESS_POSTGRES_ADMIN_USER: ${{ vars.TX_BUSINESS_POSTGRES_ADMIN_USER }}
+          TX_BUSINESS_POSTGRES_ADMIN_PASSWORD: ${{ secrets.TX_BUSINESS_POSTGRES_ADMIN_PASSWORD }}
+          TX_BUSINESS_DB_NAME: ${{ vars.TX_BUSINESS_DB_NAME }}
+          TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
+          TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+          KEYCLOAK_E2E_CLIENT_SECRET: ${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}
