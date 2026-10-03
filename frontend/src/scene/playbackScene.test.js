@@ -14,13 +14,15 @@
  * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createPlaybackStore } from './playbackStore.js'
 
-const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), resolveMapKey: vi.fn() }))
+const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
 vi.mock('./replaySource.js', () => ({
   loadPlaybackData: source.loadPlaybackData,
   resolveMapKey: source.resolveMapKey,
-  mapStaticUrl: () => null,
+  mapStaticUrl: source.mapStaticUrl,
 }))
 
 /**
@@ -36,6 +38,7 @@ vi.mock('three', async (importOriginal) => {
       this.toneMapping = 0
       this.toneMappingExposure = 1
       this.shadowMap = { enabled: false }
+      this.capabilities = { getMaxAnisotropy: () => 8 }
     }
     setSize() {}
     setPixelRatio() {}
@@ -89,6 +92,9 @@ function track(d) {
 beforeEach(() => {
   source.loadPlaybackData.mockReset()
   source.resolveMapKey.mockReset()
+  source.mapStaticUrl.mockReset()
+  source.mapStaticUrl.mockReturnValue(null)
+  window.history.replaceState(null, '', '/?debug&q=low')
   source.loadPlaybackData.mockImplementation(() => new Promise(() => {}))
   source.resolveMapKey.mockImplementation(() => Promise.resolve(null))
   api = null
@@ -104,6 +110,9 @@ afterEach(async () => {
   created = []
   pending = []
   document.body.innerHTML = ''
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  window.history.replaceState(null, '', '/')
 })
 
 function createScene(existingStore = null) {
@@ -234,44 +243,37 @@ describe('playbackScene 被销毁实例不得再写共享 store', () => {
   })
 })
 
-/**
- * 资产阶段竞态（review blocker 2）：`startPlayback()` 的 await 之后被取代时，
- * 不得继续 buildVehicles / buildRoster / setPlaying / tick / writeHud 并标 ready。
- *
- * 挂起点用 `loadMapImage()` 内部真实的资产请求 await（`fetch(mapUrl)`）——此时 A 已经
- * 走完「数据 → teardown → 资产解析 await → buildWorld → 进入资产阶段」，是真正的中途被取代。
- *
- * 可观测探针选 `store.mapName`：它写在 `initScene()` 之后、`loadMapImage()` 之前，
- * 因此**不依赖 WebGL**（happy-dom 里渲染器创建必然失败，`startTime` 等尾部写入不可达），
- * 却能精确回答「过期续体有没有继续跑自己的资产阶段」。
- */
+/** 真实驱动 loadMapImage 内部 await，外层预解析立即返回。 */
 describe('playbackScene 资产阶段过期续体', () => {
-  it('A 的资产阶段续体不得复活已被 B 取代的会话', async () => {
+  it.each(['same instance', 'destroy and recreate'])('A 的内部地图解析不得改写 B（%s）', async (mode) => {
     const store = createPlaybackStore()
     // A / B 使用可区分的地图名与时间轴起点：任何一处标记出现，就证明过期续体跑到了尾部
     source.loadPlaybackData
       .mockImplementationOnce(() => Promise.resolve(minimalData(917, 'map_a')))
       .mockImplementationOnce(() => Promise.resolve(minimalData(431, 'map_b')))
       .mockImplementation(() => Promise.resolve(minimalData(917, 'map_a')))
-    // 只挂起 A（第 1 次 loadMapImage 内的 resolveMapKey）；之后一律立即返回
+    // 第一次是 startPlayback 预解析，第二次才是 loadMapImage 内部解析
     const parkedA = track(deferred())
     source.resolveMapKey
+      .mockResolvedValueOnce('map_a')
       .mockImplementationOnce(() => parkedA.promise)
-      .mockImplementation(() => Promise.resolve(null))
+      .mockResolvedValue('map_b')
 
     const apiA = createInstance(store)
     const loadA = apiA.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
     // 等 A 停进资产阶段（A 在挂起点之前已写 mapName）
-    for (let i = 0; i < 30 && store.mapName !== 'map_a'; i++) await Promise.resolve()
-    if (store.mapName !== 'map_a') throw new Error('A 未进入资产阶段: ' + JSON.stringify({ err: String(store.err), loading: store.loading }))
+    await vi.waitFor(() => expect(source.resolveMapKey).toHaveBeenCalledTimes(2))
+    expect(store.assetStage).toBe(true)
     expect(store.loading).toBe(true)
 
     // A 被销毁（工作台切走 / file=null 的真实路径），随后 B 完整跑完
-    apiA.destroy()
-    const apiB = createInstance(store)
+    if (mode === 'destroy and recreate') apiA.destroy()
+    const apiB = mode === 'same instance' ? apiA : createInstance(store)
     await apiB.loadData({ kind: 'local', file: new File(['b'], 'b.wotbreplay') })
     expect(store.mapName).toBe('map_b')
     expect(store.startTime).toBe(431)
+    expect(store.mapKey).toBe('map_b')
+    expect(store.hasData).toBe(true)
 
     // 放行 A 的资产续体：会话身份已过期，必须立刻放弃
     parkedA.resolve('map_a')
@@ -279,6 +281,8 @@ describe('playbackScene 资产阶段过期续体', () => {
     // 过期续体必须放弃：A 的两个专属标记都不得被写回（B 已写完并保持）
     expect(store.mapName).toBe('map_b')      // 不是 'map_a'
     expect(store.startTime).toBe(431)
+    expect(store.mapKey).toBe('map_b')
+    expect(store.hasData).toBe(true)
   })
 
   it('未过期时资产阶段正常收尾（守住修复没有把正常路径一起关掉）', async () => {
@@ -307,13 +311,15 @@ describe('playbackScene 资产阶段过期续体', () => {
     // 资产阶段挂起，拿到句柄后再让「会话作废」，最后放行，模拟被取代的时序
     const parked = track(deferred())
     source.resolveMapKey
+      .mockResolvedValueOnce('map_a')
       .mockImplementationOnce(() => parked.promise)
-      .mockImplementation(() => Promise.resolve(null))
+      .mockResolvedValue(null)
 
     const only = createInstance(store)
     api = only
     const load = only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
-    for (let i = 0; i < 30 && store.mapName !== 'map_a'; i++) await Promise.resolve()
+    await vi.waitFor(() => expect(source.resolveMapKey).toHaveBeenCalledTimes(2))
+    expect(store.assetStage).toBe(true)
     expect(store.mapName).toBe('map_a')       // 已过入口复核、进入资产阶段
 
     // 会话作废（等价于新的 loadData / destroy 换掉会话身份），然后才放行资产阶段
@@ -326,5 +332,195 @@ describe('playbackScene 资产阶段过期续体', () => {
     expect(store.startTime).toBe(epochBefore)  // 不是 917
     expect(store.playing).toBe(false)          // 不得自行开始播放
     expect(store.hasData).toBe(false)
+  })
+})
+
+/** 同一实例替换：B 的资源引用与高度场不得被 A 的迟到结果覆盖。 */
+describe('playbackScene 资产发布顺序', () => {
+  function prepareAssets(kinds) {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    source.resolveMapKey.mockResolvedValue('probe_map')
+    source.mapStaticUrl.mockImplementation((kind) => kinds.includes(kind) ? '/assets/' + kind : null)
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:asset')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  }
+
+  it('迟到底图只 dispose A；B 的当前贴图引用仍由会话持有', async () => {
+    prepareAssets(['map'])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, headers: new Headers(), blob: async () => new Blob(['map']),
+    }))
+    const textureA = new THREE.Texture()
+    const textureB = new THREE.Texture()
+    const disposeA = vi.spyOn(textureA, 'dispose')
+    const disposeB = vi.spyOn(textureB, 'dispose')
+    const parked = track(deferred())
+    const loader = vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync')
+      .mockImplementationOnce(() => parked.promise)
+      .mockResolvedValue(textureB)
+    const { api, store } = createScene()
+    const loadA = api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    await vi.waitFor(() => expect(loader).toHaveBeenCalledTimes(1))
+    await api.loadData({ kind: 'local', file: new File(['b'], 'b') })
+    expect(store.hasData).toBe(true)
+    const groundB = window.__scene.children.find((o) => o.material?.map === textureB)
+    expect(groundB).toBeDefined()
+
+    parked.resolve(textureA)
+    await loadA
+    expect(disposeA).toHaveBeenCalledTimes(1)
+    expect(disposeB).not.toHaveBeenCalled()
+    expect(groundB.material.map).toBe(textureB)
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2)
+    // 当前贴图同时被地面材质与会话引用持有，teardown 会分别释放它。
+    // 若旧续体把 mapTexture 置 null，第二次释放就缺失。
+    api.destroy()
+    expect(disposeB).toHaveBeenCalledTimes(2)
+    created = []
+  })
+
+  it('迟到 terrain arrayBuffer 不得覆盖 B 正在提交的高度场', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    prepareAssets(['terrain', 'terrain-meta', 'groundmeta'])
+    const parkedBuffer = track(deferred())
+    const parkedGround = track(deferred())
+    const readBuffer = vi.fn()
+      .mockImplementationOnce(() => parkedBuffer.promise)
+      .mockResolvedValue(new Uint16Array([0, 0, 0, 0]).buffer)
+    const groundFetch = vi.fn().mockImplementationOnce(() => parkedGround.promise)
+      .mockResolvedValue({ ok: false })
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (url.endsWith('terrain-meta')) return { ok: true, json: async () => ({ size: 2, span: 600, zmin: 20, zmax: 100 }) }
+      if (url.endsWith('terrain')) return { ok: true, arrayBuffer: readBuffer }
+      if (url.endsWith('groundmeta')) return groundFetch()
+      throw new Error('unexpected asset ' + url)
+    }))
+    const { api, store } = createScene()
+    const loadA = api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    await vi.waitFor(() => expect(readBuffer).toHaveBeenCalledTimes(1))
+    const loadB = api.loadData({ kind: 'local', file: new File(['b'], 'b') })
+    await vi.waitFor(() => expect(groundFetch).toHaveBeenCalledTimes(1))
+    parkedBuffer.resolve(new Uint16Array([65535, 65535, 65535, 65535]).buffer)
+    await loadA
+    expect(store.loading).toBe(true)
+    parkedGround.resolve({ ok: false })
+    await loadB
+    const terrain = window.__scene.children.find((o) => o.isMesh && o.geometry.type === 'PlaneGeometry' && o.geometry.attributes.position.count > 4)
+    expect(terrain).toBeDefined()
+    expect(terrain.geometry.attributes.position.getZ(0)).toBeCloseTo(20)
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+  })
+
+  it('迟到 scenery GLB 不入 B 场景，且释放局部资源与隔离进度', async () => {
+    window.history.replaceState(null, '', '/?debug&q=mid')
+    prepareAssets(['scenery'])
+    const gltfA = new THREE.Group()
+    const geometryA = new THREE.BoxGeometry()
+    const textureA = new THREE.Texture()
+    const materialA = new THREE.MeshBasicMaterial({ map: textureA })
+    gltfA.add(new THREE.Mesh(geometryA, materialA))
+    const disposeGeo = vi.spyOn(geometryA, 'dispose')
+    const disposeMat = vi.spyOn(materialA, 'dispose')
+    const disposeTex = vi.spyOn(textureA, 'dispose')
+    let finishA, progressA
+    const loader = vi.spyOn(GLTFLoader.prototype, 'load')
+      .mockImplementationOnce((_url, onLoad, onProgress) => { finishA = onLoad; progressA = onProgress })
+      .mockImplementation((_url, onLoad) => onLoad({ scene: new THREE.Group() }))
+    const { api, store } = createScene()
+    const loadA = api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    await vi.waitFor(() => expect(loader).toHaveBeenCalledTimes(1))
+    await api.loadData({ kind: 'local', file: new File(['b'], 'b') })
+    const currentProgress = store.assetProgress
+    progressA({ loaded: 3, total: 10, lengthComputable: true })
+    expect(store.assetProgress).toBe(currentProgress)
+    finishA({ scene: gltfA })
+    await loadA
+    expect(gltfA.parent).toBeNull()
+    expect(disposeGeo).toHaveBeenCalledTimes(1)
+    expect(disposeMat).toHaveBeenCalledTimes(1)
+    expect(disposeTex).toHaveBeenCalledTimes(1)
+    expect(store.hasData).toBe(true)
+    expect(store.assetProgress).toBe(currentProgress)
+  })
+
+  it('分层纹理 worker 迟到时释放全部局部纹理，不发布旧分层或进度', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    prepareAssets(['groundmeta', 'groundtex'])
+    let groundCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (url.endsWith('groundmeta')) {
+        if (++groundCalls === 2) return { ok: false }
+        return { ok: true, json: async () => ({ height_blend: false }) }
+      }
+      return { ok: true, blob: async () => new Blob(['layer']) }
+    }))
+    const parked = track(deferred())
+    const lateTexture = new THREE.Texture()
+    const disposeLate = vi.spyOn(lateTexture, 'dispose')
+    const localTextures = []
+    const loader = vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync')
+      .mockImplementationOnce(() => parked.promise)
+      .mockImplementation(async () => {
+        const texture = new THREE.Texture()
+        localTextures.push({ texture, dispose: vi.spyOn(texture, 'dispose') })
+        return texture
+      })
+    const { api, store } = createScene()
+    const loadA = api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    await vi.waitFor(() => expect(loader).toHaveBeenCalledTimes(6))
+    await api.loadData({ kind: 'local', file: new File(['b'], 'b') })
+    const progressB = store.assetProgress
+    parked.resolve(lateTexture)
+    await loadA
+    expect(disposeLate).toHaveBeenCalledTimes(1)
+    for (const { dispose } of localTextures) expect(dispose).toHaveBeenCalledTimes(1)
+    expect(window.__gdbg.layers).toBe(false)
+    expect(store.assetProgress).toBe(progressB)
+    expect(store.hasData).toBe(true)
+  })
+
+  it('新 loadData 的解析阶段清掉上一会话的 assetStage / assetProgress', async () => {
+    source.loadPlaybackData.mockResolvedValueOnce(minimalData())
+    const parked = track(deferred())
+    source.resolveMapKey.mockResolvedValueOnce('map_a').mockImplementationOnce(() => parked.promise)
+    const { api, store } = createScene()
+    const loadA = api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    await vi.waitFor(() => expect(store.assetStage).toBe(true))
+    store.assetProgress = 0.6
+    const parserB = track(deferred())
+    source.loadPlaybackData.mockImplementationOnce(() => parserB.promise)
+    const loadB = api.loadData({ kind: 'local', file: new File(['b'], 'b') })
+    expect(store.assetStage).toBe(false)
+    expect(store.assetProgress).toBeNull()
+    expect(store.loading).toBe(true)
+    parked.resolve('map_a')
+    await loadA
+    expect(store.assetStage).toBe(false)
+    expect(store.assetProgress).toBeNull()
+    expect(store.loading).toBe(true)
+    parserB.reject(new Error('B parser failed'))
+    await loadB
+  })
+
+  it('destroy 在资产阶段清掉 loading / assetStage / assetProgress', async () => {
+    source.loadPlaybackData.mockResolvedValueOnce(minimalData())
+    const parked = track(deferred())
+    source.resolveMapKey.mockResolvedValueOnce('map_a').mockImplementationOnce(() => parked.promise)
+    const { api, store } = createScene()
+    const load = api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    await vi.waitFor(() => expect(store.assetStage).toBe(true))
+    store.assetProgress = 0.6
+    api.destroy()
+    expect(store.loading).toBe(false)
+    expect(store.assetStage).toBe(false)
+    expect(store.assetProgress).toBeNull()
+    parked.resolve('map_a')
+    await load
+    expect(store.assetStage).toBe(false)
+    expect(store.assetProgress).toBeNull()
+    created = []
   })
 })
