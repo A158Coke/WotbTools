@@ -143,6 +143,35 @@ describe('AgentArmorView WebGL 预检与加载状态', () => {
     wrapper.unmount()
     expect(viewer.calls[0].destroy).toHaveBeenCalled()
   })
+
+  it('手机参数开关：默认收起，点击展开 / 再点收起，aria-expanded 跟随', async () => {
+    mockWebGL('webgl2')
+    const wrapper = await mountArmor()
+    const stage = wrapper.find('[data-testid="armor-stage"]')
+    const tools = wrapper.find('[data-testid="armor-tools"]')
+    expect(tools.exists()).toBe(true)
+    // 默认收起：面板的显隐由 .is-tools-open 经移动端 CSS 控制（桌面端该按钮不可见、面板常驻）
+    expect(stage.classes()).not.toContain('is-tools-open')
+    expect(tools.attributes('aria-expanded')).toBe('false')
+    await tools.trigger('click')
+    expect(stage.classes()).toContain('is-tools-open')
+    expect(tools.attributes('aria-expanded')).toBe('true')
+    await tools.trigger('click')
+    expect(stage.classes()).not.toContain('is-tools-open')
+  })
+
+  it('?clean=1：顶栏与参数开关一并让位（场景脚本会隐藏全部常驻面板）', async () => {
+    mockWebGL('webgl2')
+    window.history.replaceState({}, '', '/?view=agent-armor&tank=5&clean=1')
+    try {
+      const { default: AgentArmorView } = await import('./AgentArmorView.vue')
+      const wrapper = await mountWithRouter(AgentArmorView, { view: 'agent-armor', tank: '5' })
+      expect(wrapper.find('.armor-view').classes()).toContain('is-clean')
+      expect(wrapper.find('[data-testid="armor-tools"]').exists()).toBe(false)
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
 })
 
 describe('回放工作台能力归属', () => {

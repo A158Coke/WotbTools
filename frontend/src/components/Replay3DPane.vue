@@ -20,6 +20,7 @@ import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
 import BaseStatusBar from './BaseStatusBar.vue'
 import SegmentedControl from './SegmentedControl.vue'
+import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 
@@ -76,6 +77,11 @@ const CAMERAS = [
   { value: 'follow', label: t('agentReplay.cam_follow') },
 ]
 const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
+
+// 顶栏双方总血量：数值用**完整整数**（§11 HUD 禁止 1k / 22.3k 缩写，与 2D HUD 同口径）；
+// 色条宽度用原始百分比（不取整，血量缓慢下降时条仍平滑），title 上给取整百分比。
+const hpText = (n) => String(Math.round(Math.max(0, Number(n) || 0)))
+const hpPctText = (pct) => Math.round(Number(pct) || 0) + '%'
 
 /**
  * 阵营色只在 HUD 里用（three.js 场景本体的阵营色由场景内核按设计 token 处理）：
@@ -197,15 +203,39 @@ function ensureScene() {
 
 /** 解析目标回放：同一次会话内同一文件不重复解析 */
 let loadedFile = null
+
+/**
+ * 待开播：文件到位后先让用户选画质，按「开始」才解析 + 拉资产。
+ * 画质必须在渲染器创建前定型（内核 `startPlayback()` 惰性建渲染器、首帧按当前档位），
+ * 所以这一步不能省成"加载中也能切档"。`startedFile` = 用户已按过开始的那一场。
+ */
+const startedFile = ref(null)
+const qualityOptions = QUALITY_ORDER.map((k) => ({ value: k, label: QUALITY_PRESETS[k].label }))
+
+function startReplay() {
+  if (!props.file) return
+  startedFile.value = props.file
+  reconcileScene()
+}
+
 function reconcileScene() {
   if (!shouldHaveScene()) {
     destroyScene()
     loadedFile = null
+    startedFile.value = null
     return
   }
   const created = ensureScene()
   const file = props.file
-  if (created || (file && file !== loadedFile)) {
+  // 尚未按开始（含换到另一场）：先把上一场撤下，否则旧场景继续呈现、还会压住待开播面板
+  if (file !== startedFile.value) {
+    if (loadedFile) {
+      sceneApi?.reset?.()
+      loadedFile = null
+    }
+    return
+  }
+  if (created || file !== loadedFile) {
     loadedFile = file
     loadFile(file)
   }
@@ -240,9 +270,23 @@ watch(
 
       <div class="hud">
         <div v-if="store.hasData" class="topbar panel">
-          <span class="map">{{ mapTitle }}</span>
-          <span class="timer">{{ store.timer }}</span>
-          <span class="score"><span class="t1">{{ store.score1 }}</span> : <span class="t2">{{ store.score2 }}</span></span>
+          <div class="tb-row">
+            <span class="map">{{ mapTitle }}</span>
+            <span class="timer">{{ store.timer }}</span>
+          </div>
+          <!-- 双方队伍总血量（与上游 3D 视图同布局：数值 + 色条夹住比分，己方在左、敌方在右；
+               整行单一阵营视角：血条与比分都按 friendly_team 映射，见 teamHpTotals/perspectiveScore） -->
+          <div class="tb-row" data-test="hud-team-hp">
+            <em class="hpnum hpnum-f">{{ hpText(store.hpFriend) }} / {{ hpText(store.hpFriendMax) }}</em>
+            <span class="hpbar hp-f" :title="`${t('agentReplay.hp_friendly')} ${hpPctText(store.hpFriendPct)}`">
+              <i :style="{ width: store.hpFriendPct + '%' }"></i>
+            </span>
+            <span class="score" data-test="hud-score"><span class="t1">{{ store.scoreFriend }}</span> : <span class="t2">{{ store.scoreEnemy }}</span></span>
+            <span class="hpbar hp-e" :title="`${t('agentReplay.hp_enemy')} ${hpPctText(store.hpEnemyPct)}`">
+              <i :style="{ width: store.hpEnemyPct + '%' }"></i>
+            </span>
+            <em class="hpnum hpnum-e">{{ hpText(store.hpEnemy) }} / {{ hpText(store.hpEnemyMax) }}</em>
+          </div>
         </div>
 
         <!-- 基地状态条（与 2D 共用）：每基地一枚徽章（底色 = 归属，外环 = 占领进度），两端为争霸积分 -->
@@ -313,6 +357,22 @@ watch(
         </div>
       </div>
 
+      <!-- 待开播：画质先定型再解析 + 拉资产（内核在 startPlayback 惰性建渲染器、首帧按当前档位） -->
+      <div v-if="file !== startedFile" class="pre-start" data-test="replay3d-pending">
+        <div class="pre-start-card">
+          <h3>{{ t('agentReplay.title') }}</h3>
+          <p class="pre-start-file">{{ t('agentReplay.ready_file', { name: file.name || 'replay' }) }}</p>
+          <SegmentedControl
+            :model-value="store.qualityKey"
+            :options="qualityOptions"
+            :aria-label="t('agentReplay.quality')"
+            data-testid="replay3d-quality"
+            @update:model-value="sceneApi.setQuality($event)"
+          />
+          <AppButton variant="primary" data-test="replay3d-start" @click="startReplay">{{ t('agentReplay.start') }}</AppButton>
+        </div>
+      </div>
+
       <!-- 审计 3D-23：解析为不确定进度，地图资产阶段按段 / 字节推进；失败给出原因与重试 -->
       <Scene3DStatus
         v-if="store.loading"
@@ -362,14 +422,47 @@ watch(
 }
 
 .topbar {
-  display: flex; gap: var(--space-4); align-items: center; white-space: nowrap;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  white-space: nowrap;
   padding: var(--space-1) var(--space-4);
 }
+.topbar .tb-row { display: flex; align-items: center; gap: var(--space-3); }
 .topbar .timer { font: var(--type-h3); font-variant-numeric: tabular-nums; }
 .topbar .score { font: var(--type-h3); }
 .topbar .score .t1 { color: var(--color-team-ally); }
 .topbar .score .t2 { color: var(--color-team-enemy); }
 .topbar .map { color: var(--color-text-secondary); }
+/* 双方队伍总血量：数值 + 色条夹住比分。己方条自右向左、敌方条自左向右（围绕比分对称），
+   条宽用原始百分比（不取整）保证连续下降平滑。 */
+.topbar .hpnum { font-style: normal; color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
+.topbar .hpbar { display: inline-flex; width: 92px; height: 9px; overflow: hidden;
+                 border-radius: var(--radius-full); background: var(--color-surface-3); }
+.topbar .hp-f { justify-content: flex-end; }
+.topbar .hpbar > i { display: block; height: 100%; transition: width var(--duration-base) var(--ease-standard); }
+.topbar .hp-f > i { background: var(--color-team-ally); }
+.topbar .hp-e > i { background: var(--color-team-enemy); }
+
+/* 待开播：半透明遮罩 + 居中卡片（画质档位 + 开始）；点开始才解析 + 拉资产。
+   层级用 --pb-z-scrim（盖住 HUD 面板，加载 / 错误状态仍在其上）。 */
+.pre-start {
+  position: absolute; inset: 0;
+  z-index: var(--pb-z-scrim);
+  display: grid; place-items: center;
+  padding: var(--space-4);
+  background: var(--color-scrim);
+}
+.pre-start-card {
+  display: grid; justify-items: center; gap: var(--space-3);
+  max-inline-size: min(100%, 420px);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-2);
+  box-shadow: var(--elevation-3);
+  text-align: center;
+}
+.pre-start-card h3 { margin: 0; font: var(--type-h3); }
+.pre-start-file { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 
 /* 顶部 HUD 竖排：顶栏 → 基地状态条 → 击杀流；整列不拦截场景操作，
    阵容面板从这一列下方开始，不再靠各自猜的固定 top 值。 */
