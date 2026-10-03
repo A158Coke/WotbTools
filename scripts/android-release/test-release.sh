@@ -48,6 +48,36 @@ guard_bridge_covered "" 2 "2" 1000000 "$bridge_cutover_code" || fail "first rele
 guard_bridge_covered 2 2 "2" 1000000 2001000 || fail "unchanged bridge needs no cutover"
 if guard_bridge_covered 1 2 "" 1000000 "$bridge_cutover_code" 2>/dev/null; then fail "empty frontend version set must not be treated as coverage"; fi
 
+# 发布权威是 staged release 身份（tag + staging evidence + APK SHA），纯 bash、不依赖 jq/git。
+staged_a='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+staged_b='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+apk_sha='dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+apk_sha_other='eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+guard_staged_release_identity "$staged_a" "$staged_a" "$staged_a" "$apk_sha" "$apk_sha" \
+  || fail "matching tag/evidence/APK identity must pass"
+if guard_staged_release_identity "$staged_b" "$staged_a" "$staged_a" "$apk_sha" "$apk_sha" 2>/dev/null; then
+  fail "a tag pointing at another commit must fail"
+fi
+if guard_staged_release_identity "$staged_a" "$staged_a" "$staged_b" "$apk_sha" "$apk_sha" 2>/dev/null; then
+  fail "staging evidence from another commit must fail"
+fi
+if guard_staged_release_identity "$staged_a" "$staged_a" "$staged_a" "$apk_sha" "$apk_sha_other" 2>/dev/null; then
+  fail "a staged APK whose SHA-256 differs from the evidence must fail"
+fi
+if guard_staged_release_identity "" "$staged_a" "$staged_a" "$apk_sha" "$apk_sha" 2>/dev/null; then
+  fail "a missing/absent release tag must fail"
+fi
+if guard_staged_release_identity "$staged_a" "$staged_a" "$staged_a" "not-a-sha" "$apk_sha" 2>/dev/null; then
+  fail "malformed evidence SHA-256 must fail"
+fi
+
+# 历史模型 A（staged）─ F（线上前端）─ B（当前 main）：main 前进不作废已 staged 版本，
+# 但前端必须包含 A、且本身来自 main；反向（前端比 A 旧）必须失败。
+guard_release_ancestry 1 1 1 || fail "A ∈ main, F ⊇ A, F ∈ main must pass"
+if guard_release_ancestry 0 1 1 2>/dev/null; then fail "staged source outside current main history must fail"; fi
+if guard_release_ancestry 1 1 0 2>/dev/null; then fail "frontend build outside main history must fail"; fi
+if guard_release_ancestry 1 0 1 2>/dev/null; then fail "frontend older than the staged release (reversed ancestry) must fail"; fi
+
 python3 "$ROOT/scripts/android-release/android_contract.py" version 1.0.2 | grep -q '1000002' || fail "version parser"
 if python3 "$ROOT/scripts/android-release/android_contract.py" version 1.0.02 >/dev/null 2>&1; then fail "invalid version must fail"; fi
 bash "$ROOT/scripts/android-release/test-android-contract.sh"
@@ -156,27 +186,44 @@ for forbidden in ("assembleRelease", "setup-gradle", "wotbKeystorePath", "keysto
                   "ANDROID_KEYSTORE_BASE64", "base64 --decode"):
     assert forbidden not in publish_runs, f"publish must reuse the staged APK, not rebuild ({forbidden})"
 
+# --- publish: the release authority is the STAGED identity, not the checkout SHA ---
+assert "guard_staged_release_identity" in publish_runs, "publish must prove the staged artifact identity"
+assert "guard_release_ancestry" in publish_runs, "publish must prove the release/frontend ancestry"
+assert "steps.staged.outputs.stagedSource" in publish_runs, "publish must carry the staged source SHA"
+assert "origin/main" in publish_runs, "publish must anchor ancestry on current main"
+assert "publish must run from origin/main HEAD" not in publish_runs, \
+    "publish must not require the staged source to equal current main HEAD (main may have advanced)"
+
 # --- publish: the four publication invariants ---
 assert ".staging.json" in publish_runs, "publish must read the staging evidence"
 assert "sha256sum" in publish_runs, "publish must re-verify the staged APK bytes"
-assert "classify_tag" in publish_runs, "publish must require the stage-created tag"
+assert "refs/tags/" in publish_runs, "publish must resolve the immutable release tag"
 assert "guard_min_supported" in publish_runs, "publish must verify minSupportedVersionCode"
 assert "guard_bridge_covered" in publish_runs, "publish must verify the bridge cutover coverage"
 assert "protocol/openid-connect/auth" in publish_runs, "publish must re-verify the Keycloak client"
 assert "nativeRuntime" in publish_runs, "publish must verify the production frontend capability"
-assert "merge-base --is-ancestor" in publish_runs, "publish must verify the frontend build identity"
 
-# --- version.json is the LAST mutation ---
+# --- version.json is the LAST mutation, and it records the STAGED source ---
 write_index = next(i for i, name in enumerate(publish_names) if name.startswith("Write version.json"))
 upload_index = next(i for i, name in enumerate(publish_names) if name.startswith("Upload version.json"))
 verify_index = next(i for i, name in enumerate(publish_names) if name.startswith("Verify production version.json"))
 assert write_index < upload_index < verify_index, publish_names
+assert "steps.staged.outputs.stagedSource" in publish["steps"][write_index]["run"], \
+    "version.json must record the staged release source, not the checkout HEAD"
 scp_indices = [i for i, step in enumerate(publish["steps"])
                if str(step.get("uses", "")).startswith("appleboy/scp-action")]
 assert max(scp_indices) == upload_index, "the version.json upload must be the last artifact upload"
 for step in publish["steps"][upload_index + 1:]:
     assert not str(step.get("uses", "")).startswith(("appleboy/scp-action", "appleboy/ssh-action")), step
     assert "release-staging" not in (step.get("run") or ""), step
+
+# --- frontend ancestry direction: staged A must be included BY the frontend build F ---
+assert '--is-ancestor "$STAGED_SOURCE" "$FE_COMMIT"' in publish_runs, \
+    "the frontend build must include the staged Android source"
+assert '--is-ancestor "$FE_COMMIT" "$ORIGIN_MAIN"' in publish_runs, \
+    "the frontend build must itself be contained in current main"
+assert '--is-ancestor "$FE_COMMIT" "${{ steps.version.outputs.commit }}"' not in publish_runs, \
+    "the reversed (old) frontend ancestry check must be gone"
 print("Android release two-phase protocol: PASS")
 PY
 

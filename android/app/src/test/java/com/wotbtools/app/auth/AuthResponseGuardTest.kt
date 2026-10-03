@@ -73,6 +73,54 @@ class AuthResponseGuardTest {
     }
 
     @Test
+    fun theOwnershipCheckComparesTheReturnedStateNotTheBundledRequestState() {
+        // review 指出的自指风险：AppAuth 的 AuthorizationResponse 同时带 `state`（OAuth 响应真正
+        // 返回的值）与 `request.state`（响应里自带的 request）。拿后者与持久化交易比较是自指恒等，
+        // 等于这道独立校验不存在。
+        //
+        // 语义前提（模拟调用点）：bundled request.state == 持久化交易的 state，而返回的 state 不同。
+        val bundledRequestState = "state-1"
+        val returnedState = "state-other"
+
+        assertEquals(
+            AuthFailureReason.STATE_MISMATCH,
+            AuthResponseGuard.verify(
+                expectedState = "state-1",
+                responseState = returnedState,
+                expectedRedirectUri = expectedRedirect,
+                responseRedirectUri = expectedRedirect,
+                code = "the-code",
+                error = null
+            )?.reason
+        )
+        // 同一组输入若把 bundled request.state 当成 responseState（旧的错误接线），guard 会放行 ——
+        // 这个对照正是「调用点必须用 response.state」的证据。
+        assertNull(
+            AuthResponseGuard.verify(
+                expectedState = "state-1",
+                responseState = bundledRequestState,
+                expectedRedirectUri = expectedRedirect,
+                responseRedirectUri = expectedRedirect,
+                code = "the-code",
+                error = null
+            )
+        )
+    }
+
+    @Test
+    fun aMissingReturnedStateIsRejectedEvenWhenACodeIsPresent() {
+        val failure = AuthResponseGuard.verify(
+            expectedState = "state-1",
+            responseState = null,
+            expectedRedirectUri = expectedRedirect,
+            responseRedirectUri = expectedRedirect,
+            code = "the-code",
+            error = null
+        )
+        assertEquals(AuthFailureReason.STATE_MISMATCH, failure?.reason)
+    }
+
+    @Test
     fun wrongRedirectUriIsRejectedFailClosed() {
         // 本次交易用的是 private scheme，响应却落在 HTTPS 回程：不是同一份配置，拒绝。
         val failure = AuthResponseGuard.verify(

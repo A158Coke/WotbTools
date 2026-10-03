@@ -559,10 +559,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Checkout the exact current main
+      - name: Checkout current main (committed release metadata + ancestry history)
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }}
+          # publish 的权威是 staged release 身份（tag + staging evidence + APK SHA），
+          # 这里只需要当前 main 的 committed 元数据与完整历史来做 ancestry 判定。
+          ref: main
           fetch-depth: 0
 
       - name: Resolve release metadata
@@ -590,63 +592,61 @@ jobs:
             --frontend-source frontend/src/platform/nativeBridgeContract.js \
             --frontend-source frontend/src/platform/androidAuthProvider.js
 
-      - name: Require the exact current main
-        shell: bash
-        run: |
-          set -euo pipefail
-          # 手工入口必须绑定当前 main：publish 广播的是「当前 main 上的 committed 版本」，
-          # 不允许对着一个已经前进（或来自其它分支）的 checkout 发布。
-          BUILD_SHA="${{ steps.version.outputs.commit }}"
-          git fetch origin main
-          ORIGIN_MAIN="$(git rev-parse origin/main)"
-          if [ "$BUILD_SHA" != "$ORIGIN_MAIN" ]; then
-            echo "::error::publish must run from origin/main HEAD (checked out $BUILD_SHA != origin/main $ORIGIN_MAIN)." >&2
-            exit 1
-          fi
-          echo "Publishing the staged artifact of ${{ steps.version.outputs.versionName }} (source $BUILD_SHA)."
-
-      - name: Verify the staged APK identity (no rebuild)
+      - name: Resolve the staged release identity from the immutable tag (no rebuild)
         id: staged
         shell: bash
         run: |
           set -euo pipefail
-          # 不重建：staging evidence 与线上的 immutable APK 必须同时对上本地 committed 元数据，
-          # 否则这次 publish 广播的就不是验证过的那个产物。
+          . scripts/android-release/check-release-guards.sh
+          git fetch origin main --tags --force
+
+          # 发布权威是**已 staged 的 release 身份**，不是当前 checkout / main HEAD：
+          #   versionName/versionCode（committed）→ immutable tag → tag target = STAGED_SOURCE
+          #   → staging evidence 必须与 STAGED_SOURCE 一致 → 线上 APK 字节必须匹配 evidence.sha256。
+          # 真机验证期间 main 可能已经前进（A → B）：那**不能**作废一个已经 staged + 验证过的
+          # Android 版本（Android 版本/tag/APK 身份都是 immutable，无法从 B 重新 staged 同一版本）。
           APK_NAME="${{ steps.version.outputs.apkName }}"
-          STAGING_NAME="${APK_NAME%.apk}.staging.json"
+          TAG="${{ steps.version.outputs.tagName }}"
           BASE="https://wotbtools.com/download/android"
+
+          REFS="$(git ls-remote --tags origin "refs/tags/$TAG")"
+          TAG_TARGET="$(printf '%s\n' "$REFS" | awk -F'\t' -v want="refs/tags/$TAG" '
+            $2 == want       { obj = $1 }
+            $2 == want "^{}" { peeled = $1 }
+            END              { if (peeled != "") print peeled; else print obj }
+          ')"
+          if [ -z "$TAG_TARGET" ]; then
+            echo "::error::Release tag $TAG does not exist. Run the stage phase for this version before publishing." >&2
+            exit 1
+          fi
+
           STAGING="$RUNNER_TEMP/staging.json"
-          if ! curl -fsSL -o "$STAGING" "$BASE/$STAGING_NAME"; then
-            echo "::error::No staging evidence at $BASE/$STAGING_NAME. Run the stage phase for this version first." >&2
+          if ! curl -fsSL -o "$STAGING" "$BASE/${APK_NAME%.apk}.staging.json"; then
+            echo "::error::No staging evidence at $BASE/${APK_NAME%.apk}.staging.json; run the stage phase first." >&2
             exit 1
           fi
           jq -e --argjson code "${{ steps.version.outputs.versionCode }}" \
                 --arg name "${{ steps.version.outputs.versionName }}" \
                 --argjson bridge "${{ steps.version.outputs.nativeBridgeVersion }}" \
-                --arg source "${{ steps.version.outputs.commit }}" \
-                --arg tag "${{ steps.version.outputs.tagName }}" \
+                --arg source "$TAG_TARGET" \
+                --arg tag "$TAG" \
                 --arg apk "$APK_NAME" \
                 --arg url "$BASE/$APK_NAME" \
             '.schemaVersion == 1 and .versionCode == $code and .versionName == $name
              and .nativeBridgeVersion == $bridge and .sourceSha == $source and .tag == $tag
              and .apkName == $apk and .apkUrl == $url and (.sha256 | test("^[0-9a-f]{64}$"))' "$STAGING" \
-            || { echo "::error::Staged evidence does not match the committed release metadata" >&2; exit 1; }
-          EXPECTED_APK_SHA="$(jq -r '.sha256' "$STAGING")"
+            || { echo "::error::Staging evidence does not match the immutable tag / committed release metadata" >&2; exit 1; }
+
           curl -fsSL -o "$RUNNER_TEMP/staged.apk" "$BASE/$APK_NAME"
           test -s "$RUNNER_TEMP/staged.apk" || { echo "::error::Staged APK is empty" >&2; exit 1; }
           ACTUAL_APK_SHA="$(sha256sum "$RUNNER_TEMP/staged.apk" | awk '{print $1}')"
-          if [ "$ACTUAL_APK_SHA" != "$EXPECTED_APK_SHA" ]; then
-            echo "::error::Staged APK SHA-256 mismatch: evidence=$EXPECTED_APK_SHA actual=$ACTUAL_APK_SHA" >&2
-            exit 1
-          fi
-          . scripts/android-release/check-release-guards.sh
-          REFS="$(git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tagName }}")"
-          classify_tag "$REFS" "${{ steps.version.outputs.tagName }}" "${{ steps.version.outputs.commit }}"
-          if [ "$TAG_STATE" != "tag_equal" ]; then
-            echo "::error::Release tag ${{ steps.version.outputs.tagName }} state is $TAG_STATE; publishing requires the tag created by the stage phase to point at the staged source commit." >&2
-            exit 1
-          fi
-          echo "Staged APK identity verified: $APK_NAME sha256=$ACTUAL_APK_SHA tag=${{ steps.version.outputs.tagName }}"
+
+          guard_staged_release_identity \
+            "$TAG_TARGET" "$TAG_TARGET" "$(jq -r '.sourceSha' "$STAGING")" \
+            "$(jq -r '.sha256' "$STAGING")" "$ACTUAL_APK_SHA"
+
+          echo "Staged release identity verified: $APK_NAME tag=$TAG source=$TAG_TARGET sha256=$ACTUAL_APK_SHA"
+          echo "stagedSource=$TAG_TARGET" >> "$GITHUB_OUTPUT"
           echo "apkSha=$ACTUAL_APK_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Preflight publication state and cutover guards (idempotent)
@@ -659,7 +659,9 @@ jobs:
           VERSION_NAME="${{ steps.version.outputs.versionName }}"
           APK_NAME="${{ steps.version.outputs.apkName }}"
           BRIDGE_VERSION="${{ steps.version.outputs.nativeBridgeVersion }}"
-          SOURCE_SHA="${{ steps.version.outputs.commit }}"
+          # version.json 的 sourceSha 记录的是 **APK 的 source**（= staged release source），
+          # 不是当前 main HEAD：两者在真机验证期间完全可能不同，而 immutable 的只有前者。
+          SOURCE_SHA="${{ steps.staged.outputs.stagedSource }}"
           PROD_JSON="$RUNNER_TEMP/prod-version.json"
           URL="https://wotbtools.com/download/android/version.json"
           CODE="$(curl -s -o "$PROD_JSON" -w '%{http_code}' "$URL")"
@@ -759,10 +761,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/android-release/check-release-guards.sh
           # 前端、Keycloak、Android 是三条**互相独立**的 push workflow，不存在执行顺序保证；
           # 因此不能假设「前端已经部署好了」。这里用前端 build 自己生成、不可缓存的
-          # /version.json 证明线上前端确实支持 Bridge v2 + native-auth，且它的构建 commit
-          # 是本次发布 source commit 的祖先（即来自 main，而不是别的分支或本地构建）。
+          # /version.json 证明线上前端确实支持 Bridge v2 + native-auth。
           FE_URL="https://wotbtools.com/version.json"
           FE_JSON="$RUNNER_TEMP/frontend-version.json"
           curl -fsSL -H 'Cache-Control: no-cache' -o "$FE_JSON" "$FE_URL?cb=$(date +%s%N)"
@@ -782,11 +784,27 @@ jobs:
             echo "::error::Production frontend does not report a full build commit (got '${FE_COMMIT:-<none>}'); the frontend image must be built by the frontend release lane." >&2
             exit 1
           fi
-          if ! git merge-base --is-ancestor "$FE_COMMIT" "${{ steps.version.outputs.commit }}"; then
-            echo "::error::Production frontend build ($FE_COMMIT) is not a main commit contained in the release source (${{ steps.version.outputs.commit }})." >&2
-            exit 1
-          fi
-          echo "Production frontend verified: bridges=$(jq -c '.nativeRuntime.supportedBridgeVersions' "$FE_JSON") commit=$FE_COMMIT"
+
+          git fetch origin main --tags --force
+          STAGED_SOURCE="${{ steps.staged.outputs.stagedSource }}"
+          ORIGIN_MAIN="$(git rev-parse origin/main)"
+
+          # 历史模型：A（staged Android source）─ F（线上前端 build）─ B（当前 main）。
+          # 前端**可以**比 staged Android 更新（只要包含它），但必须包含 A、且本身在 main 线上：
+          #   staged_in_main      : A 是 origin/main 的祖先或相等（main 前进不作废已 staged 版本）
+          #   frontend_includes_A : A 是 F 的祖先或相等（前端包含 Android 2.0 认证 cutover）
+          #   frontend_in_main    : F 是 origin/main 的祖先或相等（真实主线构建）
+          staged_in_main=0
+          frontend_includes_staged=0
+          frontend_in_main=0
+          git merge-base --is-ancestor "$STAGED_SOURCE" "$ORIGIN_MAIN" && staged_in_main=1
+          git merge-base --is-ancestor "$STAGED_SOURCE" "$FE_COMMIT" && frontend_includes_staged=1
+          git merge-base --is-ancestor "$FE_COMMIT" "$ORIGIN_MAIN" && frontend_in_main=1
+
+          guard_release_ancestry "$staged_in_main" "$frontend_includes_staged" "$frontend_in_main"
+
+          echo "Production frontend verified: bridges=$(jq -c '.nativeRuntime.supportedBridgeVersions' "$FE_JSON") \
+          commit=$FE_COMMIT staged=$STAGED_SOURCE main=$ORIGIN_MAIN"
 
       - name: Write version.json (commit point, LAST)
         if: steps.pubpreflight.outputs.publishAction == 'publish'
@@ -798,7 +816,7 @@ jobs:
             "${{ steps.version.outputs.versionName }}" \
             "$ANDROID_MIN_SUPPORTED_VERSION_CODE" \
             "${{ steps.version.outputs.nativeBridgeVersion }}" \
-            "${{ steps.version.outputs.commit }}" \
+            "${{ steps.staged.outputs.stagedSource }}" \
             "${{ steps.version.outputs.apkName }}" \
             "${{ steps.staged.outputs.apkSha }}" \
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "release-staging/version.json"
@@ -830,7 +848,7 @@ jobs:
                 --arg url "https://wotbtools.com/download/android/${{ steps.version.outputs.apkName }}" \
                 --arg sha "${{ steps.staged.outputs.apkSha }}" \
                 --argjson bridge "${{ steps.version.outputs.nativeBridgeVersion }}" \
-                --arg source "${{ steps.version.outputs.commit }}" \
+                --arg source "${{ steps.staged.outputs.stagedSource }}" \
             '.schemaVersion == 1 and .latestVersionCode == $code and .latestVersionName == $name
              and .minSupportedVersionCode == $min and .nativeBridgeVersion == $bridge
              and .sourceSha == $source and .apkUrl == $url and .sha256 == $sha' "$TMP_JSON" \
@@ -852,5 +870,5 @@ jobs:
             echo "Staged APK SHA-256: ${{ steps.staged.outputs.apkSha }}"
             echo "minSupportedVersionCode: $ANDROID_MIN_SUPPORTED_VERSION_CODE"
             echo "Tag: ${{ steps.version.outputs.tagName }}"
-            echo "Source Commit: ${{ steps.version.outputs.commit }}"
+            echo "Staged Source Commit: ${{ steps.staged.outputs.stagedSource }}"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -438,8 +438,13 @@ internal class AuthManager private constructor(context: Context) {
         }
 
         val guardFailure = AuthResponseGuard.verify(
+            // 交易归属校验的两个操作数必须来自**两处独立来源**：
+            //  - expectedState：我们自己持久化那笔交易的 request.state；
+            //  - responseState：OAuth 响应真正携带回来的 `response.state`。
+            // 刻意**不**用 `response.request.state`：那是响应里自带的 request，与自己比较是自指
+            // （恒等），等于这道独立校验不存在。
             expectedState = expectedRequest.state,
-            responseState = response.request.state,
+            responseState = response.state,
             expectedRedirectUri = transaction.redirectUri,
             responseRedirectUri = redirectUriOf(intent?.data),
             code = response.authorizationCode,
