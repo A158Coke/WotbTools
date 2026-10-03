@@ -74,7 +74,8 @@ function onKeydown(event) {
   background: var(--color-surface-2);
 }
 
-/* 选项多 / 容器窄：占满宽度、横向滚动、不换行（窄屏能力切换） */
+/* 选项多 / 容器窄：横向滚动、不换行、**选项不得被压缩**
+   （flex-shrink 会把触屏 44px 点击区域压到 42px，CI 在 375px coarse 实测到过） */
 .segmented.is-scrollable {
   display: flex;
   max-width: 100%;
@@ -85,7 +86,7 @@ function onKeydown(event) {
 .segmented.is-scrollable::-webkit-scrollbar { display: none; }
 
 .segmented-option {
-  flex: 1 1 0;
+  flex: none;
   min-height: var(--control-h-sm);
   padding: 0 var(--space-3);
   border: 0;
@@ -96,8 +97,6 @@ function onKeydown(event) {
   white-space: nowrap;
   cursor: pointer;
 }
-
-.segmented.is-scrollable .segmented-option { flex: none; }
 
 .segmented-option.is-active {
   background: var(--color-surface-1);
