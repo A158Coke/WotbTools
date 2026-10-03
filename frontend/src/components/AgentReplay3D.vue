@@ -135,7 +135,8 @@ onBeforeUnmount(() => {
           <span class="hpbar hp-f" :title="`${t('agentReplay.hp_friendly')} ${hpPctText(store.hpFriendPct)}`">
             <i :style="{ width: store.hpFriendPct + '%' }"></i>
           </span>
-          <span class="score"><span class="t1">{{ store.score1 }}</span> : <span class="t2">{{ store.score2 }}</span></span>
+          <!-- 比分与两侧血条同一阵营视角（内核 perspectiveScore 映射）：左=己方、右=敌方 -->
+          <span class="score" data-test="hud-score"><span class="score-friend">{{ store.scoreFriend }}</span> : <span class="score-enemy">{{ store.scoreEnemy }}</span></span>
           <span class="hpbar hp-e" :title="`${t('agentReplay.hp_enemy')} ${hpPctText(store.hpEnemyPct)}`">
             <i :style="{ width: store.hpEnemyPct + '%' }"></i>
           </span>
@@ -314,9 +315,10 @@ html[data-ui-profile="classic"] .pb-root {
 .topbar .tb-row { display: flex; align-items: center; gap: 12px; }
 .topbar .timer { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .topbar .score { font-size: 16px; font-weight: 600; }
-.topbar .score .t1 { color: var(--ally); }
+/* 比分与两侧血条同一阵营视角：左 = 己方（ally），右 = 敌方（enemy） */
+.topbar .score .score-friend { color: var(--ally); }
 /* 争霸点数与单基地进度已移到基地状态条（BaseStatusBar，与 2D 共用） */
-.topbar .score .t2 { color: var(--enemy); }
+.topbar .score .score-enemy { color: var(--enemy); }
 .topbar .map { color: var(--dim); }
 /* 双方队伍总血量：数值 + 色条夹住比分。己方条自右向左、敌方条自左向右（围绕比分对称），
    血量只掉不涨，条宽用原始百分比（不取整）保证连续下降平滑。 */
