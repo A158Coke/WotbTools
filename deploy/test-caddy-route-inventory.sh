@@ -59,9 +59,28 @@ caddyfile() {
 }
 
 guard() {
+  local dir="$1" rc=0
   rm -f "$stub_log"
   PATH="$work/bin:$PATH" STUB_DOCKER_LOG="$stub_log" \
-    bash "$ROOT/deploy/tx/validate-caddy-config.sh" "$1" >"$work/out.log" 2>&1
+    bash "$ROOT/deploy/tx/validate-caddy-config.sh" "$dir" >"$work/out.log" 2>&1 || rc=$?
+  release_compose_network "$dir"
+  return "$rc"
+}
+
+# The guard runs the real Compose project (`-p deploy`) for its adapt/validate step, and Compose
+# allocates a Docker network from the daemon's default address pool. Leaving those behind would
+# slowly consume that pool inside one CI job - enough for a later fixture that needs an explicit
+# subnet (`deploy/test-nginx-grafana-recreate.sh` creates 172.29.0.0/16) to fail with
+# "Pool overlaps with other one on this address space". Every guard invocation therefore releases
+# what it created. Cleanup uses the real CLI directly, so it never appears in the stub log that the
+# rejected cases assert on.
+release_compose_network() {
+  local dir="$1"
+  [ -n "$real_docker" ] || return 0
+  CADDY_ACME_EMAIL="$CADDY_ACME_EMAIL" "$real_docker" compose -p deploy \
+    -f "$dir/common.compose.yml" -f "$dir/caddy.compose.yml" \
+    down --volumes --remove-orphans >/dev/null 2>&1 || true
+  "$real_docker" network rm deploy_default >/dev/null 2>&1 || true
 }
 
 accepts() {
