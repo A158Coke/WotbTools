@@ -100,6 +100,17 @@
 13. **外部数据生命周期** — 持久化外部 API 返回的个人或统计数据时，必须同时提供明确的 retention/deletion path；删除流程需限定数据来源、遵守真实 FK 顺序，并保护仍被其他业务引用的共享文件或记录。
 14. **Android Version-as-Code** — Android production runtime 改动必须递增 committed `android/gradle.properties:wotbVersion`；不得手工编辑 `versionCode` 或依赖 release workflow 版本参数。Native Bridge wire breaking change 必须同时更新 `contracts/android-native-bridge.json`、递增 `bridgeVersion`、更新 Native/FE，并在同一 PR 通过 deterministic compatibility tests；先让 FE 兼容旧/新协议，再发布 Native。
 
+## 视觉验证归属（2026-10-03）
+
+**3D 回放、坦克/模型查看、场景渲染等"看起来对不对"的验收由用户执行。** Agent：
+
+- 不启动/驱动浏览器去读屏、截图或目视核对 3D 画面，也不拿截图当验收证据（本仓与上游
+  Agent 仓同规则）；3D 画面依赖真实 GPU/地形/资产面状态，分离或无头浏览器给不出可信结论。
+- 交付方式改为：实现 + 锁定不变量的测试（纯函数单测、场景源码级接线守卫、既有
+  `npm run test:browser-*` 自动化门禁），然后明确写出「需要人工看什么」交给用户确认。
+- 上游 Agent 仓（WoT-Blitz-Agent）的 `frontend/` 已冻结、不再维护：**前端改动与前端测试
+  都在本仓**，不要再去上游改前端或在上游跑前端测试。
+
 ## 禁止
 
 - 改 `target/` `node_modules/` `dist/` `.m2repo/` 内文件
