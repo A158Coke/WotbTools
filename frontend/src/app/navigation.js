@@ -141,7 +141,11 @@ const TANKOPEDIA_QUERY_KEYS = ['q', 'tier', 'nation', 'type', 'sort', 'tank', 'c
  * 装甲查看器 / 射击复现场景写进 URL 的键（`AgentShots.srViewerUrl` 的交接链接 + `tankViewer` 的 QP 读取）：
  * tank / shooter / config / scfg / shell / shot / world / heatmap，加相机与显示档（az / h / d / eqcal / …）
  * 与 `clean` / `debug` 这类只对该场景有意义的开关。它们**只属于该视图**——不清理的话，
- * 从侧边栏切走再回来会继续带着上一发的场景参数（用户实测反馈）。
+ * 从场景里用侧边栏切走，URL 会变成 ?view=replay&tank=…&shot=…&world=1&heatmap=1（用户实测反馈）。
+ *
+ * 清理方向与坦克百科一致：只处理**离开**场景。进入方向一律保留——这些键就是目的地的参数，
+ * 而"射击分析 → 装甲查看器"的交接（`ReplayShotsPane.openInViewer`）与坦克百科入口
+ * （`AgentTankopedia` 的 router.push）都不经本函数；但任何以 URL 表达的交接都不该在入场时被吞掉。
  */
 const ARMOR_SCENE_QUERY_KEYS = [
   'tank', 'shooter', 'config', 'scfg', 'shell', 'shot', 'world', 'heatmap',
@@ -158,9 +162,8 @@ export function locationForView(view, route) {
   if (route.query?.view === 'agent-tankopedia' && view !== 'agent-tankopedia') {
     for (const key of TANKOPEDIA_QUERY_KEYS) delete query[key]
   }
-  // 装甲查看器 / 射击复现场景参数只属于该视图：进出都丢掉。否则从场景（?view=agent-armor&tank=…&shot=…）
-  // 用侧边栏切走，URL 会变成 ?view=replay&tank=…&shot=…&world=1&heatmap=1（用户实测反馈）。
-  if ((route.query?.view === 'agent-armor') !== (view === 'agent-armor')) {
+  // 离开装甲场景时丢掉场景参数（进入方向见上面 ARMOR_SCENE_QUERY_KEYS 的说明）
+  if (route.query?.view === 'agent-armor' && view !== 'agent-armor') {
     for (const key of ARMOR_SCENE_QUERY_KEYS) delete query[key]
   }
   if (view === 'home' || view === 'android' || view === 'sponsor') delete query.view

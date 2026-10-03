@@ -19,7 +19,12 @@ vi.mock('./components/ReplayWorkspace.vue', () => ({
     name: 'ReplayWorkspace',
     props: ['initialCapability'],
     setup() { return { navigate: inject(NAVIGATE_VIEW_KEY) } },
-    template: `<div :data-cap="initialCapability" data-test="view-replay"><button data-testid="ws-tab" @click="navigate('ai-review')">ai</button></div>`,
+    // ws-armor-handoff 模拟 `ReplayShotsPane.openInViewer`：目标带 query 的对象形式
+    // （工作台把整个目的地交给 router owner，装甲查看器要的 tank/shot/world/… 都在里面）
+    template: `<div :data-cap="initialCapability" data-test="view-replay">
+      <button data-testid="ws-tab" @click="navigate('ai-review')">ai</button>
+      <button data-testid="ws-armor-handoff" @click="navigate({ query: { view: 'agent-armor', tank: '13825', shooter: '19969', shot: '2', shell: '0', scfg: '0', config: '1', world: '1', heatmap: '1' } })">viewer</button>
+    </div>`,
   },
 }))
 vi.mock('./components/HomePage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-home" />' } }))
@@ -302,6 +307,23 @@ describe('App routing', () => {
     await settle()
     expect(router.currentRoute.value.query.view).toBe('ai-review')
     expect(wrapper.find('[data-test="view-replay"]').attributes('data-cap')).toBe('ai')
+  })
+
+  it('射击 → 装甲查看器的交接参数原样落到 URL（视图私有 key 清理不作用于入场方向）', async () => {
+    authState.isAdminRef.value = true
+    try {
+      const { wrapper, router } = await mountApp('/?view=agent-shots')
+      await wrapper.get('[data-testid="ws-armor-handoff"]').trigger('click')
+      await settle()
+      expect(router.currentRoute.value.query).toEqual({
+        view: 'agent-armor', tank: '13825', shooter: '19969', shot: '2',
+        shell: '0', scfg: '0', config: '1', world: '1', heatmap: '1',
+      })
+      // 落地的是装甲查看器（不是被收敛回工作台），参数就得是它读的那一份
+      expect(wrapper.find('[data-test="view-agent-armor"]').exists()).toBe(true)
+    } finally {
+      authState.isAdminRef.value = false
+    }
   })
 
   it('restores Replay capability with Back navigation', async () => {

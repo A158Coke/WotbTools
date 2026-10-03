@@ -518,6 +518,25 @@ describe('Replay3DPane 待开播画质闸门', () => {
     wrapper.unmount()
   })
 
+  it('档位文案走 i18n（agentReplay.q_*），不直接用预设里的固定 label', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    const quality = wrapper.get('[data-testid="replay3d-quality"]')
+    // 预设 label 是上游固定中文（低/中/高）；界面必须取三语 key，
+    // 否则 en / ru 界面会混入中文（用户实测反馈）
+    expect(quality.findAll('button').map(b => b.text()))
+      .toEqual(['agentReplay.q_low', 'agentReplay.q_mid', 'agentReplay.q_high'])
+    expect(quality.text()).not.toContain('Low')
+    // 相机档位同理（在就绪态里：工具栏只在 HUD 有数据时渲染）
+    playback.api.store.hasData = true
+    await nextTick()
+    const cams = wrapper.get('[data-testid="replay3d-toolbar"] [role="radiogroup"]')
+    expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'top', 'follow'])
+    expect(cams.text()).toContain('agentReplay.cam_free')
+    wrapper.unmount()
+  })
+
   it('损坏 / 无文件名也不炸：卡片按兜底名呈现', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane({ file: { name: '', size: 0 } })

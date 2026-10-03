@@ -539,3 +539,58 @@ describe('ReplayShotsPane 文件与激活契约', () => {
     wrapper.unmount()
   })
 })
+
+/**
+ * 交接护栏：命中弹的「在装甲查看器里打开」把整份射击数据交出去（本机通道），
+ * 并把装甲查看器要读的场景参数**一个不少**地交给 router owner——参数由目的地组件消费，
+ * 不能在这里被裁掉（导航层的视图私有 key 清理只作用于"离开场景"方向，见 navigation.test.js）。
+ */
+describe('ReplayShotsPane → 装甲查看器交接', () => {
+  const hitShot = {
+    shots: [{
+      index: 2, time_s: 41.2, damage: 0, is_kill: false,
+      shooter_eid: 100, shooter_name: 'A158', shooter_tank_id: 19969, is_author: true, shell_slot: 3,
+      target_name: 'Maus', target_eid: 200, target_tank_id: 13825, target_config_idx: 1,
+      hit_flags: 0x28, game_hit_result: 0, shell_id: 79242,
+    }],
+    author_path: 'ok', author_eid: 100, others: baseOthers,
+  }
+
+  it('命中弹：先交出射击数据，再把场景参数整个交给 router', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue(hitShot)
+    const navigate = vi.fn()
+    const wrapper = await mountPane({ navigate })
+    await wrapper.get('[data-testid="shot-row-2"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="shot-open-viewer"]').trigger('click')
+    await flushPromises()
+
+    // 交接通道：整份 shots 交出去（查看器按 shot 序号找这一发）
+    expect(storeShotsForViewer).toHaveBeenCalledTimes(1)
+    expect(storeShotsForViewer.mock.calls[0][0]).toHaveLength(1)
+    // 目的地：装甲查看器要读的键一个不少（view / tank / shooter / shot / shell / config / world / heatmap）
+    expect(navigate).toHaveBeenCalledWith({
+      query: {
+        view: 'agent-armor', tank: '13825', shooter: '19969', shot: '2',
+        shell: '3', config: '1', world: '1', heatmap: '1',
+      },
+    })
+    wrapper.unmount()
+  })
+
+  it('未命中弹（无目标实体）不给入口，也不交接数据', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [{ ...hitShot.shots[0], index: 3, target_eid: null, target_name: '', target_tank_id: 0 }],
+      author_path: 'ok', author_eid: 100, others: baseOthers,
+    })
+    const navigate = vi.fn()
+    const wrapper = await mountPane({ navigate })
+    await wrapper.get('[data-testid="shot-row-3"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="shot-open-viewer"]').exists()).toBe(false)
+    expect(storeShotsForViewer).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})

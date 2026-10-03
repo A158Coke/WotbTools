@@ -71,11 +71,13 @@ const mapTitle = computed(() => {
   return mapLabel(store.mapName, locale.value) || store.mapName
 })
 
-const CAMERAS = [
+// 相机 / 画质档位文案都是用户可见文本，且本应用支持运行中切语言（MorePanel 的 setLocale 不刷新页面），
+// 所以走 computed 每次重算——不得在 setup 里定死一次，也不用内核预设里的固定中文 label。
+const CAMERAS = computed(() => [
   { value: 'free', label: t('agentReplay.cam_free') },
   { value: 'top', label: t('agentReplay.cam_top') },
   { value: 'follow', label: t('agentReplay.cam_follow') },
-]
+])
 const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
 
 // 顶栏双方总血量：数值用**完整整数**（§11 HUD 禁止 1k / 22.3k 缩写，与 2D HUD 同口径）；
@@ -210,7 +212,9 @@ let loadedFile = null
  * 所以这一步不能省成"加载中也能切档"。`startedFile` = 用户已按过开始的那一场。
  */
 const startedFile = ref(null)
-const qualityOptions = QUALITY_ORDER.map((k) => ({ value: k, label: QUALITY_PRESETS[k].label }))
+const qualityOptions = computed(() =>
+  QUALITY_ORDER.map((k) => ({ value: k, label: t('agentReplay.q_' + k) })),
+)
 
 function startReplay() {
   if (!props.file) return

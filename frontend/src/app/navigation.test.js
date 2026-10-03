@@ -121,4 +121,22 @@ describe('locationForView：名人堂筛选只属于名人堂', () => {
     // 留在装甲查看器内（如切换能力后又回到同一视图）保留全部场景参数
     expect(locationForView('agent-armor', armorRoute).query).toEqual(armorRoute.query)
   })
+
+  it('进入装甲查看器时保留场景参数：交接链接不得在入场方向被吞掉', () => {
+    // 以 URL 表达的交接（射击分析的复现链接 / 坦克百科的详情入口）在入场时必须原样保留——
+    // 清理只针对"离开场景"，与坦克百科那条规则同向。任何方向的误删都会让复现那发直接丢参数。
+    const handoff = {
+      path: '/',
+      query: {
+        view: 'agent-shots', tank: '13825', shooter: '19969', shot: '2', shell: '0', scfg: '0',
+        world: '1', heatmap: '1', lang: 'x',
+      },
+    }
+    expect(locationForView('agent-armor', handoff).query).toEqual({ ...handoff.query, view: 'agent-armor' })
+
+    // 场景独有键（world / heatmap / clean）同理：入场保留，切走才清
+    const sceneOnly = { path: '/', query: { view: 'replay', world: '1', heatmap: '1', clean: '1' } }
+    expect(locationForView('agent-armor', sceneOnly).query)
+      .toEqual({ view: 'agent-armor', world: '1', heatmap: '1', clean: '1' })
+  })
 })
