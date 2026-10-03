@@ -172,8 +172,11 @@ rejects 'android callback route removed' "$callback_missing" \
 
 callback_proxied="$(caddyfile android-callback-proxied)"
 # The route keeps a respond (so only the "answer from Caddy" rule can reject it)
-# but also proxies the same path into Keycloak.
-awk '/^\thandle \/android\/oauth\/callback \{/ { print; print "\t\treverse_proxy keycloak:8080"; next }
+# but also proxies the same path. The injected upstream uses the reviewed logical
+# placeholder, not a hard-coded host: otherwise the fixture would be rejected by
+# the auth.wotbtools.com catch-all rule first and stop testing the callback rule
+# it exists for.
+awk '/^\thandle \/android\/oauth\/callback \{/ { print; print "\t\treverse_proxy {$CADDY_KEYCLOAK_UPSTREAM}"; next }
      { print }' "$ROOT/deploy/tx/Caddyfile" > "$callback_proxied/Caddyfile"
 rejects 'android callback handed back to Keycloak' "$callback_proxied" \
   'must answer from Caddy, never reverse_proxy an upstream'

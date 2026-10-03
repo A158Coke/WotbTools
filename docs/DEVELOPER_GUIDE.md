@@ -500,10 +500,14 @@ TX-internal frontend nginx、Caddy readiness surface 与 deployment-owned `healt
 `TX_BACKEND_UPSTREAM` 表达 logical endpoint，允许 Docker-local `http://business-api:8087`
 或 reviewed TX1/TX2 WireGuard `:8087`；公网 host、错误端口与已退役 Yecao
 `10.20.0.2:8087` 一律 fail-closed。K6B-1 owner workflow 仍显式注入 Docker-local value，
-因此本阶段不发生 dependency cutover。TX deploy staging 与只读 `TX_RUNTIME_READY`
-分别用 `assert_routing_boundary`、`tx-logical-endpoints`、`retired-replay-switches`
-守护 routing/placement 不变量；K6A published bindings 仍由 `wireguard-service-plane` 守护。
-端点、验收与回滚见 `docs/operations/tx-service-plane.md`。
+因此本阶段不发生 dependency cutover。全部 logical endpoint 由同一组 canonical validator
+（`deploy/tx/deploy.sh`）守护：staged deploy、只读 `dependency-readiness.sh`（在任何
+secret-bearing 连接之前）与 runtime gate 共用，仓库不存在第二份 allowlist。TX deploy staging
+与只读 `TX_RUNTIME_READY` 分别用 `assert_routing_boundary`、`tx-logical-endpoints-declared`、
+`tx-logical-endpoints-active`、`retired-replay-switches` 守护 routing/placement 不变量
+（declared = render 出的 Compose，active = `docker inspect` 读到的运行容器真实 env，两者都必须
+等于 deploy helper 当前会选择的 placement）；K6A published bindings 仍由
+`wireguard-service-plane` 守护。端点、验收与回滚见 `docs/operations/tx-service-plane.md`。
 
 **全业务运行时 E2E 检查**：`deploy/tx/runtime-check.sh` 加载独立只读校验库
 `deploy/tx/runtime-check-lib.sh`；除基础设施与路由 token 外，还用

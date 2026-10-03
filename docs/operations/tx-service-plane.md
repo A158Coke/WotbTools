@@ -36,6 +36,14 @@ K6B-1 logical endpoint contract（active workflow value 仍为 Docker-local defa
 `http://10.20.0.2:8089`；monitor/Komodo/Loki 边界不变。公网 host、未审核 WG 地址、
 错误协议或错误端口在 live mutation 前 fail closed。K6B-1 不迁移任何 workload。
 
+同一套 canonical validator（`deploy/tx/deploy.sh:validate_http_endpoint` /
+`validate_database_endpoint` / `validate_caddy_upstream`）同时守护三个入口，仓库里没有第二份
+allowlist：staged deploy、只读 dependency readiness，以及 runtime gate。因此
+`deploy/dependency-readiness.sh` 在启动任何容器之前就拒绝未审核 endpoint——携带
+`TX_BUSINESS_DB_PASSWORD` 的 psql 探针与携带 `KEYCLOAK_ADMIN_CLIENT_SECRET` 的
+Keycloak Admin 请求都不会先发出去再等 `deploy.sh` 拒绝。probe 自身也不再为
+`TX_KEYCLOAK_ADMIN_SERVER_URL` 取默认值：没有经过校验的显式值就直接失败。
+
 ## Repository acceptance
 
 `deploy/tx/runtime-check-lib.sh:assert_tx_service_ports` 比较 native Compose JSON 的
@@ -43,7 +51,17 @@ host IP、published port、target、protocol 与数量，声明顺序不影响�
 staged deploy 对 selected owner 在 live promote/recreate 前使用同一校验；runtime readiness
 使用 `wireguard-service-plane` token 检查全部五个 owner。它替代旧的
 `postgres-loopback` / `business-postgres-loopback` / `keycloak-admin-loopback` token。
-`tx-logical-endpoints` 接受 Docker-local default 与上述 reviewed TX1/TX2 WG value；
+
+K6B logical endpoint 由两条 token 分别证明两个不同事实，两者都必须 PASS：
+
+- `tx-logical-endpoints-declared`：当前环境 render 出来的 Compose 值 ∈ reviewed allowlist
+  且等于 deploy helper 现在会选择的 placement。
+- `tx-logical-endpoints-active`：**正在运行**的容器自己的 `Config.Env`（`docker inspect`，
+  frontend/business-api/keycloak/caddy 四个 owner）同样满足上述两个条件。
+
+只断言 rendered Compose 会给出假绿：workflow 期望与 render 都是 `10.20.0.3`，而运行中的
+容器仍在 dial Docker-local，两侧都 healthy 时旧 gate 仍会输出 `TX_RUNTIME_READY`。active
+token 直接读取运行容器的真实环境，因此这种不一致一定 FAIL。
 `wireguard-service-plane` 继续守护 K6A published bindings。业务 E2E 与受信任公网 TLS
 探针继续验证真实运行链。配置通过本身不代表 WG 实际可达。
 
