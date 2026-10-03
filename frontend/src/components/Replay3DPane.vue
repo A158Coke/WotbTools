@@ -129,19 +129,6 @@ const bannerColor = computed(() => {
 })
 
 /**
- * 阵容三块（未知阵营 team=0 中性 fail-visible，绝不并入任何一队）：己方 / 敌方各占场景一侧的
- * 浮动面板，未知阵营单独一块——不是把两队塞进一条通栏，两侧面板与居中的 HUD 列互不遮挡。
- * `cls` 同时是定位类（team1 = 左、team2 = 右、team-unknown = 居中）与测试锚点。
- */
-const rosterPanels = computed(() => [
-  { key: 'team1', cls: 'team1', label: t('agentReplay.team1'), players: rosterGroups.value.ally },
-  { key: 'team2', cls: 'team2', label: t('agentReplay.team2'), players: rosterGroups.value.enemy },
-  ...(rosterGroups.value.unknown.length
-    ? [{ key: 'unknown', cls: 'team-unknown', label: t('agentReplay.teamUnknown'), players: rosterGroups.value.unknown }]
-    : []),
-])
-
-/**
  * 把目标文件交给场景内核。
  *
  * **加载状态不属于组件层**：`playbackScene.loadData()` 自己持有代数 guard 与
@@ -249,8 +236,51 @@ function reconcileScene() {
   }
 }
 
-onMounted(reconcileScene)
-onBeforeUnmount(destroyScene)
+/**
+ * 阵容车道（review blocker 修复）：己方 / 敌方各占一条**侧边车道**，未知阵营归左车道、
+ * 在车道内常驻底部（flex: none，不被队伍名单滚出可视区）——三条名单都不与中央 HUD 列
+ * 或底部控制条共用车道。车道上下界**不写死**：ResizeObserver 实测 .hud / .controls 的
+ * 高度写入 --pb-hud-h / --pb-controls-h（.pb-root 上有兜底默认），HUD 长高（基地条 +
+ * 击杀流）或控制条换行（窄屏）时车道自动让位。
+ */
+const rootEl = ref(null)
+const hudEl = ref(null)
+const controlsEl = ref(null)
+let laneBoundsObserver = null
+function observeLaneBounds() {
+  if (typeof ResizeObserver !== 'function') return
+  laneBoundsObserver?.disconnect()
+  laneBoundsObserver = new ResizeObserver(() => {
+    const root = rootEl.value
+    if (!root) return
+    root.style.setProperty('--pb-hud-h', `${Math.ceil(hudEl.value?.offsetHeight ?? 0)}px`)
+    root.style.setProperty('--pb-controls-h', `${Math.ceil(controlsEl.value?.offsetHeight ?? 0)}px`)
+  })
+  if (hudEl.value) laneBoundsObserver.observe(hudEl.value)
+  if (controlsEl.value) laneBoundsObserver.observe(controlsEl.value)
+}
+watch(controlsEl, (el) => {
+  // controls 是 hasData 条件渲染：数据就位才出现，出现即纳入观测
+  if (el && laneBoundsObserver) laneBoundsObserver.observe(el)
+})
+
+/** ?debug：几何门禁 / 人工排查的状态注入点（与场景内核的 ?debug 钩子同一口径，只暴露
+ *  store 引用与车道 DOM，不改变任何行为）。browser 几何门禁据此注入 roster / killfeed，
+ *  在真实 Chrome 里断言车道的非交叉几何。 */
+if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) {
+  window.__pbPane = { store }
+}
+
+onMounted(() => {
+  reconcileScene()
+  observeLaneBounds()
+})
+onBeforeUnmount(() => {
+  destroyScene()
+  laneBoundsObserver?.disconnect()
+  laneBoundsObserver = null
+  if (window.__pbPane?.store === store) delete window.__pbPane
+})
 
 /**
  * file / blockedReason / active 都由工作台派生：
@@ -273,10 +303,10 @@ watch(
     <Scene3DStatus v-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
     <p v-else-if="blockedReason" class="pb-note" data-testid="replay3d-blocked">{{ blockedReason }}</p>
     <p v-else-if="!file" class="pb-note" data-testid="replay3d-empty">{{ $t('agentReplay.no_file') }}</p>
-    <div v-else class="pb-root" :class="{ 'roster-open': rosterOpen }">
+    <div v-else class="pb-root" ref="rootEl" :class="{ 'roster-open': rosterOpen }">
       <div ref="stage" class="scene"></div>
 
-      <div class="hud">
+      <div ref="hudEl" class="hud">
         <div v-if="store.hasData" class="topbar panel">
           <div class="tb-row">
             <span class="map">{{ mapTitle }}</span>
@@ -307,22 +337,55 @@ watch(
         </div>
       </div>
 
+      <!-- 阵容车道：左右两条侧边车道（不占中央 HUD 车道）；未知阵营归左车道、常驻车道
+           底部（不被队伍名单滚出可视区），与居中的 HUD 列 / 底部控制条互不遮挡 -->
       <template v-if="store.hasData">
-        <div
-          v-for="group in rosterPanels" :key="group.key"
-          class="team panel" :class="group.cls"
-        >
-          <h3>{{ group.label }}</h3>
-          <div class="roster">
-            <div
-              v-for="p in group.players" :key="p.eid"
-              class="pl" :class="{ dead: p.dead, followed: p.followed }"
-              @click="sceneApi.setFollow(p.eid)"
-            >
-              <span class="dot" :style="{ background: p.dotColor }"></span>
-              <span class="nick">{{ p.nick }}</span>
-              <span class="tank">{{ p.tank }}</span>
-              <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+        <div class="team-lane side-left">
+          <div class="team panel team1">
+            <h3>{{ t('agentReplay.team1') }}</h3>
+            <div class="roster">
+              <div
+                v-for="p in rosterGroups.ally" :key="p.eid"
+                class="pl" :class="{ dead: p.dead, followed: p.followed }"
+                @click="sceneApi.setFollow(p.eid)"
+              >
+                <span class="dot" :style="{ background: p.dotColor }"></span>
+                <span class="nick">{{ p.nick }}</span>
+                <span class="tank">{{ p.tank }}</span>
+                <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+              </div>
+            </div>
+          </div>
+          <div v-if="rosterGroups.unknown.length" class="team panel team-unknown">
+            <h3>{{ t('agentReplay.teamUnknown') }}</h3>
+            <div class="roster">
+              <div
+                v-for="p in rosterGroups.unknown" :key="p.eid"
+                class="pl" :class="{ dead: p.dead, followed: p.followed }"
+                @click="sceneApi.setFollow(p.eid)"
+              >
+                <span class="dot" :style="{ background: p.dotColor }"></span>
+                <span class="nick">{{ p.nick }}</span>
+                <span class="tank">{{ p.tank }}</span>
+                <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="team-lane side-right">
+          <div class="team panel team2">
+            <h3>{{ t('agentReplay.team2') }}</h3>
+            <div class="roster">
+              <div
+                v-for="p in rosterGroups.enemy" :key="p.eid"
+                class="pl" :class="{ dead: p.dead, followed: p.followed }"
+                @click="sceneApi.setFollow(p.eid)"
+              >
+                <span class="dot" :style="{ background: p.dotColor }"></span>
+                <span class="nick">{{ p.nick }}</span>
+                <span class="tank">{{ p.tank }}</span>
+                <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+              </div>
             </div>
           </div>
         </div>
@@ -330,7 +393,7 @@ watch(
 
       <div v-if="store.banner" class="banner" :style="{ color: bannerColor }">{{ bannerText() }}</div>
 
-      <div v-if="store.hasData" class="controls panel">
+      <div v-if="store.hasData" ref="controlsEl" class="controls panel">
         <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
         <PlaybackTransport
           :playing="store.playing"
@@ -416,6 +479,10 @@ watch(
 .pb-root {
   position: relative;
   isolation: isolate;               /* 局部层叠上下文：HUD 只用 --pb-z-* 的 1–9 层 */
+  /* 阵容车道定界变量的兜底值：RO 就位后由 observeLaneBounds 写入实测值。
+     必须定义在 .pb-root 上——写在 .team-lane 上会把根元素的实测值遮蔽掉。 */
+  --pb-hud-h: 48px;
+  --pb-controls-h: 130px;
   height: clamp(320px, 62dvh, 720px);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
@@ -486,21 +553,30 @@ watch(
   pointer-events: none;
 }
 
-/* 阵容：己方 / 敌方**各一块浮动面板**（贴场景左 / 右边缘）、未知阵营单独一块（居中灰调）。
-   居中的 HUD 列（顶栏 / 基地 / 击杀流）在中间，三者互不遮挡——不要把两队合成一条通栏。
-   每条带偏移的规则自己声明 `position`（HUD 定位契约 A：定位规则必须能自证，不靠继承）。 */
-.team {
+/* 阵容车道（review blocker 修复）：左右两条**侧边**车道，未知阵营归左车道、在车道内
+   flex 常驻底部——三条名单都不与中央 HUD 列 / 底部控制条共用车道。车道上下界**实测**：
+   ResizeObserver 把 .hud / .controls 的高度写进 --pb-hud-h / --pb-controls-h（下面给
+   兜底默认），HUD 长高或控制条换行时车道自动让位，不再有写死的 top:96px / 底部 reserve。 */
+.team-lane {
   position: absolute;
-  top: 96px;
+  display: flex; flex-direction: column; gap: var(--space-2);
+  top: calc(var(--space-2) + var(--pb-hud-h) + var(--space-3));
+  bottom: calc(var(--pb-controls-h) + var(--space-2) + var(--space-3));
   z-index: var(--pb-z-hud);
   width: 240px;
-  max-height: calc(100% - 190px);
-  padding: var(--space-1);
-  overflow-y: auto;
+  pointer-events: none;              /* 车道只负责定界，空白处不拦截场景操作 */
 }
-.team1 { position: absolute; left: var(--space-2); }
-.team2 { position: absolute; right: var(--space-2); }
-.team-unknown { position: absolute; left: 50%; width: 220px; transform: translateX(-50%); }
+.side-left { position: absolute; left: var(--space-2); }
+.side-right { position: absolute; right: var(--space-2); }
+.team {
+  pointer-events: auto;
+  min-height: 0;                     /* 车道放不下时在面板内部滚动，不越界 */
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+.team1, .team2 { flex: 0 1 auto; }
+.team-unknown { flex: none; max-height: 50%; }   /* 常驻可见：不被队伍名单挤出车道 */
+.team-unknown h3 { color: var(--color-text-secondary); }
 .team h3 { margin: var(--space-1) var(--space-1) var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); }
 
 .pl {
@@ -583,20 +659,15 @@ watch(
 
 .roster-toggle { display: none; }
 
-/* 审计 3D-15：紧凑档名单收进「阵容」开关。打开时两块面板**各占半宽**——旧版是两块 240px
-   绝对定位互相重叠、盖住场景，这里必须保持左右分栏、互不重叠；半宽放不下弹种 / 血条，只留
-   圆点 + 昵称（与主表同一取舍）。未知阵营块落在左半栏下方，避免与两块并排抢宽度。 */
+/* 审计 3D-15：紧凑档名单收进「阵容」开关。打开时两条车道**各占半宽**——旧版两块 240px
+   绝对定位互相重叠、盖住场景（不得回退）；半宽放不下弹种 / 血条，只留圆点 + 昵称。
+   车道上下界仍由 --pb-hud-h / --pb-controls-h 实测定界，与桌面同一套几何安全。 */
 @media (width < 768px) {
   .roster-toggle { display: inline-flex; align-items: center; }
-  .team { display: none; top: 88px; width: auto; max-height: 34%; }
-  .pb-root.roster-open .team { display: block; }
-  .pb-root.roster-open .team1 { position: absolute; left: var(--space-2); right: 51%; }
-  .pb-root.roster-open .team2 { position: absolute; right: var(--space-2); left: 51%; }
-  .pb-root.roster-open .team-unknown {
-    position: absolute;
-    left: var(--space-2); right: 51%; top: calc(88px + 36%);
-    width: auto; transform: none;
-  }
+  .team-lane { display: none; }
+  .pb-root.roster-open .team-lane { display: flex; }
+  .pb-root.roster-open .side-left { position: absolute; left: var(--space-2); right: 51%; width: auto; }
+  .pb-root.roster-open .side-right { position: absolute; right: var(--space-2); left: 51%; width: auto; }
   .pl .tank, .pl .hpbar { display: none; }
   .topbar { gap: var(--space-2); padding: 0 var(--space-3); }
   .controls { width: calc(100% - var(--space-2)); padding: var(--space-1) var(--space-2); }
