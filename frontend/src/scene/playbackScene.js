@@ -2488,7 +2488,10 @@ export function initPlayback(container, store) {
     store.playing = p;
     invalidate();
   }
-  /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时从当前帧重启并丢弃暂停期间的时间差 */
+  /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时重挂帧循环；已初始化场景还要
+   *  丢弃暂停期间的时间差。渲染器/时钟是惰性创建的（首次 startPlayback 才 initScene），
+   *  所以 pre-init resume 不能读 `clock`，但必须把 pause 取消掉的唯一 rAF 重新挂回去；
+   *  `animate()` 在 renderer 尚不存在时本身就是安全的空转等待。 */
   function setPaused(next) {
     const value = !!next;
     if (value === paused) return;
@@ -2496,8 +2499,11 @@ export function initPlayback(container, store) {
     if (paused) {
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
     } else if (!destroyed) {
-      clock.getDelta();   // 丢弃暂停期间累积的 dt
-      animate();
+      // pre-init 也必须把被 pause 取消的唯一 rAF 重新挂回去：animate() 本身在 renderer
+      // 尚未创建时只排下一帧并安全返回。否则「待开播切走 → 切回 → Start」会进入
+      // paused=false / renderer!=null / rafId=0 的死态，场景 ready 但时间与画面都不再推进。
+      if (clock) clock.getDelta();   // 已初始化时丢弃暂停期间累积的 dt
+      if (!rafId) animate();
     }
   }
   function seekTo(t) {

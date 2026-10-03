@@ -15,6 +15,7 @@ import {
   __setAgentWasmResolverForTest,
 } from '../api/agent-replay-facets.js'
 import {
+  __resetMapIndexForTest,
   __resetPlaybackJsonCacheForTest,
   exactArrayBuffer,
   loadFromLocalFile,
@@ -305,6 +306,7 @@ it('迟到地图解析不会改变当前会话的资产 URL', async () => {
   const json = vi.spyOn(assetProvider, 'json').mockResolvedValue({ maps: { 1: { key: 'map_a' }, 2: { key: 'map_b' } } })
   const url = vi.spyOn(assetProvider, 'url').mockImplementation((path) => 'https://assets.example' + path)
   try {
+    __resetMapIndexForTest()
     const keyB = await resolveMapKey('id=2')
     await resolveMapKey('id=1')
     expect(mapStaticUrl('terrain', undefined, keyB)).toBe('https://assets.example/map/map_b/terrain.u16.bin')
@@ -312,5 +314,74 @@ it('迟到地图解析不会改变当前会话的资产 URL', async () => {
     expect(mapStaticUrl('map', undefined, null)).toBeNull()
   } finally {
     configured.mockRestore(); json.mockRestore(); url.mockRestore()
+    __resetMapIndexForTest()
   }
+})
+
+/**
+ * "线上有时资产加载完成却看不到地图"回归：索引（id → key）是所有地图资产 URL 的前置，
+ * 它失败 / miss 时 `mapStaticUrl` 全部返回 null，资产阶段照常走完（缺失按完成计），
+ * 场景只剩占位地面——用户视角就是"加载完了却没地图"。这里锁两条语义：
+ * 瞬时失败**不缓存**（下一场重试）；索引 miss 在 console 点名（否则无法区分"没配源"和"图不在包里"）。
+ */
+describe('地图索引的失败语义', () => {
+  it('index.json 瞬时失败 → 本次 null（告警），但不得缓存失败：下一次加载重试成功', async () => {
+    const configured = vi.spyOn(assetProvider, 'configured').mockReturnValue(true)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const json = vi.spyOn(assetProvider, 'json')
+      .mockRejectedValueOnce(new Error('asset /index.json: HTTP 502'))
+      .mockResolvedValueOnce({ maps: { 3: { key: 'middleburg' } } })
+    try {
+      __resetMapIndexForTest()
+      expect(await resolveMapKey('id=3&name=middleburg')).toBeNull()
+      expect(json).toHaveBeenCalledTimes(1)
+      expect(warn).toHaveBeenCalledTimes(1)
+
+      // 关键：失败没有写进缓存 → 下一次解析重新请求并成功
+      expect(await resolveMapKey('id=3&name=middleburg')).toBe('middleburg')
+      expect(json).toHaveBeenCalledTimes(2)
+
+      // 成功后整页缓存：不再重复请求
+      expect(await resolveMapKey('id=3')).toBe('middleburg')
+      expect(json).toHaveBeenCalledTimes(2)
+    } finally {
+      configured.mockRestore(); json.mockRestore(); warn.mockRestore()
+      __resetMapIndexForTest()
+    }
+  })
+
+  it('索引 miss（id 不在资产包）→ null + console 点名 id，按 id 去重不刷屏', async () => {
+    const configured = vi.spyOn(assetProvider, 'configured').mockReturnValue(true)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const json = vi.spyOn(assetProvider, 'json').mockResolvedValue({ maps: { 1: { key: 'karelia' } } })
+    try {
+      __resetMapIndexForTest()
+      expect(await resolveMapKey('id=42&name=new_map')).toBeNull()
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0][0])).toContain('42')
+      // 同一张图重复加载不刷屏；别的图 miss 仍各自点名
+      expect(await resolveMapKey('id=42&name=new_map')).toBeNull()
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(await resolveMapKey('id=43')).toBeNull()
+      expect(warn).toHaveBeenCalledTimes(2)
+    } finally {
+      configured.mockRestore(); json.mockRestore(); warn.mockRestore()
+      __resetMapIndexForTest()
+    }
+  })
+
+  it('未配置资产 origin：不请求索引、不告警（UI 另有"资产源未配置"提示）', async () => {
+    const configured = vi.spyOn(assetProvider, 'configured').mockReturnValue(false)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const json = vi.spyOn(assetProvider, 'json')
+    try {
+      __resetMapIndexForTest()
+      expect(await resolveMapKey('id=3')).toBeNull()
+      expect(json).not.toHaveBeenCalled()
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      configured.mockRestore(); json.mockRestore(); warn.mockRestore()
+      __resetMapIndexForTest()
+    }
+  })
 })
