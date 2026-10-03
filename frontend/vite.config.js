@@ -105,6 +105,10 @@ export default defineConfig(({ command, mode }) => {
   // Agent identity 在每个 command 下都解析：dev server 也要把 /wasm/<ref>/ 拼对
   // （Vite dev 直接伺服 publicDir，产物由 scripts/fetch-agent-wasm.sh 落位）。
   const agent = agentWasmIdentity()
+  // Android local-first runtime target（PR B §6）：**同一份产品源码**，只是输出目录不同，
+  // 由 frontend/scripts/build-android-bundle.mjs 复制进 APK assets（产物不进源码树）。
+  // 禁止为 Android 建第二套 frontend 源码树。
+  const outDir = resolve(configDirectory, mode === 'android' ? 'dist-android' : 'dist')
   return {
     plugins: [
       vue(),
@@ -112,7 +116,6 @@ export default defineConfig(({ command, mode }) => {
         name: 'wotb-build-identity',
         apply: 'build',
         closeBundle() {
-          const outDir = resolve(configDirectory, 'dist')
           mkdirSync(outDir, { recursive: true })
           writeFileSync(resolve(outDir, 'version.json'),
             JSON.stringify({
@@ -144,7 +147,7 @@ export default defineConfig(({ command, mode }) => {
     },
     publicDir: '../common/assets',
     build: {
-      outDir: 'dist',
+      outDir,
       // 让 CI 将 mapping 期望的 source asset 与实际 emitted dist 文件逐项对照。
       manifest: true,
       // 车型 WebP 必须保持独立生产文件，避免小型 turret 被内联后绕过 HTTP/dist 门禁。

@@ -23,6 +23,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
@@ -33,9 +38,41 @@ jobs:
           if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
           fi
+      # PR B §30：APK 里必须真的带着可离线运行的前端 bundle（index + JS/CSS + Agent WASM + 本地资源）。
+      # 只断言「能构建」不够 —— 这里构建 bundle、校验 commit-addressed WASM 产物，再把 bundle 复制进
+      # assets，最后在 assembleDebug 之后直接检查 APK 内容。
+      - name: Build the local-first frontend bundle into APK assets
+        run: |
+          set -euo pipefail
+          bash scripts/fetch-agent-wasm.sh
+          npm --prefix frontend ci --no-audit --no-fund
+          npm --prefix frontend run build:android
       - name: Assemble debug APK and run Android JVM unit tests
         working-directory: android
         run: bash ../scripts/ci/run-with-network-retry.sh "Android Gradle dependency resolution" gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon
+      - name: Assert the APK carries the offline frontend bundle
+        run: |
+          set -euo pipefail
+          ref="$(python3 -c 'import json;print(json.load(open("deploy/agent/source.json"))["ref"])')"
+          manifest_ref="$(python3 -c 'import json;print(json.load(open("android/app/src/main/assets/web/bundle-manifest.json"))["agentWasm"]["commit"])')"
+          test "$ref" = "$manifest_ref" || {
+            echo "::error::bundle manifest 的 Agent 身份与 deploy/agent/source.json 不一致"
+            exit 1
+          }
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          listing="$(unzip -Z1 "$apk")"
+          for required in \
+            assets/web/index.html \
+            assets/web/bundle-manifest.json \
+            "assets/web/wasm/$ref/wotb_replay_wasm.js" \
+            "assets/web/wasm/$ref/wotb_replay_wasm_bg.wasm"; do
+            printf '%s\n' "$listing" | grep -Fxq "$required" || {
+              echo "::error::APK 缺少离线前端 bundle 文件：$required"
+              exit 1
+            }
+          done
+          echo "APK carries the offline frontend bundle: $(printf '%s\n' "$listing" | grep -c '^assets/web/') files"
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
