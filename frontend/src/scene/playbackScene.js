@@ -101,6 +101,8 @@ export function initPlayback(container, store) {
   let kfId = 0;
   // 会话代数：loadData/teardown 各自递增，全部异步续体持旧代数即失效
   let sessionGen = 0;
+  /** 加载令牌：只有新的 loadData 递增，用于判定「谁是最新一次加载」（见 loadData 注释） */
+  let loadGeneration = 0;
   // 渲染帧句柄：destroy 显式 cancel（旧实现依赖 destroyed 标志的自然退出，
   // 帧回调在 destroy 后仍可能再排队一次）
   let rafId = 0;
@@ -2579,6 +2581,10 @@ export function initPlayback(container, store) {
     }
     glbCache = new Map();
     DATA = null;
+    // 会话终止 = 不再有任何可用的回放数据：就绪标记必须一起落下，否则新会话加载期间
+    // （或 file=null / 被阻断 / 组件卸载之后）HUD 与播放传输仍会按「已就绪」渲染，
+    // 而底层 DATA/车辆/贴图已经 dispose。destroy 与 loadData 的替换路径都经过这里。
+    store.hasData = false;
     T = 0; shotPtr = 0; killPtr = 0;
     winnerShown = false;
     FOLLOW_EID = 0; followAnchor = null;
@@ -2594,7 +2600,20 @@ export function initPlayback(container, store) {
   async function loadData(source) {
     // source 仅接受 { kind:'local', file }（client-only 拓扑，replaySource 对
     // 其他形态显式拒绝）；字符串路径等 server 形态在本拓扑中不存在
-    const gen = ++sessionGen;   // 使上一会话的在途异步续体全部失效
+    //
+    // 两个令牌各司其职（混用会漏掉真实竞态）：
+    // - `sessionGen`（会话代数）：teardown 递增，用于让在途的**会话资源**续体失效；
+    // - `loadGen`（加载令牌）：只有新的 loadData 递增，用于判定「谁是最新一次加载」。
+    //   不能用 `gen + 1 === sessionGen` 代替：A 在途时 B 接管，A 的 gen 恰好等于
+    //   sessionGen - 1，会被误判成本次代而清掉 B 的 loading（旧加载迟到完成 → 新会话
+    //   loading 提前消失 → 加载遮罩早退、未就绪 UI 暴露）。
+    const gen = ++sessionGen;
+    const loadGen = ++loadGeneration;
+    const ownsLoading = () => loadGen === loadGeneration;
+    // 新会话被接受的那一刻，当前场景就不再是「已就绪」：否则解析/资产阶段（可能数秒）
+    // 里 HUD、播放传输与 time/roster 仍然代表上一场回放（ready 泄漏 + 旧 UI 可交互）。
+    // 与下面的 hasData=true 一起构成不变量：hasData ⟺ 当前会话已完成加载且 DATA 可用。
+    store.hasData = false;
     store.err = '';
     store.loading = true;
     try {
@@ -2602,15 +2621,17 @@ export function initPlayback(container, store) {
       // 新数据就位才拆旧会话）
       const data = await loadPlaybackData(source);
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
-      teardownSession();   // 内部再递增一代——gen+1 仍属本调用（仍是最新所有者）
+      teardownSession();   // 内部递增会话代数；加载令牌仍属本调用（仍是最新一次加载）
       DATA = data;
       await startPlayback();   // 进入场景前等待运行所需全部资产（地图/地形/地表/场景）
       store.hasData = true;
     } catch (e) {
-      // 只写原因；标题与重试由宿主页（Scene3DStatus）按当前语言呈现
-      if (gen === sessionGen || gen + 1 === sessionGen) store.err = String(e?.message || e || 'unknown');
+      // 只写原因；标题与重试由宿主页（Scene3DStatus）按当前语言呈现。
+      // 只有最新一次加载可以写：旧加载的失败不得覆盖新加载的状态。
+      if (ownsLoading()) store.err = String(e?.message || e || 'unknown');
     } finally {
-      if (gen === sessionGen || gen + 1 === sessionGen) store.loading = false;
+      // 只有最新一次加载可以落下 loading；被取代的加载不得提前结束新会话的加载态。
+      if (ownsLoading()) store.loading = false;
     }
   }
   async function startPlayback() {

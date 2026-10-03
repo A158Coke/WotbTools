@@ -129,24 +129,25 @@ const rosterSections = computed(() => [
     : []),
 ])
 
+/**
+ * 把目标文件交给场景内核。
+ *
+ * **加载状态不属于组件层**：`playbackScene.loadData()` 自己持有代数 guard 与
+ * `loading` / `err` / `assetStage` / `assetProgress` 的唯一写入权（见其 finally 的
+ * `gen === sessionGen || gen + 1 === sessionGen` 判定）。组件层若也写 `store.loading`，
+ * 就会出现「旧场景的迟到完成把新场景的 loading 清掉」——两边代数不同步，且组件层没有
+ * 任何 guard。所以这里只发命令与记录最近文件（重试用）。
+ */
 async function loadFile(file) {
   if (!file || !sceneApi) return
   lastFile = file
   lastFileName.value = file.name || 'replay'
-  store.loading = true
-  try {
-    await sceneApi.loadData({ kind: 'local', file })
-  } catch (e) {
-    store.err = String(e?.message || e).slice(0, 160)
-  } finally {
-    store.loading = false
-  }
+  await sceneApi.loadData({ kind: 'local', file })
 }
 
-/** 重试：同一份文件重新解析（失败不清空 selection，用户不必再选一次） */
+/** 重试：同一份文件重新解析（失败不清空 selection，用户不必再选一次）；错误态由场景层重写 */
 function retryLoad() {
   if (lastFile) return loadFile(lastFile)
-  store.err = ''
 }
 
 function bannerText() {
