@@ -2498,9 +2498,12 @@ export function initPlayback(container, store) {
     paused = value;
     if (paused) {
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
-    } else if (!destroyed && clock) {
-      clock.getDelta();   // 丢弃暂停期间累积的 dt（场景未初始化时无循环，initScene 尾部按 paused 排队）
-      animate();
+    } else if (!destroyed) {
+      // pre-init 也必须把被 pause 取消的唯一 rAF 重新挂回去：animate() 本身在 renderer
+      // 尚未创建时只排下一帧并安全返回。否则「待开播切走 → 切回 → Start」会进入
+      // paused=false / renderer!=null / rafId=0 的死态，场景 ready 但时间与画面都不再推进。
+      if (clock) clock.getDelta();   // 已初始化时丢弃暂停期间累积的 dt
+      if (!rafId) animate();
     }
   }
   function seekTo(t) {
