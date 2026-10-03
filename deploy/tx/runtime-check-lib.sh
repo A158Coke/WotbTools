@@ -418,19 +418,21 @@ assert frontend.get("BACKEND_UPSTREAM") in {
 }, frontend.get("BACKEND_UPSTREAM")
 assert frontend.get("AI_UPSTREAM") == "http://10.20.0.2:8089", frontend.get("AI_UPSTREAM")
 environment = services["business-api"].get("environment") or {}
-db = (environment.get("POSTGRES_HOST"), str(environment.get("POSTGRES_PORT", "")))
-assert db in {("business-postgres", "5432"), ("10.20.0.1", "25432"), ("10.20.0.3", "25432")}, db
+business_db = (environment.get("POSTGRES_HOST"), str(environment.get("POSTGRES_PORT", "")))
+assert business_db in {
+    ("business-postgres", "5432"), ("10.20.0.1", "25432"), ("10.20.0.3", "25432")
+}, business_db
 assert environment.get("KEYCLOAK_ADMIN_SERVER_URL") in {
     "http://keycloak:8080", "http://10.20.0.1:8080", "http://10.20.0.3:8080"
 }
 assert environment.get("KEYCLOAK_ISSUER_URI") == "https://auth.wotbtools.com/realms/wotbtools"
 keycloak = services["keycloak"].get("environment") or {}
-db_url = keycloak.get("KC_DB_URL", "")
-assert db_url.startswith((
+keycloak_db = keycloak.get("KC_DB_URL", "")
+assert keycloak_db.startswith((
     "jdbc:postgresql://keycloak-postgres:5432/",
     "jdbc:postgresql://10.20.0.1:15432/",
     "jdbc:postgresql://10.20.0.3:15432/",
-)), db_url
+)), keycloak_db
 ' <<< "$compose_json"; then
     echo "tx-logical-endpoints: PASS"
   else
