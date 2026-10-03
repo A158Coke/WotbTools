@@ -23,13 +23,14 @@ const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
 
 /**
- * 只替换 Keycloak 网络边界。用 resolveId 插件而不是 `resolve.alias` 正则：
+ * 只替换 Keycloak 网络边界与**解析 Worker 的来源**。用 resolveId 插件而不是 `resolve.alias` 正则：
  * rollup alias 的 RegExp 分支只替换「匹配到的那一段」，先把已解析的真实文件定位出来
  * 再整体换掉，才不会拼出假路径。
  */
 const AUTH_BOUNDARY_STUBS = new Map([
   [resolve(frontendRoot, 'src/composables/useAuth.js'), resolve(here, 'browser-fixtures/use-auth-stub.js')],
   [resolve(frontendRoot, 'src/composables/useBusinessUserBootstrap.js'), resolve(here, 'browser-fixtures/use-business-user-bootstrap-stub.js')],
+  [resolve(frontendRoot, 'src/scene/playbackParse.worker.ts'), resolve(here, 'browser-fixtures/playback-parse-worker-stub.mjs')],
 ])
 
 /** Vite 的 module id 在 Windows 上是正斜杠、可能带盘符前导斜杠，且大小写不敏感；比较前统一规整。 */
@@ -41,10 +42,11 @@ function normalizeId(id) {
 function authBoundaryStubPlugin() {
   const normalizedStubs = new Map([...AUTH_BOUNDARY_STUBS].map(([from, to]) => [normalizeId(from), to]))
   return {
-    name: 'wotb-browser-fixture-auth-boundary',
+    name: 'wotb-browser-fixture-boundary',
     enforce: 'pre',
     async resolveId(source, importer, options) {
-      // 只接管「应用内部的相对 import」，不碰裸模块名（vue / vue-router / keycloak-js 等）。
+      // 只接管「应用内部的相对 import」，不碰裸模块名（vue / vue-router / keycloak-js 等）：
+      // stub 入口自己由测试用绝对路径 import，不会被这里接管。
       if (!importer || !source.startsWith('.')) return null
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
       if (!resolved) return null
@@ -369,7 +371,7 @@ class Page {
       document.addEventListener('touchstart', recordPrimary, true)
       document.addEventListener('mousedown', recordPrimary, true)
       document.addEventListener('click', (event) => {
-        window.__wsInput.click = describe(event.target)
+        window.__wsInput.click = { ...describe(event.target), x: event.clientX, y: event.clientY }
         window.__wsInput.clickCount += 1
       }, true)
       return true
@@ -630,6 +632,62 @@ async function runRosterGeometryScenario(env, scenario) {
   const geometry = await page.probe(rosterGeometryProbe)
   check(failures, geometry.root, 'pb-root missing')
   check(failures, geometry.errors.length === 0, `geometry violations: ${geometry.errors.join('; ')}`)
+
+  // —— A → 清空 → B（真实解析生命周期，P0 回归路径）——
+  // 注意：本段必须先等 A 收敛（err / hasData）才能注入就绪态，所以它覆盖的是「A 已 settle
+  // 后再换文件」；**A 仍在解析时就被清空**的线上真实序列由下面的
+  // `runParseLifecycleScenario`（parse-lifecycle-* 场景）用闸门 Worker 覆盖。
+  // 撤下第一场（解析未完成 resp=null → per-file remove 无确认；列表默认折叠，先展开），
+  // 换入第二份文件再真实点击「开始」：第二场的解析必须收敛（loading 落下、err 或 ready），
+  // 不得因旧解析占着 Worker 队列永远停在「解析中」。
+  await page.evaluate(`(() => {
+    const toggle = document.querySelector('.filebar .fb-actions button[aria-expanded]')
+    if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click()
+  })()`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="file-list"] .chipx'), { label: 'file chip after expanding list' })
+  const chipCenter = await page.evaluate(`(() => {
+    const chip = document.querySelector('[data-testid="file-list"] .chipx')
+    chip.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = chip.getBoundingClientRect()
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+    return (hit === chip || chip.contains(hit))
+      ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+      : null
+  })()`)
+  check(failures, !!chipCenter, 'file remove chip not hit-testable')
+  if (chipCenter) {
+    await page.tap({ ...chipCenter, touch: scenario.touch })
+    await page.waitFor(() => !document.querySelector('.pb-root'), { label: '3D pane torn down after clear' })
+    await page.evaluate(`(() => {
+      const input = document.querySelector('[data-testid="select-files-input"]')
+      const dt = new DataTransfer()
+      dt.items.add(new File([new Uint8Array([5, 6, 7, 8])], 'roster-geometry-b.wotbreplay'))
+      input.files = dt.files
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })()`)
+    await page.waitFor(() => !!document.querySelector('[data-test="replay3d-start"]'), { label: 'pre-start for battle B' })
+    const startBCenter = await page.evaluate(`(() => {
+      const button = document.querySelector('[data-test="replay3d-start"]')
+      button.scrollIntoView({ block: 'center', inline: 'nearest' })
+      const r = button.getBoundingClientRect()
+      const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+      return (hit === button || button.contains(hit))
+        ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+        : null
+    })()`)
+    check(failures, !!startBCenter, 'battle B start button not hit-testable')
+    if (startBCenter) {
+      // 先清掉 A 的失败残留：此后 store.err 只能由 B 自己的解析写回（内核代数 guard
+      // 保证只有当前加载可写 err）——「err 重新非空」就是 B 的解析跑完并收敛的证明。
+      // 若 P0 回归（旧解析占队列导致 B 永远「解析中」），err 保持空 → 超时失败。
+      await page.evaluate(`(() => { window.__pbPane.store.err = '' })()`)
+      await page.tap({ ...startBCenter, touch: scenario.touch })
+      const settled = await page.waitForValue('window.__pbPane && window.__pbPane.store.err.length > 0', (v) => v === true,
+        { timeout: 30_000, label: 'battle B parse settled (not stuck in parsing)' }).catch(() => null)
+      check(failures, settled === true, 'battle B parse did not settle after A was cleared (stuck in parsing?)')
+    }
+  }
+
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
 
   await env.chrome.client.send('Target.closeTarget', { targetId })
@@ -920,6 +978,254 @@ async function runMobileFullscreenScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `fullscreen ${scenario.width}x${scenario.height}` })
 }
 
+/* ------------------------------------------------------------------ 解析生命周期（P0） */
+
+/**
+ * A → 清空 → B 的**真实在途**生命周期回归（线上 P0：replay parser lifecycle is not
+ * session-owned）。
+ *
+ * 与同文件 roster-geometry 场景里那段「A → 清空 → B」的区别（review 指出的覆盖缺口）：
+ * 那段必须先把 A 等成 `err` / `hasData` 才能注入就绪态，所以 clear 时 A 早已 settled——
+ * 它证明的是"结算完之后再换文件"，**没有**覆盖线上真实故障序列：
+ *
+ *     A 正在解析（Worker 不回包）→ 用户清空 / 换 B → A 必须被真正撤下 → B 必须能继续
+ *
+ * 这里用 fixture Worker（`playback-parse-worker-stub.mjs`，经 `?debug` 的
+ * `__setParseWorkerForTest` 注入点替换 Worker 来源）把 A 确定性地挂在 in-flight：
+ * 不依赖真实网络随机卡顿，也不等 A 的 `err` / `hasData`。全程真实用户路径（工作台文件
+ * 选择 → 3D 能力页 → 真实点击「开始」→ 真实点击 remove chip → 再选 B → 再点「开始」），
+ * 只把 Worker 的实现换成可控闸门。
+ *
+ * 关键断言：
+ *  1. clear 那一刻 A 仍在解析（store.loading、无 err/hasData）且请求已到 Worker；
+ *  2. clear 真的撤下 A：Worker 被 terminate（生产代码的 abort 路径）；
+ *  3. B 重新发起解析并**自己**收敛（hasData，无 err）——旧解析不占队列；
+ *  4. 放行 A 的迟到回包 → 无人认领（不被 B 或任何会话消费）。
+ */
+const LIFECYCLE_SCENARIO = {
+  name: 'parse-lifecycle-a-clear-b-390x844-coarse',
+  width: 390, height: 844, touch: true,
+}
+
+/** 在 fixture server 上传入 main world 的 Worker stub 入口（`.mjs` 不是应用源码） */
+const PARSE_WORKER_STUB_URL = '/scripts/browser-fixtures/playback-parse-worker-stub.mjs'
+
+/** 页面内辅助（main world）：真实 File 选择 */
+const PARSE_LIFECYCLE_BRIDGE = `(() => {
+  window.__pbSelect = (name, bytes) => {
+    const input = document.querySelector('[data-testid="select-files-input"]')
+    if (!input) throw new Error('file input missing')
+    const dt = new DataTransfer()
+    dt.items.add(new File([new Uint8Array(bytes)], name))
+    input.files = dt.files
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    return input.files.length
+  }
+  return true
+})()`
+
+/** 可点击中心点（hit-test 通过才返回；与其它场景同一口径） */
+function clickCenterExpression(selector) {
+  return `(() => {
+    const element = document.querySelector(${JSON.stringify(selector)})
+    if (!element) return null
+    element.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = element.getBoundingClientRect()
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+    return (hit === element || element.contains(hit))
+      ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+      : null
+  })()`
+}
+
+/** fixture Worker 状态（页面内）：请求 id / terminate 次数 / 迟到回包无人认领数 */
+const PARSE_WORKER_STATE = `(() => {
+  const fixture = window.__pbWorkerFixture
+  const workers = fixture ? fixture.workers : []
+  const ids = workers.map((worker) => worker.requests.map((request) => request.id))
+  const store = window.__pbPane && window.__pbPane.store
+  return {
+    workers: workers.length,
+    ids,
+    requests: ids.reduce((sum, list) => sum + list.length, 0),
+    terminations: workers.reduce((sum, worker) => sum + worker.terminations, 0),
+    unclaimed: workers.reduce((sum, worker) => sum + worker.unclaimed.length, 0),
+    paneStore: store ? { loading: store.loading, hasData: store.hasData, err: store.err } : null,
+  }
+})()`
+
+/** 放行全部已登记请求 + 清零「无人认领」计数（之后新增的条目 = 本次放行里的迟到回包） */
+const RELEASE_WORKER_RESPONSES = `(() => {
+  const fixture = window.__pbWorkerFixture
+  for (const worker of fixture.workers) { worker.unclaimed.length = 0; worker.releaseResponses() }
+  return fixture.workers.map((worker) => worker.requests.map((request) => request.id))
+})()`
+
+async function runParseLifecycleScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+
+  await page.goto(`${env.origin}/?view=replay&ws-auth=1&ws-login=resolve&ws-roles=wotbtools-admin&debug`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="3d"]'), { label: 'capability tabs' })
+  await page.evaluate(PARSE_LIFECYCLE_BRIDGE)
+
+  // —— A：选文件 → 3D 能力页（惰性 chunk 挂载）→ 注入闸门 Worker → 真实点击「开始」 ——
+  await page.evaluate('window.__pbSelect("lifecycle-a.wotbreplay", [1, 2, 3, 4])')
+  const tabCenter = await page.evaluate(clickCenterExpression('[data-testid="ws-tab"][data-cap="3d"]'))
+  check(failures, !!tabCenter, '3D capability tab not hit-testable')
+  if (!tabCenter) {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+    return
+  }
+  await page.tap({ ...tabCenter, touch: scenario.touch })
+  await page.waitFor(() => !!document.querySelector('.pb-root'), { label: '3D pane root' })
+
+  // 闸门 Worker 必须在**任何解析请求之前**注入：3D chunk（含 replaySource）此时已装载
+  const injected = await page.evaluate(`(async () => {
+    const stub = await import(${JSON.stringify(PARSE_WORKER_STUB_URL)})
+    const source = window.__pbReplaySource
+    if (!source) throw new Error('replaySource debug bridge missing (?debug required)')
+    source.__setParseWorkerForTest(stub.installParseWorkerFixture())
+    return true
+  })()`).catch((error) => `Error: ${error?.message || error}`)
+  check(failures, injected === true, `worker fixture injection failed: ${JSON.stringify(injected)}`)
+
+  const startA = await page.evaluate(clickCenterExpression('[data-test="replay3d-start"]'))
+  check(failures, !!startA, 'battle A start button not hit-testable')
+  if (!startA) {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+    return
+  }
+  await page.tap({ ...startA, touch: scenario.touch })
+
+  // A 必须真的停在 in-flight（闸门 Worker 不回包）：请求已到 Worker，且内核仍在 loading、
+  // 既没有 err 也没有 hasData —— 这正是线上「A 正在解析」的那一刻。
+  const inFlight = await page
+    .waitForValue(PARSE_WORKER_STATE, (state) => state.requests >= 1, {
+      timeout: 15_000,
+      label: 'battle A parse request reached the worker',
+    })
+    .catch(() => null)
+  check(failures, inFlight !== null, `battle A parse never reached the worker: ${await page.evaluate(PARSE_WORKER_STATE).then(JSON.stringify).catch(String)}`)
+  check(failures, inFlight?.paneStore?.loading === true,
+    `battle A must be in-flight before the clear (state=${JSON.stringify(inFlight)})`)
+  check(failures, inFlight?.paneStore?.err === '' && inFlight?.paneStore?.hasData === false,
+    `battle A must still be pending (no err / no data) at clear time (state=${JSON.stringify(inFlight)})`)
+
+  // —— clear A：展开文件列表 → 真实点击 remove chip ——
+  await page.evaluate(`(() => {
+    const toggle = document.querySelector('.filebar .fb-actions button[aria-expanded]')
+    if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click()
+  })()`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="file-list"] .chipx'), { label: 'file chip after expanding list' })
+  const chipCenter = await page.evaluate(`(() => {
+    const chip = document.querySelector('[data-testid="file-list"] .chipx')
+    if (!chip) return null
+    chip.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = chip.getBoundingClientRect()
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+    return (hit === chip || chip.contains(hit))
+      ? {
+        x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
+        box: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
+      }
+      : null
+  })()`)
+  check(failures, !!chipCenter, 'file remove chip not hit-testable')
+  if (!chipCenter) {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+    return
+  }
+  // 真实输入事件必须落在 remove chip 上：用页面内记录的真实 click 目标 + 坐标证明
+  // （点击完成后 chip 与列表都消失了，事后再 elementFromPoint 只会拿到别的东西）
+  await page.installInputTrace()
+  await page.tap({ ...chipCenter, touch: scenario.touch })
+  const clearInput = await page.inputTrace()
+  const click = clearInput?.click
+  const insideChip = click && chipCenter.box
+    && click.x >= chipCenter.box.left && click.x <= chipCenter.box.right
+    && click.y >= chipCenter.box.top && click.y <= chipCenter.box.bottom
+  check(failures, click?.testId === 'file-list' && insideChip,
+    `the real click at (${click?.x},${click?.y}) must land on the remove chip ${JSON.stringify(chipCenter.box)} (target=${JSON.stringify(click)})`)
+  await page.waitFor(() => !document.querySelector('.pb-root'), { label: '3D pane torn down after clear' })
+
+  // clear 必须**真的撤下** A 的解析：生产代码在 abort 时整体 terminate 当前 Worker
+  const aborted = await page
+    .waitForValue(PARSE_WORKER_STATE, (state) => state.terminations >= 1, {
+      timeout: 10_000,
+      label: 'worker terminated after aborting battle A parse',
+    })
+    .catch(() => null)
+  check(failures, aborted !== null,
+    `clearing battle A did not abort the in-flight parse (worker never terminated): ${await page.evaluate(PARSE_WORKER_STATE).then(JSON.stringify).catch(String)}`)
+
+  // —— B：选文件 → 真实点击「开始」 ——
+  await page.evaluate('window.__pbSelect("lifecycle-b.wotbreplay", [5, 6, 7, 8])')
+  await page.waitFor(() => !!document.querySelector('[data-test="replay3d-start"]'), { label: 'pre-start for battle B' })
+  const startB = await page.evaluate(clickCenterExpression('[data-test="replay3d-start"]'))
+  check(failures, !!startB, 'battle B start button not hit-testable')
+  if (!startB) {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+    return
+  }
+  await page.tap({ ...startB, touch: scenario.touch })
+
+  const bRequest = await page
+    .waitForValue(PARSE_WORKER_STATE, (state) => state.requests >= 2, {
+      timeout: 15_000,
+      label: 'battle B parse request reached the worker',
+    })
+    .catch(() => null)
+  check(failures, bRequest !== null,
+    `battle B parse never reached the worker (stuck behind the abandoned A request?): ${await page.evaluate(PARSE_WORKER_STATE).then(JSON.stringify).catch(String)}`)
+  // A 的解析被撤下时必须整体放弃那个 Worker（terminate）→ B 只能在**重建后的** Worker 上跑。
+  // 若 abort 没有真的让位（旧请求仍占着旧 Worker 的队列），B 会排在 A 后面而不是新 Worker。
+  check(failures, bRequest !== null && bRequest.workers >= 2 && bRequest.ids?.[1]?.length === 1,
+    `battle B must parse on a re-created worker (abort must release the old queue): ${JSON.stringify(bRequest)}`)
+
+  // —— 放行闸门：A 的迟到回包 + B 的正常回包（同一次放行；顺序 = 请求顺序） ——
+  await page.evaluate(RELEASE_WORKER_RESPONSES)
+
+  // B 必须自己收敛：旧解析不再占队列，B 的解析跑完并落到就绪态
+  const settledB = await page
+    .waitForValue(PARSE_WORKER_STATE, (state) => state.paneStore !== null && state.paneStore.loading === false
+      && (state.paneStore.hasData === true || state.paneStore.err !== ''), {
+      timeout: 30_000,
+      label: 'battle B parse settled (not stuck in parsing)',
+    })
+    .catch(() => null)
+  check(failures, settledB !== null,
+    `battle B parse did not settle after A was cleared (stuck in parsing?): ${await page.evaluate(PARSE_WORKER_STATE).then(JSON.stringify).catch(String)}`)
+  check(failures, settledB?.paneStore?.hasData === true && settledB?.paneStore?.err === '',
+    `battle B must settle ready (old parse must not own the new session): ${JSON.stringify(settledB?.paneStore)}`)
+
+  // A 的迟到回包必须无人认领（旧解析已经被 abort 结算，不得再写任何会话）
+  const lateSettlement = await page.evaluate(`(async () => {
+    const store = window.__pbPane && window.__pbPane.store
+    const snapshot = () => (store ? { hasData: store.hasData, err: store.err, loading: store.loading } : null)
+    const before = snapshot()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    return { before, after: snapshot(), state: ${PARSE_WORKER_STATE} }
+  })()`)
+  check(failures, JSON.stringify(lateSettlement?.before) === JSON.stringify(lateSettlement?.after),
+    `late battle A response mutated the current session: ${JSON.stringify(lateSettlement)}`)
+  check(failures, lateSettlement?.state?.unclaimed >= 1,
+    `late battle A response must be unclaimed (none ignored): ${JSON.stringify(lateSettlement)}`)
+
+  check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
+
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chrome = findChrome()
@@ -938,6 +1244,7 @@ try {
   const runs = [
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...ROSTER_GEOMETRY_SCENARIOS.map((scenario) => ({ scenario, run: () => runRosterGeometryScenario(env, scenario) })),
+    { scenario: LIFECYCLE_SCENARIO, run: () => runParseLifecycleScenario(env, LIFECYCLE_SCENARIO) },
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
     { scenario: ROTATION_SCENARIO, run: () => runRotationScenario(env, ROTATION_SCENARIO) },
     ...MOBILE_FULLSCREEN_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileFullscreenScenario(env, scenario) })),
