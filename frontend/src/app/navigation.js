@@ -27,6 +27,21 @@ export const ADMIN_ONLY_VIEWS = Object.freeze([
 ])
 
 /**
+ * ⚠️ [本机测试旁路·提交前请还原] `git checkout -- frontend/src/app/navigation.js`
+ *
+ * 上面三个视图被 `wotbtools-admin`（Keycloak realm 角色）挡着，本机没有该角色时直连
+ * `?view=agent-replay` 会被 viewFromRoute 收敛回默认视图。dev 构建下显式带
+ * `?agentViews=1` 即可直达：
+ *  - 生产构建 `import.meta.env.DEV === false` → 恒为 false，门禁原样生效（无产品行为变化）；
+ *  - vitest 环境无 query（jsdom 默认 URL） → 同样为 false，navigation.test.js 的
+ *    "默认 fail-closed" / "显式 false 即拒绝" 两条断言不受影响。
+ * 也即：dev 下也必须显式带参数才放开，不是无条件解除。
+ */
+const LOCAL_AGENT_VIEWS = import.meta.env.DEV
+  && typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).has('agentViews')
+
+/**
  * 主导航（design-language §9）：
  * - 手机 / App（compact）：底部 Tab 栏渲染 PRIMARY_NAV。
  * - 平板 / 桌面：左侧边栏渲染 PRIMARY_NAV 中除"更多"外的栏目 + 管理组（ADMIN_NAV）；
@@ -113,7 +128,8 @@ export function viewFromRoute(route, { allowAdminViews = false } = {}) {
     : route.query.view ?? (isAndroidPath(route.path) ? 'android' : null)
   const view = canonicalView(rawView)
   if (!ALLOWED_VIEWS.includes(view)) return defaultView()
-  if (isAdminOnlyView(view) && !allowAdminViews) return defaultView()
+  // LOCAL_AGENT_VIEWS：仅 dev 且显式 `?agentViews=1`（见文件上方说明，提交前还原）
+  if (isAdminOnlyView(view) && !allowAdminViews && !LOCAL_AGENT_VIEWS) return defaultView()
   return view
 }
 
@@ -121,6 +137,16 @@ export function viewFromRoute(route, { allowAdminViews = false } = {}) {
 const HOF_QUERY_KEYS = ['tab', 'page', 'tank', 'nation', 'type', 'tier', 'bt', 'nick', 'limit']
 /** 坦克百科写进 URL 的筛选 / 详情键（utils/tankopediaQuery.js）：离开百科时丢掉，不带到别的页面。 */
 const TANKOPEDIA_QUERY_KEYS = ['q', 'tier', 'nation', 'type', 'sort', 'tank', 'config']
+/**
+ * 装甲查看器 / 射击复现场景写进 URL 的键（`AgentShots.srViewerUrl` 的交接链接 + `tankViewer` 的 QP 读取）：
+ * tank / shooter / config / scfg / shell / shot / world / heatmap，加相机与显示档（az / h / d / eqcal / …）
+ * 与 `clean` / `debug` 这类只对该场景有意义的开关。它们**只属于该视图**——不清理的话，
+ * 从侧边栏切走再回来会继续带着上一发的场景参数（用户实测反馈）。
+ */
+const ARMOR_SCENE_QUERY_KEYS = [
+  'tank', 'shooter', 'config', 'scfg', 'shell', 'shot', 'world', 'heatmap',
+  'az', 'h', 'd', 'eqcal', 'eqenh', 'quality', 'move', 'rel', 'clean', 'debug',
+]
 
 /** Keep legacy query URLs as the public URL contract while Vue Router owns history. */
 export function locationForView(view, route) {
@@ -131,6 +157,11 @@ export function locationForView(view, route) {
   }
   if (route.query?.view === 'agent-tankopedia' && view !== 'agent-tankopedia') {
     for (const key of TANKOPEDIA_QUERY_KEYS) delete query[key]
+  }
+  // 装甲查看器 / 射击复现场景参数只属于该视图：进出都丢掉。否则从场景（?view=agent-armor&tank=…&shot=…）
+  // 用侧边栏切走，URL 会变成 ?view=replay&tank=…&shot=…&world=1&heatmap=1（用户实测反馈）。
+  if ((route.query?.view === 'agent-armor') !== (view === 'agent-armor')) {
+    for (const key of ARMOR_SCENE_QUERY_KEYS) delete query[key]
   }
   if (view === 'home' || view === 'android' || view === 'sponsor') delete query.view
   else query.view = view
