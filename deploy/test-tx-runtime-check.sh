@@ -137,6 +137,10 @@ json.dump(data, sys.stdout)
     exit 0
     ;;
   run)
+    if [ "${FAKE_COMPOSE_RUN_STDERR:-0}" = 1 ]; then
+      printf '%s\n' ' Container deploy-health-probe-run-test Creating' >&2
+      printf '%s\n' ' Container deploy-health-probe-run-test Created' >&2
+    fi
     # The check asks curl for a body + status; the older probes ask for the status
     # only. Detect the write-out contract so both keep working.
     write_out=""
@@ -261,6 +265,27 @@ grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$ready_output"
 grep -Fq 'wireguard-service-plane: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-provisioning: PASS' <<< "$ready_output"
+
+# Docker Compose writes lifecycle/status lines for `compose run` to stderr in
+# production. Those diagnostics must remain visible without contaminating the
+# JSON/body/status protocol captured from stdout.
+stderr_noise_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_COMPOSE_RUN_STDERR=1)"
+for token in \
+  'TX_RUNTIME_READY' \
+  'qq-idp-admin-api: PASS' \
+  'auth-token: PASS' \
+  'hof-replay-storage: PASS' \
+  'public-tls-web: PASS' \
+  'public-tls-auth: PASS'; do
+  grep -Fq "$token" <<< "$stderr_noise_output" || {
+    echo "FAIL: compose stderr noise broke runtime probe token: $token" >&2
+    exit 1
+  }
+done
+grep -Fq 'Container deploy-health-probe-run-test Creating' <<< "$stderr_noise_output" || {
+  echo 'FAIL: compose stderr diagnostics should remain visible to the operator' >&2
+  exit 1
+}
 
 # Exercise the actual promoted TX layout: the wrapper and deploy helper are
 # siblings under runtime/deploy, with no repository checkout or source root.
