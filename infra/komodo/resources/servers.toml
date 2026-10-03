@@ -1,0 +1,135 @@
+# Declarative Komodo Server desired state (K4.1) — read by the ResourceSync
+# `wotbtools-main` from `infra/komodo/resources`.
+#
+# These are EXISTING production Servers. Resource Sync adopts them by name; it must
+# never recreate them with a different identity, and nothing here may change how
+# Periphery authenticates.
+#
+# The one invariant that matters most: **Periphery dials Core outbound**, so Core
+# must not dial Periphery. `address` stays empty and no inbound `:8120` endpoint may
+# ever appear here. Periphery inbound mode is disabled in production.
+#
+# Komodo v2.3.3 turns a partial `[server.config]` into a full config through the
+# schema defaults before diffing, so an omitted field is NOT "leave the live value
+# alone". Every operational field of the v2.3.3 `ServerConfig` is therefore declared
+# explicitly below, at its documented default, so the first diff is reviewable and
+# cannot silently reset a production setting.
+#
+# The same holds for the resource metadata that sync compares and applies for every
+# resource type — `description`, `tags`, and `template`. In Komodo v2.3.3
+# `bin/core/src/sync/view.rs` only skips a resource when the config diff is empty AND
+# `description`, `template`, and `tags` all match, and `sync/execute.rs` then applies
+# them through `ResourceMetaUpdate { description, template, tags }`. `ResourceToml::tags`
+# defaults to `[]`, so an omitted `tags` asserts the EMPTY tag set — it does not leave
+# live tags alone. **Git owns the tag set**, so a non-empty live tag set would surface
+# as a tag diff: treat that as a STOP condition (see
+# docs/operations/komodo-resource-sync.md), not as noise to apply.
+#
+# No non-empty production tag set is known for these hosts — this repository owns no
+# Komodo API tooling that could read one — so the reviewed tag set is the empty set,
+# declared explicitly. If a host genuinely uses tags, add them here exactly and
+# re-review.
+#
+# Deliberately absent: `deploy` and `after`. They carry no deploy scheduling on a
+# Server (no Stack or Deployment is declared here) and are not part of
+# `ResourceMetaUpdate`, so they cannot silently change this host's identity.
+#
+# Also absent by design: Periphery private keys, Periphery public-key identity, the
+# Core trust key, onboarding credentials, and the onboarding marker. Those are not
+# ServerConfig fields and stay under the Periphery owner (`deploy/periphery/**` +
+# systemd).
+#
+# See docs/operations/komodo-resource-sync.md before applying any diff.
+
+[[server]]
+name = "yecao"
+description = "Yecao production host — Komodo Periphery outbound, declared by the wotbtools-main Resource Sync"
+tags = []                    # Git owns the tag set; empty is the reviewed production tag set
+template = false             # metadata the sync also compares and applies
+
+[server.config]
+address = ""                 # outbound mode: Core never dials Periphery
+insecure_tls = true          # v2.3.3 default; unused while `address` is empty
+external_address = ""
+region = ""
+enabled = true               # v2.3.3 default is false; these Servers are live
+auto_rotate_keys = true
+passkey = ""                 # legacy inbound auth is not used
+ignore_mounts = []
+auto_prune = true
+links = []
+stats_monitoring = true
+send_unreachable_alerts = true
+send_cpu_alerts = true
+send_mem_alerts = true
+send_disk_alerts = true
+send_version_mismatch_alerts = true
+cpu_warning = 90.0
+cpu_critical = 99.0
+mem_warning = 75.0
+mem_critical = 95.0
+disk_warning = 75.0
+disk_critical = 95.0
+maintenance_windows = []
+
+[[server]]
+name = "tx1"
+description = "TX1 production host — Komodo Periphery outbound, declared by the wotbtools-main Resource Sync"
+tags = []                    # Git owns the tag set; empty is the reviewed production tag set
+template = false             # metadata the sync also compares and applies
+
+[server.config]
+address = ""                 # outbound mode: Core never dials Periphery
+insecure_tls = true          # v2.3.3 default; unused while `address` is empty
+external_address = ""
+region = ""
+enabled = true               # v2.3.3 default is false; these Servers are live
+auto_rotate_keys = true
+passkey = ""                 # legacy inbound auth is not used
+ignore_mounts = []
+auto_prune = true
+links = []
+stats_monitoring = true
+send_unreachable_alerts = true
+send_cpu_alerts = true
+send_mem_alerts = true
+send_disk_alerts = true
+send_version_mismatch_alerts = true
+cpu_warning = 90.0
+cpu_critical = 99.0
+mem_warning = 75.0
+mem_critical = 95.0
+disk_warning = 75.0
+disk_critical = 95.0
+maintenance_windows = []
+
+[[server]]
+name = "tx2"
+description = "TX2 production host — Komodo Periphery outbound, declared by the wotbtools-main Resource Sync"
+tags = []                    # Git owns the tag set; empty is the reviewed production tag set
+template = false             # metadata the sync also compares and applies
+
+[server.config]
+address = ""                 # outbound mode: Core never dials Periphery
+insecure_tls = true          # v2.3.3 default; unused while `address` is empty
+external_address = ""
+region = ""
+enabled = true               # v2.3.3 default is false; these Servers are live
+auto_rotate_keys = true
+passkey = ""                 # legacy inbound auth is not used
+ignore_mounts = []
+auto_prune = true
+links = []
+stats_monitoring = true
+send_unreachable_alerts = true
+send_cpu_alerts = true
+send_mem_alerts = true
+send_disk_alerts = true
+send_version_mismatch_alerts = true
+cpu_warning = 90.0
+cpu_critical = 99.0
+mem_warning = 75.0
+mem_critical = 95.0
+disk_warning = 75.0
+disk_critical = 95.0
+maintenance_windows = []
