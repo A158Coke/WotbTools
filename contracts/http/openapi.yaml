@@ -288,11 +288,10 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '204': { description: Cancellation accepted }
+        '204': { description: Cancellation accepted or no active review remains }
         '400': { description: Invalid correlation ID, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '403': { description: AI review role required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
-        '404': { description: No active review for this correlation ID, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
 components:
   securitySchemes:
     bearerAuth:

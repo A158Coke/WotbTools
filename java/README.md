@@ -103,7 +103,7 @@ AI Review 已从 Business Backend 拆出，运行在 Yecao 的独立无状态 `a
   `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`（409）/
   `UNSUPPORTED_BATTLE_CATEGORY`（422）/ `AI_REQUEST_TOO_LARGE`（413，16 MiB 上限，gzip 解压后同样受限）/
   `AI_REVIEW_BUSY`（503，有界准入饱和）。取消：`POST /api/ai/reviews/{correlationId}/cancel`
-  （`204`，未注册 `404`）。公开入口经 TX `/api/ai/**` 私网反代，服务本身无公网端口。
+  （幂等 `204`：请求已完成、已取消或未注册也视为目标状态已达成）。公开入口经 TX `/api/ai/**` 私网反代，服务本身无公网端口。
   完整协议见 `contracts/http/openapi.yaml` 与 `docs/features/team-ai-review.md`。
 
 **策略**：系统按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
