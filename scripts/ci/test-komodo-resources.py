@@ -82,7 +82,8 @@ SERVER_CONFIG_FIELDS = {
 # Metadata Komodo compares and applies for every resource type (`ResourceMetaUpdate`
 # in v2.3.3 `sync/execute.rs`): an omitted `tags`/`template` asserts the default, it
 # does not leave the live value alone. Both are therefore declared explicitly on every
-# resource, and Git owns them.
+# resource, and Git owns them. `description` is managed the same way and is required to
+# be present by `check_metadata` — its content is intentionally not pinned.
 MANAGED_METADATA = {"tags": [], "template": False}
 RESOURCE_SYNC_CONFIG = {
     "git_provider": "github.com",
@@ -195,7 +196,21 @@ def check_resource_types(parsed: dict[Path, dict]) -> dict[str, dict[str, dict]]
 
 
 def check_metadata(table: str, name: str, declaration: dict) -> None:
-    """Both managed metadata fields must be declared, not left to their default."""
+    """Managed metadata must be declared, not left to its default.
+
+    `description`, `tags`, and `template` are all compared and applied by Komodo, so
+    omitting any of them asserts the default — for `description` that means the empty
+    string, which would clear a live description on Apply. Only presence and type are
+    pinned here: the K4.1 drift proof deliberately edits a description through Git, so
+    its content must stay free to change by review.
+    """
+    if "description" not in declaration:
+        fail(
+            f"{table} '{name}': 'description' must be declared explicitly "
+            "(Komodo compares and applies it; omitting it asserts the empty string)"
+        )
+    elif not isinstance(declaration["description"], str):
+        fail(f"{table} '{name}': description must be a string, found {declaration['description']!r}")
     for key, expected in MANAGED_METADATA.items():
         if key not in declaration:
             fail(
