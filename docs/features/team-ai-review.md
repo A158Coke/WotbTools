@@ -361,8 +361,8 @@ prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集�
 
 ## 11. 前端展示
 
-- `ReplayWorkspace.vue`：工作台编排层，`initialCapability=ai` 的 tab / 深链直接挂载 `AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`（登录门控 + 客户端投影可用性），触发分析并展示结果
-- `FileUploader.vue`：单文件选择（替换而非追加），超限拒绝，单文件删除，clear all
+- `ReplayWorkspace.vue`：工作台编排层（五种能力的唯一载体），capability=ai 的切换 / 深链直接挂载 `AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`（登录门控 + 客户端投影可用性），触发分析并展示结果
+- `FileDrop.vue`：全站唯一的文件投放面（单文件选择替换而非追加），超限拒绝，单文件删除，clear all
 - `AnalysisResultPanel.vue`：仅渲染最终 Markdown 报告（`MarkdownContent.vue`）
 - `MarkdownContent`：渲染前对 `^(#{1,6})(?!#|\s)` 行补空格（跳过围栏代码块），修复 AI 输出 `##一、` 导致 `##` 字面显示的问题；归一化逻辑在 `utils/markdownHeadingNormalize.js`（happy-dom 下 DOMPurify 会剥掉 h1-h6，组件测试断言文本，语义由 utils 单测 + markdown-it 断言）
 - `analysis` 末尾由后端统一追加三语免责句（AI复盘仅供参考 / This AI review is for reference only / Разбор ИИ приведён только для справки）

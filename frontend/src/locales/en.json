@@ -1308,7 +1308,7 @@
     "tab_results": "Parse Results",
     "results_hint": "Run 'Parse & Preview' to see the parsed results here",
     "ai_empty": "Select a replay to start AI review",
-    "playback_empty": "Select a replay above to view it here",
+    "playback_empty": "Select a replay to view battle playback",
     "dataset_preparing": "Preparing replay data…",
     "dataset_expired": "Replay data has expired. Re-preparing…",
     "ai_login_required": "Sign in to use AI review. The replay is parsed on this device; only the structured facts the review needs are uploaded.",
@@ -1421,11 +1421,13 @@
     "btn": "Project history"
   },
   "agentReplay": {
-    "title": "3D Replay (Agent)",
+    "title": "3D replay",
+    "pick_hint": "Replays are parsed locally in your browser; the file is never uploaded.",
     "parsing": "Parsing…",
     "error_parse": "Parse failed: ",
     "play": "Play",
     "pause": "Pause",
+    "local_file": "Local file",
     "assets_hint": "Asset source not configured: append ?assets=<remote-asset-base-url> to load map terrain / vehicle GLBs / tank data (replay parsing itself does not depend on it).",
     "cam_free": "Free",
     "cam_top": "Top",
@@ -1447,8 +1449,10 @@
     "banner_win": "VICTORY",
     "banner_lose": "DEFEAT",
     "banner_draw": "DRAW",
-    "pb_hint": "Continuous 14-vehicle replay: filtered poses + turret/gun follow + tracer animation + live HP/killfeed. Parsed locally; loading takes seconds.",
-    "loading_assets": "Fetching map / terrain / scenery assets…"
+    "pb_hint": "All 14 vehicles replayed continuously: poses, turret/gun tracking, shell flight and live HP / kill feed. Parsing happens locally and takes a few seconds.",
+    "loading_assets": "Fetching map / terrain / scenery assets…",
+    "no_file": "Pick a .wotbreplay replay above to start.",
+    "destroyed_by_environment": "destroyed"
   },
   "agentTanks": {
     "title": "Tankopedia (Agent)",
@@ -1488,8 +1492,9 @@
     "open3d_hint": "Armor values, effective thickness and penetration verdicts are authoritative in the 3D inspector."
   },
   "agentShots": {
-    "title": "Shot Replay (Agent)",
-    "hint": "Pick a local .wotbreplay — the full shot chain is parsed in-browser via WebAssembly (file never leaves your machine). Shot count follows one firing event (unique shotId); subsequent events or multiple armor interactions associated with the same shotId remain part of the same shot. Click a row to reproduce it in the 3D armor viewer.",
+    "title": "Shot analysis",
+    "hint": "Pick a replay above; the full shot chain is parsed locally in your browser. Shot count follows one firing event. Click a row for shell, hit verdict and data quality.",
+    "pick": "Pick replay file",
     "parsing": "Parsing…",
     "error_parse": "Parse failed: ",
     "author_path_error": "Author strict-path extraction failed — the table below only contains other players’ shots via the lenient path (degraded ballistics/verdicts, no method38 detail)",
@@ -1534,7 +1539,19 @@
     "q_shell_terrain": "Shell type from terrain-hit broadcast fallback (0x1b, precise impact point)",
     "q_pitch_velocity": "Shooter gun pitch derived from trajectory (unavailable for other players)",
     "q_shell_unknown": "Shell type unknown (notice and broadcast both missing)",
-    "q_result_unknown": "Server did not report hit result"
+    "q_result_unknown": "Server did not report hit result",
+    "unknown_player": "Unknown player",
+    "inspector_title": "Shot inspector",
+    "inspector_hint": "The armor scene opens in Tankopedia → Armor viewer: trajectory, hit verdict and armor test live there.",
+    "open_viewer": "Open in armor viewer",
+    "close": "Close",
+    "detail_impact": "Impact",
+    "impact_hit": "Hit a target",
+    "impact_miss": "Missed",
+    "detail_trajectory": "Trajectory length",
+    "detail_quality": "Data quality",
+    "prev_shot": "Previous shot",
+    "next_shot": "Next shot"
   },
   "agentNav": {
     "replay": "3D Replay",

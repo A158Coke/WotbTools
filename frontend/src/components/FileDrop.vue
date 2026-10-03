@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowRight, CloudUpload, FileText, FolderOpen, Plus, Trash2 } from 'lucide-vue-next'
+import { ArrowRight, CloudUpload, FileText, FolderOpen, Plus, Trash2, X } from 'lucide-vue-next'
 import { fileKey, displayName } from '../utils/helpers.js'
 import {
   MAX_REPLAY_FILES,
@@ -178,7 +178,7 @@ function onDrop(e) {
         <span v-for="f in files" :key="fileKey(f)" class="chip" :title="displayName(f)">
           <span class="chip-name">{{ displayName(f) }}</span>
           <span class="chip-size">{{ formatReplaySize(f.size) }}</span>
-          <button type="button" class="chipx" :title="$t('upload.remove_title')" :aria-label="$t('upload.remove_title')" @click.stop="removeFile(f)">&times;</button>
+          <button type="button" class="chipx" :title="$t('upload.remove_title')" :aria-label="$t('upload.remove_title')" @click.stop="removeFile(f)"><X :size="16" aria-hidden="true" /></button>
         </span>
       </div>
       <div v-if="showPreview" class="replay-primary-actions">

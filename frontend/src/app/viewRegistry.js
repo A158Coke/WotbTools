@@ -1,6 +1,7 @@
 import { defineAsyncComponent } from 'vue'
 import HomePage from '../components/HomePage.vue'
 import ReplayWorkspace from '../components/ReplayWorkspace.vue'
+import { toReplayCapability } from '../types/workspace.js'
 
 // 审计 PF-02：只有落地页（首页 / 回放工作台）同步加载，其余页面按需拆包，
 // 管理页、markdown-it、DOMPurify、历史 .md 不再进主包。
@@ -18,8 +19,16 @@ const AgentTankopediaPage = defineAsyncComponent(() => import('../components/Age
 const AgentArmorViewPage = defineAsyncComponent(() => import('../components/AgentArmorView.vue'))
 const RatingDocsPage = defineAsyncComponent(() => import('../components/RatingDocsPage.vue'))
 
-// 3D 回放 / 射击分析是工作台能力（与 2D / AI 同一条 session、同一个 pane 壳），不再有独立页面：
-// 深链 ?view=agent-replay / ?view=agent-shots 解析为带对应 capability 的 ReplayWorkspace。
+/**
+ * 回放工作台是唯一 capability orchestrator：`replay` / `battle-playback` / `ai-review`
+ * 与旧深链 `agent-replay` / `agent-shots` 全部落在同一个 `ReplayWorkspace`，由
+ * `replayInitialCapability` 决定初始能力（3D / 射击仍受 admin feature flag 约束，
+ * 见 `app/navigation.js` 的 `ADMIN_ONLY_VIEWS`）。3D 与射击不再有独立页面，
+ * 深链只是工作台的能力入口。
+ *
+ * 坦克百科 → 装甲查看器（`agent-armor`）仍是独立页面：装甲查看器属于坦克百科，
+ * 不属于回放工作台（design-language §9 的 Master–Detail 只在工作台内部成立）。
+ */
 export const VIEW_COMPONENTS = Object.freeze({
   home: HomePage,
   replay: ReplayWorkspace,
@@ -42,10 +51,15 @@ export const VIEW_COMPONENTS = Object.freeze({
   'rating-docs': RatingDocsPage,
 })
 
+/** view → 工作台初始能力（唯一映射点）。 */
+const CAPABILITY_BY_VIEW = Object.freeze({
+  replay: 'data',
+  'agent-replay': '3d',
+  'agent-shots': 'shots',
+  'battle-playback': 'playback',
+  'ai-review': 'ai',
+})
+
 export function replayInitialCapability(view) {
-  if (view === 'ai-review') return 'ai'
-  if (view === 'battle-playback') return 'playback'
-  if (view === 'agent-replay') return '3d'
-  if (view === 'agent-shots') return 'shots'
-  return 'data'
+  return toReplayCapability(CAPABILITY_BY_VIEW[view])
 }

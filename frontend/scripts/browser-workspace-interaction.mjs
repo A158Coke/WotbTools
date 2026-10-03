@@ -1,6 +1,8 @@
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { createServer } from 'vite'
+import vue from '@vitejs/plugin-vue'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
-import { Page, delay } from './browser-page.mjs'
-import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
 /**
  * Browser-level interaction regression for the Replay Workspace capability tabs and the
@@ -9,17 +11,67 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
  * 为什么必须是真浏览器：本次回归的两类症状（「点了没反应」、透明层吃掉 pointer）在 jsdom 里
  * 结构上不可见 —— jsdom 没有真实布局/层叠/hit-testing，`elementFromPoint` 恒为 null。
  * 因此这里启动真实 Chrome（独立 user-data-dir）、按设备指标仿真 mobile/tablet/desktop，
- * 用真实输入管线（鼠标 / 触摸原始事件）点击真实坐标，并断言
+ * 用真实输入管线（Input.synthesizeTapGesture）点击真实坐标，并断言
  * `document.elementFromPoint(按钮中心)` 确实命中按钮本身。
  *
  * 与 `browser-playback-layout.mjs` 的分工：
  *   - 那个是 file:// + 生产 CSS 的**几何**夹具（布局/尺寸契约）；
  *   - 本文件是 Vite dev server + **真实生产应用**（router/AppShell/ReplayWorkspace/全部 CSS）
  *     的**交互**夹具，只把 Keycloak 网络边界替换掉（见 browser-fixtures/*-stub.js）。
- *
- * 通用能力（设备仿真 / 真实输入 / 输入落点记录 / 求值等待）在 browser-page.mjs，
- * 应用夹具服务器在 browser-fixtures/fixture-server.mjs —— 与 browser-armor-mobile.mjs 共用。
  */
+const here = dirname(fileURLToPath(import.meta.url))
+const frontendRoot = resolve(here, '..')
+
+/**
+ * 只替换 Keycloak 网络边界。用 resolveId 插件而不是 `resolve.alias` 正则：
+ * rollup alias 的 RegExp 分支只替换「匹配到的那一段」，先把已解析的真实文件定位出来
+ * 再整体换掉，才不会拼出假路径。
+ */
+const AUTH_BOUNDARY_STUBS = new Map([
+  [resolve(frontendRoot, 'src/composables/useAuth.js'), resolve(here, 'browser-fixtures/use-auth-stub.js')],
+  [resolve(frontendRoot, 'src/composables/useBusinessUserBootstrap.js'), resolve(here, 'browser-fixtures/use-business-user-bootstrap-stub.js')],
+])
+
+/** Vite 的 module id 在 Windows 上是正斜杠、可能带盘符前导斜杠，且大小写不敏感；比较前统一规整。 */
+function normalizeId(id) {
+  const forward = id.replace(/\\/g, '/').replace(/^\/+/, '')
+  return process.platform === 'win32' ? forward.toLowerCase() : forward
+}
+
+function authBoundaryStubPlugin() {
+  const normalizedStubs = new Map([...AUTH_BOUNDARY_STUBS].map(([from, to]) => [normalizeId(from), to]))
+  return {
+    name: 'wotb-browser-fixture-auth-boundary',
+    enforce: 'pre',
+    async resolveId(source, importer, options) {
+      // 只接管「应用内部的相对 import」，不碰裸模块名（vue / vue-router / keycloak-js 等）。
+      if (!importer || !source.startsWith('.')) return null
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
+      if (!resolved) return null
+      return normalizedStubs.get(normalizeId(resolved.id.split('?')[0])) || null
+    },
+  }
+}
+
+const delay = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
+
+async function startFixtureServer() {
+  const server = await createServer({
+    configFile: false,
+    root: frontendRoot,
+    logLevel: 'error',
+    plugins: [authBoundaryStubPlugin(), vue()],
+    // vite.config.js 的 define 只在读取项目配置时注入；本实例不读 configFile，需显式提供。
+    define: { __BUILD_COMMIT__: '"browser-fixture"', __BUILD_TIME__: '"browser-fixture"' },
+    // 与 vite.config.js 一致：logo / icon / silent-check-sso 等 public 资源来自 common/assets。
+    publicDir: resolve(frontendRoot, '../common/assets'),
+    server: { host: '127.0.0.1', port: 0, strictPort: false },
+  })
+  await server.listen()
+  const url = server.resolvedUrls?.local?.[0]
+  if (!url) throw new Error('fixture Vite server did not publish a local URL')
+  return { server, origin: url.replace(/\/$/, '') }
+}
 
 /* ------------------------------------------------------------------ 页面内探针
    写成真实函数再序列化执行，避免模板字符串里的转义错误。 */
@@ -61,11 +113,18 @@ function capabilityStateProbe() {
     if (!element) return { present: false, visible: false }
     return { present: true, visible: getComputedStyle(element).display !== 'none' && element.getClientRects().length > 0 }
   }
-  const tabs = Array.from(document.querySelectorAll('[data-testid="ws-tab"]')).map((tab) => ({
-    cap: tab.dataset.cap,
-    selected: tab.getAttribute('aria-selected') === 'true',
-    active: tab.classList.contains('is-active'),
-  }))
+  const tabs = Array.from(document.querySelectorAll('[data-testid="ws-tab"]')).map((tab) => {
+    const rect = tab.getBoundingClientRect()
+    return {
+      cap: tab.dataset.cap,
+      role: tab.getAttribute('role'),
+      // 能力切换走 canonical SegmentedControl 的 radiogroup 模型（不是 tablist）
+      selected: tab.getAttribute('aria-checked') === 'true',
+      active: tab.classList.contains('is-active'),
+      /** 触屏点击区域（design-language §5：coarse 下 ≥ 44px） */
+      minSide: Math.round(Math.min(rect.width, rect.height)),
+    }
+  })
   const dialog = document.querySelector('.global-error-modal')
   const overlay = dialog ? dialog.closest('.dialog-scrim') : null
   return {
@@ -73,26 +132,11 @@ function capabilityStateProbe() {
     data: pane('ws-data'),
     ai: pane('ws-ai'),
     playback: pane('ws-playback'),
+    threeD: pane('ws-3d'),
+    shots: pane('ws-shots'),
     errorDialog: dialog
       ? { text: dialog.textContent.trim(), visible: !!overlay && getComputedStyle(overlay).display !== 'none' }
       : null,
-  }
-}
-
-/** 3D / 射击 pane 就地在工作台内切换时的工作台状态（页面内探针，供 page.probe 使用）。 */
-function workspacePaneProbe() {
-  const pane = document.querySelector('[data-testid="ws-3d"]')
-  const data = document.querySelector('[data-testid="ws-data"]')
-  return {
-    view: new URLSearchParams(location.search).get('view'),
-    tabsVisible: !!document.querySelector('.workspace-tabs'),
-    workspaceRoot: !!document.querySelector('.replay-workspace'),
-    paneDisplay: pane ? getComputedStyle(pane).display : null,
-    dataDisplay: data ? getComputedStyle(data).display : null,
-    // 无已选回放时内核不建 canvas（场景在 loadData 后才创建）：用组件根 + 空态提示证明
-    // 这个 pane 真的是 3D 回放视图（而不是空壳）
-    paneHasView: !!document.querySelector('[data-testid="ws-3d"] .pb-root'),
-    paneEmptyHint: !!document.querySelector('[data-testid="ws-3d"] [data-test="replay3d-source-hint"]'),
   }
 }
 
@@ -183,20 +227,175 @@ function playbackControlProbe() {
 
 /* ------------------------------------------------------------------ 页面驱动 */
 
-/** 场景失败时的现场快照探针（应用专属；通用外壳在 browser-page.mjs）。 */
-function workspaceDiagnosticsProbe() {
-  const present = (selector) => !!document.querySelector(selector)
-  return {
-    authStubLoaded: typeof window.__wsAuth === 'object' && window.__wsAuth !== null,
-    appMounted: !!document.querySelector('#app')?.firstElementChild,
-    tabs: document.querySelectorAll('[data-testid="ws-tab"]').length,
-    dataPane: present('[data-testid="ws-data"]'),
-    playbackPane: present('[data-testid="ws-playback"]'),
-    inputTrace: window.__inputTrace || null,
-    url: location.href,
+class Page {
+  constructor(client, sessionId) {
+    this.client = client
+    this.sessionId = sessionId
+    this.consoleErrors = []
+    client.on('Runtime.exceptionThrown', (params, session) => {
+      if (session !== sessionId) return
+      this.consoleErrors.push(`uncaught: ${params.exceptionDetails?.exception?.description || params.exceptionDetails?.text}`)
+    })
+    client.on('Runtime.consoleAPICalled', (params, session) => {
+      if (session !== sessionId || params.type !== 'error') return
+      this.consoleErrors.push(`console.error: ${(params.args || []).map((arg) => arg.value ?? arg.description).join(' ')}`)
+    })
+  }
+
+  async enable() {
+    await this.client.send('Runtime.enable', {}, this.sessionId)
+    await this.client.send('Page.enable', {}, this.sessionId)
+  }
+
+  async evaluate(expression) {
+    const { result, exceptionDetails } = await this.client.send('Runtime.evaluate', {
+      expression, awaitPromise: true, returnByValue: true,
+    }, this.sessionId)
+    if (exceptionDetails) {
+      throw new Error(`page exception: ${exceptionDetails.exception?.description || exceptionDetails.text}`)
+    }
+    return result.value
+  }
+
+  /** 序列化执行 `fn()`（探针不依赖闭包，因此可以安全地跨进程传递）。 */
+  probe(fn) {
+    return this.evaluate(`(${fn.toString()})()`)
+  }
+
+  /**
+   * 轮询页面表达式直到 predicate 成立。
+   * navigate 期间执行上下文会被销毁，`Runtime.evaluate` 会失败 —— 那是预期噪声，重试即可。
+   */
+  async waitForValue(expression, predicate, { timeout = 20_000, label = expression } = {}) {
+    const deadline = Date.now() + timeout
+    let last
+    let lastError = null
+    while (Date.now() < deadline) {
+      try {
+        last = await this.evaluate(expression)
+        lastError = null
+        if (predicate(last)) return last
+      } catch (error) {
+        lastError = error
+      }
+      await delay(50)
+    }
+    throw new Error(`timeout waiting for ${label}; last=${JSON.stringify(last)}${lastError ? ` error=${lastError.message}` : ''}`)
+  }
+
+  waitFor(conditionFn, options) {
+    return this.waitForValue(`(${conditionFn.toString()})()`, (value) => value === true, options)
+  }
+
+  async emulate(scenario) {
+    const touch = scenario.touch !== false
+    await this.client.send('Emulation.setDeviceMetricsOverride', {
+      width: scenario.width,
+      height: scenario.height,
+      deviceScaleFactor: scenario.deviceScaleFactor ?? 3,
+      mobile: touch,
+    }, this.sessionId)
+    await this.client.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: touch ? 5 : 1 }, this.sessionId)
+  }
+
+  async goto(url) {
+    await this.client.send('Page.navigate', { url }, this.sessionId)
+    await this.waitForValue('document.readyState', (value) => value === 'complete', { label: 'document readyState=complete' })
+  }
+
+  /** 场景失败时的现场快照：页面异常 + 关键状态位，避免「timeout 但不知道为什么」。 */
+  async diagnose() {
+    const state = await this.probe(function diagnosticsProbe() {
+      const present = (selector) => !!document.querySelector(selector)
+      return {
+        authStubLoaded: typeof window.__wsAuth === 'object' && window.__wsAuth !== null,
+        appMounted: !!document.querySelector('#app')?.firstElementChild,
+        tabs: document.querySelectorAll('[data-testid="ws-tab"]').length,
+        dataPane: present('[data-testid="ws-data"]'),
+        playbackPane: present('[data-testid="ws-playback"]'),
+        inputTrace: window.__wsInput || null,
+        url: location.href,
+      }
+    }).catch(() => null)
+    return [`page state: ${JSON.stringify(state)}`, `page errors: ${this.consoleErrors.join(' | ') || '(none)'}`]
+  }
+
+  /**
+   * 真实输入管线点击。
+   *
+   * 只用原始事件注入（touch 序列 / 鼠标序列），**不用 `Input.synthesizeTapGesture`**：
+   * 本机 Chrome 上该 API 只派发 touch 事件、不合成兼容 click（已实测：连 topbar 控制组
+   * 按钮也拿不到 click），会让「点击是否真的产生行为」这条断言全部假阳性。
+   */
+  async tap(point) {
+    const touch = point.touch !== false
+    if (touch) {
+      await this.client.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: point.x, y: point.y, id: 1, radiusX: 8, radiusY: 8, force: 1 }],
+      }, this.sessionId)
+      await delay(40)
+      await this.client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, this.sessionId)
+    } else {
+      await this.client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y }, this.sessionId)
+      await this.client.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 }, this.sessionId)
+      await delay(40)
+      await this.client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 }, this.sessionId)
+    }
+    await delay(150)
+  }
+
+  /**
+   * 记录**真实输入事件**实际落到哪个元素上。
+   * 这是「click/touch 真的到达 button」的权威证据 —— 比 `elementFromPoint` 更强，
+   * 因为它证明的是输入管线真实派发的 target，而不是静态几何。
+   */
+  async installInputTrace() {
+    await this.evaluate(`(() => {
+      const describe = (element) => {
+        if (!element || !element.closest) return null
+        const cap = element.closest('[data-cap]')
+        const testId = element.closest('[data-testid]')
+        const test = element.closest('[data-test]')
+        return {
+          tag: element.tagName,
+          cap: cap ? cap.getAttribute('data-cap') : null,
+          testId: testId ? testId.getAttribute('data-testid') : null,
+          test: test ? test.getAttribute('data-test') : null,
+        }
+      }
+      window.__wsInput = { primary: null, click: null, clickCount: 0 }
+      const recordPrimary = (event) => { window.__wsInput.primary = describe(event.target) }
+      document.addEventListener('touchstart', recordPrimary, true)
+      document.addEventListener('mousedown', recordPrimary, true)
+      document.addEventListener('click', (event) => {
+        window.__wsInput.click = describe(event.target)
+        window.__wsInput.clickCount += 1
+      }, true)
+      return true
+    })()`)
+  }
+
+  inputTrace() {
+    return this.evaluate('window.__wsInput')
+  }
+
+  /**
+   * 把控件滚进视口后再探针。用于「非全屏横屏地图高于视口」这类形态：
+   * 判定标准是「可滚动触达 + 触达后真的可点」，而不是「永远在首屏」。
+   */
+  async revealControl(selector) {
+    await this.evaluate(
+      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' }); return !!el })()`,
+    )
+    await delay(200)
+    return this.probe(playbackControlProbe)
+  }
+
+  resetInputTrace() {
+    return this.evaluate('window.__wsInput = { primary: null, click: null, clickCount: 0 }; window.__wsInput')
   }
 }
-
 
 const results = []
 
@@ -215,14 +414,14 @@ const APP_SCENARIOS = [
   { name: 'capability-740x360-landscape-coarse', width: 740, height: 360, touch: true, authenticated: true, login: 'resolve' },
   { name: 'capability-1024x768-tablet', width: 1024, height: 768, touch: false, authenticated: true, login: 'resolve' },
   { name: 'capability-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve' },
-  // 3D 回放 / 射击分析已并入工作台：admin 下点这两个 tab 必须**留在工作台内**（tab 栏保留、
-  // pane 就地切换），不再跳到独立页面。admin 角色由 auth stub 的 ws-roles 提供。
-  { name: 'capability-admin-3d-tab-390x844-coarse', width: 390, height: 844, touch: true, authenticated: true, login: 'resolve', roles: 'wotbtools-admin', adminPanes: true },
   // 服务器没有 parser，工作台没有 auth gating：未登录、auth init 挂起 / 失败时都立即可用，且不发起登录。
   // pending 的 watchdog 设得远长于场景本身——工作台必须在 auth init 仍挂起时就渲染（不能等超时兜底）。
   { name: 'anonymous-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'reject' },
   { name: 'auth-init-pending-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'pending', authTimeout: 120_000 },
   { name: 'auth-init-reject-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'reject', authTimeout: 120_000 },
+  // 管理员（内测 feature flag）：五能力齐全，3D 能力真实可切（不再导航去独立页面）
+  { name: 'admin-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
+  { name: 'admin-390x844-portrait-coarse', width: 390, height: 844, touch: true, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
 ]
 
 const PLAYBACK_SCENARIOS = [
@@ -257,7 +456,8 @@ async function runAppScenario(env, scenario) {
   const authParams = scenario.authInit
     ? `&ws-auth-init=${scenario.authInit}&ws-auth-timeout-ms=${scenario.authTimeout ?? 12_000}`
     : ''
-  const url = `${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-login=${scenario.login}${authParams}${scenario.roles ? `&ws-roles=${scenario.roles}` : ''}`
+  const roleParams = scenario.roles?.length ? `&ws-roles=${encodeURIComponent(scenario.roles.join(','))}` : ''
+  const url = `${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-login=${scenario.login}${authParams}${roleParams}`
   await page.goto(url)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="playback"]'), { label: 'capability tabs' })
 
@@ -308,53 +508,49 @@ async function runAppScenario(env, scenario) {
   `capability was reverted by a later watcher/route sync: ${JSON.stringify(settled)}`)
   check(failures, await page.evaluate('new URLSearchParams(location.search).get("view")') === 'battle-playback',
     'route was reverted away from ?view=battle-playback by a later watcher/route sync')
-  // §3D-capability：3D 回放 / 射击分析并入工作台后，admin 点这两个 tab 必须留在工作台内
-  if (scenario.adminPanes) {
-    const tabPoint = async (cap) => page.evaluate(`(() => {
-      const b = document.querySelector('.workspace-tabs [data-testid="ws-tab"][data-cap="${cap}"]')
-      if (!b) return null
-      const r = b.getBoundingClientRect()
-      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
-    })()`)
-
-    const threeDPoint = await tabPoint('3d')
-    check(failures, !!threeDPoint, 'admin 场景缺少 3D 回放 tab')
-    if (threeDPoint) {
-      await page.tap({ ...threeDPoint, touch: scenario.touch })
-      const entered = await page
-        .waitForValue(`new URLSearchParams(location.search).get('view')`, (value) => value === 'agent-replay', { timeout: 10_000, label: 'view=agent-replay' })
-        .then(() => page.waitForValue(`(() => { const p = document.querySelector('[data-testid="ws-3d"]'); return !!p && getComputedStyle(p).display !== 'none' })()`, (value) => value === true, { timeout: 10_000, label: '3D pane visible' })
-          // 场景内核是懒加载 async 组件：等组件根真正挂进 pane（否则 pane 只是空壳）
-          .then(() => page.waitForValue(`!!document.querySelector('[data-testid="ws-3d"] .pb-root')`, (value) => value === true, { timeout: 15_000, label: '3D pane view root' }).catch(() => null))
-          .then(() => page.probe(workspacePaneProbe))
-          .catch(() => null))
-        .catch(() => null)
-      check(failures, !!entered, '点击 3D tab 后没有进入工作台内的 3D pane（可能又跳独立页面）')
-      if (entered) {
-        check(failures, entered.tabsVisible, '切到 3D 后工作台 tab 栏消失（回到独立页面形态）')
-        check(failures, entered.workspaceRoot, '切到 3D 后工作台根容器消失')
-        check(failures, entered.dataDisplay === 'none', `切到 3D 后数据 pane 仍可见（display=${entered.dataDisplay}）`)
-        check(failures, entered.paneHasView && entered.paneEmptyHint,
-          `3D pane 内不是 3D 回放视图（view=${entered.paneHasView} emptyHint=${entered.paneEmptyHint}）`)
-      }
-      // 切回数据：pane 保留（状态不丢），tab 栏仍在
-      const dataPoint = await tabPoint('data')
-      check(failures, !!dataPoint, 'admin 场景缺少数据 tab')
-      if (dataPoint) {
-        await page.tap({ ...dataPoint, touch: scenario.touch })
-        const back = await page
-          .waitForValue(`new URLSearchParams(location.search).get('view')`, (value) => value === 'replay', { timeout: 10_000, label: 'view=replay' })
-          .then(() => page.probe(workspacePaneProbe))
-          .catch(() => null)
-        check(failures, !!back && back.paneDisplay === 'none', `切回数据后 3D pane 未隐藏（${JSON.stringify(back)}）`)
-        check(failures, !!back && back.tabsVisible, '切回数据后工作台 tab 栏消失')
-      }
-    }
-  }
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
   if (!scenario.authenticated) {
     const attempts = await page.evaluate('window.__wsAuth.loginCalls.length')
     check(failures, attempts === 0, `anonymous capability switch must not start login, loginCalls=${attempts}`)
+  }
+
+  // —— 能力集合（PR-B：五能力同一工作台）——
+  // 普通用户 = data / playback / ai（AI 是正式能力，不是 admin-only）；
+  // 管理员额外有 3D 回放 / 射击分析。两条集合都必须完整渲染，不因能力不可用而消失。
+  const expectedCaps = scenario.roles?.includes('wotbtools-admin')
+    ? ['data', 'playback', '3d', 'shots', 'ai']
+    : ['data', 'playback', 'ai']
+  check(failures, JSON.stringify(state.tabs.map((t) => t.cap)) === JSON.stringify(expectedCaps),
+    `capability set=${JSON.stringify(state.tabs.map((t) => t.cap))}, expected ${JSON.stringify(expectedCaps)}`)
+  if (scenario.touch) {
+    const small = state.tabs.filter((t) => t.minSide < 43.5)
+    check(failures, small.length === 0,
+      `coarse capability targets below 44px: ${JSON.stringify(small)}`)
+  }
+
+  // —— 3D 能力（管理员）：切过去真的落在同一工作台，URL 与面板一起变 ——
+  if (expectedCaps.includes('3d')) {
+    const threeDTab = state.tabs.find((t) => t.cap === '3d')
+    const threeDHit = await page.evaluate(`(() => {
+      const button = document.querySelector('[data-testid="ws-tab"][data-cap="3d"]')
+      if (!button) return null
+      button.scrollIntoView({ block: 'center', inline: 'nearest' })
+      const r = button.getBoundingClientRect()
+      const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+      const hit = document.elementFromPoint(center.x, center.y)
+      return { center, hitIsButton: hit === button || button.contains(hit) }
+    })()`)
+    check(failures, !!threeDTab && !!threeDHit?.hitIsButton,
+      `3D capability tab not hit-testable: ${JSON.stringify({ threeDTab, threeDHit })}`)
+    if (threeDHit?.hitIsButton) {
+      await page.tap({ ...threeDHit.center, touch: scenario.touch })
+      await page.waitForValue('new URLSearchParams(location.search).get("view")', (value) => value === 'agent-replay',
+        { label: 'route ?view=agent-replay' })
+      const threeDState = await page.probe(capabilityStateProbe)
+      check(failures, threeDState.threeD.visible, `ws-3d not visible after switching (${JSON.stringify(threeDState.threeD)})`)
+      check(failures, !threeDState.playback.visible, 'ws-playback still visible after switching to 3D')
+      check(failures, !threeDState.data.visible, 'ws-data still visible after switching to 3D')
+    }
   }
 
   await env.chrome.client.send('Target.closeTarget', { targetId })
@@ -375,7 +571,7 @@ async function runPlaybackControlScenario(env, scenario) {
   const before = await page.probe(playbackControlProbe)
   // §landscape：非全屏手机横屏时地图按宽度定尺寸，方形地图可以比视口还高，
   // controls 因此排在首屏之外。要求不是「永远在首屏」，而是「可以滚动到并真的可点」。
-  const control = before.hitIsButton ? before : await page.revealControl('[data-test="pb-play"]', playbackControlProbe)
+  const control = before.hitIsButton ? before : await page.revealControl('[data-test="pb-play"]')
   check(failures, control.hitIsButton,
     `play button center hit ${control.hitDescription} instead (viewport=${control.viewportWidth}x${control.viewportHeight} geometry=${JSON.stringify(control.geometry)})`)
   if (before.railSpeeds) {
@@ -445,7 +641,7 @@ async function runRotationScenario(env, scenario) {
   const after = await page.probe(playbackControlProbe)
   check(failures, after.pageScrollWidth <= after.viewportWidth + 1,
     `after rotation page-level horizontal overflow: ${after.pageScrollWidth} > ${after.viewportWidth} (contentWidth=${after.contentWidth} geometry=${JSON.stringify(after.geometry)})`)
-  const control = after.hitIsButton ? after : await page.revealControl('[data-test="pb-play"]', playbackControlProbe)
+  const control = after.hitIsButton ? after : await page.revealControl('[data-test="pb-play"]')
   check(failures, control.hitIsButton,
     `after rotation the play button center hit ${control.hitDescription} (viewport=${control.viewportWidth}x${control.viewportHeight} geometry=${JSON.stringify(control.geometry)})`)
   await page.installInputTrace()
@@ -565,7 +761,7 @@ try {
     } catch (error) {
       results.push({
         name: scenario.name,
-        failures: [error.message, ...(lastPage ? await lastPage.diagnose(workspaceDiagnosticsProbe).catch(() => []) : [])],
+        failures: [error.message, ...(lastPage ? await lastPage.diagnose().catch(() => []) : [])],
         viewport: `${scenario.width}x${scenario.height}`,
       })
     }

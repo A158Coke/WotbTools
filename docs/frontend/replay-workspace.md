@@ -4,11 +4,12 @@
 
 ## 当前实现
 
-- `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`ai`、`playback`、`3d`、`shots` 五种能力的统一工作台（3D / 射击仅管理员可见）。
-- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责模式切换（数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘，* 仅管理员），`FileUploader.vue` 负责空 / 已选择 / 解析完成三种上传状态（解析完成后折叠为一行，清空需确认，是**唯一**的上传入口），`BattlePicker.vue`（可搜索的场次选择器）在各能力面板上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
-- 五种能力都在工作台内渲染（各自一个 pane，首进懒挂载、之后切走只隐藏），上层导航（页头 + tab 栏 + 上传区）始终保留：3D 回放 / 射击分析不再有独立页面，`?view=agent-replay` / `?view=agent-shots` 深链与 tab 都解析为这里的 `3d` / `shots` pane，并通过 `props.file` 消费工作台已选回放（自身不再自带文件选择器；无已选回放时显示统一空态 `workspace.playback_empty`，多文件未选场次时由 `blockedReason` 说明）。
-- **撤下回放**（清空选择 / 多文件未选场次 / 换成别的场次）时各 pane 必须复位到等待态并释放上一场：3D 走内核 `playbackScene.reset()`（车辆/地图/地形/特效/GLB 模板全量 dispose + HUD 派生字段归零，渲染器与画质档保留），射击清空表格与在途解析（`parseSeq` 作废迟到结果）；两者都清掉本地的「上次文件」记忆，因此**再选同一份回放也会重新加载**，并重新等待解析 + 资产就绪才呈现（3D 的 `hasData` 在 `startPlayback()` 等待运行所需资产之后才置位）。
-- **3D 回放是显式两段式**：工作台给出回放后 pane 先进入「待开播」（显示回放名 + 画质档位 + 「开始」），点开始才 `loadData` → 等解析与地图/地形资产 → 才呈现场景。原因：内核在 `startPlayback()` 惰性创建渲染器、首帧按当前画质档定型，画质必须在开播前选定（等价于旧独立页 loader 里的选档步骤）。
+- `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`playback`、`3d`、`shots`、`ai` **五种能力**的统一工作台：选择一次文件，能力之间切换不重新选文件、不重建 session。
+- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘，* 仅管理员；五个能力都在本工作台内，没有"导航去另一个页面"的能力），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
+- 五个能力面板都由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`），之后切走只 `v-show` 隐藏：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
+- 3D 场景加载与就绪态由 `scene/playbackScene.js` 独占：新文件进入解析阶段立即置 `loading=true`、`hasData=false`、`assetStage=false`、`assetProgress=null`；当前会话进入资产阶段才推进资产进度，完成后才标 ready。销毁清掉加载阶段状态。地图资产每个异步边界之后先复核会话身份，再发布地图 key、纹理、地形、分层地表或场景；迟到资源只释放局部结果。资产 URL 显式使用当前会话的地图 key，旧实例的地图解析不能改变当前会话后续请求。`Replay3DPane` 只负责编排，不新增加载令牌。
+- 3D / 射击面板不持有文件选择器，也不持有第二份 session：选择与 identity 仍只由 `useReplaySession` 拥有。
+- 四个懒加载面板都经 `utils/lazyModule.ts` 的 `defineLazyModule` 边界加载（不是裸 `defineAsyncComponent`）：部署换掉 chunk 文件名后旧页面进入能力必然 404，边界保证工作台**保持挂载**并在该能力内显示可操作失败态（「重新加载」为主、「重试」覆盖瞬时失败），且失败态在切走再切回后**仍然保留**（generation 与 recovery 由边界自己拥有）。生产契约见 [`docs/architecture/ai-review.md`](../architecture/ai-review.md)「懒加载与部署的关系」。
 - 数据模式（`ReplayPage.vue`）的结果区自上而下是：提示（`Banner`：重复 / 解析失败 / League 不可用 / 未评分场次）→ 工具栏（`SegmentedControl` 汇总 / 单场 · 单场时的 `BattlePicker` · Rating 说明 · 列 · `MenuButton` 导出 ▾：Excel 汇总 / Excel 逐场 / PNG 当前视图）→ 汇总视图顶部的 `SeriesOverview`（两支稳定战队时显示系列赛比分，其后是逐场结果条，点击跳到该场单场视图）→ 表格。
 - 玩家表默认只显示 6–8 个核心列（`utils/helpers.js` 的 `*_DEFAULT_VISIBLE`），其余在「列 N/M」面板里；localStorage 可见列与旧默认值完全相同时视为未自定义，迁到新默认值。手机（<768）默认用 `PlayerCardList` 卡片列表（可切回表格，排序与表格共用）；卡片模式下表格仍在 DOM 中隐藏，PNG 导出始终导出表格。
 - 玩家详情 `PlayerDetailDrawer`：桌面可拖宽的推开式侧栏，平板固定 360px 推开式侧栏（都写 `--pd-drawer-offset` 让工作台让位），手机全屏 sheet，可左右滑动切换玩家。
@@ -16,15 +17,16 @@
 - `frontend/src/composables/useReplaySession.ts` 是唯一 session state owner，持有 selection、当前 battle、本地分析状态（`analysis: { phase, done, total, failure }`）、结果与 Workspace view state。
 - `frontend/src/composables/useLocalReplayAnalysis.ts` 持有本机分析生命周期：Worker 解析（上游 Rust Core WASM）→ 批次计算 → 提交结果；选择变化 / 取消作废在途分析；`exportExcel` 复用最近一次的批次结果在客户端生成 xlsx / zip。服务器没有 parser，失败只显示原因（`ENGINE_UNAVAILABLE` / `NO_VALID_REPLAYS` / `UNKNOWN`），不回退服务端。
 - `frontend/src/composables/useReplay.ts` 是 facade/orchestrator，组合 session 与本地分析。
-- `BattlePlaybackPanel.vue`（2D）、`AgentReplay3D.vue`（3D）、`AgentShots.vue`（射击）都直接接收工作台给的目标文件（`props.file`/`active`/`blockedReason`）：2D 本机 `parseLocalPlayback` 得到数据与地图概览，3D 本机 `loadPlaybackData` + `playbackScene` 全场渲染，射击本机 `parseAgentShotsFromBytes` 出逐发表格；三者都是懒挂载 chunk。多文件未选场次时统一显示 `workspace.single_replay_required`，没有目标文件时显示 `workspace.playback_empty`。
-- `frontend/src/app/viewRegistry.js` 将 `replay`、`ai-review`、`battle-playback`、`agent-replay`、`agent-shots` URL 映射到同一个 `ReplayWorkspace`，由 `initialCapability` 决定初始 tab（`viewRegistry.replayInitialCapability`）；`ViewHost.vue` 用 `KeepAlive` 保留工作台实例。
+- `BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时显示 `workspace.single_replay_required`。
+- `frontend/src/app/viewRegistry.js` 是 view → capability 的唯一映射：`replay` → `data`、`battle-playback` → `playback`、`agent-replay` → `3d`、`agent-shots` → `shots`、`ai-review` → `ai`；五个 view 全部映射到同一个 `ReplayWorkspace`，由 `initialCapability` 决定初始能力。`ViewHost.vue` 用 `KeepAlive` 保留工作台实例。旧深链（`agent-replay` / `agent-shots`）继续有效，只是变成能力入口。
 - `frontend/src/app/router.js` 是历史与深链 owner。页面组件通过注入的 `navigate` 改变 URL，不直接操作浏览器 history。
 
 ## 稳定边界
 
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision` 与 `sourceId`（`r{文件序号}`）作为唯一 identity。
-- 场次选择器（数据模式在 `ReplayPage` 工具栏、2D 回放在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。
-- AI 复盘 tab 与深链直接挂载 AI 面板（`AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`），受登录门控与客户端投影可用性约束；前端已无维护状态卡（提交 `83884790`，`ai_maintenance` 三语 key 无消费者）。切换 capability 不重新分析数据模式的结果。
+- 场次选择器（数据模式在 `ReplayPage` 工具栏、四个单场能力在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。用户可见的能力集合仍受 admin feature flag 约束：普通用户 `data / playback / ai`，管理员再加 `3d / shots`；非管理员直达 `?view=agent-replay|agent-shots` 由 `viewFromRoute` 收敛回默认视图。
+- AI 复盘是**正式能力**（普通用户可见，未登录由 AuthGate 引导登录），深链直接挂载 AI 面板（`AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`），受登录门控与客户端投影可用性约束；前端已无维护状态卡（提交 `83884790`，`ai_maintenance` 三语 key 无消费者）。切换 capability 不重新分析数据模式的结果。
+- 射击分析面板按 `docs/frontend/design-language.md` §9 做 Master–Detail（expanded 常驻右栏 / medium 推开式侧栏 / compact 整屏面板），分档由**容器宽度**（`ResizeObserver` + container query）决定而不是视口。装甲场景不在面板内嵌：命中弹的「在装甲查看器里打开」把 `shots` 经既有本地交接通道交出并用注入的 `navigate` 打开 `?view=agent-armor&…`——复用引擎，不复用页面导航模型。
 - AI/Playback 详细接口与回放管线以以下文档为准，不在本索引重复维护：
   - [`docs/architecture/ai-review.md`](../architecture/ai-review.md)
   - [`docs/features/team-ai-review.md`](../features/team-ai-review.md)

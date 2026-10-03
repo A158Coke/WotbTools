@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import FileUploader from './FileUploader.vue'
+import FileDrop from './FileDrop.vue'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn((key, values) => values ? `${key}:${Object.values(values).join(',')}` : key)
@@ -17,7 +17,7 @@ function makeFiles(count, size = 1024) {
 
 function mountUploader(files = [], loading = false, options = {}) {
   return {
-    wrapper: mount(FileUploader, {
+    wrapper: mount(FileDrop, {
       props: {
         files,
         loading,
@@ -57,7 +57,7 @@ async function expectNativePickerClick(wrapper, labelKey, testId) {
   clickSpy.mockRestore()
 }
 
-describe('FileUploader 文件列表与回放工作台', () => {
+describe('FileDrop 文件列表与回放工作台', () => {
   it('34 个文件默认折叠：只显示 summary，不铺开 filename', () => {
     const { wrapper } = mountUploader(makeFiles(34))
     expect(wrapper.findAll('.chip').length).toBe(0)
@@ -346,9 +346,9 @@ describe('FileUploader 文件列表与回放工作台', () => {
 // 回归：openPicker() 曾对 template ref 再取 .value（`input.value?.click()`），
 // 实际对 file input 的 value 字符串调 click() → 生产环境 "P.click is not a function"。
 
-describe('FileUploader native picker（真实按钮 → 隐藏 input.click）', () => {
+describe('FileDrop native picker（真实按钮 → 隐藏 input.click）', () => {
   function mountCompact(files) {
-    return mount(FileUploader, {
+    return mount(FileDrop, {
       props: { files, loading: false, confirmRemove: true, compact: true },
       global: { mocks: { $t: key => key } }
     })
@@ -400,9 +400,9 @@ describe('FileUploader native picker（真实按钮 → 隐藏 input.click）', 
   })
 })
 
-describe('FileUploader 解析完成后的批次条（compact）', () => {
+describe('FileDrop 解析完成后的批次条（compact）', () => {
   function mountCompact(files) {
-    return mount(FileUploader, {
+    return mount(FileDrop, {
       props: { files, loading: false, confirmRemove: true, compact: true },
       global: { mocks: { $t: key => key } },
     })

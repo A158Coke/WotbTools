@@ -36,7 +36,10 @@ export function useMoreMenu() {
     { value: 'auto', label: t('uiProfile.auto') },
   ]
 
-  /** 内测工具（仅管理员）：平板 / 桌面从回放工作台的模式切换进入，手机从"更多"页进入。 */
+  /**
+   * 内测工具（仅管理员）：深链落到回放工作台的 3D / 射击能力（不再是独立页面）。
+   * 平板 / 桌面直接在工作台的能力切换里进，手机这一组是"更多"页的快捷入口。
+   */
   const betaToolLinks = computed(() => (isAdmin.value
     ? [
         { view: 'agent-replay', labelKey: 'agentNav.replay', icon: Box },

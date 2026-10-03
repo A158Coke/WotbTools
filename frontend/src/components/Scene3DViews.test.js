@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-// 3D 视图的 WebGL 预检与加载状态（审计 3D-23）：AgentArmorView / AgentReplay3D / Scene3DStatus。
+// 3D 视图的 WebGL 预检与加载状态（审计 3D-23）：AgentArmorView（装甲查看器）/ Scene3DStatus。
+// 回放侧的 3D 面板（Replay3DPane）有独立测试文件。
 // WebGL 通过 HTMLCanvasElement.prototype.getContext 模拟；three.js 场景内核整体 mock。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -16,24 +17,7 @@ vi.mock('../scene/tankViewer.js', () => ({
   }),
 }))
 
-const playback = vi.hoisted(() => ({ api: null, init: null }))
-vi.mock('../scene/playbackScene.js', () => {
-  playback.init = vi.fn((container, store) => {
-    playback.api = {
-      store,
-      loadData: vi.fn(async () => {}),
-      // 内核 reset() 的契约：撤下会话并回到「无数据」态（测试替身照做，否则 hasData 会挡住待开播面板）
-      reset: vi.fn(() => { store.hasData = false; store.loading = false }),
-      destroy: vi.fn(),
-      setPlaying: vi.fn(),
-      setQuality: vi.fn(),
-    }
-    return playback.api
-  })
-  return { initPlayback: playback.init, QUALITY_PRESETS: { low: { label: 'Low' } } }
-})
 vi.mock('../scene/assetProvider.js', () => ({ assetProvider: { configured: () => true } }))
-vi.mock('../scene/replaySource.js', () => ({ loadPlaybackData: vi.fn() }))
 
 vi.mock('../composables/useBreakpoint.js', async () => {
   const { computed } = await import('vue')
@@ -53,14 +37,10 @@ function mockWebGL(level) {
   })
 }
 
-async function mountWithRouter(component, query, props = null) {
+async function mountWithRouter(component, query) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
   await router.push({ path: '/', query })
-  const wrapper = mount(component, {
-    global: { plugins: [router], mocks: { $t: translate } },
-    ...(props ? { props } : {}),
-    attachTo: document.body,
-  })
+  const wrapper = mount(component, { global: { plugins: [router], mocks: { $t: translate } }, attachTo: document.body })
   await flushPromises()
   return wrapper
 }
@@ -68,8 +48,6 @@ async function mountWithRouter(component, query, props = null) {
 beforeEach(() => {
   viewer.calls.length = 0
   viewer.retryResult = true
-  playback.api = null
-  playback.init?.mockClear()
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -165,194 +143,16 @@ describe('AgentArmorView WebGL 预检与加载状态', () => {
     wrapper.unmount()
     expect(viewer.calls[0].destroy).toHaveBeenCalled()
   })
-
-  it('手机参数开关：默认收起，点击展开 / 再点收起，aria-expanded 跟随', async () => {
-    mockWebGL('webgl2')
-    const wrapper = await mountArmor()
-    const stage = wrapper.find('[data-testid="armor-stage"]')
-    const tools = wrapper.find('[data-testid="armor-tools"]')
-    expect(tools.exists()).toBe(true)
-    // 默认收起：面板的显隐由 .is-tools-open 经移动端 CSS 控制（桌面端该按钮不可见、面板常驻）
-    expect(stage.classes()).not.toContain('is-tools-open')
-    expect(tools.attributes('aria-expanded')).toBe('false')
-    await tools.trigger('click')
-    expect(stage.classes()).toContain('is-tools-open')
-    expect(tools.attributes('aria-expanded')).toBe('true')
-    await tools.trigger('click')
-    expect(stage.classes()).not.toContain('is-tools-open')
-  })
-
-  it('?clean=1：顶栏与参数开关一并让位（场景脚本会隐藏全部常驻面板）', async () => {
-    mockWebGL('webgl2')
-    window.history.replaceState({}, '', '/?view=agent-armor&tank=5&clean=1')
-    try {
-      const { default: AgentArmorView } = await import('./AgentArmorView.vue')
-      const wrapper = await mountWithRouter(AgentArmorView, { view: 'agent-armor', tank: '5' })
-      expect(wrapper.find('.armor-view').classes()).toContain('is-clean')
-      expect(wrapper.find('[data-testid="armor-tools"]').exists()).toBe(false)
-    } finally {
-      window.history.replaceState({}, '', '/')
-    }
-  })
 })
 
-describe('AgentReplay3D WebGL 预检与加载状态', () => {
-  async function mountReplay() {
-    const { default: AgentReplay3D } = await import('./AgentReplay3D.vue')
-    return mountWithRouter(AgentReplay3D, { view: 'agent-replay' })
-  }
-
-  it('不支持 WebGL：不初始化场景，显示说明', async () => {
-    mockWebGL('none')
-    const wrapper = await mountReplay()
-    expect(playback.init).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="scene3d-unsupported"]').text()).toContain('scene3d.webgl_unavailable')
-  })
-
-  it('顶栏双方总血量 + 比分：同一阵营视角（完整整数，title 带取整百分比）', async () => {
-    mockWebGL('webgl2')
-    const wrapper = await mountReplay()
-    const { store } = playback.api
-    store.hasData = true
-    store.hpFriend = 1500; store.hpFriendMax = 3000; store.hpFriendPct = 50
-    store.hpEnemy = 900; store.hpEnemyMax = 1200; store.hpEnemyPct = 75.4
-    // 比分读内核映射后的视角化字段（左 = 己方），组件不再直接消费物理 score1/score2
-    store.scoreFriend = 4; store.scoreEnemy = 2
-    await nextTick()
-    const row = wrapper.find('[data-test="hud-team-hp"]')
-    expect(row.exists()).toBe(true)
-    expect(row.text()).toContain('1500 / 3000')
-    expect(row.text()).toContain('900 / 1200')
-    const score = wrapper.find('[data-test="hud-score"]')
-    expect(score.text()).toBe('4 : 2')
-    expect(score.find('.score-friend').exists()).toBe(true)
-    expect(score.find('.score-enemy').exists()).toBe(true)
-    const fills = row.findAll('.hpbar > i')
-    expect(fills).toHaveLength(2)
-    expect(fills[0].attributes('style')).toContain('width: 50%')
-    expect(fills[1].attributes('style')).toContain('width: 75.4%')
-    const bars = row.findAll('.hpbar')
-    expect(bars[0].attributes('title')).toBe('agentReplay.hp_friendly 50%')
-    expect(bars[1].attributes('title')).toBe('agentReplay.hp_enemy 75%')
-  })
-
-  it('工作台给回放后先选画质（待开播）：点「开始」才解析，之前不建渲染器、不 loadData', async () => {
-    mockWebGL('webgl2')
-    const { default: AgentReplay3D } = await import('./AgentReplay3D.vue')
-    const wrapper = await mountWithRouter(AgentReplay3D, { view: 'agent-replay' })
-    expect(playback.init).toHaveBeenCalledTimes(1)
-    const { store } = playback.api
-
-    // 尚未选回放：显示空态（不再是自带文件选择器）
-    expect(wrapper.find('[data-test=replay3d-source-hint]').text()).toContain('workspace.playback_empty')
-    expect(wrapper.find('input[type="file"]').exists()).toBe(false)
-
-    // 工作台给了回放：先进入「待开播」，画质按钮可点、但还没解析
-    const file = new File(['x'], 'battle.wotbreplay')
-    wrapper.setProps({ file })
-    await nextTick()
-    expect(wrapper.find('[data-test=replay3d-pending]').exists()).toBe(true)
-    expect(playback.api.loadData).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="scene3d-loading"]').exists()).toBe(false)
-    // 画质必须在渲染器创建前定型：此时点档位走 setQuality
-    const buttons = wrapper.findAll('.loader .row button:not(.start)')
-    expect(buttons.length).toBeGreaterThan(0)
-    await buttons[0].trigger('click')
-    expect(playback.api.setQuality).toHaveBeenCalled()
-
-    // 点「开始」才真正加载
-    let finish
-    playback.api.loadData.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
-    await wrapper.find('[data-test=replay3d-start]').trigger('click')
-    await nextTick()
-    expect(playback.api.loadData).toHaveBeenCalledWith({ kind: 'local', file })
-    expect(wrapper.find('[data-testid="scene3d-loading"]').text()).toContain('agentReplay.parsing')
-    expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBeUndefined()
-
-    store.assetStage = true
-    store.assetProgress = 0.3
-    await nextTick()
-    expect(wrapper.find('[data-testid="scene3d-loading"]').text()).toContain('agentReplay.loading_assets')
-    expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('30')
-
-    store.err = 'bad replay'
-    store.assetStage = false
-    finish()
-    await flushPromises()
-    expect(wrapper.find('[data-testid="scene3d-error"]').text()).toContain('agentReplay.error_load')
-    await wrapper.find('[data-testid="scene3d-retry"]').trigger('click')
-    await flushPromises()
-    expect(playback.api.loadData).toHaveBeenLastCalledWith({ kind: 'local', file })
-
-    store.err = 'still bad'
-    await nextTick()
-    await wrapper.find('[data-testid="scene3d-dismiss"]').trigger('click')
-    expect(store.err).toBe('')
-    expect(wrapper.find('[data-testid="scene3d-error"]').exists()).toBe(false)
-  })
-
-  it('多文件未选场次（blockedReason）时不解析，显示工作台给出的原因', async () => {
-    mockWebGL('webgl2')
-    const { default: AgentReplay3D } = await import('./AgentReplay3D.vue')
-    const file = new File(['x'], 'battle.wotbreplay')
-    const wrapper = await mountWithRouter(AgentReplay3D, { view: 'agent-replay' }, { file, blockedReason: 'workspace.single_replay_required' })
-    await flushPromises()
-    expect(playback.api.loadData).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-test=replay3d-source-hint]').text()).toContain('workspace.single_replay_required')
-  })
-
-  it('多文件切场次：换另一场先撤下上一场（内核 reset）再进入新一场待开播，不卡在旧场景', async () => {
-    mockWebGL('webgl2')
-    const { default: AgentReplay3D } = await import('./AgentReplay3D.vue')
-    const fileA = new File(['a'], 'a.wotbreplay')
-    const fileB = new File(['b'], 'b.wotbreplay')
-    const wrapper = await mountWithRouter(AgentReplay3D, { view: 'agent-replay' })
-
-    wrapper.setProps({ file: fileA })
-    await nextTick()
-    await wrapper.find('[data-test=replay3d-start]').trigger('click')
-    await flushPromises()
-    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
-    playback.api.store.hasData = true
-    await nextTick()
-
-    // 切到另一场：必须先撤下旧场景（否则 hasData 挡着待开播面板，用户永远看着上一场）
-    wrapper.setProps({ file: fileB })
-    await flushPromises()
-    expect(playback.api.reset).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('[data-test=replay3d-pending]').text()).toContain('b.wotbreplay')
-    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
-
-    await wrapper.find('[data-test=replay3d-start]').trigger('click')
-    await flushPromises()
-    expect(playback.api.loadData).toHaveBeenLastCalledWith({ kind: 'local', file: fileB })
-  })
-
-  it('工作台清空回放：复位到等待态（内核 reset + 回到空态，不再呈现上一场）', async () => {
-    mockWebGL('webgl2')
-    const { default: AgentReplay3D } = await import('./AgentReplay3D.vue')
-    const file = new File(['x'], 'battle.wotbreplay')
-    const wrapper = await mountWithRouter(AgentReplay3D, { view: 'agent-replay' }, { file })
-    await flushPromises()
-    // 待开播 → 点开始才加载
-    await wrapper.find('[data-test=replay3d-start]').trigger('click')
-    await flushPromises()
-    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
-    playback.api.store.hasData = true
-    await nextTick()
-    expect(wrapper.find('.loader').exists()).toBe(false)
-
-    // 清空选择 / 多文件未选场次 → props.file 变 null
-    wrapper.setProps({ file: null })
-    await flushPromises()
-    expect(playback.api.reset).toHaveBeenCalledTimes(1)
-    await nextTick()
-    // 本地记住的「上次加载的文件」同时清掉：再选同一份回放要能重新走待开播→开始
-    wrapper.setProps({ file })
-    await flushPromises()
-    expect(wrapper.find('[data-test=replay3d-start]').exists()).toBe(true)
-    await wrapper.find('[data-test=replay3d-start]').trigger('click')
-    await flushPromises()
-    expect(playback.api.loadData).toHaveBeenCalledTimes(2)
+describe('回放工作台能力归属', () => {
+  it('3D / 射击深链落到工作台能力，不再是独立页面', async () => {
+    const { VIEW_COMPONENTS, replayInitialCapability } = await import('../app/viewRegistry.js')
+    expect(VIEW_COMPONENTS['agent-replay']).toBe(VIEW_COMPONENTS.replay)
+    expect(VIEW_COMPONENTS['agent-shots']).toBe(VIEW_COMPONENTS.replay)
+    expect(replayInitialCapability('agent-replay')).toBe('3d')
+    expect(replayInitialCapability('agent-shots')).toBe('shots')
+    // 装甲查看器仍是独立页面（坦克百科侧）
+    expect(VIEW_COMPONENTS['agent-armor']).not.toBe(VIEW_COMPONENTS.replay)
   })
 })

@@ -207,7 +207,6 @@ export async function loadPlaybackData(source) {
 import { assetProvider } from './assetProvider.js'
 
 let mapIndexPromise = null
-let currentMapKey = null
 
 /** 一次性装载资产源索引（数字 id → key）；未配置 origin 时为空 */
 export function loadMapIndex() {
@@ -218,22 +217,21 @@ export function loadMapIndex() {
   return mapIndexPromise
 }
 
-/** 从 mapq（id=..&name=..）解析当前地图的静态 key；结果缓存供同步取用 */
+/** 从 mapq（id=..&name=..）解析静态 key；由调用方持有结果，不发布模块级会话状态。 */
 export async function resolveMapKey(mapq) {
   const id = new URLSearchParams(mapq).get('id')
   const idx = assetProvider.configured() ? await loadMapIndex() : null
-  currentMapKey = (idx && idx.maps && idx.maps[String(id)]) ? idx.maps[String(id)].key : null
-  return currentMapKey
+  return (idx && idx.maps && idx.maps[String(id)]) ? idx.maps[String(id)].key : null
 }
 
 /**
  * 静态模式 URL（已配置 origin 且 index 命中 → 打包器物化路径）；
- * key 未解析/未配置 origin → null，调用方跳过该资产（无服务端回退）。
+ * mapKey 由当前会话显式传入；未解析/未配置 origin → null，调用方跳过该资产（无服务端回退）。
  * kind ∈ map | map-mini | terrain | terrain-meta | scenery | groundmeta | groundtex
  */
-export function mapStaticUrl(kind, layer) {
-  if (!currentMapKey || !assetProvider.configured()) return null
-  const f = (name) => assetProvider.url(`/map/${currentMapKey}/${name}`)
+export function mapStaticUrl(kind, layer, mapKey) {
+  if (!mapKey || !assetProvider.configured()) return null
+  const f = (name) => assetProvider.url(`/map/${mapKey}/${name}`)
   switch (kind) {
     case 'map': return f('ground.webp')
     case 'map-mini': return f('mini.webp')
