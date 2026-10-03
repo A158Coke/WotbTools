@@ -110,6 +110,7 @@ observability:
   - '.github/workflows/ci-observability.yml'
 deployment:
   - '.github/workflows/ai-service.yml'
+  - '.github/workflows/tx-runtime-check.yml'
   - 'docker/Dockerfile.ai-service'
   - '.github/workflows/ci-deployment.yml'
   - '.github/workflows/ci-gate.yml'
