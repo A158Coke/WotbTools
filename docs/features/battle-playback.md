@@ -369,6 +369,10 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `AgentReplay3D.vue` 顶栏第二行渲染「数值 + 阵营色条夹住比分」，与上游 3D 视图同口径；
   数值用完整整数（§11 禁止 1k / 22.3k 缩写），条宽用原始百分比保证平滑。顶栏与基地状态条
   同列堆叠（`.hud-top`），高度随内容变化，不再依赖写死的 top 偏移。
+  **整行是单一阵营视角**（`friendly_team` = 录像者一方）：左侧血条 = 己方，中间比分左 = 己方
+  ——击杀计数在内核里是物理队伍（score1 = team 1），上屏前经 `perspectiveScore()` 映射成
+  `scoreFriend/scoreEnemy`（`friendly_team = 2` 时交换），否则会出现「己方血条 + 对方比分」的错位；
+  `friendly_team` 未知时比分保持物理顺序（此时两侧血量都按 0 计，视角标注本身不成立）。
 - 3D 车体位姿：yaw/pitch 取自渲染滤波网格；**横滚取网格新增的 `vehicles[].hull_roll`**
   （上游 2026-10-03 起产出，additive；值来自原始 type=10 volatile 采样的最近邻——滤波层不输出侧倾）。
   消费端镜像约定：游戏系→场景系是「x 取负」的镜像，故 yaw 与 roll 取负、pitch 不变；

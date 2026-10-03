@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { teamHpTotals } from './teamHpTotals.js'
+import { perspectiveScore, teamHpTotals } from './teamHpTotals.js'
 
 const vehicle = (team, hp, maxHp) => ({ team, hp, maxHp })
 
@@ -38,5 +38,33 @@ describe('teamHpTotals（3D 顶栏双方总血量）', () => {
     expect(totals.hpFriendMax).toBe(1000)
     expect(totals.hpFriendPct).toBe(0)
     expect(Number.isFinite(totals.hpEnemyPct)).toBe(true)
+  })
+})
+
+describe('perspectiveScore（顶栏比分与血条同一阵营视角）', () => {
+  it('friendlyTeam = 1：物理顺序即视角顺序', () => {
+    expect(perspectiveScore(3, 1, 1)).toEqual({ scoreFriend: 3, scoreEnemy: 1 })
+  })
+
+  it('friendlyTeam = 2：交换，左=己方（team 2）', () => {
+    expect(perspectiveScore(1, 3, 2)).toEqual({ scoreFriend: 3, scoreEnemy: 1 })
+  })
+
+  it('friendlyTeam 未知（0/null）：保持物理顺序（此时两侧血量都按 0 计，视角标注不成立）', () => {
+    expect(perspectiveScore(3, 1, 0)).toEqual({ scoreFriend: 3, scoreEnemy: 1 })
+    expect(perspectiveScore(3, 1, null)).toEqual({ scoreFriend: 3, scoreEnemy: 1 })
+  })
+
+  it('perspective 对齐：friendlyTeam = 2 时，左侧血桶与左侧比分都来自 team 2', () => {
+    // 顶栏布局：己方 HP | 己方比分 : 敌方比分 | 敌方 HP —— 两者必须同一视角
+    const vehicles = [vehicle(1, 100, 1000), vehicle(1, 200, 1000), vehicle(2, 700, 800)]
+    const totals = teamHpTotals(vehicles, 2)              // team 2 是己方
+    const score = perspectiveScore(3, 1, 2)               // 物理：team1 杀 3、team2 杀 1
+    expect(totals.hpFriend + totals.hpFriendMax).toBe(1500)   // 左侧血量总量 = team 2
+    expect(score.scoreFriend).toBe(1)                          // 左侧比分 = team 2 的击杀
+    expect(score.scoreEnemy).toBe(3)                           // 右侧比分 = team 1
+    // 直接对照：己方血量桶的 max 必须来自 team 2（与 scoreFriend 同队）
+    expect(totals.hpFriendMax).toBe(800)
+    expect(totals.hpEnemyMax).toBe(2000)
   })
 })
