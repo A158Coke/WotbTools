@@ -60,24 +60,53 @@ source/contract/version gate
 ### 阶段 2：publish（手工，真机验证之后）
 
 ```text
-必须从 exact current main 手工触发（mode=publish）
-→ contract/version gate → staged evidence 与本地 committed 元数据逐字段比对
-→ 下载线上 APK 并重算 SHA-256（必须等于 evidence.sha256；绝不重建）
-→ tag 必须已存在且指向 staged source commit
+手工触发 mode=publish（checkout 当前 main 只用于 committed 元数据与 ancestry 历史）
+→ contract/version gate
+→ 解析 staged release 身份：
+      versionName/versionCode（committed）→ immutable tag → tag target = STAGED_SOURCE
+      → staging evidence.sourceSha 必须 == STAGED_SOURCE
+      → 线上 APK 字节 SHA-256 必须 == evidence.sha256（绝不重建）
+      → guard_staged_release_identity（tag / evidence / APK 三者一致；绝不 repoint、绝不替换）
 → minSupportedVersionCode 必须覆盖这次 breaking bridge cutover（guard_min_supported
    + guard_bridge_covered）
 → production Keycloak 有可用的 wotbtools-android（只读 GET 认证端点探测）
-→ production frontend 声明支持本次 bridge 版本 + native-auth，且其 build commit 是
-   本次 release source 的祖先（git merge-base --is-ancestor）
-→ 写 version.json → 上传 → 线上内容核验（LAST）
+→ production frontend 声明支持本次 bridge 版本 + native-auth
+   + guard_release_ancestry（见下）
+→ 写 version.json（sourceSha = STAGED_SOURCE）→ 上传 → 线上内容核验（LAST）
 ```
+
+**发布权威是已 staged 的 release 身份，不是当前 main HEAD。** Android 的版本 / tag / APK 身份都是
+immutable：真机验证期间 main 完全可能前进（`A → B`），那**不能**让一个已经 staged 且验证过的版本
+作废（也无法从 `B` 重新 staged 同一个 2.0.0）。因此要求的是：
+
+```text
+A = STAGED_SOURCE（tag 指向的 commit）
+B = 当前 origin/main
+
+android-v<版本> 指向 A
+∧ staging evidence.sourceSha == A
+∧ 线上 APK SHA-256 == evidence.sha256
+∧ A 是 B 的祖先或相等（git merge-base --is-ancestor A origin/main）
+```
+
+`A == B` 从来不是要求；main 前进只影响 `A` 必须仍在 main 历史里。
+
+**前端 ancestry 方向**（`guard_release_ancestry`，历史模型 `A ─ F ─ B`，F = 线上前端 build）：
+
+```text
+A 是 origin/main 的祖先或相等      （staged 版本属于当前 main 线）
+A 是 F 的祖先或相等                （前端**包含** Android 2.0 认证 cutover）
+F 是 origin/main 的祖先或相等      （前端是真实主线构建，不是分支/未知来源）
+```
+
+即：线上前端**可以**比 staged Android 更新（只要包含它），但不可以更旧、不可以来自 main 之外。
 
 最终发布不变量（全部成立才写 manifest）：
 
 ```text
-staged APK 身份正确
+staged APK 身份正确（tag / evidence / APK SHA 三者一致，source 在 main 线内）
   ∧ production Keycloak 有可用的 wotbtools-android
-  ∧ production frontend 支持 Bridge v2 + native-auth（且来自 main）
+  ∧ production frontend 支持 Bridge v2 + native-auth 且 ancestry 满足 A ─ F ─ B
   ∧ minSupportedVersionCode 覆盖本次 breaking bridge cutover
   ⇒ 才发布 version.json
 ```

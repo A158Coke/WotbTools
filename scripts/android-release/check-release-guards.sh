@@ -6,6 +6,77 @@
 # guard_min_supported returns non-zero on a guard violation.
 set -euo pipefail
 
+guard_error() {
+  echo "::error::$1" >&2
+}
+
+# guard_staged_release_identity <tag_target> <staged_source> <evidence_source> <evidence_apk_sha> <actual_apk_sha>
+#
+# 发布权威是**已 staged 的 release 身份**，不是当前 checkout / main HEAD。发布阶段的断言必须
+# 证明 manifest 要广播的正是设备上验证过的那个产物：
+#   - immutable tag 指向 staged source commit（绝不 repoint）；
+#   - staging evidence 的 sourceSha 与 staged source 一致；
+#   - 线上 APK 字节的 SHA-256 与 evidence 记录的一致（不重建、不替换）。
+guard_staged_release_identity() {
+  local tag_target="$1" staged_source="$2" evidence_source="$3" evidence_apk_sha="$4" actual_apk_sha="$5"
+
+  case "$tag_target" in
+    ''|*[!0-9a-f]*) guard_error "the release tag does not resolve to a commit ($tag_target)"; return 1 ;;
+  esac
+  [ "${#tag_target}" = 40 ] || { guard_error "the release tag target is not a full commit SHA: $tag_target"; return 1; }
+
+  case "$staged_source" in
+    ''|*[!0-9a-f]*) guard_error "the staged release source is not a commit SHA ($staged_source)"; return 1 ;;
+  esac
+  [ "${#staged_source}" = 40 ] || { guard_error "the staged release source is not a full commit SHA: $staged_source"; return 1; }
+
+  [ "$tag_target" = "$staged_source" ] || {
+    guard_error "the release tag points at $tag_target but the staged release source is $staged_source; refusing to publish a different commit"
+    return 1
+  }
+  [ "$evidence_source" = "$staged_source" ] || {
+    guard_error "staging evidence sourceSha=$evidence_source does not match the staged release source $staged_source"
+    return 1
+  }
+
+  case "$evidence_apk_sha" in
+    ''|*[!0-9a-f]*) guard_error "staging evidence carries no usable APK SHA-256 ($evidence_apk_sha)"; return 1 ;;
+  esac
+  [ "${#evidence_apk_sha}" = 64 ] || {
+    guard_error "staging evidence APK SHA-256 is not 64 hex characters: $evidence_apk_sha"
+    return 1
+  }
+  [ "$evidence_apk_sha" = "$actual_apk_sha" ] || {
+    guard_error "the staged APK SHA-256 ($actual_apk_sha) does not match the staging evidence ($evidence_apk_sha)"
+    return 1
+  }
+}
+
+# guard_release_ancestry <staged_in_main> <frontend_includes_staged> <frontend_in_main>
+#
+# 发布历史模型：A（staged Android source）─ F（线上前端 build）─ B（当前 main）：
+#   - A 必须包含在当前 main 历史里。main 前进**不能**让一个已经 staged + 真机验证过的 Android
+#     版本作废（这正是 publish 不要求 A == main HEAD 的原因）。
+#   - F 必须包含 A：线上前端要含 Android 2.0 认证 cutover。
+#   - F 本身必须在 main 历史里：真实主线构建，不是分支 / 来源不明的构建。
+# 三个入参都是调用方用 `git merge-base --is-ancestor` 判定的 0/1。
+guard_release_ancestry() {
+  local staged_in_main="$1" frontend_includes_staged="$2" frontend_in_main="$3"
+
+  [ "$staged_in_main" = 1 ] || {
+    guard_error "the staged release source is not contained in current main history; the staged artifact no longer belongs to this main line"
+    return 1
+  }
+  [ "$frontend_includes_staged" = 1 ] || {
+    guard_error "the production frontend predates the staged Android release: its build does not include the release source"
+    return 1
+  }
+  [ "$frontend_in_main" = 1 ] || {
+    guard_error "the production frontend build is not contained in current main history"
+    return 1
+  }
+}
+
 # guard_min_supported <min_supported_code> <new_code>
 guard_min_supported() {
   local min_supported="$1" new_code="$2"
