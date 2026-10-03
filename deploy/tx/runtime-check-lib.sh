@@ -289,10 +289,27 @@ business_e2e_check() {
     failures=1
   fi
   # --- HoF replay originals are readable for a record that advertises one ----
-  local hof_id=""
-  [ "$hof_status" = 200 ] && hof_id="$(e2e_first_replay_id "$hof_body")"
-  if [ -z "$hof_id" ]; then
-    e2e_emit hof-replay-storage 0 "no HoF record in the first 200 results advertises replayAvailable=true"
+  local hof_id="" hof_page=1 hof_total_pages=0 hof_scan_failed=0
+  if [ "$hof_status" = 200 ]; then
+    hof_id="$(e2e_first_replay_id "$hof_body")"
+    hof_total_pages="$(e2e_field "$hof_body" totalPages)"
+    [[ "$hof_total_pages" =~ ^[0-9]+$ ]] || hof_total_pages=1
+    while [ -z "$hof_id" ] && [ "$hof_page" -lt "$hof_total_pages" ]; do
+      hof_page=$((hof_page + 1))
+      e2e_http GET "http://business-api:8087/api/hof?page=$hof_page&size=200"
+      if [ "$E2E_HTTP_STATUS" != 200 ]; then
+        hof_scan_failed=1
+        break
+      fi
+      hof_id="$(e2e_first_replay_id "$E2E_HTTP_BODY")"
+    done
+  fi
+
+  if [ "$hof_scan_failed" = 1 ]; then
+    e2e_emit hof-replay-storage 0 "HoF replay candidate scan failed at page $hof_page (HTTP $E2E_HTTP_STATUS)"
+    failures=1
+  elif [ -z "$hof_id" ]; then
+    e2e_emit hof-replay-storage 0 "no HoF record advertises replayAvailable=true"
     failures=1
   elif e2e_download "http://business-api:8087/api/hof/$hof_id/replay" \
     && [ "$E2E_HTTP_STATUS" = 200 ] && [ "$E2E_DOWNLOAD_SIZE" -gt 0 ]; then
