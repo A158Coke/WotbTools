@@ -29,14 +29,14 @@
 - Loki canary 校验在 emitter 启动前固定 `start`，重试时只推进 `end`；响应必须是 `status=success`、至少一个 result stream、至少一个 values 样本并包含 marker。Keycloak canary 是加入 `wotb_internal` 网络的独立 Alpine emitter，只用于验证 Alloy 的 ownership 采集路径，不得把 Keycloak 镜像当 shell 执行。
 - Keycloak 运行时契约由 `deploy/test-keycloak-runtime.sh` 独立验证：自定义镜像必须以 `start --optimized` 启动，保留 PostgreSQL 与应用 OIDC discovery；不再启用或暴露 management health/metrics 端口，且不得出现启动时 Quarkus augmentation。启动日志必须报告**运行镜像自身注入的** build commit（`runtime-contract`＝本脚本自建的一次性镜像，或 40 位源码 SHA＝已发布生产镜像），期望值从容器 env 推导。main push 上 `.github/workflows/keycloak.yml` 的 `smoke` 验证 published digest；PR 上 `.github/workflows/ci-keycloak.yml` 的 `keycloak_runtime` 运行真实 Docker smoke。
 
-## TX service-plane boundary（K6A）
+## TX service-plane boundary（K6A / K6B）
 
 - 公网 HTTP/HTTPS ingress 仅 Caddy（80/443）；UFW inactive 不允许发布 service-plane 通配端口。
 - WG-only TCP：`10.20.0.1:8081 → frontend:80`、`:8087 → business-api:8087`、`:8088 → business-api:8088`、`:8080 → keycloak:8080`、`:15432 → keycloak-postgres:5432`、`:25432 → business-postgres:5432`。
 - 保留 host-local administration / OpenTofu：`127.0.0.1:18080 → keycloak:8080`、`:15432 → keycloak-postgres:5432`、`:25432 → business-postgres:5432`；OpenTofu provider 仍仅使用 loopback。
 - `runtime-check-lib.sh:assert_tx_service_ports` 是 rendered Compose 精确绑定校验，staged owner deploy 与 read-only readiness 共用；拒绝缺失/额外绑定、通配/public IP、非 TCP 与 app/management 端口混用。`wireguard-service-plane` token 取代旧的三条 loopback-only token；原有 Docker-local HTTP/DB/E2E 探针保留。
-- frontend → `http://business-api:8087`、business-api → `business-postgres` / `http://keycloak:8080`、Keycloak → `keycloak-postgres:5432`、Caddy → `wotb-frontend:80` / `keycloak:8080` 均不切换。卷、512m DB 限制、OpenTofu ownership、备份、DNS、WG 配置与 Yecao endpoints 不变。
-- 合并后逐 owner 部署会重建受影响容器。TX1 listener / TX2 WG / public TLS / 原有 E2E 全部验收通过后才算 K6A COMPLETE；操作与回滚见 `docs/operations/tx-service-plane.md`。
+- K6B-1 将 consumer dependency 变成 fail-closed logical endpoints：默认仍为 frontend → `http://business-api:8087`、business-api → `business-postgres:5432` / `http://keycloak:8080`、Keycloak → `keycloak-postgres:5432`、Caddy → `wotb-frontend:80` / `keycloak:8080`；仅允许对应 TX1/TX2 WG service-plane 地址。owner workflows 在 K6B-1 仍显式注入这些 Docker-local active values，避免已有 repository variable 意外触发 cutover。K6B-2 才逐 consumer 切换。卷、512m DB 限制、OpenTofu ownership、备份、DNS、WG 配置与 Yecao endpoints 不变。
+- K6A 已完成生产验收。K6B-1 合并后的 owner deploy 只能保留 Docker-local active dependency；K6B-2 每次只切一个 consumer，并以 `TX_RUNTIME_READY` 作为回滚/继续边界。操作见 `docs/operations/tx-service-plane.md`。
 
 ## Gate boundary
 
