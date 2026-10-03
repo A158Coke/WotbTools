@@ -231,6 +231,11 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Fetch pinned Agent WASM for frontend validation
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        shell: bash
+        run: bash scripts/fetch-agent-wasm.sh
+
       - name: Frontend tests + build validation
         if: steps.preflight.outputs.releaseAction == 'publish'
         working-directory: frontend
