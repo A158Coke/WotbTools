@@ -2941,7 +2941,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         }
 
         async function loadShooter(tid) {
-            shooterData = await fetchTankData(tid);
+            if (destroyed) return;
+            const data = await fetchTankData(tid);
+            if (destroyed) return;
+            shooterData = data;
             // 射手实际搭载配置弹表（&scfg= = shooter_config_idx，射击复现表注入）：
             // 多炮坦克 stock 弹表与发射炮的穿深/弹种清单不同（KV-1 发射 85mm F-30 AP
             // 120mm，stock ZiS-5 表只有 86/102/20），选择器必须用发射炮的表；
@@ -2959,6 +2962,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             }
             if (!shells || shells.length === 0) {
                 const data = await fetchShells(tid);
+                if (destroyed) return;
                 if (Array.isArray(data)) {
                     shells = data;
                 } else {
@@ -3119,7 +3123,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         }
 
         async function populateTankLists(initTargetId, initShooterId) {
-            tanksList = await fetchTankFilter();
+            const list = await fetchTankFilter();
+            if (destroyed) return;
+            tanksList = list;
             currentShooterId = initShooterId || initTargetId;
             currentTargetId = initTargetId;
             populateFilterOptions();
@@ -3371,8 +3377,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const initTargetId = window.__INITIAL_TANK__ || 28689;
             const initShooterId = window.__INITIAL_SHOOTER__ || initTargetId;
             await populateTankLists(initTargetId, initShooterId);
+            if (destroyed) return;
             initDone = true;
             await loadTarget(initTargetId);
+            if (destroyed) return;
             await loadShooter(initShooterId);
             if (!destroyed) animate();   // await 期间路由已离开则不再启动渲染
         }

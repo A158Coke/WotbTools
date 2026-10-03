@@ -1,6 +1,6 @@
 # 本机测试 runbook（全功能联调 · 自动化门禁 · 故障对照）
 
-在本机把 WotbTools 跑成"可测状态"的完整手册：Agent 引擎产物、资产面、admin 视图旁路、
+在本机把 WotbTools 跑成"可测状态"的完整手册：Agent 引擎产物、资产面、认证门禁与可选管理旁路、
 自检探针、常见故障、自动化门禁。改动前端/场景/回放前先按 §0 起环境，交付前跑 §8 的相关门禁。
 
 相关文档：[`local-production-dev.md`](local-production-dev.md)（连接生产后端与 Keycloak 链路）、
@@ -23,8 +23,7 @@ bash scripts/fetch-agent-wasm.sh
 npm run dev
 ```
 
-浏览器打开 `http://localhost:5173/?admin=1`（可加 `&view=agent-armor` 等）。
-参数来自本机旁路（§4），**每次都要带在 URL 上**。
+浏览器打开 `http://localhost:5173/`（可加 `?view=agent-replay` / `agent-shots` / `agent-armor`）。五种回放能力始终可见；3D / shots / armor / AI 用普通账号登录，无需 `?admin=1`。
 
 ## 1. 系统构成（先理解数据从哪来）
 
@@ -54,7 +53,7 @@ npm run dev
    ```
 
    改后必须**重启 dev server**（`import.meta.env.*` 在 transform 时内联，非运行时读取）。
-5. **本机旁路**（§4）：`git status` 应看到 `useAuth.js` 一个 modified——这是预期状态。
+5. 仅调试真正管理入口时按 §4 使用可选的本机旁路；回放能力不需要该补丁。
 
 ## 3. 每次测试的启动
 
@@ -87,25 +86,22 @@ npm run dev
 
 ## 4. 本机 admin 旁路（一个未提交改动，**永不提交**）
 
-**背景**：本地账号通常没有 `wotbtools-admin` / `HoF-admin` realm 角色，admin 视图的入口与深链
-都会被挡下——本机用一份**不提交的**补丁把这两个角色视为已持有（URL 带 `?admin=1`），补丁全文见附录 A。
+**背景**：本地账号通常没有 `wotbtools-admin` / `HoF-admin` realm 角色，真正管理功能的入口与操作
+会被角色边界挡下——本机用一份**不提交的**补丁把这两个角色视为已持有（URL 带 `?admin=1`），补丁全文见附录 A。
 
-admin 闸门**只认角色**：`viewFromRoute` 不得出现按 URL 参数放行的分支（曾经有一版 dev 旁路被误提交
-进 PR，review blocker；现在 `navigation.js` 里没有任何旁路分支）。一处 `?admin=1` 即可同时打开导航
-入口与深链，所以本机不需要第二个参数。
+管理功能**只认角色**，URL 不得成为权限来源。Agent 深链不再有 admin route gate：匿名保留目标并显示 Login Gate，普通登录用户可用 3D / shots / armor。`?admin=1` 不提供登录态，也不能绕过这些认证门禁。
 
 - 生效条件：`import.meta.env.DEV` 且 URL 显式带参数；生产构建恒 false（无产品行为变化），
   vitest 环境同样 false（既有门禁断言不受影响）。
 - 只改**前端可见性**：后端仍按真实 token 鉴权，越权调用照样 401/403（见 §5）。
-- **永远不要提交这两个文件的本机改动**：提交其它工作时只 stage 目标文件；`git status` 里这两个
+- **永远不要提交这份本机补丁**：提交其它工作时只 stage 目标改动；`git status` 里对应的
   `M` 是预期状态，不要"顺手清理"。误清后用 `git apply <patch>`（附录 A）恢复。
 - 落地到 main 的正路（若要做）：改成 dev-gated 的正式实现，或按实际实现修正文档引用——
   不要把这份补丁当产品交付。
 
 ## 5. 能力分层：本地能全用什么，什么要真角色
 
-**本地即可全用**（数据链全在本机，无需任何后端角色）：3D 回放、射击复现、装甲查看器、
-坦克百科 3D 卡片。
+**普通登录用户即可使用**（数据链全在本机，无需 admin role）：3D 回放、射击分析 / 复现、装甲查看器。匿名可用数据与 2D，并可看到全部五个 tab；匿名进入受限能力不会加载实际 pane、解析或资产。Tankopedia 原有入口策略保持不变。
 
 **需要真实 realm 角色**（前端旁路只解决可见性，后端按 token 鉴权）：
 
@@ -142,7 +138,7 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 | 同上但 `.env.local` 明明是对的 | URL/localStorage 里残留非空 `?assets=` | 带一次空 `?assets=` 清除 |
 | 3D 回放/射击/装甲查看器"引擎加载失败"，`/wasm/<ref>/…` 404 | `source.json` pin 与 `common/assets/wasm/` 不一致（bump 后没重跑） | `bash scripts/fetch-agent-wasm.sh` |
 | dev 下 `/wasm/*.js?import` 500 | Vite 拦截 publicDir 里的 .js（回归） | 检查 `vite.config.js` 的 `local-dev-public-wasm-as-module` 中间件 |
-| 直连 `?view=agent-armor` 被收敛回默认视图 | 旁路未应用 / URL 缺 `?admin=1` | 应用附录 A 补丁，URL 带 `?admin=1` |
+| 直连 `?view=agent-armor` 显示登录提示 | 当前未登录 | 普通账号登录；返回保留原场景 query |
 | admin 页面能打开但数据 401/403 | 后端按真实 token 鉴权 | §5（需要真角色；本地绕不过，也不应绕） |
 
 ## 8. 自动化测试与门禁
@@ -166,9 +162,8 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 
 ## 附录 A：本机 admin 旁路补丁（不提交）
 
-只有 `useAuth.js` 一处：admin 视图的入口与深链都由角色决定，`?admin=1` 把两个 admin 角色视为已持有。
-`navigation.js` **不参与**本机旁路——那一版按 `?agentViews=1` 放行的 dev 分支曾被误提交进 PR，
-已从源码删除，`navigation.test.js` 另有回归用例钉住「URL 参数不得放行 admin 视图」。
+只有 `useAuth.js` 一处：`?admin=1` 把两个 admin 角色视为已持有，仅供管理入口调试。
+`navigation.js` 不参与旁路，也没有 Agent admin route gate；navigation tests 锁定 Agent 深链对所有人解析。
 
 恢复方式（本机保存的副本：`WotbTools-local-dev-bypass-2026-10-03.patch`，仓库外；副本里还带着
 `navigation.js` 那段 hunk，源码已无对应上下文，`git apply` 前先删掉它）：
@@ -190,7 +185,7 @@ index eadca959..280e257f 100644
 + * ⚠️ [本机测试旁路·提交前请还原] `git checkout -- frontend/src/composables/useAuth.js`
 + *
 + * 本地账号没有 `wotbtools-admin` / `HoF-admin` realm 角色时，admin 视图会被
-+ * `viewFromRoute` 收敛回默认视图、导航里也不出现入口。dev 构建下显式带
++ * 管理页面的角色边界挡下、导航里也不出现入口。dev 构建下显式带
 + * `?admin=1` 即把这两个角色视为已持有：
 + *  - 生产构建 `import.meta.env.DEV === false` → 恒为 false，门禁原样生效（无产品行为变化）；
 + *  - vitest 环境无 query（jsdom 默认 URL）→ 同样为 false，角色断言不受影响。

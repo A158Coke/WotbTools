@@ -30,7 +30,7 @@ vi.mock('../composables/useReplay.js', () => ({
   useReplay: () => hold.state,
   chooseInitialResultTab: () => 'aggregate',
 }))
-// 服务器没有 parser：工作台不等登录（无 auth gating），useAuth 只用于管理员能力开关。
+// 数据 / 2D 匿名可用；3D / shots 在工作台挂载边界要求登录。
 vi.mock('../composables/useAuth.js', async () => {
   const { ref } = await import('vue')
   authState.authenticated = ref(true)
@@ -190,14 +190,30 @@ describe('ReplayWorkspace', () => {
     const wrapper = mountWorkspace(cap, { authenticated: false })
     await flushPromises()
     expect(capKeys(wrapper)).toEqual(['data', 'playback', '3d', 'shots', 'ai'])
+    // 匿名 + 离线：连通性提示优先于登录门禁，且不触发任何 login。
     expect(wrapper.find(`[data-testid="ws-${cap}-connectivity"]`).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
     expect(wrapper.find(`[data-test="ws-${cap}-pane"]`).exists()).toBe(false)
     expect(authState.login).not.toHaveBeenCalled()
+    // 本地能力（2D / 射击）在离线 + 未登录时仍可用；射击是登录门禁，不是连通性门禁。
     await switchTo(wrapper, 'playback')
     expect(wrapper.find('[data-test="ws-playback-pane"]').exists()).toBe(true)
     await switchTo(wrapper, 'shots')
-    expect(wrapper.find('[data-test="ws-shots-pane"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="ws-shots-pane"]').exists()).toBe(false)
     expect(replayState.files.value[0]).toBe(file)
+    wrapper.unmount()
+  })
+
+  it.each(['3d', 'ai'])('offline %s pane shows connectivity (not the auth gate) even when authenticated', async (cap) => {
+    connectivityState.state.value = 'offline'
+    authState.isAdmin.value = true
+    withBattles(1)
+    const wrapper = mountWorkspace(cap)
+    await flushPromises()
+    expect(wrapper.find(`[data-testid="ws-${cap}-connectivity"]`).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
+    expect(wrapper.find(`[data-test="ws-${cap}-pane"]`).exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -219,19 +235,68 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('普通用户只少了 3D / 射击；管理员五个能力齐全', async () => {
-    const wrapper = mountWorkspace('data')
+  it.each([
+    ['anonymous', false, false],
+    ['authenticated normal user', true, false],
+    ['admin', true, true],
+  ])('%s sees the same five capabilities', async (_, authenticated, isAdmin) => {
+    authState.isAdmin.value = isAdmin
+    const wrapper = mountWorkspace('data', { authenticated })
     await flushPromises()
-    expect(capKeys(wrapper)).toEqual(['data', 'playback', 'ai'])
+    expect(capKeys(wrapper)).toEqual(['data', 'playback', '3d', 'shots', 'ai'])
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
     wrapper.unmount()
+  })
 
-    authState.isAdmin.value = true
-    const admin = mountWorkspace('data')
+  it.each([
+    ['3d', 'agent-replay'],
+    ['shots', 'agent-shots'],
+  ])('anonymous %s deep link gates before mounting; login restores selected replay', async (capability, view) => {
+    withBattles(1)
+    const files = replayState.files.value
+    const revision = replayState.selectionRevision.value
+    const wrapper = mountWorkspace(capability, { authenticated: false })
     await flushPromises()
-    expect(capKeys(admin)).toEqual(['data', 'playback', '3d', 'shots', 'ai'])
-    admin.unmount()
-    authState.isAdmin.value = false
+    expect(tab(wrapper, capability).classes()).toContain('is-active')
+    expect(wrapper.get('[data-testid="capability-auth-gate"]').text()).toContain(
+      capability === '3d' ? 'workspace.login_required_3d' : 'workspace.login_required_shots')
+    expect(wrapper.find(`[data-test="ws-${capability}-pane"]`).exists()).toBe(false)
+    expect(replayState.analyze).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="capability-login"]').trigger('click')
+    expect(authState.login).toHaveBeenCalledWith(view)
+    expect(nav.navigate).not.toHaveBeenCalled()
+    authState.authenticated.value = true
+    await flushPromises()
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
+    expect(wrapper.get(`[data-test="ws-${capability}-pane"]`).text()).toContain('f0.wotbreplay')
+    expect(replayState.files.value).toBe(files)
+    expect(replayState.selectionRevision.value).toBe(revision)
+    expect(replayState.updateFiles).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['3d', false], ['3d', true], ['shots', false], ['shots', true],
+  ])('logout removes %s pane (hidden=%s) without clearing replay session', async (capability, hidden) => {
+    withBattles(1)
+    const files = replayState.files.value
+    const result = replayState.resp.value
+    const revision = replayState.selectionRevision.value
+    const wrapper = mountWorkspace(capability)
+    await flushPromises()
+    expect(wrapper.find(`[data-test="ws-${capability}-pane"]`).exists()).toBe(true)
+    if (hidden) await switchTo(wrapper, 'data')
+    authState.authenticated.value = false
+    await flushPromises()
+    expect(wrapper.find(`[data-test="ws-${capability}-pane"]`).exists()).toBe(false)
+    await switchTo(wrapper, capability)
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(true)
+    expect(wrapper.find(`[data-test="ws-${capability}-pane"]`).exists()).toBe(false)
+    expect(replayState.files.value).toBe(files)
+    expect(replayState.resp.value).toBe(result)
+    expect(replayState.selectionRevision.value).toBe(revision)
+    expect(replayState.updateFiles).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('AI 不是 admin-only：普通用户也能切到 AI 复盘', async () => {
@@ -258,7 +323,6 @@ describe('ReplayWorkspace', () => {
   })
 
   it('选中一次文件：data → 2D → 3D → 射击 → AI 全过程不重新选文件、selection identity 不变', async () => {
-    authState.isAdmin.value = true
     withBattles(4)
     const wrapper = mountWorkspace('data')
     await flushPromises()
@@ -275,11 +339,9 @@ describe('ReplayWorkspace', () => {
     await switchTo(wrapper, 'shots')
     expect(wrapper.get('[data-test="ws-shots-pane"]').text()).toContain('f0.wotbreplay')
     wrapper.unmount()
-    authState.isAdmin.value = false
   })
 
   it('切走 3D 时面板收到 active=false（停渲染但保留会话），切回 active=true', async () => {
-    authState.isAdmin.value = true
     withBattles(1)
     const wrapper = mountWorkspace('3d')
     await flushPromises()
@@ -289,11 +351,9 @@ describe('ReplayWorkspace', () => {
     await switchTo(wrapper, '3d')
     expect(wrapper.get('[data-test="ws-3d-pane"]').text()).toContain('|true')
     wrapper.unmount()
-    authState.isAdmin.value = false
   })
 
   it('能力切换写 URL（router owner）：五个能力各自的 view', async () => {
-    authState.isAdmin.value = true
     const navigate = vi.fn()
     const wrapper = mountWorkspace('data', { navigate })
     await flushPromises()
@@ -310,11 +370,9 @@ describe('ReplayWorkspace', () => {
       expect(navigate).toHaveBeenCalledWith(view)
     }
     wrapper.unmount()
-    authState.isAdmin.value = false
   })
 
   it('深链初始能力：3d / shots / playback / ai 各自直达', async () => {
-    authState.isAdmin.value = true
     withBattles(1)
     for (const cap of ['3d', 'shots', 'playback', 'ai']) {
       const wrapper = mountWorkspace(cap)
@@ -323,11 +381,9 @@ describe('ReplayWorkspace', () => {
       expect(wrapper.get(`[data-testid="ws-${cap}"]`).element.style.display).not.toBe('none')
       wrapper.unmount()
     }
-    authState.isAdmin.value = false
   })
 
   it('多文件未选场次：3D / 射击 / 2D / AI 收到同一份阻断原因（本机只解析单场）', async () => {
-    authState.isAdmin.value = true
     withBattles(3)
     const wrapper = mountWorkspace('3d')
     await flushPromises()
@@ -339,11 +395,9 @@ describe('ReplayWorkspace', () => {
       expect(wrapper.get(`[data-test="ws-${cap}-pane"]`).text()).toContain('workspace.single_replay_required')
     }
     wrapper.unmount()
-    authState.isAdmin.value = false
   })
 
   it('四个单场能力共用 workspace 的 selectBattle：选 #2 后都拿 f2', async () => {
-    authState.isAdmin.value = true
     withBattles(3)
     const wrapper = mountWorkspace('data')
     await flushPromises()
@@ -355,10 +409,9 @@ describe('ReplayWorkspace', () => {
       expect(wrapper.get(`[data-test="ws-${cap}-pane"]`).text()).toContain('f2.wotbreplay')
     }
     wrapper.unmount()
-    authState.isAdmin.value = false
   })
 
-  it('没有 auth gating：未登录也立即渲染投放区与数据面板，不请求登录', async () => {
+  it('匿名数据能力立即渲染投放区与数据面板，不请求登录', async () => {
     const wrapper = mountWorkspace('data', { authenticated: false })
     expect(wrapper.find('[data-testid="ws-auth-loading"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="drop"]').exists()).toBe(true)
@@ -368,8 +421,17 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
+  it('anonymous 2D capability mounts with selected replay without requesting login', async () => {
+    withBattles(1)
+    const wrapper = mountWorkspace('playback', { authenticated: false })
+    await flushPromises()
+    expect(wrapper.get('[data-test="ws-playback-pane"]').text()).toContain('f0.wotbreplay')
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
+    expect(authState.login).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('FileDrop allowFolder 只在数据能力打开（单场能力一次只收一份回放）', async () => {
-    authState.isAdmin.value = true
     replayState.files.value = [new File(['x'], 'a.wotbreplay')]
     const wrapper = mountWorkspace('data')
     await flushPromises()
@@ -379,7 +441,6 @@ describe('ReplayWorkspace', () => {
       expect(wrapper.findComponent({ name: 'FileDropMock' }).props('allowFolder')).toBe(false)
     }
     wrapper.unmount()
-    authState.isAdmin.value = false
   })
 
   it('FileDrop preview → analyze；ProcessingPanel 拿 analysis + result 并转发 cancel / dismiss', async () => {
@@ -454,7 +515,6 @@ describe('ReplayWorkspace', () => {
   })
 
   it('键盘：方向键 / Home / End 在能力间移动并激活（canonical SegmentedControl 的 radiogroup 模型）', async () => {
-    authState.isAdmin.value = true
     const wrapper = mountWorkspace('data')
     await flushPromises()
     const group = wrapper.get('[role="radiogroup"]')
@@ -477,11 +537,9 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('.capability-option').exists()).toBe(false)
     expect(wrapper.get('.segmented').classes()).toContain('is-scrollable')
     wrapper.unmount()
-    authState.isAdmin.value = false
   })
 
   it('Case2（生产）：data READY → 3D → data，resp/files/analysis 保留、无空状态', async () => {
-    authState.isAdmin.value = true
     withBattles(1)
     const wrapper = mountWorkspace('data')
     await flushPromises()
@@ -493,6 +551,5 @@ describe('ReplayWorkspace', () => {
     expect(replayState.resp.value).toBeTruthy()
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
     wrapper.unmount()
-    authState.isAdmin.value = false
   })
 })

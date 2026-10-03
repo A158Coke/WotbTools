@@ -6,6 +6,8 @@ Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://gi
 
 ## What it does
 
+The Replay Workspace always displays Data, 2D Playback, 3D Playback, Shot Analysis and AI Review. Data and 2D are usable anonymously; 3D, shot analysis / armor reconstruction and AI require sign-in. Ordinary users and administrators have the same workspace capabilities.
+
 - **Replay parsing & Excel export**: parse a `.wotbreplay` on your device (upstream Rust Core WASM; the file is not uploaded), extract authoritative settlement (damage / received / assisted / blocked / kills / death times) plus event-stream features (movement / engagements / 3x3 grid regions).
 - **Hall of Fame**: per-battle damage ranking for Random and Rating battles, plus Tier X career-average leaderboards through screenshot + 5-replay manual review.
 - **Battle performance**: derived metrics computed from a single authoritative replay-facts source (contribution, KAST, Impact, potential damage, assist, kills, multi-damage rate, survival rate, trades) — no composite rating anymore.
@@ -32,7 +34,7 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 
 0. **The server has no parser**: the only replay parser is the upstream [WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) Rust Core (WASM, pinned in `deploy/agent/source.json`); aggregation, rating, export and 2D data are computed in the browser too. The server only stores, deduplicates, authorizes, records the Hall of Fame and orchestrates AI; missing fields are added upstream.
 1. **Authoritative settlement > observed event stream**: damage / deaths come from `battle_results`; the event stream is only an observed subset, and its numbers are suppressed when coverage is partial (`OBSERVED_DAMAGE_IS_PARTIAL`).
-2. **AI review is its own service**: `POST /api/ai/reviews` (`text/event-stream`) is served by a standalone stateless `ai-service` on Yecao, reached over the private WireGuard path behind the TX `/api/ai/**` ingress route. The Business Backend no longer participates in AI requests and the legacy `/api/replay/analyze` endpoint is removed. Cancellation is `POST /api/ai/reviews/{correlationId}/cancel`; admission is bounded and saturation returns 503 `AI_REVIEW_BUSY`. The frontend entry stays in maintenance until every release gate passes.
+2. **AI review is its own service**: `POST /api/ai/reviews` (`text/event-stream`) is served by a standalone stateless `ai-service` on Yecao, reached over the private WireGuard path behind the TX `/api/ai/**` ingress route. The Business Backend no longer participates in AI requests and the legacy `/api/replay/analyze` endpoint is removed. Cancellation is `POST /api/ai/reviews/{correlationId}/cancel`; admission is bounded and saturation returns 503 `AI_REVIEW_BUSY`. The frontend entry is publicly discoverable and requires sign-in to use.
 3. **3x3 grid + map semantics**: canonical 500×500 grid regions 1-9; AREA semantics are decoded from client SC2 / heightmap and are not treated as verified facts before manual review.
 
 > More architecture and trade-offs: `docs/DEVELOPER_GUIDE.md` and `docs/architecture/`.
