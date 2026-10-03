@@ -107,7 +107,7 @@
 | `operations/agent-asset-origin.md` | 部署/更换 Agent 3D 静态资产源（GLB/地图/坦克数据）时 |
 | `operations/ai-service.md` | Yecao 独立 AI 服务的预部署、私网边界与健康验收时 |
 | `operations/komodo-public-ingress.md` | Komodo 控制平面公网入口（K2）ownership、两层验证、手工验收与回滚时 |
-| `operations/komodo-periphery.md` | Komodo Periphery agent（K3.1 Yecao / K3.2 TX1）owner、一套 lifecycle + 多宿主 profile、二进制 pin、身份文件、凭据生命周期、双宿主锁与恢复时 |
+| `operations/komodo-periphery.md` | Komodo Periphery agent（K3.1 Yecao / K3.2 TX1 / K3.3 TX2）owner、一套 lifecycle + 多宿主 profile、二进制 pin、身份文件、凭据生命周期、三把宿主锁与恢复时 |
 
 ## Reference（参考字典）
 
