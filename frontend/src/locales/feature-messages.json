@@ -233,8 +233,6 @@
     "agentReplay": {
       "title": "3D 回放",
       "roster": "阵容",
-      "hp_friendly": "己方总血量",
-      "hp_enemy": "敌方总血量",
       "error_load": "回放加载失败：{msg}",
       "pick_hint": "选择本地 .wotbreplay 文件——在浏览器内本地解析，文件不会上传。"
     },
@@ -590,8 +588,6 @@
     "agentReplay": {
       "title": "3D replay",
       "roster": "Rosters",
-      "hp_friendly": "Friendly total HP",
-      "hp_enemy": "Enemy total HP",
       "error_load": "Couldn't load the replay: {msg}",
       "pick_hint": "Pick a local .wotbreplay — it is parsed in your browser and never uploaded."
     },
@@ -947,8 +943,6 @@
     "agentReplay": {
       "title": "3D-повтор",
       "roster": "Составы",
-      "hp_friendly": "Всего HP у союзников",
-      "hp_enemy": "Всего HP у противника",
       "error_load": "Не удалось загрузить повтор: {msg}",
       "pick_hint": "Выберите локальный .wotbreplay — он разбирается в браузере и никуда не загружается."
     },
