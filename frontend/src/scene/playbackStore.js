@@ -18,6 +18,9 @@ export function createPlaybackStore() {
     timer: '--:--',
     score1: 0,
     score2: 0,
+    // 顶栏双方总血量（teamHpTotals：按全队 max_hp 汇总；未知阵营不计入任一方）
+    hpFriend: 0, hpFriendMax: 0, hpEnemy: 0, hpEnemyMax: 0,
+    hpFriendPct: 100, hpEnemyPct: 100,
     // 单基地目标（攻防/遭遇战）：objective 存在性与进度分开——0 与「未发生」不同
     // 争霸实时点数（上限 1000）：null = 该场无点数广播（非争霸）
     pointsFriend: null,

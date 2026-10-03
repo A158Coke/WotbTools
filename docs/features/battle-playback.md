@@ -364,6 +364,11 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （清晰度随画质档 DPR，不再固定 `min(dpr,2)`）；特效（炮线/命中/爆散/飘字）走对象池，
   仅在会话结束时整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
   HUD/进度条按 ~10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
+- 3D 顶栏双方总血量（2026-10-03 补回）：`scene/teamHpTotals.js` 按各队 `max_hp` 汇总剩余量与
+  上限（未知阵营不计入任一方，unknown ≠ enemy），`playbackScene` 在 HUD 节流写 store，
+  `AgentReplay3D.vue` 顶栏第二行渲染「数值 + 阵营色条夹住比分」，与上游 3D 视图同口径；
+  数值用完整整数（§11 禁止 1k / 22.3k 缩写），条宽用原始百分比保证平滑。顶栏与基地状态条
+  同列堆叠（`.hud-top`），高度随内容变化，不再依赖写死的 top 偏移。
 - 3D 车体位姿：yaw/pitch 取自渲染滤波网格；**横滚取网格新增的 `vehicles[].hull_roll`**
   （上游 2026-10-03 起产出，additive；值来自原始 type=10 volatile 采样的最近邻——滤波层不输出侧倾）。
   消费端镜像约定：游戏系→场景系是「x 取负」的镜像，故 yaw 与 roll 取负、pitch 不变；

@@ -55,6 +55,11 @@ const mapTitle = computed(() => {
   return mapLabel(store.mapName, locale.value) || store.mapName
 })
 
+// 顶栏双方总血量：数值用**完整整数**（§11 HUD 禁止 1k / 22.3k 缩写，与 2D HUD 同口径）；
+// 色条宽度用原始百分比（不取整，血量缓慢下降时条仍平滑），title 上给取整百分比。
+const hpText = (n) => String(Math.round(Math.max(0, Number(n) || 0)))
+const hpPctText = (pct) => Math.round(Number(pct) || 0) + '%'
+
 const CAMS = [
   { k: 'free', label: () => t('agentReplay.cam_free') },
   { k: 'top', label: () => t('agentReplay.cam_top') },
@@ -115,15 +120,33 @@ onBeforeUnmount(() => {
   <div v-else class="pb-root" :class="{ 'roster-open': rosterOpen }">
     <div class="scene" ref="stage"></div>
 
-    <div v-if="store.hasData" class="topbar panel">
-      <span class="map">{{ mapTitle }}</span>
-      <span class="timer">{{ store.timer }}</span>
-      <span class="score"><span class="t1">{{ store.score1 }}</span> : <span class="t2">{{ store.score2 }}</span></span>
-    </div>
+    <!-- 顶部 HUD 栈：顶栏 + 基地状态条同列堆叠（不再各自写死 top 偏移——顶栏加了血量行，
+         各自定位会在高度变化时互相压住） -->
+    <div class="hud-top">
+      <div v-if="store.hasData" class="topbar panel">
+        <div class="tb-row">
+          <span class="map">{{ mapTitle }}</span>
+          <span class="timer">{{ store.timer }}</span>
+        </div>
+        <!-- 双方队伍总血量（与上游 3D 视图同布局：数值 + 色条夹住比分，己方在左、敌方在右；
+             数值来自 teamHpTotals，按全队 max_hp 汇总，未知阵营不计入任一方） -->
+        <div class="tb-row" data-test="hud-team-hp">
+          <em class="hpnum hpnum-f">{{ hpText(store.hpFriend) }} / {{ hpText(store.hpFriendMax) }}</em>
+          <span class="hpbar hp-f" :title="`${t('agentReplay.hp_friendly')} ${hpPctText(store.hpFriendPct)}`">
+            <i :style="{ width: store.hpFriendPct + '%' }"></i>
+          </span>
+          <span class="score"><span class="t1">{{ store.score1 }}</span> : <span class="t2">{{ store.score2 }}</span></span>
+          <span class="hpbar hp-e" :title="`${t('agentReplay.hp_enemy')} ${hpPctText(store.hpEnemyPct)}`">
+            <i :style="{ width: store.hpEnemyPct + '%' }"></i>
+          </span>
+          <em class="hpnum hpnum-e">{{ hpText(store.hpEnemy) }} / {{ hpText(store.hpEnemyMax) }}</em>
+        </div>
+      </div>
 
-    <!-- 基地状态条（与 2D 共用）：每基地一枚徽章（底色 = 归属，外环 = 占领进度），两端为争霸积分 -->
-    <div v-if="store.hasData && store.baseViews.length" class="base-status">
-      <BaseStatusBar :bases="store.baseViews" :friendly-points="store.pointsFriend" :enemy-points="store.pointsEnemy" />
+      <!-- 基地状态条（与 2D 共用）：每基地一枚徽章（底色 = 归属，外环 = 占领进度），两端为争霸积分 -->
+      <div v-if="store.hasData && store.baseViews.length" class="base-status">
+        <BaseStatusBar :bases="store.baseViews" :friendly-points="store.pointsFriend" :enemy-points="store.pointsEnemy" />
+      </div>
     </div>
 
     <div v-if="store.hasData" class="team panel team1">
@@ -282,15 +305,33 @@ html[data-ui-profile="classic"] .pb-root {
 .scene { position: absolute; inset: 0; }
 .panel { position: absolute; background: var(--panel); border: 1px solid var(--line);
          border-radius: 8px; backdrop-filter: blur(4px); }
-.topbar { top: 10px; left: 50%; transform: translateX(-50%); padding: 6px 18px;
-          display: flex; gap: 16px; align-items: center; white-space: nowrap; }
+/* 顶部 HUD 栈：顶栏 + 基地状态条同列堆叠。高度随内容（顶栏两行 / 有没有基地条），
+   名册的 top 按栈的最坏高度留出余量，不再依赖写死的 top 偏移。 */
+.hud-top { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5;
+           display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+.topbar { position: static; padding: 6px 18px;
+          display: flex; flex-direction: column; align-items: center; gap: 3px; white-space: nowrap; }
+.topbar .tb-row { display: flex; align-items: center; gap: 12px; }
 .topbar .timer { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .topbar .score { font-size: 16px; font-weight: 600; }
 .topbar .score .t1 { color: var(--ally); }
 /* 争霸点数与单基地进度已移到基地状态条（BaseStatusBar，与 2D 共用） */
 .topbar .score .t2 { color: var(--enemy); }
 .topbar .map { color: var(--dim); }
-.team { top: 60px; width: 240px; padding: 6px; max-height: calc(100% - 190px); overflow-y: auto; z-index: 5; }
+/* 双方队伍总血量：数值 + 色条夹住比分。己方条自右向左、敌方条自左向右（围绕比分对称），
+   血量只掉不涨，条宽用原始百分比（不取整）保证连续下降平滑。 */
+.topbar .hpnum { font-style: normal; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.topbar .hpbar { display: inline-flex; width: 92px; height: 9px; overflow: hidden;
+                 border-radius: 999px; background: var(--hpbar-bg); }
+.topbar .hp-f { justify-content: flex-end; }
+.topbar .hpbar > i { display: block; height: 100%; transition: width .5s ease-out; }
+.topbar .hp-f > i { background: var(--ally); }
+.topbar .hp-e > i { background: var(--enemy); }
+@media (prefers-reduced-motion: reduce) {
+  .topbar .hpbar > i { transition: none; }
+}
+/* 名册让位：顶栏两行后更低，避免与 HUD 栈压住（基地条居中、不与两侧 240px 名册横向重叠） */
+.team { top: 84px; width: 240px; padding: 6px; max-height: calc(100% - 190px); overflow-y: auto; z-index: 5; }
 .team1 { left: 10px; }
 .team2 { right: 10px; }
 /* 未知阵营中性组：居中灰调 fail-visible */
@@ -308,7 +349,7 @@ html[data-ui-profile="classic"] .pb-root {
             text-overflow: ellipsis; white-space: nowrap; }
 .pl .hpbar { width: 52px; height: 5px; background: var(--hpbar-bg); border-radius: 3px; flex: none; }
 .pl .hpbar i { display: block; height: 100%; border-radius: 3px; }
-.killfeed { position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+.killfeed { position: absolute; top: 128px; left: 50%; transform: translateX(-50%);
             display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; z-index: 4; }
 .kf { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
       padding: 3px 12px; font-size: 12px; animation: kfin .18s ease-out; white-space: nowrap; }
@@ -318,8 +359,8 @@ html[data-ui-profile="classic"] .pb-root {
 .controls .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 /* 共用播放传输控件（PlaybackTransport，与 2D 同一套）；时间 mm:ss 与 2D 统一（审计 3D-22） */
 .controls .transport { display: flex; flex-direction: column; gap: 4px; }
-/* 基地状态条：顶栏正下方居中，不拦截场景操作（徽章本身可悬停看说明） */
-.base-status { position: absolute; top: 58px; left: 50%; transform: translateX(-50%); z-index: 5; pointer-events: none; }
+/* 基地状态条：HUD 栈里顶栏正下方居中（同列流式，不再写死 top——顶栏两行后不会互压） */
+.base-status { position: static; pointer-events: none; }
 .pb-root input[type="checkbox"] { flex: none; min-width: 0; width: auto; margin: 0; }
 .pb-root button, .pb-root select { background: var(--btn-bg); color: var(--fg); border: 1px solid var(--line);
                    border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
@@ -351,12 +392,22 @@ html[data-ui-profile="classic"] .pb-root {
 /* 审计 3D-15：手机上名单收进「阵容」开关，打开时两队并排各占一半宽度，场景仍可见 */
 @media (width < 768px) {
   .roster-toggle { display: inline-flex; }
-  .team { display: none; top: 52px; width: calc(50% - 12px); max-height: 42%; }
+  /* 名册从 HUD 栈下方开始（顶栏两行 + 可能的基地条都留在上面） */
+  .team { display: none; top: 96px; width: calc(50% - 12px); max-height: 42%; }
   .team1 { left: 8px; }
   .team2 { right: 8px; }
   .pb-root.roster-open .team { display: block; }
   .pl .tank, .pl .hpbar { display: none; }
-  .topbar { top: 6px; padding: 4px 12px; gap: 10px; }
+  .hud-top { top: 6px; gap: 4px; }
+  .topbar { padding: 4px 12px; gap: 2px; }
+  .topbar .tb-row { gap: 8px; }
+  .topbar .timer { font-size: 15px; }
+  .topbar .score { font-size: 14px; }
+  /* 手机窄屏：血量数值与色条随视口收缩（clamp，不新增断点），保证
+     「数值+条+比分+条+数值」在 320–767px 都是一行且不溢出 */
+  .topbar .hpnum { font-size: clamp(10px, 2.8vw, 11px); }
+  .topbar .hpbar { width: clamp(40px, 13vw, 56px); height: 7px; }
+  .killfeed { top: 164px; }
   .controls { bottom: 6px; width: calc(100% - 12px); padding: 6px 8px; }
 }
 </style>
