@@ -499,9 +499,10 @@ TX-internal frontend nginx、Caddy readiness surface 与 deployment-owned `healt
 公开 API 路由由 TX service plane 终结：`wotb-frontend` 的 nginx upstream 通过
 `TX_BACKEND_UPSTREAM` 表达 logical endpoint，允许 Docker-local `http://business-api:8087`
 或 reviewed TX1/TX2 WireGuard `:8087`；公网 host、错误端口与已退役 Yecao
-`10.20.0.2:8087` 一律 fail-closed。K6B-2A 已把 Frontend → Business API 这一个 consumer
-切到 `http://10.20.0.1:8087`（TX1 WireGuard），其余 consumer（Business API → Business
-PostgreSQL、Business API → Keycloak、Keycloak → Keycloak PostgreSQL、Caddy → Frontend /
+`10.20.0.2:8087` 一律 fail-closed。K6B-2A 已把 Frontend → Business API 切到
+`http://10.20.0.1:8087`（TX1 WireGuard），K6B-2B 已把 Business API → Business PostgreSQL 切到
+`10.20.0.1:25432`（TX1 WireGuard，同一套 canonical database validator 的已评审值）；其余 consumer
+（Business API → Keycloak、Keycloak → Keycloak PostgreSQL、Caddy → Frontend /
 Keycloak）在各自 K6B-2 步骤前保持 Docker-local。全部 logical endpoint 由同一组 canonical validator
 （`deploy/tx/deploy.sh`）守护：staged deploy、只读 `dependency-readiness.sh`（在任何
 secret-bearing 连接之前）与 runtime gate 共用，仓库不存在第二份 allowlist。TX deploy staging
@@ -530,7 +531,8 @@ tcp + udp），但没有固定容器地址：readiness surface 通过 Docker ser
 `KEYCLOAK_ISSUER_URI` 保持 public URL（Keycloak 的 `iss` 由 hostname 决定）。
 `TX_KEYCLOAK_ADMIN_SERVER_URL` 默认 `http://keycloak:8080`，仅允许 reviewed TX1/TX2
 WireGuard Keycloak endpoint，永不允许用公网 hostname 代替 Admin path。Business/Keycloak
-PostgreSQL 同样以 host/port logical endpoint 表达，K6B-2A 后 active value 仍为 Docker-local。
+PostgreSQL 同样以 host/port logical endpoint 表达：Business PostgreSQL 在 K6B-2B 后 active value
+为 `10.20.0.1:25432`，Keycloak PostgreSQL 仍为 Docker-local。
 HoF 回放原件是永久内容寻址文件，挂 TX
 `replay_data` 卷到 `HOF_REPLAY_DIR`（服务端唯一的回放文件存储）。
 TX 与 Yecao 的每个服务都由自己的 workflow 路径规则及手动入口拥有，不再通过 release planner
