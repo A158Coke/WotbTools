@@ -74,3 +74,28 @@ describe('Replay3DPane HUD 定位契约', () => {
     expect(ruleFor('.pb-root').body).toContain('isolation: isolate')
   })
 })
+
+/**
+ * 触屏点击区域的源码级回归：CI 实测过 canonical SegmentedControl 的选项在 375px coarse
+ * 容器里被 flex-shrink 压到 42px（低于 44px 下限）。组件行为测试无法覆盖 CSS 收缩，
+ * 这里锁住「选项不参与收缩 + 容器横向滚动」，真几何由 test:browser-interaction 验证。
+ */
+describe('SegmentedControl 选项不得被 flex 压缩', () => {
+  const source = readFileSync(fileURLToPath(new URL('../components/SegmentedControl.vue', import.meta.url)), 'utf8')
+  const css = source.slice(source.indexOf('<style'), source.indexOf('</style>'))
+  const bodyOf = (selector) => {
+    const m = css.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}'))
+    if (!m) throw new Error(`rule not found: ${selector}`)
+    return m[1].replace(/\s+/g, ' ').trim()
+  }
+
+  it('选项 flex: none（不收缩），容器横向滚动', () => {
+    expect(bodyOf('.segmented-option')).toContain('flex: none')
+    expect(bodyOf('.segmented-option')).not.toContain('flex: 1 1 0')
+    expect(bodyOf('.segmented.is-scrollable')).toContain('overflow-x: auto')
+  })
+
+  it('coarse 档把选项高度抬到 --hit-min', () => {
+    expect(css).toContain('min-height: var(--hit-min)')
+  })
+})
