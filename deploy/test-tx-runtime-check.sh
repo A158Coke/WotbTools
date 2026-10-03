@@ -63,8 +63,12 @@ grep -Fq 'business-postgres-provisioning: PASS' "$RUNTIME_CHECK_LIB"
 grep -Fq 'business-postgres-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)' "$RUNTIME_CHECK_LIB"
 grep -Fq 'tx-local-opentofu-business-postgres' "$RUNTIME_CHECK_LIB"
 grep -Fq 'BUSINESS_POSTGRES_TOFU_PROVISION_MARKER' "$RUNTIME_CHECK_LIB"
-grep -Fq '/api/hof?page=1&size=1' "$RUNTIME_CHECK_LIB"
-! grep -Fq '/api/hof?page=0&size=1' "$RUNTIME_CHECK_LIB"
+grep -Fq '/api/hof?page=1&size=200' "$RUNTIME_CHECK_LIB"
+! grep -Fq '/api/hof?page=0&size=' "$RUNTIME_CHECK_LIB"
+grep -Fq 'e2e_first_replay_id' "$RUNTIME_CHECK_LIB"
+grep -Fq 'replayAvailable' "$RUNTIME_CHECK_LIB"
+grep -Fq 'totalPages' "$RUNTIME_CHECK_LIB"
+grep -Fq 'hof_page=$((hof_page + 1))' "$RUNTIME_CHECK_LIB"
 # The new checks must be read-only: no DDL/DML against the business database.
 ! grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alter[[:space:]]+database)' "$RUNTIME_CHECK_LIB"
 
@@ -192,12 +196,18 @@ json.dump(data, sys.stdout)
       if [[ "$*" == *"page=0"* ]]; then
         respond '{"errorCode":"INVALID_PAGE"}' 400
       elif [ "${FAKE_HOF_LIST_EMPTY:-0}" = 1 ]; then
-        respond '{"records":[]}' "${FAKE_HOF_STATUS:-200}"
+        respond '{"items":[],"page":1,"size":200,"totalItems":0,"totalPages":0}' "${FAKE_HOF_STATUS:-200}"
+      elif [[ "$*" == *"page=2"* ]]; then
+        respond '{"items":[{"id":349,"nickname":"e2e","replayAvailable":true}],"page":2,"size":200,"totalItems":2,"totalPages":2}' "${FAKE_HOF_STATUS:-200}"
       else
-        respond '{"records":[{"id":348,"nickname":"e2e"}]}' "${FAKE_HOF_STATUS:-200}"
+        respond '{"items":[{"id":348,"nickname":"legacy","replayAvailable":false}],"page":1,"size":200,"totalItems":2,"totalPages":2}' "${FAKE_HOF_STATUS:-200}"
       fi
     elif [[ "$*" == *"/replay"* && "$write_out" == *size_download* ]]; then
-      printf '%s %s\n' "${FAKE_HOF_REPLAY_STATUS:-200}" "${FAKE_HOF_REPLAY_BYTES:-2048}"
+      if [[ "$*" == *"/api/hof/348/replay"* ]]; then
+        printf '404 186\n'
+      else
+        printf '%s %s\n' "${FAKE_HOF_REPLAY_STATUS:-200}" "${FAKE_HOF_REPLAY_BYTES:-2048}"
+      fi
     elif [[ "$*" == *"https://wotbtools.com"* ]]; then
       if [[ "$write_out" == *remote_ip* ]]; then
         # Real curl prints the write-out even when the TLS handshake is rejected,
@@ -375,6 +385,8 @@ run_gate_failure "hof-list-error" 'business-hof: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_STATUS=500
 run_gate_failure "hof-replay-missing" 'hof-replay-storage: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_LIST_EMPTY=1
+run_gate_failure "hof-replay-unreadable" 'hof-replay-storage: FAIL' \
+  "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_REPLAY_STATUS=404
 # An untrusted certificate is a hard failure: TLS verification is never disabled.
 run_gate_failure "public-tls-untrusted-certificate" 'public-tls-web: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=60

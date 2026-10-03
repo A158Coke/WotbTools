@@ -141,11 +141,28 @@ const bannerColor = computed(() => {
  * 就会出现「旧场景的迟到完成把新场景的 loading 清掉」——两边代数不同步，且组件层没有
  * 任何 guard。所以这里只发命令与记录最近文件（重试用）。
  */
+/**
+ * 解析任务的 session 所有权（P0：replay parser lifecycle is session-owned）：
+ * 清空 / 换文件 / 销毁时**真正 abort 在途解析**，不只是丢弃结果——否则旧解析继续占着
+ * Worker 队列，极端情况下（Worker 不回包）新文件永远排队、面板卡在「解析中」。
+ * signal 经内核的 source 透传给 replaySource 的解析边界；被 abort 的旧加载其错误
+ * 由内核的代数 guard 吞掉（新加载已接管归属），不会写成用户可见错误。
+ */
+let parseController = null
+function abortParse() {
+  parseController?.abort()
+  parseController = null
+}
+
 async function loadFile(file) {
+  // 连通性门禁在最前（离线时不启动新的 3D 解析）；随后是 main 的解析生命周期归属：
+  // 每次新解析都要先撤下上一次（abort）并换新的 AbortController。
   if (!file || !sceneApi || !requireFeature(Feature.PLAYBACK_3D)) return
+  abortParse()
+  parseController = new AbortController()
   lastFile = file
   lastFileName.value = file.name || 'replay'
-  await sceneApi.loadData({ kind: 'local', file })
+  await sceneApi.loadData({ kind: 'local', file, signal: parseController.signal })
 }
 
 /** 重试：同一份文件重新解析（失败不清空 selection，用户不必再选一次）；错误态由场景层重写 */
@@ -180,6 +197,7 @@ function killfeedText(kf) {
  * 否则会把旧节点（或 null）交给场景内核。
  */
 function destroyScene() {
+  abortParse()   // 场景销毁 = 解析任务一并撤下（在途解析不得再占 Worker 队列）
   if (!sceneApi) return
   sceneApi.destroy?.()
   sceneApi = null
@@ -226,10 +244,12 @@ function reconcileScene() {
   }
   const created = ensureScene()
   const file = props.file
-  // 尚未按开始（含换到另一场）：先把上一场撤下，否则旧场景继续呈现、还会压住待开播面板
+  // 尚未按开始（含换到另一场）：先把上一场撤下，否则旧场景继续呈现、还会压住待开播面板；
+  // 同时撤下旧场的在途解析（reset 归零会话，解析任务也一并让出 Worker 队列）
   if (file !== startedFile.value) {
     if (loadedFile) {
       sceneApi?.reset?.()
+      abortParse()
       loadedFile = null
     }
     return
