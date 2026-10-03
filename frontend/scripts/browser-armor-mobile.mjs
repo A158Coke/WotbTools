@@ -16,11 +16,13 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
  *   - 本文件：Vite dev server + **真实装甲查看器**（AgentArmorView + tankViewer 内核 +
  *     全部 CSS）在手机 / 平板 / 桌面三档设备指标下的几何与真实触摸接线。
  *
- * 环境前提与两处显式让位（都不影响被测契约）：
+ * 环境前提与三处显式让位（都不影响被测契约）：
  *   1. 门禁不带资产包：坦克数据会加载失败，场景脚本弹出**全屏阻塞**错误遮罩——测量前
  *      先移除状态遮罩（它是环境产物，不是被测对象）。资产包若恰好在跑，页面直接进入
  *      正常态，同样兼容。
- *   2. 3D 画面本身不在断言之列（视觉归属用户，见 .agents/AGENTS.md）；这里只断言
+ *   2. 加载态布局（顶栏单行 / 弹种不截断 / 面板控件 ≥44px）用 `applyLoadedFixture`
+ *      注入 worst-case 内容后测量——不依赖资产，避免"退化态下空跑"（评审 BLOCKER 2）。
+ *   3. 3D 画面本身不在断言之列（视觉归属用户，见 .agents/AGENTS.md）；这里只断言
  *      DOM/CSS chrome 的几何与接线。
  */
 
@@ -100,10 +102,65 @@ function armorLayoutProbe() {
     pickerSearch: box('#tp-search'),
     pickerFilters: ['#tp-tier', '#tp-nation', '#tp-type'].map((selector) => box(selector)),
     targetSelect: box('#target-select'),
+    configSelect: box('#config-select'),
+    eqOpts: [...document.querySelectorAll('#tank-selectors .eq-opt')].map((label) => {
+      const rect = label.getBoundingClientRect()
+      return { text: label.textContent.trim(), width: Math.round(rect.width), height: Math.round(rect.height) }
+    }),
+    /** 顶栏信息行是否被压成多行（行高 ≤ 26px = 单行；多行会把它撑高） */
+    infoPanelHeight: (() => {
+      const el = document.querySelector('#info-panel')
+      return el ? Math.round(el.getBoundingClientRect().height) : null
+    })(),
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
     statusOverlays: document.querySelectorAll('[data-testid="scene3d-error"], [data-testid="scene3d-loading"]').length,
   }
+}
+
+/**
+ * 加载态夹具（评审 BLOCKER 2）：资产缺失时 `#info-panel` / `#shell-selector` / `#config-row`
+ * 默认 hidden，门禁会在**退化态**下空跑——「顶栏单行」只证明了「一个按钮不会撑高顶栏」，
+ * 「弹种不截断」也因下拉隐藏而变成 no-op。这里向真实组件注入 worst-case 内容
+ * （长车名 + 俄语 等级/类型/国籍 + 长弹种文案 + 两项配置），让 loaded 布局在任何资产条件下
+ * 都可确定复现；注入的是内容，测的仍是生产 CSS / 生产 DOM 结构。
+ */
+function applyLoadedFixture() {
+  const setText = (selector, text) => {
+    const element = document.querySelector(selector)
+    if (element) element.textContent = text
+  }
+  const infoPanel = document.querySelector('#info-panel')
+  if (infoPanel) infoPanel.style.display = 'block'
+  setText('#tank-name', 'Т-34-85 (обр. 1944 г.)')
+  setText('#tank-tier', 'Уровень VIII')
+  setText('#tank-type', 'Тяжёлый танк')
+  setText('#tank-nation', 'Великобритания')
+
+  const shellSelector = document.querySelector('#shell-selector')
+  const shellSelect = document.querySelector('#shell-select')
+  if (shellSelector && shellSelect) {
+    shellSelect.innerHTML = ''
+    for (const text of ['APCR 310mm / 460dmg', 'AP 258mm / 400dmg', 'HE 68mm / 500dmg']) {
+      const option = document.createElement('option')
+      option.textContent = text
+      shellSelect.appendChild(option)
+    }
+    shellSelector.style.display = 'block'
+  }
+
+  const configRow = document.querySelector('#config-row')
+  const configSelect = document.querySelector('#config-select')
+  if (configRow && configSelect) {
+    configSelect.innerHTML = ''
+    for (const text of ['Орудие 122 мм Д-25Т', 'Орудие 100 мм Д-10Т']) {
+      const option = document.createElement('option')
+      option.textContent = text
+      configSelect.appendChild(option)
+    }
+    configRow.style.display = 'flex'
+  }
+  return true
 }
 
 /** 资产缺失时场景脚本的阻塞遮罩是环境产物：测量前移除（见文件头「环境前提」）。 */
@@ -182,7 +239,13 @@ async function runMobileScenario(env, scenario) {
   const assetQuery = scenario.assetless ? '&assets=http://127.0.0.1:1/' : ''
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&ws-roles=wotbtools-admin&tank=1${assetQuery}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
-  await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"], [data-testid="scene3d-loading"], #info-panel'), { label: 'scene settled' })
+  // 等内核**做完**（成功或失败）：loading 遮罩消失才算 settled——否则注入的夹具会被
+  // 迟到的真实加载结果覆盖，测量变成"看运气"。
+  await page.waitFor(() => {
+    const loading = document.querySelector('[data-testid="scene3d-loading"]')
+    const error = document.querySelector('[data-testid="scene3d-error"]')
+    return !loading || !!error
+  }, { label: 'scene settled' })
   await dismissStatusOverlays(page)
   await delay(150)
 
@@ -192,6 +255,12 @@ async function runMobileScenario(env, scenario) {
   }
 
   // —— 默认收起态：顶栏一行 + 底栏一行 + 场景带 ——
+  // 加载态夹具：非 assetless 场景注入 worst-case 内容，让「顶栏单行 / 弹种不截断 /
+  // 面板控件 ≥44px」在有无资产包时都可确定复现（评审 BLOCKER 2）
+  if (!scenario.assetless) {
+    await page.probe(applyLoadedFixture)
+    await delay(120)
+  }
   const initial = await page.probe(armorLayoutProbe)
   check(failures, initial.hasStage && !initial.unsupported, `${label}: 场景未渲染（hasStage=${initial.hasStage} unsupported=${initial.unsupported}）`)
   checkCommonGeometry(failures, initial, label)
@@ -200,6 +269,11 @@ async function runMobileScenario(env, scenario) {
     check(failures, initial.statusOverlays >= 1, `${label}: 资产不可达时应出现错误态遮罩（环境前提）`)
     check(failures, initial.topBar && initial.topBar.height >= 44,
       `${label}: 车名未加载时顶栏塌陷（height=${initial.topBar?.height}）`)
+  } else {
+    // 加载态：worst-case 车名/等级/类型/国籍必须在**一行**内（评审「额外关注」：
+    // 越界由省略号接管，不许换行把顶栏撑高）
+    check(failures, initial.infoPanel?.visible === true && initial.infoPanelHeight !== null && initial.infoPanelHeight <= 26,
+      `${label}: 顶栏信息行不是单行（#info-panel 高 ${initial.infoPanelHeight}px；长车名 + ru 等级/类型/国籍不得换行）`)
   }
   check(failures, initial.topBar && initial.root && Math.abs((initial.topBar.top - initial.root.top) - 8) <= 2,
     `${label}: 顶栏没有贴 armor-view 顶边（top=${initial.topBar?.top} root top=${initial.root?.top}，期望间距 8）`)
@@ -256,7 +330,22 @@ async function runMobileScenario(env, scenario) {
   check(failures, opened.selectors && opened.selectors.height <= opened.root.height * 0.46 + 2,
     `${label}: 参数面板高度 ${opened.selectors?.height}px 超过 46% 视口上限`)
   check(failures, opened.targetSelect?.visible === true, `${label}: 参数面板里没有可用的目标 / 选车按钮`)
+  // 参数面板内的真实交互控件 ≥44px（评审 BLOCKER 1：配置下拉 + 两个装备复选框 label）
+  if (!scenario.assetless) {
+    check(failures, opened.configSelect?.visible === true && opened.configSelect.height >= 43.5,
+      `${label}: 配置下拉缺失或命中区不足 44px（${JSON.stringify(opened.configSelect)}）`)
+    check(failures, opened.eqOpts.length === 2, `${label}: 装备复选框 label 数量 ${opened.eqOpts.length}，期望 2`)
+    for (const option of opened.eqOpts) {
+      check(failures, option.height >= 43.5,
+        `${label}: 装备「${option.text}」label 命中区 ${option.width}x${option.height}，低于 44px`)
+    }
+  }
   checkCommonGeometry(failures, opened, `${label} (expanded)`)
+  // 逐场景指标（CI 日志里的证据：证明夹具真的注入、断言不是空跑）
+  console.log(`[browser-armor-mobile] ${label} metrics: topBar=${initial.topBar?.height}px infoPanel=${initial.infoPanelHeight}px `
+    + `shellClipped=${initial.shellSelectClipped ? initial.shellSelectClipped.clipped : 'n/a'} `
+    + `configSelect=${opened.configSelect ? opened.configSelect.height + 'px' : 'n/a'} `
+    + `eqOpts=[${opened.eqOpts.map((option) => option.height).join(',')}] sceneBand=${initial.bottomBar.top - initial.topBar.bottom}px`)
 
   await page.tap({ ...opened.tools.center, touch: scenario.touch })
   const collapsed = await page.probe(armorLayoutProbe)
