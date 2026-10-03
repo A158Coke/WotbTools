@@ -13,8 +13,8 @@ services:
       - "10.20.0.1:8081:80"
     environment:
       # nginx's official template entrypoint expands this value before nginx
-      # starts. It is the TX-internal business runtime: the generic /api/ traffic is
-      # terminated inside wotb_tx_internal and never crosses WireGuard.
+      # starts. K6B keeps the Docker-local default but permits a reviewed TX1/TX2
+      # WireGuard Business API endpoint for later placement cutovers.
       BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}
       # The standalone AI service is pre-deployed on Yecao and published only on its
       # WireGuard address, so /api/ai/ is proxied over WireGuard instead of to the TX

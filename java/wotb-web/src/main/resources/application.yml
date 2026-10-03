@@ -15,7 +15,7 @@ spring:
     resources:
       static-locations: classpath:/static/
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/${POSTGRES_DB:wotb}
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:wotb}
     username: ${POSTGRES_USER:wotb}
     password: ${POSTGRES_PASSWORD}
   jpa:

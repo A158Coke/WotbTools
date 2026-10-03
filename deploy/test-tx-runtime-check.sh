@@ -22,7 +22,11 @@ grep -Fq 'clientAuthMethod' "$RUNTIME_CHECK_LIB"
 grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "$RUNTIME_CHECK_LIB"
 grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "$RUNTIME_CHECK_LIB"
 grep -Fq 'https://graph.qq.com/user/get_user_info' "$RUNTIME_CHECK_LIB"
-grep -Fq 'tx-internal-api-route: PASS' "$RUNTIME_CHECK_LIB"
+# The declared/active split is a contract of its own: the gate must read the
+# running container environment, not just re-render Compose.
+grep -Fq 'tx-logical-endpoints-declared' "$RUNTIME_CHECK_LIB"
+grep -Fq 'tx-logical-endpoints-active' "$RUNTIME_CHECK_LIB"
+grep -Fq 'docker inspect --format' "$RUNTIME_CHECK_LIB"
 grep -Fq 'tx-alloy-config: PASS' "$RUNTIME_CHECK_LIB"
 grep -Fq 'retired-replay-switches: PASS' "$RUNTIME_CHECK_LIB"
 ! grep -Fq 'wireguard-backend' "$RUNTIME_CHECK_LIB"
@@ -80,7 +84,37 @@ printf '{}\n' > "$WORK/runtime/config/sponsor-config.json"
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-[ "${1:-}" = compose ] || exit 0
+# `docker inspect` is the active-contract source: it reports the environment the
+# running container was actually started with, which re-rendering Compose cannot.
+# Every other subcommand this fixture does not model is a no-op.
+if [ "${1:-}" != compose ]; then
+  if [ "${1:-}" = inspect ]; then
+    case "${!#}" in
+      fake-wotb-frontend)
+        printf '["PATH=/usr/bin","BACKEND_UPSTREAM=%s","AI_UPSTREAM=%s"]\n' \
+          "${FAKE_RUNNING_FRONTEND_UPSTREAM:-http://business-api:8087}" \
+          "${FAKE_RUNNING_FRONTEND_AI_UPSTREAM:-http://10.20.0.2:8089}"
+        ;;
+      fake-business-api)
+        printf '["POSTGRES_HOST=%s","POSTGRES_PORT=%s","KEYCLOAK_ADMIN_SERVER_URL=%s","KEYCLOAK_ISSUER_URI=%s"]\n' \
+          "${FAKE_RUNNING_BUSINESS_DB_HOST:-business-postgres}" \
+          "${FAKE_RUNNING_BUSINESS_DB_PORT:-5432}" \
+          "${FAKE_RUNNING_KEYCLOAK_ADMIN_SERVER_URL:-http://keycloak:8080}" \
+          "${FAKE_RUNNING_KEYCLOAK_ISSUER_URI:-https://auth.wotbtools.com/realms/wotbtools}"
+        ;;
+      fake-keycloak)
+        printf '["KC_DB_URL=%s"]\n' \
+          "${FAKE_RUNNING_KEYCLOAK_DB_URL:-jdbc:postgresql://keycloak-postgres:5432/keycloak}"
+        ;;
+      fake-caddy)
+        printf '["CADDY_FRONTEND_UPSTREAM=%s","CADDY_KEYCLOAK_UPSTREAM=%s"]\n' \
+          "${FAKE_RUNNING_CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}" \
+          "${FAKE_RUNNING_CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}"
+        ;;
+    esac
+  fi
+  exit 0
+fi
 shift
 while [ "${1:-}" = -f ]; do shift 2; done
 business_ports='[{"host_ip":"127.0.0.1","published":25432,"target":5432},{"host_ip":"10.20.0.1","published":25432,"target":5432}]'
@@ -102,15 +136,18 @@ job_repository_field=""
 if [ -n "${FAKE_JOB_REPOSITORY:-}" ]; then
   job_repository_field=",\"WOTB_REPLAY_PROCESSING_JOB_REPOSITORY\":\"${FAKE_JOB_REPOSITORY}\""
 fi
-# 组合成保留 Docker-local dependency 的 business-api environment 主体。
+# 组合成默认 Docker-local、可切 reviewed WG endpoint 的 business-api environment 主体。
 extra_env="${job_repository_field}${execution_mode_field}"
-extra_env="\"POSTGRES_HOST\":\"business-postgres\",\"KEYCLOAK_ADMIN_SERVER_URL\":\"http://keycloak:8080\"${extra_env}"
+extra_env="\"POSTGRES_HOST\":\"${FAKE_BUSINESS_DB_HOST:-business-postgres}\",\"POSTGRES_PORT\":\"${FAKE_BUSINESS_DB_PORT:-5432}\",\"KEYCLOAK_ISSUER_URI\":\"https://auth.wotbtools.com/realms/wotbtools\",\"KEYCLOAK_ADMIN_SERVER_URL\":\"${FAKE_KEYCLOAK_ADMIN_SERVER_URL:-http://keycloak:8080}\"${extra_env}"
 business_api_ports='[{"host_ip":"10.20.0.1","published":8087,"target":8087},{"host_ip":"10.20.0.1","published":8088,"target":8088}]'
 [ -z "${FAKE_BUSINESS_API_PUBLISHED_PORT:-}" ] || business_api_ports="$FAKE_BUSINESS_API_PUBLISHED_PORT"
+# Caddy is rendered separately from the containers that actually run, so the
+# declared and active contracts can be pointed at different values on purpose.
+caddy_env="\"CADDY_FRONTEND_UPSTREAM\":\"${FAKE_CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}\",\"CADDY_KEYCLOAK_UPSTREAM\":\"${FAKE_CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}\""
 case "${1:-}" in
   config)
-    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432},{"host_ip":"10.20.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"keycloak":{"environment":{"KC_DB_URL":"jdbc:postgresql://keycloak-postgres:5432/keycloak"},"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080},{"host_ip":"10.20.0.1","published":8080,"target":8080}]},"wotb-frontend":{"ports":[{"host_ip":"10.20.0.1","published":8081,"target":80}],"environment":{"BACKEND_UPSTREAM":"%s","AI_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
-      "$business_ports" "$frontend_upstream" "$frontend_ai_upstream" "$business_api_ports" "$extra_env" | python3 -c '
+    printf '{"services":{"keycloak-postgres":{"ports":[{"host_ip":"127.0.0.1","published":15432,"target":5432},{"host_ip":"10.20.0.1","published":15432,"target":5432}]},"business-postgres":{"ports":%s},"keycloak":{"environment":{"KC_DB_URL":"%s"},"ports":[{"host_ip":"127.0.0.1","published":18080,"target":8080},{"host_ip":"10.20.0.1","published":8080,"target":8080}]},"wotb-frontend":{"ports":[{"host_ip":"10.20.0.1","published":8081,"target":80}],"environment":{"BACKEND_UPSTREAM":"%s","AI_UPSTREAM":"%s"}},"business-api":{"ports":%s,"environment":{%s}},"caddy":{"environment":{%s}},"alloy-tx":{"ports":[],"volumes":[{"source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"source":"./alloy/config.alloy","target":"/etc/alloy/config.alloy","read_only":true}]}}}\n' \
+      "$business_ports" "${FAKE_KEYCLOAK_DB_URL:-jdbc:postgresql://keycloak-postgres:5432/keycloak}" "$frontend_upstream" "$frontend_ai_upstream" "$business_api_ports" "$extra_env" "$caddy_env" | python3 -c '
 import json, os, sys
 data = json.load(sys.stdin)
 removed = os.environ.get("FAKE_BINDING_REMOVED")
@@ -125,6 +162,7 @@ json.dump(data, sys.stdout)
 '
     ;;
   ps)
+    service="${!#}"
     if [[ "$*" == *business-postgres* ]]; then
       if [ "${FAKE_BUSINESS_MISSING:-0}" = 1 ]; then
         exit 0
@@ -134,7 +172,12 @@ json.dump(data, sys.stdout)
         exit 0
       fi
     fi
-    printf 'healthy\n'
+    if [[ "$*" == *"-q"* ]]; then
+      [ "${FAKE_NO_RUNNING_CONTAINER:-}" = "$service" ] && exit 0
+      printf 'fake-%s\n' "$service"
+    else
+      printf 'healthy\n'
+    fi
     ;;
   exec)
     if [[ "$*" == *business-postgres* ]] && [ "${FAKE_BUSINESS_PG_NOT_READY:-0}" = 1 ]; then
@@ -256,7 +299,32 @@ run_check() {
 printf 'tx-local-opentofu-business-postgres\n' > "$WORK/business-postgres.tofu-provisioned"
 ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
 grep -Fq 'TX_RUNTIME_READY' <<< "$ready_output"
-grep -Fq 'tx-internal-api-route: PASS' <<< "$ready_output"
+grep -Fq 'tx-logical-endpoints-declared: PASS' <<< "$ready_output"
+grep -Fq 'tx-logical-endpoints-active: PASS' <<< "$ready_output"
+
+# A full reviewed TX1 placement must stay green on both sides: the rendered
+# Compose contract, the running containers, and the expectation the gate was
+# invoked with all carry the same reviewed value.
+wg_ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_FRONTEND_UPSTREAM=http://10.20.0.1:8087 \
+  FAKE_BUSINESS_DB_HOST=10.20.0.1 FAKE_BUSINESS_DB_PORT=25432 \
+  FAKE_KEYCLOAK_ADMIN_SERVER_URL=http://10.20.0.1:8080 \
+  FAKE_KEYCLOAK_DB_URL=jdbc:postgresql://10.20.0.1:15432/keycloak \
+  FAKE_CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081 FAKE_CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080 \
+  FAKE_RUNNING_FRONTEND_UPSTREAM=http://10.20.0.1:8087 \
+  FAKE_RUNNING_BUSINESS_DB_HOST=10.20.0.1 FAKE_RUNNING_BUSINESS_DB_PORT=25432 \
+  FAKE_RUNNING_KEYCLOAK_ADMIN_SERVER_URL=http://10.20.0.1:8080 \
+  FAKE_RUNNING_KEYCLOAK_DB_URL=jdbc:postgresql://10.20.0.1:15432/keycloak \
+  FAKE_RUNNING_CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081 FAKE_RUNNING_CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080 \
+  TX_BACKEND_UPSTREAM=http://10.20.0.1:8087 \
+  TX_BUSINESS_DB_HOST=10.20.0.1 TX_BUSINESS_DB_PORT=25432 \
+  TX_KEYCLOAK_ADMIN_SERVER_URL=http://10.20.0.1:8080 \
+  TX_KEYCLOAK_DB_HOST=10.20.0.1 TX_KEYCLOAK_DB_PORT=15432 \
+  CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081 CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080)"
+grep -Fq 'TX_RUNTIME_READY' <<< "$wg_ready_output"
+grep -Fq 'tx-logical-endpoints-declared: PASS' <<< "$wg_ready_output"
+grep -Fq 'tx-logical-endpoints-active: PASS' <<< "$wg_ready_output"
+
 grep -Fq 'tx-alloy-config: PASS' <<< "$ready_output"
 grep -Fq 'caddy-monitor: PASS' <<< "$ready_output"
 grep -Fq 'retired-replay-switches: PASS' <<< "$ready_output"
@@ -335,16 +403,66 @@ run_gate_failure() {
     || { echo "FAIL: $label must report '$expected' (output: $output)" >&2; exit 1; }
 }
 
-run_gate_failure "frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
+run_gate_failure "frontend-upstream-yecao" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
-run_gate_failure "frontend-upstream-public" 'tx-internal-api-route: FAIL' \
+run_gate_failure "frontend-upstream-public" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=https://example.test
 # The AI route must reach the Yecao ai-service over WireGuard: pointing it at the TX
 # business runtime or a public host reintroduces exactly the boundary this check owns.
-run_gate_failure "frontend-ai-upstream-business-api" 'tx-internal-api-route: FAIL' \
+run_gate_failure "frontend-ai-upstream-business-api" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=http://business-api:8087
-run_gate_failure "frontend-ai-upstream-public" 'tx-internal-api-route: FAIL' \
+run_gate_failure "frontend-ai-upstream-public" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=https://ai.example.test
+# The expectation itself is reviewed state: a workflow that expects a WireGuard
+# placement while the staged Compose file still renders Docker-local must fail
+# instead of being tolerated as "both values are allowlisted".
+run_gate_failure "declared-placement-behind-expectation" 'tx-logical-endpoints-declared: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" TX_BACKEND_UPSTREAM=http://10.20.0.1:8087
+run_gate_failure "active-placement-public-host" 'tx-logical-endpoints-active: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_RUNNING_FRONTEND_UPSTREAM=https://api.example.invalid
+run_gate_failure "active-business-db-public-host" 'tx-logical-endpoints-active: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_RUNNING_BUSINESS_DB_HOST=10.20.0.2
+run_gate_failure "active-business-db-wrong-port" 'tx-logical-endpoints-active: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_RUNNING_BUSINESS_DB_PORT=5432 \
+  FAKE_RUNNING_BUSINESS_DB_HOST=10.20.0.1
+run_gate_failure "active-keycloak-admin-public-host" 'tx-logical-endpoints-active: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_RUNNING_KEYCLOAK_ADMIN_SERVER_URL=https://auth.wotbtools.com
+run_gate_failure "active-keycloak-db-wrong-port" 'tx-logical-endpoints-active: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_RUNNING_KEYCLOAK_DB_URL=jdbc:postgresql://10.20.0.1:5432/keycloak
+# Both Caddy upstreams are part of the public ingress contract and are read from
+# the running gateway, not from the Compose file it was rendered out of.
+run_gate_failure "active-caddy-frontend-upstream" 'tx-logical-endpoints-active: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_RUNNING_CADDY_FRONTEND_UPSTREAM=10.20.0.2:8081
+run_gate_failure "active-caddy-keycloak-upstream" 'tx-logical-endpoints-active: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_RUNNING_CADDY_KEYCLOAK_UPSTREAM=keycloak:9999
+run_gate_failure "declared-caddy-keycloak-upstream" 'tx-logical-endpoints-declared: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_CADDY_KEYCLOAK_UPSTREAM=keycloak:9999
+# The canonical issuer never becomes a placement endpoint.
+run_gate_failure "active-keycloak-issuer" 'tx-logical-endpoints-active: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_RUNNING_KEYCLOAK_ISSUER_URI=https://auth.example.invalid/realms/wotbtools
+run_gate_failure "active-container-missing" 'tx-logical-endpoints-active: FAIL' \
+  "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_NO_RUNNING_CONTAINER=caddy
+
+# The K6B-2 false green this gate exists to refuse: the invocation expects and
+# renders the reviewed WireGuard placement while the containers that are actually
+# running still dial Docker-local. Both sides are healthy, so only the active
+# contract can catch it - and the declared contract must still pass, otherwise the
+# fixture would be failing for the wrong reason.
+set +e
+stale_active_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
+  FAKE_FRONTEND_UPSTREAM=http://10.20.0.1:8087 TX_BACKEND_UPSTREAM=http://10.20.0.1:8087)"
+stale_active_rc=$?
+set -e
+[ "$stale_active_rc" -ne 0 ] \
+  || { echo 'FAIL: a WireGuard expectation rendered but Docker-local containers must block TX_RUNTIME_READY' >&2; exit 1; }
+! grep -Fq 'TX_RUNTIME_READY' <<< "$stale_active_output"
+grep -Fq 'tx-logical-endpoints-declared: PASS' <<< "$stale_active_output" \
+  || { echo "FAIL: the rendered placement was valid, so the declared contract must pass (output: $stale_active_output)" >&2; exit 1; }
+grep -Fq 'tx-logical-endpoints-active: FAIL' <<< "$stale_active_output" \
+  || { echo "FAIL: only the active contract can reject this state (output: $stale_active_output)" >&2; exit 1; }
 run_gate_failure "business-api-published-port" 'wireguard-service-plane: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_BUSINESS_API_PUBLISHED_PORT='[{"host_ip":"0.0.0.0","published":8087,"target":8087}]'
@@ -357,13 +475,13 @@ for binding in wotb-frontend:0 business-api:0 business-api:1 keycloak:0 keycloak
     "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_BINDING_REMOVED="$binding"
 done
 for dependency in \
-  'business-api|POSTGRES_HOST|10.20.0.1' \
-  'business-api|KEYCLOAK_ADMIN_SERVER_URL|http://10.20.0.1:8080' \
-  'keycloak|KC_DB_URL|jdbc:postgresql://10.20.0.1:15432/keycloak'; do
-  run_gate_failure "changed-$dependency" 'tx-internal-api-route: FAIL' \
+  'business-api|POSTGRES_HOST|10.20.0.2' \
+  'business-api|KEYCLOAK_ADMIN_SERVER_URL|https://auth.wotbtools.com' \
+  'keycloak|KC_DB_URL|jdbc:postgresql://10.20.0.2:15432/keycloak'; do
+  run_gate_failure "changed-$dependency" 'tx-logical-endpoints-declared: FAIL' \
     "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_DOCKER_LOCAL_DEPENDENCY="$dependency"
 done
-run_gate_failure "relocated-frontend-upstream-yecao" 'tx-internal-api-route: FAIL' \
+run_gate_failure "relocated-frontend-upstream-yecao" 'tx-logical-endpoints-declared: FAIL' \
   "" "$RELOCATED_ROOT/deploy/runtime-check.sh" env FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
 run_gate_failure "retired-execution-mode-switch" 'retired-replay-switches: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_EXECUTION_MODE=distributed

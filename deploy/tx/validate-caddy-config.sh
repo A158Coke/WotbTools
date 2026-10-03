@@ -16,6 +16,22 @@ for required in Caddyfile common.compose.yml caddy.compose.yml; do
     || { echo "ERROR: staged Caddy input is missing: $INCOMING_DIR/$required" >&2; exit 1; }
 done
 CADDYFILE="$INCOMING_DIR/Caddyfile"
+CADDY_FRONTEND_UPSTREAM_VALUE="${CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}"
+CADDY_KEYCLOAK_UPSTREAM_VALUE="${CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}"
+
+validate_tx_upstream() {
+  local name="$1" value="$2" local_value="$3" wg_port="$4"
+  case "$value" in
+    "$local_value"|"10.20.0.1:$wg_port"|"10.20.0.3:$wg_port") return 0 ;;
+    *)
+      echo "ERROR: $name must be $local_value or a reviewed TX1/TX2 WireGuard endpoint on port $wg_port (found: $value)." >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_tx_upstream CADDY_FRONTEND_UPSTREAM "$CADDY_FRONTEND_UPSTREAM_VALUE" wotb-frontend:80 8081
+validate_tx_upstream CADDY_KEYCLOAK_UPSTREAM "$CADDY_KEYCLOAK_UPSTREAM_VALUE" keycloak:8080 8080
 
 # site_block <host>: the body of the `<host> { ... }` site, honouring nested
 # blocks. Matching is literal (`index(...) == 1`), so no regex escaping is needed.
@@ -83,8 +99,8 @@ handle_block() {
 # Every public host this gateway owns. Yecao upstreams are always the WireGuard
 # address 10.20.0.2; a public Yecao address here would bypass the private
 # boundary that ai-service, Grafana, and Komodo Core rely on.
-assert_upstream wotbtools.com wotb-frontend:80
-assert_upstream auth.wotbtools.com keycloak:8080
+assert_upstream wotbtools.com '{$CADDY_FRONTEND_UPSTREAM}'
+assert_upstream auth.wotbtools.com '{$CADDY_KEYCLOAK_UPSTREAM}'
 assert_upstream monitor.wotbtools.com 10.20.0.2:3000
 assert_upstream komodo.wotbtools.com 10.20.0.2:9120
 
@@ -116,7 +132,9 @@ grep -qi 'reverse_proxy' <<<"$android_callback" \
 
 # No upstream may exist beyond the reviewed set above.
 unexpected="$(sed -n 's/^[[:space:]]*reverse_proxy[[:space:]]\{1,\}\([^[:space:]]*\).*$/\1/p' "$CADDYFILE" \
-  | grep -vxE 'wotb-frontend:80|keycloak:8080|10\.20\.0\.2:3000|10\.20\.0\.2:9120|https://wotbtools-assets-1478073677\.cos\.ap-shanghai\.myqcloud\.com' || true)"
+  | grep -vxF -e '{$CADDY_FRONTEND_UPSTREAM}' -e '{$CADDY_KEYCLOAK_UPSTREAM}' \
+      -e '10.20.0.2:3000' -e '10.20.0.2:9120' \
+      -e 'https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com' || true)"
 [ -z "$unexpected" ] || {
   echo "ERROR: unreviewed Caddy upstream(s): $(tr '\n' ' ' <<<"$unexpected")" >&2
   exit 1
@@ -178,7 +196,7 @@ fi
 
 # The Android callback route in the adapted configuration, not in the text: exactly
 # one route matching that exact path on that exact host, ordered before the single
-# catch-all that still proxies the realm to keycloak:8080, answering from Caddy
+# catch-all that still proxies the realm to the configured Keycloak logical endpoint, answering from Caddy
 # (never reverse_proxy), with a 200 status and a body that tells the user to return
 # to the app. `all_handlers` walks every nesting level, so a handler hidden one
 # level deeper is still found and a proxying one can never hide.
@@ -220,8 +238,9 @@ if ! jq -e '
 fi
 
 # Inspect Caddy's real adapted handlers: preflight must precede every proxy.
-python3 - "$android_adapted_doc" <<'PY_CORS'
-import json, sys
+WOTB_EXPECTED_FRONTEND_DIAL="$CADDY_FRONTEND_UPSTREAM_VALUE" python3 - "$android_adapted_doc" <<'PY_CORS'
+import json
+import os, sys
 
 def walk(node):
     if isinstance(node, dict):
@@ -250,7 +269,8 @@ try:
     # handle directives within route preserve source order. Require the gateway
     # and Web catch-all to be siblings in the same mutually exclusive group.
     siblings = next(node["routes"] for node in nodes if any(route is gateway for route in node.get("routes", [])))
-    catchall = next(route for route in siblings if not route.get("match") and any(child.get("handler") == "reverse_proxy" and child.get("upstreams") == [{"dial": "wotb-frontend:80"}] for child in walk(route)))
+    expected_dial = os.environ.get("WOTB_EXPECTED_FRONTEND_DIAL") or "wotb-frontend:80"
+    catchall = next(route for route in siblings if not route.get("match") and any(child.get("handler") == "reverse_proxy" and child.get("upstreams") == [{"dial": expected_dial}] for child in walk(route)))
     assert gateway.get("group") and gateway["group"] == catchall.get("group")
     assert siblings.index(gateway) < siblings.index(catchall)
     assert any(node.get("strip_path_prefix") == "/agent-assets" for node in walk(gateway))

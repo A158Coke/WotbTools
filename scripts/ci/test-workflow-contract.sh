@@ -386,6 +386,60 @@ assert '[ "$komodo_public" = "$komodo_private" ]' in caddy_script, \
 caddy_tokens = {token for line in caddy_script.splitlines() for token in line.split()}
 assert "-k" not in caddy_tokens, "curl -k is forbidden in the Caddy gateway verification"
 assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy gateway verification"
+
+# K6B-1 logical endpoints: every owner that consumes a private placement
+# dependency pins the *active* Docker-local value in its own workflow, and the
+# read-only runtime gate asserts exactly the same placement. That pairing is what
+# keeps a merge from cutting production over through an existing repository
+# variable, and it keeps `TX_RUNTIME_READY` from only proving that the gate
+# agrees with itself. The Keycloak owner's equivalent pin lives in
+# scripts/ci/test-keycloak-tofu-contract.sh with its own apply step.
+k6b1_placements = {
+    "frontend": (frontend_deploy, {
+        "TX_BACKEND_UPSTREAM": "http://business-api:8087",
+        "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
+    }),
+    "business-api": (business_deploy, {
+        "TX_BUSINESS_DB_HOST": "business-postgres",
+        "TX_BUSINESS_DB_PORT": "5432",
+        "TX_KEYCLOAK_ADMIN_SERVER_URL": "http://keycloak:8080",
+    }),
+    "caddy": (caddy_deploy, {
+        "CADDY_FRONTEND_UPSTREAM": "wotb-frontend:80",
+        "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
+    }),
+}
+for owner, (step, placements) in k6b1_placements.items():
+    exported = step["with"]["envs"].split(",")
+    for name, value in placements.items():
+        assert step["env"][name] == value, (owner, name, step["env"].get(name))
+        assert name in exported, (owner, name)
+
+# The secret-bearing readiness probe stays ahead of the deployment: it is the
+# step that must reject an unreviewed endpoint before a credential is sent.
+assert business_script.index("dependency-readiness.sh business-api") \
+    < business_script.index("deploy/tx/deploy.sh"), \
+    "dependency readiness must run before the Business API deployment"
+
+runtime_gate_workflow = load(workflow_dir / "tx-runtime-check.yml")
+runtime_gate_step = next(
+    step for step in runtime_gate_workflow["jobs"]["runtime_check"]["steps"]
+    if step.get("name") == "Run exact-SHA read-only TX runtime gate"
+)
+for name, value in {
+    "TX_BACKEND_UPSTREAM": "http://business-api:8087",
+    "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
+    "TX_BUSINESS_DB_HOST": "business-postgres",
+    "TX_BUSINESS_DB_PORT": "5432",
+    "TX_KEYCLOAK_ADMIN_SERVER_URL": "http://keycloak:8080",
+    "TX_KEYCLOAK_DB_HOST": "keycloak-postgres",
+    "TX_KEYCLOAK_DB_PORT": "5432",
+    "CADDY_FRONTEND_UPSTREAM": "wotb-frontend:80",
+    "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
+}.items():
+    assert runtime_gate_step["env"][name] == value, (name, runtime_gate_step["env"].get(name))
+    assert name in runtime_gate_step["with"]["envs"].split(","), name
+
 # K3.2: one Komodo Periphery owner serves every reviewed target host. GitHub
 # Actions owns each agent's systemd lifecycle, the hosts never download an
 # artifact, the bootstrap credential only ever lives in a transient /run file, and
