@@ -1,6 +1,14 @@
-import { apiErrorFromResponse, apiFetch, requireOk } from './http.js'
+import { ApiError, apiErrorFromResponse, apiFetch, requireOk } from './http.js'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
 import { appendReplayFacts, replayFactsJson } from '../replay-local/submissionFacts.js'
+
+function requireHofOnline() {
+  if (!useFeatureGate().requireFeature(Feature.HALL_OF_FAME)) {
+    throw new ApiError({ errorCode: 'NETWORK_ERROR', status: 0, retryable: true })
+  }
+}
 
 function withQuery(path, params = {}) {
   const query = new URLSearchParams()
@@ -27,12 +35,14 @@ async function downloadResponse(response, fallbackName) {
 /** 名人堂统一公开查询：nation / vehicleType / tier / tankId 可独立使用并取交集。 */
 
 export async function hofList(params = {}) {
+  requireHofOnline()
   const r = await requireOk(await apiFetch(withQuery('/api/hof', params)))
   return r.json()
 }
 
 /** 公开单场车辆选项：当前名人堂实际存在的车辆及稳定分类码。 */
 export async function hofVehicleOptions() {
+  requireHofOnline()
   const r = await requireOk(await apiFetch('/api/hof/vehicle-options'))
   return r.json()
 }
@@ -44,9 +54,12 @@ export async function hofVehicleOptions() {
  * 名人堂单场上传：本机解析回放得到结算事实（服务器没有 parser），事实 + 原始回放（证据附件）一并提交。
  */
 export async function hofUpload(file) {
+  requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   const facts = await replayFactsJson(file)
+  requireHofOnline()
   await ensureToken(30)
+  requireHofOnline()
   const fd = new FormData()
   fd.append('file', file)
   fd.append('facts', facts)
@@ -56,7 +69,7 @@ export async function hofUpload(file) {
     body: fd,
   })
   if (r.status === 401) {
-    login('hof')
+    if (useFeatureGate().availability(Feature.HALL_OF_FAME).available) login('hof')
     throw await apiErrorFromResponse(r)
   }
   // requireOk 是 async 函数（返回 Promise）：必须先 await 再读 body，否则 Promise.json 抛 TypeError
@@ -69,13 +82,15 @@ export async function hofUpload(file) {
  * 禁止 <a href> 裸链（SPA 不会自动携带 Authorization: Bearer）。
  */
 export async function hofDownload(id) {
+  requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
+  requireHofOnline()
   const r = await apiFetch(`/api/hof/${encodeURIComponent(id)}/replay`, {
     headers: token() ? { Authorization: `Bearer ${token()}` } : {},
   })
   if (r.status === 401) {
-    login('hof')
+    if (useFeatureGate().availability(Feature.HALL_OF_FAME).available) login('hof')
     throw await apiErrorFromResponse(r)
   }
   if (!r.ok) throw await apiErrorFromResponse(r)
@@ -85,13 +100,15 @@ export async function hofDownload(id) {
 // ── 名人堂管理后台（/api/admin/hof/**，需 HoF-admin 或 wotbtools-admin）────────────────
 
 async function hofAdminRequest(url, options = {}) {
+  requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
+  requireHofOnline()
   const headers = { ...(options.headers || {}) }
   if (token()) headers.Authorization = `Bearer ${token()}`
   const r = await apiFetch(url, { ...options, headers })
   if (r.status === 401) {
-    login('hof-admin')
+    if (useFeatureGate().availability(Feature.HALL_OF_FAME).available) login('hof-admin')
     throw await apiErrorFromResponse(r)
   }
   await requireOk(r)
@@ -156,13 +173,15 @@ function filenameFromDisposition(cd) {
 
 /** 已登录通用请求（401 → 跳转登录后回到 ?view=hof）。 */
 async function hofAuthRequest(url, options = {}) {
+  requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
+  requireHofOnline()
   const headers = { ...(options.headers || {}) }
   if (token()) headers.Authorization = `Bearer ${token()}`
   const r = await apiFetch(url, { ...options, headers })
   if (r.status === 401) {
-    login('hof')
+    if (useFeatureGate().availability(Feature.HALL_OF_FAME).available) login('hof')
     throw await apiErrorFromResponse(r)
   }
   await requireOk(r)
@@ -171,6 +190,7 @@ async function hofAuthRequest(url, options = {}) {
 
 /** 百场公开排行榜（匿名）：nation / vehicleType / vehicleId 可选并取交集。 */
 export async function hofHundredList(params = {}) {
+  requireHofOnline()
   const r = await requireOk(await apiFetch(withQuery('/api/hof/hundred', params)))
   return r.json()
 }
@@ -180,16 +200,19 @@ export async function hofHundredList(params = {}) {
  * formData 包含 vehicleId / averageDamage / battleCount / screenshot(base64) / replays(×5)。
  */
 export async function hofHundredSubmit(formData) {
+  requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   await appendReplayFacts(formData)
+  requireHofOnline()
   await ensureToken(30)
+  requireHofOnline()
   const r = await apiFetch('/api/hof/hundred/submissions', {
     method: 'POST',
     headers: token() ? { Authorization: `Bearer ${token()}` } : {},
     body: formData,
   })
   if (r.status === 401) {
-    login('hof')
+    if (useFeatureGate().availability(Feature.HALL_OF_FAME).available) login('hof')
     throw await apiErrorFromResponse(r)
   }
   await requireOk(r)
@@ -275,6 +298,7 @@ export async function hofAdminBulkDeleteHundred(ids, body) {
 
 /** 三环公开排行榜（匿名）：nation / vehicleType / vehicleId 可选并取交集。 */
 export async function hofMark3List(params = {}) {
+  requireHofOnline()
   const r = await requireOk(await apiFetch(withQuery('/api/hof/mark3', params)))
   return r.json()
 }
@@ -285,7 +309,9 @@ export async function hofMark3List(params = {}) {
  * proofScreenshots(×1–2 base64) / replays(×5)。
  */
 export async function hofMark3Submit(formData) {
+  requireHofOnline()
   await appendReplayFacts(formData)
+  requireHofOnline()
   const r = await hofAuthRequest('/api/hof/mark3/submissions', { method: 'POST', body: formData })
   return r.json()
 }

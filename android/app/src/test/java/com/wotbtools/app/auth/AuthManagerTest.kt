@@ -18,6 +18,67 @@ import java.io.File
 class AuthManagerTest {
 
     @Test
+    fun refreshTransportAndServiceFailurePreservesTheCachedSession() {
+        listOf(null, "network_error", "server_error", "temporarily_unavailable", "invalid_grant").forEach {
+            assertFalse(AuthManager.shouldClearSessionAfterRefresh(false, it))
+        }
+        listOf(null, "server_error", "temporarily_unavailable", "unknown_error").forEach {
+            assertFalse(AuthManager.shouldClearSessionAfterRefresh(true, it))
+        }
+    }
+
+    @Test
+    fun explicitPermanentTokenRejectionInvalidatesTheCachedSession() {
+        listOf("invalid_grant", "invalid_client", "unauthorized_client").forEach {
+            assertTrue(AuthManager.shouldClearSessionAfterRefresh(true, it))
+        }
+    }
+
+    @Test
+    fun transientRefreshFailureDoesNotEmitAnAuthChangedRetryLoop() {
+        // AppAuth cannot run in plain JVM; lock the callback wiring around the behavioral policy above.
+        val source = authManagerSource()
+        assertTrue(source.contains("pending to (!success && sessionGeneration == generation && session == null)"))
+        assertTrue(source.contains("if (changed) notifyListeners()"))
+    }
+
+    @Test
+    fun lateRefreshSuccessCannotRestoreAnExplicitlyLoggedOutSession() {
+        val sessions = AuthSessionStore(FakeSecureSlotStore())
+        sessions.save("old-session")
+        var generation = 0L
+        val requestGeneration = generation
+        val callback = {
+            AuthManager.applyCurrentSessionUpdate(requestGeneration, generation) { sessions.save("refreshed-old-session") }
+        }
+        generation++
+        sessions.clear("logout")
+        assertFalse(callback())
+        assertNull(sessions.load())
+    }
+
+    @Test
+    fun oldRefreshSuccessAndRejectionCannotOverwriteOrClearTheNewAccount() {
+        val sessions = AuthSessionStore(FakeSecureSlotStore())
+        sessions.save("account-a")
+        var generation = 0L
+        val oldGeneration = generation
+        val success = {
+            AuthManager.applyCurrentSessionUpdate(oldGeneration, generation) { sessions.save("account-a-refreshed") }
+        }
+        val rejection = {
+            AuthManager.applyCurrentSessionUpdate(oldGeneration, generation) { sessions.clear("refresh-rejected") }
+        }
+        generation++
+        sessions.save("account-b")
+        assertFalse(success())
+        assertFalse(rejection())
+        assertEquals("account-b", sessions.load())
+        assertTrue(AuthManager.applyCurrentSessionUpdate(generation, generation) { sessions.save("account-b-refreshed") })
+        assertEquals("account-b-refreshed", sessions.load())
+    }
+
+    @Test
     fun absentStoredStateMeansUnauthenticated() {
         // AuthSessionStore.load() 在「没有条目 / 解密失败 / 内容为空」时统一返回 null，
         // 投影必须把这个 null 变成明确的未认证，而不是异常或空壳会话。

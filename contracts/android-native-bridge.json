@@ -1,8 +1,9 @@
 {
   "schemaVersion": 1,
   "bridgeVersion": 2,
-  "origin": "https://wotbtools.com",
+  "origin": "https://appassets.androidplatform.net",
   "allowedOrigins": [
+    "https://appassets.androidplatform.net",
     "https://wotbtools.com",
     "https://www.wotbtools.com"
   ],
@@ -119,7 +120,7 @@
   "syntheticResources": {
     "pendingReplay": {
       "method": "GET",
-      "url": "https://wotbtools.com/__native/replay-pending",
+      "url": "https://appassets.androidplatform.net/__native/replay-pending",
       "requiredHeaders": ["X-Wotb-Pending-Id"],
       "failure": "never-fallback-to-network"
     }

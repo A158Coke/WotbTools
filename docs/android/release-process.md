@@ -2,181 +2,92 @@
 
 ## 版本与 Bridge 契约
 
-Android 生产版本只从已提交文件读取：`android/gradle.properties` 的
-`wotbVersion=X.Y.Z` 计算 `versionName` 与
-`versionCode=major*1_000_000+minor*1_000+patch`。正常构建禁止依赖
-`-PwotbVersionCode` / `-PwotbVersionName`；仅保留 `-PwotbVersionOverride` 作为本地开发
-实验参数，生产 workflow 不传入任何版本覆盖参数。
+`android/gradle.properties:wotbVersion=X.Y.Z` 是生产版本唯一来源，
+`versionCode=major*1_000_000+minor*1_000+patch`。生产 workflow 不接受版本覆盖。
+`contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
 
-`contracts/android-native-bridge.json` 是 Native Bridge 的机器可读唯一协议来源。
-`wotbNativeBridgeVersion` 必须与它一致，前端 `nativeBridgeContract.js` 声明支持的版本也由
-CI 精确校验。Native 运行时通过 `getBridgeVersion` 暴露实际版本；版本不兼容时前端停止
-replay 导入并提示需要升级 Native client，不静默把协议错误当成普通导入失败。
+Native Bridge 保持 v2，Android 使用可信本地 origin `https://appassets.androidplatform.net`。
+新增受信任 origin 不改变 RPC schema；删除方法、改变参数/字段类型等真实 breaking 变更仍须
+递增 bridgeVersion 并同步 Native/FE。版本已经产生 immutable tag、APK 或 staging evidence
+后不能复用；修改 runtime 必须选新版本。
 
-协议的 breaking inspector 会比较 PR base 与 HEAD：删除/重命名 method、删除或改变字段类型、
-新增必填参数/请求头、改变 synthetic resource URL/方法/失败语义都要求递增
-`bridgeVersion`。独立新增 method 或新增 optional 字段不要求递增。Android Native、FE
-兼容声明与 contract 必须在同一个 PR 中完成。
-
-**前端不再支持的 bridge 版本必须靠强制更新收敛**：前端 `SUPPORTED_NATIVE_BRIDGE_VERSIONS`
-是「这个 Web 版本还能服务哪些 Native 世代」的唯一声明。当一次发布把线上正在使用的
-`version.json:nativeBridgeVersion` 从前端支持集合里移除时（Android 2.0：1 → 2），
-`guard_bridge_covered` 要求 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 已经 ≥ 本次发布的
-`versionCode`；否则 release 在 build 之前 fail closed，并给出需要设置的确切变量值。
-这条 guard 存在的理由：不设变量时 manifest 会带着默认 `1000000` 发布，1.4.x 客户端只会看到
-「可选更新」，可以继续用一个本前端已经无法服务的 wire contract。
+PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计确认它没有 tag/release，
+公开 APK 与 staging evidence 均为 404；已 staged 的 2.0.0 属于 PR A，不能作为 local-first APK 发布。
 
 ## 两阶段发布（stage → publish）
 
-`.github/workflows/android-release.yml` 监听 `main` push（`android/gradle.properties` 变化）与
-`android-v*` tag push，并提供 `workflow_dispatch` 手工入口。手工入口有一个 `mode` 输入：
+`.github/workflows/android-release.yml` 的默认 mode 是 `stage`；`publish` 只能手工续跑。
 
-| mode | job | 做什么 |
-|---|---|---|
-| `stage`（默认） | `stage` | 构建 / 签名 / 上传 immutable APK / 建 tag / 写 **staging evidence**。**绝不写 production `version.json`** |
-| `publish` | `publish` | 真机 A14 验证通过后手工续跑：复用已经 staged 的 APK，证明四件事后写 `version.json`（唯一 commit point） |
+| 阶段 | 行为 |
+|---|---|
+| stage | 校验 source/version/contract/cutover → 构建完整 Android bundle → 签名 APK → 核验 APK 内容、签名和 SHA → immutable APK/tag/evidence；不写 production version.json |
+| publish | 读取 immutable tag/evidence/APK → 核验实际 APK 与内嵌 bundle → Keycloak/API/资产就绪探测 → 最后上传 version.json；不重建、不重新签名 APK |
 
-所有入口 checkout 固定 source SHA，版本来自 committed properties，tag 必须与该版本一致。
-生产比较规则为：仓库版本较新则继续，相同则验证不可变 APK 后安全 no-op，仓库版本较旧则 fail-closed。
+生产版本较旧时继续，相同版本验证元数据和 SHA 后 no-op，较新则拒绝回滚。
+Tag 不得 repoint；已有 APK SHA 不同则拒绝覆盖。已有 staging evidence 必须与本次实际 APK
+身份逐字段匹配，重跑保留其原始 `stagedAt`，不能用新身份覆盖旧证据。
 
-### 阶段 1：stage（自动）
+## Schema 2 staging evidence
 
-```text
-source/contract/version gate
-→ production preflight（幂等分类 + tag 冲突检查）
-→ FE test/build（bridge 契约一致性）
-→ signed APK build → certificate/SHA 校验
-→ immutable APK 上传（确定性 URL）→ nginx 可读
-→ 线上 APK HTTP 200 + SHA 核验
-→ tag（已存在则校验指向，绝不 repoint）
-→ staging evidence 写入/上传/线上核验
-```
+公开路径为 `/download/android/wotbtools-android-v<版本>.staging.json`。
+证据的每个身份字段都由实际 APK 核验，并在 publish 再次验证：
 
-**staging evidence**（`/download/android/wotbtools-android-v<版本>.staging.json`）是不可变产物身份记录：
-`versionCode` / `versionName` / `nativeBridgeVersion` / `sourceSha` / `tag` / `apkName` / `apkUrl` /
-`sha256` / `stagedAt`。它存在的唯一目的：让阶段 2 在不重建 APK 的前提下证明「要广播的那个 APK 就是
-验证过的那个」。stage 全程不触碰 production `version.json`。
+| 字段 | 校验来源 |
+|---|---|
+| schemaVersion | 必须为 2；PR A schema 1 不能证明 local-first 运行面 |
+| versionCode/versionName | committed properties 与 `aapt dump badging` 读取的 APK AndroidManifest |
+| nativeBridgeVersion | immutable tag 的 bridge contract 与 APK manifest 的支持版本 |
+| sourceSha/tag | immutable tag commit、APK bundle 的 buildCommit、当前 main ancestry |
+| apkName/apkUrl/sha256 | 确定性发布路径与公开 APK 实际字节 |
+| bundleManifestSha256 | APK 内 `assets/web/bundle-manifest.json` 的实际字节 SHA-256 |
+| bundleFileCount | APK 中 assets/web 文件数，包含 bundle-manifest.json；bundle 自身 fileCount 不包含它 |
+| agentWasmRelease/agentWasmCommit | tag 的 deploy/agent/source.json、bundle 身份与 pinned JS/WASM 文件 |
+| runtimeOrigin/apiOrigin/assetOrigin | trusted local origin、生产 API、reviewed 固定资产 gateway |
+| nativeRuntime | bridge 支持集合、native-auth capability、auth methods 与 auth event，和 tag contract 一致 |
+| stagedAt | 格式合法的 UTC 时间，重跑保留 |
 
-### 阶段 2：publish（手工，真机验证之后）
+Bundle schema 2 的 `files` 清单列出每个内容文件的路径、大小、SHA-256。校验器对 APK 内完整
+文件集合逐项核验，同时检查 entry/WASM hash、总大小和数量；工作区里的清单不能代替 APK 内容。
+stage/publish/debug CI 都复用 `scripts/android-release/android_contract.py bundle`。
 
-```text
-手工触发 mode=publish（checkout 当前 main 只用于 committed 元数据与 ancestry 历史）
-→ contract/version gate
-→ 解析 staged release 身份：
-      versionName/versionCode（committed）→ immutable tag → tag target = STAGED_SOURCE
-      → staging evidence.sourceSha 必须 == STAGED_SOURCE
-      → 线上 APK 字节 SHA-256 必须 == evidence.sha256（绝不重建）
-      → guard_staged_release_identity（tag / evidence / APK 三者一致；绝不 repoint、绝不替换）
-→ minSupportedVersionCode 必须覆盖这次 breaking bridge cutover（guard_min_supported
-   + guard_bridge_covered）
-→ production Keycloak 有可用的 wotbtools-android（只读 GET 认证端点探测）
-→ production frontend 声明支持本次 bridge 版本 + native-auth
-   + guard_release_ancestry（见下）
-→ 写 version.json（sourceSha = STAGED_SOURCE）→ 上传 → 线上内容核验（LAST）
-```
+发布权威是已 staged APK，不是当前 main HEAD：tag target 必须包含在当前 main 历史里，但 main
+可以在真机验证期间继续前进。Android Vue 已在 APK 内，发布不依赖生产 Web `/version.json`
+或 Web build commit；Web 与 Android 是独立发布产物。
 
-**发布权威是已 staged 的 release 身份，不是当前 main HEAD。** Android 的版本 / tag / APK 身份都是
-immutable：真机验证期间 main 完全可能前进（`A → B`），那**不能**让一个已经 staged 且验证过的版本
-作废（也无法从 `B` 重新 staged 同一个 2.0.0）。因此要求的是：
+## 发布前真实依赖
 
-```text
-A = STAGED_SOURCE（tag 指向的 commit）
-B = 当前 origin/main
+所有探测只读且有超时，任何失败都阻止写 production version.json：
 
-android-v<版本> 指向 A
-∧ staging evidence.sourceSha == A
-∧ 线上 APK SHA-256 == evidence.sha256
-∧ A 是 B 的祖先或相等（git merge-base --is-ancestor A origin/main）
-```
+1. Keycloak `wotbtools-android` public client 与 private-scheme redirect 可用，认证走 PKCE。
+2. `/api/users/profile` 真实 OPTIONS：Origin 为 appassets，Authorization 等请求头允许，
+   GET/POST/PUT/PATCH/DELETE/OPTIONS 允许；ACAO 必须精确等于 appassets，不能是 wildcard，
+   不启用 credentialed CORS。无 Bearer 的同一路由 GET 必须返回 401 且携带正确 CORS，证明 backend 可达。
+3. APK 声明的 `https://wotbtools.com/agent-assets/index.json` GET 成功，返回 JSON object，
+   并允许精确 appassets origin。受信任响应必须 expose Content-Disposition、X-Request-ID 和 X-Map-Meta，
+   使 3D 地图元数据可由本地 WebView 读取。Gateway 在 Web catch-all 前固定转发已审计资产源，
+   剥离 `/agent-assets` 前缀；不使用 arbitrary URL proxy。
+4. `ANDROID_MIN_SUPPORTED_VERSION_CODE >= 2000001` 且不超过 latestVersionCode。
+   Bridge 已是 v2 也不能绕过这条门槛：PR A 2.0.0 仍依赖远程 Web frontend。
+   后续 patch 可保持 2000001 floor，不要求每次 patch 强制全部客户端更新。
 
-`A == B` 从来不是要求；main 前进只影响 `A` 必须仍在 main 历史里。
+Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-Encoding、Accept；
+Content-Encoding 用于 AI gzip。跨站 Cookie 和 WebView Keycloak 不属于这条发布链。
 
-**前端 ancestry 方向**（`guard_release_ancestry`，历史模型 `A ─ F ─ B`，F = 线上前端 build）：
+## Rollout 与验证
 
-```text
-A 是 origin/main 的祖先或相等      （staged 版本属于当前 main 线）
-A 是 F 的祖先或相等                （前端**包含** Android 2.0 认证 cutover）
-F 是 origin/main 的祖先或相等      （前端是真实主线构建，不是分支/未知来源）
-```
+先上线 production API exact-origin CORS、reviewed asset gateway 与 Keycloak client，再 stage。
+完成 B13/B14 物理 Android 矩阵后才手工 `workflow_dispatch(mode=publish)`。
+没有物理设备时不能把真机项目标为 PASS，production version.json 保持不变。
 
-即：线上前端**可以**比 staged Android 更新（只要包含它），但不可以更旧、不可以来自 main 之外。
+`scripts/android-release/test-release.sh` 覆盖版本/幂等分类、cutover floor、schema2 stage/publish
+roundtrip、每个证据字段被破坏时 fail-closed、APK 文件损坏、真实版本不符、CORS wildcard/
+credentials/headers/methods/HTTP 错误；同时锁定 publish 不重建与 version.json 最后写入。
+`scripts/ci/test-workflow-contract.sh` 校验 owner 与实际 workflow 接线。
+CI 还构建 debug APK，验证本地启动/Bridge/replay 合约及离线 bundle；真机仍负责实际 WebView、
+OEM Intent、native auth/refresh/process-death、飞行模式冷启动与本地回放全链路。
 
-最终发布不变量（全部成立才写 manifest）：
+## 签名与基础设施
 
-```text
-staged APK 身份正确（tag / evidence / APK SHA 三者一致，source 在 main 线内）
-  ∧ production Keycloak 有可用的 wotbtools-android
-  ∧ production frontend 支持 Bridge v2 + native-auth 且 ancestry 满足 A ─ F ─ B
-  ∧ minSupportedVersionCode 覆盖本次 breaking bridge cutover
-  ⇒ 才发布 version.json
-```
-
-**「四个 IdP 真机验证失败 ⇒ NO RELEASE」是 workflow 强制的，不是约定**：merge 之后的自动阶段
-只做 staging，`version.json` 只能由 `mode=publish` 的手工续跑写入；真机验证未做或失败时，
-production manifest 保持原样，1.x 客户端不会被推向一个尚未验证的客户端。
-
-### 为什么前端就绪检查是机器可验证的
-
-`frontend.yml` / `keycloak.yml` / Android release 是三条**互相独立**的 push workflow，不存在执行
-顺序保证（不用时序假设当就绪证据）。前端 build 生成的 `/version.json`（不可缓存）包含：
-
-```json
-{
-  "buildCommit": "<40 位 source SHA>",
-  "buildTime": "...",
-  "nativeRuntime": {
-    "supportedBridgeVersions": [2],
-    "nativeAuthCapability": "native-auth",
-    "authChangedGlobal": "wotbtoolsOnAuthChanged",
-    "nativeAuthMethods": ["authGetAccessToken", "authGetState", "authLogin", "authLogout"]
-  }
-}
-```
-
-`nativeRuntime` 直接取自 `frontend/src/platform/nativeBridgeContract.js`（bridge 契约声明的 SSOT），
-因此不会与 bundle 里真正运行的常量漂移；`frontend/src/vite-proxy.test.js` 固定这条投影与
-`contracts/android-native-bridge.json` 的一致性。publish 阶段只读地断言这个文件，不依赖任何时间/顺序假设。
-
-## PR 门禁与 rollout
-
-CI 的 Android Contract job 校验严格 semver、版本 code 公式、runtime change 必须递增版本、
-bridge breaking change 必须递增 bridgeVersion、Gradle/contract/FE 三方一致，并覆盖 test-only、
-docs-only、optional additive、breaking header/field、生产版本 older/equal/newer 分类。
-`scripts/android-release/test-release.sh` 另外固定：
-
-- bridge cutover guard 的五种取值（已配置 / 未配置 / 前端仍支持旧版本 / 首次发布 / bridge 未变）；
-- **两阶段协议本身**：stage 不得写 `version.json`、必须产出 staging evidence 并核验公开 APK；
-  publish 必须只能手工触发、必须复用 staged APK（不得出现构建/签名路径）、必须校验 staged 身份 /
-  Keycloak client / production frontend native 运行面 / minSupported cutover，且 `version.json`
-  的上传必须是最后一次产物写入。
-
-兼容 rollout 顺序：先发布同时支持旧版和新版 Bridge 的 FE，再发布 Native Android；不能兼容时
-先提高 `minSupportedVersionCode`，不得让线上旧 App 静默请求新协议。
-
-**Android 2.0 的 cutover 顺序（已由 workflow 强制）**：前端只支持 bridge v2，bridge v1 客户端属于
-「不支持的 Android 客户端」—— 它们在 WebView 内**不会**回退到 keycloak-js，只会看到需要更新；
-登录链本身由原生 OIDC 承担，因此权威顺序是：
-
-```text
-1. 设置 GitHub Actions variable ANDROID_MIN_SUPPORTED_VERSION_CODE = 2000000（2.0.0 的 versionCode）
-2. merge PR A
-   → keycloak.yml apply wotbtools-android client
-   → frontend.yml 发布支持 Bridge v2 + native-auth 的前端
-   → android-release 自动进入 stage：构建 2.0.0、上传 APK、建 tag、写 staging evidence
-     （production version.json 不变 → 1.x 此时仍可正常使用旧版本）
-3. 真机 A14 矩阵：QQ 首登 / QQ 已授权 / WG ASIA / WG EU / WG NA / 取消 / 错误回调 / logout→再登录 /
-   换账号 / refresh / process death / HTTPS App Link / private scheme / 登录中收 replay / 未登录 replay
-4. 全部通过后手工 dispatch android-release（mode=publish）
-   → 校验 staged 身份 + Keycloak client + 前端 native 运行面 + minSupported 覆盖
-   → 写 version.json（commit point）
-5. 1.x 客户端读到新 manifest → 强制更新到 2.0.0
-```
-
-第 1 步必须先于 merge：它只影响下一次发布的 manifest，不会提前打断任何在线用户；漏做则
-publish 在 `guard_bridge_covered` 直接失败，不会静默发布一个不强制更新的 manifest。
-
-## 签名与前置条件
-
-正式版本使用同一 signing key。keystore 与口令只来自 GitHub Secrets，证书 SHA-256 来自
-GitHub Variable；缺失或不匹配均 fail-closed。`deploy` 必须先把 nginx 的
-`/download/android/` 与宿主 bind mount 正确上线，否则版本 manifest 不能安全发布。
+正式版本保持同一 signing key。keystore/口令来自 GitHub Secrets，证书 SHA-256 来自 GitHub
+Variable；缺失或不匹配均 fail-closed。`/download/android/` 的 bind mount 必须先上线。
+`version.json` 是唯一强制更新 commit point，必须在上述身份与就绪检查之后作为最后一次上传。

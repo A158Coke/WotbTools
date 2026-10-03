@@ -6,7 +6,7 @@ import java.util.regex.Pattern
 /**
  * Android 版本 manifest（对应 https://wotbtools.com/download/android/version.json）。
  * fail-closed：任何非法字段（sha256 缺失/格式错、apkUrl 缺失、schemaVersion 不支持、
- * 版本字段非法）都视为 manifest/update error，抛异常 → 启动门禁不放行、绝不绕过完整性校验。
+ * 版本字段非法）都视为 manifest/update error，抛异常 → 本地启动继续、该更新不可用，绝不绕过 APK 完整性校验。
  */
 data class VersionManifest(
     val schemaVersion: Int,

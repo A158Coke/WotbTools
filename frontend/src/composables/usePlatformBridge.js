@@ -1,8 +1,9 @@
+import { isAndroidRuntime } from '../platform/runtime.js'
 /**
  * 极薄的平台能力探测（origin-scoped）。
  *
  * Android WebView 壳经 AndroidX WebKit WebMessageListener 注入 `window.WotbNative`
- * （仅 `https://wotbtools.com` / `https://www.wotbtools.com` 可调，见 android/.../MainActivity.kt）。
+ * （仅 appassets 和 reviewed production compatibility origins 的主 frame 可调）。
  * 普通浏览器 / 非 Android 场景下不存在该对象，所有方法回退到 Web 默认（null / false）。
  *
  * 本模块是异步 RPC（postMessage → reply 'message' 事件），只做能力查询、pending replay 交接
@@ -13,8 +14,6 @@
  * 也被 `platform/androidAuthProvider.js` 复用；禁止再造第二条通道或轮询。
  */
 import {
-  LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES,
-  LEGACY_PR290_REPLAY_RESOURCE_URL,
   SUPPORTED_NATIVE_BRIDGE_VERSIONS,
 } from '../platform/nativeBridgeContract.js'
 
@@ -30,7 +29,7 @@ function bridge() {
 
 export function isAndroidApp() {
   const b = bridge()
-  return !!(b && typeof b.postMessage === 'function')
+  return isAndroidRuntime() || !!(b && typeof b.postMessage === 'function')
 }
 
 /**
@@ -102,16 +101,6 @@ export function isNativeBridgeCompatible(version) {
   return SUPPORTED_NATIVE_BRIDGE_VERSIONS.includes(version)
 }
 
-export function isLegacyNativeReplayContractCompatible({
-  bridgeVersion,
-  capabilities = [],
-  pending,
-}) {
-  return bridgeVersion === null
-    && LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES.every(capability => capabilities.includes(capability))
-    && pending?.uri === LEGACY_PR290_REPLAY_RESOURCE_URL
-}
-
 export async function supports(capability) {
   return (await getCapabilities()).includes(capability)
 }
@@ -144,7 +133,6 @@ export function usePlatformBridge() {
     getCapabilities,
     getNativeBridgeVersion,
     isNativeBridgeCompatible,
-    isLegacyNativeReplayContractCompatible,
     supports,
     getPendingReplay,
     consumePendingReplay,

@@ -164,6 +164,7 @@ describe('feature capability model', () => {
     expect(featureRequirement(Feature.HALL_OF_FAME)).toBe(FeatureRequirement.ONLINE_REQUIRED)
     expect(featureRequirement(Feature.PLAYBACK_3D)).toBe(FeatureRequirement.ONLINE_REQUIRED)
     expect(featureRequirement(Feature.PLAYBACK_2D)).toBe(FeatureRequirement.LOCAL)
+    expect(featureRequirement(Feature.SHOOTING_INSPECTION)).toBe(FeatureRequirement.LOCAL)
     expect(featureRequirement(Feature.RATING)).toBe(FeatureRequirement.LOCAL)
     expect(featureRequirement(Feature.REPLAY_PARSING)).toBe(FeatureRequirement.LOCAL)
     expect(featureRequirement(Feature.TELEMETRY_UPLOAD)).toBe(FeatureRequirement.ONLINE_OPTIONAL)

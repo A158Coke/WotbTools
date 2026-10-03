@@ -46,8 +46,38 @@ www.wotbtools.com {
 }
 
 wotbtools.com {
-	reverse_proxy wotb-frontend:80 {
-		header_up Host {host}
+	# Exact Android origin; native Bearer authentication never needs cookies.
+	@android {
+		header Origin https://appassets.androidplatform.net
+		path /api/* /agent-assets/* /download/android/version.json
+	}
+	@androidPreflight {
+		header Origin https://appassets.androidplatform.net
+		method OPTIONS
+		path /api/* /agent-assets/* /download/android/version.json
+	}
+	route {
+	header @android {
+		Access-Control-Allow-Origin https://appassets.androidplatform.net
+		Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+		Access-Control-Allow-Headers "Authorization, Content-Type, Content-Encoding, Accept"
+		Access-Control-Expose-Headers "Content-Disposition, X-Request-ID, X-Map-Meta"
+		+Vary Origin
+	}
+	respond @androidPreflight "" 204
+	# Existing reviewed COS plane; fixed upstream cannot proxy arbitrary URLs.
+	handle_path /agent-assets/* {
+		reverse_proxy https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com {
+			header_up Host wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Credentials
+		}
+	}
+	handle {
+		reverse_proxy wotb-frontend:80 {
+			header_up Host {host}
+		}
+	}
 	}
 }
 

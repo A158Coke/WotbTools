@@ -52,31 +52,6 @@ guard_staged_release_identity() {
   }
 }
 
-# guard_release_ancestry <staged_in_main> <frontend_includes_staged> <frontend_in_main>
-#
-# 发布历史模型：A（staged Android source）─ F（线上前端 build）─ B（当前 main）：
-#   - A 必须包含在当前 main 历史里。main 前进**不能**让一个已经 staged + 真机验证过的 Android
-#     版本作废（这正是 publish 不要求 A == main HEAD 的原因）。
-#   - F 必须包含 A：线上前端要含 Android 2.0 认证 cutover。
-#   - F 本身必须在 main 历史里：真实主线构建，不是分支 / 来源不明的构建。
-# 三个入参都是调用方用 `git merge-base --is-ancestor` 判定的 0/1。
-guard_release_ancestry() {
-  local staged_in_main="$1" frontend_includes_staged="$2" frontend_in_main="$3"
-
-  [ "$staged_in_main" = 1 ] || {
-    guard_error "the staged release source is not contained in current main history; the staged artifact no longer belongs to this main line"
-    return 1
-  }
-  [ "$frontend_includes_staged" = 1 ] || {
-    guard_error "the production frontend predates the staged Android release: its build does not include the release source"
-    return 1
-  }
-  [ "$frontend_in_main" = 1 ] || {
-    guard_error "the production frontend build is not contained in current main history"
-    return 1
-  }
-}
-
 # guard_min_supported <min_supported_code> <new_code>
 guard_min_supported() {
   local min_supported="$1" new_code="$2"
@@ -85,6 +60,19 @@ guard_min_supported() {
   fi
   echo "::error::versionCode $new_code is below ANDROID_MIN_SUPPORTED_VERSION_CODE=$min_supported" >&2
   return 1
+}
+
+# PR B starts at 2.0.1. Bridge v2 alone cannot prove this local-first cutover:
+# PR A 2.0.0 still requires the remote frontend. Keep the floor on later patches too.
+guard_local_first_cutover() {
+  local min_supported="$1" new_code="$2"
+  [[ "$min_supported" =~ ^[1-9][0-9]*$ && "$new_code" =~ ^[1-9][0-9]*$ ]] || {
+    guard_error "minSupported/versionCode must be positive integers"; return 1
+  }
+  if [ "$new_code" -ge 2000001 ] && [ "$min_supported" -lt 2000001 ]; then
+    guard_error "Local-first cutover requires ANDROID_MIN_SUPPORTED_VERSION_CODE >= 2000001; old remote-WebView clients must update"
+    return 1
+  fi
 }
 
 # guard_bridge_covered <prod_bridge> <head_bridge> <frontend_versions_csv> <min_supported_code> <new_code>

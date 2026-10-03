@@ -10,6 +10,7 @@ on:
       - frontend/**
       - common/map_names.json
       - common/tankopedia-tier10.json
+      - common/shot-tank-data.json
       - common/assets/**
       - deploy/agent/source.json
       - scripts/fetch-agent-wasm.sh
@@ -39,6 +40,7 @@ env:
     frontend/**
     common/map_names.json
     common/tankopedia-tier10.json
+    common/shot-tank-data.json
     common/assets/**
     deploy/agent/source.json
     scripts/fetch-agent-wasm.sh

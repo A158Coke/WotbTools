@@ -67,6 +67,38 @@ assert connectivity_methods == ["connectivityGetState"], connectivity_methods
 assert [name for name in base["capabilities"] if name == "connectivity"] == ["connectivity"]
 assert base["methods"]["connectivityGetState"]["response"]["enum"] == ["online", "offline"]
 
+# Trusted local origin addition retains Bridge v2 RPC semantics and both production origins.
+local_contract = json.loads(json.dumps(base))
+remote_contract = json.loads(json.dumps(local_contract))
+remote_contract["origin"] = "https://wotbtools.com"
+remote_contract["allowedOrigins"] = ["https://wotbtools.com", "https://www.wotbtools.com"]
+remote_contract["syntheticResources"]["pendingReplay"]["url"] = "https://wotbtools.com/__native/replay-pending"
+assert not contract_result(remote_contract, local_contract)["breaking"]
+for field, value in [("url", "https://appassets.androidplatform.net/__native/other"), ("method", "POST"), ("failure", "network-fallback"), ("requiredHeaders", [])]:
+    broken = json.loads(json.dumps(local_contract))
+    broken["syntheticResources"]["pendingReplay"][field] = value
+    assert contract_result(remote_contract, broken)["breaking"], field
+removed_origin = json.loads(json.dumps(local_contract))
+removed_origin["allowedOrigins"].remove("https://wotbtools.com")
+assert contract_result(remote_contract, removed_origin)["breaking"]
+untrusted_origin = json.loads(json.dumps(local_contract))
+untrusted_origin["origin"] = "https://other.example"
+assert contract_result(remote_contract, untrusted_origin)["breaking"]
+
+# Resource validation must resolve the canonical Kotlin constant reference.
+with tempfile.TemporaryDirectory() as temp:
+    native = Path(temp) / "Native.kt"
+    declarations = '\n'.join(f'"{item}"' for item in [*base["methods"], *base["allowedOrigins"], *base["capabilities"], *auth_globals])
+    native.write_text(declarations + '\nconst val LOCAL_APP_ORIGIN = "https://appassets.androidplatform.net"\nconst val STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-pending"\n"X-Wotb-Pending-Id"', encoding="utf-8")
+    validate_native_sources(base, [str(native)])
+    native.write_text(native.read_text(encoding="utf-8").replace('/__native/replay-pending', '/__native/wrong'), encoding="utf-8")
+    try:
+        validate_native_sources(base, [str(native)])
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("wrong canonical replay resource path was accepted")
+
 base["bridgeVersion"] = 1
 
 additive = json.loads(json.dumps(base))

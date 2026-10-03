@@ -1,6 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
+import Banner from './Banner.vue'
 import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorCodeLabel, apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
@@ -11,6 +14,8 @@ import AppDialog from './AppDialog.vue'
 
 const { t, te, tm, locale } = useI18n()
 const { initPromise, tokenParsed, login } = useAuth()
+const { availability, requireFeature } = useFeatureGate()
+const hofAvailability = computed(() => availability(Feature.HALL_OF_FAME))
 
 // 授权在 auth 初始化完成后决定（不先渲染再等 403）；直接访问无权限 → 明确无权限状态。
 const canAdmin = computed(() => {
@@ -173,13 +178,19 @@ const deleteTarget = ref(null)
 const deleting = ref(false)
 const deleteMsg = ref('')
 
-onMounted(async () => {
+let initializing = false
+async function initialize() {
+  if (initializing || !requireFeature(Feature.HALL_OF_FAME)) return
+  initializing = true
   let loggedIn = false
   try {
     loggedIn = Boolean(await initPromise)
   } catch {
     loggedIn = false
+  } finally {
+    initializing = false
   }
+  if (!availability(Feature.HALL_OF_FAME).available) return
   if (!loggedIn) {
     authPhase.value = 'login'
     login('hof-admin')
@@ -192,9 +203,20 @@ onMounted(async () => {
   }
   loadRecords()
   loadVehicleOptions()
+}
+onMounted(initialize)
+watch(() => hofAvailability.value.available, (available, previous) => {
+  if (!available || previous !== false) return
+  if (authPhase.value === 'init') { void initialize(); return }
+  if (!canAdmin.value) return
+  if (activeTab.value === 'hundred') loadHundred()
+  else if (activeTab.value === 'mark3') loadMark3()
+  else if (activeTab.value === 'audit') loadAudit()
+  else loadRecords()
 })
 
 async function loadRecords() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   const g = ++gen
   loading.value = true
   error.value = ''
@@ -227,6 +249,7 @@ async function loadRecords() {
 }
 
 async function loadVehicleOptions() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   vehicleOptionsLoading.value = true
   try {
     vehicleOptions.value = (await api.hofAdminVehicleOptions()) || []
@@ -288,6 +311,7 @@ function goPage(p) {
 }
 
 async function loadAudit() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   const g = ++auditGen
   auditLoading.value = true
   try {
@@ -311,6 +335,7 @@ function switchTab(tab) {
 }
 
 async function download(id) {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   try {
     await api.hofAdminDownload(id)
   } catch (e) {
@@ -330,6 +355,7 @@ function cancelDelete() {
 }
 
 async function confirmDelete() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   if (!deleteTarget.value || deleting.value) return
   deleting.value = true
   deleteMsg.value = ''
@@ -434,6 +460,7 @@ function cancelBulkDelete() {
 }
 
 async function confirmBulkDelete() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   const domain = bulkDomain.value
   const selection = selectionFor(domain)
   const ids = [...(selection?.selected.value || [])]
@@ -486,6 +513,7 @@ function reloadDomain(domain) {
 // ── 百场审核 ──────────────────────────────────────────────────
 
 async function loadHundred() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   const g = ++hundredGen
   hundredLoading.value = true
   error.value = ''
@@ -538,6 +566,7 @@ function goHundredPage(p) {
 // ── 三环审核 ──────────────────────────────────────────────────
 
 async function loadMark3() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   const generation = ++mark3Gen
   mark3Loading.value = true
   error.value = ''
@@ -600,6 +629,7 @@ function hundredStatusLabel(s) {
 }
 
 async function openReview(row) {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   const g = ++reviewGen
   ++evidenceGen
   reviewTarget.value = row
@@ -632,6 +662,7 @@ async function openReview(row) {
 
 /** 加载 MANUAL PENDING 的 replay evidence 元数据（旧记录可能为空）。 */
 async function loadEvidence(submissionId) {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   const g = ++evidenceGen
   evidenceLoading.value = true
   evidenceError.value = ''
@@ -667,6 +698,7 @@ function screenshotFileName(src) {
 
 /** 下载单个 replay evidence（authenticated download API）。 */
 async function downloadReplay(ev) {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   if (!reviewTarget.value) return
   try {
     await api.hofAdminHundredReplayDownload(reviewTarget.value.id, ev.id)
@@ -711,6 +743,7 @@ function askReject() {
 }
 
 async function confirmApprove() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   if (actionBusy.value || !reviewTarget.value) return
   actionBusy.value = true
   actionMsg.value = ''
@@ -727,6 +760,7 @@ async function confirmApprove() {
 }
 
 async function confirmReject() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   if (actionBusy.value || !reviewTarget.value) return
   if (!rejectReason.value) {
     actionMsg.value = t('hundredAdmin.rejectReasonRequired')
@@ -767,6 +801,7 @@ function cancelCurrentDelete() {
 }
 
 async function confirmCurrentDelete() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   if (actionBusy.value || !reviewTarget.value) return
   if (!currentDeleteReason.value) {
     actionMsg.value = t('hundredAdmin.deleteReasonRequired')
@@ -795,6 +830,7 @@ async function confirmCurrentDelete() {
 }
 
 async function openMark3Review(row) {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   const generation = ++mark3ReviewGen
   ++mark3EvidenceGen
   mark3ReviewTarget.value = row
@@ -824,6 +860,7 @@ async function openMark3Review(row) {
 }
 
 async function loadMark3Evidence(submissionId) {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   const generation = ++mark3EvidenceGen
   mark3EvidenceLoading.value = true
   mark3EvidenceError.value = ''
@@ -863,6 +900,7 @@ function downloadMark3Screenshot(src, index) {
 }
 
 async function downloadMark3Replay(evidence) {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   if (!mark3ReviewTarget.value) return
   try {
     await api.hofAdminMark3ReplayDownload(mark3ReviewTarget.value.id, evidence.id)
@@ -889,6 +927,7 @@ function askMark3Delete() {
 }
 
 async function confirmMark3Approve() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   if (mark3ActionBusy.value || !mark3ReviewTarget.value) return
   mark3ActionBusy.value = true
   mark3ActionMsg.value = ''
@@ -905,6 +944,7 @@ async function confirmMark3Approve() {
 }
 
 async function confirmMark3Reject() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   if (mark3ActionBusy.value || !mark3ReviewTarget.value) return
   if (!mark3RejectReason.value) {
     mark3ActionMsg.value = t('mark3Admin.rejectReasonRequired')
@@ -933,6 +973,7 @@ async function confirmMark3Reject() {
 }
 
 async function confirmMark3Delete() {
+  if (!requireFeature(Feature.HALL_OF_FAME)) return
   if (mark3ActionBusy.value || !mark3ReviewTarget.value) return
   if (!mark3DeleteReason.value) {
     mark3ActionMsg.value = t('mark3Admin.deleteReasonRequired')
@@ -991,6 +1032,7 @@ function battleTypeLabel(tp) {
 
 <template>
   <div class="hof-admin">
+    <Banner v-if="!hofAvailability.available" tone="info" data-testid="hof-admin-connectivity"><p>{{ $t(hofAvailability.messageKey) }}</p></Banner>
     <!-- 登录流程 -->
     <div v-if="authPhase === 'login'" class="hof-admin-login muted">{{ $t('hofAdmin.login') }}</div>
 

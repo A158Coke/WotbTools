@@ -16,6 +16,13 @@ import AiReviewWorkspacePane from './AiReviewWorkspacePane.vue'
 
 const buildLocalAiReviewInput = vi.fn()
 
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
+
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({ authenticated: { value: true }, login: vi.fn() }),
 }))
@@ -53,7 +60,9 @@ async function projectionErrorFor(error) {
   buildLocalAiReviewInput.mockRejectedValue(error)
   const wrapper = mountPane()
   await flushPromises()
-  return wrapper.find('.panel-stub').attributes('data-error')
+  const errorKey = wrapper.find('.panel-stub').attributes('data-error')
+  wrapper.unmount()
+  return errorKey
 }
 
 describe('AiReviewWorkspacePane 错误归属', () => {
@@ -82,4 +91,19 @@ describe('AiReviewWorkspacePane 错误归属', () => {
     expect(await projectionErrorFor(new AiProjectionUnavailableError()))
       .toBe('workspace.ai_projection_unavailable')
   })
+})
+
+ it('offline AI entry gives connectivity before login/projection, and reconnect never submits AI', async () => {
+  buildLocalAiReviewInput.mockReset().mockResolvedValue({ battle: {}, projection: {} })
+  connectivityState.state.value = 'offline'
+  const wrapper = mountPane()
+  await flushPromises()
+  expect(wrapper.find('[data-testid="ai-connectivity"]').exists()).toBe(true)
+  expect(wrapper.find('[data-testid="ai-login"]').exists()).toBe(false)
+  expect(buildLocalAiReviewInput).not.toHaveBeenCalled()
+  connectivityState.state.value = 'online'
+  await flushPromises()
+  expect(buildLocalAiReviewInput).toHaveBeenCalledTimes(1)
+  expect(wrapper.find('.panel-stub').exists()).toBe(true)
+  wrapper.unmount()
 })

@@ -562,7 +562,7 @@ export function initPlayback(container, store) {
       // 不存在服务端回退
       const mapUrl = (Q.miniMap ? mapStaticUrl('map-mini', undefined, resolvedKey) : null) ?? mapStaticUrl('map', undefined, resolvedKey);
       if (mapUrl) {
-        const resp = await fetch(mapUrl);
+        const resp = await assetProvider.fetch(mapUrl);
         if (stale()) return;
         if (resp.ok) {
           const meta = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
@@ -591,7 +591,7 @@ export function initPlayback(container, store) {
       const terrainBin = mapStaticUrl('terrain', undefined, resolvedKey);
       let tmeta = {}; let tbuf = null;
       if (terrainBin) {
-        const m = await fetch(mapStaticUrl('terrain-meta', undefined, resolvedKey));
+        const m = await assetProvider.fetch(mapStaticUrl('terrain-meta', undefined, resolvedKey));
         if (stale()) return;
         if (m.ok) {
           tmeta = await m.json();
@@ -607,7 +607,7 @@ export function initPlayback(container, store) {
             if (dx > 0 || dy > 0) tmeta.span = Math.max(dx, dy);
           }
         }
-        const b = await fetch(terrainBin);
+        const b = await assetProvider.fetch(terrainBin);
         if (stale()) return;
         if (b.ok) {
           tbuf = await b.arrayBuffer();
@@ -641,7 +641,7 @@ export function initPlayback(container, store) {
       const gmUrl = mapStaticUrl('groundmeta', undefined, resolvedKey);
       if (!gmUrl) { /* 未配置资产面/未命中索引：跳过分层地表，回退烘焙底图/网格 */ }
       else {
-      const mresp = await fetch(gmUrl);
+      const mresp = await assetProvider.fetch(gmUrl);
       if (stale()) return;
       if (mresp.ok) {
         const L = await mresp.json();
@@ -659,7 +659,7 @@ export function initPlayback(container, store) {
           try {
             const texUrl = mapStaticUrl('groundtex', k, resolvedKey);
             if (texUrl) {
-              const r = await fetch(texUrl);
+              const r = await assetProvider.fetch(texUrl);
               if (stale()) return false;
               if (r.ok) {
                 const blob = await r.blob();

@@ -71,16 +71,111 @@ if guard_staged_release_identity "$staged_a" "$staged_a" "$staged_a" "not-a-sha"
   fail "malformed evidence SHA-256 must fail"
 fi
 
-# 历史模型 A（staged）─ F（线上前端）─ B（当前 main）：main 前进不作废已 staged 版本，
-# 但前端必须包含 A、且本身来自 main；反向（前端比 A 旧）必须失败。
-guard_release_ancestry 1 1 1 || fail "A ∈ main, F ⊇ A, F ∈ main must pass"
-if guard_release_ancestry 0 1 1 2>/dev/null; then fail "staged source outside current main history must fail"; fi
-if guard_release_ancestry 1 1 0 2>/dev/null; then fail "frontend build outside main history must fail"; fi
-if guard_release_ancestry 1 0 1 2>/dev/null; then fail "frontend older than the staged release (reversed ancestry) must fail"; fi
+guard_local_first_cutover 2000001 2000001 || fail "local-first cutover floor must pass"
+guard_local_first_cutover 2000001 2000002 || fail "later patches keep the local-first floor"
+if guard_local_first_cutover 2000000 2000001 2>/dev/null; then fail "PR A minimum must not permit PR B publish"; fi
+if guard_local_first_cutover 1000000 2000001 2>/dev/null; then fail "1.x minimum must reject local-first cutover"; fi
 
 python3 "$ROOT/scripts/android-release/android_contract.py" version 1.0.2 | grep -q '1000002' || fail "version parser"
 if python3 "$ROOT/scripts/android-release/android_contract.py" version 1.0.02 >/dev/null 2>&1; then fail "invalid version must fail"; fi
 bash "$ROOT/scripts/android-release/test-android-contract.sh"
+
+# Stage/publish evidence roundtrip against APK bytes, with independent corruption cases.
+python3 - "$ROOT" "$TMP" <<'PY'
+import contextlib
+import copy
+import hashlib
+import importlib.util
+import io
+import json
+import sys
+import zipfile
+from argparse import Namespace
+from pathlib import Path
+
+root, tmp = map(Path, sys.argv[1:])
+spec = importlib.util.spec_from_file_location("android_contract", root / "scripts/android-release/android_contract.py")
+gates = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gates)
+contract = json.loads((root / "contracts/android-native-bridge.json").read_text(encoding="utf-8"))
+contract["origin"] = "https://appassets.androidplatform.net"
+pin = json.loads((root / "deploy/agent/source.json").read_text(encoding="utf-8"))
+source = "a" * 40
+version = "2.0.1"
+contents = {"index.html": b"local index", f"wasm/{pin['ref']}/wotb_replay_wasm.js": b"js", f"wasm/{pin['ref']}/wotb_replay_wasm_bg.wasm": b"wasm"}
+digest = lambda data: hashlib.sha256(data).hexdigest()
+manifest = {
+    "schemaVersion": 2, "target": "android", "buildCommit": source,
+    "runtimeOrigin": contract["origin"], "apiOrigin": "https://wotbtools.com",
+    "assetOrigin": "https://wotbtools.com/agent-assets", "entry": "index.html",
+    "agentWasm": {"commit": pin["ref"], "release": pin["artifact"]["release"]},
+    "nativeRuntime": {"supportedBridgeVersions": [contract["bridgeVersion"]], "nativeAuthCapability": "native-auth",
+                      "nativeAuthMethods": gates.auth_surface(contract)[0], "authChangedGlobal": contract["events"]["authChanged"]["global"]},
+    "files": [{"path": path, "size": len(data), "sha256": digest(data)} for path, data in contents.items()],
+    "fileCount": len(contents), "totalBytes": sum(map(len, contents.values())),
+    "entrySha256": digest(contents["index.html"]), "agentWasmSha256": digest(b"wasm"),
+}
+apk = tmp / "bundle.apk"
+def write_apk(doc, files=contents):
+    with zipfile.ZipFile(apk, "w") as archive:
+        for path, data in files.items():
+            archive.writestr("assets/web/" + path, data)
+        archive.writestr("assets/web/bundle-manifest.json", json.dumps(doc))
+
+def reject(call):
+    with contextlib.redirect_stderr(io.StringIO()):
+        try:
+            call()
+        except SystemExit:
+            return
+    raise AssertionError("corrupt artifact / readiness was accepted")
+
+write_apk(manifest)
+contract_file, pin_file, badging = tmp / "contract.json", tmp / "pin.json", tmp / "badging.txt"
+contract_file.write_text(json.dumps(contract), encoding="utf-8")
+pin_file.write_text(json.dumps(pin), encoding="utf-8")
+badging.write_text("package: name='com.wotbtools.app' versionCode='2000001' versionName='2.0.1'", encoding="utf-8")
+evidence_path = tmp / "evidence.json"
+args = Namespace(apk=str(apk), badging=str(badging), contract=str(contract_file), pin=str(pin_file), source=source, version=version, evidence=None, output=str(evidence_path))
+gates.command_bundle(args)
+evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+assert evidence["schemaVersion"] == 2 and evidence["bundleFileCount"] == 4
+args.evidence = str(evidence_path)
+gates.command_bundle(args)  # publish validates the exact stage identity without rebuilding.
+for field in evidence:
+    broken = copy.deepcopy(evidence)
+    broken[field] = None
+    evidence_path.write_text(json.dumps(broken), encoding="utf-8")
+    reject(lambda: gates.command_bundle(args))
+evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+# Legacy PR A schema1 evidence cannot establish a local-first bundle.
+legacy = copy.deepcopy(evidence); legacy["schemaVersion"] = 1
+evidence_path.write_text(json.dumps(legacy), encoding="utf-8")
+reject(lambda: gates.command_bundle(args))
+evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+for field in ("runtimeOrigin", "buildCommit", "agentWasm", "nativeRuntime", "fileCount", "totalBytes", "files", "entrySha256"):
+    broken = copy.deepcopy(manifest)
+    broken[field] = [] if field == "files" else None
+    write_apk(broken)
+    reject(lambda: gates.apk_bundle_identity(str(apk), contract, pin, source, version))
+write_apk(manifest, {**contents, "index.html": b"tampered index"})
+reject(lambda: gates.apk_bundle_identity(str(apk), contract, pin, source, version))
+reject(lambda: gates.validate_apk_version("package: name='com.wotbtools.app' versionCode='2000000' versionName='2.0.0'", version))
+# Exact-origin preflight, authenticated route and asset readiness; no wildcard or credentials.
+headers = {"access-control-allow-origin": contract["origin"], "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+           "access-control-allow-headers": "Authorization, Content-Type, Content-Encoding, Accept",
+           "access-control-expose-headers": "Content-Disposition, X-Request-ID, X-Map-Meta"}
+gates.validate_cors(204, headers, contract["origin"], ["GET", "PATCH"], ["authorization", "content-encoding"])
+gates.validate_cors(401, headers, contract["origin"], [], [], 401)
+for field, value in [("access-control-allow-origin", "*"), ("access-control-allow-origin", "https://untrusted.example"),
+                     ("access-control-allow-credentials", "true"), ("access-control-allow-methods", "GET"),
+                     ("access-control-allow-headers", "Accept"),
+                     ("access-control-expose-headers", "Content-Disposition, X-Request-ID")]:
+    reject(lambda: gates.validate_cors(204, {**headers, field: value}, contract["origin"], ["PATCH"], ["authorization"]))
+reject(lambda: gates.validate_cors(503, headers, contract["origin"], [], []))
+reject(lambda: gates.validate_cors(200, headers, contract["origin"], [], [], 401))
+print("APK bundle evidence and exact-origin readiness: PASS")
+PY
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "jq is unavailable; production JSON classifier cases are CI-only"
@@ -147,7 +242,7 @@ PY
 
 # 两阶段发布协议：stage 只做 staging（绝不写 production version.json），publish 只能手工续跑、
 # 绝不重建 APK，并且必须在写 manifest 之前证明四件事（staged 身份 / Keycloak client /
-# production frontend native 运行面 / minSupported 覆盖 cutover）。
+# bundled frontend / API / assets / minSupported 覆盖 cutover）。
 python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
 import sys
 import yaml
@@ -230,7 +325,7 @@ for forbidden in ("assembleRelease", "setup-gradle", "wotbKeystorePath", "keysto
 
 # --- publish: the release authority is the STAGED identity, not the checkout SHA ---
 assert "guard_staged_release_identity" in publish_runs, "publish must prove the staged artifact identity"
-assert "guard_release_ancestry" in publish_runs, "publish must prove the release/frontend ancestry"
+assert '--is-ancestor "$TAG_TARGET" origin/main' in publish_runs, "publish must keep staged main ancestry"
 assert "steps.staged.outputs.stagedSource" in publish_runs, "publish must carry the staged source SHA"
 assert "origin/main" in publish_runs, "publish must anchor ancestry on current main"
 assert "publish must run from origin/main HEAD" not in publish_runs, \
@@ -243,7 +338,13 @@ assert "refs/tags/" in publish_runs, "publish must resolve the immutable release
 assert "guard_min_supported" in publish_runs, "publish must verify minSupportedVersionCode"
 assert "guard_bridge_covered" in publish_runs, "publish must verify the bridge cutover coverage"
 assert "protocol/openid-connect/auth" in publish_runs, "publish must re-verify the Keycloak client"
-assert "nativeRuntime" in publish_runs, "publish must verify the production frontend capability"
+assert "android_contract.py bundle" in publish_runs, "publish must validate the APK manifest/auth identity"
+assert "--evidence" in publish_runs and "--output" in stage_runs, "stage and publish must share evidence validation"
+assert "guard_local_first_cutover" in publish_runs and "guard_local_first_cutover" in stage_runs
+assert "android_contract.py cors" in publish_runs and "/api/users/profile" in publish_runs
+assert "$ASSETS/index.json" in publish_runs
+assert "https://wotbtools.com/version.json" not in publish_runs
+assert "FE_COMMIT" not in publish_runs and "frontend-version.json" not in publish_runs
 
 # --- version.json is the LAST mutation, and it records the STAGED source ---
 write_index = next(i for i, name in enumerate(publish_names) if name.startswith("Write version.json"))
@@ -259,13 +360,6 @@ for step in publish["steps"][upload_index + 1:]:
     assert not str(step.get("uses", "")).startswith(("appleboy/scp-action", "appleboy/ssh-action")), step
     assert "release-staging" not in (step.get("run") or ""), step
 
-# --- frontend ancestry direction: staged A must be included BY the frontend build F ---
-assert '--is-ancestor "$STAGED_SOURCE" "$FE_COMMIT"' in publish_runs, \
-    "the frontend build must include the staged Android source"
-assert '--is-ancestor "$FE_COMMIT" "$ORIGIN_MAIN"' in publish_runs, \
-    "the frontend build must itself be contained in current main"
-assert '--is-ancestor "$FE_COMMIT" "${{ steps.version.outputs.commit }}"' not in publish_runs, \
-    "the reversed (old) frontend ancestry check must be gone"
 print("Android release two-phase protocol: PASS")
 PY
 

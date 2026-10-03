@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
+import { resolveApiUrl } from '../platform/runtime.js'
 import { useAuth } from '../composables/useAuth.js'
 
 const { t } = useI18n()
@@ -17,7 +18,7 @@ const authState = ref('checking')
 
 async function loadManifest() {
   try {
-    const res = await fetch(MANIFEST_URL)
+    const res = await fetch(resolveApiUrl(MANIFEST_URL), { credentials: 'omit' })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     manifest.value = await res.json()
   } catch {

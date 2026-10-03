@@ -7,7 +7,6 @@ import {
   getCapabilities,
   getNativeBridgeVersion,
   getPendingReplay,
-  isLegacyNativeReplayContractCompatible,
   isAndroidApp,
   isNativeBridgeCompatible,
   supports,
@@ -58,7 +57,7 @@ describe('usePlatformBridge', () => {
   })
 
   it('capability detection via injected bridge', async () => {
-    stubNative(['replay-share', 'replay-open', 'app-update'], { name: 'a.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 1 })
+    stubNative(['replay-share', 'replay-open', 'app-update'], { name: 'a.wotbreplay', uri: 'https://appassets.androidplatform.net/__native/replay-pending', size: 1 })
     expect(isAndroidApp()).toBe(true)
     await expect(getCapabilities()).resolves.toEqual(['replay-share', 'replay-open', 'app-update'])
     await expect(supports('replay-share')).resolves.toBe(true)
@@ -66,22 +65,7 @@ describe('usePlatformBridge', () => {
     await expect(getNativeBridgeVersion()).resolves.toBe(2)
     expect(isNativeBridgeCompatible(2)).toBe(true)
     expect(isNativeBridgeCompatible(1)).toBe(false)
-    expect(isLegacyNativeReplayContractCompatible({
-      bridgeVersion: null,
-      capabilities: ['replay-open', 'replay-share'],
-      pending: { uri: 'https://wotbtools.com/__native/replay-pending' },
-    })).toBe(true)
-    expect(isLegacyNativeReplayContractCompatible({
-      bridgeVersion: null,
-      capabilities: ['replay-open'],
-      pending: { uri: 'https://wotbtools.com/__native/replay-pending' },
-    })).toBe(false)
-    expect(isLegacyNativeReplayContractCompatible({
-      bridgeVersion: null,
-      capabilities: ['replay-open', 'replay-share'],
-      pending: { uri: 'content://legacy/replay' },
-    })).toBe(false)
-    await expect(getPendingReplay()).resolves.toEqual({ name: 'a.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 1 })
+    await expect(getPendingReplay()).resolves.toEqual({ name: 'a.wotbreplay', uri: 'https://appassets.androidplatform.net/__native/replay-pending', size: 1 })
     await expect(consumePendingReplay()).resolves.toBe(true)
   })
 
@@ -92,7 +76,7 @@ describe('usePlatformBridge', () => {
   })
 
   it('consumePendingReplay 携带 expectedPendingId（identity-aware ACK 的 wire 边界）', async () => {
-    const native = stubNative(['replay-share'], { pendingId: 'pid-1', name: 'a.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 1 })
+    const native = stubNative(['replay-share'], { pendingId: 'pid-1', name: 'a.wotbreplay', uri: 'https://appassets.androidplatform.net/__native/replay-pending', size: 1 })
     await expect(consumePendingReplay('pid-1')).resolves.toBe(true)
     expect(native.calls.at(-1)).toEqual({
       method: 'consumePendingReplay',
@@ -101,7 +85,7 @@ describe('usePlatformBridge', () => {
   })
 
   it('Native compare-and-clear 返回 false（identity 不匹配）时如实透传 false', async () => {
-    stubNative(['replay-share'], { pendingId: 'pid-2', name: 'a.wotbreplay', uri: 'https://wotbtools.com/__native/replay-pending', size: 1 }, false)
+    stubNative(['replay-share'], { pendingId: 'pid-2', name: 'a.wotbreplay', uri: 'https://appassets.androidplatform.net/__native/replay-pending', size: 1 }, false)
     await expect(consumePendingReplay('pid-1')).resolves.toBe(false)
   })
 

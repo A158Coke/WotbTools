@@ -1,3 +1,6 @@
+import { isAndroidRuntime } from '../platform/runtime.js'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
 // 资产访问边界（评审 P0-3）：storage/network 与 Three.js 运行时解耦——
 // provider 只返回 URL / bytes / JSON，绝不返回 THREE.Object3D；场景内核经此
 // 取资产，不感知资产实际托管在哪里。
@@ -22,6 +25,9 @@
 import { assetBase } from './assetBase.js'
 
 function requireBase() {
+  if (isAndroidRuntime() && !useFeatureGate().requireFeature(Feature.PLAYBACK_3D)) {
+    throw new Error('NETWORK_ERROR')
+  }
   const base = assetBase()
   if (!base) {
     throw new Error(
@@ -32,6 +38,11 @@ function requireBase() {
 }
 
 export const assetProvider = {
+  /** Recheck availability at dispatch, even when a scene resolved its URL earlier. */
+  fetch(url, init) {
+    requireBase()
+    return fetch(url, init)
+  },
   /** 资产直连 URL（<img> / TextureLoader 等需要 URL 的消费方）；未配置 origin 抛错 */
   url(path) {
     return requireBase() + path
@@ -39,14 +50,14 @@ export const assetProvider = {
 
   /** 资产字节（GLB/二进制）；非 2xx 抛错（含状态码） */
   async bytes(path) {
-    const resp = await fetch(this.url(path))
+    const resp = await this.fetch(this.url(path))
     if (!resp.ok) throw new Error(`asset ${path}: HTTP ${resp.status}`)
     return new Uint8Array(await resp.arrayBuffer())
   },
 
   /** 资产 JSON；非 2xx 抛错 */
   async json(path) {
-    const resp = await fetch(this.url(path))
+    const resp = await this.fetch(this.url(path))
     if (!resp.ok) throw new Error(`asset ${path}: HTTP ${resp.status}`)
     return resp.json()
   },

@@ -183,5 +183,6 @@ describe('回放工作台能力归属', () => {
     expect(replayInitialCapability('agent-shots')).toBe('shots')
     // 装甲查看器仍是独立页面（坦克百科侧）
     expect(VIEW_COMPONENTS['agent-armor']).not.toBe(VIEW_COMPONENTS.replay)
-  })
+    // Loading the real registry compiles every page; bound compilation separately from UI timing.
+  }, 15_000)
 })

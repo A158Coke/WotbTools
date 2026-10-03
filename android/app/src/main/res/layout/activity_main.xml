@@ -10,43 +10,6 @@
         android:layout_height="match_parent" />
 
     <LinearLayout
-        android:id="@+id/networkGateView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@color/bg"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:padding="24dp"
-        android:visibility="gone">
-
-        <TextView
-            android:id="@+id/networkGateTitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/network_gate_title"
-            android:textColor="#F0F6FC"
-            android:textSize="22sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/networkGateMessage"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:gravity="center"
-            android:text="@string/network_gate_message"
-            android:textColor="#8B949E"
-            android:textSize="16sp" />
-
-        <Button
-            android:id="@+id/retryButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/network_gate_retry" />
-    </LinearLayout>
-
-    <LinearLayout
         android:id="@+id/versionGateView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

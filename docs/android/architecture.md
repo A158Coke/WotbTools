@@ -2,19 +2,20 @@
 
 ## 定位
 
-WotBTools Android 是现有 Vue/Web 的**纯联网 Thin Client**（用户规格 §8）。它不是第二套 WotBTools：
-所有业务运算（replay 解析、Rating、AI、战局重建）仍在客户端 Agent WASM / 服务端；Android 只负责
-设备能力、文件入口、Web 容器、认证、网络门禁与 APK 更新。
+Android 是同一 Vue 应用的 Local-First App Shell。APK 自带 Vue chunks、唯一 Agent Rust/WASM
+parser、2D 地图与图标资产；Native 只拥有系统能力、认证、外部文件 ingress 与 APK 更新。
+ReplayWorkspace 仍是唯一回放编排器，selection 由现有 Vue store 持有，不建立 Android 业务分支。
 
 ```text
-Android App (Native shell)
-   ├── AuthManager ──> 外部 user-agent ──> Keycloak ──> QQ / WG IdP
-   └── WebView ──> https://wotbtools.com
+Android App
+   ├── AuthManager → external user-agent → Keycloak → QQ / WG
+   └── WebView → https://appassets.androidplatform.net/index.html
+        ├── self: APK assets/web (Vue, WASM, 2D assets)
+        └── HTTPS API / remote 3D assets: reviewed production origins
 ```
 
-Android 2.0 起**认证由 Native 独占**（见下面的 Authentication Boundary）。普通业务更新 = Web deploy
-→ Android 自动获得，无需重发 APK；只有 Native 层变化（Intent/WebView/manifest/bridge/updater/shell/auth）
-才重发 APK。
+Android bundling 和生产 Web deploy 是独立发布产物。更改 Android 使用的 bundled Vue 或 Native runtime
+都需要重新构建 APK；生产 Web frontend 不再是 Android 启动或发布的 runtime dependency。
 
 ## 工程结构
 
@@ -29,7 +30,7 @@ android/
       AndroidManifest.xml
       java/com/wotbtools/app/
         MainActivity.kt       # Android 生命周期 / intent 分发 / WebView / bridge 接线
-        StartupGate.kt        # 网络 + version.json（fail-closed）
+        StartupGate.kt        # bounded best-effort version.json discovery
         VersionManifest.kt    # version.json 解析
         ApkUpdater.kt         # 下载 / SHA-256 / installer
         ReplayIntentHandler.kt# ACTION_SEND/ACTION_VIEW → PendingReplay（+ metadata 持久化/恢复）
@@ -46,46 +47,56 @@ android/
           AuthResponseGuard.kt    # 事务归属校验（state / redirect / code / error，纯逻辑）
           AuthResult.kt           # 显式 result / error 模型
       res/
-        layout/activity_main.xml         # webView + networkGate + versionGate + webError
+        layout/activity_main.xml         # webView + versionGate + local webError
         values/{strings,colors,themes}.xml
         xml/file_paths.xml               # FileProvider cache-path
         mipmap-anydpi-v26/{ic_launcher,ic_launcher_round}.xml
 ```
 
-## 启动门禁
+## 本地启动与更新
 
-```text
-网络 OK? ──No──▶ Network Gate（重试）
-   │Yes
-version.json 拉取 ──失败──▶ Network Gate（fail-closed）
-   │成功
-installed < minSupportedVersionCode ──▶ Mandatory Update
-installed < latestVersionCode        ──▶ Optional Update [立即更新][稍后]
-else                                  ──▶ Load https://wotbtools.com
-```
+`MainActivity.LOCAL_APP_ORIGIN` 是 `https://appassets.androidplatform.net`，`LOCAL_APP_ENTRY` 是
+`/index.html`；有 pending replay 时附加 `?view=replay`。Vue Router 继续拥有深链和 Back/Forward。
+`WebViewAssetLoader` 的 `/` handler 把 URL path 映射到 APK `assets/web/<path>`，与 Android Vite `base=/`
+一致。合成 pending replay exact URL 优先拦截，其次 bundled assets；缺失本地资产返回本地 404，绝不访问网络。
 
-`version.json` 获取失败不允许进入业务（fail-closed，规格 §16）。
+启动先加载 bundled document，再在系统确认 online 时异步获取版本 manifest（connect/read 各 3 秒）。
+离线、manifest 获取失败或非法都不阻断本地界面；可达且有效的 manifest 仍执行
+`installed < minSupportedVersionCode` mandatory update，较新版本使用 existing optional update。
+恢复联网会触发一次 coalesced 检查，不 reload 页面或清空回放。Native WebError 只表示 local bundle/WebView
+加载失败；不存在 Network Gate 或远程 frontend retry-only 页面。
+
+## 网络与业务边界
+
+Android API transport 从本地 origin 解析到 `https://wotbtools.com`，以 Native 短期 Bearer 调用；Web 保持
+同源 transport。生产 ingress 只为 exact `https://appassets.androidplatform.net` 允许所需 API CORS，
+不依赖 third-party cookies。Native Bridge RPC 不是任意 HTTP proxy。
+
+本地 import/parse、Data、deterministic Rating、2D 和 shots 可离线使用；AI、HoF、Profile backend 与
+3D remote assets 使用共享 ONLINE_REQUIRED capability gate，离线保留入口并在发请求前立即给连接提示。
+已缓存 Native session 或离线过期 token 不影响本地回放；API 调用等待联网和可用 token。
+恢复联网不自动提交 AI，也不 reset selection、logout 或 reload。
 
 ## 能力边界（V2 冻结区）
 
 Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability 业务状态机，
 这些由 Vue 提供。Android 只实现 Web 之外的系统能力：
 
-- 网络/版本门禁、WebView 加载、splash、back、生命周期、错误屏
+- 本地 WebView 加载、系统连通性、best-effort 更新、back、生命周期、本地错误屏
 - 原生 OIDC 认证（Authorization Code + PKCE S256，外部 user-agent）与 token 生命周期
 - Replay 意图入口（ACTION_SEND / ACTION_VIEW → content URI）
 - Native Bridge（`getCapabilities`/`getPendingReplay`/`consumePendingReplay`/`checkForUpdate`/
   `startUpdate`/`authGetState`/`authLogin`/`authLogout`/`authGetAccessToken`；禁止
   readFile/http/execute/launch、禁止任何 refresh token 出口）——
   **origin-scoped**：经 AndroidX WebKit `WebMessageListener`（`addWebMessageListener`），
-  仅 `https://wotbtools.com` / `https://www.wotbtools.com` 可调，不暴露给 Keycloak / IdP /
+  仅 `https://appassets.androidplatform.net` / `https://wotbtools.com` / `https://www.wotbtools.com` 的主 frame 可调，不暴露给 Keycloak / IdP /
   任意第三方 frame（替代 `addJavascriptInterface` 的全 frame 暴露）
 - APK 下载、SHA-256 校验、installer、未知来源授权
 - 复用 Web 的本机解析（上游 Rust Core WASM，服务器没有 parser；Android 不实现第二套解析，
   也不携带任何自有凭据）
 
 Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`native-auth`/`replay-share`/`replay-open`/
-`app-update`），不涉及 replay 业务 capability 判断（FULL/DEGRADED/PERFORMANCE 等由 Web 端接入）。
+`app-update` / `connectivity`），不涉及 replay 业务 capability 判断（FULL/DEGRADED/PERFORMANCE 等由 Web 端接入）。
 wire contract 的 SSOT 是 `contracts/android-native-bridge.json`（`bridgeVersion` 由
 `android/gradle.properties:wotbNativeBridgeVersion` 锁定，CI 用 `scripts/android-release/android_contract.py`
 校验 Native 实现、FE 声明与契约三方一致）。
@@ -190,8 +201,12 @@ App **未安装**（或该设备没走 App Link）时，浏览器会真的停在
   异步 token 交换同样带着自己那笔交易的身份去消费，等待期间用户再次登录不会被成功回调抹掉。
   明确禁止：明文 SharedPreferences refresh token、WebView localStorage refresh token、
   Cookie → Native token 复制、Native → JS refresh token 暴露。
-- **单飞 refresh**：并发 `authGetAccessToken` 只触发一次 refresh；refresh 无效时清空 Native 会话并回报
-  `unauthenticated`（`authGetAccessToken` 的 `error` 字段），Web 侧据此回到未登录态。
+- **单飞 refresh**：并发 `authGetAccessToken` 只触发一次 refresh；refresh 的永久 token 拒绝清空 Native 会话；离线/网络/服务失败保留加密 cached session 并回报
+  `refresh-failed`（`authGetAccessToken` 的 `error` 字段），Web 侧清除不可用的 API token，但保留 Native cached session 的登录投影和本地回放状态。
+  Logout / account replacement advances the session generation under the same persistence lock.
+  Late refresh success/rejection cannot restore a logged-out session, overwrite/clear a new account,
+  or release a newer generation's waiters. Transient failures emit no authChanged retry loop.
+
 
 ### 登录 / 登出语义
 
@@ -203,8 +218,8 @@ App **未安装**（或该设备没走 App Link）时，浏览器会真的停在
 
 ### Bridge 是独立边界
 
-Native Bridge 与 OAuth 是两个独立安全边界。Bridge origins 仍严格限于 `https://wotbtools.com` 与
-`https://www.wotbtools.com`，不暴露给 Keycloak、QQ/IdP 或第三方 frame；禁止在 WebView 与系统浏览器
+Native Bridge 与 OAuth 是两个独立安全边界。Bridge origins 严格限于 canonical local origin
+`https://appassets.androidplatform.net` 以及 bridge v2 生产兼容 origins `https://wotbtools.com` / `https://www.wotbtools.com`，不暴露给 Keycloak、QQ/IdP 或第三方 frame；禁止在 WebView 与系统浏览器
 之间同步 Cookie。
 
 ## Replay 意图与认证的导航边界
@@ -230,15 +245,65 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 
 ## WebView 安全（规格 §28–§29 / §86–§88）
 
-- app host（`wotbtools.com` / `www.wotbtools.com`）始终允许留在 WebView；其它外链走系统浏览器。
-  WebView 不再承载任何 OIDC / IdP 导航，因此不存在认证专用的 host allowlist。
+- 主 frame 只留在 exact HTTPS local origin；外部 HTTPS / mailto 交给系统浏览器，其它 scheme 阻断。
+  生产 API origin、Keycloak 与 IdP 不在 WebView 中导航。
 - `usesCleartextTraffic=false`；`mixedContentMode=NEVER_ALLOW`；`allowFileAccess=false`；
   `allowContentAccess=false`；`setGeolocationEnabled(false)`。
 - 禁用 `allowUniversalAccessFromFileURLs` / `ignoreSslErrors`；SSL 错误必须失败。
-- Native Bridge 只加到 `wotbtools.com` 页面，第三方页不可调用。
-- WebView 的 CookieManager 不再承担认证语义（认证由 Native 持有）；App 不读取、不复制、不持久化 Cookie。
+- Native Bridge 只暴露给三个 reviewed exact origins 的主 frame，任意第三方页与 iframe 不可调用。
+- WebView third-party cookies 禁用；CookieManager 不承担认证语义，App 不读取、复制或持久化 Cookie。
 
 ## 权限（least privilege，规格 §69）
 
 `INTERNET`、`ACCESS_NETWORK_STATE`、`REQUEST_INSTALL_PACKAGES` + FileProvider URI grant。
 不申请 `READ_EXTERNAL_STORAGE` / `MANAGE_EXTERNAL_STORAGE` / Contacts / Location / Camera / Microphone。
+
+## 自动化 WebView smoke
+
+`gradle :app:connectedDebugAndroidTest --no-daemon` 使用系统 framework instrumentation runner，
+不增加 production test 依赖；test-only APK provider 从 `common/fixtures/replays` 读取同一匿名 fixture。
+测试临时启用飞行模式并恢复原设置，检查 local origin、真实 Vue shell 挂载、Activity restart、
+Bridge v2 / native-auth / offline authority，以及 external content Intent → private cache → bundled WASM
+分析 → Data 结果 → identity ACK 清 pending。这是模拟器运行证据，不能代替物理设备的 provider、
+文件分享和视觉验收。
+
+## PR B 人工交接（2026-10-03）
+
+Automated B13/B14 已验证；Physical B13/B14 为 **PENDING HUMAN VALIDATION**。
+模拟器为 API34，Native JVM 98 项、真实 local Vue/Intent/WASM/ACK smoke 1 项通过。
+Browser offline matrix 使用真实 pinned WASM，覆盖手动导入、Data/Rating/2D/shots、深链门禁与连接切换。
+执行真机矩阵时记录 model/Android/WebView、最终 APK SHA256、bundle buildCommit 和每项 PASS/FAIL。
+
+- B13：飞行模式 cold start/restart；手动及外部回放；Result/Rating/2D/shots；坏文件可重试；
+  pending process death/resume 后成功 ACK；AI/HoF/3D/Profile 入口保留、即时提示、零请求/离线登录。
+- B13：联网→断网→联网保留回放/车辆/shot；3D 由用户 quality→Start；断网释放场景、重连无风暴。
+  人工核验 GPU/3D 画面/地图方向/装甲 viewer 交接；既有角色权限保持。
+- B14：Keycloak chooser、QQ、具备测试账号的 WG ASIA/EU/NA；preferred App Link/fallback scheme；
+  access token、refresh、logout/relogin/account switch、授权中 process death/resume；
+  authenticated→offline 与 expired token offline 本地可用，无 WebView OIDC 导航。无账号项标为未测。
+- 发布：先部署 exact-origin CORS/gateway 与 Keycloak client，minSupported 至少 2000001。
+  本轮只读 repo variable 为 2000000，publish 将拒绝。本 PR 未 stage/publish，未写 production version.json。
+
+Android 严格 CSP 只允许本地脚本/现有 bootstrap hash 与 WASM 编译；业务 connect 仅 self 和
+生产 wotbtools origin。既有 OpenAPI generator 生成 Ajv standalone ESM validators，
+WebView 无 runtime eval/new Function。Bundle URL graph/CSS references/APK 文件 SHA 全部 fail-closed。
+
+### B15 critical review
+
+| 项 | 结论与证据 |
+|---|---|
+| 1–4 cold start/document/BASE/file | 即时 APK /index.html；appassets 文档；无远程 frontend startup/file URL。MainActivity + emulator smoke。 |
+| 5 bridge | 仅 appassets、https://wotbtools.com、https://www.wotbtools.com，main frame；合同/JVM。 |
+| 6–8 API/CORS/Bearer | Android absolute API；Caddy exact-origin 匿名预检与真实响应；Native Bearer、omit cookies；实际 Caddy HTTP。 |
+| 9 offline auth | capability 先于 login/API，browser matrix 零离线 login，Native transient failure 保留 cached session。 |
+| 10 parser | APK commit-addressed JS/WASM，与 deploy/agent/source.json v0.3.11 pin 一致。 |
+| 11–13 pending | exact local synthetic GET、无网络回退；full UUID/compare-clear ACK；JVM 持久恢复与 emulator Activity recreation。完整 OS process-death 属真机矩阵。 |
+| 14–17 local | Result/Rating/2D bundled，shots compact tank parameters/shell table bundled；真实 WASM offline matrix。 |
+| 18–20 remote offline | AI/HoF/3D 在 mount/login/data/dispatch 前门控，matrix 零业务 HTTP/远程资产。 |
+| 21–22 owner | ReplayWorkspace/session 是唯一 orchestrator/selection owner，无 Android fork。 |
+| 23 reconnect | HoF/Profile 去重，AI 不自动提交，3D 保留 main quality→Start；local selection 不 reset。 |
+| 24 refresh | Native lock/generation 与 FE generation 防迟到回复；transient failure 不 logout/clear replay。 |
+| 25 release APK | signed stage 复用 build:android、签名后实际 APK inventory/SHA/aapt gate；debug实包/CI验证。本轮未 stage/sign release。 |
+| 26–27 publish/Web | immutable staged APK，不 rebuild/resign；production Web commit 不再是 Android runtime 依赖。 |
+| 28–29 readiness | Keycloak client gate 保留；真实 profile preflight/401、gateway JSON/exposed headers fail-closed。 |
+| 30 commit point | version.json 仍是最后 production mutation，release helpers 锁定顺序。 |

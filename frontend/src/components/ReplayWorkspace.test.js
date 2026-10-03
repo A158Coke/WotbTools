@@ -19,6 +19,13 @@ const hold = vi.hoisted(() => ({ state: null }))
 const authState = vi.hoisted(() => ({ authenticated: null, isAdmin: null, login: vi.fn() }))
 const nav = vi.hoisted(() => ({ navigate: null }))
 
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
+
 vi.mock('../composables/useReplay.js', () => ({
   useReplay: () => hold.state,
   chooseInitialResultTab: () => 'aggregate',
@@ -163,6 +170,7 @@ describe('ReplayWorkspace', () => {
   })
 
   beforeEach(() => {
+    connectivityState.state.value = 'online'
     replayState = buildState()
     hold.state = replayState
     authState.authenticated.value = true
@@ -172,6 +180,43 @@ describe('ReplayWorkspace', () => {
     showError.value = false
     globalError.value = ''
     vi.clearAllMocks()
+  })
+
+  it.each(['3d', 'ai'])('offline deep link keeps %s discoverable but never mounts its online pane', async (cap) => {
+    connectivityState.state.value = 'offline'
+    authState.isAdmin.value = true
+    withBattles(1)
+    const file = replayState.files.value[0]
+    const wrapper = mountWorkspace(cap, { authenticated: false })
+    await flushPromises()
+    expect(capKeys(wrapper)).toEqual(['data', 'playback', '3d', 'shots', 'ai'])
+    expect(wrapper.find(`[data-testid="ws-${cap}-connectivity"]`).exists()).toBe(true)
+    expect(wrapper.find(`[data-test="ws-${cap}-pane"]`).exists()).toBe(false)
+    expect(authState.login).not.toHaveBeenCalled()
+    await switchTo(wrapper, 'playback')
+    expect(wrapper.find('[data-test="ws-playback-pane"]').exists()).toBe(true)
+    await switchTo(wrapper, 'shots')
+    expect(wrapper.find('[data-test="ws-shots-pane"]').exists()).toBe(true)
+    expect(replayState.files.value[0]).toBe(file)
+    wrapper.unmount()
+  })
+
+  it('reconnect activates a blocked pane once; disconnect preserves the replay and disables its active props', async () => {
+    connectivityState.state.value = 'offline'
+    authState.isAdmin.value = true
+    withBattles(1)
+    const file = replayState.files.value[0]
+    const wrapper = mountWorkspace('3d')
+    await flushPromises()
+    connectivityState.state.value = 'online'
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="ws-3d-pane"]')).toHaveLength(1)
+    connectivityState.state.value = 'offline'
+    await flushPromises()
+    expect(wrapper.get('[data-test="ws-3d-pane"]').text()).toContain('false')
+    expect(replayState.files.value[0]).toBe(file)
+    expect(replayState.analyze).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('普通用户只少了 3D / 射击；管理员五个能力齐全', async () => {

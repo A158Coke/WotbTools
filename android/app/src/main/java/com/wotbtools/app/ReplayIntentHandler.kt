@@ -75,7 +75,7 @@ internal data class ReplayPendingMetadata(
  * replay 永久丢失。
  */
 object ReplayIntentHandler {
-    internal const val STREAM_URL = "https://wotbtools.com/__native/replay-pending"
+    internal const val STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-pending"
     internal const val IDENTITY_HEADER = "X-Wotb-Pending-Id"
 
     /** Native response decision + open stream; independent of Android's WebResourceResponse stub. */
@@ -83,9 +83,10 @@ object ReplayIntentHandler {
 
     /** Only unrelated URLs may fall through to the network. Never buffer the replay in memory. */
     internal fun interceptPendingResource(
-        url: String, file: File?, currentId: String?, expectedId: String?
+        url: String, file: File?, currentId: String?, expectedId: String?, method: String = "GET"
     ): StreamResponse? {
         if (url != STREAM_URL) return null
+        if (method != "GET") return StreamResponse(405, "Method Not Allowed")
         return try {
             if (file == null || !file.isFile) {
                 StreamResponse(404, "Not Found")

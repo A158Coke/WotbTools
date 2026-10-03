@@ -32,8 +32,13 @@ site_block() {
 }
 
 assert_upstream() {
-  local host="$1" expected="$2" actual
-  actual="$(site_block "$host" \
+  local host="$1" expected="$2" actual scope
+  if [ "$host" = wotbtools.com ]; then
+    scope="$(handle_block "$host" "")"
+  else
+    scope="$(site_block "$host")"
+  fi
+  actual="$(printf '%s\n' "$scope" \
     | sed -n 's/^[[:space:]]*reverse_proxy[[:space:]]\{1,\}\([^[:space:]]*\).*$/\1/p' \
     | head -n1)"
   [ "$actual" = "$expected" ] || {
@@ -53,7 +58,7 @@ handle_block() {
     !in_host {
       if (!inside && index($0, host " {") == 1) { in_host = 1; host_depth = 0 }
     }
-    !inside && index(trimmed, "handle " path " {") == 1 {
+    !inside && in_host && trimmed == (path == "" ? "handle {" : "handle " path " {") {
       inside = 1
       depth = 1
       print
@@ -111,7 +116,7 @@ grep -qi 'reverse_proxy' <<<"$android_callback" \
 
 # No upstream may exist beyond the reviewed set above.
 unexpected="$(sed -n 's/^[[:space:]]*reverse_proxy[[:space:]]\{1,\}\([^[:space:]]*\).*$/\1/p' "$CADDYFILE" \
-  | grep -vxE 'wotb-frontend:80|keycloak:8080|10\.20\.0\.2:3000|10\.20\.0\.2:9120' || true)"
+  | grep -vxE 'wotb-frontend:80|keycloak:8080|10\.20\.0\.2:3000|10\.20\.0\.2:9120|https://wotbtools-assets-1478073677\.cos\.ap-shanghai\.myqcloud\.com' || true)"
 [ -z "$unexpected" ] || {
   echo "ERROR: unreviewed Caddy upstream(s): $(tr '\n' ' ' <<<"$unexpected")" >&2
   exit 1
@@ -213,6 +218,52 @@ if ! jq -e '
   ' "$android_adapted_doc" >&2 || head -c 2000 "$android_adapted_doc" >&2
   exit 1
 fi
+
+# Inspect Caddy's real adapted handlers: preflight must precede every proxy.
+python3 - "$android_adapted_doc" <<'PY_CORS'
+import json, sys
+
+def walk(node):
+    if isinstance(node, dict):
+        yield node
+        for value in node.values(): yield from walk(value)
+    elif isinstance(node, list):
+        for value in node: yield from walk(value)
+
+origin = "https://appassets.androidplatform.net"
+doc = json.load(open(sys.argv[1]))
+host = next(node for node in walk(doc) if node.get("match") == [{"host": ["wotbtools.com"]}])
+nodes = list(walk(host))
+paths = ["/api/*", "/agent-assets/*", "/download/android/version.json"]
+try:
+    cors = next(node for node in nodes if node.get("match") == [{"header": {"Origin": [origin]}, "path": paths}])
+    headers = next(node["response"]["set"] for node in walk(cors) if node.get("handler") == "headers")
+    assert headers["Access-Control-Allow-Origin"] == [origin]
+    assert set(headers["Access-Control-Allow-Methods"][0].replace(" ", "").split(",")) == {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+    assert set(headers["Access-Control-Allow-Headers"][0].lower().replace(" ", "").split(",")) == {"authorization", "content-type", "content-encoding", "accept"}
+    assert {"content-disposition", "x-request-id", "x-map-meta"}.issubset(set(headers["Access-Control-Expose-Headers"][0].lower().replace(" ", "").split(",")))
+    preflight = next(node for node in nodes if node.get("match") == [{"header": {"Origin": [origin]}, "method": ["OPTIONS"], "path": paths}])
+    assert any(node.get("handler") == "static_response" and node.get("status_code") == 204 for node in walk(preflight))
+    proxy_position = next(i for i, node in enumerate(nodes) if node.get("handler") == "reverse_proxy")
+    assert next(i for i, node in enumerate(nodes) if node is preflight) < proxy_position
+    gateway = next(node for node in nodes if node.get("match") == [{"path": ["/agent-assets/*"]}])
+    # handle directives within route preserve source order. Require the gateway
+    # and Web catch-all to be siblings in the same mutually exclusive group.
+    siblings = next(node["routes"] for node in nodes if any(route is gateway for route in node.get("routes", [])))
+    catchall = next(route for route in siblings if not route.get("match") and any(child.get("handler") == "reverse_proxy" and child.get("upstreams") == [{"dial": "wotb-frontend:80"}] for child in walk(route)))
+    assert gateway.get("group") and gateway["group"] == catchall.get("group")
+    assert siblings.index(gateway) < siblings.index(catchall)
+    assert any(node.get("strip_path_prefix") == "/agent-assets" for node in walk(gateway))
+    proxy = next(node for node in walk(gateway) if node.get("handler") == "reverse_proxy")
+    assert proxy["upstreams"] == [{"dial": "wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com:443"}]
+    for node in nodes:
+        for operation in ("set", "add"):
+            values = node.get("response", {}).get(operation, {})
+            assert "Access-Control-Allow-Credentials" not in values
+            assert "*" not in values.get("Access-Control-Allow-Origin", [])
+except (StopIteration, AssertionError, KeyError):
+    raise SystemExit("ERROR: adapted Android CORS must be exact-origin, non-credentialed, pre-auth, with the reviewed asset gateway")
+PY_CORS
 
 docker compose -p deploy \
   -f "$INCOMING_DIR/common.compose.yml" -f "$INCOMING_DIR/caddy.compose.yml" \

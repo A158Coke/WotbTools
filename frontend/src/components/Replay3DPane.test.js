@@ -20,6 +20,13 @@ const playback = vi.hoisted(() => ({ api: null, init: null, apis: [] }))
  * （见 frontend/src/scene/playbackScene.js 的 loadData / teardownSession / reset）。
  * 组件层不再镜像这些状态，所以 mock 必须自己承担，否则测试会验证一个不存在的 owner。
  */
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
+
 vi.mock('../scene/playbackScene.js', () => {
   playback.init = vi.fn((container, store) => {
     const api = {
@@ -104,6 +111,7 @@ function mountPane(props = {}) {
 }
 
 beforeEach(() => {
+    connectivityState.state.value = 'online'
   playback.api = null
   playback.apis.length = 0
   playback.init?.mockClear()
@@ -114,6 +122,56 @@ afterEach(() => {
 })
 
 describe('Replay3DPane', () => {
+  it.each(['offline', 'unknown', 'degraded', 'service-unavailable'])('never initializes a remote loader on a %s direct mount', async (state) => {
+    connectivityState.state.value = state
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    expect(playback.init).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="replay3d-connectivity"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('disconnect destroys the remote session; reconnect initializes once with the retained file', async () => {
+    mockWebGL('webgl2')
+    const file = mkFile('kept.wotbreplay')
+    const wrapper = mountPane({ file })
+    await flush()
+    await start(wrapper)
+    const oldApi = playback.api
+    connectivityState.state.value = 'offline'
+    await flush()
+    expect(oldApi.destroy).toHaveBeenCalledTimes(1)
+    expect(wrapper.props('file')).toStrictEqual(file)
+    connectivityState.state.value = 'online'
+    await flush()
+    expect(playback.init).toHaveBeenCalledTimes(2)
+    expect(playback.api.loadData).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
+    await start(wrapper)
+    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
+    connectivityState.state.value = 'online'
+    await flush()
+    expect(playback.init).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('reconnect while the retained 3D pane is hidden defers new assets until activation', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    connectivityState.state.value = 'offline'
+    await flush()
+    await wrapper.setProps({ active: false })
+    connectivityState.state.value = 'online'
+    await flush()
+    expect(playback.init).toHaveBeenCalledTimes(1)
+    await wrapper.setProps({ active: true })
+    await flush()
+    expect(playback.init).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
   it('不支持 WebGL：不初始化场景，显示说明', () => {
     mockWebGL('none')
     const wrapper = mountPane()

@@ -18,6 +18,7 @@ export function createAppRouter(history = createWebHistory()) {
     routes: [
       {
         path: '/',
+        alias: '/index.html',
         component: AppShell,
         children: [{ path: '', name: 'view-host', component: ViewHost }],
       },
