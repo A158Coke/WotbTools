@@ -13,6 +13,13 @@ readonly BUSINESS_POSTGRES_TOFU_PROVISION_MARKER="${WOTB_TX_BUSINESS_POSTGRES_TO
 readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://business-api:8087}"
 readonly AI_UPSTREAM_VALUE="${TX_AI_UPSTREAM:-http://10.20.0.2:8089}"
+readonly BUSINESS_DB_HOST_VALUE="${TX_BUSINESS_DB_HOST:-business-postgres}"
+readonly BUSINESS_DB_PORT_VALUE="${TX_BUSINESS_DB_PORT:-5432}"
+readonly KEYCLOAK_ADMIN_SERVER_URL_VALUE="${TX_KEYCLOAK_ADMIN_SERVER_URL:-http://keycloak:8080}"
+readonly KEYCLOAK_DB_HOST_VALUE="${TX_KEYCLOAK_DB_HOST:-keycloak-postgres}"
+readonly KEYCLOAK_DB_PORT_VALUE="${TX_KEYCLOAK_DB_PORT:-5432}"
+readonly CADDY_FRONTEND_UPSTREAM_VALUE="${TX_CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}"
+readonly CADDY_KEYCLOAK_UPSTREAM_VALUE="${TX_CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}"
 readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
 readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
 readonly TX_IMAGE_REGISTRY_PREFIX_VALUE="${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}"
@@ -131,13 +138,41 @@ validate_inputs() {
     local frontend_digest="${TX_FRONTEND_IMAGE_REF_VALUE##*@sha256:}"
     [[ "$frontend_digest" =~ ^[0-9a-f]{64}$ ]] \
       || die "TX_FRONTEND_IMAGE_REF must contain a 64-character lowercase sha256 digest."
-    [ "$BACKEND_UPSTREAM_VALUE" = "http://business-api:8087" ] \
-      || die "TX_BACKEND_UPSTREAM must be the TX-internal business runtime http://business-api:8087."
+    case "$BACKEND_UPSTREAM_VALUE" in
+      http://business-api:8087|http://10.20.0.1:8087|http://10.20.0.3:8087) ;;
+      *) die "TX_BACKEND_UPSTREAM must be the Docker-local or reviewed TX WireGuard Business API endpoint." ;;
+    esac
     # /api/ai/ is the only route that leaves TX: the standalone AI service runs on
     # Yecao and has no public port, so its upstream is the WireGuard address. Any
     # other value would be a public hop, the wrong service, or a different port.
     [ "$AI_UPSTREAM_VALUE" = "http://10.20.0.2:8089" ] \
       || die "TX_AI_UPSTREAM must be the Yecao ai-service WireGuard endpoint http://10.20.0.2:8089."
+  fi
+  if is_selected business-api; then
+    case "$BUSINESS_DB_HOST_VALUE:$BUSINESS_DB_PORT_VALUE" in
+      business-postgres:5432|10.20.0.1:25432|10.20.0.3:25432) ;;
+      *) die "TX_BUSINESS_DB_HOST/PORT must select the Docker-local or reviewed TX WireGuard Business PostgreSQL endpoint." ;;
+    esac
+    case "$KEYCLOAK_ADMIN_SERVER_URL_VALUE" in
+      http://keycloak:8080|http://10.20.0.1:8080|http://10.20.0.3:8080) ;;
+      *) die "TX_KEYCLOAK_ADMIN_SERVER_URL must select the Docker-local or reviewed TX WireGuard Keycloak endpoint." ;;
+    esac
+  fi
+  if is_selected keycloak; then
+    case "$KEYCLOAK_DB_HOST_VALUE:$KEYCLOAK_DB_PORT_VALUE" in
+      keycloak-postgres:5432|10.20.0.1:15432|10.20.0.3:15432) ;;
+      *) die "TX_KEYCLOAK_DB_HOST/PORT must select the Docker-local or reviewed TX WireGuard Keycloak PostgreSQL endpoint." ;;
+    esac
+  fi
+  if is_selected caddy; then
+    case "$CADDY_FRONTEND_UPSTREAM_VALUE" in
+      wotb-frontend:80|10.20.0.1:8081|10.20.0.3:8081) ;;
+      *) die "TX_CADDY_FRONTEND_UPSTREAM must select the Docker-local or reviewed TX WireGuard frontend endpoint." ;;
+    esac
+    case "$CADDY_KEYCLOAK_UPSTREAM_VALUE" in
+      keycloak:8080|10.20.0.1:8080|10.20.0.3:8080) ;;
+      *) die "TX_CADDY_KEYCLOAK_UPSTREAM must select the Docker-local or reviewed TX WireGuard Keycloak endpoint." ;;
+    esac
   fi
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
@@ -241,6 +276,13 @@ stage_and_validate() {
   export TX_RUNTIME_ROOT
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"
   export TX_AI_UPSTREAM="$AI_UPSTREAM_VALUE"
+  export TX_BUSINESS_DB_HOST="$BUSINESS_DB_HOST_VALUE"
+  export TX_BUSINESS_DB_PORT="$BUSINESS_DB_PORT_VALUE"
+  export TX_KEYCLOAK_ADMIN_SERVER_URL="$KEYCLOAK_ADMIN_SERVER_URL_VALUE"
+  export TX_KEYCLOAK_DB_HOST="$KEYCLOAK_DB_HOST_VALUE"
+  export TX_KEYCLOAK_DB_PORT="$KEYCLOAK_DB_PORT_VALUE"
+  export TX_CADDY_FRONTEND_UPSTREAM="$CADDY_FRONTEND_UPSTREAM_VALUE"
+  export TX_CADDY_KEYCLOAK_UPSTREAM="$CADDY_KEYCLOAK_UPSTREAM_VALUE"
   assert_routing_boundary "$EFFECTIVE_COMPOSE"
   local compose_json
   compose_json="$(docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" config --format json)" \
@@ -336,18 +378,34 @@ assert_routing_boundary() {
   local compose_file="$1"
   if is_selected wotb-frontend; then
     grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}' "$compose_file" \
-      || die "staged TX frontend must default to the TX-internal business runtime."
+      || die "staged TX frontend must preserve the reviewed logical Business API endpoint contract."
     grep -Fq 'AI_UPSTREAM: ${TX_AI_UPSTREAM:-http://10.20.0.2:8089}' "$compose_file" \
       || die "staged TX frontend must default /api/ai/ to the Yecao ai-service WireGuard endpoint."
   fi
   ! grep -Eq '10\.20\.0\.2:8087' "$compose_file" \
     || die "staged TX compose must not reference the retired Yecao backend endpoint."
   if is_selected business-api; then
+    grep -Fq 'POSTGRES_HOST: ${TX_BUSINESS_DB_HOST:-business-postgres}' "$compose_file" \
+      || die "staged TX Business API must preserve the logical PostgreSQL host contract."
+    grep -Fq 'POSTGRES_PORT: "${TX_BUSINESS_DB_PORT:-5432}"' "$compose_file" \
+      || die "staged TX Business API must preserve the logical PostgreSQL port contract."
+    grep -Fq 'KEYCLOAK_ADMIN_SERVER_URL: ${TX_KEYCLOAK_ADMIN_SERVER_URL:-http://keycloak:8080}' "$compose_file" \
+      || die "staged TX Business API must preserve the logical Keycloak admin endpoint contract."
     # 服务端没有回放解析：已退役的执行模式与 job 后端选择器开关都不得出现。
     ! grep -Fq 'WOTB_REPLAY_EXECUTION_MODE' "$compose_file" \
       || die "the retired replay execution-mode switch must not appear in production."
     ! grep -Fq 'WOTB_REPLAY_PROCESSING_JOB_REPOSITORY' "$compose_file" \
       || die "the retired replay job-repository switch must not appear in production."
+  fi
+  if is_selected keycloak; then
+    grep -Fq 'KC_DB_URL: jdbc:postgresql://${TX_KEYCLOAK_DB_HOST:-keycloak-postgres}:${TX_KEYCLOAK_DB_PORT:-5432}/${KC_DB_NAME:-keycloak}' "$compose_file" \
+      || die "staged TX Keycloak must preserve the logical PostgreSQL endpoint contract."
+  fi
+  if is_selected caddy; then
+    grep -Fq 'CADDY_FRONTEND_UPSTREAM: ${TX_CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}' "$compose_file" \
+      || die "staged TX Caddy must preserve the logical frontend upstream contract."
+    grep -Fq 'CADDY_KEYCLOAK_UPSTREAM: ${TX_CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}' "$compose_file" \
+      || die "staged TX Caddy must preserve the logical Keycloak upstream contract."
   fi
 }
 
