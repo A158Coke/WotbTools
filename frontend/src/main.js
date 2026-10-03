@@ -60,7 +60,7 @@ async function bootstrap() {
   const syncDocumentMeta = () => {
     const lang = i18n.global.locale
     document.documentElement.lang = HTML_LANG[lang] || lang
-    const key = sectionTitleKey(viewFromRoute(router.currentRoute.value, { allowAdminViews: true }))
+    const key = sectionTitleKey(viewFromRoute(router.currentRoute.value))
     document.title = key ? `${i18n.global.t(key)} · WoTBTools` : 'WoTBTools'
   }
   router.afterEach(() => syncDocumentMeta())

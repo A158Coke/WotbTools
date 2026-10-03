@@ -37,15 +37,13 @@ export function useMoreMenu() {
   ]
 
   /**
-   * 内测工具（仅管理员）：深链落到回放工作台的 3D / 射击能力（不再是独立页面）。
+   * 公开的回放工具入口：深链落到工作台，能力宿主负责登录门。
    * 平板 / 桌面直接在工作台的能力切换里进，手机这一组是"更多"页的快捷入口。
    */
-  const betaToolLinks = computed(() => (isAdmin.value
-    ? [
-        { view: 'agent-replay', labelKey: 'agentNav.replay', icon: Box },
-        { view: 'agent-shots', labelKey: 'agentNav.shots', icon: Crosshair },
-      ]
-    : []))
+  const replayToolLinks = [
+    { view: 'agent-replay', labelKey: 'agentNav.replay', icon: Box },
+    { view: 'agent-shots', labelKey: 'agentNav.shots', icon: Crosshair },
+  ]
 
   /** 管理入口：平板 / 桌面在侧边栏管理组，手机在"更多"页。 */
   const adminLinks = computed(() => [
@@ -63,5 +61,5 @@ export function useMoreMenu() {
     !isAndroidApp() && { view: 'android', labelKey: 'android.nav', icon: Download },
   ].filter(Boolean))
 
-  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, betaToolLinks, adminLinks, aboutLinks }
+  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, replayToolLinks, adminLinks, aboutLinks }
 }

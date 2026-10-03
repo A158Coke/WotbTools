@@ -31,3 +31,23 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     ).toEqual([])
   })
 })
+
+
+// 生命周期所有权守卫：登录门卸载场景后，迟到 continuation 不得再启动资产或访问移除的 DOM。
+// WebGL 画面由人工验收；此处只锁定 async 边界的销毁接线。
+describe('armor destroyed scene async ownership', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('guards every bootstrap continuation before the next asset or DOM step', () => {
+    for (const step of [
+      'const list = await fetchTankFilter();',
+      'const data = await fetchTankData(tid);',
+      'const data = await fetchShells(tid);',
+      'await populateTankLists(initTargetId, initShooterId);',
+      'await loadTarget(initTargetId);',
+    ]) {
+      const start = kernel.indexOf(step)
+      expect(start, step).toBeGreaterThan(-1)
+      expect(kernel.slice(start + step.length).trimStart().startsWith('if (destroyed) return;'), step).toBe(true)
+    }
+  })
+})

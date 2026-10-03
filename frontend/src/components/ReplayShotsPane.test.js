@@ -29,7 +29,7 @@ vi.mock('../api/agent-replay-facets.js', async (importOriginal) => {
 vi.mock('../scene/agentData.js', () => ({
   tankImageUrl: (id) => `img:${id}`,
   storeShotsForViewer: vi.fn(),
-  fetchTankData: async () => ({ configs: [] }),
+  fetchTankData: vi.fn(async () => ({ configs: [] })),
 }))
 
 /** happy-dom 没有 ResizeObserver：记录回调以便按容器宽度驱动 Master–Detail 分档 */
@@ -43,7 +43,7 @@ class ResizeObserverStub {
 globalThis.ResizeObserver = ResizeObserverStub
 
 import ReplayShotsPane from './ReplayShotsPane.vue'
-import { storeShotsForViewer } from '../scene/agentData.js'
+import { fetchTankData, storeShotsForViewer } from '../scene/agentData.js'
 
 function mkFile(name = 'cn.wotbreplay') {
   return new File([new Uint8Array([1, 2, 3, 4])], name)
@@ -76,6 +76,39 @@ beforeEach(() => {
   parseAgentPlaybackFromBytes.mockReset()
   parseAgentPlaybackFromBytes.mockResolvedValue({ vehicles: [] })
   storeShotsForViewer.mockClear()
+  fetchTankData.mockClear()
+})
+
+describe('ReplayShotsPane unmount authorization boundary', () => {
+  it('unmount during file read never starts playback or shot parsing', async () => {
+    let finishRead
+    const file = { name: 'pending.wotbreplay', arrayBuffer: () => new Promise((resolve) => { finishRead = resolve }) }
+    const wrapper = mount(ReplayShotsPane, {
+      props: { file, active: true },
+      global: { mocks: { $t: i18n.t } },
+    })
+    wrapper.unmount()
+    finishRead(new ArrayBuffer(4))
+    await flushPromises()
+    expect(parseAgentPlaybackFromBytes).not.toHaveBeenCalled()
+    expect(parseAgentShotsFromBytes).not.toHaveBeenCalled()
+  })
+
+  it('unmount during playback parsing never starts pitch assets or shot parsing', async () => {
+    let finishPlayback
+    parseAgentPlaybackFromBytes.mockImplementationOnce(() => new Promise((resolve) => { finishPlayback = resolve }))
+    const wrapper = mount(ReplayShotsPane, {
+      props: { file: { name: 'pending.wotbreplay', arrayBuffer: async () => new ArrayBuffer(4) }, active: true },
+      global: { mocks: { $t: i18n.t } },
+    })
+    await flushPromises()
+    expect(parseAgentPlaybackFromBytes).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    finishPlayback({ vehicles: [{ eid: 1, nickname: 'author', tank_id: 1 }] })
+    await flushPromises()
+    expect(fetchTankData).not.toHaveBeenCalled()
+    expect(parseAgentShotsFromBytes).not.toHaveBeenCalled()
+  })
 })
 afterEach(() => { document.body.innerHTML = '' })
 
