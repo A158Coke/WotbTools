@@ -113,11 +113,18 @@ function capabilityStateProbe() {
     if (!element) return { present: false, visible: false }
     return { present: true, visible: getComputedStyle(element).display !== 'none' && element.getClientRects().length > 0 }
   }
-  const tabs = Array.from(document.querySelectorAll('[data-testid="ws-tab"]')).map((tab) => ({
-    cap: tab.dataset.cap,
-    selected: tab.getAttribute('aria-selected') === 'true',
-    active: tab.classList.contains('is-active'),
-  }))
+  const tabs = Array.from(document.querySelectorAll('[data-testid="ws-tab"]')).map((tab) => {
+    const rect = tab.getBoundingClientRect()
+    return {
+      cap: tab.dataset.cap,
+      role: tab.getAttribute('role'),
+      // 能力切换走 canonical SegmentedControl 的 radiogroup 模型（不是 tablist）
+      selected: tab.getAttribute('aria-checked') === 'true',
+      active: tab.classList.contains('is-active'),
+      /** 触屏点击区域（design-language §5：coarse 下 ≥ 44px） */
+      minSide: Math.round(Math.min(rect.width, rect.height)),
+    }
+  })
   const dialog = document.querySelector('.global-error-modal')
   const overlay = dialog ? dialog.closest('.dialog-scrim') : null
   return {
@@ -125,6 +132,8 @@ function capabilityStateProbe() {
     data: pane('ws-data'),
     ai: pane('ws-ai'),
     playback: pane('ws-playback'),
+    threeD: pane('ws-3d'),
+    shots: pane('ws-shots'),
     errorDialog: dialog
       ? { text: dialog.textContent.trim(), visible: !!overlay && getComputedStyle(overlay).display !== 'none' }
       : null,
@@ -410,6 +419,9 @@ const APP_SCENARIOS = [
   { name: 'anonymous-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'reject' },
   { name: 'auth-init-pending-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'pending', authTimeout: 120_000 },
   { name: 'auth-init-reject-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'reject', authTimeout: 120_000 },
+  // 管理员（内测 feature flag）：五能力齐全，3D 能力真实可切（不再导航去独立页面）
+  { name: 'admin-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
+  { name: 'admin-390x844-portrait-coarse', width: 390, height: 844, touch: true, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
 ]
 
 const PLAYBACK_SCENARIOS = [
@@ -444,7 +456,8 @@ async function runAppScenario(env, scenario) {
   const authParams = scenario.authInit
     ? `&ws-auth-init=${scenario.authInit}&ws-auth-timeout-ms=${scenario.authTimeout ?? 12_000}`
     : ''
-  const url = `${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-login=${scenario.login}${authParams}`
+  const roleParams = scenario.roles?.length ? `&ws-roles=${encodeURIComponent(scenario.roles.join(','))}` : ''
+  const url = `${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-login=${scenario.login}${authParams}${roleParams}`
   await page.goto(url)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="playback"]'), { label: 'capability tabs' })
 
@@ -499,6 +512,45 @@ async function runAppScenario(env, scenario) {
   if (!scenario.authenticated) {
     const attempts = await page.evaluate('window.__wsAuth.loginCalls.length')
     check(failures, attempts === 0, `anonymous capability switch must not start login, loginCalls=${attempts}`)
+  }
+
+  // —— 能力集合（PR-B：五能力同一工作台）——
+  // 普通用户 = data / playback / ai（AI 是正式能力，不是 admin-only）；
+  // 管理员额外有 3D 回放 / 射击分析。两条集合都必须完整渲染，不因能力不可用而消失。
+  const expectedCaps = scenario.roles?.includes('wotbtools-admin')
+    ? ['data', 'playback', '3d', 'shots', 'ai']
+    : ['data', 'playback', 'ai']
+  check(failures, JSON.stringify(state.tabs.map((t) => t.cap)) === JSON.stringify(expectedCaps),
+    `capability set=${JSON.stringify(state.tabs.map((t) => t.cap))}, expected ${JSON.stringify(expectedCaps)}`)
+  if (scenario.touch) {
+    const small = state.tabs.filter((t) => t.minSide < 43.5)
+    check(failures, small.length === 0,
+      `coarse capability targets below 44px: ${JSON.stringify(small)}`)
+  }
+
+  // —— 3D 能力（管理员）：切过去真的落在同一工作台，URL 与面板一起变 ——
+  if (expectedCaps.includes('3d')) {
+    const threeDTab = state.tabs.find((t) => t.cap === '3d')
+    const threeDHit = await page.evaluate(`(() => {
+      const button = document.querySelector('[data-testid="ws-tab"][data-cap="3d"]')
+      if (!button) return null
+      button.scrollIntoView({ block: 'center', inline: 'nearest' })
+      const r = button.getBoundingClientRect()
+      const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+      const hit = document.elementFromPoint(center.x, center.y)
+      return { center, hitIsButton: hit === button || button.contains(hit) }
+    })()`)
+    check(failures, !!threeDTab && !!threeDHit?.hitIsButton,
+      `3D capability tab not hit-testable: ${JSON.stringify({ threeDTab, threeDHit })}`)
+    if (threeDHit?.hitIsButton) {
+      await page.tap({ ...threeDHit.center, touch: scenario.touch })
+      await page.waitForValue('new URLSearchParams(location.search).get("view")', (value) => value === 'agent-replay',
+        { label: 'route ?view=agent-replay' })
+      const threeDState = await page.probe(capabilityStateProbe)
+      check(failures, threeDState.threeD.visible, `ws-3d not visible after switching (${JSON.stringify(threeDState.threeD)})`)
+      check(failures, !threeDState.playback.visible, 'ws-playback still visible after switching to 3D')
+      check(failures, !threeDState.data.visible, 'ws-data still visible after switching to 3D')
+    }
   }
 
   await env.chrome.client.send('Target.closeTarget', { targetId })

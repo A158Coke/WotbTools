@@ -1,5 +1,28 @@
 # Read-only production runtime and end-to-end checks. Sourced by runtime-check.sh.
 
+# Validate rendered Compose ports for all core services, or one selected owner.
+# Exact TCP tuples reject extra/public bindings and preserve local administration.
+assert_tx_service_ports() {
+  python3 -c '
+import json, sys
+services = json.load(sys.stdin)["services"]
+expected = {
+    "wotb-frontend": [("10.20.0.1", "8081", "80", "tcp")],
+    "business-api": [("10.20.0.1", "8087", "8087", "tcp"), ("10.20.0.1", "8088", "8088", "tcp")],
+    "keycloak": [("127.0.0.1", "18080", "8080", "tcp"), ("10.20.0.1", "8080", "8080", "tcp")],
+    "keycloak-postgres": [("127.0.0.1", "15432", "5432", "tcp"), ("10.20.0.1", "15432", "5432", "tcp")],
+    "business-postgres": [("127.0.0.1", "25432", "5432", "tcp"), ("10.20.0.1", "25432", "5432", "tcp")],
+}
+for name in sys.argv[1:] or expected:
+    actual = [
+        (str(p.get("host_ip", "")), str(p.get("published", "")), str(p.get("target", "")), p.get("protocol", "tcp"))
+        for p in (services[name].get("ports") or [])
+    ]
+    if sorted(actual) != sorted(expected[name]):
+        raise SystemExit(f"{name}: expected reviewed loopback/WireGuard TCP bindings, got {actual}")
+' "$@"
+}
+
 probe_body_contains() {
   local service="$1" url="$2" needle="$3" host_header="${4:-}" body
   local -a args=(--silent --show-error --fail --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
@@ -378,22 +401,15 @@ services = data["services"]
 frontend = services["wotb-frontend"].get("environment") or {}
 assert frontend.get("BACKEND_UPSTREAM") == "http://business-api:8087", frontend.get("BACKEND_UPSTREAM")
 assert frontend.get("AI_UPSTREAM") == "http://10.20.0.2:8089", frontend.get("AI_UPSTREAM")
-business_api = services["business-api"]
-business_ports = [
-    (str(port.get("host_ip", "")), str(port.get("published")), str(port.get("target")))
-    for port in (business_api.get("ports") or [])
-]
-assert business_ports == [("10.20.0.1", "8088", "8088")], business_ports
-published = [
-    str(port)
-    for name, service in services.items()
-    for port in (service.get("ports") or [])
-]
-assert not any("8087" in port or "8089" in port for port in published), published
+environment = services["business-api"].get("environment") or {}
+assert environment.get("POSTGRES_HOST") == "business-postgres"
+assert environment.get("KEYCLOAK_ADMIN_SERVER_URL") == "http://keycloak:8080"
+keycloak = services["keycloak"].get("environment") or {}
+assert keycloak.get("KC_DB_URL", "").startswith("jdbc:postgresql://keycloak-postgres:5432/")
 ' <<< "$compose_json"; then
     echo "tx-internal-api-route: PASS"
   else
-    echo "tx-internal-api-route: FAIL (frontend must use TX-internal business-api plus the Yecao ai-service WireGuard endpoint, and only the management port may bind to WireGuard)" >&2
+    echo "tx-internal-api-route: FAIL (frontend must use TX-internal business-api plus the Yecao ai-service WireGuard endpoint, and production database/auth dependencies must stay Docker-local)" >&2
     failures=1
   fi
 
@@ -425,45 +441,10 @@ assert "WOTB_REPLAY_PROCESSING_JOB_REPOSITORY" not in environment, "the retired 
     failures=1
   fi
 
-  if python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-ports = data["services"]["keycloak-postgres"].get("ports", [])
-values = [str(p) for p in ports]
-assert any("127.0.0.1" in p and "15432" in p and "5432" in p for p in values), values
-assert not any("0.0.0.0" in p or p.startswith("5432:") or "::" in p for p in values), values
-' <<< "$compose_json"; then
-    echo "postgres-loopback: PASS"
+  if assert_tx_service_ports <<< "$compose_json"; then
+    echo "wireguard-service-plane: PASS"
   else
-    echo "postgres-loopback: FAIL (management port must be 127.0.0.1:15432:5432 only)" >&2
-    failures=1
-  fi
-
-  if python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-ports = [str(p) for p in data["services"]["business-postgres"].get("ports", [])]
-assert any("127.0.0.1" in p and "25432" in p and "5432" in p for p in ports), ports
-assert not any(
-    "0.0.0.0" in p or "::" in p or "10.20.0.1" in p or p.startswith("25432:") for p in ports
-), ports
-' <<< "$compose_json"; then
-    echo "business-postgres-loopback: PASS"
-  else
-    echo "business-postgres-loopback: FAIL (management port must be 127.0.0.1:25432:5432 only)" >&2
-    failures=1
-  fi
-
-  if python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-ports = [str(p) for p in data["services"]["keycloak"].get("ports", [])]
-assert any("127.0.0.1" in p and "18080" in p and "8080" in p for p in ports), ports
-assert not any("0.0.0.0" in p or p.startswith("8080:") or "::" in p for p in ports)
-' <<< "$compose_json"; then
-    echo "keycloak-admin-loopback: PASS"
-  else
-    echo "keycloak-admin-loopback: FAIL (Admin API must bind to 127.0.0.1:18080:8080 only)" >&2
+    echo "wireguard-service-plane: FAIL (core services must preserve exactly the reviewed WireGuard and loopback bindings)" >&2
     failures=1
   fi
 
@@ -477,7 +458,7 @@ assert not any("0.0.0.0" in p or p.startswith("8080:") or "::" in p for p in por
   fi
 
   # Business PostgreSQL is authoritative business state, so TX_RUNTIME_READY
-  # must not be emitted until its runtime, loopback administration port, and
+  # must not be emitted until its runtime, reviewed service bindings, and
   # TX-local OpenTofu provisioning marker are all proven. These checks are
   # read-only: they never create, modify, or delete any database or row.
   business_container="$(docker compose -f "$LIVE_COMPOSE" ps -q business-postgres 2>/dev/null || true)"

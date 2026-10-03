@@ -171,7 +171,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 - **产物锁定（content-addressed）**：`deploy/agent/source.json` 是 Agent identity 的**唯一来源**（`ref` = 上游完整 commit，`artifact.release` = Release tag，`artifact.sha256` = 附件校验）。`scripts/fetch-agent-wasm.sh` 下载 Release 附件、校验 sha256 与产物自带 `fingerprint.json` 后落位到 `common/assets/wasm/<ref>/`；`scripts/build-agent-wasm.sh` 是按源码自建的后备路径，产出同一形状。落位目录名就是 URL identity：运行期加载 `/wasm/<ref>/wotb_replay_wasm.js`（wrapper 从同目录取 `_bg.wasm`），**stable `/wasm/wotb_replay_wasm.js` 已废除且由测试/构建/发布三处断言不存在**。`frontend/vite.config.js:agentWasmIdentity()` 在 build 时把 `ref`/`release` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载器据此拼 URL 并先校验 fingerprint，不一致抛 `AgentWasmVersionMismatchError`（fail closed，UI 提示刷新）。缓存失效靠 URL identity，`/wasm/<40 位 commit>/` 因此是长期 `immutable`——普通刷新即可生效，不需要 Ctrl+F5。CI（`ci-frontend.yml`）与发布（`frontend.yml`）执行同一校验；细节见 [replay-pipeline.md](architecture/replay-pipeline.md)「Agent 产物身份」。
 - **消费契约**：`contracts/agent/replay-facets-v2.md`。四个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影；可选 `tankNamesJson` 注入车型名）、`parsePlayback`（时序与花名册；可选 `tankNamesJson`）、`parseShotReplays`（射击复现；可选俯仰锚定表与弹种反解表）、`parseAiReview`（AI 事件数据）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
-- **消费方**：回放工作台（数据 / 导出 / 2D 回放）、三维回放、射击复现、装甲查看器、名人堂 / 百场 / 三环提交、个人主页账号验证、Android（WebView 同一套前端）。
+- **消费方**：回放工作台（数据 / 导出 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘五能力同一工作台）、装甲查看器、名人堂 / 百场 / 三环提交、个人主页账号验证、Android（WebView 同一套前端）。
 - **一致性基线**：`frontend/src/replay-local/__golden__/` 是 Java 删除前在仓库 fixture 上的最后输出（只读），CI 常驻断言客户端全链路逐字段一致；上游升级后重新导出 `wasm-*` 再跑同一组测试。
 - **缺字段**：一律向上游要（改上游 → 发版 → 升级 `source.json`），不在客户端启发式推导，也不在服务端解析。
 
@@ -359,12 +359,12 @@ Showcase Topbar 为 60px。跨页面高优先级修复集中在 `showcase-regres
 
 ### AI Review / Battle Playback
 
-`ReplayWorkspace` 是回放数据 / AI / 战局回放三个能力的统一载体：通过唯一 `useReplay` 组合并消费 `useReplaySession` 持有的 selection / 分析状态 / 结果（并 `provide('replay')`），分析生命周期由 `useLocalReplayAnalysis` 持有（Worker 解析 → 批次计算 → 提交结果；选择变化 / 取消即作废在途分析）。三个 capability tab 始终可见。Workspace 的标题/清空、能力 tabs、批次与当前回放 selector 分别由 `PageHeader`、`ReplayCapabilityTabs`、`FileUploader`、`BattlePicker` 展示（数据结果区的工具栏、系列赛概览与导出菜单在 `ReplayPage` 内）；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。`ReplayPage` 只作为 data 结果 tab 嵌入，渲染结果 / 列系统 / Export / Drawer。
+`ReplayWorkspace` 是回放**五种能力**（数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘）的唯一统一载体：这些能力不再是各自独立页面，深链只是能力入口（`app/viewRegistry.js` 的 `replayInitialCapability` 是唯一映射点）。它通过唯一 `useReplay` 组合并消费 `useReplaySession` 持有的 selection / 分析状态 / 结果，分析生命周期由 `useLocalReplayAnalysis` 持有（Worker 解析 → 批次计算 → 提交结果；选择变化 / 取消即作废在途分析）。能力切换不重新选文件、不重建 session；能力面板首次激活才挂载（`useMountedWhenActive`）并按需异步加载，切走只隐藏（3D 停帧不销毁）。Workspace 的标题、能力切换、批次与当前回放 selector 分别由 `PageHeader`、`ReplayCapabilityTabs`、`FileDrop`、`BattlePicker` 展示（数据结果区的工具栏、系列赛概览与导出菜单在 `ReplayPage` 内）；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。`ReplayPage` 只作为 data 结果 tab 嵌入，渲染结果 / 列系统 / Export / Drawer。
 
 **匿名可用**：服务器没有 parser，分析全部在本机，工作台挂载即可用，不等 Keycloak init、没有登录门禁（只有 AI 复盘与名人堂等写操作需要登录）。
 **能力解耦**：AI 与 Playback 不做 `AI@seek → Playback` 时间点联动 / 跨 capability 状态 handoff。tab 切换经 pushState + popstate 形成可 Back/Forward 的 history，返回时 selection / 分析结果不丢，只恢复 activeCapability。
 **2D 回放**：`BattlePlaybackPanel` 接收目标文件，本机 `parseLocalPlayback`（parseResult + parsePlayback + parseAiReview 伤害事件 → `BattlePlaybackDataset` + `MapOverview`）；多文件未选场次时给出明确提示。
-**Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `shouldInterceptRequest` 以固定同源 `https://wotbtools.com/__native/replay-pending` stream 缓存字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection → 本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）；普通 Web/FileUploader 手动选文件不经过此路径。读取使用 `X-Wotb-Pending-Id` header 校验 metadata 与文件 identity，避免 pending 替换时串包；Native 无 pending/文件返回 404、identity 不匹配返回 409、读取失败返回 500，禁止网络 fallback，响应 no-store。读取失败复用 Replay 错误区与重试，不 ACK；WebView file/content access 保持禁用。ACK 边界是「本机分析已完成」（`analyze()` 返回 `completed: true`，无论有没有有效场次——重新导入同一份结果相同）；回放引擎装载失败（可重试）不 ACK，Native pending 原样保留。认证不再参与 WebView navigation（Android 2.0 起原生 OIDC 在外部 user-agent 完成，WebView 不承载登录）；登录期间收到的 replay intent 正常持久化并按 `ReplayDispatchPolicy` 分发，pending metadata（24h TTL）持久化在 app private storage，跨 process death 恢复，且不以登录状态为前置条件。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
+**Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `shouldInterceptRequest` 以固定同源 `https://wotbtools.com/__native/replay-pending` stream 缓存字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection → 本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）；普通 Web/FileDrop 手动选文件不经过此路径。读取使用 `X-Wotb-Pending-Id` header 校验 metadata 与文件 identity，避免 pending 替换时串包；Native 无 pending/文件返回 404、identity 不匹配返回 409、读取失败返回 500，禁止网络 fallback，响应 no-store。读取失败复用 Replay 错误区与重试，不 ACK；WebView file/content access 保持禁用。ACK 边界是「本机分析已完成」（`analyze()` 返回 `completed: true`，无论有没有有效场次——重新导入同一份结果相同）；回放引擎装载失败（可重试）不 ACK，Native pending 原样保留。认证不再参与 WebView navigation（Android 2.0 起原生 OIDC 在外部 user-agent 完成，WebView 不承载登录）；登录期间收到的 replay intent 正常持久化并按 `ReplayDispatchPolicy` 分发，pending metadata（24h TTL）持久化在 app private storage，跨 process death 恢复，且不以登录状态为前置条件。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
 Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈与 canonical 2 秒轨迹由
 `BattleMap.vue` 渲染，通用 HUD 由 `BattlePlaybackHud.vue` 渲染，播放控制与标注工具由
@@ -491,17 +491,17 @@ TX；Yecao 宿主在 cutover 后只承载 AI service 与观测服务，不再运
 TX 的业务运行时是
 Compose 服务 `business-api`（Tencent TCR `<TCR_REGISTRY>/<TCR_NAMESPACE>/wotbtools-business-api` 的 immutable 镜像；GHCR 保留为 TX 恢复副本）：
 单个 Spring Boot 进程承载全部 public business endpoint（不再有任何回放解析 / 计算端点），
-不发布任何 host port，只被 TX-internal 的 frontend nginx、Caddy readiness surface 与
-deployment-owned `health-probe` 访问（app `/api/health` + management
+app :8087 与 management :8088 分别发布在 TX1 WireGuard `10.20.0.1` 上；现有生产访问仍来自
+TX-internal frontend nginx、Caddy readiness surface 与 deployment-owned `health-probe`（app `/api/health` + management
 `/actuator/health`，管理端口 8088）。因此 release plan 把 backend 镜像路由到
 `business-api`（target `tx`）；Yecao 侧的 `wotb-backend`/`wotb-frontend`/`keycloak`/`postgres`
 已随退役 PR 从 Compose 与 deploy 白名单中删除，不再是可选项。
 公开 API 路由已在 TX 内部终结：`wotb-frontend` 的 nginx upstream 固定为
 `http://business-api:8087`（`TX_BACKEND_UPSTREAM` 只接受这个 TX-internal 值，公网 host 与
-已退役的 Yecao `10.20.0.2:8087` 一律 fail-closed 拒绝），任何服务都不得发布 8087；TX deploy
+已退役的 Yecao `10.20.0.2:8087` 一律 fail-closed 拒绝），app 8087 只允许发布到 `10.20.0.1:8087`；TX deploy
 staging 与只读 `TX_RUNTIME_READY` 运行时检查分别用 `assert_routing_boundary` 与
 `tx-internal-api-route` / `retired-replay-switches` 两条 token 断言这些不变量，因此没有任何
-公开流量再经过 Yecao backend，WireGuard 只剩 TX→Yecao AI service 与按需观测。
+公开流量再经过 Yecao backend。K6A 额外提供 TX1 WG service plane（frontend、业务 API、Keycloak、两套 PostgreSQL），现有消费者仍走 Docker-local 路由；端点、验收与回滚见 `docs/operations/tx-service-plane.md`。
 
 **全业务运行时 E2E 检查**：`deploy/tx/runtime-check.sh` 加载独立只读校验库
 `deploy/tx/runtime-check-lib.sh`；除基础设施与路由 token 外，还用
@@ -521,8 +521,8 @@ tcp + udp），但没有固定容器地址：readiness surface 通过 Docker ser
 cutover 前经公网访问并管理 Yecao realm。HoF 回放原件是永久内容寻址文件，挂 TX
 `replay_data` 卷到 `HOF_REPLAY_DIR`（服务端唯一的回放文件存储）。
 TX 与 Yecao 的每个服务都由自己的 workflow 路径规则及手动入口拥有，不再通过 release planner
-路由。TX PostgreSQL 只发布
-`127.0.0.1:15432:5432` 给 TX-local OpenTofu；GitHub runner 只 SSH 触发，绝不
+路由。TX Keycloak PostgreSQL 保留
+`127.0.0.1:15432:5432` 给 TX-local OpenTofu，并增加 `10.20.0.1:15432:5432` 私有 WG endpoint；GitHub runner 只 SSH 触发，绝不
 直连数据库、建立 SSH tunnel 或使用 Terraform `remote-exec`。详见
 `docs/architecture/opentofu-postgres-keycloak.md`。
 
@@ -531,7 +531,7 @@ TX Business PostgreSQL 与 Keycloak PostgreSQL 完全独立：主 Compose 通过
 二者使用固定 Compose project `deploy`，生产 Docker volumes 分别是
 `deploy_business_postgres_data` 与 `deploy_keycloak_postgres_data`。Business PostgreSQL 为
 `postgres:18-alpine`，使用 `business_postgres_data`、
-`127.0.0.1:25432:5432` 仅 loopback、`pg_isready` 健康检查）；`infra/tofu/postgres-business`
+`127.0.0.1:25432:5432` loopback administration + `10.20.0.1:25432:5432` WG service、`pg_isready` 健康检查）；`infra/tofu/postgres-business`
 只管理 `wotb` 数据库、`control_api` 应用角色与 database-level grant，用独立 local
 state `/opt/wotb-tx/postgres-business-tofu-state`，provider 经
 `/opt/wotb-tx/tofu-provider-mirror` 的 filesystem mirror fail-closed 安装。业务表仍

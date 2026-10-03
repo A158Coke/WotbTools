@@ -29,7 +29,8 @@ vi.mock('./components/SponsorPage.vue', () => ({ __esModule: true, default: { te
 vi.mock('./components/ProfilePage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-profile" />' } }))
 vi.mock('./components/HistoryPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-history" />' } }))
 vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-technical-evolution" />' } }))
-// Agent 数据平面（admin-only）：详情/场景组件用轻量替身，断言可见性边界即可。
+// Agent 数据平面（admin-only）：3D 回放 / 射击分析收敛进回放工作台的能力，
+// 装甲查看器与坦克百科仍是独立视图；用轻量替身断言可见性边界即可。
 // `__esModule: true` 必需——viewRegistry 经 defineAsyncComponent 动态 import，
 // Vue 靠它把命名空间的 `.default` 解包成组件（缺失时会把命名空间本身当组件，
 // 触发对 __isTeleport/name 的探测并报错）。
@@ -37,10 +38,8 @@ const agentViewMock = (testId, name) => ({
   __esModule: true,
   default: { name, template: `<div data-test="${testId}" />` },
 })
-vi.mock('./components/AgentReplay3D.vue', () => agentViewMock('view-agent-replay', 'AgentReplay3D'))
 vi.mock('./components/AgentTankopedia.vue', () => agentViewMock('view-agent-tankopedia', 'AgentTankopedia'))
 vi.mock('./components/AgentArmorView.vue', () => agentViewMock('view-agent-armor', 'AgentArmorView'))
-vi.mock('./components/AgentShots.vue', () => agentViewMock('view-agent-shots', 'AgentShots'))
 
 const authState = vi.hoisted(() => ({
   authenticated: false,
@@ -177,18 +176,32 @@ describe('App routing', () => {
         const { wrapper } = await mountApp(`/?view=${view}`)
         expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
         expect(wrapper.find(`[data-test="view-${view}"]`).exists()).toBe(false)
+        wrapper.unmount()
       }
     })
 
-    it('renders the Agent view for an admin deep link', async () => {
+    it('admin deep links restore the matching workspace capability (3D / 射击)', async () => {
       authState.isAdminRef.value = true
-      const { wrapper } = await mountApp('/?view=agent-shots')
-      // Agent 视图是 defineAsyncComponent：等异步组件解析完成再断言
-      await settle()
-      await nextTick()
-      await settle()
-      expect(wrapper.find('[data-test="view-agent-shots"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
+      const cases = [
+        ['replay', 'data'],
+        ['battle-playback', 'playback'],
+        ['agent-replay', '3d'],
+        ['agent-shots', 'shots'],
+        ['ai-review', 'ai'],
+      ]
+      for (const [view, capability] of cases) {
+        const { wrapper } = await mountApp(`/?view=${view}`)
+        expect(wrapper.find('[data-test="view-replay"]').attributes('data-cap')).toBe(capability)
+        wrapper.unmount()
+      }
+    })
+
+    it('3D / 射击 capability 对普通用户不可见（深链收敛回数据）', async () => {
+      for (const view of ['agent-replay', 'agent-shots']) {
+        const { wrapper } = await mountApp(`/?view=${view}`)
+        expect(wrapper.find('[data-test="view-replay"]').attributes('data-cap')).toBe('data')
+        wrapper.unmount()
+      }
     })
 
     it('lets a non-admin deep-link the public 坦克百科', async () => {

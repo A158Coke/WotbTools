@@ -5,7 +5,7 @@
 ## 镜像与产物（服务 workflow + Dockerfile）
 
 - **镜像身份**：应用发布都必须先冻结完整 source SHA，并保留不可变 SHA/tag + registry digest 供 provenance 与诊断。TX 的 `business-api` 与 `frontend` 是 digest-pinned 车道：GitHub 只确定 release source/输入，Gitee 作为国内源码传输，TX 从 exact SHA 构建并验证后发布到 TCR，生产 Compose 必须消费 `repo@sha256:<digest>`（分别由 `TX_BUSINESS_API_IMAGE_REF` / `TX_FRONTEND_IMAGE_REF` 提供），禁止回退 `latest`。其他尚未迁移的应用 owner 仍沿用各自现有 `latest`/freshness 契约。TX 镜像只用 TCR，Yecao 镜像只用 GHCR；TX registry prefix 必须从 `vars.TCR_REGISTRY/TCR_NAMESPACE` 传给 host，不可依赖默认 namespace。
-- TX 业务运行时定义在 `deploy/tx/business-api.compose.yml`，由 `deploy/tx/docker-compose.yml` 汇总：镜像为 `wotbtools-business-api`，只承载业务 API（服务器没有回放解析器：没有 processing/export job、broker 或对象存储；名人堂回放原件仍落本地 `replay_data:/data/replays`），仅将 management :8088 绑定到 WireGuard `10.20.0.1` 供 Yecao Prometheus 抓取；app :8087 只被 TX-internal frontend/Caddy/health-probe 访问。
+- TX 业务运行时定义在 `deploy/tx/business-api.compose.yml`，由 `deploy/tx/docker-compose.yml` 汇总：镜像为 `wotbtools-business-api`，只承载业务 API（服务器没有回放解析器：没有 processing/export job、broker 或对象存储；名人堂回放原件仍落本地 `replay_data:/data/replays`），app :8087 与 management :8088 分别绑定到 WireGuard `10.20.0.1`（8088 继续供 Yecao Prometheus 抓取）；现有生产消费者仍经 TX Docker network 访问。K6A 仅增加私有跨宿主 service plane，不切换 dependency。
 - **独立发布闭环**：PR 的 `CI / Required Gate` 是唯一代码验证门禁；四个应用 owner（business-api / frontend / keycloak / ai-service）在每次 main push 运行，固定基础设施按各自路径触发，手动入口只作用于所属服务。不要新增跨服务 planner、reusable Build/Deploy/Tofu DAG、`workflow_run` 链、deployment manifest 或 all selector。应用按当前 main 部署，持久状态校验必须 fail-closed，失败不自动回滚。
 - **PR 快速上线**：计划已明确且用户要求直接上线时，完成实现后直接提交、推送并开 PR，由 PR CI 验证；本地测试不是推送前阻塞条件。部署脚本仍必须保留静态配置校验、`verify-observability.sh` 数据链路 gate、失败诊断与无自动恢复路径。
 - **TX host lock**：GitHub/脚本内部可以继承 `WOTB_DEPLOY_LOCK_FD=9`，但任何 operator / Agent 给人的手工命令必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`（仓库源为 `deploy/tx/with-deploy-lock.sh`）获取锁；禁止在交互式 SSH shell 直接执行 `exec 9>/opt/wotb-tx/.deploy.lock` + `flock`，否则 FD 会跟随 shell 长期存活并阻断后续部署。锁冲突由 wrapper 输出 holder 诊断。
@@ -28,6 +28,15 @@
 - Grafana 生产 API 校验必须复用 `deploy/grafana-api-request.sh` 这条生产 backend Alpine 运行时可用的 BusyBox `wget` 路径：调用方只传 `/api/...`，helper 在 backend 容器内唯一拼接 Grafana hostname 并生成 `Authorization: Basic` header（不得把密码放 URL、命令输出或日志），datasource health 的唯一成功值是 JSON `status=OK`。CI runtime smoke 还必须在 Alpine 3.22 中验证正确凭据通过、错误凭据失败，以防回退到 GNU-only `wget` 参数或 double URL prefix。
 - Loki canary 校验在 emitter 启动前固定 `start`，重试时只推进 `end`；响应必须是 `status=success`、至少一个 result stream、至少一个 values 样本并包含 marker。Keycloak canary 是加入 `wotb_internal` 网络的独立 Alpine emitter，只用于验证 Alloy 的 ownership 采集路径，不得把 Keycloak 镜像当 shell 执行。
 - Keycloak 运行时契约由 `deploy/test-keycloak-runtime.sh` 独立验证：自定义镜像必须以 `start --optimized` 启动，保留 PostgreSQL 与应用 OIDC discovery；不再启用或暴露 management health/metrics 端口，且不得出现启动时 Quarkus augmentation。启动日志必须报告**运行镜像自身注入的** build commit（`runtime-contract`＝本脚本自建的一次性镜像，或 40 位源码 SHA＝已发布生产镜像），期望值从容器 env 推导。main push 上 `.github/workflows/keycloak.yml` 的 `smoke` 验证 published digest；PR 上 `.github/workflows/ci-keycloak.yml` 的 `keycloak_runtime` 运行真实 Docker smoke。
+
+## TX service-plane boundary（K6A）
+
+- 公网 HTTP/HTTPS ingress 仅 Caddy（80/443）；UFW inactive 不允许发布 service-plane 通配端口。
+- WG-only TCP：`10.20.0.1:8081 → frontend:80`、`:8087 → business-api:8087`、`:8088 → business-api:8088`、`:8080 → keycloak:8080`、`:15432 → keycloak-postgres:5432`、`:25432 → business-postgres:5432`。
+- 保留 host-local administration / OpenTofu：`127.0.0.1:18080 → keycloak:8080`、`:15432 → keycloak-postgres:5432`、`:25432 → business-postgres:5432`；OpenTofu provider 仍仅使用 loopback。
+- `runtime-check-lib.sh:assert_tx_service_ports` 是 rendered Compose 精确绑定校验，staged owner deploy 与 read-only readiness 共用；拒绝缺失/额外绑定、通配/public IP、非 TCP 与 app/management 端口混用。`wireguard-service-plane` token 取代旧的三条 loopback-only token；原有 Docker-local HTTP/DB/E2E 探针保留。
+- frontend → `http://business-api:8087`、business-api → `business-postgres` / `http://keycloak:8080`、Keycloak → `keycloak-postgres:5432`、Caddy → `wotb-frontend:80` / `keycloak:8080` 均不切换。卷、512m DB 限制、OpenTofu ownership、备份、DNS、WG 配置与 Yecao endpoints 不变。
+- 合并后逐 owner 部署会重建受影响容器。TX1 listener / TX2 WG / public TLS / 原有 E2E 全部验收通过后才算 K6A COMPLETE；操作与回滚见 `docs/operations/tx-service-plane.md`。
 
 ## Gate boundary
 

@@ -13,14 +13,15 @@ application role password uses the provider write-only field, so the state holds
 no application credential attribute.
 
 Docker Compose creates and runs `business-postgres`; it exposes the
-administration port only on TX loopback as `127.0.0.1:25432:5432`. The
+administration port on TX loopback as `127.0.0.1:25432:5432`, plus the private K6A
+service endpoint `10.20.0.1:25432:5432`. Production dependencies stay Docker-local. The
 PostgreSQL provider is hard-constrained to `127.0.0.1:25432`, so it cannot reach
 a public endpoint, the WireGuard network, or the Keycloak PostgreSQL runtime.
 
 ## Ownership split
 
 ```text
-Compose   runtime, image, volume, loopback admin port, healthcheck, restart, memory limit
+Compose   runtime, image, volume, loopback admin + WG service ports, healthcheck, restart, memory limit
 OpenTofu  wotb database, control_api role, database-level grant
 Flyway    application schema, tables, indexes, sequences, rows
 ```
@@ -81,7 +82,8 @@ which bash disables for functions invoked in that position.
 
 Business PostgreSQL is authoritative state, so the read-only
 `deploy/tx/runtime-check.sh` check requires its container health,
-`pg_isready`, an exactly loopback `127.0.0.1:25432:5432` publication, and the
+`pg_isready`, exactly the `127.0.0.1:25432:5432` + `10.20.0.1:25432:5432`
+TCP publications, and the
 `tx-local-opentofu-business-postgres` provisioning marker before it may emit
 `TX_RUNTIME_READY`. Any failure emits `TX_RUNTIME_NOT_READY`; the check never
 creates, modifies, or deletes a database or row.
