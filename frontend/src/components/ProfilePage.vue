@@ -103,8 +103,18 @@ async function loadProfile() {
       connectivity: connectivity.value,
     })
     if (!settled) {
-      // 期间掉线 / 状态变化：不发请求，落在中性提示上，等恢复在线后自动重试。
-      if (!availability(Feature.ACCOUNT_PROFILE).available) enterConnectivityUnavailable()
+      if (!availability(Feature.ACCOUNT_PROFILE).available) {
+        enterConnectivityUnavailable()
+      } else {
+        // 连通性仍可用：bootstrap 失败属于业务错误，等待用户显式重试。
+        profile.value = null
+        phase.value = 'error'
+      }
+      return
+    }
+    // ensure 期间也可能掉线：成功结果不能绕过当前的 backend 准入。
+    if (!requireProfileOnline()) {
+      enterConnectivityUnavailable()
       return
     }
     profile.value = await getUserProfile()
@@ -134,12 +144,12 @@ function enterConnectivityUnavailable() {
  * 恢复在线后自动加载（无需刷新 / 重开页面 / 重新登录），仍然只经 capability 门禁判定：
  *  - 已加载过 profile（`profile.value` 存在）不再触发；
  *  - 重复的 online 通知由 `loading` + `profile.value` 双重去重，不会形成请求风暴；
- *  - 仍处于 init / signedOut 时不抢跑（由 onMounted 的流程负责）。
+ *  - 只自动恢复 connectivity-unavailable；业务错误由用户显式 retry，避免自动重试循环。
  */
 watch(connectivity, () => {
   if (!isAuthenticated()) return
   if (profile.value || loading.value) return
-  if (phase.value === 'init' || phase.value === 'signedOut') return
+  if (phase.value !== 'connectivity-unavailable') return
   if (!availability(Feature.ACCOUNT_PROFILE).available) return
   void loadProfile()
 })
@@ -266,6 +276,7 @@ async function verifyWithReplay(event) {
   verifyError.value = ''
   try {
     const recorderAccountId = await replayRecorderAccountId(file)
+    if (!requireProfileOnline()) return
     profile.value = await verifyUserWotbAccountFromReplay(recorderAccountId)
   } catch (e) {
     verifyError.value = apiError(e)
@@ -300,6 +311,7 @@ async function loadHundredStatus() {
 async function withdrawHundred(id) {
   if (!requireHofOnline()) return
   if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return
+  if (!requireHofOnline()) return
   hundredWithdrawingId.value = id
   hundredMessage.value = ''
   hundredError.value = ''
@@ -321,6 +333,7 @@ function formatTime(value) {
 async function removeAccount() {
   if (!requireProfileOnline()) return
   if (!(await confirm({ title: t('profile.unbindConfirm'), confirmLabel: t('profile.unbind'), danger: true }))) return
+  if (!requireProfileOnline()) return
   editError.value = ''
   try {
     profile.value = await deleteUserWotbAccount()

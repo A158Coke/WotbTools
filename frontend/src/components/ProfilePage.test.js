@@ -5,6 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import ProfilePage from './ProfilePage.vue'
 import { useConnectivity } from '../composables/useConnectivity.js'
+import { resetBusinessUserBootstrap, useBusinessUserBootstrap } from '../composables/useBusinessUserBootstrap.js'
 import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 
 const confirmDialog = vi.hoisted(() => ({ confirm: vi.fn(() => Promise.resolve(true)) }))
@@ -409,9 +410,9 @@ describe('ProfilePage Wargaming regions', () => {
     expect(wrapper.text()).toContain('hundred.currentPending')
     expect(wrapper.text()).toContain('Jagdpanzer E 100')
     expect(wrapper.text()).toContain('Progetto 65')
-    expect(wrapper.text()).toContain('4,101')
+    expect(wrapper.text()).toContain((4101).toLocaleString())
     expect(wrapper.text()).toContain('188')
-    expect(wrapper.text()).not.toContain('3,500')
+    expect(wrapper.text()).not.toContain((3500).toLocaleString())
     expect(wrapper.text()).toContain('hundred.reviewStatus')
     expect(wrapper.text()).toContain('hundred.recentRejected')
     expect(wrapper.text()).toContain('INSUFFICIENT_PROOF')
@@ -691,5 +692,152 @@ describe('ProfilePage connectivity gating', () => {
     window.dispatchEvent(new Event('online'))
     await flushPromises()
     expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
+  })
+})
+
+/** 业务失败与连通性变化分开，异步等待后在真实 backend boundary 再次 gate。 */
+describe('ProfilePage bootstrap failure and asynchronous connectivity changes', () => {
+  function deferred() {
+    let resolve
+    const promise = new Promise(res => { resolve = res })
+    return { promise, resolve }
+  }
+
+  async function disconnect() {
+    setOnline(false)
+    window.dispatchEvent(new Event('offline'))
+    await flushPromises()
+  }
+
+  function button(wrapper, key) {
+    const result = wrapper.findAll('button').find(b => b.text() === key)
+    expect(result).toBeDefined()
+    return result
+  }
+
+  beforeEach(() => {
+    resetBusinessUserBootstrap()
+    api.authenticated = true
+    tokenRef.value = null
+    profileFailures = 0
+    currentProfile = {
+      wotbAccountSource: 'MANUAL', wotbServer: 'CN', wotbAccountId: 1001,
+      wotbNickname: 'CNName', wotbAccountVerifiedAt: null, displayName: 'CN Player',
+    }
+    for (const spy of Object.values(userApi)) spy.mockReset()
+    userApi.ensureUserProfile.mockResolvedValue(currentProfile)
+    userApi.getUserProfile.mockImplementation(async () => currentProfile)
+    userApi.getUserHofRecords.mockResolvedValue([])
+    userApi.verifyUserWotbAccountFromReplay.mockImplementation((...args) => verifyApi.verifyUserWotbAccountFromReplay(...args))
+    confirmDialog.confirm.mockReset().mockResolvedValue(true)
+    verifyApi.replayRecorderAccountId.mockReset()
+    verifyApi.verifyUserWotbAccountFromReplay.mockReset()
+    hundredApi.hofHundredCancel.mockReset()
+    hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
+  })
+
+  afterEach(() => resetBusinessUserBootstrap())
+
+  it('online provisioning failure shows profile error, preserves business error, and recovers on explicit retry', async () => {
+    const failure = { status: 500, code: 'PROVISIONING_FAILED' }
+    userApi.ensureUserProfile.mockRejectedValueOnce(failure)
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(userApi.getUserProfile).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('profile.error')
+    expect(wrapper.text()).not.toContain('profile.loading')
+    expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(false)
+    expect(useConnectivityNotice().visible.value).toBe(false)
+    expect(useBusinessUserBootstrap().state.value).toBe('failed')
+    expect(useBusinessUserBootstrap().error.value).toEqual(failure)
+
+    // 即使状态重新发布 online，业务 error 也不应自行重试。
+    useConnectivity().stop()
+    await useConnectivity().start()
+    window.dispatchEvent(new Event('online'))
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(userApi.ensureUserProfile).toHaveBeenCalledTimes(1)
+    expect(userApi.getUserProfile).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('profile.error')
+
+    await wrapper.get('[data-testid="profile-retry"]').trigger('click')
+    await flushPromises()
+    expect(userApi.ensureUserProfile).toHaveBeenCalledTimes(2)
+    expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="profile-logout"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('profile.error')
+    expect(useBusinessUserBootstrap().state.value).toBe('ready')
+  })
+
+  it('successful bootstrap after disconnect cannot issue a profile read; reconnect resumes once', async () => {
+    const ensure = deferred()
+    userApi.ensureUserProfile.mockImplementationOnce(() => ensure.promise)
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(userApi.ensureUserProfile).toHaveBeenCalledTimes(1)
+    await disconnect()
+    ensure.resolve(currentProfile)
+    await flushPromises()
+    expect(userApi.getUserProfile).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('profile.error')
+
+    setOnline(true)
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('disconnect during unbind confirmation blocks delete and shows connectivity notice', async () => {
+    const confirmation = deferred()
+    confirmDialog.confirm.mockImplementationOnce(() => confirmation.promise)
+    const wrapper = mountProfile()
+    await flushPromises()
+    await button(wrapper, 'profile.unbind').trigger('click')
+    expect(confirmDialog.confirm).toHaveBeenCalledTimes(1)
+    await disconnect()
+    confirmation.resolve(true)
+    await flushPromises()
+    expect(userApi.deleteUserWotbAccount).not.toHaveBeenCalled()
+    expect(useConnectivityNotice().notice.value.messageKey).toBe('featureOffline.accountProfile')
+  })
+
+  it('disconnect during withdrawal confirmation blocks cancel and status refresh', async () => {
+    hundredApi.hofHundredMyStatus.mockResolvedValue({ current: [], pending: [{ id: 7, vehicleName: 'Tank', status: 'PENDING' }], rejected: [] })
+    const confirmation = deferred()
+    confirmDialog.confirm.mockImplementationOnce(() => confirmation.promise)
+    const wrapper = mountProfile()
+    await flushPromises()
+    await button(wrapper, 'hundred.withdraw').trigger('click')
+    expect(confirmDialog.confirm).toHaveBeenCalledTimes(1)
+    await disconnect()
+    confirmation.resolve(true)
+    await flushPromises()
+    expect(hundredApi.hofHundredCancel).not.toHaveBeenCalled()
+    expect(hundredApi.hofHundredMyStatus).toHaveBeenCalledTimes(1)
+    expect(useConnectivityNotice().notice.value.messageKey).toBe('featureOffline.hallOfFame')
+  })
+
+  it('disconnect during local replay parse blocks verify API and clears pending state', async () => {
+    const parser = deferred()
+    verifyApi.replayRecorderAccountId.mockImplementationOnce(() => parser.promise)
+    const wrapper = mountProfile()
+    await flushPromises()
+    const file = new File(['local replay'], 'mine.wotbreplay')
+    const input = wrapper.get('[data-testid="profile-verify-input"]')
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+    expect(verifyApi.replayRecorderAccountId).toHaveBeenCalledWith(file)
+    await disconnect()
+    parser.resolve(1001)
+    await flushPromises()
+    expect(userApi.verifyUserWotbAccountFromReplay).not.toHaveBeenCalled()
+    expect(verifyApi.verifyUserWotbAccountFromReplay).not.toHaveBeenCalled()
+    expect(useConnectivityNotice().notice.value.messageKey).toBe('featureOffline.accountProfile')
+    expect(wrapper.get('[data-testid="profile-verify-replay"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="profile-verify-error"]').exists()).toBe(false)
   })
 })

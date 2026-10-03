@@ -759,7 +759,7 @@ describe('HoFPage', () => {
       page: 1, size: 50, nation: '', vehicleType: '', vehicleId: null,
     })
     expect(wrapper.findAll('.mark3-pane .rk').map(item => item.text())).toEqual(['1', '1'])
-    expect(wrapper.text()).toContain('68.25%')
+    expect(wrapper.text()).toContain(`${(68.25).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`)
 
     const filters = wrapper.findAll('.mark3-pane .mark3-filter select')
     await filters[0].setValue('EUROPE')
