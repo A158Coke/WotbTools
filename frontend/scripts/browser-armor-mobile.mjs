@@ -253,7 +253,7 @@ async function runMobileScenario(env, scenario) {
   // assetless 场景显式把资产源指向不可达端口：无论本机有没有跑资产包，都稳定复现
   // 「资产加载失败」态（CI 环境本来就没有资产源）
   const assetQuery = scenario.assetless ? '&assets=http://127.0.0.1:1/' : ''
-  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&ws-roles=wotbtools-admin&tank=1${assetQuery}`)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=1${assetQuery}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
   // 等内核**做完**（成功或失败）：loading 遮罩消失才算 settled——否则注入的夹具会被
   // 迟到的真实加载结果覆盖，测量变成"看运气"。
@@ -423,7 +423,7 @@ async function runMobileBackScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  const url = `${env.origin}/?view=agent-armor&ws-auth=1&ws-roles=wotbtools-admin&tank=1`
+  const url = `${env.origin}/?view=agent-armor&ws-auth=1&tank=1`
   await page.goto(url)
   // 模拟「从射击分析 / 坦克百科经路由打开」：history.state.back 存在 → 返回键出现
   await page.evaluate(`history.replaceState({ back: '/', current: location.href, forward: null }, '', location.href)`)
@@ -466,7 +466,7 @@ async function runDesktopScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&ws-roles=wotbtools-admin&tank=1`)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=1`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
   await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"], [data-testid="scene3d-loading"], #info-panel'), { label: 'scene settled' })
   await dismissStatusOverlays(page)

@@ -8,6 +8,8 @@
 
 Android 从文件管理器打开回放后即可自动在本机解析（无需登录，回放不上传）；读取失败可重试。见 [Android 回放交接](docs/android/replay-intent.md)。
 
+回放工作台永久展示数据、2D 回放、3D 回放、射击分析与 AI 复盘。数据与 2D 匿名可用；3D、射击分析 / 装甲复现与 AI 登录后可用，普通用户和管理员能力相同。
+
 - **回放解析与 Excel 导出**：浏览器本机解析 `.wotbreplay`（上游 Rust Core WASM，文件不上传），提取权威结算（伤害 / 承伤 / 助攻 / 格挡 / 击杀 / 死亡时刻）与事件流特征（走位 / 交火 / 九宫格区域）。
 - **名人堂**：随机战与评级战单场伤害排行；Tier X 百场生涯场均榜统一使用截图 + 5 回放人工审核。
 - **战斗表现**：基于统一回放事实计算的派生指标（贡献度、KAST、Impact、潜在伤害、协助、击杀、多伤率、存活率、互换击杀），不再输出任何综合评分。
@@ -34,7 +36,7 @@ flowchart LR
 
 0. **服务器没有 parser**：唯一解析器是上游 [WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) Rust Core（WASM，版本锁定在 `deploy/agent/source.json`）；汇总、评分、导出、2D 数据也在客户端。服务端只负责存储、去重、授权、名人堂记录与 AI 编排；缺字段向上游要。
 1. **权威结算 > 事件流观测**：伤害 / 死亡以 `battle_results` 为准；事件流只是观测子集，覆盖不足时抑制数字（`OBSERVED_DAMAGE_IS_PARTIAL`）。
-2. **AI 复盘独立成服务**：`POST /api/ai/reviews`（`text/event-stream`）由 Yecao 独立无状态 `ai-service` 承载，经 TX 入口 `/api/ai/**` 私网转发；Business Backend 不再参与 AI 请求，旧 `/api/replay/analyze` 已移除。取消走 `POST /api/ai/reviews/{correlationId}/cancel`；有界准入，饱和返回 503 `AI_REVIEW_BUSY`。前端入口在完整发布门槛通过前保持维护中。
+2. **AI 复盘独立成服务**：`POST /api/ai/reviews`（`text/event-stream`）由 Yecao 独立无状态 `ai-service` 承载，经 TX 入口 `/api/ai/**` 私网转发；Business Backend 不再参与 AI 请求，旧 `/api/replay/analyze` 已移除。取消走 `POST /api/ai/reviews/{correlationId}/cancel`；有界准入，饱和返回 503 `AI_REVIEW_BUSY`。前端入口公开可见，登录后使用。
 3. **九宫格 + 地图语义化**：500×500 canonical 九宫格 1-9；AREA 语义来自客户端 SC2 / heightmap 解码，人工核验前不当作已验证事实。
 
 > 更多架构与工程取舍见 `docs/DEVELOPER_GUIDE.md` 与 `docs/architecture/`。

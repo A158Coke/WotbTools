@@ -164,22 +164,27 @@ async function decode(file) {
   selectedIndex.value = null
   try {
     const bytes = new Uint8Array(await file.arrayBuffer())
+    if (seq !== parseSeq) return
     // 时序：先解析 playback（轻）构建俯仰锚定表，射击链只做一次重解析。
     // 锚定注入失败（产物过旧等）→ 裸解析兜底（俯仰降级标记如实透传）。
     let playback = null
     let pitchLimits = null
     try {
       playback = await parseAgentPlaybackFromBytes(bytes)
+      if (seq !== parseSeq) return
       pitchLimits = await buildPitchLimits(playback.vehicles)
     } catch (e) {
       console.warn('pitch limits skipped:', e)
     }
+    if (seq !== parseSeq) return
     const shellTable = await loadShellTable().catch(() => undefined)
+    if (seq !== parseSeq) return
     let outcome
     try {
       outcome = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined, shellTable)
     } catch (e) {
       console.warn('anchored parse failed, fallback:', e)
+      if (seq !== parseSeq) return
       outcome = await parseAgentShotsFromBytes(bytes)
     }
     if (seq !== parseSeq) return
@@ -541,6 +546,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // 工作台退出登录会卸载面板；不得继续启动后续解析或资产富化。
+  parseSeq++
   observer?.disconnect()
   observer = null
 })

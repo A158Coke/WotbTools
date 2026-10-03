@@ -17,7 +17,7 @@ vi.mock('../composables/useAuth.js', async () => {
   }
 })
 
-function mountPage() {
+function mountPage(navigate = vi.fn()) {
   const i18n = createI18n({
     locale: 'zh',
     fallbackLocale: 'en',
@@ -26,7 +26,7 @@ function mountPage() {
   const wrapper = mount(MorePage, {
     global: {
       plugins: [i18n],
-      provide: { [NAVIGATE_VIEW_KEY]: vi.fn() },
+      provide: { [NAVIGATE_VIEW_KEY]: navigate },
     },
   })
   return { wrapper, i18n }
@@ -35,6 +35,17 @@ function mountPage() {
 describe('MorePage language switcher', () => {
   beforeEach(() => {
     localStorage.clear()
+  })
+
+  it('public tool links navigate directly without initiating login in the menu', async () => {
+    const navigate = vi.fn()
+    const { wrapper } = mountPage(navigate)
+    for (const view of ['agent-replay', 'agent-shots']) {
+      await wrapper.get(`[data-testid="more-link-${view}"]`).trigger('click')
+      expect(navigate).toHaveBeenLastCalledWith(view)
+    }
+    expect(wrapper.find('[data-testid="more-link-admin-users"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('switches the global locale and persists the selected language', async () => {

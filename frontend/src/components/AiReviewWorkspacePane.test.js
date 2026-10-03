@@ -6,7 +6,7 @@
  * 同 identity 的 Agent 产物。stale WASM 的原始症状是 AI Review 报
  * `ai_review.poses 缺失`，本测试锁定它不再走到那一步。
  */
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import { AgentWasmVersionMismatchError } from '../api/agent-replay-facets.js'
@@ -16,9 +16,12 @@ import AiReviewWorkspacePane from './AiReviewWorkspacePane.vue'
 
 const buildLocalAiReviewInput = vi.fn()
 
-vi.mock('../composables/useAuth.js', () => ({
-  useAuth: () => ({ authenticated: { value: true }, login: vi.fn() }),
-}))
+const auth = vi.hoisted(() => ({ authenticated: null, login: vi.fn() }))
+vi.mock('../composables/useAuth.js', async () => {
+  const { ref } = await import('vue')
+  auth.authenticated = ref(true)
+  return { useAuth: () => auth }
+})
 
 // pane 用 useI18n().t 解析 errorKey；组件本体不挂 i18n 插件，这里返回 key 本身
 vi.mock('vue-i18n', () => ({
@@ -33,14 +36,15 @@ vi.mock('../replay-local/ai/index.js', async (importOriginal) => {
   }
 })
 
-function mountPane() {
+function mountPane(props = {}) {
   return mount(AiReviewWorkspacePane, {
-    props: { file: { name: 'a.wotbreplay' }, active: true },
+    props: { file: { name: 'a.wotbreplay' }, active: true, ...props },
     global: {
       mocks: { $t: (key) => key },
       stubs: {
         AiReviewPanel: {
-          props: ['projectionError'],
+          name: 'AiReviewPanel',
+          props: ['projectionError', 'projection'],
           template: '<div class="panel-stub" :data-error="projectionError" />',
         },
       },
@@ -53,8 +57,54 @@ async function projectionErrorFor(error) {
   buildLocalAiReviewInput.mockRejectedValue(error)
   const wrapper = mountPane()
   await flushPromises()
-  return wrapper.find('.panel-stub').attributes('data-error')
+  const key = wrapper.find('.panel-stub').attributes('data-error')
+  wrapper.unmount()
+  return key
 }
+
+beforeEach(() => {
+  auth.authenticated.value = true
+  auth.login.mockReset()
+  buildLocalAiReviewInput.mockReset()
+})
+
+describe('AiReviewWorkspacePane authenticated use', () => {
+  it.each(['', 'select one replay'])('anonymous sees login gate before projection work (blocked=%s)', async (blockedReason) => {
+    auth.authenticated.value = false
+    const wrapper = mountPane({ blockedReason })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ai-login-required"]').exists()).toBe(true)
+    expect(wrapper.find('.panel-stub').exists()).toBe(false)
+    expect(buildLocalAiReviewInput).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="ai-login"]').trigger('click')
+    expect(auth.login).toHaveBeenCalledWith('ai-review')
+    wrapper.unmount()
+  })
+
+  it('login builds selected replay; logout discards late projection and relogin rebuilds it', async () => {
+    auth.authenticated.value = false
+    let finishOld
+    buildLocalAiReviewInput.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve }))
+    const wrapper = mountPane()
+    const file = wrapper.props('file')
+    auth.authenticated.value = true
+    await flushPromises()
+    expect(buildLocalAiReviewInput).toHaveBeenCalledWith(file)
+    auth.authenticated.value = false
+    await flushPromises()
+    expect(wrapper.find('.panel-stub').exists()).toBe(false)
+    finishOld({ old: true })
+    await flushPromises()
+    const fresh = { fresh: true }
+    buildLocalAiReviewInput.mockResolvedValueOnce(fresh)
+    auth.authenticated.value = true
+    await flushPromises()
+    expect(buildLocalAiReviewInput).toHaveBeenCalledTimes(2)
+    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('projection')).toEqual(fresh)
+    expect(wrapper.props('file')).toBe(file)
+    wrapper.unmount()
+  })
+})
 
 describe('AiReviewWorkspacePane 错误归属', () => {
   it('Agent 版本不一致 → workspace.ai_engine_version_mismatch（独立文案，优先于通用引擎错误）', async () => {

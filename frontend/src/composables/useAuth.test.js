@@ -256,6 +256,43 @@ describe('useAuth', () => {
       expect.objectContaining({ idpHint: expect.any(String) }))
   })
 
+  it('same capability login preserves query and hash; changing destination drops unrelated context', async () => {
+    const auth = useAuth()
+    await auth.retryAuth()
+    window.history.replaceState({}, '', '/?view=agent-replay&replay=abc#selected')
+    try {
+      await auth.login('agent-replay')
+      expect(new URL(kcLogin.mock.calls.at(-1)[0].redirectUri).searchParams.get('replay')).toBe('abc')
+      expect(new URL(kcLogin.mock.calls.at(-1)[0].redirectUri).hash).toBe('#selected')
+      await auth.login('profile')
+      expect(new URL(kcLogin.mock.calls.at(-1)[0].redirectUri).search).toBe('?view=profile')
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('login accepts a full armor scene location without losing any scene query', async () => {
+    const auth = useAuth()
+    await auth.retryAuth()
+    const query = {
+      view: 'agent-armor', tank: '13825', shooter: '19969', config: '1', scfg: '0', shell: '0',
+      shot: '2', world: '1', heatmap: '1', az: '45', h: '6', d: '12',
+    }
+    await auth.login({ path: '/', query, hash: '#shot' })
+    const redirect = new URL(kcLogin.mock.calls.at(-1)[0].redirectUri)
+    expect(Object.fromEntries(redirect.searchParams)).toEqual(query)
+    expect(redirect.hash).toBe('#shot')
+    expect(redirect.origin).toBe(window.location.origin)
+  })
+
+  it('login rejects an external destination before handing it to the provider', async () => {
+    const auth = useAuth()
+    await auth.retryAuth()
+    await expect(auth.login({ path: 'https://external.example/' })).rejects.toThrow('AUTH_REDIRECT_ORIGIN_MISMATCH')
+    expect(kcLogin).not.toHaveBeenCalled()
+    expect(auth.loginInFlight.value).toBe(false)
+  })
+
   it('Android login() 走 native external user-agent：不导航 WebView、不构造 keycloak-js', async () => {
     const keycloakBefore = kcInstances.length
     const native = androidBridge({ authLogin: true })

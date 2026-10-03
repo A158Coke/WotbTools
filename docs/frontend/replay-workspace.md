@@ -5,8 +5,8 @@
 ## 当前实现
 
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`playback`、`3d`、`shots`、`ai` **五种能力**的统一工作台：选择一次文件，能力之间切换不重新选文件、不重建 session。
-- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘，* 仅管理员；五个能力都在本工作台内，没有"导航去另一个页面"的能力），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
-- 五个能力面板都由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`），之后切走只 `v-show` 隐藏：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
+- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放 · 射击分析 · AI 复盘，五种能力对所有用户可见；五个能力都在本工作台内，没有"导航去另一个页面"的能力），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
+- 五个能力面板都由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`），3D / shots 还必须已登录；登录态有效时切走只 `v-show` 隐藏：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
 - 3D 面板按「待开播 → 开始」两步进入播放：文件由工作台派生后就位，但解析与资产加载都要等用户在面板里按「开始」（卡片上先选画质档——内核 `startPlayback()` 惰性创建渲染器、首帧按当前档位定型，所以档位不能事后在加载中再改）。换场次 / 清空先 `reset()` 撤下上一场：`reset` 与 `destroy` 同等作废在途加载（`sessionEpoch` / `loadGeneration`），被撤下的解析 / 资产续体不得再回写 store，也不得把上一场继续画在待开播面板后面。
 - 解析任务的**生命周期归当前会话所有**（P0）：`Replay3DPane` 持有 per-load 的 `AbortController`，清空 / 换场次 / 销毁经 `sceneApi.loadData({ signal })` 透传到 `scene/replaySource.js` 的解析边界——被撤下的解析立即以 `AbortError` 结束并让出 Worker 队列（仍在 Worker 上时整体 terminate），不再无限排队。`replaySource` 的每个解析请求带看门狗（120s 不回包也不报错 → terminate + 在途全部失败，下次请求重建 Worker）；WASM 装载链（fingerprint 拉取 / 产物 JS dynamic import / wasm 初始化）有 20s 看门狗——浏览器 fetch / import 没有默认超时，网络停滞曾让会话级缓存里的悬 Promise 把 3D Worker 与 Data 批量解析（同一装载链）永久钉在「解析中」。装载超时后 dynamic import 换带序号的 specifier 强制全新装载（浏览器模块表按 URL 去重，同 URL 重试只会拿回同一个悬着的模块记录）。
 - 3D 场景加载与就绪态由 `scene/playbackScene.js` 独占：进入解析阶段立即置 `loading=true`、`hasData=false`、`assetStage=false`、`assetProgress=null`；当前会话进入资产阶段才推进资产进度，完成后才标 ready。销毁清掉加载阶段状态。地图资产每个异步边界之后先复核会话身份，再发布地图 key、纹理、地形、分层地表或场景；迟到资源只释放局部结果。资产 URL 显式使用当前会话的地图 key，旧实例的地图解析不能改变当前会话后续请求。`Replay3DPane` 只负责编排，不新增加载令牌。
@@ -27,7 +27,7 @@
 ## 稳定边界
 
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision` 与 `sourceId`（`r{文件序号}`）作为唯一 identity。
-- 场次选择器（数据模式在 `ReplayPage` 工具栏、四个单场能力在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。用户可见的能力集合仍受 admin feature flag 约束：普通用户 `data / playback / ai`，管理员再加 `3d / shots`；非管理员直达 `?view=agent-replay|agent-shots` 由 `viewFromRoute` 收敛回默认视图。
+- 场次选择器（数据模式在 `ReplayPage` 工具栏、四个单场能力在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。五种能力对匿名、普通登录用户与管理员永久可见，`wotbtools-admin` 不改变能力集合；匿名直达 `?view=agent-replay|agent-shots` 保持目标能力，由能力层显示登录门禁。
 - AI 复盘是**正式能力**（普通用户可见，未登录由 AuthGate 引导登录），深链直接挂载 AI 面板（`AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`），受登录门控与客户端投影可用性约束；前端已无维护状态卡（提交 `83884790`，`ai_maintenance` 三语 key 无消费者）。切换 capability 不重新分析数据模式的结果。
 - 射击分析面板按 `docs/frontend/design-language.md` §9 做 Master–Detail（expanded 常驻右栏 / medium 推开式侧栏 / compact 整屏面板），分档由**容器宽度**（`ResizeObserver` + container query）决定而不是视口。装甲场景不在面板内嵌：命中弹的「在装甲查看器里打开」把 `shots` 经既有本地交接通道交出并用注入的 `navigate` 打开 `?view=agent-armor&…`——复用引擎，不复用页面导航模型。
 - AI/Playback 详细接口与回放管线以以下文档为准，不在本索引重复维护：
@@ -40,7 +40,15 @@
 
 ## 匿名访问
 
-服务器没有 parser：解析、汇总、导出与 2D 回放全部在本机进行，工作台挂载即可用、不等登录、没有登录门禁，也不发出任何回放相关的后端请求。AI 复盘与名人堂等写操作才需要登录。
+服务器没有 parser：解析、汇总、导出与 2D 回放全部在本机进行，工作台挂载即可用、不等登录、没有登录门禁，也不发出任何回放相关的后端请求。3D 回放、射击分析 / 复现、AI 复盘以及名人堂等写操作需要登录。
 
 - Android pending 字节通过固定同源 HTTPS Native resource 读取；header 校验 pending identity，响应不缓存。fetch/blob 失败复用 Replay 错误区与重试，不分析、不 ACK。
 - Android pending replay 在工作台挂载后消费；ACK 边界是「本机分析已完成」（`analyze()` 返回 `{ completed: true }`，无论有没有有效场次）；回放引擎装载失败返回 `{ completed: false, reason: 'ENGINE_UNAVAILABLE' }`，Native pending 原样保留可重试（见 [`docs/android/replay-intent.md`](../android/replay-intent.md)）。
+
+## 能力访问策略
+
+Replay Workspace contains five publicly discoverable capabilities. Anonymous users can use Data and 2D Playback. Authentication is required for 3D Playback, Shot Analysis / Reconstruction, and AI Review. `wotbtools-admin` does not alter Replay Workspace capabilities.
+
+`ReplayCapabilityAuthGate.vue` 复用 `EmptyState` 与登录按钮：匿名状态不挂载 `Replay3DPane` / `ReplayShotsPane`，不启动解析、场景或远端资产加载；登录分别以 `agent-replay` / `agent-shots` 为返回目的地。登出卸载受限 pane，但不清空 Workspace 的 replay selection/session。AI 保留自己的 projection/error lifecycle，匿名不构建投影，登录返回 `ai-review`。
+
+装甲查看器 `agent-armor` 保持独立页面。普通登录用户可从 shots 选择命中弹并打开复现场景；匿名深链由 `ViewHost` 显示登录门禁，不加载装甲页面。登录返回保留当前完整 scene query（`tank/shooter/config/scfg/shell/shot/world/heatmap/az/h/d/…`）。登录门禁不会主动清空 selection；浏览器 OIDC 整页跳转仍受既有 session 持久化能力限制，不新增 replay 字节持久化。

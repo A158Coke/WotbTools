@@ -1,7 +1,7 @@
 <!--
   回放工作台 · AI 复盘：为当前目标回放在本机建立 AI 输入（结算事实 + client canonical AI projection，
   replay-local/ai），交给 AiReviewPanel 发起分析。服务器没有 parser——文件不出本机，只上传投影。
-  需要登录（AI 复盘角色由 AiReviewPanel 判定）；时间轴不可用 / 解析失败只显示原因，不回退服务端。
+  公开显示、登录后使用；时间轴不可用 / 解析失败只显示原因，不回退服务端。
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
@@ -76,16 +76,25 @@ watch(() => props.file, () => {
   input.value = null
   errorKey.value = ''
 })
+watch(authenticated, (signedIn) => {
+  if (!signedIn) {
+    // 退出登录使在途结果失效，重新登录仍可为同一文件构建输入。
+    seq++
+    builtFile = null
+    input.value = null
+    errorKey.value = ''
+  }
+})
 watch(() => [props.file, props.active, props.blockedReason, authenticated.value], () => { void build() }, { immediate: true })
 </script>
 
 <template>
   <div class="ai-workspace-pane" data-testid="ws-ai">
-    <p v-if="blockedReason" class="ws-note" data-testid="ai-blocked">{{ blockedReason }}</p>
-    <div v-else-if="!authenticated" class="ai-login" data-testid="ai-login-required">
+    <div v-if="!authenticated" class="ai-login" data-testid="ai-login-required">
       <p class="ws-note">{{ $t('workspace.ai_login_required') }}</p>
-      <AppButton data-testid="ai-login" @click="login()">{{ $t('app.login') }}</AppButton>
+      <AppButton data-testid="ai-login" @click="login('ai-review')">{{ $t('app.login') }}</AppButton>
     </div>
+    <p v-else-if="blockedReason" class="ws-note" data-testid="ai-blocked">{{ blockedReason }}</p>
     <AiReviewPanel
       v-else
       :file="file ?? undefined"
