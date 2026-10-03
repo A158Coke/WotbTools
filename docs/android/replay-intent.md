@@ -2,7 +2,7 @@
 
 ## 支持通道（V1 单个）
 
-- **App 内选择**：现有 Vue `<input type="file" accept=".wotbreplay">`（`FileUploader.vue`）。
+- **App 内选择**：现有 Vue `<input type="file" accept=".wotbreplay">`（`FileDrop.vue`）。
 - **Share to WotBTools**：`ACTION_SEND`，`content://` URI。
 - **Open With WotBTools**：`ACTION_VIEW`，文件管理器 → `content://` URI。
 
@@ -41,7 +41,7 @@ ACTION_SEND / ACTION_VIEW
   → private cache backing file + pendingId（完整 UUID，authoritative identity）+ createdAt
   → pending slot（single slot：最新 replay 取代旧 pending）+ SharedPreferences metadata
   → 工作台挂载后经 NativeBridge getPendingReplay() 取回 pendingId/name/size/uri
-  → Web fetch 固定同源 HTTPS synthetic resource 读字节构造 File → 现有 FileUploader/validate 管线
+  → Web fetch 固定同源 HTTPS synthetic resource 读字节构造 File → 现有 FileDrop/validate 管线
   → 本机分析（上游 Rust Core WASM；服务器没有 parser，不上传回放）
   → 分析完成后 Web 调 consumePendingReplay(pendingId) ACK（compare-and-clear）
 ```

@@ -1,7 +1,13 @@
 import type { ComputedRef, Ref } from 'vue'
 import type { Battle, ReplayResult, SourceId } from './replay.js'
 
-export type ReplayCapability = 'data' | 'ai' | 'playback'
+/** 回放工作台的五种能力（`3d` / `shots` 仍受 admin feature flag 约束）。 */
+export type ReplayCapability = 'data' | 'playback' | '3d' | 'shots' | 'ai'
+const REPLAY_CAPABILITIES: readonly string[] = Object.freeze(['data', 'playback', '3d', 'shots', 'ai'])
+/** 未知 / 缺省能力统一落到 `data`（深链与外部输入的唯一规范化点）。 */
+export function toReplayCapability(value: unknown): ReplayCapability {
+  return typeof value === 'string' && REPLAY_CAPABILITIES.includes(value) ? (value as ReplayCapability) : 'data'
+}
 export type DataViewMode = 'SUMMARY' | 'SINGLE'
 
 /**

@@ -1421,8 +1421,8 @@
     "btn": "项目历史"
   },
   "agentReplay": {
-    "title": "三维回放（Agent）",
-    "pick_hint": "选择本地 .wotbreplay 文件——解析在浏览器内经 WebAssembly 完成，文件不出本机。",
+    "title": "3D 回放",
+    "pick_hint": "回放在浏览器内本机解析，文件不会上传。",
     "parsing": "解析中…",
     "error_parse": "解析失败：",
     "play": "播放",
@@ -1449,8 +1449,10 @@
     "banner_win": "胜利",
     "banner_lose": "失败",
     "banner_draw": "平局",
-    "pb_hint": "14 车全场连续回放：滤波渲染位姿 + 炮塔/炮管随动 + 弹道飞行动画 + 实时血量/击杀流。数据由本机解析，加载需数秒。",
-    "loading_assets": "正在获取地图/地形/场景资产…"
+    "pb_hint": "14 车全场连续回放：位姿、炮塔/炮管随动、弹道动画与实时血量 / 击杀流。回放在本机解析，加载需数秒。",
+    "loading_assets": "正在获取地图/地形/场景资产…",
+    "no_file": "请先在上方选择一份 .wotbreplay 回放。",
+    "destroyed_by_environment": "阵亡"
   },
   "agentTanks": {
     "title": "坦克百科（Agent）",
@@ -1490,8 +1492,8 @@
     "open3d_hint": "装甲数值、等效厚度与击穿判定以 3D 装甲检视器实测为准。"
   },
   "agentShots": {
-    "title": "射击复现（Agent）",
-    "hint": "选择本地 .wotbreplay——浏览器内 WebAssembly 解析全员射击链（文件不出本机）。射击数按一次开火（唯一 shotId）计算；同一 shotId 下的后续事件或多次装甲交互仍属于同一个 Shot。点击行可在 3D 装甲查看器世界模式复现该发。",
+    "title": "射击分析",
+    "hint": "在上方选择回放后，本机解析全部射击：射击数按一次开火计；点一行查看这一发的弹种、命中与数据质量。",
     "pick": "选择回放文件",
     "parsing": "解析中…",
     "error_parse": "解析失败：",
@@ -1537,7 +1539,19 @@
     "q_shell_terrain": "弹种来自地形命中广播兜底（0x1b，含精确落点）",
     "q_pitch_velocity": "射手炮管俯仰由弹道推算（他人视角无该状态）",
     "q_shell_unknown": "弹种未知（通知与广播均缺失）",
-    "q_result_unknown": "服务器未通知命中结果"
+    "q_result_unknown": "服务器未通知命中结果",
+    "unknown_player": "未知玩家",
+    "inspector_title": "射击检视",
+    "inspector_hint": "装甲场景在「坦克百科 → 装甲查看器」里打开：弹道、命中判定与装甲实测都在那边。",
+    "open_viewer": "在装甲查看器里打开",
+    "close": "关闭",
+    "detail_impact": "命中",
+    "impact_hit": "命中目标",
+    "impact_miss": "脱靶",
+    "detail_trajectory": "弹道长度",
+    "detail_quality": "数据质量",
+    "prev_shot": "上一发",
+    "next_shot": "下一发"
   },
   "agentNav": {
     "replay": "三维回放",
