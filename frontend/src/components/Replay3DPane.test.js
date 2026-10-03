@@ -223,3 +223,110 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 })
+
+/**
+ * 场景生命周期不变量：sceneApi 存在 ⟺ 活的 stage DOM ∧ file ∧ !blocked ∧ WebGL。
+ * 这三种变化的产品语义必须分开：active=false 只停帧；file/blocked 变化会销毁场景。
+ */
+describe('Replay3DPane 场景生命周期', () => {
+  it('Test A — file → null 销毁旧场景；给新 file 时在新 stage 上重建并解析新文件', async () => {
+    mockWebGL('webgl2')
+    const fileA = mkFile('a.wotbreplay')
+    const wrapper = mountPane({ file: fileA })
+    await flush()
+    const firstApi = playback.api
+    expect(playback.init).toHaveBeenCalledTimes(1)
+    expect(firstApi.loadData).toHaveBeenCalledWith({ kind: 'local', file: fileA })
+
+    // file=null：模板移除 .pb-root（stage 变成游离节点）→ 必须销毁场景，不能继续往它上面画
+    await wrapper.setProps({ file: null })
+    await flush()
+    expect(firstApi.destroy).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.pb-root').exists()).toBe(false)
+    expect(wrapper.find('.scene').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="replay3d-empty"]').exists()).toBe(true)
+
+    // 新文件：必须是一次**全新的** initPlayback，并解析新文件
+    const fileB = mkFile('b.wotbreplay')
+    await wrapper.setProps({ file: fileB })
+    await flush()
+    expect(playback.init).toHaveBeenCalledTimes(2)
+    const secondApi = playback.api
+    expect(secondApi).not.toBe(firstApi)
+    expect(secondApi.loadData).toHaveBeenCalledWith({ kind: 'local', file: fileB })
+    // 新场景必须挂在**当前**的 stage 节点上，而不是那个已被移除的旧节点
+    expect(wrapper.find('.scene').exists()).toBe(true)
+    expect(playback.init.mock.calls[1][0]).toBe(wrapper.get('.scene').element)
+
+    wrapper.unmount()
+  })
+
+  it('Test B — blocked 非空销毁场景；解除阻断后重建并重新解析同一文件', async () => {
+    mockWebGL('webgl2')
+    const file = mkFile('a.wotbreplay')
+    const wrapper = mountPane({ file })
+    await flush()
+    const firstApi = playback.api
+    expect(playback.init).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ blockedReason: 'workspace.single_replay_required' })
+    await flush()
+    expect(firstApi.destroy).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="replay3d-blocked"]').text()).toBe('workspace.single_replay_required')
+    expect(wrapper.find('.scene').exists()).toBe(false)
+
+    await wrapper.setProps({ blockedReason: '' })
+    await flush()
+    expect(playback.init).toHaveBeenCalledTimes(2)
+    expect(playback.api).not.toBe(firstApi)
+    expect(playback.api.loadData).toHaveBeenCalledWith({ kind: 'local', file })
+
+    wrapper.unmount()
+  })
+
+  it('Test C — active=false 只停帧：不销毁、不重建、不重解析；切回只恢复', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    const api = playback.api
+    expect(playback.init).toHaveBeenCalledTimes(1)
+    expect(api.loadData).toHaveBeenCalledTimes(1)
+    api.setPaused.mockClear()
+
+    await wrapper.setProps({ active: false })
+    await flush()
+    expect(api.setPaused).toHaveBeenCalledWith(true)
+    expect(api.destroy).not.toHaveBeenCalled()
+    expect(playback.init).toHaveBeenCalledTimes(1)
+    expect(api.loadData).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ active: true })
+    await flush()
+    expect(api.setPaused).toHaveBeenLastCalledWith(false)
+    expect(api.destroy).not.toHaveBeenCalled()
+    expect(playback.init).toHaveBeenCalledTimes(1)
+    expect(api.loadData).toHaveBeenCalledTimes(1)
+
+    wrapper.unmount()
+  })
+
+  it('卸载销毁且只销毁一次', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    const api = playback.api
+    wrapper.unmount()
+    expect(api.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('无 WebGL 时不建场景，也不因 file 变化而建', async () => {
+    mockWebGL('none')
+    const wrapper = mountPane()
+    await flush()
+    expect(playback.init).not.toHaveBeenCalled()
+    await wrapper.setProps({ file: mkFile('b.wotbreplay') })
+    await flush()
+    expect(playback.init).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})

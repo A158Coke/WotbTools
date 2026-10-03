@@ -162,40 +162,68 @@ function killfeedText(kf) {
 }
 
 /**
- * 场景内核懒建：有目标文件、没被工作台阻断、且 WebGL 可用时才创建
- * （面板可能先挂在"请选择回放"状态；此时不该为一个空面板建 WebGL 上下文）。
+ * 场景生命周期不变量（唯一权威，别把三件事混在一起）：
+ *
+ *   sceneApi 存在  ⟺  有一个**活的** stage DOM ∧ file 存在 ∧ 未被阻断 ∧ WebGL 可用
+ *
+ * 三种变化的产品语义完全不同，必须分开处理：
+ * - `active=false`（能力切走）→ **只停帧**：保留会话，切回不重新解析、保留 timeline / 相机；
+ * - `file=null` / `blockedReason` 非空 → **销毁场景**：模板此时已经移除了 `.pb-root`，
+ *   旧 stage 是游离节点，再往上渲染就是往看不见的 DOM 上画（而且渲染循环还在跑）；
+ * - 组件卸载 → 销毁一次。
+ *
+ * 销毁后必须等 Vue 用 `flush: 'post'` 重建出新的 stage 再 `initPlayback`，
+ * 否则会把旧节点（或 null）交给场景内核。
  */
+function destroyScene() {
+  if (!sceneApi) return
+  sceneApi.destroy?.()
+  sceneApi = null
+}
+
+/** 当前是否应存在场景（模板 v-else 分支的条件，必须与它逐字一致） */
+function shouldHaveScene() {
+  return !!webgl.supported && !props.blockedReason && !!props.file
+}
+
+/** 需要则建场景（返回是否新建）；已存在则复用，不重建、不重解析 */
 function ensureScene() {
-  if (sceneApi || !webgl.supported || !props.file || props.blockedReason) return false
+  if (sceneApi || !shouldHaveScene()) return false
   sceneApi = initPlayback(stage.value, store)
   sceneApi?.setPaused?.(!props.active)
   return true
 }
 
-onMounted(() => {
-  if (ensureScene() && props.file) loadFile(props.file)
-})
-onBeforeUnmount(() => {
-  sceneApi?.destroy?.()
-  sceneApi = null
-})
+/** 解析目标回放：同一次会话内同一文件不重复解析 */
+let loadedFile = null
+function reconcileScene() {
+  if (!shouldHaveScene()) {
+    destroyScene()
+    loadedFile = null
+    return
+  }
+  const created = ensureScene()
+  const file = props.file
+  if (created || (file && file !== loadedFile)) {
+    loadedFile = file
+    loadFile(file)
+  }
+}
+
+onMounted(reconcileScene)
+onBeforeUnmount(destroyScene)
 
 /**
- * 文件 / 阻断原因 / 激活都由工作台派生：
- * - 首次拿到目标文件（含挂载后才选）：建场景并解析；
- * - 切换目标回放：重新解析新文件（同一文件不重复解析）；
- * - 能力切走 / 切回：停帧 / 恢复，不销毁会话。
+ * file / blockedReason / active 都由工作台派生：
+ * 只有 `active` 是「暂停 / 恢复」，其余两个都会改变「场景该不该存在」。
  */
 watch(
   [() => props.file, () => props.blockedReason, () => props.active],
-  ([file, blocked, active], previous = []) => {
-    const [prevFile = null, prevBlocked = null, prevActive = active] = previous
-    // 首次拿到目标文件（含挂载后才选）或切换目标回放：重新解析
-    if (!blocked && (file !== prevFile || blocked !== prevBlocked)) {
-      ensureScene()
-      if (file) loadFile(file)
-    }
-    if (active !== prevActive) sceneApi?.setPaused?.(!active)
+  ([, , active], previous = []) => {
+    // 先按新的 file/blocked 收敛场景，再处理能力切换
+    reconcileScene()
+    const activeChanged = previous.length === 3 && previous[2] !== active
+    if (activeChanged) sceneApi?.setPaused?.(!active)
   },
   { flush: 'post' },
 )
@@ -398,7 +426,9 @@ watch(
 /* 基地状态条：顶栏下方居中，不拦截场景操作（徽章本身可悬停看说明） */
 .base-status { pointer-events: none; }
 
+/* 底部控制条：自己的定位自己声明（`.panel` 只是视觉面，不再隐含 absolute） */
 .controls {
+  position: absolute;
   bottom: var(--space-2); left: 50%; transform: translateX(-50%);
   z-index: var(--pb-z-hud);
   display: flex; flex-direction: column; gap: var(--space-2);
