@@ -132,13 +132,17 @@ import sys
 
 workflow = Path(sys.argv[1]).read_text(encoding="utf-8")
 preflight = workflow.index("Preflight classify production state")
+agent_wasm = workflow.index("Fetch pinned Agent WASM for frontend validation")
 frontend = workflow.index("Frontend tests + build validation")
 upload = workflow.index("Upload APK to TX")
 ensure_tag = workflow.index("Ensure release tag (idempotent)")
-assert preflight < frontend < upload < ensure_tag
-preflight_block = workflow[preflight:frontend]
+assert preflight < agent_wasm < frontend < upload < ensure_tag
+preflight_block = workflow[preflight:agent_wasm]
 assert 'classify_tag "$REFS" "$TAG" "$COMMIT_SHA"' in preflight_block
 assert 'if [ "$TAG_STATE" = "tag_conflict" ]; then' in preflight_block
+agent_wasm_block = workflow[agent_wasm:frontend]
+assert "bash scripts/fetch-agent-wasm.sh" in agent_wasm_block, \
+    "Android release frontend validation must fetch the pinned Agent WASM first"
 PY
 
 # 两阶段发布协议：stage 只做 staging（绝不写 production version.json），publish 只能手工续跑、
