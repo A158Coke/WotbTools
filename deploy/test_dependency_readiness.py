@@ -45,10 +45,18 @@ class KeycloakProbeTests(unittest.TestCase):
             FakeResponse({"issuer": "https://auth.wotbtools.com/realms/wotbtools"}),
             FakeResponse({"access_token": "token"}),
         ]
-        with mock.patch.dict("os.environ", {"KEYCLOAK_ADMIN_CLIENT_SECRET": "probe-secret"}), \
-                mock.patch.object(readiness.urllib.request, "urlopen", side_effect=responses) as urlopen:
+        with mock.patch.dict(
+                "os.environ",
+                {
+                    "KEYCLOAK_ADMIN_CLIENT_SECRET": "probe-secret",
+                    "TX_KEYCLOAK_ADMIN_SERVER_URL": "http://10.20.0.1:8080",
+                },
+        ), mock.patch.object(readiness.urllib.request, "urlopen", side_effect=responses) as urlopen:
             readiness.check_keycloak()
         self.assertEqual(urlopen.call_count, 2)
+        self.assertTrue(urlopen.call_args_list[0].args[0].startswith(
+            "http://10.20.0.1:8080/realms/wotbtools/"
+        ))
 
     def test_fails_closed_on_wrong_issuer(self) -> None:
         with mock.patch.dict("os.environ", {"KEYCLOAK_ADMIN_CLIENT_SECRET": "probe-secret"}), \
