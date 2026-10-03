@@ -1267,6 +1267,7 @@
     "failure_scope_note": "Replay data and the other analysis features are unaffected.",
     "partial_incomplete": "The text below is incomplete and for reference only.",
     "errors": {
+      "AI_CLIENT_ERROR": "The AI review request could not be completed. Please retry; if it keeps failing, reload the page.",
       "AI_NOT_CONFIGURED": "AI is not configured. Please contact the administrator.",
       "AI_INVALID_REQUEST": "The AI provider rejected this request. Please try again later.",
       "AI_AUTHENTICATION_ERROR": "AI provider authentication failed. Please contact the administrator.",
@@ -1315,7 +1316,7 @@
     "ai_engine_version_mismatch": "The replay engine version does not match this WotBTools build. Please refresh the page and try again.",
     "ai_projection_unavailable": "A battle timeline cannot be established for this replay, so AI review is unavailable",
     "ai_projection_failed": "This replay could not be parsed for AI review",
-    "pane_load_failed": "This panel could not load, usually because the site was updated. Reload to continue; if it still fails, check your connection and retry.",
+    "pane_load_failed": "This panel could not load, usually because the site was updated. Reload to get the new version; if it was only a network interruption, retry first.",
     "pane_reload": "Reload",
     "pane_retry": "Retry"
   },

@@ -93,38 +93,17 @@ const activeCapability = workspace.activeWorkspaceTab
 /** 2D 回放面板首次进入时才挂载（之后保留状态，切走只是隐藏），它的代码块因此不随工作台加载。 */
 const playbackMounted = ref(activeCapability.value === 'playback')
 const aiMounted = ref(activeCapability.value === 'ai')
-
-/** 重试世代：+1 让 :key 变化，失败过的 async 包装器重新执行 loader 而不是复用 reject 缓存。 */
-const playbackPaneGeneration = ref(0)
-const aiPaneGeneration = ref(0)
-
-function generationFor(module) {
-  return module === playbackModule ? playbackPaneGeneration : aiPaneGeneration
-}
-
-/** 清掉失败态并强制下一次挂载重新加载（重试 / 重新进入能力共用）。 */
-function resetPane(module) {
-  generationFor(module).value += 1
-  module.reset()
-}
-
-/** 重试：先按同一 URL 再试一次；成功即恢复渲染（当前 bundle 本就可用，例如网络瞬断）。 */
-async function retryPane(module) {
-  generationFor(module).value += 1
-  await module.retry()
-}
-
-/**
- * 重新进入能力时清掉上一次的失败态（连带 :key 世代 +1），让失败过的 async 包装器重新执行 loader：
- * 失败可能只是一次瞬时加载（网络/部署中），不该让用户每次切回来都先看到一次错误再手动重试。
- */
 watch(activeCapability, (cap) => {
-  if (cap === 'playback') { playbackMounted.value = true; resetPane(playbackModule) }
-  if (cap === 'ai') { aiMounted.value = true; resetPane(aiModule) }
+  if (cap === 'playback') playbackMounted.value = true
+  if (cap === 'ai') aiMounted.value = true
 })
 
 /**
  * 能力模块加载失败态（design-language §10）：说清发生了什么 + 下一步怎么做。
+ *
+ * 失败态是**持久的**：切走再切回来仍然显示，只有用户明确选择才算处理过——
+ * 自动清状态只会把「有提示的失败」变成「没有提示的空白」。generation 与 recovery 由
+ * `lazyModule` 自己拥有（见其文件头），Workspace 不重复管理。
  *
  * 触发条件是「页面还跑着上一次部署的 bundle，而 chunk 已被新部署替换」——重新加载必然修好，
  * 所以主操作是重新加载；「重试」只覆盖网络瞬断（同一 URL 再试一次即可）。
@@ -134,6 +113,11 @@ function paneLoadError(module) {
 }
 const playbackLoadError = computed(() => paneLoadError(playbackModule))
 const aiLoadError = computed(() => paneLoadError(aiModule))
+
+/** 重试：由 lazyModule 创建新一代 async wrapper（不是重复跑一次 import）。 */
+async function retryPane(module) {
+  await module.retry()
+}
 
 /** 模板直接消费的 workspace 权威 ref（顶层绑定，模板自动解包 ref）。 */
 const currentBattleId = workspace.currentBattleId
@@ -258,7 +242,6 @@ watch(() => props.initialCapability, (val) => {
         />
         <BattlePlaybackPanel
           v-if="playbackMounted && !playbackLoadError"
-          :key="playbackPaneGeneration"
           :file="playbackFile"
           :active="activeCapability === 'playback'"
           :blocked-reason="playbackBlockedReason"
@@ -283,7 +266,6 @@ watch(() => props.initialCapability, (val) => {
         />
         <AiReviewWorkspacePane
           v-if="aiMounted && !aiLoadError"
-          :key="aiPaneGeneration"
           :file="playbackFile"
           :active="activeCapability === 'ai'"
           :blocked-reason="playbackBlockedReason"
