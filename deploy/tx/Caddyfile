@@ -19,13 +19,13 @@ http://caddy {
 	}
 
 	handle_path /_wotb/frontend/* {
-		reverse_proxy wotb-frontend:80 {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {
 			header_up Host wotbtools.com
 		}
 	}
 
 	handle_path /_wotb/keycloak/* {
-		reverse_proxy keycloak:8080 {
+		reverse_proxy {$CADDY_KEYCLOAK_UPSTREAM} {
 			header_up Host auth.wotbtools.com
 		}
 	}
@@ -46,7 +46,7 @@ www.wotbtools.com {
 }
 
 wotbtools.com {
-	reverse_proxy wotb-frontend:80 {
+	reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {
 		header_up Host {host}
 	}
 }
@@ -88,7 +88,7 @@ HTML
 	}
 
 	handle {
-		reverse_proxy keycloak:8080 {
+		reverse_proxy {$CADDY_KEYCLOAK_UPSTREAM} {
 			header_up Host {host}
 		}
 	}
