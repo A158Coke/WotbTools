@@ -45,6 +45,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     ports:
+      - "10.20.0.1:8087:8087"
       - "10.20.0.1:8088:8088"
 
 

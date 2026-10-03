@@ -3,7 +3,9 @@
 This root owns only the Business PostgreSQL logical resources: the authoritative
 `wotb` database, the `control_api` application role, and its database-level
 grant. Docker Compose owns the `business-postgres` runtime container and must
-publish its administration port only as `127.0.0.1:25432:5432` on TX.
+publish its administration port as `127.0.0.1:25432:5432` on TX for local administration, plus the private
+WireGuard service binding `10.20.0.1:25432:5432` (K6A). This root continues
+using loopback; no production dependency is switched.
 
 Business PostgreSQL is deliberately independent from Keycloak PostgreSQL:
 

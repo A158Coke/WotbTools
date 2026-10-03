@@ -491,17 +491,17 @@ TX；Yecao 宿主在 cutover 后只承载 AI service 与观测服务，不再运
 TX 的业务运行时是
 Compose 服务 `business-api`（Tencent TCR `<TCR_REGISTRY>/<TCR_NAMESPACE>/wotbtools-business-api` 的 immutable 镜像；GHCR 保留为 TX 恢复副本）：
 单个 Spring Boot 进程承载全部 public business endpoint（不再有任何回放解析 / 计算端点），
-不发布任何 host port，只被 TX-internal 的 frontend nginx、Caddy readiness surface 与
-deployment-owned `health-probe` 访问（app `/api/health` + management
+app :8087 与 management :8088 分别发布在 TX1 WireGuard `10.20.0.1` 上；现有生产访问仍来自
+TX-internal frontend nginx、Caddy readiness surface 与 deployment-owned `health-probe`（app `/api/health` + management
 `/actuator/health`，管理端口 8088）。因此 release plan 把 backend 镜像路由到
 `business-api`（target `tx`）；Yecao 侧的 `wotb-backend`/`wotb-frontend`/`keycloak`/`postgres`
 已随退役 PR 从 Compose 与 deploy 白名单中删除，不再是可选项。
 公开 API 路由已在 TX 内部终结：`wotb-frontend` 的 nginx upstream 固定为
 `http://business-api:8087`（`TX_BACKEND_UPSTREAM` 只接受这个 TX-internal 值，公网 host 与
-已退役的 Yecao `10.20.0.2:8087` 一律 fail-closed 拒绝），任何服务都不得发布 8087；TX deploy
+已退役的 Yecao `10.20.0.2:8087` 一律 fail-closed 拒绝），app 8087 只允许发布到 `10.20.0.1:8087`；TX deploy
 staging 与只读 `TX_RUNTIME_READY` 运行时检查分别用 `assert_routing_boundary` 与
 `tx-internal-api-route` / `retired-replay-switches` 两条 token 断言这些不变量，因此没有任何
-公开流量再经过 Yecao backend，WireGuard 只剩 TX→Yecao AI service 与按需观测。
+公开流量再经过 Yecao backend。K6A 额外提供 TX1 WG service plane（frontend、业务 API、Keycloak、两套 PostgreSQL），现有消费者仍走 Docker-local 路由；端点、验收与回滚见 `docs/operations/tx-service-plane.md`。
 
 **全业务运行时 E2E 检查**：`deploy/tx/runtime-check.sh` 加载独立只读校验库
 `deploy/tx/runtime-check-lib.sh`；除基础设施与路由 token 外，还用
@@ -521,8 +521,8 @@ tcp + udp），但没有固定容器地址：readiness surface 通过 Docker ser
 cutover 前经公网访问并管理 Yecao realm。HoF 回放原件是永久内容寻址文件，挂 TX
 `replay_data` 卷到 `HOF_REPLAY_DIR`（服务端唯一的回放文件存储）。
 TX 与 Yecao 的每个服务都由自己的 workflow 路径规则及手动入口拥有，不再通过 release planner
-路由。TX PostgreSQL 只发布
-`127.0.0.1:15432:5432` 给 TX-local OpenTofu；GitHub runner 只 SSH 触发，绝不
+路由。TX Keycloak PostgreSQL 保留
+`127.0.0.1:15432:5432` 给 TX-local OpenTofu，并增加 `10.20.0.1:15432:5432` 私有 WG endpoint；GitHub runner 只 SSH 触发，绝不
 直连数据库、建立 SSH tunnel 或使用 Terraform `remote-exec`。详见
 `docs/architecture/opentofu-postgres-keycloak.md`。
 
@@ -531,7 +531,7 @@ TX Business PostgreSQL 与 Keycloak PostgreSQL 完全独立：主 Compose 通过
 二者使用固定 Compose project `deploy`，生产 Docker volumes 分别是
 `deploy_business_postgres_data` 与 `deploy_keycloak_postgres_data`。Business PostgreSQL 为
 `postgres:18-alpine`，使用 `business_postgres_data`、
-`127.0.0.1:25432:5432` 仅 loopback、`pg_isready` 健康检查）；`infra/tofu/postgres-business`
+`127.0.0.1:25432:5432` loopback administration + `10.20.0.1:25432:5432` WG service、`pg_isready` 健康检查）；`infra/tofu/postgres-business`
 只管理 `wotb` 数据库、`control_api` 应用角色与 database-level grant，用独立 local
 state `/opt/wotb-tx/postgres-business-tofu-state`，provider 经
 `/opt/wotb-tx/tofu-provider-mirror` 的 filesystem mirror fail-closed 安装。业务表仍

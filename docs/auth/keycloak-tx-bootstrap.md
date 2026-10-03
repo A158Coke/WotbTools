@@ -194,6 +194,8 @@ delete/replace、flow/PKCE/redirect 精确匹配、android mapper 存在），`d
   fresh TX realm 不迁移旧 Keycloak users。
 - Android 使用 `idp-qq` 官方 OAuth callback contract；本 TX realm 不引入聚合 QQ fallback。
 
+K6A 另增 TX1 WireGuard 私有 service-plane endpoint，同时保留 Keycloak `127.0.0.1:18080` 与两套 PostgreSQL loopback administration；OpenTofu 地址、应用 dependency 与 Caddy upstream 均不切换。端点、跨宿主验收及回滚见 [TX service plane](../operations/tx-service-plane.md)。
+
 ## TX_RUNTIME_READY 只读运行时检查
 
 在 TX runtime 上执行 `deploy/tx/runtime-check.sh`。该入口只复用
@@ -211,7 +213,7 @@ TX_RUNTIME_READY
 
 Business PostgreSQL 是权威业务状态，因此检查同样要求它完全就绪才允许 `TX_RUNTIME_READY`：
 `business-postgres` 容器存在且 healthy、`pg_isready` 成功、发布端口严格为
-`127.0.0.1:25432:5432`（出现 `0.0.0.0`、`::` 或 WireGuard 地址即失败）、
+`127.0.0.1:25432:5432` + `10.20.0.1:25432:5432` TCP（缺失/额外绑定、`0.0.0.0`、`::` 或 public 地址均失败，统一 `wireguard-service-plane` token）、
 `/opt/wotb-tx/business-postgres.tofu-provisioned` 存在且内容精确为
 `tx-local-opentofu-business-postgres`。任一检查失败即输出 `TX_RUNTIME_NOT_READY`；
 这些检查全部只读，不创建、修改或删除任何数据库或数据行。详见
