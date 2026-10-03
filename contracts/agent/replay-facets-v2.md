@@ -143,9 +143,16 @@ WotBTools
 
 ## 4d. 实时装填遥测（PlaybackData additive；上游 v0.3.9）
 
-这两项只属于 **PlaybackData / 3D Playback 的专用时序输入**，不自动提升为
-WotbTools canonical ReplayFacts。字段均为 additive、skip-when-empty；缺失必须保持
-unknown，不允许恢复服务端解析或为敌方推算装填状态。
+这两项是 **PlaybackData 的时序遥测，供 Playback 呈现（2D / 3D）消费**，
+但**不自动提升为 WotbTools canonical ReplayFacts**——它们仍然是呈现层的输入，不是
+通用回放事实。字段均为 additive、skip-when-empty；缺失必须保持 unknown，
+不允许恢复服务端解析或为敌方推算装填状态。
+
+消费路径：2D 的 `replay-local/playback/parseLocalPlayback.ts` 从同一 `parsePlayback`
+结果保留独立的 `reloadTelemetry`，与 canonical 2D dataset 并列传给 Playback；3D
+直接消费 PlaybackData。两者共同使用 `frontend/src/scene/reloadBar.js` 的
+`createReloadStateResolver()`（`reloadStateAt(vehicleId, time)`），不复制装填解释器，
+也不向 `ReplayFacts` 或 HTTP dataset schema 添加装填字段。
 
 - `reloads[]`: `{clock, eid, phase, duration_s: number|null, count: number|null}`。来源为
   arena update subtype 15/16/17 的原始装填族；`phase` = 原始 f2，`duration_s` = f3 秒数
@@ -153,14 +160,14 @@ unknown，不允许恢复服务端解析或为敌方推算装填状态。
   生产者按 clock 升序输出，并且协议只给**本方全队**。
 - `reload_effective[]`: `{clock, eid, duration_s}`。来源为 method 35（0x23），表示该时刻
   **当前生效的完整装填配置时长**；同样仅本方可见、按 clock 升序。
-- WotbTools 3D 当前只解释已在真实回放与客户端 OTM 交叉闭环的子集：
+- WotbTools 2D / 3D 共同只解释已在真实回放与客户端 OTM 交叉闭环的子集：
   `f2=1` = 剩余发数快照；`3` = 整夹装填；`4` = 当前装填时长变更；
   `5` 的 `f4=1` = 就绪/取消标志（**不是**剩余发数）；`6` = 弹鼓逐发补槽；
   `7` = 夹内推弹/射击间隔，**有定时视觉但不补弹**。未闭环码继续原样保留，不赋语义。
 - 方法 35 只校准整夹 `f2=3` 的长装填刻度；`f2=6/7` 使用相位自身 `duration_s`。
   求值按时间归并而不是累加计时器，因此 seek / 拖动时间轴必须得到相同状态。
-- 敌方没有该遥测：3D OTM 只为 friendly team 绘制装填条。无数据时不得把“未知”渲染成
-  推测的敌方满弹/空弹状态。
+- 敌方没有该遥测：共享车辆标签只为有权威遥测的 friendly team 绘制逐发装填条。无数据时不得把“未知”
+  渲染成推测的敌方满弹/空弹状态。
 - **无遥测 = 整条不画（`unknown ≠ full`）**：`reloads` 缺失或该车没有任何闭环相位时，
   消费方（`frontend/src/scene/reloadBar.js#shellStatesAt`）返回 `null`，渲染侧隐藏整条
   装填 UI。**不允许**把"没有遥测"兜底成满弹——2026-10-02 线上故障正是错版 WASM

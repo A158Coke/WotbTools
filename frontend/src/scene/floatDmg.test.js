@@ -75,8 +75,12 @@ describe('伤害飘字 · 覆盖层层级（回归守卫）', () => {
   })
 
   it('标签开关只切名牌精灵，不整层隐藏（否则关名牌会连坐飘字）', () => {
-    expect(src).toMatch(/setLabels: \(on\) => \{/)
-    expect(src).not.toMatch(/labelScene\.visible = on/)
+    // 偏好入口从 setLabels(on) 扩成 setLabelPrefs(prefs)：enabled:false 只切精灵，
+    // 绝不把 labelScene 整层隐藏——飘字（renderOrder 1001）是战斗反馈，必须继续可见。
+    expect(src).toMatch(/setLabelPrefs: \(prefs\) => \{/)
+    expect(src).toMatch(/v\.label\.visible = enabled && v\.group\.visible;/)
+    expect(src).not.toMatch(/labelScene\.visible = /)
+    expect(src).not.toMatch(/setLabels:/)
   })
 
   it('逐帧尺寸走屏幕占比恒定式，并套用弹出曲线', () => {

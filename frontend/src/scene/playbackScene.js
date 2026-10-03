@@ -23,9 +23,9 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
-import { labelVisual } from './labelStyle.js'
+import { ROSTER_GROUPS, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
-import { groupByVehicle, inferMagazineSize, reloadVisualKey, resolveMagazineSize, shellStatesAt } from './reloadBar.js'
+import { createReloadStateResolver, inferMagazineSize, resolveMagazineSize } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
 import { perspectiveScore, teamHpTotals } from './teamHpTotals.js'
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
@@ -68,7 +68,7 @@ export const QUALITY_PRESETS = {
   high: { label: '高', antialias: true,  maxDpr: 2,   scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true },
 }
 
-export function initPlayback(container, store) {
+export function initPlayback(container, store, labelOverlay = null) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
   let currentMapBases = null;
@@ -80,7 +80,7 @@ export function initPlayback(container, store) {
       // mapBases[资产面 map key]（基地几何；loadMapImage 解析后缓存）
   let currentMapKey = null;        // 资产面 map key（playableBounds 表索引）
   let boundaryGroup = null;        // 地图边界带（会话拥有）
-  let V = [];                      // 车辆运行时 {def, group, turretG, gunPivot, label, meshHull, glb}
+  let V = [];                      // 车辆运行时 {def, group, turretG, gunPivot, labelAnchor, meshHull, glb}
   let T = 0, PLAYING = false, SPEED = store.speed;
   // 时间轴终点 = 比赛结束（battleEnd.js）；加载数据时确定，播放 / seek / 胜负横幅都以它为准
   let END = 0;
@@ -271,7 +271,6 @@ export function initPlayback(container, store) {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
-    resizeLabelCanvases();   // 标签贴图分辨率随视口高度重算（卡片屏幕占比恒定）
     invalidate();            // 视口变化：下一帧必须重绘
   }
   function onScenePointerDown(e) {
@@ -1051,16 +1050,6 @@ export function initPlayback(container, store) {
     return t === f ? 0x26794a : 0x98322a;
   }
 
-  // 标签文字/血条的阵营色——对齐 WotbTools 2D 的 TEAM_TOKENS（ALLY=GREEN / ENEMY=RED，
-  // data/mapTeamColors.js）：3D 卡片不再自带阵营色底/描边/竖条，阵营语义全部由文字与血条
-  // 颜色承载。未知阵营（team=0 或 friendly_team 未知）一律白——unknown ≠ enemy。
-  const LABEL_TEAM_TEXT = { friendly: '#4ade80', enemy: '#f87171', neutral: '#ffffff' };
-  function labelSide(v) {
-    const f = DATA.meta.friendly_team, t = v.def.team;
-    if (t === 0 || f === 0) return 'neutral';
-    return t === f ? 'friendly' : 'enemy';
-  }
-
   // ---------- 基地（争霸 A–D / 单基地）：贴地标记 ----------
   // 几何来自 mapBases[key]（客户端 .sc2 提取，世界坐标；scene x = −游戏 x 镜像）；
   // 状态口径与 2D 地图、顶部基地状态条共用 utils/baseStatus.js（seek 折叠：clock ≤ t 的最后一条）。
@@ -1315,8 +1304,6 @@ export function initPlayback(container, store) {
   //   · 场景（建筑/树）才 raycast，且**每 occlStride 帧只检测一辆车**（轮转），
   //     其余帧复用上次结果；
   //   · 单次 raycast 超过 4ms（大图三角形多）自动拉长步长，避免掉帧。
-  const LABEL_OPACITY = 1;
-  const LABEL_BLOCKED_OPACITY = 0.35;
   const LABEL_OCCL_SAMPLES = 16;
   const LABEL_OCCL_BUDGET_MS = 4;
   let occlCursor = 0, occlTick = 0, occlStride = 1, occlCostMs = 0;
@@ -1357,8 +1344,8 @@ export function initPlayback(container, store) {
     if (++occlTick < occlStride) return;   // 未到检测帧：沿用缓存结果
     occlTick = 0;
     const v = V[occlCursor++ % n];
-    if (!v || !v.label || !v.label.visible) return;
-    const a = v.label.position;
+    if (!v || !v.labelAnchor || !v.group.visible || !store.labelsOn) return;
+    const a = v.labelAnchor;
     let blocked = terrainBlocksAim(camera.position.x, camera.position.y, camera.position.z,
                                    a.x, a.y, a.z);
     if (!blocked) {
@@ -1371,263 +1358,67 @@ export function initPlayback(container, store) {
     v.labelOccluded = blocked;
   }
 
-  // ---------- 标签：单块屏幕占比恒定覆盖元素（名牌 + 血量条）----------
-  // 名牌 = 一行「车型名 · 玩家昵称」；血量条在卡片内、名字下方，**沿用最初版血条的格式**
-  //（暗槽 #0a0e13 / #3a4450 描边 + 队色纵向渐变填充 + 浅灰 ghost + 条内白字黑描边）。
-  // 卡片与文字的样式对齐 WotbTools 2D 版（.pb-labels）：半透明黑底 + 极淡白边 + 阵营色文字。
-  const LABEL_FRAC = 0.0302;        // 卡片高 ≈ 视口高的 3.02%（653px 视口 → 72×19.7 CSS px）
-  const LABEL_ASPECT = 512 / 140;   // 512×140：名牌一行 + 血量条 + **实时装填条**（最下一行）
-  const LABEL_TEX_BASE_H = 140;     // 设计高度：drawLabel 里的绝对像素都以此为准
-  const TEX_SS = 1.5;               // 贴图超采样：略高于 1:1，兼顾清晰与显存
-
-  // 贴图分辨率跟随**实际屏幕尺寸**（修「发糊」）：卡片在屏上恒为视口高的 LABEL_FRAC，贴图只需
-  // 覆盖这段像素（×超采样）。旧实现固定 512×128 不随屏幕变——1080p 下卡片只有 ~18 CSS px 高，
-  // 贴图被 mipmap 缩小 7 倍，昵称落到屏上约 3.7 px 并被三线性平均成一团糊。绘制布局仍按设计
-  // 坐标系写，由 drawLabel 用 ctx.scale(px / LABEL_TEX_BASE_H) 映射。
-  function labelTexSize() {
-    // 与主画布同口径（标签已并入主画布渲染）：按 renderer 的实际像素比取纹理尺寸——
-    // 低画质档不再按 2× 超采样，那份显存与逐帧上传开销随之消失
-    const pr = renderer ? renderer.getPixelRatio() : Math.min(window.devicePixelRatio || 1, 2);
-    const cssH = Math.max(0, container.clientHeight) * LABEL_FRAC;
-    const h = Math.max(12, Math.min(LABEL_TEX_BASE_H, Math.round(cssH * pr * TEX_SS)));
-    return { h, w: Math.round(h * LABEL_ASPECT) };   // canvas 尺寸必须是整数
-  }
-  // 视口变化后重算贴图尺寸（屏幕占比恒定 → 贴图像素数必须跟着变，否则又会发糊）
-  function resizeLabelCanvases() {
-    const { w, h } = labelTexSize();
-    for (const v of V) {
-      if (!v.labelCanvas || (v.labelCanvas.width === w && v.labelCanvas.height === h)) continue;
-      v.labelCanvas.width = w; v.labelCanvas.height = h;
-      v.labelDirty = true;   // 尺寸变了必须重绘（内容检测会早退）
-      drawLabel(v);
-    }
-  }
-
-  function updateLabels() {
-    updateLabelOcclusion();   // 软遮挡：每 occlStride 帧检测一辆车
-    const k = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * LABEL_FRAC;
-    for (const v of V) {
-      if (!v.label) continue;
-      // 标签为覆盖场景根级对象：世界位置 = 车体位置 + 悬浮偏移（不再从父节点继承）
-      const d = camera.position.distanceTo(v.group.position);
-      // 严格 d·k：屏幕占比对所有车恒定（旧 max(0.3,…) 钳位让近处车的标签明显偏小，
-      // 是尺寸不一致的来源）；下限仅防 d→0 退化
-      const s = Math.max(0.05, d * k);
-      v.label.scale.set(s * LABEL_ASPECT, s, 1);
-      // 悬浮高度随距离缩放（近处贴车顶、远处上限 6m）
-      v.label.position.copy(v.group.position);
-      v.label.position.y += Math.min(6, Math.max(3.25, d * 0.045));
-      // 车辆不可见时标签同步隐藏（原先经父子关系继承，现根级需显式管理）
-      v.label.visible = v.group.visible && store.labelsOn;
-      // 软遮挡：被地形/静态场景挡住时弱化（永不隐藏，下限 LABEL_BLOCKED_OPACITY）
-      const target = v.labelOccluded ? LABEL_BLOCKED_OPACITY : LABEL_OPACITY;
-      if (v.label.material.opacity !== target) v.label.material.opacity = target;
-      // 装填条：按 T 时间归并求值（不累加计时器）→ **逐发状态**（客户端 Full/Active/Inactive）。
-      // 重绘门控必须保留状态拓扑：aggregate fill 会把 loading≈100% 与完成后的 A|A|A
-      // 都压成 100%，导致整条 loading 永久卡住。视觉签名 = 每格 state + loading 的 1% 进度桶。
-      // 求值只服务标签卡片（v.reloadShells 仅 drawLabel 消费）且**只依赖 T**：
-      // 关标签时整段跳过；T 未变（暂停）时复用上次结果——此前两者都照跑，是每帧最大的固定 CPU 项。
-      if (store.labelsOn && v.reloadT !== T) {
-        v.reloadT = T;
-        const shells = shellStatesAt(v.reloadEvents, v.reloadFires, T, v.reloadSize, v.reloadDurations);
-        v.reloadShells = shells;
-        const visualKey = reloadVisualKey(shells);
-        if (visualKey !== v.reloadVisualKey) { v.reloadVisualKey = visualKey; v.labelDirty = true; drawLabel(v); }
-      }
-    }
-  }
-
-  function makeLabel(v) {
-    const { w, h } = labelTexSize();
-    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-    v.labelCanvas = cv;
-    const tex = new THREE.CanvasTexture(cv);
-    tex.colorSpace = THREE.SRGBColorSpace;   // canvas 本身是 sRGB，颜色直出
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: tex, depthTest: false, depthWrite: false,
-      // 卡片本体不透明（描边/底色/文字/血条全部 1.0 alpha，见 drawLabel）；这里保留
-      // transparent 只为圆角外的透明像素——置 false 会让圆角变成黑方块。
-      transparent: true, opacity: LABEL_OPACITY,   // 由软遮挡逐帧驱动（1 / 0.35）
+  // HTML label contents are isolated in the child overlay, capped at 10 Hz.
+  // Anchors use camera projection at render FPS without mutating Vue state.
+  let reloadStateAt = () => null;
+  let labelsWrittenMs = -Infinity;
+  let labelsTime = null;
+  const labelClip = new THREE.Vector4();
+  function publishLabels(force = false) {
+    if (!DATA || !labelOverlay || !store.labelsOn) return;
+    const now = performance.now();
+    if (!force && (T === labelsTime || now - labelsWrittenMs < 100)) return;
+    labelsWrittenMs = now;
+    labelsTime = T;
+    labelOverlay.setLabels(V.map((v) => {
+      const destroyed = deathAt(v, T);
+      const current = hpAt(v, T);
+      const pct = Number.isFinite(v.def.max_hp) && v.def.max_hp > 0
+        ? Math.max(0, Math.min(100, current / v.def.max_hp * 100)) : null;
+      const friendlyTeam = DATA.meta.friendly_team;
+      const friendly = [1, 2].includes(friendlyTeam) && [1, 2].includes(v.def.team)
+        ? v.def.team === friendlyTeam : null;
+      const ghost = ghostByEid.get(v.def.eid);
+      return {
+        eid: v.def.eid, playerName: v.def.name || '', tankName: v.def.tank_name || '',
+        friendly, destroyed, lastKnown: false,
+        hp: { current, pct, state: destroyed ? 'DESTROYED' : 'CURRENT' },
+        reload: destroyed ? null : reloadStateAt(v.def.eid, T, v.reloadSize),
+        hpGhost: ghost ? { prevPct: (ghost.fromFrac + ghost.lossFrac) * 100, nextPct: ghost.fromFrac * 100 } : null,
+        hpFlash: flashByEid.has(v.def.eid),
+      };
     }));
-    sp.renderOrder = 999;   // 最后绘制：水面/半透明层不得覆盖标签；不写深度避免
-                            // 透明四边形裁掉后画的相邻标签（14 车聚簇时必现）
-    sp.scale.set(10, 2.5, 1); sp.position.y = 6.2;
-    v.label = sp; v.labelHp = null; v.labelDead = null;
-    drawLabel(v);
-    return sp;
   }
-
-  // 圆角矩形路径（卡片/血条/进度条通用）
-  function rrPath(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
+  function setLabelPrefs() {
+    labelsTime = null;
+    publishLabels(true);
+    invalidate();
   }
-
-  // #rrggbb → 亮度系数 k 的 css 颜色（最初版血条的纵向渐变用）
-  function shadeCss(hex, k) {
-    const n = parseInt(hex.slice(1), 16);
-    const c = (s) => Math.min(255, Math.max(0, Math.round(((n >> s) & 255) * k)));
-    return `rgb(${c(16)},${c(8)},${c(0)})`;
+  function updateLabels() {
+    if (!labelOverlay) return;
+    camera.updateMatrixWorld();
+    for (const v of V) {
+      const d = camera.position.distanceTo(v.group.position);
+      v.labelAnchor.copy(v.group.position);
+      v.labelAnchor.y += Math.min(6, Math.max(3.25, d * 0.045));
+    }
+    updateLabelOcclusion();
+    for (const v of V) {
+      labelClip.set(v.labelAnchor.x, v.labelAnchor.y, v.labelAnchor.z, 1)
+        .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix);
+      const w = labelClip.w;
+      const x = labelClip.x / w, y = labelClip.y / w, z = labelClip.z / w;
+      const visible = v.group.visible && store.labelsOn && w > 0
+        && Number.isFinite(x) && Number.isFinite(y) && z >= -1 && z <= 1
+        && x >= -1 && x <= 1 && y >= -1 && y <= 1;
+      labelOverlay.setAnchor(v.def.eid, {
+        x: visible ? (x + 1) * container.clientWidth / 2 : 0,
+        y: visible ? (1 - y) * container.clientHeight / 2 : 0,
+        visible, occluded: v.labelOccluded,
+      });
+    }
+    publishLabels();
   }
-
-  // 名牌 + 血量条（同一张卡片）。卡片与文字样式对齐 WotbTools 2D 版（.pb-labels +
-  // data/mapTeamColors.js：ALLY=绿 #4ade80 / ENEMY=红 #f87171，未知阵营白）；
-  // 血量条沿用最初版格式（暗槽 + 队色纵向渐变 + 浅灰 ghost + 条内白字黑描边）。
-  // 变化检测必须在清空画布之前——先 clear 再早退会得到永久空白标签。
-  function drawLabel(v) {
-    const hp = hpAt(v, T), dead = deathAt(v, T);
-    if (hp === v.labelHp && dead === v.labelDead && !v.labelDirty) return;
-    v.labelHp = hp; v.labelDead = dead; v.labelDirty = false;
-    const cv = v.labelCanvas, ctx = cv.getContext('2d');
-    // 画布像素尺寸随屏幕尺寸变（labelTexSize），布局仍按 512×128 设计坐标系绘制
-    const ls = cv.height / LABEL_TEX_BASE_H;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    ctx.setTransform(ls, 0, 0, ls, 0, 0);
-    // 最初版血条用的队色（深绿/深红口径，teamColors.js）与阵亡压暗色
-    const team = '#' + new THREE.Color(teamColor(v)).getHexString();
-    const base = team;   // 血条填充只在存活时画（阵亡样式见下）
-    // 存活/阵亡两套样式（纯函数，见 scene/labelStyle.js）：阵亡整体去队色 + 卡片删除线
-    // + 数字转灰 + 不画装填条，与存活车一眼可分
-    const st = labelVisual(dead);
-    const teamText = LABEL_TEAM_TEXT[labelSide(v)];
-    // —— 卡片（2D .pb-labels）：半透明黑底 + 极淡白描边；无阵营色底/描边/左竖条 ——
-    ctx.save();
-    // shadowBlur/shadowOffset 不随 CTM 缩放，需按 ls 手动等比（否则小贴图下投影相对过重）
-    ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 14 * ls; ctx.shadowOffsetY = 5 * ls;
-    rrPath(ctx, 26, 6, 460, 116, 18);
-    ctx.fillStyle = st.cardFill;            // 存活=2D 同款半透明黑；阵亡=更暗更实
-    ctx.fill();
-    ctx.restore();
-    // 受击闪（FLASH_MS）：描边瞬亮，弱化而非隐藏；阵亡不闪（不再掉血）
-    const flashing = st.flash && (flashByEid.get(v.def.eid) || 0) > performance.now();
-    rrPath(ctx, 26, 6, 460, 116, 18);
-    ctx.lineWidth = flashing ? 10 : st.cardStrokeW;
-    ctx.strokeStyle = flashing ? 'rgba(255,255,255,.5)' : st.cardStroke;
-    ctx.stroke();
-    // —— 一行文字：车型名 · 玩家昵称（阵营色 + 黑色柔光；同款样式，靠分隔点区分）——
-    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-    ctx.lineJoin = 'round';
-    const name = st.namePrefix + (v.def.nickname || 'Unknown');
-    const tank = v.def.tank_name || (v.def.tank_id ? 'tank_' + v.def.tank_id : '');
-    const starW = (v.def.is_author && !dead) ? 40 : 0;
-    const rowText = tank ? tank + ' · ' + name : name;
-    const rowFont = (px) => `700 ${px}px "Segoe UI", "Microsoft YaHei", sans-serif`;
-    let tfs = 42;
-    const rowWidth = () => { ctx.font = rowFont(tfs); return starW + ctx.measureText(rowText).width; };
-    while (tfs > 24 && rowWidth() > 430) tfs -= 2;   // 超宽自适应缩字号（卡片内宽 460 − 留白）
-    ctx.font = rowFont(tfs);
-    // 文字：阵营色 + 黑色柔光（2D 里 .pb-label-* 用阵营色、.pb-hp-num 用 text-shadow）；
-    // 阵亡只把文字压到 65%（2D §24 同款），卡片本身不变
-    ctx.shadowColor = 'rgba(0,0,0,.9)'; ctx.shadowBlur = 10 * ls;
-    let tx = 256 - rowWidth() / 2;
-    if (starW) {
-      ctx.fillStyle = '#e8b23c'; ctx.fillText('★', tx, 36);
-      tx += starW;
-    }
-    ctx.fillStyle = st.nameColor || teamText;
-    ctx.fillText(rowText, tx, 36);
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
-    // —— 血量条（**最初版格式**）：暗槽 + 队色纵向渐变填充 + 浅灰 ghost + 条内白字黑描边 ——
-    const frac = v.def.max_hp > 0 ? Math.max(0, Math.min(1, hp / v.def.max_hp)) : 0;
-    const bx = 56, by = 60, bw = 400, bh = 44;
-    rrPath(ctx, bx, by, bw, bh, 11);
-    ctx.fillStyle = st.hpTrackFill; ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = '#3a4450'; ctx.stroke();
-    if (frac > 0 && !dead) {
-      const fg = ctx.createLinearGradient(0, by + 3, 0, by + bh - 3);
-      fg.addColorStop(0, shadeCss(base, 1.35));
-      fg.addColorStop(.5, base);
-      fg.addColorStop(1, shadeCss(base, .68));
-      rrPath(ctx, bx + 3, by + 3, Math.max(16, (bw - 6) * frac), bh - 6, 8);
-      ctx.fillStyle = fg; ctx.fill();
-    }
-    // lost-HP 幽灵段（GHOST_MS）：最初版为浅灰不透明段（与队色填充区分）
-    const ghost = ghostByEid.get(v.def.eid);
-    if (ghost && !dead && ghost.toFrac > ghost.fromFrac) {
-      const gw = (bw - 6) * (ghost.toFrac - ghost.fromFrac);
-      if (gw > 1) {
-        rrPath(ctx, bx + 3 + (bw - 6) * ghost.fromFrac, by + 3, gw, bh - 6, 8);
-        ctx.fillStyle = '#c8d2de';
-        ctx.fill();
-      }
-    }
-    // 血量数字（最初版格式：条上居中、白字 + 黑描边）
-    const txt = v.def.max_hp > 0 ? `${hp} / ${v.def.max_hp}` : '—';
-    ctx.font = '700 30px "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.lineWidth = 5; ctx.strokeStyle = '#000000';
-    ctx.strokeText(txt, 256, by + bh / 2 + 1);
-    ctx.fillStyle = st.hpTextColor; ctx.fillText(txt, 256, by + bh / 2 + 1);
-    // —— 实时装填条（血量条下方）：**逐发**绘制，对齐客户端 OTM 标记的 `GunStatus`
-    // 客户端：`VehicleUIObjectMarker.yaml` 的 GunNHealthContainer 里、血量条之下的 70×3 细条；
-    // 结构 = 一根整条暗底（fill rgba(0,0,0,.565)）+ `ShellBack` 里 N 枚 `ShellItem`（等分父宽），
-    // 每枚按状态染色（`GunStatusAtlas.style.yaml`）：loaded 1.0 / used 0.250980 /
-    // loading 底图隐去 + `#Reload` 进度 0.815686。
-    // 客户端靠弹壳美术自带留白分隔；我们没有美术，改为把分格间隙做够（≈2 屏幕 px）——
-    // **满弹时也要能数出发数**（此前 4 设计 px ≈ 0.6 屏幕 px，满条看着就是一整条）。
-    // 相位流只覆盖**本方全队**：无相位流的车保持满条（= 已装填），不猜。
-    // 几何对齐客户端（`VehicleUIObjectMarker.yaml` + `VehicleUIObjectMarkerHealth.style.yaml`）：
-    //   血条 70×14，装填条框（GunStatusBattle）70×3，条本体（ShellBack）**68×2**、位置 [1,0]，
-    //   即：**条高/血条高 = 2/14 ≈ 0.143**、左右各内缩 1px、BottomUp 紧贴血条下方。
-    //   我们血条高 44 设计 px → 条高 44×0.143 ≈ **6**；2px 高的块谈不上圆角 → 近方角。
-    //   暗底仍是客户端 `GunStatus` 的 fill rgba(0,0,0,.565) 那一根整条。
-    // 只给**本方**画：装填相位（subtype 15/16/17）与方法 35 都**只广播本方全队**，
-    // 给敌方画出来的只是"假满条"；客户端同样按标记角色挂 `marker-no-reload-status` 隐藏。
-    const friendly = DATA.meta && v.def.team === DATA.meta.friendly_team;
-    // **无装填遥测 = unknown，整条不画**（`shellStatesAt` 返回 null）。绝不兜底成满条：
-    // reloads = 0 时旧实现画出一根永远不动的白条（2026-10-02 线上故障）。
-    const shells = v.reloadShells;
-    const sx = 56, sy = 104, sw = 400, sh = 6;
-    if (st.showReload && friendly && shells && shells.length) {
-      rrPath(ctx, sx, sy, sw, sh, 1.5);
-      ctx.fillStyle = 'rgba(0, 0, 0, .56)'; ctx.fill();            // 与客户端整条暗底 0.565 同档
-    }
-    const rn = shells ? shells.length : 0;
-    const gap = rn > 1 ? 14 : 0;                                   // 固定条宽 ÷ N（客户端同式）+ 可见间隙
-    const inX = 1, inY = 1;                                        // 客户端 68 = 70−2 的内缩
-    const innerW = sw - inX * 2;
-    const segW = rn > 1 ? (innerW - gap * (rn - 1)) / rn : innerW;
-    for (let k = 0; st.showReload && friendly && shells && k < rn; k++) {
-      const st = shells[k] || { state: 'empty', progress: 0 };
-      const x = sx + inX + k * (segW + gap);
-      const f = st.state === 'full' ? 1
-        : st.state === 'loading' ? Math.max(0, Math.min(1, st.progress)) : 0;
-      if (st.state === 'locked' || st.state === 'empty') {
-        // 空位 = 暗槽 + 极淡填充（读作"空条" C）。注意：客户端 used(.25)/locked(.69) 是**弹壳
-        // 美术**的 alpha，不是纯色填充——把 .69 抄到纯白填充上会亮得像"已装填"（弹鼓空槽曾被
-        // 看成 A）。我们无美术，两档统一 .18：能数格、但明确是空。
-        rrPath(ctx, x, sy + inY, segW, sh - inY * 2, 1);
-        ctx.fillStyle = 'rgba(244,248,252,.18)';
-        ctx.fill();
-      } else if (f > 0) {
-        rrPath(ctx, x, sy + inY, Math.max(1.5, segW * f), sh - inY * 2, 1);
-        ctx.fillStyle = st.state === 'loading' ? 'rgba(244,248,252,.82)' : '#f4f8fc';
-        ctx.fill();
-      }
-    }
-    if (st.strike) {
-      // 删除线：卡片对角一条灰线（"划掉"语义）。**必须最后画**——血条与血量数字是不透明
-      // 内容，先画会被它们整段盖住（此前就是这个 bug：线只在卡面空白处露出来）。
-      ctx.save();
-      rrPath(ctx, 26, 6, 460, 116, 18);
-      ctx.clip();
-      ctx.beginPath();
-      ctx.moveTo(30, 118); ctx.lineTo(482, 10);
-      ctx.lineCap = 'round';
-      ctx.lineWidth = st.strikeW; ctx.strokeStyle = st.strikeColor;
-      ctx.stroke();
-      ctx.restore();
-    }
-    v.label.material.map.needsUpdate = true;
-  }
-
 
   function buildVehicles() {
     // 低模车体：俯视六边形轮廓（平尾 + 尖首）挤压成棱柱，配合尾部散热格栅——
@@ -1670,7 +1461,7 @@ export function initPlayback(container, store) {
         g.add(ring);
       }
       const v = { def, group: g, turretG, gunPivot, meshHull: hull };
-      labelScene.add(makeLabel(v));   // 标签在独立覆盖画布渲染（满 DPR，清晰度与画质档解耦）
+      v.labelAnchor = new THREE.Vector3();
       scene.add(g);
       V.push(v);
     }
@@ -1839,7 +1630,7 @@ export function initPlayback(container, store) {
   // 低模显隐（标签与作者标记环除外；GLB 根在 scene 上不经过 group）
   function setLowPoly(v, show) {
     for (const c of v.group.children) {
-      if (c === v.label || c.userData.keepWithGlb) continue;
+      if (c.userData.keepWithGlb) continue;
       c.visible = show;
     }
   }
@@ -2117,7 +1908,7 @@ export function initPlayback(container, store) {
       ghostByEid.set(eid, { fromFrac, toFrac, untilMs: nowMs + GHOST_MS * FX_SCALE });
     }
     flashByEid.set(eid, nowMs + FLASH_MS * FX_SCALE);
-    v.labelDirty = true;   // 标签重绘由反馈触发（否则只在 HP 整数变化时重绘）
+    labelsTime = null;   // feedback expires independently of playback time
   }
 
   // 击毁爆散：双层扩散环 + 中心球，基准 700ms × FX_SCALE 内扩张并淡出
@@ -2157,14 +1948,14 @@ export function initPlayback(container, store) {
     for (const [eid, g] of ghostByEid) {
       if (now >= g.untilMs) {
         ghostByEid.delete(eid);
-        const v = vehicleByEid(eid); if (v) v.labelDirty = true;
+        labelsTime = null;
         invalidate();   // 到期要重画标签（清幽灵段），否则脏帧会停在这一帧
       }
     }
     for (const [eid, until] of flashByEid) {
       if (now >= until) {
         flashByEid.delete(eid);
-        const v = vehicleByEid(eid); if (v) v.labelDirty = true;
+        labelsTime = null;
         invalidate();
       }
     }
@@ -2269,39 +2060,34 @@ export function initPlayback(container, store) {
   }
 
   // ---------- 名册 ----------
+  // 静态身份（eid / 物理 team / 昵称 / 车型）与运行时状态（hp / 阵亡 / 跟随）**分开放**：
+  // 前者只在会话开始时建一次，后者每次投影都按当前 T 重算（见 scene/rosterState.js）。
+  // 名册的物理阵营色由呈现层按 `team` 取语义 token（--color-team-1/2），内核不再下发颜色——
+  // 否则「Team 1 是什么颜色」会有两份事实源。
+  const rosterRowsByEid = new Map();
   function buildRoster() {
-    store.roster.team1 = [];
-    store.roster.team2 = [];
-    store.roster.unknown = [];
-    for (const v of V) {
-      const d = v.def;
-      const entry = {
-        eid: d.eid,
-        dot: '#' + new THREE.Color(teamColor(v)).getHexString(),
-        nick: d.is_author ? '★ ' + (d.nickname || 'Unknown') : (d.nickname || 'Unknown'),
-        tank: d.tank_name || (d.tank_id ? 'tank_' + d.tank_id : ''),
-        frac: 1,
-        dead: false,
-        followed: false,
-      };
-      v.rosterEntry = entry;
-      // 显式三元分组：未知阵营（team=0，联表失败/观察者）进中性组，fail-visible
-      // 且绝不污染任何一队（旧 `team!==2→team1` 把 Unknown 划给队伍 1）
-      if (d.team === 2) store.roster.team2.push(entry);
-      else if (d.team === 1) store.roster.team1.push(entry);
-      else store.roster.unknown.push(entry);
+    const groups = buildRosterRows(V);
+    rosterRowsByEid.clear();
+    for (const key of ROSTER_GROUPS) {
+      const rows = groups[key].map((row) => ({
+        ...row, hp: 0, maxHp: 0, dead: false, followed: false,
+      }));
+      for (const row of rows) rosterRowsByEid.set(row.eid, row);
+      store.roster[key] = rows;
     }
   }
+  /** 把当前 T 的运行时状态投影进名册行（只在值真的变了时写，避免无谓的 VDOM patch） */
   function updateRoster() {
+    const projected = projectRoster(V, T);
     for (const v of V) {
-      const e = v.rosterEntry;
-      if (!e) continue;
-      const hp = hpAt(v, T), dead = deathAt(v, T);
-      const frac = v.def.max_hp > 0 ? hp / v.def.max_hp : 0;
-      const w = Math.round(100 * frac);
-      if (e.frac !== w) e.frac = w;
-      if (e.dead !== dead) e.dead = dead;
-      if (e.followed !== (FOLLOW_EID === v.def.eid)) e.followed = FOLLOW_EID === v.def.eid;
+      const e = rosterRowsByEid.get(v.def.eid);
+      const p = projected.get(v.def.eid);
+      if (!e || !p) continue;
+      if (e.hp !== p.hp) e.hp = p.hp;
+      if (e.maxHp !== p.maxHp) e.maxHp = p.maxHp;
+      if (e.dead !== p.dead) e.dead = p.dead;
+      const followed = FOLLOW_EID === v.def.eid;
+      if (e.followed !== followed) e.followed = followed;
     }
   }
 
@@ -2347,7 +2133,6 @@ export function initPlayback(container, store) {
         }
       });
     }
-    drawLabel(v);
   }
 
   // 按需渲染的脏标记：状态跳变（seek/换相机/开关节/尺寸变化/特效到期）必须显式置脏，
@@ -2414,9 +2199,7 @@ export function initPlayback(container, store) {
     updateImpacts();      // wall-clock transient：暂停时也继续自然淡出
     updateTransients();
     renderer.render(scene, camera);
-    // 标签/飘字覆盖层：同 renderer 的第二次 render（不清屏、不写深度）。两者都是
-    // depthTest:false 的覆盖精灵，绘制顺序由 renderOrder 决定（飘字 1001 > 标签 999），
-    // 与独立画布时的视觉语义一致；省掉第二个 WebGL 上下文与两画布合成。
+    // 伤害飘字覆盖层：同 renderer 的第二次 render；车辆标签由 HTML overlay 呈现。
     renderer.autoClear = false;
     renderer.render(labelScene, camera);
     renderer.autoClear = true;
@@ -2471,6 +2254,7 @@ export function initPlayback(container, store) {
     const now = performance.now();
     if (!force && now - hudWrittenMs < HUD_INTERVAL_MS) return;
     hudWrittenMs = now;
+    if (force) publishLabels(true);
     store.timer = gameTimerLabel(T);
     // 顶栏：双方队伍总血量（与上游 3D 视图同口径：各队 max_hp 汇总；未知阵营不计入任一方，
     // 见 teamHpTotals）。随 HUD 10Hz 节流写入即可——血量每秒变化远低于此，没必要每帧
@@ -2518,6 +2302,9 @@ export function initPlayback(container, store) {
     resetScore();     // 比分为单调游标，seek 后必须从头推进（否则分数不回落）
     winnerShown = false; store.banner = null;
     tick();
+    // 名册是**状态在时刻**投影，而 tick() 在暂停 / 静止时会走「非 busy 提前返回」，
+    // 不重跑 updateRoster；seek 必须自己补一次，否则拖动进度条时名册血量停在旧值。
+    updateRoster();
     writeHud(true);   // seek 是状态跳变：立即把 HUD/进度条对齐到新 T（不等下一个降频窗口）
     invalidate();
   }
@@ -2611,16 +2398,12 @@ export function initPlayback(container, store) {
     currentMapBases = null;
     for (const v of V) {
       if (v.glb) scene.remove(v.glb);          // clone 与模板共享资源：不在此 dispose
-      if (v.label) {
-        labelScene.remove(v.label);
-        if (v.label.material) {
-          if (v.label.material.map) v.label.material.map.dispose();
-          v.label.material.dispose();
-        }
-      }
       if (v.group) { scene.remove(v.group); disposeObject3D(v.group); }
     }
     V = [];
+    labelOverlay?.clear();
+    labelsTime = null; labelsWrittenMs = -Infinity;
+    reloadStateAt = () => null;
     for (const o of [mapPlane, terrainMesh, mapScenery, groundMesh, gridHelper]) {
       if (o) { scene.remove(o); disposeObject3D(o); }
     }
@@ -2656,6 +2439,7 @@ export function initPlayback(container, store) {
     store.roster.team1 = [];
     store.roster.team2 = [];
     store.roster.unknown = [];
+    rosterRowsByEid.clear();
   }
 
   async function loadData(source) {
@@ -2751,45 +2535,17 @@ export function initPlayback(container, store) {
     if (!current()) return false;   // 地图资产期间被取代：后面全是 DATA 派生的会话状态
     buildVehicles();
     buildRoster();
-    // 实时装填相位（`DATA.reloads`，arena subtype 15/17；**仅本方全队**）→ 按 eid 归到车。
-    // 采用**逐发状态**模型（对齐客户端 OTM 的 ShellItem）：开火消耗一发；f2=7 只表示
-    // 夹内推弹/射击间隔，不补弹；f2=6 弹鼓逐发补槽；f2=3 整夹重装补满。故还需要
-    // 本车的开火时刻。求值是纯函数（时间归并），
-    // 不做累加计时器 → seek / 拖动进度条天然正确。无相位流的车 = **无遥测 → 不画装填条**
-    // （`shellStatesAt` 返回 null），不得兜底成满条。
-    {
-      const reloadByEid = groupByVehicle(DATA.reloads);
-      const effByEid = groupByVehicle(DATA.reload_effective);   // 方法 35：权威有效装填时长
-      const firesByEid = new Map();
-      for (const s of DATA.shots || []) {
-        const eid = s.shooter_eid != null ? s.shooter_eid : s.shooter;
-        if (eid == null || !Number.isFinite(s.t_fire)) continue;
-        let a = firesByEid.get(eid);
-        if (!a) { a = []; firesByEid.set(eid, a); }
-        a.push(s.t_fire);
-      }
-      for (const a of firesByEid.values()) a.sort((x, y) => x - y);
-      for (const v of V) {
-        v.reloadEvents = reloadByEid.get(v.def.eid) || [];
-        v.reloadFires = firesByEid.get(v.def.eid) || [];
-        v.reloadDurations = effByEid.get(v.def.eid) || [];
-        v.reloadSize = inferMagazineSize(v.reloadEvents);
-        v.reloadShells = null;       // 首帧前空值 = 不画（有遥测时由 updateLabels 求值）
-        v.reloadVisualKey = null;    // 置脏：首帧按 N 格重绘一次（否则开局一直是一根未分割的条）
-        v.labelDirty = true;
-      }
-      // N 以**客户端静态数据**为主（`configs[].burst_size` == 客户端 XML 的 `<clip><count>`，
-      // 已对 30 台车验证一致），相位推断取较大者（回放真值可纠正配置歧义）；都没有 → 1，不猜。
-      // 这决定**有遥测**时画几格；无遥测的车不画条，与 N 无关。
-      for (const v of V) {
-        if (!(v.def.tank_id > 0)) continue;
-        assetProvider.json(`/tank/${v.def.tank_id}.json`).then((t) => {
-          const n = resolveMagazineSize(t, v.reloadEvents);
-          if (n !== v.reloadSize) {
-            v.reloadSize = n; v.reloadVisualKey = null; v.labelDirty = true;   // 下一帧按新 N 重绘
-          }
-        }).catch(() => {});
-      }
+    reloadStateAt = createReloadStateResolver({ ...DATA, friendlyTeam: DATA.meta.friendly_team });
+    for (const v of V) {
+      v.reloadEvents = (DATA.reloads || []).filter((e) => e.eid === v.def.eid);
+      v.reloadSize = inferMagazineSize(v.reloadEvents);
+      if (!(v.def.tank_id > 0)) continue;
+      assetProvider.json(`/tank/${v.def.tank_id}.json`).then((tank) => {
+        if (!current()) return;
+        v.reloadSize = resolveMagazineSize(tank, v.reloadEvents);
+        labelsTime = null;
+        invalidate();
+      }).catch(() => {});
     }
     buildTransientSources();   // 战斗反馈事件源（伤害/击毁）
     buildBases();   // 基地贴地标记（争霸 A–D / 单基地）
@@ -2859,12 +2615,17 @@ export function initPlayback(container, store) {
     setCam,
     setFollow,
     setGlb: (on) => { if (Q.allowGlb || !on) applyGlbToggle(on); invalidate(); },
-    // 标签开关只切名牌精灵，**不整层隐藏**：覆盖层上还有伤害飘字（1001 > 999），
-    // 它是战斗反馈而非名牌——关名牌时数字仍要可见（updateLabels 每帧也会重算同一条件）。
-    setLabels: (on) => {
-      store.labelsOn = on;
-      for (const v of V) if (v.label) v.label.visible = on && v.group.visible;
-      invalidate();
+    /**
+     * 共享标签偏好（唯一 owner = usePlaybackPreferences）。契约：
+     * - `enabled:false` → 整层名牌隐藏（覆盖层上还有伤害飘字，它是战斗反馈而非名牌，
+     *   关名牌时数字仍要可见——updateLabels 每帧也会重算同一条件）；
+     * - `showPlayerName / showTankName / showHp / showReload` → 名牌内部的行开关。
+     */
+    setLabelPrefs: (prefs) => {
+      const enabled = !prefs || prefs.enabled !== false;
+      store.labelsOn = enabled;
+      setLabelPrefs(prefs || {});
+      if (camera) updateLabels();
     },
     setQuality,
     setPaused,

@@ -48,6 +48,8 @@ import {
   victimFeedbackAllowedV2,
 } from '../utils/battlePlaybackV2'
 import { projectVehicleState } from '../utils/playbackVehicleState'
+import { createReloadStateResolver, groupByVehicle, resolveMagazineSize } from '../scene/reloadBar.js'
+import { assetProvider } from '../scene/assetProvider.js'
 import { computeVehicleMarkerSize } from '../utils/vehicleMarkerSizing'
 import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
 import { playbackSafeInsetOwnership } from '../utils/playbackSafeInsets.js'
@@ -98,6 +100,8 @@ const props = defineProps({
   loop: { type: Boolean, default: false },
   /** V2 canonical battle-playback-dataset；未加载时为空。 */
   playbackV2: { type: Object, default: null },
+  /** Raw Playback reload evidence stays outside the generic canonical/HTTP dataset. */
+  reloadTelemetry: { type: Object, default: null },
   /**
    * 是否为当前可见的模式（审计 PB-05）。false 时暂停播放、不响应快捷键——
    * 工作台用 v-show 保留实例，隐藏的回放不能再抢空格 / 方向键。
@@ -148,6 +152,40 @@ watch(image, async (img) => {
 
 // V2 canonical dataset 是唯一 playback 事实源（cleanup：移除 legacy overview.playback）。
 const playback = computed(() => props.playbackV2 || null)
+const reloadStateAt = computed(() => createReloadStateResolver(props.reloadTelemetry))
+const reloadVehiclesByAccount = computed(() => {
+  const byAccount = new Map()
+  for (const vehicle of props.reloadTelemetry?.vehicles || []) {
+    // Ambiguous entity identity is unknown; do not combine two independent gun timelines.
+    if (byAccount.has(vehicle.account_id)) byAccount.set(vehicle.account_id, null)
+    else byAccount.set(vehicle.account_id, vehicle)
+  }
+  return byAccount
+})
+const reloadMagazineSizes = ref(new Map())
+let reloadAssetToken = 0
+watch(() => props.reloadTelemetry, async (telemetry) => {
+  const token = ++reloadAssetToken
+  reloadMagazineSizes.value = new Map()
+  if (!telemetry || !assetProvider.configured()) return
+  const events = groupByVehicle(telemetry.reloads)
+  const tankIds = new Set(telemetry.vehicles.filter((v) => v.team === telemetry.friendlyTeam && v.tank_id > 0).map((v) => v.tank_id))
+  const configs = new Map(await Promise.all([...tankIds].map(async (tankId) => {
+    try { return [tankId, await assetProvider.json(`/tank/${tankId}.json`)] }
+    catch { return [tankId, null] }
+  })))
+  if (token !== reloadAssetToken) return
+  reloadMagazineSizes.value = new Map(telemetry.vehicles.map((v) => [v.eid,
+    resolveMagazineSize(configs.get(v.tank_id), events.get(v.eid) || []),
+  ]))
+}, { immediate: true })
+
+function vehicleReloadAt(accountId, time) {
+  const telemetry = props.reloadTelemetry
+  const vehicle = reloadVehiclesByAccount.value.get(accountId)
+  if (!telemetry || !vehicle) return null
+  return reloadStateAt.value(vehicle.eid, time + telemetry.timeOrigin, reloadMagazineSizes.value.get(vehicle.eid))
+}
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => pbOverview.value.friendlyTeam)
 
@@ -1444,6 +1482,7 @@ function onKeydown(e) {
 onBeforeUnmount(() => {
   playbackLifecycleActive = false
   paletteRequestToken += 1
+  reloadAssetToken += 1
   if (rafId != null) cancelAnimationFrame(rafId)
   if (pauseRafId != null) cancelAnimationFrame(pauseRafId)
   if (mapResizeObserver) {
@@ -1608,7 +1647,7 @@ const baseVehicleStates = computed(() => {
           markerSize?.footprint,
         )
         : null
-      return { ...state, terrainAttitude }
+      return { ...state, terrainAttitude, reloadShells: vehicleReloadAt(track.accountId, currentTime.value) }
     })
     .filter(Boolean)
 })
@@ -1984,6 +2023,7 @@ function markerLabel(accountId) {
   return {
     showPlayer: labelPrefs.showPlayerName,
     showTank: labelPrefs.showTankName,
+    showReload: labelPrefs.showReload,
     tankDy: l ? l.tankDy : 0,
     blockHidden: l ? l.blockHidden : false,
     hpHidden: l ? l.hpHidden : false,
