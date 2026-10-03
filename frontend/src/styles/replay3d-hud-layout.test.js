@@ -62,10 +62,35 @@ describe('Replay3DPane HUD 定位契约', () => {
     expect(controls.body).toContain('z-index: var(--pb-z-hud)')
   })
 
-  it('D) 其余 HUD 区域各自声明定位（roster / hud / banner）', () => {
-    for (const selector of ['.roster', '.hud', '.banner']) {
+  it('D) 其余 HUD 区域各自声明定位（阵容面板 / hud / banner）', () => {
+    for (const selector of ['.team', '.hud', '.banner']) {
       expect(ruleFor(selector).body, `${selector} 缺少 position`).toContain('position: absolute')
     }
+    expect(ruleFor('.team1').body, '.team1 缺少 left').toContain('left:')
+    expect(ruleFor('.team2').body, '.team2 缺少 right').toContain('right:')
+    expect(ruleFor('.team-unknown').body).toContain('left: 50%')
+  })
+
+  /**
+   * 阵容布局回归：双方名单是**两块独立面板**（己方贴左 / 敌方贴右 + 未知阵营居中块）。
+   * 曾经被合成一条通栏（两队塞进一个 flex 容器各占一半），视觉上"双方队伍栏并成一条"；
+   * 这类改动不会让任何行为测试失败，所以在这里锁死结构。紧凑档打开时两块各占半宽——
+   * 旧版两块 240px 绝对定位互相重叠盖住场景（审计 3D-15），不得回退成重叠。
+   */
+  it('F) 阵容是左右两块独立面板；紧凑档打开时各占半宽、不重叠', () => {
+    const all = rules()
+    const bodiesOf = (selector) => all.filter((r) => r.selector === selector).map((r) => r.body).join(' ')
+    // 桌面：两块面板各自贴边、互不覆盖（team1 只声明 left、team2 只声明 right）
+    expect(bodiesOf('.team1')).toContain('left: var(--space-2)')
+    expect(bodiesOf('.team1')).not.toContain('right:')
+    expect(bodiesOf('.team2')).toContain('right: var(--space-2)')
+    expect(bodiesOf('.team2')).not.toContain('left:')
+    // 不再有把两队装进一个容器的 .side 布局
+    expect(all.some((r) => r.selector === '.side' || r.selector.endsWith(' .side'))).toBe(false)
+    // 紧凑档：打开后左右各半（两侧边界都声明），互不重叠
+    expect(bodiesOf('.pb-root.roster-open .team1')).toContain('right: 51%')
+    expect(bodiesOf('.pb-root.roster-open .team2')).toContain('left: 51%')
+    expect(bodiesOf('.pb-root.roster-open .team')).toContain('display: block')
   })
 
   it('E) 场景画布铺满并建立局部层叠上下文', () => {

@@ -253,15 +253,49 @@ describe('Replay3DPane', () => {
     expect(dots).toHaveLength(3)
     expect(dots[0].attributes('style')).toContain('rgb(1, 2, 3)')
     expect(dots[1].attributes('style')).toContain('rgb(4, 5, 6)')
-    // 未知阵营既不并入我方也不并入敌方（用中性色）
+    // 未加入任何一方（中性色）
     expect(dots[2].attributes('style')).not.toContain('rgb(1, 2, 3)')
     expect(dots[2].attributes('style')).not.toContain('rgb(4, 5, 6)')
     // 分组标题三语（未知阵营独立一段）
-    expect(wrapper.findAll('.roster h3').map(h => h.text())).toEqual([
+    expect(wrapper.findAll('.team h3').map(h => h.text())).toEqual([
       'agentReplay.team1', 'agentReplay.team2', 'agentReplay.teamUnknown',
     ])
     document.documentElement.style.removeProperty('--color-team-ally')
     document.documentElement.style.removeProperty('--color-team-enemy')
+    wrapper.unmount()
+  })
+
+  it('阵容是两块独立面板（己方 / 敌方各一块），未知阵营另起一块，不合成一条通栏', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.roster = {
+      team1: [{ eid: 1, nick: 'A', tank: 'T-62A', frac: 50, dead: false, followed: false, dot: '#26794a' }],
+      team2: [{ eid: 2, nick: 'B', tank: 'Maus', frac: 100, dead: false, followed: false, dot: '#98322a' }],
+      unknown: [],
+    }
+    await nextTick()
+    // 两块面板各自持有自己那队的名单（定位类 team1 / team2 由 CSS 钉在左右两侧）
+    const panels = wrapper.findAll('.pb-root > .team')
+    expect(panels.map(p => p.classes())).toEqual([['team', 'panel', 'team1'], ['team', 'panel', 'team2']])
+    expect(panels[0].findAll('.pl')).toHaveLength(1)
+    expect(panels[0].text()).toContain('A')
+    expect(panels[1].findAll('.pl')).toHaveLength(1)
+    expect(panels[1].text()).toContain('B')
+
+    // 未知阵营非空才多一块（fail-visible），且不混进任何一队
+    store.roster.unknown = [{ eid: 3, nick: 'C', tank: '', frac: 100, dead: false, followed: false, dot: '#f5f5f5' }]
+    await nextTick()
+    expect(wrapper.findAll('.pb-root > .team').map(p => p.classes())).toEqual([
+      ['team', 'panel', 'team1'], ['team', 'panel', 'team2'], ['team', 'panel', 'team-unknown'],
+    ])
+    expect(wrapper.get('.team-unknown').findAll('.pl')).toHaveLength(1)
+
+    // 未就绪时三块都不渲染（与 HUD 其余部分同口径）
+    store.hasData = false
+    await nextTick()
+    expect(wrapper.findAll('.team')).toHaveLength(0)
     wrapper.unmount()
   })
 

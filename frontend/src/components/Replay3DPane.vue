@@ -128,12 +128,16 @@ const bannerColor = computed(() => {
   return teamColors.value.unknown
 })
 
-/** 阵容三段（未知阵营 team=0 中性 fail-visible，绝不并入任何一队） */
-const rosterSections = computed(() => [
-  { key: 'team1', label: t('agentReplay.team1'), players: rosterGroups.value.ally },
-  { key: 'team2', label: t('agentReplay.team2'), players: rosterGroups.value.enemy },
+/**
+ * 阵容三块（未知阵营 team=0 中性 fail-visible，绝不并入任何一队）：己方 / 敌方各占场景一侧的
+ * 浮动面板，未知阵营单独一块——不是把两队塞进一条通栏，两侧面板与居中的 HUD 列互不遮挡。
+ * `cls` 同时是定位类（team1 = 左、team2 = 右、team-unknown = 居中）与测试锚点。
+ */
+const rosterPanels = computed(() => [
+  { key: 'team1', cls: 'team1', label: t('agentReplay.team1'), players: rosterGroups.value.ally },
+  { key: 'team2', cls: 'team2', label: t('agentReplay.team2'), players: rosterGroups.value.enemy },
   ...(rosterGroups.value.unknown.length
-    ? [{ key: 'unknown', label: t('agentReplay.teamUnknown'), players: rosterGroups.value.unknown }]
+    ? [{ key: 'unknown', cls: 'team-unknown', label: t('agentReplay.teamUnknown'), players: rosterGroups.value.unknown }]
     : []),
 ])
 
@@ -303,21 +307,26 @@ watch(
         </div>
       </div>
 
-      <div v-if="store.hasData" class="roster panel" :class="{ 'is-open': rosterOpen }">
-        <div v-for="group in rosterSections" :key="group.key" class="side" :class="{ 'side-unknown': group.key === 'unknown' }">
+      <template v-if="store.hasData">
+        <div
+          v-for="group in rosterPanels" :key="group.key"
+          class="team panel" :class="group.cls"
+        >
           <h3>{{ group.label }}</h3>
-          <div
-            v-for="p in group.players" :key="p.eid"
-            class="pl" :class="{ dead: p.dead, followed: p.followed }"
-            @click="sceneApi.setFollow(p.eid)"
-          >
-            <span class="dot" :style="{ background: p.dotColor }"></span>
-            <span class="nick">{{ p.nick }}</span>
-            <span class="tank">{{ p.tank }}</span>
-            <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+          <div class="roster">
+            <div
+              v-for="p in group.players" :key="p.eid"
+              class="pl" :class="{ dead: p.dead, followed: p.followed }"
+              @click="sceneApi.setFollow(p.eid)"
+            >
+              <span class="dot" :style="{ background: p.dotColor }"></span>
+              <span class="nick">{{ p.nick }}</span>
+              <span class="tank">{{ p.tank }}</span>
+              <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+            </div>
           </div>
         </div>
-      </div>
+      </template>
 
       <div v-if="store.banner" class="banner" :style="{ color: bannerColor }">{{ bannerText() }}</div>
 
@@ -477,18 +486,22 @@ watch(
   pointer-events: none;
 }
 
-.roster {
+/* 阵容：己方 / 敌方**各一块浮动面板**（贴场景左 / 右边缘）、未知阵营单独一块（居中灰调）。
+   居中的 HUD 列（顶栏 / 基地 / 击杀流）在中间，三者互不遮挡——不要把两队合成一条通栏。
+   每条带偏移的规则自己声明 `position`（HUD 定位契约 A：定位规则必须能自证，不靠继承）。 */
+.team {
   position: absolute;
-  top: 96px; left: var(--space-2); right: var(--space-2);
+  top: 96px;
   z-index: var(--pb-z-hud);
-  display: flex; gap: var(--space-2);
+  width: 240px;
+  max-height: calc(100% - 190px);
   padding: var(--space-1);
-  max-height: calc(100% - 240px);
-  overflow: hidden;
+  overflow-y: auto;
 }
-.roster .side { flex: 1 1 0; min-width: 0; overflow-y: auto; }
-.roster .side-unknown { flex: 0 1 200px; border-inline-start: 1px solid var(--color-border-subtle); padding-inline-start: var(--space-2); }
-.roster h3 { margin: var(--space-1) var(--space-1) var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); }
+.team1 { position: absolute; left: var(--space-2); }
+.team2 { position: absolute; right: var(--space-2); }
+.team-unknown { position: absolute; left: 50%; width: 220px; transform: translateX(-50%); }
+.team h3 { margin: var(--space-1) var(--space-1) var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); }
 
 .pl {
   display: flex; align-items: center; gap: var(--space-1);
@@ -570,11 +583,20 @@ watch(
 
 .roster-toggle { display: none; }
 
-/* 审计 3D-15：紧凑档名单收进「阵容」开关，打开时两队并排、场景仍可见 */
+/* 审计 3D-15：紧凑档名单收进「阵容」开关。打开时两块面板**各占半宽**——旧版是两块 240px
+   绝对定位互相重叠、盖住场景，这里必须保持左右分栏、互不重叠；半宽放不下弹种 / 血条，只留
+   圆点 + 昵称（与主表同一取舍）。未知阵营块落在左半栏下方，避免与两块并排抢宽度。 */
 @media (width < 768px) {
   .roster-toggle { display: inline-flex; align-items: center; }
-  .roster { display: none; top: 88px; max-height: calc(100% - 220px); }
-  .pb-root.roster-open .roster { display: flex; }
+  .team { display: none; top: 88px; width: auto; max-height: 34%; }
+  .pb-root.roster-open .team { display: block; }
+  .pb-root.roster-open .team1 { position: absolute; left: var(--space-2); right: 51%; }
+  .pb-root.roster-open .team2 { position: absolute; right: var(--space-2); left: 51%; }
+  .pb-root.roster-open .team-unknown {
+    position: absolute;
+    left: var(--space-2); right: 51%; top: calc(88px + 36%);
+    width: auto; transform: none;
+  }
   .pl .tank, .pl .hpbar { display: none; }
   .topbar { gap: var(--space-2); padding: 0 var(--space-3); }
   .controls { width: calc(100% - var(--space-2)); padding: var(--space-1) var(--space-2); }
