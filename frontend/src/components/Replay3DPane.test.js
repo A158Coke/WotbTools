@@ -145,13 +145,38 @@ describe('Replay3DPane', () => {
     expect(playback.api.loadData).not.toHaveBeenCalled()
     expect(wrapper.get('[data-test="replay3d-pending"]').text()).toContain('battle.wotbreplay')
     await start(wrapper)
-    expect(playback.api.loadData).toHaveBeenCalledWith({ kind: 'local', file })
+    expect(playback.api.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file }))
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
     await wrapper.setProps({ active: false })
     await wrapper.setProps({ active: true })
     await flush()
     expect(playback.api.loadData).toHaveBeenCalledTimes(1)
     wrapper.unmount()
+  })
+
+  it('解析所有权：换文件 / 撤下 / 卸载会真正 abort 在途解析（signal 透传给内核 source）', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
+    const firstSignal = playback.api.loadData.mock.calls[0][0].signal
+    expect(firstSignal.aborted).toBe(false)
+
+    // 换文件：reset 撤下旧场景的同时，旧解析任务必须被 abort（不再占 Worker 队列）
+    const next = mkFile('b2.wotbreplay')
+    await wrapper.setProps({ file: next })
+    await flush()
+    expect(firstSignal.aborted).toBe(true)
+
+    // 按「开始」→ 新解析拿到**新** signal（未 abort）
+    await start(wrapper)
+    const secondSignal = playback.api.loadData.mock.calls[1][0].signal
+    expect(secondSignal).not.toBe(firstSignal)
+    expect(secondSignal.aborted).toBe(false)
+
+    // 卸载：在途解析一并撤下
+    wrapper.unmount()
+    expect(secondSignal.aborted).toBe(true)
   })
 
   it('换目标回放 → 先撤下上一场（内核 reset）回到待开播，按开始才解析新文件', async () => {
@@ -172,7 +197,7 @@ describe('Replay3DPane', () => {
     expect(wrapper.get('[data-test="replay3d-pending"]').text()).toContain('b2.wotbreplay')
 
     await start(wrapper)
-    expect(playback.api.loadData).toHaveBeenLastCalledWith({ kind: 'local', file: next })
+    expect(playback.api.loadData).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'local', file: next }))
     wrapper.unmount()
   })
 
@@ -225,7 +250,7 @@ describe('Replay3DPane', () => {
     expect(wrapper.get('[data-testid="scene3d-error"]').text()).toContain('agentReplay.error_load')
     await wrapper.get('[data-testid="scene3d-retry"]').trigger('click')
     await flush()
-    expect(playback.api.loadData).toHaveBeenLastCalledWith({ kind: 'local', file: wrapper.props('file') })
+    expect(playback.api.loadData).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'local', file: wrapper.props('file') }))
 
     store.err = 'still bad'
     await nextTick()
@@ -334,7 +359,7 @@ describe('Replay3DPane 场景生命周期', () => {
     const firstApi = playback.api
     expect(playback.init).toHaveBeenCalledTimes(1)
     await start(wrapper)
-    expect(firstApi.loadData).toHaveBeenCalledWith({ kind: 'local', file: fileA })
+    expect(firstApi.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file: fileA }))
 
     // file=null：模板移除 .pb-root（stage 变成游离节点）→ 必须销毁场景，不能继续往它上面画
     await wrapper.setProps({ file: null })
@@ -354,7 +379,7 @@ describe('Replay3DPane 场景生命周期', () => {
     expect(secondApi.loadData).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
     await start(wrapper)
-    expect(secondApi.loadData).toHaveBeenCalledWith({ kind: 'local', file: fileB })
+    expect(secondApi.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file: fileB }))
     // 新场景必须挂在**当前**的 stage 节点上，而不是那个已被移除的旧节点
     expect(wrapper.find('.scene').exists()).toBe(true)
     expect(playback.init.mock.calls[1][0]).toBe(wrapper.get('.scene').element)
@@ -384,7 +409,7 @@ describe('Replay3DPane 场景生命周期', () => {
     expect(playback.api).not.toBe(firstApi)
     expect(playback.api.loadData).not.toHaveBeenCalled()
     await start(wrapper)
-    expect(playback.api.loadData).toHaveBeenCalledWith({ kind: 'local', file })
+    expect(playback.api.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file }))
 
     wrapper.unmount()
   })
