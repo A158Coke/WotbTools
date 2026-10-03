@@ -24,8 +24,8 @@ import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
 import {
-  LABEL_ASPECT, LABEL_DESIGN, LABEL_DESIGN_H, LABEL_DESIGN_W, LABEL_FONT, labelTexHeight,
-  labelVisual, measureTextAt, minLabelFrac, vehicleLabelRows,
+  LABEL_ASPECT, LABEL_DESIGN, LABEL_DESIGN_H, LABEL_DESIGN_W, LABEL_FONT, labelScreenFrac,
+  labelTexHeight, labelVisual, measureTextAt, vehicleLabelRows,
 } from './labelStyle.js'
 import { ROSTER_GROUPS, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
@@ -1380,10 +1380,8 @@ export function initPlayback(container, store) {
   // 玩家昵称 / 车型 / 血量数字 + 百分比 + 细血条 / 逐发装填条。**不再铺大面积不透明黑底**
   // ——对比度由文字描边与柔光承担，只保留数字胶囊 + 血条空槽两小块（见 scene/labelStyle.js）。
   //
-  // 定标：屏上高度 = max(d·LABEL_FRAC, 可读下限)，两者换算成同一系数再乘设计高。
-  // 下限的意义：恒定屏占比会把**近处**的车牌一并压到看不清（旧值 0.0302 在 653px 视口上
-  // 只有 19.7 CSS px）。字号仍随距离不变，只是不再允许小到读不出来。
-  const LABEL_FRAC = 0.0345;        // 卡片高 ≈ 视口高的 3.45%（653px 视口 → 22.5 CSS px，钳到下限 26）
+  // 定标：屏上高度 = max(d·基准屏占比, 可读下限)，两者由 labelStyle.labelFracFor 统一给出
+  // ——**这里不再各写一份比例**（写两份就是上次 4 行文字被压成每行 7.9px 的根因）。
   const TEX_SS = 1.5;               // 贴图超采样：略高于 1:1，兼顾清晰与显存
 
   /**
@@ -1401,15 +1399,21 @@ export function initPlayback(container, store) {
     invalidate();
   }
 
-  /** 定标系数：按距离的屏占比，与「屏上可读下限」取大 */
+  /**
+   * 名牌定标：`labelScreenFrac` 是唯一定标口径（屏上占比 = 视口高的该比例）。
+   *
+   * 几何：可见垂直范围 = 2·d·tan(fov/2)，而卡片世界高要取 `screenFrac × 可见范围`，
+   * 才能让**屏上高度 = 视口高 × screenFrac**（与距离无关）。所以 world-per-distance
+   * 系数 = 2·tan(fov/2)·screenFrac，注意 screenFrac 是"视口高比例"、不是 world 单位
+   * ——把它直接当成 world 高度用会差一个 1/(2tan(fov/2)) ≈ 1.9 的因子（曾经就在这里算错）。
+   */
   function labelFrac() {
-    return Math.max(LABEL_FRAC, minLabelFrac(container.clientHeight));
+    return labelScreenFrac(container.clientHeight);
   }
 
-  // 贴图分辨率跟随**实际屏幕尺寸**（修「发糊」）：卡片在屏上恒为视口高的 labelFrac()，贴图只需
-  // 覆盖这段像素（×超采样）。旧实现固定 512×128 不随屏幕变——1080p 下卡片只有 ~18 CSS px 高，
-  // 贴图被 mipmap 缩小 7 倍，昵称落到屏上约 3.7 px 并被三线性平均成一团糊。绘制布局仍按设计
-  // 坐标系写，由 drawLabel 用 ctx.scale(px / LABEL_DESIGN_H) 映射。
+  // 贴图分辨率：设计坐标恒按 LABEL_DESIGN_H 归一化绘制，所以贴图**不能因为卡片小就被压小**
+  // （压小 = 设计坐标被压得更狠 = 文字更糊，见 labelStyle.labelTexHeight）。屏幕像素比卡片
+  // 需要的更多时按屏幕像素走，否则用下限。
   function labelTexSize() {
     // 与主画布同口径（标签已并入主画布渲染）：按 renderer 的实际像素比取纹理尺寸——
     // 低画质档不再按 2× 超采样，那份显存与逐帧上传开销随之消失

@@ -62,26 +62,45 @@ export const LABEL_DESIGN_W = 560
 export const LABEL_ASPECT = LABEL_DESIGN_W / LABEL_DESIGN_H
 
 /**
- * 卡片设计高 → 屏上最小高度系数。
+ * 名牌定标（**唯一定标口径**，调用方不得再各写一份）。
  *
- * 恒定屏占比本身是对的（远近一致），但它会把**近处**的车牌一并压到看不清：
- * 653px 视口下 140 设计 px 只落到 19.7 CSS px。这里给一个屏幕像素下限
- * （`MIN_LABEL_CSS_PX`），换算成等价的屏占比系数——两者取大即得
- * "要么按距离、要么按可读下限"的最终定标系数。
+ * 几何推导（曾在这里踩坑，留档）：
+ *   相机在距离 d 处能看到的垂直world范围 = 2·d·tan(fov/2)
+ *   卡片世界高 = screenFrac · 2·d·tan(fov/2)
+ *   屏上高度(px) = 视口高 × 卡片世界高 / 可见垂直范围 = 视口高 × screenFrac
+ * 即：**屏上占比 = screenFrac，与 d 无关**（这正是"标签大小恒定"的语义）。
+ *
+ * 所以定标就是两条约束：
+ *   1. 远近一致：屏上高度 ≈ 视口高 × LABEL_FRAC；
+ *   2. 可读：不低于 MIN_LABEL_CSS_PX；但也不超过 MAX_LABEL_FRAC 的视口高
+ *      （别让一个名牌糊住小半屏）。
+ * 返回「卡片屏上高度 / 视口高」的最终比例。
  */
-export const MIN_LABEL_CSS_PX = 26
+export const LABEL_FRAC = 0.0345
+export const MIN_LABEL_CSS_PX = 48
+export const MAX_LABEL_FRAC = 0.13
 
-export function minLabelFrac(viewportH) {
+export function labelScreenFrac(viewportH) {
   const h = Number(viewportH)
-  if (!(h > 0)) return 0
-  return MIN_LABEL_CSS_PX / (h * LABEL_DESIGN_H)
+  if (!(h > 0)) return LABEL_FRAC
+  // 顺序有意义：**可读下限优先于上限**。360px 高的横屏手机上 48px 卡片占 13.3%，
+  // 宁可略超上限也不能糊到读不出（上限只是防"小半屏被一个名牌糊住"）。
+  return Math.max(MIN_LABEL_CSS_PX / h, Math.min(MAX_LABEL_FRAC, LABEL_FRAC))
 }
 
-/** 贴图分辨率：跟随实际屏幕像素（×超采样），并夹在「屏幕像素」与「设计像素」之间 */
+/**
+ * 贴图高度下限（像素）。**必须 ≥ 设计高**：设计坐标是按 `LABEL_DESIGN_H` 归一化绘制的，
+ * 贴图小于设计高就等于把设计像素压掉，文字直接发糊（旧实现夹到设计高、且随卡片一起缩小，
+ * 实测把 4 行文字压成 12px 噪点）。
+ *
+ * 取 256（≈1.5× 设计高）：小卡片由 mipmap 缩小比"压设计坐标"清晰得多。
+ */
+export const LABEL_TEX_MIN_H = 256
+
 export function labelTexHeight(cssH, devicePixelRatio, texSs) {
   const pr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1
-  const px = Math.max(0, cssH) * pr
-  return Math.max(1, Math.min(LABEL_DESIGN_H, Math.round(px * texSs)))
+  const wanted = Math.round(Math.max(0, cssH) * pr * texSs)
+  return Math.max(LABEL_TEX_MIN_H, wanted)
 }
 
 /** 3D 名牌字体栈（与 2D `.pb-labels` 同族；场景内核不参与 i18n，故此处固定） */

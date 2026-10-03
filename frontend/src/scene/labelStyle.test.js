@@ -4,8 +4,9 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import {
-  DEAD_GRAY, LABEL_DESIGN, LABEL_DESIGN_H, LABEL_DESIGN_W, labelTexHeight, labelVisual,
-  minLabelFrac, vehicleLabelRows,
+  DEAD_GRAY, LABEL_DESIGN, LABEL_DESIGN_H, LABEL_DESIGN_W, LABEL_FRAC, LABEL_TEX_MIN_H,
+  MAX_LABEL_FRAC, MIN_LABEL_CSS_PX, labelScreenFrac, labelTexHeight, labelVisual,
+  vehicleLabelRows,
 } from './labelStyle.js'
 
 describe('3D 名牌样式 · 存活 vs 阵亡', () => {
@@ -96,18 +97,52 @@ describe('3D 名牌 · 卡片定标', () => {
     expect(LABEL_DESIGN_W).toBeGreaterThan(0)
   })
 
-  it('贴图高度夹在设计像素与屏幕像素×超采样之间（不超采样到设计高以上）', () => {
-    expect(labelTexHeight(26, 1, 1.5)).toBe(Math.min(LABEL_DESIGN_H, 39))
-    expect(labelTexHeight(200, 2, 1.5)).toBe(LABEL_DESIGN_H)   // 大屏也不会超过设计高
-    expect(labelTexHeight(26, 1, 1.5)).toBeGreaterThan(0)
+  /**
+   * 定标语义：`labelScreenFrac(vh) × vh` **就是卡片屏上高度（CSS px）**。
+   * 这里是对几何推导（屏上占比 = screenFrac，与距离无关）的可执行锁。
+   */
+  it('大视口按基准屏占比；小视口被可读下限抬起来（下限优先于上限）', () => {
+    // 1440px 视口：0.0345 → 49.7px，已经超过 48px 下限 → 用基准比例
+    expect(labelScreenFrac(1440) * 1440).toBeCloseTo(1440 * LABEL_FRAC, 6)
+    // 920px 视口：基准只有 31.7px < 48 → 抬到下限
+    expect(labelScreenFrac(920) * 920).toBeCloseTo(MIN_LABEL_CSS_PX, 6)
+    // 极矮视口（横屏手机 360px）：48px 下限优先，宁可略超 13% 上限也不糊
+    expect(labelScreenFrac(360) * 360).toBeCloseTo(MIN_LABEL_CSS_PX, 6)
+    expect(labelScreenFrac(360)).toBeGreaterThan(MAX_LABEL_FRAC)
   })
 
-  it('可读下限：屏上最小高度系数随视口变高而变小，且换算回屏幕像素恒等于下限', () => {
-    const frac653 = minLabelFrac(653)
-    const frac1300 = minLabelFrac(1300)
-    expect(frac653).toBeGreaterThan(frac1300)
-    // 653 视口 + 下限系数 → 恰好是下线像素数
-    expect(frac653 * 653 * LABEL_DESIGN_H).toBeCloseTo(26, 6)
+  /**
+   * 回归：名牌屏上高度必须容得下它的 4 行内容。
+   *
+   * 实测踩过：屏上 31.7 CSS px 的卡片要画 4 行 → 每行 7.9px（用户截图里就是一团噪点），
+   * 而且贴图还被夹到设计高以下，等于把设计坐标又压了一遍。
+   */
+  it('每个视口下定标后的卡片都容得下 4 行内容（每行 ≥ 10 CSS px）', () => {
+    for (const vh of [360, 640, 768, 920, 1080, 1440, 2160]) {
+      const cssH = labelScreenFrac(vh) * vh
+      expect(cssH / 4, `视口 ${vh}px 下每行只有 ${(cssH / 4).toFixed(1)}px`).toBeGreaterThanOrEqual(10)
+      // 上限只约束"下限没被触发"的情况；矮视口下可读性优先，允许略超
+      if (MIN_LABEL_CSS_PX / vh <= MAX_LABEL_FRAC) {
+        expect(cssH / vh, `视口 ${vh}px 下卡片占了 ${((cssH / vh) * 100).toFixed(1)}% 屏高`)
+          .toBeLessThanOrEqual(MAX_LABEL_FRAC + 0.001)
+      }
+    }
+  })
+
+  /**
+   * 回归：贴图**不得**因为卡片小就被压小。
+   * 设计坐标恒按 LABEL_DESIGN_H 归一化绘制，贴图小于设计高 = 压掉设计像素 = 文字发糊。
+   */
+  it('贴图高度下限 ≥ 设计高（小卡片不再把设计坐标压成噪点）', () => {
+    expect(LABEL_TEX_MIN_H).toBeGreaterThanOrEqual(LABEL_DESIGN_H)
+    for (const [cssH, dpr] of [[0, 1], [8, 1], [20, 1], [31.7, 1], [48, 1], [48, 2]]) {
+      const h = labelTexHeight(cssH, dpr, 1.5)
+      expect(h, `cssH=${cssH} dpr=${dpr} 时贴图只有 ${h}px`).toBeGreaterThanOrEqual(LABEL_DESIGN_H)
+    }
+  })
+
+  it('屏幕像素比贴图下限更大时跟着长（高分辨率屏不吃亏）', () => {
+    expect(labelTexHeight(400, 2, 1.5)).toBe(1200)
   })
 })
 
