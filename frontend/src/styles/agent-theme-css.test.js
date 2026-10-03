@@ -1,21 +1,16 @@
-// Agent 视觉面（列表页 + 3D/HUD 沉浸页）的配色源码契约守卫。
+// Agent 视觉面（3D / 射击回放面板 + 装甲查看器 + 坦克百科）的配色源码契约守卫。
 //
-// 背景：这四个组件自上游独立 SPA 平移，用的是那套**深色单主题**的颜色名
-// （--fg/--panel/--line/--muted/--danger/--dim/--txt…）。这些名字在本仓 token
-// 体系里从未定义，于是 `var(--x, 深色 fallback)` 的 fallback 恒生效 = 等于写死
-// 深色：浅色档（classic profile）下灰字落在白底上对比度仅 ~2.6:1（"文字发淡"），
-// 面板/按钮/边框则是突兀深色块。当时没有任何测试覆盖 Agent 组件配色，坏了两档
-// 主题也没人拦。
+// 背景：这些组件自上游独立 SPA 平移，用的是那套**深色单主题**的颜色名
+// （--fg/--panel/--line/--muted/--danger/--dim…）。这些名字在本仓 token 体系里从未定义，
+// 于是 `var(--x, 深色 fallback)` 的 fallback 恒生效 = 等于写死深色：浅色档（classic profile）
+// 下灰字落在白底上对比度仅 ~2.6:1（"文字发淡"），面板/按钮/边框则是突兀深色块。
 //
-// 复审进一步指出：只查 `var(--x)` 是否定义**不够**——裸的 `background: rgba(10,13,17,.94)`
-// 或 `color: #ffcf5c` 同样绕过主题（AgentReplay3D 的整页 .loader overlay 就是这样
-// 漏掉的：全屏 UI 却写死深色，浅色档根本看不到底下的 --root-bg）。
-//
-// 因此本文件固化四类契约：
-//   A) Agent 组件不得引用"本仓任何地方都没定义"的 token（含 JS 内联样式）；
-//   B) 沉浸页自建调色板里每个**颜色** token，必须在 classic 档有成对覆盖；
-//   C) 沉浸页样式块里不得出现裸色（#hex/rgb/rgba/hsl），白名单只放"非主题色"——
-//      即 three.js 场景底/标记图例这类数据可视化色；
+// 3D 回放面板（原 AgentReplay3D）与射击分析面板（原 AgentShots）已在 PR-B 迁到设计语言
+// 语义 token：私有 palette 整体删除，两档主题共用同一份规则。本文件固化四类契约：
+//   A) 组件不得引用"本仓任何地方都没定义"的 token（含 JS 内联样式）；
+//   B) 仍自建调色板的沉浸页（装甲查看器），每个**颜色** token 必须在 classic 档有成对覆盖；
+//   C) 组件样式块里不得出现裸色（#hex/rgb/rgba/hsl），白名单只放"非主题色"——
+//      即 three.js 视口底这类场景色；
 //   D) tankViewer 的 JS 内联色只允许白名单里的标记/图例色。
 
 import { readdirSync, readFileSync } from 'node:fs'
@@ -25,19 +20,18 @@ import { describe, expect, it } from 'vitest'
 const stylesDir = fileURLToPath(new URL('.', import.meta.url))
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 
-/** 参与本契约的 Agent 视觉面文件 */
+/** 参与本契约的视觉面文件 */
 const AGENT_FILES = {
-  'AgentShots.vue': '../components/AgentShots.vue',
+  'Replay3DPane.vue': '../components/Replay3DPane.vue',
+  'ReplayShotsPane.vue': '../components/ReplayShotsPane.vue',
   'AgentTankopedia.vue': '../components/AgentTankopedia.vue',
   'AgentArmorView.vue': '../components/AgentArmorView.vue',
-  'AgentReplay3D.vue': '../components/AgentReplay3D.vue',
   'tankViewer.js': '../scene/tankViewer.js',
 }
 
-/** 沉浸页：自建调色板选择器 */
+/** 仍自建调色板的沉浸页（回放面板不在其中：它们只用语义 token） */
 const IMMERSIVE = {
   'AgentArmorView.vue': { file: '../components/AgentArmorView.vue', selector: '.armor-view' },
-  'AgentReplay3D.vue': { file: '../components/AgentReplay3D.vue', selector: '.pb-root' },
 }
 
 /**
@@ -48,7 +42,7 @@ const BARE_COLOR_SELECTOR_ALLOWLIST = {
   'AgentArmorView.vue': [
     '#canvas-container', // three.js 视口底色（游戏视觉，见 classic-profile 的同类约定）
   ],
-  'AgentReplay3D.vue': [], // 3D 场景由 three.js 画进 canvas，CSS 层不应有裸色
+  'Replay3DPane.vue': [], // 3D 场景由 three.js 画进 canvas，CSS 层不应有裸色
 }
 
 /**
@@ -119,6 +113,15 @@ describe('Agent 视觉面配色契约', () => {
     expect(repoDefined.size).toBeGreaterThan(80)
   })
 
+  it('回放工作台的 3D / 射击面板不再自建颜色调色板（两档主题共用同一份规则）', () => {
+    for (const label of ['Replay3DPane.vue', 'ReplayShotsPane.vue']) {
+      const colorTokens = [...stripComments(read(AGENT_FILES[label])).matchAll(DECLARATION)]
+        .filter((m) => looksLikeColor(m[2]))
+        .map((m) => m[1])
+      expect(colorTokens, `${label} 仍在自建颜色 palette（应只用语义色 token）`).toEqual([])
+    }
+  })
+
   describe('A) 组件只引用已定义的 token', () => {
     // tankViewer.js 无样式块：它的面板 DOM 渲染在 .armor-view 子树内，
     // 因此可以合法继承该调色板（其余文件仍只认"仓库定义 + 自身**默认**档定义"）。
@@ -165,8 +168,13 @@ describe('Agent 视觉面配色契约', () => {
     }
   })
 
-  describe('C) 沉浸页样式块不留裸色（除白名单的非主题色）', () => {
-    for (const [label, { file }] of Object.entries(IMMERSIVE)) {
+  describe('C) 组件样式块不留裸色（除白名单的非主题色）', () => {
+    const scanned = {
+      ...IMMERSIVE,
+      'Replay3DPane.vue': { file: '../components/Replay3DPane.vue' },
+      'ReplayShotsPane.vue': { file: '../components/ReplayShotsPane.vue' },
+    }
+    for (const [label, { file }] of Object.entries(scanned)) {
       it(`${label} 的规则只经 token 取色`, () => {
         const css = styleBlockOf(read(file))
         expect(css, `${label} 未解析到样式块`).not.toBe('')

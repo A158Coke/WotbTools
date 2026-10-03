@@ -104,6 +104,13 @@ export function initPlayback(container, store) {
   // 渲染帧句柄：destroy 显式 cancel（旧实现依赖 destroyed 标志的自然退出，
   // 帧回调在 destroy 后仍可能再排队一次）
   let rafId = 0;
+  /**
+   * 宿主可见性闸门（Replay3DPane 的 `active`）：工作台切到别的能力时停帧——
+   * rAF、相机 update、标签/基地重绘全部停止，**不销毁场景**（切回不重解析、
+   * 保留 timeline / 相机 / 画质档）。恢复时重置时钟，否则暂停期间累积的 dt
+   * 会让第一帧直接跳进战斗。
+   */
+  let paused = false;
   // 诊断强引用仅在显式 debug 下创建（生产不挂 window.__scene 等长生命周期引用）
   const DEBUG = (() => { try { return new URLSearchParams(location.search).has('debug'); } catch (e) { return false; } })();
 
@@ -2304,6 +2311,7 @@ export function initPlayback(container, store) {
   let winnerShown = false;
   function animate() {
     if (destroyed) return;
+    if (paused) { rafId = 0; return; }   // 停帧：不排队下一帧，场景与状态原样保留
     rafId = requestAnimationFrame(animate);
     if (!renderer) return;   // 渲染器惰性创建（首次 startPlayback）：数据加载完成前无场景可渲染
     const dt = Math.min(clock.getDelta(), 0.1);
@@ -2425,6 +2433,18 @@ export function initPlayback(container, store) {
     PLAYING = p;
     store.playing = p;
     invalidate();
+  }
+  /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时从当前帧重启并丢弃暂停期间的时间差 */
+  function setPaused(next) {
+    const value = !!next;
+    if (value === paused) return;
+    paused = value;
+    if (paused) {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+    } else if (!destroyed) {
+      clock.getDelta();   // 丢弃暂停期间累积的 dt
+      animate();
+    }
   }
   function seekTo(t) {
     T = Math.max(DATA.meta.t_start, Math.min(END, t));
@@ -2701,6 +2721,7 @@ export function initPlayback(container, store) {
       invalidate();
     },
     setQuality,
+    setPaused,
     qualityPresets: QUALITY_PRESETS,
     destroy() {
       destroyed = true;

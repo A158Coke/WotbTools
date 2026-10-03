@@ -36,8 +36,13 @@ watch([authInitState, authenticated], ([state, isLoggedIn]) => {
   void ensure()
 }, { immediate: true })
 
-function navigate(view) {
-  const destination = router.resolve(locationForView(view, route))
+function navigate(target) {
+  // 目标是 view 字符串或带 query 的完整目的地；两者都归 router（组件不碰 history）
+  const destination = router.resolve(
+    typeof target === 'string'
+      ? locationForView(target, route)
+      : { path: route.path, query: { ...route.query, ...target.query } },
+  )
   if (destination.fullPath !== route.fullPath) router.push(destination)
 }
 

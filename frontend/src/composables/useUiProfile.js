@@ -67,8 +67,8 @@ export function applyUiProfile(profile) {
 }
 
 /** 唯一 reactive 状态源。uiProfile = 实际生效的主题；uiProfilePreference = 用户的选择（可为 auto）。 */
-const uiProfile = ref(DEFAULT_UI_PROFILE)
-const uiProfilePreference = ref(DEFAULT_UI_PROFILE)
+export const uiProfile = ref(DEFAULT_UI_PROFILE)
+export const uiProfilePreference = ref(DEFAULT_UI_PROFILE)
 
 // auto 时跟随系统深浅色变化（全应用一个监听）
 let schemeQuery = null

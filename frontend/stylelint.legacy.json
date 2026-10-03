@@ -4,8 +4,6 @@
     "src/App.vue",
     "src/app/GlobalErrorDialog.vue",
     "src/components/AgentArmorView.vue",
-    "src/components/AgentReplay3D.vue",
-    "src/components/AgentShots.vue",
     "src/components/AggregateTable.vue",
     "src/components/AnalysisResultPanel.vue",
     "src/components/AndroidDownloadPage.vue",

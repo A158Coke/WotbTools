@@ -355,7 +355,7 @@ describe('ReplayPage data hydration (embedded-only)', () => {
     state.init.files = [new File(['x'], 'a.wotbreplay')]
     const wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.findComponent({ name: 'FileUploader' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'FileDrop' }).exists()).toBe(false)
     expect(wrapper.find('[data-testid="replay-processing-panel"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
     wrapper.unmount()
