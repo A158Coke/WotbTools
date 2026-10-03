@@ -71,8 +71,12 @@ jobs:
             assert_digest_image "$TX_FRONTEND_IMAGE_REF" wotbtools-frontend
             assert_digest_image "$TX_BUSINESS_API_IMAGE_REF" wotbtools-business-api
 
-            output="$(bash "$lock_wrapper" bash "$runtime")"
+            set +e
+            output="$(bash "$lock_wrapper" bash "$runtime" 2>&1)"
+            status=$?
+            set -e
             printf '%s\n' "$output"
+            [ "$status" -eq 0 ] || exit "$status"
             grep -Fxq 'TX_RUNTIME_READY' <<< "$output"
         env:
           TX_RUNTIME_ROOT: /opt/wotb-tx
