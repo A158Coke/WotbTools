@@ -21,7 +21,8 @@
     "native-auth",
     "replay-share",
     "replay-open",
-    "app-update"
+    "app-update",
+    "connectivity"
   ],
   "methods": {
     "getBridgeVersion": {
@@ -95,11 +96,24 @@
           "error": { "type": "string", "nullable": true, "required": true }
         }
       }
+    },
+    "connectivityGetState": {
+      "request": { "fields": {} },
+      "response": {
+        "type": "string",
+        "enum": ["online", "offline"],
+        "notes": "System authority (ConnectivityManager INTERNET + VALIDATED). Reserved future tokens: degraded, service-unavailable. The page must re-read this method after connectivityChanged instead of trusting navigator.onLine."
+      }
     }
   },
   "events": {
     "authChanged": {
       "global": "wotbtoolsOnAuthChanged"
+    },
+    "connectivityChanged": {
+      "global": "wotbtoolsOnConnectivityChanged",
+      "payload": "none",
+      "notes": "Notification only: the page re-reads connectivityGetState, so there is no second source of truth."
     }
   },
   "syntheticResources": {

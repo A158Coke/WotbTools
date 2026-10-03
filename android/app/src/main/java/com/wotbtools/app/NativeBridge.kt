@@ -40,6 +40,7 @@ class NativeBridge(private val host: MainActivity) {
                 // ── 立即回复（纯本地读 / 无网络）──
                 "getBridgeVersion" -> reply(envelope(id, host.bridgeVersion()))
                 "getCapabilities" -> reply(envelope(id, JSONArray(host.bridgeCapabilities())))
+                "connectivityGetState" -> reply(envelope(id, host.bridgeConnectivityState()))
                 "getPendingReplay" -> reply(envelope(id, host.bridgePendingReplayJson()))
                 "consumePendingReplay" ->
                     reply(envelope(id, host.bridgeConsumePendingReplay(params?.optString("expectedPendingId"))))

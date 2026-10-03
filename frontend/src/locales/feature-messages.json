@@ -351,6 +351,15 @@
     "account": {
       "signedOutTitle": "登录 WoTBTools",
       "signedOutHint": "登录后可以绑定游戏账号、提交名人堂记录、查看你的记录。解析回放不需要登录。"
+    },
+    "featureOffline": {
+      "title": "当前处于离线状态",
+      "retry": "请联网后重试。",
+      "aiReview": "AI 复盘需要连接 WotbTools AI 服务。",
+      "hallOfFame": "名人堂需要联网读取和提交数据。",
+      "playback3d": "3D 播放需要联网加载地图和模型资源。",
+      "accountProfile": "账号资料需要联网读取。",
+      "syncPaused": "离线状态，数据同步已暂停。"
     }
   },
   "en": {
@@ -705,6 +714,15 @@
     "account": {
       "signedOutTitle": "Sign in to WoTBTools",
       "signedOutHint": "Sign in to link your game account, submit Hall of Fame records and see your records. Parsing replays does not require an account."
+    },
+    "featureOffline": {
+      "title": "You are offline",
+      "retry": "Reconnect and try again.",
+      "aiReview": "AI review needs the WotbTools AI service.",
+      "hallOfFame": "The Hall of Fame needs a connection to read and submit data.",
+      "playback3d": "3D playback needs a connection to load maps and models.",
+      "accountProfile": "Account data needs a connection.",
+      "syncPaused": "Offline: syncing is paused."
     }
   },
   "ru": {
@@ -1059,6 +1077,15 @@
     "account": {
       "signedOutTitle": "Вход в WoTBTools",
       "signedOutHint": "Войдите, чтобы привязать игровой аккаунт, отправлять записи в Зал славы и видеть свои записи. Для разбора реплеев вход не нужен."
+    },
+    "featureOffline": {
+      "title": "Нет подключения",
+      "retry": "Подключитесь к сети и повторите.",
+      "aiReview": "Для ИИ-разбора нужно подключение к сервису WotbTools AI.",
+      "hallOfFame": "Для Зала славы нужно подключение для чтения и отправки данных.",
+      "playback3d": "Для 3D-воспроизведения нужно подключение для загрузки карт и моделей.",
+      "accountProfile": "Для данных аккаунта нужно подключение.",
+      "syncPaused": "Нет сети: синхронизация приостановлена."
     }
   }
 }
