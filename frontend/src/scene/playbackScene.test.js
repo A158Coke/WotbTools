@@ -403,6 +403,39 @@ describe('playbackScene reset：撤下当前回放', () => {
   })
 })
 
+/**
+ * 场景未初始化（渲染器/时钟惰性创建前）的 HUD API 调用安全：待开播 / 解析期间切走能力
+ * 再切回，面板会对 `setPaused(false)`——此时 `clock` 还不存在，恢复分支不得触场景内部
+ * 对象（线上实测 TypeError: Cannot read properties of undefined (reading 'getDelta')）。
+ */
+describe('playbackScene 场景未初始化时的调用安全', () => {
+  it('initScene 之前 setPaused / setPlaying / togglePlay 不炸，结束态自洽', () => {
+    const { store, api } = createScene()   // 只 initPlayback，不 loadData → clock/renderer 不存在
+    expect(() => api.setPaused(true)).not.toThrow()
+    expect(() => api.setPaused(false)).not.toThrow()
+    expect(() => api.setPlaying(false)).not.toThrow()
+    expect(() => api.togglePlay()).not.toThrow()
+    expect(store.playing).toBe(true)       // togglePlay：false → true
+    expect(() => api.togglePlay()).not.toThrow()
+    expect(store.playing).toBe(false)      // 再翻回 false（与初始一致）
+  })
+
+  it('初始化之后 setPaused 仍正常停帧 / 恢复（守住修复没有把正常路径关掉）', async () => {
+    source.loadPlaybackData.mockImplementation(() => Promise.resolve(minimalData()))
+    const store = createPlaybackStore()
+    const only = createInstance(store)
+    await only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
+    expect(store.hasData).toBe(true)
+
+    expect(() => only.setPaused(true)).not.toThrow()
+    expect(() => only.setPaused(false)).not.toThrow()
+    // 会话未被闸门破坏：就绪态保持、无错误（minimalData 的 END==t_start，加载完成即播完，
+    // playing 落回 false 属正常，不在此断言播放态）
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+  })
+})
+
 /** 同一实例替换：B 的资源引用与高度场不得被 A 的迟到结果覆盖。 */
 describe('playbackScene 资产发布顺序', () => {
   function prepareAssets(kinds) {
