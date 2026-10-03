@@ -6,14 +6,14 @@ import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import PageHeader from './PageHeader.vue'
 import SegmentedControl from './SegmentedControl.vue'
 
-// "更多"页：手机 / App 的低频入口（显示设置、内测工具、管理、关于与支持）。
+// "更多"页：手机 / App 的低频入口（显示设置、回放工具、管理、关于与支持）。
 // 平板 / 桌面的同一份内容在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）；
 // 坦克百科是主导航栏目，不在这里重复。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, betaToolLinks, adminLinks, aboutLinks } = useMoreMenu()
+const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, replayToolLinks, adminLinks, aboutLinks } = useMoreMenu()
 
 const groups = computed(() => [
-  { id: 'tools', titleKey: 'more.sections.tools', links: betaToolLinks.value },
+  { id: 'tools', titleKey: 'more.sections.tools', links: replayToolLinks },
   { id: 'admin', titleKey: 'more.sections.admin', links: adminLinks.value },
   { id: 'about', titleKey: 'more.sections.about', links: aboutLinks.value, feedback: true },
 ].filter(group => group.links.length))

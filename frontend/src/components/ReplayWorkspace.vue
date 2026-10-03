@@ -13,6 +13,7 @@ import FileDrop from './FileDrop.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
+import ReplayCapabilityAuthGate from './ReplayCapabilityAuthGate.vue'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
 import PageHeader from './PageHeader.vue'
@@ -45,7 +46,7 @@ const props = defineProps({
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const { t, locale } = useI18n()
-const { isAdmin } = useAuth()
+const { authenticated } = useAuth()
 
 /**
  * Workspace 持有唯一一份 replay selection 与本地分析结果（服务器没有 parser：文件不出本机，
@@ -86,27 +87,26 @@ const { consumePendingWhenReady } = useNativeReplayImport({
 })
 
 /**
- * 能力：数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘（* 仍受 admin feature flag 约束，
- * 与深链的 `ADMIN_ONLY_VIEWS` 边界同一份判断）。五个能力都在本工作台内，
- * 没有"导航去另一个页面"的 capability。
+ * 五个能力始终公开显示。数据 / 2D 匿名可用；3D / 射击 / AI 登录后使用，
+ * 管理员角色不改变工作台能力。登录门禁位于实际解析与场景挂载之前。
  */
-const capabilityOptions = computed(() => [
+const capabilityOptions = [
   { key: 'data', labelKey: 'workspace.tab_data' },
   { key: 'playback', labelKey: 'workspace.tab_playback' },
-  ...(isAdmin.value
-    ? [{ key: '3d', labelKey: 'workspace.tab_3d' }, { key: 'shots', labelKey: 'workspace.tab_shots' }]
-    : []),
+  { key: '3d', labelKey: 'workspace.tab_3d' },
+  { key: 'shots', labelKey: 'workspace.tab_shots' },
   { key: 'ai', labelKey: 'workspace.tab_ai' },
-])
+]
 
 /**
  * 能力面板首次进入时才挂载（代码块按需加载、不进主包），之后切走只隐藏：
  * 停渲染但不销毁会话——切回不重新要求文件、不重新解析、保留 timeline / 相机。
+ * 退出登录卸载受保护面板，工作台持有的 replay selection / 数据结果继续保留。
  */
 const activeCapability = workspace.activeWorkspaceTab
 const playbackMounted = useMountedWhenActive(() => activeCapability.value === 'playback')
-const threeMounted = useMountedWhenActive(() => activeCapability.value === '3d')
-const shotsMounted = useMountedWhenActive(() => activeCapability.value === 'shots')
+const threeMounted = useMountedWhenActive(() => authenticated.value && activeCapability.value === '3d')
+const shotsMounted = useMountedWhenActive(() => authenticated.value && activeCapability.value === 'shots')
 const aiMounted = useMountedWhenActive(() => activeCapability.value === 'ai')
 
 /**
@@ -264,7 +264,13 @@ watch(() => props.initialCapability, (val) => {
         />
       </div>
       <div v-show="activeCapability === '3d'" class="capability-pane" data-testid="ws-3d">
-        <Banner v-if="threeLoadError" tone="danger" data-testid="ws-3d-load-error">
+        <ReplayCapabilityAuthGate
+          v-if="!authenticated && activeCapability === '3d'"
+          :title="$t('workspace.tab_3d')"
+          :description="$t('workspace.login_required_3d')"
+          login-destination="agent-replay"
+        />
+        <Banner v-else-if="authenticated && threeLoadError" tone="danger" data-testid="ws-3d-load-error">
           <p>{{ $t(threeLoadError) }}</p>
           <template #actions>
             <AppButton size="sm" data-testid="ws-3d-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
@@ -272,7 +278,7 @@ watch(() => props.initialCapability, (val) => {
           </template>
         </Banner>
         <BattlePicker
-          v-else-if="battleOptions.length > 1"
+          v-else-if="authenticated && battleOptions.length > 1"
           class="single-battle-picker"
           :options="battleOptions"
           :model-value="currentBattleId"
@@ -281,14 +287,20 @@ watch(() => props.initialCapability, (val) => {
           @update:model-value="onBattleSelect"
         />
         <Replay3DPane
-          v-if="threeMounted && !threeLoadError"
+          v-if="authenticated && threeMounted && !threeLoadError"
           :file="targetFile"
           :active="activeCapability === '3d'"
           :blocked-reason="blockedReason"
         />
       </div>
       <div v-show="activeCapability === 'shots'" class="capability-pane" data-testid="ws-shots">
-        <Banner v-if="shotsLoadError" tone="danger" data-testid="ws-shots-load-error">
+        <ReplayCapabilityAuthGate
+          v-if="!authenticated && activeCapability === 'shots'"
+          :title="$t('workspace.tab_shots')"
+          :description="$t('workspace.login_required_shots')"
+          login-destination="agent-shots"
+        />
+        <Banner v-else-if="authenticated && shotsLoadError" tone="danger" data-testid="ws-shots-load-error">
           <p>{{ $t(shotsLoadError) }}</p>
           <template #actions>
             <AppButton size="sm" data-testid="ws-shots-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
@@ -296,7 +308,7 @@ watch(() => props.initialCapability, (val) => {
           </template>
         </Banner>
         <BattlePicker
-          v-else-if="battleOptions.length > 1"
+          v-else-if="authenticated && battleOptions.length > 1"
           class="single-battle-picker"
           :options="battleOptions"
           :model-value="currentBattleId"
@@ -305,7 +317,7 @@ watch(() => props.initialCapability, (val) => {
           @update:model-value="onBattleSelect"
         />
         <ReplayShotsPane
-          v-if="shotsMounted && !shotsLoadError"
+          v-if="authenticated && shotsMounted && !shotsLoadError"
           :file="targetFile"
           :active="activeCapability === 'shots'"
           :blocked-reason="blockedReason"

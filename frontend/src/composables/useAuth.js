@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { stringifyQuery } from 'vue-router'
 import { NATIVE_AUTH_CAPABILITY } from '../platform/nativeBridgeContract.js'
 import { createBrowserAuthProvider } from '../platform/browserAuthProvider.js'
 import {
@@ -238,10 +239,22 @@ async function retryAuth() {
   return promise
 }
 
-/** 浏览器 redirect 回到本页后要恢复的目的地（`?view=`）。 */
-function loginRedirectUri(view) {
-  const url = new URL(window.location.origin + window.location.pathname)
-  url.searchParams.set('view', view)
+/** 浏览器登录目的地：同一 view 保留上下文，也接受完整 router location（仅本站）。 */
+function loginRedirectUri(destination) {
+  const current = new URL(window.location.href)
+  if (typeof destination === 'string') {
+    const url = current.searchParams.get('view') === destination
+      ? current
+      : new URL(current.origin + current.pathname)
+    url.searchParams.set('view', destination)
+    return url.toString()
+  }
+  if (!destination) return current.toString()
+
+  const url = new URL(destination.path || current.pathname, current.origin)
+  if (url.origin !== current.origin) throw new Error('AUTH_REDIRECT_ORIGIN_MISMATCH')
+  url.search = stringifyQuery(destination.query || {})
+  url.hash = destination.hash || ''
   return url.toString()
 }
 
@@ -252,7 +265,7 @@ function logoutRedirectUri() {
 
 /**
  * 两个 provider 的 login 都接受 redirectUri，但语义刻意不对称：
- * - 浏览器：redirect 真的会回到本页，必须带 `?view=<view>` 才能恢复目的地。
+ * - 浏览器：redirect 回到明确 view 或完整 router location，场景 query 必须保留。
  * - Android：OIDC 在 external browser 里完成、WebView 从不导航，provider 直接忽略该 URI；
  *   登录结果由 `wotbtoolsOnAuthChanged` 就地把状态同步回来，页面停在原地，
  *   当前 view 天然保留，所以 `view` 对 Native 侧没有任何意义。
@@ -260,13 +273,13 @@ function logoutRedirectUri() {
  * bootstrap 仍在进行或已失败时：放弃那一代并重建（浏览器走不带 check-sso 的
  * login-recovery），旧 promise 既不能阻塞本次跳转，也不能写回当前状态。
  */
-async function login(view = 'profile') {
+async function login(destination = 'profile') {
   if (loginInFlight.value) {
-    console.debug(`[auth] login_deduplicated view=${view} reason=redirect-in-flight`)
+    console.debug(`[auth] login_deduplicated destination=${typeof destination === 'string' ? destination : 'location'} reason=redirect-in-flight`)
     return false
   }
   loginInFlight.value = true
-  console.debug(`[auth] login_requested view=${view} generation=${authGeneration}`)
+  console.debug(`[auth] login_requested destination=${typeof destination === 'string' ? destination : 'location'} generation=${authGeneration}`)
   try {
     if (!currentTransaction || authInitState.value === 'initializing' || authInitState.value === 'failed') {
       const promise = startAuthInit({ mode: 'login-recovery', reason: 'login-recovery' })
@@ -277,7 +290,7 @@ async function login(view = 'profile') {
     if (!transaction || transaction.abandoned || !transaction.provider) {
       throw new Error('AUTH_INIT_NOT_READY')
     }
-    return await transaction.provider.login(loginRedirectUri(view))
+    return await transaction.provider.login(loginRedirectUri(destination))
   } finally {
     loginInFlight.value = false
   }
@@ -305,7 +318,7 @@ function hasRole(role) {
 }
 
 /**
- * `wotbtools-admin` 角色：admin-only 功能开关（feature flag）的唯一判定源。
+ * `wotbtools-admin` 用于管理入口与现有 Tankopedia 入口策略；Replay capabilities 不依赖角色。
  */
 const isAdmin = computed(() => hasRole('wotbtools-admin'))
 
