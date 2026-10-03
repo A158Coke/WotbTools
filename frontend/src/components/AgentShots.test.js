@@ -36,13 +36,8 @@ function mkFile() {
 }
 
 async function mountAndPick() {
-  const wrapper = mount(AgentShots, { global: { mocks: { $t: i18n.t } } })
-  const input = wrapper.find('input[type="file"]')
-  // @vue/test-utils 禁止经 trigger 注入 target——直接在元素上定义 files 后触发
-  Object.defineProperty(input.element, 'files', {
-    value: [mkFile()], configurable: true,
-  })
-  await input.trigger('change')
+  // 回放由工作台给出（pane 契约：props.file）——组件自身不再有文件选择入口
+  const wrapper = mount(AgentShots, { props: { file: mkFile(), active: true }, global: { mocks: { $t: i18n.t } } })
   // 解析链有多层 await（含动态 import JSON 的模块加载）——轮询至终态而非定数 tick
   await vi.waitFor(() => {
     if (!wrapper.text().includes('agentShots.no_shots') && wrapper.findAll('table').length === 0) {
@@ -77,8 +72,7 @@ describe('AgentShots author_path fail-visible（评审 blocker 回归）', () =>
     expect(wrapper.text()).toContain('agentShots.no_shots')
   })
 
-  it('author_path=ok → 无警示', async () => {
-    parseAgentShotsFromBytes.mockResolvedValue({
+  it('author_path=ok → 无警示', async () => {    parseAgentShotsFromBytes.mockResolvedValue({
       shots: [],
       author_path: 'ok',
       author_eid: 7,
@@ -163,5 +157,36 @@ describe('AgentShots author_path fail-visible（评审 blocker 回归）', () =>
     expect(wrapper.text()).toContain('agentShots.res_hit_unknown')
     expect(wrapper.text()).not.toContain('agentShots.res_miss')
     expect(wrapper.text()).not.toContain('agentShots.res_nopen')
+  })
+
+  it('工作台清空回放：复位到等待态（清掉表格与文件名，可再选同一份重新解析）', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [{
+        index: 1, time_s: 5, damage: 100, target_name: '林肝美', is_kill: false,
+        shooter_eid: 200, target_eid: 101, hit_flags: 0, game_hit_result: 255, shell_id: 0,
+      }],
+      author_path: 'ok',
+      author_eid: 7,
+      others: { total_launches: 1, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 },
+    })
+    const file = mkFile()
+    const wrapper = mount(AgentShots, { props: { file, active: true }, global: { mocks: { $t: i18n.t } } })
+    await vi.waitFor(() => {
+      if (!wrapper.find('table.shot-table').exists()) throw new Error('still parsing')
+    }, { timeout: 3000 })
+    expect(wrapper.vm.fileName).toBe('cn.wotbreplay')
+
+    wrapper.setProps({ file: null })
+    await flushPromises()
+    expect(wrapper.find('table.shot-table').exists()).toBe(false)
+    expect(wrapper.vm.fileName).toBe('')
+    expect(wrapper.find('[data-test=shots-source-hint]').exists()).toBe(true)
+
+    // 再次选中同一份文件必须重新解析（本地记住的 lastParsedFile 已被复位清掉）
+    wrapper.setProps({ file })
+    await vi.waitFor(() => {
+      if (!wrapper.find('table.shot-table').exists()) throw new Error('still parsing')
+    }, { timeout: 3000 })
+    expect(parseAgentShotsFromBytes).toHaveBeenCalledTimes(2)
   })
 })

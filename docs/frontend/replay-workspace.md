@@ -4,8 +4,11 @@
 
 ## 当前实现
 
-- `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`ai`、`playback` 三种能力的统一工作台。
-- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责模式切换（数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘，* 仅管理员；3D / 射击目前导航到各自独立页面），`FileUploader.vue` 负责空 / 已选择 / 解析完成三种上传状态（解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在 2D 回放面板上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
+- `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`ai`、`playback`、`3d`、`shots` 五种能力的统一工作台（3D / 射击仅管理员可见）。
+- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责模式切换（数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘，* 仅管理员），`FileUploader.vue` 负责空 / 已选择 / 解析完成三种上传状态（解析完成后折叠为一行，清空需确认，是**唯一**的上传入口），`BattlePicker.vue`（可搜索的场次选择器）在各能力面板上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
+- 五种能力都在工作台内渲染（各自一个 pane，首进懒挂载、之后切走只隐藏），上层导航（页头 + tab 栏 + 上传区）始终保留：3D 回放 / 射击分析不再有独立页面，`?view=agent-replay` / `?view=agent-shots` 深链与 tab 都解析为这里的 `3d` / `shots` pane，并通过 `props.file` 消费工作台已选回放（自身不再自带文件选择器；无已选回放时显示统一空态 `workspace.playback_empty`，多文件未选场次时由 `blockedReason` 说明）。
+- **撤下回放**（清空选择 / 多文件未选场次 / 换成别的场次）时各 pane 必须复位到等待态并释放上一场：3D 走内核 `playbackScene.reset()`（车辆/地图/地形/特效/GLB 模板全量 dispose + HUD 派生字段归零，渲染器与画质档保留），射击清空表格与在途解析（`parseSeq` 作废迟到结果）；两者都清掉本地的「上次文件」记忆，因此**再选同一份回放也会重新加载**，并重新等待解析 + 资产就绪才呈现（3D 的 `hasData` 在 `startPlayback()` 等待运行所需资产之后才置位）。
+- **3D 回放是显式两段式**：工作台给出回放后 pane 先进入「待开播」（显示回放名 + 画质档位 + 「开始」），点开始才 `loadData` → 等解析与地图/地形资产 → 才呈现场景。原因：内核在 `startPlayback()` 惰性创建渲染器、首帧按当前画质档定型，画质必须在开播前选定（等价于旧独立页 loader 里的选档步骤）。
 - 数据模式（`ReplayPage.vue`）的结果区自上而下是：提示（`Banner`：重复 / 解析失败 / League 不可用 / 未评分场次）→ 工具栏（`SegmentedControl` 汇总 / 单场 · 单场时的 `BattlePicker` · Rating 说明 · 列 · `MenuButton` 导出 ▾：Excel 汇总 / Excel 逐场 / PNG 当前视图）→ 汇总视图顶部的 `SeriesOverview`（两支稳定战队时显示系列赛比分，其后是逐场结果条，点击跳到该场单场视图）→ 表格。
 - 玩家表默认只显示 6–8 个核心列（`utils/helpers.js` 的 `*_DEFAULT_VISIBLE`），其余在「列 N/M」面板里；localStorage 可见列与旧默认值完全相同时视为未自定义，迁到新默认值。手机（<768）默认用 `PlayerCardList` 卡片列表（可切回表格，排序与表格共用）；卡片模式下表格仍在 DOM 中隐藏，PNG 导出始终导出表格。
 - 玩家详情 `PlayerDetailDrawer`：桌面可拖宽的推开式侧栏，平板固定 360px 推开式侧栏（都写 `--pd-drawer-offset` 让工作台让位），手机全屏 sheet，可左右滑动切换玩家。
@@ -13,8 +16,8 @@
 - `frontend/src/composables/useReplaySession.ts` 是唯一 session state owner，持有 selection、当前 battle、本地分析状态（`analysis: { phase, done, total, failure }`）、结果与 Workspace view state。
 - `frontend/src/composables/useLocalReplayAnalysis.ts` 持有本机分析生命周期：Worker 解析（上游 Rust Core WASM）→ 批次计算 → 提交结果；选择变化 / 取消作废在途分析；`exportExcel` 复用最近一次的批次结果在客户端生成 xlsx / zip。服务器没有 parser，失败只显示原因（`ENGINE_UNAVAILABLE` / `NO_VALID_REPLAYS` / `UNKNOWN`），不回退服务端。
 - `frontend/src/composables/useReplay.ts` 是 facade/orchestrator，组合 session 与本地分析。
-- `BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时显示 `workspace.single_replay_required`。
-- `frontend/src/app/viewRegistry.js` 将 `replay`、`ai-review`、`battle-playback` URL 映射到同一个 `ReplayWorkspace`，由 `initialCapability` 决定初始 tab；`ViewHost.vue` 用 `KeepAlive` 保留工作台实例。
+- `BattlePlaybackPanel.vue`（2D）、`AgentReplay3D.vue`（3D）、`AgentShots.vue`（射击）都直接接收工作台给的目标文件（`props.file`/`active`/`blockedReason`）：2D 本机 `parseLocalPlayback` 得到数据与地图概览，3D 本机 `loadPlaybackData` + `playbackScene` 全场渲染，射击本机 `parseAgentShotsFromBytes` 出逐发表格；三者都是懒挂载 chunk。多文件未选场次时统一显示 `workspace.single_replay_required`，没有目标文件时显示 `workspace.playback_empty`。
+- `frontend/src/app/viewRegistry.js` 将 `replay`、`ai-review`、`battle-playback`、`agent-replay`、`agent-shots` URL 映射到同一个 `ReplayWorkspace`，由 `initialCapability` 决定初始 tab（`viewRegistry.replayInitialCapability`）；`ViewHost.vue` 用 `KeepAlive` 保留工作台实例。
 - `frontend/src/app/router.js` 是历史与深链 owner。页面组件通过注入的 `navigate` 改变 URL，不直接操作浏览器 history。
 
 ## 稳定边界

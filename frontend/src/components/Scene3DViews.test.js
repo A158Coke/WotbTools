@@ -22,7 +22,10 @@ vi.mock('../scene/playbackScene.js', () => {
     playback.api = {
       store,
       loadData: vi.fn(async () => {}),
+      // 内核 reset() 的契约：撤下会话并回到「无数据」态（测试替身照做，否则 hasData 会挡住待开播面板）
+      reset: vi.fn(() => { store.hasData = false; store.loading = false }),
       destroy: vi.fn(),
+      setPlaying: vi.fn(),
       setQuality: vi.fn(),
     }
     return playback.api
@@ -50,10 +53,14 @@ function mockWebGL(level) {
   })
 }
 
-async function mountWithRouter(component, query) {
+async function mountWithRouter(component, query, props = null) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
   await router.push({ path: '/', query })
-  const wrapper = mount(component, { global: { plugins: [router], mocks: { $t: translate } }, attachTo: document.body })
+  const wrapper = mount(component, {
+    global: { plugins: [router], mocks: { $t: translate } },
+    ...(props ? { props } : {}),
+    attachTo: document.body,
+  })
   await flushPromises()
   return wrapper
 }
@@ -229,19 +236,36 @@ describe('AgentReplay3D WebGL 预检与加载状态', () => {
     expect(bars[1].attributes('title')).toBe('agentReplay.hp_enemy 75%')
   })
 
-  it('解析中为不确定进度，资产阶段显示资产进度；失败后可重试同一文件或关闭', async () => {
+  it('工作台给回放后先选画质（待开播）：点「开始」才解析，之前不建渲染器、不 loadData', async () => {
     mockWebGL('webgl2')
-    const wrapper = await mountReplay()
+    const { default: AgentReplay3D } = await import('./AgentReplay3D.vue')
+    const wrapper = await mountWithRouter(AgentReplay3D, { view: 'agent-replay' })
     expect(playback.init).toHaveBeenCalledTimes(1)
     const { store } = playback.api
 
+    // 尚未选回放：显示空态（不再是自带文件选择器）
+    expect(wrapper.find('[data-test=replay3d-source-hint]').text()).toContain('workspace.playback_empty')
+    expect(wrapper.find('input[type="file"]').exists()).toBe(false)
+
+    // 工作台给了回放：先进入「待开播」，画质按钮可点、但还没解析
+    const file = new File(['x'], 'battle.wotbreplay')
+    wrapper.setProps({ file })
+    await nextTick()
+    expect(wrapper.find('[data-test=replay3d-pending]').exists()).toBe(true)
+    expect(playback.api.loadData).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="scene3d-loading"]').exists()).toBe(false)
+    // 画质必须在渲染器创建前定型：此时点档位走 setQuality
+    const buttons = wrapper.findAll('.loader .row button:not(.start)')
+    expect(buttons.length).toBeGreaterThan(0)
+    await buttons[0].trigger('click')
+    expect(playback.api.setQuality).toHaveBeenCalled()
+
+    // 点「开始」才真正加载
     let finish
     playback.api.loadData.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
-    const input = wrapper.find('input[type="file"]')
-    const file = new File(['x'], 'battle.wotbreplay')
-    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
-    await input.trigger('change')
+    await wrapper.find('[data-test=replay3d-start]').trigger('click')
     await nextTick()
+    expect(playback.api.loadData).toHaveBeenCalledWith({ kind: 'local', file })
     expect(wrapper.find('[data-testid="scene3d-loading"]').text()).toContain('agentReplay.parsing')
     expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBeUndefined()
 
@@ -265,5 +289,70 @@ describe('AgentReplay3D WebGL 预检与加载状态', () => {
     await wrapper.find('[data-testid="scene3d-dismiss"]').trigger('click')
     expect(store.err).toBe('')
     expect(wrapper.find('[data-testid="scene3d-error"]').exists()).toBe(false)
+  })
+
+  it('多文件未选场次（blockedReason）时不解析，显示工作台给出的原因', async () => {
+    mockWebGL('webgl2')
+    const { default: AgentReplay3D } = await import('./AgentReplay3D.vue')
+    const file = new File(['x'], 'battle.wotbreplay')
+    const wrapper = await mountWithRouter(AgentReplay3D, { view: 'agent-replay' }, { file, blockedReason: 'workspace.single_replay_required' })
+    await flushPromises()
+    expect(playback.api.loadData).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test=replay3d-source-hint]').text()).toContain('workspace.single_replay_required')
+  })
+
+  it('多文件切场次：换另一场先撤下上一场（内核 reset）再进入新一场待开播，不卡在旧场景', async () => {
+    mockWebGL('webgl2')
+    const { default: AgentReplay3D } = await import('./AgentReplay3D.vue')
+    const fileA = new File(['a'], 'a.wotbreplay')
+    const fileB = new File(['b'], 'b.wotbreplay')
+    const wrapper = await mountWithRouter(AgentReplay3D, { view: 'agent-replay' })
+
+    wrapper.setProps({ file: fileA })
+    await nextTick()
+    await wrapper.find('[data-test=replay3d-start]').trigger('click')
+    await flushPromises()
+    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
+    playback.api.store.hasData = true
+    await nextTick()
+
+    // 切到另一场：必须先撤下旧场景（否则 hasData 挡着待开播面板，用户永远看着上一场）
+    wrapper.setProps({ file: fileB })
+    await flushPromises()
+    expect(playback.api.reset).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-test=replay3d-pending]').text()).toContain('b.wotbreplay')
+    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
+
+    await wrapper.find('[data-test=replay3d-start]').trigger('click')
+    await flushPromises()
+    expect(playback.api.loadData).toHaveBeenLastCalledWith({ kind: 'local', file: fileB })
+  })
+
+  it('工作台清空回放：复位到等待态（内核 reset + 回到空态，不再呈现上一场）', async () => {
+    mockWebGL('webgl2')
+    const { default: AgentReplay3D } = await import('./AgentReplay3D.vue')
+    const file = new File(['x'], 'battle.wotbreplay')
+    const wrapper = await mountWithRouter(AgentReplay3D, { view: 'agent-replay' }, { file })
+    await flushPromises()
+    // 待开播 → 点开始才加载
+    await wrapper.find('[data-test=replay3d-start]').trigger('click')
+    await flushPromises()
+    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
+    playback.api.store.hasData = true
+    await nextTick()
+    expect(wrapper.find('.loader').exists()).toBe(false)
+
+    // 清空选择 / 多文件未选场次 → props.file 变 null
+    wrapper.setProps({ file: null })
+    await flushPromises()
+    expect(playback.api.reset).toHaveBeenCalledTimes(1)
+    await nextTick()
+    // 本地记住的「上次加载的文件」同时清掉：再选同一份回放要能重新走待开播→开始
+    wrapper.setProps({ file })
+    await flushPromises()
+    expect(wrapper.find('[data-test=replay3d-start]').exists()).toBe(true)
+    await wrapper.find('[data-test=replay3d-start]').trigger('click')
+    await flushPromises()
+    expect(playback.api.loadData).toHaveBeenCalledTimes(2)
   })
 })
