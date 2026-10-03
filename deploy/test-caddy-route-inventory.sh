@@ -62,6 +62,8 @@ guard() {
   local dir="$1" rc=0
   rm -f "$stub_log"
   PATH="$work/bin:$PATH" STUB_DOCKER_LOG="$stub_log" \
+    CADDY_FRONTEND_UPSTREAM="${CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}" \
+    CADDY_KEYCLOAK_UPSTREAM="${CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}" \
     bash "$ROOT/deploy/tx/validate-caddy-config.sh" "$dir" >"$work/out.log" 2>&1 || rc=$?
   release_compose_network "$dir"
   return "$rc"
