@@ -56,6 +56,21 @@ jobs:
             export TX_FRONTEND_IMAGE_REF="$(running_image wotb-frontend)"
             export TX_BUSINESS_API_IMAGE_REF="$(running_image business-api)"
 
+            assert_digest_image() {
+              local actual="$1" repository="$2" digest
+              case "$actual" in
+                "$TX_IMAGE_REGISTRY_PREFIX/$repository@sha256:"*) ;;
+                *) echo "Running image is not the expected TCR digest-pinned image: $repository" >&2; return 1 ;;
+              esac
+              digest="$(printf '%s' "$actual" | sed -n 's/^.*@sha256://p')"
+              [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || {
+                echo "Running image has an invalid sha256 digest: $repository" >&2
+                return 1
+              }
+            }
+            assert_digest_image "$TX_FRONTEND_IMAGE_REF" wotbtools-frontend
+            assert_digest_image "$TX_BUSINESS_API_IMAGE_REF" wotbtools-business-api
+
             output="$(bash "$lock_wrapper" bash "$runtime")"
             printf '%s\n' "$output"
             grep -Fxq 'TX_RUNTIME_READY' <<< "$output"
