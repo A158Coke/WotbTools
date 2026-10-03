@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { execSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -108,6 +108,34 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [
       vue(),
+      // dev-only 修复：把 `/wasm/*.js` 按静态模块伺服，绕开 Vite 对 publicDir 里 .js 的拦截。
+      //
+      // 缺陷：`publicDir` 指向 root 之外的 `../common/assets`；importAnalysis 会把动态
+      // `import()` 包成 `__vite__injectQuery(url, 'import')`（**`@vite-ignore` 不阻止这一步**），
+      // dev server 随即把带 `?import` 的请求判定为「源码 import」，对 publicDir 里的 .js 直接抛
+      // "should not be imported from source code"。实测（2026-10-03，Vite 6.4.3）：
+      //   `/wasm/<ref>/wotb_replay_wasm.js`          → 200 text/javascript
+      //   `/wasm/<ref>/wotb_replay_wasm.js?import`   → **500**（修前）
+      // 于是 dev 下 3D 回放 / 射击复现拿不到引擎（AgentWasm 懒加载，选中回放文件时才触发）。
+      //
+      // 修法：在 transform 之前按静态文件伺服，与构建产物行为一致（publicDir 原样拷进 dist、
+      // 按静态文件取、query 被忽略）。`apply: 'serve'` ⇒ 只影响 dev server，`npm run build`
+      // 产物与 CI 完全不受影响。
+      {
+        name: 'local-dev-public-wasm-as-module',
+        apply: 'serve',
+        configureServer(server) {
+          server.middlewares.use('/wasm', (req, res, next) => {
+            const rel = decodeURIComponent((req.url || '').split('?')[0]).replace(/^\/+/, '')
+            if (!rel.endsWith('.js')) return next()
+            const file = resolve(configDirectory, '../common/assets/wasm', rel)
+            if (!existsSync(file)) return next()
+            res.setHeader('Content-Type', 'text/javascript')
+            res.setHeader('Cache-Control', 'no-cache')
+            createReadStream(file).pipe(res)
+          })
+        },
+      },
       {
         name: 'wotb-build-identity',
         apply: 'build',

@@ -10,6 +10,20 @@
 - 先跑与改动直接相关的测试：`npx vitest run <related-test-files>`；多文件 feature 再跑对应 feature suite。
 - 不因小改动重复跑全量测试或 build。路由、依赖、Vite、动态 import、资产管线或生产编译改动才在本地扩大验证；repository full validation 由 PR CI 负责。
 
+## Local runs must configure the asset origin
+
+前端是 client-only + remote 资产面：dev server 下没有 `VITE_ASSET_BASE_URL` 时 `assetProvider`
+会显式报「资产源未配置」，**地图地形 / 车模 GLB / 坦克数据一律不加载**（回放解析、标签、伤害
+数字仍正常，现象就像"只有模型没了"）。**3D 回放 / 车模 / 地图相关的本机测试一律按这个姿势做**
+（完整说明见 [`docs/frontend/local-production-dev.md`](../docs/frontend/local-production-dev.md) §本机资产面）：
+
+1. 在 WoT-Blitz-Agent 仓执行 `node scripts/serve_asset_pack.mjs 8123`（伺服其 `release/asset_pack/`，带 CORS）。
+2. 本仓 `frontend/.env.local`（gitignored）写 `VITE_ASSET_BASE_URL=http://127.0.0.1:8123`；改后**必须重启 dev server**（env 在 transform 时内联）。
+3. `npm run dev` → `http://localhost:5173/?view=agent-replay&agentViews=1`（管理视图 dev 下需 `?agentViews=1`）。
+4. 自检不看画面：`?debug` 下 `window.__gdbg.layers === true`、`window.__pbV.filter(v => v.glb).length === 车辆数`。
+
+坑：URL 上的非空 `?assets=` 会持久化到 localStorage 并盖住 `.env.local`；回到默认要带一次空 `?assets=`。
+
 ## Architecture boundaries
 
 - 需要路由、页面/组件归属、composable 状态、API 边界或跨 feature import 时，必须先读取

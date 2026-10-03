@@ -2,6 +2,10 @@
 // 无服务端通道。WotBTools Playback 拓扑不含 Business API / Agent 自托管服务端
 //（评审 P0-3）；地图/地形/场景等渲染资产经 assetProvider 走配置的 remote asset origin。
 //
+// 解析在 Worker 里跑（playbackParse.worker.ts）：把 WASM `parsePlayback`（单场 ~95ms）
+// 移出 UI 线程；主线程只做 JSON.parse 与契约校验。同一份文件（名+长+mtime+采样指纹）
+// 的解析结果缓存最近 3 场，重复打开直接命中。Worker 不可用时回退主线程同一条路径。
+//
 // WASM 产物由 CI 依据 deploy/agent/source.json 锁定的上游 Release 产物直取
 //（fetch-agent-wasm.sh，sha256 + fingerprint 双重校验）到 common/assets/wasm/<ref>/，
 // 经 publicDir 进 dist，线上由 /wasm/<ref>/ 伺服；产物缺失时本地通道拒绝并提示。
@@ -11,7 +15,7 @@
 
 // 契约校验复用 api/agent-replay-facets 的 validateAgentPlayback（trust-boundary
 // 单一实现）：3D 路径此前只做 JSON.parse，错版 WASM 可静默载入 v1 数据（缺
-// supremacy_bases/points/aim_frames），版本门禁形同虚设。
+// supremacy_bases/points），版本门禁形同虚设。
 import { loadAgentWasmModule, validateAgentPlayback } from '../api/agent-replay-facets.js'
 
 /**
@@ -37,15 +41,104 @@ function tankNamesStatic() {
   return tankNamesPromise
 }
 
-export async function loadFromLocalFile(fileObject) {
-  const mod = await loadAgentWasmModule()
+// ---------- 解析 Worker 与解析结果缓存 ----------
+// 解析（WASM `parsePlayback`，单场 95ms 量级）在 Worker 里跑，主线程只做 JSON.parse 与
+// 契约校验（见 playbackParse.worker.ts 的取舍说明）。Worker 构造/崩溃时回退主线程同一条
+// WASM 路径——行为与改造前一致，只是少了线程隔离。
+const PLAYBACK_JSON_CACHE_MAX = 3;   // 每条 JSON 约 2–3MB，故只留最近 3 场
+const playbackJsonCache = new Map();
+let parseWorker = null;
+let parseSeq = 0;
+const parsePending = new Map();
+
+function parseWorkerInstance() {
+  if (parseWorker) return parseWorker;
+  try {
+    const worker = new Worker(new URL('./playbackParse.worker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (event) => {
+      const { id, json, error } = event.data || {};
+      const pending = parsePending.get(id);
+      if (!pending) return;
+      parsePending.delete(id);
+      if (error) pending.reject(new Error(error)); else pending.resolve(json);
+    };
+    // 崩溃/初始化失败：在飞请求全部失败并由调用方回退主线程，worker 置空待下次重建
+    worker.onerror = (event) => {
+      const err = new Error(event.message || 'playback parse worker crashed');
+      for (const pending of parsePending.values()) pending.reject(err);
+      parsePending.clear();
+      parseWorker = null;
+    };
+    parseWorker = worker;
+  } catch { parseWorker = null; }
+  return parseWorker;
+}
+
+async function parsePlaybackJsonOffThread(bytes) {
+  const worker = parseWorkerInstance();
+  if (worker) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const id = ++parseSeq;
+        parsePending.set(id, { resolve, reject });
+        // 不转移所有权：失败回退时主线程仍需这份字节（结构化克隆 1–2MB 成本可忽略）
+        worker.postMessage({ id, bytes });
+      });
+    } catch (err) {
+      console.warn('[playback] 解析 Worker 不可用，回退主线程解析:', err);
+      parseWorker = null;
+    }
+  }
+  const mod = await loadAgentWasmModule();
   if (typeof mod.parsePlayback !== 'function') {
     throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
   }
-  const bytes = new Uint8Array(await fileObject.arrayBuffer())
+  return mod.parsePlayback(new Uint8Array(bytes));
+}
+
+/** 缓存键：文件名 + 字节数 + mtime + **采样指纹**（首/中/尾各 ≤4KB 的 FNV-1a）。
+ *  只靠文件名/长度/mtime 会让「同名同长但内容不同」的两份回放互相串用；
+ *  全量哈希 1–2MB 又要几毫秒，采样窗口足够区分真实回放（成本 ~0.05ms）。 */
+function fileCacheKey(fileObject, bytes) {
+  const n = bytes.length;
+  let h = 2166136261;
+  const step = Math.max(1, Math.floor(n / 3));
+  for (const start of [0, step, Math.max(0, n - 4096)]) {
+    const end = Math.min(n, start + 4096);
+    for (let i = start; i < end; i++) { h ^= bytes[i]; h = Math.imul(h, 16777619); }
+  }
+  h = (h >>> 0).toString(36);
+  return [fileObject && fileObject.name ? fileObject.name : '',
+          n,
+          fileObject && fileObject.lastModified ? fileObject.lastModified : 0, h].join('|');
+}
+
+/** 仅测试用：清空解析结果缓存（跨用例替换 WASM 桩时，同一份字节会产出不同结果） */
+export function __resetPlaybackJsonCacheForTest() { playbackJsonCache.clear(); }
+
+export async function loadFromLocalFile(fileObject) {
+  const bytes = await fileObject.arrayBuffer()
+  // 解析结果缓存：以（文件名, 字节数, mtime）为键缓存 JSON 字符串。重复打开同一场
+  // （换标签页/重进页面/重新加载同一文件）直接命中，省掉一次完整 WASM 解析；
+  // 命中仍走主线程 JSON.parse（约 15ms）与契约校验，形状门禁不绕过。
+  const cacheKey = fileCacheKey(fileObject, bytes)
+  const cachedJson = playbackJsonCache.get(cacheKey)
+  if (cachedJson !== undefined) {
+    playbackJsonCache.delete(cacheKey); playbackJsonCache.set(cacheKey, cachedJson);   // LRU 触碰
+    return enrichPlayback(validateAgentPlayback(JSON.parse(cachedJson)))
+  }
+  const json = await parsePlaybackJsonOffThread(bytes)
+  playbackJsonCache.set(cacheKey, json)
+  if (playbackJsonCache.size > PLAYBACK_JSON_CACHE_MAX) {
+    playbackJsonCache.delete(playbackJsonCache.keys().next().value)   // 最旧一条
+  }
   // 契约 v2 门禁：与 parseAgentPlaybackFromBytes 同一校验器（错版/陈旧 WASM
   // 在此抛出，而不是把缺字段的 v1 数据交给渲染层）
-  const data = validateAgentPlayback(JSON.parse(mod.parsePlayback(bytes)))
+  return enrichPlayback(validateAgentPlayback(JSON.parse(json)))
+}
+
+/** 展示名富化（本地通道与缓存命中路径共用） */
+async function enrichPlayback(data) {
   // 展示名富化：客户端 WASM 无 tank_names（数据边界），按静态资产补齐；
   // 仅补空值，不覆盖上游已有名。失败不阻断回放（兜底显示 tank_{id}）
   try {

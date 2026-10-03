@@ -8,14 +8,80 @@
 //   poseShooterTurretGun（消费方还带 bake 捕获与炮盾随动，留在场景侧）。
 import * as THREE from 'three'
 
-/** GLB 根节点四元数：yaw/pitch/roll（场景系）× z-up→y-up 帧变换 */
-export function poseFromYPR(yaw, pitch, roll) {
-  const qYpi = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI)
-  const qFrame = qYpi.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2))
-  const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw || 0)
-  const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch || 0)
-  const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll || 0)
-  return qYaw.multiply(qPitch).multiply(qRoll).multiply(qFrame)
+// 模块级常量与 scratch：poseFromYPR 在 3D 回放里**每车每帧**被调用（14 车 × 60fps），
+// 原实现每次分配 5 个 Quaternion + 3 个 Vector3——是每帧 GC 抖动的主要来源之一。
+// 帧变换与旋转轴都是常量；调用方可传 `out` 复用目标四元数（不传则照旧返回新对象，
+// tankViewer 里把结果绑到变量再用的调用点不受影响）。
+const AXIS_Y = new THREE.Vector3(0, 1, 0)
+const AXIS_X = new THREE.Vector3(1, 0, 0)
+const AXIS_Z = new THREE.Vector3(0, 0, 1)
+/** qFrame = Ry(π)·Rx(−π/2)，常量，预计算一次 */
+const Q_FRAME = new THREE.Quaternion()
+  .setFromAxisAngle(AXIS_Y, Math.PI)
+  .multiply(new THREE.Quaternion().setFromAxisAngle(AXIS_X, -Math.PI / 2))
+const _qYaw = new THREE.Quaternion()
+const _qPitch = new THREE.Quaternion()
+const _qRoll = new THREE.Quaternion()
+
+/**
+ * GLB 根节点四元数：yaw/pitch/roll（场景系）× z-up→y-up 帧变换。
+ * `out` 传入时写入并返回它（热路径零分配）；省略则返回新对象（兼容既有调用点）。
+ */
+export function poseFromYPR(yaw, pitch, roll, out) {
+  const q = out || new THREE.Quaternion()
+  _qYaw.setFromAxisAngle(AXIS_Y, yaw || 0)
+  _qPitch.setFromAxisAngle(AXIS_X, pitch || 0)
+  _qRoll.setFromAxisAngle(AXIS_Z, roll || 0)
+  return q.copy(_qYaw).multiply(_qPitch).multiply(_qRoll).multiply(Q_FRAME)
+}
+
+/**
+ * 丢弃与 `gun_NN_mask` **几何完全一致**的 `mask_NN` 重复件。
+ *
+ * 实测（2026-10-03）：Maus（tank 6929；全 735 台里唯一一个）的视觉模型同时存在
+ * `gun_01_mask` 与 `mask_01` 两个节点——两者**共用同一套索引/UV accessor，顶点数与
+ * 包围盒逐值相同**，即同一块炮盾的重复副本。装配 rig 只按名字摆位（`^gun_\d+(_mask)?$`
+ * 随炮管、`turret_\d+` 随炮塔），`mask_NN` 不在其中，于是炮塔/炮管转走后这份副本
+ * **留在原地**（表现为"原地还剩一块炮盾"），且两份共面几何本就互相 z-fighting。
+ *
+ * 判据是**几何一致**（子树内 mesh 数、各 mesh 顶点数、包围盒逐值相等）而不只是命名：
+ * 几何不同则原样保留——绝不凭"名字像副本"就删掉可见部件。
+ *
+ * @returns {number} 丢弃的节点数（0 = 无副本，正常）
+ */
+export function dropDuplicateGunMasks(root) {
+  if (!root) return 0
+  const meshesOf = (node) => {
+    const out = []
+    node.traverse((n) => { if (n.isMesh && n.geometry) out.push(n) })
+    return out
+  }
+  const sameGeometry = (a, b) => {
+    if (a.length !== b.length || !a.length) return false
+    return a.every((ma, i) => {
+      const mb = b[i]
+      const pa = ma.geometry.attributes.position, pb = mb.geometry.attributes.position
+      if (!pa || !pb || pa.count !== pb.count) return false
+      if (!ma.geometry.boundingBox) ma.geometry.computeBoundingBox()
+      if (!mb.geometry.boundingBox) mb.geometry.computeBoundingBox()
+      return ma.geometry.boundingBox.min.distanceTo(mb.geometry.boundingBox.min) < 1e-4
+        && ma.geometry.boundingBox.max.distanceTo(mb.geometry.boundingBox.max) < 1e-4
+    })
+  }
+  const byName = new Map()
+  root.traverse((n) => { if (n.name) byName.set(n.name, n) })
+  let dropped = 0
+  for (const [name, node] of byName) {
+    const m = name.match(/^mask_(\d+)$/)
+    if (!m) continue
+    const counterpart = byName.get(`gun_${m[1]}_mask`)
+    if (!counterpart || !sameGeometry(meshesOf(node), meshesOf(counterpart))) continue
+    for (const mesh of meshesOf(node)) mesh.geometry.dispose()
+    if (node.parent) node.parent.remove(node)
+    else root.remove(node)
+    dropped++
+  }
+  return dropped
 }
 
 /** 老式车材质（无 metallicRoughness 贴图）的金属度归零。
