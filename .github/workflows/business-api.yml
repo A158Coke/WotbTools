@@ -352,13 +352,13 @@ jobs:
           TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
           TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
           TX_BUSINESS_DB_PASSWORD_VERSION: ${{ vars.TX_BUSINESS_DB_PASSWORD_VERSION || '1' }}
-          # K6B-2B: the application database consumer is cut over to the reviewed TX1
-          # WireGuard service endpoint. It is the only consumer moved in K6B-2B; every
-          # other private placement stays Docker-local until its own step, and the
-          # read-only runtime gate expects the same value.
+          # K6B-2B / K6B-2C: the database consumer and the Keycloak Admin consumer are
+          # cut over to the reviewed TX1 WireGuard service endpoints. K6B-2C is the only
+          # consumer moved here; every other private placement stays Docker-local until
+          # its own step, and the read-only runtime gate expects the same values.
           TX_BUSINESS_DB_HOST: 10.20.0.1
           TX_BUSINESS_DB_PORT: '25432'
-          TX_KEYCLOAK_ADMIN_SERVER_URL: http://keycloak:8080
+          TX_KEYCLOAK_ADMIN_SERVER_URL: http://10.20.0.1:8080
           KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
           BOOST_AUTO_CONFIRM_HOURS: ${{ vars.BOOST_AUTO_CONFIRM_HOURS || '72' }}
           BOOST_AUTO_CONFIRM_SCAN_MS: ${{ vars.BOOST_AUTO_CONFIRM_SCAN_MS || '300000' }}

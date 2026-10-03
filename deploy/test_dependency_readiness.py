@@ -215,6 +215,10 @@ class EndpointValidationOrderTests(unittest.TestCase):
             "TX_KEYCLOAK_ADMIN_SERVER_URL must be http://keycloak:8080",
         )
         self.assert_refused_before_any_container(
+            self.run_probe("business-api", TX_KEYCLOAK_ADMIN_SERVER_URL="http://10.20.0.1:8088"),
+            "TX_KEYCLOAK_ADMIN_SERVER_URL must be http://keycloak:8080",
+        )
+        self.assert_refused_before_any_container(
             self.run_probe("keycloak", TX_KEYCLOAK_DB_HOST="10.20.0.1", TX_KEYCLOAK_DB_PORT="5432"),
             "TX_KEYCLOAK_DB must be keycloak-postgres:5432",
         )
@@ -222,6 +226,49 @@ class EndpointValidationOrderTests(unittest.TestCase):
             self.run_probe("keycloak", TX_KEYCLOAK_DB_HOST="10.20.0.2", TX_KEYCLOAK_DB_PORT="15432"),
             "TX_KEYCLOAK_DB must be keycloak-postgres:5432",
         )
+
+
+class SecretLoggingTests(unittest.TestCase):
+    """The readiness path must never echo secret material into the CI log.
+
+    The accepted path needs a live Keycloak, so this is asserted structurally: the
+    probe prints only `label: PASS`, and every failure prints only the exception *type*
+    name, never a message that could carry a credential, token, or Authorization
+    header. `test_keycloak_admin_endpoint_is_validated_before_any_secret` covers the
+    ordering half, and this covers the disclosure half of the K6B-2C credential rule.
+    """
+
+    SECRET_NAMES = (
+        "KEYCLOAK_ADMIN_CLIENT_SECRET",
+        "KEYCLOAK_E2E_CLIENT_SECRET",
+        "TX_BUSINESS_DB_PASSWORD",
+        "KC_BOOTSTRAP_ADMIN_PASSWORD",
+        "access_token",
+        "Authorization",
+    )
+
+    def test_probe_never_interpolates_a_secret_into_a_printed_line(self) -> None:
+        source = MODULE_PATH.read_text(encoding="utf-8")
+        printed = [line for line in source.splitlines() if "print(" in line]
+        self.assertTrue(printed, "the probe must print its PASS/failure lines")
+        for line in printed:
+            for name in self.SECRET_NAMES:
+                # Interpolation, not a bare identifier: `--env SECRET_NAME` is fine.
+                self.assertNotIn(f"{{{name}}}", line, line)
+                self.assertNotIn(f"${{{name}}}", line, line)
+                self.assertNotIn(f"${name}", line, line)
+        # Failures must stay message-free: only the exception type name is disclosed.
+        self.assertIn("dependency readiness failed: {type(error).__name__}", source)
+        self.assertIn("({type(last_error).__name__})", source)
+
+    def test_shell_entrypoint_never_echoes_a_secret_value(self) -> None:
+        source = SCRIPT_PATH.read_text(encoding="utf-8")
+        for line in source.splitlines():
+            if "echo " not in line and "die " not in line:
+                continue
+            for name in self.SECRET_NAMES:
+                self.assertNotIn(f"${{{name}}}", line, line)
+                self.assertNotIn(f"${name}", line, line)
 
 
 if __name__ == "__main__":
