@@ -592,6 +592,12 @@ Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties
 bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 的版本与契约，
 生产发布前还会校验 APK、manifest 和 `version.json` 的 SHA/版本一致性。
 
+发布分两阶段（`android-release.yml`）：main 合并后自动 **stage**（构建/签名/上传 immutable APK、
+建 tag、写 staging evidence，**不碰** production `version.json`）；真机 A14 验证通过后手工
+`workflow_dispatch(mode=publish)` **publish**（复用 staged APK、校验 staged 身份 + Keycloak client +
+production frontend native 运行面 + minSupported cutover，最后才写 `version.json`）。
+细节见 `docs/android/release-process.md`。
+
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
 Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurrency，`cancel-in-progress: false`（`queue: max` 只排队、不丢弃已开始的生产写入）；服务器脚本另用 `flock` 串行化 production mutation。TX 人工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`（源文件 `deploy/tx/with-deploy-lock.sh`）让锁 FD 只存在于命令进程树，禁止在交互 SSH shell 直接 `exec 9>` 持锁；冲突时 wrapper 会输出当前 holder 诊断。Build 与 Release 不占用该队列，但每个 lane 都在 mutation 前核对 source 仍是当前 main。这不是 distributed lock。

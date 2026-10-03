@@ -37,11 +37,13 @@ android/
         NativeBridge.kt       # 方法白名单分发（含 auth*）
         auth/
           AuthManager.kt          # login/logout/token 编排（AppAuth），单飞 refresh
-          AuthStateStore.kt       # Keystore AES-GCM 加密的持久认证状态
+          SecureSlotStore.kt      # 加密槽位原语（Keystore AES-GCM）+ 状态域隔离契约
+          AuthTransactionStore.kt # 进行中的授权交易（request + 本次回程 URI，纯逻辑）
+          AuthSessionStore.kt     # 已建立的会话（AppAuth AuthState JSON，纯逻辑）
           AuthSession.kt          # 当前会话快照 + 过期判定（纯逻辑）
           OidcConfiguration.kt    # issuer / clientId / redirect URIs / scope
           OidcRedirectStrategy.kt # HTTPS App Link vs private scheme（纯决策 + API31 探测）
-          AuthResponseGuard.kt    # 事务归属校验（redirect / code / error，纯逻辑）
+          AuthResponseGuard.kt    # 事务归属校验（state / redirect / code / error，纯逻辑）
           AuthResult.kt           # 显式 result / error 模型
       res/
         layout/activity_main.xml         # webView + networkGate + versionGate + webError
@@ -139,12 +141,14 @@ App **未安装**（或该设备没走 App Link）时，浏览器会真的停在
 
 ### 校验边界（谁负责什么）
 
-- **AppAuth 负责**：响应 `state` 与请求 `state` 的比较（`AuthorizationManagementActivity` 不匹配即丢弃
-  并回 `STATE_MISMATCH`）、nonce 断言、以及 code verifier 的归属 —— verifier 只存在于
+- **AppAuth 负责**：它自己那一份响应 `state` 与请求 `state` 的比较（`AuthorizationManagementActivity`
+  不匹配即丢弃并回 `STATE_MISMATCH`）、nonce 断言、以及 code verifier 的归属 —— verifier 只存在于
   `AuthorizationRequest` 内，随响应对象回到本进程后才用于交换，应用层拿不到也不需要拿。
-- **本 App 负责**（`AuthResponseGuard`，JVM 单测覆盖）：response 携带的 redirect URI 必须等于**本次事务
-  实际使用的那一条**（不一致 fail closed）；成功路径必须有 code；OAuth `error`（含用户取消）分类为
-  显式失败；取消/失败后必须仍可重新登录（不得留下卡死的 auth 状态）。
+- **本 App 负责**（`AuthResponseGuard`，JVM 单测覆盖）：响应携带的 `state` 必须等于**本次交易**
+  持久化的请求的 `state`（我们独立存了一份，因此即使 intent 里的请求缺失或被替换，也不会有响应
+  被算作「我们发起的交易」）；response 携带的 redirect URI 必须等于**本次交易实际使用的那一条**
+  （不一致 fail closed）；成功路径必须有 code；OAuth `error`（含用户取消）分类为显式失败；
+  取消/失败后必须仍可重新登录（不得留下卡死的 auth 状态）。
 - **PKCE 必须显式声明 S256**：AppAuth 单参数 `setCodeVerifier()` 会算出 challenge 但**不设置**
   `code_challenge_method`，只带 `code_challenge` 时 Keycloak 按 `plain` 处理 —— 那是真实的 PKCE 降级，
   因此必须用三参数 `setCodeVerifier(verifier, challenge, S256)`。
@@ -157,9 +161,17 @@ App **未安装**（或该设备没走 App Link）时，浏览器会真的停在
   状态、access token 解码后的 claims（realm roles / `displayName` / `wotb_*`）、expiry。
 - **Vue 永远拿不到**：refresh token、authorization code、PKCE verifier、state/nonce secret。Bridge 不提供
   `getRefreshToken` / `setToken` / `setCookie` / `executeAuthUrl` / 任意 OAuth 请求入口。
-- **持久化只经 `AuthStateStore`**：Android Keystore 的 AES-256-GCM 密钥加密 AppAuth `AuthState` JSON
-  （含 refresh token）后写入 app private `SharedPreferences`；解密/解析失败或数据损坏一律清空并回到
-  未登录。明确禁止：明文 SharedPreferences refresh token、WebView localStorage refresh token、
+- **持久化分成两个互不相干的状态域**（`SecureSlotStore` 的独立 slot，均为 Android Keystore
+  AES-256-GCM 加密后写入 app private `SharedPreferences`）：
+  - `AuthTransactionStore`：进行中的授权交易（`AuthorizationRequest` + 本次选定的回程 URI + 建立时刻）。
+    只有登录启动、回程校验与交换成功这三处读写它。
+  - `AuthSessionStore`：已建立的会话（AppAuth `AuthState` JSON，含 refresh token）。
+    `authGetState`、token 读取、刷新与 logout **只**经这一个域。
+  两条硬规则：任何人都不解析、不清理对方的状态；交换成功时先写会话、再消费交易（顺序不可颠倒）。
+  这样「登录途中进程被杀 + App 重启读会话（甚至是坏会话）」不会作废那笔交易，反过来交易损坏也不会
+  清掉已有会话 —— 单槽位实现正是死在这里：`authGetState` 会把交易当成 `AuthState` 解析，失败即整份清空，
+  回程 callback 于是再也无法通过校验。解密/解析失败一律只清出问题的那个域并回到未登录。
+  明确禁止：明文 SharedPreferences refresh token、WebView localStorage refresh token、
   Cookie → Native token 复制、Native → JS refresh token 暴露。
 - **单飞 refresh**：并发 `authGetAccessToken` 只触发一次 refresh；refresh 无效时清空 Native 会话并回报
   `unauthenticated`（`authGetAccessToken` 的 `error` 字段），Web 侧据此回到未登录态。

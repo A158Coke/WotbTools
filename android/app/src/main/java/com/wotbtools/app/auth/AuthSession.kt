@@ -5,7 +5,7 @@ package com.wotbtools.app.auth
  *
  * 安全边界：只持有 access token（以及「是否存在 id token」这一位事实）与解码后的
  * claims；**绝不**持有 refresh token / authorization code / PKCE verifier / state / nonce。
- * 这些只存在于 [AuthStateStore] 加密保存的 AppAuth `AuthState` JSON 内部，永远不进入本类型、
+ * 这些只存在于 [AuthSessionStore] 加密保存的 AppAuth `AuthState` JSON 内部，永远不进入本类型、
  * 不进入 bridge 回复、不进入日志。
  *
  * 纯 Kotlin：不引用 `android.*`，也不引用 `org.json`，因此有效期判定可在 `testDebugUnitTest`

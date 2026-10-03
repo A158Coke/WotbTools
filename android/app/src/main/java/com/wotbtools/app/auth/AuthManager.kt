@@ -33,6 +33,13 @@ import java.util.concurrent.TimeUnit
  *  - 网络与 token 操作都不在 WebView 线程：发现走库的 AsyncTask，持久化与等待走 [executor]，
  *    bridge 的 WebView 线程只提交请求、异步收结果。
  *
+ * ── 两个状态域（本类最重要的不变量）──
+ *  持久化被刻意拆成两个互不相干的域，各有独立 slot（见 [SecureSlotStore]）：
+ *  [AuthTransactionStore] 只装「进行中的授权交易」，[AuthSessionStore] 只装「已建立的会话」。
+ *  规则：`authGetState` / token 读取 / 刷新 / logout **只**读写会话域；回程校验**只**读写交易域；
+ *  两者都不会解析或清理对方。因此「登录途中进程被杀 + App 重启读会话（甚至是坏会话）」不会
+ *  作废那笔交易，反过来交易损坏也不会把用户已有的会话清掉。
+ *
  * ── 线程模型（刻意写死，避免回调线程猜谜）──
  *  - [login] / [logout] / [accessTokenOrRefresh]：**任意线程**（bridge 的后台线程）调用；
  *    需要 `startActivity` 的动作内部切到主线程（见 [onMainThread]）。
@@ -52,7 +59,21 @@ internal class AuthManager private constructor(context: Context) {
     }
 
     private val appContext = context.applicationContext
-    private val store = AuthStateStore(appContext)
+
+    /**
+     * 认证的**两个互不相干的状态域**（见 [SecureSlotStore] 的类注释）：
+     *  - [transactions]：进行中的授权交易（请求 + 本次回程 URI），只有登录启动、回程校验与
+     *    交换成功这三处读写；
+     *  - [sessions]：已建立的会话（AppAuth `AuthState`），`authGetState` / token 读取 / 刷新 /
+     *    logout 只碰这一个域。
+     *
+     * 两者绝不互相解析、绝不互相清理：会话缺失或损坏不能让进行中的交易作废（否则进程在
+     * 登录途中被回收后，回程 callback 会因交易被误清而永久失败），交易作废也不影响已有会话。
+     */
+    private val slots = KeystoreSlotStore(appContext)
+    private val transactions = AuthTransactionStore(slots)
+    private val sessions = AuthSessionStore(slots)
+
     private val executor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "wotb-auth")
     }
@@ -126,21 +147,26 @@ internal class AuthManager private constructor(context: Context) {
 
     // ── 会话读取 ──
 
-    /** 当前会话快照：内存命中优先，否则从加密存储恢复（损坏 → 未认证，绝不崩溃）。 */
+    /** 当前会话快照：内存命中优先，否则从会话状态域恢复（损坏 → 未认证，绝不崩溃）。 */
     internal fun currentSession(): AuthSession = synchronized(lock) { session }
-        ?: restoreFromStore()
+        ?: restoreSession()
         ?: AuthSession.unauthenticated()
 
-    /** 内存未命中时从加密存储恢复；失败即未认证（条目已在 store 内清空）。 */
-    private fun restoreFromStore(): AuthSession? {
-        val entry = store.load() ?: return null
+    /**
+     * 内存未命中时从**会话域**恢复；失败即未认证（该 slot 已在读取处清空）。
+     *
+     * 刻意不读交易域：`authGetState` 是页面最常调用的一次 bridge 调用，它绝不能因为「有一份
+     * 正在进行的登录交易」而解析失败，更不能把那笔交易清掉。
+     */
+    private fun restoreSession(): AuthSession? {
+        val authStateJson = sessions.load() ?: return null
         // 显式标注类型：catch 分支非局部 return，try 表达式因此是 AuthSession（非 null）。
         val restored: AuthSession = try {
-            val authState = net.openid.appauth.AuthState.jsonDeserialize(entry.authStateJson)
+            val authState = net.openid.appauth.AuthState.jsonDeserialize(authStateJson)
             sessionOf(authState)
         } catch (_: Exception) {
-            // 解密成功但 JSON 形状不对：同样当作损坏，清掉重来。
-            store.clear("deserialize-failed")
+            // 解密成功但 JSON 形状不对：同样当作损坏，只清会话域。
+            sessions.clear("deserialize-failed")
             return null
         }
         // 只有真的解析出 access token 才缓存；空状态不占内存，下次仍会重读存储。
@@ -276,17 +302,14 @@ internal class AuthManager private constructor(context: Context) {
         )
         val request = builder.build()
 
-        // 交易状态（含 code verifier）必须先落盘再启动：进程死亡 / 被回收后仍要能完成交换。
+        // 交易（请求 + 本次回程 URI）必须先落盘再启动：进程在登录途中死亡 / 被回收后，回程
+        // callback 仍要能拿到同一份交易（state 与回程 URI）并通过校验。
         // 顺序是 executor 落盘 → 主线程启动，任何线程都不为这次 I/O 阻塞：调用方（bridge 的认证线程）
         // 立刻拿到「已受理」，主线程也不会被磁盘/Keystore 卡住（旧实现的 await 会在主线程等最多 5s）。
+        //
+        // 只写交易域：这一步绝不触碰会话域，因此「开始登录」不会让一个已有会话消失。
         executor.execute {
-            store.save(
-                AuthStateStore.Entry(
-                    request.jsonSerializeString(),
-                    selectedRedirectUri,
-                    System.currentTimeMillis()
-                )
-            )
+            transactions.save(request.jsonSerializeString(), selectedRedirectUri)
             Log.d(TAG, "auth-login persisted redirect=${OidcConfiguration.redirectCategory(selectedRedirectUri)}")
             onMainThread { startAuthorizationRequest(request) }
         }
@@ -306,7 +329,7 @@ internal class AuthManager private constructor(context: Context) {
             Log.d(TAG, "auth-login launched")
         } catch (e: Exception) {
             // 浏览器不可用 / 启动失败：交易状态不能留下（否则下次响应对不上任何请求）。
-            store.clear("launch-failed")
+            transactions.clear("launch-failed")
             Log.d(TAG, "auth-login failed category=${e.javaClass.simpleName}")
         }
     }
@@ -379,7 +402,8 @@ internal class AuthManager private constructor(context: Context) {
                     AuthFailureReason.STATE_MISMATCH
                 else -> AuthFailureReason.PROVIDER_ERROR
             }
-            store.clear("auth-exception")
+            // 回程失败只作废**这一次交易**：已有会话不是这次失败证明为无效的东西。
+            transactions.clear("auth-exception")
             val detail = exception.error?.takeIf { it.isNotBlank() }
             Log.d(TAG, "auth-result outcome=failure reason=${reason.name.lowercase()} " +
                 "code=${exception.code} error=${detail ?: "none"}")
@@ -392,20 +416,37 @@ internal class AuthManager private constructor(context: Context) {
             null
         }
         if (response == null) {
-            store.clear("empty-result")
+            transactions.clear("empty-result")
             Log.d(TAG, "auth-result outcome=cancelled reason=no-response")
             return AuthResult.Failure(AuthFailureReason.CANCELLED, "no-response")
         }
 
+        // 回程校验的唯一依据是**交易域**：本次交易持久化的 request（state）与实际使用的回程 URI。
+        // 交易不存在（回程是伪造的 / 已被消费）时 fail closed，且绝不去动会话域。
+        val transaction = transactions.load()
+        if (transaction == null) {
+            Log.d(TAG, "auth-result outcome=rejected reason=no-pending-transaction")
+            return AuthResult.Failure(AuthFailureReason.UNSUPPORTED, NO_PENDING_TRANSACTION_DETAIL)
+        }
+        val expectedRequest = try {
+            AuthorizationRequest.jsonDeserialize(org.json.JSONObject(transaction.requestJson))
+        } catch (_: Exception) {
+            // 交易存在但请求读不出来：这份交易不可能再完成，只清交易域。
+            transactions.clear("stored-request-unreadable")
+            Log.d(TAG, "auth-result outcome=rejected reason=stored-request-unreadable")
+            return AuthResult.Failure(AuthFailureReason.UNSUPPORTED, "stored-request-unreadable")
+        }
+
         val guardFailure = AuthResponseGuard.verify(
-            expectedState = response.request.state,
-            expectedRedirectUri = currentTransactionRedirectUri(),
+            expectedState = expectedRequest.state,
+            responseState = response.request.state,
+            expectedRedirectUri = transaction.redirectUri,
             responseRedirectUri = redirectUriOf(intent?.data),
             code = response.authorizationCode,
             error = response.additionalParameters[ERROR_PARAM]
         )
         if (guardFailure != null) {
-            store.clear("guard-${guardFailure.logToken}")
+            transactions.clear("guard-${guardFailure.logToken}")
             Log.d(TAG, "auth-result outcome=rejected reason=${guardFailure.logToken} detail=${guardFailure.detail}")
             return guardFailure
         }
@@ -419,13 +460,16 @@ internal class AuthManager private constructor(context: Context) {
         return AuthResult.ExchangeStarted
     }
 
-    /** 用授权码换 token；成功持久化新 AuthState 并通知，失败清会话（可复用未认证）。 */
+    /**
+     * 用授权码换 token。成功 → **先持久化会话、再消费交易**（顺序不可颠倒：中途进程死亡时
+     * 「会话已存在 + 交易残留」只是下次登录会被覆盖，而反过来会得到「授权码已消耗但会话丢失」）。
+     * 失败 → 只作废这次交易，已有会话不受影响（这次失败没有证明它无效）。
+     */
     private fun exchangeAuthorizationCode(response: AuthorizationResponse) {
         val service = authorizationService()
         service.performTokenRequest(response.createTokenExchangeRequest()) { tokenResponse, ex ->
             if (tokenResponse == null || ex != null) {
-                store.clear("exchange-failed")
-                synchronized(lock) { session = null }
+                transactions.clear("exchange-failed")
                 Log.d(TAG, "auth-exchange outcome=failure category=${ex?.error ?: "unknown"}")
                 notifyListeners()
                 return@performTokenRequest
@@ -437,22 +481,19 @@ internal class AuthManager private constructor(context: Context) {
                 tokenResponse,
                 null as AuthorizationException?
             )
-            // 换 token 可能轮换 refresh token / 更新到期时间：整体覆盖写回。
-            val persisted = store.save(
-                AuthStateStore.Entry(
-                    authState.jsonSerializeString(),
-                    currentTransactionRedirectUri() ?: OidcConfiguration.PRIVATE_REDIRECT_URI,
-                    System.currentTimeMillis()
-                )
-            )
+            // 换 token 可能轮换 refresh token / 更新到期时间：整体覆盖写回会话域。
+            val persisted = sessions.save(authState.jsonSerializeString())
             if (!persisted) {
-                // 落盘失败不能让用户以为已登录：清会话，保持未认证。
-                store.clear("persist-failed")
+                // 落盘失败不能让用户以为已登录：清会话、并消费这笔无法重试的交易。
+                sessions.clear("persist-failed")
+                transactions.clear("persist-failed")
                 synchronized(lock) { session = null }
                 Log.d(TAG, "auth-exchange outcome=persist-failed")
                 notifyListeners()
                 return@performTokenRequest
             }
+            // 会话已落盘 → 这笔交易完成使命，可以消费掉了。
+            transactions.clear("exchanged")
             synchronized(lock) { session = sessionOf(authState) }
             Log.d(TAG, "auth-exchange outcome=success")
             notifyListeners()
@@ -512,10 +553,16 @@ internal class AuthManager private constructor(context: Context) {
         }
     }
 
-    /** 清本地会话（内存 + 存储）并通知；幂等。 */
+    /**
+     * 清本地**会话**（内存 + 会话状态域）并通知；幂等。
+     *
+     * 刻意不触碰交易域：一次进行中的登录交易属于「用户还在外部浏览器里操作」这件事，
+     * logout 只结束已经建立的会话，交易仍由回程 callback 决定（到期未回程的交易会被下一次
+     * 登录覆盖）。这样两者互不牵连 —— 会话域的缺失/损坏永远不会作废一笔进行中的登录。
+     */
     internal fun clearLocalSession() {
         synchronized(lock) { session = null }
-        store.clear("logout")
+        sessions.clear("logout")
         notifyListeners()
     }
 
@@ -576,9 +623,9 @@ internal class AuthManager private constructor(context: Context) {
     private fun startRefresh() {
         val authState = loadAuthStateForRefresh()
         if (authState == null) {
-            // 存储里没有可用状态：没有什么可刷新的，直接按未认证收尾。
+            // 会话域里没有可用状态：没有什么可刷新的，直接按未认证收尾。
             synchronized(lock) { session = null }
-            store.clear("no-refresh-state")
+            sessions.clear("no-refresh-state")
             completeRefresh(false)
             return
         }
@@ -587,24 +634,18 @@ internal class AuthManager private constructor(context: Context) {
         ) { accessToken, _, ex ->
             if (ex != null || accessToken.isNullOrBlank()) {
                 // 刷新失败：会话不可再信。清会话，让页面回到未认证并可重新登录。
-                store.clear("refresh-failed")
+                sessions.clear("refresh-failed")
                 synchronized(lock) { session = null }
                 Log.d(TAG, "auth-refresh outcome=failure category=${ex?.error ?: "empty-token"}")
                 completeRefresh(false)
                 return@performActionWithFreshTokens
             }
             val refreshed = sessionOf(authState)
-            // 刷新后的 AuthState（新 access token / 可能轮换的 refresh token）整体写回。
-            val persisted = store.save(
-                AuthStateStore.Entry(
-                    authState.jsonSerializeString(),
-                    currentTransactionRedirectUri() ?: OidcConfiguration.PRIVATE_REDIRECT_URI,
-                    System.currentTimeMillis()
-                )
-            )
+            // 刷新后的 AuthState（新 access token / 可能轮换的 refresh token）整体写回会话域。
+            val persisted = sessions.save(authState.jsonSerializeString())
             if (!persisted) {
                 // 新 token 没能落盘：不能只用内存里的会话（下次启动就没了），按刷新失败收尾。
-                store.clear("refresh-persist-failed")
+                sessions.clear("refresh-persist-failed")
                 synchronized(lock) { session = null }
                 Log.d(TAG, "auth-refresh outcome=persist-failed")
                 completeRefresh(false)
@@ -616,13 +657,13 @@ internal class AuthManager private constructor(context: Context) {
         }
     }
 
-    /** 从加密存储恢复 AppAuth `AuthState`（刷新需要它携带的 refresh token）；损坏即 null。 */
+    /** 从**会话域**恢复 AppAuth `AuthState`（刷新需要它携带的 refresh token）；损坏即 null。 */
     private fun loadAuthStateForRefresh(): net.openid.appauth.AuthState? {
-        val entry = store.load() ?: return null
+        val authStateJson = sessions.load() ?: return null
         return try {
-            net.openid.appauth.AuthState.jsonDeserialize(entry.authStateJson)
+            net.openid.appauth.AuthState.jsonDeserialize(authStateJson)
         } catch (_: Exception) {
-            store.clear("refresh-deserialize-failed")
+            sessions.clear("refresh-deserialize-failed")
             null
         }
     }
@@ -640,14 +681,7 @@ internal class AuthManager private constructor(context: Context) {
         if (!success) notifyListeners()
     }
 
-    // ── 交易状态读取 ──
-
-    /** 当前交易使用的回程 URI（响应校验的唯一基准；读不到即由 guard fail closed）。 */
-    private fun currentTransactionRedirectUri(): String? = try {
-        store.load()?.redirectUri
-    } catch (_: Exception) {
-        null
-    }
+    // ── 回程 URI 归一化 ──
 
     /**
      * 响应 URI 的**回程部分**：剥掉 query 与 fragment，只留 scheme/authority/path。
@@ -675,6 +709,12 @@ internal class AuthManager private constructor(context: Context) {
          * 而是系统对同一个 intent 的第二次交付（dedupe 由 [processedResponseState] 保证）。
          */
         internal const val ALREADY_PROCESSED_DETAIL = "already-processed"
+
+        /**
+         * 收到授权回程、但交易域里没有对应交易时的失败 detail（回程是伪造的，或这笔交易已被消费）。
+         * 同样不该弹「登录失败」提示：用户没有发起一次新的登录。
+         */
+        internal const val NO_PENDING_TRANSACTION_DETAIL = "no-pending-transaction"
 
         /** 授权完成回程的 PendingIntent request code。 */
         private const val REQUEST_CODE_LOGIN = 0
