@@ -770,35 +770,38 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
    行 1 = 队伍标 + 昵称 + **HP 数值** + **百分比**（数值列 `tabular-nums`、不截断；
           只有昵称允许 ellipsis）。
    行 2 = 车型名（可 ellipsis）+ 一条**次要**的细血条——血条只是辅助视觉，
-          HP 数值与百分比才是主信息（旧版只有血条，血量只能靠长度猜）。 */
+          HP 数值与百分比才是主信息（旧版只有血条，血量只能靠长度猜）。
+
+   ⚠️ 用显式 grid-column/row 定位，**不要用 grid-template-areas**：
+   本行有两行结构，"HP 值行 1 占第 3 列 / 百分比行 1 占第 4 列"，若把它们写成同一个
+   区域名，该区域就不是矩形 → 整条 `grid-template-areas` 被判无效并丢弃 → 所有单元格
+   落进隐式单列、全部叠在 x=0（实测整行文字互相压在一起）。 */
 .pl {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
-  grid-template-areas:
-    "dot nick hp pct"
-    "dot tank bar";
+  grid-template-rows: auto auto;
   align-items: center;
   column-gap: var(--space-1);
   min-height: var(--hit-min); padding: 0 var(--space-1);
   border-radius: var(--radius-sm); cursor: pointer;
 }
-.pl .dot { grid-area: dot; flex: none; width: 8px; height: 8px; align-self: center; }
-.pl .nick { grid-area: nick; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl .dot { grid-column: 1; grid-row: 1 / span 2; width: 8px; height: 8px; align-self: center; }
+.pl .nick { grid-column: 2; grid-row: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl .hpv { grid-column: 3; grid-row: 1; }
+.pl .hpp { grid-column: 4; grid-row: 1; text-align: end; }
 .pl .hpv,
 .pl .hpp {
-  grid-area: hp;
   font: var(--type-caption);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;              /* HP 与百分比不得被截断 */
 }
-.pl .hpp { grid-area: pct; text-align: end; }
 .pl .tank {
-  grid-area: tank; min-width: 0;
+  grid-column: 2; grid-row: 2; min-width: 0;
   overflow: hidden; color: var(--color-text-secondary);
   font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap;
 }
 .pl .hpbar {
-  grid-area: bar; justify-self: end; align-self: center;
+  grid-column: 3 / span 2; grid-row: 2; justify-self: end; align-self: center;
   width: 52px; height: 3px; border-radius: var(--radius-full); background: var(--color-surface-3);
 }
 .pl .hpbar i { display: block; height: 100%; border-radius: var(--radius-full); }

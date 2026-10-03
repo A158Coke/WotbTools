@@ -1435,6 +1435,10 @@ export function initPlayback(container, store) {
 
   function updateLabels() {
     updateLabelOcclusion();   // 软遮挡：每 occlStride 帧检测一辆车
+    // 世界高度 = 2·d·tan(fov/2)·screenFrac —— `2tan(fov/2)` 是**乘上去**的：
+    // 距离 d 处可见的垂直范围就是 2·d·tan(fov/2)，卡片占其中 screenFrac → 屏上正好
+    // 占视口高的 screenFrac（与 d 无关）。曾写成除以 2tan(fov/2)，名牌因此大了约 3.6 倍
+    // （真实回放实测：世界高 57.7m、屏上 34000px，整屏糊成一团）。
     const k = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * labelFrac();
     for (const v of V) {
       if (!v.label) continue;
