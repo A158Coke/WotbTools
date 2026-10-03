@@ -2,7 +2,7 @@
  * 3D 回放路径的契约门禁回归（PR #411 review blocker）：
  * 真实 3D 路径 = playbackScene → loadPlaybackData → loadFromLocalFile →
  * mod.parsePlayback；此前该路径只做 JSON.parse，错版 WASM 可静默载入 v1 数据
- * （缺 supremacy_bases/supremacy_points/aim_frames），版本门禁形同虚设。
+ * （缺 supremacy_bases/supremacy_points），版本门禁形同虚设。
  * 本测试证明该路径现在复用 validateAgentPlayback：v1 被拒、v2 通过。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,7 +12,7 @@ import {
   __resetAgentWasmForTest,
   __setAgentWasmResolverForTest,
 } from '../api/agent-replay-facets.js'
-import { loadFromLocalFile, loadPlaybackData } from './replaySource.js'
+import { __resetPlaybackJsonCacheForTest, loadFromLocalFile, loadPlaybackData } from './replaySource.js'
 
 // 最小合法 v2 PlaybackData（字段齐备且版本为 2）
 function v2Doc() {
@@ -20,7 +20,7 @@ function v2Doc() {
     version: 2,
     meta: { map_id: 3, map_name: 'Middleburg', winner_team: 1, friendly_team: 2, author_eid: 7, t_start: 0, samples: 10, duration: 1 },
     vehicles: [], shots: [], kills: [], periods: [], visibility: [],
-    supremacy_bases: [], supremacy_points: [], aim_frames: [],
+    supremacy_bases: [], supremacy_points: [],
   }
 }
 const stub = (doc) => ({ parsePlayback: () => JSON.stringify(doc) })
@@ -41,6 +41,7 @@ function setWasm(doc) {
 beforeEach(() => {
   vi.unstubAllGlobals()
   __resetAgentWasmForTest()
+  __resetPlaybackJsonCacheForTest()   // 同一份字节 + 不同 WASM 桩：跨用例必须清缓存
 })
 
 describe('3D 路径（loadFromLocalFile / loadPlaybackData）契约门禁', () => {
@@ -49,6 +50,31 @@ describe('3D 路径（loadFromLocalFile / loadPlaybackData）契约门禁', () =
     const data = await loadFromLocalFile(blob())
     expect(data.version).toBe(2)
     expect(Array.isArray(data.supremacy_bases)).toBe(true)
+  })
+
+  it('解析结果缓存：同文件第二次打开不再走 WASM 解析，且返回同一结果', async () => {
+    let parseCalls = 0
+    __setAgentWasmResolverForTest(() => Promise.resolve({
+      parsePlayback: () => { parseCalls += 1; return JSON.stringify(v2Doc()) },
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ tag: AGENT_WASM_RELEASE, upstream_commit: AGENT_WASM_COMMIT }),
+    })))
+    const file = blob()
+    const a = await loadFromLocalFile(file)
+    const b = await loadFromLocalFile(file)
+    expect(parseCalls).toBe(1)          // 第二次命中缓存：WASM 解析只跑了一次
+    expect(b.version).toBe(2)
+    expect(a.version).toBe(b.version)
+  })
+
+  it('缓存命中不绕过契约门禁：错版文件两次都被拒', async () => {
+    setWasm({ ...v2Doc(), version: 1 })
+    const file = blob()
+    await expect(loadFromLocalFile(file)).rejects.toThrow(/不支持的契约版本/)
+    // 第二次走缓存（缓存的是解析产物，不是校验结论），仍必须被拒
+    await expect(loadFromLocalFile(file)).rejects.toThrow(/不支持的契约版本/)
   })
 
   it('v1 被拒——经 loadFromLocalFile 抛出版本错误（不再静默通过）', async () => {

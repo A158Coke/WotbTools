@@ -360,6 +360,20 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 - Battle Playback 的 2D 底图由 `BattleMap.vue` 的独立 `.pb-basemap` HTML `<img>` 渲染；`.pb-svg` 承载 vector overlays，`.pb-markers` 与两者共享同一个 `.pb-viewport` camera frame。底图和 SVG 按 `mapView.W / mapView.H` 的 frame `fill`，保持既有 overlay 对齐。
 - 运行时 raster capacity 以 `requiredDeviceWidth = renderedCssWidth × view.scale × devicePixelRatio`（height 同理）诊断。`naturalWidth / requiredDeviceWidth` 小于 1 表示源分辨率不足；维持现有 1×→4× camera contract，不用滤镜弥补源图细节。
 - 3D 模型、纹理及地图资产继续经 `frontend/src/scene/assetProvider.js` 读取 remote asset origin（生产 COS），与 2D 本地静态底图分开。此次退役增强地图不改变 3D provider、缓存策略或资产托管。
+- 3D 回放运行特征（2026-10-03 性能批）：解析在 Worker 内跑（`scene/playbackParse.worker.ts`，
+  失败自动回退主线程），同一文件（名+长+mtime+采样指纹）的解析结果缓存最近 3 场；渲染按需刷新
+  （暂停且无在飞特效、相机静止时不重绘）；标签与伤害飘字并入主画布**单 WebGL 上下文**
+  （清晰度随画质档 DPR，不再固定 `min(dpr,2)`）；特效（炮线/命中/爆散/飘字）走对象池，
+  仅在会话结束时整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
+  HUD/进度条按 ~10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
+- 3D 车体位姿：yaw/pitch 取自渲染滤波网格；**横滚取网格新增的 `vehicles[].hull_roll`**
+  （上游 2026-10-03 起产出，additive；值来自原始 type=10 volatile 采样的最近邻——滤波层不输出侧倾）。
+  消费端镜像约定：游戏系→场景系是「x 取负」的镜像，故 yaw 与 roll 取负、pitch 不变；
+  旧产物缺 `hull_roll` 时按 0 = 水平（不拿 pitch 顶替）。
+- 3D 场景内核 `frontend/src/scene/playbackScene.js` 是上游冻结 Agent 前端的**同源分叉**：上游已停止维护，
+  本仓按需移植其场景渲染实现（材质实例去重、叶卡/伪透明/水体管线、退化几何守卫、曝光修整等，
+  见 `scene/sceneryMaterials.test.js` 的源码级接线守卫）。上游若有新的渲染修复，需要人工比对移植，
+  不会自动同步。
 
 ### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5）
 

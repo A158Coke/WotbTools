@@ -134,6 +134,13 @@ export interface AgentVehicleTrack {
   pos: number[]
   hull_yaw: number[]
   hull_pitch: number[]
+  /**
+   * 车体侧倾（弧度；上游 2026-10-03 起产出，**additive**：旧产物缺省 → 消费端按 0 = 水平）。
+   * 与 `hull_pitch` 不同源：俯仰取自渲染滤波输出，侧倾取**原始 type=10 volatile 采样**的
+   * 最近邻（滤波层不输出侧倾）。上游规则见 `crates/replay-core/src/replay/playback.rs`
+   * 的 `roll_nearest`（段内不插值、不跨 AoI 断段编造中间姿态）。
+   */
+  hull_roll?: number[]
   turret_yaw: number[]
   gun_pitch: number[]
   hp: Array<[number, number]>
@@ -251,15 +258,6 @@ export interface AgentAssaultBaseTransition {
   progress: number
 }
 
-/** 作者瞄准帧（Type39 投影，recorder-only；缺帧不外推，存活期按 deaths 门控） */
-export interface AgentAimFrame {
-  time_sec: number
-  world_yaw: number
-  world_pitch: number
-  /** 上游 `[f32; 3]`——定长三元组，非任意长度数组 */
-  ray_point: [number, number, number]
-}
-
 /**
  * arena subtype 15/16/17 原始装填事件（仅本方；null = 上游字段缺失）。
  *
@@ -292,13 +290,13 @@ export interface AgentPlaybackFacet {
   /** contract v2 新能力（skip-when-empty：非争霸场缺省） */
   supremacy_bases?: AgentSupremacyBaseTransition[]
   supremacy_points?: AgentSupremacyPointsSample[]
-  /** 仅作者/recorder；禁止给其他车辆伪造 */
-  aim_frames?: AgentAimFrame[]
   /**
-   * 单基地目标存在性（上游 v0.3.1）——**独立于是否已有占领进度**。判据为目标族发出
-   * 裸初始化对以外的字段：裸初始化对 `1=1,2=1` + `1=2,2=1` 是通用广播，普通对局同样
-   * 会发（62 份样本里 8 份 Regular/TrainingRoom/Any 只发这一对），不得据此判定。
-   * 缺省/ false = 无已证实的单基地目标。单基地与争霸互斥（wrapper8 vs wrapper12）。
+   * 单基地目标存在性（上游 v0.3.1）——**独立于是否已有占领进度**。判据为 wrapper8/root8
+   * 目标族（`field2==1`、`field1 ∈ {1,2}`）**出现过即真**，含只发裸初始化对
+   * `1=1,2=1` + `1=2,2=1` 的场次（2026-10-03 判定修正：此前"须超出初始化对"比契约更严，
+   * 把"有目标但全程未占领"的场次——实测 10v10 的 Mayan Ruins——整场目标圈压掉了）。
+   * 缺省/ false = 无目标族广播。单基地与争霸互斥（wrapper8 vs wrapper12）。
+   * 详情见上游 `docs/replay-contract-v2-supremacy-type39.md` §5.1。
    */
   assault_objective_present?: boolean
   /** 单基地占领进度时间线（skip-when-empty：非单基地场次缺省） */
@@ -497,7 +495,8 @@ export interface AgentShotReplay {
 // ---------- 形状校验（trust boundary：进 view model 前的结构契约锁定） ----------
 
 const CONTRACT_VERSION = 1
-/** PlaybackData 契约版本（上游 v0.2.0 起 = 2：+supremacy_bases/supremacy_points/aim_frames）。
+/** PlaybackData 契约版本（上游 v0.2.0 起 = 2：+supremacy_bases/supremacy_points；
+ *  上游 2026-10-03 起不再产出 `aim_frames`——该字段自始可选且无消费方，版本保持 2）。
  *  错版 WASM 在此显式拒绝，不允许被静默解析成半残数据（trust boundary）。 */
 export const PLAYBACK_CONTRACT_VERSION = 2
 
@@ -599,8 +598,8 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
     assertArray(pb[key], `playback.${key}`)
   }
-  // contract v2 additive 能力：在场时必须为数组
-  for (const key of ['supremacy_bases', 'supremacy_points', 'aim_frames', 'assault_bases']) {
+  // contract v2 additive 能力：在场时必须为数组（aim_frames 上游已移除，不再校验）
+  for (const key of ['supremacy_bases', 'supremacy_points', 'assault_bases']) {
     if (pb[key] !== undefined) assertArray(pb[key], `playback.${key}`)
   }
   if (pb.reloads !== undefined) {

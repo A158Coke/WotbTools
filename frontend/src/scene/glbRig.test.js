@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { neutralizeDefaultMetalness } from './glbRig.js'
+import { dropDuplicateGunMasks, neutralizeDefaultMetalness } from './glbRig.js'
 
 // 复刻 GLTFLoader 的赋值：省略 metallicFactor 时取 glTF 规范默认 1.0（three 自己的
 // MeshStandardMaterial 默认是 0.0，所以必须显式设成 1 才是真实的装载结果）；
@@ -78,5 +78,43 @@ describe('neutralizeDefaultMetalness（老式车不得按全金属渲染）', ()
     root.add(mesh(b))
     neutralizeDefaultMetalness(root)
     expect([a.metalness, b.metalness]).toEqual([0, 0])
+  })
+})
+
+describe('dropDuplicateGunMasks · 几何副本去重（Maus mask_01 ↔ gun_01_mask）', () => {
+  /** 造一个和真实 GLB 同形的子树：组节点 → mesh 子节点（几何在子节点上） */
+  const piece = (name, geo) => {
+    const group = new THREE.Group(); group.name = name
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial())
+    group.add(mesh)
+    return group
+  }
+  const box = (w, h, d) => new THREE.BoxGeometry(w, h, d)
+  const root = (...nodes) => { const r = new THREE.Group(); nodes.forEach((n) => r.add(n)); return r }
+
+  it('几何完全一致 → 丢弃 mask_NN（否则炮塔转走后它留在原地）', () => {
+    const r = root(piece('turret_01', box(2, 2, 2)), piece('gun_01_mask', box(1, 3, 1)), piece('mask_01', box(1, 3, 1)))
+    expect(dropDuplicateGunMasks(r)).toBe(1)
+    expect(r.getObjectByName('mask_01')).toBeUndefined()
+    expect(r.getObjectByName('gun_01_mask')).toBeTruthy()   // 保留被 rig 摆位的那一份
+    expect(r.getObjectByName('turret_01')).toBeTruthy()
+  })
+
+  it('几何不同 → 原样保留（绝不凭命名像副本就删可见部件）', () => {
+    const r = root(piece('gun_01_mask', box(1, 3, 1)), piece('mask_01', box(2, 2, 4)))
+    expect(dropDuplicateGunMasks(r)).toBe(0)
+    expect(r.getObjectByName('mask_01')).toBeTruthy()
+  })
+
+  it('无同名对手件 / 顶点数不同 → 保留', () => {
+    expect(dropDuplicateGunMasks(root(piece('mask_01', box(1, 1, 1))))).toBe(0)
+    const r = root(piece('gun_01_mask', box(1, 1, 1)), piece('mask_01', box(1, 1, 1), piece));
+    // 顶点数不同（多加一个 mesh）→ 视为不同几何
+    r.getObjectByName('mask_01').add(new THREE.Mesh(box(1, 1, 1), new THREE.MeshBasicMaterial()))
+    expect(dropDuplicateGunMasks(r)).toBe(0)
+  })
+
+  it('空输入安全（无模型时返回 0）', () => {
+    expect(dropDuplicateGunMasks(null)).toBe(0)
   })
 })
