@@ -394,6 +394,9 @@ jobs:
           WOTB_DEPLOY_CONFIG_SHA: ${{ github.sha }}
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
           ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
-          # K6B-1 keeps the current dependency path active; K6B-2 switches it.
-          TX_BACKEND_UPSTREAM: http://business-api:8087
+          # K6B-2A: this consumer is cut over to the reviewed TX1 WireGuard service
+          # endpoint for the Business API application port. It is the only consumer
+          # moved in K6B-2A; every other private placement stays Docker-local until
+          # its own step, and the read-only gate asserts the same placement.
+          TX_BACKEND_UPSTREAM: http://10.20.0.1:8087
           TX_AI_UPSTREAM: http://10.20.0.2:8089

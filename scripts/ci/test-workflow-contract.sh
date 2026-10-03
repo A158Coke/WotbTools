@@ -430,16 +430,23 @@ caddy_tokens = {token for line in caddy_script.splitlines() for token in line.sp
 assert "-k" not in caddy_tokens, "curl -k is forbidden in the Caddy gateway verification"
 assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy gateway verification"
 
-# K6B-1 logical endpoints: every owner that consumes a private placement
-# dependency pins the *active* Docker-local value in its own workflow, and the
-# read-only runtime gate asserts exactly the same placement. That pairing is what
-# keeps a merge from cutting production over through an existing repository
-# variable, and it keeps `TX_RUNTIME_READY` from only proving that the gate
-# agrees with itself. The Keycloak owner's equivalent pin lives in
-# scripts/ci/test-keycloak-tofu-contract.sh with its own apply step.
+# K6B logical endpoints: every owner that consumes a private placement dependency
+# pins the *active* value in its own workflow, and the read-only runtime gate asserts
+# exactly the same placement. That pairing is what keeps a merge from cutting
+# production over through an existing repository variable, and it keeps
+# `TX_RUNTIME_READY` from only proving that the gate agrees with itself. The Keycloak
+# owner's equivalent pin lives in scripts/ci/test-keycloak-tofu-contract.sh with its
+# own apply step.
+#
+# K6B-2A cut over exactly one consumer: Frontend -> Business API now dials the
+# reviewed TX1 WireGuard service endpoint. Everything below is expected to stay
+# Docker-local until its own K6B-2 step, so the remaining entries are also the guard
+# that this PR cannot silently perform a second cutover.
+K6B2A_CUT_OVER = {
+    "frontend": {"TX_BACKEND_UPSTREAM": "http://10.20.0.1:8087"},
+}
 k6b1_placements = {
     "frontend": (frontend_deploy, {
-        "TX_BACKEND_UPSTREAM": "http://business-api:8087",
         "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
     }),
     "business-api": (business_deploy, {
@@ -454,9 +461,16 @@ k6b1_placements = {
 }
 for owner, (step, placements) in k6b1_placements.items():
     exported = step["with"]["envs"].split(",")
-    for name, value in placements.items():
+    for name, value in {**placements, **K6B2A_CUT_OVER.get(owner, {})}.items():
         assert step["env"][name] == value, (owner, name, step["env"].get(name))
         assert name in exported, (owner, name)
+# A second consumer cutover in a later PR must be an explicit, reviewed edit of this
+# file: assert that no other pinned placement selects a WireGuard endpoint yet.
+for owner, (step, placements) in k6b1_placements.items():
+    for name, value in placements.items():
+        assert not re.search(r"10\.20\.0\.[13]:", str(value)), (owner, name, value)
+    if owner != "frontend":
+        assert "TX_BACKEND_UPSTREAM" not in step["env"], owner
 
 # The secret-bearing readiness probe stays ahead of the deployment: it is the
 # step that must reject an unreviewed endpoint before a credential is sent.
@@ -469,8 +483,11 @@ runtime_gate_step = next(
     step for step in runtime_gate_workflow["jobs"]["runtime_check"]["steps"]
     if step.get("name") == "Run exact-SHA read-only TX runtime gate"
 )
-for name, value in {
-    "TX_BACKEND_UPSTREAM": "http://business-api:8087",
+# The read-only gate must expect the same placement the owner workflow applies: the
+# K6B-2A WireGuard value for Frontend -> Business API, Docker-local for every other
+# consumer until its own step. A mismatch on either side fails the gate, so the two
+# halves of a cutover cannot be merged separately.
+gate_expectations = {
     "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
     "TX_BUSINESS_DB_HOST": "business-postgres",
     "TX_BUSINESS_DB_PORT": "5432",
@@ -479,9 +496,19 @@ for name, value in {
     "TX_KEYCLOAK_DB_PORT": "5432",
     "CADDY_FRONTEND_UPSTREAM": "wotb-frontend:80",
     "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
-}.items():
+}
+gate_expectations.update(K6B2A_CUT_OVER["frontend"])
+for name, value in gate_expectations.items():
     assert runtime_gate_step["env"][name] == value, (name, runtime_gate_step["env"].get(name))
     assert name in runtime_gate_step["with"]["envs"].split(","), name
+# Only the cut-over consumer may carry a WireGuard expectation in the gate.
+for name, value in gate_expectations.items():
+    if name == "TX_BACKEND_UPSTREAM":
+        assert value == "http://10.20.0.1:8087", value
+    else:
+        assert not re.search(r"10\.20\.0\.[13]:", str(value)), (name, value)
+assert runtime_gate_step["env"]["TX_AI_UPSTREAM"] == "http://10.20.0.2:8089", \
+    "the Yecao AI upstream must never move with a TX placement cutover"
 
 # K3.2: one Komodo Periphery owner serves every reviewed target host. GitHub
 # Actions owns each agent's systemd lifecycle, the hosts never download an
