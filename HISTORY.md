@@ -529,6 +529,27 @@ UI 不会把未知说成满弹。生产 pin 同时升到 `v0.3.10`（`5029e103�
 **Git 证据：** 本 PR；`deploy/agent/source.json`、`scripts/fetch-agent-wasm.sh`、
 `frontend/src/api/agent-replay-facets.ts`、`frontend/src/scene/reloadBar.js`。
 
+## 2026-10-03 — 回放能力从「三个页面三次上传」收敛为一个回放工作台
+
+回放的数据表、2D 战局、3D 回放与射击分析此前是彼此独立的产品面：3D 与射击各自是一个页面、各自
+带一个文件选择器，用户要看同一场战斗的不同侧面就得重复选文件，而每个页面也各自持有一份「当前回放」
+的理解。这个形态在 3D 与射击从内测走向可用后成为主要摩擦点。
+
+这次把五个能力（数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘）收进同一个工作台：选择一次文件，
+能力之间切换不重新选文件、不重建会话，也不产生第二份 selection。工作台成为唯一的能力编排者，
+各能力面板按首次激活懒加载（Three.js、装甲与射击数据不进首屏包），切走只停渲染不销毁会话——
+3D 场景切回时保留时间轴与相机。
+
+文件入口收敛为全站唯一的投放面，3D 与射击不再自带上传控件；旧深链（`agent-replay` /
+`agent-shots`）继续有效，但只是工作台能力的入口，不再是独立页面。装甲查看器保持独立：它属于
+坦克百科，工作台复用其引擎（击穿判定、坦克资产、标记调色板）而不复用其页面导航模型。
+
+AI 复盘同时被明确为**正式能力**而不是管理员内测项：普通登录用户即可使用，未登录由登录引导承接；
+只有 3D 回放与射击分析仍受管理员开关约束。**产品边界因此从「哪个页面」变成「哪个能力」。**
+
+**Git 证据：** 本 PR；`frontend/src/app/viewRegistry.js`、`frontend/src/components/ReplayWorkspace.vue`、
+`frontend/src/components/{Replay3DPane,ReplayShotsPane,FileDrop}.vue`、`frontend/src/composables/useReplaySession.ts`。
+
 ## 2026-10-03 — Android 认证 owner 从 WebView 迁到 Native
 
 Android 壳此前一直沿用 Web 的认证链：Keycloak 登录页、IdP 跳转、broker callback 全部发生在同一个

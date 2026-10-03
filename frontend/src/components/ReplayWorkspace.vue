@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { mapLabel } from '../utils/helpers.js'
@@ -7,8 +7,9 @@ import { defineLazyModule, reloadForFreshBundle } from '../utils/lazyModule.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
+import { useMountedWhenActive } from '../composables/useMountedWhenActive.js'
 import ReplayPage from './ReplayPage.vue'
-import FileUploader from './FileUploader.vue'
+import FileDrop from './FileDrop.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
@@ -18,23 +19,27 @@ import PageHeader from './PageHeader.vue'
 import BattlePicker from './BattlePicker.vue'
 import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
 
-// 审计 PF-02：2D 回放（含约 2.5MB 的地图语义数据）只在进入 2D 回放模式时加载，不进主包。
-// 3D 回放 / 射击分析与 2D 同属重能力，同样懒加载（首进才挂载，之后保留状态）。
-// 懒加载边界：部署换掉 chunk 文件名后，旧页面进入能力时必然 404——必须变成可恢复的失败态，
-// 不能让 Vue 渲染中断（那会把整个工作台打成空壳，见 utils/lazyModule.ts 的说明）。
+/**
+ * 审计 PF-02：能力面板的代码块都不进主包（2D 回放带约 2.5MB 地图语义数据；3D 带 Three.js；
+ * 射击带装甲与弹表；AI 带 SSE 与投影）。
+ *
+ * 懒加载边界：部署换掉 chunk 文件名后，旧页面进入能力时必然 404——必须变成可恢复的失败态，
+ * 不能让 Vue 渲染中断（那会把整个工作台打成空壳，见 utils/lazyModule.ts 的说明）。
+ * generation 与 recovery 由该边界自己拥有，工作台不重复管理。
+ */
 const playbackModule = defineLazyModule(() => import('./BattlePlaybackPanel.vue'))
+const threeModule = defineLazyModule(() => import('./Replay3DPane.vue'))
+const shotsModule = defineLazyModule(() => import('./ReplayShotsPane.vue'))
 const aiModule = defineLazyModule(() => import('./AiReviewWorkspacePane.vue'))
-const replay3dModule = defineLazyModule(() => import('./AgentReplay3D.vue'))
-const shotsModule = defineLazyModule(() => import('./AgentShots.vue'))
 const BattlePlaybackPanel = playbackModule.component
+const Replay3DPane = threeModule.component
+const ReplayShotsPane = shotsModule.component
 const AiReviewWorkspacePane = aiModule.component
-const AgentReplay3D = replay3dModule.component
-const AgentShots = shotsModule.component
 
 defineOptions({ name: 'ReplayWorkspace' })
 
 const props = defineProps({
-  /** 初始能力：data / ai / playback / 3d / shots（由路由 view 派生）。 */
+  /** 初始能力：data / playback / 3d / shots / ai（由路由 view 派生）。 */
   initialCapability: { type: String, default: 'data' },
 })
 
@@ -44,7 +49,7 @@ const { isAdmin } = useAuth()
 
 /**
  * Workspace 持有唯一一份 replay selection 与本地分析结果（服务器没有 parser：文件不出本机，
- * 匿名即可用，不等登录）。data / ai / playback 三个能力共享这份状态——选择一次、只分析一次。
+ * 匿名即可用，不等登录）。五个能力共享这份状态——选择一次、只分析一次、不重新选文件。
  * 直接子组件通过显式 props 消费，不再通过 string provide/inject 隐藏依赖。
  */
 const workspace = useReplayWorkspace(props.initialCapability || 'data')
@@ -57,7 +62,7 @@ const {
 /**
  * Android 外部 replay 完整自动解析契约：
  * pending File 导入 → 替换当前 selection → 本机分析一次 → data tab 展示结果。
- * 仅在 Android external intent 触发（isAndroidApp()); 普通 Web/FileUploader 手动选文件不经过此回调，
+ * 仅在 Android external intent 触发（isAndroidApp()); 普通 Web/FileDrop 手动选文件不经过此回调，
  * 保持现有手动 UX。绝不自动启动 AI Review。
  *
  * 返回值是 Native pending 的 ACK 唯一依据：本机分析完成（无论有没有有效场次）才返回 true——
@@ -81,9 +86,9 @@ const { consumePendingWhenReady } = useNativeReplayImport({
 })
 
 /**
- * 模式：数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘（* 仅管理员）。
- * 五种能力都在工作台内渲染（pane + 上层 tab 导航保留）；3D / 射击直接消费工作台已上传的
- * 回放（与 2D / AI 同一条 session），不再各自选文件、也不再整页跳走。
+ * 能力：数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘（* 仍受 admin feature flag 约束，
+ * 与深链的 `ADMIN_ONLY_VIEWS` 边界同一份判断）。五个能力都在本工作台内，
+ * 没有"导航去另一个页面"的 capability。
  */
 const capabilityOptions = computed(() => [
   { key: 'data', labelKey: 'workspace.tab_data' },
@@ -94,18 +99,15 @@ const capabilityOptions = computed(() => [
   { key: 'ai', labelKey: 'workspace.tab_ai' },
 ])
 
+/**
+ * 能力面板首次进入时才挂载（代码块按需加载、不进主包），之后切走只隐藏：
+ * 停渲染但不销毁会话——切回不重新要求文件、不重新解析、保留 timeline / 相机。
+ */
 const activeCapability = workspace.activeWorkspaceTab
-/** 2D 回放面板首次进入时才挂载（之后保留状态，切走只是隐藏），它的代码块因此不随工作台加载。 */
-const playbackMounted = ref(activeCapability.value === 'playback')
-const aiMounted = ref(activeCapability.value === 'ai')
-const replay3dMounted = ref(activeCapability.value === '3d')
-const shotsMounted = ref(activeCapability.value === 'shots')
-watch(activeCapability, (cap) => {
-  if (cap === 'playback') playbackMounted.value = true
-  if (cap === 'ai') aiMounted.value = true
-  if (cap === '3d') replay3dMounted.value = true
-  if (cap === 'shots') shotsMounted.value = true
-})
+const playbackMounted = useMountedWhenActive(() => activeCapability.value === 'playback')
+const threeMounted = useMountedWhenActive(() => activeCapability.value === '3d')
+const shotsMounted = useMountedWhenActive(() => activeCapability.value === 'shots')
+const aiMounted = useMountedWhenActive(() => activeCapability.value === 'ai')
 
 /**
  * 能力模块加载失败态（design-language §10）：说清发生了什么 + 下一步怎么做。
@@ -121,9 +123,9 @@ function paneLoadError(module) {
   return module.error.value ? 'workspace.pane_load_failed' : ''
 }
 const playbackLoadError = computed(() => paneLoadError(playbackModule))
-const aiLoadError = computed(() => paneLoadError(aiModule))
-const replay3dLoadError = computed(() => paneLoadError(replay3dModule))
+const threeLoadError = computed(() => paneLoadError(threeModule))
 const shotsLoadError = computed(() => paneLoadError(shotsModule))
+const aiLoadError = computed(() => paneLoadError(aiModule))
 
 /** 重试：由 lazyModule 创建新一代 async wrapper（不是重复跑一次 import）。 */
 async function retryPane(module) {
@@ -134,23 +136,30 @@ async function retryPane(module) {
 const currentBattleId = workspace.currentBattleId
 
 /**
- * 2D 回放的场次选择器：只列解析成功的场次（failed / duplicate 不入列），
- * 选项文案与数据模式一致（第 N 场 · 地图 · 胜方 · 时间）。数据模式的选择器在 ReplayPage 工具栏里。
+ * 单场能力（2D 回放 / 3D 回放 / 射击分析 / AI 复盘）共用的场次选择器：只列解析成功的场次
+ * （failed / duplicate 不入列），选项文案与数据模式一致（第 N 场 · 地图 · 胜方 · 时间）。
+ * 数据模式的选择器在 ReplayPage 工具栏里。
  */
-const playbackBattleOptions = computed(() =>
+const battleOptions = computed(() =>
   battlePickerOptions(buildSeriesOverview(resp.value), { t, locale: locale.value, mapLabel }))
 function onBattleSelect(sourceId) {
   workspace.selectBattle(sourceId)
 }
 
-/** 2D 回放 / AI 复盘的目标文件：单文件直接用；多文件须先选场次（本机解析单场） */
-const playbackFile = computed(() => workspace.currentTargetFile.value)
-const playbackBlockedReason = computed(() =>
-  files.value.length > 1 && !playbackFile.value ? t('workspace.single_replay_required') : '')
+/** 单场能力的目标文件：单文件直接用；多文件须先选场次（本机解析单场） */
+const targetFile = computed(() => workspace.currentTargetFile.value)
+const blockedReason = computed(() =>
+  files.value.length > 1 && !targetFile.value ? t('workspace.single_replay_required') : '')
 
-const VIEW_BY_CAPABILITY = Object.freeze({ data: 'replay', ai: 'ai-review', playback: 'battle-playback', '3d': 'agent-replay', shots: 'agent-shots' })
+const VIEW_BY_CAPABILITY = Object.freeze({
+  data: 'replay',
+  playback: 'battle-playback',
+  '3d': 'agent-replay',
+  shots: 'agent-shots',
+  ai: 'ai-review',
+})
 
-/** capability → 路由 view。 */
+/** capability → 路由 view（Back / Forward 与深链仍由 Vue Router 唯一持有）。 */
 function viewFor(cap) {
   return VIEW_BY_CAPABILITY[cap] || 'replay'
 }
@@ -177,7 +186,7 @@ function clearSelection() {
   updateFiles([])
 }
 
-/** 上传条是唯一的清空入口（带确认）；清空时同时复位 2D 回放引用。 */
+/** 上传条是唯一的清空入口（带确认）；清空时同时复位所有单场能力的引用。 */
 function onFilesUpdate(next) {
   if (!next.length) clearSelection()
   else updateFiles(next)
@@ -198,7 +207,7 @@ watch(() => props.initialCapability, (val) => {
     <ReplayCapabilityTabs :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
 
     <div class="workspace-source">
-      <FileUploader
+      <FileDrop
         :files="files"
         :loading="loading"
         :confirm-remove="!!resp"
@@ -239,9 +248,9 @@ watch(() => props.initialCapability, (val) => {
           </template>
         </Banner>
         <BattlePicker
-          v-else-if="playbackBattleOptions.length > 1"
-          class="playback-picker"
-          :options="playbackBattleOptions"
+          v-else-if="battleOptions.length > 1"
+          class="single-battle-picker"
+          :options="battleOptions"
           :model-value="currentBattleId"
           :aria-label="$t('workspace.battle_picker')"
           data-testid="playback-battle-picker"
@@ -249,58 +258,33 @@ watch(() => props.initialCapability, (val) => {
         />
         <BattlePlaybackPanel
           v-if="playbackMounted && !playbackLoadError"
-          :file="playbackFile"
+          :file="targetFile"
           :active="activeCapability === 'playback'"
-          :blocked-reason="playbackBlockedReason"
+          :blocked-reason="blockedReason"
         />
       </div>
-      <div v-show="activeCapability === 'ai'" class="capability-pane">
-        <Banner v-if="aiLoadError" tone="danger" data-testid="ws-ai-load-error">
-          <p>{{ $t(aiLoadError) }}</p>
-          <template #actions>
-            <AppButton size="sm" data-testid="ws-ai-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
-            <AppButton size="sm" variant="ghost" data-testid="ws-ai-load-retry" @click="retryPane(aiModule)">{{ $t('workspace.pane_retry') }}</AppButton>
-          </template>
-        </Banner>
-        <BattlePicker
-          v-if="!aiLoadError && playbackBattleOptions.length > 1"
-          class="playback-picker"
-          :options="playbackBattleOptions"
-          :model-value="currentBattleId"
-          :aria-label="$t('workspace.battle_picker')"
-          data-testid="ai-battle-picker"
-          @update:model-value="onBattleSelect"
-        />
-        <AiReviewWorkspacePane
-          v-if="aiMounted && !aiLoadError"
-          :file="playbackFile"
-          :active="activeCapability === 'ai'"
-          :blocked-reason="playbackBlockedReason"
-        />
-      </div>
-      <!-- 3D 回放 / 射击分析：与 2D / AI 同一条 session（消费工作台已选回放），不再整页跳走 -->
-      <div v-show="activeCapability === '3d'" class="capability-pane capability-pane-3d" data-testid="ws-3d">
-        <Banner v-if="replay3dLoadError" tone="danger" data-testid="ws-3d-load-error">
-          <p>{{ $t(replay3dLoadError) }}</p>
+      <div v-show="activeCapability === '3d'" class="capability-pane" data-testid="ws-3d">
+        <Banner v-if="threeLoadError" tone="danger" data-testid="ws-3d-load-error">
+          <p>{{ $t(threeLoadError) }}</p>
           <template #actions>
             <AppButton size="sm" data-testid="ws-3d-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
-            <AppButton size="sm" variant="ghost" data-testid="ws-3d-load-retry" @click="retryPane(replay3dModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+            <AppButton size="sm" variant="ghost" data-testid="ws-3d-load-retry" @click="retryPane(threeModule)">{{ $t('workspace.pane_retry') }}</AppButton>
           </template>
         </Banner>
         <BattlePicker
-          v-if="!replay3dLoadError && playbackBattleOptions.length > 1"
-          class="playback-picker"
-          :options="playbackBattleOptions"
+          v-else-if="battleOptions.length > 1"
+          class="single-battle-picker"
+          :options="battleOptions"
           :model-value="currentBattleId"
           :aria-label="$t('workspace.battle_picker')"
           data-testid="replay3d-battle-picker"
           @update:model-value="onBattleSelect"
         />
-        <AgentReplay3D
-          v-if="replay3dMounted && !replay3dLoadError"
-          :file="playbackFile"
+        <Replay3DPane
+          v-if="threeMounted && !threeLoadError"
+          :file="targetFile"
           :active="activeCapability === '3d'"
-          :blocked-reason="playbackBlockedReason"
+          :blocked-reason="blockedReason"
         />
       </div>
       <div v-show="activeCapability === 'shots'" class="capability-pane" data-testid="ws-shots">
@@ -312,19 +296,44 @@ watch(() => props.initialCapability, (val) => {
           </template>
         </Banner>
         <BattlePicker
-          v-if="!shotsLoadError && playbackBattleOptions.length > 1"
-          class="playback-picker"
-          :options="playbackBattleOptions"
+          v-else-if="battleOptions.length > 1"
+          class="single-battle-picker"
+          :options="battleOptions"
           :model-value="currentBattleId"
           :aria-label="$t('workspace.battle_picker')"
           data-testid="shots-battle-picker"
           @update:model-value="onBattleSelect"
         />
-        <AgentShots
+        <ReplayShotsPane
           v-if="shotsMounted && !shotsLoadError"
-          :file="playbackFile"
+          :file="targetFile"
           :active="activeCapability === 'shots'"
-          :blocked-reason="playbackBlockedReason"
+          :blocked-reason="blockedReason"
+          :navigate="navigate"
+        />
+      </div>
+      <div v-show="activeCapability === 'ai'" class="capability-pane" data-testid="ws-ai">
+        <Banner v-if="aiLoadError" tone="danger" data-testid="ws-ai-load-error">
+          <p>{{ $t(aiLoadError) }}</p>
+          <template #actions>
+            <AppButton size="sm" data-testid="ws-ai-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
+            <AppButton size="sm" variant="ghost" data-testid="ws-ai-load-retry" @click="retryPane(aiModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+          </template>
+        </Banner>
+        <BattlePicker
+          v-else-if="battleOptions.length > 1"
+          class="single-battle-picker"
+          :options="battleOptions"
+          :model-value="currentBattleId"
+          :aria-label="$t('workspace.battle_picker')"
+          data-testid="ai-battle-picker"
+          @update:model-value="onBattleSelect"
+        />
+        <AiReviewWorkspacePane
+          v-if="aiMounted && !aiLoadError"
+          :file="targetFile"
+          :active="activeCapability === 'ai'"
+          :blocked-reason="blockedReason"
         />
       </div>
     </div>
@@ -338,5 +347,5 @@ watch(() => props.initialCapability, (val) => {
 .workspace-source { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
 .workspace-status { margin: 0; padding: var(--space-12) var(--space-4); color: var(--color-text-secondary); font: var(--type-body); text-align: center; }
 .capability-pane { margin-top: var(--space-1); }
-.playback-picker { margin-bottom: var(--space-3); }
+.single-battle-picker { margin-bottom: var(--space-3); }
 </style>

@@ -102,9 +102,24 @@ export function initPlayback(container, store) {
   let kfId = 0;
   // 会话代数：loadData/teardown 各自递增，全部异步续体持旧代数即失效
   let sessionGen = 0;
+  /** 加载令牌：只有新的 loadData 递增，用于判定「谁是最新一次加载」（见 loadData 注释） */
+  let loadGeneration = 0;
+  /**
+   * 会话身份：当前「活着的会话」的标识。旧会话的资源续体用它判定自己是否已过期，
+   * 而本次加载的资产阶段用它判定自己是否仍是当前会话（见 startPlayback）。
+   * 与 sessionGen 分开的原因：teardown 是本次加载自己的提交流程，不能把自己判过期。
+   */
+  let sessionEpoch = 0;
   // 渲染帧句柄：destroy 显式 cancel（旧实现依赖 destroyed 标志的自然退出，
   // 帧回调在 destroy 后仍可能再排队一次）
   let rafId = 0;
+  /**
+   * 宿主可见性闸门（Replay3DPane 的 `active`）：工作台切到别的能力时停帧——
+   * rAF、相机 update、标签/基地重绘全部停止，**不销毁场景**（切回不重解析、
+   * 保留 timeline / 相机 / 画质档）。恢复时重置时钟，否则暂停期间累积的 dt
+   * 会让第一帧直接跳进战斗。
+   */
+  let paused = false;
   // 诊断强引用仅在显式 debug 下创建（生产不挂 window.__scene 等长生命周期引用）
   const DEBUG = (() => { try { return new URLSearchParams(location.search).has('debug'); } catch (e) { return false; } })();
 
@@ -507,10 +522,14 @@ export function initPlayback(container, store) {
   }
 
   async function loadMapImage() {
-    // generation guard：回放替换/销毁后，旧会话的地图资产续体一律失效——
-    // 迟到的已加载纹理就地 dispose，不得写入新会话的共享状态或场景
-    const gen = sessionGen;
-    const stale = () => gen !== sessionGen;
+    // 会话身份 guard：回放替换/销毁后，旧会话的地图资产续体一律失效——
+    // 迟到的已加载纹理就地 dispose，不得写入新会话的共享状态或场景。
+    // 用 sessionEpoch（不是 sessionGen）：新的 loadData / destroy 都会换掉身份，
+    // 旧会话的资源续体因此无法再写共享 store。
+    const epoch = sessionEpoch;
+    const stale = () => destroyed || epoch !== sessionEpoch;
+    // ASYNC SESSION RULE: await into locals → revalidate ownership → dispose obsolete
+    // local resources → only then publish session state or mutate the scene.
     if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
     if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
     if (mapScenery) { scene.remove(mapScenery); mapScenery = null; }
@@ -525,48 +544,58 @@ export function initPlayback(container, store) {
     // mapq，TDZ ReferenceError 让整个函数静默死亡，地图/地形/场景一个请求都不发，
     // 全画质档回退占位网格）
     const resolvedKey = await resolveMapKey(mapq).catch(() => null);
+    if (stale()) return;
     currentMapKey = resolvedKey;
     store.mapKey = resolvedKey;
     currentMapBases = resolvedKey ? (mapBases[resolvedKey] || null) : null;
-    if (stale()) return;
     // 资产阶段进度（审计 3D-23）：按画质档实际会请求的段登记，每段完成（含缺失降级）计满；
     // 分层地表按纹理张数、场景 GLB 按字节推进。写入 store.assetProgress（0–1）
     const progress = createLoadProgress((snap) => { if (!stale()) store.assetProgress = snap.fraction; });
-    const mapUrlPlanned = (Q.miniMap ? mapStaticUrl('map-mini') : null) ?? mapStaticUrl('map');
+    const mapUrlPlanned = (Q.miniMap ? mapStaticUrl('map-mini', undefined, resolvedKey) : null) ?? mapStaticUrl('map', undefined, resolvedKey);
     if (mapUrlPlanned) progress.expect('map');
-    if (mapStaticUrl('terrain')) progress.expect('terrain');
-    if (Q.groundLayers && mapStaticUrl('groundmeta')) progress.expect('ground');
-    if (Q.scenery && mapStaticUrl('scenery')) progress.expect('scenery');
+    if (mapStaticUrl('terrain', undefined, resolvedKey)) progress.expect('terrain');
+    if (Q.groundLayers && mapStaticUrl('groundmeta', undefined, resolvedKey)) progress.expect('ground');
+    if (Q.scenery && mapStaticUrl('scenery', undefined, resolvedKey)) progress.expect('scenery');
     try {
       // 低档 mini：客户端小地图作地面（比高清底图小一个量级，保留 3D 起伏）。
       // client-only：仅资产平面静态路径；未配置基址/索引未命中 → 无底图（回退网格），
       // 不存在服务端回退
-      const mapUrl = (Q.miniMap ? mapStaticUrl('map-mini') : null) ?? mapStaticUrl('map');
+      const mapUrl = (Q.miniMap ? mapStaticUrl('map-mini', undefined, resolvedKey) : null) ?? mapStaticUrl('map', undefined, resolvedKey);
       if (mapUrl) {
         const resp = await fetch(mapUrl);
         if (stale()) return;
         if (resp.ok) {
-          mapMetaInfo = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
-          const url = URL.createObjectURL(await resp.blob());
-          mapTexture = await new THREE.TextureLoader().loadAsync(url);
-          URL.revokeObjectURL(url);
-          if (stale()) { mapTexture.dispose(); mapTexture = null; return; }
+          const meta = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
+          const blob = await resp.blob();
+          if (stale()) return;
+          const url = URL.createObjectURL(blob);
+          let texture;
+          try {
+            texture = await new THREE.TextureLoader().loadAsync(url);
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+          if (stale()) { texture.dispose(); return; }
+          mapMetaInfo = meta;
+          mapTexture = texture;
           mapTexture.colorSpace = THREE.SRGBColorSpace;
           mapTexture.anisotropy = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
           if (mapMetaInfo.flip_x) { mapTexture.wrapS = THREE.RepeatWrapping; mapTexture.repeat.x = -1; mapTexture.offset.x = 1; }
         }
       }
     } catch (e) { console.warn('底图加载失败（回退网格）:', e); }
+    if (stale()) return;
     progress.complete('map');
     try {
       // 3D 地形：仅资产平面静态路径 + terrain.json sidecar 尺度；无静态资产 → 保持 2D
-      const terrainBin = mapStaticUrl('terrain');
+      const terrainBin = mapStaticUrl('terrain', undefined, resolvedKey);
       let tmeta = {}; let tbuf = null;
       if (terrainBin) {
-        const m = await fetch(mapStaticUrl('terrain-meta'));
+        const m = await fetch(mapStaticUrl('terrain-meta', undefined, resolvedKey));
         if (stale()) return;
         if (m.ok) {
           tmeta = await m.json();
+          if (stale()) return;
           // span = 水平世界跨度（服务端 terrain_scale 同式 max(dx,dy)，map_assets.rs）。
           // 打包器 v0.1.7 sidecar 误写垂直高度差（zmax-zmin，malinovka=60）——按
           // sidecar 自带的 worldBounds 自愈，否则地形被压成 span×span 小块、
@@ -580,7 +609,10 @@ export function initPlayback(container, store) {
         }
         const b = await fetch(terrainBin);
         if (stale()) return;
-        if (b.ok) tbuf = await b.arrayBuffer();
+        if (b.ok) {
+          tbuf = await b.arrayBuffer();
+          if (stale()) return;
+        }
       }
       {
         const meta = tmeta;
@@ -597,6 +629,7 @@ export function initPlayback(container, store) {
         }
       }
     } catch (e) { console.warn('地形加载失败（回退 2D）:', e); }
+    if (stale()) return;
     progress.complete('terrain');
     // 客户端同款分层地表：colormap/lightmap/tile 细节/mask/(HeightBlend 高度图)，
     // tile 纹理前端按 textureTiling 平铺全分辨率采样——清晰度等同客户端，不受整图烘焙
@@ -605,13 +638,14 @@ export function initPlayback(container, store) {
     // 近黑），第 4 通道在独立灰度图里（tile1/mask1/hmap1 的 R）。
     // 低/中档跳过分层地表：直接走整图烘焙底图（省 4–8 张纹理下载与显存）
     if (Q.groundLayers) try {
-      const gmUrl = mapStaticUrl('groundmeta');
+      const gmUrl = mapStaticUrl('groundmeta', undefined, resolvedKey);
       if (!gmUrl) { /* 未配置资产面/未命中索引：跳过分层地表，回退烘焙底图/网格 */ }
       else {
       const mresp = await fetch(gmUrl);
       if (stale()) return;
       if (mresp.ok) {
         const L = await mresp.json();
+        if (stale()) return;
         const need = L.height_blend
           ? ['cm', 'lm', 'tile0', 'tile1', 'mask0', 'mask1', 'hmap0', 'hmap1']
           : ['cm', 'lm', 'tile0', 'tile1', 'mask0', 'mask1'];
@@ -620,15 +654,23 @@ export function initPlayback(container, store) {
         // 任一张失败仍整体回退（其余在飞的照常收下，失败分支统一 dispose）。
         let texDone = 0;
         const loaded = await mapLimit(need, ASSET_CONCURRENCY, async (k) => {
+          if (stale()) return false;
           let okOne = false;
           try {
-            const texUrl = mapStaticUrl('groundtex', k);
+            const texUrl = mapStaticUrl('groundtex', k, resolvedKey);
             if (texUrl) {
               const r = await fetch(texUrl);
+              if (stale()) return false;
               if (r.ok) {
-                const u = URL.createObjectURL(await r.blob());
-                const t = await new THREE.TextureLoader().loadAsync(u);
-                URL.revokeObjectURL(u);
+                const blob = await r.blob();
+                if (stale()) return false;
+                const u = URL.createObjectURL(blob);
+                let t;
+                try {
+                  t = await new THREE.TextureLoader().loadAsync(u);
+                } finally {
+                  URL.revokeObjectURL(u);
+                }
                 if (stale()) { t.dispose(); }
                 else { texs[k] = t; okOne = true; }
               }
@@ -637,6 +679,10 @@ export function initPlayback(container, store) {
           progress.update('ground', ++texDone, need.length);
           return okOne;
         });
+        if (stale()) {
+          for (const k in texs) texs[k]?.dispose?.();
+          return;
+        }
         const ok = loaded.every(Boolean);
         if (ok) {
           const ani = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
@@ -667,7 +713,7 @@ export function initPlayback(container, store) {
     // 与坦克 GLB 同一帧变换，纯旋转无镜像，绕序天然正确。
     // 中/低档跳过场景 GLB（单图 11–67MB 下载 + 大块显存，是画质档最大的分流项）
     if (Q.scenery) try {
-      const sceneryUrl = mapStaticUrl('scenery');
+      const sceneryUrl = mapStaticUrl('scenery', undefined, resolvedKey);
       if (!sceneryUrl) { /* 未配置资产面/未命中索引：跳过场景 GLB（无服务端回退） */ }
       else {
       const gltf = await new Promise((res) => {
@@ -676,7 +722,10 @@ export function initPlayback(container, store) {
           (e) => { if (e) progress.update('scenery', e.loaded, e.lengthComputable ? e.total : 0); },
           () => res(null));
       });
-      if (stale()) return;   // 迟到的场景 GLB：整体 GC（未渲染即未上传 GPU），不入新会话场景
+      if (stale()) {
+        if (gltf?.scene) disposeObject3D(gltf.scene);
+        return;
+      }
       if (gltf && gltf.scene) {
         // GLTFLoader 默认 MeshStandardMaterial（PBR）比场景 Lambert 光照吃光得多，
         // 建筑会渲染成近黑——统一降级为 Lambert 并保留贴图/透明/平直着色。
@@ -805,6 +854,7 @@ export function initPlayback(container, store) {
       }
       }
     } catch (e) { console.warn('场景模型加载失败（忽略）:', e); }
+    if (stale()) return;
     progress.complete('scenery');
   }
 
@@ -2308,6 +2358,7 @@ export function initPlayback(container, store) {
   let winnerShown = false;
   function animate() {
     if (destroyed) return;
+    if (paused) { rafId = 0; return; }   // 停帧：不排队下一帧，场景与状态原样保留
     rafId = requestAnimationFrame(animate);
     if (!renderer) return;   // 渲染器惰性创建（首次 startPlayback）：数据加载完成前无场景可渲染
     const dt = Math.min(clock.getDelta(), 0.1);
@@ -2436,6 +2487,18 @@ export function initPlayback(container, store) {
     PLAYING = p;
     store.playing = p;
     invalidate();
+  }
+  /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时从当前帧重启并丢弃暂停期间的时间差 */
+  function setPaused(next) {
+    const value = !!next;
+    if (value === paused) return;
+    paused = value;
+    if (paused) {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+    } else if (!destroyed) {
+      clock.getDelta();   // 丢弃暂停期间累积的 dt
+      animate();
+    }
   }
   function seekTo(t) {
     T = Math.max(DATA.meta.t_start, Math.min(END, t));
@@ -2570,6 +2633,10 @@ export function initPlayback(container, store) {
     }
     glbCache = new Map();
     DATA = null;
+    // 会话终止 = 不再有任何可用的回放数据：就绪标记必须一起落下，否则新会话加载期间
+    // （或 file=null / 被阻断 / 组件卸载之后）HUD 与播放传输仍会按「已就绪」渲染，
+    // 而底层 DATA/车辆/贴图已经 dispose。destroy 与 loadData 的替换路径都经过这里。
+    store.hasData = false;
     T = 0; shotPtr = 0; killPtr = 0;
     winnerShown = false;
     FOLLOW_EID = 0; followAnchor = null;
@@ -2588,26 +2655,67 @@ export function initPlayback(container, store) {
   async function loadData(source) {
     // source 仅接受 { kind:'local', file }（client-only 拓扑，replaySource 对
     // 其他形态显式拒绝）；字符串路径等 server 形态在本拓扑中不存在
-    const gen = ++sessionGen;   // 使上一会话的在途异步续体全部失效
+    //
+    // 三个计数各司其职（混用会漏掉真实竞态）：
+    // - `sessionGen`（加载代数）：只有新的 loadData / destroy 递增，判定「谁是最新一次加载」；
+    // - `loadGen`（实例内加载令牌）：同上但按实例隔离，配合 destroyed 判定归属；
+    // - `sessionEpoch`（会话身份）：每次新的 loadData 与 destroy 时递增，判定
+    //   「startPlayback 的资产续体是否还属于当前会话」。
+    //   与 sessionGen 分开的原因：sessionGen 表达「加载顺序」，而身份判定需要的是
+    //   「谁拥有当前会话」。teardown 只销毁旧会话资源、不改身份，否则本次加载自己的
+    //   资产续体会连同旧会话一起被判过期（正常加载被误伤）。
+    const gen = ++sessionGen;
+    // 会话身份：每次加载唯一。teardown 只销毁旧会话资源、不改身份——否则本次加载的
+    // 资产续体会连同旧会话一起被判过期（这正是「正常加载也被误伤」的成因）。
+    const epoch = ++sessionEpoch;
+    const loadGen = ++loadGeneration;
+    // 归属判定必须同时覆盖两件事：**本实例还活着**（destroyed）且**本代仍是最新一次加载**。
+    // 只看 loadGen 不够：`loadGeneration` 是实例内闭包，A 实例被 destroy 后自己的计数器不变，
+    // 它会继续把自己评为「最新代」，于是被销毁实例的迟到续体仍能写共享 store（B 用同一个 store）。
+    const ownsLoading = () => !destroyed && loadGen === loadGeneration;
+    // 新会话被接受的那一刻，当前场景就不再是「已就绪」：否则解析/资产阶段（可能数秒）
+    // 里 HUD、播放传输与 time/roster 仍然代表上一场回放（ready 泄漏 + 旧 UI 可交互）。
+    // 与下面的 hasData=true 一起构成不变量：hasData ⟺ 当前会话已完成加载且 DATA 可用。
+    store.hasData = false;
     store.err = '';
     store.loading = true;
+    store.assetStage = false;
+    store.assetProgress = null;
     try {
       // 数据获取在 teardown 之前：新回放解析失败时当前回放保持完好（替换语义 =
       // 新数据就位才拆旧会话）
       const data = await loadPlaybackData(source);
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
-      teardownSession();   // 内部再递增一代——gen+1 仍属本调用（仍是最新所有者）
+      teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       DATA = data;
-      await startPlayback();   // 进入场景前等待运行所需全部资产（地图/地形/地表/场景）
+      // 资产阶段（地图/地形/地表/场景）内部有多个 await：被取代后必须立刻放弃，
+      // 否则旧会话会走完 buildVehicles / buildRoster / setPlaying / tick / writeHud 复活自己。
+      const ready = await startPlayback(epoch);
+      if (!ready || !ownsLoading()) return;
       store.hasData = true;
     } catch (e) {
-      // 只写原因；标题与重试由宿主页（Scene3DStatus）按当前语言呈现
-      if (gen === sessionGen || gen + 1 === sessionGen) store.err = String(e?.message || e || 'unknown');
+      // 只写原因；标题与重试由宿主页（Scene3DStatus）按当前语言呈现。
+      // 只有最新一次加载可以写：旧加载的失败不得覆盖新加载的状态。
+      if (ownsLoading()) store.err = String(e?.message || e || 'unknown');
     } finally {
-      if (gen === sessionGen || gen + 1 === sessionGen) store.loading = false;
+      // 只有最新一次加载可以落下 loading；被取代的加载不得提前结束新会话的加载态。
+      if (ownsLoading()) store.loading = false;
     }
   }
-  async function startPlayback() {
+  /**
+   * 进入场景：等待运行所需全部资产（地图/地形/地表/场景 GLB 按画质档）后落成会话。
+   *
+   * 本函数内部有多个 await；`epoch` 是本会话的身份令牌，**每个 await 之后与最终就绪态之前
+   * 都必须复核**。否则被取代的会话会在资产加载返回后继续走完
+   * buildVehicles / buildRoster / setPlaying / tick / writeHud，把旧会话复活到新会话身上。
+   *
+   * @param {number} epoch loadData 提交数据后领取的会话身份（见 loadData 注释）
+   * @returns {boolean} true = 本会话仍是当前会话，可以落成就绪态；false = 已过期，调用方必须放弃
+   */
+  async function startPlayback(epoch) {
+    const current = () => epoch === sessionEpoch && !destroyed;
+    // 入口即复核：数据阶段可能耗时到被取代，此时连渲染器都不该为它创建;
+    if (!current()) return false;
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
     store.mapName = DATA.meta.map_name || ('map_' + DATA.meta.map_id);
     // 提前解析资产面 mapKey：buildWorld 要用 playableBoundsFor（依赖 currentMapKey）；
@@ -2615,10 +2723,11 @@ export function initPlayback(container, store) {
     {
       const mid0 = DATA.meta.map_id || 0;
       const mq0 = mid0 ? ('id=' + mid0) : ('name=' + encodeURIComponent(DATA.meta.map_name || ''));
-      // 注意：resolveMapKey 只写 replaySource 内部的 currentMapKey；场景自己的
-      // currentMapKey（playableBoundsFor 读这个）必须在此赋值——只调不接曾让
+      // 场景自己的 currentMapKey（playableBoundsFor 读这个）必须在此赋值——只调不接曾让
       // buildWorld 拿不到可玩矩形、中心回退到车辆云心。
-      currentMapKey = await resolveMapKey(mq0).catch(() => null);
+      const resolvedKey = await resolveMapKey(mq0).catch(() => null);
+      if (!current()) return false;   // 资产解析期间被取代：不得继续动场景
+      currentMapKey = resolvedKey;
     }
     buildWorld();
     // 进入场景前等待运行所需全部资产（评审要求：地图/地形/分层地表/场景 GLB 按
@@ -2631,8 +2740,9 @@ export function initPlayback(container, store) {
     } catch (e) {
       console.warn('地图资产加载失败（回退网格）:', e);
     } finally {
-      store.assetStage = false;
+      if (current()) store.assetStage = false;
     }
+    if (!current()) return false;   // 地图资产期间被取代：后面全是 DATA 派生的会话状态
     buildVehicles();
     buildRoster();
     // 实时装填相位（`DATA.reloads`，arena subtype 15/17；**仅本方全队**）→ 按 eid 归到车。
@@ -2685,10 +2795,13 @@ export function initPlayback(container, store) {
     // 会话常量一次写清（此前每 tick 重写，值不变不会触发响应式，但语义上属会话级）
     store.startTime = DATA.meta.t_start;
     store.duration = END;
+    // 最后一处会「启动播放」的写：过期会话绝不允许走到这里（否则旧会话会自己开始 tick）
+    if (!current()) return false;
     setPlaying(true);
     tick();
     writeHud(true);   // 会话开始：立即对齐 HUD（不等降频窗口）
     invalidate();
+    return true;
   }
 
   // 初始化：事件绑定 + 动画循环（渲染器惰性创建，画质选择先于首帧定型）
@@ -2740,9 +2853,18 @@ export function initPlayback(container, store) {
       invalidate();
     },
     setQuality,
+    setPaused,
     qualityPresets: QUALITY_PRESETS,
     destroy() {
       destroyed = true;
+      loadGeneration++;
+      sessionEpoch++;
+      store.loading = false;
+      store.assetStage = false;
+      store.assetProgress = null;
+      // 使本实例所有在途 loadData 的归属判定永久失效：仅有 `destroyed` 也能挡住，
+      // 但把加载令牌一并推进让「被销毁的实例」与「被取代的加载」走同一条判定路径
+      // （ownsLoading 同时看 destroyed 与 loadGeneration），不依赖单一标志。
       cancelAnimationFrame(rafId);   // 显式取消：不等下一帧的 destroyed 自然退出
       teardownSession();             // 会话资源（车辆/地图/特效/GLB 模板）全量 dispose
       removeEventListener('resize', onResize);

@@ -20,6 +20,7 @@ const md = read('../components/MarkdownContent.vue')
 const ratingDocs = read('../components/RatingDocsPage.vue')
 const drawer = read('../components/PlayerDetailDrawer.vue')
 const capabilityTabs = read('../components/ReplayCapabilityTabs.vue')
+const segmented = read('../components/SegmentedControl.vue')
 const bpPanel = read('../components/BattlePlaybackPanel.vue')
 
 // 提取第一条「selector{…}」规则的声明体（selector 允许跨行，但要求紧跟 { 前无逗号，
@@ -78,9 +79,12 @@ describe('Classic 主题 residual-dark 回归（语义 token 契约）', () => {
   })
 
   it('ReplayCapabilityTabs / BattlePlaybackPanel 面板 不得再写死深色面', () => {
-    // 设计语言组件：只用语义 token（--color-*），不写死任何色值
+    // 能力切换是 canonical SegmentedControl 的薄 adapter：自己不持有任何选项样式，
+    // 因此这里断言的是"没有第二套视觉"，token 契约由 SegmentedControl 自己承担。
     expect(capabilityTabs).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
-    expect(ruleBody(capabilityTabs, '\\.workspace-tab\\.is-active')).toContain('var(--color-')
+    expect(capabilityTabs).not.toContain('<style')
+    expect(capabilityTabs).toContain('SegmentedControl')
+    expect(ruleBody(segmented, '\\.segmented-option\\.is-active')).toContain('var(--color-')
     expect(ruleBody(bpPanel, '\\.panel ')).toContain('background: var(--bg-card)')
     expect(ruleBody(bpPanel, '\\.panel ')).toContain('color: var(--text)')
     expect(ruleBody(bpPanel, '\\.panel ')).not.toContain('#303a40')

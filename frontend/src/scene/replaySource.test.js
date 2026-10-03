@@ -5,6 +5,7 @@
  * （缺 supremacy_bases/supremacy_points），版本门禁形同虚设。
  * 本测试证明该路径现在复用 validateAgentPlayback：v1 被拒、v2 通过。
  */
+import { assetProvider } from './assetProvider.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import {
@@ -20,6 +21,8 @@ import {
   loadPlaybackData,
   playbackParsePayload,
   replayContentDigest,
+  resolveMapKey,
+  mapStaticUrl,
 } from './replaySource.js'
 
 /** 独立实现（Node 内建）的 SHA-256 hex——用于校验生产代码走的是完整内容摘要 */
@@ -294,4 +297,20 @@ describe('Supremacy base 空态可空性（PR #411 review blocker）', () => {
     expect(b1.owner_team).toBe(1)
     expect(b1.capturing_team).toBeNull()
   })
+})
+
+// URL ownership is explicit even when an older map resolution finishes after the current one.
+it('迟到地图解析不会改变当前会话的资产 URL', async () => {
+  const configured = vi.spyOn(assetProvider, 'configured').mockReturnValue(true)
+  const json = vi.spyOn(assetProvider, 'json').mockResolvedValue({ maps: { 1: { key: 'map_a' }, 2: { key: 'map_b' } } })
+  const url = vi.spyOn(assetProvider, 'url').mockImplementation((path) => 'https://assets.example' + path)
+  try {
+    const keyB = await resolveMapKey('id=2')
+    await resolveMapKey('id=1')
+    expect(mapStaticUrl('terrain', undefined, keyB)).toBe('https://assets.example/map/map_b/terrain.u16.bin')
+    expect(mapStaticUrl('groundtex', 'cm', keyB)).toBe('https://assets.example/map/map_b/ground/cm.webp')
+    expect(mapStaticUrl('map', undefined, null)).toBeNull()
+  } finally {
+    configured.mockRestore(); json.mockRestore(); url.mockRestore()
+  }
 })
