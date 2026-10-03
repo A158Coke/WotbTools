@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { vi, describe, expect, it } from 'vitest'
 import {
   ADMIN_ONLY_VIEWS,
   ALLOWED_VIEWS,
@@ -45,6 +45,24 @@ describe('viewFromRoute admin-only gating', () => {
   it('resolves admin-only views when allowAdminViews is true', () => {
     for (const view of ADMIN_ONLY_VIEWS) {
       expect(viewFromRoute(routeFor(view), { allowAdminViews: true })).toBe(view)
+    }
+  })
+
+  it('URL 参数绝不能放开 admin 视图：dev 下带 ?agentViews=1 也必须 fail-closed', async () => {
+    // 回归护栏：曾经有一版本按 `window.location.search` 里的 `agentViews` 在 dev 构建放行
+    // admin 视图（本机旁路被误提交，review BLOCKER）。这条用例按真实首屏复现——URL 带参数、
+    // 模块**重新加载**后再问一次；只要源码里再出现任何基于 URL 的放行，这里立刻失败。
+    window.history.replaceState({}, '', '/?view=agent-replay&agentViews=1&admin=1')
+    try {
+      vi.resetModules()
+      const fresh = await import('./navigation.js')
+      for (const view of fresh.ADMIN_ONLY_VIEWS) {
+        expect(fresh.viewFromRoute({ path: '/', query: { view } }, { allowAdminViews: false })).toBe(fresh.defaultView())
+        expect(fresh.viewFromRoute({ path: '/', query: { view } })).toBe(fresh.defaultView())
+      }
+    } finally {
+      window.history.replaceState({}, '', '/')
+      vi.resetModules()
     }
   })
 
@@ -104,5 +122,39 @@ describe('locationForView：名人堂筛选只属于名人堂', () => {
     expect(locationForView('hof', hofRoute).query).toEqual(hofRoute.query)
     expect(locationForView('hof', { path: '/', query: { view: 'agent-tankopedia', tank: '5' } }).query)
       .toEqual({ view: 'hof' })
+  })
+
+  it('装甲查看器 / 射击复现场景参数只属于该视图：切走时整组丢掉，保留无关参数', () => {
+    const armorRoute = {
+      path: '/',
+      query: {
+        view: 'agent-armor', tank: '13825', shot: '2', shooter: '19969', shell: '0', scfg: '0',
+        world: '1', heatmap: '1', az: '45', d: '12', clean: '1', lang: 'x',
+      },
+    }
+    // 侧边栏切走：不留任何场景参数（用户实测：此前会带上 tank/shot/shooter/…）
+    expect(locationForView('replay', armorRoute).query).toEqual({ view: 'replay', lang: 'x' })
+    expect(locationForView('agent-tankopedia', armorRoute).query).toEqual({ view: 'agent-tankopedia', lang: 'x' })
+    expect(locationForView('hof', armorRoute).query).toEqual({ view: 'hof', lang: 'x' })
+    // 留在装甲查看器内（如切换能力后又回到同一视图）保留全部场景参数
+    expect(locationForView('agent-armor', armorRoute).query).toEqual(armorRoute.query)
+  })
+
+  it('进入装甲查看器时保留场景参数：交接链接不得在入场方向被吞掉', () => {
+    // 以 URL 表达的交接（射击分析的复现链接 / 坦克百科的详情入口）在入场时必须原样保留——
+    // 清理只针对"离开场景"，与坦克百科那条规则同向。任何方向的误删都会让复现那发直接丢参数。
+    const handoff = {
+      path: '/',
+      query: {
+        view: 'agent-shots', tank: '13825', shooter: '19969', shot: '2', shell: '0', scfg: '0',
+        world: '1', heatmap: '1', lang: 'x',
+      },
+    }
+    expect(locationForView('agent-armor', handoff).query).toEqual({ ...handoff.query, view: 'agent-armor' })
+
+    // 场景独有键（world / heatmap / clean）同理：入场保留，切走才清
+    const sceneOnly = { path: '/', query: { view: 'replay', world: '1', heatmap: '1', clean: '1' } }
+    expect(locationForView('agent-armor', sceneOnly).query)
+      .toEqual({ view: 'agent-armor', world: '1', heatmap: '1', clean: '1' })
   })
 })

@@ -123,7 +123,12 @@ export async function launchChromeForCdp(chrome, { extraArgs = [] } = {}) {
   const deadline = Date.now() + 30_000
   let port = 0
   while (!port) {
-    if (child.exitCode != null) throw new Error(`Chrome exited before publishing DevToolsActivePort (code=${child.exitCode})`)
+    // 进程退出 ≠ 启动失败：Windows 上 Chromium（Edge / Chrome）可能走「启动器」模型 —— 启动器
+    // 进程立即以 0 退出，真正的浏览器进程继续运行并写出 DevToolsActivePort（本机 Edge 154 +
+    // 已开的用户会话实测如此）。只有拿不到端口文件才是失败，所以这里只把「非 0 退出」当错误。
+    if (child.exitCode != null && child.exitCode !== 0) {
+      throw new Error(`Chrome exited before publishing DevToolsActivePort (code=${child.exitCode})`)
+    }
     if (Date.now() > deadline) throw new Error('Chrome did not publish DevToolsActivePort within 30s')
     // 文件出现 ≠ 写完：读到空/半行时继续等，避免把 NaN 递给 fetch。
     // Windows 上 Chrome 可能仍持有写锁（EBUSY）读完即释放，因此瞬时读取失败按“还没就绪”处理。

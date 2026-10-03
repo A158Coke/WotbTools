@@ -335,6 +335,129 @@ describe('playbackScene 资产阶段过期续体', () => {
   })
 })
 
+/**
+ * `reset()`（工作台清空选择 / 换选场次）也落在**加载途中**：撤下必须让在途续体整体作废，
+ * 而不是等它自己跑完。否则旧场解析完成会绕过 reset 把旧场景画回来，还会把 `DATA` 占住。
+ */
+describe('playbackScene reset：撤下当前回放', () => {
+  it('解析途中撤下：迟到解析不得落成会话，也不得把 DATA 留给下一场', async () => {
+    const store = createPlaybackStore()
+    const late = track(deferred())
+    source.loadPlaybackData.mockImplementationOnce(() => late.promise)
+
+    const only = createInstance(store)
+    api = only
+    const load = only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
+    expect(store.loading).toBe(true)
+
+    only.reset()
+    expect(store.loading).toBe(false)
+    expect(store.hasData).toBe(false)
+
+    // 旧场解析迟到完成：不得落成会话、不得改写等待态
+    late.resolve(minimalData(917, 'map_a'))
+    await load
+    expect(store.hasData).toBe(false)
+    expect(store.loading).toBe(false)
+    expect(store.mapName).toBe('')
+    expect(store.startTime).toBe(0)
+    expect(store.err).toBe('')
+
+    // DATA 也不得被旧场占用：画质选择必须仍是「就地生效」，
+    // 而不是走 `if (DATA)` 的「已在播放 → 整页重载」分支
+    expect(store.qualityKey).toBe('low')
+    only.setQuality('mid')
+    expect(store.qualityKey).toBe('mid')
+  })
+
+  it('资产途中撤下：迟到续体不得触场景，也不得把内部异常当「加载失败」写给用户', async () => {
+    source.loadPlaybackData.mockImplementation(() => Promise.resolve(minimalData(917, 'map_a')))
+    // 第一次是 startPlayback 预解析，第二次（挂起）在资产阶段内部
+    const parked = track(deferred())
+    source.resolveMapKey
+      .mockResolvedValueOnce('map_a')
+      .mockImplementationOnce(() => parked.promise)
+      .mockResolvedValue(null)
+
+    const store = createPlaybackStore()
+    const only = createInstance(store)
+    api = only
+    const load = only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
+    await vi.waitFor(() => expect(source.resolveMapKey).toHaveBeenCalledTimes(2))
+    expect(store.assetStage).toBe(true)
+
+    only.reset()
+    expect(store.assetStage).toBe(false)
+    expect(store.mapName).toBe('')
+
+    parked.resolve('map_a')
+    await load
+    expect(store.mapName).toBe('')       // 不是 'map_a'
+    expect(store.startTime).toBe(0)      // 不是 917
+    expect(store.playing).toBe(false)
+    expect(store.hasData).toBe(false)
+    expect(store.assetStage).toBe(false)
+    // 关键：续体必须「安静地」放弃。撤下已 teardown 掉 DATA（= null），若让它继续跑
+    // buildVehicles，会在 DATA.vehicles 上抛错并把 TypeError 当成「加载失败」写给用户。
+    expect(store.err).toBe('')
+  })
+})
+
+/**
+ * 场景未初始化（渲染器/时钟惰性创建前）的 HUD API 调用安全：待开播 / 解析期间切走能力
+ * 再切回，面板会对 `setPaused(false)`——此时 `clock` 还不存在，恢复分支不得触场景内部
+ * 对象（线上实测 TypeError: Cannot read properties of undefined (reading 'getDelta')）。
+ */
+describe('playbackScene 场景未初始化时的调用安全', () => {
+  it('initScene 之前 pause → resume 会重新挂起被取消的 rAF，且场景 API 不炸', async () => {
+    // 精确锁定线上路径：待开播时 initPlayback 已有一个空转 rAF；切走会 cancel，
+    // 切回时 clock/renderer 仍不存在，但必须重新挂回 rAF。否则之后 Start 虽能 ready，
+    // animation loop 仍是 0，画面与时间永久停死。
+    const raf = vi.fn()
+      .mockReturnValueOnce(101)
+      .mockReturnValueOnce(102)
+      .mockReturnValue(103)
+    const cancel = vi.fn()
+    vi.stubGlobal('requestAnimationFrame', raf)
+    vi.stubGlobal('cancelAnimationFrame', cancel)
+
+    const { store, api } = createScene()   // 只 initPlayback：clock/renderer 尚不存在
+    expect(raf).toHaveBeenCalledTimes(1)
+    expect(() => api.setPaused(true)).not.toThrow()
+    expect(cancel).toHaveBeenCalledWith(101)
+
+    expect(() => api.setPaused(false)).not.toThrow()
+    expect(raf).toHaveBeenCalledTimes(2)   // pre-init resume 必须重新 arm animation loop
+
+    // 后续正常 Start / initScene 仍可落成 ready；不能只是“不抛异常”。
+    source.loadPlaybackData.mockResolvedValueOnce(minimalData())
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+
+    expect(() => api.setPlaying(false)).not.toThrow()
+    expect(() => api.togglePlay()).not.toThrow()
+    expect(store.playing).toBe(true)
+    expect(() => api.togglePlay()).not.toThrow()
+    expect(store.playing).toBe(false)
+  })
+
+  it('初始化之后 setPaused 仍正常停帧 / 恢复（守住修复没有把正常路径关掉）', async () => {
+    source.loadPlaybackData.mockImplementation(() => Promise.resolve(minimalData()))
+    const store = createPlaybackStore()
+    const only = createInstance(store)
+    await only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
+    expect(store.hasData).toBe(true)
+
+    expect(() => only.setPaused(true)).not.toThrow()
+    expect(() => only.setPaused(false)).not.toThrow()
+    // 会话未被闸门破坏：就绪态保持、无错误（minimalData 的 END==t_start，加载完成即播完，
+    // playing 落回 false 属正常，不在此断言播放态）
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+  })
+})
+
 /** 同一实例替换：B 的资源引用与高度场不得被 A 的迟到结果覆盖。 */
 describe('playbackScene 资产发布顺序', () => {
   function prepareAssets(kinds) {

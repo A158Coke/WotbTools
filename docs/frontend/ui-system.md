@@ -25,6 +25,7 @@
 - Mobile 档断点统一写作 `@media (width < 768px)`（range 语法，无 1px 缝隙/重叠），JS 判断统一 `window.innerWidth < 768`；禁止再引入 `max-width: 767/768px` 或 640/560/520 等新散值（`app-shell.css` 保留一个带注释的 `max-width: 480px` 超窄手机块）。
 - Mobile 档交互约定：`input/select/textarea` 字号 ≥16px（防 iOS 聚焦缩放，`app-shell.css` 全局兜底）；主要触控目标 ≥36px（参照 `PlayerRatingRadar` 缩放按钮）；modal 遮罩用固定暗色 scrim（`rgb(0 0 0 / .35|.72)`），禁止用 `color-mix(var(--text-heading))`（showcase 下语义反转成亮纱）。
 - `index.html` viewport 已带 `viewport-fit=cover`；topbar、底部 sheet、drawer 预留 `env(safe-area-inset-*)`（当前非 edge-to-edge 解析为 0），新增贴顶/贴底固定元素时同步加 inset。
+- 装甲查看器（`AgentArmorView.vue` 的样式 + `scene/tankViewer.js` 的常驻 UI）Mobile 档：顶栏一行（车名 + 等级/类型/国籍 + 「参数」开关），底栏弹种一行 + 视图开关（碰撞 / 热力图 / 炮塔）一行——弹种文案是「弹种 穿深mm / 伤害dmg」，下拉不限宽、禁止截断；装备 / 射击方 / 目标 / 配置收进默认收起的参数面板（`.armor-stage.is-tools-open`），炮塔 / 炮管角度条贴顶栏下方；`?clean=1` 时顶栏一并让位。DOM 契约不变（内核按固定 ID 查找，守卫 `src/components/AgentArmorView.dom-contract.test.js`），几何 / 触控目标 / 真实触摸接线由 `npm run test:browser-armor-mobile` 锁定。
 - 视觉回归至少检查对比度、overflow、sticky、hover/focus、loading/empty/error；页面级验收细节见 [`docs/DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md)。
 
 ## Canonical feature references

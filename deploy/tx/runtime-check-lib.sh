@@ -29,7 +29,7 @@ probe_body_contains() {
     --max-time "$PROBE_MAX_TIME_SEC")
   [ -n "$host_header" ] && args+=(--header "$host_header")
   args+=("$url")
-  if ! body="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
+  if ! body="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}")"; then
     echo "$service: FAIL (probe command failed)" >&2
     return 1
   fi
@@ -49,7 +49,7 @@ qq_identity_provider_ready() {
       --data-urlencode 'client_id=admin-cli' \
       --data-urlencode 'username=admin' \
       --data-urlencode "password=$KC_BOOTSTRAP_ADMIN_PASSWORD" \
-      http://keycloak:8080/realms/master/protocol/openid-connect/token 2>&1)"; then
+      http://keycloak:8080/realms/master/protocol/openid-connect/token)"; then
     echo "qq-idp-admin-token: FAIL (token request failed)" >&2
     return 1
   fi
@@ -61,7 +61,7 @@ qq_identity_provider_ready() {
       --silent --show-error --fail --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
       --max-time "$PROBE_MAX_TIME_SEC" \
       --header "Authorization: Bearer $admin_token" \
-      http://keycloak:8080/admin/realms/wotbtools/identity-provider/instances 2>&1)"; then
+      http://keycloak:8080/admin/realms/wotbtools/identity-provider/instances)"; then
     echo "qq-idp-admin-api: FAIL (identity provider query failed)" >&2
     return 1
   fi
@@ -115,6 +115,8 @@ declare -a E2E_EXTRA_ARGS=()
 
 # Run one HTTP call in the deployment-owned health-probe container: the gate
 # needs no curl on the TX host and never contacts a published application port.
+# Keep Compose/container lifecycle diagnostics on stderr: stdout is a machine
+# protocol (JSON/body + curl write-out) and must stay parseable.
 e2e_http() {
   local method="$1" url="$2" body="${3:-}" content_type="${4:-}" raw
   local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
@@ -129,7 +131,7 @@ e2e_http() {
   args+=("$url")
   E2E_HTTP_STATUS="000"
   E2E_HTTP_BODY=""
-  if ! raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
+  if ! raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}")"; then
     E2E_HTTP_BODY="$raw"
     return 1
   fi
@@ -148,7 +150,7 @@ e2e_download() {
   args+=("$url")
   E2E_HTTP_STATUS="000"
   E2E_DOWNLOAD_SIZE="0"
-  if ! raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
+  if ! raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}")"; then
     return 1
   fi
   E2E_HTTP_STATUS="${raw%% *}"
@@ -324,7 +326,7 @@ edge_tls_probe() {
   # `if ! cmd` would make `$?` the status of the negation (always 0), so the real
   # exit code is captured in the else branch, where `$?` is the command's status.
   # The command inside an `if` condition stays exempt from errexit.
-  if raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}" 2>&1)"; then
+  if raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}")"; then
     exit_code=0
   else
     exit_code=$?

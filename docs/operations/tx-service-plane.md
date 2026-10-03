@@ -89,9 +89,9 @@ curl -fsS https://wotbtools.com/ >/dev/null
 curl -fsS https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration >/dev/null
 ```
 
-用现有 secret 注入流程执行 TX `deploy/tx/runtime-check.sh`，要求 `TX_RUNTIME_READY`；
-不得关闭 TLS 验证或打印凭据。验收记录应保存部署 SHA、actual bindings、TX2/Yecao probe、
-public TLS 与 E2E 结果；所有条件同时通过且 workload 未移动后才记为 K6A COMPLETE。
+通过 GitHub Actions 手动触发 `.github/workflows/tx-runtime-check.yml`（`Ops / TX Runtime Check`，必须从 `main` dispatch）。该 workflow 只通过现有 `tx-production` Secrets/Variables 注入运行时检查所需凭据，从正在运行的 Frontend / Business API 容器读取当前 image ref，并在 TX host lock 下执行既有 `/opt/wotb-tx/deploy/runtime-check.sh`；要求最终输出 `TX_RUNTIME_READY`。它不得 stage/deploy/recreate/stop 服务、执行 OpenTofu apply、修改 DNS，也不得关闭 TLS 验证或打印凭据。
+
+验收记录应保存部署 SHA、actual bindings、TX2/Yecao probe、public TLS 与 E2E 结果；所有条件同时通过且 workload 未移动后才记为 K6A COMPLETE。
 
 ## Rollback and next phase
 
