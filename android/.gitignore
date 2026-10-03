@@ -2,3 +2,7 @@
 .gradle/
 build/
 local.properties
+
+# Android local-first 前端 bundle（PR B）：由 frontend/scripts/build-android-bundle.mjs 生成后复制进来，
+# 生成物不进源码树（唯一源码是 frontend/）。改前端请改 frontend/ 再重跑 npm run build:android。
+app/src/main/assets/web/
