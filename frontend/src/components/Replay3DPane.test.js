@@ -50,7 +50,7 @@ vi.mock('../scene/playbackScene.js', () => {
       setCam: vi.fn(),
       setFollow: vi.fn(),
       setGlb: vi.fn(),
-      setLabels: vi.fn(),
+      setLabelPrefs: vi.fn(),
       setQuality: vi.fn(),
       setPaused: vi.fn(),
     }
@@ -107,6 +107,8 @@ beforeEach(() => {
   playback.api = null
   playback.apis.length = 0
   playback.init?.mockClear()
+  // 呈现偏好是持久化的：逐例清空，否则「显示」面板用例的改动会渗到后续用例
+  localStorage.clear()
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -260,19 +262,23 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
-  it('HUD 阵营色取语义 token（inject 的 --color-team-* 生效），不写死红绿', async () => {
+  it('阵容圆点走**物理队伍** token：Team 1 恒 --color-team-1、Team 2 恒 --color-team-2，不随录像者交换', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     const { store } = playback.api
     store.hasData = true
-    // 阵容条目的真实形状来自 playbackScene 的 buildRoster（无 team 字段，分组即阵营）
+    // 名册条目的真实形状来自 playbackScene 的 buildRoster（身份字段 + 当前时刻的 hp/maxHp）
     store.roster = {
-      team1: [{ eid: 1, nick: 'A', tank: 'T-62A', frac: 50, dead: false, followed: false, dot: '#26794a' }],
-      team2: [{ eid: 2, nick: 'B', tank: 'Maus', frac: 100, dead: false, followed: false, dot: '#98322a' }],
-      unknown: [{ eid: 3, nick: 'C', tank: '', frac: 100, dead: false, followed: false, dot: '#f5f5f5' }],
+      team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T-62A', hp: 975, maxHp: 1950, dead: false, followed: false }],
+      team2: [{ eid: 2, team: 2, nick: 'B', tank: 'Maus', hp: 1500, maxHp: 3000, dead: false, followed: false }],
+      unknown: [{ eid: 3, team: null, nick: 'C', tank: '', hp: 100, maxHp: 0, dead: false, followed: false }],
     }
-    document.documentElement.style.setProperty('--color-team-ally', 'rgb(1, 2, 3)')
-    document.documentElement.style.setProperty('--color-team-enemy', 'rgb(4, 5, 6)')
+    document.documentElement.style.setProperty('--color-team-1', 'rgb(1, 2, 3)')
+    document.documentElement.style.setProperty('--color-team-2', 'rgb(4, 5, 6)')
+    // ally / enemy 是**记录者视角**别名：把两者设成完全不同的值，
+    // 名册若（错误地）按视角取色就会立刻显形
+    document.documentElement.style.setProperty('--color-team-ally', 'rgb(9, 9, 9)')
+    document.documentElement.style.setProperty('--color-team-enemy', 'rgb(8, 8, 8)')
     await nextTick()
     // 车道结构下 DOM 顺序是 team1 → unknown → team2：按各自面板取点，不依赖全局序
     const dots = (sel) => wrapper.findAll(`${sel} .pl .dot`)
@@ -280,7 +286,7 @@ describe('Replay3DPane', () => {
     expect(dots('.team1')[0].attributes('style')).toContain('rgb(1, 2, 3)')
     expect(dots('.team2')).toHaveLength(1)
     expect(dots('.team2')[0].attributes('style')).toContain('rgb(4, 5, 6)')
-    // 未知阵营既不并入我方也不并入敌方（用中性色）
+    // 未知阵营既不并入队伍 1 也不并入队伍 2（用中性色）
     expect(dots('.team-unknown')).toHaveLength(1)
     expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(1, 2, 3)')
     expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(4, 5, 6)')
@@ -288,8 +294,44 @@ describe('Replay3DPane', () => {
     expect(wrapper.findAll('.team h3').map(h => h.text())).toEqual([
       'agentReplay.team1', 'agentReplay.teamUnknown', 'agentReplay.team2',
     ])
-    document.documentElement.style.removeProperty('--color-team-ally')
-    document.documentElement.style.removeProperty('--color-team-enemy')
+    for (const p of ['--color-team-1', '--color-team-2', '--color-team-ally', '--color-team-enemy']) {
+      document.documentElement.style.removeProperty(p)
+    }
+    wrapper.unmount()
+  })
+
+  it('名册每行显示 HP 数值与百分比（血条不是唯一信息），随 store 投影变化，阵亡 = 0 / 0%', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.roster = {
+      team1: [
+        { eid: 1, team: 1, nick: 'A', tank: 'Kranvagn', hp: 1950, maxHp: 1950, dead: false, followed: false },
+        { eid: 2, team: 1, nick: 'B', tank: 'SPHT', hp: 824, maxHp: 1950, dead: false, followed: false },
+      ],
+      team2: [{ eid: 3, team: 2, nick: 'C', tank: 'Chieftain', hp: 0, maxHp: 2000, dead: true, followed: false }],
+      unknown: [],
+    }
+    await nextTick()
+    const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp"]`).map(n => n.text())
+    const pcts = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp-pct"]`).map(n => n.text())
+    expect(nums('.team1')).toEqual(['1950', '824'])
+    expect(pcts('.team1')).toEqual(['100%', '42%'])
+    // 阵亡行读作 0 / 0%，不保留"最后一个非零 HP"
+    expect(nums('.team2')).toEqual(['0'])
+    expect(pcts('.team2')).toEqual(['0%'])
+
+    // 状态在时刻：store 投影变化后行内数值同步（HP 不只有血条）
+    store.roster.team1[0].hp = 1200
+    await nextTick()
+    expect(nums('.team1')).toEqual(['1200', '824'])
+    expect(pcts('.team1')).toEqual(['62%', '42%'])
+
+    // 无可信上限 → 百分比为 —（unknown ≠ 0），不是 0%
+    store.roster.team1[1].maxHp = 0
+    await nextTick()
+    expect(pcts('.team1')[1]).toBe('—')
     wrapper.unmount()
   })
 
@@ -299,8 +341,8 @@ describe('Replay3DPane', () => {
     const { store } = playback.api
     store.hasData = true
     store.roster = {
-      team1: [{ eid: 1, nick: 'A', tank: 'T-62A', frac: 50, dead: false, followed: false, dot: '#26794a' }],
-      team2: [{ eid: 2, nick: 'B', tank: 'Maus', frac: 100, dead: false, followed: false, dot: '#98322a' }],
+      team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T-62A', hp: 975, maxHp: 1950, dead: false, followed: false }],
+      team2: [{ eid: 2, team: 2, nick: 'B', tank: 'Maus', hp: 3000, maxHp: 3000, dead: false, followed: false }],
       unknown: [],
     }
     await nextTick()
@@ -316,7 +358,7 @@ describe('Replay3DPane', () => {
     expect(team2.text()).toContain('B')
     // unknown 非空才渲染，且渲染在**左车道**里（team1 之后）——绝不进中央 / 右车道
     expect(wrapper.find('.team-unknown').exists()).toBe(false)
-    store.roster.unknown = [{ eid: 3, nick: 'C', tank: '', frac: 100, dead: false, followed: false, dot: '#f5f5f5' }]
+    store.roster.unknown = [{ eid: 3, team: null, nick: 'C', tank: '', hp: 100, maxHp: 100, dead: false, followed: false }]
     await nextTick()
     const unknown = wrapper.get('.team-unknown')
     expect(unknown.element.parentElement).toBe(left.element)
@@ -342,6 +384,124 @@ describe('Replay3DPane', () => {
     expect(wrapper.find('[data-test="pb-time"]').exists()).toBe(true)
     // 3D 专属控件在独立 toolbar 行里，不混进传输控件
     expect(wrapper.get('[data-testid="replay3d-toolbar"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('共享标签偏好推给场景：enabled + 四行开关，面板改动即时下发', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    // 建场景时补推一次（内核在 initPlayback 之后才有 setLabelPrefs）
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
+      enabled: true, showPlayerName: false, showTankName: true, showHp: true, showReload: true,
+    })
+    // 工具条只在 HUD 有数据时渲染
+    playback.api.store.hasData = true
+    await nextTick()
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="disp-player"]').setValue(true)
+    await nextTick()
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
+      enabled: true, showPlayerName: true, showTankName: true, showHp: true, showReload: true,
+    })
+    await wrapper.get('[data-testid="disp-hp"]').setValue(false)
+    await nextTick()
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
+      enabled: true, showPlayerName: true, showTankName: true, showHp: false, showReload: true,
+    })
+    wrapper.unmount()
+  })
+
+  it('显示面板可分别开关战场 UI 分块（顶栏 / 阵容 / 击杀流 / 基地条）', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.baseViews = [{ id: 'A', owner: 'friendly', progress: 0.5 }]
+    store.killfeed = [{ id: 1, kill: true, killer: 'K', victim: 'V' }]
+    store.roster = {
+      team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T', hp: 1, maxHp: 2, dead: false, followed: false }],
+      team2: [], unknown: [],
+    }
+    await nextTick()
+    expect(wrapper.find('.topbar').exists()).toBe(true)
+    expect(wrapper.find('.killfeed').exists()).toBe(true)
+    expect(wrapper.find('.base-status').exists()).toBe(true)
+    expect(wrapper.find('.team-lane').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="display-toggle"]').attributes('aria-expanded')).toBe('true')
+    await wrapper.get('[data-testid="disp-topbar"]').setValue(false)
+    await wrapper.get('[data-testid="disp-killfeed"]').setValue(false)
+    await wrapper.get('[data-testid="disp-base"]').setValue(false)
+    await wrapper.get('[data-testid="disp-roster"]').setValue(false)
+    await nextTick()
+    expect(wrapper.find('.topbar').exists()).toBe(false)
+    expect(wrapper.find('.killfeed').exists()).toBe(false)
+    expect(wrapper.find('.base-status').exists()).toBe(false)
+    expect(wrapper.find('.team-lane').exists()).toBe(false)
+    // 底部传输控件不属于"战场 UI"分块：仍可操作
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('隐藏全部 UI：HUD / 阵容 / 击杀流 / 标签全部让位，且永远可以恢复（按钮或 H 键）', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.killfeed = [{ id: 1, kill: true, killer: 'K', victim: 'V' }]
+    store.roster = {
+      team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T', hp: 1, maxHp: 2, dead: false, followed: false }],
+      team2: [], unknown: [],
+    }
+    await nextTick()
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="hide-all-ui"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('.topbar').exists()).toBe(false)
+    expect(wrapper.find('.killfeed').exists()).toBe(false)
+    expect(wrapper.find('.team-lane').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="display-toggle"]').exists()).toBe(false)
+    // 标签整层关掉（场景侧 enabled:false）
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }))
+
+    // 常驻恢复入口
+    const restore = wrapper.get('[data-testid="show-all-ui"]')
+    await restore.trigger('click')
+    await nextTick()
+    expect(wrapper.find('.topbar').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+
+    // H 键等效（window 级监听）
+    const pane = wrapper.findComponent(Replay3DPane)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(true)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
+
+    // 输入控件聚焦时不劫持：happy-dom 的合成 KeyboardEvent 不带 target，
+    // 所以直接按真实形状（target = INPUT）驱动同一个处理函数。
+    const keyEvent = (target, key = 'h') => ({ key, target, preventDefault: vi.fn() })
+    const before = wrapper.find('[data-testid="show-all-ui"]').exists()
+    pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'INPUT', isContentEditable: false }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(before)
+    pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'BUTTON', isContentEditable: false }))
+    pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'DIV', isContentEditable: true }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(before)
+    // 普通元素上仍然生效
+    pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'DIV', isContentEditable: false }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(!before)
     wrapper.unmount()
   })
 })

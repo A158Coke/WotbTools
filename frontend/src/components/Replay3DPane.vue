@@ -14,15 +14,17 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
+import { hpPercentText } from '../scene/rosterState.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { uiProfile } from '../composables/useUiProfile.js'
+import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
 import BaseStatusBar from './BaseStatusBar.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
-import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
+import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 
 defineOptions({ name: 'Replay3DPane' })
 
@@ -36,6 +38,45 @@ const props = defineProps({
 })
 
 const { t, locale } = useI18n()
+
+/**
+ * 呈现偏好（标签行 / 战场 UI 分块）的**唯一 owner** 是 usePlaybackPreferences——
+ * 与 2D Playback 共用同一份持久化偏好，3D 不再自建第二套 localStorage 状态。
+ */
+const { labelPrefs, hpPrefs, uiPrefs } = usePlaybackPreferences()
+
+/**
+ * 「隐藏全部 UI」：**不写入持久化偏好**（刷新后回到常规界面，不会把用户永久关在空白场景里），
+ * 只覆盖本次会话的显示。隐藏时保留一个常驻的极简恢复按钮——不得做成不可逆状态。
+ * `H` 键切换；输入控件聚焦时不响应（复用播放传输的同一判据）。
+ */
+const uiHidden = ref(false)
+/** 「显示」面板开合（局部视图状态，不持久化） */
+const displayOpen = ref(false)
+function toggleUiHidden() { uiHidden.value = !uiHidden.value }
+/**
+ * `H` 切换「隐藏全部 UI」。在输入 / 可操作控件上不响应（复用播放传输的同一判据：
+ * 输入框里打字不该把界面藏起来）。
+ *
+ * 注：判据用 `event.target`（与 usePlaybackTransport 的空格 / 方向键一致）。浏览器里
+ * 输入框聚焦时 keydown 的 target 就是该元素；happy-dom 的合成 KeyboardEvent 不设 target，
+ * 因此这条守卫无法用「聚焦 input + dispatch」在单测里覆盖——测试改为直接调用本函数
+ * 并传入真实 target 形状的事件（见 Replay3DPane.test.js）。
+ */
+function onUiToggleKeydown(event) {
+  if (event.key !== 'h' && event.key !== 'H') return
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  if (!props.active || !store.hasData) return
+  if (isInteractiveTarget(event.target)) return
+  event.preventDefault()
+  toggleUiHidden()
+}
+
+/** 战场 UI 分块：隐藏全部 UI 时整块关掉（面板自身与恢复按钮不受影响） */
+const showTopbar = computed(() => !uiHidden.value && uiPrefs.showTopbar)
+const showRoster = computed(() => !uiHidden.value && uiPrefs.showRoster)
+const showKillfeed = computed(() => !uiHidden.value && uiPrefs.showKillfeed)
+const showBaseStatus = computed(() => !uiHidden.value && uiPrefs.showBaseStatus)
 
 const store = createPlaybackStore()
 const stage = ref(null)
@@ -53,6 +94,22 @@ const transport = usePlaybackTransport({
 })
 // 审计 3D-23：渲染器创建前做 WebGL 预检；不支持时不初始化场景，整块换成说明
 const webgl = detectWebGL()
+
+/**
+ * 把共享偏好推给场景内核（唯一方向：偏好 → 场景；场景只读，不回写）。
+ * 建场景时要补推一次——内核在 initPlayback 之后才有 setLabelPrefs。
+ */
+function pushLabelPrefs() {
+  sceneApi?.setLabelPrefs?.({
+    enabled: !uiHidden.value,
+    showPlayerName: labelPrefs.showPlayerName,
+    showTankName: labelPrefs.showTankName,
+    showHp: hpPrefs.showHp,
+    showReload: labelPrefs.showReload,
+  })
+}
+watch([labelPrefs, hpPrefs, uiHidden], pushLabelPrefs, { deep: true })
+
 /** 最近一次加载的文件：失败后"重试"直接重新解析，不必再选一次 */
 let lastFile = null
 const lastFileName = ref('')
@@ -90,16 +147,22 @@ const hpPctText = (pct) => Math.round(Number(pct) || 0) + '%'
  * 阵容圆点 / 胜利失败横幅取语义 token，随主题切换，不再写死红绿。
  * `uiProfile` 是唯一 reactive 主题源（design-language §2），读样式只发生在计算属性里，
  * 不在每帧渲染里逐行读。
+ *
+ * **两套颜色是不同的概念，不得互相替代**：
+ * - `team1` / `team2` = **物理队伍**身份色（--color-team-1/2），固定不随录像者所属队伍交换；
+ * - `ally` / `enemy` = **记录者视角**（--color-team-ally/enemy），只服务顶栏总血量、比分与胜负横幅。
  */
 const teamColors = computed(() => {
   // 主题偏好是唯一主题状态源：它变了就重读一次 token 值
   void uiProfile.value
   if (typeof getComputedStyle !== 'function' || typeof document === 'undefined') {
-    return { ally: 'currentColor', enemy: 'currentColor', unknown: 'currentColor' }
+    return { team1: 'currentColor', team2: 'currentColor', ally: 'currentColor', enemy: 'currentColor', unknown: 'currentColor' }
   }
   const styles = getComputedStyle(document.documentElement)
   const read = (name) => styles.getPropertyValue(name).trim() || 'currentColor'
   return {
+    team1: read('--color-team-1'),
+    team2: read('--color-team-2'),
     ally: read('--color-team-ally'),
     enemy: read('--color-team-enemy'),
     unknown: read('--color-text-secondary'),
@@ -107,19 +170,38 @@ const teamColors = computed(() => {
 })
 
 /**
- * 阵容按阵营分组渲染：场景内核写进 store 的 `dot` 是场景侧调色板值，
- * HUD 圆点按**分组归属**改用主题 token（阵容已经是 team1 / team2 / unknown 三组，
- * 每条目本身不带 team 字段）。
+ * 名册按**物理队伍**分组渲染（左 = Team 1，右 = Team 2，未识别阵营在左车道底部——
+ * 位置与颜色都不随录像者属于哪一队改变）。场景内核只下发 `team`，颜色在本层取语义 token，
+ * 保证「Team 1 是什么颜色」只有一份事实源。
+ *
+ * HP 数值/百分比由每行的 `hp` / `maxHp` 现算（回放时刻的状态投影，见 scene/rosterState.js）：
+ * 没有可信上限时百分比为 `null`，上屏成「—」而不是 0——unknown ≠ 0。
  */
 const rosterGroups = computed(() => {
   const colors = teamColors.value
-  const withColor = (list, color) => (list || []).map((player) => ({ ...player, dotColor: color }))
+  const withColor = (list, color) => (list || []).map((player) => ({
+    ...player,
+    color,
+    hpText: String(Math.max(0, Math.round(Number(player.hp) || 0))),
+    pctText: formatPct(player.hp, player.maxHp),
+  }))
   return {
-    ally: withColor(store.roster.team1, colors.ally),
-    enemy: withColor(store.roster.team2, colors.enemy),
+    team1: withColor(store.roster.team1, colors.team1),
+    team2: withColor(store.roster.team2, colors.team2),
     unknown: withColor(store.roster.unknown, colors.unknown),
   }
 })
+
+/** HP 百分比文案（整数 + `%`）；无可信上限 → `—` */
+function formatPct(hp, maxHp) {
+  const pct = hpPercentText(hp, maxHp)
+  return pct == null ? '—' : `${pct}%`
+}
+/** 名册血条的填充宽度（百分比字符串；无上限 → 0） */
+function hpBarWidth(hp, maxHp) {
+  const pct = hpPercentText(hp, maxHp)
+  return `${pct == null ? 0 : pct}%`
+}
 
 const bannerColor = computed(() => {
   const outcome = store.banner?.outcome
@@ -207,6 +289,7 @@ function ensureScene() {
   if (sceneApi || !shouldHaveScene()) return false
   sceneApi = initPlayback(stage.value, store)
   sceneApi?.setPaused?.(!props.active)
+  pushLabelPrefs();   // 新场景默认吃共享偏好（含"隐藏全部 UI"的当前状态）
   return true
 }
 
@@ -289,14 +372,45 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   window.__pbPane = { store }
 }
 
+/**
+ * 「显示」面板的可用高度（实测写进 --pb-display-panel-h）。向上展开时取两者最小：
+ *   1. 工具条上沿到面板顶的实际空间（矮窗口里否则面板会长到视口外）；
+ *   2. **.pb-pane 视口内可见高度的 1/4**：面板不该盖住画面主体；小窗口里"场景中心"
+ *      可能整个落在视口外（横屏 360px 高时 .pb-root 顶部本身就是负的），所以按可见
+ *      高度的比例兜，而不是按 .pb-root 高度的一半。
+ *
+ * 极端矮的窗口（横屏 < 480px 高）上方根本没有空间：那时面板改走**工具条内联**布局
+ * （见 @media (height < 480px)），不再需要这里的可用高度。
+ *
+ * 与车道定界同一口径（实测 → 写 CSS 变量），不在 CSS 里猜。打开时才测量
+ * （闭合状态下 .controls 可能整块不存在），窗口尺寸变化时重算。
+ */
+const displayWrapEl = ref(null)
+const DISPLAY_PANEL_MAX_H = 240
+function measureDisplayPanel() {
+  const wrap = displayWrapEl.value
+  const root = rootEl.value
+  const pane = wrap?.closest('.pb-pane')
+  if (!wrap || !root || !pane) return
+  const rootBox = root.getBoundingClientRect()
+  const paneBox = pane.getBoundingClientRect()
+  const paneVisible = Math.max(0, Math.min(paneBox.bottom, innerHeight) - Math.max(paneBox.top, 0))
+  const above = wrap.getBoundingClientRect().top - rootBox.top
+  const available = Math.min(above, paneVisible / 4, DISPLAY_PANEL_MAX_H)
+  root.style.setProperty('--pb-display-panel-h', `${Math.max(72, Math.floor(available))}px`)
+}
+watch(displayOpen, (open) => { if (open) measureDisplayPanel() })
+
 onMounted(() => {
   reconcileScene()
   observeLaneBounds()
+  window.addEventListener('keydown', onUiToggleKeydown)
 })
 onBeforeUnmount(() => {
   destroyScene()
   laneBoundsObserver?.disconnect()
   laneBoundsObserver = null
+  window.removeEventListener('keydown', onUiToggleKeydown)
   if (window.__pbPane?.store === store) delete window.__pbPane
 })
 
@@ -314,6 +428,12 @@ watch(
   },
   { flush: 'post' },
 )
+
+// 面板打开期间尺寸变化（旋转 / 全屏 / 工作台重排）重算可用高度；闭合时不测量
+// （此时 .controls 可能整块不存在），打开那一下由 watch(displayOpen) 负责。
+function onViewportResize() { if (displayOpen.value) measureDisplayPanel() }
+onMounted(() => window.addEventListener('resize', onViewportResize))
+onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 </script>
 
 <template>
@@ -324,14 +444,17 @@ watch(
     <div v-else class="pb-root" ref="rootEl" :class="{ 'roster-open': rosterOpen }">
       <div ref="stage" class="scene"></div>
 
-      <div ref="hudEl" class="hud">
-        <div v-if="store.hasData" class="topbar panel">
+      <!-- 顶部 HUD 列：顶栏 → 基地状态条 → 击杀流。整列在没有任何子块可显示时消失
+           （不是留一个空 .hud 占位——那会让"隐藏全部 UI"看起来没生效，也让车道定界白留高度）。 -->
+      <div v-if="store.hasData && (showTopbar || showBaseStatus || showKillfeed)" ref="hudEl" class="hud">
+        <div v-if="store.hasData && showTopbar" class="topbar panel">
           <div class="tb-row">
             <span class="map">{{ mapTitle }}</span>
             <span class="timer">{{ store.timer }}</span>
           </div>
-          <!-- 双方队伍总血量（与上游 3D 视图同布局：数值 + 色条夹住比分，己方在左、敌方在右；
-               整行单一阵营视角：血条与比分都按 friendly_team 映射，见 teamHpTotals/perspectiveScore） -->
+          <!-- 双方队伍总血量（与上游 3D 视图同布局：数值 + 色条夹住比分，己方在左、敌方在右）。
+               整行是**记录者视角**：血条与比分都按 friendly_team 映射（teamHpTotals /
+               perspectiveScore）——与名册的**物理队伍**是两套不同约定，不得互相替代。 -->
           <div class="tb-row" data-test="hud-team-hp">
             <em class="hpnum hpnum-f">{{ hpText(store.hpFriend) }} / {{ hpText(store.hpFriendMax) }}</em>
             <span class="hpbar hp-f" :title="`${t('agentReplay.hp_friendly')} ${hpPctText(store.hpFriendPct)}`">
@@ -346,31 +469,35 @@ watch(
         </div>
 
         <!-- 基地状态条（与 2D 共用）：每基地一枚徽章（底色 = 归属，外环 = 占领进度），两端为争霸积分 -->
-        <div v-if="store.hasData && store.baseViews.length" class="base-status">
+        <div v-if="store.hasData && showBaseStatus && store.baseViews.length" class="base-status">
           <BaseStatusBar :bases="store.baseViews" :friendly-points="store.pointsFriend" :enemy-points="store.pointsEnemy" />
         </div>
 
-        <div v-if="store.hasData" class="killfeed">
+        <div v-if="store.hasData && showKillfeed" class="killfeed">
           <div v-for="kf in store.killfeed" :key="kf.id" class="kf">{{ killfeedText(kf) }}</div>
         </div>
       </div>
 
       <!-- 阵容车道：左右两条侧边车道（不占中央 HUD 车道）；未知阵营归左车道、常驻车道
-           底部（不被队伍名单滚出可视区），与居中的 HUD 列 / 底部控制条互不遮挡 -->
-      <template v-if="store.hasData">
+           底部（不被队伍名单滚出可视区），与居中的 HUD 列 / 底部控制条互不遮挡。
+           左侧恒为**物理 Team 1**、右侧恒为 **Team 2**：位置、标题、颜色都不随录像者
+           属于哪一队改变（不在这里做 friendly/enemy 映射）。 -->
+      <template v-if="store.hasData && showRoster">
         <div class="team-lane side-left">
           <div class="team panel team1">
             <h3>{{ t('agentReplay.team1') }}</h3>
             <div class="roster">
               <div
-                v-for="p in rosterGroups.ally" :key="p.eid"
+                v-for="p in rosterGroups.team1" :key="p.eid"
                 class="pl" :class="{ dead: p.dead, followed: p.followed }"
                 @click="sceneApi.setFollow(p.eid)"
               >
-                <span class="dot" :style="{ background: p.dotColor }"></span>
+                <span class="dot" :style="{ background: p.color }"></span>
                 <span class="nick">{{ p.nick }}</span>
+                <span class="hpv" data-test="roster-hp">{{ p.hpText }}</span>
+                <span class="hpp" data-test="roster-hp-pct">{{ p.pctText }}</span>
                 <span class="tank">{{ p.tank }}</span>
-                <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+                <span class="hpbar"><i :style="{ width: hpBarWidth(p.hp, p.maxHp), background: p.color }"></i></span>
               </div>
             </div>
           </div>
@@ -382,10 +509,12 @@ watch(
                 class="pl" :class="{ dead: p.dead, followed: p.followed }"
                 @click="sceneApi.setFollow(p.eid)"
               >
-                <span class="dot" :style="{ background: p.dotColor }"></span>
+                <span class="dot" :style="{ background: p.color }"></span>
                 <span class="nick">{{ p.nick }}</span>
+                <span class="hpv" data-test="roster-hp">{{ p.hpText }}</span>
+                <span class="hpp" data-test="roster-hp-pct">{{ p.pctText }}</span>
                 <span class="tank">{{ p.tank }}</span>
-                <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+                <span class="hpbar"><i :style="{ width: hpBarWidth(p.hp, p.maxHp), background: p.color }"></i></span>
               </div>
             </div>
           </div>
@@ -395,14 +524,16 @@ watch(
             <h3>{{ t('agentReplay.team2') }}</h3>
             <div class="roster">
               <div
-                v-for="p in rosterGroups.enemy" :key="p.eid"
+                v-for="p in rosterGroups.team2" :key="p.eid"
                 class="pl" :class="{ dead: p.dead, followed: p.followed }"
                 @click="sceneApi.setFollow(p.eid)"
               >
-                <span class="dot" :style="{ background: p.dotColor }"></span>
+                <span class="dot" :style="{ background: p.color }"></span>
                 <span class="nick">{{ p.nick }}</span>
+                <span class="hpv" data-test="roster-hp">{{ p.hpText }}</span>
+                <span class="hpp" data-test="roster-hp-pct">{{ p.pctText }}</span>
                 <span class="tank">{{ p.tank }}</span>
-                <span class="hpbar"><i :style="{ width: p.frac + '%', background: p.dotColor }"></i></span>
+                <span class="hpbar"><i :style="{ width: hpBarWidth(p.hp, p.maxHp), background: p.color }"></i></span>
               </div>
             </div>
           </div>
@@ -411,7 +542,9 @@ watch(
 
       <div v-if="store.banner" class="banner" :style="{ color: bannerColor }">{{ bannerText() }}</div>
 
-      <div v-if="store.hasData" ref="controlsEl" class="controls panel">
+      <!-- 隐藏全部 UI：连底部播放控件一起让位（这是「只看战场」的语义）；
+           `H` 键或右上角常驻按钮随时恢复。resize 观测对 null 元素是安全的（watch(controlsEl)）。 -->
+      <div v-if="store.hasData && !uiHidden" ref="controlsEl" class="controls panel">
         <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
         <PlaybackTransport
           :playing="store.playing"
@@ -428,7 +561,9 @@ watch(
           @scrub-start="store.seeking = true; transport.scrubStart()"
           @scrub-end="store.seeking = false; transport.scrubEnd()"
         />
-        <!-- 3D 专属（相机 / 画质 / 标签 / 阵容 / GLB）独立成一行，不与传输控件混成一套 -->
+        <!-- 3D 专属（相机 / 显示 / 阵容 / 画质）独立成一行，不与传输控件混成一套。
+             标签与战场 UI 的开关收进「显示」面板：设置只有一份 owner（共享偏好），
+             不在工具条上再放一份重复开关。 -->
         <div class="toolbar" data-testid="replay3d-toolbar">
           <button
             type="button" class="tool-btn roster-toggle" :aria-pressed="rosterOpen"
@@ -440,16 +575,50 @@ watch(
             :aria-label="t('agentReplay.camera')"
             @update:model-value="sceneApi.setCam($event)"
           />
+          <div ref="displayWrapEl" class="display-wrap">
+            <button
+              type="button" class="tool-btn" :aria-expanded="displayOpen"
+              aria-haspopup="true" data-testid="display-toggle"
+              @click="displayOpen = !displayOpen"
+            >{{ t('agentReplay.display') }}</button>
+          </div>
           <span class="spacer"></span>
-          <label class="toggle" :title="store.glbAllowed ? '' : t('agentReplay.glb_gate_hint')">
-            <input type="checkbox" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
-          </label>
-          <label class="toggle">
-            <input type="checkbox" :checked="store.labelsOn" @change="sceneApi.setLabels($event.target.checked)"> {{ t('agentReplay.labels') }}
-          </label>
           <span class="q-badge" :title="t('agentReplay.q_title')">{{ qualityBadge }}</span>
         </div>
       </div>
+
+      <!-- 「显示」面板：锚在 .pb-root 的**右下角**（不是工具条），用 `hidden` 开关。
+           关键取舍：面板**绝不参与工具条布局**——一旦让它撑高 .controls，底部控件就会长到
+           占掉半个战场，阵容车道随之越界（矮窗口实测）。浮动面板 + 内部滚动是稳定的做法：
+           高度上限由 measureDisplayPanel 实测写进 --pb-display-panel-h，宽度按断点由 CSS 给。 -->
+      <div class="display-panel panel" data-testid="display-panel" :hidden="!displayOpen">
+        <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
+        <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
+        <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
+        <label class="toggle"><input type="checkbox" data-testid="disp-killfeed" :checked="uiPrefs.showKillfeed" @change="uiPrefs.showKillfeed = $event.target.checked"> {{ t('agentReplay.display_killfeed') }}</label>
+        <label class="toggle"><input type="checkbox" data-testid="disp-base" :checked="uiPrefs.showBaseStatus" @change="uiPrefs.showBaseStatus = $event.target.checked"> {{ t('agentReplay.display_base') }}</label>
+        <p class="dp-title">{{ t('agentReplay.display_labels') }}</p>
+        <label class="toggle"><input type="checkbox" data-testid="disp-player" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ t('recon.map.playback.show_player_name') }}</label>
+        <label class="toggle"><input type="checkbox" data-testid="disp-tank" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ t('recon.map.playback.show_tank_name') }}</label>
+        <label class="toggle"><input type="checkbox" data-testid="disp-hp" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ t('recon.map.playback.show_hp') }}</label>
+        <label class="toggle"><input type="checkbox" data-testid="disp-reload" :checked="labelPrefs.showReload" @change="labelPrefs.showReload = $event.target.checked"> {{ t('agentReplay.display_reload') }}</label>
+        <p class="dp-title">{{ t('agentReplay.display_scene') }}</p>
+        <label class="toggle" :title="store.glbAllowed ? '' : t('agentReplay.glb_gate_hint')">
+          <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
+        </label>
+        <button
+          type="button" class="tool-btn dp-hide" data-testid="hide-all-ui"
+          @click="toggleUiHidden(); displayOpen = false"
+        >{{ t('agentReplay.hide_all_ui') }}</button>
+      </div>
+
+      <!-- 隐藏全部 UI 后唯一的恢复入口：常驻、极简、不遮场景中心；`H` 键等效。
+           不得做成不可逆状态（该状态也不写入持久化偏好）。 -->
+      <button
+        v-if="uiHidden" type="button" class="ui-restore tool-btn panel"
+        data-testid="show-all-ui" :title="t('agentReplay.show_all_ui_hint')"
+        @click="toggleUiHidden()"
+      >{{ t('agentReplay.show_all_ui') }}</button>
 
       <!-- 待开播：画质先定型再解析 + 拉资产（内核在 startPlayback 惰性建渲染器、首帧按当前档位） -->
       <div v-if="file !== startedFile" class="pre-start" data-test="replay3d-pending">
@@ -597,19 +766,45 @@ watch(
 .team-unknown h3 { color: var(--color-text-secondary); }
 .team h3 { margin: var(--space-1) var(--space-1) var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); }
 
+/* 名册行：两行网格。
+   行 1 = 队伍标 + 昵称 + **HP 数值** + **百分比**（数值列 `tabular-nums`、不截断；
+          只有昵称允许 ellipsis）。
+   行 2 = 车型名（可 ellipsis）+ 一条**次要**的细血条——血条只是辅助视觉，
+          HP 数值与百分比才是主信息（旧版只有血条，血量只能靠长度猜）。 */
 .pl {
-  display: flex; align-items: center; gap: var(--space-1);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "dot nick hp pct"
+    "dot tank bar";
+  align-items: center;
+  column-gap: var(--space-1);
   min-height: var(--hit-min); padding: 0 var(--space-1);
   border-radius: var(--radius-sm); cursor: pointer;
 }
+.pl .dot { grid-area: dot; flex: none; width: 8px; height: 8px; align-self: center; }
+.pl .nick { grid-area: nick; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl .hpv,
+.pl .hpp {
+  grid-area: hp;
+  font: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;              /* HP 与百分比不得被截断 */
+}
+.pl .hpp { grid-area: pct; text-align: end; }
+.pl .tank {
+  grid-area: tank; min-width: 0;
+  overflow: hidden; color: var(--color-text-secondary);
+  font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap;
+}
+.pl .hpbar {
+  grid-area: bar; justify-self: end; align-self: center;
+  width: 52px; height: 3px; border-radius: var(--radius-full); background: var(--color-surface-3);
+}
+.pl .hpbar i { display: block; height: 100%; border-radius: var(--radius-full); }
 .pl.dead { opacity: .42; }
 .pl.dead .nick { text-decoration: line-through; }
 .pl.followed { outline: 1px solid var(--color-accent); }
-.pl .dot { flex: none; width: 8px; height: 8px; }
-.pl .nick { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pl .tank { max-width: 86px; overflow: hidden; color: var(--color-text-secondary); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
-.pl .hpbar { flex: none; width: 52px; height: 5px; border-radius: var(--radius-full); background: var(--color-surface-3); }
-.pl .hpbar i { display: block; height: 100%; border-radius: var(--radius-full); }
 .pl:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 .killfeed {
@@ -659,6 +854,46 @@ watch(
 .q-badge { color: var(--color-text-secondary); font: var(--type-caption); }
 .pb-root input[type="checkbox"] { flex: none; width: auto; min-width: 0; margin: 0; }
 
+/* 「显示」面板：锚在 .pb-root 的右下角（悬浮、不参与工具条布局）。
+   宽度 240px；高度上限 = 可见面板高度的 40%（实测写进 --pb-display-panel-h），
+   下限 72px，内容超出则面板内部滚动——所有开关始终可滚动到并真实可点。 */
+.pb-root { --pb-display-panel-w: 240px; --pb-display-panel-h: 240px; }
+.display-wrap { display: inline-flex; }
+.display-panel {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline-end: var(--space-2);
+  z-index: var(--pb-z-hud);
+  display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1);
+  inline-size: var(--pb-display-panel-w);
+  max-block-size: var(--pb-display-panel-h);
+  overflow-y: auto;
+  padding: var(--space-2);
+  box-shadow: var(--elevation-3);
+}
+/* hidden 属性在组件 scoped 样式下不可靠（`.panel` 的 display 会盖掉 UA 的 [hidden]），
+   显式写死：闭合时必须真正不占位、不拦点击。 */
+.display-panel[hidden] { display: none; }
+
+.display-panel .dp-title {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+/* 隐藏按钮必须整宽可点（面板是 flex column + align-items: stretch；曾因没拉伸退化成 18px 宽）。
+   注意：这里**不能**再放 `max-inline-size: calc(100% - …)`——百分比解析的是 inline-flex 的
+   .display-wrap（26px），会把 240px 的面板夹成一条 34px 的缝。紧凑档的宽度覆盖只在下面的
+   媒体查询里给。 */
+.display-panel .dp-hide { margin-top: var(--space-2); inline-size: 100%; }
+
+/* 隐藏全部 UI 后的唯一恢复入口：右下角常驻，不遮场景中心也不拦场景操作 */
+.ui-restore {
+  position: absolute; right: var(--space-2); top: var(--space-2);
+  z-index: var(--pb-z-hud);
+  box-shadow: var(--elevation-3);
+}
+
 .banner {
   position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
   z-index: var(--pb-z-hud);
@@ -678,7 +913,8 @@ watch(
 .roster-toggle { display: none; }
 
 /* 审计 3D-15：紧凑档名单收进「阵容」开关。打开时两条车道**各占半宽**——旧版两块 240px
-   绝对定位互相重叠、盖住场景（不得回退）；半宽放不下弹种 / 血条，只留圆点 + 昵称。
+   绝对定位互相重叠、盖住场景（不得回退）；半宽放不下血条，只留圆点 + 昵称 + HP 数值/百分比
+   （血量数字与百分比是主信息，**不得**在紧凑档一起消失；血条是次要视觉，可省）。
    车道上下界仍由 --pb-hud-h / --pb-controls-h 实测定界，与桌面同一套几何安全。 */
 @media (width < 768px) {
   .roster-toggle { display: inline-flex; align-items: center; }
@@ -686,7 +922,11 @@ watch(
   .pb-root.roster-open .team-lane { display: flex; }
   .pb-root.roster-open .side-left { position: absolute; left: var(--space-2); right: 51%; width: auto; }
   .pb-root.roster-open .side-right { position: absolute; right: var(--space-2); left: 51%; width: auto; }
-  .pl .tank, .pl .hpbar { display: none; }
+  .pl .hpbar { display: none; }
+  /* 车型名是次要行：紧凑档已在 --type-caption 上，不再另设字号（仓库无 --font-size-xs token） */
+  /* 紧凑档：显示面板整宽（240px 在 360px 宽的窗口里太窄，读不全标签文案） */
+  .pb-root { --pb-display-panel-w: calc(100% - var(--space-4)); }
+  .display-panel { inset-inline-start: var(--space-2); inset-inline-end: var(--space-2); }
   .topbar { gap: var(--space-2); padding: 0 var(--space-3); }
   .controls { width: calc(100% - var(--space-2)); padding: var(--space-1) var(--space-2); }
 }

@@ -39,8 +39,13 @@
     --color-warning: #f5ca76;
     --color-info: #6db3ec;
 
-    --color-team-ally: var(--green-400);
-    --color-team-enemy: var(--red-400);
+    /* 物理阵营（回放 Team 1 / Team 2）：**固定身份色**，绝不随录像者属于哪一队交换。
+       呈现层需要「我方 / 敌方」时用下面的 ally/enemy 用途别名，两者是不同的概念：
+       physical team → 稳定身份；relation → 记录者视角业务语义。 */
+    --color-team-1: var(--green-400);
+    --color-team-2: var(--red-400);
+    --color-team-ally: var(--color-team-1);
+    --color-team-enemy: var(--color-team-2);
     --color-team-enemy-cb: #c38bf0;
     /* 中立（无主基地等）：3D 场景与 2D 地图上都画在深色地面之上，两套主题同值 */
     --color-team-neutral: #f5f5f5;
@@ -80,8 +85,10 @@
     --color-warning: #855600;
     --color-info: #1a64a8;
 
-    --color-team-ally: var(--green-700);
-    --color-team-enemy: var(--red-700);
+    --color-team-1: var(--green-700);
+    --color-team-2: var(--red-700);
+    --color-team-ally: var(--color-team-1);
+    --color-team-enemy: var(--color-team-2);
     --color-team-enemy-cb: #7b3fb3;
     --color-team-neutral: #f5f5f5;
     --color-on-team-neutral: #1c1f1d;

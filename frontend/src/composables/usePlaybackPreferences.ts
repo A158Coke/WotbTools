@@ -3,6 +3,8 @@ import { reactive, ref, watch } from 'vue'
 export interface PlaybackLabelPreferences {
   showPlayerName: boolean
   showTankName: boolean
+  /** 实时装填状态（3D 逐发装填格）——只在有可信遥测时才有内容，无遥测不画 */
+  showReload: boolean
 }
 
 export interface PlaybackHpPreferences {
@@ -13,6 +15,17 @@ export interface PlaybackTrailPreferences {
   showTrail: boolean
 }
 
+/**
+ * 战场 UI 分块开关（3D 回放覆盖层）。与标签/血量偏好同一个 owner ——
+ * 场景组件不再自建第二套 localStorage 状态。
+ */
+export interface PlaybackUiPreferences {
+  showTopbar: boolean
+  showRoster: boolean
+  showKillfeed: boolean
+  showBaseStatus: boolean
+}
+
 export interface PlaybackPaneWidths {
   rail: number | null
   details: number | null
@@ -21,6 +34,7 @@ export interface PlaybackPaneWidths {
 const LABEL_PREFS_KEY = 'wotb.pb.label-prefs'
 const HP_PREFS_KEY = 'wotb.pb.hp-prefs'
 const TRAIL_PREFS_KEY = 'wotb.pb.trail-prefs'
+const UI_PREFS_KEY = 'wotb.pb.ui-prefs'
 const PANE_WIDTH_KEY = 'wotb.pb.pane-widths'
 // v2 deliberately resets the old persisted value once. The rail became persistent
 // in desktop non-fullscreen layout after the original preference was introduced;
@@ -48,12 +62,28 @@ function persistJson(key: string, value: unknown): void {
 export function usePlaybackPreferences() {
   const labelPrefs = reactive<PlaybackLabelPreferences>(readJson(
     LABEL_PREFS_KEY,
-    { showPlayerName: false, showTankName: true },
+    { showPlayerName: false, showTankName: true, showReload: true },
     (value) => {
       const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
       return {
         showPlayerName: record.showPlayerName === true,
         showTankName: record.showTankName !== false,
+        // 新增字段：老持久化值（无该键）默认开启，不重置用户已有的昵称/车型选择
+        showReload: record.showReload !== false,
+      }
+    },
+  ))
+
+  const uiPrefs = reactive<PlaybackUiPreferences>(readJson(
+    UI_PREFS_KEY,
+    { showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true },
+    (value) => {
+      const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+      return {
+        showTopbar: record.showTopbar !== false,
+        showRoster: record.showRoster !== false,
+        showKillfeed: record.showKillfeed !== false,
+        showBaseStatus: record.showBaseStatus !== false,
       }
     },
   ))
@@ -98,6 +128,7 @@ export function usePlaybackPreferences() {
   watch(labelPrefs, (value) => persistJson(LABEL_PREFS_KEY, value), { deep: true })
   watch(hpPrefs, (value) => persistJson(HP_PREFS_KEY, value), { deep: true })
   watch(trailPrefs, (value) => persistJson(TRAIL_PREFS_KEY, value), { deep: true })
+  watch(uiPrefs, (value) => persistJson(UI_PREFS_KEY, value), { deep: true })
   watch(paneWidths, (value) => persistJson(PANE_WIDTH_KEY, value), { deep: true })
   watch(railCollapsed, (value) => {
     try {
@@ -107,5 +138,5 @@ export function usePlaybackPreferences() {
     }
   })
 
-  return { labelPrefs, hpPrefs, trailPrefs, paneWidths, railCollapsed }
+  return { labelPrefs, hpPrefs, trailPrefs, uiPrefs, paneWidths, railCollapsed }
 }

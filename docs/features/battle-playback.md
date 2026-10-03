@@ -373,6 +373,34 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `scoreFriend/scoreEnemy`（`friendly_team = 2` 时交换），否则会出现「己方血条 + 对方比分」的错位；
   `friendly_team` 未知（≠ 1/2）时**不建立视角**：比分与两队血量一律 0 / 0（与 `pointsAt` 同为
   fail-closed，unknown ≠ enemy），不得把物理 team1 当「己方」上屏再染成 ally / enemy 两色。
+- **物理队伍 vs 记录者视角（2026-02 收敛，两套并存且不得互相替代）**：
+  - `team ∈ {1, 2, null}` = **物理队伍**身份，走固定语义色 `--color-team-1` / `--color-team-2`
+    （`null` → `--color-team-text-secondary` 系中性色）。**3D 名册**（`Replay3DPane.vue` 左右侧边
+    车道）用这一套：左 = Team 1、右 = Team 2、未识别阵营在左车道底部；位置、标题、颜色都不随
+    录像者属于哪一队改变。
+  - `relation ∈ {friendly, enemy, unknown}` = **记录者视角**，走 `--color-team-ally` /
+    `--color-team-enemy`（在 `styles/tokens/color.css` 里定义为物理色的用途别名）。3D 顶栏
+    双方总血量/比分、以及 **2D 名册**（`PlaybackRoster` / `BattlePlayback` 的 friendly/enemy 分组）
+    用这一套。
+  - 两套在同一页面同时可见是有意保留的产品约定，靠标题文本区分（「队伍 1/2」vs「我方/敌方」）。
+    **不得**用 `relation` 给名册染色，也不得按 `friendly_team` 交换名册两侧。
+- **3D 名册行状态在时刻投影**（`scene/rosterState.js`）：静态身份（eid / team / 昵称 / 车型）在会话
+  开始时建一次；运行时状态（`hp` / `maxHp` / `dead` / `followed`）由 `projectRoster(vehicles, t)`
+  按当前回放时刻**纯函数**投影，`playbackScene.updateRoster()` 只写变化过的字段。
+  `Replay3DPane` 每行渲染「昵称 + **HP 数值** + **百分比** + 车型 + 细血条」：HP 与百分比是主信息
+  （`tabular-nums`、不截断），血条只是次要视觉；没有可信 `maxHp` 时百分比渲染成 `—`（unknown ≠ 0）。
+  **seek 必须重投影**：`seekTo()` 在 `tick()` 之后显式补一次 `updateRoster()`——`tick()` 在暂停 /
+  相机静止时会走「非 busy 提前返回」，不补这一次名册血量会停在拖动前的值。
+- **3D 名牌 = 共享标签偏好的投影**：`usePlaybackPreferences` 的 `labelPrefs.showPlayerName /
+  showTankName / showReload` 与 `hpPrefs.showHp` 经 `sceneApi.setLabelPrefs()` 推给场景内核
+  （唯一方向：偏好 → 场景，场景只读、不持久化）；行默认值定义在 `scene/labelStyle.js`
+  `vehicleLabelRows()`（昵称关 / 车型开 / 血量开 / 装填开）。名牌**不得**再自带第二份 localStorage。
+  绘制上：不再铺整卡不透明黑底（旧 `rgba(0,0,0,.55)`、阵亡 `.78` 已退役），对比度由文字描边 +
+  柔光承担；卡片定标 = `max(距离屏占比, 屏上可读下限 26px)`，字号仍随距离恒定。
+- **3D 显示控制**：`Replay3DPane` 工具条的「显示」面板锚在 `.pb-root` 右下角（**不参与工具条布局**
+  ——让它撑高 `.controls` 会把底部控件顶到半个战场、把阵容车道挤出界），可分别开关顶栏 / 名册 /
+  击杀流 / 基地条 / 四类标签行 / GLB 车模，并提供「隐藏全部 UI」（`H` 键等效）。
+  隐藏全部 UI 时保留右上角常驻恢复按钮；该状态**不写入持久化偏好**，刷新即回到常规界面。
 - 3D 车体位姿：yaw/pitch 取自渲染滤波网格；**横滚取网格新增的 `vehicles[].hull_roll`**
   （上游 2026-10-03 起产出，additive；值来自原始 type=10 volatile 采样的最近邻——滤波层不输出侧倾）。
   消费端镜像约定：游戏系→场景系是「x 取负」的镜像，故 yaw 与 roll 取负、pitch 不变；

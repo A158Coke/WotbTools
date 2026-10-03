@@ -752,9 +752,9 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     await player.setValue(true)
     expect(wrapper.findAll('.pb-label-player').length).toBe(2)
     expect(wrapper.findAll('.pb-label-player')[0].text()).toBe('You')
-    // 持久化：localStorage 写入
+    // 持久化：localStorage 写入（含新增的 showReload —— 同一份共享偏好里的标签行开关）
     const saved = JSON.parse(localStorage.getItem('wotb.pb.label-prefs'))
-    expect(saved).toEqual({ showPlayerName: true, showTankName: true })
+    expect(saved).toEqual({ showPlayerName: true, showTankName: true, showReload: true })
     // 重新挂载 → 读取持久化值
     const w2 = mountPlayback(makeOverview(), 12)
     await flushPromises()
