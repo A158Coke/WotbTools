@@ -103,6 +103,12 @@ export function initPlayback(container, store) {
   let sessionGen = 0;
   /** 加载令牌：只有新的 loadData 递增，用于判定「谁是最新一次加载」（见 loadData 注释） */
   let loadGeneration = 0;
+  /**
+   * 会话身份：当前「活着的会话」的标识。旧会话的资源续体用它判定自己是否已过期，
+   * 而本次加载的资产阶段用它判定自己是否仍是当前会话（见 startPlayback）。
+   * 与 sessionGen 分开的原因：teardown 是本次加载自己的提交流程，不能把自己判过期。
+   */
+  let sessionEpoch = 0;
   // 渲染帧句柄：destroy 显式 cancel（旧实现依赖 destroyed 标志的自然退出，
   // 帧回调在 destroy 后仍可能再排队一次）
   let rafId = 0;
@@ -515,10 +521,12 @@ export function initPlayback(container, store) {
   }
 
   async function loadMapImage() {
-    // generation guard：回放替换/销毁后，旧会话的地图资产续体一律失效——
-    // 迟到的已加载纹理就地 dispose，不得写入新会话的共享状态或场景
-    const gen = sessionGen;
-    const stale = () => gen !== sessionGen;
+    // 会话身份 guard：回放替换/销毁后，旧会话的地图资产续体一律失效——
+    // 迟到的已加载纹理就地 dispose，不得写入新会话的共享状态或场景。
+    // 用 sessionEpoch（不是 sessionGen）：新的 loadData / destroy 都会换掉身份，
+    // 旧会话的资源续体因此无法再写共享 store。
+    const epoch = sessionEpoch;
+    const stale = () => epoch !== sessionEpoch;
     if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
     if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
     if (mapScenery) { scene.remove(mapScenery); mapScenery = null; }
@@ -2601,15 +2609,23 @@ export function initPlayback(container, store) {
     // source 仅接受 { kind:'local', file }（client-only 拓扑，replaySource 对
     // 其他形态显式拒绝）；字符串路径等 server 形态在本拓扑中不存在
     //
-    // 两个令牌各司其职（混用会漏掉真实竞态）：
-    // - `sessionGen`（会话代数）：teardown 递增，用于让在途的**会话资源**续体失效；
-    // - `loadGen`（加载令牌）：只有新的 loadData 递增，用于判定「谁是最新一次加载」。
-    //   不能用 `gen + 1 === sessionGen` 代替：A 在途时 B 接管，A 的 gen 恰好等于
-    //   sessionGen - 1，会被误判成本次代而清掉 B 的 loading（旧加载迟到完成 → 新会话
-    //   loading 提前消失 → 加载遮罩早退、未就绪 UI 暴露）。
+    // 三个计数各司其职（混用会漏掉真实竞态）：
+    // - `sessionGen`（加载代数）：只有新的 loadData / destroy 递增，判定「谁是最新一次加载」；
+    // - `loadGen`（实例内加载令牌）：同上但按实例隔离，配合 destroyed 判定归属；
+    // - `sessionEpoch`（会话身份）：每次新的 loadData 与 destroy 时递增，判定
+    //   「startPlayback 的资产续体是否还属于当前会话」。
+    //   与 sessionGen 分开的原因：sessionGen 表达「加载顺序」，而身份判定需要的是
+    //   「谁拥有当前会话」。teardown 只销毁旧会话资源、不改身份，否则本次加载自己的
+    //   资产续体会连同旧会话一起被判过期（正常加载被误伤）。
     const gen = ++sessionGen;
+    // 会话身份：每次加载唯一。teardown 只销毁旧会话资源、不改身份——否则本次加载的
+    // 资产续体会连同旧会话一起被判过期（这正是「正常加载也被误伤」的成因）。
+    const epoch = ++sessionEpoch;
     const loadGen = ++loadGeneration;
-    const ownsLoading = () => loadGen === loadGeneration;
+    // 归属判定必须同时覆盖两件事：**本实例还活着**（destroyed）且**本代仍是最新一次加载**。
+    // 只看 loadGen 不够：`loadGeneration` 是实例内闭包，A 实例被 destroy 后自己的计数器不变，
+    // 它会继续把自己评为「最新代」，于是被销毁实例的迟到续体仍能写共享 store（B 用同一个 store）。
+    const ownsLoading = () => !destroyed && loadGen === loadGeneration;
     // 新会话被接受的那一刻，当前场景就不再是「已就绪」：否则解析/资产阶段（可能数秒）
     // 里 HUD、播放传输与 time/roster 仍然代表上一场回放（ready 泄漏 + 旧 UI 可交互）。
     // 与下面的 hasData=true 一起构成不变量：hasData ⟺ 当前会话已完成加载且 DATA 可用。
@@ -2621,9 +2637,12 @@ export function initPlayback(container, store) {
       // 新数据就位才拆旧会话）
       const data = await loadPlaybackData(source);
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
-      teardownSession();   // 内部递增会话代数；加载令牌仍属本调用（仍是最新一次加载）
+      teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       DATA = data;
-      await startPlayback();   // 进入场景前等待运行所需全部资产（地图/地形/地表/场景）
+      // 资产阶段（地图/地形/地表/场景）内部有多个 await：被取代后必须立刻放弃，
+      // 否则旧会话会走完 buildVehicles / buildRoster / setPlaying / tick / writeHud 复活自己。
+      const ready = await startPlayback(epoch);
+      if (!ready || !ownsLoading()) return;
       store.hasData = true;
     } catch (e) {
       // 只写原因；标题与重试由宿主页（Scene3DStatus）按当前语言呈现。
@@ -2634,7 +2653,20 @@ export function initPlayback(container, store) {
       if (ownsLoading()) store.loading = false;
     }
   }
-  async function startPlayback() {
+  /**
+   * 进入场景：等待运行所需全部资产（地图/地形/地表/场景 GLB 按画质档）后落成会话。
+   *
+   * 本函数内部有多个 await；`epoch` 是本会话的身份令牌，**每个 await 之后与最终就绪态之前
+   * 都必须复核**。否则被取代的会话会在资产加载返回后继续走完
+   * buildVehicles / buildRoster / setPlaying / tick / writeHud，把旧会话复活到新会话身上。
+   *
+   * @param {number} epoch loadData 提交数据后领取的会话身份（见 loadData 注释）
+   * @returns {boolean} true = 本会话仍是当前会话，可以落成就绪态；false = 已过期，调用方必须放弃
+   */
+  async function startPlayback(epoch) {
+    const current = () => epoch === sessionEpoch && !destroyed;
+    // 入口即复核：数据阶段可能耗时到被取代，此时连渲染器都不该为它创建;
+    if (!current()) return false;
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
     store.mapName = DATA.meta.map_name || ('map_' + DATA.meta.map_id);
     // 提前解析资产面 mapKey：buildWorld 要用 playableBoundsFor（依赖 currentMapKey）；
@@ -2646,6 +2678,7 @@ export function initPlayback(container, store) {
       // currentMapKey（playableBoundsFor 读这个）必须在此赋值——只调不接曾让
       // buildWorld 拿不到可玩矩形、中心回退到车辆云心。
       currentMapKey = await resolveMapKey(mq0).catch(() => null);
+      if (!current()) return false;   // 资产解析期间被取代：不得继续动场景
     }
     buildWorld();
     // 进入场景前等待运行所需全部资产（评审要求：地图/地形/分层地表/场景 GLB 按
@@ -2658,8 +2691,9 @@ export function initPlayback(container, store) {
     } catch (e) {
       console.warn('地图资产加载失败（回退网格）:', e);
     } finally {
-      store.assetStage = false;
+      if (current()) store.assetStage = false;
     }
+    if (!current()) return false;   // 地图资产期间被取代：后面全是 DATA 派生的会话状态
     buildVehicles();
     buildRoster();
     // 实时装填相位（`DATA.reloads`，arena subtype 15/17；**仅本方全队**）→ 按 eid 归到车。
@@ -2712,10 +2746,13 @@ export function initPlayback(container, store) {
     // 会话常量一次写清（此前每 tick 重写，值不变不会触发响应式，但语义上属会话级）
     store.startTime = DATA.meta.t_start;
     store.duration = END;
+    // 最后一处会「启动播放」的写：过期会话绝不允许走到这里（否则旧会话会自己开始 tick）
+    if (!current()) return false;
     setPlaying(true);
     tick();
     writeHud(true);   // 会话开始：立即对齐 HUD（不等降频窗口）
     invalidate();
+    return true;
   }
 
   // 初始化：事件绑定 + 动画循环（渲染器惰性创建，画质选择先于首帧定型）
@@ -2746,6 +2783,11 @@ export function initPlayback(container, store) {
     qualityPresets: QUALITY_PRESETS,
     destroy() {
       destroyed = true;
+      loadGeneration++;
+      sessionEpoch++;
+      // 使本实例所有在途 loadData 的归属判定永久失效：仅有 `destroyed` 也能挡住，
+      // 但把加载令牌一并推进让「被销毁的实例」与「被取代的加载」走同一条判定路径
+      // （ownsLoading 同时看 destroyed 与 loadGeneration），不依赖单一标志。
       cancelAnimationFrame(rafId);   // 显式取消：不等下一帧的 destroyed 自然退出
       teardownSession();             // 会话资源（车辆/地图/特效/GLB 模板）全量 dispose
       removeEventListener('resize', onResize);
