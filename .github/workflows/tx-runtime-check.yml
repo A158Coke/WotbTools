@@ -145,3 +145,25 @@ jobs:
           TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
           KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
           KEYCLOAK_E2E_CLIENT_SECRET: ${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}
+
+      - name: Clean up exact-SHA verifier bundle
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          envs: VERIFIER_DIR
+          script: |
+            set -euo pipefail
+            case "$VERIFIER_DIR" in
+              /tmp/wotb-tx-runtime-check-*) ;;
+              *) echo "Unsafe verifier directory: $VERIFIER_DIR" >&2; exit 2 ;;
+            esac
+            if [ -d "$VERIFIER_DIR" ] && [ ! -L "$VERIFIER_DIR" ]; then
+              rm -f --                 "$VERIFIER_DIR/runtime-check.sh"                 "$VERIFIER_DIR/runtime-check-lib.sh"                 "$VERIFIER_DIR/deploy.sh"                 "$VERIFIER_DIR/with-deploy-lock.sh"
+              rmdir -- "$VERIFIER_DIR"
+            fi
+        env:
+          VERIFIER_DIR: /tmp/wotb-tx-runtime-check-${{ github.run_id }}-${{ github.run_attempt }}
