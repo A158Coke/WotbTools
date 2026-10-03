@@ -9,12 +9,15 @@
  * Master–Detail（design-language §9）按**容器宽度**分档，不按视口：
  * 宽档常驻右栏；中档选中后成推开式侧栏（列表让位不遮盖）；窄档整屏面板 + 遮罩，
  * 焦点在打开时进入面板、Esc / 关闭后回到触发它的那一行。
+ * 窄档详情支持左右滑动 / 方向键在**当前筛选结果内**切换上一发 / 下一发（首尾不循环）。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import {
   parseAgentShotsFromBytes, parseAgentPlaybackFromBytes, enrichShotsFromRoster, isShotHit,
 } from '../api/agent-replay-facets.js'
+import { formatPlaybackClock } from '../utils/playbackClock.js'
 import { storeShotsForViewer, fetchTankData, tankImageUrl } from '../scene/agentData.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import Badge from './Badge.vue'
@@ -375,14 +378,6 @@ const summaryStats = computed(() => {
 const selectedShot = computed(() =>
   selectedIndex.value == null ? null : shots.value.find((s) => s.index === selectedIndex.value) || null)
 
-/** 时间格式统一 mm:ss.s（design-language §11：时间统一 mm:ss） */
-function clock(seconds) {
-  const total = Math.max(0, Number(seconds) || 0)
-  const mm = Math.floor(total / 60)
-  const ss = (total % 60).toFixed(1).padStart(4, '0')
-  return `${String(mm).padStart(2, '0')}:${ss}`
-}
-
 /** 弹道两点距离（米）：只做展示，不参与任何判定 */
 function trajectoryLength(s) {
   const a = s.ball_a, b = s.ball_b
@@ -424,11 +419,72 @@ function closeDetail() {
   if (lastTrigger?.focus) lastTrigger.focus()
 }
 
+/**
+ * 上一发 / 下一发：**只在当前筛选结果内**移动（`filteredShots` 而不是 `shots`）。
+ * 边界不循环——第一发没有上一发，最后一发没有下一发，对应按钮同时 disabled。
+ */
+const selectedPosition = computed(() =>
+  filteredShots.value.findIndex((s) => s.index === selectedIndex.value))
+const hasPreviousShot = computed(() => selectedPosition.value > 0)
+const hasNextShot = computed(() =>
+  selectedPosition.value >= 0 && selectedPosition.value < filteredShots.value.length - 1)
+
+function goToAdjacentShot(step) {
+  const position = selectedPosition.value
+  if (position < 0) return false
+  const next = position + step
+  if (next < 0 || next >= filteredShots.value.length) return false
+  selectedIndex.value = filteredShots.value[next].index
+  return true
+}
+
+/**
+ * 筛选把当前这一发筛掉了 → 关闭详情，不要留一个"列表里已经没有、详情还开着"的状态。
+ * （导航本身只在筛选结果内移动，所以这是筛选变化时唯一的不一致入口。）
+ */
+watch(filteredShots, (rows) => {
+  if (selectedIndex.value == null) return
+  if (!rows.some((s) => s.index === selectedIndex.value)) closeDetail()
+})
+
+/** 键盘：方向键等价于上一发 / 下一发；表单控件聚焦时不劫持 */
+function isFormControl(target) {
+  return !!target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
+
 function onDetailKeydown(event) {
-  if (event.key === 'Escape' && detailOpen.value) {
+  if (!detailOpen.value) return
+  if (event.key === 'Escape') {
     event.stopPropagation()
     closeDetail()
+    return
   }
+  if (isFormControl(event.target)) return
+  if (event.key === 'ArrowLeft' && goToAdjacentShot(-1)) event.preventDefault()
+  else if (event.key === 'ArrowRight' && goToAdjacentShot(1)) event.preventDefault()
+}
+
+/**
+ * compact 全屏详情里的左右滑动切换（Pointer Events，无手势依赖）：
+ * 只在 compact + 详情打开时生效；横向位移要足够大且明显压过纵向位移，避免和纵向滚动打架。
+ */
+const SWIPE_MIN_DX = 48
+const SWIPE_DX_RATIO = 1.25
+let swipeStart = null
+
+function onDetailPointerDown(event) {
+  if (layout.value !== 'compact' || !detailOpen.value) return
+  swipeStart = { x: event.clientX, y: event.clientY }
+}
+
+function onDetailPointerUp(event) {
+  const start = swipeStart
+  swipeStart = null
+  if (!start || layout.value !== 'compact' || !detailOpen.value) return
+  const dx = event.clientX - start.x
+  const dy = event.clientY - start.y
+  if (Math.abs(dx) < SWIPE_MIN_DX || Math.abs(dx) <= Math.abs(dy) * SWIPE_DX_RATIO) return
+  goToAdjacentShot(dx < 0 ? 1 : -1)
 }
 
 /**
@@ -538,7 +594,7 @@ onBeforeUnmount(() => {
               :data-testid="`shot-row-${s.index}`"
               @click="selectShot(s.index, $event)"
             >
-              <span class="shot-time">{{ clock(s.time_s) }}</span>
+              <span class="shot-time">{{ formatPlaybackClock(s.time_s) }}</span>
               <img v-if="s.target_tank_id" class="shot-icon" loading="lazy" :src="tankImageUrl(s.target_tank_id)" alt="">
               <span class="shot-path">
                 <span class="shot-names">
@@ -566,13 +622,37 @@ onBeforeUnmount(() => {
           tabindex="-1"
           data-testid="shot-inspector"
           :aria-label="$t('agentShots.inspector_title')"
+          @pointerdown="onDetailPointerDown"
+          @pointerup="onDetailPointerUp"
+          @pointercancel="swipeStart = null"
         >
           <header class="shot-detail-head">
             <h3 class="shot-detail-title">{{ $t('agentShots.inspector_title') }}</h3>
-            <AppButton size="sm" data-testid="shot-detail-close" @click="closeDetail">{{ $t('agentShots.close') }}</AppButton>
+            <div class="shot-detail-nav">
+              <!-- 滑动是快捷方式，按钮是可发现 / 可键盘操作的等价路径（首尾各自 disabled，不循环） -->
+              <button
+                type="button"
+                class="shot-nav-btn"
+                data-testid="shot-prev"
+                :disabled="!hasPreviousShot"
+                :title="$t('agentShots.prev_shot')"
+                :aria-label="$t('agentShots.prev_shot')"
+                @click="goToAdjacentShot(-1)"
+              ><ChevronLeft :size="16" aria-hidden="true" /></button>
+              <button
+                type="button"
+                class="shot-nav-btn"
+                data-testid="shot-next"
+                :disabled="!hasNextShot"
+                :title="$t('agentShots.next_shot')"
+                :aria-label="$t('agentShots.next_shot')"
+                @click="goToAdjacentShot(1)"
+              ><ChevronRight :size="16" aria-hidden="true" /></button>
+              <AppButton size="sm" data-testid="shot-detail-close" @click="closeDetail">{{ $t('agentShots.close') }}</AppButton>
+            </div>
           </header>
           <dl class="shot-detail-grid">
-            <div class="shot-detail-row"><dt>{{ $t('agentShots.col_time') }}</dt><dd>{{ clock(selectedShot.time_s) }}</dd></div>
+            <div class="shot-detail-row"><dt>{{ $t('agentShots.col_time') }}</dt><dd>{{ formatPlaybackClock(selectedShot.time_s) }}</dd></div>
             <div class="shot-detail-row"><dt>{{ $t('agentShots.col_shooter') }}</dt><dd>{{ playerName(selectedShot.shooter_name) }}</dd></div>
             <div class="shot-detail-row"><dt>{{ $t('agentShots.col_target') }}</dt><dd>{{ selectedShot.target_name ? playerName(selectedShot.target_name) : '—' }}</dd></div>
             <div class="shot-detail-row"><dt>{{ $t('agentShots.col_shell') }}</dt><dd>
@@ -691,6 +771,22 @@ onBeforeUnmount(() => {
 .shot-detail:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .shot-detail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .shot-detail-title { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
+.shot-detail-nav { display: flex; align-items: center; gap: var(--space-1); }
+.shot-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-h-sm);
+  min-height: var(--control-h-sm);
+  padding: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.shot-nav-btn:disabled { opacity: .45; cursor: not-allowed; }
+.shot-nav-btn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .shot-detail-grid { display: grid; gap: var(--space-1); margin: 0; }
 .shot-detail-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .shot-detail-row dt { color: var(--color-text-secondary); font: var(--type-caption); }
@@ -738,13 +834,10 @@ onBeforeUnmount(() => {
   .shot-row:not(.is-selected):hover { background: var(--color-surface-2); }
 }
 
-@media (hover: hover) {
-  .shot-row:not(.is-selected):hover { background: var(--color-surface-2); }
-}
-
 /* 触屏：点击区域抬到 --hit-min（44px），布局不动 */
 @media (pointer: coarse) {
   .shot-row { min-height: var(--hit-min); }
   .shots-select { min-height: var(--control-h-md); }
+  .shot-nav-btn { min-width: var(--hit-min); min-height: var(--hit-min); }
 }
 </style>
