@@ -1,9 +1,11 @@
 <script setup>
-import { provide, watch } from 'vue'
+import { onMounted, provide, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useBusinessUserBootstrap } from '../composables/useBusinessUserBootstrap.js'
+import { useConnectivity } from '../composables/useConnectivity.js'
 import { useError } from '../composables/useError.js'
+import { useOfflineNotice } from '../composables/useOfflineNotice.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { locationForView } from './navigation.js'
@@ -11,14 +13,25 @@ import AppTopBar from './AppTopBar.vue'
 import AppTabBar from './AppTabBar.vue'
 import AppSidebar from './AppSidebar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
+import OfflineNoticeDialog from './OfflineNoticeDialog.vue'
 import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 
 const router = useRouter()
 const route = useRoute()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
+const { noticeKey, visible: offlineVisible, close: closeOfflineNotice } = useOfflineNotice()
 // 外壳按可用宽度切换（design-language §9）：compact 用标题栏 + 底部 Tab 栏；平板 / 桌面用左侧边栏
 const { isCompact } = useBreakpoint()
+
+/**
+ * 连通性监听在这里启动一次（进程内单例）：Android 壳走系统 ConnectivityManager（bridge v2），
+ * 浏览器走 navigator.onLine。业务页面不得自行监听 —— 它们只读 capability 门禁的结果。
+ */
+const { start: startConnectivity } = useConnectivity()
+onMounted(() => {
+  void startConnectivity()
+})
 
 /**
  * 全局业务用户 bootstrap：只要 Keycloak 认证成功并进入 SPA（任意 view —— home /
@@ -76,6 +89,7 @@ provide(NAVIGATE_VIEW_KEY, navigate)
   </footer>
   <AppTabBar v-if="isCompact" />
   <GlobalErrorDialog :error="globalError" :visible="showGlobalError" @close="closeGlobalError" />
+  <OfflineNoticeDialog :message-key="noticeKey" :visible="offlineVisible" @close="closeOfflineNotice" />
   <ConfirmDialogHost />
 </template>
 

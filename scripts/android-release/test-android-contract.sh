@@ -48,15 +48,24 @@ validate_native_sources(base := json.loads((root / "contracts/android-native-bri
     str(root / "android/app/src/main/java/com/wotbtools/app/NativeBridge.kt"),
     str(root / "android/app/src/main/java/com/wotbtools/app/MainActivity.kt"),
     str(root / "android/app/src/main/java/com/wotbtools/app/ReplayIntentHandler.kt"),
+    str(root / "android/app/src/main/java/com/wotbtools/app/ConnectivityMonitor.kt"),
 ])
 validate_frontend_sources(base, [
     str(root / "frontend/src/platform/nativeBridgeContract.js"),
     str(root / "frontend/src/platform/androidAuthProvider.js"),
+    str(root / "frontend/src/platform/connectivity.js"),
 ])
 auth_methods, auth_capabilities, auth_globals = auth_surface(base)
 assert sorted(auth_methods) == ["authGetAccessToken", "authGetState", "authLogin", "authLogout"], auth_methods
 assert auth_capabilities == ["native-auth"], auth_capabilities
-assert auth_globals == ["wotbtoolsOnAuthChanged"], auth_globals
+# 事件集合逐字固定（auth_surface 返回契约里的**全部**事件全局）：新增事件必须在这里显式登记，
+# 不允许悄悄多出一个页面全局。
+assert auth_globals == ["wotbtoolsOnAuthChanged", "wotbtoolsOnConnectivityChanged"], auth_globals
+# connectivity 是 PR B 新增的 wire surface：方法与能力同样逐字固定（additive 不等于随手加）。
+connectivity_methods = [name for name in base["methods"] if name.startswith("connectivity")]
+assert connectivity_methods == ["connectivityGetState"], connectivity_methods
+assert [name for name in base["capabilities"] if name == "connectivity"] == ["connectivity"]
+assert base["methods"]["connectivityGetState"]["response"]["enum"] == ["online", "offline"]
 
 base["bridgeVersion"] = 1
 

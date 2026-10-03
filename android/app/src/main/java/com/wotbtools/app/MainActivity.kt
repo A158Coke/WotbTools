@@ -70,6 +70,9 @@ class MainActivity : Activity() {
         /** 原生认证变更后推给页面的全局（与 contracts/android-native-bridge.json 的 events 一致）。 */
         private const val AUTH_CHANGED_GLOBAL = "wotbtoolsOnAuthChanged"
 
+        /** 连通性变化后推给页面的全局（与 contracts/android-native-bridge.json 的 events 一致）。 */
+        private const val CONNECTIVITY_CHANGED_GLOBAL = "wotbtoolsOnConnectivityChanged"
+
         /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
         private val BRIDGE_ORIGINS = setOf(
             "https://wotbtools.com",
@@ -100,6 +103,7 @@ class MainActivity : Activity() {
     private lateinit var apkUpdater: ApkUpdater
     private lateinit var nativeBridge: NativeBridge
     private lateinit var authManager: AuthManager
+    private lateinit var connectivityMonitor: ConnectivityMonitor
     private val executor: ExecutorService = Executors.newFixedThreadPool(2)
 
     @Volatile private var pendingReplay: PendingReplay? = null
@@ -145,6 +149,9 @@ class MainActivity : Activity() {
         authManager.addListener(authChangedListener)
         // discovery 只预热一次（进程内缓存），让 authLogin 能真正同步启动 external user-agent。
         authManager.warmUp()
+        // 连通性由系统 ConnectivityManager 权威判定；页面经 bridge 读取（绝不看 navigator.onLine）。
+        connectivityMonitor = ConnectivityMonitor(this) { notifyConnectivityChanged() }
+        connectivityMonitor.start()
 
         findViewById<Button>(R.id.retryButton).setOnClickListener { hideAllGates(); startStartupFlow() }
         webErrorRetryButton.setOnClickListener { hideAllGates(); loadWeb() }
@@ -648,12 +655,35 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 连通性变化 → 通知页面（全局 `wotbtoolsOnConnectivityChanged`）。
+     *
+     * 推送**不携带 payload**：页面收到通知后回读 `connectivityGetState`，因此不存在
+     * 「事件说在线、读回来是离线」的双事实源（与 authChanged 同一约定）。回调可能在主线程之外
+     * （binder 线程经 mainHandler 转发，这里仍保守地按 post 处理）。
+     */
+    private fun notifyConnectivityChanged() {
+        webView.post {
+            if (destroyedWebView || webView.url.isNullOrEmpty()) return@post
+            webView.evaluateJavascript(
+                "window.$CONNECTIVITY_CHANGED_GLOBAL && window.$CONNECTIVITY_CHANGED_GLOBAL()",
+                null
+            )
+        }
+    }
+
     // ── Native Bridge 白名单能力（供 Vue 端；origin-scoped）──
 
     fun bridgeVersion(): Int = BuildConfig.NATIVE_BRIDGE_VERSION
 
     fun bridgeCapabilities(): List<String> =
-        listOf("native-auth", "replay-share", "replay-open", "app-update")
+        listOf("native-auth", "replay-share", "replay-open", "app-update", "connectivity")
+
+    /**
+     * 连通性状态 token（`connectivityGetState` 的 result）：Android 系统 `ConnectivityManager` 的
+     * 权威判定（INTERNET + VALIDATED），页面**不得**用 `navigator.onLine` 代替它。
+     */
+    fun bridgeConnectivityState(): String = connectivityMonitor.state
 
     /**
      * pending replay 的 wire contract（`getPendingReplay` 的 result）：`pendingId` 是这份 pending 的
@@ -866,6 +896,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         if (fullscreenView != null) hideFullscreenView(notifyWeb = true)
         destroyedWebView = true
+        connectivityMonitor.stop()
         authManager.removeListener(authChangedListener)
         webViewContainer.removeAllViews()
         webView.destroy()
