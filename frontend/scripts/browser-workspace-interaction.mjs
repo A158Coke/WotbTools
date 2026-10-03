@@ -630,6 +630,59 @@ async function runRosterGeometryScenario(env, scenario) {
   const geometry = await page.probe(rosterGeometryProbe)
   check(failures, geometry.root, 'pb-root missing')
   check(failures, geometry.errors.length === 0, `geometry violations: ${geometry.errors.join('; ')}`)
+
+  // —— A → 清空 → B（真实解析生命周期，P0 回归路径）——
+  // 撤下第一场（解析未完成 resp=null → per-file remove 无确认；列表默认折叠，先展开），
+  // 换入第二份文件再真实点击「开始」：第二场的解析必须收敛（loading 落下、err 或 ready），
+  // 不得因旧解析占着 Worker 队列永远停在「解析中」。
+  await page.evaluate(`(() => {
+    const toggle = document.querySelector('.filebar .fb-actions button[aria-expanded]')
+    if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click()
+  })()`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="file-list"] .chipx'), { label: 'file chip after expanding list' })
+  const chipCenter = await page.evaluate(`(() => {
+    const chip = document.querySelector('[data-testid="file-list"] .chipx')
+    chip.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = chip.getBoundingClientRect()
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+    return (hit === chip || chip.contains(hit))
+      ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+      : null
+  })()`)
+  check(failures, !!chipCenter, 'file remove chip not hit-testable')
+  if (chipCenter) {
+    await page.tap({ ...chipCenter, touch: scenario.touch })
+    await page.waitFor(() => !document.querySelector('.pb-root'), { label: '3D pane torn down after clear' })
+    await page.evaluate(`(() => {
+      const input = document.querySelector('[data-testid="select-files-input"]')
+      const dt = new DataTransfer()
+      dt.items.add(new File([new Uint8Array([5, 6, 7, 8])], 'roster-geometry-b.wotbreplay'))
+      input.files = dt.files
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })()`)
+    await page.waitFor(() => !!document.querySelector('[data-test="replay3d-start"]'), { label: 'pre-start for battle B' })
+    const startBCenter = await page.evaluate(`(() => {
+      const button = document.querySelector('[data-test="replay3d-start"]')
+      button.scrollIntoView({ block: 'center', inline: 'nearest' })
+      const r = button.getBoundingClientRect()
+      const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+      return (hit === button || button.contains(hit))
+        ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+        : null
+    })()`)
+    check(failures, !!startBCenter, 'battle B start button not hit-testable')
+    if (startBCenter) {
+      // 先清掉 A 的失败残留：此后 store.err 只能由 B 自己的解析写回（内核代数 guard
+      // 保证只有当前加载可写 err）——「err 重新非空」就是 B 的解析跑完并收敛的证明。
+      // 若 P0 回归（旧解析占队列导致 B 永远「解析中」），err 保持空 → 超时失败。
+      await page.evaluate(`(() => { window.__pbPane.store.err = '' })()`)
+      await page.tap({ ...startBCenter, touch: scenario.touch })
+      const settled = await page.waitForValue('window.__pbPane && window.__pbPane.store.err.length > 0', (v) => v === true,
+        { timeout: 30_000, label: 'battle B parse settled (not stuck in parsing)' }).catch(() => null)
+      check(failures, settled === true, 'battle B parse did not settle after A was cleared (stuck in parsing?)')
+    }
+  }
+
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
 
   await env.chrome.client.send('Target.closeTarget', { targetId })

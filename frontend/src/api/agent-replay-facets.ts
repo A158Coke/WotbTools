@@ -685,6 +685,15 @@ export function agentWasmModuleUrl(commit: string = AGENT_WASM_COMMIT): string {
   return `${agentWasmBase(commit)}/wotb_replay_wasm.js`
 }
 
+/** dynamic import 重试序号：装载挂起超时后 +1，见 loadAgentWasm 内的注释。
+ *  只有超时失败才后移——正常失败（HTTP 404 / 版本不一致）URL 没坏，重试同 URL 即可。 */
+let wasmImportAttempt = 0
+
+function agentWasmModuleUrlWithRetry(commit: string): string {
+  const base = agentWasmModuleUrl(commit)
+  return wasmImportAttempt > 0 ? `${base}?wasmAttempt=${wasmImportAttempt}` : base
+}
+
 /** 本 build 固化的 Agent 产物清单 URL */
 export function agentWasmFingerprintUrl(commit: string = AGENT_WASM_COMMIT): string {
   return `${agentWasmBase(commit)}/fingerprint.json`
@@ -758,7 +767,7 @@ export async function verifyAgentWasmFingerprint(
   const pending = (async (): Promise<AgentWasmFingerprint> => {
     let response: Response
     try {
-      response = await fetch(url)
+      response = await withLoadTimeout(fetch(url), 'fingerprint 拉取')
     } catch (e) {
       throw mismatch(expected, { release: 'unknown', commit: 'unknown' }, `fingerprint ${url} 不可读：${String(e)}`)
     }
@@ -796,6 +805,32 @@ export async function verifyAgentWasmFingerprint(
 }
 
 /**
+ * WASM 装载链路看门狗：fingerprint（几十字节 JSON）、产物 JS（dynamic import）、
+ * wasm 初始化都必须在**有限时间**内失败。浏览器 fetch / dynamic import 没有默认超时——
+ * CDN / 代理把请求挂起不回包时 await 永远悬着，而 fingerprint / wasmPromise 的会话级
+ * 缓存只在 reject 时清理，悬着的 Promise 会被复用到会话结束 → 3D Worker 与 Data 批量
+ * 解析（同一装载链）全部永久停在「解析中」（线上用户实测的「卡解析进度条」根因）。
+ * 超时按普通失败处理：缓存清空、下次调用自动重试。
+ */
+const WASM_LOAD_TIMEOUT_MS = 20_000
+
+function withLoadTimeout<T>(promise: Promise<T>, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error = new Error(
+        `agent wasm: ${what} 超过 ${Math.round(WASM_LOAD_TIMEOUT_MS / 1000)}s 未完成（网络停滞？已放弃本次装载，可重试）`,
+      ) as Error & { wasmLoadTimeout?: boolean }
+      error.wasmLoadTimeout = true
+      reject(error)
+    }, WASM_LOAD_TIMEOUT_MS)
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (error) => { clearTimeout(timer); reject(error) },
+    )
+  })
+}
+
+/**
  * 装载并校验 wasm-bindgen 产物（web target：default() 异步初始化）。
  * 保证：单次初始化、并发调用共享 Promise、失败清空缓存可重试。
  *
@@ -813,9 +848,21 @@ export function loadAgentWasm(
     || loadedIdentity.commit !== expected.commit || loadedIdentity.release !== expected.release) {
     wasmPromise = (async () => {
       const fingerprint = await verifyAgentWasmFingerprint(expected)
-      // 运行期 URL：常量形式 + @vite-ignore 避免 bundler 构建期解析
-      const mod = (await import(/* @vite-ignore */ agentWasmModuleUrl(expected.commit))) as AgentWasmModule
-      if (mod.default) await mod.default()
+      // 运行期 URL：常量形式 + @vite-ignore 避免 bundler 构建期解析。
+      // dynamic import 的 specifier 被浏览器模块表按 URL 去重：装载挂起超时后**重试同一
+      // URL 只会拿回同一个悬着的模块记录**，所以超时一次就把序号后移，强制下一次调用
+      // 发起真正全新的装载（相对资源 .wasm 按 import.meta.url 解析，query 不影响落点）。
+      let mod: AgentWasmModule
+      try {
+        mod = await withLoadTimeout(
+          import(/* @vite-ignore */ agentWasmModuleUrlWithRetry(expected.commit)),
+          '产物 JS 装载',
+        )
+      } catch (error) {
+        if ((error as { wasmLoadTimeout?: boolean })?.wasmLoadTimeout) wasmImportAttempt++
+        throw error
+      }
+      if (mod.default) await withLoadTimeout(mod.default(), '产物 WASM 初始化')
       loadedIdentity = { release: expected.release, commit: expected.commit, fingerprint }
       // 排障用：用户报「解析结果不对」时，这条日志能直接证明页面实际加载的是哪个 Agent
       console.info('[agent-wasm] loaded', {
