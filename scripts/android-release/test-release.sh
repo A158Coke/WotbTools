@@ -111,4 +111,73 @@ assert 'classify_tag "$REFS" "$TAG" "$COMMIT_SHA"' in preflight_block
 assert 'if [ "$TAG_STATE" = "tag_conflict" ]; then' in preflight_block
 PY
 
+# 两阶段发布协议：stage 只做 staging（绝不写 production version.json），publish 只能手工续跑、
+# 绝不重建 APK，并且必须在写 manifest 之前证明四件事（staged 身份 / Keycloak client /
+# production frontend native 运行面 / minSupported 覆盖 cutover）。
+python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
+import sys
+import yaml
+
+workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+trigger = workflow.get(True, workflow.get("on", {}))
+mode = trigger["workflow_dispatch"]["inputs"]["mode"]
+assert mode["default"] == "stage", mode
+assert mode["options"] == ["stage", "publish"], mode
+
+jobs = workflow["jobs"]
+assert set(jobs) == {"stage", "publish"}, sorted(jobs)
+stage, publish = jobs["stage"], jobs["publish"]
+
+
+def runs(job):
+    return "\n".join(step.get("run") or "" for step in job["steps"])
+
+
+def names(job):
+    return [step.get("name", "") for step in job["steps"]]
+
+
+stage_runs, stage_names = runs(stage), names(stage)
+publish_runs, publish_names = runs(publish), names(publish)
+
+# --- stage: immutable evidence only, never the publication commit point ---
+assert "release-staging/version.json" not in stage_runs, "stage must not write version.json"
+assert ".staging.json" in stage_runs, "stage must publish staging evidence"
+assert "stagingName" in stage_runs, "stage must expose the staging evidence name"
+assert any("staging evidence" in name.lower() for name in stage_names), stage_names
+assert "sha256sum" in stage_runs, "stage must verify the APK it staged"
+assert "download/android" in stage_runs, "stage must verify the public APK URL"
+assert "assembleRelease" in stage_runs, "stage is the phase that builds and signs the APK"
+
+# --- publish: manual continuation, no rebuild ---
+assert "inputs.mode == 'publish'" in publish.get("if", ""), publish.get("if")
+# `--gradle-properties`（契约校验参数）不是构建；这里禁的是真正的重建 / 重新签名路径。
+for forbidden in ("assembleRelease", "setup-gradle", "wotbKeystorePath", "keystore.jks",
+                  "ANDROID_KEYSTORE_BASE64", "base64 --decode"):
+    assert forbidden not in publish_runs, f"publish must reuse the staged APK, not rebuild ({forbidden})"
+
+# --- publish: the four publication invariants ---
+assert ".staging.json" in publish_runs, "publish must read the staging evidence"
+assert "sha256sum" in publish_runs, "publish must re-verify the staged APK bytes"
+assert "classify_tag" in publish_runs, "publish must require the stage-created tag"
+assert "guard_min_supported" in publish_runs, "publish must verify minSupportedVersionCode"
+assert "guard_bridge_covered" in publish_runs, "publish must verify the bridge cutover coverage"
+assert "protocol/openid-connect/auth" in publish_runs, "publish must re-verify the Keycloak client"
+assert "nativeRuntime" in publish_runs, "publish must verify the production frontend capability"
+assert "merge-base --is-ancestor" in publish_runs, "publish must verify the frontend build identity"
+
+# --- version.json is the LAST mutation ---
+write_index = next(i for i, name in enumerate(publish_names) if name.startswith("Write version.json"))
+upload_index = next(i for i, name in enumerate(publish_names) if name.startswith("Upload version.json"))
+verify_index = next(i for i, name in enumerate(publish_names) if name.startswith("Verify production version.json"))
+assert write_index < upload_index < verify_index, publish_names
+scp_indices = [i for i, step in enumerate(publish["steps"])
+               if str(step.get("uses", "")).startswith("appleboy/scp-action")]
+assert max(scp_indices) == upload_index, "the version.json upload must be the last artifact upload"
+for step in publish["steps"][upload_index + 1:]:
+    assert not str(step.get("uses", "")).startswith(("appleboy/scp-action", "appleboy/ssh-action")), step
+    assert "release-staging" not in (step.get("run") or ""), step
+print("Android release two-phase protocol: PASS")
+PY
+
 echo "ALL ANDROID RELEASE TESTS PASSED"

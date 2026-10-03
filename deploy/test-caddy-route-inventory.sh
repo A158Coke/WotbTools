@@ -3,29 +3,50 @@
 #
 # The guard lives in `deploy/tx/validate-caddy-config.sh` and runs in two places:
 # PR CI (`ci-caddy.yml`) and production staging (`deploy/tx/deploy.sh`, through
-# `deploy/tx/validate-caddy-config.sh`). Docker is stubbed because these cases are
-# about the inventory decision, and every rejected case must fail *before* the
-# runtime validation is reached - that ordering is asserted, not assumed.
+# `deploy/tx/validate-caddy-config.sh`). Every rejected case must fail *before*
+# the runtime validation is reached - that ordering is asserted through the stub
+# log below, not assumed.
+#
+# Docker is stubbed so that ordering is observable, but the stub **delegates** the
+# invocation to the real docker binary: the guard's final assertions run against
+# the JSON Caddy actually adapts the staged file to. A stub that answered with a
+# canned or empty document would either hide a real adapted-shape regression or
+# reject a valid configuration for the wrong reason (which is exactly what an
+# empty adaptation did before). Docker is therefore required here, as it already
+# is for the other TX runtime fixtures and for the production caller.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
+real_docker="$(command -v docker || true)"
+[ -n "$real_docker" ] || {
+  echo 'docker is required: the adapted-config assertions are verified against the real Caddy image.' >&2
+  exit 1
+}
+# The Caddyfile takes its ACME account address from the environment; production and
+# the PR fixture both set it. Keep the same default so the adaptation under test is
+# decided by the staged Caddyfile, not by a missing variable.
+: "${CADDY_ACME_EMAIL:=ci@example.invalid}"
+export CADDY_ACME_EMAIL
+
 stub_log="$work/docker.log"
 mkdir -p "$work/bin"
-cat > "$work/bin/docker" <<'STUB'
+cat > "$work/bin/docker" <<STUB
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "${STUB_DOCKER_LOG:?}"
-exit 0
+printf '%s\n' "\$*" >> "\${STUB_DOCKER_LOG:?}"
+exec "$real_docker" "\$@"
 STUB
 chmod +x "$work/bin/docker"
 
-# staged <name> -> a disposable staged TX directory with the real compose files.
+# staged <name> -> a disposable staged TX directory with the real compose files
+# and the mounted domain-association asset, mirroring the production staging tree.
 staged() {
   local dir="$work/$1"
-  mkdir -p "$dir"
+  mkdir -p "$dir/assets/auth/.well-known"
   cp "$ROOT/deploy/tx/common.compose.yml" "$ROOT/deploy/tx/caddy.compose.yml" "$dir/"
+  cp "$ROOT/deploy/tx/assets/auth/.well-known/assetlinks.json" "$dir/assets/auth/.well-known/"
   printf '%s\n' "$dir"
 }
 

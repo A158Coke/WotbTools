@@ -58,14 +58,40 @@ jobs:
           mkdir -p "$TX_RUNTIME_ROOT"
           bash scripts/ci/run-with-network-retry.sh "Pull Caddy image" docker pull caddy:2.10.2-alpine
           bash deploy/tx/validate-caddy-config.sh deploy/tx
+          # Two independent negative fixtures: one that the inventory must reject, and
+          # one that passes the inventory but that Caddy itself cannot adapt. Both
+          # assert the rejection reason, so neither can pass by matching an unrelated
+          # error (which is what made the log ambiguous before).
           broken="$RUNNER_TEMP/broken-caddy"
           rm -rf -- "$broken"
           cp -a deploy/tx "$broken"
           printf '%s\n' 'wotbtools.com {' '  this-is-not-a-caddy-directive' '}' > "$broken/Caddyfile"
-          if bash deploy/tx/validate-caddy-config.sh "$broken"; then
+          if bash deploy/tx/validate-caddy-config.sh "$broken" > "$RUNNER_TEMP/broken-caddy.log" 2>&1; then
             echo 'an invalid staged Caddyfile was accepted' >&2
             exit 1
           fi
+          grep -q 'must reverse_proxy wotb-frontend:80' "$RUNNER_TEMP/broken-caddy.log" || {
+            echo 'the invalid Caddyfile was rejected for an unexpected reason:' >&2
+            cat "$RUNNER_TEMP/broken-caddy.log" >&2
+            exit 1
+          }
+          not_adaptable="$RUNNER_TEMP/not-adaptable-caddy"
+          rm -rf -- "$not_adaptable"
+          cp -a deploy/tx "$not_adaptable"
+          sed -i '/^wotbtools\.com {$/a \\tthis-is-not-a-caddy-directive' "$not_adaptable/Caddyfile"
+          grep -q 'this-is-not-a-caddy-directive' "$not_adaptable/Caddyfile" || {
+            echo 'the not-adaptable Caddyfile fixture was not written as expected' >&2
+            exit 1
+          }
+          if bash deploy/tx/validate-caddy-config.sh "$not_adaptable" > "$RUNNER_TEMP/not-adaptable-caddy.log" 2>&1; then
+            echo 'a Caddyfile that Caddy cannot adapt was accepted' >&2
+            exit 1
+          fi
+          grep -q 'could not be adapted by Caddy' "$RUNNER_TEMP/not-adaptable-caddy.log" || {
+            echo 'the unadaptable Caddyfile was rejected for an unexpected reason:' >&2
+            cat "$RUNNER_TEMP/not-adaptable-caddy.log" >&2
+            exit 1
+          }
           docker compose -p deploy -f deploy/tx/common.compose.yml -f deploy/tx/caddy.compose.yml \
             down --volumes --remove-orphans >/dev/null 2>&1 || true
       - name: Workflow and ToFu safety fixtures

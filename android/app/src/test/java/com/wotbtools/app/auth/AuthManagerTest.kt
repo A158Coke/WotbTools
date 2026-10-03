@@ -17,7 +17,7 @@ class AuthManagerTest {
 
     @Test
     fun absentStoredStateMeansUnauthenticated() {
-        // AuthStateStore.load() 在「没有条目 / 解密失败 / JSON 损坏 / 过期」时统一返回 null，
+        // AuthSessionStore.load() 在「没有条目 / 解密失败 / 内容为空」时统一返回 null，
         // 投影必须把这个 null 变成明确的未认证，而不是异常或空壳会话。
         val session = AuthManager.sessionOf(null)
         assertEquals(AuthSession.unauthenticated(), session)

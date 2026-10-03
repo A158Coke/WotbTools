@@ -4,6 +4,12 @@ import { execSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  NATIVE_AUTH_CAPABILITY,
+  NATIVE_AUTH_CHANGED_GLOBAL,
+  NATIVE_AUTH_METHODS,
+  SUPPORTED_NATIVE_BRIDGE_VERSIONS,
+} from './src/platform/nativeBridgeContract.js'
 
 // dev 时把 /api 代理到选定的后端；生产 bundle 由 nginx 反向代理。
 const configDirectory = fileURLToPath(new URL('.', import.meta.url))
@@ -74,7 +80,25 @@ export function buildIdentity() {
   }
 }
 
+/**
+ * 生产前端的 native 运行面：直接取自 `src/platform/nativeBridgeContract.js`（FE 侧 bridge
+ * 契约声明的 SSOT），因此它不可能与 bundle 里真正运行的常量漂移。
+ *
+ * 发布 Android 2.0 manifest 之前必须能证明**线上前端**支持 Bridge v2 + `native-auth`；
+ * `nativeRuntimeIdentity()` 就是这条证明的机器可读来源
+ * （见 `.github/workflows/android-release.yml` 的 publish 阶段与 `docs/android/release-process.md`）。
+ */
+export function nativeRuntimeIdentity() {
+  return {
+    supportedBridgeVersions: [...SUPPORTED_NATIVE_BRIDGE_VERSIONS],
+    nativeAuthCapability: NATIVE_AUTH_CAPABILITY,
+    authChangedGlobal: NATIVE_AUTH_CHANGED_GLOBAL,
+    nativeAuthMethods: Object.values(NATIVE_AUTH_METHODS).sort(),
+  }
+}
+
 const identity = buildIdentity()
+const nativeRuntime = nativeRuntimeIdentity()
 
 export default defineConfig(({ command, mode }) => {
   assertLocal3dDistributionBoundary(command, existsSync(LOCAL_3D_ASSET_DIR))
@@ -91,7 +115,11 @@ export default defineConfig(({ command, mode }) => {
           const outDir = resolve(configDirectory, 'dist')
           mkdirSync(outDir, { recursive: true })
           writeFileSync(resolve(outDir, 'version.json'),
-            JSON.stringify({ buildCommit: identity.buildCommit, buildTime: identity.buildTime }, null, 2) + '\n')
+            JSON.stringify({
+              buildCommit: identity.buildCommit,
+              buildTime: identity.buildTime,
+              nativeRuntime,
+            }, null, 2) + '\n')
         },
       },
     ],

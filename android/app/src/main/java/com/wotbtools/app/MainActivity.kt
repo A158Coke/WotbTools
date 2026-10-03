@@ -620,10 +620,13 @@ class MainActivity : Activity() {
             null
         }
         if (result !is AuthResult.Failure) return
-        // 两种失败不需要用户干预：
+        // 三种失败不需要用户干预：
         //  - cancelled：用户主动放弃，页面保持未认证即可；
-        //  - already-processed：系统把同一个回程 intent 又交付了一次，不是一次新的登录失败。
+        //  - already-processed：系统把同一个回程 intent 又交付了一次，不是一次新的登录失败；
+        //  - no-pending-transaction：回程没有对应的进行中交易（伪造的，或这笔交易已被消费），
+        //    用户并没有发起一次新的登录。
         if (result.detail == AuthManager.ALREADY_PROCESSED_DETAIL) return
+        if (result.detail == AuthManager.NO_PENDING_TRANSACTION_DETAIL) return
         if (result.reason == AuthFailureReason.CANCELLED) return
         toast(getString(R.string.auth_login_failed_retry))
     }
