@@ -15,7 +15,10 @@ services:
       # Flyway owns every application table in the OpenTofu-provisioned business
       # database; the application role is separate from the PostgreSQL bootstrap
       # administrator.
-      POSTGRES_HOST: business-postgres
+      # K6B logical endpoint: defaults stay Docker-local; reviewed WireGuard
+      # endpoints can be selected later without changing the service definition.
+      POSTGRES_HOST: ${TX_BUSINESS_DB_HOST:-business-postgres}
+      POSTGRES_PORT: "${TX_BUSINESS_DB_PORT:-5432}"
       POSTGRES_DB: ${TX_BUSINESS_DB_NAME:?TX_BUSINESS_DB_NAME is required}
       POSTGRES_USER: ${TX_BUSINESS_DB_USERNAME:?TX_BUSINESS_DB_USERNAME is required}
       POSTGRES_PASSWORD: ${TX_BUSINESS_DB_PASSWORD:?TX_BUSINESS_DB_PASSWORD is required}
@@ -23,10 +26,10 @@ services:
       # claim from its configured hostname, and the JWT decoder fetches the JWKS
       # from whichever deployment currently owns that public name.
       KEYCLOAK_ISSUER_URI: https://auth.wotbtools.com/realms/wotbtools
-      # The Admin API is TX-internal on purpose: a public round trip would answer
-      # from the Yecao Keycloak until the separately approved DNS cutover, and
-      # this service must never administer that realm.
-      KEYCLOAK_ADMIN_SERVER_URL: http://keycloak:8080
+      # Admin traffic never uses the public hostname. K6B may point this at the
+      # reviewed TX1/TX2 WireGuard endpoint; the Docker-local default preserves
+      # today's production path.
+      KEYCLOAK_ADMIN_SERVER_URL: ${TX_KEYCLOAK_ADMIN_SERVER_URL:-http://keycloak:8080}
       KEYCLOAK_ADMIN_REALM: wotbtools
       KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?KEYCLOAK_ADMIN_CLIENT_SECRET is required}
