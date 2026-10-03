@@ -153,8 +153,10 @@ for required in (
 for invariant in (
     "/opt/wotb-tx/deploy/runtime-check.sh",
     "/opt/wotb-tx/deploy/with-deploy-lock.sh",
+    "TX_RUNTIME_ROOT",
     "TX_FRONTEND_IMAGE_REF",
     "TX_BUSINESS_API_IMAGE_REF",
+    "assert_digest_image",
     "grep -Fxq 'TX_RUNTIME_READY'",
 ):
     assert invariant in tx_runtime_text, invariant
