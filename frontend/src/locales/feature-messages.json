@@ -360,6 +360,15 @@
       "playback3d": "3D 播放需要联网加载地图和模型资源。",
       "accountProfile": "账号资料需要联网读取。",
       "syncPaused": "离线状态，数据同步已暂停。"
+    },
+    "connectivityNotice": {
+      "unknownTitle": "暂时无法确认网络状态",
+      "unknown": "暂时无法确认网络连接状态，请稍后重试。",
+      "degradedTitle": "网络连接不稳定",
+      "degraded": "当前网络连接不稳定，部分在线功能暂不可用。",
+      "serviceUnavailableTitle": "在线服务暂不可用",
+      "serviceUnavailable": "在线服务当前暂不可用，请稍后重试。",
+      "retry": "请检查网络连接后重试。"
     }
   },
   "en": {
@@ -723,6 +732,15 @@
       "playback3d": "3D playback needs a connection to load maps and models.",
       "accountProfile": "Account data needs a connection.",
       "syncPaused": "Offline: syncing is paused."
+    },
+    "connectivityNotice": {
+      "unknownTitle": "Network status unavailable",
+      "unknown": "The network connection status could not be determined. Please try again shortly.",
+      "degradedTitle": "Unstable connection",
+      "degraded": "The network connection is currently unstable. Some online features are temporarily unavailable.",
+      "serviceUnavailableTitle": "Online service unavailable",
+      "serviceUnavailable": "The online service is temporarily unavailable. Please try again later.",
+      "retry": "Check your connection and try again."
     }
   },
   "ru": {
@@ -1086,6 +1104,15 @@
       "playback3d": "Для 3D-воспроизведения нужно подключение для загрузки карт и моделей.",
       "accountProfile": "Для данных аккаунта нужно подключение.",
       "syncPaused": "Нет сети: синхронизация приостановлена."
+    },
+    "connectivityNotice": {
+      "unknownTitle": "Не удалось определить состояние сети",
+      "unknown": "Не удалось определить состояние сетевого подключения. Повторите попытку позже.",
+      "degradedTitle": "Нестабильное подключение",
+      "degraded": "Соединение сейчас нестабильно. Часть онлайн-функций временно недоступна.",
+      "serviceUnavailableTitle": "Онлайн-сервис недоступен",
+      "serviceUnavailable": "Онлайн-сервис временно недоступен. Повторите попытку позже.",
+      "retry": "Проверьте подключение и повторите попытку."
     }
   }
 }

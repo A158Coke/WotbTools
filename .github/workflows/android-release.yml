@@ -231,6 +231,13 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Fetch pinned Agent WASM for frontend validation
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
@@ -243,6 +250,16 @@ jobs:
           npm ci --no-audit --no-fund
           npm test
           npm run build
+
+      # PR B：signed release APK 必须和内层 debug APK 一样携带**完整的本地前端 bundle**
+      # （index + JS/CSS + pinned Agent WASM + 本地 2D 资源）。否则会出现「CI 是 local-first、
+      # 线上 APK 不是」的分裂。复用上一步的 node_modules 与已取回的 Agent 产物，不重复下载。
+      - name: Build the local-first frontend bundle into APK assets
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix frontend run build:android
 
       - uses: actions/setup-java@v4
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -338,6 +355,55 @@ jobs:
             exit 1
           fi
           echo "Signing certificate SHA-256 verified (public fingerprint)."
+
+      # PR B：signed release APK 的 local-first 内容证明。位置刻意在签名验证之后、任何上传 / tag /
+      # staging evidence 之前 —— 一个不含本地 bundle 的 APK 绝不允许被广播或写入 release 身份。
+      - name: Verify release APK carries the local-first frontend bundle
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK" || { echo "::error::release APK missing or empty" >&2; exit 1; }
+
+          MANIFEST="android/app/src/main/assets/web/bundle-manifest.json"
+          test -s "$MANIFEST" || { echo "::error::bundle manifest missing; build:android did not run" >&2; exit 1; }
+          AGENT_REF="$(python3 -c 'import json;print(json.load(open("deploy/agent/source.json"))["ref"])')"
+          AGENT_RELEASE="$(python3 -c 'import json;print(json.load(open("deploy/agent/source.json"))["artifact"]["release"])')"
+          MANIFEST_REF="$(python3 -c 'import json;print(json.load(open("android/app/src/main/assets/web/bundle-manifest.json"))["agentWasm"]["commit"])')"
+          MANIFEST_RELEASE="$(python3 -c 'import json;print(json.load(open("android/app/src/main/assets/web/bundle-manifest.json"))["agentWasm"]["release"])')"
+          test "$AGENT_REF" = "$MANIFEST_REF" || {
+            echo "::error::bundle manifest agent commit $MANIFEST_REF != pinned $AGENT_REF" >&2
+            exit 1
+          }
+          test "$AGENT_RELEASE" = "$MANIFEST_RELEASE" || {
+            echo "::error::bundle manifest agent release $MANIFEST_RELEASE != pinned $AGENT_RELEASE" >&2
+            exit 1
+          }
+
+          # listing 文件而不是管道：`producer | grep -q` 在 `set -o pipefail` 下会因 SIGPIPE 假失败。
+          listing_file="$RUNNER_TEMP/release-apk-listing.txt"
+          unzip -Z1 "$APK" > "$listing_file"
+          for required in \
+            assets/web/index.html \
+            assets/web/bundle-manifest.json \
+            "assets/web/wasm/$AGENT_REF/wotb_replay_wasm.js" \
+            "assets/web/wasm/$AGENT_REF/wotb_replay_wasm_bg.wasm"; do
+            grep -Fxq "$required" "$listing_file" || {
+              echo "::error::release APK 缺少离线前端 bundle 文件：$required" >&2
+              grep '^assets/web/' "$listing_file" | head -n 10 || true
+              exit 1
+            }
+          done
+          BUNDLE_FILES="$(grep -c '^assets/web/' "$listing_file")"
+          echo "Release APK carries the local-first frontend bundle: $BUNDLE_FILES files (agent $AGENT_RELEASE @ $AGENT_REF)"
+          {
+            echo "bundleFiles=$BUNDLE_FILES"
+            echo "agentWasmCommit=$AGENT_REF"
+            echo "agentWasmRelease=$AGENT_RELEASE"
+            echo "bundleEntrySha256=$(python3 -c 'import json;print(json.load(open("android/app/src/main/assets/web/bundle-manifest.json"))["entrySha256"])')"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Compute SHA-256 and stage APK
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -545,6 +611,11 @@ jobs:
             echo "APK SHA-256: ${{ steps.artifact.outputs.sha256 }}"
             echo "Staging evidence: ${{ steps.staging.outputs.stagingName }}"
             echo "Signing Certificate SHA-256: ${{ env.ANDROID_SIGNING_CERT_SHA256 }}"
+            echo ""
+            # PR B：登记 release APK 内 bundle 的身份（证明 parser 来自 APK 自带的 pinned 产物）。
+            echo "Local-first bundle files: ${{ steps.bundle.outputs.bundleFiles }}"
+            echo "Agent WASM: ${{ steps.bundle.outputs.agentWasmRelease }} @ ${{ steps.bundle.outputs.agentWasmCommit }}"
+            echo "Bundle entry SHA-256: ${{ steps.bundle.outputs.bundleEntrySha256 }}"
             echo ""
             echo "production version.json is NOT modified by this job."
           } >> "$GITHUB_STEP_SUMMARY"

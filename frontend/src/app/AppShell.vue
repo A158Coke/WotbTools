@@ -2,10 +2,10 @@
 import { onMounted, provide, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
-import { useBusinessUserBootstrap } from '../composables/useBusinessUserBootstrap.js'
+import { shouldEnsureBusinessUser, useBusinessUserBootstrap } from '../composables/useBusinessUserBootstrap.js'
 import { useConnectivity } from '../composables/useConnectivity.js'
+import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useError } from '../composables/useError.js'
-import { useOfflineNotice } from '../composables/useOfflineNotice.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { locationForView } from './navigation.js'
@@ -13,14 +13,14 @@ import AppTopBar from './AppTopBar.vue'
 import AppTabBar from './AppTabBar.vue'
 import AppSidebar from './AppSidebar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
-import OfflineNoticeDialog from './OfflineNoticeDialog.vue'
+import ConnectivityNoticeDialog from './ConnectivityNoticeDialog.vue'
 import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 
 const router = useRouter()
 const route = useRoute()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
-const { noticeKey, visible: offlineVisible, close: closeOfflineNotice } = useOfflineNotice()
+const { notice: connectivityNotice, close: closeConnectivityNotice } = useConnectivityNotice()
 // 外壳按可用宽度切换（design-language §9）：compact 用标题栏 + 底部 Tab 栏；平板 / 桌面用左侧边栏
 const { isCompact } = useBreakpoint()
 
@@ -28,7 +28,7 @@ const { isCompact } = useBreakpoint()
  * 连通性监听在这里启动一次（进程内单例）：Android 壳走系统 ConnectivityManager（bridge v2），
  * 浏览器走 navigator.onLine。业务页面不得自行监听 —— 它们只读 capability 门禁的结果。
  */
-const { start: startConnectivity } = useConnectivity()
+const { connectivity, start: startConnectivity } = useConnectivity()
 onMounted(() => {
   void startConnectivity()
 })
@@ -39,12 +39,22 @@ onMounted(() => {
  * 就在这里 ensure 当前用户的 user_profile。
  *
  * 这里也是唯一触发点：页面不再各自负责「读不到资料 → 自己创建」。
+ *
+ * 但 ensure 是一次 **backend** 调用，准入必须服从 capability SSOT（`ACCOUNT_PROFILE` 是
+ * ONLINE_REQUIRED，见 shouldEnsureBusinessUser）：离线 / 状态未知时**不发请求、不进入 failed、
+ * 不显示失败横幅**，本地 UI 照常可用（「离线是受支持的运行模式，不是错误状态」）。恢复在线后
+ * 这里会因 connectivity 变化再次求值并自动补一次（`ensure()` 自身的 ready / in-flight 去重保证
+ * 不重复请求，也没有任何 retry 循环）。
  */
 const { authInitState, authenticated } = useAuth()
 const { failed, ensure, retry } = useBusinessUserBootstrap()
 
-watch([authInitState, authenticated], ([state, isLoggedIn]) => {
-  if (state !== 'authenticated' || !isLoggedIn) return
+watch([authInitState, authenticated, connectivity], ([state, isLoggedIn, currentConnectivity]) => {
+  if (!shouldEnsureBusinessUser({
+    authInitState: state,
+    authenticated: isLoggedIn,
+    connectivity: currentConnectivity,
+  })) return
   // Auth generation changes are authoritative; ensure itself deduplicates ready/in-flight work.
   void ensure()
 }, { immediate: true })
@@ -89,7 +99,13 @@ provide(NAVIGATE_VIEW_KEY, navigate)
   </footer>
   <AppTabBar v-if="isCompact" />
   <GlobalErrorDialog :error="globalError" :visible="showGlobalError" @close="closeGlobalError" />
-  <OfflineNoticeDialog :message-key="noticeKey" :visible="offlineVisible" @close="closeOfflineNotice" />
+  <ConnectivityNoticeDialog
+    :title-key="connectivityNotice?.titleKey"
+    :message-key="connectivityNotice?.messageKey"
+    :hint-key="connectivityNotice?.hintKey"
+    :visible="!!connectivityNotice"
+    @close="closeConnectivityNotice"
+  />
   <ConfirmDialogHost />
 </template>
 

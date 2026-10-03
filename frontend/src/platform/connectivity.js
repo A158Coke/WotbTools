@@ -90,7 +90,16 @@ export function createAndroidConnectivitySource(bridgeCapabilities = null) {
     subscribe(onChange) {
       if (typeof window === 'undefined') return () => {}
       const handler = async () => {
-        onChange(normalizeConnectivityState(await callBridge(NATIVE_CONNECTIVITY_METHODS.getState)))
+        // 事件 handler 由 Native 的 evaluateJavascript 触发，返回值没人接：
+        // 因此这里**必须**自己兜住任何异常（桥报错 / 回复畸形 / 超时），
+        // 并且绝不能把「读不到」当成在线 —— 统一规范化成 UNKNOWN（fail-closed）。
+        let raw = null
+        try {
+          raw = await callBridge(NATIVE_CONNECTIVITY_METHODS.getState)
+        } catch {
+          raw = null
+        }
+        onChange(normalizeConnectivityState(raw))
       }
       window[NATIVE_CONNECTIVITY_CHANGED_GLOBAL] = handler
       return () => {

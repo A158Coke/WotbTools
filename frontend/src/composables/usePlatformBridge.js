@@ -67,7 +67,18 @@ export function callBridge(method, params = {}, { timeoutMs = BRIDGE_RPC_TIMEOUT
       }
     }
     b.addEventListener('message', handler)
-    b.postMessage(JSON.stringify({ id, method, params }))
+    try {
+      b.postMessage(JSON.stringify({ id, method, params }))
+    } catch {
+      // postMessage 抛错（WebView 已销毁 / 桥实现异常）也必须遵守「绝不 reject」的契约：
+      // 否则 async 调用方（例如 connectivity 事件 handler）会产生 unhandled rejection。
+      if (typeof b.removeEventListener === 'function') {
+        b.removeEventListener('message', handler)
+      }
+      clearTimeout(timeoutId)
+      resolve(null)
+      return
+    }
     timeoutId = setTimeout(() => {
       if (typeof b.removeEventListener === 'function') {
         b.removeEventListener('message', handler)

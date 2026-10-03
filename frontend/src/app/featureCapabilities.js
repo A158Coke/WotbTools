@@ -61,8 +61,53 @@ const REQUIREMENTS = Object.freeze({
 /** 未注册功能的判定：fail-closed（绝不给未知能力发放「可用」）。 */
 export const UNKNOWN_FEATURE_REASON = 'unknown-feature'
 
-/** 在线部分被跳过的提示 key（ONLINE_OPTIONAL 离线 / 不可达时使用）。 */
+/** 在线部分被跳过的提示 key（ONLINE_OPTIONAL 且**确实离线**时使用）。 */
 export const SYNC_PAUSED_MESSAGE_KEY = 'featureOffline.syncPaused'
+
+/**
+ * 非-offline 的连通性提示文案（连线状态本身有问题，而不是「用户离线」）。
+ *
+ * 语义区分（review P1）：`unknown` / `degraded` / `service-unavailable` **不能**复用
+ * `featureOffline.*`，否则用户会被错误告知「你现在离线」。三者各有自己的 title/body。
+ */
+export const CONNECTIVITY_NOTICE = Object.freeze({
+  [ConnectivityState.UNKNOWN]: Object.freeze({
+    messageKey: 'connectivityNotice.unknown',
+    titleKey: 'connectivityNotice.unknownTitle',
+  }),
+  [ConnectivityState.DEGRADED]: Object.freeze({
+    messageKey: 'connectivityNotice.degraded',
+    titleKey: 'connectivityNotice.degradedTitle',
+  }),
+  [ConnectivityState.SERVICE_UNAVAILABLE]: Object.freeze({
+    messageKey: 'connectivityNotice.serviceUnavailable',
+    titleKey: 'connectivityNotice.serviceUnavailableTitle',
+  }),
+})
+
+const OFFLINE_TITLE_KEY = 'featureOffline.title'
+const OFFLINE_HINT_KEY = 'featureOffline.retry'
+const CONNECTIVITY_HINT_KEY = 'connectivityNotice.retry'
+
+/**
+ * 把「真实连通性状态」映射成提示文案（title / body / retry hint）。
+ *
+ * - `offline`：确实是用户离线 ⇒ 功能专属 body `featureOffline.<feature>`；
+ * - `unknown` / `degraded` / `service-unavailable`：连通性未知 / 不稳定 / 服务不可用 ⇒
+ *   `connectivityNotice.*`（**不**说「你离线」）；
+ * - `online`：没有任何提示（三者全为 null）。
+ */
+function noticeFor(reason, offlineBodyKey) {
+  const connectivity = CONNECTIVITY_NOTICE[reason]
+  if (!connectivity) {
+    return { messageKey: offlineBodyKey, titleKey: OFFLINE_TITLE_KEY, hintKey: OFFLINE_HINT_KEY }
+  }
+  return {
+    messageKey: connectivity.messageKey,
+    titleKey: connectivity.titleKey,
+    hintKey: CONNECTIVITY_HINT_KEY,
+  }
+}
 
 export function featureRequirement(feature) {
   return REQUIREMENTS[feature] ?? null
@@ -87,11 +132,11 @@ export function featuresByRequirement(requirement) {
  *
  * 规则（对应计划 §29 的确定性矩阵）：
  *  - LOCAL：任何连通性下都 available，`reason: null`（离线不是错误）；
- *  - ONLINE_REQUIRED：仅在线可用；不可用时 `reason` 保留真实状态（offline / degraded / unknown…），
- *    `messageKey = featureOffline.<feature>`；
- *  - ONLINE_OPTIONAL：本地动作始终 available，`online` 表达「联网部分能否进行」（false ⇒ sync 暂停），
- *    离线时 `messageKey = featureOffline.syncPaused`；
- *  - 未知功能：fail-closed（available=false, reason='unknown-feature'）。
+ *  - ONLINE_REQUIRED：仅在线可用；不可用时 `reason` 保留真实状态，并按状态给出文案：
+ *    `offline` → `featureOffline.<feature>`；`unknown` / `degraded` / `service-unavailable`
+ *    → `connectivityNotice.*`（三者的 title/body 各不相同，绝不统一说成「你离线」）；
+ *  - ONLINE_OPTIONAL：本地动作始终 available，`online` 表达「联网部分能否进行」，文案同规则；
+ *  - 未知功能：fail-closed（available=false, reason='unknown-feature'，且**不**伪装成连通性问题）。
  *
  * `degraded` / `service-unavailable` / `unknown` 一律**不**算在线（`isOnlineState`），
  * 因此不会对着一个不可达的服务发请求。
@@ -109,6 +154,8 @@ export function getFeatureAvailability(feature, { connectivity = ConnectivitySta
       reason: UNKNOWN_FEATURE_REASON,
       online: false,
       messageKey: null,
+      titleKey: null,
+      hintKey: null,
     })
   }
 
@@ -120,26 +167,49 @@ export function getFeatureAvailability(feature, { connectivity = ConnectivitySta
       reason: null,
       online,
       messageKey: null,
+      titleKey: null,
+      hintKey: null,
     })
   }
 
-  if (requirement === FeatureRequirement.ONLINE_OPTIONAL) {
+  if (online) {
     return Object.freeze({
       feature,
       requirement,
       available: true,
-      reason: online ? null : state,
-      online,
-      messageKey: online ? null : SYNC_PAUSED_MESSAGE_KEY,
+      reason: null,
+      online: true,
+      messageKey: null,
+      titleKey: null,
+      hintKey: null,
     })
   }
 
+  if (requirement === FeatureRequirement.ONLINE_OPTIONAL) {
+    // 本地动作照常（available=true），只有联网部分停：提示按**真实**状态措辞，
+    // 不能把 unknown/degraded 说成「离线导致同步暂停」。
+    const notice = noticeFor(state, SYNC_PAUSED_MESSAGE_KEY)
+    return Object.freeze({
+      feature,
+      requirement,
+      available: true,
+      reason: state,
+      online: false,
+      messageKey: notice.messageKey,
+      titleKey: notice.titleKey,
+      hintKey: notice.hintKey,
+    })
+  }
+
+  const notice = noticeFor(state, `featureOffline.${feature}`)
   return Object.freeze({
     feature,
     requirement,
-    available: online,
-    reason: online ? null : state,
-    online,
-    messageKey: online ? null : `featureOffline.${feature}`,
+    available: false,
+    reason: state,
+    online: false,
+    messageKey: notice.messageKey,
+    titleKey: notice.titleKey,
+    hintKey: notice.hintKey,
   })
 }

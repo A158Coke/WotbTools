@@ -183,6 +183,44 @@ assert "sha256sum" in stage_runs, "stage must verify the APK it staged"
 assert "download/android" in stage_runs, "stage must verify the public APK URL"
 assert "assembleRelease" in stage_runs, "stage is the phase that builds and signs the APK"
 
+# --- stage: the signed release APK must carry the local-first bundle (PR #467 review) ---
+# 顺序即协议：取回 pinned Agent 产物 → 前端校验/构建 → 构建 Android bundle → assembleRelease
+# → 内容验证 → 才允许上传 / 打 tag / 写 staging evidence。
+def step_index(predicate, label):
+    for i, name in enumerate(stage_names):
+        if predicate(name, i):
+            return i
+    raise AssertionError(f"stage step not found: {label}")
+
+
+fetch_wasm_i = step_index(lambda n, i: n.startswith("Fetch pinned Agent WASM"), "fetch wasm")
+frontend_i = step_index(lambda n, i: n.startswith("Frontend tests"), "frontend validation")
+bundle_i = step_index(lambda n, i: "local-first frontend bundle" in n, "build:android")
+assemble_i = step_index(
+    lambda n, i: "assembleRelease" in (stage["steps"][i].get("run") or ""), "assembleRelease")
+verify_bundle_i = step_index(lambda n, i: "Verify release APK carries" in n, "release APK bundle verification")
+upload_apk_i = step_index(lambda n, i: n.startswith("Upload APK to TX"), "upload APK")
+tag_i = step_index(lambda n, i: n.startswith("Ensure release tag"), "release tag")
+evidence_i = step_index(lambda n, i: "staging evidence" in n.lower(), "staging evidence")
+assert fetch_wasm_i < frontend_i < bundle_i < assemble_i < verify_bundle_i, stage_names
+assert verify_bundle_i < upload_apk_i < tag_i < evidence_i, stage_names
+bundle_runs = "\n".join(step.get("run") or "" for step in stage["steps"][bundle_i:assemble_i])
+assert "npm --prefix frontend run build:android" in bundle_runs, bundle_runs
+# 不重复 npm ci / 不重复取回 Agent 产物：bundle 步骤只复用前端校验的工作区。
+assert "npm ci" not in bundle_runs, bundle_runs
+assert "fetch-agent-wasm" not in bundle_runs, bundle_runs
+verify_runs = stage["steps"][verify_bundle_i]["run"]
+for required in ("assets/web/index.html", "assets/web/bundle-manifest.json",
+                 "wotb_replay_wasm.js", "wotb_replay_wasm_bg.wasm"):
+    assert required in verify_runs, f"release APK verification must require {required}"
+assert "unzip -Z1" in verify_runs and "listing_file" in verify_runs, \
+    "release APK verification must use a listing file (no pipe into grep -q under pipefail)"
+# 注释里可以解释这个坑；真实命令里不允许再出现（YAML 注释以 # 开头）。
+verify_commands = "\n".join(
+    line for line in verify_runs.splitlines() if not line.lstrip().startswith("#"))
+assert "| grep -q" not in verify_commands, verify_runs
+assert '"$AGENT_REF" = "$MANIFEST_REF"' in verify_runs or "AGENT_REF" in verify_runs, verify_runs
+
 # --- publish: manual continuation, no rebuild ---
 assert "inputs.mode == 'publish'" in publish.get("if", ""), publish.get("if")
 # `--gradle-properties`（契约校验参数）不是构建；这里禁的是真正的重建 / 重新签名路径。
