@@ -7,9 +7,9 @@ owner workflows 当时仍显式注入 Docker-local 值。K6B-2 才逐 consumer �
 ```text
 K6B-1  COMPLETE
 K6B-2A COMPLETE  Frontend → Business API              http://10.20.0.1:8087
-K6B-2B CUT OVER  Business API → Business PostgreSQL   10.20.0.1:25432
+K6B-2B COMPLETE  Business API → Business PostgreSQL   10.20.0.1:25432
+K6B-2C CUT OVER  Business API → Keycloak Admin        http://10.20.0.1:8080
 Remaining（Docker-local，各自步骤前不变）
-       Business API → Keycloak Admin        http://keycloak:8080
        Keycloak → Keycloak PostgreSQL       keycloak-postgres:5432
        Caddy → Frontend                     wotb-frontend:80
        Caddy → Keycloak                     keycloak:8080
@@ -39,7 +39,7 @@ K6B logical endpoint contract（`Active value` 为当前生产实际 placement�
 |---|---|---|---|---|
 | Frontend → Business API | `TX_BACKEND_UPSTREAM` | `http://business-api:8087` | `http://10.20.0.1:8087`, `http://10.20.0.3:8087` | **`http://10.20.0.1:8087`（K6B-2A 已切换）** |
 | Business API → Business PostgreSQL | `TX_BUSINESS_DB_HOST/PORT` | `business-postgres:5432` | `10.20.0.1:25432`, `10.20.0.3:25432` | **`10.20.0.1:25432`（K6B-2B 已切换）** |
-| Business API → Keycloak Admin | `TX_KEYCLOAK_ADMIN_SERVER_URL` | `http://keycloak:8080` | `http://10.20.0.1:8080`, `http://10.20.0.3:8080` | Docker-local |
+| Business API → Keycloak Admin | `TX_KEYCLOAK_ADMIN_SERVER_URL` | `http://keycloak:8080` | `http://10.20.0.1:8080`, `http://10.20.0.3:8080` | **`http://10.20.0.1:8080`（K6B-2C 已切换）** |
 | Keycloak → Keycloak PostgreSQL | `TX_KEYCLOAK_DB_HOST/PORT` | `keycloak-postgres:5432` | `10.20.0.1:15432`, `10.20.0.3:15432` | Docker-local |
 | Caddy → Frontend | `CADDY_FRONTEND_UPSTREAM` | `wotb-frontend:80` | `10.20.0.1:8081`, `10.20.0.3:8081` | Docker-local |
 | Caddy → Keycloak | `CADDY_KEYCLOAK_UPSTREAM` | `keycloak:8080` | `10.20.0.1:8080`, `10.20.0.3:8080` | Docker-local |
@@ -60,19 +60,21 @@ Keycloak Admin 请求都不会先发出去再等 `deploy.sh` 拒绝。probe 自�
 
 ## K6B-2A / K6B-2B：同宿主 hairpin 是刻意的 placement 验证
 
-Frontend、Business API、Keycloak、Caddy 与两套 PostgreSQL **当前都在 TX1**，因此两个已切换的
+Frontend、Business API、Keycloak、Caddy 与两套 PostgreSQL **当前都在 TX1**，因此三个已切换的
 consumer 都是**同宿主**切换：Frontend 不再走 Docker bridge 的 `business-api:8087`，而是连到
-TX1 自己的 WG 地址 `10.20.0.1:8087`；Business API 也不再走 `business-postgres:5432`，而是连到
-`10.20.0.1:25432`。两者都经宿主的 published port 回到同一台机器。这在网络上是 hairpin，且是有意为之：
+TX1 自己的 WG 地址 `10.20.0.1:8087`；Business API 也不再走 `business-postgres:5432` 与
+`http://keycloak:8080`，而是连到 `10.20.0.1:25432` 与 `http://10.20.0.1:8080`。三者都经宿主的
+published port 回到同一台机器。这在网络上是 hairpin，且是有意为之：
 
 - **目的**：K6B 的目标是 logical placement abstraction / migration readiness，不是"为了使用
   WireGuard"。把 consumer 的值改成 service-plane 地址后，placement 由 Git 里的一个已评审值
-  表达，未来把 Business API 移到 TX2（`10.20.0.3:8087`）或其数据库移到 TX2
-  （`10.20.0.3:25432`）只需改这一个值；如果同宿主 consumer
+  表达，未来把 Business API 移到 TX2（`10.20.0.3:8087`）、其数据库移到 TX2
+  （`10.20.0.3:25432`）或 Keycloak 移到 TX2（`http://10.20.0.3:8080`）只需改这一个值；
+  如果同宿主 consumer
   永远保持 Docker-local，K6B-2 的整套 allowlist 与 runtime token 就永远得不到真实验证。
 - **代价**：被切换的路径比走 bridge 多一次宿主 NAT 跳；对 K6B-2B 而言，Business API 的数据库
   连接新增一个依赖——TX1 自己的 `wg0` 地址必须存在（TX deploy 的 `preflight_host` 本来就要求
-  `wg0`）。它**不**意味着
+  `wg0`）；对 K6B-2C 而言，Keycloak Admin 请求同样依赖该地址。它**不**意味着
   TX1 → TX1 的流量会走到远端 WG peer：流量没有离开宿主机，因此 WG peer 不可达不会影响它，
   只有 `wg0` 地址本身消失才会。
 - **可观测性**：frontend owner deploy 用 `frontend-api` 探针**穿过 frontend**
@@ -82,11 +84,29 @@ TX1 自己的 WG 地址 `10.20.0.1:8087`；Business API 也不再走 `business-p
   2B 不需要新的 deploy 探针：`dependency-readiness.sh business-api` 在 **recreate 之前**就用
   `TX_BUSINESS_DB_PASSWORD` 对**新 placement** 执行真实 `psql SELECT 1`（fail-closed），而应用
   启动本身需要数据库（Flyway + `ddl-auto: validate`），`/actuator/health` 的聚合状态也包含
-  `db`（`show-details: never` 只隐藏细节）。
+  `db`（`show-details: never` 只隐藏细节）。2C 同样不需要新的 deploy 探针：
+  `deploy/dependency-readiness.py:check_keycloak()` 先用**已校验**的 `TX_KEYCLOAK_ADMIN_SERVER_URL`
+  读取 discovery 并要求 `issuer` 仍是公开 realm URL，然后用**与 Business API 完全相同的
+  admin client（`wotbtools-admin-api` + `KEYCLOAK_ADMIN_CLIENT_SECRET`）**发真实
+  `client_credentials` 请求并必须拿到 access token——任何一步失败都在 recreate 之前失败，
+  且凭据只在 canonical validator 通过之后才发出。
+- **K6B-2C 的运行时功能边界（诚实记录）**：runtime gate 的 `business-profile` / `business-hof` /
+  `hof-replay-storage` / `admin-authz` 走的是 Business API 的**用户面**，代码上**不**调用
+  Keycloak Admin client（唯一调用者是 `AdminUserService`，只挂在需要 `wotbtools-admin` realm role
+  的 `/api/admin/users/**`）；而 gate 的两个身份（`wotbtools-e2e` 只有 `wotbtools-user`，
+  `wotbtools-admin-api` 只有 `realm-management` client roles）都**刻意**没有该 realm role
+  （`admin-authz` 正是断言非管理员被 403）。因此"由 Business API 自己发起的 Admin 调用"在
+  runtime gate 里**不可达**，除非新增 Keycloak realm/client 授权——那属于 Keycloak workload
+  变更，不在 K6B-2C 范围内。2C 的功能证据因此是：**deploy 前**用同一 admin client 对已校验的
+  新 endpoint 取到真实 token（readiness，fail-closed）＋ runtime gate 的 declared/active
+  placement 断言（运行中的 Business API 容器确实持有新值）＋ gate 自己的 Keycloak Admin REST
+  查询（`qq-idp-admin-api`）与 Keycloak 认证面（`keycloak` / `auth-token` / `anonymous-rejected`）。
+  `KEYCLOAK_ISSUER_URI` 与公开 hostname（`https://auth.wotbtools.com`）**不变**：issuer 是
+  token 语义，不是 placement endpoint，readiness 还会显式断言 discovery 报告的 issuer 仍是它。
 - **每次只切一个 consumer**：未切换的 placement 在各自步骤前保持 Docker-local，并由
   `scripts/ci/test-workflow-contract.sh` 的 `CURRENT_K6B_CUTOVERS`
   pin、runtime gate 的 expectation 与
-  `deploy/test-tx-runtime-check.sh` 的提前切换 fixture（2C/2D/2E/2F）三重守护。
+  `deploy/test-tx-runtime-check.sh` 的提前切换 fixture（2D/2E/2F）三重守护。
 
 ## Repository acceptance
 
@@ -192,5 +212,16 @@ placement 做真实 `psql` 检查），随后重新 dispatch `Ops / TX Runtime C
 （declared/active 必 FAIL）。该回退只改 consumer 连接目标：不迁移 PostgreSQL 数据、schema、
 Flyway 历史、数据库账号/密码/库名、持久卷、备份、OpenTofu ownership、WireGuard 配置或
 published-port 架构，也不需要恢复整个生产栈。
+
+**K6B-2C rollback（只回退 Business API → Keycloak Admin）**：同一个 revert 里把
+`.github/workflows/business-api.yml` 与 `.github/workflows/tx-runtime-check.yml` 的
+`TX_KEYCLOAK_ADMIN_SERVER_URL` 一起改回 `http://keycloak:8080`，并同步把
+`scripts/ci/test-workflow-contract.sh` 的 `CURRENT_K6B_CUTOVERS["business-api"]` 去掉这一项，
+合并后 Business API owner 会自动重新部署（`dependency-readiness.sh` 会先用恢复后的
+Docker-local endpoint 完成 discovery + admin token 检查），随后重新 dispatch
+`Ops / TX Runtime Check`。回退后必须是 `2A = WG`、`2B = WG`、`2C = Docker-local`；
+**绝对不得**回退 2A/2B。该回退不改 Keycloak 容器、镜像、realm、client、client secret、IdP、
+SPI、Keycloak PostgreSQL、hostname、公开 issuer、Caddy 路由、DNS 或 WireGuard 配置，
+也不需要恢复整个生产栈。
 
 K6B 全部 consumer 完成后，K7 才进行首个真实 Komodo workload migration。
