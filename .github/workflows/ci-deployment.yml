@@ -101,6 +101,9 @@ jobs:
           bash scripts/ci/test-tofu-workflow-contract.sh
           bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
           bash scripts/ci/test-postgres-business-tofu-contract.sh
+      # Declarative Komodo resources are reviewed data, never applied from CI.
+      - name: Declarative Komodo resource contract
+        run: python3 scripts/ci/test-komodo-resources.py
       - name: TX and Yecao owner runtime fixtures
         run: |
           set -euo pipefail
