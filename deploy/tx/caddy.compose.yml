@@ -22,6 +22,8 @@ services:
       - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443/udp"
     environment:
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL is required}
+      CADDY_FRONTEND_UPSTREAM: ${TX_CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}
+      CADDY_KEYCLOAK_UPSTREAM: ${TX_CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./assets/auth/.well-known/assetlinks.json:/srv/.well-known/assetlinks.json:ro
