@@ -15,8 +15,13 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 python3 - "$ROOT" <<'PY'
+import copy
+import json
+import os
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -78,6 +83,135 @@ normalized_apply_script = re.sub(r"\s+", " ", apply_script)
 assert 'if ! jq -e \'type == "object" and (.resource_changes | type == "array") and all(.resource_changes[]; ((.change.actions // []) == ["no-op"]))\'' in normalized_apply_script, \
     "malformed or non-no-op second plans must fail closed"
 assert "Keycloak PostgreSQL second plan is malformed or not clean." in apply_script
+
+# --- the standalone owner gates service exposure before live mutation --------
+validator_path = "deploy/tx/runtime-check-lib.sh"
+assert validator_path in events["push"]["paths"]
+assert validator_path in workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
+stage_step = next(step for step in owner_job["steps"] if "appleboy/scp-action" in step.get("uses", ""))
+assert validator_path in stage_step["with"]["source"].split(",")
+assert stage_step["with"]["target"].endswith("/${{ steps.source.outputs.source_sha }}")
+assert 'validator="$stage/deploy/tx/runtime-check-lib.sh"' in apply_script
+assert 'test -f "$validator"' in apply_script
+
+def position(pattern):
+    match = re.search(pattern, apply_script, re.MULTILINE)
+    assert match, f"missing production safety command: {pattern}"
+    return match.start()
+
+lock = position(r"^\s*flock -n 9\b")
+link = position(r"^\s*ip link show wg0\b")
+address = position(r"^\s*ip -4 addr show dev wg0\s*\|")
+route = position(r"^\s*ip route get 10\.20\.0\.2\b")
+source = position(r'^\s*source "\$validator"')
+render = position(r'^\s*compose_json="')
+bindings = position(r'^\s*assert_tx_service_ports keycloak-postgres\s*<<<\s*"\$compose_json"')
+identity = position(r"^\s*jq -e '")
+install = position(r'^\s*install -m 600 "\$compose"')
+replace = position(r'^\s*mv -f -- "\$live_compose')
+recreate = position(r'^\s*docker compose .*\bup -d\b')
+assert lock < link < address < route < source < render < bindings < identity < install < replace < recreate
+assert "set -Eeuo pipefail" in apply_script
+for command in ("docker", "python3", "ip"):
+    assert f"command -v {command}" in apply_script
+assert "docker compose version" in apply_script
+assert "inet 10\\.20\\.0\\.1/24([[:space:]]|$)" in apply_script
+assert "wg0 must have 10.20.0.1/24." in apply_script
+assert "live runtime was not changed." in apply_script
+
+# Native Bash checks the extracted SSH body rather than the YAML wrapper.
+subprocess.run(["bash", "-n"], input=apply_script, text=True, check=True)
+
+# Execute the real owner body through its last pre-mutation guard. Native
+# Compose supplies the baseline; only host commands are isolated fixtures.
+render_env = dict(os.environ, KC_POSTGRES_ADMIN_USER="ci", KC_POSTGRES_ADMIN_PASSWORD="ci")
+rendered = subprocess.run(
+    ["docker", "compose", "-p", "deploy", "-f", str(root / "deploy/tx/keycloak-postgres.compose.yml"),
+     "config", "--format", "json"],
+    env=render_env, text=True, capture_output=True, check=True,
+).stdout
+baseline = json.loads(rendered)
+with tempfile.TemporaryDirectory(prefix="keycloak-postgres-owner-") as work:
+    host = Path(work) / "host"
+    sha = "a" * 40
+    staged = host / "tofu.incoming" / sha
+    (staged / "infra/tofu/postgres-keycloak").mkdir(parents=True)
+    tx = staged / "deploy/tx"
+    tx.mkdir(parents=True)
+    (tx / "keycloak-postgres.compose.yml").write_text("# staged fixture\n")
+    (tx / "runtime-check-lib.sh").write_text((root / validator_path).read_text(encoding="utf-8"))
+    state = host / "postgres-keycloak-tofu-state"
+    state.mkdir()
+    (state / "terraform.tfstate").write_text("{}\n")
+    (state / "bootstrap-complete").write_text("local-tofu-state-bootstrap-v1\n")
+    (host / "tofurc").write_text("# unused before mutation\n")
+    bin_dir = Path(work) / "bin"
+    bin_dir.mkdir()
+    stubs = {
+        "docker": '''#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  "compose version") exit 0 ;;
+  *"config --format json") cat "$FIXTURE_COMPOSE_JSON" ;;
+  *"volume inspect --format"*".project"*) echo deploy ;;
+  *"volume inspect --format"*".volume"*) echo keycloak_postgres_data ;;
+  "volume inspect "*|"network inspect "*) exit 0 ;;
+  *"ps -aq keycloak-postgres") echo existing-container ;;
+  "inspect --format "*) echo deploy_keycloak_postgres_data ;;
+  *) echo "unexpected docker call: $*" >&2; exit 99 ;;
+esac
+''',
+        "ip": '''#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  "link show wg0") [ "${FIXTURE_WG_MISSING:-0}" = 0 ] ;;
+  "-4 addr show dev wg0") printf 'inet %s scope global wg0\\n' "${FIXTURE_WG_ADDRESS:-10.20.0.1/24}" ;;
+  "route get 10.20.0.2") [ "${FIXTURE_ROUTE_MISSING:-0}" = 0 ] ;;
+  *) exit 99 ;;
+esac
+''',
+        "tofu": "#!/usr/bin/env bash\nexit 99\n",
+    }
+    for name, content in stubs.items():
+        path = bin_dir / name
+        path.write_text(content)
+        path.chmod(0o700)
+    config = Path(work) / "compose.json"
+    env = dict(render_env, PATH=f"{bin_dir}:{os.environ['PATH']}", SOURCE_SHA=sha,
+               WOTB_DEPLOY_CONFIG_SHA=sha, KC_DB_PASSWORD="ci", KC_DB_PASSWORD_VERSION="1",
+               FIXTURE_COMPOSE_JSON=str(config))
+    # Static ordering above ties this prefix to install/mv/up in the full body.
+    prefix = apply_script[:apply_script.index("live_compose=")]
+    prefix = prefix.replace("/opt/wotb-tx", str(host)) + "\necho PRE_MUTATION_GATES_PASSED\n"
+    def run(data, **overrides):
+        config.write_text(json.dumps(data))
+        return subprocess.run(["bash", "-c", prefix], env=dict(env, **overrides),
+                              text=True, capture_output=True)
+    result = run(baseline)
+    assert result.returncode == 0 and "PRE_MUTATION_GATES_PASSED" in result.stdout, result.stderr
+    for overrides in (
+        {"FIXTURE_WG_MISSING": "1"}, {"FIXTURE_WG_ADDRESS": "10.20.0.9/24"},
+        {"FIXTURE_WG_ADDRESS": "10.20.0.1/32"}, {"FIXTURE_ROUTE_MISSING": "1"},
+    ):
+        result = run(baseline, **overrides)
+        assert result.returncode != 0 and "PRE_MUTATION_GATES_PASSED" not in result.stdout, overrides
+    for index, port in enumerate(baseline["services"]["keycloak-postgres"]["ports"]):
+        for field, value in (
+            ("host_ip", "0.0.0.0"), ("host_ip", "::"), ("host_ip", "203.0.113.10"),
+            ("host_ip", "10.20.0.9"), ("published", "5432"), ("target", 1),
+            ("protocol", "udp"), ("remove", None), ("duplicate", None),
+        ):
+            data = copy.deepcopy(baseline)
+            ports = data["services"]["keycloak-postgres"]["ports"]
+            if field == "remove":
+                ports.pop(index)
+            elif field == "duplicate":
+                ports.append(copy.deepcopy(port))
+            else:
+                ports[index][field] = value
+            result = run(data)
+            assert result.returncode != 0 and "PRE_MUTATION_GATES_PASSED" not in result.stdout, (index, field)
+print("Keycloak PostgreSQL owner WG/binding guards precede live mutation: PASS")
 
 # --- CI selects this root for PR fmt/init/validate ---------------------------
 assert "tofu_plans" in ci["jobs"]

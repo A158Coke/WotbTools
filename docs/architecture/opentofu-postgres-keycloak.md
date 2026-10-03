@@ -7,7 +7,8 @@ state is TX-local at
 `/opt/wotb-tx/postgres-keycloak-tofu-state/terraform.tfstate`.
 
 Docker Compose creates and runs `keycloak-postgres`; it exposes the management
-port only on TX loopback as `127.0.0.1:15432:5432`. The PostgreSQL provider is
+port on TX loopback as `127.0.0.1:15432:5432`, plus the private K6A
+service endpoint `10.20.0.1:15432:5432`. Production dependencies stay Docker-local. The PostgreSQL provider is
 hard-constrained to `127.0.0.1:15432`, so it cannot reach a public database
 endpoint or the Yecao service over WireGuard.
 
