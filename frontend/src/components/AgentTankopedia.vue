@@ -578,6 +578,7 @@ onMounted(() => {
 
 /* 固定比例的图片框：懒加载图片到达前后都不引起布局位移 */
 .tp-media {
+  position: relative;
   display: grid;
   place-items: center;
   aspect-ratio: 8 / 5;
@@ -587,7 +588,21 @@ onMounted(() => {
   background: var(--color-surface-2);
 }
 
-.tp-media img { inline-size: 100%; block-size: 100%; object-fit: contain; }
+/* 图片必须**绝对定位铺满**，不能让它在网格里按 `block-size:100%` 自适应。
+ *
+ * 容器是 `display:grid` + `place-items:center`：网格区域按内容 sizing，`block-size:100%`
+ * 解不出确定高度，于是 img 退回**固有比例**——封面图是逐车紧裁的（高固定、宽 84~190），
+ * 窄于 8:5 的车会算得比容器更高（实测列表卡片 164.8×103 的框里 img 是 164.8×133.5，
+ * 详情 hero 240×150 里是 240×156.9），多出来的部分被容器的 `overflow:hidden`
+ * **从下方裁掉**（履带/车体下缘被切）。
+ * 绝对定位后 img 盒恒等于容器盒，`contain` 完整装下整张图，不再裁切。 */
+.tp-media img {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+}
 
 .tp-card-name {
   display: -webkit-box;
