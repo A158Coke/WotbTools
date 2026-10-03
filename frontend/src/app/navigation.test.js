@@ -105,4 +105,20 @@ describe('locationForView：名人堂筛选只属于名人堂', () => {
     expect(locationForView('hof', { path: '/', query: { view: 'agent-tankopedia', tank: '5' } }).query)
       .toEqual({ view: 'hof' })
   })
+
+  it('装甲查看器 / 射击复现场景参数只属于该视图：切走时整组丢掉，保留无关参数', () => {
+    const armorRoute = {
+      path: '/',
+      query: {
+        view: 'agent-armor', tank: '13825', shot: '2', shooter: '19969', shell: '0', scfg: '0',
+        world: '1', heatmap: '1', az: '45', d: '12', clean: '1', lang: 'x',
+      },
+    }
+    // 侧边栏切走：不留任何场景参数（用户实测：此前会带上 tank/shot/shooter/…）
+    expect(locationForView('replay', armorRoute).query).toEqual({ view: 'replay', lang: 'x' })
+    expect(locationForView('agent-tankopedia', armorRoute).query).toEqual({ view: 'agent-tankopedia', lang: 'x' })
+    expect(locationForView('hof', armorRoute).query).toEqual({ view: 'hof', lang: 'x' })
+    // 留在装甲查看器内（如切换能力后又回到同一视图）保留全部场景参数
+    expect(locationForView('agent-armor', armorRoute).query).toEqual(armorRoute.query)
+  })
 })

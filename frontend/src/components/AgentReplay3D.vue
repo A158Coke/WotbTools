@@ -1,14 +1,15 @@
 <script setup>
 /**
- * Agent 三维回放页（场景内核版 / client-only）：本地 .wotbreplay → 浏览器 WASM
+ * Agent 三维回放（工作台能力 pane / client-only）：工作台已选 .wotbreplay → 浏览器 WASM
  * parsePlayback 解析（契约 v2 时序能力，文件不出本机）→ playbackScene 全场渲染。
  * 交互面板自上游 PlaybackView 完整平移（顶栏/名册/击杀流/控制条/画质档/相机/GLB/标签），
  * 标签文案三语（zh/en/ru）；拓扑（评审 P0-3）：无服务端通道——渲染资产经
  * ?assets= 资产平面（assetProvider）。
  * 播放传输控件与 2D 回放共用 PlaybackTransport + usePlaybackTransport：播放 / ±5s / 速度档位 /
  * 时钟（从 00:00 起算）/ 进度条，键盘空格 / ←→，拖动时暂停、松手若原先在播放则继续。
+ * 由 ReplayWorkspace 以 pane 形式挂载（props.file/active/blockedReason），不自带文件选择。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
@@ -22,6 +23,18 @@ import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 
 const { t, locale } = useI18n()
+
+/**
+ * 工作台能力 pane 契约（与 BattlePlaybackPanel / AiReviewWorkspacePane 同一套 props）：
+ * file = 工作台已选回放（本机解析、文件不出本机）；active = 当前 pane 可见；
+ * blockedReason = 工作台给出的不可用原因（如多文件未选场次）。自己不再有文件选择入口——
+ * 设计语言 §7 全站只有 FileUploader 一个上传组件。
+ */
+const props = defineProps({
+  file: { type: Object, default: null },
+  active: { type: Boolean, default: true },
+  blockedReason: { type: String, default: '' },
+})
 
 const store = createPlaybackStore()
 const stage = ref(null)
@@ -69,6 +82,11 @@ const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
 // 资产平面状态提示：回放解析不依赖资产；地图/地形/车模 GLB 需要 ?assets=
 const assetsReady = assetProvider.configured()
 
+/** 待开播的回放：收到就绪的回放后先让用户选画质，点「开始」才真正解析 + 拉资产。
+    画质必须定型在渲染器创建之前（内核 `startPlayback()` 惰性建渲染器、首帧按当前档位定型），
+    所以这一步不能省成"加载中也能切档"。 */
+const pendingFile = ref(null)
+
 async function loadFile(file) {
   if (!file || !sceneApi) return
   lastFile = file
@@ -83,9 +101,10 @@ async function loadFile(file) {
   }
 }
 
-function onFilePicked(event) {
-  const file = event.target.files && event.target.files[0]
-  event.target.value = ''
+/** 开始播放：用当前选定的画质档加载已就绪的回放 */
+function startPending() {
+  const file = pendingFile.value
+  pendingFile.value = null
   return loadFile(file)
 }
 
@@ -93,6 +112,35 @@ function retryLoad() {
   if (lastFile) return loadFile(lastFile)
   store.err = ''
 }
+
+/** 工作台撤下回放（清空选择 / 多文件未选场次）：回到等待态，不留下上一场的场景与 HUD。 */
+function resetToEmpty() {
+  lastFile = null
+  lastFileName.value = ''
+  pendingFile.value = null
+  sceneApi?.reset?.()
+}
+
+// 工作台已选回放 → 本 pane 先「待开播」（让用户选画质），点开始才解析 + 拉资产；
+// 撤下回放 → 复位到等待态（多文件未选场次时不待播，由工作台的提示承担说明）。
+watch([() => props.file, () => props.blockedReason], ([file, blocked]) => {
+  if (blocked || !file) {
+    if (lastFile || pendingFile.value) resetToEmpty()
+    return
+  }
+  if (file === lastFile || file === pendingFile.value) return
+  // 换成另一场（多文件在 picker 里切场次 / 换回放文件）：必须先把上一场撤下——
+  // 否则旧场景仍占着 store.hasData，待开播面板被 `v-if="!store.hasData"` 挡住，
+  // 用户会一直看着上一场且没有开播入口。撤下后再进入新一场的待开播。
+  if (lastFile || store.hasData) resetToEmpty()
+  pendingFile.value = file
+  store.err = ''
+})
+
+// pane 切走时暂停播放：隐藏的 3D 场景不该继续跑时钟（回到该 tab 时用户自己继续）
+watch(() => props.active, (active) => {
+  if (!active) sceneApi?.setPlaying?.(false)
+})
 
 
 function bannerText() {
@@ -108,7 +156,10 @@ function killfeedText(kf) {
 }
 
 onMounted(() => {
-  if (webgl.supported) sceneApi = initPlayback(stage.value, store)
+  if (!webgl.supported) return
+  sceneApi = initPlayback(stage.value, store)
+  // 首进时 props.file 已就位：同样先待播（先选画质再开播），不直接 loadData
+  if (props.file && !props.blockedReason) pendingFile.value = props.file
 })
 onBeforeUnmount(() => {
   sceneApi?.destroy?.()
@@ -241,23 +292,33 @@ onBeforeUnmount(() => {
 
     <div v-if="!store.hasData" class="loader">
       <h2>{{ t('agentReplay.title') }}</h2>
-      <div class="row">
-        <label class="pick">
-          <input type="file" accept=".wotbreplay" @change="onFilePicked" />
-          {{ t('agentReplay.local_file') }}
-        </label>
-      </div>
-      <div class="row" v-if="!store.hasData">
-        <span class="dim">{{ t('agentReplay.quality') }}</span>
-        <button
-          v-for="k in QUALITY_ORDER" :key="k"
-          :class="{ on: store.qualityKey === k }" @click="sceneApi.setQuality(k)"
-        >{{ QUALITY_PRESETS[k].label }}</button>
-        <span class="dim small">{{ t('agentReplay.q_desc') }}</span>
-      </div>
-      <p class="hint">{{ t('agentReplay.pick_hint') }}</p>
-      <p v-if="!assetsReady" class="hint assets-warn">{{ t('agentReplay.assets_hint') }}</p>
-      <p class="hint">{{ t('agentReplay.pb_hint') }}</p>
+      <template v-if="pendingFile">
+        <!-- 待开播：画质档位必须在渲染器创建前定型（首帧按当前档位），所以先选再开始 -->
+        <p class="hint" data-test="replay3d-pending">
+          {{ t('agentReplay.ready_file', { name: pendingFile.name || 'replay' }) }}
+        </p>
+        <div class="row">
+          <span class="dim">{{ t('agentReplay.quality') }}</span>
+          <button
+            v-for="k in QUALITY_ORDER" :key="k"
+            :class="{ on: store.qualityKey === k }" @click="sceneApi.setQuality(k)"
+          >{{ QUALITY_PRESETS[k].label }}</button>
+          <span class="dim small">{{ t('agentReplay.q_desc') }}</span>
+        </div>
+        <div class="row">
+          <button type="button" class="start" data-test="replay3d-start" @click="startPending">{{ t('agentReplay.start') }}</button>
+        </div>
+        <p v-if="!assetsReady" class="hint assets-warn">{{ t('agentReplay.assets_hint') }}</p>
+        <p class="hint">{{ t('agentReplay.pb_hint') }}</p>
+      </template>
+      <template v-else>
+        <!-- 文件来自工作台上传区（全站唯一上传入口）；这里只说明状态，不再自带选择器 -->
+        <p class="hint" data-test="replay3d-source-hint">
+          {{ blockedReason || t('workspace.playback_empty') }}
+        </p>
+        <p v-if="!assetsReady" class="hint assets-warn">{{ t('agentReplay.assets_hint') }}</p>
+        <p class="hint">{{ t('agentReplay.pb_hint') }}</p>
+      </template>
     </div>
 
     <!-- 审计 3D-23：解析为不确定进度，地图资产阶段按段 / 字节推进；失败给出原因与重试 -->
@@ -384,9 +445,9 @@ html[data-ui-profile="classic"] .pb-root {
 .loader .hint { color: var(--dim); max-width: 620px; text-align: center; margin: 0; }
 .loader .assets-warn { color: var(--warn); }
 .loader .err { color: var(--error); max-width: 640px; white-space: pre-wrap; }
-.pick { cursor: pointer; border: 1px solid var(--line); padding: 6px 14px; border-radius: 6px; }
-.pick input[type='file'] { display: none; }
 .loader button { min-width: 44px; }
+/* 待开播的主操作：唯一一处橙色填充（design-language §3.2） */
+.loader .start { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; padding: 6px 22px; }
 .roster-toggle { display: none; }
 @media (pointer: coarse) {
   .pb-root button { min-height: 44px; }

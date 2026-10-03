@@ -79,6 +79,23 @@ function capabilityStateProbe() {
   }
 }
 
+/** 3D / 射击 pane 就地在工作台内切换时的工作台状态（页面内探针，供 page.probe 使用）。 */
+function workspacePaneProbe() {
+  const pane = document.querySelector('[data-testid="ws-3d"]')
+  const data = document.querySelector('[data-testid="ws-data"]')
+  return {
+    view: new URLSearchParams(location.search).get('view'),
+    tabsVisible: !!document.querySelector('.workspace-tabs'),
+    workspaceRoot: !!document.querySelector('.replay-workspace'),
+    paneDisplay: pane ? getComputedStyle(pane).display : null,
+    dataDisplay: data ? getComputedStyle(data).display : null,
+    // 无已选回放时内核不建 canvas（场景在 loadData 后才创建）：用组件根 + 空态提示证明
+    // 这个 pane 真的是 3D 回放视图（而不是空壳）
+    paneHasView: !!document.querySelector('[data-testid="ws-3d"] .pb-root'),
+    paneEmptyHint: !!document.querySelector('[data-testid="ws-3d"] [data-test="replay3d-source-hint"]'),
+  }
+}
+
 function playbackControlProbe() {
   const play = document.querySelector('[data-test="pb-play"]')
   const root = document.querySelector('[data-test="battle-playback"]')
@@ -198,6 +215,9 @@ const APP_SCENARIOS = [
   { name: 'capability-740x360-landscape-coarse', width: 740, height: 360, touch: true, authenticated: true, login: 'resolve' },
   { name: 'capability-1024x768-tablet', width: 1024, height: 768, touch: false, authenticated: true, login: 'resolve' },
   { name: 'capability-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve' },
+  // 3D 回放 / 射击分析已并入工作台：admin 下点这两个 tab 必须**留在工作台内**（tab 栏保留、
+  // pane 就地切换），不再跳到独立页面。admin 角色由 auth stub 的 ws-roles 提供。
+  { name: 'capability-admin-3d-tab-390x844-coarse', width: 390, height: 844, touch: true, authenticated: true, login: 'resolve', roles: 'wotbtools-admin', adminPanes: true },
   // 服务器没有 parser，工作台没有 auth gating：未登录、auth init 挂起 / 失败时都立即可用，且不发起登录。
   // pending 的 watchdog 设得远长于场景本身——工作台必须在 auth init 仍挂起时就渲染（不能等超时兜底）。
   { name: 'anonymous-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'reject' },
@@ -237,7 +257,7 @@ async function runAppScenario(env, scenario) {
   const authParams = scenario.authInit
     ? `&ws-auth-init=${scenario.authInit}&ws-auth-timeout-ms=${scenario.authTimeout ?? 12_000}`
     : ''
-  const url = `${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-login=${scenario.login}${authParams}`
+  const url = `${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-login=${scenario.login}${authParams}${scenario.roles ? `&ws-roles=${scenario.roles}` : ''}`
   await page.goto(url)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="playback"]'), { label: 'capability tabs' })
 
@@ -288,6 +308,49 @@ async function runAppScenario(env, scenario) {
   `capability was reverted by a later watcher/route sync: ${JSON.stringify(settled)}`)
   check(failures, await page.evaluate('new URLSearchParams(location.search).get("view")') === 'battle-playback',
     'route was reverted away from ?view=battle-playback by a later watcher/route sync')
+  // §3D-capability：3D 回放 / 射击分析并入工作台后，admin 点这两个 tab 必须留在工作台内
+  if (scenario.adminPanes) {
+    const tabPoint = async (cap) => page.evaluate(`(() => {
+      const b = document.querySelector('.workspace-tabs [data-testid="ws-tab"][data-cap="${cap}"]')
+      if (!b) return null
+      const r = b.getBoundingClientRect()
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+    })()`)
+
+    const threeDPoint = await tabPoint('3d')
+    check(failures, !!threeDPoint, 'admin 场景缺少 3D 回放 tab')
+    if (threeDPoint) {
+      await page.tap({ ...threeDPoint, touch: scenario.touch })
+      const entered = await page
+        .waitForValue(`new URLSearchParams(location.search).get('view')`, (value) => value === 'agent-replay', { timeout: 10_000, label: 'view=agent-replay' })
+        .then(() => page.waitForValue(`(() => { const p = document.querySelector('[data-testid="ws-3d"]'); return !!p && getComputedStyle(p).display !== 'none' })()`, (value) => value === true, { timeout: 10_000, label: '3D pane visible' })
+          // 场景内核是懒加载 async 组件：等组件根真正挂进 pane（否则 pane 只是空壳）
+          .then(() => page.waitForValue(`!!document.querySelector('[data-testid="ws-3d"] .pb-root')`, (value) => value === true, { timeout: 15_000, label: '3D pane view root' }).catch(() => null))
+          .then(() => page.probe(workspacePaneProbe))
+          .catch(() => null))
+        .catch(() => null)
+      check(failures, !!entered, '点击 3D tab 后没有进入工作台内的 3D pane（可能又跳独立页面）')
+      if (entered) {
+        check(failures, entered.tabsVisible, '切到 3D 后工作台 tab 栏消失（回到独立页面形态）')
+        check(failures, entered.workspaceRoot, '切到 3D 后工作台根容器消失')
+        check(failures, entered.dataDisplay === 'none', `切到 3D 后数据 pane 仍可见（display=${entered.dataDisplay}）`)
+        check(failures, entered.paneHasView && entered.paneEmptyHint,
+          `3D pane 内不是 3D 回放视图（view=${entered.paneHasView} emptyHint=${entered.paneEmptyHint}）`)
+      }
+      // 切回数据：pane 保留（状态不丢），tab 栏仍在
+      const dataPoint = await tabPoint('data')
+      check(failures, !!dataPoint, 'admin 场景缺少数据 tab')
+      if (dataPoint) {
+        await page.tap({ ...dataPoint, touch: scenario.touch })
+        const back = await page
+          .waitForValue(`new URLSearchParams(location.search).get('view')`, (value) => value === 'replay', { timeout: 10_000, label: 'view=replay' })
+          .then(() => page.probe(workspacePaneProbe))
+          .catch(() => null)
+        check(failures, !!back && back.paneDisplay === 'none', `切回数据后 3D pane 未隐藏（${JSON.stringify(back)}）`)
+        check(failures, !!back && back.tabsVisible, '切回数据后工作台 tab 栏消失')
+      }
+    }
+  }
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
   if (!scenario.authenticated) {
     const attempts = await page.evaluate('window.__wsAuth.loginCalls.length')

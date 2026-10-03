@@ -25,9 +25,12 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
 
   const analysis = ref<ReplayAnalysis>({ phase: 'idle', done: 0, total: 0, failure: null })
 
-  const activeWorkspaceTab = ref(initialCapability === 'playback' || initialCapability === 'ai'
-    ? initialCapability
-    : 'data')
+  // 初始能力即初始 tab（五种能力都在工作台内渲染；未知值回落 data）
+  const activeWorkspaceTab = ref<ReplayCapability>(
+    initialCapability === 'playback' || initialCapability === 'ai'
+    || initialCapability === '3d' || initialCapability === 'shots'
+      ? initialCapability
+      : 'data')
   const currentBattleId = ref<SourceId | null>(null)
   const dataViewMode = ref<DataViewMode>('SUMMARY')
 

@@ -1,16 +1,17 @@
 <script setup>
 /**
- * Agent 射击复现（?view=agent-shots）：本地 .wotbreplay → 浏览器 WASM parseShotReplays
- * （全员射击链：作者严格路径 + 他人宽松路径合并，文件不出本机）→ 逐发表格
+ * Agent 射击复现（工作台能力 pane / ?view=agent-shots）：工作台已选 .wotbreplay → 浏览器 WASM
+ * parseShotReplays（全员射击链：作者严格路径 + 他人宽松路径合并，文件不出本机）→ 逐发表格
  * （射击者筛选/命中·穿透·跳弹摘要/弹种与结果徽标/质量⚠）→ 点击行在 3D 装甲查看器
  * 世界模式复现该发（shots 数组经 sessionStorage 交接，无服务端）。
  * 契约 v0.1.9：输出 {shots, author_path, others} 包装——作者严格路径失败
  * fail-visible（警示条），不再静默吞空。
  * 数据面：api/agent-replay-facets.ts parseAgentShotsFromBytes + scene/agentData.js 交接。
  * 顶层计数口径：1 row = 1 unique shotId = 一次开火；同一 shotId 下的后续事件或多次装甲交互
- * 仍属于同一个 Shot，不在消费端展开成额外“射击”。
+ * 仍属于同一个 Shot，不在消费端展开成额外”射击”。
+ * 由 ReplayWorkspace 以 pane 形式挂载（props.file/active/blockedReason），不自带文件选择。
  */
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { parseAgentShotsFromBytes, parseAgentPlaybackFromBytes, enrichShotsFromRoster, isShotHit } from '../api/agent-replay-facets.js'
 import { storeShotsForViewer, fetchTankData, tankImageUrl } from '../scene/agentData.js'
@@ -19,7 +20,18 @@ import { useRouter } from 'vue-router'
 const { t } = useI18n()
 const router = useRouter()
 
-const fileEl = ref(null)
+/**
+ * 工作台能力 pane 契约（与 BattlePlaybackPanel / AgentReplay3D 同一套 props）：
+ * file = 工作台已选回放（本机解析、文件不出本机）；active = 当前 pane 可见；
+ * blockedReason = 工作台给出的不可用原因（如多文件未选场次）。不再自带文件选择入口
+ * （设计语言 §7：全站只有 FileUploader 一个上传组件）。
+ */
+const props = defineProps({
+  file: { type: Object, default: null },
+  active: { type: Boolean, default: false },
+  blockedReason: { type: String, default: '' },
+})
+
 const fileName = ref('')
 const parsing = ref(false)
 const err = ref('')
@@ -122,10 +134,10 @@ async function buildPitchLimits(vehicles) {
   return limits
 }
 
-async function onFilePicked(event) {
-  const file = event.target.files && event.target.files[0]
-  event.target.value = ''
+async function parseFile(file) {
   if (!file) return
+  if (props.blockedReason) return
+  const seq = ++parseSeq
   fileName.value = file.name
   parsing.value = true
   err.value = ''
@@ -170,17 +182,46 @@ async function onFilePicked(event) {
         console.warn('shell enrichment skipped:', e)
       }
     }
+    if (seq !== parseSeq) return   // 清空 / 换文件后迟到的解析结果一律丢弃
     shots.value = parsedShots
     shooter.value = 'all'
   } catch (e) {
+    if (seq !== parseSeq) return
     shots.value = []
     authorError.value = ''
     othersStats.value = null
     err.value = (t('agentShots.error_parse') || '解析失败') + ' ' + String(e?.message || e).slice(0, 200)
   } finally {
-    parsing.value = false
+    if (seq === parseSeq) parsing.value = false
   }
 }
+
+/** 工作台撤下回放（清空选择 / 多文件未选场次）：回到等待态，清掉上一发的表格与筛选。 */
+function resetToEmpty() {
+  parseSeq++   // 在途解析作废（迟到的结果不得再上屏）
+  lastParsedFile = null
+  shots.value = []
+  fileName.value = ''
+  parsing.value = false
+  err.value = ''
+  authorError.value = ''
+  othersStats.value = null
+  shooter.value = 'all'
+}
+
+// 工作台已选回放 → 本 pane 自动解析；撤下回放 → 复位到等待态（多文件未选场次时同理）。
+// 首进时 props.file 已就位：immediate 直接吃初始值（本组件不需要等挂载）。
+let lastParsedFile = null
+let parseSeq = 0
+watch([() => props.file, () => props.blockedReason], ([file, blocked]) => {
+  if (blocked || !file) {
+    if (lastParsedFile) resetToEmpty()
+    return
+  }
+  if (file === lastParsedFile) return
+  lastParsedFile = file
+  parseFile(file)
+}, { immediate: true })
 
 // 射击者筛选：显式三态 ally / enemy / unknown——undefined（阵营未知，含
 // team=0 与未联上花名册）绝不并入 Allies（旧 `!== 'enemy'` 是 roster team hack
@@ -375,11 +416,9 @@ async function resolveShellIdx(s) {
     <p class="hint">{{ t('agentShots.hint') }}</p>
 
     <div class="controls">
-      <label class="pick">
-        <input type="file" accept=".wotbreplay" @change="onFilePicked" />
-        {{ t('agentShots.pick') }}
-      </label>
+      <!-- 文件来自工作台上传区（全站唯一上传入口）；这里只显示当前文件与状态 -->
       <span v-if="fileName" class="fname">{{ fileName }}</span>
+      <span v-else class="status" data-test="shots-source-hint">{{ blockedReason || t('workspace.playback_empty') }}</span>
     </div>
 
     <p v-if="parsing" class="status">{{ t('agentShots.parsing') }}</p>
@@ -482,8 +521,6 @@ async function resolveShellIdx(s) {
    语义色用 --status-*-fg / --accent（同样两档成对），tint 用 color-mix 自适应主题。 */
 .agent-shots { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pick { cursor: pointer; border: 1px solid var(--border); padding: 5px 12px; border-radius: 6px; }
-.pick input[type='file'] { display: none; }
 .fname { color: var(--text-muted); font-size: 0.85em; }
 .status.error { color: var(--status-err-fg); }
 .status.warn { color: var(--status-warn-fg); border: 1px solid color-mix(in srgb, var(--status-warn-fg) 35%, transparent); border-radius: 6px; padding: 6px 10px; }
@@ -511,7 +548,9 @@ async function resolveShellIdx(s) {
 .shot-table tbody tr:hover td { background: var(--bg-list-hover); }
 .shot-table tbody tr.link { cursor: pointer; }
 .w-idx { width: 44px; } .w-time { width: 56px; } .w-dmg { width: 58px; }
-.w-shell { width: 104px; } .w-res { width: 92px; } .w-3d { width: 48px; }
+.w-shell { width: 104px; } .w-res { width: 92px; }
+/* 「3D」按钮 ≈ 36px 宽 + 单元格左右各 8px padding = 52px；48px 会把它裁掉（审计 3D-25） */
+.w-3d { width: 56px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .ctr { text-align: center; }
 .ell { overflow: hidden; text-overflow: ellipsis; }

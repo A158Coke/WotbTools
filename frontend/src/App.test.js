@@ -29,18 +29,14 @@ vi.mock('./components/SponsorPage.vue', () => ({ __esModule: true, default: { te
 vi.mock('./components/ProfilePage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-profile" />' } }))
 vi.mock('./components/HistoryPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-history" />' } }))
 vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-technical-evolution" />' } }))
-// Agent 数据平面（admin-only）：详情/场景组件用轻量替身，断言可见性边界即可。
-// `__esModule: true` 必需——viewRegistry 经 defineAsyncComponent 动态 import，
-// Vue 靠它把命名空间的 `.default` 解包成组件（缺失时会把命名空间本身当组件，
-// 触发对 __isTeleport/name 的探测并报错）。
+// Agent 数据平面：3D 回放 / 射击分析已并入 ReplayWorkspace（pane），不再是独立 view；
+// 只剩坦克百科 / 装甲查看器两个独立页面需要替身，断言可见性边界即可。
 const agentViewMock = (testId, name) => ({
   __esModule: true,
   default: { name, template: `<div data-test="${testId}" />` },
 })
-vi.mock('./components/AgentReplay3D.vue', () => agentViewMock('view-agent-replay', 'AgentReplay3D'))
 vi.mock('./components/AgentTankopedia.vue', () => agentViewMock('view-agent-tankopedia', 'AgentTankopedia'))
 vi.mock('./components/AgentArmorView.vue', () => agentViewMock('view-agent-armor', 'AgentArmorView'))
-vi.mock('./components/AgentShots.vue', () => agentViewMock('view-agent-shots', 'AgentShots'))
 
 const authState = vi.hoisted(() => ({
   authenticated: false,
@@ -180,15 +176,19 @@ describe('App routing', () => {
       }
     })
 
-    it('renders the Agent view for an admin deep link', async () => {
+    it('admin 深链 agent-replay / agent-shots 解析为工作台的对应 capability（不再是独立页面）', async () => {
       authState.isAdminRef.value = true
-      const { wrapper } = await mountApp('/?view=agent-shots')
-      // Agent 视图是 defineAsyncComponent：等异步组件解析完成再断言
-      await settle()
-      await nextTick()
-      await settle()
-      expect(wrapper.find('[data-test="view-agent-shots"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
+      for (const [view, capability] of [['agent-shots', 'shots'], ['agent-replay', '3d']]) {
+        const { wrapper } = await mountApp(`/?view=${view}`)
+        // ReplayWorkspace 是 defineAsyncComponent：等异步组件解析完成再断言
+        await settle()
+        await nextTick()
+        await settle()
+        const workspace = wrapper.find('[data-test="view-replay"]')
+        expect(workspace.exists()).toBe(true)
+        expect(workspace.attributes('data-cap')).toBe(capability)
+        expect(wrapper.find(`[data-test="view-${view}"]`).exists()).toBe(false)
+      }
     })
 
     it('lets a non-admin deep-link the public 坦克百科', async () => {

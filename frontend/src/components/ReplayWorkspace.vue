@@ -19,17 +19,22 @@ import BattlePicker from './BattlePicker.vue'
 import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
 
 // 审计 PF-02：2D 回放（含约 2.5MB 的地图语义数据）只在进入 2D 回放模式时加载，不进主包。
+// 3D 回放 / 射击分析与 2D 同属重能力，同样懒加载（首进才挂载，之后保留状态）。
 // 懒加载边界：部署换掉 chunk 文件名后，旧页面进入能力时必然 404——必须变成可恢复的失败态，
 // 不能让 Vue 渲染中断（那会把整个工作台打成空壳，见 utils/lazyModule.ts 的说明）。
 const playbackModule = defineLazyModule(() => import('./BattlePlaybackPanel.vue'))
 const aiModule = defineLazyModule(() => import('./AiReviewWorkspacePane.vue'))
+const replay3dModule = defineLazyModule(() => import('./AgentReplay3D.vue'))
+const shotsModule = defineLazyModule(() => import('./AgentShots.vue'))
 const BattlePlaybackPanel = playbackModule.component
 const AiReviewWorkspacePane = aiModule.component
+const AgentReplay3D = replay3dModule.component
+const AgentShots = shotsModule.component
 
 defineOptions({ name: 'ReplayWorkspace' })
 
 const props = defineProps({
-  /** 初始能力：data / ai / playback（由路由 view 派生）。 */
+  /** 初始能力：data / ai / playback / 3d / shots（由路由 view 派生）。 */
   initialCapability: { type: String, default: 'data' },
 })
 
@@ -77,9 +82,9 @@ const { consumePendingWhenReady } = useNativeReplayImport({
 
 /**
  * 模式：数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘（* 仅管理员）。
- * 3D / 射击目前仍是独立页面（各自读取本地文件），切换时导航过去；嵌入工作台留到 L6。
+ * 五种能力都在工作台内渲染（pane + 上层 tab 导航保留）；3D / 射击直接消费工作台已上传的
+ * 回放（与 2D / AI 同一条 session），不再各自选文件、也不再整页跳走。
  */
-const NAVIGATION_ONLY_CAPABILITIES = Object.freeze({ '3d': 'agent-replay', shots: 'agent-shots' })
 const capabilityOptions = computed(() => [
   { key: 'data', labelKey: 'workspace.tab_data' },
   { key: 'playback', labelKey: 'workspace.tab_playback' },
@@ -93,9 +98,13 @@ const activeCapability = workspace.activeWorkspaceTab
 /** 2D 回放面板首次进入时才挂载（之后保留状态，切走只是隐藏），它的代码块因此不随工作台加载。 */
 const playbackMounted = ref(activeCapability.value === 'playback')
 const aiMounted = ref(activeCapability.value === 'ai')
+const replay3dMounted = ref(activeCapability.value === '3d')
+const shotsMounted = ref(activeCapability.value === 'shots')
 watch(activeCapability, (cap) => {
   if (cap === 'playback') playbackMounted.value = true
   if (cap === 'ai') aiMounted.value = true
+  if (cap === '3d') replay3dMounted.value = true
+  if (cap === 'shots') shotsMounted.value = true
 })
 
 /**
@@ -113,6 +122,8 @@ function paneLoadError(module) {
 }
 const playbackLoadError = computed(() => paneLoadError(playbackModule))
 const aiLoadError = computed(() => paneLoadError(aiModule))
+const replay3dLoadError = computed(() => paneLoadError(replay3dModule))
+const shotsLoadError = computed(() => paneLoadError(shotsModule))
 
 /** 重试：由 lazyModule 创建新一代 async wrapper（不是重复跑一次 import）。 */
 async function retryPane(module) {
@@ -137,7 +148,7 @@ const playbackFile = computed(() => workspace.currentTargetFile.value)
 const playbackBlockedReason = computed(() =>
   files.value.length > 1 && !playbackFile.value ? t('workspace.single_replay_required') : '')
 
-const VIEW_BY_CAPABILITY = Object.freeze({ data: 'replay', ai: 'ai-review', playback: 'battle-playback' })
+const VIEW_BY_CAPABILITY = Object.freeze({ data: 'replay', ai: 'ai-review', playback: 'battle-playback', '3d': 'agent-replay', shots: 'agent-shots' })
 
 /** capability → 路由 view。 */
 function viewFor(cap) {
@@ -146,10 +157,6 @@ function viewFor(cap) {
 
 async function setCapability(key) {
   if (key === activeCapability.value) return
-  if (NAVIGATION_ONLY_CAPABILITIES[key]) {
-    if (navigate) navigate(NAVIGATION_ONLY_CAPABILITIES[key])
-    return
-  }
   workspace.setWorkspaceTab(key)
   if (navigate) navigate(viewFor(key))
 }
@@ -268,6 +275,55 @@ watch(() => props.initialCapability, (val) => {
           v-if="aiMounted && !aiLoadError"
           :file="playbackFile"
           :active="activeCapability === 'ai'"
+          :blocked-reason="playbackBlockedReason"
+        />
+      </div>
+      <!-- 3D 回放 / 射击分析：与 2D / AI 同一条 session（消费工作台已选回放），不再整页跳走 -->
+      <div v-show="activeCapability === '3d'" class="capability-pane capability-pane-3d" data-testid="ws-3d">
+        <Banner v-if="replay3dLoadError" tone="danger" data-testid="ws-3d-load-error">
+          <p>{{ $t(replay3dLoadError) }}</p>
+          <template #actions>
+            <AppButton size="sm" data-testid="ws-3d-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
+            <AppButton size="sm" variant="ghost" data-testid="ws-3d-load-retry" @click="retryPane(replay3dModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+          </template>
+        </Banner>
+        <BattlePicker
+          v-if="!replay3dLoadError && playbackBattleOptions.length > 1"
+          class="playback-picker"
+          :options="playbackBattleOptions"
+          :model-value="currentBattleId"
+          :aria-label="$t('workspace.battle_picker')"
+          data-testid="replay3d-battle-picker"
+          @update:model-value="onBattleSelect"
+        />
+        <AgentReplay3D
+          v-if="replay3dMounted && !replay3dLoadError"
+          :file="playbackFile"
+          :active="activeCapability === '3d'"
+          :blocked-reason="playbackBlockedReason"
+        />
+      </div>
+      <div v-show="activeCapability === 'shots'" class="capability-pane" data-testid="ws-shots">
+        <Banner v-if="shotsLoadError" tone="danger" data-testid="ws-shots-load-error">
+          <p>{{ $t(shotsLoadError) }}</p>
+          <template #actions>
+            <AppButton size="sm" data-testid="ws-shots-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
+            <AppButton size="sm" variant="ghost" data-testid="ws-shots-load-retry" @click="retryPane(shotsModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+          </template>
+        </Banner>
+        <BattlePicker
+          v-if="!shotsLoadError && playbackBattleOptions.length > 1"
+          class="playback-picker"
+          :options="playbackBattleOptions"
+          :model-value="currentBattleId"
+          :aria-label="$t('workspace.battle_picker')"
+          data-testid="shots-battle-picker"
+          @update:model-value="onBattleSelect"
+        />
+        <AgentShots
+          v-if="shotsMounted && !shotsLoadError"
+          :file="playbackFile"
+          :active="activeCapability === 'shots'"
           :blocked-reason="playbackBlockedReason"
         />
       </div>
