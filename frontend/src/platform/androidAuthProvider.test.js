@@ -166,6 +166,22 @@ describe('androidAuthProvider', () => {
     expect(provider.token()).toBe('')
   })
 
+  it('cold offline init preserves cached roles while withholding an expired API token', async () => {
+    stubNative({
+      authGetState: { authenticated: true, expiresAt: 1 },
+      authGetAccessToken: { token: null, expiresAt: 1, claims: ADMIN_CLAIMS, error: 'refresh-failed' },
+    })
+    const provider = createAndroidAuthProvider()
+    await provider.init()
+    expect(provider.authenticated).toBe(true)
+    expect(provider.tokenParsed?.realm_access.roles).toContain('wotbtools-admin')
+    expect(provider.token()).toBe('')
+    await expect(provider.ensureToken()).resolves.toBe(false)
+    expect(provider.tokenParsed).toEqual(ADMIN_CLAIMS)
+    await provider.logout()
+    expect(provider.tokenParsed).toBe(null)
+  })
+
   it('claims 缺失时 tokenParsed 保持 null（不伪造空对象），token 仍可用', async () => {
     stubNative({
       authGetState: { authenticated: true, expiresAt: 1_700_000_000 },

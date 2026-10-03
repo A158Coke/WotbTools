@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.test.InstrumentationTestCase
 import android.webkit.WebView
+import com.wotbtools.app.auth.AuthSession
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
@@ -82,6 +83,74 @@ class LocalRuntimeSmokeTest : InstrumentationTestCase() {
         }
         assertEquals("false", js("!!document.querySelector('[data-testid=result-failures]')"))
         assertEquals("https://appassets.androidplatform.net", js("location.origin"))
+    }
+
+    fun testOfflineExpiredCachedSessionProjectsLocalClaimsWithoutAnApiToken() {
+        activity = launch()
+        awaitCondition("local shell for cached-session bridge") {
+            js("!!document.querySelector('[data-testid=app-footer]')") == "true"
+        }
+        awaitCondition("native system offline") {
+            var offline = false
+            instrumentation.runOnMainSync { offline = activity!!.bridgeConnectivityState() == "offline" }
+            offline
+        }
+        val managerField = MainActivity::class.java.getDeclaredField("authManager").apply { isAccessible = true }
+        val manager = requireNotNull(managerField.get(activity))
+        val sessionField = manager.javaClass.getDeclaredField("session").apply { isAccessible = true }
+        val lockField = manager.javaClass.getDeclaredField("lock").apply { isAccessible = true }
+        val sessionLock = requireNotNull(lockField.get(manager))
+        val originalSession = synchronized(sessionLock) { sessionField.get(manager) }
+        try {
+            // Test-only in-memory fixture: no real provider token or persistent/auth store mutation.
+            synchronized(sessionLock) {
+                sessionField.set(manager, AuthSession(
+                    accessToken = "expired-offline-instrumentation-fixture",
+                    hasIdToken = true,
+                    expiresAtSeconds = 1L,
+                    claims = mapOf(
+                        "realm_access" to JSONObject().put("roles", JSONArray().put("wotbtools-admin")),
+                        "preferred_username" to "offline-admin-fixture"
+                    )
+                ))
+            }
+            // Recreate the host and load a fresh local document with the fixture already cached.
+            instrumentation.runOnMainSync { activity!!.finish() }
+            instrumentation.waitForIdleSync()
+            activity = launch()
+            instrumentation.runOnMainSync {
+                activity!!.findViewById<WebView>(R.id.webView).loadUrl(MainActivity.LOCAL_APP_ENTRY + "?view=replay")
+            }
+            awaitCondition("cached admin claims keep local shots and reviewed 3D entries visible") {
+                js("""!!document.querySelector('[data-testid="ws-tab"][data-cap="shots"]') && !!document.querySelector('[data-testid="ws-tab"][data-cap="3d"]')""") == "true"
+            }
+            js("""(() => {
+                window.__cachedSessionReply = null;
+                WotbNative.addEventListener('message', e => {
+                    const reply = JSON.parse(e.data);
+                    if (reply.id === 'smoke-cached-session') window.__cachedSessionReply = reply.result;
+                });
+                WotbNative.postMessage(JSON.stringify({id:'smoke-cached-session', method:'authGetAccessToken', params:{minValiditySeconds:30}}));
+                return true;
+            })()""")
+            awaitCondition("expired cached-session Native RPC reply") {
+                js("!!window.__cachedSessionReply") == "true"
+            }
+            assertEquals("refresh-failed", js("window.__cachedSessionReply.error"))
+            assertEquals("true", js("window.__cachedSessionReply.token === null"))
+            assertEquals("1", js("window.__cachedSessionReply.expiresAt"))
+            assertEquals("wotbtools-admin", js("window.__cachedSessionReply.claims.realm_access.roles[0]"))
+            assertEquals("offline-admin-fixture", js("window.__cachedSessionReply.claims.preferred_username"))
+            // A genuinely cleared Native session still has no claims, expiry or token projection.
+            synchronized(sessionLock) { sessionField.set(manager, AuthSession.unauthenticated()) }
+            val unauthenticatedReply = activity!!.bridgeAuthGetAccessToken(30)
+            assertEquals("unauthenticated", unauthenticatedReply.getString("error"))
+            assertTrue(unauthenticatedReply.isNull("token"))
+            assertTrue(unauthenticatedReply.isNull("claims"))
+            assertTrue(unauthenticatedReply.isNull("expiresAt"))
+        } finally {
+            synchronized(sessionLock) { sessionField.set(manager, originalSession) }
+        }
     }
 
     private fun pendingSnapshot(): JSONObject? {

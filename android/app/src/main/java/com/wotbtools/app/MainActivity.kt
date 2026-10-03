@@ -803,12 +803,15 @@ class MainActivity : Activity() {
         }
     }
 
-    /** `authGetAccessToken` 的失败形状（契约封闭集合：null 字段 + error）。 */
-    private fun tokenFailureJson(error: String): org.json.JSONObject = org.json.JSONObject()
-        .put("token", org.json.JSONObject.NULL)
-        .put("expiresAt", org.json.JSONObject.NULL)
-        .put("claims", org.json.JSONObject.NULL)
-        .put("error", error)
+    /** Cached claims on transient failure are a local UI projection, never API authorization. */
+    private fun tokenFailureJson(error: String): org.json.JSONObject {
+        val cached = if (error == "refresh-failed") authManager.currentSession().takeIf { it.authenticated } else null
+        return org.json.JSONObject()
+            .put("token", org.json.JSONObject.NULL)
+            .put("expiresAt", cached?.expiresAtSeconds ?: org.json.JSONObject.NULL)
+            .put("claims", claimsJson(cached?.claims))
+            .put("error", error)
+    }
 
     private fun sessionJson(session: com.wotbtools.app.auth.AuthSession): org.json.JSONObject =
         org.json.JSONObject()

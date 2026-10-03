@@ -93,7 +93,7 @@
         "fields": {
           "token": { "type": "string", "nullable": true, "required": true },
           "expiresAt": { "type": "integer", "nullable": true, "required": true },
-          "claims": { "type": "object", "nullable": true, "required": true },
+          "claims": { "type": "object", "nullable": true, "required": true, "notes": "On refresh-failed a retained Native session may project cached claims for local UI; token remains null and API authorization requires a fresh token." },
           "error": { "type": "string", "nullable": true, "required": true }
         }
       }
