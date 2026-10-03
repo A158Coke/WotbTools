@@ -120,8 +120,8 @@ onBeforeUnmount(() => {
                 <div class="sel-row" id="config-row" style="display:none;"><label id="config-label">{{ $t('armor.config') }}</label><select id="config-select"></select></div>
                 <div class="sel-row">
                     <label>{{ $t('armor.equip') }}</label>
-                    <label style="width:auto;display:flex;align-items:center;gap:3px;cursor:pointer;font-size:0.78em;"><input type="checkbox" id="eq-calibrated"> {{ $t('armor.calibrated') }}</label>
-                    <label style="width:auto;display:flex;align-items:center;gap:3px;cursor:pointer;font-size:0.78em;"><input type="checkbox" id="eq-enhanced"> {{ $t('armor.enhanced') }}</label>
+                    <label class="eq-opt"><input type="checkbox" id="eq-calibrated"> {{ $t('armor.calibrated') }}</label>
+                    <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> {{ $t('armor.enhanced') }}</label>
                 </div>
                 <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select">—</button></div>
                 <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select">—</button></div>
@@ -306,6 +306,8 @@ onBeforeUnmount(() => {
     .armor-view #tank-selectors label { width: 58px; color: var(--muted); font-size: 0.8em; }
     /* 全局 input{flex:1;min-width:120px} 会把复选框撑到 120px 导致 Equip 行溢出面板——恢复自然尺寸 */
     .armor-view input[type="checkbox"] { flex: none; min-width: 0; width: auto; margin: 0; }
+    /* 装备复选框外层 label = 真实点击目标（原先靠内联样式，现收进 CSS 以便触控档加高命中区） */
+    .armor-view .eq-opt { display: inline-flex; align-items: center; gap: 3px; width: auto; cursor: pointer; font-size: 0.78em; }
     .armor-view #tank-selectors .tank-btn {
             background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-sm);
             padding: 5px 10px; max-width: 176px; cursor: pointer; font-size: 0.85em;
@@ -368,6 +370,9 @@ onBeforeUnmount(() => {
         .armor-view #view-toggle button,
         .armor-view #tank-selectors .tank-btn,
         .armor-view #tp-close { min-height: 44px; }
+        /* 参数面板内的真实交互控件同样要 ≥44px（评审 BLOCKER 1：配置下拉与装备复选框 label） */
+        .armor-view #config-select,
+        .armor-view .eq-opt { min-height: 44px; }
     }
     /* 审计 3D-14 + 移动端空间收束：手机 = 顶栏一行（车名 + 参数开关）+ 底栏一行（弹种 + 视图
        开关），3D 场景占满其余；装备 / 射击方 / 目标 / 配置收进「参数」面板（默认收起），不再
@@ -385,10 +390,13 @@ onBeforeUnmount(() => {
             z-index: 30;
         }
         .armor-view.has-back #corner-tl { top: 8px; left: 60px; }
-        /* 车名 + 等级 / 类型 / 国籍 压成一行：面板收起时这是唯一常驻信息 */
+        /* 车名 + 等级 / 类型 / 国籍 压成一行：面板收起时这是唯一常驻信息。
+           单行是硬约束（评审「额外关注」）：长车名 + EN/RU 类型/国家在 360px 下不得换行，
+           越界统一由省略号接管；车名自己的 52% 省略号是第二层。 */
         .armor-view #info-panel {
             grid-column: 1; grid-row: 1; min-width: 0;
-            max-width: none; max-height: none; overflow: visible;
+            max-width: none; max-height: none;
+            overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
             padding: 0; background: none; border: none; box-shadow: none; backdrop-filter: none;
         }
         .armor-view #info-panel h1 {
@@ -410,6 +418,10 @@ onBeforeUnmount(() => {
         }
         .armor-view .armor-stage.is-tools-open #tank-selectors { display: block; }
         .armor-view #tank-selectors .tank-btn { flex: 1 1 auto; max-width: none; }
+        /* 参数面板内的交互控件在手机档统一 ≥44px（评审 BLOCKER 1：配置下拉与装备复选框 label。
+           本档 <768 包含鼠标窄窗，故不放在 pointer:coarse 里，与该档其它控件规则一致） */
+        .armor-view #config-select,
+        .armor-view .eq-opt { min-height: 44px; }
         .armor-view .armor-tools {
             grid-column: 2; grid-row: 1;
             display: inline-flex; align-items: center; justify-content: center;
