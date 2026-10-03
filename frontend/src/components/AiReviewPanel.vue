@@ -45,7 +45,7 @@ const props = defineProps({
   projectionError: { type: String, default: '' }
 })
 
-const emit = defineEmits(['seek', 'rebuild-projection'])
+const emit = defineEmits(['rebuild-projection'])
 
 const { t, te, locale } = useI18n()
 const auth = useAuth() as AiPanelAuth
@@ -410,7 +410,7 @@ defineExpose({ __classify: classify })
         {{ partialAnalysis }}
       </div>
 
-      <AnalysisResultPanel v-if="analysisResult" :result="analysisResult" @seek="(sec) => emit('seek', sec)" />
+      <AnalysisResultPanel v-if="analysisResult" :result="analysisResult" />
       <Banner v-if="limitedTimelineNote" tone="warning" data-test="ai-capability-limited">
         <p>{{ limitedTimelineNote }}</p>
       </Banner>
