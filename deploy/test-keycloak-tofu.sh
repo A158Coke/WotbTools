@@ -393,6 +393,48 @@ api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/clients/$WEB_CLIENT_ID/protoco
 jq -e '([.[].name] | sort) == ["display-name-mapper", "wotb-account-id-mapper", "wotb-nickname-mapper", "wotb-region-mapper", "wotb-verified-mapper"]' \
   "$WORK/mappers.json" >/dev/null || fail "wotbtools-web mapper set is incomplete"
 
+# Android 2.0 authenticates natively (OIDC Authorization Code + PKCE S256, external
+# user-agent) as a PUBLIC client of its own. This asserts the applied realm, not the
+# plan text: `?clientId=` matching exactly once proves there is no second client
+# sharing the id, and the runtime representation below is what Keycloak actually
+# enforces for the app - the class of setting a browser-only client would silently
+# accept (wildcard redirect, implicit flow, direct access grants, no PKCE).
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/clients?clientId=wotbtools-android" \
+  "$BOOTSTRAP_TOKEN" "$WORK/android-clients.json"
+jq -e 'length == 1' "$WORK/android-clients.json" >/dev/null \
+  || fail "expected exactly one wotbtools-android client in the applied realm"
+ANDROID_CLIENT_ID="$(jq -er '.[0].id' "$WORK/android-clients.json")"
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/clients/$ANDROID_CLIENT_ID" \
+  "$BOOTSTRAP_TOKEN" "$WORK/android-client.json"
+jq -e '
+  .clientId == "wotbtools-android" and
+  .enabled == true and
+  .publicClient == true and
+  .standardFlowEnabled == true and
+  .implicitFlowEnabled == false and
+  .directAccessGrantsEnabled == false and
+  .serviceAccountsEnabled == false and
+  .consentRequired == false and
+  .alwaysDisplayInConsole == true and
+  .frontchannelLogout == false and
+  .attributes.login_theme == "wotbtools" and
+  .attributes["pkce.code.challenge.method"] == "S256" and
+  ((.redirectUris // []) | sort) == [
+    "com.wotbtools.app:/oauth2redirect",
+    "https://auth.wotbtools.com/android/oauth/callback"
+  ] and
+  ((.attributes["post.logout.redirect.uris"] // "") | split("##") | sort) == [
+    "com.wotbtools.app:/oauth2redirect",
+    "https://auth.wotbtools.com/android/oauth/callback"
+  ]
+' "$WORK/android-client.json" >/dev/null \
+  || fail "wotbtools-android runtime representation does not satisfy the native PKCE client contract"
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/clients/$ANDROID_CLIENT_ID/protocol-mappers/models" \
+  "$BOOTSTRAP_TOKEN" "$WORK/android-mappers.json"
+jq -e '([.[].name] | sort) == ["display-name-mapper", "wotb-account-id-mapper", "wotb-nickname-mapper", "wotb-region-mapper", "wotb-verified-mapper"]' \
+  "$WORK/android-mappers.json" >/dev/null || fail "wotbtools-android mapper set is incomplete"
+echo "PASS: applied wotbtools-android client is public, PKCE S256, standard-flow-only, exact-redirect, with the five native token claims"
+
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances" "$BOOTSTRAP_TOKEN" "$WORK/idps.json"
 # Exact-set equality above already forbids every other alias, including any
 # legacy broker alias; no second denylist is needed.

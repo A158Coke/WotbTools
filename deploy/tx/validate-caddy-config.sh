@@ -42,6 +42,39 @@ assert_upstream() {
   }
 }
 
+# handle_block <host> <path>: the body of that host's `handle <path> { ... }`
+# block, including the opening line and the closing brace of that same block.
+# Directives are matched after trimming leading whitespace, so no regex escaping is
+# needed for the path; the end is the brace that returns the block below its own
+# opening depth.
+handle_block() {
+  awk -v host="$1" -v path="$2" '
+    { trimmed = $0; sub(/^[ \t]+/, "", trimmed) }
+    !in_host {
+      if (!inside && index($0, host " {") == 1) { in_host = 1; host_depth = 0 }
+    }
+    !inside && index(trimmed, "handle " path " {") == 1 {
+      inside = 1
+      depth = 1
+      print
+      next
+    }
+    {
+      if (inside) {
+        opens = gsub(/\{/, "{"); closes = gsub(/\}/, "}")
+        depth += opens - closes
+        print
+        if (depth <= 0) exit
+        next
+      }
+      if (in_host) {
+        host_depth += gsub(/\{/, "{") - gsub(/\}/, "}")
+        if (host_depth <= 0) exit
+      }
+    }
+  ' "$CADDYFILE"
+}
+
 # Every public host this gateway owns. Yecao upstreams are always the WireGuard
 # address 10.20.0.2; a public Yecao address here would bypass the private
 # boundary that ai-service, Grafana, and Komodo Core rely on.
@@ -57,6 +90,24 @@ site_block www.wotbtools.com \
 # The TX-local readiness surface the runtime check drives must survive.
 site_block 'http://caddy' | grep -q 'handle /_wotb/ready' \
   || { echo 'ERROR: the TX-local /_wotb/ready readiness surface is missing.' >&2; exit 1; }
+
+# Android's OIDC App Link target must answer for itself, on that host only. The
+# app is not always installed, and before this route existed such a browser landed
+# on Keycloak's catch-all 404 - a dead end with no way back to the app. The minimal
+# text assertion here states the intent (one Caddy-owned `handle` for that exact
+# path, answering from Caddy rather than proxying); the response Caddy actually
+# serves is asserted against the adapted configuration below, where the answer is
+# unambiguous.
+android_callback="$(handle_block auth.wotbtools.com /android/oauth/callback)"
+[ -n "$android_callback" ] \
+  || { echo 'ERROR: auth.wotbtools.com must declare handle /android/oauth/callback.' >&2; exit 1; }
+android_handles="$(grep -cE '^[[:space:]]*handle[[:space:]]+/android/oauth/callback[[:space:]]*\{' <<<"$android_callback" || true)"
+[ "$android_handles" = 1 ] \
+  || { echo "ERROR: auth.wotbtools.com must declare handle /android/oauth/callback exactly once (found $android_handles)." >&2; exit 1; }
+grep -qE '^[[:space:]]*respond[[:space:]]' <<<"$android_callback" \
+  || { echo 'ERROR: /android/oauth/callback must answer with a respond directive.' >&2; exit 1; }
+grep -qi 'reverse_proxy' <<<"$android_callback" \
+  && { echo 'ERROR: the /android/oauth/callback handler must answer from Caddy, never reverse_proxy an upstream.' >&2; exit 1; }
 
 # No upstream may exist beyond the reviewed set above.
 unexpected="$(sed -n 's/^[[:space:]]*reverse_proxy[[:space:]]\{1,\}\([^[:space:]]*\).*$/\1/p' "$CADDYFILE" \
@@ -76,7 +127,93 @@ fi
 # what turns the `validate ...` argument list into a real executable; it also
 # keeps this command correct if a future image starts declaring
 # `ENTRYPOINT ["caddy"]` (which would make a plain `caddy validate ...` argument
-# list run `caddy caddy`).
+# list run `caddy caddy`). The same invocation adapts the staged file to JSON, so
+# the assertions below inspect the exact configuration Caddy will serve - the
+# adapted routes, response bodies and status codes - instead of re-parsing
+# Caddyfile text.
+android_adapted_file="$(mktemp)"
+android_adapted_doc="$(mktemp)"
+android_validate_log="$(mktemp)"
+trap 'rm -f -- "$android_adapted_file" "$android_adapted_doc" "$android_validate_log"' EXIT
+
+# Fail closed when jq is absent: the adapted-route assertions below are the only
+# proof of what this route actually answers.
+command -v jq >/dev/null 2>&1 || {
+  echo 'ERROR: jq is required to assert the adapted Caddy routes.' >&2
+  exit 1
+}
+
+if ! docker compose -p deploy \
+  -f "$INCOMING_DIR/common.compose.yml" -f "$INCOMING_DIR/caddy.compose.yml" \
+  run --rm --no-deps --entrypoint caddy caddy \
+  adapt --config /etc/caddy/Caddyfile --adapter caddyfile > "$android_adapted_file" 2> "$android_validate_log"; then
+  echo 'ERROR: the staged Caddy configuration could not be adapted by Caddy.' >&2
+  cat "$android_validate_log" >&2
+  exit 1
+fi
+
+# `caddy adapt` 把适配结果写到 stdout、日志写到 stderr，但 `docker compose run` 在部分版本/环境下
+# 还会往 stdout 混入自己的输出（实测形态可以是一个裸数字），因此断言必须针对 **adapted JSON
+# 文档**本身，而不是「stdout 恰好只有 JSON」这个假设：这里按 JSON 值流切开输入，取第一个对象，
+# 并把被忽略的非对象值数量记下来（出现时能自解释，而不是让下一个人重新猜）。
+if ! jq -s 'map(select(type == "object")) | first // empty' "$android_adapted_file" > "$android_adapted_doc"; then
+  echo 'ERROR: the adapted Caddy output is not valid JSON.' >&2
+  head -c 2000 "$android_adapted_file" >&2
+  exit 1
+fi
+if [ ! -s "$android_adapted_doc" ]; then
+  echo 'ERROR: Caddy produced no adapted JSON document for the staged configuration.' >&2
+  head -c 2000 "$android_adapted_file" >&2
+  exit 1
+fi
+android_noise="$(jq -s 'map(select(type != "object")) | length' "$android_adapted_file")"
+if [ "$android_noise" != "0" ]; then
+  echo "NOTE: ignored $android_noise non-object value(s) alongside the adapted JSON document."
+fi
+
+# The Android callback route in the adapted configuration, not in the text: exactly
+# one route matching that exact path on that exact host, ordered before the single
+# catch-all that still proxies the realm to keycloak:8080, answering from Caddy
+# (never reverse_proxy), with a 200 status and a body that tells the user to return
+# to the app. `all_handlers` walks every nesting level, so a handler hidden one
+# level deeper is still found and a proxying one can never hide.
+if ! jq -e '
+  def all_handlers: .. | objects | select(has("handler"));
+  def has_callback: ((.match // []) | map(.path? // []) | flatten | index("/android/oauth/callback")) != null;
+  .apps.http.servers.srv0.routes
+  | map(select([.match[]?.host[]?] | index("auth.wotbtools.com")))
+  | .[0].handle[0].routes as $host_routes
+  | [$host_routes[] | select(has_callback)] as $callback
+  | [$host_routes[] | select((.match // []) == [])] as $catch_all
+  | ([$callback[] | all_handlers | select(.handler == "static_response")] | length) as $answers
+  | ([$callback[] | all_handlers
+      | select(.handler == "static_response")
+      | select(
+          ((.status_code // 200) == 200)
+          and ((.body // "") | contains("WotBTools App"))
+          and ((.body // "") | contains("https://wotbtools.com/download/android"))
+        )
+     ] | length) as $answered
+  | ($callback | length) == 1
+    and ($catch_all | length) == 1
+    and ([$host_routes | to_entries[] | select(.value | has_callback) | .key][0]
+         < [$host_routes | to_entries[] | select((.value.match // []) == []) | .key][0])
+    and ($answers == 1)
+    and ($answered == 1)
+    and (any($callback[] | all_handlers; .handler == "reverse_proxy") | not)
+' "$android_adapted_doc" >/dev/null; then
+  echo 'ERROR: the adapted Caddy configuration does not serve /android/oauth/callback as a 200 Caddy-owned page that tells the user to return to the WotBTools app (or it is not ordered before the auth.wotbtools.com catch-all).' >&2
+  # 失败时必须能自解释：把该 host 的路由形状（match + handler 类型）打到 stderr，
+  # 而不是只留一句结论让人重新跑一遍去猜。
+  echo '--- adapted auth.wotbtools.com route shape ---' >&2
+  jq -c '
+    [.apps.http.servers.srv0.routes[] | select([.match[]?.host[]?] | index("auth.wotbtools.com"))]
+    | .[0].handle[0].routes
+    | map({match: (.match // []), handlers: ([.. | objects | select(has("handler")) | .handler] | unique)})
+  ' "$android_adapted_doc" >&2 || head -c 2000 "$android_adapted_doc" >&2
+  exit 1
+fi
+
 docker compose -p deploy \
   -f "$INCOMING_DIR/common.compose.yml" -f "$INCOMING_DIR/caddy.compose.yml" \
   run --rm --no-deps --entrypoint caddy caddy \

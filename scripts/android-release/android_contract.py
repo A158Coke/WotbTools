@@ -146,6 +146,18 @@ def contract_breaking_changes(base: dict, head: dict) -> list[str]:
     return breaking
 
 
+def auth_surface(contract: dict) -> tuple[list[str], list[str], list[str]]:
+    """The auth-owned part of the contract: methods, capabilities, and event globals."""
+    methods = [name for name in contract.get("methods", {}) if name.startswith("auth")]
+    capabilities = [name for name in contract.get("capabilities", []) if "auth" in name]
+    globals_ = [
+        event["global"]
+        for event in contract.get("events", {}).values()
+        if isinstance(event, dict) and event.get("global")
+    ]
+    return methods, capabilities, globals_
+
+
 def validate_native_sources(contract: dict, paths: list[str]) -> None:
     source = "\n".join(Path(path).read_text(encoding="utf-8") for path in paths)
     for method in contract.get("methods", {}):
@@ -155,12 +167,38 @@ def validate_native_sources(contract: dict, paths: list[str]) -> None:
     for origin in origins:
         if origin not in source:
             fail(f"Native source is missing contract origin: {origin}")
+    for capability in contract.get("capabilities", []):
+        if capability not in source:
+            fail(f"Native source does not advertise contract capability: {capability}")
+    for event in contract.get("events", {}).values():
+        if event.get("global") and event["global"] not in source:
+            fail(f"Native source does not emit contract event: {event['global']}")
     for resource in contract.get("syntheticResources", {}).values():
         if resource.get("url") and resource["url"] not in source:
             fail(f"Native source is missing synthetic resource URL: {resource['url']}")
         for header in resource.get("requiredHeaders", []):
             if header not in source:
                 fail(f"Native source is missing synthetic resource header: {header}")
+
+
+def validate_frontend_sources(contract: dict, paths: list[str]) -> None:
+    """The browser client must declare the same native-auth surface the contract publishes.
+
+    Only the auth-owned surface is asserted: the replay/update methods keep their own
+    declarations. This is what makes "an Android shell never falls back to keycloak-js"
+    a deterministic gate instead of a review convention.
+    """
+    source = "\n".join(Path(path).read_text(encoding="utf-8") for path in paths)
+    methods, capabilities, globals_ = auth_surface(contract)
+    for method in methods:
+        if f"'{method}'" not in source and f'"{method}"' not in source:
+            fail(f"Frontend source does not declare contract method: {method}")
+    for capability in capabilities:
+        if f"'{capability}'" not in source and f'"{capability}"' not in source:
+            fail(f"Frontend source does not declare contract capability: {capability}")
+    for name in globals_:
+        if name not in source:
+            fail(f"Frontend source does not handle contract event: {name}")
 
 
 def contract_result(base: dict, head: dict) -> dict:
@@ -193,6 +231,8 @@ def command_validate(args: argparse.Namespace) -> None:
         fail("frontend supported Native Bridge versions do not include the JSON contract")
     if args.native_source:
         validate_native_sources(contract, args.native_source)
+    if args.frontend_source:
+        validate_frontend_sources(contract, args.frontend_source)
     print(json.dumps({"versionName": props["wotbVersion"], "versionCode": version_code(parts), "bridgeVersion": bridge}))
 
 
@@ -236,7 +276,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("version"); p.add_argument("version"); p.set_defaults(func=command_version)
-    p = sub.add_parser("validate"); p.add_argument("--contract", required=True); p.add_argument("--gradle-properties", required=True); p.add_argument("--frontend", required=True); p.add_argument("--native-source", action="append", default=[]); p.set_defaults(func=command_validate)
+    p = sub.add_parser("validate"); p.add_argument("--contract", required=True); p.add_argument("--gradle-properties", required=True); p.add_argument("--frontend", required=True); p.add_argument("--native-source", action="append", default=[]); p.add_argument("--frontend-source", action="append", default=[]); p.set_defaults(func=command_validate)
     p = sub.add_parser("version-bump"); p.add_argument("--base-version", required=True); p.add_argument("--head-version", required=True); p.add_argument("--paths", required=True); p.set_defaults(func=command_bump)
     p = sub.add_parser("gate"); p.add_argument("--base-contract", required=True); p.add_argument("--head-contract", required=True); p.add_argument("--base-version", required=True); p.add_argument("--head-version", required=True); p.add_argument("--paths", required=True); p.add_argument("--frontend-versions", required=True); p.add_argument("--initial-version-baseline", action="store_true"); p.set_defaults(func=command_gate)
     args = parser.parse_args()

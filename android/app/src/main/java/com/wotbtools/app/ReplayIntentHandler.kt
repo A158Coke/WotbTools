@@ -20,7 +20,7 @@ import java.util.UUID
  * `pendingId` 是这份 pending 的 **authoritative identity**（完整 UUID）：Web ACK 必须原样回传它，
  * 由 `PendingReplayAckPolicy` 做 compare-and-clear —— 没有任何「无 identity 清当前 pending」的路径。
  * 日志一律只允许用 short ref（[logRef]），绝不落完整 id。
- * `createdAt` 是本地 ingress 时刻，供 24h 本地 cache TTL 判断（与 Keycloak / QQ 的认证超时无关）。
+ * `createdAt` 是本地 ingress 时刻，供 24h 本地 cache TTL 判断（与认证会话 / token 生命周期无关）。
  */
 data class PendingReplay(
     val pendingId: String,
@@ -70,8 +70,9 @@ internal data class ReplayPendingMetadata(
  * Android external replay 只有这一条 ingress（Intent → pending cache → Native Bridge →
  * Web `fetch(HTTPS synthetic resource)` → 上传管线），没有 file chooser 注入路径。
  *
- * 跨 process death（RC7）：pending 的 metadata 落盘在 app private SharedPreferences；冷启动先恢复
- * active pending，再清理不再被引用的 orphan，避免 QQ 登录期间进程被杀后 replay 永久丢失。
+ * 跨 process death：pending 的 metadata 落盘在 app private SharedPreferences；冷启动先恢复
+ * active pending，再清理不再被引用的 orphan，避免进程在用户离开 App（包括去外部浏览器登录）期间被杀后
+ * replay 永久丢失。
  */
 object ReplayIntentHandler {
     internal const val STREAM_URL = "https://wotbtools.com/__native/replay-pending"
@@ -116,8 +117,8 @@ object ReplayIntentHandler {
     internal const val PENDING_ID_MAX_LENGTH = 64
 
     /**
-     * 本地 cache hygiene TTL：24h。这是本地 pending 生命周期，**不**与 Keycloak session / QQ 登录
-     * 超时绑定；只保证一个陈旧 replay 不会在跨 process death 后被无限期当成有效 pending 恢复。
+     * 本地 cache hygiene TTL：24h。这是本地 pending 生命周期，**不**与认证会话 / token 生命周期绑定；
+     * 只保证一个陈旧 replay 不会在跨 process death 后被无限期当成有效 pending 恢复。
      */
     internal const val PENDING_TTL_MS = 24L * 60 * 60 * 1000
 
@@ -157,8 +158,9 @@ object ReplayIntentHandler {
     /**
      * 落盘当前 pending 的 metadata（single slot：最新 pending 直接覆盖旧的）。
      *
-     * 用 `commit()` 而不是 `apply()`：metadata 必须在进程被系统杀死之前真正写入磁盘 —— QQ 登录期间本进程
-     * 随时可能被杀（RC7），延迟落盘会让重启后的恢复逻辑读到空值。
+     * 用 `commit()` 而不是 `apply()`：metadata 必须在进程被系统杀死之前真正写入磁盘 —— 用户可能刚
+     * 收到 replay 就切到别的 App（包括去外部浏览器登录），本进程随时可能被杀，延迟落盘会让重启后的
+     * 恢复逻辑读到空值。
      */
     @SuppressLint("ApplySharedPref")
     fun savePendingMetadata(context: Context, pending: PendingReplay) {

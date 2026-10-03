@@ -364,7 +364,7 @@ Showcase Topbar 为 60px。跨页面高优先级修复集中在 `showcase-regres
 **匿名可用**：服务器没有 parser，分析全部在本机，工作台挂载即可用，不等 Keycloak init、没有登录门禁（只有 AI 复盘与名人堂等写操作需要登录）。
 **能力解耦**：AI 与 Playback 不做 `AI@seek → Playback` 时间点联动 / 跨 capability 状态 handoff。tab 切换经 pushState + popstate 形成可 Back/Forward 的 history，返回时 selection / 分析结果不丢，只恢复 activeCapability。
 **2D 回放**：`BattlePlaybackPanel` 接收目标文件，本机 `parseLocalPlayback`（parseResult + parsePlayback + parseAiReview 伤害事件 → `BattlePlaybackDataset` + `MapOverview`）；多文件未选场次时给出明确提示。
-**Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `shouldInterceptRequest` 以固定同源 `https://wotbtools.com/__native/replay-pending` stream 缓存字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection → 本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）；普通 Web/FileUploader 手动选文件不经过此路径。读取使用 `X-Wotb-Pending-Id` header 校验 metadata 与文件 identity，避免 pending 替换时串包；Native 无 pending/文件返回 404、identity 不匹配返回 409、读取失败返回 500，禁止网络 fallback，响应 no-store。读取失败复用 Replay 错误区与重试，不 ACK；WebView file/content access 保持禁用。ACK 边界是「本机分析已完成」（`analyze()` 返回 `completed: true`，无论有没有有效场次——重新导入同一份结果相同）；回放引擎装载失败（可重试）不 ACK，Native pending 原样保留。auth flow 进行中的 replay intent 只入队、绝不抢 WebView navigation；pending metadata（24h TTL）持久化在 app private storage，可跨 QQ 登录期间的 process death 恢复。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
+**Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `shouldInterceptRequest` 以固定同源 `https://wotbtools.com/__native/replay-pending` stream 缓存字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection → 本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）；普通 Web/FileUploader 手动选文件不经过此路径。读取使用 `X-Wotb-Pending-Id` header 校验 metadata 与文件 identity，避免 pending 替换时串包；Native 无 pending/文件返回 404、identity 不匹配返回 409、读取失败返回 500，禁止网络 fallback，响应 no-store。读取失败复用 Replay 错误区与重试，不 ACK；WebView file/content access 保持禁用。ACK 边界是「本机分析已完成」（`analyze()` 返回 `completed: true`，无论有没有有效场次——重新导入同一份结果相同）；回放引擎装载失败（可重试）不 ACK，Native pending 原样保留。认证不再参与 WebView navigation（Android 2.0 起原生 OIDC 在外部 user-agent 完成，WebView 不承载登录）；登录期间收到的 replay intent 正常持久化并按 `ReplayDispatchPolicy` 分发，pending metadata（24h TTL）持久化在 app private storage，跨 process death 恢复，且不以登录状态为前置条件。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
 Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈与 canonical 2 秒轨迹由
 `BattleMap.vue` 渲染，通用 HUD 由 `BattlePlaybackHud.vue` 渲染，播放控制与标注工具由
@@ -592,6 +592,12 @@ Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties
 契约 SSOT；运行时变更必须 bump Android 版本，breaking bridge 变更必须同步 bump
 bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 的版本与契约，
 生产发布前还会校验 APK、manifest 和 `version.json` 的 SHA/版本一致性。
+
+发布分两阶段（`android-release.yml`）：main 合并后自动 **stage**（构建/签名/上传 immutable APK、
+建 tag、写 staging evidence，**不碰** production `version.json`）；真机 A14 验证通过后手工
+`workflow_dispatch(mode=publish)` **publish**（复用 staged APK、校验 staged 身份 + Keycloak client +
+production frontend native 运行面 + minSupported cutover，最后才写 `version.json`）。
+细节见 `docs/android/release-process.md`。
 
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 

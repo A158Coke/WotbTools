@@ -1,5 +1,21 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import config, { assertLocal3dDistributionBoundary, buildIdentity, devProxyTarget } from '../vite.config.js'
+import config, {
+  assertLocal3dDistributionBoundary,
+  buildIdentity,
+  devProxyTarget,
+  nativeRuntimeIdentity,
+} from '../vite.config.js'
+import {
+  NATIVE_AUTH_CAPABILITY,
+  NATIVE_AUTH_CHANGED_GLOBAL,
+  NATIVE_AUTH_METHODS,
+  SUPPORTED_NATIVE_BRIDGE_VERSIONS,
+} from './platform/nativeBridgeContract.js'
+
+const bridgeContract = JSON.parse(readFileSync(
+  fileURLToPath(new URL('../../contracts/android-native-bridge.json', import.meta.url)), 'utf8'))
 
 function proxyFor(mode) {
   return config({ command: 'serve', mode }).server.proxy['/api']
@@ -52,5 +68,30 @@ describe('frontend build identity', () => {
       if (previous === undefined) delete process.env.BUILD_COMMIT
       else process.env.BUILD_COMMIT = previous
     }
+  })
+})
+
+/**
+ * `/version.json` 里的 native 运行面是 Android 发布门禁（publish 阶段）判断「线上前端是否
+ * 支持 Bridge v2 + native-auth」的唯一机器可读来源，因此它必须是 bridge 契约声明的投影，
+ * 而不是任何手写副本。
+ */
+describe('production native runtime identity', () => {
+  it('projects the bridge contract module verbatim', () => {
+    expect(nativeRuntimeIdentity()).toEqual({
+      supportedBridgeVersions: [...SUPPORTED_NATIVE_BRIDGE_VERSIONS],
+      nativeAuthCapability: NATIVE_AUTH_CAPABILITY,
+      authChangedGlobal: NATIVE_AUTH_CHANGED_GLOBAL,
+      nativeAuthMethods: Object.values(NATIVE_AUTH_METHODS).sort(),
+    })
+  })
+
+  it('proves the two facts the Android publish gate requires', () => {
+    const runtime = nativeRuntimeIdentity()
+    // 1) 线上前端支持的 bridge 世代包含 wire contract 的 head 版本。
+    expect(runtime.supportedBridgeVersions).toContain(bridgeContract.bridgeVersion)
+    // 2) 线上前端声明了 native-auth 能力，且该能力就是契约里的名字。
+    expect(bridgeContract.capabilities).toContain(runtime.nativeAuthCapability)
+    expect(runtime.nativeAuthCapability.length).toBeGreaterThan(0)
   })
 })

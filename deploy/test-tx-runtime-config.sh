@@ -12,9 +12,19 @@ cat > "$WORK/bin/ip" <<'IP'
 #!/usr/bin/env bash
 if [ "${1:-}" = -4 ]; then echo 'inet 10.20.0.1/24'; fi
 IP
+# `validate-caddy-config.sh` asserts against the JSON Caddy **adapts** the staged file to
+# (the adapted routes, their order, their handlers and the response they answer with), so
+# a fake `adapt` reply would either hide a real shape regression or reject a valid
+# configuration. This fixture therefore delegates exactly that one invocation to the real
+# Docker CLI - the same pinned caddy image the Caddy validation step already pulls - and
+# keeps the fake behaviour for everything else (including the deliberate
+# FAKE_CADDY_VALIDATE_FAIL knob on `validate`, and the canned readiness/log responses).
+REAL_DOCKER="$(command -v docker || true)"
 cat > "$WORK/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
 set -euo pipefail
+REAL_DOCKER='@REAL_DOCKER@'
+original=("$@")
 [ "${1:-}" = compose ] || exit 0
 shift
 while :; do
@@ -26,6 +36,13 @@ case "$verb" in
   run)
     if [[ "${FAKE_CADDY_VALIDATE_FAIL:-0}" = 1 && "$*" == *"--entrypoint caddy caddy validate"* ]]; then
       exit 1
+    fi
+    if [[ "$*" == *"--entrypoint caddy caddy adapt"* ]]; then
+      [ -n "$REAL_DOCKER" ] || {
+        echo 'the caddy adapt invocation must run against the real image; install docker or run this fixture where the pinned caddy image is available.' >&2
+        exit 1
+      }
+      exec "$REAL_DOCKER" "${original[@]}"
     fi
     if [[ "$*" == *":3100/ready"* ]]; then
       printf 'ready'
@@ -41,6 +58,7 @@ case "$verb" in
     ;;
 esac
 DOCKER
+sed -i "s|@REAL_DOCKER@|$REAL_DOCKER|" "$WORK/bin/docker"
 chmod 700 "$WORK/bin/ip" "$WORK/bin/docker"
 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 FRONTEND_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend@sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd
@@ -184,6 +202,13 @@ if env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   exit 1
 fi
 ! grep -q '^up ' "$WORK/caddy-fail.log"
+
+# The delegated `caddy adapt` runs the real Compose project (`-p deploy`), which allocates a Docker
+# network from the daemon's default address pool. Release it here so later fixtures in the same job
+# keep the full pool (the nginx/Grafana fixture needs an explicit 172.29.0.0/16 subnet).
+if [ -n "$REAL_DOCKER" ]; then
+  "$REAL_DOCKER" network rm deploy_default >/dev/null 2>&1 || true
+fi
 env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
   WOTB_TX_DIR="$WORK/host" WOTB_TX_INCOMING_DIR="$WORK/incoming/deploy/tx" \
   TX_RUNTIME_ROOT="$WORK/host" WOTB_DEPLOY_SERVICE=keycloak WOTB_DEPLOY_CONFIG_SHA="$SHA" \

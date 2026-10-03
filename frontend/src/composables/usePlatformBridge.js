@@ -5,8 +5,12 @@
  * （仅 `https://wotbtools.com` / `https://www.wotbtools.com` 可调，见 android/.../MainActivity.kt）。
  * 普通浏览器 / 非 Android 场景下不存在该对象，所有方法回退到 Web 默认（null / false）。
  *
- * 本模块是异步 RPC（postMessage → reply 'message' 事件），只做能力查询与 pending replay 交接，
- * 绝不借此调用任何系统能力（readFile / http / execute / launch）。Vue 业务用 supports() 能力探测。
+ * 本模块是异步 RPC（postMessage → reply 'message' 事件），只做能力查询、pending replay 交接
+ * 与 native-auth 会话调用，绝不借此调用任何系统能力（readFile / http / execute / launch）。
+ * Vue 业务用 supports() 能力探测。
+ *
+ * `callBridge` 是**唯一**的 RPC transport（一份实现 / 一份监听注册 / 一个序号计数器），
+ * 也被 `platform/androidAuthProvider.js` 复用；禁止再造第二条通道或轮询。
  */
 import {
   LEGACY_NATIVE_BRIDGE_REQUIRED_CAPABILITIES,
@@ -29,7 +33,14 @@ export function isAndroidApp() {
   return !!(b && typeof b.postMessage === 'function')
 }
 
-function call(method, params = {}) {
+/**
+ * 单次 RPC：postMessage → 同 id 的 reply 'message' → `data.result`。
+ * 无 bridge / 超时一律 resolve `null`（绝不 reject）：调用方按 null 走 fail-closed 分支。
+ *
+ * `timeoutMs` 允许按方法放宽：native-auth 的 RPC 需要 OIDC discovery / token refresh（网络），
+ * 默认 5s 不够；调用方传 `NATIVE_AUTH_TIMEOUT_MS`。其余方法保持默认预算不变。
+ */
+export function callBridge(method, params = {}, { timeoutMs = BRIDGE_RPC_TIMEOUT_MS } = {}) {
   return new Promise(resolve => {
     const b = bridge()
     if (!b || typeof b.postMessage !== 'function') {
@@ -62,17 +73,17 @@ function call(method, params = {}) {
         b.removeEventListener('message', handler)
       }
       resolve(null)
-    }, BRIDGE_RPC_TIMEOUT_MS)
+    }, timeoutMs)
   })
 }
 
 export async function getCapabilities() {
-  const c = await call('getCapabilities')
+  const c = await callBridge('getCapabilities')
   return Array.isArray(c) ? c : []
 }
 
 export async function getNativeBridgeVersion() {
-  const version = await call('getBridgeVersion')
+  const version = await callBridge('getBridgeVersion')
   return Number.isInteger(version) ? version : null
 }
 
@@ -96,7 +107,7 @@ export async function supports(capability) {
 
 /** Result: { pendingId, name, size, uri }; uri is a fixed same-origin HTTPS Native resource. */
 export async function getPendingReplay() {
-  return await call('getPendingReplay')
+  return await callBridge('getPendingReplay')
 }
 
 /**
@@ -105,15 +116,15 @@ export async function getPendingReplay() {
  * 不传 / 不匹配一律返回 false 且**绝不清掉当前 pending**（避免清掉后来取代它的新 replay）。
  */
 export async function consumePendingReplay(expectedPendingId) {
-  return (await call('consumePendingReplay', { expectedPendingId })) === true
+  return (await callBridge('consumePendingReplay', { expectedPendingId })) === true
 }
 
 export async function checkForUpdate() {
-  return (await call('checkForUpdate')) === true
+  return (await callBridge('checkForUpdate')) === true
 }
 
 export async function startUpdate() {
-  return (await call('startUpdate')) === true
+  return (await callBridge('startUpdate')) === true
 }
 
 export function usePlatformBridge() {

@@ -1,0 +1,4 @@
+# 本地 Gradle / Android 构建产物：CI 在一次性 checkout 里构建，这里的任何文件都不是源文件。
+.gradle/
+build/
+local.properties
