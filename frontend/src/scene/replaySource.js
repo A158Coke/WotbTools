@@ -45,30 +45,87 @@ function tankNamesStatic() {
 // 解析（WASM `parsePlayback`，单场 95ms 量级）在 Worker 里跑，主线程只做 JSON.parse 与
 // 契约校验（见 playbackParse.worker.ts 的取舍说明）。Worker 构造/崩溃时回退主线程同一条
 // WASM 路径——行为与改造前一致，只是少了线程隔离。
+//
+// 解析任务的**生命周期所有权**（P0 review blocker 回归）：请求进 `parsePending` 后，只有
+// Worker 回包/报错才结算——没有看门狗时，Worker「不回包也不报错」（装载链网络停滞一类）
+// 会让后续请求无限排队、3D 永远停在「解析中」。因此：
+// - 每个请求带**看门狗**：超时判定 Worker 不可信 → terminate + 在途全部失败，下次重建；
+// - 每个请求可 **abort**（清空 / 换文件 / 销毁传入 signal）：被撤下的解析立即以
+//   AbortError 结束、若仍在 Worker 上则整体 terminate 让出队列——旧解析不得占位。
 const PLAYBACK_JSON_CACHE_MAX = 3;   // 每条 JSON 约 2–3MB，故只留最近 3 场
 const playbackJsonCache = new Map();
 let parseWorker = null;
 let parseSeq = 0;
 const parsePending = new Map();
+/** 单场解析毫秒级、巨型文件秒级：120s 只兜「Worker 不回包也不报错」的真异常。 */
+const PARSE_WATCHDOG_MS = 120_000;
+
+/** abort 的规范错误形态：调用方可按 name === 'AbortError' 分流「主动撤下」与真失败。 */
+function playbackParseAbortError() {
+  return new DOMException('playback 解析已被撤下（清空 / 换文件 / 销毁）', 'AbortError')
+}
+
+/** 整体放弃当前 Worker：在途 / 排队请求全部按给定错误结算（清看门狗、摘 abort 监听），
+ *  Worker terminate 掉，下次请求自动重建。迟到回包走 onmessage 的 `pending 不在表内`
+ *  分支被忽略，不会产生未处理拒绝。 */
+function abandonParseWorker(error) {
+  const pendings = [...parsePending.values()];
+  parsePending.clear();
+  for (const pending of pendings) {
+    if (pending.watchdog) clearTimeout(pending.watchdog);
+    pending.signal?.removeEventListener('abort', pending.onAbort);
+    pending.reject(error);
+  }
+  if (parseWorker) {
+    try { parseWorker.terminate(); } catch { /* 已死 */ }
+    parseWorker = null;
+  }
+}
+
+function wireParseWorker(worker) {
+  // 返回值 = **本回包是否被认领**（true=结算了在途请求，false=迟到回包被忽略）。
+  // 真实 Worker 忽略返回值；这个契约存在的意义是让注入的假 Worker（unit / browser
+  // 回归）能直接观察「迟到回包无人认领」，而不是只能间接推断。
+  worker.onmessage = (event) => {
+    const { id, json, error } = event.data || {};
+    const pending = parsePending.get(id);
+    if (!pending) return false;   // 迟到回包（已被 abort / 看门狗结算）：无人认领，忽略
+    parsePending.delete(id);
+    if (pending.watchdog) clearTimeout(pending.watchdog);
+    pending.signal?.removeEventListener('abort', pending.onAbort);
+    if (error) pending.reject(new Error(error)); else pending.resolve(json);
+    return true;
+  };
+  // 崩溃/初始化失败：在飞请求全部失败、worker 置空待下次重建（不回退主线程——
+  // 崩溃是整体性的，调用方按错误处理并可重试）
+  worker.onerror = (event) => {
+    abandonParseWorker(new Error(event.message || 'playback parse worker crashed'));
+  };
+}
+
+/** 仅测试用：注入假 Worker（happy-dom 造不出真 Worker；注入的 Worker 会走与真实
+ *  Worker 完全相同的 onmessage / onerror 装配，看门狗 / 迟到回包语义由此验证）。
+ *  传 null 复位为真实创建路径。 */
+let testParseWorker = null;
+export function __setParseWorkerForTest(worker) {
+  testParseWorker = worker;
+}
+
+// `?debug`（与 Replay3DPane 的 `window.__pbPane` 同一口径）：把上面这个注入点暴露给
+// browser 回归。A → 清空 → B 的真实在途生命周期必须在**真浏览器**里验证，而 A 要确定性地
+// 停在解析中，就不能用真产物（fixture server 没有 WASM）。暴露的只有「Worker 从哪来」，
+// 结算 / abort / 看门狗全部仍是生产代码。
+if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) {
+  window.__pbReplaySource = { __setParseWorkerForTest };
+}
 
 function parseWorkerInstance() {
   if (parseWorker) return parseWorker;
   try {
-    const worker = new Worker(new URL('./playbackParse.worker.ts', import.meta.url), { type: 'module' });
-    worker.onmessage = (event) => {
-      const { id, json, error } = event.data || {};
-      const pending = parsePending.get(id);
-      if (!pending) return;
-      parsePending.delete(id);
-      if (error) pending.reject(new Error(error)); else pending.resolve(json);
-    };
-    // 崩溃/初始化失败：在飞请求全部失败并由调用方回退主线程，worker 置空待下次重建
-    worker.onerror = (event) => {
-      const err = new Error(event.message || 'playback parse worker crashed');
-      for (const pending of parsePending.values()) pending.reject(err);
-      parsePending.clear();
-      parseWorker = null;
-    };
+    // 注入点可以是工厂（每次调用产出**新的**假 Worker，模拟真实 Worker 在 terminate 后重建）
+    const worker = typeof testParseWorker === 'function' ? testParseWorker() : testParseWorker
+      ?? new Worker(new URL('./playbackParse.worker.ts', import.meta.url), { type: 'module' });
+    wireParseWorker(worker);
     parseWorker = worker;
   } catch { parseWorker = null; }
   return parseWorker;
@@ -127,22 +184,25 @@ async function fileCacheKey(fileObject, bytes) {
 /** 仅测试用：清空解析结果缓存（跨用例替换 WASM 桩时，同一份字节会产出不同结果） */
 export function __resetPlaybackJsonCacheForTest() { playbackJsonCache.clear(); }
 
-export async function loadFromLocalFile(fileObject) {
+export async function loadFromLocalFile(fileObject, signal) {
+  if (signal?.aborted) throw playbackParseAbortError()
   const arrayBuffer = await fileObject.arrayBuffer()
   // 进入摘要 / Worker / 回退解析前统一 bytes 类型：三条路径都只认 Uint8Array
   //（此前把 ArrayBuffer 直接当字节数组用，缓存指纹恒为常量 → 同名同 mtime 的不同
   //  回放会命中彼此的结果）。
   const bytes = new Uint8Array(arrayBuffer)
+  if (signal?.aborted) throw playbackParseAbortError()
   // 解析结果缓存：键 = metadata + 完整内容 SHA-256。重复打开同一场（换标签页/重进页面/
   // 重新加载同一文件）直接命中，省掉一次完整 WASM 解析；命中仍走主线程 JSON.parse
   // （约 15ms）与契约校验，形状门禁不绕过。
   const cacheKey = await fileCacheKey(fileObject, bytes)
+  if (signal?.aborted) throw playbackParseAbortError()
   const cachedJson = cacheKey === null ? undefined : playbackJsonCache.get(cacheKey)
   if (cachedJson !== undefined) {
     playbackJsonCache.delete(cacheKey); playbackJsonCache.set(cacheKey, cachedJson);   // LRU 触碰
     return enrichPlayback(validateAgentPlayback(JSON.parse(cachedJson)))
   }
-  const json = await parsePlaybackJsonOffThread(bytes)
+  const json = await parsePlaybackJsonOffThread(bytes, signal)
   if (cacheKey !== null) {
     playbackJsonCache.set(cacheKey, json)
     if (playbackJsonCache.size > PLAYBACK_JSON_CACHE_MAX) {
@@ -153,22 +213,44 @@ export async function loadFromLocalFile(fileObject) {
   // 在此抛出，而不是把缺字段的 v1 数据交给渲染层）
   return enrichPlayback(validateAgentPlayback(JSON.parse(json)))
 }
-async function parsePlaybackJsonOffThread(bytes) {
+async function parsePlaybackJsonOffThread(bytes, signal) {
+  if (signal?.aborted) throw playbackParseAbortError()
   const worker = parseWorkerInstance();
   if (worker) {
     try {
       return await new Promise((resolve, reject) => {
         const id = ++parseSeq;
-        parsePending.set(id, { resolve, reject });
+        const pending = { resolve, reject, signal, watchdog: null, onAbort: null };
+        parsePending.set(id, pending);
+        // 看门狗：Worker 不回包也不报错（装载链网络停滞一类）时不能无限「解析中」。
+        // 超时判定 Worker 不可信 → 整体 terminate，在途 / 排队请求一起失败（可重试，
+        // 下次请求重建 Worker）。
+        pending.watchdog = setTimeout(() => {
+          abandonParseWorker(new Error(
+            `playback 解析 Worker ${Math.round(PARSE_WATCHDOG_MS / 1000)}s 未回包，已重建（可重试）`,
+          ));
+        }, PARSE_WATCHDOG_MS);
+        // 被撤下的解析不能再占队列：该请求仍在 Worker 上（在途或排队）时整体 terminate；
+        // 已结算（正常完成）则无事发生。
+        pending.onAbort = () => {
+          if (parsePending.has(id)) abandonParseWorker(playbackParseAbortError())
+        };
+        signal?.addEventListener('abort', pending.onAbort, { once: true });
         // 不转移所有权：失败回退时主线程仍需这份字节（结构化克隆 1–2MB 成本可忽略）
         worker.postMessage({ id, bytes: playbackParsePayload(bytes) });
       });
     } catch (err) {
+      if (!parseWorker) {
+        // Worker 已被看门狗 / abort / onerror 整体放弃：按原样上抛——主动撤下（AbortError）
+        // 不得伪装成主线程重解析，崩溃重试也应从重建 Worker 开始。
+        throw err;
+      }
       console.warn('[playback] 解析 Worker 不可用，回退主线程解析:', err);
       parseWorker = null;
     }
   }
   const mod = await loadAgentWasmModule();
+  if (signal?.aborted) throw playbackParseAbortError()
   if (typeof mod.parsePlayback !== 'function') {
     throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
   }
@@ -192,12 +274,14 @@ async function enrichPlayback(data) {
 
 /**
  * 统一入口（playbackScene.loadData 委托至此）。
- * 仅接受 { kind:'local', file }；server 形态在 client-only 拓扑下不存在——
- * 显式拒绝而非静默吞掉，防止调用方误以为有服务端通道。
+ * 仅接受 { kind:'local', file, signal? }；server 形态在 client-only 拓扑下不存在——
+ * 显式拒绝而非静默吞掉，防止调用方误以为有服务端通道。`signal` 是解析任务的
+ * session 所有权：清空 / 换文件 / 销毁时由调用方 abort，被撤下的解析立即以
+ * AbortError 结束并让出 Worker 队列，不再无限排队。
  */
 export async function loadPlaybackData(source) {
   if (source && source.kind === 'local' && source.file) {
-    return loadFromLocalFile(source.file)
+    return loadFromLocalFile(source.file, source.signal)
   }
   throw new Error('回放数据源仅支持本地文件（client-only 拓扑，无服务端通道）')
 }

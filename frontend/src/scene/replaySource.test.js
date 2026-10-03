@@ -17,6 +17,7 @@ import {
 import {
   __resetMapIndexForTest,
   __resetPlaybackJsonCacheForTest,
+  __setParseWorkerForTest,
   exactArrayBuffer,
   loadFromLocalFile,
   loadPlaybackData,
@@ -382,6 +383,76 @@ describe('地图索引的失败语义', () => {
     } finally {
       configured.mockRestore(); json.mockRestore(); warn.mockRestore()
       __resetMapIndexForTest()
+    }
+  })
+})
+
+/**
+ * 解析生命周期（P0：replay parser lifecycle is session-owned）回归：
+ * 「A → 清空 / 换文件 → B」时被撤下的解析必须**真正结束**并让出 Worker 队列；
+ * Worker「不回包也不报错」（装载链网络停滞一类）时看门狗必须整体放弃并允许重建——
+ * 否则 3D 永远卡在「解析中」。happy-dom 造不出真 Worker：Worker 路径语义用注入的
+ * 假 Worker 验证，主线程回退路径用 resolver 桩验证。
+ */
+describe('解析生命周期：abort / 看门狗 / 迟到回包', () => {
+  it('abort：被撤下的解析立即以 AbortError 结束；同文件之后仍可正常解析（无残留状态）', async () => {
+    setWasm(v2Doc())
+    const controller = new AbortController()
+    const stale = loadPlaybackData({ kind: 'local', file: blob(), signal: controller.signal })
+    controller.abort()
+    await expect(stale).rejects.toMatchObject({ name: 'AbortError' })
+    // 同一份文件、新 signal：正常完成（撤下没有留下任何半成品状态）
+    const data = await loadPlaybackData({ kind: 'local', file: blob(), signal: new AbortController().signal })
+    expect(data.version).toBe(2)
+  })
+
+  it('abort 后到达的迟到回包被忽略（不产生未处理拒绝）；被撤下时 Worker 整体让位', async () => {
+    setWasm(v2Doc())
+    const fake = { postMessage: vi.fn(), terminate: vi.fn(), onmessage: null, onerror: null }
+    __setParseWorkerForTest(fake)
+    try {
+      const controller = new AbortController()
+      const stale = loadPlaybackData({ kind: 'local', file: blob(), signal: controller.signal })
+      // 等请求真正到达 Worker（摘要 / arrayBuffer 都是异步前置），再撤下
+      await vi.waitFor(() => { if (!fake.postMessage.mock.calls.length) throw new Error('not posted yet') })
+      const requestId = fake.postMessage.mock.calls[0][0].id
+      const staleSettled = expect(stale).rejects.toMatchObject({ name: 'AbortError' })   // 先挂 handler
+      controller.abort()   // 同步拒绝：上面已挂好，不会被记成 unhandled
+      await staleSettled
+      // 该请求仍在 Worker 上 → 整体放弃：terminate + Worker 置空（下次请求重建）
+      expect(fake.terminate).toHaveBeenCalledTimes(1)
+      // 迟到回包：pending 已被清空 → 被忽略，绝不悬挂
+      expect(() => fake.onmessage({ data: { id: requestId, json: JSON.stringify(v2Doc()) } })).not.toThrow()
+    } finally {
+      __setParseWorkerForTest(null)
+    }
+    const data = await loadPlaybackData({ kind: 'local', file: blob(), signal: new AbortController().signal })
+    expect(data.version).toBe(2)
+  })
+
+  it('看门狗：Worker 不回包也不报错 → 超时整体失败 + terminate；下次请求重建并完成', async () => {
+    setWasm(v2Doc())   // 看门狗放弃后的「下一次解析」走主线程回退，需要 WASM 桩
+    vi.useFakeTimers()
+    try {
+      const fake = { postMessage: vi.fn(), terminate: vi.fn(), onmessage: null, onerror: null }
+      __setParseWorkerForTest(fake)
+      const stuck = loadFromLocalFile(blob())
+      // 真实定时器下等请求停进 Worker（挂起状态），再切假定时器推进看门狗
+      await vi.waitFor(() => { if (!fake.postMessage.mock.calls.length) throw new Error('not posted yet') })
+      vi.useFakeTimers()
+      const watchdogSettled = expect(stuck).rejects.toThrow(/未回包/)   // 先挂 handler
+      await vi.advanceTimersByTimeAsync(120_000)
+      await watchdogSettled
+      expect(fake.terminate).toHaveBeenCalledTimes(1)
+      expect(fake.postMessage).toHaveBeenCalledTimes(1)   // 只有这一条请求，不会重发
+      __setParseWorkerForTest(null)
+      vi.useRealTimers()
+      // 看门狗放弃后，下一次解析从重建开始并正常完成（happy-dom 无真 Worker → 主线程回退）
+      const data = await loadFromLocalFile(blob())
+      expect(data.version).toBe(2)
+    } finally {
+      vi.useRealTimers()
+      __setParseWorkerForTest(null)
     }
   })
 })

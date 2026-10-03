@@ -185,44 +185,36 @@ print(payload)
 ' "$path" <<< "$body"
 }
 
-# First integer `id` anywhere in a JSON document; robust against the paged HoF
-# envelope without hard-coding its wrapper field names.
-e2e_first_id() {
+# First HoF record that explicitly advertises a replay. Public HoF records can
+# legitimately exist without an archived replay, so arbitrary ids are not valid
+# storage probes.
+e2e_first_replay_id() {
   local body="$1"
   python3 -c '
 import json
 import sys
 
-
-def first_id(node):
-    if isinstance(node, dict):
-        value = node.get("id")
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str) and value.isdigit():
-            return int(value)
-        for child in node.values():
-            found = first_id(child)
-            if found is not None:
-                return found
-    elif isinstance(node, list):
-        for child in node:
-            found = first_id(child)
-            if found is not None:
-                return found
-    return None
-
-
 try:
     document = json.load(sys.stdin)
 except ValueError:
     raise SystemExit(0)
-found = first_id(document)
-if found is not None:
-    print(found)
+
+items = document.get("items") if isinstance(document, dict) else None
+if not isinstance(items, list):
+    raise SystemExit(0)
+
+for item in items:
+    if not isinstance(item, dict) or item.get("replayAvailable") is not True:
+        continue
+    value = item.get("id")
+    if isinstance(value, int):
+        print(value)
+        break
+    if isinstance(value, str) and value.isdigit():
+        print(value)
+        break
 ' <<< "$body"
 }
-
 e2e_emit() {
   local name="$1" ok="$2" detail="${3:-}"
   if [ "$ok" = 1 ]; then
@@ -288,7 +280,7 @@ business_e2e_check() {
     e2e_emit business-profile 0 "profile read must answer 200 or a canonical 404, got HTTP $E2E_HTTP_STATUS"
     failures=1
   fi
-  e2e_http GET "http://business-api:8087/api/hof?page=1&size=1"
+  e2e_http GET "http://business-api:8087/api/hof?page=1&size=200"
   local hof_body="$E2E_HTTP_BODY" hof_status="$E2E_HTTP_STATUS"
   if [ "$hof_status" = 200 ]; then
     e2e_emit business-hof 1
@@ -296,14 +288,34 @@ business_e2e_check() {
     e2e_emit business-hof 0 "public HoF list must answer 200, got HTTP $hof_status"
     failures=1
   fi
-  # --- HoF replay originals are readable for a real migrated record ----------
-  local hof_id=""
-  [ "$hof_status" = 200 ] && hof_id="$(e2e_first_id "$hof_body")"
-  if [ -n "$hof_id" ] && e2e_download "http://business-api:8087/api/hof/$hof_id/replay" \
+  # --- HoF replay originals are readable for a record that advertises one ----
+  local hof_id="" hof_page=1 hof_total_pages=0 hof_scan_failed=0
+  if [ "$hof_status" = 200 ]; then
+    hof_id="$(e2e_first_replay_id "$hof_body")"
+    hof_total_pages="$(e2e_field "$hof_body" totalPages)"
+    [[ "$hof_total_pages" =~ ^[0-9]+$ ]] || hof_total_pages=1
+    while [ -z "$hof_id" ] && [ "$hof_page" -lt "$hof_total_pages" ]; do
+      hof_page=$((hof_page + 1))
+      e2e_http GET "http://business-api:8087/api/hof?page=$hof_page&size=200"
+      if [ "$E2E_HTTP_STATUS" != 200 ]; then
+        hof_scan_failed=1
+        break
+      fi
+      hof_id="$(e2e_first_replay_id "$E2E_HTTP_BODY")"
+    done
+  fi
+
+  if [ "$hof_scan_failed" = 1 ]; then
+    e2e_emit hof-replay-storage 0 "HoF replay candidate scan failed at page $hof_page (HTTP $E2E_HTTP_STATUS)"
+    failures=1
+  elif [ -z "$hof_id" ]; then
+    e2e_emit hof-replay-storage 0 "no HoF record advertises replayAvailable=true"
+    failures=1
+  elif e2e_download "http://business-api:8087/api/hof/$hof_id/replay" \
     && [ "$E2E_HTTP_STATUS" = 200 ] && [ "$E2E_DOWNLOAD_SIZE" -gt 0 ]; then
     e2e_emit hof-replay-storage 1
   else
-    e2e_emit hof-replay-storage 0 "no readable HoF replay original for id=${hof_id:-none} (HTTP $E2E_HTTP_STATUS, ${E2E_DOWNLOAD_SIZE}B); check the replay_data volume"
+    e2e_emit hof-replay-storage 0 "HoF record id=$hof_id advertises replayAvailable=true but its replay is unreadable (HTTP $E2E_HTTP_STATUS, ${E2E_DOWNLOAD_SIZE}B); check replay_data"
     failures=1
   fi
 
