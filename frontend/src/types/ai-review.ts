@@ -53,6 +53,39 @@ export interface AiReviewRunState {
   timedOut: boolean
 }
 
+/**
+ * AI 复盘失败态归类（design-language §10：每个失败必须说清发生了什么 + 下一步）。
+ *
+ * 界面只消费这个稳定归类，不直接渲染服务端 message / 异常字符串。
+ * 「登录 / 权限」不在这里：登录门禁属于宿主（`AiReviewWorkspacePane`），已登录但缺 realm role
+ * 是**前置权限态**（渲染前就确定，不是一次 run 的失败），两者都不经过本归类。
+ */
+export type AiFailureKind =
+  /** AI 服务当前并发/队列已满 */
+  | 'busy'
+  /** 服务端未配置 provider */
+  | 'not_configured'
+  /** 整体或单次调用超时 */
+  | 'timeout'
+  /** 上游/provider 失败、网络不可达 */
+  | 'upstream'
+  /** 返回体不符合契约（schema / 空结果 / 断流） */
+  | 'malformed'
+  /** 用户主动取消（不是错误） */
+  | 'cancelled'
+  /** 其它客户端侧失败 */
+  | 'client'
+
+export interface AiFailure {
+  kind: AiFailureKind
+  /** 稳定错误码（服务端契约）；无则为空串 */
+  code: string
+  /** 诊断 ID（服务端 ApiError id 或 correlationId） */
+  id: string
+  /** 已本地化的用户可读文案 */
+  message: string
+}
+
 export interface AiReviewStageEvent {
   type: 'call1_start' | 'call1_done' | 'evidence_done'
 }

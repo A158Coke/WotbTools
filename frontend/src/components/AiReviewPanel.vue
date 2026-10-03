@@ -3,6 +3,10 @@
   不负责页面级登录门禁/自动跳转（由宿主入口把关）。HTTP endpoint / auth / canonical
   error handling 由 api/ai-review.ts 统一拥有；本组件只编排 run lifecycle 与 SSE 展示状态。
   输入是 client canonical AI projection（battle + projection，replay-local/ai），不是完整回放。
+
+  失败态（design-language §10：永远不能静默失败，必须说明发生了什么 + 下一步）：
+  登录/权限、AI 服务不可达、服务繁忙、超时、Provider 失败、返回格式异常、已取消 —— 各自独立归类，
+  可重试的给「重试」，取消之类的非错误只给中性提示，不渲染成 danger。
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -13,10 +17,19 @@ import type { ReplayAuthSession } from '../api/replay-capabilities.js'
 import { toAiReviewLocale } from '../types/ai-review.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { ApiError, normalizeApiError } from '../utils/http.js'
-import type { AiReviewCapability, AiReviewProjection, AiReviewResult, AiReviewRunState } from '../types/ai-review.js'
-import type { AiReviewEvent } from '../types/ai-review.js'
+import type {
+  AiFailure,
+  AiFailureKind,
+  AiReviewCapability,
+  AiReviewEvent,
+  AiReviewProjection,
+  AiReviewResult,
+  AiReviewRunState,
+} from '../types/ai-review.js'
 import { createAiReviewSseParser } from '../utils/aiReviewSse.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
+import AppButton from './AppButton.vue'
+import Banner from './Banner.vue'
 import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 
 type AuthTokenParsed = { realm_access?: { roles?: unknown } } | null
@@ -32,13 +45,14 @@ const props = defineProps({
   projectionError: { type: String, default: '' }
 })
 
-const emit = defineEmits(['seek'])
+const emit = defineEmits(['seek', 'rebuild-projection'])
 
 const { t, te, locale } = useI18n()
 const auth = useAuth() as AiPanelAuth
 const { tokenParsed } = auth
 
-// AI Review 权限：已登录 + wotbtools-user 或 wotbtools-admin
+// AI Review 权限：已登录 + wotbtools-user 或 wotbtools-admin。
+// 登录成功不等于授权成功——realm role 缺失必须是**显式权限态**，不能静默隐藏入口。
 const canUseAiReview = computed(() => {
   const roles = tokenParsed.value?.realm_access?.roles
   return Array.isArray(roles) && (
@@ -56,8 +70,7 @@ const projectionReady = computed(() => !!props.projection)
 const projectionMessage = computed(() =>
   props.projectionError || t('workspace.dataset_preparing'))
 
-const error = ref('')
-const errorId = ref('')
+const failure = ref<AiFailure | null>(null)
 const copiedErrorId = ref(false)
 const analyzing = ref(false)
 const analysisResult = ref<AiReviewResult | null>(null)
@@ -76,6 +89,10 @@ const partialAnalysis = ref('')
 // AI 复盘请求生命周期：客户端安全超时 + 取消（AbortController + 后端 cancel 端点）。
 // 超时链对齐：后端整体 deadline=1100s < nginx analyze 1120s；前端 1100s 在 nginx 之前给出干净 AI_TIMEOUT。
 const AI_ANALYZE_TIMEOUT_MS = 1_100_000
+/** 确定性失败重试没有意义（provider 未配置）：不给重试按钮，避免假装可恢复。 */
+const NOT_RETRYABLE: ReadonlySet<AiFailureKind> = new Set<AiFailureKind>(['not_configured'])
+const canRetry = computed(() => !!failure.value && !NOT_RETRYABLE.has(failure.value.kind))
+
 /**
  * 当前 AI analysis run：每次 runAnalyze 创建独立 run context。
  * Dataset identity 变化只取消旧 activeRun；stale run 绝不修改新 generation 的状态。
@@ -94,15 +111,15 @@ watch(() => [props.file, props.projection], () => {
   activeRun = null
   analyzing.value = false
   resetResults()
-  error.value = ''
-  errorId.value = ''
+  failure.value = null
   copiedErrorId.value = false
 })
 
 async function copyErrorId() {
-  if (!errorId.value || typeof navigator === 'undefined' || !navigator.clipboard) return
+  const id = failure.value?.id
+  if (!id || typeof navigator === 'undefined' || !navigator.clipboard) return
   try {
-    await navigator.clipboard.writeText(errorId.value)
+    await navigator.clipboard.writeText(id)
     copiedErrorId.value = true
   } catch {
     copiedErrorId.value = false
@@ -150,6 +167,44 @@ function analyzeRequest(correlationId: string) {
   })
 }
 
+/**
+ * 失败归类：稳定错误码（服务端契约）→ 用户可读文案 + 是否给重试动作。
+ *
+ * 服务端未给 errorCode 的形态（网关 5xx HTML、断流、网络失败）按 status / 异常兜底，
+ * 不允许落回无信息的「未知错误」。
+ */
+function classify(e: unknown, run: AiReviewRunState): AiFailure {
+  const normalized = normalizeApiError(e)
+  const code = normalized.code || ''
+  const id = normalized.id || normalized.traceId || ''
+  const known = (kind: AiFailureKind, key: string): AiFailure =>
+    ({ kind, code, id, message: t(key) })
+
+  if (run.cancelRequested) return { kind: 'cancelled', code, id, message: t('recon.cancelled') }
+  if (run.timedOut || code === 'AI_TIMEOUT') return known('timeout', 'recon.errors.AI_TIMEOUT')
+  // 确定性分类只在服务端给了明确语义时覆盖 canonical label；status 兜底交给 apiErrorLabel，
+  // 避免把「后端说禁止」误写成「你的账号没有权限」这类我们其实不知道的结论。
+  if (code === 'AI_REVIEW_BUSY') return known('busy', 'recon.errors.AI_REVIEW_BUSY')
+  if (code === 'AI_NOT_CONFIGURED') return known('not_configured', 'recon.errors.AI_NOT_CONFIGURED')
+  if (code === 'AI_EMPTY_RESPONSE') return known('malformed', 'recon.errors.AI_EMPTY_RESPONSE')
+  if (code === 'AI_RESPONSE_INVALID') return known('malformed', 'recon.errors.AI_RESPONSE_INVALID')
+  if (code === 'AI_REVIEW_SCHEMA_FAILED' || code === 'AI_REVIEW_GROUNDING_FAILED') {
+    return known('malformed', `recon.errors.${code}`)
+  }
+  if (e instanceof ApiError) {
+    // 服务端给了契约错误码且 i18n 有对应文案（含 `errors.<code 小写>` 约定）：沿用 canonical label
+    // （保留 errorCode → 文案的稳定映射与诊断 ID）；只有文案缺失时才退到通用归类。
+    const hasLocaleLabel = te(`recon.errors.${code}`) || te(`errors.${code.toLowerCase()}`)
+      || te(`api_errors.${code}`)
+    if (hasLocaleLabel) return { kind: 'upstream', code, id, message: apiErrorLabel(t, te, normalized) }
+  }
+  if (code === 'NETWORK_ERROR' || normalized.status === 502 || normalized.status === 504) {
+    return known('upstream', 'recon.errors.AI_UPSTREAM_UNAVAILABLE')
+  }
+  const runtimeError = e as AiRuntimeError
+  return { kind: 'client', code, id, message: runtimeError.message || t('recon.errors.AI_RESPONSE_INVALID') }
+}
+
 async function runAnalyze() {
   if (analyzing.value) return
   if (!projectionReady.value) return
@@ -163,8 +218,7 @@ async function runAnalyze() {
   }
   activeRun = run
   analyzing.value = true
-  error.value = ''
-  errorId.value = ''
+  failure.value = null
   copiedErrorId.value = false
   analysisResult.value = null
   progressStage.value = 'call1'
@@ -179,22 +233,17 @@ async function runAnalyze() {
     if (activeRun !== run) return
     const receivedDone = await readAnalyzeStream(r, run)
     if (!receivedDone && !run.cancelRequested) {
-      throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
+      // 断流（响应 200 但从未给 done）不是网络失败，是契约不满足：必须归到「返回格式异常」。
+      throw new ApiError({
+        errorCode: 'AI_RESPONSE_INVALID',
+        status: 200,
+        id: run.correlationId,
+        retryable: true,
+      })
     }
   } catch (e) {
     if (activeRun !== run) return
-    const runtimeError = e as AiRuntimeError
-    const normalized = normalizeApiError(e)
-    errorId.value = normalized.id || normalized.traceId || ''
-    if (normalized.code === 'REQUEST_ABORTED') {
-      error.value = run.timedOut ? t('recon.errors.AI_TIMEOUT') : t('recon.cancelled')
-    } else if (run.cancelRequested) {
-      error.value = t('recon.cancelled')
-    } else {
-      error.value = e instanceof ApiError || e instanceof TypeError
-        ? apiErrorLabel(t, te, normalized)
-        : (runtimeError.message || String(runtimeError))
-    }
+    failure.value = classify(e, run)
   } finally {
     if (run.timeoutTimer) clearTimeout(run.timeoutTimer)
     run.timeoutTimer = null
@@ -301,39 +350,65 @@ onBeforeUnmount(() => {
   <div class="ai-review-panel">
     <p v-if="!file && !projectionReady" class="ws-note">{{ $t('workspace.ai_empty') }}</p>
     <template v-else>
-      <div v-if="canUseAiReview" class="ai-action-row">
+      <!-- 已登录但缺 realm role：显式权限态，不静默隐藏入口（design-language §10「权限」）。 -->
+      <Banner v-if="!canUseAiReview" tone="warning" data-testid="ai-permission-required">
+        <p>{{ $t('recon.permission_missing') }}</p>
+      </Banner>
+      <div v-else class="ai-action-row">
         <ReplayAnalysisAction :analyzing="analyzing" :disabled="!projectionReady" @analyze="runAnalyze" @cancel="cancelAnalyze" />
       </div>
 
-      <div v-if="!projectionReady" class="ai-projection-status" data-test="ai-projection-status">
-        <span v-if="!projectionError" class="stream-spinner" aria-hidden="true"></span>
-        <span :class="{ 'ai-projection-error': !!projectionError }">{{ projectionMessage }}</span>
-      </div>
+      <!-- 本地 AI 输入准备：准备中为 info，失败为 danger（本地解析生命周期，不是模型错误）。
+           权限缺失时也渲染：否则「什么都没发生」无法归因。 -->
+      <Banner
+        v-if="!projectionReady"
+        :tone="projectionError ? 'danger' : 'info'"
+        data-test="ai-projection-status"
+      >
+        <p class="ai-projection-message">{{ projectionMessage }}</p>
+        <template v-if="projectionError" #actions>
+          <AppButton size="sm" variant="ghost" data-testid="ai-projection-retry" @click="emit('rebuild-projection')">
+            {{ $t('workspace.pane_retry') }}
+          </AppButton>
+        </template>
+      </Banner>
 
-      <div v-if="error" class="ai-error" data-test="ai-error">
-        <p class="error">{{ error }}</p>
-        <div v-if="errorId" class="ai-error-id">
-          <span>{{ $t('errors.diagnostic_id', { id: errorId }) }}</span>
-          <button type="button" class="btn-sm" @click="copyErrorId">
+      <Banner
+        v-if="failure"
+        :tone="failure.kind === 'cancelled' ? 'info' : 'danger'"
+        data-test="ai-error"
+      >
+        <p class="ai-failure-message">{{ failure.message }}</p>
+        <p v-if="failure.kind === 'upstream' || failure.kind === 'busy'" class="ai-failure-hint">
+          {{ $t('recon.failure_scope_note') }}
+        </p>
+        <div v-if="failure.id" class="ai-failure-id">
+          <span>{{ $t('errors.diagnostic_id', { id: failure.id }) }}</span>
+          <button type="button" class="ai-failure-copy" @click="copyErrorId">
             {{ copiedErrorId ? $t('errors.diagnostic_id_copied') : $t('errors.copy_diagnostic_id') }}
           </button>
         </div>
-      </div>
+        <template v-if="canRetry" #actions>
+          <AppButton size="sm" data-testid="ai-retry" @click="runAnalyze">{{ $t('workspace.pane_retry') }}</AppButton>
+        </template>
+      </Banner>
 
-      <div v-if="analyzing" class="panel streaming-panel">
-        <div class="stream-status">
+      <div v-if="analyzing" class="ai-streaming" data-testid="ai-streaming">
+        <div class="ai-stream-status">
           <span class="stream-spinner" aria-hidden="true"></span>
-          <span class="stream-stage">
-            {{ $t(`recon.stages.${progressStage || 'call1'}`) }}
-          </span>
+          <span>{{ $t(`recon.stages.${progressStage || 'call1'}`) }}</span>
         </div>
-        <div v-if="partialAnalysis" class="stream-text">{{ partialAnalysis }}</div>
+      </div>
+      <!-- 断流/失败时已到达的正文不丢弃：明确标注不完整，用户仍可读已生成部分。 -->
+      <div v-if="partialAnalysis" class="ai-stream-text" data-testid="ai-partial">
+        <p v-if="failure" class="ai-partial-note">{{ $t('recon.partial_incomplete') }}</p>
+        {{ partialAnalysis }}
       </div>
 
       <AnalysisResultPanel v-if="analysisResult" :result="analysisResult" @seek="(sec) => emit('seek', sec)" />
-      <p v-if="limitedTimelineNote" class="ai-capability-note" data-test="ai-capability-limited">
-        {{ limitedTimelineNote }}
-      </p>
+      <Banner v-if="limitedTimelineNote" tone="warning" data-test="ai-capability-limited">
+        <p>{{ limitedTimelineNote }}</p>
+      </Banner>
     </template>
   </div>
 </template>
@@ -343,64 +418,63 @@ onBeforeUnmount(() => {
   width: min(1100px, 100%);
   margin-inline: auto;
 }
-.ai-capability-note {
-  margin: 10px 0;
-  padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--warn-text) 40%, var(--border));
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--warn-text) 10%, var(--bg-card));
-  color: var(--warn-text);
-  font-size: .84rem;
-}
 .ai-action-row {
   display: flex;
   align-items: center;
-  margin: 16px 0;
+  margin-block: var(--space-4);
 }
-.ws-note { margin: 18px 4px; color: var(--text-muted); font-size: .85rem; }
-.ai-projection-status {
+.ws-note {
+  margin: var(--space-4) var(--space-1);
+  color: var(--color-text-secondary);
+  font: var(--type-body);
+}
+.ai-projection-message { font: var(--type-body); }
+.ai-failure-message { font: var(--type-body); }
+.ai-failure-hint { color: var(--color-text-secondary); font: var(--type-caption); }
+.ai-failure-id {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 16px 0;
-  font-size: .9rem;
-  color: var(--text-label);
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
 }
-.ai-projection-status .ai-projection-error { color: var(--error); }
-.streaming-panel { margin-top: 16px; }
-.stream-status {
+.ai-failure-copy {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  cursor: pointer;
+}
+.ai-streaming { margin-top: var(--space-4); }
+.ai-stream-status {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: .88rem;
-  color: var(--text-label);
-  margin-bottom: 8px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
 }
 .stream-spinner {
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
+  width: var(--space-3);
+  height: var(--space-3);
+  border: 2px solid var(--color-border-subtle);
+  border-top-color: var(--color-accent);
+  border-radius: var(--radius-full);
   animation: stream-spin 0.9s linear infinite;
   flex-shrink: 0;
 }
 @keyframes stream-spin { to { transform: rotate(360deg); } }
-.stream-text {
-  white-space: pre-wrap;
-  line-height: 1.6;
-  font-size: .9rem;
-  color: var(--text);
+.ai-stream-text {
+  margin-top: var(--space-3);
   max-height: 320px;
   overflow-y: auto;
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  white-space: pre-wrap;
   word-break: break-word;
 }
-.ai-error-id {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: .82rem;
-}
+.ai-partial-note { color: var(--color-text-secondary); font: var(--type-caption); }
 </style>

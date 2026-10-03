@@ -492,6 +492,33 @@ RoundFinished / Supremacy*），由 `BattleStateReconstructor`（纯事件归约
 
 ---
 
+## 前端交付与失败态契约（2026-10，AI Review 生产可用性）
+
+AI Review 是正式开放能力，入口没有 maintenance gate / admin-only gate：`?view=ai-review` 与
+`?view=replay` 共用 `ReplayWorkspace`，`AiReviewWorkspacePane` 直接挂载（匿名只显示登录提示）。
+
+**懒加载与部署的关系（生产可用性根因）**：`AiReviewWorkspacePane` / `BattlePlaybackPanel` 是
+`ReplayWorkspace` 的懒加载 chunk（`frontend/src/utils/lazyModule.ts` 的 `defineLazyModule`）。Vite 产物按内容
+哈希命名，而 TX 部署用 `docker compose up -d --force-recreate` 整体替换镜像里的 `/usr/share/nginx/html`
+（`deploy/tx/deploy.sh`），**上一次部署的 chunk 文件随即消失**。因此「部署前打开、部署后仍然存活」的页面
+进入这两个能力时必然 404。`index.html` 固定 `no-store`，刷新一次即拿到与新部署一致的 bundle——这是唯一
+正确的补救动作。边界必须满足：
+
+- 动态 import 失败**不得中断整页渲染**（`defineAsyncComponent` 的 `onError` 返回 `false`），否则工作台会塌成空壳；
+- 失败态复用 `Banner` + `AppButton`（design-language §7/§10），说明发生了什么 + 下一步；
+- 「重新加载」拿新 bundle（内容哈希决定旧 URL 不可恢复），「重试」只覆盖网络瞬断这一类可原地恢复的情况。
+
+**失败态分类**（`AiFailure.kind`，`frontend/src/types/ai-review.ts`）：`busy` / `not_configured` /
+`timeout` / `upstream` / `malformed` / `cancelled` / `client`；`not_configured` 是确定性失败，不提供重试
+按钮，`cancelled` 渲染为中性 info 而不是 danger。**登录与权限不在这套归类里**：登录门禁属于宿主
+（`AiReviewWorkspacePane`，未登录显示登录入口），已登录但缺 realm role 是渲染前就确定的**前置权限态**
+（`data-testid="ai-permission-required"`，说明缺什么并给下一步），不是一次 run 的失败。权限判定因此存在
+两层且都必须成立：前端（`tokenParsed.realm_access.roles` 含 `wotbtools-user` 或 `wotbtools-admin`）与
+ai-service（`AiServiceSecurityConfig` 的 `/api/ai/**` `hasAnyRole`）。界面只消费 `kind` + 本地化文案，
+不渲染服务端 message 或异常字符串。
+
+---
+
 ## 历史演进（机制已删除，见 `HISTORY.md`）
 
 > 本节只记录 2026-10 AI domain contract 收敛（S6/S7）中**已删除**的机制，供追溯与理解历史测试命名；
