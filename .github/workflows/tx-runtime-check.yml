@@ -12,6 +12,15 @@ concurrency:
   cancel-in-progress: false
   queue: max
 
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/tx-runtime-check.yml
+    deploy/check-production-freshness.sh
+    deploy/tx/runtime-check.sh
+    deploy/tx/runtime-check-lib.sh
+    deploy/tx/deploy.sh
+    deploy/tx/with-deploy-lock.sh
+
 jobs:
   runtime_check:
     name: TX_RUNTIME_READY
@@ -19,18 +28,46 @@ jobs:
     timeout-minutes: 15
     environment: tx-production
     steps:
-      - name: Reject non-main dispatch
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Freeze exact current main
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          [ "$EVENT_REF" = refs/heads/main ] || {
-            echo 'TX runtime check must be dispatched from main.' >&2
-            exit 1
-          }
+          bash deploy/check-production-freshness.sh "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
-      - name: Run read-only TX runtime gate
+      - name: Stage exact-SHA verifier bundle
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/tx/runtime-check.sh,deploy/tx/runtime-check-lib.sh,deploy/tx/deploy.sh,deploy/tx/with-deploy-lock.sh
+          target: /tmp/wotb-tx-runtime-check-${{ github.run_id }}-${{ github.run_attempt }}
+          strip_components: 2
+          overwrite: true
+
+      - name: Reject stale main before runtime check
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bash deploy/check-production-freshness.sh "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+      - name: Run exact-SHA read-only TX runtime gate
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
@@ -38,13 +75,24 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 12m
-          envs: TX_RUNTIME_ROOT,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET
+          envs: VERIFIER_DIR,WOTB_TX_DIR,TX_RUNTIME_ROOT,TX_IMAGE_REGISTRY_PREFIX,KC_POSTGRES_ADMIN_USER,KC_POSTGRES_ADMIN_PASSWORD,KC_BOOTSTRAP_ADMIN_PASSWORD,KC_DB_USERNAME,KC_DB_PASSWORD,WG_APPLICATION_ID,CADDY_ACME_EMAIL,TX_BUSINESS_POSTGRES_ADMIN_USER,TX_BUSINESS_POSTGRES_ADMIN_PASSWORD,TX_BUSINESS_DB_NAME,TX_BUSINESS_DB_USERNAME,TX_BUSINESS_DB_PASSWORD,KEYCLOAK_ADMIN_CLIENT_SECRET,KEYCLOAK_E2E_CLIENT_SECRET
           script: |
             set -Eeuo pipefail
-            runtime=/opt/wotb-tx/deploy/runtime-check.sh
-            lock_wrapper=/opt/wotb-tx/deploy/with-deploy-lock.sh
-            test -f "$runtime"
-            test -f "$lock_wrapper"
+            case "$VERIFIER_DIR" in
+              /tmp/wotb-tx-runtime-check-*) ;;
+              *) echo "Unsafe verifier directory: $VERIFIER_DIR" >&2; exit 2 ;;
+            esac
+            test -d "$VERIFIER_DIR"
+            test ! -L "$VERIFIER_DIR"
+
+            runtime="$VERIFIER_DIR/runtime-check.sh"
+            lock_wrapper="$VERIFIER_DIR/with-deploy-lock.sh"
+            deploy_helper="$VERIFIER_DIR/deploy.sh"
+            runtime_lib="$VERIFIER_DIR/runtime-check-lib.sh"
+            for file in "$runtime" "$lock_wrapper" "$deploy_helper" "$runtime_lib"; do
+              test -f "$file"
+              test ! -L "$file"
+            done
 
             running_image() {
               local service="$1" id
@@ -79,6 +127,8 @@ jobs:
             [ "$status" -eq 0 ] || exit "$status"
             grep -Fxq 'TX_RUNTIME_READY' <<< "$output"
         env:
+          VERIFIER_DIR: /tmp/wotb-tx-runtime-check-${{ github.run_id }}-${{ github.run_attempt }}
+          WOTB_TX_DIR: /opt/wotb-tx
           TX_RUNTIME_ROOT: /opt/wotb-tx
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
           KC_POSTGRES_ADMIN_USER: kc_admin
@@ -95,3 +145,25 @@ jobs:
           TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
           KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
           KEYCLOAK_E2E_CLIENT_SECRET: ${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}
+
+      - name: Clean up exact-SHA verifier bundle
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          envs: VERIFIER_DIR
+          script: |
+            set -euo pipefail
+            case "$VERIFIER_DIR" in
+              /tmp/wotb-tx-runtime-check-*) ;;
+              *) echo "Unsafe verifier directory: $VERIFIER_DIR" >&2; exit 2 ;;
+            esac
+            if [ -d "$VERIFIER_DIR" ] && [ ! -L "$VERIFIER_DIR" ]; then
+              rm -f --                 "$VERIFIER_DIR/runtime-check.sh"                 "$VERIFIER_DIR/runtime-check-lib.sh"                 "$VERIFIER_DIR/deploy.sh"                 "$VERIFIER_DIR/with-deploy-lock.sh"
+              rmdir -- "$VERIFIER_DIR"
+            fi
+        env:
+          VERIFIER_DIR: /tmp/wotb-tx-runtime-check-${{ github.run_id }}-${{ github.run_attempt }}

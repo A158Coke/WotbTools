@@ -89,7 +89,7 @@ curl -fsS https://wotbtools.com/ >/dev/null
 curl -fsS https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration >/dev/null
 ```
 
-通过 GitHub Actions 手动触发 `.github/workflows/tx-runtime-check.yml`（`Ops / TX Runtime Check`，必须从 `main` dispatch）。该 workflow 只通过现有 `tx-production` Secrets/Variables 注入运行时检查所需凭据，从正在运行的 Frontend / Business API 容器读取当前 image ref，并在 TX host lock 下执行既有 `/opt/wotb-tx/deploy/runtime-check.sh`；要求最终输出 `TX_RUNTIME_READY`。它不得 stage/deploy/recreate/stop 服务、执行 OpenTofu apply、修改 DNS，也不得关闭 TLS 验证或打印凭据。
+通过 GitHub Actions 手动触发 `.github/workflows/tx-runtime-check.yml`（`Ops / TX Runtime Check`，必须从 `main` dispatch）。workflow 先确认触发 SHA 仍是 exact current `main`，再把该 SHA 的 `runtime-check.sh`、`runtime-check-lib.sh`、`deploy.sh`、`with-deploy-lock.sh` 四个 verifier/helper 文件临时复制到 TX `/tmp/wotb-tx-runtime-check-<run>-<attempt>`；检查时显式使用 `WOTB_TX_DIR=/opt/wotb-tx`，因此 verifier 代码来自当前 Git SHA，而 Compose、容器、卷、marker 与业务数据仍读取真实 TX runtime。它通过现有 `tx-production` Secrets/Variables 注入只读检查所需凭据，从正在运行的 Frontend / Business API 容器读取当前 image ref，并在 TX host lock 下执行 staged verifier；完成后清理临时 bundle，要求最终输出 `TX_RUNTIME_READY`。它不得覆盖 `/opt/wotb-tx/deploy` 下的 live verifier 或 stage 生产 Compose/config/data，不得 deploy/recreate/stop 服务、执行 OpenTofu apply、修改 DNS，也不得关闭 TLS 验证或打印凭据。
 
 验收记录应保存部署 SHA、actual bindings、TX2/Yecao probe、public TLS 与 E2E 结果；所有条件同时通过且 workload 未移动后才记为 K6A COMPLETE。
 
