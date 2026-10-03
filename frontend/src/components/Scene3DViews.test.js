@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-// 3D 视图的 WebGL 预检与加载状态（审计 3D-23）：AgentArmorView / AgentReplay3D / Scene3DStatus。
+// 3D 视图的 WebGL 预检与加载状态（审计 3D-23）：AgentArmorView（装甲查看器）/ Scene3DStatus。
+// 回放侧的 3D 面板（Replay3DPane）有独立测试文件。
 // WebGL 通过 HTMLCanvasElement.prototype.getContext 模拟；three.js 场景内核整体 mock。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -16,21 +17,7 @@ vi.mock('../scene/tankViewer.js', () => ({
   }),
 }))
 
-const playback = vi.hoisted(() => ({ api: null, init: null }))
-vi.mock('../scene/playbackScene.js', () => {
-  playback.init = vi.fn((container, store) => {
-    playback.api = {
-      store,
-      loadData: vi.fn(async () => {}),
-      destroy: vi.fn(),
-      setQuality: vi.fn(),
-    }
-    return playback.api
-  })
-  return { initPlayback: playback.init, QUALITY_PRESETS: { low: { label: 'Low' } } }
-})
 vi.mock('../scene/assetProvider.js', () => ({ assetProvider: { configured: () => true } }))
-vi.mock('../scene/replaySource.js', () => ({ loadPlaybackData: vi.fn() }))
 
 vi.mock('../composables/useBreakpoint.js', async () => {
   const { computed } = await import('vue')
@@ -61,8 +48,6 @@ async function mountWithRouter(component, query) {
 beforeEach(() => {
   viewer.calls.length = 0
   viewer.retryResult = true
-  playback.api = null
-  playback.init?.mockClear()
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -160,54 +145,14 @@ describe('AgentArmorView WebGL 预检与加载状态', () => {
   })
 })
 
-describe('AgentReplay3D WebGL 预检与加载状态', () => {
-  async function mountReplay() {
-    const { default: AgentReplay3D } = await import('./AgentReplay3D.vue')
-    return mountWithRouter(AgentReplay3D, { view: 'agent-replay' })
-  }
-
-  it('不支持 WebGL：不初始化场景，显示说明', async () => {
-    mockWebGL('none')
-    const wrapper = await mountReplay()
-    expect(playback.init).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="scene3d-unsupported"]').text()).toContain('scene3d.webgl_unavailable')
-  })
-
-  it('解析中为不确定进度，资产阶段显示资产进度；失败后可重试同一文件或关闭', async () => {
-    mockWebGL('webgl2')
-    const wrapper = await mountReplay()
-    expect(playback.init).toHaveBeenCalledTimes(1)
-    const { store } = playback.api
-
-    let finish
-    playback.api.loadData.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
-    const input = wrapper.find('input[type="file"]')
-    const file = new File(['x'], 'battle.wotbreplay')
-    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
-    await input.trigger('change')
-    await nextTick()
-    expect(wrapper.find('[data-testid="scene3d-loading"]').text()).toContain('agentReplay.parsing')
-    expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBeUndefined()
-
-    store.assetStage = true
-    store.assetProgress = 0.3
-    await nextTick()
-    expect(wrapper.find('[data-testid="scene3d-loading"]').text()).toContain('agentReplay.loading_assets')
-    expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('30')
-
-    store.err = 'bad replay'
-    store.assetStage = false
-    finish()
-    await flushPromises()
-    expect(wrapper.find('[data-testid="scene3d-error"]').text()).toContain('agentReplay.error_load')
-    await wrapper.find('[data-testid="scene3d-retry"]').trigger('click')
-    await flushPromises()
-    expect(playback.api.loadData).toHaveBeenLastCalledWith({ kind: 'local', file })
-
-    store.err = 'still bad'
-    await nextTick()
-    await wrapper.find('[data-testid="scene3d-dismiss"]').trigger('click')
-    expect(store.err).toBe('')
-    expect(wrapper.find('[data-testid="scene3d-error"]').exists()).toBe(false)
+describe('回放工作台能力归属', () => {
+  it('3D / 射击深链落到工作台能力，不再是独立页面', async () => {
+    const { VIEW_COMPONENTS, replayInitialCapability } = await import('../app/viewRegistry.js')
+    expect(VIEW_COMPONENTS['agent-replay']).toBe(VIEW_COMPONENTS.replay)
+    expect(VIEW_COMPONENTS['agent-shots']).toBe(VIEW_COMPONENTS.replay)
+    expect(replayInitialCapability('agent-replay')).toBe('3d')
+    expect(replayInitialCapability('agent-shots')).toBe('shots')
+    // 装甲查看器仍是独立页面（坦克百科侧）
+    expect(VIEW_COMPONENTS['agent-armor']).not.toBe(VIEW_COMPONENTS.replay)
   })
 })
