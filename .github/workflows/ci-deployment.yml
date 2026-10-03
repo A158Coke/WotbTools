@@ -70,7 +70,7 @@ jobs:
             echo 'an invalid staged Caddyfile was accepted' >&2
             exit 1
           fi
-          grep -q 'must reverse_proxy wotb-frontend:80' "$RUNNER_TEMP/broken-caddy.log" || {
+          grep -q 'must reverse_proxy {$CADDY_FRONTEND_UPSTREAM}' "$RUNNER_TEMP/broken-caddy.log" || {
             echo 'the invalid Caddyfile was rejected for an unexpected reason:' >&2
             cat "$RUNNER_TEMP/broken-caddy.log" >&2
             exit 1

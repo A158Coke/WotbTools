@@ -115,7 +115,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 30m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,CADDY_ACME_EMAIL
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,CADDY_ACME_EMAIL,CADDY_FRONTEND_UPSTREAM,CADDY_KEYCLOAK_UPSTREAM
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -221,3 +221,6 @@ jobs:
           WOTB_DEPLOY_SERVICE: caddy
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
+          # K6B-1 does not move public ingress consumers yet.
+          CADDY_FRONTEND_UPSTREAM: wotb-frontend:80
+          CADDY_KEYCLOAK_UPSTREAM: keycloak:8080

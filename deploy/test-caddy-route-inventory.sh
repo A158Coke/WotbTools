@@ -62,6 +62,8 @@ guard() {
   local dir="$1" rc=0
   rm -f "$stub_log"
   PATH="$work/bin:$PATH" STUB_DOCKER_LOG="$stub_log" \
+    CADDY_FRONTEND_UPSTREAM="${CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}" \
+    CADDY_KEYCLOAK_UPSTREAM="${CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}" \
     bash "$ROOT/deploy/tx/validate-caddy-config.sh" "$dir" >"$work/out.log" 2>&1 || rc=$?
   release_compose_network "$dir"
   return "$rc"
@@ -114,6 +116,18 @@ rejects() {
 # Komodo public ingress added for K2.
 accepts 'repository Caddyfile' "$(caddyfile repository)"
 
+wg_upstreams="$(caddyfile wg-upstreams)"
+CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081 CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080 \
+  accepts 'reviewed TX1 WireGuard upstreams' "$wg_upstreams"
+
+unsafe_upstream="$(caddyfile unsafe-upstream)"
+if CADDY_FRONTEND_UPSTREAM=frontend.example.invalid:8081 guard "$unsafe_upstream"; then
+  echo 'invalid Caddy logical endpoint was accepted: public frontend upstream' >&2
+  exit 1
+fi
+[ ! -s "$stub_log" ] || { echo 'runtime validation ran despite an unsafe Caddy endpoint' >&2; exit 1; }
+grep -q 'CADDY_FRONTEND_UPSTREAM must be' "$work/out.log"
+
 # --- komodo.wotbtools.com is mandatory and must target the WireGuard address ---
 missing="$(caddyfile komodo-missing)"
 awk '/^komodo\.wotbtools\.com \{/ { skip = 1 }
@@ -158,8 +172,11 @@ rejects 'android callback route removed' "$callback_missing" \
 
 callback_proxied="$(caddyfile android-callback-proxied)"
 # The route keeps a respond (so only the "answer from Caddy" rule can reject it)
-# but also proxies the same path into Keycloak.
-awk '/^\thandle \/android\/oauth\/callback \{/ { print; print "\t\treverse_proxy keycloak:8080"; next }
+# but also proxies the same path. The injected upstream uses the reviewed logical
+# placeholder, not a hard-coded host: otherwise the fixture would be rejected by
+# the auth.wotbtools.com catch-all rule first and stop testing the callback rule
+# it exists for.
+awk '/^\thandle \/android\/oauth\/callback \{/ { print; print "\t\treverse_proxy {$CADDY_KEYCLOAK_UPSTREAM}"; next }
      { print }' "$ROOT/deploy/tx/Caddyfile" > "$callback_proxied/Caddyfile"
 rejects 'android callback handed back to Keycloak' "$callback_proxied" \
   'must answer from Caddy, never reverse_proxy an upstream'

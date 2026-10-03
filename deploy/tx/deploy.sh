@@ -13,6 +13,13 @@ readonly BUSINESS_POSTGRES_TOFU_PROVISION_MARKER="${WOTB_TX_BUSINESS_POSTGRES_TO
 readonly BOOTSTRAP_KEYCLOAK="${WOTB_TX_BOOTSTRAP_KEYCLOAK:-0}"
 readonly BACKEND_UPSTREAM_VALUE="${TX_BACKEND_UPSTREAM:-http://business-api:8087}"
 readonly AI_UPSTREAM_VALUE="${TX_AI_UPSTREAM:-http://10.20.0.2:8089}"
+readonly BUSINESS_DB_HOST_VALUE="${TX_BUSINESS_DB_HOST:-business-postgres}"
+readonly BUSINESS_DB_PORT_VALUE="${TX_BUSINESS_DB_PORT:-5432}"
+readonly KEYCLOAK_ADMIN_SERVER_URL_VALUE="${TX_KEYCLOAK_ADMIN_SERVER_URL:-http://keycloak:8080}"
+readonly KEYCLOAK_DB_HOST_VALUE="${TX_KEYCLOAK_DB_HOST:-keycloak-postgres}"
+readonly KEYCLOAK_DB_PORT_VALUE="${TX_KEYCLOAK_DB_PORT:-5432}"
+readonly CADDY_FRONTEND_UPSTREAM_VALUE="${CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}"
+readonly CADDY_KEYCLOAK_UPSTREAM_VALUE="${CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}"
 readonly DEPLOY_SERVICE_VALUE="${WOTB_DEPLOY_SERVICE:-}"
 readonly CONFIG_SHA_VALUE="${WOTB_DEPLOY_CONFIG_SHA:-}"
 readonly TX_IMAGE_REGISTRY_PREFIX_VALUE="${TX_IMAGE_REGISTRY_PREFIX:-ccr.ccs.tencentyun.com/wotbtools}"
@@ -50,6 +57,33 @@ is_positive_integer() {
 require_env() {
   local name="$1"
   [ -n "${!name:-}" ] || die "$name is required."
+}
+
+validate_http_endpoint() {
+  local name="$1" value="$2" local_value="$3" wg_port="$4"
+  case "$value" in
+    "$local_value"|"http://10.20.0.1:$wg_port"|"http://10.20.0.3:$wg_port") return 0 ;;
+    *) die "$name must be $local_value or a reviewed TX1/TX2 WireGuard HTTP endpoint on port $wg_port." ;;
+  esac
+}
+
+validate_database_endpoint() {
+  local name="$1" host="$2" port="$3" local_host="$4" local_port="$5" wg_port="$6"
+  if [ "$host" = "$local_host" ] && [ "$port" = "$local_port" ]; then
+    return 0
+  fi
+  case "$host:$port" in
+    "10.20.0.1:$wg_port"|"10.20.0.3:$wg_port") return 0 ;;
+    *) die "$name must be $local_host:$local_port or a reviewed TX1/TX2 WireGuard endpoint on port $wg_port." ;;
+  esac
+}
+
+validate_caddy_upstream() {
+  local name="$1" value="$2" local_value="$3" wg_port="$4"
+  case "$value" in
+    "$local_value"|"10.20.0.1:$wg_port"|"10.20.0.3:$wg_port") return 0 ;;
+    *) die "$name must be $local_value or a reviewed TX1/TX2 WireGuard endpoint on port $wg_port." ;;
+  esac
 }
 
 require_tofu_provisioning() {
@@ -131,8 +165,7 @@ validate_inputs() {
     local frontend_digest="${TX_FRONTEND_IMAGE_REF_VALUE##*@sha256:}"
     [[ "$frontend_digest" =~ ^[0-9a-f]{64}$ ]] \
       || die "TX_FRONTEND_IMAGE_REF must contain a 64-character lowercase sha256 digest."
-    [ "$BACKEND_UPSTREAM_VALUE" = "http://business-api:8087" ] \
-      || die "TX_BACKEND_UPSTREAM must be the TX-internal business runtime http://business-api:8087."
+    validate_http_endpoint TX_BACKEND_UPSTREAM "$BACKEND_UPSTREAM_VALUE" http://business-api:8087 8087
     # /api/ai/ is the only route that leaves TX: the standalone AI service runs on
     # Yecao and has no public port, so its upstream is the WireGuard address. Any
     # other value would be a public hop, the wrong service, or a different port.
@@ -161,9 +194,12 @@ validate_inputs() {
     for required in KC_BOOTSTRAP_ADMIN_PASSWORD KC_DB_USERNAME KC_DB_PASSWORD WG_APPLICATION_ID; do
       require_env "$required"
     done
+    validate_database_endpoint TX_KEYCLOAK_DB "$KEYCLOAK_DB_HOST_VALUE" "$KEYCLOAK_DB_PORT_VALUE" keycloak-postgres 5432 15432
   fi
   if is_selected caddy; then
     require_env CADDY_ACME_EMAIL
+    validate_caddy_upstream CADDY_FRONTEND_UPSTREAM "$CADDY_FRONTEND_UPSTREAM_VALUE" wotb-frontend:80 8081
+    validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM "$CADDY_KEYCLOAK_UPSTREAM_VALUE" keycloak:8080 8080
   fi
   if is_business_postgres_group_selected; then
     for required in TX_BUSINESS_POSTGRES_ADMIN_USER TX_BUSINESS_POSTGRES_ADMIN_PASSWORD \
@@ -188,6 +224,8 @@ validate_inputs() {
       KEYCLOAK_ADMIN_CLIENT_SECRET; do
       require_env "$required"
     done
+    validate_database_endpoint TX_BUSINESS_DB "$BUSINESS_DB_HOST_VALUE" "$BUSINESS_DB_PORT_VALUE" business-postgres 5432 25432
+    validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL "$KEYCLOAK_ADMIN_SERVER_URL_VALUE" http://keycloak:8080 8080
   fi
 }
 
@@ -241,6 +279,13 @@ stage_and_validate() {
   export TX_RUNTIME_ROOT
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"
   export TX_AI_UPSTREAM="$AI_UPSTREAM_VALUE"
+  export TX_BUSINESS_DB_HOST="$BUSINESS_DB_HOST_VALUE"
+  export TX_BUSINESS_DB_PORT="$BUSINESS_DB_PORT_VALUE"
+  export TX_KEYCLOAK_ADMIN_SERVER_URL="$KEYCLOAK_ADMIN_SERVER_URL_VALUE"
+  export TX_KEYCLOAK_DB_HOST="$KEYCLOAK_DB_HOST_VALUE"
+  export TX_KEYCLOAK_DB_PORT="$KEYCLOAK_DB_PORT_VALUE"
+  export CADDY_FRONTEND_UPSTREAM="$CADDY_FRONTEND_UPSTREAM_VALUE"
+  export CADDY_KEYCLOAK_UPSTREAM="$CADDY_KEYCLOAK_UPSTREAM_VALUE"
   assert_routing_boundary "$EFFECTIVE_COMPOSE"
   local compose_json
   compose_json="$(docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" config --format json)" \
@@ -325,9 +370,9 @@ if not valid:
   fi
 }
 
-# Fail closed on the two production invariants this routing boundary establishes:
-#   1. the frontend proxies public API traffic to the TX-internal business
-#      runtime while /api/ai/ goes to the Yecao ai-service over WireGuard, and no
+# Fail closed on the production invariants this routing boundary establishes:
+#   1. the frontend proxies public API traffic only to the reviewed logical
+#      Business API endpoint while /api/ai/ goes to Yecao over WireGuard, and no
 #      staged service references the retired Yecao backend endpoint;
 #   2. the business runtime has no replay execution plane at all (replay parsing
 #      runs in the browser), so a future edit cannot silently re-introduce a
@@ -336,7 +381,7 @@ assert_routing_boundary() {
   local compose_file="$1"
   if is_selected wotb-frontend; then
     grep -Fq 'BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}' "$compose_file" \
-      || die "staged TX frontend must default to the TX-internal business runtime."
+      || die "staged TX frontend must retain the Docker-local Business API default."
     grep -Fq 'AI_UPSTREAM: ${TX_AI_UPSTREAM:-http://10.20.0.2:8089}' "$compose_file" \
       || die "staged TX frontend must default /api/ai/ to the Yecao ai-service WireGuard endpoint."
   fi

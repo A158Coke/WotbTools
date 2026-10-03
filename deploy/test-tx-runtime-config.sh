@@ -82,6 +82,29 @@ for name in names:
             count += 1
 print(f"TX rendered Compose service-plane contract: PASS ({count} rejected mutations)")
 PY
+
+# K6B logical endpoint validators are pure fail-closed guards. Exercise them
+# directly so every owner gets both a reviewed-WG positive and unsafe negative
+# without creating another standalone test entrypoint.
+validate_endpoint() {
+  bash -c '
+    set -euo pipefail
+    export TX_DEPLOY_LIBRARY_ONLY=1
+    source "$1"
+    shift
+    "$@"
+  ' bash "$ROOT/deploy/tx/deploy.sh" "$@"
+}
+validate_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://business-api:8087 http://business-api:8087 8087
+validate_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:8087 http://business-api:8087 8087
+! validate_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM https://api.example.invalid http://business-api:8087 8087
+! validate_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:9999 http://business-api:8087 8087
+validate_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.1 25432 business-postgres 5432 25432
+validate_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.3 15432 keycloak-postgres 5432 15432
+! validate_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.2 25432 business-postgres 5432 25432
+validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.1:8081 wotb-frontend:80 8081
+! validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM frontend.example.invalid:8081 wotb-frontend:80 8081
+
 cat > "$WORK/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -136,6 +159,17 @@ run_frontend() {
     bash "$WORK/incoming/deploy/tx/deploy.sh"
 }
 run_frontend FAKE_DOCKER_LOG="$WORK/docker.log" >/dev/null
+run_frontend TX_BACKEND_UPSTREAM=http://10.20.0.1:8087 FAKE_DOCKER_LOG="$WORK/frontend-wg.log" >/dev/null
+if run_frontend TX_BACKEND_UPSTREAM=https://api.example.invalid FAKE_DOCKER_LOG="$WORK/frontend-public-upstream.log" >/dev/null 2>&1; then
+  echo 'TX deployment accepted a public Business API upstream' >&2
+  exit 1
+fi
+! grep -q '^up ' "$WORK/frontend-public-upstream.log" 2>/dev/null
+if run_frontend TX_BACKEND_UPSTREAM=http://10.20.0.1:9999 FAKE_DOCKER_LOG="$WORK/frontend-wrong-port.log" >/dev/null 2>&1; then
+  echo 'TX deployment accepted a Business API WireGuard endpoint on the wrong port' >&2
+  exit 1
+fi
+! grep -q '^up ' "$WORK/frontend-wrong-port.log" 2>/dev/null
 grep -q '^pull wotb-frontend$' "$WORK/docker.log"
 grep -q '^up -d --no-deps --force-recreate wotb-frontend$' "$WORK/docker.log"
 ! grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/docker.log"

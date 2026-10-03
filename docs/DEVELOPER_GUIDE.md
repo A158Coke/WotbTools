@@ -496,12 +496,18 @@ TX-internal frontend nginx、Caddy readiness surface 与 deployment-owned `healt
 `/actuator/health`，管理端口 8088）。因此 release plan 把 backend 镜像路由到
 `business-api`（target `tx`）；Yecao 侧的 `wotb-backend`/`wotb-frontend`/`keycloak`/`postgres`
 已随退役 PR 从 Compose 与 deploy 白名单中删除，不再是可选项。
-公开 API 路由已在 TX 内部终结：`wotb-frontend` 的 nginx upstream 固定为
-`http://business-api:8087`（`TX_BACKEND_UPSTREAM` 只接受这个 TX-internal 值，公网 host 与
-已退役的 Yecao `10.20.0.2:8087` 一律 fail-closed 拒绝），app 8087 只允许发布到 `10.20.0.1:8087`；TX deploy
-staging 与只读 `TX_RUNTIME_READY` 运行时检查分别用 `assert_routing_boundary` 与
-`tx-internal-api-route` / `retired-replay-switches` 两条 token 断言这些不变量，因此没有任何
-公开流量再经过 Yecao backend。K6A 额外提供 TX1 WG service plane（frontend、业务 API、Keycloak、两套 PostgreSQL），现有消费者仍走 Docker-local 路由；端点、验收与回滚见 `docs/operations/tx-service-plane.md`。
+公开 API 路由由 TX service plane 终结：`wotb-frontend` 的 nginx upstream 通过
+`TX_BACKEND_UPSTREAM` 表达 logical endpoint，允许 Docker-local `http://business-api:8087`
+或 reviewed TX1/TX2 WireGuard `:8087`；公网 host、错误端口与已退役 Yecao
+`10.20.0.2:8087` 一律 fail-closed。K6B-1 owner workflow 仍显式注入 Docker-local value，
+因此本阶段不发生 dependency cutover。全部 logical endpoint 由同一组 canonical validator
+（`deploy/tx/deploy.sh`）守护：staged deploy、只读 `dependency-readiness.sh`（在任何
+secret-bearing 连接之前）与 runtime gate 共用，仓库不存在第二份 allowlist。TX deploy staging
+与只读 `TX_RUNTIME_READY` 分别用 `assert_routing_boundary`、`tx-logical-endpoints-declared`、
+`tx-logical-endpoints-active`、`retired-replay-switches` 守护 routing/placement 不变量
+（declared = render 出的 Compose，active = `docker inspect` 读到的运行容器真实 env，两者都必须
+等于 deploy helper 当前会选择的 placement）；K6A published bindings 仍由
+`wireguard-service-plane` 守护。端点、验收与回滚见 `docs/operations/tx-service-plane.md`。
 
 **全业务运行时 E2E 检查**：`deploy/tx/runtime-check.sh` 加载独立只读校验库
 `deploy/tx/runtime-check-lib.sh`；除基础设施与路由 token 外，还用
@@ -516,9 +522,11 @@ Caddy 已是生产公网入口（默认 `0.0.0.0:80` / `0.0.0.0:443`
 tcp + udp），但没有固定容器地址：readiness surface 通过 Docker service DNS
 （`http://caddy/_wotb/...`）访问，frontend 的 `set_real_ip_from` 信任 `wotb_tx_internal`
 子网；DNS 切换仍是 operator 的受控外部操作，仓库不写任何 DNS 变更。
-`KEYCLOAK_ISSUER_URI` 保持 public URL（Keycloak 的 `iss` 由 hostname 决定），
-`KEYCLOAK_ADMIN_SERVER_URL` 故意指向 TX-internal `http://keycloak:8080`，避免 DNS
-cutover 前经公网访问并管理 Yecao realm。HoF 回放原件是永久内容寻址文件，挂 TX
+`KEYCLOAK_ISSUER_URI` 保持 public URL（Keycloak 的 `iss` 由 hostname 决定）。
+`TX_KEYCLOAK_ADMIN_SERVER_URL` 默认 `http://keycloak:8080`，仅允许 reviewed TX1/TX2
+WireGuard Keycloak endpoint，永不允许用公网 hostname 代替 Admin path。Business/Keycloak
+PostgreSQL 同样以 host/port logical endpoint 表达，K6B-1 active value 仍为 Docker-local。
+HoF 回放原件是永久内容寻址文件，挂 TX
 `replay_data` 卷到 `HOF_REPLAY_DIR`（服务端唯一的回放文件存储）。
 TX 与 Yecao 的每个服务都由自己的 workflow 路径规则及手动入口拥有，不再通过 release planner
 路由。TX Keycloak PostgreSQL 保留
