@@ -18,10 +18,11 @@
 1. WoT-Blitz-Agent 仓**根目录**：`node scripts/serve_asset_pack.mjs 8123`（脚本按 cwd 解析 `release/asset_pack`，起错目录会静默 404）。
 2. 本仓 `frontend/.env.local`（gitignored）写 `VITE_ASSET_BASE_URL=http://127.0.0.1:8123`；改后**必须重启 dev server**（env 在 transform 时内联）。
 3. 依赖上游引擎的调试先 `bash scripts/fetch-agent-wasm.sh`（`deploy/agent/source.json` pin 变更后必须重跑）。
-4. `npm run dev` → `http://localhost:5173/?admin=1&agentViews=1`。
+4. `npm run dev` → `http://localhost:5173/?admin=1`。
 
-两个 URL 参数来自**未提交**的本机旁路（`navigation.js` / `useAuth.js`，见 runbook §4 与附录 A）：
-不要提交它们，也不要"顺手清理"工作区里的这两个 `M`。
+这个 URL 参数来自**未提交**的本机旁路（`useAuth.js`，见 runbook §4 与附录 A）：
+不要提交它，也不要"顺手清理"工作区里的这个 `M`。admin 视图的放开只认角色——
+`viewFromRoute` 里不得出现任何按 URL 参数放行的分支（漏提交过一次，review blocker）。
 
 ## Architecture boundaries
 

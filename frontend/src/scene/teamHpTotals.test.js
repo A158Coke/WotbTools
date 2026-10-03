@@ -50,9 +50,12 @@ describe('perspectiveScore（顶栏比分与血条同一阵营视角）', () => 
     expect(perspectiveScore(1, 3, 2)).toEqual({ scoreFriend: 3, scoreEnemy: 1 })
   })
 
-  it('friendlyTeam 未知（0/null）：保持物理顺序（此时两侧血量都按 0 计，视角标注不成立）', () => {
-    expect(perspectiveScore(3, 1, 0)).toEqual({ scoreFriend: 3, scoreEnemy: 1 })
-    expect(perspectiveScore(3, 1, null)).toEqual({ scoreFriend: 3, scoreEnemy: 1 })
+  it('friendlyTeam 未知（0/null）：不建立视角，比分归零（unknown ≠ enemy）', () => {
+    // 与 teamHpTotals（两队血量都算 0）、pointsAt（friend/enemy 都是 null）同口径：
+    // 视角未知时不得把物理 team1 当「己方」上屏——那会被 HUD 染成 ally/enemy 两色
+    expect(perspectiveScore(3, 1, 0)).toEqual({ scoreFriend: 0, scoreEnemy: 0 })
+    expect(perspectiveScore(3, 1, null)).toEqual({ scoreFriend: 0, scoreEnemy: 0 })
+    expect(perspectiveScore(3, 1, undefined)).toEqual({ scoreFriend: 0, scoreEnemy: 0 })
   })
 
   it('perspective 对齐：friendlyTeam = 2 时，左侧血桶与左侧比分都来自 team 2', () => {

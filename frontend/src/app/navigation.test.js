@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { vi, describe, expect, it } from 'vitest'
 import {
   ADMIN_ONLY_VIEWS,
   ALLOWED_VIEWS,
@@ -45,6 +45,24 @@ describe('viewFromRoute admin-only gating', () => {
   it('resolves admin-only views when allowAdminViews is true', () => {
     for (const view of ADMIN_ONLY_VIEWS) {
       expect(viewFromRoute(routeFor(view), { allowAdminViews: true })).toBe(view)
+    }
+  })
+
+  it('URL 参数绝不能放开 admin 视图：dev 下带 ?agentViews=1 也必须 fail-closed', async () => {
+    // 回归护栏：曾经有一版本按 `window.location.search` 里的 `agentViews` 在 dev 构建放行
+    // admin 视图（本机旁路被误提交，review BLOCKER）。这条用例按真实首屏复现——URL 带参数、
+    // 模块**重新加载**后再问一次；只要源码里再出现任何基于 URL 的放行，这里立刻失败。
+    window.history.replaceState({}, '', '/?view=agent-replay&agentViews=1&admin=1')
+    try {
+      vi.resetModules()
+      const fresh = await import('./navigation.js')
+      for (const view of fresh.ADMIN_ONLY_VIEWS) {
+        expect(fresh.viewFromRoute({ path: '/', query: { view } }, { allowAdminViews: false })).toBe(fresh.defaultView())
+        expect(fresh.viewFromRoute({ path: '/', query: { view } })).toBe(fresh.defaultView())
+      }
+    } finally {
+      window.history.replaceState({}, '', '/')
+      vi.resetModules()
     }
   })
 
