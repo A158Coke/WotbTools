@@ -2488,15 +2488,18 @@ export function initPlayback(container, store) {
     store.playing = p;
     invalidate();
   }
-  /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时从当前帧重启并丢弃暂停期间的时间差 */
+  /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时从当前帧重启并丢弃暂停期间的时间差。
+   *  渲染器/时钟是惰性创建的（首次 startPlayback 才 initScene）：待开播 / 解析期间场景
+   *  尚不存在，此刻没有帧循环可停可重启——只记录闸门状态即可，恢复分支必须以 `clock`
+   *  存在为前提（否则切走再切回在读 `clock.getDelta()` 时抛 TypeError，线上实测）。 */
   function setPaused(next) {
     const value = !!next;
     if (value === paused) return;
     paused = value;
     if (paused) {
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
-    } else if (!destroyed) {
-      clock.getDelta();   // 丢弃暂停期间累积的 dt
+    } else if (!destroyed && clock) {
+      clock.getDelta();   // 丢弃暂停期间累积的 dt（场景未初始化时无循环，initScene 尾部按 paused 排队）
       animate();
     }
   }
