@@ -58,6 +58,19 @@ async function build() {
   }
 }
 
+/**
+ * 重建本地 AI 输入（面板失败态里的「重试」动作）：
+ * 投影构建是可重复的本机解析，重跑一次即可区分「一次性失败」与「这份回放真的建不起来」。
+ * 必须先清空 builtFile——build() 靠它去重，不清会让按钮变成假的。
+ */
+function rebuildProjection() {
+  seq++
+  builtFile = null
+  input.value = null
+  errorKey.value = ''
+  void build()
+}
+
 watch(() => props.file, () => {
   seq++
   builtFile = null
@@ -80,6 +93,7 @@ watch(() => [props.file, props.active, props.blockedReason, authenticated.value]
       :projection="input"
       :projection-error="projectionError"
       @seek="(sec: number) => emit('seek', sec)"
+      @rebuild-projection="rebuildProjection"
     />
   </div>
 </template>

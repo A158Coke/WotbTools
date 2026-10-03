@@ -1,8 +1,9 @@
 <script setup>
-import { computed, defineAsyncComponent, inject, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { mapLabel } from '../utils/helpers.js'
+import { defineLazyModule, reloadForFreshBundle } from '../utils/lazyModule.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
@@ -12,14 +13,18 @@ import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
 import AppButton from './AppButton.vue'
-// 审计 PF-02：2D 回放（含约 2.5MB 的地图语义数据）只在进入 2D 回放模式时加载，不进主包。
-const BattlePlaybackPanel = defineAsyncComponent(() => import('./BattlePlaybackPanel.vue'))
-// AI 复盘面板（本机建立 canonical AI 投影 + SSE 流）同样按需加载。
-const AiReviewWorkspacePane = defineAsyncComponent(() => import('./AiReviewWorkspacePane.vue'))
 import Banner from './Banner.vue'
 import PageHeader from './PageHeader.vue'
 import BattlePicker from './BattlePicker.vue'
 import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
+
+// 审计 PF-02：2D 回放（含约 2.5MB 的地图语义数据）只在进入 2D 回放模式时加载，不进主包。
+// 懒加载边界：部署换掉 chunk 文件名后，旧页面进入能力时必然 404——必须变成可恢复的失败态，
+// 不能让 Vue 渲染中断（那会把整个工作台打成空壳，见 utils/lazyModule.ts 的说明）。
+const playbackModule = defineLazyModule(() => import('./BattlePlaybackPanel.vue'))
+const aiModule = defineLazyModule(() => import('./AiReviewWorkspacePane.vue'))
+const BattlePlaybackPanel = playbackModule.component
+const AiReviewWorkspacePane = aiModule.component
 
 defineOptions({ name: 'ReplayWorkspace' })
 
@@ -87,9 +92,48 @@ const capabilityOptions = computed(() => [
 const activeCapability = workspace.activeWorkspaceTab
 /** 2D 回放面板首次进入时才挂载（之后保留状态，切走只是隐藏），它的代码块因此不随工作台加载。 */
 const playbackMounted = ref(activeCapability.value === 'playback')
-watch(activeCapability, (cap) => { if (cap === 'playback') playbackMounted.value = true })
 const aiMounted = ref(activeCapability.value === 'ai')
-watch(activeCapability, (cap) => { if (cap === 'ai') aiMounted.value = true })
+
+/** 重试世代：+1 让 :key 变化，失败过的 async 包装器重新执行 loader 而不是复用 reject 缓存。 */
+const playbackPaneGeneration = ref(0)
+const aiPaneGeneration = ref(0)
+
+function generationFor(module) {
+  return module === playbackModule ? playbackPaneGeneration : aiPaneGeneration
+}
+
+/** 清掉失败态并强制下一次挂载重新加载（重试 / 重新进入能力共用）。 */
+function resetPane(module) {
+  generationFor(module).value += 1
+  module.reset()
+}
+
+/** 重试：先按同一 URL 再试一次；成功即恢复渲染（当前 bundle 本就可用，例如网络瞬断）。 */
+async function retryPane(module) {
+  generationFor(module).value += 1
+  await module.retry()
+}
+
+/**
+ * 重新进入能力时清掉上一次的失败态（连带 :key 世代 +1），让失败过的 async 包装器重新执行 loader：
+ * 失败可能只是一次瞬时加载（网络/部署中），不该让用户每次切回来都先看到一次错误再手动重试。
+ */
+watch(activeCapability, (cap) => {
+  if (cap === 'playback') { playbackMounted.value = true; resetPane(playbackModule) }
+  if (cap === 'ai') { aiMounted.value = true; resetPane(aiModule) }
+})
+
+/**
+ * 能力模块加载失败态（design-language §10）：说清发生了什么 + 下一步怎么做。
+ *
+ * 触发条件是「页面还跑着上一次部署的 bundle，而 chunk 已被新部署替换」——重新加载必然修好，
+ * 所以主操作是重新加载；「重试」只覆盖网络瞬断（同一 URL 再试一次即可）。
+ */
+function paneLoadError(module) {
+  return module.error.value ? 'workspace.pane_load_failed' : ''
+}
+const playbackLoadError = computed(() => paneLoadError(playbackModule))
+const aiLoadError = computed(() => paneLoadError(aiModule))
 
 /** 模板直接消费的 workspace 权威 ref（顶层绑定，模板自动解包 ref）。 */
 const currentBattleId = workspace.currentBattleId
@@ -196,8 +240,15 @@ watch(() => props.initialCapability, (val) => {
         :workspace-context="workspace"
       />
       <div v-show="activeCapability === 'playback'" class="capability-pane" data-testid="ws-playback">
+        <Banner v-if="playbackLoadError" tone="danger" data-testid="ws-playback-load-error">
+          <p>{{ $t(playbackLoadError) }}</p>
+          <template #actions>
+            <AppButton size="sm" data-testid="ws-playback-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
+            <AppButton size="sm" variant="ghost" data-testid="ws-playback-load-retry" @click="retryPane(playbackModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+          </template>
+        </Banner>
         <BattlePicker
-          v-if="playbackBattleOptions.length > 1"
+          v-else-if="playbackBattleOptions.length > 1"
           class="playback-picker"
           :options="playbackBattleOptions"
           :model-value="currentBattleId"
@@ -206,15 +257,23 @@ watch(() => props.initialCapability, (val) => {
           @update:model-value="onBattleSelect"
         />
         <BattlePlaybackPanel
-          v-if="playbackMounted"
+          v-if="playbackMounted && !playbackLoadError"
+          :key="playbackPaneGeneration"
           :file="playbackFile"
           :active="activeCapability === 'playback'"
           :blocked-reason="playbackBlockedReason"
         />
       </div>
       <div v-show="activeCapability === 'ai'" class="capability-pane">
+        <Banner v-if="aiLoadError" tone="danger" data-testid="ws-ai-load-error">
+          <p>{{ $t(aiLoadError) }}</p>
+          <template #actions>
+            <AppButton size="sm" data-testid="ws-ai-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
+            <AppButton size="sm" variant="ghost" data-testid="ws-ai-load-retry" @click="retryPane(aiModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+          </template>
+        </Banner>
         <BattlePicker
-          v-if="playbackBattleOptions.length > 1"
+          v-if="!aiLoadError && playbackBattleOptions.length > 1"
           class="playback-picker"
           :options="playbackBattleOptions"
           :model-value="currentBattleId"
@@ -223,7 +282,8 @@ watch(() => props.initialCapability, (val) => {
           @update:model-value="onBattleSelect"
         />
         <AiReviewWorkspacePane
-          v-if="aiMounted"
+          v-if="aiMounted && !aiLoadError"
+          :key="aiPaneGeneration"
           :file="playbackFile"
           :active="activeCapability === 'ai'"
           :blocked-reason="playbackBlockedReason"
