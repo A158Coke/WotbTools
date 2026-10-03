@@ -39,6 +39,9 @@ import java.util.concurrent.TimeUnit
  *  规则：`authGetState` / token 读取 / 刷新 / logout **只**读写会话域；回程校验**只**读写交易域；
  *  两者都不会解析或清理对方。因此「登录途中进程被杀 + App 重启读会话（甚至是坏会话）」不会
  *  作废那笔交易，反过来交易损坏也不会把用户已有的会话清掉。
+ *  交易**只能按身份消费**（[AuthTransactionStore.clearIfState]）：只有回程带回的 `state` 与当前
+ *  交易身份一致时才允许清空它，因此一笔陈旧 / 外来的 callback（旧登录的回程、库判定的
+ *  STATE_MISMATCH、读不出 state 的取消）绝不可能作废用户已经开始的那笔新登录。
  *
  * ── 线程模型（刻意写死，避免回调线程猜谜）──
  *  - [login] / [logout] / [accessTokenOrRefresh]：**任意线程**（bridge 的后台线程）调用；
@@ -219,9 +222,8 @@ internal class AuthManager private constructor(context: Context) {
             false
         }
         if (ready) {
-            // 不需要先切主线程：launchAuthorization 自己完成「落盘（executor）→ 启动（主线程）」。
-            launchAuthorization()
-            return true
+            // 返回值语义：true = 已受理（交易已落盘并已交给浏览器）；false = 无法受理（落盘失败）。
+            return launchAuthorization()
         }
         if (fetchNeeded) onMainThread { fetchConfiguration() }
         Log.d(TAG, "auth-login queued reason=configuration-pending")
@@ -302,22 +304,51 @@ internal class AuthManager private constructor(context: Context) {
         )
         val request = builder.build()
 
-        // 交易（请求 + 本次回程 URI）必须先落盘再启动：进程在登录途中死亡 / 被回收后，回程
-        // callback 仍要能拿到同一份交易（state 与回程 URI）并通过校验。
-        // 顺序是 executor 落盘 → 主线程启动，任何线程都不为这次 I/O 阻塞：调用方（bridge 的认证线程）
-        // 立刻拿到「已受理」，主线程也不会被磁盘/Keystore 卡住（旧实现的 await 会在主线程等最多 5s）。
+        // 交易必须先**成功落盘**才允许启动浏览器：没有落盘的交易不可能通过回程的归属校验，
+        // 启动它等于制造一次必然失败的登录（见 persistTransactionThenLaunch）。
         //
-        // 只写交易域：这一步绝不触碰会话域，因此「开始登录」不会让一个已有会话消失。
-        executor.execute {
-            transactions.save(request.jsonSerializeString(), selectedRedirectUri)
-            Log.d(TAG, "auth-login persisted redirect=${OidcConfiguration.redirectCategory(selectedRedirectUri)}")
-            onMainThread { startAuthorizationRequest(request) }
+        // 线程：调用方通常是 bridge 的认证线程（落了盘就能立刻给出诚实的返回值）；若调用方是主线程
+        // （discovery 回调补齐排队登录），落盘 + 启动整体交给 auth executor，主线程不做磁盘 /
+        // Keystore I/O。
+        return if (Looper.myLooper() === Looper.getMainLooper()) {
+            executor.execute { persistTransactionThenLaunch(request, selectedRedirectUri) }
+            true
+        } else {
+            persistTransactionThenLaunch(request, selectedRedirectUri)
         }
+    }
+
+    /**
+     * 落盘交易 → 启动 external user-agent。顺序不可颠倒：落盘失败时**绝不**打开浏览器，
+     * 也绝不留下「已受理」的假象（调用方拿到 false，页面据此把这次登录当成可重试的失败）。
+     */
+    private fun persistTransactionThenLaunch(request: AuthorizationRequest, redirectUri: String): Boolean {
+        // 没有 state 的请求无法做交易归属校验：绝不启动（fail closed），也绝不留下一笔无法匹配的交易。
+        val state = request.state?.takeIf { it.isNotBlank() }
+        if (state == null) {
+            Log.d(TAG, "auth-login not-launched reason=missing-state")
+            notifyListeners()
+            return false
+        }
+        if (!transactions.save(state, redirectUri)) {
+            // 落盘失败（Keystore / prefs 异常）：不启动、不假装已受理；已有会话原样保留。
+            Log.d(TAG, "auth-login not-launched reason=persist-failed")
+            // 让页面重新取一次状态：用户那次点击不会静默消失，登录按钮仍然可重试。
+            notifyListeners()
+            return false
+        }
+        Log.d(TAG, "auth-login persisted redirect=${OidcConfiguration.redirectCategory(redirectUri)}")
+        onMainThread { startAuthorizationRequest(request, state) }
         return true
     }
 
-    /** 把请求交给 external user-agent。主线程调用：库内部走 `startActivity`。 */
-    private fun startAuthorizationRequest(request: AuthorizationRequest) {
+    /**
+     * 把请求交给 external user-agent。主线程调用：库内部走 `startActivity`。
+     *
+     * @param transactionState 这笔交易的 `state`：启动失败时用它做身份匹配的清理，绝不误清
+     *   一笔在这中间被替换掉的新交易。
+     */
+    private fun startAuthorizationRequest(request: AuthorizationRequest, transactionState: String) {
         val completionIntent = PendingIntent.getActivity(
             appContext,
             REQUEST_CODE_LOGIN,
@@ -328,8 +359,9 @@ internal class AuthManager private constructor(context: Context) {
             authorizationService().performAuthorizationRequest(request, completionIntent)
             Log.d(TAG, "auth-login launched")
         } catch (e: Exception) {
-            // 浏览器不可用 / 启动失败：交易状态不能留下（否则下次响应对不上任何请求）。
-            transactions.clear("launch-failed")
+            // 浏览器不可用 / 启动失败：这笔交易不可能再有回程，按身份清掉它（若中间已被新交易替换，
+            // clearIfState 会保留新的那笔）。
+            transactions.clearIfState(transactionState, "launch-failed")
             Log.d(TAG, "auth-login failed category=${e.javaClass.simpleName}")
         }
     }
@@ -371,8 +403,12 @@ internal class AuthManager private constructor(context: Context) {
      *
      * 三条路径都必须收敛到「可复用的未认证」或「已认证」，绝不留下卡死状态：
      *  - 空 intent / RESULT_CANCELED / 缺少响应与异常 → [AuthFailureReason.CANCELLED]；
-     *  - 响应存在 → 先过 [AuthResponseGuard]（redirect 归属 + code 存在性 + 错误分类），再换 token；
-     *  - 交换失败 → 清会话 + [AuthFailureReason.EXCHANGE_FAILED]。
+     *  - 响应存在 → 先过 [AuthResponseGuard]（交易身份 + redirect 归属 + code 存在性 + 错误分类），
+     *    再换 token；
+     *  - 交换失败 → 只消费这笔交易，已有会话不受影响（见 [exchangeAuthorizationCode]）。
+     *
+     * **失败路径的清理一律按身份**：只有能证明这次回程属于当前交易时才消费它，否则对这次回程
+     * fail closed 并原样保留当前交易（陈旧 / 外来的 callback 不得作废一笔新登录）。
      *
      * 同一个 intent 被系统重复交付时直接跳过（见 [processedResponseState]）：授权码只能用一次。
      */
@@ -402,11 +438,17 @@ internal class AuthManager private constructor(context: Context) {
                     AuthFailureReason.STATE_MISMATCH
                 else -> AuthFailureReason.PROVIDER_ERROR
             }
-            // 回程失败只作废**这一次交易**：已有会话不是这次失败证明为无效的东西。
-            transactions.clear("auth-exception")
+            // 回程失败（含库判定的 STATE_MISMATCH）只允许作废**它自己那一笔**交易：
+            //  - 回程 URI 里带回的 `state` 与当前交易身份一致 ⇒ 是本次交易的失败 ⇒ 按身份清掉；
+            //  - 带回的 state 对不上，或根本读不出 state（用户直接返回、浏览器关闭）⇒ 归属无法证明，
+            //    对这次回程 fail closed，但**原样保留**当前交易（用户可能已经开始了一笔更新的登录）。
+            // 已有会话与这些都无关：它不是这次失败证明为无效的东西。
+            val returnedState = stateOf(intent?.data)
+            val consumed = transactions.clearIfState(returnedState, "auth-exception")
             val detail = exception.error?.takeIf { it.isNotBlank() }
             Log.d(TAG, "auth-result outcome=failure reason=${reason.name.lowercase()} " +
-                "code=${exception.code} error=${detail ?: "none"}")
+                "code=${exception.code} error=${detail ?: "none"} " +
+                "transaction=${if (consumed) "consumed" else "preserved"}")
             return AuthResult.Failure(reason, detail)
         }
 
@@ -416,34 +458,27 @@ internal class AuthManager private constructor(context: Context) {
             null
         }
         if (response == null) {
-            transactions.clear("empty-result")
-            Log.d(TAG, "auth-result outcome=cancelled reason=no-response")
+            // 没有响应对象 ⇒ 无法证明这次回程属于哪一笔交易（典型：用户取消 / 直接返回）。
+            // 对这次回程 fail closed，但**不**清当前交易：陈旧或无法归属的回程不得作废一笔新登录。
+            Log.d(TAG, "auth-result outcome=cancelled reason=no-response transaction=preserved")
             return AuthResult.Failure(AuthFailureReason.CANCELLED, "no-response")
         }
 
-        // 回程校验的唯一依据是**交易域**：本次交易持久化的 request（state）与实际使用的回程 URI。
+        // 回程校验的唯一依据是**交易域**：当前交易的身份（state）与实际使用的回程 URI。
         // 交易不存在（回程是伪造的 / 已被消费）时 fail closed，且绝不去动会话域。
         val transaction = transactions.load()
         if (transaction == null) {
             Log.d(TAG, "auth-result outcome=rejected reason=no-pending-transaction")
             return AuthResult.Failure(AuthFailureReason.UNSUPPORTED, NO_PENDING_TRANSACTION_DETAIL)
         }
-        val expectedRequest = try {
-            AuthorizationRequest.jsonDeserialize(org.json.JSONObject(transaction.requestJson))
-        } catch (_: Exception) {
-            // 交易存在但请求读不出来：这份交易不可能再完成，只清交易域。
-            transactions.clear("stored-request-unreadable")
-            Log.d(TAG, "auth-result outcome=rejected reason=stored-request-unreadable")
-            return AuthResult.Failure(AuthFailureReason.UNSUPPORTED, "stored-request-unreadable")
-        }
 
         val guardFailure = AuthResponseGuard.verify(
             // 交易归属校验的两个操作数必须来自**两处独立来源**：
-            //  - expectedState：我们自己持久化那笔交易的 request.state；
+            //  - expectedState：我们自己持久化那笔交易的身份（state）；
             //  - responseState：OAuth 响应真正携带回来的 `response.state`。
             // 刻意**不**用 `response.request.state`：那是响应里自带的 request，与自己比较是自指
             // （恒等），等于这道独立校验不存在。
-            expectedState = expectedRequest.state,
+            expectedState = transaction.state,
             responseState = response.state,
             expectedRedirectUri = transaction.redirectUri,
             responseRedirectUri = redirectUriOf(intent?.data),
@@ -451,12 +486,17 @@ internal class AuthManager private constructor(context: Context) {
             error = response.additionalParameters[ERROR_PARAM]
         )
         if (guardFailure != null) {
-            transactions.clear("guard-${guardFailure.logToken}")
-            Log.d(TAG, "auth-result outcome=rejected reason=${guardFailure.logToken} detail=${guardFailure.detail}")
+            // 只有能证明属于当前交易的回程才允许消费它：state 不一致（陈旧 / 外来）时
+            // clearIfState 返回 false，当前交易原样保留。
+            val consumed = transactions.clearIfState(response.state, "guard-${guardFailure.logToken}")
+            Log.d(TAG, "auth-result outcome=rejected reason=${guardFailure.logToken} " +
+                "detail=${guardFailure.detail} transaction=${if (consumed) "consumed" else "preserved"}")
             return guardFailure
         }
 
-        exchangeAuthorizationCode(response)
+        // 只有走到这里才说明回程**属于当前交易**（guard 已用 response.state 与交易身份比对过），
+        // 因此这笔交易可以被这次交换按身份消费。
+        exchangeAuthorizationCode(response, transaction.state)
         // 记下这次响应的 identity：同一个 intent 再次被交付时直接跳过，避免用已消耗的授权码再换一次。
         processedResponseState = response.request.state
         // 交换是异步的：这里的结果表示「已接受并开始交换」，真正的会话由 authChanged 事件与随后的
@@ -469,13 +509,17 @@ internal class AuthManager private constructor(context: Context) {
      * 用授权码换 token。成功 → **先持久化会话、再消费交易**（顺序不可颠倒：中途进程死亡时
      * 「会话已存在 + 交易残留」只是下次登录会被覆盖，而反过来会得到「授权码已消耗但会话丢失」）。
      * 失败 → 只作废这次交易，已有会话不受影响（这次失败没有证明它无效）。
+     *
+     * 消费一律走 [AuthTransactionStore.clearIfState]：token endpoint 是异步的，回调到达时 slot 里
+     * 可能已经换成**另一笔**更新的登录（用户在等待期间又点了一次登录）。这里只允许清掉自己那一笔。
      */
-    private fun exchangeAuthorizationCode(response: AuthorizationResponse) {
+    private fun exchangeAuthorizationCode(response: AuthorizationResponse, transactionState: String) {
         val service = authorizationService()
         service.performTokenRequest(response.createTokenExchangeRequest()) { tokenResponse, ex ->
             if (tokenResponse == null || ex != null) {
-                transactions.clear("exchange-failed")
-                Log.d(TAG, "auth-exchange outcome=failure category=${ex?.error ?: "unknown"}")
+                val consumed = transactions.clearIfState(transactionState, "exchange-failed")
+                Log.d(TAG, "auth-exchange outcome=failure category=${ex?.error ?: "unknown"} " +
+                    "transaction=${if (consumed) "consumed" else "preserved"}")
                 notifyListeners()
                 return@performTokenRequest
             }
@@ -491,16 +535,17 @@ internal class AuthManager private constructor(context: Context) {
             if (!persisted) {
                 // 落盘失败不能让用户以为已登录：清会话、并消费这笔无法重试的交易。
                 sessions.clear("persist-failed")
-                transactions.clear("persist-failed")
+                val consumed = transactions.clearIfState(transactionState, "persist-failed")
                 synchronized(lock) { session = null }
-                Log.d(TAG, "auth-exchange outcome=persist-failed")
+                Log.d(TAG, "auth-exchange outcome=persist-failed " +
+                    "transaction=${if (consumed) "consumed" else "preserved"}")
                 notifyListeners()
                 return@performTokenRequest
             }
-            // 会话已落盘 → 这笔交易完成使命，可以消费掉了。
-            transactions.clear("exchanged")
+            // 会话已落盘 → 这笔交易完成使命；若 slot 里已是更新的交易，则保留它。
+            val consumed = transactions.clearIfState(transactionState, "exchanged")
             synchronized(lock) { session = sessionOf(authState) }
-            Log.d(TAG, "auth-exchange outcome=success")
+            Log.d(TAG, "auth-exchange outcome=success transaction=${if (consumed) "consumed" else "preserved"}")
             notifyListeners()
         }
     }
@@ -686,7 +731,7 @@ internal class AuthManager private constructor(context: Context) {
         if (!success) notifyListeners()
     }
 
-    // ── 回程 URI 归一化 ──
+    // ── 回程 URI 解析（归一化 + 身份）──
 
     /**
      * 响应 URI 的**回程部分**：剥掉 query 与 fragment，只留 scheme/authority/path。
@@ -704,6 +749,16 @@ internal class AuthManager private constructor(context: Context) {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * 回程 URI 里带回的 `state`（交易身份）。读不出就返回 null ⇒ 调用方按「归属无法证明」处理：
+     * 对这次回程 fail closed，但**不**清当前交易（陈旧 / 外来回程不得作废一笔新登录）。
+     */
+    private fun stateOf(responseUri: Uri?): String? = try {
+        responseUri?.getQueryParameter(STATE_PARAM)?.takeIf { it.isNotBlank() }
+    } catch (_: Exception) {
+        null
     }
 
     internal companion object {
@@ -728,6 +783,9 @@ internal class AuthManager private constructor(context: Context) {
         private const val REQUEST_CODE_END_SESSION = 1
 
         private const val ERROR_PARAM = "error"
+
+        /** 回程 URI 里的交易身份参数（OAuth `state`）。 */
+        private const val STATE_PARAM = "state"
         private const val REFRESH_TIMEOUT_SECONDS = 30L
 
         @Volatile

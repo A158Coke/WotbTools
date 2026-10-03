@@ -51,7 +51,7 @@ class AuthSessionStoreTest {
     fun clearingTheSessionNeverTouchesThePendingTransaction() {
         val slots = FakeSecureSlotStore()
         val transactions = AuthTransactionStore(slots) { 1L }
-        transactions.save("""{"state":"state-1"}""", OidcConfiguration.HTTPS_REDIRECT_URI)
+        transactions.save("state-1", OidcConfiguration.HTTPS_REDIRECT_URI)
 
         AuthSessionStore(slots).clear("logout")
 
@@ -68,15 +68,13 @@ class AuthSessionStoreTest {
         // 正是旧实现出错的路径：会话域损坏（密文解不开/内容不是 AuthState）只清会话域。
         val slots = FakeSecureSlotStore()
         val transactions = AuthTransactionStore(slots) { 1L }
-        transactions.save("""{"state":"state-1"}""", OidcConfiguration.PRIVATE_REDIRECT_URI)
+        transactions.save("state-1", OidcConfiguration.PRIVATE_REDIRECT_URI)
         slots.write(AuthSessionStore.SLOT, "decryptable-but-not-auth-state")
 
         AuthSessionStore(slots).clear("deserialize-failed")
 
-        assertEquals(
-            "state-1",
-            transactions.load()?.let { Regex("\"state\":\"([^\"]+)\"").find(it.requestJson)?.groupValues?.get(1) }
-        )
+        assertEquals("state-1", transactions.load()?.state)
+        assertEquals(OidcConfiguration.PRIVATE_REDIRECT_URI, transactions.load()?.redirectUri)
         assertFalse(slots.clearedSlots().contains(AuthTransactionStore.SLOT))
     }
 
@@ -84,12 +82,13 @@ class AuthSessionStoreTest {
     fun aFreshProcessReadingTheSessionKeepsThePendingTransactionIntact() {
         // 进程重建：同一份 slot 之上新建两个状态域对象；WebView init 只读会话域。
         val slots = FakeSecureSlotStore()
-        AuthTransactionStore(slots) { 1L }.save("""{"state":"state-1"}""", OidcConfiguration.HTTPS_REDIRECT_URI)
+        AuthTransactionStore(slots) { 1L }.save("state-1", OidcConfiguration.HTTPS_REDIRECT_URI)
 
         val restartedSessions = AuthSessionStore(slots)
         assertNull(restartedSessions.load())
 
         val restartedTransaction = AuthTransactionStore(slots) { 2L }.load()
+        assertEquals("state-1", restartedTransaction?.state)
         assertEquals(OidcConfiguration.HTTPS_REDIRECT_URI, restartedTransaction?.redirectUri)
         assertEquals(1L, restartedTransaction?.createdAtMillis)
     }

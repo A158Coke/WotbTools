@@ -40,20 +40,92 @@ class AuthManagerTest {
      */
     @Test
     fun theTransactionOwnershipCheckIsWiredToTheReturnedState() {
-        val candidates = listOf(
-            "src/main/java/com/wotbtools/app/auth/AuthManager.kt",
-            "app/src/main/java/com/wotbtools/app/auth/AuthManager.kt"
-        )
-        val source = candidates.map(::File).firstOrNull { it.isFile }?.readText()
-            ?: error("AuthManager.kt not found from ${File(".").absolutePath}")
+        val source = authManagerSource()
 
         assertTrue(
-            "交易归属校验必须比较持久化交易的 state 与响应返回的 response.state",
+            "交易归属校验必须比较持久化交易的身份（state）与响应返回的 response.state",
+            source.contains("expectedState = transaction.state")
+        )
+        assertTrue(
+            "必须比较响应真正携带回来的 state",
             source.contains("responseState = response.state")
         )
         assertFalse(
             "禁止把响应自带的 response.request.state 当作 responseState（自指恒等）",
             source.contains("responseState = response.request.state")
         )
+    }
+
+    /**
+     * 失败与消费路径必须**按身份**清交易（[AuthTransactionStore.clearIfState]），不得无条件清空。
+     *
+     * 陈旧 / 外来的 callback（旧登录的回程、库判定的 STATE_MISMATCH、读不出 state 的取消）到达时
+     * 无条件清空会作废用户已经开始的那笔新登录。这里断言接线只用身份匹配的清理原语，行为断言由
+     * `AuthTransactionStoreTest.aStaleCallbackNeverClearsTheCurrentTransaction` 覆盖。
+     */
+    @Test
+    fun transactionCleanupOnCallbackPathsIsIdentityMatched() {
+        val source = authManagerSource()
+
+        assertTrue(
+            "回程失败路径必须经 clearIfState 按身份清理",
+            source.contains("transactions.clearIfState(returnedState, \"auth-exception\")")
+        )
+        assertTrue(
+            "guard 失败路径必须经 clearIfState 按身份清理",
+            source.contains("transactions.clearIfState(response.state, \"guard-")
+        )
+        assertTrue(
+            "异步交换消费必须带上自己那笔交易的身份",
+            source.contains("transactions.clearIfState(transactionState, \"exchanged\")")
+        )
+        for (blindClear in listOf(
+            "transactions.clear(\"auth-exception\")",
+            "transactions.clear(\"empty-result\")",
+            "transactions.clear(\"guard-",
+            "transactions.clear(\"exchanged\")"
+        )) {
+            assertFalse(
+                "回程路径禁止无条件清交易：$blindClear",
+                source.contains(blindClear)
+            )
+        }
+    }
+
+    /**
+     * 登录必须先成功落盘交易才允许启动 external user-agent（落盘失败 ⇒ 不启动、不假装已受理）。
+     * 该顺序无法用普通 JVM 单测执行（AppAuth + Keystore），因此窄断言这条接线。
+     */
+    @Test
+    fun theBrowserIsOnlyLaunchedAfterTheTransactionWasPersisted() {
+        val source = authManagerSource()
+
+        val persist = source.indexOf("private fun persistTransactionThenLaunch(")
+        assertTrue("persistTransactionThenLaunch must exist", persist >= 0)
+        val body = source.substring(persist, minOf(source.length, persist + 1600))
+        assertTrue(
+            "落盘结果必须被检查（失败即不启动）",
+            body.contains("if (!transactions.save(state, redirectUri))")
+        )
+        assertTrue(
+            "落盘失败必须打 not-launched reason=persist-failed",
+            body.contains("auth-login not-launched reason=persist-failed")
+        )
+        assertTrue(
+            "没有 state 的请求无法做归属校验，必须 fail closed",
+            body.contains("auth-login not-launched reason=missing-state")
+        )
+        val saveIndex = body.indexOf("transactions.save(")
+        val launchIndex = body.indexOf("onMainThread { startAuthorizationRequest(")
+        assertTrue("save 必须发生在启动之前", saveIndex in 0 until launchIndex)
+    }
+
+    private fun authManagerSource(): String {
+        val candidates = listOf(
+            "src/main/java/com/wotbtools/app/auth/AuthManager.kt",
+            "app/src/main/java/com/wotbtools/app/auth/AuthManager.kt"
+        )
+        return candidates.map(::File).firstOrNull { it.isFile }?.readText()
+            ?: error("AuthManager.kt not found from ${File(".").absolutePath}")
     }
 }
