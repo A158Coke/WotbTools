@@ -95,9 +95,9 @@ describe('SegmentedControl 选项不得被 flex 压缩', () => {
     expect(bodyOf('.segmented.is-scrollable')).toContain('overflow-x: auto')
   })
 
-  it('coarse 档把选项点击区域抬到 44×44', () => {
+  it('coarse 档把选项点击区域抬到 --hit-min（token，不写死像素）', () => {
     const coarse = css.slice(css.indexOf('@media (pointer: coarse)'))
-    expect(coarse).toContain('min-height: 44px')
-    expect(coarse).toContain('min-width: 44px')
+    expect(coarse).toContain('min-height: var(--hit-min)')
+    expect(coarse).toContain('min-width: var(--hit-min)')
   })
 })
