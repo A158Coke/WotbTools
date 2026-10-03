@@ -3,7 +3,7 @@
 //（评审 P0-3）；地图/地形/场景等渲染资产经 assetProvider 走配置的 remote asset origin。
 //
 // 解析在 Worker 里跑（playbackParse.worker.ts）：把 WASM `parsePlayback`（单场 ~95ms）
-// 移出 UI 线程；主线程只做 JSON.parse 与契约校验。同一份文件（名+长+mtime+采样指纹）
+// 移出 UI 线程；主线程只做 JSON.parse 与契约校验。同一份文件（**完整内容 SHA-256**）
 // 的解析结果缓存最近 3 场，重复打开直接命中。Worker 不可用时回退主线程同一条路径。
 //
 // WASM 产物由 CI 依据 deploy/agent/source.json 锁定的上游 Release 产物直取
@@ -75,19 +75,84 @@ function parseWorkerInstance() {
 }
 
 /**
- * Worker 传输载荷：Worker 契约是 ArrayBuffer（`playbackParse.worker.ts` 自己 `new Uint8Array`）。
- * 若 bytes 是 backing buffer 上的切片，必须只发这一段——否则会把无关字节一起交给解析器。
- * 不转移所有权（`transfer`）：Worker 失败时主线程还要用同一份字节回退解析。
+ * 精确区间的 ArrayBuffer：`bytes` 可能是 backing buffer 上的切片（subarray），直接取
+ * `bytes.buffer` 会把无关字节一起交给消费者（Worker 解析 / 内容摘要）。整段时零拷贝复用，
+ * 切片时才复制这一段——Worker 传输与 SHA-256 共用同一份区间判定，避免两套逻辑漂移。
  */
-export function playbackParsePayload(bytes) {
+export function exactArrayBuffer(bytes) {
   if (!(bytes instanceof Uint8Array)) {
-    throw new TypeError('playback parse payload expects Uint8Array')
+    throw new TypeError('exact replay bytes expected (Uint8Array)')
   }
   return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
     ? bytes.buffer
     : bytes.slice().buffer;
 }
 
+/**
+ * Worker 传输载荷：Worker 契约是 ArrayBuffer（`playbackParse.worker.ts` 自己 `new Uint8Array`）。
+ * 不转移所有权（`transfer`）：Worker 失败时主线程还要用同一份字节回退解析。
+ */
+export function playbackParsePayload(bytes) {
+  return exactArrayBuffer(bytes);
+}
+
+/**
+ * 内容身份：**完整** replay bytes 的 SHA-256（hex）。
+ *
+ * Replay cache 是 **correctness cache**，identity 必须来自完整内容——不接受任何概率性/采样
+ * 指纹：首/中/尾三个窗口可被确定性构造绕过（同名同长同 mtime、窗口内全同、窗口外一个字节
+ * 不同 → 不同回放复用同一份 Playback JSON）。
+ *
+ * WebCrypto 不可用（非安全上下文等）时返回 `null`，调用方必须**完全不使用缓存**：
+ * cache miss / 不缓存只是性能退化，错误 cache hit 是 correctness bug——绝不回退到采样 hash。
+ */
+export async function replayContentDigest(bytes) {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return null;
+  const digest = await subtle.digest('SHA-256', exactArrayBuffer(bytes));
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** 缓存键：metadata（文件名 / 字节数 / mtime，便于可读与人工核对）+ **完整内容 SHA-256**。
+ *  identity 只有摘要：metadata 相同不会命中，内容相同才会命中。
+ *  WebCrypto 不可用（摘要为 null）时返回 null → 调用方本次不读也不写缓存。 */
+async function fileCacheKey(fileObject, bytes) {
+  const digest = await replayContentDigest(bytes);
+  if (!digest) return null;
+  return [fileObject && fileObject.name ? fileObject.name : '',
+          bytes.byteLength,
+          fileObject && fileObject.lastModified ? fileObject.lastModified : 0, digest].join('|');
+}
+
+/** 仅测试用：清空解析结果缓存（跨用例替换 WASM 桩时，同一份字节会产出不同结果） */
+export function __resetPlaybackJsonCacheForTest() { playbackJsonCache.clear(); }
+
+export async function loadFromLocalFile(fileObject) {
+  const arrayBuffer = await fileObject.arrayBuffer()
+  // 进入摘要 / Worker / 回退解析前统一 bytes 类型：三条路径都只认 Uint8Array
+  //（此前把 ArrayBuffer 直接当字节数组用，缓存指纹恒为常量 → 同名同 mtime 的不同
+  //  回放会命中彼此的结果）。
+  const bytes = new Uint8Array(arrayBuffer)
+  // 解析结果缓存：键 = metadata + 完整内容 SHA-256。重复打开同一场（换标签页/重进页面/
+  // 重新加载同一文件）直接命中，省掉一次完整 WASM 解析；命中仍走主线程 JSON.parse
+  // （约 15ms）与契约校验，形状门禁不绕过。
+  const cacheKey = await fileCacheKey(fileObject, bytes)
+  const cachedJson = cacheKey === null ? undefined : playbackJsonCache.get(cacheKey)
+  if (cachedJson !== undefined) {
+    playbackJsonCache.delete(cacheKey); playbackJsonCache.set(cacheKey, cachedJson);   // LRU 触碰
+    return enrichPlayback(validateAgentPlayback(JSON.parse(cachedJson)))
+  }
+  const json = await parsePlaybackJsonOffThread(bytes)
+  if (cacheKey !== null) {
+    playbackJsonCache.set(cacheKey, json)
+    if (playbackJsonCache.size > PLAYBACK_JSON_CACHE_MAX) {
+      playbackJsonCache.delete(playbackJsonCache.keys().next().value)   // 最旧一条
+    }
+  }
+  // 契约 v2 门禁：与 parseAgentPlaybackFromBytes 同一校验器（错版/陈旧 WASM
+  // 在此抛出，而不是把缺字段的 v1 数据交给渲染层）
+  return enrichPlayback(validateAgentPlayback(JSON.parse(json)))
+}
 async function parsePlaybackJsonOffThread(bytes) {
   const worker = parseWorkerInstance();
   if (worker) {
@@ -108,58 +173,6 @@ async function parsePlaybackJsonOffThread(bytes) {
     throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
   }
   return mod.parsePlayback(bytes);
-}
-
-/** 缓存键：文件名 + 字节数 + mtime + **采样指纹**（首/中/尾各 ≤4KB 的 FNV-1a）。
- *  只靠文件名/长度/mtime 会让「同名同长同 mtime 但内容不同」的两份回放互相串用；
- *  全量哈希 1–2MB 又要几毫秒，采样窗口足够区分真实回放（成本 ~0.05ms）。
- *  `bytes` 必须是 Uint8Array：ArrayBuffer 没有 `length` 与索引语义，采样会退化成常量
- *  指纹（正是本函数此前失效的原因），所以这里显式 fail loud。 */
-function fileCacheKey(fileObject, bytes) {
-  if (!(bytes instanceof Uint8Array)) {
-    throw new TypeError('fileCacheKey expects Uint8Array replay bytes')
-  }
-  const n = bytes.byteLength;
-  let h = 2166136261;
-  const window = 4096;
-  const step = Math.max(1, Math.floor(n / 3));
-  // 去重 start：小文件（n < 3×window）三个窗口会重叠，重复读同一段纯属浪费
-  for (const start of new Set([0, step, Math.max(0, n - window)])) {
-    const end = Math.min(n, start + window);
-    for (let i = start; i < end; i++) { h ^= bytes[i]; h = Math.imul(h, 16777619); }
-  }
-  h = (h >>> 0).toString(36);
-  return [fileObject && fileObject.name ? fileObject.name : '',
-          n,
-          fileObject && fileObject.lastModified ? fileObject.lastModified : 0, h].join('|');
-}
-
-/** 仅测试用：清空解析结果缓存（跨用例替换 WASM 桩时，同一份字节会产出不同结果） */
-export function __resetPlaybackJsonCacheForTest() { playbackJsonCache.clear(); }
-
-export async function loadFromLocalFile(fileObject) {
-  const arrayBuffer = await fileObject.arrayBuffer()
-  // 进入指纹 / Worker / 回退解析前统一 bytes 类型：三条路径都只认 Uint8Array
-  //（此前把 ArrayBuffer 直接当字节数组用，缓存指纹恒为常量 → 同名同 mtime 的不同
-  //  回放会命中彼此的结果）。
-  const bytes = new Uint8Array(arrayBuffer)
-  // 解析结果缓存：以（文件名, 字节数, mtime, 采样指纹）为键缓存 JSON 字符串。重复打开同一场
-  // （换标签页/重进页面/重新加载同一文件）直接命中，省掉一次完整 WASM 解析；
-  // 命中仍走主线程 JSON.parse（约 15ms）与契约校验，形状门禁不绕过。
-  const cacheKey = fileCacheKey(fileObject, bytes)
-  const cachedJson = playbackJsonCache.get(cacheKey)
-  if (cachedJson !== undefined) {
-    playbackJsonCache.delete(cacheKey); playbackJsonCache.set(cacheKey, cachedJson);   // LRU 触碰
-    return enrichPlayback(validateAgentPlayback(JSON.parse(cachedJson)))
-  }
-  const json = await parsePlaybackJsonOffThread(bytes)
-  playbackJsonCache.set(cacheKey, json)
-  if (playbackJsonCache.size > PLAYBACK_JSON_CACHE_MAX) {
-    playbackJsonCache.delete(playbackJsonCache.keys().next().value)   // 最旧一条
-  }
-  // 契约 v2 门禁：与 parseAgentPlaybackFromBytes 同一校验器（错版/陈旧 WASM
-  // 在此抛出，而不是把缺字段的 v1 数据交给渲染层）
-  return enrichPlayback(validateAgentPlayback(JSON.parse(json)))
 }
 
 /** 展示名富化（本地通道与缓存命中路径共用） */
