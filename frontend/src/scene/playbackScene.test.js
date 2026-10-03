@@ -409,15 +409,37 @@ describe('playbackScene reset：撤下当前回放', () => {
  * 对象（线上实测 TypeError: Cannot read properties of undefined (reading 'getDelta')）。
  */
 describe('playbackScene 场景未初始化时的调用安全', () => {
-  it('initScene 之前 setPaused / setPlaying / togglePlay 不炸，结束态自洽', () => {
-    const { store, api } = createScene()   // 只 initPlayback，不 loadData → clock/renderer 不存在
+  it('initScene 之前 pause → resume 会重新挂起被取消的 rAF，且场景 API 不炸', async () => {
+    // 精确锁定线上路径：待开播时 initPlayback 已有一个空转 rAF；切走会 cancel，
+    // 切回时 clock/renderer 仍不存在，但必须重新挂回 rAF。否则之后 Start 虽能 ready，
+    // animation loop 仍是 0，画面与时间永久停死。
+    const raf = vi.fn()
+      .mockReturnValueOnce(101)
+      .mockReturnValueOnce(102)
+      .mockReturnValue(103)
+    const cancel = vi.fn()
+    vi.stubGlobal('requestAnimationFrame', raf)
+    vi.stubGlobal('cancelAnimationFrame', cancel)
+
+    const { store, api } = createScene()   // 只 initPlayback：clock/renderer 尚不存在
+    expect(raf).toHaveBeenCalledTimes(1)
     expect(() => api.setPaused(true)).not.toThrow()
+    expect(cancel).toHaveBeenCalledWith(101)
+
     expect(() => api.setPaused(false)).not.toThrow()
+    expect(raf).toHaveBeenCalledTimes(2)   // pre-init resume 必须重新 arm animation loop
+
+    // 后续正常 Start / initScene 仍可落成 ready；不能只是“不抛异常”。
+    source.loadPlaybackData.mockResolvedValueOnce(minimalData())
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+
     expect(() => api.setPlaying(false)).not.toThrow()
     expect(() => api.togglePlay()).not.toThrow()
-    expect(store.playing).toBe(true)       // togglePlay：false → true
+    expect(store.playing).toBe(true)
     expect(() => api.togglePlay()).not.toThrow()
-    expect(store.playing).toBe(false)      // 再翻回 false（与初始一致）
+    expect(store.playing).toBe(false)
   })
 
   it('初始化之后 setPaused 仍正常停帧 / 恢复（守住修复没有把正常路径关掉）', async () => {
