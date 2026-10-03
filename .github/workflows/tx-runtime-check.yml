@@ -147,12 +147,13 @@ jobs:
           TX_BUSINESS_DB_NAME: ${{ vars.TX_BUSINESS_DB_NAME }}
           TX_BUSINESS_DB_USERNAME: ${{ vars.TX_BUSINESS_DB_USERNAME }}
           TX_BUSINESS_DB_PASSWORD: ${{ secrets.TX_BUSINESS_DB_PASSWORD }}
-          # The gate validates the active placement: K6B-2A cut the Frontend ->
-          # Business API consumer over to the reviewed TX1 WireGuard endpoint, so the
-          # expectation moves with it. Every other value below is still the
-          # Docker-local placement and moves only with its own K6B-2 step.
-          TX_BUSINESS_DB_HOST: business-postgres
-          TX_BUSINESS_DB_PORT: '5432'
+          # The gate validates the active placement: K6B-2A cut Frontend -> Business API
+          # over to the reviewed TX1 WireGuard endpoint, and K6B-2B cut Business API ->
+          # Business PostgreSQL over to the TX1 WireGuard service endpoint on port 25432,
+          # so both expectations move with their consumer. Every other value below is
+          # still the Docker-local placement and moves only with its own K6B-2 step.
+          TX_BUSINESS_DB_HOST: 10.20.0.1
+          TX_BUSINESS_DB_PORT: '25432'
           TX_KEYCLOAK_ADMIN_SERVER_URL: http://keycloak:8080
           TX_BACKEND_UPSTREAM: http://10.20.0.1:8087
           TX_AI_UPSTREAM: http://10.20.0.2:8089

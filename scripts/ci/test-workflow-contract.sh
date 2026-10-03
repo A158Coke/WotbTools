@@ -438,20 +438,24 @@ assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy g
 # owner's equivalent pin lives in scripts/ci/test-keycloak-tofu-contract.sh with its
 # own apply step.
 #
-# K6B-2A cut over exactly one consumer: Frontend -> Business API now dials the
-# reviewed TX1 WireGuard service endpoint. Everything below is expected to stay
-# Docker-local until its own K6B-2 step, so the remaining entries are also the guard
-# that this PR cannot silently perform a second cutover.
-K6B2A_CUT_OVER = {
+# CURRENT_K6B_CUTOVERS is the reviewed production placement of the cut-over consumers:
+# K6B-2A moved Frontend -> Business API onto the TX1 WireGuard service endpoint and
+# K6B-2B moved Business API -> Business PostgreSQL onto the TX1 WireGuard service
+# endpoint at port 25432. Everything not listed here is still Docker-local, and the
+# assertions below are the guard that a later PR cannot cut a consumer over (or revert
+# an earlier cutover) without an explicit, reviewed edit of this file.
+CURRENT_K6B_CUTOVERS = {
     "frontend": {"TX_BACKEND_UPSTREAM": "http://10.20.0.1:8087"},
+    "business-api": {
+        "TX_BUSINESS_DB_HOST": "10.20.0.1",
+        "TX_BUSINESS_DB_PORT": "25432",
+    },
 }
-k6b1_placements = {
+K6B_DOCKER_LOCAL_PLACEMENTS = {
     "frontend": (frontend_deploy, {
         "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
     }),
     "business-api": (business_deploy, {
-        "TX_BUSINESS_DB_HOST": "business-postgres",
-        "TX_BUSINESS_DB_PORT": "5432",
         "TX_KEYCLOAK_ADMIN_SERVER_URL": "http://keycloak:8080",
     }),
     "caddy": (caddy_deploy, {
@@ -459,18 +463,19 @@ k6b1_placements = {
         "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
     }),
 }
-for owner, (step, placements) in k6b1_placements.items():
+for owner, (step, placements) in K6B_DOCKER_LOCAL_PLACEMENTS.items():
     exported = step["with"]["envs"].split(",")
-    for name, value in {**placements, **K6B2A_CUT_OVER.get(owner, {})}.items():
+    for name, value in {**placements, **CURRENT_K6B_CUTOVERS.get(owner, {})}.items():
         assert step["env"][name] == value, (owner, name, step["env"].get(name))
         assert name in exported, (owner, name)
-# A second consumer cutover in a later PR must be an explicit, reviewed edit of this
-# file: assert that no other pinned placement selects a WireGuard endpoint yet.
-for owner, (step, placements) in k6b1_placements.items():
+# No consumer outside CURRENT_K6B_CUTOVERS may select a WireGuard endpoint yet, and no
+# consumer may be pinned by an owner workflow that does not own it.
+for owner, (step, placements) in K6B_DOCKER_LOCAL_PLACEMENTS.items():
     for name, value in placements.items():
         assert not re.search(r"10\.20\.0\.[13]:", str(value)), (owner, name, value)
-    if owner != "frontend":
-        assert "TX_BACKEND_UPSTREAM" not in step["env"], owner
+    for cut_over_name in CURRENT_K6B_CUTOVERS.get(owner, {}):
+        assert cut_over_name in step["env"], (owner, cut_over_name)
+        assert cut_over_name in step["with"]["envs"].split(","), (owner, cut_over_name)
 
 # The secret-bearing readiness probe stays ahead of the deployment: it is the
 # step that must reject an unreviewed endpoint before a credential is sent.
@@ -483,28 +488,29 @@ runtime_gate_step = next(
     step for step in runtime_gate_workflow["jobs"]["runtime_check"]["steps"]
     if step.get("name") == "Run exact-SHA read-only TX runtime gate"
 )
-# The read-only gate must expect the same placement the owner workflow applies: the
-# K6B-2A WireGuard value for Frontend -> Business API, Docker-local for every other
-# consumer until its own step. A mismatch on either side fails the gate, so the two
-# halves of a cutover cannot be merged separately.
+# The read-only gate must expect the same placement the owner workflows apply: the
+# cut-over WireGuard values for Frontend -> Business API and Business API -> Business
+# PostgreSQL, Docker-local for every other consumer until its own step. A mismatch on
+# either side fails the gate, so the two halves of a cutover cannot be merged
+# separately, and a reverted cutover cannot be hidden behind a stale expectation.
 gate_expectations = {
     "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
-    "TX_BUSINESS_DB_HOST": "business-postgres",
-    "TX_BUSINESS_DB_PORT": "5432",
     "TX_KEYCLOAK_ADMIN_SERVER_URL": "http://keycloak:8080",
     "TX_KEYCLOAK_DB_HOST": "keycloak-postgres",
     "TX_KEYCLOAK_DB_PORT": "5432",
     "CADDY_FRONTEND_UPSTREAM": "wotb-frontend:80",
     "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
 }
-gate_expectations.update(K6B2A_CUT_OVER["frontend"])
+for cut_over in CURRENT_K6B_CUTOVERS.values():
+    gate_expectations.update(cut_over)
 for name, value in gate_expectations.items():
     assert runtime_gate_step["env"][name] == value, (name, runtime_gate_step["env"].get(name))
     assert name in runtime_gate_step["with"]["envs"].split(","), name
-# Only the cut-over consumer may carry a WireGuard expectation in the gate.
+# Only the cut-over consumers may carry a WireGuard expectation in the gate.
+cut_over_names = {name for cut_over in CURRENT_K6B_CUTOVERS.values() for name in cut_over}
 for name, value in gate_expectations.items():
-    if name == "TX_BACKEND_UPSTREAM":
-        assert value == "http://10.20.0.1:8087", value
+    if name in cut_over_names:
+        assert re.search(r"(10\.20\.0\.[13]|25432)", str(value)), (name, value)
     else:
         assert not re.search(r"10\.20\.0\.[13]:", str(value)), (name, value)
 assert runtime_gate_step["env"]["TX_AI_UPSTREAM"] == "http://10.20.0.2:8089", \
