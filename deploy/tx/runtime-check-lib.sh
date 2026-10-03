@@ -412,18 +412,50 @@ tx_runtime_check() {
 import json, sys
 data = json.load(sys.stdin)
 services = data["services"]
+
 frontend = services["wotb-frontend"].get("environment") or {}
-assert frontend.get("BACKEND_UPSTREAM") == "http://business-api:8087", frontend.get("BACKEND_UPSTREAM")
+assert frontend.get("BACKEND_UPSTREAM") in {
+    "http://business-api:8087",
+    "http://10.20.0.1:8087",
+    "http://10.20.0.3:8087",
+}, frontend.get("BACKEND_UPSTREAM")
 assert frontend.get("AI_UPSTREAM") == "http://10.20.0.2:8089", frontend.get("AI_UPSTREAM")
-environment = services["business-api"].get("environment") or {}
-assert environment.get("POSTGRES_HOST") == "business-postgres"
-assert environment.get("KEYCLOAK_ADMIN_SERVER_URL") == "http://keycloak:8080"
+
+business = services["business-api"].get("environment") or {}
+assert (business.get("POSTGRES_HOST"), str(business.get("POSTGRES_PORT"))) in {
+    ("business-postgres", "5432"),
+    ("10.20.0.1", "25432"),
+    ("10.20.0.3", "25432"),
+}
+assert business.get("KEYCLOAK_ADMIN_SERVER_URL") in {
+    "http://keycloak:8080",
+    "http://10.20.0.1:8080",
+    "http://10.20.0.3:8080",
+}
+
 keycloak = services["keycloak"].get("environment") or {}
-assert keycloak.get("KC_DB_URL", "").startswith("jdbc:postgresql://keycloak-postgres:5432/")
+db_url = keycloak.get("KC_DB_URL", "")
+assert any(db_url.startswith(prefix) for prefix in (
+    "jdbc:postgresql://keycloak-postgres:5432/",
+    "jdbc:postgresql://10.20.0.1:15432/",
+    "jdbc:postgresql://10.20.0.3:15432/",
+)), db_url
+
+caddy = services["caddy"].get("environment") or {}
+assert caddy.get("CADDY_FRONTEND_UPSTREAM") in {
+    "wotb-frontend:80",
+    "10.20.0.1:8081",
+    "10.20.0.3:8081",
+}
+assert caddy.get("CADDY_KEYCLOAK_UPSTREAM") in {
+    "keycloak:8080",
+    "10.20.0.1:8080",
+    "10.20.0.3:8080",
+}
 ' <<< "$compose_json"; then
     echo "tx-internal-api-route: PASS"
   else
-    echo "tx-internal-api-route: FAIL (frontend must use TX-internal business-api plus the Yecao ai-service WireGuard endpoint, and production database/auth dependencies must stay Docker-local)" >&2
+    echo "tx-internal-api-route: FAIL (private dependencies must use reviewed Docker-local or TX WireGuard endpoints; AI remains on the Yecao WireGuard endpoint)" >&2
     failures=1
   fi
 
