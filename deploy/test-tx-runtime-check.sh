@@ -67,6 +67,8 @@ grep -Fq '/api/hof?page=1&size=200' "$RUNTIME_CHECK_LIB"
 ! grep -Fq '/api/hof?page=0&size=' "$RUNTIME_CHECK_LIB"
 grep -Fq 'e2e_first_replay_id' "$RUNTIME_CHECK_LIB"
 grep -Fq 'replayAvailable' "$RUNTIME_CHECK_LIB"
+grep -Fq 'totalPages' "$RUNTIME_CHECK_LIB"
+grep -Fq 'hof_page=$((hof_page + 1))' "$RUNTIME_CHECK_LIB"
 # The new checks must be read-only: no DDL/DML against the business database.
 ! grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alter[[:space:]]+database)' "$RUNTIME_CHECK_LIB"
 
@@ -195,8 +197,10 @@ json.dump(data, sys.stdout)
         respond '{"errorCode":"INVALID_PAGE"}' 400
       elif [ "${FAKE_HOF_LIST_EMPTY:-0}" = 1 ]; then
         respond '{"items":[],"page":1,"size":200,"totalItems":0,"totalPages":0}' "${FAKE_HOF_STATUS:-200}"
+      elif [[ "$*" == *"page=2"* ]]; then
+        respond '{"items":[{"id":349,"nickname":"e2e","replayAvailable":true}],"page":2,"size":200,"totalItems":2,"totalPages":2}' "${FAKE_HOF_STATUS:-200}"
       else
-        respond '{"items":[{"id":348,"nickname":"legacy","replayAvailable":false},{"id":349,"nickname":"e2e","replayAvailable":true}],"page":1,"size":200,"totalItems":2,"totalPages":1}' "${FAKE_HOF_STATUS:-200}"
+        respond '{"items":[{"id":348,"nickname":"legacy","replayAvailable":false}],"page":1,"size":200,"totalItems":2,"totalPages":2}' "${FAKE_HOF_STATUS:-200}"
       fi
     elif [[ "$*" == *"/replay"* && "$write_out" == *size_download* ]]; then
       if [[ "$*" == *"/api/hof/348/replay"* ]]; then
