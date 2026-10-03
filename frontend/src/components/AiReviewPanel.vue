@@ -11,6 +11,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
 import { buildAiReviewRequest, cancelAiReview, openAiReviewStream } from '../api/ai-review.js'
 import type { ReplayAuthSession } from '../api/replay-capabilities.js'
@@ -49,6 +51,7 @@ const emit = defineEmits(['rebuild-projection'])
 
 const { t, te, locale } = useI18n()
 const auth = useAuth() as AiPanelAuth
+const { availability, requireFeature, connectivity } = useFeatureGate()
 const { tokenParsed } = auth
 
 // AI Review 权限：已登录 + wotbtools-user 或 wotbtools-admin。
@@ -128,7 +131,7 @@ async function copyErrorId() {
 
 /** 尽力而为地通知后端取消 in-flight 请求（按钮取消 / 面板卸载 / 前端超时）。 */
 function fireCancel(correlationId: string) {
-  if (!correlationId) return
+  if (!correlationId || !availability(Feature.AI_REVIEW).available) return
   cancelAiReview(auth, correlationId).catch(() => {})
 }
 
@@ -143,6 +146,10 @@ function cancelRun(run: AiReviewRunState | null) {
   fireCancel(run.correlationId)
   run.controller.abort()
 }
+
+watch(connectivity, () => {
+  if (!availability(Feature.AI_REVIEW).available) cancelRun(activeRun)
+})
 
 function cancelAnalyze() {
   cancelRun(activeRun)
@@ -208,6 +215,7 @@ function classify(e: unknown, run: AiReviewRunState): AiFailure {
 }
 
 async function runAnalyze() {
+  if (!requireFeature(Feature.AI_REVIEW)) return
   if (analyzing.value) return
   if (!projectionReady.value) return
   const run: AiReviewRunState = {

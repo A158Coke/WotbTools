@@ -6,6 +6,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
 import { AgentWasmVersionMismatchError } from '../api/agent-replay-facets.js'
 import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
@@ -26,6 +28,11 @@ const props = defineProps({
 
 const { t } = useI18n()
 const { authenticated, login } = useAuth()
+const { availability, requireFeature } = useFeatureGate()
+const online = computed(() => availability(Feature.AI_REVIEW))
+function loginOnline() {
+  if (requireFeature(Feature.AI_REVIEW)) login()
+}
 
 const input = ref<AiReviewProjection | null>(null)
 const errorKey = ref('')
@@ -36,7 +43,7 @@ const projectionError = computed(() => (errorKey.value ? t(errorKey.value) : '')
 
 async function build() {
   const file = props.file
-  if (!file || !props.active || props.blockedReason || !authenticated.value || builtFile === file) return
+  if (!online.value.available || !file || !props.active || props.blockedReason || !authenticated.value || builtFile === file) return
   builtFile = file
   const mine = ++seq
   input.value = null
@@ -76,15 +83,16 @@ watch(() => props.file, () => {
   input.value = null
   errorKey.value = ''
 })
-watch(() => [props.file, props.active, props.blockedReason, authenticated.value], () => { void build() }, { immediate: true })
+watch(() => [props.file, props.active, props.blockedReason, authenticated.value, online.value.available], () => { void build() }, { immediate: true })
 </script>
 
 <template>
   <div class="ai-workspace-pane" data-testid="ws-ai">
-    <p v-if="blockedReason" class="ws-note" data-testid="ai-blocked">{{ blockedReason }}</p>
+    <p v-if="!online.available" class="ws-note" data-testid="ai-connectivity">{{ $t(online.messageKey) }}</p>
+    <p v-else-if="blockedReason" class="ws-note" data-testid="ai-blocked">{{ blockedReason }}</p>
     <div v-else-if="!authenticated" class="ai-login" data-testid="ai-login-required">
       <p class="ws-note">{{ $t('workspace.ai_login_required') }}</p>
-      <AppButton data-testid="ai-login" @click="login()">{{ $t('app.login') }}</AppButton>
+      <AppButton data-testid="ai-login" @click="loginOnline">{{ $t('app.login') }}</AppButton>
     </div>
     <AiReviewPanel
       v-else

@@ -1,10 +1,12 @@
-import Ajv2020 from 'ajv/dist/2020.js'
-import addFormats from 'ajv-formats'
 import type { components } from './generated/http-contract.js'
-import schema from './generated/playback-v2.schema.js'
+import type { ValidateFunction } from 'ajv'
+import { validator as playbackValidator, apiErrorValidator as errorValidator } from './generated/contract-validators.js'
 
 type BattlePlaybackDataset = components['schemas']['BattlePlaybackDataset']
 type ApiErrorWirePayload = components['schemas']['ApiError']
+
+const validator = playbackValidator as ValidateFunction<BattlePlaybackDataset>
+const apiErrorValidator = errorValidator as ValidateFunction<ApiErrorWirePayload>
 
 export interface ContractDiagnostic {
   endpoint: string
@@ -14,10 +16,6 @@ export interface ContractDiagnostic {
   receivedType: string
 }
 
-const ajv = new Ajv2020({ allErrors: true, strict: false })
-addFormats(ajv)
-const validator = ajv.compile(schema)
-const apiErrorValidator = ajv.compile({ ...schema, $ref: '#/$defs/ApiError' })
 
 function receivedType(value: unknown): string {
   if (value === null) return 'null'

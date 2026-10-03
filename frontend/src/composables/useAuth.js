@@ -336,12 +336,15 @@ async function ensureToken(minValidity = 30) {
   } catch {
     refreshed = false
   }
+  if (currentTransaction?.provider !== provider) return false
   if (!refreshed) {
-    // 与迁移前一致：刷新失败（浏览器 updateToken 抛错 / Android refresh-failed）
-    // 一律退回未登录；现有调用方（api/replay-capabilities.ts）依赖这个 false。
-    authenticated.value = false
-    tokenParsed.value = null
-    authInitState.value = 'unauthenticated'
+    // Native may retain an offline session while denying a usable API token.
+    if (provider.name === 'android') applyProviderState(provider)
+    else {
+      authenticated.value = false
+      tokenParsed.value = null
+      authInitState.value = 'unauthenticated'
+    }
     return false
   }
   // 刷新后 claims 可能变化（角色 / displayName）：重新投影 provider 的当前 claims。

@@ -17,6 +17,14 @@ export async function fetchTankData(id) {
   return assetProvider.json(`/tank/${id}.json`)
 }
 
+/** Compact config inputs are bundled for local shooting inspection; never fall back to the network. */
+export async function fetchLocalShotTankData(id) {
+  const { default: snapshot } = await import('../../../common/shot-tank-data.json')
+  const tank = snapshot.tanks[String(id)]
+  if (!tank) throw new Error(`Local shooting inputs unavailable for tank ${id}`)
+  return tank
+}
+
 // ---------- 全景名册（tank_cache.json；无服务端聚合回退） ----------
 
 let tankFilterPromise = null

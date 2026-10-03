@@ -8,6 +8,13 @@ import HoFPage from './HoFPage.vue'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
 const confirmDialog = vi.hoisted(() => ({ confirm: vi.fn(() => Promise.resolve(true)) }))
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
+
 vi.mock('../composables/useConfirm.js', () => ({ confirm: confirmDialog.confirm }))
 
 
@@ -66,6 +73,7 @@ vi.mock('vue-i18n', () => ({
 
 describe('HoFPage', () => {
   beforeEach(() => {
+    connectivityState.state.value = 'online'
     authenticated = true
     tokenClaims = null
     vi.clearAllMocks()
@@ -156,6 +164,37 @@ describe('HoFPage', () => {
     await wrapper.find('.mark3-submit-btn').trigger('click')
     await flushPromises()
   }
+
+  it.each(['offline', 'unknown', 'degraded', 'service-unavailable'])('HoF deep entry and all boards issue zero requests in %s', async (state) => {
+    connectivityState.state.value = state
+    authenticated = false
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="hof-connectivity"]').exists()).toBe(true)
+    await wrapper.findAll('.tabs button')[1].trigger('click')
+    await wrapper.findAll('.tabs button')[2].trigger('click')
+    await openSingleUpload(wrapper)
+    await flushPromises()
+    for (const call of Object.values(lbApi)) expect(call).not.toHaveBeenCalled()
+    expect(api.login).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('resumes the currently blocked hundred board once on reconnect, preserving the selected tab', async () => {
+    connectivityState.state.value = 'offline'
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.findAll('.tabs button')[1].trigger('click')
+    connectivityState.state.value = 'online'
+    await flushPromises()
+    expect(lbApi.hofHundredList).toHaveBeenCalledTimes(1)
+    expect(lbApi.hofHundredMyStatus).toHaveBeenCalledTimes(1)
+    expect(lbApi.hofList).not.toHaveBeenCalled()
+    connectivityState.state.value = 'online'
+    await flushPromises()
+    expect(lbApi.hofHundredList).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
 
   it('renders download button only for rows with replayAvailable', async () => {
     lbApi.hofList.mockResolvedValue({

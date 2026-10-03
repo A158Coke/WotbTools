@@ -33,9 +33,11 @@ function stubNative(results = {}) {
       calls.push({ method: msg.method, params: msg.params })
       const result = results[msg.method]
       if (result === NO_REPLY) return
-      listeners.forEach(cb =>
-        cb({ data: JSON.stringify({ id: msg.id, result: result ?? null }) })
+      const reply = value => listeners.slice().forEach(cb =>
+        cb({ data: JSON.stringify({ id: msg.id, result: value ?? null }) })
       )
+      if (result instanceof Promise) result.then(reply)
+      else reply(result)
     }),
     addEventListener: vi.fn((type, cb) => listeners.push(cb)),
     removeEventListener: vi.fn((type, cb) => {
@@ -86,6 +88,45 @@ describe('androidAuthProvider', () => {
     ])
   })
 
+  it('logout rejects a token refresh that completes after the session was cleared', async () => {
+    const native = stubNative({
+      authGetState: { authenticated: true },
+      authGetAccessToken: { token: 'initial', claims: ADMIN_CLAIMS },
+      authLogout: true,
+    })
+    const provider = createAndroidAuthProvider()
+    await provider.init()
+    let resolveToken
+    native.results.authGetAccessToken = new Promise(resolve => { resolveToken = resolve })
+    const refreshing = provider.ensureToken()
+    await provider.logout()
+    resolveToken({ token: 'stale', claims: ADMIN_CLAIMS })
+    await expect(refreshing).resolves.toBe(false)
+    expect(provider.authenticated).toBe(false)
+    expect(provider.token()).toBe('')
+    expect(provider.tokenParsed).toBe(null)
+  })
+
+  it('logout rejects a late cached-session reply after refresh failure', async () => {
+    const native = stubNative({
+      authGetState: { authenticated: true },
+      authGetAccessToken: { token: 'initial', claims: ADMIN_CLAIMS },
+      authLogout: true,
+    })
+    const provider = createAndroidAuthProvider()
+    await provider.init()
+    let resolveState
+    native.results.authGetState = new Promise(resolve => { resolveState = resolve })
+    native.results.authGetAccessToken = { error: 'refresh-failed' }
+    const refreshing = provider.ensureToken()
+    await vi.waitFor(() => expect(methodsOf(native).filter(method => method === 'authGetState')).toHaveLength(2))
+    await provider.logout()
+    resolveState({ authenticated: true })
+    await expect(refreshing).resolves.toBe(false)
+    expect(provider.authenticated).toBe(false)
+    expect(provider.token()).toBe('')
+  })
+
   it('init() 在未登录时立即落定，不再请求 token', async () => {
     const native = stubNative({
       authGetState: { authenticated: false, expiresAt: null },
@@ -101,7 +142,7 @@ describe('androidAuthProvider', () => {
     expect(methodsOf(native)).toEqual(['authGetState'])
   })
 
-  it('init() 遇到 error 回复（refresh-failed）按未登录处理，绝不留下半登录态', async () => {
+  it('init() 离线刷新失败保留 Native cached session，API token remains unavailable', async () => {
     stubNative({
       authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
       authGetAccessToken: { token: null, expiresAt: null, claims: null, error: 'refresh-failed' },
@@ -110,7 +151,7 @@ describe('androidAuthProvider', () => {
 
     await provider.init({ mode: 'normal' })
 
-    expect(provider.authenticated).toBe(false)
+    expect(provider.authenticated).toBe(true)
     expect(provider.tokenParsed).toBe(null)
     expect(provider.token()).toBe('')
   })
@@ -195,7 +236,7 @@ describe('androidAuthProvider', () => {
     expect(provider.tokenParsed).toEqual({ realm_access: { roles: ['wotbtools-user'] } })
   })
 
-  it('ensureToken() 失败（refresh-failed / null）返回 false 并清空本地会话', async () => {
+  it('ensureToken() transient failure retains session; explicit Native logout clears it', async () => {
     const native = stubNative({
       authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
       authGetAccessToken: { token: 'native-token', expiresAt: 1_700_000_000, claims: ADMIN_CLAIMS, error: null },
@@ -205,10 +246,15 @@ describe('androidAuthProvider', () => {
 
     native.results.authGetAccessToken = { token: null, expiresAt: null, claims: null, error: 'refresh-failed' }
     await expect(provider.ensureToken(30)).resolves.toBe(false)
-    expect(provider.authenticated).toBe(false)
-    expect(provider.tokenParsed).toBe(null)
+    expect(provider.authenticated).toBe(true)
+    expect(provider.tokenParsed).toEqual(ADMIN_CLAIMS)
     expect(provider.token()).toBe('')
 
+    // Native permanent rejection/log-out, unlike offline refresh, clears the projection.
+    native.results.authGetState = { authenticated: false }
+    await expect(provider.ensureToken(30)).resolves.toBe(false)
+    expect(provider.authenticated).toBe(false)
+    expect(provider.tokenParsed).toBe(null)
     // 未登录后不再发起任何 RPC。
     const callsBefore = native.calls.length
     await expect(provider.ensureToken(30)).resolves.toBe(false)

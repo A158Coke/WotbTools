@@ -1,3 +1,6 @@
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { resolveApiUrl, isAndroidRuntime } from '../platform/runtime.js'
 import type {
   ApiErrorApplicationModel,
   ApiErrorInit,
@@ -213,7 +216,20 @@ export async function requireOk(response: Response): Promise<Response> {
 /** Fetch wrapper guaranteeing transport failures are also canonical ApiError instances. */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
-    return init === undefined ? await fetch(input) : await fetch(input, init)
+    const resolved = resolveApiUrl(input)
+    if (isAndroidRuntime()) {
+      const url = new URL(typeof resolved === 'string' ? resolved : resolved instanceof URL ? resolved.href : resolved.url, window.location.href)
+      const feature = url.pathname.startsWith('/api/ai/') ? Feature.AI_REVIEW
+        : /^\/api\/(?:admin\/hof|hof)(?:\/|$)/.test(url.pathname) ? Feature.HALL_OF_FAME
+          : url.pathname.startsWith('/api/users/') ? Feature.ACCOUNT_PROFILE : null
+      if (feature && !useFeatureGate().requireFeature(feature)) {
+        throw new ApiError({ code: 'NETWORK_ERROR', retryable: true })
+      }
+    }
+    // Native Bearer owns Android authentication; never send cross-origin cookies.
+    return isAndroidRuntime()
+      ? await fetch(resolved, { ...init, credentials: 'omit' })
+      : init === undefined ? await fetch(resolved) : await fetch(resolved, init)
   } catch (error) {
     throw normalizeApiError(error)
   }

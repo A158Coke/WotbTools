@@ -59,6 +59,7 @@ assert affected("infra/tofu/postgres-business/main.tf") == {"business_postgres"}
 assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgres"}
 assert affected("docs/README.md") == set()
 assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend", "android"}
+assert "android" in affected(".github/workflows/android-release.yml"), "release protocol changes must run Android helper tests"
 assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment"}
 assert affected("deploy/tx/publish-loaded-image-to-tcr.sh") == {"deployment"}
 assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
@@ -200,6 +201,12 @@ for android_workflow in ("ci-android.yml", "android-release.yml"):
     f"{android_workflow} must not pipe into grep -q (SIGPIPE false negative under pipefail): {offenders[:2]}"
   assert "listing_file" in android_text and "unzip -Z1" in android_text, \
     f"{android_workflow} must assert APK contents from a listing file"
+
+_publish_block = _release_source.split("\n  publish:", 1)[1]
+assert "https://wotbtools.com/version.json" not in _publish_block
+assert "FE_COMMIT" not in _publish_block
+assert "android_contract.py bundle" in _stage_block and "android_contract.py bundle" in _publish_block
+assert "android_contract.py cors" in _publish_block
 
 # Production owner routing and freshness inputs are paired contracts. A workflow
 # may only proceed when its triggering SHA is still current for every owned input.

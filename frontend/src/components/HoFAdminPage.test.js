@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import HoFAdminPage from './HoFAdminPage.vue'
@@ -37,6 +37,13 @@ const hofAdminApi = vi.hoisted(() => ({
 
 let roles = ['HoF-admin']
 let authenticated = true
+
+const connectivityState = vi.hoisted(() => ({ state: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+})
 
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
@@ -158,7 +165,10 @@ const mark3PendingDetail = {
 }
 
 describe('HoFAdminPage', () => {
+  const wrappers = []
+  afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
   beforeEach(() => {
+    connectivityState.state.value = 'online'
     roles = ['HoF-admin']
     authenticated = true
     vi.clearAllMocks()
@@ -168,7 +178,9 @@ describe('HoFAdminPage', () => {
   })
 
   function mountPage() {
-    return mount(HoFAdminPage, { global: { mocks: { $t: translate, $tm: optionMessages }, provide: { [DIALOG_INLINE_KEY]: true } } })
+    const wrapper = mount(HoFAdminPage, { global: { mocks: { $t: translate, $tm: optionMessages }, provide: { [DIALOG_INLINE_KEY]: true } } })
+    wrappers.push(wrapper)
+    return wrapper
   }
 
   async function switchToHundred(wrapper) {
@@ -180,6 +192,16 @@ describe('HoFAdminPage', () => {
     await wrapper.findAll('.hof-admin-tabs button')[3].trigger('click')
     await flushPromises()
   }
+
+  it.each(['offline', 'unknown', 'degraded', 'service-unavailable'])('admin deep mount in %s gates before login and all backend reads', async (state) => {
+    connectivityState.state.value = state
+    authenticated = false
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="hof-admin-connectivity"]').exists()).toBe(true)
+    expect(api.login).not.toHaveBeenCalled()
+    for (const call of Object.values(hofAdminApi)) expect(call).not.toHaveBeenCalled()
+  })
 
   it('HoF-admin sees admin content and loads records', async () => {
     const wrapper = mountPage()

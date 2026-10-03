@@ -1,3 +1,5 @@
+import { PRODUCTION_API_ORIGIN } from './src/platform/runtime.js'
+import { createHash } from 'node:crypto'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { execSync } from 'node:child_process'
@@ -140,9 +142,8 @@ export function buildIdentity() {
  * 生产前端的 native 运行面：直接取自 `src/platform/nativeBridgeContract.js`（FE 侧 bridge
  * 契约声明的 SSOT），因此它不可能与 bundle 里真正运行的常量漂移。
  *
- * 发布 Android 2.0 manifest 之前必须能证明**线上前端**支持 Bridge v2 + `native-auth`；
- * `nativeRuntimeIdentity()` 就是这条证明的机器可读来源
- * （见 `.github/workflows/android-release.yml` 的 publish 阶段与 `docs/android/release-process.md`）。
+ * Android release 从 immutable APK 内的 bundle manifest 核验相同声明，
+ * 不依赖线上 Vue 部署的 commit。Web version.json 保留这份诊断信息。
  */
 export function nativeRuntimeIdentity() {
   return {
@@ -151,6 +152,20 @@ export function nativeRuntimeIdentity() {
     authChangedGlobal: NATIVE_AUTH_CHANGED_GLOBAL,
     nativeAuthMethods: Object.values(NATIVE_AUTH_METHODS).sort(),
   }
+}
+
+/** Hash existing bootstrap scripts; Android has one reviewed network origin. */
+export function androidCsp(html) {
+  const hashes = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
+    .filter(match => match[1].trim())
+    .map(match => `'sha256-${createHash('sha256').update(match[1]).digest('base64')}'`)
+  return [
+    "default-src 'none'", `script-src 'self' 'wasm-unsafe-eval' ${hashes.join(' ')}`,
+    "style-src 'self' 'unsafe-inline'", `img-src 'self' data: blob: ${PRODUCTION_API_ORIGIN}`,
+    `connect-src 'self' ${PRODUCTION_API_ORIGIN}`, "font-src 'self' data:",
+    "worker-src 'self' blob:", "media-src 'self' blob:", "object-src 'none'",
+    "base-uri 'self'", "form-action 'none'",
+  ].join('; ')
 }
 
 const identity = buildIdentity()
@@ -168,6 +183,15 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [
       vue(),
+      ...(mode === 'android' ? [{
+        name: 'wotb-android-csp',
+        transformIndexHtml: {
+          order: 'post',
+          handler(html) {
+            return [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: androidCsp(html) }, injectTo: 'head-prepend' }]
+          },
+        },
+      }] : []),
       // dev-only 修复：把 `/wasm/*.js` 按静态模块伺服，绕开 Vite 对 publicDir 里 .js 的拦截。
       //
       // 缺陷：`publicDir` 指向 root 之外的 `../common/assets`；importAnalysis 会把动态

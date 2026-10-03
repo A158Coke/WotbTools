@@ -17,7 +17,7 @@ class ReplayDispatchPolicyTest {
         assertDispatch(
             hasPendingReplay = true,
             webViewVisible = true,
-            currentUrl = "https://wotbtools.com",
+            currentUrl = "https://appassets.androidplatform.net/index.html",
             expected = ReplayDispatchAction.NAVIGATE_REPLAY
         )
         // 冷启动后 URL 仍为空（webView.url == null）：同样切到 replay canonical view。
@@ -39,9 +39,9 @@ class ReplayDispatchPolicyTest {
     fun pendingReplayOnReplayWorkspaceNotifiesWebWithoutReloading() {
         // 已在 replay workspace：走 window.wotbtoolsOnReplay()，绝不 reload（否则丢掉 Web 侧已有状态）。
         listOf(
-            "https://wotbtools.com/?view=replay",
-            "https://wotbtools.com/?view=replay&tab=data",
-            "https://www.wotbtools.com/?view=replay"
+            "https://appassets.androidplatform.net/index.html?view=replay",
+            "https://appassets.androidplatform.net/index.html?view=replay&tab=data",
+            "https://appassets.androidplatform.net/index.html?view=replay"
         ).forEach { url ->
             assertDispatch(
                 hasPendingReplay = true,
@@ -58,13 +58,13 @@ class ReplayDispatchPolicyTest {
         assertDispatch(
             hasPendingReplay = true,
             webViewVisible = false,
-            currentUrl = "https://wotbtools.com",
+            currentUrl = "https://appassets.androidplatform.net/index.html",
             expected = ReplayDispatchAction.NONE
         )
         assertDispatch(
             hasPendingReplay = true,
             webViewVisible = false,
-            currentUrl = "https://wotbtools.com/?view=replay",
+            currentUrl = "https://appassets.androidplatform.net/index.html?view=replay",
             expected = ReplayDispatchAction.NONE
         )
     }
@@ -74,20 +74,20 @@ class ReplayDispatchPolicyTest {
         assertDispatch(
             hasPendingReplay = false,
             webViewVisible = true,
-            currentUrl = "https://wotbtools.com",
+            currentUrl = "https://appassets.androidplatform.net/index.html",
             expected = ReplayDispatchAction.NONE
         )
         assertDispatch(
             hasPendingReplay = false,
             webViewVisible = true,
-            currentUrl = "https://wotbtools.com/?view=replay",
+            currentUrl = "https://appassets.androidplatform.net/index.html?view=replay",
             expected = ReplayDispatchAction.NONE
         )
     }
 
     @Test
     fun replayMarkerIsSharedWithTheNavigationTarget() {
-        // MainActivity.REPLAY_URL = BASE_URL + "?" + REPLAY_VIEW_MARKER：分发判断的 URL 与导航目标
+        // MainActivity.REPLAY_URL = LOCAL_APP_ENTRY + "?" + REPLAY_VIEW_MARKER：分发判断的 URL 与导航目标
         // 不允许漂移，因此固定这个常量值。
         assertEquals("view=replay", ReplayDispatchPolicy.REPLAY_VIEW_MARKER)
     }

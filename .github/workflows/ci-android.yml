@@ -79,6 +79,14 @@ jobs:
             }
           done
           echo "APK carries the offline frontend bundle: $(grep -c '^assets/web/' "$listing_file") files"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+          test -x "$AAPT"
+          "$AAPT" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
+          python3 scripts/android-release/android_contract.py bundle \
+            --apk "$apk" --badging "$RUNNER_TEMP/apk-badging.txt" --contract contracts/android-native-bridge.json \
+            --pin deploy/agent/source.json --source "$(git rev-parse HEAD)" \
+            --version "$(sed -n 's/^wotbVersion=//p' android/gradle.properties)"
+
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:

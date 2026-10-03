@@ -3,14 +3,11 @@ package com.wotbtools.app
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * 启动门禁：网络检查 + Android 版本 manifest 拉取。
- * 本项目强制联网（规格 §11）：manifest 获取失败 → fail-closed，不允许进入业务。
- */
+/** Best-effort update manifest discovery; local startup never awaits this request. */
 object StartupGate {
     private const val VERSION_URL = "https://wotbtools.com/download/android/version.json"
-    private const val CONNECT_TIMEOUT_MS = 10_000
-    private const val READ_TIMEOUT_MS = 10_000
+    private const val CONNECT_TIMEOUT_MS = 3_000
+    private const val READ_TIMEOUT_MS = 3_000
 
     sealed class Result {
         data class Ok(val manifest: VersionManifest) : Result()

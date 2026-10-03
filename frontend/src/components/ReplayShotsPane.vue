@@ -12,13 +12,15 @@
  * 窄档详情支持左右滑动 / 方向键在**当前筛选结果内**切换上一发 / 下一发（首尾不循环）。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useI18n } from 'vue-i18n'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import {
   parseAgentShotsFromBytes, parseAgentPlaybackFromBytes, enrichShotsFromRoster, isShotHit,
 } from '../api/agent-replay-facets.js'
 import { formatPlaybackClock } from '../utils/playbackClock.js'
-import { storeShotsForViewer, fetchTankData, tankImageUrl } from '../scene/agentData.js'
+import { storeShotsForViewer, fetchLocalShotTankData } from '../scene/agentData.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import Badge from './Badge.vue'
 import StatStrip from './StatStrip.vue'
@@ -39,6 +41,7 @@ const props = defineProps({
   navigate: { type: Function, default: null },
 })
 const { t } = useI18n()
+const { requireFeature } = useFeatureGate()
 
 const shots = ref([])
 const parsing = ref(false)
@@ -53,7 +56,8 @@ let parsedFile = null
 let parseSeq = 0
 
 /**
- * 弹种兜底 / 俯仰锚定共用同一份资产面数据链（与 2D 回放、装甲查看器同一来源）。
+ * 弹种使用 bundled shellKinds，俯仰锚定/配置顺序使用 common/shot-tank-data.json。
+ * 这份紧凑快照来自同一 reviewed Agent asset plane；射击检视从不请求远端数据。
  * 弹表只在首次解析时按需加载一次。
  */
 let shellTablePromise = null
@@ -72,34 +76,13 @@ function loadShellTable() {
  * 弹种富化兜底（旧产物路径：WASM 输出没有 shell 字段时在客户端按同款表反解；
  * 新产物由 WASM 注入，此处零命中直通）。
  */
-async function enrichShellFallback(parsedShots, table) {
-  const byTank = new Map()
-  for (const s of parsedShots) {
-    if (s.shell_id && !s.shell && !byTank.has(s.shooter_tank_id)) byTank.set(s.shooter_tank_id, null)
-  }
-  await Promise.all([...byTank.keys()].map(async (tid) => {
-    try { byTank.set(tid, await fetchTankData(tid)) } catch { /* 静态面缺失：跳过弹链兜底 */ }
-  }))
-  for (const s of parsedShots) {
-    if (!s.shell_id || s.shell) continue
-    const entry = table && table[String(s.shell_id)]
-    if (entry) {
-      s.shell = entry
-      s.shell_kind = s.shell_kind || entry.type
-      continue
-    }
-    const data = byTank.get(s.shooter_tank_id)
-    if (!data) continue
-    // 与上游 resolve_shell_by_global_id 同式：全配置弹链查找（顶级偏好，从后往前）
-    for (let ci = (data.configs || []).length - 1; ci >= 0; ci--) {
-      const cfg = data.configs[ci]
-      const idx = (cfg.shell_global_ids || []).indexOf(s.shell_id)
-      if (idx >= 0 && cfg.shells?.[idx]) {
-        s.shell = s.shell || cfg.shells[idx]
-        s.shell_kind = s.shell_kind || cfg.shells[idx].type
-        break
-      }
-    }
+function enrichShellFallback(parsedShots, table) {
+  for (const shot of parsedShots) {
+    if (!shot.shell_id || shot.shell) continue
+    const entry = table?.[String(shot.shell_id)]
+    if (!entry) continue
+    shot.shell = entry
+    shot.shell_kind = shot.shell_kind || entry.type
   }
 }
 
@@ -118,7 +101,7 @@ async function buildPitchLimits(vehicles) {
   }
   await Promise.all([...tankNames.keys()].map(async (tid) => {
     try {
-      const data = await fetchTankData(tid)
+      const data = await fetchLocalShotTankData(tid)
       const cfgs = data.configs || []
       const pl = cfgs.length ? cfgs[cfgs.length - 1].pitch_limits : null
       if (pl && pl.max != null && pl.min != null) {
@@ -196,7 +179,7 @@ async function decode(file) {
       }
     }
     if (shellTable && parsedShots.some((s) => s.shell_id && !s.shell)) {
-      try { await enrichShellFallback(parsedShots, shellTable) } catch (e) {
+      try { enrichShellFallback(parsedShots, shellTable) } catch (e) {
         console.warn('shell enrichment skipped:', e)
       }
     }
@@ -494,7 +477,7 @@ function onDetailPointerUp(event) {
 async function resolveShellIdx(s) {
   if (!s.shell_id || !s.shooter_tank_id) return null
   try {
-    const data = await fetchTankData(s.shooter_tank_id)
+    const data = await fetchLocalShotTankData(s.shooter_tank_id)
     const cfgs = data.configs || []
     for (let ci = cfgs.length - 1; ci >= 0; ci--) {
       const idx = (cfgs[ci].shell_global_ids || []).indexOf(s.shell_id)
@@ -507,12 +490,14 @@ async function resolveShellIdx(s) {
 }
 
 async function openInViewer(s) {
+  if (!requireFeature(Feature.PLAYBACK_3D)) return
   if (!rowHas3d(s)) return
   const shooterTank = s.shooter_tank_id || 0
   const tank = s.target_tank_id || shooterTank || 0
   if (!tank) return
   storeShotsForViewer(shots.value)
   const hit = await resolveShellIdx(s)
+  if (!requireFeature(Feature.PLAYBACK_3D)) return
   const shellIdx = hit ? hit.idx : (s.is_author && s.shell_slot != null) ? s.shell_slot : null
   // 组件不碰 history：目的地交给工作台注入的 router owner
   props.navigate?.({
@@ -595,7 +580,6 @@ onBeforeUnmount(() => {
               @click="selectShot(s.index, $event)"
             >
               <span class="shot-time">{{ formatPlaybackClock(s.time_s) }}</span>
-              <img v-if="s.target_tank_id" class="shot-icon" loading="lazy" :src="tankImageUrl(s.target_tank_id)" alt="">
               <span class="shot-path">
                 <span class="shot-names">
                   <span class="shot-name">{{ playerName(s.shooter_name) }}</span>
@@ -748,7 +732,6 @@ onBeforeUnmount(() => {
 .shot-row:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 
 .shot-time { flex: none; width: 5.5ch; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
-.shot-icon { flex: none; width: 36px; height: 25px; object-fit: contain; }
 .shot-path { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .shot-names { display: flex; gap: var(--space-1); min-width: 0; }
 .shot-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

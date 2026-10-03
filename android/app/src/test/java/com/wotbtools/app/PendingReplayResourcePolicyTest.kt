@@ -18,17 +18,30 @@ class PendingReplayResourcePolicyTest {
         assertNull(response.data)
     }
 
+    @Test fun exactResourceRejectsNonGetWithoutNetworkFallback() {
+        val file = temp.newFile().apply { writeText("replay-bytes") }
+        listOf("POST", "HEAD", "OPTIONS", "DELETE").forEach { method ->
+            val response = ReplayIntentHandler.interceptPendingResource(
+                ReplayIntentHandler.STREAM_URL, file, identity, identity, method
+            )!!
+            assertEquals(405, response.status)
+            assertNull(response.data)
+            assertTrue(file.isFile)
+        }
+    }
+
     @Test fun unrelatedUrlsAreNotTheNativeResource() {
         val rejected = listOf(
-            "http://wotbtools.com/__native/replay-pending",
+            "https://wotbtools.com/__native/replay-pending",
+            "http://appassets.androidplatform.net/__native/replay-pending",
             "https://www.wotbtools.com/__native/replay-pending",
             "https://evil.com/__native/replay-pending",
-            "https://wotbtools.com/__native/replay-pending/extra",
-            "https://wotbtools.com/__native/other",
-            "https://wotbtools.com/__native/replay-pending?id=$identity",
-            "https://wotbtools.com:8443/__native/replay-pending",
-            "https://wotbtools.com/__native/replay-pending#fragment",
-            "https://user@wotbtools.com/__native/replay-pending"
+            "https://appassets.androidplatform.net/__native/replay-pending/extra",
+            "https://appassets.androidplatform.net/__native/other",
+            "https://appassets.androidplatform.net/__native/replay-pending?id=$identity",
+            "https://appassets.androidplatform.net:8443/__native/replay-pending",
+            "https://appassets.androidplatform.net/__native/replay-pending#fragment",
+            "https://user@appassets.androidplatform.net/__native/replay-pending"
         )
         rejected.forEach { url ->
             assertNull(url, ReplayIntentHandler.interceptPendingResource(url, null, null, identity))

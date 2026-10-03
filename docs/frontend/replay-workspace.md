@@ -6,7 +6,7 @@
 
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`playback`、`3d`、`shots`、`ai` **五种能力**的统一工作台：选择一次文件，能力之间切换不重新选文件、不重建 session。
 - Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放* · 射击分析* · AI 复盘，* 仅管理员；五个能力都在本工作台内，没有"导航去另一个页面"的能力），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
-- 五个能力面板都由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`），之后切走只 `v-show` 隐藏：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
+- 五个能力面板都由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`），之后切走只 `v-show` 隐藏（3D/AI 首次挂载还要求 capability 可用）：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
 - 3D 面板按「待开播 → 开始」两步进入播放：文件由工作台派生后就位，但解析与资产加载都要等用户在面板里按「开始」（卡片上先选画质档——内核 `startPlayback()` 惰性创建渲染器、首帧按当前档位定型，所以档位不能事后在加载中再改）。换场次 / 清空先 `reset()` 撤下上一场：`reset` 与 `destroy` 同等作废在途加载（`sessionEpoch` / `loadGeneration`），被撤下的解析 / 资产续体不得再回写 store，也不得把上一场继续画在待开播面板后面。
 - 3D 场景加载与就绪态由 `scene/playbackScene.js` 独占：进入解析阶段立即置 `loading=true`、`hasData=false`、`assetStage=false`、`assetProgress=null`；当前会话进入资产阶段才推进资产进度，完成后才标 ready。销毁清掉加载阶段状态。地图资产每个异步边界之后先复核会话身份，再发布地图 key、纹理、地形、分层地表或场景；迟到资源只释放局部结果。资产 URL 显式使用当前会话的地图 key，旧实例的地图解析不能改变当前会话后续请求。`Replay3DPane` 只负责编排，不新增加载令牌。
 - 3D 顶栏的双方总血量与比分都按**阵营视角**渲染，不是原始 `score1` / `score2`：`scene/teamHpTotals.js` 的 `teamHpTotals()` 按 `friendly_team` 把车辆血量归到己方 / 敌方，`perspectiveScore()` 把物理比分映射成 `scoreFriend` / `scoreEnemy`，store 只暴露视角字段，HUD 数值不缩写（完整整数 + 原始百分比色条）。
@@ -27,7 +27,7 @@
 
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision` 与 `sourceId`（`r{文件序号}`）作为唯一 identity。
 - 场次选择器（数据模式在 `ReplayPage` 工具栏、四个单场能力在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。用户可见的能力集合仍受 admin feature flag 约束：普通用户 `data / playback / ai`，管理员再加 `3d / shots`；非管理员直达 `?view=agent-replay|agent-shots` 由 `viewFromRoute` 收敛回默认视图。
-- AI 复盘是**正式能力**（普通用户可见，未登录由 AuthGate 引导登录），深链直接挂载 AI 面板（`AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`），受登录门控与客户端投影可用性约束；前端已无维护状态卡（提交 `83884790`，`ai_maintenance` 三语 key 无消费者）。切换 capability 不重新分析数据模式的结果。
+- AI 复盘是**正式能力**（普通用户可见）；联网能力先经 `useFeatureGate` 判定，离线/unknown/degraded/service-unavailable 先给 connectivity 提示，绝不启动登录；在线且未登录沿用 native/browser auth。可用深链挂载 AI 面板（`AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`），受登录门控与客户端投影可用性约束；前端已无维护状态卡（提交 `83884790`，`ai_maintenance` 三语 key 无消费者）。切换 capability 不重新分析数据模式的结果。
 - 射击分析面板按 `docs/frontend/design-language.md` §9 做 Master–Detail（expanded 常驻右栏 / medium 推开式侧栏 / compact 整屏面板），分档由**容器宽度**（`ResizeObserver` + container query）决定而不是视口。装甲场景不在面板内嵌：命中弹的「在装甲查看器里打开」把 `shots` 经既有本地交接通道交出并用注入的 `navigate` 打开 `?view=agent-armor&…`——复用引擎，不复用页面导航模型。
 - AI/Playback 详细接口与回放管线以以下文档为准，不在本索引重复维护：
   - [`docs/architecture/ai-review.md`](../architecture/ai-review.md)
@@ -43,3 +43,24 @@
 
 - Android pending 字节通过固定同源 HTTPS Native resource 读取；header 校验 pending identity，响应不缓存。fetch/blob 失败复用 Replay 错误区与重试，不分析、不 ACK。
 - Android pending replay 在工作台挂载后消费；ACK 边界是「本机分析已完成」（`analyze()` 返回 `{ completed: true }`，无论有没有有效场次）；回放引擎装载失败返回 `{ completed: false, reason: 'ENGINE_UNAVAILABLE' }`，Native pending 原样保留可重试（见 [`docs/android/replay-intent.md`](../android/replay-intent.md)）。
+
+## Local-first capability boundary
+
+`app/featureCapabilities.js` 是唯一连通性能力模型；组件消费 `useFeatureGate()`，不自行读 `navigator.onLine`。
+
+| 能力 | 运行要求 | 离线行为 |
+|---|---|---|
+| `data`：导入、Rust/WASM 解析、Result、deterministic Rating、session state | LOCAL | 文件、结果与选择照常使用，不请求业务 HTTP |
+| `playback`：2D、底图、标记 | LOCAL | 本机解析，底图和标记随 bundle 提供 |
+| `shots`：射击列表、检视、弹种、俯仰锚定 | LOCAL | 本机解析，使用 bundled `shellKinds.json` 与 `common/shot-tank-data.json` |
+| `3d`：远端场景/GLB | ONLINE_REQUIRED | tab 保留；点击/深链立即提示，不挂载 remote loader |
+| `ai`：AI 复盘 | ONLINE_REQUIRED + auth | connectivity 先于登录与请求；联网恢复不自动提交 |
+| HoF/remote Profile | ONLINE_REQUIRED | 入口保留；mount、读写、确认后的动作都经过同一门禁 |
+
+Android 与 Web 共用工作台、Router 和唯一 `useReplaySession`。外部 replay pending 导入在同一工作台选择文件并本机分析后 ACK；解析引擎失败保留 pending 供重试，不自动发起 AI、3D 或上传。
+
+断网不清空 replay、Result、Rating、native cached session 或本地检视。3D 断网销毁当前场景以作废在途 asset session（沿用场景 generation，不创建另一套 cancellation）；selection 仍属于工作台。用户停留在阻断的 3D 时，重连只恢复 controller 与待开播面板一次；沿用 main 的画质先选、明确 Start 后才解析/拉资产，后台重连不新建场景。AI 流沿用既有 AbortController 取消，断网取消不再发送 cancel HTTP；重连只恢复能力，不提交复盘。HoF 只在 availability 从不可用恢复可用时加载当前榜单一次，业务错误仍由明确重试处理。
+
+`common/shot-tank-data.json` 从 reviewed Agent asset plane 的 `data/tank_cache.json` 与 `tank/{id}.json` 提取 config 原始顺序、`pitch_limits`、`shell_global_ids`；不包含名称/GLB/纹理或第二份 tankopedia。更新：`python common/python/update_shot_tank_data.py --asset-base <reviewed HTTPS asset origin>`。缺 source entry 更新失败，不覆盖现有快照；缓存与全部 tank 原始输入有 SHA-256 provenance。当前 735 车型的 2075 global shell IDs 全部由同包弹表覆盖。未知车型如实保留 pitch 降级，不联网补齐。装甲查看器跳转属于联网 3D 动作，单独门控。
+
+`npm run test:browser-interaction` 包含真实 WASM offline scenario：冷启动/重启、fixture 手动导入/Result/Rating/2D/射击、AI/HoF/3D/Profile 深链、重连/断网与 local state 保持，并在网络边界记录和拒绝业务 HTTP（应为零）。这是自动运行门禁；3D 画面和 Android provider 真机验证仍由人工完成。
