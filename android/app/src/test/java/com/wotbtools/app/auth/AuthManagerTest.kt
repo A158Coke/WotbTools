@@ -120,12 +120,79 @@ class AuthManagerTest {
         assertTrue("save 必须发生在启动之前", saveIndex in 0 until launchIndex)
     }
 
-    private fun authManagerSource(): String {
+    /**
+     * AppAuth 的 completion `PendingIntent` 必须允许 AppAuth **填入响应 Intent**。
+     *
+     * AppAuth 的 `AuthorizationManagementActivity` 用 `callback.send(context, 0, responseData)` 把
+     * 组装好的响应（`EXTRA_RESPONSE` / `EXTRA_EXCEPTION` + redirect URI 作为 data）交给调用方的
+     * PendingIntent。`FLAG_IMMUTABLE` 会冻结创建时的 Intent、静默忽略这次填充：
+     * `MainActivity.isAuthorizationIntent()` 于是看不到任何 extra，回程被当成普通启动，
+     * token 交换永远不会开始 —— 真机表现是「浏览器里认证成功，App 里始终未登录」，而这在
+     * JVM/CI 里完全测不出来。这里对 flag 策略与调用点做一次窄的源契约断言。
+     */
+    @Test
+    fun appAuthCallbackPendingIntentsAllowAppAuthToFillTheResponse() {
+        val code = authManagerCode()
+
+        assertTrue(
+            "必须有单一、可审查的 AppAuth 回程 flag 策略",
+            code.contains("private fun appAuthCallbackFlags(): Int =")
+        )
+        assertTrue(
+            "回程 PendingIntent 必须带 FLAG_UPDATE_CURRENT",
+            code.contains("PendingIntent.FLAG_UPDATE_CURRENT or")
+        )
+        assertTrue(
+            "S+ 必须带 FLAG_MUTABLE（minSdk 26 需要按版本降级）",
+            code.contains(
+                "if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0"
+            )
+        )
+
+        // 登录与 end-session 这两个 AppAuth 回程 PendingIntent 必须共用同一份策略。
+        assertEquals(
+            "AppAuth 回程 PendingIntent 的数量变化了，flag 策略需要重新审查",
+            2,
+            Regex("""PendingIntent\.getActivity\(""").findAll(code).count()
+        )
+        assertEquals(
+            "登录与 end-session 必须都使用 appAuthCallbackFlags()",
+            2,
+            Regex("""\n\s+appAuthCallbackFlags\(\)\n""").findAll(code).count()
+        )
+
+        assertFalse(
+            "AppAuth 的结果 PendingIntent 绝不能是不可变的（响应 extras 会被丢弃）",
+            code.contains("FLAG_IMMUTABLE")
+        )
+
+        // 可变 ≠ 隐式：基础 Intent 必须仍然是显式组件。
+        assertEquals(
+            "两个回程 PendingIntent 都必须携带显式组件 Intent",
+            2,
+            Regex("""Intent\(appContext, activityClass\(\)\)""").findAll(code).count()
+        )
+    }
+
+    private fun authManagerSource(): String = authManagerFile().readText()
+
+    /**
+     * 源码中**去掉注释行**的部分：flag 策略断言必须针对真实代码，而不是针对解释它的注释
+     * （helper 的文档注释里刻意提到了 `FLAG_IMMUTABLE`）。
+     */
+    private fun authManagerCode(): String = authManagerSource().lines()
+        .filterNot { line ->
+            val trimmed = line.trimStart()
+            trimmed.startsWith("*") || trimmed.startsWith("//") || trimmed.startsWith("/*")
+        }
+        .joinToString("\n")
+
+    private fun authManagerFile(): File {
         val candidates = listOf(
             "src/main/java/com/wotbtools/app/auth/AuthManager.kt",
             "app/src/main/java/com/wotbtools/app/auth/AuthManager.kt"
         )
-        return candidates.map(::File).firstOrNull { it.isFile }?.readText()
+        return candidates.map(::File).firstOrNull { it.isFile }
             ?: error("AuthManager.kt not found from ${File(".").absolutePath}")
     }
 }

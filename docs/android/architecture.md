@@ -141,6 +141,16 @@ App **未安装**（或该设备没走 App Link）时，浏览器会真的停在
 
 ### 校验边界（谁负责什么）
 
+- **回程投递（PendingIntent 必须是 mutable）**：AppAuth 的 `AuthorizationManagementActivity` 不复用
+  调用方给的 Intent —— 它先组装一个新的响应 Intent（`EXTRA_RESPONSE` / `EXTRA_EXCEPTION` + 完整
+  redirect URI 作为 data），再 `callback.send(context, 0, responseData)` 交给 completion
+  `PendingIntent`。因此登录与 end-session 的回程 PendingIntent 都用
+  `FLAG_UPDATE_CURRENT | (SDK ≥ 31 ? FLAG_MUTABLE : 0)`（`appAuthCallbackFlags()`，minSdk 26 需降级）：
+  `FLAG_IMMUTABLE` 会冻结创建时的 Intent、静默丢弃填充，`MainActivity` 于是连
+  `isAuthorizationIntent()` 都不成立，授权码永远不会被交换 —— 真机表现是「浏览器里认证成功、
+  App 里始终未登录」，而 JVM/CI 完全测不出来（由 `AuthManagerTest` 的源契约断言守住）。
+  可变的是「允许 AppAuth 填 extras」，基础 Intent 仍然是显式组件 `Intent(appContext, activityClass())`。
+
 - **AppAuth 负责**：它自己那一份响应 `state` 与请求 `state` 的比较（`AuthorizationManagementActivity`
   不匹配即丢弃并回 `STATE_MISMATCH`）、nonce 断言、以及 code verifier 的归属 —— verifier 只存在于
   `AuthorizationRequest` 内，随响应对象回到本进程后才用于交换，应用层拿不到也不需要拿。
