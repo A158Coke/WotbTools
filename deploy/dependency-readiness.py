@@ -23,7 +23,11 @@ def required(name: str) -> str:
 
 
 def check_keycloak() -> None:
-    base = os.environ.get("TX_KEYCLOAK_ADMIN_SERVER_URL", "http://keycloak:8080").rstrip("/") + "/realms/wotbtools"
+    # The endpoint is never invented here: dependency-readiness.sh validates it
+    # against the canonical reviewed allowlist and passes the accepted value in,
+    # so a missing value means no validation happened and the probe must refuse
+    # to send the admin client secret anywhere.
+    base = required("TX_KEYCLOAK_ADMIN_SERVER_URL").rstrip("/") + "/realms/wotbtools"
     with urllib.request.urlopen(base + "/.well-known/openid-configuration", timeout=8) as response:
         if response.status != 200:
             raise ReadinessError("Keycloak realm discovery did not return HTTP 200")
