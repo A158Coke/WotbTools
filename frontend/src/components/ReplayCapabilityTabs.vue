@@ -1,6 +1,8 @@
 <script setup>
-// 回放工作台的模式切换（design-language §7 Tabs：切换内容区域）。
-// WAI-ARIA tablist：方向键在模式间移动并激活，Home / End 跳到首尾。
+// 回放工作台的能力切换：把「数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘」呈现为
+// 同一内容区域的模式分档（design-language §7：SegmentedControl 的形态）。
+// 视觉 primitive 与 SegmentedControl 同一套语义 token，不再维护 Replay 专属 tab CSS；
+// 窄屏允许水平滚动，键盘走完整的 WAI-ARIA tab 模式：方向键移动并激活、Home / End 跳首尾。
 defineOptions({ name: 'ReplayCapabilityTabs' })
 
 const props = defineProps({
@@ -27,13 +29,13 @@ function onKeydown(event) {
 </script>
 
 <template>
-  <div class="workspace-tabs" role="tablist" :aria-label="$t('workspace.title')" @keydown="onKeydown">
+  <div class="capability-selector" role="tablist" :aria-label="$t('workspace.title')" @keydown="onKeydown">
     <button
       v-for="option in options"
       :key="option.key"
       role="tab"
       type="button"
-      class="workspace-tab"
+      class="capability-option"
       :class="{ 'is-active': activeCapability === option.key }"
       :aria-selected="activeCapability === option.key"
       :tabindex="activeCapability === option.key ? 0 : -1"
@@ -47,36 +49,49 @@ function onKeydown(event) {
 </template>
 
 <style scoped>
-.workspace-tabs {
+.capability-selector {
   display: flex;
   gap: var(--space-1);
+  max-width: 100%;
   margin-bottom: var(--space-4);
+  padding: var(--space-1);
   overflow-x: auto;
-  border-bottom: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
   scrollbar-width: none;
 }
 
-.workspace-tabs::-webkit-scrollbar { display: none; }
+.capability-selector::-webkit-scrollbar { display: none; }
 
-.workspace-tab {
+.capability-option {
   flex: none;
-  min-height: var(--control-h-lg);
-  margin-bottom: -1px;
-  padding: 0 var(--space-4);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-3);
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-secondary);
   font: var(--type-body);
-  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
 }
 
-.workspace-tab.is-active { border-bottom-color: var(--color-accent); color: var(--color-text-primary); }
-.workspace-tab:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
+.capability-option.is-active {
+  background: var(--color-surface-1);
+  box-shadow: var(--elevation-1);
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.capability-option:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 @media (hover: hover) {
-  .workspace-tab:not(.is-active):hover { color: var(--color-text-primary); }
+  .capability-option:not(.is-active):hover { color: var(--color-text-primary); }
+}
+
+/* 触屏：点击区域抬到 --hit-min（44px），布局不动（design-language §5/§6） */
+@media (pointer: coarse) {
+  .capability-option { min-height: var(--hit-min); padding: 0 var(--space-4); }
 }
 </style>
