@@ -202,6 +202,33 @@ describe('AgentReplay3D WebGL 预检与加载状态', () => {
     expect(wrapper.find('[data-testid="scene3d-unsupported"]').text()).toContain('scene3d.webgl_unavailable')
   })
 
+  it('顶栏双方总血量 + 比分：同一阵营视角（完整整数，title 带取整百分比）', async () => {
+    mockWebGL('webgl2')
+    const wrapper = await mountReplay()
+    const { store } = playback.api
+    store.hasData = true
+    store.hpFriend = 1500; store.hpFriendMax = 3000; store.hpFriendPct = 50
+    store.hpEnemy = 900; store.hpEnemyMax = 1200; store.hpEnemyPct = 75.4
+    // 比分读内核映射后的视角化字段（左 = 己方），组件不再直接消费物理 score1/score2
+    store.scoreFriend = 4; store.scoreEnemy = 2
+    await nextTick()
+    const row = wrapper.find('[data-test="hud-team-hp"]')
+    expect(row.exists()).toBe(true)
+    expect(row.text()).toContain('1500 / 3000')
+    expect(row.text()).toContain('900 / 1200')
+    const score = wrapper.find('[data-test="hud-score"]')
+    expect(score.text()).toBe('4 : 2')
+    expect(score.find('.score-friend').exists()).toBe(true)
+    expect(score.find('.score-enemy').exists()).toBe(true)
+    const fills = row.findAll('.hpbar > i')
+    expect(fills).toHaveLength(2)
+    expect(fills[0].attributes('style')).toContain('width: 50%')
+    expect(fills[1].attributes('style')).toContain('width: 75.4%')
+    const bars = row.findAll('.hpbar')
+    expect(bars[0].attributes('title')).toBe('agentReplay.hp_friendly 50%')
+    expect(bars[1].attributes('title')).toBe('agentReplay.hp_enemy 75%')
+  })
+
   it('解析中为不确定进度，资产阶段显示资产进度；失败后可重试同一文件或关闭', async () => {
     mockWebGL('webgl2')
     const wrapper = await mountReplay()

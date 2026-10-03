@@ -27,6 +27,7 @@ import { labelVisual } from './labelStyle.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
 import { groupByVehicle, inferMagazineSize, reloadVisualKey, resolveMagazineSize, shellStatesAt } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
+import { perspectiveScore, teamHpTotals } from './teamHpTotals.js'
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { playableBounds } from '../data/playableBounds.js'
@@ -2210,8 +2211,11 @@ export function initPlayback(container, store) {
       if (!victim) continue;
       if (victim.def.team === 1) score2++; else if (victim.def.team === 2) score1++;
     }
-    if (store.score1 !== score1) store.score1 = score1;
-    if (store.score2 !== score2) store.score2 = score2;
+    // 上屏前映射到阵营视角：击杀计数是物理队伍（score1 = team 1），而顶栏布局是
+    // 「己方 HP | 己方比分 : 敌方比分 | 敌方 HP」——不映射在 `friendly_team = 2` 时左右相反。
+    const perspective = perspectiveScore(score1, score2, DATA.meta.friendly_team);
+    if (store.scoreFriend !== perspective.scoreFriend) store.scoreFriend = perspective.scoreFriend;
+    if (store.scoreEnemy !== perspective.scoreEnemy) store.scoreEnemy = perspective.scoreEnemy;
   }
 
   // ---------- 名册 ----------
@@ -2417,6 +2421,13 @@ export function initPlayback(container, store) {
     if (!force && now - hudWrittenMs < HUD_INTERVAL_MS) return;
     hudWrittenMs = now;
     store.timer = gameTimerLabel(T);
+    // 顶栏：双方队伍总血量（与上游 3D 视图同口径：各队 max_hp 汇总；未知阵营不计入任一方，
+    // 见 teamHpTotals）。随 HUD 10Hz 节流写入即可——血量每秒变化远低于此，没必要每帧
+    // 触发整页 VDOM patch（见上方 HUD_INTERVAL_MS）。
+    Object.assign(store, teamHpTotals(
+      V.map((v) => ({ team: v.def.team, hp: hpAt(v, T), maxHp: v.def.max_hp })),
+      DATA.meta.friendly_team,
+    ));
     store.time = T;
     const f = (T - DATA.meta.t_start) / Math.max(0.001, END - DATA.meta.t_start);
     if (!store.seeking) store.seekFrac = Math.round(f * 1000);
@@ -2566,6 +2577,9 @@ export function initPlayback(container, store) {
     store.banner = null;
     // HUD 派生字段显式归零（与 tick 的确定性重算互为双保险：会话切换不留上一场残值）
     store.pointsFriend = null; store.pointsEnemy = null;
+    store.scoreFriend = 0; store.scoreEnemy = 0;
+    store.hpFriend = 0; store.hpFriendMax = 0; store.hpEnemy = 0; store.hpEnemyMax = 0;
+    store.hpFriendPct = 100; store.hpEnemyPct = 100;
     store.roster.team1 = [];
     store.roster.team2 = [];
     store.roster.unknown = [];
