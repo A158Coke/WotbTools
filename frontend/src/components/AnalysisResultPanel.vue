@@ -7,15 +7,13 @@ import MarkdownContent from './MarkdownContent.vue'
 // 后端 SSE `done` 载荷返回个人 { analysis, preBattleSection? } 或团队 { teamReview, preBattleSection? }；
 // preBattleSection 为 null/空（Call #1 失败/降级）时整个区块不渲染。
 // 地图鸟瞰（热力/路线/战局回放）已拆为页面级独立区块（ReplayPage Workspace / BattlePlaybackPanel 加载），
-// 不随 AI 复盘结果渲染；AI 报告时间链接经 seek 事件上抛给页面。
+// 不随 AI 复盘结果渲染；AI 报告中的时间只作为证据定位文本，不在结果面板承担 Playback seek。
 const props = defineProps({
   result: {
     type: Object,
     required: true
   }
 })
-
-defineEmits(['seek'])
 
 // 默认展开，用户可折叠收起
 const preBattleOpen = ref(true)
@@ -153,7 +151,6 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
       v-if="analysisOpen && !result.teamReview && result.analysis"
       class="analysis-text"
       :content="result.analysis"
-      @seek="$emit('seek', $event)"
     />
     <div v-if="analysisOpen && result.teamReview" class="team-review-content">
       <section class="team-summary">
@@ -170,7 +167,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
           <span v-if="episode.startSec !== null && episode.endSec !== null" class="team-time">
             {{ episode.startSec }}s–{{ episode.endSec }}s
           </span>
-          <MarkdownContent class="analysis-text" :content="episode.analysis" @seek="$emit('seek', $event)" />
+          <MarkdownContent class="analysis-text" :content="episode.analysis" />
         </article>
       </section>
 

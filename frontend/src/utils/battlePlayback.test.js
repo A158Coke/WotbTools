@@ -7,7 +7,6 @@ import {
   KILL_FEED_MS,
   lastKnownPosition,
   normalizeDeg,
-  parseAiTime,
   positionAt,
   pushFeed,
   recentPositionTrails,
@@ -141,24 +140,6 @@ describe('teamPointsAt', () => {
     expect(teamPointsAt(samples, 2, 78.6)).toBe(361)
     expect(teamPointsAt(samples, 2, 56.5)).toBeNull()
     expect(teamPointsAt(null, 1, 0)).toBeNull()
-  })
-})
-
-describe('parseAiTime', () => {
-  it('parses explicit time formats only', () => {
-    expect(parseAiTime('03:20')).toBe(200)
-    expect(parseAiTime('3分20秒')).toBe(200)
-    expect(parseAiTime('3m 20s')).toBe(200)
-    expect(parseAiTime('3m20s')).toBe(200)
-    expect(parseAiTime('3 мин 20 с')).toBe(200)
-    expect(parseAiTime('3 мин. 20 с.')).toBe(200)
-  })
-
-  it('does not misread plain numbers or scores', () => {
-    expect(parseAiTime('854:275')).toBeNull()
-    expect(parseAiTime('123')).toBeNull()
-    expect(parseAiTime('5')).toBeNull()
-    expect(parseAiTime('854比275')).toBeNull()
   })
 })
 

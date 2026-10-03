@@ -26,8 +26,9 @@ fragment alongside the independent Keycloak PostgreSQL fragment so application
 deployments share the same service and volume definition:
 
 - image `postgres:18-alpine` (never a floating tag);
-- administration port `127.0.0.1:25432:5432` - loopback only, never public and
-  never over WireGuard;
+- administration port `127.0.0.1:25432:5432` - host-local OpenTofu/administration;
+- private service endpoint `10.20.0.1:25432:5432` - WireGuard only (K6A);
+  production consumers still use `business-postgres:5432`;
 - volume `business_postgres_data`;
 - `POSTGRES_DB=postgres` so the image entrypoint never auto-creates the
   OpenTofu-owned business database when the bootstrap administrator is named
@@ -116,8 +117,9 @@ refuses `TX_RUNTIME_READY` until Business PostgreSQL is fully ready:
 
 - the `business-postgres` container exists and reports `healthy`;
 - `pg_isready -U "$TX_BUSINESS_POSTGRES_ADMIN_USER" -d postgres` succeeds;
-- the published administration port is exactly `127.0.0.1:25432:5432` - a
-  `0.0.0.0`, `::`, bare `25432:5432`, or WireGuard address fails the check;
+- published TCP bindings are exactly `127.0.0.1:25432:5432` and
+  `10.20.0.1:25432:5432`; missing/extra bindings, wildcard/public addresses,
+  bare ports, wrong targets or UDP fail the `wireguard-service-plane` check;
 - `/opt/wotb-tx/business-postgres.tofu-provisioned` exists and contains exactly
   `tx-local-opentofu-business-postgres`.
 

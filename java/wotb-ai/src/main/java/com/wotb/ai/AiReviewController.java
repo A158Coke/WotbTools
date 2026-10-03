@@ -204,9 +204,9 @@ public class AiReviewController {
         if (!AiCancellationRegistry.isValidCorrelationId(correlationId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_CORRELATION_ID");
         }
-        if (!cancellations.cancel(correlationId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND");
-        }
+        // Cancel 是 best-effort 通知：请求已完成、已取消或从未注册都视为目标状态已达成。
+        // 这避免 beforeunload / timeout 与 worker finally unregister 的正常竞态产生无意义 404。
+        cancellations.cancel(correlationId);
         return ResponseEntity.noContent().build();
     }
 

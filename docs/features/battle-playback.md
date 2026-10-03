@@ -328,11 +328,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   - **RAF 幂等**：`play()` 在已播放时直接返回、`pause()` 取消未完成回调，任意时刻至多一个 RAF 循环；
     播放到结尾、切离 playback Tab、折叠地图鸟瞰、组件卸载均停止。
   - **时间格式**：`formatClock` 先对总秒数统一取整再分解分钟/秒（杜绝 59.6s 显示为 00:60）。
-  **AI 报告时间跳转**：`MarkdownContent` 把明确时间文本（`03:20` / `3分20秒` / `3m 20s` /
-  `3 мин 20 с`）转成 `#seek=<秒>` 链接（不识别普通数字/比分）；结果面板把 seek 事件上抛给页面，
-  页面确保独立地图区块已加载（`MapOverview` 由同一次本机解析产出，无网络请求）并把 seek 传给 MapOverview——
-  自动切换到战局回放并 seek 到该时刻暂停；随后页面 scrollIntoView 回滚到地图区块（地图在结果面板上方，
-  点报告底部时间链接即可直接看到对应时刻的回放）。
+  **AI 报告时间**：AI 复盘中的 `03:20` / `3分20秒` 等时间仅作为证据定位文本展示，不承担
+  Playback seek / capability handoff。Replay Workspace 当前明确解耦 AI 与 2D/3D Playback；
+  若未来统一交互，再由工作台级 player state 提供单一 seek 语义。
 - **阶段切片**：opening = OPENING + FIRST_CONTACT 合并；mid = 中间段；late = 战斗末
   `BattlePhaseSummary.DENSE_KILL_WINDOW_SEC`（15s）窗口（残局）。
 - **降级**：未知地图 / 无语义网格 / 无名册 / 无观测 / 视角未解析 → `mapOverview = null`，

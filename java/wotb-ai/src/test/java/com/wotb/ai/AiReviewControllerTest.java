@@ -38,6 +38,19 @@ class AiReviewControllerTest {
     }
 
     @Test
+    void cancelIsIdempotentWhenReviewIsAlreadyFinished() {
+        final var response = controller.cancel(UUID.randomUUID().toString());
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+    }
+
+    @Test
+    void cancelStillRejectsInvalidCorrelationId() {
+        final var error = assertThrows(ResponseStatusException.class, () -> controller.cancel("not-a-uuid"));
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        assertEquals("INVALID_CORRELATION_ID", error.getReason());
+    }
+
+    @Test
     void rejectsMissingReconstructionFactsBeforeStartingWorker() {
         final Battle battle = new Battle();
         battle.arenaBonusType = 1;
