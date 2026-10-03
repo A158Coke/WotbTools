@@ -347,8 +347,9 @@ jobs:
           KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
           KC_DB_USERNAME: keycloak
           KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
-          TX_KEYCLOAK_DB_HOST: ${{ vars.TX_KEYCLOAK_DB_HOST || 'keycloak-postgres' }}
-          TX_KEYCLOAK_DB_PORT: ${{ vars.TX_KEYCLOAK_DB_PORT || '5432' }}
+          # K6B-1 keeps Keycloak on its Docker-local database path.
+          TX_KEYCLOAK_DB_HOST: keycloak-postgres
+          TX_KEYCLOAK_DB_PORT: '5432'
           WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
           KEYCLOAK_ADMIN_USERNAME: admin
           KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}

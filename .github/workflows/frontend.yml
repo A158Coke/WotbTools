@@ -392,5 +392,6 @@ jobs:
           WOTB_DEPLOY_CONFIG_SHA: ${{ github.sha }}
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
           ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
-          TX_BACKEND_UPSTREAM: ${{ vars.TX_BACKEND_UPSTREAM || 'http://business-api:8087' }}
-          TX_AI_UPSTREAM: ${{ vars.TX_AI_UPSTREAM || 'http://10.20.0.2:8089' }}
+          # K6B-1 keeps the current dependency path active; K6B-2 switches it.
+          TX_BACKEND_UPSTREAM: http://business-api:8087
+          TX_AI_UPSTREAM: http://10.20.0.2:8089

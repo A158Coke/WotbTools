@@ -221,5 +221,6 @@ jobs:
           WOTB_DEPLOY_SERVICE: caddy
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
-          CADDY_FRONTEND_UPSTREAM: ${{ vars.CADDY_FRONTEND_UPSTREAM || 'wotb-frontend:80' }}
-          CADDY_KEYCLOAK_UPSTREAM: ${{ vars.CADDY_KEYCLOAK_UPSTREAM || 'keycloak:8080' }}
+          # K6B-1 does not move public ingress consumers yet.
+          CADDY_FRONTEND_UPSTREAM: wotb-frontend:80
+          CADDY_KEYCLOAK_UPSTREAM: keycloak:8080
