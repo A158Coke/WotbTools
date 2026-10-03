@@ -1,6 +1,6 @@
 import { computed, readonly, ref } from 'vue'
 import { ensureUserProfile } from '../utils/api-user.js'
-import { Feature, getFeatureAvailability } from '../app/featureCapabilities.js'
+import { Feature, getFeatureAvailability, profileBackendAllowed } from '../app/featureCapabilities.js'
 
 /**
  * WotBTools 业务用户 bootstrap（KC User → user_profile 的 eventual self-healing）。
@@ -63,9 +63,9 @@ export function businessProfileAvailability(connectivity) {
  * 只有「已认证 + ACCOUNT_PROFILE 可用」才允许。`offline` / `unknown` / `degraded` /
  * `service-unavailable` 一律拒绝 —— 后三种**不是**「你离线」，但同样不能访问 backend。
  */
-export function shouldEnsureBusinessUser({ authInitState, authenticated, connectivity } = {}) {
-  if (authInitState !== 'authenticated' || authenticated !== true) return false
-  return businessProfileAvailability(connectivity).available
+export function shouldEnsureBusinessUser(context = {}) {
+  // 策略本体在 capability 模块（profileBackendAllowed），浏览器测试替身共用同一实现。
+  return profileBackendAllowed(context)
 }
 
 /**
