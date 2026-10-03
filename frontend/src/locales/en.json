@@ -1549,7 +1549,9 @@
     "impact_hit": "Hit a target",
     "impact_miss": "Missed",
     "detail_trajectory": "Trajectory length",
-    "detail_quality": "Data quality"
+    "detail_quality": "Data quality",
+    "prev_shot": "Previous shot",
+    "next_shot": "Next shot"
   },
   "agentNav": {
     "replay": "3D Replay",

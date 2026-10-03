@@ -408,23 +408,29 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('键盘：方向键 / Home / End 在能力间移动并激活（ARIA tablist）', async () => {
+  it('键盘：方向键 / Home / End 在能力间移动并激活（canonical SegmentedControl 的 radiogroup 模型）', async () => {
     authState.isAdmin.value = true
     const wrapper = mountWorkspace('data')
     await flushPromises()
-    const list = wrapper.get('[role="tablist"]')
-    await list.trigger('keydown', { key: 'End' })
+    const group = wrapper.get('[role="radiogroup"]')
+    await group.trigger('keydown', { key: 'End' })
     await flushPromises()
     expect(tab(wrapper, 'ai').classes()).toContain('is-active')
-    await list.trigger('keydown', { key: 'ArrowLeft' })
+    await group.trigger('keydown', { key: 'ArrowLeft' })
     await flushPromises()
     expect(tab(wrapper, 'shots').classes()).toContain('is-active')
-    await list.trigger('keydown', { key: 'Home' })
+    await group.trigger('keydown', { key: 'Home' })
     await flushPromises()
     expect(tab(wrapper, 'data').classes()).toContain('is-active')
-    expect(tab(wrapper, 'data').attributes('aria-selected')).toBe('true')
+    // ARIA 单选组语义：选中项 aria-checked=true；只有选中项在 Tab 顺序里
+    expect(tab(wrapper, 'data').attributes('role')).toBe('radio')
+    expect(tab(wrapper, 'data').attributes('aria-checked')).toBe('true')
+    expect(tab(wrapper, 'ai').attributes('aria-checked')).toBe('false')
     expect(tab(wrapper, 'data').attributes('tabindex')).toBe('0')
     expect(tab(wrapper, 'ai').attributes('tabindex')).toBe('-1')
+    // 视觉 / 键盘行为归 canonical 组件：adapter 不再自带选项样式与状态机
+    expect(wrapper.find('.capability-option').exists()).toBe(false)
+    expect(wrapper.get('.segmented').classes()).toContain('is-scrollable')
     wrapper.unmount()
     authState.isAdmin.value = false
   })

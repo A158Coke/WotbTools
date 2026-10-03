@@ -1549,7 +1549,9 @@
     "impact_hit": "Есть цель",
     "impact_miss": "Промах",
     "detail_trajectory": "Длина траектории",
-    "detail_quality": "Качество данных"
+    "detail_quality": "Качество данных",
+    "prev_shot": "Предыдущий выстрел",
+    "next_shot": "Следующий выстрел"
   },
   "agentNav": {
     "replay": "3D-повтор",

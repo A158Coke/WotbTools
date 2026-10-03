@@ -1549,7 +1549,9 @@
     "impact_hit": "命中目标",
     "impact_miss": "脱靶",
     "detail_trajectory": "弹道长度",
-    "detail_quality": "数据质量"
+    "detail_quality": "数据质量",
+    "prev_shot": "上一发",
+    "next_shot": "下一发"
   },
   "agentNav": {
     "replay": "三维回放",
