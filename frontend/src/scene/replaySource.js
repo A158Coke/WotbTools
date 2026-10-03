@@ -207,21 +207,46 @@ export async function loadPlaybackData(source) {
 import { assetProvider } from './assetProvider.js'
 
 let mapIndexPromise = null
+/** 已点名告警过的索引 miss（按 id 去重）：同一张图反复加载不刷屏 */
+const mapIndexMissWarned = new Set()
 
-/** 一次性装载资产源索引（数字 id → key）；未配置 origin 时为空 */
+/** 一次性装载资产源索引（数字 id → key）；未配置 origin 时为空。
+ *  **失败不缓存**：index.json 一次瞬时失败（CDN 抖动 / 5xx / 超时）不得把整个页面会话
+ *  钉死在"无地图"上——resolvedKey 为 null 时所有地图资产 URL 都是 null，资产阶段照常
+ *  走完（缺失按完成计），场景只剩占位地面/网格，用户看到"加载完成却没地图"。
+ *  失败即置空 promise 并告警，下一场回放加载时重试（与 tankNamesStatic 同一模式）；
+ *  成功结果仍整页缓存（每场 loadMapImage 都要查一次）。 */
 export function loadMapIndex() {
   if (!assetProvider.configured()) return Promise.resolve(null)
   if (!mapIndexPromise) {
-    mapIndexPromise = assetProvider.json('/index.json').catch(() => null)
+    mapIndexPromise = assetProvider.json('/index.json').catch((e) => {
+      mapIndexPromise = null
+      console.warn('地图资产索引加载失败（本场地图回退占位网格；下次加载重试）:', e)
+      return null
+    })
   }
   return mapIndexPromise
 }
 
-/** 从 mapq（id=..&name=..）解析静态 key；由调用方持有结果，不发布模块级会话状态。 */
+/** 从 mapq（id=..&name=..）解析静态 key；由调用方持有结果，不发布模块级会话状态。
+ *  索引 miss（origin 已配置、索引也加载成功，但这张图的 id 不在索引里）是"这张图永远
+ *  出不了地图"的一类（资产包过期 / 新图未入库），且 UI 上与"资产源没配 / 索引没拉到"
+ *  无法区分——console 里点名 id。索引本身加载失败的情况由 loadMapIndex 的告警覆盖。 */
 export async function resolveMapKey(mapq) {
   const id = new URLSearchParams(mapq).get('id')
   const idx = assetProvider.configured() ? await loadMapIndex() : null
-  return (idx && idx.maps && idx.maps[String(id)]) ? idx.maps[String(id)].key : null
+  const hit = idx && idx.maps && idx.maps[String(id)]
+  if (idx && !hit && id && !mapIndexMissWarned.has(String(id))) {
+    mapIndexMissWarned.add(String(id))
+    console.warn('地图不在资产索引中（资产包过期或缺该地图？）: id=' + id)
+  }
+  return hit ? hit.key : null
+}
+
+/** 测试专用：清空地图索引缓存与 miss 告警去重（模块级状态不得跨用例泄漏） */
+export function __resetMapIndexForTest() {
+  mapIndexPromise = null
+  mapIndexMissWarned.clear()
 }
 
 /**
