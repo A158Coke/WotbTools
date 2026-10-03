@@ -23,7 +23,6 @@ const props = defineProps({
   blockedReason: { type: String, default: '' },
 })
 
-const emit = defineEmits(['seek'])
 
 const { t } = useI18n()
 const { authenticated, login } = useAuth()
@@ -92,7 +91,6 @@ watch(() => [props.file, props.active, props.blockedReason, authenticated.value]
       :file="file ?? undefined"
       :projection="input"
       :projection-error="projectionError"
-      @seek="(sec: number) => emit('seek', sec)"
       @rebuild-projection="rebuildProjection"
     />
   </div>

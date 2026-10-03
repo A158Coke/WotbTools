@@ -474,9 +474,13 @@ RoundFinished / Supremacy*），由 `BattleStateReconstructor`（纯事件归约
 - BattleTimeline 每秒每车：位置 knowledge（CURRENT / LAST_KNOWN）、车辆 knowledge、朝向 knowledge、位置（≤ 1 mm）、
   生命、血量、血量 knowledge、HP bar 量程、地图区域——**完全相等**（3 场共 7 374 个帧-车辆）；
 - grounding facts（formation / clustering / relative depth / map region 的上游输入）——**完全相等**；
-- 团队 / 个人 prompt 全文（生产路径：客户端结算事实 + 投影）——仅三处固定差异：内部事件条数（新链路只装配被消费的
-  事件类型）、`decodedPacketRatio=UNAVAILABLE`、同 tick 内争霸点数与基地迁移的相对顺序（上游两类事件分列、时钟舍入
-  0.01 s，包序不可恢复；行内容逐字一致）。
+- 团队 / 个人 prompt 全文（生产路径：客户端结算事实 + 投影）——仅三处固定差异（`normalizePrompt` 每条写明原因）：
+  内部事件条数（新链路只装配被消费的事件类型）、`decodedPacketRatio=UNAVAILABLE`、同 tick 内争霸点数与基地迁移的
+  相对顺序 + 基地迁移的分秒（上游两类事件分列数组、目标时钟舍入 0.01 s，包序不可恢复；行内容逐字一致）。
+  此外 v0.3.11「占领中断归零」在**已知 fixture**（联赛场）上产生团队 prompt 的**逐条冻结**差异
+  （`PINNED_BASE_CAPTURE_JAVA_ONLY` / `PINNED_BASE_CAPTURE_CLIENT_ONLY`）：只放行逐字列出的具体行、
+  条数漂移即失败，**不做字段通配**——任何未列入的 capture 回归仍由逐行比较抓住。同一次契约补正的另一侧
+  看守在前端 `playback.golden.test.ts` 的 `PINNED_BASE_ABORT_CLEARS` / `PINNED_ASSAULT_RESET_ROWS`。
 
 ### 请求体量与传输
 

@@ -83,7 +83,8 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 
 - 全局基地生成器保留原有抽取行为；本 PR 不对全部地图施加未经真实 Maps corpus 验证的 variant 筛选。
   `mapBases.js` 保留 base branch 生成产物，旧注释中的“守方”不构成已证明语义；以本节 raw metadata 边界为准。
-- 2D Assault 以 `assaultObjectivePresent`（wrapper8 目标族发出裸初始化对以外的字段）确认 objective 存在；
+- 2D Assault 以 `assaultObjectivePresent`（wrapper8 目标族存在性：field2==1 且 field1∈{1,2} 出现即 true，
+  与是否发生占领无关）确认 objective 存在；
   按 `mapCode` 查找 verified `common/map-semantics/*.semantic.json`，使用唯一 EXACT_SCENE_DATA
   controlpoint 的 X/Y。无地图特例；Neptune 与 Malinovka 共用此路径。Docker 在 Vite build 前复制该目录。
   静态几何 LEFT JOIN runtime `baseStates`；无 field3、无 BASE transition 时仍画圈，但不画占领水位。

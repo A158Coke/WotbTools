@@ -41,6 +41,28 @@ const java = javaGolden as unknown as Record<string, JavaEntry>
 const PINNED_KNOWLEDGE_DIFFS: Array<{ file: string; accountId: number; t: number; java: string | null; local: string | null; reason: string }> = []
 
 /**
+ * 放行的基地差异（上游 **v0.3.11 契约补正**）：服务端用「全缺省行」（争霸 wrapper12）/「双缺省块」
+ * （单基地 wrapper8）表达**占领中断**（车辆出圈/被击毁 → 进度作废）。Java 基线是旧行为（把"字段缺省"
+ * 当"维持前值"）的产物，所以本地允许且**仅允许**两类差异：
+ *   ① 同刻同基地被清成 `null:null:null`（Java 仍挂着 occupying/progress）→ PINNED_BASE_ABORT_CLEARS
+ *   ② 单基地多出一条 `BASE:null:null:0` 归零行（Java 无此语义）→ PINNED_ASSAULT_RESET_ROWS
+ * 两张表按 fixture **冻结条数**：数字变化必须重新核对（变多 = 语义又改；变少 = 基线不再覆盖该语义）。
+ * 其余任何差异（行数、时刻漂移 > 0.02 s、别的字段）依旧失败。
+ */
+const PINNED_BASE_ABORT_CLEARS: Record<string, number> = {
+  'random-battle-example.wotbreplay': 0,
+  'cw-training-15-14-example.wotbreplay': 0,
+  // B 基地 t≈40.39 被 1 队占到 30 后中断（全缺省行）→ 清空；末尾 t≈79.4 同理
+  'tournament-14-14-example.wotbreplay': 2,
+}
+const PINNED_ASSAULT_RESET_ROWS: Record<string, number> = {
+  // 单基地占领 t≈174.01 中断（双缺省块）→ 多出一条归零行
+  'random-battle-example.wotbreplay': 1,
+  'cw-training-15-14-example.wotbreplay': 0,
+  'tournament-14-14-example.wotbreplay': 0,
+}
+
+/**
  * fixture 三切面 → canonical dataset。经 [`requireFixtures`] 严格读取：被 trust boundary 拒绝的
  * producer 输出在此抛出**原始 validation error**，而不是降级成 `null.meta` 的二次症状。
  */
@@ -249,8 +271,31 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
         expect(pts(l)).toEqual(pts(j))
         l.pointsSamples.forEach((p, i) => expect(Math.abs(p.timeSec - j.pointsSamples[i].timeSec)).toBeLessThan(0.01))
         const bases = (d: BattlePlaybackDataset) => (d.baseStates ?? []).map((b) => `${b.baseId}:${b.ownerTeam}:${b.capturingTeam}:${b.captureProgress}`)
-        expect(bases(l)).toEqual(bases(j))
-        ;(l.baseStates ?? []).forEach((b, i) => expect(Math.abs(b.timeSec - j.baseStates![i].timeSec)).toBeLessThan(0.02))
+        // **放行的基地差异（上游 v0.3.11 契约补正）**：服务端用「全缺省行」（争霸）/「双缺省块」（单基地）
+        // 表达占领中断（车辆出圈/被击毁 → 进度作废）。Java 基线是旧行为（把"字段缺省"当"维持前值"）的
+        // 产物，所以本地只允许这两类差异，**其余任何差异都必须失败**：
+        //   ① 单基地多出一条归零行 `BASE:null:null:0`（Java 无此语义）——比较前从本地剔除；
+        //   ② 同刻同基地被清成 `null:null:null`（Java 仍挂着 occupying/progress）——逐项放行并计数。
+        const ZERO_ASSAULT = /^BASE:null:null:0$/
+        const all = bases(l)
+        const resets = all.filter((r) => ZERO_ASSAULT.test(r))
+        const lb = all.filter((r) => !ZERO_ASSAULT.test(r))
+        const jb = bases(j)
+        expect(resets.length, `单基地归零行数应为冻结值 ${PINNED_ASSAULT_RESET_ROWS[file]}`)
+          .toBe(PINNED_ASSAULT_RESET_ROWS[file])
+        expect(lb.length, `基地行数差异只允许"单基地归零行"一类：local=${JSON.stringify(all)} java=${JSON.stringify(jb)}`).toBe(jb.length)
+        let clearedByAbort = 0
+        lb.forEach((b, i) => {
+          if (b === jb[i]) return
+          const [bId, o, c, p] = b.split(':')
+          const jId = jb[i].split(':')[0]
+          expect(bId === jId && o === 'null' && c === 'null' && p === 'null',
+            `基地差异只允许"占领中断清空"一类：java=${jb[i]} local=${b}`).toBe(true)
+          clearedByAbort++
+        })
+        expect(clearedByAbort, `占领中断清空行数应为冻结值 ${PINNED_BASE_ABORT_CLEARS[file]}`)
+          .toBe(PINNED_BASE_ABORT_CLEARS[file])
+        ;(l.baseStates ?? []).filter((b) => !(b.baseId === 'BASE' && b.captureProgress === 0)).forEach((b, i) => expect(Math.abs(b.timeSec - j.baseStates![i].timeSec)).toBeLessThan(0.02))
         for (const jv of j.vehicles) {
           const lv = byId.get(jv.accountId)!
           const c = (v: VehiclePlaybackTrack) => v.consumableTransitions.map((x) => `${x.state}|${x.logicalItemId}|${Math.round(x.timeSec)}`)
@@ -298,7 +343,8 @@ describe('2D canonical 场景', () => {
     expect(d.arenaBonusType).toBe(1)
     expect(d.assaultObjectivePresent).toBe(true)
     expect(d.baseStates!.every((b) => b.baseId === 'BASE' && b.ownerTeam === null && b.capturingTeam === null)).toBe(true)
-    expect(d.baseStates!.map((b) => b.captureProgress)).toEqual([1, 2, 3])
+    // 末项 0 = 占领中断（双缺省块）→ 归零行（上游 v0.3.11 契约补正；此前进度停在最后一个正值）
+    expect(d.baseStates!.map((b) => b.captureProgress)).toEqual([1, 2, 3, 0])
   })
 
   it('联赛（arenaBonusType 4）与 CW（2）：争霸点数 + A–D 基地归属迁移', () => {
