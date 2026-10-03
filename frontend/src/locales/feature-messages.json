@@ -50,7 +50,7 @@
       "replayParse": "回放解析",
       "replayParseDesc": "批量解析回放，查看汇总、单场数据与 League Rating。",
       "aiReview": "AI 复盘",
-      "aiReviewDesc": "AI 复盘维护中。",
+      "aiReviewDesc": "上传单场回放，AI Review 生成战术复盘与改进建议。需登录。",
       "battlePlayback": "战局重建",
       "battlePlaybackDesc": "通过地图、时间轴、车辆状态、HP 与战斗事件重现整场战斗。"
     },
@@ -409,7 +409,7 @@
       "replayParse": "Replay Analysis",
       "replayParseDesc": "Batch-parse replays and inspect summaries, battles, and League Rating.",
       "aiReview": "AI Review",
-      "aiReviewDesc": "AI Review is under maintenance.",
+      "aiReviewDesc": "Upload a single replay and AI Review returns a tactical debrief with improvement tips. Sign-in required.",
       "battlePlayback": "Battle Reconstruction",
       "battlePlaybackDesc": "Reconstruct the battle with maps, timeline, vehicle state, HP, and events."
     },
@@ -768,7 +768,7 @@
       "replayParse": "Анализ реплеев",
       "replayParseDesc": "Пакетная обработка реплеев, сводки, бои и League Rating.",
       "aiReview": "ИИ-разбор",
-      "aiReviewDesc": "ИИ-разбор на техническом обслуживании.",
+      "aiReviewDesc": "Загрузите один реплей — AI Review составит тактический разбор и советы. Нужен вход.",
       "battlePlayback": "Реконструкция боя",
       "battlePlaybackDesc": "Восстановление боя по карте, таймлайну, состоянию техники, HP и событиям."
     },
