@@ -23,6 +23,10 @@ import {
     assetProvider,
 } from './agentData.js'
 import { createLoadProgress } from './loadProgress.js'
+import {
+    RC, RC_GLSL_CONST, RC_GLSL_FUNCS,
+    buildPack, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
+} from './armorCollisionPack.js'
 
 /**
  * @param {object} [options]
@@ -34,7 +38,7 @@ import { createLoadProgress } from './loadProgress.js'
  * 现在同一标签页内反复进出，残留状态会让下一辆坦克的炮塔转不动、镜头被锁——初始化与销毁时统一清掉。
  * 宿主传入的 __INITIAL_TANK__ / __INITIAL_SHOOTER__ 不在此列。
  */
-const VIEWER_GLOBAL_RE = /^__(world|shot|shooter|victim|hit|seg|move|launch|end|dbg|debug|autoRel|fireGun|update)/
+const VIEWER_GLOBAL_RE = /^__(world|shot|shooter|victim|hit|seg|move|launch|end|dbg|debug|autoRel|fireGun|update|armor)/
 function resetViewerGlobals() {
     if (typeof window === 'undefined') return
     for (const key of Object.keys(window)) {
@@ -197,6 +201,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               }
               return vec3(0.0, 1.0, 0.0);
             }
+            ${RC_GLSL_CONST}
+            ${RC_GLSL_FUNCS}
             void main() {
               #include <clipping_planes_fragment>
               vec2 sc = gl_FragCoord.xy / resolution;
@@ -205,13 +211,37 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               float viewDistance = length(vViewPos);
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
 
+              highp mat3 vRotT = transpose(mat3(viewMatrix));
+              highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
+              highp vec3 incR = normalize(vViewPos);
+              highp vec3 nVR = normalize(vNormal);
+              highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
+              highp vec3 reflR = normalize(vRotT * rVR);
               bool threeCal = caliber > thickness * 3.0 || underSpaced;
               bool mayRicochet = angle >= ricochet;
               float penChance = -1.0;
               float splashChance = 0.0;
               bool ricocheted = false;
+              bool contPen = false;
+              int contCls = 0;
+              highp float contChance = 0.0;
+              highp float rcDiag = 0.0;
               if (!threeCal && mayRicochet) {
                 penChance = 0.0; ricocheted = true;
+                // 跳弹续飞（GPU 求交）：反射线在打包碰撞几何上做出射段判定，
+                // 语义 = 点击判定跳弹后的 judgePenetration 二次判定（强制不跳弹）。
+                // 仅动能弹可入本分支（爆炸弹 ricochet=90°）。v5.3 全分辨率逐像素：
+                //   rcMode>=1 —— 网格 DDA 求交（与原热力图同精度、同帧计算）；
+                //   rcMode=0 —— 关闭（维持紫）。
+                // 注：入射侧无消耗可言——有覆盖(underSpaced)时 threeCal 恒真进不了本分支，
+                // 故续飞初始穿深恒为 penetration×0.75，与点击链首层跳弹精确一致。
+                // 全分辨率逐像素续飞（v5.3）：网格 DDA + 取数预算把单像素求交压回
+                // 原热力图量级，不再需要低清类通道中转（与原热力图同精度、同帧计算）
+                if (rcMode >= 1) {
+                  contCls = rcContinue(wPosR, reflR, penetration * RC_RICO_MUL, contChance, rcDiag);
+                  if (contCls == 1) { penChance = contChance; ricocheted = false; contPen = true; }   // 续飞击穿→绿
+                  else if (contCls == 2) { ricocheted = false; }                                      // 续飞被挡→红
+                }
               } else {
                 float ratio = thickness > 0.0 ? caliber / thickness : 0.0;
                 bool twoCal = ratio > 2.0;
@@ -252,11 +282,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               if (greenPenetration || advancedHighlighting) {
                 float fall = 1.0 - penChance * penChance;
                 float gain = 1.0 - (penChance - 1.0) * (penChance - 1.0);
-                vec3 penColor = getPenetrationColor(threeCal, mayRicochet);
+                // 续飞击穿用纯绿（不套掠射 overmatch 的青蓝指示色——炮弹确实穿了）
+                vec3 penColor = contPen ? vec3(0.0, 1.0, 0.0) : getPenetrationColor(threeCal, mayRicochet);
                 gl_FragColor = vec4(fall * base + gain * penColor, alpha);
               } else {
                 gl_FragColor = vec4(base, (1.0 - penChance) * alpha);
               }
+              // 防编译器消除 rcContinue 调用：out 参数副作用必须可能被观测
+              if (rcDiag > 1e30) gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
               gl_FragColor.a *= opacity;
             }
         `;
@@ -394,6 +427,29 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         const omitMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: true, depthWrite: true });
         const excludeMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: true, depthWrite: true });
+        // 跳弹续飞共享 uniform（同一对象引用注入每个 penetrationMaterial——单点更新全体生效）。
+        // 数据面 = 世界系均匀网格（buildRicochetGrid，炮塔/配置变化时重建；相机移动不重建）；
+        // 执行面 = 全分辨率主图逐像素求交（rcMode=1；v5.3 起无低清中转）。
+        let ricochetPack = null;
+        let ricochetGrid = null;          // 网格加速结构（含纹理）
+        let ricochetPoseDirty = true;     // 几何姿态变化（炮塔/配置/模型）→ 需重建网格
+        let ricochetPackReason = '';      // 最近一次失败原因（钩子透出，排查用）
+        const resUniform = { value: new THREE.Vector2(1, 1) };   // 共享分辨率（低清/全清 pass 每帧切换）
+        const rcUniforms = {
+            rcThickMul: { value: 1 },
+            rcEnabled: { value: false },
+            rcMode: { value: 0 },
+            rcWorldTris: { value: null },
+            rcTriRows: { value: 1 },
+            rcGridCells: { value: null },
+            rcGridEntries: { value: null },
+            rcGridMin: { value: new THREE.Vector3(0, 0, 0) },
+            rcCell: { value: 0.45 },
+            rcGridDimsF: { value: new THREE.Vector3(1, 1, 1) },
+            rcCellRows: { value: 1 },
+            rcEntryRows: { value: 1 },
+            rcEntryTotal: { value: 0 },
+        };
         function penetrationMaterial(thickness) {
             return new THREE.ShaderMaterial({
                 vertexShader: PBR_VERT, fragmentShader: PBR_FRAG,
@@ -411,12 +467,25 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     canSplash: { value: false },
                     damage: { value: 0 },
                     explosionRadius: { value: 0 },
-                    resolution: { value: new THREE.Vector2(1, 1) },
+                    resolution: resUniform,
                     metersPerUnit: { value: 1 },
                     opacity: { value: 1 },
                     spacedArmorBuffer: { value: emptySpacedTexture() },
                     spacedArmorDepth: { value: null },
                     inverseProjectionMatrix: { value: null },
+                    rcThickMul: rcUniforms.rcThickMul,
+                    rcEnabled: rcUniforms.rcEnabled,
+                    rcMode: rcUniforms.rcMode,
+                    rcWorldTris: rcUniforms.rcWorldTris,
+                    rcTriRows: rcUniforms.rcTriRows,
+                    rcGridCells: rcUniforms.rcGridCells,
+                    rcGridEntries: rcUniforms.rcGridEntries,
+                    rcGridMin: rcUniforms.rcGridMin,
+                    rcCell: rcUniforms.rcCell,
+                    rcGridDimsF: rcUniforms.rcGridDimsF,
+                    rcCellRows: rcUniforms.rcCellRows,
+                    rcEntryRows: rcUniforms.rcEntryRows,
+                    rcEntryTotal: rcUniforms.rcEntryTotal,
                 },
             });
         }
@@ -660,6 +729,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         }
         function updateHeatmapThickness() {
             const { thickMul } = equipmentCoeffs();
+            rcUniforms.rcThickMul.value = thickMul;   // 续飞层链厚度系数与主图同源
             const apply = function(obj) {
                 if (!obj) return;
                 obj.traverse(function(node){
@@ -791,11 +861,414 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 penetrationRT.dispose();
                 penetrationRT = null;
             }
+            // 续飞 pack/网格随热力图资源整体废弃（纹理已释放；下次重建重新打包）
+            if (ricochetGrid && ricochetGrid.textures) {
+                ricochetGrid.textures.cellsTex.dispose();
+                ricochetGrid.textures.entriesTex.dispose();
+                ricochetGrid.textures.worldTrisTex.dispose();
+            }
+            ricochetPack = null;
+            ricochetGrid = null;
+            ricochetPoseDirty = true;
+            rcUniforms.rcWorldTris.value = null;
+            rcUniforms.rcGridCells.value = null;
+            rcUniforms.rcGridEntries.value = null;
+            rcUniforms.rcEnabled.value = false;
+            rcUniforms.rcMode.value = 0;
         }
+
+        // 跳弹续飞求交几何枚举：口径 = 点击判定的 raycast 对象集合经 classifyHit 过滤后的
+        // 保留面（armorModel 非 deco、非 configHidden、父节点可见的装甲板 + 按激活炮/掩码
+        // 过滤后的外部模块）。可见性口径与 doPenetrationCheck 一致（点击前会取消隐藏网格
+        // 本体，但仍拒绝父节点隐藏——classifyHit 同款判定）。
+        function collectRicochetEntries() {
+            const list = [];
+            if (!armorModel) return list;
+            armorModel.traverse(function(node) {
+                if (!node.isMesh) return;
+                const sec = node.userData.armorSection;
+                if (sec !== 'hull' && sec !== 'turret' && sec !== 'gun' && sec !== 'spaced') return;
+                if (node.userData.configHidden) return;
+                if (node.parent && node.parent.visible === false) return;
+                const t = node.userData.armorThickness;
+                if (typeof t !== 'number') return;
+                list.push({ mesh: node, section: sec, thickness: t, variant: null });
+            });
+            const act = activeGunNumber();
+            const cfg = currentConfig();
+            const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+            moduleMeshes.forEach(function(node) {
+                if (!node.isMesh) return;
+                if (node.userData.gunConfig != null && act != null && node.userData.gunConfig !== act) return;
+                if (node.userData.gunMaskPart && !hasMask) return;
+                if (node.parent && node.parent.visible === false) return;
+                const t = node.userData.armorThickness;
+                if (typeof t !== 'number') return;
+                const sec = node.userData.armorSection;   // 'chassis' | 'gunBarrel'
+                if (sec !== 'chassis' && sec !== 'gunBarrel') return;
+                list.push({ mesh: node, section: sec, thickness: t, variant: sec === 'chassis' ? 'track' : 'gun' });
+            });
+            return list;
+        }
+        function rebuildRicochetPack() {
+            ricochetPack = null;
+            ricochetGrid = null;
+            ricochetPackReason = '';
+            rcUniforms.rcEnabled.value = false;
+            const entries = collectRicochetEntries();
+            const pack = buildPack(entries);
+            if (!pack.ok) {
+                // fail-closed：超限/非刚性 → 续飞整体关闭，跳弹维持紫色（现状行为）
+                ricochetPackReason = pack.reason + ' (entries=' + entries.length + ')';
+                console.warn('[armor-ricochet] continuation disabled:', ricochetPackReason);
+                return;
+            }
+            ricochetPack = pack;
+            ricochetGridRetries = 0;
+            rebuildRicochetGrid();
+            const sh = selectedShell || (shooterShells[0]) || null;
+            if (sh) syncRicochetEnabled(sh);
+        }
+        // 世界系网格重建（炮塔/配置/模型变化时；读取当前 matrixWorld）。
+        // 失败不弃用：模块矩阵在加载/对齐时序上可能尚未就位（包围盒异常膨胀 → 网格超密），
+        // 保持 poseDirty 下一帧重试（重试上限后禁用，fail-closed 兜底）。
+        let ricochetGridRetries = 0;
+        const RC_GRID_RETRY_MAX = 240;   // ~4s @60fps：矩阵就位的宽限期
+        function rebuildRicochetGrid() {
+            if (!ricochetPack) return false;
+            const grid = buildRicochetGrid(ricochetPack);
+            if (!grid.ok) {
+                ricochetGrid = null;
+                ricochetPackReason = grid.reason;
+                ricochetGridRetries++;
+                if (ricochetGridRetries >= RC_GRID_RETRY_MAX) {
+                    rcUniforms.rcEnabled.value = false;
+                    ricochetPoseDirty = false;   // 放弃重试（跳弹维持紫 = 现状）
+                    console.warn('[armor-ricochet] grid disabled after retries:', grid.reason);
+                    return false;
+                }
+                ricochetPoseDirty = true;        // 矩阵可能未就位 → 下一帧重试
+                return false;
+            }
+            ricochetGridRetries = 0;
+            // 旧网格纹理释放（disposeMaterial 不会碰它们——不在材质 uniforms 表里）
+            if (ricochetGrid && ricochetGrid.textures) {
+                ricochetGrid.textures.cellsTex.dispose();
+                ricochetGrid.textures.entriesTex.dispose();
+                ricochetGrid.textures.worldTrisTex.dispose();
+            }
+            const tex = createGridTextures(grid);
+            grid.textures = tex;
+            ricochetGrid = grid;
+            rcUniforms.rcWorldTris.value = tex.worldTrisTex;
+            rcUniforms.rcTriRows.value = grid.triRows;
+            rcUniforms.rcGridCells.value = tex.cellsTex;
+            rcUniforms.rcGridEntries.value = tex.entriesTex;
+            rcUniforms.rcGridMin.value.set(grid.gridMin[0], grid.gridMin[1], grid.gridMin[2]);
+            rcUniforms.rcCell.value = grid.cellSize;
+            rcUniforms.rcGridDimsF.value.set(grid.dims[0], grid.dims[1], grid.dims[2]);
+            rcUniforms.rcCellRows.value = Math.ceil(grid.cellTotal / RC.CELL_ROW);
+            rcUniforms.rcEntryRows.value = Math.ceil(grid.entryTotal / RC.ENTRY_ROW);
+            rcUniforms.rcEntryTotal.value = grid.entryTotal;
+            ricochetPoseDirty = false;
+            return true;
+        }
+        // 弹种门：仅动能弹（AP/APCR）可跳弹；爆炸弹（HE/HEAT，跳弹角 90°）续飞恒关；
+        // 还需网格在位（矩阵未就位的宽限期内跳弹维持紫，网格就位后自动恢复）。
+        // rcMode 同步切换（v5.3 全分辨率逐像素：1=启用 0=关闭——低清类通道 pass 已删，
+        // 此前由该 pass 设置，删除后曾遗漏导致 rcMode 恒 0 → 续飞全紫）。
+        function syncRicochetEnabled(sh) {
+            const t = shellTypeOf(sh);
+            const on = !!ricochetPack && !!ricochetGrid && (t === 'ap' || t === 'apcr');
+            rcUniforms.rcEnabled.value = on;
+            rcUniforms.rcMode.value = on ? 1 : 0;
+        }
+        // 调试/差分测试钩子：info() 看 pack 状态；simulate(跳弹点, 反射向) 跑 JS 参考续飞
+        // （与 GLSL rcContinue 同常量同语义，入参口径与着色器一致 = 穿深×0.75）。
+        // 浏览器门禁/控制台对拍 "GPU 像素类 vs JS 参考类" 用。
+        // 探针：记录最后一次左键点击像素（用户触发问题情形后一条命令取三方对照）。
+        // 惰性挂载：闭包顶层 renderer 尚未创建（init 末尾才赋值），animate 首帧再挂。
+        let rcLastClick = null;
+        let rcClickHooked = false;
+        function hookRcClickRecorder() {
+            if (rcClickHooked || !renderer || !renderer.domElement) return;
+            rcClickHooked = true;
+            renderer.domElement.addEventListener('mouseup', function(e) {
+                if (e.button === 0) rcLastClick = { x: e.clientX, y: e.clientY };
+            });
+        }
+        window.__armorRicochet = {
+            info() {
+                return {
+                    enabled: rcUniforms.rcEnabled.value,
+                    meshCount: ricochetPack ? ricochetPack.meshCount : 0,
+                    triTotal: ricochetPack ? ricochetPack.triTotal : 0,
+                    grid: ricochetGrid ? { dims: ricochetGrid.dims, cell: ricochetGrid.cellSize, entries: ricochetGrid.entryTotal } : null,
+                    poseDirty: ricochetPoseDirty,
+                    reason: ricochetPackReason,
+                };
+            },
+            simulate(bouncePos, reflDir) {
+                if (!ricochetPack || !selectedShell) return null;
+                const sh = selectedShell;
+                const pen = (sh.penetration || 0) * shellPenMul(sh);
+                // 入参容错：控制台/CDP 传普通 {x,y,z}（结构化克隆不带 THREE 类）
+                const p = bouncePos.isVector3 ? bouncePos : new THREE.Vector3(bouncePos.x, bouncePos.y, bouncePos.z);
+                const d = reflDir.isVector3 ? reflDir : new THREE.Vector3(reflDir.x, reflDir.y, reflDir.z);
+                return simulateContinuation(ricochetPack, p, d, {
+                    remIn: pen * RC.RICO_REMAIN_MUL,
+                    caliber: sh.caliber || 120,
+                    normalizationRad: (sh.normalization != null ? sh.normalization : 0) * Math.PI / 180,
+                    thickMul: equipmentCoeffs().thickMul,
+                });
+            },
+            // GLSL 侧 uniform 当前值（布局对照用）
+            __uniforms() {
+                return {
+                    triRows: rcUniforms.rcTriRows.value, cellRows: rcUniforms.rcCellRows.value, entryRows: rcUniforms.rcEntryRows.value, entryTotal: rcUniforms.rcEntryTotal.value,
+                    gridMin: ricochetGrid ? ricochetGrid.gridMin : null, cell: rcUniforms.rcCell.value,
+                    dimsF: rcUniforms.rcGridDimsF.value.toArray(), mode: rcUniforms.rcMode.value, thickMul: rcUniforms.rcThickMul.value,
+                };
+            },
+            // CPU 侧逐像素预测类通道（差分测试参照）：RT 像素坐标（左下原点）→
+            // 相机射线 → 首命中为主装甲且满足跳弹判据 → 反射 + JS 参考续飞 → cls。
+            // skip=true 的像素（首命中非主装甲/不跳弹/无命中）不在比对范围。
+            predict(px, py) {
+                if (!ricochetPack || !selectedShell) return null;
+                const c = renderer.domElement;
+                const w = c.width, h = c.height;
+                if (px < 0 || py < 0 || px >= w || py >= h) return { skip: true };
+                const ndc = new THREE.Vector2((px + 0.5) / w * 2 - 1, (py + 0.5) / h * 2 - 1);
+                const dir = new THREE.Vector3(ndc.x, ndc.y, 0.5).unproject(camera)
+                    .sub(camera.position).normalize();
+                const hits = raycastPackAll(ricochetPack, camera.position, dir, 0.01);
+                const first = hits[0];
+                const camHits = hits.slice(0, 4).map(x => ({ s: x.section, th: x.thickness, t: +x.t.toFixed(2), ang: +(Math.acos(Math.min(Math.abs(x.normal.dot(dir)), 1)) * 180 / Math.PI).toFixed(0) }));
+                if (!first) return { skip: true, why: 'no-hit', camHits };
+                if (!(first.section === 'hull' || first.section === 'turret' || first.section === 'gun')) {
+                    return { skip: true, why: 'first-not-primary:' + first.section, camHits };
+                }
+                const PRIM = first.section === 'hull' || first.section === 'turret' || first.section === 'gun';
+                if (!PRIM) return { skip: true };   // 首命中为间隙/模块 → 着色器 underSpaced 口径，不比对
+                const sh = selectedShell;
+                const { penMul, thickMul } = equipmentCoeffs();
+                const pen = (sh.penetration || 0) * penMul;
+                const caliber = sh.caliber || 120;
+                const th = first.thickness * thickMul;
+                const angle = Math.acos(Math.min(Math.abs(first.normal.dot(dir)), 1));
+                const rico = (sh.ricochet != null ? sh.ricochet : 70) * Math.PI / 180;
+                const threeCal = caliber > th * 3.0;   // underSpaced=false（首命中即主装甲）
+                if (threeCal || angle < rico) return { skip: true, why: threeCal ? 'threeCal' : 'angle<' + (rico * 180 / Math.PI).toFixed(0), angleDeg: +(angle * 180 / Math.PI).toFixed(1), camHits };
+                const r = dir.clone().sub(first.normal.clone().multiplyScalar(2 * dir.dot(first.normal))).normalize();
+                const sim = simulateContinuation(ricochetPack, first.point, r, {
+                    remIn: pen * RC.RICO_REMAIN_MUL,
+                    caliber,
+                    normalizationRad: (sh.normalization != null ? sh.normalization : 0) * Math.PI / 180,
+                    thickMul,
+                });
+                return {
+                    skip: false, cls: sim.cls,
+                    detail: {
+                        first: { section: first.section, thickness: first.thickness, angleDeg: +(angle * 180 / Math.PI).toFixed(1), point: [first.point.x.toFixed(2), first.point.y.toFixed(2), first.point.z.toFixed(2)] },
+                        reflect: [r.x.toFixed(3), r.y.toFixed(3), r.z.toFixed(3)],
+                        layers: (sim.layers || []).map(l => ({ s: l.section, t: +l.t.toFixed(2), eff: +l.eff.toFixed(0), pen: l.penetrated })),
+                    },
+                };
+            },
+            // 诊断：克隆网格 matrix vs matrixWorld（坐标框架核对）
+            __clones() {
+                if (!primaryArmorScene) return null;
+                const out = [];
+                primaryArmorScene.children.forEach(c => {
+                    if (out.length >= 4 || c.renderOrder !== 1) return;
+                    const m = c.matrix.elements, w = c.matrixWorld.elements;
+                    let same = true;
+                    for (let i = 0; i < 16; i++) if (Math.abs(m[i] - w[i]) > 1e-6) { same = false; break; }
+                    out.push({ name: c.userData._src ? (c.userData._src.name || '?') : '?', same, flag: c.matrixWorldNeedsUpdate });
+                });
+                return out;
+            },
+            // 诊断：材质实际编译的着色器源码片段（版本核对）
+            __shaderPeek() {
+                let m = null;
+                if (primaryArmorScene) primaryArmorScene.traverse(n => { if (!m && n.isMesh && n.renderOrder === 1) m = n.material; });
+                if (!m) return null;
+                const src = m.fragmentShader || '';
+                return {
+                    len: src.length,
+                    hasDDA: src.includes('网格 DDA 在线推进'),
+                    hasBudget: src.includes('budget'),
+                    hasEmptyBody: src.includes('完全空体'),
+                    hasCls3: src.includes('探针（恒）'),
+                    tail: src.slice(-160),
+                };
+            },
+            // 诊断：网格原始数据（页面内 JS DDA 镜像对照用；引用直通，勿序列化）
+            __gridDebug() {
+                return ricochetGrid
+                    ? { gridMin: ricochetGrid.gridMin, dims: ricochetGrid.dims, cellSize: ricochetGrid.cellSize,
+                        cellsData: ricochetGrid.cellsData, entriesData: ricochetGrid.entriesData, worldTrisData: ricochetGrid.worldTrisData }
+                    : null;
+            },
+            // 诊断：当前判定口径（弹参 + 装备系数）
+            shell() {
+                const sh = selectedShell;
+                if (!sh) return null;
+                const { penMul, thickMul } = equipmentCoeffs();
+                return {
+                    type: shellTypeOf(sh), pen: (sh.penetration || 0) * penMul, caliber: sh.caliber || 120,
+                    ricoDeg: sh.ricochet != null ? sh.ricochet : 70, normDeg: sh.normalization ?? 0, thickMul,
+                    remIn: (sh.penetration || 0) * penMul * RC.RICO_REMAIN_MUL,
+                };
+            },
+            // 诊断：点击链同款求交（含可见性/configHidden 标注）
+            __raytrace(px, py) {
+                const c = renderer.domElement;
+                const rect = c.getBoundingClientRect();
+                const ndcX = ((px - rect.left) / rect.width) * 2 - 1;
+                const ndcY = -((py - rect.top) / rect.height) * 2 + 1;
+                const act = activeGunNumber();
+                const cfg = currentConfig();
+                const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+                const activeModules = act == null ? moduleMeshes : moduleMeshes.filter(m => {
+                    if (m.userData.gunConfig != null) return m.userData.gunConfig === act;
+                    return true;
+                }).filter(m => !(m.userData.gunMaskPart && !hasMask));
+                const rc = new THREE.Raycaster();
+                rc.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+                const objects = [armorModel, ...activeModules];
+                const hits = rc.intersectObjects(objects, true);
+                return hits.slice(0, 8).map(h => {
+                    const sec = h.object.userData.armorSection;
+                    return {
+                        sec, name: h.object.name || '?', dist: +h.distance.toFixed(3),
+                        vis: h.object.visible, hidden: !!h.object.userData.configHidden,
+                        parentVis: h.object.parent ? h.object.parent.visible : true,
+                        th: h.object.userData.armorThickness,
+                    };
+                });
+            },
+            // 最后一次点击的对照：真实点击链结果（DOM 文本）vs CPU 逐像素预测
+            probe() {
+                if (!rcLastClick) return { error: '还没有点击记录：先在装甲上点一下目标位置' };
+                const c = renderer.domElement;
+                const rect = c.getBoundingClientRect();
+                const cx = Math.floor((rcLastClick.x - rect.left) / rect.width * c.width);
+                const cy = Math.floor((rcLastClick.y - rect.top) / rect.height * c.height);
+                const infoEl = document.getElementById('traj-info');
+                return {
+                    canvas: [cx, cy],
+                    clickResult: infoEl ? (infoEl.textContent || '').replace(/\s+/g, ' ').slice(0, 400) : '(无 traj-info)',
+                    predict: window.__armorRicochet.predict(cx, c.height - 1 - cy),
+                    state: window.__armorRicochet.info(),
+                };
+            },
+            // 诊断：克隆网格 matrix vs matrixWorld（坐标框架核对）
+            __clones() {
+                if (!primaryArmorScene) return null;
+                const out = [];
+                primaryArmorScene.children.forEach(c => {
+                    if (out.length >= 4 || c.renderOrder !== 1) return;
+                    const m = c.matrix.elements, w = c.matrixWorld.elements;
+                    let same = true;
+                    for (let i = 0; i < 16; i++) if (Math.abs(m[i] - w[i]) > 1e-6) { same = false; break; }
+                    out.push({ name: c.userData._src ? (c.userData._src.name || '?') : '?', same, flag: c.matrixWorldNeedsUpdate });
+                });
+                return out;
+            },
+            // 诊断：材质实际编译的着色器源码片段（版本核对）
+            __shaderPeek() {
+                let m = null;
+                if (primaryArmorScene) primaryArmorScene.traverse(n => { if (!m && n.isMesh && n.renderOrder === 1) m = n.material; });
+                if (!m) return null;
+                const src = m.fragmentShader || '';
+                return {
+                    len: src.length,
+                    hasDDA: src.includes('网格 DDA 在线推进'),
+                    hasBudget: src.includes('budget'),
+                    hasEmptyBody: src.includes('完全空体'),
+                    hasCls3: src.includes('探针（恒）'),
+                    tail: src.slice(-160),
+                };
+            },
+            // 诊断：网格原始数据（页面内 JS DDA 镜像对照用；引用直通，勿序列化）
+            __gridDebug() {
+                return ricochetGrid
+                    ? { gridMin: ricochetGrid.gridMin, dims: ricochetGrid.dims, cellSize: ricochetGrid.cellSize,
+                        cellsData: ricochetGrid.cellsData, entriesData: ricochetGrid.entriesData, worldTrisData: ricochetGrid.worldTrisData }
+                    : null;
+            },
+            // 诊断：当前判定口径（弹参 + 装备系数）
+            shell() {
+                const sh = selectedShell;
+                if (!sh) return null;
+                const { penMul, thickMul } = equipmentCoeffs();
+                return {
+                    type: shellTypeOf(sh), pen: (sh.penetration || 0) * penMul, caliber: sh.caliber || 120,
+                    ricoDeg: sh.ricochet != null ? sh.ricochet : 70, normDeg: sh.normalization ?? 0, thickMul,
+                    remIn: (sh.penetration || 0) * penMul * RC.RICO_REMAIN_MUL,
+                };
+            },
+            // 诊断：点击链同款求交（含可见性/configHidden 标注）
+            __raytrace(px, py) {
+                const c = renderer.domElement;
+                const rect = c.getBoundingClientRect();
+                const ndcX = ((px - rect.left) / rect.width) * 2 - 1;
+                const ndcY = -((py - rect.top) / rect.height) * 2 + 1;
+                const act = activeGunNumber();
+                const cfg = currentConfig();
+                const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
+                const activeModules = act == null ? moduleMeshes : moduleMeshes.filter(m => {
+                    if (m.userData.gunConfig != null) return m.userData.gunConfig === act;
+                    return true;
+                }).filter(m => !(m.userData.gunMaskPart && !hasMask));
+                const rc = new THREE.Raycaster();
+                rc.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+                const objects = [armorModel, ...activeModules];
+                const hits = rc.intersectObjects(objects, true);
+                return hits.slice(0, 8).map(h => {
+                    const sec = h.object.userData.armorSection;
+                    return {
+                        sec, name: h.object.name || '?', dist: +h.distance.toFixed(3),
+                        vis: h.object.visible, hidden: !!h.object.userData.configHidden,
+                        parentVis: h.object.parent ? h.object.parent.visible : true,
+                        th: h.object.userData.armorThickness,
+                    };
+                });
+            },
+            // 最后一次点击的对照：真实点击链结果（DOM 文本）vs CPU 逐像素预测
+            probe() {
+                if (!rcLastClick) return { error: '还没有点击记录：先在装甲上点一下目标位置' };
+                const c = renderer.domElement;
+                const rect = c.getBoundingClientRect();
+                const cx = Math.floor((rcLastClick.x - rect.left) / rect.width * c.width);
+                const cy = Math.floor((rcLastClick.y - rect.top) / rect.height * c.height);
+                const infoEl = document.getElementById('traj-info');
+                return {
+                    canvas: [cx, cy],
+                    clickResult: infoEl ? (infoEl.textContent || '').replace(/\s+/g, ' ').slice(0, 400) : '(无 traj-info)',
+                    predict: window.__armorRicochet.predict(cx, c.height - 1 - cy),
+                    state: window.__armorRicochet.info(),
+                };
+            },
+            // 调试：各打包单元的世界包围盒（定位异常矩阵用）
+            units() {
+                if (!ricochetPack) return null;
+                const bb = new THREE.Box3();
+                return ricochetPack.units.map(u => {
+                    bb.setFromObject(u.mesh);
+                    const mn = bb.min, mx = bb.max;
+                    return { name: u.mesh.name || '?', section: u.section,
+                        min: [+mn.x.toFixed(2), +mn.y.toFixed(2), +mn.z.toFixed(2)],
+                        max: [+mx.x.toFixed(2), +mx.y.toFixed(2), +mx.z.toFixed(2)] };
+                });
+            },
+        };
 
         function rebuildHeatmapScenes() {
             disposePenetrationResources();
             collectPenetrationMeshes();
+            rebuildRicochetPack();
             buildSpacedArmorScene();
             buildPrimaryArmorScene();
             const sh = selectedShell || (shooterShells[0]) || null;
@@ -846,6 +1319,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const t = shellTypeOf(sh);
             const isHE = t === 'he';
             const isExplosive = isHE || t === 'heat';
+            syncRicochetEnabled(sh);
             const cal = sh.caliber || 120;
             const { penMul } = equipmentCoeffs();
             const pen = (sh.penetration || 0) * penMul;
@@ -3247,6 +3721,17 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 if (e.button === 0) {
                     mouseDownPos = { x: e.clientX, y: e.clientY };
                     isDragging = false;
+                    // BlitzKit 式：按炮管 = 拖动转炮塔+俯仰；按炮塔壳 = 只转炮塔；车体/空白 = 相机
+                    if (!window.__worldPan) {
+                        const part = aimPartAt(e.clientX, e.clientY);
+                        if (part) {
+                            aiming = true;
+                            aimPitchEnabled = part === 'gun';
+                            aimStartX = e.clientX; aimStartY = e.clientY;
+                            aimStartTurret = currentTurretDeg; aimStartGun = currentGunDeg;
+                            controls.enabled = false;
+                        }
+                    }
                 }
             });
             renderer.domElement.addEventListener('mousemove', function(e) {
@@ -3255,48 +3740,83 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     const dy = e.clientY - mouseDownPos.y;
                     if (dx * dx + dy * dy > 25) isDragging = true; // 5px threshold
                 }
+                if (aiming) aimFromDrag(e.clientX - aimStartX, aimPitchEnabled ? e.clientY - aimStartY : 0);
             });
             renderer.domElement.addEventListener('mouseup', function(e) {
                 if (e.button !== 0) return;
+                if (aiming) { aiming = false; controls.enabled = true; }   // 抬起恢复相机控制
                 if (isDragging) { mouseDownPos = null; isDragging = false; return; }
                 mouseDownPos = null;
                 isDragging = false;
                 onClick(e);
             });
 
-            let rmbDown = false, rmbStartX = 0, rmbStartY = 0, rmbStartTurret = 0, rmbStartGun = 0;
-            renderer.domElement.addEventListener('contextmenu', function(e) { e.preventDefault(); });
-            renderer.domElement.addEventListener('mousedown', function(e) {
-                if (e.button !== 2) return;
-                if (window.__worldPan) return;   // 世界模式：右键留给 OrbitControls 平移
-                rmbDown = true;
-                rmbStartX = e.clientX;
-                rmbStartY = e.clientY;
-                rmbStartTurret = currentTurretDeg;
-                rmbStartGun = currentGunDeg;
-            });
-            onWin('mousemove', function(e) {
-                if (!rmbDown) return;
-                aimFromDrag(e.clientX - rmbStartX, e.clientY - rmbStartY);
-            });
-            /** 拖动位移 → 炮塔 / 炮管角度（右键拖动与触屏「炮塔」模式共用，含俯仰 / 水平射界限制）。 */
-            function aimFromDrag(dx, dy) {
+            let aimStartX = 0, aimStartY = 0, aimStartTurret = 0, aimStartGun = 0;   // 左键拖转炮塔起点（BlitzKit 式）
+            let aiming = false;        // 左键正拖在炮塔/炮管上（期间相机控制禁用）
+            let aimPitchEnabled = true; // 命中炮管才俯仰；命中炮塔壳只转 yaw（BlitzKit enablePitchRotation）
+            /**
+             * 左键按下位置命中哪个瞄准部位（BlitzKit MixerScene 语义：onPointerDown 只挂
+             * 炮塔/炮管组——按炮管 = yaw+俯仰，按炮塔壳 = 只 yaw，按车体/空白 = 相机）。
+             * 命中判定走首个命中 mesh 的名字与父链：装甲板 turret_XX_armor_* / gun_XX_armor_*、
+             * 视觉模型 turret_XX / gun_XX(_mask) 组。
+             * @returns 'gun' | 'turret' | null（null = 车体或空白 → 相机）
+             */
+            function aimPartAt(clientX, clientY) {
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                const objs = [];
+                if (armorModel) objs.push(armorModel);
+                if (tankModel) objs.push(tankModel);
+                const hits = raycaster.intersectObjects(objs, true);
+                // Raycaster 不查 visible：跳过隐藏链（其它配置的炮塔/炮管/隐藏件），
+                // 以第一条可见命中链判定（视觉上光标压着的部位）
+                for (let h = 0; h < hits.length && h < 8; h++) {
+                    let n = hits[h].object;
+                    let part = null;
+                    let chainVisible = true;
+                    while (n) {
+                        if (n.visible === false) { chainVisible = false; break; }
+                        const name = n.name || '';
+                        if (part === null) {
+                            if (/^gun_\d+/.test(name)) part = 'gun';
+                            else if (/^turret_\d+/.test(name)) part = 'turret';
+                        }
+                        n = n.parent;
+                    }
+                    if (chainVisible) return part;   // 可见命中：turret/gun 或 null（车体）
+                }
+                return null;
+            }
+            /**
+             * 拖动位移 → 炮塔 / 炮管角度（BlitzKit 式左键拖坦克：灵敏度 = 拖满屏宽转 180°、
+             * 拖满屏高俯仰 180°——MixerScene/Model.tsx 的 π/bounds 公式；含俯仰/水平射界限制）。
+             */
+            function aimFromDrag(dxPx, dyPx) {
+                const rect = renderer.domElement.getBoundingClientRect();
+                const dx = dxPx * 180 / Math.max(1, rect.width);
+                const dy = dyPx * 180 / Math.max(1, rect.height);
                 const norm180 = (a) => ((a + 180) % 360 + 360) % 360 - 180;
                 const yl = currentConfig()?.yaw_limits;
                 const pl = currentConfig()?.pitch_limits;
-                let yawDeg = rmbStartTurret + dx * 0.5;
+                let yawDeg = aimStartTurret + dx;
                 if (yl) {
                     if (yl.max - yl.min < 360) {
                         yawDeg = norm180(Math.max(-yl.max, Math.min(-yl.min, yawDeg)));
+                    } else {
+                        yawDeg = norm180(yawDeg);   // 全向射界：角度回卷 [-180,180)，多圈拖动不无限叠加
                     }
                 } else {
                     const tLeft = tankData.turret_traverse_left ?? 180;
                     const tRight = tankData.turret_traverse_right ?? 180;
                     if (!(tLeft >= 180 && tRight >= 180)) {
                         yawDeg = Math.max(-tLeft, Math.min(tRight, yawDeg));
+                    } else {
+                        yawDeg = norm180(yawDeg);   // 全向炮塔：同上回卷
                     }
                 }
-                let pitchDeg = rmbStartGun - dy * 0.5;
+                let pitchDeg = aimStartGun - dy;
                 let lower = -pl.max, upper = -pl.min;
                 const transition = pl.transition || 20;
                 if (pl.back) {
@@ -3330,34 +3850,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 document.getElementById('gun-val').textContent = currentGunDeg.toFixed(0) + '°';
                 updateTurretGun(currentTurretDeg, currentGunDeg);
             }
-            onWin('mouseup', function(e) {
-                if (e.button === 2) rmbDown = false;
-            });
 
-            // 触屏 / 没有右键的设备（审计 3D-14）：「炮塔」开关打开时，单指拖动转炮塔与炮管，镜头旋转暂停
-            let aimMode = false, aimPointer = null;
-            const aimBtn = document.getElementById('aim-btn');
-            if (aimBtn) aimBtn.addEventListener('click', function() {
-                aimMode = !aimMode;
-                this.classList.toggle('active', aimMode);
-                this.setAttribute('aria-pressed', String(aimMode));
-                if (controls) controls.enabled = !aimMode;
-            });
-            renderer.domElement.addEventListener('pointerdown', function(e) {
-                if (!aimMode || aimPointer != null || window.__worldPan) return;
-                aimPointer = e.pointerId;
-                rmbStartX = e.clientX;
-                rmbStartY = e.clientY;
-                rmbStartTurret = currentTurretDeg;
-                rmbStartGun = currentGunDeg;
-            });
-            onWin('pointermove', function(e) {
-                if (aimPointer !== e.pointerId) return;
-                aimFromDrag(e.clientX - rmbStartX, e.clientY - rmbStartY);
-            });
-            const endAim = function(e) { if (aimPointer === e.pointerId) aimPointer = null; };
-            onWin('pointerup', endAim);
-            onWin('pointercancel', endAim);
 
             document.getElementById('turret-controls').style.display = 'block';
 
@@ -3466,6 +3959,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             if (!tankModel) return;
             if (!origMatrices) collectTurretGunNodes();
             if (!origMatrices) return;
+            ricochetPoseDirty = true;   // 炮塔/炮管旋转 → 世界系网格重建（下一帧类通道前）
 
             // 旋转枢轴 = models.pb 原点链（alignArmorModules 写入：track+turret / track+turret+gun）
             const tPivot = armorPivotTurret ? armorPivotTurret.clone() : new THREE.Vector3(0, 0, 1.7);
@@ -3866,6 +4360,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         remainBefore: l.remaining_before,
                         penetrated: l.penetrated,
                         ricochet: l.ricochet,
+                        angle: l.angle_deg != null ? l.angle_deg : null,
                         normal: ah?.normal,
                         seg: 0,
                     };
@@ -3881,11 +4376,13 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                             n = hitMatch ? hitMatch.normal : first.normal;
                         }
                         const reflect = shellDir.clone().sub(n.clone().multiplyScalar(2 * shellDir.dot(n))).normalize();
-                        const rc = new THREE.Raycaster(lastLayer.point.clone().add(reflect.clone().multiplyScalar(0.05)), reflect, 0.01, 60);
+                        // BlitzKit 对齐：出射射线原点=跳弹点、near=0、无近距过滤——接缝处另一侧板
+                        // 在厘米级距离，原 +0.05m 偏移 + <0.1m 跳过会把它丢弃 → 续飞穿入车体内部。
+                        const rc = new THREE.Raycaster(lastLayer.point, reflect);
                         const ricIntersects = rc.intersectObjects(objects, true);
                         const ricHits = [];
                         for (const hit of ricIntersects) {
-                            if (hit.point.distanceToSquared(lastLayer.point) < 0.01) continue;
+                            if (hit.distance < 1e-4) continue;   // 仅滤数值自命中（与 GPU 侧 RC.T_SKIP 同口径）
                             const entry = classifyHit(hit);
                             if (entry) ricHits.push(entry);
                         }
@@ -3907,28 +4404,28 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                 .then(ricRes => {
                                     if (penSeq !== __penCheckSeq) return;   // 过期响应丢弃
                                     if (ricRes) {
-                                        const ricLayers = ricRes.layers.map(l => ({ point: ricHits.find(ah => ah.partName === l.part_name)?.point || lastLayer.point, name: l.part_name, thickness: l.thickness, eff: l.effective, remainBefore: l.remaining_before, penetrated: l.penetrated, ricochet: l.ricochet, seg: 1 }));
+                                        const ricLayers = ricRes.layers.map(l => ({ point: ricHits.find(ah => ah.partName === l.part_name)?.point || lastLayer.point, name: l.part_name, thickness: l.thickness, eff: l.effective, remainBefore: l.remaining_before, penetrated: l.penetrated, ricochet: l.ricochet, angle: l.angle_deg != null ? l.angle_deg : null, seg: 1 }));
                                         const combined = { result: 'RICOCHET → ' + ricRes.result, total_effective: res.total_effective, layers: [...trajLayers, ...ricLayers] };
-                                        showTrajectory(point, combined.result, combined.total_effective, combined.layers, penDisp, dmg, modDmg, dist, shotRayO);
-                                    } else { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO); }
-                                }).catch(() => { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO); });
+                                        showTrajectory(point, combined.result, combined.total_effective, combined.layers, penDisp, dmg, modDmg, dist, shotRayO, (ricRes && ricRes.damage) || 0);
+                                    } else { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0); }
+                                }).catch(() => { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0); });
                             return;
                         }
                     }
                 }
 
-                showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO);
+                showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0);
             }).catch(err => {
                 if (penSeq !== __penCheckSeq) return;   // 过期请求的失败不覆盖最新结果
                 console.error('Penetration API error:', err);
-                showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO);
+                showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0);
             });
         }
 
 
         let trajGroup = null;
         let trajInfoPos = null;
-        function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin) {
+        function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt) {
             // world 复现模式：本地内核预测 vs 服务器判定（method38 位图 + game_hit_result）
             if (window.__worldPenMode && window.__worldServerInfo) {
                 const el = document.getElementById('world-pen-cmp');
@@ -4016,33 +4513,69 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const lastPt = layers.length > 0 ? layers[layers.length - 1].point : firstPoint;
             trajInfoPos = lastPt.clone();
             const div = document.getElementById('traj-info');
+            // ===== 结果面板（对照 BlitzKit ShotDisplayCard）=====
+            // 结构：状态+伤害标题（按状态着色）→ 逐层行（主/间隙=等效@角度+名义厚度、
+            // 外部模块=flat 厚度、HEAT 间隙=距离+穿深损耗）；跳弹时中间分隔「-25% 穿深」
+            // 再出第二段标题。无 Dist / Remain / 汇总行（BlitzKit 卡片不展示这些）。
+            const ST_COLOR = {
+                PENETRATION: 'var(--green)', BLOCKED: 'var(--red)', RICOCHET: 'var(--orange)',
+                SPLASH: 'var(--orange)', ERROR: 'var(--red)',
+            };
+            const stColor = (st) => ST_COLOR[st] || 'var(--orange)';
+            const fmtNum = (v) => {
+                const r = Math.round(v);
+                return Math.abs(r - v) < 0.05 ? String(r) : (Math.round(v * 10) / 10).toFixed(1);
+            };
+            const segments = result.split('→').map(x => x.trim()).filter(Boolean);
             const colorHex = '#' + color.toString(16).padStart(6, '0');
             let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${colorHex};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
-            html += `<div style="font-size:18px;font-weight:bold;color:${colorHex};margin-bottom:4px;">${result}</div>`;
-            const dmgLine = (() => {
-                const hp = (typeof dmgVal === 'number') ? dmgVal : 0;
-                const md = (typeof modDmgVal === 'number') ? modDmgVal : 0;
-                if (result === 'PENETRATION' && hp > 0) return `HP Dmg ${hp.toFixed(0)}`;
-                if ((result === 'BLOCKED' || result === 'RICOCHET') && md > 0) return `Module Dmg ${md.toFixed(0)} (HP ${hp.toFixed(0)})`;
-                if (hp > 0) return `HP Dmg ${hp.toFixed(0)} / Module ${md.toFixed(0)}`;
-                return '';
-            })();
-            const decayedPen = layers.length && layers[0].remainBefore != null ? layers[0].remainBefore : null;
-            const distPart = (typeof distVal === 'number' && distVal > 0)
-                ? ` · <span style="color:var(--blue);">Dist ${distVal.toFixed(0)}m</span>` + (decayedPen != null && Math.abs(decayedPen - penVal) > 0.5 ? ` · Pen@${distVal.toFixed(0)}m <span style="color:var(--accent-3);">${decayedPen.toFixed(1)}</span>` : '')
-                : '';
-            html += `<div style="font-size:13px;color:var(--muted);margin-bottom:8px;">Eff ${totalEff.toFixed(0)}mm · Pen ${penVal}mm${distPart} · Remain ${Math.max(0, (decayedPen??penVal) - totalEff).toFixed(0)}mm · ${layers.length} layers${dmgLine ? ' · <span style="color:var(--accent-2);">' + dmgLine + '</span>' : ''}</div>`;
-            html += `<div style="border-top:1px solid var(--border);margin-bottom:6px;"></div>`;
+            const titleHtml = (st) => {
+                const d = (typeof dmgDealt === 'number') ? dmgDealt : 0;
+                return `<div style="font-size:18px;font-weight:bold;color:${stColor(st)};margin-bottom:4px;">${st}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· 伤害 ${Math.round(d)}</span>` : ''}</div>`;
+            };
+            html += titleHtml(segments[0]);
+            let layerNo = 0;
+            let outStarted = false;
             for (let i = 0; i < layers.length; i++) {
                 const l = layers[i];
+                // 跳弹分段：出射段首层前插分隔线+第二段标题（BlitzKit "ricochet (-25% penetration)"）
+                if (segments.length > 1 && l.seg === 1 && !outStarted) {
+                    outStarted = true;
+                    html += `<div style="display:flex;align-items:center;gap:8px;margin:6px 0;">`;
+                    html += `<span style="flex:1;border-top:1px solid var(--border);"></span>`;
+                    html += `<span style="font-size:11px;color:var(--muted);">跳弹（-25% 穿深）</span>`;
+                    html += `<span style="flex:1;border-top:1px solid var(--border);"></span></div>`;
+                    html += titleHtml(segments[segments.length - 1]);
+                }
                 const pc = l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)');
-                const remain = l.penetrated ? (l.remainBefore - l.eff).toFixed(0) : 'BLOCKED';
-                // 厚度去尾差：整数显示 150，小数保留一位 62.4
                 const th = Number(l.thickness);
-                const thStr = isFinite(th) ? (Number.isInteger(Math.round(th * 10) / 10) ? String(Math.round(th)) : (Math.round(th * 10) / 10).toFixed(1)) : l.thickness;
-                html += `<div style="font-size:13px;line-height:20px;color:${pc};">`;
-                html += `<span style="color:${pc};">●</span> <span style="color:var(--txt);">${l.name}</span>`;
-                html += `<span style="color:var(--muted);margin-left:16px;">${thStr}mm / ${l.eff.toFixed(0)}eff / pen ${remain}</span>`;
+                const isGap = /^Gap /.test(l.name || '');
+                let main, sub;
+                if (isGap) {
+                    // HEAT 间隙层：距离（mm）+ 跳弹损耗（BlitzKit：max(-100, -50×距离米)）
+                    const distM = parseFloat((l.name || '').slice(4)) || 0;
+                    main = `${Math.round(distM * 1000)}mm`;
+                    sub = `损耗 ${Math.max(-100, -50 * distM).toFixed(0)}%`;
+                } else if (l.eff != null && l.eff > 0 && l.angle != null) {
+                    // 主/间隙装甲：等效厚度 @ 入射角 + 名义厚度（BlitzKit thickness_and_angle + nominal）
+                    main = `${fmtNum(l.eff)}mm @ ${Math.round(l.angle)}°`;
+                    sub = `名义 ${fmtNum(th)}mm`;
+                } else if (l.angle != null) {
+                    // 跳弹层：等效为 0，显示名义厚度 @ 角度
+                    main = `${fmtNum(th)}mm @ ${Math.round(l.angle)}°`;
+                    sub = '跳弹';
+                } else {
+                    // 外部模块：flat 厚度（BlitzKit External 只显示厚度）
+                    main = `${fmtNum(th)}mm`;
+                    sub = l.penetrated ? '' : '挡下';
+                }
+                const idx = isGap ? '' : `${++layerNo}.`;
+                html += `<div style="font-size:13px;line-height:20px;">`;
+                html += `<span style="display:inline-block;width:14px;color:${pc};">●</span>`;
+                html += `<span style="color:var(--muted);display:inline-block;min-width:20px;">${idx}</span>`;
+                html += `<span style="color:var(--txt);">${l.name}</span>`;
+                html += `<span style="color:${pc};margin-left:14px;">${main}</span>`;
+                if (sub) html += `<span style="color:var(--muted);margin-left:14px;">${sub}</span>`;
                 html += `</div>`;
             }
             html += `</div>`;
@@ -4091,6 +4624,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         function animate() {
             if (destroyed) return;
+            hookRcClickRecorder();   // 探针监听惰性挂载（首帧 renderer 就绪）
             rafId = requestAnimationFrame(animate);
             controls.update();
             if (penetrationMode && armorModel) {
@@ -4098,6 +4632,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     heatFrames++;   // 就绪门控计数保留（上游语义）；上报端点已随 client-only 移除
                 }
                 renderSpacedArmorPass();
+                // 全分辨率逐像素续飞（v5.3）：姿态变化时重建世界网格（相机移动无需重建）
+                if (ricochetPoseDirty && ricochetPack) {
+                    rebuildRicochetGrid();
+                    const sh0 = selectedShell || (shooterShells[0]) || null;
+                    if (sh0) syncRicochetEnabled(sh0);
+                }
                 renderer.render(scene, camera);                       // 背景/网格（autoClear 已置 false）
                 renderer.clearDepth();                                 // 清除深度，让 exclude 深度遮罩生效
                 if (primaryArmorScene) { syncCloneMatrices(primaryArmorScene); renderer.render(primaryArmorScene, camera); }
