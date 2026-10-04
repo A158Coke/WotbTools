@@ -17,6 +17,7 @@ for required in Caddyfile common.compose.yml caddy.compose.yml; do
 done
 CADDYFILE="$INCOMING_DIR/Caddyfile"
 CADDY_FRONTEND_UPSTREAM_VALUE="${CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}"
+CADDY_FRONTEND_PEER_VALUE="${CADDY_FRONTEND_PEER:-wotb-frontend:80}"
 CADDY_KEYCLOAK_UPSTREAM_VALUE="${CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}"
 
 validate_tx_upstream() {
@@ -31,6 +32,7 @@ validate_tx_upstream() {
 }
 
 validate_tx_upstream CADDY_FRONTEND_UPSTREAM "$CADDY_FRONTEND_UPSTREAM_VALUE" wotb-frontend:80 8081
+validate_tx_upstream CADDY_FRONTEND_PEER "$CADDY_FRONTEND_PEER_VALUE" wotb-frontend:80 8081
 validate_tx_upstream CADDY_KEYCLOAK_UPSTREAM "$CADDY_KEYCLOAK_UPSTREAM_VALUE" keycloak:8080 8080
 
 # site_block <host>: the body of the `<host> { ... }` site, honouring nested
@@ -104,6 +106,13 @@ assert_upstream auth.wotbtools.com '{$CADDY_KEYCLOAK_UPSTREAM}'
 assert_upstream monitor.wotbtools.com 10.20.0.2:3000
 assert_upstream komodo.wotbtools.com 10.20.0.2:9120
 
+# K7C frontend steady state is an exact two-peer pool. Assert the public catch-all
+# carries both reviewed logical placeholders in order; adapted JSON below proves
+# they become the exact runtime dial pair.
+frontend_handle="$(handle_block wotbtools.com "")"
+grep -qE '^[[:space:]]*reverse_proxy[[:space:]]+\{\$CADDY_FRONTEND_UPSTREAM\}[[:space:]]+\{\$CADDY_FRONTEND_PEER\}[[:space:]]*\{' <<<"$frontend_handle" \
+  || { echo 'ERROR: wotbtools.com must reverse_proxy the reviewed two-peer frontend pool.' >&2; exit 1; }
+
 site_block www.wotbtools.com \
   | grep -qE '^[[:space:]]*redir[[:space:]]+https://wotbtools\.com\{uri\}[[:space:]]+permanent[[:space:]]*$' \
   || { echo 'ERROR: www.wotbtools.com must permanently redirect to https://wotbtools.com.' >&2; exit 1; }
@@ -152,7 +161,9 @@ grep -qE '^[[:space:]]*request>headers>Cookie[[:space:]]+delete[[:space:]]*$' <<
 grep -qE '^[[:space:]]*request>headers>Authorization[[:space:]]+delete[[:space:]]*$' <<<"$auth_site" \
   || { echo 'ERROR: the auth access log must delete the Authorization header.' >&2; exit 1; }
 
-# No upstream may exist beyond the reviewed set above.
+# No first-position upstream may exist beyond the reviewed set above. The second
+# frontend peer is asserted explicitly by the exact two-peer directive above and
+# by the adapted runtime dial list below.
 unexpected="$(sed -n 's/^[[:space:]]*reverse_proxy[[:space:]]\{1,\}\([^[:space:]]*\).*$/\1/p' "$CADDYFILE" \
   | grep -vxF -e '{$CADDY_FRONTEND_UPSTREAM}' -e '{$CADDY_KEYCLOAK_UPSTREAM}' \
       -e '10.20.0.2:3000' -e '10.20.0.2:9120' \
@@ -260,7 +271,9 @@ if ! jq -e '
 fi
 
 # Inspect Caddy's real adapted handlers: preflight must precede every proxy.
-WOTB_EXPECTED_FRONTEND_DIAL="$CADDY_FRONTEND_UPSTREAM_VALUE" python3 - "$android_adapted_doc" <<'PY_CORS'
+WOTB_EXPECTED_FRONTEND_DIAL="$CADDY_FRONTEND_UPSTREAM_VALUE" \
+WOTB_EXPECTED_FRONTEND_PEER_DIAL="$CADDY_FRONTEND_PEER_VALUE" \
+python3 - "$android_adapted_doc" <<'PY_CORS'
 import json
 import os, sys
 
@@ -292,19 +305,37 @@ try:
     # and Web catch-all to be siblings in the same mutually exclusive group.
     siblings = next(node["routes"] for node in nodes if any(route is gateway for route in node.get("routes", [])))
     expected_dial = os.environ.get("WOTB_EXPECTED_FRONTEND_DIAL") or "wotb-frontend:80"
-    catchall = next(route for route in siblings if not route.get("match") and any(child.get("handler") == "reverse_proxy" and child.get("upstreams") == [{"dial": expected_dial}] for child in walk(route)))
+    expected_peer_dial = os.environ.get("WOTB_EXPECTED_FRONTEND_PEER_DIAL") or "wotb-frontend:80"
+    expected_upstreams = [{"dial": expected_dial}, {"dial": expected_peer_dial}]
+    catchall = next(
+        route for route in siblings
+        if not route.get("match")
+        and any(
+            child.get("handler") == "reverse_proxy"
+            and child.get("upstreams") == expected_upstreams
+            for child in walk(route)
+        )
+    )
     assert gateway.get("group") and gateway["group"] == catchall.get("group")
     assert siblings.index(gateway) < siblings.index(catchall)
     assert any(node.get("strip_path_prefix") == "/agent-assets" for node in walk(gateway))
     proxy = next(node for node in walk(gateway) if node.get("handler") == "reverse_proxy")
     assert proxy["upstreams"] == [{"dial": "wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com:443"}]
+    frontend_proxy = next(
+        node for node in walk(catchall)
+        if node.get("handler") == "reverse_proxy" and node.get("upstreams") == expected_upstreams
+    )
+    health_checks = frontend_proxy.get("health_checks", {}).get("active", {})
+    assert health_checks.get("uri") == "/version.json"
+    assert health_checks.get("interval") == 10_000_000_000
+    assert health_checks.get("timeout") == 3_000_000_000
     for node in nodes:
         for operation in ("set", "add"):
             values = node.get("response", {}).get(operation, {})
             assert "Access-Control-Allow-Credentials" not in values
             assert "*" not in values.get("Access-Control-Allow-Origin", [])
 except (StopIteration, AssertionError, KeyError):
-    raise SystemExit("ERROR: adapted Android CORS must be exact-origin, non-credentialed, pre-auth, with the reviewed asset gateway")
+    raise SystemExit("ERROR: adapted Android CORS / K7C frontend pool must be exact-origin, non-credentialed, pre-auth, with the reviewed asset gateway and exact two-peer health-checked frontend pool")
 PY_CORS
 
 docker compose -p deploy \
