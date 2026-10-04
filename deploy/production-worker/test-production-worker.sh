@@ -458,6 +458,22 @@ write_daemon '{"registry-mirrors":["https://mirror.ccs.tencentyun.com"],"live-re
 expect_fail 'an unsupported daemon setting' 'does not own these daemon settings' install_cmd
 write_daemon '{"registry-mirrors":["https://mirror.ccs.tencentyun.com"]}'
 expect_ok 'a supported daemon config' "$work/mirror-ok.log" install_cmd
+
+# Docker's runtime view canonicalizes a registry mirror by appending one trailing
+# slash. That representation is equivalent to the reviewed host-only URL, but no
+# other scheme/host/path drift is accepted.
+expect_ok 'a Docker-canonical trailing slash mirror' "$work/mirror-trailing-slash.log" \
+  verify_cmd STUB_MIRRORS_OVERRIDE='["https://mirror.ccs.tencentyun.com/"]'
+expect_ok 'an exact active mirror' "$work/mirror-exact.log" \
+  verify_cmd STUB_MIRRORS_OVERRIDE='["https://mirror.ccs.tencentyun.com"]'
+expect_fail 'an active mirror with a path' 'does not report the reviewed mirror' \
+  verify_cmd STUB_MIRRORS_OVERRIDE='["https://mirror.ccs.tencentyun.com/foo"]'
+expect_fail 'an active mirror with the wrong scheme' 'does not report the reviewed mirror' \
+  verify_cmd STUB_MIRRORS_OVERRIDE='["http://mirror.ccs.tencentyun.com/"]'
+expect_fail 'a different active mirror host' 'does not report the reviewed mirror' \
+  verify_cmd STUB_MIRRORS_OVERRIDE='["https://other.example.com/"]'
+pass 'active mirror canonicalization accepts only one insignificant trailing slash'
+
 pass 'daemon.json is strictly validated (malformed and unsupported settings refuse)'
 
 ## --- H. credential model and generation convergence --------------------------
