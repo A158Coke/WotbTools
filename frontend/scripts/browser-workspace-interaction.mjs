@@ -10,7 +10,7 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
  * 为什么必须是真浏览器：本次回归的两类症状（「点了没反应」、透明层吃掉 pointer）在 jsdom 里
  * 结构上不可见 —— jsdom 没有真实布局/层叠/hit-testing，`elementFromPoint` 恒为 null。
  * 因此这里启动真实 Chrome（独立 user-data-dir）、按设备指标仿真 mobile/tablet/desktop，
- * 用真实输入管线（Input.synthesizeTapGesture）点击真实坐标，并断言
+ * 用真实输入管线（原始 touch / mouse 序列）点击真实坐标，并断言
  * `document.elementFromPoint(按钮中心)` 确实命中按钮本身。
  *
  * 例外：`roster-geometry-*` 场景里对 3D 面板的开关点击走 `clickElement()`——它把
@@ -178,17 +178,16 @@ function playbackControlProbe() {
         .map((r) => Math.min(r.width, r.height))
       return sides.length ? Math.min(...sides) : null
     })(),
-    /** rail 模式下速度档位必须一行排开且不撑出 rail（档位个数变化时的回归点） */
-    railSpeeds: (() => {
-      const group = document.querySelector('.pb-controls-rail-mode .pb-speed')
+    /** 速度档位菜单展开后必须一行排开且不越出自身容器（档位个数变化时的回归点） */
+    speedMenu: (() => {
+      const group = document.querySelector('.pb-speed-menu')
       if (!group) return null
-      const container = group.closest('.pb-left-rail') || group.parentElement
-      const limit = container.getBoundingClientRect()
-      const buttons = [...group.querySelectorAll('[data-test^="pb-speed-"]')].map((b) => b.getBoundingClientRect())
+      const limit = group.getBoundingClientRect()
+      const buttons = [...group.querySelectorAll('.pb-speed-menu [data-test^="pb-speed-"]')].map((b) => b.getBoundingClientRect())
+      if (!buttons.length) return null
       return {
         count: buttons.length,
-        rows: new Set(buttons.map((r) => Math.round(r.top))).size,
-        overflow: buttons.some((r) => r.left < limit.left - 1 || r.right > limit.right + 1),
+        overflow: buttons.some((r) => r.left < limit.left - 1 || r.right > limit.right + 1 || r.top < limit.top - 1 || r.bottom > limit.bottom + 1),
         minSide: Math.min(...buttons.map((r) => Math.min(r.width, r.height))),
       }
     })(),
@@ -373,7 +372,12 @@ class Page {
           test: test ? test.getAttribute('data-test') : null,
         }
       }
-      window.__wsInput = { primary: null, click: null, clickCount: 0 }
+      window.__wsInput = { primary: null, click: null, clickCount: 0, pointers: [] }
+      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+        document.addEventListener(type, (event) => {
+          window.__wsInput.pointers.push({ type, ...describe(event.target), x: event.clientX, y: event.clientY })
+        }, true)
+      }
       const recordPrimary = (event) => { window.__wsInput.primary = describe(event.target) }
       document.addEventListener('touchstart', recordPrimary, true)
       document.addEventListener('mousedown', recordPrimary, true)
@@ -402,7 +406,7 @@ class Page {
   }
 
   resetInputTrace() {
-    return this.evaluate('window.__wsInput = { primary: null, click: null, clickCount: 0 }; window.__wsInput')
+    return this.evaluate('window.__wsInput = { primary: null, click: null, clickCount: 0, pointers: [] }; window.__wsInput')
   }
 
   async pressH() {
@@ -604,6 +608,7 @@ async function runAuthCapabilityScenario(env, scenario) {
  */
 const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-1600x900-desktop', width: 1600, height: 900, touch: false, players: 7, unknown: 2, killfeed: 3, layout: 'side' },
+  { name: 'roster-geometry-1792x922-fullscreen-desktop', width: 1792, height: 922, touch: false, players: 7, unknown: 2, killfeed: 3, layout: 'side', fullscreen: true },
   { name: 'roster-geometry-1024x768-tablet', width: 1024, height: 768, touch: false, players: 7, unknown: 2, killfeed: 3, layout: 'side' },
   { name: 'roster-geometry-375x812-portrait-coarse', width: 375, height: 812, touch: true, players: 7, unknown: 0, killfeed: 3, layout: 'portrait' },
   { name: 'roster-geometry-390x844-portrait-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 2, killfeed: 3, layout: 'portrait' },
@@ -622,9 +627,9 @@ const PLAYBACK_SCENARIOS = [
   // 审计 PB-07：iPad 横屏是触屏但有平板的可用空间，必须拿 tablet 形态（触屏只放大点击区域）
   { name: 'play-1024x768-ipad-coarse', width: 1024, height: 768, touch: true, duration: 60, form: 'pb-form-tablet' },
   { name: 'play-1440x900-desktop', width: 1440, height: 900, touch: false, duration: 60, form: 'pb-form-pc' },
-  // 触屏 + rail：视口 >1200 的大平板（iPad Pro / Android 平板横屏）走 pc 形态，控件进 rail；
-  // 速度档位必须一行排开且每个都满足 44px 点击区域（rail 在触屏上自动加宽）
-  { name: 'play-1366x1024-tablet-coarse-rail', width: 1366, height: 1024, touch: true, duration: 60, form: 'pb-form-pc' },
+  // 触屏 + 大平板（iPad Pro / Android 平板横屏）走 pc 形态：六个 primary 控件仍在 Stage 之下的
+  // 中心列，速度档位展开后每个都满足 44px 点击区域（触屏自动放大 --control-h-*）。
+  { name: 'play-1366x1024-tablet-coarse', width: 1366, height: 1024, touch: true, duration: 60, form: 'pb-form-pc' },
   { name: 'duration-zero-390x844-coarse', width: 390, height: 844, touch: true, duration: 0, form: 'pb-form-mobile' },
 ]
 
@@ -649,6 +654,38 @@ function rosterGeometryProbe() {
   const square = root.querySelector('.stage-square')?.getBoundingClientRect()
   out.square = square ? { w: square.width, h: square.height, l: square.left, r: square.right, t: square.top, b: square.bottom } : null
   if (!square || Math.abs(square.width - square.height) > 1) out.errors.push(`3D Stage is not square: ${JSON.stringify(out.square)}`)
+  const stage = root.querySelector('.pb-stage')?.getBoundingClientRect()
+  const hud = root.querySelector('.hud')?.getBoundingClientRect()
+  const transport = root.querySelector('.controls')?.getBoundingClientRect()
+  if (stage && square) {
+    const maximumSide = out.portrait ? stage.width : Math.min(stage.width, stage.height)
+    if (square.width < maximumSide - 2 || square.width > maximumSide + 2) {
+      out.errors.push(`Stage does not maximize available square: side=${square.width.toFixed(1)}, available=${maximumSide.toFixed(1)}`)
+    }
+    if (hud && transport) {
+      const gaps = { hud: square.top - hud.bottom, transport: transport.top - square.bottom }
+      out.stackGaps = gaps
+      for (const [name, gap] of Object.entries(gaps)) {
+        if (gap < -1 || gap > 16) out.errors.push(`central ${name} gap must remain compact (0–16px): ${gap.toFixed(1)}`)
+      }
+    }
+  }
+  const primaryIds = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
+  const primary = primaryIds.map((id) => root.querySelector(`[data-test="${id}"]`))
+  if (primary.some((element) => !element)) out.errors.push('six shared primary controls must be present')
+  else {
+    const boxes = primary.map((element) => element.getBoundingClientRect())
+    const domOrder = [...root.querySelectorAll('.pb-controls button[data-test]')]
+      .map((element) => element.dataset.test).filter((id) => primaryIds.includes(id))
+    if (JSON.stringify(domOrder) !== JSON.stringify(primaryIds)) out.errors.push(`primary control DOM order: ${domOrder.join(',')}`)
+    if (boxes.some((box, index) => index > 0 && box.left < boxes[index - 1].right - 1)
+      || boxes.some((box) => Math.abs(box.top - boxes[0].top) > 1)) out.errors.push('six primary controls must stay in x-order on one row')
+    if (out.phone && boxes.some((box) => Math.min(box.width, box.height) < 43.5)) out.errors.push('primary touch targets must be at least 44px')
+  }
+  out.laneWidths = ['.side-left', '.side-right'].map((selector) => root.querySelector(selector)?.getBoundingClientRect().width ?? 0)
+  const maxLane = getComputedStyle(root).getPropertyValue('--pb-roster-max').trim()
+  out.maxLaneWidth = parseFloat(maxLane) * (maxLane.endsWith('rem') ? parseFloat(getComputedStyle(document.documentElement).fontSize) : 1)
+  if (!out.portrait && out.laneWidths.some((width) => width > out.maxLaneWidth + 1)) out.errors.push('roster lane exceeds its usable upper bound')
   out.laneIds = ['.side-left', '.side-right'].map((sel) => [...root.querySelectorAll(`${sel} .pl`)].map((el) => el.textContent.trim().split(/\s+/)[0]))
   out.rowsComplete = [...root.querySelectorAll('.team-lane .pl')].every((row) => ['pb-roster-player', 'pb-roster-tank', 'roster-hp', 'roster-hp-pct']
     .every((test) => (row.querySelector(`[data-test="${test}"]`)?.textContent || '').trim().length > 0))
@@ -839,11 +876,16 @@ function displayPanelProbe() {
   if (pb.height > visBottom - visTop - 8) {
     out.errors.push(`display panel taller than the visible pane: ${Math.round(pb.height)}px`)
   }
-  // 不得盖住场景中心（面板锚在右下角）
-  const cx = rr.left + rr.width / 2
-  const cy = rr.top + rr.height / 2
-  if (cx > pb.left && cx < pb.right && cy > pb.top && cy < pb.bottom) {
-    out.errors.push('display panel covers the scene center')
+  const gear = root.querySelector('[data-testid="display-toggle"]')?.getBoundingClientRect()
+  if (!gear) out.errors.push('display anchor gear missing')
+  else {
+    const distanceX = Math.max(0, pb.left - gear.right, gear.left - pb.right)
+    const distanceY = Math.max(0, pb.top - gear.bottom, gear.top - pb.bottom)
+    if (Math.hypot(distanceX, distanceY) > 16) out.errors.push(`Display must stay anchored to gear: distance=${Math.hypot(distanceX, distanceY).toFixed(1)}`)
+  }
+  if (pb.left < rr.left - 1 || pb.right > rr.right + 1) out.errors.push('Display exceeds workspace width')
+  if (innerWidth >= 1600 && innerHeight >= 900 && panel.scrollHeight > panel.clientHeight + 1) {
+    out.errors.push(`standard Display must not scroll on large screens: ${panel.scrollHeight} > ${panel.clientHeight}`)
   }
   for (const id of ['disp-topbar', 'disp-roster', 'disp-killfeed', 'disp-base', 'disp-player', 'disp-tank', 'disp-hp', 'disp-reload', 'disp-glb', 'hide-all-ui']) {
     const el = document.querySelector(`[data-testid="${id}"]`)
@@ -1015,7 +1057,7 @@ async function runRosterGeometryScenario(env, scenario) {
   const sceneBefore = await page.evaluate('(window.__sceneMarker = window.__pbPane.sceneApi, true)')
   if (scenario.fullscreen) {
     const fsButton = await page.evaluate(`(() => {
-      const el = document.querySelector('[data-testid="playback-fullscreen"]')
+      const el = document.querySelector('[data-test="pb-fullscreen"]')
       if (!el) return null
       el.scrollIntoView({ block: 'center' })
       const r = el.getBoundingClientRect()
@@ -1255,11 +1297,12 @@ async function runRosterGeometryScenario(env, scenario) {
   })()`)
   check(failures, !!chipCenter, 'file remove chip not hit-testable')
   if (chipCenter) {
-    // 这一段验证的是解析生命周期（A → 清空 → B），不是触屏命中：矮横屏 740×360 上 touch 序列
-    // 落在 chip 上但浏览器没有合成 click（primary=chip、click=null，原因待单独排查），
-    // 所以这里与本文件 3D 控件一样走「命中测试 + click」的原子点击（遮挡照样会暴露）。
-    const chipClick = await clickElement(page, '[data-testid="file-list"] .chipx')
-    check(failures, clicked(chipClick), `file remove chip not clickable: ${chipClick}`)
+    await page.installInputTrace()
+    await page.tap({ ...chipCenter, touch: scenario.touch })
+    const chipInput = await page.inputTrace()
+    check(failures, chipInput.clickCount === 1, `file remove chip must receive exactly one real click: ${JSON.stringify(chipInput)}`)
+    check(failures, chipInput.primary?.testId === 'file-list' && chipInput.click?.testId === 'file-list',
+      `file remove touch/click must hit the chip: ${JSON.stringify(chipInput)}`)
     await page.waitFor(() => !document.querySelector('.pb-root'), { label: '3D pane torn down after clear' })
     await page.evaluate(`(() => {
       const input = document.querySelector('[data-testid="select-files-input"]')
@@ -1294,7 +1337,7 @@ async function runRosterGeometryScenario(env, scenario) {
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
 
   await env.chrome.client.send('Target.closeTarget', { targetId })
-  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}`, geometry })
 }
 
 async function runAppScenario(env, scenario) {
@@ -1422,17 +1465,28 @@ async function runPlaybackControlScenario(env, scenario) {
   const control = before.hitIsButton ? before : await page.revealControl('[data-test="pb-play"]')
   check(failures, control.hitIsButton,
     `play button center hit ${control.hitDescription} instead (viewport=${control.viewportWidth}x${control.viewportHeight} geometry=${JSON.stringify(control.geometry)})`)
-  if (before.railSpeeds) {
-    check(failures, before.railSpeeds.rows === 1,
-      `rail speed options wrapped onto ${before.railSpeeds.rows} rows (${before.railSpeeds.count} options)`)
-    check(failures, !before.railSpeeds.overflow, 'rail speed options overflow the rail')
-  }
   if (scenario.touch && before.speedMinSide != null) {
     check(failures, before.speedMinSide >= 43.5,
       `touch speed option hit target is ${before.speedMinSide.toFixed(1)}px, below 44px`)
   }
-  if (scenario.name.endsWith('-rail')) {
-    check(failures, !!before.railSpeeds, 'expected the playback controls to be in the rail')
+  // 速度档位是渐进披露：常驻只有当前值，展开后是一列档位菜单——档位齐全、不越出自身容器、
+  // 触屏每个档位都满足 44px。菜单是覆盖层，不参与控件条高度。
+  {
+    await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]')?.click()`)
+    await delay(150)
+    const menu = await page.probe(playbackControlProbe)
+    check(failures, !!menu.speedMenu, 'speed options must open on demand from the current value')
+    if (menu.speedMenu) {
+      check(failures, menu.speedMenu.count === 5,
+        `speed menu must list every shared speed: ${JSON.stringify(menu.speedMenu)}`)
+      check(failures, !menu.speedMenu.overflow, 'speed options overflow their menu')
+      if (scenario.touch) {
+        check(failures, menu.speedMenu.minSide >= 43.5,
+          `touch speed option hit target is ${menu.speedMenu.minSide.toFixed(1)}px, below 44px`)
+      }
+    }
+    await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]')?.click()`)
+    await delay(150)
   }
   check(failures, before.pageScrollWidth <= before.viewportWidth + 1,
     `page-level horizontal overflow: ${before.pageScrollWidth} > ${before.viewportWidth} (contentWidth=${before.contentWidth} overflowing=${JSON.stringify(before.overflowing)})`)
@@ -1509,18 +1563,13 @@ async function runRotationScenario(env, scenario) {
 }
 
 /**
- * §mobile-fullscreen：手机横屏全屏是「148px navigation rail | map」，播放控件仍在底部 overlay。
- * 触屏 rail 的 248px 下限只属于「控件真的在 rail 里」的大平板，不得通过 inline --pb-rail-w
- * 盖掉 mobile fullscreen 的 148px（inline style 优先级高于 CSS 规则）；用户在桌面拖过、持久化在
- * localStorage 的 rail 宽度同样不得盖掉它。
+ * §mobile-fullscreen：手机横屏全屏与**非全屏横屏是同一个几何**——Team 1 | 正方形 Stage | Team 2，
+ * 播放控件在 Stage 之下，没有常驻左栏；⚙ 打开的是锚定在 gear 上的 Display 浮面。
+ * 早先「148px navigation rail | map」的模型已整体移除，这里锁的是替代它的契约：
+ * 全屏本身不产生任何常驻侧栏，⚙ 的浮面既不离开 gear 也不越出视口。
  */
 const MOBILE_FULLSCREEN_SCENARIOS = [
   { name: 'fullscreen-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 60 },
-  {
-    name: 'fullscreen-740x360-landscape-coarse-persisted-rail',
-    width: 740, height: 360, touch: true, duration: 60,
-    paneWidths: { rail: 320, details: null },
-  },
 ]
 
 async function runMobileFullscreenScenario(env, scenario) {
@@ -1530,12 +1579,6 @@ async function runMobileFullscreenScenario(env, scenario) {
   lastPage = page
   await page.enable()
   await page.emulate(scenario)
-  if (scenario.paneWidths) {
-    // mount 前写入持久化偏好（模拟此前在桌面拖过 rail）
-    await env.chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `try { localStorage.setItem('wotb.pb.pane-widths', ${JSON.stringify(JSON.stringify(scenario.paneWidths))}) } catch {}`,
-    }, sessionId)
-  }
 
   await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=${scenario.duration}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-fullscreen"]'), { label: 'fullscreen button' })
@@ -1551,36 +1594,37 @@ async function runMobileFullscreenScenario(env, scenario) {
 
   const state = await page.evaluate(`(() => {
     const root = document.querySelector('[data-test="battle-playback"]')
-    const rail = root.querySelector('.pb-left-rail')
     return {
       fullscreenIsRoot: document.fullscreenElement === root,
       formClass: Array.from(root.classList).find((n) => n.startsWith('pb-form-')) || null,
-      persisted: localStorage.getItem('wotb.pb.pane-widths'),
-      inlineRailVar: root.style.getPropertyValue('--pb-rail-w').trim(),
-      railWidth: rail ? rail.getBoundingClientRect().width : null,
-      controlsInRail: !!document.querySelector('.pb-controls-rail-mode'),
+      displayOpen: !!document.querySelector('[data-testid="display-panel"]'),
     }
   })()`)
   check(failures, state.fullscreenIsRoot, 'fullscreen element is not the playback root')
   check(failures, state.formClass === 'pb-form-mobile', `fullscreen form=${state.formClass}, expected pb-form-mobile`)
-  check(failures, !state.controlsInRail, 'mobile fullscreen must keep the playback controls out of the rail')
-  if (scenario.paneWidths) {
-    check(failures, state.persisted === JSON.stringify(scenario.paneWidths),
-      `persisted pane widths were not in place: ${state.persisted}`)
-  }
-  check(failures, state.inlineRailVar === '', `mobile fullscreen wrote inline --pb-rail-w=${state.inlineRailVar}`)
-  // 手机全屏与非全屏横屏同一个几何（Team 1 | 正方形 Stage | Team 2）：左栏不是常驻列，
-  // 只有 ⚙ 打开时才以浮层出现——持久化的桌面宽度也不得把它变回常驻列。
-  check(failures, state.railWidth === 0, `mobile fullscreen rendered a persistent ${state.railWidth}px rail`)
+  check(failures, !state.displayOpen, 'mobile fullscreen must not open the Display surface before ⚙')
+  // 手机全屏与非全屏横屏同一个几何（Team 1 | 正方形 Stage | Team 2）：⚙ 打开的是锚定在
+  // gear 上的 workspace 级浮面，不是常驻左栏，也不改变三段式布局。
   await page.evaluate(`document.querySelector('[data-test="pb-secondary-entry"]').click()`)
   await delay(200)
   const drawer = await page.evaluate(`(() => {
-    const rail = document.querySelector('.pb-left-rail')
-    const r = rail.getBoundingClientRect()
-    return { width: r.width, position: getComputedStyle(rail).position }
+    const panel = document.querySelector('[data-testid="display-panel"]')
+    if (!panel) return null
+    const r = panel.getBoundingClientRect()
+    const gear = document.querySelector('[data-testid="display-toggle"]').getBoundingClientRect()
+    return {
+      width: r.width,
+      position: getComputedStyle(panel).position,
+      distance: Math.hypot(Math.max(0, r.left - gear.right, gear.left - r.right), Math.max(0, r.top - gear.bottom, gear.top - r.bottom)),
+      insideViewport: r.left >= -1 && r.right <= innerWidth + 1,
+    }
   })()`)
-  check(failures, drawer.width > 0 && drawer.position === 'fixed',
-    `⚙ must open the left rail as an overlay drawer in mobile fullscreen: ${JSON.stringify(drawer)}`)
+  check(failures, !!drawer && drawer.width > 0 && drawer.position === 'absolute',
+    `⚙ must open the Display surface as an anchored overlay in mobile fullscreen: ${JSON.stringify(drawer)}`)
+  check(failures, !!drawer && drawer.distance <= 16,
+    `Display must stay anchored to gear in mobile fullscreen: ${JSON.stringify(drawer)}`)
+  check(failures, !!drawer && drawer.insideViewport,
+    `Display must stay inside the viewport in mobile fullscreen: ${JSON.stringify(drawer)}`)
 
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `fullscreen ${scenario.width}x${scenario.height}` })
@@ -1610,10 +1654,10 @@ async function runMobileFullscreenScenario(env, scenario) {
  *  3. B 重新发起解析并**自己**收敛（hasData，无 err）——旧解析不占队列；
  *  4. 放行 A 的迟到回包 → 无人认领（不被 B 或任何会话消费）。
  */
-const LIFECYCLE_SCENARIO = {
-  name: 'parse-lifecycle-a-clear-b-390x844-coarse',
-  width: 390, height: 844, touch: true,
-}
+const LIFECYCLE_SCENARIOS = [
+  { name: 'parse-lifecycle-a-clear-b-390x844-coarse', width: 390, height: 844, touch: true },
+  { name: 'parse-lifecycle-a-clear-b-740x360-coarse', width: 740, height: 360, touch: true },
+]
 
 /** 在 fixture server 上传入 main world 的 Worker stub 入口（`.mjs` 不是应用源码） */
 const PARSE_WORKER_STUB_URL = '/scripts/browser-fixtures/playback-parse-worker-stub.mjs'
@@ -1732,6 +1776,18 @@ async function runParseLifecycleScenario(env, scenario) {
     if (toggle && toggle.getAttribute('aria-expanded') === 'false') toggle.click()
   })()`)
   await page.waitFor(() => !!document.querySelector('[data-testid="file-list"] .chipx'), { label: 'file chip after expanding list' })
+  // Dragging a chip is a scroll gesture: it must leave A selected and its parse alive.
+  await page.installInputTrace()
+  const dragStart = await page.evaluate(clickCenterExpression('[data-testid="file-list"] .chipx'))
+  check(failures, !!dragStart, 'file chip must be hit-testable for a real scroll gesture')
+  if (dragStart) {
+    await dragPointer(page, dragStart, { x: dragStart.x - 24, y: dragStart.y - 24 }, { touch: scenario.touch })
+    const dragInput = await page.inputTrace()
+    check(failures, dragInput.clickCount === 0, `chip drag must not click: ${JSON.stringify(dragInput)}`)
+    check(failures, await page.evaluate(`!!document.querySelector('[data-testid="file-list"] .chipx') && !!window.__pbPane?.store.loading`),
+      'chip drag cleared selection or stopped battle A parse')
+    await page.resetInputTrace()
+  }
   const chipCenter = await page.evaluate(`(() => {
     const chip = document.querySelector('[data-testid="file-list"] .chipx')
     if (!chip) return null
@@ -1753,7 +1809,6 @@ async function runParseLifecycleScenario(env, scenario) {
   }
   // 真实输入事件必须落在 remove chip 上：用页面内记录的真实 click 目标 + 坐标证明
   // （点击完成后 chip 与列表都消失了，事后再 elementFromPoint 只会拿到别的东西）
-  await page.installInputTrace()
   await page.tap({ ...chipCenter, touch: scenario.touch })
   const clearInput = await page.inputTrace()
   const click = clearInput?.click
@@ -1762,6 +1817,11 @@ async function runParseLifecycleScenario(env, scenario) {
     && click.y >= chipCenter.box.top && click.y <= chipCenter.box.bottom
   check(failures, click?.testId === 'file-list' && insideChip,
     `the real click at (${click?.x},${click?.y}) must land on the remove chip ${JSON.stringify(chipCenter.box)} (target=${JSON.stringify(click)})`)
+  check(failures, clearInput.clickCount === 1, `chip tap must click exactly once: ${JSON.stringify(clearInput)}`)
+  check(failures, clearInput.pointers.some((event) => event.type === 'pointerdown' && event.testId === 'file-list')
+    && clearInput.pointers.some((event) => event.type === 'pointerup' && event.testId === 'file-list')
+    && !clearInput.pointers.some((event) => event.type === 'pointercancel'),
+    `chip tap must complete the real pointer sequence: ${JSON.stringify(clearInput)}`)
   await page.waitFor(() => !document.querySelector('.pb-root'), { label: '3D pane torn down after clear' })
 
   // clear 必须**真的撤下** A 的解析：生产代码在 abort 时整体 terminate 当前 Worker
@@ -1944,6 +2004,7 @@ const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, layout: 'lanes', fullscreen: true },
   { name: 'ws2d-1024x768-tablet', width: 1024, height: 768, touch: false, layout: 'lanes' },
   { name: 'ws2d-1600x900-desktop', width: 1600, height: 900, touch: false, layout: 'lanes' },
+  { name: 'ws2d-1792x922-fullscreen-desktop', width: 1792, height: 922, touch: false, layout: 'lanes', fullscreen: true },
 ]
 
 /** workspace 几何探针（只读）。 */
@@ -1980,6 +2041,7 @@ function workspace2dProbe() {
     height: innerHeight,
     fullscreen: !!document.fullscreenElement,
     rootClass: root?.className || '',
+    hud: box(document.querySelector('.pb-hud')),
     pageOverflowX: document.documentElement.scrollWidth > innerWidth + 1,
     main: box(main),
     map: box(document.querySelector('[data-test="pb-map"]')),
@@ -1998,8 +2060,21 @@ function workspace2dProbe() {
     time: document.querySelector('[data-test="pb-time"]')?.textContent?.trim() || null,
     friendlyHp: document.querySelector('[data-test="pb-hp-value-friendly"]')?.textContent?.trim() || null,
     primaryTops: primary.map((b) => (b ? Math.round(b.t) : null)),
+    primaryBoxes: primary,
+    primaryOrder: [...document.querySelectorAll('.pb-controls button[data-test]')].map((b) => b.dataset.test)
+      .filter((id) => ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry'].includes(id)),
     primaryMinSide: Math.min(...primary.filter(Boolean).map((b) => Math.min(b.w, b.h))),
     buttonCount: buttons.length,
+    layout: ['.battle-playback', '.pb-hud', '.pb-main', '.pb-map-stage', '.pb-map', '.pb-transport-slot', '.pb-mobile-overlay', '.pb-mobile-overlay-content', '.pb-team-lane-left', '[data-test="pb-roster-row"]'].map((selector) => {
+      const element = document.querySelector(selector)
+      if (!element) return { selector }
+      const style = getComputedStyle(element)
+      return { selector, box: box(element), rows: style.gridTemplateRows, columns: style.gridTemplateColumns,
+        gridRow: style.gridRow, position: style.position, display: style.display, flex: style.flex,
+        padding: style.padding, margin: style.margin, border: style.borderWidth, gap: style.gap, minHeight: style.minHeight, maxHeight: style.maxHeight,
+        scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, classes: element.className,
+        squareAvailable: style.getPropertyValue('--pb-square-avail-h'), workspaceHeight: style.getPropertyValue('--pb-workspace-h') }
+    }),
   }
 }
 
@@ -2053,14 +2128,13 @@ async function setRosterVisible(page, visible) {
     if (!box) {
       document.querySelector('[data-test="pb-secondary-entry"]')?.click()
       await wait()
-      document.querySelector('[data-test="pb-rail-display"]')?.click()
-      await wait()
     }
     const input = document.querySelector('[data-test="pb-show-roster"]')
     if (!input) return 'missing'
     if (input.checked !== ${visible}) input.click()
     await wait()
-    document.querySelector('[data-test="pb-rail-back"]')?.click()
+    const close = document.querySelector('[data-testid="display-close"]') || document.querySelector('[data-test="pb-secondary-entry"]')
+    close?.click()
     await wait()
     return 'ok'
   })()`)
@@ -2079,13 +2153,32 @@ async function runWorkspace2DScenario(env, scenario) {
   await delay(300)
 
   if (scenario.fullscreen) {
+    await page.evaluate(`document.querySelector('[data-test="pb-fullscreen"]').scrollIntoView({ block: 'center' })`)
+    await delay(200)
     const button = await page.evaluate(`(() => {
       const el = document.querySelector('[data-test="pb-fullscreen"]')
-      el.scrollIntoView({ block: 'center' })
       const r = el.getBoundingClientRect()
       return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
     })()`)
+    await page.installInputTrace()
     await page.tap({ ...button, touch: scenario.touch })
+    const input = await page.inputTrace()
+    check(failures, input.click?.test === 'pb-fullscreen', `fullscreen real click missed button: ${JSON.stringify(input)}`)
+    if (input.click?.test !== 'pb-fullscreen') {
+      const boxes = await page.evaluate(`(() => {
+        const selectors = ['.battle-playback', '.pb-main', '.pb-map-stage', '.pb-map', '.pb-transport-slot', '.pb-mobile-overlay', '.pb-mobile-overlay-content', '.pb-controls']
+        return selectors.map((selector) => {
+          const el = document.querySelector(selector)
+          if (!el) return { selector, missing: true }
+          const rect = el.getBoundingClientRect()
+          const style = getComputedStyle(el)
+          return { selector, x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+            position: style.position, display: style.display, gridColumn: style.gridColumn, gridRow: style.gridRow,
+            columns: style.gridTemplateColumns, rows: style.gridTemplateRows, inlineSize: style.inlineSize, minWidth: style.minWidth }
+        })
+      })()`)
+      throw new Error(`fullscreen button occluded: ${JSON.stringify({ input, boxes })}`)
+    }
     await page.waitFor(() => !!document.fullscreenElement, { timeout: 5000, label: 'document.fullscreenElement' })
     await delay(400)
   }
@@ -2100,6 +2193,16 @@ async function runWorkspace2DScenario(env, scenario) {
   // 标记共用这一个画框），与 1:1 的差 < 1%——拉成严格 1:1 反而会把地图拉伸变形。
   const squareish = (b) => b && b.w > 0 && Math.abs(b.w - b.h) <= Math.max(1.5, b.w * 0.01)
   check(failures, squareish(g.map), `Stage is not square: ${JSON.stringify(g.map)}`)
+  check(failures, JSON.stringify(g.primaryOrder) === JSON.stringify(['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']),
+    `primary controls DOM order: ${JSON.stringify(g.primaryOrder)}`)
+  check(failures, g.primaryBoxes.every((box) => box)
+    && g.primaryBoxes.every((box, index) => index === 0 || box.l >= g.primaryBoxes[index - 1].r - 1),
+    'six primary controls must preserve their x-order')
+  if (g.hud && g.map && g.transport) {
+    for (const [name, gap] of [['HUD', g.map.t - g.hud.b], ['Transport', g.transport.t - g.map.b]]) {
+      check(failures, gap >= -1 && gap <= 16, `${name} gap must remain compact (0–16px): ${gap.toFixed(1)} layout=${JSON.stringify(g.layout)}`)
+    }
+  }
   // 主控件行：-5 ▶ +5 1× ⛶ ⚙ 同一行（触屏 44px）
   if (scenario.touch) {
     const tops = g.primaryTops.filter((t) => t != null)
@@ -2249,7 +2352,7 @@ try {
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...AUTH_CAPABILITY_SCENARIOS.map((scenario) => ({ scenario, run: () => runAuthCapabilityScenario(env, scenario) })),
     ...ROSTER_GEOMETRY_SCENARIOS.map((scenario) => ({ scenario, run: () => runRosterGeometryScenario(env, scenario) })),
-    { scenario: LIFECYCLE_SCENARIO, run: () => runParseLifecycleScenario(env, LIFECYCLE_SCENARIO) },
+    ...LIFECYCLE_SCENARIOS.map((scenario) => ({ scenario, run: () => runParseLifecycleScenario(env, scenario) })),
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
     { scenario: ROTATION_SCENARIO, run: () => runRotationScenario(env, ROTATION_SCENARIO) },
     ...MOBILE_FULLSCREEN_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileFullscreenScenario(env, scenario) })),
@@ -2272,6 +2375,15 @@ try {
     }
   }
 
+  const tabletRoster = results.find((result) => result.name === 'roster-geometry-1024x768-tablet')?.geometry
+  const desktopRoster = results.find((result) => result.name === 'roster-geometry-1600x900-desktop')?.geometry
+  const fullscreenRoster = results.find((result) => result.name === 'roster-geometry-1792x922-fullscreen-desktop')?.geometry
+  if (tabletRoster && desktopRoster && fullscreenRoster) {
+    const failures = []
+    check(failures, tabletRoster.laneWidths[0] + 1 < desktopRoster.laneWidths[0], 'roster lanes must grow between tablet and desktop')
+    check(failures, Math.abs(fullscreenRoster.laneWidths[0] - fullscreenRoster.maxLaneWidth) <= 1, 'large fullscreen roster must stop at its maximum bound')
+    results.push({ name: 'roster-fluid-width-matrix', failures, viewport: '1024 → 1600 → 1792' })
+  }
   let failed = 0
   for (const result of results) {
     if (result.failures.length === 0) {
