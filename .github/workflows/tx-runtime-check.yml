@@ -136,8 +136,13 @@ jobs:
           KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.TX_KC_BOOTSTRAP_ADMIN_PASSWORD }}
           KC_DB_USERNAME: keycloak
           KC_DB_PASSWORD: ${{ secrets.TX_KC_DB_PASSWORD }}
-          TX_KEYCLOAK_DB_HOST: keycloak-postgres
-          TX_KEYCLOAK_DB_PORT: '5432'
+          # The gate validates the active placement of every cut-over consumer: K6B-2D
+          # moved Keycloak -> Keycloak PostgreSQL onto the reviewed TX1 WireGuard
+          # service endpoint (port 15432, the Keycloak PostgreSQL endpoint - never the
+          # Business PostgreSQL port 25432). The remaining values below are still the
+          # Docker-local placement and move only with their own K6B-2 step.
+          TX_KEYCLOAK_DB_HOST: 10.20.0.1
+          TX_KEYCLOAK_DB_PORT: '15432'
           WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
           CADDY_FRONTEND_UPSTREAM: wotb-frontend:80
