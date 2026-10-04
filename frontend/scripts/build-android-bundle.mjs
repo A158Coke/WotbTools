@@ -27,6 +27,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
 import { nativeRuntimeIdentity } from '../vite.config.js'
+import { MAP_DERIVATIVE_BUDGETS } from './lib/mapAssetInvariants.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FRONTEND = resolve(here, '..')
@@ -36,6 +37,16 @@ const ASSETS_WEB = join(REPO, 'android/app/src/main/assets/web')
 const PIN_PATH = join(REPO, 'deploy/agent/source.json')
 const VERIFY = join(here, 'verify-agent-wasm-dist.mjs')
 const MANIFEST_NAME = 'bundle-manifest.json'
+
+/** 地图派生物（唯一实现：scripts/build-android-map-assets.mjs，含自身不变量校验）。 */
+async function generateMapDerivatives() {
+  const { generate } = await import('./build-android-map-assets.mjs')
+  try {
+    return generate()
+  } catch (error) {
+    return fail(`地图派生失败：${error?.message || error}`)
+  }
+}
 
 function fail(message) {
   console.error(`android bundle: ${message}`)
@@ -101,6 +112,11 @@ async function main() {
     fail(`Agent WASM 产物缺失：${relative(REPO, wasmSource)}。先运行 bash scripts/fetch-agent-wasm.sh（禁止从 CDN 取）`)
   }
 
+  // 1b) 2D 地图派生（Phase 10）：canonical 底图 → dist-android-maps/（Pillow，确定性），
+  // 之后 android 模式的 vite build 会把地图 import 重定向到派生物；不变量（等比 / 不放大 /
+  // 单张与总量预算）在这里 fail closed。
+  const mapSummary = await generateMapDerivatives()
+
   // 2) 构建 android target（同一份源码、不同 mode/outDir）。
   // Invalidate the previous APK payload before any build can fail.
   rmSync(ASSETS_WEB, { recursive: true, force: true })
@@ -123,6 +139,13 @@ async function main() {
   cpSync(DIST, ASSETS_WEB, { recursive: true })
 
   const files = walk(ASSETS_WEB)
+  // 2D 地图必须真的随包进 APK（离线 2D 的前提）：按**派生文件名**逐张核对（Vite 会给
+  // 资源加内容哈希），不看宽松的 webp 计数——坦克图标等其它 webp 不在核对范围内。
+  const missingMaps = mapSummary.names.filter((name) =>
+    !files.some((path) => new RegExp(`(^|/)assets/${name}-[A-Za-z0-9_-]+\.webp$`).test(path)))
+  if (missingMaps.length) {
+    fail(`APK bundle 缺少 ${missingMaps.length} 张派生地图：${missingMaps.slice(0, 5).join(', ')}${missingMaps.length > 5 ? ' …' : ''}`)
+  }
   const indexRel = 'index.html'
   const wasmJsRel = `wasm/${ref}/wotb_replay_wasm.js`
   const wasmBinRel = `wasm/${ref}/wotb_replay_wasm_bg.wasm`
@@ -143,6 +166,8 @@ async function main() {
     entry: indexRel,
     entrySha256: sha256(join(ASSETS_WEB, indexRel)),
     agentWasmSha256: sha256(join(ASSETS_WEB, wasmBinRel)),
+    maps: { files: mapSummary.files, totalBytes: mapSummary.totalBytes, largest: mapSummary.largest,
+             maxDimension: MAP_DERIVATIVE_BUDGETS.maxDimension },
     fileCount: files.length,
     totalBytes: files.reduce((sum, rel) => sum + statSync(join(ASSETS_WEB, rel)).size, 0),
   }
