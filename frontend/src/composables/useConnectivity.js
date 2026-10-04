@@ -36,6 +36,24 @@ function markSettled() {
 }
 
 /**
+ * 首次读到结果、**写入状态之前**就置 settled：状态一变，`watch(connectivity)` 的副作用
+ * （重连补加载等）会立刻调门禁，此时必须已是「测过了」，否则会被当成未完成而挡掉。
+ * 等待者仍由 start() 在状态写入后唤醒，保证补判读到的是新状态而不是占位的 UNKNOWN。
+ */
+function settleOnFirstRead(source) {
+  return {
+    ...source,
+    async read() {
+      try {
+        return await source.read()
+      } finally {
+        settled = true
+      }
+    },
+  }
+}
+
+/**
  * 平台来源选择：Android 壳先问能力再决定。
  * 老客户端（bridge v2 但没有 `connectivity` 方法/能力）退回浏览器近似，而不是把
  * 「读不到」当成永久离线 —— 计划 §4 允许的最低要求就是 offline/online 两态。
@@ -76,7 +94,7 @@ export function useConnectivity() {
       if (!startPromise) {
         startPromise = (async () => {
           try {
-            const source = await resolveSource()
+            const source = settleOnFirstRead(await resolveSource())
             return await ensureStore(source).start()
           } finally {
             // 读失败也视为「已测过」：此后 UNKNOWN 才是真实结论（fail-closed 不变）。
