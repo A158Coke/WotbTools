@@ -657,6 +657,18 @@ function rosterGeometryProbe() {
   const stage = root.querySelector('.pb-stage')?.getBoundingClientRect()
   const hud = root.querySelector('.hud')?.getBoundingClientRect()
   const transport = root.querySelector('.controls')?.getBoundingClientRect()
+  const hudPanel = root.querySelector('.hud .pb-hud')
+  if (hudPanel && hud && Math.abs(hudPanel.getBoundingClientRect().width - hud.width) > 1) out.errors.push('HUD panel must span its center column')
+  if (innerWidth >= 1200 && hudPanel && parseFloat(getComputedStyle(hudPanel.querySelector('.pb-hud-value')).fontSize) < 16) out.errors.push('desktop HUD values must use the enlarged type scale')
+  const friendlyTeam = window.__pbPane?.store.friendlyTeam
+  if ([1, 2].includes(friendlyTeam)) {
+    for (const team of [1, 2]) {
+      const expected = root.querySelector(`[data-test="pb-hp-fill-${team === friendlyTeam ? 'friendly' : 'enemy'}"]`)
+      for (const fill of root.querySelectorAll(`.team${team} .pb-roster-hpfill`)) {
+        if (expected && getComputedStyle(fill).backgroundColor !== getComputedStyle(expected).backgroundColor) out.errors.push(`Team ${team} HP must use Recorder relation color`)
+      }
+    }
+  }
   if (stage && square) {
     // Budget comes from the workspace and chrome, never the content-sized Stage itself.
     const style = getComputedStyle(root)
@@ -690,7 +702,7 @@ function rosterGeometryProbe() {
     if (out.phone && boxes.some((box) => Math.min(box.width, box.height) < 43.5)) out.errors.push('primary touch targets must be at least 44px')
   }
   out.laneWidths = ['.side-left', '.side-right'].map((selector) => root.querySelector(selector)?.getBoundingClientRect().width ?? 0)
-  // center 列宽：HUD 占满整列，直接量它的盒（2/6/2 的比例断言用）。
+  // center 列宽：HUD 占满整列，直接量它的盒。
   out.centerWidth = root.querySelector('.hud')?.getBoundingClientRect().width ?? null
   out.laneIds = ['.side-left', '.side-right'].map((sel) => [...root.querySelectorAll(`${sel} .pl`)].map((el) => el.textContent.trim().split(/\s+/)[0]))
   // 行的信息契约：玩家 / 车型 / HP 条（条内文字）——百分比已经收进 HP 条内部。
@@ -770,12 +782,12 @@ function rosterGeometryProbe() {
     if (!bar || !bar.querySelector('[data-test="roster-hp-text"]')) {
       out.errors.push(`roster row without HP bar: ${JSON.stringify(row.textContent)}`)
     }
-    // reload 若出现，必须比 HP 条更短更细（次级瞬时状态不得抢 HP 权重）
+    // reload 若出现，必须与 HP 条等宽且更细（次级瞬时状态不得抢 HP 权重）
     const reload = row.querySelector('[data-test="roster-reload"]')
     if (bar && reload) {
       const bb = bar.getBoundingClientRect()
       const rb = reload.getBoundingClientRect()
-      if (!(rb.width < bb.width - 1)) out.errors.push(`roster reload must be shorter than the HP bar: ${JSON.stringify({ hp: bb.width, reload: rb.width })}`)
+      if (Math.abs(rb.width - bb.width) > 1) out.errors.push(`roster reload must span the HP bar width: ${JSON.stringify({ hp: bb.width, reload: rb.width })}`)
       if (!(rb.height < bb.height - 1)) out.errors.push(`roster reload must be thinner than the HP bar: ${JSON.stringify({ hp: bb.height, reload: rb.height })}`)
     }
     if (!transient) {
@@ -1134,7 +1146,9 @@ async function runRosterGeometryScenario(env, scenario) {
       hp: i === 0 ? 0 : 1950 - i * 137,
       maxHp: 1950,
       dead: i === 0, followed: team === 1 && i === 1,
+      reload: i === 0 ? null : [{ state: 'full' }, { state: 'loading', progress: 0.5 }],
     }))
+    s.friendlyTeam = ${scenario.recorder || 1}
     s.hasData = true
     s.loading = false
     s.assetStage = false
@@ -1194,9 +1208,9 @@ async function runRosterGeometryScenario(env, scenario) {
   check(failures, geometry.rowsComplete, 'roster rows must show player / tank / HP bar with in-bar text')
   // HP 是主 combat state：行里必须真的有一条 HP bar（数值 / 百分比已经收进条内）。
   check(failures, geometry.hpBar, 'roster rows must render an HP bar')
-  check(failures, geometry.laneIds[0].every((nick) => nick.startsWith('Ally') || nick.startsWith('Neutral'))
-    && geometry.laneIds[1].every((nick) => nick.startsWith('Enemy')),
-    `lanes must be physical Team 1 (left) / Team 2 (right): ${JSON.stringify(geometry.laneIds)}`)
+  check(failures, geometry.laneIds[0].every((nick) => nick.startsWith(scenario.recorder === 2 ? 'Enemy' : 'Ally') || nick.startsWith('Neutral'))
+    && geometry.laneIds[1].every((nick) => nick.startsWith(scenario.recorder === 2 ? 'Ally' : 'Enemy')),
+    `lanes must follow Recorder perspective (friendly left / enemy right): ${JSON.stringify(geometry.laneIds)}`)
   if (scenario.layout === 'portrait') {
     check(failures, geometry.portrait && !geometry.side, `portrait must be the vertical flow (class portrait-flow): ${JSON.stringify(geometry)}`)
     const order = await page.evaluate(`(() => {
@@ -1209,9 +1223,7 @@ async function runRosterGeometryScenario(env, scenario) {
     check(failures, geometry.side && !geometry.portrait, `expected Team 1 | Stage | Team 2 (class roster-side): portrait=${geometry.portrait} side=${geometry.side}`)
   }
 
-  // —— 横向空间归属（实测）：宽档三栏 = **2 / 6 / 2** ——
-  // 真实应用里的列宽关系。设计决策是显式比例，所以断言锁的是**比例**而不是某个 px 上限：
-  // 两条 lane 等宽、center ≈ 3× lane（2:6:2 = 1:3:1）、窄视口时 lane 回落到可读下限。
+  // Desktop center follows the maximum square; remaining width belongs to equal roster lanes.
   if (geometry.side) {
     const columns = await page.probe(workspaceColumnsProbe)
     // --pb-roster-min = 9rem，按根字号折算（2/6/2 的窄档 fallback 就是守在它上面）。
@@ -1224,10 +1236,9 @@ async function runRosterGeometryScenario(env, scenario) {
     const expectedCenter = columns.contentW - 2 * columns.laneW - 2 * (columns.laneGutter ?? 0)
     check(failures, Math.abs(columns.centerW - expectedCenter) <= 1.5,
       `center column must consume all remaining width (expected ${expectedCenter}): ${JSON.stringify({ centerW: columns.centerW, laneW: columns.laneW, contentW: columns.contentW, gutter: columns.laneGutter })}`)
-    // 2fr : 6fr : 2fr → center 是单条 lane 的 3 倍。窄档下限生效时 center 只会更宽。
-    const ratio = columns.centerW / columns.laneW
-    check(failures, ratio >= 2.8,
-      `2/6/2 wide layout: center must be ~3× a lane: ${JSON.stringify({ centerW: columns.centerW, laneW: columns.laneW, ratio: +ratio.toFixed(2) })}`)
+    // Desktop must not reserve dead space beside the square.
+    if (scenario.width >= 1200) check(failures, Math.abs(columns.centerW - geometry.square.w) <= 2,
+      `desktop center must fit the square: center=${columns.centerW} square=${geometry.square.w}`)
     // lane 不得低于可读下限（--pb-roster-min，2/6/2 的窄档 fallback 就是守在它上面）。
     // 下限值随 scenario 传入：page.evaluate 的表达式里没有 getComputedStyle 作用域。
     check(failures, columns.laneW >= rosterMinPx - 0.5,
@@ -1302,8 +1313,8 @@ async function runRosterGeometryScenario(env, scenario) {
     time: window.__pbPane.store.time,
   })`)
   // 页面顶部有吸顶的工作台标题：先把行滚到视口中部再点（真机用户也是这样点到的）。
-  await page.evaluate(`document.querySelector('.side-left .team1 .pl:nth-child(2)')?.scrollIntoView({ block: 'center' })`)
-  const rowClick = await clickElement(page, '.side-left .team1 .pl:nth-child(2)')
+  await page.evaluate(`document.querySelector('.team1 .pl:nth-child(2)')?.scrollIntoView({ block: 'center' })`)
+  const rowClick = await clickElement(page, '.team1 .pl:nth-child(2)')
   check(failures, clicked(rowClick), `roster row not selectable: ${rowClick}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-info"]'), { label: 'roster selects and opens shared details' })
   const selectionAfter = await page.evaluate(`JSON.stringify({
@@ -1349,13 +1360,13 @@ async function runRosterGeometryScenario(env, scenario) {
   const relativePanel = `(() => { const p = document.querySelector('[data-test="pb-info"]')?.getBoundingClientRect(); const r = document.querySelector('.pb-root').getBoundingClientRect(); return p ? { l: p.left - r.left, t: p.top - r.top } : {} })()`
   const dragged = await page.evaluate(relativePanel)
   // Team 2 连点：同一个窗更新，Team 2 车道仍在，拖过的位置不动
-  await page.evaluate(`document.querySelector('.side-right .team2 .pl:nth-child(3)')?.scrollIntoView({ block: 'center' })`)
-  const team2Click = await clickElement(page, '.side-right .team2 .pl:nth-child(3)')
+  await page.evaluate(`document.querySelector('.team2 .pl:nth-child(3)')?.scrollIntoView({ block: 'center' })`)
+  const team2Click = await clickElement(page, '.team2 .pl:nth-child(3)')
   check(failures, clicked(team2Click), `Team 2 row not clickable with details open: ${team2Click}`)
   await delay(200)
   const afterTeam2 = { ...(await page.evaluate(`(() => ({ count: document.querySelectorAll('[data-test="pb-info"]').length,
       player: document.querySelector('[data-test="pb-sb-player"]')?.textContent.trim(),
-      lane: !!document.querySelector('.side-right .team2'), selected: window.__pbPane.selectedEid }))()`)),
+      lane: !!document.querySelector('.team2'), selected: window.__pbPane.selectedEid }))()`)),
   ...(await page.evaluate(relativePanel)) }
   check(failures, afterTeam2.count === 1 && afterTeam2.player === 'Enemy_03' && afterTeam2.lane,
     `Team 2 selection must update the single details panel: ${JSON.stringify(afterTeam2)}`)
@@ -1366,7 +1377,7 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate(`document.querySelector('[data-test="pb-sb-close"]')?.scrollIntoView({ block: 'center' })`)
   await clickElement(page, '[data-test="pb-sb-close"]')
   await page.waitFor(() => !document.querySelector('[data-test="pb-info"]'), { label: 'shared details close' })
-  check(failures, await page.evaluate('window.__pbPane.selectedEid === 103 && !!document.querySelector(".side-right .pl.selected")'),
+  check(failures, await page.evaluate('window.__pbPane.selectedEid === 103 && !!document.querySelector(".team2 .pl.selected")'),
     'details × must keep the 3D selection')
   check(failures, await page.evaluate(`JSON.stringify({
     cam: window.__pbPane.store.cam,
@@ -2514,8 +2525,8 @@ async function runWorkspace2DScenario(env, scenario) {
     await env.chrome.client.send('Target.closeTarget', { targetId })
     return result()
   }
-  check(failures, JSON.stringify(g.left.ids) === JSON.stringify(team1), `left lane must be physical Team 1: ${JSON.stringify(g.left.ids)}`)
-  check(failures, JSON.stringify(g.right.ids) === JSON.stringify(team2), `right lane must be physical Team 2: ${JSON.stringify(g.right.ids)}`)
+  check(failures, JSON.stringify(g.left.ids) === JSON.stringify(scenario.recorder === 2 ? team2 : team1), `left lane must be Recorder friendly: ${JSON.stringify(g.left.ids)}`)
+  check(failures, JSON.stringify(g.right.ids) === JSON.stringify(scenario.recorder === 2 ? team1 : team2), `right lane must be Recorder enemy: ${JSON.stringify(g.right.ids)}`)
   check(failures, g.left.box.r <= g.map.l + 1 && g.right.box.l >= g.map.r - 1, 'lanes must flank the square Stage')
   check(failures, !g.left.scrolls && !g.right.scrolls, 'normal 7v7 lanes must not scroll')
   check(failures, g.left.rowsComplete && g.right.rowsComplete, 'roster rows must show player / tank / HP bar with in-bar text')
@@ -2530,7 +2541,10 @@ async function runWorkspace2DScenario(env, scenario) {
 
   // ---- 选择 Team 1 → 浮窗；名册两条都在 ----
   const time0 = g.time
-  const team1Click = await clickElement(page, '[data-test="pb-team-lane-left"] [data-test="pb-roster-row"][data-account-id="1002"]')
+  const leftPlayer = scenario.recorder === 2 ? 2002 : 1002
+  const rightPlayer = scenario.recorder === 2 ? 1003 : 2003
+  const rightName = scenario.recorder === 2 ? 'T1_Player_3' : 'T2_Player_3'
+  const team1Click = await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${leftPlayer}"]`)
   check(failures, clicked(team1Click), `Team 1 row not clickable: ${team1Click}`)
   await delay(250)
   let s = await page.probe(workspace2dProbe)
@@ -2560,11 +2574,11 @@ async function runWorkspace2DScenario(env, scenario) {
   }
 
   // ---- 点 Team 2 → 同一个窗更新、位置不动、Team 2 车道仍在 ----
-  const team2Click = await clickElement(page, '[data-test="pb-team-lane-right"] [data-test="pb-roster-row"][data-account-id="2003"]')
+  const team2Click = await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${rightPlayer}"]`)
   check(failures, clicked(team2Click), `Team 2 row not clickable: ${team2Click}`)
   await delay(250)
   s = await page.probe(workspace2dProbe)
-  check(failures, s.detailsCount === 1 && s.detailsPlayer === 'T2_Player_3', `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
+  check(failures, s.detailsCount === 1 && s.detailsPlayer === rightName, `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
   check(failures, !!s.right, 'Team 2 lane disappeared after selecting a Team 2 vehicle')
   check(failures, lastPos && s.details && Math.abs(s.details.l - lastPos.l) < 1 && Math.abs(s.details.t - lastPos.t) < 1,
     'user-dragged details position must survive selection changes')
@@ -2574,9 +2588,9 @@ async function runWorkspace2DScenario(env, scenario) {
   await delay(200)
   s = await page.probe(workspace2dProbe)
   check(failures, s.detailsCount === 0, 'details × must close the panel')
-  check(failures, JSON.stringify(s.selectedIds) === '[2003]', `details × must keep the selection: ${JSON.stringify(s.selectedIds)}`)
+  check(failures, JSON.stringify(s.selectedIds) === JSON.stringify([rightPlayer]), `details × must keep the selection: ${JSON.stringify(s.selectedIds)}`)
   check(failures, s.time === time0, `closing details changed playback time ${time0} -> ${s.time}`)
-  await clickElement(page, '[data-test="pb-team-lane-right"] [data-test="pb-roster-row"][data-account-id="2003"]')
+  await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${rightPlayer}"]`)
   await delay(200)
   s = await page.probe(workspace2dProbe)
   check(failures, s.detailsCount === 1, 'clicking the selected vehicle again must reopen details')
@@ -2593,7 +2607,7 @@ async function runWorkspace2DScenario(env, scenario) {
     await setRosterVisible(page, true)
     await delay(300)
     s = await page.probe(workspace2dProbe)
-    check(failures, !!s.left && !!s.right && JSON.stringify(s.selectedIds) === '[2003]', 'roster ON must restore lanes with the existing selection')
+    check(failures, !!s.left && !!s.right && JSON.stringify(s.selectedIds) === JSON.stringify([rightPlayer]), 'roster ON must restore lanes with the existing selection')
   }
 
   // ---- Display 面开合：始终可从 gear 到达，且不把用户丢到首屏之外 ----
@@ -2623,6 +2637,7 @@ try {
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...AUTH_CAPABILITY_SCENARIOS.map((scenario) => ({ scenario, run: () => runAuthCapabilityScenario(env, scenario) })),
+    { scenario: { ...ROSTER_GEOMETRY_SCENARIOS[0], name: 'roster-geometry-recorder-team2-desktop', recorder: 2 }, run: () => runRosterGeometryScenario(env, { ...ROSTER_GEOMETRY_SCENARIOS[0], name: 'roster-geometry-recorder-team2-desktop', recorder: 2 }) },
     ...ROSTER_GEOMETRY_SCENARIOS.map((scenario) => ({ scenario, run: () => runRosterGeometryScenario(env, scenario) })),
     ...LIFECYCLE_SCENARIOS.map((scenario) => ({ scenario, run: () => runParseLifecycleScenario(env, scenario) })),
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
@@ -2652,17 +2667,17 @@ try {
   const fullscreenRoster = results.find((result) => result.name === 'roster-geometry-1792x922-fullscreen-desktop')?.geometry
   if (tabletRoster && desktopRoster && fullscreenRoster) {
     const failures = []
-    // 宽档 sizing authority 是 2 / 6 / 2：lane 随视口线性增长（2fr），不再有「到上限停住」那一档。
+    // As the workspace grows, roster lanes absorb width beyond the maximum square.
     // 这里锁的是比例：lane 变大、center 变大且始终约 3× lane。
     check(failures, tabletRoster.laneWidths[0] + 1 < desktopRoster.laneWidths[0], 'roster lanes must grow between tablet and desktop')
-    check(failures, fullscreenRoster.laneWidths[0] > desktopRoster.laneWidths[0] + 1, 'roster lanes must keep growing with the viewport under 2/6/2')
+    check(failures, fullscreenRoster.laneWidths[0] > desktopRoster.laneWidths[0] + 1, 'roster lanes must absorb spare viewport width')
     for (const [name, g] of [['tablet', tabletRoster], ['desktop', desktopRoster], ['fullscreen', fullscreenRoster]]) {
       const lane = g.laneWidths[0]
       // HUD 属于 center 列，用它的宽度当 center 宽度的实测值
       const center = g.centerWidth ?? null
       if (!lane || !center) { check(failures, false, `${name} roster matrix: missing lane/center`); continue }
-      check(failures, center / lane >= 2.8,
-        `${name} roster matrix: center must be ~3× a lane (lane=${lane} center=${center} ratio=${(center / lane).toFixed(2)})`)
+      if (name !== 'tablet') check(failures, Math.abs(center - g.square.w) <= 2,
+        `${name} roster matrix: center must match square (center=${center} square=${g.square.w})`)
     }
     results.push({ name: 'roster-fluid-width-matrix', failures, viewport: '1024 → 1600 → 1792' })
   }

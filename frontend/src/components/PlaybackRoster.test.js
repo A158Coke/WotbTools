@@ -147,7 +147,7 @@ describe('PlaybackRoster', () => {
     wrapper.unmount()
   })
 
-  it('reload 比 HP 更短更细：尺寸由 CSS 声明决定，不是同样宽的大白条', () => {
+  it('reload 与 HP 等宽且更细，保留次级状态厚度', () => {
     // happy-dom 没有布局引擎（computed style 量不到真实尺寸），所以这里锁的是**声明本身**；
     // 真实渲染后的比值由 browser gate 断言。
     const source = readFileSync('src/components/PlaybackRoster.vue', 'utf8')
@@ -160,10 +160,10 @@ describe('PlaybackRoster', () => {
     // HP 是主状态：整行宽 + 更厚
     expect(hpBar).toContain('inline-size: 100%')
     expect(hpBar).toMatch(/block-size:\s*var\(--roster-hpbar-h,\s*14px\)/)
-    // reload 是次级状态：更短（60%）+ 更细（3px）
-    expect(reload).toMatch(/inline-size:\s*var\(--roster-reload-w,\s*60%\)/)
+    // reload 是次级状态：等宽（100%）+ 更细（3px）
+    expect(reload).toContain('inline-size: 100%')
     expect(reload).toMatch(/block-size:\s*var\(--roster-reload-h,\s*3px\)/)
-    // 两者各自拥有尺寸 token，不共用同一条 bar 宽度（共用正是「reload 抢 HP 权重」的成因）
+    // 厚度各自独立，装填状态以更细的线保持次级信息权重
     expect(hpBar).not.toContain('--roster-reload-w')
     expect(reload).not.toContain('--roster-hpbar-h')
   })
@@ -225,8 +225,8 @@ describe('PlaybackRoster', () => {
     expect(wrapper.get('.team1 .pb-team-head').text()).toBe('agentReplay.team1')
     // 行首圆点只存在于 3D 变体（2D 用左侧物理队色条），颜色来自行本身（物理队伍色）
     const dot = wrapper.get('.team1 .dot')
-    expect(dot.attributes('style')).toContain('rgb(1, 2, 3)')
-    expect(wrapper.get('.team2 .dot').attributes('style')).toContain('rgb(4, 5, 6)')
+    expect(dot.attributes('style')).toContain('--color-text-secondary')
+    expect(wrapper.get('.team2 .dot').attributes('style')).toContain('--color-text-secondary')
     // 2D 行没有圆点
     const twoD = mountRoster()
     expect(twoD.find('.dot').exists()).toBe(false)

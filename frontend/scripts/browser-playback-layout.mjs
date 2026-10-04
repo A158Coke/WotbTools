@@ -386,14 +386,12 @@ try {
   const desktop = geometryByName.get('pc-1600x900')
   const fullscreen = geometryByName.get('wide-fullscreen-1792x922')
   const phoneLandscape = geometryByName.get('phone-landscape-844x390')
-  // 宽档 sizing authority 已从「bounded roster + center 吃剩余」换成显式 **2 / 6 / 2**：
-  // 旧的「lane 随视口变宽、到上限停住」不再成立（2fr 会随视口线性增长），
-  // 所以这里改成锁比例：center ≈ 3× lane，且 lane 不低于可读下限。
+  // Equal roster lanes absorb width beyond the maximum square while retaining their floor.
   if (!(tablet.laneWidth >= 9 * 16 - 0.5 && desktop.laneWidth > tablet.laneWidth)) {
     throw new Error('Roster lanes must keep their readable floor and grow with the workspace')
   }
 
-  // —— 横向空间归属：宽档三栏 = 2 / 6 / 2 ——
+  // —— 横向空间归属：桌面中心贴合正方形、车道承接余量 ——
   //
   // 用比例 / 恒等式而不是像素宽度做验收：断点只决定形态，尺寸由 fr 连续决定，
   // 所以「center 相对 lane 有多宽」才是要锁的契约，具体 px 会随视口自由变化。
@@ -415,9 +413,9 @@ try {
     const expectedCenter = metrics.mainWidth - 2 * metrics.laneWidth - LANE_GAP_PX
     requireContract(Math.abs(metrics.centerWidth - expectedCenter) <= 1,
       `center column must consume all remaining width (expected ${expectedCenter}): ${label}`)
-    // 2fr : 6fr : 2fr → center 是单条 lane 的 3 倍（窄档下限生效时只会更宽）
-    requireContract(metrics.centerWidth / metrics.laneWidth >= 2.8,
-      `2/6/2 wide layout: center must be ~3× a lane (ratio=${(metrics.centerWidth / metrics.laneWidth).toFixed(2)}): ${label}`)
+    // Desktop must not reserve dead space beside the square.
+    if (metrics.mainWidth >= 1200) requireContract(Math.abs(metrics.centerWidth - metrics.stageSide) <= 2,
+      `desktop center must fit the square without unused side space: ${label}`)
     requireContract(metrics.stageSide <= metrics.centerWidth + 0.5, `Stage must fit inside the center column: ${label}`)
     // HUD 属于整个 center column，而不是按内容收缩成中间小块
     requireContract(Math.abs(metrics.hudWidth - metrics.centerWidth) <= 1,
@@ -429,9 +427,9 @@ try {
       `Stage must never exceed the measured vertical budget: ${label}`)
   }
 
-  // 大屏新增的宽度按 2/6/2 分流：center 拿到的绝对增量必须远大于单侧 lane
-  requireContract((fullscreen.centerWidth - desktop.centerWidth) > (fullscreen.laneWidth - desktop.laneWidth) * 2,
-    `extra wide-viewport width must go to the center column: desktop=${desktop.centerWidth}/${desktop.laneWidth} fullscreen=${fullscreen.centerWidth}/${fullscreen.laneWidth}`)
+  // Wide viewport surplus is assigned to the roster lanes.
+  requireContract(fullscreen.laneWidth > desktop.laneWidth,
+    `extra wide-viewport width must grow the roster lanes: desktop=${desktop.centerWidth}/${desktop.laneWidth} fullscreen=${fullscreen.centerWidth}/${fullscreen.laneWidth}`)
   // 短横屏（844x390）与平板仍保持三栏 + 可读 roster
   requireContract(phoneLandscape.centerWidth > phoneLandscape.stageSide,
     `phone landscape center must remain the widest column: ${JSON.stringify(phoneLandscape)}`)

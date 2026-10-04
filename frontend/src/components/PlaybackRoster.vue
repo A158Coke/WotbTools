@@ -1,13 +1,7 @@
 <script setup>
 /**
- * 两队阵容：2D 与 3D **同一份实现**，并且按**物理队伍**分组——左 = Team 1，右 = Team 2，
- * 与录像者属于哪一队无关（录像者视角的 friendly / enemy 只服务 HUD 总血量、比分与详情里的
- * 关系文案，不决定名册落在哪一侧）。两个渲染器只有**行数据**的来源不同：2D 的血量来自
- * `health` 投影（与地图标记同一个 healthDisplayAt），3D 的行自带 hp / maxHp / dead。
- *
- * 行的信息契约：玩家 / 车型 / 当前 HP / 百分比 / 阵亡，点行 → 选中该车。
- * 没有血条：HP 数值与百分比就是主信息（`hpPercentText` 在「没有可信血量上限」时返回 null，
- * 上屏成 `—` 而不是 `0%`——unknown ≠ 0，见 scene/rosterState.js）。
+ * Shared roster: physical team identities remain intact; Recorder perspective selects side and color.
+ * HP presentation consumes current facts only; unknown HP never becomes a full bar.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -18,9 +12,10 @@ defineOptions({ name: 'PlaybackRoster' })
 const props = defineProps({
   /**
    * 分组容器：`{ team1, team2, unknown }`（物理队伍）。一个车道可以只给其中一部分
-   * （左车道 = team1 + unknown，右车道 = team2）。
+   * （己方在左、敌方在右；unknown 保持独立）。
    */
   teams: { type: Object, required: true },
+  friendlyTeam: { type: Number, default: null },
   /** 当前时刻已被击毁的集合（accountId 或 eid，按行 id 匹配） */
   destroyed: { type: Set, default: () => new Set() },
   /**
@@ -63,8 +58,14 @@ const SECTIONS = Object.freeze([
  * `showEmptyTeams` 打开时保留空分组的标题——上传的分析在解析出名单之前就是这种状态，
  * 这时「队伍 1 / 队伍 2」两个空标题本身就是「还没有数据」的正确呈现。
  */
-const groups = computed(() => SECTIONS
-  .map((section) => ({ ...section, rows: (props.teams?.[section.key] || []).map(decorate) }))
+const groups = computed(() => (props.friendlyTeam === 2 ? [SECTIONS[2], SECTIONS[1], SECTIONS[0]] : SECTIONS)
+  .map((section) => {
+    let labelKey = section.labelKey
+    if ([1, 2].includes(props.friendlyTeam) && section.key !== 'unknown') {
+      labelKey = section.key === `team${props.friendlyTeam}` ? 'recon.map.team_friendly' : 'recon.map.team_enemy'
+    }
+    return { ...section, labelKey, rows: (props.teams?.[section.key] || []).map(decorate) }
+  })
   .filter((section) => section.rows.length > 0 || (props.showEmptyTeams && section.key in props.teams)))
 
 function decorate(row) {
@@ -91,6 +92,9 @@ function decorate(row) {
   return {
     ...row,
     id,
+    teamColor: [1, 2].includes(props.friendlyTeam) && [1, 2].includes(row.team)
+      ? (row.team === props.friendlyTeam ? 'var(--color-team-ally)' : 'var(--color-team-enemy)')
+      : 'var(--color-text-secondary)',
     player: row.playerName ?? row.nick ?? '—',
     tank: row.tankName || row.tank || row.tankId || '—',
     hp,
@@ -147,10 +151,11 @@ function listRows(rowCount) {
           :class="{ 'is-destroyed': row.destroyed, dead: row.destroyed, 'is-selected': row.selected, selected: row.selected, followed: row.followed }"
           data-test="pb-roster-row"
           :data-account-id="row.id"
+          :style="{ '--roster-team-color': row.teamColor }"
           :aria-pressed="row.selected"
           @click="emit('select', row.id, $event)"
         >
-          <span v-if="variant === '3d'" class="dot" :style="{ background: row.color }" aria-hidden="true" />
+          <span v-if="variant === '3d'" class="dot" :style="{ background: row.teamColor }" aria-hidden="true" />
           <span class="nick pb-team-player" data-test="pb-roster-player">{{ row.player }}</span>
           <span class="tank pb-team-tank" data-test="pb-roster-tank">{{ row.tank }}</span>
           <!-- HP 是主 combat state：条内文字叠加。文字**不能**放进 fill 节点里，
@@ -165,7 +170,7 @@ function listRows(rowCount) {
             <span v-if="row.hp.fill > 0" class="pb-roster-hpfill" :style="{ width: (row.hp.fill * 100) + '%' }" aria-hidden="true"></span>
             <span class="pb-roster-hptext" data-test="roster-hp-text" aria-hidden="true">{{ row.hp.text }}</span>
           </span>
-          <!-- reload 是次级瞬时状态：更短更细，仅在有权威 telemetry 时出现 -->
+          <!-- reload 是次级瞬时状态：等宽更细，仅在有权威 telemetry 时出现 -->
           <span v-if="row.reload" class="pb-roster-reload" data-test="roster-reload" aria-hidden="true">
             <span
               v-for="(shell, index) in row.reload"
@@ -237,8 +242,8 @@ function listRows(rowCount) {
   inset-block: 0;
   inset-inline-start: 0;
   border-radius: var(--radius-full);
-  /* 绿色 = 「这也是 HP」的语义（与名牌的 HP fill 同一族 token：team-1/ally = green-400）。 */
-  background: var(--color-team-ally);
+  /* HP 颜色与 Recorder 视角一致；未知阵营使用中性色。 */
+  background: var(--roster-team-color);
 }
 .pb-roster-hptext {
   position: absolute;
@@ -257,14 +262,14 @@ function listRows(rowCount) {
    所以这里不需要 !important 去覆盖 inline width —— unknown ≠ 0%，也不画满绿。 */
 .pb-roster-hpbar.hp-mode-unknown { background: var(--color-surface-3); }
 
-/* —— reload（次级瞬时状态）：比 HP 更短、更细，保留弹夹分段。
+/* —— reload（次级瞬时状态）：与 HP 等宽、更细，保留弹夹分段。
    分段语义与名牌共用同一批 token：locked 用 `--color-playback-label-locked`，fill 用
    `--color-playback-label-text`（弹夹已装填的那一格是白/亮色，不是绿色——绿色属于 HP）。 —— */
 .pb-roster-reload {
   display: flex;
   align-items: center;
   gap: calc(var(--space-1) / 2);
-  inline-size: var(--roster-reload-w, 60%);
+  inline-size: 100%;
   block-size: var(--roster-reload-h, 3px);
 }
 .pb-roster-shell {
@@ -293,7 +298,7 @@ function listRows(rowCount) {
 .pb-roster-row.dead .nick { text-decoration: line-through; }
 .pb-roster-row:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
-/* 分组：两个渲染器都按物理队伍着色（team-1 / team-2）——左右与颜色都不随录像者交换。
+/* 分组保留物理身份；两个渲染器的行色统一按 Recorder 视角呈现。
    `.team` / `.roster` 是与 3D 场景层共用的类名——行的布局只此一份。 */
 /* 名册容器**不是**独立滚动区（审计 BZ-13：名册里不允许嵌套滚动条）。
    宽度永远跟着承载它的车道 / 纵向流走（车道自己定宽），这里不再写死 240px。 */
@@ -336,8 +341,8 @@ function listRows(rowCount) {
 .pb-roster-3d .pb-roster-team { background: none; border: 0; }
 .pb-team-head { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 800; }
 .pb-roster-list { display: grid; gap: var(--space-1); margin: 0; padding: 0; }
-.pb-roster-team.pb-roster-team1 .pb-roster-row { border-inline-start: 3px solid var(--color-team-1); }
-.pb-roster-team.pb-roster-team2 .pb-roster-row { border-inline-start: 3px solid var(--color-team-2); }
+.pb-roster-team.pb-roster-team1 .pb-roster-row { border-inline-start: 3px solid var(--roster-team-color); }
+.pb-roster-team.pb-roster-team2 .pb-roster-row { border-inline-start: 3px solid var(--roster-team-color); }
 .pb-roster-team.pb-roster-unknown .pb-roster-row { border-inline-start: 3px solid var(--color-border-subtle); opacity: .8; }
 .pb-roster-team .pb-roster-row { background: var(--color-surface-2); }
 .pb-roster-row:hover { background: var(--color-surface-3); }

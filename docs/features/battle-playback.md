@@ -38,7 +38,7 @@ anti-future-leak 或现有 tank-marker 资产契约。
   `FULL_RELATIVE`、`EXACT`、`PARTIAL`、`UNKNOWN` 语义保持不变。
 - 2D / 3D 共用紧凑中心栈（行高随内容，宽度受限时多余高度留在栈外）：地图/时间、HP/比分与 compact 基地 metadata 的持久 HUD → 最大可用正方形 Stage → Transport。击杀流是独立的有界 overlay（2D 最多保留最新 2 条、3D 最多 3 条），不参与 HUD 高度预算，因此条目变化不会牵动 Stage / Transport 重排。
 - 主控件共用 `PlaybackTransport.vue`，顺序为 `-5 / Play-Pause / +5 / 当前速度 / 全屏 / Display`，速度档位按需展开，六个触控目标至少 44px。
-- 侧车道以 workspace 宽度作 fluid sizing，并有最小/最大边界；Stage 同时受中心可用宽度和实测可用高度约束。容量按**视口**算（`视口高 − 顶栏/底栏 − 实测 HUD − 实测 Transport − 间距`），刻意不用根元素的内容高度，也就不用按断点各写一套固定扣减。
+- 侧车道以 workspace 宽度作 fluid sizing，并保持可读下限；桌面中心列贴合最大正方形，额外宽度分配给两侧名册，短横屏保留主控件所需列宽。HUD 铺满中心列，桌面放大字号与血条厚度；名册装填条与 HP 条等宽且更细。Stage 同时受中心可用宽度和实测可用高度约束。容量按**视口**算（`视口高 − 顶栏/底栏 − 实测 HUD − 实测 Transport − 间距`），刻意不用根元素的内容高度，也就不用按断点各写一套固定扣减。
 - Display 由 `PlaybackDisplaySurface.vue` 锚定 Gear，优先向上、空间不足换边并夹紧；竖屏采用有界 inline 面。Details 仍为独立的 workspace 级可拖动上下文窗。
 - 形态判定（`shared/breakpoints` 的 `PLAYBACK_MOBILE_QUERY`）：Mobile = 宽 `<768px` 或触屏且高 `≤500px`（手机横屏）；`768–1199px` 一律 Tablet、`≥1200px` 一律 PC。布局只看可用空间，触屏只放大控件点击区域（44px），iPad / Android 平板拿 Tablet 形态。
 - 不抢页面：滚轮只在全屏、按住 Ctrl/⌘ 或刚在地图上按下后才缩放，否则交给页面滚动并短暂提示；地图未放大、非全屏、未标注时 `touch-action: pan-y`，单指纵向滑动滚动页面；`active=false`（隐藏的模式 / KeepAlive 停用）时暂停并不响应空格 / 方向键。地图高度扣掉固定顶栏，手机横屏按可用高度封顶。
@@ -373,17 +373,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `scoreFriend/scoreEnemy`（`friendly_team = 2` 时交换），否则会出现「己方血条 + 对方比分」的错位；
   `friendly_team` 未知（≠ 1/2）时**不建立视角**：比分与两队血量一律 0 / 0（与 `pointsAt` 同为
   fail-closed，unknown ≠ enemy），不得把物理 team1 当「己方」上屏再染成 ally / enemy 两色。
-- **物理队伍 vs 记录者视角（2026-02 收敛，两套并存且不得互相替代）**：
-  - `team ∈ {1, 2, null}` = **物理队伍**身份，走固定语义色 `--color-team-1` / `--color-team-2`
-    （`null` → `--color-team-text-secondary` 系中性色）。**3D 名册**（`Replay3DPane.vue` 左右侧边
-    车道）用这一套：左 = Team 1、右 = Team 2、未识别阵营在左车道底部；位置、标题、颜色都不随
-    录像者属于哪一队改变。
-  - `relation ∈ {friendly, enemy, unknown}` = **记录者视角**，走 `--color-team-ally` /
-    `--color-team-enemy`（在 `styles/tokens/color.css` 里定义为物理色的用途别名）。3D 顶栏
-    双方总血量/比分、以及 **2D 名册**（`PlaybackRoster` / `BattlePlayback` 的 friendly/enemy 分组）
-    用这一套。
-  - 两套在同一页面同时可见是有意保留的产品约定，靠标题文本区分（「队伍 1/2」vs「我方/敌方」）。
-    **不得**用 `relation` 给名册染色，也不得按 `friendly_team` 交换名册两侧。
+- **队伍身份与 Recorder 视角**：`team` 保留物理队伍身份，`friendly_team` 只用于呈现关系。
+  2D / 3D 名册均将己方放左、敌方放右；录像者属于 Team 2 时交换车道。名册 HP、圆点与
+  行边框使用 `--color-team-ally` / `--color-team-enemy`，未知视角使用中性色，未知阵营独立分组。
 - **3D 名册行状态在时刻投影**（`scene/rosterState.js`）：静态身份（eid / team / 昵称 / 车型）在会话
   开始时建一次；运行时状态（`hp` / `maxHp` / `dead` / `followed`）由 `projectRoster(vehicles, t)`
   按当前回放时刻**纯函数**投影，`playbackScene.updateRoster()` 只写变化过的字段。

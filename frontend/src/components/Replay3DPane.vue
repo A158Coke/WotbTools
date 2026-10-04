@@ -28,6 +28,7 @@ import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
 import PlaybackVehicleLabels3D from './PlaybackVehicleLabels3D.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
+import { rosterLanesFor } from '../scene/rosterState.js'
 import BaseStatusBar from './BaseStatusBar.vue'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import SegmentedControl from './SegmentedControl.vue'
@@ -215,56 +216,29 @@ const hudHealth = (current, maximum) => ({
   unknownMax: 0,
 })
 
-/**
- * 阵营色只在 HUD 里用（three.js 场景本体的阵营色由场景内核按设计 token 处理）：
- * 阵容圆点 / 胜利失败横幅取语义 token，随主题切换，不再写死红绿。
- * `uiProfile` 是唯一 reactive 主题源（design-language §2），读样式只发生在计算属性里，
- * 不在每帧渲染里逐行读。
- *
- * **两套颜色是不同的概念，不得互相替代**：
- * - `team1` / `team2` = **物理队伍**身份色（--color-team-1/2），固定不随录像者所属队伍交换；
- * - `ally` / `enemy` = **记录者视角**（--color-team-ally/enemy），只服务顶栏总血量、比分与胜负横幅。
- */
+/** Banner colors follow the current profile and Recorder perspective. */
 const teamColors = computed(() => {
   // 主题偏好是唯一主题状态源：它变了就重读一次 token 值
   void uiProfile.value
   if (typeof getComputedStyle !== 'function' || typeof document === 'undefined') {
-    return { team1: 'currentColor', team2: 'currentColor', ally: 'currentColor', enemy: 'currentColor', unknown: 'currentColor' }
+    return { ally: 'currentColor', enemy: 'currentColor', unknown: 'currentColor' }
   }
   const styles = getComputedStyle(document.documentElement)
   const read = (name) => styles.getPropertyValue(name).trim() || 'currentColor'
   return {
-    team1: read('--color-team-1'),
-    team2: read('--color-team-2'),
     ally: read('--color-team-ally'),
     enemy: read('--color-team-enemy'),
     unknown: read('--color-text-secondary'),
   }
 })
 
-/**
- * 名册按**物理队伍**分组渲染（左 = Team 1，右 = Team 2，未识别阵营在左车道底部——
- * 位置与颜色都不随录像者属于哪一队改变）。场景内核只下发 `team`，颜色在本层取语义 token，
- * 保证「Team 1 是什么颜色」只有一份事实源。
- *
- * HP 数值/百分比由共享 `PlaybackRoster` 按每行的 `hp` / `maxHp` 现算（回放时刻的状态投影，
- * 见 scene/rosterState.js）：没有可信上限时百分比为 `null`，上屏成「—」而不是 0——unknown ≠ 0。
- * 本层只负责**分组事实源**（物理队伍）与圆点颜色。
- */
-const rosterGroups = computed(() => {
-  const colors = teamColors.value
-  const withColor = (list, color) => (list || []).map((player) => ({ ...player, color }))
-  return {
-    team1: withColor(store.roster.team1, colors.team1),
-    team2: withColor(store.roster.team2, colors.team2),
-    unknown: withColor(store.roster.unknown, colors.unknown),
-  }
-})
+/** Physical identities stay in the store; shared roster presentation derives Recorder colors. */
+const rosterLanes = computed(() => rosterLanesFor(store.roster, store.friendlyTeam))
 
 /** 选中行（详情面用它取实时投影；随名册每帧更新，所以是 computed 不是快照） */
 const selectedRow = computed(() => {
   if (selectedEid.value == null) return null
-  const g = rosterGroups.value
+  const g = store.roster
   return g.team1.find((p) => p.eid === selectedEid.value)
     || g.team2.find((p) => p.eid === selectedEid.value)
     || g.unknown.find((p) => p.eid === selectedEid.value)
@@ -273,7 +247,7 @@ const selectedRow = computed(() => {
 
 const selectedDetailState = computed(() => selectedRow.value ? {
   vehicle: { tankName: selectedRow.value.tank, playerName: selectedRow.value.nick,
-    team: selectedRow.value.team, friendly: null },
+    team: selectedRow.value.team, friendly: [1, 2].includes(store.friendlyTeam) && [1, 2].includes(selectedRow.value.team) ? selectedRow.value.team === store.friendlyTeam : null },
   destroyed: selectedRow.value.dead,
 } : null)
 const selectedHealth = computed(() => selectedRow.value ? {
@@ -449,6 +423,7 @@ function measurePresentationBounds() {
   const controlsH = controlsEl.value?.getBoundingClientRect().height || 0
   const budget = Math.max(1, workspaceH - padding - border - hudH - controlsH - gap * 2)
   const stageW = root.querySelector('.pb-stage')?.getBoundingClientRect().width || 0
+  root.style.setProperty('--pb-square-avail-h', `${Math.floor(budget)}px`)
   root.style.setProperty('--pb-stage-h', `${Math.floor(Math.min(stageW, budget)) + gap * 2}px`)
 }
 function observeLaneBounds() {
@@ -593,17 +568,16 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         @close="closeDetails"
       />
 
-      <!-- 阵容车道：左侧恒为**物理 Team 1**（未知阵营排在它下面）、右侧恒为 **Team 2**：
-           位置、标题、颜色都不随录像者属于哪一队改变（不在这里做 friendly/enemy 映射）。
+      <!-- 阵容车道：Recorder 的己方在左、敌方在右，未知阵营独立列在左车道底部。
            三段式下两条车道吃满根高度、不与中间一栏的 HUD / 传输控件交叉；竖屏下它们是
            纵向流里传输控件（与详情）之后的两段。没有「临时名册面」：名册的唯一开关是
            uiPrefs.showRoster。行的渲染与 2D 共用同一个 `PlaybackRoster`。 -->
       <div v-if="store.hasData && showRoster" class="roster-surface" data-testid="roster-surface">
         <div class="team-lane side-left" data-testid="replay3d-lane-left">
-          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="{ team1: rosterGroups.team1, unknown: rosterGroups.unknown }" :selected-id="selectedEid" @select="selectVehicle" />
+          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="selectVehicle" />
         </div>
         <div class="team-lane side-right" data-testid="replay3d-lane-right">
-          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="{ team2: rosterGroups.team2 }" :selected-id="selectedEid" @select="selectVehicle" />
+          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.right" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="selectVehicle" />
         </div>
       </div>
 
