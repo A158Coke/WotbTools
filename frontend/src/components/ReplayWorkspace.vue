@@ -274,6 +274,7 @@ watch(() => props.initialCapability, (val) => {
         />
         <BattlePlaybackPanel
           v-if="playbackMounted && !playbackLoadError"
+          :playback-session="workspace.playbackSession"
           :file="targetFile"
           :active="activeCapability === 'playback'"
           :blocked-reason="blockedReason"
@@ -312,6 +313,7 @@ watch(() => props.initialCapability, (val) => {
         />
         <Replay3DPane
           v-if="authenticated && threeMounted && !threeLoadError"
+          :playback-session="workspace.playbackSession"
           :file="targetFile"
           :active="activeCapability === '3d' && threeAvailability.available"
           :blocked-reason="threeBlocked"

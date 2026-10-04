@@ -52,6 +52,14 @@ describe('parseLocalPlayback', () => {
     expect(facets.parseAgentAiReviewFromBytes).toHaveBeenCalledTimes(1)
   })
 
+  it('projects the session Playback without parsing it again and exposes an independent clock', async () => {
+    const f = await arrange('random-battle-example.wotbreplay')
+    const out = await parseLocalPlayback(new Uint8Array([1]), { tankopedia, playback: f.playback! })
+    expect(facets.parseAgentPlaybackFromBytes).not.toHaveBeenCalled()
+    expect(out.clock?.startRaw).toBe(resolveReplayClock(f.aiReview!.battle.periods, f.result, f.playback!.meta.duration)?.startRaw)
+    expect(out.dataset).toBeTruthy()
+  })
+
   it('AiReview 入口失败 → 整体失败（fail closed：血量 / 归属 / 终态证据缺失时不降级成弱证据回放）', async () => {
     await arrange('random-battle-example.wotbreplay')
     facets.parseAgentAiReviewFromBytes.mockRejectedValue(new Error('boom'))

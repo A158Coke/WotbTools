@@ -133,6 +133,31 @@ function createInstance(store) {
 }
 
 describe('playbackScene 会话代数契约', () => {
+  it('prepared session feeds scene and Details without another raw parse', async () => {
+    const { store, api } = createScene()
+    const result = { scenePlayback: minimalData(), canonical: { dataset: { vehicles: [] }, clock: { startRaw: 42 }, reloadTelemetry: null } }
+    const session = { load: vi.fn().mockResolvedValue(result) }
+    const file = new File(['x'], 'shared.wotbreplay')
+    await api.loadData({ kind: 'local', file, session })
+    expect(session.load).toHaveBeenCalledWith(file)
+    expect(source.loadPlaybackData).not.toHaveBeenCalled()
+    expect(store.hasData).toBe(true)
+    expect(store.playbackSession.canonical.dataset).toEqual(result.canonical.dataset)
+    expect(store.playbackSession.canonical.clock.startRaw).toBe(42)
+    api.reset()
+    expect(store.playbackSession).toBeNull()
+  })
+
+  it('canonical failure does not block raw 3D playback', async () => {
+    const { store, api } = createScene()
+    const session = { load: vi.fn().mockResolvedValue({ scenePlayback: minimalData(), canonical: null, canonicalError: new Error('AI failed') }) }
+    await api.loadData({ kind: 'local', file: new File(['x'], 'partial.wotbreplay'), session })
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+    expect(store.playbackSession.canonical).toBeNull()
+    expect(source.loadPlaybackData).not.toHaveBeenCalled()
+  })
+
   it('战场标签使用回放 nickname 字段', async () => {
     const store = createPlaybackStore()
     const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }

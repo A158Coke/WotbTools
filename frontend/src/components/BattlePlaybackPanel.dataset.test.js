@@ -55,6 +55,16 @@ describe('BattlePlaybackPanel local playback parse', () => {
     vi.restoreAllMocks()
   })
 
+  it('consumes the workspace session result without invoking its own parser', async () => {
+    const playbackSession = { load: vi.fn().mockResolvedValue({ canonical: { dataset: dataset(), overview: null, reloadTelemetry: null } }) }
+    const wrapper = mountPanel({ playbackSession })
+    await flushPromises()
+    expect(playbackSession.load).toHaveBeenCalledWith(wrapper.props('file'))
+    expect(playback.parseLocalPlayback).not.toHaveBeenCalled()
+    expect(wrapper.getComponent(BattlePlayback).props('playbackV2')).toEqual(dataset())
+    wrapper.unmount()
+  })
+
   it('shows LOADING while the local parse is pending, then FULL with BattlePlayback + map overlay', async () => {
     const pending = deferred()
     playback.parseLocalPlayback.mockReturnValue(pending.promise)

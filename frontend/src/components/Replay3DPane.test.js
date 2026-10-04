@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, shallowReactive } from 'vue'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
@@ -21,8 +21,7 @@ import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil.js'
 const here = dirname(fileURLToPath(import.meta.url))
 let Replay3DPane
 
-const canonical = vi.hoisted(() => ({ parse: vi.fn(), portrait: vi.fn() }))
-vi.mock('../replay-local/playback/index.js', () => ({ parseLocalPlayback: canonical.parse }))
+const canonical = vi.hoisted(() => ({ load: vi.fn(), portrait: vi.fn() }))
 vi.mock('../vehicle-portraits/runtime.js', () => ({ loadVehiclePortrait: canonical.portrait }))
 const playback = vi.hoisted(() => ({ api: null, init: null, apis: [] }))
 /**
@@ -40,12 +39,17 @@ vi.mock('../composables/useConnectivity.js', async () => {
 
 vi.mock('../scene/playbackScene.js', () => {
   playback.init = vi.fn((container, store) => {
+    let generation = 0
     const api = {
       store,
-      loadData: vi.fn(async () => {
+      loadData: vi.fn(async (source) => {
+        const current = ++generation
         // 真实契约：新会话被接受即 loading=true / hasData=false，完成后反向翻转
         store.hasData = false
         store.loading = true
+        const result = source.session ? await source.session.load(source.file) : null
+        if (current !== generation) return
+        store.playbackSession = { canonical: result }
         store.loading = false
         store.hasData = true
       }),
@@ -55,6 +59,8 @@ vi.mock('../scene/playbackScene.js', () => {
         store.loading = false
       }),
       reset: vi.fn(() => {
+        generation++
+        store.playbackSession = null
         // 撤下当前回放（工作台清空 / 换选）：回到「无数据」等待态
         store.hasData = false
         store.loading = false
@@ -144,7 +150,7 @@ async function start(wrapper) {
 
 function mountPane(props = {}) {
   return mount(Replay3DPane, {
-    props: { file: mkFile('battle.wotbreplay'), active: true, ...props },
+    props: { file: mkFile('battle.wotbreplay'), active: true, playbackSession: { load: canonical.load }, ...props },
     global: { mocks: { $t: translate } },
   })
 }
@@ -156,7 +162,7 @@ function mountPane(props = {}) {
 // null——必须先 await dynamic import 触发工厂，再设状态值（直接设 .value 会炸
 // "Cannot set properties of null"）。
 beforeEach(async () => {
-  canonical.parse.mockReset().mockResolvedValue({ dataset: null, reloadTelemetry: null })
+  canonical.load.mockReset().mockResolvedValue({ dataset: null, reloadTelemetry: null })
   canonical.portrait.mockReset().mockResolvedValue(null)
   layout.compact = false
   playback.api = null
@@ -186,7 +192,7 @@ describe('Replay3DPane', () => {
     track.loadout = { consumables: ['repairkit', null, null], provisions: ['food', null, null], equipmentIds: ['rammer'], consumableWireCodes: [] }
     track.consumableTransitions = [{ timeSec: 8, consumableSlot: 0, state: 'COOLDOWN', logicalItemId: 'repairkit' }]
     dataset.events.push({ type: 'KILL', timeSec: 12, accountId: 1001, targetAccountId: 2001 })
-    canonical.parse.mockResolvedValue({ dataset, reloadTelemetry: { timeOrigin: 42 } })
+    canonical.load.mockResolvedValue({ dataset, clock: { startRaw: 42 }, reloadTelemetry: null })
     canonical.portrait.mockResolvedValue('/portrait.png')
     const wrapper = mountPane()
     await start(wrapper)
@@ -223,13 +229,13 @@ describe('Replay3DPane', () => {
   it('换文件时迟到canonical结果不得覆盖新场详情', async () => {
     mockWebGL('webgl2')
     let finishOld
-    canonical.parse.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    canonical.load.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
     const nextDataset = makeBattlePlaybackDataset()
     nextDataset.vehicles[0].playerName = 'New battle'
-    canonical.parse.mockResolvedValue({ dataset: nextDataset, reloadTelemetry: { timeOrigin: 10 } })
+    canonical.load.mockResolvedValue({ dataset: nextDataset, clock: { startRaw: 10 }, reloadTelemetry: null })
     const wrapper = mountPane()
     await start(wrapper)
-    expect(canonical.parse).toHaveBeenCalledTimes(1)
+    expect(canonical.load).toHaveBeenCalledTimes(1)
     await wrapper.setProps({ file: mkFile('next.wotbreplay') })
     await start(wrapper)
     playback.api.store.time = 10
@@ -238,16 +244,35 @@ describe('Replay3DPane', () => {
     await wrapper.get('.team-lane .pl').trigger('click')
     const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
     expect(details.props('selectedTrack').playerName).toBe('New battle')
-    finishOld({ dataset: makeBattlePlaybackDataset(), reloadTelemetry: { timeOrigin: 42 } })
+    finishOld({ dataset: makeBattlePlaybackDataset(), clock: { startRaw: 42 }, reloadTelemetry: null })
     await flush()
     expect(details.props('selectedTrack').playerName).toBe('New battle')
     expect(details.props('currentTime')).toBe(0)
     wrapper.unmount()
   })
 
+  it('a successful 2D retry updates retained 3D Details without reloading the scene', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const shared = shallowReactive({ canonical: null })
+    playback.api.store.playbackSession = shared
+    playback.api.store.roster = { team1: [{ eid: 7, accountId: 1001, team: 1, nick: 'A', tank: 'Maus' }], team2: [], unknown: [] }
+    await flush()
+    await wrapper.get('.team-lane .pl').trigger('click')
+    const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
+    expect(details.props('selectedTrack')).toBeNull()
+    await wrapper.setProps({ active: false })
+    shared.canonical = { dataset: makeBattlePlaybackDataset(), clock: { startRaw: 42 }, reloadTelemetry: null }
+    await wrapper.setProps({ active: true })
+    expect(details.props('selectedTrack').accountId).toBe(1001)
+    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   it('canonical缺失时不为3D详情伪造统计或inspect track', async () => {
     mockWebGL('webgl2')
-    canonical.parse.mockRejectedValue(new Error('canonical unavailable'))
+    canonical.load.mockResolvedValue({ dataset: null, clock: null })
     const wrapper = mountPane()
     await start(wrapper)
     playback.api.store.roster = { team1: [{ eid: 7, accountId: 1001, team: 1, nick: 'A', tank: 'Maus', hp: 100, maxHp: 100 }], team2: [], unknown: [] }

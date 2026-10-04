@@ -4,6 +4,9 @@ import { useReplayWorkspace } from './useReplayWorkspace.js'
 import { useReplaySession } from './useReplaySession.js'
 
 const holder = vi.hoisted(() => ({ state: null }))
+const parser = vi.hoisted(() => ({ raw: vi.fn(), project: vi.fn() }))
+vi.mock('../scene/replaySource.js', () => ({ loadFromLocalFile: parser.raw }))
+vi.mock('../replay-local/playback/index.js', () => ({ parseLocalPlayback: parser.project }))
 
 vi.mock('./useReplay.js', () => ({
   useReplay: () => holder.state,
@@ -35,8 +38,63 @@ function battle(sourceId, mapName = 'Lagoon') {
 }
 
 describe('useReplayWorkspace', () => {
+  it('2D / 3D / Details share one in-flight and completed playback session result', async () => {
+    const ws = useReplayWorkspace()
+    const file = makeFiles(1)[0]
+    const a = ws.playbackSession.load(file)
+    const b = ws.playbackSession.load(file)
+    expect(a).toBe(b)
+    const result = await a
+    expect(await ws.playbackSession.load(file)).toBe(result)
+    expect(parser.raw).toHaveBeenCalledTimes(1)
+    expect(parser.project).toHaveBeenCalledTimes(1)
+    expect(parser.project).toHaveBeenCalledWith(file, { playback: result.scenePlayback })
+    expect(result.canonical.dataset).toBeTruthy()
+    expect(result.canonical.reloadTelemetry).toBeNull()
+  })
+
+  it('canonical failure preserves raw 3D data and only an explicit retry recomputes facts', async () => {
+    const ws = useReplayWorkspace()
+    const file = makeFiles(1)[0]
+    parser.project.mockRejectedValueOnce(new Error('AI unavailable'))
+    const result = await ws.playbackSession.load(file)
+    expect(result.scenePlayback).toBeTruthy()
+    expect(result.canonical).toBeNull()
+    expect(result.canonicalError.message).toBe('AI unavailable')
+    expect(await ws.playbackSession.load(file)).toBe(result)
+    expect(parser.project).toHaveBeenCalledTimes(1)
+    ws.playbackSession.invalidate(file)
+    expect(await ws.playbackSession.load(file)).toBe(result)
+    expect(result.canonical).toBeTruthy()
+    expect(result.canonicalError).toBeNull()
+    expect(parser.raw).toHaveBeenCalledTimes(1)
+    expect(parser.project).toHaveBeenCalledTimes(2)
+  })
+
+  it('selection change aborts pending parsing and failed sessions can retry', async () => {
+    const ws = useReplayWorkspace()
+    const [file, next] = makeFiles(2)
+    holder.state.session.replaceSelection([file])
+    let signal
+    parser.raw.mockImplementationOnce((_file, abortSignal) => new Promise((_resolve, reject) => {
+      signal = abortSignal
+      signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')))
+    }))
+    const old = ws.playbackSession.load(file)
+    await vi.waitFor(() => expect(signal).toBeDefined())
+    const rejected = expect(old).rejects.toMatchObject({ name: 'AbortError' })
+    holder.state.session.replaceSelection([next])
+    await rejected
+    expect(signal.aborted).toBe(true)
+    expect(await ws.playbackSession.load(next)).toBeTruthy()
+    expect(await ws.playbackSession.load(file)).toBeTruthy()
+    expect(parser.raw).toHaveBeenCalledTimes(3)
+  })
+
   beforeEach(() => {
     holder.state = newReplay()
+    parser.raw.mockReset().mockResolvedValue({ vehicles: [] })
+    parser.project.mockReset().mockImplementation(async (_file, { playback }) => ({ dataset: { vehicles: [] }, clock: { startRaw: 42 }, reloadTelemetry: null }))
   })
 
   it('暴露权威字段（replayBatch / parsedBattles / currentBattleId / dataViewMode / activeWorkspaceTab）', async () => {
