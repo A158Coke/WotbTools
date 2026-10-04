@@ -2,103 +2,93 @@
 
 K7C moves the public `wotbtools.com` frontend ingress from the TX1 frontend to the Komodo-owned TX2 frontend that passed K7B shadow acceptance.
 
-This document covers the **preflight gate only**. It does not authorize or perform the Caddy cutover.
+This document covers runtime-content parity and the **preflight gate**. It still does not authorize or perform the Caddy cutover.
 
 ## Accepted K7B state
 
-K7B is complete when all of the following are evidenced:
-
 - `wotbtools-frontend-shadow` is Running on Komodo Server `tx2`.
 - TX2 binds only `10.20.0.3:8081 -> 80`.
-- nginx is stable with `restart_count=0`.
-- TX1 reaches `http://10.20.0.3:8081/` over WireGuard.
-- TX2 `/api/health` reaches the authoritative TX1 Business API.
-- the Gitee transport commit used by Komodo matches the reviewed GitHub source commit.
-- Caddy remains on TX1 and public ingress has not moved.
+- TX1 reaches TX2 over WireGuard and TX2 `/api/health` reaches the authoritative TX1 Business API.
+- Gitee transport commit matches the reviewed GitHub commit.
+- TX1 and TX2 serve the exact same immutable frontend image before runtime-content parity is evaluated.
+- Caddy remains on TX1.
 
-Record the accepted marker:
+Record `TX2_FRONTEND_SHADOW_READY=PASS`.
 
-`TX2_FRONTEND_SHADOW_READY=PASS`
+## Runtime-content ownership
 
-## Why K7C needs a separate gate
+The frontend image is not the whole production surface. TX1 injects host-owned sponsor and Android release content.
 
-The frontend image is not the whole production surface. TX1 currently injects host-owned runtime content into the frontend container:
+K7C replicates only the **current public production surface** to TX2 local storage at `/opt/wotb-tx2/runtime-content`:
 
-- `/opt/wotb-tx/config/sponsor-config.json`
-- `/opt/wotb-tx/config/sponsor/**`
-- `/opt/wotb-tx/android-release/**`
+- `sponsor-config.json`;
+- sponsor assets actually referenced by that config;
+- Android `version.json`;
+- the APK actually referenced by that manifest.
 
-K7B deliberately omitted those mounts. Therefore a healthy shadow frontend is necessary but not sufficient for public cutover.
+Historical APKs and `*.staging.json` evidence are not public cutover dependencies and are deliberately not copied. The observed TX1 Android directory is about 112 MiB largely because it contains historical releases; K7C must not turn that archive into a placement dependency.
 
-K7C must first prove that TX1 and TX2 serve the exact same immutable frontend build, then prove that every authoritative TX1 runtime file required by the public site is served byte-for-byte by TX2.
+TX2 never bind-mounts `/opt/wotb-tx` and never reads the TX1 filesystem directly. It owns a local replicated runtime-content root.
+
+## TX2 runtime-content sync
+
+After the reviewed source commit is mirrored to Gitee, run on TX2 before redeploying the shadow stack:
+
+```bash
+cd /tmp
+curl -fsSL \
+  https://raw.githubusercontent.com/A158Coke/WotbTools/main/deploy/tx/k7c-sync-runtime-content.sh \
+  -o k7c-sync-runtime-content.sh
+chmod +x k7c-sync-runtime-content.sh
+sudo bash ./k7c-sync-runtime-content.sh
+```
+
+The script reads the currently authoritative TX1 frontend over WireGuard (`http://10.20.0.1:8081`), discovers referenced sponsor assets and the current APK from the published manifests, stages them under a temporary directory, validates safe paths (and APK SHA when present), then atomically replaces `/opt/wotb-tx2/runtime-content`.
+
+Success marker:
+
+```text
+K7C_RUNTIME_CONTENT_READY=PASS
+```
+
+After this marker, redeploy `wotbtools-frontend-shadow` so nginx receives the three read-only runtime mounts.
 
 ## Read-only preflight
 
 Run on TX1:
 
 ```bash
-sudo bash /opt/wotb-tx/deploy/k7c-preflight.sh
+sudo TX_RUNTIME_ROOT=/opt/wotb-tx bash /tmp/k7c-preflight.sh
 ```
 
-Defaults:
+The preflight remains intentionally read-only. It requires:
 
-```text
-TX_RUNTIME_ROOT=/opt/wotb-tx
-TX1_FRONTEND=http://10.20.0.1:8081
-TX2_FRONTEND=http://10.20.0.3:8081
-```
+1. TX1/TX2 frontend roots return HTTP 200.
+2. TX2 SPA fallback and `/api/health` return HTTP 200.
+3. TX1/TX2 `/` and `/version.json` are byte-identical.
+4. `sponsor-config.json` is byte-identical.
+5. every sponsor asset referenced by the authoritative sponsor config is byte-identical.
+6. Android `version.json` is byte-identical.
+7. the APK referenced by authoritative Android `version.json` is byte-identical.
+8. Caddy still targets TX1 (`wotb-frontend:80` or `10.20.0.1:8081`).
 
-The preflight is intentionally read-only. It may use `curl`, `docker ps`, and `docker inspect`; it must never copy content, restart/reconcile containers, or change Caddy.
-
-It requires:
-
-1. TX1 and TX2 frontend roots return HTTP 200.
-2. TX2 SPA fallback returns HTTP 200.
-3. TX2 `/api/health` returns HTTP 200 through the TX1 Business API.
-4. TX1 and TX2 `/` and `/version.json` are byte-identical.
-5. authoritative TX1 `sponsor-config.json` is byte-identical on TX2, or absent on both.
-6. every authoritative file under `config/sponsor` is byte-identical under `/sponsor-assets/` on TX2.
-7. authoritative Android `version.json` is byte-identical on TX2, or absent on both.
-8. every authoritative file under `android-release` is byte-identical under `/download/android/` on TX2.
-9. the running TX1 Caddy still targets `wotb-frontend:80` or `10.20.0.1:8081`; targeting TX2 before the gate passes is an error.
-
-The success marker is:
+Success marker:
 
 ```text
 K7C_FRONTEND_CUTOVER_PREFLIGHT=PASS
 ```
 
-## Expected first result
-
-Immediately after K7B, the preflight is expected to fail on sponsor and/or Android parity because the shadow intentionally has no runtime-content mounts.
-
-That failure is useful evidence: it identifies the exact production surface that still needs an explicit replication/ownership design. Do not weaken the gate or treat HTTP 404 as acceptable when TX1 has a corresponding authoritative file.
-
-Runtime-content replication is a separate reviewed change. Do not introduce ad-hoc SSH/SCP/rsync commands into the preflight itself.
+Do not weaken the gate to accept 404 when TX1 publishes a corresponding current file.
 
 ## Cutover contract after preflight passes
 
-The existing TX Caddy contract already exposes the frontend as a logical endpoint:
-
-```text
-CADDY_FRONTEND_UPSTREAM
-```
-
-The reviewed WireGuard endpoints are:
+The Caddyfile continues to use `{$CADDY_FRONTEND_UPSTREAM}`.
 
 ```text
 TX1 rollback: 10.20.0.1:8081
 TX2 cutover:  10.20.0.3:8081
 ```
 
-The Caddyfile must continue to use `{$CADDY_FRONTEND_UPSTREAM}`; no literal TX1/TX2 frontend address belongs in the Caddyfile.
-
-The actual K7C cutover PR/procedure must be reviewed separately and must include:
-
-- exact active-endpoint evidence before mutation;
-- a single Caddy-only reconciliation to `10.20.0.3:8081`;
-- public HTTP/HTTPS and application smoke tests;
-- explicit rollback to `10.20.0.1:8081`;
-- no movement of Business API, Keycloak, PostgreSQL, or AI ownership.
+The actual cutover remains a separate reviewed operation: one Caddy-only reconciliation to TX2, public smoke tests, and an explicit rollback path to TX1. Business API, Keycloak, PostgreSQL and AI placement do not move in K7C.
 
 K7C public cutover is not authorized until the preflight emits `K7C_FRONTEND_CUTOVER_PREFLIGHT=PASS`.
