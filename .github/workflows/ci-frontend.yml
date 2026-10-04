@@ -52,6 +52,12 @@ jobs:
       - name: Real-browser Armor viewer mobile layout regression
         working-directory: frontend
         run: npm run test:browser-armor-mobile
+      # 装甲查看器瞄准交互（Pointer Events × OrbitControls）同样只有真浏览器 + 真实输入能验证。
+      # 门禁自带确定性夹具资产包（frontend/scripts/browser-fixtures/fixture-asset-pack.mjs：
+      # 进程内资产源 + 构造的 hull/turret_01/gun_01 GLB），不需要真实资产、不 SKIP。
+      - name: Real-browser Armor viewer aiming interaction regression
+        working-directory: frontend
+        run: npm run test:browser-armor-aiming
       - name: Build
         working-directory: frontend
         run: npm run build

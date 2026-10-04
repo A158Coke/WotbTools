@@ -63,7 +63,7 @@ function packOf(meshes) {
 /** 前端口径的 oracle：raw 命中无 primary → 紫（不做二次判定）；有 → calculate */
 function oracleClass(pack, bouncePos, reflDir, params) {
     const ro = bouncePos.clone().addScaledVector(reflDir, RC.ORIGIN_OFFSET)
-    const raw = raycastPackAll(pack, ro, reflDir, RC.T_SKIP + RC.T_EPS)
+    const raw = raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T)
     if (!raw.some(h => PRIM.has(h.section))) return 0
     const req = {
         shell_type: 'ap',
@@ -471,6 +471,28 @@ describe('网格覆盖不变量（评审 P1）', () => {
         expect(RC.MAX_STEPS).toBeGreaterThanOrEqual(dimsSum);
         expect(RC.MAX_STEPS).toBeGreaterThanOrEqual(RC.GRID_DIM_MAX * 3);
     });
+    it('密度细化重试可达（评审 P1）：初始 0.45m 过密 → 细化到更细 cell 成功且仍全覆盖', () => {
+        // 2m 平面 60×60 段 = 7200 三角形（均匀铺满、单元 AABB 极小）：0.45m cell 时单 cell
+        // ≈ 364 > MAX_CELL_ENTRIES(256)；0.225m 时 ≈ 91 ≤ 256。远置小盒把场景 extent 拉到
+        // 7.5m（coverageFloor = 7.5/48 ≈ 0.156 < 0.225，细化不被覆盖下界截断）。
+        // 旧实现把 GRID_CELL_SIZE 并入 floor → 初始 cell 恰等于 floor → 第一次密度失败即
+        // break（attempt 2..4 死代码）→ 此场景会直接 grid-too-dense（评审 P1 的回归锁）。
+        const dense = makeMesh(new THREE.PlaneGeometry(2, 2, 60, 60), 'hull', 60, m => {
+            m.rotation.x = -Math.PI / 2; m.position.set(0, 0, 0); m.updateMatrix();
+        });
+        const far = makeMesh(new THREE.BoxGeometry(1, 1, 1), 'turret', 100, m => {
+            m.position.set(6, 0, 0); m.updateMatrix();
+        });
+        const pack = packOf([dense, far]);
+        const grid = buildRicochetGrid(pack);
+        expect(grid.ok).toBe(true);
+        expect(grid.cellSize).toBeLessThan(RC.GRID_CELL_SIZE);   // 确实细化过（不是初始尺寸直接通过）
+        const cov = grid.gridMin.map((v, a) => v + grid.dims[a] * grid.cellSize);
+        expect(cov[0]).toBeGreaterThanOrEqual(6.5 - 1e-6);       // far 盒右缘 x=6.5 —— 覆盖不破坏
+        for (let ci = 0; ci < grid.cellTotal; ci++) {
+            expect(grid.cellsData[ci * 4 + 1]).toBeLessThanOrEqual(RC.MAX_CELL_ENTRIES);
+        }
+    });
     it('极端密集（下界处仍超条目上限）→ fail-closed 而非截断成功', () => {
         // 单网格 2 万三角形集中在 10m 平面（chunk 拆为 ~79 单元）：细化到覆盖下界仍超
         // MAX_CELL_ENTRIES → 必须显式失败，禁止「capped 截断仍 ok」的静默半覆盖
@@ -494,22 +516,42 @@ describe('网格覆盖不变量（评审 P1）', () => {
 })
 
 
-describe('续飞距离常量三路一致（评审 P1b）', () => {
-    it('RC.MIN_CONTINUATION_T = 0.0001 且 GLSL 序列化保 6 位小数', () => {
+describe('续飞初始接受阈三路一致（评审 P1）', () => {
+    it('两个常量语义分离：MIN_CONTINUATION_T（初始接受阈）/ ADVANCE_EPSILON（层推进）', () => {
         expect(RC.MIN_CONTINUATION_T).toBe(0.0001);
+        expect(RC.ADVANCE_EPSILON).toBe(0.0001);
         expect(RC_GLSL_CONST).toContain('#define RC_TSKIP 0.000100');
+        expect(RC_GLSL_CONST).toContain('#define RC_ADV_EPS 0.000100');
     });
-    it('边界距离分类：0.05mm 滤除 / 0.10mm 边界（GLSL t> 判定） / 0.20mm 保留 —— JS 参考与口径锁', () => {
-        // 层距 0.2m 的两块板：跳弹点附近按不同 MIN_CONTINUATION_T 人为分类，验证阈值语义
-        // （0.05mm 与 0.10mm 处于同一 cell 噪声域，均被滤；0.2mm 亦滤——真实装甲层
-        //  距离为厘米级，这些边界只验证常量语义而非物理命中）
-        expect(0.00005 < RC.MIN_CONTINUATION_T).toBe(true);    // 0.05mm < 0.1mm → 滤
-        expect(0.00010 >= RC.MIN_CONTINUATION_T).toBe(true);   // 0.10mm == 常量 → click 严格 < 判定保留（GLSL t<=tLo 滤，差一个 T_EPS 噪声域）
-        expect(0.00020 > RC.MIN_CONTINUATION_T).toBe(true);    // 0.20mm > 常量 → 保留
-        // JS 参考入口使用同一常量（源码级锁：防止将来改回硬编码）
+    it('GLSL：初始接受阈 = RC_TSKIP 本身（不得叠加 RC_ADV_EPS）；推进 eps 只出现在吞层之后', () => {
+        // 旧实现 tStart = max(tStart, RC_TSKIP + RC_T_EPS) → GLSL 阈值实为 0.2mm，与 click 的
+        // 0.1mm 不一致（评审 P1）。锁死：初始接受只用 RC_TSKIP；RC_ADV_EPS 只在吞层推进处出现。
+        expect(RC_GLSL_FUNCS).toContain('tStart = max(tStart, RC_TSKIP);');
+        expect(RC_GLSL_FUNCS).not.toContain('RC_TSKIP + RC_ADV_EPS');
+        expect(RC_GLSL_FUNCS).not.toContain('tCur + RC_ADV_EPS');
+        expect(RC_GLSL_FUNCS).toContain('tCur = bestT + RC_ADV_EPS;');
+    });
+    it('JS 参考入口与 click 路径使用同一初始接受阈（源码级锁，防回归到 +eps 口径）', () => {
         const src = require('fs').readFileSync(new URL('./armorCollisionPack.js', import.meta.url), 'utf8');
-        expect(src).toContain('raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T + RC.T_EPS)');
-        expect(src).not.toContain('RC.T_SKIP + RC.T_EPS);   // 与');
+        expect(src).toContain('raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T);');
+        expect(src).not.toContain('RC.MIN_CONTINUATION_T + RC.ADVANCE_EPSILON');
+        // click 路径（tankViewer.js）严格同一口径：t <= MIN 滤（此前是 t < MIN，且 GLSL/JS 侧 +eps）
+        const viewer = require('fs').readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8');
+        expect(viewer).toContain('if (hit.distance <= RC.MIN_CONTINUATION_T) continue;');
+        expect(viewer).not.toContain('hit.distance < RC.MIN_CONTINUATION_T');
+    });
+    it('行为锁定：0.15mm 处的板被命中（旧 +eps 口径 0.2mm 会滤掉它）；0.05mm 处被滤', () => {
+        // 0.15mm > MIN(0.1mm) 且 < MIN + ADV(0.2mm)：命中与否正是两个口径的分叉点。
+        // 射线偏离平面中轴（y/z 非 0）避免打在两三角形共边上（共边会记 2 次命中）
+        const at = (x) => makeMesh(new THREE.PlaneGeometry(2, 2), 'hull', 60, m => {
+            m.rotation.y = -Math.PI / 2; m.position.set(x, 0, 0); m.updateMatrix();
+        });
+        const ro = new THREE.Vector3(0, 0.31, 0.17);
+        const dir = new THREE.Vector3(1, 0, 0);
+        const mid = packOf([at(0.00015)]);
+        expect(raycastPackAll(mid, ro, dir, RC.MIN_CONTINUATION_T).length).toBe(1);
+        const below = packOf([at(0.00005)]);
+        expect(raycastPackAll(below, ro, dir, RC.MIN_CONTINUATION_T).length).toBe(0);
     });
     it('真实边界场景：跳弹点旁 0.5mm 处的薄板被保留（<0.1m 的接缝另一侧板命中）', () => {
         // 跳弹板在 x=0，另一侧板在 x=0.0005（0.5mm）：远大于 0.1mm 滤值 → 必须命中

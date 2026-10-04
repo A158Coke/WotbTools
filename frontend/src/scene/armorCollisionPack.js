@@ -31,15 +31,22 @@ export const RC = Object.freeze({
     /** 续飞射程（点击链出射 Raycaster far=60） */
     FAR: 60.0,
     /**
-     * 续飞射线最小命中距离（评审 P1b：click / JS 参考 / GLSL 三路共用的唯一语义常量，
-     * 序列化到 GLSL 时保留 6 位小数）。起点=跳弹点（BlitzKit 对齐，无偏移）；
-     * 该值仅滤数值级自命中（0.1mm）——BlitzKit 无过滤但依赖浮点侥幸，这里确定性兜底。
+     * 续飞射线【初始命中接受阈】（评审 P1：click / JS 参考 / GLSL 三路唯一语义常量）：
+     * 反射线上 t ≤ 该值的命中一律滤除——只是滤数值级自命中（0.1mm），不是"推进步长"。
+     * 起点=跳弹点（BlitzKit 对齐，无偏移）；BlitzKit 无过滤但依赖浮点侥幸，这里确定性兜底。
      * 原实现 0.05 偏移 + 0.1m 窗口曾把接缝另一侧板丢弃（接缝点击 bug 根因）。
+     * 三路一致口径：click `hit.distance <= RC.MIN_CONTINUATION_T → 滤`、
+     * JS `raycastPackAll(..., RC.MIN_CONTINUATION_T)`、GLSL `tStart = max(tStart, RC_TSKIP)`。
      */
     MIN_CONTINUATION_T: 0.0001,
+    /**
+     * 【层推进 eps】（评审 P1 拆出）：仅用于"已命中一层之后"的推进——下一层必须比
+     * 已吞掉的层严格更远（DDA 游标 tCur = bestT + ADV、cell 窗口上界容差），
+     * 不得叠加到初始接受阈上（此前 tStart = TSKIP + T_EPS = 0.2mm → 三路阈值不一致）。
+     */
+    ADVANCE_EPSILON: 0.0001,
     /** 兼容别名（GLSL 定义名不变） */
     ORIGIN_OFFSET: 0.0,
-    T_SKIP: 0.0001,
     /** 跳弹剩余穿深系数（penetration.js ricochetRemainingPen = remaining*0.75） */
     RICO_REMAIN_MUL: 0.75,
     /** 层链上限（碰撞模型实际 ≤4/射线；超限按"无续飞"保守处理=维持紫） */
@@ -66,8 +73,6 @@ export const RC = Object.freeze({
     BAND: 0.05,
     /** 90° 防 f32 负 cos 下限（penetration.js 同值） */
     COS_EPS: 1e-6,
-    /** 层推进 / 命中窗口的最小 t 间隔 */
-    T_EPS: 1e-4,
     /** 2×口径增强转正系数（BlitzKit/penetration.js 同源） */
     TWO_CAL_NORM: 1.4,
     /** 装甲 section 码（texel0.w；primary = 码≤2，外部模块 = 码≥4） */
@@ -82,6 +87,7 @@ export const RC_GLSL_CONST = `
 #define RC_FAR ${RC.FAR.toFixed(1)}
 #define RC_OFF ${RC.ORIGIN_OFFSET.toFixed(6)}
 #define RC_TSKIP ${RC.MIN_CONTINUATION_T.toFixed(6)}
+#define RC_ADV_EPS ${RC.ADVANCE_EPSILON.toFixed(6)}
 #define RC_RICO_MUL ${RC.RICO_REMAIN_MUL.toFixed(3)}
 #define RC_MAX_LAYER ${RC.MAX_LAYER}
 #define RC_MAX_STEPS ${RC.MAX_STEPS}
@@ -95,7 +101,6 @@ export const RC_GLSL_CONST = `
 #define RC_ENTRY_ROW_I ${RC.ENTRY_ROW}
 #define RC_BAND ${RC.BAND.toFixed(3)}
 #define RC_COS_EPS ${RC.COS_EPS.toFixed(8)}
-#define RC_T_EPS ${RC.T_EPS.toFixed(6)}
 #define RC_TWO_CAL ${RC.TWO_CAL_NORM.toFixed(1)}
 #define RC_SEC_HULL ${RC.SECTION.hull}
 #define RC_SEC_SPACED ${RC.SECTION.spaced}
@@ -170,10 +175,10 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
     highp float tEnd = min(min(gbg.x, gbg.y), gbg.z);
     highp float tStart = max(max(gsm.x, gsm.y), gsm.z);
     if (tEnd <= RC_TSKIP) return 0;
-    tStart = max(tStart, RC_TSKIP + RC_T_EPS);
+    tStart = max(tStart, RC_TSKIP);    // 初始接受阈（三路一致）：t > RC_TSKIP 才接受（rcTriW 的 t<=tLo 滤）
     if (tStart >= tEnd) return 0;
     // DDA 初始化（Amanatides & Woo）
-    highp vec3 p0 = ro + reflDir * (tStart + RC_T_EPS * 4.0);
+    highp vec3 p0 = ro + reflDir * (tStart + RC_ADV_EPS * 4.0);
     ivec3 cell = clamp(ivec3(floor((p0 - rcGridMin) / rcCell)), ivec3(0), dims - ivec3(1));
     ivec3 stp = ivec3(reflDir.x > 0.0 ? 1 : (reflDir.x < 0.0 ? -1 : 0),
                       reflDir.y > 0.0 ? 1 : (reflDir.y < 0.0 ? -1 : 0),
@@ -184,7 +189,7 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
     if (stp.y != 0) tMax.y = (nb.y - ro.y) / reflDir.y;
     if (stp.z != 0) tMax.z = (nb.z - ro.z) / reflDir.z;
     highp vec3 tDelta = abs(rcCell / reflDir);
-    highp float tCur = tStart;         // 层游标（下一层须 t > tCur + RC_T_EPS）
+    highp float tCur = tStart;         // 层游标：剩余命中须 t > tCur（吞层后 tCur = bestT + RC_ADV_EPS）
     bool anyPrimary = false;           // 前端门：整条射线存在主装甲原始命中（ricHasPrimary）
     bool blocked = false;              // 链中途被挡（待定：anyPrimary→红 否则紫）
     highp float rem = remIn;
@@ -195,7 +200,7 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
     for (int s = 0; s < RC_MAX_STEPS; s++) {
         if (budget <= 0) return 0;
         highp float tCell = min(min(tMax.x, tMax.y), tMax.z);
-        highp float hi = min(tCell + RC_T_EPS, tEnd);
+        highp float hi = min(tCell + RC_ADV_EPS, tEnd);
         int cidx = cell.x + dims.x * (cell.y + dims.y * cell.z);
         highp vec4 cel = rcCellAt(cidx);
         int cnt = int(cel.y + 0.5);
@@ -214,7 +219,7 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
                 int slot = int(ent.x + 0.5);
                 if (slot == prevTri) continue;
                 highp float tHit;
-                if (rcTriW(slot, ro, reflDir, tCur + RC_T_EPS, hi, tHit) && tHit < bestT) {
+                if (rcTriW(slot, ro, reflDir, tCur, hi, tHit) && tHit < bestT) {
                     bestT = tHit; bestSlot = slot; bestEnt = ent;
                 }
             }
@@ -225,15 +230,15 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             if (sec <= 2) anyPrimary = true;            // 主装甲原始命中在场（无论链是否已断）
             if (blocked) {
                 if (anyPrimary) return 2;
-                tCur = bestT + RC_T_EPS; continue;
+                tCur = bestT + RC_ADV_EPS; continue;
             }
             if (sec >= RC_SEC_CHASSIS) {                // 外部模块：variant 去重 + flat 消耗
                 int vbit = (sec == RC_SEC_CHASSIS) ? 1 : 2;
-                if ((variantSeen & vbit) != 0) { tCur = bestT + RC_T_EPS; continue; }   // 同 variant 已消耗（不计层）
+                if ((variantSeen & vbit) != 0) { tCur = bestT + RC_ADV_EPS; continue; }   // 同 variant 已消耗（不计层）
                 variantSeen |= vbit;
-                if (rem > th) { rem -= th; tCur = bestT + RC_T_EPS; continue; }          // 穿过模块（不计层）
+                if (rem > th) { rem -= th; tCur = bestT + RC_ADV_EPS; continue; }          // 穿过模块（不计层）
                 blocked = true;                         // 模块挡下：余下只查主装甲存在性
-                tCur = bestT + RC_T_EPS; continue;
+                tCur = bestT + RC_ADV_EPS; continue;
             }
             // 间隙/主装甲：角度等效 + 2×口径增强转正；出射段强制不跳弹（threeCal 恒真）
             highp vec3 a = rcVertW(bestSlot * 3), b = rcVertW(bestSlot * 3 + 1), c = rcVertW(bestSlot * 3 + 2);
@@ -253,9 +258,9 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
                 }
                 return 2;
             }
-            if (!layPen) { blocked = true; tCur = bestT + RC_T_EPS; continue; }
+            if (!layPen) { blocked = true; tCur = bestT + RC_ADV_EPS; continue; }
             rem -= eff;
-            tCur = bestT + RC_T_EPS;
+            tCur = bestT + RC_ADV_EPS;
             L++;                                        // 消耗一层才计数
         }
         // 前进到下一 cell
@@ -405,7 +410,8 @@ export function updatePackMatrices(pack) {
  * triSlot 与 pack 一致），三角形 AABB 覆盖的每个 cell 追加一条 entry（triSlot +
  * sectionCode + thickness）。炮塔/配置变化时重建（相机移动无需重建）——这就是
  * 着色器只测路径 cell 内三角形（~10² 级）代替全量扫描的结构基础。
- * cell 条目超限时自动 ×2 放粗（最多 3 次），仍超限 → ok=false（调用方禁用续飞）。
+ * cell 条目超限时按对半【细化】重试（0.45 → 0.225 → … → coverageFloor，最多 4 次尝试；
+ * 细化降低单 cell 条目数），到覆盖下界仍超限 → ok=false（调用方禁用续飞，fail-closed）。
  */
 export function buildRicochetGrid(pack) {
     if (!pack || !pack.ok || !pack.units) return { ok: false, reason: 'no-pack' };
@@ -475,8 +481,11 @@ export function buildRicochetGrid(pack) {
     // 覆盖不变量（评审 P1）：cellSize 下界 = max(extAxis)/GRID_DIM_MAX —— 该尺寸下任何轴
     // 都不超过 cell 数上限，网格恒覆盖全部几何；后续放细只在该下界之内，被截断的
     // capped 成功路径（GPU 网格 AABB 小于几何 → DDA 永不可达 → 静默紫）不可能再出现。
-    const cellSizeFloor = Math.max(RC.GRID_CELL_SIZE, Math.max(ext[0], ext[1], ext[2]) / RC.GRID_DIM_MAX);
-    let cellSize = cellSizeFloor;
+    const coverageFloor = Math.max(ext[0], ext[1], ext[2]) / RC.GRID_DIM_MAX;
+    // 初始 cell 尺寸：目标 0.45m，但不低于覆盖下界（长几何抬高初始值）。注意这与覆盖下界
+    // 是两个概念——此前把 GRID_CELL_SIZE 也并入 floor，初始 cell 恰等于 floor →
+    // `cellSize/2 < floor` 恒真 → 密度细化重试的 attempt 2..4 成为死代码（评审 P1）。
+    let cellSize = Math.max(RC.GRID_CELL_SIZE, coverageFloor);
     let dims, cells;
     for (let attempt = 0; attempt < 4; attempt++) {
         dims = [0, 1, 2].map(a => Math.min(RC.GRID_DIM_MAX, Math.max(1, Math.ceil((ext[a] + 1e-4) / cellSize))));
@@ -547,9 +556,10 @@ export function buildRicochetGrid(pack) {
                 cellsData, entriesData, worldTrisData,
             };
         }
-        // 密度重试只能在不破坏覆盖下界的范围内细化；到下界仍过密 → fail-closed（跳弹紫）
-        if (cellSize / 2 < cellSizeFloor) break;
-        cellSize = Math.max(cellSize / 2, cellSizeFloor);
+        // 密度重试：只要还没到覆盖下界就继续对半细化（0.45 → 0.225 → … → coverageFloor，
+        // 最多 4 次尝试）；细化到覆盖下界仍过密 → fail-closed（跳弹紫），不允许截断成功
+        if (cellSize <= coverageFloor) break;
+        cellSize = Math.max(cellSize / 2, coverageFloor);
     }
     return { ok: false, reason: 'grid-too-dense' };
 }
@@ -679,7 +689,7 @@ const _PRIM = new Set(['hull', 'turret', 'gun']);
  */
 export function simulateContinuation(pack, bouncePos, reflDir, params) {
     const ro = bouncePos.clone().addScaledVector(reflDir, RC.ORIGIN_OFFSET);
-    const hits = raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T + RC.T_EPS);   // 与 GLSL/click 同一常量（P1b）
+    const hits = raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T);   // 初始接受阈与 GLSL/click 同一常量（评审 P1）
     // 前端门：原始命中无主装甲 → 不做二次判定（维持紫）
     if (!hits.some(h => _PRIM.has(h.section))) return { cls: 0, penChance: 0, layers: [] };
     // 收集：variant 去重 + 首 primary 止（calculate 收集段）
