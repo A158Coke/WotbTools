@@ -23,10 +23,10 @@ services:
     environment:
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL is required}
       # K7C dual-instance frontend placement. TX2 stays the reviewed primary
-      # value carried by the owner workflow, while TX1 remains an active peer so
-      # Caddy can load-balance and fail over without changing public ingress.
+      # value carried by the owner workflow, while TX1 remains an equally active
+      # peer so Caddy can load-balance and fail over without changing public ingress.
       CADDY_FRONTEND_UPSTREAM: ${CADDY_FRONTEND_UPSTREAM:-10.20.0.3:8081}
-      CADDY_FRONTEND_FALLBACK: ${CADDY_FRONTEND_FALLBACK:-10.20.0.1:8081}
+      CADDY_FRONTEND_PEER: ${CADDY_FRONTEND_PEER:-10.20.0.1:8081}
       CADDY_KEYCLOAK_UPSTREAM: ${CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
