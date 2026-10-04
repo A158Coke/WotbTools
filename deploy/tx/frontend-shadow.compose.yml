@@ -6,9 +6,8 @@ name: wotbtools-frontend-shadow
 # production-content parity before any public cutover.
 services:
   frontend:
-    # Immutable build identity from the last successfully deployed TX1 Frontend run
-    # before K7B. The sha-* tag is source+asset-origin addressed by frontend.yml.
-    image: ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-473495ec07e7
+    # Immutable build identity from the current TX1 production Frontend build required for K7C parity. The sha-* tag is source+asset-origin addressed by frontend.yml.
+    image: ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-fe53250d06b5
     ports:
       - "10.20.0.3:8081:80"
     extra_hosts:
