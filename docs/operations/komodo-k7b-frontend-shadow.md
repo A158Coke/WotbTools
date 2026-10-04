@@ -20,7 +20,7 @@ GitHub `A158Coke/WotbTools` remains the source/release authority; Gitee is only 
 
 ## Shadow runtime contract
 
-The shadow binds only `10.20.0.3:8081 -> 80`. Frontend routes Business API to `http://10.20.0.1:8087` and AI to `http://10.20.0.2:8089`. TX1 Caddy remains `10.20.0.1:8081` throughout K7B.
+The shadow binds only `10.20.0.3:8081 -> 80`. Frontend routes Business API to `http://10.20.0.1:8087` and AI to `http://10.20.0.2:8089`. TX1 Caddy remains `10.20.0.1:8081` throughout K7B. Because the shared nginx template trusts the logical ingress hostname `caddy`, the shadow Compose maps `caddy` to TX1 WireGuard `10.20.0.1`; this is a K7B placement adapter, not a public cutover.
 The initial shadow pins immutable build identity `ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-473495ec07e7`, produced by the last successful TX1 Frontend deployment before K7B.
 
 ## Runtime content boundary
