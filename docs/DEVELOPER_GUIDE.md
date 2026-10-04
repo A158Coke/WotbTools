@@ -513,12 +513,15 @@ TX-internal frontend nginx、Caddy readiness surface 与 deployment-owned `healt
 `http://10.20.0.1:8087`（TX1 WireGuard），K6B-2B 已把 Business API → Business PostgreSQL 切到
 `10.20.0.1:25432`，K6B-2C 已把 Business API → Keycloak Admin 切到
 `http://10.20.0.1:8080`，K6B-2D 已把 Keycloak → Keycloak PostgreSQL 切到
-`10.20.0.1:15432`，K6B-2E 已把 Caddy → Frontend 切到 `10.20.0.1:8081`
-（都属 TX1 WireGuard，且都是同一套 canonical validator 的已评审值）；最后一个 consumer
-（Caddy → Keycloak）在 K6B-2F 前保持
-Docker-local。Caddy 的 upstream 由容器 env 经只读 bind-mounted Caddyfile 的 `{$VAR}` 替换决定，
+`10.20.0.1:15432`，K6B-2E 已把 Caddy → Frontend 切到 `10.20.0.1:8081`，K6B-2F 已把
+Caddy → Keycloak 切到 `10.20.0.1:8080`
+（都属 TX1 WireGuard，且都是同一套 canonical validator 的已评审值）；2F 是最后一个 consumer，
+六个 TX placement 现在都是 reviewed WireGuard 值，Docker-local 值只剩 rollback 用途
+（`K6B_FINAL_PLACEMENT_MATRIX` 是 K7 的 baseline）。Caddy 的 upstream 由容器 env 经只读
+bind-mounted Caddyfile 的 `{$VAR}` 替换决定，
 没有渲染中间层，所以 runtime gate 读运行容器 env 即实际生效的 upstream；Caddyfile 的 route、
-`header_up Host`、TLS 与公开 hostname 都不随 placement 改变。
+`header_up Host`、TLS 与公开 hostname 都不随 placement 改变，2F 只改 Caddy 的私有 upstream，
+Keycloak 的 `--hostname`、公开 issuer 与 OIDC redirect 语义不变。
 service-plane 端口不可互换：8081 Frontend、8080 Keycloak、8087 Business API、
 25432 Business PostgreSQL、15432 Keycloak PostgreSQL。`KEYCLOAK_ISSUER_URI` 仍是公开 realm URL：issuer 不是 placement endpoint，
 `dependency-readiness.py` 还会对已校验的 admin endpoint 断言 discovery 报告的 issuer 等于它。
