@@ -1,10 +1,13 @@
 /* Shared macro geometry for both Playback renderers.
    Topology selects columns/flow; measured viewport capacity and intrinsic chrome select size.
    Details positioning remains owned by usePlaybackDetailsPlacement. */
-/* Shared sizing authority; portrait topology changes do not redefine the battlefield budget. */
+/* Shared sizing authority; portrait topology changes do not redefine the battlefield budget.
+   Lane width is bounded on both ends: the floor keeps a 7v7 roster readable (name + tank + HP%),
+   the ceiling yields every further pixel to the center battlefield column. The fluid term only
+   decides *where* between the bounds the lane sits; it never lets the roster grow without bound. */
 .playback-workspace {
   container-type: inline-size;
-  --pb-lane-w: clamp(var(--pb-roster-min), 14cqw, var(--pb-roster-max));
+  --pb-lane-w: clamp(var(--pb-roster-min), 11cqw, var(--pb-roster-max));
 }
 .battle-playback.playback-workspace:not(:fullscreen),
 .battle-playback.playback-workspace:fullscreen {
