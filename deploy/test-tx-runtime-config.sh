@@ -134,6 +134,23 @@ reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL 'http://10.2
 reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL 'http://10.20.0.1:8080#frag' http://keycloak:8080 8080
 validate_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.1 25432 business-postgres 5432 25432
 validate_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.3 15432 keycloak-postgres 5432 15432
+# K6B-2D moves the Keycloak -> Keycloak PostgreSQL consumer onto the reviewed TX1
+# WireGuard endpoint, guarded by the same canonical database validator. The reviewed
+# values (Docker-local, TX1 WG, TX2 WG) are accepted; the retired Yecao address, the
+# wrong WireGuard host port, and - importantly - the OTHER PostgreSQL placement's port
+# are refused, so the two database consumers can never be swapped by accident.
+validate_endpoint validate_database_endpoint TX_KEYCLOAK_DB keycloak-postgres 5432 keycloak-postgres 5432 15432
+validate_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.1 15432 keycloak-postgres 5432 15432
+reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.2 15432 keycloak-postgres 5432 15432
+reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.1 5432 keycloak-postgres 5432 15432
+reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.1 25432 keycloak-postgres 5432 15432
+reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.1 15433 keycloak-postgres 5432 15432
+reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.3 25432 keycloak-postgres 5432 15432
+reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB db.example.com 15432 keycloak-postgres 5432 15432
+reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB auth.wotbtools.com 15432 keycloak-postgres 5432 15432
+reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB '' 15432 keycloak-postgres 5432 15432
+reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB keycloak-postgres '' keycloak-postgres 5432 15432
+reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB keycloak-postgres abc keycloak-postgres 5432 15432
 reject_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.2 25432 business-postgres 5432 25432
 validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.1:8081 wotb-frontend:80 8081
 reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM frontend.example.invalid:8081 wotb-frontend:80 8081
