@@ -1061,10 +1061,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         let aiming = false;
         let aimPitchEnabled = true;
         const aimPointerId = { active: null };
+        /** 指针会话的唯一清理点（up / cancel / lostpointercapture 共用）：会话态与
+         *  拖动跟踪态一并复位，避免任何一条出口留下半截状态（评审：cleanup 集中完整）。 */
         function endPointerSession(e) {
             if (aimPointerId.active !== e.pointerId) return;
             aimPointerId.active = null;
             aiming = false;
+            mouseDownPos = null;
+            isDragging = false;
             if (controls) controls.enabled = true;
             try {
                 if (renderer.domElement.hasPointerCapture && renderer.domElement.hasPointerCapture(e.pointerId)) {
@@ -1130,20 +1134,26 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             },
             up(e) {
                 if (aimPointerId.active !== e.pointerId) return;
-                const wasAiming = aiming;
+                const wasDragging = isDragging;   // endPointerSession 会复位拖动态，先取
                 endPointerSession(e);
                 if (e.pointerType === 'mouse' && e.button !== 0) return;
-                if (isDragging) { mouseDownPos = null; isDragging = false; return; }
-                mouseDownPos = null;
-                isDragging = false;
-                if (!wasAiming) onClick(e);   // 瞄准手势（炮塔/炮管上按下）不触发点击判定
+                // 是否触发点击判定只由 isDragging 决定（评审 BLOCKER 1）：短按无拖动一律判定
+                // ——点炮塔/炮管同样是「点哪判哪」；只有实际拖动才视为手势（瞄准或相机）
+                if (wasDragging) return;
+                onClick(e);
             },
             cancel: endPointerSession,
+            // 指针捕获被系统夺走（元素移除/浏览器抢占）时的兜底出口：会话必须完整收尾
+            lostCapture(e) { endPointerSession(e); },
         };
         // 探针：记录最后一次左键点击像素（用户触发问题情形后一条命令取三方对照）。
         // 惰性挂载：闭包顶层 renderer 尚未创建（init 末尾才赋值），animate 首帧再挂。
         let rcLastClick = null;
         let rcClickHooked = false;
+        // 判定代数计数（每次 doPenetrationCheck +1）：浏览器门禁用它区分「短按判定」
+        // 与「拖动 = 手势（不判定）」——#traj-info 面板被渲染循环持续重新摆位/显示，
+        // 无法用 display 判新判定是否发生（评审 BLOCKER 1 的断言口径）
+        let judgmentCount = 0;
         function hookRcClickRecorder() {
             if (rcClickHooked || !renderer || !renderer.domElement) return;
             rcClickHooked = true;
@@ -1160,6 +1170,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     grid: ricochetGrid ? { dims: ricochetGrid.dims, cell: ricochetGrid.cellSize, entries: ricochetGrid.entryTotal } : null,
                     poseDirty: ricochetPoseDirty,
                     reason: ricochetPackReason,
+                    judgments: judgmentCount,
                 };
             },
             simulate(bouncePos, reflDir) {
@@ -1234,94 +1245,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             // 诊断：瞄准交互状态（浏览器门禁断言「画布外释放不卡死相机」用）
             aimingState() {
                 return { aiming, controlsEnabled: controls ? controls.enabled : null };
-            },
-            // 诊断：克隆网格 matrix vs matrixWorld（坐标框架核对）
-            __clones() {
-                if (!primaryArmorScene) return null;
-                const out = [];
-                primaryArmorScene.children.forEach(c => {
-                    if (out.length >= 4 || c.renderOrder !== 1) return;
-                    const m = c.matrix.elements, w = c.matrixWorld.elements;
-                    let same = true;
-                    for (let i = 0; i < 16; i++) if (Math.abs(m[i] - w[i]) > 1e-6) { same = false; break; }
-                    out.push({ name: c.userData._src ? (c.userData._src.name || '?') : '?', same, flag: c.matrixWorldNeedsUpdate });
-                });
-                return out;
-            },
-            // 诊断：材质实际编译的着色器源码片段（版本核对）
-            __shaderPeek() {
-                let m = null;
-                if (primaryArmorScene) primaryArmorScene.traverse(n => { if (!m && n.isMesh && n.renderOrder === 1) m = n.material; });
-                if (!m) return null;
-                const src = m.fragmentShader || '';
-                return {
-                    len: src.length,
-                    hasDDA: src.includes('网格 DDA 在线推进'),
-                    hasBudget: src.includes('budget'),
-                    hasEmptyBody: src.includes('完全空体'),
-                    hasCls3: src.includes('探针（恒）'),
-                    tail: src.slice(-160),
-                };
-            },
-            // 诊断：网格原始数据（页面内 JS DDA 镜像对照用；引用直通，勿序列化）
-            __gridDebug() {
-                return ricochetGrid
-                    ? { gridMin: ricochetGrid.gridMin, dims: ricochetGrid.dims, cellSize: ricochetGrid.cellSize,
-                        cellsData: ricochetGrid.cellsData, entriesData: ricochetGrid.entriesData, worldTrisData: ricochetGrid.worldTrisData }
-                    : null;
-            },
-            // 诊断：当前判定口径（弹参 + 装备系数）
-            shell() {
-                const sh = selectedShell;
-                if (!sh) return null;
-                const { penMul, thickMul } = equipmentCoeffs();
-                return {
-                    type: shellTypeOf(sh), pen: (sh.penetration || 0) * penMul, caliber: sh.caliber || 120,
-                    ricoDeg: sh.ricochet != null ? sh.ricochet : 70, normDeg: sh.normalization ?? 0, thickMul,
-                    remIn: (sh.penetration || 0) * penMul * RC.RICO_REMAIN_MUL,
-                };
-            },
-            // 诊断：点击链同款求交（含可见性/configHidden 标注）
-            __raytrace(px, py) {
-                const c = renderer.domElement;
-                const rect = c.getBoundingClientRect();
-                const ndcX = ((px - rect.left) / rect.width) * 2 - 1;
-                const ndcY = -((py - rect.top) / rect.height) * 2 + 1;
-                const act = activeGunNumber();
-                const cfg = currentConfig();
-                const hasMask = cfg && typeof cfg.gun_mask === 'number' && cfg.gun_mask !== 0;
-                const activeModules = act == null ? moduleMeshes : moduleMeshes.filter(m => {
-                    if (m.userData.gunConfig != null) return m.userData.gunConfig === act;
-                    return true;
-                }).filter(m => !(m.userData.gunMaskPart && !hasMask));
-                const rc = new THREE.Raycaster();
-                rc.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
-                const objects = [armorModel, ...activeModules];
-                const hits = rc.intersectObjects(objects, true);
-                return hits.slice(0, 8).map(h => {
-                    const sec = h.object.userData.armorSection;
-                    return {
-                        sec, name: h.object.name || '?', dist: +h.distance.toFixed(3),
-                        vis: h.object.visible, hidden: !!h.object.userData.configHidden,
-                        parentVis: h.object.parent ? h.object.parent.visible : true,
-                        th: h.object.userData.armorThickness,
-                    };
-                });
-            },
-            // 最后一次点击的对照：真实点击链结果（DOM 文本）vs CPU 逐像素预测
-            probe() {
-                if (!rcLastClick) return { error: '还没有点击记录：先在装甲上点一下目标位置' };
-                const c = renderer.domElement;
-                const rect = c.getBoundingClientRect();
-                const cx = Math.floor((rcLastClick.x - rect.left) / rect.width * c.width);
-                const cy = Math.floor((rcLastClick.y - rect.top) / rect.height * c.height);
-                const infoEl = document.getElementById('traj-info');
-                return {
-                    canvas: [cx, cy],
-                    clickResult: infoEl ? (infoEl.textContent || '').replace(/\s+/g, ' ').slice(0, 400) : '(无 traj-info)',
-                    predict: window.__armorRicochet.predict(cx, c.height - 1 - cy),
-                    state: window.__armorRicochet.info(),
-                };
             },
             // 诊断：克隆网格 matrix vs matrixWorld（坐标框架核对）
             __clones() {
@@ -3878,51 +3801,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             });
 
             // —— 指针交互注册（单一 Pointer Events，桌面+触屏统一；评审 PR BLOCKER 1/2）——
-            // 处理器与状态定义在闭包级（__armorRicochet 钩子之前），这里只做注册（renderer 已就绪）。
+            // 处理器与全部状态定义在闭包级（__armorRicochet 钩子之前），这里只做注册（renderer 已就绪）。
             renderer.domElement.addEventListener('pointerdown', aimPointerHandlers.down);
             renderer.domElement.addEventListener('pointermove', aimPointerHandlers.move);
             renderer.domElement.addEventListener('pointerup', aimPointerHandlers.up);
             renderer.domElement.addEventListener('pointercancel', aimPointerHandlers.cancel);
-
-            let aimStartX = 0, aimStartY = 0, aimStartTurret = 0, aimStartGun = 0;   // 左键拖转炮塔起点（BlitzKit 式）
-            let aiming = false;        // 左键正拖在炮塔/炮管上（期间相机控制禁用）
-            let aimPitchEnabled = true; // 命中炮管才俯仰；命中炮塔壳只转 yaw（BlitzKit enablePitchRotation）
-            /**
-             * 左键按下位置命中哪个瞄准部位（BlitzKit MixerScene 语义：onPointerDown 只挂
-             * 炮塔/炮管组——按炮管 = yaw+俯仰，按炮塔壳 = 只 yaw，按车体/空白 = 相机）。
-             * 命中判定走首个命中 mesh 的名字与父链：装甲板 turret_XX_armor_* / gun_XX_armor_*、
-             * 视觉模型 turret_XX / gun_XX(_mask) 组。
-             * @returns 'gun' | 'turret' | null（null = 车体或空白 → 相机）
-             */
-            function aimPartAt(clientX, clientY) {
-                const rect = renderer.domElement.getBoundingClientRect();
-                mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-                mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-                raycaster.setFromCamera(mouse, camera);
-                const objs = [];
-                if (armorModel) objs.push(armorModel);
-                if (tankModel) objs.push(tankModel);
-                const hits = raycaster.intersectObjects(objs, true);
-                // Raycaster 不查 visible：跳过隐藏链（其它配置的炮塔/炮管/隐藏件），
-                // 以第一条可见命中链判定（视觉上光标压着的部位）
-                for (let h = 0; h < hits.length && h < 8; h++) {
-                    let n = hits[h].object;
-                    let part = null;
-                    let chainVisible = true;
-                    while (n) {
-                        if (n.visible === false) { chainVisible = false; break; }
-                        const name = n.name || '';
-                        if (part === null) {
-                            if (/^gun_\d+/.test(name)) part = 'gun';
-                            else if (/^turret_\d+/.test(name)) part = 'turret';
-                        }
-                        n = n.parent;
-                    }
-                    if (chainVisible) return part;   // 可见命中：turret/gun 或 null（车体）
-                }
-                return null;
-            }
-
+            renderer.domElement.addEventListener('lostpointercapture', aimPointerHandlers.lostCapture);
 
             document.getElementById('turret-controls').style.display = 'block';
 
@@ -4223,6 +4107,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         function doPenetrationCheck(ndcX, ndcY) {
             if (!armorModel) return;
+            judgmentCount++;
             // 代数序号：仅最新一次判定的响应可上屏（滑块拖动会连续触发判定）
             const penSeq = ++__penCheckSeq;
 
@@ -4454,7 +4339,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         const ricIntersects = rc.intersectObjects(objects, true);
                         const ricHits = [];
                         for (const hit of ricIntersects) {
-                            if (hit.distance < RC.MIN_CONTINUATION_T) continue;   // 三路统一常量（click/JS/GLSL；评审 P1b）
+                            // 初始接受阈（评审 P1 三路一致）：t ≤ RC.MIN_CONTINUATION_T 一律滤——与 JS
+                            // 参考 raycastPackAll 的 tMin、GLSL 的 tStart 同一严格口径（不含推进 eps）
+                            if (hit.distance <= RC.MIN_CONTINUATION_T) continue;
                             const entry = classifyHit(hit);
                             if (entry) ricHits.push(entry);
                         }
