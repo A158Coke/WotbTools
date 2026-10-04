@@ -24,7 +24,18 @@ load_target_profile "$TARGET" "$runtime"
 if [[ "$WORKER_PRIVILEGE" == sudo && "$(id -u)" != 0 ]]; then
   sudo -n true >/dev/null 2>&1 \
     || fail "non-interactive (passwordless) sudo is required to verify target $WORKER_TARGET."
-  exec sudo -n env PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
+  # Standalone verification needs only the non-secret desired-state registry
+  # inputs. Credentials are re-proved from root's Docker config and must not be
+  # propagated into this read-only phase.
+  preserve=()
+  for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION; do
+    if [[ -n "${!name:-}" ]]; then preserve+=("$name"); fi
+  done
+  sudo_args=(-n)
+  if (( ${#preserve[@]} > 0 )); then
+    sudo_args+=(--preserve-env="$(IFS=,; echo "${preserve[*]}")")
+  fi
+  exec sudo "${sudo_args[@]}" env PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
     bash "$0" "$@"
 fi
 [[ "$(id -u)" == 0 ]] || fail "Production-worker verification must run as root (target $WORKER_TARGET)."

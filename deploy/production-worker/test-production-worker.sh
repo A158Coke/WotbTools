@@ -733,25 +733,42 @@ pass 'architectural boundary (no Komodo/Caddy/Periphery/WireGuard/workload owner
 
 ## --- P. sudo registry-contract handoff ---------------------------------------
 #
-# Production runs enter install.sh as the non-root SSH account and then re-exec
-# through sudo. Keep this contract structural so CI proves every desired-state
-# registry input crosses that boundary, while unrelated environment variables do
-# not become part of the allowlist.
-install_code="$(cat "$ROOT/install.sh")"
-preserve_loop="$(sed -n '/for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD; do/,/done/p' "$ROOT/install.sh")"
-[[ -n "$preserve_loop" ]] || fail 'install.sh must explicitly allowlist the complete registry contract for sudo'
-for required in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD; do
-  grep -qw "$required" <<< "$preserve_loop" \
-    || fail "sudo registry-contract allowlist is missing $required"
-done
+# Production enters reconcile.sh as the non-root SSH account. That OUTER sudo is
+# the authoritative privilege boundary: if it drops desired-state values,
+# install.sh can never recover them. install.sh keeps the same full contract for
+# standalone use; verify.sh preserves only its three non-secret desired-state
+# inputs because it reads the credential from root's Docker store.
+assert_preserve_contract() {
+  local path="$1" label="$2"; shift 2
+  local code loop required
+  code="$(cat "$path")"
+  loop="$(sed -n '/for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION/,+4p' "$path")"
+  [[ -n "$loop" ]] || fail "$label must explicitly allowlist its sudo registry contract"
+  for required in "$@"; do
+    grep -qw "$required" <<< "$loop" || fail "$label sudo allowlist is missing $required"
+  done
+  grep -q -- '--preserve-env=' <<< "$code" || fail "$label sudo handoff must use --preserve-env"
+}
+
+assert_preserve_contract "$ROOT/reconcile.sh" reconcile.sh \
+  TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD
+assert_preserve_contract "$ROOT/install.sh" install.sh \
+  TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD
+assert_preserve_contract "$ROOT/verify.sh" verify.sh \
+  TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION
+
+reconcile_loop="$(sed -n '/for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION/,+4p' "$ROOT/reconcile.sh")"
+install_loop="$(sed -n '/for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION/,+4p' "$ROOT/install.sh")"
+verify_loop="$(sed -n '/for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION/,+4p' "$ROOT/verify.sh")"
 for forbidden in GITHUB_TOKEN SSH_PRIVATE_KEY WORKER_READY_TOKEN SOURCE_SHA PATH HOME; do
-  if grep -qw "$forbidden" <<< "$preserve_loop"; then
-    fail "sudo registry-contract allowlist must not preserve unrelated input $forbidden"
-  fi
+  ! grep -qw "$forbidden" <<< "$reconcile_loop$install_loop$verify_loop" \
+    || fail "sudo registry-contract allowlists must not preserve unrelated input $forbidden"
 done
-grep -q -- '--preserve-env=' <<< "$install_code" \
-  || fail 'sudo handoff must use an explicit --preserve-env allowlist'
-pass 'sudo handoff preserves the complete registry contract and nothing unrelated'
+for secret in TCR_USERNAME TCR_PASSWORD; do
+  ! grep -qw "$secret" <<< "$verify_loop" \
+    || fail "verify.sh must not preserve secret input $secret"
+done
+pass 'outer reconcile, standalone install and standalone verify sudo contracts are complete'
 
 echo
 echo "Production-worker fixtures: PASS"

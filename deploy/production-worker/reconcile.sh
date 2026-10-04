@@ -37,9 +37,13 @@ if [[ "$WORKER_PRIVILEGE" == sudo && "$(id -u)" != 0 ]]; then
   sudo -n true >/dev/null 2>&1 \
     || fail "non-interactive (passwordless) sudo is required to reconcile target $WORKER_TARGET."
   sudo_args=(-n)
+  # The outer reconcile is the first privilege boundary in production, so it
+  # must hand the complete reviewed registry contract to the root transaction.
+  # install.sh cannot recover values that were already dropped here.
   preserve=()
-  if [[ -n "${TCR_USERNAME:-}" ]]; then preserve+=(TCR_USERNAME); fi
-  if [[ -n "${TCR_PASSWORD:-}" ]]; then preserve+=(TCR_PASSWORD); fi
+  for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD; do
+    if [[ -n "${!name:-}" ]]; then preserve+=("$name"); fi
+  done
   if (( ${#preserve[@]} > 0 )); then
     sudo_args+=(--preserve-env="$(IFS=,; echo "${preserve[*]}")")
   fi
