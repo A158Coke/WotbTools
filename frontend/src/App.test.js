@@ -313,6 +313,24 @@ describe('App routing', () => {
     }
   })
 
+  it('登出（authenticated true→false）收敛到首页：不保留登出前的 view', async () => {
+    authState.authenticatedRef.value = true
+    try {
+      const { wrapper, router } = await mountApp('/?view=profile')
+      expect(router.currentRoute.value.query.view).toBe('profile')
+
+      // 登出：useAuth 把 authenticated 落回 false（local-first，不等网络）
+      authState.authenticatedRef.value = false
+      await settle()
+
+      // Phase 5.3：登出落点固定 HOME——不是保留 ?view=profile
+      expect(router.currentRoute.value.query.view ?? 'home').toBe('home')
+      wrapper.unmount()
+    } finally {
+      authState.authenticatedRef.value = false
+    }
+  })
+
   it('restores Replay capability with Back navigation', async () => {
     const { wrapper, router } = await mountApp('/?view=replay')
     await wrapper.get('[data-testid="ws-tab"]').trigger('click')
