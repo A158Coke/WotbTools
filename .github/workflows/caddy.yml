@@ -235,6 +235,6 @@ jobs:
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
           # K7C dual-instance frontend: both reviewed WireGuard peers are active.
-          CADDY_FRONTEND_UPSTREAM: 10.20.0.3:8081
-          CADDY_FRONTEND_PEER: 10.20.0.1:8081
+          CADDY_FRONTEND_UPSTREAM: 10.20.0.1:8081
+          CADDY_FRONTEND_PEER: 10.20.0.3:8081
           CADDY_KEYCLOAK_UPSTREAM: 10.20.0.1:8080
