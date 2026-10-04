@@ -19,6 +19,13 @@ export const LABEL_PAD_X = 8
 /** Desktop marker visual target; mobile CSS remains smaller. */
 export const MARKER_CORE_PX = 30
 export const HP_BAR_W_PX = 48
+/**
+ * `.pb-hp-hud` 的高度**回退**（无布局环境，例如 jsdom）。
+ *
+ * 真实高度由 `BattlePlayback.vue` 实测 `offsetHeight` 后作为 `hpBoxH` 传入，所以这个
+ * 常量只影响测不到布局时的保守盒；**不要**为了追上 `.pb-hp-hud` 的实际渲染高度而改它——
+ * 它参与 lane 评分，改动会连带碰撞结果（`labelLayout.test.js` 锁住了当前几何）。
+ */
 export const HP_HUD_H_PX = 18
 export const HP_HUD_GAP_PX = 4
 export const RECORDER_BADGE_PX = 7

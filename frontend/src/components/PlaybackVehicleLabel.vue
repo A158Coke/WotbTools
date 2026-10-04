@@ -51,37 +51,45 @@ const classes = computed(() => ({
 
 <template>
   <div class="vehicle-label" :class="classes" data-test="playback-vehicle-label" aria-hidden="true">
-    <div v-if="showHp && hp && !destroyed" class="pb-hp-hud" data-test="pb-hp-hud"
-      :class="{ 'pb-hp-lastknown': hp.state === 'LAST_KNOWN', 'pb-hp-flash': hpFlash, 'pb-hp-no-transition': hpNoTransition, 'pb-hp-full-spawn': hp.state === 'RELATIVE_FULL' }"
-      :title="hpTitle">
-      <div class="hp-values">
-        <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current ?? '—' }}</span>
-        <span class="pb-hp-pct" data-test="pb-hp-pct">{{ hpPct == null ? '—' : `${Math.round(hpPct)}%` }}</span>
-      </div>
-      <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
-        <span class="pb-hp-fill" :class="{ 'pb-hp-fill-unknown': hpFillUnknown }" :style="{ width: hpFillWidth }"></span>
-        <span v-if="ghostWidth != null" class="pb-hp-ghost" :style="{ left: hpGhost.nextPct + '%', width: ghostWidth + '%' }"></span>
-      </span>
-    </div>
     <div v-if="showPlayerName || showTankName" class="pb-labels">
       <span v-if="showPlayerName && playerName" ref="playerLine" class="pb-label-player" data-test="pb-label-player"
         :class="{ 'name-tooltip': nameTooltips }" :title="nameTooltips && playerTruncated ? playerName : undefined">{{ playerName }}</span>
       <span v-if="showTankName" class="pb-label-tank pb-name" data-test="pb-label-tank">{{ tankName }}</span>
     </div>
-    <span v-if="showReload && !destroyed && friendly === true && reload?.length" class="reload-bar" data-test="pb-reload">
-      <span v-for="(shell, index) in reload" :key="index" class="reload-shell" :data-state="shell.state">
-        <span class="reload-fill" :style="{ width: (shell.state === 'full' ? 100 : shell.state === 'loading' ? Math.max(0, Math.min(1, shell.progress)) * 100 : 0) + '%' }"></span>
+    <!-- combat state block：HP（主要）在上、reload（次级瞬时）在下，两者视觉上属于同一块，
+         但与上面的身份两行保持更大的间距。 -->
+    <div class="pb-combat-state">
+      <div v-if="showHp && hp && !destroyed" class="pb-hp-hud" data-test="pb-hp-hud"
+        :class="{ 'pb-hp-lastknown': hp.state === 'LAST_KNOWN', 'pb-hp-flash': hpFlash, 'pb-hp-no-transition': hpNoTransition, 'pb-hp-full-spawn': hp.state === 'RELATIVE_FULL' }"
+        :title="hpTitle">
+        <div class="hp-values">
+          <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current ?? '—' }}</span>
+          <span class="pb-hp-pct" data-test="pb-hp-pct">{{ hpPct == null ? '—' : `${Math.round(hpPct)}%` }}</span>
+        </div>
+        <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
+          <span class="pb-hp-fill" :class="{ 'pb-hp-fill-unknown': hpFillUnknown }" :style="{ width: hpFillWidth }"></span>
+          <span v-if="ghostWidth != null" class="pb-hp-ghost" :style="{ left: hpGhost.nextPct + '%', width: ghostWidth + '%' }"></span>
+        </span>
+      </div>
+      <span v-if="showReload && !destroyed && friendly === true && reload?.length" class="reload-bar" data-test="pb-reload">
+        <span v-for="(shell, index) in reload" :key="index" class="reload-shell" :data-state="shell.state">
+          <span class="reload-fill" :style="{ width: (shell.state === 'full' ? 100 : shell.state === 'loading' ? Math.max(0, Math.min(1, shell.progress)) * 100 : 0) + '%' }"></span>
+        </span>
       </span>
-    </span>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* 层级 contract（从上到下）：玩家昵称 → 车辆昵称 → HP → reload。
+   身份两行先建立"这是谁"，HP 是主要 combat state，reload 是最下方次级瞬时状态。
+   间距刻意克制：两行身份名之间只有行距，身份块 → combat block 是两个 space-1，
+   combat block 内部（HP → reload）回到一个 space-1，让两者读起来像同一块。 */
 .vehicle-label {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-1);
+  gap: calc(var(--space-1) * 2);
   color: var(--color-team-neutral);
   font: var(--type-caption);
   font-weight: 600;
@@ -90,6 +98,7 @@ const classes = computed(() => ({
 }
 .label-friendly { color: var(--pb-team-text, var(--color-team-ally)); }
 .label-enemy { color: var(--pb-enemy-text, var(--color-team-enemy)); }
+.pb-combat-state { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
 .pb-labels { display: flex; flex-direction: column; align-items: center; }
 .pb-label-tank { white-space: nowrap; }
 .pb-label-player { max-width: var(--pb-label-player-width); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -103,15 +112,17 @@ const classes = computed(() => ({
 .pb-hp-hud { display: flex; flex-direction: column; align-items: center; gap: var(--space-0); }
 .hp-values { display: flex; gap: var(--space-1); font-variant-numeric: tabular-nums; }
 .pb-hp-num { color: var(--color-playback-label-text); }
-.pb-hp-bar, .reload-bar { width: var(--pb-label-bar-width); height: var(--space-1); border-radius: var(--radius-full); background: var(--color-playback-label-track); overflow: hidden; }
-.pb-hp-bar { position: relative; }
+/* 两个 indicator 共享的只是"轨道"外观；尺寸各自属于自己（HP 宽 64 厚 4、reload 宽 40 厚 2）。 */
+.pb-hp-bar, .reload-bar { border-radius: var(--radius-full); background: var(--color-playback-label-track); overflow: hidden; }
+.pb-hp-bar { position: relative; width: var(--pb-label-hp-bar-width); height: var(--space-1); }
 .pb-hp-fill, .pb-hp-ghost { position: absolute; inset-block: 0; left: 0; background: currentColor; }
 .pb-hp-fill { transition: width var(--duration-base) linear; }
 .pb-hp-fill-unknown { background: var(--color-playback-label-destroyed); opacity: .5; }
 .pb-hp-ghost { opacity: .55; animation: label-ghost var(--duration-slow) linear forwards; }
 .pb-hp-flash .pb-hp-fill { filter: brightness(1.5); }
 .pb-hp-no-transition .pb-hp-fill { transition: none; }
-.reload-bar { display: flex; gap: calc(var(--space-1) / 2); height: calc(var(--space-1) * 1.5); }
+/* reload 是次级状态：更短、更细。弹夹分段保持，每段仍按 state 区分 full / loading / locked / empty。 */
+.reload-bar { display: flex; width: var(--pb-label-reload-bar-width); height: var(--pb-label-reload-bar-height); gap: calc(var(--space-1) / 2); }
 .reload-shell { flex: 1; background: var(--color-playback-label-track); }
 .reload-shell[data-state="locked"] { background: var(--color-playback-label-locked); }
 .reload-fill { display: block; height: 100%; background: var(--color-playback-label-text); }
