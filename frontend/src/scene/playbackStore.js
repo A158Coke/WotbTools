@@ -6,6 +6,7 @@ export function createPlaybackStore() {
   return reactive({
     // loader 弹层
     filePath: '',
+    playbackSession: null, // Workspace canonical result shared with 2D / Details
     loading: false,
     assetStage: false,   // 进入场景前正在获取地图/地形/地表/场景资产（WotBTools：资产就绪才进场）
     assetProgress: null, // 资产阶段进度 0–1（loadProgress 聚合）；null = 尚未登记任何资产

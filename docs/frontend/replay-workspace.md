@@ -151,6 +151,8 @@ geometry and interaction checks establish layout/state invariants, not GPU/mater
 
 ### 3D Details canonical parity
 
-`Replay3DPane` 在场景就绪后复用 `parseLocalPlayback(file)` 获取 canonical dataset，不要求先打开 2D。场景名册保留 `accountId` / `tankId`；选择动作仍以 3D `eid` 为键，详情按账号匹配 track。查询时间为 `store.time - reloadTelemetry.timeOrigin`，不能用场景 render-grid 的 `startTime` 代替 AI-derived origin。
+`useReplayWorkspace.playbackSession` 是 2D / 3D Playback 解析的唯一 owner，按当前 selection 中的 File 身份复用在途及完成结果；两个 Pane 经显式 prop 消费。首次进入 2D 或启动 3D 时才加载，原始 Playback 只经既有 Worker 入口解析一次，再投影 canonical dataset / overview；共享结果持有 `scenePlayback` 及 canonical 投影，投影带独立 `clock`。3D 场景和 Details 使用同一结果，不在 Pane 中额外解析。切换 renderer、布局、Details 不重跑 parser；换 selection / 工作台销毁撤下在途 Worker，失败允许显式重试。raw Playback 成功但 canonical 失败时，session 保留原始场景数据，2D 显示解析错误，3D 继续基础播放与详情；renderer 切换不会自动重试失败 facts。显式重试复用成功的 raw 数据并更新同一个响应式结果，保留的 3D Details 同步恢复。
 
-共享 `VehicleDetailsPanel` / `V2VehicleInspector` 展示肖像、最后已知位置时间、血量与生命状态、已记录伤害 / 承伤 / 击杀、最近伤害日志、装备 / 物资 / 消耗品及状态。日志标注由两种 renderer 共用 `detailsDamageLogAtV2`，事件时刻未覆盖的攻击者保持来源未知。缺少 canonical 数据、时钟起点或账号匹配时不造 0；仅保留场景已有的基础详情。切换文件 / 卸载使用 generation guard 防止迟到数据和肖像串场。
+场景名册保留 `accountId` / `tankId`；选择动作仍以 3D `eid` 为键，详情按账号匹配 track。查询时间为 `store.time - clock.startRaw`，不能用 render-grid 的 `startTime` 代替 AI-derived origin；rich Details 不以 reload telemetry 是否存在为前提。
+
+共享 `VehicleDetailsPanel` / `V2VehicleInspector` 展示肖像、最后已知位置时间、血量与生命状态、已记录伤害 / 承伤 / 击杀、最近伤害日志、装备 / 物资 / 消耗品及状态。日志标注由两种 renderer 共用 `detailsDamageLogAtV2`，事件时刻未覆盖的攻击者保持来源未知。缺少 canonical 数据、时钟起点或账号匹配时不造 0；仅保留场景已有的基础详情。场景加载代数与肖像 generation guard 防止迟到数据和肖像串场。

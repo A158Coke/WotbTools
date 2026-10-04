@@ -10,7 +10,6 @@
  * 切到别的能力（`active=false`）：场景停帧但不销毁，切回不重新解析、保留 timeline / 相机；
  * 键盘播放快捷键同样只在激活时响应。
  */
-import { parseLocalPlayback } from '../replay-local/playback/index.js'
 import { cumulativeStatsAtV2, healthDisplayAt, lifeAt, positionAtV2, positionCoveredAtV2 } from '../utils/battlePlaybackV2.ts'
 import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -44,6 +43,7 @@ defineOptions({ name: 'Replay3DPane' })
 const props = defineProps({
   /** 工作台派生的目标回放文件；null = 还没选（面板只显示提示，不自己开文件选择器） */
   file: { type: Object, default: null },
+  playbackSession: { type: Object, default: null },
   /** 当前能力是否激活：false 时停帧、停键盘，但不销毁会话 */
   active: { type: Boolean, default: false },
   /** 工作台给出的不可用原因（多文件未选场次等）；非空时不解析 */
@@ -248,25 +248,11 @@ const selectedRow = computed(() => {
     || null
 })
 
-// Canonical details are independently available even when the 2D pane was never opened.
-// The scene owns its raw clock; canonical queries use the AI-derived time origin.
-const detailPlayback = ref(null)
-let detailParseGeneration = 0
-watch([() => props.file, () => store.hasData], async ([file, ready]) => {
-  const generation = ++detailParseGeneration
-  detailPlayback.value = null
-  if (!file || !ready) return
-  try {
-    const result = await parseLocalPlayback(file)
-    if (generation !== detailParseGeneration) return
-    if (result.dataset && Number.isFinite(result.reloadTelemetry?.timeOrigin)) detailPlayback.value = result
-  } catch {
-    // Missing canonical facts remain unavailable; the scene's existing subset still works.
-  }
-}, { immediate: true })
-const detailTime = computed(() => detailPlayback.value
-  ? Math.max(0, store.time - detailPlayback.value.reloadTelemetry.timeOrigin) : store.time)
-const selectedTrack = computed(() => detailPlayback.value?.dataset.vehicles.find(track =>
+// Scene and Details consume the same workspace-owned parse result.
+const detailPlayback = computed(() => store.hasData ? store.playbackSession?.canonical : null)
+const detailTime = computed(() => detailPlayback.value?.clock
+  ? Math.max(0, store.time - detailPlayback.value.clock.startRaw) : store.time)
+const selectedTrack = computed(() => detailPlayback.value?.dataset?.vehicles.find(track =>
   selectedRow.value?.accountId != null && track.accountId === selectedRow.value.accountId) || null)
 const selectedLife = computed(() => selectedTrack.value ? lifeAt(selectedTrack.value, detailTime.value) : null)
 const selLastKnownSec = computed(() => {
@@ -331,7 +317,8 @@ const bannerColor = computed(() => {
  * 解析任务的 session 所有权（P0：replay parser lifecycle is session-owned）：
  * 清空 / 换文件 / 销毁时**真正 abort 在途解析**，不只是丢弃结果——否则旧解析继续占着
  * Worker 队列，极端情况下（Worker 不回包）新文件永远排队、面板卡在「解析中」。
- * signal 经内核的 source 透传给 replaySource 的解析边界；被 abort 的旧加载其错误
+ * 工作台 session 路径由 owner 在 selection 变化 / 工作台销毁时取消共享解析；
+ * 独立场景路径的 signal 经 source 透传给 replaySource；被 abort 的旧加载其错误
  * 由内核的代数 guard 吞掉（新加载已接管归属），不会写成用户可见错误。
  */
 let parseController = null
@@ -348,7 +335,7 @@ async function loadFile(file) {
   parseController = new AbortController()
   lastFile = file
   lastFileName.value = file.name || 'replay'
-  await sceneApi.loadData({ kind: 'local', file, signal: parseController.signal })
+  await sceneApi.loadData({ kind: 'local', file, signal: parseController.signal, session: props.playbackSession })
 }
 
 /** 重试：同一份文件重新解析（失败不清空 selection，用户不必再选一次）；错误态由场景层重写 */
@@ -526,7 +513,6 @@ onMounted(() => {
   window.addEventListener('keydown', onUiToggleKeydown)
 })
 onBeforeUnmount(() => {
-  detailParseGeneration++
   portraitGeneration++
   destroyScene()
   laneBoundsObserver?.disconnect()

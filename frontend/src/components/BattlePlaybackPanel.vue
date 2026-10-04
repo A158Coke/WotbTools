@@ -15,6 +15,7 @@ const BattleMap3D = defineAsyncComponent(() => import('./BattleMap3D.vue'))
 const props = defineProps({
   /** 目标回放文件：本地解析（上游 Rust Core WASM），文件不出本机 */
   file: { type: Object, default: null },
+  playbackSession: { type: Object, default: null },
   active: { type: Boolean, default: false },
   seekTo: { type: Number, default: null },
   /** 工作台给出的不可用原因（如多文件未选场次）；非空时不解析 */
@@ -69,7 +70,9 @@ async function load() {
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
   try {
-    const { dataset, overview, reloadTelemetry: telemetry } = await parseLocalPlayback(file as File)
+    const session = props.playbackSession ? await props.playbackSession.load(file as File) : null
+    if (session && !session.canonical) throw session.canonicalError
+    const { dataset, overview, reloadTelemetry: telemetry } = session ? session.canonical : await parseLocalPlayback(file as File)
     if (seq !== parseSeq) return
     mapPlaybackV2.value = dataset
     reloadTelemetry.value = telemetry
@@ -90,6 +93,7 @@ async function load() {
 }
 
 function retry() {
+  if (props.file) props.playbackSession?.invalidate(props.file)
   parsedFile = null
   load()
 }

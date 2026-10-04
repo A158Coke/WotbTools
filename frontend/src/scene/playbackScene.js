@@ -2433,6 +2433,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     glbCache = new Map();
     DATA = null;
+    store.playbackSession = null;
     // 会话终止 = 不再有任何可用的回放数据：就绪标记必须一起落下，否则新会话加载期间
     // （或 file=null / 被阻断 / 组件卸载之后）HUD 与播放传输仍会按「已就绪」渲染，
     // 而底层 DATA/车辆/贴图已经 dispose。destroy 与 loadData 的替换路径都经过这里。
@@ -2486,10 +2487,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     try {
       // 数据获取在 teardown 之前：新回放解析失败时当前回放保持完好（替换语义 =
       // 新数据就位才拆旧会话）
-      const data = await loadPlaybackData(source);
+      const playbackSession = source?.session ? await source.session.load(source.file) : null;
+      const data = playbackSession ? playbackSession.scenePlayback : await loadPlaybackData(source);
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       DATA = data;
+      store.playbackSession = playbackSession;
       // 资产阶段（地图/地形/地表/场景）内部有多个 await：被取代后必须立刻放弃，
       // 否则旧会话会走完 buildVehicles / buildRoster / setPlaying / tick / writeHud 复活自己。
       const ready = await startPlayback(epoch);
