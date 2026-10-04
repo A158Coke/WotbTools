@@ -9,11 +9,13 @@
  */
 
 import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import BattlePlayback from './BattlePlayback.vue'
+import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import { makeOverview, makePlaybackV2 } from './playbackTestHarness.js'
 import { preloadBattleModels } from '../vehicle-models/runtime.js'
 import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
@@ -300,6 +302,24 @@ function setLife(dataset, accountId, timeSec) {
 let rafCb
 const mountedWrappers = []
 
+beforeEach(async () => {
+  // Preferences have one persistent in-memory owner. Clearing storage alone does not
+  // reset that owner between tests; restore its logical defaults before each mount.
+  const prefs = usePlaybackPreferences()
+  Object.assign(prefs.labelPrefs, { showPlayerName: false, showTankName: true, showReload: true })
+  Object.assign(prefs.hpPrefs, { showHp: true })
+  Object.assign(prefs.trailPrefs, { showTrail: true })
+  Object.assign(prefs.uiPrefs, { showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true })
+  Object.assign(prefs.paneWidths, { rail: null, details: null })
+  prefs.railCollapsed.value = false
+  await nextTick()
+  localStorage.clear()
+})
+
+afterEach(() => {
+  mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
+})
+
 function stubRaf() {
   vi.stubGlobal('requestAnimationFrame', (cb) => {
     rafCb = cb
@@ -517,6 +537,55 @@ describe('BattlePlayback', () => {
     expect(enemy.classes()).not.toContain('pb-destroyed')
   })
 
+})
+
+describe('2D Playback reload telemetry', () => {
+  const telemetry = () => ({
+    timeOrigin: 40,
+    friendlyTeam: 1,
+    vehicles: [
+      { eid: 7, account_id: 1001, team: 1, tank_id: 1 },
+      { eid: 8, account_id: 2001, team: 2, tank_id: 2 },
+    ],
+    reloads: [
+      { eid: 7, clock: 50, phase: 3, duration_s: 8, count: null },
+      { eid: 8, clock: 50, phase: 3, duration_s: 4, count: null },
+    ],
+    reload_effective: [{ eid: 7, clock: 40, duration_s: 4 }],
+    shots: [],
+  })
+  const marker = (wrapper, accountId) => wrapper.findAllComponents({ name: 'VehicleMarker' })
+    .find((component) => component.props('marker').vehicle.accountId === accountId)
+
+  it('passes authoritative friendly reload to labels with canonical time; enemy stays unknown', async () => {
+    const wrapper = mountBattlePlayback({ overview: makeOverview(), playbackV2: makePlaybackV2(), reloadTelemetry: telemetry(), seekTo: 12 })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toEqual([{ state: 'loading', progress: 0.5 }])
+    expect(marker(wrapper, 1001).props('label').showReload).toBe(true)
+    expect(marker(wrapper, 2001).props('marker').reloadShells).toBeNull()
+    await wrapper.setProps({ seekTo: 20 })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toEqual([{ state: 'full', progress: 1 }])
+    await wrapper.setProps({ seekTo: 12 })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toEqual([{ state: 'loading', progress: 0.5 }])
+    // wall-clock time advancing while playback stays paused cannot change gun progress.
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toEqual([{ state: 'loading', progress: 0.5 }])
+  })
+
+  it('missing telemetry and unresolved/ambiguous identity remain hidden', async () => {
+    const wrapper = mountBattlePlayback({ overview: makeOverview(), playbackV2: makePlaybackV2(), seekTo: 12 })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toBeNull()
+    const raw = telemetry()
+    await wrapper.setProps({ reloadTelemetry: { ...raw, friendlyTeam: null } })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toBeNull()
+    await wrapper.setProps({ reloadTelemetry: { ...raw, vehicles: [...raw.vehicles, { eid: 17, account_id: 1001, team: 1, tank_id: 1 }] } })
+    await flushPromises()
+    expect(marker(wrapper, 1001).props('marker').reloadShells).toBeNull()
+  })
 })
 
 
@@ -752,9 +821,9 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     await player.setValue(true)
     expect(wrapper.findAll('.pb-label-player').length).toBe(2)
     expect(wrapper.findAll('.pb-label-player')[0].text()).toBe('You')
-    // 持久化：localStorage 写入
+    // 持久化：localStorage 写入（含新增的 showReload —— 同一份共享偏好里的标签行开关）
     const saved = JSON.parse(localStorage.getItem('wotb.pb.label-prefs'))
-    expect(saved).toEqual({ showPlayerName: true, showTankName: true })
+    expect(saved).toEqual({ showPlayerName: true, showTankName: true, showReload: true })
     // 重新挂载 → 读取持久化值
     const w2 = mountPlayback(makeOverview(), 12)
     await flushPromises()
@@ -781,7 +850,7 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     await flushPromises()
     const a = wrapper.find('[data-test="pb-marker-1001"]')
     const b = wrapper.find('[data-test="pb-marker-2001"]')
-    const labelsStyle = (m) => (m.find('.pb-labels').attributes('style') || '')
+    const labelsStyle = (m) => (m.find('.pb-presentation').attributes('style') || '')
     // 标签位移为有限 screen px（稳定 lane），不产生 display:none
     expect(Number.isFinite(parseFloat(labelsStyle(a).match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || 'NaN'))).toBe(true)
     expect(Number.isFinite(parseFloat(labelsStyle(b).match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || 'NaN'))).toBe(true)
@@ -1432,6 +1501,124 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(scaleOf()).toBeLessThan(fsReserve)
   })
 
+  /**
+   * 需求 1D/1E：名册可见性是**共享呈现偏好**（uiPrefs.showRoster，与 3D 同一个 key），
+   * 手机形态下名册是**临时面**而不是常驻侧边车道。
+   */
+  describe('§roster-visibility-shared：共享可见性偏好 + 手机临时名册', () => {
+    const mountMobile = async () => {
+      stubRaf()
+      stubMatchMedia({ [PLAYBACK_MOBILE_QUERY]: true, '(min-width: 1200px)': false })
+      const wrapper = mountPlayback(makeOverview(), 12)
+      mountedWrappers.push(wrapper)
+      await flushPromises()
+      return wrapper
+    }
+
+    it('手机：名册走统一二级面（不再有第二个常驻入口），点行仍能选中并开详情', async () => {
+      const wrapper = await mountMobile()
+      // 主面只有一个二级入口；没有第二个常驻名册启动器
+      expect(wrapper.find('[data-test="pb-secondary-entry"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="pb-landscape-roster-toggle"]').exists()).toBe(false)
+      // 名册本体默认不在 DOM 里（不是“渲染了但被 CSS 藏起来”）
+      expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(false)
+      // 二级面 → Team 分页 → **真的** PlaybackRoster（不是静态名单）
+      await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-test="pb-rail-team"]').trigger('click')
+      await flushPromises()
+      const roster = wrapper.find('[data-testid="team-panel-roster"]')
+      expect(roster.exists()).toBe(true)
+      // 选中契约：点行 → 选中车辆 → 打开共享详情面
+      const row = roster.find('[data-test="pb-roster-row"]')
+      if (row.exists()) {
+        await row.trigger('click')
+        await flushPromises()
+        expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
+      }
+      // 关闭二级面即还回场景空间
+      await wrapper.find('[data-test="pb-drawer-backdrop"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(false)
+    })
+
+    it('uiPrefs.showRoster=false → 手机名册不呈现；恢复 true 后数据即刻可用且不重建播放', async () => {
+      const wrapper = await mountMobile()
+      const prefs = usePlaybackPreferences()
+      // 先选中一辆车，用于验证隐藏不清选中
+      await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+      await flushPromises()
+      const timeBefore = wrapper.vm.currentTime
+      const selectedBefore = wrapper.find('[data-test="pb-info"]').exists()
+
+      prefs.uiPrefs.showRoster = false
+      await flushPromises()
+      // Team 入口不得存在（否则会点进被隐藏的名册）
+      expect(wrapper.find('[data-test="pb-rail-team"]').exists()).toBe(false)
+      // 只关呈现：播放时间、选中详情、地图视图都不重置
+      expect(wrapper.vm.currentTime).toBe(timeBefore)
+      expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(selectedBefore)
+      expect(wrapper.find('[data-test="pb-map"]').exists()).toBe(true)
+
+      prefs.uiPrefs.showRoster = true
+      await flushPromises()
+      // 恢复后入口立刻回来（数据一直由播放状态持有，不重建）
+      await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="pb-rail-team"]').exists()).toBe(true)
+    })
+
+    it('名册偏好关闭时：正在打开的 Team 分页被收起（不留空的不可用分页）', async () => {
+      const wrapper = await mountMobile()
+      const prefs = usePlaybackPreferences()
+      await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-test="pb-rail-team"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(true)
+      prefs.uiPrefs.showRoster = false
+      await flushPromises()
+      // activePanel 不得停留在一个不可用的 Team 状态上
+      expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="pb-rail-back"]').exists()).toBe(false)
+    })
+
+    it('手机竖屏 → 全屏横屏（390x844 → 844x390）仍是手机形态：紧凑速度档 + 主面不分层退化', async () => {
+      const wrapper = await mountMobile()
+      // 竖屏：速度档渐进披露（只有一个当前值按钮）
+      expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="pb-speed-1"]').exists()).toBe(false)
+      // 旋转到横屏（内宽 844 > 768）：形态必须仍判为手机——否则会突然长回桌面控件网格
+      stubMatchMedia({ [PLAYBACK_MOBILE_QUERY]: true, '(min-width: 1200px)': false })
+      await flushPromises()
+      expect(wrapper.find('[data-test="battle-playback"]').classes()).toContain('pb-form-mobile')
+      expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="pb-secondary-entry"]').exists()).toBe(true)
+      // 手机横屏不得出现常驻侧边名册，也不得有第二个启动器：名册只经统一二级面
+      expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="pb-landscape-roster-toggle"]').exists()).toBe(false)
+    })
+
+    it('手机主面只留 PRIMARY：传输 + 全屏 + 二级入口；渲染器工具移入二级面且仍可达', async () => {
+      const wrapper = await mountMobile()
+      // 常驻主面
+      expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="pb-secondary-entry"]').exists()).toBe(true)
+      // 渲染器专属工具不再常驻主面
+      expect(wrapper.find('[data-test="pb-panels"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="pb-annotation"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="pb-reset"]').exists()).toBe(false)
+      // 但它们没有消失：二级面里可达（功能不丢）。二级面先开抽屉，再进「显示」分页。
+      await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-test="pb-rail-display"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-test="pb-panel-annotation"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="pb-panel-reset"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="pb-show-roster"]').exists()).toBe(true)
+    })
+  })
+
   it('§mobile-fullscreen-contract：手机 fullscreen + landscape（内宽>768）仍保持 mobile mode（bottom-overlay controls、无 rail/details）', async () => {
     stubRaf()
     stubFullscreenApi()
@@ -1461,17 +1648,20 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-side-panel-shell"]').classes()).not.toContain('pb-details-active')
 
-    // §mobile-drawer：☰ 不是 dead action——打开 mobile drawer，能进入 Team/Display/Events
-    await wrapper.find('[data-test="pb-panels"]').trigger('click')
+    // §mobile-drawer：二级面入口不是 dead action——打开 mobile drawer，能进入 Team/Display/Events。
+    // 手机形态下主面用统一的**二级面入口**（pb-secondary-entry）；渲染器专属的 pb-panels
+    // 让位到二级层级（宽档仍在主面原处），这是 2D/3D 收敛后的层级契约。
+    expect(wrapper.find('[data-test="pb-panels"]').exists()).toBe(false)
+    await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
     await flushPromises()
     expect(root.classes()).toContain('pb-drawer-open')
     expect(wrapper.find('[data-test="pb-drawer-backdrop"]').exists()).toBe(true)
     await wrapper.find('[data-test="pb-rail-team"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-team-friendly"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(true)
     await wrapper.find('[data-test="pb-rail-back"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-team-friendly"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(false)
     await wrapper.find('[data-test="pb-drawer-backdrop"]').trigger('click')
     await flushPromises()
     expect(root.classes()).not.toContain('pb-drawer-open')
@@ -1613,11 +1803,13 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     stubFullscreenApi()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // 右侧列存在（对称）；未选车辆时右侧为空壳：无详情、无战局 Summary、无提示
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(true)
+    // 右侧列只在**真的有内容**时才存在：名册关闭、也没选车时它整列不渲染，
+    // 否则空壳会占住「地图列 + 详情列」的第二轨，正方形只能拿到第一轨的宽度
+    // （详见 styles/playback-workspace.css 的 `.pb-details-column`）。
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-panel-content-battle"]').exists()).toBe(false)
-    // 进入 fullscreen + 点击车辆 → 右侧显示详情
+    // 进入 fullscreen + 点击车辆 → 详情就是右侧列本身（全屏下不走浮窗）
     setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
@@ -1688,7 +1880,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await openPanel(wrapper, 'display')
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
-    const labelsStyle = () => wrapper.find('[data-test="pb-marker-1001"]').find('.pb-labels').attributes('style') || ''
+    const labelsStyle = () => wrapper.find('[data-test="pb-marker-1001"]').find('.pb-presentation').attributes('style') || ''
     expect(labelsStyle()).toContain('scale(1)') // 1× 反缩放
     // 2× zoom：wheel 锚点 = 车辆所在容器 px（(96,646)，1× 时内容 (95.75,646.2)）——
     // 避免 zoom 的 pan 把车辆移出 viewport 被裁剪（裁剪是真实机制，但本测试验证的是 zoom 后 collision）
@@ -2475,13 +2667,16 @@ describe('V2 HP regression (restored critical coverage)', () => {
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     await openPanel(wrapper, 'team')
-    const friendly = wrapper.findAll('[data-test="pb-team-friendly"] li')
-    const enemy = wrapper.findAll('[data-test="pb-team-enemy"] li')
-    expect(friendly).toHaveLength(1)      // 仅 You/Maus（friendly roster）
+    // 名册现在由共享的 PlaybackRoster 渲染（二级面的 Team 分页），不再是被替换掉的静态名单
+    const roster = wrapper.find('[data-testid="team-panel-roster"]')
+    expect(roster.exists()).toBe(true)
+    // 按物理队伍分组（Team 1 / Team 2），不是录像者视角的 friendly / enemy
+    const friendly = roster.findAll('.pb-roster-team1 [data-test="pb-roster-row"]')
+    const enemy = roster.findAll('.pb-roster-team2 [data-test="pb-roster-row"]')
+    expect(friendly).toHaveLength(1)      // 仅 You/Maus（Team 1）
     expect(enemy).toHaveLength(2)          // EnemyA/T49 + NeverSeen：后者在 event 流中从无位置，但仍来自 result 名单
     expect(friendly[0].text()).toContain('Maus')
     expect(enemy[0].text()).toContain('T49')
     expect(enemy[1].text()).toContain('NeverSeen')
   })
 })
-

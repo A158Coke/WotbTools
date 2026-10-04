@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
+import BattlePlayback from './BattlePlayback.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 
 vi.mock('vue-i18n', () => ({
@@ -34,7 +35,7 @@ function mountPanel(props = {}) {
       mocks: { $t: key => key },
       stubs: {
         MapOverview: { props: ['overview'], template: '<div class="map-stub" data-test="map-stub">{{ overview.mapCode }}</div>' },
-        BattlePlayback: { props: ['overview', 'playbackV2'], template: '<div data-test="pb-stub">{{ overview.mapCode }}</div>' },
+        BattlePlayback: { props: ['overview', 'playbackV2', 'reloadTelemetry'], template: '<div data-test="pb-stub">{{ overview.mapCode }}</div>' },
         BattleMap3D: true,
         teleport: true,
       },
@@ -82,6 +83,30 @@ describe('BattlePlaybackPanel local playback parse', () => {
     expect(find(wrapper, 'pb-stub').exists()).toBe(true)
     // 没有 overview：地图副视图显式不可用
     expect(find(wrapper, 'map-unavailable').exists()).toBe(true)
+  })
+
+  it('passes Playback reload telemetry to the 2D consumer and discards it on file changes', async () => {
+    const reloadTelemetry = { timeOrigin: 40, friendlyTeam: 1, vehicles: [{ eid: 7, account_id: 42, team: 1 }], reloads: [] }
+    // 两点注意：
+    //  1. BattlePlayback 受 `v-if="pbOverview"` 保护（没有地图副视图就不挂载播放器），
+    //     所以必须给 overview，否则找不到组件；
+    //  2. BattlePlayback.vue 没有 name 选项，`findComponent({ name })` 恒为空
+    //     ——按组件定义查找；stub 也带 data-test="pb-stub" 便于断言已挂载。
+    playback.parseLocalPlayback.mockResolvedValueOnce({
+      dataset: dataset(), overview: { mapCode: 'holland-overview' }, result: {}, reloadTelemetry,
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(find(wrapper, 'pb-stub').exists()).toBe(true)
+    expect(wrapper.findComponent(BattlePlayback).props('reloadTelemetry')).toEqual(reloadTelemetry)
+    playback.parseLocalPlayback.mockResolvedValueOnce({
+      dataset: dataset(), overview: { mapCode: 'holland-overview' }, result: {}, reloadTelemetry: null,
+    })
+    await wrapper.setProps({ file: new File(['b'], 'b.wotbreplay') })
+    await flushPromises()
+    // 换文件必须丢弃上一场的装填遥测（否则会把 A 场的装填画到 B 场上）
+    expect(wrapper.findComponent(BattlePlayback).props('reloadTelemetry')).toBeUndefined()
+    wrapper.unmount()
   })
 
   it('null dataset → explicit UNAVAILABLE without retry; overview still usable in map view', async () => {

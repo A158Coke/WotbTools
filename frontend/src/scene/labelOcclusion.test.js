@@ -2,27 +2,36 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { LABEL_OCCLUDED_OPACITY } from '../utils/labelLayout.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+const overlay = readFileSync(resolve(here, '../components/PlaybackVehicleLabels3D.vue'), 'utf8')
 
 // 场景内核依赖 WebGL，无法直接实例化；此仓已有源码级契约测试的先例，
 // 这里对 PR #411 第二轮 review 的 Blocker 3（标签软遮挡）做接线与不变量守卫。
+//
+// 3D 名牌改为 HTML 覆盖层后，遮挡判定仍在场景侧（它需要 camera 与地形/场景几何），
+// 但**弱化强度归呈现层**：场景只发布 `occluded` 标记，覆盖层加 `.label-occluded`。
+// 因此下限只有一份事实源（utils/labelLayout.js），不再散落在 scene 常量与 CSS 里。
 describe('标签软遮挡（PR #411 Blocker 3）', () => {
-  it('车辆标签材质不再固定半透明①：opacity 由软遮挡常量驱动', () => {
+  it('车辆标签材质不再固定半透明：遮挡标记由场景发布、强度由覆盖层消费', () => {
     // 回归：此前 WotbTools 标签材质仍是 opacity: 0.72（agent 侧已不透明），
     // 且无任何遮挡判定 → 实为 always-visible HUD。
     expect(src).not.toMatch(/opacity: 0\.72/)
-    expect(src).toMatch(/const LABEL_OPACITY = 1;/)
-    expect(src).toMatch(/const LABEL_BLOCKED_OPACITY = 0\.35;/)
+    // 场景只发布标记，不再自带透明度常量
+    expect(src).toMatch(/v\.labelOccluded = blocked;/)
+    expect(src).toMatch(/visible, occluded: v\.labelOccluded,/)
+    expect(src).not.toMatch(/const LABEL_(BLOCKED_)?OPACITY = /)
   })
 
-  it('**永不隐藏**：被挡下限严格大于 0（弱化而非消失）', () => {
-    const m = src.match(/const LABEL_BLOCKED_OPACITY = ([0-9.]+);/)
-    expect(m).toBeTruthy()
-    const blocked = Number(m[1])
-    expect(blocked).toBeGreaterThan(0)
-    expect(blocked).toBeLessThan(1)
+  it('**永不隐藏**：被挡下限严格大于 0（弱化而非消失），且只有一份事实源', () => {
+    expect(LABEL_OCCLUDED_OPACITY).toBeGreaterThan(0)
+    expect(LABEL_OCCLUDED_OPACITY).toBeLessThan(1)
+    // 覆盖层只消费变量，不写死数值（避免同一契约散成两处）
+    expect(overlay).toMatch(/classList\.toggle\('label-occluded', !!anchor\.occluded\)/)
+    expect(overlay).toMatch(/\.label-occluded \{ opacity: var\(--pb-label-occluded-opacity,/)
+    expect(overlay).toMatch(/import \{ LABEL_OCCLUDED_OPACITY \} from '\.\.\/utils\/labelLayout\.js'/)
   })
 
   it('按 camera → 标签锚点做视线检测：地形用高度场步进、场景用 raycast', () => {
@@ -46,10 +55,10 @@ describe('标签软遮挡（PR #411 Blocker 3）', () => {
     expect(src).toMatch(/const v = V\[occlCursor\+\+ % n\];/)
   })
 
-  it('updateLabels 每帧推进遮挡并把结果落到材质透明度', () => {
-    expect(src).toMatch(/function updateLabels\(\) \{\s*updateLabelOcclusion\(\);/)
-    expect(src).toMatch(/const target = v\.labelOccluded \? LABEL_BLOCKED_OPACITY : LABEL_OPACITY;/)
-    expect(src).toMatch(/if \(v\.label\.material\.opacity !== target\) v\.label\.material\.opacity = target;/)
+  it('updateLabels 每帧推进遮挡，并把结果作为 anchor 的 occluded 发布出去', () => {
+    const update = src.slice(src.indexOf('function updateLabels'), src.indexOf('function buildVehicles'))
+    expect(update).toMatch(/updateLabelOcclusion\(\);/)
+    expect(update).toMatch(/visible, occluded: v\.labelOccluded,/)
   })
 
   it('raycast 的 far 在调用后被恢复（不污染其他射线使用点，如点选跟随）', () => {
