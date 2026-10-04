@@ -34,9 +34,7 @@ mount = volumes[0]
 assert mount.get("type") == "bind", f"unexpected mount type: {mount!r}"
 assert mount.get("target") == "/etc/nginx/templates/default.conf.template", f"unexpected mount target: {mount!r}"
 assert pathlib.Path(mount.get("source", "")).resolve() == pathlib.Path(sys.argv[1]).resolve(), f"unexpected mount source: {mount!r}"
-# Compose JSON represents a read-only bind through bind.create_host_path=false
-# plus the mount's read_only flag when present; accept either canonical form.
-assert mount.get("read_only", True) is True, f"frontend template mount must be read-only: {mount!r}"
+assert mount.get("read_only") is True, f"frontend template mount must be read-only: {mount!r}"
 
 # K7B must not accidentally make TX1 host content a TX2 workload dependency.
 rendered = json.dumps(data, sort_keys=True)
