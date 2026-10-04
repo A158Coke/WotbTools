@@ -1,4 +1,5 @@
 import Keycloak from 'keycloak-js'
+import { record, recordLoginStart, recordReturnFacts } from './authDiagnostics.js'
 
 const KEYCLOAK_CONFIG = Object.freeze({
   url: 'https://auth.wotbtools.com',
@@ -29,6 +30,9 @@ export function createBrowserAuthProvider() {
      * `login-recovery`：watchdog 放弃上一代后的重建，不再重复 check-sso bootstrap。
      */
     async init({ mode } = {}) {
+      // 回程取证（2.1.0 Phase 2.5）：整页登录回来后，URL 上的 OIDC 参数存在性是
+      // 「断在哪一跳」的关键事实——放在 adapter init 之前，失败路径也留痕。
+      recordReturnFacts(window.location.search)
       const options = mode === 'login-recovery'
         ? {
             pkceMethod: 'S256',
@@ -57,6 +61,7 @@ export function createBrowserAuthProvider() {
 
     /** 浏览器：redirect 真的会回到本页，redirectUri 由调用方（SPA 自己）决定并保留 view。 */
     login(redirectUri) {
+      recordLoginStart(typeof redirectUri === 'string' ? redirectUri : null)
       return adapter().login({ redirectUri })
     },
 
