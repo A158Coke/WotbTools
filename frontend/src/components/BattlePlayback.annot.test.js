@@ -109,10 +109,15 @@ async function drawStroke(wrapper, points) {
   await flushPromises()
 }
 
+// 注释工具不是 primary transport 的一部分：它挂在 Display 面里（打开即收起 Display）。
 async function openAnnotations(wrapper) {
   if (!wrapper.find('[data-test="pb-annot-toolbar"]').exists()) {
-    await wrapper.find('[data-test="pb-annotation"]').trigger('click')
+    if (!wrapper.find('[data-test="pb-panel-annotation"]').exists()) {
+      await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    }
+    await wrapper.get('[data-test="pb-panel-annotation"]').trigger('click')
   }
+  await flushPromises()
 }
 
 describe('BattlePlayback annotations', () => {
@@ -339,7 +344,8 @@ describe('BattlePlayback annotations', () => {
     await flushPromises()
     setMapLayout(wrapper, 600, 602)
     await openAnnotations(wrapper)
-    await wrapper.find('[data-test="pb-annotation"]').trigger('click')
+    // 工具条的关闭按钮是标注面的唯一出口（工具栏与画笔状态同生共死）。
+    await wrapper.get('[data-test="pb-annot-close"]').trigger('click')
     await flushPromises()
 
     const viewport = wrapper.find('[data-test="pb-viewport"]')

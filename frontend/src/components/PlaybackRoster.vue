@@ -188,7 +188,7 @@ function decorate(row) {
 /* 紧凑密度（横屏侧车道）：信息不减，只收紧留白。行高回到「两行文字 + 2px」，
    正常 7v7 因此不需要车道滚动条。 */
 .pb-roster-compact { gap: var(--space-1); padding: 0; }
-.pb-roster-compact .pb-roster-team { gap: 2px; padding: 2px; }
-.pb-roster-compact .pb-roster-list { gap: 2px; }
-.pb-roster-compact .pb-roster-row { min-height: 0; padding: 1px var(--space-1); }
+.pb-roster-compact .pb-roster-team { gap: 0; padding: 0; }
+.pb-roster-compact .pb-roster-list { gap: 0; }
+.pb-roster-compact .pb-roster-row { min-height: 0; padding: 0 var(--space-1); border-block-width: 0; }
 </style>

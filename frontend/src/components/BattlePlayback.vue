@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { mapBases } from '../data/mapBases'
+import { mapLabel } from '../utils/helpers.js'
 import { mapImages } from '../data/mapImages'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
@@ -15,8 +16,8 @@ import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
-import { PLAYBACK_SPEEDS, isPlaybackSpeed, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
-import { usePointer } from '../composables/useBreakpoint.js'
+import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
+import { isPlaybackSpeed, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
@@ -54,7 +55,6 @@ import { createReloadStateResolver, groupByVehicle, resolveMagazineSize } from '
 import { assetProvider } from '../scene/assetProvider.js'
 import { computeVehicleMarkerSize } from '../utils/vehicleMarkerSizing'
 import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
-import { playbackSafeInsetOwnership } from '../utils/playbackSafeInsets.js'
 import { baseView } from '../utils/baseStatus.js'
 import {
   MARKER_CORE_PX,
@@ -111,7 +111,7 @@ const props = defineProps({
   active: { type: Boolean, default: true },
 })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 /**
  * 呈现元数据（Battle Playback PRIMARY 核心输入）：V2 canonical dataset 为权威源
@@ -267,67 +267,7 @@ const speed = ref(1)
 const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
 
 // Playback presentation preferences have one persistence owner. BattlePlayback only consumes refs.
-const { labelPrefs, hpPrefs, trailPrefs, uiPrefs, paneWidths, railCollapsed } = usePlaybackPreferences()
-
-// 左右两栏宽度可拖拽调整；持久化由 usePlaybackPreferences 负责。
-const RAIL_W_RANGE = { min: 160, max: 420 }
-/**
- * 触屏时 rail 的宽度下限：速度档位一行排开、每个都满足 44px 点击区域（--hit-min）。
- * = 档位数 × 44 + (档位数 − 1) × 3px 间距 + rail 左右 padding 8px × 2；5 档时为 248px。
- * 只在「播放控件真的在 rail 里」时生效（controlsInRail：非 mobile 形态的 fullscreen/宽屏，即视口 >1200 的
- * 触屏大平板）。mobile fullscreen 也有一条 navigation rail，但控件不在里面，宽度继续交给 CSS（148px）。
- */
-const TOUCH_HIT_MIN_PX = 44
-const COARSE_RAIL_MIN_W = PLAYBACK_SPEEDS.length * TOUCH_HIT_MIN_PX + (PLAYBACK_SPEEDS.length - 1) * 3 + 16
-const DEFAULT_RAIL_W = 220 // 与 playback-shared.css 的 --pb-rail-w 默认值一致
-const { coarse: coarsePointer } = usePointer()
-// controlsInRail 定义在下方；computed 惰性求值，setup 结束后才读取
-const coarseControlsRail = computed(() => coarsePointer.value && controlsInRail.value)
-const railWidthRange = computed(() => ({
-  min: coarseControlsRail.value ? Math.max(RAIL_W_RANGE.min, COARSE_RAIL_MIN_W) : RAIL_W_RANGE.min,
-  max: RAIL_W_RANGE.max,
-}))
-/**
- * 实际 rail 宽度：只有可调的控件 rail 才写 inline --pb-rail-w。mobile fullscreen 的 navigation rail
- * 不可拖、宽度由 CSS 决定（148px），持久化的拖拽宽度（可能来自桌面）不得盖掉它。
- * 用户拖过就用拖的值（不低于下限）；没拖过时仅触屏控件 rail 抬到下限，否则交给 CSS。
- */
-const railWidthPx = computed(() => {
-  if (!controlsInRail.value) return null
-  if (paneWidths.rail != null) return Math.max(paneWidths.rail, railWidthRange.value.min)
-  return coarseControlsRail.value ? Math.max(DEFAULT_RAIL_W, railWidthRange.value.min) : null
-})
-const DETAILS_W_RANGE = { min: 240, max: 560 }
-const clampWidth = (value, range) => Math.min(range.max, Math.max(range.min, value))
-
-/** 拖拽改宽：edge 决定按指针换算成哪一侧的宽度。 */
-function startPaneResize(event, pane) {
-  if (event.button != null && event.button !== 0) return
-  event.preventDefault()
-  event.stopPropagation()
-  const target = event.currentTarget
-  if (target && typeof target.setPointerCapture === 'function') {
-    target.setPointerCapture(event.pointerId)
-  }
-  const rootRect = pbRoot.value ? pbRoot.value.getBoundingClientRect() : null
-  if (!rootRect) return
-  const move = (moveEvent) => {
-    const next = pane === 'rail'
-      ? moveEvent.clientX - rootRect.left
-      : rootRect.right - moveEvent.clientX
-    paneWidths[pane] = clampWidth(Math.round(next),
-      pane === 'rail' ? railWidthRange.value : DETAILS_W_RANGE)
-  }
-  const stop = () => {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', stop)
-    window.removeEventListener('pointercancel', stop)
-  }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', stop)
-  window.addEventListener('pointercancel', stop)
-}
-
+const { labelPrefs, hpPrefs, trailPrefs, uiPrefs } = usePlaybackPreferences()
 
 // 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。
 const visibleTrails = computed(() => trailPrefs.showTrail
@@ -534,7 +474,11 @@ const visibleBursts = computed(() => {
 })
 const visibleFeed = computed(() => activeFeed(feedItems.value, nowMs.value, feedShownAt))
 const selectedAccountId = ref(null)
-const activePanel = ref(null)
+const uiHidden = ref(false)
+function setUiHidden(hidden) {
+  uiHidden.value = hidden
+  if (hidden) { displayOpen.value = false; closeAnnotation() }
+}
 // §mobile-panels：移动端/中型宽度没有永久 Left Rail，用 ☰ 打开一个 drawer/sheet 以进入
 // Team / Display / Events / Annotation（避免 dead action）。
 /**
@@ -544,22 +488,16 @@ const activePanel = ref(null)
  * 关掉**只关呈现**：名册数据（teamVehicles）、选中车辆、详情、时间轴、地图视图与相机
  * 全部保留；恢复后立刻可用，不重建播放、不重解析。
  */
-const showRosterPresentation = computed(() => uiPrefs.showRoster !== false)
-/**
- * 名册被隐藏时清理指向不可见内容的**导航状态**（不留空的/不可用的 Team 分页）。
- * 只动 `activePanel`，不碰选中车辆（那是播放状态，与呈现偏好无关）。
- */
-watch(showRosterPresentation, (visible) => {
-  if (!visible && activePanel.value === 'team') activePanel.value = null
-})
-const mobileDrawerOpen = ref(false)
-const railDrawerOpen = computed(() => mobileDrawerOpen.value
-  && (isMobileDevice.value || !(isFullscreen.value || wideLayout.value)))
+const showRosterPresentation = computed(() => !uiHidden.value && uiPrefs.showRoster !== false)
 const annotationOpen = ref(false)
 const mobileOverlay = ref(null)
 /** §details-float：详情浮窗的受保护下界——传输控件。它在不同形态下分别住在左栏或
     地图下方的 overlay 里，这里始终指向「当前真正在渲染的那一处」，避免浮窗盖住拇指操作区。 */
 const transportEl = ref(null)
+const displayOpen = ref(false)
+const displaySection = ref('display')
+const displayAnchor = ref(null)
+function toggleDisplay(anchor) { displayAnchor.value = anchor; displaySection.value = 'display'; displayOpen.value = !displayOpen.value }
 /** 整个战场 workspace（`.pb-main`：Team 1 | Stage | Team 2 + 浮窗）——详情浮窗的定位祖先与
     拖动宿主。浮窗是它的直接子元素，`left/top`、夹紧与拖动在同一个坐标系里算；
     它不是 `.pb-map-stage`（那只是中间一栏，按它算会把浮窗关在 Stage 里）。 */
@@ -584,10 +522,6 @@ const mapStageEl = ref(null)
 // 由 ResizeObserver 更新 → 依赖容器尺寸的 screen-space 布局（markerScreen/labelLayout/
 // hitbox/textInput）在新尺寸下重新计算；无 RO 环境（测试/旧浏览器）回退 clientWidth 读取。
 const mapSize = ref({ w: 0, h: 0 })
-// §side-slots：Map Workspace（stage）的真实尺寸。地图是方的，横屏全屏下它受高度限制，
-// 于是两侧必然各留 (stageW - stageH) / 2 的黑边。够宽时 HUD 与 controls 就搬进这两条
-// 黑边，地图吃满高度；不够宽（含竖屏）则保持上下形态。
-const stageSize = ref({ w: 0, h: 0 })
 let mapResizeObserver = null
 function mapWidth() {
   return mapSize.value.w || (mapEl.value ? mapEl.value.clientWidth : 0)
@@ -611,11 +545,6 @@ function mapRenderRect() {
 // 生命周期与方向锁已抽到 composables/usePlaybackFullscreen.js（与 3D 共用同一套产品语义：
 // 手机形态才锁横屏、锁在全屏成功之后、退出/卸载解锁、平板与桌面绝不请求方向锁）。----
 const pbRoot = ref(null)
-// §3：大桌面（>=1200px）即使不进入 fullscreen，也用持久 rail|map|details 三列布局。
-const wideLayout = ref(false)
-// rail 在 >=1200px 或 fullscreen（且非移动端）出现；控制条跟着 rail 走，否则回落到地图下方。
-// 收起左栏时控件必须搬出去：非触屏设备的 controls 本来渲染在 rail 内，rail 一收起
-// 正文整块 display:none，播放/进度条会跟着消失，只剩一个展开箭头。
 /* §three-forms：PC / tablet / mobile 三套互斥的布局形态，由 JS 判定后写成根类。
    互斥性由「只挂一个类」保证，而不是靠媒体查询之间的算术——旧写法里
    .pb-device-mobile(0,4,0) 会压掉宽度键控的规则(0,3,0)，一档的改动因此
@@ -623,14 +552,12 @@ const wideLayout = ref(false)
      mobile = isMobileDevice（宽 <768，或触屏且高 <=500；见 shared/breakpoints PLAYBACK_MOBILE_QUERY）
      pc     = 非 mobile 且 >=1200
      tablet = 非 mobile 且 <1200（含 iPad / Android 平板；触屏只放大点击区域，不改形态） */
+const wideLayout = ref(false)
 const formFactor = computed(() => {
   if (isMobileDevice.value) return 'mobile'
   return wideLayout.value ? 'pc' : 'tablet'
 })
 
-const controlsInRail = computed(() => (isFullscreen.value || wideLayout.value)
-  && !isMobileDevice.value
-  && !railCollapsed.value)
 // §mobile-contract：设备是否为「移动端」（primary pointer=coarse 且视口 <=1200px）。手机在
 // fullscreen + landscape 时内宽可 >768，因此移动端判定不得只依赖 innerWidth<768；一旦判定为
 // 移动端，无论全屏/横竖屏都保持 mobile playback mode（HUD+Map 为主、bottom overlay controls、
@@ -680,19 +607,13 @@ watch(() => mapEl.value, (el, prev) => {
     })
     mapResizeObserver.observe(el)
     if (mapStageEl.value) mapResizeObserver.observe(mapStageEl.value)
-    // §safe-viewport：观察影响 camera safe area 的真实元素 —— HUD（top inset）与 bottom overlay
-    // controls（bottom inset）。controls 从 Bottom Overlay 搬到 Left Rail 后，bottom overlay 高度归零，
-    // 这里触发 fitViewIfReady → geometry-signature 变化 → 重新 fit，不再残留旧 bottom inset。
-    const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
-    if (hud && hud !== el) mapResizeObserver.observe(hud)
-    // §safeInsets-DOM：观察真实 .pb-mobile-overlay-content（controls 实际高度），而非 inset:0 wrapper；
-    // controls content reflow → RO 触发 fitViewIfReady → safe 几何更新。
-    const overlayContent = mobileOverlay.value?.$el?.querySelector('.pb-mobile-overlay-content')
-    if (overlayContent && overlayContent !== el) mapResizeObserver.observe(overlayContent)
+
   }
 })
 
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
+// Default contain follows geometry; a user camera stays owned by their gestures until Reset View.
+let cameraUserModified = false
 // Actual rendered SVG frame in the shared camera layer. mapSize is updated by
 // the existing ResizeObserver; multiplying both axes by the camera width scale
 // keeps leader-line conversion reactive across resize/fullscreen/zoom changes.
@@ -711,24 +632,6 @@ let suppressClick = false
 // 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
 let gestureMoved = false
 
-/* §side-slots：仅非 mobile 的横屏 fullscreen 才尝试把「不在 rail 内」的 controls 放进
-   地图列左右黑边。Battle HUD 已永久归属顶部，不再参与 side-slot relocation；mobile
-   fullscreen 由 PR #245 的 transient bottom controller 独占，不进入本优化。
-   黑边按实际 map workspace 宽度而不是整个 stage 宽度计算，避免把 tablet Details 列
-   错算成地图 gutter。168px 是竖排 controls 的可用下限。 */
-const SIDE_SLOT_MIN_PX = 168
-const sideSlotWidth = computed(() => {
-  if (!isFullscreen.value || formFactor.value === 'mobile') return 0
-  const mapW = mapSize.value.w || mapWidth()
-  const stageH = stageSize.value.h
-  if (!mapW || !stageH) return 0
-  const gutter = Math.floor((mapW - stageH) / 2)
-  return gutter >= SIDE_SLOT_MIN_PX ? gutter : 0
-})
-const sideSlots = computed(() => sideSlotWidth.value > 0)
-// Map Workspace（stage）尺寸单独观察：sideSlotWidth 依赖它，不能搭在 mapEl 的
-// observer 上——那条挂载要求 mapEl 就绪时 mapStageEl 也已就绪，不成立时 stageSize
-// 会一直停在 0，侧栏形态永远不触发。
 let stageResizeObserver = null
 /**
  * §square-stage：正方形 Stage 的**纵向可用高度**实测值。
@@ -748,94 +651,64 @@ function writeSquareAvailHeight() {
   const transport = transportEl.value
   // 根高度在纵向流里本身就由正方形撑开（自指），所以再用视口高度封顶：
   // 横屏手机 / 全屏下正方形 + HUD + 传输控件必须一屏放下，传输控件不被顶出首屏。
-  const viewportH = Number(window.innerHeight) || Infinity
-  // 正方形之上占用的高度：workspace（.pb-main）相对根的上缘偏移 + 它的上内边距
-  // （非全屏时 HUD 在流里、偏移已含 HUD；手机全屏时 HUD 是浮层、由上内边距让位）。
+  const rootRect = root.getBoundingClientRect()
+  const style = getComputedStyle(root)
+  const viewportH = window.visualViewport?.height || window.innerHeight
+  const pageStyle = getComputedStyle(document.documentElement)
+  const headerH = parseFloat(pageStyle.getPropertyValue('--header-h')) || 0
+  const tabbarH = isFullscreen.value ? 0 : (parseFloat(pageStyle.getPropertyValue('--tabbar-h')) || 0)
+  // Use viewport capacity, never a content-derived root height (which feeds back into Stage).
+  // Scroll changes presentation position, not the workspace capacity.
+  const top = isFullscreen.value ? 0 : headerH
+  const workspaceH = Math.max(1, viewportH - top - tabbarH)
+  root.style.setProperty('--pb-workspace-h', `${workspaceH}px`)
   const main = battlefieldWorkspaceEl.value
-  const above = main
-    ? Math.max(0, main.getBoundingClientRect().top - root.getBoundingClientRect().top)
-      + (parseFloat(getComputedStyle(main).paddingTop) || 0)
-    : (hud ? hud.getBoundingClientRect().height : 0)
-  // 传输控件按整块 overlay 计（含卡片内边距与安全区），与下面写入的 --pb-controls-h 同源。
-  const overlay = transport?.closest?.('.pb-mobile-overlay')
-  const controlsH = overlay ? overlay.getBoundingClientRect().height
-    : (transport ? transport.getBoundingClientRect().height : 0)
-  const budget = Math.min(root.getBoundingClientRect().height, viewportH)
-    - above
-    - controlsH
-  if (budget > 0) root.style.setProperty('--pb-square-avail-h', `${Math.round(budget)}px`)
-  // 传输控件整块（含 overlay 卡片的内边距）的实测高度：横屏手机里中心列在 Stage 下方为它让位。
-  if (controlsH > 0) root.style.setProperty('--pb-controls-h', `${Math.ceil(controlsH)}px`)
-  // 手机全屏：HUD 是顶部浮层，三段式 workspace 从它下缘开始。
-  if (hud) root.style.setProperty('--pb-hud-h', `${Math.ceil(hud.getBoundingClientRect().height)}px`)
+  const above = main ? Math.max(0, main.getBoundingClientRect().top - rootRect.top) : 0
+  const content = transport?.closest?.('.pb-mobile-overlay-content')
+  const controlsH = content?.getBoundingClientRect().height || transport?.getBoundingClientRect().height || 0
+  const gap = parseFloat(style.getPropertyValue('--space-1')) || 4
+  const bottom = parseFloat(style.paddingBottom) || 0
+  const hudH = hud?.getBoundingClientRect().height || 0
+  const budget = Math.max(1, workspaceH - above - hudH - controlsH - gap * 2 - bottom)
+  root.style.setProperty('--pb-square-avail-h', `${Math.floor(budget)}px`)
+  root.style.setProperty('--pb-controls-h', `${Math.ceil(controlsH)}px`)
+  root.style.setProperty('--pb-hud-h', `${Math.ceil(hud?.getBoundingClientRect().height || 0)}px`)
+
 }
 
 watch(() => mapStageEl.value, (el) => {
   if (stageResizeObserver) { stageResizeObserver.disconnect(); stageResizeObserver = null }
   if (!el || typeof ResizeObserver !== 'function') return
-  stageResizeObserver = new ResizeObserver((entries) => {
-    for (const e of entries || []) {
-      if (e && e.target === el) stageSize.value = { w: e.contentRect.width, h: e.contentRect.height }
-    }
-    writeSquareAvailHeight()
-  })
+  stageResizeObserver = new ResizeObserver(writeSquareAvailHeight)
   stageResizeObserver.observe(el)
   if (pbRoot.value) stageResizeObserver.observe(pbRoot.value)
   if (transportEl.value) stageResizeObserver.observe(transportEl.value)
+  const hud = pbRoot.value?.querySelector('.pb-hud')
+  if (hud) stageResizeObserver.observe(hud)
   writeSquareAvailHeight()
 }, { immediate: true })
-watch(transportEl, () => { nextTick(writeSquareAvailHeight) })
+watch(transportEl, (el, previous) => {
+  if (previous && stageResizeObserver) stageResizeObserver.unobserve(previous)
+  if (el && stageResizeObserver) stageResizeObserver.observe(el)
+  nextTick(writeSquareAvailHeight)
+})
 
-// 侧栏形态切换会改变地图可用高度 → 用新几何强制重新 fit。
-watch(sideSlots, () => { nextTick(() => fitViewIfReady(true)) })
-
-/** 安全区：fullscreen battle HUD 永远位于顶部，因此始终按真实 HUD 高度保留 top inset。
- * controls 的 bottom inset 按形态决定：mobile fullscreen 属于 PR #245 的底部 transient
- * controller（显示时按真实 content 高度避让）；PC/tablet 只有 controls 真正在 bottom overlay
- * 时才保留，rail/side-slot 形态不占 bottom。 */
-function safeInsets() {
-  let top = 0
-  let bottom = 0
-  const ownership = playbackSafeInsetOwnership({
-    isFullscreen: isFullscreen.value,
-    formFactor: formFactor.value,
-    sideSlots: sideSlots.value,
-    controlsInRail: controlsInRail.value,
-  })
-  if (ownership.reserveTop) {
-    const hud = pbRoot.value ? pbRoot.value.querySelector('.pb-hud') : null
-    top = hud ? hud.clientHeight : 0
-  }
-  // §safeInsets-DOM：wrapper 是 inset:0，不能把 wrapper.clientHeight 当 controls 高度。
-  // transient controls 显示时按 wrapper bottom → content top 量取完整占用区（含 bottom/safe-area gap）；
-  // hidden 时 contentHeight=0。内容重排由 ResizeObserver 触发重新 fit。
-  if (ownership.reserveBottom) {
-    const wrap = mobileOverlay.value?.$el
-    const content = wrap ? wrap.querySelector('.pb-mobile-overlay-content') : null
-    if (wrap && content && content.clientHeight > 0) {
-      const wrapRect = wrap.getBoundingClientRect()
-      const contentRect = content.getBoundingClientRect()
-      // Reserve the complete occupied bottom zone, including the controller's
-      // bottom offset / safe-area gap, rather than only the card height.
-      bottom = Math.max(0, wrapRect.bottom - contentRect.top)
-    }
-  }
-  return { top, bottom }
-}
-
-function applyView(next) {
+// HUD and Transport live outside Stage; the raster uses the whole square viewport.
+function applyView(next, userGesture = false) {
   // stage = 可见 map-stage；map = rendered map rect。pan bounds / reset fit 都以二者为据。
-  // 地图只在「下 HUD、上 controls」之间的 safe area 内完整显示/平移，不遮挡进 HUD/controls。
+  // HUD 与传输控件在 Stage 外，地图可使用整个正方形。
   const stageW = mapWidth()
   const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safe = safeInsets()
-  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const safeH = Math.max(0, fullH)
   const rect = mapRenderRect()
   // §对称：地图在安全区内垂直居中，顶部/底部黑边完全对称（无向下偏移）。
   const clamped = clampViewPan(next, stageW, safeH, rect.width, rect.height)
+  if (userGesture && (clamped.scale !== view.scale || clamped.tx !== view.tx || clamped.ty !== view.ty)) {
+    cameraUserModified = true
+  }
   view.scale = clamped.scale
   view.tx = clamped.tx
-  view.ty = clamped.ty + safe.top
+  view.ty = clamped.ty
 }
 
 // Raster camera fallback: enlarge the layout box before the browser paints the HD image,
@@ -888,7 +761,7 @@ function onWheel(e) {
   wheelHintVisible.value = false
   const p = screenPoint(e.clientX, e.clientY)
   // 缩放下限 = 完整地图 fit scale：放大后再缩小能回到原始完整视图，不会卡在 1x。
-  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()))
+  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, fitScale()), true)
 }
 
 function pinchInfo() {
@@ -962,7 +835,7 @@ function onPointerMove(e) {
       // 两指中点整体移动 = 屏幕平移（translate 单位为屏幕像素，直接加 client 位移）
       next.tx += mid.x - pinchStart.mid.x
       next.ty += mid.y - pinchStart.mid.y
-      applyView(next)
+      applyView(next, true)
     }
     return
   }
@@ -972,7 +845,7 @@ function onPointerMove(e) {
     if (!panStart.moved && Math.hypot(dx, dy) < PAN_THRESHOLD_PX) return
     panStart.moved = true
     gestureMoved = true
-    applyView({ scale: view.scale, tx: panStart.tx + dx, ty: panStart.ty + dy })
+    applyView({ scale: view.scale, tx: panStart.tx + dx, ty: panStart.ty + dy }, true)
   }
 }
 
@@ -1027,8 +900,7 @@ const FIT_MARGIN = 0.98
 function fitScale() {
   const stageW = mapWidth()
   const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safe = safeInsets()
-  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const safeH = Math.max(0, fullH)
   const rect = mapRenderRect()
   if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
     return Math.min(stageW / rect.width, safeH / rect.height) * FIT_MARGIN
@@ -1037,11 +909,11 @@ function fitScale() {
 }
 
 function resetView() {
-  // Reset View：恢复「完整地图视图」——fit 整张 rendered map 到安全区（下 HUD、上 controls）并居中。
+  cameraUserModified = false
+  // Reset View：恢复整张地图在正方形 Stage 内 contain 居中。
   const stageW = mapWidth()
   const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safe = safeInsets()
-  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const safeH = Math.max(0, fullH)
   const rect = mapRenderRect()
   if (stageW > 0 && safeH > 0 && rect.width > 0 && rect.height > 0) {
     const scale = fitScale()
@@ -1054,22 +926,21 @@ function resetView() {
 }
 
 // §3：默认视图 = 完整地图 contain（fit 居中、完整可见，无需手动调整）。
-// 地图在「下 HUD、上 controls」安全区内，顶部不伸进血条；四周黑边取决于地图与安全区的比例。
+// HUD/Transport 在正方形 Stage 外，地图在整个 Stage 中 contain 居中。
 // §geometry-signature：以 mode + stage/map/safe 尺寸为 signature，变化即重新 fit，
-// 不靠布尔（fitInitialized）锁死旧几何——mode 或 safe area 改变（如 bottom inset 归零）会重新 fit。
+// 不锁住旧几何：mode 或 Stage 尺寸改变时更新默认 contain。
 let lastFitSignature = ''
 function fitViewIfReady(force = false) {
   if (force) lastFitSignature = ''
   const stageW = mapWidth()
   const fullH = mapStageEl.value ? mapStageEl.value.clientHeight : mapHeight()
-  const safe = safeInsets()
-  const safeH = Math.max(0, fullH - safe.top - safe.bottom)
+  const safeH = Math.max(0, fullH)
   const rect = mapRenderRect()
   if (stageW <= 0 || safeH <= 0 || rect.width <= 0 || rect.height <= 0) return
-  const signature = [isFullscreen.value, wideLayout.value, isMobileDevice.value, stageW, safeH, rect.width, rect.height, safe.top, safe.bottom].join('|')
+  const signature = [isFullscreen.value, wideLayout.value, isMobileDevice.value, stageW, safeH, rect.width, rect.height].join('|')
   if (!force && signature === lastFitSignature) return
   lastFitSignature = signature
-  resetView()
+  if (!cameraUserModified) resetView()
 }
 
 // ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
@@ -1130,17 +1001,6 @@ function closeAnnotation() {
   annotationOpen.value = false
   activeTool.value = null
 }
-/* 收起左栏时一并收掉二级面板：否则 .pb-rail-expanded 仍把 --pb-left-col 撑到
-   panel 宽，收起就没有效果。收起/展开都改变列宽 → 用新几何强制重新 fit 一次。 */
-function toggleRailCollapsed() {
-  railCollapsed.value = !railCollapsed.value
-  if (railCollapsed.value) {
-    activePanel.value = null
-    closeAnnotation()
-  }
-  nextTick(() => fitViewIfReady(true))
-}
-
 function undoAnnot() {
   const s = undo(history.value, historyIndex.value)
   history.value = s.history
@@ -1356,6 +1216,7 @@ onMounted(() => {
     }
   }
   window.addEventListener('keydown', onKeydown)
+  window.addEventListener('resize', writeSquareAvailHeight)
 })
 
 function frame(ts) {
@@ -1493,6 +1354,12 @@ const transport = usePlaybackTransport({
 }, { keyboard: false })
 
 function onKeydown(e) {
+  if (!props.active || !lifecycleVisible.value) return
+  if ((e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey && !isInteractiveTarget(e.target)) {
+    e.preventDefault()
+    setUiHidden(!uiHidden.value)
+    return
+  }
   transport.handleKeydown(e)
 }
 
@@ -1528,6 +1395,7 @@ onBeforeUnmount(() => {
   }
   wideLayoutQuery = null
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('resize', writeSquareAvailHeight)
   if (wheelHintTimer != null) clearTimeout(wheelHintTimer)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
@@ -1860,8 +1728,7 @@ const teamVehicles = computed(() => {
 })
 
 /**
- * 审计 BZ-13 / PB-03：PC / 平板双栏的右侧栏在未选中车辆时不再空着，显示两队阵容（含当前存活状态），
- * 点玩家即打开该车详情。手机与窄平板（<860，堆叠形态）由 CSS 隐藏，避免把控制栏推出首屏。
+ * Both physical team rosters use current destruction state from the same authoritative projection.
  */
 const destroyedNow = computed(() => new Set(
   baseVehicleStates.value.filter(st => st.destroyed === true).map(st => st.vehicle.accountId)))
@@ -1881,23 +1748,6 @@ const rosterLanes = computed(() => showRosterPresentation.value && !isPhonePortr
 const inlineStack = computed(() => isPhonePortrait.value)
 const detailsFloating = computed(() => !isPhonePortrait.value)
 /**
- * Stage 右侧那一列（`.pb-side-panel-shell`）**只在真的有东西要放进去时**才渲染。
- *
- * 为什么不能让它作为空壳常驻：形态文件把它写成「地图列 + 详情列」的两轨 grid。没有内容
- * 也照样占住第二轨时，正方形只能拿到**第一轨**的列宽（并因此偏离 Stage 中心）——
- * 实测 1600×900 名册关闭：正方形 720px，左右间隙 147 / 487。布置见
- * `styles/playback-workspace.css` 的 `.pb-details-column`。
- *
- * 三段式（`rosterLanes`）下这一列同样没有内容：详情是 workspace 顶层的浮窗，名册在两侧车道。
- * 手机形态从来没有用过这一列（名册要么在车道、要么在 `.pb-inline-area`；竖屏的 inline 详情
- * 也在 `.pb-inline-area` 里，排在传输控件之后）。
- */
-const rosterInShell = computed(() => formFactor.value !== 'mobile'
-  && showRosterPresentation.value && !rosterLanes.value && !inlineStack.value)
-/** 右侧详情列要渲染吗。**手机形态保留空壳**：它的 Stage 是块级流，空壳既不占轨也不影响
- *  正方形，而「空 shell 不阻挡 pointer」本身是被守卫测试断言过的行为。 */
-const shellInUse = computed(() => formFactor.value === 'mobile' || rosterInShell.value)
-/**
  * 选中与详情可见性是**两个状态**（不是「选中了 ⟺ 详情开着」）：
  *   选车 → selectedAccountId = 车，detailsOpen = true
  *   详情 × → 只有 detailsOpen = false；选中、跟随、时间轴、倍速、名册与地图视图都不动
@@ -1913,7 +1763,6 @@ function openDetails(accountId, side = null) {
   if (side) detailsSide.value = side
   detailsOpen.value = true
   // §右侧 only 车辆详情：不再开左侧 vehicle 二级，详情由 detailsOpen + selectedState 驱动。
-  activePanel.value = null
 }
 /** 屏幕横坐标在战场 workspace 的哪一半 → 浮窗落到另一半。 */
 function sideAwayFromClientX(clientX) {
@@ -1988,7 +1837,6 @@ function closeSidebar() {
 }
 
 function closePanel() {
-  activePanel.value = null
 }
 
 const selLastKnownSec = computed(() => {
@@ -2080,8 +1928,8 @@ const labelLayout = computed(() => {
     }
   }).filter(Boolean)
   return computeLabelLayout(items, {
-    showTank: labelPrefs.showTankName,
-    showPlayer: labelPrefs.showPlayerName,
+    showTank: !uiHidden.value && labelPrefs.showTankName,
+    showPlayer: !uiHidden.value && labelPrefs.showPlayerName,
     viewportW: W,
     viewportH: W * (mapView.value.H / mapView.value.W),
     coreSize,
@@ -2117,9 +1965,9 @@ watch([nowMs, currentTime], () => pruneTransients(nowMs.value))
 function markerLabel(accountId) {
   const l = labelLayout.value.get(accountId)
   return {
-    showPlayer: labelPrefs.showPlayerName,
-    showTank: labelPrefs.showTankName,
-    showReload: labelPrefs.showReload,
+    showPlayer: !uiHidden.value && labelPrefs.showPlayerName,
+    showTank: !uiHidden.value && labelPrefs.showTankName,
+    showReload: !uiHidden.value && labelPrefs.showReload,
     tankDy: l ? l.tankDy : 0,
     blockHidden: l ? l.blockHidden : false,
     hpHidden: l ? l.hpHidden : false,
@@ -2186,12 +2034,14 @@ const basesAt = computed(() => {
     })
 })
 
+watch([uiHidden, () => uiPrefs.showTopbar, () => uiPrefs.showBaseStatus, () => hudBaseStates.value.length], async () => {
+  await nextTick()
+  const hud = pbRoot.value?.querySelector('.pb-hud')
+  if (hud && stageResizeObserver) stageResizeObserver.observe(hud)
+  writeSquareAvailHeight()
+})
+
 const mapStyle = computed(() => ({
-  // 只有用户真的拖过才覆盖；否则保持 CSS 里的响应式默认宽度。
-  ...(railWidthPx.value != null ? { '--pb-rail-w': `${railWidthPx.value}px` } : {}),
-  ...(paneWidths.details != null ? { '--pb-details-w': `${paneWidths.details}px` } : {}),
-  // §side-slots：两侧黑边实宽（0 = 不启用侧栏形态）。
-  ...(sideSlotWidth.value ? { '--pb-slot-w': `${sideSlotWidth.value}px` } : {}),
   '--pb-map-aspect': `${mapView.value.W} / ${mapView.value.H}`,
   // Numeric aspect ratio (W/H) for fullscreen contain sizing (aspect-ratio needs a unit string).
   '--pb-map-ratio': String(mapView.value.W / mapView.value.H),
@@ -2207,216 +2057,23 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-rail-expanded': !!(activePanel || annotationOpen), 'pb-drawer-open': railDrawerOpen, 'pb-rail-collapsed': railCollapsed, 'pb-side-slots': sideSlots, 'pb-controls-bottom': !controlsInRail, 'pb-roster-lanes': rosterLanes, 'pb-details-column': shellInUse, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
+
+
+    <div ref="battlefieldWorkspaceEl" class="pb-main" data-test="pb-main">
     <BattlePlaybackHud
+      v-if="!uiHidden && (uiPrefs.showTopbar || (uiPrefs.showBaseStatus && hudBaseStates.length))"
+      :show-summary="uiPrefs.showTopbar"
+      :map-title="mapLabel(pbOverview.mapCode, locale) || pbOverview.mapCode || ''"
+      :battle-time="formatClock(currentTime)"
       :friendly-hp="friendlyHp"
       :enemy-hp="enemyHp"
       :friendly-points="friendlyPoints"
       :enemy-points="enemyPoints"
-      :base-states="hudBaseStates"
+      :base-states="uiPrefs.showBaseStatus ? hudBaseStates : []"
       :friendly-team="friendlyTeam"
       :hp-no-transition="hpNoTransition"
     />
-
-    <!-- 地图是主视觉；控制条在桌面流式布局，移动端由首次触摸唤起。 -->
-    <!-- §2：Fullscreen Workspace —— Left Rail（fullscreen 下作为左列；普通页面隐藏） -->
-    <!-- §mobile-panels：无永久 rail（mobile/medium）时 ☰ 打开 drawer；backdrop 点击关闭。 -->
-    <div v-if="railDrawerOpen" class="pb-drawer-backdrop" data-test="pb-drawer-backdrop" @click="mobileDrawerOpen = false" />
-    <div class="pb-left-rail" :class="{ 'pb-rail-expanded': !!(activePanel || annotationOpen) }" data-test="pb-left-rail" aria-label="Playback workspace rail">
-      <div
-        class="pb-pane-resizer pb-pane-resizer-rail"
-        data-test="pb-rail-resizer"
-        role="separator"
-        aria-orientation="vertical"
-        :aria-label="$t('recon.map.playback.panel_team')"
-        @pointerdown="startPaneResize($event, 'rail')"
-      />
-      <!-- 收起/展开左栏。收起后本按钮是窄条里唯一剩下的东西，也是唯一的重开入口——
-           所以不能收成 0 宽，否则入口只能放到地图上。 -->
-      <button
-        type="button"
-        class="pb-rail-collapse"
-        data-test="pb-rail-collapse"
-        :title="railCollapsed ? $t('recon.map.playback.rail_expand') : $t('recon.map.playback.rail_collapse')"
-        :aria-label="railCollapsed ? $t('recon.map.playback.rail_expand') : $t('recon.map.playback.rail_collapse')"
-        :aria-expanded="!railCollapsed"
-        aria-controls="pb-left-rail-body"
-        @click="toggleRailCollapsed"
-      ><span class="pb-rail-glyph" aria-hidden="true">{{ railCollapsed ? '»' : '«' }}</span><span class="pb-rail-label">{{ $t('recon.map.playback.rail_collapse') }}</span></button>
-      <div id="pb-left-rail-body" class="pb-rail-body" data-test="pb-rail-body">
-      <!-- §二级菜单：左侧展开对应内容，带返回按钮（不占右侧 details panel） -->
-      <template v-if="annotationOpen">
-        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="closeAnnotation">← {{ $t('recon.map.playback.back') }}</button>
-        <AnnotationToolbar
-          :open="true"
-          :active-tool="activeTool"
-          :annot-colors="ANNOT_COLORS"
-          :annot-color="annotColor"
-          :annot-visible="annotVisible"
-          :annot-width-slider="annotWidthSlider"
-          :annot-width-min="ANNOT_WIDTH_MIN"
-          :annot-width-max="ANNOT_WIDTH_MAX"
-          :history-index="historyIndex"
-          :history="history"
-          :can-undo="canUndo"
-          :can-redo="canRedo"
-          @close="closeAnnotation"
-          @toggle-tool="toggleTool"
-          @set-annot-color="annotColor = $event"
-          @update:annot-width="annotWidthSlider = $event"
-          @undo="undoAnnot"
-          @redo="redoAnnot"
-          @clear-annotations="clearAll"
-          @toggle-annotations="annotVisible = !annotVisible"
-        />
-      </template>
-      <!-- Team / 阵容分页：**唯一的手机名册入口**（二级面内），并且用真正的
-           `PlaybackRoster` 而不是静态名单——静态列表只有名字，没有「点行 → 选中车辆 →
-           打开共享 VehicleDetailsPanel」的交互契约，会直接退化 2D 的选中能力。
-           它同时受共享呈现偏好约束：showRoster=false 时这个入口根本不存在。 -->
-      <template v-else-if="activePanel === 'team' && showRosterPresentation">
-        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
-        <PlaybackRoster
-          class="pb-team-panel-roster"
-          data-test="pb-team-panel-roster"
-          data-testid="team-panel-roster"
-          :teams="teamVehicles"
-          :destroyed="destroyedNow"
-          :health="rosterHealth"
-          :selected-id="selectedAccountId"
-          @select="selectFromRoster"
-        />
-      </template>
-      <template v-else-if="activePanel === 'display'">
-        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
-        <div class="pb-panel-options" data-test="pb-panel-content-display">
-          <label><input data-test="pb-show-player" type="checkbox" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ $t('recon.map.playback.show_player_name') }}</label>
-          <label><input data-test="pb-show-tank" type="checkbox" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ $t('recon.map.playback.show_tank_name') }}</label>
-          <label><input data-test="pb-show-hp" type="checkbox" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ $t('recon.map.playback.show_hp') }}</label>
-          <label><input data-test="pb-show-trail" type="checkbox" :checked="trailPrefs.showTrail" @change="trailPrefs.showTrail = $event.target.checked"> {{ $t('recon.map.playback.show_trail_2s') }}</label>
-          <!-- 名册可见性是**共享呈现偏好**（与 3D 同一个 uiPrefs.showRoster）。隐藏只关呈现：
-               名册数据、选中车辆、跟随目标、时间轴与相机都不重置。 -->
-          <label><input data-test="pb-show-roster" type="checkbox" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ $t('agentReplay.display_roster') }}</label>
-        </div>
-        <!-- 渲染器专属工具（次级层级）：手机形态下主面只留传输 + 全屏 + 二级入口，
-             这些工具移到这里，功能不丢（原来常驻在传输控件行的动作）。
-             字形沿用本文件既有的 .pb-rail-glyph 写法（不引入新图标依赖）。宽档仍在主面原位。 -->
-        <div v-if="isMobileDevice" class="pb-panel-tools" data-test="pb-panel-tools">
-          <p class="pb-panel-tools-title">{{ $t('recon.map.playback.panel_display') }}</p>
-          <button type="button" class="pb-tool-row" data-test="pb-panel-annotation" @click="toggleAnnotation()">
-            <span class="pb-rail-glyph" aria-hidden="true">✎</span> {{ $t('recon.map.playback.annotation') }}
-          </button>
-          <button type="button" class="pb-tool-row" data-test="pb-panel-reset" @click="resetView()">
-            <span class="pb-rail-glyph" aria-hidden="true">⟲</span> {{ $t('recon.map.playback.reset_view') }}
-          </button>
-        </div>
-      </template>
-      <template v-else-if="activePanel === 'events'">
-        <button type="button" class="pb-rail-back" data-test="pb-rail-back" :title="$t('recon.map.playback.back')" :aria-label="$t('recon.map.playback.back')" @click="activePanel = null">← {{ $t('recon.map.playback.back') }}</button>
-        <div class="pb-event-list" data-test="pb-event-panel">
-          <button
-            v-for="(event, index) in userVisibleEvents"
-            :key="`${event.type}-${event.timeSec}-${index}`"
-            type="button"
-            class="pb-event-row"
-            data-test="pb-event"
-            @click="seekToEvent(event.timeSec)"
-          >
-            <span class="pb-event-time">{{ formatClock(event.timeSec) }}</span>
-            <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
-            <span>{{ eventLabel(event) }}</span>
-          </button>
-          <p v-if="userVisibleEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
-        </div>
-      </template>
-      <!-- 一级菜单：播放控制 + 图标导航。rail 宽 --pb-rail-w，放得下速度档位那一排。 -->
-      <template v-else>
-        <PlaybackControls
-          v-if="controlsInRail"
-          :playing="playing"
-          :speed="speed"
-          :current-time="currentTime"
-          :duration="duration"
-          :fullscreen-supported="fullscreenSupported"
-          :is-fullscreen="isFullscreen"
-          :rail-visible="true"
-          :format-clock="formatClock"
-          @toggle-play="togglePlay"
-          @step="step"
-          @set-speed="setSpeed"
-          @reset-view="resetView"
-          @toggle-fullscreen="toggleFullscreen"
-          @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
-          @toggle-annotation="toggleAnnotation()"
-          @drag-start="dragStart"
-          @drag-end="dragEnd"
-          @seek="seek"
-        />
-      <!-- Team / 阵容导航项：名册是呈现偏好的产物，偏好关闭时这个入口不得存在
-           （否则会点进一个空的分页，或者更糟——点到被隐藏的名册数据）。 -->
-      <button
-        v-if="showRosterPresentation"
-        type="button"
-        class="pb-rail-btn"
-        :class="{ active: activePanel === 'team' }"
-        data-test="pb-rail-team"
-        :aria-expanded="activePanel === 'team'"
-        :title="$t('recon.map.playback.panel_team')"
-        :aria-label="$t('recon.map.playback.panel_team')"
-        @click="activePanel = activePanel === 'team' ? null : 'team'"
-      ><span class="pb-rail-glyph">⚖</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_team') }}</span></button>
-      <button
-        type="button"
-        class="pb-rail-btn"
-        :class="{ active: activePanel === 'display' }"
-        data-test="pb-rail-display"
-        :aria-expanded="activePanel === 'display'"
-        :title="$t('recon.map.playback.panel_display')"
-        :aria-label="$t('recon.map.playback.panel_display')"
-        @click="activePanel = activePanel === 'display' ? null : 'display'"
-      ><span class="pb-rail-glyph">⚙</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_display') }}</span></button>
-      <button
-        type="button"
-        class="pb-rail-btn"
-        :class="{ active: activePanel === 'events' }"
-        data-test="pb-rail-events"
-        :aria-expanded="activePanel === 'events'"
-        :title="$t('recon.map.playback.panel_events')"
-        :aria-label="$t('recon.map.playback.panel_events')"
-        @click="activePanel = activePanel === 'events' ? null : 'events'"
-      ><span class="pb-rail-glyph">☰</span><span class="pb-rail-label">{{ $t('recon.map.playback.panel_events') }}</span></button>
-      <button
-        type="button"
-        class="pb-rail-btn"
-        :class="{ active: annotationOpen }"
-        data-test="pb-rail-annotation"
-        :aria-expanded="annotationOpen"
-        :title="$t('recon.map.playback.annotation')"
-        :aria-label="$t('recon.map.playback.annotation')"
-        @click="toggleAnnotation()"
-      ><span class="pb-rail-glyph">✎</span><span class="pb-rail-label">{{ $t('recon.map.playback.annotation') }}</span></button>
-      <button
-        type="button"
-        class="pb-rail-btn"
-        :class="{ active: isFullscreen }"
-        data-test="pb-rail-fullscreen"
-        :title="$t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
-        :aria-label="$t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
-        @click="toggleFullscreen"
-      ><span class="pb-rail-glyph">⛶</span><span class="pb-rail-label">{{ $t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen') }}</span></button>
-      <button
-        type="button"
-        class="pb-rail-btn"
-        data-test="pb-rail-reset"
-        :title="$t('recon.map.playback.reset_view')"
-        :aria-label="$t('recon.map.playback.reset_view')"
-        @click="resetView"
-      ><span class="pb-rail-glyph">↺</span><span class="pb-rail-label">{{ $t('recon.map.playback.reset_view') }}</span></button>
-      </template>
-      </div>
-    </div>
-
-    <div ref="battlefieldWorkspaceEl" class="pb-main" data-test="pb-main">
       <!-- §square-stage 三段式：Team 1 | 正方形 Stage | Team 2。
            两侧车道只在「名册开着 且 非手机竖屏」时存在；关掉名册两侧整体消失，
            Stage 依然居中且保持正方形（绝不被拉宽填满）。 -->
@@ -2445,7 +2102,7 @@ const mapStyle = computed(() => ({
           :selected-account-id="selectedAccountId"
           :marker-label="markerLabel"
           :hp-for="hpFor"
-          :hp-prefs="hpPrefs"
+          :hp-prefs="{ showHp: !uiHidden && hpPrefs.showHp }"
           :translate="t"
           :ghost-for="ghostFor"
           :flash-for="flashFor"
@@ -2469,27 +2126,7 @@ const mapStyle = computed(() => ({
         <!-- 审计 PB-04：未与地图交互时滚轮交给页面，这里短暂提示如何缩放 -->
         <div v-if="wheelHintVisible" class="pb-wheel-hint" role="status" data-test="pb-wheel-hint">{{ t('workspace.map_wheel_hint') }}</div>
 
-        <div v-if="shellInUse" class="pb-side-panel-shell" :class="{ 'pb-details-active': !!detailsState }" data-test="pb-side-panel-shell">
-          <div
-            class="pb-pane-resizer pb-pane-resizer-details"
-            data-test="pb-details-resizer"
-            role="separator"
-            aria-orientation="vertical"
-            @pointerdown="startPaneResize($event, 'details')"
-          />
-          <!-- 常驻名册（窄档 / 竖屏以外的回退位置）：可见性由**共享呈现偏好**
-               uiPrefs.showRoster 独占，与 3D 同一个 key。三段式开着时名册由两侧车道承担，
-               这里不再画第二份。关掉只是不呈现——名册数据、选中车辆、详情、时间轴与
-               地图视图都由播放状态持有，恢复后立刻可用，不重建、不重解析。 -->
-          <PlaybackRoster
-            v-if="rosterInShell"
-            :teams="teamVehicles"
-            :destroyed="destroyedNow"
-            :health="rosterHealth"
-            :selected-id="selectedAccountId"
-            @select="selectFromRoster"
-          />
-        </div>
+
       </div>
 
       <!-- §details-float：详情是**整个战场 workspace（.pb-main）顶层**的可拖动浮窗，不属于
@@ -2497,7 +2134,7 @@ const mapStyle = computed(() => ({
            宿主就是它的定位祖先 `.pb-main`（同一个坐标系）；位置/边界/初始落位由
            usePlaybackDetailsPlacement 独占（含「不得盖住传输控件」的保护边界）。 -->
       <VehicleDetailsPanel
-        v-if="detailsFloating && detailsState"
+        v-if="!uiHidden && detailsFloating && detailsState"
         presentation="floating"
         :phone-form="false"
         :selected-state="detailsState"
@@ -2519,31 +2156,28 @@ const mapStyle = computed(() => ({
         <PlaybackRoster :teams="{ team2: teamVehicles.team2 }" :destroyed="destroyedNow" :health="rosterHealth" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
 
-      <PlaybackMobileOverlay ref="mobileOverlay" :paused="!playing">
+      <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing">
         <div ref="transportEl" class="pb-transport-slot" data-test="pb-transport-slot">
         <PlaybackControls
-          v-if="!controlsInRail"
           :playing="playing"
           :speed="speed"
           :current-time="currentTime"
           :duration="duration"
           :fullscreen-supported="fullscreenSupported"
           :is-fullscreen="isFullscreen"
+          :display-open="displayOpen"
           :format-clock="formatClock"
           @toggle-play="togglePlay"
           @step="step"
           @set-speed="setSpeed"
-          @reset-view="resetView"
           @toggle-fullscreen="toggleFullscreen"
-          @toggle-panels="mobileDrawerOpen = !mobileDrawerOpen"
-          @toggle-annotation="toggleAnnotation()"
+          @toggle-panels="toggleDisplay"
           @drag-start="dragStart"
           @drag-end="dragEnd"
           @seek="seek"
         />
-        <!-- 移动端（rail 隐藏）标注工具栏：和 controls 一样排在地图下方的流内容器里。
-             以前它是 .pb-map-stage 里 bottom 锚定的 absolute 浮层，展开时向上长、挡住地图。 -->
-        <div v-if="annotationOpen && !(isFullscreen || wideLayout)" class="pb-annotation-surface">
+        <!-- One annotation toolbar in the transport flow in every form. -->
+        <div v-if="annotationOpen" class="pb-annotation-surface">
           <AnnotationToolbar
             :open="annotationOpen"
             :active-tool="activeTool"
@@ -2570,10 +2204,62 @@ const mapStyle = computed(() => ({
         </div>
       </PlaybackMobileOverlay>
 
+      <PlaybackDisplaySurface :open="displayOpen && !uiHidden" :portrait="inlineStack" :anchor="displayAnchor" :host="battlefieldWorkspaceEl" @close="displayOpen = false">
+        <template v-if="displaySection === 'events'">
+          <button type="button" class="pb-tool-row pb-display-close" data-test="pb-events-back" @click="displaySection = 'display'">{{ $t('recon.map.playback.back') }}</button>
+          <div class="pb-event-list" data-test="pb-event-panel">
+          <button
+            v-for="(event, index) in userVisibleEvents"
+            :key="`${event.type}-${event.timeSec}-${index}`"
+            type="button"
+            class="pb-event-row"
+            data-test="pb-event"
+            @click="seekToEvent(event.timeSec)"
+          >
+            <span class="pb-event-time">{{ formatClock(event.timeSec) }}</span>
+            <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
+            <span>{{ eventLabel(event) }}</span>
+          </button>
+          <p v-if="userVisibleEvents.length === 0" class="pb-event-empty">{{ $t('recon.map.playback.no_events') }}</p>
+        </div>
+
+        </template>
+        <template v-else>
+        <button type="button" class="pb-tool-row pb-display-close" data-testid="display-close" @click="displayOpen = false">{{ $t('app.close') }}</button>
+        <p class="pb-display-heading">{{ $t('agentReplay.display_battlefield') }}</p>
+        <div class="pb-panel-options" data-test="pb-panel-content-display">
+          <label><input data-test="pb-show-hud" type="checkbox" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ $t('agentReplay.display_topbar') }}</label>
+          <label><input data-test="pb-show-base" type="checkbox" :checked="uiPrefs.showBaseStatus" @change="uiPrefs.showBaseStatus = $event.target.checked"> {{ $t('agentReplay.display_base') }}</label>
+          <label><input data-test="pb-show-killfeed" type="checkbox" :checked="uiPrefs.showKillfeed" @change="uiPrefs.showKillfeed = $event.target.checked"> {{ $t('agentReplay.display_killfeed') }}</label>
+          <label><input data-test="pb-show-roster" type="checkbox" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ $t('agentReplay.display_roster') }}</label>
+        </div>
+        <p class="pb-display-heading">{{ $t('agentReplay.display_labels') }}</p>
+        <div class="pb-panel-options">
+          <label><input data-test="pb-show-player" type="checkbox" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ $t('recon.map.playback.show_player_name') }}</label>
+          <label><input data-test="pb-show-tank" type="checkbox" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ $t('recon.map.playback.show_tank_name') }}</label>
+          <label><input data-test="pb-show-hp" type="checkbox" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ $t('recon.map.playback.show_hp') }}</label>
+          <label><input data-test="pb-show-trail" type="checkbox" :checked="trailPrefs.showTrail" @change="trailPrefs.showTrail = $event.target.checked"> {{ $t('recon.map.playback.show_trail_2s') }}</label>
+          <label><input data-test="pb-show-reload" type="checkbox" :checked="labelPrefs.showReload" @change="labelPrefs.showReload = $event.target.checked"> {{ $t('agentReplay.display_reload') }}</label>
+        </div>
+        <div class="pb-panel-tools" data-test="pb-panel-tools">
+          <button type="button" class="pb-tool-row" data-test="pb-panel-annotation" @click="toggleAnnotation(); displayOpen = false">
+            <span aria-hidden="true">✎</span> {{ $t('recon.map.playback.annotation') }}
+          </button>
+          <button type="button" class="pb-tool-row" data-test="pb-panel-reset" @click="resetView()">
+            <span aria-hidden="true">⟲</span> {{ $t('recon.map.playback.reset_view') }}
+          </button>
+          <button type="button" class="pb-tool-row" data-test="pb-panel-events" @click="displaySection = 'events'">{{ $t('recon.map.playback.panel_events') }}</button>
+          <button type="button" class="pb-tool-row" data-test="pb-hide-all-ui" @click="setUiHidden(true)">{{ $t('agentReplay.hide_all_ui') }}</button>
+        </div>
+        </template>
+      </PlaybackDisplaySurface>
+
+      <button v-if="uiHidden" type="button" class="pb-ui-restore" data-test="pb-show-all-ui" :title="$t('agentReplay.show_all_ui_hint')" @click="setUiHidden(false)">{{ $t('agentReplay.show_all_ui') }}</button>
+
       <!-- §square-stage 手机竖屏纵向流：传输控件之后是详情（inline）与 Team 1 / Team 2。
            竖屏利用的是**纵向**空间，所以这一段就是普通流内容，跟着页面滚，不设高度上限。
            详情与名册各自独立：名册关掉时详情照样可以开着，反之亦然。 -->
-      <div v-if="inlineStack && (detailsState || showRosterPresentation)" class="pb-inline-area" data-test="pb-inline-area">
+      <div v-if="!uiHidden && inlineStack && (detailsState || showRosterPresentation)" class="pb-inline-area" data-test="pb-inline-area">
         <!-- 竖屏的详情：同一个组件、同一份 props，只是换成流内呈现（没有拖动柄）。 -->
         <VehicleDetailsPanel
           v-if="detailsState"
@@ -2602,7 +2288,7 @@ const mapStyle = computed(() => ({
       <!-- 手机名册没有「打开名册」这种独立开关：竖屏在上面的纵向流里，横屏 / 全屏横屏在
            Team 1 | Stage | Team 2 两侧车道里；唯一的呈现偏好是 uiPrefs.showRoster。 -->
 
-      <div v-if="visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
+      <div v-if="!uiHidden && uiPrefs.showKillfeed && visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
         <div v-for="feed in visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimPlayerName ? feed.victimPlayerName + '（' + feed.victimName + '）' : feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>
       </div>
     </div>
@@ -2610,6 +2296,28 @@ const mapStyle = computed(() => ({
 </template>
 
 <style scoped>
+/* Display 面的内容外观；位置与边界归 PlaybackDisplaySurface。 */
+.pb-display-heading { margin: var(--space-1) 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
+.pb-tool-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  min-block-size: var(--hit-min);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+.pb-display-close { inline-size: auto; align-self: flex-end; color: var(--color-text-secondary); }
+.pb-panel-tools { display: grid; gap: var(--space-1); }
+.pb-ui-restore { position: absolute; inset-block-start: var(--space-2); inset-inline-end: var(--space-2); z-index: var(--pb-z-modal); min-block-size: var(--hit-min); padding: var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); font: var(--type-caption); }
+
 .pb-wheel-hint {
   position: absolute;
   top: 50%;
