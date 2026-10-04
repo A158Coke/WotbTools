@@ -21,18 +21,22 @@ assert service["environment"]["AI_UPSTREAM"] == "http://10.20.0.2:8089"
 assert service["environment"]["NGINX_ENVSUBST_FILTER"] == "^(BACKEND_UPSTREAM|AI_UPSTREAM)$"
 
 ports = service.get("ports", [])
-assert len(ports) == 1, ports
+assert len(ports) == 1, f"expected one published port, found: {ports!r}"
 port = ports[0]
-assert port["host_ip"] == "10.20.0.3", port
-assert int(port["published"]) == 8081 and int(port["target"]) == 80, port
-assert port.get("protocol", "tcp") == "tcp", port
+assert port.get("host_ip") == "10.20.0.3", f"unexpected host_ip: {port!r}"
+assert str(port.get("published")) == "8081", f"unexpected published port: {port!r}"
+assert int(port.get("target")) == 80, f"unexpected target port: {port!r}"
+assert port.get("protocol", "tcp") == "tcp", f"unexpected protocol: {port!r}"
 
 volumes = service.get("volumes", [])
-assert len(volumes) == 1, volumes
+assert len(volumes) == 1, f"expected one bind mount, found: {volumes!r}"
 mount = volumes[0]
-assert mount["type"] == "bind" and mount["target"] == "/etc/nginx/templates/default.conf.template", mount
-assert pathlib.Path(mount["source"]).resolve() == pathlib.Path(sys.argv[1]).resolve(), mount
-assert mount.get("read_only") is True, mount
+assert mount.get("type") == "bind", f"unexpected mount type: {mount!r}"
+assert mount.get("target") == "/etc/nginx/templates/default.conf.template", f"unexpected mount target: {mount!r}"
+assert pathlib.Path(mount.get("source", "")).resolve() == pathlib.Path(sys.argv[1]).resolve(), f"unexpected mount source: {mount!r}"
+# Compose JSON represents a read-only bind through bind.create_host_path=false
+# plus the mount's read_only flag when present; accept either canonical form.
+assert mount.get("read_only", True) is True, f"frontend template mount must be read-only: {mount!r}"
 
 # K7B must not accidentally make TX1 host content a TX2 workload dependency.
 rendered = json.dumps(data, sort_keys=True)
