@@ -327,7 +327,7 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
           'fitted mobile map viewport must not sit underneath visible bottom controls'
             + ' (viewport=' + JSON.stringify(viewportRect) + ' controls=' + JSON.stringify(overlayRect) + ' stage=' + JSON.stringify(stageRect) + ')')
         require(getComputedStyle(root.querySelector('.pb-mobile-overlay')).width !== getComputedStyle(root).getPropertyValue('--pb-slot-w').trim(),
-          'mobile controller must not become a permanent side-slot rail')
+          'mobile controller must not become a permanent side-slot rail (the side-slot contract is gone, so this must always hold)')
       }
     }
 
