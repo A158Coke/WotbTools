@@ -120,6 +120,25 @@ realm 的 `login_theme=wotbtools` 覆盖了登录与 first-broker-login 页面�
 版本与本仓部署是否一致：`Failed to verify login action` 若集中在主题表单 POST 上，
 而 A 类证据不足，优先排查主题模板里的 action URL / cookie 相关改动历史。
 
+## 3bis. 实测取证结论（2026-10-04，72h 窗口）
+
+经 TX 主机 WireGuard 直连生产 Loki（`{container_name="keycloak"}`）取得，全部为只读查询：
+
+| 观察 | 数值 | 结论 |
+|---|---|---|
+| `cookie_not_found` 总数 | 234（72h，96 个 IP） | 主 P0 信号 |
+| 与 Keycloak 启动相距 >10 分钟的占比 | **226 / 232** | **部署 / 重启丢会话假设排除**（且会话本就在 PostgreSQL 里，重启不丢） |
+| `Failed to verify login action` | 25，全部在 ±10s 内伴随 `cookie_not_found` | **B 确认是 A 的下游症状**（分类法成立） |
+| `cookie_not_found` 事件的 `identityProvider` 字段 | **全部缺失** | 回调时读不到会话，本就无从判定 IdP——与"cookie 没送到"一致 |
+| 腾讯云机房段事件 | 83 条 / 42 IP，典型形态"同一秒 8–10 个不同 IP 齐打" | **扫描器噪音**（Phase 12 面板已按此分流） |
+| 住宅 / 移动网段事件 | 151 条 / 54 IP（如 223.104.x 中国移动、182.240.x），同一 IP 反复失败（36 次 / 19 次） | **真实用户**，本轮 P0 的实际受害面 |
+| 成功事件 | `org.keycloak.events` 72h 内**只有 WARN** | 日志口径下**算不出成功率**；成功率只能靠 SPA 侧 `[auth-diag]` + 会话创建计数补齐 |
+
+由此把根因收窄为：**QQ 回调请求没有携带（或无效）AUTH_SESSION_ID 会话 cookie**（Keycloak 只在
+这种情况下打 `cookie_not_found`；"会话不存在"是另一类错误），且受影响面是移动端用户而非机房扫描器。
+下一步判别（"cookie 从未产生" vs "产生了但没被带回"）依赖 §3.4 已上线的 broker 访问日志（UA +
+状态码）与受影响用户的复现——两者都不需要再改动服务端配置。
+
 ## 4. 修复边界（取证证实后）
 
 允许落点：Keycloak hostname/proxy 参数、Caddy 头链、cookie 属性（经由升级路径）、
