@@ -118,13 +118,14 @@ const fillHeight = computed(() => props.compact === true)
  *
  * 取 26px 而不是触控尺寸：短横屏（740×360）整个 workspace 只有 ~256px，7 行 × 44px
  * 直接就溢出去顶开传输控件了。行仍带 `min-height: var(--hit-min)` 之外的可点区域由整行
- * 承担，这里只保证文字不互相压住。高视口下 1fr 会把行拉得很开（这才是均匀分布的目标）。
+ * 承担。触屏宽度低于 1200px 时 CSS 将下限提升到 64px，短横屏列表内部滚动，
+ * 保证身份与血条可读；高视口下 1fr 均匀铺满。
  */
 const ROSTER_ROW_MIN_PX = 26
 
 /** 每个分组的列表轨道：N 行 × minmax(下限, 1fr)。 */
 function listRows(rowCount) {
-  return `repeat(${Math.max(1, rowCount)}, minmax(${ROSTER_ROW_MIN_PX}px, 1fr))`
+  return `repeat(${Math.max(1, rowCount)}, minmax(var(--roster-row-min, ${ROSTER_ROW_MIN_PX}px), 1fr))`
 }
 </script>
 
@@ -354,4 +355,8 @@ function listRows(rowCount) {
 .pb-roster-compact .pb-roster-team { gap: 0; padding: 0; }
 .pb-roster-compact .pb-roster-list { gap: 0; }
 .pb-roster-compact .pb-roster-row { min-height: 0; padding: 0 var(--space-1); border-block-width: 0; }
+@media (width < 1200px) and (pointer: coarse) {
+  .pb-roster { --roster-row-min: calc(var(--space-4) * 4); }
+  .pb-roster.pb-roster-fill .pb-roster-list { overflow-y: auto; }
+}
 </style>

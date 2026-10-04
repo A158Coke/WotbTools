@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
@@ -648,6 +649,7 @@ function rosterGeometryProbe() {
   if (!root) return out
   const rr = root.getBoundingClientRect()
   const transient = false
+  const mobileRosterScroll = matchMedia('(width < 1200px) and (pointer: coarse)').matches
   out.portrait = root.classList.contains('portrait-flow')
   out.side = root.classList.contains('roster-side')
   out.viewport = { width: innerWidth, height: innerHeight }
@@ -790,7 +792,7 @@ function rosterGeometryProbe() {
       if (Math.abs(rb.width - bb.width) > 1) out.errors.push(`roster reload must span the HP bar width: ${JSON.stringify({ hp: bb.width, reload: rb.width })}`)
       if (!(rb.height < bb.height - 1)) out.errors.push(`roster reload must be thinner than the HP bar: ${JSON.stringify({ hp: bb.height, reload: rb.height })}`)
     }
-    if (!transient) {
+    if (!transient && !mobileRosterScroll) {
       const r = row.getBoundingClientRect()
       const group = row.closest('.team').getBoundingClientRect()
       if (r.top < group.top - 0.5 || r.bottom > group.bottom + 0.5
@@ -839,7 +841,15 @@ function rosterGeometryProbe() {
   for (const element of root.querySelectorAll('.team, .team-lane, .roster')) {
     const style = getComputedStyle(element)
     if (['auto', 'scroll'].includes(style.overflowY) && element.scrollHeight > element.clientHeight + 1) {
-      out.errors.push(`independent/nested roster scroll: ${element.className}`)
+      if (!(mobileRosterScroll && element.classList.contains('pb-roster-list'))) out.errors.push(`independent/nested roster scroll: ${element.className}`)
+      else {
+        const previous = element.scrollTop
+        element.scrollTop = element.scrollHeight
+        const last = element.lastElementChild.getBoundingClientRect()
+        const bounds = element.getBoundingClientRect()
+        if (last.bottom > bounds.bottom + 1 || last.top < bounds.top - 1) out.errors.push('last mobile roster row cannot be reached by scrolling')
+        element.scrollTop = previous
+      }
     }
   }
   if (!transient) {
@@ -1197,6 +1207,7 @@ async function runRosterGeometryScenario(env, scenario) {
     }
   }
 
+  await captureMobileReview(page, scenario)
   const geometry = await page.probe(rosterGeometryProbe)
   check(failures, geometry.root, 'pb-root missing')
   check(failures, geometry.viewport.width === viewport.width && geometry.viewport.height === viewport.height,
@@ -1411,6 +1422,7 @@ async function runRosterGeometryScenario(env, scenario) {
   check(failures, clicked(displayToggle), `display toggle not clickable: ${displayToggle}`)
   if (clicked(displayToggle)) {
     await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]:not([hidden])'), { label: 'display panel opens' })
+    await captureMobileReview(page, scenario, 'display')
     const panel = await page.probe(displayPanelProbe)
     check(failures, panel.errors.length === 0, `display panel violations: ${panel.errors.join('; ')}`)
 
@@ -2356,7 +2368,7 @@ async function setRosterVisible(page, visible) {
  *
  * 必须在竖屏分支 return 之前调用：竖屏场景不走三段式断言。
  */
-async function checkDisplaySurface(page, failures, layout) {
+async function checkDisplaySurface(page, failures, layout, scenario) {
   const anchorFocused = await page.evaluate(`(() => {
     const gear = document.querySelector('[data-test="pb-secondary-entry"]')
     gear?.focus()
@@ -2364,6 +2376,7 @@ async function checkDisplaySurface(page, failures, layout) {
   })()`)
   await page.evaluate(`document.querySelector('[data-test="pb-secondary-entry"]')?.click()`)
   await delay(200)
+  await captureMobileReview(page, scenario, 'display')
   const display = await page.evaluate(`(() => {
     const panel = document.querySelector('[data-testid="display-panel"]')
     if (!panel) return null
@@ -2462,6 +2475,7 @@ async function runWorkspace2DScenario(env, scenario) {
     await delay(400)
   }
 
+  await captureMobileReview(page, scenario)
   const g = await page.probe(workspace2dProbe)
   const result = () => results.push({ name: scenario.name, failures, viewport })
   check(failures, g.width === scenario.width && g.height === scenario.height,
@@ -2513,7 +2527,7 @@ async function runWorkspace2DScenario(env, scenario) {
     const closed = await page.probe(workspace2dProbe)
     check(failures, closed.detailsCount === 0, 'details × must close the panel')
     check(failures, JSON.stringify(closed.selectedIds) === '[2002]', `details × must keep the selection: ${JSON.stringify(closed.selectedIds)}`)
-    await checkDisplaySurface(page, failures, scenario.layout)
+    await checkDisplaySurface(page, failures, scenario.layout, scenario)
     await env.chrome.client.send('Target.closeTarget', { targetId })
     return result()
   }
@@ -2611,11 +2625,29 @@ async function runWorkspace2DScenario(env, scenario) {
   }
 
   // ---- Display 面开合：始终可从 gear 到达，且不把用户丢到首屏之外 ----
-  await checkDisplaySurface(page, failures, scenario.layout)
+  await checkDisplaySurface(page, failures, scenario.layout, scenario)
 
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   result()
+}
+
+async function captureMobileReview(page, scenario, state = 'battlefield') {
+  const output = process.env.WOTB_MOBILE_REVIEW_DIR
+  if (!output || scenario.width >= 900) return
+  await mkdir(output, { recursive: true })
+  const previousScroll = await page.evaluate(`(() => {
+    const previous = { x: scrollX, y: scrollY }
+    const root = document.querySelector('.pb-root, .battle-playback')
+    const header = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--header-h')) || 0
+    if (root && !document.fullscreenElement) scrollTo(0, root.getBoundingClientRect().top + scrollY - header)
+    return previous
+  })()`)
+  await delay(100)
+  const { data } = await page.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, page.sessionId)
+  await writeFile(resolve(output, `${scenario.name}-${state}.png`), Buffer.from(data, 'base64'))
+  await page.evaluate(`scrollTo(${previousScroll.x}, ${previousScroll.y})`)
+  await delay(100)
 }
 
 /* ------------------------------------------------------------------ main */
@@ -2647,7 +2679,9 @@ try {
   ]
   // 可选场景名过滤（调试单个形态时不必跑满矩阵）。
   const nameFilter = process.argv.slice(2).find((arg) => !arg.startsWith('-'))
-  const selected = nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs
+  const selected = process.argv.includes('--mobile-visual')
+    ? runs.filter(({ scenario }) => scenario.width < 900 && /^(roster-geometry|ws2d)-/.test(scenario.name))
+    : nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs
   if (nameFilter && selected.length === 0) throw new Error(`no scenario matches "${nameFilter}"`)
   for (const { scenario, run } of selected) {
     // 单个场景抛错（例如等不到元素）不得吞掉整轮结果：记为该场景的失败后继续。
