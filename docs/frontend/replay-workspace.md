@@ -148,3 +148,9 @@ clearing a pending replay still aborts its parse before loading the new file.
 3D visual acceptance remains manual: check 740×360, 844×390 fullscreen, 1600×900 and 1792×922 fullscreen
 for battlefield prominence, compact HUD/Transport and comfortable Display presentation. Browser
 geometry and interaction checks establish layout/state invariants, not GPU/material appearance.
+
+### 3D Details canonical parity
+
+`Replay3DPane` 在场景就绪后复用 `parseLocalPlayback(file)` 获取 canonical dataset，不要求先打开 2D。场景名册保留 `accountId` / `tankId`；选择动作仍以 3D `eid` 为键，详情按账号匹配 track。查询时间为 `store.time - reloadTelemetry.timeOrigin`，不能用场景 render-grid 的 `startTime` 代替 AI-derived origin。
+
+共享 `VehicleDetailsPanel` / `V2VehicleInspector` 展示肖像、最后已知位置时间、血量与生命状态、已记录伤害 / 承伤 / 击杀、最近伤害日志、装备 / 物资 / 消耗品及状态。日志标注由两种 renderer 共用 `detailsDamageLogAtV2`，事件时刻未覆盖的攻击者保持来源未知。缺少 canonical 数据、时钟起点或账号匹配时不造 0；仅保留场景已有的基础详情。切换文件 / 卸载使用 generation guard 防止迟到数据和肖像串场。

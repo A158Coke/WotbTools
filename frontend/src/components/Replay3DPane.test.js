@@ -15,11 +15,15 @@ import { nextTick, ref } from 'vue'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil.js'
 
 // 源码级守卫用（CSS 结构契约：名册不得是嵌套滚动盒等）
 const here = dirname(fileURLToPath(import.meta.url))
 let Replay3DPane
 
+const canonical = vi.hoisted(() => ({ parse: vi.fn(), portrait: vi.fn() }))
+vi.mock('../replay-local/playback/index.js', () => ({ parseLocalPlayback: canonical.parse }))
+vi.mock('../vehicle-portraits/runtime.js', () => ({ loadVehiclePortrait: canonical.portrait }))
 const playback = vi.hoisted(() => ({ api: null, init: null, apis: [] }))
 /**
  * 模拟 `playbackScene.initPlayback` 的**真实契约**：加载状态与就绪状态由场景层唯一持有
@@ -152,6 +156,8 @@ function mountPane(props = {}) {
 // null——必须先 await dynamic import 触发工厂，再设状态值（直接设 .value 会炸
 // "Cannot set properties of null"）。
 beforeEach(async () => {
+  canonical.parse.mockReset().mockResolvedValue({ dataset: null, reloadTelemetry: null })
+  canonical.portrait.mockReset().mockResolvedValue(null)
   layout.compact = false
   playback.api = null
   playback.apis.length = 0
@@ -169,6 +175,91 @@ afterEach(() => {
 })
 
 describe('Replay3DPane', () => {
+  it('3D完整详情按canonical账号与时间投影，包含肖像装备物资道具且seek不泄露未来', async () => {
+    mockWebGL('webgl2')
+    const dataset = makeBattlePlaybackDataset()
+    const track = dataset.vehicles[0]
+    track.positionSegments = [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 5,
+      samples: [{ timeSec: 0, x: 0, y: 0 }, { timeSec: 5, x: 5, y: 0 }] }]
+    track.healthTransitions.push({ timeSec: 10, currentHp: 1400, displayCapacityHp: 1500, knowledge: 'CURRENT' })
+    track.damageLosses = [{ fromSec: 9, toSec: 10, hpLoss: 100, attackerAccountId: 2001, attackerReliable: true }]
+    track.loadout = { consumables: ['repairkit', null, null], provisions: ['food', null, null], equipmentIds: ['rammer'], consumableWireCodes: [] }
+    track.consumableTransitions = [{ timeSec: 8, consumableSlot: 0, state: 'COOLDOWN', logicalItemId: 'repairkit' }]
+    dataset.events.push({ type: 'KILL', timeSec: 12, accountId: 1001, targetAccountId: 2001 })
+    canonical.parse.mockResolvedValue({ dataset, reloadTelemetry: { timeOrigin: 42 } })
+    canonical.portrait.mockResolvedValue('/portrait.png')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const store = playback.api.store
+    store.time = 54 // canonical 12; never subtract the render-grid startTime instead
+    store.startTime = 0
+    store.roster = { team1: [{ eid: 7, accountId: 1001, tankId: 1, team: 1, nick: 'Scene name', tank: 'Scene tank', hp: 999, maxHp: 999 }], team2: [], unknown: [] }
+    await flush()
+    await wrapper.get('.team-lane .pl').trigger('click')
+    await flush()
+    const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
+    expect(details.props('selectedTrack').accountId).toBe(1001)
+    expect(details.props('currentTime')).toBe(12)
+    await vi.waitFor(() => expect(details.props('selectedPortraitUrl')).toBe('/portrait.png'))
+    expect(details.props('selLastKnownSec')).toBe(5)
+    expect(details.props('health')).toEqual({ currentHp: 1400, maxHp: 1500 })
+    expect(details.props('selCurStats')).toEqual({ dealt: 400, received: 100, kills: 1 })
+    expect(details.props('selDamageLog')).toHaveLength(2)
+    for (const group of ['equipment', 'provisions', 'consumables']) expect(details.find(`[data-test="v2-inspector-${group}"]`).exists()).toBe(true)
+    expect(details.find('.v2-chip-state').exists()).toBe(true)
+    store.time = 47
+    await nextTick()
+    expect(details.find('.v2-chip-state').exists()).toBe(false)
+    store.time = 51
+    await nextTick()
+    expect(details.props('selCurStats')).toEqual({ dealt: 0, received: 0, kills: 0 })
+    expect(details.props('selDamageLog')).toEqual([])
+    store.time = 54
+    await nextTick()
+    expect(details.props('selCurStats').dealt).toBe(400)
+    wrapper.unmount()
+  })
+
+  it('换文件时迟到canonical结果不得覆盖新场详情', async () => {
+    mockWebGL('webgl2')
+    let finishOld
+    canonical.parse.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    const nextDataset = makeBattlePlaybackDataset()
+    nextDataset.vehicles[0].playerName = 'New battle'
+    canonical.parse.mockResolvedValue({ dataset: nextDataset, reloadTelemetry: { timeOrigin: 10 } })
+    const wrapper = mountPane()
+    await start(wrapper)
+    expect(canonical.parse).toHaveBeenCalledTimes(1)
+    await wrapper.setProps({ file: mkFile('next.wotbreplay') })
+    await start(wrapper)
+    playback.api.store.time = 10
+    playback.api.store.roster = { team1: [{ eid: 77, accountId: 1001, team: 1, nick: 'New battle', tank: 'Maus' }], team2: [], unknown: [] }
+    await flush()
+    await wrapper.get('.team-lane .pl').trigger('click')
+    const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
+    expect(details.props('selectedTrack').playerName).toBe('New battle')
+    finishOld({ dataset: makeBattlePlaybackDataset(), reloadTelemetry: { timeOrigin: 42 } })
+    await flush()
+    expect(details.props('selectedTrack').playerName).toBe('New battle')
+    expect(details.props('currentTime')).toBe(0)
+    wrapper.unmount()
+  })
+
+  it('canonical缺失时不为3D详情伪造统计或inspect track', async () => {
+    mockWebGL('webgl2')
+    canonical.parse.mockRejectedValue(new Error('canonical unavailable'))
+    const wrapper = mountPane()
+    await start(wrapper)
+    playback.api.store.roster = { team1: [{ eid: 7, accountId: 1001, team: 1, nick: 'A', tank: 'Maus', hp: 100, maxHp: 100 }], team2: [], unknown: [] }
+    await flush()
+    await wrapper.get('.team-lane .pl').trigger('click')
+    const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
+    expect(details.props('selCurStats')).toBeNull()
+    expect(details.props('selectedTrack')).toBeNull()
+    expect(details.find('[data-test="pb-sb-dealt"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it.each(['offline', 'unknown', 'degraded', 'service-unavailable'])('never initializes a remote loader on a %s direct mount', async (state) => {
     connectivityState.state.value = state
     mockWebGL('webgl2')

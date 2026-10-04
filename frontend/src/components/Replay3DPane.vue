@@ -10,6 +10,9 @@
  * 切到别的能力（`active=false`）：场景停帧但不销毁，切回不重新解析、保留 timeline / 相机；
  * 键盘播放快捷键同样只在激活时响应。
  */
+import { parseLocalPlayback } from '../replay-local/playback/index.js'
+import { cumulativeStatsAtV2, healthDisplayAt, lifeAt, positionAtV2, positionCoveredAtV2 } from '../utils/battlePlaybackV2.ts'
+import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -245,15 +248,67 @@ const selectedRow = computed(() => {
     || null
 })
 
+// Canonical details are independently available even when the 2D pane was never opened.
+// The scene owns its raw clock; canonical queries use the AI-derived time origin.
+const detailPlayback = ref(null)
+let detailParseGeneration = 0
+watch([() => props.file, () => store.hasData], async ([file, ready]) => {
+  const generation = ++detailParseGeneration
+  detailPlayback.value = null
+  if (!file || !ready) return
+  try {
+    const result = await parseLocalPlayback(file)
+    if (generation !== detailParseGeneration) return
+    if (result.dataset && Number.isFinite(result.reloadTelemetry?.timeOrigin)) detailPlayback.value = result
+  } catch {
+    // Missing canonical facts remain unavailable; the scene's existing subset still works.
+  }
+}, { immediate: true })
+const detailTime = computed(() => detailPlayback.value
+  ? Math.max(0, store.time - detailPlayback.value.reloadTelemetry.timeOrigin) : store.time)
+const selectedTrack = computed(() => detailPlayback.value?.dataset.vehicles.find(track =>
+  selectedRow.value?.accountId != null && track.accountId === selectedRow.value.accountId) || null)
+const selectedLife = computed(() => selectedTrack.value ? lifeAt(selectedTrack.value, detailTime.value) : null)
+const selLastKnownSec = computed(() => {
+  const track = selectedTrack.value
+  if (!track || positionCoveredAtV2(track.positionSegments, detailTime.value)) return null
+  return positionAtV2(track.positionSegments, detailTime.value)?.timeSec ?? null
+})
+const selCurStats = computed(() => selectedTrack.value
+  ? cumulativeStatsAtV2(detailPlayback.value.dataset.events, selectedTrack.value, detailTime.value, detailPlayback.value.dataset.vehicles)
+  : null)
+const selDamageLog = computed(() => detailsDamageLogAtV2(detailPlayback.value?.dataset,
+  selectedTrack.value, detailTime.value, t('recon.map.playback.source_unknown')))
+const selectedPortraitUrl = ref(null)
+let portraitGeneration = 0
+watch(() => selectedTrack.value?.tankId ?? selectedRow.value?.tankId, async tankId => {
+  const generation = ++portraitGeneration
+  selectedPortraitUrl.value = null
+  if (tankId == null) return
+  try {
+    const { loadVehiclePortrait } = await import('../vehicle-portraits/runtime.js')
+    const url = await loadVehiclePortrait(tankId)
+    if (generation === portraitGeneration) selectedPortraitUrl.value = url
+  } catch { /* Missing assets keep the panel without a portrait. */ }
+})
+
 const selectedDetailState = computed(() => selectedRow.value ? {
-  vehicle: { tankName: selectedRow.value.tank, playerName: selectedRow.value.nick,
+  vehicle: selectedTrack.value || { tankName: selectedRow.value.tank, playerName: selectedRow.value.nick,
+    tankId: selectedRow.value.tankId, accountId: selectedRow.value.accountId,
     team: selectedRow.value.team, friendly: [1, 2].includes(store.friendlyTeam) && [1, 2].includes(selectedRow.value.team) ? selectedRow.value.team === store.friendlyTeam : null },
-  destroyed: selectedRow.value.dead,
+  destroyed: selectedLife.value ? selectedLife.value.lifeState === 'DESTROYED' : selectedRow.value.dead,
+  destroyedKnownAtSec: selectedLife.value?.destroyedKnownAtSec ?? null,
 } : null)
-const selectedHealth = computed(() => selectedRow.value ? {
-  currentHp: Number.isFinite(selectedRow.value.hp) ? selectedRow.value.hp : null,
-  maxHp: Number.isFinite(selectedRow.value.maxHp) && selectedRow.value.maxHp > 0 ? selectedRow.value.maxHp : null,
-} : null)
+const selectedHealth = computed(() => {
+  if (selectedTrack.value) {
+    const health = healthDisplayAt(selectedTrack.value, detailTime.value)
+    return { currentHp: health?.currentHp ?? null, maxHp: health?.displayCapacityHp ?? null }
+  }
+  return selectedRow.value ? {
+    currentHp: Number.isFinite(selectedRow.value.hp) ? selectedRow.value.hp : null,
+    maxHp: Number.isFinite(selectedRow.value.maxHp) && selectedRow.value.maxHp > 0 ? selectedRow.value.maxHp : null,
+  } : null
+})
 const detailClock = (sec) => `${Math.floor(Math.max(0, sec) / 60)}:${String(Math.floor(Math.max(0, sec) % 60)).padStart(2, '0')}`
 
 const bannerColor = computed(() => {
@@ -471,6 +526,8 @@ onMounted(() => {
   window.addEventListener('keydown', onUiToggleKeydown)
 })
 onBeforeUnmount(() => {
+  detailParseGeneration++
+  portraitGeneration++
   destroyScene()
   laneBoundsObserver?.disconnect()
   laneBoundsObserver = null
@@ -561,7 +618,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         class="vehicle-details" data-testid="replay3d-details"
         :presentation="portraitFlow ? 'inline' : 'floating'"
         :selected-state="selectedDetailState" :health="selectedHealth" :phone-form="portraitFlow"
-        :current-time="store.time" :format-clock="detailClock"
+        :selected-portrait-url="selectedPortraitUrl" :sel-last-known-sec="selLastKnownSec"
+        :sel-cur-stats="selCurStats" :selected-track="selectedTrack" :sel-damage-log="selDamageLog"
+        :current-time="detailTime" :format-clock="detailClock"
         :drag-host="rootEl" :drag-bounds="controlsEl"
         :initial-side="detailsSide" :selection-key="selectedEid"
         @close="closeDetails"

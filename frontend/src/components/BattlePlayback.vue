@@ -1,4 +1,5 @@
 <script setup>
+import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
@@ -45,7 +46,6 @@ import {
 } from '../utils/battlePlayback'
 import {
   cumulativeStatsAtV2,
-  damageLogAtV2,
   friendlyHealthAt,
   ghostAroundV2,
   healthDisplayAt,
@@ -1874,22 +1874,7 @@ const selCurStats = computed(() => {
 const selDamageLog = computed(() => {
   const st = selectedState.value
   if (!st) return []
-  const rows = damageLogAtV2(authoritativeEvents.value, st.vehicle, currentTime.value, 8, hpVehicles.value)
-  return rows.map((d) => {
-    if (d.dir === 'in') {
-      if (d.attackerReliable && d.attackerAccountId != null) {
-        const attacker = vehiclesByAccount.value.get(d.attackerAccountId)
-        // §13：事件时刻位置流未覆盖的攻击者不得泄露身份
-        const covered = attacker && victimFeedbackAllowedV2(attacker, d.timeSec)
-        return { ...d, label: attacker && covered
-          ? (attacker.playerName || '#' + attacker.accountId)
-          : t('recon.map.playback.source_unknown') }
-      }
-      return { ...d, label: t('recon.map.playback.source_unknown') }
-    }
-    const victim = vehiclesByAccount.value.get(d.victimAccountId)
-    return { ...d, label: victim ? (victim.tankName || '#' + victim.accountId) : '#' + d.victimAccountId }
-  })
+  return detailsDamageLogAtV2(playback.value, st.vehicle, currentTime.value, t('recon.map.playback.source_unknown'))
 })
 function floatTeamClass(friendly) {
   if (friendly === true) return 'pb-float-friendly'
