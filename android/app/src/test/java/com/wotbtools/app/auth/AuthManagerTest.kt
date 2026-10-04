@@ -182,6 +182,38 @@ class AuthManagerTest {
     }
 
     /**
+     * 授权请求的 state / nonce 必须由 AppAuth 的 builder **自动生成**——本项目不得手工设置。
+     * 手工设置会引入第二个随机源（同一交易两处 state），并让"nonce 由库保证"的不变量失效；
+     * 计划 Phase 11 点名了这条接线，因此按本文件既有做法做窄的源契约断言。
+     */
+    @Test
+    fun stateAndNonceAreGeneratedByTheLibraryNotHandSet() {
+        val code = authManagerCode()
+
+        assertTrue(
+            "不得手工 setState（AppAuth builder 构造时自动生成随机 state）",
+            !code.contains("setState(")
+        )
+        assertTrue(
+            "不得手工 setNonce（build() 时由库生成）",
+            !code.contains("setNonce(")
+        )
+    }
+
+    /**
+     * RP-initiated logout 的 post-logout 回程固定 private scheme（2.1.0 Phase 5.2）：
+     * 与授权回程同一传输决策——HTTPS App Link 降级为兼容回退后，登出也必须回到 App。
+     */
+    @Test
+    fun postLogoutRedirectUsesThePrivateScheme() {
+        val code = authManagerCode()
+        assertTrue(
+            "登出必须回到 private scheme（com.wotbtools.app:/oauth2redirect）",
+            code.contains("setPostLogoutRedirectUri(Uri.parse(OidcConfiguration.PRIVATE_REDIRECT_URI))")
+        )
+    }
+
+    /**
      * AppAuth 的 completion `PendingIntent` 必须允许 AppAuth **填入响应 Intent**。
      *
      * AppAuth 的 `AuthorizationManagementActivity` 用 `callback.send(context, 0, responseData)` 把
