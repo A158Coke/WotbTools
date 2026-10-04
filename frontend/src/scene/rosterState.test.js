@@ -121,23 +121,11 @@ describe('rosterState · 物理队伍分组', () => {
   })
 })
 
-// 名册血量**必须在暂停 / 拖动进度条时也更新**：tick() 在非 busy 时会提前返回，
-// seekTo 必须自己补一次 updateRoster。源码级守卫（场景内核依赖 WebGL，无法实例化）。
-describe('rosterState · seek 投影接线守卫', () => {
+// 名册在 seek / 播放 / 停播 / 换相机时都必须对 Vue 可见地更新，且随 HUD 节拍而非逐帧写入：
+// 由 playbackScene.test.js 真实驱动场景内核锁定。这里只保留源码级接线守卫。
+describe('rosterState · 投影接线守卫', () => {
   const here = dirname(fileURLToPath(import.meta.url))
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
-
-  it('seekTo 在 tick() 之后显式重跑 updateRoster', () => {
-    const at = src.indexOf('function seekTo(t)')
-    expect(at).toBeGreaterThan(-1)
-    const body = src.slice(at, at + 1600)
-    const tickAt = body.indexOf('tick();')
-    const rosterAt = body.indexOf('updateRoster();')
-    const hudAt = body.indexOf('writeHud(true);')
-    expect(tickAt).toBeGreaterThan(-1)
-    expect(rosterAt).toBeGreaterThan(tickAt)
-    expect(rosterAt).toBeLessThan(hudAt)
-  })
 
   it('名册运行时状态由 projectRoster(V, T) 投影，不再由 hpAt/deathAt 在中途改写', () => {
     const at = src.indexOf('function updateRoster()')
