@@ -1223,7 +1223,7 @@ async function runRosterGeometryScenario(env, scenario) {
     check(failures, geometry.side && !geometry.portrait, `expected Team 1 | Stage | Team 2 (class roster-side): portrait=${geometry.portrait} side=${geometry.side}`)
   }
 
-  // Desktop center follows the maximum square; remaining width belongs to equal roster lanes.
+  // Desktop uses approximately 25 / 50 / 25 columns.
   if (geometry.side) {
     const columns = await page.probe(workspaceColumnsProbe)
     // --pb-roster-min = 9rem，按根字号折算（2/6/2 的窄档 fallback 就是守在它上面）。
@@ -1236,9 +1236,9 @@ async function runRosterGeometryScenario(env, scenario) {
     const expectedCenter = columns.contentW - 2 * columns.laneW - 2 * (columns.laneGutter ?? 0)
     check(failures, Math.abs(columns.centerW - expectedCenter) <= 1.5,
       `center column must consume all remaining width (expected ${expectedCenter}): ${JSON.stringify({ centerW: columns.centerW, laneW: columns.laneW, contentW: columns.contentW, gutter: columns.laneGutter })}`)
-    // Desktop must not reserve dead space beside the square.
-    if (scenario.width >= 1200) check(failures, Math.abs(columns.centerW - geometry.square.w) <= 2,
-      `desktop center must fit the square: center=${columns.centerW} square=${geometry.square.w}`)
+    // Desktop keeps the center twice as wide as either roster.
+    if (scenario.width >= 1200) check(failures, Math.abs(columns.centerW - columns.laneW * 2) <= 2,
+      `desktop center must be twice the roster lane width: center=${columns.centerW} square=${geometry.square.w}`)
     // lane 不得低于可读下限（--pb-roster-min，2/6/2 的窄档 fallback 就是守在它上面）。
     // 下限值随 scenario 传入：page.evaluate 的表达式里没有 getComputedStyle 作用域。
     check(failures, columns.laneW >= rosterMinPx - 0.5,
@@ -2667,8 +2667,8 @@ try {
   const fullscreenRoster = results.find((result) => result.name === 'roster-geometry-1792x922-fullscreen-desktop')?.geometry
   if (tabletRoster && desktopRoster && fullscreenRoster) {
     const failures = []
-    // As the workspace grows, roster lanes absorb width beyond the maximum square.
-    // 这里锁的是比例：lane 变大、center 变大且始终约 3× lane。
+    // As the workspace grows, desktop center stays twice the roster width.
+    // 这里锁的是比例：lane 变大、center 变大且桌面始终约 2× lane。
     check(failures, tabletRoster.laneWidths[0] + 1 < desktopRoster.laneWidths[0], 'roster lanes must grow between tablet and desktop')
     check(failures, fullscreenRoster.laneWidths[0] > desktopRoster.laneWidths[0] + 1, 'roster lanes must absorb spare viewport width')
     for (const [name, g] of [['tablet', tabletRoster], ['desktop', desktopRoster], ['fullscreen', fullscreenRoster]]) {
@@ -2676,8 +2676,8 @@ try {
       // HUD 属于 center 列，用它的宽度当 center 宽度的实测值
       const center = g.centerWidth ?? null
       if (!lane || !center) { check(failures, false, `${name} roster matrix: missing lane/center`); continue }
-      if (name !== 'tablet') check(failures, Math.abs(center - g.square.w) <= 2,
-        `${name} roster matrix: center must match square (center=${center} square=${g.square.w})`)
+      if (name !== 'tablet') check(failures, Math.abs(center - lane * 2) <= 2,
+        `${name} roster matrix: center must be twice the roster lane width (center=${center} square=${g.square.w})`)
     }
     results.push({ name: 'roster-fluid-width-matrix', failures, viewport: '1024 → 1600 → 1792' })
   }

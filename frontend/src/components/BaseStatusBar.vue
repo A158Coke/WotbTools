@@ -142,4 +142,8 @@ function baseLabel(base) {
 /* HUD metadata shares a single compact row with map and time. */
 .base-status-bar.is-compact { gap: var(--space-1); padding: 0; border: 0; background: transparent; backdrop-filter: none; }
 .is-compact .base-badge-svg { width: var(--space-6); height: var(--space-6); }
+@media (width >= 1200px) {
+  .is-compact .base-badge-svg { width: var(--control-h-lg); height: var(--control-h-lg); }
+  .is-compact .base-points { font: var(--type-h3); font-weight: 700; }
+}
 </style>

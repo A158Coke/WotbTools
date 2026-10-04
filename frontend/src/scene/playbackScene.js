@@ -1382,7 +1382,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         ? v.def.team === friendlyTeam : null;
       const ghost = ghostByEid.get(v.def.eid);
       return {
-        eid: v.def.eid, playerName: v.def.name || '', tankName: v.def.tank_name || '',
+        eid: v.def.eid, playerName: v.def.nickname || '', tankName: v.def.tank_name || '',
         friendly, destroyed, lastKnown: false,
         hp: { current, pct, state: destroyed ? 'DESTROYED' : 'CURRENT' },
         reload: destroyed ? null : reloadStateAt(v.def.eid, T, v.reloadSize),

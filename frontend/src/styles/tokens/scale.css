@@ -89,11 +89,9 @@
     --pb-workspace-fallback-h: 80dvh;
 
     --pb-label-player-width: 110px;
-    /* Vehicle label 的两个 combat indicator 各自拥有尺寸：HP 是主要状态（更宽、更厚），
-       reload 是次级瞬时状态（更短、更细）。不再共用一个通用 bar token —— 共用正是
-       reload 白条抢过 HP 视觉权重的原因。 */
+    /* Vehicle label 的两个 combat indicator 各自拥有尺寸：HP 是主要状态（更厚），
+       reload 是次级瞬时状态（等宽、更细）。两者共用宽度 token，厚度区分视觉权重。 */
     --pb-label-hp-bar-width: 64px;
-    --pb-label-reload-bar-width: 40px;
     --pb-label-reload-bar-height: 2px;
 
     /* 控件尺寸与密度：默认紧凑，触屏自动切换（§5） */

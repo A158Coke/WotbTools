@@ -1,8 +1,8 @@
 /* Shared macro geometry for both Playback renderers.
    Topology selects columns/flow; measured viewport capacity and intrinsic chrome select size.
    Details positioning remains owned by usePlaybackDetailsPlacement. */
-/* Shared sizing authority. Short layouts retain 2/6/2 control capacity; desktop caps the
-   center at the largest available square and distributes unused width to both rosters. */
+/* Shared sizing authority. Short layouts retain 2/6/2 control capacity; desktop uses
+   approximately 25 / 50 / 25 columns while the Stage maximizes its available square. */
 .playback-workspace {
   container-type: inline-size;
   --pb-lane-w: var(--pb-roster-min);
@@ -164,13 +164,13 @@
   overflow: hidden;
 }
 
-/* Desktop gives unused square-side space to the rosters; short touch layouts retain control width. */
+/* Desktop roster lanes share approximately 25 / 50 / 25 of the available width. */
 @media (width >= 1200px) {
   .battle-playback.playback-workspace.pb-roster-lanes .pb-main,
   .pb-root.playback-workspace.roster-side:not(.portrait-flow) {
     grid-template-columns:
       minmax(var(--pb-roster-min), 1fr)
-      minmax(0, min(calc((100% - var(--space-1) * 2) * 0.6), var(--pb-square-avail-h, var(--pb-workspace-fallback-h))))
+      minmax(0, 2fr)
       minmax(var(--pb-roster-min), 1fr);
   }
 }

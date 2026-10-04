@@ -38,7 +38,7 @@ anti-future-leak 或现有 tank-marker 资产契约。
   `FULL_RELATIVE`、`EXACT`、`PARTIAL`、`UNKNOWN` 语义保持不变。
 - 2D / 3D 共用紧凑中心栈（行高随内容，宽度受限时多余高度留在栈外）：地图/时间、HP/比分与 compact 基地 metadata 的持久 HUD → 最大可用正方形 Stage → Transport。击杀流是独立的有界 overlay（2D 最多保留最新 2 条、3D 最多 3 条），不参与 HUD 高度预算，因此条目变化不会牵动 Stage / Transport 重排。
 - 主控件共用 `PlaybackTransport.vue`，顺序为 `-5 / Play-Pause / +5 / 当前速度 / 全屏 / Display`，速度档位按需展开，六个触控目标至少 44px。
-- 侧车道以 workspace 宽度作 fluid sizing，并保持可读下限；桌面中心列贴合最大正方形，额外宽度分配给两侧名册，短横屏保留主控件所需列宽。HUD 铺满中心列，桌面放大字号与血条厚度；名册装填条与 HP 条等宽且更细。Stage 同时受中心可用宽度和实测可用高度约束。容量按**视口**算（`视口高 − 顶栏/底栏 − 实测 HUD − 实测 Transport − 间距`），刻意不用根元素的内容高度，也就不用按断点各写一套固定扣减。
+- 侧车道以 workspace 宽度作 fluid sizing，并保持可读下限；桌面左 / 中 / 右列约为 25% / 50% / 25%，短横屏保留主控件所需列宽。HUD 铺满中心列，桌面放大字号与血条厚度；名册与战场标签的装填条均与 HP 条等宽且更细；战场血量数值置于加厚血条内，不重复显示百分比。Stage 同时受中心可用宽度和实测可用高度约束。容量按**视口**算（`视口高 − 顶栏/底栏 − 实测 HUD − 实测 Transport − 间距`），刻意不用根元素的内容高度，也就不用按断点各写一套固定扣减。
 - Display 由 `PlaybackDisplaySurface.vue` 锚定 Gear，优先向上、空间不足换边并夹紧；竖屏采用有界 inline 面。Details 仍为独立的 workspace 级可拖动上下文窗。
 - 形态判定（`shared/breakpoints` 的 `PLAYBACK_MOBILE_QUERY`）：Mobile = 宽 `<768px` 或触屏且高 `≤500px`（手机横屏）；`768–1199px` 一律 Tablet、`≥1200px` 一律 PC。布局只看可用空间，触屏只放大控件点击区域（44px），iPad / Android 平板拿 Tablet 形态。
 - 不抢页面：滚轮只在全屏、按住 Ctrl/⌘ 或刚在地图上按下后才缩放，否则交给页面滚动并短暂提示；地图未放大、非全屏、未标注时 `touch-action: pan-y`，单指纵向滑动滚动页面；`active=false`（隐藏的模式 / KeepAlive 停用）时暂停并不响应空格 / 方向键。地图高度扣掉固定顶栏，手机横屏按可用高度封顶。

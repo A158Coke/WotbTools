@@ -6,7 +6,7 @@
  *
  *   PlayerName → TankName → HP → Reload
  *
- * HP 是主要 combat state（更宽、更厚），reload 是最下方次级瞬时状态（更短、更细）。
+ * HP 是主要 combat state（更厚），reload 是最下方次级瞬时状态（等宽、更细）。
  * 2D 与 3D 共用本组件，所以这里锁的就是两个 renderer 的共同呈现。
  *
  * 为什么用 `?raw` 源码断言量尺寸：happy-dom 不跑布局，`getComputedStyle` 拿不到
@@ -127,34 +127,33 @@ describe('PlaybackVehicleLabel 垂直层级', () => {
 })
 
 describe('PlaybackVehicleLabel indicator 尺寸 ownership', () => {
-  it('HP 与 reload 各自消费自己的宽度 token，不再共用通用 bar token', () => {
+  it('HP 与 reload 消费同一宽度 token', () => {
     const hpBar = ruleBody('.pb-hp-bar')
     const reloadBar = ruleBody('.reload-bar')
     expect(hpBar).toContain('width: var(--pb-label-hp-bar-width)')
-    expect(reloadBar).toContain('width: var(--pb-label-reload-bar-width)')
+    expect(reloadBar).toContain('width: var(--pb-label-hp-bar-width)')
     // 通用 token 已废除：组件里不得再出现
     expect(labelSource).not.toContain('--pb-label-bar-width')
     expect(scaleTokens).not.toContain('--pb-label-bar-width')
   })
 
-  it('reload 比 HP 短', () => {
-    const hpWidth = parseFloat(tokenValue('--pb-label-hp-bar-width'))
-    const reloadWidth = parseFloat(tokenValue('--pb-label-reload-bar-width'))
-    expect(Number.isFinite(hpWidth) && Number.isFinite(reloadWidth)).toBe(true)
-    expect(reloadWidth).toBeLessThan(hpWidth)
+  it('血量数值位于轨道内且不重复显示百分比', () => {
+    const wrapper = mountLabel()
+    expect(wrapper.get('.pb-hp-bar').get('[data-test="pb-hp-num"]').text()).toBe('1250')
+    expect(wrapper.find('[data-test="pb-hp-pct"]').exists()).toBe(false)
+    expect(wrapper.get('.pb-hp-fill').element.contains(wrapper.get('[data-test="pb-hp-num"]').element)).toBe(false)
   })
 
   it('reload 比 HP 细', () => {
     const hpHeight = resolvePx(ruleBody('.pb-hp-bar')?.match(/height:\s*([^;]+);/)?.[1])
     const reloadHeight = parseFloat(tokenValue('--pb-label-reload-bar-height'))
-    expect(hpHeight).toBe(4)
+    expect(hpHeight).toBe(16)
     expect(Number.isFinite(reloadHeight)).toBe(true)
-    expect(reloadHeight).toBeLessThan(hpHeight)
+    expect(reloadHeight).toBeLessThanOrEqual(hpHeight / 2)
   })
 
   it('两个 token 都是语义 token，组件里没有散落的硬编码尺寸', () => {
     expect(tokenValue('--pb-label-hp-bar-width')).toMatch(/px$/)
-    expect(tokenValue('--pb-label-reload-bar-width')).toMatch(/px$/)
     expect(tokenValue('--pb-label-reload-bar-height')).toMatch(/px$/)
     // 组件只允许通过 token 表达尺寸：不得出现 width/height 的裸 px
     expect(labelSource).not.toMatch(/\.reload-bar \{[^}]*height:\s*\d+px/)
