@@ -14,7 +14,8 @@ It creates a **shadow** Frontend on TX2 and deliberately does not move public tr
 
 ## Declarative ownership
 
-ResourceSync `wotbtools-main` may declare exactly one K7B Stack: `wotbtools-frontend-shadow` on `tx2`, sourced from public `A158Coke/WotbTools` main with run directory `deploy/tx` and compose file `frontend-shadow.compose.yml`.
+ResourceSync `wotbtools-main` may declare exactly one K7B Stack: `wotbtools-frontend-shadow` on `tx2`, sourced from the public Gitee transport mirror `A158Coke/Wotbtools` main with run directory `deploy/tx` and compose file `frontend-shadow.compose.yml`.
+GitHub `A158Coke/WotbTools` remains the source/release authority; Gitee is only the domestic source transport for TX workers. Before a production deployment uses the mirror, the intended Gitee commit must match the reviewed GitHub commit.
 `deploy = false`; Stack webhook, image polling, and auto-update are disabled. ResourceSync remains `managed=false`, `delete=false`, `webhook_enabled=false`. Applying ResourceSync changes desired state only; workload deployment is a separate explicit Komodo action.
 
 ## Shadow runtime contract
@@ -30,11 +31,12 @@ Sponsor runtime content and Android release artifact parity are mandatory precon
 ## Manual apply and deployment
 
 1. Refresh `wotbtools-main`.
-2. The pending diff must contain exactly the new `wotbtools-frontend-shadow` Stack and no Server drift or deletion.
+2. The pending diff must contain exactly the reviewed `wotbtools-frontend-shadow` Stack change and no Server drift or deletion.
 3. Manually Apply the ResourceSync.
 4. Refresh and require zero unexpected pending diff.
-5. Open the Stack and explicitly Deploy it. ResourceSync Apply itself must not deploy.
-6. Perform the acceptance probes below.
+5. Verify the Gitee mirror commit matches the intended reviewed GitHub commit.
+6. Open the Stack and explicitly Deploy it. ResourceSync Apply itself must not deploy.
+7. Perform the acceptance probes below.
 
 Stop if the diff proposes another Stack, a different server, any deletion, an automatic deploy setting, or a Caddy / TX1 workload change.
 

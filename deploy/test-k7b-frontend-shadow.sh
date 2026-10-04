@@ -3,9 +3,11 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 compose="$ROOT/deploy/tx/frontend-shadow.compose.yml"
 template="$ROOT/deploy/tx/nginx/frontend.conf.template"
+resource="$ROOT/infra/komodo/resources/frontend-shadow.toml"
 
 [ -f "$compose" ] || { echo "missing K7B shadow compose" >&2; exit 1; }
 [ -f "$template" ] || { echo "missing frontend nginx template" >&2; exit 1; }
+[ -f "$resource" ] || { echo "missing K7B shadow Komodo resource" >&2; exit 1; }
 
 json="$(docker compose -f "$compose" config --format json)"
 COMPOSE_JSON="$json" python3 - "$template" <<'PY'
@@ -44,6 +46,11 @@ for forbidden in (
 ):
     assert forbidden not in rendered, forbidden
 PY
+
+# K7B TX workload source transport must remain on the domestic Gitee mirror.
+grep -Fq 'git_provider = "gitee.com"' "$resource"
+grep -Fq 'repo = "A158Coke/Wotbtools"' "$resource"
+! grep -Fq 'git_provider = "github.com"' "$resource"
 
 # The shadow must use the same official-nginx template filter as TX1 production.
 grep -Fq 'NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$$' "$compose"
