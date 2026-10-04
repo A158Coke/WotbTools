@@ -62,9 +62,13 @@ const loginStarted = ref(false)
  * 实时派生而非进入时快照：首次检测未完成（pending）时不下结论，settle 后显示真实状态。
  */
 const profileAvailability = computed(() => availability(Feature.ACCOUNT_PROFILE))
-const unavailableMessageKey = computed(() => (profileAvailability.value.pending
-  ? ''
-  : profileAvailability.value.messageKey || 'featureOffline.accountProfile'))
+const unavailableMessageKey = computed(() => {
+  const current = profileAvailability.value
+  // pending：尚未下结论；available：已恢复在线、正在重新加载（phase 尚未离开
+  // connectivity-unavailable）—— 两种情况都不得显示「需要联网」类文案。
+  if (current.pending || current.available) return ''
+  return current.messageKey || 'featureOffline.accountProfile'
+})
 
 const editingAccount = ref(false)
 const editAccountId = ref(null)
