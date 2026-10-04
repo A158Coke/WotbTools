@@ -88,7 +88,7 @@ MANAGED_METADATA = {"tags": [], "template": False}
 RESOURCE_SYNC_CONFIG = {
     "git_provider": "github.com",
     "git_https": True,
-    "repo": "A158Coke/WotBTools",
+    "repo": "A158Coke/Wotbtools",
     "branch": "main",
     "resource_path": [RESOURCE_PATH_VALUE],
     "managed": False,
