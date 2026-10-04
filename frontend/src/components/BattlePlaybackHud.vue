@@ -5,6 +5,10 @@ import { baseView } from '../utils/baseStatus.js'
 defineOptions({ name: 'BattlePlaybackHud' })
 
 const props = defineProps({
+  mapTitle: { type: String, default: '' },
+  battleTime: { type: String, default: '' },
+  showSummary: { type: Boolean, default: true },
+  scoreLabelKey: { type: String, default: 'recon.map.playback.points' },
   friendlyHp: { type: Object, required: true },
   enemyHp: { type: Object, required: true },
   friendlyPoints: { type: Number, default: null },
@@ -29,22 +33,11 @@ function compactNumber(value) {
   return String(Math.round(n))
 }
 
-function wideNumber(value) {
-  const n = finiteNumber(value)
-  if (n === null) return '—'
-  return String(Math.round(n))
-}
-
-function hpText(hp, density) {
+function hpText(hp) {
   if (!hp || hp.state === 'UNKNOWN') return '—'
   if (hp.state === 'FULL_RELATIVE') return '100%'
-  if (hp.state === 'EXACT') {
-    if (density === 'wide') return wideNumber(hp.knownRemaining) + ' / ' + wideNumber(hp.totalMax)
-    if (density === 'medium') return compactNumber(hp.knownRemaining) + ' / ' + compactNumber(hp.totalMax)
-    // §compact：EXACT 也必须保留 current / total（不丢弃 totalMax）；宽度由响应式换行/字号解决。
-    return compactNumber(hp.knownRemaining) + ' / ' + compactNumber(hp.totalMax)
-  }
-  return density === 'wide' ? wideNumber(hp.knownRemaining) : compactNumber(hp.knownRemaining)
+  if (hp.state === 'EXACT') return compactNumber(hp.knownRemaining) + ' / ' + compactNumber(hp.totalMax)
+  return compactNumber(hp.knownRemaining)
 }
 
 function barFill(hp, kind) {
@@ -59,19 +52,8 @@ function barFill(hp, kind) {
   return (Math.max(0, Math.min(100, (value / total) * 100))).toFixed(1) + '%'
 }
 
-function scoreText() {
-  return [props.friendlyPoints, props.enemyPoints]
-    .filter(value => value != null)
-    .map(compactNumber)
-    .join(' : ')
-}
-
 function hasPoints() {
   return props.friendlyPoints != null || props.enemyPoints != null
-}
-
-function hasCenterData() {
-  return hasPoints() || props.baseStates.length > 0
 }
 
 // ---- §13：Team HP delayed-damage bar ----
@@ -114,12 +96,17 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 
 <template>
   <section class="pb-hud" :class="{ 'pb-hud-notransition': props.hpNoTransition }" data-test="pb-hud" :aria-label="$t('recon.map.playback.hud')">
-    <div class="pb-hud-grid" data-test="pb-hp-bars">
+    <div v-if="(props.showSummary && (props.mapTitle || props.battleTime)) || props.baseStates.length || $slots.bases" class="pb-hud-meta" data-test="pb-hud-meta">
+      <span v-if="props.showSummary && props.mapTitle" class="pb-hud-map" data-test="pb-hud-map">{{ props.mapTitle }}</span>
+      <div v-if="props.baseStates.length || $slots.bases" class="pb-hud-bases" data-test="pb-hud-bases">
+        <slot name="bases"><BaseStatusBar :bases="baseViews" compact /></slot>
+      </div>
+      <span v-if="props.showSummary && props.battleTime" class="pb-hud-time" data-test="pb-hud-time">{{ props.battleTime }}</span>
+    </div>
+    <div v-if="props.showSummary" class="pb-hud-grid" data-test="pb-hp-bars">
     <div class="pb-hud-team pb-hud-friendly pb-hud-column-friendly pb-hp-row" data-test="pb-hud-friendly">
       <span class="pb-hud-label" data-test="pb-hud-points-label-friendly">{{ $t('recon.map.playback.hud_friendly_hp') }}</span>
-      <span class="pb-hud-value pb-hp-value pb-hud-wide" data-test="pb-hp-value-friendly">{{ hpText(props.friendlyHp, 'wide') }}</span>
-      <span class="pb-hud-value pb-hud-medium">{{ hpText(props.friendlyHp, 'medium') }}</span>
-      <span class="pb-hud-value pb-hud-compact">{{ hpText(props.friendlyHp, 'compact') }}</span>
+      <span class="pb-hud-value pb-hp-value" data-test="pb-hp-value-friendly">{{ hpText(props.friendlyHp) }}</span>
       <span class="pb-hud-track pb-hp-track" aria-hidden="true">
         <span class="pb-hud-fill pb-hp-fill pb-hud-fill-friendly" :class="{ 'pb-hud-partial': props.friendlyHp?.state === 'PARTIAL' }" :style="{ width: barFill(props.friendlyHp, 'known') }" data-test="pb-hp-fill-friendly"></span>
         <span class="pb-hud-lag" data-test="pb-hud-lag-friendly" :style="{ left: barFill(props.friendlyHp, 'known'), width: lagPct.friendly + '%' }"></span>
@@ -127,24 +114,20 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
       </span>
     </div>
 
-    <div v-if="hasCenterData()" class="pb-hud-center pb-hud-column-center" data-test="pb-hud-center">
-      <div v-if="hasPoints()" class="pb-hud-points" data-test="pb-hud-points">
-        <span class="pb-hud-label" data-test="pb-hud-points-label">{{ $t('recon.map.playback.points') }}</span>
+    <div v-if="hasPoints()" class="pb-hud-center pb-hud-column-center" data-test="pb-hud-center">
+      <div class="pb-hud-points" data-test="pb-hud-points">
+        <span class="pb-hud-label" data-test="pb-hud-points-label">{{ $t(props.scoreLabelKey) }}</span>
         <strong data-test="pb-hud-score">
           <span v-if="props.friendlyPoints != null" data-test="pb-points-friendly">{{ compactNumber(props.friendlyPoints) }}</span>
           <span v-if="props.friendlyPoints != null && props.enemyPoints != null"> : </span>
           <span v-if="props.enemyPoints != null" data-test="pb-points-enemy">{{ compactNumber(props.enemyPoints) }}</span>
         </strong>
       </div>
-      <div v-if="props.baseStates.length" class="pb-hud-bases" data-test="pb-hud-bases">
-        <BaseStatusBar :bases="baseViews" />
-      </div>
+
     </div>
     <div class="pb-hud-team pb-hud-enemy pb-hud-column-enemy pb-hp-row" data-test="pb-hud-enemy">
       <span class="pb-hud-label" data-test="pb-hud-points-label-enemy">{{ $t('recon.map.playback.hud_enemy_hp') }}</span>
-      <span class="pb-hud-value pb-hp-value pb-hud-wide" data-test="pb-hp-value-enemy">{{ hpText(props.enemyHp, 'wide') }}</span>
-      <span class="pb-hud-value pb-hud-medium">{{ hpText(props.enemyHp, 'medium') }}</span>
-      <span class="pb-hud-value pb-hud-compact">{{ hpText(props.enemyHp, 'compact') }}</span>
+      <span class="pb-hud-value pb-hp-value" data-test="pb-hp-value-enemy">{{ hpText(props.enemyHp) }}</span>
       <span class="pb-hud-track pb-hp-track" aria-hidden="true">
         <span class="pb-hud-fill pb-hp-fill pb-hud-fill-enemy" :class="{ 'pb-hud-partial': props.enemyHp?.state === 'PARTIAL' }" :style="{ width: barFill(props.enemyHp, 'known') }" data-test="pb-hp-fill-enemy"></span>
         <span class="pb-hud-lag" data-test="pb-hud-lag-enemy" :style="{ left: barFill(props.enemyHp, 'known'), width: lagPct.enemy + '%' }"></span>
@@ -156,44 +139,49 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 </template>
 
 <style scoped>
-.pb-hud-bases { display: flex; justify-content: center; }
-.pb-hud { padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--bg-card2) 86%, transparent); color: var(--text-label); }
-.pb-hud-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: clamp(8px, 2vw, 28px); }
+.pb-hud {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+.pb-hud-meta { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); min-width: 0; font: var(--type-caption); }
+.pb-hud-map { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-hud-time { flex: none; font-variant-numeric: tabular-nums; }
+.pb-hud-bases { display: flex; flex: none; justify-content: center; min-width: 0; margin-inline: auto; }
+.pb-hud-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--space-2); }
 .pb-hud-column-friendly { grid-column: 1; }
 .pb-hud-column-center { grid-column: 2; }
-/* 「点数」是这一列的标题，排在比分上方居中，而不是和比分并排。 */
-.pb-hud-points { display: grid; justify-items: center; gap: 2px; }
+.pb-hud-points { display: grid; justify-items: center; }
 .pb-hud-column-enemy { grid-column: 3; }
-.pb-hud-team { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 9px; min-width: 0; }
+.pb-hud-team { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-1); min-width: 0; }
 .pb-hud-enemy { text-align: right; grid-template-columns: auto minmax(0, 1fr); }
-.pb-hud-label { grid-column: 1; grid-row: 1; color: var(--text-muted); font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.pb-hud-label { grid-column: 1; grid-row: 1; color: var(--color-text-secondary); font: var(--type-caption); }
 .pb-hud-enemy .pb-hud-label { grid-column: 2; }
-.pb-hud-value { grid-row: 1; grid-column: 2; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: clamp(.72rem, 1.2vw, .9rem); font-weight: 800; }
+.pb-hud-value { grid-row: 1; grid-column: 2; white-space: nowrap; font: var(--type-caption); font-weight: 700; font-variant-numeric: tabular-nums; }
 .pb-hud-enemy .pb-hud-value { grid-column: 1; }
-.pb-hud-track { position: relative; grid-column: 1 / -1; grid-row: 2; display: flex; min-width: 0; height: 8px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 18%, transparent); }
-.pb-hud-fill { height: 100%; transition: width .5s ease-out; }
-.pb-hud-fill-friendly { background: var(--map-spawn-friendly); }
-.pb-hud-fill-enemy { background: var(--map-spawn-enemy); }
-.pb-hud-fill-unknown { background: color-mix(in srgb, var(--text-muted) 42%, transparent); }
-/* §13.2：delayed-damage chip —— HP 下降时短暂停留在旧值，随后 1.2s 追赶当前值（更慢、更清晰）。 */
-.pb-hud-lag { position: absolute; top: 0; height: 100%; background: color-mix(in srgb, var(--error) 45%, transparent); transition: width 1.2s ease-out; pointer-events: none; }
-/* seek/恢复：hpNoTransition 时不播伤害/追赶动画（瞬时同步，不符播）。 */
+.pb-hud-track { position: relative; grid-column: 1 / -1; grid-row: 2; display: flex; min-width: 0; height: var(--space-1); overflow: hidden; border-radius: var(--radius-full); background: var(--color-surface-3); }
+.pb-hud-fill { height: 100%; transition: width var(--duration-base) var(--ease-standard); }
+.pb-hud-fill-friendly { background: var(--color-team-ally); }
+.pb-hud-fill-enemy { background: var(--color-team-enemy); }
+.pb-hud-fill-unknown { background: var(--color-text-tertiary); }
+.pb-hud-lag { position: absolute; top: 0; height: 100%; background: var(--color-danger); transition: width var(--duration-slow) var(--ease-standard); pointer-events: none; }
 .pb-hud-notransition .pb-hud-fill, .pb-hud-notransition .pb-hud-lag { transition: none; }
-.pb-hud-partial { background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--text) 28%, transparent) 0 3px, transparent 3px 6px); }
-.pb-hud-center { display: grid; justify-items: center; gap: 3px; min-width: 7ch; color: var(--text-heading); font-variant-numeric: tabular-nums; }
-.pb-hud-center strong { font-size: clamp(.9rem, 2vw, 1.2rem); white-space: nowrap; }
-.pb-hud-medium, .pb-hud-compact { display: none; }
-@media (768px <= width < 1200px) {
-  .pb-hud-wide { display: none; }
-  .pb-hud-medium { display: inline; }
+.pb-hud-partial { background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--color-text-primary) 28%, transparent) 0 var(--space-1), transparent var(--space-1) var(--space-2)); }
+.pb-hud-center { display: grid; justify-items: center; min-width: 0; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+.pb-hud-center strong { font: var(--type-caption); font-weight: 700; white-space: nowrap; }
+@media (width >= 1200px) {
+  .pb-hud { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
+  .pb-hud-meta, .pb-hud-label, .pb-hud-value, .pb-hud-center strong { font: var(--type-h3); }
+  .pb-hud-value, .pb-hud-center strong { font-weight: 700; }
+  .pb-hud-track { height: var(--space-2); }
 }
 @media (width < 768px) {
-  .pb-hud { padding: 6px 7px; border-radius: 6px; }
-  .pb-hud-grid { gap: 5px; }
-  .pb-hud-label { display: inline; font-size: .62rem; }
-  /* 手机上 .pb-hud-team 压成单列，「我方/敌方总HP」和数值都落在 row1/col1，两段文字
-     直接叠在一起。数值本身已说明是血量，标签视觉上去掉；absolute + clip 让它退出
-     grid 流但仍留给读屏软件（不能用 display: none，那会连语义一起丢）。 */
+  .pb-hud-grid { gap: var(--space-1); }
   .pb-hud-team .pb-hud-label {
     position: absolute;
     width: 1px;
@@ -204,18 +192,12 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  .pb-hud-wide, .pb-hud-medium { display: none; }
-  .pb-hud-compact { display: inline; }
-  /* §compact：EXACT 的 current / total 可能较宽 → 允许换行 + 稍小字号，不丢 totalMax。 */
-  .pb-hud-value { white-space: normal; }
-  .pb-hud-compact { font-size: .72rem; line-height: 1.2; }
-  .pb-hud-team { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .pb-hud-value { white-space: normal; overflow-wrap: anywhere; }
+  .pb-hud-team { grid-template-columns: minmax(0, 1fr); }
   .pb-hud-friendly .pb-hud-value { grid-column: 1; }
   .pb-hud-enemy .pb-hud-label, .pb-hud-enemy .pb-hud-value { grid-column: 1; }
   .pb-hud-enemy .pb-hud-value { grid-row: 1; }
   .pb-hud-enemy .pb-hud-track { grid-column: 1; grid-row: 2; }
-  .pb-hud-center { min-width: 6ch; }
-  .pb-hud-center strong { font-size: .82rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .pb-hud-fill, .pb-hud-lag { transition: none; }

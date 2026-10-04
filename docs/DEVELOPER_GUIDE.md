@@ -27,6 +27,8 @@
 
 ---
 
+Playback 2D/3D 的布局所有权与浏览器验收矩阵见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)：共享 fluid 三列、实测正方形 Stage、紧凑 HUD/Transport、Gear 锚定 Display；Details 拖动与 fullscreen/session 生命周期沿用既有 owner。
+
 ## 环境与工具链
 
 - **JDK 25** 必需。Maven 必须带 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`。

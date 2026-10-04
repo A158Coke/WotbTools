@@ -6,9 +6,35 @@
  * marker / selected / destroyed / recorder 仅作为 lane 评分障碍，不再驱动 visibility。
  */
 
-export const LABEL_LINE_H = Object.freeze({ tank: 12, player: 11 })
-export const LABEL_PAD_Y = 2
+/**
+ * Vehicle label 的垂直层级（自上而下，screen 坐标 y 向下增长）：
+ *
+ *     PlayerName
+ *     TankName      ← 身份块 `--type-caption` 两行，行高 16、无行间距
+ *     ─ 8px ─       ← `.vehicle-label` 的 gap（`calc(var(--space-1) * 2)`）
+ *     HP HUD        ← 数值行 16 + 血条 4，块内 gap 0（`HP_HUD_H_PX` / 实测 hpBoxH）
+ *     ─ 4px ─       ← `.pb-combat-state` 的 gap（`HP_HUD_GAP_PX`）
+ *     Reload        ← 不参与 collision scoring（有意的：它是最次级的信息）
+ *     ↓ marker
+ *
+ * **本文件的 box 顺序必须与 `PlaybackVehicleLabel.vue` 的真实 DOM 顺序一致**：
+ * player 在 tank 之上、tank 在 HP 之上、HP 在 marker 之上。这里曾经是
+ * 「HP → 玩家 → 车辆」，与真实呈现相反，导致 2D lane/collision 评分按错的几何计算。
+ *
+ * 行高来自 `--type-caption`（`--line-height-caption: 16px`）；两行标签是
+ * `.pb-labels` 的直接子元素、该 flex 列没有 gap，所以身份块高度就是两行行高之和。
+ */
+export const LABEL_LINE_H = Object.freeze({ tank: 16, player: 16 })
+/** 已并入行高：保留导出是为了不破坏既有消费者，语义上等价于 0。 */
+export const LABEL_PAD_Y = 0
+/** marker 顶部 → 身份块底部（`tankBox` 与其下方元素之间就是它）。 */
 export const LABEL_GAP_PX = 2
+/**
+ * 身份块 → combat block 的间距，owner 是 `PlaybackVehicleLabel.vue` 的
+ * `.vehicle-label { gap: calc(var(--space-1) * 2) }`（--space-1 = 4px）。
+ * 改那个 gap 时必须同步这里，否则 collision 盒会与真实渲染错位。
+ */
+export const IDENTITY_TO_COMBAT_GAP_PX = 8
 export const TANK_SHIFT_MAX_PX = 24
 const PLAYER_MAX_WIDTH_PX = 110
 const TANK_MAX_WIDTH_PX = 150
@@ -19,7 +45,15 @@ export const LABEL_PAD_X = 8
 /** Desktop marker visual target; mobile CSS remains smaller. */
 export const MARKER_CORE_PX = 30
 export const HP_BAR_W_PX = 48
-export const HP_HUD_H_PX = 18
+/**
+ * `.pb-hp-hud` 的高度**回退**（无布局环境，例如 jsdom）。
+ *
+ * 真实高度由 `BattlePlayback.vue` 实测 `offsetHeight` 后作为 `hpBoxH` 传入；这个常量是
+ * 测不到布局时的等价盒。当前口径 = `--line-height-caption` 16（数值行）+ 4（血条），
+ * 与真实渲染一致（`.pb-hp-hud` 块内 gap 为 0）。
+ */
+export const HP_HUD_H_PX = 20
+/** `.pb-combat-state` 的 gap：HP HUD → reload（--space-1 = 4px）。 */
 export const HP_HUD_GAP_PX = 4
 export const RECORDER_BADGE_PX = 7
 export const RECORDER_GAP_PX = 5
@@ -238,7 +272,8 @@ export function computeLabelLayout(items, opts = {}) {
   const coreHalf = coreSize / 2
   const tankH = LABEL_LINE_H.tank + LABEL_PAD_Y
   const playerH = LABEL_LINE_H.player + LABEL_PAD_Y
-  const labelBlockH = (showTank ? tankH : 0) + (showPlayer ? playerH : 0)
+  /** 身份块 = 名称两行（顺序同 DOM：player 在上、tank 在下）。 */
+  const identityBlockH = (showTank ? tankH : 0) + (showPlayer ? playerH : 0)
 
   for (const it of items) {
     if (!it || it.accountId == null || !Number.isFinite(it.x) || !Number.isFinite(it.y)) continue
@@ -261,26 +296,37 @@ export function computeLabelLayout(items, opts = {}) {
       ? { x: it.x - RECORDER_BADGE_PX / 2, y: markerBottom + RECORDER_GAP_PX, w: RECORDER_BADGE_PX, h: RECORDER_BADGE_PX }
       : null
 
-    const tankW = showTank ? estimateLabelWidth(it.tankName, 10, TANK_MAX_WIDTH_PX) : 0
-    const tankBox = showTank && tankW > 0
-      ? { x: it.x - tankW / 2, y: markerTop - LABEL_GAP_PX - tankH, w: tankW, h: tankH }
-      : null
-    const playerW = showPlayer && it.playerName
-      ? estimateLabelWidth(it.playerName, 9, PLAYER_MAX_WIDTH_PX) : 0
-    const playerBox = showPlayer && playerW > 0
-      ? { x: it.x - playerW / 2, y: (tankBox ? tankBox.y : markerTop - LABEL_GAP_PX) - playerH, w: playerW, h: playerH }
-      : null
-
+    // 自下而上构造：先定 combat block（它直接坐在 marker 之上），身份块再叠在它上面。
+    // 真实层级：PlayerName → TankName →（IDENTITY_TO_COMBAT_GAP_PX）→ HP →（LABEL_GAP_PX）→ marker
     const hpRendered = it.hpRendered === true
     const hpText = it.hpDisplayText || ''
     const hpW = hpRendered ? Math.max(it.hpBoxW ?? HP_BAR_W_PX,
       estimateLabelWidth(hpText || '—', 10, 80)) : 0
     const hpH = hpRendered ? (it.hpBoxH ?? HP_HUD_H_PX) : 0
+    // 没有 HP 时 marker 上方留白的仍是同一个 LABEL_GAP_PX。
+    const combatTop = hpRendered && hpW > 0
+      ? markerTop - LABEL_GAP_PX - hpH
+      : markerTop - LABEL_GAP_PX
     const hpBox = hpRendered && hpW > 0
-      ? { x: it.x - hpW / 2, y: markerTop - LABEL_GAP_PX - labelBlockH - HP_HUD_GAP_PX - hpH, w: hpW, h: hpH }
+      ? { x: it.x - hpW / 2, y: combatTop, w: hpW, h: hpH }
       : null
+
+    // 身份块底边 = combat block 顶边 − identity gap（tank 在下、player 在上）。
+    const identityBottom = combatTop - IDENTITY_TO_COMBAT_GAP_PX
+    const identityTop = identityBottom - identityBlockH
+    const tankW = showTank ? estimateLabelWidth(it.tankName, 10, TANK_MAX_WIDTH_PX) : 0
+    const tankBox = showTank && tankW > 0
+      ? { x: it.x - tankW / 2, y: identityBottom - tankH, w: tankW, h: tankH }
+      : null
+    const playerW = showPlayer && it.playerName
+      ? estimateLabelWidth(it.playerName, 9, PLAYER_MAX_WIDTH_PX) : 0
+    const playerBox = showPlayer && playerW > 0
+      ? { x: it.x - playerW / 2, y: identityTop, w: playerW, h: playerH }
+      : null
+
+    // 选中倒三角贴在身份块（整个标签栈的最上沿）之上。
     const selectedBox = it.selected === true
-      ? { x: it.x - SELECTED_MARK_W_PX / 2, y: markerTop - LABEL_GAP_PX - labelBlockH - SELECTED_NAME_GAP_PX - SELECTED_MARK_H_PX, w: SELECTED_MARK_W_PX, h: SELECTED_MARK_H_PX }
+      ? { x: it.x - SELECTED_MARK_W_PX / 2, y: identityTop - SELECTED_NAME_GAP_PX - SELECTED_MARK_H_PX, w: SELECTED_MARK_W_PX, h: SELECTED_MARK_H_PX }
       : null
 
     result.set(it.accountId, {

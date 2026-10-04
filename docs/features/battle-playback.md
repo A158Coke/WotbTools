@@ -36,17 +36,19 @@ anti-future-leak 或现有 tank-marker 资产契约。
 - Desktop（`>=1200px`）、Tablet（`768–1199px`）和 Mobile（`<768px`）共用同一套
   Universal Battle HUD：己方在左、权威比分/基地状态在中（无事实时不渲染占位符）、敌方在右；HP 的
   `FULL_RELATIVE`、`EXACT`、`PARTIAL`、`UNKNOWN` 语义保持不变。
-- 地图是 workspace 的主视觉。Desktop / Tablet 的 controls 为紧凑流式布局，Mobile
-  初始只保留地图和 HUD；轻触地图显示播放 controls，控制事件不会穿透到地图。
+- 2D / 3D 共用中心栈（2D 取最大正方形，3D 横屏铺满可用宽高）：地图/时间、HP/比分与 compact 基地 metadata 的持久 HUD → Stage → Transport。击杀流是独立的有界 overlay（2D 最多保留最新 2 条、3D 最多 3 条），不参与 HUD 高度预算，因此条目变化不会牵动 Stage / Transport 重排。
+- 主控件共用 `PlaybackTransport.vue`，顺序为 `-5 / Play-Pause / +5 / 当前速度 / 全屏 / Display`，速度档位按需展开，六个触控目标至少 44px。
+- 侧车道以 workspace 宽度作 fluid sizing，并保持可读下限；桌面左 / 中 / 右列约为 25% / 50% / 25%，短横屏保留主控件所需列宽。HUD 铺满中心列，桌面放大字号与血条厚度；名册与战场标签的装填条均与 HP 条等宽且更细；战场血量数值置于加厚血条内，不重复显示百分比。2D Stage 同时受中心可用宽度和实测可用高度约束；3D 横屏画布铺满中心列可用宽高，相机比例随容器更新，竖屏保持正方形。容量按**视口**算（`视口高 − 顶栏/底栏 − 实测 HUD − 实测 Transport − 间距`），刻意不用根元素的内容高度，也就不用按断点各写一套固定扣减。
+- Display 由 `PlaybackDisplaySurface.vue` 锚定 Gear，优先向上、空间不足换边并夹紧；竖屏采用有界 inline 面。Details 仍为独立的 workspace 级可拖动上下文窗。
 - 形态判定（`shared/breakpoints` 的 `PLAYBACK_MOBILE_QUERY`）：Mobile = 宽 `<768px` 或触屏且高 `≤500px`（手机横屏）；`768–1199px` 一律 Tablet、`≥1200px` 一律 PC。布局只看可用空间，触屏只放大控件点击区域（44px），iPad / Android 平板拿 Tablet 形态。
 - 不抢页面：滚轮只在全屏、按住 Ctrl/⌘ 或刚在地图上按下后才缩放，否则交给页面滚动并短暂提示；地图未放大、非全屏、未标注时 `touch-action: pan-y`，单指纵向滑动滚动页面；`active=false`（隐藏的模式 / KeepAlive 停用）时暂停并不响应空格 / 方向键。地图高度扣掉固定顶栏，手机横屏按可用高度封顶。
-- PC / 宽平板（≥860）的右侧栏未选车时显示两队阵容，点玩家打开车辆详情；控制条在底部时，☰ 侧栏不再重复标注 / 重置视图 / 全屏。
-- Display、Events、Vehicle 与 Battle 内容通过侧面板按需显示；Events 只呈现
+- 两队阵容属于 Stage 两侧的有界车道；点玩家打开独立 Details，未选车时不预留详情列。
+- Display 与 Events 从 Gear 按需打开，Vehicle 由选车打开 Details；Events 只呈现
   `DAMAGE`、`KILL`、`DESTROYED`，点击事件执行 seek + pause，纯时间轴不承载事件标记。
 - 标注工具默认折叠，绘图不暂停 battle clock。Fullscreen 继续保持同一组件实例的
   current time、playing、倍速、选中车辆、zoom/pan、annotations 和偏好；移动端只对
   `screen.orientation.lock('landscape')` 做 best-effort 尝试，失败不阻断播放。
-- Fullscreen 几何 ownership 按 form 固定：Universal Battle HUD 在 PC / Tablet / Mobile 始终属于地图顶部，即使存在 `pb-side-slots` 也不会迁移到 gutter；side-slot 只允许复用 PC / Tablet 的非移动端 controls 空白侧边空间。camera fit 动态量取顶部 `.pb-hud` 的真实高度，并在 Mobile transient controls 可见时额外量取 `.pb-mobile-overlay-content` 作为 bottom safe inset；Mobile 本身不启用 side-slot optimization。`test:browser-layout` 用真实 Chrome 几何断言覆盖 fullscreen + side-slot / mobile bottom-overlay，禁止只靠 CSS 源码正则判断。
+- Fullscreen 复用普通工作区的 HUD → Stage → Transport ownership，只更新可用容量与 safe-area。`test:browser-layout` 和 `test:browser-interaction` 用真实 Chrome 几何与交互断言覆盖桌面、平板、手机横竖屏和原生 fullscreen。
 - `BattlePlaybackDataset.baseStates` 是后端 canonical 基地 transition：Supremacy 来自
   wrapper12/root11（`baseId=A|B|C|D`），Assault 单基地来自 wrapper8/root8
   （`baseId=BASE`）。Assault controlled 11.20 样本证明 progress 会真实广播到 `100`；
@@ -236,11 +238,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     selectAt（hitTest 像素→内容坐标）/ textInputStyle / semanticPoint 全部经 mapWidth/mapHeight 读取
     → fullscreen enter/exit 后 collision / hitbox / 标注换算立即用新尺寸重算（禁止 magic delay）；
     zoom/pan 不自动 reset（无 auto-fit；Reset View 由用户使用）。全屏 `.battle-playback:fullscreen`
-    为 3-column Workspace grid（64px Left Rail | Map Workspace | Right Details）：Left Rail 提供
-    Battle/Vehicle/Display/Events/Annotation/Reset View；Map Workspace 中央列承载 HUD + 地图 + controls
-    （均为 overlay，不占地图 layout）；Right Details 常驻（未选状态默认 Battle Summary，选车/选事件切换
-    对应 Details）。地图按 `--pb-map-ratio` 保持真实宽高比（contain，无非等比拉伸，zoom 后可大于
-    viewport 随 pan/zoom 裁剪）；HUD / controls 为顶部/底部 overlay；non-fullscreen 仍 map-first。
+    复用普通工作区的有界 roster 车道与中央 HUD → Stage → Transport 栈；Details 是
+    workspace 级浮窗，Display 锚定 Gear（竖屏 inline）。地图按真实宽高比 contain，无非等比拉伸，
+    zoom 后可大于 viewport 随 pan/zoom 裁剪；HUD 与 Transport 占流式布局，killfeed 有界覆盖。
     生命周期：`fullscreenchange` listener 与 ResizeObserver 在 unmount 时移除/disconnect；组件在全屏
     中被卸载时仅退出自己拥有的 fullscreen。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
@@ -373,17 +373,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `scoreFriend/scoreEnemy`（`friendly_team = 2` 时交换），否则会出现「己方血条 + 对方比分」的错位；
   `friendly_team` 未知（≠ 1/2）时**不建立视角**：比分与两队血量一律 0 / 0（与 `pointsAt` 同为
   fail-closed，unknown ≠ enemy），不得把物理 team1 当「己方」上屏再染成 ally / enemy 两色。
-- **物理队伍 vs 记录者视角（2026-02 收敛，两套并存且不得互相替代）**：
-  - `team ∈ {1, 2, null}` = **物理队伍**身份，走固定语义色 `--color-team-1` / `--color-team-2`
-    （`null` → `--color-team-text-secondary` 系中性色）。**3D 名册**（`Replay3DPane.vue` 左右侧边
-    车道）用这一套：左 = Team 1、右 = Team 2、未识别阵营在左车道底部；位置、标题、颜色都不随
-    录像者属于哪一队改变。
-  - `relation ∈ {friendly, enemy, unknown}` = **记录者视角**，走 `--color-team-ally` /
-    `--color-team-enemy`（在 `styles/tokens/color.css` 里定义为物理色的用途别名）。3D 顶栏
-    双方总血量/比分、以及 **2D 名册**（`PlaybackRoster` / `BattlePlayback` 的 friendly/enemy 分组）
-    用这一套。
-  - 两套在同一页面同时可见是有意保留的产品约定，靠标题文本区分（「队伍 1/2」vs「我方/敌方」）。
-    **不得**用 `relation` 给名册染色，也不得按 `friendly_team` 交换名册两侧。
+- **队伍身份与 Recorder 视角**：`team` 保留物理队伍身份，`friendly_team` 只用于呈现关系。
+  2D / 3D 名册均将己方放左、敌方放右；录像者属于 Team 2 时交换车道。名册 HP、圆点与
+  行边框使用 `--color-team-ally` / `--color-team-enemy`，未知视角使用中性色，未知阵营独立分组。
 - **3D 名册行状态在时刻投影**（`scene/rosterState.js`）：静态身份（eid / team / 昵称 / 车型）在会话
   开始时建一次；运行时状态（`hp` / `maxHp` / `dead` / `followed`）由 `projectRoster(vehicles, t)`
   按当前回放时刻**纯函数**投影，`playbackScene.updateRoster()` 只写变化过的字段。
@@ -400,7 +392,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `VehicleDetailsPanel.vue`；3D 场景通过 selection callback 上报，由 Pane 持有 selectedEid。
   选车不移动相机、不自动 Follow；Follow 是显式相机命令，Free/Top 不清选中。
   详情共用 identity/HP/time 契约，portrait、last-known、destroyed-at、stats、track inspector、
-  damage log 按 evidence 可选；3D 缺失字段不写假零。phone / 短视口详情临时覆盖，不占永久场景空间，
+  damage log 使用 canonical track（含装备、物资、消耗品状态）；3D 缺失字段不写假零。phone / 短视口详情临时覆盖，不占永久场景空间，
   关闭不重新解析、不重建 Three.js 或加载资产。
 - **共同 phone/fullscreen 契约**：`usePlaybackPhoneForm()` / `PLAYBACK_MOBILE_QUERY` 同时驱动
   2D/3D compact transport、toolbar hierarchy、临时名册/详情和 safe-area；3D 根 `.phone-form`
@@ -542,3 +534,5 @@ python common/python/extract_vehicle_sizes.py --check   # CI：过期即失败
 Playback 继续使用现有俯视 hull/turret 资产，不引入 3D 坦克模型。启用 2.5D terrain relief 时，前端以当前车辆 footprint 和可靠 hull yaw 在 heightfield 上采样前/后/左/右地面高度，得到 presentation-only pitch/roll。pitch/roll 只倾斜车辆视觉层 `.pb-graphics`；HP、名称、hitbox、selected/recorder 与 collision layout 保持 screen-aligned。
 
 该姿态来自地图权威 heightfield，不从前端猜测 replay Z；无 terrain model 或无可靠 hull yaw 时保持原有平面 marker。为避免小尺寸贴图翻卡片，视觉 pitch clamp ±14°、roll clamp ±10°，并遵守 `prefers-reduced-motion`。
+
+- 3D Details 与 2D 共用 canonical 查询及 `V2VehicleInspector`：选中账号对应的 track 提供时刻统计、伤害日志、最后已知时间、装备、物资与消耗品状态，肖像按车型懒加载。2D / 3D 复用工作台 playback session 的同一份解析结果；3D 只等待 scene readiness，canonical 后台就绪后自动增强已打开的 Details。3D 按独立 clock.startRaw 转换场景时钟（不依赖 reload telemetry）；数据缺失保持 unavailable，不使用终局汇总代替当前统计。

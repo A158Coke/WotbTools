@@ -10,16 +10,12 @@ const frontendRoot = resolve(here, '..')
 
 const chrome = findChrome()
 const cssPaths = [
+  'src/styles/tokens/scale.css',
   'src/styles/playback-shared.css',
-  'src/styles/playback-pc.css',
-  'src/styles/playback-tablet.css',
   'src/styles/playback-mobile.css',
   // Owns the square-Stage contract (`--pb-square-side`) and the Team 1 | Stage | Team 2 workspace.
   // Same position as in src/main.js: after the three form files, before the fullscreen refinements.
   'src/styles/playback-workspace.css',
-  'src/styles/playback-mobile-fullscreen.css',
-  // Must remain last: this owns battle-HUD placement across form-specific fullscreen rules.
-  'src/styles/playback-fullscreen-form-contract.css',
 ]
 
 // Native :fullscreen cannot be entered reliably from a file:// headless fixture without a user
@@ -29,7 +25,6 @@ const productionCss = cssPaths
   .map((path) => readFileSync(resolve(frontendRoot, path), 'utf8'))
   .join('\n')
   .replaceAll(':fullscreen', '.pb-test-fullscreen')
-const safeInsetsUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/playbackSafeInsets.js')).href
 const rasterDensityUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/mapRasterDensity.js')).href
 const battleMapSource = readFileSync(resolve(frontendRoot, 'src/components/BattleMap.vue'), 'utf8')
 const battlePlaybackSource = readFileSync(resolve(frontendRoot, 'src/components/BattlePlayback.vue'), 'utf8')
@@ -45,7 +40,10 @@ const scenarios = [
   { name: 'pc-1600x900', form: 'pc', width: 1600, height: 900, check: 'pc' },
   { name: 'tablet-1024x768', form: 'tablet', width: 1024, height: 768, check: 'tablet' },
   { name: 'mobile-390x844', form: 'mobile', width: 390, height: 844, check: 'mobile' },
-  // Structural isolation: a PC form at tablet width must not accidentally receive tablet geometry.
+  { name: 'phone-landscape-740x360', form: 'mobile', width: 740, height: 360, check: 'wide' },
+  { name: 'phone-landscape-844x390', form: 'mobile', width: 844, height: 390, check: 'wide' },
+  { name: 'wide-fullscreen-1792x922', form: 'pc', width: 1792, height: 922, check: 'wide', fullscreen: true },
+  // Form differences must not override the shared geometry.
   { name: 'pc-isolated-at-1024', form: 'pc', width: 1024, height: 768, check: 'pc-isolated' },
   // Real raster frame guard: intentionally non-square logical dimensions must remain the shared
   // frame for the basemap img, overlay SVG and marker layer.
@@ -54,8 +52,7 @@ const scenarios = [
   // same 20px screen displacement as the HTML marker on a mobile-sized visible map frame.
   { name: 'leader-line-non-1-to-1', form: 'mobile', width: 390, height: 844, check: 'leader' },
 
-  // Real browser geometry guards for the regression behind PR #248. sideSlots is forced on the
-  // class for CSS-cascade coverage; production JS only enables it when the measured gutter qualifies.
+  // Fullscreen changes capacity while retaining the shared three-row battlefield contract.
   { name: 'pc-fullscreen-side-slots', form: 'pc', width: 1920, height: 900, check: 'fullscreen', fullscreen: true, sideSlots: true, controlsInRail: false },
   { name: 'tablet-fullscreen-side-slots', form: 'tablet', width: 1180, height: 320, check: 'fullscreen', fullscreen: true, sideSlots: true, controlsInRail: false },
   // Mobile production JS no longer enables sideSlots, but force the stale class defensively: even if
@@ -65,9 +62,12 @@ const scenarios = [
 
 function fixtureHtml(scenario) {
   const fullscreen = !!scenario.fullscreen
+  const lanes = !['mobile', 'raster', 'leader'].includes(scenario.check)
   const rootClasses = [
     'battle-playback',
+    'playback-workspace',
     `pb-form-${scenario.form}`,
+    lanes ? 'pb-roster-lanes' : '',
     fullscreen ? 'pb-test-fullscreen' : '',
     scenario.sideSlots ? 'pb-side-slots' : '',
   ].filter(Boolean).join(' ')
@@ -76,8 +76,7 @@ function fixtureHtml(scenario) {
     scenario.form === 'mobile' && fullscreen ? 'pb-mobile-overlay-transient' : '',
     scenario.controlsVisible ? 'pb-mobile-overlay-visible' : '',
   ].filter(Boolean).join(' ')
-  const controlsInRail = !!scenario.controlsInRail
-  const controlsMarkup = '<div class="pb-controls"><button class="pb-btn">play</button><button class="pb-btn">-5</button><button class="pb-btn">+5</button><div class="pb-speed"><button class="pb-btn">1×</button></div><span class="pb-time">00:12 / 01:00</span></div>'
+  const controlsMarkup = '<div class="pb-controls"><button class="pb-btn">-5</button><button class="pb-btn">play</button><button class="pb-btn">+5</button><button class="pb-btn">1×</button><button class="pb-btn">fullscreen</button><button class="pb-btn">gear</button></div><span class="pb-time">00:12 / 01:00</span>'
   return `<!doctype html>
 <html>
 <head>
@@ -96,7 +95,6 @@ function fixtureHtml(scenario) {
   .pb-hud-grid { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:12px; width:100%; }
   .pb-hud-team { min-width:0; }
   .pb-hud-track { display:block; height:8px; background:#555; }
-  .pb-left-rail { min-height: 160px; }
   .pb-main { width: 100%; }
   .pb-map-stage { width: 100%; }
   .pb-map { position:relative; width:100%; height:100%; min-width:0; min-height:1px; overflow:hidden; background:#090909; }
@@ -106,10 +104,9 @@ function fixtureHtml(scenario) {
   .pb-markers { position:absolute; inset:0; pointer-events:none; }
   .pb-marker { position:absolute; width:20px; height:20px; transform:translate(-50%,-50%); border-radius:50%; background:#f00; }
   .pb-marker-leader { stroke:#aaa; stroke-width:1; }
-  .pb-side-panel-shell { min-width:0; min-height:0; }
-  .pb-sidebar, .pb-side-panel { min-height:120px; }
   .pb-mobile-overlay-content { min-height:72px; }
-  .pb-btn { min-width:36px; min-height:36px; }
+  .pb-controls { display: flex; justify-content: center; gap: 4px; }
+  .pb-btn { min-width:44px; min-height:44px; }
 
   /* Relevant scoped PlaybackMobileOverlay geometry. The global form contract below has the same
      production specificity relationship to these rules as it does in the app bundle. */
@@ -123,6 +120,7 @@ ${productionCss}
 </head>
 <body>
 <div id="root" class="${rootClasses}">
+    <main class="pb-main">
   <section class="pb-hud">
     <div class="pb-hud-grid">
       <div class="pb-hud-team pb-hud-column-friendly">Friendly HP<span class="pb-hud-track"></span></div>
@@ -130,21 +128,16 @@ ${productionCss}
       <div class="pb-hud-team pb-hud-enemy pb-hud-column-enemy">Enemy HP<span class="pb-hud-track"></span></div>
     </div>
   </section>
-  <aside class="pb-left-rail"><button class="pb-rail-collapse">rail</button>${controlsInRail ? controlsMarkup : ''}</aside>
-    <main class="pb-main">
+    ${lanes ? '<aside class="pb-team-lane pb-team-lane-left">Team 1</aside><aside class="pb-team-lane pb-team-lane-right">Team 2</aside>' : ''}
     <div class="pb-map-stage">
       <div class="pb-map"${scenario.check === 'leader' ? ' style="width:390px;height:387px"' : ''}><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : scenario.check === 'leader' ? ' style="width:400%;aspect-ratio:769 / 763;transform:translate(-585px,-580.5px)"' : ''}>
         ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : scenario.check === 'leader' ? `<svg class="pb-svg" viewBox="0 0 769 763"><line class="pb-marker-leader" x1="384.5" y1="381.5" x2="384.5" y2="381.5"></line></svg><div class="pb-markers"><div class="pb-marker" style="left:calc(50% + 20px);top:calc(50% - 16px)"></div></div>` : ''}
       </div></div>
-      <!-- Production keeps only an empty shell in the stage: vehicle Details is a workspace-level
-           floating panel (or an inline block in the portrait flow), never a stage column / sheet. -->
-      <div class="pb-side-panel-shell"></div>
     </div>
-    <div class="${overlayClasses}"><div class="pb-mobile-overlay-content">${controlsInRail ? '' : controlsMarkup}</div></div>
+    <div class="${overlayClasses}"><div class="pb-mobile-overlay-content">${controlsMarkup}</div></div>
   </main>
 </div>
 <script type="module">
-import { playbackSafeInsetOwnership } from ${JSON.stringify(safeInsetsUrl)}
 import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
 
 // This module script is deferred by HTML and the load event waits for its module graph to finish.
@@ -156,10 +149,10 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
     const map = root.querySelector('.pb-map')
     const viewport = root.querySelector('.pb-viewport')
     const hud = root.querySelector('.pb-hud')
-    const shell = root.querySelector('.pb-side-panel-shell')
-    const rail = root.querySelector('.pb-left-rail')
     const overlayContent = root.querySelector('.pb-mobile-overlay-content')
     const button = root.querySelector('.pb-btn')
+    root.style.setProperty('--pb-workspace-h', innerHeight + 'px')
+    root.style.setProperty('--pb-square-avail-h', Math.max(1, innerHeight - hud.getBoundingClientRect().height - overlayContent.getBoundingClientRect().height - 8) + 'px')
     const rootStyle = getComputedStyle(root)
     const stageStyle = getComputedStyle(stage)
     const buttonStyle = button ? getComputedStyle(button) : null
@@ -167,24 +160,40 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
     let metrics = null
     const require = (ok, message) => { if (!ok) failures.push(message) }
 
-    if (${JSON.stringify(scenario.check)} === 'pc') {
+    if (${JSON.stringify(lanes)}) {
+      const main = root.querySelector('.pb-main').getBoundingClientRect()
+      const left = root.querySelector('.pb-team-lane-left').getBoundingClientRect()
+      const right = root.querySelector('.pb-team-lane-right').getBoundingClientRect()
       const mapRect = map.getBoundingClientRect()
-      const stageRect = stage.getBoundingClientRect()
-      const shellRect = shell.getBoundingClientRect()
-      require(rootStyle.display === 'grid', 'PC root must use grid at >=1200px')
-      require(getComputedStyle(rail).display === 'flex', 'PC left rail must be persistent')
-      require(stageStyle.display === 'grid', 'PC map stage must use map/details grid')
-      require(shellRect.left >= mapRect.right - 2, 'PC details must occupy a distinct right column')
-      require(stageRect.height <= innerHeight - 150, 'PC stage must remain viewport-bounded')
+      const controlsRect = overlayContent.getBoundingClientRect()
+      const centerWidth = right.left - left.right - 8
+      const availableHeight = innerHeight - hud.getBoundingClientRect().height - controlsRect.height - 8
+      require(left.right <= mapRect.left && right.left >= mapRect.right, 'physical lanes must flank the Stage')
+      require(Math.abs(mapRect.width - mapRect.height) <= 1, 'wide Stage must remain square')
+      require(mapRect.width >= Math.min(centerWidth, availableHeight) - 2, 'Stage must maximize the available square')
+      require(controlsRect.top >= mapRect.bottom - 1 && controlsRect.top - mapRect.bottom <= 8, 'transport must sit tightly below Stage')
+      metrics = {
+        laneWidth: left.width,
+        laneRight: right.width,
+        stageSide: mapRect.width,
+        centerWidth,
+        availableHeight,
+        gridColumns: rootStyle.gridTemplateColumns,
+        laneToken: rootStyle.getPropertyValue('--pb-lane-w').trim(),
+        hudWidth: hud.getBoundingClientRect().width,
+        hudLeft: hud.getBoundingClientRect().left,
+        hudRight: hud.getBoundingClientRect().right,
+        mainWidth: main.width,
+        mainRight: main.right,
+      }
     }
-    if (${JSON.stringify(scenario.check)} === 'tablet') {
+    if (['pc', 'tablet'].includes(${JSON.stringify(scenario.check)})) {
       const mapRect = map.getBoundingClientRect()
       const stageRect = stage.getBoundingClientRect()
-      const shellRect = shell.getBoundingClientRect()
-      require(stageStyle.display === 'grid', '1024 tablet map stage must use two-column grid')
-      require(shellRect.left >= mapRect.right - 2, 'tablet details must occupy the second column')
-      require(stageRect.height <= innerHeight - 150, 'tablet stage must remain viewport-bounded')
-      require(getComputedStyle(rail).display === 'none', 'tablet left rail must not become a persistent PC rail')
+      require(rootStyle.display === 'flex', 'workspace root owns shared HUD/center stack')
+      require(stageStyle.display === 'block', 'Stage must not reserve an obsolete details column')
+      require(Math.abs(mapRect.width - mapRect.height) <= 1, 'battlefield must remain square')
+      require(stageRect.height <= innerHeight, 'stage must remain viewport-bounded')
     }
     if (${JSON.stringify(scenario.check)} === 'mobile') {
       require(rootStyle.display === 'flex', 'mobile root must retain flow layout when not fullscreen')
@@ -193,9 +202,8 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
       const mapRect = map.getBoundingClientRect()
       require(mapRect.width > 0 && Math.abs(mapRect.width - mapRect.height) <= 1, 'mobile portrait map must be a square')
       require(mapRect.width <= innerWidth + 0.5, 'mobile portrait square must fit the viewport width')
-      require(getComputedStyle(rail).display === 'none', 'closed mobile rail must not cover the map')
-      require(buttonStyle && parseFloat(buttonStyle.minWidth) >= 36 && parseFloat(buttonStyle.minHeight) >= 36,
-        'mobile controls must retain >=36px touch targets')
+      require(buttonStyle && parseFloat(buttonStyle.minWidth) >= 44 && parseFloat(buttonStyle.minHeight) >= 44,
+        'fixture controls must retain their intrinsic size')
     }
     if (${JSON.stringify(scenario.check)} === 'pc-isolated') {
       require(stageStyle.display !== 'grid', 'PC form at 1024px must not receive tablet grid rules')
@@ -296,23 +304,14 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
     }
 
     if (${JSON.stringify(fullscreen)}) {
-      const ownership = playbackSafeInsetOwnership({
-        isFullscreen: true,
-        formFactor: ${JSON.stringify(scenario.form)},
-        sideSlots: ${JSON.stringify(!!scenario.sideSlots)},
-        controlsInRail: ${JSON.stringify(controlsInRail)},
-      })
       const hudRectBefore = hud.getBoundingClientRect()
       const stageRect = stage.getBoundingClientRect()
       const contentRectBefore = overlayContent.getBoundingClientRect()
       const overlayWrapRectBefore = root.querySelector('.pb-mobile-overlay').getBoundingClientRect()
       const mapRectBefore = map.getBoundingClientRect()
-      // Reserve only what actually overlaps the stage: in the square-Stage workspace the stage is
-      // already laid out below the HUD / above the transport, so there is nothing left to inset.
-      const top = ownership.reserveTop ? Math.max(0, hudRectBefore.bottom - stageRect.top) : 0
-      const bottom = ownership.reserveBottom && contentRectBefore.height > 0
-        ? Math.max(0, Math.min(stageRect.bottom, overlayWrapRectBefore.bottom) - contentRectBefore.top)
-        : 0
+      // HUD and transport occupy their own grid rows outside Stage. Camera safe insets are zero.
+      const top = 0
+      const bottom = 0
       const safeH = Math.max(1, stageRect.height - top - bottom)
       const naturalW = mapRectBefore.width
       const naturalH = naturalW
@@ -341,7 +340,7 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
           'fitted mobile map viewport must not sit underneath visible bottom controls'
             + ' (viewport=' + JSON.stringify(viewportRect) + ' controls=' + JSON.stringify(overlayRect) + ' stage=' + JSON.stringify(stageRect) + ')')
         require(getComputedStyle(root.querySelector('.pb-mobile-overlay')).width !== getComputedStyle(root).getPropertyValue('--pb-slot-w').trim(),
-          'mobile controller must not become a permanent side-slot rail')
+          'mobile controller must not become a permanent side-slot rail (the side-slot contract is gone, so this must always hold)')
       }
     }
 
@@ -360,6 +359,7 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
 // 否则直接失败——不允许把一个回退过的视口算作该形态的覆盖。
 const temp = mkdtempSync(resolve(tmpdir(), 'wotb-playback-browser-'))
 const browser = await launchChromeForCdp(chrome, { extraArgs: ['--allow-file-access-from-files', '--run-all-compositor-stages-before-draw'] })
+const geometryByName = new Map()
 try {
   for (const scenario of scenarios) {
     const htmlPath = resolve(temp, `${scenario.name}.html`)
@@ -379,7 +379,62 @@ try {
     if (result.failures.length) {
       throw new Error(`${scenario.name}:\n- ${result.failures.join('\n- ')}`)
     }
+    geometryByName.set(scenario.name, result.metrics)
     console.log(`[browser-layout] ${scenario.name} OK (${result.width}x${result.height})${result.metrics ? ` ${JSON.stringify(result.metrics)}` : ''}`)
+  }
+  const tablet = geometryByName.get('tablet-1024x768')
+  const desktop = geometryByName.get('pc-1600x900')
+  const fullscreen = geometryByName.get('wide-fullscreen-1792x922')
+  const phoneLandscape = geometryByName.get('phone-landscape-844x390')
+  // Equal roster lanes absorb width beyond the maximum square while retaining their floor.
+  if (!(tablet.laneWidth >= 9 * 16 - 0.5 && desktop.laneWidth > tablet.laneWidth)) {
+    throw new Error('Roster lanes must keep their readable floor and grow with the workspace')
+  }
+
+  // —— 横向空间归属：桌面中心贴合正方形、车道承接余量 ——
+  //
+  // 用比例 / 恒等式而不是像素宽度做验收：断点只决定形态，尺寸由 fr 连续决定，
+  // 所以「center 相对 lane 有多宽」才是要锁的契约，具体 px 会随视口自由变化。
+  const LANE_GAP_PX = 8 // --space-2：三栏之间的 gutter，由 --space-* token 决定
+  const ROSTER_MIN_PX = 9 * 16 // --pb-roster-min（窄档 fallback 的下限）
+  const contractFailures = []
+  const requireContract = (ok, message) => { if (!ok) contractFailures.push(message) }
+
+  for (const [name, metrics] of geometryByName) {
+    if (!metrics?.hudWidth) continue // 非三栏场景（mobile portrait / raster / leader）不参与
+    const label = `${name}: lane=${metrics.laneWidth} center=${metrics.centerWidth} stage=${metrics.stageSide}`
+    // 两条 lane 等宽，且不低于可读下限（2/6/2 的窄档 fallback 就是守在 --pb-roster-min 上）
+    requireContract(Math.abs(metrics.laneWidth - metrics.laneRight) <= 0.5, `both lanes must share one width: ${label}`)
+    requireContract(metrics.laneWidth >= ROSTER_MIN_PX - 0.5, `roster lane must keep its readable floor: ${label}`)
+    // center 必须吃掉**全部**剩余宽度：等于 整宽 − 两条 lane − 一条 gutter。
+    // 这条恒等式才是「center 没有额外 max-width / 固定宽度 / 多余 margin」的直接证据。
+    // 注意 `centerWidth` 量的是 right.left − left.right − LANE_GAP_PX：右 lane 的 gutter
+    // 已经内含在这段距离里，所以再减一条就重复了。
+    const expectedCenter = metrics.mainWidth - 2 * metrics.laneWidth - LANE_GAP_PX
+    requireContract(Math.abs(metrics.centerWidth - expectedCenter) <= 1,
+      `center column must consume all remaining width (expected ${expectedCenter}): ${label}`)
+    // Desktop keeps the center twice as wide as either roster.
+    if (metrics.mainWidth >= 1200) requireContract(Math.abs(metrics.centerWidth - metrics.laneWidth * 2) <= 2,
+      `desktop center must be twice the roster lane width: ${label}`)
+    requireContract(metrics.stageSide <= metrics.centerWidth + 0.5, `Stage must fit inside the center column: ${label}`)
+    // HUD 属于整个 center column，而不是按内容收缩成中间小块
+    requireContract(Math.abs(metrics.hudWidth - metrics.centerWidth) <= 1,
+      `HUD must span the whole center column (hud=${metrics.hudWidth} center=${metrics.centerWidth}): ${label}`)
+    // center 横向居中，且不产生水平溢出
+    requireContract(Math.abs((metrics.hudLeft + metrics.hudRight) / 2 - metrics.mainWidth / 2) <= 1,
+      `center column must stay centered: ${label}`)
+    requireContract(metrics.stageSide <= metrics.availableHeight + 1,
+      `Stage must never exceed the measured vertical budget: ${label}`)
+  }
+
+  // Wide viewport surplus is assigned to the roster lanes.
+  requireContract(fullscreen.laneWidth > desktop.laneWidth,
+    `extra wide-viewport width must grow the roster lanes: desktop=${desktop.centerWidth}/${desktop.laneWidth} fullscreen=${fullscreen.centerWidth}/${fullscreen.laneWidth}`)
+  // 短横屏（844x390）与平板仍保持三栏 + 可读 roster
+  requireContract(phoneLandscape.centerWidth > phoneLandscape.stageSide,
+    `phone landscape center must remain the widest column: ${JSON.stringify(phoneLandscape)}`)
+  if (contractFailures.length) {
+    throw new Error(`workspace column ownership contract:\n- ${contractFailures.join('\n- ')}`)
   }
 } finally {
   await browser.close()

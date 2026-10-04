@@ -67,7 +67,7 @@ function paneMock(name, testid) {
     __esModule: true,
     default: {
       name,
-      props: ['file', 'active', 'blockedReason', 'navigate'],
+      props: ['file', 'active', 'blockedReason', 'navigate', 'playbackSession'],
       template: `<div data-test="${testid}" data-testid="${testid}">{{ file && file.name }}|{{ blockedReason }}|{{ active }}</div>`,
     },
   }
@@ -388,6 +388,18 @@ describe('ReplayWorkspace', () => {
     await switchTo(wrapper, 'ai')
     expect(wrapper.find('[data-test="ws-ai-pane"]').exists()).toBe(true)
     expect(tab(wrapper, 'ai').classes()).toContain('is-active')
+    wrapper.unmount()
+  })
+
+  it('2D and 3D receive the same workspace playback session owner', async () => {
+    withBattles(1)
+    const wrapper = mountWorkspace('playback')
+    await flushPromises()
+    const owner = wrapper.getComponent({ name: 'BattlePlaybackPanelMock' }).props('playbackSession')
+    expect(owner.loadScene).toBeTypeOf('function')
+    expect(owner.loadCanonical).toBeTypeOf('function')
+    await switchTo(wrapper, '3d')
+    expect(wrapper.getComponent({ name: 'Replay3DPaneMock' }).props('playbackSession')).toBe(owner)
     wrapper.unmount()
   })
 

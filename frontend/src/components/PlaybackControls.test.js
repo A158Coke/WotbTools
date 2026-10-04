@@ -75,8 +75,8 @@ describe('PlaybackControls', () => {
     }))
     const wrapper = mountControls()
     expect(wrapper.get('[data-test="pb-controls"]').classes()).not.toContain('phone-form')
-    expect(wrapper.find('.pb-speed').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(false)
+    expect(wrapper.find('.pb-speed').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -86,6 +86,7 @@ describe('PlaybackControls', () => {
     await wrapper.find('[data-test="pb-play"]').trigger('click')
     await wrapper.find('[data-test="pb-back5"]').trigger('click')
     await wrapper.find('[data-test="pb-fwd5"]').trigger('click')
+    await wrapper.find('[data-test="pb-speed-current"]').trigger('click')
     await wrapper.find('[data-test="pb-speed-2"]').trigger('click')
     await wrapper.find('[data-test="pb-fullscreen"]').trigger('click')
 
@@ -98,16 +99,15 @@ describe('PlaybackControls', () => {
   it('keeps panels and annotations as compact secondary actions and forwards timeline events', async () => {
     const wrapper = mountControls()
 
-    await wrapper.find('[data-test="pb-panels"]').trigger('click')
-    await wrapper.find('[data-test="pb-annotation"]').trigger('click')
+    await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
     await wrapper.find('[data-test="timeline-drag"]').trigger('click')
     await wrapper.find('[data-test="timeline-seek"]').trigger('click')
 
     expect(wrapper.emitted('toggle-panels')).toHaveLength(1)
-    expect(wrapper.emitted('toggle-annotation')).toHaveLength(1)
     expect(wrapper.emitted('drag-start')).toHaveLength(1)
     expect(wrapper.emitted('seek')).toEqual([[17]])
-    expect(wrapper.find('.pb-filters').exists()).toBe(false)
+    // 控件条只有 primary 六项：既没有速度筛选，也没有上一段 / 下一段
+    expect(wrapper.findAll('.pb-controls > button, .pb-controls > .pb-speed-picker > button')).toHaveLength(6)
     expect(wrapper.find('[data-test="pb-prev"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-next"]').exists()).toBe(false)
   })
@@ -137,8 +137,9 @@ describe('PlaybackControls', () => {
     expect(wrapper.find('[data-test="pb-play-unavailable"]').text()).toBe('recon.map.playback.timeline_unavailable')
 
     // 不依赖时间线的操作必须保持可用（不能顺手整体禁用）。
+    await wrapper.find('[data-test="pb-speed-current"]').trigger('click')
     await wrapper.find('[data-test="pb-speed-2"]').trigger('click')
-    await wrapper.find('[data-test="pb-panels"]').trigger('click')
+    await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
     expect(wrapper.emitted('set-speed')).toEqual([[2]])
     expect(wrapper.emitted('toggle-panels')).toHaveLength(1)
   })

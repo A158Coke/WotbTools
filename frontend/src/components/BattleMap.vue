@@ -198,7 +198,7 @@ function onTwoFingerTouch(event) {
 </script>
 
 <template>
-  <div class="pb-map" data-test="pb-map" ref="mapEl" :style="{ aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }" @wheel="emit('wheel', $event)">
+  <div class="pb-map" data-test="pb-map" ref="mapEl" @wheel="emit('wheel', $event)">
     <div
       class="pb-viewport"
       :class="{ 'pb-touch-pan': props.touchPan }"
