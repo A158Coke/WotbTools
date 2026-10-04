@@ -89,5 +89,9 @@ onBeforeUnmount(() => {
   background: var(--color-surface-2);
   box-shadow: var(--elevation-3);
 }
-.pb-display-portrait { order: 4; position: static; inline-size: 100%; max-block-size: 60dvh; }
+/* 竖屏是流内的一块面，顺序由宿主自己决定：2D 的 `.pb-main` 竖屏下就是普通文档流
+   （源码顺序已把 Display 排在传输控件之后），3D 的 `.portrait-flow` 才有显式 order 阶梯。
+   这里**不能**统一写死 order —— 那会把 2D 的面推到竖屏里很高的详情 / 名册块之后，
+   变成「点了 gear 却什么都不发生」。 */
+.pb-display-portrait { position: static; inline-size: 100%; max-block-size: 60dvh; }
 </style>

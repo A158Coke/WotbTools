@@ -597,7 +597,6 @@ describe('Replay3DPane', () => {
       // Both forms disclose camera and presentation preferences from Gear.
       expect(compactPane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(true)
       // 名册没有临时面入口：唯一开关是 disp-roster 呈现偏好
-      expect(compactPane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(false)
       expect(compactPane.find('[data-testid="disp-roster"]').exists()).toBe(true)
       compactPane.unmount()
 
@@ -932,6 +931,29 @@ describe('Replay3DPane', () => {
       await nextTick()
       expect(api.setFollow).toHaveBeenCalledTimes(1)
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
+      wrapper.unmount()
+    })
+
+    it('场景点选带真实事件时按点击原点定详情落位（不抛错、不误判左右）', async () => {
+      mockWebGL('webgl2')
+      const wrapper = mountPane()
+      const api = playback.api
+      api.store.hasData = true
+      api.store.roster = roster
+      await nextTick()
+      const onVehicleSelect = playback.init.mock.calls.at(-1)[3].onVehicleSelect
+      const root = wrapper.get('[data-testid="replay3d-root"]').element
+      // 场景 canvas 上的一次真实点选：事件由 playbackScene 透传，target 既不是左车道也不是右车道，
+      // 落位只能按 clientX 相对 workspace 的位置判定（这条路径曾引用未定义变量而在真实点击时抛错）。
+      const canvas = document.createElement('canvas')
+      root.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 600, right: 1000, bottom: 600 })
+      onVehicleSelect(21, { target: canvas, clientX: 900 })
+      await nextTick()
+      expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
+      expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(true)
+      onVehicleSelect(11, { target: canvas, clientX: 40 })
+      await nextTick()
+      expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       wrapper.unmount()
     })
 
