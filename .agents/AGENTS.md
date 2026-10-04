@@ -63,6 +63,20 @@
    ├─ build / config / dependency / architecture → broader validation（可能触发 Full）
    └─ 无法确定影响范围 → Full-test 例外，先说明原因
 
+   **CI 结果获取——实时 watch，禁止 sleep 轮询**：等待 CI 一律用阻塞式 watch（流式输出、失败退出非 0），
+   不要 `sleep N` 之后再查状态：
+   - 实时看整个 PR：`gh pr checks <pr-number> --watch`（每个 check 状态变化即打印一行，非 TTY/后台也可见）；
+   - 等某个 run 的结论：`gh run watch <run-id> --exit-status --compact`（阻塞到结束；被管道/后台接管时
+     只在结束时整体输出，不要指望逐行进度）；
+   - 取 run-id：`gh run list --branch <branch> --limit 1 --json databaseId,headSha`（run 绑定 head SHA，不可变，
+     同一 run 可反复查看，不必重跑）。刚 push 完 checks 可能尚未创建——此时 `gh pr checks --watch` 会直接
+     `no checks reported`（退出 1），先用上一行取 run-id 再 `gh run watch`。
+   **退出码**：`--exit-status` 的成败信号就是进程退出码——不要把它管进 `| tail` 之类的管道（管道退出码取末段命令，
+   会把失败吞成 0）；要么不加管道，要么 `set -o pipefail`。
+   Agent 执行时把 watch 放**后台**运行、结束后读输出，等待期间并行做其它工作；禁止 sleep 循环轮询
+   `gh run list` / `gh run view`（丢流式进度、失败感知滞后）。push 会按 workflow 的 concurrency 取消在途
+   run——要留存某 head 的 CI 证据时，先等它的 watch 结束再 push 下一个提交。
+
    迭代验证去重与失效：
    - CI 失败后只复现失败 job 对应的本地范围（backend 失败→重跑失败测试；bundle 失败→`npm run build`），
      修复后 `git push` 让 PR CI 重新成为权威验证，不默认再跑整个 repository full suite。

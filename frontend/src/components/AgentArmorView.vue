@@ -59,6 +59,11 @@ function startViewer() {
             showCollision: t('armor.show_collision'),
             hideCollision: t('armor.hide_collision'),
             worldHint: t('armor.world_hint'),
+            shotDamage: t('armor.shot_damage'),
+            shotRicochetSeg: t('armor.shot_ricochet_seg'),
+            shotLoss: t('armor.shot_loss'),
+            shotNominal: t('armor.shot_nominal'),
+            shotBlocked: t('armor.shot_blocked'),
             phase: (phase) => (PHASE_KEY[phase] ? t(`armor.phase_${PHASE_KEY[phase]}`) : phase),
         },
         onLoadState,
@@ -135,8 +140,6 @@ onBeforeUnmount(() => {
             <div id="view-toggle">
                 <button id="collision-btn">{{ $t('armor.show_collision') }}</button>
                 <button id="penetration-btn">{{ $t('armor.heatmap') }}</button>
-                <!-- 审计 3D-14：没有右键的设备（触屏）用开关切到瞄准模式 -->
-                <button id="aim-btn" type="button" aria-pressed="false" :title="$t('armor.aim_hint')">{{ $t('armor.aim') }}</button>
             </div>
         </div>
         <div id="tank-picker">
@@ -368,8 +371,7 @@ onBeforeUnmount(() => {
             min-height: 36px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px;
             background: var(--panel); color: var(--txt); cursor: pointer; backdrop-filter: blur(12px);
         }
-    .armor-view #view-toggle button#aim-btn.active { background: linear-gradient(135deg,var(--accent),var(--accent-2)); color: var(--on-accent); border-color: transparent; }
-    /* 手机顶栏的「参数」开关：桌面端不渲染成可见控件（面板照旧常驻四角布局） */
+       /* 手机顶栏的「参数」开关：桌面端不渲染成可见控件（面板照旧常驻四角布局） */
     .armor-view .armor-tools { display: none; }
     /* 审计 3D-14：触屏控件放大到 44px 点击区域 */
     @media (pointer: coarse) {
@@ -449,8 +451,9 @@ onBeforeUnmount(() => {
         .armor-view #shell-selector select { max-width: 100%; min-height: 44px; }
         .armor-view #view-toggle { flex: 1 1 180px; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px 8px; }
         .armor-view #view-toggle button { min-height: 44px; padding: 4px 6px; font-size: 0.8em; line-height: 1.2; white-space: normal; }
-        /* 炮塔 / 炮管角度：贴顶栏下方的单行小条（给「炮塔」开关提供反馈）；世界模式面板
-           显隐仍由内核控制。放在顶侧后不会再与可换行的底栏重叠。 */
+        /* 炮塔 / 炮管角度：贴顶栏下方的单行小条（拖动炮塔/炮管瞄准时的角度反馈；
+           「炮塔」开关已随交互改造删除）。世界模式面板显隐仍由内核控制。
+           放在顶侧后不会再与可换行的底栏重叠。 */
         .armor-view #turret-controls {
             top: 64px; bottom: auto; left: 8px; right: auto;
             min-width: 0; max-width: calc(100% - 16px); padding: 6px 12px;
