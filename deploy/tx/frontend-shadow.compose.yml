@@ -11,6 +11,11 @@ services:
     image: ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-473495ec07e7
     ports:
       - "10.20.0.3:8081:80"
+    extra_hosts:
+      # The shared nginx template trusts the logical ingress hostname "caddy".
+      # K7B runs the frontend on TX2 while Caddy remains on TX1, so resolve that
+      # logical peer over WireGuard instead of Docker-local DNS.
+      - "caddy:10.20.0.1"
     environment:
       BACKEND_UPSTREAM: http://10.20.0.1:8087
       AI_UPSTREAM: http://10.20.0.2:8089
