@@ -238,6 +238,28 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **安全区：** 顶栏、底部 Tab 栏、底部操作栏、全屏回放都要加 `env(safe-area-inset-*)`。
 - **hover 效果**包在 `@media (hover: hover)` 里，避免触屏上的"粘滞 hover"。
 
+### 6.1 Fluid bounded sizing：固定值只定义边界
+
+普通组件尺寸默认采用 **bounded fluid sizing**，而不是给每个断点写一套固定宽高。
+
+- **固定值只负责边界和可用性约束。** 用语义 token 定义最小可用尺寸（防止内容、触控目标或关键数据被压坏）与最大合理尺寸（防止侧栏、面板在大屏无限膨胀）；固定值不负责描述中间态。
+- **中间尺寸随所属容器连续变化。** 优先使用百分比、`fr`、`minmax()`、`clamp()` 和 container-relative units（`cqw` / `cqh`）；组件级尺寸相对于自己的 workspace/container，而不是默认绑定整个 viewport。
+- **推荐模型：** `clamp(var(--component-min), <fluid container-relative size>, var(--component-max))`。也就是 **min → fluid → max**：小屏守住最低可用，大屏连续增长，到合理上限后停止。
+- **Breakpoint 决定 topology，不决定普通尺寸。** 断点只用于真正的结构变化，例如三栏 → 纵向流、常驻栏 → sheet；禁止仅为了把 `144px` 改成 `196px` / `224px` 而增加 breakpoint-specific fixed sizing。
+- **主内容优先吃剩余空间。** 辅助区域（roster、filters、details/navigation wings）在自己的 min/max 之间 fluid；主工作区使用 `minmax(0, 1fr)` 等方式取得剩余空间。存在二维约束时（例如正方形 Stage），尺寸取可用宽和可用高中的较小值，而不是用某个 viewport magic subtraction 猜测。
+- **允许固定尺寸的场景：** 触控下限、图标、明确的设计 token、协议/素材本身要求的固定比例，以及确实不会随容器增长的 intrinsic control。需要新的固定视觉值时仍按 §1 / §5 先进入 token，而不是写组件魔法数。
+
+示意：
+
+```css
+.workspace {
+  --side-w: clamp(var(--side-min), 14cqw, var(--side-max));
+  grid-template-columns: var(--side-w) minmax(0, 1fr) var(--side-w);
+}
+```
+
+这条规则的目标不是“所有尺寸都写百分比”，而是：**固定值负责防止过小 / 过大，正常区间由可用空间连续决定。** Playback 的 roster / square Stage 是当前参考实现。
+
 ---
 
 ## 7. 组件规范（最小集合）
@@ -375,3 +397,6 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 2026-10-02 已确认：
 - 平板 / 桌面的主导航从顶栏移到左侧边栏（顶栏放不下主栏目 + 管理入口）；"更多"在侧边栏里是弹出面板，只放不常用的设置与关于 / 支持。
+
+2026-10-04 已确认：
+- 全局采用 **fluid bounded sizing**：固定值只定义最小可用 / 最大合理边界，中间尺寸优先随所属 container 连续变化（百分比、`fr`、`clamp()`、`cqw/cqh`）；breakpoint 只负责 topology 变化，不再为普通尺寸维护多套 fixed values。Playback #518 是参考实现。
