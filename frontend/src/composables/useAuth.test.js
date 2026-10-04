@@ -426,15 +426,64 @@ describe('useAuth', () => {
     expect(auth.loginInFlight.value).toBe(false)
   })
 
-  it('logout() 在浏览器里把回跳地址交给 keycloak', async () => {
+  it('logout() 在浏览器里把回跳地址交给 keycloak（落点固定 HOME，不保留登出前 view）', async () => {
+    const auth = useAuth()
+    window.history.replaceState({}, '', '/?view=profile')
+    try {
+      await auth.retryAuth()
+
+      await auth.logout()
+
+      // Phase 5.3：登出落点 = 首页，不是当前 view（否则用户会被 end-session 送回个人中心）
+      expect(kcLogout).toHaveBeenCalledWith({ redirectUri: window.location.origin + '/' })
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('logout() 是 local-first：提交 provider 之前本地状态就已清空（当前页面立即 signed-out）', async () => {
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = USER_CLAIMS
     const auth = useAuth()
     await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
 
-    await auth.logout()
+    // 让 provider.logout 挂起：本地清理不得等它
+    let releaseLogout
+    kcLogout.mockImplementationOnce(() => new Promise((resolve) => { releaseLogout = resolve }))
+    const pending = auth.logout()
 
-    expect(kcLogout).toHaveBeenCalledWith({
-      redirectUri: window.location.origin + window.location.pathname,
-    })
+    expect(auth.authenticated.value).toBe(false)      // 未等网络就落回未登录（Phase 5.4）
+    expect(auth.authInitState.value).toBe('unauthenticated')
+    expect(auth.tokenParsed.value).toBe(null)
+
+    releaseLogout()
+    await pending
+  })
+
+  it('logout() 在**明确离线**时跳过 end-session（best effort），本地照常清空', async () => {
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = USER_CLAIMS
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+    kcLogout.mockClear()
+    // 明确离线：Phase 9.2——本地立即退出，不依赖 Keycloak 网络。
+    // 连通性状态由 store 经 online/offline 事件维护（直接改 navigator.onLine 不生效）：
+    // 重启 store 让初始读取落在 offline。
+    const { useConnectivity } = await import('./useConnectivity.js')
+    useConnectivity().stop()
+    Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true })
+    try {
+      await useConnectivity().start()
+      expect(useConnectivity().connectivity.value).toBe('offline')
+      await auth.logout()
+      expect(kcLogout).not.toHaveBeenCalled()
+      expect(auth.authenticated.value).toBe(false)
+    } finally {
+      Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true })
+      useConnectivity().stop()
+    }
   })
 
   it('logout() 在 Android 上调用 native 会话终结并把本地状态落回未登录', async () => {
