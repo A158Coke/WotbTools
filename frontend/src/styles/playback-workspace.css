@@ -98,9 +98,11 @@
 .pb-root.playback-workspace:not(.portrait-flow) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* A trailing flexible row absorbs spare height without stretching the central stack. */
+  grid-template-rows: auto minmax(0, var(--pb-stage-h, 1fr)) auto minmax(0, 1fr);
   align-content: start;
   gap: var(--space-1);
+  row-gap: 0;
   block-size: var(--pb-workspace-h, var(--pb-workspace-fallback-h));
   height: var(--pb-workspace-h, var(--pb-workspace-fallback-h));
   padding: var(--space-1);
@@ -113,6 +115,7 @@
   grid-row: 2;
   padding: 0;
   align-self: stretch;
+  margin-block: var(--space-1);
 }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) > .pb-stage { grid-column: 2; }
 .pb-root.playback-workspace:not(.portrait-flow) > .hud,
