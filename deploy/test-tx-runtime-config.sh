@@ -174,10 +174,34 @@ reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 'user:pass@10.20
 reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM ':8081' wotb-frontend:80 8081
 reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM '10.20.0.1:' wotb-frontend:80 8081
 reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM '10.20.0.1:abc' wotb-frontend:80 8081
-# Caddy -> Keycloak is the LAST consumer. `10.20.0.1:8080` is a legal value for it in the
-# canonical allowlist, so K6B-2F is held back by the desired-state contracts instead:
-# CURRENT_K6B_CUTOVERS in scripts/ci/test-workflow-contract.sh and the
-# `k6b2f-caddy-keycloak-*-cut-over-early` fixtures in deploy/test-tx-runtime-check.sh.
+# Caddy -> Keycloak (K6B-2F) is guarded by the same canonical Caddy upstream validator.
+# The reviewed values (Docker-local, TX1 WG, TX2 WG) are accepted; the retired Yecao
+# address, every other service-plane port, public hosts, and URL-shaped values are
+# refused, so 8080 (Keycloak), 8081 (Frontend) and 8087 (Business API) can never be
+# swapped. `keycloak:8080` stays legal in the allowlist because it is the rollback value
+# for this consumer; after K6B-2F it is no longer the reviewed production placement, and
+# that is asserted by the desired-state contracts (CURRENT_K6B_CUTOVERS in
+# scripts/ci/test-workflow-contract.sh plus the `k6b2f-*` fixtures in
+# deploy/test-tx-runtime-check.sh).
+validate_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM keycloak:8080 keycloak:8080 8080
+validate_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 10.20.0.1:8080 keycloak:8080 8080
+validate_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 10.20.0.3:8080 keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 10.20.0.2:8080 keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 10.20.0.1:80 keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 10.20.0.1:8081 keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 10.20.0.1:8087 keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 10.20.0.1:8088 keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM auth.wotbtools.com:443 keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM wotbtools.com:443 keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM arbitrary.example:8080 keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 'http://10.20.0.1:8080' keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 'https://10.20.0.1:8080' keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM '10.20.0.1:8080/path' keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM '10.20.0.1:8080?x=y' keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 'user:pass@10.20.0.1:8080' keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM ':8080' keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM '10.20.0.1:' keycloak:8080 8080
+reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM '10.20.0.1:abc' keycloak:8080 8080
 
 # K6B-2A moves the Frontend -> Business API consumer onto a WireGuard placement, so the
 # frontend owner's own deploy must fail when that placement is unreachable instead of
