@@ -130,6 +130,28 @@ grep -qE '^[[:space:]]*respond[[:space:]]' <<<"$android_callback" \
 grep -qi 'reverse_proxy' <<<"$android_callback" \
   && { echo 'ERROR: the /android/oauth/callback handler must answer from Caddy, never reverse_proxy an upstream.' >&2; exit 1; }
 
+# auth 站点的受控访问日志（2.1.0 取证能力，docs/auth/web-qq-diagnostics.md §3.4）：
+# Caddy 的 `log` 不是 ordered HTTP handler——既不能进 `handle` 也不能进 `route`（两者都被
+# caddy adapt 拒绝），因此它是**站点级**的。这里断言它存在，且**脱敏行齐全**：query 里的
+# code/state/session_state/iss 与 Cookie/Authorization 头必须在写 stdout 之前被删除。
+auth_site="$(site_block auth.wotbtools.com)"
+[ -n "$auth_site" ] \
+  || { echo 'ERROR: auth.wotbtools.com site block is missing.' >&2; exit 1; }
+grep -qE '^[[:space:]]*log[[:space:]]*\{' <<<"$auth_site" \
+  || { echo 'ERROR: auth.wotbtools.com must enable the controlled access log.' >&2; exit 1; }
+grep -qE '^[[:space:]]*format[[:space:]]+filter[[:space:]]*\{' <<<"$auth_site" \
+  || { echo 'ERROR: the auth access log must use the filter encoder (redaction before stdout).' >&2; exit 1; }
+grep -qE '^[[:space:]]*wrap[[:space:]]+json[[:space:]]*$' <<<"$auth_site" \
+  || { echo 'ERROR: the auth access log must wrap the json encoder.' >&2; exit 1; }
+for secret in code state session_state iss; do
+  grep -qE "^[[:space:]]*delete[[:space:]]+${secret}[[:space:]]*$" <<<"$auth_site" \
+    || { echo "ERROR: the auth access log must delete query parameter '${secret}' before stdout." >&2; exit 1; }
+done
+grep -qE '^[[:space:]]*request>headers>Cookie[[:space:]]+delete[[:space:]]*$' <<<"$auth_site" \
+  || { echo 'ERROR: the auth access log must delete the Cookie header.' >&2; exit 1; }
+grep -qE '^[[:space:]]*request>headers>Authorization[[:space:]]+delete[[:space:]]*$' <<<"$auth_site" \
+  || { echo 'ERROR: the auth access log must delete the Authorization header.' >&2; exit 1; }
+
 # No upstream may exist beyond the reviewed set above.
 unexpected="$(sed -n 's/^[[:space:]]*reverse_proxy[[:space:]]\{1,\}\([^[:space:]]*\).*$/\1/p' "$CADDYFILE" \
   | grep -vxF -e '{$CADDY_FRONTEND_UPSTREAM}' -e '{$CADDY_KEYCLOAK_UPSTREAM}' \

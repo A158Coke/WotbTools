@@ -66,3 +66,5 @@ build/performance/
 # Agent WASM 构建产物（scripts/build-agent-wasm.sh 生成，随发布不入库）
 common/assets/wasm/
 frontend/dist-android/
+# 地图派生物（构建产物，见 scripts/build-android-map-assets.mjs）
+frontend/dist-android-maps/

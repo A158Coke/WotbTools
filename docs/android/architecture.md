@@ -141,19 +141,51 @@ Vue login() ──bridge──▶ authLogin() ──▶ AuthManager
 
 | transport | URI | 使用条件 |
 |---|---|---|
-| 首选：HTTPS App Link | `https://auth.wotbtools.com/android/oauth/callback` | domain verification 判定**已知可用**：API 31+ 的 `DomainVerificationManager` 给出 `DOMAIN_STATE_VERIFIED` 且 `isLinkHandlingAllowed` |
-| 回退：private-use scheme | `com.wotbtools.app:/oauth2redirect` | 其它一切情况（API < 31、探测异常、用户关闭 supported links） |
+| 主回程（2.1.0 起固定）：private-use scheme | `com.wotbtools.app:/oauth2redirect` | **唯一**授权回程：不依赖 domain verification / 用户设置 / OEM 行为，所有设备一致 |
+| 兼容回退：HTTPS App Link | `https://auth.wotbtools.com/android/oauth/callback` | 不再由决策产出。仅 2.0.x 旧版本 APK 的交易、或设备没能处理 private scheme 时，浏览器停在该 URL 的 Caddy 落地页（带「返回 App」按钮转发登录结果） |
 
 两者共用同一个 Keycloak client、同一份 PKCE 实现、同一个 `AuthSession` 与同一个 token store ——
 **不存在两套 auth implementation**。private scheme 使用 application-id namespace，不使用过于泛化的
 `wotbtools://`。HTTPS transport 的 domain association 由既有
-`auth.wotbtools.com/.well-known/assetlinks.json`（package + 生产签名证书指纹）承载，因此 ROM 差异
-不会让登录不可用，只会退回 private scheme。
+`auth.wotbtools.com/.well-known/assetlinks.json`（package + 生产签名证书指纹）承载，仅在
+兼容回退路径继续生效。
 
-App **未安装**（或该设备没走 App Link）时，浏览器会真的停在
-`https://auth.wotbtools.com/android/oauth/callback`：`deploy/tx/Caddyfile` 在该 host 上用一个最小
-落地页回答这个精确路径（不再落到 Keycloak 的 catch-all 404），并提供下载入口。Keycloak 自身的
-路径（`/realms/...`、`/resources/...`）行为不变。
+浏览器真的停在
+`https://auth.wotbtools.com/android/oauth/callback`（2.0.x 旧版本交易 / 设备没处理 private scheme）时，
+`deploy/tx/Caddyfile` 在该 host 上用一个最小落地页回答这个精确路径（不再落到 Keycloak 的
+catch-all 404）：页面带「返回 WotBTools App」按钮——把本页持有的 OAuth 响应（`location.search`）
+原样转发给 `com.wotbtools.app:/oauth2redirect`，否则 App 侧的 AuthResponseGuard 收不到响应、
+交易永远 pending——并提供下载入口。Keycloak 自身的路径（`/realms/...`、`/resources/...`）行为不变。
+这个按钮是**兜底，不是主认证机制**。
+
+### 2D 离线地图派生（Phase 10）
+
+APK 里随包携带 29 张 2D 离线底图（`frontend/src/assets/maps/*.webp`，canonical
+2024×2024、合计约 32.8 MiB，Web 构建继续使用 canonical 原图）。Android 构建在
+`frontend/scripts/build-android-bundle.mjs` 内先派生出缩小副本，再让 android 模式的
+Vite 构建把地图 import 重定向到派生物（`vite.config.js` 的 `wotb-android-map-derivatives`
+插件）——**不维护第二份人工源**，也不改任何源码 import：
+
+```text
+src/assets/maps/*.webp（canonical，Web 用）
+  --python3 scripts/optimize-android-maps.py（Pillow，等比缩放到最长边 1024、WebP q72、剥元数据）-->
+    frontend/dist-android-maps/*.webp（构建产物，gitignored）
+  --Vite 别名-->  APK assets（29 张合计 ≈ 4.2 MiB，原 32.8 MiB）
+```
+
+- 参数与预算单点声明在 `frontend/scripts/lib/mapAssetInvariants.mjs`
+  （maxDimension 1024 / 单张 ≤500 KiB / 总量 ≤10 MiB / 宽高比容差 0.2%）；
+- **不变量 fail closed**：文件集合逐字一致、派生尺寸 = 按上限计算的期望尺寸（等比、
+  不放大、无裁剪 / 补边）、单张与总量在预算内——构建期由
+  `scripts/build-android-map-assets.mjs` 对**真实编码输出**校验（不是 CSS 文本式的近似断言）；
+  打包后再按派生文件名逐张核对地图确实进了 APK，并写入 bundle manifest 的 `maps` 段；
+- **确定性**：Pillow 版本在 workflow 里 pin（wheel 自带 libwebp），`--check-determinism`
+  再跑一遍逐字节比对；同输入同版本必须同输出；
+- 纯校验器有独立单测（`scripts/lib/mapAssetInvariants.test.mjs`），canonical 资产的
+  映射完整性与规格由 `src/assets/maps.test.js` 在 frontend CI 守（无需 Pillow）。
+
+压缩参数的"看起来够不够清楚"属**视觉验收**：由用户在真机 2D 回放目视确认，需要更清晰
+时只调 `MAP_DERIVATIVE_BUDGETS.maxDimension` / python 的 `--quality`（预算会跟着拦）。
 
 ### 校验边界（谁负责什么）
 

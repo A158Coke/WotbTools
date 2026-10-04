@@ -183,6 +183,25 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [
       vue(),
+      // Android 2D 地图派生（Phase 10）：canonical 底图（src/assets/maps，Web 构建继续用）
+      // 在 build:android 里被 Pillow 派生成更小的同比例副本（dist-android-maps/），
+      // 这里把 android 模式下的地图 import 重定向到派生物——不改源码 import，也不维护
+      // 第二份人工源。派生物缺失 = 构建失败（fail closed，见 scripts/build-android-map-assets.mjs）。
+      ...(mode === 'android' ? [{
+        name: 'wotb-android-map-derivatives',
+        enforce: 'pre',
+        resolveId(source) {
+          const match = /(?:^|\/)assets\/maps\/([^/]+\.webp)$/.exec(source)
+          if (!match) return null
+          const derived = resolve(configDirectory, 'dist-android-maps', match[1])
+          if (!existsSync(derived)) {
+            throw new Error(
+              `android map derivative missing: ${match[1]} —— 先运行 npm run build:android（内部会生成 dist-android-maps/）`,
+            )
+          }
+          return derived
+        },
+      }] : []),
       ...(mode === 'android' ? [{
         name: 'wotb-android-csp',
         transformIndexHtml: {

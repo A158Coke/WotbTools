@@ -82,18 +82,43 @@ wotbtools.com {
 }
 
 auth.wotbtools.com {
+	# 受控访问日志（2.1.0 Phase 2 取证）：Caddy 的 `log` 不是 ordered HTTP handler，
+	# 既不能挂进 `handle` 也不能放进 `route`（两者都被 caddy adapt 拒绝），所以它是**站点级**的；
+	# 路径筛选交给 Loki 查询（broker 回调 = uri 含 /realms/*/broker/*）。
+	# filter 编码器在**写 stdout 之前**剥掉秘密：query 里的 code / state / session_state / iss
+	# （OAuth 授权码与会话标识）与 Cookie / Authorization 头（Caddy 默认即不记录凭据，这里显式删除）。
+	# 保留的 uri 其余部分、User-Agent、status、远端 IP 足以分辨"真实用户 vs 机器人"与客户端类型
+	# （docs/auth/web-qq-diagnostics.md §3.4）；校验见 deploy/tx/validate-caddy-config.sh。
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete code
+					delete state
+					delete session_state
+					delete iss
+				}
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+			}
+		}
+	}
 	handle /.well-known/assetlinks.json {
 		root * /srv
 		file_server
 	}
 
 	# App Link 回跳地址。Android 用 external user-agent 走 Authorization Code + PKCE，
-	# 授权后浏览器会回到这里：
-	#   - App 已安装：Android 把该 URL 交给 com.wotbtools.app（assetlinks.json 已验证），
-	#     浏览器页面本身不会被看到；
-	#   - App 未安装（或未走 App Link 而落在私有 scheme 上）：浏览器真的会停在这个 URL。
-	# 第二条路径以前会落到 Keycloak 的 catch-all，得到 404「页面不存在」，用户无法理解，
-	# 也没有下载入口。这里用一个最小落地页明确告诉用户回到 App / 从 wotbtools.com 下载。
+	# 2.1.0 起 **Android 授权回程固定 private scheme**（`com.wotbtools.app:/oauth2redirect`，
+	# 不依赖 domain verification / 用户设置 / OEM 行为）；这条 HTTPS 路径**降级为兼容回退**：
+	#   - 2.0.x 旧版本 APK 的交易（回程仍是 HTTPS）会落到这里；
+	#   - 设备没能处理 private scheme 时，浏览器也会停在这里。
+	# 两种情况下页面都提供「返回 WotBTools App」按钮，并把本页持有的 OAuth 响应
+	# （location.search，含 code/state）原样转发给 private scheme——否则 App 侧
+	# AuthResponseGuard 收不到响应、交易永远 pending。
+	# 该路径以前会落到 Keycloak 的 catch-all 得到 404「页面不存在」，用户无法理解，也没有下载入口。
 	# `handle` 按最长前缀匹配，这个更具体的路径优先于下方 catch-all，因此 Keycloak 的
 	# 所有真实路径（/realms/...、/resources/...、/.well-known/...）行为不变。
 	handle /android/oauth/callback {
@@ -110,8 +135,24 @@ auth.wotbtools.com {
 <body style="font-family:sans-serif;max-width:30em;margin:2em auto;padding:0 1em;line-height:1.6">
 <h1>返回 WotBTools App</h1>
 <p>登录已完成。请回到 WotBTools App 继续使用。</p>
+<p><a id="return-app" href="com.wotbtools.app:/oauth2redirect"
+      style="display:inline-block;padding:.6em 1.2em;border:1px solid #555;border-radius:.4em;text-decoration:none">返回 WotBTools App</a></p>
+<p id="return-app-hint" hidden>本页保留了登录结果；点击上面的按钮会把它交回 App。</p>
 <p>如果你还没有安装：<a href="https://wotbtools.com/download/android">从 wotbtools.com 下载</a>。</p>
 <p>Login is complete. Please return to the WotBTools app. Not installed yet? <a href="https://wotbtools.com/download/android">Download it from wotbtools.com</a>.</p>
+<script>
+// 兜底按钮不是主认证机制：2.1.0 起授权回程固定走 private scheme，浏览器只有在
+// 「旧版本 APK 以 HTTPS 回程发起的交易」或「设备没能处理 private scheme」时才会停在本页。
+// 这两种情况下本页持有完整的 OAuth 响应（code/state/...），必须原样转发给 App，
+// 否则 App 侧 AuthResponseGuard 收不到响应、交易永远 pending。
+(function () {
+  var search = location.search || '';
+  if (!search) return;                       // 没有登录结果可转发：按钮保持原始形状
+  var link = document.getElementById('return-app');
+  link.href = 'com.wotbtools.app:/oauth2redirect' + search;
+  document.getElementById('return-app-hint').hidden = false;
+})();
+</script>
 </body>
 </html>
 HTML
