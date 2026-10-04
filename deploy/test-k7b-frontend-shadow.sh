@@ -17,7 +17,7 @@ data = json.loads(os.environ["COMPOSE_JSON"])
 assert data.get("name") == "wotbtools-frontend-shadow", data.get("name")
 assert set(data.get("services", {})) == {"frontend"}, sorted(data.get("services", {}))
 service = data["services"]["frontend"]
-assert service["image"] == "ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-473495ec07e7"
+assert service["image"] == "ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-fe53250d06b5"
 assert service["environment"]["BACKEND_UPSTREAM"] == "http://10.20.0.1:8087"
 assert service["environment"]["AI_UPSTREAM"] == "http://10.20.0.2:8089"
 assert service["environment"]["NGINX_ENVSUBST_FILTER"] == "^(BACKEND_UPSTREAM|AI_UPSTREAM)$$", service["environment"]

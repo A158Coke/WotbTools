@@ -30,7 +30,7 @@ The frontend image is not the whole production surface. TX1 currently injects ho
 
 K7B deliberately omitted those mounts. Therefore a healthy shadow frontend is necessary but not sufficient for public cutover.
 
-K7C must also prove that every authoritative TX1 runtime file required by the public site is served byte-for-byte by TX2.
+K7C must first prove that TX1 and TX2 serve the exact same immutable frontend build, then prove that every authoritative TX1 runtime file required by the public site is served byte-for-byte by TX2.
 
 ## Read-only preflight
 
