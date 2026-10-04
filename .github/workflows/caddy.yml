@@ -221,10 +221,12 @@ jobs:
           WOTB_DEPLOY_SERVICE: caddy
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
-          # K6B-2E: the public frontend upstream is cut over to the reviewed TX1
-          # WireGuard service-plane endpoint. Caddy substitutes this into its
-          # bind-mounted Caddyfile at config load, so the running container's
-          # environment is the active routing value. Caddy -> Keycloak stays
-          # Docker-local until K6B-2F, and the read-only gate expects both.
+          # K6B-2E / K6B-2F: both public ingress upstreams are cut over to the reviewed
+          # TX1 WireGuard service-plane endpoints. Caddy substitutes these into its
+          # bind-mounted Caddyfile at config load, so the running container's environment
+          # is the active routing value. K6B-2F is the last K6B-2 consumer cutover, so no
+          # private Docker-local placement remains here; the read-only gate expects the
+          # same values. This moves only Caddy's private upstream: Keycloak's public
+          # hostname, issuer and TLS termination are unchanged.
           CADDY_FRONTEND_UPSTREAM: 10.20.0.1:8081
-          CADDY_KEYCLOAK_UPSTREAM: keycloak:8080
+          CADDY_KEYCLOAK_UPSTREAM: 10.20.0.1:8080
