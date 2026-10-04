@@ -62,13 +62,10 @@ const classes = computed(() => ({
       <div v-if="showHp && hp && !destroyed" class="pb-hp-hud" data-test="pb-hp-hud"
         :class="{ 'pb-hp-lastknown': hp.state === 'LAST_KNOWN', 'pb-hp-flash': hpFlash, 'pb-hp-no-transition': hpNoTransition, 'pb-hp-full-spawn': hp.state === 'RELATIVE_FULL' }"
         :title="hpTitle">
-        <div class="hp-values">
-          <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current ?? '—' }}</span>
-          <span class="pb-hp-pct" data-test="pb-hp-pct">{{ hpPct == null ? '—' : `${Math.round(hpPct)}%` }}</span>
-        </div>
         <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
           <span class="pb-hp-fill" :class="{ 'pb-hp-fill-unknown': hpFillUnknown }" :style="{ width: hpFillWidth }"></span>
           <span v-if="ghostWidth != null" class="pb-hp-ghost" :style="{ left: hpGhost.nextPct + '%', width: ghostWidth + '%' }"></span>
+          <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current ?? '—' }}</span>
         </span>
       </div>
       <span v-if="showReload && !destroyed && friendly === true && reload?.length" class="reload-bar" data-test="pb-reload">
@@ -110,19 +107,18 @@ const classes = computed(() => ({
 .label-last-known .pb-label-player { opacity: .65; }
 .label-last-known .pb-hp-hud { opacity: .55; }
 .pb-hp-hud { display: flex; flex-direction: column; align-items: center; gap: var(--space-0); }
-.hp-values { display: flex; gap: var(--space-1); font-variant-numeric: tabular-nums; }
-.pb-hp-num { color: var(--color-playback-label-text); }
-/* 两个 indicator 共享的只是"轨道"外观；尺寸各自属于自己（HP 宽 64 厚 4、reload 宽 40 厚 2）。 */
+.pb-hp-num { position: absolute; inset: 0; display: grid; place-items: center; color: var(--color-playback-label-text); font-variant-numeric: tabular-nums; }
+/* 等宽轨道：HP 容纳数值，reload 保持较细的分段状态。 */
 .pb-hp-bar, .reload-bar { border-radius: var(--radius-full); background: var(--color-playback-label-track); overflow: hidden; }
-.pb-hp-bar { position: relative; width: var(--pb-label-hp-bar-width); height: var(--space-1); }
+.pb-hp-bar { position: relative; width: var(--pb-label-hp-bar-width); height: var(--space-4); }
 .pb-hp-fill, .pb-hp-ghost { position: absolute; inset-block: 0; left: 0; background: currentColor; }
 .pb-hp-fill { transition: width var(--duration-base) linear; }
 .pb-hp-fill-unknown { background: var(--color-playback-label-destroyed); opacity: .5; }
 .pb-hp-ghost { opacity: .55; animation: label-ghost var(--duration-slow) linear forwards; }
 .pb-hp-flash .pb-hp-fill { filter: brightness(1.5); }
 .pb-hp-no-transition .pb-hp-fill { transition: none; }
-/* reload 是次级状态：更短、更细。弹夹分段保持，每段仍按 state 区分 full / loading / locked / empty。 */
-.reload-bar { display: flex; width: var(--pb-label-reload-bar-width); height: var(--pb-label-reload-bar-height); gap: calc(var(--space-1) / 2); }
+/* reload 是次级状态：等宽、更细。弹夹分段保持，每段仍按 state 区分 full / loading / locked / empty。 */
+.reload-bar { display: flex; width: var(--pb-label-hp-bar-width); height: var(--pb-label-reload-bar-height); gap: calc(var(--space-1) / 2); }
 .reload-shell { flex: 1; background: var(--color-playback-label-track); }
 .reload-shell[data-state="locked"] { background: var(--color-playback-label-locked); }
 .reload-fill { display: block; height: 100%; background: var(--color-playback-label-text); }

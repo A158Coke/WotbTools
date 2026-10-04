@@ -513,11 +513,18 @@ describe('Replay3DPane', () => {
     await nextTick()
     await wrapper.get('[data-testid="display-toggle"]').trigger('click')
     await nextTick()
+    wrapper.findComponent({ name: 'PlaybackVehicleLabels3D' }).vm.setLabels([{ eid: 1, playerName: 'Recorder昵称', tankName: 'Maus', friendly: true }])
+    await nextTick()
+    expect(wrapper.find('[data-test="pb-label-player"]').exists()).toBe(false)
     await wrapper.get('[data-testid="disp-player"]').setValue(true)
     await nextTick()
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: true, showTankName: true, showHp: true, showReload: true,
     })
+    expect(wrapper.get('[data-test="pb-label-player"]').text()).toBe('Recorder昵称')
+    await wrapper.get('[data-testid="disp-player"]').setValue(false)
+    expect(wrapper.find('[data-test="pb-label-player"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="disp-player"]').setValue(true)
     await wrapper.get('[data-testid="disp-hp"]').setValue(false)
     await nextTick()
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({

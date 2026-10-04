@@ -133,6 +133,23 @@ function createInstance(store) {
 }
 
 describe('playbackScene 会话代数契约', () => {
+  it('战场标签使用回放 nickname 字段', async () => {
+    const store = createPlaybackStore()
+    const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
+    api = initPlayback(mountContainer(), store, overlay)
+    created.push(api)
+    const data = minimalData()
+    data.meta.samples = 1
+    data.vehicles = [{ eid: 1, team: 1, nickname: 'Recorder昵称', tank_name: 'Maus', max_hp: 3074,
+      pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+      hp: [], coverage: [42, 100], death_t: null }]
+    source.loadPlaybackData.mockResolvedValue(data)
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'names.wotbreplay') })
+    expect(store.error).toBeFalsy()
+    expect(overlay.setLabels).toHaveBeenCalled()
+    expect(overlay.setLabels.mock.calls.at(-1)[0][0].playerName).toBe('Recorder昵称')
+  })
+
   it('同一 scene 上接受新文件后：旧加载迟到完成不得清掉新加载的 loading', async () => {
     const { store, api } = createScene()
     const first = track(deferred())

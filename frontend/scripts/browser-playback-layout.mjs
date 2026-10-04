@@ -413,9 +413,9 @@ try {
     const expectedCenter = metrics.mainWidth - 2 * metrics.laneWidth - LANE_GAP_PX
     requireContract(Math.abs(metrics.centerWidth - expectedCenter) <= 1,
       `center column must consume all remaining width (expected ${expectedCenter}): ${label}`)
-    // Desktop must not reserve dead space beside the square.
-    if (metrics.mainWidth >= 1200) requireContract(Math.abs(metrics.centerWidth - metrics.stageSide) <= 2,
-      `desktop center must fit the square without unused side space: ${label}`)
+    // Desktop keeps the center twice as wide as either roster.
+    if (metrics.mainWidth >= 1200) requireContract(Math.abs(metrics.centerWidth - metrics.laneWidth * 2) <= 2,
+      `desktop center must be twice the roster lane width: ${label}`)
     requireContract(metrics.stageSide <= metrics.centerWidth + 0.5, `Stage must fit inside the center column: ${label}`)
     // HUD 属于整个 center column，而不是按内容收缩成中间小块
     requireContract(Math.abs(metrics.hudWidth - metrics.centerWidth) <= 1,
