@@ -2,13 +2,17 @@
    Topology selects columns/flow; measured viewport capacity and intrinsic chrome select size.
    Details positioning remains owned by usePlaybackDetailsPlacement. */
 /* Shared sizing authority; portrait topology changes do not redefine the battlefield budget.
-   Lane width is bounded on both ends: the floor keeps a 7v7 roster readable (name + tank + HP%),
-   the ceiling yields every further pixel to the center battlefield column. The fluid term only
-   decides *where* between the bounds the lane sits; it never lets the roster grow without bound. */
+   Wide layout is an explicit **2 / 6 / 2** decision, not "bounded roster + center eats the rest":
+   the center is a square Stage that is usually height-limited, so every extra pixel handed to it
+   only becomes dead space beside the Stage while pushing the roster lanes out to the workspace
+   edges. The `minmax(var(--pb-roster-min), 2fr)` floor is the narrow fallback: below roughly 10×
+   the roster minimum the 2fr share would undercut a readable roster, so both lanes hold the floor
+   and the center absorbs what is left. */
 .playback-workspace {
   container-type: inline-size;
-  --pb-lane-w: clamp(var(--pb-roster-min), 11cqw, var(--pb-roster-max));
+  --pb-lane-w: var(--pb-roster-min);
 }
+
 .battle-playback.playback-workspace:not(:fullscreen),
 .battle-playback.playback-workspace:fullscreen {
   display: flex;
@@ -29,9 +33,17 @@
   padding: 0;
   min-block-size: 0;
 }
-.battle-playback.playback-workspace.pb-roster-lanes .pb-main {
-  grid-template-columns: var(--pb-lane-w) minmax(0, 1fr) var(--pb-lane-w);
+/* 宽档三列 2 / 6 / 2：中心列 = 两条 2fr 车道之外的全部剩余空间。2D `.pb-main` 与 3D
+   `.pb-root` 共用同一条声明，两者不可能再各自漂移。 */
+.battle-playback.playback-workspace.pb-roster-lanes .pb-main,
+.pb-root.playback-workspace.roster-side:not(.portrait-flow) {
+  grid-template-columns:
+    minmax(var(--pb-roster-min), 2fr)
+    minmax(0, 6fr)
+    minmax(var(--pb-roster-min), 2fr);
 }
+/* 2D 的 `.pb-main` 三列 2/6/2 由下面的共享选择器给出（与 3D `.pb-root` 同一条规则）——
+   必须在这里之后声明，否则会被上面那条更高特异性的单列 `.pb-main` 规则盖掉。 */
 .battle-playback.playback-workspace .pb-main > .pb-map-stage {
   display: block;
   position: relative;
@@ -89,9 +101,7 @@
   height: var(--pb-workspace-h, var(--pb-workspace-fallback-h));
   padding: var(--space-1);
 }
-.pb-root.playback-workspace.roster-side:not(.portrait-flow) {
-  grid-template-columns: var(--pb-lane-w) minmax(0, 1fr) var(--pb-lane-w);
-}
+/* 3D 根网格的三列 2/6/2 已在共享选择器里与 2D `.pb-main` 一起声明；这里只补各单元归属。 */
 .pb-root.playback-workspace:not(.portrait-flow) > .pb-stage {
   position: relative;
   inset: auto;

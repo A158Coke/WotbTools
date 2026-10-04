@@ -23,7 +23,7 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
-import { ROSTER_GROUPS, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
+import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
 import { createReloadStateResolver, inferMagazineSize, resolveMagazineSize } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
@@ -2069,25 +2069,35 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const groups = buildRosterRows(V);
     rosterRowsByEid.clear();
     for (const key of ROSTER_GROUPS) {
-      const rows = groups[key].map((row) => ({
-        ...row, hp: 0, maxHp: 0, dead: false, followed: false,
-      }));
+      const rows = groups[key].map((row) => applyRosterRuntime(
+        { ...row },
+        { hp: 0, maxHp: 0, dead: false, followed: false, reload: null },
+      ));
       for (const row of rows) rosterRowsByEid.set(row.eid, row);
       store.roster[key] = rows;
     }
   }
-  /** 把当前 T 的运行时状态投影进名册行（只在值真的变了时写，避免无谓的 VDOM patch） */
+  /**
+   * 把当前 T 的运行时状态投影进名册行（只在值真的变了时写，避免无谓的 VDOM patch）。
+   *
+   * `reload` 复用**场景自己的** reload resolver（`reloadStateAt`，与车辆名牌同一份
+   * `v.reloadSize` / `reloadEvents` 事实源），不在名册里另起一套解释——2D 名册走的是
+   * `createReloadStateResolver(reloadTelemetry)`，两边是同一个 resolver 家族、同一套弹夹语义。
+   */
   function updateRoster() {
     const projected = projectRoster(V, T);
     for (const v of V) {
       const e = rosterRowsByEid.get(v.def.eid);
       const p = projected.get(v.def.eid);
       if (!e || !p) continue;
-      if (e.hp !== p.hp) e.hp = p.hp;
-      if (e.maxHp !== p.maxHp) e.maxHp = p.maxHp;
-      if (e.dead !== p.dead) e.dead = p.dead;
-      const followed = FOLLOW_EID === v.def.eid;
-      if (e.followed !== followed) e.followed = followed;
+      applyRosterRuntime(e, {
+        hp: p.hp,
+        maxHp: p.maxHp,
+        dead: p.dead,
+        followed: FOLLOW_EID === v.def.eid,
+        // 阵亡不展示 reload（与名牌同一判据：destroyed 时不显示次级瞬时状态）
+        reload: p.dead ? null : reloadStateAt(v.def.eid, T, v.reloadSize),
+      });
     }
   }
 
