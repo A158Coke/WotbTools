@@ -81,10 +81,10 @@ function toggleDisplay(anchor) { displayAnchor.value = anchor; displayOpen.value
 const { isPhone } = usePlaybackPhoneForm()
 /**
  * 竖屏判据与 2D **同一个**（usePlaybackPortraitViewport）：不能从 `isPhone` 推——手机横屏 /
- * 全屏横屏也是 `isPhone`，但它们走的是 `Team 1 | 正方形 Stage | Team 2`。
+ * 全屏横屏也是 `isPhone`，但它们走的是 `Team 1 | 铺满中心的 Stage | Team 2`。
  *
  *   竖屏 = 纵向流：HUD / 正方形 Stage / 传输控件 / 详情（inline）/ Team 1 / Team 2，页面可滚
- *   其它 = 三段式：两侧车道 + 中间正方形 Stage，传输控件在 Stage 之下
+ *   其它 = 三段式：两侧车道 + 中间铺满的 Stage，传输控件在 Stage 之下
  */
 const { isPortrait } = usePlaybackPortraitViewport()
 const portraitFlow = computed(() => isPortrait.value)
@@ -422,9 +422,8 @@ function measurePresentationBounds() {
   const hudH = hudEl.value?.getBoundingClientRect().height || 0
   const controlsH = controlsEl.value?.getBoundingClientRect().height || 0
   const budget = Math.max(1, workspaceH - padding - border - hudH - controlsH - gap * 2)
-  const stageW = root.querySelector('.pb-stage')?.getBoundingClientRect().width || 0
   root.style.setProperty('--pb-square-avail-h', `${Math.floor(budget)}px`)
-  root.style.setProperty('--pb-stage-h', `${Math.floor(Math.min(stageW, budget)) + gap * 2}px`)
+  root.style.setProperty('--pb-stage-h', `${Math.floor(budget) + gap * 2}px`)
 }
 function observeLaneBounds() {
   if (typeof ResizeObserver !== 'function') return
@@ -514,12 +513,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <p v-else-if="blockedReason" class="pb-note" data-testid="replay3d-blocked">{{ blockedReason }}</p>
     <p v-else-if="!file" class="pb-note" data-testid="replay3d-empty">{{ $t('agentReplay.no_file') }}</p>
     <!-- 两种呈现（与 2D 同一个契约）：
-           `roster-side`  = 三段式 `[Team1] [正方形 Stage] [Team2]`，传输控件在 Stage 之下；
+           `roster-side`  = 三段式 `[Team1] [Stage] [Team2]`，传输控件在 Stage 之下；
                             宽档、平板、手机横屏、手机全屏横屏都是这一条；
            `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
-         名册关闭时两者都没有车道，Stage 仍是居中的正方形。 -->
+         名册关闭时两者都没有车道，横屏 Stage 铺满中心，竖屏仍为正方形。 -->
     <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow }" data-testid="replay3d-root">
-      <!-- 名牌覆盖层与 canvas 共用**同一个正方形盒子**：场景内核按 canvas（.scene）尺寸算锚点，
+      <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
       <div class="pb-stage" data-testid="replay3d-stage">
         <div class="stage-square">
@@ -703,11 +702,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .pb-note { margin: var(--space-4) 0; color: var(--color-text-secondary); font: var(--type-body); }
 
 /**
- * 三列工作区骨架（2D 与 3D 同一布局契约）：`[Team1] [正方形 Stage] [Team2]`。
+ * 三列工作区骨架（2D 与 3D 同一布局契约）：`[Team1] [Stage] [Team2]`。
  *
- * 战场是**正方形**：横屏视口里它只能受高度约束，两侧于是天然空出横向空间；那些空间就是
- * 名册的槽位——不把正方形拉成宽矩形去填满视口。名册关闭时不带 `roster-side` 类，
- * 侧槽整列不存在，Stage 依然居中、依然是正方形。
+ * 横屏战场铺满中心可用宽高；名册关闭时横向扩展到整个工作区。
  *
  * 传输控件与 HUD 只占**中间一栏**（Stage 之上 / 之下），两条车道因此吃满整个根高度——
  * 手机横屏（740×360、844×390）与全屏横屏下，正常 7v7 的紧凑行不需要车道滚动条。
@@ -744,14 +741,13 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .scene { position: absolute; inset: 0; z-index: var(--pb-z-canvas); }
 
 /**
- * 正方形 Stage 的工作区骨架（2D 与 3D 共用同一布局契约）。
+ * Stage 的工作区骨架（2D 与 3D 共用同一布局契约）。
  *
- * 两个渲染器的战场都是**正方形**：横屏视口里它只能受高度约束，两侧于是天然空出横向空间,
- * 那些空间就是 Team 1 / Team 2 名册的槽位——不把正方形拉成宽矩形去填满视口。
+ * 3D 横屏占满中心可用宽高，竖屏保持正方形；相机比例随画布更新。
  *
  *   · `.pb-root` 是三列网格：`[Team1] [Stage] [Team2]`；
- *   · 侧槽宽度受 `--pb-lane-w` 控制，名册关闭时整列不存在（Stage 仍居中、仍是正方形）；
- *   · `.pb-stage` 里的 `.stage-square` 是正方形盒子：在可用空间里取最大正方形并居中；
+ *   · 侧槽宽度受 `--pb-lane-w` 控制，名册关闭时整列不存在（Stage 铺满中心列）；
+ *   · `.pb-stage` 里的 `.stage-square` 在横屏铺满中心可用宽高；竖屏保持正方形；
  *     canvas（.scene）与名牌覆盖层共用这个盒子，因此两者同原点、同尺寸。
  *
  * 竖屏（手机）走另一套：见 `.portrait-flow` 的纵向流（HUD → Stage → Transport → 详情 → 名册）。
@@ -762,12 +758,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   place-items: center;
   min-width: 0; min-height: 0;
 }
-/* 正方形：取「可用宽 / 可用高」的较小边，永远不拉伸成矩形 */
+/* 横屏画布占满中心；场景 ResizeObserver 同步相机比例，几何不拉伸。 */
 .stage-square {
   position: relative;
-  aspect-ratio: 1 / 1;
-  inline-size: min(100%, 100cqh);
-  block-size: auto;
+  inline-size: 100%;
+  block-size: 100%;
 }
 .stage-square > .scene { position: absolute; inset: 0; }
 .pb-stage { container-type: size; }
@@ -906,7 +901,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 }
 .portrait-flow > .hud { position: relative; inset: auto; order: 1; }
 .portrait-flow > .pb-stage { order: 2; container-type: normal; }
-.portrait-flow .stage-square { inline-size: 100%; }
+.portrait-flow .stage-square { inline-size: 100%; block-size: auto; aspect-ratio: 1; }
 .portrait-flow > .controls {
   position: static;
   order: 3;
