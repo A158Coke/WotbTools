@@ -110,6 +110,7 @@ jobs:
           bash deploy/test-check-latest-main.sh
           bash deploy/test-tx-deploy-lock.sh
           bash deploy/test-tx-runtime-config.sh
+          bash deploy/test-k7b-frontend-shadow.sh
           bash deploy/test-yecao-wireguard-boundary.sh
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
