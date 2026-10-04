@@ -116,6 +116,22 @@ rejects() {
 # Komodo public ingress added for K2.
 accepts 'repository Caddyfile' "$(caddyfile repository)"
 
+# K6B-2E: the K6B placement contract is only real while the Caddyfile takes its two
+# private upstreams from the environment. Caddy substitutes `{$VAR}` when it loads the
+# bind-mounted Caddyfile, so the running container's environment is the active routing
+# value; a literal upstream would let the runtime gate read a correct
+# CADDY_FRONTEND_UPSTREAM while Caddy actually proxies somewhere else, which is exactly
+# the false green the active-endpoint contract exists to refuse.
+repository_caddyfile="$ROOT/deploy/tx/Caddyfile"
+grep -Fq 'reverse_proxy {$CADDY_FRONTEND_UPSTREAM}' "$repository_caddyfile" \
+  || { echo 'the Caddyfile must substitute {$CADDY_FRONTEND_UPSTREAM} instead of a literal frontend upstream' >&2; exit 1; }
+grep -Fq 'reverse_proxy {$CADDY_KEYCLOAK_UPSTREAM}' "$repository_caddyfile" \
+  || { echo 'the Caddyfile must substitute {$CADDY_KEYCLOAK_UPSTREAM} instead of a literal Keycloak upstream' >&2; exit 1; }
+if grep -Eq 'reverse_proxy +(wotb-frontend|keycloak)(:|$)|reverse_proxy +10\.20\.0\.[0-9]+:(8080|8081)( |$)' "$repository_caddyfile"; then
+  echo 'the Caddyfile must not hardcode a frontend/Keycloak upstream' >&2
+  exit 1
+fi
+
 wg_upstreams="$(caddyfile wg-upstreams)"
 CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081 CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080 \
   accepts 'reviewed TX1 WireGuard upstreams' "$wg_upstreams"
