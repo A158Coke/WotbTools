@@ -653,7 +653,7 @@ function rosterGeometryProbe() {
   out.viewport = { width: innerWidth, height: innerHeight }
   const square = root.querySelector('.stage-square')?.getBoundingClientRect()
   out.square = square ? { w: square.width, h: square.height, l: square.left, r: square.right, t: square.top, b: square.bottom } : null
-  if (!square || Math.abs(square.width - square.height) > 1) out.errors.push(`3D Stage is not square: ${JSON.stringify(out.square)}`)
+  if (!square || (out.portrait && Math.abs(square.width - square.height) > 1)) out.errors.push(`3D Stage is not square: ${JSON.stringify(out.square)}`)
   const stage = root.querySelector('.pb-stage')?.getBoundingClientRect()
   const hud = root.querySelector('.hud')?.getBoundingClientRect()
   const transport = root.querySelector('.controls')?.getBoundingClientRect()
@@ -677,9 +677,9 @@ function rosterGeometryProbe() {
     const availableHeight = rr.height - padding - border - (hud?.height || 0) - (transport?.height || 0)
       - (parseFloat(getComputedStyle(root.querySelector('.pb-stage')).marginTop) || 0)
       - (parseFloat(getComputedStyle(root.querySelector('.pb-stage')).marginBottom) || 0)
-    const maximumSide = out.portrait ? stage.width : Math.min(stage.width, availableHeight)
-    if (square.width < maximumSide - 2 || square.width > maximumSide + 2) {
-      out.errors.push(`Stage does not maximize available square: side=${square.width.toFixed(1)}, available=${maximumSide.toFixed(1)}`)
+    const expectedHeight = out.portrait ? stage.width : availableHeight
+    if (Math.abs(square.width - stage.width) > 2 || Math.abs(square.height - expectedHeight) > 2) {
+      out.errors.push(`Stage must fill available center: ${JSON.stringify(out.square)}, available=${stage.width}x${expectedHeight}`)
     }
     if (hud && transport) {
       const gaps = { hud: square.top - hud.bottom, transport: transport.top - square.bottom }
@@ -1249,8 +1249,8 @@ async function runRosterGeometryScenario(env, scenario) {
     // 正方形 Stage 落在 center column 内，且不产生水平溢出
     check(failures, columns.square && columns.square.w <= columns.centerW + 0.5,
       `Stage must fit inside the center column: ${JSON.stringify({ stage: columns.square?.w, centerW: columns.centerW })}`)
-    check(failures, columns.square && Math.abs(columns.square.w - columns.square.h) <= 1,
-      `Stage must stay square: ${JSON.stringify({ w: columns.square?.w, h: columns.square?.h })}`)
+    check(failures, columns.square && Math.abs(columns.square.w - columns.centerW) <= 1,
+      `Stage must fill the center width: ${JSON.stringify({ w: columns.square?.w, h: columns.square?.h })}`)
     check(failures, columns.rootBox.left >= -0.5 && columns.rootBox.right <= viewport.width + 0.5,
       `workspace must not overflow horizontally: ${JSON.stringify({ root: columns.rootBox, viewport: viewport.width })}`)
     // center column 水平居中：HUD 中心必须落在两条车道之间（左右留白对称）

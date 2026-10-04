@@ -51,7 +51,7 @@ const classes = computed(() => ({
 
 <template>
   <div class="vehicle-label" :class="classes" data-test="playback-vehicle-label" aria-hidden="true">
-    <div v-if="showPlayerName || showTankName" class="pb-labels">
+    <div v-if="(showPlayerName && playerName) || showTankName" class="pb-labels">
       <span v-if="showPlayerName && playerName" ref="playerLine" class="pb-label-player" data-test="pb-label-player"
         :class="{ 'name-tooltip': nameTooltips }" :title="nameTooltips && playerTruncated ? playerName : undefined">{{ playerName }}</span>
       <span v-if="showTankName" class="pb-label-tank pb-name" data-test="pb-label-tank">{{ tankName }}</span>
@@ -96,7 +96,7 @@ const classes = computed(() => ({
 .label-friendly { color: var(--pb-team-text, var(--color-team-ally)); }
 .label-enemy { color: var(--pb-enemy-text, var(--color-team-enemy)); }
 .pb-combat-state { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
-.pb-labels { display: flex; flex-direction: column; align-items: center; }
+.pb-labels { display: flex; flex-direction: column; align-items: center; padding: calc(var(--space-1) / 2) var(--space-1); border-radius: var(--radius-sm); background: color-mix(in oklab, var(--color-canvas) 45%, transparent); backdrop-filter: blur(var(--space-1)); }
 .pb-label-tank { white-space: nowrap; }
 .pb-label-player { max-width: var(--pb-label-player-width); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .name-tooltip { pointer-events: auto; }
