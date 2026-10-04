@@ -683,13 +683,11 @@ function rosterGeometryProbe() {
     if (out.phone && boxes.some((box) => Math.min(box.width, box.height) < 43.5)) out.errors.push('primary touch targets must be at least 44px')
   }
   out.laneWidths = ['.side-left', '.side-right'].map((selector) => root.querySelector(selector)?.getBoundingClientRect().width ?? 0)
-  const maxLane = getComputedStyle(root).getPropertyValue('--pb-roster-max').trim()
-  out.maxLaneWidth = parseFloat(maxLane) * (maxLane.endsWith('rem') ? parseFloat(getComputedStyle(document.documentElement).fontSize) : 1)
-  if (!out.portrait && out.laneWidths.some((width) => width > out.maxLaneWidth + 1)) out.errors.push('roster lane exceeds its usable upper bound')
   out.laneIds = ['.side-left', '.side-right'].map((sel) => [...root.querySelectorAll(`${sel} .pl`)].map((el) => el.textContent.trim().split(/\s+/)[0]))
-  out.rowsComplete = [...root.querySelectorAll('.team-lane .pl')].every((row) => ['pb-roster-player', 'pb-roster-tank', 'roster-hp', 'roster-hp-pct']
+  // 行的信息契约：玩家 / 车型 / HP 条（条内文字）——百分比已经收进 HP 条内部。
+  out.rowsComplete = [...root.querySelectorAll('.team-lane .pl')].every((row) => ['pb-roster-player', 'pb-roster-tank', 'roster-hp', 'roster-hp-text']
     .every((test) => (row.querySelector(`[data-test="${test}"]`)?.textContent || '').trim().length > 0))
-  out.hpBar = !!root.querySelector('.team-lane .hpbar')
+  out.hpBar = !!root.querySelector('.team-lane [data-test="roster-hp"]')
   out.phone = root.classList.contains('phone-form')
   const overlap = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5
     && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
@@ -729,24 +727,47 @@ function rosterGeometryProbe() {
   for (const [a, c] of pairs) {
     if (panels[a] && panels[c] && overlap(panels[a], panels[c])) out.errors.push(`${a} overlaps ${c}`)
   }
-  // 名册行的 HP 数值与百分比必须真实上屏且不被截断（血条不是唯一信息）：
-  // scrollWidth ≤ clientWidth 证明"没有 ellipsis 吃掉数字"。
-  const hpCells = [...document.querySelectorAll('.pl [data-test="roster-hp"], .pl [data-test="roster-hp-pct"]')]
-  out.hpCells = hpCells.length
-  for (const cell of hpCells) {
-    if (!/^\d+$/.test(cell.textContent.trim()) && !/^\d+%$/.test(cell.textContent.trim()) && cell.textContent.trim() !== '—') {
-      out.errors.push(`roster HP cell has unexpected text: ${JSON.stringify(cell.textContent)}`)
-    }
+  // 名册行的 HP 文本必须真实上屏、且**整段落在自己的条内**（条内文字 overlay）：
+  // exact 写 `current / max`、relative 写 `pct%`、unknown 写 `—`，都不带多余后缀。
+  const hpTexts = [...document.querySelectorAll('.pl [data-test="roster-hp-text"]')]
+  out.hpCells = hpTexts.length
+  for (const cell of hpTexts) {
+    const text = cell.textContent.trim()
+    const ok = /^\d+ \/ \d+$/.test(text) || /^\d+%$/.test(text) || text === '—'
+    if (!ok) out.errors.push(`roster HP text has unexpected shape: ${JSON.stringify(text)}`)
     if (cell.scrollWidth > cell.clientWidth + 1) {
-      out.errors.push(`roster HP cell is truncated: ${JSON.stringify(cell.textContent)}`)
+      out.errors.push(`roster HP text is truncated: ${JSON.stringify(text)}`)
+    }
+    // 文字不被 fill 宽度裁切：文本必须完整落在条的可视范围内（低血量时同样成立）。
+    const bar = cell.closest('[data-test="roster-hp"]')
+    if (bar) {
+      const b = bar.getBoundingClientRect()
+      const t = cell.getBoundingClientRect()
+      if (t.left < b.left - 0.5 || t.right > b.right + 0.5 || t.top < b.top - 0.5 || t.bottom > b.bottom + 0.5) {
+        out.errors.push(`roster HP text escapes its bar: ${JSON.stringify({ text, bar: [b.left, b.right], textBox: [t.left, t.right] })}`)
+      }
+      // 文字不能在 fill 节点内部（否则会被 fill 的宽度裁掉）
+      const fill = bar.querySelector('.pb-roster-hpfill')
+      if (fill && fill.contains(cell)) out.errors.push('roster HP text must not live inside the fill node')
+    } else {
+      out.errors.push(`roster HP text without its bar: ${JSON.stringify(text)}`)
     }
   }
-  // 每个可见名册行都必须同时有 HP 数值与百分比
+  // 每个可见名册行都必须有 HP 条（值 / 百分比已经收进条内文字）
   const rows = [...document.querySelectorAll('.roster-surface .pl')].filter((el) => el.getClientRects().length > 0)
   out.rows = rows.length
   for (const row of rows) {
-    if (!row.querySelector('[data-test="roster-hp"]') || !row.querySelector('[data-test="roster-hp-pct"]')) {
-      out.errors.push(`roster row without explicit HP value/percent: ${JSON.stringify(row.textContent)}`)
+    const bar = row.querySelector('[data-test="roster-hp"]')
+    if (!bar || !bar.querySelector('[data-test="roster-hp-text"]')) {
+      out.errors.push(`roster row without HP bar: ${JSON.stringify(row.textContent)}`)
+    }
+    // reload 若出现，必须比 HP 条更短更细（次级瞬时状态不得抢 HP 权重）
+    const reload = row.querySelector('[data-test="roster-reload"]')
+    if (bar && reload) {
+      const bb = bar.getBoundingClientRect()
+      const rb = reload.getBoundingClientRect()
+      if (!(rb.width < bb.width - 1)) out.errors.push(`roster reload must be shorter than the HP bar: ${JSON.stringify({ hp: bb.width, reload: rb.width })}`)
+      if (!(rb.height < bb.height - 1)) out.errors.push(`roster reload must be thinner than the HP bar: ${JSON.stringify({ hp: bb.height, reload: rb.height })}`)
     }
     if (!transient) {
       const r = row.getBoundingClientRect()
@@ -755,6 +776,43 @@ function rosterGeometryProbe() {
         || r.top < rr.top - 0.5 || r.bottom > rr.bottom + 0.5) {
         out.errors.push(`wide roster row is clipped: ${JSON.stringify(row.textContent)}`)
       }
+    }
+  }
+
+  // —— 纵向铺满（宽档侧车道，7v7）：header 固定顶部 + 列表吃满 section 剩余高度 + 行均匀分布 ——
+  // 用比例 / 几何关系断言，不锁死每行具体 px（正常高度由 `1fr` 连续决定）。
+  if (!transient && out.rows >= 5) {
+    const sections = [...root.querySelectorAll('.roster-surface .pb-roster-team')]
+      .filter((el) => el.getClientRects().length > 0)
+    for (const section of sections) {
+      const head = section.querySelector('.pb-team-head')
+      const list = section.querySelector('.pb-roster-list')
+      const sectionRows = [...list.querySelectorAll('.pl')].filter((el) => el.getClientRects().length > 0)
+      if (!head || sectionRows.length < 5) continue
+      const sr = section.getBoundingClientRect()
+      const hr = head.getBoundingClientRect()
+      const lr = list.getBoundingClientRect()
+      const first = sectionRows[0].getBoundingClientRect()
+      const last = sectionRows[sectionRows.length - 1].getBoundingClientRect()
+      // header 在上、列表在 header 之下
+      if (hr.bottom > lr.top + 1) out.errors.push('roster header must sit above the list')
+      // 列表吃满 section 剩余高度（不是只占内容高、下面空着）
+      const listShare = lr.height / Math.max(1, sr.height)
+      if (listShare < 0.6) out.errors.push(`roster list must consume the section's remaining height: ${JSON.stringify({ listShare: +listShare.toFixed(3), section: sr.height, list: lr.height })}`)
+      // 首行贴近列表顶、末行贴近列表底 → 行没有全部挤在顶部
+      if (first.top - lr.top > Math.max(6, lr.height * 0.06)) out.errors.push(`first roster row must start near the list top: ${JSON.stringify({ gap: +(first.top - lr.top).toFixed(1) })}`)
+      if (lr.bottom - last.bottom > Math.max(6, lr.height * 0.06)) out.errors.push(`last roster row must end near the list bottom: ${JSON.stringify({ gap: +(lr.bottom - last.bottom).toFixed(1) })}`)
+      // 行间距大致均匀：相邻间距的最大 / 最小不要差太多
+      const gaps = []
+      for (let i = 1; i < sectionRows.length; i++) {
+        gaps.push(sectionRows[i].getBoundingClientRect().top - sectionRows[i - 1].getBoundingClientRect().bottom)
+      }
+      const minGap = Math.min(...gaps)
+      const maxGap = Math.max(...gaps)
+      if (maxGap - minGap > Math.max(4, maxGap * 0.25)) {
+        out.errors.push(`roster row spacing must be roughly even: ${JSON.stringify({ minGap: +minGap.toFixed(1), maxGap: +maxGap.toFixed(1) })}`)
+      }
+      out.rosterFill = { listShare: +listShare.toFixed(3), minGap: +minGap.toFixed(1), maxGap: +maxGap.toFixed(1), rows: sectionRows.length }
     }
   }
   for (const element of root.querySelectorAll('.team, .team-lane, .roster')) {
@@ -1124,8 +1182,9 @@ async function runRosterGeometryScenario(env, scenario) {
   check(failures, geometry.hpCells >= 2, 'roster HP cells missing in real browser')
   const expectedRows = scenario.players * 2 + (scenario.unknown ?? 2)
   check(failures, geometry.rows === expectedRows, `roster hides players: ${geometry.rows} rows, expected ${expectedRows}`)
-  check(failures, geometry.rowsComplete, 'roster rows must show player / tank / HP / %')
-  check(failures, !geometry.hpBar, 'roster rows must not render an HP bar')
+  check(failures, geometry.rowsComplete, 'roster rows must show player / tank / HP bar with in-bar text')
+  // HP 是主 combat state：行里必须真的有一条 HP bar（数值 / 百分比已经收进条内）。
+  check(failures, geometry.hpBar, 'roster rows must render an HP bar')
   check(failures, geometry.laneIds[0].every((nick) => nick.startsWith('Ally') || nick.startsWith('Neutral'))
     && geometry.laneIds[1].every((nick) => nick.startsWith('Enemy')),
     `lanes must be physical Team 1 (left) / Team 2 (right): ${JSON.stringify(geometry.laneIds)}`)
@@ -1141,24 +1200,31 @@ async function runRosterGeometryScenario(env, scenario) {
     check(failures, geometry.side && !geometry.portrait, `expected Team 1 | Stage | Team 2 (class roster-side): portrait=${geometry.portrait} side=${geometry.side}`)
   }
 
-  // —— 横向空间归属（实测）：bounded roster | fluid center | bounded roster ——
-  // 真实应用里的列宽关系；`--pb-roster-max` 是 tokens/scale.css 的 SSOT 值。
+  // —— 横向空间归属（实测）：宽档三栏 = **2 / 6 / 2** ——
+  // 真实应用里的列宽关系。设计决策是显式比例，所以断言锁的是**比例**而不是某个 px 上限：
+  // 两条 lane 等宽、center ≈ 3× lane（2:6:2 = 1:3:1）、窄视口时 lane 回落到可读下限。
   if (geometry.side) {
-    const ROSTER_MAX_PX = 11 * 16
     const columns = await page.probe(workspaceColumnsProbe)
     check(failures, columns.root, 'workspace columns: pb-root missing')
-    check(failures, columns.laneW <= ROSTER_MAX_PX + 0.5,
-      `roster lane must stay bounded by --pb-roster-max: ${JSON.stringify({ laneW: columns.laneW, rootW: columns.rootW })}`)
     check(failures, Math.abs(columns.left.w - columns.right.w) <= 0.5,
-      `both lanes must share one bounded width: ${JSON.stringify({ left: columns.left.w, right: columns.right.w })}`)
-    // center 必须吃掉全部剩余宽度：内边距盒 − 两条 lane − 两条 gutter。
-    // centerW 直接量自 HUD 盒（HUD 属于整列），所以这条断言同时证明「没有额外
-    // max-width / 固定宽度 / 多余 margin 把 center 卡窄」以及「HUD 属于整列」。
+      `both lanes must share one width: ${JSON.stringify({ left: columns.left.w, right: columns.right.w })}`)
+    // center 吃掉除两条 lane 与 gutter 之外的全部宽度（没有额外 max-width / margin 卡窄它）。
+    // centerW 量自 HUD 盒（HUD 属于整列），所以这条同时证明「HUD 属于整列」。
     const expectedCenter = columns.contentW - 2 * columns.laneW - 2 * (columns.laneGutter ?? 0)
     check(failures, Math.abs(columns.centerW - expectedCenter) <= 1.5,
       `center column must consume all remaining width (expected ${expectedCenter}): ${JSON.stringify({ centerW: columns.centerW, laneW: columns.laneW, contentW: columns.contentW, gutter: columns.laneGutter })}`)
-    check(failures, columns.centerW >= columns.laneW * 2.5,
-      `center battlefield must dominate the bounded lanes: ${JSON.stringify({ centerW: columns.centerW, laneW: columns.laneW })}`)
+    // 2fr : 6fr : 2fr → center 是单条 lane 的 3 倍。窄档下限生效时 center 只会更宽。
+    const ratio = columns.centerW / columns.laneW
+    check(failures, ratio >= 2.8,
+      `2/6/2 wide layout: center must be ~3× a lane: ${JSON.stringify({ centerW: columns.centerW, laneW: columns.laneW, ratio: +ratio.toFixed(2) })}`)
+    // lane 不得低于可读下限（--pb-roster-min，2/6/2 的窄档 fallback 就是守在它上面）
+    const minLane = (() => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue('--pb-roster-min').trim()
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+      return raw.endsWith('rem') ? parseFloat(raw) * rem : parseFloat(raw)
+    })()
+    check(failures, columns.laneW >= minLane - 0.5,
+      `roster lane must keep its readable floor: ${JSON.stringify({ laneW: columns.laneW, minLane })}`)
     // HUD 属于整个 center column，而不是按内容收缩成中间小块
     check(failures, columns.hud && Math.abs(columns.hud.w - columns.centerW) <= 1,
       `HUD must span the whole center column: ${JSON.stringify({ hudW: columns.hud?.w, centerW: columns.centerW })}`)
@@ -2147,9 +2213,9 @@ function workspace2dProbe() {
       box: box(el),
       ids: rows.map((row) => Number(row.dataset.accountId)),
       scrolls: el.scrollHeight > el.clientHeight + 1,
-      rowsComplete: rows.every((row) => ['pb-roster-player', 'pb-roster-tank', 'roster-hp', 'roster-hp-pct']
+      rowsComplete: rows.every((row) => ['pb-roster-player', 'pb-roster-tank', 'roster-hp', 'roster-hp-text']
         .every((test) => (row.querySelector(`[data-test="${test}"]`)?.textContent || '').trim().length > 0)),
-      hpBar: !!el.querySelector('.hpbar'),
+      hpBar: !!el.querySelector('[data-test="roster-hp"]'),
     }
   }
   const buttons = [...document.querySelectorAll('.pb-controls > .pb-btn, .pb-controls > * > .pb-btn, .pb-controls .pb-btn')]
@@ -2445,8 +2511,8 @@ async function runWorkspace2DScenario(env, scenario) {
   check(failures, JSON.stringify(g.right.ids) === JSON.stringify(team2), `right lane must be physical Team 2: ${JSON.stringify(g.right.ids)}`)
   check(failures, g.left.box.r <= g.map.l + 1 && g.right.box.l >= g.map.r - 1, 'lanes must flank the square Stage')
   check(failures, !g.left.scrolls && !g.right.scrolls, 'normal 7v7 lanes must not scroll')
-  check(failures, g.left.rowsComplete && g.right.rowsComplete, 'roster rows must show player / tank / HP / %')
-  check(failures, !g.left.hpBar && !g.right.hpBar, 'roster rows must not render an HP bar')
+  check(failures, g.left.rowsComplete && g.right.rowsComplete, 'roster rows must show player / tank / HP bar with in-bar text')
+  check(failures, g.left.hpBar && g.right.hpBar, 'roster rows must render an HP bar')
   if (g.transport && g.transport.h > 0) {
     check(failures, g.transport.t >= g.map.b - 1, `transport must sit below the Stage (transport=${JSON.stringify(g.transport)} map=${JSON.stringify(g.map)})`)
   }

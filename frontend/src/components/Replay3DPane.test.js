@@ -417,24 +417,22 @@ describe('Replay3DPane', () => {
       unknown: [],
     }
     await nextTick()
-    const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp"]`).map(n => n.text())
-    const pcts = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp-pct"]`).map(n => n.text())
-    expect(nums('.team1')).toEqual(['1950', '824'])
-    expect(pcts('.team1')).toEqual(['100%', '42%'])
-    // 阵亡行读作 0 / 0%，不保留"最后一个非零 HP"
-    expect(nums('.team2')).toEqual(['0'])
-    expect(pcts('.team2')).toEqual(['0%'])
+    const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp-text"]`).map(n => n.text())
+    // exact 呈现：条内只写 `current / max`，不再重复百分比后缀
+    expect(nums('.team1')).toEqual(['1950 / 1950', '824 / 1950'])
+    // 阵亡行读作 `0 / max`（有量程时信息更完整），不保留“最后一个非零 HP”
+    expect(nums('.team2')).toEqual(['0 / 2000'])
 
     // 状态在时刻：store 投影变化后行内数值同步（HP 不只有血条）
     store.roster.team1[0].hp = 1200
     await nextTick()
-    expect(nums('.team1')).toEqual(['1200', '824'])
-    expect(pcts('.team1')).toEqual(['62%', '42%'])
+    expect(nums('.team1')).toEqual(['1200 / 1950', '824 / 1950'])
 
-    // 无可信上限 → 百分比为 —（unknown ≠ 0），不是 0%
+    // 无可信上限 → unknown（`—`，unknown ≠ 0），不是 0%
     store.roster.team1[1].maxHp = 0
     await nextTick()
-    expect(pcts('.team1')[1]).toBe('—')
+    expect(nums('.team1')[1]).toBe('—')
+    expect(wrapper.findAll('.team1 [data-test="roster-hp"]')[1].classes()).toContain('hp-mode-unknown')
     wrapper.unmount()
   })
 
@@ -977,8 +975,7 @@ describe('Replay3DPane', () => {
       const row = wrapper.get('[data-testid="replay3d-lane-left"] .pl')
       expect(wrapper.get('[data-testid="replay3d-lane-left"] [data-test="pb-shell-roster"]').classes()).toContain('pb-roster-compact')
       expect(row.get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
-      expect(row.get('[data-test="roster-hp"]').text()).toBe('1800')
-      expect(row.get('[data-test="roster-hp-pct"]').text()).toBe('92%')
+      expect(row.get('[data-test="roster-hp-text"]').text()).toBe('1800 / 1950')
       // 传输控件照常存在（名册与控件不互斥）
       expect(wrapper.find('.controls').exists()).toBe(true)
       wrapper.unmount()
@@ -1003,9 +1000,10 @@ describe('Replay3DPane', () => {
       const rows = wrapper.findAll('.team-lane .pl')
       expect(rows).toHaveLength(3)
       expect(rows[0].get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
-      expect(rows[0].get('[data-test="roster-hp-pct"]').text()).toBe('92%')
-      // 竖屏名册不是紧凑密度（纵向空间够用）
+      expect(rows[0].get('[data-test="roster-hp-text"]').text()).toBe('1800 / 1950')
+      // 竖屏名册不是紧凑密度（纵向空间够用），也不做纵向铺满
       expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-compact')
+      expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-fill')
       // 详情是同一个共享组件的 inline 呈现
       await rows[0].trigger('click')
       const details = wrapper.get('[data-testid="replay3d-details"]')

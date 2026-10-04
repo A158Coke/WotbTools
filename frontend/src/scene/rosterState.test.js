@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { hpAtSeries, hpPercentText, projectRoster, ROSTER_GROUPS, buildRosterRows } from './rosterState.js'
+import { hpAtSeries, hpPercentText, hpPresentationFor, projectRoster, ROSTER_GROUPS, buildRosterRows } from './rosterState.js'
 
 const vehicle = (eid, team, opts = {}) => ({
   def: {
@@ -148,5 +148,78 @@ describe('rosterState · seek 投影接线守卫', () => {
 
   it('teardown 清空名册与 eid → 行 索引（会话切换不留旧行）', () => {
     expect(src).toMatch(/rosterRowsByEid\.clear\(\)/)
+  })
+})
+
+/**
+ * HP 呈现模型：名册与名牌共用同一份判定，渲染层不自己猜。
+ * 契约核心是「exact 不重复百分比 / relative 不伪造数值 / unknown ≠ 0% / destroyed 归零」。
+ */
+describe('rosterState · HP 呈现模型（exact / relative / unknown / destroyed）', () => {
+  it('exact：有权威 current + max → 只写 `current / max`，不重复百分比', () => {
+    const hp = hpPresentationFor({ currentHp: 742, maxHp: 1995 })
+    expect(hp.mode).toBe('exact')
+    expect(hp.text).toBe('742 / 1995')
+    expect(hp.text).not.toContain('%')
+    expect(hp.pct).toBe(37)
+    expect(hp.fill).toBeCloseTo(742 / 1995, 6)
+  })
+
+  it('exact 满血也只是数值，不写 100%', () => {
+    const hp = hpPresentationFor({ currentHp: 1995, maxHp: 1995 })
+    expect(hp.text).toBe('1995 / 1995')
+    expect(hp.fill).toBe(1)
+  })
+
+  it('relative：只有相对证据时显示 pct%，绝不造 current/max', () => {
+    const full = hpPresentationFor({ currentHp: null, maxHp: null, relativeFull: true })
+    expect(full.mode).toBe('relative')
+    expect(full.text).toBe('100%')
+    expect(full.currentHp).toBeNull()
+    expect(full.maxHp).toBeNull()
+
+    const hurt = hpPresentationFor({ currentHp: null, maxHp: null, pct: 52 })
+    expect(hurt.mode).toBe('relative')
+    expect(hurt.text).toBe('52%')
+    expect(hurt.fill).toBeCloseTo(0.52, 6)
+  })
+
+  it('relative 即使带 knowledge 也不升级成 exact（不伪造数值）', () => {
+    const hp = hpPresentationFor({ currentHp: null, maxHp: null, pct: 76, knowledge: 'CURRENT' })
+    expect(hp.mode).toBe('relative')
+    expect(hp.text).toBe('76%')
+  })
+
+  it('unknown：— 且 fill 为 0（unknown ≠ 0%，不画满绿）', () => {
+    for (const input of [null, {}, { currentHp: null, maxHp: null }, { currentHp: 800, maxHp: 0 }]) {
+      const hp = hpPresentationFor(input)
+      expect(hp.mode).toBe('unknown')
+      expect(hp.text).toBe('—')
+      expect(hp.fill).toBe(0)
+      expect(hp.pct).toBeNull()
+    }
+  })
+
+  it('destroyed：有量程写 `0 / max`，无量程退回 `0%`，fill 归零', () => {
+    const withMax = hpPresentationFor({ currentHp: 0, maxHp: 2600 }, true)
+    expect(withMax.mode).toBe('destroyed')
+    expect(withMax.text).toBe('0 / 2600')
+    expect(withMax.fill).toBe(0)
+
+    const bare = hpPresentationFor({ currentHp: null, maxHp: null }, true)
+    expect(bare.mode).toBe('destroyed')
+    expect(bare.text).toBe('0%')
+    expect(bare.fill).toBe(0)
+  })
+
+  it('destroyed 优先于 relative：阵亡不被读成「相对满血」', () => {
+    const hp = hpPresentationFor({ currentHp: null, maxHp: null, relativeFull: true }, true)
+    expect(hp.mode).toBe('destroyed')
+    expect(hp.text).toBe('0%')
+  })
+
+  it('fill 永远夹在 0..1，超量/负数输入不会画出条外', () => {
+    expect(hpPresentationFor({ currentHp: 9999, maxHp: 1000 }).fill).toBe(1)
+    expect(hpPresentationFor({ currentHp: -50, maxHp: 1000 }).fill).toBe(0)
   })
 })

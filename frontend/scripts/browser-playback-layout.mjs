@@ -386,35 +386,38 @@ try {
   const desktop = geometryByName.get('pc-1600x900')
   const fullscreen = geometryByName.get('wide-fullscreen-1792x922')
   const phoneLandscape = geometryByName.get('phone-landscape-844x390')
-  if (!(tablet.laneWidth < desktop.laneWidth && Math.abs(fullscreen.laneWidth - desktop.laneWidth) <= 1)) {
-    throw new Error('Roster lanes must grow with workspace width then stop at the shared maximum')
+  // 宽档 sizing authority 已从「bounded roster + center 吃剩余」换成显式 **2 / 6 / 2**：
+  // 旧的「lane 随视口变宽、到上限停住」不再成立（2fr 会随视口线性增长），
+  // 所以这里改成锁比例：center ≈ 3× lane，且 lane 不低于可读下限。
+  if (!(tablet.laneWidth >= 9 * 16 - 0.5 && desktop.laneWidth > tablet.laneWidth)) {
+    throw new Error('Roster lanes must keep their readable floor and grow with the workspace')
   }
 
-  // —— 横向空间归属：bounded roster | fluid center | bounded roster ——
+  // —— 横向空间归属：宽档三栏 = 2 / 6 / 2 ——
   //
-  // 用比例 / 恒等式而不是像素宽度做验收：断点只决定形态，尺寸由剩余空间连续决定，
-  // 所以「center 吃掉多少剩余空间」才是要锁的契约，具体 px 会随上述设计自由调整。
-  const ROSTER_MAX_PX = 11 * 16 // --pb-roster-max（tokens/scale.css 的 SSOT 值）
+  // 用比例 / 恒等式而不是像素宽度做验收：断点只决定形态，尺寸由 fr 连续决定，
+  // 所以「center 相对 lane 有多宽」才是要锁的契约，具体 px 会随视口自由变化。
   const LANE_GAP_PX = 8 // --space-2：三栏之间的 gutter，由 --space-* token 决定
+  const ROSTER_MIN_PX = 9 * 16 // --pb-roster-min（窄档 fallback 的下限）
   const contractFailures = []
   const requireContract = (ok, message) => { if (!ok) contractFailures.push(message) }
 
   for (const [name, metrics] of geometryByName) {
     if (!metrics?.hudWidth) continue // 非三栏场景（mobile portrait / raster / leader）不参与
     const label = `${name}: lane=${metrics.laneWidth} center=${metrics.centerWidth} stage=${metrics.stageSide}`
-    // roster 必须 bounded，且左右对称
-    requireContract(metrics.laneWidth <= ROSTER_MAX_PX + 0.5, `roster lane must stay bounded by --pb-roster-max: ${label}`)
-    requireContract(Math.abs(metrics.laneWidth - metrics.laneRight) <= 0.5, `both lanes must share one bounded width: ${label}`)
-    // center 必须吃掉**全部**剩余宽度：等于 整宽 − 两条 lane − 两条 gutter。
+    // 两条 lane 等宽，且不低于可读下限（2/6/2 的窄档 fallback 就是守在 --pb-roster-min 上）
+    requireContract(Math.abs(metrics.laneWidth - metrics.laneRight) <= 0.5, `both lanes must share one width: ${label}`)
+    requireContract(metrics.laneWidth >= ROSTER_MIN_PX - 0.5, `roster lane must keep its readable floor: ${label}`)
+    // center 必须吃掉**全部**剩余宽度：等于 整宽 − 两条 lane − 一条 gutter。
     // 这条恒等式才是「center 没有额外 max-width / 固定宽度 / 多余 margin」的直接证据。
     // 注意 `centerWidth` 量的是 right.left − left.right − LANE_GAP_PX：右 lane 的 gutter
     // 已经内含在这段距离里，所以再减一条就重复了。
     const expectedCenter = metrics.mainWidth - 2 * metrics.laneWidth - LANE_GAP_PX
     requireContract(Math.abs(metrics.centerWidth - expectedCenter) <= 1,
       `center column must consume all remaining width (expected ${expectedCenter}): ${label}`)
-    // center 明显宽于单侧 roster，且 Stage 不超出它
-    requireContract(metrics.centerWidth >= metrics.laneWidth * 2.5,
-      `center battlefield must dominate the bounded lanes: ${label}`)
+    // 2fr : 6fr : 2fr → center 是单条 lane 的 3 倍（窄档下限生效时只会更宽）
+    requireContract(metrics.centerWidth / metrics.laneWidth >= 2.8,
+      `2/6/2 wide layout: center must be ~3× a lane (ratio=${(metrics.centerWidth / metrics.laneWidth).toFixed(2)}): ${label}`)
     requireContract(metrics.stageSide <= metrics.centerWidth + 0.5, `Stage must fit inside the center column: ${label}`)
     // HUD 属于整个 center column，而不是按内容收缩成中间小块
     requireContract(Math.abs(metrics.hudWidth - metrics.centerWidth) <= 1,
@@ -426,17 +429,12 @@ try {
       `Stage must never exceed the measured vertical budget: ${label}`)
   }
 
-  // 大屏新增的宽度只应归 center：roster 到顶后不再膨胀
-  requireContract(Math.abs(desktop.laneWidth - fullscreen.laneWidth) <= 1,
-    `roster must not grow past its maximum on larger viewports: desktop=${desktop.laneWidth} fullscreen=${fullscreen.laneWidth}`)
-  requireContract(fullscreen.centerWidth - desktop.centerWidth > 100,
-    `extra wide-viewport width must go to the center column: desktop=${desktop.centerWidth} fullscreen=${fullscreen.centerWidth}`)
+  // 大屏新增的宽度按 2/6/2 分流：center 拿到的绝对增量必须远大于单侧 lane
+  requireContract((fullscreen.centerWidth - desktop.centerWidth) > (fullscreen.laneWidth - desktop.laneWidth) * 2,
+    `extra wide-viewport width must go to the center column: desktop=${desktop.centerWidth}/${desktop.laneWidth} fullscreen=${fullscreen.centerWidth}/${fullscreen.laneWidth}`)
   // 短横屏（844x390）与平板仍保持三栏 + 可读 roster
   requireContract(phoneLandscape.centerWidth > phoneLandscape.stageSide,
     `phone landscape center must remain the widest column: ${JSON.stringify(phoneLandscape)}`)
-  requireContract(tablet.laneWidth >= 9 * 16 - 0.5,
-    `tablet roster must keep its readable floor (--pb-roster-min): ${tablet.laneWidth}`)
-
   if (contractFailures.length) {
     throw new Error(`workspace column ownership contract:\n- ${contractFailures.join('\n- ')}`)
   }

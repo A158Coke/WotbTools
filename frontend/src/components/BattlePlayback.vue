@@ -1764,7 +1764,16 @@ function sideAwayFromClientX(clientX) {
   return clientX > rect.left + rect.width / 2 ? 'left' : 'right'
 }
 
-/** 名册每行显示的当前 HP（与地图标记同一个权威投影：healthDisplayAt）。 */
+/**
+ * 名册每行显示的当前 HP（与地图标记同一个权威投影：healthDisplayAt）。
+ *
+ * 传的是**完整投影**而不只是 current/max：名册的 HP 呈现模型要区分 exact / relative /
+ * unknown / destroyed（见 scene/rosterState.js 的 hpPresentationFor）。`pct` 只在
+ * `displayCapacityHp` 可信时才有值，`relativeFull` 是 backend 标注的「相对满状态」事实——
+ * 两者都不可用时呈现层落到 unknown（`—`），绝不伪造 current/max。
+ *
+ * `pct` 直接取投影的原始比例，不预先取整：取整是呈现层的事（避免累积误差）。
+ */
 const rosterHealth = computed(() => {
   const out = {}
   for (const state of baseVehicleStates.value) {
@@ -1773,7 +1782,26 @@ const rosterHealth = computed(() => {
     out[state.vehicle.accountId] = {
       currentHp: display.currentHp,
       maxHp: display.displayCapacityHp,
+      pct: display.pct,
+      relativeFull: display.relativeFull === true,
+      state: display.state,
     }
+  }
+  return out
+})
+/**
+ * 名册每行的 reload（次级瞬时状态），按 accountId。
+ *
+ * 与地图名牌**同一个 resolver 调用**（`vehicleReloadAt` → 共享 `reloadStateAt`），
+ * 所以「弹夹有几发、哪一发在装填、locked / empty 怎么显示」只有一份语义——
+ * 名册不自己重算 reload。没有 telemetry 时值为 null，呈现层据此不显示 reload（不假设满弹）。
+ */
+const rosterReload = computed(() => {
+  if (!props.reloadTelemetry) return null
+  const out = {}
+  for (const state of baseVehicleStates.value) {
+    const shells = vehicleReloadAt(state.vehicle.accountId, currentTime.value)
+    if (shells && shells.length > 0) out[state.vehicle.accountId] = shells
   }
   return out
 })
@@ -2047,7 +2075,7 @@ const mapStyle = computed(() => ({
   <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
 
 
-    <div ref="battlefieldWorkspaceEl" class="pb-main" data-test="pb-main">
+    <div ref="battlefieldWorkspaceEl" class="pb-main" :class="{ 'pb-roster-lanes': rosterLanes }" data-test="pb-main">
     <BattlePlaybackHud
       v-if="!uiHidden && (uiPrefs.showTopbar || (uiPrefs.showBaseStatus && hudBaseStates.length))"
       :show-summary="uiPrefs.showTopbar"
@@ -2065,7 +2093,7 @@ const mapStyle = computed(() => ({
            两侧车道只在「名册开着 且 非手机竖屏」时存在；关掉名册两侧整体消失，
            Stage 依然居中且保持正方形（绝不被拉宽填满）。 -->
       <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-left" data-test="pb-team-lane-left" :aria-label="$t('agentReplay.team1')">
-        <PlaybackRoster :teams="{ team1: teamVehicles.team1, unknown: teamVehicles.unknown }" :destroyed="destroyedNow" :health="rosterHealth" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
+        <PlaybackRoster :teams="{ team1: teamVehicles.team1, unknown: teamVehicles.unknown }" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
       <div class="pb-map-stage" ref="mapStageEl">
         <BattleMap
@@ -2140,7 +2168,7 @@ const mapStyle = computed(() => ({
       />
 
       <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-right" data-test="pb-team-lane-right" :aria-label="$t('agentReplay.team2')">
-        <PlaybackRoster :teams="{ team2: teamVehicles.team2 }" :destroyed="destroyedNow" :health="rosterHealth" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
+        <PlaybackRoster :teams="{ team2: teamVehicles.team2 }" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
 
       <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing">

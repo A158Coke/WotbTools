@@ -11,7 +11,7 @@
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { hpPercentText } from '../scene/rosterState.js'
+import { hpPresentationFor } from '../scene/rosterState.js'
 
 defineOptions({ name: 'PlaybackRoster' })
 
@@ -29,6 +29,11 @@ const props = defineProps({
    *   3D：行自带 `hp` / `maxHp` / `dead` / `followed` —— 场景内核的 store.roster
    */
   health: { type: Object, default: null },
+  /**
+   * 每行的 reload（共享 resolver 的输出数组，按行 id）。缺省 / 该行为空 → **不显示 reload**
+   * （没有权威 telemetry 时不得假设满弹），阵亡行同样隐藏。
+   */
+  reload: { type: Object, default: null },
   /**
    * 行样式：'2d' 与 '3d' 的差异只在呈现（3D 多一个行首队色圆点 + 跟随态描边），
    * 行的信息契约相同。
@@ -65,26 +70,60 @@ const groups = computed(() => SECTIONS
 function decorate(row) {
   const id = row.accountId ?? row.eid
   const subset = props.health?.[id] || null
+  // 血量事实：2D 传 healthDisplayAt 投影（含 relative / knowledge），3D 传 store.roster 行自带的
+  // hp / maxHp。两种形状都只是**事实源**；展示判定统一交给 hpPresentationFor，渲染层不自己猜。
   const rawHp = subset ? subset.currentHp : row.hp
   const currentHp = rawHp == null ? null : Math.max(0, Math.round(Number(rawHp) || 0))
   const maxHp = subset ? subset.maxHp : row.maxHp
-  const pct = currentHp == null ? null : hpPercentText(currentHp, maxHp)
+  const destroyed = props.destroyed.has(id) || row.dead === true
+  const hp = hpPresentationFor({
+    currentHp,
+    maxHp,
+    pct: subset?.pct,
+    relativeFull: subset?.relativeFull,
+    state: destroyed ? 'DESTROYED' : (subset?.state ?? null),
+  }, destroyed)
+  // reload 是次级瞬时状态：优先取共享 resolver 的输出（props.reload 按行 id），
+  // 其次取行自带的（3D 的 store.roster 行已经把 resolver 结果投影进去）。
+  // 两者都没有 → null：不显示 reload，绝不假设满弹；阵亡时隐藏。
+  const shells = props.reload?.[id] ?? row.reload
+  const reload = Array.isArray(shells) && shells.length > 0 ? shells : null
   return {
     ...row,
     id,
     player: row.playerName ?? row.nick ?? '—',
     tank: row.tankName || row.tank || row.tankId || '—',
-    hpText: currentHp == null ? '—' : String(currentHp),
-    hpPctText: pct == null ? '—' : `${pct}%`,
-    destroyed: props.destroyed.has(id) || row.dead === true,
+    hp,
+    hpMode: hp.mode,
+    // reload 是次级瞬时状态：没有权威 telemetry 时**不显示**（绝不假设满弹），阵亡时隐藏。
+    reload: destroyed ? null : reload,
+    destroyed,
     followed: row.followed === true,
     selected: props.selectedId != null && props.selectedId === id,
   }
 }
+/**
+ * 纵向铺满（宽档侧车道）：紧凑行 + 高度由车道给足时，让 header 固定、列表吃满剩余高度、
+ * 每行 `minmax(<可读下限>, 1fr)` 均匀分布——而不是全部堆在顶部、下面留一大片空白。
+ * 竖屏纵向流（`compact === false`）保持自然高，不参与铺满。
+ */
+const fillHeight = computed(() => props.compact === true)
+
+/** 每行的可读下限：固定值只是 guard，正常高度由 1fr 连续决定。 */
+const ROSTER_ROW_MIN_PX = 44
+
+/** 每个分组的列表轨道：N 行 × minmax(下限, 1fr)。 */
+function listRows(rowCount) {
+  return `repeat(${Math.max(1, rowCount)}, minmax(${ROSTER_ROW_MIN_PX}px, 1fr))`
+}
 </script>
 
 <template>
-  <div class="pb-roster" :class="['pb-roster-' + variant, { 'pb-roster-compact': compact }]" data-test="pb-shell-roster">
+  <div
+    class="pb-roster"
+    :class="['pb-roster-' + variant, { 'pb-roster-compact': compact, 'pb-roster-fill': fillHeight }]"
+    data-test="pb-shell-roster"
+  >
     <section
       v-for="section in groups"
       :key="section.key"
@@ -93,7 +132,7 @@ function decorate(row) {
       :data-team="section.key"
     >
       <h3 class="pb-team-head">{{ t(section.labelKey) }}</h3>
-      <div class="pb-roster-list roster">
+      <div class="pb-roster-list roster" :style="{ gridTemplateRows: listRows(section.rows.length) }">
         <button
           v-for="row in section.rows"
           :key="row.id"
@@ -107,9 +146,33 @@ function decorate(row) {
         >
           <span v-if="variant === '3d'" class="dot" :style="{ background: row.color }" aria-hidden="true" />
           <span class="nick pb-team-player" data-test="pb-roster-player">{{ row.player }}</span>
-          <span class="hpv pb-roster-hp" data-test="roster-hp">{{ row.hpText }}</span>
-          <span class="hpp pb-roster-hp-pct" data-test="roster-hp-pct">{{ row.hpPctText }}</span>
           <span class="tank pb-team-tank" data-test="pb-roster-tank">{{ row.tank }}</span>
+          <!-- HP 是主 combat state：条内文字叠加。文字**不能**放进 fill 节点里，
+               否则 30% 血量会把文字一起裁掉（见下方 CSS 的 z-index 分层）。 -->
+          <span
+            class="pb-roster-hpbar pb-roster-hp"
+            :class="'hp-mode-' + row.hp.mode"
+            data-test="roster-hp"
+            role="img"
+            :aria-label="row.hp.text"
+          >
+            <span v-if="row.hp.fill > 0" class="pb-roster-hpfill" :style="{ width: (row.hp.fill * 100) + '%' }" aria-hidden="true"></span>
+            <span class="pb-roster-hptext" data-test="roster-hp-text" aria-hidden="true">{{ row.hp.text }}</span>
+          </span>
+          <!-- reload 是次级瞬时状态：更短更细，仅在有权威 telemetry 时出现 -->
+          <span v-if="row.reload" class="pb-roster-reload" data-test="roster-reload" aria-hidden="true">
+            <span
+              v-for="(shell, index) in row.reload"
+              :key="index"
+              class="pb-roster-shell"
+              :data-state="shell.state"
+            >
+              <span
+                class="pb-roster-shellfill"
+                :style="{ width: (shell.state === 'full' ? 100 : shell.state === 'loading' ? Math.max(0, Math.min(1, shell.progress)) * 100 : 0) + '%' }"
+              ></span>
+            </span>
+          </span>
         </button>
       </div>
     </section>
@@ -118,20 +181,15 @@ function decorate(row) {
 </template>
 
 <style scoped>
-/* 名册行：两行网格。
-   行 1 = 玩家 + **HP 数值** + **百分比**（数值列 `tabular-nums`、不截断；只有玩家与车型允许 ellipsis）
-   行 2 = 车型（横跨整行）。没有血条：数值与百分比就是主信息。
-
-   ⚠️ 用显式 grid-column / grid-row 定位，**不要用 grid-template-areas**：
-   本行有两行结构，"HP 值行 1 占第 3 列 / 百分比行 1 占第 4 列"，若把它们写成同一个
-   区域名，该区域就不是矩形 → 整条 `grid-template-areas` 被判无效并丢弃 → 所有单元格
-   落进隐式单列、全部叠在 x=0（实测整行文字互相压在一起）。 */
+/* 名册行：**纵向四层**，信息层级固定为
+      PlayerName → TankName → [ HP 条（文字叠加在条内） ] → [ reload ]
+   昵称独占第一行（长昵称因此有完整宽度，不再和 HP 数字挤同一行）。 */
 .pb-roster-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-rows: auto auto;
-  align-items: center;
-  column-gap: var(--space-2);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
   width: 100%;
   min-height: var(--hit-min);
   padding: var(--space-1) var(--space-2);
@@ -143,20 +201,82 @@ function decorate(row) {
   text-align: start;
   cursor: pointer;
 }
-.pb-roster-dot,
-.pb-roster-row .dot { grid-column: 1; grid-row: 1 / span 2; align-self: center; width: var(--space-2); height: var(--space-2); border-radius: var(--radius-full); }
-.pb-roster-row .nick { grid-column: 1; grid-row: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pb-roster-row .hpv { grid-column: 2; grid-row: 1; }
-.pb-roster-row .hpp { grid-column: 3; grid-row: 1; min-inline-size: 4ch; text-align: end; }
-.pb-roster-row .hpv,
-.pb-roster-row .hpp { font: var(--type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pb-roster-row .tank { grid-column: 1 / -1; grid-row: 2; min-width: 0; overflow: hidden; color: var(--color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
-/* 3D 变体：行首圆点独占第一列，其余列整体右移一格。 */
-.pb-roster-3d .pb-roster-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
-.pb-roster-3d .pb-roster-row .nick { grid-column: 2; }
-.pb-roster-3d .pb-roster-row .hpv { grid-column: 3; }
-.pb-roster-3d .pb-roster-row .hpp { grid-column: 4; }
-.pb-roster-3d .pb-roster-row .tank { grid-column: 2 / -1; }
+.pb-roster-row .nick { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-roster-row .tank { min-width: 0; overflow: hidden; color: var(--color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+/* 3D 变体的行首队色圆点：绝对定位，不参与纵向四层的排布。 */
+.pb-roster-3d .pb-roster-row .dot {
+  position: absolute;
+  inset-block-start: calc(var(--space-1) + 5px);
+  inset-inline-start: calc(var(--space-2) - 1px);
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+}
+.pb-roster-3d .pb-roster-row .nick { padding-inline-start: var(--space-3); }
+
+/* —— HP 条（主 combat state）：绿色 fill + 条内文字叠加 ——
+   fill 与 text 是**兄弟**节点：文字若放进 fill 里，低血量时会被 fill 的宽度一起裁掉。
+   条内文字必须始终完整可读 → text 用 `position:absolute` + `inset:0` + 居中，独立于 fill。 */
+.pb-roster-hpbar {
+  position: relative;
+  display: block;
+  inline-size: 100%;
+  block-size: var(--roster-hpbar-h, 14px);
+  border-radius: var(--radius-full);
+  background: var(--color-playback-label-track);
+  overflow: hidden;
+}
+.pb-roster-hpfill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: var(--radius-full);
+  /* 绿色 = 「这也是 HP」的语义（与名牌的 HP fill 同一族 token：team-1/ally = green-400）。 */
+  background: var(--color-team-ally);
+}
+.pb-roster-hptext {
+  position: absolute;
+  inset: 0;
+  z-index: var(--pb-z-hud);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--color-playback-label-text);
+  text-shadow: var(--text-shadow-playback-label);
+}
+/* unknown / destroyed 没有可画的填充：fill 节点根本不渲染（见模板的 v-if），
+   所以这里不需要 !important 去覆盖 inline width —— unknown ≠ 0%，也不画满绿。 */
+.pb-roster-hpbar.hp-mode-unknown { background: var(--color-surface-3); }
+
+/* —— reload（次级瞬时状态）：比 HP 更短、更细，保留弹夹分段。
+   分段语义与名牌共用同一批 token：locked 用 `--color-playback-label-locked`，fill 用
+   `--color-playback-label-text`（弹夹已装填的那一格是白/亮色，不是绿色——绿色属于 HP）。 —— */
+.pb-roster-reload {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-1) / 2);
+  inline-size: var(--roster-reload-w, 60%);
+  block-size: var(--roster-reload-h, 3px);
+}
+.pb-roster-shell {
+  position: relative;
+  flex: 1 1 0;
+  block-size: 100%;
+  border-radius: var(--radius-full);
+  background: var(--color-playback-label-track);
+  overflow: hidden;
+}
+.pb-roster-shell[data-state="locked"] { background: var(--color-playback-label-locked); }
+.pb-roster-shellfill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-playback-label-text);
+}
 
 /* 状态视觉：`selected`（选择器语义，详情面板跟它走）与 `followed`（相机跟随语义）
    是**两个独立状态**，一行可以同时是两者，所以两条规则各按自己的类生效，不互相冒充。 */
@@ -172,6 +292,18 @@ function decorate(row) {
 /* 名册容器**不是**独立滚动区（审计 BZ-13：名册里不允许嵌套滚动条）。
    宽度永远跟着承载它的车道 / 纵向流走（车道自己定宽），这里不再写死 240px。 */
 .pb-roster { display: grid; align-content: start; gap: var(--space-3); width: 100%; min-block-size: 0; padding: var(--space-3); }
+
+/* —— 纵向铺满（宽档侧车道 / 竖向流）——
+   目标形状：Team header 固定顶部，列表吃满 section 剩余高度，7 行**纵向均匀分布**。
+   所有权链条：`.pb-roster`（行 = header / list 的两条 grid 轨道）
+     → `.pb-roster-team`（行 = header 自动 + list `minmax(0,1fr)`）
+     → `.pb-roster-list`（行 = N × `minmax(<可读下限>, 1fr)`，由行内 style 给出 N）
+   每行只拿「剩余高度 ÷ N」，没有固定大 px；7v7 正常数据因此不需要车道滚动条。 */
+.pb-roster.pb-roster-fill { align-content: stretch; block-size: 100%; }
+.pb-roster.pb-roster-fill .pb-roster-team { grid-template-rows: auto minmax(0, 1fr); }
+.pb-roster.pb-roster-fill .pb-roster-list { align-content: stretch; }
+.pb-roster.pb-roster-fill .pb-roster-row { min-block-size: var(--roster-row-min, 44px); }
+
 .pb-roster-team { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-1); }
 /* 3D 的车道里，名册栏自己承担卡片外观（2D 的车道由外层 lane 承担）。
    卡片必须**填满车道高度**：`.team-lane` 是 flex column 且已拉满网格行高，卡片若是
