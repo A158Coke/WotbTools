@@ -160,15 +160,7 @@ if (( restart_required )); then
   done
 fi
 docker_daemon_healthy || fail "The Docker daemon is not healthy after reconciliation."
-active_mirrors | python3 -c '
-import json, sys
-expected = sys.argv[1]
-raw = sys.stdin.read().strip() or "null"
-mirrors = json.loads(raw)
-if not isinstance(mirrors, list) or expected not in mirrors:
-    print(f"the running daemon does not report the reviewed mirror {expected}: {mirrors}", file=sys.stderr)
-    raise SystemExit(1)
-' "$WORKER_DOCKER_HUB_MIRROR" \
+assert_active_mirror "$WORKER_DOCKER_HUB_MIRROR" \
   || fail "The reviewed Docker Hub mirror is not active on $WORKER_TARGET."
 pass docker-hub-mirror
 
