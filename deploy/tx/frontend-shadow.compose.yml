@@ -15,7 +15,7 @@ services:
       BACKEND_UPSTREAM: http://10.20.0.1:8087
       AI_UPSTREAM: http://10.20.0.2:8089
       # Official nginx template entrypoint expands only these deployment variables.
-      # Compose escapes the regex end-anchor '$' as '$$'; the container receives '$'.
+      # Keep this byte-for-byte aligned with TX1 production; Compose config preserves '$'.
       NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$$
     volumes:
       - ./nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro
