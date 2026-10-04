@@ -57,8 +57,14 @@ function epochArg(value) {
 }
 const profile = ref(null)
 const loginStarted = ref(false)
-/** 离线 / 状态未知时的中性提示文案（取自 capability 模型，不另造文案、不当成错误态）。 */
-const unavailableMessageKey = ref('')
+/**
+ * 离线 / 状态未知时的中性提示文案（取自 capability 模型，不另造文案、不当成错误态）。
+ * 实时派生而非进入时快照：首次检测未完成（pending）时不下结论，settle 后显示真实状态。
+ */
+const profileAvailability = computed(() => availability(Feature.ACCOUNT_PROFILE))
+const unavailableMessageKey = computed(() => (profileAvailability.value.pending
+  ? ''
+  : profileAvailability.value.messageKey || 'featureOffline.accountProfile'))
 
 const editingAccount = ref(false)
 const editAccountId = ref(null)
@@ -146,7 +152,6 @@ async function loadProfile() {
   }
   if (!ownEpoch(epoch)) return
   phase.value = 'done'
-  unavailableMessageKey.value = ''
   await syncFromLogin(epoch)
   if (!ownEpoch(epoch)) return
   if (profile.value?.wotbAccountId) {
@@ -158,7 +163,6 @@ async function loadProfile() {
 /** 网络不可用时的中性状态：不是错误态，不显示「资料加载失败 / 重试」。 */
 function enterConnectivityUnavailable() {
   phase.value = 'connectivity-unavailable'
-  unavailableMessageKey.value = availability(Feature.ACCOUNT_PROFILE).messageKey || 'featureOffline.accountProfile'
 }
 
 /**
@@ -442,8 +446,10 @@ async function removeAccount() {
       即时提示由统一的 ConnectivityNoticeDialog 负责，这里不另造 modal。
     -->
     <div v-else-if="phase === 'connectivity-unavailable'" class="profile-card profile-message" data-testid="profile-connectivity-unavailable">
-      <p class="text-sub">{{ $t(unavailableMessageKey) }}</p>
-      <button class="btn-primary" data-testid="profile-retry" @click="retry">{{ $t('profile.retry') }}</button>
+      <template v-if="unavailableMessageKey">
+        <p class="text-sub">{{ $t(unavailableMessageKey) }}</p>
+        <button class="btn-primary" data-testid="profile-retry" @click="retry">{{ $t('profile.retry') }}</button>
+      </template>
     </div>
 
     <div v-else-if="profile" class="profile-main">

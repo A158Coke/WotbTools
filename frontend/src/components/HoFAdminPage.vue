@@ -1032,7 +1032,7 @@ function battleTypeLabel(tp) {
 
 <template>
   <div class="hof-admin">
-    <Banner v-if="!hofAvailability.available" tone="info" data-testid="hof-admin-connectivity"><p>{{ $t(hofAvailability.messageKey) }}</p></Banner>
+    <Banner v-if="!hofAvailability.pending && !hofAvailability.available" tone="info" data-testid="hof-admin-connectivity"><p>{{ $t(hofAvailability.messageKey) }}</p></Banner>
     <!-- 登录流程 -->
     <div v-if="authPhase === 'login'" class="hof-admin-login muted">{{ $t('hofAdmin.login') }}</div>
 

@@ -55,7 +55,7 @@ Replay Workspace contains five publicly discoverable capabilities. Anonymous use
 
 ## Local-first capability boundary
 
-`app/featureCapabilities.js` 是唯一连通性能力模型；组件消费 `useFeatureGate()`，不自行读 `navigator.onLine`。连通性与登录是**两条独立门禁**：ONLINE_REQUIRED 能力在非-online 时连挂载都不做，登录门禁只决定「已连通但未登录」时的引导。
+`app/featureCapabilities.js` 是唯一连通性能力模型；组件消费 `useFeatureGate()`，不自行读 `navigator.onLine`。连通性与登录是**两条独立门禁**：ONLINE_REQUIRED 能力在非-online 时连挂载都不做，登录门禁只决定「已连通但未登录」时的引导。连通性首次检测完成前（`availability().pending`）只 fail-closed、不下结论：不显示任何 connectivity 提示，也不落到登录门禁；检测完成后按真实结论（含仍为 UNKNOWN）渲染。
 
 | 能力 | 运行要求 | 离线行为 |
 |---|---|---|

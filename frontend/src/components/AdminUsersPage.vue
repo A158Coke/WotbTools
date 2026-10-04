@@ -339,7 +339,7 @@ function fmtTime(s) {
     <!-- 非-online 的中性状态（不是错误态）：文案来自 capability 模型，四态各有措辞。
          已加载的列表 / 搜索条件 / 选择集一律保留，只是新的 ONLINE_REQUIRED 动作被挡住。 -->
     <p
-      v-if="!adminAvailability.available"
+      v-if="!adminAvailability.pending && !adminAvailability.available"
       class="admin-connectivity"
       data-testid="admin-connectivity-unavailable"
     >{{ $t(adminAvailability.messageKey) }}</p>
