@@ -109,8 +109,14 @@ function decorate(row) {
  */
 const fillHeight = computed(() => props.compact === true)
 
-/** 每行的可读下限：固定值只是 guard，正常高度由 1fr 连续决定。 */
-const ROSTER_ROW_MIN_PX = 44
+/**
+ * 每行的可读下限：固定值只是 guard，正常高度由 `1fr` 连续决定。
+ *
+ * 取 26px 而不是触控尺寸：短横屏（740×360）整个 workspace 只有 ~256px，7 行 × 44px
+ * 直接就溢出去顶开传输控件了。行仍带 `min-height: var(--hit-min)` 之外的可点区域由整行
+ * 承担，这里只保证文字不互相压住。高视口下 1fr 会把行拉得很开（这才是均匀分布的目标）。
+ */
+const ROSTER_ROW_MIN_PX = 26
 
 /** 每个分组的列表轨道：N 行 × minmax(下限, 1fr)。 */
 function listRows(rowCount) {
@@ -293,16 +299,21 @@ function listRows(rowCount) {
    宽度永远跟着承载它的车道 / 纵向流走（车道自己定宽），这里不再写死 240px。 */
 .pb-roster { display: grid; align-content: start; gap: var(--space-3); width: 100%; min-block-size: 0; padding: var(--space-3); }
 
-/* —— 纵向铺满（宽档侧车道 / 竖向流）——
-   目标形状：Team header 固定顶部，列表吃满 section 剩余高度，7 行**纵向均匀分布**。
-   所有权链条：`.pb-roster`（行 = header / list 的两条 grid 轨道）
+/* 纵向铺满（宽档侧车道 / 竖向流）——
+   目标形状：Team header 固定顶部，列表吃满 section 剩余高度，行**纵向均匀分布**。
+   所有权链条：`.pb-roster`（行 = header / list 两条轨道）
      → `.pb-roster-team`（行 = header 自动 + list `minmax(0,1fr)`）
-     → `.pb-roster-list`（行 = N × `minmax(<可读下限>, 1fr)`，由行内 style 给出 N）
-   每行只拿「剩余高度 ÷ N」，没有固定大 px；7v7 正常数据因此不需要车道滚动条。 */
+     → `.pb-roster-list`（行 = N × `minmax(<可读下限>, 1fr)`，N 由行内 style 给出）
+   每行只拿「剩余高度 ÷ N」，没有固定大 px。
+
+   ⚠️ 必须显式把 grid track 的自动最小尺寸压到 0（`min-block-size: 0` 不够，轨道要
+   `minmax(0, …)`）：grid 轨道的 `auto` 下限等于内容高，短横屏（740×360、workspace 只有
+   246px）下 section 会撑到 394px 溢出车道、把传输控件顶出视口。压到 0 之后内容才真正
+   在车道内被压缩（行距随之收紧），而不是把父级顶开。 */
 .pb-roster.pb-roster-fill { align-content: stretch; block-size: 100%; }
-.pb-roster.pb-roster-fill .pb-roster-team { grid-template-rows: auto minmax(0, 1fr); }
-.pb-roster.pb-roster-fill .pb-roster-list { align-content: stretch; }
-.pb-roster.pb-roster-fill .pb-roster-row { min-block-size: var(--roster-row-min, 44px); }
+.pb-roster.pb-roster-fill .pb-roster-team { grid-template-rows: auto minmax(0, 1fr); min-block-size: 0; }
+.pb-roster.pb-roster-fill .pb-roster-list { align-content: stretch; min-block-size: 0; }
+.pb-roster.pb-roster-fill .pb-roster-row { min-block-size: var(--roster-row-min, 26px); }
 
 .pb-roster-team { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-1); }
 /* 3D 的车道里，名册栏自己承担卡片外观（2D 的车道由外层 lane 承担）。
