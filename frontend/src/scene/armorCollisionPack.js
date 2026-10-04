@@ -31,19 +31,21 @@ export const RC = Object.freeze({
     /** 续飞射程（点击链出射 Raycaster far=60） */
     FAR: 60.0,
     /**
-     * 起点沿反射方向偏移。BlitzKit 对齐：0（原点=跳弹点，无偏移）。
-     * 原值 0.05 + T_SKIP 0.05 组成的 0.1m 窗口会把接缝另一侧板（厘米级距离）丢弃
-     * → 续飞射线穿缝进入车体内部——正是接缝点击 bug 的根因。
+     * 续飞射线最小命中距离（评审 P1b：click / JS 参考 / GLSL 三路共用的唯一语义常量，
+     * 序列化到 GLSL 时保留 6 位小数）。起点=跳弹点（BlitzKit 对齐，无偏移）；
+     * 该值仅滤数值级自命中（0.1mm）——BlitzKit 无过滤但依赖浮点侥幸，这里确定性兜底。
+     * 原实现 0.05 偏移 + 0.1m 窗口曾把接缝另一侧板丢弃（接缝点击 bug 根因）。
      */
+    MIN_CONTINUATION_T: 0.0001,
+    /** 兼容别名（GLSL 定义名不变） */
     ORIGIN_OFFSET: 0.0,
-    /** 近段过滤：仅滤数值自命中（0.1mm；BlitzKit 无过滤但依赖浮点侥幸，这里确定性兜底） */
     T_SKIP: 0.0001,
     /** 跳弹剩余穿深系数（penetration.js ricochetRemainingPen = remaining*0.75） */
     RICO_REMAIN_MUL: 0.75,
     /** 层链上限（碰撞模型实际 ≤4/射线；超限按"无续飞"保守处理=维持紫） */
     MAX_LAYER: 8,
-    /** DDA 步进上限（网格各轴 ≤48 → 路径 ≤~140 步） */
-    MAX_STEPS: 96,
+    /** DDA 步进上限 = RC_GRID_DIM_MAX×3（144）：cell 交叉上界 = dims.x+dims.y+dims.z ≤ 48×3 */
+    MAX_STEPS: 144,
     /** 单 cell 条目上限（构建器超限自动放粗 cell；着色器循环常量上界） */
     MAX_CELL_ENTRIES: 256,
     /** 单片元求交全局纹理取数预算（正常路径 ~300；超预算保守返回紫——防着色器执行超时被驱动杀 draw） */
@@ -78,8 +80,8 @@ export const RC = Object.freeze({
 export const RC_GLSL_CONST = `
 // ==== 跳弹续飞常量（单一来源 armorCollisionPack.js RC；禁止手改数值）====
 #define RC_FAR ${RC.FAR.toFixed(1)}
-#define RC_OFF ${RC.ORIGIN_OFFSET.toFixed(3)}
-#define RC_TSKIP ${RC.T_SKIP.toFixed(3)}
+#define RC_OFF ${RC.ORIGIN_OFFSET.toFixed(6)}
+#define RC_TSKIP ${RC.MIN_CONTINUATION_T.toFixed(6)}
 #define RC_RICO_MUL ${RC.RICO_REMAIN_MUL.toFixed(3)}
 #define RC_MAX_LAYER ${RC.MAX_LAYER}
 #define RC_MAX_STEPS ${RC.MAX_STEPS}
@@ -396,19 +398,6 @@ export function updatePackMatrices(pack) {
     if (pack.textures) pack.textures.matsTex.needsUpdate = true;
 }
 
-/** 由 pack 数据构建三张浮点纹理（Nearest + Clamp；装配期一次，重建时旧纹理整体废弃） */
-export function createPackTextures(pack) {
-    const tris = new THREE.DataTexture(pack.triData, RC.TRI_ROW, pack.triRows, THREE.RGBAFormat, THREE.FloatType);
-    const meta = new THREE.DataTexture(pack.metaData, RC.META_ROW, pack.meshCount, THREE.RGBAFormat, THREE.FloatType);
-    const mats = new THREE.DataTexture(pack.matsData, RC.MAT_ROW, pack.meshCount, THREE.RGBAFormat, THREE.FloatType);
-    for (const t of [tris, meta, mats]) {
-        t.minFilter = THREE.NearestFilter;
-        t.magFilter = THREE.NearestFilter;
-        t.generateMipmaps = false;
-        t.needsUpdate = true;
-    }
-    return { trisTex: tris, metaTex: meta, matsTex: mats };
-}
 
 /**
  * 世界系均匀网格加速结构（GPU DDA 求交数据面）。
@@ -454,7 +443,8 @@ export function buildRicochetGrid(pack) {
     }
     if (nanCount > 0) return { ok: false, reason: 'nan-verts:' + nanCount };
     // 稳健性诊断：包围盒异常膨胀时定位元凶单元（防单个坏矩阵拖垮整个网格）。
-    // 阈值：单单元对角线 > 车长两倍（~15m）视为坏矩阵。
+    // 阈值 80m：高于一切真实车辆几何（含长炮管整车 ~12m），只拦矩阵腐蚀的天文坐标；
+    // 覆盖不变量测试（长几何 60m）不受影响。
     {
         let culprits = [];
         const bb = new THREE.Box3();
@@ -465,7 +455,7 @@ export function buildRicochetGrid(pack) {
             if (bb.isEmpty()) continue;
             bb.getSize(sz);
             const diag = sz.length();
-            if (diag > 15) culprits.push(`${unit.mesh.name || '?'}(${sz.x.toFixed(1)},${sz.y.toFixed(1)},${sz.z.toFixed(1)})`);
+            if (diag > 80) culprits.push(`${unit.mesh.name || '?'}(${sz.x.toFixed(1)},${sz.y.toFixed(1)},${sz.z.toFixed(1)})`);
         }
         if (culprits.length) {
             return { ok: false, reason: 'bad-unit:' + culprits.slice(0, 3).join('|') + (culprits.length > 3 ? `+${culprits.length - 3}` : '') };
@@ -482,11 +472,16 @@ export function buildRicochetGrid(pack) {
     }
     if (!Number.isFinite(minX)) return { ok: false, reason: 'empty' };
     const ext = [maxX - minX, maxY - minY, maxZ - minZ];
-    let cellSize = RC.GRID_CELL_SIZE;
+    // 覆盖不变量（评审 P1）：cellSize 下界 = max(extAxis)/GRID_DIM_MAX —— 该尺寸下任何轴
+    // 都不超过 cell 数上限，网格恒覆盖全部几何；后续放细只在该下界之内，被截断的
+    // capped 成功路径（GPU 网格 AABB 小于几何 → DDA 永不可达 → 静默紫）不可能再出现。
+    const cellSizeFloor = Math.max(RC.GRID_CELL_SIZE, Math.max(ext[0], ext[1], ext[2]) / RC.GRID_DIM_MAX);
+    let cellSize = cellSizeFloor;
     let dims, cells;
     for (let attempt = 0; attempt < 4; attempt++) {
         dims = [0, 1, 2].map(a => Math.min(RC.GRID_DIM_MAX, Math.max(1, Math.ceil((ext[a] + 1e-4) / cellSize))));
         const capped = dims.some((d, a) => d === RC.GRID_DIM_MAX && ext[a] / RC.GRID_DIM_MAX > cellSize);
+        if (capped) return { ok: false, reason: 'grid-capped' };   // 防御断言：下界保证下不可达
         const total = dims[0] * dims[1] * dims[2];
         cells = new Map();
         let maxCnt = 0;
@@ -552,8 +547,9 @@ export function buildRicochetGrid(pack) {
                 cellsData, entriesData, worldTrisData,
             };
         }
-        if (capped) return { ok: false, reason: 'grid-capped' };
-        cellSize /= 2;   // 密集 cell 放细重试（分散条目）
+        // 密度重试只能在不破坏覆盖下界的范围内细化；到下界仍过密 → fail-closed（跳弹紫）
+        if (cellSize / 2 < cellSizeFloor) break;
+        cellSize = Math.max(cellSize / 2, cellSizeFloor);
     }
     return { ok: false, reason: 'grid-too-dense' };
 }
@@ -683,7 +679,7 @@ const _PRIM = new Set(['hull', 'turret', 'gun']);
  */
 export function simulateContinuation(pack, bouncePos, reflDir, params) {
     const ro = bouncePos.clone().addScaledVector(reflDir, RC.ORIGIN_OFFSET);
-    const hits = raycastPackAll(pack, ro, reflDir, RC.T_SKIP + RC.T_EPS);
+    const hits = raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T + RC.T_EPS);   // 与 GLSL/click 同一常量（P1b）
     // 前端门：原始命中无主装甲 → 不做二次判定（维持紫）
     if (!hits.some(h => _PRIM.has(h.section))) return { cls: 0, penChance: 0, layers: [] };
     // 收集：variant 去重 + 首 primary 止（calculate 收集段）
