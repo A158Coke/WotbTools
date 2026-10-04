@@ -335,12 +335,23 @@ assert apply_step["env"]["TX_QQ_CLIENT_ID"] == "${{ vars.TX_QQ_CLIENT_ID }}"
 assert apply_step["env"]["TX_QQ_CLIENT_SECRET"] == "${{ secrets.TX_QQ_CLIENT_SECRET }}"
 assert apply_step["env"]["KC_POSTGRES_ADMIN_PASSWORD"] == "${{ secrets.TX_KC_POSTGRES_ADMIN_PASSWORD }}"
 assert apply_step["env"]["KC_DB_PASSWORD"] == "${{ secrets.TX_KC_DB_PASSWORD }}"
-# K6B-1 pins the active Keycloak database placement to Docker-local: merging the
-# logical-endpoint variables must not let an existing repository variable (or any
-# other ambient environment) cut production over to a WireGuard endpoint. K6B-2
-# moves exactly one consumer at a time and updates this assertion with it.
-assert apply_step["env"]["TX_KEYCLOAK_DB_HOST"] == "keycloak-postgres"
-assert apply_step["env"]["TX_KEYCLOAK_DB_PORT"] == "5432"
+# K6B-1 pinned the Keycloak database placement to Docker-local so that merging the
+# logical-endpoint variables could not let an existing repository variable (or any
+# other ambient environment) cut production over. K6B-2D is the reviewed cutover for
+# exactly this consumer, so the assertion moves to the new desired state instead of
+# being dropped; K6B-2E/2F stay Docker-local and are asserted in
+# scripts/ci/test-workflow-contract.sh.
+#
+# This stays a placement pin, not a second allowlist: the canonical validator in
+# deploy/tx/deploy.sh owns which values are legal, and the rails below only state which
+# one is the reviewed production placement - TX1 (never TX2), the Keycloak PostgreSQL
+# port (never 5432 on the WG host, and never the Business PostgreSQL port 25432).
+assert apply_step["env"]["TX_KEYCLOAK_DB_HOST"] == "10.20.0.1"
+assert apply_step["env"]["TX_KEYCLOAK_DB_PORT"] == "15432"
+for unreviewed_host in ("10.20.0.3", "10.20.0.2", "keycloak-postgres", "db.example.com", ""):
+    assert apply_step["env"]["TX_KEYCLOAK_DB_HOST"] != unreviewed_host, unreviewed_host
+for unreviewed_port in ("5432", "25432", "15433", "5433", ""):
+    assert apply_step["env"]["TX_KEYCLOAK_DB_PORT"] != unreviewed_port, unreviewed_port
 assert apply_step["env"]["WG_APPLICATION_ID"] == "${{ secrets.WG_APPLICATION_ID }}"
 assert apply_step["env"]["KEYCLOAK_E2E_CLIENT_SECRET"] == "${{ secrets.KEYCLOAK_E2E_CLIENT_SECRET }}"
 assert "TF_VAR_" not in apply_step["with"]["envs"]
