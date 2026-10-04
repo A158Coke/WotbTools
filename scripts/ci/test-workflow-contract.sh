@@ -438,13 +438,16 @@ assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy g
 # owner's equivalent pin lives in scripts/ci/test-keycloak-tofu-contract.sh with its
 # own apply step.
 #
-# CURRENT_K6B_CUTOVERS is the reviewed production placement of the cut-over consumers:
+# CURRENT_K6B_CUTOVERS is the reviewed production placement of every K6B-2 consumer:
 # K6B-2A moved Frontend -> Business API onto the TX1 WireGuard service endpoint,
 # K6B-2B moved Business API -> Business PostgreSQL onto the TX1 WireGuard service
-# endpoint at port 25432, and K6B-2C moved Business API -> Keycloak Admin onto the TX1
-# WireGuard endpoint at port 8080. Everything not listed here is still Docker-local, and
-# the assertions below are the guard that a later PR cannot cut a consumer over (or
-# revert an earlier cutover) without an explicit, reviewed edit of this file.
+# endpoint at port 25432, K6B-2C moved Business API -> Keycloak Admin onto the TX1
+# WireGuard endpoint at port 8080, K6B-2D moved Keycloak -> Keycloak PostgreSQL onto the
+# TX1 WireGuard endpoint at port 15432, K6B-2E moved Caddy -> Frontend onto the TX1
+# WireGuard endpoint at port 8081, and K6B-2F - the last consumer - moved Caddy ->
+# Keycloak onto the TX1 WireGuard endpoint at port 8080. No private Docker-local TX
+# placement remains, and the assertions below are the guard that a later PR cannot revert
+# a cutover (or silently move one to TX2) without an explicit, reviewed edit of this file.
 CURRENT_K6B_CUTOVERS = {
     "frontend": {"TX_BACKEND_UPSTREAM": "http://10.20.0.1:8087"},
     "business-api": {
@@ -458,19 +461,35 @@ CURRENT_K6B_CUTOVERS = {
     },
     "caddy": {
         "CADDY_FRONTEND_UPSTREAM": "10.20.0.1:8081",
+        "CADDY_KEYCLOAK_UPSTREAM": "10.20.0.1:8080",
     },
 }
+# K6B-2F completes the cutovers, so the only placement left in this map is the Yecao AI
+# upstream, which is not a TX placement consumer and must never move with one. An empty
+# dict for an owner means "no Docker-local TX placement remains" rather than a missing
+# assertion.
 K6B_DOCKER_LOCAL_PLACEMENTS = {
     "frontend": (frontend_deploy, {
         "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
     }),
     "business-api": (business_deploy, {}),
-    # K6B-2E moved Caddy -> Frontend onto the WireGuard endpoint; Caddy -> Keycloak is
-    # still Docker-local and must stay that way until K6B-2F.
-    "caddy": (caddy_deploy, {
-        "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
-    }),
+    "caddy": (caddy_deploy, {}),
 }
+# K6B-2 baseline invariant: after K6B-2F every TX consumer must sit on the reviewed TX1
+# logical placement, so the K7 placement migration starts from an exact, asserted matrix
+# instead of "no Docker-local value is left".
+K6B_FINAL_PLACEMENT_MATRIX = {
+    "TX_BACKEND_UPSTREAM": "http://10.20.0.1:8087",
+    "TX_BUSINESS_DB_HOST": "10.20.0.1",
+    "TX_BUSINESS_DB_PORT": "25432",
+    "TX_KEYCLOAK_ADMIN_SERVER_URL": "http://10.20.0.1:8080",
+    "TX_KEYCLOAK_DB_HOST": "10.20.0.1",
+    "TX_KEYCLOAK_DB_PORT": "15432",
+    "CADDY_FRONTEND_UPSTREAM": "10.20.0.1:8081",
+    "CADDY_KEYCLOAK_UPSTREAM": "10.20.0.1:8080",
+}
+assert {name: value for cut_over in CURRENT_K6B_CUTOVERS.values() for name, value in cut_over.items()} \
+    == K6B_FINAL_PLACEMENT_MATRIX, "the K6B-2 cut-over matrix must match the reviewed final matrix"
 # The Keycloak owner's own placement pin lives in scripts/ci/test-keycloak-tofu-contract.sh
 # with its apply step, so it is deliberately not duplicated here; the gate expectation
 # for the same consumer is asserted below.
@@ -500,31 +519,36 @@ runtime_gate_step = next(
     if step.get("name") == "Run exact-SHA read-only TX runtime gate"
 )
 # The read-only gate must expect the same placement the owner workflows apply: the
-# cut-over WireGuard values for the consumers in CURRENT_K6B_CUTOVERS, Docker-local for
-# every other consumer until its own step. A mismatch on either side fails the gate, so
+# reviewed WireGuard values for every consumer in CURRENT_K6B_CUTOVERS, and only the Yecao
+# AI upstream outside the TX service plane. A mismatch on either side fails the gate, so
 # the two halves of a cutover cannot be merged separately, and a reverted cutover cannot
 # be hidden behind a stale expectation.
 gate_expectations = {
     "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
-    "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
 }
 for cut_over in CURRENT_K6B_CUTOVERS.values():
     gate_expectations.update(cut_over)
 for name, value in gate_expectations.items():
     assert runtime_gate_step["env"][name] == value, (name, runtime_gate_step["env"].get(name))
     assert name in runtime_gate_step["with"]["envs"].split(","), name
+assert {name: value for name, value in gate_expectations.items() if name != "TX_AI_UPSTREAM"} \
+    == K6B_FINAL_PLACEMENT_MATRIX, "the runtime gate must expect the reviewed final matrix"
 # Only the cut-over consumers may carry a WireGuard expectation in the gate, and the
 # service-plane ports must never be swapped: 8081 is Frontend, 8080 is Keycloak,
-# 8087 is Business API, 25432 is Business PostgreSQL, 15432 is Keycloak PostgreSQL.
+# 8087 is Business API, 25432 is Business PostgreSQL, 15432 is Keycloak PostgreSQL. After
+# K6B-2F the only non-cut-over expectation left is the Yecao AI upstream.
 cut_over_names = {name for cut_over in CURRENT_K6B_CUTOVERS.values() for name in cut_over}
 for name, value in gate_expectations.items():
     if name not in cut_over_names:
+        assert name == "TX_AI_UPSTREAM", (name, value)
         assert not re.search(r"10\.20\.0\.[13]:", str(value)), (name, value)
 assert gate_expectations["TX_KEYCLOAK_DB_PORT"] == "15432", gate_expectations["TX_KEYCLOAK_DB_PORT"]
 assert gate_expectations["TX_BUSINESS_DB_PORT"] == "25432", gate_expectations["TX_BUSINESS_DB_PORT"]
 assert gate_expectations["CADDY_FRONTEND_UPSTREAM"] == "10.20.0.1:8081", \
     gate_expectations["CADDY_FRONTEND_UPSTREAM"]
-assert gate_expectations["CADDY_KEYCLOAK_UPSTREAM"] == "keycloak:8080", \
+# K6B-2F: Caddy -> Keycloak is cut over too, so the Docker-local value is now the rollback
+# state and must not appear as the reviewed placement.
+assert gate_expectations["CADDY_KEYCLOAK_UPSTREAM"] == "10.20.0.1:8080", \
     gate_expectations["CADDY_KEYCLOAK_UPSTREAM"]
 assert runtime_gate_step["env"]["TX_AI_UPSTREAM"] == "http://10.20.0.2:8089", \
     "the Yecao AI upstream must never move with a TX placement cutover"
