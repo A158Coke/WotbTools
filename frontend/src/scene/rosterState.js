@@ -167,6 +167,8 @@ export function buildRosterRows(vehicles) {
     if (d.eid == null) continue;
     const row = {
       eid: d.eid,
+      accountId: Number.isFinite(d.account_id) && d.account_id > 0 ? d.account_id : null,
+      tankId: Number.isFinite(d.tank_id) && d.tank_id > 0 ? d.tank_id : null,
       team: d.team === 1 || d.team === 2 ? d.team : null,
       // 作者标记直接烘进昵称（★ 前缀）：名册不再单独暴露 isAuthor，避免同一事实两个字段
       nick: d.is_author ? `★ ${d.nickname || 'Unknown'}` : (d.nickname || 'Unknown'),

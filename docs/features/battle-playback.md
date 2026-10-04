@@ -392,7 +392,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `VehicleDetailsPanel.vue`；3D 场景通过 selection callback 上报，由 Pane 持有 selectedEid。
   选车不移动相机、不自动 Follow；Follow 是显式相机命令，Free/Top 不清选中。
   详情共用 identity/HP/time 契约，portrait、last-known、destroyed-at、stats、track inspector、
-  damage log 按 evidence 可选；3D 缺失字段不写假零。phone / 短视口详情临时覆盖，不占永久场景空间，
+  damage log 使用 canonical track（含装备、物资、消耗品状态）；3D 缺失字段不写假零。phone / 短视口详情临时覆盖，不占永久场景空间，
   关闭不重新解析、不重建 Three.js 或加载资产。
 - **共同 phone/fullscreen 契约**：`usePlaybackPhoneForm()` / `PLAYBACK_MOBILE_QUERY` 同时驱动
   2D/3D compact transport、toolbar hierarchy、临时名册/详情和 safe-area；3D 根 `.phone-form`
@@ -534,3 +534,5 @@ python common/python/extract_vehicle_sizes.py --check   # CI：过期即失败
 Playback 继续使用现有俯视 hull/turret 资产，不引入 3D 坦克模型。启用 2.5D terrain relief 时，前端以当前车辆 footprint 和可靠 hull yaw 在 heightfield 上采样前/后/左/右地面高度，得到 presentation-only pitch/roll。pitch/roll 只倾斜车辆视觉层 `.pb-graphics`；HP、名称、hitbox、selected/recorder 与 collision layout 保持 screen-aligned。
 
 该姿态来自地图权威 heightfield，不从前端猜测 replay Z；无 terrain model 或无可靠 hull yaw 时保持原有平面 marker。为避免小尺寸贴图翻卡片，视觉 pitch clamp ±14°、roll clamp ±10°，并遵守 `prefers-reduced-motion`。
+
+- 3D Details 与 2D 共用 canonical 查询及 `V2VehicleInspector`：选中账号对应的 track 提供时刻统计、伤害日志、最后已知时间、装备、物资与消耗品状态，肖像按车型懒加载。3D 通过本地 canonical 解析入口取得数据，按 AI clock origin 转换场景时钟；数据缺失保持 unavailable，不使用终局汇总代替当前统计。

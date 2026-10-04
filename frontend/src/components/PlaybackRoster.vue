@@ -69,7 +69,7 @@ const groups = computed(() => (props.friendlyTeam === 2 ? [SECTIONS[2], SECTIONS
   .filter((section) => section.rows.length > 0 || (props.showEmptyTeams && section.key in props.teams)))
 
 function decorate(row) {
-  const id = row.accountId ?? row.eid
+  const id = props.variant === '3d' ? row.eid : (row.accountId ?? row.eid)
   const subset = props.health?.[id] || null
   // 血量事实：2D 传 healthDisplayAt 投影（含 relative / knowledge），3D 传 store.roster 行自带的
   // hp / maxHp。两种形状都只是**事实源**；展示判定统一交给 hpPresentationFor，渲染层不自己猜。
