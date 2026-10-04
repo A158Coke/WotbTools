@@ -456,14 +456,18 @@ CURRENT_K6B_CUTOVERS = {
         "TX_KEYCLOAK_DB_HOST": "10.20.0.1",
         "TX_KEYCLOAK_DB_PORT": "15432",
     },
+    "caddy": {
+        "CADDY_FRONTEND_UPSTREAM": "10.20.0.1:8081",
+    },
 }
 K6B_DOCKER_LOCAL_PLACEMENTS = {
     "frontend": (frontend_deploy, {
         "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
     }),
     "business-api": (business_deploy, {}),
+    # K6B-2E moved Caddy -> Frontend onto the WireGuard endpoint; Caddy -> Keycloak is
+    # still Docker-local and must stay that way until K6B-2F.
     "caddy": (caddy_deploy, {
-        "CADDY_FRONTEND_UPSTREAM": "wotb-frontend:80",
         "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
     }),
 }
@@ -502,7 +506,6 @@ runtime_gate_step = next(
 # be hidden behind a stale expectation.
 gate_expectations = {
     "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
-    "CADDY_FRONTEND_UPSTREAM": "wotb-frontend:80",
     "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
 }
 for cut_over in CURRENT_K6B_CUTOVERS.values():
@@ -510,14 +513,19 @@ for cut_over in CURRENT_K6B_CUTOVERS.values():
 for name, value in gate_expectations.items():
     assert runtime_gate_step["env"][name] == value, (name, runtime_gate_step["env"].get(name))
     assert name in runtime_gate_step["with"]["envs"].split(","), name
-# Only the cut-over consumers may carry a WireGuard expectation in the gate, and the two
-# PostgreSQL placements must never be swapped: 25432 is Business, 15432 is Keycloak.
+# Only the cut-over consumers may carry a WireGuard expectation in the gate, and the
+# service-plane ports must never be swapped: 8081 is Frontend, 8080 is Keycloak,
+# 8087 is Business API, 25432 is Business PostgreSQL, 15432 is Keycloak PostgreSQL.
 cut_over_names = {name for cut_over in CURRENT_K6B_CUTOVERS.values() for name in cut_over}
 for name, value in gate_expectations.items():
     if name not in cut_over_names:
         assert not re.search(r"10\.20\.0\.[13]:", str(value)), (name, value)
 assert gate_expectations["TX_KEYCLOAK_DB_PORT"] == "15432", gate_expectations["TX_KEYCLOAK_DB_PORT"]
 assert gate_expectations["TX_BUSINESS_DB_PORT"] == "25432", gate_expectations["TX_BUSINESS_DB_PORT"]
+assert gate_expectations["CADDY_FRONTEND_UPSTREAM"] == "10.20.0.1:8081", \
+    gate_expectations["CADDY_FRONTEND_UPSTREAM"]
+assert gate_expectations["CADDY_KEYCLOAK_UPSTREAM"] == "keycloak:8080", \
+    gate_expectations["CADDY_KEYCLOAK_UPSTREAM"]
 assert runtime_gate_step["env"]["TX_AI_UPSTREAM"] == "http://10.20.0.2:8089", \
     "the Yecao AI upstream must never move with a TX placement cutover"
 
