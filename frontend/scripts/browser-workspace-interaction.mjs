@@ -2150,6 +2150,11 @@ async function setRosterVisible(page, visible) {
  * 必须在竖屏分支 return 之前调用：竖屏场景不走三段式断言。
  */
 async function checkDisplaySurface(page, failures, layout) {
+  const anchorFocused = await page.evaluate(`(() => {
+    const gear = document.querySelector('[data-test="pb-secondary-entry"]')
+    gear?.focus()
+    return document.activeElement === gear
+  })()`)
   await page.evaluate(`document.querySelector('[data-test="pb-secondary-entry"]')?.click()`)
   await delay(200)
   const display = await page.evaluate(`(() => {
@@ -2159,6 +2164,7 @@ async function checkDisplaySurface(page, failures, layout) {
     const transport = document.querySelector('[data-test="pb-transport-slot"]')
     const transportRect = transport?.getBoundingClientRect() || null
     const area = document.querySelector('[data-test="pb-inline-area"]')
+    const close = panel.querySelector('[data-testid="display-close"]')
     return {
       order: getComputedStyle(panel).order,
       top: Math.round(rect.top),
@@ -2167,10 +2173,17 @@ async function checkDisplaySurface(page, failures, layout) {
       transportBottom: transportRect ? Math.round(transportRect.bottom) : null,
       inlineAreaBottom: area ? Math.round(area.getBoundingClientRect().bottom) : null,
       viewportHeight: innerHeight,
+      focusInside: panel.contains(document.activeElement),
+      focusOnClose: !!close && document.activeElement === close,
     }
   })()`)
   check(failures, !!display, 'Display must open from the gear')
   if (display) {
+    // 键盘落点：打开时进入面内（有明确关闭入口就优先给它），不在面外干等
+    check(failures, display.focusInside,
+      `Display must take the keyboard focus on open: ${JSON.stringify(display)}`)
+    check(failures, display.focusOnClose,
+      `Display should land on its close button: ${JSON.stringify(display)}`)
     if (layout === 'portrait') {
       check(failures, display.position === 'static',
         `portrait Display must be an inline surface: ${JSON.stringify(display)}`)
@@ -2187,8 +2200,16 @@ async function checkDisplaySurface(page, failures, layout) {
   }
   await page.evaluate(`document.querySelector('[data-testid="display-close"]')?.click()`)
   await delay(200)
-  const closed = await page.evaluate(`!document.querySelector('[data-testid="display-panel"]')`)
-  check(failures, closed, 'Display close must remove the surface')
+  const closed = await page.evaluate(`(() => ({
+    gone: !document.querySelector('[data-testid="display-panel"]'),
+    focusBackOnGear: document.activeElement === document.querySelector('[data-test="pb-secondary-entry"]'),
+  }))()`)
+  check(failures, closed.gone, 'Display close must remove the surface')
+  // 关掉之后键盘不能掉在 body 上：焦点回到触发它的 gear
+  if (anchorFocused) {
+    check(failures, closed.focusBackOnGear,
+      `closing Display must return focus to the gear: ${JSON.stringify(closed)}`)
+  }
 }
 
 async function runWorkspace2DScenario(env, scenario) {
