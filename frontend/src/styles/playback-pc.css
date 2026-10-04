@@ -42,6 +42,9 @@
       grid-template-columns: minmax(0, 1fr);
     }
   .battle-playback.pb-form-pc:fullscreen .pb-main { grid-column: 1; }
+  /* 三段式（Team 1 | Stage | Team 2）下，左侧黑边是 Team 1 车道的位置：workspace 从浮层左栏
+     右缘开始，车道不被左栏盖住（浮窗夹紧同样以这块内边距为界）。 */
+  .battle-playback.pb-form-pc.pb-roster-lanes:fullscreen .pb-main { padding-inline-start: var(--pb-left-col); }
   .battle-playback.pb-form-pc:fullscreen .pb-map-stage {
       grid-template-columns: minmax(0, 1fr);
     }

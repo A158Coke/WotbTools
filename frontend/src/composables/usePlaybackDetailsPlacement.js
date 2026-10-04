@@ -18,7 +18,7 @@
  * `clampToBounds` 刻意做成「纯函数 + 一个写手」：ResizeObserver / 全屏切换 / 方向变化都调它，
  * 调用时机再多也不会互相打架。
  */
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from 'vue'
 
 /** 左侧/顶部的最小可见余量：贴边时不能整个压出 workspace。 */
 const EDGE_MARGIN = 8
@@ -50,7 +50,14 @@ export function usePlaybackDetailsPlacement({
     if (!hostRect.width || !hostRect.height) return null
     // 未布局时 rect 会是 0×0；此时夹紧无意义，等下一帧的真实尺寸。
     if (!rect.width || !rect.height) return null
-    const maxLeft = Math.max(EDGE_MARGIN, hostRect.width - rect.width - EDGE_MARGIN)
+    // 宿主的左右内边距不属于 workspace（宽屏桌面全屏时那里是浮在黑边上的左栏）。
+    const hostStyle = typeof getComputedStyle === 'function' ? getComputedStyle(host) : null
+    const padStart = parseFloat(hostStyle?.paddingLeft) || 0
+    const padEnd = parseFloat(hostStyle?.paddingRight) || 0
+    const minLeft = padStart + EDGE_MARGIN
+    // 上内边距同理：手机 / 桌面全屏时那里是顶部 HUD，浮窗的拖动柄不能钻到 HUD 下面。
+    const minTop = (parseFloat(hostStyle?.paddingTop) || 0) + EDGE_MARGIN
+    const maxLeft = Math.max(minLeft, hostRect.width - padEnd - rect.width - EDGE_MARGIN)
     // 传输控件是保护区：浮窗**下缘**不得越过它的上缘（控件缺失 → 只受 host 约束）。
     const bounds = boundsEl?.value
     let transportTop = hostRect.height
@@ -64,10 +71,10 @@ export function usePlaybackDetailsPlacement({
     // 这里是 top 的上界，不是高度：`maxBottom` 已经是「浮窗下缘允许到的位置」，
     // 减去面板自身高度才是浮窗左上角的极限。写反的后果不是布局偏移，而是保护边界**完全失效**
     // —— 只要候选 top 小于这个数值，`Math.min` 就永远选候选值，浮窗会盖在传输控件上。
-    const maxTop = Math.max(EDGE_MARGIN, maxBottom - rect.height)
+    const maxTop = Math.max(minTop, maxBottom - rect.height)
     const out = {
-      left: Math.round(Math.min(Math.max(left, EDGE_MARGIN), maxLeft)),
-      top: Math.round(Math.min(Math.max(top, EDGE_MARGIN), maxTop)),
+      left: Math.round(Math.min(Math.max(left, minLeft), maxLeft)),
+      top: Math.round(Math.min(Math.max(top, minTop), maxTop)),
       maxLeft,
       maxTop,
     }
@@ -97,14 +104,15 @@ export function usePlaybackDetailsPlacement({
     const hostRect = host.getBoundingClientRect()
     const rect = panel.getBoundingClientRect()
     if (!hostRect.width || !rect.width) return
-    let side = initialSide
+    // `initialSide` 可以是字符串也可以是 ref / computed（调用方按选择来源实时给偏好）。
+    let side = unref(initialSide)
     if (origin && Number.isFinite(origin.x)) {
       side = origin.x > hostRect.width / 2 ? 'left' : 'right'
     }
     const gutter = EDGE_MARGIN * 2
     const left = side === 'right'
       ? hostRect.width - rect.width - gutter
-      : gutter
+      : gutter + (parseFloat(getComputedStyle?.(host)?.paddingLeft) || 0)
     const top = EDGE_MARGIN * 2
     const next = clampToBounds(left, top)
     if (next) {
@@ -117,6 +125,9 @@ export function usePlaybackDetailsPlacement({
     if (event.button != null && event.button !== 0) return
     const panel = panelEl.value
     if (!panel) return
+    // 拖动柄里有标题文字：不阻止默认行为的话，鼠标拖动会变成文本选择，靠近视口边缘时
+    // 浏览器还会自动滚动页面（实测 1024×460 拖动中途页面滚走，浮窗只挪了一小段）。
+    event.preventDefault?.()
     const rect = panel.getBoundingClientRect()
     session = {
       pointerId: event.pointerId,
@@ -154,6 +165,9 @@ export function usePlaybackDetailsPlacement({
   let panelObserver = null
   let hostObserver = null
   onMounted(() => {
+    // 父组件常常是「选中 → v-if 挂载」：挂载那一刻就已经是打开状态，下面的 watch 不会触发，
+    // 这里补一次初始落位。
+    if (isActive()) nextTick(() => placeInitial())
     if (typeof ResizeObserver === 'function') {
       if (panelEl.value) {
         panelObserver = new ResizeObserver(clampIntoHost)
@@ -180,6 +194,15 @@ export function usePlaybackDetailsPlacement({
     window.removeEventListener('pointercancel', onPointerUp)
   })
 
+  /**
+   * 同一次打开期间换选中车辆：用户还没拖过 → 按新的落位偏好重新摆放（点左边名册落右侧、
+   * 点右边名册落左侧）；用户拖过 → **一动不动**（位置只在尺寸 / 全屏 / 旋转迫使夹紧时才变）。
+   */
+  function onSelectionChange() {
+    if (userPositioned.value || pos.value == null) return
+    nextTick(() => placeInitial())
+  }
+
   /** 关闭 → 打开：位置重置。用户位置只在**同一次打开**里有效（浮窗重开就是新的一次）。 */
   watch(() => !!isActive(), (active) => {
     if (!active) {
@@ -194,5 +217,5 @@ export function usePlaybackDetailsPlacement({
 
   // `hostEl` / `boundsEl` 一并回传：调用方（与测试）需要能够读到**同一份**元素引用，
   // 而不是另拿一个模板 ref——参考元素与量测元素必须是同一个节点，否则边界检查会静默失效。
-  return { pos, userPositioned, clampIntoHost, placeInitial, onPointerDown, hostEl, boundsEl, panelEl }
+  return { pos, userPositioned, clampIntoHost, placeInitial, onSelectionChange, onPointerDown, hostEl, boundsEl, panelEl }
 }

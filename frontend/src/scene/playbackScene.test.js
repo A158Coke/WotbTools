@@ -667,7 +667,10 @@ describe('scene vehicle selection intent', () => {
     container.querySelector('canvas').releasePointerCapture = vi.fn()
     const beforeCamera = window.__camera.position.clone()
     container.querySelector('canvas').dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 10, clientY: 10 }))
-    expect(onVehicleSelect).toHaveBeenCalledExactlyOnceWith(11)
+    // 第二个参数是原始指针事件：面板据此把详情浮窗落在与这台车相对的一侧
+    expect(onVehicleSelect).toHaveBeenCalledOnce()
+    expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
+    expect(onVehicleSelect.mock.calls[0][1]?.clientX).toBe(10)
     expect(store.cam).toBe('free')
     expect(window.__camera.position.equals(beforeCamera)).toBe(true)
     container.querySelector('canvas').dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))

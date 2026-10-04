@@ -283,7 +283,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (hits.length) {
       let o = hits[0].object;
       while (o && !o.userData.eid) o = o.parent;
-      if (o) onVehicleSelect?.(o.userData.eid);
+      if (o) onVehicleSelect?.(o.userData.eid, e);
     }
   }
 

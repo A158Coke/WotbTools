@@ -560,6 +560,10 @@ const mobileOverlay = ref(null)
 /** §details-float：详情浮窗的受保护下界——传输控件。它在不同形态下分别住在左栏或
     地图下方的 overlay 里，这里始终指向「当前真正在渲染的那一处」，避免浮窗盖住拇指操作区。 */
 const transportEl = ref(null)
+/** 整个战场 workspace（`.pb-main`：Team 1 | Stage | Team 2 + 浮窗）——详情浮窗的定位祖先与
+    拖动宿主。浮窗是它的直接子元素，`left/top`、夹紧与拖动在同一个坐标系里算；
+    它不是 `.pb-map-stage`（那只是中间一栏，按它算会把浮窗关在 Stage 里）。 */
+const battlefieldWorkspaceEl = ref(null)
 const panelGroups = computed(() => [
   { name: 'battle', label: t('recon.map.playback.panel_battle') },
   { name: 'vehicle', label: t('recon.map.playback.panel_vehicle') },
@@ -742,10 +746,28 @@ function writeSquareAvailHeight() {
   if (!root) return
   const hud = root.querySelector('.pb-hud')
   const transport = transportEl.value
-  const budget = root.getBoundingClientRect().height
-    - (hud ? hud.getBoundingClientRect().height : 0)
-    - (transport ? transport.getBoundingClientRect().height : 0)
+  // 根高度在纵向流里本身就由正方形撑开（自指），所以再用视口高度封顶：
+  // 横屏手机 / 全屏下正方形 + HUD + 传输控件必须一屏放下，传输控件不被顶出首屏。
+  const viewportH = Number(window.innerHeight) || Infinity
+  // 正方形之上占用的高度：workspace（.pb-main）相对根的上缘偏移 + 它的上内边距
+  // （非全屏时 HUD 在流里、偏移已含 HUD；手机全屏时 HUD 是浮层、由上内边距让位）。
+  const main = battlefieldWorkspaceEl.value
+  const above = main
+    ? Math.max(0, main.getBoundingClientRect().top - root.getBoundingClientRect().top)
+      + (parseFloat(getComputedStyle(main).paddingTop) || 0)
+    : (hud ? hud.getBoundingClientRect().height : 0)
+  // 传输控件按整块 overlay 计（含卡片内边距与安全区），与下面写入的 --pb-controls-h 同源。
+  const overlay = transport?.closest?.('.pb-mobile-overlay')
+  const controlsH = overlay ? overlay.getBoundingClientRect().height
+    : (transport ? transport.getBoundingClientRect().height : 0)
+  const budget = Math.min(root.getBoundingClientRect().height, viewportH)
+    - above
+    - controlsH
   if (budget > 0) root.style.setProperty('--pb-square-avail-h', `${Math.round(budget)}px`)
+  // 传输控件整块（含 overlay 卡片的内边距）的实测高度：横屏手机里中心列在 Stage 下方为它让位。
+  if (controlsH > 0) root.style.setProperty('--pb-controls-h', `${Math.ceil(controlsH)}px`)
+  // 手机全屏：HUD 是顶部浮层，三段式 workspace 从它下缘开始。
+  if (hud) root.style.setProperty('--pb-hud-h', `${Math.ceil(hud.getBoundingClientRect().height)}px`)
 }
 
 watch(() => mapStageEl.value, (el) => {
@@ -1811,28 +1833,30 @@ function selectAt(accountId, clientX, clientY) {
     if (selectedAccountId.value != null && candidates.length > 1
         && Math.abs(dist(best) - dist(candidates[1])) < 1) {
       const sel = candidates.find((s) => s.vehicle.accountId === selectedAccountId.value)
-      if (sel) return
+      if (sel) { openDetails(selectedAccountId.value, sideAwayFromClientX(clientX)); return }
     }
   }
   // PR5 §8.1：点击 marker 恒选中/直接切换（不 toggle-off）；点击空白不关闭；必须 × 显式关闭
-  selectedAccountId.value = best.vehicle.accountId
-  // §details-float：记录点击原点（workspace 内坐标），让详情浮窗落在**不遮住**这台车的一侧。
-  selectionOrigin.value = { x: px, y: py }
-  // §右侧 only 车辆详情：不再开左侧 vehicle 二级，右侧由 selectedState 驱动。
-  activePanel.value = null
+  // §details-float：浮窗落在**不遮住**这台车的一侧（按它在战场 workspace 里的屏幕位置）。
+  openDetails(best.vehicle.accountId, sideAwayFromClientX(clientX))
   mobileOverlay.value?.reveal?.()
 }
 
 // §队伍阵容：从 result 全量名单（playbackV2.vehicles）取，不依赖回放事件流/vehicleStates。
+// 按**物理队伍**（权威 `vehicle.team`）分组：左车道恒为 Team 1、右车道恒为 Team 2，
+// 与录像者属于哪一队无关。friendly / enemy 是录像者视角，只服务 HUD 总血量 / 比分与详情里的
+// 关系文案——物理位置 ≠ 录像者关系，两者互不推导。
 const teamVehicles = computed(() => {
   const vehicles = props.playbackV2?.vehicles || []
-  const friendly = []
-  const enemy = []
+  const team1 = []
+  const team2 = []
+  const unknown = []
   for (const v of vehicles) {
-    if (v.friendly === true) friendly.push(v)
-    else if (v.friendly === false) enemy.push(v)
+    if (v.team === 1) team1.push(v)
+    else if (v.team === 2) team2.push(v)
+    else unknown.push(v)
   }
-  return { friendly, enemy }
+  return { team1, team2, unknown }
 })
 
 /**
@@ -1865,18 +1889,39 @@ const detailsFloating = computed(() => !isPhonePortrait.value)
  * `styles/playback-workspace.css` 的 `.pb-details-column`。
  *
  * 三段式（`rosterLanes`）下这一列同样没有内容：详情是 workspace 顶层的浮窗，名册在两侧车道。
- * 手机形态从来没有用过这一列（名册要么在车道、要么在 `.pb-inline-area`）。
+ * 手机形态从来没有用过这一列（名册要么在车道、要么在 `.pb-inline-area`；竖屏的 inline 详情
+ * 也在 `.pb-inline-area` 里，排在传输控件之后）。
  */
-const detailsInShell = computed(() => inlineStack.value && !!selectedState.value)
 const rosterInShell = computed(() => formFactor.value !== 'mobile'
   && showRosterPresentation.value && !rosterLanes.value && !inlineStack.value)
 /** 右侧详情列要渲染吗。**手机形态保留空壳**：它的 Stage 是块级流，空壳既不占轨也不影响
  *  正方形，而「空 shell 不阻挡 pointer」本身是被守卫测试断言过的行为。 */
-const shellInUse = computed(() => formFactor.value === 'mobile'
-  || detailsInShell.value || rosterInShell.value)/** 浮窗初始落位偏好（点击原点未知时的兜底）：名册在右 → 落左侧。 */
-const detailsInitialSide = computed(() => (rosterLanes.value ? 'left' : 'right'))
-/** 选择来源（点击原点）：用来让浮窗落在**不遮住**刚点的那台车的一侧。 */
-const selectionOrigin = ref(null)
+const shellInUse = computed(() => formFactor.value === 'mobile' || rosterInShell.value)
+/**
+ * 选中与详情可见性是**两个状态**（不是「选中了 ⟺ 详情开着」）：
+ *   选车 → selectedAccountId = 车，detailsOpen = true
+ *   详情 × → 只有 detailsOpen = false；选中、跟随、时间轴、倍速、名册与地图视图都不动
+ *   再点同一台 / 另一台车 → 同一个详情窗重新打开（或换内容），永远只有一个窗
+ */
+const detailsOpen = ref(false)
+/** 浮窗初始落位偏好：由**这次选择的来源**决定（点左车道 → 落右侧，点右车道 → 落左侧，
+ *  点地图上的车 → 与它在 workspace 里相对的一侧）。用户拖过之后不再生效。 */
+const detailsSide = ref('right')
+
+function openDetails(accountId, side = null) {
+  selectedAccountId.value = accountId
+  if (side) detailsSide.value = side
+  detailsOpen.value = true
+  // §右侧 only 车辆详情：不再开左侧 vehicle 二级，详情由 detailsOpen + selectedState 驱动。
+  activePanel.value = null
+}
+/** 屏幕横坐标在战场 workspace 的哪一半 → 浮窗落到另一半。 */
+function sideAwayFromClientX(clientX) {
+  const host = battlefieldWorkspaceEl.value
+  if (!host || !Number.isFinite(clientX)) return null
+  const rect = host.getBoundingClientRect()
+  return clientX > rect.left + rect.width / 2 ? 'left' : 'right'
+}
 
 /** 名册每行显示的当前 HP（与地图标记同一个权威投影：healthDisplayAt）。 */
 const rosterHealth = computed(() => {
@@ -1892,25 +1937,22 @@ const rosterHealth = computed(() => {
   return out
 })
 function selectFromRoster(accountId, event) {
-  selectedAccountId.value = accountId
-  activePanel.value = null
-  // §details-float：名册行没有地图坐标，用**被点的那一行**在 workspace 里的 x 当原点——
-  // 左边的 Team 1 名册 → 浮窗落右侧，右边的 Team 2 名册 → 浮窗落左侧，都不会盖住刚点的行。
+  // §details-float：左边的 Team 1 名册 → 浮窗落右侧，右边的 Team 2 名册 → 浮窗落左侧，
+  // 都不会盖住刚点的那一行（竖屏纵向流里详情是流内内容块，落位偏好不起作用）。
   const row = event?.target?.closest?.('[data-test="pb-roster-row"]')
-  const host = mapStageEl.value
-  if (row && host) {
-    const hostRect = host.getBoundingClientRect()
-    const rowRect = row.getBoundingClientRect()
-    selectionOrigin.value = { x: rowRect.left + rowRect.width / 2 - hostRect.left, y: 0 }
-  } else {
-    selectionOrigin.value = null
-  }
+  let side = null
+  if (row?.closest?.('.pb-team-lane-left')) side = 'right'
+  else if (row?.closest?.('.pb-team-lane-right')) side = 'left'
+  else if (row) side = sideAwayFromClientX(row.getBoundingClientRect().left)
+  openDetails(accountId, side)
 }
 
 const selectedState = computed(() => {
   if (selectedAccountId.value == null) return null
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
 })
+/** 详情真正呈现的对象：选中了**且**详情开着。关掉详情不清选中。 */
+const detailsState = computed(() => (detailsOpen.value ? selectedState.value : null))
 
 // Selected vehicle details consume the canonical track directly by accountId.
 const selectedTrack = computed(() => {
@@ -1940,9 +1982,9 @@ watch(
   },
 )
 
+/** 详情 ×：只关详情。选中（名册高亮 / 地图标记选中态）、跟随、时间轴、倍速、名册与视图都保留。 */
 function closeSidebar() {
-  selectedAccountId.value = null
-  activePanel.value = null
+  detailsOpen.value = false
 }
 
 function closePanel() {
@@ -2240,6 +2282,8 @@ const mapStyle = computed(() => ({
           data-testid="team-panel-roster"
           :teams="teamVehicles"
           :destroyed="destroyedNow"
+          :health="rosterHealth"
+          :selected-id="selectedAccountId"
           @select="selectFromRoster"
         />
       </template>
@@ -2372,12 +2416,12 @@ const mapStyle = computed(() => ({
       </div>
     </div>
 
-    <div class="pb-main" data-test="pb-main">
+    <div ref="battlefieldWorkspaceEl" class="pb-main" data-test="pb-main">
       <!-- §square-stage 三段式：Team 1 | 正方形 Stage | Team 2。
            两侧车道只在「名册开着 且 非手机竖屏」时存在；关掉名册两侧整体消失，
            Stage 依然居中且保持正方形（绝不被拉宽填满）。 -->
       <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-left" data-test="pb-team-lane-left" :aria-label="$t('agentReplay.team1')">
-        <PlaybackRoster :teams="{ friendly: teamVehicles.friendly }" :destroyed="destroyedNow" :health="rosterHealth" @select="selectFromRoster" />
+        <PlaybackRoster :teams="{ team1: teamVehicles.team1, unknown: teamVehicles.unknown }" :destroyed="destroyedNow" :health="rosterHealth" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
       <div class="pb-map-stage" ref="mapStageEl">
         <BattleMap
@@ -2425,7 +2469,7 @@ const mapStyle = computed(() => ({
         <!-- 审计 PB-04：未与地图交互时滚轮交给页面，这里短暂提示如何缩放 -->
         <div v-if="wheelHintVisible" class="pb-wheel-hint" role="status" data-test="pb-wheel-hint">{{ t('workspace.map_wheel_hint') }}</div>
 
-        <div v-if="shellInUse" class="pb-side-panel-shell" :class="{ 'pb-details-active': !!selectedState }" data-test="pb-side-panel-shell">
+        <div v-if="shellInUse" class="pb-side-panel-shell" :class="{ 'pb-details-active': !!detailsState }" data-test="pb-side-panel-shell">
           <div
             class="pb-pane-resizer pb-pane-resizer-details"
             data-test="pb-details-resizer"
@@ -2433,44 +2477,30 @@ const mapStyle = computed(() => ({
             aria-orientation="vertical"
             @pointerdown="startPaneResize($event, 'details')"
           />
-          <!-- 非浮窗形态（手机竖屏）的详情：同一个组件、同一份 props，只是换一种呈现。
-               浮窗形态下它由下面 workspace 顶层的浮层渲染，这里不再重复一份。 -->
-          <VehicleDetailsPanel
-            v-if="detailsInShell"
-            presentation="inline"
-            :phone-form="isMobileDevice"
-            :selected-state="selectedState"
-            :selected-portrait-url="selectedPortraitUrl"
-            :sel-last-known-sec="selLastKnownSec"
-            :sel-cur-stats="selCurStats"
-            :selected-track="selectedTrack"
-            :current-time="currentTime"
-            :sel-damage-log="selDamageLog"
-            :format-clock="formatClock"
-            @close="closeSidebar"
-          />
           <!-- 常驻名册（窄档 / 竖屏以外的回退位置）：可见性由**共享呈现偏好**
                uiPrefs.showRoster 独占，与 3D 同一个 key。三段式开着时名册由两侧车道承担，
                这里不再画第二份。关掉只是不呈现——名册数据、选中车辆、详情、时间轴与
                地图视图都由播放状态持有，恢复后立刻可用，不重建、不重解析。 -->
           <PlaybackRoster
-            v-else-if="rosterInShell"
+            v-if="rosterInShell"
             :teams="teamVehicles"
             :destroyed="destroyedNow"
             :health="rosterHealth"
+            :selected-id="selectedAccountId"
             @select="selectFromRoster"
           />
         </div>
       </div>
 
-      <!-- §details-float：详情是**整个 Playback workspace 顶层**的可拖动浮窗，不属于
-           Stage、也不属于任何一条名册车道。位置/边界/初始落位由
+      <!-- §details-float：详情是**整个战场 workspace（.pb-main）顶层**的可拖动浮窗，不属于
+           Stage、也不属于任何一条名册车道——它可以被拖到 Team 1 / Stage / Team 2 任意一栏之上。
+           宿主就是它的定位祖先 `.pb-main`（同一个坐标系）；位置/边界/初始落位由
            usePlaybackDetailsPlacement 独占（含「不得盖住传输控件」的保护边界）。 -->
       <VehicleDetailsPanel
-        v-if="detailsFloating && selectedState"
+        v-if="detailsFloating && detailsState"
         presentation="floating"
         :phone-form="false"
-        :selected-state="selectedState"
+        :selected-state="detailsState"
         :selected-portrait-url="selectedPortraitUrl"
         :sel-last-known-sec="selLastKnownSec"
         :sel-cur-stats="selCurStats"
@@ -2478,14 +2508,15 @@ const mapStyle = computed(() => ({
         :current-time="currentTime"
         :sel-damage-log="selDamageLog"
         :format-clock="formatClock"
-        :drag-host="mapStageEl"
+        :drag-host="battlefieldWorkspaceEl"
         :drag-bounds="transportEl"
-        :initial-side="detailsInitialSide"
+        :initial-side="detailsSide"
+        :selection-key="selectedAccountId"
         @close="closeSidebar"
       />
 
       <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-right" data-test="pb-team-lane-right" :aria-label="$t('agentReplay.team2')">
-        <PlaybackRoster :teams="{ enemy: teamVehicles.enemy }" :destroyed="destroyedNow" :health="rosterHealth" @select="selectFromRoster" />
+        <PlaybackRoster :teams="{ team2: teamVehicles.team2 }" :destroyed="destroyedNow" :health="rosterHealth" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
 
       <PlaybackMobileOverlay ref="mobileOverlay" :paused="!playing">
@@ -2540,20 +2571,36 @@ const mapStyle = computed(() => ({
       </PlaybackMobileOverlay>
 
       <!-- §square-stage 手机竖屏纵向流：传输控件之后是详情（inline）与 Team 1 / Team 2。
-           竖屏利用的是**纵向**空间，所以这一段就是普通流内容，跟着页面滚，不设高度上限。 -->
-      <div v-if="inlineStack && showRosterPresentation" class="pb-inline-area" data-test="pb-inline-area">
+           竖屏利用的是**纵向**空间，所以这一段就是普通流内容，跟着页面滚，不设高度上限。
+           详情与名册各自独立：名册关掉时详情照样可以开着，反之亦然。 -->
+      <div v-if="inlineStack && (detailsState || showRosterPresentation)" class="pb-inline-area" data-test="pb-inline-area">
+        <!-- 竖屏的详情：同一个组件、同一份 props，只是换成流内呈现（没有拖动柄）。 -->
+        <VehicleDetailsPanel
+          v-if="detailsState"
+          presentation="inline"
+          :phone-form="isMobileDevice"
+          :selected-state="detailsState"
+          :selected-portrait-url="selectedPortraitUrl"
+          :sel-last-known-sec="selLastKnownSec"
+          :sel-cur-stats="selCurStats"
+          :selected-track="selectedTrack"
+          :current-time="currentTime"
+          :sel-damage-log="selDamageLog"
+          :format-clock="formatClock"
+          @close="closeSidebar"
+        />
         <PlaybackRoster
+          v-if="showRosterPresentation"
           :teams="teamVehicles"
           :destroyed="destroyedNow"
           :health="rosterHealth"
+          :selected-id="selectedAccountId"
           @select="selectFromRoster"
         />
       </div>
 
-      <!-- 手机名册**没有**独立入口：它走统一的二级面（pb-secondary-entry → Team 分页），
-           与 3D 的层级一致。这里曾经有一条 `mobileRosterOpen` + 横屏常驻开关的独立路径，
-           它在竖屏与全屏横屏下会变成 dead control（点了之后开关消失、名册容器被 CSS 关着），
-           已整条删除——不是再补 CSS 条件，而是收敛到唯一的二级入口。 -->
+      <!-- 手机名册没有「打开名册」这种独立开关：竖屏在上面的纵向流里，横屏 / 全屏横屏在
+           Team 1 | Stage | Team 2 两侧车道里；唯一的呈现偏好是 uiPrefs.showRoster。 -->
 
       <div v-if="visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
         <div v-for="feed in visibleFeed" :key="'feed-' + feed.id" class="pb-feed-item" :class="feed.victimFriendly === true ? 'pb-feed-friendly' : (feed.victimFriendly === false ? 'pb-feed-enemy' : 'pb-feed-neutral')"><span class="pb-feed-skull" aria-hidden="true">☠</span><span class="pb-feed-victim">{{ feed.victimPlayerName ? feed.victimPlayerName + '（' + feed.victimName + '）' : feed.victimName }}</span><span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span></div>

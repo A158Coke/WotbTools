@@ -79,7 +79,7 @@ vi.mock('../scene/assetProvider.js', () => ({ assetProvider: { configured: () =>
  * 布局档位 / 指针 mock：手机形态用例把 `layout.compact` 打开，即可验证「工具条收窄、
  * 相机与阵容搬进显示面板」这套紧凑呈现；宽档用例保持 false（桌面不得回归）。
  */
-const layout = vi.hoisted(() => ({ compact: false }))
+const layout = vi.hoisted(() => ({ compact: false, portrait: false }))
 /** 全屏能力桩的调用计数（happy-dom 无 Fullscreen API，用于断言确实调用了 requestFullscreen） */
 const fullscreenCalls = { request: 0 }
 vi.mock('../composables/useBreakpoint.js', async () => {
@@ -100,6 +100,12 @@ vi.mock('../composables/useBreakpoint.js', async () => {
 vi.mock('../composables/usePlaybackPhoneForm.js', async () => {
   const { computed } = await import('vue')
   return { usePlaybackPhoneForm: () => ({ isPhone: computed(() => layout.compact) }) }
+})
+/** 竖屏判据（与 2D 共用 usePlaybackPortraitViewport）：手机竖屏 = compact + portrait，
+ *  手机横屏 / 全屏横屏 = compact 但不是 portrait。 */
+vi.mock('../composables/usePlaybackPortraitViewport.js', async () => {
+  const { computed } = await import('vue')
+  return { usePlaybackPortraitViewport: () => ({ isPortrait: computed(() => layout.portrait) }) }
 })
 // 唯一 reactive 主题源：给 HUD 阵营色一个可依赖的 profile ref
 vi.mock('../composables/useUiProfile.js', async () => {
@@ -565,7 +571,7 @@ describe('Replay3DPane', () => {
       team2: [], unknown: [],
     }
 
-    it('紧凑档：相机 / 阵容出现在面板内；宽档：面板里没有这两项（仍在工具条上）', async () => {
+    it('紧凑档：相机出现在面板内；宽档：面板里没有相机（仍在工具条上）；两档都没有「打开名册」按钮', async () => {
       mockWebGL('webgl2')
       layout.compact = true
       const compactPane = mountPane()
@@ -577,7 +583,9 @@ describe('Replay3DPane', () => {
       // 工具条那行由 CSS `display:none` 让位——它仍在 DOM 里，所以这里断言的是**分支**，
       // 而不是「按钮不存在」）。
       expect(compactPane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(true)
-      expect(compactPane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(true)
+      // 名册没有临时面入口：唯一开关是 disp-roster 呈现偏好
+      expect(compactPane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(false)
+      expect(compactPane.find('[data-testid="disp-roster"]').exists()).toBe(true)
       compactPane.unmount()
 
       layout.compact = false
@@ -591,6 +599,7 @@ describe('Replay3DPane', () => {
       // 真正的形态差异由这里的**分支**与 CSS 共同保证，浏览器门禁再验可见性。
       expect(widePane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(false)
       expect(widePane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(false)
+      expect(widePane.find('[data-testid="roster-toggle"]').exists()).toBe(false)
       widePane.unmount()
       layout.compact = false
     })
@@ -851,9 +860,12 @@ describe('Replay3DPane', () => {
       // .team 是视觉面板：不得带 overflow 滚动（旧实现 overflow-y: auto 造成两个小滚动盒）
       const teamBlock = /\.team \{([\s\S]*?)\}/.exec(src)?.[1] ?? ''
       expect(teamBlock).not.toContain('overflow')
-      // 溢出只允许有一个归属：车道整体（而不是每个队面板各滚一次）
-      const laneBlock = /\.team-lane \{([\s\S]*?)\}/.exec(src)?.[1] ?? ''
+      // 车道本身（基础规则）不是滚动盒；三段式里的 overflow 只是病态数据的兜底，
+      // 正常 7v7 不出现滚动条由浏览器门禁（roster-geometry-*）在真实布局里断言。
+      const laneBlock = /\n\.team-lane \{([\s\S]*?)\}/.exec(src)?.[1] ?? ''
       expect(laneBlock).not.toContain('overflow')
+      // 临时名册面整套规则已不存在
+      expect(src).not.toMatch(/\.roster-surface\.transient|rosterTransient|rosterConstrained/)
     })
 
     it('点一行只选中并显示共享详情，相机跟随保持独立', async () => {
@@ -910,7 +922,66 @@ describe('Replay3DPane', () => {
       wrapper.unmount()
     })
 
-    it('phone roster is transient and hiding it preserves data, selection, follow and playback', async () => {
+    it('手机横屏 / 全屏横屏：Team 1 | Stage | Team 2 常驻两侧车道（不需要 Display → Roster）', async () => {
+      layout.compact = true
+      layout.portrait = false
+      mockWebGL('webgl2')
+      const wrapper = mountPane()
+      await start(wrapper)
+      const api = playback.api
+      api.store.roster = roster
+      await nextTick()
+      const root = wrapper.get('.pb-root')
+      expect(root.classes()).toEqual(expect.arrayContaining(['phone-form', 'roster-side']))
+      expect(root.classes()).not.toContain('portrait-flow')
+      // 两条物理车道直接可见：左 = Team 1，右 = Team 2
+      expect(wrapper.get('[data-testid="replay3d-lane-left"]').find('.team1').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="replay3d-lane-right"]').find('.team2').exists()).toBe(true)
+      expect(wrapper.get('.roster-surface').isVisible()).toBe(true)
+      // 紧凑行：信息不减
+      const row = wrapper.get('[data-testid="replay3d-lane-left"] .pl')
+      expect(wrapper.get('[data-testid="replay3d-lane-left"] [data-test="pb-shell-roster"]').classes()).toContain('pb-roster-compact')
+      expect(row.get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
+      expect(row.get('[data-test="roster-hp"]').text()).toBe('1800')
+      expect(row.get('[data-test="roster-hp-pct"]').text()).toBe('92%')
+      // 传输控件照常存在（名册与控件不互斥）
+      expect(wrapper.find('.controls').exists()).toBe(true)
+      wrapper.unmount()
+      layout.compact = false
+    })
+
+    it('手机竖屏：纵向流（HUD / Stage / 传输控件 / 详情 inline / Team 1 / Team 2），没有浮层名册', async () => {
+      layout.compact = true
+      layout.portrait = true
+      mockWebGL('webgl2')
+      const wrapper = mountPane()
+      await start(wrapper)
+      const api = playback.api
+      api.store.roster = roster
+      await nextTick()
+      const root = wrapper.get('.pb-root')
+      expect(root.classes()).toContain('portrait-flow')
+      expect(root.classes()).not.toContain('roster-side')
+      // 名册直接在流里（不是 transient 浮层），行仍是完整信息
+      expect(wrapper.get('.roster-surface').isVisible()).toBe(true)
+      expect(wrapper.find('.roster-surface.transient').exists()).toBe(false)
+      const rows = wrapper.findAll('.team-lane .pl')
+      expect(rows).toHaveLength(3)
+      expect(rows[0].get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
+      expect(rows[0].get('[data-test="roster-hp-pct"]').text()).toBe('92%')
+      // 竖屏名册不是紧凑密度（纵向空间够用）
+      expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-compact')
+      // 详情是同一个共享组件的 inline 呈现
+      await rows[0].trigger('click')
+      const details = wrapper.get('[data-testid="replay3d-details"]')
+      expect(details.attributes('data-presentation')).toBe('inline')
+      expect(details.find('[data-test="pb-sb-drag"]').exists()).toBe(false)
+      wrapper.unmount()
+      layout.compact = false
+      layout.portrait = false
+    })
+
+    it('名册关闭（uiPrefs.showRoster=false）：两条车道消失；数据、选中、详情、跟随与播放都保留', async () => {
       layout.compact = true
       mockWebGL('webgl2')
       const wrapper = mountPane()
@@ -919,25 +990,52 @@ describe('Replay3DPane', () => {
       api.store.roster = roster
       api.store.time = 45
       await nextTick()
-      expect(wrapper.get('.pb-root').classes()).toContain('phone-form')
-      expect(wrapper.get('.roster-surface').isVisible()).toBe(false)
-      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
-      await wrapper.get('[data-testid="roster-toggle-compact"]').trigger('click')
-      expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
-      expect(wrapper.get('.roster-surface').classes()).toContain('transient')
-      expect(wrapper.get('.roster-surface').isVisible()).toBe(true)
-      expect(wrapper.find('.controls').exists()).toBe(false)
-      await wrapper.get('[data-testid="roster-close"]').trigger('click')
-      expect(wrapper.find('.controls').exists()).toBe(true)
       playback.init.mock.calls.at(-1)[3].onVehicleSelect(11)
       await nextTick()
       await wrapper.get('[data-testid="disp-roster"]').setValue(false)
       expect(wrapper.find('.roster-surface').exists()).toBe(false)
+      expect(wrapper.get('.pb-root').classes()).not.toContain('roster-side')
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       expect(api.store.roster).toEqual(roster)
       expect(api.store.time).toBe(45)
       expect(api.setFollow).not.toHaveBeenCalled()
+      await wrapper.get('[data-testid="disp-roster"]').setValue(true)
+      expect(wrapper.get('[data-testid="replay3d-lane-left"] .pl').classes()).toContain('selected')
       expect(api.loadData).toHaveBeenCalledTimes(1)
+      expect(playback.init).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+      layout.compact = false
+    })
+
+    it('详情 × 只关详情：选中保留、跟随 / 相机 / 时间不动；再点同一台或另一台重新打开同一个窗', async () => {
+      mockWebGL('webgl2')
+      const wrapper = mountPane()
+      const api = playback.api
+      api.store.hasData = true
+      api.store.roster = roster
+      api.store.time = 30
+      await nextTick()
+      const rowOf = (nick) => wrapper.findAll('.team-lane .pl').find((r) => r.text().includes(nick))
+      await rowOf('Alpha').trigger('click')
+      expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
+      await wrapper.get('[data-test="pb-sb-close"]').trigger('click')
+      expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
+      expect(rowOf('Alpha').classes()).toContain('selected')
+      expect(api.setFollow).not.toHaveBeenCalled()
+      expect(api.setCam).not.toHaveBeenCalled()
+      expect(api.store.time).toBe(30)
+      // 名册与详情互不影响：两条车道一直都在
+      expect(wrapper.find('[data-testid="replay3d-lane-right"]').exists()).toBe(true)
+      await rowOf('Alpha').trigger('click')
+      expect(wrapper.findAll('[data-testid="replay3d-details"]')).toHaveLength(1)
+      // 点 Team 2：同一个窗换内容，Team 2 车道仍在
+      await rowOf('Enemy').trigger('click')
+      expect(wrapper.findAll('[data-testid="replay3d-details"]')).toHaveLength(1)
+      expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
+      expect(wrapper.find('[data-testid="replay3d-lane-right"]').exists()).toBe(true)
+      expect(rowOf('Enemy').classes()).toContain('selected')
+      expect(rowOf('Enemy').classes()).toContain('followed')
+      expect(rowOf('Alpha').classes()).not.toContain('selected')
       wrapper.unmount()
     })
 

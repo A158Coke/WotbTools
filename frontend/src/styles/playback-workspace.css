@@ -15,6 +15,8 @@
 /* 名册侧车道的宽度：与 3D（Replay3DPane '--pb-lane-w'）同一档，两边不许各写一个数。 */
 .battle-playback {
   --pb-lane-w: 240px;
+  /* 手机横屏的车道：紧凑行在这个宽度下玩家名 / HP / 百分比 / 车型都放得下。 */
+  --pb-lane-w-phone: 196px;
 }
 
 /* ── 正方形 Stage 的边长契约（2D / 3D 同一份） ───────────────────────────── */
@@ -49,7 +51,6 @@
   gap: var(--space-1);
   align-content: start;
   width: auto;
-  max-inline-size: 34%;
   min-width: 0;
   max-height: 100%;
   overflow-y: auto;
@@ -105,12 +106,22 @@
    锚在 workspace 底部横贯整行，行 1 就只剩「左车道 | Stage | 右车道」三格。
    同特异性、本文件后加载，因此这里生效。 */
 @media (orientation: landscape) and (height <= 500px) {
-  /* 横屏手机：传输控件是 workspace **底部**的一条横贯行，不占中心列高度；两条车道也都
-     让出这块高度。扣减量与所有形态共用同一个常量，Stage / 名册 / 控件因此互不遮挡。 */
-  .battle-playback.pb-form-mobile:not(:fullscreen) .pb-main {
-    padding-block-end: var(--pb-controls-h, 96px);
+  /* 横屏手机：传输控件住在**中心列**、正方形 Stage 之下（与 3D 同一个几何）。
+     两条车道因此吃满整行高度，正常 7v7 的紧凑行不需要滚动条；中心列下方为控件让出
+     实测高度（--pb-controls-h，见 BattlePlayback 的 writeSquareAvailHeight 同源实测）。 */
+  .battle-playback.pb-roster-lanes.pb-form-mobile:not(:fullscreen) .pb-main > .pb-map-stage {
+    margin-block-end: var(--pb-controls-h, 96px);
   }
   .battle-playback.pb-roster-lanes.pb-form-mobile:not(:fullscreen) .pb-main > .pb-mobile-overlay {
+    position: absolute;
+    inset-inline: calc(var(--pb-lane-w-phone) + var(--space-2));
+    inset-block-end: 0;
+  }
+  /* 名册关闭：没有车道，传输控件照样是 Stage 下方的一条。 */
+  .battle-playback.pb-form-mobile:not(:fullscreen):not(.pb-roster-lanes) .pb-main {
+    padding-block-end: var(--pb-controls-h, 96px);
+  }
+  .battle-playback.pb-form-mobile:not(:fullscreen):not(.pb-roster-lanes) .pb-main > .pb-mobile-overlay {
     position: absolute;
     inset-inline: 0;
     inset-block-end: 0;
@@ -118,17 +129,59 @@
   .battle-playback.pb-roster-lanes.pb-form-mobile:not(:fullscreen) .pb-team-lane {
     max-height: none;
   }
-  /* 三段式下的正方形取「中心列宽 / 中心列高」的较小值。宽度那一半是 100%——车道已经是
-     网格列，再减一次会让正方形无故缩水；高度那一半用实测的纵向可用量（`--pb-square-avail-h`
-     由回放组件的 ResizeObserver 写入，见 BattlePlayback 的 writeSquareAvailHeight）。 */
+  /* 三段式下的正方形取「中心列宽 / 纵向可用高度」的较小值（`--pb-square-avail-h` 由回放组件的
+     ResizeObserver 写入，已按视口封顶，见 BattlePlayback 的 writeSquareAvailHeight）。 */
   .battle-playback.pb-roster-lanes.pb-form-mobile .pb-main .pb-map {
     --pb-square-side: min(100%, var(--pb-square-avail-h));
   }
-  /* 中心列必须是**定宽**：形态文件把它写成 `auto`，而定宽列才不会跟着内容走。 */
-  .battle-playback.pb-roster-lanes.pb-form-mobile:not(:fullscreen) .pb-main {
-    grid-template-columns: minmax(160px, 1fr) var(--pb-lane-w) minmax(160px, 1fr);
+  /* 两侧车道是**定宽**列，中心列吃掉剩余宽度。形态文件给的是「工具栏 | auto | 名册」三列，这里覆盖。 */
+  .battle-playback.pb-roster-lanes.pb-form-mobile .pb-main {
+    grid-template-columns: var(--pb-lane-w-phone) minmax(0, 1fr) var(--pb-lane-w-phone);
   }
 }
+/* ── 全屏：同一个三段式（不是另一种布局模型） ───────────────────────────── */
+/* 全屏只是把 workspace 撑满屏幕：HUD 在顶部、`Team 1 | 正方形 Stage | Team 2`、传输控件在
+   Stage 之下（控件在左栏时 Stage 下方不让位）。共享表里的旧全屏模型是「地图铺满 workspace
+   （cover）+ 右侧常驻 Details 列」，Details 现在是浮窗、名册是车道，那一列宽归零。
+   特异性高于共享表的 `.battle-playback:fullscreen …`（0,3,0）。 */
+
+.battle-playback:fullscreen { --pb-details-w: 0px; }
+.battle-playback:fullscreen .pb-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
+  padding-block-start: var(--pb-hud-h, 48px);
+}
+.battle-playback.pb-roster-lanes:fullscreen .pb-main {
+  grid-template-columns: var(--pb-lane-w) minmax(0, 1fr) var(--pb-lane-w);
+}
+.battle-playback:fullscreen .pb-main > .pb-map-stage {
+  position: relative;
+  inset: auto;
+  display: block;
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+}
+.battle-playback.pb-roster-lanes:fullscreen .pb-main > .pb-map-stage { grid-column: 2; }
+.battle-playback.pb-controls-bottom:fullscreen .pb-main > .pb-map-stage {
+  margin-block-end: var(--pb-controls-h, 96px);
+}
+.battle-playback.pb-roster-lanes:fullscreen .pb-team-lane { max-height: none; }
+/* 正方形：边长 = min(中心列宽, 纵向可用高度)（`--pb-square-avail-h` 实测：根高 − HUD − 传输控件）。 */
+.battle-playback:fullscreen .pb-main .pb-map {
+  inline-size: min(100%, var(--pb-square-avail-h, calc(100dvh - 170px)));
+  max-inline-size: 100%;
+  aspect-ratio: 1 / 1;
+  margin-inline: auto;
+}
+/* 底部传输控件：中心列、Stage 之下（名册关闭时横贯整行）。 */
+.battle-playback.pb-roster-lanes:fullscreen .pb-mobile-overlay {
+  left: calc(var(--pb-lane-w) + var(--space-2));
+  right: calc(var(--pb-lane-w) + var(--space-2));
+}
+
 /* 名册开着但两条车道都空（数据还没到）时不要留一条空槽把 Stage 挤偏。 */
 .battle-playback.pb-roster-lanes .pb-team-lane:empty { display: none; }
 
@@ -217,6 +270,8 @@
   .battle-playback.pb-form-pc.pb-roster-lanes:not(:fullscreen) .pb-team-lane {
     position: absolute;
     inset-block: 0;
+    /* 车道是绝对定位、Stage 在流里：不抬层级的话 Stage 的盒子会盖住车道的点击区。 */
+    z-index: var(--pb-z-hud);
     max-width: none;
   }
   /* 贴着正方形左右缘排（不是贴 workspace 两端：正方形居中后两侧留白远宽于车道）。
