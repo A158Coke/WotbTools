@@ -24,19 +24,19 @@
 - `frontend/src/app/viewRegistry.js` 是 view → capability 的唯一映射：`replay` → `data`、`battle-playback` → `playback`、`agent-replay` → `3d`、`agent-shots` → `shots`、`ai-review` → `ai`；五个 view 全部映射到同一个 `ReplayWorkspace`，由 `initialCapability` 决定初始能力。`ViewHost.vue` 用 `KeepAlive` 保留工作台实例。旧深链（`agent-replay` / `agent-shots`）继续有效，只是变成能力入口。
 - `frontend/src/app/router.js` 是历史与深链 owner。页面组件通过注入的 `navigate` 改变 URL，不直接操作浏览器 history。
 
-## Playback 正方形的布局契约（2D / 3D 同一套）
+## Playback 布局契约（共享外围，按 renderer 定义 Stage 几何）
 
-2D 与 3D 是同一个 Playback 产品，只有渲染器不同（2D = 正方形地图，3D = 正方形 3D 场景）。外围 workspace 契约**只有一份**：`frontend/src/styles/playback-workspace.css`（`main.js` 在 `playback-shared.css` / `playback-mobile.css` 之后引入），2D 与 3D 的三列网格、车道宽度、正方形预算与中心栈都写在那里；`Replay3DPane.vue` 只保留 3D 自己的呈现与竖屏 order 阶梯。竖屏判据两边共用 `usePlaybackPortraitViewport()`（不从 `isPhone` 推）。
+2D 与 3D 是同一个 Playback 产品，共享外围布局，Stage 几何按渲染器区分：2D 为正方形地图；3D 横屏铺满中心列可用宽高，竖屏为正方形。外围 workspace 契约**只有一份**：`frontend/src/styles/playback-workspace.css`（`main.js` 在 `playback-shared.css` / `playback-mobile.css` 之后引入），2D 与 3D 的三列网格、车道宽度、Stage 容量与中心栈都写在那里；`Replay3DPane.vue` 只保留 3D 自己的呈现与竖屏 order 阶梯。竖屏判据两边共用 `usePlaybackPortraitViewport()`（不从 `isPhone` 推）。
 
 **布局档位**
 
 | 档位 | 呈现 |
 |---|---|
 | 手机竖屏 | **纵向流**：HUD / 正方形 Stage / 传输控件 / Display（打开时，流内）/ 详情（inline）/ 己方 / 敌方，页面纵向滚动；没有名册浮层、没有两个各自滚动的队伍盒子 |
-| 手机横屏（740×360、844×390） | `己方 │ 正方形 Stage │ 敌方`，传输控件在 Stage 之下（中心列） |
-| 手机全屏横屏 | **同一个**几何：`己方 │ 正方形 Stage │ 敌方`，传输控件在 Stage 之下；没有常驻侧栏，⚙ 打开的是锚定在 gear 上的 Display 浮面 |
-| 平板 / 桌面（含全屏） | `己方 │ 正方形 Stage │ 敌方`；六个 primary 控件在中心列 Stage 之下，不存在「控件进左栏」的形态 |
-| 名册关闭（`uiPrefs.showRoster=false`） | 两侧车道**整体不存在**，Stage 仍是**居中**的正方形；数据、选中、详情、跟随、相机、播放与倍速都保留 |
+| 手机横屏（740×360、844×390） | `己方 │ Stage │ 敌方`（2D 正方形，3D 横屏铺满），传输控件在 Stage 之下（中心列） |
+| 手机全屏横屏 | **同一个**几何：`己方 │ Stage │ 敌方`（2D 正方形，3D 横屏铺满），传输控件在 Stage 之下；没有常驻侧栏，⚙ 打开的是锚定在 gear 上的 Display 浮面 |
+| 平板 / 桌面（含全屏） | `己方 │ Stage │ 敌方`（2D 正方形，3D 横屏铺满）；六个 primary 控件在中心列 Stage 之下，不存在「控件进左栏」的形态 |
+| 名册关闭（`uiPrefs.showRoster=false`） | 两侧车道**整体不存在**，2D Stage 仍为居中正方形；3D 横屏填满可用中心区域，竖屏保持正方形；数据、选中、详情、跟随、相机、播放与倍速都保留 |
 | 异常数据（远超 7v7） | 车道内滚动只作为安全兜底；正常 7v7 不是异常数据，任何视口都不走「临时名册面」 |
 
 - **Recorder 视角**：己方在左、敌方在右；录像者属于 Team 2 时交换两队车道。HP 条、圆点与行边框使用己方绿／敌方红，未知视角保持中性，未识别阵营独立列在左侧。物理 `vehicle.team` 身份保持不变。
@@ -108,13 +108,14 @@ Android 与 Web 共用工作台、Router 和唯一 `useReplaySession`。外部 r
 Playback 布局有两条**真实浏览器门禁**（jsdom / happy-dom 没有布局引擎，几何断言只能在这里判定）：
 
 - `npm run test:browser-layout`（`scripts/browser-playback-layout.mjs`）：几何夹具按生产顺序加载**生产样式表**（`tokens/scale.css` → `playback-shared.css` → `playback-mobile.css` → `playback-workspace.css`，只把 `:fullscreen` 换成根类标记），并用脚本**合成**生产由 JS 写入的容量变量（`--pb-workspace-h` / `--pb-square-avail-h`，按与 `writeSquareAvailHeight()` 相同的口径算）。夹具自己的控件盒（`.pb-controls` / `.pb-btn`）是独立的小尺寸替身，因此这里锁的是宏几何，中心栈与控件尺寸由 `test:browser-interaction` 用真实组件覆盖。视口用 CDP `Emulation.setDeviceMetricsOverride` 而不是 `--window-size`（headless 窗口最小宽 500px，`390×844` 会被静默放大），并断言页面实测视口与请求一致。
-- `npm run test:browser-interaction`：真实应用。`ws2d-*` 场景挂载生产 `BattlePlayback`（`playback-controls.html?players=7&recorder=1|2`），`roster-geometry-*` 场景驱动真实 `Replay3DPane`，覆盖 375×812、390×844、740×360、844×390（含全屏与录像者在 Team 2）、1024×460、1024×768、1366×1024、1600×900、1792×922（全屏）：竖屏纵向流、横屏三段式、正方形、Recorder 视角左右、车道不滚动、行信息完整且 HP 文字位于血条内、主控件一行且顺序不变、HUD↔Stage↔Transport 间距紧凑、Display 从 gear 打开并夹在 workspace 内（竖屏必须是紧跟传输控件的流内面）、详情浮窗挂在 workspace 上并能拖过三栏且不压传输控件、连点 Team 2 更新同一个窗且位置不动、× 不清选中、名册关闭 / 打开保留状态、3D 全屏不重建场景。
+- `npm run test:browser-interaction`：真实应用。`ws2d-*` 场景挂载生产 `BattlePlayback`（`playback-controls.html?players=7&recorder=1|2`），`roster-geometry-*` 场景驱动真实 `Replay3DPane`，覆盖 375×812、390×844、740×360、844×390（含全屏与录像者在 Team 2）、1024×460、1024×768、1366×1024、1600×900、1792×922（全屏）：竖屏纵向流、横屏三段式、2D 正方形 / 3D 横屏填满与竖屏正方形、Recorder 视角左右、车道不滚动、行信息完整且 HP 文字位于血条内、主控件一行且顺序不变、HUD↔Stage↔Transport 间距紧凑、Display 从 gear 打开并夹在 workspace 内（竖屏必须是紧跟传输控件的流内面）、详情浮窗挂在 workspace 上并能拖过三栏且不压传输控件、连点 Team 2 更新同一个窗且位置不动、× 不清选中、名册关闭 / 打开保留状态、3D 全屏不重建场景。
 
 ### Playback fluid geometry and controls
 
 2D/3D share the primary composition `-5 / Play-Pause / +5 / current speed / Fullscreen / Display`.
-Speed options open on demand; all six controls keep their intrinsic touch targets. HUD, square Stage and
-Transport form one compact center stack. Recorder allies stay left and enemies right; portrait
+Speed options open on demand; all six controls keep their intrinsic touch targets. HUD, Stage and
+Transport form one compact center stack. The 2D Stage stays square; the 3D canvas fills the available
+center width and height in landscape and stays square in portrait. Recorder allies stay left and enemies right; portrait
 retains natural document flow. Roster widths grow within bounded limits relative to the workspace.
 Viewport capacity and measured persistent HUD/Transport heights determine Stage capacity; scrolling,
 selection and presentation toggles do not recreate renderers, reparse a replay or reload assets.
@@ -126,7 +127,7 @@ ladder). Details remain a separate draggable contextual surface. Persistent HUD 
 HP/score and compact base metadata; transient kill feed is bounded and excluded from height
 measurement.
 
-The real browser matrix also covers 1792×922 fullscreen and checks maximal square capacity, compact
+The real browser matrix also covers 1792×922 fullscreen and checks maximal 2D square capacity and 3D landscape fill / portrait square, compact
 stack gaps, fluid roster bounds, primary DOM/x order, Display anchoring and the portrait Display
 order. Replay file reselection at 740×360 uses raw touch; no synthetic click is added. A drag on the
 file chip is a scroll gesture and must not select anything, while one tap selects exactly once and
@@ -134,11 +135,11 @@ clearing a pending replay still aborts its parse before loading the new file.
 
 | Geometry responsibility | Owner |
 |---|---|
-| Shared columns, fluid roster bounds, square capacity, center stack | `playback-workspace.css` |
+| Shared columns, fluid roster bounds, renderer-specific Stage capacity, center stack | `playback-workspace.css` |
 | Phone portrait flow | `playback-mobile.css` |
 | 3D portrait order ladder, 3D scene/HUD presentation | `Replay3DPane.vue` scoped rules |
 | Workspace height | 2D `BattlePlayback.writeSquareAvailHeight()`; 3D viewport tokens from the pane |
-| Square budget (HUD + Transport + gaps) | `BattlePlayback.writeSquareAvailHeight()` for 2D; grid rows `auto minmax(0,1fr) auto` for 3D |
+| Stage budget (HUD + Transport + gaps) | `BattlePlayback.writeSquareAvailHeight()` for 2D; grid rows `auto minmax(0,1fr) auto` for 3D |
 | Primary controls and speed disclosure | `PlaybackTransport.vue` |
 | Persistent HUD and compact bases | `BattlePlaybackHud.vue` / `BaseStatusBar.vue` |
 | Display anchor and workspace bounds | `PlaybackDisplaySurface.vue` |
