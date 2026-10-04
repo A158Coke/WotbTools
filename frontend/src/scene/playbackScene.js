@@ -33,6 +33,7 @@ import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayb
 import { playableBounds } from '../data/playableBounds.js'
 import { createLoadProgress } from './loadProgress.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
+import { resolveReplayClock } from '../replay-local/canonical/facts'
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
 import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import { assetProvider } from './assetProvider.js'
@@ -177,8 +178,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   // ---------- 工具 ----------
-  const fmtTime = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60);
-    return String(m).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0'); };
   const wrapPi = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 
   function idxOf(t) { return Math.floor((t - DATA.meta.t_start) / GRID_DT); }
@@ -220,14 +219,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     for (let k = 0; k + 1 < c.length; k += 2) if (t >= c[k] && t <= c[k+1]) return true;
     return false;
   }
-  function gameTimerLabel(t) {
-    const ps = DATA.periods; let p = null;
-    for (const pe of ps) { if (pe.clock <= t) p = pe; else break; }
-    if (!p || p.period < 3) return p ? (p.period === 1 ? '准备' : '倒计时') : fmtTime(t);
-    const elapsed = (t - p.clock) + (p.duration_s - p.remaining_s);
-    return fmtTime(Math.max(0, p.duration_s - elapsed));
-  }
-
   // ---------- 场景 ----------
   function initScene() {
     scene = new THREE.Scene();
@@ -2271,7 +2262,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!force && now - hudWrittenMs < HUD_INTERVAL_MS) return;
     hudWrittenMs = now;
     if (force) publishLabels(true);
-    store.timer = gameTimerLabel(T);
     // 顶栏：双方队伍总血量（与上游 3D 视图同口径：各队 max_hp 汇总；未知阵营不计入任一方，
     // 见 teamHpTotals）。随 HUD 10Hz 节流写入即可——血量每秒变化远低于此，没必要每帧
     // 触发整页 VDOM patch（见上方 HUD_INTERVAL_MS）。
@@ -2577,8 +2567,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     buildTransientSources();   // 战斗反馈事件源（伤害/击毁）
     buildBases();   // 基地贴地标记（争霸 A–D / 单基地）
-    T = DATA.meta.t_start;
     END = battleEndTime(DATA);
+    // 战斗时钟（与 2D / 工作台 canonical 同一个 resolver、同一份 periods）：0 = 开战（period 3）。
+    // 面板的播放条 / 顶栏计时 / 详情都按它换算；会话从开战时刻开始，准备与倒计时阶段不在时间轴上（与 2D 一致）。
+    const clock = resolveReplayClock(DATA.periods || [], null, DATA.meta.duration);
+    store.battleClock = clock ? { startRaw: clock.startRaw, durationSec: clock.durationSec } : null;
+    T = clock ? Math.max(DATA.meta.t_start, Math.min(END, clock.startRaw)) : DATA.meta.t_start;
     shotPtr = 0; killPtr = 0;
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
     if (glbOn) applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
@@ -2622,7 +2616,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       store.assetStage = false;
       store.assetProgress = null;
       store.err = '';
-      store.timer = '--:--';
+      store.battleClock = null;
       store.scoreFriend = 0;
       store.scoreEnemy = 0;
       store.mapName = '';

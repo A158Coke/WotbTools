@@ -16,7 +16,9 @@ export function createPlaybackStore() {
     // 顶栏
     mapName: '',
     mapKey: null, // 资产面地图 key（与三语地图名表 map_names.json 同一套 key）
-    timer: '--:--',
+    // 战斗时钟 { startRaw, durationSec }（scene 按 canonical 同一 resolver 从自身 periods 推出；null = 无法确定开战时刻）。
+    // 面板优先用工作台 canonical 的 clock，没有时用它——顶栏计时 / 播放条 / 详情与 2D 同为「开战起算」
+    battleClock: null,
     // 顶栏比分：已是阵营视角（perspectiveScore：己方 = 录像者一方），与两侧血条同视角
     scoreFriend: 0,
     scoreEnemy: 0,
@@ -33,7 +35,7 @@ export function createPlaybackStore() {
     playing: false,
     speed: 1, // 与 2D 统一默认 1×（usePlaybackTransport.DEFAULT_PLAYBACK_SPEED）
     time: 0,
-    startTime: 0, // 时间轴起点（DATA.meta.t_start，不一定是 0）
+    startTime: 0, // 场景时间轴起点（DATA.meta.t_start，含准备阶段，不一定是 0）；面板有战斗时钟时不用它
     duration: 0,
     seekFrac: 0,
     seeking: false, // 用户拖动进度条期间场景不回写
