@@ -20,7 +20,7 @@ service = data["services"]["frontend"]
 assert service["image"] == "ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-473495ec07e7"
 assert service["environment"]["BACKEND_UPSTREAM"] == "http://10.20.0.1:8087"
 assert service["environment"]["AI_UPSTREAM"] == "http://10.20.0.2:8089"
-assert service["environment"]["NGINX_ENVSUBST_FILTER"] == "^(BACKEND_UPSTREAM|AI_UPSTREAM)$", service["environment"]
+assert service["environment"]["NGINX_ENVSUBST_FILTER"] == "^(BACKEND_UPSTREAM|AI_UPSTREAM)$$", service["environment"]
 
 extra_hosts = service.get("extra_hosts", [])
 if isinstance(extra_hosts, dict):
