@@ -111,12 +111,14 @@ auth.wotbtools.com {
 	}
 
 	# App Link 回跳地址。Android 用 external user-agent 走 Authorization Code + PKCE，
-	# 授权后浏览器会回到这里：
-	#   - App 已安装：Android 把该 URL 交给 com.wotbtools.app（assetlinks.json 已验证），
-	#     浏览器页面本身不会被看到；
-	#   - App 未安装（或未走 App Link 而落在私有 scheme 上）：浏览器真的会停在这个 URL。
-	# 第二条路径以前会落到 Keycloak 的 catch-all，得到 404「页面不存在」，用户无法理解，
-	# 也没有下载入口。这里用一个最小落地页明确告诉用户回到 App / 从 wotbtools.com 下载。
+	# 2.1.0 起 **Android 授权回程固定 private scheme**（`com.wotbtools.app:/oauth2redirect`，
+	# 不依赖 domain verification / 用户设置 / OEM 行为）；这条 HTTPS 路径**降级为兼容回退**：
+	#   - 2.0.x 旧版本 APK 的交易（回程仍是 HTTPS）会落到这里；
+	#   - 设备没能处理 private scheme 时，浏览器也会停在这里。
+	# 两种情况下页面都提供「返回 WotBTools App」按钮，并把本页持有的 OAuth 响应
+	# （location.search，含 code/state）原样转发给 private scheme——否则 App 侧
+	# AuthResponseGuard 收不到响应、交易永远 pending。
+	# 该路径以前会落到 Keycloak 的 catch-all 得到 404「页面不存在」，用户无法理解，也没有下载入口。
 	# `handle` 按最长前缀匹配，这个更具体的路径优先于下方 catch-all，因此 Keycloak 的
 	# 所有真实路径（/realms/...、/resources/...、/.well-known/...）行为不变。
 	handle /android/oauth/callback {
