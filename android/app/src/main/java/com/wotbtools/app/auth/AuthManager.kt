@@ -27,8 +27,8 @@ import java.util.concurrent.TimeUnit
  *
  * ── ownership 边界 ──
  *  - WebView **不再拥有认证**：App 内不再出现任何 IdP / provider host，登录只在 external
- *    user-agent（Custom Tabs，AppAuth 选择）里发生；回程经 [OidcRedirectStrategy] 选定的
- *    redirect URI 落到 `net.openid.appauth.RedirectUriReceiverActivity`。
+ *    user-agent（Custom Tabs，AppAuth 选择）里发生；回程固定 private scheme（[OidcRedirectStrategy]，2.1.0 起）：
+ *    两条 URI 都登记在 Keycloak client；private scheme 之外仅剩兼容回退路径。
  *  - 本类只向 bridge 暴露 [AuthSession]（access token + claims + 到期秒）与显式失败原因；
  *    refresh token / 授权码 / PKCE verifier / state / nonce 永不出本类（只以密文落盘）。
  *  - 网络与 token 操作都不在 WebView 线程：发现走库的 AsyncTask，持久化与等待走 [executor]，
@@ -292,7 +292,7 @@ internal class AuthManager private constructor(context: Context) {
             return false
         }
 
-        val selectedRedirectUri = OidcRedirectStrategy.redirectUri(appContext)
+        val selectedRedirectUri = OidcRedirectStrategy.redirectUri()
         val builder = AuthorizationRequest.Builder(
             config,
             OidcConfiguration.CLIENT_ID,

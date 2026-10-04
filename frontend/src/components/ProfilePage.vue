@@ -21,7 +21,7 @@ import { apiErrorLabel } from '../utils/display.js'
 import AppButton from './AppButton.vue'
 
 const { locale, t, te } = useI18n()
-const { initPromise, login, logout, isAuthenticated, initError, tokenParsed, displayName: authDisplayName } = useAuth()
+const { initPromise, login, logout, isAuthenticated, authenticated: authState, initError, tokenParsed, displayName: authDisplayName, authEpoch } = useAuth()
 
 /**
  * 本页所有 backend 动作的统一门禁（PR #467 review blocker）。
@@ -44,7 +44,17 @@ function requireHofOnline() {
   return requireFeature(Feature.HALL_OF_FAME)
 }
 
-const phase = ref('init')
+const phase = ref('init')
+
+/** 账户归属复核（Phase 7.2）：epoch 相同且仍处于登录态，迟到结果才允许写入。 */
+function ownEpoch(epoch) {
+  return authEpoch() === epoch && isAuthenticated()
+}
+
+/** 模板 @click 直连 handler 时 Vue 会把事件对象塞进第一个参数：只接受整数 epoch。 */
+function epochArg(value) {
+  return Number.isInteger(value) ? value : authEpoch()
+}
 const profile = ref(null)
 const loginStarted = ref(false)
 /** 离线 / 状态未知时的中性提示文案（取自 capability 模型，不另造文案、不当成错误态）。 */
@@ -93,6 +103,9 @@ async function loadProfile() {
     enterConnectivityUnavailable()
     return
   }
+  // 账户归属（Phase 7.2）：发起代数记在这里，之后每个 await 复核——登出 / 切到 B 后，
+  // A 时代的迟到结果（profile / records / hundred）一律不得写入。
+  const epoch = authEpoch()
   loading.value = true
   try {
     // 等待全局 business bootstrap 完成 ensure；页面不再自己「读不到就创建」。
@@ -102,6 +115,7 @@ async function loadProfile() {
       authenticated: true,
       connectivity: connectivity.value,
     })
+    if (!ownEpoch(epoch)) return
     if (!settled) {
       if (!availability(Feature.ACCOUNT_PROFILE).available) {
         enterConnectivityUnavailable()
@@ -117,20 +131,27 @@ async function loadProfile() {
       enterConnectivityUnavailable()
       return
     }
-    profile.value = await getUserProfile()
+    const fetchedProfile = await getUserProfile()
+    if (!ownEpoch(epoch)) return
+    profile.value = fetchedProfile
   } catch {
+    if (!ownEpoch(epoch)) return
     profile.value = null
     phase.value = 'error'
     return
   } finally {
-    loading.value = false
+    // P1（review）：pending 状态也要归属检查——A 的迟到响应不得把 B 正在进行的加载清掉，
+    // 否则 B 的加载窗口会被误判为"空闲"，watcher / 重连路径可能再起一次加载。
+    if (ownEpoch(epoch)) loading.value = false
   }
+  if (!ownEpoch(epoch)) return
   phase.value = 'done'
   unavailableMessageKey.value = ''
-  await syncFromLogin()
+  await syncFromLogin(epoch)
+  if (!ownEpoch(epoch)) return
   if (profile.value?.wotbAccountId) {
-    loadRecords()
-    loadHundredStatus()
+    loadRecords(epoch)
+    loadHundredStatus(epoch)
   }
 }
 
@@ -154,14 +175,49 @@ watch(connectivity, () => {
   void loadProfile()
 })
 
+/**
+ * 认证状态**响应式**语义（2.1.0 Phase 6 / 7）：
+ * - false → true（登录回站 / 账户切到 B / Android authChanged 推送）：立即进入已登录并
+ *   恰好加载一次（loading + profile 双重去重，不因 watcher 与手动 retry 叠加出请求风暴）；
+ * - true → false（logout / 会话失效）：**立即**清理上一账号的一切投影——profile / records /
+ *   hundred / 同步与编辑状态 / 错误——不得等页面重挂或刷新。
+ * 在途请求由 loadProfile 等各自的 epoch 复核丢弃（Phase 7.2）。
+ */
+watch(authState, (now, before) => {
+  if (before === now) return
+  if (now) {
+    if (loading.value) return
+    phase.value = 'done'
+    void loadProfile()
+    return
+  }
+  profile.value = null
+  records.value = []
+  recordsError.value = ''
+  hundredStatus.value = null
+  hundredError.value = ''
+  hundredWithdrawingId.value = null
+  hundredMessage.value = ''
+  syncFromLoginPending.value = false
+  syncFromLoginError.value = null
+  editingAccount.value = false
+  editError.value = ''
+  loginStarted.value = false
+  loading.value = false
+  phase.value = 'signedOut'
+})
+
 /** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新；失败不再静默，保留错误状态供重试。 */
-async function syncFromLogin() {
+async function syncFromLogin(epochInput) {
+  const epoch = epochArg(epochInput)
+  if (!ownEpoch(epoch)) return
   if (!isWargamingLogin.value) return
   if (!requireProfileOnline()) return
   syncFromLoginPending.value = true
   syncFromLoginError.value = null
   try {
     const synced = await syncUserWotbAccountFromLogin()
+    if (!ownEpoch(epoch)) return
     if (synced) {
       profile.value = synced
     }
@@ -169,7 +225,7 @@ async function syncFromLogin() {
     // 保留后端业务错误码：同步失败时绝不回退为 CN 手动入口。
     syncFromLoginError.value = e
   } finally {
-    syncFromLoginPending.value = false
+    if (ownEpoch(epoch)) syncFromLoginPending.value = false
   }
 }
 
@@ -245,17 +301,21 @@ function startEditAccount() {
 
 async function saveAccount() {
   if (!requireProfileOnline()) return
+  const epoch = authEpoch()
   editError.value = ''
   try {
-    profile.value = await updateUserWotbAccount({
+    const updated = await updateUserWotbAccount({
       wotbAccountId: editAccountId.value,
       wotbNickname: editNickname.value,
       wotbServer: 'CN'
     })
+    if (!ownEpoch(epoch)) return
+    profile.value = updated
     editingAccount.value = false
-    loadRecords()
-    loadHundredStatus()
+    loadRecords(epoch)
+    loadHundredStatus(epoch)
   } catch (e) {
+    if (!ownEpoch(epoch)) return
     editError.value = apiError(e)
   }
 }
@@ -272,36 +332,50 @@ async function verifyWithReplay(event) {
   // 门禁放在最前：本地解析是 LOCAL 能力，但「用回放验证账号」最终要打 backend verify，
   // 离线时先提示，避免用户选完文件才发现无法提交。
   if (!requireProfileOnline()) return
+  const epoch = authEpoch()
   verifyPending.value = true
   verifyError.value = ''
   try {
     const recorderAccountId = await replayRecorderAccountId(file)
+    if (!ownEpoch(epoch)) return
     if (!requireProfileOnline()) return
-    profile.value = await verifyUserWotbAccountFromReplay(recorderAccountId)
+    const verified = await verifyUserWotbAccountFromReplay(recorderAccountId)
+    if (!ownEpoch(epoch)) return
+    profile.value = verified
   } catch (e) {
+    if (!ownEpoch(epoch)) return
     verifyError.value = apiError(e)
   } finally {
-    verifyPending.value = false
+    if (ownEpoch(epoch)) verifyPending.value = false
   }
 }
 
-async function loadRecords() {
+async function loadRecords(epochInput) {
+  const epoch = epochArg(epochInput)
+  if (!ownEpoch(epoch)) return
   if (!requireHofOnline()) return
   recordsError.value = ''
   try {
-    records.value = await getUserHofRecords()
+    const fetchedRecords = await getUserHofRecords()
+    if (!ownEpoch(epoch)) return
+    records.value = fetchedRecords
   } catch (error) {
-    recordsError.value = apiError(error)
+    if (ownEpoch(epoch)) recordsError.value = apiError(error)
   }
 }
 
 /** 个人中心「我的百场成绩」：当前认证 / 当前申请 / 最近拒绝。 */
-async function loadHundredStatus() {
+async function loadHundredStatus(epochInput) {
+  const epoch = epochArg(epochInput)
+  if (!ownEpoch(epoch)) return
   if (!requireHofOnline()) return
   hundredError.value = ''
   try {
-    hundredStatus.value = await hofHundredMyStatus()
+    const fetchedStatus = await hofHundredMyStatus()
+    if (!ownEpoch(epoch)) return
+    hundredStatus.value = fetchedStatus
   } catch (error) {
+    if (!ownEpoch(epoch)) return
     hundredStatus.value = null
     hundredError.value = apiError(error)
   }
@@ -312,17 +386,20 @@ async function withdrawHundred(id) {
   if (!requireHofOnline()) return
   if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return
   if (!requireHofOnline()) return
+  const epoch = authEpoch()
   hundredWithdrawingId.value = id
   hundredMessage.value = ''
   hundredError.value = ''
   try {
     await hofHundredCancel(id)
+    if (!ownEpoch(epoch)) return
     hundredMessage.value = t('hundred.withdrawSuccess')
-    await loadHundredStatus()
+    await loadHundredStatus(epoch)
   } catch (error) {
+    if (!ownEpoch(epoch)) return
     hundredError.value = apiError(error)
   } finally {
-    hundredWithdrawingId.value = null
+    if (ownEpoch(epoch)) hundredWithdrawingId.value = null
   }
 }
 
@@ -435,7 +512,7 @@ async function removeAccount() {
             <div v-else-if="isWargamingProfile" class="account-bound">
               <p class="error">{{ $t('profile.wgSyncFailed') }}</p>
               <div class="edit-row">
-                <button class="btn-ghost btn-sm" :disabled="syncFromLoginPending" @click="syncFromLogin">
+                <button class="btn-ghost btn-sm" :disabled="syncFromLoginPending" @click="syncFromLogin()">
                   {{ syncFromLoginPending ? $t('profile.wgSyncing') : $t('profile.wgSyncRetry') }}
                 </button>
               </div>

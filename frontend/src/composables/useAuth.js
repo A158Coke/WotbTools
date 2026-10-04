@@ -12,6 +12,8 @@ import {
   isNativeBridgeCompatible,
   supports,
 } from './usePlatformBridge.js'
+import { useConnectivity } from './useConnectivity.js'
+import { ConnectivityState } from '../platform/connectivity.js'
 
 const AUTH_INIT_WATCHDOG_MS = 12_000
 /**
@@ -111,10 +113,8 @@ function markFailed(transaction, error, reason) {
   transaction.settled = true
   clearTimeout(transaction.watchdog)
   clearTimeout(transaction.pendingLog)
-  authInitState.value = 'failed'
   initialized.value = true
-  authenticated.value = false
-  tokenParsed.value = null
+  projectSession({ isAuthenticated: false, parsedToken: null, state: 'failed' })
   initError.value = error
   initFailureReason.value = reason
   if (reason === 'init-timeout' && !transaction.timeoutLogged) {
@@ -131,13 +131,46 @@ function markFailed(transaction, error, reason) {
 }
 
 /**
+ * **身份/session 归属代数**（与 init 交易代数 `authGeneration` 无关）：
+ * 业务侧的在途请求用它判定「结果还属不属于当前账号」。
+ *
+ * 前进时机 = 有效身份边界变化：未登录 → 已登录、已登录 → 未登录、A → B（`sub` 变化）。
+ * 刻意**不**绑定 init 交易代数：Native `authChanged` 登录成功、logout、账号切换都发生在
+ * 同一笔 init 交易里，交易代数不会前进（review blocker 2）。
+ * 同一身份的重复投影（如 token 刷新后 claims 更新）不前进。
+ */
+let authIdentityEpoch = 0
+let projectedIdentity = null
+
+/** 身份键：已登录取 token 的 `sub`（缺失时用占位键——仍是"已登录"这个身份），未登录为 null。 */
+function identityKeyOf(isAuthenticatedValue, parsedToken) {
+  if (!isAuthenticatedValue) return null
+  const sub = parsedToken && typeof parsedToken === 'object' ? parsedToken.sub : null
+  return typeof sub === 'string' && sub ? `sub:${sub}` : 'authenticated:unknown-sub'
+}
+
+/**
+ * 唯一的投影写入路径：init 落定、Native 推送（`wotbtoolsOnAuthChanged`）、logout、
+ * ensureToken 失效都经这里，`authIdentityEpoch` 因而覆盖所有身份变化。
+ */
+function projectSession({ isAuthenticated: isAuthed, parsedToken, state }) {
+  const nextIdentity = identityKeyOf(isAuthed, parsedToken)
+  if (nextIdentity !== projectedIdentity) {
+    projectedIdentity = nextIdentity
+    authIdentityEpoch += 1
+  }
+  authenticated.value = isAuthed
+  tokenParsed.value = parsedToken || null
+  authInitState.value = state || (isAuthed ? 'authenticated' : 'unauthenticated')
+}
+
+/**
  * 把 provider 的当前状态投影到组件可见的 refs。init 落定、Native 推送
  * （`wotbtoolsOnAuthChanged`）与 Android logout 共用这一条投影路径：只有一个状态 owner。
  */
 function applyProviderState(provider) {
-  authenticated.value = Boolean(provider.authenticated)
-  tokenParsed.value = provider.tokenParsed || null
-  authInitState.value = authenticated.value ? 'authenticated' : 'unauthenticated'
+  const isAuthed = Boolean(provider.authenticated)
+  projectSession({ isAuthenticated: isAuthed, parsedToken: isAuthed ? provider.tokenParsed : null })
 }
 
 function completeTransaction(transaction) {
@@ -177,10 +210,8 @@ function startAuthInit({ mode = 'normal', reason = 'startup' } = {}) {
     promise: null,
   }
   currentTransaction = transaction
-  authInitState.value = 'initializing'
   initialized.value = false
-  authenticated.value = false
-  tokenParsed.value = null
+  projectSession({ isAuthenticated: false, parsedToken: null, state: 'initializing' })
   initError.value = null
   initFailureReason.value = null
 
@@ -230,6 +261,12 @@ function startAuthInit({ mode = 'normal', reason = 'startup' } = {}) {
 
 async function initAuth() {
   if (currentTransaction) return currentTransaction.promise
+  // 离线登出后远端会话未收敛：本次不静默 check-sso（否则会被悄悄登回去）；
+  // 用户显式点登录时由 login() 清标记并照常走登录。
+  if (hasPendingRemoteLogout()) {
+    console.warn('[auth] init_skip_check_sso reason=pending-remote-logout')
+    return startAuthInit({ mode: 'login-recovery', reason: 'pending-remote-logout' })
+  }
   return startAuthInit()
 }
 
@@ -258,9 +295,11 @@ function loginRedirectUri(destination) {
   return url.toString()
 }
 
-/** OIDC end-session 之后回到本页（浏览器专用；Android 不导航，回跳地址被忽略）。 */
+/** OIDC end-session 之后回到 **HOME**（2.1.0 Phase 5.3：登出落点固定首页，
+ *  不保留登出前的 view——`?view=profile` 那种回跳会把用户又带回个人中心）。
+ *  浏览器专用；Android 不导航，回跳地址被忽略（App 侧落点由 SPA 自己收敛）。 */
 function logoutRedirectUri() {
-  return window.location.origin + window.location.pathname
+  return window.location.origin + '/'
 }
 
 /**
@@ -290,29 +329,100 @@ async function login(destination = 'profile') {
     if (!transaction || transaction.abandoned || !transaction.provider) {
       throw new Error('AUTH_INIT_NOT_READY')
     }
+    // 用户显式登录：清掉"远端登出未完成"标记（这次登录本身就会重建会话）
+    clearPendingRemoteLogout()
     return await transaction.provider.login(loginRedirectUri(destination))
   } finally {
     loginInFlight.value = false
   }
 }
 
+/**
+ * 登出分两层，**本地会话清理恒执行，远端 end-session 才是 best effort**（review blocker 1）：
+ *
+ * ```text
+ * 1. 先清 SPA 投影（当前页面立即 signed-out，不等任何网络往返）
+ * 2. Android：provider.logout() = bridge authLogout —— Native 侧**先清本地会话（Keystore）**
+ *    再 best-effort 打开 end-session；本地清理不依赖网络，所以离线也必须调用。
+ *    跳过它 = Native 会话残留，重启 / auth 同步会把用户"复活"成已登录。
+ * 3. Web：provider.logout() 的全部作用就是**导航到远端 end-session 页**；离线时这次导航
+ *    只会撞出浏览器的错误页，因此离线只跳过导航本身，本地投影已清。残留的 Keycloak SSO
+ *    cookie 由 `pendingRemoteLogout` 标记兜住：下次 init 不再静默 check-sso 复登
+ *    （否则离线登出会被下一次刷新悄悄撤销），用户显式点登录才会清标记。
+ * ```
+ */
 async function logout() {
   const provider = currentTransaction?.provider
   if (!provider) {
     console.warn('[auth] logout_skipped reason=no-provider')
     return
   }
+  // 1) 本地投影先行（Phase 5.4）
+  projectSession({ isAuthenticated: false, parsedToken: null })
+
+  if (provider.name === 'android') {
+    // 2) Native 本地会话清理是**强制**步骤（远端 end-session 在 Native 内部自己 best-effort）
+    await provider.logout(logoutRedirectUri())
+    applyProviderState(provider)
+    return
+  }
+
+  if (offlineKnown()) {
+    // 3) Web 离线：跳过远端导航，但记下"远端登出未完成"——否则恢复在线后的下一次
+    //    check-sso 会把用户静默登回去，登出就不"永久"了。
+    markPendingRemoteLogout()
+    console.warn('[auth] logout_offline reason=end-session-navigation-skipped')
+    return
+  }
+  clearPendingRemoteLogout()
   await provider.logout(logoutRedirectUri())
-  // 浏览器 provider 立刻导航到 OIDC end-session，refs 无需更新；
-  // Android 的 WebView 不导航（Native 清会话），必须把本地状态落回未登录。
-  if (provider.name === 'android') applyProviderState(provider)
+}
+
+/**
+ * 「远端 end-session 尚未完成」标记（仅浏览器离线登出会置位）。
+ * 存 localStorage：登出意图必须跨刷新存活，否则下一次加载就会把用户静默登回去。
+ */
+const PENDING_REMOTE_LOGOUT_KEY = 'wotb-auth-pending-remote-logout'
+
+function markPendingRemoteLogout() {
+  try { localStorage.setItem(PENDING_REMOTE_LOGOUT_KEY, '1') } catch { /* 隐私模式：降级为会话内语义 */ }
+}
+
+function clearPendingRemoteLogout() {
+  try { localStorage.removeItem(PENDING_REMOTE_LOGOUT_KEY) } catch { /* 同上 */ }
+}
+
+/** 是否处于「离线登出后、远端会话未收敛」状态：init 不静默复登。 */
+function hasPendingRemoteLogout() {
+  try { return localStorage.getItem(PENDING_REMOTE_LOGOUT_KEY) === '1' } catch { return false }
 }
 
 function isAuthenticated() {
   return authenticated.value
 }
 
+/** 只有确定离线才跳过网络动作：unknown / degraded / service-unavailable 仍按在线语义尝试
+ *  （unknown ≠ offline——否则「连接未知」会被误当成离线，静默跳过 end-session / 保留失效会话）。 */
+function offlineKnown() {
+  return useConnectivity().connectivity.value === ConnectivityState.OFFLINE
+}
+
+/**
+ * ⚠️ [本机测试旁路·提交前请还原] `git checkout -- frontend/src/composables/useAuth.js`
+ *
+ * 本地账号没有 `wotbtools-admin` / `HoF-admin` realm 角色时，admin 视图会被
+ * `viewFromRoute` 收敛回默认视图、导航里也不出现入口。dev 构建下显式带
+ * `?admin=1` 即把这两个角色视为已持有：
+ *  - 生产构建 `import.meta.env.DEV === false` → 恒为 false，门禁原样生效（无产品行为变化）；
+ *  - vitest 环境无 query（jsdom 默认 URL）→ 同样为 false，角色断言不受影响。
+ * 它只改**前端可见性**：后端仍按真实 token 鉴权，越权调用照样 401/403。
+ */
+const DEV_ADMIN_ROLES = import.meta.env.DEV
+  && typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).has('admin')
+
 function hasRole(role) {
+  if (DEV_ADMIN_ROLES && (role === 'wotbtools-admin' || role === 'HoF-admin')) return true
   return Boolean(role) && Array.isArray(tokenParsed.value?.realm_access?.roles)
     && tokenParsed.value.realm_access.roles.includes(role)
 }
@@ -339,6 +449,13 @@ function token() {
   return currentTransaction?.provider?.token() || ''
 }
 
+/** 当前**身份代数**（未登录→已登录 / 已登录→未登录 / A→B 各前进一次）：业务侧在途请求的
+ *  归属判定用。请求发起时记下 epoch，await 之后必须复核——不相等即身份已变，迟到结果不得写入。
+ *  与 `authGeneration`（init 交易代数）不同：后者在同一身份内的重试 / 推送里不前进。 */
+function authEpoch() {
+  return authIdentityEpoch
+}
+
 /** Keep the token valid for at least minValidity seconds when the user is signed in. */
 async function ensureToken(minValidity = 30) {
   const provider = currentTransaction?.provider
@@ -351,16 +468,23 @@ async function ensureToken(minValidity = 30) {
   }
   if (currentTransaction?.provider !== provider) return false
   if (!refreshed) {
+    // 离线 / 连接未知时的刷新失败是**瞬时**失败（Phase 9.3）：绝不能销毁有效缓存身份
+    // ——本地功能继续用缓存会话，恢复在线后由下一次 ensureToken 自然收敛。
+    // 只有**明确离线**才保留缓存身份（unknown ≠ offline：连接未知时按老行为收敛为未登录，
+    // 避免把「后端拒绝刷新」误当网络问题而长期挂着失效会话）。
+    if (offlineKnown()) {
+      console.warn(`[auth] refresh_failed_offline generation=${authGeneration} session=retained`)
+      return false
+    }
     // Native may retain an offline session while denying a usable API token.
     if (provider.name === 'android') applyProviderState(provider)
     else {
-      authenticated.value = false
-      tokenParsed.value = null
-      authInitState.value = 'unauthenticated'
+      projectSession({ isAuthenticated: false, parsedToken: null })
     }
     return false
   }
-  // 刷新后 claims 可能变化（角色 / displayName）：重新投影 provider 的当前 claims。
+  // 刷新后 claims 可能变化（角色 / displayName）：重新投影 provider 的当前 claims
+  // （同一身份 → 身份代数不前进）。
   tokenParsed.value = provider.tokenParsed || null
   return true
 }
@@ -374,6 +498,8 @@ export function useAuth() {
     loginInFlight,
     logout,
     isAuthenticated,
+    authEpoch,
+    hasPendingRemoteLogout,
     hasRole,
     isAdmin,
     isHofAdmin,

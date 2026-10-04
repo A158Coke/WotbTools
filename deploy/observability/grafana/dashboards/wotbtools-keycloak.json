@@ -1,56 +1,341 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": false,
   "graphTooltip": 1,
   "panels": [
     {
-      "datasource": { "type": "loki", "uid": "loki" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
-      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": true, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
-      "targets": [{ "expr": "{container_name=\"keycloak\"} |~ \"(?i)LOGIN|LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN|IDENTITY_PROVIDER_FIRST_LOGIN|broker_authenticated\"", "queryType": "range", "refId": "A" }],
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{container_name=\"keycloak\"} |~ \"(?i)LOGIN|LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN|IDENTITY_PROVIDER_FIRST_LOGIN|broker_authenticated\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
       "title": "登录与身份代理事件",
       "type": "logs"
     },
     {
-      "datasource": { "type": "loki", "uid": "loki" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
       "id": 2,
-      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": true, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
-      "targets": [{ "expr": "{container_name=\"keycloak\"} |~ \"(?i)callback_entered|authentication_session_restored|before_broker_authenticated|broker_authenticated|oauth|state|code_to_token\"", "queryType": "range", "refId": "A" }],
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{container_name=\"keycloak\"} |~ \"(?i)callback_entered|authentication_session_restored|before_broker_authenticated|broker_authenticated|oauth|state|code_to_token\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
       "title": "QQ Callback 流程",
       "type": "logs"
     },
     {
-      "datasource": { "type": "loki", "uid": "loki" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 20 },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
       "id": 3,
-      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": true, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
-      "targets": [{ "expr": "{container_name=\"keycloak\"} |~ \"(?i)LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|user_not_found|identity provider|failed|exception\"", "queryType": "range", "refId": "A" }],
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{container_name=\"keycloak\"} |~ \"(?i)LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|user_not_found|identity provider|failed|exception\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
       "title": "登录错误与 IdP 故障",
       "type": "logs"
     },
     {
-      "datasource": { "type": "loki", "uid": "loki" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 20 },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
       "id": 4,
-      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": true, "showCommonLabels": true, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
-      "targets": [{ "expr": "{container_name=\"keycloak\"} |~ \"(?i)WARN|ERROR\"", "queryType": "range", "refId": "A" }],
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{container_name=\"keycloak\"} |~ \"(?i)WARN|ERROR\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
       "title": "Keycloak WARN / ERROR",
       "type": "logs"
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "登录可靠性 · 失败分类（5m，已分流噪音）",
+      "description": "登录失败按 error 维度分解（LOGIN_ERROR / IDENTITY_PROVIDER_LOGIN_ERROR / IDENTITY_PROVIDER_FIRST_LOGIN_ERROR）。已排除噪音：本机 silent-check-sso 的 invalid_redirect_uri（72h 实测 55 条）、密码/用户不存在（user_not_found 42 条、invalid_user_credentials 5 条）与 security-admin-console 管理台（17 条）。分类法与实测口径见 docs/auth/web-qq-diagnostics.md。查询已对生产 Loki 实测验证（LogQL 用反引号字符串；修复前版本用了非法的单引号）。",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "range",
+          "expr": "sum by (error) (count_over_time({container_name=\"keycloak\"} |~ `type=\"(LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|IDENTITY_PROVIDER_FIRST_LOGIN_ERROR)\"` !~ \"security-admin-console\" | regexp `error=\"(?P<error>[^\"]+)\"` | error!~ \"invalid_redirect_uri|user_not_found|invalid_user_credentials\" [5m]))"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "登录可靠性 · broker 会话连续性（5m，P0 信号）",
+      "description": "Web QQ 登录 P0 的两个连续性信号：cookie_not_found（broker 回调读不到 auth session cookie）与 Failed to verify login action（first-broker-login 表单校验失败）。正常用户路径不应出现；持续非零即按 docs/auth/web-qq-diagnostics.md §3 取证。",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "range",
+          "expr": "sum(count_over_time({container_name=\"keycloak\"} |~ \"cookie_not_found\" [5m]))"
+        },
+        {
+          "refId": "B",
+          "queryType": "range",
+          "expr": "sum(count_over_time({container_name=\"keycloak\"} |~ \"Failed to verify login action\" [5m]))"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "IdP 失败分解（provider × error，5m）",
+      "description": "按 identity_provider 与 error 分解 broker 失败，定位 QQ / WG 单点故障。",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "range",
+          "expr": "sum by (identity_provider, error) (count_over_time({container_name=\"keycloak\"} |~ `type=\"(LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|IDENTITY_PROVIDER_FIRST_LOGIN_ERROR)\"` | regexp `(identityProvider=\"(?P<identity_provider>[^\"]*)\")?.*error=\"(?P<error>[^\"]+)\"` | error!~ \"invalid_redirect_uri|user_not_found|invalid_user_credentials\" [5m]))"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "broker 回调（UA / 状态码，query 与凭据已脱敏）",
+      "description": "Caddy 对 /realms/*/broker/* 的受控访问日志：query 里的 code/state/session_state/iss 与 Cookie/Authorization 头在写 stdout 前已被 filter 删除。用于区分真实用户与扫描器、识别移动 QQ 内置浏览器 / WebView。见 docs/auth/web-qq-diagnostics.md §3.4。",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 47
+      },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "range",
+          "expr": "{container_name=\"caddy\"} |~ \"broker\""
+        }
+      ]
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["wotbtools", "keycloak", "production", "logs"],
-  "time": { "from": "now-15m", "to": "now" },
+  "tags": [
+    "wotbtools",
+    "keycloak",
+    "production",
+    "logs",
+    "timeseries"
+  ],
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
   "timezone": "browser",
   "title": "WotBTools · Keycloak",
   "uid": "wotbtools-keycloak",
-  "version": 3,
+  "version": 5,
   "weekStart": ""
 }

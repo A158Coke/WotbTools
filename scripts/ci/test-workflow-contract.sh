@@ -754,6 +754,28 @@ for invariant in (
 ):
     assert invariant in freshness, invariant
 
+# 诊断通道的 cookie 脱敏契约（review blocker 3）：prod-diagnostics 会把线上 Set-Cookie
+# 打进 Actions 日志，而 AUTH_SESSION_ID / KC_RESTART 的值是动态 secret——GitHub 的
+# secret masking 不认它们。这里锁两件事：
+#   1) 任何读取 set-cookie 的管道之后必须紧跟脱敏（`=<redacted>`），且
+#   2) 出现裸打印的形态（grep set-cookie 但没有脱敏）即失败。
+diagnostics = (workflow_dir / "prod-diagnostics.yml").read_text(encoding="utf-8")
+assert "set-cookie" in diagnostics, "prod-diagnostics must still probe live cookie attributes"
+all_lines = diagnostics.splitlines()
+read_pipelines = [
+    index for index, line in enumerate(all_lines)
+    if "set-cookie" in line.lower() and "grep" in line
+]
+assert read_pipelines, "cookie probe step disappeared"
+assert "<redacted>" in diagnostics, "cookie values must be redacted before stdout"
+for index in read_pipelines:
+    # 脱敏必须出现在**读取 cookie 的管道本身**（同一段窗口内、到达 stdout 之前）
+    window = "\n".join(all_lines[index:index + 3])
+    assert "<redacted>" in window, (
+        "a set-cookie pipeline without redaction can leak live session identifiers: "
+        + all_lines[index].strip()
+    )
+
 print("PR gate, production freshness/ownership, ToFu validation, and backup safety OK")
 PY
 
