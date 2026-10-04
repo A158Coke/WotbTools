@@ -452,6 +452,10 @@ CURRENT_K6B_CUTOVERS = {
         "TX_BUSINESS_DB_PORT": "25432",
         "TX_KEYCLOAK_ADMIN_SERVER_URL": "http://10.20.0.1:8080",
     },
+    "keycloak": {
+        "TX_KEYCLOAK_DB_HOST": "10.20.0.1",
+        "TX_KEYCLOAK_DB_PORT": "15432",
+    },
 }
 K6B_DOCKER_LOCAL_PLACEMENTS = {
     "frontend": (frontend_deploy, {
@@ -463,6 +467,9 @@ K6B_DOCKER_LOCAL_PLACEMENTS = {
         "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
     }),
 }
+# The Keycloak owner's own placement pin lives in scripts/ci/test-keycloak-tofu-contract.sh
+# with its apply step, so it is deliberately not duplicated here; the gate expectation
+# for the same consumer is asserted below.
 for owner, (step, placements) in K6B_DOCKER_LOCAL_PLACEMENTS.items():
     exported = step["with"]["envs"].split(",")
     for name, value in {**placements, **CURRENT_K6B_CUTOVERS.get(owner, {})}.items():
@@ -489,15 +496,12 @@ runtime_gate_step = next(
     if step.get("name") == "Run exact-SHA read-only TX runtime gate"
 )
 # The read-only gate must expect the same placement the owner workflows apply: the
-# cut-over WireGuard values for Frontend -> Business API and Business API -> Business
-# PostgreSQL, Docker-local for every other consumer until its own step. A mismatch on
-# either side fails the gate, so the two halves of a cutover cannot be merged
-# separately, and a reverted cutover cannot be hidden behind a stale expectation.
+# cut-over WireGuard values for the consumers in CURRENT_K6B_CUTOVERS, Docker-local for
+# every other consumer until its own step. A mismatch on either side fails the gate, so
+# the two halves of a cutover cannot be merged separately, and a reverted cutover cannot
+# be hidden behind a stale expectation.
 gate_expectations = {
     "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
-    "TX_KEYCLOAK_ADMIN_SERVER_URL": "http://keycloak:8080",
-    "TX_KEYCLOAK_DB_HOST": "keycloak-postgres",
-    "TX_KEYCLOAK_DB_PORT": "5432",
     "CADDY_FRONTEND_UPSTREAM": "wotb-frontend:80",
     "CADDY_KEYCLOAK_UPSTREAM": "keycloak:8080",
 }
@@ -506,13 +510,14 @@ for cut_over in CURRENT_K6B_CUTOVERS.values():
 for name, value in gate_expectations.items():
     assert runtime_gate_step["env"][name] == value, (name, runtime_gate_step["env"].get(name))
     assert name in runtime_gate_step["with"]["envs"].split(","), name
-# Only the cut-over consumers may carry a WireGuard expectation in the gate.
+# Only the cut-over consumers may carry a WireGuard expectation in the gate, and the two
+# PostgreSQL placements must never be swapped: 25432 is Business, 15432 is Keycloak.
 cut_over_names = {name for cut_over in CURRENT_K6B_CUTOVERS.values() for name in cut_over}
 for name, value in gate_expectations.items():
-    if name in cut_over_names:
-        assert re.search(r"(10\.20\.0\.[13]|25432)", str(value)), (name, value)
-    else:
+    if name not in cut_over_names:
         assert not re.search(r"10\.20\.0\.[13]:", str(value)), (name, value)
+assert gate_expectations["TX_KEYCLOAK_DB_PORT"] == "15432", gate_expectations["TX_KEYCLOAK_DB_PORT"]
+assert gate_expectations["TX_BUSINESS_DB_PORT"] == "25432", gate_expectations["TX_BUSINESS_DB_PORT"]
 assert runtime_gate_step["env"]["TX_AI_UPSTREAM"] == "http://10.20.0.2:8089", \
     "the Yecao AI upstream must never move with a TX placement cutover"
 
