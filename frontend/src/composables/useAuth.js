@@ -12,6 +12,8 @@ import {
   isNativeBridgeCompatible,
   supports,
 } from './usePlatformBridge.js'
+import { useConnectivity } from './useConnectivity.js'
+import { ConnectivityState } from '../platform/connectivity.js'
 
 const AUTH_INIT_WATCHDOG_MS = 12_000
 /**
@@ -258,9 +260,11 @@ function loginRedirectUri(destination) {
   return url.toString()
 }
 
-/** OIDC end-session 之后回到本页（浏览器专用；Android 不导航，回跳地址被忽略）。 */
+/** OIDC end-session 之后回到 **HOME**（2.1.0 Phase 5.3：登出落点固定首页，
+ *  不保留登出前的 view——`?view=profile` 那种回跳会把用户又带回个人中心）。
+ *  浏览器专用；Android 不导航，回跳地址被忽略（App 侧落点由 SPA 自己收敛）。 */
 function logoutRedirectUri() {
-  return window.location.origin + window.location.pathname
+  return window.location.origin + '/'
 }
 
 /**
@@ -302,6 +306,17 @@ async function logout() {
     console.warn('[auth] logout_skipped reason=no-provider')
     return
   }
+  // local-first（2.1.0 Phase 5.4）：先清本地状态并立即投影回 signed-out——
+  // 当前页面的 UI（含 ProfilePage 等响应式消费者）不等任何网络往返就完成清理。
+  authenticated.value = false
+  tokenParsed.value = null
+  authInitState.value = 'unauthenticated'
+  if (offlineKnown()) {
+    // 离线登出（Phase 9.2）：绝不依赖 Keycloak 网络——end-session 是 best effort，
+    // 恢复在线后用户重新登录即可收敛服务端 SSO；本地会话此刻必须已经清干净。
+    console.warn('[auth] logout_offline reason=end-session-skipped')
+    return
+  }
   await provider.logout(logoutRedirectUri())
   // 浏览器 provider 立刻导航到 OIDC end-session，refs 无需更新；
   // Android 的 WebView 不导航（Native 清会话），必须把本地状态落回未登录。
@@ -310,6 +325,12 @@ async function logout() {
 
 function isAuthenticated() {
   return authenticated.value
+}
+
+/** 只有确定离线才跳过网络动作：unknown / degraded / service-unavailable 仍按在线语义尝试
+ *  （unknown ≠ offline——否则「连接未知」会被误当成离线，静默跳过 end-session / 保留失效会话）。 */
+function offlineKnown() {
+  return useConnectivity().connectivity.value === ConnectivityState.OFFLINE
 }
 
 function hasRole(role) {
@@ -339,6 +360,12 @@ function token() {
   return currentTransaction?.provider?.token() || ''
 }
 
+/** 当前 auth generation（账户切换 / 重新 init 的代数）：业务侧在途请求的归属判定用。
+ *  请求发起时记下 epoch，await 之后必须复核——不相等即账户已切换，迟到结果不得写入。 */
+function authEpoch() {
+  return authGeneration
+}
+
 /** Keep the token valid for at least minValidity seconds when the user is signed in. */
 async function ensureToken(minValidity = 30) {
   const provider = currentTransaction?.provider
@@ -351,6 +378,14 @@ async function ensureToken(minValidity = 30) {
   }
   if (currentTransaction?.provider !== provider) return false
   if (!refreshed) {
+    // 离线 / 连接未知时的刷新失败是**瞬时**失败（Phase 9.3）：绝不能销毁有效缓存身份
+    // ——本地功能继续用缓存会话，恢复在线后由下一次 ensureToken 自然收敛。
+    // 只有**明确离线**才保留缓存身份（unknown ≠ offline：连接未知时按老行为收敛为未登录，
+    // 避免把「后端拒绝刷新」误当网络问题而长期挂着失效会话）。
+    if (offlineKnown()) {
+      console.warn(`[auth] refresh_failed_offline generation=${authGeneration} session=retained`)
+      return false
+    }
     // Native may retain an offline session while denying a usable API token.
     if (provider.name === 'android') applyProviderState(provider)
     else {
@@ -374,6 +409,7 @@ export function useAuth() {
     loginInFlight,
     logout,
     isAuthenticated,
+    authEpoch,
     hasRole,
     isAdmin,
     isHofAdmin,

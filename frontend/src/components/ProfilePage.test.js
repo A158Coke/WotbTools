@@ -23,12 +23,24 @@ const api = vi.hoisted(() => ({
   logout: vi.fn(() => Promise.resolve(undefined))
 }))
 
+const authFlag = ref(true)
+let authEpochCounter = 1
+// 让 mock 的 authenticated 具备**响应式**语义（真实 useAuth 是 ref）：组件的
+// computed / watcher 才能观察到登录 / 登出翻转。既有 `api.authenticated = X`
+// 的写法保持不变（getter/setter 转发到 authFlag）。
+Object.defineProperty(api, 'authenticated', {
+  get: () => authFlag.value,
+  set: (value) => { authFlag.value = value },
+  configurable: true,
+})
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
     initPromise: Promise.resolve(api.authenticated),
     login: api.login,
     logout: api.logout,
     isAuthenticated: () => api.authenticated,
+    authenticated: authFlag,
+    authEpoch: () => authEpochCounter,
     initError: ref(null),
     tokenParsed: tokenRef,
     displayName: computed(() => tokenRef.value?.displayName || tokenRef.value?.preferred_username || '')
@@ -839,5 +851,92 @@ describe('ProfilePage bootstrap failure and asynchronous connectivity changes', 
     expect(useConnectivityNotice().notice.value.messageKey).toBe('featureOffline.accountProfile')
     expect(wrapper.get('[data-testid="profile-verify-replay"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('[data-testid="profile-verify-error"]').exists()).toBe(false)
+  })
+})
+
+/**
+ * 2.1.0 Phase 6/7：认证状态的**响应式**语义与账户隔离。
+ * - 登录回站（false→true）不需要重新挂载/刷新，页面自己进入已登录并恰好加载一次；
+ * - 登出（true→false）立即清空上一账号的一切投影；
+ * - 账户切换（A→B）时 A 时代的在途请求迟到返回，不得写进 B 的页面（epoch 归属）。
+ */
+describe('ProfilePage 响应式认证与账户隔离', () => {
+  beforeEach(() => {
+    api.authenticated = true
+    profileFailures = 0
+    currentProfile = null
+    tokenRef.value = null
+    authEpochCounter = 1
+    userApi.getUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.ensureUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.getUserHofRecords.mockResolvedValue([])
+    hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
+  })
+
+  it('登录回站 false→true：不重挂载即加载资料（恰好一次）', async () => {
+    api.authenticated = false
+    let calls = 0
+    userApi.getUserProfile.mockImplementation(() => {
+      calls += 1
+      return Promise.resolve(currentProfile)
+    })
+
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
+    expect(calls).toBe(0)
+
+    // 登录回站：只翻转 authenticated（模拟 Android authChanged 推送 / 浏览器回程），
+    // 不重新挂载、不刷新页面
+    api.authenticated = true
+    authEpochCounter += 1                                  // 登录也换 epoch（useAuth 真实行为）
+    tokenRef.value = { preferred_username: 'back-from-login' }
+    await flushPromises()
+
+    expect(calls).toBe(1)                                  // 自己加载，恰好一次
+    expect(wrapper.find('[data-testid="profile-signed-out"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('登出 true→false：立即清空上一账号的投影（不切页、不刷新）', async () => {
+    currentProfile = wargamingProfile('ASIA', 572253806)
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.serverAsia')
+
+    api.authenticated = false
+    authEpochCounter += 1                                  // 登出同样换 epoch
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('572253806')
+    wrapper.unmount()
+  })
+
+  it('账户切换 A→B：A 时代在途的 profile 迟到返回不得写进 B 的页面', async () => {
+    let releaseA
+    userApi.getUserProfile.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseA = () => resolve({ wotbAccountSource: 'WARGAMING', wotbServer: 'ASIA', wotbAccountId: 111111, wotbNickname: 'PlayerA', displayName: 'PlayerA' })
+    }))
+
+    const wrapper = mountProfile()
+    await flushPromises()                       // A 的请求在途（挂起）
+
+    // A 登出、B 登录（epoch 前进两次）
+    api.authenticated = false
+    authEpochCounter += 1
+    await flushPromises()
+    api.authenticated = true
+    authEpochCounter += 1
+    currentProfile = { wotbAccountSource: 'WARGAMING', wotbServer: 'EU', wotbAccountId: 222222, wotbNickname: 'PlayerB', displayName: 'PlayerB' }
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.serverEu')
+
+    // A 的响应现在才到：必须被丢弃（页面仍是 B 的数据）
+    releaseA()
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.serverEu')
+    expect(wrapper.text()).not.toContain('111111')
+    wrapper.unmount()
   })
 })

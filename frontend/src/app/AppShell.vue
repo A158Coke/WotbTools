@@ -86,6 +86,21 @@ function retryBusinessBootstrap() {
   void retry(context)
 }
 
+/**
+ * 登出 / 会话失效 → **HOME**（2.1.0 Phase 5.3/5.4）：authenticated true→false 时把本 SPA
+ * 收敛到首页。浏览器端这一步发生在跳 Keycloak end-session 之前（local-first 已先清本地态）；
+ * Android 端 WebView 不导航，这一跳就是它唯一的落点。
+ * init 重建期间（authInitState=initializing）的中间态不是登出：不导航。
+ */
+let previousAuthenticated = authenticated.value
+watch(authenticated, (now) => {
+  const was = previousAuthenticated
+  previousAuthenticated = now
+  if (!was || now) return
+  if (authInitState.value === 'initializing') return
+  navigate('home')
+})
+
 function navigate(target) {
   // 目标是 view 字符串或带 query 的完整目的地；两者都归 router（组件不碰 history）
   const destination = router.resolve(
