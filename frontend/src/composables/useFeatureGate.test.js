@@ -133,6 +133,33 @@ describe('feature gate (wired to the connectivity singleton)', () => {
     expect(requireFeature(Feature.REPLAY_RESULT)).toBe(true)
   })
 
+  it('defers the verdict until the first detection settles (deep-link mount race)', async () => {
+    // 子组件先于 AppShell 挂载：门禁在 start() 之前被调用，此时 UNKNOWN 只是占位。
+    Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true })
+    const { requireFeature } = useFeatureGate()
+    const notice = useConnectivityNotice()
+    expect(requireFeature(Feature.AI_REVIEW)).toBe(false)
+    expect(notice.visible.value).toBe(false)
+
+    await useConnectivity().start()
+    await Promise.resolve()
+    // 实际在线：不得误报「暂时无法确认网络状态」。
+    expect(notice.visible.value).toBe(false)
+    expect(requireFeature(Feature.AI_REVIEW)).toBe(true)
+  })
+
+  it('still notifies after settling when the deferred check is really offline', async () => {
+    stubNative({ getCapabilities: ['native-auth', 'connectivity'], connectivityGetState: 'offline' })
+    const { requireFeature } = useFeatureGate()
+    const notice = useConnectivityNotice()
+    expect(requireFeature(Feature.HALL_OF_FAME)).toBe(false)
+    expect(notice.visible.value).toBe(false)
+
+    await useConnectivity().start()
+    await Promise.resolve()
+    expect(notice.notice.value).toMatchObject({ messageKey: 'featureOffline.hallOfFame' })
+  })
+
   it('falls back to the browser approximation when the shell lacks the capability', async () => {
     stubNative({ getCapabilities: ['native-auth'], connectivityGetState: 'offline' })
     Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true })
