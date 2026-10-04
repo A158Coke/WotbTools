@@ -382,10 +382,13 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   只写变化过的字段；行由与 2D 共用的 `PlaybackRoster.vue` 呈现（见 `docs/frontend/replay-workspace.md`）。
   **写入必须经响应式代理**：`store` 是 `reactive()`，eid → 行索引登记的是读回 `store.roster` 得到的
   代理，不是建行时的原始对象——改原始对象 Vue 收不到通知，名册会停在满血，直到选中行之类的无关
-  状态碰巧触发重绘（PR #489 起的线上故障）。
-  **投影节拍 = HUD 节拍**：`updateRoster()` 只在 `writeHud()` 越过 ~10Hz 节流闸后运行，与顶栏总血量
-  同帧写入（两者永远是同一个 T）；reload resolver 每次返回新数组，逐帧投影会让名册每帧重绘。
-  seek / 会话开始由 `writeHud(true)` 强制补一次——暂停时没有帧在跑，拖动进度条后的名册只能靠它投影。
+  状态碰巧触发重绘（2026-10 线上故障；名册改经 computed / 子组件渲染后，不再有整页重绘替它掩盖）。
+  **投影节拍 = HUD 节拍，不逐帧**：随 T 变化的投影只在 `writeHud()` 越过 ~10Hz 节流闸后运行，与顶栏
+  总血量同帧写入（两者永远是同一个 T）；reload resolver 每次返回新数组，逐帧投影会让名册每帧重绘。
+  seek / 会话开始 / 停播（暂停、播到终点）由 `writeHud(true)` 强制补一次——之后没有帧在跑，不补就停在
+  节流窗口里的旧值。跟随目标（`followed`）变化由 `setCam()` 同样以 `writeHud(true)` 补写
+  （`setFollow()` 也经由它），暂停时切跟随相机也立即可见；名册只经 `writeHud()` 投影，播放中也不会
+  跑到顶栏前面。
 - **响应式名册**：desktop / 大 tablet 的 normal 7v7 与 unknown group 在 root 内完整可见，
   不与播放控件重叠、无 team/lane 独立滚动。phone 与短视口不保留左右常驻名单，
   改为 Display → Roster 临时 surface；打开 Roster 即关闭 Display，dismiss 后完整场景立即恢复，
