@@ -711,12 +711,17 @@ assert "TX2_PRODUCTION_WORKER_READY" not in json.dumps(worker_workflow, ensure_a
 # The registry credential is read from the protected environment and handed over
 # through the SSH action's environment: never inline, never an argument, never a file.
 worker_envs = worker_reconcile["with"]["envs"].split(",")
-for name in ("TCR_REGISTRY", "TCR_NAMESPACE", "TCR_USERNAME", "TCR_PASSWORD"):
+for name in ("TCR_REGISTRY", "TCR_NAMESPACE", "TCR_CREDENTIAL_VERSION", "TCR_USERNAME", "TCR_PASSWORD"):
     assert name in worker_envs, name
 assert worker_reconcile["env"]["TCR_USERNAME"] == "${{ secrets.TCR_USERNAME }}"
 assert worker_reconcile["env"]["TCR_PASSWORD"] == "${{ secrets.TCR_PASSWORD }}"
 assert worker_reconcile["env"]["TCR_REGISTRY"] == "${{ vars.TCR_REGISTRY }}"
 assert worker_reconcile["env"]["TCR_NAMESPACE"] == "${{ vars.TCR_NAMESPACE }}"
+# The credential generation is the authoritative, non-secret convergence input: it must
+# come from a reviewed repository variable, so a rotation can never be ignored just
+# because the previous credential still authenticates.
+assert worker_reconcile["env"]["TCR_CREDENTIAL_VERSION"] == "${{ vars.TCR_CREDENTIAL_VERSION }}"
+assert "secrets.TCR_CREDENTIAL_VERSION" not in json.dumps(worker_workflow, ensure_ascii=False)
 assert "--password" not in json.dumps(worker_workflow, ensure_ascii=False)
 # Ownership is mutual: worker inputs trigger only the worker owner, and no workload
 # owner's inputs can reach the worker lifecycle.

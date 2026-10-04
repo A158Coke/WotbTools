@@ -81,15 +81,49 @@ staging 目录                      （只 stage 脚本；临时凭据目录 070
 `secrets.TCR_PASSWORD`（registry 与 namespace 复用既有的 `vars.TCR_REGISTRY` /
 `vars.TCR_NAMESPACE`）。跨 sudo 只按名字 `--preserve-env`，不经 argv、磁盘或日志。
 
+### 凭据生成（credential generation）：desired state 的权威输入
+
+凭据的**生成号**决定收敛，认证只是额外功能验证。受保护 `tx-production` environment 提供
+`vars.TCR_CREDENTIAL_VERSION`（**非密**、正整数、reviewed）与 `secrets.TCR_USERNAME` /
+`secrets.TCR_PASSWORD`；host 在 state root 记录自己实际应用的生成号：
+
+```text
+/var/lib/wotbtools-production-worker/tcr-credential-version     (root:root, 0600)
+```
+
+只有当 **① root 凭据文件结构安全 ② 记录生成号 == 期望生成号 ③ 该凭据能认证到私有验证镜像**
+三者同时成立时才不重写。否则一律执行：登录到临时 0700 `DOCKER_CONFIG` → 结构校验产出的
+config → 原子安装 `/root/.docker/config.json` → 用已安装的 root config 验证 manifest/私有镜像
+→ **验证通过后才原子推进生成号**。
+
+关键语义：**新生成号必须强制登录/重写，即使旧凭据仍然可用**（轮换窗口内旧凭据通常会继续有效，
+若只看认证就会永远停在旧 secret 上）。生成号在验证通过前绝不推进；登录或安装后验证失败时：
+先前凭据会被恢复、生成号保持不变、**不输出 `TX2_PRODUCTION_WORKER_READY`**。
+
 ### 凭据生命周期
 
 | 阶段 | 行为 |
 |---|---|
-| provision | 首次 reconcile：缺失时用 secret 登录并原子写入 root store |
-| rotate | GitHub secret 变更后重新 dispatch：仅在既有凭据**不再能认证**时才重新登录并原子替换 |
-| verify | 每次 reconcile 都重新断言权限/所有权/单一 registry + 私有镜像 manifest/pull |
+| provision | 首次 reconcile：缺失时用 secret 登录并原子写入 root store，随后记录生成号 |
+| rotate | 期望生成号变化即触发（与旧凭据是否仍可用无关）；登录 → 结构校验 → 原子替换 → 验证 → 记录新生成号 |
+| verify | 每次 reconcile 都重新断言权限/所有权/单一 registry + **记录生成号 == 期望生成号** + 私有镜像 manifest/pull |
 | revoke | 删除 `/root/.docker/config.json`（或轮换 TCR 侧凭据）即可；不需要重建主机 |
-| reconcile | 幂等：凭据仍有效时不重写、不重启 Docker、不重装 Compose |
+| reconcile | 幂等：生成号未变且凭据可用且结构安全时不重写、不重启 Docker、不重装 Compose |
+
+### 正常轮换步骤
+
+```text
+1. 在 TCR 侧 provision / 启用新凭据（旧凭据暂时保持有效）
+2. 更新受保护 environment 的 secrets.TCR_USERNAME / secrets.TCR_PASSWORD
+3. 递增 vars.TCR_CREDENTIAL_VERSION（例如 2 → 3）
+4. 运行 Production Worker reconcile（merge 后自动触发，或手工 dispatch）
+5. 确认输出 TX2_PRODUCTION_WORKER_READY，且 host 上的 tcr-credential-version == 新值
+6. 确认无异常后吊销旧 TCR 凭据
+```
+
+第 3 步是关键：只改 secret 而不递增生成号不会触发重写（host 会认为已收敛）。第 6 步之前旧凭据
+仍需有效，否则轮换窗口内的拉取会失败。若登录失败或安装后验证失败，manifest 会在日志中给出原因，
+host 保持旧凭据与旧生成号 —— 不会报告 ready，也不会虚报新生成号。
 
 ## 验证与 token
 
@@ -116,7 +150,8 @@ TX2_PRODUCTION_WORKER_READY
 ```text
 1. 主机：Ubuntu + Docker（发行版或官方安装，二者都行）+ WireGuard 身份 + TX2 deploy-owned
    /opt/wotb-tx2/（含 .deploy.lock）；Periphery 由 komodo-periphery.yml 独立 reconcile
-2. GitHub：`tx-production` environment 必须提供 secrets.TCR_USERNAME / secrets.TCR_PASSWORD；
+2. GitHub：`tx-production` environment 必须提供 secrets.TCR_USERNAME / secrets.TCR_PASSWORD，
+   以及 vars.TCR_CREDENTIAL_VERSION（正整数生成号；缺失或非法即 fail closed）；
    仓库 variables TCR_REGISTRY / TCR_NAMESPACE 必须指向 TCR
 3. dispatch `Production Worker`（或在 main 上改动 deploy/production-worker/** 触发）
    → 冻结 exact main → 读取 TX2 profile → 准备 staging root → stage 本 owner 的脚本

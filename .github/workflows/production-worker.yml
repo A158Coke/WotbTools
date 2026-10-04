@@ -141,7 +141,7 @@ jobs:
           port: ${{ secrets.TX2_VPS_PORT }}
           key: ${{ secrets.TX2_VPS_SSH_KEY }}
           command_timeout: 30m
-          envs: SOURCE_SHA,WORKER_TARGET,WORKER_READY_TOKEN,TCR_REGISTRY,TCR_NAMESPACE,TCR_USERNAME,TCR_PASSWORD
+          envs: SOURCE_SHA,WORKER_TARGET,WORKER_READY_TOKEN,TCR_REGISTRY,TCR_NAMESPACE,TCR_CREDENTIAL_VERSION,TCR_USERNAME,TCR_PASSWORD
           script: |
             set -Eeuo pipefail
             stage="${{ steps.target.outputs.staging_root }}/incoming/$SOURCE_SHA"
@@ -159,6 +159,9 @@ jobs:
           WORKER_READY_TOKEN: ${{ steps.target.outputs.ready_token }}
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+          # The reviewed credential generation is not a secret: it is what forces a
+          # rotation to converge even while the previous credential still works.
+          TCR_CREDENTIAL_VERSION: ${{ vars.TCR_CREDENTIAL_VERSION }}
           TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
           TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
 
