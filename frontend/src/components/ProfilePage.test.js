@@ -2,6 +2,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { computed, ref } from 'vue'
 import ProfilePage from './ProfilePage.vue'
 import { useConnectivity } from '../composables/useConnectivity.js'
@@ -24,7 +26,27 @@ const api = vi.hoisted(() => ({
 }))
 
 const authFlag = ref(true)
-let authEpochCounter = 1
+// 身份驱动代数（与生产 useAuth 同规则）：未登录→已登录、已登录→未登录、A→B（sub 变化）各前进一次。
+// 测试用 signInAs()/signOut() 改变会话身份，而不是手工 +1（review blocker 2 的测试口径）。
+let projectedIdentityKey = null
+let identityEpoch = 0
+function projectIdentity(isAuthed, parsedToken) {
+  const key = isAuthed ? `sub:${parsedToken?.sub ?? 'unknown'}` : null
+  if (key !== projectedIdentityKey) {
+    projectedIdentityKey = key
+    identityEpoch += 1
+  }
+}
+function signInAs(sub = 'user-a') {
+  tokenRef.value = { ...(tokenRef.value || {}), sub }
+  api.authenticated = true
+  projectIdentity(true, tokenRef.value)
+}
+function signOut() {
+  api.authenticated = false
+  tokenRef.value = null
+  projectIdentity(false, null)
+}
 // 让 mock 的 authenticated 具备**响应式**语义（真实 useAuth 是 ref）：组件的
 // computed / watcher 才能观察到登录 / 登出翻转。既有 `api.authenticated = X`
 // 的写法保持不变（getter/setter 转发到 authFlag）。
@@ -40,7 +62,7 @@ vi.mock('../composables/useAuth.js', () => ({
     logout: api.logout,
     isAuthenticated: () => api.authenticated,
     authenticated: authFlag,
-    authEpoch: () => authEpochCounter,
+    authEpoch: () => identityEpoch,
     initError: ref(null),
     tokenParsed: tokenRef,
     displayName: computed(() => tokenRef.value?.displayName || tokenRef.value?.preferred_username || '')
@@ -862,15 +884,50 @@ describe('ProfilePage bootstrap failure and asynchronous connectivity changes', 
  */
 describe('ProfilePage 响应式认证与账户隔离', () => {
   beforeEach(() => {
-    api.authenticated = true
     profileFailures = 0
     currentProfile = null
-    tokenRef.value = null
-    authEpochCounter = 1
+    signInAs('user-a')
     userApi.getUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
     userApi.ensureUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
     userApi.getUserHofRecords.mockResolvedValue([])
     hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
+  })
+
+
+  it('P1 守卫：每个 finally 里的 pending 清理都做身份归属检查（源码级不变量）', () => {
+    // review P1：`finally { loading.value = false }` 这类无条件清理会让 A 时代的迟到响应
+    // 把 B 正在进行的加载/pending 误判为空闲（重连 / watch 路径可能因此再起一次请求）。
+    // 只审 **finally 块**内：登出清理（watcher true→false 分支）无条件清空是刻意的，不在范围内。
+    // happy-dom 环境下 import.meta.url 不是 file: URL：按 vitest 的 cwd（frontend/）取源文件
+    const source = readFileSync(join(process.cwd(), 'src/components/ProfilePage.vue'), 'utf8')
+    const finallyBlocks = []
+    let cursor = 0
+    while (true) {
+      const at = source.indexOf('} finally {', cursor)
+      if (at < 0) break
+      let depth = 0
+      let i = source.indexOf('{', at)
+      const from = i
+      for (; i < source.length; i++) {
+        if (source[i] === '{') depth += 1
+        else if (source[i] === '}') { depth -= 1; if (depth === 0) break }
+      }
+      finallyBlocks.push(source.slice(from, i + 1))
+      cursor = i + 1
+    }
+    expect(finallyBlocks.length).toBeGreaterThanOrEqual(4)
+
+    const pendingVars = ['loading', 'syncFromLoginPending', 'verifyPending', 'hundredWithdrawingId']
+    for (const body of finallyBlocks) {
+      for (const name of pendingVars) {
+        const writes = new RegExp(`(^|\\s)${name}\\.value = `, 'm').test(body)
+        if (!writes) continue
+        expect(
+          new RegExp(`if \\(ownEpoch\\(epoch\\)\\) ${name}\\.value = `).test(body),
+          `${name} 在 finally 里的清理缺少 ownEpoch 守卫：${body.trim().slice(0, 80)}`,
+        ).toBe(true)
+      }
+    }
   })
 
   it('登录回站 false→true：不重挂载即加载资料（恰好一次）', async () => {
@@ -888,9 +945,8 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
 
     // 登录回站：只翻转 authenticated（模拟 Android authChanged 推送 / 浏览器回程），
     // 不重新挂载、不刷新页面
-    api.authenticated = true
-    authEpochCounter += 1                                  // 登录也换 epoch（useAuth 真实行为）
-    tokenRef.value = { preferred_username: 'back-from-login' }
+    signInAs('user-b')                                     // 身份变化 → 代数前进（与生产同规则）
+    tokenRef.value = { sub: 'user-b', preferred_username: 'back-from-login' }
     await flushPromises()
 
     expect(calls).toBe(1)                                  // 自己加载，恰好一次
@@ -904,8 +960,7 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('profile.serverAsia')
 
-    api.authenticated = false
-    authEpochCounter += 1                                  // 登出同样换 epoch
+    signOut()                                              // 登出 → 身份回到 null → 代数前进
     await flushPromises()
 
     expect(wrapper.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
@@ -922,12 +977,10 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
     const wrapper = mountProfile()
     await flushPromises()                       // A 的请求在途（挂起）
 
-    // A 登出、B 登录（epoch 前进两次）
-    api.authenticated = false
-    authEpochCounter += 1
+    // A 登出、B 登录：身份边界两次前进（每次都由身份变化驱动）
+    signOut()
     await flushPromises()
-    api.authenticated = true
-    authEpochCounter += 1
+    signInAs('user-b')
     currentProfile = { wotbAccountSource: 'WARGAMING', wotbServer: 'EU', wotbAccountId: 222222, wotbNickname: 'PlayerB', displayName: 'PlayerB' }
     await flushPromises()
     expect(wrapper.text()).toContain('profile.serverEu')

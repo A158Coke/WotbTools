@@ -137,6 +137,33 @@ loki.process "android_download" {
 	}
 }
 
+// Caddy：broker 回调的访问日志（2.1.0 Phase 2 取证）。Caddyfile 在
+// `/realms/*/broker/*` 上用 filter 编码器剥掉了 query 里的 code/state 与 Cookie /
+// Authorization 头，因此这里收到的行**只有**脱敏后的 uri、User-Agent、status 与远端 IP。
+// 标签归一化为 `container_name="caddy"`，与既有查询口径一致。
+discovery.relabel "caddy" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "caddy"
+		action        = "keep"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "(.*)"
+		target_label  = "container_name"
+		replacement   = "caddy"
+	}
+}
+
+loki.source.docker "caddy" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.caddy.output
+	forward_to = [loki.write.default.receiver]
+}
+
 // Yecao Loki 的 WireGuard-only 摄入端口（deploy/docker-compose.prod.yml）。
 // E2E smoke 测试网络里不存在 WireGuard 地址，因此允许用 WOTB_LOKI_URL 覆盖；
 // 生产 compose 不设置该变量，端点保持 10.20.0.2:3100 不变。

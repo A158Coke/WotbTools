@@ -130,6 +130,18 @@ grep -qE '^[[:space:]]*respond[[:space:]]' <<<"$android_callback" \
 grep -qi 'reverse_proxy' <<<"$android_callback" \
   && { echo 'ERROR: the /android/oauth/callback handler must answer from Caddy, never reverse_proxy an upstream.' >&2; exit 1; }
 
+# broker 回调的访问日志是 2.1.0 的取证能力（docs/auth/web-qq-diagnostics.md §3.4）：
+# 必须存在，且**脱敏在写 stdout 之前**——query 里的 code/state 与 Cookie/Authorization
+# 头绝不允许进入日志流。
+broker_callback="$(handle_block auth.wotbtools.com '/realms/*/broker/*')"
+[ -n "$broker_callback" ]   || { echo 'ERROR: auth.wotbtools.com must declare handle /realms/*/broker/* (broker callback forensics).' >&2; exit 1; }
+grep -qE '^[[:space:]]*log[[:space:]]*\{' <<<"$broker_callback"   || { echo 'ERROR: the broker callback handle must enable access logging.' >&2; exit 1; }
+for secret in code state session_state iss; do
+  grep -qE "^[[:space:]]*delete[[:space:]]+${secret}[[:space:]]*$" <<<"$broker_callback"     || { echo "ERROR: the broker access log must delete query parameter '${secret}' before stdout." >&2; exit 1; }
+done
+grep -qE '^[[:space:]]*request>headers>Cookie[[:space:]]+delete[[:space:]]*$' <<<"$broker_callback"   || { echo 'ERROR: the broker access log must delete the Cookie header.' >&2; exit 1; }
+grep -qE '^[[:space:]]*request>headers>Authorization[[:space:]]+delete[[:space:]]*$' <<<"$broker_callback"   || { echo 'ERROR: the broker access log must delete the Authorization header.' >&2; exit 1; }
+
 # No upstream may exist beyond the reviewed set above.
 unexpected="$(sed -n 's/^[[:space:]]*reverse_proxy[[:space:]]\{1,\}\([^[:space:]]*\).*$/\1/p' "$CADDYFILE" \
   | grep -vxF -e '{$CADDY_FRONTEND_UPSTREAM}' -e '{$CADDY_KEYCLOAK_UPSTREAM}' \

@@ -96,6 +96,34 @@ auth.wotbtools.com {
 	# 也没有下载入口。这里用一个最小落地页明确告诉用户回到 App / 从 wotbtools.com 下载。
 	# `handle` 按最长前缀匹配，这个更具体的路径优先于下方 catch-all，因此 Keycloak 的
 	# 所有真实路径（/realms/...、/resources/...、/.well-known/...）行为不变。
+	# broker 回调取证（2.1.0 Phase 2）：`cookie_not_found` 的现场就在这个路径上。
+	# 只在这一段路径上开访问日志，日志**到达 stdout 之前**已经被 filter 编码器剥掉秘密：
+	#   - query 里的 code / state / session_state / iss（OAuth 授权码与会话标识）；
+	#   - Cookie 与 Authorization 头（Caddy 默认即不记录凭据，这里显式删除以固定口径）。
+	# 保留的字段（uri 的其余部分、User-Agent、status、远端 IP）足以分辨"真实用户 vs 机器人"
+	# 与"哪一类浏览器 / webview"，这正是 docs/auth/web-qq-diagnostics.md §3.4 缺的那一层。
+	handle /realms/*/broker/* {
+		log {
+			output stdout
+			format filter {
+				wrap json
+				fields {
+					request>uri query {
+						delete code
+						delete state
+						delete session_state
+						delete iss
+					}
+					request>headers>Cookie delete
+					request>headers>Authorization delete
+				}
+			}
+		}
+		reverse_proxy {$CADDY_KEYCLOAK_UPSTREAM} {
+			header_up Host {host}
+		}
+	}
+
 	handle /android/oauth/callback {
 		header Content-Type "text/html; charset=utf-8"
 		header Cache-Control "no-store"

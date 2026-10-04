@@ -76,7 +76,36 @@ docker inspect -f '{{.State.StartedAt}}' keycloak
 JGroups `connection closed`（日志已出现）对齐：**重启后 in-flight 登录的 auth session
 丢失属预期行为**，不属于 cookie 策略问题；只有稳定复现于正常操作路径的才算 blocker。
 
-### 3.4 一次失败登录的完整跳链（浏览器 DevTools，Network 面板）
+### 3.4 broker 回调的 HTTP 层证据（已上线的受控访问日志）
+
+`deploy/tx/Caddyfile` 只对 `auth.wotbtools.com` 的 `/realms/*/broker/*` 开访问日志，并且
+**在写 stdout 之前**由 Caddy 的 filter 编码器剥掉秘密：query 里的 `code` / `state` /
+`session_state` / `iss` 被删除，`Cookie` 与 `Authorization` 头被删除（Caddy 默认即不记录
+凭据，这里是显式固定口径）。经 `deploy/tx/alloy` 送 Loki，标签 `container_name="caddy"`。
+
+保留的字段足以回答两件事：
+
+```logql
+# 谁在打 broker 回调（UA / 路径 / 状态码；IP 是 datacenter 还是住宅网段）
+{container_name="caddy"} |~ "broker" | json | line_format "{{.request.headers.User-Agent}} {{.request.uri}} {{.status}}"
+```
+
+- **真实用户 vs 机器人**：UA 与来源 IP 网段；实测 72h 内 234 条 `cookie_not_found` 里约
+  83 条来自腾讯云机房段且表现为"同一秒 8–10 个不同 IP 齐打"（扫描器），151 条来自住宅 /
+  移动网段（真实用户，同一 IP 反复重试）。
+- **哪类客户端**：移动 QQ 内置浏览器 / WebView / 桌面 Chrome 在 UA 上可分辨——这正是
+  "cookie 从未送到"与"送到了但被过滤"之外的第三条判别线。
+
+查询方式（从任意能连 WireGuard 的 TX 主机；生产 Grafana 的 Keycloak 看板另有对应面板）：
+
+```bash
+curl -sG 'http://10.20.0.2:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={container_name="caddy"} |~ "broker"' \
+  --data-urlencode "start=$(date -d '-2 hours' +%s)000000000" \
+  --data-urlencode "end=$(date +%s)000000000" --data-urlencode 'limit=50'
+```
+
+### 3.4b 一次失败登录的完整跳链（浏览器 DevTools，Network 面板，可选手工复核）
 
 1. 清 cookie → 点 QQ 登录 → 一直保留 Network 记录（Preserve log）。
 2. 关注三跳：SPA → `auth.wotbtools.com/.../auth`（Set-Cookie 是否出现）；

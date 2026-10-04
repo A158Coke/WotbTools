@@ -65,7 +65,12 @@ jobs:
             docker logs --timestamps "$KC" 2>&1 | grep -E 'cookie_not_found|Failed to verify login action|expired_code|identity_provider_login_failure' | tail -80 || true
             echo "== restart / cluster noise timeline（JGroups / DB 连接 / administrator command）=="
             docker logs --timestamps "$KC" 2>&1 | grep -E 'JGroups|connection closed|administrator command' | tail -40 || true
-            echo "== live Set-Cookie attributes（从 TX 本机视角复核 §3.1）=="
-            curl -sD - -o /dev/null --max-time 20 'https://auth.wotbtools.com/realms/wotbtools/protocol/openid-connect/auth?client_id=wotbtools-web&redirect_uri=https%3A%2F%2Fwotbtools.com%2F&response_type=code&scope=openid&state=diag' | grep -i 'set-cookie' || true
+            echo "== live Set-Cookie attributes（从 TX 本机视角复核 §3.1；cookie 值已脱敏）=="
+            # 只输出 cookie **名称与属性**（Path/Secure/HttpOnly/SameSite/…）：值（AUTH_SESSION_ID /
+            # KC_RESTART 的会话标识）是动态 secret，GitHub 的 secret masking 不会自动识别它们——
+            # 脱敏必须在**到达 stdout 之前**完成（review blocker 3），绝不允许先打印再过滤。
+            curl -sD - -o /dev/null --max-time 20 'https://auth.wotbtools.com/realms/wotbtools/protocol/openid-connect/auth?client_id=wotbtools-web&redirect_uri=https%3A%2F%2Fwotbtools.com%2F&response_type=code&scope=openid&state=diag' |
+              grep -i '^set-cookie' |
+              awk 'BEGIN{IGNORECASE=1} { sub(/=[^;]*/, "=<redacted>"); print }' || true
             echo "== compose projects =="
             docker compose ls || true
