@@ -115,7 +115,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 30m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,CADDY_ACME_EMAIL,CADDY_FRONTEND_UPSTREAM,CADDY_KEYCLOAK_UPSTREAM
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,CADDY_ACME_EMAIL,CADDY_FRONTEND_UPSTREAM,CADDY_FRONTEND_PEER,CADDY_KEYCLOAK_UPSTREAM
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -234,7 +234,7 @@ jobs:
           WOTB_DEPLOY_SERVICE: caddy
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
-          # K7C dual-instance frontend: TX2 remains the reviewed primary placement;
-          # TX1 is declared by caddy.compose.yml as the active fallback peer.
+          # K7C dual-instance frontend: both reviewed WireGuard peers are active.
           CADDY_FRONTEND_UPSTREAM: 10.20.0.3:8081
+          CADDY_FRONTEND_PEER: 10.20.0.1:8081
           CADDY_KEYCLOAK_UPSTREAM: 10.20.0.1:8080
