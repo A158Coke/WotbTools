@@ -111,6 +111,7 @@ jobs:
           bash deploy/test-tx-deploy-lock.sh
           bash deploy/test-tx-runtime-config.sh
           bash deploy/test-k7b-frontend-shadow.sh
+          bash deploy/test-k7c-preflight.sh
           bash deploy/test-yecao-wireguard-boundary.sh
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
