@@ -159,7 +159,7 @@ const selectedMarkStyle = computed(() => {
   const inv = overlayInv.value
   const x = NAME_GAP_SCREEN_PX + MARK_LAYOUT_HALF_PX
     + (BLOCK_SCREEN_TOP_PX - MARK_LAYOUT_HALF_PX) * inv
-    + props.label.tankDy * inv
+    - props.label.tankDy * inv
   return {
     transform: `translateX(-50%) ${st.value.overlayInverseScale}`,
     bottom: `calc(100% + ${x}px)`,
@@ -172,7 +172,7 @@ const selectedMarkStyle = computed(() => {
 const labelsStyle = computed(() => ({
   transform: `translateX(-50%) ${st.value.overlayInverseScale}`,
   // tankDy（screen px）→ layout px（×overlayInv）；碰撞位移只作用于标签块，不影响车体
-  bottom: `calc(100% + ${LABEL_ANCHOR_PX + props.label.tankDy * overlayInv.value}px)`,
+  bottom: `calc(100% + ${LABEL_ANCHOR_PX - props.label.tankDy * overlayInv.value}px)`,
 }))
 const recorderBadgeStyle = computed(() => ({
   transform: `translate(-50%, -50%) rotate(45deg) ${st.value.overlayInverseScale}`,

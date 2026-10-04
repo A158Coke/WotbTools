@@ -1724,7 +1724,7 @@ const rosterTeams = computed(() => rosterLanesFor(teamVehicles.value, friendlyTe
  * Both physical team rosters use current destruction state from the same authoritative projection.
  */
 const destroyedNow = computed(() => new Set(
-  baseVehicleStates.value.filter(st => st.destroyed === true).map(st => st.vehicle.accountId)))
+  (props.playbackV2?.vehicles || []).filter(vehicle => healthDisplayAt(vehicle, currentTime.value)?.destroyed === true).map(vehicle => vehicle.accountId)))
 
 /**
  * 正方形 Stage 的呈现决策（见 styles/playback-workspace.css 的权威契约）：
@@ -1777,10 +1777,10 @@ function sideAwayFromClientX(clientX) {
  */
 const rosterHealth = computed(() => {
   const out = {}
-  for (const state of baseVehicleStates.value) {
-    const display = healthDisplayAt(state.vehicle, currentTime.value)
+  for (const vehicle of props.playbackV2?.vehicles || []) {
+    const display = healthDisplayAt(vehicle, currentTime.value)
     if (!display) continue
-    out[state.vehicle.accountId] = {
+    out[vehicle.accountId] = {
       currentHp: display.currentHp,
       maxHp: display.displayCapacityHp,
       pct: display.pct,
@@ -1800,9 +1800,9 @@ const rosterHealth = computed(() => {
 const rosterReload = computed(() => {
   if (!props.reloadTelemetry) return null
   const out = {}
-  for (const state of baseVehicleStates.value) {
-    const shells = vehicleReloadAt(state.vehicle.accountId, currentTime.value)
-    if (shells && shells.length > 0) out[state.vehicle.accountId] = shells
+  for (const vehicle of props.playbackV2?.vehicles || []) {
+    const shells = vehicleReloadAt(vehicle.accountId, currentTime.value)
+    if (shells && shells.length > 0) out[vehicle.accountId] = shells
   }
   return out
 })

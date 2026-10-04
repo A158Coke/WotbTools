@@ -448,10 +448,10 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
     const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: true, label: { ...label, tankDy: -10 } } })
     // 定位/位移宿主是 .pb-presentation（内含共享呈现组件）
     const labelsStyle = w.find('.pb-presentation').attributes('style') || ''
-    expect(labelsStyle).toContain('bottom: calc(100% + -8px)') // 2 + (-10)×1
+    expect(labelsStyle).toContain('bottom: calc(100% + 12px)') // 2 - (-10)×1
     // 三角底边 = 1× 基准偏移，再随 tankDy 上移 10
     const markStyle = w.find('.pb-selected-mark').attributes('style') || ''
-    expect(markStyle).toContain(`bottom: calc(100% + ${3 + 4.5 + (62 - 4.5) - 10}px)`)
+    expect(markStyle).toContain(`bottom: calc(100% + ${3 + 4.5 + (62 - 4.5) + 10}px)`)
     expect(w.find('button').attributes('style')).toContain('left: 10%')
   })
 
