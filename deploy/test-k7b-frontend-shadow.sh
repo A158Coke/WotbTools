@@ -46,8 +46,8 @@ for forbidden in (
 PY
 
 # The shadow must use the same official-nginx template filter as TX1 production.
-grep -Fq 'NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$' "$compose"
-grep -Fq 'NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$' "$ROOT/deploy/tx/frontend.compose.yml"
+grep -Fq 'NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$$' "$compose"
+grep -Fq 'NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$$' "$ROOT/deploy/tx/frontend.compose.yml"
 
 # The mounted template must preserve the routing split used by production.
 grep -Fq 'proxy_pass ${AI_UPSTREAM};' "$template"
