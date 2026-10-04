@@ -59,6 +59,11 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             showCollision: 'Show Collision',
             hideCollision: 'Hide Collision',
             worldHint: 'Drag to rotate · Scroll to zoom · Right-drag: pan',
+            shotDamage: 'damage',
+            shotRicochetSeg: 'ricochet (-25% penetration)',
+            shotLoss: 'loss',
+            shotNominal: 'nominal',
+            shotBlocked: 'blocked',
             phase: (phase) => phase,   // 加载阶段名（armor model / tank model / tank data / tank list）
             ...labels,
         };
@@ -986,6 +991,155 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // 调试/差分测试钩子：info() 看 pack 状态；simulate(跳弹点, 反射向) 跑 JS 参考续飞
         // （与 GLSL rcContinue 同常量同语义，入参口径与着色器一致 = 穿深×0.75）。
         // 浏览器门禁/控制台对拍 "GPU 像素类 vs JS 参考类" 用。
+        /**
+         * 拖动位移 → 炮塔 / 炮管角度（BlitzKit 式左键拖坦克：灵敏度 = 拖满屏宽转 180°、
+         * 拖满屏高俯仰 180°——MixerScene/Model.tsx 的 π/bounds 公式；含俯仰/水平射界限制）。
+         */
+        function aimFromDrag(dxPx, dyPx) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            const dx = dxPx * 180 / Math.max(1, rect.width);
+            const dy = dyPx * 180 / Math.max(1, rect.height);
+            const norm180 = (a) => ((a + 180) % 360 + 360) % 360 - 180;
+            const yl = currentConfig()?.yaw_limits;
+            const pl = currentConfig()?.pitch_limits;
+            let yawDeg = aimStartTurret + dx;
+            if (yl) {
+                if (yl.max - yl.min < 360) {
+                    yawDeg = norm180(Math.max(-yl.max, Math.min(-yl.min, yawDeg)));
+                } else {
+                    yawDeg = norm180(yawDeg);   // 全向射界：角度回卷 [-180,180)，多圈拖动不无限叠加
+                }
+            } else {
+                const tLeft = tankData.turret_traverse_left ?? 180;
+                const tRight = tankData.turret_traverse_right ?? 180;
+                if (!(tLeft >= 180 && tRight >= 180)) {
+                    yawDeg = Math.max(-tLeft, Math.min(tRight, yawDeg));
+                } else {
+                    yawDeg = norm180(yawDeg);   // 全向炮塔：同上回卷
+                }
+            }
+            let pitchDeg = aimStartGun - dy;
+            let lower = -pl.max, upper = -pl.min;
+            const transition = pl.transition || 20;
+            if (pl.back) {
+                const yawRotatedAbs = Math.abs(norm180(yawDeg - 180));
+                if (yawRotatedAbs <= pl.back.range / 2 + transition) {
+                    if (yawRotatedAbs <= pl.back.range / 2) {
+                        lower = -pl.back.max; upper = -pl.back.min;
+                    } else {
+                        const tp = (yawRotatedAbs - pl.back.range / 2) / transition;
+                        lower = -((1 - tp) * pl.back.max + tp * pl.max);
+                        upper = -((1 - tp) * pl.back.min + tp * pl.min);
+                    }
+                }
+            }
+            if (pl.front) {
+                const yawAbs = Math.abs(norm180(yawDeg));
+                if (yawAbs <= pl.front.range / 2 + transition) {
+                    if (yawAbs <= pl.front.range / 2) {
+                        lower = -pl.front.max; upper = -pl.front.min;
+                    } else {
+                        const tp = (yawAbs - pl.front.range / 2) / transition;
+                        lower = -((1 - tp) * pl.front.max + tp * pl.max);
+                        upper = -((1 - tp) * pl.front.min + tp * pl.min);
+                    }
+                }
+            }
+            pitchDeg = Math.max(lower, Math.min(upper, pitchDeg));
+            currentTurretDeg = yawDeg;
+            currentGunDeg = pitchDeg;
+            document.getElementById('turret-val').textContent = currentTurretDeg.toFixed(0) + '°';
+            document.getElementById('gun-val').textContent = currentGunDeg.toFixed(0) + '°';
+            updateTurretGun(currentTurretDeg, currentGunDeg);
+        }
+
+        // ===== 瞄准交互（BlitzKit MixerScene 语义；Pointer Events 单一路径，评审 BLOCKER 1/2）=====
+        // 按炮管 = yaw+俯仰；按炮塔壳 = 只 yaw；车体/空白 = 相机轨道；短按无拖动 = 点击判定。
+        // pointerId 跟踪忽略无关指针；pointer capture 保证画布外拖动/释放也能收到
+        // pointerup/pointercancel → controls.enabled 不会卡在 false。
+        let aimStartX = 0, aimStartY = 0, aimStartTurret = 0, aimStartGun = 0;
+        let aiming = false;
+        let aimPitchEnabled = true;
+        const aimPointerId = { active: null };
+        function endPointerSession(e) {
+            if (aimPointerId.active !== e.pointerId) return;
+            aimPointerId.active = null;
+            aiming = false;
+            if (controls) controls.enabled = true;
+            try {
+                if (renderer.domElement.hasPointerCapture && renderer.domElement.hasPointerCapture(e.pointerId)) {
+                    renderer.domElement.releasePointerCapture(e.pointerId);
+                }
+            } catch (_) {}
+        }
+        /** 左键按下位置命中哪个瞄准部位（'gun'|'turret'|null=车体/空白→相机）。 */
+        function aimPartAt(clientX, clientY) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const objs = [];
+            if (armorModel) objs.push(armorModel);
+            if (tankModel) objs.push(tankModel);
+            const hits = raycaster.intersectObjects(objs, true);
+            // Raycaster 不查 visible：跳过隐藏链（其它配置的炮塔/炮管/隐藏件），
+            // 以第一条可见命中链判定（视觉上光标压着的部位）
+            for (let h = 0; h < hits.length && h < 8; h++) {
+                let n = hits[h].object;
+                let part = null;
+                let chainVisible = true;
+                while (n) {
+                    if (n.visible === false) { chainVisible = false; break; }
+                    const name = n.name || '';
+                    if (part === null) {
+                        if (/^gun_\d/.test(name)) part = 'gun';
+                        else if (/^turret_\d/.test(name)) part = 'turret';
+                    }
+                    n = n.parent;
+                }
+                if (chainVisible) return part;
+            }
+            return null;
+        }
+        const aimPointerHandlers = {
+            down(e) {
+                if (e.button !== 0 || aimPointerId.active !== null) return;
+                aimPointerId.active = e.pointerId;
+                mouseDownPos = { x: e.clientX, y: e.clientY };
+                isDragging = false;
+                if (!window.__worldPan) {
+                    const part = aimPartAt(e.clientX, e.clientY);
+                    if (part) {
+                        aiming = true;
+                        aimPitchEnabled = part === 'gun';
+                        aimStartX = e.clientX; aimStartY = e.clientY;
+                        aimStartTurret = currentTurretDeg; aimStartGun = currentGunDeg;
+                        controls.enabled = false;
+                        try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+                    }
+                }
+            },
+            move(e) {
+                if (aimPointerId.active !== e.pointerId) return;
+                if (mouseDownPos) {
+                    const dx = e.clientX - mouseDownPos.x;
+                    const dy = e.clientY - mouseDownPos.y;
+                    if (dx * dx + dy * dy > 25) isDragging = true; // 5px threshold
+                }
+                if (aiming) aimFromDrag(e.clientX - aimStartX, aimPitchEnabled ? e.clientY - aimStartY : 0);
+            },
+            up(e) {
+                if (aimPointerId.active !== e.pointerId) return;
+                const wasAiming = aiming;
+                endPointerSession(e);
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                if (isDragging) { mouseDownPos = null; isDragging = false; return; }
+                mouseDownPos = null;
+                isDragging = false;
+                if (!wasAiming) onClick(e);   // 瞄准手势（炮塔/炮管上按下）不触发点击判定
+            },
+            cancel: endPointerSession,
+        };
         // 探针：记录最后一次左键点击像素（用户触发问题情形后一条命令取三方对照）。
         // 惰性挂载：闭包顶层 renderer 尚未创建（init 末尾才赋值），animate 首帧再挂。
         let rcLastClick = null;
@@ -1074,6 +1228,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         layers: (sim.layers || []).map(l => ({ s: l.section, t: +l.t.toFixed(2), eff: +l.eff.toFixed(0), pen: l.penetrated })),
                     },
                 };
+            },
+            // 诊断：部位判定探针（client 坐标 → 'gun'|'turret'|null）
+            __aimPart(clientX, clientY) { return aimPartAt(clientX, clientY); },
+            // 诊断：瞄准交互状态（浏览器门禁断言「画布外释放不卡死相机」用）
+            aimingState() {
+                return { aiming, controlsEnabled: controls ? controls.enabled : null };
             },
             // 诊断：克隆网格 matrix vs matrixWorld（坐标框架核对）
             __clones() {
@@ -3717,39 +3877,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 applyArmorViewStyle(collisionMode);
             });
 
-            renderer.domElement.addEventListener('mousedown', function(e) {
-                if (e.button === 0) {
-                    mouseDownPos = { x: e.clientX, y: e.clientY };
-                    isDragging = false;
-                    // BlitzKit 式：按炮管 = 拖动转炮塔+俯仰；按炮塔壳 = 只转炮塔；车体/空白 = 相机
-                    if (!window.__worldPan) {
-                        const part = aimPartAt(e.clientX, e.clientY);
-                        if (part) {
-                            aiming = true;
-                            aimPitchEnabled = part === 'gun';
-                            aimStartX = e.clientX; aimStartY = e.clientY;
-                            aimStartTurret = currentTurretDeg; aimStartGun = currentGunDeg;
-                            controls.enabled = false;
-                        }
-                    }
-                }
-            });
-            renderer.domElement.addEventListener('mousemove', function(e) {
-                if (mouseDownPos) {
-                    const dx = e.clientX - mouseDownPos.x;
-                    const dy = e.clientY - mouseDownPos.y;
-                    if (dx * dx + dy * dy > 25) isDragging = true; // 5px threshold
-                }
-                if (aiming) aimFromDrag(e.clientX - aimStartX, aimPitchEnabled ? e.clientY - aimStartY : 0);
-            });
-            renderer.domElement.addEventListener('mouseup', function(e) {
-                if (e.button !== 0) return;
-                if (aiming) { aiming = false; controls.enabled = true; }   // 抬起恢复相机控制
-                if (isDragging) { mouseDownPos = null; isDragging = false; return; }
-                mouseDownPos = null;
-                isDragging = false;
-                onClick(e);
-            });
+            // —— 指针交互注册（单一 Pointer Events，桌面+触屏统一；评审 PR BLOCKER 1/2）——
+            // 处理器与状态定义在闭包级（__armorRicochet 钩子之前），这里只做注册（renderer 已就绪）。
+            renderer.domElement.addEventListener('pointerdown', aimPointerHandlers.down);
+            renderer.domElement.addEventListener('pointermove', aimPointerHandlers.move);
+            renderer.domElement.addEventListener('pointerup', aimPointerHandlers.up);
+            renderer.domElement.addEventListener('pointercancel', aimPointerHandlers.cancel);
 
             let aimStartX = 0, aimStartY = 0, aimStartTurret = 0, aimStartGun = 0;   // 左键拖转炮塔起点（BlitzKit 式）
             let aiming = false;        // 左键正拖在炮塔/炮管上（期间相机控制禁用）
@@ -3788,67 +3921,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     if (chainVisible) return part;   // 可见命中：turret/gun 或 null（车体）
                 }
                 return null;
-            }
-            /**
-             * 拖动位移 → 炮塔 / 炮管角度（BlitzKit 式左键拖坦克：灵敏度 = 拖满屏宽转 180°、
-             * 拖满屏高俯仰 180°——MixerScene/Model.tsx 的 π/bounds 公式；含俯仰/水平射界限制）。
-             */
-            function aimFromDrag(dxPx, dyPx) {
-                const rect = renderer.domElement.getBoundingClientRect();
-                const dx = dxPx * 180 / Math.max(1, rect.width);
-                const dy = dyPx * 180 / Math.max(1, rect.height);
-                const norm180 = (a) => ((a + 180) % 360 + 360) % 360 - 180;
-                const yl = currentConfig()?.yaw_limits;
-                const pl = currentConfig()?.pitch_limits;
-                let yawDeg = aimStartTurret + dx;
-                if (yl) {
-                    if (yl.max - yl.min < 360) {
-                        yawDeg = norm180(Math.max(-yl.max, Math.min(-yl.min, yawDeg)));
-                    } else {
-                        yawDeg = norm180(yawDeg);   // 全向射界：角度回卷 [-180,180)，多圈拖动不无限叠加
-                    }
-                } else {
-                    const tLeft = tankData.turret_traverse_left ?? 180;
-                    const tRight = tankData.turret_traverse_right ?? 180;
-                    if (!(tLeft >= 180 && tRight >= 180)) {
-                        yawDeg = Math.max(-tLeft, Math.min(tRight, yawDeg));
-                    } else {
-                        yawDeg = norm180(yawDeg);   // 全向炮塔：同上回卷
-                    }
-                }
-                let pitchDeg = aimStartGun - dy;
-                let lower = -pl.max, upper = -pl.min;
-                const transition = pl.transition || 20;
-                if (pl.back) {
-                    const yawRotatedAbs = Math.abs(norm180(yawDeg - 180));
-                    if (yawRotatedAbs <= pl.back.range / 2 + transition) {
-                        if (yawRotatedAbs <= pl.back.range / 2) {
-                            lower = -pl.back.max; upper = -pl.back.min;
-                        } else {
-                            const tp = (yawRotatedAbs - pl.back.range / 2) / transition;
-                            lower = -((1 - tp) * pl.back.max + tp * pl.max);
-                            upper = -((1 - tp) * pl.back.min + tp * pl.min);
-                        }
-                    }
-                }
-                if (pl.front) {
-                    const yawAbs = Math.abs(norm180(yawDeg));
-                    if (yawAbs <= pl.front.range / 2 + transition) {
-                        if (yawAbs <= pl.front.range / 2) {
-                            lower = -pl.front.max; upper = -pl.front.min;
-                        } else {
-                            const tp = (yawAbs - pl.front.range / 2) / transition;
-                            lower = -((1 - tp) * pl.front.max + tp * pl.max);
-                            upper = -((1 - tp) * pl.front.min + tp * pl.min);
-                        }
-                    }
-                }
-                pitchDeg = Math.max(lower, Math.min(upper, pitchDeg));
-                currentTurretDeg = yawDeg;
-                currentGunDeg = pitchDeg;
-                document.getElementById('turret-val').textContent = currentTurretDeg.toFixed(0) + '°';
-                document.getElementById('gun-val').textContent = currentGunDeg.toFixed(0) + '°';
-                updateTurretGun(currentTurretDeg, currentGunDeg);
             }
 
 
@@ -4382,7 +4454,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         const ricIntersects = rc.intersectObjects(objects, true);
                         const ricHits = [];
                         for (const hit of ricIntersects) {
-                            if (hit.distance < 1e-4) continue;   // 仅滤数值自命中（与 GPU 侧 RC.T_SKIP 同口径）
+                            if (hit.distance < RC.MIN_CONTINUATION_T) continue;   // 三路统一常量（click/JS/GLSL；评审 P1b）
                             const entry = classifyHit(hit);
                             if (entry) ricHits.push(entry);
                         }
@@ -4531,7 +4603,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${colorHex};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
             const titleHtml = (st) => {
                 const d = (typeof dmgDealt === 'number') ? dmgDealt : 0;
-                return `<div style="font-size:18px;font-weight:bold;color:${stColor(st)};margin-bottom:4px;">${st}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· 伤害 ${Math.round(d)}</span>` : ''}</div>`;
+                return `<div style="font-size:18px;font-weight:bold;color:${stColor(st)};margin-bottom:4px;">${st}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;
             };
             html += titleHtml(segments[0]);
             let layerNo = 0;
@@ -4543,7 +4615,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     outStarted = true;
                     html += `<div style="display:flex;align-items:center;gap:8px;margin:6px 0;">`;
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span>`;
-                    html += `<span style="font-size:11px;color:var(--muted);">跳弹（-25% 穿深）</span>`;
+                    html += `<span style="font-size:11px;color:var(--muted);">${L.shotRicochetSeg}</span>`;
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span></div>`;
                     html += titleHtml(segments[segments.length - 1]);
                 }
@@ -4555,19 +4627,19 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     // HEAT 间隙层：距离（mm）+ 跳弹损耗（BlitzKit：max(-100, -50×距离米)）
                     const distM = parseFloat((l.name || '').slice(4)) || 0;
                     main = `${Math.round(distM * 1000)}mm`;
-                    sub = `损耗 ${Math.max(-100, -50 * distM).toFixed(0)}%`;
+                    sub = `${L.shotLoss} ${Math.max(-100, -50 * distM).toFixed(0)}%`;
                 } else if (l.eff != null && l.eff > 0 && l.angle != null) {
                     // 主/间隙装甲：等效厚度 @ 入射角 + 名义厚度（BlitzKit thickness_and_angle + nominal）
                     main = `${fmtNum(l.eff)}mm @ ${Math.round(l.angle)}°`;
-                    sub = `名义 ${fmtNum(th)}mm`;
+                    sub = `${L.shotNominal} ${fmtNum(th)}mm`;
                 } else if (l.angle != null) {
                     // 跳弹层：等效为 0，显示名义厚度 @ 角度
                     main = `${fmtNum(th)}mm @ ${Math.round(l.angle)}°`;
-                    sub = '跳弹';
+                    sub = L.shotRicochetSeg;
                 } else {
                     // 外部模块：flat 厚度（BlitzKit External 只显示厚度）
                     main = `${fmtNum(th)}mm`;
-                    sub = l.penetrated ? '' : '挡下';
+                    sub = l.penetrated ? '' : L.shotBlocked;
                 }
                 const idx = isGap ? '' : `${++layerNo}.`;
                 html += `<div style="font-size:13px;line-height:20px;">`;

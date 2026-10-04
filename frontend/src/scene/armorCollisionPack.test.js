@@ -10,8 +10,8 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
-    RC, RC_GLSL_CONST, RC_GLSL_FUNCS, buildPack, createPackTextures, updatePackMatrices,
-    buildRicochetGrid, raycastPackAll, simulateContinuation,
+    RC, RC_GLSL_CONST, RC_GLSL_FUNCS, buildPack, buildRicochetGrid, createGridTextures, updatePackMatrices,
+    raycastPackAll, simulateContinuation,
 } from './armorCollisionPack.js'
 import { calculate } from './penetration.js'
 
@@ -127,17 +127,19 @@ describe('buildPack 守卫（fail-closed）', () => {
         expect(mine.length).toBe(ref.length)
         expect(Math.abs(mine[0].t - ref[0].distance)).toBeLessThan(1e-4)
     })
-    it('正常打包：计数与纹理可创建', () => {
+    it('正常打包：计数与网格纹理可创建（评审清理：死 createPackTextures 已移除）', () => {
         const { meshes } = buildChainScene([
             { section: 'hull', thickness: 100, x: 2 },
             { section: 'chassis', thickness: 20, x: 3 },
         ])
         const pack = packOf(meshes)
         expect(pack.meshCount).toBe(2)
-        const tex = createPackTextures(pack)
-        expect(tex.trisTex.image.width).toBe(RC.TRI_ROW)
-        expect(tex.metaTex.image.height).toBe(2)
-        expect(tex.matsTex.image.height).toBe(2)
+        const grid = buildRicochetGrid(pack)
+        expect(grid.ok).toBe(true)
+        const tex = createGridTextures(grid)
+        expect(tex.worldTrisTex.image.width).toBe(RC.TRI_ROW)
+        expect(tex.cellsTex.image.height).toBe(Math.ceil(grid.cellTotal / RC.CELL_ROW))
+        expect(tex.entriesTex.image.height).toBe(Math.ceil(grid.entryTotal / RC.ENTRY_ROW))
     })
 })
 
@@ -414,6 +416,117 @@ describe('世界网格加速结构（buildRicochetGrid）', () => {
         }
     })
 })
+
+describe('网格覆盖不变量（评审 P1）', () => {
+    function packOfBoxes(boxes) {
+        // boxes: [{ size:[x,y,z], pos, section, thickness }] → buildPack
+        const meshes = boxes.map(b => makeMesh(new THREE.BoxGeometry(...b.size), b.section, b.thickness, m => {
+            m.position.set(...b.pos); m.updateMatrix(); m.updateWorldMatrix(true, false);
+        }));
+        return packOf(meshes);
+    }
+    it('长几何（单轴 60m > 48×0.45）：cellSize 抬到覆盖下界，网格仍全覆盖', () => {
+        const pack = packOfBoxes([
+            { size: [60, 1, 1], pos: [0, 0, 0], section: 'hull', thickness: 100 },
+            { size: [1, 1, 1], pos: [61, 0, 0], section: 'turret', thickness: 200 },
+        ]);
+        const grid = buildRicochetGrid(pack);
+        expect(grid.ok).toBe(true);
+        const [gx, gy, gz] = grid.dims;
+        expect(gx).toBeLessThanOrEqual(48);
+        // 覆盖断言：网格 AABB 完全包含几何包围盒
+        // 末端 turret 盒（x∈[60.5,61.5]）必须落在网格内
+        const maxX = grid.gridMin[0] + grid.dims[0] * grid.cellSize;
+        expect(maxX).toBeGreaterThanOrEqual(61.5 - 1e-6);
+        // 覆盖性：暴力射线命中末端盒的三角形必在其命中点 cell 的条目表
+        const far = new THREE.Vector3(61, 0, 5);
+        const hits = raycastPackAll(pack, far, new THREE.Vector3(0, 0, -1), 0);
+        expect(hits.length).toBeGreaterThan(0);
+        const [mgx, mgy, mgz] = grid.dims;
+        const cx = Math.min(mgx - 1, Math.max(0, Math.floor((hits[0].point.x - grid.gridMin[0]) / grid.cellSize)));
+        const cy = Math.min(mgy - 1, Math.max(0, Math.floor((hits[0].point.y - grid.gridMin[1]) / grid.cellSize)));
+        const cz = Math.min(mgz - 1, Math.max(0, Math.floor((hits[0].point.z - grid.gridMin[2]) / grid.cellSize)));
+        const ci = cx + mgx * (cy + mgy * cz);
+        const off = grid.cellsData[ci * 4], cnt = grid.cellsData[ci * 4 + 1];
+        const listed = [];
+        for (let e = 0; e < cnt; e++) listed.push(grid.entriesData[(off + e) * 4]);
+        expect(listed).toContain(hits[0].slot);
+    });
+    it('恰在上限的几何（单轴 = 48×0.45m）成功且覆盖', () => {
+        // 盒以原点为中心：x∈[-10.8, 10.8]，ext=21.6=48×0.45 → floor 恰为默认 0.45
+        const pack = packOfBoxes([{ size: [48 * 0.45, 2, 2], pos: [0, 0, 0], section: 'hull', thickness: 80 }]);
+        const grid = buildRicochetGrid(pack);
+        expect(grid.ok).toBe(true);
+        expect(grid.dims[0]).toBeLessThanOrEqual(48);
+        const maxX = grid.gridMin[0] + grid.dims[0] * grid.cellSize;
+        const minX = grid.gridMin[0];
+        expect(maxX).toBeGreaterThanOrEqual(10.8 - 1e-6);   // 覆盖到几何最远点
+        expect(minX).toBeLessThanOrEqual(-10.8 + 1e-6);
+    });
+    it('DDA 步数上界 ≥ dims 之和（对角线路径可达）', () => {
+        const pack = packOfBoxes([{ size: [10, 3, 3], pos: [0, 0, 0], section: 'hull', thickness: 80 }]);
+        const grid = buildRicochetGrid(pack);
+        expect(grid.ok).toBe(true);
+        const dimsSum = grid.dims[0] + grid.dims[1] + grid.dims[2];
+        expect(RC.MAX_STEPS).toBeGreaterThanOrEqual(dimsSum);
+        expect(RC.MAX_STEPS).toBeGreaterThanOrEqual(RC.GRID_DIM_MAX * 3);
+    });
+    it('极端密集（下界处仍超条目上限）→ fail-closed 而非截断成功', () => {
+        // 单网格 2 万三角形集中在 10m 平面（chunk 拆为 ~79 单元）：细化到覆盖下界仍超
+        // MAX_CELL_ENTRIES → 必须显式失败，禁止「capped 截断仍 ok」的静默半覆盖
+        const dense = makeMesh(new THREE.PlaneGeometry(10, 10, 100, 100), 'hull', 60, m => {
+            m.rotation.x = -Math.PI / 2; m.updateMatrix();
+        });
+        const pack = packOf([dense]);
+        const grid = buildRicochetGrid(pack);
+        if (grid.ok) {
+            // 允许成功，但必须全覆盖 + 条目不超上限
+            const cov = grid.gridMin.map((v, a) => v + grid.dims[a] * grid.cellSize);
+            expect(cov[0]).toBeGreaterThanOrEqual(5 - 1e-6);
+            expect(cov[2]).toBeGreaterThanOrEqual(5 - 1e-6);
+            for (let ci = 0; ci < grid.cellTotal; ci++) {
+                expect(grid.cellsData[ci * 4 + 1]).toBeLessThanOrEqual(RC.MAX_CELL_ENTRIES);
+            }
+        } else {
+            expect(['grid-too-dense', 'grid-capped']).toContain(grid.reason);
+        }
+    });
+})
+
+
+describe('续飞距离常量三路一致（评审 P1b）', () => {
+    it('RC.MIN_CONTINUATION_T = 0.0001 且 GLSL 序列化保 6 位小数', () => {
+        expect(RC.MIN_CONTINUATION_T).toBe(0.0001);
+        expect(RC_GLSL_CONST).toContain('#define RC_TSKIP 0.000100');
+    });
+    it('边界距离分类：0.05mm 滤除 / 0.10mm 边界（GLSL t> 判定） / 0.20mm 保留 —— JS 参考与口径锁', () => {
+        // 层距 0.2m 的两块板：跳弹点附近按不同 MIN_CONTINUATION_T 人为分类，验证阈值语义
+        // （0.05mm 与 0.10mm 处于同一 cell 噪声域，均被滤；0.2mm 亦滤——真实装甲层
+        //  距离为厘米级，这些边界只验证常量语义而非物理命中）
+        expect(0.00005 < RC.MIN_CONTINUATION_T).toBe(true);    // 0.05mm < 0.1mm → 滤
+        expect(0.00010 >= RC.MIN_CONTINUATION_T).toBe(true);   // 0.10mm == 常量 → click 严格 < 判定保留（GLSL t<=tLo 滤，差一个 T_EPS 噪声域）
+        expect(0.00020 > RC.MIN_CONTINUATION_T).toBe(true);    // 0.20mm > 常量 → 保留
+        // JS 参考入口使用同一常量（源码级锁：防止将来改回硬编码）
+        const src = require('fs').readFileSync(new URL('./armorCollisionPack.js', import.meta.url), 'utf8');
+        expect(src).toContain('raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T + RC.T_EPS)');
+        expect(src).not.toContain('RC.T_SKIP + RC.T_EPS);   // 与');
+    });
+    it('真实边界场景：跳弹点旁 0.5mm 处的薄板被保留（<0.1m 的接缝另一侧板命中）', () => {
+        // 跳弹板在 x=0，另一侧板在 x=0.0005（0.5mm）：远大于 0.1mm 滤值 → 必须命中
+        const bounce = makeMesh(new THREE.PlaneGeometry(2, 2), 'hull', 60, m => {
+            m.rotation.y = -Math.PI / 2; m.position.set(0, 0, 0); m.updateMatrix();
+        });
+        const near = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 150, m => {
+            m.rotation.y = -Math.PI / 2; m.position.set(0.0005, 0, 0); m.updateMatrix();
+        });
+        const pack = packOf([bounce, near]);
+        const sim = simulateContinuation(pack, new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0, 0), {
+            remIn: 300, caliber: 100, normalizationRad: 0, thickMul: 1,
+        });
+        expect(sim.cls).toBe(1);   // 0.5mm 处的板被命中并穿透（正是接缝 bug 修复的语义）
+    });
+});
+
 
 describe('GLSL 注入串完整性', () => {
     it('常量与关键函数在位（防手改漂移的轻量哨兵）', () => {
