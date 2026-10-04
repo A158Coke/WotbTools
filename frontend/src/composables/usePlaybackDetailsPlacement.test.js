@@ -229,3 +229,15 @@ describe('usePlaybackDetailsPlacement', () => {
     expect(removed).toContain('pointerup')
   })
 })
+
+// A short workspace cannot protect Transport by changing top alone: the panel must also scroll.
+describe('short workspace panel capacity', () => {
+  it('bounds tall content above Transport while preserving the drag position contract', async () => {
+    const { wrapper, api } = harness({ host: rect(0, 0, 740, 256), panel: rect(0, 0, 320, 280), bounds: rect(144, 174, 452, 82) })
+    await nextTick()
+    api.placeInitial()
+    expect(api.maxPanelHeight.value).toBe(158)
+    expect(api.pos.value.top + api.maxPanelHeight.value).toBeLessThanOrEqual(166)
+    wrapper.unmount()
+  })
+})

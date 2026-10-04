@@ -1,4 +1,4 @@
-import { effectScope, reactive, ref, watch } from 'vue'
+import { effectScope, reactive, watch } from 'vue'
 
 export interface PlaybackLabelPreferences {
   showPlayerName: boolean
@@ -26,21 +26,10 @@ export interface PlaybackUiPreferences {
   showBaseStatus: boolean
 }
 
-export interface PlaybackPaneWidths {
-  rail: number | null
-  details: number | null
-}
-
 const LABEL_PREFS_KEY = 'wotb.pb.label-prefs'
 const HP_PREFS_KEY = 'wotb.pb.hp-prefs'
 const TRAIL_PREFS_KEY = 'wotb.pb.trail-prefs'
 const UI_PREFS_KEY = 'wotb.pb.ui-prefs'
-const PANE_WIDTH_KEY = 'wotb.pb.pane-widths'
-// v2 deliberately resets the old persisted value once. The rail became persistent
-// in desktop non-fullscreen layout after the original preference was introduced;
-// an old collapsed=true value could therefore produce an empty 44px strip with no
-// visible recovery control. New values remain persisted normally.
-const RAIL_COLLAPSED_KEY = 'wotb.pb.rail-collapsed.v2'
 
 function readJson<T>(key: string, fallback: T, normalize: (value: unknown) => T): T {
   try {
@@ -106,39 +95,12 @@ function createPlaybackPreferences() {
     },
   ))
 
-  const paneWidths = reactive<PlaybackPaneWidths>(readJson(
-    PANE_WIDTH_KEY,
-    { rail: null, details: null },
-    (value) => {
-      const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-      return {
-        rail: Number.isFinite(record.rail) ? record.rail as number : null,
-        details: Number.isFinite(record.details) ? record.details as number : null,
-      }
-    },
-  ))
-
-  const railCollapsed = ref(false)
-  try {
-    railCollapsed.value = localStorage.getItem(RAIL_COLLAPSED_KEY) === '1'
-  } catch {
-    railCollapsed.value = false
-  }
-
   watch(labelPrefs, (value) => persistJson(LABEL_PREFS_KEY, value), { deep: true })
   watch(hpPrefs, (value) => persistJson(HP_PREFS_KEY, value), { deep: true })
   watch(trailPrefs, (value) => persistJson(TRAIL_PREFS_KEY, value), { deep: true })
   watch(uiPrefs, (value) => persistJson(UI_PREFS_KEY, value), { deep: true })
-  watch(paneWidths, (value) => persistJson(PANE_WIDTH_KEY, value), { deep: true })
-  watch(railCollapsed, (value) => {
-    try {
-      localStorage.setItem(RAIL_COLLAPSED_KEY, value ? '1' : '0')
-    } catch {
-      // Privacy mode / quota exhaustion: keep the in-memory session preference.
-    }
-  })
 
-  return { labelPrefs, hpPrefs, trailPrefs, uiPrefs, paneWidths, railCollapsed }
+  return { labelPrefs, hpPrefs, trailPrefs, uiPrefs }
 }
 
 // Initialize lazily so persisted values hydrate on the first consumer. A detached

@@ -75,10 +75,17 @@ function mountPlayback(overview = makeOverview(), seekTo = null, dataset = undef
   return mountBattlePlayback({ overview, seekTo, playbackV2: finalDataset })
 }
 
-// 左侧二级菜单：面板内容现在由左侧导航项（pb-rail-*）打开。
+// 二级面统一由传输控件上的 Display（⚙）打开，面板内容再由 pb-panel-* 行切换。
 async function openPanel(wrapper, name) {
-  const tab = wrapper.find(`[data-test="pb-rail-${name}"]`)
-  if (tab.attributes('aria-expanded') !== 'true') await tab.trigger('click')
+  const entry = wrapper.get('[data-test="pb-secondary-entry"]')
+  if (entry.attributes('aria-expanded') !== 'true') await entry.trigger('click')
+  await flushPromises()
+  if (name === 'display') {
+    const back = wrapper.find('[data-test="pb-events-back"]')
+    if (back.exists()) await back.trigger('click')
+  } else {
+    await wrapper.get(`[data-test="pb-panel-${name}"]`).trigger('click')
+  }
   await flushPromises()
 }
 
@@ -123,14 +130,14 @@ describe('L3：滚轮与快捷键不抢页面（审计 PB-04 / PB-05）', () => 
     const wrapper = mountPlayback()
     await flushPromises()
     await wrapper.find('[data-test="pb-play"]').trigger('click')
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.pause')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.pause')
     await wrapper.setProps({ active: false })
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.play')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.play')
     const space = new KeyboardEvent('keydown', { key: ' ', code: 'Space', cancelable: true })
     window.dispatchEvent(space)
     await flushPromises()
     expect(space.defaultPrevented).toBe(false)
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.play')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.play')
   })
 })
 
@@ -176,7 +183,7 @@ describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形
     expect(wrapper.get('[data-test="battle-playback"]').classes()).not.toContain('pb-details-column')
   })
 
-  it('录像者属于 Team 2：左车道仍是 Team 1、右车道仍是 Team 2；HUD 的录像者视角语义不变', async () => {
+  it('录像者属于 Team 2：己方 Team 2 在左、敌方 Team 1 在右，HUD 同视角', async () => {
     stubRaf()
     // HUD 是录像者视角：录像者在 Team 1 时 friendly 总血量 = Team 1（1500）
     const recorderTeam1 = mountPlayback()
@@ -187,9 +194,9 @@ describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形
 
     const recorderTeam2 = mountPlayback(makeOverview(), null, recorderOnTeam2())
     await flushPromises()
-    // 物理位置与录像者无关
-    expect(laneIds(recorderTeam2, 'left')).toEqual([1001])
-    expect(laneIds(recorderTeam2, 'right')).toEqual([2001, 2002])
+    // 车道位置跟随 Recorder 视角，物理队伍身份不变
+    expect(laneIds(recorderTeam2, 'left')).toEqual([2001, 2002])
+    expect(laneIds(recorderTeam2, 'right')).toEqual([1001])
     // 录像者换到 Team 2：friendly 总血量跟着换成 Team 2（1200），名册左右不动
     expect(recorderTeam2.get('[data-test="pb-hp-value-friendly"]').text()).toContain('1200')
     // 详情里的关系文案仍按录像者视角给出（右车道 Team 2 的车对 Team 2 录像者是己方）

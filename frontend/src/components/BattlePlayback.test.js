@@ -28,6 +28,27 @@ dataset.vehicles[1].positionSegments = [{ knowledge: 'OBSERVED', interpolationAl
   samples: [{ timeSec: 0, x: -20, y: 0 }, { timeSec: 10, x: -40, y: 0 }] }]
 
 describe('BattlePlayback orchestrator integration', () => {
+  it('名册保留未被发现敌车的开局血量事实', async () => {
+    const opening = structuredClone(dataset)
+    const enemy = opening.vehicles[1]
+    enemy.positionSegments = []
+    enemy.healthTransitions = [{ timeSec: 0, currentHp: 1995, displayCapacityHp: 1995, knowledge: 'CURRENT', source: 'EXACT_BATTLE_EVENT' }]
+    const wrapper = mount(BattlePlayback, {
+      props: { playbackV2: opening }, global: { mocks: { $t: key => key } },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-marker-2001"]').exists()).toBe(false)
+    expect(wrapper.findAllComponents({ name: 'PlaybackRoster' }).some(roster =>
+      roster.props('health')[enemy.accountId]?.currentHp === 1995)).toBe(true)
+    expect(wrapper.text()).toContain('1995 / 1995')
+    enemy.lifeTransitions = [{ timeSec: 0, lifeState: 'DESTROYED' }]
+    await wrapper.setProps({ playbackV2: structuredClone(opening) })
+    await flushPromises()
+    expect(wrapper.findAllComponents({ name: 'PlaybackRoster' }).some(roster =>
+      roster.props('destroyed').has(enemy.accountId))).toBe(true)
+    wrapper.unmount()
+  })
+
   it('wires canonical V2 data through one clock owner and all presentation boundaries', async () => {
     const wrapper = mount(BattlePlayback, {
       props: { playbackV2: dataset },

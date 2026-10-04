@@ -11,15 +11,18 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, shallowReactive } from 'vue'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil.js'
 
 // 源码级守卫用（CSS 结构契约：名册不得是嵌套滚动盒等）
 const here = dirname(fileURLToPath(import.meta.url))
 let Replay3DPane
 
+const canonical = vi.hoisted(() => ({ load: vi.fn(), portrait: vi.fn() }))
+vi.mock('../vehicle-portraits/runtime.js', () => ({ loadVehiclePortrait: canonical.portrait }))
 const playback = vi.hoisted(() => ({ api: null, init: null, apis: [] }))
 /**
  * 模拟 `playbackScene.initPlayback` 的**真实契约**：加载状态与就绪状态由场景层唯一持有
@@ -36,12 +39,17 @@ vi.mock('../composables/useConnectivity.js', async () => {
 
 vi.mock('../scene/playbackScene.js', () => {
   playback.init = vi.fn((container, store) => {
+    let generation = 0
     const api = {
       store,
-      loadData: vi.fn(async () => {
+      loadData: vi.fn(async (source) => {
+        const current = ++generation
         // 真实契约：新会话被接受即 loading=true / hasData=false，完成后反向翻转
         store.hasData = false
         store.loading = true
+        const result = source.session ? await source.session.loadScene(source.file) : null
+        if (current !== generation) return
+        store.playbackSession = source.session?.getState(source.file) ?? null
         store.loading = false
         store.hasData = true
       }),
@@ -51,6 +59,8 @@ vi.mock('../scene/playbackScene.js', () => {
         store.loading = false
       }),
       reset: vi.fn(() => {
+        generation++
+        store.playbackSession = null
         // 撤下当前回放（工作台清空 / 换选）：回到「无数据」等待态
         store.hasData = false
         store.loading = false
@@ -139,8 +149,21 @@ async function start(wrapper) {
 }
 
 function mountPane(props = {}) {
+  const states = new WeakMap()
+  const getState = file => {
+    if (!states.has(file)) states.set(file, shallowReactive({ canonical: null, sceneState: 'idle' }))
+    return states.get(file)
+  }
+  const playbackSession = {
+    getState,
+    loadScene: async file => {
+      getState(file).canonical = await canonical.load(file)
+      getState(file).sceneState = 'ready'
+      return {}
+    },
+  }
   return mount(Replay3DPane, {
-    props: { file: mkFile('battle.wotbreplay'), active: true, ...props },
+    props: { file: mkFile('battle.wotbreplay'), active: true, playbackSession, ...props },
     global: { mocks: { $t: translate } },
   })
 }
@@ -152,6 +175,8 @@ function mountPane(props = {}) {
 // null——必须先 await dynamic import 触发工厂，再设状态值（直接设 .value 会炸
 // "Cannot set properties of null"）。
 beforeEach(async () => {
+  canonical.load.mockReset().mockResolvedValue({ dataset: null, reloadTelemetry: null })
+  canonical.portrait.mockReset().mockResolvedValue(null)
   layout.compact = false
   playback.api = null
   playback.apis.length = 0
@@ -169,6 +194,150 @@ afterEach(() => {
 })
 
 describe('Replay3DPane', () => {
+  it('3D完整详情按canonical账号与时间投影，包含肖像装备物资道具且seek不泄露未来', async () => {
+    mockWebGL('webgl2')
+    const dataset = makeBattlePlaybackDataset()
+    const track = dataset.vehicles[0]
+    track.positionSegments = [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 5,
+      samples: [{ timeSec: 0, x: 0, y: 0 }, { timeSec: 5, x: 5, y: 0 }] }]
+    track.healthTransitions.push({ timeSec: 10, currentHp: 1400, displayCapacityHp: 1500, knowledge: 'CURRENT' })
+    track.damageLosses = [{ fromSec: 9, toSec: 10, hpLoss: 100, attackerAccountId: 2001, attackerReliable: true }]
+    track.loadout = { consumables: ['repairkit', null, null], provisions: ['food', null, null], equipmentIds: ['rammer'], consumableWireCodes: [] }
+    track.consumableTransitions = [{ timeSec: 8, consumableSlot: 0, state: 'COOLDOWN', logicalItemId: 'repairkit' }]
+    dataset.events.push({ type: 'KILL', timeSec: 12, accountId: 1001, targetAccountId: 2001 })
+    canonical.load.mockResolvedValue({ dataset, clock: { startRaw: 42 }, reloadTelemetry: null })
+    canonical.portrait.mockResolvedValue('/portrait.png')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const store = playback.api.store
+    store.time = 54 // canonical 12; never subtract the render-grid startTime instead
+    store.startTime = 0
+    store.roster = { team1: [{ eid: 7, accountId: 1001, tankId: 1, team: 1, nick: 'Scene name', tank: 'Scene tank', hp: 999, maxHp: 999 }], team2: [], unknown: [] }
+    await flush()
+    await wrapper.get('.team-lane .pl').trigger('click')
+    await flush()
+    const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
+    expect(details.props('selectedTrack').accountId).toBe(1001)
+    expect(details.props('currentTime')).toBe(12)
+    await vi.waitFor(() => expect(details.props('selectedPortraitUrl')).toBe('/portrait.png'))
+    expect(details.props('selLastKnownSec')).toBe(5)
+    expect(details.props('health')).toEqual({ currentHp: 1400, maxHp: 1500 })
+    expect(details.props('selCurStats')).toEqual({ dealt: 400, received: 100, kills: 1 })
+    expect(details.props('selDamageLog')).toHaveLength(2)
+    for (const group of ['equipment', 'provisions', 'consumables']) expect(details.find(`[data-test="v2-inspector-${group}"]`).exists()).toBe(true)
+    expect(details.find('.v2-chip-state').exists()).toBe(true)
+    store.time = 47
+    await nextTick()
+    expect(details.find('.v2-chip-state').exists()).toBe(false)
+    store.time = 51
+    await nextTick()
+    expect(details.props('selCurStats')).toEqual({ dealt: 0, received: 0, kills: 0 })
+    expect(details.props('selDamageLog')).toEqual([])
+    store.time = 54
+    await nextTick()
+    expect(details.props('selCurStats').dealt).toBe(400)
+    wrapper.unmount()
+  })
+
+  it('换文件时迟到canonical结果不得覆盖新场详情', async () => {
+    mockWebGL('webgl2')
+    let finishOld
+    canonical.load.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    const nextDataset = makeBattlePlaybackDataset()
+    nextDataset.vehicles[0].playerName = 'New battle'
+    canonical.load.mockResolvedValue({ dataset: nextDataset, clock: { startRaw: 10 }, reloadTelemetry: null })
+    const wrapper = mountPane()
+    await start(wrapper)
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    await wrapper.setProps({ file: mkFile('next.wotbreplay') })
+    await start(wrapper)
+    playback.api.store.time = 10
+    playback.api.store.roster = { team1: [{ eid: 77, accountId: 1001, team: 1, nick: 'New battle', tank: 'Maus' }], team2: [], unknown: [] }
+    await flush()
+    await wrapper.get('.team-lane .pl').trigger('click')
+    const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
+    expect(details.props('selectedTrack').playerName).toBe('New battle')
+    finishOld({ dataset: makeBattlePlaybackDataset(), clock: { startRaw: 42 }, reloadTelemetry: null })
+    await flush()
+    expect(details.props('selectedTrack').playerName).toBe('New battle')
+    expect(details.props('currentTime')).toBe(0)
+    wrapper.unmount()
+  })
+
+  it('scene starts with canonical pending and the open Details automatically enriches later', async () => {
+    mockWebGL('webgl2')
+    const state = shallowReactive({ canonical: null, canonicalError: null, canonicalState: 'loading', sceneState: 'ready' })
+    const session = { loadScene: vi.fn().mockResolvedValue({}), getState: () => state }
+    const wrapper = mountPane({ playbackSession: session })
+    await start(wrapper)
+    const store = playback.api.store
+    expect(store.hasData).toBe(true)
+    expect(state.canonicalState).toBe('loading')
+    store.time = 54
+    store.roster = { team1: [{ eid: 7, accountId: 1001, team: 1, nick: 'Scene player', tank: 'Maus', hp: 100, maxHp: 1500 }], team2: [], unknown: [] }
+    await flush()
+    await wrapper.get('.team-lane .pl').trigger('click')
+    const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
+    expect(details.props('selectedState').vehicle.playerName).toBe('Scene player')
+    expect(details.props('health')).toEqual({ currentHp: 100, maxHp: 1500 })
+    expect(details.props('selectedTrack')).toBeNull()
+    expect(details.props('selCurStats')).toBeNull()
+    expect(details.props('selDamageLog')).toEqual([])
+    const dataset = makeBattlePlaybackDataset({ events: [
+      { timeSec: 10, kind: 'DAMAGE', attackerAccountId: 1001, victimAccountId: 2001, amount: 400, visibility: 'OBSERVED' },
+    ] })
+    state.canonical = { dataset, clock: { startRaw: 42 }, reloadTelemetry: null }
+    state.canonicalState = 'ready'
+    await flush()
+    expect(details.props('selectedTrack').accountId).toBe(1001)
+    expect(details.props('selCurStats').dealt).toBe(400)
+    expect(details.props('selDamageLog')).toHaveLength(1)
+    expect(details.props('currentTime')).toBe(12)
+    expect(session.loadScene).toHaveBeenCalledTimes(1)
+    state.canonical = null
+    state.canonicalState = 'error'
+    state.canonicalError = new Error('AI failed')
+    await flush()
+    expect(store.hasData).toBe(true)
+    expect(details.props('selectedState').vehicle.playerName).toBe('Scene player')
+    expect(details.props('selCurStats')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('a successful 2D retry updates retained 3D Details without reloading the scene', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const shared = shallowReactive({ canonical: null })
+    playback.api.store.playbackSession = shared
+    playback.api.store.roster = { team1: [{ eid: 7, accountId: 1001, team: 1, nick: 'A', tank: 'Maus' }], team2: [], unknown: [] }
+    await flush()
+    await wrapper.get('.team-lane .pl').trigger('click')
+    const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
+    expect(details.props('selectedTrack')).toBeNull()
+    await wrapper.setProps({ active: false })
+    shared.canonical = { dataset: makeBattlePlaybackDataset(), clock: { startRaw: 42 }, reloadTelemetry: null }
+    await wrapper.setProps({ active: true })
+    expect(details.props('selectedTrack').accountId).toBe(1001)
+    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('canonical缺失时不为3D详情伪造统计或inspect track', async () => {
+    mockWebGL('webgl2')
+    canonical.load.mockResolvedValue({ dataset: null, clock: null })
+    const wrapper = mountPane()
+    await start(wrapper)
+    playback.api.store.roster = { team1: [{ eid: 7, accountId: 1001, team: 1, nick: 'A', tank: 'Maus', hp: 100, maxHp: 100 }], team2: [], unknown: [] }
+    await flush()
+    await wrapper.get('.team-lane .pl').trigger('click')
+    const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
+    expect(details.props('selCurStats')).toBeNull()
+    expect(details.props('selectedTrack')).toBeNull()
+    expect(details.find('[data-test="pb-sb-dealt"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it.each(['offline', 'unknown', 'degraded', 'service-unavailable'])('never initializes a remote loader on a %s direct mount', async (state) => {
     connectivityState.state.value = state
     mockWebGL('webgl2')
@@ -365,11 +534,12 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
-  it('阵容圆点走**物理队伍** token：Team 1 恒 --color-team-1、Team 2 恒 --color-team-2，不随录像者交换', async () => {
+  it('Recorder 在 Team 2：己方在左、敌方在右，颜色和标题跟随视角', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     const { store } = playback.api
     store.hasData = true
+    store.friendlyTeam = 2
     // 名册条目的真实形状来自 playbackScene 的 buildRoster（身份字段 + 当前时刻的 hp/maxHp）
     store.roster = {
       team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T-62A', hp: 975, maxHp: 1950, dead: false, followed: false }],
@@ -383,19 +553,23 @@ describe('Replay3DPane', () => {
     document.documentElement.style.setProperty('--color-team-ally', 'rgb(9, 9, 9)')
     document.documentElement.style.setProperty('--color-team-enemy', 'rgb(8, 8, 8)')
     await nextTick()
+    expect(wrapper.get('.side-left .team2').exists()).toBe(true)
+    expect(wrapper.get('.side-right .team1').exists()).toBe(true)
+    expect(wrapper.get('.side-left .pl').attributes('style')).toContain('--color-team-ally')
+    expect(wrapper.get('.side-right .pl').attributes('style')).toContain('--color-team-enemy')
     // 车道结构下 DOM 顺序是 team1 → unknown → team2：按各自面板取点，不依赖全局序
     const dots = (sel) => wrapper.findAll(`${sel} .pl .dot`)
     expect(dots('.team1')).toHaveLength(1)
-    expect(dots('.team1')[0].attributes('style')).toContain('rgb(1, 2, 3)')
+    expect(dots('.team1')[0].attributes('style')).toContain('--color-team-enemy')
     expect(dots('.team2')).toHaveLength(1)
-    expect(dots('.team2')[0].attributes('style')).toContain('rgb(4, 5, 6)')
+    expect(dots('.team2')[0].attributes('style')).toContain('--color-team-ally')
     // 未知阵营既不并入队伍 1 也不并入队伍 2（用中性色）
     expect(dots('.team-unknown')).toHaveLength(1)
     expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(1, 2, 3)')
     expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(4, 5, 6)')
     // 分组标题三语（未知阵营独立一段）
     expect(wrapper.findAll('.team h3').map(h => h.text())).toEqual([
-      'agentReplay.team1', 'agentReplay.teamUnknown', 'agentReplay.team2',
+      'recon.map.team_friendly', 'agentReplay.teamUnknown', 'recon.map.team_enemy',
     ])
     for (const p of ['--color-team-1', '--color-team-2', '--color-team-ally', '--color-team-enemy']) {
       document.documentElement.style.removeProperty(p)
@@ -417,24 +591,22 @@ describe('Replay3DPane', () => {
       unknown: [],
     }
     await nextTick()
-    const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp"]`).map(n => n.text())
-    const pcts = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp-pct"]`).map(n => n.text())
-    expect(nums('.team1')).toEqual(['1950', '824'])
-    expect(pcts('.team1')).toEqual(['100%', '42%'])
-    // 阵亡行读作 0 / 0%，不保留"最后一个非零 HP"
-    expect(nums('.team2')).toEqual(['0'])
-    expect(pcts('.team2')).toEqual(['0%'])
+    const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp-text"]`).map(n => n.text())
+    // exact 呈现：条内只写 `current / max`，不再重复百分比后缀
+    expect(nums('.team1')).toEqual(['1950 / 1950', '824 / 1950'])
+    // 阵亡行读作 `0 / max`（有量程时信息更完整），不保留“最后一个非零 HP”
+    expect(nums('.team2')).toEqual(['0 / 2000'])
 
     // 状态在时刻：store 投影变化后行内数值同步（HP 不只有血条）
     store.roster.team1[0].hp = 1200
     await nextTick()
-    expect(nums('.team1')).toEqual(['1200', '824'])
-    expect(pcts('.team1')).toEqual(['62%', '42%'])
+    expect(nums('.team1')).toEqual(['1200 / 1950', '824 / 1950'])
 
-    // 无可信上限 → 百分比为 —（unknown ≠ 0），不是 0%
+    // 无可信上限 → unknown（`—`，unknown ≠ 0），不是 0%
     store.roster.team1[1].maxHp = 0
     await nextTick()
-    expect(pcts('.team1')[1]).toBe('—')
+    expect(nums('.team1')[1]).toBe('—')
+    expect(wrapper.findAll('.team1 [data-test="roster-hp"]')[1].classes()).toContain('hp-mode-unknown')
     wrapper.unmount()
   })
 
@@ -490,10 +662,10 @@ describe('Replay3DPane', () => {
     await nextTick()
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-speed-0.5"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-time"]').exists()).toBe(true)
-    // 3D 专属控件在独立 toolbar 行里，不混进传输控件
-    expect(wrapper.get('[data-testid="replay3d-toolbar"]').exists()).toBe(true)
+    // Renderer-specific tools live exclusively in the shared Display surface.
+    expect(wrapper.find('[data-testid="replay3d-toolbar"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -510,16 +682,37 @@ describe('Replay3DPane', () => {
     await nextTick()
     await wrapper.get('[data-testid="display-toggle"]').trigger('click')
     await nextTick()
+    wrapper.findComponent({ name: 'PlaybackVehicleLabels3D' }).vm.setLabels([{ eid: 1, playerName: 'Recorder昵称', tankName: 'Maus', friendly: true }])
+    await nextTick()
+    expect(wrapper.find('[data-test="pb-label-player"]').exists()).toBe(false)
     await wrapper.get('[data-testid="disp-player"]').setValue(true)
     await nextTick()
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: true, showTankName: true, showHp: true, showReload: true,
     })
+    expect(wrapper.get('[data-test="pb-label-player"]').text()).toBe('Recorder昵称')
+    await wrapper.get('[data-testid="disp-player"]').setValue(false)
+    expect(wrapper.find('[data-test="pb-label-player"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="disp-player"]').setValue(true)
     await wrapper.get('[data-testid="disp-hp"]').setValue(false)
     await nextTick()
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: true, showTankName: true, showHp: false, showReload: true,
     })
+    wrapper.unmount()
+  })
+
+  it('bounds transient kill events independently of persistent HUD content', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.killfeed = Array.from({ length: 6 }, (_, id) => ({ id, kill: true, killer: `K${id}`, victim: `V${id}` }))
+    await nextTick()
+    expect(wrapper.get('[data-test="replay3d-killfeed"]').findAll('.kf')).toHaveLength(3)
+    expect(wrapper.get('[data-test="replay3d-killfeed"]').text()).toContain('K5')
+    expect(wrapper.get('[data-test="replay3d-killfeed"]').text()).not.toContain('K0')
+    expect(wrapper.get('[data-test="pb-hud"]').find('.killfeed').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -571,33 +764,30 @@ describe('Replay3DPane', () => {
       team2: [], unknown: [],
     }
 
-    it('紧凑档：相机出现在面板内；宽档：面板里没有相机（仍在工具条上）；两档都没有「打开名册」按钮', async () => {
+    it('紧凑档与宽档共享 Display 相机设置；两档都没有「打开名册」按钮', async () => {
       mockWebGL('webgl2')
       layout.compact = true
       const compactPane = mountPane()
-      const compactStore = playback.api
+      const compactStore = playback.api.store
       compactStore.hasData = true
       compactStore.roster = roster
       await nextTick()
-      // 紧凑档：面板收纳相机分档与阵容开关（面板隐藏时也在 DOM 中，hidden 由属性控制；
-      // 工具条那行由 CSS `display:none` 让位——它仍在 DOM 里，所以这里断言的是**分支**，
-      // 而不是「按钮不存在」）。
+      await compactPane.get('[data-testid="display-toggle"]').trigger('click')
+      // Both forms disclose camera and presentation preferences from Gear.
       expect(compactPane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(true)
       // 名册没有临时面入口：唯一开关是 disp-roster 呈现偏好
-      expect(compactPane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(false)
       expect(compactPane.find('[data-testid="disp-roster"]').exists()).toBe(true)
       compactPane.unmount()
 
       layout.compact = false
       const widePane = mountPane()
-      const wideStore = playback.api
+      const wideStore = playback.api.store
       wideStore.hasData = true
       wideStore.roster = roster
       await nextTick()
-      // 宽档：面板里不得重复出现相机 / 阵容（那会变成第二份设置入口）。
-      // 注：工具条那行在紧凑档只是 CSS 隐藏（DOM 仍在），所以不断言「按钮不存在」——
-      // 真正的形态差异由这里的**分支**与 CSS 共同保证，浏览器门禁再验可见性。
-      expect(widePane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(false)
+      await widePane.get('[data-testid="display-toggle"]').trigger('click')
+      // Wide form uses the same secondary camera surface.
+      expect(widePane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(true)
       expect(widePane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(false)
       expect(widePane.find('[data-testid="roster-toggle"]').exists()).toBe(false)
       widePane.unmount()
@@ -610,12 +800,11 @@ describe('Replay3DPane', () => {
       const wrapper = mountPane()
       await start(wrapper)
       const apiAfterStart = playback.api
-      const panel = wrapper.get('[data-testid="display-panel"]')
-      expect(panel.element.hidden).toBe(true)
+      expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
 
       await wrapper.get('[data-testid="display-toggle"]').trigger('click')
       await nextTick()
-      expect(panel.element.hidden).toBe(false)
+      expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(true)
       expect(wrapper.get('[data-testid="display-close"]').exists()).toBe(true)
       // 面板只是覆盖层：不改变 playback session 身份，也不重建场景
       expect(playback.api).toBe(apiAfterStart)
@@ -624,7 +813,7 @@ describe('Replay3DPane', () => {
 
       await wrapper.get('[data-testid="display-close"]').trigger('click')
       await nextTick()
-      expect(panel.element.hidden).toBe(true)
+      expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
       expect(playback.api).toBe(apiAfterStart)
       expect(playback.init).toHaveBeenCalledTimes(1)
       wrapper.unmount()
@@ -710,6 +899,7 @@ describe('Replay3DPane', () => {
         await nextTick()
         const btn = wrapper.get('[data-testid="playback-fullscreen"]')
         // 它必须在面板**之外**（面板是二级设置，不允许把全屏藏进去）
+        await wrapper.get('[data-testid="display-toggle"]').trigger('click')
         expect(wrapper.get('[data-testid="display-panel"]').element.contains(btn.element)).toBe(false)
         expect(btn.attributes('aria-pressed')).toBe('false')
         wrapper.unmount()
@@ -906,19 +1096,43 @@ describe('Replay3DPane', () => {
       await nextTick()
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       expect(api.setFollow).not.toHaveBeenCalled()
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
       for (const mode of ['top', 'free']) {
-        await wrapper.get(`.toolbar [data-value="${mode}"]`).trigger('click')
+        await wrapper.get(`[data-testid="display-panel"] [data-value="${mode}"]`).trigger('click')
         expect(api.setCam).toHaveBeenLastCalledWith(mode)
         api.store.cam = mode
         await nextTick()
         expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       }
-      await wrapper.get('.toolbar [data-value="follow"]').trigger('click')
+      await wrapper.get('[data-testid="display-panel"] [data-value="follow"]').trigger('click')
       expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
       onVehicleSelect(21)
       await nextTick()
       expect(api.setFollow).toHaveBeenCalledTimes(1)
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
+      wrapper.unmount()
+    })
+
+    it('场景点选带真实事件时按点击原点定详情落位（不抛错、不误判左右）', async () => {
+      mockWebGL('webgl2')
+      const wrapper = mountPane()
+      const api = playback.api
+      api.store.hasData = true
+      api.store.roster = roster
+      await nextTick()
+      const onVehicleSelect = playback.init.mock.calls.at(-1)[3].onVehicleSelect
+      const root = wrapper.get('[data-testid="replay3d-root"]').element
+      // 场景 canvas 上的一次真实点选：事件由 playbackScene 透传，target 既不是左车道也不是右车道，
+      // 落位只能按 clientX 相对 workspace 的位置判定（这条路径曾引用未定义变量而在真实点击时抛错）。
+      const canvas = document.createElement('canvas')
+      root.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 600, right: 1000, bottom: 600 })
+      onVehicleSelect(21, { target: canvas, clientX: 900 })
+      await nextTick()
+      expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
+      expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(true)
+      onVehicleSelect(11, { target: canvas, clientX: 40 })
+      await nextTick()
+      expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       wrapper.unmount()
     })
 
@@ -942,8 +1156,7 @@ describe('Replay3DPane', () => {
       const row = wrapper.get('[data-testid="replay3d-lane-left"] .pl')
       expect(wrapper.get('[data-testid="replay3d-lane-left"] [data-test="pb-shell-roster"]').classes()).toContain('pb-roster-compact')
       expect(row.get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
-      expect(row.get('[data-test="roster-hp"]').text()).toBe('1800')
-      expect(row.get('[data-test="roster-hp-pct"]').text()).toBe('92%')
+      expect(row.get('[data-test="roster-hp-text"]').text()).toBe('1800 / 1950')
       // 传输控件照常存在（名册与控件不互斥）
       expect(wrapper.find('.controls').exists()).toBe(true)
       wrapper.unmount()
@@ -968,9 +1181,10 @@ describe('Replay3DPane', () => {
       const rows = wrapper.findAll('.team-lane .pl')
       expect(rows).toHaveLength(3)
       expect(rows[0].get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
-      expect(rows[0].get('[data-test="roster-hp-pct"]').text()).toBe('92%')
-      // 竖屏名册不是紧凑密度（纵向空间够用）
+      expect(rows[0].get('[data-test="roster-hp-text"]').text()).toBe('1800 / 1950')
+      // 竖屏名册不是紧凑密度（纵向空间够用），也不做纵向铺满
       expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-compact')
+      expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-fill')
       // 详情是同一个共享组件的 inline 呈现
       await rows[0].trigger('click')
       const details = wrapper.get('[data-testid="replay3d-details"]')
@@ -992,6 +1206,7 @@ describe('Replay3DPane', () => {
       await nextTick()
       playback.init.mock.calls.at(-1)[3].onVehicleSelect(11)
       await nextTick()
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
       await wrapper.get('[data-testid="disp-roster"]').setValue(false)
       expect(wrapper.find('.roster-surface').exists()).toBe(false)
       expect(wrapper.get('.pb-root').classes()).not.toContain('roster-side')
@@ -1082,11 +1297,11 @@ describe('Replay3DPane', () => {
     await nextTick()
     expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_win')
     await wrapper.get('[data-testid="display-toggle"]').trigger('click')
-    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(false)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(true)
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
     await nextTick()
-    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="show-all-ui"]').exists()).toBe(true)
     expect(wrapper.find('.banner').exists()).toBe(false)
     expect(store.banner).toEqual({ outcome: 'win' })
@@ -1094,7 +1309,7 @@ describe('Replay3DPane', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'H', bubbles: true }))
     await nextTick()
     expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="display-toggle"]').attributes('aria-expanded')).toBe('false')
     expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_win')
     wrapper.unmount()
@@ -1108,7 +1323,7 @@ describe('Replay3DPane', () => {
     await nextTick()
     await wrapper.get('[data-testid="display-toggle"]').trigger('click')
     await wrapper.get('[data-testid="hide-all-ui"]').trigger('click')
-    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     expect(wrapper.find('.banner').exists()).toBe(false)
     expect(wrapper.get('[data-testid="show-all-ui"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(false)
@@ -1118,7 +1333,7 @@ describe('Replay3DPane', () => {
     expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_lose')
     expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -1431,7 +1646,8 @@ describe('Replay3DPane 待开播画质闸门', () => {
     // 相机档位同理（在就绪态里：工具栏只在 HUD 有数据时渲染）
     playback.api.store.hasData = true
     await nextTick()
-    const cams = wrapper.get('[data-testid="replay3d-toolbar"] [role="radiogroup"]')
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    const cams = wrapper.get('[data-testid="display-panel"] [role="radiogroup"]')
     expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'top', 'follow'])
     expect(cams.text()).toContain('agentReplay.cam_free')
     wrapper.unmount()
@@ -1463,18 +1679,16 @@ describe('Replay3DPane 顶栏双方血量', () => {
     store.scoreFriend = 2; store.scoreEnemy = 1
     await nextTick()
 
-    const hp = wrapper.get('[data-test="hud-team-hp"]')
+    const hp = wrapper.get('[data-test="pb-hp-bars"]')
     expect(hp.text()).toContain('12345 / 20000')
     expect(hp.text()).toContain('800 / 15000')
     // 血量不缩写（§11：禁止 12.3k）；己方在左、敌方在右
     expect(hp.text()).not.toContain('12.3k')
-    const bars = hp.findAll('.hpbar > i')
-    expect(bars[0].attributes('style')).toContain('width: 61.725%')   // 原始百分比：缓慢掉血也平滑
-    expect(bars[1].attributes('style')).toContain('width: 5.333%')
-    expect(hp.findAll('.hpbar')[0].attributes('title')).toBe('agentReplay.hp_friendly 62%')
-    expect(hp.findAll('.hpbar')[1].attributes('title')).toBe('agentReplay.hp_enemy 5%')
+    expect(hp.get('[data-test="pb-hp-fill-friendly"]').attributes('style')).toContain('width: 61.7%')
+    expect(hp.get('[data-test="pb-hp-fill-enemy"]').attributes('style')).toContain('width: 5.3%')
+    expect(wrapper.get('[data-test="pb-hud-time"]').text()).toBe('03:20')
     // 比分取视角字段（不是 score1/score2）
-    expect(wrapper.get('[data-test="hud-score"]').text()).toBe('2 : 1')
+    expect(wrapper.get('[data-test="pb-hud-score"]').text()).toBe('2 : 1')
     wrapper.unmount()
   })
 
@@ -1485,8 +1699,8 @@ describe('Replay3DPane 顶栏双方血量', () => {
     store.hasData = true
     store.hpFriend = NaN; store.hpFriendMax = null; store.hpFriendPct = NaN
     await nextTick()
-    expect(wrapper.get('[data-test="hud-team-hp"]').text()).toContain('0 / 0')
-    expect(wrapper.get('[data-test="hud-team-hp"]').text()).not.toContain('NaN')
+    expect(wrapper.get('[data-test="pb-hp-bars"]').text()).toContain('0 / 0')
+    expect(wrapper.get('[data-test="pb-hp-bars"]').text()).not.toContain('NaN')
     wrapper.unmount()
   })
 })

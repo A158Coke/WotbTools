@@ -77,8 +77,22 @@
     --pb-z-scrim: 6;   /* 待开播遮罩：盖住 HUD 面板；加载 / 错误状态仍在其上（--z-sticky） */
     --pb-z-modal: 9;
 
+    /* Bounded side wings: the minimum preserves a readable 7v7 roster (name / tank / HP%), the
+       maximum yields every further pixel to the center battlefield column. Measured in Chrome:
+       the roster row is `minmax(0,1fr) auto auto`, so the name column is whatever the lane has
+       left after the tank name and the two HP cells — the lane width is therefore the binding
+       constraint on player-name room, which is why the floor is a readability value, not a
+       spacing value. The bounds used to be 9rem/14rem: the ceiling was wide enough that the
+       roster kept absorbing new viewport width instead of handing it to the battlefield. */
+    --pb-roster-min: 9rem;
+    --pb-roster-max: 11rem;
+    --pb-workspace-fallback-h: 80dvh;
+
     --pb-label-player-width: 110px;
-    --pb-label-bar-width: 64px;
+    /* Vehicle label 的两个 combat indicator 各自拥有尺寸：HP 是主要状态（更厚），
+       reload 是次级瞬时状态（等宽、更细）。两者共用宽度 token，厚度区分视觉权重。 */
+    --pb-label-hp-bar-width: 64px;
+    --pb-label-reload-bar-height: 2px;
 
     /* 控件尺寸与密度：默认紧凑，触屏自动切换（§5） */
     --control-h-sm: 28px;

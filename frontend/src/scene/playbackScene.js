@@ -23,7 +23,7 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { impactKind } from './impactKind.js'
-import { ROSTER_GROUPS, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
+import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
 import { createReloadStateResolver, inferMagazineSize, resolveMagazineSize } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
@@ -1382,7 +1382,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         ? v.def.team === friendlyTeam : null;
       const ghost = ghostByEid.get(v.def.eid);
       return {
-        eid: v.def.eid, playerName: v.def.name || '', tankName: v.def.tank_name || '',
+        eid: v.def.eid, playerName: v.def.nickname || '', tankName: v.def.tank_name || '',
         friendly, destroyed, lastKnown: false,
         hp: { current, pct, state: destroyed ? 'DESTROYED' : 'CURRENT' },
         reload: destroyed ? null : reloadStateAt(v.def.eid, T, v.reloadSize),
@@ -2066,28 +2066,39 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 否则「Team 1 是什么颜色」会有两份事实源。
   const rosterRowsByEid = new Map();
   function buildRoster() {
+    store.friendlyTeam = [1, 2].includes(DATA.meta.friendly_team) ? DATA.meta.friendly_team : null;
     const groups = buildRosterRows(V);
     rosterRowsByEid.clear();
     for (const key of ROSTER_GROUPS) {
-      const rows = groups[key].map((row) => ({
-        ...row, hp: 0, maxHp: 0, dead: false, followed: false,
-      }));
+      const rows = groups[key].map((row) => applyRosterRuntime(
+        { ...row },
+        { hp: 0, maxHp: 0, dead: false, followed: false, reload: null },
+      ));
       for (const row of rows) rosterRowsByEid.set(row.eid, row);
       store.roster[key] = rows;
     }
   }
-  /** 把当前 T 的运行时状态投影进名册行（只在值真的变了时写，避免无谓的 VDOM patch） */
+  /**
+   * 把当前 T 的运行时状态投影进名册行（只在值真的变了时写，避免无谓的 VDOM patch）。
+   *
+   * `reload` 复用**场景自己的** reload resolver（`reloadStateAt`，与车辆名牌同一份
+   * `v.reloadSize` / `reloadEvents` 事实源），不在名册里另起一套解释——2D 名册走的是
+   * `createReloadStateResolver(reloadTelemetry)`，两边是同一个 resolver 家族、同一套弹夹语义。
+   */
   function updateRoster() {
     const projected = projectRoster(V, T);
     for (const v of V) {
       const e = rosterRowsByEid.get(v.def.eid);
       const p = projected.get(v.def.eid);
       if (!e || !p) continue;
-      if (e.hp !== p.hp) e.hp = p.hp;
-      if (e.maxHp !== p.maxHp) e.maxHp = p.maxHp;
-      if (e.dead !== p.dead) e.dead = p.dead;
-      const followed = FOLLOW_EID === v.def.eid;
-      if (e.followed !== followed) e.followed = followed;
+      applyRosterRuntime(e, {
+        hp: p.hp,
+        maxHp: p.maxHp,
+        dead: p.dead,
+        followed: FOLLOW_EID === v.def.eid,
+        // 阵亡不展示 reload（与名牌同一判据：destroyed 时不显示次级瞬时状态）
+        reload: p.dead ? null : reloadStateAt(v.def.eid, T, v.reloadSize),
+      });
     }
   }
 
@@ -2422,6 +2433,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     glbCache = new Map();
     DATA = null;
+    store.playbackSession = null;
     // 会话终止 = 不再有任何可用的回放数据：就绪标记必须一起落下，否则新会话加载期间
     // （或 file=null / 被阻断 / 组件卸载之后）HUD 与播放传输仍会按「已就绪」渲染，
     // 而底层 DATA/车辆/贴图已经 dispose。destroy 与 loadData 的替换路径都经过这里。
@@ -2436,6 +2448,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     store.scoreFriend = 0; store.scoreEnemy = 0;
     store.hpFriend = 0; store.hpFriendMax = 0; store.hpEnemy = 0; store.hpEnemyMax = 0;
     store.hpFriendPct = 100; store.hpEnemyPct = 100;
+    store.friendlyTeam = null;
     store.roster.team1 = [];
     store.roster.team2 = [];
     store.roster.unknown = [];
@@ -2474,10 +2487,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     try {
       // 数据获取在 teardown 之前：新回放解析失败时当前回放保持完好（替换语义 =
       // 新数据就位才拆旧会话）
-      const data = await loadPlaybackData(source);
+      const data = source?.session ? await source.session.loadScene(source.file) : await loadPlaybackData(source);
+      const playbackSession = source?.session ? source.session.getState(source.file) : null;
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       DATA = data;
+      store.playbackSession = playbackSession;
       // 资产阶段（地图/地形/地表/场景）内部有多个 await：被取代后必须立刻放弃，
       // 否则旧会话会走完 buildVehicles / buildRoster / setPlaying / tick / writeHud 复活自己。
       const ready = await startPlayback(epoch);

@@ -133,6 +133,66 @@ function createInstance(store) {
 }
 
 describe('playbackScene 会话代数契约', () => {
+  it('prepared session feeds scene and Details without another raw parse', async () => {
+    const { store, api } = createScene()
+    const result = { scenePlayback: minimalData(), canonical: { dataset: { vehicles: [] }, clock: { startRaw: 42 }, reloadTelemetry: null } }
+    const session = { loadScene: vi.fn().mockResolvedValue(result.scenePlayback), getState: () => result }
+    const file = new File(['x'], 'shared.wotbreplay')
+    await api.loadData({ kind: 'local', file, session })
+    expect(session.loadScene).toHaveBeenCalledWith(file)
+    expect(source.loadPlaybackData).not.toHaveBeenCalled()
+    expect(store.hasData).toBe(true)
+    expect(store.playbackSession.canonical.dataset).toEqual(result.canonical.dataset)
+    expect(store.playbackSession.canonical.clock.startRaw).toBe(42)
+    api.reset()
+    expect(store.playbackSession).toBeNull()
+  })
+
+  it('3D becomes ready before canonical readiness resolves', async () => {
+    const { store, api } = createScene()
+    const state = { canonical: null, canonicalState: 'loading' }
+    const canonicalPending = track(deferred())
+    const session = {
+      loadScene: vi.fn().mockResolvedValue(minimalData()),
+      loadCanonical: vi.fn(() => canonicalPending.promise),
+      getState: () => state,
+    }
+    await api.loadData({ kind: 'local', file: new File(['x'], 'async.wotbreplay'), session })
+    expect(store.hasData).toBe(true)
+    expect(store.startTime).toBe(42)
+    expect(state.canonicalState).toBe('loading')
+    expect(session.loadCanonical).not.toHaveBeenCalled()
+    expect(source.loadPlaybackData).not.toHaveBeenCalled()
+  })
+
+  it('canonical failure does not block raw 3D playback', async () => {
+    const { store, api } = createScene()
+    const result = { scenePlayback: minimalData(), canonical: null, canonicalError: new Error('AI failed') }
+    const session = { loadScene: vi.fn().mockResolvedValue(result.scenePlayback), getState: () => result }
+    await api.loadData({ kind: 'local', file: new File(['x'], 'partial.wotbreplay'), session })
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+    expect(store.playbackSession.canonical).toBeNull()
+    expect(source.loadPlaybackData).not.toHaveBeenCalled()
+  })
+
+  it('战场标签使用回放 nickname 字段', async () => {
+    const store = createPlaybackStore()
+    const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
+    api = initPlayback(mountContainer(), store, overlay)
+    created.push(api)
+    const data = minimalData()
+    data.meta.samples = 1
+    data.vehicles = [{ eid: 1, team: 1, nickname: 'Recorder昵称', tank_name: 'Maus', max_hp: 3074,
+      pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+      hp: [], coverage: [42, 100], death_t: null }]
+    source.loadPlaybackData.mockResolvedValue(data)
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'names.wotbreplay') })
+    expect(store.error).toBeFalsy()
+    expect(overlay.setLabels).toHaveBeenCalled()
+    expect(overlay.setLabels.mock.calls.at(-1)[0][0].playerName).toBe('Recorder昵称')
+  })
+
   it('同一 scene 上接受新文件后：旧加载迟到完成不得清掉新加载的 loading', async () => {
     const { store, api } = createScene()
     const first = track(deferred())

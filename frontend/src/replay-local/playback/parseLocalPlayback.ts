@@ -1,5 +1,5 @@
 /**
- * 2D 战局回放的本地数据入口：.wotbreplay → 上游 WASM（parseResult + parsePlayback + parseAiReview）
+ * 战局回放 canonical 投影入口（2D / 3D session 共用）：.wotbreplay → 上游 WASM（parseResult + parsePlayback + parseAiReview）
  * → WotbTools canonical facts → `BattlePlaybackDataset` + `MapOverview`。文件不出本机，服务器不参与。
  * 三个切面缺一不可：AiReview 承载血量 / 归属 / 终态的原始证据，失败即整体失败（fail closed，
  * 不退化成弱证据归因）。
@@ -15,6 +15,7 @@ import {
   parseAgentPlaybackFromBytes,
   parseAgentResultFromBytes,
   type AgentBattleResult,
+  type AgentPlaybackFacet,
 } from '../../api/agent-replay-facets.js'
 import type { BattlePlaybackDataset, PlaybackReloadTelemetry } from '../../types/playback-v2.js'
 import { loadTankopedia, type Tankopedia } from '../compute/tankopedia.js'
@@ -28,6 +29,8 @@ export interface LocalPlayback {
   /** null = 地图未收录 / 无位置（与服务端 map-overview 204 同义） */
   overview: LocalMapOverview | null
   result: AgentBattleResult
+  /** Raw scene seconds → canonical seconds; independent of reload presentation. */
+  clock: ReturnType<typeof resolveReplayClock>
   /** Presentation-only raw Playback telemetry; never promoted into canonical ReplayFacts. */
   reloadTelemetry: PlaybackReloadTelemetry | null
 }
@@ -35,6 +38,8 @@ export interface LocalPlayback {
 export interface ParseLocalPlaybackOptions {
   tankopedia?: Tankopedia
   sampleStepSec?: number
+  /** Already decoded by the workspace Worker path; do not parse Playback again. */
+  playback?: AgentPlaybackFacet
 }
 
 let profiles: Map<string, MapGridProfile> | null = null
@@ -64,7 +69,7 @@ export async function parseLocalPlayback(
   }
   const tankopedia = options.tankopedia ?? await tankopediaPromise!
   const result = await parseAgentResultFromBytes(bytes)
-  const playback = await parseAgentPlaybackFromBytes(bytes)
+  const playback = options.playback ?? await parseAgentPlaybackFromBytes(bytes)
   const aiReview = await parseAgentAiReviewFromBytes(bytes)
   const dataset = toBattlePlaybackDataset(playback, result, aiReview, {
     tankopedia, sampleStepSec: options.sampleStepSec,
@@ -81,5 +86,5 @@ export async function parseLocalPlayback(
     reload_effective: playback.reload_effective,
     shots: playback.shots,
   } : null
-  return { dataset, overview, result, reloadTelemetry }
+  return { dataset, overview, result, reloadTelemetry, clock }
 }

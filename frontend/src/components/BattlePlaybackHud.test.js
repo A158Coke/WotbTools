@@ -36,6 +36,42 @@ describe('BattlePlaybackHud', () => {
     expect(wrapper.find('[data-test="pb-hp-fill-friendly"]').attributes('style')).toContain('width: 50.0%')
   })
 
+  it('renders map and battle time in the persistent summary', () => {
+    const wrapper = mountHud({ mapTitle: 'Canal', battleTime: '03:20' })
+    expect(wrapper.get('[data-test="pb-hud-map"]').text()).toBe('Canal')
+    expect(wrapper.get('[data-test="pb-hud-time"]').text()).toBe('03:20')
+  })
+
+  it('keeps compact authoritative bases beside map and time', () => {
+    const wrapper = mount(BattlePlaybackHud, {
+      props: {
+        friendlyHp: hp('UNKNOWN'), enemyHp: hp('UNKNOWN'), friendlyTeam: 1,
+        mapTitle: 'Canal', battleTime: '03:20',
+        baseStates: [{ baseId: 'A', ownerTeam: 1, capturingTeam: 2, captureProgress: 45 }],
+      },
+      global: {
+        mocks: { $t: key => key },
+        stubs: { BaseStatusBar: { name: 'BaseStatusBar', props: { bases: Array, compact: Boolean }, template: '<div data-test="base-view" />' } },
+      },
+    })
+    const bases = wrapper.getComponent({ name: 'BaseStatusBar' })
+    expect(bases.props('compact')).toBe(true)
+    expect(bases.props('bases')).toEqual([{ baseId: 'A', kind: 'supremacy', owner: 'friendly', capturing: 'enemy', progress: 45 }])
+    expect(wrapper.get('[data-test="pb-hud-meta"]').find('[data-test="pb-hud-bases"]').exists()).toBe(true)
+  })
+
+  it('supports base-only presentation without summary height', () => {
+    const wrapper = mount(BattlePlaybackHud, {
+      props: { friendlyHp: hp('UNKNOWN'), enemyHp: hp('UNKNOWN'), showSummary: false },
+      slots: { bases: '<span data-test="projected-bases">A</span>' },
+      global: { mocks: { $t: key => key } },
+    })
+    expect(wrapper.find('[data-test="pb-hp-bars"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-hud-map"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-hud-time"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="projected-bases"]').text()).toBe('A')
+  })
+
   it('shows full integer HP (no k abbreviation) even for large values (§11)', () => {
     const wrapper = mountHud({
       friendlyHp: hp('EXACT', 22305, 21446),

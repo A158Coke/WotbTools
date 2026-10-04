@@ -106,9 +106,14 @@
 
 ## 4. 战局重建（PB）
 
+> 历史快照：本节的「位置」列记录的是 2026-09-30 当时的文件与行号。`playback-tablet.css` /
+> `playback-pc.css` / `playback-mobile-fullscreen.css` / `playback-fullscreen-form-contract.css`
+> 与 `playbackSafeInsets.js` 已在 Playback UI 收敛 PR 中删除（规则合并进
+> `playback-workspace.css` / `playback-mobile.css`），行号也不再对应；结论与建议仍然有效。
+
 | ID | 级别 | 问题 | 位置 | 端 | 建议 |
 |---|---|---|---|---|---|
-| PB-02 | P1 | 平板（790×914 实测）：地图 ~720px 高，播放控制栏被挤出首屏；原因是 `(100dvh - 210px)` 假设回放从视口顶部开始，但上方还有 ~450px 的上传卡 | `playback-tablet.css:167-171`、`ReplayWorkspace.vue:278-296` | T | 按实际偏移测量；折叠上传卡 |
+| PB-02 | P1 | 平板（790×914 实测）：地图 ~720px 高，播放控制栏被挤出首屏；原因是 `(100dvh - 210px)` 假设回放从视口顶部开始，但上方还有 ~450px 的上传卡 | `playback-tablet.css:167-171`（已删）、`ReplayWorkspace.vue:278-296` | T | 按实际偏移测量；折叠上传卡 |
 | PB-03 | P1 | 平板上玩家列表 / 事件面板不可见：左栏默认 `display:none`，只能通过控制栏里的 ☰ 打开，而 ☰ 又在首屏外 | `playback-shared.css:34` | T | 可见的侧栏或底部 sheet |
 | PB-04 | P1 | 滚轮在地图上始终被捕获为缩放（`@wheel.prevent`），平板上地图占满视口时无法滚到控制栏 | `BattleMap.vue:194` | D T | Ctrl/⌘+滚轮或聚焦后才缩放 |
 | PB-05 | P1 | 隐藏的回放仍响应快捷键：在数据 Tab 或其他路由按空格 / 方向键会切换 / 步进隐藏的回放并 `preventDefault`，页面无法用空格滚动；播放循环隐藏时仍在跑 | `BattlePlayback.vue:1237,1351-1362`；`active` prop 未下传 | 全部 | 传 `active`，onDeactivated 解绑 |
@@ -122,7 +127,7 @@
 | PB-13 | P2 | App 全屏一律强制横屏，平板 / PC 形态也一样，竖屏兜底样式永远不生效；使用废弃的 `systemUiVisibility`；无 `webglcontextlost` 处理 | `MainActivity.kt:360` | App | 由网页通过桥请求方向 |
 | PB-14 | P2 | 3D 管理页：只监听 window resize、DPR 不封顶 + `preserveDrawingBuffer`；`100vh - 67px` 写死；240px 队伍面板在手机上盖住场景；空格在按钮聚焦时触发两次 | `playbackScene.js:188,1336`、`tankViewer.js:3026`、`AgentReplay3D.vue:140,192,221`、`AgentArmorView.vue:135` | M | — |
 | PB-15 | P2 | 侧栏 `position:fixed` 用 `--z-modal`(200)，与应用模态同级 | `playback-mobile.css:47-62,124-139` | M | 回放内部 z 刻度 |
-| PB-16 | P3 | 游离断点：`max-width:767px`（文档禁止）、640、860 对；多个组件内 scoped `width<768` 与形态类打架 | `BattlePlaybackPanel.vue:407`、`AgentTankopedia.vue:333`、`playback-tablet.css:112,167` | — | — |
+| PB-16 | P3 | 游离断点：`max-width:767px`（文档禁止）、640、860 对；多个组件内 scoped `width<768` 与形态类打架 | `BattlePlaybackPanel.vue:407`、`AgentTankopedia.vue:333`、`playback-tablet.css:112,167`（已删） | — | — |
 | PB-17 | P3 | 死 / 重复 CSS：`playback-mobile.css:27-62,79-110` 被 fullscreen 文件完全覆盖；PC 用 `100vh`、平板用 `100dvh` | — | — | — |
 | PB-18 | P3 | 时间轴 `drag-start` 触发三次；原生 thumb 未放大；手机按钮 36px（建议 44–48） | `PlaybackTimeline.vue:16` | M | — |
 | PB-19 | P3 | 键盘：按钮聚焦时方向键无效；无倍速 / 全屏 / Esc 快捷键；拖动中卸载会泄漏 window 监听 | `BattlePlayback.vue:246-248,1354` | D | — |

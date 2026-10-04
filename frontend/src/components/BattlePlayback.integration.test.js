@@ -89,10 +89,12 @@ function mountPlayback(overview = makeOverview(), seekTo = null, dataset = undef
   return mountBattlePlayback({ overview, seekTo, playbackV2: finalDataset })
 }
 
-// 左侧二级菜单：面板内容现在由左侧导航项（pb-rail-*）打开。
+// Secondary settings and Events share the Gear-anchored surface.
 async function openPanel(wrapper, name) {
-  const tab = wrapper.find(`[data-test="pb-rail-${name}"]`)
-  if (tab.attributes('aria-expanded') !== 'true') await tab.trigger('click')
+  if (!wrapper.find('[data-testid="display-panel"]').exists()) {
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+  }
+  if (name === 'events') await wrapper.get('[data-test="pb-panel-events"]').trigger('click')
   await flushPromises()
 }
 
@@ -310,8 +312,6 @@ beforeEach(async () => {
   Object.assign(prefs.hpPrefs, { showHp: true })
   Object.assign(prefs.trailPrefs, { showTrail: true })
   Object.assign(prefs.uiPrefs, { showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true })
-  Object.assign(prefs.paneWidths, { rail: null, details: null })
-  prefs.railCollapsed.value = false
   await nextTick()
   localStorage.clear()
 })
@@ -375,9 +375,10 @@ describe('BattlePlayback', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
-    // 事件面板默认折叠（左侧二级菜单未打开），事件入口为左侧 pb-rail-events。
+    // 事件面板默认折叠：二级面未打开时事件行不在 DOM 里，入口在 Display 面里的 pb-panel-events。
     expect(wrapper.find('[data-test="pb-event-panel"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="pb-rail-events"]').exists()).toBe(true)
+    await openPanel(wrapper, 'display')
+    expect(wrapper.find('[data-test="pb-panel-events"]').exists()).toBe(true)
   })
 
   it('seeks on seekTo and pauses', async () => {
@@ -403,7 +404,7 @@ describe('BattlePlayback', () => {
     const wrapper = mountPlayback()
     await flushPromises()
     await wrapper.find('[data-test="pb-play"]').trigger('click')
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.pause')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.pause')
     rafCb(0)
     rafCb(1000)
     await flushPromises()
@@ -424,7 +425,7 @@ describe('BattlePlayback', () => {
     expect(wrapper.text()).toContain('recon.map.playback.event_DAMAGE')
     expect(wrapper.text()).toContain('400')
     expect(wrapper.find('.pb-time').text()).toContain('00:12 / 01:00')
-    expect(wrapper.find('[data-test="pb-play"] .pb-control-label').text()).toBe('recon.map.playback.play')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.play')
   })
 
   function gapOverview() {
@@ -461,9 +462,9 @@ describe('BattlePlayback', () => {
     const wrapper = mountPlayback()
     await flushPromises()
     await wrapper.find('[data-test="pb-play"]').trigger('click')
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.pause')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.pause')
     await wrapper.find('.pb-range').trigger('pointerdown')
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.play')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.play')
     rafCb(1000) // 残留 RAF 回调不得再推进时间
     await flushPromises()
     expect(wrapper.text()).toContain('00:00 / 01:00')
@@ -485,7 +486,7 @@ describe('BattlePlayback', () => {
     input.remove()
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ' }))
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.pause')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.pause')
   })
 
   it('a single play click schedules exactly one RAF loop', async () => {
@@ -587,11 +588,6 @@ describe('2D Playback reload telemetry', () => {
     expect(marker(wrapper, 1001).props('marker').reloadShells).toBeNull()
   })
 })
-
-
-
-
-
 
 describe('destroyed markers (symmetric contract)', () => {
   function destroyedOverview() {
@@ -893,14 +889,18 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
+    await wrapper.get('[data-test="pb-speed-current"]').trigger('click')
     await wrapper.find('[data-test="pb-speed-2"]').trigger('click')
-    expect(wrapper.find('[data-test="pb-speed-2"]').classes()).toContain('active')
+    expect(wrapper.get('[data-test=\"pb-speed-current\"]').text()).toBe('2×')
+    await wrapper.get('[data-test="pb-speed-current"]').trigger('click')
     await wrapper.find('[data-test="pb-speed-4"]').trigger('click')
-    expect(wrapper.find('[data-test="pb-speed-4"]').classes()).toContain('active')
+    expect(wrapper.get('[data-test=\"pb-speed-current\"]').text()).toBe('4×')
+    await wrapper.get('[data-test="pb-speed-current"]').trigger('click')
     await wrapper.find('[data-test="pb-speed-0.5"]').trigger('click')
-    expect(wrapper.find('[data-test="pb-speed-0.5"]').classes()).toContain('active')
+    expect(wrapper.get('[data-test=\"pb-speed-current\"]').text()).toBe('0.5×')
+    await wrapper.get('[data-test="pb-speed-current"]').trigger('click')
     await wrapper.find('[data-test="pb-speed-1"]').trigger('click')
-    expect(wrapper.find('[data-test="pb-speed-1"]').classes()).toContain('active')
+    expect(wrapper.get('[data-test=\"pb-speed-current\"]').text()).toBe('1×')
     // loop：seek 到接近末尾 → 播放 → 越过末尾自动回 0 继续
     await wrapper.setProps({ loop: true })
     const wrap = mountPlayback(makeOverview(), 59)
@@ -914,7 +914,6 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     expect(wrap.find('.pb-time').text()).toBe('00:00 / 01:00')
   })
 })
-
 
 describe('PR4 §33 B3 — collision UX：标签与 HP 永不因碰撞隐藏', () => {
   afterEach(() => {
@@ -1153,7 +1152,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     // 会让喂进去的 entries 落到错误的观察者身上，于是 mapSize 永远是 0、scale 恒为 1。
     // 广播给全部回调即可——每个回调本来就按 e.target 过滤自己关心的元素。
     const callbacks = []
-    const RO = vi.fn(function (cb) { callbacks.push(cb); this.observe = vi.fn(); this.disconnect = vi.fn() })
+    const RO = vi.fn(function (cb) { callbacks.push(cb); this.observe = vi.fn(); this.unobserve = vi.fn(); this.disconnect = vi.fn() })
     vi.stubGlobal('ResizeObserver', RO)
     // 保持原 API：返回的是「取回调」的 getter，取到的才是喂 entries 的那个函数。
     return () => (callbacks.length ? (entries) => { for (const cb of callbacks) cb(entries) } : null)
@@ -1186,22 +1185,6 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(src).toContain('state.markerSize.renderBox.width * view.scale')
     expect(src).toContain('state.markerSize.renderBox.height * view.scale')
     expect(src).not.toContain('state.markerSize.collisionFootprint.width * view.scale')
-  })
-
-  // §side-slots：侧栏形态下 safeInsets 必须归零。忘了归零的话上下仍按 HUD/controls
-  // 高度预留，地图白白小一圈——882×344 上是 336px 与 188px 的差别。
-  it('keeps the fullscreen HUD inset and delegates bottom inset ownership by form', () => {
-    const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
-    const fn = src.slice(src.indexOf('function safeInsets()'))
-    const body = fn.slice(0, fn.indexOf('function applyView'))
-    expect(body).toContain('playbackSafeInsetOwnership')
-    expect(body).toContain('if (ownership.reserveTop)')
-    expect(body).toContain("querySelector('.pb-hud')")
-    expect(body).toContain('if (ownership.reserveBottom)')
-    expect(body).toContain("querySelector('.pb-mobile-overlay-content')")
-    expect(body).toContain('wrapRect.bottom - contentRect.top')
-    expect(body).not.toContain('if (sideSlots.value) return { top, bottom }')
-    expect(body).toContain('formFactor: formFactor.value')
   })
 
   // 三档必须严格互补：mobile 的上界与 pc 的下界不能重叠，否则同一视口既是
@@ -1237,73 +1220,17 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     }
   })
 
-  // 收起左栏时 controls 必须搬出 rail：非触屏设备的 controls 渲染在 rail 内，
-  // 而收起态把 .pb-rail-body 整块 display:none，播放/进度条会跟着一起消失，
-  // 屏幕上只剩一个展开箭头。
-  it('moves the controls out of the rail when the rail collapses', async () => {
+  // Desktop primary controls belong to the same center Transport.
+  it('wide desktop keeps one primary Transport in the center stack', async () => {
     stubRaf()
     stubMatchMedia({ '(min-width: 1200px)': true })
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-
-    const railBody = () => wrapper.find('[data-test="pb-rail-body"]')
-    const controls = () => wrapper.find('[data-test="pb-controls"]')
-    expect(controls().exists()).toBe(true)
-    expect(railBody().element.contains(controls().element)).toBe(true)
-
-    await wrapper.find('[data-test="pb-rail-collapse"]').trigger('click')
-    await flushPromises()
-
-    expect(controls().exists()).toBe(true)
-    expect(railBody().element.contains(controls().element)).toBe(false)
-
-    // 再展开回到 rail 内
-    await wrapper.find('[data-test="pb-rail-collapse"]').trigger('click')
-    await flushPromises()
-    expect(railBody().element.contains(controls().element)).toBe(true)
-  })
-
-  // 左右两栏可拖拽改宽：把手写入 --pb-rail-w / --pb-details-w，并夹在合理区间内。
-  it('resizes the rail by dragging its handle and clamps the width', async () => {
-    stubRaf()
-    stubMatchMedia({ '(min-width: 1200px)': true })
-    const wrapper = mountPlayback(makeOverview(), 12)
-    await flushPromises()
-
-    const root = wrapper.find('[data-test="battle-playback"]')
-    expect(root.attributes('style') || '').not.toContain('--pb-rail-w')
-
-    const handle = wrapper.find('[data-test="pb-rail-resizer"]')
-    expect(handle.exists()).toBe(true)
-    root.element.getBoundingClientRect = () => ({ left: 0, right: 1600, top: 0, bottom: 900 })
-
-    await handle.trigger('pointerdown', { button: 0, pointerId: 1 })
-    window.dispatchEvent(new window.PointerEvent('pointermove', { clientX: 300 }))
-    await flushPromises()
-    expect(wrapper.find('[data-test="battle-playback"]').attributes('style')).toContain('--pb-rail-w: 300px')
-
-    // 超出上限被夹住（rail 最大 420）
-    window.dispatchEvent(new window.PointerEvent('pointermove', { clientX: 9999 }))
-    await flushPromises()
-    expect(wrapper.find('[data-test="battle-playback"]').attributes('style')).toContain('--pb-rail-w: 420px')
-    window.dispatchEvent(new window.PointerEvent('pointerup', {}))
-  })
-
-  // 宽桌面（>=1200px）：播放控制在 Left Rail 内（rail 已加宽到放得下速度档位那一排），
-  // 且与 rail 图标导航重复的面板/标注/重置/全屏按钮必须隐藏，不能在右下角再出现一份。
-  it('wide desktop puts playback controls in the Left Rail without duplicating rail actions', async () => {
-    stubRaf()
-    stubMatchMedia({ '(min-width: 1200px)': true })
-    const wrapper = mountPlayback(makeOverview(), 12)
-    await flushPromises()
-
-    const rail = wrapper.find('[data-test="pb-left-rail"]')
-    expect(rail.find('[data-test="pb-controls"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-test="pb-controls"]')).toHaveLength(1)
-    expect(wrapper.find('[data-test="pb-controls"]').classes()).toContain('pb-controls-rail-mode')
-    // rail 里已有这些图标，控制条不再重复
-    expect(wrapper.find('[data-test="pb-rail-reset"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-rail-fullscreen"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="pb-transport-slot"]').find('[data-test="pb-controls"]').exists()).toBe(true)
+    // 二级入口是 Transport 上的 gear；宽档不再有常驻左栏，也不预渲染 Display 浮面
+    expect(wrapper.get('[data-test="pb-secondary-entry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
   })
 
   it('1/2/3/4/5：API 可用 → 按钮可见；进入调 root.requestFullscreen；fullscreenchange 同步；退出调 exitFullscreen；ESC 外部退出恢复', async () => {
@@ -1313,7 +1240,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await flushPromises()
     const btn = wrapper.find('[data-test="pb-fullscreen"]')
     expect(btn.exists()).toBe(true)
-    expect(btn.text()).toContain('enter_fullscreen')
+    expect(btn.attributes('aria-label')).toContain('enter_fullscreen')
     // 进入：requestFullscreen 调用在 Battle Playback root 上
     await btn.trigger('click')
     expect(reqFs).toHaveBeenCalledTimes(1)
@@ -1322,7 +1249,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-fullscreen"]').text()).toContain('exit_fullscreen')
+    expect(wrapper.find('[data-test="pb-fullscreen"]').attributes('aria-label')).toContain('exit_fullscreen')
     // 点击退出 → document.exitFullscreen
     await wrapper.find('[data-test="pb-fullscreen"]').trigger('click')
     expect(exitFs).toHaveBeenCalledTimes(1)
@@ -1330,7 +1257,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     setFullscreen(null)
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-fullscreen"]').text()).toContain('enter_fullscreen')
+    expect(wrapper.find('[data-test="pb-fullscreen"]').attributes('aria-label')).toContain('enter_fullscreen')
   })
 
   it('6：API 不可用 → 按钮隐藏，不抛错', async () => {
@@ -1346,6 +1273,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     await wrapper.find('.pb-range').setValue(12)
+    await wrapper.get('[data-test="pb-speed-current"]').trigger('click')
     await wrapper.find('[data-test="pb-speed-2"]').trigger('click') // 2×
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 }) // 选中
     for (let i = 0; i < 3; i++) {
@@ -1353,7 +1281,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     }
     await flushPromises()
     const timeBefore = wrapper.find('.pb-time').text()
-    const speedBefore = wrapper.find('.pb-speed .active').text()
+    const speedBefore = wrapper.get('[data-test="pb-speed-current"]').text()
     const infoBefore = wrapper.find('[data-test="pb-info"]').text()
     const viewportBefore = wrapper.find('[data-test="pb-viewport"]').attributes('style')
     // 进入
@@ -1361,7 +1289,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
     expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
-    expect(wrapper.find('.pb-speed .active').text()).toBe(speedBefore)
+    expect(wrapper.get('[data-test="pb-speed-current"]').text()).toBe(speedBefore)
     expect(wrapper.find('[data-test="pb-info"]').text()).toBe(infoBefore)
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toBe(viewportBefore)
     // 退出
@@ -1369,9 +1297,46 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
     expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
-    expect(wrapper.find('.pb-speed .active').text()).toBe(speedBefore)
+    expect(wrapper.get('[data-test="pb-speed-current"]').text()).toBe(speedBefore)
     expect(wrapper.find('[data-test="pb-info"]').text()).toBe(infoBefore)
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toBe(viewportBefore)
+  })
+
+  it('preserves user zoom/pan when actual Stage dimensions change and fullscreen toggles', async () => {
+    stubRaf()
+    stubFullscreenApi()
+    const getRoCb = stubResizeObserver()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const roCb = getRoCb()
+    const stage = wrapper.get('.pb-map-stage').element
+    const map = wrapper.get('[data-test="pb-map"]').element
+    Object.defineProperty(stage, 'clientHeight', { value: 900, configurable: true })
+    roCb([{ target: map, contentRect: { width: 900, height: 900 } }])
+    await flushPromises()
+    for (let i = 0; i < 4; i++) {
+      await wrapper.get('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 400, clientY: 300 })
+    }
+    const viewport = wrapper.get('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 400, clientY: 300 })
+    await viewport.trigger('pointermove', { pointerId: 1, clientX: 440, clientY: 330 })
+    await viewport.trigger('pointerup', { pointerId: 1, clientX: 440, clientY: 330 })
+    const camera = { ...wrapper.vm.view }
+    const time = wrapper.vm.currentTime
+    Object.defineProperty(stage, 'clientHeight', { value: 650, configurable: true })
+    roCb([{ target: map, contentRect: { width: 650, height: 650 } }])
+    await flushPromises()
+    expect({ ...wrapper.vm.view }).toEqual(camera)
+    setFullscreen(wrapper.get('[data-test="battle-playback"]').element)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    Object.defineProperty(stage, 'clientHeight', { value: 1000, configurable: true })
+    roCb([{ target: map, contentRect: { width: 1000, height: 1000 } }])
+    await flushPromises()
+    expect({ ...wrapper.vm.view }).toEqual(camera)
+    expect(wrapper.vm.currentTime).toBe(time)
+    await openPanel(wrapper, 'display')
+    await wrapper.get('[data-test="pb-panel-reset"]').trigger('click')
+    expect(wrapper.vm.view.scale).toBeLessThan(camera.scale)
   })
 
   it('§fullscreen-exit：退出 fullscreen 后以 page-mode 几何重新 fit（不带回 fullscreen camera），持久状态保留', async () => {
@@ -1430,7 +1395,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-info"]').text()).toBe(selBefore)
   })
 
-  it('§safeInsets-contract：normal mobile controls hidden→bottom=0 不缩地图；fullscreen mobile controls visible→reserve content；content reflow→safe 更新', async () => {
+  it('external HUD/Transport never reserve an inset inside the square raster viewport', async () => {
     stubRaf()
     stubFullscreenApi()
     stubMatchMedia({
@@ -1492,131 +1457,37 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
     await flushPromises()
     const fsNoReserve = scaleOf()
-    expect(fsReserve).toBeLessThan(fsNoReserve)
+    expect(fsReserve).toBeCloseTo(fsNoReserve, 6)
 
     // --- content reflow：fullscreen mobile content 高度变化 → safe 几何更新（200>140 → reserve 更多 → 更小 fit）。 ---
     Object.defineProperty(overlayEl, 'clientHeight', { value: 200, configurable: true })
     roCb([{ target: mapEl, contentRect: { width: 1200, height: 1204 } }])
     await flushPromises()
-    expect(scaleOf()).toBeLessThan(fsReserve)
+    expect(scaleOf()).toBeCloseTo(fsReserve, 6)
   })
 
   /**
    * 需求 1D/1E：名册可见性是**共享呈现偏好**（uiPrefs.showRoster，与 3D 同一个 key），
    * 手机形态下名册是**临时面**而不是常驻侧边车道。
    */
-  describe('§roster-visibility-shared：共享可见性偏好 + 手机临时名册', () => {
-    const mountMobile = async () => {
-      stubRaf()
-      stubMatchMedia({ [PLAYBACK_MOBILE_QUERY]: true, '(min-width: 1200px)': false })
-      const wrapper = mountPlayback(makeOverview(), 12)
-      mountedWrappers.push(wrapper)
-      await flushPromises()
-      return wrapper
-    }
-
-    it('手机：名册走统一二级面（不再有第二个常驻入口），点行仍能选中并开详情', async () => {
-      const wrapper = await mountMobile()
-      // 主面只有一个二级入口；没有第二个常驻名册启动器
-      expect(wrapper.find('[data-test="pb-secondary-entry"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="pb-landscape-roster-toggle"]').exists()).toBe(false)
-      // 名册本体默认不在 DOM 里（不是“渲染了但被 CSS 藏起来”）
-      expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(false)
-      // 二级面 → Team 分页 → **真的** PlaybackRoster（不是静态名单）
-      await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
-      await flushPromises()
-      await wrapper.find('[data-test="pb-rail-team"]').trigger('click')
-      await flushPromises()
-      const roster = wrapper.find('[data-testid="team-panel-roster"]')
-      expect(roster.exists()).toBe(true)
-      // 选中契约：点行 → 选中车辆 → 打开共享详情面
-      const row = roster.find('[data-test="pb-roster-row"]')
-      if (row.exists()) {
-        await row.trigger('click')
-        await flushPromises()
-        expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
-      }
-      // 关闭二级面即还回场景空间
-      await wrapper.find('[data-test="pb-drawer-backdrop"]').trigger('click')
-      await flushPromises()
-      expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(false)
-    })
-
-    it('uiPrefs.showRoster=false → 手机名册不呈现；恢复 true 后数据即刻可用且不重建播放', async () => {
-      const wrapper = await mountMobile()
-      const prefs = usePlaybackPreferences()
-      // 先选中一辆车，用于验证隐藏不清选中
-      await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
-      await flushPromises()
-      const timeBefore = wrapper.vm.currentTime
-      const selectedBefore = wrapper.find('[data-test="pb-info"]').exists()
-
-      prefs.uiPrefs.showRoster = false
-      await flushPromises()
-      // Team 入口不得存在（否则会点进被隐藏的名册）
-      expect(wrapper.find('[data-test="pb-rail-team"]').exists()).toBe(false)
-      // 只关呈现：播放时间、选中详情、地图视图都不重置
-      expect(wrapper.vm.currentTime).toBe(timeBefore)
-      expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(selectedBefore)
-      expect(wrapper.find('[data-test="pb-map"]').exists()).toBe(true)
-
-      prefs.uiPrefs.showRoster = true
-      await flushPromises()
-      // 恢复后入口立刻回来（数据一直由播放状态持有，不重建）
-      await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
-      await flushPromises()
-      expect(wrapper.find('[data-test="pb-rail-team"]').exists()).toBe(true)
-    })
-
-    it('名册偏好关闭时：正在打开的 Team 分页被收起（不留空的不可用分页）', async () => {
-      const wrapper = await mountMobile()
-      const prefs = usePlaybackPreferences()
-      await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
-      await flushPromises()
-      await wrapper.find('[data-test="pb-rail-team"]').trigger('click')
-      await flushPromises()
-      expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(true)
-      prefs.uiPrefs.showRoster = false
-      await flushPromises()
-      // activePanel 不得停留在一个不可用的 Team 状态上
-      expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(false)
-      expect(wrapper.find('[data-test="pb-rail-back"]').exists()).toBe(false)
-    })
-
-    it('手机竖屏 → 全屏横屏（390x844 → 844x390）仍是手机形态：紧凑速度档 + 主面不分层退化', async () => {
-      const wrapper = await mountMobile()
-      // 竖屏：速度档渐进披露（只有一个当前值按钮）
-      expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="pb-speed-1"]').exists()).toBe(false)
-      // 旋转到横屏（内宽 844 > 768）：形态必须仍判为手机——否则会突然长回桌面控件网格
-      stubMatchMedia({ [PLAYBACK_MOBILE_QUERY]: true, '(min-width: 1200px)': false })
-      await flushPromises()
-      expect(wrapper.find('[data-test="battle-playback"]').classes()).toContain('pb-form-mobile')
-      expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="pb-secondary-entry"]').exists()).toBe(true)
-      // 手机横屏不得出现常驻侧边名册，也不得有第二个启动器：名册只经统一二级面
-      expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(false)
-      expect(wrapper.find('[data-test="pb-landscape-roster-toggle"]').exists()).toBe(false)
-    })
-
-    it('手机主面只留 PRIMARY：传输 + 全屏 + 二级入口；渲染器工具移入二级面且仍可达', async () => {
-      const wrapper = await mountMobile()
-      // 常驻主面
-      expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="pb-secondary-entry"]').exists()).toBe(true)
-      // 渲染器专属工具不再常驻主面
-      expect(wrapper.find('[data-test="pb-panels"]').exists()).toBe(false)
-      expect(wrapper.find('[data-test="pb-annotation"]').exists()).toBe(false)
-      expect(wrapper.find('[data-test="pb-reset"]').exists()).toBe(false)
-      // 但它们没有消失：二级面里可达（功能不丢）。二级面先开抽屉，再进「显示」分页。
-      await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
-      await flushPromises()
-      await wrapper.find('[data-test="pb-rail-display"]').trigger('click')
-      await flushPromises()
-      expect(wrapper.find('[data-test="pb-panel-annotation"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="pb-panel-reset"]').exists()).toBe(true)
-      expect(wrapper.find('[data-test="pb-show-roster"]').exists()).toBe(true)
-    })
+  it('shared roster presentation hides/restores both physical teams without clearing selection/time', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    await wrapper.get('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+    const time = wrapper.vm.currentTime
+    const selected = wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')
+    const prefs = usePlaybackPreferences()
+    expect(wrapper.findAll('[data-test="pb-roster-row"]')).toHaveLength(3)
+    prefs.uiPrefs.showRoster = false
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="pb-roster-row"]')).toHaveLength(0)
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
+    expect(wrapper.vm.currentTime).toBe(time)
+    prefs.uiPrefs.showRoster = true
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="pb-roster-row"]')).toHaveLength(3)
+    expect(wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')).toBe(selected)
   })
 
   it('§mobile-fullscreen-contract：手机 fullscreen + landscape（内宽>768）仍保持 mobile mode（bottom-overlay controls、无 rail/details）', async () => {
@@ -1639,43 +1510,29 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
 
-    // controls 在 bottom overlay：Left Rail 内不再有 pb-controls
-    expect(wrapper.find('.pb-left-rail [data-test="pb-controls"]').exists()).toBe(false)
+    // controls 在 bottom overlay：手机形态只由 overlay 承载，不存在第二份控件条
+    expect(wrapper.findAll('[data-test="pb-controls"]')).toHaveLength(1)
     // overlay 内有 controls：mobile mode 以 bottom-overlay controls 承载
     expect(wrapper.find('[data-test="pb-mobile-overlay"] [data-test="pb-controls"]').exists()).toBe(true)
 
     // §details-blocker：未选中车辆时 shell 空壳且不带 pb-details-active（不遮挡/不 tint/不接管 pointer）
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').classes()).not.toContain('pb-details-active')
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
 
-    // §mobile-drawer：二级面入口不是 dead action——打开 mobile drawer，能进入 Team/Display/Events。
-    // 手机形态下主面用统一的**二级面入口**（pb-secondary-entry）；渲染器专属的 pb-panels
-    // 让位到二级层级（宽档仍在主面原处），这是 2D/3D 收敛后的层级契约。
-    expect(wrapper.find('[data-test="pb-panels"]').exists()).toBe(false)
-    await wrapper.find('[data-test="pb-secondary-entry"]').trigger('click')
-    await flushPromises()
-    expect(root.classes()).toContain('pb-drawer-open')
-    expect(wrapper.find('[data-test="pb-drawer-backdrop"]').exists()).toBe(true)
-    await wrapper.find('[data-test="pb-rail-team"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(true)
-    await wrapper.find('[data-test="pb-rail-back"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="team-panel-roster"]').exists()).toBe(false)
-    await wrapper.find('[data-test="pb-drawer-backdrop"]').trigger('click')
-    await flushPromises()
-    expect(root.classes()).not.toContain('pb-drawer-open')
+    await openPanel(wrapper, 'display')
+    expect(wrapper.find('[data-test="pb-panel-events"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="display-close"]').trigger('click')
 
     // 选中车辆 → details 以 sheet/drawer 出现，且 shell 进入 active（接管 pointer）
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
     await flushPromises()
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').classes()).toContain('pb-details-active')
-    // 退出 fullscreen 后仍保持 mobile overlay controls（不回到 rail）
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
+    // 退出 fullscreen 后仍保持 mobile overlay controls（不产生第二份常驻控件条）
     setFullscreen(null)
     document.dispatchEvent(new Event('fullscreenchange'))
     await flushPromises()
-    expect(wrapper.find('.pb-left-rail [data-test="pb-controls"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="pb-controls"]')).toHaveLength(1)
     expect(wrapper.find('[data-test="pb-mobile-overlay"] [data-test="pb-controls"]').exists()).toBe(true)
   })
 
@@ -1706,7 +1563,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await flushPromises()
 
     // 空 shell：未选中车辆，无 pb-details-active → shell 不接管 pointer
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').classes()).not.toContain('pb-details-active')
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
 
     // 先 zoom in，让地图走出 contain-fit、产生可平移余量（真实手势路径：手指拖动）
     const map = wrapper.find('[data-test="pb-map"]')
@@ -1774,28 +1631,14 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(scaleOf()).toBeCloseTo(fitScale, 3)
   })
 
-  it('workspace Left Rail：buttons toggle panels; annotation/reset wired（§2）', async () => {
+  it('secondary Reset View remains reachable and preserves replay time', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // rail 常驻 DOM（fullscreen 下才视觉显示为左列）；所有 rail 按钮存在
-    expect(wrapper.find('[data-test="pb-rail-team"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-rail-display"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-rail-events"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-rail-annotation"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-rail-reset"]').exists()).toBe(true)
-    // 点击 rail display → 左侧二级菜单显示显示选项
-    await wrapper.find('[data-test="pb-rail-display"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-test="pb-panel-content-display"]').exists()).toBe(true)
-    // 返回一级菜单
-    await wrapper.find('[data-test="pb-rail-back"]').trigger('click')
-    await flushPromises()
-    // reset view 不改变回放状态
-    const timeBefore = wrapper.find('.pb-time').text()
-    await wrapper.find('[data-test="pb-rail-reset"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
+    await openPanel(wrapper, 'display')
+    const time = wrapper.get('[data-test="pb-time"]').text()
+    await wrapper.get('[data-test="pb-panel-reset"]').trigger('click')
+    expect(wrapper.get('[data-test="pb-time"]').text()).toBe(time)
   })
 
   it('§3 Right Details：右侧仅保留点击车辆后的详情；未选车辆时无战局/提示重复', async () => {
@@ -1915,7 +1758,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
       await flushPromises()
     }
     expect(addSpy.mock.calls.filter(([t]) => t === 'fullscreenchange').length).toBe(1) // 未重复 add
-    expect(wrapper.find('[data-test="pb-fullscreen"]').text()).toContain('enter_fullscreen')
+    expect(wrapper.find('[data-test="pb-fullscreen"]').attributes('aria-label')).toContain('enter_fullscreen')
     wrapper.unmount()
     expect(removeSpy.mock.calls.filter(([t]) => t === 'fullscreenchange').length).toBe(1)
   })
@@ -2666,9 +2509,8 @@ describe('V2 HP regression (restored critical coverage)', () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    await openPanel(wrapper, 'team')
-    // 名册现在由共享的 PlaybackRoster 渲染（二级面的 Team 分页），不再是被替换掉的静态名单
-    const roster = wrapper.find('[data-testid="team-panel-roster"]')
+    // The visible physical side lanes consume the same authoritative roster.
+    const roster = wrapper.get('[data-test="pb-main"]')
     expect(roster.exists()).toBe(true)
     // 按物理队伍分组（Team 1 / Team 2），不是录像者视角的 friendly / enemy
     const friendly = roster.findAll('.pb-roster-team1 [data-test="pb-roster-row"]')
@@ -2678,5 +2520,84 @@ describe('V2 HP regression (restored critical coverage)', () => {
     expect(friendly[0].text()).toContain('Maus')
     expect(enemy[0].text()).toContain('T49')
     expect(enemy[1].text()).toContain('NeverSeen')
+  })
+})
+
+describe('Playback secondary convergence', () => {
+  it('opens Events through Display and keeps event seek/pause behavior reachable', async () => {
+    const wrapper = mountPlayback()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    await wrapper.get('[data-test="pb-panel-events"]').trigger('click')
+    expect(wrapper.get('[data-testid="display-panel"]').find('[data-test="pb-event-panel"]').exists()).toBe(true)
+    const event = wrapper.find('[data-test="pb-event"]')
+    expect(event.exists()).toBe(true)
+    await event.trigger('click')
+    expect(wrapper.getComponent({ name: 'PlaybackControls' }).props('playing')).toBe(false)
+    expect(wrapper.getComponent({ name: 'PlaybackControls' }).props('currentTime')).toBeGreaterThan(0)
+    await wrapper.get('[data-test="pb-events-back"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-panel-content-display"]').exists()).toBe(true)
+  })
+
+  it('opens one closeable annotation toolbar under Transport in wide form', async () => {
+    const wrapper = mountPlayback()
+    await flushPromises()
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    await wrapper.get('[data-test="pb-panel-annotation"]').trigger('click')
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
+    expect(wrapper.findAllComponents({ name: 'AnnotationToolbar' })).toHaveLength(1)
+    expect(wrapper.get('[data-test="pb-transport-slot"]').find('.pb-annotation-toolbar').exists()).toBe(true)
+    expect(wrapper.getComponent({ name: 'BattleMap' }).props('activeTool')).toBe('pen')
+    await wrapper.getComponent({ name: 'AnnotationToolbar' }).vm.$emit('close')
+    await nextTick()
+    expect(wrapper.findComponent({ name: 'AnnotationToolbar' }).exists()).toBe(false)
+    expect(wrapper.getComponent({ name: 'BattleMap' }).props('activeTool')).toBe(null)
+  })
+
+  it('honors shared HUD/base/killfeed/Reload preferences without changing replay state', async () => {
+    const dataset = makePlaybackV2({ baseStates: [{ timeSec: 0, baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null }] })
+    const wrapper = mountPlayback(makeOverview(), 8, dataset)
+    await flushPromises()
+    const time = wrapper.getComponent({ name: 'PlaybackControls' }).props('currentTime')
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    await wrapper.get('[data-test="pb-show-hud"]').setValue(false)
+    expect(wrapper.find('[data-test="pb-hp-bars"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-hud-bases"]').exists()).toBe(true)
+    await wrapper.get('[data-test="pb-show-base"]').setValue(false)
+    expect(wrapper.find('[data-test="pb-hud"]').exists()).toBe(false)
+    await wrapper.get('[data-test="pb-show-killfeed"]').setValue(false)
+    await wrapper.get('[data-test="pb-show-reload"]').setValue(false)
+    const prefs = usePlaybackPreferences()
+    expect(prefs.uiPrefs.showKillfeed).toBe(false)
+    expect(prefs.labelPrefs.showReload).toBe(false)
+    expect(wrapper.getComponent({ name: 'BattleMap' }).props('markerLabel')(1001).showReload).toBe(false)
+    expect(wrapper.getComponent({ name: 'PlaybackControls' }).props('currentTime')).toBe(time)
+  })
+
+  it('hides all UI transiently and restores retained time, selection and preferences via H', async () => {
+    const wrapper = mountPlayback(makeOverview(), 8)
+    await flushPromises()
+    await wrapper.get('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+    const map = wrapper.getComponent({ name: 'BattleMap' })
+    const selected = map.props('selectedAccountId')
+    const time = wrapper.getComponent({ name: 'PlaybackControls' }).props('currentTime')
+    const prefs = usePlaybackPreferences()
+    const before = { ...prefs.uiPrefs }
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    await wrapper.get('[data-test="pb-hide-all-ui"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-hud"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-show-all-ui"]').exists()).toBe(true)
+    expect(map.props('selectedAccountId')).toBe(selected)
+    expect(map.props('hpPrefs').showHp).toBe(false)
+    expect(prefs.uiPrefs).toEqual(before)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h' }))
+    await nextTick()
+    expect(wrapper.find('[data-test="pb-show-all-ui"]').exists()).toBe(false)
+    expect(wrapper.getComponent({ name: 'PlaybackControls' }).props('currentTime')).toBe(time)
+    expect(wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')).toBe(selected)
+    expect(wrapper.findComponent({ name: 'VehicleDetailsPanel' }).exists()).toBe(true)
   })
 })

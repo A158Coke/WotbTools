@@ -10,14 +10,14 @@
  * 切到别的能力（`active=false`）：场景停帧但不销毁，切回不重新解析、保留 timeline / 相机；
  * 键盘播放快捷键同样只在激活时响应。
  */
+import { cumulativeStatsAtV2, healthDisplayAt, lifeAt, positionAtV2, positionCoveredAtV2 } from '../utils/battlePlaybackV2.ts'
+import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Maximize2, Minimize2 } from 'lucide-vue-next'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useI18n } from 'vue-i18n'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
-import { hpPercentText } from '../scene/rosterState.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { uiProfile } from '../composables/useUiProfile.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
@@ -26,10 +26,13 @@ import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitV
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
+import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
 import PlaybackVehicleLabels3D from './PlaybackVehicleLabels3D.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
+import { rosterLanesFor } from '../scene/rosterState.js'
 import BaseStatusBar from './BaseStatusBar.vue'
+import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
@@ -40,6 +43,7 @@ defineOptions({ name: 'Replay3DPane' })
 const props = defineProps({
   /** 工作台派生的目标回放文件；null = 还没选（面板只显示提示，不自己开文件选择器） */
   file: { type: Object, default: null },
+  playbackSession: { type: Object, default: null },
   /** 当前能力是否激活：false 时停帧、停键盘，但不销毁会话 */
   active: { type: Boolean, default: false },
   /** 工作台给出的不可用原因（多文件未选场次等）；非空时不解析 */
@@ -63,25 +67,27 @@ const { labelPrefs, hpPrefs, uiPrefs } = usePlaybackPreferences()
  */
 const uiHidden = ref(false)
 /**
- * 「显示 / 二级控件」面板开合（局部视图状态，不持久化）。
+ * 「显示 / 二级控件」面开合（局部视图状态，不持久化）。
  *
- * 一个 owner 承担两种形态（不新建第二套设置系统）：
- *   · 宽视口 = 右下方浮层，只放显示开关；相机等仍在常驻工具条上；
- *   · 紧凑视口（手机）= 底部浮层，**额外**收纳相机模式 / 阵容 / 画质，工具条整行隐藏，
- *     战场因此拿回一整行高度（见模板里的 `.toolbar` 与 compact sheet 分支）。
- * 两种形态读写同一份共享偏好（uiPrefs / labelPrefs / hpPrefs / store.cam），只有布局不同。
+ * 一个 owner 承担两种形态（不新建第二套设置系统）：内容是同一份——相机模式、阵容 / 标签 /
+ * 画质等查看与显示开关；只有**位置**随形态变，且位置归 `PlaybackDisplaySurface`：
+ *   · 宽视口 / 横屏 = 锚定在 gear 上的浮面，优先开在 gear 上方，空间不足换边并夹在 workspace 内；
+ *   · 竖屏 = 流内的一块面，排在传输控件之后（order 由本组件的 `.portrait-flow` 给）。
+ * 两种形态读写同一份共享偏好（uiPrefs / labelPrefs / hpPrefs / store.cam）。
  */
 const displayOpen = ref(false)
+const displayAnchor = ref(null)
+function toggleDisplay(anchor) { displayAnchor.value = anchor; displayOpen.value = !displayOpen.value }
 /** 紧凑档：手机形态（见 usePlaybackPhoneForm —— 宽度 <768 **或** 触屏且视口高 ≤500，
  *  后者命中手机全屏横屏）。**不能用纯宽度断点**：手机竖屏 412×915 全屏后是 915×412，
  *  按宽度会突然判成平板、把收起来的 controls 又展开。与 2D 共用同一份 form-factor 契约。 */
 const { isPhone } = usePlaybackPhoneForm()
 /**
  * 竖屏判据与 2D **同一个**（usePlaybackPortraitViewport）：不能从 `isPhone` 推——手机横屏 /
- * 全屏横屏也是 `isPhone`，但它们走的是 `Team 1 | 正方形 Stage | Team 2`。
+ * 全屏横屏也是 `isPhone`，但它们走的是 `Team 1 | 铺满中心的 Stage | Team 2`。
  *
  *   竖屏 = 纵向流：HUD / 正方形 Stage / 传输控件 / 详情（inline）/ Team 1 / Team 2，页面可滚
- *   其它 = 三段式：两侧车道 + 中间正方形 Stage，传输控件在 Stage 之下
+ *   其它 = 三段式：两侧车道 + 中间铺满的 Stage，传输控件在 Stage 之下
  */
 const { isPortrait } = usePlaybackPortraitViewport()
 const portraitFlow = computed(() => isPortrait.value)
@@ -105,6 +111,7 @@ function detailsSideFor(event) {
   if (target?.closest?.('.side-right')) return 'left'
   const root = rootEl.value
   if (!root || !Number.isFinite(event?.clientX)) return null
+  // 场景里的车：浮窗落在点击位置的**相对**一侧，不挡住用户刚点的那台车。
   const rect = root.getBoundingClientRect()
   return event.clientX > rect.left + rect.width / 2 ? 'left' : 'right'
 }
@@ -205,74 +212,89 @@ const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
 
 // 顶栏双方总血量：数值用**完整整数**（§11 HUD 禁止 1k / 22.3k 缩写，与 2D HUD 同口径）；
 // 色条宽度用原始百分比（不取整，血量缓慢下降时条仍平滑），title 上给取整百分比。
-const hpText = (n) => String(Math.round(Math.max(0, Number(n) || 0)))
-const hpPctText = (pct) => Math.round(Number(pct) || 0) + '%'
+const hudHealth = (current, maximum) => ({
+  state: 'EXACT',
+  knownRemaining: Number.isFinite(Number(current)) ? Math.max(0, Number(current)) : 0,
+  totalMax: Number.isFinite(Number(maximum)) ? Math.max(0, Number(maximum)) : 0,
+  unknownMax: 0,
+})
 
-/**
- * 阵营色只在 HUD 里用（three.js 场景本体的阵营色由场景内核按设计 token 处理）：
- * 阵容圆点 / 胜利失败横幅取语义 token，随主题切换，不再写死红绿。
- * `uiProfile` 是唯一 reactive 主题源（design-language §2），读样式只发生在计算属性里，
- * 不在每帧渲染里逐行读。
- *
- * **两套颜色是不同的概念，不得互相替代**：
- * - `team1` / `team2` = **物理队伍**身份色（--color-team-1/2），固定不随录像者所属队伍交换；
- * - `ally` / `enemy` = **记录者视角**（--color-team-ally/enemy），只服务顶栏总血量、比分与胜负横幅。
- */
+/** Banner colors follow the current profile and Recorder perspective. */
 const teamColors = computed(() => {
   // 主题偏好是唯一主题状态源：它变了就重读一次 token 值
   void uiProfile.value
   if (typeof getComputedStyle !== 'function' || typeof document === 'undefined') {
-    return { team1: 'currentColor', team2: 'currentColor', ally: 'currentColor', enemy: 'currentColor', unknown: 'currentColor' }
+    return { ally: 'currentColor', enemy: 'currentColor', unknown: 'currentColor' }
   }
   const styles = getComputedStyle(document.documentElement)
   const read = (name) => styles.getPropertyValue(name).trim() || 'currentColor'
   return {
-    team1: read('--color-team-1'),
-    team2: read('--color-team-2'),
     ally: read('--color-team-ally'),
     enemy: read('--color-team-enemy'),
     unknown: read('--color-text-secondary'),
   }
 })
 
-/**
- * 名册按**物理队伍**分组渲染（左 = Team 1，右 = Team 2，未识别阵营在左车道底部——
- * 位置与颜色都不随录像者属于哪一队改变）。场景内核只下发 `team`，颜色在本层取语义 token，
- * 保证「Team 1 是什么颜色」只有一份事实源。
- *
- * HP 数值/百分比由共享 `PlaybackRoster` 按每行的 `hp` / `maxHp` 现算（回放时刻的状态投影，
- * 见 scene/rosterState.js）：没有可信上限时百分比为 `null`，上屏成「—」而不是 0——unknown ≠ 0。
- * 本层只负责**分组事实源**（物理队伍）与圆点颜色。
- */
-const rosterGroups = computed(() => {
-  const colors = teamColors.value
-  const withColor = (list, color) => (list || []).map((player) => ({ ...player, color }))
-  return {
-    team1: withColor(store.roster.team1, colors.team1),
-    team2: withColor(store.roster.team2, colors.team2),
-    unknown: withColor(store.roster.unknown, colors.unknown),
-  }
-})
+/** Physical identities stay in the store; shared roster presentation derives Recorder colors. */
+const rosterLanes = computed(() => rosterLanesFor(store.roster, store.friendlyTeam))
 
 /** 选中行（详情面用它取实时投影；随名册每帧更新，所以是 computed 不是快照） */
 const selectedRow = computed(() => {
   if (selectedEid.value == null) return null
-  const g = rosterGroups.value
+  const g = store.roster
   return g.team1.find((p) => p.eid === selectedEid.value)
     || g.team2.find((p) => p.eid === selectedEid.value)
     || g.unknown.find((p) => p.eid === selectedEid.value)
     || null
 })
 
+// Scene and Details consume the same workspace-owned parse result.
+const detailPlayback = computed(() => store.hasData ? store.playbackSession?.canonical : null)
+const detailTime = computed(() => detailPlayback.value?.clock
+  ? Math.max(0, store.time - detailPlayback.value.clock.startRaw) : store.time)
+const selectedTrack = computed(() => detailPlayback.value?.dataset?.vehicles.find(track =>
+  selectedRow.value?.accountId != null && track.accountId === selectedRow.value.accountId) || null)
+const selectedLife = computed(() => selectedTrack.value ? lifeAt(selectedTrack.value, detailTime.value) : null)
+const selLastKnownSec = computed(() => {
+  const track = selectedTrack.value
+  if (!track || positionCoveredAtV2(track.positionSegments, detailTime.value)) return null
+  return positionAtV2(track.positionSegments, detailTime.value)?.timeSec ?? null
+})
+const selCurStats = computed(() => selectedTrack.value
+  ? cumulativeStatsAtV2(detailPlayback.value.dataset.events, selectedTrack.value, detailTime.value, detailPlayback.value.dataset.vehicles)
+  : null)
+const selDamageLog = computed(() => detailsDamageLogAtV2(detailPlayback.value?.dataset,
+  selectedTrack.value, detailTime.value, t('recon.map.playback.source_unknown')))
+const selectedPortraitUrl = ref(null)
+let portraitGeneration = 0
+watch(() => selectedTrack.value?.tankId ?? selectedRow.value?.tankId, async tankId => {
+  const generation = ++portraitGeneration
+  selectedPortraitUrl.value = null
+  if (tankId == null) return
+  try {
+    const { loadVehiclePortrait } = await import('../vehicle-portraits/runtime.js')
+    const url = await loadVehiclePortrait(tankId)
+    if (generation === portraitGeneration) selectedPortraitUrl.value = url
+  } catch { /* Missing assets keep the panel without a portrait. */ }
+})
+
 const selectedDetailState = computed(() => selectedRow.value ? {
-  vehicle: { tankName: selectedRow.value.tank, playerName: selectedRow.value.nick,
-    team: selectedRow.value.team, friendly: null },
-  destroyed: selectedRow.value.dead,
+  vehicle: selectedTrack.value || { tankName: selectedRow.value.tank, playerName: selectedRow.value.nick,
+    tankId: selectedRow.value.tankId, accountId: selectedRow.value.accountId,
+    team: selectedRow.value.team, friendly: [1, 2].includes(store.friendlyTeam) && [1, 2].includes(selectedRow.value.team) ? selectedRow.value.team === store.friendlyTeam : null },
+  destroyed: selectedLife.value ? selectedLife.value.lifeState === 'DESTROYED' : selectedRow.value.dead,
+  destroyedKnownAtSec: selectedLife.value?.destroyedKnownAtSec ?? null,
 } : null)
-const selectedHealth = computed(() => selectedRow.value ? {
-  currentHp: Number.isFinite(selectedRow.value.hp) ? selectedRow.value.hp : null,
-  maxHp: Number.isFinite(selectedRow.value.maxHp) && selectedRow.value.maxHp > 0 ? selectedRow.value.maxHp : null,
-} : null)
+const selectedHealth = computed(() => {
+  if (selectedTrack.value) {
+    const health = healthDisplayAt(selectedTrack.value, detailTime.value)
+    return { currentHp: health?.currentHp ?? null, maxHp: health?.displayCapacityHp ?? null }
+  }
+  return selectedRow.value ? {
+    currentHp: Number.isFinite(selectedRow.value.hp) ? selectedRow.value.hp : null,
+    maxHp: Number.isFinite(selectedRow.value.maxHp) && selectedRow.value.maxHp > 0 ? selectedRow.value.maxHp : null,
+  } : null
+})
 const detailClock = (sec) => `${Math.floor(Math.max(0, sec) / 60)}:${String(Math.floor(Math.max(0, sec) % 60)).padStart(2, '0')}`
 
 const bannerColor = computed(() => {
@@ -295,7 +317,8 @@ const bannerColor = computed(() => {
  * 解析任务的 session 所有权（P0：replay parser lifecycle is session-owned）：
  * 清空 / 换文件 / 销毁时**真正 abort 在途解析**，不只是丢弃结果——否则旧解析继续占着
  * Worker 队列，极端情况下（Worker 不回包）新文件永远排队、面板卡在「解析中」。
- * signal 经内核的 source 透传给 replaySource 的解析边界；被 abort 的旧加载其错误
+ * 工作台 session 路径由 owner 在 selection 变化 / 工作台销毁时取消共享解析；
+ * 独立场景路径的 signal 经 source 透传给 replaySource；被 abort 的旧加载其错误
  * 由内核的代数 guard 吞掉（新加载已接管归属），不会写成用户可见错误。
  */
 let parseController = null
@@ -312,12 +335,15 @@ async function loadFile(file) {
   parseController = new AbortController()
   lastFile = file
   lastFileName.value = file.name || 'replay'
-  await sceneApi.loadData({ kind: 'local', file, signal: parseController.signal })
+  await sceneApi.loadData({ kind: 'local', file, signal: parseController.signal, session: props.playbackSession })
 }
 
 /** 重试：同一份文件重新解析（失败不清空 selection，用户不必再选一次）；错误态由场景层重写 */
 function retryLoad() {
-  if (lastFile) return loadFile(lastFile)
+  if (lastFile) {
+    if (props.playbackSession?.getState(lastFile).sceneState === 'error') props.playbackSession.invalidate(lastFile)
+    return loadFile(lastFile)
+  }
 }
 
 function bannerText() {
@@ -419,14 +445,7 @@ function reconcileScene() {
   }
 }
 
-/**
- * 车道与 HUD / 传输控件的定界：ResizeObserver 实测 .hud / .controls 的高度写入
- * --pb-hud-h / --pb-controls-h（.pb-root 上有兜底默认），HUD 长高（基地条 + 击杀流）或
- * 控制条换行时，Stage 下方为传输控件让出的高度随之变化。
- *
- * 名册不再有「放不下就改成临时名册面」的分支：三段式里两条车道吃满整个根高度（传输控件
- * 只占中间一栏），紧凑行让正常 7v7 不需要滚动条；竖屏则是纵向流，页面本身可以滚。
- */
+// Measure viewport capacity independently of the content-sized Stage row.
 const rootEl = ref(null)
 const hudEl = ref(null)
 const controlsEl = ref(null)
@@ -434,10 +453,22 @@ let laneBoundsObserver = null
 function measurePresentationBounds() {
   const root = rootEl.value
   if (!root) return
-  const hudHeight = Math.ceil(hudEl.value?.offsetHeight ?? 0)
-  const controlsHeight = Math.ceil(controlsEl.value?.offsetHeight ?? 0)
-  root.style.setProperty('--pb-hud-h', `${hudHeight}px`)
-  root.style.setProperty('--pb-controls-h', `${controlsHeight}px`)
+  const pageStyle = getComputedStyle(document.documentElement)
+  const header = parseFloat(pageStyle.getPropertyValue('--header-h')) || 0
+  const tabs = document.fullscreenElement === root ? 0 : (parseFloat(pageStyle.getPropertyValue('--tabbar-h')) || 0)
+  const viewportH = window.visualViewport?.height || window.innerHeight
+  const top = document.fullscreenElement === root ? 0 : header
+  const workspaceH = Math.max(1, viewportH - top - tabs)
+  root.style.setProperty('--pb-workspace-h', `${workspaceH}px`)
+  const style = getComputedStyle(root)
+  const gap = parseFloat(style.getPropertyValue('--space-1')) || 0
+  const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
+  const border = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0)
+  const hudH = hudEl.value?.getBoundingClientRect().height || 0
+  const controlsH = controlsEl.value?.getBoundingClientRect().height || 0
+  const budget = Math.max(1, workspaceH - padding - border - hudH - controlsH - gap * 2)
+  root.style.setProperty('--pb-square-avail-h', `${Math.floor(budget)}px`)
+  root.style.setProperty('--pb-stage-h', `${Math.floor(budget) + gap * 2}px`)
 }
 function observeLaneBounds() {
   if (typeof ResizeObserver !== 'function') return
@@ -478,31 +509,6 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   }
 }
 
-/**
- * 「显示」面板的可用高度（实测写进 --pb-display-panel-h）。向上展开时取两者最小：
- *   1. 工具条上沿到面板顶的实际空间（矮窗口里否则面板会长到视口外）；
- *   2. **.pb-pane 视口内可见高度的 1/4**：面板不该盖住画面主体；小窗口里"场景中心"
- *      可能整个落在视口外（横屏 360px 高时 .pb-root 顶部本身就是负的），所以按可见
- *      高度的比例兜，而不是按 .pb-root 高度的一半。
- *
- * 与车道定界同一口径（实测 → 写 CSS 变量），不在 CSS 里猜。打开时才测量
- * （闭合状态下 .controls 可能整块不存在），窗口尺寸变化时重算。
- */
-const displayWrapEl = ref(null)
-const DISPLAY_PANEL_MAX_H = 240
-function measureDisplayPanel() {
-  const wrap = displayWrapEl.value
-  const root = rootEl.value
-  const pane = wrap?.closest('.pb-pane')
-  if (!wrap || !root || !pane) return
-  const rootBox = root.getBoundingClientRect()
-  const paneBox = pane.getBoundingClientRect()
-  const paneVisible = Math.max(0, Math.min(paneBox.bottom, innerHeight) - Math.max(paneBox.top, 0))
-  const above = wrap.getBoundingClientRect().top - rootBox.top
-  const available = Math.min(above, paneVisible / 4, DISPLAY_PANEL_MAX_H)
-  root.style.setProperty('--pb-display-panel-h', `${Math.max(72, Math.floor(available))}px`)
-}
-watch(displayOpen, (open) => { if (open) measureDisplayPanel() })
 
 onMounted(() => {
   reconcileScene()
@@ -510,6 +516,7 @@ onMounted(() => {
   window.addEventListener('keydown', onUiToggleKeydown)
 })
 onBeforeUnmount(() => {
+  portraitGeneration++
   destroyScene()
   laneBoundsObserver?.disconnect()
   laneBoundsObserver = null
@@ -537,7 +544,7 @@ watch(
 
 // 面板打开期间尺寸变化（旋转 / 全屏 / 工作台重排）重算可用高度；闭合时不测量
 // （此时 .controls 可能整块不存在），打开那一下由 watch(displayOpen) 负责。
-function onViewportResize() { measurePresentationBounds(); if (displayOpen.value) measureDisplayPanel() }
+function onViewportResize() { measurePresentationBounds() }
 onMounted(() => window.addEventListener('resize', onViewportResize))
 onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 </script>
@@ -552,12 +559,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <p v-else-if="blockedReason" class="pb-note" data-testid="replay3d-blocked">{{ blockedReason }}</p>
     <p v-else-if="!file" class="pb-note" data-testid="replay3d-empty">{{ $t('agentReplay.no_file') }}</p>
     <!-- 两种呈现（与 2D 同一个契约）：
-           `roster-side`  = 三段式 `[Team1] [正方形 Stage] [Team2]`，传输控件在 Stage 之下；
+           `roster-side`  = 三段式 `[Team1] [Stage] [Team2]`，传输控件在 Stage 之下；
                             宽档、平板、手机横屏、手机全屏横屏都是这一条；
            `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
-         名册关闭时两者都没有车道，Stage 仍是居中的正方形。 -->
-    <div v-else class="pb-root" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow }" data-testid="replay3d-root">
-      <!-- 名牌覆盖层与 canvas 共用**同一个正方形盒子**：场景内核按 canvas（.scene）尺寸算锚点，
+         名册关闭时两者都没有车道，横屏 Stage 铺满中心，竖屏仍为正方形。 -->
+    <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow }" data-testid="replay3d-root">
+      <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
       <div class="pb-stage" data-testid="replay3d-stage">
         <div class="stage-square">
@@ -566,37 +573,27 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         </div>
       </div>
 
-      <!-- 顶部 HUD 列：顶栏 → 基地状态条 → 击杀流。整列在没有任何子块可显示时消失
-           （不是留一个空 .hud 占位——那会让"隐藏全部 UI"看起来没生效，也让车道定界白留高度）。 -->
+      <!-- Only persistent state contributes to measured HUD height. Kill events stay in a bounded overlay. -->
       <div v-if="store.hasData && (showTopbar || showBaseStatus || showKillfeed)" ref="hudEl" class="hud">
-        <div v-if="store.hasData && showTopbar" class="topbar panel">
-          <div class="tb-row">
-            <span class="map">{{ mapTitle }}</span>
-            <span class="timer">{{ store.timer }}</span>
-          </div>
-          <!-- 双方队伍总血量（与上游 3D 视图同布局：数值 + 色条夹住比分，己方在左、敌方在右）。
-               整行是**记录者视角**：血条与比分都按 friendly_team 映射（teamHpTotals /
-               perspectiveScore）——与名册的**物理队伍**是两套不同约定，不得互相替代。 -->
-          <div class="tb-row" data-test="hud-team-hp">
-            <em class="hpnum hpnum-f">{{ hpText(store.hpFriend) }} / {{ hpText(store.hpFriendMax) }}</em>
-            <span class="hpbar hp-f" :title="`${t('agentReplay.hp_friendly')} ${hpPctText(store.hpFriendPct)}`">
-              <i :style="{ width: store.hpFriendPct + '%' }"></i>
-            </span>
-            <span class="score" data-test="hud-score"><span class="t1">{{ store.scoreFriend }}</span> : <span class="t2">{{ store.scoreEnemy }}</span></span>
-            <span class="hpbar hp-e" :title="`${t('agentReplay.hp_enemy')} ${hpPctText(store.hpEnemyPct)}`">
-              <i :style="{ width: store.hpEnemyPct + '%' }"></i>
-            </span>
-            <em class="hpnum hpnum-e">{{ hpText(store.hpEnemy) }} / {{ hpText(store.hpEnemyMax) }}</em>
-          </div>
-        </div>
-
-        <!-- 基地状态条（与 2D 共用）：每基地一枚徽章（底色 = 归属，外环 = 占领进度），两端为争霸积分 -->
-        <div v-if="store.hasData && showBaseStatus && store.baseViews.length" class="base-status">
-          <BaseStatusBar :bases="store.baseViews" :friendly-points="store.pointsFriend" :enemy-points="store.pointsEnemy" />
-        </div>
-
-        <div v-if="store.hasData && showKillfeed" class="killfeed">
-          <div v-for="kf in store.killfeed" :key="kf.id" class="kf">{{ killfeedText(kf) }}</div>
+        <BattlePlaybackHud
+          v-if="showTopbar || (showBaseStatus && store.baseViews.length)"
+          :class="{ topbar: showTopbar }"
+          :show-summary="showTopbar"
+          score-label-key="recon.map.playback.kills"
+          :map-title="mapTitle"
+          :battle-time="store.timer"
+          :friendly-hp="hudHealth(store.hpFriend, store.hpFriendMax)"
+          :enemy-hp="hudHealth(store.hpEnemy, store.hpEnemyMax)"
+          :friendly-points="store.scoreFriend"
+          :enemy-points="store.scoreEnemy"
+          :hp-no-transition="!store.playing"
+        >
+          <template v-if="showBaseStatus && store.baseViews.length" #bases>
+            <BaseStatusBar compact class="base-status" :bases="store.baseViews" :friendly-points="store.pointsFriend" :enemy-points="store.pointsEnemy" />
+          </template>
+        </BattlePlaybackHud>
+        <div v-if="showKillfeed && store.killfeed.length" class="killfeed" data-test="replay3d-killfeed" aria-hidden="true">
+          <div v-for="kf in store.killfeed.slice(-3)" :key="kf.id" class="kf">{{ killfeedText(kf) }}</div>
         </div>
       </div>
 
@@ -610,23 +607,24 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         class="vehicle-details" data-testid="replay3d-details"
         :presentation="portraitFlow ? 'inline' : 'floating'"
         :selected-state="selectedDetailState" :health="selectedHealth" :phone-form="portraitFlow"
-        :current-time="store.time" :format-clock="detailClock"
+        :selected-portrait-url="selectedPortraitUrl" :sel-last-known-sec="selLastKnownSec"
+        :sel-cur-stats="selCurStats" :selected-track="selectedTrack" :sel-damage-log="selDamageLog"
+        :current-time="detailTime" :format-clock="detailClock"
         :drag-host="rootEl" :drag-bounds="controlsEl"
         :initial-side="detailsSide" :selection-key="selectedEid"
         @close="closeDetails"
       />
 
-      <!-- 阵容车道：左侧恒为**物理 Team 1**（未知阵营排在它下面）、右侧恒为 **Team 2**：
-           位置、标题、颜色都不随录像者属于哪一队改变（不在这里做 friendly/enemy 映射）。
+      <!-- 阵容车道：Recorder 的己方在左、敌方在右，未知阵营独立列在左车道底部。
            三段式下两条车道吃满根高度、不与中间一栏的 HUD / 传输控件交叉；竖屏下它们是
            纵向流里传输控件（与详情）之后的两段。没有「临时名册面」：名册的唯一开关是
            uiPrefs.showRoster。行的渲染与 2D 共用同一个 `PlaybackRoster`。 -->
       <div v-if="store.hasData && showRoster" class="roster-surface" data-testid="roster-surface">
         <div class="team-lane side-left" data-testid="replay3d-lane-left">
-          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="{ team1: rosterGroups.team1, unknown: rosterGroups.unknown }" :selected-id="selectedEid" @select="selectVehicle" />
+          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="selectVehicle" />
         </div>
         <div class="team-lane side-right" data-testid="replay3d-lane-right">
-          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="{ team2: rosterGroups.team2 }" :selected-id="selectedEid" @select="selectVehicle" />
+          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.right" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="selectVehicle" />
         </div>
       </div>
 
@@ -637,6 +635,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
       <div v-if="store.hasData && !uiHidden" ref="controlsEl" class="controls panel">
         <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
         <PlaybackTransport
+          :fullscreen-supported="fullscreenSupported"
+          :is-fullscreen="isFullscreen"
+          :display-open="displayOpen"
+          display-enabled
+          @toggle-fullscreen="toggleFullscreen()"
+          @toggle-display="toggleDisplay"
           :playing="store.playing"
           :speed="store.speed"
           :speeds="PLAYBACK_SPEEDS"
@@ -652,56 +656,13 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           @scrub-start="store.seeking = true; transport.scrubStart()"
           @scrub-end="store.seeking = false; transport.scrubEnd()"
         >
-          <!-- 全屏是**主操作**（primary action），不是二级设置：手机紧凑档必须一眼可见、
-               一次点击直达，不允许「先开显示面板再点全屏」。它因此放在传输控件行里，
-               而不是工具条 / 显示面板中。全屏 API 不可用时**不渲染**（不画假按钮）。 -->
-          <template #actions>
-            <button
-              v-if="fullscreenSupported" type="button" class="pb-btn tool-btn fs-btn"
-              :aria-pressed="isFullscreen" data-testid="playback-fullscreen"
-              :aria-label="t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
-              :title="t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')"
-              @click="toggleFullscreen()"
-            >
-              <component :is="isFullscreen ? Minimize2 : Maximize2" :size="16" aria-hidden="true" />
-              <span class="pb-control-label">{{ t(isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen') }}</span>
-            </button>
-            <div v-if="isPhone" ref="displayWrapEl" class="display-wrap">
-              <button type="button" class="pb-btn tool-btn" :aria-expanded="displayOpen"
-                aria-haspopup="true" data-testid="display-toggle" @click="displayOpen = !displayOpen"
-              >{{ t('agentReplay.display') }}</button>
-            </div>
-          </template>
         </PlaybackTransport>
-        <!-- 宽档保留相机工具条；手机只在传输行保留 Display 入口，二级操作在面板中。 -->
-        <div v-if="!isPhone" class="toolbar" data-testid="replay3d-toolbar">
-          <SegmentedControl
-            :model-value="store.cam"
-            :options="CAMERAS"
-            :aria-label="t('agentReplay.camera')"
-            @update:model-value="chooseCamera($event)"
-          />
-          <div ref="displayWrapEl" class="display-wrap">
-            <button
-              type="button" class="tool-btn" :aria-expanded="displayOpen"
-              aria-haspopup="true" data-testid="display-toggle"
-              @click="displayOpen = !displayOpen"
-            >{{ t('agentReplay.display') }}</button>
-          </div>
-          <span class="spacer"></span>
-          <span class="q-badge" :title="t('agentReplay.q_title')">{{ qualityBadge }}</span>
-        </div>
       </div>
 
-      <!-- 「显示」面板：锚在 .pb-root 的**右下角**（不是工具条），用 `hidden` 开关。
-           关键取舍：面板**绝不参与工具条布局**——一旦让它撑高 .controls，底部控件就会长到
-           占掉半个战场，阵容车道随之越界（矮窗口实测）。浮动面板 + 内部滚动是稳定的做法：
-           高度上限由 measureDisplayPanel 实测写进 --pb-display-panel-h，宽度按断点由 CSS 给。 -->
-      <div class="display-panel panel" data-testid="display-panel" :hidden="uiHidden || !displayOpen">
-        <!-- 紧凑档：相机 / 画质从常驻工具条移到这里（同一份 store.cam / uiPrefs / store.glbOn，
-             没有第二套状态）。高频动作之外的东西，在手机上都不该永久占着战场高度。
+      <PlaybackDisplaySurface :open="displayOpen && !uiHidden" :portrait="portraitFlow" :anchor="displayAnchor" :host="rootEl" @close="displayOpen = false">
+        <!-- 查看 / 显示开关都在这里（同一份 store.cam / uiPrefs / labelPrefs / hpPrefs / store.glbOn，
+             没有第二套状态）：高频动作之外的设置不该永久占着战场高度。
              名册没有单独的「打开名册」入口：它的唯一开关是下面的 disp-roster 呈现偏好。 -->
-        <template v-if="isPhone">
           <p class="dp-title">{{ t('agentReplay.camera') }}</p>
           <SegmentedControl
             class="dp-camera"
@@ -710,7 +671,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             :aria-label="t('agentReplay.camera')"
             @update:model-value="chooseCamera($event)"
           />
-        </template>
         <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
@@ -726,17 +686,17 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
         </label>
         <!-- 画质在紧凑档是只读徽标（档位在播放前定型，运行中不可改），宽档同样只在工具条展示 -->
-        <p v-if="isPhone" class="q-badge dp-quality" :title="t('agentReplay.q_title')">{{ qualityBadge }}</p>
+        <p class="q-badge dp-quality" :title="t('agentReplay.q_title')">{{ qualityBadge }}</p>
         <button
           type="button" class="tool-btn dp-hide" data-testid="hide-all-ui"
           @click="setUiHidden(true)"
         >{{ t('agentReplay.hide_all_ui') }}</button>
         <!-- 紧凑档面板是覆盖战场的浮层，必须有明确关闭入口（宽档点触发按钮即可，这里要能一眼看到） -->
         <button
-          v-if="isPhone" type="button" class="tool-btn dp-close"
+          type="button" class="tool-btn dp-close"
           data-testid="display-close" @click="displayOpen = false"
         >{{ t('app.close') }}</button>
-      </div>
+      </PlaybackDisplaySurface>
 
       <!-- 隐藏全部 UI 后唯一的恢复入口：常驻、极简、不遮场景中心；`H` 键等效。
            不得做成不可逆状态（该状态也不写入持久化偏好）。 -->
@@ -790,27 +750,13 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .pb-note { margin: var(--space-4) 0; color: var(--color-text-secondary); font: var(--type-body); }
 
 /**
- * 三列工作区骨架（2D 与 3D 同一布局契约）：`[Team1] [正方形 Stage] [Team2]`。
+ * 三列工作区骨架（2D 与 3D 同一布局契约）：`[Team1] [Stage] [Team2]`。
  *
- * 战场是**正方形**：横屏视口里它只能受高度约束，两侧于是天然空出横向空间；那些空间就是
- * 名册的槽位——不把正方形拉成宽矩形去填满视口。名册关闭时不带 `roster-side` 类，
- * 侧槽整列不存在，Stage 依然居中、依然是正方形。
+ * 横屏战场铺满中心可用宽高；名册关闭时横向扩展到整个工作区。
  *
  * 传输控件与 HUD 只占**中间一栏**（Stage 之上 / 之下），两条车道因此吃满整个根高度——
  * 手机横屏（740×360、844×390）与全屏横屏下，正常 7v7 的紧凑行不需要车道滚动条。
  */
-.pb-root.roster-side {
-  display: grid;
-  grid-template-columns: var(--pb-lane-w) minmax(0, 1fr) var(--pb-lane-w);
-  align-items: stretch;
-  column-gap: var(--space-2);
-  padding: var(--space-2);
-}
-.pb-root.roster-side > .pb-stage {
-  grid-column: 2;
-  /* Stage 之下让出传输控件的高度（只在中间一栏让，车道不受影响）。 */
-  padding-block-end: calc(var(--pb-controls-h) + var(--space-2));
-}
 .pb-root.roster-side .roster-surface {
   /* 宽档下这条表壳**不参与布局**：两条车道必须直接落在根网格的第 1 / 第 3 列里。
      让表壳留在流里，它就成了网格的唯一内容项、被放进第 1 列，两条车道只能在 240px 里
@@ -827,27 +773,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   align-self: stretch;
   overflow-y: auto;
 }
-.pb-root.roster-side .side-left { grid-column: 1; grid-row: 1; }
-.pb-root.roster-side .side-right { grid-column: 3; grid-row: 1; }
-/* HUD 与传输控件只占中间一栏：不与两侧车道交叉。 */
-.pb-root.roster-side .hud,
-.pb-root.roster-side .controls {
-  position: absolute;
-  left: calc(var(--space-2) + var(--pb-lane-w) + var(--space-2));
-  right: calc(var(--space-2) + var(--pb-lane-w) + var(--space-2));
-  width: auto;
-  transform: none;
-}
 
 .pb-root {
   position: relative;
   scroll-margin-block-start: calc(var(--header-h) + var(--space-3));
   isolation: isolate;               /* 局部层叠上下文：HUD 只用 --pb-z-* 的 1–9 层 */
-  /* HUD / 传输控件高度的兜底值：RO 就位后由 observeLaneBounds 写入实测值。
-     必须定义在 .pb-root 上——写在子元素上会把根元素的实测值遮蔽掉。 */
-  --pb-hud-h: 48px;
-  --pb-controls-h: 130px;
-  height: clamp(320px, 62dvh, 720px);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
@@ -859,38 +789,31 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .scene { position: absolute; inset: 0; z-index: var(--pb-z-canvas); }
 
 /**
- * 正方形 Stage 的工作区骨架（2D 与 3D 共用同一布局契约）。
+ * Stage 的工作区骨架（2D 与 3D 共用同一布局契约）。
  *
- * 两个渲染器的战场都是**正方形**：横屏视口里它只能受高度约束，两侧于是天然空出横向空间,
- * 那些空间就是 Team 1 / Team 2 名册的槽位——不把正方形拉成宽矩形去填满视口。
+ * 3D 横屏占满中心可用宽高，竖屏保持正方形；相机比例随画布更新。
  *
  *   · `.pb-root` 是三列网格：`[Team1] [Stage] [Team2]`；
- *   · 侧槽宽度受 `--pb-lane-w` 控制，名册关闭时整列不存在（Stage 仍居中、仍是正方形）；
- *   · `.pb-stage` 里的 `.stage-square` 是正方形盒子：在可用空间里取最大正方形并居中；
+ *   · 侧槽宽度受 `--pb-lane-w` 控制，名册关闭时整列不存在（Stage 铺满中心列）；
+ *   · `.pb-stage` 里的 `.stage-square` 在横屏铺满中心可用宽高；竖屏保持正方形；
  *     canvas（.scene）与名牌覆盖层共用这个盒子，因此两者同原点、同尺寸。
  *
  * 竖屏（手机）走另一套：见 `.portrait-flow` 的纵向流（HUD → Stage → Transport → 详情 → 名册）。
  */
-.pb-root { --pb-lane-w: 240px; }
+
 .pb-stage {
   display: grid;
   place-items: center;
   min-width: 0; min-height: 0;
 }
-/* 正方形：取「可用宽 / 可用高」的较小边，永远不拉伸成矩形 */
+/* 横屏画布占满中心；场景 ResizeObserver 同步相机比例，几何不拉伸。 */
 .stage-square {
   position: relative;
-  aspect-ratio: 1 / 1;
-  inline-size: min(100%, 100cqh);
-  block-size: auto;
+  inline-size: 100%;
+  block-size: 100%;
 }
 .stage-square > .scene { position: absolute; inset: 0; }
 .pb-stage { container-type: size; }
-/* 名册关闭（没有三列骨架）时 Stage 自己占满根并居中正方形，传输控件照样在它之下。 */
-.pb-root:not(.roster-side):not(.portrait-flow) > .pb-stage {
-  position: absolute;
-  inset: var(--space-2) var(--space-2) calc(var(--pb-controls-h) + var(--space-3));
-}
 
 /* HUD 面板外观（位置交给各自的容器规则，不再默认绝对定位） */
 .panel {
@@ -899,26 +822,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   border-radius: var(--radius-md);
 }
 
-.topbar {
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  white-space: nowrap;
-  padding: var(--space-1) var(--space-4);
-}
-.topbar .tb-row { display: flex; align-items: center; gap: var(--space-3); }
-.topbar .timer { font: var(--type-h3); font-variant-numeric: tabular-nums; }
-.topbar .score { font: var(--type-h3); }
-.topbar .score .t1 { color: var(--color-team-ally); }
-.topbar .score .t2 { color: var(--color-team-enemy); }
-.topbar .map { color: var(--color-text-secondary); }
-/* 双方队伍总血量：数值 + 色条夹住比分。己方条自右向左、敌方条自左向右（围绕比分对称），
-   条宽用原始百分比（不取整）保证连续下降平滑。 */
-.topbar .hpnum { font-style: normal; color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
-.topbar .hpbar { display: inline-flex; width: 92px; height: 9px; overflow: hidden;
-                 border-radius: var(--radius-full); background: var(--color-surface-3); }
-.topbar .hp-f { justify-content: flex-end; }
-.topbar .hpbar > i { display: block; height: 100%; transition: width var(--duration-base) var(--ease-standard); }
-.topbar .hp-f > i { background: var(--color-team-ally); }
-.topbar .hp-e > i { background: var(--color-team-enemy); }
 
 /* 待开播：半透明遮罩 + 居中卡片（画质档位 + 开始）；点开始才解析 + 拉资产。
    层级用 --pb-z-scrim（盖住 HUD 面板，加载 / 错误状态仍在其上）。 */
@@ -942,10 +845,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .pre-start-card h3 { margin: 0; font: var(--type-h3); }
 .pre-start-file { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 
-/* 顶部 HUD 竖排：顶栏 → 基地状态条 → 击杀流；整列不拦截场景操作，
-   阵容面板从这一列下方开始，不再靠各自猜的固定 top 值。 */
+/* Persistent HUD appearance; row placement belongs to the shared workspace. */
 .hud {
-  position: absolute; top: var(--space-2); left: var(--space-2); right: var(--space-2);
   z-index: var(--pb-z-hud);
   display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
   pointer-events: none;
@@ -960,6 +861,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
    the 3D stage is a square, so a corner-pinned card would cover the battlefield. */
 
 .killfeed {
+  position: absolute; inset-block-start: calc(100% + var(--space-1)); inset-inline: 0;
+  max-block-size: calc(3 * (var(--line-height-caption) + var(--space-1))); overflow: hidden;
   display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
   max-width: 100%;
 }
@@ -970,6 +873,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   background: var(--color-surface-2);
   color: var(--color-text-primary);
   font: var(--type-caption);
+  max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap;
   animation: kfin var(--duration-base) var(--ease-standard);
 }
@@ -978,17 +882,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 /* 基地状态条：顶栏下方居中，不拦截场景操作（徽章本身可悬停看说明） */
 .base-status { pointer-events: none; }
 
-/* 底部控制条：自己的定位自己声明（`.panel` 只是视觉面，不再隐含 absolute） */
+/* Transport appearance; shared workspace owns its position and available width. */
 .controls {
-  position: absolute;
-  bottom: var(--space-2); left: 50%; transform: translateX(-50%);
   z-index: var(--pb-z-hud);
   display: flex; flex-direction: column; gap: var(--space-2);
-  width: min(880px, calc(100% - var(--space-4)));
-  padding: var(--space-2) var(--space-4);
 }
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.spacer { flex: 1; }
 .toggle { display: flex; gap: var(--space-1); align-items: center; min-height: var(--hit-min); color: var(--color-text-secondary); cursor: pointer; }
 .tool-btn {
   min-height: var(--control-h-sm);
@@ -1006,38 +904,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .q-badge { color: var(--color-text-secondary); font: var(--type-caption); }
 .pb-root input[type="checkbox"] { flex: none; width: auto; min-width: 0; margin: 0; }
 
-/* 「显示」面板：锚在 .pb-root 的右下角（悬浮、不参与工具条布局）。
-   宽度 240px；高度上限 = 可见面板高度的 40%（实测写进 --pb-display-panel-h），
-   下限 72px，内容超出则面板内部滚动——所有开关始终可滚动到并真实可点。 */
-.pb-root { --pb-display-panel-w: 240px; --pb-display-panel-h: 240px; }
-.display-wrap { display: inline-flex; }
-.display-panel {
-  position: absolute;
-  inset-block-end: var(--space-2);
-  inset-inline-end: var(--space-2);
-  z-index: var(--pb-z-hud);
-  display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1);
-  inline-size: var(--pb-display-panel-w);
-  max-block-size: var(--pb-display-panel-h);
-  overflow-y: auto;
-  padding: var(--space-2);
-  box-shadow: var(--elevation-3);
-}
-/* hidden 属性在组件 scoped 样式下不可靠（`.panel` 的 display 会盖掉 UA 的 [hidden]），
-   显式写死：闭合时必须真正不占位、不拦点击。 */
-.display-panel[hidden] { display: none; }
-
-.display-panel .dp-title {
-  margin: var(--space-1) 0 0;
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-  font-weight: 600;
-}
-/* 隐藏按钮必须整宽可点（面板是 flex column + align-items: stretch；曾因没拉伸退化成 18px 宽）。
-   注意：这里**不能**再放 `max-inline-size: calc(100% - …)`——百分比解析的是 inline-flex 的
-   .display-wrap（26px），会把 240px 的面板夹成一条 34px 的缝。紧凑档的宽度覆盖只在下面的
-   phone-form 规则里给。 */
-.display-panel .dp-hide { margin-top: var(--space-2); inline-size: 100%; }
+/* Display content appearance; placement belongs to PlaybackDisplaySurface. */
+.dp-title { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+.dp-hide { margin-block-start: var(--space-2); inline-size: 100%; }
 
 /* 隐藏全部 UI 后的唯一恢复入口：右下角常驻，不遮场景中心也不拦场景操作 */
 .ui-restore {
@@ -1058,25 +927,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 }
 
 @media (hover: hover) {
-  .pl:hover { background: var(--color-surface-3); }
   .tool-btn:hover { color: var(--color-text-primary); }
 }
 
-.phone-form { --pb-display-panel-w: calc(100% - var(--space-4)); }
-/* 手机横屏（非竖屏）：根高度跟着视口走（不是 62dvh 的固定比例），两侧车道才放得下 7v7；
-   全屏时浏览器把根撑满屏幕，同一套三段式照常生效。车道收窄一点，把宽度留给正方形。 */
-.phone-form:not(.portrait-flow) { --pb-lane-w: 184px; height: clamp(220px, calc(100dvh - var(--space-4)), 720px); }
-.phone-form .display-panel { inset-inline-start: var(--space-2); inset-inline-end: var(--space-2); }
-.phone-form .topbar { gap: var(--space-2); padding: 0 var(--space-3); }
-.phone-form .topbar .hpbar { width: var(--space-8); }
-.phone-form .topbar { max-inline-size: 100%; overflow: hidden; }
-.phone-form .controls { position: absolute; gap: var(--space-1); padding: var(--space-1) var(--space-2);
-  bottom: calc(var(--space-1) + env(safe-area-inset-bottom, 0px)); }
-.phone-form:not(.roster-side) .controls { width: calc(100% - var(--space-2)); }
-.phone-form .pb-control-label { display: none; }
-.phone-form .controls :deep(.pb-controls) { justify-content: center; }
-.phone-form .controls :deep(.pb-play-unavailable) { flex-basis: 100%; text-align: center; order: 21; }
-.phone-form .display-panel { inset-block-end: calc(var(--space-2) + env(safe-area-inset-bottom, 0px)); }
+
 .phone-form .dp-close, .phone-form .dp-camera { inline-size: 100%; }
 
 /**
@@ -1093,19 +947,20 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   overflow: visible;
   padding: var(--space-2);
 }
-.portrait-flow > .hud { position: static; order: 1; }
+.portrait-flow > .hud { position: relative; inset: auto; order: 1; }
 .portrait-flow > .pb-stage { order: 2; container-type: normal; }
-.portrait-flow .stage-square { inline-size: 100%; }
+.portrait-flow .stage-square { inline-size: 100%; block-size: auto; aspect-ratio: 1; }
 .portrait-flow > .controls {
   position: static;
   order: 3;
   width: 100%;
   transform: none;
 }
-.portrait-flow .controls :deep(.pb-time) { flex-basis: 100%; margin: 0; text-align: center; order: 20; }
-.portrait-flow > .display-panel { position: static; order: 4; inline-size: 100%; max-block-size: none; }
+
 .portrait-flow > .vehicle-details { order: 5; }
 .portrait-flow > .roster-surface { order: 6; display: grid; gap: var(--space-2); }
+/* Display 面在竖屏纵向流里紧跟传输控件（共享组件只负责「是一块流内面」，顺序归宿主）。 */
+.portrait-flow > .pb-display-surface { order: 4; }
 .portrait-flow .team-lane { position: static; width: auto; }
 .portrait-flow > .banner { position: absolute; top: var(--space-12); }
 

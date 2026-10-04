@@ -52,7 +52,7 @@ const dragHost = ref(null)
 const dragBounds = ref(null)
 watch(() => props.dragHost, (el) => { dragHost.value = el || null }, { immediate: true })
 watch(() => props.dragBounds, (el) => { dragBounds.value = el || null }, { immediate: true })
-const { pos, onPointerDown, onSelectionChange } = usePlaybackDetailsPlacement({
+const { pos, maxPanelHeight, onPointerDown, onSelectionChange } = usePlaybackDetailsPlacement({
   isActive: () => !!props.selectedState && floating.value,
   hostEl: dragHost,
   boundsEl: dragBounds,
@@ -61,7 +61,7 @@ const { pos, onPointerDown, onSelectionChange } = usePlaybackDetailsPlacement({
 })
 watch([() => props.selectionKey, () => props.initialSide], onSelectionChange)
 const floatingStyle = computed(() => (floating.value && pos.value
-  ? { left: `${pos.value.left}px`, top: `${pos.value.top}px` }
+  ? { left: `${pos.value.left}px`, top: `${pos.value.top}px`, maxHeight: `${maxPanelHeight.value}px` }
   : null))
 </script>
 
@@ -168,7 +168,7 @@ const floatingStyle = computed(() => (floating.value && pos.value
 .pb-sidebar { width: calc(var(--sidebar-full-w) + var(--space-5)); max-width: 100%; min-width: 0; flex-shrink: 0; align-self: stretch; font-size: var(--font-size-caption); line-height: var(--line-height-caption); color: var(--color-text-primary); background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); padding: var(--space-2); overflow-y: auto; max-height: 72dvh; }
 /* 浮窗形态：workspace 顶层的一块面。位置由 usePlaybackDetailsPlacement 写 left/top
    （未定位的首帧落在左上角，随后立即被夹进宿主）。
-   宽度固定一档（不借用 2D 的 `--pb-details-w` 列宽 token：手机全屏下那个 token 是 0）。
+   宽度固定一档：它不属于任何一个列，宿主里也没有列宽 token 可借。
    这里只负责「它是一块浮起来的卡片」，不负责它在哪——位置与边界是 JS 的所有权。 */
 .pb-sidebar.pb-floating {
   position: absolute;

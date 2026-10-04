@@ -11,6 +11,7 @@ defineOptions({ name: 'BaseStatusBar' })
 const props = defineProps({
   /** [{ baseId, kind: 'supremacy'|'assault', owner, capturing, progress }] */
   bases: { type: Array, default: () => [] },
+  compact: { type: Boolean, default: false },
   friendlyPoints: { type: Number, default: null },
   enemyPoints: { type: Number, default: null },
 })
@@ -43,7 +44,7 @@ function baseLabel(base) {
 </script>
 
 <template>
-  <div v-if="props.bases.length" class="base-status-bar" role="group" :aria-label="t('baseStatus.title')" data-testid="base-status-bar">
+  <div v-if="props.bases.length" class="base-status-bar" :class="{ 'is-compact': props.compact }" role="group" :aria-label="t('baseStatus.title')" data-testid="base-status-bar">
     <span
       v-if="props.friendlyPoints != null"
       class="base-points base-points-friendly"
@@ -137,5 +138,12 @@ function baseLabel(base) {
 
 @media (width < 768px) {
   .base-status-bar { gap: var(--space-1); padding: 2px var(--space-2); }
+}
+/* HUD metadata shares a single compact row with map and time. */
+.base-status-bar.is-compact { gap: var(--space-1); padding: 0; border: 0; background: transparent; backdrop-filter: none; }
+.is-compact .base-badge-svg { width: var(--space-6); height: var(--space-6); }
+@media (width >= 1200px) {
+  .is-compact .base-badge-svg { width: var(--control-h-lg); height: var(--control-h-lg); }
+  .is-compact .base-points { font: var(--type-h3); font-weight: 700; }
 }
 </style>

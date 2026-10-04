@@ -20,8 +20,6 @@ describe('usePlaybackPreferences', () => {
     expect({ ...prefs.uiPrefs }).toEqual({
       showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true,
     })
-    expect({ ...prefs.paneWidths }).toEqual({ rail: null, details: null })
-    expect(prefs.railCollapsed.value).toBe(false)
   })
 
   it('shares immediate state and merged persistence between two mounted consumers', async () => {
@@ -75,6 +73,7 @@ describe('usePlaybackPreferences', () => {
     localStorage.setItem('wotb.pb.hp-prefs', JSON.stringify({ showHp: false }))
     localStorage.setItem('wotb.pb.trail-prefs', JSON.stringify({ showTrail: false }))
     localStorage.setItem('wotb.pb.ui-prefs', JSON.stringify({ showTopbar: false, showRoster: true, showKillfeed: false, showBaseStatus: true }))
+    // 已移除的 rail / 列宽偏好：残留的旧键不得再被读回，也不得被重写。
     localStorage.setItem('wotb.pb.pane-widths', JSON.stringify({ rail: 240, details: 360 }))
     localStorage.setItem('wotb.pb.rail-collapsed.v2', '1')
 
@@ -83,21 +82,17 @@ describe('usePlaybackPreferences', () => {
     expect({ ...prefs.hpPrefs }).toEqual({ showHp: false })
     expect({ ...prefs.trailPrefs }).toEqual({ showTrail: false })
     expect({ ...prefs.uiPrefs }).toEqual({ showTopbar: false, showRoster: true, showKillfeed: false, showBaseStatus: true })
-    expect({ ...prefs.paneWidths }).toEqual({ rail: 240, details: 360 })
-    expect(prefs.railCollapsed.value).toBe(true)
 
     prefs.hpPrefs.showHp = true
     prefs.trailPrefs.showTrail = true
     prefs.uiPrefs.showTopbar = true
-    prefs.paneWidths.details = 420
-    prefs.railCollapsed.value = false
     await nextTick()
 
     expect(JSON.parse(localStorage.getItem('wotb.pb.hp-prefs') || '{}')).toEqual({ showHp: true })
     expect(JSON.parse(localStorage.getItem('wotb.pb.trail-prefs') || '{}')).toEqual({ showTrail: true })
     expect(JSON.parse(localStorage.getItem('wotb.pb.ui-prefs') || '{}').showTopbar).toBe(true)
-    expect(JSON.parse(localStorage.getItem('wotb.pb.pane-widths') || '{}').details).toBe(420)
-    expect(localStorage.getItem('wotb.pb.rail-collapsed.v2')).toBe('0')
+    expect(JSON.parse(localStorage.getItem('wotb.pb.pane-widths') || '{}')).toEqual({ rail: 240, details: 360 })
+    expect(localStorage.getItem('wotb.pb.rail-collapsed.v2')).toBe('1')
   })
 
   it('老持久化值（无 showReload / 无 ui-prefs）不重置用户已有选择：新增项默认开启', () => {
@@ -112,13 +107,5 @@ describe('usePlaybackPreferences', () => {
     expect({ ...prefs.uiPrefs }).toEqual({
       showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true,
     })
-  })
-
-  it('does not hydrate the stale pre-desktop-rail collapsed preference', () => {
-    localStorage.setItem('wotb.pb.rail-collapsed', '1')
-
-    const prefs = usePlaybackPreferences()
-
-    expect(prefs.railCollapsed.value).toBe(false)
   })
 })
