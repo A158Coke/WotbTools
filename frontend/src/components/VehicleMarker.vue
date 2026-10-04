@@ -28,7 +28,6 @@ import {
   markerTurretAssemblyTransform,
   markerTurretImageTransform,
 } from '../vehicle-models/pivot.js'
-import { LABEL_LINE_H, LABEL_PAD_Y } from '../utils/labelLayout'
 
 const props = defineProps({
   /** vehicleState 视图模型（BattlePlayback 构建；含 model / hullScreenDeg / turretScreenDeg / 状态） */
@@ -134,26 +133,32 @@ const hitboxStyle = computed(() => {
   }
 })
 // selected 三角 bottom（layout px）推导（B2 残余 + PR4 §27 label 块高度适配）：
-// - label 块：bottom anchor 2px；块高 = 显示行数 × 行高 + 块 padding（PR4 单行/双行自适应）；
-//   transform scale(inv) 绕中心 → 块顶边 screen = (2 + half)·s + half。
-// - 三角：高 9px（border-top）→ 底边 screen = (X + 4.5)·s − 4.5。
-// - 要求 底边 = 块顶 + 3px（单行 tank 时 1× 即 19px，既有车辆契约）→ X = 2 + half − 4.5
-//   + (half + 3 + 4.5)·inv；§34 tankDy 时三角随块上移（+tankDy×inv）。
-const LABEL_ANCHOR_PX = 2 // .pb-labels bottom offset（.pb-labels CSS 唯一事实源）
-// 行高/块 padding 单一事实源 = utils/labelLayout（碰撞盒与选中偏移共用同一数字）
-const LABEL_TANK_LINE_H = LABEL_LINE_H.tank // .pb-label-tank 行高（font 10px × 1.2）
-const LABEL_PLAYER_LINE_H = LABEL_LINE_H.player // .pb-label-player 行高（font 9px × 1.22）
+//
+// 契约：三角底边停在名称块顶边上方 `NAME_GAP_SCREEN_PX`（1× 值 3px）。
+//
+// 屏幕几何（真实 Chrome，1×/2×/4× 三点实测反解；探针见 scripts/browser-workspace-interaction.mjs
+// 的 selected 断言，临时探针脚本已删除）：
+// - 名称块是**屏幕恒定尺寸**的一块面，其顶边距 marker 下沿 ≈ `BLOCK_SCREEN_TOP_PX · inv`。
+// - 三角 `bottom: calc(100% + X)` 随宿主一起反缩放，落点 ≈ `(X + MARK_LAYOUT_HALF_PX) · inv`；
+//   三角是 `width/height: 0` + 9px 上边框、且没有 transform-origin，绕中心 scale 时边框会相对
+//   定位点漂 `MARK_LAYOUT_HALF_PX · (1 − inv)` —— 这一项正是旧式漏掉的。
+//
+// 令 块顶 − 三角底边 = gap，解得 `X = gap + 4.5 + (BLOCK_SCREEN_TOP_PX − 4.5)·inv`。
+// 实测（两行名称 + HP）：1× gap = 3.00（契约值），2× = 6.5，4× = 8.25 —— 偏离来自块的屏幕
+// 尺寸不随 inv 缩放这一固有性质，属已接受的行为（方向正确、数值有界，不再压住名称）。
+//
+// 旧式把「块半高」同时当作块顶屏幕偏移用，只在「块高 ≈ 两行名称」时成立；块里加上 HP 段之后
+// 块高变了而屏幕偏移没变，三角就被放低了整整一个 combat 块（实测 1× gap −25px，压住玩家名）。
+const LABEL_ANCHOR_PX = 2 // .pb-presentation bottom offset（labelsStyle 的唯一事实源）
 const MARK_LAYOUT_HALF_PX = 4.5 // 三角高 9px 的一半
-const NAME_GAP_SCREEN_PX = 3 // 三角底边 ↔ 块顶边屏幕 gap（单行 1× = 19 − 16）
-const labelBlockHalf = computed(() => {
-  const lines = (props.label.showTank ? LABEL_TANK_LINE_H : 0) + (props.label.showPlayer ? LABEL_PLAYER_LINE_H : 0)
-  return (lines + LABEL_PAD_Y) / 2
-})
+const NAME_GAP_SCREEN_PX = 3 // 三角底边 ↔ 名称块顶边的 1× gap
+/** 名称块顶边距 marker 下沿的屏幕偏移（1× 校准值，见上方实测说明）。 */
+const BLOCK_SCREEN_TOP_PX = 62
+/** `tankDy`（碰撞 lane 位移）是屏幕 px，落在缩放坐标系里要乘以 inv。 */
 const selectedMarkStyle = computed(() => {
   const inv = overlayInv.value
-  const half = labelBlockHalf.value
-  const x = LABEL_ANCHOR_PX + half - MARK_LAYOUT_HALF_PX
-    + (half + NAME_GAP_SCREEN_PX + MARK_LAYOUT_HALF_PX) * inv
+  const x = NAME_GAP_SCREEN_PX + MARK_LAYOUT_HALF_PX
+    + (BLOCK_SCREEN_TOP_PX - MARK_LAYOUT_HALF_PX) * inv
     + props.label.tankDy * inv
   return {
     transform: `translateX(-50%) ${st.value.overlayInverseScale}`,

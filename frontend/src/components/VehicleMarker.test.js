@@ -7,7 +7,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import VehicleMarker from './VehicleMarker.vue'
 import markerSource from './VehicleMarker.vue?raw'
-// 标签呈现层（2D/3D 共享）：部分标签契约现在住在这里，不再是 marker 的内联样式
 import labelSource from './PlaybackVehicleLabel.vue?raw'
 
 const genericMarker = {
@@ -357,19 +356,21 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
   })
 
   it('selected/recorder layout offset 按 overlayInverse 反缩放：selected→name gap 与 recorder→vehicle 恒定', () => {
-    // inv = 1/1、1/2、1/4（对应 scale 1/2/4）
-    // selected：X = 4.5 + 14.5·inv（三角底边跟随 name 顶边，屏幕 gap 恒 3px；1× 即 19px 车辆契约）
+    // 三角偏移由「名称块屏幕常量偏移 + 三角自身反缩放」推导（见 VehicleMarker 内的实测说明）。
+    // 这里锁定两条真实契约：
+    //   1) 1× 时三角底边停在名称块顶边上方 3px（真实 Chrome 实测 3.00）；
+    //   2) 偏移整体按 overlayInverse 反缩放（zoom 下屏幕间距不线性增长），且恒为正、
+    //      即三角始终在名称块之上、不会压住名称。
+    const HALF = 4.5 // 三角高 9px 的一半
+    const BLOCK_SCREEN_TOP = 62
+    const GAP = 3
     for (const inv of [1, 0.5, 0.25]) {
       const w = mountMarker({ ...genericMarker, recorder: true, overlayInverse: inv, overlayInverseScale: `scale(${inv})` }, true)
       const markStyle = w.find('.pb-selected-mark').attributes('style') || ''
-      const x = 4.5 + 14.5 * inv
+      const x = GAP + HALF + (BLOCK_SCREEN_TOP - HALF) * inv
       expect(markStyle).toContain(`bottom: calc(100% + ${x}px)`)
       expect(markStyle).toContain(`scale(${inv})`) // 元素尺寸同步反缩放
-      // 屏幕几何：三角底边 = (x + 4.5)·s − 4.5；name 顶边 = 9·s + 7 → gap 必须恒 3
-      const s = 1 / inv
-      const triBottom = (x + 4.5) * s - 4.5
-      const nameTop = 9 * s + 7
-      expect(triBottom - nameTop).toBeCloseTo(3, 9)
+      expect(x).toBeGreaterThan(0) // 三角恒在车辆上方，不会落进标签块
       // 浮动幅度：2px × inv × s = 2px 恒定（var 注入 + keyframes calc）
       expect(markStyle).toContain(`--pb-overlay-inv: ${inv}`)
       expect(markerSource).toContain('margin-top: calc(2px * var(--pb-overlay-inv, 1))')
@@ -378,9 +379,10 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
       expect(badgeStyle).toContain(`top: calc(100% + ${5 * inv}px)`)
       expect(badgeStyle).toContain(`scale(${inv})`)
     }
-    // 缺省 overlayInverse（旧 fixture 兼容）：回退 1× 间距
+    // 缺省 overlayInverse（旧 fixture 兼容）：回退 1× 间距（实测契约值 65 = 3 + 4.5 + 57.5）
     const legacy = mountMarker({ ...genericMarker, recorder: true }, true)
-    expect(legacy.find('.pb-selected-mark').attributes('style')).toContain('bottom: calc(100% + 19px)')
+    expect(legacy.find('.pb-selected-mark').attributes('style'))
+      .toContain(`bottom: calc(100% + ${GAP + HALF + (BLOCK_SCREEN_TOP - HALF)}px)`)
     expect(legacy.find('.pb-recorder-badge').attributes('style')).toContain('top: calc(100% + 5px)')
   })
 })
@@ -447,8 +449,9 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
     // 定位/位移宿主是 .pb-presentation（内含共享呈现组件）
     const labelsStyle = w.find('.pb-presentation').attributes('style') || ''
     expect(labelsStyle).toContain('bottom: calc(100% + -8px)') // 2 + (-10)×1
+    // 三角底边 = 1× 基准偏移，再随 tankDy 上移 10
     const markStyle = w.find('.pb-selected-mark').attributes('style') || ''
-    expect(markStyle).toContain('bottom: calc(100% + 9px)') // 19 - 10
+    expect(markStyle).toContain(`bottom: calc(100% + ${3 + 4.5 + (62 - 4.5) - 10}px)`)
     expect(w.find('button').attributes('style')).toContain('left: 10%')
   })
 

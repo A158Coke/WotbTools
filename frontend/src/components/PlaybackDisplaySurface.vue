@@ -22,16 +22,29 @@ function measure() {
   const paddingRight = parseFloat(style.paddingRight) || 0
   const viewportTop = Math.max(host.top, 0)
   const viewportBottom = Math.min(host.bottom, window.innerHeight)
-  const above = Math.max(0, anchor.top - viewportTop - edge - gap)
-  const below = Math.max(0, viewportBottom - anchor.bottom - edge - gap)
-  const abovePreferred = panel.value.scrollHeight <= above || above >= below
-  const available = abovePreferred ? above : below
+  // 锚点也要先夹进可见交集：宿主整块位于视口之外时（矮横屏把工作台推到首屏下方就是这样），
+  // 锚点本身在视口外，按它算「可用空间」会得出一个屏幕外的答案（实测 above=300 而可见只有 111）。
+  const anchorTop = Math.min(Math.max(anchor.top, viewportTop), Math.max(viewportTop, viewportBottom))
+  const anchorBottom = Math.min(Math.max(anchor.bottom, anchorTop), Math.max(viewportTop, viewportBottom))
+  const above = Math.max(0, anchorTop - viewportTop - edge - gap)
+  const below = Math.max(0, viewportBottom - anchorBottom - edge - gap)
+  // 可见高度不足时 selected 侧会压到 0，此时保留一个下限，避免 max-height 把面板压成不可用。
+  const minimumPane = 96
+  const abovePane = Math.max(above, Math.min(minimumPane, viewportBottom - viewportTop))
+  const belowPane = Math.max(below, Math.min(minimumPane, viewportBottom - viewportTop))
+  const abovePreferred = panel.value.scrollHeight <= abovePane || abovePane >= belowPane
+  const available = abovePreferred ? abovePane : belowPane
   const width = Math.min(panel.value.offsetWidth, hostWidth - paddingLeft - paddingRight - edge * 2)
-  const height = Math.min(panel.value.scrollHeight, available)
+  // 面板自身高度也按可见交集收口，保证它始终落在**可见**范围内（而不是宿主范围内）。
+  const height = Math.min(panel.value.scrollHeight, available, Math.max(0, viewportBottom - viewportTop))
+  const topMin = Math.max(0, paddingTop + edge)
+  const topMax = Math.max(topMin, viewportBottom - host.top - height)
+  const aboveTop = anchorTop - originTop - gap - height
+  const rawTop = abovePreferred ? aboveTop : anchorBottom - originTop + gap
   placement.value = {
     // 面板以 host 的内边距盒为定位基准，故先扣掉左侧内边距再夹到 host 内。
     left: `${Math.max(paddingLeft + edge, Math.min(anchor.right - originLeft - width, hostWidth - paddingRight - width - edge))}px`,
-    top: `${Math.max(paddingTop + edge, abovePreferred ? anchor.top - originTop - gap - height : anchor.bottom - originTop + gap)}px`,
+    top: `${Math.min(Math.max(rawTop, topMin), topMax)}px`,
     maxHeight: `${available}px`,
   }
 }
@@ -44,18 +57,19 @@ function dismiss(event) {
 /**
  * 只在元素真的可聚焦时动焦点，并且以「焦点确实落上去了」为准（focus() 对不可聚焦元素是静默 no-op）。
  *
- * 为什么还要额外量尺寸：gear 在部分形态下会被隐藏（`display:none`），把焦点丢给一个看不见的
- * 按钮会让键盘用户彻底失去落点。显式带 `tabindex` 的宿主（速度：本面板自己）按声明即可聚焦，
- * 不必依赖布局引擎——jsdom / happy-dom 里所有元素的尺寸都是 0。
+ * 两个关键点：
+ *
+ * 1. **`preventScroll: true`**。默认的 `focus()` 会把元素滚进视口，而这是一个锚定在 gear 上的
+ *    非 modal 浮面：打开它不该改变页面滚动位置。少了这一项，打开 Display 会连带整页滚动一次、
+ *    把 `.pb-root` 推出视口，浮面的可用高度随之变化（矮横屏 844×390 上直接表现为浮面落到可见区
+ *    之外）。这不是"修 race"，是这次焦点转移本来就不该有的副作用。
+ * 2. 可见性用 `getClientRects().length` 判断（不依赖布局引擎，也不需要量尺寸）：gear 在部分
+ *    形态下会被隐藏，把焦点丢给一个看不见的按钮会让键盘用户彻底失去落点。
  */
 function focusIfPossible(element) {
   if (!element || typeof element.focus !== 'function' || element === document.activeElement) return false
-  const declaredFocusable = element.hasAttribute?.('tabindex')
-  if (!declaredFocusable) {
-    const rect = element.getBoundingClientRect?.()
-    if (rect && !rect.width && !rect.height) return false
-  }
-  element.focus()
+  if (element.getClientRects && element.getClientRects().length === 0) return false
+  element.focus({ preventScroll: true })
   return document.activeElement === element
 }
 /**

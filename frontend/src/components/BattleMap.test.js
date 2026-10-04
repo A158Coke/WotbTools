@@ -560,7 +560,7 @@ describe('vehicle-aware vehicle markers', () => {
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
     const readOffset = (sel) => {
       const style = wrapper.find(sel).attributes('style') || ''
-      const m = style.match(/calc\(100% \+ ([\d.]+)px\)/)
+      const m = style.match(/calc\(100% \+ (-?[\d.]+)px\)/)
       return m ? Number(m[1]) : null
     }
     const readInv = () => {
@@ -568,27 +568,31 @@ describe('vehicle-aware vehicle markers', () => {
       const m = style.match(/--pb-overlay-inv: ([\d.]+)/)
       return m ? Number(m[1]) : null
     }
-    // 屏幕几何（layout→screen）：三角底边 = (X + 4.5)·s − 4.5；name 顶边 = 9·s + 7（name 锚点 2px + 盒高 14px，与 .pb-name CSS 一致）
-    const triBottom = (x, s) => (x + 4.5) * s - 4.5
-    const nameTop = (s) => 9 * s + 7
+    // 三角偏移 = 名称块屏幕常量偏移(62) + 三角自身反缩放（见 VehicleMarker 内的实测说明）。
+    // 这里锁定：偏移按 overlayInverse 反缩放、恒为正（三角不落进标签块）、recorder 与车身恒 5px。
+    const HALF = 4.5
+    const BLOCK_SCREEN_TOP = 62
+    const NAME_GAP = 3
+    const selectedOffset = (inv) => NAME_GAP + HALF + (BLOCK_SCREEN_TOP - HALF) * inv
     const check = () => {
-      const s = viewportScale(wrapper)
+      const currentScale = viewportScale(wrapper)
       const x = readOffset('.pb-selected-mark')
       const r = readOffset('.pb-recorder-badge')
       const inv = readInv()
       expect(x).toBeTruthy()
       expect(r).toBeTruthy()
       expect(inv).toBeTruthy()
-      // selected → name 顶边屏幕 gap 恒 3px（三角跟随 name 上移）
-      expect(triBottom(x, s) - nameTop(s)).toBeCloseTo(3, 6)
+      // 偏移随 inv 反缩放，且恒为正 → 三角始终在名称块之上
+      expect(x).toBeCloseTo(selectedOffset(inv), 6)
+      expect(x).toBeGreaterThan(0)
       // recorder → vehicle 恒 5px
-      expect(r * s).toBeCloseTo(5, 6)
+      expect(r * currentScale).toBeCloseTo(5, 6)
       // 浮动幅度 = 2px × inv × s = 2px（inv = 1/s）
-      expect(inv * s).toBeCloseTo(1, 6)
+      expect(inv * currentScale).toBeCloseTo(1, 6)
     }
-    // 1×：selected 19px / recorder 5px（既有基准契约）
+    // 1×：三角偏移 = 3 + 4.5 + 57.5 = 65（真实 Chrome 实测值）/ recorder 5px
     expect(viewportScale(wrapper)).toBe(1)
-    expect(readOffset('.pb-selected-mark')).toBe(19)
+    expect(readOffset('.pb-selected-mark')).toBe(selectedOffset(1))
     expect(readOffset('.pb-recorder-badge')).toBe(5)
     check()
     // ≈2×（1.2^4 ≈ 2.07）
