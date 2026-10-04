@@ -24,7 +24,8 @@ const connectivityState = vi.hoisted(() => ({ state: null }))
 vi.mock('../composables/useConnectivity.js', async () => {
   const { ref } = await import('vue')
   connectivityState.state = ref('online')
-  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+  connectivityState.settled = ref(true)
+  return { useConnectivity: () => ({ connectivity: connectivityState.state, settled: connectivityState.settled, isSettled: () => connectivityState.settled.value, whenSettled: () => Promise.resolve() }) }
 })
 
 vi.mock('../scene/playbackScene.js', () => {

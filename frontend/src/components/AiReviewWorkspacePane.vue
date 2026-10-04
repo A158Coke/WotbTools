@@ -98,7 +98,10 @@ watch(() => [props.file, props.active, props.blockedReason, authenticated.value,
 
 <template>
   <div class="ai-workspace-pane" data-testid="ws-ai">
-    <p v-if="!online.available" class="ws-note" data-testid="ai-connectivity">{{ $t(online.messageKey) }}</p>
+    <!-- pending（首次检测未完成）：不下结论、不挂载 AI 面板，保持中性空白。 -->
+    <template v-if="!online.available">
+      <p v-if="!online.pending" class="ws-note" data-testid="ai-connectivity">{{ $t(online.messageKey) }}</p>
+    </template>
     <div v-else-if="!authenticated" class="ai-login" data-testid="ai-login-required">
       <p class="ws-note">{{ $t('workspace.ai_login_required') }}</p>
       <AppButton data-testid="ai-login" @click="loginOnline">{{ $t('app.login') }}</AppButton>

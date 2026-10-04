@@ -10,6 +10,7 @@ async function flushPromises() {
   await flushVue()
 }
 import { useError } from '../composables/useError.js'
+import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import ReplayWorkspace from './ReplayWorkspace.vue'
@@ -21,9 +22,19 @@ const nav = vi.hoisted(() => ({ navigate: null }))
 
 const connectivityState = vi.hoisted(() => ({ state: null }))
 vi.mock('../composables/useConnectivity.js', async () => {
-  const { ref } = await import('vue')
+  const { ref, watch } = await import('vue')
   connectivityState.state = ref('online')
-  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+  connectivityState.settled = ref(true)
+  // 与生产一致：whenSettled 在 settled 变 true（且同一同步块里写入的状态已提交）后才 resolve。
+  const whenSettled = () => new Promise((resolve) => {
+    if (connectivityState.settled.value) return resolve()
+    const stop = watch(connectivityState.settled, (value) => {
+      if (!value) return
+      stop()
+      resolve()
+    })
+  })
+  return { useConnectivity: () => ({ connectivity: connectivityState.state, settled: connectivityState.settled, isSettled: () => connectivityState.settled.value, whenSettled }) }
 })
 
 vi.mock('../composables/useReplay.js', () => ({
@@ -171,6 +182,8 @@ describe('ReplayWorkspace', () => {
 
   beforeEach(() => {
     connectivityState.state.value = 'online'
+    connectivityState.settled.value = true
+    useConnectivityNotice().close()
     replayState = buildState()
     hold.state = replayState
     authState.authenticated.value = true
@@ -232,6 +245,75 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.get('[data-test="ws-3d-pane"]').text()).toContain('false')
     expect(replayState.files.value[0]).toBe(file)
     expect(replayState.analyze).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  // 冷启动深链（?view=ai-review / ?view=agent-replay）：连通性首次检测未完成时，占位 UNKNOWN
+  // 不是结论 —— 不得出现任何连通性提示，也不得提前挂载需要网络的面板或落到登录门禁。
+  it.each(['ai', '3d'])('cold-start deep link to %s shows no connectivity verdict until detection settles ONLINE', async (cap) => {
+    connectivityState.state.value = 'unknown'
+    connectivityState.settled.value = false
+    withBattles(1)
+    const wrapper = mountWorkspace(cap)
+    await flushPromises()
+    expect(wrapper.find(`[data-testid="ws-${cap}-connectivity"]`).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('connectivityNotice.')
+    expect(wrapper.text()).not.toContain('featureOffline.')
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
+    expect(wrapper.find(`[data-test="ws-${cap}-pane"]`).exists()).toBe(false)
+    expect(useConnectivityNotice().notice.value).toBe(null)
+
+    // 首次检测结果 ONLINE（生产中 settled 与状态在同一个同步块里提交）。
+    connectivityState.settled.value = true
+    connectivityState.state.value = 'online'
+    await flushPromises()
+    expect(wrapper.find(`[data-testid="ws-${cap}-connectivity"]`).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('connectivityNotice.')
+    const pane = wrapper.get(`[data-test="ws-${cap}-pane"]`)
+    expect(pane.text()).toContain('true')
+    // 深链入口的门禁补判按真实 ONLINE 进行：全局 connectivity 提示（AppShell 弹层）也不得出现。
+    expect(useConnectivityNotice().notice.value).toBe(null)
+    wrapper.unmount()
+  })
+
+  it('cold-start anonymous 3d deep link reaches the login gate only after detection settles ONLINE', async () => {
+    connectivityState.state.value = 'unknown'
+    connectivityState.settled.value = false
+    withBattles(1)
+    const wrapper = mountWorkspace('3d', { authenticated: false })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="ws-3d-connectivity"]').exists()).toBe(false)
+
+    connectivityState.settled.value = true
+    connectivityState.state.value = 'online'
+    await flushPromises()
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ws-3d-connectivity"]').exists()).toBe(false)
+    expect(authState.login).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  // settle 后的真实结论必须照常显示。UNKNOWN → UNKNOWN 时连通性值不变，只有 settled
+  // false → true 能驱动 UI 从「暂未下结论」切到真实 unknown 提示（锁死 settled 必须是响应式）。
+  it.each([
+    ['unknown', 'connectivityNotice.unknown'],
+    ['offline', 'featureOffline.aiReview'],
+  ])('cold-start ai deep link settling %s shows the real connectivity banner', async (result, messageKey) => {
+    connectivityState.state.value = 'unknown'
+    connectivityState.settled.value = false
+    withBattles(1)
+    const wrapper = mountWorkspace('ai')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="ws-ai-connectivity"]').exists()).toBe(false)
+
+    connectivityState.settled.value = true
+    connectivityState.state.value = result
+    await flushPromises()
+    expect(wrapper.get('[data-testid="ws-ai-connectivity"]').text()).toContain(messageKey)
+    expect(wrapper.find('[data-test="ws-ai-pane"]').exists()).toBe(false)
+    // 深链入口被拒绝的门禁在 settle 后按真实结论补提示一次。
+    expect(useConnectivityNotice().notice.value).toMatchObject({ messageKey })
     wrapper.unmount()
   })
 

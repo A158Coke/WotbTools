@@ -281,10 +281,13 @@ watch(() => props.initialCapability, (val) => {
       </div>
       <div v-show="activeCapability === '3d'" class="capability-pane" data-testid="ws-3d">
         <!-- 顺序即优先级：连通性（capability SSOT）→ 登录门禁 → 加载错误 → 面板。
-             非-online 时既不给登录入口、也不挂载 3D（远端资源所需的连接不存在）。 -->
-        <Banner v-if="!threeAvailability.available" tone="info" data-testid="ws-3d-connectivity">
-          <p>{{ $t(threeAvailability.messageKey) }}</p>
-        </Banner>
+             非-online 时既不给登录入口、也不挂载 3D（远端资源所需的连接不存在）。
+             首次检测未完成（pending）时保持中性空白：不下连通性结论，也不落到登录门禁。 -->
+        <template v-if="!threeAvailability.available">
+          <Banner v-if="!threeAvailability.pending" tone="info" data-testid="ws-3d-connectivity">
+            <p>{{ $t(threeAvailability.messageKey) }}</p>
+          </Banner>
+        </template>
         <ReplayCapabilityAuthGate
           v-else-if="!authenticated && activeCapability === '3d'"
           :title="$t('workspace.tab_3d')"
@@ -346,9 +349,11 @@ watch(() => props.initialCapability, (val) => {
         />
       </div>
       <div v-show="activeCapability === 'ai'" class="capability-pane" data-testid="ws-ai">
-        <Banner v-if="!aiAvailability.available" tone="info" data-testid="ws-ai-connectivity">
-          <p>{{ $t(aiAvailability.messageKey) }}</p>
-        </Banner>
+        <template v-if="!aiAvailability.available">
+          <Banner v-if="!aiAvailability.pending" tone="info" data-testid="ws-ai-connectivity">
+            <p>{{ $t(aiAvailability.messageKey) }}</p>
+          </Banner>
+        </template>
         <Banner v-else-if="aiLoadError" tone="danger" data-testid="ws-ai-load-error">
           <p>{{ $t(aiLoadError) }}</p>
           <template #actions>

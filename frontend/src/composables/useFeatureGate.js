@@ -1,4 +1,4 @@
-import { getFeatureAvailability } from '../app/featureCapabilities.js'
+import { FeatureRequirement, getFeatureAvailability } from '../app/featureCapabilities.js'
 import { useConnectivity } from './useConnectivity.js'
 import { showConnectivityNotice } from './useConnectivityNotice.js'
 
@@ -23,20 +23,52 @@ import { showConnectivityNotice } from './useConnectivityNotice.js'
  *    service-unavailable 各不相同），这里不另写一套措辞。
  */
 export function useFeatureGate() {
-  const { connectivity } = useConnectivity()
+  const { connectivity, settled, whenSettled } = useConnectivity()
 
+  /**
+   * 当前可用性 + `pending`（连通性首次检测尚未完成）。
+   *
+   * `pending` 只对联网功能有意义：此时 ONLINE_REQUIRED 仍 fail-closed（`available=false`），
+   * 但 `reason` / `messageKey` 来自**占位**的 UNKNOWN，不是检测结论 —— UI 必须先判断
+   * `pending`，pending 时不得展示任何 connectivity 提示（不是 unknown，也不是 offline）。
+   * LOCAL 与未注册功能不依赖连通性，`pending` 恒为 false，绝不被初始化阻塞。
+   *
+   * 读取 `settled.value` 让 computed 依赖它：首次结果恰好是 UNKNOWN 时 `connectivity` 不变，
+   * 只有 settled false → true 能把 UI 从 pending 切到真实 UNKNOWN。
+   */
   function availability(feature) {
-    return getFeatureAvailability(feature, { connectivity: connectivity.value })
+    const result = getFeatureAvailability(feature, { connectivity: connectivity.value })
+    const dependsOnConnectivity = result.requirement !== null && result.requirement !== FeatureRequirement.LOCAL
+    return Object.freeze({ ...result, pending: dependsOnConnectivity && !settled.value })
   }
 
   function isAvailable(feature) {
     return availability(feature).available
   }
 
+  /**
+   * 同步门禁（返回值即「当前这次动作能不能做」）。
+   *
+   * 与 `availability(feature)` 同一判定：是否等待首次检测只看**该功能自己的** `pending`。
+   *  - 不 pending（LOCAL / 未注册功能，或检测已完成）：直接按当前状态判定；
+   *  - pending 但当前动作本就可用（ONLINE_OPTIONAL 的本地部分）：放行，不因初始化阻塞；
+   *  - pending 且不可用（ONLINE_REQUIRED）：fail-closed 返回 false，当前动作被拒绝（不发请求），
+   *    不立即弹 connectivity 提示（占位 UNKNOWN 不是结论）；检测完成后只按真实状态
+   *    **补判 / 补提示**一次（在线则不提示），**不会**自动重放被拒绝的原始动作 ——
+   *    需要恢复的页面由自己的可用性 watcher 负责。
+   */
+  function requireFeature(feature) {
+    const current = availability(feature)
+    if (!current.pending) return evaluateFeatureGate(feature, connectivity.value)
+    if (current.available) return true
+    void whenSettled().then(() => evaluateFeatureGate(feature, connectivity.value))
+    return false
+  }
+
   return {
     availability,
     isAvailable,
-    requireFeature: feature => evaluateFeatureGate(feature, connectivity.value),
+    requireFeature,
     connectivity,
   }
 }

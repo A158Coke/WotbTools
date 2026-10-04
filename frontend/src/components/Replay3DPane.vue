@@ -324,7 +324,10 @@ watch(
 
 <template>
   <div class="pb-pane">
-    <p v-if="!online.available" class="pb-note" data-testid="replay3d-connectivity">{{ $t(online.messageKey) }}</p>
+    <!-- pending（首次检测未完成）：不下结论、不初始化 3D 场景，保持中性空白。 -->
+    <template v-if="!online.available">
+      <p v-if="!online.pending" class="pb-note" data-testid="replay3d-connectivity">{{ $t(online.messageKey) }}</p>
+    </template>
     <Scene3DStatus v-else-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
     <p v-else-if="blockedReason" class="pb-note" data-testid="replay3d-blocked">{{ blockedReason }}</p>
     <p v-else-if="!file" class="pb-note" data-testid="replay3d-empty">{{ $t('agentReplay.no_file') }}</p>
