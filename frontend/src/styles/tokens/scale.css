@@ -77,6 +77,11 @@
     --pb-z-scrim: 6;   /* 待开播遮罩：盖住 HUD 面板；加载 / 错误状态仍在其上（--z-sticky） */
     --pb-z-modal: 9;
 
+    /* Bounded side wings: minimum preserves HP columns, maximum yields to battlefield. */
+    --pb-roster-min: 9rem;
+    --pb-roster-max: 14rem;
+    --pb-workspace-fallback-h: 80dvh;
+
     --pb-label-player-width: 110px;
     --pb-label-bar-width: 64px;
 

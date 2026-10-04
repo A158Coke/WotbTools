@@ -14,21 +14,11 @@ import './styles/showcase-regressions.css'
 import './styles/app-shell.css'
 import './styles/playback-overlap-ux.css'
 import './styles/playback-shared.css'
-// 形态文件排在基础表之后：迁出的规则原本就在后面，顺序不变则同特异性的胜负不变。
-// 三档互斥（根元素只挂一个 pb-form-*），三者之间没有层叠冲突，顺序无关紧要。
-import './styles/playback-pc.css'
-import './styles/playback-tablet.css'
+// Form styles only own peripheral navigation/portrait behavior.
 import './styles/playback-mobile.css'
 // 正方形 Stage 的三段式 workspace（Team 1 | Stage | Team 2、手机竖屏纵向流、详情浮窗层）。
-// 必须晚于三套形态文件：它要压过 pc 桌面的 `.pb-map-stage` 定高两列与 mobile 横屏的三列。
+// Shared sizing authority for every form and fullscreen mode.
 import './styles/playback-workspace.css'
-// Mobile fullscreen has stricter map-first behavior than the generic mobile form:
-// controller is transient and vehicle details must resize, never cover, the map.
-import './styles/playback-mobile-fullscreen.css'
-// Final fullscreen ownership guard: side-slot space reuse may move controls, but
-// HP / points / bases stay attached to the map HUD in every form. Mobile keeps
-// PR #245's transient bottom-controller contract even on ultra-wide screens.
-import './styles/playback-fullscreen-form-contract.css'
 import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
 import router from './app/router.js'
