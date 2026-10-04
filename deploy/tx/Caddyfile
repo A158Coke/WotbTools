@@ -110,8 +110,24 @@ auth.wotbtools.com {
 <body style="font-family:sans-serif;max-width:30em;margin:2em auto;padding:0 1em;line-height:1.6">
 <h1>返回 WotBTools App</h1>
 <p>登录已完成。请回到 WotBTools App 继续使用。</p>
+<p><a id="return-app" href="com.wotbtools.app:/oauth2redirect"
+      style="display:inline-block;padding:.6em 1.2em;border:1px solid #555;border-radius:.4em;text-decoration:none">返回 WotBTools App</a></p>
+<p id="return-app-hint" hidden>本页保留了登录结果；点击上面的按钮会把它交回 App。</p>
 <p>如果你还没有安装：<a href="https://wotbtools.com/download/android">从 wotbtools.com 下载</a>。</p>
 <p>Login is complete. Please return to the WotBTools app. Not installed yet? <a href="https://wotbtools.com/download/android">Download it from wotbtools.com</a>.</p>
+<script>
+// 兜底按钮不是主认证机制：2.1.0 起授权回程固定走 private scheme，浏览器只有在
+// 「旧版本 APK 以 HTTPS 回程发起的交易」或「设备没能处理 private scheme」时才会停在本页。
+// 这两种情况下本页持有完整的 OAuth 响应（code/state/...），必须原样转发给 App，
+// 否则 App 侧 AuthResponseGuard 收不到响应、交易永远 pending。
+(function () {
+  var search = location.search || '';
+  if (!search) return;                       // 没有登录结果可转发：按钮保持原始形状
+  var link = document.getElementById('return-app');
+  link.href = 'com.wotbtools.app:/oauth2redirect' + search;
+  document.getElementById('return-app-hint').hidden = false;
+})();
+</script>
 </body>
 </html>
 HTML

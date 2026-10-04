@@ -292,7 +292,7 @@ internal class AuthManager private constructor(context: Context) {
             return false
         }
 
-        val selectedRedirectUri = OidcRedirectStrategy.redirectUri(appContext)
+        val selectedRedirectUri = OidcRedirectStrategy.redirectUri()
         val builder = AuthorizationRequest.Builder(
             config,
             OidcConfiguration.CLIENT_ID,
