@@ -1,5 +1,5 @@
 /**
- * 实时装填条求值（纯函数；3D 标签的装填条用）。**逐发状态模型**，对齐游戏客户端。
+ * 实时装填条求值（纯函数；2D / 3D 共用）。**逐发状态模型**，对齐游戏客户端。
  *
  * ── 客户端证据（Steam 客户端 `Data/`，均为 DVPL 容器） ──
  * 位置/结构：`UI/Screens/Battle/VehicleUIObjectMarker/VehicleUIObjectMarker.yaml` 的
@@ -161,6 +161,40 @@ export function groupByVehicle(reloads) {
     a.push(e);
   }
   return m;
+}
+
+/**
+ * Session-level reload index shared by both playback presentations. Inputs and query times
+ * use the Playback facet's raw clock; 2D adds its canonical battle origin at the caller.
+ * The index owns no advancing clock: repeated, paused and out-of-order queries are identical.
+ * Relation is a separate gate from physical team colour. Unknown/enemy vehicles stay unknown
+ * even if malformed input carries reload events for them; shots alone never imply reload.
+ * Optional size is the same authoritative tank-config override used by both presentations.
+ */
+export function createReloadStateResolver(telemetry) {
+  const eventsByEid = groupByVehicle(telemetry?.reloads);
+  const durationsByEid = groupByVehicle(telemetry?.reload_effective);
+  const vehiclesByEid = new Map((telemetry?.vehicles || []).map((v) => [v.eid, v]));
+  const friendlyTeam = telemetry?.friendlyTeam ?? telemetry?.meta?.friendly_team;
+  const firesByEid = new Map();
+  for (const shot of telemetry?.shots || []) {
+    const eid = shot.shooter_eid ?? shot.shooter;
+    if (eid == null || !Number.isFinite(shot.t_fire)) continue;
+    if (!firesByEid.has(eid)) firesByEid.set(eid, []);
+    firesByEid.get(eid).push(shot.t_fire);
+  }
+  // Sort copies: the producer's immutable telemetry remains untouched.
+  for (const list of [...eventsByEid.values(), ...durationsByEid.values()]) {
+    list.sort((a, b) => a.clock - b.clock);
+  }
+  for (const list of firesByEid.values()) list.sort((a, b) => a - b);
+  return function reloadStateAt(vehicleId, time, size) {
+    const vehicle = vehiclesByEid.get(vehicleId);
+    if ((friendlyTeam !== 1 && friendlyTeam !== 2) || vehicle?.team !== friendlyTeam || !Number.isFinite(time)) return null;
+    const events = eventsByEid.get(vehicleId) || [];
+    return shellStatesAt(events, firesByEid.get(vehicleId) || [], time,
+      size ?? inferMagazineSize(events), durationsByEid.get(vehicleId) || []);
+  };
 }
 
 /** 推导弹夹容量 N（单发车 = 1） */

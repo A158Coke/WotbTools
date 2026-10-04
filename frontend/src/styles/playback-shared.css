@@ -149,9 +149,11 @@
 }
 
 .battle-playback .pb-main .pb-map {
-  width: 100%;
-  max-width: none;
-  margin: 0;
+  /* 边长由 styles/playback-workspace.css 的 `--pb-square-side` 统一给出（正方形契约）；
+     这里同时声明居中，避免只在某个形态的规则里写 auto margin 时其它形态忘记居中。 */
+  inline-size: min(var(--pb-square-side), 100%);
+  max-inline-size: 100%;
+  margin: 0 auto;
 }
 /* §Playback 战局回放地图：底图为纯环境层，可玩区边线由这条内嵌红色叠加提供
    （inset box-shadow，不占空间、不影响地图适配几何）。 */
@@ -185,7 +187,7 @@
    锁失败时也不在地图上放提示（地图上只允许短暂的事件播报）。 */
 
 /* VehicleDetailsPanel 渲染成 .pb-side-panel-shell 的直接子元素，不在 .pb-side-panel 内，
-   所以只写 `.pb-side-panel .pb-sidebar` 的旧覆盖从来没匹配上——组件自带的
+   所以只写 '.pb-side-panel .pb-sidebar' 的旧覆盖从来没匹配上——组件自带的
    width: 260px / max-height: 72vh / 卡片描边一直生效，于是详情在几百像素宽的列里
    缩成一张窄卡片，还带自己的滚动条。两条 DOM 路径都要覆盖。 */
 /* 所有形态都只做一件事：填满可用宽度（组件自带 width: 260px 是给旧浮层用的）。

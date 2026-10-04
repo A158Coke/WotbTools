@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   PHASE_AMMO_COUNT, PHASE_DRUM_SHELL, PHASE_DURATION_CHANGE, PHASE_MAG_INTERVAL, PHASE_START, fillOf, groupByVehicle,
   hasReloadTelemetry, hasPerShellReloads, inferMagazineSize, isTimedAmmoPhase, magazineSizeFromTank, reloadViewAt,
-  reloadVisualKey, resolveMagazineSize, shellStatesAt, usablePhases,
+  createReloadStateResolver, reloadVisualKey, resolveMagazineSize, shellStatesAt, usablePhases,
 } from './reloadBar.js'
 
 // 相位条目（facet `reloads` 的形状）：{ clock, eid, phase, duration_s, count }
@@ -12,6 +12,71 @@ const drum = (clock, eid, d, count = null) => ({ clock, eid, phase: PHASE_DRUM_S
 const ammo = (clock, eid, count) => ({ clock, eid, phase: PHASE_AMMO_COUNT, duration_s: null, count })
 const chg = (clock, eid, d) => ({ clock, eid, phase: PHASE_DURATION_CHANGE, duration_s: d, count: null })
 const states = (arr) => arr.map((s) => s.state)
+
+describe('shared Playback reloadStateAt resolver', () => {
+  function telemetry(overrides = {}) {
+    return {
+      friendlyTeam: 1,
+      vehicles: [{ eid: 7, team: 1 }, { eid: 8, team: 2 }, { eid: 9, team: 1 }],
+      reloads: [clip(10, 7, 8)],
+      reload_effective: [{ clock: 0, eid: 7, duration_s: 4 }],
+      shots: [],
+      ...overrides,
+    }
+  }
+
+  it('2D and 3D raw-clock input uses the same interpretation, including effective duration', () => {
+    const raw = telemetry()
+    const mapResolver = createReloadStateResolver(raw)
+    const sceneResolver = createReloadStateResolver({ ...raw, friendlyTeam: undefined, meta: { friendly_team: 1 } })
+    const mapTime = 2
+    const rawOrigin = 10
+    expect(mapResolver(7, mapTime + rawOrigin)).toEqual([{ state: 'loading', progress: 0.5 }])
+    expect(sceneResolver(7, 12)).toEqual(mapResolver(7, mapTime + rawOrigin))
+  })
+
+  it('pause and forward/back seek reconstruct exactly; no advancing clock is owned', () => {
+    const at = createReloadStateResolver(telemetry())
+    const initial = at(7, 12)
+    expect(at(7, 12)).toEqual(initial)
+    expect(at(7, 20)).toEqual([{ state: 'full', progress: 1 }])
+    expect(at(7, 12)).toEqual(initial)
+  })
+
+  it('unknown telemetry, enemy, unresolved friendly team and invalid query are hidden', () => {
+    const raw = telemetry({ shots: [{ shooter_eid: 9, t_fire: 11 }], reloads: [clip(10, 8, 4)] })
+    const at = createReloadStateResolver(raw)
+    expect(at(7, 12)).toBeNull()
+    expect(at(9, 12)).toBeNull() // firing cannot supply absent reload telemetry
+    expect(at(8, 12)).toBeNull() // even malformed enemy telemetry is gated
+    expect(at(7, NaN)).toBeNull()
+    expect(createReloadStateResolver({ ...telemetry(), friendlyTeam: null })(7, 12)).toBeNull()
+  })
+
+  it('evidence-based magazines preserve count, interval, per-shell and static config capacity', () => {
+    const raw = telemetry({
+      reloads: [gap(10, 7, 2, 2), drum(12, 7, 6, 2)],
+      reload_effective: [],
+      shots: [{ shooter_eid: 7, t_fire: 10 }],
+    })
+    const at = createReloadStateResolver(raw)
+    expect(at(7, 15)).toEqual([
+      { state: 'full', progress: 1 }, { state: 'full', progress: 1 }, { state: 'loading', progress: 0.5 },
+    ])
+    expect(at(7, 18)).toHaveLength(3)
+    const size = resolveMagazineSize({ configs: [{ burst_size: 4 }] }, raw.reloads)
+    expect(at(7, 18, size)).toHaveLength(4)
+    expect(at(7, 15)).toEqual(createReloadStateResolver(raw)(7, 15))
+  })
+
+  it('indexes sort producer events without mutating the raw facet', () => {
+    const raw = telemetry({ reloads: [clip(20, 7, 4), clip(10, 7, 4)] })
+    const original = structuredClone(raw)
+    const at = createReloadStateResolver(raw)
+    expect(at(7, 12)).toEqual([{ state: 'loading', progress: 0.5 }])
+    expect(raw).toEqual(original)
+  })
+})
 
 describe('reloadBar · 相位语义与筛选', () => {
   it('收 f2=3/4/6/7 且带正时长的条目；无时长的 5（就绪/取消）与其他码不参与', () => {
