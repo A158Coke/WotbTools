@@ -19,7 +19,7 @@ http://caddy {
 	}
 
 	handle_path /_wotb/frontend/* {
-		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {$CADDY_FRONTEND_FALLBACK} {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {$CADDY_FRONTEND_PEER} {
 			health_uri /version.json
 			health_interval 10s
 			health_timeout 3s
@@ -77,7 +77,7 @@ wotbtools.com {
 		}
 	}
 	handle {
-		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {$CADDY_FRONTEND_FALLBACK} {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {$CADDY_FRONTEND_PEER} {
 			health_uri /version.json
 			health_interval 10s
 			health_timeout 3s
