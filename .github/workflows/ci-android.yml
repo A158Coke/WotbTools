@@ -41,6 +41,11 @@ jobs:
       # PR B §30：APK 里必须真的带着可离线运行的前端 bundle（index + JS/CSS + Agent WASM + 本地资源）。
       # 只断言「能构建」不够 —— 这里构建 bundle、校验 commit-addressed WASM 产物，再把 bundle 复制进
       # assets，最后在 assembleDebug 之后直接检查 APK 内容。
+      # 2D 地图派生（Phase 10）：canonical 底图 → dist-android-maps/（Pillow，确定性）。
+      # 版本 pin：Pillow wheel 自带 libwebp，跨环境同版本才能保证派生逐字节一致
+      # （build-android-map-assets.mjs 内部会跑 determinism 复核）。
+      - name: Install pinned Pillow for the map derivative pipeline
+        run: python3 -m pip install --disable-pip-version-check 'Pillow==12.3.0'
       - name: Build the local-first frontend bundle into APK assets
         run: |
           set -euo pipefail

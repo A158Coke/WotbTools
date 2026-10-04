@@ -269,12 +269,20 @@ jobs:
       # PR B：signed release APK 必须和内层 debug APK 一样携带**完整的本地前端 bundle**
       # （index + JS/CSS + pinned Agent WASM + 本地 2D 资源）。否则会出现「CI 是 local-first、
       # 线上 APK 不是」的分裂。复用上一步的 node_modules 与已取回的 Agent 产物，不重复下载。
+      # 2D 地图派生（Phase 10）：canonical 底图 → dist-android-maps/（Pillow，确定性）。
+      # 版本 pin：Pillow wheel 自带 libwebp，跨环境同版本才能保证派生逐字节一致
+      # （build-android-map-assets.mjs 内部会跑 determinism 复核）。
+      - name: Install pinned Pillow for the map derivative pipeline
+        run: python3 -m pip install --disable-pip-version-check 'Pillow==12.3.0'
       - name: Build the local-first frontend bundle into APK assets
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           set -euo pipefail
           npm --prefix frontend run build:android
+          # 派生不变量（等比 / 不放大 / 单张与总量预算）独立复核一次：build 内部已 fail closed，
+          # 这一步让 CI 日志里有明确的"地图派生已校验"证据。
+          node frontend/scripts/build-android-map-assets.mjs --verify
 
       - uses: actions/setup-java@v4
         if: steps.preflight.outputs.releaseAction == 'publish'

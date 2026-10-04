@@ -155,6 +155,35 @@ App **未安装**（或该设备没走 App Link）时，浏览器会真的停在
 落地页回答这个精确路径（不再落到 Keycloak 的 catch-all 404），并提供下载入口。Keycloak 自身的
 路径（`/realms/...`、`/resources/...`）行为不变。
 
+### 2D 离线地图派生（Phase 10）
+
+APK 里随包携带 29 张 2D 离线底图（`frontend/src/assets/maps/*.webp`，canonical
+2024×2024、合计约 32.8 MiB，Web 构建继续使用 canonical 原图）。Android 构建在
+`frontend/scripts/build-android-bundle.mjs` 内先派生出缩小副本，再让 android 模式的
+Vite 构建把地图 import 重定向到派生物（`vite.config.js` 的 `wotb-android-map-derivatives`
+插件）——**不维护第二份人工源**，也不改任何源码 import：
+
+```text
+src/assets/maps/*.webp（canonical，Web 用）
+  --python3 scripts/optimize-android-maps.py（Pillow，等比缩放到最长边 1024、WebP q72、剥元数据）-->
+    frontend/dist-android-maps/*.webp（构建产物，gitignored）
+  --Vite 别名-->  APK assets（29 张合计 ≈ 4.2 MiB，原 32.8 MiB）
+```
+
+- 参数与预算单点声明在 `frontend/scripts/lib/mapAssetInvariants.mjs`
+  （maxDimension 1024 / 单张 ≤500 KiB / 总量 ≤10 MiB / 宽高比容差 0.2%）；
+- **不变量 fail closed**：文件集合逐字一致、派生尺寸 = 按上限计算的期望尺寸（等比、
+  不放大、无裁剪 / 补边）、单张与总量在预算内——构建期由
+  `scripts/build-android-map-assets.mjs` 对**真实编码输出**校验（不是 CSS 文本式的近似断言）；
+  打包后再按派生文件名逐张核对地图确实进了 APK，并写入 bundle manifest 的 `maps` 段；
+- **确定性**：Pillow 版本在 workflow 里 pin（wheel 自带 libwebp），`--check-determinism`
+  再跑一遍逐字节比对；同输入同版本必须同输出；
+- 纯校验器有独立单测（`scripts/lib/mapAssetInvariants.test.mjs`），canonical 资产的
+  映射完整性与规格由 `src/assets/maps.test.js` 在 frontend CI 守（无需 Pillow）。
+
+压缩参数的"看起来够不够清楚"属**视觉验收**：由用户在真机 2D 回放目视确认，需要更清晰
+时只调 `MAP_DERIVATIVE_BUDGETS.maxDimension` / python 的 `--quality`（预算会跟着拦）。
+
 ### 校验边界（谁负责什么）
 
 - **回程投递（PendingIntent 必须是 mutable）**：AppAuth 的 `AuthorizationManagementActivity` 不复用
