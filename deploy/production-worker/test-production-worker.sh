@@ -731,5 +731,27 @@ for script in lib.sh staging-root.sh install.sh verify.sh reconcile.sh read-targ
 done
 pass 'architectural boundary (no Komodo/Caddy/Periphery/WireGuard/workload ownership)'
 
+## --- P. sudo registry-contract handoff ---------------------------------------
+#
+# Production runs enter install.sh as the non-root SSH account and then re-exec
+# through sudo. Keep this contract structural so CI proves every desired-state
+# registry input crosses that boundary, while unrelated environment variables do
+# not become part of the allowlist.
+install_code="$(cat "$ROOT/install.sh")"
+preserve_loop="$(sed -n '/for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD; do/,/done/p' "$ROOT/install.sh")"
+[[ -n "$preserve_loop" ]] || fail 'install.sh must explicitly allowlist the complete registry contract for sudo'
+for required in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD; do
+  grep -qw "$required" <<< "$preserve_loop" \
+    || fail "sudo registry-contract allowlist is missing $required"
+done
+for forbidden in GITHUB_TOKEN SSH_PRIVATE_KEY WORKER_READY_TOKEN SOURCE_SHA PATH HOME; do
+  if grep -qw "$forbidden" <<< "$preserve_loop"; then
+    fail "sudo registry-contract allowlist must not preserve unrelated input $forbidden"
+  fi
+done
+grep -q -- '--preserve-env=' <<< "$install_code" \
+  || fail 'sudo handoff must use an explicit --preserve-env allowlist'
+pass 'sudo handoff preserves the complete registry contract and nothing unrelated'
+
 echo
 echo "Production-worker fixtures: PASS"
