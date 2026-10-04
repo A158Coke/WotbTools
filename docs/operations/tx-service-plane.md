@@ -2,23 +2,64 @@
 
 K6A 已在 TX1 Docker-local production plane 之外建立并验收私有跨宿主入口。
 K6B-1 在不切换生产流量的前提下，把消费者依赖改为 fail-closed logical endpoints；
-owner workflows 当时仍显式注入 Docker-local 值。K6B-2 才逐 consumer 切换：
+owner workflows 当时仍显式注入 Docker-local 值。K6B-2 随后逐 consumer 切换，
+每个 consumer 一次，并以 production `TX_RUNTIME_READY` 作为继续/回滚边界。
+
+本文件现在是一份**已完成的迁移记录 + 冻结的 production baseline**：
 
 ```text
-K6B-1  COMPLETE
+K6A    COMPLETE  TX1 WireGuard service plane 建成并生产验收
+
+K6B-1  COMPLETE  logical endpoint 契约（resolve → validate → fail closed）
 K6B-2A COMPLETE  Frontend → Business API              http://10.20.0.1:8087
 K6B-2B COMPLETE  Business API → Business PostgreSQL   10.20.0.1:25432
 K6B-2C COMPLETE  Business API → Keycloak Admin        http://10.20.0.1:8080
 K6B-2D COMPLETE  Keycloak → Keycloak PostgreSQL       10.20.0.1:15432
 K6B-2E COMPLETE  Caddy → Frontend                     10.20.0.1:8081
-K6B-2F CUT OVER  Caddy → Keycloak                     10.20.0.1:8080
+K6B-2F COMPLETE  Caddy → Keycloak                     10.20.0.1:8080
+
+K6B-2  COMPLETE  六个 TX consumer 全部完成
+K6B    COMPLETE  仓库内不存在 K6B-1 / K6B-2 之外的 K6B phase
+
 Non-TX（不在 TX service plane 内，不随 placement 移动）
        Frontend → AI Service（Yecao）        http://10.20.0.2:8089
 ```
 
-K6B-2 的六个 consumer 的 desired state 现在全部落在 Git 里（`K6B_FINAL_PLACEMENT_MATRIX`）。
-`K6B-2F` 标为 CUT OVER 而不是 COMPLETE：complete 需要 merge 之后的 Caddy production deploy
-与 exact-current-main 的 `Ops / TX Runtime Check` 全部通过。本文件不声称 K6B-2 已完成。
+K6B-2F 的 production acceptance：`Ops / TX Runtime Check` run `37187973790`，exact main
+`07f731e2a17d3dec1a24ac73cb27655a1d69e28f`，`tx-logical-endpoints-declared` /
+`tx-logical-endpoints-active` / `wireguard-service-plane` PASS，`TX_RUNTIME_READY`。
+
+## Production baseline（冻结，K7 的起点）
+
+六个 TX consumer 的当前 production placement（`Expected == Declared == Active`，由 runtime gate
+持续强制；`scripts/ci/test-workflow-contract.sh:K6B_FINAL_PLACEMENT_MATRIX` 是它的契约副本）：
+
+```text
+Frontend → Business API            TX_BACKEND_UPSTREAM=http://10.20.0.1:8087
+Business API → Business PostgreSQL TX_BUSINESS_DB_HOST=10.20.0.1  TX_BUSINESS_DB_PORT=25432
+Business API → Keycloak Admin      TX_KEYCLOAK_ADMIN_SERVER_URL=http://10.20.0.1:8080
+Keycloak → Keycloak PostgreSQL     TX_KEYCLOAK_DB_HOST=10.20.0.1  TX_KEYCLOAK_DB_PORT=15432
+Caddy → Frontend                   CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081
+Caddy → Keycloak                   CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080
+
+Non-TX fixed dependency
+Frontend → AI Service（Yecao）      TX_AI_UPSTREAM=http://10.20.0.2:8089
+```
+
+主机地址语义：**TX1 = `10.20.0.1`、Yecao = `10.20.0.2`、TX2 = `10.20.0.3`**。
+`10.20.0.2` 只承载非 TX 依赖（AI service / monitor），永远不是 TX service placement。
+
+### 三类合法值（不要混淆）
+
+| 类别 | 含义 | 例子 |
+|---|---|---|
+| **current production placement** | 本文件冻结的六个值；runtime gate 要求 declared 与 active 都等于它 | `10.20.0.1:8081` |
+| **allowed rollback placement** | canonical validator 仍然接受的 Docker-local 值，用于生产事故时的紧急回退（每步只回退一个 consumer） | `wotb-frontend:80`、`keycloak:8080`、`business-postgres:5432`、`keycloak-postgres:5432`、`http://business-api:8087` |
+| **future reviewed TX2 placement** | canonical validator 同样接受的 TX2 等价地址，供未来 workload migration 使用；**不是**当前 desired state | `10.20.0.3:8081` |
+
+rollback 与 TX2 值保留在 allowlist 里是刻意的：如果 K6B 完成后把它们从 validator 删除，生产事故
+时回退会被自己的 guard rail 阻断。validator 继续拒绝退役 Yecao 地址当作 TX placement、公网
+hostname 当私有 placement、任意 host、错误端口/协议、path/query/userinfo，以及 wildcard/公网发布。
 
 ## Endpoint contract
 
@@ -50,15 +91,37 @@ K6B logical endpoint contract（`Active value` 为当前生产实际 placement�
 
 上表六行即 K6B-2 的最终 placement matrix，同时被
 `scripts/ci/test-workflow-contract.sh` 的 `K6B_FINAL_PLACEMENT_MATRIX`（owner 与 runtime gate
-两侧都断言）与 `deploy/test-tx-runtime-check.sh` 的 K6B-2F 稳态 fixture 固定下来，作为 K7
-placement migration 的 baseline。`keycloak:8080` 仍是 canonical allowlist 的合法值，但它是 2F 的
-**rollback** 状态，不再是 reviewed production placement。
+两侧都断言）与 `deploy/test-tx-runtime-check.sh` 的 K6B-2F steady-state fixture 固定下来，作为
+K7 placement migration 的权威 baseline。`Docker-local default` 这一列现在只表示
+**rollback 值**（见上文「三类合法值」）：它们仍在 canonical allowlist 内，任何一步都可以只回退
+一个 consumer，但已不再是 reviewed production placement。
 
 `KEYCLOAK_ISSUER_URI` 不是 placement endpoint，始终保持
 `https://auth.wotbtools.com/realms/wotbtools`。Yecao AI 仍固定
 `http://10.20.0.2:8089`，不随任何 TX placement 切换移动；monitor/Komodo/Loki 边界不变。
 公网 host、未审核 WG 地址、
 错误协议或错误端口在 live mutation 前 fail closed。K6B 不迁移任何 workload。
+
+## Runtime gate 是永久基础设施（不是 migration-only code）
+
+`tx-logical-endpoints-declared` 与 `tx-logical-endpoints-active` 在 K6B 期间用来证明「Git 里的
+desired placement 已经真的生效」；K6B 完成后它们**继续存在**，并且是 K7 的前提条件：K7 开始移动
+workload 之后，这三个 token 负责证明
+
+```text
+Git desired placement（expectation）
+= rendered deployment（declared）
+= actual running container（active）
+```
+
+因此 closeout 不删除、不弱化这三个 token，也不把 `Expected == Declared == Active` 降级为
+「至少不是 Docker-local」。`wireguard-service-plane` 同样保留：它按精确 host IP / published
+port / target / protocol 校验五个 owner 的绑定，防止公网或 wildcard 暴露。功能探针
+（`frontend` / `caddy-frontend` / `public-tls-web` / `keycloak` / `caddy-keycloak` /
+`public-tls-auth` / `auth-token` / `anonymous-rejected` / `admin-authz` / `qq-idp-admin-api` /
+`business-postgres` / `business-postgres-provisioning` / `keycloak-postgres` / `tx-business-api` /
+`business-profile` / `business-hof` / `hof-replay-storage`）同样保留：它们是 K7 workload migration
+的 production acceptance 基础。
 
 同一套 canonical validator（`deploy/tx/deploy.sh:validate_http_endpoint` /
 `validate_database_endpoint` / `validate_caddy_upstream`）同时守护三个入口，仓库里没有第二份
@@ -68,9 +131,11 @@ allowlist：staged deploy、只读 dependency readiness，以及 runtime gate。
 Keycloak Admin 请求都不会先发出去再等 `deploy.sh` 拒绝。probe 自身也不再为
 `TX_KEYCLOAK_ADMIN_SERVER_URL` 取默认值：没有经过校验的显式值就直接失败。
 
-## K6B-2A / 2B / 2C / 2D：同宿主 hairpin 是刻意的 placement 验证
+## K6B-2 迁移记录：同宿主 hairpin 是刻意的 placement 验证
 
-Frontend、Business API、Keycloak、Caddy 与两套 PostgreSQL **当前都在 TX1**，因此六个已切换的
+本节记录 K6B-2A–2F 为什么这样切换（历史依据），不是待执行的步骤。
+
+Frontend、Business API、Keycloak、Caddy 与两套 PostgreSQL **都在 TX1**，因此六个已切换的
 consumer 都是**同宿主**切换：Frontend 不再走 Docker bridge 的 `business-api:8087`，而是连到
 TX1 自己的 WG 地址 `10.20.0.1:8087`；Business API 也不再走 `business-postgres:5432` 与
 `http://keycloak:8080`，而是连到 `10.20.0.1:25432` 与 `http://10.20.0.1:8080`；Keycloak 也不再走
@@ -250,14 +315,17 @@ curl -fsS https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configu
 
 验收记录应保存部署 SHA、actual bindings、TX2/Yecao probe、public TLS 与 E2E 结果；所有条件同时通过且 workload 未移动后才记为 K6A COMPLETE。
 
-## Rollback and next phase
+## Rollback（K6B 已完成；以下是紧急回退记录）
+
+K6B-2 已完成，因此本节不再是待执行的迁移步骤，而是**生产事故时的单 consumer 回退手册**：每一步
+只回退一个 consumer，回退值就是上表的 `Docker-local default`（它们仍在 canonical allowlist 内），
+合并后对应 owner 会自动重新部署，随后重新 dispatch `Ops / TX Runtime Check` 并要求
+`TX_RUNTIME_READY`。回退必须同步 owner workflow、gate expectation 与
+`K6B_FINAL_PLACEMENT_MATRIX`／`CURRENT_K6B_CUTOVERS`，只改一侧必然 FAIL。
 
 回退 K6A 提交，经同一批服务 owner 重新部署，移除新增 WG 绑定并保留原有管理入口。
 卷、DNS、Caddy 与数据不变，因此无需数据迁移。遵守现有宿主部署锁，
 手工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`。
-
-K6B-2 按 consumer 逐项把 owner workflow 切到对应 endpoint variable/value；每一步单独部署并要求
-`TX_RUNTIME_READY`，失败即恢复该 consumer 的 Docker-local value。
 
 **K6B-2A rollback（只回退 Frontend → Business API）**：在同一个 revert 里把
 `.github/workflows/frontend.yml` 与 `.github/workflows/tx-runtime-check.yml` 的
@@ -322,6 +390,21 @@ DNS/WireGuard 配置、不改 Keycloak 或任何 workload。
 issuer、realm/client、TLS、Caddyfile 路由与 Host 语义、DNS 与 WireGuard 配置都不变），因此
 `keycloak:8080` 一直是 canonical allowlist 里的合法 rollback 值。
 
-K6B 六个 consumer 的 desired state 全部落 Git 后，仍需 merge 后的 Caddy production deploy +
-exact-current-main `Ops / TX Runtime Check` 才能宣布 K6B-2 complete；之后 K7 才进行首个真实
-Komodo workload migration。
+## K7 readiness baseline
+
+以下是**已经成立的事实**，不是计划：本文件不做 K7 的 workload 排序，也不包含任何 K7 实现。
+
+```text
+K6B logical placement abstraction 已 production accepted。
+六个 TX consumer 依赖全部使用 reviewed logical service-plane endpoint。
+Expected == Declared == Active 由 TX runtime gate 持续强制（permanent infrastructure）。
+功能探针覆盖 frontend、public TLS、auth（discovery/issuer/token/anonymous/admin/IdP）、
+两套 PostgreSQL 与 Business API 读路径。
+TX1 = 10.20.0.1    Yecao = 10.20.0.2    TX2 = 10.20.0.3
+```
+
+后续 K7 workload migration 必须**一次只移动一个 workload placement**，并保持 consumer contract
+不变（`K6B_FINAL_PLACEMENT_MATRIX` 是它的权威 baseline）：移动前先改 Git 里的 reviewed 值，
+部署后由 runtime gate 证明 declared 与 active 都等于新值，且全部功能探针仍然 PASS。
+
+K6A 的回退入口（移除 WG 绑定、保留原管理入口）与上文每个 consumer 的紧急 rollback 手册继续有效。
