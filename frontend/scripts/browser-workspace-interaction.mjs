@@ -902,6 +902,51 @@ function displayPanelProbe() {
 }
 
 /**
+ * 横向空间归属探针：bounded roster | fluid center | bounded roster。
+ *
+ * 量的是**真实应用**的 grid 结果（不是 file:// fixture），所以「center 吃掉全部剩余宽度」
+ * 与「HUD 属于整个 center column」是实测结论而不是 CSS 推断。
+ */
+function workspaceColumnsProbe() {
+  const root = document.querySelector('.pb-root')
+  if (!root) return { root: false }
+  const box = (el) => {
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return {
+      left: +r.left.toFixed(1), right: +r.right.toFixed(1),
+      top: +r.top.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1),
+    }
+  }
+  const main = root.querySelector('.pb-main')
+  const left = box(root.querySelector('.side-left'))
+  const right = box(root.querySelector('.side-right'))
+  const square = box(document.querySelector('.stage-square'))
+  const hud = box(root.querySelector('.hud'))
+  const controls = box(root.querySelector('.controls'))
+  const rootBox = box(root)
+  const mainBox = box(main)
+  // 列宽用的是 grid 容器（root）的**内边距盒**：root 自身有 padding，边框盒会多算进去。
+  const cs = getComputedStyle(root)
+  const padL = parseFloat(cs.paddingLeft) || 0
+  const padR = parseFloat(cs.paddingRight) || 0
+  const contentW = +(root.clientWidth - padL - padR).toFixed(1)
+  // center column 的宽度：grid 里 stage/hud/controls 都占 center 列，用 HUD 的盒直接量它。
+  const centerW = hud ? hud.w : null
+  const laneGutter = left && hud ? +(hud.left - left.right).toFixed(1) : null
+  return {
+    root: true,
+    portrait: root.classList.contains('portrait-flow'),
+    rosterSide: root.classList.contains('roster-side'),
+    laneCount: root.querySelectorAll('.team-lane').length,
+    columns: cs.gridTemplateColumns,
+    left, right, square, hud, controls, rootBox, mainBox, contentW, centerW, laneGutter,
+    laneW: left ? +left.w.toFixed(1) : null,
+    rootW: rootBox ? +rootBox.w.toFixed(1) : null,
+  }
+}
+
+/**
  * 等名册布局**稳定**（连续两次读到的几何签名一致）。
  *
  * 为什么不能只 sleep 一个常数：`Replay3DPane` 的 ResizeObserver 会把实测高度写回
@@ -1094,6 +1139,84 @@ async function runRosterGeometryScenario(env, scenario) {
       `portrait order must be Stage → Transport → Team 1 → Team 2: ${JSON.stringify(order)}`)
   } else {
     check(failures, geometry.side && !geometry.portrait, `expected Team 1 | Stage | Team 2 (class roster-side): portrait=${geometry.portrait} side=${geometry.side}`)
+  }
+
+  // —— 横向空间归属（实测）：bounded roster | fluid center | bounded roster ——
+  // 真实应用里的列宽关系；`--pb-roster-max` 是 tokens/scale.css 的 SSOT 值。
+  if (geometry.side) {
+    const ROSTER_MAX_PX = 11 * 16
+    const columns = await page.probe(workspaceColumnsProbe)
+    check(failures, columns.root, 'workspace columns: pb-root missing')
+    check(failures, columns.laneW <= ROSTER_MAX_PX + 0.5,
+      `roster lane must stay bounded by --pb-roster-max: ${JSON.stringify({ laneW: columns.laneW, rootW: columns.rootW })}`)
+    check(failures, Math.abs(columns.left.w - columns.right.w) <= 0.5,
+      `both lanes must share one bounded width: ${JSON.stringify({ left: columns.left.w, right: columns.right.w })}`)
+    // center 必须吃掉全部剩余宽度：内边距盒 − 两条 lane − 两条 gutter。
+    // centerW 直接量自 HUD 盒（HUD 属于整列），所以这条断言同时证明「没有额外
+    // max-width / 固定宽度 / 多余 margin 把 center 卡窄」以及「HUD 属于整列」。
+    const expectedCenter = columns.contentW - 2 * columns.laneW - 2 * (columns.laneGutter ?? 0)
+    check(failures, Math.abs(columns.centerW - expectedCenter) <= 1.5,
+      `center column must consume all remaining width (expected ${expectedCenter}): ${JSON.stringify({ centerW: columns.centerW, laneW: columns.laneW, contentW: columns.contentW, gutter: columns.laneGutter })}`)
+    check(failures, columns.centerW >= columns.laneW * 2.5,
+      `center battlefield must dominate the bounded lanes: ${JSON.stringify({ centerW: columns.centerW, laneW: columns.laneW })}`)
+    // HUD 属于整个 center column，而不是按内容收缩成中间小块
+    check(failures, columns.hud && Math.abs(columns.hud.w - columns.centerW) <= 1,
+      `HUD must span the whole center column: ${JSON.stringify({ hudW: columns.hud?.w, centerW: columns.centerW })}`)
+    // 正方形 Stage 落在 center column 内，且不产生水平溢出
+    check(failures, columns.square && columns.square.w <= columns.centerW + 0.5,
+      `Stage must fit inside the center column: ${JSON.stringify({ stage: columns.square?.w, centerW: columns.centerW })}`)
+    check(failures, columns.square && Math.abs(columns.square.w - columns.square.h) <= 1,
+      `Stage must stay square: ${JSON.stringify({ w: columns.square?.w, h: columns.square?.h })}`)
+    check(failures, columns.rootBox.left >= -0.5 && columns.rootBox.right <= viewport.width + 0.5,
+      `workspace must not overflow horizontally: ${JSON.stringify({ root: columns.rootBox, viewport: viewport.width })}`)
+    // center column 水平居中：HUD 中心必须落在两条车道之间（左右留白对称）
+    const hudCenter = columns.hud.left + columns.hud.w / 2
+    const rootCenter = columns.rootBox.left + columns.rootBox.w / 2
+    check(failures, Math.abs(hudCenter - rootCenter) <= 1,
+      `center column must stay centered between the lanes: ${JSON.stringify({ hudCenter, rootCenter })}`)
+
+    // roster off：两条车道必须完全消失、center 变成满宽、Stage 仍居中。
+    // 用 hit-tested 的 clickElement：矮视口下 Display 面板比可见区还高，必须先滚面板再点。
+    await page.evaluate(`document.querySelector('[data-testid="display-toggle"]')?.click()`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]:not([hidden])'),
+      { label: 'display panel for roster toggle' })
+    const rosterToggle = await clickElement(page, '[data-testid="disp-roster"]')
+    check(failures, clicked(rosterToggle), `roster toggle not clickable: ${rosterToggle}`)
+    if (clicked(rosterToggle)) {
+      await page.waitFor(() => !document.querySelector('.pb-root')?.classList.contains('roster-side'),
+        { label: 'roster lanes removed' })
+      await waitForStableLayout(page)
+      const off = await page.probe(workspaceColumnsProbe)
+      check(failures, off.laneCount === 0 && !off.left && !off.right,
+        `roster off must remove both lanes entirely: ${JSON.stringify({ laneCount: off.laneCount, left: off.left, right: off.right })}`)
+      // center 变成满宽：Stage 不再被两条 lane 挤窄。
+      // 注意 Stage 常是**高度受限**的（宽屏正方形由可用高度决定），所以这里锁的是
+      // 「不会被挤小 + 不横向溢出」，而不是无条件变大。
+      check(failures, off.square && off.square.w >= columns.square.w - 1,
+        `roster off must not shrink the Stage: on=${columns.square?.w} off=${off.square?.w}`)
+      check(failures, off.square && off.square.w <= off.rootW + 0.5,
+        `roster off Stage must stay inside the workspace: ${JSON.stringify({ stage: off.square?.w, rootW: off.rootW })}`)
+      // 若宽度本是限制项（center < 可用高度），关掉名册后 Stage 必须变大
+      if (columns.centerW < columns.square.h - 1) {
+        check(failures, off.square.w > columns.square.w,
+          `roster off must enlarge a width-bound Stage: on=${columns.square?.w} off=${off.square?.w}`)
+      }
+      // Stage 仍水平居中于工作区
+      check(failures, off.square && Math.abs((off.square.left + off.square.w / 2) - (off.rootBox.left + off.rootBox.w / 2)) <= 1.5,
+        `roster off must keep the Stage centered: ${JSON.stringify({ square: off.square, root: off.rootBox })}`)
+      // 恢复：名册回来，几何回到名册开启时的形状
+      const restoreToggle = await clickElement(page, '[data-testid="disp-roster"]')
+      check(failures, clicked(restoreToggle), `roster toggle restore not clickable: ${restoreToggle}`)
+      await page.waitFor(() => document.querySelector('.pb-root')?.classList.contains('roster-side'),
+        { label: 'roster lanes restored' })
+      await waitForStableLayout(page)
+      const restored = await page.probe(workspaceColumnsProbe)
+      check(failures, Math.abs(restored.laneW - columns.laneW) <= 1 && Math.abs(restored.centerW - columns.centerW) <= 1,
+        `restoring the roster must return the same column geometry: ${JSON.stringify({ before: columns.laneW, after: restored.laneW })}`)
+    }
+    await page.evaluate(`document.querySelector('[data-testid="display-close"]')?.click()`)
+    await page.waitFor(() => !document.querySelector('[data-testid="display-panel"]:not([hidden])'),
+      { label: 'display panel closed after roster check' })
   }
   if (scenario.fullscreen) {
     check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), 'entering fullscreen must not recreate the 3D scene')
