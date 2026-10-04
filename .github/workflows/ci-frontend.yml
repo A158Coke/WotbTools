@@ -75,8 +75,9 @@ jobs:
           '
 
   # 真实浏览器门禁拆成 4 个并行 job（原先是 frontend job 尾部的串行 step，合计占该 job 约 2/3 时长；
-  # 其中装甲瞄准门禁又占其大头）。每条门禁只依赖 npm ci + runner 自带 Chrome：不下载 WASM 产物
-  # （夹具桩替代）、不跑 build，故各 job 的前置成本约 10s。
+  # 其中装甲瞄准门禁又占其大头）。各 job 只依赖 npm ci + runner 自带 Chrome（不跑 build）；
+  # WASM 产物仍需按 pin 下载——Playback/Workspace interaction 的 local-workspace-matrix 场景
+  # 真的走本地 WASM 解析（夹具桩只替代了部分通道），其余三条门禁不消费它（各约 1s，统一带上）。
   # fail-fast: false —— 一条门禁失败不取消其它三条，PR 上一次就能看到全部失败面。
   browser-gates:
     name: Frontend / ${{ matrix.gate.label }}
@@ -109,6 +110,8 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
+      - name: Fetch upstream agent WASM artifact (release pin, sha256 verified)
+        run: bash scripts/fetch-agent-wasm.sh
       - name: Real-browser ${{ matrix.gate.label }} regression
         working-directory: frontend
         run: npm run ${{ matrix.gate.script }}
