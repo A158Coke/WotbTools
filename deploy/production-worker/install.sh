@@ -41,12 +41,16 @@ if [[ "$WORKER_PRIVILEGE" == sudo && "$(id -u)" != 0 ]]; then
   sudo -n true >/dev/null 2>&1 \
     || fail "non-interactive (passwordless) sudo is required to reconcile target $WORKER_TARGET."
   sudo_args=(-n)
-  # Preserve only the registry credential that this phase owns, and only when it
-  # is present. --preserve-env hands it over in the environment; it never appears
-  # in argv, on disk, or in a log, and `set -x` is never enabled.
+  # Preserve only the reviewed registry contract that this phase owns, and only
+  # when each input is present. This includes the non-secret desired-state inputs:
+  # dropping them at the sudo boundary would make the privileged half validate a
+  # different contract from the workflow that invoked it. --preserve-env hands
+  # values over in the environment; secrets never appear in argv, on disk, or in
+  # a log, and `set -x` is never enabled.
   preserve=()
-  if [[ -n "${TCR_USERNAME:-}" ]]; then preserve+=(TCR_USERNAME); fi
-  if [[ -n "${TCR_PASSWORD:-}" ]]; then preserve+=(TCR_PASSWORD); fi
+  for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD; do
+    if [[ -n "${!name:-}" ]]; then preserve+=("$name"); fi
+  done
   if (( ${#preserve[@]} > 0 )); then
     sudo_args+=(--preserve-env="$(IFS=,; echo "${preserve[*]}")")
   fi
