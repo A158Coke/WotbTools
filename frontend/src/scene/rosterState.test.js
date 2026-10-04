@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { hpAtSeries, hpPercentText, hpPresentationFor, projectRoster, ROSTER_GROUPS, buildRosterRows } from './rosterState.js'
+import { hpAtSeries, hpPercentText, hpPresentationFor, projectRoster, ROSTER_GROUPS, buildRosterRows, rosterLanesFor } from './rosterState.js'
 
 const vehicle = (eid, team, opts = {}) => ({
   def: {
@@ -221,5 +221,17 @@ describe('rosterState · HP 呈现模型（exact / relative / unknown / destroye
   it('fill 永远夹在 0..1，超量/负数输入不会画出条外', () => {
     expect(hpPresentationFor({ currentHp: 9999, maxHp: 1000 }).fill).toBe(1)
     expect(hpPresentationFor({ currentHp: -50, maxHp: 1000 }).fill).toBe(0)
+  })
+})
+
+// Perspective changes lane placement without altering physical identities.
+describe('rosterLanesFor', () => {
+  it.each([1, 2, null])('keeps unknown separate for Recorder team %s', (friendlyTeam) => {
+    const groups = { team1: [{ eid: 1, team: 1 }], team2: [{ eid: 2, team: 2 }], unknown: [{ eid: 3, team: null }] }
+    const lanes = rosterLanesFor(groups, friendlyTeam)
+    expect(lanes.left[friendlyTeam === 2 ? 'team2' : 'team1']).toBe(groups[friendlyTeam === 2 ? 'team2' : 'team1'])
+    expect(lanes.right[friendlyTeam === 2 ? 'team1' : 'team2']).toBe(groups[friendlyTeam === 2 ? 'team1' : 'team2'])
+    expect(lanes.left.unknown).toBe(groups.unknown)
+    expect(lanes.right.unknown).toBeUndefined()
   })
 })

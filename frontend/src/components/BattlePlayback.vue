@@ -21,6 +21,7 @@ import { isPlaybackSpeed, isInteractiveTarget, usePlaybackTransport } from '../c
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
+import { rosterLanesFor } from '../scene/rosterState.js'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
@@ -1703,9 +1704,7 @@ function selectAt(accountId, clientX, clientY) {
 }
 
 // §队伍阵容：从 result 全量名单（playbackV2.vehicles）取，不依赖回放事件流/vehicleStates。
-// 按**物理队伍**（权威 `vehicle.team`）分组：左车道恒为 Team 1、右车道恒为 Team 2，
-// 与录像者属于哪一队无关。friendly / enemy 是录像者视角，只服务 HUD 总血量 / 比分与详情里的
-// 关系文案——物理位置 ≠ 录像者关系，两者互不推导。
+// 按权威 vehicle.team 保留物理身份；rosterTeams 按 Recorder 视角决定左右。
 const teamVehicles = computed(() => {
   const vehicles = props.playbackV2?.vehicles || []
   const team1 = []
@@ -1718,6 +1717,8 @@ const teamVehicles = computed(() => {
   }
   return { team1, team2, unknown }
 })
+
+const rosterTeams = computed(() => rosterLanesFor(teamVehicles.value, friendlyTeam.value))
 
 /**
  * Both physical team rosters use current destruction state from the same authoritative projection.
@@ -1806,7 +1807,7 @@ const rosterReload = computed(() => {
   return out
 })
 function selectFromRoster(accountId, event) {
-  // §details-float：左边的 Team 1 名册 → 浮窗落右侧，右边的 Team 2 名册 → 浮窗落左侧，
+  // §details-float：左边的己方名册 → 浮窗落右侧，右边的敌方名册 → 浮窗落左侧，
   // 都不会盖住刚点的那一行（竖屏纵向流里详情是流内内容块，落位偏好不起作用）。
   const row = event?.target?.closest?.('[data-test="pb-roster-row"]')
   let side = null
@@ -2089,11 +2090,11 @@ const mapStyle = computed(() => ({
       :friendly-team="friendlyTeam"
       :hp-no-transition="hpNoTransition"
     />
-      <!-- §square-stage 三段式：Team 1 | 正方形 Stage | Team 2。
+      <!-- §square-stage 三段式：己方 | 正方形 Stage | 敌方。
            两侧车道只在「名册开着 且 非手机竖屏」时存在；关掉名册两侧整体消失，
            Stage 依然居中且保持正方形（绝不被拉宽填满）。 -->
-      <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-left" data-test="pb-team-lane-left" :aria-label="$t('agentReplay.team1')">
-        <PlaybackRoster :teams="{ team1: teamVehicles.team1, unknown: teamVehicles.unknown }" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
+      <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-left" data-test="pb-team-lane-left" :aria-label="$t('recon.map.team_friendly')">
+        <PlaybackRoster :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
       <div class="pb-map-stage" ref="mapStageEl">
         <BattleMap
@@ -2167,8 +2168,8 @@ const mapStyle = computed(() => ({
         @close="closeSidebar"
       />
 
-      <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-right" data-test="pb-team-lane-right" :aria-label="$t('agentReplay.team2')">
-        <PlaybackRoster :teams="{ team2: teamVehicles.team2 }" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
+      <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-right" data-test="pb-team-lane-right" :aria-label="$t('recon.map.team_enemy')">
+        <PlaybackRoster :teams="rosterTeams.right" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
 
       <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing">
@@ -2292,7 +2293,7 @@ const mapStyle = computed(() => ({
         />
         <PlaybackRoster
           v-if="showRosterPresentation"
-          :teams="teamVehicles"
+          :teams="teamVehicles" :friendly-team="friendlyTeam"
           :destroyed="destroyedNow"
           :health="rosterHealth"
           :selected-id="selectedAccountId"

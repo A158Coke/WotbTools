@@ -15,6 +15,16 @@
 /** 物理队伍分组键：Team 1 / Team 2 / 未识别（绝不把未知并进任一队） */
 export const ROSTER_GROUPS = Object.freeze(['team1', 'team2', 'unknown']);
 
+/** Recorder perspective controls presentation only; unknown teams remain separate. */
+export function rosterLanesFor(groups, friendlyTeam) {
+  const leftKey = friendlyTeam === 2 ? 'team2' : 'team1';
+  const rightKey = friendlyTeam === 2 ? 'team1' : 'team2';
+  return {
+    left: { [leftKey]: groups[leftKey] || [], unknown: groups.unknown || [] },
+    right: { [rightKey]: groups[rightKey] || [] },
+  };
+}
+
 /**
  * HP 百分比：maxHp 不可信（≤0 / 非有限）时返回 null。
  * **null ≠ 0**——"没有可证明的血量上限"不能上屏成"血量是 0"。

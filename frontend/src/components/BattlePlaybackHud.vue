@@ -174,6 +174,12 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 .pb-hud-partial { background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--color-text-primary) 28%, transparent) 0 var(--space-1), transparent var(--space-1) var(--space-2)); }
 .pb-hud-center { display: grid; justify-items: center; min-width: 0; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
 .pb-hud-center strong { font: var(--type-caption); font-weight: 700; white-space: nowrap; }
+@media (width >= 1200px) {
+  .pb-hud { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
+  .pb-hud-meta, .pb-hud-label, .pb-hud-value, .pb-hud-center strong { font: var(--type-h3); }
+  .pb-hud-value, .pb-hud-center strong { font-weight: 700; }
+  .pb-hud-track { height: var(--space-2); }
+}
 @media (width < 768px) {
   .pb-hud-grid { gap: var(--space-1); }
   .pb-hud-team .pb-hud-label {

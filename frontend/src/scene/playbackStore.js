@@ -47,7 +47,8 @@ export function createPlaybackStore() {
     // ——绝不污染 team1（旧 hack `team!==2→team1`）。
     // 身份（eid/team/nick/tank）只在会话开始时建一次；运行时状态
     // （hp/maxHp/dead/followed）由 playbackScene.updateRoster 按当前回放时刻投影，
-    // 见 scene/rosterState.js。呈现层按 `team` 取 --color-team-1/2 语义 token，内核不下发颜色。
+    // 见 scene/rosterState.js。呈现层结合 friendlyTeam 取 Recorder 视角颜色，内核不下发颜色。
+    friendlyTeam: null, // Authoritative Recorder team; unknown never implies Team 1.
     roster: { team1: [], team2: [], unknown: [] },
     hasData: false,
   })

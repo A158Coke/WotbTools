@@ -365,11 +365,12 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
-  it('阵容圆点走**物理队伍** token：Team 1 恒 --color-team-1、Team 2 恒 --color-team-2，不随录像者交换', async () => {
+  it('Recorder 在 Team 2：己方在左、敌方在右，颜色和标题跟随视角', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     const { store } = playback.api
     store.hasData = true
+    store.friendlyTeam = 2
     // 名册条目的真实形状来自 playbackScene 的 buildRoster（身份字段 + 当前时刻的 hp/maxHp）
     store.roster = {
       team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T-62A', hp: 975, maxHp: 1950, dead: false, followed: false }],
@@ -383,19 +384,23 @@ describe('Replay3DPane', () => {
     document.documentElement.style.setProperty('--color-team-ally', 'rgb(9, 9, 9)')
     document.documentElement.style.setProperty('--color-team-enemy', 'rgb(8, 8, 8)')
     await nextTick()
+    expect(wrapper.get('.side-left .team2').exists()).toBe(true)
+    expect(wrapper.get('.side-right .team1').exists()).toBe(true)
+    expect(wrapper.get('.side-left .pl').attributes('style')).toContain('--color-team-ally')
+    expect(wrapper.get('.side-right .pl').attributes('style')).toContain('--color-team-enemy')
     // 车道结构下 DOM 顺序是 team1 → unknown → team2：按各自面板取点，不依赖全局序
     const dots = (sel) => wrapper.findAll(`${sel} .pl .dot`)
     expect(dots('.team1')).toHaveLength(1)
-    expect(dots('.team1')[0].attributes('style')).toContain('rgb(1, 2, 3)')
+    expect(dots('.team1')[0].attributes('style')).toContain('--color-team-enemy')
     expect(dots('.team2')).toHaveLength(1)
-    expect(dots('.team2')[0].attributes('style')).toContain('rgb(4, 5, 6)')
+    expect(dots('.team2')[0].attributes('style')).toContain('--color-team-ally')
     // 未知阵营既不并入队伍 1 也不并入队伍 2（用中性色）
     expect(dots('.team-unknown')).toHaveLength(1)
     expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(1, 2, 3)')
     expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(4, 5, 6)')
     // 分组标题三语（未知阵营独立一段）
     expect(wrapper.findAll('.team h3').map(h => h.text())).toEqual([
-      'agentReplay.team1', 'agentReplay.teamUnknown', 'agentReplay.team2',
+      'recon.map.team_friendly', 'agentReplay.teamUnknown', 'recon.map.team_enemy',
     ])
     for (const p of ['--color-team-1', '--color-team-2', '--color-team-ally', '--color-team-enemy']) {
       document.documentElement.style.removeProperty(p)

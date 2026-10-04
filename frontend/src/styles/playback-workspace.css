@@ -1,13 +1,8 @@
 /* Shared macro geometry for both Playback renderers.
    Topology selects columns/flow; measured viewport capacity and intrinsic chrome select size.
    Details positioning remains owned by usePlaybackDetailsPlacement. */
-/* Shared sizing authority; portrait topology changes do not redefine the battlefield budget.
-   Wide layout is an explicit **2 / 6 / 2** decision, not "bounded roster + center eats the rest":
-   the center is a square Stage that is usually height-limited, so every extra pixel handed to it
-   only becomes dead space beside the Stage while pushing the roster lanes out to the workspace
-   edges. The `minmax(var(--pb-roster-min), 2fr)` floor is the narrow fallback: below roughly 10×
-   the roster minimum the 2fr share would undercut a readable roster, so both lanes hold the floor
-   and the center absorbs what is left. */
+/* Shared sizing authority. Short layouts retain 2/6/2 control capacity; desktop caps the
+   center at the largest available square and distributes unused width to both rosters. */
 .playback-workspace {
   container-type: inline-size;
   --pb-lane-w: var(--pb-roster-min);
@@ -129,6 +124,7 @@
   margin: 0;
 }
 .pb-root.playback-workspace:not(.portrait-flow) > .hud { grid-row: 1; }
+.pb-root.playback-workspace > .hud > .pb-hud { inline-size: 100%; }
 .pb-root.playback-workspace:not(.portrait-flow) > .controls { grid-row: 3; padding: 0; }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) > .hud,
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) > .controls { grid-column: 2; }
@@ -166,4 +162,15 @@
   padding-block-start: env(safe-area-inset-top);
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   overflow: hidden;
+}
+
+/* Desktop gives unused square-side space to the rosters; short touch layouts retain control width. */
+@media (width >= 1200px) {
+  .battle-playback.playback-workspace.pb-roster-lanes .pb-main,
+  .pb-root.playback-workspace.roster-side:not(.portrait-flow) {
+    grid-template-columns:
+      minmax(var(--pb-roster-min), 1fr)
+      minmax(0, min(calc((100% - var(--space-1) * 2) * 0.6), var(--pb-square-avail-h, var(--pb-workspace-fallback-h))))
+      minmax(var(--pb-roster-min), 1fr);
+  }
 }

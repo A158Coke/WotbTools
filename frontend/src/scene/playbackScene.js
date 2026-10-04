@@ -2066,6 +2066,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 否则「Team 1 是什么颜色」会有两份事实源。
   const rosterRowsByEid = new Map();
   function buildRoster() {
+    store.friendlyTeam = [1, 2].includes(DATA.meta.friendly_team) ? DATA.meta.friendly_team : null;
     const groups = buildRosterRows(V);
     rosterRowsByEid.clear();
     for (const key of ROSTER_GROUPS) {
@@ -2446,6 +2447,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     store.scoreFriend = 0; store.scoreEnemy = 0;
     store.hpFriend = 0; store.hpFriendMax = 0; store.hpEnemy = 0; store.hpEnemyMax = 0;
     store.hpFriendPct = 100; store.hpEnemyPct = 100;
+    store.friendlyTeam = null;
     store.roster.team1 = [];
     store.roster.team2 = [];
     store.roster.unknown = [];
