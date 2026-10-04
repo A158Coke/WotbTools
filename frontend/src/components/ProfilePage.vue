@@ -91,10 +91,14 @@ function apiError(error) {
 
 onMounted(async () => {
   try {
-    const loggedIn = await initPromise
-    if (loggedIn || isAuthenticated()) {
+    // `initPromise` 只用来等 auth bootstrap **落定**（它 resolve 值为 undefined：模块级一次性
+    // 交易，logout 不会重建它，它的历史结果在登出后立刻失效）。
+    // 登录态一律只认当前 reactive session —— 否则 logout 后重挂载会误进 done，页面永久停在
+    // `profile.loading`（Android 2.1.0 真机 bug）。
+    await initPromise
+    if (isAuthenticated()) {
       phase.value = 'done'
-      loadProfile()
+      void loadProfile()
     } else if (initError.value) {
       phase.value = 'error'
     } else {
