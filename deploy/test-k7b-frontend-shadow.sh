@@ -18,7 +18,7 @@ service = data["services"]["frontend"]
 assert service["image"] == "ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-473495ec07e7"
 assert service["environment"]["BACKEND_UPSTREAM"] == "http://10.20.0.1:8087"
 assert service["environment"]["AI_UPSTREAM"] == "http://10.20.0.2:8089"
-assert service["environment"]["NGINX_ENVSUBST_FILTER"] == "^(BACKEND_UPSTREAM|AI_UPSTREAM)$"
+assert "NGINX_ENVSUBST_FILTER" not in service["environment"], "shadow compose must inherit the image's canonical envsubst filter"
 
 ports = service.get("ports", [])
 assert len(ports) == 1, f"expected one published port, found: {ports!r}"
@@ -46,6 +46,10 @@ for forbidden in (
 ):
     assert forbidden not in rendered, forbidden
 PY
+
+# The image owns the canonical envsubst allowlist; the shadow Compose must not
+# duplicate it and drift from the production image contract.
+grep -Fq 'ENV NGINX_ENVSUBST_FILTER="^(BACKEND_UPSTREAM|AI_UPSTREAM)$"' "$ROOT/docker/Dockerfile.frontend"
 
 # The mounted template must preserve the routing split used by production.
 grep -Fq 'proxy_pass ${AI_UPSTREAM};' "$template"
