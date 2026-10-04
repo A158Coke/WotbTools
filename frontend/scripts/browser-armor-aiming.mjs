@@ -179,6 +179,10 @@ try {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts([from, p2]) }, sessionId)
       await delay(30)
     }
+    // 等距离真的变化（同样不靠固定 delay：触屏 pointermove 按帧合并，慢渲染下会晚到）
+    const dollyChanged = await page.waitForValue('window.__armorRicochet.aimingState().cameraDistance',
+      (v) => Math.abs(v - state0.cameraDistance) > 0.05, { timeout: 3000, label: 'pinch dolly' })
+      .then((v) => v).catch(() => null)
     const state1 = await page.evaluate('window.__armorRicochet.aimingState()')
     const aim1 = await readAim()
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
@@ -187,8 +191,8 @@ try {
     const j1 = await readJudgments()
     check(stateSecond.aiming === false && stateSecond.controlsEnabled === true,
       `${label}：部位上的第一根手指不进入瞄准、OrbitControls 保持启用（aiming=${stateSecond.aiming} controls=${stateSecond.controlsEnabled}）`)
-    check(Math.abs(state1.cameraDistance - state0.cameraDistance) > 0.05,
-      `${label}：双指捏合改变相机距离（${state0.cameraDistance} → ${state1.cameraDistance}）`)
+    check(dollyChanged !== null && Math.abs(state1.cameraDistance - state0.cameraDistance) > 0.05,
+      `${label}：双指捏合改变相机距离（${state0.cameraDistance} → ${dollyChanged ?? state1.cameraDistance}）`)
     check(aim1.t === aim0.t && aim1.g === aim0.g,
       `${label}：炮塔/炮管角度不变（${aim0.t}/${aim0.g}）`)
     check(j1 === j0, `${label}：双指手势不触发装甲判定（judgments ${j0}→${j1}）`)
@@ -326,19 +330,22 @@ try {
       const pt = (x, y) => [{ x, y, id: 1, radiusX: 8, radiusY: 8, force: 1 }]
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(from.x, from.y) }, sessionId)
       await delay(60)
-      // 先在画布内移动过阈值完成 claim（触屏是延迟 claim：按下只记候选，移动才进入瞄准），
-      // 再拖出视口顶部。这样后续断言验证的是 capture 语义本身，而不是 claim 时机——
-      // 且不依赖"视口外触碰点是否还派发 pointermove"（CI 上实测该事件可能被吞）。
+      // 先在画布内移动过阈值完成 claim（触屏是延迟 claim：按下只记候选，移动才进入瞄准）。
+      // **等状态而不是等时钟**：Chrome 的触屏 pointermove 按帧合并派发，CI 无 GPU 渲染慢时
+      // 固定 delay 会读到「事件还没送到」的中间态（18872f5c 与 67f3a01a 两次 CI 失败均源于此）。
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(from.x + 24, from.y) }, sessionId)
-      await delay(80)
-      const claimed = await page.evaluate('window.__armorRicochet.aimingState()')
+      const claimed = await page.waitForValue('window.__armorRicochet.aimingState().aiming', (v) => v === true,
+        { timeout: 5000, label: 'touch aim claim' }).then(() => true).catch(() => false)
+      check(claimed, `画布内移动过阈值即 claim 瞄准（aiming=${claimed}）`)
+      // claim 已确认后再拖出视口顶部：验证的是 capture 语义本身（会话不因指针离开画布而丢）
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(from.x + 24, -40) }, sessionId)
-      await delay(60)
+      await delay(80)
       const mid = await page.evaluate('window.__armorRicochet.aimingState()')
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
-      await delay(300)
+      await page.waitForValue(
+        'window.__armorRicochet.aimingState().aiming === false && window.__armorRicochet.aimingState().controlsEnabled === true',
+        (v) => v === true, { timeout: 3000, label: 'session cleanup' }).catch(() => {})
       const st = await page.evaluate('window.__armorRicochet.aimingState()')
-      check(claimed.aiming === true, `画布内移动过阈值即 claim 瞄准（aiming=${claimed.aiming}）`)
       check(mid.aiming === true, '画布外拖动中 aiming 保持（capture 生效）')
       check(st.aiming === false && st.controlsEnabled === true,
         `画布外释放后清理完整（aiming=${st.aiming} controls=${st.controlsEnabled}）`)
