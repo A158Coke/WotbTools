@@ -727,6 +727,30 @@ describe('ProfilePage connectivity gating', () => {
     await flushPromises()
     expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
   })
+
+  it('while the reconnect reload is in flight it never claims the profile needs a connection', async () => {
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(wrapper.text()).toContain('featureOffline.accountProfile')
+    resetApi()
+
+    // 挂起资料读取：phase 在请求完成前仍是 connectivity-unavailable。
+    let resolveProfile
+    userApi.getUserProfile.mockImplementationOnce(() => new Promise((resolve) => { resolveProfile = resolve }))
+    setOnline(true)
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).not.toContain('featureOffline.accountProfile')
+    expect(wrapper.text()).not.toContain('connectivityNotice.')
+    expect(wrapper.find('[data-testid="profile-retry"]').exists()).toBe(false)
+
+    resolveProfile(currentProfile)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(false)
+    expect(wrapper.find('.profile-main').exists()).toBe(true)
+    expect(wrapper.text()).toContain('profile.serverAsia')
+  })
 })
 
 /** 业务失败与连通性变化分开，异步等待后在真实 backend boundary 再次 gate。 */

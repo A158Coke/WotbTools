@@ -12,7 +12,8 @@ const connectivityState = vi.hoisted(() => ({ state: null }))
 vi.mock('../composables/useConnectivity.js', async () => {
   const { ref } = await import('vue')
   connectivityState.state = ref('online')
-  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+  connectivityState.settled = ref(true)
+  return { useConnectivity: () => ({ connectivity: connectivityState.state, settled: connectivityState.settled, isSettled: () => connectivityState.settled.value, whenSettled: () => Promise.resolve() }) }
 })
 
 vi.mock('../composables/useConfirm.js', () => ({ confirm: confirmDialog.confirm }))
@@ -74,6 +75,7 @@ vi.mock('vue-i18n', () => ({
 describe('HoFPage', () => {
   beforeEach(() => {
     connectivityState.state.value = 'online'
+    connectivityState.settled.value = true
     authenticated = true
     tokenClaims = null
     vi.clearAllMocks()
@@ -177,6 +179,39 @@ describe('HoFPage', () => {
     await flushPromises()
     for (const call of Object.values(lbApi)) expect(call).not.toHaveBeenCalled()
     expect(api.login).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('cold-start ?view=hof shows no connectivity verdict and issues no request until detection settles, then loads once', async () => {
+    connectivityState.state.value = 'unknown'
+    connectivityState.settled.value = false
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="hof-connectivity"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('connectivityNotice.')
+    for (const call of Object.values(lbApi)) expect(call).not.toHaveBeenCalled()
+
+    // 首次检测 ONLINE：现有可用性 watcher 自动恢复加载（不需要用户重试）。
+    connectivityState.settled.value = true
+    connectivityState.state.value = 'online'
+    await flushPromises()
+    expect(wrapper.find('[data-testid="hof-connectivity"]').exists()).toBe(false)
+    expect(lbApi.hofList).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('cold-start ?view=hof settling UNKNOWN shows the real unknown banner without any request', async () => {
+    connectivityState.state.value = 'unknown'
+    connectivityState.settled.value = false
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="hof-connectivity"]').exists()).toBe(false)
+
+    // 连通性值不变（UNKNOWN → UNKNOWN），仅 settled 变化也必须驱动 UI。
+    connectivityState.settled.value = true
+    await flushPromises()
+    expect(wrapper.get('[data-testid="hof-connectivity"]').text()).toContain('connectivityNotice.unknown')
+    for (const call of Object.values(lbApi)) expect(call).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

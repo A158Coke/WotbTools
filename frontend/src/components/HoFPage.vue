@@ -1264,7 +1264,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 
 <template>
   <div ref="boardTop" class="lb-wrap">
-    <Banner v-if="!hofAvailability.available" tone="info" data-testid="hof-connectivity">
+    <Banner v-if="!hofAvailability.pending && !hofAvailability.available" tone="info" data-testid="hof-connectivity">
       <p>{{ $t(hofAvailability.messageKey) }}</p>
     </Banner>
     <div v-if="isCompact && filterSheet" class="lb-sheet-scrim" aria-hidden="true" @click="closeFilterSheet"></div>
