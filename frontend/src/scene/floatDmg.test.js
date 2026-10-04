@@ -74,9 +74,23 @@ describe('伤害飘字 · 覆盖层层级（回归守卫）', () => {
     expect(src).not.toMatch(/scene\.remove\(f\.sp\)/)
   })
 
-  it('标签开关只切名牌精灵，不整层隐藏（否则关名牌会连坐飘字）', () => {
-    expect(src).toMatch(/setLabels: \(on\) => \{/)
-    expect(src).not.toMatch(/labelScene\.visible = on/)
+  /**
+   * 名牌与飘字共用同一个覆盖场景（`labelScene`），所以"关名牌"必须有明确边界：
+   * 只把它自己的呈现层关掉，**绝不** `labelScene.visible = false`——否则飘字
+   * （renderOrder 1001，战斗反馈）会被连坐隐藏。
+   *
+   * 3D 名牌改为 HTML 覆盖层后，场景侧只剩两件事：`store.labelsOn` 门控 anchor 发布，
+   * 以及 overlay 的 `hidden`；两者都不触碰 labelScene 的整层可见性。
+   */
+  it('标签开关不得整层隐藏覆盖场景（否则关名牌会连坐飘字）', () => {
+    expect(src).toMatch(/store\.labelsOn = enabled;/)
+    // anchor 发布被 labelsOn 门控（关名牌 = 不发 anchor = overlay 全隐藏）
+    expect(src).toMatch(/const visible = v\.group\.visible && store\.labelsOn && w > 0/)
+    // 飘字仍挂在覆盖场景上，且 renderOrder 高于名牌
+    expect(src).toMatch(/labelScene\.add\(sp\);/)
+    // 任何情况下都不得整层隐藏该场景
+    expect(src).not.toMatch(/labelScene\.visible = /)
+    expect(src).not.toMatch(/setLabels:/)
   })
 
   it('逐帧尺寸走屏幕占比恒定式，并套用弹出曲线', () => {

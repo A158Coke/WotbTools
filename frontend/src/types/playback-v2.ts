@@ -3,6 +3,7 @@
 import type { PlaybackDirection, PlaybackPosition } from './playback.js'
 import type { components } from '../api/generated/http-contract.js'
 import { validateBattlePlaybackDataset } from '../api/contract-runtime.js'
+import type { AgentPlaybackFacet, AgentVehicleTrack } from '../api/agent-replay-facets.js'
 
 export type PlaybackCapability = components['schemas']['PlaybackCapability']
 export type PositionKnowledge = components['schemas']['PositionKnowledge']
@@ -25,6 +26,14 @@ export type ModuleCrewTransition = components['schemas']['ModuleCrewTransition']
 export type BattleEvent = components['schemas']['BattleEvent']
 export type PointsSample = components['schemas']['PointsSample']
 export type BaseStateTransition = components['schemas']['BaseStateTransition']
+
+/** Local Playback telemetry, separate from the HTTP dataset and generic ReplayFacts. */
+export interface PlaybackReloadTelemetry extends Pick<AgentPlaybackFacet, 'reloads' | 'reload_effective' | 'shots'> {
+  vehicles: Array<Pick<AgentVehicleTrack, 'eid' | 'account_id' | 'team' | 'tank_id'>>
+  /** Raw clock corresponding to the canonical 2D battle-relative t=0. */
+  timeOrigin: number
+  friendlyTeam: number | null
+}
 
 export function isBattlePlaybackDataset(value: unknown): value is BattlePlaybackDataset {
   return validateBattlePlaybackDataset(value).data !== null

@@ -1,9 +1,9 @@
-import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { findChrome } from './browser-chrome.mjs'
+import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
+import { Page } from './browser-page.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
@@ -14,6 +14,9 @@ const cssPaths = [
   'src/styles/playback-pc.css',
   'src/styles/playback-tablet.css',
   'src/styles/playback-mobile.css',
+  // Owns the square-Stage contract (`--pb-square-side`) and the Team 1 | Stage | Team 2 workspace.
+  // Same position as in src/main.js: after the three form files, before the fullscreen refinements.
+  'src/styles/playback-workspace.css',
   'src/styles/playback-mobile-fullscreen.css',
   // Must remain last: this owns battle-HUD placement across form-specific fullscreen rules.
   'src/styles/playback-fullscreen-form-contract.css',
@@ -133,10 +136,9 @@ ${productionCss}
       <div class="pb-map"${scenario.check === 'leader' ? ' style="width:390px;height:387px"' : ''}><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : scenario.check === 'leader' ? ' style="width:400%;aspect-ratio:769 / 763;transform:translate(-585px,-580.5px)"' : ''}>
         ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : scenario.check === 'leader' ? `<svg class="pb-svg" viewBox="0 0 769 763"><line class="pb-marker-leader" x1="384.5" y1="381.5" x2="384.5" y2="381.5"></line></svg><div class="pb-markers"><div class="pb-marker" style="left:calc(50% + 20px);top:calc(50% - 16px)"></div></div>` : ''}
       </div></div>
-      <div class="pb-side-panel-shell pb-details-active">
-        <div class="pb-sidebar">details</div>
-        <div class="pb-side-panel">panel</div>
-      </div>
+      <!-- Production keeps only an empty shell in the stage: vehicle Details is a workspace-level
+           floating panel (or an inline block in the portrait flow), never a stage column / sheet. -->
+      <div class="pb-side-panel-shell"></div>
     </div>
     <div class="${overlayClasses}"><div class="pb-mobile-overlay-content">${controlsInRail ? '' : controlsMarkup}</div></div>
   </main>
@@ -186,7 +188,11 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
     }
     if (${JSON.stringify(scenario.check)} === 'mobile') {
       require(rootStyle.display === 'flex', 'mobile root must retain flow layout when not fullscreen')
-      require(stageStyle.overflow === 'hidden', 'mobile map stage must clip overlays')
+      // 车辆详情不再住在 Stage 里（它是 workspace 浮窗 / 纵向流内容块），Stage 不需要裁剪浮层；
+      // 这里锁的是正方形契约：竖屏 Stage 用满列宽、宽高相等。
+      const mapRect = map.getBoundingClientRect()
+      require(mapRect.width > 0 && Math.abs(mapRect.width - mapRect.height) <= 1, 'mobile portrait map must be a square')
+      require(mapRect.width <= innerWidth + 0.5, 'mobile portrait square must fit the viewport width')
       require(getComputedStyle(rail).display === 'none', 'closed mobile rail must not cover the map')
       require(buttonStyle && parseFloat(buttonStyle.minWidth) >= 36 && parseFloat(buttonStyle.minHeight) >= 36,
         'mobile controls must retain >=36px touch targets')
@@ -297,13 +303,15 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
         controlsInRail: ${JSON.stringify(controlsInRail)},
       })
       const hudRectBefore = hud.getBoundingClientRect()
+      const stageRect = stage.getBoundingClientRect()
       const contentRectBefore = overlayContent.getBoundingClientRect()
       const overlayWrapRectBefore = root.querySelector('.pb-mobile-overlay').getBoundingClientRect()
       const mapRectBefore = map.getBoundingClientRect()
-      const stageRect = stage.getBoundingClientRect()
-      const top = ownership.reserveTop ? hudRectBefore.height : 0
+      // Reserve only what actually overlaps the stage: in the square-Stage workspace the stage is
+      // already laid out below the HUD / above the transport, so there is nothing left to inset.
+      const top = ownership.reserveTop ? Math.max(0, hudRectBefore.bottom - stageRect.top) : 0
       const bottom = ownership.reserveBottom && contentRectBefore.height > 0
-        ? Math.max(0, overlayWrapRectBefore.bottom - contentRectBefore.top)
+        ? Math.max(0, Math.min(stageRect.bottom, overlayWrapRectBefore.bottom) - contentRectBefore.top)
         : 0
       const safeH = Math.max(1, stageRect.height - top - bottom)
       const naturalW = mapRectBefore.width
@@ -330,7 +338,8 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
       if (${JSON.stringify(scenario.form === 'mobile' && !!scenario.controlsVisible)}) {
         require(overlayRect.height > 0, 'visible mobile controller must have measurable height')
         require(viewportRect.bottom <= overlayRect.top + 1,
-          'fitted mobile map viewport must not sit underneath visible bottom controls')
+          'fitted mobile map viewport must not sit underneath visible bottom controls'
+            + ' (viewport=' + JSON.stringify(viewportRect) + ' controls=' + JSON.stringify(overlayRect) + ' stage=' + JSON.stringify(stageRect) + ')')
         require(getComputedStyle(root.querySelector('.pb-mobile-overlay')).width !== getComputedStyle(root).getPropertyValue('--pb-slot-w').trim(),
           'mobile controller must not become a permanent side-slot rail')
       }
@@ -345,29 +354,34 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
 </html>`
 }
 
+// 设备指标走 CDP `Emulation.setDeviceMetricsOverride`，不是 `--window-size`：headless Chrome 的窗口
+// 有最小宽度（实测 500px），`--window-size=390,844` 会被静默放大成 500×757，「手机竖屏」用例于是
+// 跑在一个根本不是手机竖屏的视口上还报 OK。这里要求页面实测的 innerWidth/innerHeight 与请求一致，
+// 否则直接失败——不允许把一个回退过的视口算作该形态的覆盖。
 const temp = mkdtempSync(resolve(tmpdir(), 'wotb-playback-browser-'))
+const browser = await launchChromeForCdp(chrome, { extraArgs: ['--allow-file-access-from-files', '--run-all-compositor-stages-before-draw'] })
 try {
   for (const scenario of scenarios) {
     const htmlPath = resolve(temp, `${scenario.name}.html`)
     writeFileSync(htmlPath, fixtureHtml(scenario), 'utf8')
-    const output = execFileSync(chrome, [
-      '--headless=new',
-      '--no-sandbox',
-      '--disable-gpu',
-      '--allow-file-access-from-files',
-      '--run-all-compositor-stages-before-draw',
-      `--window-size=${scenario.width},${scenario.height}`,
-      '--dump-dom',
-      pathToFileURL(htmlPath).href,
-    ], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })
-    const match = output.match(/data-result="([A-Za-z0-9+/=]+)"/)
-    if (!match) throw new Error(`${scenario.name}: browser fixture did not publish a result`)
-    const result = JSON.parse(Buffer.from(match[1], 'base64').toString('utf8'))
+    const { targetId, sessionId } = await browser.openPage()
+    const page = new Page(browser.client, sessionId)
+    await page.enable()
+    await page.emulate({ width: scenario.width, height: scenario.height, touch: false, deviceScaleFactor: 1 })
+    await page.goto(pathToFileURL(htmlPath).href)
+    const encoded = await page.waitForValue('document.body && document.body.dataset.result', (value) => !!value,
+      { label: `${scenario.name} result` })
+    await browser.client.send('Target.closeTarget', { targetId })
+    const result = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'))
+    if (result.width !== scenario.width || result.height !== scenario.height) {
+      throw new Error(`${scenario.name}: requested ${scenario.width}x${scenario.height} but the page measured ${result.width}x${result.height}`)
+    }
     if (result.failures.length) {
       throw new Error(`${scenario.name}:\n- ${result.failures.join('\n- ')}`)
     }
     console.log(`[browser-layout] ${scenario.name} OK (${result.width}x${result.height})${result.metrics ? ` ${JSON.stringify(result.metrics)}` : ''}`)
   }
 } finally {
+  await browser.close()
   rmSync(temp, { recursive: true, force: true })
 }

@@ -19,6 +19,9 @@ import './styles/playback-shared.css'
 import './styles/playback-pc.css'
 import './styles/playback-tablet.css'
 import './styles/playback-mobile.css'
+// 正方形 Stage 的三段式 workspace（Team 1 | Stage | Team 2、手机竖屏纵向流、详情浮窗层）。
+// 必须晚于三套形态文件：它要压过 pc 桌面的 `.pb-map-stage` 定高两列与 mobile 横屏的三列。
+import './styles/playback-workspace.css'
 // Mobile fullscreen has stricter map-first behavior than the generic mobile form:
 // controller is transient and vehicle details must resize, never cover, the map.
 import './styles/playback-mobile-fullscreen.css'

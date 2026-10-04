@@ -43,8 +43,12 @@ export function createPlaybackStore() {
     // 覆盖层
     banner: null, // { text, color }
     killfeed: [], // { id, text }
-    // team 未知（0）的车进 unknown 中性组——绝不污染 team1（旧 hack `team!==2→team1`）
-    roster: { team1: [], team2: [], unknown: [] }, // { eid, dot, nick, tank, frac, dead, followed, isAuthor }
+    // 名册按**物理队伍**分组（team 1 / team 2 / 未识别），未知阵营（team=0）进 unknown 中性组
+    // ——绝不污染 team1（旧 hack `team!==2→team1`）。
+    // 身份（eid/team/nick/tank）只在会话开始时建一次；运行时状态
+    // （hp/maxHp/dead/followed）由 playbackScene.updateRoster 按当前回放时刻投影，
+    // 见 scene/rosterState.js。呈现层按 `team` 取 --color-team-1/2 语义 token，内核不下发颜色。
+    roster: { team1: [], team2: [], unknown: [] },
     hasData: false,
   })
 }

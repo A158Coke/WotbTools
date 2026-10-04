@@ -31,6 +31,15 @@ export const DESTROYED_X_PX = 30
 /** Stable lane offsets in screen px. Never hide when all lanes overlap. */
 export const LABEL_LANES_PX = Object.freeze([0, -10, 10, -20])
 
+/**
+ * 名牌被地形 / 静态场景挡住时的弱化下限（软遮挡）。
+ *
+ * **永不隐藏**（严格大于 0、小于 1）：被挡只是变淡，不是消失。2D 与 3D 共用同一语义——
+ * 3D 的 HTML 覆盖层把本值写进 `--pb-label-occluded-opacity`，因此这条下限只有一份事实源
+ * （此前它同时存在于 scene 的常量、覆盖层 CSS 与注释三处，重构后已收敛到这里）。
+ */
+export const LABEL_OCCLUDED_OPACITY = 0.35
+
 const TANK_COLLISION_PADDING = 1.02
 const TANK_COLLISION_GRID_STEP_PX = 2
 const TANK_COLLISION_MAX_SEARCH_RING = 64

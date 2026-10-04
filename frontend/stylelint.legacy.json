@@ -39,7 +39,6 @@
     "src/components/SponsorPage.vue",
     "src/components/TechnicalEvolutionPage.vue",
     "src/components/V2VehicleInspector.vue",
-    "src/components/VehicleDetailsPanel.vue",
     "src/components/VehicleMarker.vue",
     "src/styles/app-shell.css",
     "src/styles/classic-profile.css",
