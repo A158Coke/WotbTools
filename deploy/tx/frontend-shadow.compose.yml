@@ -1,0 +1,25 @@
+name: wotbtools-frontend-shadow
+
+# K7B shadow only. This workload receives no public traffic: TX1 Caddy remains pinned
+# to 10.20.0.1:8081 until K7C. Sponsor runtime content and Android release artifacts
+# are deliberately not copied from TX1; both are optional surfaces and must reach
+# production-content parity before any public cutover.
+services:
+  frontend:
+    # Immutable build identity from the last successfully deployed TX1 Frontend run
+    # before K7B. The sha-* tag is source+asset-origin addressed by frontend.yml.
+    image: ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-473495ec07e7
+    ports:
+      - "10.20.0.3:8081:80"
+    environment:
+      BACKEND_UPSTREAM: http://10.20.0.1:8087
+      AI_UPSTREAM: http://10.20.0.2:8089
+      NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$$
+    volumes:
+      - ./nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
