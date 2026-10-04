@@ -433,7 +433,9 @@ describe('map zoom and pan', () => {
   it('reset restores identity view and keeps all layers on the single transform', async () => {
     const wrapper = await zoomedWrapper()
     const markerStyleBefore = wrapper.find('[data-test="pb-marker-1001"]').attributes('style')
-    await wrapper.find('[data-test="pb-reset"]').trigger('click')
+    // Reset View 是次级动作：只从 Display 面可达，不再占用 primary 控件行。
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    await wrapper.get('[data-test="pb-panel-reset"]').trigger('click')
     const style = wrapper.find('[data-test="pb-viewport"]').attributes('style')
     expect(style).toContain('width: 100%')
     expect(style).toContain('translate(0px, 0px)')

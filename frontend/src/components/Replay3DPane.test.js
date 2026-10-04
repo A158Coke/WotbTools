@@ -490,10 +490,10 @@ describe('Replay3DPane', () => {
     await nextTick()
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-speed-0.5"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-time"]').exists()).toBe(true)
-    // 3D 专属控件在独立 toolbar 行里，不混进传输控件
-    expect(wrapper.get('[data-testid="replay3d-toolbar"]').exists()).toBe(true)
+    // Renderer-specific tools live exclusively in the shared Display surface.
+    expect(wrapper.find('[data-testid="replay3d-toolbar"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -520,6 +520,20 @@ describe('Replay3DPane', () => {
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: true, showTankName: true, showHp: false, showReload: true,
     })
+    wrapper.unmount()
+  })
+
+  it('bounds transient kill events independently of persistent HUD content', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.killfeed = Array.from({ length: 6 }, (_, id) => ({ id, kill: true, killer: `K${id}`, victim: `V${id}` }))
+    await nextTick()
+    expect(wrapper.get('[data-test="replay3d-killfeed"]').findAll('.kf')).toHaveLength(3)
+    expect(wrapper.get('[data-test="replay3d-killfeed"]').text()).toContain('K5')
+    expect(wrapper.get('[data-test="replay3d-killfeed"]').text()).not.toContain('K0')
+    expect(wrapper.get('[data-test="pb-hud"]').find('.killfeed').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -571,17 +585,16 @@ describe('Replay3DPane', () => {
       team2: [], unknown: [],
     }
 
-    it('紧凑档：相机出现在面板内；宽档：面板里没有相机（仍在工具条上）；两档都没有「打开名册」按钮', async () => {
+    it('紧凑档与宽档共享 Display 相机设置；两档都没有「打开名册」按钮', async () => {
       mockWebGL('webgl2')
       layout.compact = true
       const compactPane = mountPane()
-      const compactStore = playback.api
+      const compactStore = playback.api.store
       compactStore.hasData = true
       compactStore.roster = roster
       await nextTick()
-      // 紧凑档：面板收纳相机分档与阵容开关（面板隐藏时也在 DOM 中，hidden 由属性控制；
-      // 工具条那行由 CSS `display:none` 让位——它仍在 DOM 里，所以这里断言的是**分支**，
-      // 而不是「按钮不存在」）。
+      await compactPane.get('[data-testid="display-toggle"]').trigger('click')
+      // Both forms disclose camera and presentation preferences from Gear.
       expect(compactPane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(true)
       // 名册没有临时面入口：唯一开关是 disp-roster 呈现偏好
       expect(compactPane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(false)
@@ -590,14 +603,13 @@ describe('Replay3DPane', () => {
 
       layout.compact = false
       const widePane = mountPane()
-      const wideStore = playback.api
+      const wideStore = playback.api.store
       wideStore.hasData = true
       wideStore.roster = roster
       await nextTick()
-      // 宽档：面板里不得重复出现相机 / 阵容（那会变成第二份设置入口）。
-      // 注：工具条那行在紧凑档只是 CSS 隐藏（DOM 仍在），所以不断言「按钮不存在」——
-      // 真正的形态差异由这里的**分支**与 CSS 共同保证，浏览器门禁再验可见性。
-      expect(widePane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(false)
+      await widePane.get('[data-testid="display-toggle"]').trigger('click')
+      // Wide form uses the same secondary camera surface.
+      expect(widePane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(true)
       expect(widePane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(false)
       expect(widePane.find('[data-testid="roster-toggle"]').exists()).toBe(false)
       widePane.unmount()
@@ -610,12 +622,11 @@ describe('Replay3DPane', () => {
       const wrapper = mountPane()
       await start(wrapper)
       const apiAfterStart = playback.api
-      const panel = wrapper.get('[data-testid="display-panel"]')
-      expect(panel.element.hidden).toBe(true)
+      expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
 
       await wrapper.get('[data-testid="display-toggle"]').trigger('click')
       await nextTick()
-      expect(panel.element.hidden).toBe(false)
+      expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(true)
       expect(wrapper.get('[data-testid="display-close"]').exists()).toBe(true)
       // 面板只是覆盖层：不改变 playback session 身份，也不重建场景
       expect(playback.api).toBe(apiAfterStart)
@@ -624,7 +635,7 @@ describe('Replay3DPane', () => {
 
       await wrapper.get('[data-testid="display-close"]').trigger('click')
       await nextTick()
-      expect(panel.element.hidden).toBe(true)
+      expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
       expect(playback.api).toBe(apiAfterStart)
       expect(playback.init).toHaveBeenCalledTimes(1)
       wrapper.unmount()
@@ -710,6 +721,7 @@ describe('Replay3DPane', () => {
         await nextTick()
         const btn = wrapper.get('[data-testid="playback-fullscreen"]')
         // 它必须在面板**之外**（面板是二级设置，不允许把全屏藏进去）
+        await wrapper.get('[data-testid="display-toggle"]').trigger('click')
         expect(wrapper.get('[data-testid="display-panel"]').element.contains(btn.element)).toBe(false)
         expect(btn.attributes('aria-pressed')).toBe('false')
         wrapper.unmount()
@@ -906,14 +918,15 @@ describe('Replay3DPane', () => {
       await nextTick()
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       expect(api.setFollow).not.toHaveBeenCalled()
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
       for (const mode of ['top', 'free']) {
-        await wrapper.get(`.toolbar [data-value="${mode}"]`).trigger('click')
+        await wrapper.get(`[data-testid="display-panel"] [data-value="${mode}"]`).trigger('click')
         expect(api.setCam).toHaveBeenLastCalledWith(mode)
         api.store.cam = mode
         await nextTick()
         expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       }
-      await wrapper.get('.toolbar [data-value="follow"]').trigger('click')
+      await wrapper.get('[data-testid="display-panel"] [data-value="follow"]').trigger('click')
       expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
       onVehicleSelect(21)
       await nextTick()
@@ -992,6 +1005,7 @@ describe('Replay3DPane', () => {
       await nextTick()
       playback.init.mock.calls.at(-1)[3].onVehicleSelect(11)
       await nextTick()
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
       await wrapper.get('[data-testid="disp-roster"]').setValue(false)
       expect(wrapper.find('.roster-surface').exists()).toBe(false)
       expect(wrapper.get('.pb-root').classes()).not.toContain('roster-side')
@@ -1082,11 +1096,11 @@ describe('Replay3DPane', () => {
     await nextTick()
     expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_win')
     await wrapper.get('[data-testid="display-toggle"]').trigger('click')
-    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(false)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(true)
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
     await nextTick()
-    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="show-all-ui"]').exists()).toBe(true)
     expect(wrapper.find('.banner').exists()).toBe(false)
     expect(store.banner).toEqual({ outcome: 'win' })
@@ -1094,7 +1108,7 @@ describe('Replay3DPane', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'H', bubbles: true }))
     await nextTick()
     expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="display-toggle"]').attributes('aria-expanded')).toBe('false')
     expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_win')
     wrapper.unmount()
@@ -1108,7 +1122,7 @@ describe('Replay3DPane', () => {
     await nextTick()
     await wrapper.get('[data-testid="display-toggle"]').trigger('click')
     await wrapper.get('[data-testid="hide-all-ui"]').trigger('click')
-    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     expect(wrapper.find('.banner').exists()).toBe(false)
     expect(wrapper.get('[data-testid="show-all-ui"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(false)
@@ -1118,7 +1132,7 @@ describe('Replay3DPane', () => {
     expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_lose')
     expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -1431,7 +1445,8 @@ describe('Replay3DPane 待开播画质闸门', () => {
     // 相机档位同理（在就绪态里：工具栏只在 HUD 有数据时渲染）
     playback.api.store.hasData = true
     await nextTick()
-    const cams = wrapper.get('[data-testid="replay3d-toolbar"] [role="radiogroup"]')
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    const cams = wrapper.get('[data-testid="display-panel"] [role="radiogroup"]')
     expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'top', 'follow'])
     expect(cams.text()).toContain('agentReplay.cam_free')
     wrapper.unmount()
@@ -1463,18 +1478,16 @@ describe('Replay3DPane 顶栏双方血量', () => {
     store.scoreFriend = 2; store.scoreEnemy = 1
     await nextTick()
 
-    const hp = wrapper.get('[data-test="hud-team-hp"]')
+    const hp = wrapper.get('[data-test="pb-hp-bars"]')
     expect(hp.text()).toContain('12345 / 20000')
     expect(hp.text()).toContain('800 / 15000')
     // 血量不缩写（§11：禁止 12.3k）；己方在左、敌方在右
     expect(hp.text()).not.toContain('12.3k')
-    const bars = hp.findAll('.hpbar > i')
-    expect(bars[0].attributes('style')).toContain('width: 61.725%')   // 原始百分比：缓慢掉血也平滑
-    expect(bars[1].attributes('style')).toContain('width: 5.333%')
-    expect(hp.findAll('.hpbar')[0].attributes('title')).toBe('agentReplay.hp_friendly 62%')
-    expect(hp.findAll('.hpbar')[1].attributes('title')).toBe('agentReplay.hp_enemy 5%')
+    expect(hp.get('[data-test="pb-hp-fill-friendly"]').attributes('style')).toContain('width: 61.7%')
+    expect(hp.get('[data-test="pb-hp-fill-enemy"]').attributes('style')).toContain('width: 5.3%')
+    expect(wrapper.get('[data-test="pb-hud-time"]').text()).toBe('03:20')
     // 比分取视角字段（不是 score1/score2）
-    expect(wrapper.get('[data-test="hud-score"]').text()).toBe('2 : 1')
+    expect(wrapper.get('[data-test="pb-hud-score"]').text()).toBe('2 : 1')
     wrapper.unmount()
   })
 
@@ -1485,8 +1498,8 @@ describe('Replay3DPane 顶栏双方血量', () => {
     store.hasData = true
     store.hpFriend = NaN; store.hpFriendMax = null; store.hpFriendPct = NaN
     await nextTick()
-    expect(wrapper.get('[data-test="hud-team-hp"]').text()).toContain('0 / 0')
-    expect(wrapper.get('[data-test="hud-team-hp"]').text()).not.toContain('NaN')
+    expect(wrapper.get('[data-test="pb-hp-bars"]').text()).toContain('0 / 0')
+    expect(wrapper.get('[data-test="pb-hp-bars"]').text()).not.toContain('NaN')
     wrapper.unmount()
   })
 })

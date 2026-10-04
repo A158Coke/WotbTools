@@ -52,7 +52,7 @@ const dragHost = ref(null)
 const dragBounds = ref(null)
 watch(() => props.dragHost, (el) => { dragHost.value = el || null }, { immediate: true })
 watch(() => props.dragBounds, (el) => { dragBounds.value = el || null }, { immediate: true })
-const { pos, onPointerDown, onSelectionChange } = usePlaybackDetailsPlacement({
+const { pos, maxPanelHeight, onPointerDown, onSelectionChange } = usePlaybackDetailsPlacement({
   isActive: () => !!props.selectedState && floating.value,
   hostEl: dragHost,
   boundsEl: dragBounds,
@@ -61,7 +61,7 @@ const { pos, onPointerDown, onSelectionChange } = usePlaybackDetailsPlacement({
 })
 watch([() => props.selectionKey, () => props.initialSide], onSelectionChange)
 const floatingStyle = computed(() => (floating.value && pos.value
-  ? { left: `${pos.value.left}px`, top: `${pos.value.top}px` }
+  ? { left: `${pos.value.left}px`, top: `${pos.value.top}px`, maxHeight: `${maxPanelHeight.value}px` }
   : null))
 </script>
 

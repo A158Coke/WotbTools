@@ -75,10 +75,17 @@ function mountPlayback(overview = makeOverview(), seekTo = null, dataset = undef
   return mountBattlePlayback({ overview, seekTo, playbackV2: finalDataset })
 }
 
-// 左侧二级菜单：面板内容现在由左侧导航项（pb-rail-*）打开。
+// 二级面统一由传输控件上的 Display（⚙）打开，面板内容再由 pb-panel-* 行切换。
 async function openPanel(wrapper, name) {
-  const tab = wrapper.find(`[data-test="pb-rail-${name}"]`)
-  if (tab.attributes('aria-expanded') !== 'true') await tab.trigger('click')
+  const entry = wrapper.get('[data-test="pb-secondary-entry"]')
+  if (entry.attributes('aria-expanded') !== 'true') await entry.trigger('click')
+  await flushPromises()
+  if (name === 'display') {
+    const back = wrapper.find('[data-test="pb-events-back"]')
+    if (back.exists()) await back.trigger('click')
+  } else {
+    await wrapper.get(`[data-test="pb-panel-${name}"]`).trigger('click')
+  }
   await flushPromises()
 }
 
@@ -123,14 +130,14 @@ describe('L3：滚轮与快捷键不抢页面（审计 PB-04 / PB-05）', () => 
     const wrapper = mountPlayback()
     await flushPromises()
     await wrapper.find('[data-test="pb-play"]').trigger('click')
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.pause')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.pause')
     await wrapper.setProps({ active: false })
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.play')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.play')
     const space = new KeyboardEvent('keydown', { key: ' ', code: 'Space', cancelable: true })
     window.dispatchEvent(space)
     await flushPromises()
     expect(space.defaultPrevented).toBe(false)
-    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.play')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.play')
   })
 })
 
