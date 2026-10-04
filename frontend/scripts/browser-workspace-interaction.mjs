@@ -1205,6 +1205,8 @@ async function runRosterGeometryScenario(env, scenario) {
   // 两条 lane 等宽、center ≈ 3× lane（2:6:2 = 1:3:1）、窄视口时 lane 回落到可读下限。
   if (geometry.side) {
     const columns = await page.probe(workspaceColumnsProbe)
+    // --pb-roster-min = 9rem，按根字号折算（2/6/2 的窄档 fallback 就是守在它上面）。
+    const rosterMinPx = 9 * (await page.evaluate('parseFloat(getComputedStyle(document.documentElement).fontSize) || 16'))
     check(failures, columns.root, 'workspace columns: pb-root missing')
     check(failures, Math.abs(columns.left.w - columns.right.w) <= 0.5,
       `both lanes must share one width: ${JSON.stringify({ left: columns.left.w, right: columns.right.w })}`)
@@ -1217,14 +1219,10 @@ async function runRosterGeometryScenario(env, scenario) {
     const ratio = columns.centerW / columns.laneW
     check(failures, ratio >= 2.8,
       `2/6/2 wide layout: center must be ~3× a lane: ${JSON.stringify({ centerW: columns.centerW, laneW: columns.laneW, ratio: +ratio.toFixed(2) })}`)
-    // lane 不得低于可读下限（--pb-roster-min，2/6/2 的窄档 fallback 就是守在它上面）
-    const minLane = (() => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue('--pb-roster-min').trim()
-      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-      return raw.endsWith('rem') ? parseFloat(raw) * rem : parseFloat(raw)
-    })()
-    check(failures, columns.laneW >= minLane - 0.5,
-      `roster lane must keep its readable floor: ${JSON.stringify({ laneW: columns.laneW, minLane })}`)
+    // lane 不得低于可读下限（--pb-roster-min，2/6/2 的窄档 fallback 就是守在它上面）。
+    // 下限值随 scenario 传入：page.evaluate 的表达式里没有 getComputedStyle 作用域。
+    check(failures, columns.laneW >= rosterMinPx - 0.5,
+      `roster lane must keep its readable floor: ${JSON.stringify({ laneW: columns.laneW, minLane: rosterMinPx })}`)
     // HUD 属于整个 center column，而不是按内容收缩成中间小块
     check(failures, columns.hud && Math.abs(columns.hud.w - columns.centerW) <= 1,
       `HUD must span the whole center column: ${JSON.stringify({ hudW: columns.hud?.w, centerW: columns.centerW })}`)
@@ -2645,8 +2643,18 @@ try {
   const fullscreenRoster = results.find((result) => result.name === 'roster-geometry-1792x922-fullscreen-desktop')?.geometry
   if (tabletRoster && desktopRoster && fullscreenRoster) {
     const failures = []
+    // 宽档 sizing authority 是 2 / 6 / 2：lane 随视口线性增长（2fr），不再有「到上限停住」那一档。
+    // 这里锁的是比例：lane 变大、center 变大且始终约 3× lane。
     check(failures, tabletRoster.laneWidths[0] + 1 < desktopRoster.laneWidths[0], 'roster lanes must grow between tablet and desktop')
-    check(failures, Math.abs(fullscreenRoster.laneWidths[0] - fullscreenRoster.maxLaneWidth) <= 1, 'large fullscreen roster must stop at its maximum bound')
+    check(failures, fullscreenRoster.laneWidths[0] > desktopRoster.laneWidths[0] + 1, 'roster lanes must keep growing with the viewport under 2/6/2')
+    for (const [name, g] of [['tablet', tabletRoster], ['desktop', desktopRoster], ['fullscreen', fullscreenRoster]]) {
+      const lane = g.laneWidths[0]
+      // HUD 属于 center 列，用它的宽度当 center 宽度的实测值
+      const center = g.hud?.w ?? null
+      if (!lane || !center) { check(failures, false, `${name} roster matrix: missing lane/center`); continue }
+      check(failures, center / lane >= 2.8,
+        `${name} roster matrix: center must be ~3× a lane (lane=${lane} center=${center} ratio=${(center / lane).toFixed(2)})`)
+    }
     results.push({ name: 'roster-fluid-width-matrix', failures, viewport: '1024 → 1600 → 1792' })
   }
   let failed = 0

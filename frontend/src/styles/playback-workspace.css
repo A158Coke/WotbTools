@@ -59,7 +59,11 @@
   position: static;
   inset: auto;
   grid-row: 1 / -1;
-  max-block-size: 100%;
+  /* 用容器高度而不是 `100%`：`.pb-main` 是 `align-content: start` 的固定高网格，
+     内容溢出时它的「100%」会跟着内容长（实测 740×360 上车道量到 394px 而不是 256px），
+     于是名册把传输控件顶下去。`--pb-workspace-h` 才是真正的可用高度。 */
+  max-block-size: var(--pb-workspace-h, var(--pb-workspace-fallback-h));
+  min-block-size: 0;
   min-inline-size: 0;
   overflow-y: auto;
 }
@@ -126,7 +130,15 @@
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) > .hud,
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) > .controls { grid-column: 2; }
 .pb-root.playback-workspace.roster-side .team-lane.side-left,
-.pb-root.playback-workspace.roster-side .team-lane.side-right { grid-row: 1 / -1; }
+.pb-root.playback-workspace.roster-side .team-lane.side-right {
+  grid-row: 1 / -1;
+  /* 车道跨全部三行，于是它的内容高度会反过来参与第 1 / 第 3 条 `auto` 行的尺寸计算：
+     名册内容一旦高于 workspace，`auto` 行就把 HUD / 传输控件顶出视口（实测 740×360 上
+     `.pb-main` 的行变成 123/108/155、总高 394 > 256，传输控件被推到底部之外）。
+     `overflow: hidden` 让车道的自动最小尺寸归零——内容改由车道自己滚动，不再撑大网格。 */
+  overflow: hidden;
+  min-block-size: 0;
+}
 .pb-root.playback-workspace.roster-side .side-left { grid-column: 1; }
 .pb-root.playback-workspace.roster-side .side-right { grid-column: 3; }
 
