@@ -25,12 +25,17 @@ const props = defineProps({
    *   'inline'    纵向流里的普通内容块（手机竖屏，排在传输控件之后）
    */
   presentation: { type: String, default: 'floating' },
-  /** 浮窗宿主（`.pb-main` / 3D 的 `.pb-root`）；inline 形态不需要。 */
+  /** 浮窗宿主 = **整个战场 workspace**（2D 的 `.pb-main`、3D 的 `.pb-root`：Team 1 / Stage /
+      Team 2 三栏共同的定位祖先）。浮窗是它的直接子元素，`left/top`、夹紧与拖动都在同一个
+      坐标系里计算；inline 形态不需要。 */
   dragHost: { type: Object, default: null },
   /** 受保护区域（传输控件）：浮窗下缘不得越过它。 */
   dragBounds: { type: Object, default: null },
-  /** 浮窗初始落位偏好（点击原点未知时的兜底）。 */
+  /** 浮窗初始落位偏好：点左侧名册 → 'right'，点右侧名册 → 'left'，点场景里的车 → 屏幕上
+      与它相对的一侧。只在用户还没亲手拖过时生效。 */
   initialSide: { type: String, default: 'right' },
+  /** 当前选中对象的身份（accountId / eid）。同一次打开内换车时据此重新落位（未拖过时）。 */
+  selectionKey: { type: null, default: null },
 })
 
 const emit = defineEmits(['close'])
@@ -47,13 +52,14 @@ const dragHost = ref(null)
 const dragBounds = ref(null)
 watch(() => props.dragHost, (el) => { dragHost.value = el || null }, { immediate: true })
 watch(() => props.dragBounds, (el) => { dragBounds.value = el || null }, { immediate: true })
-const { pos, onPointerDown } = usePlaybackDetailsPlacement({
+const { pos, onPointerDown, onSelectionChange } = usePlaybackDetailsPlacement({
   isActive: () => !!props.selectedState && floating.value,
   hostEl: dragHost,
   boundsEl: dragBounds,
   panelEl,
   initialSide: computed(() => props.initialSide),
 })
+watch([() => props.selectionKey, () => props.initialSide], onSelectionChange)
 const floatingStyle = computed(() => (floating.value && pos.value
   ? { left: `${pos.value.left}px`, top: `${pos.value.top}px` }
   : null))
@@ -162,21 +168,21 @@ const floatingStyle = computed(() => (floating.value && pos.value
 .pb-sidebar { width: calc(var(--sidebar-full-w) + var(--space-5)); max-width: 100%; min-width: 0; flex-shrink: 0; align-self: stretch; font-size: var(--font-size-caption); line-height: var(--line-height-caption); color: var(--color-text-primary); background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); padding: var(--space-2); overflow-y: auto; max-height: 72dvh; }
 /* 浮窗形态：workspace 顶层的一块面。位置由 usePlaybackDetailsPlacement 写 left/top
    （未定位的首帧落在左上角，随后立即被夹进宿主）。
-   宽度取宿主提供的 `--pb-details-w`（2D 侧栏列与浮窗同一个 token；宿主没给就退回默认值）。
+   宽度固定一档（不借用 2D 的 `--pb-details-w` 列宽 token：手机全屏下那个 token 是 0）。
    这里只负责「它是一块浮起来的卡片」，不负责它在哪——位置与边界是 JS 的所有权。 */
 .pb-sidebar.pb-floating {
   position: absolute;
   inset-block-start: 0;
   inset-inline-start: 0;
   z-index: var(--pb-z-modal);
-  width: var(--pb-details-w, min(340px, 92%));
+  width: min(340px, 92%);
   max-height: min(60dvh, 520px);
   box-shadow: var(--elevation-3);
 }
 /* inline 形态（手机竖屏）：纵向流里的普通内容块，跟着页面滚，不设自己的高度上限。 */
 .pb-sidebar.pb-inline { width: 100%; max-height: none; margin-top: var(--space-2); }
 .pb-sb-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2); margin-bottom: var(--space-1); }
-.pb-sb-drag { display: flex; align-items: flex-start; gap: var(--space-2); flex: 1 1 auto; min-width: 0; cursor: grab; touch-action: none; }
+.pb-sb-drag { display: flex; align-items: flex-start; gap: var(--space-2); flex: 1 1 auto; min-width: 0; cursor: grab; touch-action: none; user-select: none; }
 .pb-sb-drag:active { cursor: grabbing; }
 .pb-sb-grip { flex: none; width: var(--space-3); height: var(--space-3); margin-top: var(--space-1); border-radius: var(--radius-sm); background: linear-gradient(to bottom, var(--color-border-subtle) 0 2px, transparent 2px 5px, var(--color-border-subtle) 5px 7px, transparent 7px 10px, var(--color-border-subtle) 10px 12px); }
 .pb-sb-title { display: flex; flex-direction: column; min-width: 0; }

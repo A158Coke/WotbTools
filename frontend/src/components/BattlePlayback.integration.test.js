@@ -2670,9 +2670,10 @@ describe('V2 HP regression (restored critical coverage)', () => {
     // 名册现在由共享的 PlaybackRoster 渲染（二级面的 Team 分页），不再是被替换掉的静态名单
     const roster = wrapper.find('[data-testid="team-panel-roster"]')
     expect(roster.exists()).toBe(true)
-    const friendly = roster.findAll('.pb-roster-friendly [data-test="pb-roster-row"]')
-    const enemy = roster.findAll('.pb-roster-enemy [data-test="pb-roster-row"]')
-    expect(friendly).toHaveLength(1)      // 仅 You/Maus（friendly roster）
+    // 按物理队伍分组（Team 1 / Team 2），不是录像者视角的 friendly / enemy
+    const friendly = roster.findAll('.pb-roster-team1 [data-test="pb-roster-row"]')
+    const enemy = roster.findAll('.pb-roster-team2 [data-test="pb-roster-row"]')
+    expect(friendly).toHaveLength(1)      // 仅 You/Maus（Team 1）
     expect(enemy).toHaveLength(2)          // EnemyA/T49 + NeverSeen：后者在 event 流中从无位置，但仍来自 result 名单
     expect(friendly[0].text()).toContain('Maus')
     expect(enemy[0].text()).toContain('T49')

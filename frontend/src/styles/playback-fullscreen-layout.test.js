@@ -115,31 +115,19 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
   })
 
   // 手机非全屏：左栏排到地图下方（order），右侧详情是从右滑入的窗口而不是底部 sheet。
-  it('puts the mobile rail under the map and slides the details in from the right', () => {
+  it('puts the mobile rail under the map; vehicle Details is never a side-panel drawer', () => {
     const main = ruleBody('.battle-playback:not(:fullscreen).pb-form-mobile .pb-main')
     expect(main).toContain('order: 1')
     const rail = ruleBody('.battle-playback:not(:fullscreen).pb-form-mobile.pb-drawer-open .pb-left-rail')
     expect(rail).toContain('order: 2')
     expect(rail).toContain('position: static')
-
-    // 横屏：右侧滑入的窗口（不贴左边、不满宽）
-    const details = ruleBody('.battle-playback:not(:fullscreen).pb-form-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
-    expect(details).toContain('position: fixed')
-    expect(details).toContain('right: 8px')
-    expect(details).toContain('left: auto')
-    expect(details).toContain('animation: pb-details-slide-in')
-    expect(stripped).toContain('@keyframes pb-details-slide-in')
-
-    // 竖屏：~400px 宽的屏上右侧窗口等于满屏，会盖住地图，因此改为从底部滑上来的 sheet，
-    // 地图始终留在上方可见。
-    expect(stripped).toContain('@media (orientation: portrait)')
-    expect(stripped).toContain('@keyframes pb-details-slide-up')
-    const portrait = stripped.slice(stripped.indexOf('@media (orientation: portrait)'))
-    expect(portrait).toContain('max-height: min(58dvh, 480px)')
-    expect(portrait).toContain('animation: pb-details-slide-up')
+    // 详情是 workspace 浮窗（横屏）/ 纵向流内容块（竖屏），手机形态文件里不再有任何详情抽屉 / sheet
+    const mobile = read('./playback-mobile.css').replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(mobile).not.toContain('.pb-side-panel {')
+    expect(mobile).not.toContain('pb-details-active')
+    expect(mobile).not.toContain('pb-details-slide')
   })
 
-  // 非全屏窄视口：两侧面板都排进正常文档流，不做浮层弹窗/抽屉。
   it('keeps the side panes inline outside fullscreen instead of floating them', () => {
     const details = ruleBody('.battle-playback .pb-map-stage > .pb-side-panel-shell')
     // relative（不是 absolute）：在流内参与布局，同时作为拖拽把手的定位基准。
@@ -378,44 +366,13 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
 
   // 车辆详情是 .pb-sidebar，标签面板是 .pb-side-panel——两个不同元素都挂在 shell 下。
   // 手机抽屉形态曾经只写给 .pb-side-panel，结果车辆详情完全没被改到。
-  it('gives the mobile drawer treatment to the details element itself', () => {
-    // 抽屉形态只属于全屏——全屏地图占满屏幕，没有「地图下方」可用。非全屏一律排进流里。
-    // 以前这条没写 :fullscreen，(0,6,0) 压过宽度键控的流内规则 (0,5,0)，手机上详情
-    // 始终是盖在地图上的 sheet，违反「地图上不能有任何东西」。
-    const sheet = ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
-    expect(sheet).not.toBeNull()
-    expect(sheet).toContain('animation: pb-details-slide-up')
-    // 非全屏的那条 shell 规则必须是流内形态（position: static），不能是覆盖地图的浮层。
-    const inflowShell = ruleBody('.battle-playback.pb-form-mobile:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell')
-    expect(inflowShell).toContain('position: static')
-    expect(inflowShell).not.toContain('position: absolute')
-
-    // 流内还不够：详情内容能到 ~650px（战斗装载那几组），不封顶就把地图整个顶出视口，
-    // 形式上没盖住地图、实际效果一样。手机上必须像标注工具栏那样是一块有界区块。
-    // 该选择器在 <1200px 与 <768px 两个 media 块里都出现，ruleBody 只返回第一处，
-    // 所以这里显式切到 768 块再断言。
-    const phoneBlock = stripped.slice(stripped.lastIndexOf('@media (width < 768px)'))
-    const capped = phoneBlock.slice(phoneBlock.indexOf('.pb-side-panel-shell.pb-details-active .pb-sidebar'))
-    const cappedBody = capped.slice(capped.indexOf('{') + 1, capped.indexOf('}'))
-    expect(cappedBody).toContain('max-height: min(46dvh, 380px)')
-    expect(cappedBody).toContain('overflow-y: auto')
-
-    // §no-overlay：没有持久列的宽度区间（<1200px 非全屏）没有黑边可用，详情必须排进流里。
-    // 按宽度而不是设备类判定——.pb-form-mobile 要求 pointer: coarse，窄的桌面窗口拿不到。
+  it('keeps the tablet details shell in flow (no overlay sheet over the map)', () => {
+    // §no-overlay：没有持久列的宽度区间（<1200px 非全屏）没有黑边可用，shell 必须排进流里。
     const inflow = ruleBody('.battle-playback.pb-form-tablet:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar')
     expect(inflow).toContain('position: static')
     expect(ruleBody('.battle-playback.pb-form-tablet:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell')).toContain('position: static')
-
-    // 手机全屏横屏：抽屉宽度按黑边实宽算（(100vw - 100vh) / 2），不越到地图上。
-    expect(stripped).toContain('@media (orientation: landscape)')
-    const landscape = stripped.slice(stripped.indexOf('@media (orientation: landscape)'))
-    expect(landscape).toContain('calc((100vw - 100vh) / 2 - 8px)')
-    expect(landscape).toContain('animation: pb-details-slide-in')
   })
 
-  // VehicleDetailsPanel 挂在 .pb-side-panel-shell 下，不在 .pb-side-panel 内。
-  // 只覆盖 .pb-side-panel .pb-sidebar 的写法匹配不到它，组件的 width: 260px 会一直生效，
-  // 详情就在几百像素宽的列里缩成一张窄卡片。
   it('overrides the sidebar on its real DOM path, not only inside pb-side-panel', () => {
     // 所有形态：只解开组件的 width: 260px，让它填满可用宽度。
     const body = ruleBody('.battle-playback .pb-map-stage > .pb-side-panel-shell > .pb-sidebar')
@@ -482,38 +439,20 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
 
   // 手机 fullscreen 必然横屏，横向放得下三段，因此与桌面同构：窄 Left Rail | Map |
   // 右侧滑入的 Details 抽屉。controls 仍走 bottom overlay（拇指够得到底部）。
-  it('mobile fullscreen contract: 窄 rail + 地图 + 右侧 Details 抽屉，controls 仍在 bottom overlay', () => {
-    const fsM = ruleBody('.battle-playback:fullscreen.pb-form-mobile')
-    expect(fsM).toContain('grid-template-columns: var(--pb-left-col) minmax(0, 1fr)')
-    expect(fsM).toContain('--pb-rail-w: 148px')
-    // Details 是抽屉不是常驻列，token 仍归零：kill-feed / annotation-surface 不为浮层预留空间。
-    expect(fsM).toContain('--pb-details-w: 0px')
-    // overlay 已经是 col2 的子元素；再加 --pb-left-col 会重复偏移一个 rail 宽，
-    // 把 controls 推进地图里并裁掉右侧（实测 740×360：x 173→321，宽 587→439）。
-    const fsOverlay = ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-mobile-overlay')
-    expect(fsOverlay).toContain('left: 0')
-    expect(fsOverlay).not.toContain('--pb-left-col')
-    expect(ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-left-rail')).toContain('display: flex')
-    expect(ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-main')).toContain('grid-column: 2')
-    expect(ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-hud')).toContain('left: var(--pb-left-col)')
-    expect(ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-map-stage')).toContain('grid-template-columns: minmax(0, 1fr)')
-    // .pb-hud 是根的子元素，偏移 --pb-left-col 才能停在 rail 右缘；.pb-mobile-overlay
-    // 在 .pb-main（col2）里，同样的偏移会叠加一次 rail 宽——两者不能照抄。
-    // Details 走与非全屏一致的右侧滑入窗口
-    const details = ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel')
-    expect(details).toContain('position: fixed')
-    expect(details).toContain('animation: pb-details-slide-in')
+  it('mobile fullscreen contract lives in playback-mobile-fullscreen.css, not in the base mobile sheet', () => {
+    // 手机全屏 = 与横屏同一个三段式；基础手机表里不再有常驻 rail / Details 抽屉的全屏规则。
+    expect(ruleBody('.battle-playback:fullscreen.pb-form-mobile')).toBeNull()
+    expect(ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-left-rail')).toBeNull()
+    expect(ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel')).toBeNull()
+    // ⚙ 打开的抽屉仍然存在（左栏导航的唯一入口）
+    expect(ruleBody('.battle-playback:fullscreen.pb-form-mobile.pb-drawer-open .pb-left-rail')).toContain('position: fixed')
   })
 
-  it('details-blocker: mobile 空 shell 不接管 pointer，选中（pb-details-active）才打开 sheet', () => {
-    const shell = ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell')
+  it('details-blocker: the (always empty) mobile shell never takes pointer input', () => {
+    const shell = ruleBody('.battle-playback.pb-form-mobile .pb-map-stage > .pb-side-panel-shell')
     expect(shell).toContain('pointer-events: none')
     expect(shell).toContain('background: transparent')
-    const shellActive = ruleBody('.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active')
-    expect(shellActive).toContain('pointer-events: auto')
-    // §layering：active Details 必须显式 z-index（不依赖 768-1199 media 的 var(--z-modal)）
-    expect(shellActive).toContain('z-index: 60')
-    // 稳定层级：controls(≤40) < events(45) < HUD(50) < active Details(60) < drawer backdrop(74)/rail(75)
+    // 稳定层级：controls(≤40) < events(45) < HUD(50) < drawer backdrop(74)/rail(75)
     expect(ruleBody('.battle-playback:fullscreen .pb-hud')).toContain('z-index: 50')
     expect(ruleBody('.battle-playback:fullscreen .pb-mobile-overlay')).toContain('z-index: 40')
     expect(ruleBody('.battle-playback .pb-drawer-backdrop')).toContain('z-index: 74')

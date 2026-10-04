@@ -449,12 +449,22 @@ function clickElement(page, selector) {
     const cx = Math.round(r.left + r.width / 2)
     const cy = Math.round(r.top + r.height / 2)
     if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return 'outside-viewport:' + cx + ',' + cy
-    const hit = document.elementFromPoint(cx, cy)
-    if (!(hit === el || el.contains(hit) || (hit && hit.contains(el)))) {
-      return 'occluded-by:' + (hit ? hit.tagName + '.' + (hit.className || '') : 'null')
+    const hits = (x, y) => { const h = document.elementFromPoint(x, y); return { h, ok: h === el || el.contains(h) || (h && h.contains(el)) } }
+    let probe = hits(cx, cy)
+    let px = cx, py = cy
+    if (!probe.ok && !panel) {
+      // 被固定的页面外壳（吸顶标题 / 底部 Tab 栏）挡住：像用户一样把它滚到视口中部再点。
+      el.scrollIntoView({ block: 'center', inline: 'nearest' })
+      const r2 = el.getBoundingClientRect()
+      px = Math.round(r2.left + r2.width / 2)
+      py = Math.round(r2.top + r2.height / 2)
+      probe = hits(px, py)
+    }
+    if (!probe.ok) {
+      return 'occluded-by:' + (probe.h ? probe.h.tagName + '.' + (probe.h.className || '') : 'null')
     }
     el.click()
-    return 'clicked@' + cx + ',' + cy
+    return 'clicked@' + px + ',' + py
   })()`)
 }
 
@@ -587,13 +597,21 @@ async function runAuthCapabilityScenario(env, scenario) {
  * 所以 1600×900 与 1024×768 上**全量名册**同样是临时面：常驻车道会溢出到控制条上，
  * 那正是这条门禁要挡住的事。
  */
+/**
+ * 3D 与 2D 同一个 workspace 契约：竖屏手机 = 纵向流（HUD / Stage / 传输控件 / 详情 / Team 1 /
+ * Team 2）；其余（手机横屏、手机全屏横屏、平板、桌面）= `Team 1 | 正方形 Stage | Team 2`。
+ * 正常 7v7 不走任何「临时名册面」，车道不出现滚动条。`unknown` 是未识别阵营的行数（排在 Team 1 下）。
+ */
 const ROSTER_GEOMETRY_SCENARIOS = [
-  { name: 'roster-geometry-1600x900-desktop', width: 1600, height: 900, touch: false, players: 7, killfeed: 3 },
-  { name: 'roster-geometry-1024x768-tablet', width: 1024, height: 768, touch: false, players: 3, killfeed: 3 },
-  { name: 'roster-geometry-390x844-portrait-coarse', width: 390, height: 844, touch: true, players: 7, killfeed: 3, transient: true },
-  { name: 'roster-geometry-740x360-landscape-coarse', width: 740, height: 360, touch: true, players: 2, killfeed: 1, transient: true },
-  { name: 'roster-geometry-portrait-to844x390-coarse', width: 390, height: 844, touch: true, players: 2, killfeed: 1, transient: true, rotateTo: { width: 844, height: 390 } },
-  { name: 'roster-geometry-1024x460-short', width: 1024, height: 460, touch: false, players: 2, killfeed: 1, transient: true },
+  { name: 'roster-geometry-1600x900-desktop', width: 1600, height: 900, touch: false, players: 7, unknown: 2, killfeed: 3, layout: 'side' },
+  { name: 'roster-geometry-1024x768-tablet', width: 1024, height: 768, touch: false, players: 7, unknown: 2, killfeed: 3, layout: 'side' },
+  { name: 'roster-geometry-375x812-portrait-coarse', width: 375, height: 812, touch: true, players: 7, unknown: 0, killfeed: 3, layout: 'portrait' },
+  { name: 'roster-geometry-390x844-portrait-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 2, killfeed: 3, layout: 'portrait' },
+  { name: 'roster-geometry-740x360-landscape-coarse', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
+  { name: 'roster-geometry-844x390-landscape-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
+  { name: 'roster-geometry-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', fullscreen: true },
+  { name: 'roster-geometry-portrait-to844x390-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', rotateTo: { width: 844, height: 390 } },
+  { name: 'roster-geometry-1024x460-short', width: 1024, height: 460, touch: false, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
 ]
 
 const PLAYBACK_SCENARIOS = [
@@ -624,9 +642,17 @@ function rosterGeometryProbe() {
   const out = { root: !!root, errors: [], boxes: {} }
   if (!root) return out
   const rr = root.getBoundingClientRect()
-  const transientSurface = root.querySelector('.roster-surface.transient')
-  const transient = !!transientSurface && getComputedStyle(transientSurface).display !== 'none'
-  out.transient = transient
+  const transient = false
+  out.portrait = root.classList.contains('portrait-flow')
+  out.side = root.classList.contains('roster-side')
+  out.viewport = { width: innerWidth, height: innerHeight }
+  const square = root.querySelector('.stage-square')?.getBoundingClientRect()
+  out.square = square ? { w: square.width, h: square.height, l: square.left, r: square.right, t: square.top, b: square.bottom } : null
+  if (!square || Math.abs(square.width - square.height) > 1) out.errors.push(`3D Stage is not square: ${JSON.stringify(out.square)}`)
+  out.laneIds = ['.side-left', '.side-right'].map((sel) => [...root.querySelectorAll(`${sel} .pl`)].map((el) => el.textContent.trim().split(/\s+/)[0]))
+  out.rowsComplete = [...root.querySelectorAll('.team-lane .pl')].every((row) => ['pb-roster-player', 'pb-roster-tank', 'roster-hp', 'roster-hp-pct']
+    .every((test) => (row.querySelector(`[data-test="${test}"]`)?.textContent || '').trim().length > 0))
+  out.hpBar = !!root.querySelector('.team-lane .hpbar')
   out.phone = root.classList.contains('phone-form')
   const overlap = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5
     && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
@@ -786,6 +812,18 @@ function displayPanelProbe() {
   if (!panel) { out.errors.push('display panel not open'); return out }
   const pb = panel.getBoundingClientRect()
   out.panel = { l: +pb.left.toFixed(1), t: +pb.top.toFixed(1), r: +pb.right.toFixed(1), b: +pb.bottom.toFixed(1) }
+  if (root.classList.contains('portrait-flow')) {
+    // 竖屏纵向流：「显示」面板是传输控件之后的流内内容块（页面滚动），不是盖在 Stage 上的浮层。
+    const controls = document.querySelector('.controls')?.getBoundingClientRect()
+    const square = document.querySelector('.stage-square')?.getBoundingClientRect()
+    if (getComputedStyle(panel).position !== 'static') out.errors.push('portrait display panel must be an in-flow block')
+    if (controls && pb.top < controls.bottom - 1) out.errors.push('portrait display panel must follow the transport')
+    if (square && pb.top < square.bottom - 1) out.errors.push('portrait display panel must not cover the Stage')
+    for (const id of ['disp-topbar', 'disp-roster', 'disp-killfeed', 'disp-base', 'disp-player', 'disp-tank', 'disp-hp', 'disp-reload', 'disp-glb', 'hide-all-ui']) {
+      if (!document.querySelector(`[data-testid="${id}"]`)) out.errors.push(`display panel control missing: ${id}`)
+    }
+    return out
+  }
   // 可见范围 = .pb-root 与视口的交集（工作台在矮窗口里可能把 .pb-root 顶部推到视口外，
   // 那时"超出视口"并不等于面板不可用；真正的要求是面板落在**可见的面板区域**内）。
   const visTop = Math.max(rr.top, 0)
@@ -955,7 +993,7 @@ async function runRosterGeometryScenario(env, scenario) {
     s.roster = {
       team1: mk('Ally', ${scenario.players}, 1),
       team2: mk('Enemy', ${scenario.players}, 2),
-      unknown: mk('Neutral', 2, null),
+      unknown: mk('Neutral', ${scenario.unknown ?? 2}, null),
     }
     s.killfeed = Array.from({ length: ${scenario.killfeed} }, (_, i) => ({
       id: i + 1, killer: 'Killer_' + i, victim: 'Victim_' + i, kill: true,
@@ -969,88 +1007,65 @@ async function runRosterGeometryScenario(env, scenario) {
 
   if (scenario.rotateTo) {
     await page.emulate({ ...scenario, ...scenario.rotateTo })
-    await page.waitFor(() => document.querySelector('.pb-root')?.classList.contains('phone-form'),
-      { label: 'rotated 3D pane remains phone form' })
+    await page.waitFor(() => document.querySelector('.pb-root')?.classList.contains('roster-side'),
+      { label: 'rotated 3D pane switches to Team 1 | Stage | Team 2' })
+    await waitForStableLayout(page)
   }
-  const sceneBounds = await page.evaluate(`(() => {
-    const r = document.querySelector('.pb-root').getBoundingClientRect()
-    return { width: r.width, height: r.height }
-  })()`)
-  if (scenario.transient) {
-    const compactGeometry = await page.probe(rosterGeometryProbe)
-    check(failures, compactGeometry.errors.length === 0,
-      `dismissed scene/transport violations: ${compactGeometry.errors.join('; ')}`)
-    check(failures, await page.evaluate(`(() => { const el = document.querySelector('.roster-surface');
-      return !el || getComputedStyle(el).display === 'none' })()`),
-      'phone/short viewport must not show permanent roster lanes')
-    if (scenario.rosterOpen) {
-      // 宽档的全量名册同样放不进常驻车道（`Replay3DPane` 的 `rosterConstrained` 判断），
-      // 只是这条路径没有「显示」面板的入口：这里直接把它当「打开临时名册面」的等价动作。
-      await page.evaluate(`window.__pbPane.store.roster.team1.length + window.__pbPane.store.roster.team2.length`)
-      const opened = await page.evaluate(`(() => {
-        const root = document.querySelector('.pb-root')
-        if (!root) return false
-        const toggle = document.querySelector('[data-testid="roster-toggle-compact"]')
-        if (toggle) { toggle.click(); return true }
-        return false
-      })()`)
-      check(failures, opened, 'wide transient roster has no way to open the overlay')
-    } else {
-      const openResult = await clickElement(page, '[data-testid="display-toggle"]')
-      check(failures, clicked(openResult), `display toggle not clickable: ${openResult}`)
-      const toggleResult = await clickElement(page, '[data-testid="roster-toggle-compact"]')
-      check(failures, clicked(toggleResult), `transient roster entry not clickable: ${toggleResult}`)
-      if (!clicked(openResult) || !clicked(toggleResult)) {
-        await env.chrome.client.send('Target.closeTarget', { targetId })
-        results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
-        return
-      }
-      await page.waitFor(() => {
-        const el = document.querySelector('.roster-surface.transient')
-        return !!el && getComputedStyle(el).display !== 'none'
-      },
-        { label: 'transient roster opens' })
-      check(failures, await page.evaluate(`!document.querySelector('[data-testid="display-panel"]:not([hidden])')`),
-        'opening roster must close Display')
+  const viewport = scenario.rotateTo || scenario
+  const sceneBefore = await page.evaluate('(window.__sceneMarker = window.__pbPane.sceneApi, true)')
+  if (scenario.fullscreen) {
+    const fsButton = await page.evaluate(`(() => {
+      const el = document.querySelector('[data-testid="playback-fullscreen"]')
+      if (!el) return null
+      el.scrollIntoView({ block: 'center' })
+      const r = el.getBoundingClientRect()
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    })()`)
+    check(failures, !!fsButton, '3D fullscreen control missing')
+    if (fsButton) {
+      await page.tap({ ...fsButton, touch: scenario.touch })
+      await page.waitFor(() => !!document.fullscreenElement, { timeout: 5000, label: '3D document.fullscreenElement' })
+      await waitForStableLayout(page)
     }
   }
 
   const geometry = await page.probe(rosterGeometryProbe)
   check(failures, geometry.root, 'pb-root missing')
+  check(failures, geometry.viewport.width === viewport.width && geometry.viewport.height === viewport.height,
+    `viewport collapsed: requested ${viewport.width}x${viewport.height}, measured ${JSON.stringify(geometry.viewport)}`)
   check(failures, geometry.errors.length === 0, `geometry violations: ${geometry.errors.join('; ')}`)
-  // 名册 HP 是主信息：每行都得上屏（数量 = 可见行数 × 2 个单元格）
   check(failures, geometry.hpCells >= 2, 'roster HP cells missing in real browser')
-  check(failures, geometry.rows === scenario.players * 2 + 2,
-    `roster hides players: ${geometry.rows} rows, expected ${scenario.players * 2 + 2}`)
-  check(failures, geometry.transient === !!scenario.transient,
-    `roster presentation mode is wrong: transient=${geometry.transient}`)
-  if (scenario.transient) {
-    const dismiss = await clickElement(page, '[data-testid="roster-close"]')
-    check(failures, clicked(dismiss), `roster dismiss not clickable: ${dismiss}`)
-    await page.waitFor(() => {
-      const el = document.querySelector('.roster-surface')
-      return !el || getComputedStyle(el).display === 'none'
-    }, { label: `roster dismissed (${dismiss})` })
-    const dismissedBounds = await page.evaluate(`(() => {
-      const r = document.querySelector('.pb-root').getBoundingClientRect()
-      return { width: r.width, height: r.height }
+  const expectedRows = scenario.players * 2 + (scenario.unknown ?? 2)
+  check(failures, geometry.rows === expectedRows, `roster hides players: ${geometry.rows} rows, expected ${expectedRows}`)
+  check(failures, geometry.rowsComplete, 'roster rows must show player / tank / HP / %')
+  check(failures, !geometry.hpBar, 'roster rows must not render an HP bar')
+  check(failures, geometry.laneIds[0].every((nick) => nick.startsWith('Ally') || nick.startsWith('Neutral'))
+    && geometry.laneIds[1].every((nick) => nick.startsWith('Enemy')),
+    `lanes must be physical Team 1 (left) / Team 2 (right): ${JSON.stringify(geometry.laneIds)}`)
+  if (scenario.layout === 'portrait') {
+    check(failures, geometry.portrait && !geometry.side, `portrait must be the vertical flow (class portrait-flow): ${JSON.stringify(geometry)}`)
+    const order = await page.evaluate(`(() => {
+      const top = (sel) => document.querySelector(sel)?.getBoundingClientRect().top ?? null
+      return { stage: top('.stage-square'), controls: top('.controls'), left: top('.side-left'), right: top('.side-right') }
     })()`)
-    check(failures, Math.abs(dismissedBounds.width - sceneBounds.width) < 1
-      && Math.abs(dismissedBounds.height - sceneBounds.height) < 1,
-      'dismissing roster must restore the scene without height/width reservation')
-    await clickElement(page, '[data-testid="display-toggle"]')
-    await clickElement(page, '[data-testid="roster-toggle-compact"]')
-    await page.waitFor(() => {
-      const el = document.querySelector('.roster-surface.transient')
-      return !!el && getComputedStyle(el).display !== 'none'
-    }, { label: 'reopen roster for selection' })
+    check(failures, order.stage < order.controls && order.controls < order.left && order.left < order.right,
+      `portrait order must be Stage → Transport → Team 1 → Team 2: ${JSON.stringify(order)}`)
+  } else {
+    check(failures, geometry.side && !geometry.portrait, `expected Team 1 | Stage | Team 2 (class roster-side): portrait=${geometry.portrait} side=${geometry.side}`)
   }
+  if (scenario.fullscreen) {
+    check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), 'entering fullscreen must not recreate the 3D scene')
+  }
+
+  // —— 选择：名册行 → 共享详情；选择不动相机 / 跟随 / 时间 ——
   const selectionBefore = await page.evaluate(`JSON.stringify({
     cam: window.__pbPane.store.cam,
     followed: window.__pbPane.store.roster.team1.filter(p => p.followed).map(p => p.eid),
     time: window.__pbPane.store.time,
   })`)
-  const rowClick = await clickElement(page, '.team1 .pl')
+  // 页面顶部有吸顶的工作台标题：先把行滚到视口中部再点（真机用户也是这样点到的）。
+  await page.evaluate(`document.querySelector('.side-left .team1 .pl:nth-child(2)')?.scrollIntoView({ block: 'center' })`)
+  const rowClick = await clickElement(page, '.side-left .team1 .pl:nth-child(2)')
   check(failures, clicked(rowClick), `roster row not selectable: ${rowClick}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-info"]'), { label: 'roster selects and opens shared details' })
   const selectionAfter = await page.evaluate(`JSON.stringify({
@@ -1062,13 +1077,70 @@ async function runRosterGeometryScenario(env, scenario) {
   check(failures, await page.evaluate(`!document.querySelector('[data-test="pb-sb-dealt"]')
     && !document.querySelector('[data-test="pb-sb-v2-inspector"]')`),
     '3D details must hide unavailable stats/inspector rather than fabricate zeros')
-  if (scenario.transient) {
-    check(failures, await page.evaluate(`(() => { const el = document.querySelector('.roster-surface');
-      return !el || getComputedStyle(el).display === 'none' })()`),
-      'phone selection must replace the roster with transient details')
+  const details = await page.evaluate(`(() => {
+    const el = document.querySelector('[data-test="pb-info"]')
+    return { presentation: el.dataset.presentation, parentIsRoot: el.parentElement === document.querySelector('.pb-root'),
+      lanes: document.querySelectorAll('.team-lane').length }
+  })()`)
+  check(failures, details.presentation === (scenario.layout === 'portrait' ? 'inline' : 'floating'),
+    `details presentation=${details.presentation}`)
+  check(failures, details.parentIsRoot, 'details must belong to the whole 3D workspace (.pb-root)')
+  check(failures, details.lanes === 2, 'opening details must not hide either roster lane')
+
+  if (scenario.layout === 'side') {
+    // 拖到 Team 2 / Stage / Team 1 之上：始终在 workspace 内、不压传输控件
+    for (const sel of ['.side-right', '.stage-square', '.side-left']) {
+      const target = await page.evaluate(`(() => { const r = document.querySelector('${sel}').getBoundingClientRect(); return r.left + r.width / 2 })()`)
+      await dragDetailsTo(page, target, scenario.touch)
+      const d = await page.evaluate(`(() => {
+        const p = document.querySelector('[data-test="pb-info"]').getBoundingClientRect()
+        const root = document.querySelector('.pb-root').getBoundingClientRect()
+        const t = document.querySelector('${sel}').getBoundingClientRect()
+        const c = document.querySelector('.controls')?.getBoundingClientRect()
+        const centre = p.left + p.width / 2
+        return { over: centre >= t.left - p.width / 2 && centre <= t.right + p.width / 2,
+          inside: p.left >= root.left - 0.5 && p.right <= root.right + 0.5 && p.top >= root.top - 0.5,
+          clearOfControls: !c || p.bottom <= c.top + 0.5, left: p.left, top: p.top }
+      })()`)
+      check(failures, d.over, `3D details could not be dragged over ${sel}: ${JSON.stringify(d)} target=${target} hit=${await page.evaluate(`(() => { const h = document.querySelector('[data-test="pb-sb-drag"]').getBoundingClientRect(); const e = document.elementFromPoint(h.left + 12, h.top + h.height / 2); return e ? e.className : null })()`)}`)
+      check(failures, d.inside, `3D details left the workspace after dragging over ${sel}`)
+      check(failures, d.clearOfControls, `3D details covers the transport after dragging over ${sel}`)
+    }
   }
+  // 位置按 workspace（.pb-root）坐标比较：点行之前助手会把行滚进视口，页面滚动不是浮窗移动。
+  const relativePanel = `(() => { const p = document.querySelector('[data-test="pb-info"]')?.getBoundingClientRect(); const r = document.querySelector('.pb-root').getBoundingClientRect(); return p ? { l: p.left - r.left, t: p.top - r.top } : {} })()`
+  const dragged = await page.evaluate(relativePanel)
+  // Team 2 连点：同一个窗更新，Team 2 车道仍在，拖过的位置不动
+  await page.evaluate(`document.querySelector('.side-right .team2 .pl:nth-child(3)')?.scrollIntoView({ block: 'center' })`)
+  const team2Click = await clickElement(page, '.side-right .team2 .pl:nth-child(3)')
+  check(failures, clicked(team2Click), `Team 2 row not clickable with details open: ${team2Click}`)
+  await delay(200)
+  const afterTeam2 = { ...(await page.evaluate(`(() => ({ count: document.querySelectorAll('[data-test="pb-info"]').length,
+      player: document.querySelector('[data-test="pb-sb-player"]')?.textContent.trim(),
+      lane: !!document.querySelector('.side-right .team2'), selected: window.__pbPane.selectedEid }))()`)),
+  ...(await page.evaluate(relativePanel)) }
+  check(failures, afterTeam2.count === 1 && afterTeam2.player === 'Enemy_03' && afterTeam2.lane,
+    `Team 2 selection must update the single details panel: ${JSON.stringify(afterTeam2)}`)
+  if (scenario.layout === 'side') {
+    check(failures, Math.abs(afterTeam2.l - dragged.l) < 1 && Math.abs(afterTeam2.t - dragged.t) < 1,
+      'user-dragged 3D details position must survive selection changes')
+  }
+  await page.evaluate(`document.querySelector('[data-test="pb-sb-close"]')?.scrollIntoView({ block: 'center' })`)
   await clickElement(page, '[data-test="pb-sb-close"]')
   await page.waitFor(() => !document.querySelector('[data-test="pb-info"]'), { label: 'shared details close' })
+  check(failures, await page.evaluate('window.__pbPane.selectedEid === 103 && !!document.querySelector(".side-right .pl.selected")'),
+    'details × must keep the 3D selection')
+  check(failures, await page.evaluate(`JSON.stringify({
+    cam: window.__pbPane.store.cam,
+    followed: window.__pbPane.store.roster.team1.filter(p => p.followed).map(p => p.eid),
+    time: window.__pbPane.store.time,
+  })`) === selectionBefore, 'closing details must not alter camera/follow/time')
+  if (scenario.fullscreen) {
+    await page.evaluate('document.exitFullscreen()')
+    await page.waitFor(() => !document.fullscreenElement, { label: 'exit fullscreen' })
+    check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi && window.__pbPane.selectedEid === 103'),
+      'exiting fullscreen must keep the scene and selection')
+  }
 
   // —— 「显示」面板：真实点击展开，几何在视口内，不盖场景中心 ——
   // 可点目标：先在面板自身的滚动容器内把元素滚进可视区（**不用 scrollIntoView**：它会连带
@@ -1183,7 +1255,11 @@ async function runRosterGeometryScenario(env, scenario) {
   })()`)
   check(failures, !!chipCenter, 'file remove chip not hit-testable')
   if (chipCenter) {
-    await page.tap({ ...chipCenter, touch: scenario.touch })
+    // 这一段验证的是解析生命周期（A → 清空 → B），不是触屏命中：矮横屏 740×360 上 touch 序列
+    // 落在 chip 上但浏览器没有合成 click（primary=chip、click=null，原因待单独排查），
+    // 所以这里与本文件 3D 控件一样走「命中测试 + click」的原子点击（遮挡照样会暴露）。
+    const chipClick = await clickElement(page, '[data-testid="file-list"] .chipx')
+    check(failures, clicked(chipClick), `file remove chip not clickable: ${chipClick}`)
     await page.waitFor(() => !document.querySelector('.pb-root'), { label: '3D pane torn down after clear' })
     await page.evaluate(`(() => {
       const input = document.querySelector('[data-testid="select-files-input"]')
@@ -1480,7 +1556,6 @@ async function runMobileFullscreenScenario(env, scenario) {
       fullscreenIsRoot: document.fullscreenElement === root,
       formClass: Array.from(root.classList).find((n) => n.startsWith('pb-form-')) || null,
       persisted: localStorage.getItem('wotb.pb.pane-widths'),
-      railVar: getComputedStyle(root).getPropertyValue('--pb-rail-w').trim(),
       inlineRailVar: root.style.getPropertyValue('--pb-rail-w').trim(),
       railWidth: rail ? rail.getBoundingClientRect().width : null,
       controlsInRail: !!document.querySelector('.pb-controls-rail-mode'),
@@ -1494,10 +1569,18 @@ async function runMobileFullscreenScenario(env, scenario) {
       `persisted pane widths were not in place: ${state.persisted}`)
   }
   check(failures, state.inlineRailVar === '', `mobile fullscreen wrote inline --pb-rail-w=${state.inlineRailVar}`)
-  check(failures, state.railVar === '148px',
-    `mobile fullscreen --pb-rail-w=${state.railVar} (inline=${state.inlineRailVar || 'none'}), expected 148px`)
-  check(failures, state.railWidth != null && Math.abs(state.railWidth - 148) <= 1,
-    `mobile fullscreen rail rendered ${state.railWidth}px wide, expected 148px`)
+  // 手机全屏与非全屏横屏同一个几何（Team 1 | 正方形 Stage | Team 2）：左栏不是常驻列，
+  // 只有 ⚙ 打开时才以浮层出现——持久化的桌面宽度也不得把它变回常驻列。
+  check(failures, state.railWidth === 0, `mobile fullscreen rendered a persistent ${state.railWidth}px rail`)
+  await page.evaluate(`document.querySelector('[data-test="pb-secondary-entry"]').click()`)
+  await delay(200)
+  const drawer = await page.evaluate(`(() => {
+    const rail = document.querySelector('.pb-left-rail')
+    const r = rail.getBoundingClientRect()
+    return { width: r.width, position: getComputedStyle(rail).position }
+  })()`)
+  check(failures, drawer.width > 0 && drawer.position === 'fixed',
+    `⚙ must open the left rail as an overlay drawer in mobile fullscreen: ${JSON.stringify(drawer)}`)
 
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `fullscreen ${scenario.width}x${scenario.height}` })
@@ -1839,6 +1922,313 @@ async function runOfflineWorkspaceScenario(env) {
   results.push({ name: 'offline-local-workspace-matrix', failures, viewport: '1600x900' })
 }
 
+/* ------------------------------------------------------------------ 2D 战场 workspace（正方形 Stage 契约） */
+
+/**
+ * 真实 `BattlePlayback`（playback-controls.html，正常 7v7）在真实设备指标下的 workspace 契约：
+ *
+ *   竖屏手机   = 纵向流：正方形 Stage → 传输控件 → 详情（inline）→ Team 1 → Team 2
+ *   横屏 / 全屏 / 平板 / 桌面 = `Team 1 | 正方形 Stage | Team 2`，传输控件在 Stage 之下
+ *   左车道恒为物理 Team 1、右车道恒为物理 Team 2（录像者在 Team 2 时也不交换）
+ *   详情是**整个战场 workspace（.pb-main）**的浮窗：可拖到三栏任意一栏之上，不越出 workspace、
+ *   不压传输控件；× 只关详情不清选中；名册与详情互不影响
+ *
+ * 每个横屏场景都断言页面实测视口与请求一致（不把回退成竖屏的视口算作横屏覆盖）。
+ */
+const WORKSPACE_2D_SCENARIOS = [
+  { name: 'ws2d-375x812-portrait-coarse', width: 375, height: 812, touch: true, layout: 'portrait' },
+  { name: 'ws2d-390x844-portrait-coarse', width: 390, height: 844, touch: true, layout: 'portrait' },
+  { name: 'ws2d-740x360-landscape-coarse', width: 740, height: 360, touch: true, layout: 'lanes' },
+  { name: 'ws2d-844x390-landscape-coarse', width: 844, height: 390, touch: true, layout: 'lanes' },
+  { name: 'ws2d-844x390-landscape-recorder-team2', width: 844, height: 390, touch: true, layout: 'lanes', recorder: 2 },
+  { name: 'ws2d-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, layout: 'lanes', fullscreen: true },
+  { name: 'ws2d-1024x768-tablet', width: 1024, height: 768, touch: false, layout: 'lanes' },
+  { name: 'ws2d-1600x900-desktop', width: 1600, height: 900, touch: false, layout: 'lanes' },
+]
+
+/** workspace 几何探针（只读）。 */
+function workspace2dProbe() {
+  const box = (el) => {
+    if (!el || !el.getClientRects().length) return null
+    const r = el.getBoundingClientRect()
+    return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }
+  }
+  const root = document.querySelector('[data-test="battle-playback"]')
+  const main = document.querySelector('[data-test="pb-main"]')
+  const lane = (side) => {
+    const el = document.querySelector(`[data-test="pb-team-lane-${side}"]`)
+    if (!el) return null
+    const rows = [...el.querySelectorAll('[data-test="pb-roster-row"]')]
+    return {
+      box: box(el),
+      ids: rows.map((row) => Number(row.dataset.accountId)),
+      scrolls: el.scrollHeight > el.clientHeight + 1,
+      rowsComplete: rows.every((row) => ['pb-roster-player', 'pb-roster-tank', 'roster-hp', 'roster-hp-pct']
+        .every((test) => (row.querySelector(`[data-test="${test}"]`)?.textContent || '').trim().length > 0)),
+      hpBar: !!el.querySelector('.hpbar'),
+    }
+  }
+  const buttons = [...document.querySelectorAll('.pb-controls > .pb-btn, .pb-controls > * > .pb-btn, .pb-controls .pb-btn')]
+    .filter((b) => b.getClientRects().length && !b.closest('.pb-speed-menu'))
+  const primary = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
+    .map((test) => box(document.querySelector(`[data-test="${test}"]`)))
+  const details = document.querySelector('[data-test="pb-info"]')
+  const transport = document.querySelector('[data-test="pb-transport-slot"]')
+  const inline = document.querySelector('[data-test="pb-inline-area"]')
+  return {
+    width: innerWidth,
+    height: innerHeight,
+    fullscreen: !!document.fullscreenElement,
+    rootClass: root?.className || '',
+    pageOverflowX: document.documentElement.scrollWidth > innerWidth + 1,
+    main: box(main),
+    map: box(document.querySelector('[data-test="pb-map"]')),
+    transport: box(transport),
+    left: lane('left'),
+    right: lane('right'),
+    inline: box(inline),
+    inlineRosterIds: inline ? [...inline.querySelectorAll('[data-test="pb-roster-row"]')].map((r) => Number(r.dataset.accountId)) : [],
+    inlineHasDetails: !!inline?.querySelector('[data-test="pb-info"]'),
+    details: box(details),
+    detailsCount: document.querySelectorAll('[data-test="pb-info"]').length,
+    detailsParentIsMain: !!details && details.parentElement === main,
+    detailsPresentation: details?.dataset.presentation || null,
+    detailsPlayer: document.querySelector('[data-test="pb-sb-player"]')?.textContent?.trim() || null,
+    selectedIds: [...document.querySelectorAll('[data-test="pb-roster-row"][aria-pressed="true"]')].map((r) => Number(r.dataset.accountId)),
+    time: document.querySelector('[data-test="pb-time"]')?.textContent?.trim() || null,
+    friendlyHp: document.querySelector('[data-test="pb-hp-value-friendly"]')?.textContent?.trim() || null,
+    primaryTops: primary.map((b) => (b ? Math.round(b.t) : null)),
+    primaryMinSide: Math.min(...primary.filter(Boolean).map((b) => Math.min(b.w, b.h))),
+    buttonCount: buttons.length,
+  }
+}
+
+/**
+ * 真实指针拖动，把详情的拖动柄从 from 拖到 to。触屏场景走原始 touch 事件（设备仿真开着触屏时
+ * 注入的鼠标事件不会合成 pointer 拖动），桌面走鼠标事件——两者都由浏览器合成 pointer 事件。
+ */
+async function dragPointer(page, from, to, { touch = false } = {}) {
+  const steps = 6
+  const along = (i) => ({ x: from.x + (to.x - from.x) * i / steps, y: from.y + (to.y - from.y) * i / steps })
+  if (touch) {
+    const point = (p) => [{ x: p.x, y: p.y, id: 1, radiusX: 4, radiusY: 4, force: 1 }]
+    await page.client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: point(from) }, page.sessionId)
+    for (let i = 1; i <= steps; i++) {
+      await page.client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: point(along(i)) }, page.sessionId)
+    }
+    await page.client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, page.sessionId)
+    await delay(150)
+    return
+  }
+  const send = (type, point, extra = {}) => page.client.send('Input.dispatchMouseEvent', {
+    type, x: point.x, y: point.y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...extra,
+  }, page.sessionId)
+  await send('mouseMoved', from, { buttons: 0, button: 'none' })
+  await send('mousePressed', from)
+  for (let i = 1; i <= steps; i++) await send('mouseMoved', along(i))
+  await send('mouseReleased', to)
+  await delay(150)
+}
+
+async function dragDetailsTo(page, targetCenterX, touch = false) {
+  const handle = await page.evaluate(`(() => {
+    const h = document.querySelector('[data-test="pb-sb-drag"]')
+    if (!h) return null
+    // 矮横屏的页面里 workspace 可能有一截在首屏外：先像用户一样把拖动柄滚进视口。
+    h.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = h.getBoundingClientRect()
+    const panel = document.querySelector('[data-test="pb-info"]').getBoundingClientRect()
+    return { x: r.left + 12, y: r.top + r.height / 2, panelCenter: panel.left + panel.width / 2, room: innerHeight - (r.top + r.height / 2) - 4 }
+  })()`)
+  if (!handle) return false
+  // 向下拖到底（夹紧会把它停在传输控件之上）；指针本身不离开视口，否则移动事件会被丢掉。
+  await dragPointer(page, handle, { x: handle.x + (targetCenterX - handle.panelCenter), y: handle.y + Math.max(0, handle.room) }, { touch })
+  return true
+}
+
+async function setRosterVisible(page, visible) {
+  return page.evaluate(`(async () => {
+    const wait = () => new Promise((r) => setTimeout(r, 120))
+    const box = document.querySelector('[data-test="pb-show-roster"]')
+    if (!box) {
+      document.querySelector('[data-test="pb-secondary-entry"]')?.click()
+      await wait()
+      document.querySelector('[data-test="pb-rail-display"]')?.click()
+      await wait()
+    }
+    const input = document.querySelector('[data-test="pb-show-roster"]')
+    if (!input) return 'missing'
+    if (input.checked !== ${visible}) input.click()
+    await wait()
+    document.querySelector('[data-test="pb-rail-back"]')?.click()
+    await wait()
+    return 'ok'
+  })()`)
+}
+
+async function runWorkspace2DScenario(env, scenario) {
+  const failures = []
+  const viewport = `${scenario.fullscreen ? 'fullscreen ' : ''}${scenario.width}x${scenario.height}`
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}`)
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
+  await delay(300)
+
+  if (scenario.fullscreen) {
+    const button = await page.evaluate(`(() => {
+      const el = document.querySelector('[data-test="pb-fullscreen"]')
+      el.scrollIntoView({ block: 'center' })
+      const r = el.getBoundingClientRect()
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    })()`)
+    await page.tap({ ...button, touch: scenario.touch })
+    await page.waitFor(() => !!document.fullscreenElement, { timeout: 5000, label: 'document.fullscreenElement' })
+    await delay(400)
+  }
+
+  const g = await page.probe(workspace2dProbe)
+  const result = () => results.push({ name: scenario.name, failures, viewport })
+  check(failures, g.width === scenario.width && g.height === scenario.height,
+    `viewport collapsed: requested ${scenario.width}x${scenario.height}, measured ${g.width}x${g.height}`)
+  if (scenario.fullscreen) check(failures, g.fullscreen, 'fullscreen did not engage')
+  check(failures, !g.pageOverflowX, 'page-level horizontal overflow')
+  // 正方形 Stage：2D 地图元素带的是地图自己的逻辑画框（mapView W/H，如 766×769，底图 / SVG /
+  // 标记共用这一个画框），与 1:1 的差 < 1%——拉成严格 1:1 反而会把地图拉伸变形。
+  const squareish = (b) => b && b.w > 0 && Math.abs(b.w - b.h) <= Math.max(1.5, b.w * 0.01)
+  check(failures, squareish(g.map), `Stage is not square: ${JSON.stringify(g.map)}`)
+  // 主控件行：-5 ▶ +5 1× ⛶ ⚙ 同一行（触屏 44px）
+  if (scenario.touch) {
+    const tops = g.primaryTops.filter((t) => t != null)
+    check(failures, tops.length === 6 && Math.max(...tops) - Math.min(...tops) <= 1,
+      `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
+    check(failures, g.primaryMinSide >= 43.5, `primary control below 44px: ${g.primaryMinSide}`)
+  }
+
+  const team1 = Array.from({ length: 7 }, (_, i) => 1001 + i)
+  const team2 = Array.from({ length: 7 }, (_, i) => 2001 + i)
+  if (scenario.layout === 'portrait') {
+    check(failures, !g.left && !g.right, 'portrait must not render side lanes')
+    check(failures, !!g.inline && !!g.transport && g.inline.t >= g.transport.b - 1, 'portrait roster must flow below the transport')
+    check(failures, g.transport && g.map && g.transport.t >= g.map.b - 1, 'portrait transport must sit below the Stage')
+    check(failures, JSON.stringify(g.inlineRosterIds) === JSON.stringify([...team1, ...team2]),
+      `portrait roster order must be Team 1 then Team 2: ${JSON.stringify(g.inlineRosterIds)}`)
+    check(failures, g.map && Math.abs(g.map.w - scenario.width) <= 2, 'portrait Stage must use the full column width')
+    // 竖屏允许页面纵向延伸（纵向流），不是把名册塞进一个滚动盒
+    const longPage = await page.evaluate('document.documentElement.scrollHeight > innerHeight')
+    check(failures, longPage, 'portrait vertical flow should extend the page (no nested roster scroll box)')
+    // 选中 → inline 详情排在传输控件之后、名册之前；× 只关详情
+    await clickElement(page, '[data-test="pb-roster-row"][data-account-id="2002"]')
+    await delay(200)
+    const opened = await page.probe(workspace2dProbe)
+    check(failures, opened.detailsPresentation === 'inline' && opened.inlineHasDetails,
+      `portrait details must be the inline shared panel: ${opened.detailsPresentation}`)
+    await clickElement(page, '[data-test="pb-sb-close"]')
+    await delay(200)
+    const closed = await page.probe(workspace2dProbe)
+    check(failures, closed.detailsCount === 0, 'details × must close the panel')
+    check(failures, JSON.stringify(closed.selectedIds) === '[2002]', `details × must keep the selection: ${JSON.stringify(closed.selectedIds)}`)
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    return result()
+  }
+
+  // ---- 三段式 ----
+  check(failures, g.rootClass.includes('pb-roster-lanes'), `expected Team 1 | Stage | Team 2 lanes (class=${g.rootClass})`)
+  check(failures, !!g.left && !!g.right, 'both physical lanes must be visible without opening any menu')
+  if (!g.left || !g.right || !g.map) {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    return result()
+  }
+  check(failures, JSON.stringify(g.left.ids) === JSON.stringify(team1), `left lane must be physical Team 1: ${JSON.stringify(g.left.ids)}`)
+  check(failures, JSON.stringify(g.right.ids) === JSON.stringify(team2), `right lane must be physical Team 2: ${JSON.stringify(g.right.ids)}`)
+  check(failures, g.left.box.r <= g.map.l + 1 && g.right.box.l >= g.map.r - 1, 'lanes must flank the square Stage')
+  check(failures, !g.left.scrolls && !g.right.scrolls, 'normal 7v7 lanes must not scroll')
+  check(failures, g.left.rowsComplete && g.right.rowsComplete, 'roster rows must show player / tank / HP / %')
+  check(failures, !g.left.hpBar && !g.right.hpBar, 'roster rows must not render an HP bar')
+  if (g.transport && g.transport.h > 0) {
+    check(failures, g.transport.t >= g.map.b - 1, `transport must sit below the Stage (transport=${JSON.stringify(g.transport)} map=${JSON.stringify(g.map)})`)
+  }
+  if (scenario.recorder === 2) {
+    // HUD 仍是录像者视角：friendly 总血量 = Team 2 的当前总血量
+    check(failures, /\d/.test(g.friendlyHp || ''), 'friendly HUD value missing')
+  }
+
+  // ---- 选择 Team 1 → 浮窗；名册两条都在 ----
+  const time0 = g.time
+  const team1Click = await clickElement(page, '[data-test="pb-team-lane-left"] [data-test="pb-roster-row"][data-account-id="1002"]')
+  check(failures, clicked(team1Click), `Team 1 row not clickable: ${team1Click}`)
+  await delay(250)
+  let s = await page.probe(workspace2dProbe)
+  check(failures, s.detailsCount === 1 && s.detailsPresentation === 'floating', 'selecting must open one floating details panel')
+  check(failures, s.detailsParentIsMain, 'floating details must be a child of the battlefield workspace (.pb-main)')
+  check(failures, !!s.left && !!s.right, 'details must not hide either lane')
+  check(failures, s.details && s.details.l >= s.map.l - 1, 'clicking a left-lane row should place details away from the left lane')
+
+  // ---- 拖到 Team 1 / Stage / Team 2 三个区域 ----
+  // 右 → 中 → 左：最后停在 Team 1 之上，Team 2 车道保持可点（用户的真实流程：开着详情连点 Team 2）。
+  const regions = [['right', (s.right.box.l + s.right.box.r) / 2], ['center', (s.map.l + s.map.r) / 2], ['left', (s.left.box.l + s.left.box.r) / 2]]
+  let lastPos = null
+  for (const [label, x] of regions) {
+    await dragDetailsTo(page, x, scenario.touch)
+    const d = await page.probe(workspace2dProbe)
+    const panel = d.details
+    const centre = panel ? (panel.l + panel.r) / 2 : NaN
+    const target = label === 'left' ? d.left.box : label === 'right' ? d.right.box : d.map
+    check(failures, panel && centre >= target.l - panel.w / 2 && centre <= target.r + panel.w / 2,
+      `details could not be dragged over the ${label} region (panel=${JSON.stringify(panel)})`)
+    check(failures, panel && panel.l >= d.main.l - 0.5 && panel.r <= d.main.r + 0.5 && panel.t >= d.main.t - 0.5,
+      `details left the battlefield workspace after dragging ${label}`)
+    if (d.transport && d.transport.h > 0) {
+      check(failures, panel && panel.b <= d.transport.t + 0.5, `details covers the transport after dragging ${label}`)
+    }
+    lastPos = panel
+  }
+
+  // ---- 点 Team 2 → 同一个窗更新、位置不动、Team 2 车道仍在 ----
+  const team2Click = await clickElement(page, '[data-test="pb-team-lane-right"] [data-test="pb-roster-row"][data-account-id="2003"]')
+  check(failures, clicked(team2Click), `Team 2 row not clickable: ${team2Click}`)
+  await delay(250)
+  s = await page.probe(workspace2dProbe)
+  check(failures, s.detailsCount === 1 && s.detailsPlayer === 'T2_Player_3', `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
+  check(failures, !!s.right, 'Team 2 lane disappeared after selecting a Team 2 vehicle')
+  check(failures, lastPos && s.details && Math.abs(s.details.l - lastPos.l) < 1 && Math.abs(s.details.t - lastPos.t) < 1,
+    'user-dragged details position must survive selection changes')
+
+  // ---- × 只关详情 ----
+  await clickElement(page, '[data-test="pb-sb-close"]')
+  await delay(200)
+  s = await page.probe(workspace2dProbe)
+  check(failures, s.detailsCount === 0, 'details × must close the panel')
+  check(failures, JSON.stringify(s.selectedIds) === '[2003]', `details × must keep the selection: ${JSON.stringify(s.selectedIds)}`)
+  check(failures, s.time === time0, `closing details changed playback time ${time0} -> ${s.time}`)
+  await clickElement(page, '[data-test="pb-team-lane-right"] [data-test="pb-roster-row"][data-account-id="2003"]')
+  await delay(200)
+  s = await page.probe(workspace2dProbe)
+  check(failures, s.detailsCount === 1, 'clicking the selected vehicle again must reopen details')
+
+  // ---- 名册关闭：车道消失，Stage 仍是居中正方形，详情与选中保留 ----
+  if (!scenario.fullscreen) {
+    check(failures, (await setRosterVisible(page, false)) === 'ok', 'roster preference toggle missing')
+    await delay(300)
+    s = await page.probe(workspace2dProbe)
+    check(failures, !s.left && !s.right, 'roster OFF must remove both lanes')
+    check(failures, squareish(s.map), `roster OFF Stage must stay square: ${JSON.stringify(s.map)} main=${JSON.stringify(s.main)}`)
+    check(failures, s.map && s.main && Math.abs((s.map.l + s.map.r) / 2 - (s.main.l + s.main.r) / 2) <= 2, 'roster OFF Stage must stay centred')
+    check(failures, s.detailsCount === 1, 'roster OFF must keep Details open')
+    await setRosterVisible(page, true)
+    await delay(300)
+    s = await page.probe(workspace2dProbe)
+    check(failures, !!s.left && !!s.right && JSON.stringify(s.selectedIds) === '[2003]', 'roster ON must restore lanes with the existing selection')
+  }
+
+  check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  result()
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chrome = findChrome()
@@ -1863,6 +2253,7 @@ try {
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
     { scenario: ROTATION_SCENARIO, run: () => runRotationScenario(env, ROTATION_SCENARIO) },
     ...MOBILE_FULLSCREEN_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileFullscreenScenario(env, scenario) })),
+    ...WORKSPACE_2D_SCENARIOS.map((scenario) => ({ scenario, run: () => runWorkspace2DScenario(env, scenario) })),
   ]
   // 可选场景名过滤（调试单个形态时不必跑满矩阵）。
   const nameFilter = process.argv.slice(2).find((arg) => !arg.startsWith('-'))

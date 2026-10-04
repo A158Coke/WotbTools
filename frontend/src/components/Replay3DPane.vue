@@ -10,7 +10,7 @@
  * 切到别的能力（`active=false`）：场景停帧但不销毁，切回不重新解析、保留 timeline / 相机；
  * 键盘播放快捷键同样只在激活时响应。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Maximize2, Minimize2 } from 'lucide-vue-next'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -22,6 +22,7 @@ import { detectWebGL } from '../scene/webglSupport.js'
 import { uiProfile } from '../composables/useUiProfile.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
+import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
@@ -75,28 +76,49 @@ const displayOpen = ref(false)
  *  后者命中手机全屏横屏）。**不能用纯宽度断点**：手机竖屏 412×915 全屏后是 915×412，
  *  按宽度会突然判成平板、把收起来的 controls 又展开。与 2D 共用同一份 form-factor 契约。 */
 const { isPhone } = usePlaybackPhoneForm()
+/**
+ * 竖屏判据与 2D **同一个**（usePlaybackPortraitViewport）：不能从 `isPhone` 推——手机横屏 /
+ * 全屏横屏也是 `isPhone`，但它们走的是 `Team 1 | 正方形 Stage | Team 2`。
+ *
+ *   竖屏 = 纵向流：HUD / 正方形 Stage / 传输控件 / 详情（inline）/ Team 1 / Team 2，页面可滚
+ *   其它 = 三段式：两侧车道 + 中间正方形 Stage，传输控件在 Stage 之下
+ */
+const { isPortrait } = usePlaybackPortraitViewport()
+const portraitFlow = computed(() => isPortrait.value)
 
 // Selection belongs to the pane. Camera mode and follow target belong to the scene.
+// 选中与详情可见性是**两个状态**：关详情不清选中，选中也从不自动跟随（跟随只由相机动作改变）。
 const selectedEid = ref(null)
-function selectVehicle(eid) {
+const detailsOpen = ref(false)
+/** 浮窗落位偏好：点左车道 → 落右侧，点右车道 → 落左侧，点场景里的车 → 与它相对的一侧。 */
+const detailsSide = ref('right')
+function selectVehicle(eid, event = null) {
   selectedEid.value = eid
-  rosterOpen.value = false
+  detailsOpen.value = true
   displayOpen.value = false
+  const side = detailsSideFor(event)
+  if (side) detailsSide.value = side
+}
+function detailsSideFor(event) {
+  const target = event?.target
+  if (target?.closest?.('.side-left')) return 'right'
+  if (target?.closest?.('.side-right')) return 'left'
+  const root = rootEl.value
+  if (!root || !Number.isFinite(event?.clientX)) return null
+  const rect = root.getBoundingClientRect()
+  return event.clientX > rect.left + rect.width / 2 ? 'left' : 'right'
+}
+/** 详情 ×：只关详情。选中（名册高亮）、跟随、相机、时间轴、倍速与名册都不动。 */
+function closeDetails() {
+  detailsOpen.value = false
 }
 function chooseCamera(mode) {
   if (mode === 'follow' && selectedEid.value != null) sceneApi?.setFollow(selectedEid.value)
   else sceneApi?.setCam(mode)
 }
-function openRoster() {
-  if (!uiPrefs.showRoster) return
-  rosterOpen.value = !rosterOpen.value
-  displayOpen.value = false
-  if (rosterOpen.value) nextTick(() => rootEl.value?.scrollIntoView?.({ block: 'nearest' }))
-}
-
 function setUiHidden(hidden) {
   uiHidden.value = hidden
-  if (hidden) { displayOpen.value = false; rosterOpen.value = false }
+  if (hidden) displayOpen.value = false
 }
 function toggleUiHidden() { setUiHidden(!uiHidden.value) }
 /**
@@ -126,11 +148,6 @@ const showBaseStatus = computed(() => !uiHidden.value && uiPrefs.showBaseStatus)
 const store = createPlaybackStore()
 const stage = ref(null)
 const labelOverlay = ref(null)
-/** 审计 3D-15：手机上两队名单默认收起（原来两块 240px 面板互相重叠、盖住场景），按需打开 */
-const rosterOpen = ref(false)
-const rosterConstrained = ref(false)
-const rosterTransient = computed(() => isPhone.value || rosterConstrained.value)
-watch(() => uiPrefs.showRoster, (visible) => { if (!visible) rosterOpen.value = false })
 let sceneApi = null
 const transport = usePlaybackTransport({
   isPlaying: () => store.playing,
@@ -332,7 +349,7 @@ function killfeedText(kf) {
 function destroyScene() {
   abortParse()   // 场景销毁 = 解析任务一并撤下（在途解析不得再占 Worker 队列）
   selectedEid.value = null
-  rosterOpen.value = false
+  detailsOpen.value = false
   if (!sceneApi) return
   sceneApi.destroy?.()
   sceneApi = null
@@ -391,7 +408,7 @@ function reconcileScene() {
       abortParse()
       loadedFile = null
       selectedEid.value = null
-      rosterOpen.value = false
+      detailsOpen.value = false
       displayOpen.value = false
     }
     return
@@ -403,60 +420,24 @@ function reconcileScene() {
 }
 
 /**
- * 阵容车道（review blocker 修复）：己方 / 敌方各占一条**侧边车道**，未知阵营归左车道、
- * 在车道内常驻底部（flex: none，不被队伍名单滚出可视区）——三条名单都不与中央 HUD 列
- * 或底部控制条共用车道。车道上下界**不写死**：ResizeObserver 实测 .hud / .controls 的
- * 高度写入 --pb-hud-h / --pb-controls-h（.pb-root 上有兜底默认），HUD 长高（基地条 +
- * 击杀流）或控制条换行（窄屏）时车道自动让位。
+ * 车道与 HUD / 传输控件的定界：ResizeObserver 实测 .hud / .controls 的高度写入
+ * --pb-hud-h / --pb-controls-h（.pb-root 上有兜底默认），HUD 长高（基地条 + 击杀流）或
+ * 控制条换行时，Stage 下方为传输控件让出的高度随之变化。
+ *
+ * 名册不再有「放不下就改成临时名册面」的分支：三段式里两条车道吃满整个根高度（传输控件
+ * 只占中间一栏），紧凑行让正常 7v7 不需要滚动条；竖屏则是纵向流，页面本身可以滚。
  */
 const rootEl = ref(null)
 const hudEl = ref(null)
 const controlsEl = ref(null)
 let laneBoundsObserver = null
-let controlsReservedHeight = 0
-/**
- * 车道的纵向定界：`--pb-hud-h` / `--pb-controls-h` 实测写入（车道据此让位）；
- * `rosterConstrained` 决定常驻车道还是「临时名册面」；`--pb-roster-min-h` 是常驻车道
- * 放得下名册时 `.pb-root` 需要的最小高度。
- *
- * ⚠️ 需要的高度按**结构估算**（每个队占几行 × 行高 + 组头），不要去量名册的
- * `scrollHeight`：那是「当前布局里被裁掉多少」，本身依赖 `--pb-roster-min-h` 的上一轮取值，
- * 写回去会震荡（实测同一份代码时过时不过）。
- * ⚠️ 两条车道各装几个队：左车道 = team1 + unknown，右车道 = team2（与模板一致）。
- * 行高取 `--hit-min`（桌面 24px、触屏 44px）与两行文本的较大者。
- * ⚠️ 判定用「视口留给这份根元素多少」（`innerHeight − PAGE_CHROME_RESERVE`），不要用
- * `.pb-root` 当前的高度：那个高度正是本函数要写的 `--pb-roster-min-h` 造出来的，拿它当基准
- * 等于自指。`PAGE_CHROME_RESERVE` 是根元素上方那一段页面外壳的**实测值**
- * （workspace 分栏头 156px + 一点余量）：它决定 1024×768 与 1600×900 分别落在门槛两侧 ——
- * 前者 16 个槽位的名册放不下（走临时名册面）、后者放得下（走常驻车道），
- * 这正是 `roster-geometry-*` 两条场景要卡的位置。
- */
-const ROOT_HEIGHT_CAP = 720
-const PAGE_CHROME_RESERVE = 168
 function measurePresentationBounds() {
   const root = rootEl.value
   if (!root) return
   const hudHeight = Math.ceil(hudEl.value?.offsetHeight ?? 0)
-  if (controlsEl.value) controlsReservedHeight = Math.ceil(controlsEl.value.offsetHeight)
-  const controlsHeight = controlsEl.value ? controlsReservedHeight : rosterOpen.value ? controlsReservedHeight : 0
+  const controlsHeight = Math.ceil(controlsEl.value?.offsetHeight ?? 0)
   root.style.setProperty('--pb-hud-h', `${hudHeight}px`)
   root.style.setProperty('--pb-controls-h', `${controlsHeight}px`)
-  const styles = getComputedStyle(root)
-  const rowHeight = Math.max(parseFloat(styles.getPropertyValue('--hit-min')) || 24,
-    2 * (parseFloat(styles.getPropertyValue('--line-height-caption')) || 16))
-  const groupHeight = (count) => count ? count * rowHeight + 32 : 0
-  /** 一条车道的占高：左车道 = team1 + unknown，右车道 = team2（与模板的分组一致）。 */
-  const laneHeight = (group, unknownCount) => groupHeight(group) + groupHeight(unknownCount)
-    + (unknownCount ? 8 : 0)
-  const rosterHeight = Math.max(
-    laneHeight(store.roster.team1.length, store.roster.unknown.length),
-    laneHeight(store.roster.team2.length, store.roster.unknown.length),
-  )
-  const requiredHeight = rosterHeight + hudHeight + controlsHeight + 40
-  const available = Math.max(320, Math.min(ROOT_HEIGHT_CAP, innerHeight - PAGE_CHROME_RESERVE))
-  rosterConstrained.value = requiredHeight > available
-  root.style.setProperty('--pb-roster-min-h', !isPhone.value && !rosterConstrained.value && showRoster.value
-    ? `${requiredHeight}px` : '0px')
 }
 function observeLaneBounds() {
   if (typeof ResizeObserver !== 'function') return
@@ -468,8 +449,6 @@ watch([controlsEl, hudEl], (elements) => {
   for (const el of elements) if (el && laneBoundsObserver) laneBoundsObserver.observe(el)
   measurePresentationBounds()
 }, { flush: 'post' })
-watch([isPhone, showRoster, () => store.roster.team1.length, () => store.roster.team2.length,
-  () => store.roster.unknown.length], measurePresentationBounds, { flush: 'post' })
 
 /**
  * 全屏（与 2D 同一套产品语义，见 composables/usePlaybackFullscreen）：
@@ -489,7 +468,14 @@ const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation }
  *  store 引用与车道 DOM，不改变任何行为）。browser 几何门禁据此注入 roster / killfeed，
  *  在真实 Chrome 里断言车道的非交叉几何。 */
 if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) {
-  window.__pbPane = { store, get selectedEid() { return selectedEid.value }, get labelOverlay() { return labelOverlay.value } }
+  window.__pbPane = {
+    store,
+    get selectedEid() { return selectedEid.value },
+    get detailsOpen() { return detailsOpen.value },
+    get labelOverlay() { return labelOverlay.value },
+    /** 场景实例身份：全屏 / 旋转前后必须是同一个（门禁据此断言「没有重建场景」）。 */
+    get sceneApi() { return sceneApi },
+  }
 }
 
 /**
@@ -565,13 +551,20 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <Scene3DStatus v-else-if="!webgl.supported" mode="unsupported" :webgl-status="webgl.status" />
     <p v-else-if="blockedReason" class="pb-note" data-testid="replay3d-blocked">{{ blockedReason }}</p>
     <p v-else-if="!file" class="pb-note" data-testid="replay3d-empty">{{ $t('agentReplay.no_file') }}</p>
-    <!-- `roster-side` = 宽档的三列骨架 `[Team1] [Stage] [Team2]`（2D 的 `.pb-team-lane` 是
-         同一契约的另一个实现）。它必须与 `.pb-root.roster-side` 的样式同时存在：样式表在，
-         类名没绑上去，车道就退回 `.team-lane` 的绝对定位，名册的下半截会溢出到传输控件上
-         （实测 1600×900 的 `team-unknown overlaps controls`）。 -->
-    <div v-else class="pb-root" ref="rootEl" :class="{ 'phone-form': isPhone, 'roster-transient': rosterTransient, 'roster-side': showRoster && !rosterTransient }">
-      <div class="pb-stage"><div ref="stage" class="scene"></div></div>
-      <PlaybackVehicleLabels3D ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :hidden="uiHidden || !store.hasData" />
+    <!-- 两种呈现（与 2D 同一个契约）：
+           `roster-side`  = 三段式 `[Team1] [正方形 Stage] [Team2]`，传输控件在 Stage 之下；
+                            宽档、平板、手机横屏、手机全屏横屏都是这一条；
+           `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
+         名册关闭时两者都没有车道，Stage 仍是居中的正方形。 -->
+    <div v-else class="pb-root" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow }" data-testid="replay3d-root">
+      <!-- 名牌覆盖层与 canvas 共用**同一个正方形盒子**：场景内核按 canvas（.scene）尺寸算锚点，
+           覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
+      <div class="pb-stage" data-testid="replay3d-stage">
+        <div class="stage-square">
+          <div ref="stage" class="scene"></div>
+          <PlaybackVehicleLabels3D ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :hidden="uiHidden || !store.hasData" />
+        </div>
+      </div>
 
       <!-- 顶部 HUD 列：顶栏 → 基地状态条 → 击杀流。整列在没有任何子块可显示时消失
            （不是留一个空 .hud 占位——那会让"隐藏全部 UI"看起来没生效，也让车道定界白留高度）。 -->
@@ -607,35 +600,33 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         </div>
       </div>
 
-      <!-- 详情是**整个 3D workspace 顶层**的可拖动浮窗（与 2D 同一个组件、同一份位置所有权）：
-           它是 .pb-root 的直接子级，不属于 Stage、也不属于任何一条名册车道。
-           边界受保护：下缘不得越过传输控件（drag-bounds），位置永不越出 workspace。 -->
+      <!-- 详情是**整个 3D 战场 workspace（.pb-root）顶层**的可拖动浮窗（与 2D 同一个组件、
+           同一份位置所有权）：它是 .pb-root 的直接子级，不属于 Stage、也不属于任何一条名册
+           车道，可以拖到 Team 1 / Stage / Team 2 任意一栏之上。下缘不得越过传输控件
+           （drag-bounds）。竖屏换成纵向流里的 inline 内容块（同一个组件）。
+           与名册**互不影响**：名册开着时详情照样在，换选 Team 2 的车只是更新同一个窗。 -->
       <VehicleDetailsPanel
-        v-if="!uiHidden && selectedRow && !(rosterTransient && rosterOpen)"
+        v-if="!uiHidden && detailsOpen && selectedRow"
         class="vehicle-details" data-testid="replay3d-details"
-        :selected-state="selectedDetailState" :health="selectedHealth" :phone-form="rosterTransient"
+        :presentation="portraitFlow ? 'inline' : 'floating'"
+        :selected-state="selectedDetailState" :health="selectedHealth" :phone-form="portraitFlow"
         :current-time="store.time" :format-clock="detailClock"
-        :drag-host="rootEl" :drag-bounds="controlsEl" initial-side="left"
-        @close="selectedEid = null"
+        :drag-host="rootEl" :drag-bounds="controlsEl"
+        :initial-side="detailsSide" :selection-key="selectedEid"
+        @close="closeDetails"
       />
 
-      <!-- 阵容车道：左右两条侧边车道（不占中央 HUD 车道）；未知阵营归左车道、常驻车道
-           底部（不被队伍名单滚出可视区），与居中的 HUD 列 / 底部控制条互不遮挡。
-           左侧恒为**物理 Team 1**、右侧恒为 **Team 2**：位置、标题、颜色都不随录像者
-           属于哪一队改变（不在这里做 friendly/enemy 映射）。
-           行的渲染与 2D 共用同一个 `PlaybackRoster`——两个渲染器只有分组事实源不同，
-           行的信息契约（玩家 / 车型 / 当前 HP / 百分比 / 阵亡）与选中语义是同一条。 -->
-      <div v-if="store.hasData && showRoster" :hidden="rosterTransient && !rosterOpen"
-        class="roster-surface" :class="{ transient: rosterTransient }" data-testid="roster-surface">
-        <div v-if="rosterTransient" class="roster-surface-header">
-          <strong>{{ t('agentReplay.roster') }}</strong>
-          <button type="button" class="tool-btn" data-testid="roster-close" :aria-label="t('app.close')" @click="rosterOpen = false">×</button>
+      <!-- 阵容车道：左侧恒为**物理 Team 1**（未知阵营排在它下面）、右侧恒为 **Team 2**：
+           位置、标题、颜色都不随录像者属于哪一队改变（不在这里做 friendly/enemy 映射）。
+           三段式下两条车道吃满根高度、不与中间一栏的 HUD / 传输控件交叉；竖屏下它们是
+           纵向流里传输控件（与详情）之后的两段。没有「临时名册面」：名册的唯一开关是
+           uiPrefs.showRoster。行的渲染与 2D 共用同一个 `PlaybackRoster`。 -->
+      <div v-if="store.hasData && showRoster" class="roster-surface" data-testid="roster-surface">
+        <div class="team-lane side-left" data-testid="replay3d-lane-left">
+          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="{ team1: rosterGroups.team1, unknown: rosterGroups.unknown }" :selected-id="selectedEid" @select="selectVehicle" />
         </div>
-        <div class="team-lane side-left">
-          <PlaybackRoster variant="3d" :teams="{ team1: rosterGroups.team1, unknown: rosterGroups.unknown }" :selected-id="selectedEid" @select="selectVehicle" />
-        </div>
-        <div class="team-lane side-right">
-          <PlaybackRoster variant="3d" :teams="{ team2: rosterGroups.team2 }" :selected-id="selectedEid" @select="selectVehicle" />
+        <div class="team-lane side-right" data-testid="replay3d-lane-right">
+          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="{ team2: rosterGroups.team2 }" :selected-id="selectedEid" @select="selectVehicle" />
         </div>
       </div>
 
@@ -643,7 +634,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
       <!-- 隐藏全部 UI：连底部播放控件一起让位（这是「只看战场」的语义）；
            `H` 键或右上角常驻按钮随时恢复。resize 观测对 null 元素是安全的（watch(controlsEl)）。 -->
-      <div v-if="store.hasData && !uiHidden && !(rosterTransient && rosterOpen)" ref="controlsEl" class="controls panel">
+      <div v-if="store.hasData && !uiHidden" ref="controlsEl" class="controls panel">
         <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
         <PlaybackTransport
           :playing="store.playing"
@@ -684,10 +675,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         </PlaybackTransport>
         <!-- 宽档保留相机工具条；手机只在传输行保留 Display 入口，二级操作在面板中。 -->
         <div v-if="!isPhone" class="toolbar" data-testid="replay3d-toolbar">
-          <button
-            v-if="rosterTransient && !isPhone && showRoster" type="button" class="tool-btn roster-toggle" :aria-pressed="rosterOpen"
-            data-testid="roster-toggle" @click="openRoster()"
-          >{{ t('agentReplay.roster') }}</button>
           <SegmentedControl
             :model-value="store.cam"
             :options="CAMERAS"
@@ -711,9 +698,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
            占掉半个战场，阵容车道随之越界（矮窗口实测）。浮动面板 + 内部滚动是稳定的做法：
            高度上限由 measureDisplayPanel 实测写进 --pb-display-panel-h，宽度按断点由 CSS 给。 -->
       <div class="display-panel panel" data-testid="display-panel" :hidden="uiHidden || !displayOpen">
-        <!-- 紧凑档：相机 / 阵容 / 画质从常驻工具条移到这里（同一份 store.cam / rosterOpen /
-             uiPrefs / store.glbOn，没有第二套状态）。任务书要求的五个高频动作之外的东西，
-             在手机上都不该永久占着战场高度。 -->
+        <!-- 紧凑档：相机 / 画质从常驻工具条移到这里（同一份 store.cam / uiPrefs / store.glbOn，
+             没有第二套状态）。高频动作之外的东西，在手机上都不该永久占着战场高度。
+             名册没有单独的「打开名册」入口：它的唯一开关是下面的 disp-roster 呈现偏好。 -->
         <template v-if="isPhone">
           <p class="dp-title">{{ t('agentReplay.camera') }}</p>
           <SegmentedControl
@@ -724,10 +711,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             @update:model-value="chooseCamera($event)"
           />
         </template>
-          <button
-            v-if="rosterTransient && showRoster" type="button" class="tool-btn dp-roster" :aria-pressed="rosterOpen"
-            data-testid="roster-toggle-compact" @click="openRoster()"
-          >{{ t('agentReplay.roster') }}</button>
         <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
@@ -807,53 +790,64 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .pb-note { margin: var(--space-4) 0; color: var(--color-text-secondary); font: var(--type-body); }
 
 /**
- * 三列工作区骨架（2D 与 3D 同一布局契约）：`[Team1] [Stage] [Team2]`。
+ * 三列工作区骨架（2D 与 3D 同一布局契约）：`[Team1] [正方形 Stage] [Team2]`。
  *
  * 战场是**正方形**：横屏视口里它只能受高度约束，两侧于是天然空出横向空间；那些空间就是
  * 名册的槽位——不把正方形拉成宽矩形去填满视口。名册关闭时不带 `roster-side` 类，
  * 侧槽整列不存在，Stage 依然居中、依然是正方形。
+ *
+ * 传输控件与 HUD 只占**中间一栏**（Stage 之上 / 之下），两条车道因此吃满整个根高度——
+ * 手机横屏（740×360、844×390）与全屏横屏下，正常 7v7 的紧凑行不需要车道滚动条。
  */
 .pb-root.roster-side {
   display: grid;
   grid-template-columns: var(--pb-lane-w) minmax(0, 1fr) var(--pb-lane-w);
   align-items: stretch;
   column-gap: var(--space-2);
-  padding-inline: var(--space-2);
-  padding-block-end: calc(var(--pb-controls-h) + var(--space-2) + var(--space-3));
+  padding: var(--space-2);
 }
-.pb-root.roster-side > .pb-stage { grid-column: 2; }
+.pb-root.roster-side > .pb-stage {
+  grid-column: 2;
+  /* Stage 之下让出传输控件的高度（只在中间一栏让，车道不受影响）。 */
+  padding-block-end: calc(var(--pb-controls-h) + var(--space-2));
+}
 .pb-root.roster-side .roster-surface {
-  /* 宽档下这条表壳**不参与布局**：`roster-side` 的三列是 `.pb-root` 自己的网格，
-     两条车道必须直接落在它的第 1 / 第 3 列里。让表壳留在流里（哪怕 `position: static`），
-     它就成了网格的**唯一**内容项，被放进第 1 列（240px），两条车道只能在这个 240px 里
-     上下叠着排——实测右车道的 y 落到 753、名册下半截溢到传输控件上。
-     它本来也不画任何东西，`display: contents` 才是它真实的层级语义。 */
+  /* 宽档下这条表壳**不参与布局**：两条车道必须直接落在根网格的第 1 / 第 3 列里。
+     让表壳留在流里，它就成了网格的唯一内容项、被放进第 1 列，两条车道只能在 240px 里
+     上下叠着排（实测名册下半截溢到传输控件上）。`display: contents` 才是它的层级语义。 */
   display: contents;
-  position: static;
-  inset: auto;
 }
 .pb-root.roster-side .team-lane {
   position: static;
   inset: auto;
   width: auto;
-  /* 车道填满网格行：名册内容比行矮时它不该塌成内容高度，
-     否则车道底部不再是「传输控件上缘」这个权威下界。 */
+  min-height: 0;
+  /* 车道填满网格行（= 根高度）。正常 7v7 的紧凑行放得下；只有病态数据（远超 7v7）才会
+     在车道内出现滚动——那是例外数据的安全兜底，不是常规呈现。 */
   align-self: stretch;
+  overflow-y: auto;
 }
-.pb-root.roster-side .side-left { grid-column: 1; }
-.pb-root.roster-side .side-right { grid-column: 3; }
+.pb-root.roster-side .side-left { grid-column: 1; grid-row: 1; }
+.pb-root.roster-side .side-right { grid-column: 3; grid-row: 1; }
+/* HUD 与传输控件只占中间一栏：不与两侧车道交叉。 */
+.pb-root.roster-side .hud,
+.pb-root.roster-side .controls {
+  position: absolute;
+  left: calc(var(--space-2) + var(--pb-lane-w) + var(--space-2));
+  right: calc(var(--space-2) + var(--pb-lane-w) + var(--space-2));
+  width: auto;
+  transform: none;
+}
 
 .pb-root {
   position: relative;
   scroll-margin-block-start: calc(var(--header-h) + var(--space-3));
   isolation: isolate;               /* 局部层叠上下文：HUD 只用 --pb-z-* 的 1–9 层 */
-  /* 阵容车道定界变量的兜底值：RO 就位后由 observeLaneBounds 写入实测值。
-     必须定义在 .pb-root 上——写在 .team-lane 上会把根元素的实测值遮蔽掉。 */
+  /* HUD / 传输控件高度的兜底值：RO 就位后由 observeLaneBounds 写入实测值。
+     必须定义在 .pb-root 上——写在子元素上会把根元素的实测值遮蔽掉。 */
   --pb-hud-h: 48px;
   --pb-controls-h: 130px;
-  --pb-roster-min-h: 0px;
   height: clamp(320px, 62dvh, 720px);
-  min-height: var(--pb-roster-min-h, 0px);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
@@ -871,10 +865,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
  * 那些空间就是 Team 1 / Team 2 名册的槽位——不把正方形拉成宽矩形去填满视口。
  *
  *   · `.pb-root` 是三列网格：`[Team1] [Stage] [Team2]`；
- *   · 侧槽宽度受 `--pb-lane-w` 控制，名册关闭时整列塌成 0（Stage 仍居中、仍是正方形）；
- *   · `.pb-stage` 是正方形盒子：`aspect-ratio: 1`，在可用空间里取最大正方形并居中。
+ *   · 侧槽宽度受 `--pb-lane-w` 控制，名册关闭时整列不存在（Stage 仍居中、仍是正方形）；
+ *   · `.pb-stage` 里的 `.stage-square` 是正方形盒子：在可用空间里取最大正方形并居中；
+ *     canvas（.scene）与名牌覆盖层共用这个盒子，因此两者同原点、同尺寸。
  *
- * 竖屏（手机）走另一套：见 `.phone-form` 的纵向流（Stage → Transport → 名册/详情）。
+ * 竖屏（手机）走另一套：见 `.portrait-flow` 的纵向流（HUD → Stage → Transport → 详情 → 名册）。
  */
 .pb-root { --pb-lane-w: 240px; }
 .pb-stage {
@@ -882,14 +877,20 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   place-items: center;
   min-width: 0; min-height: 0;
 }
-.pb-stage > .scene { position: relative; inset: auto; }
 /* 正方形：取「可用宽 / 可用高」的较小边，永远不拉伸成矩形 */
-.pb-stage > .scene {
+.stage-square {
+  position: relative;
   aspect-ratio: 1 / 1;
   inline-size: min(100%, 100cqh);
   block-size: auto;
 }
+.stage-square > .scene { position: absolute; inset: 0; }
 .pb-stage { container-type: size; }
+/* 名册关闭（没有三列骨架）时 Stage 自己占满根并居中正方形，传输控件照样在它之下。 */
+.pb-root:not(.roster-side):not(.portrait-flow) > .pb-stage {
+  position: absolute;
+  inset: var(--space-2) var(--space-2) calc(var(--pb-controls-h) + var(--space-3));
+}
 
 /* HUD 面板外观（位置交给各自的容器规则，不再默认绝对定位） */
 .panel {
@@ -950,35 +951,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   pointer-events: none;
 }
 
-/* Persistent lanes never scroll. Insufficient space switches to one transient
-   roster surface, with a single document flow for all teams and a dismiss header.
-   车道只负责**位置与宽度**：行的布局与视觉由共用的 PlaybackRoster 独占（见该组件）。 */
-.roster-surface { pointer-events: none; }
-.team-lane {
-  position: absolute; display: flex; flex-direction: column; gap: var(--space-2);
-  top: calc(var(--space-2) + var(--pb-hud-h) + var(--space-3));
-  bottom: calc(var(--pb-controls-h) + var(--space-2) + var(--space-3));
-  z-index: var(--pb-z-hud); width: 240px; pointer-events: none;
-  /* 名册容器必须能被压到车道高度以内并自己滚动：车道是有界的（top/bottom 都钉住），
-     但如果名册不肯收缩，flex column 里的它会溢出车道的下边界、压到底部传输控件上
-     （实测 `team-unknown overlaps controls`）。 */
-  overflow: hidden;
-}
-.side-left { position: absolute; left: var(--space-2); }
-.side-right { position: absolute; right: var(--space-2); }
-.roster-surface.transient {
-  position: absolute; inset: var(--space-2); z-index: var(--pb-z-modal);
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-content: start; align-items: start; gap: var(--space-2);
-  overflow-y: auto; background: var(--color-surface-1); pointer-events: auto;
-  border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md);
-  padding: var(--space-2); padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
-}
-.roster-surface[hidden] { display: none; }
-.roster-surface-header { grid-column: 1 / -1; position: sticky; top: 0; z-index: var(--pb-z-hud);
-  display: flex; justify-content: space-between; align-items: center; background: var(--color-surface-1); }
-.transient .team-lane { position: static; width: auto; min-width: 0; }
-.transient .team { min-width: 0; }
+/* 名册车道只负责**位置与宽度**：行的布局与视觉由共用的 PlaybackRoster 独占（见该组件）。
+   三段式与竖屏纵向流分别在 `.roster-side` / `.portrait-flow` 下给出位置。 */
+.team-lane { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 
 /* Details placement belongs to the pane; the surface itself is the shared component, which now
    owns its own workspace-level position (drag + clamp). No absolute/transform rules here:
@@ -1087,17 +1062,52 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   .tool-btn:hover { color: var(--color-text-primary); }
 }
 
-.phone-form { --pb-display-panel-w: calc(100% - var(--space-4)); height: clamp(220px, 62dvh, 720px); }
+.phone-form { --pb-display-panel-w: calc(100% - var(--space-4)); }
+/* 手机横屏（非竖屏）：根高度跟着视口走（不是 62dvh 的固定比例），两侧车道才放得下 7v7；
+   全屏时浏览器把根撑满屏幕，同一套三段式照常生效。车道收窄一点，把宽度留给正方形。 */
+.phone-form:not(.portrait-flow) { --pb-lane-w: 184px; height: clamp(220px, calc(100dvh - var(--space-4)), 720px); }
 .phone-form .display-panel { inset-inline-start: var(--space-2); inset-inline-end: var(--space-2); }
 .phone-form .topbar { gap: var(--space-2); padding: 0 var(--space-3); }
-.phone-form .controls { position: absolute; gap: var(--space-1); width: calc(100% - var(--space-2)); padding: var(--space-1) var(--space-2);
+.phone-form .topbar .hpbar { width: var(--space-8); }
+.phone-form .topbar { max-inline-size: 100%; overflow: hidden; }
+.phone-form .controls { position: absolute; gap: var(--space-1); padding: var(--space-1) var(--space-2);
   bottom: calc(var(--space-1) + env(safe-area-inset-bottom, 0px)); }
+.phone-form:not(.roster-side) .controls { width: calc(100% - var(--space-2)); }
 .phone-form .pb-control-label { display: none; }
 .phone-form .controls :deep(.pb-controls) { justify-content: center; }
-.phone-form .controls :deep(.pb-time) { flex-basis: 100%; margin: 0; text-align: center; order: 20; }
 .phone-form .controls :deep(.pb-play-unavailable) { flex-basis: 100%; text-align: center; order: 21; }
 .phone-form .display-panel { inset-block-end: calc(var(--space-2) + env(safe-area-inset-bottom, 0px)); }
-.phone-form .dp-roster, .phone-form .dp-close, .phone-form .dp-camera { inline-size: 100%; }
+.phone-form .dp-close, .phone-form .dp-camera { inline-size: 100%; }
+
+/**
+ * 手机竖屏：纵向流（与 2D 同一个契约）。
+ *   HUD → 正方形 Stage（用满列宽）→ 传输控件 →（显示面板）→ 详情 inline → Team 1 → Team 2
+ * 竖屏利用的是**纵向**空间：根高度由内容决定，页面自己滚；没有两条各自滚动的队伍盒子，
+ * 也没有盖在场景上的名册浮层。
+ */
+.pb-root.portrait-flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: auto;
+  overflow: visible;
+  padding: var(--space-2);
+}
+.portrait-flow > .hud { position: static; order: 1; }
+.portrait-flow > .pb-stage { order: 2; container-type: normal; }
+.portrait-flow .stage-square { inline-size: 100%; }
+.portrait-flow > .controls {
+  position: static;
+  order: 3;
+  width: 100%;
+  transform: none;
+}
+.portrait-flow .controls :deep(.pb-time) { flex-basis: 100%; margin: 0; text-align: center; order: 20; }
+.portrait-flow > .display-panel { position: static; order: 4; inline-size: 100%; max-block-size: none; }
+.portrait-flow > .vehicle-details { order: 5; }
+.portrait-flow > .roster-surface { order: 6; display: grid; gap: var(--space-2); }
+.portrait-flow .team-lane { position: static; width: auto; }
+.portrait-flow > .banner { position: absolute; top: var(--space-12); }
 
 /* 触屏：控件点击区域抬到 --hit-min（44px），布局不动 */
 @media (pointer: coarse) {

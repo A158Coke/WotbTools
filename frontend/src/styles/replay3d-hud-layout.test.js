@@ -62,17 +62,17 @@ describe('Replay3DPane HUD 定位契约', () => {
     expect(controls.body).toContain('z-index: var(--pb-z-hud)')
   })
 
-  it('D) 其余 HUD 区域各自声明定位（阵容车道 / hud / banner）', () => {
-    for (const selector of ['.team-lane', '.hud', '.banner']) {
+  it('D) HUD / banner 各自声明定位；三段式下 HUD 与传输控件只占中间一栏', () => {
+    for (const selector of ['.hud', '.banner']) {
       expect(ruleFor(selector).body, `${selector} 缺少 position`).toContain('position: absolute')
     }
-    expect(ruleFor('.side-left').body, '.side-left 缺少 left').toContain('left:')
-    expect(ruleFor('.side-right').body, '.side-right 缺少 right').toContain('right:')
-    // 车道上下界必须来自实测几何（RO 写入的 CSS 变量），不允许写死像素 top / 固定 reserve：
-    // HUD 长高（基地条 + 击杀流）或控制条换行（窄屏）时车道必须自动让位
-    const lane = ruleFor('.team-lane').body
-    expect(lane).toContain('top: calc(var(--space-2) + var(--pb-hud-h)')
-    expect(lane).toContain('bottom: calc(var(--pb-controls-h)')
+    // 两侧车道把中间一栏让给 HUD 与传输控件：左右偏移 = 外边距 + 车道宽 + 列间距
+    const centre = ruleFor('.pb-root.roster-side .controls').body
+    expect(centre).toContain('position: absolute')
+    expect(centre).toContain('left: calc(var(--space-2) + var(--pb-lane-w) + var(--space-2))')
+    expect(centre).toContain('right: calc(var(--space-2) + var(--pb-lane-w) + var(--space-2))')
+    // Stage 之下为传输控件让出的高度来自实测（RO 写入 --pb-controls-h），不写死像素
+    expect(ruleFor('.pb-root.roster-side > .pb-stage').body).toContain('var(--pb-controls-h)')
   })
 
   it('E) 场景画布铺满并建立局部层叠上下文', () => {
@@ -87,32 +87,29 @@ describe('Replay3DPane HUD 定位契约', () => {
    * （review blocker）；这类改动不会让行为测试失败，所以在这里锁结构。真实几何安全由
    * browser-workspace-interaction 的 roster 几何场景在真实 Chrome 里证明，这里只是 smoke。
    */
-  it('F) 阵容是左右两条侧边车道；unknown 不在中央车道；空间不足时使用可关闭的整块名册', () => {
+  it('F) 阵容是左右两条物理车道（网格第 1 / 第 3 列）；没有临时名册面；竖屏走纵向流', () => {
     const all = rules()
     const bodiesOf = (selector) => all.filter((r) => r.selector === selector).map((r) => r.body).join(' ')
-    // 桌面：两条车道各自贴边（side-left 只声明 left、side-right 只声明 right，互不覆盖）
-    expect(bodiesOf('.side-left')).toContain('left: var(--space-2)')
-    expect(bodiesOf('.side-left')).not.toContain('right:')
-    expect(bodiesOf('.side-right')).toContain('right: var(--space-2)')
-    expect(bodiesOf('.side-right')).not.toContain('left:')
+    // 三段式：Team 1 恒在第 1 列、Team 2 恒在第 3 列（与录像者属于哪队无关）
+    expect(bodiesOf('.pb-root.roster-side .side-left')).toContain('grid-column: 1')
+    expect(bodiesOf('.pb-root.roster-side .side-right')).toContain('grid-column: 3')
+    expect(bodiesOf('.pb-root.roster-side')).toContain('grid-template-columns: var(--pb-lane-w) minmax(0, 1fr) var(--pb-lane-w)')
     // unknown 不在中央车道：任何规则不得把它居中（left: 50% / translateX(-50%)）
     const unknown = all.filter((r) => r.selector.includes('.team-unknown')).map((r) => r.body).join(' ')
     expect(unknown).not.toContain('left: 50%')
     expect(unknown).not.toContain('translateX(-50%)')
-    // 不再有把两队装进一个容器的 .side 布局（旧通栏结构）
+    // 不再有把两队装进一个容器的 .side 布局（旧通栏结构），也不再有临时名册面
     expect(all.some((r) => r.selector === '.side' || r.selector.endsWith(' .side'))).toBe(false)
-    // 空间不足时整体进入普通网格流；车道/队伍不再各自滚动或占用战场侧边。
-    expect(bodiesOf('.roster-surface.transient')).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)')
-    expect(bodiesOf('.transient .team-lane')).toContain('position: static')
-    // 车道与队伍都不得**自己滚动**（审计 BZ-13：名册里不允许嵌套滚动条）。
-    // 车道可以 `overflow: hidden` 把越界内容裁掉——那正是「有界车道」的实现方式，
-    // 与「车道变成滚动容器」是两件事。
+    expect(css).not.toContain('.transient')
+    expect(css).not.toContain('roster-surface-header')
+    // 竖屏纵向流：车道是流内内容块，不是绝对定位的侧栏
+    expect(bodiesOf('.portrait-flow .team-lane')).toContain('position: static')
+    expect(bodiesOf('.pb-root.portrait-flow')).toContain('flex-direction: column')
+    // 车道与队伍的**基础**规则都不是滚动盒（审计 BZ-13：名册里不允许嵌套滚动条）
     for (const selector of ['.team-lane', '.team']) {
       const overflow = /overflow(-y)?:\s*([a-z]+)/.exec(bodiesOf(selector))
       expect(overflow?.[2] ?? 'visible').not.toMatch(/auto|scroll/)
     }
-    expect(bodiesOf('.roster-surface[hidden]')).toContain('display: none')
-
   })
 })
 

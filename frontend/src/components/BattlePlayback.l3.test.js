@@ -137,31 +137,127 @@ describe('L3：滚轮与快捷键不抢页面（审计 PB-04 / PB-05）', () => 
 describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形 Stage 契约）', () => {
   afterEach(() => { mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.unstubAllGlobals() })
 
-  it('名册按 friendly/enemy 分成左右两条车道；点行 → 选中车辆 + 详情浮窗，名册车道不消失', async () => {
+  /** 录像者属于 Team 2 的同一份数据：friendly 标志翻转，物理队伍（team）不变。 */
+  function recorderOnTeam2() {
+    const dataset = makePlaybackV2()
+    dataset.friendlyTeam = 2
+    dataset.recorderAccountId = 2001
+    dataset.vehicles = dataset.vehicles.map(v => ({ ...v, friendly: v.team === 2 }))
+    return dataset
+  }
+  const laneIds = (wrapper, side) => wrapper.get(`[data-test="pb-team-lane-${side}"]`)
+    .findAll('[data-test="pb-roster-row"]').map(row => Number(row.attributes('data-account-id')))
+
+  it('名册按**物理队伍**分车道：左 = Team 1、右 = Team 2；点行 → 选中车辆 + 详情浮窗，名册车道不消失', async () => {
     stubRaf()
     const wrapper = mountPlayback()
     await flushPromises()
-    const rows = wrapper.findAll('[data-test="pb-roster-row"]')
-    expect(rows.length).toBeGreaterThan(1)
-    // 车道结构：左 = friendly，右 = enemy，各自一个共享 PlaybackRoster
-    const left = wrapper.get('[data-test="pb-team-lane-left"]')
-    const right = wrapper.get('[data-test="pb-team-lane-right"]')
-    expect(left.find('.pb-roster-friendly').exists()).toBe(true)
-    expect(right.find('.pb-roster-enemy').exists()).toBe(true)
+    expect(laneIds(wrapper, 'left')).toEqual([1001])
+    expect(laneIds(wrapper, 'right')).toEqual([2001, 2002])
+    expect(wrapper.get('[data-test="pb-team-lane-left"]').find('.pb-roster-team1').exists()).toBe(true)
+    expect(wrapper.get('[data-test="pb-team-lane-right"]').find('.pb-roster-team2').exists()).toBe(true)
+    // 物理车道不再用录像者视角的 friendly / enemy 分组
+    expect(wrapper.find('.pb-roster-friendly').exists()).toBe(false)
+    expect(wrapper.find('.pb-roster-enemy').exists()).toBe(false)
     // 三段式标记：根类由「名册开着 且 非手机竖屏」独占
     expect(wrapper.get('[data-test="battle-playback"]').classes()).toContain('pb-roster-lanes')
 
-    await rows[0].trigger('click')
+    await wrapper.get('[data-test="pb-team-lane-left"] [data-test="pb-roster-row"]').trigger('click')
     await flushPromises()
     // 选中不再把名册换掉：详情是 workspace 顶层的浮窗，名册**两条车道都还在**
-    expect(wrapper.find('[data-test="pb-shell-roster"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-team-lane-right"]').exists()).toBe(true)
     const details = wrapper.get('[data-test="pb-info"]')
     expect(details.attributes('data-presentation')).toBe('floating')
-    // 三段式下右侧详情列**整列不存在**：详情是 workspace 顶层的浮窗、名册在两侧车道，
-    // 这一列没有内容可放（留着空壳会把正方形挤到第一轨里，见 playback-workspace.css）。
+    // 浮窗挂在**整个战场 workspace（.pb-main）**下，不在 Stage 里
+    expect(details.element.parentElement).toBe(wrapper.get('[data-test="pb-main"]').element)
+    // 三段式下右侧详情列**整列不存在**：详情是 workspace 顶层的浮窗、名册在两侧车道。
     expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="battle-playback"]').classes()).not.toContain('pb-details-column')
+  })
+
+  it('录像者属于 Team 2：左车道仍是 Team 1、右车道仍是 Team 2；HUD 的录像者视角语义不变', async () => {
+    stubRaf()
+    // HUD 是录像者视角：录像者在 Team 1 时 friendly 总血量 = Team 1（1500）
+    const recorderTeam1 = mountPlayback()
+    await flushPromises()
+    expect(recorderTeam1.get('[data-test="pb-hp-value-friendly"]').text()).toContain('1500')
+    recorderTeam1.unmount()
+    mountedWrappers.splice(mountedWrappers.indexOf(recorderTeam1), 1)
+
+    const recorderTeam2 = mountPlayback(makeOverview(), null, recorderOnTeam2())
+    await flushPromises()
+    // 物理位置与录像者无关
+    expect(laneIds(recorderTeam2, 'left')).toEqual([1001])
+    expect(laneIds(recorderTeam2, 'right')).toEqual([2001, 2002])
+    // 录像者换到 Team 2：friendly 总血量跟着换成 Team 2（1200），名册左右不动
+    expect(recorderTeam2.get('[data-test="pb-hp-value-friendly"]').text()).toContain('1200')
+    // 详情里的关系文案仍按录像者视角给出（右车道 Team 2 的车对 Team 2 录像者是己方）
+    await recorderTeam2.setProps({ seekTo: 15 })
+    await flushPromises()
+    await recorderTeam2.get('[data-test="pb-roster-row"][data-account-id="2001"]').trigger('click')
+    await flushPromises()
+    expect(recorderTeam2.get('[data-test="pb-sb-team"]').text()).toBe('agentReplay.team2')
+    expect(recorderTeam2.get('[data-test="pb-sb-relation"]').text()).toContain('recon.map.playback.team_friendly')
+  })
+
+  it('详情 × 只关详情：选中保留（名册行仍高亮），时间不变；再点同一台 / 另一台都重新打开同一个窗', async () => {
+    stubRaf()
+    const wrapper = mountPlayback()
+    await flushPromises()
+    // EnemyA 在 10–20s 才有位置：先 seek 到它可见的时刻
+    await wrapper.setProps({ seekTo: 15 })
+    await flushPromises()
+    const rowOf = id => wrapper.get(`[data-test="pb-roster-row"][data-account-id="${id}"]`)
+    await rowOf(2001).trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('EnemyA')
+    const timeBefore = wrapper.get('[data-test="pb-time"]').text()
+
+    await wrapper.get('[data-test="pb-sb-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
+    // 选中还在：行仍是 aria-pressed / selected
+    expect(rowOf(2001).attributes('aria-pressed')).toBe('true')
+    expect(rowOf(2001).classes()).toContain('is-selected')
+    expect(wrapper.get('[data-test="pb-time"]').text()).toBe(timeBefore)
+    // 名册两条车道都还在
+    expect(wrapper.find('[data-test="pb-team-lane-right"]').exists()).toBe(true)
+
+    // 再点同一台：同一个窗重新打开
+    await rowOf(2001).trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="pb-info"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('EnemyA')
+    // 点另一台：仍是唯一一个窗，内容换成新车
+    await rowOf(1001).trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="pb-info"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('You')
+    expect(rowOf(1001).attributes('aria-pressed')).toBe('true')
+    expect(rowOf(2001).attributes('aria-pressed')).toBe('false')
+  })
+
+  it('uiPrefs.showRoster=false：两条车道都消失，详情与选中保留；打开后名册从既有状态恢复', async () => {
+    stubRaf()
+    const wrapper = mountPlayback()
+    await flushPromises()
+    await wrapper.setProps({ seekTo: 15 })
+    await flushPromises()
+    await wrapper.get('[data-test="pb-roster-row"][data-account-id="2001"]').trigger('click')
+    await flushPromises()
+    await openPanel(wrapper, 'display')
+    await wrapper.get('[data-test="pb-show-roster"]').setValue(false)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-team-lane-right"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="battle-playback"]').classes()).not.toContain('pb-roster-lanes')
+    // 详情不依赖名册：仍开着、仍是同一台车
+    expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('EnemyA')
+
+    // 显示分页仍开着（同一个开关），直接打开名册
+    await wrapper.get('[data-test="pb-show-roster"]').setValue(true)
+    await flushPromises()
+    expect(wrapper.get('[data-test="pb-roster-row"][data-account-id="2001"]').attributes('aria-pressed')).toBe('true')
   })
 })

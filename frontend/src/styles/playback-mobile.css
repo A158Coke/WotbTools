@@ -6,62 +6,8 @@
    等价替换（.pb-form-mobile 与旧的 .pb-device-mobile 判定条件完全相同），相对
    顺序保持不变；main.js 里排在 playback-responsive.css 之后，同特异性的先后
    关系也不变。 */
-/* §mobile-contract：手机 fullscreen 必然是横屏，横向放得下三段，因此与桌面同构：
-   Left Rail（窄）| Map | 右侧滑入的 Details 抽屉。controls 仍走 bottom overlay——
-   全屏下拇指够得到底部，rail 只承载导航图标。
-   Details 是抽屉不是常驻列，所以 --pb-details-w 保持 0：依赖该 token 的
-   kill-feed / annotation-surface 不该为一个浮层预留空间。 */
-.battle-playback:fullscreen.pb-form-mobile {
-  --pb-details-w: 0px;
-  /* 手机横屏宽度有限，rail 比桌面窄一档。 */
-  --pb-rail-w: 148px;
-  grid-template-columns: var(--pb-left-col) minmax(0, 1fr);
-}
-.battle-playback:fullscreen.pb-form-mobile .pb-left-rail {
-  display: flex;
-  grid-column: 1;
-}
-.battle-playback:fullscreen.pb-form-mobile .pb-main { grid-column: 2; }
-.battle-playback:fullscreen.pb-form-mobile .pb-hud { left: var(--pb-left-col); right: 0; }
-.battle-playback:fullscreen.pb-form-mobile .pb-map-stage { grid-template-columns: minmax(0, 1fr); }
-.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell {
-  /* §details-blocker：未选车辆（pb-details-active 缺省）时 shell 不遮挡、不 tint、不接管 pointer；
-     选中车辆（pb-details-active）才打开真正的 fullscreen/sheet Details。 */
-  position: absolute;
-  inset: 0;
-  grid-column: 1;
-  pointer-events: none;
-  background: transparent;
-}
-.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
-  pointer-events: auto;
-  background: color-mix(in srgb, var(--bg) 52%, transparent);
-  /* §layering：active Details 高于 controls(≤40)/HUD(50)/events(45)，低于 workspace drawer(74/75)。 */
-  z-index: 60;
-}
-/* overlay 是 .pb-main（grid col2）的子元素，left 已从 col2 左缘起算；再加 --pb-left-col
-   会重复偏移一个 rail 宽——实测 740×360 手机全屏下 controls 从 x=173 被推到 x=321，
-   宽度从 587 缩到 439，右侧被裁。手机没有常驻 Details 列，所以左右都归零。 */
-.battle-playback:fullscreen.pb-form-mobile .pb-mobile-overlay { left: 0; right: 0; }
-/* 手机全屏 Details：与非全屏同一形态的右侧滑入窗口，而不是覆盖全屏的 sheet。 */
-.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  bottom: 8px;
-  left: auto;
-  width: min(340px, calc(100vw - var(--pb-left-col) - 16px));
-  max-height: none;
-  padding: 14px;
-  padding-bottom: calc(14px + env(safe-area-inset-bottom));
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-card2);
-  box-shadow: var(--surface-shadow);
-  overflow-y: auto;
-  z-index: var(--z-modal);
-  animation: pb-details-slide-in .22s ease-out;
-}
+/* 手机全屏的几何（Team 1 | 正方形 Stage | Team 2，传输控件在 Stage 之下）由
+   playback-mobile-fullscreen.css 独占；这里只放全屏与非全屏共用的手机形态规则。 */
 /* §mobile-contract：以 .pb-form-mobile（pointer:coarse+视口<=1200，JS 判定）驱动移动端样式，
    不再只依赖 @media(width<768px)——手机 landscape 内宽可 >768，仍须保持 mobile UX。 */
 .battle-playback.pb-form-mobile {
@@ -72,44 +18,11 @@
   overflow: hidden;
   border-radius: 5px;
 }
-/* §mobile-details：车辆详情是 .pb-sidebar（VehicleDetailsPanel），不是 .pb-side-panel
-   （后者是战局/显示/事件的标签面板）。两者都挂在 shell 下，抽屉形态必须分别写。
-   非全屏一律走流内形态（地图下方），只有全屏没有「下方」可用才做抽屉。
-   全屏竖屏：底部滑上来的 sheet，地图留在上方可见。 */
-.battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
-  top: auto;
-  width: auto;
-  max-height: min(58dvh, 480px);
-  border-radius: 10px;
-  animation: pb-details-slide-up .22s ease-out;
-}
-
-@media (orientation: landscape) {
-  .battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
-    left: auto;
-    right: 8px;
-    top: 8px;
-    bottom: 8px;
-    width: min(340px, calc((100vw - 100vh) / 2 - 8px));
-    max-height: none;
-    border-radius: 12px;
-    animation: pb-details-slide-in .22s ease-out;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
-    animation: none;
-  }
-}
 /* §mobile-layout：手机非全屏。
-   左栏不再是覆盖式抽屉，展开后排在地图「下方」——根节点是纵向 flex，用 order 调序，
+   ⚙ 打开的左栏不是覆盖式抽屉，展开后排在地图「下方」——根节点是纵向 flex，用 order 调序，
    不改 DOM 顺序（DOM 里 rail 在 map 之前，是桌面三列需要的）。
-   右侧详情不再是底部 sheet，改为从右侧滑入的窗口，形态与 PlayerDetailDrawer 一致。 */
+   车辆详情不在这里：它是 workspace 顶层的浮窗（横屏）或纵向流里的内容块（竖屏），
+   见 playback-workspace.css。 */
 .battle-playback:not(:fullscreen).pb-form-mobile .pb-main { order: 1; }
 .battle-playback:not(:fullscreen).pb-form-mobile.pb-drawer-open .pb-left-rail {
   order: 2;
@@ -121,44 +34,6 @@
   border-radius: 8px;
 }
 .battle-playback:not(:fullscreen).pb-form-mobile .pb-drawer-backdrop { display: none; }
-.battle-playback:not(:fullscreen).pb-form-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  bottom: 8px;
-  left: auto;
-  width: min(380px, calc(100vw - 16px));
-  max-height: none;
-  padding: 16px;
-  padding-bottom: calc(16px + env(safe-area-inset-bottom));
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-card2);
-  box-shadow: var(--surface-shadow);
-  overflow-y: auto;
-  z-index: var(--z-modal);
-  animation: pb-details-slide-in .22s ease-out;
-}
-
-@media (orientation: portrait) {
-  .battle-playback:not(:fullscreen).pb-form-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
-    top: auto;
-    right: 8px;
-    bottom: 8px;
-    left: 8px;
-    width: auto;
-    max-height: min(58dvh, 480px);
-    border-radius: 12px;
-    animation: pb-details-slide-up .22s ease-out;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .battle-playback:not(:fullscreen).pb-form-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel,
-  .battle-playback:fullscreen.pb-form-mobile .pb-map-stage > .pb-side-panel-shell .pb-side-panel {
-    animation: none;
-  }
-}
 /* mobile fullscreen：赢过 .pb-form-mobile .pb-left-rail 的 display:none。 */
 .battle-playback:fullscreen.pb-form-mobile.pb-drawer-open .pb-left-rail {
   display: flex;
@@ -190,8 +65,6 @@
   text-align: center;
   order: 20;
 }
-.battle-playback.pb-form-mobile .pb-controls .pb-secondary-btn,
-.battle-playback.pb-form-mobile .pb-controls .pb-fullscreen-btn { min-width: 36px; }
 /* §no-overlay：控制条不再是「压在地图上、触摸才唤起」的浮层——它现在排在地图下方的
    正常流里，常驻可见。原来的 opacity: 0 + pointer-events: none 在流内形态下等于
    彻底消失：元素不在地图上，也就没有能唤起它的触摸。
@@ -242,40 +115,12 @@
       overflow: hidden;
       border-radius: 5px;
     }
+  /* 手机形态的 shell 永远是空的（详情与名册都不住在这里）：不遮挡、不 tint、不接管 pointer。 */
   .battle-playback.pb-form-mobile .pb-map-stage > .pb-side-panel-shell {
       position: absolute;
       inset: 0;
-      /* §details-blocker：空 shell（未选车辆）不遮挡/不 tint/不接管 pointer；选中才成 sheet。 */
       pointer-events: none;
       background: transparent;
-    }
-  .battle-playback.pb-form-mobile .pb-map-stage > .pb-side-panel-shell.pb-details-active {
-      pointer-events: auto;
-      background: color-mix(in srgb, var(--bg) 52%, transparent);
-      z-index: 60;
-    }
-}
-
-@media (width < 1200px) {
-  .battle-playback.pb-form-mobile:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell {
-      position: static;
-      inset: auto;
-      pointer-events: auto;
-      background: transparent;
-    }
-  .battle-playback.pb-form-mobile:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
-      position: static;
-      inset: auto;
-      width: auto;
-      margin-top: 8px;
-      max-height: none;
-    }
-}
-
-@media (width < 768px) {
-  .battle-playback.pb-form-mobile:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell.pb-details-active .pb-sidebar {
-      max-height: min(46dvh, 380px);
-      overflow-y: auto;
     }
 }
 
@@ -294,23 +139,26 @@
     }
 }
 
-/* 审计 PB-01：手机横屏非全屏 —— 三栏：工具栏在左、Stage 居中、阵容在右，用满左右的空白。
+/* 审计 PB-01：手机横屏非全屏 —— 三栏：Team 1 | 正方形 Stage | Team 2，传输控件在 Stage 之下。
    Stage 是**正方形**（边长由 styles/playback-workspace.css 的 `--pb-square-side` 统一给出：
    横屏矮视口由纵向可用高度定，三段式下由中心列宽度定），这里不再自己按高度×贴图比例算宽度
    ——那条旧公式（`(100dvh - …) * var(--pb-map-ratio)`）会给正方形定出一个与列宽无关的边长，
    实测把 722px 宽的中心列里的 Stage 压成 76×76。 */
-/* 手机名册没有独立入口：它走统一的二级面（pb-secondary-entry → Team 分页），与 3D 同层级。
-   这里曾有一套 '.pb-landscape-roster-toggle' / '.pb-landscape-roster-wrap' 规则，属于已被删除的
-   「第二条名册入口」路径（竖屏与全屏横屏下会变成 dead control）——不保留死规则。 */
+/* 名册的唯一呈现开关是 uiPrefs.showRoster：横屏是两侧车道（playback-workspace.css），
+   竖屏是传输控件之后的纵向流。没有第二条「打开名册」入口。 */
 @media (orientation: landscape) and (height <= 500px) {
   .battle-playback:not(:fullscreen).pb-form-mobile .pb-main {
     display: grid;
-    grid-template-columns: minmax(160px, 1fr) auto minmax(160px, 1fr);
+    /* 名册关闭：单列，Stage 是居中的正方形。名册开着时 playback-workspace.css 把它换成
+       `Team 1 | Stage | Team 2` 三列（Stage 在第 2 列）。不能用 `auto` 中心列：
+       Stage 里只有绝对定位的内容，auto 列会把正方形压成 0×0（实测 844×390 名册关闭）。 */
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
     gap: 8px;
   }
-  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-map-stage { grid-column: 2; grid-row: 1; }
-  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-mobile-overlay { grid-column: 1; grid-row: 2; min-width: 0; }
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-map-stage { grid-column: 1; grid-row: 1; }
+  .battle-playback.pb-roster-lanes:not(:fullscreen).pb-form-mobile .pb-main > .pb-map-stage { grid-column: 2; }
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-mobile-overlay { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
   /* 正方形：边长取共享契约，居中于所在列。 */
   .battle-playback:not(:fullscreen).pb-form-mobile .pb-main .pb-map {
     inline-size: min(var(--pb-square-side), 100%);
