@@ -135,8 +135,6 @@ onBeforeUnmount(() => {
             <div id="view-toggle">
                 <button id="collision-btn">{{ $t('armor.show_collision') }}</button>
                 <button id="penetration-btn">{{ $t('armor.heatmap') }}</button>
-                <!-- 审计 3D-14：没有右键的设备（触屏）用开关切到瞄准模式 -->
-                <button id="aim-btn" type="button" aria-pressed="false" :title="$t('armor.aim_hint')">{{ $t('armor.aim') }}</button>
             </div>
         </div>
         <div id="tank-picker">
@@ -368,8 +366,7 @@ onBeforeUnmount(() => {
             min-height: 36px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px;
             background: var(--panel); color: var(--txt); cursor: pointer; backdrop-filter: blur(12px);
         }
-    .armor-view #view-toggle button#aim-btn.active { background: linear-gradient(135deg,var(--accent),var(--accent-2)); color: var(--on-accent); border-color: transparent; }
-    /* 手机顶栏的「参数」开关：桌面端不渲染成可见控件（面板照旧常驻四角布局） */
+       /* 手机顶栏的「参数」开关：桌面端不渲染成可见控件（面板照旧常驻四角布局） */
     .armor-view .armor-tools { display: none; }
     /* 审计 3D-14：触屏控件放大到 44px 点击区域 */
     @media (pointer: coarse) {
