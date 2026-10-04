@@ -5,7 +5,7 @@
 ## 当前实现
 
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`playback`、`3d`、`shots`、`ai` **五种能力**的统一工作台：选择一次文件，能力之间切换不重新选文件、不重建 session。
-- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放 · 射击分析 · AI 复盘，五种能力对所有用户可见，`wotbtools-admin` 不改变能力集合），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
+- Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放 · 射击分析 · AI 复盘，五种能力对所有用户可见，`wotbtools-admin` 不改变能力集合；五个能力都在本工作台内，没有"导航去另一个页面"的能力），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
 - 五个能力面板都由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`）：3D / shots 还必须已登录，3D / AI 还要求 capability 可用（连通性）；满足条件后切走只 `v-show` 隐藏：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
 - 3D 面板按「待开播 → 开始」两步进入播放：文件由工作台派生后就位，但解析与资产加载都要等用户在面板里按「开始」（卡片上先选画质档——内核 `startPlayback()` 惰性创建渲染器、首帧按当前档位定型，所以档位不能事后在加载中再改）。换场次 / 清空先 `reset()` 撤下上一场：`reset` 与 `destroy` 同等作废在途加载（`sessionEpoch` / `loadGeneration`），被撤下的解析 / 资产续体不得再回写 store，也不得把上一场继续画在待开播面板后面。
 - 解析任务的**生命周期归当前会话所有**（P0）：`Replay3DPane` 持有 per-load 的 `AbortController`，清空 / 换场次 / 销毁经 `sceneApi.loadData({ signal })` 透传到 `scene/replaySource.js` 的解析边界——被撤下的解析立即以 `AbortError` 结束并让出 Worker 队列（仍在 Worker 上时整体 terminate），不再无限排队。`replaySource` 的每个解析请求带看门狗（120s 不回包也不报错 → terminate + 在途全部失败，下次请求重建 Worker）；WASM 装载链（fingerprint 拉取 / 产物 JS dynamic import / wasm 初始化）有 20s 看门狗——浏览器 fetch / import 没有默认超时，网络停滞曾让会话级缓存里的悬 Promise 把 3D Worker 与 Data 批量解析（同一装载链）永久钉在「解析中」。装载超时后 dynamic import 换带序号的 specifier 强制全新装载（浏览器模块表按 URL 去重，同 URL 重试只会拿回同一个悬着的模块记录）。
@@ -24,7 +24,29 @@
 - `frontend/src/app/viewRegistry.js` 是 view → capability 的唯一映射：`replay` → `data`、`battle-playback` → `playback`、`agent-replay` → `3d`、`agent-shots` → `shots`、`ai-review` → `ai`；五个 view 全部映射到同一个 `ReplayWorkspace`，由 `initialCapability` 决定初始能力。`ViewHost.vue` 用 `KeepAlive` 保留工作台实例。旧深链（`agent-replay` / `agent-shots`）继续有效，只是变成能力入口。
 - `frontend/src/app/router.js` 是历史与深链 owner。页面组件通过注入的 `navigate` 改变 URL，不直接操作浏览器 history。
 
+## Playback 正方形的布局契约（2D / 3D 同一套）
+
+两种渲染器共用同一份布局骨架，唯一事实源是 `frontend/src/styles/playback-workspace.css`（`main.js` 在三套形态文件**之后**引入，因此它既能压过 pc/tablet/mobile，又不影响其后的全屏 HUD 契约）。改任何一档前先读该文件头的权威契约。
+
+**布局档位**
+
+| 档位 | 呈现 |
+|---|---|
+| 手机竖屏 | **纵向流**：HUD / 正方形 Stage / 传输控件 / 详情（inline）/ Team 1 / Team 2，页面可滚 |
+| 横屏与宽档（含平板、手机横屏） | **三段式**：`Team 1 │ 正方形 Stage │ Team 2`，传输控件在 Stage 之下 |
+| 名册关闭 | 两侧车道**整体不存在**（不是宽度归零的占位），Stage 仍是**居中**的正方形 |
+
+- **正方形是几何约束，不是样式偏好**：边长 = `min(中心列可用宽度, 纵向可用高度)`，走 `--pb-square-side` 这一个自定义属性。宽度那一半在各形态文件里同一个表达式求值（形态文件给 `.pb-map` 定的 `width`/`max-width` 特异性高于共享契约，只改共享表等于没改）；高度那一半由回放组件的 `writeSquareAvailHeight()` 把「根高 − HUD − 传输控件」实测写进 `--pb-square-avail-h`。**纵向约束不能用固定常量**：根元素高度本身取决于正方形高度，拿它之外的量反推会自指。
+- **名册车道**：`.pb-main` 的三列网格，两侧是**定宽列**（`auto` 列会按名册行的 `min-height` 塌成 76px，把正方形压成一个点）。名册容器**不是**滚动区（审计 BZ-13），越界由车道的 `overflow: hidden` 裁剪。
+- **右侧详情列按需存在**：形态文件把 Stage 写成「地图列 + 详情列」两轨。`.pb-side-panel-shell` 只在真的有内容要放时才渲染（`BattlePlayback.vue` 的 `shellInUse` / 根类 `pb-details-column`），否则空壳会占住第二轨、把正方形挤到第一轨并偏离 Stage 中心。手机形态保留空壳：它的 Stage 是块级流，空壳既不占轨也不影响正方形（且「空 shell 不阻挡 pointer」有守卫断言）。
+- **详情**：宽档 / 横屏是 **workspace 顶层的可拖动浮窗**，位置归 `usePlaybackDetailsPlacement.js` 独占（`clampToBounds` 三向夹紧，下界取「传输控件上缘」与「宿主下缘」的较小者），不持久化到 localStorage；手机竖屏是**同一个组件的另一种呈现**（`presentation="inline"`），退化成纵向流里的普通内容块。初始落位按点击原点挑反侧（点右侧的车 → 浮窗落左侧）。调用方必须传**摊平成普通 ref** 的宿主/边界，传 `computed(() => props.dragHost)` 会得到 ref-in-ref 并让边界检查**静默失效**。
+- **全屏是同一套布局语义**：全屏不引入第二套骨架，只改变容器尺寸与 HUD 契约。
+
 ## 稳定边界
+
+- Playback 2D/3D 共用 `usePlaybackPhoneForm()` / `PLAYBACK_MOBILE_QUERY`：844×390 coarse 手机横屏仍用 compact transport 与二级面板；3D CSS 由根 `.phone-form` 驱动，不单凭宽度切回 tablet。真正平板保留 tablet。共享 `usePlaybackFullscreen` 只在当前 target 拥有 `document.fullscreenElement` 时报告全屏；另一个 keep-alive 面板不冒认或退出别人的全屏。landscape orientation 尝试只属于 phone 的自身全屏。
+- 3D 名册走常驻车道还是**临时面**由「放不放得下」决定（`Replay3DPane` 的 `rosterConstrained`：车道内容的 `scrollHeight` + HUD + 传输控件 vs. 常驻可用的纵向空间），不是「手机 / 矮视口」的别名。放得下就两侧常驻，放不下则由 Display → Roster 打开临时 surface（打开时关闭 Display，dismiss 即归还完整场景），不常驻左右车道、不占地图高度、不与传输控件重叠。`.pb-root` 的高度上限是 `clamp(320px, 62dvh, 720px)`（战场必须占主导），所以 1024×768 上 7v7 全量名册同样放不下。`uiPrefs.showRoster` 只控制 presentation；隐藏不能清空名册、selection、follow 或播放时刻。
+- `Replay3DPane` 独占 selected vehicle；场景 raycast 与 roster 行只报告/执行选择并打开共享 `VehicleDetailsPanel.vue`，不自动 Follow。相机模式与 follow target 独立，Follow 必须显式请求，Free/Top 不清 selection。2D 详情传完整 evidence，3D 传身份/权威 HP/阵亡/时刻子集，不伪造缺失伤害统计；phone / 短横屏详情作为 transient surface，开关不重建场景或重新解析。（`selected` 与 `followed` 是两个独立状态：行点击 = 选中 + 详情，跟随是相机动作，两者可以同时成立。）
 
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision` 与 `sourceId`（`r{文件序号}`）作为唯一 identity。
 - 场次选择器（数据模式在 `ReplayPage` 工具栏、四个单场能力在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。五种能力对匿名、普通登录用户与管理员永久可见，`wotbtools-admin` 不改变能力集合；匿名直达 `?view=agent-replay|agent-shots` 保持目标能力，由能力层显示登录门禁。
@@ -73,3 +95,5 @@ Android 与 Web 共用工作台、Router 和唯一 `useReplaySession`。外部 r
 `common/shot-tank-data.json` 从 reviewed Agent asset plane 的 `data/tank_cache.json` 与 `tank/{id}.json` 提取 config 原始顺序、`pitch_limits`、`shell_global_ids`；不包含名称/GLB/纹理或第二份 tankopedia。更新：`python common/python/update_shot_tank_data.py --asset-base <reviewed HTTPS asset origin>`。缺 source entry 更新失败，不覆盖现有快照；缓存与全部 tank 原始输入有 SHA-256 provenance。当前 735 车型的 2075 global shell IDs 全部由同包弹表覆盖。未知车型如实保留 pitch 降级，不联网补齐。装甲查看器跳转属于联网 3D 动作，单独门控。
 
 `npm run test:browser-interaction` 包含真实 WASM offline scenario：冷启动/重启、fixture 手动导入/Result/Rating/2D/射击、AI/HoF/3D/Profile 深链、重连/断网与 local state 保持，并在网络边界记录和拒绝业务 HTTP（应为零）。这是自动运行门禁；3D 画面和 Android provider 真机验证仍由人工完成。
+
+Playback 布局另有一条**真实浏览器几何门禁** `node scripts/browser-playback-workspace.mjs`：逐字加载生产 CSS（只把 `:fullscreen` 换成根类标记），断言正方形 1:1、在中心列里居中、传输控件不被 Stage 压住、一级动作行不换行、三段式两侧车道不重叠、竖屏不渲染侧车道、名册关闭时两侧整体消失、浮窗不越出 workspace 且不压住传输控件、无横向溢出，以及纵向预算写入后**收敛**。几何契约在这条门禁里才可判定 —— jsdom / happy-dom 没有布局引擎，同一条断言在那里只能是假的。

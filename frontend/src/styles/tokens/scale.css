@@ -77,6 +77,9 @@
     --pb-z-scrim: 6;   /* 待开播遮罩：盖住 HUD 面板；加载 / 错误状态仍在其上（--z-sticky） */
     --pb-z-modal: 9;
 
+    --pb-label-player-width: 110px;
+    --pb-label-bar-width: 64px;
+
     /* 控件尺寸与密度：默认紧凑，触屏自动切换（§5） */
     --control-h-sm: 28px;
     --control-h-md: 32px;

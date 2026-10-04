@@ -134,20 +134,34 @@ describe('L3：滚轮与快捷键不抢页面（审计 PB-04 / PB-05）', () => 
   })
 })
 
-describe('L3：右侧栏未选车时显示两队阵容（审计 BZ-13 / PB-03）', () => {
+describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形 Stage 契约）', () => {
   afterEach(() => { mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.unstubAllGlobals() })
 
-  it('列出两队玩家；点玩家打开车辆详情，阵容随之隐藏', async () => {
+  it('名册按 friendly/enemy 分成左右两条车道；点行 → 选中车辆 + 详情浮窗，名册车道不消失', async () => {
     stubRaf()
     const wrapper = mountPlayback()
     await flushPromises()
     const rows = wrapper.findAll('[data-test="pb-roster-row"]')
     expect(rows.length).toBeGreaterThan(1)
-    expect(wrapper.find('.pb-roster-friendly').exists()).toBe(true)
-    expect(wrapper.find('.pb-roster-enemy').exists()).toBe(true)
+    // 车道结构：左 = friendly，右 = enemy，各自一个共享 PlaybackRoster
+    const left = wrapper.get('[data-test="pb-team-lane-left"]')
+    const right = wrapper.get('[data-test="pb-team-lane-right"]')
+    expect(left.find('.pb-roster-friendly').exists()).toBe(true)
+    expect(right.find('.pb-roster-enemy').exists()).toBe(true)
+    // 三段式标记：根类由「名册开着 且 非手机竖屏」独占
+    expect(wrapper.get('[data-test="battle-playback"]').classes()).toContain('pb-roster-lanes')
+
     await rows[0].trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-shell-roster"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="pb-side-panel-shell"]').classes()).toContain('pb-details-active')
+    // 选中不再把名册换掉：详情是 workspace 顶层的浮窗，名册**两条车道都还在**
+    expect(wrapper.find('[data-test="pb-shell-roster"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-team-lane-right"]').exists()).toBe(true)
+    const details = wrapper.get('[data-test="pb-info"]')
+    expect(details.attributes('data-presentation')).toBe('floating')
+    // 三段式下右侧详情列**整列不存在**：详情是 workspace 顶层的浮窗、名册在两侧车道，
+    // 这一列没有内容可放（留着空壳会把正方形挤到第一轨里，见 playback-workspace.css）。
+    expect(wrapper.find('[data-test="pb-side-panel-shell"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="battle-playback"]').classes()).not.toContain('pb-details-column')
   })
 })

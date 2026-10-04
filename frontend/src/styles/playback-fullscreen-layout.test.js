@@ -218,10 +218,13 @@ describe('Battle Playback fullscreen layout (source regression)', () => {
     expect(shellBody).toContain('grid-column: 2')
     expect(shellBody).toContain('justify-content: center')
 
-    // 窄平板/竖屏放不下两列时退回堆叠，但地图仍必须封顶——否则工具栏一样被顶出首屏。
+    // 窄平板/竖屏放不下两列时退回堆叠，但 Stage 仍必须封顶——否则工具栏一样被顶出首屏。
+    // 封顶量走共享的正方形契约 `--pb-square-side`（宽度 = min(可用宽, 纵向可用高)）：
+    // 旧公式「高度 × 底图比例(--pb-map-ratio)」会把正方形定成一个与列宽无关的边长
+    // （实测把 722px 宽的中心列里的 Stage 压成 76×76）。
     expect(stripped).toContain('@media (width < 860px)')
     const narrow = stripped.slice(stripped.indexOf('@media (width < 860px)'))
-    expect(narrow).toContain('max-width: min(100%, calc((100dvh - var(--header-h) - 210px) * var(--pb-map-ratio, 1)))')
+    expect(narrow).toContain('max-inline-size: min(100%, var(--pb-square-side))')
   })
 
   // rail 同时承载图标导航与播放控制，60px 放不下速度档位那一排。

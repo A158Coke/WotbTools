@@ -16,10 +16,11 @@ import {
   parseAgentResultFromBytes,
   type AgentBattleResult,
 } from '../../api/agent-replay-facets.js'
-import type { BattlePlaybackDataset } from '../../types/playback-v2.js'
+import type { BattlePlaybackDataset, PlaybackReloadTelemetry } from '../../types/playback-v2.js'
 import { loadTankopedia, type Tankopedia } from '../compute/tankopedia.js'
 import { toBattlePlaybackDataset } from './toBattlePlaybackDataset.js'
 import { indexMapGridProfiles, toMapOverview, type LocalMapOverview, type MapGridProfile } from './toMapOverview.js'
+import { resolveReplayClock } from '../canonical/facts.js'
 
 export interface LocalPlayback {
   /** null = 时间轴不可用（与服务端 204「unavailable」同义） */
@@ -27,6 +28,8 @@ export interface LocalPlayback {
   /** null = 地图未收录 / 无位置（与服务端 map-overview 204 同义） */
   overview: LocalMapOverview | null
   result: AgentBattleResult
+  /** Presentation-only raw Playback telemetry; never promoted into canonical ReplayFacts. */
+  reloadTelemetry: PlaybackReloadTelemetry | null
 }
 
 export interface ParseLocalPlaybackOptions {
@@ -67,5 +70,16 @@ export async function parseLocalPlayback(
     tankopedia, sampleStepSec: options.sampleStepSec,
   })
   const overview = dataset ? toMapOverview(dataset, mapProfiles(), result) : null
-  return { dataset, overview, result }
+  // The dataset's clock comes from AI event evidence. Do not substitute Playback meta.t_start:
+  // its render-grid origin may include the pre-battle period.
+  const clock = resolveReplayClock(aiReview.battle.periods, result, playback.meta.duration)
+  const reloadTelemetry: PlaybackReloadTelemetry | null = dataset && clock ? {
+    timeOrigin: clock.startRaw,
+    friendlyTeam: dataset.friendlyTeam,
+    vehicles: playback.vehicles.map(({ eid, account_id, team, tank_id }) => ({ eid, account_id, team, tank_id })),
+    reloads: playback.reloads,
+    reload_effective: playback.reload_effective,
+    shots: playback.shots,
+  } : null
+  return { dataset, overview, result, reloadTelemetry }
 }

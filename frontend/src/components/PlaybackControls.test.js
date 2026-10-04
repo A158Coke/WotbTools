@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { PLAYBACK_PHONE_QUERY } from '../composables/usePlaybackPhoneForm.js'
 import PlaybackControls from './PlaybackControls.vue'
 
 const timelineStub = defineComponent({
@@ -33,7 +34,52 @@ function mountControls(overrides = {}) {
   })
 }
 
+afterEach(() => vi.unstubAllGlobals())
+
 describe('PlaybackControls', () => {
+  it('keeps compact speed and semantic phone CSS after 390×844 rotates to 844×390', async () => {
+    let width = 390
+    let height = 844
+    const listeners = new Set()
+    const query = {
+      get matches() { return width < 768 || height <= 500 },
+      addEventListener(_event, listener) { listeners.add(listener) },
+      removeEventListener(_event, listener) { listeners.delete(listener) },
+    }
+    const media = vi.fn((requested) => requested === PLAYBACK_PHONE_QUERY ? query : { matches: false })
+    vi.stubGlobal('matchMedia', media)
+    const wrapper = mountControls()
+    expect(media).toHaveBeenCalledWith(PLAYBACK_PHONE_QUERY)
+    expect(wrapper.get('[data-test="pb-controls"]').classes()).toContain('phone-form')
+    expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(true)
+    expect(wrapper.find('.pb-speed').exists()).toBe(false)
+
+    width = 844
+    height = 390
+    listeners.forEach(listener => listener())
+    await nextTick()
+    expect(wrapper.get('[data-test="pb-controls"]').classes()).toContain('phone-form')
+    expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(true)
+    expect(wrapper.find('.pb-speed').exists()).toBe(false)
+    await wrapper.get('[data-test="pb-speed-current"]').trigger('click')
+    await wrapper.get('[data-test="pb-speed-2"]').trigger('click')
+    expect(wrapper.emitted('set-speed')).toEqual([[2]])
+    wrapper.unmount()
+    expect(listeners.size).toBe(0)
+  })
+
+  it.each([[1024, 768], [1600, 900]])('keeps tablet/desktop %i×%i transport expanded', (width, height) => {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: width < 768 || height <= 500,
+      addEventListener() {}, removeEventListener() {},
+    }))
+    const wrapper = mountControls()
+    expect(wrapper.get('[data-test="pb-controls"]').classes()).not.toContain('phone-form')
+    expect(wrapper.find('.pb-speed').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('emits playback controls, stepping, speed, and fullscreen actions', async () => {
     const wrapper = mountControls()
 

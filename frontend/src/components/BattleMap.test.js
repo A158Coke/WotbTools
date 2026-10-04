@@ -501,7 +501,7 @@ describe('vehicle marker presentation', () => {
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
     expect(marker.attributes('style')).toContain('scale(1.2)')
-    expect(marker.find('.pb-labels').attributes('style')).toContain('scale(0.833')
+    expect(marker.find('.pb-presentation').attributes('style')).toContain('scale(0.833')
   })
 
   it('updates supremacy points from realtime samples when seeking', async () => {
@@ -547,7 +547,8 @@ describe('vehicle-aware vehicle markers', () => {
     }
     expect(viewportScale(wrapper)).toBe(4)
     expect(parseMarkerScale(marker.attributes('style'))).toBe(4)
-    expect(marker.find('.pb-labels').attributes('style')).toContain('scale(0.25)')
+    // 反缩放宿主是 .pb-presentation（标签呈现层已抽成共享组件 PlaybackVehicleLabel.vue）
+    expect(marker.find('.pb-presentation').attributes('style')).toContain('scale(0.25)')
   })
 
   it('zoom 下 selected→name gap 与 recorder→vehicle 恒定；浮动幅度恒 ≈2px（1×/≈2×/4×）', async () => {
@@ -685,8 +686,9 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     expect(labels[0].text()).toContain('Maus')
     expect(labels[1].text()).toContain('T49')
     // 标签块位于图标上方（bottom: calc(100% + 2px)），自身反缩放（overlayInverseScale）→ 屏幕字号恒定
-    for (const label of labels) {
-      expect(label.attributes('style')).toContain('scale(')
+    // 反缩放宿主是 .pb-presentation（呈现层已抽成共享组件）
+    for (const presentation of wrapper.findAll('.pb-presentation')) {
+      expect(presentation.attributes('style')).toContain('scale(')
     }
     const firstStyle = wrapper.find('.pb-vehicle').attributes('style')
     expect(firstStyle).toContain('scale(1)') // marker 自身保留缩放，避免 layout camera 改变其屏幕尺寸

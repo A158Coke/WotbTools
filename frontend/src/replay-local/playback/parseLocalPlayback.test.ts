@@ -7,6 +7,8 @@ import tier10 from '../../../../common/tankopedia-tier10.json'
 import { createTankopedia } from '../compute/tankopedia.js'
 import { validateBattlePlaybackDataset } from '../../api/contract-runtime.js'
 import { fixtureFacets, requireFixtures } from '../__golden__/agentWasmNode.js'
+import { createReloadStateResolver } from '../../scene/reloadBar.js'
+import { resolveReplayClock } from '../canonical/facts.js'
 
 const facets = vi.hoisted(() => ({
   parseAgentResultFromBytes: vi.fn(),
@@ -56,10 +58,34 @@ describe('parseLocalPlayback', () => {
     await expect(parseLocalPlayback(new Uint8Array([1]), { tankopedia })).rejects.toThrow('boom')
   })
 
+  it('carries raw Playback reload evidence beside the dataset, aligned to canonical 2D time', async () => {
+    const f = await arrange('cw-training-15-14-example.wotbreplay')
+    const clock = resolveReplayClock(f.aiReview!.battle.periods, f.result, f.playback!.meta.duration)!
+    const vehicle = f.playback!.vehicles.find((v) => v.team === f.playback!.meta.friendly_team)!
+    const raw = {
+      ...f.playback!,
+      // Render-grid origin deliberately differs from canonical 2D battle t=0.
+      meta: { ...f.playback!.meta, t_start: clock.startRaw - 20 },
+      reloads: [{ eid: vehicle.eid, clock: clock.startRaw + 10, phase: 3, duration_s: 8, count: null }],
+      reload_effective: [{ eid: vehicle.eid, clock: clock.startRaw, duration_s: 4 }],
+      shots: [],
+    }
+    facets.parseAgentPlaybackFromBytes.mockResolvedValue(raw)
+    const out = await parseLocalPlayback(new Uint8Array([1]), { tankopedia })
+    expect(out.reloadTelemetry?.timeOrigin).toBe(clock.startRaw)
+    expect(out.reloadTelemetry?.reloads).toBe(raw.reloads)
+    expect(out.reloadTelemetry?.reload_effective).toBe(raw.reload_effective)
+    const at = createReloadStateResolver(out.reloadTelemetry)
+    expect(at(vehicle.eid, out.reloadTelemetry!.timeOrigin + 12)).toEqual([{ state: 'loading', progress: 0.5 }])
+    expect(out.dataset).not.toHaveProperty('reloads')
+    expect(out.dataset).not.toHaveProperty('reloadTelemetry')
+  })
+
   it('9.8 训练室（无 period 广播，服务端 timeline 不可用）：本地同样 unavailable，与 Java 一致', async () => {
     await arrange('training-room-example.wotbreplay')
     const out = await parseLocalPlayback(new Uint8Array([1]), { tankopedia })
     expect(out.dataset).toBeNull()
     expect(out.overview).toBeNull()
+    expect(out.reloadTelemetry).toBeNull()
   })
 })

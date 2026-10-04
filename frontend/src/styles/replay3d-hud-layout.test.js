@@ -87,7 +87,7 @@ describe('Replay3DPane HUD 定位契约', () => {
    * （review blocker）；这类改动不会让行为测试失败，所以在这里锁结构。真实几何安全由
    * browser-workspace-interaction 的 roster 几何场景在真实 Chrome 里证明，这里只是 smoke。
    */
-  it('F) 阵容是左右两条侧边车道；unknown 不在中央车道；紧凑档打开时各占半宽', () => {
+  it('F) 阵容是左右两条侧边车道；unknown 不在中央车道；空间不足时使用可关闭的整块名册', () => {
     const all = rules()
     const bodiesOf = (selector) => all.filter((r) => r.selector === selector).map((r) => r.body).join(' ')
     // 桌面：两条车道各自贴边（side-left 只声明 left、side-right 只声明 right，互不覆盖）
@@ -101,10 +101,18 @@ describe('Replay3DPane HUD 定位契约', () => {
     expect(unknown).not.toContain('translateX(-50%)')
     // 不再有把两队装进一个容器的 .side 布局（旧通栏结构）
     expect(all.some((r) => r.selector === '.side' || r.selector.endsWith(' .side'))).toBe(false)
-    // 紧凑档：打开后左右各半（两侧边界都声明），互不重叠
-    expect(bodiesOf('.pb-root.roster-open .side-left')).toContain('right: 51%')
-    expect(bodiesOf('.pb-root.roster-open .side-right')).toContain('left: 51%')
-    expect(bodiesOf('.pb-root.roster-open .team-lane')).toContain('display: flex')
+    // 空间不足时整体进入普通网格流；车道/队伍不再各自滚动或占用战场侧边。
+    expect(bodiesOf('.roster-surface.transient')).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)')
+    expect(bodiesOf('.transient .team-lane')).toContain('position: static')
+    // 车道与队伍都不得**自己滚动**（审计 BZ-13：名册里不允许嵌套滚动条）。
+    // 车道可以 `overflow: hidden` 把越界内容裁掉——那正是「有界车道」的实现方式，
+    // 与「车道变成滚动容器」是两件事。
+    for (const selector of ['.team-lane', '.team']) {
+      const overflow = /overflow(-y)?:\s*([a-z]+)/.exec(bodiesOf(selector))
+      expect(overflow?.[2] ?? 'visible').not.toMatch(/auto|scroll/)
+    }
+    expect(bodiesOf('.roster-surface[hidden]')).toContain('display: none')
+
   })
 })
 

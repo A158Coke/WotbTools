@@ -6,7 +6,7 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { parseLocalPlayback } from '../replay-local/playback/index.js'
 import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
-import type { BattlePlaybackDataset } from '../types/playback-v2.js'
+import type { BattlePlaybackDataset, PlaybackReloadTelemetry } from '../types/playback-v2.js'
 import MapOverview from './MapOverview.vue'
 import BattlePlayback from './BattlePlayback.vue'
 
@@ -23,6 +23,7 @@ const props = defineProps({
 
 const mapOverview = ref<Record<string, any> | null>(null)
 const mapPlaybackV2 = ref<BattlePlaybackDataset | null>(null)
+const reloadTelemetry = ref<PlaybackReloadTelemetry | null>(null)
 /** LOADING | FULL | PARTIAL | UNAVAILABLE | ERROR */
 const playbackV2State = ref('LOADING')
 const playbackV2Error = ref('')
@@ -53,6 +54,7 @@ function reset() {
   parsedFile = null
   mapOverview.value = null
   mapPlaybackV2.value = null
+  reloadTelemetry.value = null
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
   panelView.value = 'playback'
@@ -67,9 +69,10 @@ async function load() {
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
   try {
-    const { dataset, overview } = await parseLocalPlayback(file as File)
+    const { dataset, overview, reloadTelemetry: telemetry } = await parseLocalPlayback(file as File)
     if (seq !== parseSeq) return
     mapPlaybackV2.value = dataset
+    reloadTelemetry.value = telemetry
     mapOverview.value = overview as Record<string, any> | null
     playbackV2State.value = !dataset ? 'UNAVAILABLE' : dataset.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
   } catch (e) {
@@ -78,6 +81,7 @@ async function load() {
     console.warn('[playback-local] parse failed', e)
     parsedFile = null
     mapPlaybackV2.value = null
+    reloadTelemetry.value = null
     playbackV2State.value = 'ERROR'
     playbackV2Error.value = e instanceof ReplayEngineUnavailableError
       ? 'recon.playback.engine_unavailable'
@@ -131,6 +135,7 @@ onBeforeUnmount(() => {
             v-if="pbOverview"
             :overview="pbOverview || undefined"
             :playback-v2="mapPlaybackV2 || undefined"
+            :reload-telemetry="reloadTelemetry || undefined"
             :seek-to="mapSeek ?? undefined"
             :active="active && panelView === 'playback'"
           />
