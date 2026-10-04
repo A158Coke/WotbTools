@@ -49,14 +49,18 @@ export function useFeatureGate() {
   /**
    * 同步门禁（返回值即「当前这次动作能不能做」）。
    *
-   * 连通性首次检测未完成时：
-   *  - fail-closed：返回 false，当前动作被拒绝（不发请求）；
-   *  - 不立即弹 connectivity 提示（占位 UNKNOWN 不是结论）；
-   *  - 检测完成后只按真实状态**补判 / 补提示**一次：在线则不提示，真实离线 / 未知照常提示；
-   *  - **不会**自动重放被拒绝的原始动作。需要恢复的页面由自己的可用性 watcher 负责。
+   * 与 `availability(feature)` 同一判定：是否等待首次检测只看**该功能自己的** `pending`。
+   *  - 不 pending（LOCAL / 未注册功能，或检测已完成）：直接按当前状态判定；
+   *  - pending 但当前动作本就可用（ONLINE_OPTIONAL 的本地部分）：放行，不因初始化阻塞；
+   *  - pending 且不可用（ONLINE_REQUIRED）：fail-closed 返回 false，当前动作被拒绝（不发请求），
+   *    不立即弹 connectivity 提示（占位 UNKNOWN 不是结论）；检测完成后只按真实状态
+   *    **补判 / 补提示**一次（在线则不提示），**不会**自动重放被拒绝的原始动作 ——
+   *    需要恢复的页面由自己的可用性 watcher 负责。
    */
   function requireFeature(feature) {
-    if (settled.value) return evaluateFeatureGate(feature, connectivity.value)
+    const current = availability(feature)
+    if (!current.pending) return evaluateFeatureGate(feature, connectivity.value)
+    if (current.available) return true
     void whenSettled().then(() => evaluateFeatureGate(feature, connectivity.value))
     return false
   }

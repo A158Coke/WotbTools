@@ -170,6 +170,26 @@ describe('feature gate (wired to the connectivity singleton)', () => {
     expect(availability(Feature.TELEMETRY_UPLOAD)).toMatchObject({ available: true, pending: true })
   })
 
+  it('requireFeature agrees with availability before the first detection: LOCAL / ONLINE_OPTIONAL pass, ONLINE_REQUIRED fail-closed', () => {
+    // 冷启动：connectivity = UNKNOWN、settled = false（未 start）。
+    const { requireFeature, availability } = useFeatureGate()
+    const notice = useConnectivityNotice()
+    expect(useConnectivity().settled.value).toBe(false)
+    for (const feature of [
+      Feature.REPLAY_RESULT,
+      Feature.RATING,
+      Feature.TELEMETRY_UPLOAD,
+      Feature.STATISTICS_CONTRIBUTION,
+      Feature.BACKGROUND_SYNC,
+    ]) {
+      expect(requireFeature(feature), feature).toBe(true)
+      expect(requireFeature(feature), feature).toBe(availability(feature).available)
+    }
+    expect(requireFeature(Feature.AI_REVIEW)).toBe(false)
+    expect(availability(Feature.AI_REVIEW).available).toBe(false)
+    expect(notice.visible.value).toBe(false)
+  })
+
   it('settling UNKNOWN → UNKNOWN still re-evaluates availability (settled is reactive)', async () => {
     stubNative({ getCapabilities: ['native-auth', 'connectivity'], connectivityGetState: 'unknown' })
     const { availability } = useFeatureGate()
