@@ -37,6 +37,7 @@ import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
+import { formatPlaybackClock } from '../utils/playbackClock'
 
 defineOptions({ name: 'Replay3DPane' })
 
@@ -250,8 +251,20 @@ const selectedRow = computed(() => {
 
 // Scene and Details consume the same workspace-owned parse result.
 const detailPlayback = computed(() => store.hasData ? store.playbackSession?.canonical : null)
-const detailTime = computed(() => detailPlayback.value?.clock
-  ? Math.max(0, store.time - detailPlayback.value.clock.startRaw) : store.time)
+/**
+ * 战斗时钟（与 2D 同一口径：0 = 开战，总长 = durationSec）。工作台 canonical 的 clock 优先；canonical 未就绪 / 失败时
+ * 用场景按同一 resolver 从自身 periods 推出的 store.battleClock；两者都没有才退回场景原始时间轴（含准备阶段）。
+ * 播放条、顶栏计时与 Details 只认这一个原点：同一时刻在 2D / 3D 显示同一个时间。
+ */
+const battleClock = computed(() => detailPlayback.value?.clock ?? store.battleClock ?? null)
+const timelineStart = computed(() => battleClock.value?.startRaw ?? store.startTime)
+const timelineEnd = computed(() => {
+  const clock = battleClock.value
+  return clock && Number.isFinite(clock.durationSec) && clock.durationSec > 0 ? clock.startRaw + clock.durationSec : store.duration
+})
+const transportTime = computed(() => Math.min(timelineEnd.value, Math.max(timelineStart.value, store.time)))
+const battleTimeLabel = computed(() => formatPlaybackClock(store.time - timelineStart.value))
+const detailTime = computed(() => Math.max(0, store.time - timelineStart.value))
 const selectedTrack = computed(() => detailPlayback.value?.dataset?.vehicles.find(track =>
   selectedRow.value?.accountId != null && track.accountId === selectedRow.value.accountId) || null)
 const selectedLife = computed(() => selectedTrack.value ? lifeAt(selectedTrack.value, detailTime.value) : null)
@@ -295,7 +308,6 @@ const selectedHealth = computed(() => {
     maxHp: Number.isFinite(selectedRow.value.maxHp) && selectedRow.value.maxHp > 0 ? selectedRow.value.maxHp : null,
   } : null
 })
-const detailClock = (sec) => `${Math.floor(Math.max(0, sec) / 60)}:${String(Math.floor(Math.max(0, sec) % 60)).padStart(2, '0')}`
 
 const bannerColor = computed(() => {
   const outcome = store.banner?.outcome
@@ -581,7 +593,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           :show-summary="showTopbar"
           score-label-key="recon.map.playback.kills"
           :map-title="mapTitle"
-          :battle-time="store.timer"
+          :battle-time="battleTimeLabel"
           :friendly-hp="hudHealth(store.hpFriend, store.hpFriendMax)"
           :enemy-hp="hudHealth(store.hpEnemy, store.hpEnemyMax)"
           :friendly-points="store.scoreFriend"
@@ -609,7 +621,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         :selected-state="selectedDetailState" :health="selectedHealth" :phone-form="portraitFlow"
         :selected-portrait-url="selectedPortraitUrl" :sel-last-known-sec="selLastKnownSec"
         :sel-cur-stats="selCurStats" :selected-track="selectedTrack" :sel-damage-log="selDamageLog"
-        :current-time="detailTime" :format-clock="detailClock"
+        :current-time="detailTime" :format-clock="formatPlaybackClock"
         :drag-host="rootEl" :drag-bounds="controlsEl"
         :initial-side="detailsSide" :selection-key="selectedEid"
         @close="closeDetails"
@@ -644,9 +656,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           :playing="store.playing"
           :speed="store.speed"
           :speeds="PLAYBACK_SPEEDS"
-          :current-time="store.time"
-          :start-time="store.startTime"
-          :duration="store.duration"
+          :current-time="transportTime"
+          :start-time="timelineStart"
+          :duration="timelineEnd"
           :step-seconds="PLAYBACK_STEP_SECONDS"
           :compact="isPhone"
           @toggle-play="transport.togglePlay()"

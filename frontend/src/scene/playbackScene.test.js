@@ -149,6 +149,25 @@ describe('playbackScene 会话代数契约', () => {
     expect(store.playbackSession).toBeNull()
   })
 
+  it('战斗时钟按 canonical 同一 resolver 从 periods 推出；会话从开战时刻开始（与 2D 同一个 0）', async () => {
+    const { store, api } = createScene()
+    const base = minimalData()
+    const data = {
+      ...base,
+      meta: { ...base.meta, duration: 320 },
+      // 准备 → 倒计时 → 开战（55）→ 战后（300）
+      periods: [{ clock: 42, period: 1 }, { clock: 45, period: 2 }, { clock: 55, period: 3 }, { clock: 300, period: 4 }],
+    }
+    const session = { loadScene: vi.fn().mockResolvedValue(data), getState: () => ({ canonical: null, canonicalState: 'idle' }) }
+    await api.loadData({ kind: 'local', file: new File(['x'], 'clock.wotbreplay'), session })
+    expect(store.battleClock).toEqual({ startRaw: 55, durationSec: 245 })
+    // 准备 / 倒计时阶段不在时间轴上：从开战开始，而不是 t_start（42）（开播首帧可能已走了一点点）
+    expect(store.time).toBeGreaterThanOrEqual(55)
+    expect(store.time).toBeLessThan(56)
+    api.reset()
+    expect(store.battleClock).toBeNull()
+  })
+
   it('3D becomes ready before canonical readiness resolves', async () => {
     const { store, api } = createScene()
     const state = { canonical: null, canonicalState: 'loading' }

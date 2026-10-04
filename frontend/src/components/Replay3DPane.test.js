@@ -669,6 +669,41 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it('播放条 / 顶栏 / 详情与 2D 同一战斗时钟：canonical clock 优先，场景按同一 resolver 推出的时钟兜底', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const store = playback.api.store
+    store.hasData = true
+    // 场景时间轴含准备阶段（t_start = 0.97、END = 293.82）；战斗时钟：开战在原始 11.0s，打了 282s
+    store.startTime = 0.97
+    store.duration = 293.82
+    store.battleClock = { startRaw: 11, durationSec: 282 }
+    store.time = 272.9
+    await nextTick()
+    const transport = wrapper.getComponent({ name: 'PlaybackTransport' })
+    expect(transport.props('startTime')).toBe(11)
+    expect(transport.props('duration')).toBe(293)
+    // 与 2D 同一个读数：已播放 = 原始时间 − 开战（261.9s → 04:22），总长 = 282s（04:42）
+    expect(wrapper.get('[data-test="pb-time"]').text()).toBe('04:22 / 04:42')
+    expect(wrapper.get('[data-test="pb-hud-time"]').text()).toBe('04:22')
+
+    // 工作台 canonical 就绪后以它为准（与 2D / 详情完全同一个原点）
+    store.playbackSession = shallowReactive({ canonical: { dataset: null, clock: { startRaw: 11.3, durationSec: 282 }, reloadTelemetry: null } })
+    await nextTick()
+    expect(transport.props('startTime')).toBe(11.3)
+    expect(wrapper.get('[data-test="pb-hud-time"]').text()).toBe('04:22')
+
+    // 两者都没有：退回场景原始时间轴（不伪造开战时刻）
+    store.playbackSession = null
+    store.battleClock = null
+    store.time = 100.97
+    await nextTick()
+    expect(transport.props('startTime')).toBe(0.97)
+    expect(transport.props('duration')).toBe(293.82)
+    expect(wrapper.get('[data-test="pb-hud-time"]').text()).toBe('01:40')
+    wrapper.unmount()
+  })
+
   it('共享标签偏好推给场景：enabled + 四行开关，面板改动即时下发', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
@@ -1673,7 +1708,9 @@ describe('Replay3DPane 顶栏双方血量', () => {
     const wrapper = mountPane()
     const { store } = playback.api
     store.hasData = true
-    store.timer = '03:20'
+    // 顶栏计时与 2D 同口径：开战起算（战斗时钟原点 startRaw = 10 → 210 - 10 = 200s = 03:20）
+    store.battleClock = { startRaw: 10, durationSec: 280 }
+    store.time = 210
     store.hpFriend = 12345; store.hpFriendMax = 20000; store.hpFriendPct = 61.725
     store.hpEnemy = 800; store.hpEnemyMax = 15000; store.hpEnemyPct = 5.333
     store.scoreFriend = 2; store.scoreEnemy = 1
