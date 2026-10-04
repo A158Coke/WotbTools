@@ -326,13 +326,19 @@ try {
       const pt = (x, y) => [{ x, y, id: 1, radiusX: 8, radiusY: 8, force: 1 }]
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(from.x, from.y) }, sessionId)
       await delay(60)
-      // 拖出画布顶部（负 y）再释放
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(from.x, -40) }, sessionId)
+      // 先在画布内移动过阈值完成 claim（触屏是延迟 claim：按下只记候选，移动才进入瞄准），
+      // 再拖出视口顶部。这样后续断言验证的是 capture 语义本身，而不是 claim 时机——
+      // 且不依赖"视口外触碰点是否还派发 pointermove"（CI 上实测该事件可能被吞）。
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(from.x + 24, from.y) }, sessionId)
+      await delay(80)
+      const claimed = await page.evaluate('window.__armorRicochet.aimingState()')
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(from.x + 24, -40) }, sessionId)
       await delay(60)
       const mid = await page.evaluate('window.__armorRicochet.aimingState()')
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
       await delay(300)
       const st = await page.evaluate('window.__armorRicochet.aimingState()')
+      check(claimed.aiming === true, `画布内移动过阈值即 claim 瞄准（aiming=${claimed.aiming}）`)
       check(mid.aiming === true, '画布外拖动中 aiming 保持（capture 生效）')
       check(st.aiming === false && st.controlsEnabled === true,
         `画布外释放后清理完整（aiming=${st.aiming} controls=${st.controlsEnabled}）`)
