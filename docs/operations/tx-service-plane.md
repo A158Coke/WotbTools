@@ -9,9 +9,9 @@ K6B-1  COMPLETE
 K6B-2A COMPLETE  Frontend → Business API              http://10.20.0.1:8087
 K6B-2B COMPLETE  Business API → Business PostgreSQL   10.20.0.1:25432
 K6B-2C COMPLETE  Business API → Keycloak Admin        http://10.20.0.1:8080
-K6B-2D CUT OVER  Keycloak → Keycloak PostgreSQL       10.20.0.1:15432
+K6B-2D COMPLETE  Keycloak → Keycloak PostgreSQL       10.20.0.1:15432
+K6B-2E CUT OVER  Caddy → Frontend                     10.20.0.1:8081
 Remaining（Docker-local，各自步骤前不变）
-       Caddy → Frontend                     wotb-frontend:80
        Caddy → Keycloak                     keycloak:8080
        Frontend → AI Service（Yecao）        http://10.20.0.2:8089   （不随 TX placement 移动）
 ```
@@ -41,7 +41,7 @@ K6B logical endpoint contract（`Active value` 为当前生产实际 placement�
 | Business API → Business PostgreSQL | `TX_BUSINESS_DB_HOST/PORT` | `business-postgres:5432` | `10.20.0.1:25432`, `10.20.0.3:25432` | **`10.20.0.1:25432`（K6B-2B 已切换）** |
 | Business API → Keycloak Admin | `TX_KEYCLOAK_ADMIN_SERVER_URL` | `http://keycloak:8080` | `http://10.20.0.1:8080`, `http://10.20.0.3:8080` | **`http://10.20.0.1:8080`（K6B-2C 已切换）** |
 | Keycloak → Keycloak PostgreSQL | `TX_KEYCLOAK_DB_HOST/PORT` | `keycloak-postgres:5432` | `10.20.0.1:15432`, `10.20.0.3:15432` | **`10.20.0.1:15432`（K6B-2D 已切换）** |
-| Caddy → Frontend | `CADDY_FRONTEND_UPSTREAM` | `wotb-frontend:80` | `10.20.0.1:8081`, `10.20.0.3:8081` | Docker-local |
+| Caddy → Frontend | `CADDY_FRONTEND_UPSTREAM` | `wotb-frontend:80` | `10.20.0.1:8081`, `10.20.0.3:8081` | **`10.20.0.1:8081`（K6B-2E 已切换）** |
 | Caddy → Keycloak | `CADDY_KEYCLOAK_UPSTREAM` | `keycloak:8080` | `10.20.0.1:8080`, `10.20.0.3:8080` | Docker-local |
 
 `KEYCLOAK_ISSUER_URI` 不是 placement endpoint，始终保持
@@ -60,24 +60,26 @@ Keycloak Admin 请求都不会先发出去再等 `deploy.sh` 拒绝。probe 自�
 
 ## K6B-2A / 2B / 2C / 2D：同宿主 hairpin 是刻意的 placement 验证
 
-Frontend、Business API、Keycloak、Caddy 与两套 PostgreSQL **当前都在 TX1**，因此四个已切换的
+Frontend、Business API、Keycloak、Caddy 与两套 PostgreSQL **当前都在 TX1**，因此五个已切换的
 consumer 都是**同宿主**切换：Frontend 不再走 Docker bridge 的 `business-api:8087`，而是连到
 TX1 自己的 WG 地址 `10.20.0.1:8087`；Business API 也不再走 `business-postgres:5432` 与
 `http://keycloak:8080`，而是连到 `10.20.0.1:25432` 与 `http://10.20.0.1:8080`；Keycloak 也不再走
-Docker bridge 的 `keycloak-postgres:5432`，而是连到 `10.20.0.1:15432`。四者都经宿主的
+Docker bridge 的 `keycloak-postgres:5432`，而是连到 `10.20.0.1:15432`；Caddy 也不再走
+`wotb-frontend:80`，而是连到 `10.20.0.1:8081`。五者都经宿主的
 published port 回到同一台机器。这在网络上是 hairpin，且是有意为之：
 
 - **目的**：K6B 的目标是 logical placement abstraction / migration readiness，不是"为了使用
   WireGuard"。把 consumer 的值改成 service-plane 地址后，placement 由 Git 里的一个已评审值
   表达，未来把 Business API 移到 TX2（`10.20.0.3:8087`）、其数据库移到 TX2
-  （`10.20.0.3:25432`）、Keycloak 移到 TX2（`http://10.20.0.3:8080`）或 Keycloak 的数据库移到
-  TX2（`10.20.0.3:15432`）只需改这一个值；
+  （`10.20.0.3:25432`）、Keycloak 移到 TX2（`http://10.20.0.3:8080`）、Keycloak 的数据库移到
+  TX2（`10.20.0.3:15432`）或 Frontend 移到 TX2（`10.20.0.3:8081`）只需改这一个值；
   如果同宿主 consumer
   永远保持 Docker-local，K6B-2 的整套 allowlist 与 runtime token 就永远得不到真实验证。
 - **代价**：被切换的路径比走 bridge 多一次宿主 NAT 跳；对 K6B-2B 而言，Business API 的数据库
   连接新增一个依赖——TX1 自己的 `wg0` 地址必须存在（TX deploy 的 `preflight_host` 本来就要求
   `wg0`）；对 K6B-2C 而言，Keycloak Admin 请求同样依赖该地址；对 K6B-2D 而言，Keycloak 到
-  PostgreSQL 的 JDBC 连接同样依赖该地址。它**不**意味着
+  PostgreSQL 的 JDBC 连接同样依赖该地址；对 K6B-2E 而言，**公网入口**（Caddy → Frontend）也
+  依赖它。它**不**意味着
   TX1 → TX1 的流量会走到远端 WG peer：流量没有离开宿主机，因此 WG peer 不可达不会影响它，
   只有 `wg0` 地址本身消失才会。
 - **可观测性**：frontend owner deploy 用 `frontend-api` 探针**穿过 frontend**
@@ -105,6 +107,22 @@ published port 回到同一台机器。这在网络上是 hairpin，且是有意
   `10.20.0.1:15432` 是 WG-only 发布（`127.0.0.1:15432` 仅供宿主管理），由
   `wireguard-service-plane` token 按精确 binding 守护。两个 PostgreSQL 端口不可互换：
   25432 是 Business，15432 是 Keycloak。
+- **2E 的 active 配置语义（为什么 `tx-logical-endpoints-active` 是真检查）**：Caddy 的
+  `deploy/tx/Caddyfile` 以 `reverse_proxy {$CADDY_FRONTEND_UPSTREAM}` 使用 **Caddy 自身的环境变量
+  替换**，而该 Caddyfile 是只读 bind mount、没有任何渲染步骤（`deploy/tx/caddy.compose.yml`），
+  所以运行中容器的 `Config.Env` **就是** Caddy 载入配置时用的值；改变它必须 recreate 容器。
+  runtime gate 的 active 记录正是 `docker inspect` 该容器的 `CADDY_FRONTEND_UPSTREAM`，因此
+  "容器 env = 实际生效的 upstream"，不存在 stale rendered config 的假绿；stale-active fixture
+  专门覆盖 declared WG + active `wotb-frontend:80` 的情形（declared PASS、active FAIL、
+  无 `TX_RUNTIME_READY`）。
+- **2E 的 Host/TLS/路由语义不变**：Caddyfile 未修改。公网 catch-all 用
+  `reverse_proxy {$CADDY_FRONTEND_UPSTREAM} { header_up Host {host} }`（保留客户端 Host），
+  探测路由 `/_wotb/frontend/*` 用 `header_up Host wotbtools.com`；因此 upstream 从 Docker 名换成
+  IP 不改变 Host、TLS、静态资源/SPA/`/api` 路由、assetlinks、下载路由、压缩或安全头语义。
+  Caddyfile 中也没有任何逻辑依赖 upstream 的 **hostname** 是 `wotb-frontend`（该名字只是 compose
+  的默认值 `${CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}`，回退时仍然可用）。`10.20.0.1:8081`
+  是 WG-only 发布（`deploy/tx/frontend.compose.yml`），由 `wireguard-service-plane` token 按精确
+  binding 守护；8081 = Frontend、8080 = Keycloak、8087 = Business API 不可互换。
 - **K6B-2C 的运行时功能边界（诚实记录）**：runtime gate 的 `business-profile` / `business-hof` /
   `hof-replay-storage` / `admin-authz` 走的是 Business API 的**用户面**，代码上**不**调用
   Keycloak Admin client（唯一调用者是 `AdminUserService`，只挂在需要 `wotbtools-admin` realm role
@@ -248,5 +266,16 @@ SPI、Keycloak PostgreSQL、hostname、公开 issuer、Caddy 路由、DNS 或 Wi
 dispatch `Ops / TX Runtime Check`。回退后必须是 `2A = WG`、`2B = WG`、`2C = WG`、
 `2D = Docker-local`；**绝对不得**回退 2A/2B/2C。数据库本身没有任何需要回退的东西——没有迁移
 数据、schema、库名、账号、密码、卷、备份或 provisioning 语义，只改 consumer 的连接目标。
+
+**K6B-2E rollback（只回退 Caddy → Frontend）**：同一个 revert 里把
+`.github/workflows/caddy.yml` 与 `.github/workflows/tx-runtime-check.yml` 的
+`CADDY_FRONTEND_UPSTREAM` 一起改回 `wotb-frontend:80`，并同步把
+`CURRENT_K6B_CUTOVERS["caddy"]` 与 `test-workflow-contract.sh` 的 gate 期望改回同一 desired
+state（`CADDY_KEYCLOAK_UPSTREAM` 保持 `keycloak:8080` 不动——那是 K6B-2F），合并后 Caddy owner
+会自动重新部署，随后重新 dispatch `Ops / TX Runtime Check`，期望
+`frontend` / `caddy-frontend` / `public-tls-web` 与 `TX_RUNTIME_READY` 全部通过。回退后必须是
+`2A = WG`、`2B = WG`、`2C = WG`、`2D = WG`、`2E = Docker-local`、`2F = Docker-local`；
+**绝对不得**回退 2A–2D。该回退不改 Caddyfile 的 route/TLS/Host 语义、不改公开 hostname、不改
+DNS/WireGuard 配置、不改 Keycloak 或任何 workload。
 
 K6B 全部 consumer 完成后，K7 才进行首个真实 Komodo workload migration。
