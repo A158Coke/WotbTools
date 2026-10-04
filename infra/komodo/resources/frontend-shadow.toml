@@ -1,0 +1,49 @@
+# K7B: first production workload owned declaratively by Komodo.
+#
+# This is a SHADOW Frontend on TX2. ResourceSync may create/update the Stack metadata
+# only after manual review + Apply. deploy=false means applying the ResourceSync does
+# not itself start or redeploy the workload; deployment remains an explicit Komodo
+# action during K7B acceptance.
+[[stack]]
+name = "wotbtools-frontend-shadow"
+description = "K7B TX2 shadow Frontend; no public traffic until K7C"
+tags = []
+template = false
+deploy = false
+
+[stack.config]
+server = "tx2"
+project_name = "wotbtools-frontend-shadow"
+auto_pull = true
+run_build = false
+poll_for_updates = false
+auto_update = false
+auto_update_all_services = false
+destroy_before_deploy = false
+skip_secret_interp = false
+git_provider = "github.com"
+git_https = true
+git_account = ""
+repo = "A158Coke/WotbTools"
+branch = "main"
+commit = ""
+clone_path = ""
+reclone = false
+webhook_enabled = false
+webhook_secret = ""
+webhook_force_deploy = false
+files_on_host = false
+run_directory = "deploy/tx"
+file_paths = ["frontend-shadow.compose.yml"]
+env_file_path = ".env"
+send_alerts = true
+registry_provider = ""
+registry_account = ""
+extra_args = []
+build_extra_args = []
+compose_cmd_wrapper = ""
+compose_cmd_wrapper_include = []
+ignore_services = []
+file_contents = ""
+environment = ""
+links = []
