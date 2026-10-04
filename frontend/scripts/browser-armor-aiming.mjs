@@ -140,6 +140,62 @@ try {
     await delay(250)
   }
 
+  /**
+   * 双指缩放（评审 BLOCKER：炮塔/炮管上的第一根手指不得吃掉 pinch）。
+   * 第一根手指按在部位上（from），第二根落下（距离 ~140px）后收拢/张开 → OrbitControls
+   * 的 TOUCH_DOLLY_PAN 生效。断言：手指落位时不进入瞄准、controls 保持启用；捏合改变相机
+   * 距离；炮塔/炮管角度不变；不触发装甲判定；手势结束后状态干净。
+   * direction：'converge'（收拢 = 拉远）/ 'diverge'（张开 = 拉近）——相机距离有
+   * [minDistance=3, maxDistance=30] 钳制，用例需按当前距离选方向（贴到钳制值即无变化）。
+   */
+  const canvasRect = () => page.evaluate(`(() => {
+    const r = document.querySelector('canvas').getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  })()`)
+  const pinchZoom = async (label, from, dx, dy, direction = 'converge') => {
+    const cdp = chromeCdp.client
+    const rect = await canvasRect()
+    const clamp = (p) => ({
+      x: Math.round(Math.min(rect.right - 16, Math.max(rect.left + 16, p.x))),
+      y: Math.round(Math.min(rect.bottom - 16, Math.max(rect.top + 16, p.y))),
+    })
+    const second = clamp({ x: from.x + dx, y: from.y + dy })
+    const scale = direction === 'diverge' ? 1.8 : 0.25
+    const secondEnd = clamp({ x: from.x + dx * scale, y: from.y + dy * scale })
+    const pts = (list) => list.map((p, i) => ({ x: p.x, y: p.y, id: i + 1, radiusX: 8, radiusY: 8, force: 1 }))
+    const state0 = await page.evaluate('window.__armorRicochet.aimingState()')
+    const aim0 = await readAim()
+    const j0 = await readJudgments()
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts([from]) }, sessionId)
+    await delay(60)
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts([from, second]) }, sessionId)
+    await delay(80)
+    const stateSecond = await page.evaluate('window.__armorRicochet.aimingState()')
+    for (let i = 1; i <= 5; i++) {
+      const p2 = {
+        x: Math.round(second.x + (secondEnd.x - second.x) * i / 5),
+        y: Math.round(second.y + (secondEnd.y - second.y) * i / 5),
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts([from, p2]) }, sessionId)
+      await delay(30)
+    }
+    const state1 = await page.evaluate('window.__armorRicochet.aimingState()')
+    const aim1 = await readAim()
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
+    await delay(250)
+    const stateEnd = await page.evaluate('window.__armorRicochet.aimingState()')
+    const j1 = await readJudgments()
+    check(stateSecond.aiming === false && stateSecond.controlsEnabled === true,
+      `${label}：部位上的第一根手指不进入瞄准、OrbitControls 保持启用（aiming=${stateSecond.aiming} controls=${stateSecond.controlsEnabled}）`)
+    check(Math.abs(state1.cameraDistance - state0.cameraDistance) > 0.05,
+      `${label}：双指捏合改变相机距离（${state0.cameraDistance} → ${state1.cameraDistance}）`)
+    check(aim1.t === aim0.t && aim1.g === aim0.g,
+      `${label}：炮塔/炮管角度不变（${aim0.t}/${aim0.g}）`)
+    check(j1 === j0, `${label}：双指手势不触发装甲判定（judgments ${j0}→${j1}）`)
+    check(stateEnd.aiming === false && stateEnd.controlsEnabled === true,
+      `${label}：手势结束后状态干净（aiming=${stateEnd.aiming} controls=${stateEnd.controlsEnabled}）`)
+  }
+
   // —— 交互分支断言 ——
   // 注意：炮塔/炮管一旦转动，之前扫描到的部位像素会移到别处（`aimPartAt` 按当前几何判定，
   // 陈旧像素会落进错误的部位分支）。每次操作前重新扫描，断言才指向真实部位。
@@ -215,6 +271,15 @@ try {
     check(m1 === m0, `拖动（车体上）= 相机不触发判定（judgments ${m0}→${m1}）`)
   }
 
+  // —— 双指缩放（评审 BLOCKER：炮塔/炮管上的第一根手指不得吃掉 pinch）——
+  // 触屏路由此处起才启用触屏仿真（前面的鼠标分支保持鼠标语义）；第一指按部位、第二指收拢。
+  await page.emulate({ width: 1400, height: 900, touch: true })
+  await delay(300)
+  {
+    const s = await rescan('炮管 pinch 前')
+    await pinchZoom('炮管上起手的双指缩放', s.gun, 130, 70)
+  }
+
   // —— 触屏（Pointer Events 触屏路径；评审 BLOCKER 1）——
   // 触屏视口窄且炮塔已转过：只要求用得到的部位（转动后炮管可能出画）
   await page.emulate({ width: 390, height: 844, touch: true })
@@ -228,6 +293,13 @@ try {
       `触屏·炮塔壳拖动 = 只 yaw（Pointer Events 路径，${beforeT.t} → ${afterT.t}）`)
   } else {
     check(false, '触屏视口下未找到炮塔像素（夹具几何/机位异常）')
+  }
+  {
+    // 炮塔上起手的双指缩放（手机档；与桌面档的炮管 pinch 共同覆盖两个部位）。
+    // 方向取「张开」（拉近）：桌面档 pinch 已把距离推到 23+，收拢会撞 maxDistance=30 钳制。
+    const s = await findSpots(['turret'])
+    if (s.turret) await pinchZoom('触屏·炮塔上起手的双指缩放', s.turret, 90, 60, 'diverge')
+    else check(false, '触屏视口下未找到炮塔像素（pinch 用例）')
   }
   {
     const s = await findSpots(['hull'])

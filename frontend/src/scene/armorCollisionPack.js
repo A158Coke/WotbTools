@@ -168,6 +168,11 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
     // 跳弹反射向空处，一次 AABB 测试代替求交）
     ivec3 dims = ivec3(rcGridDimsF);
     highp vec3 gMax = rcGridMin + rcGridDimsF * rcCell;
+    // 已知数值边界（评审记录，非 merge blocker）：分量恰为 0 的 slab 走 1/0=inf 口径——
+    // 射线不在该 slab 内时 t 区间为 (-inf,inf)，结果正确；恰在边界（ro 面向分量 == gMin/gMax）
+    // 时可能出 0*inf=NaN，NaN 比较为假 → 走不到 return 0 而给出无命中 → 维持紫（fail-closed，
+    // 不会伪造续飞结论）。如需严格化：改显式 zero-direction slab 分支（逐轴 if 判定 inside/miss），
+    // 代价是热路径多三条分支——当前口径在 GPU↔CPU 差分校准下已验证。
     highp vec3 ginv = 1.0 / reflDir;
     highp vec3 ga = (rcGridMin - ro) * ginv;
     highp vec3 gb = (gMax - ro) * ginv;
