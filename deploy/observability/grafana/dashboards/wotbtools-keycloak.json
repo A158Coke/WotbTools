@@ -153,7 +153,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "登录可靠性 · 失败分类（5m，已分流噪音）",
-      "description": "登录失败按 error 维度分解（LOGIN_ERROR / IDENTITY_PROVIDER_LOGIN_ERROR / IDENTITY_PROVIDER_FIRST_LOGIN_ERROR）。已排除噪音：本机 silent-check-sso 的 invalid_redirect_uri、密码错误 / 用户不存在、security-admin-console 管理台。分类法见 docs/auth/web-qq-diagnostics.md。",
+      "description": "登录失败按 error 维度分解（LOGIN_ERROR / IDENTITY_PROVIDER_LOGIN_ERROR / IDENTITY_PROVIDER_FIRST_LOGIN_ERROR）。已排除噪音：本机 silent-check-sso 的 invalid_redirect_uri（72h 实测 55 条）、密码/用户不存在（user_not_found 42 条、invalid_user_credentials 5 条）与 security-admin-console 管理台（17 条）。分类法与实测口径见 docs/auth/web-qq-diagnostics.md。查询已对生产 Loki 实测验证（LogQL 用反引号字符串；修复前版本用了非法的单引号）。",
       "datasource": {
         "type": "loki",
         "uid": "loki"
@@ -189,7 +189,7 @@
         {
           "refId": "A",
           "queryType": "range",
-          "expr": "sum by (error) (count_over_time({container_name=\"keycloak\"} |~ \"type=\\\"(LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|IDENTITY_PROVIDER_FIRST_LOGIN_ERROR)\\\"\" | clientId!=\"security-admin-console\" | regexp 'error=\"(?P<error>[^\"]+)\"' | error!~ \"invalid_redirect_uri|invalid_user_credentials|user_not_found\" [5m]))"
+          "expr": "sum by (error) (count_over_time({container_name=\"keycloak\"} |~ `type=\"(LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|IDENTITY_PROVIDER_FIRST_LOGIN_ERROR)\"` !~ \"security-admin-console\" | regexp `error=\"(?P<error>[^\"]+)\"` | error!~ \"invalid_redirect_uri|user_not_found|invalid_user_credentials\" [5m]))"
         }
       ]
     },
@@ -282,7 +282,7 @@
         {
           "refId": "A",
           "queryType": "range",
-          "expr": "sum by (identity_provider, error) (count_over_time({container_name=\"keycloak\"} |~ \"type=\\\"(LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|IDENTITY_PROVIDER_FIRST_LOGIN_ERROR)\\\"\" | regexp '(identity_provider=\"(?P<identity_provider>[^\"]*)\")?.*error=\"(?P<error>[^\"]+)\"' | error!~ \"invalid_redirect_uri|invalid_user_credentials|user_not_found\" [5m]))"
+          "expr": "sum by (identity_provider, error) (count_over_time({container_name=\"keycloak\"} |~ `type=\"(LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|IDENTITY_PROVIDER_FIRST_LOGIN_ERROR)\"` | regexp `(identityProvider=\"(?P<identity_provider>[^\"]*)\")?.*error=\"(?P<error>[^\"]+)\"` | error!~ \"invalid_redirect_uri|user_not_found|invalid_user_credentials\" [5m]))"
         }
       ]
     }
