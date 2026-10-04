@@ -48,7 +48,9 @@ vi.mock('../composables/useConnectivity.js', async () => {
 
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
-    initPromise: Promise.resolve(authenticated),
+    // 与真实 composable 一致：initPromise 只表示 bootstrap 落定，不携带登录态。
+    initPromise: Promise.resolve(undefined),
+    isAuthenticated: () => authenticated,
     tokenParsed: ref(roles.length ? { realm_access: { roles } } : null),
     login: api.login
   })
