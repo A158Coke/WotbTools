@@ -20,7 +20,14 @@ service = data["services"]["frontend"]
 assert service["image"] == "ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-473495ec07e7"
 assert service["environment"]["BACKEND_UPSTREAM"] == "http://10.20.0.1:8087"
 assert service["environment"]["AI_UPSTREAM"] == "http://10.20.0.2:8089"
-assert service["environment"]["NGINX_ENVSUBST_FILTER"] == "^(BACKEND_UPSTREAM|AI_UPSTREAM)$$", service["environment"]
+assert service["environment"]["NGINX_ENVSUBST_FILTER"] == "^(BACKEND_UPSTREAM|AI_UPSTREAM)$", service["environment"]
+
+extra_hosts = service.get("extra_hosts", [])
+if isinstance(extra_hosts, dict):
+    assert extra_hosts.get("caddy") == "10.20.0.1", extra_hosts
+else:
+    rendered_hosts = " ".join(map(str, extra_hosts))
+    assert "caddy" in rendered_hosts and "10.20.0.1" in rendered_hosts, extra_hosts
 
 ports = service.get("ports", [])
 assert len(ports) == 1, f"expected one published port, found: {ports!r}"
