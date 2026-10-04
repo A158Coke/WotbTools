@@ -36,7 +36,7 @@ anti-future-leak 或现有 tank-marker 资产契约。
 - Desktop（`>=1200px`）、Tablet（`768–1199px`）和 Mobile（`<768px`）共用同一套
   Universal Battle HUD：己方在左、权威比分/基地状态在中（无事实时不渲染占位符）、敌方在右；HP 的
   `FULL_RELATIVE`、`EXACT`、`PARTIAL`、`UNKNOWN` 语义保持不变。
-- 2D / 3D 共用紧凑中心栈：地图/时间、HP/比分与 compact 基地 metadata 的持久 HUD → 最大可用正方形 Stage → Transport。击杀流是独立的有界 overlay（2D 最多保留最新 2 条、3D 最多 3 条），不参与 HUD 高度预算，因此条目变化不会牵动 Stage / Transport 重排。
+- 2D / 3D 共用紧凑中心栈（行高随内容，宽度受限时多余高度留在栈外）：地图/时间、HP/比分与 compact 基地 metadata 的持久 HUD → 最大可用正方形 Stage → Transport。击杀流是独立的有界 overlay（2D 最多保留最新 2 条、3D 最多 3 条），不参与 HUD 高度预算，因此条目变化不会牵动 Stage / Transport 重排。
 - 主控件共用 `PlaybackTransport.vue`，顺序为 `-5 / Play-Pause / +5 / 当前速度 / 全屏 / Display`，速度档位按需展开，六个触控目标至少 44px。
 - 侧车道以 workspace 宽度作 fluid sizing，并有最小/最大边界；Stage 同时受中心可用宽度和实测可用高度约束。容量按**视口**算（`视口高 − 顶栏/底栏 − 实测 HUD − 实测 Transport − 间距`），刻意不用根元素的内容高度，也就不用按断点各写一套固定扣减。
 - Display 由 `PlaybackDisplaySurface.vue` 锚定 Gear，优先向上、空间不足换边并夹紧；竖屏采用有界 inline 面。Details 仍为独立的 workspace 级可拖动上下文窗。

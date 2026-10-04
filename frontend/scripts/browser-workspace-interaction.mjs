@@ -658,7 +658,14 @@ function rosterGeometryProbe() {
   const hud = root.querySelector('.hud')?.getBoundingClientRect()
   const transport = root.querySelector('.controls')?.getBoundingClientRect()
   if (stage && square) {
-    const maximumSide = out.portrait ? stage.width : Math.min(stage.width, stage.height)
+    // Budget comes from the workspace and chrome, never the content-sized Stage itself.
+    const style = getComputedStyle(root)
+    const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
+    const border = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0)
+    const availableHeight = rr.height - padding - border - (hud?.height || 0) - (transport?.height || 0)
+      - (parseFloat(getComputedStyle(root.querySelector('.pb-stage')).marginTop) || 0)
+      - (parseFloat(getComputedStyle(root.querySelector('.pb-stage')).marginBottom) || 0)
+    const maximumSide = out.portrait ? stage.width : Math.min(stage.width, availableHeight)
     if (square.width < maximumSide - 2 || square.width > maximumSide + 2) {
       out.errors.push(`Stage does not maximize available square: side=${square.width.toFixed(1)}, available=${maximumSide.toFixed(1)}`)
     }
@@ -683,6 +690,8 @@ function rosterGeometryProbe() {
     if (out.phone && boxes.some((box) => Math.min(box.width, box.height) < 43.5)) out.errors.push('primary touch targets must be at least 44px')
   }
   out.laneWidths = ['.side-left', '.side-right'].map((selector) => root.querySelector(selector)?.getBoundingClientRect().width ?? 0)
+  // center 列宽：HUD 占满整列，直接量它的盒（2/6/2 的比例断言用）。
+  out.centerWidth = root.querySelector('.hud')?.getBoundingClientRect().width ?? null
   out.laneIds = ['.side-left', '.side-right'].map((sel) => [...root.querySelectorAll(`${sel} .pl`)].map((el) => el.textContent.trim().split(/\s+/)[0]))
   // 行的信息契约：玩家 / 车型 / HP 条（条内文字）——百分比已经收进 HP 条内部。
   out.rowsComplete = [...root.querySelectorAll('.team-lane .pl')].every((row) => ['pb-roster-player', 'pb-roster-tank', 'roster-hp', 'roster-hp-text']
@@ -2650,7 +2659,7 @@ try {
     for (const [name, g] of [['tablet', tabletRoster], ['desktop', desktopRoster], ['fullscreen', fullscreenRoster]]) {
       const lane = g.laneWidths[0]
       // HUD 属于 center 列，用它的宽度当 center 宽度的实测值
-      const center = g.hud?.w ?? null
+      const center = g.centerWidth ?? null
       if (!lane || !center) { check(failures, false, `${name} roster matrix: missing lane/center`); continue }
       check(failures, center / lane >= 2.8,
         `${name} roster matrix: center must be ~3× a lane (lane=${lane} center=${center} ratio=${(center / lane).toFixed(2)})`)

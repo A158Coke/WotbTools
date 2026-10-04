@@ -426,7 +426,7 @@ function reconcileScene() {
   }
 }
 
-// Measure workspace capacity; grid rows reserve the intrinsic HUD and transport sizes.
+// Measure viewport capacity independently of the content-sized Stage row.
 const rootEl = ref(null)
 const hudEl = ref(null)
 const controlsEl = ref(null)
@@ -439,8 +439,17 @@ function measurePresentationBounds() {
   const tabs = document.fullscreenElement === root ? 0 : (parseFloat(pageStyle.getPropertyValue('--tabbar-h')) || 0)
   const viewportH = window.visualViewport?.height || window.innerHeight
   const top = document.fullscreenElement === root ? 0 : header
-  root.style.setProperty('--pb-workspace-h', `${Math.max(1, viewportH - top - tabs)}px`)
-
+  const workspaceH = Math.max(1, viewportH - top - tabs)
+  root.style.setProperty('--pb-workspace-h', `${workspaceH}px`)
+  const style = getComputedStyle(root)
+  const gap = parseFloat(style.getPropertyValue('--space-1')) || 0
+  const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
+  const border = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0)
+  const hudH = hudEl.value?.getBoundingClientRect().height || 0
+  const controlsH = controlsEl.value?.getBoundingClientRect().height || 0
+  const budget = Math.max(1, workspaceH - padding - border - hudH - controlsH - gap * 2)
+  const stageW = root.querySelector('.pb-stage')?.getBoundingClientRect().width || 0
+  root.style.setProperty('--pb-stage-h', `${Math.floor(Math.min(stageW, budget)) + gap * 2}px`)
 }
 function observeLaneBounds() {
   if (typeof ResizeObserver !== 'function') return
