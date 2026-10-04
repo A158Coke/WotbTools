@@ -165,6 +165,7 @@ jobs:
       alloy_tx: ${{ steps.filter.outputs.alloy_tx }}
       komodo_controller: ${{ steps.filter.outputs.komodo_controller }}
       komodo_periphery: ${{ steps.filter.outputs.komodo_periphery }}
+      production_worker: ${{ steps.filter.outputs.production_worker }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -278,6 +279,13 @@ jobs:
     with:
       base_sha: ${{ needs.pr_identity.outputs.base_sha }}
       head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+  production_worker:
+    needs: [pr_identity, changes]
+    if: needs.changes.outputs.production_worker == 'true'
+    uses: ./.github/workflows/ci-production-worker.yml
+    with:
+      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
   required:
     needs:
       - pr_identity
@@ -296,6 +304,7 @@ jobs:
       - alloy_tx
       - komodo_controller
       - komodo_periphery
+      - production_worker
     if: always()
     name: CI / Required Gate
     runs-on: ubuntu-latest

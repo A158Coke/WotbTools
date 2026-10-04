@@ -1,0 +1,184 @@
+name: Production Worker
+
+# Independent owner of the TX2 production-worker prerequisites (K7A).
+#
+# One owner, one lifecycle implementation (`deploy/production-worker`), one reviewed
+# profile per host in `deploy/production-worker/targets/<target>`. This workflow owns
+# host Docker prerequisites only: the Compose capability, the reviewed Docker daemon
+# registry mirror, and the registry credential of the execution context Komodo uses
+# (root). It never creates or adopts a workload, never touches Komodo Core or its
+# declarative resources, never touches Periphery's lifecycle, and never changes a K6B
+# production placement.
+#
+# The credential is read from the protected `tx-production` environment and handed to
+# the host through the SSH action's environment (never argv, never a file in Git). The
+# host-side reconcile re-executes itself through non-interactive sudo preserving only
+# that credential, so it never appears in a process list, a staged directory or a log.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/production-worker.yml
+      - deploy/check-production-freshness.sh
+      - deploy/production-worker/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/production-worker.yml
+    deploy/check-production-freshness.sh
+    deploy/production-worker/**
+
+jobs:
+  reconcile_tx2:
+    name: Reconcile the TX2 production worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: tx-production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Freeze current main
+        id: source
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_REF" == refs/heads/main ]] || { echo 'Production Worker workflow requires main.' >&2; exit 1; }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'The event SHA must be a full lowercase commit SHA.' >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo 'Checkout SHA differs from the event SHA.' >&2; exit 1; }
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      # Host parameters are data, reviewed in the repository, never inline here. The
+      # same validation the host-side scripts use runs on the runner first.
+      - name: Read the TX2 worker profile
+        id: target
+        shell: bash
+        env:
+          TARGET: tx2
+        run: |
+          set -euo pipefail
+          bash deploy/production-worker/read-target-profile.sh "$TARGET" "$GITHUB_OUTPUT"
+
+      # The staging root is reached before any other worker code exists on the host,
+      # so the audited helper runs straight from the checkout: the root, its incoming
+      # directory, and the SHA directory must all be real directories (mode 700)
+      # before SCP is allowed to write into them.
+      - name: Prepare safe TX2 worker staging root
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          command_timeout: 2m
+          script_path: deploy/production-worker/staging-root.sh
+          envs: SOURCE_SHA,WORKER_STAGING_ACTION,WORKER_STAGING_ROOT
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          WORKER_STAGING_ACTION: prepare
+          WORKER_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
+
+      # Only this owner's own reviewed inputs are staged: fixtures, other targets and
+      # every other owner's files stay in CI, so the host lock is never taken with
+      # anything the review did not read.
+      - name: Stage exact worker inputs on TX2
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: >-
+            deploy/production-worker/lib.sh,
+            deploy/production-worker/staging-root.sh,
+            deploy/production-worker/install.sh,
+            deploy/production-worker/verify.sh,
+            deploy/production-worker/reconcile.sh,
+            deploy/production-worker/read-target-profile.sh,
+            deploy/production-worker/targets/tx2/target.env
+          target: ${{ steps.target.outputs.staging_root }}/incoming/${{ steps.source.outputs.source_sha }}
+          overwrite: true
+
+      - name: Reject stale main before TX2 mutation
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+      # All mutation logic lives in the staged `reconcile.sh`, which owns the host
+      # lock and the privilege model. The registry credential arrives through the
+      # environment and is preserved across sudo by name only; the run asserts the
+      # host-scoped readiness token instead of trusting the exit status alone.
+      - name: Reconcile the TX2 production worker under the TX2 host lock
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          command_timeout: 30m
+          envs: SOURCE_SHA,WORKER_TARGET,WORKER_READY_TOKEN,TCR_REGISTRY,TCR_NAMESPACE,TCR_CREDENTIAL_VERSION,TCR_USERNAME,TCR_PASSWORD
+          script: |
+            set -Eeuo pipefail
+            stage="${{ steps.target.outputs.staging_root }}/incoming/$SOURCE_SHA"
+            chmod 700 "$stage/deploy/production-worker/"*.sh
+            log="$stage/reconcile.out"
+            set -o pipefail
+            bash "$stage/deploy/production-worker/reconcile.sh" \
+              "$WORKER_TARGET" "$SOURCE_SHA" "$stage" 2>&1 | tee "$log"
+            grep -qx "$WORKER_READY_TOKEN" "$log" \
+              || { echo "The production-worker verification did not report $WORKER_READY_TOKEN." >&2; exit 1; }
+            echo "Production worker ready: $WORKER_READY_TOKEN"
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          WORKER_TARGET: tx2
+          WORKER_READY_TOKEN: ${{ steps.target.outputs.ready_token }}
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+          # The reviewed credential generation is not a secret: it is what forces a
+          # rotation to converge even while the previous credential still works.
+          TCR_CREDENTIAL_VERSION: ${{ vars.TCR_CREDENTIAL_VERSION }}
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+
+      # Only the SHA-scoped staging directory is ever removed, and only after the
+      # helper re-proved the root and its incoming directory are real directories.
+      - name: Cleanup staged TX2 worker inputs
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          command_timeout: 2m
+          script_path: deploy/production-worker/staging-root.sh
+          envs: SOURCE_SHA,WORKER_STAGING_ACTION,WORKER_STAGING_ROOT
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          WORKER_STAGING_ACTION: cleanup
+          WORKER_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
