@@ -121,8 +121,8 @@ describe('rosterState · 物理队伍分组', () => {
   })
 })
 
-// 名册在 seek（含暂停时）与播放中都必须对 Vue 可见地更新、且随 HUD 节拍而非逐帧写入：
-// 这两条由 playbackScene.test.js 真实驱动场景内核锁定。这里只保留源码级接线守卫。
+// 名册在 seek / 播放 / 停播 / 换相机时都必须对 Vue 可见地更新，且随 HUD 节拍而非逐帧写入：
+// 由 playbackScene.test.js 真实驱动场景内核锁定。这里只保留源码级接线守卫。
 describe('rosterState · 投影接线守卫', () => {
   const here = dirname(fileURLToPath(import.meta.url))
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\/\/[^\n]*/g, '')

@@ -2082,8 +2082,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   /**
    * 把当前 T 的运行时状态投影进名册行（只在值真的变了时写，避免无谓的 VDOM patch）。
-   * 只由 writeHud 调用：与顶栏总血量同一个 T、同一节拍（≤10Hz，seek / 会话开始强制）——
-   * resolver 每次返回新的 reload 数组，若逐帧投影，名册会每帧重绘。
+   * 只由 writeHud 调用，**不逐帧**：与顶栏总血量同一个 T、同一 ≤10Hz 节拍；seek / 会话开始 /
+   * 停播 / 换相机（跟随目标）强制补写。resolver 每次返回新的 reload 数组，若逐帧投影，
+   * 名册会每帧重绘。
    *
    * `reload` 复用**场景自己的** reload resolver（`reloadStateAt`，与车辆名牌同一份
    * `v.reloadSize` / `reloadEvents` 事实源），不在名册里另起一套解释——2D 名册走的是
@@ -2165,8 +2166,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (DATA && PLAYING) {
       // 推进 + 钳制合并到纯函数里（NaN/负增量不会污染时钟）；终点是比赛结束 END，不是录像流结束
       T = advancePlaybackTime(T, END, dt * 1000, SPEED);
-      if (T >= END) setPlaying(false);
       tick();
+      if (T >= END) setPlaying(false);   // 先 tick 后停：停播时的 HUD/名册补写要包含终点帧的事件
     }
     // 相机
     // 跟随模式：相机位置与视点目标按坦克逐帧位移整体平移——用户选好的方位/
@@ -2261,7 +2262,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // ---------- 控制 ----------
   // HUD 降频：store.time / seekFrac 每帧都变会让页面壳（AgentReplay3D）每帧整页 VDOM patch
   // 一次（顶栏 + 双名册 + 击杀流 + 传输控件）。3D 平滑度来自场景时钟，HUD 与进度条按
-  // ~10Hz 更新即可；seek / 会话开始等状态跳变时 force 立即补一次，语义不丢。
+  // ~10Hz 更新即可；seek / 会话开始 / 停播等状态跳变时 force 立即补一次，语义不丢。
   const HUD_INTERVAL_MS = 100;
   let hudWrittenMs = -Infinity;
   function writeHud(force = false) {
@@ -2287,6 +2288,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function setPlaying(p) {
     PLAYING = p;
     store.playing = p;
+    // 停下（暂停 / 播到终点）后不再有帧：把 HUD 与名册补写到当前 T，
+    // 否则停在节流窗口里的上一次写入（最后 ≤100ms 的掉血 / 击毁不上屏）
+    if (!p) writeHud(true);
     invalidate();
   }
   /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时重挂帧循环；已初始化场景还要
@@ -2342,6 +2346,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } else if (mode === 'free') {
       FOLLOW_EID = 0;
     }
+    // 跟随目标是名册的运行时状态（followed）。setFollow 也经由这里：暂停时没有帧在跑，
+    // 换相机必须自己补写，否则跟随描边要等到下次播放 / seek 才出现。走 writeHud 而不是
+    // 直接投影名册：播放中名册也不得跑到顶栏前面（两者始终同一个 T）。
+    writeHud(true);
   }
   // 只接受档位表内的值：面板按钮与 URL 参数都不该把场景带进"1.37×"这种未定义速度
   function setSpeed(s) { if (!isPlaybackSpeed(s)) return; SPEED = s; store.speed = s; }
