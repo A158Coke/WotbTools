@@ -259,17 +259,39 @@ function startAuthInit({ mode = 'normal', reason = 'startup' } = {}) {
   return transaction.promise
 }
 
+/**
+ * 首次 auth bootstrap 的**落定信号**（`initPromise` 的来源）。
+ *
+ * 只表达「这次初始化已经结束」（成功 / 失败 / 被放弃都算落定），**不表达当前登录态**：
+ * `currentTransaction` 是模块级的一次性 init 交易，`logout()` 只把 reactive session 投影成
+ * unauthenticated —— 既不会重建它，也不会改写它已经 resolve 的结果。所以从这里读出来的
+ * 任何值都只是**第一次 init 时的历史快照**，登出 / 账号切换之后立刻失效。
+ *
+ * 登录态一律只认 reactive `isAuthenticated()` / `authenticated`。为了让「历史 promise 的
+ * 值 == session truth」在结构上不可能发生，这里刻意**不 resolve 值**（恒为 undefined）。
+ *
+ * 反例（Android 2.1.0 真机）：ProfilePage remount 时 `const loggedIn = await initPromise`
+ * 拿到历史 true → 误进 done → 当前 session 其实是未登录 → 永久停在「正在初始化登录…」。
+ */
 async function initAuth() {
-  if (currentTransaction) return currentTransaction.promise
+  if (currentTransaction) {
+    await currentTransaction.promise
+    return
+  }
   // 离线登出后远端会话未收敛：本次不静默 check-sso（否则会被悄悄登回去）；
   // 用户显式点登录时由 login() 清标记并照常走登录。
   if (hasPendingRemoteLogout()) {
     console.warn('[auth] init_skip_check_sso reason=pending-remote-logout')
-    return startAuthInit({ mode: 'login-recovery', reason: 'pending-remote-logout' })
+    await startAuthInit({ mode: 'login-recovery', reason: 'pending-remote-logout' })
+    return
   }
-  return startAuthInit()
+  await startAuthInit()
 }
 
+/**
+ * 新建一代 init 交易。返回值是**那一次** init 的结果，同样不是当前 session truth
+ * （`retryAuth()` 目前没有生产消费方；新代码不要用它的 resolve 值判断登录态）。
+ */
 async function retryAuth() {
   const promise = startAuthInit({ reason: 'retry' })
   console.debug(`[auth] init_retry generation=${currentTransaction.generation}`)
@@ -492,6 +514,9 @@ async function ensureToken(minValidity = 30) {
 export function useAuth() {
   return {
     initAuth,
+    // 只表示「auth bootstrap 已落定」这个**事件**，resolve 值为 undefined：
+    // 它是模块级一次性的，logout 不会重建它，所以绝不能拿它的值当 session truth。
+    // 需要登录态请读 isAuthenticated() / authenticated（见 initAuth 注释）。
     initPromise: initAuth(),
     retryAuth,
     login,

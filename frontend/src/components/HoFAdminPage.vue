@@ -13,7 +13,7 @@ import { Check, Download, Trash2, X } from 'lucide-vue-next'
 import AppDialog from './AppDialog.vue'
 
 const { t, te, tm, locale } = useI18n()
-const { initPromise, tokenParsed, login } = useAuth()
+const { initPromise, isAuthenticated, tokenParsed, login } = useAuth()
 const { availability, requireFeature } = useFeatureGate()
 const hofAvailability = computed(() => availability(Feature.HALL_OF_FAME))
 
@@ -182,16 +182,17 @@ let initializing = false
 async function initialize() {
   if (initializing || !requireFeature(Feature.HALL_OF_FAME)) return
   initializing = true
-  let loggedIn = false
   try {
-    loggedIn = Boolean(await initPromise)
+    // 只等 bootstrap 落定；登录态只认当前 reactive session，绝不读历史 promise 的值
+    // （它是一次性 init 交易的结果，logout 之后仍可能停留在 true）。
+    await initPromise
   } catch {
-    loggedIn = false
+    // init 失败视作未登录。
   } finally {
     initializing = false
   }
   if (!availability(Feature.HALL_OF_FAME).available) return
-  if (!loggedIn) {
+  if (!isAuthenticated()) {
     authPhase.value = 'login'
     login('hof-admin')
     return
