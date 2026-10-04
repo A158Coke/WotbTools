@@ -312,8 +312,6 @@ beforeEach(async () => {
   Object.assign(prefs.hpPrefs, { showHp: true })
   Object.assign(prefs.trailPrefs, { showTrail: true })
   Object.assign(prefs.uiPrefs, { showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true })
-  Object.assign(prefs.paneWidths, { rail: null, details: null })
-  prefs.railCollapsed.value = false
   await nextTick()
   localStorage.clear()
 })

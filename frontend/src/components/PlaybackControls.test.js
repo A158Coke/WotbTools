@@ -106,7 +106,8 @@ describe('PlaybackControls', () => {
     expect(wrapper.emitted('toggle-panels')).toHaveLength(1)
     expect(wrapper.emitted('drag-start')).toHaveLength(1)
     expect(wrapper.emitted('seek')).toEqual([[17]])
-    expect(wrapper.find('.pb-filters').exists()).toBe(false)
+    // 控件条只有 primary 六项：既没有速度筛选，也没有上一段 / 下一段
+    expect(wrapper.findAll('.pb-controls > button, .pb-controls > .pb-speed-picker > button')).toHaveLength(6)
     expect(wrapper.find('[data-test="pb-prev"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-next"]').exists()).toBe(false)
   })

@@ -238,8 +238,6 @@
       "roster": "阵容",
       "start": "开始",
       "ready_file": "待开播：{name}——先选画质，再开始",
-      "hp_friendly": "己方总血量",
-      "hp_enemy": "敌方总血量",
       "error_load": "回放加载失败：{msg}",
       "pick_hint": "选择本地 .wotbreplay 文件——在浏览器内本地解析，文件不会上传。"
     },
@@ -619,8 +617,6 @@
       "roster": "Rosters",
       "start": "Start",
       "ready_file": "Ready: {name} — pick a quality preset, then start",
-      "hp_friendly": "Friendly total HP",
-      "hp_enemy": "Enemy total HP",
       "error_load": "Couldn't load the replay: {msg}",
       "pick_hint": "Pick a local .wotbreplay — it is parsed in your browser and never uploaded."
     },
@@ -1000,8 +996,6 @@
       "roster": "Составы",
       "start": "Начать",
       "ready_file": "Готово: {name} — выберите качество и начните",
-      "hp_friendly": "Всего HP у союзников",
-      "hp_enemy": "Всего HP у противника",
       "error_load": "Не удалось загрузить повтор: {msg}",
       "pick_hint": "Выберите локальный .wotbreplay — он разбирается в браузере и никуда не загружается."
     },

@@ -502,12 +502,6 @@ function toggleDisplay(anchor) { displayAnchor.value = anchor; displaySection.va
     拖动宿主。浮窗是它的直接子元素，`left/top`、夹紧与拖动在同一个坐标系里算；
     它不是 `.pb-map-stage`（那只是中间一栏，按它算会把浮窗关在 Stage 里）。 */
 const battlefieldWorkspaceEl = ref(null)
-const panelGroups = computed(() => [
-  { name: 'battle', label: t('recon.map.playback.panel_battle') },
-  { name: 'vehicle', label: t('recon.map.playback.panel_vehicle') },
-  { name: 'display', label: t('recon.map.playback.panel_display') },
-  { name: 'events', label: t('recon.map.playback.panel_events') },
-])
 let rafId = null
 let lastFrameTs = null
 
@@ -671,9 +665,6 @@ function writeSquareAvailHeight() {
   const hudH = hud?.getBoundingClientRect().height || 0
   const budget = Math.max(1, workspaceH - above - hudH - controlsH - gap * 2 - bottom)
   root.style.setProperty('--pb-square-avail-h', `${Math.floor(budget)}px`)
-  root.style.setProperty('--pb-controls-h', `${Math.ceil(controlsH)}px`)
-  root.style.setProperty('--pb-hud-h', `${Math.ceil(hud?.getBoundingClientRect().height || 0)}px`)
-
 }
 
 watch(() => mapStageEl.value, (el) => {
@@ -1836,9 +1827,6 @@ function closeSidebar() {
   detailsOpen.value = false
 }
 
-function closePanel() {
-}
-
 const selLastKnownSec = computed(() => {
   const st = selectedState.value
   return st && st.lastKnown && Number.isFinite(st.pos.timeSec) ? st.pos.timeSec : null
@@ -2043,8 +2031,6 @@ watch([uiHidden, () => uiPrefs.showTopbar, () => uiPrefs.showBaseStatus, () => h
 
 const mapStyle = computed(() => ({
   '--pb-map-aspect': `${mapView.value.W} / ${mapView.value.H}`,
-  // Numeric aspect ratio (W/H) for fullscreen contain sizing (aspect-ratio needs a unit string).
-  '--pb-map-ratio': String(mapView.value.W / mapView.value.H),
   // Battle Playback 6x6 网格：用显式强对比线，保证每一列可见地隔开（热力图鸟瞰用弱 gridStroke）。
   '--map-grid-stroke': palette.value.gridStrokeStrong,
   '--map-region-stroke': palette.value.regionStroke,
@@ -2331,18 +2317,10 @@ const mapStyle = computed(() => ({
   pointer-events: none;
   transform: translate(-50%, -50%);
 }
+/* 这里只保留**组件根元素**的规则：scoped 属性会落在子组件根节点上，所以 `.pb-map`（BattleMap
+   根）与 `.pb-vehicle`（VehicleMarker 根）能匹配；`.pb-map` 剩下的一半外观归 BattleMap 自己，
+   那里的定位（`.pb-viewport` absolute 等）与这里曾经的默认值互相矛盾，已随矛盾规则一并删除。 */
 .pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; }
-.pb-viewport {
-  position: relative;
-  width: 100%;
-  transform-origin: 0 0;
-  touch-action: none;
-}
-.pb-markers {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
 /* Vehicle-aware sizing supplies the production width/height inline. These are
    only safe defaults for isolated component rendering without a projected model. */
 .pb-vehicle {
@@ -2370,46 +2348,14 @@ const mapStyle = computed(() => ({
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
 
-/* PR5 §10/§12/§16 transient feedback 层（floating damage / destruction burst / kill feed）：
-   wall-clock 生命周期、任意倍速可读时长一致；seek 清空、pause 自然完成。 */
-.pb-feedback-layer { position: absolute; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }
-.pb-float-dmg {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  font-size: 14px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 3px rgba(0, 0, 0, .9), 0 1px 2px rgba(0, 0, 0, .8);
-  animation: pb-float-rise 1s ease-out forwards;
-  white-space: nowrap;
-}
-.pb-float-friendly { color: var(--pb-team-text, #4ade80); }
-.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
-@keyframes pb-float-rise {
-  0% { opacity: 1; margin-top: 0; }
-  70% { opacity: 1; }
-  100% { opacity: 0; margin-top: -10px; }
-}
-.pb-burst {
-  position: absolute;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 2px solid currentColor;
-  animation: pb-burst-ring .7s ease-out forwards;
-  pointer-events: none;
-}
-.pb-burst.pb-float-friendly { color: var(--pb-team-text, #4ade80); }
-.pb-burst.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
-@keyframes pb-burst-ring {
-  0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); }
-}
+/* transient 反馈层（floating damage / destruction burst）的外观归 BattleMap：那几个节点是
+   BattleMap 自己的后代（`.pb-map[data-v-this]` 匹配不到它们），这里的同名规则永远不会生效。 */
+
 .pb-kill-feed {
   position: absolute;
   top: calc(max(8px, env(safe-area-inset-top)) + 50px);
   left: 0;
-  right: var(--pb-details-w, 0);
+  right: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2441,7 +2387,7 @@ const mapStyle = computed(() => ({
   to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pb-float-dmg, .pb-burst, .pb-feed-item { animation: none; }
+  .pb-feed-item { animation: none; }
 }
 .pb-event-list {
   display: flex;
@@ -2467,26 +2413,4 @@ const mapStyle = computed(() => ({
 .pb-event-time { min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--text-label); }
 .pb-event-type { color: var(--accent); margin-right: 4px; }
 .pb-event-empty { margin: 8px; color: var(--text-muted); font-size: .78rem; }
-
-/* 地图标注层 + 文字输入 */
-.pb-annotations { pointer-events: none; }
-/* 文字描边保证暗图上可读（paint-order 先描边后填充，不遮字） */
-.pb-annot-text {
-  paint-order: stroke;
-  stroke: rgba(0, 0, 0, .65);
-  stroke-width: 1;
-}
-/* 绘制模式下禁用车标按钮（pointer-events none），避免画到坦克上误触选中 */
-.pb-drawing { pointer-events: none; }
-.pb-text-input {
-  position: absolute;
-  width: 140px;
-  font-size: 13px;
-  padding: 2px 6px;
-  border: 1px solid var(--accent, #2f7dff);
-  border-radius: 3px;
-  background: rgba(0, 0, 0, .8);
-  color: #fff;
-  z-index: 6;
-}
 </style>

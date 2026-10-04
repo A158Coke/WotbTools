@@ -41,8 +41,9 @@ export function usePlaybackDetailsPlacement({
 
   /**
    * 把一组候选坐标夹进当前可用矩形。
-   * @returns {{left:number, top:number, maxLeft:number, maxTop:number}|null} 尺寸不可测量时为 null
-   */  function clampToBounds(left, top) {
+   * @returns {{left:number, top:number, maxHeight:number}|null} 尺寸不可测量时为 null
+   */
+  function clampToBounds(left, top) {
     const host = hostEl.value
     const panel = panelEl.value
     if (!host || !panel) return null
@@ -51,7 +52,7 @@ export function usePlaybackDetailsPlacement({
     if (!hostRect.width || !hostRect.height) return null
     // 未布局时 rect 会是 0×0；此时夹紧无意义，等下一帧的真实尺寸。
     if (!rect.width || !rect.height) return null
-    // 宿主的左右内边距不属于 workspace（宽屏桌面全屏时那里是浮在黑边上的左栏）。
+    // 宿主的左右内边距不属于 workspace（竖屏 / 全屏时那里是容器的留白与顶部 HUD）。
     const hostStyle = typeof getComputedStyle === 'function' ? getComputedStyle(host) : null
     const padStart = parseFloat(hostStyle?.paddingLeft) || 0
     const padEnd = parseFloat(hostStyle?.paddingRight) || 0
@@ -73,14 +74,11 @@ export function usePlaybackDetailsPlacement({
     // 减去面板自身高度才是浮窗左上角的极限。写反的后果不是布局偏移，而是保护边界**完全失效**
     // —— 只要候选 top 小于这个数值，`Math.min` 就永远选候选值，浮窗会盖在传输控件上。
     const maxTop = Math.max(minTop, maxBottom - rect.height)
-    const out = {
+    return {
       left: Math.round(Math.min(Math.max(left, minLeft), maxLeft)),
       top: Math.round(Math.min(Math.max(top, minTop), maxTop)),
-      maxLeft,
-      maxTop,
       maxHeight: Math.max(0, maxBottom - minTop),
     }
-    return out
   }
 
   function apply(next) {

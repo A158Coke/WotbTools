@@ -606,6 +606,32 @@ loader 或重新挂载同一份组件定义都只会拿到那个已经失败的 
 `frontend/src/components/{ReplayWorkspace,AiReviewPanel,AiReviewWorkspacePane}.vue`、
 `frontend/src/types/ai-review.ts`。
 
+## 2026-10-04 — Playback 从「固定尺寸的三栏」收敛成共享的 fluid shell
+
+`#489` 确立了正确的 topology：2D 与 3D 是同一个 Playback 产品的两个 renderer，Team 1 固定左、
+Team 2 固定右、Stage 保持正方形、Details 是整个战场 workspace 级的可拖动浮窗。但它的尺寸仍是
+按断点各写一套固定值：名册车道恒宽，正方形边长按 `100dvh - 170px` 一类的视口扣减估算。结果是
+desktop / fullscreen 的中央空间利用率低、大屏上 Stage 反而偏小，而 roster 继续膨胀。
+
+这一轮把 sizing 的 authority 换成「可用空间」：车道宽度是相对 Playback workspace 的
+`clamp(最小可用, 流体, 最大可用)`，正方形边长由中心列可用宽度与**实测**可用高度共同决定，
+而可用高度由视口容量减去实测的 persistent HUD 与 Transport 得出——刻意不读根元素的内容高度，
+否则 Stage 会把自己撑大形成自指。断点只决定结构，尺寸由空间决定；`playback-pc.css` /
+`playback-tablet.css` / `playback-mobile-fullscreen.css` / `playback-fullscreen-form-contract.css`
+随之删除，`playback-workspace.css` 成为共享宏几何的唯一 owner。
+
+同时收口了二级面的语义：2D 与 3D 共用同一套 primary composition
+（`-5 / 播放 / +5 / 当前倍速 / 全屏 / Display`），倍速改为按需展开；**Display 是锚定在 ⚙ 上的
+配置面（不可拖动），Details 是可拖动的上下文浮窗**。这两者此前混在「常驻左栏 / 抽屉 /
+右侧详情列」里——同一个面既承担导航又承担设置，还各自持久化 pane 宽度与折叠状态。
+现在那套模型整体移除，随之删掉了对应的持久化偏好。
+
+**产品边界因此从「一个页面有几个面板」变成「一个战场加两个语义不同的浮面」。**
+
+**Git 证据：** 本 PR；`frontend/src/styles/playback-workspace.css`、
+`frontend/src/components/{PlaybackTransport,PlaybackDisplaySurface,BattlePlayback,Replay3DPane}.vue`、
+`frontend/scripts/browser-{playback-layout,workspace-interaction}.mjs`。
+
 ## 2026-10-03 — 回放能力面向普通登录用户开放
 
 回放工作台的五种能力统一为公开可发现：数据与 2D 回放匿名可用，3D 回放、射击分析 / 复现与 AI 复盘登录后可用。管理员不再拥有额外的回放能力。匿名深链保留原目标并显示登录引导；射击到装甲查看器的复现场景对普通登录用户完整开放，登录返回保留场景参数。
