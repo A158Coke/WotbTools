@@ -78,10 +78,10 @@ JGroups `connection closed`（日志已出现）对齐：**重启后 in-flight �
 
 ### 3.4 broker 回调的 HTTP 层证据（已上线的受控访问日志）
 
-`deploy/tx/Caddyfile` 只对 `auth.wotbtools.com` 的 `/realms/*/broker/*` 开访问日志，并且
+`deploy/tx/Caddyfile` 为 `auth.wotbtools.com` 开启受控访问日志（Caddy 的 `log` 是站点级指令，无法只挂某条路径；路径筛选交给下面的 LogQL），并且
 **在写 stdout 之前**由 Caddy 的 filter 编码器剥掉秘密：query 里的 `code` / `state` /
 `session_state` / `iss` 被删除，`Cookie` 与 `Authorization` 头被删除（Caddy 默认即不记录
-凭据，这里是显式固定口径）。经 `deploy/tx/alloy` 送 Loki，标签 `container_name="caddy"`。
+凭据，这里是显式固定口径）。经 `deploy/tx/alloy` 送 Loki，标签 `container_name="caddy"`；校验脚本断言脱敏行齐全，且配置用真实 Caddy（`caddy validate`）在 CI 中适配通过。
 
 保留的字段足以回答两件事：
 
