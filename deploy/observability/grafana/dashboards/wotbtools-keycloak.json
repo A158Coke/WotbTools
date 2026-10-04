@@ -285,6 +285,39 @@
           "expr": "sum by (identity_provider, error) (count_over_time({container_name=\"keycloak\"} |~ `type=\"(LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|IDENTITY_PROVIDER_FIRST_LOGIN_ERROR)\"` | regexp `(identityProvider=\"(?P<identity_provider>[^\"]*)\")?.*error=\"(?P<error>[^\"]+)\"` | error!~ \"invalid_redirect_uri|user_not_found|invalid_user_credentials\" [5m]))"
         }
       ]
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "broker 回调（UA / 状态码，query 与凭据已脱敏）",
+      "description": "Caddy 对 /realms/*/broker/* 的受控访问日志：query 里的 code/state/session_state/iss 与 Cookie/Authorization 头在写 stdout 前已被 filter 删除。用于区分真实用户与扫描器、识别移动 QQ 内置浏览器 / WebView。见 docs/auth/web-qq-diagnostics.md §3.4。",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 47
+      },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "range",
+          "expr": "{container_name=\"caddy\"} |~ \"broker\""
+        }
+      ]
     }
   ],
   "refresh": "30s",
@@ -303,6 +336,6 @@
   "timezone": "browser",
   "title": "WotBTools · Keycloak",
   "uid": "wotbtools-keycloak",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }

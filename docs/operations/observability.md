@@ -333,6 +333,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 | `wotbtools-usage` | WotBTools · 使用统计与 Android | 回放/AI 使用量与 APK 下载统计 |
 | `wotbtools-keycloak` | WotBTools · Keycloak | 登录、QQ callback、IdP 与 Keycloak 日志 |
 
+- 新增 `container_name="caddy"` 流：只承载 `auth.wotbtools.com` 的 `/realms/*/broker/*` 访问日志（Caddy `filter` 编码器在写 stdout 前删除 query 的 `code`/`state`/`session_state`/`iss` 与 `Cookie`/`Authorization` 头，校验由 `deploy/tx/validate-caddy-config.sh` 断言）。它提供 broker 回调的 UA / 状态码 / 来源网段，用于区分真实用户与扫描器（见 [`docs/auth/web-qq-diagnostics.md`](../auth/web-qq-diagnostics.md) §3.4）。
 - Keycloak 看板把「登录可靠性」与「诊断日志」分开：
   - **登录可靠性 · 失败分类（5m，已分流噪音）**：`LOGIN_ERROR` / `IDENTITY_PROVIDER_LOGIN_ERROR` / `IDENTITY_PROVIDER_FIRST_LOGIN_ERROR` 按 `error` 维度分解，**排除**本机 silent-check-sso 的 `invalid_redirect_uri`、密码错误 / 用户不存在与 `security-admin-console` 管理台噪音；
   - **登录可靠性 · broker 会话连续性（P0 信号）**：`cookie_not_found` 与 `Failed to verify login action` 两条独立曲线（正常用户路径应为 0；持续非零按 `docs/auth/web-qq-diagnostics.md` §3 取证）；

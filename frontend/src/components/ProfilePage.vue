@@ -140,7 +140,9 @@ async function loadProfile() {
     phase.value = 'error'
     return
   } finally {
-    loading.value = false
+    // P1（review）：pending 状态也要归属检查——A 的迟到响应不得把 B 正在进行的加载清掉，
+    // 否则 B 的加载窗口会被误判为"空闲"，watcher / 重连路径可能再起一次加载。
+    if (ownEpoch(epoch)) loading.value = false
   }
   if (!ownEpoch(epoch)) return
   phase.value = 'done'
@@ -223,7 +225,7 @@ async function syncFromLogin(epochInput) {
     // 保留后端业务错误码：同步失败时绝不回退为 CN 手动入口。
     syncFromLoginError.value = e
   } finally {
-    syncFromLoginPending.value = false
+    if (ownEpoch(epoch)) syncFromLoginPending.value = false
   }
 }
 
@@ -299,17 +301,21 @@ function startEditAccount() {
 
 async function saveAccount() {
   if (!requireProfileOnline()) return
+  const epoch = authEpoch()
   editError.value = ''
   try {
-    profile.value = await updateUserWotbAccount({
+    const updated = await updateUserWotbAccount({
       wotbAccountId: editAccountId.value,
       wotbNickname: editNickname.value,
       wotbServer: 'CN'
     })
+    if (!ownEpoch(epoch)) return
+    profile.value = updated
     editingAccount.value = false
-    loadRecords()
-    loadHundredStatus()
+    loadRecords(epoch)
+    loadHundredStatus(epoch)
   } catch (e) {
+    if (!ownEpoch(epoch)) return
     editError.value = apiError(e)
   }
 }
@@ -326,16 +332,21 @@ async function verifyWithReplay(event) {
   // 门禁放在最前：本地解析是 LOCAL 能力，但「用回放验证账号」最终要打 backend verify，
   // 离线时先提示，避免用户选完文件才发现无法提交。
   if (!requireProfileOnline()) return
+  const epoch = authEpoch()
   verifyPending.value = true
   verifyError.value = ''
   try {
     const recorderAccountId = await replayRecorderAccountId(file)
+    if (!ownEpoch(epoch)) return
     if (!requireProfileOnline()) return
-    profile.value = await verifyUserWotbAccountFromReplay(recorderAccountId)
+    const verified = await verifyUserWotbAccountFromReplay(recorderAccountId)
+    if (!ownEpoch(epoch)) return
+    profile.value = verified
   } catch (e) {
+    if (!ownEpoch(epoch)) return
     verifyError.value = apiError(e)
   } finally {
-    verifyPending.value = false
+    if (ownEpoch(epoch)) verifyPending.value = false
   }
 }
 
@@ -375,17 +386,20 @@ async function withdrawHundred(id) {
   if (!requireHofOnline()) return
   if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return
   if (!requireHofOnline()) return
+  const epoch = authEpoch()
   hundredWithdrawingId.value = id
   hundredMessage.value = ''
   hundredError.value = ''
   try {
     await hofHundredCancel(id)
+    if (!ownEpoch(epoch)) return
     hundredMessage.value = t('hundred.withdrawSuccess')
-    await loadHundredStatus()
+    await loadHundredStatus(epoch)
   } catch (error) {
+    if (!ownEpoch(epoch)) return
     hundredError.value = apiError(error)
   } finally {
-    hundredWithdrawingId.value = null
+    if (ownEpoch(epoch)) hundredWithdrawingId.value = null
   }
 }
 

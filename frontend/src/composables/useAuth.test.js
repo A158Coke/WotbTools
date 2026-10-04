@@ -461,6 +461,95 @@ describe('useAuth', () => {
     await pending
   })
 
+  it('logout() 在 Android 上**离线也强制清 Native 本地会话**（远端 end-session 才是 best-effort）', async () => {
+    // review blocker 1：Native（Keystore）才是 Android 会话的持久 owner。离线时若整条
+    // authLogout 都不调用，本地会话残留 → 重启 / auth 同步会把用户"复活"成已登录。
+    const native = androidBridge({
+      authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
+      authGetAccessToken: {
+        token: 'native-token', expiresAt: 1_700_000_000, claims: ADMIN_CLAIMS, error: null,
+      },
+      authLogout: true,
+    })
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    const { useConnectivity } = await import('./useConnectivity.js')
+    useConnectivity().stop()
+    Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true })
+    try {
+      await useConnectivity().start()
+      expect(useConnectivity().connectivity.value).toBe('offline')
+
+      await auth.logout()
+
+      // 本地会话清理必须已发到 Native（远端 end-session 由 Native 内部 best-effort）
+      expect(native.calls.at(-1)).toEqual({ method: 'authLogout', params: {} })
+      expect(auth.authenticated.value).toBe(false)
+      expect(auth.token()).toBe('')
+      expect(auth.authEpoch()).toBeGreaterThan(0)
+    } finally {
+      Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true })
+      useConnectivity().stop()
+    }
+  })
+
+  it('浏览器离线 logout：跳过远端导航但留下"远端未收敛"标记，下一次 init 不静默复登', async () => {
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = { ...USER_CLAIMS, sub: 'user-a' }
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    const { useConnectivity } = await import('./useConnectivity.js')
+    useConnectivity().stop()
+    Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true })
+    try {
+      await useConnectivity().start()
+      kcLogout.mockClear()
+      await auth.logout()
+
+      // 离线：不导航（浏览器会撞错误页），但登出意图必须留下
+      expect(kcLogout).not.toHaveBeenCalled()
+      expect(auth.hasPendingRemoteLogout()).toBe(true)
+      expect(auth.authenticated.value).toBe(false)
+    } finally {
+      Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true })
+      useConnectivity().stop()
+      window.localStorage.removeItem('wotb-auth-pending-remote-logout')
+    }
+  })
+
+
+  it('身份代数：登录前进、登出再前进、A→B 也前进；同身份刷新 claims 不前进', async () => {
+    // review blocker 2：归属判定必须绑定**身份边界**，而不是 init 交易代数
+    // （Native authChanged 登录、logout、账号切换都发生在同一笔交易里）。
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = { ...USER_CLAIMS, sub: 'user-a' }
+    const auth = useAuth()
+    const beforeLogin = auth.authEpoch()
+    await auth.retryAuth()
+    const afterLoginA = auth.authEpoch()
+    expect(afterLoginA).toBeGreaterThan(beforeLogin)
+
+    // 同身份重新投影（刷新后 claims 更新）：不前进
+    kcUpdateToken.mockResolvedValueOnce(true)
+    kcInstances.at(-1).tokenParsed = { ...USER_CLAIMS, sub: 'user-a', displayName: 'A renamed' }
+    await auth.ensureToken(30)
+    expect(auth.authEpoch()).toBe(afterLoginA)
+
+    // 账号切换 A → B：前进
+    kcScenario.tokenParsed = { ...USER_CLAIMS, sub: 'user-b' }
+    await auth.retryAuth()
+    const afterSwitchToB = auth.authEpoch()
+    expect(afterSwitchToB).toBeGreaterThan(afterLoginA)
+
+    // 登出：前进（身份回到 null）
+    await auth.logout()
+    expect(auth.authEpoch()).toBeGreaterThan(afterSwitchToB)
+  })
+
   it('logout() 在**明确离线**时跳过 end-session（best effort），本地照常清空', async () => {
     kcScenario.initResult = true
     kcScenario.tokenParsed = USER_CLAIMS
@@ -590,5 +679,30 @@ describe('useAuth', () => {
 
     auth.tokenParsed.value = null
     expect(auth.displayName.value).toBe('')
+  })
+
+  it('存在"远端登出未收敛"标记时，首屏 init 走 login-recovery（不做 check-sso 静默复登）', async () => {
+    // 真实路径是"页面加载后第一次 initAuth"（每个 useAuth 模块实例只发生一次）：
+    // 用 resetModules 复现首屏，而不是在同一模块态里再 init 一次。
+    window.localStorage.setItem('wotb-auth-pending-remote-logout', '1')
+    try {
+      kcScenario.initResult = true
+      kcScenario.tokenParsed = { ...USER_CLAIMS, sub: 'user-a' }
+      kcInit.mockClear()
+      vi.resetModules()
+      const fresh = await import('./useAuth.js')
+      const auth = fresh.useAuth()
+      await auth.initPromise
+
+      // login-recovery 模式的 init 选项：无 check-sso（不带 onLoad/silentCheckSsoRedirectUri）
+      const lastOptions = kcInit.mock.calls.at(-1)[0]
+      expect(lastOptions).not.toHaveProperty('onLoad')
+      expect(lastOptions).not.toHaveProperty('silentCheckSsoRedirectUri')
+      // 且标记仍然在（用户显式登录才会清）
+      expect(auth.hasPendingRemoteLogout()).toBe(true)
+    } finally {
+      window.localStorage.removeItem('wotb-auth-pending-remote-logout')
+      vi.resetModules()
+    }
   })
 })
