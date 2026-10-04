@@ -4,10 +4,10 @@
 	email {$CADDY_ACME_EMAIL}
 }
 
-# TX-local readiness surface. K6B resolves the same reviewed logical upstreams
-# used by the public routes, so readiness keeps proving the active placement
-# without public HTTP redirects or ACME certificates; Caddy itself is the production public
-# ingress and owns 80/443 by default (see docker-compose.yml).
+# TX-local readiness surface. K7C keeps both reviewed frontend instances active
+# behind the same public gateway while Keycloak remains on its reviewed placement.
+# Caddy itself is the production public ingress and owns 80/443 by default
+# (see docker-compose.yml).
 http://caddy {
 	handle /.well-known/assetlinks.json {
 		root * /srv
@@ -19,7 +19,10 @@ http://caddy {
 	}
 
 	handle_path /_wotb/frontend/* {
-		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {$CADDY_FRONTEND_FALLBACK} {
+			health_uri /version.json
+			health_interval 10s
+			health_timeout 3s
 			header_up Host wotbtools.com
 		}
 	}
@@ -74,7 +77,10 @@ wotbtools.com {
 		}
 	}
 	handle {
-		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {$CADDY_FRONTEND_FALLBACK} {
+			health_uri /version.json
+			health_interval 10s
+			health_timeout 3s
 			header_up Host {host}
 		}
 	}
