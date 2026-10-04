@@ -14,6 +14,17 @@ services:
     environment:
       BACKEND_UPSTREAM: http://10.20.0.1:8087
       AI_UPSTREAM: http://10.20.0.2:8089
+      # Same official-nginx template contract as the TX1 production compose.
+      # '$' is Compose escaping: the container receives a single regex end-anchor '
+      - ./nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+.
+      NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$
     volumes:
       - ./nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro
     restart: unless-stopped
