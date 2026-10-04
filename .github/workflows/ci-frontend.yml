@@ -43,21 +43,6 @@ jobs:
       - name: Unit tests
         working-directory: frontend
         run: npm test
-      - name: Real-browser Playback layout regression
-        working-directory: frontend
-        run: npm run test:browser-layout
-      - name: Real-browser Playback/Workspace interaction regression
-        working-directory: frontend
-        run: npm run test:browser-interaction
-      - name: Real-browser Armor viewer mobile layout regression
-        working-directory: frontend
-        run: npm run test:browser-armor-mobile
-      # 装甲查看器瞄准交互（Pointer Events × OrbitControls）同样只有真浏览器 + 真实输入能验证。
-      # 门禁自带确定性夹具资产包（frontend/scripts/browser-fixtures/fixture-asset-pack.mjs：
-      # 进程内资产源 + 构造的 hull/turret_01/gun_01 GLB），不需要真实资产、不 SKIP。
-      - name: Real-browser Armor viewer aiming interaction regression
-        working-directory: frontend
-        run: npm run test:browser-armor-aiming
       - name: Build
         working-directory: frontend
         run: npm run build
@@ -88,3 +73,42 @@ jobs:
             du -sk /usr/share/nginx/html/assets
             find /usr/share/nginx/html -type f -exec du -k {} + | sort -n | tail -15
           '
+
+  # 真实浏览器门禁拆成 4 个并行 job（原先是 frontend job 尾部的串行 step，合计占该 job 约 2/3 时长；
+  # 其中装甲瞄准门禁又占其大头）。每条门禁只依赖 npm ci + runner 自带 Chrome：不下载 WASM 产物
+  # （夹具桩替代）、不跑 build，故各 job 的前置成本约 10s。
+  # fail-fast: false —— 一条门禁失败不取消其它三条，PR 上一次就能看到全部失败面。
+  browser-gates:
+    name: Frontend / ${{ matrix.gate.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        gate:
+          - label: Playback layout
+            script: test:browser-layout
+          - label: Playback/Workspace interaction
+            script: test:browser-interaction
+          - label: Armor viewer mobile layout
+            script: test:browser-armor-mobile
+          # 装甲查看器瞄准交互（Pointer Events × OrbitControls）同样只有真浏览器 + 真实输入能验证。
+          # 门禁自带确定性夹具资产包（frontend/scripts/browser-fixtures/fixture-asset-pack.mjs：
+          # 进程内资产源 + 构造的 hull/turret_01/gun_01 GLB），不需要真实资产、不 SKIP。
+          - label: Armor viewer aiming interaction
+            script: test:browser-armor-aiming
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Real-browser ${{ matrix.gate.label }} regression
+        working-directory: frontend
+        run: npm run ${{ matrix.gate.script }}

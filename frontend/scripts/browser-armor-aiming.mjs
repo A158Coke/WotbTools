@@ -47,7 +47,7 @@ try {
   const { targetId, sessionId } = await chromeCdp.openPage()
   page = new Page(chromeCdp.client, sessionId)
   await page.enable()
-  await page.emulate({ width: 1400, height: 900, touch: false })
+  await page.emulate({ width: 1400, height: 900, touch: false, deviceScaleFactor: 1 })
 
   // 固定机位（前右三分之四视角，含俯角）：炮管/炮塔/车体三部位都清晰可见，
   // 部位像素扫描不依赖默认相机（夹具与真实资产都适用）
@@ -79,24 +79,27 @@ try {
     const c = document.querySelector('canvas');
     const r = c.getBoundingClientRect();
     const need = ${JSON.stringify(need)};
-    let gun = null, turret = null, hull = null;
-    for (let cy = 20; cy < c.height - 20; cy += 4) {
-      for (let cx = 20; cx < c.width - 20; cx += 4) {
-        const px = r.left + cx, py = r.top + cy;
-        const hits = H.__raytrace(px, py);
-        if (!hits || !hits.length) continue;
-        const n = hits[0].name;
-        const cls = H.__aimPart(px, py);
-        if (!gun && /^gun_/.test(n) && cls === 'gun') gun = { x: px, y: py, name: n, cls };
-        if (!turret && /^turret_/.test(n) && cls === 'turret') turret = { x: px, y: py, name: n, cls };
-        if (!hull && /^hull_/.test(n) && cls === null) hull = { x: px, y: py, name: n, cls: 'camera' };
-        const ok = need.every((p) => ({ gun, turret, hull })[p]);
-        if (ok) break;
+    const found = { gun: null, turret: null, hull: null };
+    const scan = (step) => {
+      for (let cy = 20; cy < c.height - 20; cy += step) {
+        for (let cx = 20; cx < c.width - 20; cx += step) {
+          const px = r.left + cx, py = r.top + cy;
+          const hits = H.__raytrace(px, py);
+          if (!hits || !hits.length) continue;
+          const n = hits[0].name;
+          const cls = H.__aimPart(px, py);
+          if (!found.gun && /^gun_/.test(n) && cls === 'gun') found.gun = { x: px, y: py, name: n, cls };
+          if (!found.turret && /^turret_/.test(n) && cls === 'turret') found.turret = { x: px, y: py, name: n, cls };
+          if (!found.hull && /^hull_/.test(n) && cls === null) found.hull = { x: px, y: py, name: n, cls: 'camera' };
+          if (need.every((p) => found[p])) return true;
+        }
       }
-      const ok = need.every((p) => ({ gun, turret, hull })[p]);
-      if (ok) break;
-    }
-    return { gun, turret, hull };
+      return false;
+    };
+    // 先粗后细：步长 8 已足够命中（最细的炮管在屏上也有 ~20px 宽），漏找才回退步长 4。
+    // 全画布逐像素双射线（__raytrace + __aimPart）在 CI 的 3fps runner 上要 20s+，粗扫省 4 倍。
+    if (!scan(8)) scan(4);
+    return found;
   })()`
   const findSpots = async (need = ['gun', 'turret', 'hull']) => {
     // 采样前等视图静止：damping 让相机在拖动/捏合后继续滑行（慢渲染下数秒），滑行中采到的
@@ -126,8 +129,8 @@ try {
     const cdp = chromeCdp.client
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x, y: from.y }, sessionId)
     await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: from.x, y: from.y, button: 'left', clickCount: 1 }, sessionId)
-    for (let i = 1; i <= 5; i++) {
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x + (dx * i) / 5, y: from.y + (dy * i) / 5, button: 'left' }, sessionId)
+    for (let i = 1; i <= 3; i++) {
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x + (dx * i) / 3, y: from.y + (dy * i) / 3, button: 'left' }, sessionId)
       await delay(30)
     }
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: from.x + dx, y: from.y + dy, button: 'left', clickCount: 1 }, sessionId)
@@ -145,8 +148,8 @@ try {
     const cdp = chromeCdp.client
     const pt = (x, y) => [{ x, y, id: 1, radiusX: 8, radiusY: 8, force: 1 }]
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(from.x, from.y) }, sessionId)
-    for (let i = 1; i <= 5; i++) {
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(from.x + (dx * i) / 5, from.y + (dy * i) / 5) }, sessionId)
+    for (let i = 1; i <= 3; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(from.x + (dx * i) / 3, from.y + (dy * i) / 3) }, sessionId)
       await delay(30)
     }
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
@@ -184,10 +187,10 @@ try {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts([from, second]) }, sessionId)
     await delay(80)
     const stateSecond = await page.evaluate('window.__armorRicochet.aimingState()')
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 3; i++) {
       const p2 = {
-        x: Math.round(second.x + (secondEnd.x - second.x) * i / 5),
-        y: Math.round(second.y + (secondEnd.y - second.y) * i / 5),
+        x: Math.round(second.x + (secondEnd.x - second.x) * i / 3),
+        y: Math.round(second.y + (secondEnd.y - second.y) * i / 3),
       }
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts([from, p2]) }, sessionId)
       await delay(30)
@@ -275,8 +278,8 @@ try {
           `短按·${part} 不产生瞄准手势（角度 ${angleBefore.t}/${angleBefore.g} 不变）`)
       }
     }
-    // 拖动 = 手势，不触发判定（同一修复的另一半语义）
-    const s2 = await rescan('手势判定前')
+    // 拖动 = 手势，不触发判定（同一修复的另一半语义）；短按三连不做任何位姿变化，采样沿用
+    const s2 = s
     const n0 = await readJudgments()
     await mouseDrag(s2.turret, 120, 40)
     const n1 = await readJudgments()
@@ -290,7 +293,7 @@ try {
 
   // —— 双指缩放（评审 BLOCKER：炮塔/炮管上的第一根手指不得吃掉 pinch）——
   // 触屏路由此处起才启用触屏仿真（前面的鼠标分支保持鼠标语义）；第一指按部位、第二指收拢。
-  await page.emulate({ width: 1400, height: 900, touch: true })
+  await page.emulate({ width: 1400, height: 900, touch: true, deviceScaleFactor: 1 })
   await delay(300)
   {
     const s = await rescan('炮管 pinch 前')
@@ -299,7 +302,7 @@ try {
 
   // —— 触屏（Pointer Events 触屏路径；评审 BLOCKER 1）——
   // 触屏视口窄且炮塔已转过：只要求用得到的部位（转动后炮管可能出画）
-  await page.emulate({ width: 390, height: 844, touch: true })
+  await page.emulate({ width: 390, height: 844, touch: true, deviceScaleFactor: 1 })
   await delay(400)
   const spots2 = await findSpots(['turret'])
   if (spots2.turret) {
@@ -319,7 +322,9 @@ try {
     else check(false, '触屏视口下未找到炮塔像素（pinch 用例）')
   }
   {
-    const s = await findSpots(['hull'])
+    // 车体按压用例：pinch 之后相机已变，需要重新采样；这一次把 turret/hull 一起取足，
+    // 供「画布外释放」复用（两者之间没有新的相机动/转角动作，采样不会失效）。
+    const s = await findSpots(['hull', 'turret'])
     if (s.hull) {
       const cdp = chromeCdp.client
       const pt = (x, y) => [{ x, y, id: 1, radiusX: 8, radiusY: 8, force: 1 }]
@@ -332,14 +337,11 @@ try {
     } else {
       check(false, '触屏视口下未找到车体像素')
     }
-  }
 
-  // —— 画布外释放（评审 BLOCKER 2：pointer capture 保证清理）——
-  {
-    const s = await findSpots(['turret'])
-    if (s.turret) {
+    // —— 画布外释放（评审 BLOCKER 2：pointer capture 保证清理）——
+    const from = s.turret
+    if (from) {
       const cdp = chromeCdp.client
-      const from = s.turret
       // 诊断（CI 失败时自解释）：采样像素的命中/分类 + 落点元素 + 手势前的会话态
       const diag = await page.evaluate(`(() => {
         const H = window.__armorRicochet;
