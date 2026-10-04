@@ -22,7 +22,8 @@
  *   pivot rotate(T-H)）——数学见 vehicle-models/pivot.js（marker*Transform）；
  * - dedicated turretless：仅 hull（gun/mantlet 已 bake 进 hull；无 fake turret layer）。
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed } from 'vue'
+import PlaybackVehicleLabel from './PlaybackVehicleLabel.vue'
 import {
   markerTurretAssemblyTransform,
   markerTurretImageTransform,
@@ -168,23 +169,6 @@ const labelsStyle = computed(() => ({
   // tankDy（screen px）→ layout px（×overlayInv）；碰撞位移只作用于标签块，不影响车体
   bottom: `calc(100% + ${LABEL_ANCHOR_PX + props.label.tankDy * overlayInv.value}px)`,
 }))
-const playerLineEl = ref(null)
-const playerTruncated = ref(false)
-watch(
-  () => [props.label, st.value.playerName],
-  () => {
-    nextTick(() => {
-      const el = playerLineEl.value
-      playerTruncated.value = !!el && el.scrollWidth > el.clientWidth + 1
-    })
-  },
-  { immediate: true },
-)
-const playerTooltip = computed(() =>
-  playerTruncated.value && props.label.showPlayer && st.value.playerName
-    ? st.value.playerName
-    : undefined,
-)
 const recorderBadgeStyle = computed(() => ({
   transform: `translate(-50%, -50%) rotate(45deg) ${st.value.overlayInverseScale}`,
   top: `calc(100% + ${5 * overlayInv.value}px)`,
@@ -201,63 +185,6 @@ const stateClasses = computed(() => ({
   'pb-enemy': st.value.friendly === false,
 }))
 
-// ---- HP HUD（docs/features/battle-playback.md HP HUD）----
-// 布局：HP 数字 + 定宽 bar 位于 marker 上方；标签块在有内容时让位（HP 优先级最高）。
-// offset（screen px，沿 labelsStyle 同款 inverse-scale 模式）：
-//   base 2px + 标签块屏幕高度 + 4px 间隙；标签全关时 = 2 + 0 + 4 = 6px。
-const HP_HUD_GAP_PX = 4
-const labelScreenHeight = computed(() => {
-  const inv = overlayInv.value
-  const lines = (props.label.showTank ? LABEL_TANK_LINE_H : 0)
-    + (props.label.showPlayer ? LABEL_PLAYER_LINE_H : 0)
-  return (lines + LABEL_PAD_Y) * inv
-})
-const hpHudStyle = computed(() => ({
-  transform: 'translateX(-50%) ' + st.value.overlayInverseScale,
-  // §22：HP HUD 与 label 块同源位移（labelLayout tankDy 联动；碰撞位移只作用于堆叠，不影响车体）
-  bottom: 'calc(100% + ' + (LABEL_ANCHOR_PX + labelScreenHeight.value + HP_HUD_GAP_PX + props.label.tankDy * overlayInv.value) + 'px)',
-}))
-// 填充只消费 canonical health state：RELATIVE_FULL / CURRENT / LAST_KNOWN /
-// UNKNOWN / DESTROYED；没有可证明百分比时不推导比例。
-const hpFillWidth = computed(() => {
-  const d = props.hp
-  if (!d) return '0%'
-  if (d.state === 'DESTROYED' || d.state === 'UNKNOWN') return '0%'
-  if (d.state === 'RELATIVE_FULL') return '100%'
-  if ((d.state === 'CURRENT' || d.state === 'LAST_KNOWN') && d.pct != null) return d.pct + '%'
-  return (d.state === 'CURRENT' || d.state === 'LAST_KNOWN') && d.current != null ? '100%' : '0%'
-})
-// 当前/最后已知 HP 有数字但没有可证明容量时，显示 indeterminate 纹理；
-// RELATIVE_FULL 是相对展示状态，UNKNOWN/DESTROYED 不冒充已知 HP。
-const hpFillUnknown = computed(() => !!props.hp
-  && (props.hp.state === 'CURRENT' || props.hp.state === 'LAST_KNOWN')
-  && props.hp.current != null && props.hp.pct == null)
-const hpGhostWidth = computed(() => {
-  const g = props.hpGhost
-  if (!g || !Number.isFinite(g.prevPct) || !Number.isFinite(g.nextPct)) return null
-  const w = g.prevPct - g.nextPct
-  return w > 0.5 ? w : null
-})
-const hpGhostLeft = computed(() => {
-  const g = props.hpGhost
-  return g && Number.isFinite(g.nextPct) ? g.nextPct + '%' : '0%'
-})
-const hpTitle = computed(() => {
-  const d = props.hp
-  if (!d) return ''
-  if (d.state === 'RELATIVE_FULL') {
-    return props.t ? props.t('recon.map.playback.hp_full_spawn') : ''
-  }
-  return ''
-})
-const hpClasses = computed(() => ({
-  'pb-hp-lastknown': props.hp && props.hp.state === 'LAST_KNOWN' && !props.hp.destroyed,
-  'pb-hp-destroyed': st.value.destroyed,
-  'pb-hp-flash': props.hpFlash,
-  'pb-hp-no-transition': props.hpNoTransition,
-  // 相对满血 → 阵营色实心条
-  'pb-hp-full-spawn': props.hp && props.hp.state === 'RELATIVE_FULL',
-}))
 </script>
 
 <template>
@@ -370,56 +297,17 @@ const hpClasses = computed(() => ({
       :style="recorderBadgeStyle"
     ></span>
 
-    <!-- HP HUD（docs/features/battle-playback.md HP HUD）：HP 数字 + 定宽 bar，
-         位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化；
-         destroyed 由权威 lifeState 判定（st.destroyed，非 hp===0）→ 隐藏单车
-         HP number+bar（§18/§19），保留 ✕ / 灰化 marker / labels / selected / recorder；
-         UNKNOWN 显示 —；ghost/flash 由外层 transient 状态驱动；hpVisible=false 整体隐藏 -->
-    <div
-      v-if="hpVisible && hp && !label.hpHidden && !st.destroyed"
-      class="pb-hp-hud"
-      :class="hpClasses"
-      :style="hpHudStyle"
-      data-test="pb-hp-hud"
-      aria-hidden="true"
-      :title="hpTitle"
-    >
-      <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current != null ? hp.current : '—' }}</span>
-      <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
-        <span
-          class="pb-hp-fill"
-          :class="{ 'pb-hp-fill-unknown': hpFillUnknown }"
-          :style="{ width: hpFillWidth }"
-        ></span>
-        <span
-          v-if="hpGhostWidth != null"
-          class="pb-hp-ghost"
-          :style="{ left: hpGhostLeft, width: hpGhostWidth + '%' }"
-        ></span>
-      </span>
-    </div>
-
-    <!-- PR4 §27/§28：PlayerName + TankName 共享背景 label 块（两行 centered；只显示一项时
-         背景自动收缩到单行；tankDy 上移让位）；team 文字色见 CSS；
-         destroyed/last-known 只弱化文字、background 保持正常 -->
-    <div
-      class="pb-labels"
-      v-show="!label.blockHidden"
-      aria-hidden="true"
-      :style="labelsStyle"
-    >
-      <span
-        v-if="label.showPlayer && st.playerName"
-        ref="playerLineEl"
-        class="pb-label-player"
-        :title="playerTooltip"
-        data-test="pb-label-player"
-      >{{ st.playerName }}</span>
-      <span
-        v-if="label.showTank"
-        class="pb-label-tank pb-name"
-        data-test="pb-label-tank"
-      >{{ st.tankName }}</span>
+    <div class="pb-presentation" :style="labelsStyle">
+      <PlaybackVehicleLabel
+        :player-name="st.playerName" :tank-name="st.tankName" :friendly="st.friendly"
+        :destroyed="st.destroyed" :last-known="st.lastKnown"
+        :show-player-name="label.showPlayer && !label.blockHidden"
+        :show-tank-name="label.showTank && !label.blockHidden"
+        :show-hp="hpVisible && !label.hpHidden" :show-reload="label.showReload !== false"
+        :hp="hp" :reload="st.reloadShells" :hp-ghost="hpGhost" :hp-flash="hpFlash" :hp-no-transition="hpNoTransition"
+        :hp-title="hp?.state === 'RELATIVE_FULL' && t ? t('recon.map.playback.hp_full_spawn') : ''"
+        name-tooltips
+      />
     </div>
   </button>
 </template>
@@ -593,147 +481,15 @@ const hpClasses = computed(() => ({
     -1px -1px 0 rgba(0, 0, 0, 0.55),
     1px 1px 0 rgba(0, 0, 0, 0.55);
 }
-/* —— PR4 §27/§28：PlayerName + TankName 共享背景 label 块（screen-space 恒定；
-   单行/双行自适应；team 文字色 §29；destroyed/last-known 只弱化文字 §24/§25）—— */
-.pb-labels {
+.pb-presentation {
   position: absolute;
-  bottom: calc(100% + 2px); /* 1× 兜底；实际 offset 由 inline style 提供 */
   left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: rgba(0, 0, 0, .55);
-  border: 1px solid rgba(255, 255, 255, .14);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
-  z-index: 5;
+  transform-origin: bottom center;
   pointer-events: none;
+  z-index: var(--pb-z-hud);
 }
-/* §31 TankName 永远完整：不截断、不缩字——无 max-width/ellipsis，允许 background 自然变宽；
-   150px 上限只存在于 labelLayout 碰撞估算（TANK_MAX_WIDTH_PX），不作用于视觉。 */
-.pb-label-tank {
-  font-size: 10px;
-  line-height: 1.2;
-  font-weight: 600;
-  white-space: nowrap;
-}
-/* §30 PlayerName：按实际像素宽度截断（max-width + ellipsis），截断才有 tooltip（inline title）；
-   pointer-events:auto 只为 hover 触发原生 title（§36 点击不选中的拦截在 BattlePlayback 层） */
-.pb-label-player {
-  font-size: 9px;
-  line-height: 1.22;
-  opacity: .9;
-  white-space: nowrap;
-  max-width: 110px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: auto;
-}
-/* §29 文字跟随 team text token（friendly green|blue / enemy red，根元素 CSS vars） */
-.pb-friendly .pb-label-tank,
-.pb-friendly .pb-label-player {
-  color: var(--pb-team-text, #fff);
-}
-.pb-enemy .pb-label-tank,
-.pb-enemy .pb-label-player {
-  color: var(--pb-enemy-text, #ff8d8d);
-}
-/* §24/§25 destroyed/last-known：只弱化文字，background/border/shadow 保持正常强度 */
-.pb-destroyed .pb-labels .pb-label-tank,
-.pb-destroyed .pb-labels .pb-label-player,
-.pb-last-known .pb-labels .pb-label-tank,
-.pb-last-known .pb-labels .pb-label-player {
-  opacity: .65;
-}
-/* —— HP HUD（docs/features/battle-playback.md HP HUD）：数字 + 定宽 bar，screen-space
-   恒定（overlayInverseScale 反缩放）；friendly/enemy 沿用 team token（§4.2 现有阵营色）——
-    friendly = --pb-team-text（地图 tone），enemy = --pb-enemy-text（red）——与整车 outline 同源。
-   UNKNOWN（maxHp 缺失）时 fill 进入斜纹 UNKNOWN 语义（§5.2：不伪造百分比、不隐藏 HP）。 */
-.pb-hp-hud {
-  position: absolute;
-  bottom: calc(100% + 6px); /* 1× 兜底；实际 offset 由 inline style 提供 */
-  left: 50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  z-index: 8;
-  pointer-events: none;
-  white-space: nowrap;
-}
-.pb-hp-num {
-  font-size: 10px;
-  line-height: 1.1;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: #fff;
-  text-shadow:
-    0 0 2px rgba(0, 0, 0, 0.9),
-    0 0 3px rgba(0, 0, 0, 0.9),
-    0 1px 2px rgba(0, 0, 0, 0.8);
-}
-.pb-hp-bar {
-  position: relative;
-  width: 46px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-.pb-hp-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  transition: width 0.2s linear; /* §10.3：150–300ms 快速缩短（seek 由 pb-hp-no-transition 禁用） */
-}
-.pb-friendly .pb-hp-fill { background: var(--pb-team-text, #4ade80); }
-.pb-enemy .pb-hp-fill { background: var(--pb-enemy-text, #f87171); }
-/* §5.2 UNKNOWN：maxHp 缺失 → 斜纹灰段，不伪造百分比 */
-.pb-hp-fill-unknown {
-  background: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.28) 0 3px, transparent 3px 6px) !important;
-}
-/* §11 lost-HP ghost：同阵营色浅版（低透明），约 GHOST_MS 线性消退 */
-.pb-hp-ghost {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  animation: pb-ghost-fade 0.6s ease forwards;
-}
-.pb-friendly .pb-hp-ghost { background: var(--pb-team-text, #4ade80); }
-.pb-enemy .pb-hp-ghost { background: var(--pb-enemy-text, #f87171); }
-@keyframes pb-ghost-fade {
-  from { opacity: 0.55; }
-  to { opacity: 0; }
-}
-/* §10.3 hit flash：短暂亮起（约 FLASH_MS） */
-.pb-hp-flash .pb-hp-fill {
-  animation: pb-hp-flash 0.28s ease-out;
-}
-@keyframes pb-hp-flash {
-  0% { filter: brightness(2.2); }
-  100% { filter: brightness(1); }
-}
-/* §7.1 last-known：HP 冻结为最后可信值，整体弱化/desaturate */
-.pb-hp-lastknown .pb-hp-num { opacity: 0.55; }
-.pb-hp-lastknown .pb-hp-fill { opacity: 0.45; }
-/* §12 destroyed：HP 归零，弱化表达 */
-.pb-hp-destroyed .pb-hp-num { opacity: 0.5; }
-.pb-hp-destroyed .pb-hp-fill { opacity: 0.5; }
-/* §20.1 seek/状态恢复帧：禁用 HP bar transition（不补动画） */
-.pb-hp-no-transition .pb-hp-fill { transition: none; }
-
-/* —— PR3 §22/§24 reduced motion：停止浮动动画、跳过 destroyed transition（直达终态） —— */
 @media (prefers-reduced-motion: reduce) {
   .pb-selected-mark { animation: none; }
   .pb-destroyed .pb-graphics { transition: none; }
-  /* §21 prefers-reduced-motion：取消 ghost/flash 动画（保留准确 HP/伤害事实） */
-  .pb-hp-ghost { animation: none; opacity: 0.3; }
-  .pb-hp-flash .pb-hp-fill { animation: none; }
 }
 </style>

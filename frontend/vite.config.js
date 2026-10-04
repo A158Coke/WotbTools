@@ -22,6 +22,22 @@ const DEV_PROXY_TARGETS = Object.freeze({
 const LOCAL_3D_ASSET_DIR = resolve(configDirectory, '../common/assets/map-3d-local')
 
 /**
+ * 本机验收用的**按需**资产代理：`WOTB_ASSET_PROXY=<remote asset origin>` 时把 `/__assets/*`
+ * 透传到该 origin（去掉前缀）。
+ *
+ * 为什么需要它：浏览器 v1 的资产源是远端 origin（`?assets=<url>`），而生产 COS 的 CORS
+ * 白名单不含 localhost —— 于是本机打开 3D 回放必然被浏览器拦下（`connect-src`/CORS），
+ * 与代码无关。代理让请求从同源 dev server 出去，浏览器不再做跨域判定。
+ *
+ * **不设该环境变量时不注册任何代理**，默认 `npm run dev` 行为与本改动前完全一致；
+ * 代理只存在于 dev server（`apply: 'serve'` 语义，不进 build 产物）。
+ */
+function assetProxyTarget() {
+  const target = (process.env.WOTB_ASSET_PROXY || '').trim()
+  return target ? target.replace(/\/+$/, '') : ''
+}
+
+/**
  * Agent WASM identity SSOT：`deploy/agent/source.json`（repo 相对路径在 Docker 里
  * 通过 `COPY deploy/agent/source.json /deploy/agent/source.json` 保持同一布局）。
  *
@@ -277,12 +293,28 @@ export default defineConfig(({ command, mode }) => {
       port: 5173,
       // 允许 dev server 读取仓库根的共享 JSON (common/map_names.json 等)。
       fs: { allow: ['..'] },
+      watch: {
+        // 编辑器 / 工具在 `scripts/` 下写文件时会留下临时文件；watcher 一旦在文件仍被
+        // 占用时挂上监听就抛 `EBUSY: resource busy or locked`，而该异常会直接杀掉
+        // dev server（实测：一次 `.browser-workspace-interaction.mjs.<pid>.<uuid>.tmpdir/…tmp`
+        // 就让本机验收服务器整个挂掉）。这些临时文件从不参与构建，直接排除。
+        ignored: ['**/.*.tmpdir/**', '**/*.tmp'],
+      },
       proxy: {
         '/api': {
           target: devProxyTarget(mode),
           changeOrigin: true,
           secure: mode === 'production-remote',
         },
+        // 仅当 WOTB_ASSET_PROXY 设置时存在（见 assetProxyTarget 说明）
+        ...(assetProxyTarget() ? {
+          '/__assets': {
+            target: assetProxyTarget(),
+            changeOrigin: true,
+            secure: true,
+            rewrite: (path) => path.replace(/^\/__assets/, ''),
+          },
+        } : {}),
       }
     },
     publicDir: '../common/assets',

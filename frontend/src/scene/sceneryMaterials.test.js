@@ -131,9 +131,18 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     expect(src).toMatch(/disposeFxPool\(\);/)
   })
 
+  /**
+   * 装填条求值门控：3D 标签改为 HTML 覆盖层后，求值从"每车 sprite 重绘"变成
+   * `publishLabels` 的节流快照。两条不变量不变：
+   *   1. 关标签时整段不做（`store.labelsOn` 早退）；
+   *   2. 暂停 / T 未变时不重复求值（时间戳门控）。
+   */
   it('装填条求值：关标签或 T 未变时跳过（暂停/关标签不再每车每帧全量求值）', () => {
-    expect(src).toMatch(/if \(store\.labelsOn && v\.reloadT !== T\) \{/)
-    expect(src).toMatch(/v\.reloadT = T;/)
+    const publish = src.slice(src.indexOf('function publishLabels'), src.indexOf('function setLabelPrefs'))
+    expect(publish, '关标签时必须整段早退').toMatch(/if \(!DATA \|\| !labelOverlay \|\| !store\.labelsOn\) return;/)
+    expect(publish, 'T 未变 / 未到节流窗口时不得重复求值').toMatch(/if \(!force && \(T === labelsTime \|\| now - labelsWrittenMs < 100\)\) return;/)
+    // 求值本身只依赖 T（纯状态在时刻）：走共享 resolver，不再自带累加计时器
+    expect(publish).toMatch(/reload: destroyed \? null : reloadStateAt\(v\.def\.eid, T, v\.reloadSize\)/)
   })
 
   it('HUD 降频：store.time/seekFrac 不再每帧写，seek 时强制补一次', () => {
