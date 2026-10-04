@@ -262,6 +262,35 @@ active_mirrors() {
   "$docker_bin" info --format '{{json .RegistryConfig.Mirrors}}' 2>/dev/null || true
 }
 
+# assert_active_mirror <expected>
+#
+# Docker canonicalizes registry mirror URLs in its runtime view and may append one
+# trailing slash. Treat only that representation difference as equivalent. Scheme,
+# host, path, and every other character remain exact so readiness cannot accept a
+# different mirror by normalization accident.
+assert_active_mirror() {
+  local expected="$1"
+  active_mirrors | python3 -c '
+import json, sys
+
+expected = sys.argv[1]
+raw = sys.stdin.read()
+try:
+    mirrors = json.loads(raw)
+except ValueError as error:
+    print(f"cannot parse running Docker mirrors: {error}", file=sys.stderr)
+    raise SystemExit(1)
+if not isinstance(mirrors, list) or not all(isinstance(item, str) for item in mirrors):
+    print(f"running Docker mirrors are not a list of strings: {mirrors!r}", file=sys.stderr)
+    raise SystemExit(1)
+
+canonical = lambda value: value[:-1] if value.endswith("/") else value
+if canonical(expected) not in [canonical(item) for item in mirrors]:
+    print(f"the running daemon does not report the reviewed mirror {expected}: {mirrors}", file=sys.stderr)
+    raise SystemExit(1)
+' "$expected"
+}
+
 # running_container_ids - stable snapshot used to prove this reconcile created no
 # workload (K7A must not adopt or start anything).
 running_container_ids() {

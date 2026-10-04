@@ -61,15 +61,7 @@ daemon_config_matches "$daemon_config" \
   || fail "The Docker daemon configuration is not the reviewed state: $daemon_config"
 [[ "$(stat -c '%U:%G' "$daemon_config")" == root:root && "$(stat -c '%a' "$daemon_config")" == 644 ]] \
   || fail 'The Docker daemon configuration must be root:root mode 644.'
-active_mirrors | python3 -c '
-import json, sys
-expected = sys.argv[1]
-raw = sys.stdin.read().strip() or "null"
-mirrors = json.loads(raw)
-if not isinstance(mirrors, list) or expected not in mirrors:
-    print(f"the running daemon does not report the reviewed mirror {expected}: {mirrors}", file=sys.stderr)
-    raise SystemExit(1)
-' "$WORKER_DOCKER_HUB_MIRROR" \
+assert_active_mirror "$WORKER_DOCKER_HUB_MIRROR" \
   || fail "The reviewed Docker Hub mirror is not active: $WORKER_DOCKER_HUB_MIRROR"
 pass docker-hub-mirror
 
