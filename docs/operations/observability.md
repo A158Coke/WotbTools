@@ -333,6 +333,12 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 | `wotbtools-usage` | WotBTools · 使用统计与 Android | 回放/AI 使用量与 APK 下载统计 |
 | `wotbtools-keycloak` | WotBTools · Keycloak | 登录、QQ callback、IdP 与 Keycloak 日志 |
 
+- Keycloak 看板把「登录可靠性」与「诊断日志」分开：
+  - **登录可靠性 · 失败分类（5m，已分流噪音）**：`LOGIN_ERROR` / `IDENTITY_PROVIDER_LOGIN_ERROR` / `IDENTITY_PROVIDER_FIRST_LOGIN_ERROR` 按 `error` 维度分解，**排除**本机 silent-check-sso 的 `invalid_redirect_uri`、密码错误 / 用户不存在与 `security-admin-console` 管理台噪音；
+  - **登录可靠性 · broker 会话连续性（P0 信号）**：`cookie_not_found` 与 `Failed to verify login action` 两条独立曲线（正常用户路径应为 0；持续非零按 `docs/auth/web-qq-diagnostics.md` §3 取证）；
+  - **IdP 失败分解（provider × error，5m）**：按 `identity_provider` 定位 QQ / WG 单点故障。
+  失败分类法（A/B/C/D 与噪音清单）单点在 `docs/auth/web-qq-diagnostics.md` 维护，看板不另立口径。
+
 看板使用现有 Prometheus/Loki 数据源，并增加低基数 node-exporter 主机指标；Keycloak 观测保持 Alloy → Loki 日志链路，不增加或依赖 management metrics。生产总览只放摘要，HTTP 与事故诊断、回放与 AI 诊断、JVM 与基础设施、使用统计与 Android 分别承接下钻职责。未引入 cAdvisor、Postgres exporter 或 Alertmanager。
 
 Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`errorId` 对 AI SSE 映射为 `correlationId`，对普通 HTTP 错误映射为 canonical error 的 `id`，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
