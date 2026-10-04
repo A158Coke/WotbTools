@@ -55,11 +55,38 @@ describe('BattlePlaybackPanel local playback parse', () => {
     vi.restoreAllMocks()
   })
 
+  it.each(['ready', 'error'])('2D waits for canonical and retries only the failed readiness (%s)', async (sceneState) => {
+    const retry = deferred()
+    const session = {
+      getState: () => ({ sceneState, canonicalError: new Error('canonical unavailable') }),
+      loadCanonical: vi.fn().mockResolvedValueOnce(null).mockReturnValueOnce(retry.promise),
+      invalidateCanonical: vi.fn(), invalidate: vi.fn(), loadScene: vi.fn(),
+    }
+    const wrapper = mountPanel({ playbackSession: session })
+    await flushPromises()
+    expect(find(wrapper, 'pb-error').exists()).toBe(true)
+    await find(wrapper, 'pb-retry').trigger('click')
+    expect(find(wrapper, 'pb-loading').exists()).toBe(true)
+    if (sceneState === 'ready') {
+      expect(session.invalidateCanonical).toHaveBeenCalledWith(wrapper.props('file'))
+      expect(session.invalidate).not.toHaveBeenCalled()
+    } else {
+      expect(session.invalidate).toHaveBeenCalledWith(wrapper.props('file'))
+      expect(session.invalidateCanonical).not.toHaveBeenCalled()
+    }
+    retry.resolve({ dataset: dataset(), overview: null, reloadTelemetry: null })
+    await flushPromises()
+    expect(find(wrapper, 'pb-stub').exists()).toBe(true)
+    expect(session.loadScene).not.toHaveBeenCalled()
+    expect(playback.parseLocalPlayback).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('consumes the workspace session result without invoking its own parser', async () => {
-    const playbackSession = { load: vi.fn().mockResolvedValue({ canonical: { dataset: dataset(), overview: null, reloadTelemetry: null } }) }
+    const playbackSession = { loadCanonical: vi.fn().mockResolvedValue({ dataset: dataset(), overview: null, reloadTelemetry: null }) }
     const wrapper = mountPanel({ playbackSession })
     await flushPromises()
-    expect(playbackSession.load).toHaveBeenCalledWith(wrapper.props('file'))
+    expect(playbackSession.loadCanonical).toHaveBeenCalledWith(wrapper.props('file'))
     expect(playback.parseLocalPlayback).not.toHaveBeenCalled()
     expect(wrapper.getComponent(BattlePlayback).props('playbackV2')).toEqual(dataset())
     wrapper.unmount()

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, effectScope } from 'vue'
 import { useReplayWorkspace } from './useReplayWorkspace.js'
 import { useReplaySession } from './useReplaySession.js'
 
@@ -38,40 +38,70 @@ function battle(sourceId, mapName = 'Lagoon') {
 }
 
 describe('useReplayWorkspace', () => {
-  it('2D / 3D / Details share one in-flight and completed playback session result', async () => {
+  it('scene readiness resolves while canonical stays pending; concurrent consumers decode/project once', async () => {
     const ws = useReplayWorkspace()
     const file = makeFiles(1)[0]
-    const a = ws.playbackSession.load(file)
-    const b = ws.playbackSession.load(file)
-    expect(a).toBe(b)
-    const result = await a
-    expect(await ws.playbackSession.load(file)).toBe(result)
+    let finish
+    parser.project.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const scene = ws.playbackSession.loadScene(file)
+    expect(ws.playbackSession.loadScene(file)).toBe(scene)
+    const canonical = ws.playbackSession.loadCanonical(file)
+    expect(ws.playbackSession.loadCanonical(file)).toBe(canonical)
+    const raw = await scene
+    const state = ws.playbackSession.getState(file)
+    expect(state.scenePlayback).toBe(raw)
+    expect(state.sceneState).toBe('ready')
+    expect(state.canonicalState).toBe('loading')
+    expect(state.canonical).toBeNull()
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
     expect(parser.raw).toHaveBeenCalledTimes(1)
     expect(parser.project).toHaveBeenCalledTimes(1)
-    expect(parser.project).toHaveBeenCalledWith(file, { playback: result.scenePlayback })
-    expect(result.canonical.dataset).toBeTruthy()
-    expect(result.canonical.reloadTelemetry).toBeNull()
+    expect(parser.project).toHaveBeenCalledWith(file, { playback: raw })
+    finish({ dataset: { vehicles: [] }, clock: { startRaw: 42 }, reloadTelemetry: null })
+    expect(await canonical).toBe(state.canonical)
+    expect(state.canonicalState).toBe('ready')
+    expect(await ws.playbackSession.loadScene(file)).toBe(raw)
+    expect(await ws.playbackSession.loadCanonical(file)).toBe(state.canonical)
+    expect(parser.raw).toHaveBeenCalledTimes(1)
+    expect(parser.project).toHaveBeenCalledTimes(1)
   })
 
-  it('canonical failure preserves raw 3D data and only an explicit retry recomputes facts', async () => {
+  it('scene-only request starts canonical in the background without blocking raw readiness', async () => {
+    const ws = useReplayWorkspace()
+    const file = makeFiles(1)[0]
+    let finish
+    parser.project.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    await ws.playbackSession.loadScene(file)
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    expect(ws.playbackSession.getState(file).sceneState).toBe('ready')
+    expect(ws.playbackSession.getState(file).canonicalState).toBe('loading')
+    finish({ dataset: { vehicles: [] }, clock: null })
+    await ws.playbackSession.loadCanonical(file)
+  })
+
+  it('canonical failure preserves scene, and canonical retry updates the same state without decoding again', async () => {
     const ws = useReplayWorkspace()
     const file = makeFiles(1)[0]
     parser.project.mockRejectedValueOnce(new Error('AI unavailable'))
-    const result = await ws.playbackSession.load(file)
-    expect(result.scenePlayback).toBeTruthy()
-    expect(result.canonical).toBeNull()
-    expect(result.canonicalError.message).toBe('AI unavailable')
-    expect(await ws.playbackSession.load(file)).toBe(result)
+    const raw = await ws.playbackSession.loadScene(file)
+    expect(await ws.playbackSession.loadCanonical(file)).toBeNull()
+    const state = ws.playbackSession.getState(file)
+    expect(state.sceneState).toBe('ready')
+    expect(state.canonicalState).toBe('error')
+    expect(state.canonicalError.message).toBe('AI unavailable')
+    expect(await ws.playbackSession.loadCanonical(file)).toBeNull()
     expect(parser.project).toHaveBeenCalledTimes(1)
-    ws.playbackSession.invalidate(file)
-    expect(await ws.playbackSession.load(file)).toBe(result)
-    expect(result.canonical).toBeTruthy()
-    expect(result.canonicalError).toBeNull()
+    ws.playbackSession.invalidateCanonical(file)
+    const retry = ws.playbackSession.loadCanonical(file)
+    expect(ws.playbackSession.getState(file)).toBe(state)
+    expect(await ws.playbackSession.loadScene(file)).toBe(raw)
+    expect(await retry).toBeTruthy()
+    expect(state.canonicalError).toBeNull()
     expect(parser.raw).toHaveBeenCalledTimes(1)
     expect(parser.project).toHaveBeenCalledTimes(2)
   })
 
-  it('selection change aborts pending parsing and failed sessions can retry', async () => {
+  it('selection change aborts pending scene parsing; explicit whole-session retry can recover raw failure', async () => {
     const ws = useReplayWorkspace()
     const [file, next] = makeFiles(2)
     holder.state.session.replaceSelection([file])
@@ -80,15 +110,57 @@ describe('useReplayWorkspace', () => {
       signal = abortSignal
       signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')))
     }))
-    const old = ws.playbackSession.load(file)
+    const old = ws.playbackSession.loadScene(file)
     await vi.waitFor(() => expect(signal).toBeDefined())
     const rejected = expect(old).rejects.toMatchObject({ name: 'AbortError' })
     holder.state.session.replaceSelection([next])
     await rejected
     expect(signal.aborted).toBe(true)
-    expect(await ws.playbackSession.load(next)).toBeTruthy()
-    expect(await ws.playbackSession.load(file)).toBeTruthy()
-    expect(parser.raw).toHaveBeenCalledTimes(3)
+    expect(await ws.playbackSession.loadCanonical(next)).toBeTruthy()
+    parser.raw.mockRejectedValueOnce(new Error('raw failed'))
+    await expect(ws.playbackSession.loadScene(file)).rejects.toThrow('raw failed')
+    expect(ws.playbackSession.getState(file).sceneState).toBe('error')
+    ws.playbackSession.invalidate(file)
+    expect(await ws.playbackSession.loadCanonical(file)).toBeTruthy()
+  })
+
+  it('late canonical A cannot publish after switching to ready B', async () => {
+    const ws = useReplayWorkspace()
+    const [a, b] = makeFiles(2)
+    holder.state.session.replaceSelection([a])
+    let finishA
+    parser.project.mockImplementationOnce(() => new Promise(resolve => { finishA = resolve }))
+    const old = ws.playbackSession.loadCanonical(a)
+    const discarded = expect(old).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(finishA).toBeTypeOf('function'))
+    const stateA = ws.playbackSession.getState(a)
+    holder.state.session.replaceSelection([b])
+    const canonicalB = await ws.playbackSession.loadCanonical(b)
+    finishA({ dataset: { vehicles: ['old A'] }, clock: null })
+    await discarded
+    expect(stateA.canonical).toBeNull()
+    expect(ws.playbackSession.getState(b).canonical).toBe(canonicalB)
+    expect(holder.state.session.currentTargetFile.value).toBe(b)
+    holder.state.session.replaceSelection([a])
+    await ws.playbackSession.loadScene(a)
+    expect(await ws.playbackSession.loadCanonical(a)).toBeTruthy()
+    expect(parser.raw).toHaveBeenCalledTimes(2)
+    expect(parser.project).toHaveBeenCalledTimes(3)
+  })
+
+  it('workspace disposal withdraws pending canonical without pretending to abort the projection', async () => {
+    const scope = effectScope()
+    const ws = scope.run(() => useReplayWorkspace())
+    const file = makeFiles(1)[0]
+    let finish
+    parser.project.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const task = ws.playbackSession.loadCanonical(file)
+    const discarded = expect(task).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    scope.stop()
+    finish({ dataset: { vehicles: ['stale'] } })
+    await discarded
+    expect(ws.playbackSession.getState(file).canonical).toBeNull()
   })
 
   beforeEach(() => {

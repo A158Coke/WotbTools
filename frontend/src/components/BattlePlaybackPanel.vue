@@ -70,9 +70,9 @@ async function load() {
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
   try {
-    const session = props.playbackSession ? await props.playbackSession.load(file as File) : null
-    if (session && !session.canonical) throw session.canonicalError
-    const { dataset, overview, reloadTelemetry: telemetry } = session ? session.canonical : await parseLocalPlayback(file as File)
+    const canonical = props.playbackSession ? await props.playbackSession.loadCanonical(file as File) : await parseLocalPlayback(file as File)
+    if (!canonical) throw props.playbackSession.getState(file as File).canonicalError
+    const { dataset, overview, reloadTelemetry: telemetry } = canonical
     if (seq !== parseSeq) return
     mapPlaybackV2.value = dataset
     reloadTelemetry.value = telemetry
@@ -93,7 +93,10 @@ async function load() {
 }
 
 function retry() {
-  if (props.file) props.playbackSession?.invalidate(props.file)
+  if (props.file && props.playbackSession) {
+    if (props.playbackSession.getState(props.file).sceneState === 'error') props.playbackSession.invalidate(props.file)
+    else props.playbackSession.invalidateCanonical(props.file)
+  }
   parsedFile = null
   load()
 }

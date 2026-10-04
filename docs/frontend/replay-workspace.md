@@ -151,7 +151,11 @@ geometry and interaction checks establish layout/state invariants, not GPU/mater
 
 ### 3D Details canonical parity
 
-`useReplayWorkspace.playbackSession` 是 2D / 3D Playback 解析的唯一 owner，按当前 selection 中的 File 身份复用在途及完成结果；两个 Pane 经显式 prop 消费。首次进入 2D 或启动 3D 时才加载，原始 Playback 只经既有 Worker 入口解析一次，再投影 canonical dataset / overview；共享结果持有 `scenePlayback` 及 canonical 投影，投影带独立 `clock`。3D 场景和 Details 使用同一结果，不在 Pane 中额外解析。切换 renderer、布局、Details 不重跑 parser；换 selection / 工作台销毁撤下在途 Worker，失败允许显式重试。raw Playback 成功但 canonical 失败时，session 保留原始场景数据，2D 显示解析错误，3D 继续基础播放与详情；renderer 切换不会自动重试失败 facts。显式重试复用成功的 raw 数据并更新同一个响应式结果，保留的 3D Details 同步恢复。
+`useReplayWorkspace.playbackSession` 是 2D / 3D Playback 解析的唯一 owner，按 selection 中的 File 身份复用在途及完成结果；两个 Pane 经显式 prop 消费。接口分为 `loadScene(file)`、`loadCanonical(file)` 和 `getState(file)`，共享状态分别记录 scene / canonical 的 readiness 与错误。
+
+首次进入 2D 或启动 3D 时才加载；原始 Playback 经既有 Worker 入口只解析一次。`loadScene` 仅等待 raw 数据，3D 立即进入场景资产与建场流程，不等 canonical。session 后台启动 `parseLocalPlayback(file, { playback })`，复用 raw 数据投影 canonical dataset / overview；2D 可以等待 `loadCanonical`。canonical 后到时更新稳定的响应式 state，已打开的 3D Details 自动增强，不要求重新点击车辆或重建场景。canonical 失败只留下基础详情，2D 显示自己的错误；不阻塞 3D。
+
+切换 renderer、布局、Details 不重跑 parser。`invalidateCanonical` 仅撤下并重试 canonical，不动成功的 scene 数据或 3D 场景；raw 失败时显式 `invalidate` 可重试整个 session。换 selection / 工作台销毁真实 abort 在途 Worker；canonical parser 无 AbortSignal，使用 generation guard 丢弃迟到投影，不能声称物理取消了 WASM。
 
 场景名册保留 `accountId` / `tankId`；选择动作仍以 3D `eid` 为键，详情按账号匹配 track。查询时间为 `store.time - clock.startRaw`，不能用 render-grid 的 `startTime` 代替 AI-derived origin；rich Details 不以 reload telemetry 是否存在为前提。
 
