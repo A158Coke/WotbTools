@@ -128,7 +128,7 @@ K7B_STACK_CONFIG = {
     "skip_secret_interp": False,
     "git_provider": "gitee.com",
     "git_https": True,
-    "repo": "A158Coke/WotbTools",
+    "repo": "A158Coke/Wotbtools",
     "branch": "main",
     "commit": "",
     "clone_path": "",
