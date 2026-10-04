@@ -183,3 +183,12 @@ komodo_periphery:
   - '.github/workflows/ci-komodo-periphery.yml'
   - 'deploy/check-production-freshness.sh'
   - 'deploy/periphery/**'
+production_worker:
+  # The TX2 production-worker prerequisites (K7A) are their own owner: host
+  # packages, the Docker daemon mirror and the root registry credential. Touching
+  # them must validate this owner only, and must never reach the Komodo, Periphery,
+  # Caddy, frontend, business-api, keycloak or PostgreSQL owners.
+  - '.github/workflows/production-worker.yml'
+  - '.github/workflows/ci-production-worker.yml'
+  - 'deploy/check-production-freshness.sh'
+  - 'deploy/production-worker/**'

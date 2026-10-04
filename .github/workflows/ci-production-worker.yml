@@ -1,0 +1,42 @@
+name: CI / production-worker
+
+# Pull-request validation for the production-worker owner (K7A). This workflow never
+# reads production secrets, never SSHes TX2, never touches production state, and never
+# takes the TX2 host lock: it validates the owner's scripts and drives the real
+# lifecycle against a disposable fake host root with stubbed host commands.
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Production worker contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Bash syntax
+        run: |
+          set -euo pipefail
+          for script in deploy/production-worker/*.sh; do
+            bash -n "$script"
+          done
+      # The owner's single fixture entrypoint: the reviewed profile contract, the
+      # staging-root and host-lock guards, the fail-closed matrix (Compose, mirror,
+      # credential, private image, Periphery, WireGuard, workload), the conditional
+      # Docker restart, credential rotation and the readiness token. It runs as root
+      # because the mode/permission assertions and the root Docker credential model
+      # are the point; every mutation happens inside a temporary fake host root.
+      - name: Validate the production-worker owner contract and safety fixtures
+        run: sudo -E bash deploy/production-worker/test-production-worker.sh

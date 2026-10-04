@@ -259,15 +259,23 @@ k5 network:       none
 
 No K5 runtime object remained on TX2.
 
-## Current ownership gap
+## Current ownership gap（K5 当时的状态，保留为历史记录）
 
-Two TX2 host prerequisites used by K5 are currently **host-local manual state**:
+During K5, two TX2 host prerequisites were **host-local manual state**:
 
 1. installation of the Ubuntu `docker-compose-v2` package;
 2. `/etc/docker/daemon.json` containing the Tencent Docker Hub mirror.
 
-They are **not yet reconciled by this repository**. Rebuilding TX2 would therefore
+They were **not yet reconciled by this repository**. Rebuilding TX2 would therefore
 lose them unless they are restored separately.
+
+> **K7A follow-up**：K7A 后来引入了独立的 production-worker owner
+> （`deploy/production-worker/**` + `.github/workflows/production-worker.yml`），把 Compose
+> 安装、`daemon.json` 的 Tencent Docker Hub mirror，以及 **root / Periphery 执行上下文的
+> 私有 TCR pull 凭据** 纳入仓库拥有的 reconcile 与验证，因此重建 TX2 不再依赖未记录的手工
+> 状态。本节其余内容描述的仍是 K5 当时的真实状态，不要据此认为 K5 自动化过这些前置条件；
+> K5 也**有意**没有任何生产 registry 凭据。详见
+> `docs/operations/tx2-production-worker.md`。
 
 Do not silently fold either prerequisite into the Periphery lifecycle: Periphery owns
 its binary/config/systemd identity and connection to Core, not general Docker host
@@ -289,7 +297,8 @@ K5 does not prove or authorize:
 
 - migration of Business API, Frontend, Keycloak, AI service, PostgreSQL, Caddy, or
   observability workloads;
-- production registry-secret provisioning for root / Periphery;
+- production registry-secret provisioning for root / Periphery（K5 有意不做；该边界后来由
+  K7A 的 production-worker owner 用受保护 environment 的 secret 建立）;
 - declarative Stack ownership under `infra/komodo/resources/**`;
 - automatic ResourceSync apply;
 - `managed = true` or `delete = true`;

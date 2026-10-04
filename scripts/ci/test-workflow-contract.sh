@@ -96,7 +96,7 @@ assert affected("deploy/agent/source.json") == {"frontend"}
 assert affected("scripts/fetch-agent-wasm.sh") == {"frontend"}
 assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment"}
 assert affected("deploy/check-production-freshness.sh") == {
-    "deployment", "frontend", "komodo_controller", "komodo_periphery",
+    "deployment", "frontend", "komodo_controller", "komodo_periphery", "production_worker",
 }
 for owner in jobs["changes"]["outputs"]:
     caller = jobs[owner]
@@ -296,7 +296,7 @@ assert "steps.staged.outputs" in _publish_job["steps"][_write_i]["run"], \
 owners = (
     "business-api", "frontend", "keycloak", "caddy",
     "business-postgres", "keycloak-postgres", "observability", "alloy-tx",
-    "komodo-controller", "komodo-periphery",
+    "komodo-controller", "komodo-periphery", "production-worker",
 )
 pr_owner_for_production = {
     "business-api": "business_api",
@@ -309,6 +309,7 @@ pr_owner_for_production = {
     "alloy-tx": "alloy_tx",
     "komodo-controller": "komodo_controller",
     "komodo-periphery": "komodo_periphery",
+    "production-worker": "production_worker",
 }
 assert set(pr_owner_for_production) == set(owners)
 image_owners = {"business-api", "frontend", "keycloak"}
@@ -639,6 +640,148 @@ for host, spec in periphery_hosts.items():
 yecao_json = json.dumps(periphery_jobs["reconcile_yecao"], ensure_ascii=False)
 assert "ONBOARDING_KEY" not in yecao_json, "the Yecao job must not reference an onboarding secret"
 assert "KOMODO_YECAO_ONBOARDING_KEY" not in json.dumps(periphery_workflow, ensure_ascii=False)
+
+# K7A: the TX2 production-worker owner is a separate lifecycle from the Periphery
+# agent lifecycle and from every workload owner. It owns host Docker prerequisites
+# only (Compose, the reviewed daemon mirror, the root registry credential), so its
+# inputs must not reach - and must not be reachable from - any workload owner.
+worker_workflow = load(workflow_dir / "production-worker.yml")
+worker_events = worker_workflow.get("on", worker_workflow.get(True, {}))
+assert worker_events["push"]["branches"] == ["main"]
+assert worker_events["push"]["paths"] == worker_workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
+assert set(worker_events["push"]["paths"]) == {
+    ".github/workflows/production-worker.yml",
+    "deploy/check-production-freshness.sh",
+    "deploy/production-worker/**",
+}, worker_events["push"]["paths"]
+worker_jobs = worker_workflow["jobs"]
+assert set(worker_jobs) == {"reconcile_tx2"}, sorted(worker_jobs)
+worker_job = worker_jobs["reconcile_tx2"]
+# A host mutating workflow runs in the protected environment and serializes with every
+# other TX mutation through the shared maintenance queue.
+assert worker_job["environment"] == "tx-production", worker_job.get("environment")
+assert worker_workflow["concurrency"]["group"] == "production-maintenance"
+assert worker_workflow["concurrency"]["cancel-in-progress"] == "false"
+# One owner, one host: the worker owns no other domain, and no workload owner's
+# artifact may appear inside it.
+worker_text = json.dumps(worker_workflow, ensure_ascii=False)
+for forbidden in (
+    "infra/komodo", "resource-sync", "komodo-", "CADDY_", "TX_BACKEND_UPSTREAM",
+    "TX_KEYCLOAK_", "TX_BUSINESS_DB_", "TX_AI_UPSTREAM", "caddy.yml", "frontend.yml",
+    "business-api.yml", "keycloak.yml", "keycloak-postgres.yml", "business-postgres.yml",
+    "alloy-tx.yml", "docker compose up", "docker run",
+):
+    assert forbidden not in worker_text, f"the production-worker owner must not own {forbidden}"
+worker_steps = {step.get("name"): step for step in worker_job["steps"]}
+# Host parameters come from the reviewed profile, exactly like the Periphery owner.
+assert worker_steps["Read the TX2 worker profile"]["env"]["TARGET"] == "tx2"
+assert "read-target-profile.sh" in worker_steps["Read the TX2 worker profile"]["run"]
+# TX2's own SSH boundary, and only that host's.
+for secret in ("TX2_VPS_HOST", "TX2_VPS_USER", "TX2_VPS_PORT", "TX2_VPS_SSH_KEY"):
+    assert secret in json.dumps(worker_job, ensure_ascii=False), secret
+worker_ssh_steps = [step for step in worker_job["steps"]
+                    if step.get("uses", "").startswith(("appleboy/ssh-action", "appleboy/scp-action"))]
+assert worker_ssh_steps, "the worker must reach TX2 over the reviewed SSH boundary"
+for step in worker_ssh_steps:
+    assert step["with"]["host"] == "${{ secrets.TX2_VPS_HOST }}", step["with"]["host"]
+for staging_name in ("Prepare safe TX2 worker staging root", "Cleanup staged TX2 worker inputs"):
+    staging_step = worker_steps[staging_name]
+    assert staging_step["with"]["script_path"] == "deploy/production-worker/staging-root.sh", staging_name
+    assert staging_step["env"]["WORKER_STAGING_ROOT"] == "${{ steps.target.outputs.staging_root }}", staging_name
+assert worker_steps["Cleanup staged TX2 worker inputs"]["if"] == "always()"
+# Only this owner's reviewed inputs are staged: fixtures and every other owner stay in CI.
+staged = " ".join(worker_steps["Stage exact worker inputs on TX2"]["with"]["source"].split())
+staged_files = {part for part in staged.replace(" ", "").split(",") if part}
+assert staged_files == {
+    "deploy/production-worker/lib.sh",
+    "deploy/production-worker/staging-root.sh",
+    "deploy/production-worker/install.sh",
+    "deploy/production-worker/verify.sh",
+    "deploy/production-worker/reconcile.sh",
+    "deploy/production-worker/read-target-profile.sh",
+    "deploy/production-worker/targets/tx2/target.env",
+}, sorted(staged_files)
+# The reconcile runs the staged lifecycle under the host lock and asserts the
+# host-scoped readiness token instead of trusting the exit status alone.
+worker_reconcile = worker_steps["Reconcile the TX2 production worker under the TX2 host lock"]
+assert 'bash "$stage/deploy/production-worker/reconcile.sh"' in worker_reconcile["with"]["script"]
+assert 'grep -qx "$WORKER_READY_TOKEN" "$log"' in worker_reconcile["with"]["script"]
+assert "TX2_PRODUCTION_WORKER_READY" not in json.dumps(worker_workflow, ensure_ascii=False), \
+    "the readiness token must come from the reviewed host profile, never inlined"
+# The registry credential is read from the protected environment and handed over
+# through the SSH action's environment: never inline, never an argument, never a file.
+worker_envs = worker_reconcile["with"]["envs"].split(",")
+for name in ("TCR_REGISTRY", "TCR_NAMESPACE", "TCR_CREDENTIAL_VERSION", "TCR_USERNAME", "TCR_PASSWORD"):
+    assert name in worker_envs, name
+assert worker_reconcile["env"]["TCR_USERNAME"] == "${{ secrets.TCR_USERNAME }}"
+assert worker_reconcile["env"]["TCR_PASSWORD"] == "${{ secrets.TCR_PASSWORD }}"
+assert worker_reconcile["env"]["TCR_REGISTRY"] == "${{ vars.TCR_REGISTRY }}"
+assert worker_reconcile["env"]["TCR_NAMESPACE"] == "${{ vars.TCR_NAMESPACE }}"
+# The credential generation is the authoritative, non-secret convergence input: it must
+# come from a reviewed repository variable, so a rotation can never be ignored just
+# because the previous credential still authenticates.
+assert worker_reconcile["env"]["TCR_CREDENTIAL_VERSION"] == "${{ vars.TCR_CREDENTIAL_VERSION }}"
+assert "secrets.TCR_CREDENTIAL_VERSION" not in json.dumps(worker_workflow, ensure_ascii=False)
+assert "--password" not in json.dumps(worker_workflow, ensure_ascii=False)
+# Ownership is mutual: worker inputs trigger only the worker owner, and no workload
+# owner's inputs can reach the worker lifecycle.
+assert affected("deploy/production-worker/install.sh") == {"production_worker"}
+assert affected(".github/workflows/production-worker.yml") == {"production_worker"}
+assert affected("deploy/production-worker/targets/tx2/target.env") == {"production_worker"}
+assert not (affected("deploy/production-worker/install.sh")
+            & {"komodo_controller", "komodo_periphery", "caddy", "frontend",
+               "business_api", "keycloak", "business_postgres", "keycloak_postgres", "ai_service"})
+for workload_input in (".github/workflows/frontend.yml", "deploy/tx/Caddyfile",
+                       "deploy/tx/business-api.compose.yml", "infra/komodo/resources/servers.toml"):
+    assert "production_worker" not in affected(workload_input), workload_input
+# The worker never predicts or reads workload placement, and never expands the K4.1
+# declarative Komodo scope (Servers + ResourceSync only; Stacks arrive in K7B).
+for owner_path in ("deploy/production-worker/install.sh", "deploy/production-worker/verify.sh",
+                   "deploy/production-worker/reconcile.sh", "deploy/production-worker/lib.sh"):
+    worker_script = (root / owner_path).read_text(encoding="utf-8")
+    for forbidden in ("infra/komodo", "resource-sync", "CADDY_", "TX_BACKEND_UPSTREAM",
+                      "periphery.service", "wg set", "docker compose up"):
+        assert forbidden not in worker_script, (owner_path, forbidden)
+# The worker serializes through the host's existing mutation lock. A second, worker-only
+# lock would let it race Periphery and any future workload, so the lifecycle must take
+# the deploy-owned lock and must not name or create another one.
+for lock_path in ("deploy/production-worker/install.sh", "deploy/production-worker/reconcile.sh"):
+    lock_script = (root / lock_path).read_text(encoding="utf-8")
+    assert "require_host_lock" in lock_script, lock_path
+    assert 'exec 9>"$WORKER_LOCK_ROOT/.deploy.lock"' in lock_script, lock_path
+    assert "flock -n 9" in lock_script, lock_path
+    for forbidden in ('mkdir -p "$WORKER_LOCK_ROOT', 'touch "$WORKER_LOCK_ROOT',
+                      'install -d "$WORKER_LOCK_ROOT', ' > "$WORKER_LOCK_ROOT/.deploy.lock'):
+        assert forbidden not in lock_script, (lock_path, forbidden)
+    assert lock_script.count(".deploy.lock") <= 2, lock_path
+# No tracked file may carry a Docker registry credential. The worker materialises it on
+# the host from the protected environment, so the repository stays credential-free; only
+# the owner's own fixture may contain a deliberately fake credential document.
+for tracked in sorted(root.rglob("*")):
+    if not tracked.is_file() or ".git" in tracked.parts:
+        continue
+    if tracked.suffix in {".png", ".jpg", ".webp", ".gz", ".lock", ".jar", ".woff", ".woff2", ".ico"}:
+        continue
+    text = tracked.read_text(encoding="utf-8", errors="ignore")
+    if '"auths"' in text and '"auth":' in text:
+        relative = str(tracked.relative_to(root))
+        # The owner's fixture carries a deliberately fake credential document, and this
+        # scanner necessarily contains the markers it looks for.
+        assert relative in {
+            "deploy/production-worker/test-production-worker.sh",
+            "scripts/ci/test-workflow-contract.sh",
+        }, f"a Docker credential must never be committed: {relative}"
+    # A registry credential assigned in a tracked file (a Compose file, a Komodo
+    # resource, the Periphery config, a tracked env file) is the same violation as a
+    # committed credential document: the worker reads it from the protected environment.
+    for assignment in re.finditer(
+        r"^\s*(?:export\s+)?(TCR_PASSWORD|TCR_USERNAME|DOCKER_PASSWORD)\s*[=:]\s*[\"']?([^\s\"']+)",
+        text, re.MULTILINE,
+    ):
+        relative = str(tracked.relative_to(root))
+        value = assignment.group(2)
+        assert relative.startswith("deploy/production-worker/test-") or value.startswith("$"), \
+            f"a registry credential must never be assigned in the repository: {relative}"
 # Every sudo host maps only its own onboarding secret into the generic runtime
 # variable, and never echoes it.
 for host, spec in periphery_hosts.items():
