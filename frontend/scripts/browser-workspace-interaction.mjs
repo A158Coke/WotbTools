@@ -905,9 +905,9 @@ function displayPanelProbe() {
  * 等名册布局**稳定**（连续两次读到的几何签名一致）。
  *
  * 为什么不能只 sleep 一个常数：`Replay3DPane` 的 ResizeObserver 会把实测高度写回
- * `--pb-hud-h` / `--pb-controls-h` / `--pb-roster-min-h`，每写一次都重排一次根元素、
- * 车道与传输控件。抢在重排中间读，拿到的是「上一轮布局 + 这一轮变量」的混合几何 ——
- * 那是假失败（实测 1024×768 有时过、有时不过，差别只在读的时机）。
+ * `--pb-workspace-h`，每写一次都重排一次根元素、车道与传输控件。抢在重排中间读，
+ * 拿到的是「上一轮布局 + 这一轮变量」的混合几何 —— 那是假失败（实测 1024×768 有时过、
+ * 有时不过，差别只在读的时机）。
  */
 function rosterLayoutSignature() {
   const root = document.querySelector('.pb-root')
@@ -919,7 +919,7 @@ function rosterLayoutSignature() {
     box(root),
     box(lane),
     box(controls),
-    root.style.getPropertyValue('--pb-roster-min-h'),
+    root.style.getPropertyValue('--pb-workspace-h'),
     root.className,
   ].join('|')
 }
@@ -1041,8 +1041,8 @@ async function runRosterGeometryScenario(env, scenario) {
       id: i + 1, killer: 'Killer_' + i, victim: 'Victim_' + i, kill: true,
     }))
   })()`)
-  // ResizeObserver 异步把 hud / controls 的实测高度写进 CSS 变量（车道定界依赖它）。
-  // ⚠️ 定下来之前**不能**开始断言：`--pb-roster-min-h` 一变，`.pb-root` 的高度、
+  // ResizeObserver 异步把实测工作区高度写进 `--pb-workspace-h`（车道与正方形定界依赖它）。
+  // ⚠️ 定下来之前**不能**开始断言：这个变量一变，`.pb-root` 的高度、
   // 车道的上下界、控制条的位置会一起重排，读到的就是「上一轮布局 + 这一轮变量」的混合几何
   // （实测同一次运行里 1024×768 会因为抢在重排前读而失败，稍后再读就通过）。
   await waitForStableLayout(page)
@@ -2140,6 +2140,57 @@ async function setRosterVisible(page, visible) {
   })()`)
 }
 
+/**
+ * Display 面开合：始终可从 gear 到达，且不把用户丢到首屏之外。
+ *
+ * 竖屏下 Display 是**流内**的一块面（不是浮层），必须紧跟传输控件，而不是被排到长长的
+ * 详情 / 名册块之后——那种回归在 jsdom 里看不出来（没有布局引擎），只能在这里拦。
+ * 宽档 / 横屏则必须是锚定 gear 的浮层。
+ *
+ * 必须在竖屏分支 return 之前调用：竖屏场景不走三段式断言。
+ */
+async function checkDisplaySurface(page, failures, layout) {
+  await page.evaluate(`document.querySelector('[data-test="pb-secondary-entry"]')?.click()`)
+  await delay(200)
+  const display = await page.evaluate(`(() => {
+    const panel = document.querySelector('[data-testid="display-panel"]')
+    if (!panel) return null
+    const rect = panel.getBoundingClientRect()
+    const transport = document.querySelector('[data-test="pb-transport-slot"]')
+    const transportRect = transport?.getBoundingClientRect() || null
+    const area = document.querySelector('[data-test="pb-inline-area"]')
+    return {
+      order: getComputedStyle(panel).order,
+      top: Math.round(rect.top),
+      height: Math.round(rect.height),
+      position: getComputedStyle(panel).position,
+      transportBottom: transportRect ? Math.round(transportRect.bottom) : null,
+      inlineAreaBottom: area ? Math.round(area.getBoundingClientRect().bottom) : null,
+      viewportHeight: innerHeight,
+    }
+  })()`)
+  check(failures, !!display, 'Display must open from the gear')
+  if (display) {
+    if (layout === 'portrait') {
+      check(failures, display.position === 'static',
+        `portrait Display must be an inline surface: ${JSON.stringify(display)}`)
+      check(failures, display.transportBottom != null && display.top - display.transportBottom <= 24,
+        `portrait Display must follow the transport, not the inline details/roster block: ${JSON.stringify(display)}`)
+      check(failures, display.inlineAreaBottom == null || display.top <= display.inlineAreaBottom + 1,
+        `portrait Display must not be pushed below the inline details/roster block: ${JSON.stringify(display)}`)
+      check(failures, display.top < display.viewportHeight,
+        `portrait Display must open inside the first screen: ${JSON.stringify(display)}`)
+    } else {
+      check(failures, display.position === 'absolute',
+        `wide Display must be an anchored overlay: ${JSON.stringify(display)}`)
+    }
+  }
+  await page.evaluate(`document.querySelector('[data-testid="display-close"]')?.click()`)
+  await delay(200)
+  const closed = await page.evaluate(`!document.querySelector('[data-testid="display-panel"]')`)
+  check(failures, closed, 'Display close must remove the surface')
+}
+
 async function runWorkspace2DScenario(env, scenario) {
   const failures = []
   const viewport = `${scenario.fullscreen ? 'fullscreen ' : ''}${scenario.width}x${scenario.height}`
@@ -2234,6 +2285,7 @@ async function runWorkspace2DScenario(env, scenario) {
     const closed = await page.probe(workspace2dProbe)
     check(failures, closed.detailsCount === 0, 'details × must close the panel')
     check(failures, JSON.stringify(closed.selectedIds) === '[2002]', `details × must keep the selection: ${JSON.stringify(closed.selectedIds)}`)
+    await checkDisplaySurface(page, failures, scenario.layout)
     await env.chrome.client.send('Target.closeTarget', { targetId })
     return result()
   }
@@ -2326,6 +2378,9 @@ async function runWorkspace2DScenario(env, scenario) {
     s = await page.probe(workspace2dProbe)
     check(failures, !!s.left && !!s.right && JSON.stringify(s.selectedIds) === '[2003]', 'roster ON must restore lanes with the existing selection')
   }
+
+  // ---- Display 面开合：始终可从 gear 到达，且不把用户丢到首屏之外 ----
+  await checkDisplaySurface(page, failures, scenario.layout)
 
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })

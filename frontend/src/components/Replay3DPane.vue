@@ -16,7 +16,6 @@ import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useI18n } from 'vue-i18n'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
-import { hpPercentText } from '../scene/rosterState.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { uiProfile } from '../composables/useUiProfile.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
@@ -108,6 +107,8 @@ function detailsSideFor(event) {
   if (target?.closest?.('.side-right')) return 'left'
   const root = rootEl.value
   if (!root || !Number.isFinite(event?.clientX)) return null
+  // 场景里的车：浮窗落在点击位置的**相对**一侧，不挡住用户刚点的那台车。
+  const rect = root.getBoundingClientRect()
   return event.clientX > rect.left + rect.width / 2 ? 'left' : 'right'
 }
 /** 详情 ×：只关详情。选中（名册高亮）、跟随、相机、时间轴、倍速与名册都不动。 */
@@ -932,6 +933,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
 .portrait-flow > .vehicle-details { order: 5; }
 .portrait-flow > .roster-surface { order: 6; display: grid; gap: var(--space-2); }
+/* Display 面在竖屏纵向流里紧跟传输控件（共享组件只负责「是一块流内面」，顺序归宿主）。 */
+.portrait-flow > .pb-display-surface { order: 4; }
 .portrait-flow .team-lane { position: static; width: auto; }
 .portrait-flow > .banner { position: absolute; top: var(--space-12); }
 
