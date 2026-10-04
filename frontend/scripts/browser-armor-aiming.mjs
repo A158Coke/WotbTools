@@ -70,6 +70,9 @@ try {
   await delay(800)
 
   // —— 找三类部位像素（client 坐标）：炮管 / 炮塔壳 / 车体 ——
+  // 部位采样必须同时满足两条：可视化第一命中名（__raytrace 的报告面）与**产品同一分类器**
+  // __aimPart 的结论一致——只按名字采样会在视觉模型/装甲模型命中顺序不一致时取到
+  // "看着是炮塔、按下却落进车体/相机分支"的像素，让断言在 CI 上随机翻车。
   // need 可裁剪（触屏视口窄，转动后炮管可能出画/被遮挡时只要求用得到的部位）
   const findSpotsExpr = (need) => `(() => {
     const H = window.__armorRicochet;
@@ -79,12 +82,14 @@ try {
     let gun = null, turret = null, hull = null;
     for (let cy = 20; cy < c.height - 20; cy += 4) {
       for (let cx = 20; cx < c.width - 20; cx += 4) {
-        const hits = H.__raytrace(r.left + cx, r.top + cy);
+        const px = r.left + cx, py = r.top + cy;
+        const hits = H.__raytrace(px, py);
         if (!hits || !hits.length) continue;
         const n = hits[0].name;
-        if (!gun && /^gun_/.test(n)) gun = { x: r.left + cx, y: r.top + cy, name: n };
-        if (!turret && /^turret_/.test(n)) turret = { x: r.left + cx, y: r.top + cy, name: n };
-        if (!hull && /^hull_/.test(n)) hull = { x: r.left + cx, y: r.top + cy, name: n };
+        const cls = H.__aimPart(px, py);
+        if (!gun && /^gun_/.test(n) && cls === 'gun') gun = { x: px, y: py, name: n, cls };
+        if (!turret && /^turret_/.test(n) && cls === 'turret') turret = { x: px, y: py, name: n, cls };
+        if (!hull && /^hull_/.test(n) && cls === null) hull = { x: px, y: py, name: n, cls: 'camera' };
         const ok = need.every((p) => ({ gun, turret, hull })[p]);
         if (ok) break;
       }
@@ -93,7 +98,15 @@ try {
     }
     return { gun, turret, hull };
   })()`
-  const findSpots = (need = ['gun', 'turret', 'hull']) => page.evaluate(findSpotsExpr(need))
+  const findSpots = async (need = ['gun', 'turret', 'hull']) => {
+    // 采样前等视图静止：damping 让相机在拖动/捏合后继续滑行（慢渲染下数秒），滑行中采到的
+    // 部位像素在按下时可能已滑成别的部位 → 断言随机翻车。阈值 = max(400ms, 3×帧间隔)。
+    await page.waitForValue(`(() => {
+      const s = window.__armorRicochet.aimingState();
+      return s.cameraSettledMs > Math.max(400, 3 * s.frameIntervalMs);
+    })()`, (v) => v === true, { timeout: 20000, label: 'camera settle' }).catch(() => {})
+    return page.evaluate(findSpotsExpr(need))
+  }
 
   const spots = await findSpots()
   check(!!spots.gun && !!spots.turret && !!spots.hull,
@@ -327,7 +340,30 @@ try {
     if (s.turret) {
       const cdp = chromeCdp.client
       const from = s.turret
+      // 诊断（CI 失败时自解释）：采样像素的命中/分类 + 落点元素 + 手势前的会话态
+      const diag = await page.evaluate(`(() => {
+        const H = window.__armorRicochet;
+        const el = document.elementFromPoint(${from.x}, ${from.y});
+        return {
+          spot: H.__raytrace(${from.x}, ${from.y}).slice(0, 2),
+          part: H.__aimPart(${from.x}, ${from.y}),
+          element: el ? el.tagName + '#' + (el.id || '') + '.' + (typeof el.className === 'string' ? el.className : '') : null,
+          state: H.aimingState(),
+        };
+      })()`)
+      console.log(`[armor-aiming] 画布外用例现场: ${JSON.stringify(diag)}`)
+      check(diag.part === 'turret' && diag.state.session.active === null,
+        `画布外用例前置：采样像素分类 turret（得 ${diag.part}）且会话空闲（active=${diag.state.session.active}）`)
       const pt = (x, y) => [{ x, y, id: 1, radiusX: 8, radiusY: 8, force: 1 }]
+      // 事件级现场（失败时自解释）：canvas 捕获阶段记录本次手势的 pointer 事件序列
+      await page.evaluate(`(() => {
+        const c = document.querySelector('canvas');
+        window.__ev = [];
+        for (const t of ['pointerdown','pointermove','pointerup','pointercancel','lostpointercapture']) {
+          c.addEventListener(t, (e) => window.__ev.push({ t, id: e.pointerId, type: e.pointerType, x: Math.round(e.clientX), y: Math.round(e.clientY), btn: e.button }), true);
+        }
+        return true;
+      })()`)
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(from.x, from.y) }, sessionId)
       await delay(60)
       // 先在画布内移动过阈值完成 claim（触屏是延迟 claim：按下只记候选，移动才进入瞄准）。
@@ -337,6 +373,10 @@ try {
       const claimed = await page.waitForValue('window.__armorRicochet.aimingState().aiming', (v) => v === true,
         { timeout: 5000, label: 'touch aim claim' }).then(() => true).catch(() => false)
       check(claimed, `画布内移动过阈值即 claim 瞄准（aiming=${claimed}）`)
+      if (!claimed) {
+        console.log(`[armor-aiming] 事件序列: ${JSON.stringify(await page.evaluate('window.__ev'))}`)
+        console.log(`[armor-aiming] 会话态: ${JSON.stringify((await page.evaluate('window.__armorRicochet.aimingState()')).session)}`)
+      }
       // claim 已确认后再拖出视口顶部：验证的是 capture 语义本身（会话不因指针离开画布而丢）
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(from.x + 24, -40) }, sessionId)
       await delay(80)

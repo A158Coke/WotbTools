@@ -1285,13 +1285,23 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             // 诊断：部位判定探针（client 坐标 → 'gun'|'turret'|null）
             __aimPart(clientX, clientY) { return aimPartAt(clientX, clientY); },
             // 诊断：瞄准交互状态（浏览器门禁断言「画布外释放不卡死相机」「双指缩放不被
-            // 瞄准吃掉」用；cameraDistance = 相机到轨道中心距离，pinch dolly 的可观测面）
+            // 瞄准吃掉」用；cameraDistance = 相机到轨道中心距离，pinch dolly 的可观测面；
+            // session = 指针会话内部态，失败时能直接看出是"会话没开"还是"会话没清"）
             aimingState() {
                 return {
                     aiming,
                     controlsEnabled: controls ? controls.enabled : null,
                     cameraDistance: (controls && controls.target)
                         ? +camera.position.distanceTo(controls.target).toFixed(4) : null,
+                    // 视图静止度（门禁按像素采样部位前必须等它稳定，见 trackCameraMotion）
+                    cameraSettledMs: cameraMovedAt ? Math.round(performance.now() - cameraMovedAt) : 0,
+                    frameIntervalMs: Math.round(frameIntervalMs),
+                    session: {
+                        active: aimPointerId.active,
+                        claimed: aimClaimed,
+                        pending: aimPendingPart,
+                        multiTouch: aimMultiTouch,
+                    },
                 };
             },
             // 诊断：克隆网格 matrix vs matrixWorld（坐标框架核对）
@@ -4629,11 +4639,31 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             div.style.top = py + 'px';
         }
 
+        // 相机运动追踪（门禁用）：OrbitControls 的 damping 让相机在拖动/捏合结束后继续滑行
+        // 若干帧——慢渲染（CI 无 GPU）时这段滑行会持续数秒。门禁"按像素采样部位 → 按下"
+        // 之间相机若仍在滑行，采样时的分类与按下时的分类就会不一致（同一像素从 turret
+        // 滑成 hull/背景），断言随机翻车。暴露「上次相机移动距今多久 + 帧间隔」，让门禁
+        // 等到视图真正静止再采样（等状态，不等时钟）。
+        let cameraMovedAt = 0;
+        let lastCameraPos = new THREE.Vector3(NaN, NaN, NaN);
+        let lastFrameAt = 0;
+        let frameIntervalMs = 16;
+        function trackCameraMotion() {
+            const now = performance.now();
+            if (lastFrameAt) frameIntervalMs = frameIntervalMs * 0.8 + (now - lastFrameAt) * 0.2;
+            lastFrameAt = now;
+            if (camera.position.distanceToSquared(lastCameraPos) > 1e-10) {
+                lastCameraPos.copy(camera.position);
+                cameraMovedAt = now;
+            }
+        }
+
         function animate() {
             if (destroyed) return;
             hookRcClickRecorder();   // 探针监听惰性挂载（首帧 renderer 就绪）
             rafId = requestAnimationFrame(animate);
             controls.update();
+            trackCameraMotion();
             if (penetrationMode && armorModel) {
                 if (SESS && heatFrames < 5) {
                     heatFrames++;   // 就绪门控计数保留（上游语义）；上报端点已随 client-only 移除
