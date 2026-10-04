@@ -69,7 +69,8 @@
    - 等某个 run 的结论：`gh run watch <run-id> --exit-status --compact`（阻塞到结束；被管道/后台接管时
      只在结束时整体输出，不要指望逐行进度）；
    - 取 run-id：`gh run list --branch <branch> --limit 1 --json databaseId,headSha`（run 绑定 head SHA，不可变，
-     同一 run 可反复查看，不必重跑）。
+     同一 run 可反复查看，不必重跑）。刚 push 完 checks 可能尚未创建——此时 `gh pr checks --watch` 会直接
+     `no checks reported`（退出 1），先用上一行取 run-id 再 `gh run watch`。
    **退出码**：`--exit-status` 的成败信号就是进程退出码——不要把它管进 `| tail` 之类的管道（管道退出码取末段命令，
    会把失败吞成 0）；要么不加管道，要么 `set -o pipefail`。
    Agent 执行时把 watch 放**后台**运行、结束后读输出，等待期间并行做其它工作；禁止 sleep 循环轮询
