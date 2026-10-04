@@ -1061,12 +1061,33 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         let aiming = false;
         let aimPitchEnabled = true;
         const aimPointerId = { active: null };
+        // 触屏手势仲裁状态（评审 BLOCKER：炮塔/炮管上的第一根手指不得吃掉双指缩放）：
+        // 触屏先记候选（controls 保持启用），只有单指移动过 5px 阈值才 claim；第二根手指
+        // 一旦到来 → 本会话永不做瞄准，pinch/pan 全权交给 OrbitControls。
+        let aimClaimed = false;         // 本会话是否已 claim（claim 后才禁 controls / 捕获）
+        let aimPendingPart = null;      // 触屏候选部位（'gun' | 'turret'，未 claim）
+        let aimMultiTouch = false;      // 会话内出现过第二根手指 → 让位双指手势
+        /** 进入瞄准：禁相机控制 + 捕获指针；起点取当前事件位置（触屏在阈值处 claim，
+         *  把已累计的阈值位移吃掉，claim 瞬间不产生角度跳变）。 */
+        function claimAim(e, part) {
+            aimClaimed = true;
+            aimPendingPart = null;
+            aiming = true;
+            aimPitchEnabled = part === 'gun';
+            aimStartX = e.clientX; aimStartY = e.clientY;
+            aimStartTurret = currentTurretDeg; aimStartGun = currentGunDeg;
+            if (controls) controls.enabled = false;
+            try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+        }
         /** 指针会话的唯一清理点（up / cancel / lostpointercapture 共用）：会话态与
          *  拖动跟踪态一并复位，避免任何一条出口留下半截状态（评审：cleanup 集中完整）。 */
         function endPointerSession(e) {
             if (aimPointerId.active !== e.pointerId) return;
             aimPointerId.active = null;
             aiming = false;
+            aimClaimed = false;
+            aimPendingPart = null;
+            aimMultiTouch = false;
             mouseDownPos = null;
             isDragging = false;
             if (controls) controls.enabled = true;
@@ -1107,20 +1128,35 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         }
         const aimPointerHandlers = {
             down(e) {
-                if (e.button !== 0 || aimPointerId.active !== null) return;
+                if (e.button !== 0) return;                        // 只接左键 / 触摸（触摸 button=0）
+                if (aimPointerId.active !== null) {
+                    // 会话中的第二根手指：候选瞄准作废、本会话不再进入瞄准（pinch/pan 全权
+                    // 交给 OrbitControls）。已 claim 的会话维持瞄准——OrbitControls 此时
+                    // 并未登记第一根指针，中途交还只会让它以单指旋转接管第二根手指，
+                    // 既做不成 pinch 又丢了正在进行的瞄准；捏合起点本就发生在未 claim 阶段。
+                    if (e.pointerType === 'touch') {
+                        aimMultiTouch = true;
+                        aimPendingPart = null;
+                    }
+                    return;
+                }
                 aimPointerId.active = e.pointerId;
+                aimClaimed = false;
+                aimPendingPart = null;
+                aimMultiTouch = false;
                 mouseDownPos = { x: e.clientX, y: e.clientY };
                 isDragging = false;
-                if (!window.__worldPan) {
-                    const part = aimPartAt(e.clientX, e.clientY);
-                    if (part) {
-                        aiming = true;
-                        aimPitchEnabled = part === 'gun';
-                        aimStartX = e.clientX; aimStartY = e.clientY;
-                        aimStartTurret = currentTurretDeg; aimStartGun = currentGunDeg;
-                        controls.enabled = false;
-                        try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
-                    }
+                if (window.__worldPan) return;
+                const part = aimPartAt(e.clientX, e.clientY);
+                if (!part) return;
+                if (e.pointerType === 'mouse') {
+                    // 鼠标无多指手势冲突：按下即 claim（既有行为，保持零变化）
+                    claimAim(e, part);
+                } else {
+                    // 触屏：只记候选。第二根手指可能马上到来（pinch）——立即 claim 会禁掉
+                    // OrbitControls（其 pointerdown 在 enabled=false 时直接 return），
+                    // 第二根手指不入 pointer set → 双指缩放失效。改为单指移动过阈值才 claim。
+                    aimPendingPart = part;
                 }
             },
             move(e) {
@@ -1128,18 +1164,24 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 if (mouseDownPos) {
                     const dx = e.clientX - mouseDownPos.x;
                     const dy = e.clientY - mouseDownPos.y;
-                    if (dx * dx + dy * dy > 25) isDragging = true; // 5px threshold
+                    if (dx * dx + dy * dy > 25) {
+                        isDragging = true; // 5px threshold
+                        // 触屏候选在此刻 claim：canvas 的 pointermove 先于 OrbitControls 的
+                        // document pointermove 处理，同一事件里禁 controls 仍能拦住相机
+                        if (aimPendingPart && !aimClaimed && !aimMultiTouch) claimAim(e, aimPendingPart);
+                    }
                 }
                 if (aiming) aimFromDrag(e.clientX - aimStartX, aimPitchEnabled ? e.clientY - aimStartY : 0);
             },
             up(e) {
                 if (aimPointerId.active !== e.pointerId) return;
-                const wasDragging = isDragging;   // endPointerSession 会复位拖动态，先取
+                const wasDragging = isDragging;       // endPointerSession 会复位手势态，先取
+                const wasMultiTouch = aimMultiTouch;
                 endPointerSession(e);
                 if (e.pointerType === 'mouse' && e.button !== 0) return;
                 // 是否触发点击判定只由 isDragging 决定（评审 BLOCKER 1）：短按无拖动一律判定
-                // ——点炮塔/炮管同样是「点哪判哪」；只有实际拖动才视为手势（瞄准或相机）
-                if (wasDragging) return;
+                // ——点炮塔/炮管同样是「点哪判哪」；手势（拖动 / 双指）不触发判定
+                if (wasDragging || wasMultiTouch) return;
                 onClick(e);
             },
             cancel: endPointerSession,
@@ -1242,9 +1284,15 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             },
             // 诊断：部位判定探针（client 坐标 → 'gun'|'turret'|null）
             __aimPart(clientX, clientY) { return aimPartAt(clientX, clientY); },
-            // 诊断：瞄准交互状态（浏览器门禁断言「画布外释放不卡死相机」用）
+            // 诊断：瞄准交互状态（浏览器门禁断言「画布外释放不卡死相机」「双指缩放不被
+            // 瞄准吃掉」用；cameraDistance = 相机到轨道中心距离，pinch dolly 的可观测面）
             aimingState() {
-                return { aiming, controlsEnabled: controls ? controls.enabled : null };
+                return {
+                    aiming,
+                    controlsEnabled: controls ? controls.enabled : null,
+                    cameraDistance: (controls && controls.target)
+                        ? +camera.position.distanceTo(controls.target).toFixed(4) : null,
+                };
             },
             // 诊断：克隆网格 matrix vs matrixWorld（坐标框架核对）
             __clones() {

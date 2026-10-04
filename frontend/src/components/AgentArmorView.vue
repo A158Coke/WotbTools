@@ -451,8 +451,9 @@ onBeforeUnmount(() => {
         .armor-view #shell-selector select { max-width: 100%; min-height: 44px; }
         .armor-view #view-toggle { flex: 1 1 180px; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px 8px; }
         .armor-view #view-toggle button { min-height: 44px; padding: 4px 6px; font-size: 0.8em; line-height: 1.2; white-space: normal; }
-        /* 炮塔 / 炮管角度：贴顶栏下方的单行小条（给「炮塔」开关提供反馈）；世界模式面板
-           显隐仍由内核控制。放在顶侧后不会再与可换行的底栏重叠。 */
+        /* 炮塔 / 炮管角度：贴顶栏下方的单行小条（拖动炮塔/炮管瞄准时的角度反馈；
+           「炮塔」开关已随交互改造删除）。世界模式面板显隐仍由内核控制。
+           放在顶侧后不会再与可换行的底栏重叠。 */
         .armor-view #turret-controls {
             top: 64px; bottom: auto; left: 8px; right: auto;
             min-width: 0; max-width: calc(100% - 16px); padding: 6px 12px;
