@@ -2487,8 +2487,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     try {
       // 数据获取在 teardown 之前：新回放解析失败时当前回放保持完好（替换语义 =
       // 新数据就位才拆旧会话）
-      const playbackSession = source?.session ? await source.session.load(source.file) : null;
-      const data = playbackSession ? playbackSession.scenePlayback : await loadPlaybackData(source);
+      const data = source?.session ? await source.session.loadScene(source.file) : await loadPlaybackData(source);
+      const playbackSession = source?.session ? source.session.getState(source.file) : null;
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       DATA = data;

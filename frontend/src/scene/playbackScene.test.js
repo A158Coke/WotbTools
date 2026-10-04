@@ -136,10 +136,10 @@ describe('playbackScene 会话代数契约', () => {
   it('prepared session feeds scene and Details without another raw parse', async () => {
     const { store, api } = createScene()
     const result = { scenePlayback: minimalData(), canonical: { dataset: { vehicles: [] }, clock: { startRaw: 42 }, reloadTelemetry: null } }
-    const session = { load: vi.fn().mockResolvedValue(result) }
+    const session = { loadScene: vi.fn().mockResolvedValue(result.scenePlayback), getState: () => result }
     const file = new File(['x'], 'shared.wotbreplay')
     await api.loadData({ kind: 'local', file, session })
-    expect(session.load).toHaveBeenCalledWith(file)
+    expect(session.loadScene).toHaveBeenCalledWith(file)
     expect(source.loadPlaybackData).not.toHaveBeenCalled()
     expect(store.hasData).toBe(true)
     expect(store.playbackSession.canonical.dataset).toEqual(result.canonical.dataset)
@@ -148,9 +148,27 @@ describe('playbackScene 会话代数契约', () => {
     expect(store.playbackSession).toBeNull()
   })
 
+  it('3D becomes ready before canonical readiness resolves', async () => {
+    const { store, api } = createScene()
+    const state = { canonical: null, canonicalState: 'loading' }
+    const canonicalPending = track(deferred())
+    const session = {
+      loadScene: vi.fn().mockResolvedValue(minimalData()),
+      loadCanonical: vi.fn(() => canonicalPending.promise),
+      getState: () => state,
+    }
+    await api.loadData({ kind: 'local', file: new File(['x'], 'async.wotbreplay'), session })
+    expect(store.hasData).toBe(true)
+    expect(store.startTime).toBe(42)
+    expect(state.canonicalState).toBe('loading')
+    expect(session.loadCanonical).not.toHaveBeenCalled()
+    expect(source.loadPlaybackData).not.toHaveBeenCalled()
+  })
+
   it('canonical failure does not block raw 3D playback', async () => {
     const { store, api } = createScene()
-    const session = { load: vi.fn().mockResolvedValue({ scenePlayback: minimalData(), canonical: null, canonicalError: new Error('AI failed') }) }
+    const result = { scenePlayback: minimalData(), canonical: null, canonicalError: new Error('AI failed') }
+    const session = { loadScene: vi.fn().mockResolvedValue(result.scenePlayback), getState: () => result }
     await api.loadData({ kind: 'local', file: new File(['x'], 'partial.wotbreplay'), session })
     expect(store.hasData).toBe(true)
     expect(store.err).toBe('')

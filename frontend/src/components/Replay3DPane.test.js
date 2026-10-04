@@ -47,9 +47,9 @@ vi.mock('../scene/playbackScene.js', () => {
         // 真实契约：新会话被接受即 loading=true / hasData=false，完成后反向翻转
         store.hasData = false
         store.loading = true
-        const result = source.session ? await source.session.load(source.file) : null
+        const result = source.session ? await source.session.loadScene(source.file) : null
         if (current !== generation) return
-        store.playbackSession = { canonical: result }
+        store.playbackSession = source.session?.getState(source.file) ?? null
         store.loading = false
         store.hasData = true
       }),
@@ -149,8 +149,21 @@ async function start(wrapper) {
 }
 
 function mountPane(props = {}) {
+  const states = new WeakMap()
+  const getState = file => {
+    if (!states.has(file)) states.set(file, shallowReactive({ canonical: null, sceneState: 'idle' }))
+    return states.get(file)
+  }
+  const playbackSession = {
+    getState,
+    loadScene: async file => {
+      getState(file).canonical = await canonical.load(file)
+      getState(file).sceneState = 'ready'
+      return {}
+    },
+  }
   return mount(Replay3DPane, {
-    props: { file: mkFile('battle.wotbreplay'), active: true, playbackSession: { load: canonical.load }, ...props },
+    props: { file: mkFile('battle.wotbreplay'), active: true, playbackSession, ...props },
     global: { mocks: { $t: translate } },
   })
 }
@@ -248,6 +261,46 @@ describe('Replay3DPane', () => {
     await flush()
     expect(details.props('selectedTrack').playerName).toBe('New battle')
     expect(details.props('currentTime')).toBe(0)
+    wrapper.unmount()
+  })
+
+  it('scene starts with canonical pending and the open Details automatically enriches later', async () => {
+    mockWebGL('webgl2')
+    const state = shallowReactive({ canonical: null, canonicalError: null, canonicalState: 'loading', sceneState: 'ready' })
+    const session = { loadScene: vi.fn().mockResolvedValue({}), getState: () => state }
+    const wrapper = mountPane({ playbackSession: session })
+    await start(wrapper)
+    const store = playback.api.store
+    expect(store.hasData).toBe(true)
+    expect(state.canonicalState).toBe('loading')
+    store.time = 54
+    store.roster = { team1: [{ eid: 7, accountId: 1001, team: 1, nick: 'Scene player', tank: 'Maus', hp: 100, maxHp: 1500 }], team2: [], unknown: [] }
+    await flush()
+    await wrapper.get('.team-lane .pl').trigger('click')
+    const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
+    expect(details.props('selectedState').vehicle.playerName).toBe('Scene player')
+    expect(details.props('health')).toEqual({ currentHp: 100, maxHp: 1500 })
+    expect(details.props('selectedTrack')).toBeNull()
+    expect(details.props('selCurStats')).toBeNull()
+    expect(details.props('selDamageLog')).toEqual([])
+    const dataset = makeBattlePlaybackDataset({ events: [
+      { timeSec: 10, kind: 'DAMAGE', attackerAccountId: 1001, victimAccountId: 2001, amount: 400, visibility: 'OBSERVED' },
+    ] })
+    state.canonical = { dataset, clock: { startRaw: 42 }, reloadTelemetry: null }
+    state.canonicalState = 'ready'
+    await flush()
+    expect(details.props('selectedTrack').accountId).toBe(1001)
+    expect(details.props('selCurStats').dealt).toBe(400)
+    expect(details.props('selDamageLog')).toHaveLength(1)
+    expect(details.props('currentTime')).toBe(12)
+    expect(session.loadScene).toHaveBeenCalledTimes(1)
+    state.canonical = null
+    state.canonicalState = 'error'
+    state.canonicalError = new Error('AI failed')
+    await flush()
+    expect(store.hasData).toBe(true)
+    expect(details.props('selectedState').vehicle.playerName).toBe('Scene player')
+    expect(details.props('selCurStats')).toBeNull()
     wrapper.unmount()
   })
 

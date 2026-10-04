@@ -340,7 +340,10 @@ async function loadFile(file) {
 
 /** 重试：同一份文件重新解析（失败不清空 selection，用户不必再选一次）；错误态由场景层重写 */
 function retryLoad() {
-  if (lastFile) return loadFile(lastFile)
+  if (lastFile) {
+    if (props.playbackSession?.getState(lastFile).sceneState === 'error') props.playbackSession.invalidate(lastFile)
+    return loadFile(lastFile)
+  }
 }
 
 function bannerText() {
