@@ -23,7 +23,7 @@ import { showConnectivityNotice } from './useConnectivityNotice.js'
  *    service-unavailable 各不相同），这里不另写一套措辞。
  */
 export function useFeatureGate() {
-  const { connectivity } = useConnectivity()
+  const { connectivity, isSettled, whenSettled } = useConnectivity()
 
   function availability(feature) {
     return getFeatureAvailability(feature, { connectivity: connectivity.value })
@@ -36,7 +36,13 @@ export function useFeatureGate() {
   return {
     availability,
     isAvailable,
-    requireFeature: feature => evaluateFeatureGate(feature, connectivity.value),
+    requireFeature(feature) {
+      if (isSettled()) return evaluateFeatureGate(feature, connectivity.value)
+      // 首次检测未完成：fail-closed 返回 false 但先不提示，测完后按**真实**状态再判一次。
+      // 否则深链进入时会拿初始占位的 UNKNOWN 误报「暂时无法确认网络状态」。
+      void whenSettled().then(() => evaluateFeatureGate(feature, connectivity.value))
+      return false
+    },
     connectivity,
   }
 }

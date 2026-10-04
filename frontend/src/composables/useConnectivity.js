@@ -21,6 +21,21 @@ let unsubscribeProjection = null
 let startPromise = null
 
 /**
+ * 首次检测是否已完成。`state` 的初始 UNKNOWN 只是「还没测」，不是「测了但无法确认」：
+ * 子组件先于 AppShell 挂载（深链 `?view=ai-review` / HoF 等），若门禁在首次回读前就按
+ * UNKNOWN 下结论，会误弹「暂时无法确认网络状态」。门禁据此推迟提示，而不是各页面自己等。
+ */
+let settled = false
+let settledWaiters = []
+
+function markSettled() {
+  settled = true
+  const waiters = settledWaiters
+  settledWaiters = []
+  waiters.forEach(resolve => resolve())
+}
+
+/**
  * 平台来源选择：Android 壳先问能力再决定。
  * 老客户端（bridge v2 但没有 `connectivity` 方法/能力）退回浏览器近似，而不是把
  * 「读不到」当成永久离线 —— 计划 §4 允许的最低要求就是 offline/online 两态。
@@ -47,12 +62,26 @@ export function useConnectivity() {
     isOnline() {
       return state.value === ConnectivityState.ONLINE
     },
+    /** 首次检测是否已完成（之前的 UNKNOWN 只是初始占位）。 */
+    isSettled() {
+      return settled
+    },
+    /** 首次检测完成后 resolve（已完成则立即 resolve）。不会触发 start。 */
+    whenSettled() {
+      if (settled) return Promise.resolve()
+      return new Promise(resolve => settledWaiters.push(resolve))
+    },
     /** 解析来源并启动监听（幂等）；返回启动后的状态。 */
     start() {
       if (!startPromise) {
         startPromise = (async () => {
-          const source = await resolveSource()
-          return ensureStore(source).start()
+          try {
+            const source = await resolveSource()
+            return await ensureStore(source).start()
+          } finally {
+            // 读失败也视为「已测过」：此后 UNKNOWN 才是真实结论（fail-closed 不变）。
+            markSettled()
+          }
         })()
       }
       return startPromise
@@ -76,6 +105,8 @@ export function useConnectivity() {
       store = null
       unsubscribeProjection = null
       startPromise = null
+      settled = false
+      settledWaiters = []
       state.value = ConnectivityState.UNKNOWN
     },
   }
