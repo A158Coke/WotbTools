@@ -36,17 +36,19 @@ anti-future-leak 或现有 tank-marker 资产契约。
 - Desktop（`>=1200px`）、Tablet（`768–1199px`）和 Mobile（`<768px`）共用同一套
   Universal Battle HUD：己方在左、权威比分/基地状态在中（无事实时不渲染占位符）、敌方在右；HP 的
   `FULL_RELATIVE`、`EXACT`、`PARTIAL`、`UNKNOWN` 语义保持不变。
-- 地图是 workspace 的主视觉。Desktop / Tablet 的 controls 为紧凑流式布局，Mobile
-  初始只保留地图和 HUD；轻触地图显示播放 controls，控制事件不会穿透到地图。
+- 2D / 3D 共用紧凑中心栈：地图/时间、HP/比分与 compact 基地 metadata 的持久 HUD → 最大可用正方形 Stage → Transport。击杀流最多保留最新三条，属于有界 overlay，不参与 HUD 高度预算。
+- 主控件共用 `PlaybackTransport.vue`，顺序为 `-5 / Play-Pause / +5 / 当前速度 / 全屏 / Display`，速度档位按需展开，六个触控目标至少 44px。
+- 侧车道以 workspace 宽度作 fluid sizing，并有最小/最大边界；Stage 同时受中心可用宽度和实测可用高度约束。工作区容量与滚动位置分离，不靠固定 viewport deduction 定尺寸。
+- Display 由 `PlaybackDisplaySurface.vue` 锚定 Gear，优先向上、空间不足换边并夹紧；竖屏采用有界 inline 面。Details 仍为独立的 workspace 级可拖动上下文窗。
 - 形态判定（`shared/breakpoints` 的 `PLAYBACK_MOBILE_QUERY`）：Mobile = 宽 `<768px` 或触屏且高 `≤500px`（手机横屏）；`768–1199px` 一律 Tablet、`≥1200px` 一律 PC。布局只看可用空间，触屏只放大控件点击区域（44px），iPad / Android 平板拿 Tablet 形态。
 - 不抢页面：滚轮只在全屏、按住 Ctrl/⌘ 或刚在地图上按下后才缩放，否则交给页面滚动并短暂提示；地图未放大、非全屏、未标注时 `touch-action: pan-y`，单指纵向滑动滚动页面；`active=false`（隐藏的模式 / KeepAlive 停用）时暂停并不响应空格 / 方向键。地图高度扣掉固定顶栏，手机横屏按可用高度封顶。
-- PC / 宽平板（≥860）的右侧栏未选车时显示两队阵容，点玩家打开车辆详情；控制条在底部时，☰ 侧栏不再重复标注 / 重置视图 / 全屏。
-- Display、Events、Vehicle 与 Battle 内容通过侧面板按需显示；Events 只呈现
+- 两队阵容属于 Stage 两侧的有界车道；点玩家打开独立 Details，未选车时不预留详情列。
+- Display 与 Events 从 Gear 按需打开，Vehicle 由选车打开 Details；Events 只呈现
   `DAMAGE`、`KILL`、`DESTROYED`，点击事件执行 seek + pause，纯时间轴不承载事件标记。
 - 标注工具默认折叠，绘图不暂停 battle clock。Fullscreen 继续保持同一组件实例的
   current time、playing、倍速、选中车辆、zoom/pan、annotations 和偏好；移动端只对
   `screen.orientation.lock('landscape')` 做 best-effort 尝试，失败不阻断播放。
-- Fullscreen 几何 ownership 按 form 固定：Universal Battle HUD 在 PC / Tablet / Mobile 始终属于地图顶部，即使存在 `pb-side-slots` 也不会迁移到 gutter；side-slot 只允许复用 PC / Tablet 的非移动端 controls 空白侧边空间。camera fit 动态量取顶部 `.pb-hud` 的真实高度，并在 Mobile transient controls 可见时额外量取 `.pb-mobile-overlay-content` 作为 bottom safe inset；Mobile 本身不启用 side-slot optimization。`test:browser-layout` 用真实 Chrome 几何断言覆盖 fullscreen + side-slot / mobile bottom-overlay，禁止只靠 CSS 源码正则判断。
+- Fullscreen 复用普通工作区的 HUD → Stage → Transport ownership，只更新可用容量与 safe-area。`test:browser-layout` 和 `test:browser-interaction` 用真实 Chrome 几何与交互断言覆盖桌面、平板、手机横竖屏和原生 fullscreen。
 - `BattlePlaybackDataset.baseStates` 是后端 canonical 基地 transition：Supremacy 来自
   wrapper12/root11（`baseId=A|B|C|D`），Assault 单基地来自 wrapper8/root8
   （`baseId=BASE`）。Assault controlled 11.20 样本证明 progress 会真实广播到 `100`；
@@ -236,11 +238,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     selectAt（hitTest 像素→内容坐标）/ textInputStyle / semanticPoint 全部经 mapWidth/mapHeight 读取
     → fullscreen enter/exit 后 collision / hitbox / 标注换算立即用新尺寸重算（禁止 magic delay）；
     zoom/pan 不自动 reset（无 auto-fit；Reset View 由用户使用）。全屏 `.battle-playback:fullscreen`
-    为 3-column Workspace grid（64px Left Rail | Map Workspace | Right Details）：Left Rail 提供
-    Battle/Vehicle/Display/Events/Annotation/Reset View；Map Workspace 中央列承载 HUD + 地图 + controls
-    （均为 overlay，不占地图 layout）；Right Details 常驻（未选状态默认 Battle Summary，选车/选事件切换
-    对应 Details）。地图按 `--pb-map-ratio` 保持真实宽高比（contain，无非等比拉伸，zoom 后可大于
-    viewport 随 pan/zoom 裁剪）；HUD / controls 为顶部/底部 overlay；non-fullscreen 仍 map-first。
+    复用普通工作区的有界 roster 车道与中央 HUD → square Stage → Transport 栈；Details 是
+    workspace 级浮窗，Display 锚定 Gear（竖屏 inline）。地图按真实宽高比 contain，无非等比拉伸，
+    zoom 后可大于 viewport 随 pan/zoom 裁剪；HUD 与 Transport 占流式布局，killfeed 有界覆盖。
     生命周期：`fullscreenchange` listener 与 ResizeObserver 在 unmount 时移除/disconnect；组件在全屏
     中被卸载时仅退出自己拥有的 fullscreen。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，

@@ -106,8 +106,36 @@ Playback 布局有两条**真实浏览器门禁**（jsdom / happy-dom 没有布�
 - `npm run test:browser-layout`（`scripts/browser-playback-layout.mjs`）：逐字加载生产 CSS（含 `playback-workspace.css`，只把 `:fullscreen` 换成根类标记）的几何夹具。视口用 CDP `Emulation.setDeviceMetricsOverride` 而不是 `--window-size`（headless 窗口最小宽 500px，`390×844` 会被静默放大），并断言页面实测视口与请求一致。
 - `npm run test:browser-interaction`：真实应用。`ws2d-*` 场景挂载生产 `BattlePlayback`（`playback-controls.html?players=7&recorder=1|2`），`roster-geometry-*` 场景驱动真实 `Replay3DPane`，覆盖 375×812、390×844、740×360、844×390（含全屏与录像者在 Team 2）、1024×768、1600×900：竖屏纵向流、横屏三段式、正方形、物理左右、车道不滚动、行信息完整且无血条、主控件一行、详情浮窗挂在 workspace 上并能拖过三栏且不压传输控件、连点 Team 2 更新同一个窗且位置不动、× 不清选中、名册关闭 / 打开保留状态、3D 全屏不重建场景。
 
-### 后续拆分（不在 PR #489 内）
+### Playback fluid geometry and controls
 
-- 主控件行的**顺序**统一为 `-5 ▶ +5 1× ⛶ ⚙`（当前 2D 为 `▶ -5 +5 1× ⚙ ⛶`、3D 为 `▶ -5 +5 1× ⛶ 显示`；同一行与 44px 触控已满足），3D 的「显示」入口换成同一个 ⚙ 图标。
-- 740×360 触屏下工作台文件列表 chip 的真实 touch 序列没有合成 click（输入记录 `primary=chip, click=null`），`roster-geometry-740x360` 的「A → 清空 → B」步骤暂用命中测试 + click；需单独排查（与 Playback 布局无关）。
-- 3D 顶栏 HUD 仍叠在正方形 Stage 的上缘（中心列内，不压车道）；是否改成 Stage 之上的独立行与 2D 对齐，单独评估。
+2D/3D share the primary composition `-5 / Play-Pause / +5 / current speed / Fullscreen / Display`.
+Speed options open on demand; all six controls retain intrinsic touch targets. HUD, square Stage and
+Transport form one compact center stack. Team 1 stays physically left and Team 2 right; portrait
+retains natural document flow. Roster widths grow within bounded limits relative to the workspace.
+Viewport capacity and measured persistent HUD/Transport heights determine Stage capacity; scrolling,
+selection and presentation toggles do not recreate renderers, reparse a replay or reload assets.
+
+Display is a non-draggable workspace surface anchored to Gear, above it when space permits and
+clamped within the workspace; portrait uses a compact inline surface with bounded scroll. Details
+remain a separate draggable contextual surface. Persistent HUD shares map/time, HP/score and compact
+base metadata; transient kill feed is bounded and excluded from height measurement.
+
+The real browser matrix also covers 1792×922 fullscreen and checks maximal square capacity, compact
+stack gaps, fluid roster bounds, primary DOM/x order and Display anchoring. Replay file reselection
+at 740×360 uses raw touch; no synthetic click is added. Scroll cancels selection, the next tap selects
+once, and clearing a pending replay still aborts its parse before loading the new file.
+
+| Geometry responsibility | Owner |
+|---|---|
+| Shared columns, fluid roster bounds, square capacity, center stack | `playback-workspace.css` |
+| Phone portrait flow | `playback-mobile.css` / 3D portrait component rules |
+| Workspace height and intrinsic HUD/Transport measurement | Existing renderer ResizeObservers |
+| Primary controls and speed disclosure | `PlaybackTransport.vue` |
+| Persistent HUD and compact bases | `BattlePlaybackHud.vue` / `BaseStatusBar.vue` |
+| Display anchor and workspace bounds | `PlaybackDisplaySurface.vue` |
+| Details drag placement | Existing `usePlaybackDetailsPlacement` |
+| Fullscreen lifecycle / replay selection | Existing fullscreen composable / ReplayWorkspace |
+
+3D visual acceptance remains manual: check 740×360, 844×390 fullscreen, 1600×900 and 1792×922 fullscreen
+for battlefield prominence, compact HUD/Transport and comfortable Display presentation. Browser
+geometry and interaction checks establish layout/state invariants, not GPU/material appearance.
