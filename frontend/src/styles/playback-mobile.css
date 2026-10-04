@@ -294,10 +294,14 @@
     }
 }
 
-/* 审计 PB-01：手机横屏非全屏 —— 三栏：工具栏在左、地图居中、阵容在右，用满左右的空白。
-   地图原来按容器宽度定尺寸（844 宽时约 844 高），比视口还高，控制栏被挤出首屏；
-   现在按可用高度封顶（只扣顶栏、底部 Tab 栏与 HUD），工具栏不再占地图下方的高度。 */
-.battle-playback.pb-form-mobile .pb-landscape-roster { display: none; }
+/* 审计 PB-01：手机横屏非全屏 —— 三栏：工具栏在左、Stage 居中、阵容在右，用满左右的空白。
+   Stage 是**正方形**（边长由 styles/playback-workspace.css 的 `--pb-square-side` 统一给出：
+   横屏矮视口由纵向可用高度定，三段式下由中心列宽度定），这里不再自己按高度×贴图比例算宽度
+   ——那条旧公式（`(100dvh - …) * var(--pb-map-ratio)`）会给正方形定出一个与列宽无关的边长，
+   实测把 722px 宽的中心列里的 Stage 压成 76×76。 */
+/* 手机名册没有独立入口：它走统一的二级面（pb-secondary-entry → Team 分页），与 3D 同层级。
+   这里曾有一套 '.pb-landscape-roster-toggle' / '.pb-landscape-roster-wrap' 规则，属于已被删除的
+   「第二条名册入口」路径（竖屏与全屏横屏下会变成 dead control）——不保留死规则。 */
 @media (orientation: landscape) and (height <= 500px) {
   .battle-playback:not(:fullscreen).pb-form-mobile .pb-main {
     display: grid;
@@ -306,18 +310,12 @@
     gap: 8px;
   }
   .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-map-stage { grid-column: 2; grid-row: 1; }
-  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-mobile-overlay { grid-column: 1; grid-row: 1; min-width: 0; }
-  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-landscape-roster {
-    grid-column: 3;
-    grid-row: 1;
-    display: grid;
-    max-height: calc(100dvh - var(--header-h) - var(--tabbar-h) - 80px);
-    padding: 0;
-  }
+  .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-mobile-overlay { grid-column: 1; grid-row: 2; min-width: 0; }
+  /* 正方形：边长取共享契约，居中于所在列。 */
   .battle-playback:not(:fullscreen).pb-form-mobile .pb-main .pb-map {
-    width: calc((100dvh - var(--header-h) - var(--tabbar-h) - 80px) * var(--pb-map-ratio, 1));
-    max-width: none;
-    margin-inline: 0;
+    inline-size: min(var(--pb-square-side), 100%);
+    max-inline-size: 100%;
+    margin-inline: auto;
   }
   /* 窄侧栏里的工具栏：按钮自然换行成网格，时间与进度条各占一行 */
   .battle-playback:not(:fullscreen).pb-form-mobile .pb-main > .pb-mobile-overlay .pb-controls {

@@ -125,11 +125,15 @@
     min-height: 0;
   }
   .battle-playback.pb-form-tablet:not(:fullscreen) .pb-main .pb-map {
-    /* 与 fullscreen 一致：锚定左上，contain/pan 由 tx/ty/scale 驱动。 */
+    /* 与 fullscreen 一致：锚定左上，contain/pan 由 tx/ty/scale 驱动。
+       边长走 `--pb-square-side`（正方形契约，见 playback-workspace.css）：
+       这条规则的比特异性高于共享契约，写死 `width: 100%` 会把它整条盖掉
+       —— 实测平板正方形被压到 208×208，而中心列有 510px 可用。 */
     grid-column: 1;
     align-self: start;
-    width: 100%;
-    max-width: none;
+    inline-size: min(var(--pb-square-side), 100%);
+    max-inline-size: 100%;
+    margin-inline: auto;
   }
   .battle-playback.pb-form-tablet:not(:fullscreen) .pb-map-stage > .pb-side-panel-shell {
     position: static;
@@ -164,10 +168,11 @@
 }
 
 /* 窄平板 / 竖屏（<860px，放不下两列）：保持堆叠，但地图仍要封顶，否则同样
-   把工具栏顶出首屏。地图近似方形，按高度换算宽度即可（--pb-map-ratio = W/H）。 */
+   把工具栏顶出首屏。边长走共享的 `--pb-square-side`——战场是正方形，宽高由同一个量决定；
+   `--pb-map-ratio`（底图 W/H）只描述贴图比例，不再参与 Stage 尺寸。 */
 @media (width < 860px) {
   .battle-playback.pb-form-tablet:not(:fullscreen) .pb-main .pb-map {
-    max-width: min(100%, calc((100dvh - var(--header-h) - 210px) * var(--pb-map-ratio, 1)));
+    max-inline-size: min(100%, var(--pb-square-side));
     margin-inline: auto;
   }
 }

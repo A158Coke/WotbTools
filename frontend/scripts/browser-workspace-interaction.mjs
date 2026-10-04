@@ -13,6 +13,12 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
  * 用真实输入管线（Input.synthesizeTapGesture）点击真实坐标，并断言
  * `document.elementFromPoint(按钮中心)` 确实命中按钮本身。
  *
+ * 例外：`roster-geometry-*` 场景里对 3D 面板的开关点击走 `clickElement()`——它把
+ * 「滚动进视口 + `elementFromPoint` 命中测试 + `el.click()`」压在**同一次 evaluate** 里。
+ * 原因见该函数注释：分两步（先量坐标、再由 CDP 点击）会在 fixture 注入后 HUD 高度还在收敛时
+ * 点到别的控件上。命中测试仍然是真浏览器语义（透明层/遮挡照样暴露），只是把 measure→click
+ * 合成一步；纯坐标点击的覆盖由上面那些场景保留。
+ *
  * 与 `browser-playback-layout.mjs` 的分工：
  *   - 那个是 file:// + 生产 CSS 的**几何**夹具（布局/尺寸契约）；
  *   - 本文件是 Vite dev server + **真实生产应用**（router/AppShell/ReplayWorkspace/全部 CSS）
@@ -398,6 +404,16 @@ class Page {
   resetInputTrace() {
     return this.evaluate('window.__wsInput = { primary: null, click: null, clickCount: 0 }; window.__wsInput')
   }
+
+  async pressH() {
+    await this.client.send('Input.dispatchKeyEvent', {
+      type: 'keyDown', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72,
+    }, this.sessionId)
+    await this.client.send('Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72,
+    }, this.sessionId)
+    await delay(100)
+  }
 }
 
 const results = []
@@ -405,6 +421,44 @@ const results = []
 /** 最近一次创建的场景页面：场景抛错时用它打印现场（诊断用，不参与断言）。 */
 let lastPage = null
 
+/**
+ * 原子「命中测试 + 点击」：几何与 `el.click()` 在同一次 Runtime.evaluate 里完成，
+ * 中间不给事件循环任何机会。分两步（先量坐标、再由 CDP 点击）在 1024x768 上必翻车：
+ * fixture 注入后 HUD 高度还在收敛，量到的 y 在点击时已经落到另一个复选框上。
+ * 命中测试仍然证明"目标没有被遮住"（真点击语义），只是把 measure→click 压成一步。
+ *
+ * 若目标在可滚动容器（.display-panel）内，先在容器内把它滚进可视区；若目标整体在视口外
+ * （矮窗口里 .pb-root 会被推到视口外），先把页面滚到它可见——真机上用户也是这么点的。
+ */
+function clickElement(page, selector) {
+  return page.evaluate(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)})
+    if (!el) return 'missing'
+    const panel = el.closest('.display-panel')
+    if (panel && panel.scrollHeight > panel.clientHeight + 1) {
+      const pr = panel.getBoundingClientRect()
+      const er = el.getBoundingClientRect()
+      if (er.bottom > pr.bottom - 2 || er.top < pr.top + 2) panel.scrollTop += (er.top - pr.top) - 4
+    }
+    let r = el.getBoundingClientRect()
+    if (r.top < 0 || r.bottom > innerHeight) {
+      el.scrollIntoView({ block: 'center', inline: 'nearest' })
+      r = el.getBoundingClientRect()
+    }
+    if (r.width < 1 || r.height < 1) return 'zero-size'
+    const cx = Math.round(r.left + r.width / 2)
+    const cy = Math.round(r.top + r.height / 2)
+    if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return 'outside-viewport:' + cx + ',' + cy
+    const hit = document.elementFromPoint(cx, cy)
+    if (!(hit === el || el.contains(hit) || (hit && hit.contains(el)))) {
+      return 'occluded-by:' + (hit ? hit.tagName + '.' + (hit.className || '') : 'null')
+    }
+    el.click()
+    return 'clicked@' + cx + ',' + cy
+  })()`)
+}
+
+const clicked = (result) => typeof result === 'string' && result.startsWith('clicked')
 function check(failures, ok, message) {
   if (!ok) failures.push(message)
 }
@@ -519,15 +573,27 @@ async function runAuthCapabilityScenario(env, scenario) {
  * 每个场景走真实用户路径：选文件 → 真实点击切 3D 能力 → 真实点击「开始」（走过待开播
  * 闸门）→ 经 ?debug 注入口喂入就绪态（两队名单非空 / unknown 非空 / killfeed）→ 用
  * getBoundingClientRect 断言：三块名单两两不重叠、不覆盖 HUD 子面板、不覆盖底部控制条、
- * 全部位于 pb-root 内。mobile 还要求默认收起 + 真实点击 roster-toggle 展开。
- * 小高度横屏场景故意用更小的夹具（1 条击杀 / 2 名玩家）——屏幕放不下全部内容时车道按
- * max-height 收缩（内容截断 / 内部滚动），但**不得与 HUD / controls 交叉**。
+ * 全部位于 pb-root 内。宽档 normal 7v7 全员可见且无 team/lane 内滚动；phone/短视口
+ * 必须由 Display 打开临时 roster surface，打开即关闭 Display，dismiss 即归还完整场景。
+ */
+/**
+ * `getBoundingClientRect` 断言：三块名单两两不重叠、不覆盖 HUD 子面板、不覆盖底部控制条、
+ * 全部位于 pb-root 内；每个可见行都要有 HP 数值与百分比且不被截断。
+ *
+ * `transient` 不是「手机 / 矮视口」的别名，而是**名册放不放得下**的实测结论
+ * （`Replay3DPane` 的 `rosterConstrained`）。7v7 全员 16 行的真实名册需要约 534px 车道高，
+ * 而 `.pb-root` 的高度上限是 `clamp(320px, 62dvh, 720px)` —— 战场必须占主导，900 高的视口
+ * 只给出 558px 根高，HUD 与传输控件再各占 127 / 120px，车道只剩 313px。
+ * 所以 1600×900 与 1024×768 上**全量名册**同样是临时面：常驻车道会溢出到控制条上，
+ * 那正是这条门禁要挡住的事。
  */
 const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-1600x900-desktop', width: 1600, height: 900, touch: false, players: 7, killfeed: 3 },
-  { name: 'roster-geometry-1024x768-tablet', width: 1024, height: 768, touch: false, players: 7, killfeed: 3 },
-  { name: 'roster-geometry-390x844-portrait-coarse', width: 390, height: 844, touch: true, players: 5, killfeed: 3, mobile: true },
-  { name: 'roster-geometry-740x360-landscape-coarse', width: 740, height: 360, touch: true, players: 2, killfeed: 1, mobile: true },
+  { name: 'roster-geometry-1024x768-tablet', width: 1024, height: 768, touch: false, players: 3, killfeed: 3 },
+  { name: 'roster-geometry-390x844-portrait-coarse', width: 390, height: 844, touch: true, players: 7, killfeed: 3, transient: true },
+  { name: 'roster-geometry-740x360-landscape-coarse', width: 740, height: 360, touch: true, players: 2, killfeed: 1, transient: true },
+  { name: 'roster-geometry-portrait-to844x390-coarse', width: 390, height: 844, touch: true, players: 2, killfeed: 1, transient: true, rotateTo: { width: 844, height: 390 } },
+  { name: 'roster-geometry-1024x460-short', width: 1024, height: 460, touch: false, players: 2, killfeed: 1, transient: true },
 ]
 
 const PLAYBACK_SCENARIOS = [
@@ -558,6 +624,10 @@ function rosterGeometryProbe() {
   const out = { root: !!root, errors: [], boxes: {} }
   if (!root) return out
   const rr = root.getBoundingClientRect()
+  const transientSurface = root.querySelector('.roster-surface.transient')
+  const transient = !!transientSurface && getComputedStyle(transientSurface).display !== 'none'
+  out.transient = transient
+  out.phone = root.classList.contains('phone-form')
   const overlap = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5
     && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
   const panels = {}
@@ -568,11 +638,19 @@ function rosterGeometryProbe() {
     const b = rect(el)
     panels[name] = b
     out.boxes[name] = { l: +b.left.toFixed(1), t: +b.top.toFixed(1), r: +b.right.toFixed(1), b: +b.bottom.toFixed(1) }
-    if (b.left < rr.left - 0.5 || b.right > rr.right + 0.5 || b.top < rr.top - 0.5 || b.bottom > rr.bottom + 0.5) {
+    if (!transient && (b.left < rr.left - 0.5 || b.right > rr.right + 0.5 || b.top < rr.top - 0.5 || b.bottom > rr.bottom + 0.5)) {
       out.errors.push(`${name} is outside pb-root (root=${JSON.stringify({ l: +rr.left.toFixed(1), t: +rr.top.toFixed(1), r: +rr.right.toFixed(1), b: +rr.bottom.toFixed(1) })})`)
     }
   }
-  const hudBoxes = [...document.querySelectorAll('.hud > *')].map(rect).filter(Boolean)
+  if (transient) {
+    const surface = root.querySelector('.roster-surface').getBoundingClientRect()
+    if (surface.left < rr.left - 0.5 || surface.right > rr.right + 0.5
+      || surface.top < rr.top - 0.5 || surface.bottom > rr.bottom + 0.5) {
+      out.errors.push('transient roster surface is outside pb-root')
+    }
+  }
+  // A secondary surface may overlay HUD while open, but must stay above the controls.
+  const hudBoxes = transient ? [] : [...document.querySelectorAll('.hud > *')].map(rect).filter(Boolean)
   for (const [name, b] of Object.entries(panels)) {
     hudBoxes.forEach((h, i) => {
       if (overlap(b, h)) out.errors.push(`${name} overlaps hud child #${i} (${JSON.stringify(h)})`)
@@ -588,7 +666,200 @@ function rosterGeometryProbe() {
   for (const [a, c] of pairs) {
     if (panels[a] && panels[c] && overlap(panels[a], panels[c])) out.errors.push(`${a} overlaps ${c}`)
   }
+  // 名册行的 HP 数值与百分比必须真实上屏且不被截断（血条不是唯一信息）：
+  // scrollWidth ≤ clientWidth 证明"没有 ellipsis 吃掉数字"。
+  const hpCells = [...document.querySelectorAll('.pl [data-test="roster-hp"], .pl [data-test="roster-hp-pct"]')]
+  out.hpCells = hpCells.length
+  for (const cell of hpCells) {
+    if (!/^\d+$/.test(cell.textContent.trim()) && !/^\d+%$/.test(cell.textContent.trim()) && cell.textContent.trim() !== '—') {
+      out.errors.push(`roster HP cell has unexpected text: ${JSON.stringify(cell.textContent)}`)
+    }
+    if (cell.scrollWidth > cell.clientWidth + 1) {
+      out.errors.push(`roster HP cell is truncated: ${JSON.stringify(cell.textContent)}`)
+    }
+  }
+  // 每个可见名册行都必须同时有 HP 数值与百分比
+  const rows = [...document.querySelectorAll('.roster-surface .pl')].filter((el) => el.getClientRects().length > 0)
+  out.rows = rows.length
+  for (const row of rows) {
+    if (!row.querySelector('[data-test="roster-hp"]') || !row.querySelector('[data-test="roster-hp-pct"]')) {
+      out.errors.push(`roster row without explicit HP value/percent: ${JSON.stringify(row.textContent)}`)
+    }
+    if (!transient) {
+      const r = row.getBoundingClientRect()
+      const group = row.closest('.team').getBoundingClientRect()
+      if (r.top < group.top - 0.5 || r.bottom > group.bottom + 0.5
+        || r.top < rr.top - 0.5 || r.bottom > rr.bottom + 0.5) {
+        out.errors.push(`wide roster row is clipped: ${JSON.stringify(row.textContent)}`)
+      }
+    }
+  }
+  for (const element of root.querySelectorAll('.team, .team-lane, .roster')) {
+    const style = getComputedStyle(element)
+    if (['auto', 'scroll'].includes(style.overflowY) && element.scrollHeight > element.clientHeight + 1) {
+      out.errors.push(`independent/nested roster scroll: ${element.className}`)
+    }
+  }
+  if (!transient) {
+    const surface = root.querySelector('.roster-surface')
+    if (surface && ['auto', 'scroll'].includes(getComputedStyle(surface).overflowY)
+      && surface.scrollHeight > surface.clientHeight + 1) out.errors.push('normal wide roster requires scrolling')
+  }
+
+  // —— 手机竖屏：常驻控件不得吃掉战场（真机 blocker 的不变量）——
+  // 紧凑档（< 768）要求：工具条整行不常驻、速度档位不铺开、常驻控件高度受控、
+  // 战场（.pb-root 总高 - 常驻控件高）仍占主导。断言语义而非像素。
+  if (out.phone && !transient) {
+    const box = (el) => (el && el.getClientRects().length ? el.getBoundingClientRect() : null)
+    const toolbar = box(document.querySelector('.toolbar'))
+    const controlsBox = box(document.querySelector('.controls'))
+    const rootH = rr.height
+    // 紧凑档工具条只允许保留「显示」入口（其余项在面板里）；相机分档与画质徽标不得常驻。
+    const toolbarEl = document.querySelector('.toolbar')
+    const toolbarChildren = toolbarEl
+      ? [...toolbarEl.children]
+        .filter((el) => el.getClientRects().length > 0)
+        .map((el) => ({
+          // 「显示」入口是 .display-wrap 包着 display-toggle；其余项按类名/标签识别
+          label: el.querySelector('[data-testid="display-toggle"]')
+            ? 'display'
+            : (el.dataset.testid || el.className || el.tagName).toString(),
+          w: +el.getBoundingClientRect().width.toFixed(1),
+        }))
+      : []
+    out.compact = {
+      rootH: +rootH.toFixed(1),
+      controlsH: controlsBox ? +controlsBox.height.toFixed(1) : null,
+      // 分段高度：定位"控件为什么这么高"（时间轴 / 按钮行 / 内边距与间隙）
+      parts: controlsBox ? (() => {
+        const controlsEl = document.querySelector('.controls')
+        const part = (sel) => {
+          const el = controlsEl.querySelector(sel)
+          return el && el.getClientRects().length ? +el.getBoundingClientRect().height.toFixed(1) : null
+        }
+        return {
+          timeline: part('.pb-progress'),
+          row: part('.pb-controls'),
+          play: part('.pb-play-btn'),
+          time: part('.pb-time'),
+          speed: part('[data-test="pb-speed-current"]'),
+          step: part('[data-test="pb-fwd5"]'),
+          gap: getComputedStyle(controlsEl).rowGap,
+          pad: getComputedStyle(controlsEl).paddingTop,
+        }
+      })() : null,
+      toolbarChildren,
+      speedButtons: document.querySelectorAll('.pb-speed .pb-btn').length,
+      speedPicker: !!box(document.querySelector('[data-test="pb-speed-current"]')),
+      displayEntry: !!box(document.querySelector('[data-testid="display-toggle"]')),
+    }
+    // 「显示」入口必须常驻可点（唯一的二级控件入口）
+    if (!out.compact.displayEntry) out.errors.push('compact: display entry point is not visible')
+    // 常驻工具条项只允许「显示」这一个（相机 / 阵容 / 画质都进面板）
+    const extra = toolbarChildren.filter((c) => c.label !== 'display').map((c) => c.label)
+    if (extra.length) out.errors.push(`compact: secondary controls still permanent on the toolbar: ${extra.join(', ')}`)
+    if (document.querySelectorAll('.pb-speed .pb-btn').length > 0) {
+      out.errors.push(`compact: ${out.compact.speedButtons} permanent speed buttons (must be progressive disclosure)`)
+    }
+    if (!out.compact.speedPicker) out.errors.push('compact: current-speed control is missing')
+    if (controlsBox) {
+      // 常驻控件（时间轴 + 一行按钮）不得吃掉战场：战场至少保留工作区高的 55%
+      const sceneH = rootH - controlsBox.height
+      out.compact.sceneH = +sceneH.toFixed(1)
+      if (sceneH < rootH * 0.55) {
+        out.errors.push(`compact: controls take too much scene height (scene=${sceneH.toFixed(1)} of root=${rootH.toFixed(1)}; controls=${controlsBox.height.toFixed(1)}; parts=${JSON.stringify(out.compact.parts)})`)
+      }
+    } else {
+      out.errors.push('compact: playback controls missing')
+    }
+  }
   return out
+}
+
+/** 「显示」面板：全部开关可用、面板不越界、隐藏全部 UI 可恢复（真实点击）。 */
+function displayPanelProbe() {
+  const root = document.querySelector('.pb-root')
+  const out = { root: !!root, errors: [], panel: null }
+  if (!root) return out
+  const rr = root.getBoundingClientRect()
+  const panel = document.querySelector('[data-testid="display-panel"]')
+  if (!panel) { out.errors.push('display panel not open'); return out }
+  const pb = panel.getBoundingClientRect()
+  out.panel = { l: +pb.left.toFixed(1), t: +pb.top.toFixed(1), r: +pb.right.toFixed(1), b: +pb.bottom.toFixed(1) }
+  // 可见范围 = .pb-root 与视口的交集（工作台在矮窗口里可能把 .pb-root 顶部推到视口外，
+  // 那时"超出视口"并不等于面板不可用；真正的要求是面板落在**可见的面板区域**内）。
+  const visTop = Math.max(rr.top, 0)
+  const visBottom = Math.min(rr.bottom, document.documentElement.clientHeight)
+  // 所有形态均是根内浮层，必须位于可见区域且不遮场景中心。
+  if (pb.left < -0.5 || pb.top < visTop - 0.5
+    || pb.right > document.documentElement.clientWidth + 0.5 || pb.bottom > visBottom + 0.5) {
+    out.errors.push(`display panel outside visible pane: ${JSON.stringify(out.panel)} visible=[${visTop.toFixed(1)},${visBottom.toFixed(1)}]`)
+  }
+  if (pb.height < 60) {
+    out.errors.push(`display panel too short to be usable: ${Math.round(pb.height)}px`)
+  }
+  if (pb.height > visBottom - visTop - 8) {
+    out.errors.push(`display panel taller than the visible pane: ${Math.round(pb.height)}px`)
+  }
+  // 不得盖住场景中心（面板锚在右下角）
+  const cx = rr.left + rr.width / 2
+  const cy = rr.top + rr.height / 2
+  if (cx > pb.left && cx < pb.right && cy > pb.top && cy < pb.bottom) {
+    out.errors.push('display panel covers the scene center')
+  }
+  for (const id of ['disp-topbar', 'disp-roster', 'disp-killfeed', 'disp-base', 'disp-player', 'disp-tank', 'disp-hp', 'disp-reload', 'disp-glb', 'hide-all-ui']) {
+    const el = document.querySelector(`[data-testid="${id}"]`)
+    if (!el) { out.errors.push(`display panel control missing: ${id}`); continue }
+    // 开关的真实命中区是包住 checkbox 的 <label>（方框本身只有 13px）
+    const hit = id === 'hide-all-ui' ? el : el.closest('label')
+    if (!hit) { out.errors.push(`display panel control has no label hit area: ${id}`); continue }
+    const r = hit.getBoundingClientRect()
+    if (r.width < 20 || r.height < 20) {
+      out.errors.push(`display panel control hit area too small: ${id} (${Math.round(r.width)}x${Math.round(r.height)})`)
+    }
+  }
+  return out
+}
+
+/**
+ * 等名册布局**稳定**（连续两次读到的几何签名一致）。
+ *
+ * 为什么不能只 sleep 一个常数：`Replay3DPane` 的 ResizeObserver 会把实测高度写回
+ * `--pb-hud-h` / `--pb-controls-h` / `--pb-roster-min-h`，每写一次都重排一次根元素、
+ * 车道与传输控件。抢在重排中间读，拿到的是「上一轮布局 + 这一轮变量」的混合几何 ——
+ * 那是假失败（实测 1024×768 有时过、有时不过，差别只在读的时机）。
+ */
+function rosterLayoutSignature() {
+  const root = document.querySelector('.pb-root')
+  if (!root) return null
+  const lane = root.querySelector('.team-lane')
+  const controls = root.querySelector('.controls')
+  const box = (el) => (el ? [Math.round(el.getBoundingClientRect().top), Math.round(el.getBoundingClientRect().height)].join(',') : '-')
+  return [
+    box(root),
+    box(lane),
+    box(controls),
+    root.style.getPropertyValue('--pb-roster-min-h'),
+    root.className,
+  ].join('|')
+}
+
+async function waitForStableLayout(page, { timeout = 10_000 } = {}) {
+  const deadline = Date.now() + timeout
+  let previous = null
+  let stableReads = 0
+  while (Date.now() < deadline) {
+    const current = await page.evaluate(`(${rosterLayoutSignature.toString()})()`).catch(() => null)
+    if (current && current === previous) {
+      stableReads += 1
+      if (stableReads >= 2) return current
+    } else {
+      stableReads = 0
+    }
+    previous = current
+    await delay(100)
+  }
+  return previous
 }
 
 async function runRosterGeometryScenario(env, scenario) {
@@ -663,9 +934,14 @@ async function runRosterGeometryScenario(env, scenario) {
   // 注入 3D 就绪态（reviewer 要求的 fixture：两队非空 / unknown 非空 / killfeed 非空）
   await page.evaluate(`(() => {
     const s = window.__pbPane.store
-    const mk = (prefix, n) => Array.from({ length: n }, (_, i) => ({
-      eid: i + 1, nick: prefix + '_' + String(i + 1).padStart(2, '0'), tank: 'Tank ' + (i + 1),
-      frac: Math.min(100, 40 + i * 7), dead: i === 0, followed: false, dot: '#26794a',
+    // 名册行的形状 = 身份（eid/team/nick/tank）+ 当前回放时刻的状态投影（hp/maxHp/dead）
+    const mk = (prefix, n, team) => Array.from({ length: n }, (_, i) => ({
+      eid: (team === 1 ? 0 : team === 2 ? 100 : 200) + i + 1, team,
+      nick: prefix + '_' + String(i + 1).padStart(2, '0'),
+      tank: i % 3 === 0 ? 'Kranvagn' : (i % 3 === 1 ? 'SPHT' : 'Chieftain Mk.6'),
+      hp: i === 0 ? 0 : 1950 - i * 137,
+      maxHp: 1950,
+      dead: i === 0, followed: team === 1 && i === 1,
     }))
     s.hasData = true
     s.loading = false
@@ -675,51 +951,214 @@ async function runRosterGeometryScenario(env, scenario) {
     s.duration = 300
     s.time = 42
     s.startTime = 0
+    s.cam = 'top'
     s.roster = {
-      team1: mk('Ally', ${scenario.players}),
-      team2: mk('Enemy', ${scenario.players}),
-      unknown: mk('Neutral', 2),
+      team1: mk('Ally', ${scenario.players}, 1),
+      team2: mk('Enemy', ${scenario.players}, 2),
+      unknown: mk('Neutral', 2, null),
     }
     s.killfeed = Array.from({ length: ${scenario.killfeed} }, (_, i) => ({
       id: i + 1, killer: 'Killer_' + i, victim: 'Victim_' + i, kill: true,
     }))
   })()`)
-  // ResizeObserver 异步把 hud / controls 的实测高度写进 CSS 变量（车道定界依赖它）
-  await delay(500)
+  // ResizeObserver 异步把 hud / controls 的实测高度写进 CSS 变量（车道定界依赖它）。
+  // ⚠️ 定下来之前**不能**开始断言：`--pb-roster-min-h` 一变，`.pb-root` 的高度、
+  // 车道的上下界、控制条的位置会一起重排，读到的就是「上一轮布局 + 这一轮变量」的混合几何
+  // （实测同一次运行里 1024×768 会因为抢在重排前读而失败，稍后再读就通过）。
+  await waitForStableLayout(page)
 
-  if (scenario.mobile) {
-    // 紧凑档默认收起（审计 3D-15），真实点击 roster-toggle 展开
-    const collapsed = await page.evaluate(`(() => {
-      const lanes = [...document.querySelectorAll('.team-lane')]
-      return lanes.length === 2 && lanes.every((l) => getComputedStyle(l).display === 'none')
-    })()`)
-    check(failures, collapsed, 'mobile roster lanes must be collapsed by default')
-    const toggleCenter = await page.evaluate(`(() => {
-      const button = document.querySelector('[data-testid="roster-toggle"]')
-      if (!button) return null
-      button.scrollIntoView({ block: 'center', inline: 'nearest' })
-      const r = button.getBoundingClientRect()
-      const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
-      return (hit === button || button.contains(hit))
-        ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
-        : null
-    })()`)
-    check(failures, !!toggleCenter, 'roster toggle not hit-testable after ready-state injection')
-    if (!toggleCenter) {
-      await env.chrome.client.send('Target.closeTarget', { targetId })
-      results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
-      return
+  if (scenario.rotateTo) {
+    await page.emulate({ ...scenario, ...scenario.rotateTo })
+    await page.waitFor(() => document.querySelector('.pb-root')?.classList.contains('phone-form'),
+      { label: 'rotated 3D pane remains phone form' })
+  }
+  const sceneBounds = await page.evaluate(`(() => {
+    const r = document.querySelector('.pb-root').getBoundingClientRect()
+    return { width: r.width, height: r.height }
+  })()`)
+  if (scenario.transient) {
+    const compactGeometry = await page.probe(rosterGeometryProbe)
+    check(failures, compactGeometry.errors.length === 0,
+      `dismissed scene/transport violations: ${compactGeometry.errors.join('; ')}`)
+    check(failures, await page.evaluate(`(() => { const el = document.querySelector('.roster-surface');
+      return !el || getComputedStyle(el).display === 'none' })()`),
+      'phone/short viewport must not show permanent roster lanes')
+    if (scenario.rosterOpen) {
+      // 宽档的全量名册同样放不进常驻车道（`Replay3DPane` 的 `rosterConstrained` 判断），
+      // 只是这条路径没有「显示」面板的入口：这里直接把它当「打开临时名册面」的等价动作。
+      await page.evaluate(`window.__pbPane.store.roster.team1.length + window.__pbPane.store.roster.team2.length`)
+      const opened = await page.evaluate(`(() => {
+        const root = document.querySelector('.pb-root')
+        if (!root) return false
+        const toggle = document.querySelector('[data-testid="roster-toggle-compact"]')
+        if (toggle) { toggle.click(); return true }
+        return false
+      })()`)
+      check(failures, opened, 'wide transient roster has no way to open the overlay')
+    } else {
+      const openResult = await clickElement(page, '[data-testid="display-toggle"]')
+      check(failures, clicked(openResult), `display toggle not clickable: ${openResult}`)
+      const toggleResult = await clickElement(page, '[data-testid="roster-toggle-compact"]')
+      check(failures, clicked(toggleResult), `transient roster entry not clickable: ${toggleResult}`)
+      if (!clicked(openResult) || !clicked(toggleResult)) {
+        await env.chrome.client.send('Target.closeTarget', { targetId })
+        results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+        return
+      }
+      await page.waitFor(() => {
+        const el = document.querySelector('.roster-surface.transient')
+        return !!el && getComputedStyle(el).display !== 'none'
+      },
+        { label: 'transient roster opens' })
+      check(failures, await page.evaluate(`!document.querySelector('[data-testid="display-panel"]:not([hidden])')`),
+        'opening roster must close Display')
     }
-    await page.tap({ ...toggleCenter, touch: scenario.touch })
-    await page.waitFor(() => {
-      const lane = document.querySelector('.team-lane')
-      return !!lane && getComputedStyle(lane).display !== 'none'
-    }, { label: 'roster lanes visible after toggle' })
   }
 
   const geometry = await page.probe(rosterGeometryProbe)
   check(failures, geometry.root, 'pb-root missing')
   check(failures, geometry.errors.length === 0, `geometry violations: ${geometry.errors.join('; ')}`)
+  // 名册 HP 是主信息：每行都得上屏（数量 = 可见行数 × 2 个单元格）
+  check(failures, geometry.hpCells >= 2, 'roster HP cells missing in real browser')
+  check(failures, geometry.rows === scenario.players * 2 + 2,
+    `roster hides players: ${geometry.rows} rows, expected ${scenario.players * 2 + 2}`)
+  check(failures, geometry.transient === !!scenario.transient,
+    `roster presentation mode is wrong: transient=${geometry.transient}`)
+  if (scenario.transient) {
+    const dismiss = await clickElement(page, '[data-testid="roster-close"]')
+    check(failures, clicked(dismiss), `roster dismiss not clickable: ${dismiss}`)
+    await page.waitFor(() => {
+      const el = document.querySelector('.roster-surface')
+      return !el || getComputedStyle(el).display === 'none'
+    }, { label: `roster dismissed (${dismiss})` })
+    const dismissedBounds = await page.evaluate(`(() => {
+      const r = document.querySelector('.pb-root').getBoundingClientRect()
+      return { width: r.width, height: r.height }
+    })()`)
+    check(failures, Math.abs(dismissedBounds.width - sceneBounds.width) < 1
+      && Math.abs(dismissedBounds.height - sceneBounds.height) < 1,
+      'dismissing roster must restore the scene without height/width reservation')
+    await clickElement(page, '[data-testid="display-toggle"]')
+    await clickElement(page, '[data-testid="roster-toggle-compact"]')
+    await page.waitFor(() => {
+      const el = document.querySelector('.roster-surface.transient')
+      return !!el && getComputedStyle(el).display !== 'none'
+    }, { label: 'reopen roster for selection' })
+  }
+  const selectionBefore = await page.evaluate(`JSON.stringify({
+    cam: window.__pbPane.store.cam,
+    followed: window.__pbPane.store.roster.team1.filter(p => p.followed).map(p => p.eid),
+    time: window.__pbPane.store.time,
+  })`)
+  const rowClick = await clickElement(page, '.team1 .pl')
+  check(failures, clicked(rowClick), `roster row not selectable: ${rowClick}`)
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-info"]'), { label: 'roster selects and opens shared details' })
+  const selectionAfter = await page.evaluate(`JSON.stringify({
+    cam: window.__pbPane.store.cam,
+    followed: window.__pbPane.store.roster.team1.filter(p => p.followed).map(p => p.eid),
+    time: window.__pbPane.store.time,
+  })`)
+  check(failures, selectionAfter === selectionBefore, 'roster selection must not alter camera/follow/time')
+  check(failures, await page.evaluate(`!document.querySelector('[data-test="pb-sb-dealt"]')
+    && !document.querySelector('[data-test="pb-sb-v2-inspector"]')`),
+    '3D details must hide unavailable stats/inspector rather than fabricate zeros')
+  if (scenario.transient) {
+    check(failures, await page.evaluate(`(() => { const el = document.querySelector('.roster-surface');
+      return !el || getComputedStyle(el).display === 'none' })()`),
+      'phone selection must replace the roster with transient details')
+  }
+  await clickElement(page, '[data-test="pb-sb-close"]')
+  await page.waitFor(() => !document.querySelector('[data-test="pb-info"]'), { label: 'shared details close' })
+
+  // —— 「显示」面板：真实点击展开，几何在视口内，不盖场景中心 ——
+  // 可点目标：先在面板自身的滚动容器内把元素滚进可视区（**不用 scrollIntoView**：它会连带
+  // 滚动祖先，把底部控制条滚出视口 → 中心点命中失败，实测 1600x900 的隐藏按钮就是这样"不可点"），
+  // 再做 elementFromPoint 命中验证。
+
+  // —— 「显示」面板：真实点击展开，几何在视口内，不盖场景中心 ——
+  // 这段探针 2D / 3D 共用，且断言「点一下 = 打开」。3D 的名册场景会开关同一面板，
+  // 所以先**幂等地归位到关闭**（关着就不动），再点开——否则点击会变成关闭、后续等待超时。
+  await page.evaluate(`(() => {
+    const panel = document.querySelector('[data-testid="display-panel"]')
+    if (panel && !panel.hidden) document.querySelector('[data-testid="display-toggle"]')?.click()
+  })()`)
+  await page.waitFor(() => {
+    const panel = document.querySelector('[data-testid="display-panel"]')
+    return !panel || panel.hidden
+  }, { label: 'display panel closed before probe' })
+  const displayToggle = await clickElement(page, '[data-testid="display-toggle"]')
+  check(failures, clicked(displayToggle), `display toggle not clickable: ${displayToggle}`)
+  if (clicked(displayToggle)) {
+    await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]:not([hidden])'), { label: 'display panel opens' })
+    const panel = await page.probe(displayPanelProbe)
+    check(failures, panel.errors.length === 0, `display panel violations: ${panel.errors.join('; ')}`)
+
+    // 单个分块开关真实生效：把击杀流**显式关掉**（先读当前值，避免依赖上一条浏览器配置里的
+    // 持久化偏好），它必须从 DOM 里消失。失败时把复选框状态与面板几何一起带出来。
+    const killToggle = await page.evaluate(`document.querySelector('[data-testid="disp-killfeed"]')?.checked`)
+      ? await clickElement(page, '[data-testid="disp-killfeed"]') : 'already-off'
+    check(failures, killToggle === 'already-off' || clicked(killToggle), `kill feed toggle not clickable: ${killToggle}`)
+    if (clicked(killToggle)) {
+      const killHidden = await page.waitFor(() => !document.querySelector('.killfeed'), { label: 'kill feed hidden by display panel' })
+        .then(() => true)
+        .catch(() => false)
+      if (!killHidden) {
+        const state = await page.evaluate(`JSON.stringify({
+          checked: document.querySelector('[data-testid="disp-killfeed"]')?.checked,
+          killfeed: document.querySelectorAll('.killfeed .kf').length,
+          panel: (() => { const p = document.querySelector('.display-panel'); if (!p) return null; const r = p.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.height), p.scrollHeight, p.clientHeight] })(),
+        })`)
+        check(failures, false, `kill feed still visible after toggle: ${state}`)
+      }
+    }
+
+    // H respects interactive targets, then closes an already-open Display panel and hides
+    // result presentation without deleting its underlying state. Real keyboard input is
+    // required: a synthetic event dispatched on window would bypass the focus/target guard.
+    await page.evaluate(`(() => {
+      window.__pbPane.store.banner = { text: 'Fixture battle result' }
+      document.querySelector('[data-testid="disp-tank"]').focus()
+    })()`)
+    await page.pressH()
+    check(failures, await page.evaluate(`!!document.querySelector('[data-testid="display-panel"]:not([hidden])')
+      && !document.querySelector('[data-testid="show-all-ui"]')`), 'H on a checkbox must not hide UI')
+    await page.evaluate('document.activeElement?.blur()')
+    await page.pressH()
+    await page.waitFor(() => {
+      const root = document.querySelector('.pb-root')
+      const panel = root?.querySelector('[data-testid="display-panel"]')
+      return !!root && !root.querySelector('.hud') && !root.querySelector('.team-lane')
+        && !root.querySelector('.controls') && !root.querySelector('.banner')
+        && (!panel || panel.hidden) && !!root.querySelector('[data-testid="show-all-ui"]')
+    }, { label: 'H hides all UI and closes Display' })
+    check(failures, await page.evaluate('window.__pbPane.store.banner?.text === "Fixture battle result"'),
+      'hide all UI must preserve underlying result state')
+    const restoreAfterH = await clickElement(page, '[data-testid="show-all-ui"]')
+    check(failures, clicked(restoreAfterH), `restore button after H not clickable: ${restoreAfterH}`)
+    await page.waitFor(() => !!document.querySelector('.controls') && !!document.querySelector('.banner')
+      && !document.querySelector('[data-testid="display-panel"]:not([hidden])'), { label: 'restore returns result, keeps Display closed' })
+    const reopenDisplay = await clickElement(page, '[data-testid="display-toggle"]')
+    check(failures, clicked(reopenDisplay), `display toggle after restore not clickable: ${reopenDisplay}`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]:not([hidden])'), { label: 'Display reopens' })
+
+    // The inverse path uses the same transition: button hides, H restores.
+    const hideBtn = await clickElement(page, '[data-testid="hide-all-ui"]')
+    check(failures, clicked(hideBtn), `hide-all-ui button not clickable: ${hideBtn}`)
+    if (clicked(hideBtn)) {
+      await page.waitFor(() => {
+        const root = document.querySelector('.pb-root')
+        return !!root && !root.querySelector('.hud') && !root.querySelector('.team-lane')
+          && !root.querySelector('.controls') && !root.querySelector('.banner')
+          && !root.querySelector('[data-testid="display-panel"]:not([hidden])')
+          && !!root.querySelector('[data-testid="show-all-ui"]')
+      }, { label: 'all UI hidden' })
+      await page.evaluate('document.activeElement?.blur()')
+      await page.pressH()
+      await page.waitFor(() => !!document.querySelector('.controls') && !!document.querySelector('.banner')
+        && !document.querySelector('[data-testid="show-all-ui"]')
+        && !document.querySelector('[data-testid="display-panel"]:not([hidden])'), { label: 'H restores UI after button hides it' })
+    }
+  }
 
   // —— A → 清空 → B（真实解析生命周期，P0 回归路径）——
   // 注意：本段必须先等 A 收敛（err / hasData）才能注入就绪态，所以它覆盖的是「A 已 settle
@@ -972,6 +1411,8 @@ async function runRotationScenario(env, scenario) {
     `after rotating to ${scenario.rotateTo.width}x${scenario.rotateTo.height} form=${rotated}; coarse-pointer phones must never fall into tablet/pc`)
 
   const after = await page.probe(playbackControlProbe)
+  check(failures, await page.evaluate(`!!document.querySelector('[data-test="pb-speed-current"]')
+    && !document.querySelector('.pb-speed .pb-btn')`), '2D rotated phone must retain compact speed picker')
   check(failures, after.pageScrollWidth <= after.viewportWidth + 1,
     `after rotation page-level horizontal overflow: ${after.pageScrollWidth} > ${after.viewportWidth} (contentWidth=${after.contentWidth} geometry=${JSON.stringify(after.geometry)})`)
   const control = after.hitIsButton ? after : await page.revealControl('[data-test="pb-play"]')

@@ -12,7 +12,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
-import Replay3DPane from './Replay3DPane.vue'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
+
+// 源码级守卫用（CSS 结构契约：名册不得是嵌套滚动盒等）
+const here = dirname(fileURLToPath(import.meta.url))
+let Replay3DPane
 
 const playback = vi.hoisted(() => ({ api: null, init: null, apis: [] }))
 /**
@@ -58,7 +64,7 @@ vi.mock('../scene/playbackScene.js', () => {
       setCam: vi.fn(),
       setFollow: vi.fn(),
       setGlb: vi.fn(),
-      setLabels: vi.fn(),
+      setLabelPrefs: vi.fn(),
       setQuality: vi.fn(),
       setPaused: vi.fn(),
     }
@@ -69,9 +75,31 @@ vi.mock('../scene/playbackScene.js', () => {
   return { initPlayback: playback.init, QUALITY_PRESETS: { low: { label: 'Low' }, mid: { label: 'Mid' }, high: { label: 'High' } } }
 })
 vi.mock('../scene/assetProvider.js', () => ({ assetProvider: { configured: () => true } }))
+/**
+ * 布局档位 / 指针 mock：手机形态用例把 `layout.compact` 打开，即可验证「工具条收窄、
+ * 相机与阵容搬进显示面板」这套紧凑呈现；宽档用例保持 false（桌面不得回归）。
+ */
+const layout = vi.hoisted(() => ({ compact: false }))
+/** 全屏能力桩的调用计数（happy-dom 无 Fullscreen API，用于断言确实调用了 requestFullscreen） */
+const fullscreenCalls = { request: 0 }
 vi.mock('../composables/useBreakpoint.js', async () => {
   const { computed } = await import('vue')
-  return { usePointer: () => ({ coarse: computed(() => false) }) }
+  return {
+    usePointer: () => ({ coarse: computed(() => false) }),
+    useBreakpoint: () => ({
+      tier: computed(() => (layout.compact ? 'compact' : 'expanded')),
+      isCompact: computed(() => layout.compact),
+      isExpanded: computed(() => !layout.compact),
+    }),
+  }
+})
+/**
+ * 手机形态来自 `usePlaybackPhoneForm`（宽度 <768 **或** 触屏且视口高 ≤500），
+ * 不是纯宽度断点——手机全屏横屏后内宽可 >768，仍必须保持手机呈现。
+ */
+vi.mock('../composables/usePlaybackPhoneForm.js', async () => {
+  const { computed } = await import('vue')
+  return { usePlaybackPhoneForm: () => ({ isPhone: computed(() => layout.compact) }) }
 })
 // 唯一 reactive 主题源：给 HUD 阵营色一个可依赖的 profile ref
 vi.mock('../composables/useUiProfile.js', async () => {
@@ -111,11 +139,23 @@ function mountPane(props = {}) {
   })
 }
 
-beforeEach(() => {
-    connectivityState.state.value = 'online'
+// 两边约束都要：main 新增的连通性前置状态（离线直接挂载不得初始化远端 loader）
+// + 本分支逐例重置模块后动态 import（呈现偏好是持久化的，必须每例干净）。
+//
+// 顺序有讲究：`vi.resetModules()` 之后 mock 工厂还没跑，`connectivityState.state` 仍是
+// null——必须先 await dynamic import 触发工厂，再设状态值（直接设 .value 会炸
+// "Cannot set properties of null"）。
+beforeEach(async () => {
+  layout.compact = false
   playback.api = null
   playback.apis.length = 0
   playback.init?.mockClear()
+  // 呈现偏好是持久化的：逐例清空，否则「显示」面板用例的改动会渗到后续用例
+  localStorage.clear()
+  vi.resetModules()
+  Replay3DPane = (await import('./Replay3DPane.vue')).default
+  // 工厂已运行：把连通性复位到在线（离线用例随后在自身 it 内覆写）
+  if (connectivityState.state) connectivityState.state.value = 'online'
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -319,19 +359,23 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
-  it('HUD 阵营色取语义 token（inject 的 --color-team-* 生效），不写死红绿', async () => {
+  it('阵容圆点走**物理队伍** token：Team 1 恒 --color-team-1、Team 2 恒 --color-team-2，不随录像者交换', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     const { store } = playback.api
     store.hasData = true
-    // 阵容条目的真实形状来自 playbackScene 的 buildRoster（无 team 字段，分组即阵营）
+    // 名册条目的真实形状来自 playbackScene 的 buildRoster（身份字段 + 当前时刻的 hp/maxHp）
     store.roster = {
-      team1: [{ eid: 1, nick: 'A', tank: 'T-62A', frac: 50, dead: false, followed: false, dot: '#26794a' }],
-      team2: [{ eid: 2, nick: 'B', tank: 'Maus', frac: 100, dead: false, followed: false, dot: '#98322a' }],
-      unknown: [{ eid: 3, nick: 'C', tank: '', frac: 100, dead: false, followed: false, dot: '#f5f5f5' }],
+      team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T-62A', hp: 975, maxHp: 1950, dead: false, followed: false }],
+      team2: [{ eid: 2, team: 2, nick: 'B', tank: 'Maus', hp: 1500, maxHp: 3000, dead: false, followed: false }],
+      unknown: [{ eid: 3, team: null, nick: 'C', tank: '', hp: 100, maxHp: 0, dead: false, followed: false }],
     }
-    document.documentElement.style.setProperty('--color-team-ally', 'rgb(1, 2, 3)')
-    document.documentElement.style.setProperty('--color-team-enemy', 'rgb(4, 5, 6)')
+    document.documentElement.style.setProperty('--color-team-1', 'rgb(1, 2, 3)')
+    document.documentElement.style.setProperty('--color-team-2', 'rgb(4, 5, 6)')
+    // ally / enemy 是**记录者视角**别名：把两者设成完全不同的值，
+    // 名册若（错误地）按视角取色就会立刻显形
+    document.documentElement.style.setProperty('--color-team-ally', 'rgb(9, 9, 9)')
+    document.documentElement.style.setProperty('--color-team-enemy', 'rgb(8, 8, 8)')
     await nextTick()
     // 车道结构下 DOM 顺序是 team1 → unknown → team2：按各自面板取点，不依赖全局序
     const dots = (sel) => wrapper.findAll(`${sel} .pl .dot`)
@@ -339,7 +383,7 @@ describe('Replay3DPane', () => {
     expect(dots('.team1')[0].attributes('style')).toContain('rgb(1, 2, 3)')
     expect(dots('.team2')).toHaveLength(1)
     expect(dots('.team2')[0].attributes('style')).toContain('rgb(4, 5, 6)')
-    // 未知阵营既不并入我方也不并入敌方（用中性色）
+    // 未知阵营既不并入队伍 1 也不并入队伍 2（用中性色）
     expect(dots('.team-unknown')).toHaveLength(1)
     expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(1, 2, 3)')
     expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(4, 5, 6)')
@@ -347,8 +391,44 @@ describe('Replay3DPane', () => {
     expect(wrapper.findAll('.team h3').map(h => h.text())).toEqual([
       'agentReplay.team1', 'agentReplay.teamUnknown', 'agentReplay.team2',
     ])
-    document.documentElement.style.removeProperty('--color-team-ally')
-    document.documentElement.style.removeProperty('--color-team-enemy')
+    for (const p of ['--color-team-1', '--color-team-2', '--color-team-ally', '--color-team-enemy']) {
+      document.documentElement.style.removeProperty(p)
+    }
+    wrapper.unmount()
+  })
+
+  it('名册每行显示 HP 数值与百分比（血条不是唯一信息），随 store 投影变化，阵亡 = 0 / 0%', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.roster = {
+      team1: [
+        { eid: 1, team: 1, nick: 'A', tank: 'Kranvagn', hp: 1950, maxHp: 1950, dead: false, followed: false },
+        { eid: 2, team: 1, nick: 'B', tank: 'SPHT', hp: 824, maxHp: 1950, dead: false, followed: false },
+      ],
+      team2: [{ eid: 3, team: 2, nick: 'C', tank: 'Chieftain', hp: 0, maxHp: 2000, dead: true, followed: false }],
+      unknown: [],
+    }
+    await nextTick()
+    const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp"]`).map(n => n.text())
+    const pcts = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp-pct"]`).map(n => n.text())
+    expect(nums('.team1')).toEqual(['1950', '824'])
+    expect(pcts('.team1')).toEqual(['100%', '42%'])
+    // 阵亡行读作 0 / 0%，不保留"最后一个非零 HP"
+    expect(nums('.team2')).toEqual(['0'])
+    expect(pcts('.team2')).toEqual(['0%'])
+
+    // 状态在时刻：store 投影变化后行内数值同步（HP 不只有血条）
+    store.roster.team1[0].hp = 1200
+    await nextTick()
+    expect(nums('.team1')).toEqual(['1200', '824'])
+    expect(pcts('.team1')).toEqual(['62%', '42%'])
+
+    // 无可信上限 → 百分比为 —（unknown ≠ 0），不是 0%
+    store.roster.team1[1].maxHp = 0
+    await nextTick()
+    expect(pcts('.team1')[1]).toBe('—')
     wrapper.unmount()
   })
 
@@ -358,28 +438,35 @@ describe('Replay3DPane', () => {
     const { store } = playback.api
     store.hasData = true
     store.roster = {
-      team1: [{ eid: 1, nick: 'A', tank: 'T-62A', frac: 50, dead: false, followed: false, dot: '#26794a' }],
-      team2: [{ eid: 2, nick: 'B', tank: 'Maus', frac: 100, dead: false, followed: false, dot: '#98322a' }],
+      team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T-62A', hp: 975, maxHp: 1950, dead: false, followed: false }],
+      team2: [{ eid: 2, team: 2, nick: 'B', tank: 'Maus', hp: 3000, maxHp: 3000, dead: false, followed: false }],
       unknown: [],
     }
     await nextTick()
     // 两条车道都是 pb-root 直接子级；面板在车道**内部**（车道定界，面板不再各自绝对定位散挂）
-    const lanes = wrapper.findAll('.pb-root > .team-lane')
+    const lanes = wrapper.findAll('.roster-surface > .team-lane')
     expect(lanes.map(l => l.classes())).toEqual([['team-lane', 'side-left'], ['team-lane', 'side-right']])
     const left = lanes[0]
     const team1 = wrapper.get('.team1')
     const team2 = wrapper.get('.team2')
-    expect(team1.element.parentElement).toBe(left.element)
-    expect(team2.element.parentElement).toBe(lanes[1].element)
+    // 行由 2D / 3D 共用的 PlaybackRoster 渲染：名册容器是车道的**直接子级**，队伍面板
+    // 挂在名册容器里——同一个组件同时服务 2D 的三段式车道与 3D 的物理队伍车道。
+    // （用结构断言而不是节点同一性：happy-dom 下 Wrapper 的节点身份比较与布局契约无关。）
+    expect(left.element.firstElementChild.dataset.test).toBe('pb-shell-roster')
+    expect(lanes[1].element.firstElementChild.dataset.test).toBe('pb-shell-roster')
+    for (const team of [team1, team2]) {
+      expect(team.element.parentElement.classList.contains('pb-roster')).toBe(true)
+    }
     expect(team1.text()).toContain('A')
     expect(team2.text()).toContain('B')
     // unknown 非空才渲染，且渲染在**左车道**里（team1 之后）——绝不进中央 / 右车道
     expect(wrapper.find('.team-unknown').exists()).toBe(false)
-    store.roster.unknown = [{ eid: 3, nick: 'C', tank: '', frac: 100, dead: false, followed: false, dot: '#f5f5f5' }]
+    store.roster.unknown = [{ eid: 3, team: null, nick: 'C', tank: '', hp: 100, maxHp: 100, dead: false, followed: false }]
     await nextTick()
     const unknown = wrapper.get('.team-unknown')
-    expect(unknown.element.parentElement).toBe(left.element)
-    expect(unknown.element).toBe(left.element.lastElementChild)
+    // unknown 与 team1 同属左车道的那一个名册容器，且排在 team1 之后
+    expect(unknown.element.parentElement.classList.contains('pb-roster')).toBe(true)
+    expect(unknown.element.parentElement).toBe(team1.element.parentElement)
     expect(unknown.text()).toContain('C')
 
     // 未就绪时车道与面板都不渲染（与 HUD 其余部分同口径）
@@ -401,6 +488,597 @@ describe('Replay3DPane', () => {
     expect(wrapper.find('[data-test="pb-time"]').exists()).toBe(true)
     // 3D 专属控件在独立 toolbar 行里，不混进传输控件
     expect(wrapper.get('[data-testid="replay3d-toolbar"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('共享标签偏好推给场景：enabled + 四行开关，面板改动即时下发', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    // 建场景时补推一次（内核在 initPlayback 之后才有 setLabelPrefs）
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
+      enabled: true, showPlayerName: false, showTankName: true, showHp: true, showReload: true,
+    })
+    // 工具条只在 HUD 有数据时渲染
+    playback.api.store.hasData = true
+    await nextTick()
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="disp-player"]').setValue(true)
+    await nextTick()
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
+      enabled: true, showPlayerName: true, showTankName: true, showHp: true, showReload: true,
+    })
+    await wrapper.get('[data-testid="disp-hp"]').setValue(false)
+    await nextTick()
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
+      enabled: true, showPlayerName: true, showTankName: true, showHp: false, showReload: true,
+    })
+    wrapper.unmount()
+  })
+
+  it('显示面板可分别开关战场 UI 分块（顶栏 / 阵容 / 击杀流 / 基地条）', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.baseViews = [{ id: 'A', owner: 'friendly', progress: 0.5 }]
+    store.killfeed = [{ id: 1, kill: true, killer: 'K', victim: 'V' }]
+    store.roster = {
+      team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T', hp: 1, maxHp: 2, dead: false, followed: false }],
+      team2: [], unknown: [],
+    }
+    await nextTick()
+    expect(wrapper.find('.topbar').exists()).toBe(true)
+    expect(wrapper.find('.killfeed').exists()).toBe(true)
+    expect(wrapper.find('.base-status').exists()).toBe(true)
+    expect(wrapper.find('.team-lane').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="display-toggle"]').attributes('aria-expanded')).toBe('true')
+    await wrapper.get('[data-testid="disp-topbar"]').setValue(false)
+    await wrapper.get('[data-testid="disp-killfeed"]').setValue(false)
+    await wrapper.get('[data-testid="disp-base"]').setValue(false)
+    await wrapper.get('[data-testid="disp-roster"]').setValue(false)
+    await nextTick()
+    expect(wrapper.find('.topbar').exists()).toBe(false)
+    expect(wrapper.find('.killfeed').exists()).toBe(false)
+    expect(wrapper.find('.base-status').exists()).toBe(false)
+    expect(wrapper.find('.team-lane').exists()).toBe(false)
+    // 底部传输控件不属于"战场 UI"分块：仍可操作
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  /**
+   * 手机竖屏呈现（真机 blocker）：常驻控件只能占「时间轴 + 一行高频按钮」。
+   *
+   * 这些用例断言**行为 / 不变量**，不锁像素：
+   *   · 工具条整行在紧凑档不常驻（`display:none` 由 CSS 承担，DOM 仍在但不可见）；
+   *   · 二级控件（相机 / 阵容 / 画质）改在「显示」面板里，且可开可关；
+   *   · 开关面板**不重建场景**（同一 sceneApi 实例，session 不重置）。
+   */
+  describe('手机竖屏：二级控件收进「显示」面板', () => {
+    const roster = {
+      team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T', hp: 1, maxHp: 2, dead: false, followed: false }],
+      team2: [], unknown: [],
+    }
+
+    it('紧凑档：相机 / 阵容出现在面板内；宽档：面板里没有这两项（仍在工具条上）', async () => {
+      mockWebGL('webgl2')
+      layout.compact = true
+      const compactPane = mountPane()
+      const compactStore = playback.api
+      compactStore.hasData = true
+      compactStore.roster = roster
+      await nextTick()
+      // 紧凑档：面板收纳相机分档与阵容开关（面板隐藏时也在 DOM 中，hidden 由属性控制；
+      // 工具条那行由 CSS `display:none` 让位——它仍在 DOM 里，所以这里断言的是**分支**，
+      // 而不是「按钮不存在」）。
+      expect(compactPane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(true)
+      expect(compactPane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(true)
+      compactPane.unmount()
+
+      layout.compact = false
+      const widePane = mountPane()
+      const wideStore = playback.api
+      wideStore.hasData = true
+      wideStore.roster = roster
+      await nextTick()
+      // 宽档：面板里不得重复出现相机 / 阵容（那会变成第二份设置入口）。
+      // 注：工具条那行在紧凑档只是 CSS 隐藏（DOM 仍在），所以不断言「按钮不存在」——
+      // 真正的形态差异由这里的**分支**与 CSS 共同保证，浏览器门禁再验可见性。
+      expect(widePane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(false)
+      expect(widePane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(false)
+      widePane.unmount()
+      layout.compact = false
+    })
+
+    it('紧凑档：面板可开、可关、可关掉即恢复无遮挡；开合不得重建场景或重置会话', async () => {
+      mockWebGL('webgl2')
+      layout.compact = true
+      const wrapper = mountPane()
+      await start(wrapper)
+      const apiAfterStart = playback.api
+      const panel = wrapper.get('[data-testid="display-panel"]')
+      expect(panel.element.hidden).toBe(true)
+
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+      await nextTick()
+      expect(panel.element.hidden).toBe(false)
+      expect(wrapper.get('[data-testid="display-close"]').exists()).toBe(true)
+      // 面板只是覆盖层：不改变 playback session 身份，也不重建场景
+      expect(playback.api).toBe(apiAfterStart)
+      expect(playback.init).toHaveBeenCalledTimes(1)
+      expect(playback.api.reset).not.toHaveBeenCalled()
+
+      await wrapper.get('[data-testid="display-close"]').trigger('click')
+      await nextTick()
+      expect(panel.element.hidden).toBe(true)
+      expect(playback.api).toBe(apiAfterStart)
+      expect(playback.init).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+      layout.compact = false
+    })
+
+    it('紧凑档：相机模式在面板里切换，走同一个 setCam（不新建移动端相机状态）', async () => {
+      mockWebGL('webgl2')
+      layout.compact = true
+      const wrapper = mountPane()
+      await start(wrapper)
+      const { store } = playback.api
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+      await nextTick()
+      const options = wrapper.get('[data-testid="display-panel"] .dp-camera').findAll('button')
+      expect(options.length).toBeGreaterThan(1)
+      await options[1].trigger('click')
+      expect(playback.api.setCam).toHaveBeenCalled()
+      // 场景仍是同一个实例（切相机 ≠ 重建）
+      expect(store.speed).toBe(1)
+      wrapper.unmount()
+      layout.compact = false
+    })
+
+    it('紧凑档：画质是只读徽标，与工具条共用同一个 qualityBadge 来源', async () => {
+      mockWebGL('webgl2')
+      layout.compact = true
+      const wrapper = mountPane()
+      const { store } = playback.api
+      store.hasData = true
+      await nextTick()
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+      await nextTick()
+      const badge = wrapper.get('[data-testid="display-panel"] .dp-quality')
+      expect(badge.text().length).toBeGreaterThan(0)
+      wrapper.unmount()
+      layout.compact = false
+    })
+  })
+
+  /**
+   * 3D 全屏：与 2D 同一套产品语义（composables/usePlaybackFullscreen），
+   * 且**纯呈现 / 生命周期切换**——场景、解析、时间、倍速、相机、跟随目标、偏好都不重置。
+   */
+  describe('3D 全屏（与 2D 同语义）', () => {
+    /**
+     * Fullscreen 能力桩：happy-dom **不提供** `requestFullscreen`，而能力探测读的是
+     * 真实元素上的方法。所以任何期望看到全屏按钮的用例都必须先装上它——以前靠
+     * `v-if="fullscreenSupported"`（函数对象恒真）侥幸通过，现在探测正确了，就必须显式声明能力。
+     */
+    const withRequestFullscreen = (available, fn) => {
+      fullscreenCalls.request = 0
+      Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+      const proto = Object.getPrototypeOf(document.createElement('div'))
+      const saved = Object.getOwnPropertyDescriptor(proto, 'requestFullscreen')
+      if (available) {
+        Object.defineProperty(proto, 'requestFullscreen', {
+          value: function requestFullscreen() {
+            fullscreenCalls.request++
+            Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true })
+            document.dispatchEvent(new Event('fullscreenchange'))
+            return Promise.resolve()
+          },
+          configurable: true, writable: true,
+        })
+      } else {
+        Object.defineProperty(proto, 'requestFullscreen', { value: undefined, configurable: true, writable: true })
+      }
+      return Promise.resolve()
+        .then(fn)
+        .finally(() => {
+          if (saved) Object.defineProperty(proto, 'requestFullscreen', saved)
+          else delete proto.requestFullscreen
+        })
+    }
+
+    it('全屏是主操作：常驻在传输控件行里，不在「显示」面板内（一键直达）', async () => {
+      await withRequestFullscreen(true, async () => {
+        mockWebGL('webgl2')
+        const wrapper = mountPane()
+        const { store } = playback.api
+        store.hasData = true
+        await nextTick()
+        const btn = wrapper.get('[data-testid="playback-fullscreen"]')
+        // 它必须在面板**之外**（面板是二级设置，不允许把全屏藏进去）
+        expect(wrapper.get('[data-testid="display-panel"]').element.contains(btn.element)).toBe(false)
+        expect(btn.attributes('aria-pressed')).toBe('false')
+        wrapper.unmount()
+      })
+    })
+
+    /**
+     * BLOCKER 2A：这条用例以前是**假阳**——它写的是 `playback.api.hasData = true`，
+     * 而真实响应式状态在 `playback.api.store.hasData`。于是 `.controls` 从未渲染，
+     * 全屏按钮无论如何都不存在，用例对错误的实现（`v-if="fullscreenSupported"`，
+     * 函数对象恒真）也照样通过。
+     *
+     * 现在两条都**先证明控件确实渲染**（`[data-test=pb-controls]` / `pb-play` 存在），
+     * 再只对全屏动作做断言。不支持的那条对错误实现必然失败：函数对象为真 → 按钮仍会渲染。
+     */
+    describe('全屏能力探测（控件确实渲染后才断言）', () => {
+      const mountReady = async () => {
+        mockWebGL('webgl2')
+        const wrapper = mountPane()
+        playback.api.store.hasData = true
+        await nextTick()
+        return wrapper
+      }
+
+      it('requestFullscreen 可用 → 控件渲染且全屏动作存在', async () => {
+        await withRequestFullscreen(true, async () => {
+          const wrapper = await mountReady()
+          // 先证明控件确实渲染（否则下面的断言什么都证明不了）
+          expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+          expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
+          expect(wrapper.find('[data-testid="playback-fullscreen"]').exists()).toBe(true)
+          wrapper.unmount()
+        })
+      })
+
+      it('requestFullscreen 不可用 → 控件照常渲染，但全屏动作不存在（不画假按钮）', async () => {
+        await withRequestFullscreen(false, async () => {
+          const wrapper = await mountReady()
+          // 关键：控件**确实渲染了**，所以"没有全屏按钮"只能归因于能力探测
+          expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+          expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
+          expect(wrapper.find('[data-testid="playback-fullscreen"]').exists()).toBe(false)
+          wrapper.unmount()
+        })
+      })
+
+      it('能力在挂载后可用时也会出现（computed 跟随 target）', async () => {
+        await withRequestFullscreen(false, async () => {
+          const wrapper = await mountReady()
+          expect(wrapper.find('[data-testid="playback-fullscreen"]').exists()).toBe(false)
+          // 运行中恢复能力（等价于探测读到的元素变了）→ 重新渲染后按钮出现
+          const proto = Object.getPrototypeOf(document.createElement('div'))
+          Object.defineProperty(proto, 'requestFullscreen', {
+            value: function requestFullscreen() { return Promise.resolve() },
+            configurable: true, writable: true,
+          })
+          const remounted = await mountReady()
+          expect(remounted.find('[data-testid="playback-fullscreen"]').exists()).toBe(true)
+          wrapper.unmount()
+          remounted.unmount()
+        })
+      })
+    })
+
+    it('进入 / 退出全屏不重建场景、不重解析、不重置时间·倍速·相机·偏好', async () => {
+      // 能力必须在**挂载前**就位：探测在渲染时求值，之后才装上的按钮不会出现
+      await withRequestFullscreen(true, async () => {
+        mockWebGL('webgl2')
+        const wrapper = mountPane()
+        await start(wrapper)
+        const api = playback.api
+        const { store } = api
+        store.hasData = true
+        store.time = 42
+        store.speed = 4
+        store.cam = 'follow'
+        const rootEl = wrapper.get('.pb-root').element
+        Object.defineProperty(document, 'exitFullscreen', {
+          configurable: true,
+          value: vi.fn(() => {
+            Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+            document.dispatchEvent(new Event('fullscreenchange'))
+            return Promise.resolve()
+          }),
+        })
+        await nextTick()
+        const initCallsBefore = playback.init.mock.calls.length
+        // start() 之后解析已经发生一次（那是播放器启动，不是全屏造成的）；全屏往返不得再增
+        const loadCallsBefore = api.loadData.mock.calls.length
+        await wrapper.get('[data-testid="playback-fullscreen"]').trigger('click')
+        await nextTick()
+        expect(fullscreenCalls.request).toBe(1)
+        expect(wrapper.get('[data-testid="playback-fullscreen"]').attributes('aria-pressed')).toBe('true')
+        // 会话原封不动
+        expect(playback.init.mock.calls.length).toBe(initCallsBefore)
+        expect(api.reset).not.toHaveBeenCalled()
+        expect(api.loadData.mock.calls.length).toBe(loadCallsBefore)
+        expect(store.time).toBe(42)
+        expect(store.speed).toBe(4)
+        expect(store.cam).toBe('follow')
+        // 退出：同一会话继续，状态依旧
+        await wrapper.get('[data-testid="playback-fullscreen"]').trigger('click')
+        await nextTick()
+        expect(wrapper.get('[data-testid="playback-fullscreen"]').attributes('aria-pressed')).toBe('false')
+        expect(playback.init.mock.calls.length).toBe(initCallsBefore)
+        expect(store.time).toBe(42)
+        expect(store.speed).toBe(4)
+        expect(store.cam).toBe('follow')
+        wrapper.unmount()
+        Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+      })
+    })
+
+    it('外部退出全屏（ESC / 系统手势）后状态同步回 false', async () => {
+      await withRequestFullscreen(true, async () => {
+        mockWebGL('webgl2')
+        const wrapper = mountPane()
+        playback.api.store.hasData = true
+        await nextTick()
+        await wrapper.get('[data-testid="playback-fullscreen"]').trigger('click')
+        await nextTick()
+        expect(wrapper.get('[data-testid="playback-fullscreen"]').attributes('aria-pressed')).toBe('true')
+        // 外部退出：不经过我们的 toggle
+        Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+        document.dispatchEvent(new Event('fullscreenchange'))
+        await nextTick()
+        expect(wrapper.get('[data-testid="playback-fullscreen"]').attributes('aria-pressed')).toBe('false')
+        wrapper.unmount()
+      })
+    })
+  })
+
+  /**
+   * 需求 13：名册**不得**是嵌套滚动盒；行点击 = 跟随 + 选中 + 详情。
+   */
+  describe('名册：无嵌套滚动 + 行点击语义', () => {
+    const roster = {
+      team1: [
+        { eid: 11, team: 1, nick: 'Alpha', tank: 'Kranvagn', hp: 1800, maxHp: 1950, dead: false, followed: false, color: 'c1' },
+        { eid: 12, team: 1, nick: 'Bravo', tank: 'E 75', hp: 0, maxHp: 1900, dead: true, followed: false, color: 'c1' },
+      ],
+      team2: [{ eid: 21, team: 2, nick: 'Enemy', tank: 'T-62A', hp: 900, maxHp: 2000, dead: false, followed: true, color: 'c2' }],
+      unknown: [],
+    }
+
+    it('队面板不得是独立滚动容器（常规名册必须一屏看全）', () => {
+      const src = readFileSync(resolve(here, 'Replay3DPane.vue'), 'utf8')
+      // .team 是视觉面板：不得带 overflow 滚动（旧实现 overflow-y: auto 造成两个小滚动盒）
+      const teamBlock = /\.team \{([\s\S]*?)\}/.exec(src)?.[1] ?? ''
+      expect(teamBlock).not.toContain('overflow')
+      // 溢出只允许有一个归属：车道整体（而不是每个队面板各滚一次）
+      const laneBlock = /\.team-lane \{([\s\S]*?)\}/.exec(src)?.[1] ?? ''
+      expect(laneBlock).not.toContain('overflow')
+    })
+
+    it('点一行只选中并显示共享详情，相机跟随保持独立', async () => {
+      mockWebGL('webgl2')
+      const wrapper = mountPane()
+      const api = playback.api
+      api.store.hasData = true
+      api.store.roster = roster
+      await nextTick()
+      const rows = wrapper.findAll('.team-lane .pl')
+      expect(rows.length).toBe(3)
+      // 详情面初始不存在
+      expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
+      await rows[0].trigger('click')
+      // 跟随（相机动作）
+      expect(api.setFollow).not.toHaveBeenCalled()
+      expect(api.setCam).not.toHaveBeenCalled()
+      // 选中（行状态）
+      expect(rows[0].classes()).toContain('selected')
+      // 详情面出现且内容对应该行
+      const details = wrapper.get('[data-testid="replay3d-details"]')
+      expect(details.get('[data-test="pb-sb-tank"]').text()).toBe('Kranvagn')
+      expect(details.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
+      expect(details.get('[data-test="pb-sb-hp"]').text()).toContain('1800')
+      expect(details.find('[data-test="pb-sb-dealt"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('scene selection opens shared details; Free/Top preserve selection and Follow is explicit', async () => {
+      mockWebGL('webgl2')
+      const wrapper = mountPane()
+      const api = playback.api
+      api.store.hasData = true
+      api.store.roster = roster
+      await nextTick()
+      const onVehicleSelect = playback.init.mock.calls.at(-1)[3].onVehicleSelect
+      onVehicleSelect(11)
+      await nextTick()
+      expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
+      expect(api.setFollow).not.toHaveBeenCalled()
+      for (const mode of ['top', 'free']) {
+        await wrapper.get(`.toolbar [data-value="${mode}"]`).trigger('click')
+        expect(api.setCam).toHaveBeenLastCalledWith(mode)
+        api.store.cam = mode
+        await nextTick()
+        expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
+      }
+      await wrapper.get('.toolbar [data-value="follow"]').trigger('click')
+      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
+      onVehicleSelect(21)
+      await nextTick()
+      expect(api.setFollow).toHaveBeenCalledTimes(1)
+      expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
+      wrapper.unmount()
+    })
+
+    it('phone roster is transient and hiding it preserves data, selection, follow and playback', async () => {
+      layout.compact = true
+      mockWebGL('webgl2')
+      const wrapper = mountPane()
+      await start(wrapper)
+      const api = playback.api
+      api.store.roster = roster
+      api.store.time = 45
+      await nextTick()
+      expect(wrapper.get('.pb-root').classes()).toContain('phone-form')
+      expect(wrapper.get('.roster-surface').isVisible()).toBe(false)
+      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+      await wrapper.get('[data-testid="roster-toggle-compact"]').trigger('click')
+      expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+      expect(wrapper.get('.roster-surface').classes()).toContain('transient')
+      expect(wrapper.get('.roster-surface').isVisible()).toBe(true)
+      expect(wrapper.find('.controls').exists()).toBe(false)
+      await wrapper.get('[data-testid="roster-close"]').trigger('click')
+      expect(wrapper.find('.controls').exists()).toBe(true)
+      playback.init.mock.calls.at(-1)[3].onVehicleSelect(11)
+      await nextTick()
+      await wrapper.get('[data-testid="disp-roster"]').setValue(false)
+      expect(wrapper.find('.roster-surface').exists()).toBe(false)
+      expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
+      expect(api.store.roster).toEqual(roster)
+      expect(api.store.time).toBe(45)
+      expect(api.setFollow).not.toHaveBeenCalled()
+      expect(api.loadData).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+    })
+
+    it('selected 与 followed 是彼此独立的状态（可分别成立）', async () => {
+      mockWebGL('webgl2')
+      const wrapper = mountPane()
+      const api = playback.api
+      api.store.hasData = true
+      api.store.roster = roster
+      await nextTick()
+      const rows = wrapper.findAll('.team-lane .pl')
+      // 敌军队那行本来就是 followed（相机跟随），且未被选中
+      const enemy = rows.find((r) => r.text().includes('Enemy'))
+      expect(enemy.classes()).toContain('followed')
+      expect(enemy.classes()).not.toContain('selected')
+      // 选中另一行：选中变化不改变既有 followed 状态
+      await rows[0].trigger('click')
+      expect(rows[0].classes()).toContain('selected')
+      expect(enemy.classes()).toContain('followed')
+      wrapper.unmount()
+    })
+
+    it('详情面可关闭，且阵亡行显示击毁状态', async () => {
+      mockWebGL('webgl2')
+      const wrapper = mountPane()
+      const api = playback.api
+      api.store.hasData = true
+      api.store.roster = roster
+      await nextTick()
+      const rows = wrapper.findAll('.team-lane .pl')
+      await rows[1].trigger('click')   // Bravo（dead）
+      expect(wrapper.get('[data-test="pb-sb-state"]').text()).toBe('recon.map.playback.state_destroyed')
+      await wrapper.get('[data-test="pb-sb-close"]').trigger('click')
+      expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+  })
+
+  it('H closes an open Display panel and preserves the result for UI restoration', async () => {    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const { store } = playback.api
+    store.banner = { outcome: 'win' }
+    await nextTick()
+    expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_win')
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(false)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
+    await nextTick()
+    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.get('[data-testid="show-all-ui"]').exists()).toBe(true)
+    expect(wrapper.find('.banner').exists()).toBe(false)
+    expect(store.banner).toEqual({ outcome: 'win' })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'H', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.get('[data-testid="display-toggle"]').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_win')
+    wrapper.unmount()
+  })
+
+  it('button hide and H restore share the full UI transition', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    playback.api.store.banner = { outcome: 'lose' }
+    await nextTick()
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="hide-all-ui"]').trigger('click')
+    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    expect(wrapper.find('.banner').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="show-all-ui"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(false)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
+    await nextTick()
+    expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_lose')
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="display-panel"]').element.hidden).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('隐藏全部 UI：HUD / 阵容 / 击杀流 / 标签全部让位，且永远可以恢复（按钮或 H 键）', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const { store } = playback.api
+    store.hasData = true
+    store.killfeed = [{ id: 1, kill: true, killer: 'K', victim: 'V' }]
+    store.roster = {
+      team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T', hp: 1, maxHp: 2, dead: false, followed: false }],
+      team2: [], unknown: [],
+    }
+    await nextTick()
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="hide-all-ui"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('.topbar').exists()).toBe(false)
+    expect(wrapper.find('.killfeed').exists()).toBe(false)
+    expect(wrapper.find('.team-lane').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="display-toggle"]').exists()).toBe(false)
+    // 标签整层关掉（场景侧 enabled:false）
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }))
+
+    // 常驻恢复入口
+    const restore = wrapper.get('[data-testid="show-all-ui"]')
+    await restore.trigger('click')
+    await nextTick()
+    expect(wrapper.find('.topbar').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
+
+    // H 键等效（window 级监听）
+    const pane = wrapper.findComponent(Replay3DPane)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(true)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
+
+    // 输入控件聚焦时不劫持：happy-dom 的合成 KeyboardEvent 不带 target，
+    // 所以直接按真实形状（target = INPUT）驱动同一个处理函数。
+    const keyEvent = (target, key = 'h') => ({ key, target, preventDefault: vi.fn() })
+    const before = wrapper.find('[data-testid="show-all-ui"]').exists()
+    pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'INPUT', isContentEditable: false }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(before)
+    pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'BUTTON', isContentEditable: false }))
+    pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'DIV', isContentEditable: true }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(before)
+    // 普通元素上仍然生效
+    pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'DIV', isContentEditable: false }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(!before)
     wrapper.unmount()
   })
 })

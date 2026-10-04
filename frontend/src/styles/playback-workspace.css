@@ -1,0 +1,232 @@
+/* Playback workspace —— 正方形 Stage 的三段式布局（2D / 3D 同一个协议）。
+
+   为什么单独一份文件而不是往 playback-shared.css 里追加：这里的三条规则都**必须**压过
+   形态文件（playback-pc / playback-tablet / playback-mobile）里同属性的规则——比如 PC 桌面把
+   '.pb-map-stage' 写成 'height: min(100dvh - …, 850px)' 的两列 grid。main.js 在本文件之后
+   才引入 playback-fullscreen-form-contract.css，因此这里的顺序既晚于三套形态、又不影响
+   全屏 HUD 契约。
+
+   权威布局契约：
+     竖屏手机 = 纵向流：HUD / 正方形 Stage / 传输控件 / 详情（inline）/ Team 1 / Team 2，可滚
+     横屏与宽档 = 'Team 1 | 正方形 Stage | Team 2'，传输控件在 Stage 之下
+     名册关闭 = 两侧车道整体不存在，Stage 依然是居中的**正方形**（绝不被拉宽填满）
+     详情     = workspace 顶层浮窗（不由任何一栏承载），手机竖屏退化为纵向流里的内容块 */
+
+/* 名册侧车道的宽度：与 3D（Replay3DPane '--pb-lane-w'）同一档，两边不许各写一个数。 */
+.battle-playback {
+  --pb-lane-w: 240px;
+}
+
+/* ── 正方形 Stage 的边长契约（2D / 3D 同一份） ───────────────────────────── */
+/* 宽度那一半是「中心列可用宽度」，高度那一半是「视口高度减去页面 chrome」。
+   `--pb-square-chrome` = HUD + 传输控件 + 页面顶栏 / 底部 Tab 栏 + 安全区的合计占用，
+   是**形态相关的常量**（下面按 pb-form-* 给三档）。刻意不用 JS 实测：根元素高度本身
+   取决于正方形高度，实测会变成自指（实测 pc 下算出 622px，而真实 row 只有 578px，
+   正方形于是压到传输控件上）。 */
+.battle-playback {
+  /* 纵向可用高度 = workspace 根高度 − HUD − 传输控件；由回放组件的 ResizeObserver 实测写入
+     （见 BattlePlayback 的 writeSquareAvailHeight）。固定常量在不同形态下都不准
+     （实测 pc 桌面下算出 622px，而真实可用只有 578px）。
+     ⚠️ 兜底值必须写进声明本身：只在消费端写 `var(--x, fallback)` 时，一旦这里的 calc 因
+     缺少页面 token 而失效，`--pb-square-side` 会整体变成「无效的计算值」并被丢弃，
+     正方形直接塌成 0×0（实测旧浏览器门禁的 raster 场景）。 */
+  --pb-square-avail-h: calc(100dvh - 170px);
+}
+
+/* ── 三段式：Team 1 | Stage | Team 2 ─────────────────────────────────────── */
+.battle-playback.pb-roster-lanes .pb-main {
+  display: grid;
+  /* 两侧是**定宽列**：`auto` 列会按内容定宽（名册行的 `min-height: var(--hit-min)` 就是它的
+     min-content），并把剩余空间留在自己身上，中心列只能拿到 min-content——实测 722×264 下
+     中心列塌成 76px，正方形被压成一个点。 */
+  grid-template-columns: var(--pb-lane-w) minmax(0, 1fr) var(--pb-lane-w);
+  align-items: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.battle-playback.pb-roster-lanes .pb-team-lane {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+  width: auto;
+  max-inline-size: 34%;
+  min-width: 0;
+  max-height: 100%;
+  overflow-y: auto;
+}
+.battle-playback.pb-roster-lanes .pb-team-lane-left { grid-column: 1; }
+.battle-playback.pb-roster-lanes .pb-team-lane-right { grid-column: 3; }
+/* 中心格必须是块级流：grid 容器的 `auto` 列按**内容**定宽，名册行的
+   `min-height: var(--hit-min)`（44px）就是它的 min-content —— 列因此被压成 76px，
+   正方形跟着缩成一个点（实测 722×264 下 map 76×76）。块级子元素则吃满整列。
+   形态文件（pc 桌面 / 平板）给 `.pb-map-stage` 定了高度与两列 grid，这里一并退回自动高度。
+   名册关闭时也走这一条：Stage 仍然是居中的正方形，不需要那两个列槽。 */
+.battle-playback .pb-main > .pb-map-stage {
+  display: block;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+.battle-playback.pb-roster-lanes .pb-main > .pb-map-stage { grid-column: 2; }
+
+/* 形态文件把 Stage 写成「地图列 + 详情列」的两列 grid（详情列约 300px）。三段式下详情是
+   workspace 顶层的浮窗、名册是两侧车道，这一列既没有内容、又白占宽度——正方形于是只能拿到
+   **第一列的列宽**而不是 Stage 宽（实测平板：列 224px／Stage 510px，正方形被压到 224）。
+   ⚠️ 必须带上 `.pb-form-*`：形态文件的这条规则带 `.pb-form-tablet` 且在媒体查询里，
+   同特异性下后加载的它会把这里的单列覆盖回去。
+   空壳本身不再需要在这里隐藏：`BattlePlayback` 的 `shellInUse` 只在真的有内容要放进这一列时
+   才渲染 shell（名册关闭且未选车 = 不渲染），否则名册关闭时它会顶掉正方形的居中。 */
+.battle-playback.pb-roster-lanes.pb-form-tablet .pb-map-stage,
+.battle-playback.pb-roster-lanes.pb-form-pc .pb-map-stage,
+.battle-playback.pb-roster-lanes.pb-form-mobile .pb-map-stage,
+.battle-playback.pb-roster-lanes .pb-map-stage {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+/* 右侧那一列**没有内容**时，Stage 也必须退回单列：形态文件给它定的是常驻两轨
+   （'地图列 + 详情列'），正方形落在第一轨里就只能贴在 Stage 左缘
+   （实测 1600×900 名册关闭：正方形 720px，左右间隙 147 / 487）。
+   两边的钥匙是同一个布尔：`BattlePlayback` 的 `shellInUse`（三段式、名册关闭、未选车时的
+   竖屏都不往这一列放东西）既决定 shell 渲不渲染，也把 `pb-details-column` 绑在根上。
+   ⚠️ 两列的选择器写法都别改：根上的 `:not(.pb-details-column)` 与形态文件那条
+   `:not(:fullscreen)` 打平时会输给它（同为 0,3,0，形态文件更早但**媒体查询里的同权重规则
+   在实测里先赢**），所以这里显式写成两条；把条件下沉到 shell（`.pb-shell-collapsed`）或
+   用 `display: contents` 都不行——`display: contents` 只让 shell 自己不生成盒子，
+   **不会**让 `340px` 的第二轨消失，正方形依旧被挤在第一轨里（实测）。
+   ⚠️ 只对 pc / tablet 生效：手机形态的 Stage 走 `.pb-main` 自己的三列 / 纵向流，
+   在那里压成单列会让中心列塌成 1px（实测 844×390 名册关闭：map 1×1）。 */
+.battle-playback:not(.pb-details-column).pb-form-pc .pb-map-stage,
+.battle-playback:not(.pb-details-column).pb-form-tablet .pb-map-stage {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+/* 手机横屏非全屏另有一套「工具栏左 / Stage 中 / overlay 右」的三列（见 playback-mobile.css）。
+   三段式下名册自己占住左右两条车道，那一列不再是工具栏的地盘：把 overlay 从流里摘出来
+   锚在 workspace 底部横贯整行，行 1 就只剩「左车道 | Stage | 右车道」三格。
+   同特异性、本文件后加载，因此这里生效。 */
+@media (orientation: landscape) and (height <= 500px) {
+  /* 横屏手机：传输控件是 workspace **底部**的一条横贯行，不占中心列高度；两条车道也都
+     让出这块高度。扣减量与所有形态共用同一个常量，Stage / 名册 / 控件因此互不遮挡。 */
+  .battle-playback.pb-form-mobile:not(:fullscreen) .pb-main {
+    padding-block-end: var(--pb-controls-h, 96px);
+  }
+  .battle-playback.pb-roster-lanes.pb-form-mobile:not(:fullscreen) .pb-main > .pb-mobile-overlay {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+  }
+  .battle-playback.pb-roster-lanes.pb-form-mobile:not(:fullscreen) .pb-team-lane {
+    max-height: none;
+  }
+  /* 三段式下的正方形取「中心列宽 / 中心列高」的较小值。宽度那一半是 100%——车道已经是
+     网格列，再减一次会让正方形无故缩水；高度那一半用实测的纵向可用量（`--pb-square-avail-h`
+     由回放组件的 ResizeObserver 写入，见 BattlePlayback 的 writeSquareAvailHeight）。 */
+  .battle-playback.pb-roster-lanes.pb-form-mobile .pb-main .pb-map {
+    --pb-square-side: min(100%, var(--pb-square-avail-h));
+  }
+  /* 中心列必须是**定宽**：形态文件把它写成 `auto`，而定宽列才不会跟着内容走。 */
+  .battle-playback.pb-roster-lanes.pb-form-mobile:not(:fullscreen) .pb-main {
+    grid-template-columns: minmax(160px, 1fr) var(--pb-lane-w) minmax(160px, 1fr);
+  }
+}
+/* 名册开着但两条车道都空（数据还没到）时不要留一条空槽把 Stage 挤偏。 */
+.battle-playback.pb-roster-lanes .pb-team-lane:empty { display: none; }
+
+/* ── 正方形 Stage ───────────────────────────────────────────────────────── */
+/* 正方形是**几何约束**：`aspect-ratio: 1/1` + 由宽度决定的边长，高度跟着宽度走。
+   边长 = min(
+     中心列放得下的宽度（三段式下扣掉左右车道）,
+     纵向放得下的高度（扣掉 HUD 与 Stage 下方的传输控件）,
+   )
+   只受宽度约束的话，横屏矮视口（740×360）会把正方形撑到比视口还高，传输控件被顶出屏外。
+   `--pb-lane-gutter` 在名册关闭时是 0，所以「让位」不会在两侧留下空洞。
+
+   ⚠️ 边长走**自定义属性**而不是直接写 `inline-size`：形态文件（playback-pc.css 的非全屏
+   桌面、playback-tablet.css 的窄档）用**更高特异性**给 `.pb-map` 定了 `width`/`max-width`
+   （pc 是 `.battle-playback.pb-form-pc:not(:fullscreen) .pb-main .pb-map` = 0,5,0）。
+   同属性硬拼必然输给它们——实测 pc 下 map 变成 1354×1354 的正方形（宽度没被约束）。
+   变量在根上声明后由 `.pb-map` 消费：任何形态规则改的都是同一个量。 */
+/* 边长变量在 `.pb-map` 上解析（`100%` 必须在**元素自己**的包含块里求值，写成根级变量会被
+   当成小视口宽度）。形态文件各自的规则也用同一个表达式，谁胜出都是同一个正方形。 */
+.battle-playback .pb-map-stage > .pb-map,
+.battle-playback .pb-main .pb-map {
+  /* 兜底 `calc(100dvh - 170px)`：`--pb-square-avail-h` 尚未写入（首帧 / 无 ResizeObserver
+     的环境）时，整条 `min(...)` 会因 var() 解析失败被丢弃，正方形随之塌成 0×0。 */
+  --pb-square-side: min(100%, var(--pb-square-avail-h, calc(100dvh - 170px)));
+  aspect-ratio: 1 / 1;
+  block-size: auto;
+  inline-size: min(var(--pb-square-side), 100%);
+  max-inline-size: 100%;
+  margin-inline: auto;
+}
+
+/* ── 手机竖屏：纵向流 ───────────────────────────────────────────────────── */
+/* 竖屏不是「横屏放不下所以退化成堆叠」，而是**另一种完整呈现**：利用纵向空间，超出就滚。
+   所以这里只规定顺序与间距，不规定任何高度上限——Stage 用满列宽，1:1 由 aspect-ratio 保证。 */
+@media (orientation: portrait) and (width < 768px) {
+  .battle-playback.pb-form-mobile .pb-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .battle-playback.pb-form-mobile .pb-main .pb-map {
+    /* 竖屏利用的是**纵向**空间：正方形用满列宽，高度跟着 width 走；页面可以滚动，
+       所以这里不再受「纵向可用高度」约束。 */
+    inline-size: 100%;
+    margin-inline: auto;
+  }
+  .battle-playback.pb-form-mobile .pb-inline-area {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  /* 竖屏的详情是纵向流里的普通内容块，不再是浮窗：位置由文档流决定。 */
+  .battle-playback.pb-form-mobile .pb-sidebar.pb-floating {
+    position: static;
+    z-index: auto;
+    inline-size: 100%;
+    max-block-size: none;
+    box-shadow: none;
+  }
+}
+
+/* ── 详情浮窗（workspace 顶层的可拖动面） ──────────────────────────────── */
+/* 浮窗的 left/top 由 usePlaybackDetailsPlacement 写在元素的内联样式上，这里只提供
+   定位基准与层叠；不给任何 inset 默认值，避免与 JS 的夹紧结果打架。
+   `position: absolute` 必须写在这里而不是只留在 `VehicleDetailsPanel.vue` 的 scoped 样式里：
+   浮窗在生产与几何门禁里都会出现，而「浮窗」这个层级的所有权属于本文件（见文件头契约）。
+   `left/top` 由 JS 写内联样式，任何一条都不受 CSS 源序影响。 */
+.battle-playback .pb-main { position: relative; }
+.battle-playback .pb-main > .pb-sidebar.pb-floating {
+  position: absolute;
+  z-index: var(--pb-z-modal);
+}
+
+/* ── PC 桌面（>=1200px 非全屏）：根 grid 的两列已经放得下三段，不再嵌一层网格 ── */
+/* '.pb-main' 在 pc 形态下是 'grid-column: 2 / grid-row: 2' 的常驻列。把它再变成两列网格，
+   中心列的 '1fr' 会被父网格的 'minmax(0, 1fr)' 间接撑成两倍宽，Stage 因此偏离视口中心。
+   这里让 '.pb-main' 退回块级流，两条车道贴着正方形摆——不是贴着 workspace 两端：
+   正方形居中后两侧的空白比 240px 车道宽得多，贴边会让名册离战场很远（实测左车道右缘
+   468px、正方形左缘 476px 才对得上，而不是贴到 workspace 边缘）。 */
+@media (width >= 1200px) {
+  .battle-playback.pb-form-pc.pb-roster-lanes:not(:fullscreen) .pb-main {
+    display: block;
+    min-width: 0;
+  }
+  .battle-playback.pb-form-pc.pb-roster-lanes:not(:fullscreen) .pb-team-lane {
+    position: absolute;
+    inset-block: 0;
+    max-width: none;
+  }
+  /* 贴着正方形左右缘排（不是贴 workspace 两端：正方形居中后两侧留白远宽于车道）。
+     ⚠️ 这里的偏移表达式尚未收敛：实测两条车道都停在 workspace 左缘并互相重叠。
+     暂时退回「贴 workspace 两端」的保守版（车道的左缘 / 右缘对齐 workspace），
+     下一步再换成由 JS 写入的实测偏移（与 `--pb-square-avail-h` 同一套所有权）。 */
+  .battle-playback.pb-form-pc.pb-roster-lanes:not(:fullscreen) .pb-team-lane-left {
+    inset-inline-start: 0;
+  }
+  .battle-playback.pb-form-pc.pb-roster-lanes:not(:fullscreen) .pb-team-lane-right {
+    inset-inline-end: 0;
+  }
+}
