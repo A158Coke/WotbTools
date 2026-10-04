@@ -549,7 +549,9 @@ WireGuard Keycloak endpoint，永不允许用公网 hostname 代替 Admin path�
 `http://10.20.0.1:8080`（TX1 WireGuard），公开 issuer 与 hostname 不变。
 Business/Keycloak
 PostgreSQL 同样以 host/port logical endpoint 表达：Business PostgreSQL 在 K6B-2B 后 active value
-为 `10.20.0.1:25432`，Keycloak PostgreSQL 仍为 Docker-local。
+为 `10.20.0.1:25432`，Keycloak PostgreSQL 在 K6B-2D 后为 `10.20.0.1:15432`（两者端口不可互换）；
+Keycloak 的 `KC_DB_URL` 仍由 `TX_KEYCLOAK_DB_HOST/PORT` 生成，库名/账号/密码/驱动/连接池不变，
+`10.20.0.1:15432` 是 WG-only 发布（loopback 仅供宿主管理）。
 HoF 回放原件是永久内容寻址文件，挂 TX
 `replay_data` 卷到 `HOF_REPLAY_DIR`（服务端唯一的回放文件存储）。
 TX 与 Yecao 的每个服务都由自己的 workflow 路径规则及手动入口拥有，不再通过 release planner

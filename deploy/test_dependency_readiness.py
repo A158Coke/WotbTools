@@ -226,6 +226,30 @@ class EndpointValidationOrderTests(unittest.TestCase):
             self.run_probe("keycloak", TX_KEYCLOAK_DB_HOST="10.20.0.2", TX_KEYCLOAK_DB_PORT="15432"),
             "TX_KEYCLOAK_DB must be keycloak-postgres:5432",
         )
+        # K6B-2D: the two PostgreSQL placements are not interchangeable, so the Business
+        # PostgreSQL port must be refused for the Keycloak database consumer - and it
+        # must be refused before any container (or the Keycloak container carrying
+        # KC_DB_PASSWORD) is started.
+        self.assert_refused_before_any_container(
+            self.run_probe("keycloak", TX_KEYCLOAK_DB_HOST="10.20.0.1", TX_KEYCLOAK_DB_PORT="25432"),
+            "TX_KEYCLOAK_DB must be keycloak-postgres:5432",
+        )
+        self.assert_refused_before_any_container(
+            self.run_probe("keycloak", TX_KEYCLOAK_DB_HOST="10.20.0.3", TX_KEYCLOAK_DB_PORT="25432"),
+            "TX_KEYCLOAK_DB must be keycloak-postgres:5432",
+        )
+        self.assert_refused_before_any_container(
+            self.run_probe("keycloak", TX_KEYCLOAK_DB_HOST="10.20.0.1", TX_KEYCLOAK_DB_PORT="15433"),
+            "TX_KEYCLOAK_DB must be keycloak-postgres:5432",
+        )
+        self.assert_refused_before_any_container(
+            self.run_probe("keycloak", TX_KEYCLOAK_DB_HOST="", TX_KEYCLOAK_DB_PORT="15432"),
+            "TX_KEYCLOAK_DB must be keycloak-postgres:5432",
+        )
+        self.assert_refused_before_any_container(
+            self.run_probe("keycloak", TX_KEYCLOAK_DB_HOST="keycloak-postgres", TX_KEYCLOAK_DB_PORT="abc"),
+            "TX_KEYCLOAK_DB must be keycloak-postgres:5432",
+        )
 
 
 class SecretLoggingTests(unittest.TestCase):
