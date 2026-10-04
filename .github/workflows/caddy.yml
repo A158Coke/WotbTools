@@ -221,6 +221,10 @@ jobs:
           WOTB_DEPLOY_SERVICE: caddy
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
-          # K6B-1 does not move public ingress consumers yet.
-          CADDY_FRONTEND_UPSTREAM: wotb-frontend:80
+          # K6B-2E: the public frontend upstream is cut over to the reviewed TX1
+          # WireGuard service-plane endpoint. Caddy substitutes this into its
+          # bind-mounted Caddyfile at config load, so the running container's
+          # environment is the active routing value. Caddy -> Keycloak stays
+          # Docker-local until K6B-2F, and the read-only gate expects both.
+          CADDY_FRONTEND_UPSTREAM: 10.20.0.1:8081
           CADDY_KEYCLOAK_UPSTREAM: keycloak:8080
