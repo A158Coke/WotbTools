@@ -38,3 +38,34 @@ jobs:
             docker compose logs --tail 220 ai-service
             echo "== observability logs =="
             docker compose logs --tail 80 alloy prometheus loki grafana
+
+  tx-runtime-logs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Collect TX1 runtime diagnostics (read-only)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 8m
+          script: |
+            set -euo pipefail
+            KC=$(docker ps --format '{{.Names}}' | grep -E 'keycloak' | head -n1)
+            echo "== keycloak container: $KC =="
+            # 2.1.0 Web QQ 取证（docs/auth/web-qq-diagnostics.md §3）：全部只读。
+            echo "== container identity / args / restarts =="
+            docker inspect -f 'Cmd: {{.Config.Cmd}}' "$KC"
+            docker inspect -f 'Image: {{.Config.Image}}' "$KC"
+            docker inspect -f 'StartedAt={{.State.StartedAt}} RestartCount={{.RestartCount}} Status={{.State.Status}}' "$KC"
+            docker images --no-trunc --format '{{.ID}} {{.CreatedAt}} {{.Repository}}:{{.Tag}}' | grep keycloak || true
+            echo "== auth-flow error timeline（cookie_not_found / verify login action / expired_code / IdP failure）=="
+            docker logs --timestamps "$KC" 2>&1 | grep -E 'cookie_not_found|Failed to verify login action|expired_code|identity_provider_login_failure' | tail -80 || true
+            echo "== restart / cluster noise timeline（JGroups / DB 连接 / administrator command）=="
+            docker logs --timestamps "$KC" 2>&1 | grep -E 'JGroups|connection closed|administrator command' | tail -40 || true
+            echo "== live Set-Cookie attributes（从 TX 本机视角复核 §3.1）=="
+            curl -sD - -o /dev/null --max-time 20 'https://auth.wotbtools.com/realms/wotbtools/protocol/openid-connect/auth?client_id=wotbtools-web&redirect_uri=https%3A%2F%2Fwotbtools.com%2F&response_type=code&scope=openid&state=diag' | grep -i 'set-cookie' || true
+            echo "== compose projects =="
+            docker compose ls || true
