@@ -21,7 +21,7 @@ const connectivityState = vi.hoisted(() => ({ state: null }))
 vi.mock('../composables/useConnectivity.js', async () => {
   const { ref } = await import('vue')
   connectivityState.state = ref('online')
-  return { useConnectivity: () => ({ connectivity: connectivityState.state }) }
+  return { useConnectivity: () => ({ connectivity: connectivityState.state, isSettled: () => true, whenSettled: () => Promise.resolve() }) }
 })
 
 // 认证替身（main 侧：退出登录会使在途投影失效，重新登录后重建）。
