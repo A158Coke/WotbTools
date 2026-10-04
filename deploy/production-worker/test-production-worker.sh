@@ -147,6 +147,33 @@ except Exception:
 PY
 }
 
+# Authentication is derived from the Docker configuration actually in use, exactly as
+# the registry sees it: a config whose auth entry is not accepted for pulls fails.
+current_auth() {
+  python3 - "${DOCKER_CONFIG:-}" <<'PY'
+import json, os, sys
+path = os.path.join(sys.argv[1], "config.json")
+try:
+    with open(path, encoding="utf-8") as handle:
+        auths = json.load(handle).get("auths", {})
+    entry = next(iter(auths.values()), {})
+    print(entry.get("auth", "") if isinstance(entry, dict) else "")
+except Exception:
+    print("")
+PY
+}
+
+auth_accepted() {
+  local present
+  present="$(current_auth)"
+  [[ -n "$present" ]] || return 1
+  if [[ -f "$state/valid_auth" ]]; then
+    grep -qxF -- "$present" "$state/valid_auth"
+  else
+    [[ "$present" == "$STUB_AUTH" ]]
+  fi
+}
+
 case "${1:-}" in
   compose)
     case "${2:-}" in
@@ -171,12 +198,12 @@ case "${1:-}" in
   manifest)
     echo "manifest $*" >> "$log"
     [[ "${2:-}" == inspect ]] || exit 1
-    [[ -f "$state/auth" ]] || exit 1
+    auth_accepted || exit 1
     [[ "${STUB_MANIFEST_FAILS:-false}" == true ]] && exit 1
     echo '{"schemaVersion":2}'; exit 0 ;;
   pull)
     echo "pull $*" >> "$log"
-    [[ -f "$state/auth" ]] || exit 1
+    auth_accepted || exit 1
     [[ "${STUB_PULL_FAILS:-false}" == true ]] && exit 1
     exit 0 ;;
   login)
@@ -187,9 +214,11 @@ case "${1:-}" in
     [[ "$supplied" == "$STUB_PASSWORD" ]] || { echo 'wrong password on stdin' >&2; exit 1; }
     [[ "${STUB_LOGIN_FAILS:-false}" == true ]] && { echo 'unauthorized' >&2; exit 1; }
     mkdir -p "${DOCKER_CONFIG:?}"
-    printf '{"auths":{"%s":{"auth":"fixture"}}}\n' "${STUB_REGISTRY:?}" > "$DOCKER_CONFIG/config.json"
+    # The installed document carries the credential it was given, exactly like the real
+    # CLI: authentication later depends on that entry being accepted for pulls.
+    entry="$(printf '%s:%s' "${STUB_USERNAME:-fixture-user}" "$supplied" | base64 | tr -d '\n')"
+    printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${STUB_REGISTRY:?}" "$entry" > "$DOCKER_CONFIG/config.json"
     chmod 600 "$DOCKER_CONFIG/config.json"
-    : > "$state/auth"
     exit 0 ;;
 esac
 exit 1
@@ -273,6 +302,13 @@ export TCR_REGISTRY="$REGISTRY"
 export TCR_NAMESPACE="$NAMESPACE"
 export TCR_USERNAME="$FAKE_USERNAME"
 export TCR_PASSWORD="$FAKE_PASSWORD"
+export STUB_USERNAME="$FAKE_USERNAME"
+# The auth entry the fixture's "current GitHub secret" produces, and the default
+# accepted set when a case does not pin `state/valid_auth` itself.
+STUB_AUTH="$(printf '%s:%s' "$FAKE_USERNAME" "$FAKE_PASSWORD" | base64 | tr -d '\n')"
+export STUB_AUTH
+# Reviewed generation used by every case that is not specifically about rotation.
+export TCR_CREDENTIAL_VERSION=2
 
 # A reviewed worker always finds Periphery healthy: individual cases break it.
 : > "$state/unit_active"
@@ -360,7 +396,8 @@ pass 'the TX2 host lock must already exist (owned by the deploy owner)'
 
 ## --- D. clean bootstrap -------------------------------------------------------
 
-rm -f "$state/compose_present" "$state/auth" "$daemon_config"
+rm -f "$state/compose_present" "$state/auth" "$daemon_config" "$root_config" \
+  "$host/var/lib/wotbtools-production-worker/tcr-credential-version" "$state/valid_auth"
 : > "$state/restarts"
 expect_ok 'a clean worker bootstrap' "$work/bootstrap.log" reconcile_cmd
 grep -q 'docker-compose-v2: PASS' "$work/bootstrap.log" || fail 'bootstrap must prove Compose'
@@ -423,65 +460,164 @@ write_daemon '{"registry-mirrors":["https://mirror.ccs.tencentyun.com"]}'
 expect_ok 'a supported daemon config' "$work/mirror-ok.log" install_cmd
 pass 'daemon.json is strictly validated (malformed and unsupported settings refuse)'
 
-## --- H. credential model -----------------------------------------------------
+## --- H. credential model and generation convergence --------------------------
+#
+# The applied credential generation is authoritative: a reviewed version change MUST
+# converge the host even while the previous credential still authenticates. These are
+# the regression fixtures for the rotation blocker.
 
 expect_fail 'a missing TCR username' 'TCR_USERNAME is required' install_cmd TCR_USERNAME=
 expect_fail 'a missing TCR password' 'TCR_PASSWORD is required' install_cmd TCR_PASSWORD=
 expect_fail 'an unreviewed registry' 'must be a Tencent TCR host' install_cmd TCR_REGISTRY=registry.example.invalid
 expect_fail 'a missing registry variable' 'TCR_REGISTRY is required' install_cmd TCR_REGISTRY=
-# A rotate is only attempted when the existing credential no longer authenticates:
-# with a working credential the reconcile must leave it alone (idempotency).
-rm -f "$state/auth"
-expect_fail 'a rejected registry login' 'Registry authentication failed' install_cmd STUB_LOGIN_FAILS=true
-rm -f "$state/auth"
-expect_ok 'a restored credential' "$work/credential-restore.log" install_cmd
+expect_fail 'a missing credential version' 'TCR_CREDENTIAL_VERSION must be a reviewed positive integer' \
+  install_cmd TCR_CREDENTIAL_VERSION=
+expect_fail 'a malformed credential version' 'TCR_CREDENTIAL_VERSION must be a reviewed positive integer' \
+  install_cmd TCR_CREDENTIAL_VERSION=../etc
+expect_fail 'a zero credential version' 'TCR_CREDENTIAL_VERSION must be a reviewed positive integer' \
+  install_cmd TCR_CREDENTIAL_VERSION=0
+pass 'credential version is validated (missing, malformed and zero refused)'
 
-before_digest="$(sha256sum "$root_config" | cut -d' ' -f1)"
-expect_ok 'an unchanged secret' "$work/same-secret.log" install_cmd
-[[ "$(sha256sum "$root_config" | cut -d' ' -f1)" == "$before_digest" ]] \
-  || fail 'an unchanged secret must not rewrite the credential'
+# Fresh host: provisioning records generation 2.
+marker="$host/var/lib/wotbtools-production-worker/tcr-credential-version"
+rm -f "$root_config" "$marker" "$state/valid_auth"
+login_count_before="$(grep -c '^login ' "$state/docker.log" || true)"
+expect_ok 'provisioning generation 2' "$work/gen2.log" install_cmd TCR_CREDENTIAL_VERSION=2
+[[ "$(cat "$marker")" == 2 ]] || fail 'the applied generation must be recorded after a successful login'
+[[ "$(grep -c '^login ' "$state/docker.log" || true)" -gt "$login_count_before" ]] \
+  || fail 'a fresh host must log in'
+pass 'fresh host provisions and records the reviewed generation'
 
+# Unchanged generation: no login, no rewrite, still ready.
+digest_before="$(sha256sum "$root_config" | cut -d' ' -f1)"
+login_count_before="$(grep -c '^login ' "$state/docker.log" || true)"
+expect_ok 'an unchanged generation' "$work/gen2-again.log" install_cmd TCR_CREDENTIAL_VERSION=2
+grep -q 'generation 2 already applied and authenticating (no rewrite)' "$work/gen2-again.log" \
+  || fail 'an unchanged generation must report no rewrite'
+[[ "$(sha256sum "$root_config" | cut -d' ' -f1)" == "$digest_before" ]] \
+  || fail 'an unchanged generation must not rewrite the credential'
+[[ "$(grep -c '^login ' "$state/docker.log" || true)" == "$login_count_before" ]] \
+  || fail 'an unchanged generation must not log in again'
+[[ "$(cat "$marker")" == 2 ]] || fail 'an unchanged generation must keep the marker'
+pass 'unchanged generation: no login, no rewrite, ready'
+
+# ROTATION WHILE THE OLD CREDENTIAL REMAINS VALID (the blocker regression): the GitHub
+# secret becomes a NEW value while the old one is still accepted for pulls, so
+# authentication alone would keep the host on generation 2. The reviewed version must
+# force the login and install the newly reviewed secret.
+old_auth="$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["auths"].values()))["auth"])' "$root_config")"
+NEW_PASSWORD="fixture-rotated-not-a-real-password"
+export TCR_PASSWORD="$NEW_PASSWORD"
+export STUB_PASSWORD="$NEW_PASSWORD"
+new_auth="$(python3 -c 'import base64,sys; print(base64.b64encode(("%s:%s" % (sys.argv[1], sys.argv[2])).encode()).decode())' "$FAKE_USERNAME" "$NEW_PASSWORD")"
+printf '%s\n%s\n' "$old_auth" "$new_auth" > "$state/valid_auth"
+expect_ok 'rotation while the old credential still authenticates' "$work/rotate-3.log" \
+  reconcile_cmd TCR_CREDENTIAL_VERSION=3
+grep -q 'applying generation 3 for ' "$work/rotate-3.log" || fail 'a version change must force a login'
+[[ "$(cat "$marker")" == 3 ]] || fail 'a successful rotation must advance the marker to 3'
+new_digest="$(sha256sum "$root_config" | cut -d' ' -f1)"
+[[ "$new_digest" != "$digest_before" ]] || fail 'a version change must replace the root credential'
+[[ "$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["auths"].values()))["auth"])' "$root_config")" == "$new_auth" ]] \
+  || fail 'the installed credential must be the currently reviewed secret'
+[[ "$(tail -n1 "$work/rotate-3.log")" == 'TX2_PRODUCTION_WORKER_READY' ]] || fail 'a rotation must end ready'
+pass 'stale marker with a working credential rotates (blocker regression)'
+
+# Second reconcile after the successful rotation: converged, no rewrite.
+expect_ok 'after rotation' "$work/after-rotate.log" install_cmd TCR_CREDENTIAL_VERSION=3
+grep -q 'generation 3 already applied and authenticating (no rewrite)' "$work/after-rotate.log" \
+  || fail 'a converged generation must not rotate again'
+[[ "$(sha256sum "$root_config" | cut -d' ' -f1)" == "$new_digest" ]] \
+  || fail 'a converged generation must not rewrite the credential'
+pass 'second reconcile after rotation: no rewrite, ready'
+
+# Failed rotated login: readiness is false and the marker must not advance.
+expect_fail 'a failed rotated login' 'Registry authentication failed' \
+  install_cmd TCR_CREDENTIAL_VERSION=4 STUB_LOGIN_FAILS=true
+[[ "$(cat "$marker")" == 3 ]] || fail 'a failed login must not advance the marker'
+[[ "$(sha256sum "$root_config" | cut -d' ' -f1)" == "$new_digest" ]] \
+  || fail 'a failed login must leave the previous credential in place'
+rm -f "$state/valid_auth"
+pass 'failed rotated login: marker stays, credential unchanged'
+
+# Failed post-install verification: the login succeeds with a credential the registry
+# does not (yet) accept for pulls. The run must fail, restore the previous credential
+# byte for byte, and keep the marker on the old generation.
+THIRD_PASSWORD="fixture-unaccepted-not-a-real-password"
+third_auth="$(python3 -c 'import base64,sys; print(base64.b64encode(("%s:%s" % (sys.argv[1], sys.argv[2])).encode()).decode())' "$FAKE_USERNAME" "$THIRD_PASSWORD")"
+printf '%s\n' "$new_auth" > "$state/valid_auth"
+expect_fail 'a failed post-install verification' 'cannot resolve the private production image' \
+  install_cmd TCR_CREDENTIAL_VERSION=5 TCR_PASSWORD="$THIRD_PASSWORD" STUB_PASSWORD="$THIRD_PASSWORD"
+[[ "$(cat "$marker")" == 3 ]] || fail 'a failed post-install verification must not advance the marker'
+[[ "$(sha256sum "$root_config" | cut -d' ' -f1)" == "$new_digest" ]] \
+  || fail 'the previous credential must be restored after a failed post-install verification'
+if grep -qF -- "$third_auth" "$root_config"; then
+  fail 'the unverified credential must never remain installed'
+fi
+[[ -z "$(find "$host/var/lib/wotbtools-production-worker" -name 'tcr-credential-backup' 2>/dev/null)" ]] \
+  || fail 'the credential backup must not be left behind'
+rm -f "$state/valid_auth"
+pass 'failed post-install verification: rollback, marker stays'
+
+# Verify refuses a valid credential whose recorded generation is behind.
+printf '%s' 2 > "$marker"
+chmod 600 "$marker"
+expect_fail 'a stale generation marker' 'not the reviewed generation 3' verify_cmd TCR_CREDENTIAL_VERSION=3
+printf '%s\n' 3 > "$marker"
+chmod 600 "$marker"
+pass 'a working credential with a stale marker is never reported ready'
+
+# An unsafe existing credential is an incident, and is never silently replaced.
 chmod 644 "$root_config"
-expect_fail 'a world-readable credential' 'must be mode 600' install_cmd
+expect_fail 'a world-readable credential' 'must be mode 600' install_cmd TCR_CREDENTIAL_VERSION=6
 chmod 600 "$root_config"
 chmod 755 "$host/root/.docker"
-expect_fail 'an unsafe credential directory' 'must be mode 700' verify_cmd
+expect_fail 'an unsafe credential directory' 'must be mode 700' verify_cmd TCR_CREDENTIAL_VERSION=3
 chmod 700 "$host/root/.docker"
 printf '{"auths":{"%s":{"auth":"fixture"},"other.example.com":{"auth":"x"}}}\n' "$REGISTRY" > "$root_config"
 chmod 600 "$root_config"
-expect_fail 'a credential for an unmanaged registry' 'unmanaged registries' install_cmd
+expect_fail 'a credential for an unmanaged registry' 'unmanaged registries' install_cmd TCR_CREDENTIAL_VERSION=6
 printf '{"auths":{"%s":{"auth":"fixture"}},"credsStore":"desktop"}\n' "$REGISTRY" > "$root_config"
 chmod 600 "$root_config"
-expect_fail 'an unsupported credential store' 'unsupported root Docker configuration keys' install_cmd
-printf '{"auths":{"%s":{"auth":"fixture"}}}\n' "$REGISTRY" > "$root_config"
-chmod 600 "$root_config"
-pass 'credential model (missing secrets, unsafe modes, foreign registries refused)'
+expect_fail 'an unsupported credential store' 'unsupported root Docker configuration keys' install_cmd TCR_CREDENTIAL_VERSION=6
+pass 'unsafe credential state is refused, never silently replaced'
 
 ## --- I. rotation, cleanup and leakage ----------------------------------------
 
-rm -f "$state/auth"
-expect_ok 'a rotation run' "$work/rotate.log" install_cmd
-grep -q 'provisioning the root Docker credential' "$work/rotate.log" || fail 'a missing credential must be provisioned'
-[[ -z "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmp.*' -newer "$work/second.log" -type d 2>/dev/null | head -n1)" ]] \
-  || true
-for leaked in "$FAKE_PASSWORD" "$FAKE_USERNAME"; do
-  if grep -RqF -- "$leaked" "$work"/*.log 2>/dev/null; then
-    fail "the credential leaked into reconcile output: $leaked"
-  fi
+rm -f "$root_config" "$marker"
+# The currently reviewed secret is accepted for pulls, so a fresh provisioning is
+# verifiable exactly as it is in production.
+printf '%s\n' "$new_auth" > "$state/valid_auth"
+expect_ok 'a provisioning run' "$work/provision.log" install_cmd TCR_CREDENTIAL_VERSION=6
+grep -q 'provisioning generation 6' "$work/provision.log" || fail 'a missing credential must be provisioned'
+[[ "$(cat "$marker")" == 6 ]] || fail 'provisioning must record the generation'
+for leaked in "$FAKE_PASSWORD" "$FAKE_USERNAME" "$(cat "$root_config")"; do
+  for log in "$work"/*.log; do
+    if grep -qF -- "$leaked" "$log" 2>/dev/null; then
+      fail "credential material leaked into reconcile output: $log"
+    fi
+  done
 done
 grep -q 'login .*--password-stdin' "$state/docker.log" || fail 'the login must use --password-stdin'
 if grep -qE 'login [^|]*--password[^-]' "$state/docker.log"; then
   fail 'the password must never be passed as a command argument'
 fi
-pass 'rotation works and no credential reaches any output'
+[[ -z "$(find "$host/var/lib/wotbtools-production-worker" -type f ! -name 'containers.before' ! -name 'tcr-credential-version' 2>/dev/null)" ]] \
+  || fail 'only the container snapshot and the generation marker may persist in the state root'
+pass 'rotation works, no credential material persists outside the root Docker config'
+
+# Every later section verifies the host in its converged state, so the reviewed
+# generation stays at the one the host actually applied.
+export TCR_CREDENTIAL_VERSION=6
 
 ## --- J. private image access -------------------------------------------------
 
 expect_fail 'a failed private manifest' 'cannot resolve the private production image' verify_cmd STUB_MANIFEST_FAILS=true
 expect_fail 'a failed private pull' 'cannot pull the private production image' verify_cmd STUB_PULL_FAILS=true
-rm -f "$state/auth"
+# A credential that the registry no longer accepts: the root context is present but
+# unauthenticated, so readiness must be refused.
+printf 'not-the-accepted-entry\n' > "$state/valid_auth"
 expect_fail 'an unauthenticated root context' 'cannot resolve the private production image' verify_cmd
-: > "$state/auth"
+printf '%s\n' "$new_auth" > "$state/valid_auth"
 expect_ok 'a working private image path' "$work/verify.log" verify_cmd
 grep -qxF 'private-image-pull: PASS' "$work/verify.log" || fail 'the pull proof must be reported'
 pass 'authenticated private image access (manifest + pull), unauthenticated refused'

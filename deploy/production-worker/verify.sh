@@ -36,7 +36,9 @@ for command_name in "$docker_bin" "$systemctl_bin" ss python3 stat "$wg_bin" "$i
 done
 
 # The verification may not assume a credential is present in its environment: it
-# re-proves what the host already holds. Only the registry variables are needed.
+# re-proves what the host already holds. The reviewed generation and the registry
+# variables are needed; the password is not.
+require_credential_version "${TCR_CREDENTIAL_VERSION:-}"
 validate_registry_prefix "${TCR_REGISTRY:?TCR_REGISTRY is required}" "${TCR_NAMESPACE:?TCR_NAMESPACE is required}"
 image_ref="$registry_prefix/$WORKER_VERIFY_IMAGE_REPOSITORY:$WORKER_VERIFY_IMAGE_TAG"
 
@@ -96,6 +98,12 @@ auths = document.get("auths", {})
 if not isinstance(auths, dict) or sorted(set(auths) - {registry}):
     raise SystemExit(1)
 PY
+# The applied generation is authoritative: a credential that still works must not keep
+# the host on an older generation than the reviewed one, so readiness requires the
+# recorded generation to match the desired one exactly.
+applied_version="$(applied_credential_version)"
+[[ "$applied_version" == "$credential_version" ]] \
+  || fail "The root Docker credential generation is ${applied_version:-none}, not the reviewed generation $credential_version."
 pass tcr-root-credential
 
 ## 5. Authenticated private image access --------------------------------------

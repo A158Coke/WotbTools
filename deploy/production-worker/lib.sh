@@ -35,6 +35,44 @@ worker_state_dir="${WORKER_STATE_DIR:-/var/lib/wotbtools-production-worker}"
 
 docker_daemon_config_path() { printf '%s/daemon.json' "$docker_daemon_dir"; }
 root_docker_config_path() { printf '%s/config.json' "$root_docker_config_dir"; }
+credential_version_path() { printf '%s/tcr-credential-version' "$worker_state_dir"; }
+
+## --- credential generation contract -------------------------------------------
+#
+# The applied credential generation is authoritative for desired-state convergence.
+# `TCR_CREDENTIAL_VERSION` is a reviewed, NON-secret positive integer in the protected
+# environment; the host records the generation it applied under its state root. A new
+# desired version must force a login even while the previous credential still
+# authenticates, so a rotation can never be silently ignored: authentication is an
+# additional functional verification, never the trigger.
+#
+# The password itself is never hashed, copied or recorded anywhere.
+
+# require_credential_version <value> - fail closed on a missing or malformed version.
+require_credential_version() {
+  local value="$1"
+  [[ "$value" =~ ^[1-9][0-9]{0,8}$ ]] \
+    || fail 'TCR_CREDENTIAL_VERSION must be a reviewed positive integer (1-9 digits).'
+  credential_version="$value"
+}
+
+# applied_credential_version - the generation this host recorded, or empty.
+applied_credential_version() {
+  local path recorded
+  path="$(credential_version_path)"
+  [[ -f "$path" && ! -L "$path" ]] || return 0
+  recorded="$(cat "$path")"
+  recorded="${recorded//[[:space:]]/}"
+  [[ "$recorded" =~ ^[1-9][0-9]{0,8}$ ]] || return 0
+  printf '%s' "$recorded"
+}
+
+# record_credential_version <value> - atomically advance the applied generation.
+record_credential_version() {
+  local value="$1"
+  install -d -m 700 -o root -g root "$worker_state_dir"
+  printf '%s\n' "$value" | atomic_write "$(credential_version_path)" 600
+}
 
 ## --- target profile -----------------------------------------------------------
 

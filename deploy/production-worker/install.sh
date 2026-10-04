@@ -181,20 +181,17 @@ pass docker-hub-mirror
 
 [[ -n "${TCR_USERNAME:-}" ]] || fail 'TCR_USERNAME is required to authenticate the root Docker context.'
 [[ -n "${TCR_PASSWORD:-}" ]] || fail 'TCR_PASSWORD is required to authenticate the root Docker context.'
+require_credential_version "${TCR_CREDENTIAL_VERSION:-}"
 validate_registry_prefix "${TCR_REGISTRY:?TCR_REGISTRY is required}" "${TCR_NAMESPACE:?TCR_NAMESPACE is required}"
 image_ref="$registry_prefix/$WORKER_VERIFY_IMAGE_REPOSITORY:$WORKER_VERIFY_IMAGE_TAG"
+applied_version="$(applied_credential_version)"
 
-root_config="$(root_docker_config_path)"
-if [[ -e "$root_config" || -L "$root_config" ]]; then
-  [[ -f "$root_config" && ! -L "$root_config" ]] \
-    || fail "The root Docker configuration is not a real file: $root_config"
-  # The credential file is secret material: prove nobody else can read it, and
-  # refuse a file that carries credentials this owner does not manage.
-  [[ "$(stat -c '%a' "$root_config")" == 600 ]] \
-    || fail "The root Docker configuration must be mode 600 (found $(stat -c '%a' "$root_config"))."
-  [[ "$(stat -c '%U:%G' "$root_config")" == root:root ]] \
-    || fail "The root Docker configuration must be owned by root:root."
-  python3 - "$root_config" "${TCR_REGISTRY:?}" <<'PY' || fail "Unsupported root Docker credential state: $root_config"
+# The credential file is secret material: prove nobody else can read it, and refuse a
+# file that carries credentials this owner does not manage. An unsafe *existing* file is
+# an incident, not drift, so it stops the run instead of being silently replaced.
+credential_file_safe() {
+  local path="$1"
+  python3 - "$path" "${TCR_REGISTRY:?}" <<'PY'
 import json, sys
 
 path, registry = sys.argv[1], sys.argv[2]
@@ -214,22 +211,45 @@ if foreign:
     print(f"the root Docker store holds credentials for unmanaged registries: {foreign}", file=sys.stderr)
     raise SystemExit(1)
 PY
+}
+
+root_config="$(root_docker_config_path)"
+have_credential=0
+if [[ -e "$root_config" || -L "$root_config" ]]; then
+  have_credential=1
+  [[ -f "$root_config" && ! -L "$root_config" ]] \
+    || fail "The root Docker configuration is not a real file: $root_config"
+  [[ "$(stat -c '%a' "$root_config")" == 600 ]] \
+    || fail "The root Docker configuration must be mode 600 (found $(stat -c '%a' "$root_config"))."
+  [[ "$(stat -c '%U:%G' "$root_config")" == root:root ]] \
+    || fail "The root Docker configuration must be owned by root:root."
+  credential_file_safe "$root_config" || fail "Unsupported root Docker credential state: $root_config"
 fi
 
-# Verify what is already there before rotating it: an unchanged secret must not
-# rewrite the host state (idempotency), and a changed secret must update it.
 authenticated_image_access() {
   DOCKER_CONFIG="$root_docker_config_dir" \
     "$docker_bin" manifest inspect "$image_ref" >/dev/null 2>&1
 }
 
-if authenticated_image_access; then
-  echo "tcr-root-auth: existing root credential still authenticates (no rewrite)"
+# Desired-state convergence is driven by the reviewed generation, not by whether the
+# current credential happens to work: during a rotation the old credential stays valid
+# for a while, so authentication alone would silently keep the host on the old secret.
+if (( have_credential )) && [[ "$applied_version" == "$credential_version" ]] \
+    && authenticated_image_access; then
+  echo "tcr-root-auth: generation $credential_version already applied and authenticating (no rewrite)"
 else
-  echo "tcr-root-auth: provisioning the root Docker credential for $TCR_REGISTRY"
+  if (( have_credential )); then
+    echo "tcr-root-auth: applying generation $credential_version for $TCR_REGISTRY (applied generation: ${applied_version:-none})"
+  else
+    echo "tcr-root-auth: provisioning generation $credential_version for $TCR_REGISTRY"
+  fi
   credential_dir="$(mktemp -d)"
-  cleanup_credential_dir() { rm -rf -- "$credential_dir"; }
-  trap cleanup_credential_dir EXIT
+  backup_config="$worker_state_dir/tcr-credential-backup"
+  cleanup_credential_material() {
+    rm -rf -- "$credential_dir"
+    rm -f -- "$backup_config"
+  }
+  trap cleanup_credential_material EXIT
   # The password reaches docker only through stdin: it is never an argument.
   printf '%s' "$TCR_PASSWORD" \
     | DOCKER_CONFIG="$credential_dir" "$docker_bin" login "$TCR_REGISTRY" \
@@ -237,16 +257,40 @@ else
     || fail "Registry authentication failed for $TCR_REGISTRY."
   [[ -f "$credential_dir/config.json" && ! -L "$credential_dir/config.json" ]] \
     || fail 'Registry authentication produced no Docker credential file.'
+  # Validate the produced document before it can become the host credential.
+  credential_file_safe "$credential_dir/config.json" \
+    || fail 'Registry authentication produced an unsupported Docker credential file.'
   install -d -m 700 -o root -g root "$root_docker_config_dir"
+  install -d -m 700 -o root -g root "$worker_state_dir"
+  if (( have_credential )); then
+    atomic_write "$backup_config" 600 < "$root_config"
+  fi
   atomic_write "$root_config" 600 < "$credential_dir/config.json"
-  cleanup_credential_dir
+  rm -rf -- "$credential_dir"
+  # The generation marker advances only after the installed credential is proven. A
+  # failure here restores the previous credential and leaves the marker untouched, so
+  # the host never reports ready for a generation it has not verified.
+  if ! authenticated_image_access; then
+    if (( have_credential )); then
+      atomic_write "$root_config" 600 < "$backup_config" \
+        || fail 'Failed to restore the previous root Docker credential.'
+      rm -f -- "$backup_config"
+    else
+      rm -f -- "$root_config"
+    fi
+    fail "The newly installed root Docker credential cannot resolve the private production image $image_ref."
+  fi
+  rm -f -- "$backup_config"
   trap - EXIT
+  record_credential_version "$credential_version"
 fi
 
 [[ "$(stat -c '%a' "$root_config")" == 600 ]] \
   || fail "The root Docker configuration must be mode 600 after reconciliation."
 [[ "$(stat -c '%U:%G' "$root_config")" == root:root ]] \
   || fail "The root Docker configuration must be owned by root:root after reconciliation."
+[[ "$(applied_credential_version)" == "$credential_version" ]] \
+  || fail "The applied credential generation was not recorded as $credential_version."
 authenticated_image_access \
   || fail "The root Docker context cannot resolve the private production image $image_ref."
 pass tcr-root-auth
