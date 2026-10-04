@@ -221,12 +221,8 @@ jobs:
           WOTB_DEPLOY_SERVICE: caddy
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
-          # K6B production baseline: both public ingress upstreams are the reviewed TX1
-          # WireGuard service-plane endpoints. Caddy substitutes these into its
-          # bind-mounted Caddyfile at config load, so the running container's environment
-          # is the active routing value. K6B-2 is COMPLETE, so no private Docker-local
-          # placement remains here and the read-only gate expects the same values. This is
-          # only Caddy's private upstream: Keycloak's public hostname, issuer and TLS
-          # termination are unchanged.
-          CADDY_FRONTEND_UPSTREAM: 10.20.0.1:8081
+          # K7C public cutover: only the frontend ingress placement moves to the
+          # Komodo-owned TX2 shadow over WireGuard. Keycloak remains on TX1.
+          # Reverting this PR restores CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081.
+          CADDY_FRONTEND_UPSTREAM: 10.20.0.3:8081
           CADDY_KEYCLOAK_UPSTREAM: 10.20.0.1:8080

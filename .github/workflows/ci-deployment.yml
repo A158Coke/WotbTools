@@ -38,7 +38,8 @@ jobs:
           deploy/tx/keycloak-postgres-backup.sh deploy/test-keycloak-postgres-backup.sh
           deploy/tofu-local-state-backup.sh
           deploy/tx/runtime-check.sh deploy/tx/runtime-check-lib.sh
-          deploy/tx/publish-loaded-image-to-tcr.sh
+          deploy/tx/publish-loaded-image-to-tcr.sh deploy/tx/k7c-preflight.sh
+          deploy/tx/k7c-sync-runtime-content.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
@@ -58,10 +59,6 @@ jobs:
           mkdir -p "$TX_RUNTIME_ROOT"
           bash scripts/ci/run-with-network-retry.sh "Pull Caddy image" docker pull caddy:2.10.2-alpine
           bash deploy/tx/validate-caddy-config.sh deploy/tx
-          # Two independent negative fixtures: one that the inventory must reject, and
-          # one that passes the inventory but that Caddy itself cannot adapt. Both
-          # assert the rejection reason, so neither can pass by matching an unrelated
-          # error (which is what made the log ambiguous before).
           broken="$RUNNER_TEMP/broken-caddy"
           rm -rf -- "$broken"
           cp -a deploy/tx "$broken"
@@ -71,7 +68,6 @@ jobs:
             exit 1
           fi
           grep -q 'must reverse_proxy {$CADDY_FRONTEND_UPSTREAM}' "$RUNNER_TEMP/broken-caddy.log" || {
-            echo 'the invalid Caddyfile was rejected for an unexpected reason:' >&2
             cat "$RUNNER_TEMP/broken-caddy.log" >&2
             exit 1
           }
@@ -79,16 +75,11 @@ jobs:
           rm -rf -- "$not_adaptable"
           cp -a deploy/tx "$not_adaptable"
           sed -i '/^wotbtools\.com {$/a \\tthis-is-not-a-caddy-directive' "$not_adaptable/Caddyfile"
-          grep -q 'this-is-not-a-caddy-directive' "$not_adaptable/Caddyfile" || {
-            echo 'the not-adaptable Caddyfile fixture was not written as expected' >&2
-            exit 1
-          }
           if bash deploy/tx/validate-caddy-config.sh "$not_adaptable" > "$RUNNER_TEMP/not-adaptable-caddy.log" 2>&1; then
             echo 'a Caddyfile that Caddy cannot adapt was accepted' >&2
             exit 1
           fi
           grep -q 'could not be adapted by Caddy' "$RUNNER_TEMP/not-adaptable-caddy.log" || {
-            echo 'the unadaptable Caddyfile was rejected for an unexpected reason:' >&2
             cat "$RUNNER_TEMP/not-adaptable-caddy.log" >&2
             exit 1
           }
@@ -101,7 +92,6 @@ jobs:
           bash scripts/ci/test-tofu-workflow-contract.sh
           bash scripts/ci/test-postgres-keycloak-tofu-contract.sh
           bash scripts/ci/test-postgres-business-tofu-contract.sh
-      # Declarative Komodo resources are reviewed data, never applied from CI.
       - name: Declarative Komodo resource contract
         run: python3 scripts/ci/test-komodo-resources.py
       - name: TX and Yecao owner runtime fixtures
@@ -111,6 +101,8 @@ jobs:
           bash deploy/test-tx-deploy-lock.sh
           bash deploy/test-tx-runtime-config.sh
           bash deploy/test-k7b-frontend-shadow.sh
+          bash deploy/test-k7c-preflight.sh
+          bash deploy/test-k7c-runtime-content.sh
           bash deploy/test-yecao-wireguard-boundary.sh
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
@@ -124,8 +116,6 @@ jobs:
           KC_ADMIN_PASSWORD: ci
           WG_APPLICATION_ID: ci
           KEYCLOAK_ADMIN_CLIENT_SECRET: ci
-          # Yecao-only fixture: the predeployed ai-service owns AI provider config.
-          # TX renders no AI_* variable (see the TX Compose render below).
           AI_API_KEY: ci
           GRAFANA_ADMIN_USER: ci
           GRAFANA_ADMIN_PASSWORD: ci
@@ -180,7 +170,6 @@ jobs:
           import json
           with open('/tmp/compose.json', encoding='utf-8') as compose_file:
               services = json.load(compose_file)['services']
-          # Replay parsing runs in the browser: no parser execution plane, broker, or object store.
           retired = {'parser-worker', 'minio', 'rabbitmq'}
           assert not retired & set(services), sorted(retired & set(services))
           with open('/tmp/tx-compose.json', encoding='utf-8') as compose_file:

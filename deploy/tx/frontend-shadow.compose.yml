@@ -1,29 +1,25 @@
 name: wotbtools-frontend-shadow
 
-# K7B shadow only. This workload receives no public traffic: TX1 Caddy remains pinned
-# to 10.20.0.1:8081 until K7C. Sponsor runtime content and Android release artifacts
-# are deliberately not copied from TX1; both are optional surfaces and must reach
-# production-content parity before any public cutover.
+# K7B shadow promoted toward K7C. Public traffic remains on TX1 until the K7C
+# preflight passes. Runtime content is host-owned on TX2 and populated separately
+# by k7c-sync-runtime-content.sh before any public cutover.
 services:
   frontend:
-    # Immutable build identity from the last successfully deployed TX1 Frontend run
-    # before K7B. The sha-* tag is source+asset-origin addressed by frontend.yml.
-    image: ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-473495ec07e7
+    # Immutable build identity from the current TX1 production Frontend build required for K7C parity.
+    image: ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-fe53250d06b5
     ports:
       - "10.20.0.3:8081:80"
     extra_hosts:
-      # The shared nginx template trusts the logical ingress hostname "caddy".
-      # K7B runs the frontend on TX2 while Caddy remains on TX1, so resolve that
-      # logical peer over WireGuard instead of Docker-local DNS.
       - "caddy:10.20.0.1"
     environment:
       BACKEND_UPSTREAM: http://10.20.0.1:8087
       AI_UPSTREAM: http://10.20.0.2:8089
-      # Official nginx template entrypoint expands only these deployment variables.
-      # Keep this byte-for-byte aligned with TX1 production; Compose config preserves '$'.
       NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$$
     volumes:
       - ./nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - /opt/wotb-tx2/runtime-content/sponsor-config.json:/usr/share/nginx/html/sponsor-config.json:ro
+      - /opt/wotb-tx2/runtime-content/sponsor:/usr/share/nginx/html/sponsor-assets:ro
+      - /opt/wotb-tx2/runtime-content/android-release:/usr/share/nginx/html/download/android:ro
     restart: unless-stopped
     logging:
       driver: json-file
