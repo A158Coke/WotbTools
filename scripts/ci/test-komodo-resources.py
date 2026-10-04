@@ -126,7 +126,7 @@ K7B_STACK_CONFIG = {
     "auto_update_all_services": False,
     "destroy_before_deploy": False,
     "skip_secret_interp": False,
-    "git_provider": "github.com",
+    "git_provider": "gitee.com",
     "git_https": True,
     "repo": "A158Coke/WotbTools",
     "branch": "main",
