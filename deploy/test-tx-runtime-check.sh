@@ -342,15 +342,16 @@ grep -Fq 'TX_RUNTIME_READY' <<< "$wg_ready_output"
 grep -Fq 'tx-logical-endpoints-declared: PASS' <<< "$wg_ready_output"
 grep -Fq 'tx-logical-endpoints-active: PASS' <<< "$wg_ready_output"
 
-# K6B-2F production steady state: all six TX consumers are cut over (K6B-2A Frontend ->
+# K6B-2 COMPLETE production steady state: all six TX consumers are on the frozen K6B
+# baseline (K6B-2A Frontend ->
 # Business API, K6B-2B Business API -> Business PostgreSQL, K6B-2C Business API ->
 # Keycloak Admin, K6B-2D Keycloak -> Keycloak PostgreSQL, K6B-2E Caddy -> Frontend,
 # K6B-2F Caddy -> Keycloak). No private Docker-local TX placement remains; the only
 # non-TX dependency is the Yecao AI upstream. The rendered contract, the running
-# containers, and the gate expectation all carry the same reviewed endpoints. This is the
-# state the merged K6B-2F must produce, so its acceptance tokens are asserted here, not
-# only in production. `k6b2f_placements` is reused by the false-green cases below so each
-# of them can only fail because of the single change it introduces.
+# containers, and the gate expectation all carry the same reviewed endpoints, and this is
+# the accepted K6B-2 production state, so its acceptance tokens are asserted here, not
+# only in production. `k6b2f_placements` is reused by the baseline-drift cases below so
+# each of them can only fail because of the single change it introduces.
 k6b2f_placements=(
   FAKE_FRONTEND_UPSTREAM=http://10.20.0.1:8087
   FAKE_RUNNING_FRONTEND_UPSTREAM=http://10.20.0.1:8087
@@ -499,28 +500,20 @@ run_gate_failure "frontend-ai-upstream-business-api" 'tx-logical-endpoints-decla
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=http://business-api:8087
 run_gate_failure "frontend-ai-upstream-public" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=https://ai.example.test
-# K6B-2B reverted: the database consumer is back on Docker-local while its reviewed
-# placement is WireGuard, so the declared contract must fail.
-run_gate_failure "k6b2b-database-reverted" 'tx-logical-endpoints-declared: FAIL' \
+# K6B is COMPLETE, so the cases below are steady-state drift guards rather than migration
+# sequencing: each one rolls a single consumer back to its Docker-local *rollback* value
+# (still legal in the canonical allowlist) and requires the declared contract to fail,
+# so a rollback can never be merged without an explicit, reviewed baseline change.
+run_gate_failure "k6b2b-baseline-drift-database-rolled-back" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_BUSINESS_DB_HOST=business-postgres FAKE_BUSINESS_DB_PORT=5432
-# K6B-2C declared behind expectation: the gate expects the reviewed WireGuard placement
-# for the Keycloak Admin consumer while the staged Compose file still renders
-# Docker-local. The declared contract must fail instead of being tolerated as "both
-# values are allowlisted".
-run_gate_failure "k6b2c-keycloak-admin-declared-behind-expectation" 'tx-logical-endpoints-declared: FAIL' \
+run_gate_failure "k6b2c-baseline-drift-keycloak-admin-rolled-back" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_KEYCLOAK_ADMIN_SERVER_URL=http://keycloak:8080
-# K6B-2A reverted: the Frontend consumer is back on Docker-local while its reviewed
-# placement is WireGuard. A silently reverted cutover must fail, not pass.
-run_gate_failure "k6b2a-frontend-reverted" 'tx-logical-endpoints-declared: FAIL' \
+run_gate_failure "k6b2a-baseline-drift-frontend-rolled-back" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_FRONTEND_UPSTREAM=http://business-api:8087
-# K6B-2D declared behind expectation: the gate expects the reviewed WireGuard database
-# placement for the Keycloak consumer while the staged Compose file still renders
-# Docker-local. The declared contract must fail instead of being tolerated as "both
-# values are allowlisted".
-run_gate_failure "k6b2d-keycloak-db-declared-behind-expectation" 'tx-logical-endpoints-declared: FAIL' \
+run_gate_failure "k6b2d-baseline-drift-keycloak-db-rolled-back" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_KEYCLOAK_DB_URL=jdbc:postgresql://keycloak-postgres:5432/keycloak
 # The two PostgreSQL placements are not interchangeable: pointing the Keycloak database
@@ -532,10 +525,9 @@ run_gate_failure "k6b2d-business-postgres-port-used-for-keycloak" 'tx-logical-en
 run_gate_failure "k6b2d-wg-host-on-the-local-port" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_KEYCLOAK_DB_URL=jdbc:postgresql://10.20.0.1:5432/keycloak
-# K6B-2F declared rollback: the staged Compose file still renders the Docker-local
-# Keycloak upstream while the reviewed placement is the WireGuard endpoint. After K6B-2F
-# `keycloak:8080` is the rollback state, not the steady state.
-run_gate_failure "k6b2f-caddy-keycloak-declared-behind-expectation" 'tx-logical-endpoints-declared: FAIL' \
+# Caddy -> Keycloak rolled back to `keycloak:8080`: the Docker-local value is a legal
+# rollback placement but not the frozen production baseline.
+run_gate_failure "k6b2f-baseline-drift-caddy-keycloak-rolled-back" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_KEYCLOAK_UPSTREAM=keycloak:8080
 # K6B-2F is reviewing one specific endpoint: the Keycloak service-plane port. The
@@ -563,12 +555,12 @@ run_gate_failure "k6b2f-keycloak-upstream-is-the-public-auth-host" 'tx-logical-e
 run_gate_failure "k6b2f-keycloak-upstream-on-tx2" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_KEYCLOAK_UPSTREAM=10.20.0.3:8080
-# K6B-2E declared rollback: the staged Compose file still renders the Docker-local
-# frontend upstream while the reviewed placement is the WireGuard endpoint.
-run_gate_failure "k6b2e-caddy-frontend-declared-behind-expectation" 'tx-logical-endpoints-declared: FAIL' \
+# Caddy -> Frontend rolled back to `wotb-frontend:80`: same steady-state drift guard.
+run_gate_failure "k6b2e-baseline-drift-caddy-frontend-rolled-back" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_FRONTEND_UPSTREAM=wotb-frontend:80
-# K6B-2E is reviewing one specific endpoint: the frontend service-plane port. The
+# The frozen baseline reviews one specific endpoint per consumer: the frontend
+# service-plane port here. The
 # container port, the Keycloak port and the Business API port are well-formed values on
 # the same host, so only the reviewed placement can tell them apart.
 run_gate_failure "k6b2e-frontend-upstream-on-the-container-port" 'tx-logical-endpoints-declared: FAIL' \

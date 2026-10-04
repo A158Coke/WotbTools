@@ -438,16 +438,18 @@ assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy g
 # owner's equivalent pin lives in scripts/ci/test-keycloak-tofu-contract.sh with its
 # own apply step.
 #
-# CURRENT_K6B_CUTOVERS is the reviewed production placement of every K6B-2 consumer:
+# CURRENT_K6B_CUTOVERS is the reviewed production placement of every K6B-2 consumer, and
+# since K6B-2 COMPLETE it is a frozen baseline rather than a migration in progress:
 # K6B-2A moved Frontend -> Business API onto the TX1 WireGuard service endpoint,
 # K6B-2B moved Business API -> Business PostgreSQL onto the TX1 WireGuard service
 # endpoint at port 25432, K6B-2C moved Business API -> Keycloak Admin onto the TX1
 # WireGuard endpoint at port 8080, K6B-2D moved Keycloak -> Keycloak PostgreSQL onto the
 # TX1 WireGuard endpoint at port 15432, K6B-2E moved Caddy -> Frontend onto the TX1
-# WireGuard endpoint at port 8081, and K6B-2F - the last consumer - moved Caddy ->
-# Keycloak onto the TX1 WireGuard endpoint at port 8080. No private Docker-local TX
-# placement remains, and the assertions below are the guard that a later PR cannot revert
-# a cutover (or silently move one to TX2) without an explicit, reviewed edit of this file.
+# WireGuard endpoint at port 8081, and K6B-2F moved Caddy -> Keycloak onto the TX1
+# WireGuard endpoint at port 8080. No private Docker-local TX placement remains, and the
+# assertions below are the permanent guard that a later PR cannot drift the production
+# baseline - by rolling a consumer back to its Docker-local rollback value, or by
+# silently moving one to TX2 - without an explicit, reviewed edit of this file.
 CURRENT_K6B_CUTOVERS = {
     "frontend": {"TX_BACKEND_UPSTREAM": "http://10.20.0.1:8087"},
     "business-api": {
@@ -464,20 +466,20 @@ CURRENT_K6B_CUTOVERS = {
         "CADDY_KEYCLOAK_UPSTREAM": "10.20.0.1:8080",
     },
 }
-# K6B-2F completes the cutovers, so the only placement left in this map is the Yecao AI
-# upstream, which is not a TX placement consumer and must never move with one. An empty
-# dict for an owner means "no Docker-local TX placement remains" rather than a missing
-# assertion.
-K6B_DOCKER_LOCAL_PLACEMENTS = {
+# K6B-2 is complete, so the only placement left outside CURRENT_K6B_CUTOVERS is the Yecao
+# AI upstream: it is not a TX placement consumer and must never move with one. An empty
+# dict for an owner means "this owner has no non-TX fixed dependency" rather than a
+# missing assertion.
+NON_TX_FIXED_DEPENDENCIES = {
     "frontend": (frontend_deploy, {
         "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
     }),
     "business-api": (business_deploy, {}),
     "caddy": (caddy_deploy, {}),
 }
-# K6B-2 baseline invariant: after K6B-2F every TX consumer must sit on the reviewed TX1
-# logical placement, so the K7 placement migration starts from an exact, asserted matrix
-# instead of "no Docker-local value is left".
+# K6B-2 baseline invariant (frozen for K7): every TX consumer must sit on the reviewed TX1
+# logical placement, asserted as an exact matrix instead of the weaker "no Docker-local
+# value is left", so a future workload migration starts from an exact baseline.
 K6B_FINAL_PLACEMENT_MATRIX = {
     "TX_BACKEND_UPSTREAM": "http://10.20.0.1:8087",
     "TX_BUSINESS_DB_HOST": "10.20.0.1",
@@ -493,14 +495,14 @@ assert {name: value for cut_over in CURRENT_K6B_CUTOVERS.values() for name, valu
 # The Keycloak owner's own placement pin lives in scripts/ci/test-keycloak-tofu-contract.sh
 # with its apply step, so it is deliberately not duplicated here; the gate expectation
 # for the same consumer is asserted below.
-for owner, (step, placements) in K6B_DOCKER_LOCAL_PLACEMENTS.items():
+for owner, (step, placements) in NON_TX_FIXED_DEPENDENCIES.items():
     exported = step["with"]["envs"].split(",")
     for name, value in {**placements, **CURRENT_K6B_CUTOVERS.get(owner, {})}.items():
         assert step["env"][name] == value, (owner, name, step["env"].get(name))
         assert name in exported, (owner, name)
-# No consumer outside CURRENT_K6B_CUTOVERS may select a WireGuard endpoint yet, and no
-# consumer may be pinned by an owner workflow that does not own it.
-for owner, (step, placements) in K6B_DOCKER_LOCAL_PLACEMENTS.items():
+# The Yecao AI upstream is the only non-TX placement left, and no consumer may be pinned
+# by an owner workflow that does not own it.
+for owner, (step, placements) in NON_TX_FIXED_DEPENDENCIES.items():
     for name, value in placements.items():
         assert not re.search(r"10\.20\.0\.[13]:", str(value)), (owner, name, value)
     for cut_over_name in CURRENT_K6B_CUTOVERS.get(owner, {}):
@@ -546,8 +548,8 @@ assert gate_expectations["TX_KEYCLOAK_DB_PORT"] == "15432", gate_expectations["T
 assert gate_expectations["TX_BUSINESS_DB_PORT"] == "25432", gate_expectations["TX_BUSINESS_DB_PORT"]
 assert gate_expectations["CADDY_FRONTEND_UPSTREAM"] == "10.20.0.1:8081", \
     gate_expectations["CADDY_FRONTEND_UPSTREAM"]
-# K6B-2F: Caddy -> Keycloak is cut over too, so the Docker-local value is now the rollback
-# state and must not appear as the reviewed placement.
+# Caddy -> Keycloak is part of the frozen baseline too, so its Docker-local rollback value
+# must not appear as the reviewed placement.
 assert gate_expectations["CADDY_KEYCLOAK_UPSTREAM"] == "10.20.0.1:8080", \
     gate_expectations["CADDY_KEYCLOAK_UPSTREAM"]
 assert runtime_gate_step["env"]["TX_AI_UPSTREAM"] == "http://10.20.0.2:8089", \
