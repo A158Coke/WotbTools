@@ -154,6 +154,30 @@ reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB keycloak-postgres abc 
 reject_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.2 25432 business-postgres 5432 25432
 validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.1:8081 wotb-frontend:80 8081
 reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM frontend.example.invalid:8081 wotb-frontend:80 8081
+# K6B-2E moves the Caddy -> Frontend consumer onto the reviewed TX1 WireGuard endpoint,
+# guarded by the same canonical Caddy upstream validator. The reviewed values
+# (Docker-local, TX1 WG, TX2 WG) are accepted; the retired Yecao address, public hosts,
+# a URL-shaped value, and - importantly - every other service-plane port are refused, so
+# 8081 (Frontend), 8080 (Keycloak) and 8087 (Business API) can never be swapped.
+validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM wotb-frontend:80 wotb-frontend:80 8081
+validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.3:8081 wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.2:8081 wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.1:80 wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.1:8080 wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.1:8087 wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.1:8082 wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM wotbtools.com:443 wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM frontend.example.com:8081 wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 'http://10.20.0.1:8081' wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM '10.20.0.1:8081/path' wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 'user:pass@10.20.0.1:8081' wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM ':8081' wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM '10.20.0.1:' wotb-frontend:80 8081
+reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM '10.20.0.1:abc' wotb-frontend:80 8081
+# Caddy -> Keycloak is the LAST consumer. `10.20.0.1:8080` is a legal value for it in the
+# canonical allowlist, so K6B-2F is held back by the desired-state contracts instead:
+# CURRENT_K6B_CUTOVERS in scripts/ci/test-workflow-contract.sh and the
+# `k6b2f-caddy-keycloak-*-cut-over-early` fixtures in deploy/test-tx-runtime-check.sh.
 
 # K6B-2A moves the Frontend -> Business API consumer onto a WireGuard placement, so the
 # frontend owner's own deploy must fail when that placement is unreachable instead of
