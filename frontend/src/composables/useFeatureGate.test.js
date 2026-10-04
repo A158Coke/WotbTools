@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { computed, nextTick, watch } from 'vue'
 import { ConnectivityState } from '../platform/connectivity.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { evaluateFeatureGate, useFeatureGate } from './useFeatureGate.js'
@@ -158,6 +159,69 @@ describe('feature gate (wired to the connectivity singleton)', () => {
     await useConnectivity().start()
     await Promise.resolve()
     expect(notice.notice.value).toMatchObject({ messageKey: 'featureOffline.hallOfFame' })
+  })
+
+  it('exposes pending only for connectivity-dependent features; LOCAL is never blocked by initialization', () => {
+    const { availability } = useFeatureGate()
+    expect(availability(Feature.AI_REVIEW)).toMatchObject({ available: false, pending: true })
+    expect(availability(Feature.REPLAY_RESULT)).toMatchObject({ available: true, pending: false })
+    expect(availability(Feature.RATING)).toMatchObject({ available: true, pending: false })
+    // ONLINE_OPTIONAL：本地动作照常（available 不变），pending 只告诉 UI 先别下结论。
+    expect(availability(Feature.TELEMETRY_UPLOAD)).toMatchObject({ available: true, pending: true })
+  })
+
+  it('settling UNKNOWN → UNKNOWN still re-evaluates availability (settled is reactive)', async () => {
+    stubNative({ getCapabilities: ['native-auth', 'connectivity'], connectivityGetState: 'unknown' })
+    const { availability } = useFeatureGate()
+    const ai = computed(() => availability(Feature.AI_REVIEW))
+    expect(ai.value).toMatchObject({ pending: true, available: false })
+
+    await useConnectivity().start()
+    await nextTick()
+    // 连通性值始终是 UNKNOWN：只有 settled false → true 能让缓存的 computed 重算。
+    expect(useConnectivity().connectivity.value).toBe(ConnectivityState.UNKNOWN)
+    expect(ai.value).toMatchObject({
+      pending: false,
+      available: false,
+      reason: ConnectivityState.UNKNOWN,
+      messageKey: 'connectivityNotice.unknown',
+    })
+  })
+
+  it('whenSettled resolves only after the first read result is committed', async () => {
+    stubNative({ getCapabilities: ['native-auth', 'connectivity'], connectivityGetState: 'online' })
+    const { connectivity, whenSettled } = useConnectivity()
+    let seen = null
+    const waiter = whenSettled().then(() => { seen = connectivity.value })
+    await useConnectivity().start()
+    await waiter
+    expect(seen).toBe(ConnectivityState.ONLINE)
+  })
+
+  it('never exposes settled=true with the placeholder UNKNOWN, and connectivity watchers already see settled', async () => {
+    stubNative({ getCapabilities: ['native-auth', 'connectivity'], connectivityGetState: 'online' })
+    const { connectivity, settled } = useConnectivity()
+    const { requireFeature } = useFeatureGate()
+    const observed = []
+    const stopObserved = watch([settled, connectivity], pair => observed.push([...pair]))
+    let gateInWatcher = null
+    const stopGate = watch(connectivity, () => { gateInWatcher = requireFeature(Feature.AI_REVIEW) })
+
+    await useConnectivity().start()
+    await nextTick()
+    expect(observed).toEqual([[true, ConnectivityState.ONLINE]])
+    // 重连补加载类副作用在 watch(connectivity) 里调门禁：此刻必须已视为测过并放行。
+    expect(gateInWatcher).toBe(true)
+    stopObserved()
+    stopGate()
+  })
+
+  it('stop() resets settled so the next cold start is pending again', async () => {
+    await useConnectivity().start()
+    expect(useConnectivity().settled.value).toBe(true)
+    useConnectivity().stop()
+    expect(useConnectivity().settled.value).toBe(false)
+    expect(useFeatureGate().availability(Feature.AI_REVIEW).pending).toBe(true)
   })
 
   it('falls back to the browser approximation when the shell lacks the capability', async () => {
