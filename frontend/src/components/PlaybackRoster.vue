@@ -173,9 +173,24 @@ function decorate(row) {
    宽度永远跟着承载它的车道 / 纵向流走（车道自己定宽），这里不再写死 240px。 */
 .pb-roster { display: grid; align-content: start; gap: var(--space-3); width: 100%; min-block-size: 0; padding: var(--space-3); }
 .pb-roster-team { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-1); }
-/* 3D 的车道里，队伍面板自己承担卡片外观（2D 的车道由外层 lane 承担）。 */
-.pb-roster-3d { inline-size: 100%; max-inline-size: 100%; }
-.pb-roster-3d .pb-roster-team { border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-1); }
+/* 3D 的车道里，名册栏自己承担卡片外观（2D 的车道由外层 lane 承担）。
+   卡片必须**填满车道高度**：`.team-lane` 是 flex column 且已拉满网格行高，卡片若是
+   `flex: 0 1 auto` 就只占内容高（实测 1600×900：车道 890px、卡片只有 242px），
+   两侧名册退化成贴在左上/右上角的两个浮块，下面整列空着 —— 那不是名册栏。
+   主轴（纵向）要 `flex-grow`；`align-self` 只会拉交叉轴（横向），对高度无效。 */
+.pb-roster-3d {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+}
+/* 队伍面板不再自绘卡片：面与边框已上移到整条名册栏（`.pb-roster-3d`），
+   否则会出现「框里的框」，而名册栏下方的留白仍然没有归属。 */
+.pb-roster-3d .pb-roster-team { background: none; border: 0; }
 .pb-team-head { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 800; }
 .pb-roster-list { display: grid; gap: var(--space-1); margin: 0; padding: 0; }
 .pb-roster-team.pb-roster-team1 .pb-roster-row { border-inline-start: 3px solid var(--color-team-1); }
