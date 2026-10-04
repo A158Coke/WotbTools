@@ -42,6 +42,9 @@
       grid-template-columns: minmax(0, 1fr);
     }
   .battle-playback.pb-form-pc:fullscreen .pb-main { grid-column: 1; }
+  /* 三段式（Team 1 | Stage | Team 2）下，左侧黑边是 Team 1 车道的位置：workspace 从浮层左栏
+     右缘开始，车道不被左栏盖住（浮窗夹紧同样以这块内边距为界）。 */
+  .battle-playback.pb-form-pc.pb-roster-lanes:fullscreen .pb-main { padding-inline-start: var(--pb-left-col); }
   .battle-playback.pb-form-pc:fullscreen .pb-map-stage {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -112,11 +115,17 @@
       min-height: 0;
     }
   .battle-playback.pb-form-pc:not(:fullscreen) .pb-main .pb-map {
-      /* 与 fullscreen 一致：锚定 Origin（左上），cover/fit/pan 全由 tx/ty/scale 驱动。 */
+      /* 与 fullscreen 一致：锚定 Origin（左上），cover/fit/pan 全由 tx/ty/scale 驱动。
+         边长走 `--pb-square-side`（styles/playback-workspace.css 声明的**正方形契约**）：
+         战场是正方形，这个量已经被三段式的左右车道与实测的纵向可用高度夹过；
+         这里写死 100% 会让正方形在桌面下变成 1354×1354（比视口还高）。
+         `margin-inline: auto` 不能省：共享表里的 `margin: 0` 会把它归零，
+         正方形于是贴死在列左缘（实测左间隙 0、右间隙 302px）。 */
       grid-column: 1;
       align-self: start;
-      width: 100%;
-      max-width: none;
+      inline-size: min(var(--pb-square-side), 100%);
+      max-inline-size: 100%;
+      margin-inline: auto;
     }
   /* Right Details 列是满高的，面板必须跟着列走：内容短则垂直居中，内容超过列高才内部滚动。
        组件自带的 max-height: min(68vh, 560px) 是给浮层弹窗用的，在这里会造成

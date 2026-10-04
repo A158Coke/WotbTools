@@ -649,3 +649,66 @@ describe('playbackScene 资产发布顺序', () => {
     created = []
   })
 })
+
+
+describe('scene vehicle selection intent', () => {
+  it('raycast click reports selection without moving the camera into Follow', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const onVehicleSelect = vi.fn()
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'selection.wotbreplay') })
+    const object = new THREE.Object3D()
+    object.userData.eid = 11
+    vi.spyOn(THREE.Raycaster.prototype, 'intersectObjects').mockReturnValue([{ object }])
+    container.querySelector('canvas').setPointerCapture = vi.fn()
+    container.querySelector('canvas').releasePointerCapture = vi.fn()
+    const beforeCamera = window.__camera.position.clone()
+    container.querySelector('canvas').dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 10, clientY: 10 }))
+    // 第二个参数是原始指针事件：面板据此把详情浮窗落在与这台车相对的一侧
+    expect(onVehicleSelect).toHaveBeenCalledOnce()
+    expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
+    expect(onVehicleSelect.mock.calls[0][1]?.clientX).toBe(10)
+    expect(store.cam).toBe('free')
+    expect(window.__camera.position.equals(beforeCamera)).toBe(true)
+    container.querySelector('canvas').dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))
+    expect(onVehicleSelect).toHaveBeenCalledTimes(1)
+  })
+})
+
+
+describe('scene container geometry', () => {
+  it('resizes projection and canvas on container changes and disconnects on destroy', async () => {
+    let onSize
+    const disconnect = vi.fn()
+    const observe = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback) { onSize = callback }
+      observe = observe
+      disconnect = disconnect
+    })
+    try {
+      source.loadPlaybackData.mockResolvedValue(minimalData())
+      const container = mountContainer()
+      Object.defineProperty(container, 'clientWidth', { configurable: true, value: 800 })
+      Object.defineProperty(container, 'clientHeight', { configurable: true, value: 600 })
+      const store = createPlaybackStore()
+      api = initPlayback(container, store)
+      created.push(api)
+      await api.loadData({ kind: 'local', file: new File(['x'], 'size.wotbreplay') })
+      expect(observe).toHaveBeenCalledWith(container)
+      const setSize = vi.spyOn(window.__renderer, 'setSize')
+      Object.defineProperty(container, 'clientHeight', { configurable: true, value: 700 })
+      onSize()
+      expect(setSize).toHaveBeenCalledWith(800, 700)
+      expect(window.__camera.aspect).toBe(800 / 700)
+      api.destroy()
+      expect(disconnect).toHaveBeenCalledTimes(1)
+      created = []
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
