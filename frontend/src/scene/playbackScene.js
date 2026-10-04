@@ -2070,16 +2070,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const groups = buildRosterRows(V);
     rosterRowsByEid.clear();
     for (const key of ROSTER_GROUPS) {
-      const rows = groups[key].map((row) => applyRosterRuntime(
+      store.roster[key] = groups[key].map((row) => applyRosterRuntime(
         { ...row },
         { hp: 0, maxHp: 0, dead: false, followed: false, reload: null },
       ));
-      for (const row of rows) rosterRowsByEid.set(row.eid, row);
-      store.roster[key] = rows;
+      // 索引登记的必须是**响应式代理**（读回 store 得到的行），不能是上面的原始对象：
+      // store 只存原始对象、读取时才包代理，直接改原始对象 Vue 收不到通知——名册就会
+      // 停在旧 HP，直到别的状态（如选中行）碰巧触发重绘。
+      for (const row of store.roster[key]) rosterRowsByEid.set(row.eid, row);
     }
   }
   /**
    * 把当前 T 的运行时状态投影进名册行（只在值真的变了时写，避免无谓的 VDOM patch）。
+   * 只由 writeHud 调用：与顶栏总血量同一个 T、同一节拍（≤10Hz，seek / 会话开始强制）——
+   * resolver 每次返回新的 reload 数组，若逐帧投影，名册会每帧重绘。
    *
    * `reload` 复用**场景自己的** reload resolver（`reloadStateAt`，与车辆名牌同一份
    * `v.reloadSize` / `reloadEvents` 事实源），不在名册里另起一套解释——2D 名册走的是
@@ -2231,7 +2235,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       spawnBurst(burstEvents[burstPtr++].eid);
     }
     for (const v of V) applyPose(v);
-    updateRoster(); updateScore();
+    updateScore();
     // HUD → store
     // 顶栏：争霸实时点数——**每 tick 确定性重算**（无采样也写 null）：从争霸场切到普通场时
     // supremacy_points 缺失，若只在有采样时才写，上一场的点数会残留在 HUD 上。
@@ -2274,6 +2278,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       V.map((v) => ({ team: v.def.team, hp: hpAt(v, T), maxHp: v.def.max_hp })),
       DATA.meta.friendly_team,
     ));
+    // 名册与上面的总血量同帧写入：两侧名册与顶栏永远是同一个 T 的投影
+    updateRoster();
     store.time = T;
     const f = (T - DATA.meta.t_start) / Math.max(0.001, END - DATA.meta.t_start);
     if (!store.seeking) store.seekFrac = Math.round(f * 1000);
@@ -2313,10 +2319,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     resetScore();     // 比分为单调游标，seek 后必须从头推进（否则分数不回落）
     winnerShown = false; store.banner = null;
     tick();
-    // 名册是**状态在时刻**投影，而 tick() 在暂停 / 静止时会走「非 busy 提前返回」，
-    // 不重跑 updateRoster；seek 必须自己补一次，否则拖动进度条时名册血量停在旧值。
-    updateRoster();
-    writeHud(true);   // seek 是状态跳变：立即把 HUD/进度条对齐到新 T（不等下一个降频窗口）
+    // seek 是状态跳变：立即把 HUD/进度条/名册对齐到新 T（不等下一个降频窗口）——
+    // 暂停时没有帧在跑，名册投影只能靠这次强制写入。
+    writeHud(true);
     invalidate();
   }
   function setFollow(eid) {

@@ -363,7 +363,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （暂停且无在飞特效、相机静止时不重绘）；伤害飘字留在主画布**单 WebGL 上下文**
   （清晰度随画质档 DPR，不再固定 `min(dpr,2)`），车辆标签使用共享 HTML 呈现；特效（炮线/命中/爆散/飘字）走对象池，
   仅在会话结束时整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
-  HUD/进度条按 ~10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
+  HUD/进度条/名册按 ~10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
 - 3D 顶栏双方总血量（2026-10-03 补回）：`scene/teamHpTotals.js` 按各队 `max_hp` 汇总剩余量与
   上限（未知阵营不计入任一方，unknown ≠ enemy），`playbackScene` 在 HUD 节流写 store，
   `Replay3DPane.vue` 顶栏第二行渲染「数值 + 阵营色条夹住比分」；数值用完整整数（§11 禁止
@@ -378,11 +378,14 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   行边框使用 `--color-team-ally` / `--color-team-enemy`，未知视角使用中性色，未知阵营独立分组。
 - **3D 名册行状态在时刻投影**（`scene/rosterState.js`）：静态身份（eid / team / 昵称 / 车型）在会话
   开始时建一次；运行时状态（`hp` / `maxHp` / `dead` / `followed`）由 `projectRoster(vehicles, t)`
-  按当前回放时刻**纯函数**投影，`playbackScene.updateRoster()` 只写变化过的字段。
-  `Replay3DPane` 每行渲染「昵称 + **HP 数值** + **百分比** + 车型 + 细血条」：HP 与百分比是主信息
-  （`tabular-nums`、不截断），血条只是次要视觉；没有可信 `maxHp` 时百分比渲染成 `—`（unknown ≠ 0）。
-  **seek 必须重投影**：`seekTo()` 在 `tick()` 之后显式补一次 `updateRoster()`——`tick()` 在暂停 /
-  相机静止时会走「非 busy 提前返回」，不补这一次名册血量会停在拖动前的值。
+  按当前回放时刻**纯函数**投影（`reload` 复用场景的 reload resolver），`playbackScene.updateRoster()`
+  只写变化过的字段；行由与 2D 共用的 `PlaybackRoster.vue` 呈现（见 `docs/frontend/replay-workspace.md`）。
+  **写入必须经响应式代理**：`store` 是 `reactive()`，eid → 行索引登记的是读回 `store.roster` 得到的
+  代理，不是建行时的原始对象——改原始对象 Vue 收不到通知，名册会停在满血，直到选中行之类的无关
+  状态碰巧触发重绘（PR #489 起的线上故障）。
+  **投影节拍 = HUD 节拍**：`updateRoster()` 只在 `writeHud()` 越过 ~10Hz 节流闸后运行，与顶栏总血量
+  同帧写入（两者永远是同一个 T）；reload resolver 每次返回新数组，逐帧投影会让名册每帧重绘。
+  seek / 会话开始由 `writeHud(true)` 强制补一次——暂停时没有帧在跑，拖动进度条后的名册只能靠它投影。
 - **响应式名册**：desktop / 大 tablet 的 normal 7v7 与 unknown group 在 root 内完整可见，
   不与播放控件重叠、无 team/lane 独立滚动。phone 与短视口不保留左右常驻名单，
   改为 Display → Roster 临时 surface；打开 Roster 即关闭 Display，dismiss 后完整场景立即恢复，
