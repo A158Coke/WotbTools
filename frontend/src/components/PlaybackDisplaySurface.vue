@@ -40,6 +40,40 @@ function dismiss(event) {
   if (event.type === 'keydown') { if (event.key === 'Escape') emit('close'); return }
   if (!panel.value?.contains(event.target) && !props.anchor?.contains(event.target)) emit('close')
 }
+
+/**
+ * 只在元素真的可聚焦时动焦点，并且以「焦点确实落上去了」为准（focus() 对不可聚焦元素是静默 no-op）。
+ *
+ * 为什么还要额外量尺寸：gear 在部分形态下会被隐藏（`display:none`），把焦点丢给一个看不见的
+ * 按钮会让键盘用户彻底失去落点。显式带 `tabindex` 的宿主（速度：本面板自己）按声明即可聚焦，
+ * 不必依赖布局引擎——jsdom / happy-dom 里所有元素的尺寸都是 0。
+ */
+function focusIfPossible(element) {
+  if (!element || typeof element.focus !== 'function' || element === document.activeElement) return false
+  const declaredFocusable = element.hasAttribute?.('tabindex')
+  if (!declaredFocusable) {
+    const rect = element.getBoundingClientRect?.()
+    if (rect && !rect.width && !rect.height) return false
+  }
+  element.focus()
+  return document.activeElement === element
+}
+/**
+ * 非 modal 的锚定设置面也要有键盘落点：打开时进入面内（优先关闭按钮），关闭时把焦点还给 gear。
+ * 只记录「这一轮是不是我们把焦点搬进面里的」，所以面不是自己打开的就不还回去；
+ * gear 不可见（宽度/高度为 0）时 focusIfPossible 返回 false，此时不把焦点搬出去 —— 不给键盘用户
+ * 一个看不见的落点。
+ */
+let focusMovedIn = false
+function syncFocus(open) {
+  if (open) {
+    focusMovedIn = focusIfPossible(panel.value?.querySelector('[data-testid="display-close"]'))
+      || focusIfPossible(panel.value)
+    return
+  }
+  if (focusMovedIn) focusIfPossible(props.anchor)
+  focusMovedIn = false
+}
 watch(() => [props.open, props.portrait, props.host, props.anchor], async () => {
   await nextTick()
   observer?.disconnect()
@@ -48,6 +82,8 @@ watch(() => [props.open, props.portrait, props.host, props.anchor], async () => 
   }
   measure()
 }, { flush: 'post' })
+// 焦点与定位分开：定位走上面那个（量完就写），焦点只在开合那一刻动一次。
+watch(() => props.open, (open) => syncFocus(open), { flush: 'post' })
 onMounted(() => {
   if (typeof ResizeObserver !== 'undefined') observer = new ResizeObserver(measure)
   window.addEventListener('resize', measure)
@@ -56,6 +92,8 @@ onMounted(() => {
   document.addEventListener('keydown', dismiss)
   nextTick(() => {
     if (props.open && observer) for (const el of [props.host, props.anchor, panel.value]) if (el) observer.observe(el)
+    // 挂载时就已经是打开状态（宿主 v-if 挂载即打开）不会触发上面的 watch，这里补一次落点。
+    if (props.open) syncFocus(true)
     measure()
   })
 })
@@ -69,7 +107,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section v-if="open" ref="panel" class="pb-display-surface" :class="{ 'pb-display-portrait': portrait }" :style="portrait ? undefined : placement" role="dialog" :aria-label="$t('recon.map.playback.panel_display')" data-testid="display-panel" @pointerdown.stop @click.stop>
+  <section v-if="open" ref="panel" class="pb-display-surface" :class="{ 'pb-display-portrait': portrait }" :style="portrait ? undefined : placement" role="dialog" tabindex="-1" :aria-label="$t('recon.map.playback.panel_display')" data-testid="display-panel" @pointerdown.stop @click.stop>
     <slot />
   </section>
 </template>
@@ -94,4 +132,6 @@ onBeforeUnmount(() => {
    这里**不能**统一写死 order —— 那会把 2D 的面推到竖屏里很高的详情 / 名册块之后，
    变成「点了 gear 却什么都不发生」。 */
 .pb-display-portrait { position: static; inline-size: 100%; max-block-size: 60dvh; }
+/* tabindex="-1" 只是给键盘落点用的（打开时焦点进入面内），程序化聚焦不画焦点环 */
+.pb-display-surface:focus { outline: none; }
 </style>

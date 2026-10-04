@@ -63,13 +63,13 @@ const { labelPrefs, hpPrefs, uiPrefs } = usePlaybackPreferences()
  */
 const uiHidden = ref(false)
 /**
- * 「显示 / 二级控件」面板开合（局部视图状态，不持久化）。
+ * 「显示 / 二级控件」面开合（局部视图状态，不持久化）。
  *
- * 一个 owner 承担两种形态（不新建第二套设置系统）：
- *   · 宽视口 = 右下方浮层，只放显示开关；相机等仍在常驻工具条上；
- *   · 紧凑视口（手机）= 底部浮层，**额外**收纳相机模式 / 阵容 / 画质，工具条整行隐藏，
- *     战场因此拿回一整行高度（见模板里的 `.toolbar` 与 compact sheet 分支）。
- * 两种形态读写同一份共享偏好（uiPrefs / labelPrefs / hpPrefs / store.cam），只有布局不同。
+ * 一个 owner 承担两种形态（不新建第二套设置系统）：内容是同一份——相机模式、阵容 / 标签 /
+ * 画质等查看与显示开关；只有**位置**随形态变，且位置归 `PlaybackDisplaySurface`：
+ *   · 宽视口 / 横屏 = 锚定在 gear 上的浮面，优先开在 gear 上方，空间不足换边并夹在 workspace 内；
+ *   · 竖屏 = 流内的一块面，排在传输控件之后（order 由本组件的 `.portrait-flow` 给）。
+ * 两种形态读写同一份共享偏好（uiPrefs / labelPrefs / hpPrefs / store.cam）。
  */
 const displayOpen = ref(false)
 const displayAnchor = ref(null)
@@ -630,8 +630,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
       </div>
 
       <PlaybackDisplaySurface :open="displayOpen && !uiHidden" :portrait="portraitFlow" :anchor="displayAnchor" :host="rootEl" @close="displayOpen = false">
-        <!-- 紧凑档：相机 / 画质从常驻工具条移到这里（同一份 store.cam / uiPrefs / store.glbOn，
-             没有第二套状态）。高频动作之外的东西，在手机上都不该永久占着战场高度。
+        <!-- 查看 / 显示开关都在这里（同一份 store.cam / uiPrefs / labelPrefs / hpPrefs / store.glbOn，
+             没有第二套状态）：高频动作之外的设置不该永久占着战场高度。
              名册没有单独的「打开名册」入口：它的唯一开关是下面的 disp-roster 呈现偏好。 -->
           <p class="dp-title">{{ t('agentReplay.camera') }}</p>
           <SegmentedControl

@@ -479,20 +479,21 @@ function setUiHidden(hidden) {
   uiHidden.value = hidden
   if (hidden) { displayOpen.value = false; closeAnnotation() }
 }
-// §mobile-panels：移动端/中型宽度没有永久 Left Rail，用 ☰ 打开一个 drawer/sheet 以进入
-// Team / Display / Events / Annotation（避免 dead action）。
+// §mobile-panels：二级面没有常驻左栏——唯一入口是 Transport 上的 gear，打开的是
+// `PlaybackDisplaySurface`（Display / Events 两段）。
 /**
  * 名册呈现开关：**唯一 owner** 是共享呈现偏好 `uiPrefs.showRoster`（与 3D 同一个 key）。
- * 所有 2D 名册呈现——宽档常驻名册、Team 导航项、抽屉里的 Team/阵容分页——都必须读它，
- * 不允许出现「常驻名册关了但 Team 分页还列着全部玩家」这种割裂语义。
+ * 所有 2D 名册呈现——宽档 / 横屏的两侧车道、竖屏的纵向流名册——都必须读它，
+ * 不允许出现「名册关了但别处还列着全部玩家」这种割裂语义。
  * 关掉**只关呈现**：名册数据（teamVehicles）、选中车辆、详情、时间轴、地图视图与相机
  * 全部保留；恢复后立刻可用，不重建播放、不重解析。
  */
 const showRosterPresentation = computed(() => !uiHidden.value && uiPrefs.showRoster !== false)
 const annotationOpen = ref(false)
 const mobileOverlay = ref(null)
-/** §details-float：详情浮窗的受保护下界——传输控件。它在不同形态下分别住在左栏或
-    地图下方的 overlay 里，这里始终指向「当前真正在渲染的那一处」，避免浮窗盖住拇指操作区。 */
+/** §details-float：详情浮窗的受保护下界——传输控件。它在竖屏纵向流与横屏中心栈里都是
+    同一处（`[data-test="pb-transport-slot"]`），这里始终指向当前真正在渲染的那一个，
+    避免浮窗盖住拇指操作区。 */
 const transportEl = ref(null)
 const displayOpen = ref(false)
 const displaySection = ref('display')
@@ -554,8 +555,8 @@ const formFactor = computed(() => {
 
 // §mobile-contract：设备是否为「移动端」（primary pointer=coarse 且视口 <=1200px）。手机在
 // fullscreen + landscape 时内宽可 >768，因此移动端判定不得只依赖 innerWidth<768；一旦判定为
-// 移动端，无论全屏/横竖屏都保持 mobile playback mode（HUD+Map 为主、bottom overlay controls、
-// details sheet、无永久 Left Rail / Right Details）。
+// 移动端，无论全屏/横竖屏都保持 mobile playback mode（HUD+Stage 为主、bottom overlay controls、
+// 紧凑控件密度）；几何本身仍由朝向决定，两种形态都没有常驻侧栏。
 // §three-forms：与 wideLayoutQuery('(min-width: 1200px)') 必须严格互补。
 // 手机形态由共享 contract 判定，横屏/全屏后与 3D 保持同一紧凑呈现。
 const { isPhone: isMobileDevice } = usePlaybackPhoneForm()
@@ -570,7 +571,7 @@ function onWideLayoutChange(event) {
 /**
  * 全屏 / 方向锁生命周期与 3D 共用同一实现（composables/usePlaybackFullscreen）：
  * 事实源 `document.fullscreenElement`、手机形态才锁横屏、锁在全屏成功之后、退出与卸载解锁。
- * 这里只保留 2D 自己的**布局**反应：全屏进出后等 Vue 搬完 controls（Bottom Overlay ↔ Left Rail），
+ * 这里只保留 2D 自己的**布局**反应：全屏进出后等 Vue 把控件搬进新的容器尺寸，
  * 用新 mode 的真实几何 force 一次 authoritative fit（geometry-signature 也会捕获 bottom inset 变化）。
  * 不用 setTimeout magic delay。
  */
