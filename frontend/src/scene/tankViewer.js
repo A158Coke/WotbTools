@@ -4645,14 +4645,19 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // 滑成 hull/背景），断言随机翻车。暴露「上次相机移动距今多久 + 帧间隔」，让门禁
         // 等到视图真正静止再采样（等状态，不等时钟）。
         let cameraMovedAt = 0;
-        let lastCameraPos = new THREE.Vector3(NaN, NaN, NaN);
+        let lastCameraPos = null;   // null = 首帧（NaN 比较恒为 false，会把移动检测永远锁死）
         let lastFrameAt = 0;
         let frameIntervalMs = 16;
         function trackCameraMotion() {
             const now = performance.now();
             if (lastFrameAt) frameIntervalMs = frameIntervalMs * 0.8 + (now - lastFrameAt) * 0.2;
             lastFrameAt = now;
-            if (camera.position.distanceToSquared(lastCameraPos) > 1e-10) {
+            if (!lastCameraPos) {
+                lastCameraPos = camera.position.clone();
+                cameraMovedAt = now;
+                return;
+            }
+            if (camera.position.distanceToSquared(lastCameraPos) > 1e-10) {   // > 0.01mm
                 lastCameraPos.copy(camera.position);
                 cameraMovedAt = now;
             }
