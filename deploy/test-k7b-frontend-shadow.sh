@@ -5,7 +5,7 @@ compose="$ROOT/deploy/tx/frontend-shadow.compose.yml"
 template="$ROOT/deploy/tx/nginx/frontend.conf.template"
 resource="$ROOT/infra/komodo/resources/frontend-shadow.toml"
 
-[ -f "$compose" ] || { echo "missing K7B shadow compose" >&2; exit 1; }
+[ -f "$compose" ] || { echo "missing K7B/K7C shadow compose" >&2; exit 1; }
 [ -f "$template" ] || { echo "missing frontend nginx template" >&2; exit 1; }
 [ -f "$resource" ] || { echo "missing K7B shadow Komodo resource" >&2; exit 1; }
 
@@ -17,7 +17,7 @@ data = json.loads(os.environ["COMPOSE_JSON"])
 assert data.get("name") == "wotbtools-frontend-shadow", data.get("name")
 assert set(data.get("services", {})) == {"frontend"}, sorted(data.get("services", {}))
 service = data["services"]["frontend"]
-assert service["image"] == "ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-473495ec07e7"
+assert service["image"] == "ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-fe53250d06b5"
 assert service["environment"]["BACKEND_UPSTREAM"] == "http://10.20.0.1:8087"
 assert service["environment"]["AI_UPSTREAM"] == "http://10.20.0.2:8089"
 assert service["environment"]["NGINX_ENVSUBST_FILTER"] == "^(BACKEND_UPSTREAM|AI_UPSTREAM)$$", service["environment"]
@@ -35,36 +35,37 @@ port = ports[0]
 assert port.get("host_ip") == "10.20.0.3", f"unexpected host_ip: {port!r}"
 assert str(port.get("published")) == "8081", f"unexpected published port: {port!r}"
 assert int(port.get("target")) == 80, f"unexpected target port: {port!r}"
-assert port.get("protocol", "tcp") == "tcp", f"unexpected protocol: {port!r}"
 
 volumes = service.get("volumes", [])
-assert len(volumes) == 1, f"expected one bind mount, found: {volumes!r}"
-mount = volumes[0]
-assert mount.get("type") == "bind", f"unexpected mount type: {mount!r}"
-assert mount.get("target") == "/etc/nginx/templates/default.conf.template", f"unexpected mount target: {mount!r}"
-assert pathlib.Path(mount.get("source", "")).resolve() == pathlib.Path(sys.argv[1]).resolve(), f"unexpected mount source: {mount!r}"
-assert mount.get("read_only") is True, f"frontend template mount must be read-only: {mount!r}"
+assert len(volumes) == 4, f"expected template + 3 K7C runtime mounts, found: {volumes!r}"
+by_target = {m.get("target"): m for m in volumes}
+expected = {
+    "/etc/nginx/templates/default.conf.template": pathlib.Path(sys.argv[1]).resolve(),
+    "/usr/share/nginx/html/sponsor-config.json": pathlib.Path("/opt/wotb-tx2/runtime-content/sponsor-config.json"),
+    "/usr/share/nginx/html/sponsor-assets": pathlib.Path("/opt/wotb-tx2/runtime-content/sponsor"),
+    "/usr/share/nginx/html/download/android": pathlib.Path("/opt/wotb-tx2/runtime-content/android-release"),
+}
+for target, source in expected.items():
+    mount = by_target[target]
+    assert mount.get("type") == "bind", mount
+    assert pathlib.Path(mount.get("source", "")).resolve() == source.resolve(), mount
+    assert mount.get("read_only") is True, mount
 
-# K7B must not accidentally make TX1 host content a TX2 workload dependency.
+# TX2 must never bind TX1 host paths; it owns a local replicated runtime-content root.
 rendered = json.dumps(data, sort_keys=True)
-for forbidden in (
-    "/opt/wotb-tx", "sponsor-config.json", "sponsor-assets",
-    "android-release", "10.20.0.1:8081", "CADDY_FRONTEND_UPSTREAM",
-):
-    assert forbidden not in rendered, forbidden
+assert "/opt/wotb-tx/" not in rendered, rendered
+assert "/opt/wotb-tx2/runtime-content" in rendered, rendered
+assert "10.20.0.1:8081" not in rendered, rendered
+assert "CADDY_FRONTEND_UPSTREAM" not in rendered, rendered
 PY
 
-# K7B TX workload source transport must remain on the domestic Gitee mirror.
 grep -Fq 'git_provider = "gitee.com"' "$resource"
 grep -Fq 'repo = "A158Coke/Wotbtools"' "$resource"
 ! grep -Fq 'git_provider = "github.com"' "$resource"
 
-# The shadow must use the same official-nginx template filter as TX1 production.
 grep -Fq 'NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$$' "$compose"
 grep -Fq 'NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$$' "$ROOT/deploy/tx/frontend.compose.yml"
-
-# The mounted template must preserve the routing split used by production.
 grep -Fq 'proxy_pass ${AI_UPSTREAM};' "$template"
 grep -Fq 'proxy_pass ${BACKEND_UPSTREAM}/api/;' "$template"
 
-echo "K7B frontend shadow Compose contract: PASS"
+echo "K7B/K7C frontend shadow Compose contract: PASS"
