@@ -5,7 +5,7 @@ Validates `infra/komodo/resources/**/*.toml` structurally (never by grepping
 descriptions):
 
   * every file parses as TOML;
-  * only the reviewed resource types are declared (server, resource_sync);
+  * only the reviewed resource types are declared (server, resource_sync, and the single K7B frontend stack);
   * no duplicate name of the same resource type, across files;
   * the single ResourceSync carries the reviewed, non-destructive configuration;
   * exactly the three production Servers are declared, in outbound mode, with the
@@ -36,9 +36,9 @@ RESOURCE_PATH_VALUE = "infra/komodo/resources"
 # K4.1 declares exactly these resource types. Komodo also accepts plural aliases
 # (`[[servers]]`), which are deliberately rejected here so the reviewed files stay
 # in one canonical form.
-ALLOWED_TABLES = ("server", "resource_sync")
+ALLOWED_TABLES = ("server", "resource_sync", "stack")
 FORBIDDEN_TABLES = (
-    "stack", "deployment", "build", "repo", "procedure", "action", "builder",
+    "deployment", "build", "repo", "procedure", "action", "builder",
     "swarm", "alerter", "variable", "user_group",
 )
 # Metadata keys Komodo understands on a declared resource. Anything else is either a
@@ -114,6 +114,43 @@ RESOURCE_SYNC_INERT_KEYS = {
 }
 # Forbidden even when empty: these carry credentials for a private repository.
 RESOURCE_SYNC_FORBIDDEN_KEYS = ("git_account", "webhook_secret")
+
+K7B_STACK_NAME = "wotbtools-frontend-shadow"
+K7B_STACK_CONFIG = {
+    "server": "tx2",
+    "project_name": "wotbtools-frontend-shadow",
+    "auto_pull": True,
+    "run_build": False,
+    "poll_for_updates": False,
+    "auto_update": False,
+    "auto_update_all_services": False,
+    "destroy_before_deploy": False,
+    "skip_secret_interp": False,
+    "git_provider": "github.com",
+    "git_https": True,
+    "repo": "A158Coke/WotbTools",
+    "branch": "main",
+    "commit": "",
+    "clone_path": "",
+    "reclone": False,
+    "webhook_enabled": False,
+    "webhook_force_deploy": False,
+    "files_on_host": False,
+    "run_directory": "deploy/tx",
+    "file_paths": ["frontend-shadow.compose.yml"],
+    "env_file_path": ".env",
+    "send_alerts": True,
+    "registry_provider": "",
+    "registry_account": "",
+    "extra_args": [],
+    "build_extra_args": [],
+    "compose_cmd_wrapper": "",
+    "compose_cmd_wrapper_include": [],
+    "ignore_services": [],
+    "file_contents": "",
+    "environment": "",
+    "links": [],
+}
 
 failures: list[str] = []
 
@@ -299,6 +336,35 @@ def check_servers(entries: dict[str, dict]) -> None:
             fail(f"{context}: must not reference Periphery port 8120")
 
 
+
+def check_stacks(entries: dict[str, dict]) -> None:
+    """K7B opens exactly one tightly-scoped Stack resource, and nothing generic."""
+    if sorted(entries) != [K7B_STACK_NAME]:
+        fail(f"K7B declares exactly stack '{K7B_STACK_NAME}', found {sorted(entries)}")
+        return
+    declaration = entries[K7B_STACK_NAME]
+    check_metadata("stack", K7B_STACK_NAME, declaration)
+    if declaration.get("deploy", False) is not False:
+        fail("K7B frontend shadow must keep deploy = false; ResourceSync Apply is not workload deploy")
+    config = declaration.get("config")
+    if not isinstance(config, dict):
+        fail(f"stack '{K7B_STACK_NAME}' has no [stack.config] table")
+        return
+    missing = sorted(set(K7B_STACK_CONFIG) - set(config))
+    extra = sorted(set(config) - set(K7B_STACK_CONFIG))
+    if missing:
+        fail(f"stack '{K7B_STACK_NAME}' is missing reviewed config keys: {missing}")
+    if extra:
+        fail(f"stack '{K7B_STACK_NAME}' has unreviewed config keys: {extra}")
+    for key, expected in K7B_STACK_CONFIG.items():
+        if config.get(key) != expected:
+            fail(f"stack '{K7B_STACK_NAME}': {key} must be {expected!r}, found {config.get(key)!r}")
+    if config.get("webhook_enabled") is not False or config.get("auto_update") is not False:
+        fail("K7B frontend shadow must never auto-deploy from webhook or image polling")
+    if config.get("server") != "tx2":
+        fail("K7B frontend shadow may run only on Komodo Server tx2")
+
+
 def main() -> int:
     parsed = load_files()
     by_type = check_resource_types(parsed)
@@ -310,6 +376,7 @@ def main() -> int:
             )
     check_resource_sync(by_type.get("resource_sync", {}))
     check_servers(by_type.get("server", {}))
+    check_stacks(by_type.get("stack", {}))
 
     if failures:
         print("Declarative Komodo resource contract: FAIL", file=sys.stderr)
