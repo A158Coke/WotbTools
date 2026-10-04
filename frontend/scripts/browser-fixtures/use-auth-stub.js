@@ -113,8 +113,13 @@ function startInit(mode) {
   return publicPromise
 }
 
-function initAuth() {
-  return currentPromise || startInit(initialMode)
+/**
+ * 与真实 composable 一致：`initPromise` 只表示 bootstrap **落定**这个事件，不携带登录态。
+ * 它 resolve 的一律是 undefined —— 登录态只能读 `isAuthenticated()` / `authenticated`
+ * （读历史值正是 Android 2.1.0 logout 后 Profile 停在「正在初始化登录…」的原因）。
+ */
+async function initAuth() {
+  await (currentPromise || startInit(initialMode))
 }
 
 function retryAuth() {

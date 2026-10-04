@@ -55,9 +55,26 @@ Object.defineProperty(api, 'authenticated', {
   set: (value) => { authFlag.value = value },
   configurable: true,
 })
+
+/**
+ * 真实 useAuth 的 `initPromise` 是**模块级一次性**的 init 交易 promise：第一次落定之后，
+ * `logout()` 只把 reactive session 投影成 unauthenticated，**不会重建这笔交易** —— 之后每个
+ * `useAuth()`（= 组件重新挂载）拿到的都是同一个已经 resolve 的历史结果。
+ *
+ * 这里刻意保留 **legacy boolean 语义**（= Android 2.1.0 APK 里那份前端的行为，也正是本 bug
+ * 的触发条件）：页面必须对「历史 promise resolve true」免疫。一旦有组件再把这个值当成
+ * session truth，下面的 stale-init 回归测试就会失败。
+ * （生产代码里 `initPromise` 已不再 resolve 值，见 useAuth.test.js 的契约断言。）
+ */
+let initSettlement = null
+function staleInitPromise() {
+  if (!initSettlement) initSettlement = Promise.resolve(api.authenticated)
+  return initSettlement
+}
+
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
-    initPromise: Promise.resolve(api.authenticated),
+    initPromise: staleInitPromise(),
     login: api.login,
     logout: api.logout,
     isAuthenticated: () => api.authenticated,
@@ -142,6 +159,9 @@ function setOnline(value) {
 }
 
 beforeEach(async () => {
+  // 每个用例都从「一次全新的 auth bootstrap」开始：init 交易只在第一次 useAuth() 时建立，
+  // 之后（同一个用例内）跨挂载保持不变 —— 这正是 stale init 结果的来源。
+  initSettlement = null
   useConnectivity().stop()
   setOnline(true)
   await useConnectivity().start()
@@ -1015,5 +1035,77 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
     expect(wrapper.text()).toContain('profile.serverEu')
     expect(wrapper.text()).not.toContain('111111')
     wrapper.unmount()
+  })
+})
+
+/**
+ * Android 2.1.0 真机 bug：Native Auth 登录 → 进入 Profile → Logout → 回 Home → 再进 Profile，
+ * 页面**永久**停在「正在初始化登录…」。
+ *
+ * 根因：ProfilePage 把 `await initPromise` 的历史 boolean 当成了当前登录态。
+ * init 交易在第一次 authenticated 时就 resolve(true)，`logout()` 只把 reactive session
+ * 投影成 unauthenticated（不重建交易），所以重挂载读到 stale `true` → 误进 `done` →
+ * 当前 session 实际未登录 → `loadProfile()` 被 epoch 守卫丢弃 → `profile` 保持 null →
+ * 模板落到最后的 `profile.loading`。
+ *
+ * 修复后的语义：`initPromise` 只用于等 bootstrap **落定**；登录态只认当前 reactive session。
+ */
+describe('ProfilePage logout 后重挂载（stale init 结果）', () => {
+  beforeEach(() => {
+    profileFailures = 0
+    currentProfile = wargamingProfile('ASIA', 123)
+    for (const spy of Object.values(userApi)) spy.mockClear()
+    userApi.getUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.ensureUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.getUserHofRecords.mockResolvedValue([])
+    hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
+    // 重挂载前把 business bootstrap 状态机放回 idle，等价于"下一次 app bootstrap 起点"：
+    // bug 版本会因此真的去触发 ensure，下面「零 backend 流量」的断言才有区分度。
+    resetBusinessUserBootstrap()
+  })
+
+  afterEach(() => resetBusinessUserBootstrap())
+
+  it('remount 只认当前 session：stale initPromise 不得驱动 profile 加载', async () => {
+    // 1) startup authenticated → Profile 正常加载
+    signInAs('user-a')
+    const first = mountProfile()
+    await flushPromises()
+    expect(first.find('[data-testid="profile-logout"]').exists()).toBe(true)
+    expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
+
+    // 2) Logout → authState=false，页面立即 signedOut（响应式 watcher，不需要重挂载）
+    signOut()
+    await flushPromises()
+    expect(api.authenticated).toBe(false)
+    expect(first.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
+
+    // 3) 离开 Profile 再回来：initPromise 仍是第一次那笔已经 resolve(true) 的历史交易
+    first.unmount()
+    await flushPromises()
+    resetBusinessUserBootstrap()
+    for (const spy of Object.values(userApi)) spy.mockClear()
+    hundredApi.hofHundredMyStatus.mockClear()
+    expect(await staleInitPromise()).toBe(true)
+
+    // 4) 重挂载：登录态按当前 session 判定 → signedOut（不是 done）
+    const second = mountProfile()
+    await flushPromises()
+    expect(second.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
+
+    // 5) 不得发起任何 backend 流量：profile 读取与 business bootstrap 都不许被触发
+    expect(userApi.getUserProfile).not.toHaveBeenCalled()
+    expect(userApi.ensureUserProfile).not.toHaveBeenCalled()
+
+    // 6) 绝不显示「正在初始化登录…」
+    expect(second.text()).not.toContain('profile.loading')
+
+    // 7) 再次登录（false→true）：仍然恰好加载一次，不需要刷新 / 重挂载
+    signInAs('user-a')
+    await flushPromises()
+    expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
+    expect(second.find('[data-testid="profile-signed-out"]').exists()).toBe(false)
+    expect(second.text()).toContain('profile.serverAsia')
+    second.unmount()
   })
 })

@@ -104,7 +104,8 @@ describe('useAuth', () => {
   it('普通浏览器 → BrowserAuthProvider：生产 issuer 配置 + check-sso，initPromise 正常落定', async () => {
     const auth = useAuth()
 
-    await expect(auth.initPromise).resolves.toBe(false)
+    // initPromise 只是"bootstrap 已落定"这个事件：刻意不 resolve 任何值，避免被当成 session truth。
+    await expect(auth.initPromise).resolves.toBeUndefined()
 
     expect(kcInstances).toHaveLength(1)
     expect(kcInstances[0].config).toEqual({
@@ -459,6 +460,26 @@ describe('useAuth', () => {
 
     releaseLogout()
     await pending
+  })
+
+  it('initPromise 只是落定信号：logout 后既不携带历史 session，也不会被重建', async () => {
+    // Android 2.1.0 真机 bug 的契约面：init 交易在第一次 authenticated 时落定，logout 只投影
+    // reactive session。若 initPromise 交出一个 boolean，重挂载的组件就会把它当成"现在已登录"。
+    // （本文件的模块态跨用例存活，所以用 retryAuth() 建立"本次已认证的交易"，与其它用例同规则。）
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = { ...USER_CLAIMS, sub: 'user-a' }
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.isAuthenticated()).toBe(true)
+
+    await auth.logout()
+    expect(auth.isAuthenticated()).toBe(false)
+
+    // 组件重新挂载 = 再调一次 useAuth()：拿到同一笔已落定的交易，但绝不交出历史 true。
+    const remounted = useAuth()
+    await expect(remounted.initPromise).resolves.toBeUndefined()
+    expect(remounted.isAuthenticated()).toBe(false)
+    expect(remounted.authenticated.value).toBe(false)
   })
 
   it('logout() 在 Android 上**离线也强制清 Native 本地会话**（远端 end-session 才是 best-effort）', async () => {
