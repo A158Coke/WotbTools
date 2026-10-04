@@ -74,7 +74,9 @@ const DEG = Math.PI / 180
  *   explosion_radius?, calibrated_shells?, enhanced_armor?, normalization_deg?,
  *   ricochet_deg?, allow_ricochet? }
  * @returns {object} { result, total_effective, layers, first_armor_angle_deg,
- *   first_armor_norm_deg, ricochet, ricochet_remaining_pen, damage }
+ *   first_armor_norm_deg, ricochet, ricochet_remaining_pen, damage }。
+ *   层另带 angle_deg（该层入射角，度；外部模块层无）——结果面板对照 BlitzKit
+ *   ShotDisplayCard 显示「等效厚度 @ 角度」用。
  */
 export function calculate(req) {
   const shell = parseShellType(req.shell_type)
@@ -158,6 +160,7 @@ export function calculate(req) {
     let eff
     let layerPenetrated
     let isOvermatch = false
+    let layerAngleDeg = null   // 该层入射角（外部模块层无角度——flat 消耗）
     if (isModule(ah.section)) {
       eff = thickness
       if (isHe) {
@@ -173,6 +176,7 @@ export function calculate(req) {
       const cosA = Math.min(Math.abs(dot(n, view)), 1.0)
       const angleRad = Math.acos(cosA)
       const angleDeg = angleRad / DEG
+      layerAngleDeg = angleDeg
 
       if (firstArmorAngleDeg < 0.0) firstArmorAngleDeg = angleDeg
 
@@ -198,6 +202,7 @@ export function calculate(req) {
           penetrated: false,
           ricochet: true,
           overmatch: false,
+          angle_deg: layerAngleDeg,
         })
         break
       }
@@ -222,6 +227,7 @@ export function calculate(req) {
       penetrated: layerPenetrated,
       ricochet: false,
       overmatch: isOvermatch,
+      angle_deg: layerAngleDeg,
     })
 
     if (layerPenetrated) {
