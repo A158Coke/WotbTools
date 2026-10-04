@@ -112,6 +112,7 @@
 | `operations/komodo-resource-sync.md` | 声明式 Komodo 资源层（K4.1）：`infra/komodo/resources/**` ownership、ResourceSync `wotbtools-main` 安全设置、Server 期望状态、首次手工 bootstrap、可逆 drift 验证与只读 diff → 人工 apply 流程时 |
 | `operations/tx-service-plane.md` | TX1 K6A WireGuard-only service endpoints、loopback administration、保持 Docker-local production dependency、合并后验收与回滚时 |
 | `operations/komodo-k5-runtime-acceptance.md` | Komodo K5：TX2 disposable Stack 的真实 create/deploy/run/log/stop/destroy/delete 验收、Compose 与腾讯云 Docker Hub mirror 前置、零残留清理证明及后续 workload migration 边界时 |
+| `operations/tx2-production-worker.md` | TX2 production worker（K7A）：独立 host 前置条件 owner（Compose v2、`daemon.json` 镜像、root 执行上下文的 TCR pull 凭据）、三段 ownership 边界、凭据生命周期、fail-closed 矩阵、`TX2_PRODUCTION_WORKER_READY` 与从零重建流程时 |
 
 ## Reference（参考字典）
 
