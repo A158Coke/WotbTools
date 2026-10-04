@@ -4,6 +4,9 @@
 # only after manual review + Apply. deploy=false means applying the ResourceSync does
 # not itself start or redeploy the workload; deployment remains an explicit Komodo
 # action during K7B acceptance.
+#
+# GitHub remains the source authority. Gitee is the domestic source transport for TX
+# workers so production deployment does not depend on slow cross-border GitHub clone.
 [[stack]]
 name = "wotbtools-frontend-shadow"
 description = "K7B TX2 shadow Frontend; no public traffic until K7C"
@@ -21,9 +24,9 @@ auto_update = false
 auto_update_all_services = false
 destroy_before_deploy = false
 skip_secret_interp = false
-git_provider = "github.com"
+git_provider = "gitee.com"
 git_https = true
-repo = "A158Coke/WotbTools"
+repo = "A158Coke/Wotbtools"
 branch = "main"
 commit = ""
 clone_path = ""
