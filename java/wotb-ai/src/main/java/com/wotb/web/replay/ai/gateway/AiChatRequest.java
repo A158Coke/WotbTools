@@ -1,5 +1,10 @@
 package com.wotb.web.replay.ai.gateway;
 
+import org.springframework.ai.content.Media;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.util.MimeTypeUtils;
+
+import java.util.List;
 
 /**
  * 供应商无关的 AI 聊天请求模型，由 Replay 业务层构造、交给 {@link AiChatGateway} 执行。
@@ -19,6 +24,7 @@ package com.wotb.web.replay.ai.gateway;
  *                         {@code min(本值, 配置值)}，用于两 Call Harness 的 stage budget
  * @param responseFormat   期望的输出格式（{@code null} 视同 {@link AiResponseFormat#TEXT}）；
  *                         {@code JSON_OBJECT} 由 Gateway 映射为 provider 的 response_format=json_object
+ * @param media            optional media attachments; existing text requests use an empty list
  */
 public record AiChatRequest(
         String systemPrompt,
@@ -31,7 +37,8 @@ public record AiChatRequest(
         String correlationId,
         String analysisMode,
         Integer callTimeoutSec,
-        AiResponseFormat responseFormat
+        AiResponseFormat responseFormat,
+        List<Media> media
 ) {
     public AiChatRequest {
         if (systemPrompt == null) throw new IllegalArgumentException("systemPrompt must not be null");
@@ -42,6 +49,24 @@ public record AiChatRequest(
         // 输出格式契约：未显式指定一律 TEXT，
         // 保证存量请求（Player/Pre-battle/Harness）行为等价，绝不静默进入 JSON mode。
         responseFormat = responseFormat == null ? AiResponseFormat.TEXT : responseFormat;
+        media = media == null ? List.of() : List.copyOf(media);
+    }
+
+    /** Existing text requests keep an empty attachment list. */
+    public AiChatRequest(
+            final String systemPrompt, final String userPrompt, final String model,
+            final Double temperature, final int maxOutputTokens, final boolean thinkingEnabled,
+            final String reasoningEffort, final String correlationId, final String analysisMode,
+            final Integer callTimeoutSec, final AiResponseFormat responseFormat) {
+        this(systemPrompt, userPrompt, model, temperature, maxOutputTokens, thinkingEnabled,
+                reasoningEffort, correlationId, analysisMode, callTimeoutSec, responseFormat, List.of());
+    }
+
+    /** Keeps Spring AI media construction inside the transport boundary. */
+    public AiChatRequest withImage(final String contentType, final byte[] image) {
+        return new AiChatRequest(systemPrompt, userPrompt, model, temperature, maxOutputTokens,
+                thinkingEnabled, reasoningEffort, correlationId, analysisMode, callTimeoutSec, responseFormat,
+                List.of(new Media(MimeTypeUtils.parseMimeType(contentType), new ByteArrayResource(image))));
     }
 
     /**

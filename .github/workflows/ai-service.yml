@@ -230,7 +230,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 35m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,AI_API_KEY,AI_BASE_URL,AI_MODEL,KEYCLOAK_ISSUER_URI,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,AI_API_KEY,AI_BASE_URL,AI_MODEL,TOURNAMENT_RECOGNITION_MODEL,TOURNAMENT_RECOGNITION_SIGNING_KEY,KEYCLOAK_ISSUER_URI,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY
           script: |
             set -euo pipefail
             exec 9>/opt/wotb/.deploy.lock
@@ -245,6 +245,8 @@ jobs:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
           AI_BASE_URL: ${{ vars.AI_BASE_URL || 'https://api.deepseek.com' }}
           AI_MODEL: ${{ vars.AI_MODEL || 'deepseek-v4-flash' }}
+          TOURNAMENT_RECOGNITION_MODEL: ${{ vars.TOURNAMENT_RECOGNITION_MODEL || 'deepseek-flash' }}
+          TOURNAMENT_RECOGNITION_SIGNING_KEY: ${{ secrets.TOURNAMENT_RECOGNITION_SIGNING_KEY }}
           KEYCLOAK_ISSUER_URI: ${{ vars.KEYCLOAK_ISSUER_URI || 'https://auth.wotbtools.com/realms/wotbtools' }}
           AI_REVIEW_WORKER_MAX_CONCURRENT: ${{ vars.AI_REVIEW_WORKER_MAX_CONCURRENT || '2' }}
           AI_REVIEW_WORKER_QUEUE_CAPACITY: ${{ vars.AI_REVIEW_WORKER_QUEUE_CAPACITY || '2' }}

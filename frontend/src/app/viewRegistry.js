@@ -18,6 +18,9 @@ const MorePage = defineAsyncComponent(() => import('../components/MorePage.vue')
 const AgentTankopediaPage = defineAsyncComponent(() => import('../components/AgentTankopedia.vue'))
 const AgentArmorViewPage = defineAsyncComponent(() => import('../components/AgentArmorView.vue'))
 const RatingDocsPage = defineAsyncComponent(() => import('../components/RatingDocsPage.vue'))
+const TournamentPointsPage = defineAsyncComponent(() => import('../components/TournamentPointsPage.vue'))
+const TournamentPointsConfigPage = defineAsyncComponent(() => import('../components/TournamentPointsConfigPage.vue'))
+const TournamentPointsAdminPage = defineAsyncComponent(() => import('../components/TournamentPointsAdminPage.vue'))
 
 /**
  * 回放工作台是唯一 capability orchestrator：`replay` / `battle-playback` / `ai-review`
@@ -49,6 +52,9 @@ export const VIEW_COMPONENTS = Object.freeze({
   android: AndroidDownloadPage,
   sponsor: SponsorPage,
   'rating-docs': RatingDocsPage,
+  'tournament-points': TournamentPointsPage,
+  'tournament-points-config': TournamentPointsConfigPage,
+  'tournament-points-admin': TournamentPointsAdminPage,
 })
 
 /** view → 工作台初始能力（唯一映射点）。 */
