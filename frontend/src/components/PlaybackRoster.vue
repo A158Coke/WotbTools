@@ -247,7 +247,13 @@ function listRows(rowCount) {
 .pb-roster.pb-roster-fill { align-content: stretch; block-size: 100%; }
 .pb-roster.pb-roster-fill .pb-roster-team { grid-template-rows: auto minmax(0, 1fr); min-block-size: 0; }
 .pb-roster.pb-roster-fill .pb-roster-list { align-content: stretch; min-block-size: 0; }
-.pb-roster.pb-roster-fill .pb-roster-row { min-block-size: var(--roster-row-min, 26px); }
+.pb-roster.pb-roster-fill .pb-roster-row {
+  min-block-size: var(--roster-row-min, 26px);
+  /* 行高永远等于所在网格轨道（block-size: 100%）：内容高于轨道时裁切而不是溢出到
+     下一行轨道之上——否则相邻两行会视觉重叠（2026-10-05 实测反馈「条之间遮挡」）。 */
+  block-size: 100%;
+  overflow: hidden;
+}
 
 .pb-roster-team { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-1); }
 /* 3D 的车道里，名册栏自己承担卡片外观（2D 的车道由外层 lane 承担）。
@@ -281,7 +287,8 @@ function listRows(rowCount) {
    正常 7v7 因此不需要车道滚动条。 */
 .pb-roster-compact { gap: var(--space-1); padding: 0; }
 .pb-roster-compact .pb-roster-team { gap: 0; padding: 0; }
-.pb-roster-compact .pb-roster-list { gap: 0; }
+/* 行间保留 2px 呼吸：gap 0 时相邻行的血条/文字贴在一起，视觉上像互相遮挡。 */
+.pb-roster-compact .pb-roster-list { gap: 2px; }
 .pb-roster-compact .pb-roster-row { min-height: 0; padding: 0 var(--space-1); border-block-width: 0; }
 @media (width < 1200px) and (pointer: coarse) {
   .pb-roster { --roster-row-min: calc(var(--space-4) * 4); }

@@ -634,7 +634,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         :sel-cur-stats="selCurStats" :selected-track="selectedTrack" :sel-damage-log="selDamageLog"
         :current-time="detailTime" :format-clock="formatPlaybackClock"
         :drag-host="rootEl" :drag-bounds="controlsEl"
-        :initial-side="detailsSide" :selection-key="selectedEid"
+        :initial-side="detailsSide" :initial-vertical="'bottom'" :selection-key="selectedEid"
         @close="closeDetails"
       />
 
