@@ -32,18 +32,15 @@ export const PRIMARY_NAV = Object.freeze([
 ])
 
 /**
- * 侧边栏管理组（平板 / 桌面）。`role`：'admin' = wotbtools-admin；'hofAdmin' = HoF-admin 或全站管理员。
- * 手机没有侧边栏，这些入口留在"更多"页的管理分组里。
+ * 侧边栏管理组（平板 / 桌面）。role 由对应领域角色决定。
  */
 export const ADMIN_NAV = Object.freeze([
   Object.freeze({ id: 'admin-users', view: 'admin-users', labelKey: 'admin.title', role: 'admin' }),
   Object.freeze({ id: 'hof-admin', view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', role: 'hofAdmin' }),
-  Object.freeze({ id: 'tournament-points-config', view: 'tournament-points-config', labelKey: 'tournament.configTitle', role: 'admin' }),
-  Object.freeze({ id: 'tournament-points-admin', view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', role: 'admin' }),
+  Object.freeze({ id: 'tournament-points-config', view: 'tournament-points-config', labelKey: 'tournament.configTitle', role: 'tournamentAdmin' }),
+  Object.freeze({ id: 'tournament-points-admin', view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', role: 'tournamentAdmin' }),
 ])
 
-// 视图 → 所属栏目。个人中心属于账户入口；管理视图各自是侧边栏的一项；
-// 未列出的视图（设置、关于等）都归入"更多"。
 const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   home: 'home',
   replay: 'replay',
@@ -89,10 +86,6 @@ export function canonicalView(view) {
   return LEGACY_VIEW_ALIASES[view] ?? view
 }
 
-/**
- * Derive a supported product view from the router's canonical location.
- * Authentication gates belong to capability/page hosts; deep links remain discoverable.
- */
 export function viewFromRoute(route) {
   const rawView = isSponsorPath(route.path)
     ? 'sponsor'
@@ -102,36 +95,21 @@ export function viewFromRoute(route) {
   return view
 }
 
-/** 名人堂写进 URL 的筛选键（utils/hofQuery.js）：只属于 hof，导航到别的页面时丢掉。 */
 const HOF_QUERY_KEYS = ['tab', 'page', 'tank', 'nation', 'type', 'tier', 'bt', 'nick', 'limit']
-/** 坦克百科写进 URL 的筛选 / 详情键（utils/tankopediaQuery.js）：离开百科时丢掉，不带到别的页面。 */
 const TANKOPEDIA_QUERY_KEYS = ['q', 'tier', 'nation', 'type', 'sort', 'tank', 'config']
-/**
- * 装甲查看器 / 射击复现场景写进 URL 的键（`AgentShots.srViewerUrl` 的交接链接 + `tankViewer` 的 QP 读取）：
- * tank / shooter / config / scfg / shell / shot / world / heatmap，加相机与显示档（az / h / d / eqcal / …）
- * 与 `clean` / `debug` 这类只对该场景有意义的开关。它们**只属于该视图**——不清理的话，
- * 从场景里用侧边栏切走，URL 会变成 ?view=replay&tank=…&shot=…&world=1&heatmap=1（用户实测反馈）。
- *
- * 清理方向与坦克百科一致：只处理**离开**场景。进入方向一律保留——这些键就是目的地的参数，
- * 而"射击分析 → 装甲查看器"的交接（`ReplayShotsPane.openInViewer`）与坦克百科入口
- * （`AgentTankopedia` 的 router.push）都不经本函数；但任何以 URL 表达的交接都不该在入场时被吞掉。
- */
 const ARMOR_SCENE_QUERY_KEYS = [
   'tank', 'shooter', 'config', 'scfg', 'shell', 'shot', 'world', 'heatmap',
   'az', 'h', 'd', 'eqcal', 'eqenh', 'quality', 'move', 'rel', 'clean', 'debug',
 ]
 
-/** Keep legacy query URLs as the public URL contract while Vue Router owns history. */
 export function locationForView(view, route) {
   const query = { ...route.query }
-  // 进出名人堂都丢掉这些键：既不把筛选带到别的页面，也不把别处同名参数（如坦克百科的 tank）当成名人堂筛选
   if ((route.query?.view === 'hof') !== (view === 'hof')) {
     for (const key of HOF_QUERY_KEYS) delete query[key]
   }
   if (route.query?.view === 'agent-tankopedia' && view !== 'agent-tankopedia') {
     for (const key of TANKOPEDIA_QUERY_KEYS) delete query[key]
   }
-  // 离开装甲场景时丢掉场景参数（进入方向见上面 ARMOR_SCENE_QUERY_KEYS 的说明）
   if (route.query?.view === 'agent-armor' && view !== 'agent-armor') {
     for (const key of ARMOR_SCENE_QUERY_KEYS) delete query[key]
   }
@@ -143,7 +121,6 @@ export function locationForView(view, route) {
   }
 }
 
-/** 当前页面所属一级区块的标题 key（顶栏紧凑标题与 document.title 共用）；不属于任何区块时为 null。 */
 export function sectionTitleKey(view) {
   const section = primarySection(view)
   const item = [...primaryNavItems(), ...ADMIN_NAV].find(entry => entry.id === section)
