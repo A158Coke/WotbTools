@@ -22,7 +22,7 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
-import { buildDestructibleIndex, foldDestructibleStates, fallRotation, fallTipVector } from './destructibles.js'
+import { buildDestructibleIndex, foldDestructibleStates, fallRotation, fallTipVector, fallStopAngle } from './destructibles.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
 import { impactKind } from './impactKind.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
@@ -987,6 +987,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
               gltf.scene.add(pivot);
               st.pivot = pivot;
               st.heightM = heightM;
+              // 停止角 = 树干沿倒向**触地**的角度（客户端"停在地形上"，因而随位置/倒向变化）。
+              // 高度场在**世界系**（见 rebuildGround 注释：世界 x = −场景局部 x），而 pivot 在
+              // gltf.scene 局部系（z 上）→ 采样用 (lx, ly) → (世界 −lx, 世界 lz=ly)。
+              // 无高度场（2D 资源平面）→ sampleHeight 恒 0，此时按平坦地面（90°）。
+              st.stopRad = heightField
+                ? fallStopAngle(st.fallDir, { x: px, y: py, z: pivot.position.z }, heightM,
+                    (lx, ly) => sampleHeight(-lx, ly))
+                : Math.PI / 2;
             } else {
               st.intactMeshes = findMeshes(px, py, false).map((e) => e.mesh);
               st.deadMeshes = findMeshes(px, py, true).map((e) => e.mesh);
@@ -2316,14 +2324,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         }
         // 只在动画窗口内逐帧更新；终态后写一次不再碰（省去 700+ 次 setFromAxisAngle）
         const elapsed = T - st.clock;
-        const r = fallRotation(st.fallDir, elapsed, st.heightM);
+        const stop = st.stopRad ?? Math.PI / 2;
+        const r = fallRotation(st.fallDir, elapsed, st.heightM, stop);
         if (r && elapsed < r.durationS) {
           destruct.animating = true;
           st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r.axis[0], r.axis[1], r.axis[2]), r.angle);
         } else if (!st.settled) {
-          // 落地硬停：θ(时长) = π/2，终态写一次（客户端触地即进终态）
+          // 触地硬停：终态 = 停止角（触地角，见 fallStopAngle），写一次
           st.settled = true;
-          st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r_axis(st.fallDir, 0), r_axis(st.fallDir, 1), r_axis(st.fallDir, 2)), Math.PI / 2);
+          st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r_axis(st.fallDir, 0), r_axis(st.fallDir, 1), r_axis(st.fallDir, 2)), stop);
         }
       } else {
         if (active === !!st.applied) continue;
