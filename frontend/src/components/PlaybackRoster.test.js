@@ -146,6 +146,17 @@ describe('PlaybackRoster', () => {
     expect(source).not.toContain('pb-roster-shell')
   })
 
+  it('源码回归：车型列必须可收缩（flex 允许 shrink）——否则窄面板横向撑破出滚动条', () => {
+    const source = readFileSync('src/components/PlaybackRoster.vue', 'utf8')
+    const m = source.match(/\.pb-roster-row \.tank \{([^}]*)\}/)
+    expect(m).toBeTruthy()
+    // flex: none 会禁止收缩 → 行内容总宽超出车道 → 行被裁切 + 横向滚动条（2026-10-05 实测故障）
+    expect(m[1]).not.toContain('flex: none')
+    expect(m[1]).toMatch(/flex:\s*0 1 auto/)
+    // 血条保持固定宽（主状态视觉锚点，不可被挤压）
+    expect(source).toMatch(/\.pb-roster-hpbar \{[^}]*flex: none/)
+  })
+
   it('compact：信息不减（玩家 / 车型 / HP 条都在），只是收紧密度并开启纵向铺满', () => {
     const wrapper = mountRoster({ compact: true, health: { 1001: { currentHp: 1300, maxHp: 2600 } } })
     const shell = wrapper.get('[data-test="pb-shell-roster"]')

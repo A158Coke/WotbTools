@@ -132,15 +132,19 @@
   margin-inline: auto;
   padding: var(--space-1) var(--space-2);
 }
-/* 名册车道 = 左上/右上角悬浮面板（游戏同款：己方在左、敌方在右）。 */
+/* 名册车道 = 左上/右上角悬浮面板（游戏同款：己方在左、敌方在右）。
+   宽度按行内容需求定：行固定开销 = 内边距 32 + 间隙 12 + 色点 8 + 血条 52 = 104px，
+   昵称 + 车型再需 ~90px——9rem(144px) 会横向撑破（行被裁切 + 出现横向滚动条）。
+   取 clamp(11rem, 16vw, 15rem)：窄屏 176px 起、宽屏到原始 240px（f226174b 版宽）。 */
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane.side-left,
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane.side-right {
   position: absolute;
   inset-block-start: var(--space-1);
   z-index: var(--pb-z-hud);
-  inline-size: var(--pb-roster-min, 9rem);
-  max-block-size: calc(100% - 5rem);
+  inline-size: clamp(11rem, 16vw, 15rem);
+  max-block-size: calc(100% - 4rem);
   overflow-y: auto;
+  overflow-x: hidden;
   min-block-size: 0;
 }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .side-left {
@@ -180,8 +184,5 @@
       minmax(var(--pb-roster-min), 1fr)
       minmax(0, 2fr)
       minmax(var(--pb-roster-min), 1fr);
-  }
-  .pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane {
-    inline-size: clamp(9rem, 12vw, 14rem);
   }
 }
