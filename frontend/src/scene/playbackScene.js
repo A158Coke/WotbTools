@@ -123,6 +123,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let paused = false;
   // 诊断强引用仅在显式 debug 下创建（生产不挂 window.__scene 等长生命周期引用）
   const DEBUG = (() => { try { return new URLSearchParams(location.search).has('debug'); } catch (e) { return false; } })();
+  // 对数深度逃生开关（?logdepth=0 关闭）：log depth 全局生效——每片元写 gl_FragDepth、
+  // 禁 early-z，理论上有全场景片元开销。真机（尤其 Android）若出现可感性能回归，
+  // URL 立即回滚不必等发版；同一开关即性能验收的 A/B 对照（同回放/同画质/同机位）。
+  const LOGDEPTH = (() => { try { return new URLSearchParams(location.search).get('logdepth') !== '0'; } catch (e) { return true; } })();
 
   // ---------- 画质分档 ----------
   // 解析优先级：URL ?q= > localStorage > 设备默认；三档都开 3D 地形（仅分段数降档）。
@@ -236,14 +240,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // SPA 壳内渲染：视口尺寸取容器（main 区域），而非整窗（顶部导航占 67px）
     camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.5, 4000);
     camera.position.set(0, 180, 220);
-    // logarithmicDepthBuffer：客户端（贴地 TPS）可视地面恒在 ~200m 内，线性深度足够；
-    // 回放查看器允许 600–1000m 俯瞰——该距离线性 24bit 深度分辨率 4–12cm，与贴地
-    // 装饰（铁轨路基/冰面等场景薄板，按游戏精确高程导出）同重建地形间 ±3–30cm 的
-    // 交叠带同量级 → 远景俯视成片 z-fighting（碎色块、转动闪烁；拉近即消失）。
-    // 对数深度把远距离分辨率提至亚毫米，交叠带恢复确定性深度序；客户端在其视角
-    // 内本就正确，此开关让一切视角都正确。两个自定义 ShaderMaterial 需手动挂
-    // logdepthbuf 代码块（内建材质自动注入）。
-    renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, logarithmicDepthBuffer: true });
+    // 对数深度：客户端（贴地 TPS）可视地面恒在 ~200m 内，线性深度足够；回放查看器
+    // 允许 600–1000m 俯瞰——该距离线性 24bit 深度分辨率 4–12cm，与贴地装饰（铁轨
+    // 路基/冰面等场景薄板，按游戏精确高程导出）同重建地形间 ±3–30cm 的交叠带同
+    // 量级 → 远景俯视成片 z-fighting（碎色块、转动闪烁；拉近即消失）。对数深度把
+    // 远距离分辨率提至亚毫米，交叠带恢复确定性深度序。两个自定义 ShaderMaterial
+    // 需手动挂 logdepthbuf 代码块（内建材质自动注入）；?logdepth=0 可关闭（A/B 与
+    // 真机回滚，见 LOGDEPTH 注释）。
+    renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, logarithmicDepthBuffer: LOGDEPTH });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio, Q.maxDpr));
     if (DEBUG) window.__renderer = renderer;   // 诊断钩子（renderer 创建后才可引用；仅 ?debug）
@@ -978,35 +982,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
           vec4 mask = vec4(texture2D(uMask0, tc).rgb, texture2D(uMask1, tc).r);
           vec2 tuv = tc * uTiling;
-          // 客户端 tilemask-fp 的 LANDSCAPE_RELAXMAP 等效：tile/hmap 是 ×tiling 平铺采样，
-          // 平铺 UV 在每块 tile 缝上不连续，隐式导数（fwidth）在缝上尖峰 → mip 层级逐帧
-          // 乱跳（俯视地面碎色块、转动视角时闪烁；低角度可视地面近、导数小所以不显）。
-          // 客户端 HIGH/ULTRA 档用预计算 relaxmap 把缝松弛连续；这里对**连续的** cm 坐标
-          // tc 求导再乘 tiling——tile UV 的导数学上同值且天然无尖峰。textureGrad 为
-          // WebGL2 GLSL3 核心函数（three 对 ShaderMaterial 自动做 300 es 转换）。
-          vec2 duvdx = dFdx(tc) * uTiling;
-          vec2 duvdy = dFdy(tc) * uTiling;
           #ifdef SCALED_TILES
           vec4 tileColor = vec4(
-            textureGrad(uTile0, tuv * uTileScale.x, duvdx * uTileScale.x, duvdy * uTileScale.x).r,
-            textureGrad(uTile0, tuv * uTileScale.y, duvdx * uTileScale.y, duvdy * uTileScale.y).g,
-            textureGrad(uTile0, tuv * uTileScale.z, duvdx * uTileScale.z, duvdy * uTileScale.z).b,
-            textureGrad(uTile1, tuv * uTileScale.w, duvdx * uTileScale.w, duvdy * uTileScale.w).r);
+            texture2D(uTile0, tuv * uTileScale.x).r,
+            texture2D(uTile0, tuv * uTileScale.y).g,
+            texture2D(uTile0, tuv * uTileScale.z).b,
+            texture2D(uTile1, tuv * uTileScale.w).r);
           #else
-          vec4 tileColor = vec4(textureGrad(uTile0, tuv, duvdx, duvdy).rgb,
-                                textureGrad(uTile1, tuv, duvdx, duvdy).r);
+          vec4 tileColor = vec4(texture2D(uTile0, tuv).rgb, texture2D(uTile1, tuv).r);
           #endif
 
           #ifdef HEIGHT_BLEND
           #ifdef SCALED_TILES
           vec4 hMap = vec4(
-            textureGrad(uHMap0, tuv * uTileScale.x, duvdx * uTileScale.x, duvdy * uTileScale.x).r,
-            textureGrad(uHMap0, tuv * uTileScale.y, duvdx * uTileScale.y, duvdy * uTileScale.y).g,
-            textureGrad(uHMap0, tuv * uTileScale.z, duvdx * uTileScale.z, duvdy * uTileScale.z).b,
-            textureGrad(uHMap1, tuv * uTileScale.w, duvdx * uTileScale.w, duvdy * uTileScale.w).r);
+            texture2D(uHMap0, tuv * uTileScale.x).r,
+            texture2D(uHMap0, tuv * uTileScale.y).g,
+            texture2D(uHMap0, tuv * uTileScale.z).b,
+            texture2D(uHMap1, tuv * uTileScale.w).r);
           #else
-          vec4 hMap = vec4(textureGrad(uHMap0, tuv, duvdx, duvdy).rgb,
-                           textureGrad(uHMap1, tuv, duvdx, duvdy).r);
+          vec4 hMap = vec4(texture2D(uHMap0, tuv).rgb, texture2D(uHMap1, tuv).r);
           #endif
           vec4 mask2 = clamp(uTmWeight * (mask * 2.0 - 1.0)
                              + hMap * uHbScale + uHbOffset, 0.0, 1.0);
