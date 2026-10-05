@@ -579,7 +579,7 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
-  it('名册每行显示 HP 数值与百分比（血条不是唯一信息），随 store 投影变化，阵亡 = 0 / 0%', async () => {
+  it('名册行 HP 走 aria-label（行样式回归原始单行版），随 store 投影变化，阵亡 = 0 / max', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     const { store } = playback.api
@@ -593,7 +593,7 @@ describe('Replay3DPane', () => {
       unknown: [],
     }
     await nextTick()
-    const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp-text"]`).map(n => n.text())
+    const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp"]`).map(n => n.attributes('aria-label'))
     // exact 呈现：条内只写 `current / max`，不再重复百分比后缀
     expect(nums('.team1')).toEqual(['1950 / 1950', '824 / 1950'])
     // 阵亡行读作 `0 / max`（有量程时信息更完整），不保留“最后一个非零 HP”
@@ -1190,7 +1190,7 @@ describe('Replay3DPane', () => {
       const row = wrapper.get('[data-testid="replay3d-lane-left"] .pl')
       expect(wrapper.get('[data-testid="replay3d-lane-left"] [data-test="pb-shell-roster"]').classes()).toContain('pb-roster-compact')
       expect(row.get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
-      expect(row.get('[data-test="roster-hp-text"]').text()).toBe('1800 / 1950')
+      expect(row.get('[data-test="roster-hp"]').attributes('aria-label')).toBe('1800 / 1950')
       // 传输控件照常存在（名册与控件不互斥）
       expect(wrapper.find('.controls').exists()).toBe(true)
       wrapper.unmount()
@@ -1215,7 +1215,7 @@ describe('Replay3DPane', () => {
       const rows = wrapper.findAll('.team-lane .pl')
       expect(rows).toHaveLength(3)
       expect(rows[0].get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
-      expect(rows[0].get('[data-test="roster-hp-text"]').text()).toBe('1800 / 1950')
+      expect(rows[0].get('[data-test="roster-hp"]').attributes('aria-label')).toBe('1800 / 1950')
       // 竖屏名册不是紧凑密度（纵向空间够用），也不做纵向铺满
       expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-compact')
       expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-fill')
