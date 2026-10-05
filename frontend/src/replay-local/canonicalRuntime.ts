@@ -7,6 +7,7 @@
  */
 import type { CanonicalMessage, CanonicalRequest } from './canonicalWorkerProtocol.js'
 import { parseLocalPlayback, type LocalPlayback, type ParseLocalPlaybackOptions } from './playback/index.js'
+import type { AgentPlaybackFacet } from '../api/agent-replay-facets.js'
 
 export type CanonicalWorkerFactory = () => Worker
 
@@ -64,25 +65,33 @@ function ensureWorker(): Worker | null {
  */
 export async function parseLocalPlaybackOffThread(
   bytes: ArrayBuffer,
+  playback?: AgentPlaybackFacet,
   options: ParseLocalPlaybackOptions = {},
 ): Promise<LocalPlayback> {
   const w = ensureWorker()
   if (w) {
     let posted = false
+    const id = ++seq
     try {
       return await new Promise<LocalPlayback>((resolve, reject) => {
-        const id = ++seq
         inflight.set(id, { resolve, reject })
-        const request: CanonicalRequest = { id, bytes }
+        const request: CanonicalRequest = { id, bytes, playback }
+        // postMessage 同步抛错（clone 失败 / Worker 已失效）时立即摘除 inflight，
+        // 否则模块级 Map 留下 stale handler（review blocker 3）
         w.postMessage(request)
         posted = true
       })
     } catch (error) {
+      inflight.delete(id)
+      // 已送达 Worker 后的失败：解析失败 = 真失败，原样抛出（在主线程重跑一遍只会同样失败
+      // 并再停顿一次）；只有**进程级崩溃**才回退主线程重跑（fail-open，功能不丢）。
       // 已送达 Worker 后的失败：解析失败 = 真失败，原样抛出（在主线程重跑一遍只会同样失败
       // 并再停顿一次）；只有**进程级崩溃**才回退主线程重跑（fail-open，功能不丢）。
       if (posted && !(error instanceof CanonicalWorkerCrash)) throw error
       if (import.meta.env?.DEV) console.warn('规范投影 Worker 不可用，退回主线程:', error)
     }
   }
-  return parseLocalPlayback(new Uint8Array(bytes), options)
+  const opts: ParseLocalPlaybackOptions = { ...options }
+  if (playback !== undefined) opts.playback = playback
+  return parseLocalPlayback(new Uint8Array(bytes), opts)
 }

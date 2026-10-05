@@ -140,11 +140,25 @@
   margin-inline: auto;
   padding: var(--space-1) var(--space-2);
 }
+/* 手机横屏（.phone-form）适度缩小浮层组件：传输条收窄到 min(100% - 2×lane - 16px,
+   560px)——740×360 上全宽时间轴会横向贯穿屏幕、盖住左右名册下排行的点击区（实测
+   elementFromPoint 命中 INPUT.pb-range），给两侧车道让出底角。 */
+.pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form > .controls {
+  max-inline-size: min(100% - 2 * var(--pb-overlay-lane-w) - var(--space-4), 560px);
+}
+.pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form { --pb-overlay-lane-w: clamp(10rem, 15vw, 13rem); }
+.pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form > .hud {
+  max-inline-size: min(52%, max(12rem, calc(100% - 2 * var(--pb-overlay-lane-w) - var(--space-4))));
+}
+
 /* 名册车道 = 左上/右上角悬浮面板（游戏同款：己方在左、敌方在右）。
    宽度按行内容需求定：行固定开销 = 内边距 32 + 间隙 12 + 色点 8 + 血条 52 = 104px，
    昵称 + 车型再需 ~90px——9rem(144px) 会横向撑破（行被裁切 + 出现横向滚动条）。
    取 clamp(11rem, 16vw, 15rem)：窄屏 176px 起、宽屏到原始 240px（f226174b 版宽）。
-   宽度收进 `--pb-overlay-lane-w`（同一根作用域）：顶中 HUD 按它收口，两者不会互相压住。 */
+   宽度收进 `--pb-overlay-lane-w`（同一根作用域）：顶中 HUD 按它收口，两者不会互相压住。
+   手机横屏（.phone-form）适度缩小浮层：lane 10rem 起 / HUD 收口相应收窄——740×360 上
+   顶中 HUD（含时间与比分）此前盖住名册下排行的点击区（740 tap diagnostic 实测
+   hitAtRow=SPAN.pb-time），缩组件后两者互不侵入。 */
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) { --pb-overlay-lane-w: clamp(11rem, 16vw, 15rem); }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane.side-left,
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane.side-right {

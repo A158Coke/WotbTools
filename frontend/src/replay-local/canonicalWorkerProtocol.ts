@@ -7,6 +7,7 @@
  * 于是"播放正常一小段时间后整页卡住数百 ms~数秒"——用户实测的卡死即此处。
  * 放进 Worker 后主线程只收一条 structured clone 的结果。
  */
+import type { AgentPlaybackFacet } from '../api/agent-replay-facets.js'
 import type { LocalPlayback } from './playback/index.js'
 
 export interface CanonicalRequest {
@@ -14,6 +15,12 @@ export interface CanonicalRequest {
   id: number
   /** 回放原始字节（.wotbreplay 内容） */
   bytes: ArrayBuffer
+  /**
+   * 场景侧**已解析**的 playback facet（`loadScene` 的产物）。传入后 Worker 的
+   * `parseLocalPlayback` 跳过 `parseAgentPlaybackFromBytes`——同一回放不在
+   * Worker 里二次解析（review blocker：canonical 不得重复 parsePlayback）。
+   */
+  playback?: AgentPlaybackFacet
 }
 
 export type CanonicalMessage =
