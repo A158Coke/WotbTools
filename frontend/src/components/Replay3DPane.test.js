@@ -68,6 +68,8 @@ vi.mock('../scene/playbackScene.js', () => {
         store.err = ''
       }),
       setPlaying: vi.fn(),
+      // 真实引擎：canonical clock 到达时重定 [START, END] 并发布到 store.startTime / duration
+      setBattleClock: vi.fn((clock) => { if (clock) store.startTime = clock.startRaw }),
       seekBy: vi.fn(),
       setSpeed: vi.fn(),
       seekTime: vi.fn(),
@@ -666,6 +668,38 @@ describe('Replay3DPane', () => {
     expect(wrapper.find('[data-test="pb-time"]').exists()).toBe(true)
     // Renderer-specific tools live exclusively in the shared Display surface.
     expect(wrapper.find('[data-testid="replay3d-toolbar"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('播放条 / 顶栏 / 详情只读引擎发布的战斗时间轴；canonical clock 到达 / 消失时交给引擎', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const store = playback.api.store
+    store.hasData = true
+    // 引擎发布的战斗时间轴：开战在原始 11.0s，结束在 293.0s（打了 282s）
+    store.startTime = 11
+    store.duration = 293
+    store.time = 272.9
+    await nextTick()
+    const transport = wrapper.getComponent({ name: 'PlaybackTransport' })
+    expect(transport.props('startTime')).toBe(11)
+    expect(transport.props('duration')).toBe(293)
+    // 与 2D 同一个读数：已播放 = 原始时间 − 开战（261.9s → 04:22），总长 = 282s（04:42）
+    expect(wrapper.get('[data-test="pb-time"]').text()).toBe('04:22 / 04:42')
+    expect(wrapper.get('[data-test="pb-hud-time"]').text()).toBe('04:22')
+
+    // canonical 就绪：clock 交给引擎（引擎是播放 / seek / 自动停止的唯一权威），面板随引擎发布的原点更新
+    const clock = { startRaw: 11.3, durationSec: 282 }
+    store.playbackSession = shallowReactive({ canonical: { dataset: null, clock, reloadTelemetry: null } })
+    await nextTick()
+    expect(playback.api.setBattleClock).toHaveBeenLastCalledWith(clock)
+    expect(transport.props('startTime')).toBe(11.3)
+    expect(wrapper.get('[data-test="pb-hud-time"]').text()).toBe('04:22')
+
+    // canonical 撤下（失败 / 换会话）：通知引擎回到自己推出的时钟
+    store.playbackSession = null
+    await nextTick()
+    expect(playback.api.setBattleClock).toHaveBeenLastCalledWith(null)
     wrapper.unmount()
   })
 
@@ -1673,7 +1707,9 @@ describe('Replay3DPane 顶栏双方血量', () => {
     const wrapper = mountPane()
     const { store } = playback.api
     store.hasData = true
-    store.timer = '03:20'
+    // 顶栏计时与 2D 同口径：开战起算（引擎发布的原点 startTime = 10 → 210 - 10 = 200s = 03:20）
+    store.startTime = 10
+    store.time = 210
     store.hpFriend = 12345; store.hpFriendMax = 20000; store.hpFriendPct = 61.725
     store.hpEnemy = 800; store.hpEnemyMax = 15000; store.hpEnemyPct = 5.333
     store.scoreFriend = 2; store.scoreEnemy = 1

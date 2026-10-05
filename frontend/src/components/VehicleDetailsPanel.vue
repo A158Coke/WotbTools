@@ -52,7 +52,7 @@ const dragHost = ref(null)
 const dragBounds = ref(null)
 watch(() => props.dragHost, (el) => { dragHost.value = el || null }, { immediate: true })
 watch(() => props.dragBounds, (el) => { dragBounds.value = el || null }, { immediate: true })
-const { pos, maxPanelHeight, onPointerDown, onSelectionChange } = usePlaybackDetailsPlacement({
+const { pos, maxPanelHeight, maxPanelWidth, onPointerDown, onSelectionChange } = usePlaybackDetailsPlacement({
   isActive: () => !!props.selectedState && floating.value,
   hostEl: dragHost,
   boundsEl: dragBounds,
@@ -61,7 +61,13 @@ const { pos, maxPanelHeight, onPointerDown, onSelectionChange } = usePlaybackDet
 })
 watch([() => props.selectionKey, () => props.initialSide], onSelectionChange)
 const floatingStyle = computed(() => (floating.value && pos.value
-  ? { left: `${pos.value.left}px`, top: `${pos.value.top}px`, maxHeight: `${maxPanelHeight.value}px` }
+  ? {
+      left: `${pos.value.left}px`,
+      top: `${pos.value.top}px`,
+      maxHeight: `${maxPanelHeight.value}px`,
+      // 初始落位避让中心栏时的宽度上限（侧边名册比浮窗窄时）
+      ...(maxPanelWidth.value != null ? { maxWidth: `${maxPanelWidth.value}px` } : {}),
+    }
   : null))
 </script>
 

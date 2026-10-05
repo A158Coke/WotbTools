@@ -39,13 +39,14 @@ anti-future-leak 或现有 tank-marker 资产契约。
 - 2D / 3D 共用中心栈（2D 取最大正方形，3D 横屏铺满可用宽高）：地图/时间、HP/比分与 compact 基地 metadata 的持久 HUD → Stage → Transport。击杀流是独立的有界 overlay（2D 最多保留最新 2 条、3D 最多 3 条），不参与 HUD 高度预算，因此条目变化不会牵动 Stage / Transport 重排。
 - 主控件共用 `PlaybackTransport.vue`，顺序为 `-5 / Play-Pause / +5 / 当前速度 / 全屏 / Display`，速度档位按需展开，六个触控目标至少 44px。
 - 侧车道以 workspace 宽度作 fluid sizing，并保持可读下限；桌面左 / 中 / 右列约为 25% / 50% / 25%，短横屏保留主控件所需列宽。HUD 铺满中心列，桌面放大字号与血条厚度；名册与战场标签的装填条均与 HP 条等宽且更细；战场血量数值置于加厚血条内，不重复显示百分比。2D Stage 同时受中心可用宽度和实测可用高度约束；3D 横屏画布铺满中心列可用宽高，相机比例随容器更新，竖屏保持正方形。容量按**视口**算（`视口高 − 顶栏/底栏 − 实测 HUD − 实测 Transport − 间距`），刻意不用根元素的内容高度，也就不用按断点各写一套固定扣减。
-- Display 由 `PlaybackDisplaySurface.vue` 锚定 Gear，优先向上、空间不足换边并夹紧；竖屏采用有界 inline 面。Details 仍为独立的 workspace 级可拖动上下文窗。
+- Display 由 `PlaybackDisplaySurface.vue` 锚定 Gear，优先向上、空间不足换边并夹紧；竖屏采用有界 inline 面。Details 仍为独立的 workspace 级可拖动上下文窗；首次落位不压中心栏（HUD / Stage / Transport 同一列，以 Transport 的左右边为准）：侧边车道比浮窗窄时（如 1280 宽桌面）把浮窗收窄到侧边可用宽度，侧边不足 240px 或名册关闭时不收窄（`usePlaybackDetailsPlacement`）。
+- **2D / 3D 同一战斗时钟**：播放条、顶栏计时与 Details 都以开战（canonical `clock.startRaw`）为 0、总长 `durationSec`，同一时刻在 2D / 3D 显示同一个时间；顶栏计时是已过时间（不是游戏内的剩余倒计时）。3D 的战斗时间轴 `[START, END]` 由**场景引擎**唯一持有（发布为 `store.startTime` / `store.duration`）：会话从开战时刻开始，`seekTo` / `seekBy`（±5）/ `seekFraction`、进度比例与自动停止全部夹在里面，准备 / 倒计时阶段回不去。时钟来源按优先级：工作台 canonical 的 clock（`Replay3DPane` 在 canonical 就绪 / 失败 / 换会话时经 `setBattleClock` 交给引擎，引擎重定范围并把当前 T 夹回去、越过新终点即停播）→ 场景按同一 `resolveReplayClock` 从自身 periods 推出的时钟 → 数据范围（`t_start` → `battleEnd.js`）。
 - 形态判定（`shared/breakpoints` 的 `PLAYBACK_MOBILE_QUERY`）：Mobile = 宽 `<768px` 或触屏且高 `≤500px`（手机横屏）；`768–1199px` 一律 Tablet、`≥1200px` 一律 PC。布局只看可用空间，触屏只放大控件点击区域（44px），iPad / Android 平板拿 Tablet 形态。
 - 不抢页面：滚轮只在全屏、按住 Ctrl/⌘ 或刚在地图上按下后才缩放，否则交给页面滚动并短暂提示；地图未放大、非全屏、未标注时 `touch-action: pan-y`，单指纵向滑动滚动页面；`active=false`（隐藏的模式 / KeepAlive 停用）时暂停并不响应空格 / 方向键。地图高度扣掉固定顶栏，手机横屏按可用高度封顶。
 - 两队阵容属于 Stage 两侧的有界车道；点玩家打开独立 Details，未选车时不预留详情列。
 - Display 与 Events 从 Gear 按需打开，Vehicle 由选车打开 Details；Events 只呈现
   `DAMAGE`、`KILL`、`DESTROYED`，点击事件执行 seek + pause，纯时间轴不承载事件标记。
-- 标注工具默认折叠，绘图不暂停 battle clock。Fullscreen 继续保持同一组件实例的
+- 标注工具默认折叠，绘图不暂停 battle clock。画标注时整层车辆不接指针（从车辆上起笔只画线、不选中车辆）；地图上的鼠标拖动（平移 / 画标注）不触发浏览器的文本 / 图片选择。Fullscreen 继续保持同一组件实例的
   current time、playing、倍速、选中车辆、zoom/pan、annotations 和偏好；移动端只对
   `screen.orientation.lock('landscape')` 做 best-effort 尝试，失败不阻断播放。
 - Fullscreen 复用普通工作区的 HUD → Stage → Transport ownership，只更新可用容量与 safe-area。`test:browser-layout` 和 `test:browser-interaction` 用真实 Chrome 几何与交互断言覆盖桌面、平板、手机横竖屏和原生 fullscreen。
@@ -541,4 +542,4 @@ Playback 继续使用现有俯视 hull/turret 资产，不引入 3D 坦克模型
 
 该姿态来自地图权威 heightfield，不从前端猜测 replay Z；无 terrain model 或无可靠 hull yaw 时保持原有平面 marker。为避免小尺寸贴图翻卡片，视觉 pitch clamp ±14°、roll clamp ±10°，并遵守 `prefers-reduced-motion`。
 
-- 3D Details 与 2D 共用 canonical 查询及 `V2VehicleInspector`：选中账号对应的 track 提供时刻统计、伤害日志、最后已知时间、装备、物资与消耗品状态，肖像按车型懒加载。2D / 3D 复用工作台 playback session 的同一份解析结果；3D 只等待 scene readiness，canonical 后台就绪后自动增强已打开的 Details。3D 按独立 clock.startRaw 转换场景时钟（不依赖 reload telemetry）；数据缺失保持 unavailable，不使用终局汇总代替当前统计。
+- 3D Details 与 2D 共用 canonical 查询及 `V2VehicleInspector`：选中账号对应的 track 提供时刻统计、伤害日志、最后已知时间、装备、物资与消耗品状态，肖像按车型懒加载。2D / 3D 复用工作台 playback session 的同一份解析结果；3D 只等待 scene readiness，canonical 后台就绪后自动增强已打开的 Details。3D 按独立 clock.startRaw 转换场景时钟（不依赖 reload telemetry，与播放条 / 顶栏同一个原点）；数据缺失保持 unavailable，不使用终局汇总代替当前统计。

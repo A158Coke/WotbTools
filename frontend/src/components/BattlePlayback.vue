@@ -764,6 +764,9 @@ function pinchInfo() {
 }
 
 function onPointerDown(e) {
+  // 鼠标在地图上按下拖动（平移 / 画标注）不能变成浏览器的文本 / 图片选择——否则拖过的车辆标记与
+  // 名牌会被选中成一片蓝色色块。只拦鼠标主键：触屏的滚动 / 捏合由 touch-action 决定，click 照常触发。
+  if (e.pointerType === 'mouse' && e.button === 0) e.preventDefault()
   mapEngaged.value = true
   suppressClick = false
   gestureMoved = false

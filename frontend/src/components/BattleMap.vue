@@ -334,7 +334,8 @@ function onTwoFingerTouch(event) {
 
 <style>
 .pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
-.pb-viewport { position: absolute; inset: 0 auto auto 0; width: 100%; transform-origin: 0 0; touch-action: none; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
+/* user-select: none —— 车辆标记 / 名牌 / 标注文字不可被选中：鼠标拖动平移或画标注、触屏长按都不该出现蓝色选区 */
+.pb-viewport { position: absolute; inset: 0 auto auto 0; width: 100%; transform-origin: 0 0; touch-action: none; aspect-ratio: var(--pb-map-aspect, 1 / 1); user-select: none; }
 .pb-viewport.pb-touch-pan { touch-action: pan-y; }
 .pb-basemap,
 .pb-svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
@@ -384,7 +385,11 @@ function onTwoFingerTouch(event) {
 @keyframes pb-burst-ring { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); } }
 .pb-annotations { pointer-events: none; }
 .pb-annot-text { paint-order: stroke; stroke: color-mix(in srgb, var(--bg) 65%, transparent); stroke-width: 1; }
-.pb-drawing { pointer-events: none; }
+/* 画标注时整层车辆都不接指针：.pb-hitbox 与名牌 tooltip 自身是 pointer-events: auto，只关父层会被它们顶掉——
+   从车辆上起笔就会选中那台车、弹出详情。多一级 .pb-vehicle，特异性高于 VehicleMarker 的 scoped 规则。 */
+.pb-drawing,
+.pb-markers.pb-drawing .pb-vehicle,
+.pb-markers.pb-drawing .pb-vehicle * { pointer-events: none; }
 .pb-text-input { position: absolute; width: 140px; font-size: 13px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 3px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--text); z-index: 6; }
 @media (width < 768px) { .pb-map { width: 100%; } .pb-vehicle { width: 25px; height: 25px; } }
 @media (prefers-reduced-motion: reduce) { .pb-float-dmg, .pb-burst { animation: none; } }
