@@ -539,6 +539,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   async function loadMapImage() {
+    if (DEBUG) window.__destructStage = 'map-load';
     // 会话身份 guard：回放替换/销毁后，旧会话的地图资产续体一律失效——
     // 迟到的已加载纹理就地 dispose，不得写入新会话的共享状态或场景。
     // 用 sessionEpoch（不是 sessionGen）：新的 loadData / destroy 都会换掉身份，
@@ -732,9 +733,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 中/低档跳过场景 GLB（单图 11–67MB 下载 + 大块显存，是画质档最大的分流项）
     if (Q.scenery) try {
       // 可破坏物清单（与场景 GLB 并行拉取；缺失/低档静默禁用该特性）
-      const destructDocPromise = mapStaticUrl('destructibles', undefined, resolvedKey)
-        ? assetProvider.json(mapStaticUrl('destructibles', undefined, resolvedKey)).catch(() => null)
+      // mapStaticUrl 返回完整 URL——assetProvider.json() 会再拼一次 base（逻辑路径专用），
+      // 必须走透传的 fetch + resp.json()（与下方 terrain-meta 同款用法）
+      const destructUrl = mapStaticUrl('destructibles', undefined, resolvedKey);
+      const destructDocPromise = destructUrl
+        ? assetProvider.fetch(destructUrl).then((r) => (r.ok ? r.json() : null)).catch(() => null)
         : Promise.resolve(null);
+      if (DEBUG) destructDocPromise.then((d) => { window.__destructStage = d ? 'doc-ok' : 'doc-missing'; });
       const sceneryUrl = mapStaticUrl('scenery', undefined, resolvedKey);
       if (!sceneryUrl) { /* 未配置资产面/未命中索引：跳过场景 GLB（无服务端回退） */ }
       else {
@@ -900,6 +905,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           return out;
         };
         const destructDoc = await destructDocPromise;
+        if (DEBUG) window.__destructStage = destructDoc
+          ? (Array.isArray(DATA.destructible_events) ? `events-${DATA.destructible_events.length}` : 'no-events-old-wasm')
+          : 'doc-missing';
         if (!stale() && destructDoc && Array.isArray(DATA.destructible_events)) {
           const areasByEid = new Map((DATA.destructible_areas || []).map((a) => [a.eid, a]));
           const index = buildDestructibleIndex(destructDoc);
@@ -928,6 +936,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             }
           }
           destruct = { states, ptr: 0, lastT: -1 };
+          if (DEBUG) window.__destructStage = `ready states=${destruct.states.length}`;
+          if (DEBUG) window.__destructDebug = () => ({
+            events: (DATA.destructible_events || []).length,
+            states: destruct.states.length,
+            pivots: destruct.states.filter((st) => st.pivot).length,
+            swaps: destruct.states.filter((st) => st.intactMeshes).length,
+            ptr: destruct.ptr,
+          });
         }
       }
       }
