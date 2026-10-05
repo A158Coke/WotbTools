@@ -81,10 +81,37 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(water).not.toMatch(/mm\.renderOrder =/)
   })
 
+  it('对数深度缓冲：默认开启 + ?logdepth=0 逃生开关 + 两自定义 ShaderMaterial 挂 logdepthbuf 块', () => {
+    // 回放查看器允许 600–1000m 俯瞰（客户端贴地视角从不涉及）：线性 24bit 深度在该
+    // 距离分辨率 4–12cm，与贴地装饰薄板/重建地形的厘米级交叠同量级 → 远景成片
+    // z-fighting。对数深度恢复确定性深度序；因每片元写 gl_FragDepth（禁 early-z）
+    // 有全局片元开销，?logdepth=0 提供真机回滚与 A/B 性能验收开关。自定义
+    // ShaderMaterial 不自动注入 logdepthbuf 代码块，漏挂 = 该材质深度写回线性域，
+    // 与其他物体深度语义割裂。
+    expect(src).toMatch(/const LOGDEPTH = \(\(\) => \{ try \{ return new URLSearchParams\(location\.search\)\.get\('logdepth'\) !== '0'; \} catch \(e\) \{ return true; \} \}\)\(\);/)
+    expect(src).toMatch(/logarithmicDepthBuffer: LOGDEPTH/)
+    // logdepthbuf_vertex 调用 isPerspectiveMatrix（定义在 <common>）：自定义 vertex
+    // shader 必须 include <common>，否则 GLSL 编译失败、材质整片不渲染
+    const billboard = src.slice(src.indexOf('function makeBillboardMaterial'),
+                                src.indexOf('async function loadMapImage'))
+    expect(billboard).toMatch(/#include <common>/)
+    expect(billboard).toMatch(/#include <logdepthbuf_pars_vertex>/)
+    expect(billboard).toMatch(/#include <logdepthbuf_vertex>/)
+    expect(billboard).toMatch(/#include <logdepthbuf_pars_fragment>/)
+    expect(billboard).toMatch(/#include <logdepthbuf_fragment>/)
+    const ground = src.slice(src.indexOf('function groundShaderMaterial'), src.indexOf('function rebuildGround'))
+    expect(ground).toMatch(/#include <common>/)
+    expect(ground).toMatch(/#include <logdepthbuf_pars_vertex>/)
+    expect(ground).toMatch(/#include <logdepthbuf_vertex>/)
+    expect(ground).toMatch(/#include <logdepthbuf_pars_fragment>/)
+    expect(ground).toMatch(/#include <logdepthbuf_fragment>/)
+  })
+
   it('场景 Lambert 曝光修整只作用于 convMat 建出的材质', () => {
     expect(src).toMatch(/const SCENERY_LAMBERT_EXPOSURE = 0\.75/)
     expect(src).toMatch(/\.multiplyScalar\(SCENERY_LAMBERT_EXPOSURE\)/)
   })
+
 })
 
 describe('播放时钟与速度档位（对齐上游的纯函数入口）', () => {
