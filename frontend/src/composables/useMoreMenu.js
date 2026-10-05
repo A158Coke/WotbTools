@@ -20,11 +20,10 @@ export const LANGUAGES = Object.freeze([
 ])
 
 export function useMoreMenu() {
-  const { isAdmin, isHofAdmin, tokenParsed } = useAuth()
+  const { isAdmin, isHofAdmin, isTournamentAdmin } = useAuth()
   const { uiProfilePreference, setUiProfile } = useUiProfile()
   // vue-i18n legacy 模式下 $i18n 由 mixin 在 setup 之后才挂上：setup 时只捕获实例，用户操作时再读
   const instance = getCurrentInstance()
-  const isTournamentAdmin = computed(() => tokenParsed?.value?.realm_access?.roles?.includes('tournament-admin') === true)
 
   function setLocale(value) {
     instance.proxy.$i18n.locale = value

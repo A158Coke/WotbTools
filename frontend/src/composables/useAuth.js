@@ -457,6 +457,14 @@ const isAdmin = computed(() => hasRole('wotbtools-admin'))
 /** 名人堂审核权限：`HoF-admin` 或全站管理员。 */
 const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)
 
+/** Real token claims are the shared tournament boundary; local visibility shortcuts never authorize it. */
+export function tournamentAdminAllowed(auth = useAuth()) {
+  const roles = auth.tokenParsed.value?.realm_access?.roles
+  return auth.authenticated.value && Array.isArray(roles)
+    && roles.includes('tournament-admin')
+}
+const isTournamentAdmin = computed(() => tournamentAdminAllowed({ authenticated, tokenParsed }))
+
 /**
  * 展示名（顶栏账户入口 / 个人中心）：Keycloak `display-name-mapper` 映射的 `displayName`
  * （WG 官方昵称 / QQ 昵称）。`preferred_username` 是内部登录名（形如 `wg_eu_572253806`），
@@ -528,6 +536,7 @@ export function useAuth() {
     hasRole,
     isAdmin,
     isHofAdmin,
+    isTournamentAdmin,
     token,
     ensureToken,
     initialized,

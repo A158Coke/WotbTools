@@ -15,7 +15,7 @@ import MorePanel from './MorePanel.vue'
 import BrandMark from '../components/BrandMark.vue'
 
 const route = useRoute()
-const { isAdmin, isHofAdmin, isAuthenticated, displayName, tokenParsed } = useAuth()
+const { isAdmin, isHofAdmin, isTournamentAdmin, isAuthenticated, displayName } = useAuth()
 const { isExpanded } = useBreakpoint()
 const { collapsed, toggle } = useSidebar()
 
@@ -25,12 +25,8 @@ const activeSection = computed(() => primarySection(viewFromRoute(route)))
 const items = primaryNavItems()
 const sectionItems = items.filter(item => item.id !== 'more')
 const moreItem = items.find(item => item.id === 'more')
-const isTournamentAdmin = computed(() => tokenParsed?.value?.realm_access?.roles?.includes('tournament-admin') === true)
-const adminItems = computed(() => ADMIN_NAV.filter(item => {
-  if (item.role === 'hofAdmin') return isHofAdmin.value
-  if (item.role === 'tournamentAdmin') return isTournamentAdmin.value
-  return isAdmin.value
-}))
+const adminPermissions = { admin: isAdmin, hofAdmin: isHofAdmin, tournamentAdmin: isTournamentAdmin }
+const adminItems = computed(() => ADMIN_NAV.filter(item => adminPermissions[item.role].value))
 const brandTarget = computed(() => locationForView(defaultView(), route))
 const accountLabel = computed(() => (isAuthenticated() && displayName.value) || null)
 const showDevEnvironmentNotice = import.meta.env.DEV

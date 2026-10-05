@@ -1,0 +1,34 @@
+/* Standalone paper tokens. Points/mm and A4/A3 describe the exported document,
+ * not application viewport density; this stylesheet is never applied to the app. */
+:root {
+  --color-canvas: #fff;
+  --color-text-primary: #1b1e1c;
+  --color-border-strong: #7f7c74;
+  --color-surface-2: #f1efea;
+  --font-family-sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-size-body: 9pt;
+  --font-size-h1: 14pt;
+  --line-height-body: 1.35;
+  --type-body: 400 var(--font-size-body) / var(--line-height-body) var(--font-family-sans);
+  --space-1: 1mm;
+  --space-2: 2mm;
+  color-scheme: light;
+}
+
+@page { size: A4 landscape; margin: 10mm; }
+@page wide { size: A3 landscape; margin: 10mm; }
+.wide-paper { page: wide; }
+body { margin: 0; color: var(--color-text-primary); background: var(--color-canvas); font: var(--type-body); }
+table { width: 100%; table-layout: fixed; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+th, td { padding: var(--space-1); border: .2mm solid var(--color-border-strong); text-align: end; overflow-wrap: anywhere; }
+thead th { background: var(--color-surface-2); font-weight: 600; }
+col.clan { width: 12%; }
+col.rank { width: 3%; }
+col.total { width: 5%; }
+th.clan { text-align: start; font-weight: 400; }
+thead th.clan { font-weight: 600; }
+.round-total { font-weight: 600; }
+.print-title { padding: var(--space-2); border: 0; background: var(--color-canvas); font-size: var(--font-size-h1); text-align: start; }
+.print-status { border: 0; background: var(--color-canvas); text-align: start; }

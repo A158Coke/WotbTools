@@ -85,6 +85,20 @@ public class TournamentAdminController {
     public TournamentDtos.Standings clear(@PathVariable final long eventId, @RequestBody final TournamentDtos.ClearRequest request) {
         return service.clearPoints(JwtUtil.requireUserId(), eventId, request);
     }
+    @PostMapping("/{eventId}/historical-import/preview")
+    public TournamentDtos.HistoricalPreview historicalPreview(@PathVariable final long eventId, @RequestBody final TournamentDtos.HistoricalPreviewRequest request) {
+        return service.previewHistorical(eventId, request);
+    }
+    @GetMapping("/{eventId}/historical-import")
+    public TournamentDtos.HistoricalState historicalState(@PathVariable final long eventId,
+            @RequestParam(name = "roundNumber") final int roundNumber,
+            @RequestParam(name = "dayNumber") final int dayNumber) {
+        return service.historicalState(eventId, roundNumber, dayNumber);
+    }
+    @PostMapping("/{eventId}/historical-import")
+    public TournamentDtos.HistoricalPreview historicalImport(@PathVariable final long eventId, @RequestBody final TournamentDtos.HistoricalImportRequest request) {
+        return service.importHistorical(JwtUtil.requireUserId(), eventId, request);
+    }
     @GetMapping("/{eventId}/audit")
     public List<TournamentDtos.Audit> audit(@PathVariable final long eventId) { return service.auditList(eventId); }
     @GetMapping("/{eventId}/evidence/{evidenceId}")
