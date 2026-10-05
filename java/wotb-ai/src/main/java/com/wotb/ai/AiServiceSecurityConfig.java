@@ -51,7 +51,7 @@ public class AiServiceSecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/health/**",
                                 "/actuator/prometheus").permitAll()
-                        .requestMatchers("/api/ai/tournament-groups/**").hasAnyRole("tournament-admin", "wotbtools-admin")
+                        .requestMatchers("/api/ai/tournament-groups/**").hasRole("tournament-admin")
                         .requestMatchers("/api/ai/**").hasAnyRole("wotbtools-user", "wotbtools-admin")
                         .anyRequest().denyAll());
         return http.build();

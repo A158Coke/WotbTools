@@ -41,6 +41,9 @@ describe('tournament deep-link page gates', () => {
     expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(true)
     state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin']
     await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(false)
+    state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin', 'tournament-admin']
+    await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(true)
     state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-user']
     await wrapper.vm.$nextTick()

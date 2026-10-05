@@ -8,7 +8,7 @@
 - `?view=tournament-points-config`：管理员配置赛事和每轮积分规则。
 - `?view=tournament-points-admin`：管理员上传、核对、暂存、发布和修正成绩。
 
-公开入口在「更多 → 工具 → 积分赛榜单」。管理页面及业务/图片识别接口要求 `tournament-admin` 或 `wotbtools-admin`；联赛管理员不具有用户管理、名人堂审核或其它管理权限。所有有联赛权限的管理员共享同一份当天草稿；公开接口不返回草稿、未发布军团、小组截图或识别材料。
+公开入口在「更多 → 工具 → 积分赛榜单」。管理页面及业务/图片识别接口要求独立的 `tournament-admin` realm role；`wotbtools-admin` 在 Keycloak 中通过复合角色继承它，应用不把全站角色作为联赛权限旁路。联赛管理员不具有用户管理、名人堂审核或其它管理权限。所有有联赛权限的管理员共享同一份当天草稿；公开接口不返回草稿、未发布军团、小组截图或识别材料。
 
 角色由 `infra/tofu/keycloak/roles.tf` 管理，随 Keycloak owner 发布创建，不是默认角色。为具体用户分配角色需在 Keycloak 的用户角色映射中操作；重新登录后新 token 才携带新权限。前端侧栏、手机「更多」、业务 `/api/admin/tournaments/**` 和独立 AI 截图识别入口使用相同的角色边界。
 

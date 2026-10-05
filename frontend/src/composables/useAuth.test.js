@@ -674,7 +674,7 @@ describe('useAuth', () => {
     const auth = useAuth()
     await auth.retryAuth()
 
-    auth.tokenParsed.value = { realm_access: { roles: ['wotbtools-admin'] } }
+    auth.tokenParsed.value = { realm_access: { roles: ['wotbtools-admin', 'tournament-admin'] } }
     auth.authenticated.value = true
     expect(auth.hasRole('wotbtools-admin')).toBe(true)
     expect(auth.hasRole('HoF-admin')).toBe(false)

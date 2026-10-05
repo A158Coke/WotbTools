@@ -48,7 +48,7 @@ class TournamentGroupRecognitionHttpTest {
     }
 
     @Test
-    void anonymousAndOrdinaryUserHaveCanonicalErrorsAndNeverReachProvider() throws Exception {
+    void anonymousAndUsersWithoutTournamentRoleHaveCanonicalErrorsAndNeverReachProvider() throws Exception {
         mvc.perform(multipart(ENDPOINT).file(TournamentGroupRecognizerTest.file(image)).param("permit", "ignored"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"))
@@ -57,15 +57,19 @@ class TournamentGroupRecognitionHttpTest {
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"));
+        mvc.perform(multipart(ENDPOINT).file(TournamentGroupRecognizerTest.file(image)).param("permit", "ignored")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.errorCode").value("AUTH_FORBIDDEN"));
         verify(gateway, never()).chat(any());
     }
 
     @Test
-    void realAdminAndMatchingPermitReturnReviewableRecognition() throws Exception {
+    void tournamentAdminAndMatchingPermitReturnReviewableRecognition() throws Exception {
         mvc.perform(multipart(ENDPOINT).file(TournamentGroupRecognizerTest.file(image))
                         .param("permit", TournamentGroupRecognizerTest.permit(image, claims -> { }))
                         .with(jwt().jwt(token -> token.subject(TournamentGroupRecognizerTest.ADMIN_ID))
-                                .authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                                .authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.groupNumber").value(1))
                 .andExpect(jsonPath("$.teams[3].rank").value(4))
@@ -74,11 +78,11 @@ class TournamentGroupRecognitionHttpTest {
     }
 
     @Test
-    void tournamentOnlyRoleCanRecognizeButHofRoleCannot() throws Exception {
+    void compositeAdminCanRecognizeButHofRoleCannot() throws Exception {
         mvc.perform(multipart(ENDPOINT).file(TournamentGroupRecognizerTest.file(image))
                         .param("permit", TournamentGroupRecognizerTest.permit(image, claims -> { }))
                         .with(jwt().jwt(token -> token.subject(TournamentGroupRecognizerTest.ADMIN_ID))
-                                .authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                                .authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"), new SimpleGrantedAuthority("ROLE_tournament-admin"))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.complete").value(true));
         mvc.perform(multipart(ENDPOINT).file(TournamentGroupRecognizerTest.file(image)).param("permit", "ignored")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin"))))
@@ -91,7 +95,7 @@ class TournamentGroupRecognitionHttpTest {
                         .param("permit", TournamentGroupRecognizerTest.permit(image,
                                 claims -> claims.claim("image_hash", "0".repeat(64))))
                         .with(jwt().jwt(token -> token.subject(TournamentGroupRecognizerTest.ADMIN_ID))
-                                .authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                                .authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.errorCode").value("INVALID_RECOGNITION_PERMIT"));
         verify(gateway, never()).chat(any());
@@ -100,7 +104,7 @@ class TournamentGroupRecognitionHttpTest {
     @Test
     void missingMultipartFieldIsCanonicalBadRequest() throws Exception {
         mvc.perform(multipart(ENDPOINT).file(TournamentGroupRecognizerTest.file(image))
-                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errorCode").value("INVALID_RECOGNITION_REQUEST"));
         verify(gateway, never()).chat(any());
@@ -109,7 +113,7 @@ class TournamentGroupRecognitionHttpTest {
     @Test
     void wrongContentTypeBeforeControllerSelectionIsCanonical() throws Exception {
         mvc.perform(post(ENDPOINT).contentType("application/json").content("{}")
-                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
                 .andExpect(status().isUnsupportedMediaType())
                 .andExpect(jsonPath("$.errorCode").value("INVALID_RECOGNITION_REQUEST"));
         verify(gateway, never()).chat(any());
@@ -120,7 +124,7 @@ class TournamentGroupRecognitionHttpTest {
         mvc.perform(multipart(ENDPOINT).file(TournamentGroupRecognizerTest.file(
                                 new byte[TournamentGroupRecognizer.MAX_IMAGE_BYTES + 1]))
                         .param("permit", "not-needed")
-                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
                 .andExpect(status().isPayloadTooLarge())
                 .andExpect(jsonPath("$.errorCode").value("TOURNAMENT_IMAGE_TOO_LARGE"));
         verify(gateway, never()).chat(any());

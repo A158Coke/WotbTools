@@ -461,7 +461,7 @@ const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)
 export function tournamentAdminAllowed(auth = useAuth()) {
   const roles = auth.tokenParsed.value?.realm_access?.roles
   return auth.authenticated.value && Array.isArray(roles)
-    && (roles.includes('tournament-admin') || roles.includes('wotbtools-admin'))
+    && roles.includes('tournament-admin')
 }
 const isTournamentAdmin = computed(() => tournamentAdminAllowed({ authenticated, tokenParsed }))
 

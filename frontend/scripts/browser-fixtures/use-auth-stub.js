@@ -161,11 +161,11 @@ function hasRole(role) {
 const isAdmin = computed(() => hasRole('wotbtools-admin'))
 /** 与真实 composable 一致：名人堂审核权限（侧边栏管理组按它显示"名人堂管理"）。 */
 const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)
-const isTournamentAdmin = computed(() => hasRole('tournament-admin') || isAdmin.value)
+const isTournamentAdmin = computed(() => tournamentAdminAllowed({ authenticated, tokenParsed }))
 export function tournamentAdminAllowed(auth = useAuth()) {
   const roles = auth.tokenParsed.value?.realm_access?.roles
   return auth.authenticated.value && Array.isArray(roles)
-    && (roles.includes('tournament-admin') || roles.includes('wotbtools-admin'))
+    && roles.includes('tournament-admin')
 }
 /** 与真实 composable 一致：展示名优先 displayName claim，preferred_username 只作兜底。 */
 function displayName() { return tokenParsed.value?.displayName || tokenParsed.value?.preferred_username || '' }

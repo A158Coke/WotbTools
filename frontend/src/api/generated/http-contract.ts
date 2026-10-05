@@ -240,7 +240,7 @@ export interface paths {
         put?: never;
         /**
          * previewTournamentHistoricalImport
-         * @description Requires tournament-admin or wotbtools-admin. Imports direct historical scores only into an event without draft or published results.
+         * @description Requires tournament-admin (inherited by the Keycloak super-admin composite). Imports direct historical scores only into an event without draft or published results.
          */
         post: operations["previewTournamentHistoricalImport"];
         delete?: never;
@@ -260,7 +260,7 @@ export interface paths {
         put?: never;
         /**
          * importTournamentHistorical
-         * @description Requires tournament-admin or wotbtools-admin. Imports direct historical scores only into an event without draft or published results.
+         * @description Requires tournament-admin (inherited by the Keycloak super-admin composite). Imports direct historical scores only into an event without draft or published results.
          */
         post: operations["importTournamentHistorical"];
         delete?: never;

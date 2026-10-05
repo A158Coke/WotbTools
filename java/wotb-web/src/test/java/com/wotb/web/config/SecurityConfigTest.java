@@ -113,11 +113,13 @@ class SecurityConfigTest {
                     .andExpect(status().isForbidden());
         }
         mvc.perform(get("/api/admin/tournaments/probe")).andExpect(status().isUnauthorized());
-        for (final String role : List.of("HoF-admin", "wotbtools-user")) {
+        for (final String role : List.of("HoF-admin", "wotbtools-user", "wotbtools-admin")) {
             mvc.perform(get("/api/admin/tournaments/probe").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role))))
                     .andExpect(status().isForbidden());
         }
         mvc.perform(get("/api/admin/tournaments/probe").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/tournaments/probe").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"), new SimpleGrantedAuthority("ROLE_tournament-admin"))))
                 .andExpect(status().isOk());
     }
 

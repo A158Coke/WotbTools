@@ -31,7 +31,7 @@ AI Review is mounted normally: the `?view=ai-review` deep link and workspace tab
 
 Application navigation is defined by the feature-neutral typed `NAVIGATE_VIEW_KEY` in `frontend/src/shared/navigation.ts`. `AppShell` provides the command; app and feature consumers inject the shared contract without importing router internals or an `app/` implementation module. Production code must not introduce magic-string `inject('navigate')` / `provide('navigate')` calls.
 
-积分赛管理入口由 `useAuth.isTournamentAdmin` 所有（`tournament-admin` 或全站管理员），不复用全站 `isAdmin` 放大专属角色权限。公开积分页持有正式 standings，`utils/tournamentPointsExport.ts` 提供屏幕/Excel/打印文档共享的列投影；管理页的历史导入、预览和幂等提交状态仍归 `useTournamentPointsAdmin` 所有，JSON 文件只在文件边界转为 OpenAPI request，经 `api/tournament-points.ts` 发起请求。
+积分赛管理入口由 `useAuth.isTournamentAdmin` 所有（真实 token 中的 `tournament-admin`，全站管理员通过 Keycloak 复合角色继承），不复用全站 `isAdmin` 放大专属角色权限。公开积分页持有正式 standings，`utils/tournamentPointsExport.ts` 提供屏幕/Excel/打印文档共享的列投影；管理页的历史导入、预览和幂等提交状态仍归 `useTournamentPointsAdmin` 所有，JSON 文件只在文件边界转为 OpenAPI request，经 `api/tournament-points.ts` 发起请求。
 
 ## Dependency and state rules
 
