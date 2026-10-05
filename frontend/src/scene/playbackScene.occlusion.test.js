@@ -36,6 +36,13 @@ describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检�
     expect(src).toMatch(/occlGrid = occGrid;/)
     expect(src).toMatch(/occlGrid = null;/)
   })
+  it('折线点表必须镜像 x（游戏系 → 场景系）——镜像丢失 = 轨迹画到地图对侧', () => {
+    expect(src).toMatch(/pathPointsOf\(s\)\.map\(\(\[x, y, z\]\) => \[-x, y, z\]\)/)
+    // 弹着点从镜像后的点表取（pts3[1] = via[0] 或终点），不得再读原始坐标
+    expect(src).toMatch(/fromArray\(pts3\[1\]\)/)
+    expect(src).not.toMatch(/fromArray\(\(s\.via && s\.via\.length\) \? s\.via\[0\] : s\.to\)/)
+  })
+
   it('updateTracers 完成判定用 T >= tr.t1（禁止再引用已删除的旧变量 f）', () => {
     // 回归：折线改造曾把推进公式换成折线求值，却留下 `if (f >= 1)` —— f 未定义，
     // 每帧 ReferenceError 中断整个 tick（不渲染、炮线永不回收），即"播放中卡死、暂停即止"。
@@ -46,8 +53,10 @@ describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检�
   })
 
   it('炮线弹着特效所需的 from/to 字段仍在（折线改造曾漏掉 → ricochet 分支抛异常）', () => {
-    expect(src).toMatch(/from: new THREE\.Vector3\(-s\.from\[0\], s\.from\[1\], s\.from\[2\]\)/)
+    // from/to 现在从镜像后的点表构造（pts3[0] = 炮口、impactPos = 抵达点）
+    expect(src).toMatch(/from: new THREE\.Vector3\(\)\.fromArray\(pts3\[0\]\)/)
     expect(src).toMatch(/to: impactPos\.clone\(\), impactPos/)
+    expect(src).toMatch(/const dir = tr\.to\.clone\(\)\.sub\(tr\.from\)\.normalize\(\)/)
     expect(src).toMatch(/const dir = tr\.to\.clone\(\)\.sub\(tr\.from\)\.normalize\(\)/)
   })
 })

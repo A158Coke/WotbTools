@@ -1949,16 +1949,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 与客户端不一致。现只保留 1 帧下限，防退化数据（flight_secs=0/负数）造成零时长除零。
     // 折线：from → via…（跳弹/出射点）→ to（**method20 服务器终点**＝弹道最终停止点，跳弹后
     // 落在出射方向延长线上）；各段按时长匀速推进。
-    const pts3 = pathPointsOf(s);
+    // 折线点表必须**先镜像 x**（游戏系 → 场景系，与 posAt 同规则）：facet 的 from/via/to
+    // 是游戏系原始坐标；折线改造曾直接消费原始坐标——轨迹线/飞行段/弹着特效全部画到
+    // 地图镜像侧（用户实测"炮线轨迹不见了"）。
+    const pts3 = pathPointsOf(s).map(([x, y, z]) => [-x, y, z]);
     const legSecs = legSecsOf(s, tracerSpanSecs(s.flight_secs));
     const legEnds = legEndTimes(legSecs, s.t_fire);
     const t1 = legEnds[legEnds.length - 1];
-    const impactPos = new THREE.Vector3().fromArray((s.via && s.via.length) ? s.via[0] : s.to);
+    // 弹着特效落点 = **抵达点**（有跳弹 = via[0]，即镜像后的 pts3[1]；直射 = 服务器终点）
+    const impactPos = new THREE.Vector3().fromArray(pts3[1]);
     // `from`/`to` 供弹着特效（跳弹火花方向）使用：to = **抵达点**（跳弹点/终点），
     // from = 炮口——`spawnImpact` 依赖这两个字段，折线改造时漏掉会让 ricochet 分支抛异常
     // （整帧中断 → 画面卡住一帧且弹着特效不生成）。
     tracers.push({ mesh, points: pts3, legEnds, arcEnds: legArcEnds(pts3), t0: s.t_fire, t1, shot: s, color,
-      from: new THREE.Vector3(-s.from[0], s.from[1], s.from[2]), to: impactPos.clone(), impactPos });
+      from: new THREE.Vector3().fromArray(pts3[0]), to: impactPos.clone(), impactPos });
     // 全弹道轨迹线（队伍色：友军蓝/敌军红，与飞行段的命中结果色区分）：
     // 开火即显整条弹道（逐段一盒：折线在跳弹处拐弯）；消失节奏与弹着点特效同步——
     // 基准 t1+2.2s 移除、最后 1.2s 淡出，二者同乘 FX_SCALE（=2 → t1+4.4s 移除、最后 2.4s 淡出）
