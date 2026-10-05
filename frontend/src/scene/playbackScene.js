@@ -24,6 +24,7 @@ import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallRotation, fallTipVector, fallStopAngle } from './destructibles.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
+import { pathPointsOf, legSecsOf, legEndTimes, pointAt, legArcEnds, arcAtTime, pointAtArc } from './shotPath.js'
 import { impactKind } from './impactKind.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
@@ -1888,32 +1889,42 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     mesh.material.color.setHex(color);
     mesh.visible = true;
     scene.add(mesh);
-    // 飞行段时长 = **真实飞行时长** |终点−炮口|/弹速（客户端示踪线同为直线推进，
-    // 速度即此值）。此处曾设 0.22s 最小时长"保证可见性"——但实测 68% 的射击真飞行
-    // 时长 <0.22s（J39 样本 155 发：中位 0.16s、p10 0.04s；弹速 560~1658 m/s），
-    // 那些炮弹因此被显著拖慢（最慢 11×），与客户端不一致（用户实测反馈"飞行速度慢"）。
-    // 现只保留 1 帧下限，防退化数据（flight_secs=0/负数）造成零时长除零。
-    const t1 = s.t_fire + tracerSpanSecs(s.flight_secs);
-    tracers.push({ mesh, from, to, t0: s.t_fire, t1, shot: s, color });
+    // 飞行段时长 = **真实飞行时长**（直射弹 = |终点−炮口|/弹速；跳弹/穿透弹 = 各折线段
+    // 时长之和，见 shotPath.js）。此处曾设 0.22s 最小时长"保证可见性"——但实测 68% 的射击
+    // 真飞行时长 <0.22s（J39 样本 155 发：中位 0.16s、p10 0.04s），那些炮弹被放慢最多 11×，
+    // 与客户端不一致。现只保留 1 帧下限，防退化数据（flight_secs=0/负数）造成零时长除零。
+    // 折线：from → via…（跳弹/出射点）→ to（**method20 服务器终点**＝弹道最终停止点，跳弹后
+    // 落在出射方向延长线上）；各段按时长匀速推进。
+    const pts3 = pathPointsOf(s);
+    const legSecs = legSecsOf(s, tracerSpanSecs(s.flight_secs));
+    const legEnds = legEndTimes(legSecs, s.t_fire);
+    const t1 = legEnds[legEnds.length - 1];
+    tracers.push({ mesh, points: pts3, legEnds, arcEnds: legArcEnds(pts3), t0: s.t_fire, t1, shot: s, color,
+      impactPos: new THREE.Vector3().fromArray((s.via && s.via.length) ? s.via[0] : s.to) });
     // 全弹道轨迹线（队伍色：友军蓝/敌军红，与飞行段的命中结果色区分）：
-    // 开火即显整条弹道；消失节奏与弹着点特效同步——基准 t1+2.2s 移除、最后 1.2s 淡出，
-    // 二者同乘 FX_SCALE（=2 → t1+4.4s 移除、最后 2.4s 淡出）
-    // 单位长盒 + scale.z＝弹道长度：几何可池化（半径不变、长度每发不同）
-    const trajLen = from.distanceTo(to);
-    const traj = fxTake('traj', () => new THREE.Mesh(
-      new THREE.BoxGeometry(TRAJ_RADIUS, TRAJ_RADIUS, 1),
-      new THREE.MeshBasicMaterial({
-        color: shotTeamColor(s), transparent: true, opacity: TRAJ_OPACITY, depthWrite: false,
-        toneMapped: false,   // 同上：全弹道轨迹线同样直出字面色
-      })));
-    traj.material.color.setHex(shotTeamColor(s));
-    traj.material.opacity = TRAJ_OPACITY;
-    traj.scale.set(1, 1, Math.max(0.001, trajLen));
-    traj.visible = true;
-    traj.position.copy(from.clone().add(to).multiplyScalar(0.5));
-    traj.lookAt(to);
-    scene.add(traj);
-    trajLines.push({ mesh: traj, until: t1 + 1.0 * FX_SCALE, fadeEnd: t1 + 2.2 * FX_SCALE, base: TRAJ_OPACITY });
+    // 开火即显整条弹道（逐段一盒：折线在跳弹处拐弯）；消失节奏与弹着点特效同步——
+    // 基准 t1+2.2s 移除、最后 1.2s 淡出，二者同乘 FX_SCALE（=2 → t1+4.4s 移除、最后 2.4s 淡出）
+    // 单位长盒 + scale.z＝段长：几何可池化（半径不变、长度每段不同）
+    for (let k = 0; k + 1 < pts3.length; k++) {
+      const a = new THREE.Vector3().fromArray(pts3[k]);
+      const b = new THREE.Vector3().fromArray(pts3[k + 1]);
+      const trajLen = a.distanceTo(b);
+      if (!(trajLen > 1e-3)) continue;
+      const traj = fxTake('traj', () => new THREE.Mesh(
+        new THREE.BoxGeometry(TRAJ_RADIUS, TRAJ_RADIUS, 1),
+        new THREE.MeshBasicMaterial({
+          color: shotTeamColor(s), transparent: true, opacity: TRAJ_OPACITY, depthWrite: false,
+          toneMapped: false,   // 同上：全弹道轨迹线同样直出字面色
+        })));
+      traj.material.color.setHex(shotTeamColor(s));
+      traj.material.opacity = TRAJ_OPACITY;
+      traj.scale.set(1, 1, trajLen);
+      traj.visible = true;
+      traj.position.copy(a.clone().add(b).multiplyScalar(0.5));
+      traj.lookAt(b);
+      scene.add(traj);
+      trajLines.push({ mesh: traj, until: t1 + 1.0 * FX_SCALE, fadeEnd: t1 + 2.2 * FX_SCALE, base: TRAJ_OPACITY });
+    }
   }
   // 阵营色（唯一规则：按射手阵营 → green / red / white）。炮线用**亮色板**
   // （TRACER_FRIENDLY/ENEMY，见顶部注释）；未知阵营仍为白（unknown ≠ enemy）。
@@ -1972,7 +1983,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         sp.rotation.y = Math.atan2(side.x * sgn, side.z * sgn);
       }
     }
-    g.position.copy(tr.to);
+    g.position.copy(tr.impactPos);
     g.visible = true;
     scene.add(g);
     // impact 属于 UI feedback transient：寿命按真实壁钟计，而不是 replay clock。
@@ -2004,11 +2015,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     for (let i = tracers.length - 1; i >= 0; i--) {
       const tr = tracers[i];
       if (T < tr.t0) continue;
-      const f = Math.min(1, (T - tr.t0) / (tr.t1 - tr.t0));
-      const head = tr.from.clone().lerp(tr.to, f);
-      const tail = tr.from.clone().lerp(tr.to, Math.max(0, f - TRACER_LEN / tr.from.distanceTo(tr.to)));
-      tr.mesh.position.copy(head.clone().add(tail).multiplyScalar(0.5));
+      // 沿折线推进：头部按时间落在当前段（段内匀速），尾部 = 头部**弧长位置**回退 TRACER_LEN 米
+      // （跳弹拐角时尾巴跟着折线弯，与客户端沿折线推进的观感一致）
+      const headArr = pointAt(tr.points, tr.legEnds, T, tr.t0);
+      const sHead = arcAtTime(tr.points, tr.legEnds, tr.arcEnds, T, tr.t0);
+      const tailArr = pointAtArc(tr.points, tr.arcEnds, sHead - TRACER_LEN);
+      const head = _tpA.set(headArr[0], headArr[1], headArr[2]);
+      _tpB.set(tailArr[0], tailArr[1], tailArr[2]);
+      tr.mesh.position.copy(head.clone().add(_tpB).multiplyScalar(0.5));
       tr.mesh.lookAt(head);
+      tr.mesh.scale.z = Math.max(0.001, Math.hypot(head.x - _tpB.x, head.y - _tpB.y, head.z - _tpB.z) / TRACER_LEN);
       if (f >= 1) {
         // 归还对象池（几何/材质留待复用）；真正的释放见 disposeFxPool（会话结束时一次）
         scene.remove(tr.mesh);
@@ -2368,6 +2384,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
   }
   const _tmpFallAxis = new THREE.Vector3();
+  // 炮线折线求值 scratch（每帧多车并发，避免逐帧分配）
+  const _tpA = new THREE.Vector3(), _tpB = new THREE.Vector3();
   function r_axis(dir8, idx) { const [dx, dy] = fallTipVector(dir8); return [-dy, dx, 0][idx]; }
 
   function applyPose(v) {

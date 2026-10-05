@@ -210,6 +210,26 @@ WotBTools
   渲染侧实现在 `frontend/src/scene/trackInterp.js`（`sampleKeyframes`）与
   `frontend/src/scene/playbackScene.js`（`kfOf` 分支）。
 
+## 4g. 弹道折线（`shots[].via` / `shots[].leg_secs`，PlaybackData additive；上游 v0.3.13）
+
+- `via?: [number, number, number][]` —— 弹道**折线中间点**（按飞行顺序；直射弹缺省）。
+- `leg_secs?: number[]` —— 各段时长（秒）：段 0 = `from`→`via[0]`，…，末段 = …→`to`；
+  `leg_secs.length == via.length + 1`。段时长按**几何 / 该段速度**给出，不用包时钟
+  （包钟 10Hz 量化：跳弹常与发射同刻，用钟会得到零长段）。
+- **语义**：`from` = 炮口（method29 launchPoint）；`to` = **method20 弹道终点 = 弹道最终
+  停止点**（= 服务器权威的"炮弹最后停在哪"）；`via` = 同 `(shooter, shotId)` 的后续 method29
+  起点 = **跳弹/穿透出射点**（服务器在命中/跳弹时刻重播该发续段：起点为装甲接触/出射点、
+  速度为续段方向）。渲染 = `from → via… → to` 折线，**在服务器终点处中止**。
+- **确定性归属（不得用相关性匹配）**：一次开火 = `(shooter, shotId)` 一条链；碎片化到包级
+  只有两条规则——(1) 同链的后续 method29 是同一发的续段，(2) method20 按 `shotId` 配对。
+  典型样本（20260821_1917）：命中威廉斯特后跳弹，续段仰角 +38.6°、method20 终点在 730m 外
+  452m 高处（出射方向延长线）——把 method20 直接当"打到哪"会画出一条指向天空的炮线。
+- `flight_secs` = 各段时长之和（直射弹退化为 `|to−from| / |launch_velocity|`）；`hit` /
+  `target_eid` 的归属窗口以**首个续段时刻**（= 装甲接触时刻，与 method8 同刻）为基准。
+- 消费方契约：字段缺失（旧产物）= 直射单段，渲染回退为 `from → to` 直线（历史行为逐值不变）。
+- 与 `frontend/src/api/agent-replay-facets.ts` 的 `via?: [number,number,number][]` /
+  `leg_secs?: number[]` 逐字对应；渲染侧实现在 `frontend/src/scene/shotPath.js`。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——

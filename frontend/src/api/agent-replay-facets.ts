@@ -210,7 +210,15 @@ export interface AgentPlaybackShot {
   target_eid?: number
   from: [number, number, number]
   to: [number, number, number]
+  /** 飞行时长（秒）：折线各段之和（直射弹 = |to−from| / |launch_velocity|） */
   flight_secs: number
+  /**
+   * 弹道折线中间点（跳弹/穿透出射点，按飞行顺序；**additive**：旧产物缺省 → 直射单段）。
+   * 上游 = 同 (shooter, shotId) 的后续 method29 起点（服务器在命中/跳弹时刻重播续段）。
+   */
+  via?: [number, number, number][]
+  /** 各段时长（秒）：段 0 = from→via[0]，…，末段 = …→to；`len == via.len() + 1` */
+  leg_secs?: number[]
   shell_speed: number
   hit: boolean
   ricochet: boolean

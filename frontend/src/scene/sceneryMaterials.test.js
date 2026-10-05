@@ -263,8 +263,10 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(tracerSpanSecs(-1)).toBeCloseTo(oneFrame, 12)
     expect(tracerSpanSecs(NaN)).toBeCloseTo(oneFrame, 12)
     expect(tracerSpanSecs(Number.POSITIVE_INFINITY)).toBeCloseTo(oneFrame, 12)
-    // 源码护栏：调用点必须走纯函数，且不存在 0.22 之类的最小显示钳位
-    expect(src).toMatch(/const t1 = s\.t_fire \+ tracerSpanSecs\(s\.flight_secs\);/)
+    // 源码护栏：飞行时长必须由纯函数/折线段时长给出，且不存在 0.22 之类的最小显示钳位
+    // （折线弹道：`legEnds` 由 `legSecsOf(s, tracerSpanSecs(...))` 累计 → t1 = 末段结束时刻）
+    expect(src).toMatch(/const legSecs = legSecsOf\(s, tracerSpanSecs\(s\.flight_secs\)\);/)
+    expect(src).toMatch(/const t1 = legEnds\[legEnds\.length - 1\];/)
     expect(src).not.toMatch(/Math\.max\(0\.22, s\.flight_secs\)/)
   })
 
