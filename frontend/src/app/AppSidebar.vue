@@ -173,7 +173,7 @@ function linkAttrs(id) {
   align-items: center;
   gap: var(--space-2);
   min-height: var(--control-h-lg);
-  padding-inline: 0 var(--space-2);
+  padding-inline: var(--space-2);
   color: var(--color-text-primary);
   text-decoration: none;
 }
