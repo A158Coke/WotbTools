@@ -149,23 +149,61 @@ describe('playbackScene 会话代数契约', () => {
     expect(store.playbackSession).toBeNull()
   })
 
-  it('战斗时钟按 canonical 同一 resolver 从 periods 推出；会话从开战时刻开始（与 2D 同一个 0）', async () => {
+  it('战斗时间轴 [START, END] 归引擎：从开战开始，seekBy / seekTime / seekFraction 都回不到准备 / 倒计时阶段', async () => {
     const { store, api } = createScene()
     const base = minimalData()
     const data = {
       ...base,
       meta: { ...base.meta, duration: 320 },
-      // 准备 → 倒计时 → 开战（55）→ 战后（300）
+      // 准备（42）→ 倒计时（45）→ 开战（55）→ 战后（300）
       periods: [{ clock: 42, period: 1 }, { clock: 45, period: 2 }, { clock: 55, period: 3 }, { clock: 300, period: 4 }],
     }
     const session = { loadScene: vi.fn().mockResolvedValue(data), getState: () => ({ canonical: null, canonicalState: 'idle' }) }
     await api.loadData({ kind: 'local', file: new File(['x'], 'clock.wotbreplay'), session })
-    expect(store.battleClock).toEqual({ startRaw: 55, durationSec: 245 })
-    // 准备 / 倒计时阶段不在时间轴上：从开战开始，而不是 t_start（42）（开播首帧可能已走了一点点）
+    // 场景按 canonical 同一 resolver 从 periods 推出：开战 55，结束 300
+    expect(store.startTime).toBe(55)
+    expect(store.duration).toBe(300)
     expect(store.time).toBeGreaterThanOrEqual(55)
     expect(store.time).toBeLessThan(56)
-    api.reset()
-    expect(store.battleClock).toBeNull()
+    api.setPlaying(false)
+    api.seekTime(60)
+    api.seekBy(-30)
+    expect(store.time).toBe(55)
+    api.seekTime(0)
+    expect(store.time).toBe(55)
+    api.seekFraction(0)
+    expect(store.time).toBe(55)
+    api.seekFraction(1)
+    expect(store.time).toBe(300)
+  })
+
+  it('canonical clock 晚到：引擎重定 [START, END]、把 T 夹回范围；撤下后回到场景自推的时钟', async () => {
+    const { store, api } = createScene()
+    const base = minimalData()
+    const data = {
+      ...base,
+      meta: { ...base.meta, duration: 320 },
+      periods: [{ clock: 45, period: 2 }, { clock: 55, period: 3 }, { clock: 300, period: 4 }],
+    }
+    const session = { loadScene: vi.fn().mockResolvedValue(data), getState: () => ({ canonical: null, canonicalState: 'loading' }) }
+    await api.loadData({ kind: 'local', file: new File(['x'], 'late.wotbreplay'), session })
+    api.setPlaying(false)
+    api.seekTime(55)
+    // canonical 的开战略晚、时长取结算（比 period 4 短）：起点 / 终点都跟着变，T 被夹进新范围
+    api.setBattleClock({ startRaw: 56, durationSec: 200 })
+    expect(store.startTime).toBe(56)
+    expect(store.duration).toBe(256)
+    expect(store.time).toBe(56)
+    api.seekTime(1000)
+    expect(store.time).toBe(256)
+    api.seekBy(-1000)
+    expect(store.time).toBe(56)
+    // canonical 撤下：回到场景自推的时钟，T 仍在范围内则不动
+    api.seekTime(100)
+    api.setBattleClock(null)
+    expect(store.startTime).toBe(55)
+    expect(store.duration).toBe(300)
+    expect(store.time).toBe(100)
   })
 
   it('3D becomes ready before canonical readiness resolves', async () => {
@@ -898,6 +936,25 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     expect(store.time).toBeGreaterThan(42.6)
     expect(seen[1]).toEqual({ eid: 2, hp: 1500, dead: false, reload: null })
     stop()
+  })
+
+  it('自动停止点跟随引擎的 END：canonical 时长比 period 4 短时，播到 canonical 终点就停', async () => {
+    const frames = manualFrames()
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const { store, api } = createScene()
+    source.loadPlaybackData.mockResolvedValue(rosterData([
+      vehicle({ eid: 1, team: 1, max_hp: 3074, hp: [[42.25, 3074]] }),
+    ], { periods: [{ clock: 50, period: 3 }, { clock: 290, period: 4 }] }))
+    await api.loadData({ kind: 'local', file: new File(['x'], 'stop.wotbreplay') })
+    expect(store.duration).toBe(290)
+    api.setBattleClock({ startRaw: 50, durationSec: 100 })
+    expect(store.duration).toBe(150)
+    api.seekTime(149.8)
+    api.setPlaying(true)
+    for (let i = 0; i < 6 && frames.length; i++) { now += 100; frames.at(-1)() }
+    expect(store.playing).toBe(false)
+    expect(store.time).toBe(150)
   })
 
   it('暂停时切换跟随：名册行的 followed 立即可见（不等下次播放 / seek）', async () => {

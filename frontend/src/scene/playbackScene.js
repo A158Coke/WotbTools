@@ -83,8 +83,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let boundaryGroup = null;        // 地图边界带（会话拥有）
   let V = [];                      // 车辆运行时 {def, group, turretG, gunPivot, labelAnchor, meshHull, glb}
   let T = 0, PLAYING = false, SPEED = store.speed;
-  // 时间轴终点 = 比赛结束（battleEnd.js）；加载数据时确定，播放 / seek / 胜负横幅都以它为准
-  let END = 0;
+  // 战斗时间轴 [START, END]：引擎是唯一权威（store.startTime / store.duration 只是发布）。0 = 开战，与 2D 同一个时钟：
+  // 工作台 canonical 的 clock（面板经 setBattleClock 交给引擎）优先，canonical 未就绪 / 失败时用场景按同一
+  // resolveReplayClock 从自身 periods 推出的 sceneClock，都没有才退回数据范围（t_start → battleEnd.js）。
+  // 播放 / seek（seekTo / seekBy / seekFraction）/ 自动停止 / 进度比例 / 胜负横幅全部以它为准。
+  let START = 0, END = 0;
+  let sceneClock = null, canonicalClock = null;
   let CAM = 'free', FOLLOW_EID = 0;
   let shotPtr = 0, killPtr = 0;
   const tracers = [], impacts = [];
@@ -2272,7 +2276,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 名册与上面的总血量同帧写入：两侧名册与顶栏永远是同一个 T 的投影
     updateRoster();
     store.time = T;
-    const f = (T - DATA.meta.t_start) / Math.max(0.001, END - DATA.meta.t_start);
+    const f = (T - START) / Math.max(0.001, END - START);
     if (!store.seeking) store.seekFrac = Math.round(f * 1000);
   }
   function setPlaying(p) {
@@ -2301,8 +2305,36 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (!rafId) animate();
     }
   }
+  /** 当前权威时钟（canonical 优先，场景自推兜底）下的 [START, END]，夹在录像数据范围内。 */
+  function battleRange() {
+    const dataStart = DATA.meta.t_start;
+    const dataEnd = Math.max(dataStart, battleEndTime(DATA));
+    const clock = canonicalClock || sceneClock;
+    if (!clock) return [dataStart, dataEnd];
+    const streamEnd = Number(DATA.meta.duration) > dataStart ? Number(DATA.meta.duration) : dataEnd;
+    const start = Math.min(Math.max(dataStart, clock.startRaw), streamEnd);
+    const end = Number.isFinite(clock.durationSec) && clock.durationSec > 0
+      ? Math.min(streamEnd, clock.startRaw + clock.durationSec) : dataEnd;
+    return [start, Math.max(start, end)];
+  }
+  /**
+   * canonical 时钟换了（晚到 / 失败 / 换会话）：重定 [START, END]，把 T 夹回范围（越界才 seek，范围内不打断播放），
+   * 越过新终点时停播；随即发布到 store，播放条 / 顶栏 / Details 与引擎同一刻对齐。
+   */
+  function setBattleClock(clock) {
+    canonicalClock = clock && Number.isFinite(clock.startRaw) ? { startRaw: clock.startRaw, durationSec: clock.durationSec } : null;
+    if (!DATA) return;
+    [START, END] = battleRange();
+    store.startTime = START;
+    store.duration = END;
+    const t = Math.max(START, Math.min(END, T));
+    if (t !== T) seekTo(t);
+    if (PLAYING && T >= END) setPlaying(false);
+    writeHud(true);
+    invalidate();
+  }
   function seekTo(t) {
-    T = Math.max(DATA.meta.t_start, Math.min(END, t));
+    T = Math.max(START, Math.min(END, t));
     clearEffects();   // 动态层 dispose（与 teardown 同一路径，防 seek 循环累积显存）
     // 游标一律重定到「T 之后第一条」：clearEffects 已把 transient 游标归零，
     // 若不重定，紧随的 tick() 会把 t<=T 的历史飘字/爆散一次性补播（与 2D seek 语义不符）
@@ -2483,6 +2515,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 里 HUD、播放传输与 time/roster 仍然代表上一场回放（ready 泄漏 + 旧 UI 可交互）。
     // 与下面的 hasData=true 一起构成不变量：hasData ⟺ 当前会话已完成加载且 DATA 可用。
     store.hasData = false;
+    // 上一场的 canonical 时钟不属于这一场：新会话就绪后由面板重新交给引擎（setBattleClock）
+    canonicalClock = null;
     store.err = '';
     store.loading = true;
     store.assetStage = false;
@@ -2567,17 +2601,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     buildTransientSources();   // 战斗反馈事件源（伤害/击毁）
     buildBases();   // 基地贴地标记（争霸 A–D / 单基地）
-    END = battleEndTime(DATA);
-    // 战斗时钟（与 2D / 工作台 canonical 同一个 resolver、同一份 periods）：0 = 开战（period 3）。
-    // 面板的播放条 / 顶栏计时 / 详情都按它换算；会话从开战时刻开始，准备与倒计时阶段不在时间轴上（与 2D 一致）。
-    const clock = resolveReplayClock(DATA.periods || [], null, DATA.meta.duration);
-    store.battleClock = clock ? { startRaw: clock.startRaw, durationSec: clock.durationSec } : null;
-    T = clock ? Math.max(DATA.meta.t_start, Math.min(END, clock.startRaw)) : DATA.meta.t_start;
+    // 会话从开战时刻开始：准备 / 倒计时阶段不在时间轴上（与 2D 一致）
+    sceneClock = resolveReplayClock(DATA.periods || [], null, DATA.meta.duration);
+    [START, END] = battleRange();
+    T = START;
     shotPtr = 0; killPtr = 0;
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
     if (glbOn) applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
     // 会话常量一次写清（此前每 tick 重写，值不变不会触发响应式，但语义上属会话级）
-    store.startTime = DATA.meta.t_start;
+    store.startTime = START;
     store.duration = END;
     // 最后一处会「启动播放」的写：过期会话绝不允许走到这里（否则旧会话会自己开始 tick）
     if (!current()) return false;
@@ -2616,7 +2648,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       store.assetStage = false;
       store.assetProgress = null;
       store.err = '';
-      store.battleClock = null;
       store.scoreFriend = 0;
       store.scoreEnemy = 0;
       store.mapName = '';
@@ -2630,10 +2661,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     togglePlay: () => setPlaying(!PLAYING),
     setPlaying,
     setSpeed,
-    seekFraction: (frac) => { if (DATA) seekTo(DATA.meta.t_start + frac * (END - DATA.meta.t_start)); },
-    // 共用播放控件（PlaybackTransport）按绝对秒 seek / 跳秒；seekTo 自带 [t_start, duration] 夹取
+    seekFraction: (frac) => { if (DATA) seekTo(START + frac * (END - START)); },
+    // 共用播放控件（PlaybackTransport）按绝对秒 seek / 跳秒；seekTo 自带 [START, END] 夹取（准备 / 倒计时阶段回不去）
     seekTime: (t) => { if (DATA) seekTo(t); },
     seekBy: (delta) => { if (DATA) seekTo(T + delta); },
+    setBattleClock,
     setCam,
     setFollow,
     setGlb: (on) => { if (Q.allowGlb || !on) applyGlbToggle(on); invalidate(); },

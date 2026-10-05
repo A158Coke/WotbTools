@@ -252,19 +252,14 @@ const selectedRow = computed(() => {
 // Scene and Details consume the same workspace-owned parse result.
 const detailPlayback = computed(() => store.hasData ? store.playbackSession?.canonical : null)
 /**
- * 战斗时钟（与 2D 同一口径：0 = 开战，总长 = durationSec）。工作台 canonical 的 clock 优先；canonical 未就绪 / 失败时
- * 用场景按同一 resolver 从自身 periods 推出的 store.battleClock；两者都没有才退回场景原始时间轴（含准备阶段）。
- * 播放条、顶栏计时与 Details 只认这一个原点：同一时刻在 2D / 3D 显示同一个时间。
+ * 战斗时钟（与 2D 同一口径：0 = 开战）的唯一权威是场景引擎：它持有 [START, END]（发布为 store.startTime /
+ * store.duration），seek、自动停止与进度都夹在里面。canonical 就绪 / 失败 / 换会话时把它的 clock 交给引擎
+ * （setBattleClock），引擎重定范围并把 T 夹回去；canonical 之前引擎用自己按同一 resolver 推出的时钟。
+ * 播放条、顶栏计时与 Details 只读引擎发布的原点：同一时刻在 2D / 3D 显示同一个时间。
  */
-const battleClock = computed(() => detailPlayback.value?.clock ?? store.battleClock ?? null)
-const timelineStart = computed(() => battleClock.value?.startRaw ?? store.startTime)
-const timelineEnd = computed(() => {
-  const clock = battleClock.value
-  return clock && Number.isFinite(clock.durationSec) && clock.durationSec > 0 ? clock.startRaw + clock.durationSec : store.duration
-})
-const transportTime = computed(() => Math.min(timelineEnd.value, Math.max(timelineStart.value, store.time)))
-const battleTimeLabel = computed(() => formatPlaybackClock(store.time - timelineStart.value))
-const detailTime = computed(() => Math.max(0, store.time - timelineStart.value))
+const battleTimeLabel = computed(() => formatPlaybackClock(store.time - store.startTime))
+const detailTime = computed(() => Math.max(0, store.time - store.startTime))
+watch(() => detailPlayback.value?.clock ?? null, (clock) => sceneApi?.setBattleClock?.(clock))
 const selectedTrack = computed(() => detailPlayback.value?.dataset?.vehicles.find(track =>
   selectedRow.value?.accountId != null && track.accountId === selectedRow.value.accountId) || null)
 const selectedLife = computed(() => selectedTrack.value ? lifeAt(selectedTrack.value, detailTime.value) : null)
@@ -656,9 +651,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           :playing="store.playing"
           :speed="store.speed"
           :speeds="PLAYBACK_SPEEDS"
-          :current-time="transportTime"
-          :start-time="timelineStart"
-          :duration="timelineEnd"
+          :current-time="store.time"
+          :start-time="store.startTime"
+          :duration="store.duration"
           :step-seconds="PLAYBACK_STEP_SECONDS"
           :compact="isPhone"
           @toggle-play="transport.togglePlay()"
