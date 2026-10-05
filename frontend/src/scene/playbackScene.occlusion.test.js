@@ -36,6 +36,15 @@ describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检�
     expect(src).toMatch(/occlGrid = occGrid;/)
     expect(src).toMatch(/occlGrid = null;/)
   })
+  it('updateTracers 完成判定用 T >= tr.t1（禁止再引用已删除的旧变量 f）', () => {
+    // 回归：折线改造曾把推进公式换成折线求值，却留下 `if (f >= 1)` —— f 未定义，
+    // 每帧 ReferenceError 中断整个 tick（不渲染、炮线永不回收），即"播放中卡死、暂停即止"。
+    expect(src).toMatch(/if \(T >= tr\.t1\) \{/)
+    expect(src).not.toMatch(/f >= 1/)
+    // 完成块必须仍然回收 + 生成弹着特效
+    expect(src).toMatch(/if \(T >= tr\.t1\) \{[\s\S]{0,220}fxGive\('tracer', tr\.mesh\);[\s\S]{0,120}spawnImpact\(tr\);/)
+  })
+
   it('炮线弹着特效所需的 from/to 字段仍在（折线改造曾漏掉 → ricochet 分支抛异常）', () => {
     expect(src).toMatch(/from: new THREE\.Vector3\(-s\.from\[0\], s\.from\[1\], s\.from\[2\]\)/)
     expect(src).toMatch(/to: impactPos\.clone\(\), impactPos/)

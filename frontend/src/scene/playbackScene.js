@@ -1931,8 +1931,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   function spawnShot(s) {
-    const from = new THREE.Vector3(-s.from[0], s.from[1], s.from[2]);
-    const to = new THREE.Vector3(-s.to[0], s.to[1], s.to[2]);
     // 炮线唯一颜色规则 = 射手阵营（绿/红/白）；命中/跳弹/击毁不改炮线颜色——
     // 结果由弹着点 impact 编码（原实现按结果上色，与上游 Agent 不一致）
     const color = shotTeamColor(s);
@@ -2085,7 +2083,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       tr.mesh.position.copy(head.clone().add(_tpB).multiplyScalar(0.5));
       tr.mesh.lookAt(head);
       tr.mesh.scale.z = Math.max(0.001, Math.hypot(head.x - _tpB.x, head.y - _tpB.y, head.z - _tpB.z) / TRACER_LEN);
-      if (f >= 1) {
+      // 完成判定 = **时间到终点**（折线改造曾误留旧变量 `f >= 1`——f 已不存在，
+      // 每帧 ReferenceError 中断整个 tick：不渲染、位姿/HUD 全停，且该炮线永远走不到
+      // 移除分支 → 持续抛到暂停为止。这就是此前"播放中卡死、暂停即止"的根因。）
+      if (T >= tr.t1) {
         // 归还对象池（几何/材质留待复用）；真正的释放见 disposeFxPool（会话结束时一次）
         scene.remove(tr.mesh);
         fxGive('tracer', tr.mesh);
