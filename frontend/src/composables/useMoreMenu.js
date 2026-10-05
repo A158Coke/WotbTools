@@ -15,10 +15,10 @@ export const LANGUAGES = Object.freeze([
 ])
 
 export function useMoreMenu() {
-  const { isAdmin, isHofAdmin, hasRole } = useAuth()
+  const { isAdmin, isHofAdmin, tokenParsed } = useAuth()
   const { uiProfilePreference, setUiProfile } = useUiProfile()
   const instance = getCurrentInstance()
-  const tournamentAdmin = computed(() => hasRole('tournament-admin'))
+  const tournamentAdmin = computed(() => tokenParsed?.value?.realm_access?.roles?.includes('tournament-admin') === true)
 
   function setLocale(value) {
     instance.proxy.$i18n.locale = value
