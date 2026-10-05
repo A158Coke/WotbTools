@@ -29,12 +29,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -42,6 +45,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -51,7 +55,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** Every mutation locks the event first. Totals are recomputed from ranks, never incremented. */
+/** Every mutation locks the event first. Totals are recomputed from published facts, never incremented. */
 @Service
 @Transactional
 public class TournamentService {
@@ -119,6 +123,8 @@ public class TournamentService {
         final TournamentRule rule = rule(id, round); version(rule.rulesVersion, request.expectedRulesVersion());
         if (roundLocked(id, round)) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
         final List<TournamentSnapshot.RuleDay> next = normalizeRules(event, request.days());
+        if (dayList(id).stream().anyMatch(day -> day.roundNumber == round && day.publishedHistoricalPoints != null)
+                && !complete(event, next)) { throw error(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE); }
         final Map<String, Object> before = Map.of("rules", rule.days);
         rule.days = next; rule.rulesVersion++; event.version++;
         for (final TournamentDay day : dayList(id)) {
@@ -126,8 +132,37 @@ public class TournamentService {
         }
         audit(event, round, null, "RULES_UPDATED", actor, null, before, Map.of("rules", next)); return configView(event);
     }
-    @Transactional(readOnly = true)
+    // Event identity, published day facts and historical roster must share one MVCC snapshot.
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TournamentDtos.Standings publicStandings(final long id) { return standings(event(id), dayList(id), null, null, false); }
+    public TournamentDtos.HistoricalPreview previewHistorical(final long id, final TournamentDtos.HistoricalPreviewRequest request) {
+        final TournamentEvent event = locked(id, request.expectedEventVersion()); requireEmptyHistoricalTarget(event);
+        final Map<String, List<Integer>> matrix = historicalMatrix(event, request.sourceName(), request.sourceSha256(), request.rows());
+        return historicalView(event, request.rows().size(), matrix, historicalDays(event, matrix));
+    }
+    public TournamentDtos.HistoricalPreview importHistorical(final String actor, final long id, final TournamentDtos.HistoricalImportRequest request) {
+        final TournamentEvent event = events.findLocked(id).orElseThrow(() -> error(ApiErrorCode.RESOURCE_NOT_FOUND));
+        if (!request.confirm() || !StringUtils.hasText(request.idempotencyKey()) || request.idempotencyKey().length() > 64) { throw invalid(); }
+        final Map<String, List<Integer>> matrix = historicalMatrix(event, request.sourceName(), request.sourceSha256(), request.rows());
+        final String hash = historicalHash(request.sourceName().strip(), request.sourceSha256(), request.rows());
+        if (event.historicalImportKey != null) {
+            if (!event.historicalImportKey.equals(request.idempotencyKey()) || !event.historicalImportHash.equals(hash)) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
+            return historicalView(event, request.rows().size(), matrix, dayList(id));
+        }
+        version(event.version, request.expectedEventVersion()); requireEmptyHistoricalTarget(event);
+        final Map<String, TournamentClan> existing = clans.findByEventIdOrderByClanTag(id).stream().collect(Collectors.toMap(clan -> clan.clanTag, clan -> clan));
+        for (final String tag : matrix.keySet()) {
+            final TournamentClan clan = existing.getOrDefault(tag, new TournamentClan()); clan.eventId = id; clan.clanTag = tag; clan.historicalPublished = true; clans.save(clan);
+        }
+        for (final TournamentDay imported : historicalDays(event, matrix)) {
+            final TournamentDay day = existingDay(id, imported.roundNumber, imported.dayNumber).orElse(imported);
+            day.publishedHistoricalPoints = imported.publishedHistoricalPoints; day.expectedGroupCount = null; day.version++; days.save(day);
+        }
+        event.configLocked = true; event.historicalImportKey = request.idempotencyKey(); event.historicalImportHash = hash; event.version++;
+        audit(event, null, null, "HISTORICAL_IMPORTED", actor, null, Map.of(), Map.of("sourceName", request.sourceName().strip(),
+                "sourceSha256", request.sourceSha256(), "importHash", hash, "rows", request.rows(), "clanCount", matrix.size()));
+        return historicalView(event, request.rows().size(), matrix, dayList(id));
+    }
     @Transactional(readOnly = true)
     public TournamentDtos.DayView day(final long id, final int round, final int number) {
         final TournamentEvent event = event(id); dimension(event, round, number);
@@ -180,12 +215,13 @@ public class TournamentService {
             return dayView(event, day, null);
         }
         version(event.version, request.expectedEventVersion()); version(day.version, request.expectedDayVersion()); final TournamentRule rule = readyRule(event, round, request.expectedRulesVersion());
-        if (day.publishedGroups != null && !day.correction) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
+        if (published(day) && !day.correction) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
         requireExpectedGroups(day);
         if (day.draftGroups == null || day.draftGroups.size() != day.expectedGroupCount) { throw error(ApiErrorCode.TOURNAMENT_GROUP_COUNT_MISMATCH); }
         validateSnapshot(day.draftGroups); validateRanksAgainstRules(day.draftGroups, rule, number);
-        final Map<String, Object> before = Map.of("groups", day.publishedGroups == null ? List.of() : day.publishedGroups); final String reason = day.correctionReason;
-        day.publishedGroups = List.copyOf(day.draftGroups); day.draftGroups = null;
+        final Map<String, Object> before = Map.of("groups", day.publishedGroups == null ? List.of() : day.publishedGroups,
+                "historicalPoints", day.publishedHistoricalPoints == null ? Map.of() : day.publishedHistoricalPoints); final String reason = day.correctionReason;
+        day.publishedGroups = List.copyOf(day.draftGroups); day.publishedHistoricalPoints = null; day.draftGroups = null;
         day.publicationKeys = new LinkedHashSet<>(day.publicationKeys); day.publicationKeys.add(request.idempotencyKey()); final String action = day.correction ? "CORRECTION_PUBLISHED" : "DAY_PUBLISHED";
         day.correction = false; day.correctionReason = null; day.correctionStartedAt = null; event.configLocked = true; changed(event, day);
         audit(event, round, number, action, actor, reason, before, Map.of("groups", day.publishedGroups)); return dayView(event, day, null);
@@ -194,7 +230,8 @@ public class TournamentService {
         final TournamentEvent event = locked(id, request.expectedEventVersion()); dimension(event, round, number);
         final TournamentDay day = existingDay(id, round, number).orElseThrow(() -> error(ApiErrorCode.RESOURCE_NOT_FOUND));
         version(day.version, request.expectedDayVersion()); reason(request.reason()); groupCount(request.expectedGroupCount());
-        if (day.publishedGroups == null || day.correction) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
+        if (!published(day) || day.correction) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
+        if (day.publishedHistoricalPoints != null) { readyRule(event, round, rule(id, round).rulesVersion); }
         day.correction = true; day.correctionReason = request.reason().strip(); day.correctionStartedAt = Instant.now(); day.draftGroups = List.of(); day.expectedGroupCount = request.expectedGroupCount(); changed(event, day);
         audit(event, round, number, "CORRECTION_STARTED", actor, request.reason(), Map.of(), Map.of()); return dayView(event, day, null);
     }
@@ -203,6 +240,7 @@ public class TournamentService {
         final TournamentDay day = existingDay(id, round, number).orElseThrow(() -> error(ApiErrorCode.RESOURCE_NOT_FOUND)); version(day.version, request.expectedDayVersion());
         day.draftGroups = null; day.correction = false; day.correctionReason = null; day.correctionStartedAt = null;
         if (day.publishedGroups != null) { day.expectedGroupCount = day.publishedGroups.size(); }
+        else if (day.publishedHistoricalPoints != null) { day.expectedGroupCount = null; }
         changed(event, day); removeUnusedEvidence(event, true); return dayView(event, day, null);
     }
     public TournamentDtos.Standings clearPoints(final String actor, final long id, final TournamentDtos.ClearRequest request) {
@@ -211,8 +249,8 @@ public class TournamentService {
         if (!clans.existsByEventIdAndClanTag(id, tag)) { throw error(ApiErrorCode.RESOURCE_NOT_FOUND); }
         final List<TournamentDay> affected = dayList(id).stream().filter(day -> day.roundNumber == request.roundNumber() && (request.dayNumber() == null || day.dayNumber == request.dayNumber())).toList();
         final int required = request.dayNumber() == null ? event.daysPerRound : 1;
-        if (affected.size() != required || affected.stream().anyMatch(day -> day.publishedGroups == null || day.correction)) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
-        if (affected.stream().noneMatch(day -> day.clearedClans.contains(tag) || tags(day.publishedGroups).contains(tag))) {
+        if (affected.size() != required || affected.stream().anyMatch(day -> !published(day) || day.correction)) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
+        if (affected.stream().noneMatch(day -> day.clearedClans.contains(tag) || publishedTags(day).contains(tag))) {
             // A draft-only clan must never be exposed by sanctioning an unrelated published day.
             throw error(ApiErrorCode.RESOURCE_NOT_FOUND);
         }
@@ -296,7 +334,13 @@ public class TournamentService {
         }
     }
     private TournamentDtos.Standings standings(final TournamentEvent event, final List<TournamentDay> storedDays, final TournamentDay previewDay, final List<TournamentSnapshot.Group> preview, final boolean admin) {
+        return standings(event, storedDays, previewDay, preview, admin, Set.of());
+    }
+    private TournamentDtos.Standings standings(final TournamentEvent event, final List<TournamentDay> storedDays, final TournamentDay previewDay, final List<TournamentSnapshot.Group> preview, final boolean admin, final Set<String> historicalRoster) {
         final Map<String, Map<String, Long>> scores = new HashMap<>();
+        clans.findByEventIdOrderByClanTag(event.id).stream().filter(clan -> clan.historicalPublished)
+                .forEach(clan -> scores.put(clan.clanTag, new HashMap<>()));
+        historicalRoster.forEach(tag -> scores.putIfAbsent(tag, new HashMap<>()));
         final Map<String, TournamentDay> dayByKey = storedDays.stream().collect(Collectors.toMap(day -> key(day.roundNumber, day.dayNumber), day -> day));
         if (previewDay != null) { dayByKey.put(key(previewDay.roundNumber, previewDay.dayNumber), previewDay); }
         final List<TournamentDtos.StandingDay> columns = new ArrayList<>();
@@ -304,12 +348,15 @@ public class TournamentService {
         for (int round = 1; round <= event.roundCount; round++) {
             for (int number = 1; number <= event.daysPerRound; number++) {
                 final String key = key(round, number); final TournamentDay day = dayByKey.get(key);
-                columns.add(new TournamentDtos.StandingDay(round, number, event.dayLabels.get(number - 1), day != null && day.publishedGroups != null));
+                columns.add(new TournamentDtos.StandingDay(round, number, event.dayLabels.get(number - 1), day != null && published(day)));
                 if (day == null) { continue; }
                 final List<TournamentSnapshot.Group> selected = previewDay == day && preview != null ? preview : admin && day.draftGroups != null ? day.draftGroups : day.publishedGroups;
-                if (selected == null) { continue; }
+                if (selected == null && day.publishedHistoricalPoints == null) { continue; }
                 final Map<Integer, Integer> points = rulePoints(ruleByRound.get(round), number);
-                for (final TournamentSnapshot.Group group : selected) {
+                if (selected == null) {
+                    day.publishedHistoricalPoints.forEach((tag, value) -> scores.computeIfAbsent(tag, ignored -> new HashMap<>()).put(key, day.clearedClans.contains(tag) ? 0L : value.longValue()));
+                }
+                for (final TournamentSnapshot.Group group : selected == null ? List.<TournamentSnapshot.Group>of() : selected) {
                     for (final TournamentSnapshot.Team team : group.teams()) {
                         final Integer value = points.get(team.rank()); if (value == null) { throw error(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE); }
                         scores.computeIfAbsent(team.clanTag(), ignored -> new HashMap<>()).put(key, day.clearedClans.contains(team.clanTag()) ? 0L : value.longValue());
@@ -341,9 +388,9 @@ public class TournamentService {
     }
     private TournamentDtos.DayView dayView(final TournamentEvent event, final TournamentDay day, final List<TournamentSnapshot.Group> preview) {
         final List<TournamentSnapshot.Group> selected = preview != null ? preview : day.draftGroups != null ? day.draftGroups : day.publishedGroups != null ? day.publishedGroups : List.of();
-        final String status = day.correction ? "CORRECTION" : day.publishedGroups != null ? "FINALIZED" : day.draftGroups != null || preview != null ? "DRAFT" : "EMPTY";
+        final String status = day.correction ? "CORRECTION" : published(day) ? "FINALIZED" : day.draftGroups != null || preview != null ? "DRAFT" : "EMPTY";
         return new TournamentDtos.DayView(event.id, day.roundNumber, day.dayNumber, event.version, rule(event.id, day.roundNumber).rulesVersion,
-                day.version, status, day.expectedGroupCount, selected.stream().map(mapper::group).toList(), day.publishedGroups != null,
+                day.version, status, day.expectedGroupCount, selected.stream().map(mapper::group).toList(), published(day), day.publishedHistoricalPoints != null,
                 standings(event, dayList(event.id), preview == null ? null : day, preview, true));
     }
     private TournamentDtos.Config configView(final TournamentEvent event) {
@@ -364,18 +411,26 @@ public class TournamentService {
     private java.util.Optional<TournamentDay> existingDay(final long id, final int round, final int number) { return days.findByEventIdAndRoundNumberAndDayNumber(id, round, number); }
     private TournamentDay writableDay(final long id, final int round, final int number, final long expected) {
         final TournamentDay day = existingDay(id, round, number).orElseGet(() -> newDay(id, round, number)); version(day.version, expected);
-        if (day.publishedGroups != null && !day.correction) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); } return day;
+        if (published(day) && !day.correction) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); } return day;
     }
     private TournamentDay newDay(final long id, final int round, final int number) {
         final TournamentDay day = new TournamentDay(); day.eventId = id; day.roundNumber = round; day.dayNumber = number; day.clearedClans = Set.of(); day.publicationKeys = Set.of(); return day;
     }
     private void changed(final TournamentEvent event, final TournamentDay day) { day.version++; event.version++; days.save(day); }
-    private boolean roundLocked(final long id, final int round) { return dayList(id).stream().anyMatch(day -> day.roundNumber == round && day.publishedGroups != null); }
+    private boolean roundLocked(final long id, final int round) {
+        final List<TournamentDay> roundDays = dayList(id).stream().filter(day -> day.roundNumber == round).toList();
+        return roundDays.stream().anyMatch(day -> day.publishedGroups != null)
+                || roundDays.stream().anyMatch(day -> day.publishedHistoricalPoints != null) && complete(event(id), rule(id, round));
+    }
     private boolean complete(final TournamentEvent event, final TournamentRule rule) {
-        if (rule.days.size() != event.daysPerRound) { return false; }
+        return complete(event, rule.days);
+    }
+    private boolean complete(final TournamentEvent event, final List<TournamentSnapshot.RuleDay> configuredDays) {
+        if (configuredDays.size() != event.daysPerRound) { return false; }
         for (int number = 1; number <= event.daysPerRound; number++) {
-            final Map<Integer, Integer> values = rulePoints(rule, number);
-            if (!(values.containsKey(1) && values.containsKey(2) && values.containsKey(3) && values.containsKey(4))) { return false; }
+            final int target = number;
+            final Set<Integer> ranks = configuredDays.stream().filter(day -> day.dayNumber() == target).flatMap(day -> day.points().stream()).map(TournamentSnapshot.RankPoints::rank).collect(Collectors.toSet());
+            if (!(ranks.contains(1) && ranks.contains(2) && ranks.contains(3) && ranks.contains(4))) { return false; }
         }
         return true;
     }
@@ -410,6 +465,58 @@ public class TournamentService {
         if (!StringUtils.hasText(tag) || tag.codePointCount(0, tag.length()) > 32 || tag.codePoints().anyMatch(Character::isISOControl)) { throw invalid(); } return tag;
     }
     private static Set<String> tags(final List<TournamentSnapshot.Group> groups) { return groups.stream().flatMap(group -> group.teams().stream()).map(TournamentSnapshot.Team::clanTag).collect(Collectors.toSet()); }
+    private static boolean published(final TournamentDay day) { return day.publishedGroups != null || day.publishedHistoricalPoints != null; }
+    private static Set<String> publishedTags(final TournamentDay day) { return day.publishedHistoricalPoints != null ? day.publishedHistoricalPoints.keySet() : day.publishedGroups != null ? tags(day.publishedGroups) : Set.of(); }
+    private void requireEmptyHistoricalTarget(final TournamentEvent event) {
+        if (event.historicalImportKey != null || dayList(event.id).stream().anyMatch(day -> day.draftGroups != null || published(day) || day.correction || !day.clearedClans.isEmpty())) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
+    }
+    private Map<String, List<Integer>> historicalMatrix(final TournamentEvent event, final String sourceName, final String sourceSha256, final List<TournamentDtos.HistoricalRow> input) {
+        if (!StringUtils.hasText(sourceName) || sourceName.codePointCount(0, sourceName.length()) > 200 || sourceName.codePoints().anyMatch(Character::isISOControl)
+                || sourceSha256 == null || !sourceSha256.matches("[a-f0-9]{64}") || input == null || input.isEmpty() || input.size() > 10000) { throw invalid(); }
+        final int cellCount = event.roundCount * event.daysPerRound;
+        final Map<String, List<Integer>> matrix = new LinkedHashMap<>();
+        for (int rowIndex = 0; rowIndex < input.size(); rowIndex++) {
+            final TournamentDtos.HistoricalRow row = input.get(rowIndex);
+            if (row == null || row.points() == null || row.points().size() != cellCount || row.sourceTotal() < 0) { throw invalid(); }
+            final String tag = clanTag(row.clanTag()); long total = 0;
+            for (final Integer point : row.points()) {
+                if (point != null) { if (point < 0 || point > 1_000_000) { throw invalid(); } total += point; }
+            }
+            if (total != row.sourceTotal()) { throw new ApiException(ApiErrorCode.INVALID_ARGUMENT, null, Map.of("sourceRow", rowIndex + 1, "clanTag", tag, "computedTotal", total, "sourceTotal", row.sourceTotal())); }
+            final List<Integer> merged = matrix.computeIfAbsent(tag, ignored -> new ArrayList<>(java.util.Collections.nCopies(cellCount, null)));
+            for (int column = 0; column < cellCount; column++) {
+                final Integer next = row.points().get(column); if (next == null) { continue; }
+                if (merged.get(column) != null) { throw new ApiException(ApiErrorCode.TOURNAMENT_GROUP_CONFLICT, null, Map.of("sourceRow", rowIndex + 1, "clanTag", tag, "roundNumber", column / event.daysPerRound + 1, "dayNumber", column % event.daysPerRound + 1)); }
+                merged.set(column, next);
+            }
+        }
+        return matrix;
+    }
+    private List<TournamentDay> historicalDays(final TournamentEvent event, final Map<String, List<Integer>> matrix) {
+        final List<TournamentDay> result = new ArrayList<>();
+        for (int column = 0; column < event.roundCount * event.daysPerRound; column++) {
+            final Map<String, Integer> values = new LinkedHashMap<>();
+            for (final Map.Entry<String, List<Integer>> row : matrix.entrySet()) {
+                final Integer point = row.getValue().get(column); if (point != null) { values.put(row.getKey(), point); }
+            }
+            if (values.isEmpty()) { continue; }
+            final TournamentDay day = newDay(event.id, column / event.daysPerRound + 1, column % event.daysPerRound + 1);
+            day.publishedHistoricalPoints = Map.copyOf(values); result.add(day);
+        }
+        return result;
+    }
+    private TournamentDtos.HistoricalPreview historicalView(final TournamentEvent event, final int sourceRowCount, final Map<String, List<Integer>> matrix, final List<TournamentDay> importedDays) {
+        final int missing = (int) matrix.values().stream().flatMap(List::stream).filter(Objects::isNull).count();
+        return new TournamentDtos.HistoricalPreview(standings(event, importedDays, null, null, false, matrix.keySet()), sourceRowCount, matrix.size(), missing, event.version);
+    }
+    private String historicalHash(final String sourceName, final String sourceSha256, final List<TournamentDtos.HistoricalRow> rows) {
+        final StringBuilder canonical = new StringBuilder().append(sourceName.length()).append(':').append(sourceName).append(':').append(sourceSha256);
+        for (final TournamentDtos.HistoricalRow row : rows) {
+            final String tag = clanTag(row.clanTag()); canonical.append('|').append(tag.length()).append(':').append(tag).append(':').append(row.sourceTotal()).append(':').append(row.points());
+        }
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical.toString().getBytes(StandardCharsets.UTF_8))); }
+        catch (final NoSuchAlgorithmException impossible) { throw new IllegalStateException("SHA-256 unavailable", impossible); }
+    }
     private void requireExpectedGroups(final TournamentDay day) { if (day.expectedGroupCount == null) { throw error(ApiErrorCode.TOURNAMENT_GROUP_COUNT_MISMATCH); } }
     private void groupCount(final int count) { if (count < 1 || count > 10000) { throw invalid(); } }
     private void reason(final String reason) { if (!StringUtils.hasText(reason) || reason.length() > 500) { throw invalid(); } }

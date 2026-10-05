@@ -997,6 +997,120 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/TournamentClearRequest"
+  /api/admin/tournaments/{eventId}/historical-import/preview:
+    post:
+      operationId: previewTournamentHistoricalImport
+      summary: previewTournamentHistoricalImport
+      description: Requires tournament-admin or wotbtools-admin. Imports direct historical scores only into an event without draft or published results.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Tournament result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentHistoricalPreview"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentHistoricalPreviewRequest"
+  /api/admin/tournaments/{eventId}/historical-import:
+    post:
+      operationId: importTournamentHistorical
+      summary: importTournamentHistorical
+      description: Requires tournament-admin or wotbtools-admin. Imports direct historical scores only into an event without draft or published results.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Tournament result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentHistoricalPreview"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentHistoricalImportRequest"
   /api/admin/tournaments/{eventId}/audit:
     get:
       operationId: listTournamentAudit
@@ -2092,6 +2206,7 @@ components:
         - expectedGroupCount
         - groups
         - published
+        - historical
         - standings
       properties:
         eventId:
@@ -2135,8 +2250,128 @@ components:
             $ref: "#/components/schemas/TournamentGroup"
         published:
           type: boolean
+        historical:
+          type: boolean
+          description: The current published day uses historical direct scores rather than ranked groups.
         standings:
           $ref: "#/components/schemas/TournamentStandings"
+    TournamentHistoricalRow:
+      type: object
+      additionalProperties: false
+      required:
+        - clanTag
+        - points
+        - sourceTotal
+      properties:
+        clanTag:
+          type: string
+          minLength: 1
+          maxLength: 32
+        points:
+          type: array
+          minItems: 8
+          maxItems: 15
+          description: Round-major then day-major matrix, with exactly roundCount times daysPerRound cells. Null is no participation; zero is an explicit score.
+          items:
+            type:
+              - integer
+              - "null"
+            minimum: 0
+            maximum: 1000000
+        sourceTotal:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 15000000
+    TournamentHistoricalPreviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedEventVersion
+        - sourceName
+        - sourceSha256
+        - rows
+      properties:
+        expectedEventVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        sourceName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        sourceSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items:
+            $ref: "#/components/schemas/TournamentHistoricalRow"
+    TournamentHistoricalImportRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedEventVersion
+        - sourceName
+        - sourceSha256
+        - rows
+        - confirm
+        - idempotencyKey
+      properties:
+        expectedEventVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        sourceName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        sourceSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items:
+            $ref: "#/components/schemas/TournamentHistoricalRow"
+        confirm:
+          type: boolean
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+    TournamentHistoricalPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - standings
+        - sourceRowCount
+        - clanCount
+        - missingCellCount
+        - eventVersion
+      properties:
+        standings:
+          $ref: "#/components/schemas/TournamentStandings"
+        sourceRowCount:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        clanCount:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        missingCellCount:
+          type: integer
+          minimum: 0
+          maximum: 150000
+          description: Missing cells after merging distinct source rows for the same clan.
+        eventVersion:
+          type: integer
+          format: int64
+          minimum: 0
     TournamentRecognitionPermit:
       type: object
       additionalProperties: false

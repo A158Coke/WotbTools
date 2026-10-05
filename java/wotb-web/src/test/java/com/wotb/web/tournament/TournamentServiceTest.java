@@ -157,6 +157,7 @@ class TournamentServiceTest {
     }
     @Test void correctionKeepsOldPublicSnapshotRequiresFreshEvidenceAndPreservesClear() {
         day.expectedGroupCount=1; final TournamentDtos.IncomingGroup original=group(1,"ERROR","A","B","C");
+        images.get(original.evidenceId()).createdAt=Instant.now().minusSeconds(1);
         service.saveDraft(1,1,1,request(List.of(original),List.of("A","B","C"))); publish("once");
         service.clearPoints("admin",1,new TournamentDtos.ClearRequest(event.version,1,1,"A","violation",false));
         service.correction("admin",1,1,1,new TournamentDtos.CorrectionRequest(event.version,day.version,1,"missing data"));
@@ -182,6 +183,95 @@ class TournamentServiceTest {
         assertEquals("admin-sub",jwt.getJWTClaimsSet().getSubject()); assertEquals("wotbtools-tournament",jwt.getJWTClaimsSet().getIssuer());
         assertEquals(List.of("tournament-recognition"),jwt.getJWTClaimsSet().getAudience()); assertEquals("a".repeat(64),jwt.getJWTClaimsSet().getStringClaim("image_hash"));
         assertEquals(1,jwt.getJWTClaimsSet().getLongClaim("rules_version")); assertEquals(300000,jwt.getJWTClaimsSet().getExpirationTime().getTime()-jwt.getJWTClaimsSet().getIssueTime().getTime());
+    }
+    @Test void historicalPreviewAndImportPreserveNullAndZeroWithoutRulesOrDraftDisclosure() {
+        rule.days=List.of(); rule.rulesVersion=0;
+        final TournamentClan hidden=new TournamentClan(); hidden.eventId=1; hidden.clanTag="hidden-draft-only"; clanRows.add(hidden);
+        final List<TournamentDtos.HistoricalRow> input=List.of(historicalRow("[REQM]",100,null),historicalRow("-KSR-",null,100),historicalRow("零分",0,0),historicalRow("缺席"));
+        final TournamentDtos.HistoricalPreview preview=service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"summer.png","a".repeat(64),input));
+        assertEquals(4,preview.clanCount()); assertEquals(36,preview.missingCellCount()); assertEquals(List.of(1,1,3,3),preview.standings().rows().stream().map(TournamentDtos.StandingRow::rank).toList());
+        assertTrue(service.publicStandings(1).rows().isEmpty()); assertEquals(0,event.version); assertNull(day.publishedHistoricalPoints);
+        final TournamentDtos.HistoricalPreview result=service.importHistorical("admin",1,historicalRequest(input,"first"));
+        assertEquals(4,result.standings().rows().size()); assertEquals(1,event.version); assertTrue(event.configLocked);
+        assertEquals(4,service.publicStandings(1).rows().size()); assertFalse(service.publicStandings(1).rows().stream().anyMatch(row->row.clanTag().equals("hidden-draft-only")));
+        final TournamentDtos.StandingRow absent=service.publicStandings(1).rows().stream().filter(row->row.clanTag().equals("缺席")).findFirst().orElseThrow();
+        assertEquals(0,absent.totalPoints()); assertNull(absent.rounds().getFirst().days().getFirst().points());
+        assertEquals("FINALIZED",service.day(1,1,1).status()); assertTrue(service.day(1,1,1).historical()); assertTrue(service.day(1,1,1).groups().isEmpty());
+        assertFalse(service.publicStandings(1).days().get(2).published()); assertEquals("a".repeat(64),auditRows.getLast().afterState.get("sourceSha256"));
+    }
+    @Test void historicalRowsMergeAcrossDaysButAnyOverlappingNonNullCellIsConflict() {
+        final List<TournamentDtos.HistoricalRow> input=List.of(historicalRow("A",100,null),historicalRow("[A]",null,50));
+        final TournamentDtos.HistoricalPreview result=service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"source","a".repeat(64),input));
+        assertEquals(2,result.sourceRowCount()); assertEquals(1,result.clanCount()); assertEquals(8,result.missingCellCount()); assertEquals(150,result.standings().rows().getFirst().totalPoints());
+        assertCode(ApiErrorCode.TOURNAMENT_GROUP_CONFLICT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"source","a".repeat(64),List.of(historicalRow("A",0),historicalRow("A",0)))));
+        assertTrue(auditRows.isEmpty()); assertEquals(0,event.version);
+    }
+    @Test void historicalSourceNameLengthUsesUnicodeCodePoints() {
+        final List<TournamentDtos.HistoricalRow> input=List.of(historicalRow("A",100));
+        final String maximum="😀".repeat(200);
+        assertEquals(1,service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,maximum,"a".repeat(64),input)).clanCount());
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,maximum+"😀","a".repeat(64),input)));
+        assertTrue(auditRows.isEmpty()); assertEquals(0,event.version);
+    }
+    @Test void historicalValidationRejectsDimensionsBoundsSourceTotalsAndSourceIdentity() {
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"source","a".repeat(64),List.of(new TournamentDtos.HistoricalRow("A",List.of(1,2),3)))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"source","a".repeat(64),List.of(historicalRow("A",-1)))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"source","a".repeat(64),List.of(historicalRow("A",1000001)))));
+        final TournamentDtos.HistoricalRow valid=historicalRow("A",100);
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"source","a".repeat(64),List.of(new TournamentDtos.HistoricalRow("A",valid.points(),99)))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"source","wrong",List.of(valid))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"source\nname","a".repeat(64),List.of(valid))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"source","a".repeat(64),List.of())));
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(99,"source","a".repeat(64),List.of(valid))));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.importHistorical("admin",1,new TournamentDtos.HistoricalImportRequest(0,"source","a".repeat(64),List.of(valid),false,"key")));
+        assertTrue(clanRows.isEmpty()); assertTrue(auditRows.isEmpty());
+    }
+    @Test void historicalImportIsOneTimeAndExactRetryIsIdempotent() {
+        final TournamentDtos.HistoricalImportRequest request=historicalRequest(List.of(historicalRow("A",100)),"same-key");
+        service.importHistorical("admin",1,request); final long version=event.version;
+        service.importHistorical("admin",1,request); assertEquals(version,event.version); assertEquals(1,auditRows.size()); assertEquals(1,clanRows.size());
+        assertCode(ApiErrorCode.TOURNAMENT_LOCKED,()->service.importHistorical("admin",1,historicalRequest(List.of(historicalRow("A",101)),"same-key")));
+        assertCode(ApiErrorCode.TOURNAMENT_LOCKED,()->service.importHistorical("admin",1,historicalRequest(List.of(historicalRow("A",100)),"different-key")));
+        assertCode(ApiErrorCode.TOURNAMENT_LOCKED,()->service.expectedGroups(1,1,1,new TournamentDtos.ExpectedGroupsRequest(event.version,day.version,1)));
+        assertCode(ApiErrorCode.TOURNAMENT_LOCKED,()->service.saveDraft(1,1,1,request(List.of(),List.of())));
+    }
+    @Test void historicalImportCannotOverwriteDraftOrFinalizedGroups() {
+        service.saveDraft(1,1,1,request(List.of(group(1,"ERROR","A","B","C")),List.of("A","B","C")));
+        assertCode(ApiErrorCode.TOURNAMENT_LOCKED,()->service.importHistorical("admin",1,historicalRequest(List.of(historicalRow("X",100)),"import")));
+        day.expectedGroupCount=1; publish("first");
+        assertCode(ApiErrorCode.TOURNAMENT_LOCKED,()->service.importHistorical("admin",1,historicalRequest(List.of(historicalRow("X",100)),"import")));
+        assertEquals(3,service.publicStandings(1).rows().size());
+    }
+    @Test void incompleteHistoricalRulesCanOnlyBeCompletedOnceAndDoNotRecalculateScores() {
+        rule.days=List.of(); rule.rulesVersion=0;
+        service.importHistorical("admin",1,historicalRequest(List.of(historicalRow("A",999)),"import"));
+        assertFalse(service.config(1).rounds().getFirst().locked());
+        assertCode(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE,()->service.saveRules("admin",1,1,new TournamentDtos.RuleRequest(event.version,0,List.of())));
+        assertCode(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE,()->service.correction("admin",1,1,1,new TournamentDtos.CorrectionRequest(event.version,day.version,1,"fix")));
+        final List<TournamentDtos.RuleDay> configured=ruleDays(false).stream().map(value->new TournamentDtos.RuleDay(value.dayNumber(),value.points().stream().map(point->new TournamentDtos.RankPoints(point.rank(),point.points())).toList())).toList();
+        service.saveRules("admin",1,1,new TournamentDtos.RuleRequest(event.version,0,configured));
+        assertTrue(service.config(1).rounds().getFirst().locked()); assertEquals(999,service.publicStandings(1).rows().getFirst().totalPoints());
+        assertCode(ApiErrorCode.TOURNAMENT_LOCKED,()->service.saveRules("admin",1,1,new TournamentDtos.RuleRequest(event.version,1,configured)));
+    }
+    @Test void historicalCorrectionAndSanctionsUseExistingPublicationAndRestoreSemantics() {
+        service.importHistorical("admin",1,historicalRequest(List.of(historicalRow("A",999,123),historicalRow("B",50,25),historicalRow("C",25,10)),"import"));
+        service.clearPoints("admin",1,new TournamentDtos.ClearRequest(event.version,1,1,"A","violation",false));
+        assertEquals(123,service.publicStandings(1).rows().getFirst().totalPoints());
+        service.correction("admin",1,1,1,new TournamentDtos.CorrectionRequest(event.version,day.version,1,"correct day"));
+        assertEquals(123,service.publicStandings(1).rows().getFirst().totalPoints());
+        service.saveDraft(1,1,1,request(List.of(group(1,"ERROR","A","C","B")),List.of())); publish("replacement");
+        assertNull(day.publishedHistoricalPoints); assertFalse(service.day(1,1,1).historical()); assertEquals(123,service.publicStandings(1).rows().getFirst().totalPoints());
+        assertEquals(999,((Map<?,?>)auditRows.getLast().beforeState.get("historicalPoints")).get("A"));
+        service.clearPoints("admin",1,new TournamentDtos.ClearRequest(event.version,1,1,"A","appeal",true));
+        assertEquals(223,service.publicStandings(1).rows().getFirst().totalPoints());
+    }
+    private TournamentDtos.HistoricalImportRequest historicalRequest(final List<TournamentDtos.HistoricalRow> input, final String key) {
+        return new TournamentDtos.HistoricalImportRequest(event.version,"source.png","a".repeat(64),input,true,key);
+    }
+    private TournamentDtos.HistoricalRow historicalRow(final String tag, final Integer... input) {
+        final List<Integer> values=new ArrayList<>(java.util.Collections.nCopies(10,null)); long total=0;
+        for(int index=0;index<input.length;index++){values.set(index,input[index]); if(input[index]!=null){total+=input[index];}}
+        return new TournamentDtos.HistoricalRow(tag,values,total);
     }
     private void publish(final String key) { service.finalizeDay("admin",1,1,1,new TournamentDtos.FinalizeRequest(event.version,day.version,rule.rulesVersion,key)); }
     private TournamentDtos.DraftRequest request(final List<TournamentDtos.IncomingGroup> groups, final List<String> tags) { return new TournamentDtos.DraftRequest(event.version,day.version,rule.rulesVersion,groups,tags); }

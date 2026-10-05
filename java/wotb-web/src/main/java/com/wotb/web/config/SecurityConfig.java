@@ -78,6 +78,10 @@ public class SecurityConfig {
                 .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_PATTERN).permitAll()
 
+                // 联赛管理员只管理积分赛；在全局 admin 规则之前匹配。
+                .requestMatchers(ApiPaths.TOURNAMENTS_ADMIN, ApiPaths.TOURNAMENTS_ADMIN + "/**")
+                    .hasAnyRole("tournament-admin", "wotbtools-admin")
+
                 // --- 管理员用户管理 (仅 wotbtools-admin) ---
                 .requestMatchers(ADMIN_USERS_PATTERN)
                     .hasRole("wotbtools-admin")

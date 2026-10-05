@@ -18,6 +18,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -35,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** Real PostgreSQL: migration/JSONB/context plus locking/publication and source-scoped evidence lifecycle. */
 @Testcontainers(disabledWithoutDocker = true)
@@ -63,6 +66,7 @@ class TournamentIntegrationTest {
     @Autowired TournamentEvidenceRepository evidence;
     @Autowired TournamentAuditRepository audits;
     @Autowired JdbcTemplate jdbc;
+    @Autowired PlatformTransactionManager transactionManager;
     private long id;
     @BeforeEach void setup() {
         audits.deleteAll(); evidence.deleteAll(); days.deleteAll(); clans.deleteAll(); rules.deleteAll(); events.deleteAll();
@@ -71,7 +75,7 @@ class TournamentIntegrationTest {
         service.expectedGroups(id,1,1,new TournamentDtos.ExpectedGroupsRequest(1,0,1));
     }
     @Test void migrationAndHibernateValidateActualJsonbMappingsAndUniqueEventIdentity() {
-        assertEquals("28",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
+        assertEquals("29",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
         assertEquals("array",jdbc.queryForObject("select jsonb_typeof(days) from tournament_rule where event_id=? and round_number=1",String.class,id));
         assertEquals(5,service.config(id).rounds().size());
         final ApiException error=assertThrows(ApiException.class,()->service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","FIRE_CUP",5,2,List.of("Day 1","Day 2"))));
@@ -164,6 +168,120 @@ class TournamentIntegrationTest {
         save(id,2,1,List.of(group(id,2,1,1,2,"A","B","C")),List.of()); publish(id,2,1,"round-2");
         service.clearPoints("admin",id,new TournamentDtos.ClearRequest(service.config(id).event().version(),1,null,"A","round violation",false));
         final TournamentDtos.StandingRow row=service.publicStandings(id).rows().getFirst(); assertEquals("A",row.clanTag()); assertEquals(500,row.totalPoints()); assertEquals(0,row.rounds().getFirst().totalPoints());
+    }
+    @Test void historicalImportPersistsDirectScoresAndZeroRosterWithoutInferredRules() {
+        final long eventId=historicalEvent();
+        final List<TournamentDtos.HistoricalRow> source=List.of(historicalRow("[REQM]",100,null),historicalRow("-KSR-",null,100),historicalRow("零分",0,0),historicalRow("缺席"));
+        final TournamentDtos.HistoricalPreviewRequest previewRequest=new TournamentDtos.HistoricalPreviewRequest(0,"source.png","a".repeat(64),source);
+        assertEquals(4,service.previewHistorical(eventId,previewRequest).clanCount()); assertTrue(service.publicStandings(eventId).rows().isEmpty());
+        final TournamentDtos.HistoricalPreview result=service.importHistorical("admin",eventId,historicalRequest(eventId,source,"import"));
+        assertEquals(4,result.standings().rows().size()); assertEquals(36,result.missingCellCount()); assertEquals(1,result.eventVersion());
+        assertEquals(List.of(1,1,3,3),service.publicStandings(eventId).rows().stream().map(TournamentDtos.StandingRow::rank).toList());
+        assertEquals("object",jdbc.queryForObject("select jsonb_typeof(published_historical_points) from tournament_day where event_id=? and day_number=1",String.class,eventId));
+        assertEquals(0,jdbc.queryForObject("select count(*) from tournament_day where event_id=? and published_groups is not null",Integer.class,eventId));
+        assertEquals(4,jdbc.queryForObject("select count(*) from tournament_clan where event_id=? and historical_published",Integer.class,eventId));
+        assertEquals("a".repeat(64),jdbc.queryForObject("select after_state->>'sourceSha256' from tournament_audit where event_id=? and action='HISTORICAL_IMPORTED'",String.class,eventId));
+        assertNull(service.publicStandings(eventId).rows().stream().filter(row->row.clanTag().equals("缺席")).findFirst().orElseThrow().rounds().getFirst().days().getFirst().points());
+        assertFalse(service.day(eventId,2,1).published()); assertTrue(service.day(eventId,1,1).historical());
+        service.deleteEvent(eventId,new TournamentDtos.DeleteRequest(1,true));
+        assertEquals(0,jdbc.queryForObject("select count(*) from tournament_clan where event_id=?",Integer.class,eventId));
+        assertEquals(0,jdbc.queryForObject("select count(*) from tournament_day where event_id=?",Integer.class,eventId));
+        assertEquals(0,jdbc.queryForObject("select count(*) from tournament_audit where event_id=?",Integer.class,eventId));
+        assertEquals(1,events.count());
+    }
+    @Test void invalidHistoricalLastRowRollsBackWholeImportAndPreservesTarget() {
+        final long eventId=historicalEvent(); final TournamentDtos.HistoricalRow valid=historicalRow("A",100);
+        final List<TournamentDtos.HistoricalRow> source=List.of(valid,new TournamentDtos.HistoricalRow("B",valid.points(),101));
+        final ApiException error=assertThrows(ApiException.class,()->service.importHistorical("admin",eventId,historicalRequest(eventId,source,"import")));
+        assertEquals(ApiErrorCode.INVALID_ARGUMENT,error.errorCode()); assertEquals(0,service.config(eventId).event().version());
+        assertTrue(clans.findByEventIdOrderByClanTag(eventId).isEmpty()); assertTrue(days.findByEventIdOrderByRoundNumberAscDayNumberAsc(eventId).isEmpty());
+        assertTrue(service.publicStandings(eventId).rows().isEmpty()); assertEquals(1,service.auditList(eventId).size());
+    }
+    @Test void failedHistoricalAuditRollsBackAlreadyInsertedScoresAndRoster() {
+        final long eventId=historicalEvent();
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->service.importHistorical("x".repeat(65),eventId,historicalRequest(eventId,List.of(historicalRow("A",100)),"import")));
+        assertEquals(0,service.config(eventId).event().version()); assertNull(events.findById(eventId).orElseThrow().historicalImportKey);
+        assertTrue(clans.findByEventIdOrderByClanTag(eventId).isEmpty()); assertTrue(days.findByEventIdOrderByRoundNumberAscDayNumberAsc(eventId).isEmpty());
+        assertTrue(service.publicStandings(eventId).rows().isEmpty()); assertEquals(1,service.auditList(eventId).size());
+    }
+    @Test void simultaneousHistoricalPublicationIsIdempotentAndRejectsDifferentReplacement() throws Exception {
+        final long eventId=historicalEvent(); final List<TournamentDtos.HistoricalRow> source=List.of(historicalRow("A",100));
+        final TournamentDtos.HistoricalImportRequest request=historicalRequest(eventId,source,"same-import");
+        race(()->service.importHistorical("admin-1",eventId,request),()->service.importHistorical("admin-2",eventId,request));
+        assertEquals(1,service.auditList(eventId).stream().filter(row->row.action().equals("HISTORICAL_IMPORTED")).count());
+        assertEquals(100,service.publicStandings(eventId).rows().getFirst().totalPoints()); assertEquals(1,service.config(eventId).event().version());
+        assertEquals(ApiErrorCode.TOURNAMENT_LOCKED,assertThrows(ApiException.class,()->service.importHistorical("admin",eventId,historicalRequest(eventId,List.of(historicalRow("B",100)),"same-import"))).errorCode());
+        assertEquals("A",service.publicStandings(eventId).rows().getFirst().clanTag());
+    }
+    @Test void publicStandingsRemainOneCompleteSnapshotWhenImportCommitsBetweenQueries() throws Exception {
+        final long eventId=historicalEvent();
+        final TournamentDtos.HistoricalImportRequest request=historicalRequest(eventId,List.of(historicalRow("A",100),historicalRow("B",null,50)),"import");
+        final CountDownLatch clansLocked=new CountDownLatch(1); final CountDownLatch publish=new CountDownLatch(1);
+        try(final var executor=Executors.newFixedThreadPool(2)) {
+            final var writer=executor.submit(()->new TransactionTemplate(transactionManager).execute(transaction->{
+                // Pause exactly after the public day query and before its roster query can finish.
+                jdbc.execute("lock table tournament_clan in access exclusive mode"); clansLocked.countDown();
+                try { assertTrue(publish.await(10,TimeUnit.SECONDS)); }
+                catch(final InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }
+                return service.importHistorical("admin",eventId,request);
+            }));
+            try {
+                assertTrue(clansLocked.await(10,TimeUnit.SECONDS));
+                final var reader=executor.submit(()->service.publicStandings(eventId));
+                final long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10); boolean rosterReadBlocked=false;
+                while(System.nanoTime()<deadline) {
+                    rosterReadBlocked=Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from pg_stat_activity where pid<>pg_backend_pid() and wait_event_type='Lock' and query like '%tournament_clan%')",Boolean.class));
+                    if(rosterReadBlocked){break;} Thread.sleep(10);
+                }
+                assertTrue(rosterReadBlocked,"Public standings must have read the old event/day snapshot and be waiting on the roster query");
+                publish.countDown(); writer.get(20,TimeUnit.SECONDS);
+                final TournamentDtos.Standings old=reader.get(20,TimeUnit.SECONDS);
+                assertEquals(0,old.event().version()); assertTrue(old.rows().isEmpty(),"One response must not combine new historical clans with old day scores");
+                assertTrue(old.days().stream().noneMatch(TournamentDtos.StandingDay::published));
+                final TournamentDtos.Standings current=service.publicStandings(eventId);
+                assertEquals(1,current.event().version()); assertEquals(List.of(100L,50L),current.rows().stream().map(TournamentDtos.StandingRow::totalPoints).toList());
+                assertEquals(2,current.days().stream().filter(TournamentDtos.StandingDay::published).count());
+            } finally { publish.countDown(); }
+        }
+    }
+    @Test void historicalScoresCanBeSanctionedRestoredAndReplacedWithCompleteDayGroups() throws Exception {
+        final long eventId=historicalEvent(); final List<TournamentDtos.HistoricalRow> source=List.of(historicalRow("A",999,123),historicalRow("B",50,25),historicalRow("C",25,10));
+        service.importHistorical("admin",eventId,historicalRequest(eventId,source,"import"));
+        assertEquals(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE,assertThrows(ApiException.class,()->service.correction("admin",eventId,1,1,new TournamentDtos.CorrectionRequest(1,1,1,"fix"))).errorCode());
+        service.saveRules("admin",eventId,1,new TournamentDtos.RuleRequest(1,0,ruleDays(100)));
+        assertEquals(1122,service.publicStandings(eventId).rows().getFirst().totalPoints()); assertTrue(service.config(eventId).rounds().getFirst().locked());
+        assertEquals(ApiErrorCode.TOURNAMENT_LOCKED,assertThrows(ApiException.class,()->service.saveRules("admin",eventId,1,new TournamentDtos.RuleRequest(2,1,ruleDays(200)))).errorCode());
+        service.clearPoints("admin",eventId,new TournamentDtos.ClearRequest(2,1,1,"A","violation",false));
+        final TournamentDtos.DayView published=service.day(eventId,1,1);
+        service.correction("admin",eventId,1,1,new TournamentDtos.CorrectionRequest(published.eventVersion(),published.version(),1,"fix"));
+        final TournamentDtos.DayView correction=service.day(eventId,1,1);
+        service.deleteDraft(eventId,1,1,new TournamentDtos.Versions(correction.eventVersion(),correction.version()));
+        assertTrue(service.day(eventId,1,1).historical()); assertNull(service.day(eventId,1,1).expectedGroupCount());
+        final TournamentDtos.DayView again=service.day(eventId,1,1);
+        service.correction("admin",eventId,1,1,new TournamentDtos.CorrectionRequest(again.eventVersion(),again.version(),1,"fix again"));
+        assertEquals(123,service.publicStandings(eventId).rows().getFirst().totalPoints());
+        save(eventId,1,1,List.of(group(eventId,1,1,1,0,"A","C","B")),List.of());
+        assertEquals(123,service.publicStandings(eventId).rows().getFirst().totalPoints()); publish(eventId,1,1,"correction");
+        assertFalse(service.day(eventId,1,1).historical()); assertEquals(123,service.publicStandings(eventId).rows().getFirst().totalPoints());
+        assertEquals("999",jdbc.queryForObject("select before_state->'historicalPoints'->>'A' from tournament_audit where event_id=? and action='CORRECTION_PUBLISHED'",String.class,eventId));
+        service.clearPoints("admin",eventId,new TournamentDtos.ClearRequest(service.config(eventId).event().version(),1,1,"A","appeal",true));
+        assertEquals(223,service.publicStandings(eventId).rows().getFirst().totalPoints());
+    }
+    @Test void databaseRejectsTwoPublishedSourcesForOneHistoricalDay() {
+        final long eventId=historicalEvent(); service.importHistorical("admin",eventId,historicalRequest(eventId,List.of(historicalRow("A",100)),"import"));
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("update tournament_day set published_groups='[]'::jsonb where event_id=?",eventId));
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("update tournament_day set published_historical_points='[]'::jsonb where event_id=?",eventId));
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("update tournament_event set historical_import_hash=null where id=?",eventId));
+        assertEquals(100,service.publicStandings(eventId).rows().getFirst().totalPoints());
+    }
+    private long historicalEvent() { return service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","SUMMER",5,2,List.of("小组赛","决赛圈"))).event().id(); }
+    private TournamentDtos.HistoricalImportRequest historicalRequest(final long eventId, final List<TournamentDtos.HistoricalRow> source, final String key) {
+        return new TournamentDtos.HistoricalImportRequest(service.config(eventId).event().version(),"source.png","a".repeat(64),source,true,key);
+    }
+    private TournamentDtos.HistoricalRow historicalRow(final String tag, final Integer... input) {
+        final java.util.ArrayList<Integer> values=new java.util.ArrayList<>(java.util.Collections.nCopies(10,null)); long total=0;
+        for(int index=0;index<input.length;index++){values.set(index,input[index]); if(input[index]!=null){total+=input[index];}}
+        return new TournamentDtos.HistoricalRow(tag,values,total);
     }
     private TournamentDtos.IncomingGroup group(final long eventId, final int round, final int day, final int number, final int color, final String... tags) throws Exception {
         final BufferedImage image=new BufferedImage(32,32,BufferedImage.TYPE_INT_RGB); image.setRGB(0,0,color);

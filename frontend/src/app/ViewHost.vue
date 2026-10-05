@@ -9,14 +9,14 @@ import { viewFromRoute } from './navigation.js'
 import { replayInitialCapability, VIEW_COMPONENTS } from './viewRegistry.js'
 
 const route = useRoute()
-const { authenticated, tokenParsed } = useAuth()
+const { authenticated, isTournamentAdmin } = useAuth()
 const activeView = computed(() => viewFromRoute(route))
 // 装甲复现先过登录门：匿名不创建查看器，不启动场景；query 交给登录返回地址原样保留。
 const armorNeedsLogin = computed(() => activeView.value === 'agent-armor' && !authenticated.value)
 const tournamentAdmin = computed(() => ['tournament-points-config', 'tournament-points-admin'].includes(activeView.value))
 const tournamentNeedsLogin = computed(() => tournamentAdmin.value && !authenticated.value)
 const tournamentDenied = computed(() => tournamentAdmin.value && authenticated.value
-  && !tokenParsed.value?.realm_access?.roles?.includes('wotbtools-admin'))
+  && !isTournamentAdmin.value)
 const armorLoginDestination = computed(() => ({ path: route.path, query: { ...route.query }, hash: route.hash }))
 const currentView = computed(() => VIEW_COMPONENTS[activeView.value] || VIEW_COMPONENTS.replay)
 const initialCapability = computed(() => replayInitialCapability(activeView.value))

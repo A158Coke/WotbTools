@@ -675,20 +675,32 @@ describe('useAuth', () => {
     await auth.retryAuth()
 
     auth.tokenParsed.value = { realm_access: { roles: ['wotbtools-admin'] } }
+    auth.authenticated.value = true
     expect(auth.hasRole('wotbtools-admin')).toBe(true)
     expect(auth.hasRole('HoF-admin')).toBe(false)
     expect(auth.hasRole('')).toBe(false)
     expect(auth.isAdmin.value).toBe(true)
     // 全站管理员同时具备 HoF 审核权限。
     expect(auth.isHofAdmin.value).toBe(true)
+    expect(auth.isTournamentAdmin.value).toBe(true)
+    auth.authenticated.value = false
+    expect(auth.isTournamentAdmin.value).toBe(false)
+    auth.authenticated.value = true
 
     auth.tokenParsed.value = { realm_access: { roles: ['HoF-admin'] } }
     expect(auth.isAdmin.value).toBe(false)
     expect(auth.isHofAdmin.value).toBe(true)
+    expect(auth.isTournamentAdmin.value).toBe(false)
+
+    auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+    expect(auth.isTournamentAdmin.value).toBe(true)
+    expect(auth.isAdmin.value).toBe(false)
+    expect(auth.isHofAdmin.value).toBe(false)
 
     auth.tokenParsed.value = { realm_access: { roles: ['wotbtools-user'] } }
     expect(auth.isAdmin.value).toBe(false)
     expect(auth.isHofAdmin.value).toBe(false)
+    expect(auth.isTournamentAdmin.value).toBe(false)
 
     // WG / QQ 登录：displayName = 官方昵称 / QQ 昵称，preferred_username 是内部登录名。
     auth.tokenParsed.value = { displayName: 'A158布丁', preferred_username: 'wg_eu_572253806' }

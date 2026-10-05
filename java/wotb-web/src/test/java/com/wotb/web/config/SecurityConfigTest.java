@@ -98,6 +98,29 @@ class SecurityConfigTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void tournamentRealmRoleOnlyGrantsTournamentManagement() throws Exception {
+        final JwtDecoder decoder = context.getBean(JwtDecoder.class);
+        final Jwt token = Jwt.withTokenValue("tournament-token").header("alg", "none").subject("league-admin")
+                .claim("realm_access", Map.of("roles", List.of("tournament-admin"))).build();
+        when(decoder.decode("tournament-token")).thenReturn(token);
+        mvc.perform(get("/api/admin/tournaments/probe").header("Authorization", "Bearer tournament-token"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/admin/tournaments").header("Authorization", "Bearer tournament-token"))
+                .andExpect(status().isOk());
+        for (final String path : List.of("/api/admin/users/probe", "/api/admin/hof/probe", "/api/admin/other/probe")) {
+            mvc.perform(get(path).header("Authorization", "Bearer tournament-token"))
+                    .andExpect(status().isForbidden());
+        }
+        mvc.perform(get("/api/admin/tournaments/probe")).andExpect(status().isUnauthorized());
+        for (final String role : List.of("HoF-admin", "wotbtools-user")) {
+            mvc.perform(get("/api/admin/tournaments/probe").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+                    .andExpect(status().isForbidden());
+        }
+        mvc.perform(get("/api/admin/tournaments/probe").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().isOk());
+    }
+
     /**
      * AI Review 已迁出 wotb-web（独立 ai-service）：{@code /api/replay/analyze} 与其 cancel
      * 端点不再有专属安全规则，也不再有专属角色门，落回「未显式声明的 API 默认拒绝」
@@ -277,11 +300,15 @@ class SecurityConfigTest {
                 "/api/hof/vehicle-options",
                 "/api/admin/hof/probe",
                 "/api/admin/hof/audit",
+                "/api/admin/tournaments/probe",
                 "/static-probe"
         })
         String probe() {
             return "ok";
         }
+
+        @PostMapping("/api/admin/tournaments")
+        String tournamentCreate() { return "ok"; }
 
         /** 已删除的 Replay Processing Job 创建端点探针（只用于证明默认拒绝）。 */
         @PostMapping("/api/replay/processing-jobs")

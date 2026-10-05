@@ -13,7 +13,7 @@ it('loads generated validators as native ESM and enforces Unicode tag lengths', 
   }
   const day = {
     eventId: 7, roundNumber: 1, dayNumber: 1, eventVersion: 1, rulesVersion: 1, version: 1,
-    status: 'DRAFT', expectedGroupCount: 1, published: false,
+    status: 'DRAFT', expectedGroupCount: 1, published: false, historical: false,
     groups: [{
       groupNumber: 1, evidenceId: '00000000-0000-4000-8000-000000000001', imageHash: 'a'.repeat(64),
       teams: [{ clanTag: '😀'.repeat(20), rank: 1 }, { clanTag: 'B', rank: 2 }, { clanTag: 'C', rank: 3 }],

@@ -774,6 +774,7 @@ export default {
         "expectedGroupCount",
         "groups",
         "published",
+        "historical",
         "standings"
       ],
       "properties": {
@@ -831,8 +832,163 @@ export default {
         "published": {
           "type": "boolean"
         },
+        "historical": {
+          "type": "boolean",
+          "description": "The current published day uses historical direct scores rather than ranked groups."
+        },
         "standings": {
           "$ref": "#/$defs/TournamentStandings"
+        }
+      }
+    },
+    "TournamentHistoricalRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clanTag",
+        "points",
+        "sourceTotal"
+      ],
+      "properties": {
+        "clanTag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "points": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 15,
+          "description": "Round-major then day-major matrix, with exactly roundCount times daysPerRound cells. Null is no participation; zero is an explicit score.",
+          "items": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        },
+        "sourceTotal": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "maximum": 15000000
+        }
+      }
+    },
+    "TournamentHistoricalPreviewRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedEventVersion",
+        "sourceName",
+        "sourceSha256",
+        "rows"
+      ],
+      "properties": {
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "sourceName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "sourceSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/TournamentHistoricalRow"
+          }
+        }
+      }
+    },
+    "TournamentHistoricalImportRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedEventVersion",
+        "sourceName",
+        "sourceSha256",
+        "rows",
+        "confirm",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "sourceName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "sourceSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/TournamentHistoricalRow"
+          }
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "TournamentHistoricalPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "standings",
+        "sourceRowCount",
+        "clanCount",
+        "missingCellCount",
+        "eventVersion"
+      ],
+      "properties": {
+        "standings": {
+          "$ref": "#/$defs/TournamentStandings"
+        },
+        "sourceRowCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "clanCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "missingCellCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 150000,
+          "description": "Missing cells after merging distinct source rows for the same clan."
+        },
+        "eventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
         }
       }
     },

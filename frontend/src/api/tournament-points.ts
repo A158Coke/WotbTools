@@ -2,10 +2,10 @@ import type { components } from './generated/http-contract.js'
 import * as validators from './generated/contract-validators.js'
 import { optionalBearer } from './replay-capabilities.js'
 import { ApiError, apiFetch, requireOk } from '../utils/http.js'
-import { useAuth } from '../composables/useAuth.js'
+import { useAuth, tournamentAdminAllowed } from '../composables/useAuth.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
-import type { KeycloakTokenParsed } from 'keycloak-js'
+export { tournamentAdminAllowed } from '../composables/useAuth.js'
 
 type Schemas = components['schemas']
 export type TournamentEvent = Schemas['TournamentEvent']
@@ -18,17 +18,14 @@ export type TournamentRecognitionResult = Schemas['TournamentRecognitionResult']
 export type TournamentAudit = Schemas['TournamentAudit']
 export type TournamentRuleRequest = Schemas['TournamentRuleRequest']
 export type TournamentCreateRequest = Schemas['TournamentCreateRequest']
+export type TournamentHistoricalPreview = Schemas['TournamentHistoricalPreview']
+export type TournamentHistoricalPreviewRequest = Schemas['TournamentHistoricalPreviewRequest']
 export const TOURNAMENT_REGIONS: TournamentEvent['region'][] = ['CN', 'ASIA', 'NA', 'EU']
 export const TOURNAMENT_SEASONS: TournamentEvent['season'][] = ['SPRING', 'SUMMER', 'AUTUMN', 'WINTER', 'FIRE_CUP']
 
 const base = '/api/admin/tournaments'
 const eventPath = (id: number) => `${base}/${id}`
 const dayPath = (id: number, round: number, day: number) => `${eventPath(id)}/rounds/${round}/days/${day}`
-
-export function tournamentAdminAllowed(auth = useAuth()): boolean {
-  const roles = (auth.tokenParsed.value as KeycloakTokenParsed | null)?.realm_access?.roles
-  return auth.authenticated.value && Array.isArray(roles) && roles.includes('wotbtools-admin')
-}
 
 function requireOnline() {
   if (!useFeatureGate().requireFeature(Feature.TOURNAMENT_POINTS)) {
@@ -84,6 +81,8 @@ export const finalizeTournamentDay = (id: number, round: number, day: number, va
 export const startTournamentCorrection = (id: number, round: number, day: number, value: Schemas['TournamentCorrectionRequest'], signal?: AbortSignal) => json(`${dayPath(id, round, day)}/correction`, 'TournamentDayView', true, body('POST', value, signal))
 export const discardTournamentDraft = (id: number, round: number, day: number, value: Schemas['TournamentVersions'], signal?: AbortSignal) => json(`${dayPath(id, round, day)}/draft`, 'TournamentDayView', true, body('DELETE', value, signal))
 export const clearTournamentPoints = (id: number, value: Schemas['TournamentClearRequest'], signal?: AbortSignal) => json(`${eventPath(id)}/clear-points`, 'TournamentStandings', true, body('POST', value, signal))
+export const previewTournamentHistoricalImport = (id: number, value: TournamentHistoricalPreviewRequest, signal?: AbortSignal) => json(`${eventPath(id)}/historical-import/preview`, 'TournamentHistoricalPreview', true, body('POST', value, signal))
+export const importTournamentHistorical = (id: number, value: Schemas['TournamentHistoricalImportRequest'], signal?: AbortSignal) => json(`${eventPath(id)}/historical-import`, 'TournamentHistoricalPreview', true, body('POST', value, signal))
 export async function deleteTournament(id: number, value: Schemas['TournamentDeleteRequest'], signal?: AbortSignal) {
   await request(eventPath(id), true, body('DELETE', value, signal))
 }

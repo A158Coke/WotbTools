@@ -464,6 +464,8 @@ Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深
 
 ## i18n / DTO 约定
 
+积分赛由 `tournament-admin` 或全站 `wotbtools-admin` 管理，前端入口、业务管理 API 和独立 AI 识别共用此权限边界；该专属角色不授予其它管理权限，也不是默认角色。历史积分通过管理员预览/正式导入接口进入同一累计与审计链，V29 区分历史分数与名次小组的互斥来源，公开读取使用一致的事务快照。公开榜单支持当前赛事的客户端 Excel 导出与原生打印另存 PDF，三语列标签与页面同源；此功能不改变回放 Excel 的中文表头契约。见 [积分赛功能契约](features/tournament-points.md)。
+
 API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲染三语；Excel 继续使用中文表头。新增任何 `code/error/warningCode` 必须同步三语 `api_codes/api_errors`。
 
 站内通知子系统已随 Boost 域退役删除：其唯一写入方 `UserNotificationService` 随 `com.wotb.web.boost` 一并删除后该子系统不再有任何生产者，本次连同 Controller / Repository / DTO / 前端通知面板与三语文案一并删除，表由 forward-only `V26__drop_user_notification.sql` 永久删除。

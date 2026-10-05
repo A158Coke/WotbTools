@@ -24,6 +24,8 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -41,12 +43,13 @@ class TournamentHttpTest {
         mvc=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
     @AfterEach void close(){context.close();}
-    @Test void onlyPublicGetsAndSuperAdminMayReachTournamentRoutes() throws Exception {
+    @Test void onlyPublicGetsAndTournamentOrSuperAdminsMayReachTournamentRoutes() throws Exception {
         when(context.getBean(TournamentService.class).listEvents()).thenReturn(List.of());
         mvc.perform(get("/api/tournaments")).andExpect(status().isOk());
         mvc.perform(get("/api/admin/tournaments")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin")))).andExpect(status().isForbidden());
         mvc.perform(get("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isOk());
+        mvc.perform(get("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))).andExpect(status().isOk());
         mvc.perform(get("/api/tournaments/1/evidence/x")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isForbidden());
     }
@@ -74,6 +77,30 @@ class TournamentHttpTest {
                 .contentType("application/json").content("{\"expectedDayVersion\":0,\"expectedRulesVersion\":1,\"idempotencyKey\":\"test\"}"))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(context.getBean(TournamentService.class));
+    }
+    @Test void historicalImportUsesStrictJacksonCellReadersAndPreservesExplicitNulls() throws Exception {
+        final var mapper=JsonMapper.builder().findAndAddModules().build();
+        final String base="{\"expectedEventVersion\":0,\"sourceName\":\"summer.png\",\"sourceSha256\":\""+"a".repeat(64)+"\",\"rows\":[{\"clanTag\":\"25时\",\"points\":[null,0,100],\"sourceTotal\":100}]}";
+        final TournamentDtos.HistoricalPreviewRequest request=mapper.readValue(base,TournamentDtos.HistoricalPreviewRequest.class);
+        assertEquals(0,request.rows().getFirst().points().get(1)); assertEquals(null,request.rows().getFirst().points().getFirst());
+        assertThrows(tools.jackson.core.JacksonException.class,()->mapper.readValue(base.replace("null,0,100","null,0,100.5"),TournamentDtos.HistoricalPreviewRequest.class));
+        assertThrows(tools.jackson.core.JacksonException.class,()->mapper.readValue(base.replace("null,0,100","null,0,\"100\""),TournamentDtos.HistoricalPreviewRequest.class));
+        assertThrows(tools.jackson.core.JacksonException.class,()->mapper.readValue(base.replace("\"sourceTotal\":100","\"sourceTotal\":\"100\""),TournamentDtos.HistoricalPreviewRequest.class));
+        assertThrows(tools.jackson.core.JacksonException.class,()->mapper.readValue(base.replace(",\"sourceTotal\":100",""),TournamentDtos.HistoricalPreviewRequest.class));
+        assertThrows(tools.jackson.core.JacksonException.class,()->mapper.readValue(base.replace("\"sourceTotal\":100","\"sourceTotal\":100.5"),TournamentDtos.HistoricalPreviewRequest.class));
+    }
+    @Test void historicalImportEndpointsAreAdminOnlyAndReturnExplicitPreviewShape() throws Exception {
+        final TournamentDtos.Event event=new TournamentDtos.Event(1,0,2026,"CN","SUMMER",5,2,List.of("小组赛","决赛圈"),false);
+        final TournamentDtos.HistoricalPreview response=new TournamentDtos.HistoricalPreview(new TournamentDtos.Standings(event,List.of(),List.of()),32,32,4,0);
+        when(context.getBean(TournamentService.class).previewHistorical(eq(1L),any())).thenReturn(response);
+        final String request="{\"expectedEventVersion\":0,\"sourceName\":\"summer.png\",\"sourceSha256\":\""+"a".repeat(64)+"\",\"rows\":[]}";
+        mvc.perform(post("/api/admin/tournaments/1/historical-import/preview").contentType("application/json").content(request)).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/admin/tournaments/1/historical-import/preview").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin"))).contentType("application/json").content(request)).andExpect(status().isForbidden());
+        mvc.perform(post("/api/admin/tournaments/1/historical-import/preview").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))).contentType("application/json").content(request))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.sourceRowCount").value(32)).andExpect(jsonPath("$.clanCount").value(32)).andExpect(jsonPath("$.missingCellCount").value(4)).andExpect(jsonPath("$.eventVersion").value(0));
+        mvc.perform(post("/api/admin/tournaments/1/historical-import/preview").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))).contentType("application/json").content(request)).andExpect(status().isOk());
+        mvc.perform(post("/api/admin/tournaments/1/historical-import").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))).contentType("application/json").content(request))
+                .andExpect(status().isBadRequest());
     }
     @Configuration @EnableWebMvc
     @Import({SecurityConfig.class,ApiErrorTestConfig.class,GlobalExceptionHandler.class})

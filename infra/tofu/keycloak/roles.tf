@@ -1,8 +1,9 @@
 locals {
   realm_roles = {
-    "wotbtools-admin" = "WoTBTools admin"
-    "wotbtools-user"  = "WoTBTools user"
-    "HoF-admin"       = "Hall of Fame administrator"
+    "wotbtools-admin"  = "WoTBTools admin"
+    "wotbtools-user"   = "WoTBTools user"
+    "HoF-admin"        = "Hall of Fame administrator"
+    "tournament-admin" = "Tournament administrator"
   }
 }
 

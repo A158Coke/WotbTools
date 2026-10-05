@@ -229,6 +229,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/tournaments/{eventId}/historical-import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * previewTournamentHistoricalImport
+         * @description Requires tournament-admin or wotbtools-admin. Imports direct historical scores only into an event without draft or published results.
+         */
+        post: operations["previewTournamentHistoricalImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/tournaments/{eventId}/historical-import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * importTournamentHistorical
+         * @description Requires tournament-admin or wotbtools-admin. Imports direct historical scores only into an event without draft or published results.
+         */
+        post: operations["importTournamentHistorical"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/tournaments/{eventId}/audit": {
         parameters: {
             query?: never;
@@ -802,7 +842,41 @@ export interface components {
             expectedGroupCount: number | null;
             groups: components["schemas"]["TournamentGroup"][];
             published: boolean;
+            /** @description The current published day uses historical direct scores rather than ranked groups. */
+            historical: boolean;
             standings: components["schemas"]["TournamentStandings"];
+        };
+        TournamentHistoricalRow: {
+            clanTag: string;
+            /** @description Round-major then day-major matrix, with exactly roundCount times daysPerRound cells. Null is no participation; zero is an explicit score. */
+            points: (number | null)[];
+            /** Format: int64 */
+            sourceTotal: number;
+        };
+        TournamentHistoricalPreviewRequest: {
+            /** Format: int64 */
+            expectedEventVersion: number;
+            sourceName: string;
+            sourceSha256: string;
+            rows: components["schemas"]["TournamentHistoricalRow"][];
+        };
+        TournamentHistoricalImportRequest: {
+            /** Format: int64 */
+            expectedEventVersion: number;
+            sourceName: string;
+            sourceSha256: string;
+            rows: components["schemas"]["TournamentHistoricalRow"][];
+            confirm: boolean;
+            idempotencyKey: string;
+        };
+        TournamentHistoricalPreview: {
+            standings: components["schemas"]["TournamentStandings"];
+            sourceRowCount: number;
+            clanCount: number;
+            /** @description Missing cells after merging distinct source rows for the same clan. */
+            missingCellCount: number;
+            /** Format: int64 */
+            eventVersion: number;
         };
         TournamentRecognitionPermit: {
             permit: string;
@@ -2595,6 +2669,148 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TournamentStandings"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    previewTournamentHistoricalImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TournamentHistoricalPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Tournament result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentHistoricalPreview"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    importTournamentHistorical: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TournamentHistoricalImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Tournament result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentHistoricalPreview"];
                 };
             };
             /** @description Invalid input */

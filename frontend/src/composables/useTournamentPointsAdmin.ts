@@ -1,6 +1,7 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import * as api from '../api/tournament-points.js'
 import { useAuth } from './useAuth.js'
+import { parseTournamentHistoricalFile } from '../utils/tournamentHistoricalImport.js'
 import type { KeycloakTokenParsed } from 'keycloak-js'
 import type { TournamentConfig, TournamentDayView, TournamentDraftRequest, TournamentIncomingGroup, TournamentRecognitionResult, TournamentAudit, TournamentEvent } from '../api/tournament-points.js'
 
@@ -56,9 +57,13 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   const error = ref<unknown>(null)
   const stale = ref(false)
   const notice = ref('')
+  const historicalRequest = ref<api.TournamentHistoricalPreviewRequest | null>(null)
+  const historicalPreview = ref<api.TournamentHistoricalPreview | null>(null)
+  const historicalFileIssue = ref('')
   let generation = 0
   let controller = new AbortController()
   let publicationKey = crypto.randomUUID()
+  let historicalKey = crypto.randomUUID()
 
   function clearReviews() {
     reviews.value.forEach(review => URL.revokeObjectURL(review.url))
@@ -76,6 +81,10 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     notice.value = ''
     clearReviews()
     publicationKey = crypto.randomUUID()
+    historicalKey = crypto.randomUUID()
+    historicalRequest.value = null
+    historicalPreview.value = null
+    historicalFileIssue.value = ''
   }
   function owns(gen: number, epoch: number) {
     return gen === generation && epoch === auth.authEpoch() && allowed.value && !controller.signal.aborted
@@ -123,6 +132,55 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
       const value = await transport.listTournamentEvents(true, controller.signal)
       if (owns(gen, epoch)) events.value = value
     } catch (value) { if (owns(gen, epoch)) fail(value) }
+  }
+  const canImportHistorical = computed(() => allowed.value && !!config.value && !!dayState.value
+    && !busy.value && !recognizing.value && !stale.value && !reviews.value.length
+    && !dayState.value.standings.days.some(value => value.published)
+    && dayState.value.status === 'EMPTY')
+  async function previewHistorical(file: File) {
+    if (!canImportHistorical.value || !config.value) return
+    const gen = generation, epoch = auth.authEpoch(), event = config.value.event
+    historicalRequest.value = null
+    historicalPreview.value = null
+    historicalFileIssue.value = ''
+    error.value = null
+    notice.value = ''
+    // A full 10,000-row matrix fits this bounded file budget; reads never block UI navigation.
+    if (file.size > 2 * 1024 * 1024) { historicalFileIssue.value = 'historicalTooLarge'; return }
+    if (!file.name.toLowerCase().endsWith('.json')) { historicalFileIssue.value = 'historicalInvalid'; return }
+    busy.value = true
+    let parsed = false
+    try {
+      const text = await file.text()
+      if (!owns(gen, epoch)) return
+      const request = parseTournamentHistoricalFile(text, event)
+      parsed = true
+      const result = await transport.previewTournamentHistoricalImport(event.id, request, controller.signal)
+      if (!owns(gen, epoch)) return
+      if (result.standings.event.id !== event.id) throw new Error('INVALID_RESPONSE')
+      historicalRequest.value = request
+      historicalPreview.value = result
+      historicalKey = crypto.randomUUID()
+    } catch (value) {
+      if (!owns(gen, epoch)) return
+      if (!parsed) historicalFileIssue.value = value instanceof SyntaxError && value.message === 'historicalEventMismatch'
+        ? 'historicalEventMismatch' : 'historicalInvalid'
+      else fail(value)
+    } finally { if (owns(gen, epoch)) busy.value = false }
+  }
+  async function publishHistorical() {
+    if (!canImportHistorical.value || !historicalPreview.value || !historicalRequest.value) return
+    const gen = generation, epoch = auth.authEpoch(), id = eventId.value!
+    busy.value = true
+    error.value = null
+    try {
+      await transport.importTournamentHistorical(id, { ...historicalRequest.value,
+        expectedEventVersion: historicalPreview.value.eventVersion, confirm: true, idempotencyKey: historicalKey }, controller.signal)
+      if (!owns(gen, epoch)) return
+      await loadSelection()
+      if (allowed.value && eventId.value === id) notice.value = 'historicalImported'
+    } catch (value) { if (owns(gen, epoch)) fail(value) }
+    finally { if (owns(gen, epoch)) busy.value = false }
   }
   const roundRule = computed(() => config.value?.rounds.find(rule => rule.roundNumber === round.value))
   const editable = computed(() => allowed.value && !!dayState.value && !!roundRule.value?.complete
@@ -287,6 +345,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   watch(reviews, () => { previewState.value = null }, { deep: true })
   onScopeDispose(() => { invalidate(); events.value = []; audit.value = []; config.value = null; dayState.value = null })
   return { allowed, events, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
+    historicalRequest, historicalPreview, historicalFileIssue, canImportHistorical, previewHistorical, publishHistorical,
     busy, recognizing, progress, error, stale, notice, roundRule, editable, canUpload, canFinalize, reviewError,
     loadEvents, loadSelection, recognize, cancelRecognition, preview, saveDraft, finalize, setExpected, correction, discard, clearPoints }
 }

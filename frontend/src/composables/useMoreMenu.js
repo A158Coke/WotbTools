@@ -20,7 +20,7 @@ export const LANGUAGES = Object.freeze([
 ])
 
 export function useMoreMenu() {
-  const { isAdmin, isHofAdmin } = useAuth()
+  const { isAdmin, isHofAdmin, isTournamentAdmin } = useAuth()
   const { uiProfilePreference, setUiProfile } = useUiProfile()
   // vue-i18n legacy 模式下 $i18n 由 mixin 在 setup 之后才挂上：setup 时只捕获实例，用户操作时再读
   const instance = getCurrentInstance()
@@ -50,8 +50,8 @@ export function useMoreMenu() {
   const adminLinks = computed(() => [
     isAdmin.value && { view: 'admin-users', labelKey: 'admin.title', icon: Users },
     isHofAdmin.value && { view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', icon: ShieldCheck },
-    isAdmin.value && { view: 'tournament-points-config', labelKey: 'tournament.configTitle', icon: Settings },
-    isAdmin.value && { view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', icon: ListOrdered },
+    isTournamentAdmin.value && { view: 'tournament-points-config', labelKey: 'tournament.configTitle', icon: Settings },
+    isTournamentAdmin.value && { view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', icon: ListOrdered },
   ].filter(Boolean))
 
   /** 关于与支持：低频入口，两种形态都放在"更多"里。 */

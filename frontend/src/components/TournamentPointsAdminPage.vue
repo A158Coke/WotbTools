@@ -21,18 +21,20 @@ const { t, te } = useI18n()
 const owner = useTournamentPointsAdmin()
 const { allowed, events, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
   busy, recognizing, progress, error, stale, notice, roundRule, editable, canUpload, canFinalize, reviewError } = owner
+const { historicalPreview, historicalRequest, historicalFileIssue, canImportHistorical } = owner
 const { availability } = useFeatureGate()
 const network = computed(() => availability(Feature.TOURNAMENT_POINTS))
 const files = ref<File[]>([]), expected = ref<number | string>(''), reason = ref(''), correctionCount = ref(1)
 const clearClan = ref(''), clearDay = ref<number | null>(null), restore = ref(false)
 const dialog = ref<'' | 'finalize' | 'correction' | 'clear' | 'discard'>('')
+const historicalConfirm = ref(false)
 const evidenceUrl = ref(''), evidenceLoading = ref(false)
 let evidenceController = new AbortController(), evidenceGeneration = 0
 function closeEvidence() {
   evidenceGeneration++; evidenceController.abort()
   evidenceController = new AbortController(); URL.revokeObjectURL(evidenceUrl.value); evidenceUrl.value = ''; evidenceLoading.value = false
 }
-function clearLocal() { files.value = []; dialog.value = ''; reason.value = ''; closeEvidence() }
+function clearLocal() { files.value = []; dialog.value = ''; historicalConfirm.value = false; reason.value = ''; closeEvidence() }
 watch([eventId, round, day, allowed], clearLocal)
 watch(config, value => { if (!value) clearLocal() })
 watch(() => dayState.value?.expectedGroupCount, value => { expected.value = value ?? ''; correctionCount.value = value || 1 })
@@ -64,6 +66,16 @@ async function confirm() {
   if (!error.value) { dialog.value = ''; reason.value = '' }
 }
 function openClear() { clearClan.value = config.value?.clans[0] || ''; clearDay.value = day.value; restore.value = false; dialog.value = 'clear' }
+async function selectHistoricalFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) await owner.previewHistorical(file)
+}
+async function confirmHistorical() {
+  await owner.publishHistorical()
+  if (!error.value) historicalConfirm.value = false
+}
 onScopeDispose(clearLocal)
 </script>
 <template>
@@ -82,12 +94,25 @@ onScopeDispose(clearLocal)
       <TournamentEventSelect v-model="eventId" :events="events" :disabled="busy || recognizing" />
       <p v-if="busy" role="status">{{ $t('tournament.loading') }}</p>
       <p v-if="!events.length && !busy" class="tournament-muted">{{ $t('tournament.noEvents') }}</p>
+      <section v-if="config && dayState?.status === 'EMPTY' && !standings?.days.some(value => value.published)" class="tournament-card tournament-stack" data-testid="historical-import">
+        <h2>{{ $t('tournament.historicalImport') }}</h2>
+        <p class="tournament-muted">{{ $t('tournament.historicalHint') }}</p>
+        <label class="tournament-field"><span>{{ $t('tournament.historicalFile') }}</span><input type="file" accept=".json,application/json" :disabled="!canImportHistorical" data-testid="historical-file" @change="selectHistoricalFile" /></label>
+        <Banner v-if="historicalFileIssue" tone="danger">{{ $t('tournament.' + historicalFileIssue) }}</Banner>
+        <template v-if="historicalPreview">
+          <p>{{ historicalRequest?.sourceName }}</p>
+          <p>{{ $t('tournament.historicalSummary', { rows: historicalPreview.sourceRowCount, clans: historicalPreview.clanCount, blanks: historicalPreview.missingCellCount }) }}</p>
+          <TournamentPointsTable :standings="historicalPreview.standings" />
+          <AppButton variant="primary" :disabled="!canImportHistorical" data-testid="historical-publish" @click="historicalConfirm = true">{{ $t('tournament.historicalPublish') }}</AppButton>
+        </template>
+      </section>
       <div v-if="config" class="tournament-toolbar">
         <label class="tournament-field"><span>{{ $t('tournament.rounds') }}</span><select v-model.number="round"><option v-for="value in config.event.roundCount" :key="value" :value="value">{{ $t('tournament.round', { number: value }) }}</option></select></label>
         <label class="tournament-field"><span>{{ $t('tournament.days') }}</span><select v-model.number="day"><option v-for="value in config.event.daysPerRound" :key="value" :value="value">{{ config.event.dayLabels[value - 1] }}</option></select></label>
       </div>
       <template v-if="dayState && config">
-        <div class="tournament-actions"><span>{{ $t('tournament.' + dayState.status) }}</span><span>{{ $t('tournament.count', { actual: previewState?.groups.length ?? dayState.groups.length, expected: dayState.expectedGroupCount ?? '—' }) }}</span></div>
+        <div class="tournament-actions"><span>{{ $t('tournament.' + dayState.status) }}</span><span v-if="!dayState.historical">{{ $t('tournament.count', { actual: previewState?.groups.length ?? dayState.groups.length, expected: dayState.expectedGroupCount ?? '—' }) }}</span></div>
+        <Banner v-if="dayState.historical">{{ $t('tournament.historicalSource') }}</Banner>
         <Banner v-if="!roundRule?.complete" tone="warning">{{ $t('tournament.rulesMissing') }}</Banner>
         <Banner v-else-if="dayState.status === 'FINALIZED'">{{ $t('tournament.locked') }}</Banner>
         <section v-else class="tournament-card">
@@ -127,6 +152,11 @@ onScopeDispose(clearLocal)
         </section>
       </template>
     </template>
+    <AppDialog :open="historicalConfirm && allowed && !!historicalPreview" :title="$t('tournament.historicalPublish')" @close="!busy && (historicalConfirm = false)">
+      <p>{{ $t('tournament.historicalConfirm') }}</p>
+      <p v-if="historicalPreview">{{ historicalPreview.standings.event.year }} · {{ $t('tournament.regions.' + historicalPreview.standings.event.region) }} · {{ $t('tournament.seasons.' + historicalPreview.standings.event.season) }}</p>
+      <template #actions><AppButton :disabled="busy" @click="historicalConfirm = false">{{ $t('tournament.cancel') }}</AppButton><AppButton variant="primary" :disabled="!canImportHistorical || !historicalPreview" @click="confirmHistorical">{{ $t('tournament.historicalPublish') }}</AppButton></template>
+    </AppDialog>
     <AppDialog :open="!!dialog" :title="$t(dialog === 'finalize' ? 'tournament.finalizeTitle' : dialog === 'correction' ? 'tournament.correctionTitle' : dialog === 'clear' ? 'tournament.clearTitle' : 'tournament.discard')" :tone="dialog === 'clear' || dialog === 'discard' ? 'danger' : 'default'" @close="!busy && (dialog = '')">
       <p>{{ $t(dialog === 'finalize' ? 'tournament.finalizeHint' : dialog === 'correction' ? 'tournament.correctionHint' : dialog === 'clear' ? 'tournament.clearHint' : 'tournament.discardHint') }}</p>
       <div class="tournament-stack">
