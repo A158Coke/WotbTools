@@ -89,8 +89,15 @@ jobs:
         gate:
           - label: Playback layout
             script: test:browser-layout
-          - label: Playback/Workspace interaction
+          # 交互门禁 48 场景 ≈ 全矩阵最慢一条（~5.5min）；`--shard i/n` 按**静态场景清单
+          # 下标取模**确定性切分，两片并行墙钟减半。清单变化不影响切分正确性（每片覆盖
+          # 的是同一次 checkout 的同一份清单）。
+          - label: Playback/Workspace interaction (1/2)
             script: test:browser-interaction
+            args: --shard 1/2
+          - label: Playback/Workspace interaction (2/2)
+            script: test:browser-interaction
+            args: --shard 2/2
           - label: Armor viewer mobile layout
             script: test:browser-armor-mobile
           # 装甲查看器瞄准交互（Pointer Events × OrbitControls）同样只有真浏览器 + 真实输入能验证。
@@ -114,4 +121,4 @@ jobs:
         run: bash scripts/fetch-agent-wasm.sh
       - name: Real-browser ${{ matrix.gate.label }} regression
         working-directory: frontend
-        run: npm run ${{ matrix.gate.script }}
+        run: npm run ${{ matrix.gate.script }} -- ${{ matrix.gate.args }}

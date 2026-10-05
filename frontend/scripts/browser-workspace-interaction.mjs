@@ -1333,7 +1333,7 @@ async function runRosterGeometryScenario(env, scenario) {
   const rowClick = await clickElement(page, '.team1 .pl:nth-child(2)')
   check(failures, clicked(rowClick), `roster row not selectable: ${rowClick}`)
   await page.waitForValue(
-    `JSON.stringify({ cam: window.__pbPane.store.cam, sel: window.__pbPane.selectedEid, sf: window.__sfLog || null })`,
+    `JSON.stringify({ cam: window.__pbPane.store.cam, sel: window.__pbPane.selectedEid })`,
     (s) => { const o = JSON.parse(s); return o.cam === 'follow' && o.sel === row2Id },
     { label: 'roster click follows the row', timeout: 8000 },
   )
