@@ -278,9 +278,15 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(src).toMatch(/if \(glbOn\) applyGlbToggle\(true\);[\s\S]{0,60}prewarmShaders\(\);/)
   })
 
+  it('性能探针带主线程停顿看门狗（抓帧循环之外的长任务）', () => {
+    expect(src).toMatch(/setInterval\(\(\) => \{/)
+    expect(src).toMatch(/PERF_HEARTBEAT_MS = 50/)
+    expect(src).toMatch(/main-thread stalls/)
+  })
+
   it('性能探针：`?perf` 才挂载、只读记录（不改渲染行为）', () => {
     expect(src).toMatch(/new URLSearchParams\(window\.location\.search\)\.has\('perf'\)/)
-    expect(src).toMatch(/window\.__pbPerf = \{ report:/)
+    expect(src).toMatch(/window\.__pbPerf = \{/)
     // 分阶段计时包住「状态更新」与「提交渲染」两段
     expect(src).toMatch(/const perfT1 = PERF \? performance\.now\(\) : 0;/)
     expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, performance\.now\(\) - perfT1\);/)

@@ -2546,11 +2546,36 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} dmg=${last.dmg} burst=${last.burst}`,
       'slowest frames (dt ms / update / render / T):',
       ...perfSlow.map((r) => `  ${f(r.dt)} / ${f(r.updateMs)} / ${f(r.renderMs)} @T=${r.t.toFixed(1)}`),
+      `main-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}`,
+      ...perfStalls.map((r) => `  ${f(r.gap)} ms @T=${r.t.toFixed(1)}`),
     ];
     return out.join(String.fromCharCode(10));
   }
+  // 主线程停顿看门狗（`?perf`）：帧循环之外的**长任务**（例如解析/投影跑在主线程）不会出现在
+  // 帧间隔里——它们表现为"下一帧的 dt 巨大、但 update/render 都很小"。看门狗用 50ms 心跳量真实
+  // 间隔，直接抓出这类停顿（含当时的回放时刻 T），与帧统计互相印证。
+  const PERF_HEARTBEAT_MS = 50;
+  let perfStalls = [], perfBeat = 0, perfBeatTimer = 0;
+  function perfStartWatchdog() {
+    if (!PERF || perfBeatTimer) return;
+    perfBeat = performance.now();
+    perfBeatTimer = setInterval(() => {
+      const now = performance.now();
+      const gap = now - perfBeat;
+      perfBeat = now;
+      if (gap > PERF_HEARTBEAT_MS * 2) {
+        perfStalls.push({ gap, t: T });
+        perfStalls.sort((a, b) => b.gap - a.gap);
+        if (perfStalls.length > 8) perfStalls.length = 8;
+      }
+    }, PERF_HEARTBEAT_MS);
+  }
   if (PERF) {
-    window.__pbPerf = { report: () => { const s = perfReport(); console.log(s); return s; }, reset: () => { perfRing = []; perfRingN = 0; perfSlow = []; } };
+    perfStartWatchdog();
+    window.__pbPerf = {
+      report: () => { const s = perfReport(); console.log(s); return s; },
+      reset: () => { perfRing = []; perfRingN = 0; perfSlow = []; perfStalls = []; perfBeat = performance.now(); },
+    };
   }
 
   /** 预热在用材质（见 renderer 初始化处注释）：把首次编译的数十~数百 ms 从"战斗第一次
