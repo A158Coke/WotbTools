@@ -356,6 +356,27 @@ describe('BattlePlayback annotations', () => {
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(false)
   })
 
+  it('鼠标在地图上按下不触发浏览器选择（平移 / 画标注同一入口）；触屏与右键不拦', async () => {
+    const wrapper = mountAnnot()
+    await flushPromises()
+    const viewport = wrapper.find('[data-test="pb-viewport"]').element
+    const press = (pointerType, button = 0) => {
+      const ev = new Event('pointerdown', { bubbles: true, cancelable: true })
+      for (const [key, value] of Object.entries({ pointerId: 9, pointerType, button, clientX: 40, clientY: 40 })) {
+        Object.defineProperty(ev, key, { value })
+      }
+      viewport.dispatchEvent(ev)
+      dispatchPointer('pointerup', { pointerId: 9, clientX: 40, clientY: 40 })
+      return ev.defaultPrevented
+    }
+    expect(press('mouse')).toBe(true)
+    expect(press('touch')).toBe(false)
+    expect(press('mouse', 2)).toBe(false)
+    await openAnnotations(wrapper)
+    expect(press('mouse')).toBe(true)
+    wrapper.unmount()
+  })
+
   it('keeps browsing interactions intact when no tool is active', async () => {
     const wrapper = mountAnnot()
     await flushPromises()

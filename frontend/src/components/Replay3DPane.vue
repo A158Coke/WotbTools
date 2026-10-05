@@ -37,6 +37,7 @@ import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
+import { formatPlaybackClock } from '../utils/playbackClock'
 
 defineOptions({ name: 'Replay3DPane' })
 
@@ -250,8 +251,17 @@ const selectedRow = computed(() => {
 
 // Scene and Details consume the same workspace-owned parse result.
 const detailPlayback = computed(() => store.hasData ? store.playbackSession?.canonical : null)
-const detailTime = computed(() => detailPlayback.value?.clock
-  ? Math.max(0, store.time - detailPlayback.value.clock.startRaw) : store.time)
+/**
+ * 战斗时钟（与 2D 同一口径：0 = 开战）的唯一权威是场景引擎：它持有 [START, END]（发布为 store.startTime /
+ * store.duration），seek、自动停止与进度都夹在里面。canonical 就绪 / 失败 / 换会话时把它的 clock 交给引擎
+ * （setBattleClock），引擎重定范围并把 T 夹回去；canonical 之前引擎用自己按同一 resolver 推出的时钟。
+ * 播放条、顶栏计时与 Details 只读引擎发布的原点：同一时刻在 2D / 3D 显示同一个时间。
+ */
+const battleTimeLabel = computed(() => formatPlaybackClock(store.time - store.startTime))
+// Details 查的是 canonical track：canonical 在时必须按它自己的 clock.startRaw 换算（canonical 数据就按这个原点索引）；
+// 引擎接管 canonical clock 后与 store.startTime 是同一个值，canonical 之前才用引擎发布的原点。
+const detailTime = computed(() => Math.max(0, store.time - (detailPlayback.value?.clock?.startRaw ?? store.startTime)))
+watch(() => detailPlayback.value?.clock ?? null, (clock) => sceneApi?.setBattleClock?.(clock))
 const selectedTrack = computed(() => detailPlayback.value?.dataset?.vehicles.find(track =>
   selectedRow.value?.accountId != null && track.accountId === selectedRow.value.accountId) || null)
 const selectedLife = computed(() => selectedTrack.value ? lifeAt(selectedTrack.value, detailTime.value) : null)
@@ -295,7 +305,6 @@ const selectedHealth = computed(() => {
     maxHp: Number.isFinite(selectedRow.value.maxHp) && selectedRow.value.maxHp > 0 ? selectedRow.value.maxHp : null,
   } : null
 })
-const detailClock = (sec) => `${Math.floor(Math.max(0, sec) / 60)}:${String(Math.floor(Math.max(0, sec) % 60)).padStart(2, '0')}`
 
 const bannerColor = computed(() => {
   const outcome = store.banner?.outcome
@@ -581,7 +590,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           :show-summary="showTopbar"
           score-label-key="recon.map.playback.kills"
           :map-title="mapTitle"
-          :battle-time="store.timer"
+          :battle-time="battleTimeLabel"
           :friendly-hp="hudHealth(store.hpFriend, store.hpFriendMax)"
           :enemy-hp="hudHealth(store.hpEnemy, store.hpEnemyMax)"
           :friendly-points="store.scoreFriend"
@@ -609,7 +618,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         :selected-state="selectedDetailState" :health="selectedHealth" :phone-form="portraitFlow"
         :selected-portrait-url="selectedPortraitUrl" :sel-last-known-sec="selLastKnownSec"
         :sel-cur-stats="selCurStats" :selected-track="selectedTrack" :sel-damage-log="selDamageLog"
-        :current-time="detailTime" :format-clock="detailClock"
+        :current-time="detailTime" :format-clock="formatPlaybackClock"
         :drag-host="rootEl" :drag-bounds="controlsEl"
         :initial-side="detailsSide" :selection-key="selectedEid"
         @close="closeDetails"
