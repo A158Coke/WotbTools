@@ -41,12 +41,16 @@ class TournamentHttpTest {
         mvc=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
     @AfterEach void close(){context.close();}
-    @Test void onlyPublicGetsAndSuperAdminMayReachTournamentRoutes() throws Exception {
+    @Test void onlyPublicGetsAndTournamentAdminMayReachTournamentRoutes() throws Exception {
         when(context.getBean(TournamentService.class).listEvents()).thenReturn(List.of());
         mvc.perform(get("/api/tournaments")).andExpect(status().isOk());
         mvc.perform(get("/api/admin/tournaments")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin")))).andExpect(status().isForbidden());
-        mvc.perform(get("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isOk());
+        mvc.perform(get("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))).andExpect(status().isOk());
+        mvc.perform(get("/api/admin/tournaments").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_wotbtools-admin"),
+                new SimpleGrantedAuthority("ROLE_tournament-admin")))).andExpect(status().isOk());
         mvc.perform(get("/api/tournaments/1/evidence/x")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isForbidden());
     }
@@ -70,7 +74,7 @@ class TournamentHttpTest {
         assertThrows(tools.jackson.core.JacksonException.class,()->mapper.readValue("{\"expectedEventVersion\":0.1,\"expectedDayVersion\":0}",TournamentDtos.Versions.class));
         assertThrows(tools.jackson.core.JacksonException.class,()->mapper.readValue("{\"clanTag\":\"A\",\"rank\":1.5}",TournamentDtos.Team.class));
         assertEquals(100,mapper.readValue("{\"rank\":1.0,\"points\":100.0}",TournamentDtos.RankPoints.class).points());
-        mvc.perform(post("/api/admin/tournaments/1/rounds/1/days/1/finalize").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
+        mvc.perform(post("/api/admin/tournaments/1/rounds/1/days/1/finalize").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))
                 .contentType("application/json").content("{\"expectedDayVersion\":0,\"expectedRulesVersion\":1,\"idempotencyKey\":\"test\"}"))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(context.getBean(TournamentService.class));
