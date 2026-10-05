@@ -27,7 +27,7 @@ const dayPath = (id: number, round: number, day: number) => `${eventPath(id)}/ro
 
 export function tournamentAdminAllowed(auth = useAuth()): boolean {
   const roles = (auth.tokenParsed.value as KeycloakTokenParsed | null)?.realm_access?.roles
-  return auth.authenticated.value && Array.isArray(roles) && roles.includes('wotbtools-admin')
+  return auth.authenticated.value && Array.isArray(roles) && roles.includes('tournament-admin')
 }
 
 function requireOnline() {

@@ -16,7 +16,7 @@ function fixture() {
   })) } as TournamentConfig
   const state = { eventId: 7, roundNumber: 1, dayNumber: 1, eventVersion: 1, rulesVersion: 1, version: 1, status: 'DRAFT', expectedGroupCount: 1,
     groups: [group], published: false, standings: { event, days: [], rows: [] } } as TournamentDayView
-  const auth = { authenticated: ref(true), tokenParsed: ref({ sub: 'admin-a', realm_access: { roles: ['wotbtools-admin'] } }), authEpoch: vi.fn(() => 1) }
+  const auth = { authenticated: ref(true), tokenParsed: ref({ sub: 'admin-a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: vi.fn(() => 1) }
   const transport = {
     listTournamentEvents: vi.fn(async (..._args: any[]) => [event]), getTournamentConfig: vi.fn(async (..._args: any[]) => structuredClone(cfg)), getTournamentDay: vi.fn(async (_id: number, round: number, day: number, ..._args: any[]) => ({ ...structuredClone(state), roundNumber: round, dayNumber: day })),
     getTournamentAudit: vi.fn(async (..._args: any[]) => []), previewTournamentDay: vi.fn(async (..._args: any[]) => structuredClone(state)), saveTournamentDraft: vi.fn(async (..._args: any[]) => structuredClone(state)),
@@ -68,8 +68,11 @@ describe('tournament rules and identities', () => {
     expect(tournamentAdminAllowed(f.auth as any)).toBe(true)
     f.auth.tokenParsed.value.realm_access.roles = ['HoF-admin']
     expect(tournamentAdminAllowed({ ...f.auth, isAdmin: ref(true) } as any)).toBe(false)
-    f.auth.authenticated.value = false
     f.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin']
+    expect(tournamentAdminAllowed(f.auth as any)).toBe(false)
+    f.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin', 'wotbtools-user', 'HoF-admin', 'tournament-admin']
+    expect(tournamentAdminAllowed(f.auth as any)).toBe(true)
+    f.auth.authenticated.value = false
     expect(tournamentAdminAllowed(f.auth as any)).toBe(false)
   })
   it('requires fifth-place rules and reupload for an incomplete or multi-group image', () => {

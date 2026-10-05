@@ -32,14 +32,15 @@ export const PRIMARY_NAV = Object.freeze([
 ])
 
 /**
- * 侧边栏管理组（平板 / 桌面）。`role`：'admin' = wotbtools-admin；'hofAdmin' = HoF-admin 或全站管理员。
+ * 侧边栏管理组（平板 / 桌面）。`role`：'admin' = wotbtools-admin；'hofAdmin' = HoF-admin 或全站管理员；
+ * 'tournamentAdmin' = tournament-admin（wotbtools-admin 由 Keycloak composite 继承）。
  * 手机没有侧边栏，这些入口留在"更多"页的管理分组里。
  */
 export const ADMIN_NAV = Object.freeze([
   Object.freeze({ id: 'admin-users', view: 'admin-users', labelKey: 'admin.title', role: 'admin' }),
   Object.freeze({ id: 'hof-admin', view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', role: 'hofAdmin' }),
-  Object.freeze({ id: 'tournament-points-config', view: 'tournament-points-config', labelKey: 'tournament.configTitle', role: 'admin' }),
-  Object.freeze({ id: 'tournament-points-admin', view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', role: 'admin' }),
+  Object.freeze({ id: 'tournament-points-config', view: 'tournament-points-config', labelKey: 'tournament.configTitle', role: 'tournamentAdmin' }),
+  Object.freeze({ id: 'tournament-points-admin', view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', role: 'tournamentAdmin' }),
 ])
 
 // 视图 → 所属栏目。个人中心属于账户入口；管理视图各自是侧边栏的一项；
