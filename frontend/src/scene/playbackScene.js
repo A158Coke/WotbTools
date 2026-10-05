@@ -2070,16 +2070,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const groups = buildRosterRows(V);
     rosterRowsByEid.clear();
     for (const key of ROSTER_GROUPS) {
-      const rows = groups[key].map((row) => applyRosterRuntime(
+      store.roster[key] = groups[key].map((row) => applyRosterRuntime(
         { ...row },
         { hp: 0, maxHp: 0, dead: false, followed: false, reload: null },
       ));
-      for (const row of rows) rosterRowsByEid.set(row.eid, row);
-      store.roster[key] = rows;
+      // 索引登记的必须是**响应式代理**（读回 store 得到的行），不能是上面的原始对象：
+      // store 只存原始对象、读取时才包代理，直接改原始对象 Vue 收不到通知——名册就会
+      // 停在旧 HP，直到别的状态（如选中行）碰巧触发重绘。
+      for (const row of store.roster[key]) rosterRowsByEid.set(row.eid, row);
     }
   }
   /**
    * 把当前 T 的运行时状态投影进名册行（只在值真的变了时写，避免无谓的 VDOM patch）。
+   * 只由 writeHud 调用，**不逐帧**：与顶栏总血量同一个 T、同一 ≤10Hz 节拍；seek / 会话开始 /
+   * 停播 / 换相机（跟随目标）强制补写。resolver 每次返回新的 reload 数组，若逐帧投影，
+   * 名册会每帧重绘。
    *
    * `reload` 复用**场景自己的** reload resolver（`reloadStateAt`，与车辆名牌同一份
    * `v.reloadSize` / `reloadEvents` 事实源），不在名册里另起一套解释——2D 名册走的是
@@ -2161,8 +2166,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (DATA && PLAYING) {
       // 推进 + 钳制合并到纯函数里（NaN/负增量不会污染时钟）；终点是比赛结束 END，不是录像流结束
       T = advancePlaybackTime(T, END, dt * 1000, SPEED);
-      if (T >= END) setPlaying(false);
       tick();
+      if (T >= END) setPlaying(false);   // 先 tick 后停：停播时的 HUD/名册补写要包含终点帧的事件
     }
     // 相机
     // 跟随模式：相机位置与视点目标按坦克逐帧位移整体平移——用户选好的方位/
@@ -2231,7 +2236,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       spawnBurst(burstEvents[burstPtr++].eid);
     }
     for (const v of V) applyPose(v);
-    updateRoster(); updateScore();
+    updateScore();
     // HUD → store
     // 顶栏：争霸实时点数——**每 tick 确定性重算**（无采样也写 null）：从争霸场切到普通场时
     // supremacy_points 缺失，若只在有采样时才写，上一场的点数会残留在 HUD 上。
@@ -2257,7 +2262,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // ---------- 控制 ----------
   // HUD 降频：store.time / seekFrac 每帧都变会让页面壳（AgentReplay3D）每帧整页 VDOM patch
   // 一次（顶栏 + 双名册 + 击杀流 + 传输控件）。3D 平滑度来自场景时钟，HUD 与进度条按
-  // ~10Hz 更新即可；seek / 会话开始等状态跳变时 force 立即补一次，语义不丢。
+  // ~10Hz 更新即可；seek / 会话开始 / 停播等状态跳变时 force 立即补一次，语义不丢。
   const HUD_INTERVAL_MS = 100;
   let hudWrittenMs = -Infinity;
   function writeHud(force = false) {
@@ -2274,6 +2279,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       V.map((v) => ({ team: v.def.team, hp: hpAt(v, T), maxHp: v.def.max_hp })),
       DATA.meta.friendly_team,
     ));
+    // 名册与上面的总血量同帧写入：两侧名册与顶栏永远是同一个 T 的投影
+    updateRoster();
     store.time = T;
     const f = (T - DATA.meta.t_start) / Math.max(0.001, END - DATA.meta.t_start);
     if (!store.seeking) store.seekFrac = Math.round(f * 1000);
@@ -2281,6 +2288,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function setPlaying(p) {
     PLAYING = p;
     store.playing = p;
+    // 停下（暂停 / 播到终点）后不再有帧：把 HUD 与名册补写到当前 T，
+    // 否则停在节流窗口里的上一次写入（最后 ≤100ms 的掉血 / 击毁不上屏）
+    if (!p) writeHud(true);
     invalidate();
   }
   /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时重挂帧循环；已初始化场景还要
@@ -2313,10 +2323,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     resetScore();     // 比分为单调游标，seek 后必须从头推进（否则分数不回落）
     winnerShown = false; store.banner = null;
     tick();
-    // 名册是**状态在时刻**投影，而 tick() 在暂停 / 静止时会走「非 busy 提前返回」，
-    // 不重跑 updateRoster；seek 必须自己补一次，否则拖动进度条时名册血量停在旧值。
-    updateRoster();
-    writeHud(true);   // seek 是状态跳变：立即把 HUD/进度条对齐到新 T（不等下一个降频窗口）
+    // seek 是状态跳变：立即把 HUD/进度条/名册对齐到新 T（不等下一个降频窗口）——
+    // 暂停时没有帧在跑，名册投影只能靠这次强制写入。
+    writeHud(true);
     invalidate();
   }
   function setFollow(eid) {
@@ -2337,6 +2346,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } else if (mode === 'free') {
       FOLLOW_EID = 0;
     }
+    // 跟随目标是名册的运行时状态（followed）。setFollow 也经由这里：暂停时没有帧在跑，
+    // 换相机必须自己补写，否则跟随描边要等到下次播放 / seek 才出现。走 writeHud 而不是
+    // 直接投影名册：播放中名册也不得跑到顶栏前面（两者始终同一个 T）。
+    writeHud(true);
   }
   // 只接受档位表内的值：面板按钮与 URL 参数都不该把场景带进"1.37×"这种未定义速度
   function setSpeed(s) { if (!isPlaybackSpeed(s)) return; SPEED = s; store.speed = s; }
