@@ -6,6 +6,11 @@ import { useAuth } from './useAuth.js'
 import { useUiProfile } from './useUiProfile.js'
 import { isAndroidApp } from './usePlatformBridge.js'
 
+/**
+ * "更多"的唯一内容源：手机的"更多"页（MorePage）与平板 / 桌面侧边栏底部的"更多"弹出面板（MorePanel）
+ * 共用同一份设置项与链接清单，避免两处各写一份而漂移。
+ * 只能在组件 setup 中调用（语言切换要拿到组件实例上的 $i18n）。
+ */
 export const FEEDBACK_URL = 'https://github.com/A158Coke/WotbTools/issues/new'
 
 export const LANGUAGES = Object.freeze([
@@ -17,8 +22,9 @@ export const LANGUAGES = Object.freeze([
 export function useMoreMenu() {
   const { isAdmin, isHofAdmin, tokenParsed } = useAuth()
   const { uiProfilePreference, setUiProfile } = useUiProfile()
+  // vue-i18n legacy 模式下 $i18n 由 mixin 在 setup 之后才挂上：setup 时只捕获实例，用户操作时再读
   const instance = getCurrentInstance()
-  const tournamentAdmin = computed(() => tokenParsed?.value?.realm_access?.roles?.includes('tournament-admin') === true)
+  const isTournamentAdmin = computed(() => tokenParsed?.value?.realm_access?.roles?.includes('tournament-admin') === true)
 
   function setLocale(value) {
     instance.proxy.$i18n.locale = value
@@ -31,19 +37,25 @@ export function useMoreMenu() {
     { value: 'auto', label: t('uiProfile.auto') },
   ]
 
+  /**
+   * 公开的回放工具入口：深链落到工作台，能力宿主负责登录门。
+   * 平板 / 桌面直接在工作台的能力切换里进，手机这一组是"更多"页的快捷入口。
+   */
   const replayToolLinks = [
     { view: 'agent-replay', labelKey: 'agentNav.replay', icon: Box },
     { view: 'agent-shots', labelKey: 'agentNav.shots', icon: Crosshair },
     { view: 'tournament-points', labelKey: 'tournament.title', icon: Trophy },
   ]
 
+  /** 管理入口：平板 / 桌面在侧边栏管理组，手机在"更多"页。 */
   const adminLinks = computed(() => [
     isAdmin.value && { view: 'admin-users', labelKey: 'admin.title', icon: Users },
     isHofAdmin.value && { view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', icon: ShieldCheck },
-    tournamentAdmin.value && { view: 'tournament-points-config', labelKey: 'tournament.configTitle', icon: Settings },
-    tournamentAdmin.value && { view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', icon: ListOrdered },
+    isTournamentAdmin.value && { view: 'tournament-points-config', labelKey: 'tournament.configTitle', icon: Settings },
+    isTournamentAdmin.value && { view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', icon: ListOrdered },
   ].filter(Boolean))
 
+  /** 关于与支持：低频入口，两种形态都放在"更多"里。 */
   const aboutLinks = computed(() => [
     { view: 'history', labelKey: 'history.btn', icon: History },
     { view: 'technical-evolution', labelKey: 'technicalEvolution.btn', icon: Cpu },
