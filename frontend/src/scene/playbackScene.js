@@ -83,6 +83,19 @@ export function tracerSpanSecs(flightSecs) {
   return Number.isFinite(flightSecs) && flightSecs > oneFrame ? flightSecs : oneFrame
 }
 
+/** 线段经过的格子键（2D DDA；纯函数，单测锁定；用于标签遮挡的候选格选取） */
+export function occlusionCells(ax, ay, bx, by, cell = 16) {
+  const out = new Set();
+  const dx = bx - ax, dy = by - ay;
+  const len = Math.hypot(dx, dy);
+  const steps = Math.max(1, Math.ceil(len / (cell / 2)));
+  for (let i = 0; i <= steps; i++) {
+    const k = i / steps;
+    out.add(`${Math.floor((ax + dx * k) / cell)},${Math.floor((ay + dy * k) / cell)}`);
+  }
+  return out;
+}
+
 export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect } = {}) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
@@ -618,6 +631,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (mapScenery) { scene.remove(mapScenery); mapScenery = null; }
     destruct = null;
     mapTexture = null; mapMetaInfo = null; heightField = null; heightMeta = null;
+    occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
     groundLayers = null;
     // 地面加载方式由画质档决定（低=小地图底图、中/高=分层地表），3D 地形有高度场即开启
     // 地图端点用回放数字 id（与客户端 arenaTypeID → maps.yaml 同链）；
@@ -954,6 +968,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         const MESH_MATCH_R = 0.02;
         const meshGrid = new Map();
         const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
+        // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记**可见**静态网格——按包围球
+        // 半径铺进它覆盖到的所有格子（大建筑跨多格），避免"整个场景 raycast"的卡死。
+        const occGrid = new Map();
         gltf.scene.traverse((o) => {
           if (!o.isMesh || !o.name) return;
           if (o.name.startsWith('D_')) { o.visible = false; }
@@ -962,7 +979,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           while (n && n !== gltf.scene) { wx += n.position.x; wy += n.position.y; n = n.parent; }
           const k = gridKey(wx, wy);
           (meshGrid.get(k) || meshGrid.set(k, []).get(k)).push({ mesh: o, x: wx, y: wy });
+          if (o.visible && !/sky/i.test(o.name)) {
+            if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+            const r = o.geometry.boundingSphere ? o.geometry.boundingSphere.radius : 0;
+            const c = occlusionCells(wx - r, wy - r, wx + r, wy + r, OCCL_CELL);
+            for (const key of c) {
+              const list = occGrid.get(key);
+              if (list) { if (!list.includes(o)) list.push(o); }
+              else occGrid.set(key, [o]);
+            }
+          }
         });
+        occlGrid = occGrid;   // 遮挡检测的候选表（旧会话的由 teardown 置 null）
         const findMeshes = (px, py, wantDestroyed, r = MESH_MATCH_R) => {
           const out = [];
           const gx = Math.round(px / 2), gy = Math.round(py / 2);
@@ -1499,6 +1527,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let occlCursor = 0, occlTick = 0, occlStride = 1, occlCostMs = 0;
   const _occlDir = new THREE.Vector3();
 
+  // 场景遮挡候选格（**性能关键**）：早先对整个 `mapScenery` 做**递归全量**射线检测，
+  // 会遍历**整张场景 GLB**（本工程实测 3000+ 节点、含全部树卡片批次）——
+  // 单次可达数十~数百毫秒。它在"标签可见 + 正在播放"时按轮转触发，于是表现为
+  // **打起来后间歇性整页卡死**（暂停时 `updateLabels` 不跑 → 立刻不卡，恢复播放过一会再卡）。
+  // 现在改为：加载场景时把每个可见静态网格按**世界位置 + 包围球半径**登记进粗格
+  // （16m），检测时只对"相机→锚点线段经过的格子"里的网格做 raycast。
+  const OCCL_CELL = 16;
+  /** 场景遮挡候选（加载期构建；null = 未建/旧路径） */
+  let occlGrid = null;
+  /** 单次检测的候选上限：超限直接判"不遮挡"（fail-open，宁可少淡一个标签也不掉帧） */
+  const OCCL_MAX_CANDIDATES = 400;
+
   // 地形遮挡：沿 camera→anchor 采样高度场（地形高过视线即判遮挡）
   function terrainBlocksAim(cx, cy, cz, ax, ay, az) {
     if (!heightField || !heightMeta) return false;
@@ -1511,17 +1551,30 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return false;
   }
 
-  // 静态场景遮挡（建筑/树）：raycast，far 收到锚点之前
+  // 静态场景遮挡（建筑/树）：raycast，far 收到锚点之前。
+  // **只对线段经过的粗格内的网格**做检测（见 occlGrid 注释）；候选超限则 fail-open。
   function sceneryBlocksAim(anchor) {
-    if (!mapScenery || !raycaster) return false;
+    if (!mapScenery || !raycaster || !occlGrid) return false;
     _occlDir.copy(anchor).sub(camera.position);
     const dist = _occlDir.length();
     if (dist < 2) return false;
     _occlDir.divideScalar(dist);
+    const cands = [];
+    const seenObj = new Set();
+    for (const key of occlusionCells(camera.position.x, camera.position.z, anchor.x, anchor.z)) {
+      const list = occlGrid.get(key);
+      if (!list) continue;
+      for (const m of list) {
+        if (seenObj.has(m)) continue;
+        seenObj.add(m);
+        cands.push(m);
+      }
+    }
+    if (!cands.length || cands.length > OCCL_MAX_CANDIDATES) return false;   // 无候选/超限 → fail-open
     const prevFar = raycaster.far;
     raycaster.far = dist - 1.0;   // 只关心锚点之前的遮挡物
     raycaster.set(camera.position, _occlDir);
-    const hit = raycaster.intersectObject(mapScenery, true).length > 0;
+    const hit = raycaster.intersectObjects(cands, false).length > 0;
     raycaster.far = prevFar;
     return hit;
   }
@@ -1902,8 +1955,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const legSecs = legSecsOf(s, tracerSpanSecs(s.flight_secs));
     const legEnds = legEndTimes(legSecs, s.t_fire);
     const t1 = legEnds[legEnds.length - 1];
+    const impactPos = new THREE.Vector3().fromArray((s.via && s.via.length) ? s.via[0] : s.to);
+    // `from`/`to` 供弹着特效（跳弹火花方向）使用：to = **抵达点**（跳弹点/终点），
+    // from = 炮口——`spawnImpact` 依赖这两个字段，折线改造时漏掉会让 ricochet 分支抛异常
+    // （整帧中断 → 画面卡住一帧且弹着特效不生成）。
     tracers.push({ mesh, points: pts3, legEnds, arcEnds: legArcEnds(pts3), t0: s.t_fire, t1, shot: s, color,
-      impactPos: new THREE.Vector3().fromArray((s.via && s.via.length) ? s.via[0] : s.to) });
+      from: new THREE.Vector3(-s.from[0], s.from[1], s.from[2]), to: impactPos.clone(), impactPos });
     // 全弹道轨迹线（队伍色：友军蓝/敌军红，与飞行段的命中结果色区分）：
     // 开火即显整条弹道（逐段一盒：折线在跳弹处拐弯）；消失节奏与弹着点特效同步——
     // 基准 t1+2.2s 移除、最后 1.2s 淡出，二者同乘 FX_SCALE（=2 → t1+4.4s 移除、最后 2.4s 淡出）
