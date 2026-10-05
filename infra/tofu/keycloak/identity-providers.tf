@@ -19,6 +19,8 @@ resource "keycloak_oidc_identity_provider" "qq" {
   user_info_url     = "https://graph.qq.com/user/get_user_info"
   default_scopes    = "get_user_info"
 
+  post_broker_login_flow_alias = keycloak_authentication_flow.post_broker_session.alias
+
   extra_config = {
     clientAuthMethod = "client_secret_post"
   }
@@ -26,6 +28,10 @@ resource "keycloak_oidc_identity_provider" "qq" {
   lifecycle {
     prevent_destroy = true
   }
+
+  depends_on = [
+    keycloak_authentication_execution.post_broker_persistent_browser_session,
+  ]
 }
 
 locals {
@@ -68,6 +74,8 @@ resource "keycloak_oidc_identity_provider" "wargaming" {
   authorization_url        = "https://unused.invalid"
   token_url                = "https://unused.invalid"
 
+  post_broker_login_flow_alias = keycloak_authentication_flow.post_broker_session.alias
+
   extra_config = {
     region = each.value.region
   }
@@ -79,4 +87,8 @@ resource "keycloak_oidc_identity_provider" "wargaming" {
       enabled,
     ]
   }
+
+  depends_on = [
+    keycloak_authentication_execution.post_broker_persistent_browser_session,
+  ]
 }
