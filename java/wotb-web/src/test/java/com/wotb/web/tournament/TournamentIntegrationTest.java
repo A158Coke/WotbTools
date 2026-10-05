@@ -182,7 +182,7 @@ class TournamentIntegrationTest {
         assertEquals(4,jdbc.queryForObject("select count(*) from tournament_clan where event_id=? and historical_published",Integer.class,eventId));
         assertEquals("a".repeat(64),jdbc.queryForObject("select after_state->>'sourceSha256' from tournament_audit where event_id=? and action='HISTORICAL_IMPORTED'",String.class,eventId));
         assertNull(service.publicStandings(eventId).rows().stream().filter(row->row.clanTag().equals("缺席")).findFirst().orElseThrow().rounds().getFirst().days().getFirst().points());
-        assertFalse(service.day(eventId,2,1).published()); assertTrue(service.day(eventId,1,1).historical());
+        assertFalse(service.day(eventId,2,1).published()); assertTrue(service.historicalState(eventId,1,1).historical());
         service.deleteEvent(eventId,new TournamentDtos.DeleteRequest(1,true));
         assertEquals(0,jdbc.queryForObject("select count(*) from tournament_clan where event_id=?",Integer.class,eventId));
         assertEquals(0,jdbc.queryForObject("select count(*) from tournament_day where event_id=?",Integer.class,eventId));
@@ -196,6 +196,15 @@ class TournamentIntegrationTest {
         assertEquals(ApiErrorCode.INVALID_ARGUMENT,error.errorCode()); assertEquals(0,service.config(eventId).event().version());
         assertTrue(clans.findByEventIdOrderByClanTag(eventId).isEmpty()); assertTrue(days.findByEventIdOrderByRoundNumberAscDayNumberAsc(eventId).isEmpty());
         assertTrue(service.publicStandings(eventId).rows().isEmpty()); assertEquals(1,service.auditList(eventId).size());
+    }
+    @Test void rosterOnlyHistoricalCommitIsVisibleAsLockedStateAfterReload() {
+        final long eventId=historicalEvent();
+        service.importHistorical("admin",eventId,historicalRequest(eventId,List.of(historicalRow("缺席")),"roster-only"));
+        assertEquals(0,jdbc.queryForObject("select count(*) from tournament_day where event_id=?",Integer.class,eventId));
+        final TournamentDtos.HistoricalState state=service.historicalState(eventId,1,1);
+        assertTrue(state.imported()); assertFalse(state.canImport()); assertFalse(state.historical());
+        assertEquals("EMPTY",service.day(eventId,1,1).status()); assertFalse(service.day(eventId,1,1).published());
+        assertEquals(1,service.publicStandings(eventId).rows().size());
     }
     @Test void failedHistoricalAuditRollsBackAlreadyInsertedScoresAndRoster() {
         final long eventId=historicalEvent();
@@ -256,13 +265,13 @@ class TournamentIntegrationTest {
         service.correction("admin",eventId,1,1,new TournamentDtos.CorrectionRequest(published.eventVersion(),published.version(),1,"fix"));
         final TournamentDtos.DayView correction=service.day(eventId,1,1);
         service.deleteDraft(eventId,1,1,new TournamentDtos.Versions(correction.eventVersion(),correction.version()));
-        assertTrue(service.day(eventId,1,1).historical()); assertNull(service.day(eventId,1,1).expectedGroupCount());
+        assertTrue(service.historicalState(eventId,1,1).historical()); assertNull(service.day(eventId,1,1).expectedGroupCount());
         final TournamentDtos.DayView again=service.day(eventId,1,1);
         service.correction("admin",eventId,1,1,new TournamentDtos.CorrectionRequest(again.eventVersion(),again.version(),1,"fix again"));
         assertEquals(123,service.publicStandings(eventId).rows().getFirst().totalPoints());
         save(eventId,1,1,List.of(group(eventId,1,1,1,0,"A","C","B")),List.of());
         assertEquals(123,service.publicStandings(eventId).rows().getFirst().totalPoints()); publish(eventId,1,1,"correction");
-        assertFalse(service.day(eventId,1,1).historical()); assertEquals(123,service.publicStandings(eventId).rows().getFirst().totalPoints());
+        assertFalse(service.historicalState(eventId,1,1).historical()); assertEquals(123,service.publicStandings(eventId).rows().getFirst().totalPoints());
         assertEquals("999",jdbc.queryForObject("select before_state->'historicalPoints'->>'A' from tournament_audit where event_id=? and action='CORRECTION_PUBLISHED'",String.class,eventId));
         service.clearPoints("admin",eventId,new TournamentDtos.ClearRequest(service.config(eventId).event().version(),1,1,"A","appeal",true));
         assertEquals(223,service.publicStandings(eventId).rows().getFirst().totalPoints());

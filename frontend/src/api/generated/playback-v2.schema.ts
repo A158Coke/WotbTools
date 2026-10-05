@@ -774,7 +774,6 @@ export default {
         "expectedGroupCount",
         "groups",
         "published",
-        "historical",
         "standings"
       ],
       "properties": {
@@ -832,12 +831,37 @@ export default {
         "published": {
           "type": "boolean"
         },
-        "historical": {
-          "type": "boolean",
-          "description": "The current published day uses historical direct scores rather than ranked groups."
-        },
         "standings": {
           "$ref": "#/$defs/TournamentStandings"
+        }
+      }
+    },
+    "TournamentHistoricalState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventVersion",
+        "imported",
+        "canImport",
+        "historical"
+      ],
+      "properties": {
+        "eventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "imported": {
+          "type": "boolean",
+          "description": "A historical import was committed, including roster-only imports with all-null cells."
+        },
+        "canImport": {
+          "type": "boolean",
+          "description": "The backend one-time import gate currently accepts this event."
+        },
+        "historical": {
+          "type": "boolean",
+          "description": "The selected published day still uses historical direct scores."
         }
       }
     },

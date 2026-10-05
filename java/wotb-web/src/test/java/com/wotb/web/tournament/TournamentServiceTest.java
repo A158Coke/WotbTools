@@ -196,7 +196,7 @@ class TournamentServiceTest {
         assertEquals(4,service.publicStandings(1).rows().size()); assertFalse(service.publicStandings(1).rows().stream().anyMatch(row->row.clanTag().equals("hidden-draft-only")));
         final TournamentDtos.StandingRow absent=service.publicStandings(1).rows().stream().filter(row->row.clanTag().equals("缺席")).findFirst().orElseThrow();
         assertEquals(0,absent.totalPoints()); assertNull(absent.rounds().getFirst().days().getFirst().points());
-        assertEquals("FINALIZED",service.day(1,1,1).status()); assertTrue(service.day(1,1,1).historical()); assertTrue(service.day(1,1,1).groups().isEmpty());
+        assertEquals("FINALIZED",service.day(1,1,1).status()); assertTrue(service.historicalState(1,1,1).historical()); assertTrue(service.day(1,1,1).groups().isEmpty());
         assertFalse(service.publicStandings(1).days().get(2).published()); assertEquals("a".repeat(64),auditRows.getLast().afterState.get("sourceSha256"));
     }
     @Test void historicalRowsMergeAcrossDaysButAnyOverlappingNonNullCellIsConflict() {
@@ -205,6 +205,16 @@ class TournamentServiceTest {
         assertEquals(2,result.sourceRowCount()); assertEquals(1,result.clanCount()); assertEquals(8,result.missingCellCount()); assertEquals(150,result.standings().rows().getFirst().totalPoints());
         assertCode(ApiErrorCode.TOURNAMENT_GROUP_CONFLICT,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(0,"source","a".repeat(64),List.of(historicalRow("A",0),historicalRow("A",0)))));
         assertTrue(auditRows.isEmpty()); assertEquals(0,event.version);
+    }
+    @Test void allNullRosterCommitClosesImportGateWithoutMarkingDaysPublished() {
+        assertTrue(service.historicalState(1,1,1).canImport());
+        service.importHistorical("admin",1,historicalRequest(List.of(historicalRow("缺席")),"roster-only"));
+        final TournamentDtos.HistoricalState state=service.historicalState(1,1,1);
+        assertTrue(state.imported()); assertFalse(state.canImport()); assertFalse(state.historical());
+        assertEquals(1,state.eventVersion()); assertEquals("EMPTY",service.day(1,1,1).status());
+        assertFalse(service.day(1,1,1).published());
+        assertEquals(0,service.publicStandings(1).rows().getFirst().totalPoints());
+        assertCode(ApiErrorCode.TOURNAMENT_LOCKED,()->service.previewHistorical(1,new TournamentDtos.HistoricalPreviewRequest(event.version,"source","a".repeat(64),List.of(historicalRow("缺席")))));
     }
     @Test void historicalSourceNameLengthUsesUnicodeCodePoints() {
         final List<TournamentDtos.HistoricalRow> input=List.of(historicalRow("A",100));
@@ -260,7 +270,7 @@ class TournamentServiceTest {
         service.correction("admin",1,1,1,new TournamentDtos.CorrectionRequest(event.version,day.version,1,"correct day"));
         assertEquals(123,service.publicStandings(1).rows().getFirst().totalPoints());
         service.saveDraft(1,1,1,request(List.of(group(1,"ERROR","A","C","B")),List.of())); publish("replacement");
-        assertNull(day.publishedHistoricalPoints); assertFalse(service.day(1,1,1).historical()); assertEquals(123,service.publicStandings(1).rows().getFirst().totalPoints());
+        assertNull(day.publishedHistoricalPoints); assertFalse(service.historicalState(1,1,1).historical()); assertEquals(123,service.publicStandings(1).rows().getFirst().totalPoints());
         assertEquals(999,((Map<?,?>)auditRows.getLast().beforeState.get("historicalPoints")).get("A"));
         service.clearPoints("admin",1,new TournamentDtos.ClearRequest(event.version,1,1,"A","appeal",true));
         assertEquals(223,service.publicStandings(1).rows().getFirst().totalPoints());

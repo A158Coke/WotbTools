@@ -1055,6 +1055,64 @@ paths:
             schema:
               $ref: "#/components/schemas/TournamentHistoricalPreviewRequest"
   /api/admin/tournaments/{eventId}/historical-import:
+    get:
+      operationId: getTournamentHistoricalState
+      summary: getTournamentHistoricalState
+      description: Historical capability and committed import state are separate from the deployed day response. Previous backends return 404; clients then keep ordinary administration available and disable historical import.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: roundNumber
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+        - name: dayNumber
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 3
+      responses:
+        "200":
+          description: Historical import state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentHistoricalState"
+        "400":
+          description: Invalid dimensions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Tournament administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Event not found, or a previous backend without historical import support
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+      security:
+        - bearerAuth: []
     post:
       operationId: importTournamentHistorical
       summary: importTournamentHistorical
@@ -2206,7 +2264,6 @@ components:
         - expectedGroupCount
         - groups
         - published
-        - historical
         - standings
       properties:
         eventId:
@@ -2250,11 +2307,26 @@ components:
             $ref: "#/components/schemas/TournamentGroup"
         published:
           type: boolean
-        historical:
-          type: boolean
-          description: The current published day uses historical direct scores rather than ranked groups.
         standings:
           $ref: "#/components/schemas/TournamentStandings"
+    TournamentHistoricalState:
+      type: object
+      additionalProperties: false
+      required: [eventVersion, imported, canImport, historical]
+      properties:
+        eventVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        imported:
+          type: boolean
+          description: A historical import was committed, including roster-only imports with all-null cells.
+        canImport:
+          type: boolean
+          description: The backend one-time import gate currently accepts this event.
+        historical:
+          type: boolean
+          description: The selected published day still uses historical direct scores.
     TournamentHistoricalRow:
       type: object
       additionalProperties: false

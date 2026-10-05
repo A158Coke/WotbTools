@@ -15,11 +15,12 @@ function fixture() {
     days: [1, 2].map(dayNumber => ({ dayNumber, points: [1, 2, 3, 4].map(rank => ({ rank, points: (5 - rank) * 100 })) })),
   })) } as TournamentConfig
   const state = { eventId: 7, roundNumber: 1, dayNumber: 1, eventVersion: 1, rulesVersion: 1, version: 1, status: 'DRAFT', expectedGroupCount: 1,
-    groups: [group], published: false, historical: false, standings: { event, days: [], rows: [] } } as TournamentDayView
+    groups: [group], published: false, standings: { event, days: [], rows: [] } } as TournamentDayView
   const auth = { authenticated: ref(true), tokenParsed: ref({ sub: 'admin-a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: vi.fn(() => 1) }
   const transport = {
     listTournamentEvents: vi.fn(async (..._args: any[]) => [event]), getTournamentConfig: vi.fn(async (..._args: any[]) => structuredClone(cfg)), getTournamentDay: vi.fn(async (_id: number, round: number, day: number, ..._args: any[]) => ({ ...structuredClone(state), roundNumber: round, dayNumber: day })),
     getTournamentAudit: vi.fn(async (..._args: any[]) => []), previewTournamentDay: vi.fn(async (..._args: any[]) => structuredClone(state)), saveTournamentDraft: vi.fn(async (..._args: any[]) => structuredClone(state)),
+    getTournamentHistoricalState: vi.fn(async (..._args: any[]) => ({ eventVersion: 1, imported: false, canImport: false, historical: false })),
     finalizeTournamentDay: vi.fn(async (..._args: any[]) => ({ ...structuredClone(state), status: 'FINALIZED', published: true, version: 2, eventVersion: 2 })),
     setTournamentExpectedGroups: vi.fn(async (..._args: any[]) => structuredClone(state)), startTournamentCorrection: vi.fn(async (..._args: any[]) => ({ ...structuredClone(state), status: 'CORRECTION', groups: [], published: true })),
     discardTournamentDraft: vi.fn(async (..._args: any[]) => structuredClone(state)), clearTournamentPoints: vi.fn(async (..._args: any[]) => state.standings),
@@ -93,6 +94,7 @@ describe('historical import owner', () => {
     const f = fixture()
     f.state.status = 'EMPTY'
     f.state.groups = []
+    f.transport.getTournamentHistoricalState.mockResolvedValue({ eventVersion: 1, imported: false, canImport: true, historical: false })
     f.cfg.event.configLocked = false
     f.auth.tokenParsed.value.realm_access.roles = ['tournament-admin']
     const preview = { standings: f.state.standings, sourceRowCount: 1, clanCount: 1, missingCellCount: 9, eventVersion: 1 }
@@ -150,6 +152,35 @@ describe('historical import owner', () => {
     await f.owner.previewHistorical(f.file)
     expect(f.transport.previewTournamentHistoricalImport).not.toHaveBeenCalled()
     f.scope.stop()
+  })
+  it('disables one-time import after a committed all-null roster while its days remain empty', async () => {
+    const f = setup()
+    f.owner.eventId.value = 7
+    await settle()
+    expect(f.owner.canImportHistorical.value).toBe(true)
+    f.cfg.clans = ['缺席']
+    f.cfg.event.configLocked = true
+    f.transport.getTournamentHistoricalState.mockResolvedValue({ eventVersion: 2, imported: true, canImport: false, historical: false })
+    await f.owner.loadSelection()
+    expect(f.owner.dayState.value?.status).toBe('EMPTY')
+    expect(f.owner.dayState.value?.standings.days.some(day => day.published)).toBe(false)
+    expect(f.owner.canImportHistorical.value).toBe(false)
+    await f.owner.previewHistorical(f.file)
+    expect(f.transport.previewTournamentHistoricalImport).not.toHaveBeenCalled()
+    f.scope.stop()
+  })
+  it('keeps ordinary administration working when the previous backend has no historical endpoint', async () => {
+    const f = fixture()
+    f.transport.getTournamentHistoricalState.mockResolvedValue(null as any)
+    const scope = effectScope()
+    const owner = scope.run(() => useTournamentPointsAdmin({ api: f.transport, auth: f.auth } as any))!
+    owner.eventId.value = 7
+    await settle()
+    expect(owner.error.value).toBeNull()
+    expect(owner.dayState.value?.groups).toHaveLength(1)
+    expect(owner.canUpload.value).toBe(true)
+    expect(owner.canImportHistorical.value).toBe(false)
+    scope.stop()
   })
 })
 describe('shared tournament draft owner', () => {

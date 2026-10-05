@@ -135,6 +135,14 @@ public class TournamentService {
     // Event identity, published day facts and historical roster must share one MVCC snapshot.
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TournamentDtos.Standings publicStandings(final long id) { return standings(event(id), dayList(id), null, null, false); }
+    /** Separate capability/state response leaves strict, already-deployed day clients compatible. */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public TournamentDtos.HistoricalState historicalState(final long id, final int round, final int number) {
+        final TournamentEvent event = event(id); dimension(event, round, number);
+        final List<TournamentDay> stored = dayList(id);
+        final boolean historical = stored.stream().anyMatch(day -> day.roundNumber == round && day.dayNumber == number && day.publishedHistoricalPoints != null);
+        return new TournamentDtos.HistoricalState(event.version, event.historicalImportKey != null, historicalTargetEmpty(event, stored), historical);
+    }
     public TournamentDtos.HistoricalPreview previewHistorical(final long id, final TournamentDtos.HistoricalPreviewRequest request) {
         final TournamentEvent event = locked(id, request.expectedEventVersion()); requireEmptyHistoricalTarget(event);
         final Map<String, List<Integer>> matrix = historicalMatrix(event, request.sourceName(), request.sourceSha256(), request.rows());
@@ -390,7 +398,7 @@ public class TournamentService {
         final List<TournamentSnapshot.Group> selected = preview != null ? preview : day.draftGroups != null ? day.draftGroups : day.publishedGroups != null ? day.publishedGroups : List.of();
         final String status = day.correction ? "CORRECTION" : published(day) ? "FINALIZED" : day.draftGroups != null || preview != null ? "DRAFT" : "EMPTY";
         return new TournamentDtos.DayView(event.id, day.roundNumber, day.dayNumber, event.version, rule(event.id, day.roundNumber).rulesVersion,
-                day.version, status, day.expectedGroupCount, selected.stream().map(mapper::group).toList(), published(day), day.publishedHistoricalPoints != null,
+                day.version, status, day.expectedGroupCount, selected.stream().map(mapper::group).toList(), published(day),
                 standings(event, dayList(event.id), preview == null ? null : day, preview, true));
     }
     private TournamentDtos.Config configView(final TournamentEvent event) {
@@ -468,7 +476,10 @@ public class TournamentService {
     private static boolean published(final TournamentDay day) { return day.publishedGroups != null || day.publishedHistoricalPoints != null; }
     private static Set<String> publishedTags(final TournamentDay day) { return day.publishedHistoricalPoints != null ? day.publishedHistoricalPoints.keySet() : day.publishedGroups != null ? tags(day.publishedGroups) : Set.of(); }
     private void requireEmptyHistoricalTarget(final TournamentEvent event) {
-        if (event.historicalImportKey != null || dayList(event.id).stream().anyMatch(day -> day.draftGroups != null || published(day) || day.correction || !day.clearedClans.isEmpty())) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
+        if (!historicalTargetEmpty(event, dayList(event.id))) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
+    }
+    private boolean historicalTargetEmpty(final TournamentEvent event, final List<TournamentDay> storedDays) {
+        return event.historicalImportKey == null && storedDays.stream().noneMatch(day -> day.draftGroups != null || published(day) || day.correction || !day.clearedClans.isEmpty());
     }
     private Map<String, List<Integer>> historicalMatrix(final TournamentEvent event, final String sourceName, final String sourceSha256, final List<TournamentDtos.HistoricalRow> input) {
         if (!StringUtils.hasText(sourceName) || sourceName.codePointCount(0, sourceName.length()) > 200 || sourceName.codePoints().anyMatch(Character::isISOControl)

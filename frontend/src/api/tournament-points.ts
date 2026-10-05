@@ -20,6 +20,7 @@ export type TournamentRuleRequest = Schemas['TournamentRuleRequest']
 export type TournamentCreateRequest = Schemas['TournamentCreateRequest']
 export type TournamentHistoricalPreview = Schemas['TournamentHistoricalPreview']
 export type TournamentHistoricalPreviewRequest = Schemas['TournamentHistoricalPreviewRequest']
+export type TournamentHistoricalState = Schemas['TournamentHistoricalState']
 export const TOURNAMENT_REGIONS: TournamentEvent['region'][] = ['CN', 'ASIA', 'NA', 'EU']
 export const TOURNAMENT_SEASONS: TournamentEvent['season'][] = ['SPRING', 'SUMMER', 'AUTUMN', 'WINTER', 'FIRE_CUP']
 
@@ -83,6 +84,15 @@ export const discardTournamentDraft = (id: number, round: number, day: number, v
 export const clearTournamentPoints = (id: number, value: Schemas['TournamentClearRequest'], signal?: AbortSignal) => json(`${eventPath(id)}/clear-points`, 'TournamentStandings', true, body('POST', value, signal))
 export const previewTournamentHistoricalImport = (id: number, value: TournamentHistoricalPreviewRequest, signal?: AbortSignal) => json(`${eventPath(id)}/historical-import/preview`, 'TournamentHistoricalPreview', true, body('POST', value, signal))
 export const importTournamentHistorical = (id: number, value: Schemas['TournamentHistoricalImportRequest'], signal?: AbortSignal) => json(`${eventPath(id)}/historical-import`, 'TournamentHistoricalPreview', true, body('POST', value, signal))
+/** A previous backend has no state endpoint; ordinary day management keeps its original wire format. */
+export async function getTournamentHistoricalState(id: number, round: number, day: number, signal?: AbortSignal): Promise<TournamentHistoricalState | null> {
+  try {
+    return await json(`${eventPath(id)}/historical-import?roundNumber=${round}&dayNumber=${day}`, 'TournamentHistoricalState', true, { signal })
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null
+    throw error
+  }
+}
 export async function deleteTournament(id: number, value: Schemas['TournamentDeleteRequest'], signal?: AbortSignal) {
   await request(eventPath(id), true, body('DELETE', value, signal))
 }

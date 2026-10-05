@@ -21,7 +21,7 @@ const { t, te } = useI18n()
 const owner = useTournamentPointsAdmin()
 const { allowed, events, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
   busy, recognizing, progress, error, stale, notice, roundRule, editable, canUpload, canFinalize, reviewError } = owner
-const { historicalPreview, historicalRequest, historicalFileIssue, canImportHistorical } = owner
+const { historicalPreview, historicalRequest, historicalState, historicalFileIssue, canImportHistorical } = owner
 const { availability } = useFeatureGate()
 const network = computed(() => availability(Feature.TOURNAMENT_POINTS))
 const files = ref<File[]>([]), expected = ref<number | string>(''), reason = ref(''), correctionCount = ref(1)
@@ -94,7 +94,7 @@ onScopeDispose(clearLocal)
       <TournamentEventSelect v-model="eventId" :events="events" :disabled="busy || recognizing" />
       <p v-if="busy" role="status">{{ $t('tournament.loading') }}</p>
       <p v-if="!events.length && !busy" class="tournament-muted">{{ $t('tournament.noEvents') }}</p>
-      <section v-if="config && dayState?.status === 'EMPTY' && !standings?.days.some(value => value.published)" class="tournament-card tournament-stack" data-testid="historical-import">
+      <section v-if="config && (historicalState?.canImport || historicalPreview)" class="tournament-card tournament-stack" data-testid="historical-import">
         <h2>{{ $t('tournament.historicalImport') }}</h2>
         <p class="tournament-muted">{{ $t('tournament.historicalHint') }}</p>
         <label class="tournament-field"><span>{{ $t('tournament.historicalFile') }}</span><input type="file" accept=".json,application/json" :disabled="!canImportHistorical" data-testid="historical-file" @change="selectHistoricalFile" /></label>
@@ -111,8 +111,8 @@ onScopeDispose(clearLocal)
         <label class="tournament-field"><span>{{ $t('tournament.days') }}</span><select v-model.number="day"><option v-for="value in config.event.daysPerRound" :key="value" :value="value">{{ config.event.dayLabels[value - 1] }}</option></select></label>
       </div>
       <template v-if="dayState && config">
-        <div class="tournament-actions"><span>{{ $t('tournament.' + dayState.status) }}</span><span v-if="!dayState.historical">{{ $t('tournament.count', { actual: previewState?.groups.length ?? dayState.groups.length, expected: dayState.expectedGroupCount ?? '—' }) }}</span></div>
-        <Banner v-if="dayState.historical">{{ $t('tournament.historicalSource') }}</Banner>
+        <div class="tournament-actions"><span>{{ $t('tournament.' + dayState.status) }}</span><span v-if="!historicalState?.historical">{{ $t('tournament.count', { actual: previewState?.groups.length ?? dayState.groups.length, expected: dayState.expectedGroupCount ?? '—' }) }}</span></div>
+        <Banner v-if="historicalState?.historical">{{ $t('tournament.historicalSource') }}</Banner>
         <Banner v-if="!roundRule?.complete" tone="warning">{{ $t('tournament.rulesMissing') }}</Banner>
         <Banner v-else-if="dayState.status === 'FINALIZED'">{{ $t('tournament.locked') }}</Banner>
         <section v-else class="tournament-card">

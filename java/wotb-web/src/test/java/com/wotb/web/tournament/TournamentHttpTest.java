@@ -103,6 +103,20 @@ class TournamentHttpTest {
         mvc.perform(post("/api/admin/tournaments/1/historical-import").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))).contentType("application/json").content(request))
                 .andExpect(status().isBadRequest());
     }
+    @Test void dayResponseKeepsDeployedShapeAndHistoricalStateIsSeparatelyAuthorized() throws Exception {
+        final TournamentDtos.Event event=new TournamentDtos.Event(1,1,2026,"CN","SUMMER",5,2,List.of("小组赛","决赛圈"),true);
+        final TournamentDtos.Standings board=new TournamentDtos.Standings(event,List.of(),List.of());
+        final TournamentDtos.DayView day=new TournamentDtos.DayView(1,1,1,1,0,1,"FINALIZED",null,List.of(),true,board);
+        when(context.getBean(TournamentService.class).day(1,1,1)).thenReturn(day);
+        when(context.getBean(TournamentService.class).historicalState(1,1,1)).thenReturn(new TournamentDtos.HistoricalState(1,true,false,true));
+        mvc.perform(get("/api/admin/tournaments/1/rounds/1/days/1").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FINALIZED")).andExpect(jsonPath("$.historical").doesNotExist());
+        final String statePath="/api/admin/tournaments/1/historical-import?roundNumber=1&dayNumber=1";
+        mvc.perform(get(statePath)).andExpect(status().isUnauthorized());
+        mvc.perform(get(statePath).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin")))).andExpect(status().isForbidden());
+        mvc.perform(get(statePath).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.imported").value(true)).andExpect(jsonPath("$.canImport").value(false)).andExpect(jsonPath("$.historical").value(true));
+    }
     @Configuration @EnableWebMvc
     @Import({SecurityConfig.class,ApiErrorTestConfig.class,GlobalExceptionHandler.class})
     static class TestConfig {

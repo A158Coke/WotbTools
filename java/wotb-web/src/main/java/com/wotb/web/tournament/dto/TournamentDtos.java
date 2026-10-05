@@ -163,9 +163,9 @@ public final class TournamentDtos {
             Integer expectedGroupCount,
             List<Group> groups,
             boolean published,
-            boolean historical,
             Standings standings
     ) { }
+    public record HistoricalState(long eventVersion, boolean imported, boolean canImport, boolean historical) { }
     public record HistoricalRow(
             @JsonProperty(required = true) String clanTag,
             @JsonProperty(required = true) @JsonDeserialize(contentUsing = IntegerInput.class) List<Integer> points,

@@ -59,6 +59,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   const notice = ref('')
   const historicalRequest = ref<api.TournamentHistoricalPreviewRequest | null>(null)
   const historicalPreview = ref<api.TournamentHistoricalPreview | null>(null)
+  const historicalState = ref<api.TournamentHistoricalState | null>(null)
   const historicalFileIssue = ref('')
   let generation = 0
   let controller = new AbortController()
@@ -84,6 +85,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     historicalKey = crypto.randomUUID()
     historicalRequest.value = null
     historicalPreview.value = null
+    historicalState.value = null
     historicalFileIssue.value = ''
   }
   function owns(gen: number, epoch: number) {
@@ -115,13 +117,15 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
       if (!owns(gen, epoch)) return
       config.value = cfg
       if (round.value > cfg.event.roundCount || day.value > cfg.event.daysPerRound) { round.value = 1; day.value = 1; return }
-      const [value, entries] = await Promise.all([
+      const [value, entries, history] = await Promise.all([
         transport.getTournamentDay(eventId.value, round.value, day.value, signal),
         transport.getTournamentAudit(eventId.value, signal),
+        transport.getTournamentHistoricalState(eventId.value, round.value, day.value, signal),
       ])
       if (!owns(gen, epoch)) return
       applyDay(value)
       audit.value = entries
+      historicalState.value = history
     } catch (value) { if (owns(gen, epoch)) fail(value) }
     finally { if (owns(gen, epoch)) busy.value = false }
   }
@@ -134,6 +138,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     } catch (value) { if (owns(gen, epoch)) fail(value) }
   }
   const canImportHistorical = computed(() => allowed.value && !!config.value && !!dayState.value
+    && historicalState.value?.canImport === true
     && !busy.value && !recognizing.value && !stale.value && !reviews.value.length
     && !dayState.value.standings.days.some(value => value.published)
     && dayState.value.status === 'EMPTY')
@@ -235,8 +240,9 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
       if (!owns(gen, epoch)) return
       applyDay(value)
       if (resetReviews) clearReviews()
-      const [cfg, entries] = await Promise.all([transport.getTournamentConfig(eventId.value!, controller.signal), transport.getTournamentAudit(eventId.value!, controller.signal)])
-      if (owns(gen, epoch)) { config.value = cfg; audit.value = entries; notice.value = 'saved' }
+      const [cfg, entries, history] = await Promise.all([transport.getTournamentConfig(eventId.value!, controller.signal), transport.getTournamentAudit(eventId.value!, controller.signal),
+        transport.getTournamentHistoricalState(eventId.value!, round.value, day.value, controller.signal)])
+      if (owns(gen, epoch)) { config.value = cfg; audit.value = entries; historicalState.value = history; notice.value = 'saved' }
       return value
     } catch (value) { if (owns(gen, epoch)) fail(value) }
     finally { if (owns(gen, epoch)) busy.value = false }
@@ -345,7 +351,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   watch(reviews, () => { previewState.value = null }, { deep: true })
   onScopeDispose(() => { invalidate(); events.value = []; audit.value = []; config.value = null; dayState.value = null })
   return { allowed, events, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
-    historicalRequest, historicalPreview, historicalFileIssue, canImportHistorical, previewHistorical, publishHistorical,
+    historicalRequest, historicalPreview, historicalState, historicalFileIssue, canImportHistorical, previewHistorical, publishHistorical,
     busy, recognizing, progress, error, stale, notice, roundRule, editable, canUpload, canFinalize, reviewError,
     loadEvents, loadSelection, recognize, cancelRecognition, preview, saveDraft, finalize, setExpected, correction, discard, clearPoints }
 }

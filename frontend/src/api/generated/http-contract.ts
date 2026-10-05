@@ -256,7 +256,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * getTournamentHistoricalState
+         * @description Historical capability and committed import state are separate from the deployed day response. Previous backends return 404; clients then keep ordinary administration available and disable historical import.
+         */
+        get: operations["getTournamentHistoricalState"];
         put?: never;
         /**
          * importTournamentHistorical
@@ -842,9 +846,17 @@ export interface components {
             expectedGroupCount: number | null;
             groups: components["schemas"]["TournamentGroup"][];
             published: boolean;
-            /** @description The current published day uses historical direct scores rather than ranked groups. */
-            historical: boolean;
             standings: components["schemas"]["TournamentStandings"];
+        };
+        TournamentHistoricalState: {
+            /** Format: int64 */
+            eventVersion: number;
+            /** @description A historical import was committed, including roster-only imports with all-null cells. */
+            imported: boolean;
+            /** @description The backend one-time import gate currently accepts this event. */
+            canImport: boolean;
+            /** @description The selected published day still uses historical direct scores. */
+            historical: boolean;
         };
         TournamentHistoricalRow: {
             clanTag: string;
@@ -2780,6 +2792,67 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getTournamentHistoricalState: {
+        parameters: {
+            query: {
+                roundNumber: number;
+                dayNumber: number;
+            };
+            header?: never;
+            path: {
+                eventId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Historical import state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentHistoricalState"];
+                };
+            };
+            /** @description Invalid dimensions */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Event not found, or a previous backend without historical import support */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
