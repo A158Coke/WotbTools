@@ -20,13 +20,14 @@ resource "keycloak_role" "realm" {
 
 # Super-admin is an IAM-level composite. Domain services authorize against
 # their own least-privilege roles; assigning wotbtools-admin grants the complete
-# administrator role set through Keycloak instead of duplicating OR checks in
+# application role set through Keycloak instead of duplicating OR checks in
 # application code.
 resource "keycloak_role" "wotbtools_admin" {
   realm_id    = keycloak_realm.wotbtools.id
   name        = "wotbtools-admin"
   description = "WoTBTools admin"
   composite_roles = [
+    keycloak_role.realm["wotbtools-user"].id,
     keycloak_role.realm["HoF-admin"].id,
     keycloak_role.realm["tournament-admin"].id,
   ]
