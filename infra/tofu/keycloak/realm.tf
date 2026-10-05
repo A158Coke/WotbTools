@@ -7,8 +7,8 @@ resource "keycloak_realm" "wotbtools" {
   reset_password_allowed        = false
   edit_username_allowed         = true
   access_token_lifespan         = "30m"
-  sso_session_idle_timeout      = "24h"
-  sso_session_max_lifespan      = "168h"
+  sso_session_idle_timeout      = "720h"
+  sso_session_max_lifespan      = "8760h"
   terraform_deletion_protection = true
 
   internationalization {
