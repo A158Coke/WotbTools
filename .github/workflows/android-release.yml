@@ -494,6 +494,28 @@ jobs:
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           script: chmod 644 /opt/wotb-tx/android-release/${{ steps.artifact.outputs.apkName }}
 
+      - name: Upload APK to TX2 public frontend runtime
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: release-staging/${{ steps.artifact.outputs.apkName }}
+          target: /opt/wotb-tx2/runtime-content/android-release
+          strip_components: 1
+
+      - name: Ensure APK readable by TX2 nginx
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          script: chmod 644 /opt/wotb-tx2/runtime-content/android-release/${{ steps.artifact.outputs.apkName }}
+
       - name: Verify production APK (HTTP 200 + non-empty + SHA matches)
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
@@ -610,6 +632,28 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           script: chmod 644 /opt/wotb-tx/android-release/${{ steps.staging.outputs.stagingName }}
+
+      - name: Upload staging evidence to TX2 public frontend runtime
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: release-staging/${{ steps.staging.outputs.stagingName }}
+          target: /opt/wotb-tx2/runtime-content/android-release
+          strip_components: 1
+
+      - name: Ensure staging evidence readable by TX2 nginx
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          script: chmod 644 /opt/wotb-tx2/runtime-content/android-release/${{ steps.staging.outputs.stagingName }}
 
       - name: Verify production staging evidence (HTTP 200 + content)
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -1037,7 +1081,7 @@ jobs:
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "release-staging/version.json"
           cat "release-staging/version.json"
 
-      - name: Upload version.json to TX (LAST)
+      - name: Mirror release manifest to TX1 rollback runtime
         if: steps.pubpreflight.outputs.publishAction == 'publish'
         uses: appleboy/scp-action@v1
         with:
@@ -1047,6 +1091,18 @@ jobs:
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           source: release-staging/version.json
           target: /opt/wotb-tx/android-release
+          strip_components: 1
+
+      - name: Upload version.json to TX (LAST)
+        if: steps.pubpreflight.outputs.publishAction == 'publish'
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: release-staging/version.json
+          target: /opt/wotb-tx2/runtime-content/android-release
           strip_components: 1
 
       - name: Verify production version.json matches the staged artifact
