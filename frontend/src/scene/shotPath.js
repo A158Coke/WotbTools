@@ -11,10 +11,16 @@
 
 /** 折线点表：`[[x,y,z], ...]`（长度 ≥ 2：至少 from→to） */
 export function pathPointsOf(shot) {
-  const pts = [shot.from]
-  for (const v of shot.via || []) pts.push(v)
-  pts.push(shot.to)
-  return pts
+  // via 与 leg_secs 是一组 additive 数据：只有两者形状同时有效才消费折线。
+  // partial / malformed facet 必须整体退化到历史 from→to 直线；否则 points=N 段而
+  // timings=1 段时，pointAt 会在 fallback 结束瞬间从 via[0] 跳到最终 to。
+  const via = Array.isArray(shot.via) ? shot.via : []
+  const legs = shot.leg_secs
+  const validPolyline = via.length > 0
+    && Array.isArray(legs)
+    && legs.length === via.length + 1
+    && legs.every((x) => Number.isFinite(x) && x > 0)
+  return validPolyline ? [shot.from, ...via, shot.to] : [shot.from, shot.to]
 }
 
 /**
