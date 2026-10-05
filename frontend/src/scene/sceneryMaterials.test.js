@@ -270,6 +270,22 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(src).not.toMatch(/Math\.max\(0\.22, s\.flight_secs\)/)
   })
 
+  it('着色器预热：场景就绪时 compile 一次（首次开火才编译＝开局/接火卡顿）', () => {
+    expect(src).toMatch(/function prewarmShaders\(\)/)
+    expect(src).toMatch(/renderer\.compile\(scene, camera\);/)
+    expect(src).toMatch(/renderer\.compile\(labelScene, camera\);/)
+    // 会话启动路径必须调用（GLB 恢复之后、开播之前）
+    expect(src).toMatch(/if \(glbOn\) applyGlbToggle\(true\);[\s\S]{0,60}prewarmShaders\(\);/)
+  })
+
+  it('性能探针：`?perf` 才挂载、只读记录（不改渲染行为）', () => {
+    expect(src).toMatch(/new URLSearchParams\(window\.location\.search\)\.has\('perf'\)/)
+    expect(src).toMatch(/window\.__pbPerf = \{ report:/)
+    // 分阶段计时包住「状态更新」与「提交渲染」两段
+    expect(src).toMatch(/const perfT1 = PERF \? performance\.now\(\) : 0;/)
+    expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, performance\.now\(\) - perfT1\);/)
+  })
+
   it('炮线粗细：飞行段 ≥ 轨迹线（层级不变），且都不低于加粗后的下限', () => {
     const tr = Number(src.match(/const TRACER_RADIUS = ([0-9.]+);/)?.[1])
     const tj = Number(src.match(/const TRAJ_RADIUS = ([0-9.]+);/)?.[1])

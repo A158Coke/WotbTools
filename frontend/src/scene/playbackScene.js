@@ -294,6 +294,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 需手动挂 logdepthbuf 代码块（内建材质自动注入）；?logdepth=0 可关闭（A/B 与
     // 真机回滚，见 LOGDEPTH 注释）。
     renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, logarithmicDepthBuffer: LOGDEPTH });
+    // 着色器预热（`renderer.compile`）：three 在**首次渲染某材质**时才编译程序，编译会阻塞
+    // 数十~数百 ms，落在"战斗第一次开火/命中"的那一帧就是用户实测的"打起来就卡"。
+    // 场景就绪后立即编译在用材质（含地面分层着色器/FX 池），成本挪到加载阶段（那时本来在等资产）。
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio, Q.maxDpr));
     if (DEBUG) window.__renderer = renderer;   // 诊断钩子（renderer 创建后才可引用；仅 ?debug）
@@ -2486,15 +2489,78 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       || ghostByEid.size > 0 || flashByEid.size > 0;
     if (!busy) return;
     frameDirty = false;
+    const perfT0 = PERF ? performance.now() : 0;
     updateLabels();
     updateBases();
     updateImpacts();      // wall-clock transient：暂停时也继续自然淡出
     updateTransients();
+    const perfT1 = PERF ? performance.now() : 0;
     renderer.render(scene, camera);
     // 伤害飘字覆盖层：同 renderer 的第二次 render；车辆标签由 HTML overlay 呈现。
     renderer.autoClear = false;
     renderer.render(labelScene, camera);
     renderer.autoClear = true;
+    if (PERF) perfFrame(perfT1 - perfT0, performance.now() - perfT1);
+  }
+
+  // ---------- 性能探针（`?perf`；只读测量，不改变任何渲染行为） ----------
+  // 3D 卡顿类问题靠"读代码"定不了位：这里逐帧记录**分阶段耗时**（场景状态更新 /
+  // 提交渲染）与当时的**在场对象数**，并保留最慢的若干帧（含回放时刻 T）——复现后
+  // 在控制台执行 `__pbPerf.report()` 即可拿到证据（谁慢、慢在哪个阶段、当时有多少
+  // 炮线/轨迹盒/命中特效/飘字/爆散/可见车辆）。
+  const PERF = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).has('perf');
+  const PERF_RING = 240;              // ≈4s 窗口（60fps）
+  let perfRing = [], perfRingN = 0, perfLast = 0, perfSlow = [];
+  function perfFrame(updateMs, renderMs) {
+    const now = performance.now();
+    const dt = perfLast ? now - perfLast : 0;
+    perfLast = now;
+    perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, t: T,
+      tracers: tracers.length, traj: trajLines.length, impacts: impacts.length,
+      dmg: floatDmgs.length, burst: burstFx.length,
+      veh: V.filter((v) => v.group.visible).length };
+    perfRingN++;
+    if (dt > 33) {
+      perfSlow.push({ dt, updateMs, renderMs, t: T });
+      perfSlow.sort((a, b) => b.dt - a.dt);
+      if (perfSlow.length > 12) perfSlow.length = 12;
+    }
+  }
+  function perfReport() {
+    const n = Math.min(perfRingN, PERF_RING);
+    const rows = [];
+    for (let i = 0; i < n; i++) rows.push(perfRing[i]);
+    if (!rows.length) return 'no frames';
+    const q = (key, p) => {
+      const a = rows.map((r) => r[key]).sort((x, y) => x - y);
+      return a[Math.min(a.length - 1, Math.floor(a.length * p))];
+    };
+    const f = (v) => v.toFixed(1);
+    const last = rows[rows.length - 1];
+    const out = [
+      `frames=${perfRingN} (window ${n})`,
+      `frame ms  med=${f(q('dt', 0.5))} p90=${f(q('dt', 0.9))} max=${f(q('dt', 0.99))}`,
+      `update ms med=${f(q('updateMs', 0.5))} p90=${f(q('updateMs', 0.9))}`,
+      `render ms med=${f(q('renderMs', 0.5))} p90=${f(q('renderMs', 0.9))}`,
+      `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} dmg=${last.dmg} burst=${last.burst}`,
+      'slowest frames (dt ms / update / render / T):',
+      ...perfSlow.map((r) => `  ${f(r.dt)} / ${f(r.updateMs)} / ${f(r.renderMs)} @T=${r.t.toFixed(1)}`),
+    ];
+    return out.join(String.fromCharCode(10));
+  }
+  if (PERF) {
+    window.__pbPerf = { report: () => { const s = perfReport(); console.log(s); return s; }, reset: () => { perfRing = []; perfRingN = 0; perfSlow = []; } };
+  }
+
+  /** 预热在用材质（见 renderer 初始化处注释）：把首次编译的数十~数百 ms 从"战斗第一次
+   *  开火/命中"挪到加载阶段。场景层与飘字层各编译一次；失败不影响播放（best-effort）。 */
+  function prewarmShaders() {
+    try {
+      camera.updateMatrixWorld();
+      renderer.compile(scene, camera);
+      renderer.compile(labelScene, camera);
+    } catch (e) { console.warn('着色器预热失败（忽略）:', e); }
   }
 
   function tick() {
@@ -2890,6 +2956,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     shotPtr = 0; killPtr = 0;
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
     if (glbOn) applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
+    prewarmShaders();
     // 会话常量一次写清（此前每 tick 重写，值不变不会触发响应式，但语义上属会话级）
     store.startTime = START;
     store.duration = END;
