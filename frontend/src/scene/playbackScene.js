@@ -76,8 +76,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let currentMapBases = null;
   // 阵营/中立调色（唯一事实源）：green / red / white——炮线、基地归属、标签共用；
   // 中立与未知阵营一律 white（unknown ≠ enemy）。
-  const COLOR_FRIENDLY = 0x2ecc71;
-  const COLOR_ENEMY = 0xef4444;
+  // 阵营色深色板（2026-10-05 加深）：原亮绿/亮红在明亮地表上对比不足；
+  // 统一到与车辆 tint 同源的深绿/深红（「与上游 Agent 同值」，`teamColor` 原已用此对），
+  // 炮线与车辆着色共用一个事实源。
+  const COLOR_FRIENDLY = 0x26794a;   // 深绿
+  const COLOR_ENEMY = 0x98322a;      // 深红
   const COLOR_UNKNOWN = 0xf5f5f5;
       // mapBases[资产面 map key]（基地几何；loadMapImage 解析后缓存）
   let currentMapKey = null;        // 资产面 map key（playableBounds 表索引）
@@ -1165,7 +1168,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const f = DATA.meta.friendly_team, t = v.def.team;
     if (t === 0 || f === 0) return COLOR_UNKNOWN;   // 中立＝白（green / red / white 口径）
     // 深绿/深红（与上游 Agent 同值）：原 0x3fa66a/0xc05046 偏亮，明亮地表上对比不足
-    return t === f ? 0x26794a : 0x98322a;
+    return t === f ? COLOR_FRIENDLY : COLOR_ENEMY;
   }
 
   // ---------- 基地（争霸 A–D / 单基地）：贴地标记 ----------
@@ -1482,14 +1485,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let reloadStateAt = () => null;
   let labelsWrittenMs = -Infinity;
   let labelsTime = null;
+  // 上一轮快照里是否有正在装填（loading）的可见车：装填条是名牌唯一连续变化的元素
+  // （HP/身份变化远低于此），有装填时按 ~30Hz 发布让进度平滑，其余时间维持 10Hz
+  // （少触发整屏 VDOM patch）。
+  let labelsReloadActive = false;
+  const LABEL_INTERVAL_RELOAD_MS = 33;
+  const LABEL_INTERVAL_IDLE_MS = 100;
   const labelClip = new THREE.Vector4();
   function publishLabels(force = false) {
     if (!DATA || !labelOverlay || !store.labelsOn) return;
     const now = performance.now();
-    if (!force && (T === labelsTime || now - labelsWrittenMs < 100)) return;
+    const interval = labelsReloadActive ? LABEL_INTERVAL_RELOAD_MS : LABEL_INTERVAL_IDLE_MS;
+    if (!force && (T === labelsTime || now - labelsWrittenMs < interval)) return;
     labelsWrittenMs = now;
     labelsTime = T;
-    labelOverlay.setLabels(V.map((v) => {
+    const rows = V.map((v) => {
       const destroyed = deathAt(v, T);
       const current = hpAt(v, T);
       const pct = Number.isFinite(v.def.max_hp) && v.def.max_hp > 0
@@ -1506,7 +1516,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         hpGhost: ghost ? { prevPct: (ghost.fromFrac + ghost.lossFrac) * 100, nextPct: ghost.fromFrac * 100 } : null,
         hpFlash: flashByEid.has(v.def.eid),
       };
-    }));
+    });
+    labelsReloadActive = rows.some((r) => Array.isArray(r.reload)
+      && r.reload.some((sh) => sh.state === 'loading'));
+    labelOverlay.setLabels(rows);
   }
   function setLabelPrefs() {
     labelsTime = null;
