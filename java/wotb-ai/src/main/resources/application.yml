@@ -16,6 +16,10 @@ spring:
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:https://auth.wotbtools.com/realms/wotbtools}
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
 management:
   endpoints:
     web:
@@ -50,6 +54,11 @@ wotb:
     call2-thinking-enabled: ${AI_THINKING_ENABLED_CALL2:false}
     thinking-enabled: ${AI_THINKING_ENABLED:true}
     reasoning-effort: ${AI_REASONING_EFFORT:max}
+    tournament-recognition:
+      signing-key: ${TOURNAMENT_RECOGNITION_SIGNING_KEY:}
+      model: ${TOURNAMENT_RECOGNITION_MODEL:deepseek-flash}
+      max-concurrent: ${TOURNAMENT_RECOGNITION_MAX_CONCURRENT:2}
+      calls-per-minute: ${TOURNAMENT_RECOGNITION_CALLS_PER_MINUTE:60}
     review-worker:
       max-concurrent: ${AI_REVIEW_WORKER_MAX_CONCURRENT:4}
       queue-capacity: ${AI_REVIEW_WORKER_QUEUE_CAPACITY:4}

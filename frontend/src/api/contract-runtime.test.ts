@@ -1,7 +1,38 @@
 import { describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import { validateApiError, validateBattlePlaybackDataset } from './contract-runtime.js'
 import { API_ERROR_CODES } from './generated/api-error-codes.js'
 import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil.js'
+
+it('loads generated validators as native ESM and enforces Unicode tag lengths', () => {
+  // Vitest's transform can supply require; a separate native ESM process cannot.
+  const validatorUrl = new URL('./generated/contract-validators.js', import.meta.url).href
+  const event = {
+    id: 7, version: 1, year: 2026, region: 'CN', season: 'SUMMER',
+    roundCount: 4, daysPerRound: 2, dayLabels: ['Day 1', 'Day 2'], configLocked: false,
+  }
+  const day = {
+    eventId: 7, roundNumber: 1, dayNumber: 1, eventVersion: 1, rulesVersion: 1, version: 1,
+    status: 'DRAFT', expectedGroupCount: 1, published: false,
+    groups: [{
+      groupNumber: 1, evidenceId: '00000000-0000-4000-8000-000000000001', imageHash: 'a'.repeat(64),
+      teams: [{ clanTag: '😀'.repeat(20), rank: 1 }, { clanTag: 'B', rank: 2 }, { clanTag: 'C', rank: 3 }],
+    }],
+    standings: { event, days: [], rows: [] },
+  }
+  const program = `
+    const validators = await import(${JSON.stringify(validatorUrl)});
+    const event = ${JSON.stringify(event)};
+    if (!validators.tournamentEventValidator(event)) throw new Error('Valid event rejected');
+    const day = ${JSON.stringify(day)};
+    if (!validators.tournamentDayViewValidator(day)) throw new Error('Unicode tag rejected');
+    day.groups[0].teams[0].clanTag = 'x'.repeat(500);
+    if (validators.tournamentDayViewValidator(day)) throw new Error('Length limit ignored');
+    console.log('native-esm validators OK');
+  `
+  expect(execFileSync(process.execPath, ['--input-type=module', '-e', program], { encoding: 'utf8' }))
+    .toContain('native-esm validators OK')
+})
 
 function dataset(confidence = 'HIGH') {
   return {
