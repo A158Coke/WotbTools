@@ -53,6 +53,9 @@ jobs:
           case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
           [[ "$TCR_NAMESPACE" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo 'TCR_NAMESPACE is invalid.' >&2; exit 1; }
 
+          # This is intentionally identical to Frontend's TX1 release identity.
+          # The successful Frontend workflow has already built and pushed this tag
+          # from the exact Gitee-mirrored source before this workflow can start.
           identity="$(printf '%s\n%s' "$source_sha" "$ASSET_BASE_URL" | sha256sum | cut -c1-12)"
           immutable_ref="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-frontend:sha-$identity"
           {
