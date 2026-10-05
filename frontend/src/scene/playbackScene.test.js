@@ -14,6 +14,7 @@
  * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { watchEffect } from 'vue'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { assetProvider } from './assetProvider.js'
@@ -770,5 +771,138 @@ describe('scene container geometry', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+/**
+ * 线上故障：名册行索引登记的是**原始**对象，updateRoster 改的也是原始对象——store 是 reactive()，
+ * 只有经代理的写入才通知 Vue。于是顶栏总血量与击杀数照常推进，两侧名册却停在满血，直到选中行
+ * 之类的无关状态碰巧触发重绘。原始写入自 3D 内核平移起就存在：旧页面在模板里直接读 store，
+ * 随 10Hz HUD 整页重绘顺带读到新值而被掩盖；名册改经复制行的 computed / 子组件渲染后暴露。
+ * 这里用 Vue effect 读取 store.roster（与 PlaybackRoster 渲染同一读取路径），驱动真实内核的
+ * seek、播放帧、暂停与换相机；组件测试经代理直接写 store，覆盖不到内核这条写入路径。
+ */
+describe('playbackScene 名册运行时状态对 Vue 可见', () => {
+  /** 最小可渲染车辆：单采样位姿 + 全程可见 */
+  const vehicle = (def) => ({
+    pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+    coverage: [42, 300], death_t: null, hp: [], ...def,
+  })
+  function rosterData(vehicles, extra = {}) {
+    const data = { ...minimalData(42), ...extra, vehicles }
+    data.meta = { ...data.meta, duration: 300, samples: 1 }
+    return data
+  }
+  /** 不自动跑帧：帧只在测试显式调用时发生（返回已排队的帧回调） */
+  function manualFrames() {
+    const frames = []
+    vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    return frames
+  }
+
+  it('seek 到更晚时刻：effect 观察到名册行的 hp / dead，而不是停在满血', async () => {
+    manualFrames()   // 没有帧在跑：名册只能由 seek 自己的强制写入投影（等同暂停后拖动进度条）
+    const { store, api } = createScene()
+    source.loadPlaybackData.mockResolvedValue(rosterData([
+      vehicle({ eid: 1, team: 1, nickname: 'CHRD-A158布丁', tank_name: 'Maus', max_hp: 3074,
+        hp: [[60, 1200], [80, 0]], death_t: 80 }),
+      vehicle({ eid: 2, team: 2, nickname: 'Enemy', tank_name: 'E 100', max_hp: 2700, hp: [[70, 1500]] }),
+    ]))
+    await api.loadData({ kind: 'local', file: new File(['x'], 'roster.wotbreplay') })
+
+    let seen = null
+    const stop = watchEffect(() => {
+      seen = [...store.roster.team1, ...store.roster.team2].map(({ eid, hp, maxHp, dead }) => ({ eid, hp, maxHp, dead }))
+    }, { flush: 'sync' })
+    const atStart = [
+      { eid: 1, hp: 3074, maxHp: 3074, dead: false },
+      { eid: 2, hp: 2700, maxHp: 2700, dead: false },
+    ]
+    expect(seen).toEqual(atStart)
+
+    api.seekTime(268)
+    expect(store.hpFriend).toBe(0)   // 顶栏已在新 T（故障现场正是「HUD 对、名册旧」）
+    expect(seen).toEqual([
+      { eid: 1, hp: 0, maxHp: 3074, dead: true },
+      { eid: 2, hp: 1500, maxHp: 2700, dead: false },
+    ])
+
+    api.seekTime(50)   // 状态在时刻：seek 回开局同样可见地回退
+    expect(seen).toEqual(atStart)
+    stop()
+  })
+
+  it('播放中：名册随 HUD 节拍（≤10Hz）可见地推进，节流窗口内不逐帧重写，暂停补写到当前 T', async () => {
+    const frames = manualFrames()
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const { store, api } = createScene()
+    // 帧级时间尺度：己方车开局后 0.25s 掉血、0.45s 阵亡，敌方车 0.6s 掉血。HP 只给单条采样——
+    // 不产生伤害飘字（飘字要 2D canvas，happy-dom 没有）。己方车带装填遥测：resolver 每次
+    // 返回新数组，逐帧投影会让名册每帧都触发重绘。
+    source.loadPlaybackData.mockResolvedValue(rosterData([
+      vehicle({ eid: 1, team: 1, max_hp: 3074, hp: [[42.25, 1000]], death_t: 42.45 }),
+      vehicle({ eid: 2, team: 2, max_hp: 2700, hp: [[42.6, 1500]] }),
+    ], { reloads: [{ eid: 1, clock: 40, phase: 3, duration_s: 10 }] }))
+    await api.loadData({ kind: 'local', file: new File(['x'], 'play.wotbreplay') })
+    expect(store.playing).toBe(true)
+
+    let runs = 0
+    let seen = null
+    const stop = watchEffect(() => {
+      runs++
+      seen = [...store.roster.team1, ...store.roster.team2]
+        .map(({ eid, hp, dead, reload }) => ({ eid, hp, dead, reload: reload?.[0]?.state ?? null }))
+    }, { flush: 'sync' })
+    expect(seen).toEqual([
+      { eid: 1, hp: 3074, dead: false, reload: 'loading' },
+      { eid: 2, hp: 2700, dead: false, reload: null },
+    ])
+
+    const frame = (ms) => { now += ms; frames.at(-1)() }
+    runs = 0
+    frame(30); frame(30); frame(30)   // 同一 HUD 节流窗口（<100ms）：名册一次都不重写
+    expect(runs).toBe(0)
+
+    for (let i = 0; i < 5; i++) frame(100)   // 再播 0.5s（T≈42.56）：跨过己方掉血与阵亡时刻
+    expect(seen).toEqual([
+      { eid: 1, hp: 1000, dead: true, reload: null },
+      { eid: 2, hp: 2700, dead: false, reload: null },
+    ])
+
+    // 敌方掉血落在节流窗口内（T≈42.61，距上次 HUD 写入 50ms），此时尚未上屏；随即暂停——
+    // 之后不再有帧，停播必须把名册补写到当前 T，否则最后这次掉血永远不上屏
+    frame(50)
+    expect(seen[1].hp).toBe(2700)
+    api.setPlaying(false)
+    expect(store.time).toBeGreaterThan(42.6)
+    expect(seen[1]).toEqual({ eid: 2, hp: 1500, dead: false, reload: null })
+    stop()
+  })
+
+  it('暂停时切换跟随：名册行的 followed 立即可见（不等下次播放 / seek）', async () => {
+    manualFrames()   // 没有帧在跑：followed 只能由换相机自己的投影更新
+    const { store, api } = createScene()
+    source.loadPlaybackData.mockResolvedValue(rosterData([
+      vehicle({ eid: 1, team: 1, max_hp: 3074 }),
+      vehicle({ eid: 2, team: 2, max_hp: 2700 }),
+    ]))
+    await api.loadData({ kind: 'local', file: new File(['x'], 'follow.wotbreplay') })
+    api.setPlaying(false)
+
+    let followed = null
+    const stop = watchEffect(() => {
+      followed = [...store.roster.team1, ...store.roster.team2].filter((row) => row.followed).map((row) => row.eid)
+    }, { flush: 'sync' })
+    expect(followed).toEqual([])
+
+    api.setFollow(2)
+    expect(store.cam).toBe('follow')
+    expect(followed).toEqual([2])
+
+    api.setCam('free')
+    expect(followed).toEqual([])
+    stop()
   })
 })
