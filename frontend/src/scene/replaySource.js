@@ -214,7 +214,11 @@ export async function loadFromLocalFile(fileObject, signal) {
       const limitsJson = JSON.stringify(limits)
       json = await parsePlaybackJsonOffThread(bytes, signal, limitsJson)
     }
-  } catch { /* 锚定构建/重解析失败：保持首遍结果（gun_pitch 兜底仍可用） */ }
+  } catch (err) {
+    // 会话取消必须原样上抛（调用方按 AbortError 判定归属）——不得吞成"保持首遍结果"。
+    // 其余失败（锚定构建/重解析异常）：保持首遍结果（gun_pitch 兜底仍可用）。
+    if (err?.name === 'AbortError') throw err
+  }
   if (cacheKey !== null) {
     playbackJsonCache.set(cacheKey, json)
     if (playbackJsonCache.size > PLAYBACK_JSON_CACHE_MAX) {
