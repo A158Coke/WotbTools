@@ -16,6 +16,13 @@ const KEYCLOAK_CONFIG = Object.freeze({
  */
 export function createBrowserAuthProvider() {
   let keycloak = null
+  // A failed refresh must not immediately destroy the browser's projected identity.
+  // keycloak-js does not expose a stable OAuth-vs-transport error contract from updateToken(),
+  // so treating every rejection as a terminal session loss causes transient network/KC failures
+  // to bounce users back through the external IdP (notably visible as repeated QQ login).
+  // While refresh is unhealthy we withhold the access token from API callers, but keep the
+  // adapter/refresh token intact so the next ensureToken() can retry naturally.
+  let accessTokenUsable = true
 
   function adapter() {
     if (!keycloak) keycloak = new Keycloak(KEYCLOAK_CONFIG)
@@ -56,7 +63,7 @@ export function createBrowserAuthProvider() {
     },
 
     token() {
-      return keycloak?.token || ''
+      return accessTokenUsable ? (keycloak?.token || '') : ''
     },
 
     /** 浏览器：redirect 真的会回到本页，redirectUri 由调用方（SPA 自己）决定并保留 view。 */
@@ -69,12 +76,25 @@ export function createBrowserAuthProvider() {
       return adapter().logout({ redirectUri })
     },
 
-    /** 刷新失败（refresh token 失效 / 网络）向上抛，由 useAuth 落回未登录。 */
+    /**
+     * keycloak-js 的 updateToken() rejection 不提供稳定、可依赖的错误分类契约：
+     * transport failure 与服务端拒绝都可能表现为 rejection。这里 fail closed 于 API token
+     * （token() 暂时返回空），但不把一次 rejection 等价成 logout；保留 adapter 的 refresh
+     * state，让后续请求自然重试。真正的 session truth 会在 reload/check-sso 或显式 logout
+     * 时由 Keycloak 收敛。
+     */
     async ensureToken(minValidity = 30) {
       const kc = keycloak
       if (!kc || !kc.authenticated) return false
-      await kc.updateToken(minValidity)
-      return true
+      try {
+        await kc.updateToken(minValidity)
+        accessTokenUsable = true
+        return true
+      } catch (error) {
+        accessTokenUsable = false
+        console.warn('[auth] browser_refresh_failed session=retained token=withheld')
+        return false
+      }
     },
 
     /** 浏览器里 auth 变化只能由页面自己感知（redirect / check-sso），没有 Native 推送。 */
