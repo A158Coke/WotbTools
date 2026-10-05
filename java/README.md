@@ -11,7 +11,7 @@
 | 模块/目录       | 说明                                                           |
 |-------------|--------------------------------------------------------------|
 | `wotb-core` | 共享模型（`Battle` / `PlayerResult` 事实形状）、车辆库映射、AI 复盘用的客户端投影解码（`ReplayFactsCodec`）与分析（evidence / feature / timeline）；不解析回放 |
-| `wotb-ai`   | 独立 ai-service（AI 复盘，维护中） |
+| `wotb-ai`   | 独立 ai-service（AI 复盘与管理员积分赛截图识别） |
 | `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
 | `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net 登录 SPI（Provider ID `wargaming`，region 配置 ASIA/EU/NA → 官方 host 白名单：认证 `api.worldoftanks.*/wot/auth/`、账号 `api.wotblitz.*/wotb/account/`；ASIA/EU/NA 三个实例） |
@@ -63,6 +63,16 @@ npm run dev
 Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 ## API
+
+### 积分赛榜单与管理
+
+`GET /api/tournaments` 和 `GET /api/tournaments/{eventId}/standings` 公开读取正式成绩；
+`/api/admin/tournaments/**` 管理规则、共享草稿、发布、修正和证据，要求 `wotbtools-admin`。
+`POST /api/ai/tournament-groups/recognize` 由独立 AI Service 处理，需要管理员 JWT 和业务签发的短期图片许可。
+截图识别共用已有 `AI_API_KEY`；`TOURNAMENT_RECOGNITION_MODEL` 仅选择识别模型，
+内部 `TOURNAMENT_RECOGNITION_SIGNING_KEY` 同时注入 Business 和 AI 运行时，不是第二个 provider key。
+完整流程、配置锁定与数据生命周期见 [`docs/features/tournament-points.md`](../docs/features/tournament-points.md)，
+实际 wire shape 以 `contracts/http/openapi.yaml` 为准。
 
 ### `GET /api/health`
 

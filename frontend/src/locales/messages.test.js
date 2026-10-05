@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import zhBase from './zh.json'
 import { messages, mergeLocaleMessages } from './messages.js'
+import { API_ERROR_CODES } from '../api/generated/api-error-codes.js'
 
 describe('locale message composition', () => {
+  it('translates stable tournament and recognition errors in all supported locales', () => {
+    for (const code of API_ERROR_CODES.filter(code => /TOURNAMENT|RECOGNITION/.test(code))) {
+      for (const locale of ['zh', 'en', 'ru']) expect(messages[locale].api_errors[code], `${locale} ${code}`).toBeTruthy()
+    }
+  })
   it('merges nested feature namespaces without dropping base translations', () => {
     // league 同时存在于 base 与 feature-messages：base 独有键保留，feature 键追加
     expect(messages.zh.league.title).toBe(zhBase.league.title)
