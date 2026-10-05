@@ -7,6 +7,7 @@ import com.wotb.web.util.apierror.CanonicalAuthenticationEntryPoint;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -68,6 +69,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // --- 公开接口 ---
                 .requestMatchers(HEALTH).permitAll()
+                .requestMatchers(HttpMethod.GET, ApiPaths.TOURNAMENTS, ApiPaths.TOURNAMENT_STANDINGS).permitAll()
                 // 名人堂查询公开；上传/下载需登录（必须置于 HOF_PATTERN permitAll 之前）
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
                 // 百场：排行榜公开；提交/取消需登录（必须置于 HOF_PATTERN permitAll 之前）

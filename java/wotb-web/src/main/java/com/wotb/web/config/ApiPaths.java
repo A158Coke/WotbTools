@@ -28,6 +28,10 @@ public final class ApiPaths {
     public static final String USERS_MARK3 = "/api/users/mark3";
     public static final String HOF_MARK3_ADMIN = "/api/admin/hof/mark3";
 
+    public static final String TOURNAMENTS = "/api/tournaments";
+    public static final String TOURNAMENTS_ADMIN = "/api/admin/tournaments";
+    public static final String TOURNAMENT_STANDINGS = "/api/tournaments/*/standings";
+
     // ---- 精确端点（SecurityConfig 与 Controller 共用） ----
     public static final String HOF_UPLOAD = "/api/hof/upload";
     public static final String HEALTH = "/api/health";

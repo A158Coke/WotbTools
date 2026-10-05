@@ -502,7 +502,7 @@ WotbTools 将 production pin 从 v0.3.8 升到 v0.3.9，并继续通过 Release 
 
 **Git 证据：** PR #451；upstream `v0.3.9` / `b4e50e13`。
 
-## Agent 产物身份改为 content-addressed（stale WASM 修复）
+## 2026-10-02 — Agent 产物身份改为 content-addressed
 
 上游 WASM 此前一直以**固定 URL** `/wasm/wotb_replay_wasm.js` 伺服。前端 build 换了，
 浏览器却可能仍持有旧 Agent 产物：同一个页面用旧引擎解析新回放，症状要等到 AI Review
@@ -526,7 +526,7 @@ WotbTools 将 production pin 从 v0.3.8 升到 v0.3.9，并继续通过 Release 
 UI 不会把未知说成满弹。生产 pin 同时升到 `v0.3.10`（`5029e103…`）：同一 replay 的装填遥测
 从 0 条恢复为 121 条，作者车 28 条，装填条随真实相位推进。
 
-**Git 证据：** 本 PR；`deploy/agent/source.json`、`scripts/fetch-agent-wasm.sh`、
+**Git 证据：** `deploy/agent/source.json`、`scripts/fetch-agent-wasm.sh`、
 `frontend/src/api/agent-replay-facets.ts`、`frontend/src/scene/reloadBar.js`。
 
 ## 2026-10-03 — 回放能力从「三个页面三次上传」收敛为一个回放工作台
@@ -547,7 +547,7 @@ UI 不会把未知说成满弹。生产 pin 同时升到 `v0.3.10`（`5029e103�
 AI 复盘同时被明确为**正式能力**而不是管理员内测项：普通登录用户即可使用，未登录由登录引导承接；
 只有 3D 回放与射击分析仍受管理员开关约束。**产品边界因此从「哪个页面」变成「哪个能力」。**
 
-**Git 证据：** 本 PR；`frontend/src/app/viewRegistry.js`、`frontend/src/components/ReplayWorkspace.vue`、
+**Git 证据：** `frontend/src/app/viewRegistry.js`、`frontend/src/components/ReplayWorkspace.vue`、
 `frontend/src/components/{Replay3DPane,ReplayShotsPane,FileDrop}.vue`、`frontend/src/composables/useReplaySession.ts`。
 
 ## 2026-10-03 — Android 认证 owner 从 WebView 迁到 Native
@@ -577,7 +577,7 @@ Bridge v2 的 `native-auth`；Android 壳若报告 bridge v1，前端只会显�
 发布前先探测 Keycloak 侧的 runtime client 是否真的可用。Replay ingress 也顺势与认证彻底解耦：
 登录不再是 replay 的前置条件，登录过程中收到回放不再需要让出 navigation。
 
-**Git 证据：** 本 PR；`contracts/android-native-bridge.json`、`android/app/src/main/java/com/wotbtools/app/auth/`、
+**Git 证据：** `contracts/android-native-bridge.json`、`android/app/src/main/java/com/wotbtools/app/auth/`、
 `frontend/src/platform/{browserAuthProvider,androidAuthProvider}.js`、`infra/tofu/keycloak/client.tf`。
 
 ## 2026-10-03 — 前端交付从「入口页缓存」推进到「按代码块降级」
@@ -602,7 +602,7 @@ loader 或重新挂载同一份组件定义都只会拿到那个已经失败的 
 权限缺失不再静默隐藏入口，而是说明缺什么以及下一步找谁；用户主动取消不算错误，也不再顺手给一个「重试」，
 未归类的原始异常只进诊断日志、不进界面文案。
 
-**Git 证据：** 本 PR；`frontend/src/utils/lazyModule.ts`、
+**Git 证据：** `frontend/src/utils/lazyModule.ts`、
 `frontend/src/components/{ReplayWorkspace,AiReviewPanel,AiReviewWorkspacePane}.vue`、
 `frontend/src/types/ai-review.ts`。
 
@@ -628,13 +628,35 @@ desktop / fullscreen 的中央空间利用率低、大屏上 Stage 反而偏小�
 
 **产品边界因此从「一个页面有几个面板」变成「一个战场加两个语义不同的浮面」。**
 
-**Git 证据：** 本 PR；`frontend/src/styles/playback-workspace.css`、
+**Git 证据：** `frontend/src/styles/playback-workspace.css`、
 `frontend/src/components/{PlaybackTransport,PlaybackDisplaySurface,BattlePlayback,Replay3DPane}.vue`、
 `frontend/scripts/browser-{playback-layout,workspace-interaction}.mjs`。
 
 ## 2026-10-03 — 回放能力面向普通登录用户开放
 
 回放工作台的五种能力统一为公开可发现：数据与 2D 回放匿名可用，3D 回放、射击分析 / 复现与 AI 复盘登录后可用。管理员不再拥有额外的回放能力。匿名深链保留原目标并显示登录引导；射击到装甲查看器的复现场景对普通登录用户完整开放，登录返回保留场景参数。
+
+## 2026-10-02～10-05 — Komodo 从运维旁路发展为生产控制面，TX2 进入真实 Frontend 生产池
+
+第三台服务器 TX2 加入后，项目没有直接把生产负载搬过去，而是先建设主机与控制面的长期边界。Komodo Core 部署在 Yecao，并通过 WireGuard 与各节点的 outbound Periphery 通信；Periphery 生命周期仍由仓库里的独立 owner workflow 管理，避免控制面故障时连 agent 自身都无法恢复。
+
+随后 `infra/komodo/resources/` 建立声明式 ResourceSync：Yecao、TX1、TX2 三台 Server 与同步资源由 Git 保存期望状态，Komodo 负责计算 diff 与提供 runtime visibility。危险自动化保持关闭，ResourceSync 不拥有删除资源、Webhook 自动部署或所有基础设施；它更接近“生产运行资源的声明式控制层”，而不是新的万能 IaC 或 Release Authority。
+
+在真正迁移 workload 前，TX2 又通过独立 `production-worker` owner 完成 Docker Compose、TCR 凭据、镜像拉取、WireGuard 与 Periphery 回归等主机前置条件。项目因此明确区分 **host ready** 与 **workload ready**：服务器能承载生产负载，不等于任何业务已经切换过去。
+
+K7C 才完成第一次真实 workload cutover。Frontend 现在由两个实例共同提供生产服务：TX1 约 20%，TX2 约 80%，由仍运行在 TX1 的 Caddy 做 weighted round-robin 与 `/version.json` active health check。Business API、Keycloak、PostgreSQL 与 AI placement 在这次切换中保持不变。
+
+Frontend 发布也因此从“一台主机上的容器”升级为多实例 Artifact Contract：TX1 构建并发布不可变 TCR artifact，TX1 与 TX2 最终运行同一 digest；TX2 不从 TX1 当前容器复制镜像状态。Sponsor 配置、Sponsor 资源与当前 Android 下载面等 host-owned runtime content，则按独立契约复制到 TX2 自己的本地 runtime root。
+
+**这一步把此前“TX 是一台生产服务器”的理解改成了“TX1 拥有公网入口与核心业务 authority，TX1/TX2 共同承担 Frontend runtime，Yecao 承担 AI、Observability 与 Komodo Core”。Frontend 已有 workload redundancy，但 TX1 Caddy 仍是公网入口单点。**
+
+**Git 证据：** `619f0d60`（TX2 Periphery）、`ad3a07ef`（声明式 Komodo ResourceSync）、`01633609`（TX2 production-worker ready）；K7C production acceptance runs `37236109552`、`37283193116`、`37283700560`。
+
+## 2026-10-05 — 积分赛从人工表格转向可审核的发布流程
+
+积分赛以年份、区服和季赛建立独立档案，每轮配置完整积分规则后才开放截图统计。AI 只提取小组军团与名次，积分由固定规则精确计算；管理员共享草稿、核对完整小组并最终确认，公开榜单只展示正式成绩。
+
+成绩发布后锁定普通上传，补漏和违规清分通过有原因、可追溯的修正流程处理。这使赛事统计在保留管理员审核的同时，减少手工录入与重复累加，并把临时预览与对外发布的成绩分开。
 
 ---
 
@@ -650,15 +672,15 @@ Replay 从上传文件逐渐成为多个业务域共同依赖的事实证据来�
 
 ### 生产运行架构
 
-`单体 Web → Observability → Immutable Release → Release Contract → 双服务器 → Control / Execution Boundary → RabbitMQ + MinIO → Distributed Replay Processing → TX / Yecao 稳定职责 → Client-side Replay Parsing → Parser Worker / RabbitMQ / MinIO Replay Pipeline 退役`
+`单体 Web → Observability → Immutable Release → Release Contract → 双服务器 → Control / Execution Boundary → RabbitMQ + MinIO → Distributed Replay Processing → TX / Yecao 稳定职责 → Client-side Replay Parsing → Parser Worker / RabbitMQ / MinIO Replay Pipeline 退役 → Komodo 声明式控制面 → TX2 production-worker → TX1/TX2 Frontend active-active`
 
-生产架构从单服务器应用逐步发展为具有明确状态权威、Artifact 边界、消息协议、恢复契约和跨节点职责的系统；当 Replay execution 迁回客户端后，曾经必要的跨云解析基础设施也被主动删除，TX 保留业务运行面，Yecao 保留独立 AI Service 与观测能力。
+生产架构从单服务器应用逐步发展为具有明确状态权威、Artifact 边界、消息协议、恢复契约和跨节点职责的系统；当 Replay execution 迁回客户端后，曾经必要的跨云解析基础设施被主动删除。当前 TX1 保留公网入口、身份、Business API 与业务数据库 authority，TX1/TX2 共同承担 Frontend runtime；Yecao 保留独立 AI Service、Observability 与 Komodo Core。Komodo 管理运行控制面，但不取代 Git-reviewed release identity、immutable artifact 与各 owner workflow。
 
 ### 身份模型
 
-`Keycloak Login → IdP-only → QQ / Wargaming → Authentication Identity ≠ Business User ≠ Game Identity → Verified Game Identity`
+`Keycloak Login → IdP-only → QQ / Wargaming → Authentication Identity ≠ Business User ≠ Game Identity → Verified Game Identity → Android Native Auth Owner`
 
-身份系统从登录功能逐渐发展为认证身份、业务用户和游戏身份相互解耦，并通过可信 IdP Claims 或 Replay Evidence 证明游戏账号归属。
+身份系统从登录功能逐渐发展为认证身份、业务用户和游戏身份相互解耦，并通过可信 IdP Claims 或 Replay Evidence 证明游戏账号归属。Android 2.0 又进一步把移动端认证生命周期从 WebView 移到 Native AppAuth / PKCE，Web 与 Android 可以共享同一个 Keycloak 身份边界，但不再共享同一种客户端认证实现。
 
 ---
 

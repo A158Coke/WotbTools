@@ -19,6 +19,13 @@ ROOT="${WOTB_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 STAGED_PROPERTIES="${WOTB_STAGED_PROPERTIES:-}"
 REQUESTED="${WOTB_REQUESTED_VERSION:-}"
 
+# Publish runs on a fresh GitHub-hosted workspace. The stage job creates this
+# directory earlier in its own job, but that filesystem does not carry over to
+# publish. Prepare the workspace before the later version.json commit-point step.
+if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ "${GITHUB_JOB:-}" = "publish" ]; then
+  mkdir -p "${GITHUB_WORKSPACE:-$ROOT}/release-staging"
+fi
+
 if [ -z "$STAGED_PROPERTIES" ]; then
   echo "::error::WOTB_STAGED_PROPERTIES is required (export it with: git archive <ref> -- android/gradle.properties | tar -x -C \"\$dir\")" >&2
   exit 1
