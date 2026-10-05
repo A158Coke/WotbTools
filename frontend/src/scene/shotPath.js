@@ -41,11 +41,6 @@ export function legEndTimes(legSecs, t0) {
   return out
 }
 
-/** 折线总时长（秒） */
-export function pathTotalSecs(legSecs) {
-  return legSecs.reduce((a, b) => a + b, 0)
-}
-
 /**
  * 折线上沿时间推进的点：`t` 落在第 k 段时按该段线性插值（段内匀速，符合"段速度"语义）。
  * `t ≤ 首段起点` → 首点；`t ≥ 末段终点` → 末点。
