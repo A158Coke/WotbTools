@@ -716,7 +716,7 @@ export function agentWasmFingerprintUrl(commit: string = AGENT_WASM_COMMIT): str
 interface AgentWasmModule {
   /** tankNamesJson 可选：`{tank_id: name}` 车型名表（上游 v0.3.1 起） */
   parseResult?: (bytes: Uint8Array, tankNames?: string) => string
-  parsePlayback?: (bytes: Uint8Array, tankNames?: string) => string
+  parsePlayback?: (bytes: Uint8Array, tankNames?: string, limitsJson?: string) => string
   parseShotReplays?: (bytes: Uint8Array, limits?: string, shells?: string) => string
   /** 第 4 入口（上游 v0.3.1）：AiReviewFacet JSON（花名册 + 事件流 + 结算锚点） */
   parseAiReview?: (bytes: Uint8Array) => string
