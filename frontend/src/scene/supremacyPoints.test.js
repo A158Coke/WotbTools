@@ -86,10 +86,29 @@ describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）'
 
   it('调色常量只有一处声明（唯一事实源，避免 TDZ 与漂移）', () => {
     expect(src.match(/const COLOR_UNKNOWN = 0xf5f5f5;/g)?.length).toBe(1)
-    // 深色板（2026-10-05 加深，炮线与车辆 tint 共用）：亮色 0x2ecc71/0xef4444 已弃用
+    // 深色板（2026-10-05 加深，车辆 tint 共用）：亮色 0x2ecc71/0xef4444 已弃用
     expect(src.match(/const COLOR_FRIENDLY = 0x26794a;/g)?.length).toBe(1)
     expect(src.match(/const COLOR_ENEMY = 0x98322a;/g)?.length).toBe(1)
     expect(src).not.toContain('0x2ecc71')
     expect(src).not.toContain('0xef4444')
+  })
+
+  it('炮线用亮色板且与车辆 tint 分离：tint 不得改亮、炮线必须更亮', () => {
+    const hex = (name) => Number(src.match(new RegExp(`const ${name} = 0x([0-9a-f]{6});`))?.[1] ? '0x' + src.match(new RegExp(`const ${name} = 0x([0-9a-f]{6});`))[1] : NaN)
+    const lum = (c) => 0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255)
+    const tintF = hex('COLOR_FRIENDLY'), tintE = hex('COLOR_ENEMY')
+    const trF = hex('TRACER_FRIENDLY'), trE = hex('TRACER_ENEMY')
+    for (const v of [tintF, tintE, trF, trE]) expect(Number.isFinite(v)).toBe(true)
+    // 车辆 tint 保持深色板（回退护栏）
+    expect(tintF).toBe(0x26794a)
+    expect(tintE).toBe(0x98322a)
+    // 炮线同色相提亮：绿更亮且仍偏绿、红更亮且仍偏红；两项都显著亮于 tint
+    expect(lum(trF)).toBeGreaterThan(lum(tintF) * 1.4)
+    expect(lum(trE)).toBeGreaterThan(lum(tintE) * 1.4)
+    expect(((trF >> 8) & 255)).toBeGreaterThan((trF >> 16) & 255)   // 绿通道为主
+    expect((trE >> 16) & 255).toBeGreaterThan((trE >> 8) & 255)     // 红通道为主
+    // 阵营语义分流：炮线走亮板、车辆走深板（各只出现一次，避免误用）
+    expect(src.match(/return t === ft \? TRACER_FRIENDLY : TRACER_ENEMY;/g)?.length).toBe(1)
+    expect(src.match(/return t === f \? COLOR_FRIENDLY : COLOR_ENEMY;/g)?.length).toBe(1)
   })
 })

@@ -83,6 +83,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const COLOR_FRIENDLY = 0x26794a;   // 深绿
   const COLOR_ENEMY = 0x98322a;      // 深红
   const COLOR_UNKNOWN = 0xf5f5f5;
+  // 炮线专用亮色（与车辆 tint **分离**，2026-10-05 用户反馈"亮度/鲜艳度不够"）：
+  // 两者取色目标相反——车辆 tint 要压得住（亮色在明亮地表上刺眼且车体显脏，已回退），
+  // 炮线是细长高动态、只存在一两秒的物体，需要**字面亮度**才看得清（材质 toneMapped=false
+  // 直出字面色，故提亮只能靠颜色本身与不透明度）。保持"绿=友 / 红=敌"色相，仅提亮提饱和。
+  // 车辆/基地/标签**不得**改用这两个值（回退即车辆 tint 变亮）。
+  const TRACER_FRIENDLY = 0x3ee08a;  // 亮绿（同色相提亮 #26794a）
+  const TRACER_ENEMY = 0xff5a45;     // 亮红（同色相提亮 #98322a）
       // mapBases[资产面 map key]（基地几何；loadMapImage 解析后缓存）
   let currentMapKey = null;        // 资产面 map key（playableBounds 表索引）
   let boundaryGroup = null;        // 地图边界带（会话拥有）
@@ -1818,8 +1825,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // ---------- 弹道 ----------
   const TRACER_LEN = 9;
   // 全弹道轨迹线按 replay clock 保留；impact 单独使用 wall-clock transient（见 updateImpacts）。
-  // 透明度（2026-10-05 提高可读性：原 0.35 与背景混合后明显发灰；淡出在其上再乘）
-  const TRAJ_OPACITY = 0.6;
+  // 透明度（2026-10-05 提高可读性：原 0.35 与背景混合后明显发灰；淡出在其上再乘）。
+  // 0.85（二次提高）：用户反馈炮线整体偏暗——轨迹线是长条半透明几何，混合后亮度远低于
+  // 字面色，提高不透明度是最直接的补救；淡出阶段仍按比例衰减。
+  const TRAJ_OPACITY = 0.85;
   // 粗细（2026-10-05 加粗 ~64%：原 0.22/0.11 在 4K/远视角下几乎不可见，用户实测反馈）：
   // 飞行段与全弹道轨迹线同比例加粗，保持「飞行段更粗」的层级不变。
   const TRACER_RADIUS = 0.36;   // 飞行段粗细
@@ -1891,13 +1900,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     scene.add(traj);
     trajLines.push({ mesh: traj, until: t1 + 1.0 * FX_SCALE, fadeEnd: t1 + 2.2 * FX_SCALE, base: TRAJ_OPACITY });
   }
-  // 阵营色见文件顶部调色常量（唯一规则：按射手阵营 → green / red / white）
+  // 阵营色（唯一规则：按射手阵营 → green / red / white）。炮线用**亮色板**
+  // （TRACER_FRIENDLY/ENEMY，见顶部注释）；未知阵营仍为白（unknown ≠ enemy）。
   function shotTeamColor(s) {
     const d = DATA.vehicles.find((x) => x.eid === s.shooter_eid);
     const t = d ? d.team : 0;
     const ft = DATA.meta.friendly_team;
     if ((t !== 1 && t !== 2) || (ft !== 1 && ft !== 2)) return COLOR_UNKNOWN;
-    return t === ft ? COLOR_FRIENDLY : COLOR_ENEMY;
+    return t === ft ? TRACER_FRIENDLY : TRACER_ENEMY;
   }
   // 命中类型 → impact（评审批准语义，与上游 Agent 同式；全部 transient，无 decal/弹孔）：
   //   pen（击穿）= 白色球 + 小环；nonpen = 更大的球 + 明显 shock ring；ricochet = 侧向 sparks；
