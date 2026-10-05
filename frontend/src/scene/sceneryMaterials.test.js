@@ -199,7 +199,7 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
   })
 
   it('GLB 位姿零分配：poseFromYPR 支持 out 参数，poseGlb 用模块级 scratch', () => {
-    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, T\), arrAt\(v\.def\.hull_pitch, T\), -rollAt\(v, T\), _glbQuat\)/)
+    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, T\), hullPitchAt\(v, T\), -rollAt\(v, T\), _glbQuat\)/)
     const glb = src.slice(src.indexOf('function poseGlb'), src.indexOf('async function applyGlbToggle'))
     expect(glb).not.toMatch(/new THREE\.Matrix4\(\)/)     // 每帧不再新建矩阵
     expect(glb).not.toMatch(/new THREE\.Euler\(\)/)
@@ -224,7 +224,7 @@ describe('车体横滚（hull_roll）接线守卫', () => {
   })
 
   it('两条位姿路径都带 roll，且符号为负（镜像约定：绕前向轴取负，与 -yaw 同理）', () => {
-    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, T\), arrAt\(v\.def\.hull_pitch, T\), -rollAt\(v, T\), _glbQuat\)/)
+    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, T\), hullPitchAt\(v, T\), -rollAt\(v, T\), _glbQuat\)/)
     expect(src).toMatch(/v\.group\.rotation\.z = -rollAt\(v, T\);/)
   })
 

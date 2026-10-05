@@ -187,6 +187,29 @@ WotBTools
   **不得**用 `hull_pitch` 兜底成 roll，也不得由地形/坡度反推。
 - 与 `frontend/src/api/agent-replay-facets.ts` 的 `hull_roll?: number[]` 逐字对应。
 
+## 4f. 位姿关键帧折线（`vehicles[].pose_kf`，PlaybackData additive；上游 v0.3.13）
+
+- `pose_kf?: { t: number[]; pos: number[]; yaw: number[]; pitch: number[] }` ——
+  **渲染位姿的权威表示**：`t` = 关键帧时刻（秒，回放时钟域，升序，0.1ms 舍入），
+  `pos` = `[x,y,z] × t.length`（回放世界系，0.01m 舍入），`yaw` / `pitch` 与网格列同域
+  （`yaw` = **解卷绕连续域**）。消费方在相邻关键帧之间**线性插值**；早于首点/晚于末点按
+  端点**保持**（与网格列同语义）。
+- **它解决什么**：位姿来源是客户端滤波器（`AvatarFilter` 移植）的 60Hz 逐帧输出。滤波器在
+  「预测-保持」阶段（`latency` 未收敛到位置更新间隔，= 车辆刚进 AoI 的数秒内）逐帧输出是
+  **保持-跳变阶梯**；把 60Hz 帧按固定 0.1s 网格重采样、再在网格间线性插值，会把阶梯混叠成
+  速度摆动（实测某 0.5s 窗内前端线速度 4.5→29.6 m/s，同段真值稳定；全时线逐帧位置最大
+  偏差 21m）——观感即「一顿一顿 / 不连续」。`pose_kf` 保留原路径的折点（保持段两端 + 跳变
+  段），插值结果与客户端逐帧画面一致。
+- **精度契约**：走廊拟合容差 2cm / 0.4°（上游 `KF_TOL_POS` / `KF_TOL_ANG`），叠加落盘舍入
+  后相对客户端 60Hz 逐帧画面的偏差 ≤ ~2.5cm / 0.5°；点数 7~10 点/秒/车（≈ 位置更新率，
+  与 10Hz 网格同量级）。
+- **消费方义务**：渲染位姿（`pos` / `hull_yaw` / `hull_pitch`）**以本列为准**；字段缺失
+  （旧产物）时回退 10Hz 网格线性插值（历史行为逐值一致）。`turret_yaw` / `gun_pitch` /
+  `hull_roll` 仍只有网格列（prop2 / 原始采样语义，**不参与**折线，不得以折线替代）。
+- 与 `frontend/src/api/agent-replay-facets.ts` 的 `pose_kf?: AgentPoseKeyframes` 逐字对应；
+  渲染侧实现在 `frontend/src/scene/trackInterp.js`（`sampleKeyframes`）与
+  `frontend/src/scene/playbackScene.js`（`kfOf` 分支）。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——

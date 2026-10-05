@@ -120,6 +120,23 @@ export interface AgentPlaybackMeta {
   duration: number
 }
 
+/**
+ * 位姿关键帧折线（上游 `pose_kf`，**additive**：旧产物缺省）。
+ *
+ * = 客户端 60Hz 渲染路径的**折点**序列（facet 层用贪心走廊拟合 60Hz 帧，容差 1cm/0.2°）：
+ * 在相邻关键帧间**线性插值**即复现客户端画面，含「保持-跳变」阶梯（滤波器刚进 AoI 数秒内
+ * 的输出形态）。10Hz 网格重采样会把该阶梯混叠成速度摆动，故渲染以本列为准。
+ * `yaw` 为解卷绕连续域（与 `hull_yaw` 网格同域）；端点外按端点**保持**。
+ */
+export interface AgentPoseKeyframes {
+  /** 关键帧时刻（秒，回放时钟域，升序） */
+  t: number[]
+  /** [x,y,z] × t.length（回放世界系，米） */
+  pos: number[]
+  yaw: number[]
+  pitch: number[]
+}
+
 /** 车辆全场时间线（列式网格；含花名册语义：nickname/tank_id/team/is_author） */
 export interface AgentVehicleTrack {
   eid: number
@@ -150,6 +167,11 @@ export interface AgentVehicleTrack {
   turret_index: number | null
   gun_index: number | null
   coverage: number[]
+  /**
+   * 位姿关键帧折线（渲染位姿的精确表示；缺省 = 旧产物 → 消费端回退 10Hz 网格插值）。
+   * 覆盖 `pos`/`hull_yaw`/`hull_pitch` 三列；`turret_yaw`/`gun_pitch`/`hull_roll` 仍只有网格列。
+   */
+  pose_kf?: AgentPoseKeyframes
   /**
    * Type5 战斗装载描述符（6 × 14 字节：`[wire, state, ...12 payload]`；前 3 = consumable、
    * 后 3 = provision）。无 0A06/0B09 framing 的车辆缺省。
@@ -628,6 +650,23 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   if (pb.destructible_events !== undefined) {
     assertArray(pb.destructible_events, 'playback.destructible_events')
   }
+  // 位姿关键帧（additive）：在场时列必须等长且 pos = 3×t（渲染逐帧读取，形状错误会变成
+  // 每帧静默错位而不是一次性失败，故在边界拦下）
+  const vehicles = assertArray(pb.vehicles, 'playback.vehicles')
+  vehicles.forEach((vehicle, i) => {
+    const kf = isObject(vehicle) ? vehicle.pose_kf : undefined
+    if (kf === undefined || kf === null) return
+    const kfObj = assertObject(kf, `playback.vehicles[${i}].pose_kf`)
+    const t = assertArray(kfObj.t, `playback.vehicles[${i}].pose_kf.t`)
+    const pos = assertArray(kfObj.pos, `playback.vehicles[${i}].pose_kf.pos`)
+    assertArray(kfObj.yaw, `playback.vehicles[${i}].pose_kf.yaw`)
+    assertArray(kfObj.pitch, `playback.vehicles[${i}].pose_kf.pitch`)
+    if (pos.length !== t.length * 3) {
+      throw new Error(
+        `agent facets: playback.vehicles[${i}].pose_kf.pos 长度 ${pos.length} ≠ 3×t（${t.length}）`,
+      )
+    }
+  })
   return value as unknown as AgentPlaybackFacet
 }
 
