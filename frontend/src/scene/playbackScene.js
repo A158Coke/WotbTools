@@ -1965,7 +1965,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       from: new THREE.Vector3().fromArray(pts3[0]), to: impactPos.clone(), impactPos });
     // 全弹道轨迹线（队伍色：友军蓝/敌军红，与飞行段的命中结果色区分）：
     // 开火即显整条弹道（逐段一盒：折线在跳弹处拐弯）；消失节奏与弹着点特效同步——
-    // 基准 t1+2.2s 移除、最后 1.2s 淡出，二者同乘 FX_SCALE（=2 → t1+4.4s 移除、最后 2.4s 淡出）
+    // 基准 t1+1.1s 移除、最后 0.6s 淡出，二者同乘 FX_SCALE（=2 → t1+2.2s 移除、最后 1.2s 淡出）。
+    // 2026-10-05 用户反馈显示太久 → 时长减半（1.0/2.2 → 0.5/1.1）。
     // 单位长盒 + scale.z＝段长：几何可池化（半径不变、长度每段不同）
     for (let k = 0; k + 1 < pts3.length; k++) {
       const a = new THREE.Vector3().fromArray(pts3[k]);
@@ -1985,7 +1986,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       traj.position.copy(a.clone().add(b).multiplyScalar(0.5));
       traj.lookAt(b);
       scene.add(traj);
-      trajLines.push({ mesh: traj, until: t1 + 1.0 * FX_SCALE, fadeEnd: t1 + 2.2 * FX_SCALE, base: TRAJ_OPACITY });
+      trajLines.push({ mesh: traj, until: t1 + 0.5 * FX_SCALE, fadeEnd: t1 + 1.1 * FX_SCALE, base: TRAJ_OPACITY });
     }
   }
   // 阵营色（唯一规则：按射手阵营 → green / red / white）。炮线用**亮色板**
