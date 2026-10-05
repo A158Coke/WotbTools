@@ -2789,11 +2789,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function setFollow(eid) {
     FOLLOW_EID = eid;
     if (FOLLOW_EID) { setCam('follow'); } else { setCam('free'); }
+    // 跟随变更立即应用到名册行（followed 高亮）：updateRoster 平时在 tick 里跑，
+    // **暂停时不跑**——不补这次，暂停中点跟随的行高亮永远不亮（实测门禁抓到）。
+    if (DATA) updateRoster();
     invalidate();
   }
   function setCam(mode) {
     CAM = mode;
     store.cam = mode;
+    // 场景未初始化（renderer 惰性创建，首次 startPlayback 才有 controls）：只记录模式，
+    // 初始化后由 animate 按 CAM/FOLLOW_EID 逐帧生效——名册点击可先于首帧发生。
+    if (!controls) { invalidate(); return; }
     controls.enabled = true;
     invalidate();
     if (mode === 'top') {
