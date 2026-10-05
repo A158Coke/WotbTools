@@ -140,15 +140,31 @@ jobs:
           rm -rf -- /opt/wotb-tx2/frontend-replica
           mv /opt/wotb-tx2/frontend-replica.next /opt/wotb-tx2/frontend-replica
 
-          docker pull "$IMAGE_REF"
+          # TX2's production SSH account is intentionally not a member of the Docker
+          # group. Prefer direct Docker access when available, otherwise use the
+          # already-reviewed passwordless sudo path instead of weakening socket ACLs.
+          docker_cmd() {
+            if docker info >/dev/null 2>&1; then
+              docker "$@"
+              return
+            fi
+            if sudo -n docker info >/dev/null 2>&1; then
+              sudo -n docker "$@"
+              return
+            fi
+            echo 'TX2 deploy user cannot access Docker directly or through passwordless sudo.' >&2
+            exit 1
+          }
+
+          docker_cmd pull "$IMAGE_REF"
           cd "$stable"
           export TX_FRONTEND_IMAGE_REF="$IMAGE_REF"
-          docker compose -p wotbtools-frontend-shadow -f frontend-shadow.compose.yml \
+          docker_cmd compose -p wotbtools-frontend-shadow -f frontend-shadow.compose.yml \
             up -d --pull never --remove-orphans
 
           ready=false
           for attempt in $(seq 1 30); do
-            if docker run --rm --network host curlimages/curl:8.12.1 \
+            if docker_cmd run --rm --network host curlimages/curl:8.12.1 \
                 --fail --silent --show-error --max-time 10 \
                 http://10.20.0.3:8081/version.json >/dev/null; then
               ready=true
@@ -158,18 +174,18 @@ jobs:
           done
           [ "$ready" = true ] || { echo 'TX2 frontend replica did not become ready.' >&2; exit 1; }
 
-          replica_id="$(docker ps --filter label=com.docker.compose.project=wotbtools-frontend-shadow \
+          replica_id="$(docker_cmd ps --filter label=com.docker.compose.project=wotbtools-frontend-shadow \
             --filter label=com.docker.compose.service=frontend --format '{{.ID}}' | head -n1)"
           [ -n "$replica_id" ] || { echo 'TX2 frontend replica container is missing.' >&2; exit 1; }
-          actual_ref="$(docker inspect "$replica_id" --format '{{.Config.Image}}')"
+          actual_ref="$(docker_cmd inspect "$replica_id" --format '{{.Config.Image}}')"
           [ "$actual_ref" = "$IMAGE_REF" ] || {
             echo "TX2 frontend image drift: expected $IMAGE_REF, got $actual_ref" >&2
             exit 1
           }
 
-          tx1_version="$(docker run --rm --network host curlimages/curl:8.12.1 \
+          tx1_version="$(docker_cmd run --rm --network host curlimages/curl:8.12.1 \
             --fail --silent --show-error --max-time 10 http://10.20.0.1:8081/version.json)"
-          tx2_version="$(docker run --rm --network host curlimages/curl:8.12.1 \
+          tx2_version="$(docker_cmd run --rm --network host curlimages/curl:8.12.1 \
             --fail --silent --show-error --max-time 10 http://10.20.0.3:8081/version.json)"
           [ "$tx1_version" = "$tx2_version" ] || {
             echo 'TX1/TX2 version.json parity failed after replica deployment.' >&2
