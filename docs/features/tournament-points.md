@@ -53,7 +53,7 @@ AI 负责识别原始排名；唯一算分实现位于业务后端，按规则�
 
 图片识别继续使用独立 `java/wotb-ai` 服务的现有 `AI_API_KEY` 和 `AI_BASE_URL`。`TOURNAMENT_RECOGNITION_MODEL` 默认 `deepseek-flash`，仅作用于积分截图，不改变复盘的 `AI_MODEL`。
 
-`TOURNAMENT_RECOGNITION_SIGNING_KEY` 是至少 32 字节的内部随机签名值，作为 GitHub Secret 同时注入 Business API 和 AI Service。它不属于 AI 供应商，不需要另申请 API key。业务后端确认规则和日状态后，对图片 SHA-256、管理员、赛事、轮/天和规则版本签发至多五分钟的识别许可；前端携带原图片和许可直连独立 AI Service。AI 再次校验真实管理员 JWT 和许可，业务后端在保存/发布时重新检查当前版本。
+`TOURNAMENT_RECOGNITION_SIGNING_KEY` 是至少 32 字节的内部随机签名值，作为 GitHub Secret 同时注入 Business API 和 AI Service。它不属于 AI 供应商，不需要另申请 API key。业务后端确认规则和日状态后，对图片 SHA-256、管理员、赛事、轮/天和规则版本签发至多五分钟的识别许可；前端携带原图片和许可直连独立 AI Service。跨服务器时间校验允许最多 30 秒的时钟偏差，许可自身的签发到过期时间仍不得超过五分钟。AI 再次校验真实管理员 JWT 和许可，业务后端在保存/发布时重新检查当前版本。
 
 缺少签名配置时识别不可用，既有公开成绩和 AI 复盘不受影响。截图识别默认最多两个并发、每分钟最多 60 次准入，单次模型调用预算 90 秒。实际 provider 仍可能超时或识别不准；失败不会自动保存/发布，管理员可以重试。
 

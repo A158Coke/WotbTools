@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import type { TournamentEvent } from '../api/tournament-points.js'
 const props = defineProps<{ events: TournamentEvent[]; modelValue: number | null; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: number | null] }>()
@@ -9,14 +9,26 @@ const season = ref('')
 const years = computed(() => [...new Set(props.events.map(event => event.year))].sort((a, b) => b - a))
 const regions = computed(() => [...new Set(props.events.filter(event => event.year === Number(year.value)).map(event => event.region))])
 const seasons = computed(() => [...new Set(props.events.filter(event => event.year === Number(year.value) && event.region === region.value).map(event => event.season))])
-watch(() => props.modelValue, value => {
+let preservePartialSelection = false
+function syncModel(value: number | null) {
   const selected = props.events.find(event => event.id === value)
   if (selected) { year.value = String(selected.year); region.value = selected.region; season.value = selected.season }
+  else { year.value = ''; region.value = ''; season.value = '' }
+}
+watch(() => props.modelValue, value => {
+  if (value === null && preservePartialSelection) return
+  syncModel(value)
 }, { immediate: true })
+watch(() => props.events, () => { if (props.modelValue !== null) syncModel(props.modelValue) })
 function select(level: 'year' | 'region' | 'season') {
   if (level === 'year') { region.value = ''; season.value = '' }
   if (level === 'region') season.value = ''
-  emit('update:modelValue', props.events.find(event => event.year === Number(year.value) && event.region === region.value && event.season === season.value)?.id ?? null)
+  const value = props.events.find(event => event.year === Number(year.value) && event.region === region.value && event.season === season.value)?.id ?? null
+  // A local year/region change clears the selected event before the remaining
+  // filters are chosen. Only that immediate parent echo preserves these filters.
+  preservePartialSelection = value === null && props.modelValue !== null
+  emit('update:modelValue', value)
+  void nextTick(() => { preservePartialSelection = false })
 }
 </script>
 <template>
