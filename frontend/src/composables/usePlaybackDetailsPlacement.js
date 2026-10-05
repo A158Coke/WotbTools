@@ -12,6 +12,9 @@
  *   3. **初始位置避让点击目标**：新选中一台车时按点击原点挑一侧——点右侧的车，浮窗落左侧，
  *      否则浮窗会立刻盖住刚点的那台车。用户自己拖过之后（`userPositioned`）**永久尊重**
  *      用户位置，只有 workspace 尺寸/形态变化才重新夹紧，不再重算初始位置。
+ *      初始落位也**不压中心栏**（HUD / Stage / 传输控件同一列，以传输控件的左右边为准）：
+ *      侧边名册比浮窗窄时（如 1280 宽桌面全屏）把浮窗收窄到侧边可用宽度，而不是伸进中心栏盖住
+ *      顶栏右端的时间与血量；侧边不足 `MIN_PANEL_WIDTH`（名册关闭、中心栏铺满）时不收窄。
  *   4. **不持久化**：原始像素位置与窗口/字体/全屏状态强相关，写进 localStorage 只会在别的
  *      形态下变成一处越界浮窗。所以只活在内存里，重载即回默认。
  *
@@ -22,6 +25,8 @@ import { nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from 'vue'
 
 /** 左侧/顶部的最小可见余量：贴边时不能整个压出 workspace。 */
 const EDGE_MARGIN = 8
+/** 初始落位为避让中心栏而收窄时的下限：再窄就不收（宁可压住中心栏边缘，也不把内容挤成一列字）。 */
+const MIN_PANEL_WIDTH = 240
 
 export function usePlaybackDetailsPlacement({
   isActive,
@@ -33,6 +38,8 @@ export function usePlaybackDetailsPlacement({
   /** 已应用的位置；null = 还没定位（首帧交给 CSS 的默认角落）。 */
   const pos = ref(null)
   const maxPanelHeight = ref(null)
+  /** 初始落位为不压中心栏而给出的宽度上限；null = 不限（按面板自身宽度）。 */
+  const maxPanelWidth = ref(null)
   /** 用户是否亲手拖过：拖过之后初始位置启发式永久让位。 */
   const userPositioned = ref(false)
 
@@ -41,17 +48,19 @@ export function usePlaybackDetailsPlacement({
 
   /**
    * 把一组候选坐标夹进当前可用矩形。
+   * `panelWidth`：已决定但 DOM 尚未应用的宽度（初始落位收窄时），缺省用实测宽度。
    * @returns {{left:number, top:number, maxHeight:number}|null} 尺寸不可测量时为 null
    */
-  function clampToBounds(left, top) {
+  function clampToBounds(left, top, panelWidth = null) {
     const host = hostEl.value
     const panel = panelEl.value
     if (!host || !panel) return null
     const hostRect = host.getBoundingClientRect()
-    const rect = panel.getBoundingClientRect()
+    const measured = panel.getBoundingClientRect()
     if (!hostRect.width || !hostRect.height) return null
     // 未布局时 rect 会是 0×0；此时夹紧无意义，等下一帧的真实尺寸。
-    if (!rect.width || !rect.height) return null
+    if (!measured.width || !measured.height) return null
+    const rect = { width: panelWidth ?? measured.width, height: measured.height }
     // 宿主的左右内边距不属于 workspace（竖屏 / 全屏时那里是容器的留白与顶部 HUD）。
     const hostStyle = typeof getComputedStyle === 'function' ? getComputedStyle(host) : null
     const padStart = parseFloat(hostStyle?.paddingLeft) || 0
@@ -111,15 +120,34 @@ export function usePlaybackDetailsPlacement({
       side = origin.x > hostRect.width / 2 ? 'left' : 'right'
     }
     const gutter = EDGE_MARGIN * 2
+    const padStart = parseFloat(getComputedStyle?.(host)?.paddingLeft) || 0
+    const room = sideRoom(side, hostRect, gutter, padStart)
+    maxPanelWidth.value = room
+    const width = room == null ? rect.width : Math.min(rect.width, room)
     const left = side === 'right'
-      ? hostRect.width - rect.width - gutter
-      : gutter + (parseFloat(getComputedStyle?.(host)?.paddingLeft) || 0)
+      ? hostRect.width - width - gutter
+      : gutter + padStart
     const top = EDGE_MARGIN * 2
-    const next = clampToBounds(left, top)
+    const next = clampToBounds(left, top, width)
     if (next) {
       // 初始位置是「已应用的位置」但不是「用户位置」：之后的选择仍然可以重算它。
       apply(next)
     }
+  }
+
+  /**
+   * 浮窗所在一侧、中心栏之外的可用宽度。中心栏 = 受保护的传输控件所在列（HUD / Stage 同列）。
+   * null = 不需要 / 不能收窄：量不到控件，或侧边不足 MIN_PANEL_WIDTH（名册关闭时中心栏铺满）。
+   */
+  function sideRoom(side, hostRect, gutter, padStart) {
+    const bounds = boundsEl?.value
+    if (!bounds) return null
+    const center = bounds.getBoundingClientRect()
+    if (!center.width || !center.height) return null
+    const room = side === 'right'
+      ? hostRect.width - gutter - (center.right - hostRect.left + EDGE_MARGIN)
+      : (center.left - hostRect.left - EDGE_MARGIN) - (gutter + padStart)
+    return room >= MIN_PANEL_WIDTH ? Math.floor(room) : null
   }
 
   function onPointerDown(event) {
@@ -210,6 +238,7 @@ export function usePlaybackDetailsPlacement({
     if (!active) {
       pos.value = null
       maxPanelHeight.value = null
+      maxPanelWidth.value = null
       userPositioned.value = false
 
       return
@@ -220,5 +249,5 @@ export function usePlaybackDetailsPlacement({
 
   // `hostEl` / `boundsEl` 一并回传：调用方（与测试）需要能够读到**同一份**元素引用，
   // 而不是另拿一个模板 ref——参考元素与量测元素必须是同一个节点，否则边界检查会静默失效。
-  return { pos, maxPanelHeight, userPositioned, clampIntoHost, placeInitial, onSelectionChange, onPointerDown, hostEl, boundsEl, panelEl }
+  return { pos, maxPanelHeight, maxPanelWidth, userPositioned, clampIntoHost, placeInitial, onSelectionChange, onPointerDown, hostEl, boundsEl, panelEl }
 }
