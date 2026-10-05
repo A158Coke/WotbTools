@@ -107,7 +107,9 @@
   padding: 0;
   margin: 0;
 }
-/* HUD = 顶中悬浮（名册左右让出中间车道）。 */
+/* HUD = 顶中悬浮（名册左右让出中间车道）。
+   名单在时按「两侧车道 + 间隙」收口——HUD 与名册面板**不得重叠**（窄窗口下
+   60% 宽会横跨到车道上方，实测 700px workspace：HUD 420px 与左车道重叠 40px）。 */
 .pb-root.playback-workspace:not(.portrait-flow) > .hud {
   position: absolute;
   inset-block-start: var(--space-1);
@@ -118,6 +120,9 @@
   max-inline-size: min(60%, 480px);
   margin: 0;
   pointer-events: none;
+}
+.pb-root.playback-workspace.roster-side:not(.portrait-flow) > .hud {
+  max-inline-size: min(60%, max(14rem, calc(100% - 2 * var(--pb-overlay-lane-w) - var(--space-4))));
 }
 .pb-root.playback-workspace > .hud > .pb-hud { inline-size: auto; }
 
@@ -138,13 +143,15 @@
 /* 名册车道 = 左上/右上角悬浮面板（游戏同款：己方在左、敌方在右）。
    宽度按行内容需求定：行固定开销 = 内边距 32 + 间隙 12 + 色点 8 + 血条 52 = 104px，
    昵称 + 车型再需 ~90px——9rem(144px) 会横向撑破（行被裁切 + 出现横向滚动条）。
-   取 clamp(11rem, 16vw, 15rem)：窄屏 176px 起、宽屏到原始 240px（f226174b 版宽）。 */
+   取 clamp(11rem, 16vw, 15rem)：窄屏 176px 起、宽屏到原始 240px（f226174b 版宽）。
+   宽度收进 `--pb-overlay-lane-w`（同一根作用域）：顶中 HUD 按它收口，两者不会互相压住。 */
+.pb-root.playback-workspace.roster-side:not(.portrait-flow) { --pb-overlay-lane-w: clamp(11rem, 16vw, 15rem); }
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane.side-left,
 .pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane.side-right {
   position: absolute;
   inset-block-start: var(--space-1);
   z-index: var(--pb-z-hud);
-  inline-size: clamp(11rem, 16vw, 15rem);
+  inline-size: var(--pb-overlay-lane-w, clamp(11rem, 16vw, 15rem));
   max-block-size: calc(100% - 4rem);
   overflow-y: auto;
   overflow-x: hidden;

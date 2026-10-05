@@ -21,7 +21,7 @@ function rect(left, top, width, height) {
   return { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top }
 }
 
-function harness({ host = rect(0, 0, 1200, 700), panel = rect(0, 0, 320, 400), bounds = null, origin = null } = {}) {
+function harness({ host = rect(0, 0, 1200, 700), panel = rect(0, 0, 320, 400), bounds = null, origin = null, initialVertical = 'top' } = {}) {
   const hostEl = ref(null)
   const panelEl = ref(null)
   const boundsEl = ref(null)
@@ -39,6 +39,7 @@ function harness({ host = rect(0, 0, 1200, 700), panel = rect(0, 0, 320, 400), b
         panelEl,
         boundsEl,
         initialSide: ref('left'),
+        initialVertical,
       })
       Object.assign(api, placement, { active })
       return () => h('div', { ref: hostEl }, [
@@ -77,6 +78,19 @@ describe('usePlaybackDetailsPlacement', () => {
     api.placeInitial({ x: 100, y: 0 })
     // 右对齐：宿主 1200 - 面板 320 - 16 = 864
     expect(api.pos.value).toEqual({ left: 864, top: 16 })
+    wrapper.unmount()
+  })
+
+  it("initialVertical='bottom'：贴底落下（3D 悬浮名册占顶部两角，浮窗不得盖住）", async () => {
+    // host 1200×700、panel 320×400、bounds（传输控件）上缘 y=520 → 底界 520−8=512
+    const { api, wrapper } = harness({ initialVertical: 'bottom', bounds: rect(0, 520, 1200, 160) })
+    await nextTick()
+    api.placeInitial({ x: 900, y: 0 })
+    // 左列（点右半 → 落左）：left = gutter + pad = 16；贴底：top = 512 − 400 = 112
+    expect(api.pos.value).toEqual({ left: 16, top: 112 })
+    api.placeInitial({ x: 100, y: 0 })
+    // 右列：1200 − 320 − 16 = 864，同样贴底
+    expect(api.pos.value).toEqual({ left: 864, top: 112 })
     wrapper.unmount()
   })
 
