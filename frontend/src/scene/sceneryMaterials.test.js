@@ -81,9 +81,49 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(water).not.toMatch(/mm\.renderOrder =/)
   })
 
+  it('对数深度缓冲：renderer 开启 + 两个自定义 ShaderMaterial 挂 logdepthbuf 块', () => {
+    // 回放查看器允许 600–1000m 俯瞰（客户端贴地视角从不涉及）：线性 24bit 深度在该
+    // 距离分辨率 4–12cm，与贴地装饰薄板/重建地形的厘米级交叠同量级 → 远景成片
+    // z-fighting。对数深度恢复确定性深度序；自定义 ShaderMaterial 不自动注入
+    // logdepthbuf 代码块，漏挂 = 该材质深度写回线性域，与其他物体深度语义割裂。
+    expect(src).toMatch(/logarithmicDepthBuffer: true/)
+    // logdepthbuf_vertex 调用 isPerspectiveMatrix（定义在 <common>）：自定义 vertex
+    // shader 必须 include <common>，否则 GLSL 编译失败、材质整片不渲染
+    const billboard = src.slice(src.indexOf('function makeBillboardMaterial'),
+                                src.indexOf('async function loadMapImage'))
+    expect(billboard).toMatch(/#include <common>/)
+    expect(billboard).toMatch(/#include <logdepthbuf_pars_vertex>/)
+    expect(billboard).toMatch(/#include <logdepthbuf_vertex>/)
+    expect(billboard).toMatch(/#include <logdepthbuf_pars_fragment>/)
+    expect(billboard).toMatch(/#include <logdepthbuf_fragment>/)
+    const ground = src.slice(src.indexOf('function groundShaderMaterial'), src.indexOf('function rebuildGround'))
+    expect(ground).toMatch(/#include <common>/)
+    expect(ground).toMatch(/#include <logdepthbuf_pars_vertex>/)
+    expect(ground).toMatch(/#include <logdepthbuf_vertex>/)
+    expect(ground).toMatch(/#include <logdepthbuf_pars_fragment>/)
+    expect(ground).toMatch(/#include <logdepthbuf_fragment>/)
+  })
+
   it('场景 Lambert 曝光修整只作用于 convMat 建出的材质', () => {
     expect(src).toMatch(/const SCENERY_LAMBERT_EXPOSURE = 0\.75/)
     expect(src).toMatch(/\.multiplyScalar\(SCENERY_LAMBERT_EXPOSURE\)/)
+  })
+
+  it('地表 tile/hmap 采样走显式导数（隐式导数在平铺缝上 mip 乱跳 = 俯视碎块/转动闪烁）', () => {
+    // 客户端 tilemask-fp 用 LANDSCAPE_RELAXMAP 消除平铺 UV 缝上的导数尖峰；此处以
+    // textureGrad(连续 cm 坐标的导数 × tiling) 运行时等效。回归：改回 texture2D 隐式
+    // 导数会让俯视地面碎成 tile 网格状色块、转动视角时闪烁。
+    const ground = src.slice(src.indexOf('function groundShaderMaterial'), src.indexOf('function rebuildGround'))
+    expect(ground).toMatch(/vec2 duvdx = dFdx\(tc\) \* uTiling;/)
+    expect(ground).toMatch(/vec2 duvdy = dFdy\(tc\) \* uTiling;/)
+    expect(ground).not.toMatch(/texture2D\(uTile0/)
+    expect(ground).not.toMatch(/texture2D\(uTile1/)
+    expect(ground).not.toMatch(/texture2D\(uHMap0/)
+    expect(ground).not.toMatch(/texture2D\(uHMap1/)
+    expect(ground).toMatch(/textureGrad\(uTile0, tuv, duvdx, duvdy\)/)
+    expect(ground).toMatch(/textureGrad\(uHMap0, tuv, duvdx, duvdy\)/)
+    // SCALED_TILES 分支的导数须随各通道 tileScale 缩放
+    expect(ground).toMatch(/duvdx \* uTileScale\.w, duvdy \* uTileScale\.w/)
   })
 })
 
