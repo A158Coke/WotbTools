@@ -4,14 +4,12 @@ on:
   workflow_run:
     workflows: [Frontend]
     types: [completed]
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/frontend-replica.yml
-      - deploy/tx/frontend-shadow.compose.yml
-      - deploy/tx/k7c-sync-runtime-content.sh
-      - deploy/tx/nginx/**
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact Frontend source SHA already published to TCR
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -30,57 +28,60 @@ jobs:
     timeout-minutes: 35
     environment: tx-production
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 1
-
-      - name: Configure TX1 and TX2 SSH
+      - name: Resolve published Frontend artifact
+        id: artifact
         shell: bash
         env:
-          TX1_HOST: ${{ secrets.TX_VPS_HOST }}
-          TX1_PORT: ${{ secrets.TX_VPS_PORT }}
-          TX1_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          MANUAL_SOURCE_SHA: ${{ inputs.source_sha }}
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_run ]; then
+            source_sha="$WORKFLOW_SOURCE_SHA"
+          else
+            source_sha="$MANUAL_SOURCE_SHA"
+          fi
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Invalid Frontend source SHA: $source_sha" >&2
+            exit 1
+          }
+          [ -n "$ASSET_BASE_URL" ] || { echo 'ASSET_BASE_URL is required.' >&2; exit 1; }
+          case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
+          [[ "$TCR_NAMESPACE" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo 'TCR_NAMESPACE is invalid.' >&2; exit 1; }
+
+          identity="$(printf '%s\n%s' "$source_sha" "$ASSET_BASE_URL" | sha256sum | cut -c1-12)"
+          immutable_ref="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-frontend:sha-$identity"
+          {
+            echo "source_sha=$source_sha"
+            echo "immutable_ref=$immutable_ref"
+          } >> "$GITHUB_OUTPUT"
+          echo "TX2 will pull the Frontend artifact directly from TCR: $immutable_ref"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.artifact.outputs.source_sha }}
+          fetch-depth: 1
+
+      - name: Configure TX2 SSH
+        shell: bash
+        env:
           TX2_HOST: ${{ secrets.TX2_VPS_HOST }}
           TX2_PORT: ${{ secrets.TX2_VPS_PORT }}
           TX2_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
         run: |
           set -euo pipefail
-          : "${TX1_HOST:?TX_VPS_HOST is required}"
-          : "${TX1_PORT:?TX_VPS_PORT is required}"
-          : "${TX1_KEY:?TX_VPS_SSH_KEY is required}"
           : "${TX2_HOST:?TX2_VPS_HOST is required}"
           : "${TX2_PORT:?TX2_VPS_PORT is required}"
           : "${TX2_KEY:?TX2_VPS_SSH_KEY is required}"
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$TX1_KEY" | tr -d '\r' > ~/.ssh/tx1-frontend-replica
           printf '%s\n' "$TX2_KEY" | tr -d '\r' > ~/.ssh/tx2-frontend-replica
-          chmod 600 ~/.ssh/tx1-frontend-replica ~/.ssh/tx2-frontend-replica
-          ssh-keyscan -T 15 -p "$TX1_PORT" "$TX1_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/tx2-frontend-replica
           ssh-keyscan -T 15 -p "$TX2_PORT" "$TX2_HOST" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-
-      - name: Read exact production frontend image from TX1
-        id: image
-        shell: bash
-        env:
-          TX1_HOST: ${{ secrets.TX_VPS_HOST }}
-          TX1_USER: ${{ secrets.TX_VPS_USER }}
-          TX1_PORT: ${{ secrets.TX_VPS_PORT }}
-        run: |
-          set -euo pipefail
-          container="$(ssh -i ~/.ssh/tx1-frontend-replica -p "$TX1_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
-            "$TX1_USER@$TX1_HOST" \
-            "docker ps --filter label=com.docker.compose.project=deploy --filter label=com.docker.compose.service=wotb-frontend --format '{{.ID}}' | head -n1")"
-          [ -n "$container" ] || { echo 'TX1 production frontend container is not running.' >&2; exit 1; }
-          image_ref="$(ssh -i ~/.ssh/tx1-frontend-replica -p "$TX1_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
-            "$TX1_USER@$TX1_HOST" "docker inspect '$container' --format '{{.Config.Image}}'")"
-          case "$image_ref" in
-            *@sha256:????????????????????????????????????????????????????????????????) ;;
-            *) echo "TX1 frontend is not pinned to an immutable digest: $image_ref" >&2; exit 1 ;;
-          esac
-          echo "image_ref=$image_ref" >> "$GITHUB_OUTPUT"
-          echo "Replicating immutable TX1 frontend image: $image_ref"
 
       - name: Prepare TX2 replica staging
         uses: appleboy/ssh-action@v1
@@ -106,18 +107,18 @@ jobs:
           target: /opt/wotb-tx2/frontend-replica.incoming
           overwrite: true
 
-      - name: Reconcile TX2 to the exact TX1 frontend image
+      - name: Pull TCR artifact and reconcile TX2
         shell: bash
         env:
           TX2_HOST: ${{ secrets.TX2_VPS_HOST }}
           TX2_USER: ${{ secrets.TX2_VPS_USER }}
           TX2_PORT: ${{ secrets.TX2_VPS_PORT }}
-          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          IMMUTABLE_REF: ${{ steps.artifact.outputs.immutable_ref }}
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/tx2-frontend-replica -p "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
             -o ServerAliveInterval=10 -o ServerAliveCountMax=6 \
-            "$TX2_USER@$TX2_HOST" "IMAGE_REF='$IMAGE_REF' bash -s" <<'REMOTE'
+            "$TX2_USER@$TX2_HOST" "IMMUTABLE_REF='$IMMUTABLE_REF' bash -s" <<'REMOTE'
           set -euo pipefail
           exec 9>/opt/wotb-tx2/.deploy.lock
           flock -n 9 || { echo 'Another TX2 production deployment is running.' >&2; exit 1; }
@@ -129,8 +130,7 @@ jobs:
           [ -f "$incoming/k7c-sync-runtime-content.sh" ]
 
           # Runtime content is part of the frontend surface. Refresh sponsor assets,
-          # Android manifest and the currently published APK from TX1 before the
-          # replica enters service.
+          # Android manifest and the currently published APK before the replica enters service.
           bash "$incoming/k7c-sync-runtime-content.sh"
 
           rm -rf -- /opt/wotb-tx2/frontend-replica.next
@@ -140,9 +140,6 @@ jobs:
           rm -rf -- /opt/wotb-tx2/frontend-replica
           mv /opt/wotb-tx2/frontend-replica.next /opt/wotb-tx2/frontend-replica
 
-          # TX2's production SSH account is intentionally not a member of the Docker
-          # group. Prefer direct Docker access when available, otherwise use the
-          # already-reviewed passwordless sudo path instead of weakening socket ACLs.
           docker_cmd() {
             if docker info >/dev/null 2>&1; then
               docker "$@"
@@ -156,9 +153,17 @@ jobs:
             exit 1
           }
 
-          docker_cmd pull "$IMAGE_REF"
+          # TCR is the release-artifact source of truth. TX2 never derives its image
+          # from TX1 runtime state; it pulls the immutable tag published by TX1's build.
+          docker_cmd pull "$IMMUTABLE_REF"
+          image_ref="$(docker_cmd image inspect "$IMMUTABLE_REF" --format '{{index .RepoDigests 0}}')"
+          case "$image_ref" in
+            *@sha256:????????????????????????????????????????????????????????????????) ;;
+            *) echo "TCR pull did not resolve an immutable digest: $image_ref" >&2; exit 1 ;;
+          esac
+
           cd "$stable"
-          export TX_FRONTEND_IMAGE_REF="$IMAGE_REF"
+          export TX_FRONTEND_IMAGE_REF="$image_ref"
           docker_cmd compose -p wotbtools-frontend-shadow -f frontend-shadow.compose.yml \
             up -d --pull never --remove-orphans
 
@@ -178,8 +183,8 @@ jobs:
             --filter label=com.docker.compose.service=frontend --format '{{.ID}}' | head -n1)"
           [ -n "$replica_id" ] || { echo 'TX2 frontend replica container is missing.' >&2; exit 1; }
           actual_ref="$(docker_cmd inspect "$replica_id" --format '{{.Config.Image}}')"
-          [ "$actual_ref" = "$IMAGE_REF" ] || {
-            echo "TX2 frontend image drift: expected $IMAGE_REF, got $actual_ref" >&2
+          [ "$actual_ref" = "$image_ref" ] || {
+            echo "TX2 frontend image drift: expected $image_ref, got $actual_ref" >&2
             exit 1
           }
 
@@ -188,9 +193,9 @@ jobs:
           tx2_version="$(docker_cmd run --rm --network host curlimages/curl:8.12.1 \
             --fail --silent --show-error --max-time 10 http://10.20.0.3:8081/version.json)"
           [ "$tx1_version" = "$tx2_version" ] || {
-            echo 'TX1/TX2 version.json parity failed after replica deployment.' >&2
+            echo 'TX1/TX2 version.json parity failed after TX2 deployment.' >&2
             printf 'TX1: %s\nTX2: %s\n' "$tx1_version" "$tx2_version" >&2
             exit 1
           }
-          echo "TX2_FRONTEND_REPLICA_READY=PASS"
+          echo "TX2_FRONTEND_REPLICA_READY=PASS image=$image_ref"
           REMOTE
