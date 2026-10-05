@@ -138,6 +138,32 @@ export function fallRotation(fallDir8, elapsedS, heightM, stopRad = Math.PI / 2)
 }
 
 /**
+ * 给树状态的 `settled` 缓存加上几何自校验：场景层为了省每帧 quaternion 写入，会在
+ * 首次到达终态后设 `st.settled = true`。但 seek 倒带会把 pivot 恢复 identity；若缓存仍
+ * 永久为 true，再次越过终点就不会重写终态。这里让 getter 以 pivot 当前旋转是否真的已
+ * 达 stopRad 为准，因此 identity / 动画中间态会自然返回 false，下一次终态可重新落盘。
+ * 保持模块无 THREE 依赖，只读取 Quaternion 的标量字段。
+ */
+function makeTreeStateRewindSafe(state) {
+  let settled = false
+  Object.defineProperty(state, 'settled', {
+    enumerable: true,
+    configurable: true,
+    get() {
+      if (!settled) return false
+      const q = state.pivot?.quaternion
+      if (!q || !Number.isFinite(q.w)) return settled
+      const stop = Number.isFinite(state.stopRad) ? state.stopRad : Math.PI / 2
+      const w = Math.min(1, Math.max(0, Math.abs(q.w)))
+      const angle = 2 * Math.acos(w)
+      return angle >= Math.max(0, stop - 1e-4)
+    },
+    set(value) { settled = !!value },
+  })
+  return state
+}
+
+/**
  * 把事件流折叠成「每物体一个状态项」（同物体多事件取最早——摧毁是单次语义）。
  * 返回按 clock 升序的 [{ key, clock, prop, fallDir, inst }]，供场景逐帧应用。
  */
@@ -148,7 +174,8 @@ export function foldDestructibleStates(events, areasByEid, index) {
     if (!inst) continue
     const prev = byKey.get(inst.id)
     if (!prev || ev.clock < prev.clock) {
-      byKey.set(inst.id, { key: inst.id, clock: ev.clock, prop: ev.prop, fallDir: ev.fall_dir, inst })
+      const state = { key: inst.id, clock: ev.clock, prop: ev.prop, fallDir: ev.fall_dir, inst }
+      byKey.set(inst.id, ev.prop === 3 ? makeTreeStateRewindSafe(state) : state)
     }
   }
   return [...byKey.values()].sort((a, b) => a.clock - b.clock)
