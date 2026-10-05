@@ -51,19 +51,51 @@ export function fallTipVector(fallDir8) {
   return [-Math.sin(a), -Math.cos(a)]
 }
 
-/** 树倒动画时长（秒）：与客户端倒伏节奏同量级；超过后保持终态 */
-export const TREE_FALL_DURATION_S = 1.1
+/**
+ * 树倒运动学（客户端模型 = **逐类型物理**；本实现是形状保真的近似）。
+ *
+ * 客户端证据（`docs/回放与射击逆向总集.md` §5.4 + 二进制/数据复核 2026-10-05）：
+ * - 树 = `SpeedTreeObject` 实体，倒伏由 `TreeCutterComponent` / `TreeCutterSystem`
+ *   （client `Classes/Battle/Visuals/...`）驱动；树**没有**损毁态替换网格
+ *   （GLB 里 D_ 节点与树实例无一同位），砸倒是作用在原节点上的旋转；
+ * - 每类型的物理参数在 `destructibles.xml` `<trees>` 条目：
+ *   `physicParams`（7 数，树 = `800 10 0.26 20000 4000 20 0.15`、小枯树 = `400 10 0.03 300000 10000 0 0.1`）
+ *   + `touchdownEffect`（**触地**特效，183 类中 9 类有）——即"倒下→触地"是客户端显式建模的过程；
+ * - 冲量按载具质量缩放（XML `unitVehicleMass = 30000`）⇒ 倒伏快慢与撞击动量相关。
+ *
+ * 因此客户端不是"固定时长 + 缓入缓出"，而是重力/冲量驱动的物理过程。本实现复现其中两个
+ * 可验证特征（其余留待有冲量证据时再补）：
+ * 1) **时长随树高**：细杆绕根部倒下 ≈ 1.51·√(L/g)（重力矩 ∝ sinθ 的倒立摆时间尺度），
+ *    钳位 [0.45s, 3.0s] —— 15m 冷杉 ≈ 1.8s、3m 灌木 ≈ 0.8s、1m 草丛 ≈ 0.5s；
+ * 2) **角速度单调加速**：θ(u) = (π/2)·u²，落地瞬间角速度最大并**硬停**在 90°
+ *    （不缓出、不回弹——客户端触地即进终态，触地特效为证）。
+ *
+ * 未建模：撞击动量对速度的缩放（事件只给倒向、不给冲量；需要时按最近载具速度补）。
+ */
+export const TREE_FALL_MIN_S = 0.45
+export const TREE_FALL_MAX_S = 3.0
+/** 树高缺省（拿不到几何包围盒时的中型树） */
+export const TREE_FALL_DEFAULT_HEIGHT_M = 6
+
+/** 倒伏时长（秒）：T = 1.51·√(L/g)，按 [TREE_FALL_MIN_S, TREE_FALL_MAX_S] 钳位。 */
+export function fallDurationS(heightM) {
+  const L = Number.isFinite(heightM) && heightM > 0 ? heightM : TREE_FALL_DEFAULT_HEIGHT_M
+  const t = 1.51 * Math.sqrt(L / 9.81)
+  return Math.min(TREE_FALL_MAX_S, Math.max(TREE_FALL_MIN_S, t))
+}
 
 /**
- * 倒向 → 绕根部旋转（游戏场景系，z 上）。
+ * 倒向 + 时刻 → 绕根部旋转（游戏场景系，z 上）。
  * 轴 = up × tip 在水平面内旋转 90°（tip=(1,0) → 轴=(0,1,0)，右手法则把 +z 转向 tip）。
- * 角度按平滑步进（smoothstep）加速倒下；返回 {axis, angle}，elapsed<0 → null（未发生）。
+ * 角度 = (π/2)·u²（u = elapsed/时长，加速倒伏）；返回 {axis, angle, durationS}，
+ * elapsed<0 → null（未发生）。
  */
-export function fallRotation(fallDir8, elapsedS, durationS = TREE_FALL_DURATION_S) {
+export function fallRotation(fallDir8, elapsedS, heightM) {
   if (!(elapsedS >= 0)) return null
-  const p = Math.min(1, Math.max(0, elapsedS / durationS))
+  const durationS = fallDurationS(heightM)
+  const u = Math.min(1, elapsedS / durationS)
   const [dx, dy] = fallTipVector(fallDir8)
-  return { axis: [-dy, dx, 0], angle: (Math.PI / 2) * p * p * (3 - 2 * p) }
+  return { axis: [-dy, dx, 0], angle: (Math.PI / 2) * u * u, durationS }
 }
 
 /**

@@ -22,7 +22,7 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
-import { buildDestructibleIndex, foldDestructibleStates, fallRotation, fallTipVector, TREE_FALL_DURATION_S } from './destructibles.js'
+import { buildDestructibleIndex, foldDestructibleStates, fallRotation, fallTipVector } from './destructibles.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
 import { impactKind } from './impactKind.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
@@ -924,7 +924,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
         // ---- 可破坏地形：mesh 空间索引 + 损毁态网格初始隐藏 ----
         // 网格位置 = gltf.scene 局部系（z 上）= destructibles.json 的 pos（游戏场景系，
-        // 直接对应回放 x/z）。2m 桶 + 3×3 邻域查询；D_ 前缀 = 损毁态替换网格。
+        // 直接对应回放 x/z）。D_ 前缀 = 损毁态替换网格。
+        // 匹配半径 **2cm**（导出器把同一实例的全部批次放在同一坐标上：实测 99.8% 实例
+        // 的完好网格在 1cm 内、成对 D_ 网格在 5mm 内）——早期用 1.5m 半径会把**邻近实例**
+        // 的网格一起卷进来（malinovka 579 棵树里 22 棵会拖走邻居几何：一棵树倒，旁边草丛
+        // 跟着转）。半径收紧后邻居不再误配；无对应网格 = 该物体不在 GLB（不渲染）。
+        const MESH_MATCH_R = 0.02;
         const meshGrid = new Map();
         const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
         gltf.scene.traverse((o) => {
@@ -936,7 +941,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           const k = gridKey(wx, wy);
           (meshGrid.get(k) || meshGrid.set(k, []).get(k)).push({ mesh: o, x: wx, y: wy });
         });
-        const findMeshes = (px, py, wantDestroyed, r = 1.5) => {
+        const findMeshes = (px, py, wantDestroyed, r = MESH_MATCH_R) => {
           const out = [];
           const gx = Math.round(px / 2), gy = Math.round(py / 2);
           for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
@@ -966,13 +971,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
               if (!hits.length) continue;
               const pivot = new THREE.Group();
               pivot.position.set(px, py, worldZ(hits[0].mesh));
+              // 树高 = 各网格几何在 pivot 局部系（z 上）的上界 + 网格自身 z 偏移（= 0，
+              // 同实例批次同锚点）——倒伏时长 T ∝ √(L/g) 用它（见 destructibles.js）。
+              let heightM = 0;
               for (const h of hits) {
                 const wz = worldZ(h.mesh);
                 h.mesh.position.set(h.x - px, h.y - py, wz - pivot.position.z);
                 pivot.add(h.mesh);
+                const geo = h.mesh.geometry;
+                if (!geo) continue;
+                if (!geo.boundingBox) geo.computeBoundingBox();
+                const bb = geo.boundingBox;
+                if (bb) heightM = Math.max(heightM, (bb.max.z ?? 0) + h.mesh.position.z);
               }
               gltf.scene.add(pivot);
               st.pivot = pivot;
+              st.heightM = heightM;
             } else {
               st.intactMeshes = findMeshes(px, py, false).map((e) => e.mesh);
               st.deadMeshes = findMeshes(px, py, true).map((e) => e.mesh);
@@ -2302,11 +2316,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         }
         // 只在动画窗口内逐帧更新；终态后写一次不再碰（省去 700+ 次 setFromAxisAngle）
         const elapsed = T - st.clock;
-        if (elapsed < TREE_FALL_DURATION_S) {
+        const r = fallRotation(st.fallDir, elapsed, st.heightM);
+        if (r && elapsed < r.durationS) {
           destruct.animating = true;
-          const r = fallRotation(st.fallDir, elapsed);
-          if (r) st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r.axis[0], r.axis[1], r.axis[2]), r.angle);
+          st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r.axis[0], r.axis[1], r.axis[2]), r.angle);
         } else if (!st.settled) {
+          // 落地硬停：θ(时长) = π/2，终态写一次（客户端触地即进终态）
           st.settled = true;
           st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r_axis(st.fallDir, 0), r_axis(st.fallDir, 1), r_axis(st.fallDir, 2)), Math.PI / 2);
         }
