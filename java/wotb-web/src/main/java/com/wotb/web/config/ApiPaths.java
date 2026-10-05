@@ -46,5 +46,6 @@ public final class ApiPaths {
     public static final String HOF_MARK3_SUBMISSIONS_PATTERN = "/api/hof/mark3/submissions/**";
     public static final String USERS_PATTERN = "/api/users/**";
     public static final String ADMIN_USERS_PATTERN = "/api/admin/users/**";
+    public static final String TOURNAMENTS_ADMIN_PATTERN = "/api/admin/tournaments/**";
     public static final String ADMIN_PATTERN = "/api/admin/**";
 }
