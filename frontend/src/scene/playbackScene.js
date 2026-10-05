@@ -23,6 +23,7 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallRotation, fallTipVector, TREE_FALL_DURATION_S } from './destructibles.js'
+import { sampleChannel, sampleKeyframes } from './trackInterp.js'
 import { impactKind } from './impactKind.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
@@ -198,24 +199,47 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   function idxOf(t) { return Math.floor((t - DATA.meta.t_start) / GRID_DT); }
 
+  // 位姿求值：**优先关键帧折线**（上游 `pose_kf` = 客户端 60Hz 渲染路径的折点序列，
+  // 段内线性插值即复现客户端画面，含「保持-跳变」阶梯）。缺失 `pose_kf`（旧 facet）时
+  // 回退 10Hz 网格线性插值——与历史行为逐值一致。
+  // 为什么不能只靠网格：0.1s 网格与 ≈10~12Hz 位置更新不同相 → 阶梯被混叠成速度摆动
+  // （实测某 0.5s 窗内线速度 4.5→29.6 m/s，同段真值稳定），观感即「一顿一顿」。
+  // pos 的 x 分量在此处取镜像负号（游戏系 → 场景系）。
+  const kfOf = (v) => {
+    const k = v.def.pose_kf;
+    return k && k.t && k.t.length >= 2 ? k : null;
+  };
   function posAt(v, t, out) {
-    const i = idxOf(t), n = DATA.meta.samples;
-    const i0 = Math.max(0, Math.min(i, n - 1)), i1 = Math.min(i0 + 1, n - 1);
-    const f = Math.max(0, Math.min(1, (t - DATA.meta.t_start) / GRID_DT - i0));
-    const p = v.def.pos;
-    out.set(-(p[i0*3] + (p[i1*3] - p[i0*3]) * f),
-             p[i0*3+1] + (p[i1*3+1] - p[i0*3+1]) * f,
-             p[i0*3+2] + (p[i1*3+2] - p[i0*3+2]) * f);
+    const k = kfOf(v);
+    if (k) {
+      const col = (c) => (i) => k.pos[i * 3 + c];
+      out.set(-sampleKeyframes(col(0), k.t, t),
+               sampleKeyframes(col(1), k.t, t),
+               sampleKeyframes(col(2), k.t, t));
+      return out;
+    }
+    const p = v.def.pos, t0 = DATA.meta.t_start, n = DATA.meta.samples;
+    const col = (c) => (i) => p[i * 3 + c];
+    out.set(-sampleChannel(col(0), n, t, t0, GRID_DT),
+             sampleChannel(col(1), n, t, t0, GRID_DT),
+             sampleChannel(col(2), n, t, t0, GRID_DT));
     return out;
   }
-  function yawAt(v, t) { return arrAt(v.def.hull_yaw, t); }
+  function yawAt(v, t) {
+    const k = kfOf(v);
+    if (k) return sampleKeyframes((i) => k.yaw[i], k.t, t);
+    return arrAt(v.def.hull_yaw, t);
+  }
+  function hullPitchAt(v, t) {
+    const k = kfOf(v);
+    if (k) return sampleKeyframes((i) => k.pitch[i], k.t, t);
+    return arrAt(v.def.hull_pitch, t);
+  }
   function turretAbsAt(v, t) { return arrAt(v.def.turret_yaw, t); }
   function gunPitchAt(v, t) { return arrAt(v.def.gun_pitch, t); }
   function arrAt(arr, t) {
-    const i = idxOf(t), n = DATA.meta.samples;
-    const i0 = Math.max(0, Math.min(i, n - 1)), i1 = Math.min(i0 + 1, n - 1);
-    const f = Math.max(0, Math.min(1, (t - DATA.meta.t_start) / GRID_DT - i0));
-    return arr[i0] + (arr[i1] - arr[i0]) * f;
+    if (!arr || !arr.length) return 0;
+    return sampleChannel((i) => arr[i], arr.length, t, DATA.meta.t_start, GRID_DT);
   }
   // 车体侧倾（rad）。数据侧 hull_roll 取自**原始 type=10 volatile 采样**（滤波层不输出侧倾，
   // 与 hull_pitch 不同源）；旧产物无该列 → 0 = 水平（fail-safe，绝不拿 pitch 顶替）。
@@ -1698,7 +1722,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // GLB 根位姿 = poseFromYPR(−yaw, pitch, 0)（共享 rig，见 scene/glbRig.js）
   function poseGlb(v) {
     v.glb.position.copy(v.group.position);
-    v.glb.quaternion.copy(poseFromYPR(-yawAt(v, T), arrAt(v.def.hull_pitch, T), -rollAt(v, T), _glbQuat));
+    v.glb.quaternion.copy(poseFromYPR(-yawAt(v, T), hullPitchAt(v, T), -rollAt(v, T), _glbQuat));
     const p = v.glbParts;
     if (!p) return;
     const rel = wrapPi(turretAbsAt(v, T) - yawAt(v, T));
@@ -2311,7 +2335,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 低模位姿（GLB 显示时保留低模位姿更新，切回低模无跳变）
     v.group.rotation.order = 'YXZ';
     v.group.rotation.y = -yawAt(v, T);
-    v.group.rotation.x = arrAt(v.def.hull_pitch, T);
+    v.group.rotation.x = hullPitchAt(v, T);
     v.group.rotation.z = -rollAt(v, T);   // 横滚（符号约定见 rollAt 注释）
     const rel = wrapPi(turretAbsAt(v, T) - yawAt(v, T));
     v.turretG.rotation.y = -rel;
