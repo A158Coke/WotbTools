@@ -115,7 +115,7 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           command_timeout: 30m
-          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,CADDY_ACME_EMAIL,CADDY_FRONTEND_UPSTREAM,CADDY_KEYCLOAK_UPSTREAM
+          envs: WOTB_DEPLOY_SERVICE,WOTB_DEPLOY_CONFIG_SHA,CADDY_ACME_EMAIL,CADDY_FRONTEND_UPSTREAM,CADDY_FRONTEND_PEER,CADDY_KEYCLOAK_UPSTREAM
           script: |
             set -euo pipefail
             exec 9>/opt/wotb-tx/.deploy.lock
@@ -133,6 +133,19 @@ jobs:
             tx_probe() {
               docker run --rm --network host curlimages/curl:8.12.1 "$@"
             }
+
+            # K7C dual-instance contract: both frontend peers must independently serve
+            # the same production-facing health surfaces before the gateway is accepted.
+            # Caddy's active health checks then keep a failed peer out of rotation.
+            for frontend in 10.20.0.1:8081 10.20.0.3:8081; do
+              tx_probe --fail --silent --show-error --max-time 15 \
+                "http://$frontend/version.json" >/dev/null \
+                || { echo "Frontend peer is not healthy: $frontend/version.json" >&2; exit 1; }
+              tx_probe --fail --silent --show-error --max-time 15 \
+                "http://$frontend/api/health" >/dev/null \
+                || { echo "Frontend peer cannot reach the API: $frontend/api/health" >&2; exit 1; }
+            done
+
             www_redirect="$(tx_probe --silent --show-error --output /dev/null --max-time 15 \
               --write-out '%{http_code} %{redirect_url}' --max-redirs 0 \
               https://www.wotbtools.com/ci-gateway-check)"
@@ -221,8 +234,7 @@ jobs:
           WOTB_DEPLOY_SERVICE: caddy
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.identity.outputs.commit_sha }}
           CADDY_ACME_EMAIL: ${{ vars.CADDY_ACME_EMAIL }}
-          # K7C public cutover: only the frontend ingress placement moves to the
-          # Komodo-owned TX2 shadow over WireGuard. Keycloak remains on TX1.
-          # Reverting this PR restores CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081.
-          CADDY_FRONTEND_UPSTREAM: 10.20.0.3:8081
+          # K7C dual-instance frontend: both reviewed WireGuard peers are active.
+          CADDY_FRONTEND_UPSTREAM: 10.20.0.1:8081
+          CADDY_FRONTEND_PEER: 10.20.0.3:8081
           CADDY_KEYCLOAK_UPSTREAM: 10.20.0.1:8080
