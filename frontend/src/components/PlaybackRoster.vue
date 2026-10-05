@@ -196,7 +196,7 @@ function listRows(rowCount) {
 }
 .pb-roster-row .dot { inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-sm); flex: none; }
 .pb-roster-row .nick { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pb-roster-row .tank { flex: none; max-inline-size: 86px; min-width: 0; overflow: hidden; color: var(--color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.pb-roster-row .tank { flex: 0 1 auto; max-inline-size: 86px; min-width: 0; overflow: hidden; color: var(--color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
 
 /* —— HP 条（主 combat state）：行尾细条 52×5，fill 用本行队色（--roster-team-color）。 —— */
 .pb-roster-hpbar {
