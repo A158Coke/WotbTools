@@ -1,8 +1,9 @@
 name: wotbtools-frontend-shadow
 
 # K7B shadow promoted to the TX2 production replica for K7C. The production
-# Frontend Replica workflow supplies the exact immutable image digest copied from
-# TX1; this file no longer pins a historical build in source control.
+# Frontend Replica workflow resolves the immutable frontend artifact published by
+# TX1 to TCR and supplies that exact digest to TX2; this file never pins a
+# historical build in source control.
 services:
   frontend:
     image: ${TX_FRONTEND_IMAGE_REF:?TX_FRONTEND_IMAGE_REF is required}
