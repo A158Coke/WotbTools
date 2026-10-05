@@ -347,6 +347,8 @@ export function mapStaticUrl(kind, layer, mapKey) {
     case 'terrain': return f('terrain.u16.bin')
     case 'terrain-meta': return f('terrain.json')
     case 'scenery': return f('scenery.glb')
+    // 可破坏物清单（逆向总集 §5.4 的 (cell,slot) 联表；缺失时 3D 侧静默禁用该特性）
+    case 'destructibles': return f('destructibles.json')
     case 'groundmeta': return f('ground.layers.json')
     case 'groundtex': return f(`ground/${layer}.webp`)
   }
