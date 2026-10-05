@@ -1,23 +1,38 @@
-# Komodo K7C — Frontend public cutover preflight
+# Komodo K7C — Frontend active-active closeout
 
-K7C moves the public `wotbtools.com` frontend ingress from the TX1 frontend to the Komodo-owned TX2 frontend that passed K7B shadow acceptance.
+K7C is complete. The public `wotbtools.com` frontend now runs as a two-instance production pool behind the TX1 Caddy gateway:
 
-This document covers runtime-content parity and the **preflight gate**. It still does not authorize or perform the Caddy cutover.
+- TX1 frontend: `10.20.0.1:8081` — steady-state weight 20%;
+- TX2 frontend: `10.20.0.3:8081` — steady-state weight 80%;
+- Caddy remains on TX1 and owns public 80/443;
+- both peers are actively health-checked through `/version.json`;
+- Business API, Keycloak, PostgreSQL and AI placement are unchanged by K7C.
 
-## Accepted K7B state
+The historical K6B placement baseline remains frozen. K7C changes the frontend runtime topology only; it does not rewrite the K6B migration record.
 
-- `wotbtools-frontend-shadow` is Running on Komodo Server `tx2`.
-- TX2 binds only `10.20.0.3:8081 -> 80`.
-- TX1 reaches TX2 over WireGuard and TX2 `/api/health` reaches the authoritative TX1 Business API.
-- Gitee transport commit matches the reviewed GitHub commit.
-- TX1 and TX2 serve the exact same immutable frontend image before runtime-content parity is evaluated.
-- Caddy remains on TX1.
+## Final release ownership
 
-Record `TX2_FRONTEND_SHADOW_READY=PASS`.
+The frontend release path is now:
+
+```text
+GitHub main
+  -> mirror exact source to Gitee
+  -> TX1 pulls/builds from Gitee
+  -> TX1 publishes an immutable frontend image to TCR
+  -> TX1 deploys that immutable artifact
+  -> Frontend Replica resolves the same published artifact
+  -> TX2 pulls it directly from TCR
+  -> TX2 deploys the exact immutable digest
+  -> TX1/TX2 version parity is verified
+```
+
+TCR is the release-artifact source of truth for TX2. TX2 does not derive its deployment image by inspecting TX1's running container.
+
+Komodo keeps the TX2 Stack definition as reviewed declarative metadata and runtime visibility. It does not own automatic image rollout for this Stack: polling, webhook deployment and automatic workload updates remain disabled so they cannot race the production Frontend Replica workflow.
 
 ## Runtime-content ownership
 
-The frontend image is not the whole production surface. TX1 injects host-owned sponsor and Android release content.
+The frontend image is not the whole production surface. Sponsor content and the current Android public download surface are host-owned runtime content.
 
 K7C replicates only the **current public production surface** to TX2 local storage at `/opt/wotb-tx2/runtime-content`:
 
@@ -26,42 +41,13 @@ K7C replicates only the **current public production surface** to TX2 local stora
 - Android `version.json`;
 - the APK actually referenced by that manifest.
 
-Historical APKs and `*.staging.json` evidence are not public cutover dependencies and are deliberately not copied. The observed TX1 Android directory is about 112 MiB largely because it contains historical releases; K7C must not turn that archive into a placement dependency.
+Historical APKs and `*.staging.json` evidence are deliberately not copied. TX2 never bind-mounts `/opt/wotb-tx` and never reads the TX1 filesystem directly; it owns a local replicated runtime-content root.
 
-TX2 never bind-mounts `/opt/wotb-tx` and never reads the TX1 filesystem directly. It owns a local replicated runtime-content root.
+The production Frontend Replica workflow refreshes this runtime content before TX2 is accepted after a frontend release.
 
-## TX2 runtime-content sync
+## Preflight evidence
 
-After the reviewed source commit is mirrored to Gitee, run on TX2 before redeploying the shadow stack:
-
-```bash
-cd /tmp
-curl -fsSL \
-  https://raw.githubusercontent.com/A158Coke/WotbTools/main/deploy/tx/k7c-sync-runtime-content.sh \
-  -o k7c-sync-runtime-content.sh
-chmod +x k7c-sync-runtime-content.sh
-sudo bash ./k7c-sync-runtime-content.sh
-```
-
-The script reads the currently authoritative TX1 frontend over WireGuard (`http://10.20.0.1:8081`), discovers referenced sponsor assets and the current APK from the published manifests, stages them under a temporary directory, validates safe paths (and APK SHA when present), then atomically replaces `/opt/wotb-tx2/runtime-content`.
-
-Success marker:
-
-```text
-K7C_RUNTIME_CONTENT_READY=PASS
-```
-
-After this marker, redeploy `wotbtools-frontend-shadow` so nginx receives the three read-only runtime mounts.
-
-## Read-only preflight
-
-Run on TX1:
-
-```bash
-sudo TX_RUNTIME_ROOT=/opt/wotb-tx bash /tmp/k7c-preflight.sh
-```
-
-The preflight remains intentionally read-only. It requires:
+Before public cutover, the read-only K7C preflight required:
 
 1. TX1/TX2 frontend roots return HTTP 200.
 2. TX2 SPA fallback and `/api/health` return HTTP 200.
@@ -70,25 +56,63 @@ The preflight remains intentionally read-only. It requires:
 5. every sponsor asset referenced by the authoritative sponsor config is byte-identical.
 6. Android `version.json` is byte-identical.
 7. the APK referenced by authoritative Android `version.json` is byte-identical.
-8. Caddy still targets TX1 (`wotb-frontend:80` or `10.20.0.1:8081`).
+8. Caddy still targets the reviewed pre-cutover frontend placement.
 
-Success marker:
+Production evidence recorded during K7C:
 
 ```text
+TX2_FRONTEND_SHADOW_READY=PASS
+K7C_RUNTIME_CONTENT_READY=PASS
 K7C_FRONTEND_CUTOVER_PREFLIGHT=PASS
 ```
 
-Do not weaken the gate to accept 404 when TX1 publishes a corresponding current file.
+The initial Caddy cutover to TX2 completed successfully, followed by promotion to the final two-peer 20/80 pool.
 
-## Cutover contract after preflight passes
+## Production acceptance
 
-The Caddyfile continues to use `{$CADDY_FRONTEND_UPSTREAM}`.
+The final production topology has been exercised by a real frontend release after the TCR-source correction:
 
 ```text
-TX1 rollback: 10.20.0.1:8081
-TX2 cutover:  10.20.0.3:8081
+Frontend workflow                 PASS
+TX1 build from Gitee              PASS
+immutable TCR publish             PASS
+TX1 frontend reconcile            PASS
+Frontend Replica workflow         PASS
+TX2 direct TCR pull               PASS
+TX2 immutable-digest reconcile    PASS
+TX1/TX2 version parity            PASS
 ```
 
-The actual cutover remains a separate reviewed operation: one Caddy-only reconciliation to TX2, public smoke tests, and an explicit rollback path to TX1. Business API, Keycloak, PostgreSQL and AI placement do not move in K7C.
+Reference production runs from the closeout sequence:
 
-K7C public cutover is not authorized until the preflight emits `K7C_FRONTEND_CUTOVER_PREFLIGHT=PASS`.
+- Caddy Gateway cutover run `37236109552` — success;
+- Frontend run `37283193116` — success;
+- Frontend Replica run `37283700560` — success.
+
+The successful Replica run used the final release model: `Resolve published Frontend artifact` followed by `Pull TCR artifact and reconcile TX2`.
+
+## Final traffic contract
+
+Caddy serves both reviewed frontend peers with weighted round-robin:
+
+```text
+TX1 10.20.0.1:8081  weight 2  (~20%)
+TX2 10.20.0.3:8081  weight 8  (~80%)
+```
+
+An unhealthy peer is removed by active health checking. Caddy itself remains a TX1 single point of ingress; K7C provides frontend workload redundancy, not gateway-node redundancy.
+
+## Rollback boundary
+
+K7C keeps the operational rollback boundary explicit:
+
+- either frontend peer can be removed from public selection by changing the reviewed Caddy pool;
+- TX1 remains a complete frontend instance;
+- TX2 can be rebuilt from the immutable TCR artifact plus replicated current runtime content;
+- Business API, Keycloak, PostgreSQL and AI do not move during frontend rollback.
+
+Do not repurpose the frozen K6B placement matrix to describe this active-active topology. K6B remains the migration baseline; this document is the K7C steady-state authority.
+
+## Known follow-up outside K7C closeout
+
+K7C guarantees steady-state image/version parity and health-checked dual service. The current release sequence can still have a short rolling window in which TX1 has the new frontend release while TX2 is reconciling the same TCR artifact. Eliminating all mixed-version serving would require a separate drain/reweight or blue-green rollout design and is intentionally outside this closeout.
