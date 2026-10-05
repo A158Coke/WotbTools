@@ -1,12 +1,11 @@
 name: wotbtools-frontend-shadow
 
-# K7B shadow promoted toward K7C. Public traffic remains on TX1 until the K7C
-# preflight passes. Runtime content is host-owned on TX2 and populated separately
-# by k7c-sync-runtime-content.sh before any public cutover.
+# K7B shadow promoted to the TX2 production replica for K7C. The production
+# Frontend Replica workflow supplies the exact immutable image digest copied from
+# TX1; this file no longer pins a historical build in source control.
 services:
   frontend:
-    # Immutable build identity from the current TX1 production Frontend build required for K7C parity.
-    image: ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-fe53250d06b5
+    image: ${TX_FRONTEND_IMAGE_REF:?TX_FRONTEND_IMAGE_REF is required}
     ports:
       - "10.20.0.3:8081:80"
     extra_hosts:

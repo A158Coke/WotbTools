@@ -1,0 +1,180 @@
+name: Frontend Replica
+
+on:
+  workflow_run:
+    workflows: [Frontend]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/frontend-replica.yml
+      - deploy/tx/frontend-shadow.compose.yml
+      - deploy/tx/k7c-sync-runtime-content.sh
+      - deploy/tx/nginx/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  replicate:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: tx-production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Configure TX1 and TX2 SSH
+        shell: bash
+        env:
+          TX1_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX1_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX1_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          TX2_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_PORT: ${{ secrets.TX2_VPS_PORT }}
+          TX2_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          : "${TX1_HOST:?TX_VPS_HOST is required}"
+          : "${TX1_PORT:?TX_VPS_PORT is required}"
+          : "${TX1_KEY:?TX_VPS_SSH_KEY is required}"
+          : "${TX2_HOST:?TX2_VPS_HOST is required}"
+          : "${TX2_PORT:?TX2_VPS_PORT is required}"
+          : "${TX2_KEY:?TX2_VPS_SSH_KEY is required}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$TX1_KEY" | tr -d '\r' > ~/.ssh/tx1-frontend-replica
+          printf '%s\n' "$TX2_KEY" | tr -d '\r' > ~/.ssh/tx2-frontend-replica
+          chmod 600 ~/.ssh/tx1-frontend-replica ~/.ssh/tx2-frontend-replica
+          ssh-keyscan -T 15 -p "$TX1_PORT" "$TX1_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -T 15 -p "$TX2_PORT" "$TX2_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Read exact production frontend image from TX1
+        id: image
+        shell: bash
+        env:
+          TX1_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX1_USER: ${{ secrets.TX_VPS_USER }}
+          TX1_PORT: ${{ secrets.TX_VPS_PORT }}
+        run: |
+          set -euo pipefail
+          container="$(ssh -i ~/.ssh/tx1-frontend-replica -p "$TX1_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$TX1_USER@$TX1_HOST" \
+            "docker ps --filter label=com.docker.compose.project=deploy --filter label=com.docker.compose.service=wotb-frontend --format '{{.ID}}' | head -n1")"
+          [ -n "$container" ] || { echo 'TX1 production frontend container is not running.' >&2; exit 1; }
+          image_ref="$(ssh -i ~/.ssh/tx1-frontend-replica -p "$TX1_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$TX1_USER@$TX1_HOST" "docker inspect '$container' --format '{{.Config.Image}}'")"
+          case "$image_ref" in
+            *@sha256:????????????????????????????????????????????????????????????????) ;;
+            *) echo "TX1 frontend is not pinned to an immutable digest: $image_ref" >&2; exit 1 ;;
+          esac
+          echo "image_ref=$image_ref" >> "$GITHUB_OUTPUT"
+          echo "Replicating immutable TX1 frontend image: $image_ref"
+
+      - name: Prepare TX2 replica staging
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          script: |
+            set -eu
+            root=/opt/wotb-tx2/frontend-replica.incoming
+            rm -rf -- "$root"
+            mkdir -p "$root/deploy/tx"
+
+      - name: Stage TX2 frontend replica inputs
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: deploy/tx/frontend-shadow.compose.yml,deploy/tx/nginx/frontend.conf.template,deploy/tx/k7c-sync-runtime-content.sh
+          target: /opt/wotb-tx2/frontend-replica.incoming
+          overwrite: true
+
+      - name: Reconcile TX2 to the exact TX1 frontend image
+        shell: bash
+        env:
+          TX2_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_PORT: ${{ secrets.TX2_VPS_PORT }}
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/tx2-frontend-replica -p "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=6 \
+            "$TX2_USER@$TX2_HOST" "IMAGE_REF='$IMAGE_REF' bash -s" <<'REMOTE'
+          set -euo pipefail
+          exec 9>/opt/wotb-tx2/.deploy.lock
+          flock -n 9 || { echo 'Another TX2 production deployment is running.' >&2; exit 1; }
+
+          incoming=/opt/wotb-tx2/frontend-replica.incoming/deploy/tx
+          stable=/opt/wotb-tx2/frontend-replica/deploy/tx
+          [ -f "$incoming/frontend-shadow.compose.yml" ]
+          [ -f "$incoming/nginx/frontend.conf.template" ]
+          [ -f "$incoming/k7c-sync-runtime-content.sh" ]
+
+          # Runtime content is part of the frontend surface. Refresh sponsor assets,
+          # Android manifest and the currently published APK from TX1 before the
+          # replica enters service.
+          bash "$incoming/k7c-sync-runtime-content.sh"
+
+          rm -rf -- /opt/wotb-tx2/frontend-replica.next
+          mkdir -p /opt/wotb-tx2/frontend-replica.next/deploy
+          cp -a /opt/wotb-tx2/frontend-replica.incoming/deploy/tx \
+            /opt/wotb-tx2/frontend-replica.next/deploy/tx
+          rm -rf -- /opt/wotb-tx2/frontend-replica
+          mv /opt/wotb-tx2/frontend-replica.next /opt/wotb-tx2/frontend-replica
+
+          docker pull "$IMAGE_REF"
+          cd "$stable"
+          export TX_FRONTEND_IMAGE_REF="$IMAGE_REF"
+          docker compose -p wotbtools-frontend-shadow -f frontend-shadow.compose.yml \
+            up -d --pull never --remove-orphans
+
+          ready=false
+          for attempt in $(seq 1 30); do
+            if docker run --rm --network host curlimages/curl:8.12.1 \
+                --fail --silent --show-error --max-time 10 \
+                http://10.20.0.3:8081/version.json >/dev/null; then
+              ready=true
+              break
+            fi
+            [ "$attempt" -lt 30 ] && sleep 2
+          done
+          [ "$ready" = true ] || { echo 'TX2 frontend replica did not become ready.' >&2; exit 1; }
+
+          replica_id="$(docker ps --filter label=com.docker.compose.project=wotbtools-frontend-shadow \
+            --filter label=com.docker.compose.service=frontend --format '{{.ID}}' | head -n1)"
+          [ -n "$replica_id" ] || { echo 'TX2 frontend replica container is missing.' >&2; exit 1; }
+          actual_ref="$(docker inspect "$replica_id" --format '{{.Config.Image}}')"
+          [ "$actual_ref" = "$IMAGE_REF" ] || {
+            echo "TX2 frontend image drift: expected $IMAGE_REF, got $actual_ref" >&2
+            exit 1
+          }
+
+          tx1_version="$(docker run --rm --network host curlimages/curl:8.12.1 \
+            --fail --silent --show-error --max-time 10 http://10.20.0.1:8081/version.json)"
+          tx2_version="$(docker run --rm --network host curlimages/curl:8.12.1 \
+            --fail --silent --show-error --max-time 10 http://10.20.0.3:8081/version.json)"
+          [ "$tx1_version" = "$tx2_version" ] || {
+            echo 'TX1/TX2 version.json parity failed after replica deployment.' >&2
+            printf 'TX1: %s\nTX2: %s\n' "$tx1_version" "$tx2_version" >&2
+            exit 1
+          }
+          echo "TX2_FRONTEND_REPLICA_READY=PASS"
+          REMOTE
