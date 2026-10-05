@@ -70,6 +70,35 @@ describe('canonicalRuntime：规范投影线程化（Worker 优先）', () => {
     await expect(parseLocalPlaybackOffThread(new ArrayBuffer(8))).rejects.toThrow()
   })
 
+  it('postMessage 同步抛错 → inflight 立即清理 + 回退主线程（不泄漏 stale handler）', async () => {
+    const fake = new FakeWorker()
+    fake.mode = 'silent'   // 不回包；postMessage 本身正常 → 只有后续崩溃才清理
+    let throwOnPost = true
+    const throwingWorker = new FakeWorker()
+    Object.defineProperty(throwingWorker, 'postMessage', {
+      value: () => { if (throwOnPost) throw new Error('clone failed') },
+    })
+    __setCanonicalWorkerFactory(() => throwingWorker as unknown as Worker)
+    // 同步抛错 → 回退主线程（测试环境无真 WASM → 报解析错误而非挂起）
+    await expect(parseLocalPlaybackOffThread(new ArrayBuffer(8))).rejects.toThrow()
+    // inflight 无泄漏：内部 Map 无法直接断言，用行为锁——之后 Worker 正常回包仍按 id 工作
+    throwOnPost = false
+    fake.mode = 'done'
+    __setCanonicalWorkerFactory(() => fake as unknown as Worker)
+    const out = await parseLocalPlaybackOffThread(new ArrayBuffer(4))
+    expect(out).toBe(fake.reply)
+    expect(fake.requests).toHaveLength(1)
+  })
+
+  it('playback facet 复用：canonical 请求携带 scene 侧已解析的 playback（不二次 parsePlayback）', async () => {
+    const fake = new FakeWorker()
+    __setCanonicalWorkerFactory(() => fake as unknown as Worker)
+    const facet = { meta: { samples: 1 } }
+    const out = await parseLocalPlaybackOffThread(new ArrayBuffer(4), facet as never)
+    expect(out).toBe(fake.reply)
+    expect(fake.requests[0].playback).toBe(facet)
+  })
+
   it('Worker 崩溃（onerror）→ 实例清掉并回退主线程重跑（fail-open）', async () => {
     const fake = new FakeWorker()
     fake.mode = 'crash'

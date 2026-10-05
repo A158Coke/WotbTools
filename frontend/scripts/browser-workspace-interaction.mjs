@@ -613,10 +613,7 @@ const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-1024x768-tablet', width: 1024, height: 768, touch: false, players: 7, unknown: 2, killfeed: 3, layout: 'side' },
   { name: 'roster-geometry-375x812-portrait-coarse', width: 375, height: 812, touch: true, players: 7, unknown: 0, killfeed: 3, layout: 'portrait' },
   { name: 'roster-geometry-390x844-portrait-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 2, killfeed: 3, layout: 'portrait' },
-  // KNOWN-ISSUE（触屏小横屏）：名册行点击未触达 followFromRoster（cam 停在 top）——
-  // 真机交互复验中，修复后移除 xfail。
-  { name: 'roster-geometry-740x360-landscape-coarse', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side',
-    xfail: 'roster tap not registering at 740x360 coarse (cam stays top)' },
+  { name: 'roster-geometry-740x360-landscape-coarse', width: 740, height: 360, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
   { name: 'roster-geometry-844x390-landscape-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side' },
   { name: 'roster-geometry-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', fullscreen: true },
   { name: 'roster-geometry-portrait-to844x390-coarse', width: 390, height: 844, touch: true, players: 7, unknown: 0, killfeed: 1, layout: 'side', rotateTo: { width: 844, height: 390 } },
@@ -698,6 +695,66 @@ function rosterGeometryProbe() {
       for (const [name, gap] of Object.entries(gaps)) {
         if (gap < -1 || gap > 16) out.errors.push(`central ${name} gap must remain compact (0–16px): ${gap.toFixed(1)}`)
       }
+    }
+
+    // —— 浮层布局契约（2026-10-05 起）：场景铺满 + 名册/HUD/传输浮层 ——
+    // 注意：本探针在**未滚动**的初始布局上取值（roster-geometry 的点击滚动发生在
+    // probe 之后），lane/transport 的 rect 反映真实浮层位置。
+    const FLOATING = out.side || out.portrait
+    if (FLOATING) {
+      // ① Stage（场景画布容器）铺满工作区（浮层布局的核心语义）
+      const stageBox = root.querySelector('.pb-stage')?.getBoundingClientRect()
+      const rr = root.getBoundingClientRect()
+      if (stageBox) {
+        const inside = stageBox.left >= rr.left - 0.5 && stageBox.right <= rr.right + 0.5
+          && stageBox.top >= rr.top - 0.5 && stageBox.bottom <= rr.bottom + 0.5
+        const fillsW = stageBox.width >= rr.width * 0.95
+        if (!inside) out.errors.push(`floating: stage must sit inside the workspace: ${JSON.stringify({ stage: [Math.round(stageBox.left), Math.round(stageBox.top), Math.round(stageBox.width), Math.round(stageBox.height)], root: [Math.round(rr.left), Math.round(rr.top), Math.round(rr.width), Math.round(rr.height)] })}`)
+        if (!out.portrait && !fillsW) out.errors.push(`floating: stage must fill the workspace width: ${stageBox.width.toFixed(1)} < ${(rr.width * 0.95).toFixed(1)}`)
+      } else {
+        out.errors.push('floating: .pb-stage missing')
+      }
+      // ② 名册车道必须落在 **root 工作区**内（root 系坐标，与页面滚动无关——
+      //    workspace 场景本身可被页面滚过标题栏），且不与对侧重叠
+      const inRoot = (b) => b.left >= rr.left - 0.5 && b.right <= rr.right + 0.5 && b.top >= rr.top - 0.5 && b.bottom <= rr.bottom + 0.5
+      for (const [name, sel] of [['left', '.side-left'], ['right', '.side-right']]) {
+        const lane = root.querySelector(sel)?.getBoundingClientRect()
+        if (!lane) { out.errors.push(`floating: ${name} lane missing`); continue }
+        if (!inRoot(lane)) {
+          out.errors.push(`floating: ${name} lane outside the workspace: ${JSON.stringify({ lane: [Math.round(lane.left - rr.left), Math.round(lane.top - rr.top), Math.round(lane.width), Math.round(lane.height)], root: [Math.round(rr.width), Math.round(rr.height)] })}`)
+        }
+        const other = root.querySelector(sel === '.side-left' ? '.side-right' : '.side-left')?.getBoundingClientRect()
+        if (out.side && other && lane.left < other.right - 0.5 && other.left < lane.right - 0.5) {
+          out.errors.push(`floating: ${name} lane overlaps the opposite lane`)
+        }
+      }
+      // ③ HUD 与左右 lane 的分离（侧浮层 = x 分离；纵向流 = y 流，按序断言）
+      const hudBox = root.querySelector('.hud')?.getBoundingClientRect()
+      if (out.side) {
+        for (const [name, sel] of [['left', '.side-left'], ['right', '.side-right']]) {
+          const lane = root.querySelector(sel)?.getBoundingClientRect()
+          if (!hudBox || !lane) continue
+          if (hudBox.left < lane.right - 0.5 && lane.left < hudBox.right - 0.5) {
+            out.errors.push(`floating: HUD horizontally overlaps the ${name} lane: ${JSON.stringify({ hud: [Math.round(hudBox.left), Math.round(hudBox.right)], lane: [Math.round(lane.left), Math.round(lane.right)] })}`)
+          }
+        }
+      } else {
+        // 纵向流：HUD → transport → lanes 从上到下（order 已由旧断言锁定，这里锁
+        // HUD 在任一 lane 之上——HUD.bottom ≤ 第一条 lane 顶部）
+        const firstLane = root.querySelector('.side-left, .side-right')?.getBoundingClientRect()
+        if (hudBox && firstLane && hudBox.bottom > firstLane.top + 0.5) {
+          out.errors.push(`floating portrait: HUD must sit above the lanes (hud.bottom=${Math.round(hudBox.bottom)} > lane.top=${Math.round(firstLane.top)})`)
+        }
+      }
+      // ④ 传输控件存在且**落在 root 工作区内**（root 系）
+      const controls = root.querySelector('.controls')?.getBoundingClientRect()
+      if (!controls) {
+        out.errors.push('floating: transport controls missing')
+      } else if (!inRoot(controls)) {
+        out.errors.push(`floating: transport controls outside the workspace: ${JSON.stringify([Math.round(controls.left - rr.left), Math.round(controls.top - rr.top), Math.round(controls.width), Math.round(controls.height)])}`)
+      }
+      // ⑤ 全屏语义：root 即全屏元素（由 usePlaybackFullscreen 保证 enter/exit 不重建）
+      out.floatingChecked = true
     }
   }
   const primaryIds = ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
@@ -918,11 +975,15 @@ function rosterGeometryProbe() {
     }
     if (!out.compact.speedPicker) out.errors.push('compact: current-speed control is missing')
     if (controlsBox) {
-      // 常驻控件（时间轴 + 一行按钮）不得吃掉战场：战场至少保留工作区高的 55%
-      const sceneH = rootH - controlsBox.height
-      out.compact.sceneH = +sceneH.toFixed(1)
-      if (sceneH < rootH * 0.55) {
-        out.errors.push(`compact: controls take too much scene height (scene=${sceneH.toFixed(1)} of root=${rootH.toFixed(1)}; controls=${controlsBox.height.toFixed(1)}; parts=${JSON.stringify(out.compact.parts)})`)
+      // 常驻控件（时间轴 + 一行按钮）不得吃掉战场。2D 网格布局（非浮层）下战场 =
+      // rootH − controls；浮层布局（3D，场景铺满、控件悬浮其上）下战场**始终占满** root，
+      // 控件只是投影覆盖，这条维度不适用（Scene ≥ 55% 由场景自身铺满保证）。
+      if (!FLOATING_LAYOUT) {
+        const sceneH = rootH - controlsBox.height
+        out.compact.sceneH = +sceneH.toFixed(1)
+        if (sceneH < rootH * 0.55) {
+          out.errors.push(`compact: controls take too much scene height (scene=${sceneH.toFixed(1)} of root=${rootH.toFixed(1)}; controls=${controlsBox.height.toFixed(1)}; parts=${JSON.stringify(out.compact.parts)})`)
+        }
       }
     } else {
       out.errors.push('compact: playback controls missing')
@@ -1211,6 +1272,10 @@ async function runRosterGeometryScenario(env, scenario) {
   }
 
   await captureMobileReview(page, scenario)
+  // 回卷到顶部：start/scrollIntoView 留下的页面滚动会让"浮层在视口内"的测量失真
+  // （lane top=-52 = 恰好一屏标题高）。浮层几何契约必须在**未滚动**的布局上取值。
+  await page.evaluate('window.scrollTo(0, 0)')
+  await waitForStableLayout(page)
   const geometry = await page.probe(rosterGeometryProbe)
   check(failures, geometry.root, 'pb-root missing')
   check(failures, geometry.viewport.width === viewport.width && geometry.viewport.height === viewport.height,

@@ -9,10 +9,11 @@ import type { CanonicalMessage, CanonicalRequest } from './canonicalWorkerProtoc
 const post = (message: CanonicalMessage) => (self as DedicatedWorkerGlobalScope).postMessage(message)
 
 self.onmessage = async (event: MessageEvent<CanonicalRequest>) => {
-  const { id, bytes } = event.data
+  const { id, bytes, playback } = event.data
   try {
-    const playback = await parseLocalPlayback(new Uint8Array(bytes))
-    post({ type: 'done', id, playback })
+    // 已解析的 playback facet 直接复用：同一回放不二次 parsePlayback
+    const result = await parseLocalPlayback(new Uint8Array(bytes), { playback })
+    post({ type: 'done', id, playback: result })
   } catch (error) {
     post({ type: 'error', id, error: error instanceof Error ? error.message : String(error) })
   }
