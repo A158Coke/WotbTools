@@ -86,6 +86,10 @@ describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）'
 
   it('调色常量只有一处声明（唯一事实源，避免 TDZ 与漂移）', () => {
     expect(src.match(/const COLOR_UNKNOWN = 0xf5f5f5;/g)?.length).toBe(1)
-    expect(src.match(/const COLOR_FRIENDLY = 0x2ecc71;/g)?.length).toBe(1)
+    // 深色板（2026-10-05 加深，炮线与车辆 tint 共用）：亮色 0x2ecc71/0xef4444 已弃用
+    expect(src.match(/const COLOR_FRIENDLY = 0x26794a;/g)?.length).toBe(1)
+    expect(src.match(/const COLOR_ENEMY = 0x98322a;/g)?.length).toBe(1)
+    expect(src).not.toContain('0x2ecc71')
+    expect(src).not.toContain('0xef4444')
   })
 })

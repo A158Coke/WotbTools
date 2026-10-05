@@ -167,7 +167,12 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
   it('装填条求值：关标签或 T 未变时跳过（暂停/关标签不再每车每帧全量求值）', () => {
     const publish = src.slice(src.indexOf('function publishLabels'), src.indexOf('function setLabelPrefs'))
     expect(publish, '关标签时必须整段早退').toMatch(/if \(!DATA \|\| !labelOverlay \|\| !store\.labelsOn\) return;/)
-    expect(publish, 'T 未变 / 未到节流窗口时不得重复求值').toMatch(/if \(!force && \(T === labelsTime \|\| now - labelsWrittenMs < 100\)\) return;/)
+    // 动态节流（2026-10-05）：装填中 33ms（~30Hz，进度平滑）/ 空闲 100ms。
+    expect(publish, 'T 未变 / 未到节流窗口时不得重复求值')
+      .toMatch(/if \(!force && \(T === labelsTime \|\| now - labelsWrittenMs < interval\)\) return;/)
+    expect(publish, '装填中提高发布频率').toMatch(/labelsReloadActive \? LABEL_INTERVAL_RELOAD_MS : LABEL_INTERVAL_IDLE_MS/)
+    expect(src, '装填中 33ms').toMatch(/const LABEL_INTERVAL_RELOAD_MS = 33;/)
+    expect(src, '空闲 100ms（原值）').toMatch(/const LABEL_INTERVAL_IDLE_MS = 100;/)
     // 求值本身只依赖 T（纯状态在时刻）：走共享 resolver，不再自带累加计时器
     expect(publish).toMatch(/reload: destroyed \? null : reloadStateAt\(v\.def\.eid, T, v\.reloadSize\)/)
   })
