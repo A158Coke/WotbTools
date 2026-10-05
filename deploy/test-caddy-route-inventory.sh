@@ -213,6 +213,12 @@ def isolate(node):
             node["upstreams"] = [{"dial": "127.0.0.1:8081" if asset else "127.0.0.1:8082"}]
             node.pop("transport", None)
             node.pop("selection_policy", None)
+            # This fixture validates HTTP/CORS routing, not production active-health
+            # semantics. Rewriting the upstreams to in-process fixture listeners
+            # while retaining the production health checker can transiently mark
+            # the fixture upstream unavailable and return 503 before the local
+            # fixture listener is considered healthy.
+            node.pop("health_checks", None)
         for value in node.values(): isolate(value)
     elif isinstance(node, list):
         for value in node: isolate(value)
