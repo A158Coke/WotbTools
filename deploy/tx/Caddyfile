@@ -4,8 +4,10 @@
 	email {$CADDY_ACME_EMAIL}
 }
 
-# TX-local readiness surface. K7C keeps both reviewed frontend instances active
-# behind the same public gateway while Keycloak remains on its reviewed placement.
+# TX-local readiness surface. K7C keeps both reviewed frontend instances behind
+# the same public gateway while Keycloak remains on its reviewed placement.
+# TX1 is the preferred frontend and TX2 is its continuously reconciled failover
+# replica; this avoids serving mixed frontend builds during a rolling release.
 # Caddy itself is the production public ingress and owns 80/443 by default
 # (see docker-compose.yml).
 http://caddy {
@@ -20,6 +22,7 @@ http://caddy {
 
 	handle_path /_wotb/frontend/* {
 		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {$CADDY_FRONTEND_PEER} {
+			lb_policy first
 			health_uri /version.json
 			health_interval 10s
 			health_timeout 3s
@@ -78,6 +81,7 @@ wotbtools.com {
 	}
 	handle {
 		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {$CADDY_FRONTEND_PEER} {
+			lb_policy first
 			health_uri /version.json
 			health_interval 10s
 			health_timeout 3s
