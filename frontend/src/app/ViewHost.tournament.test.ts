@@ -25,7 +25,7 @@ describe('tournament deep-link page gates', () => {
     expect(wrapper.find('[data-testid="login-gate"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="admin-editor"], [data-testid="admin-config"]').exists()).toBe(false)
   })
-  it('denies HoF-only roles and paints the editor only after the actual site role is held', async () => {
+  it('denies unrelated and bare super-admin roles; mounts only with tournament-admin', async () => {
     state.route.query.view = 'tournament-points-admin'
     state.auth.authenticated.value = true
     state.auth.tokenParsed.value = { realm_access: { roles: ['HoF-admin'] } }
@@ -33,6 +33,9 @@ describe('tournament deep-link page gates', () => {
     expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('tournament.adminRequired')
     state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin']
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(false)
+    state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin', 'tournament-admin']
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(true)
   })
