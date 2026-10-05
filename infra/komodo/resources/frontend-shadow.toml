@@ -1,15 +1,16 @@
-# K7B: first production workload owned declaratively by Komodo.
-#
-# This is a SHADOW Frontend on TX2. ResourceSync may create/update the Stack metadata
-# only after manual review + Apply. deploy=false means applying the ResourceSync does
-# not itself start or redeploy the workload; deployment remains an explicit Komodo
-# action during K7B acceptance.
+# K7B originally introduced this as the first production workload owned
+# declaratively by Komodo. K7C keeps the Stack metadata for visibility, while the
+# running TX2 frontend image is reconciled by the Frontend Replica workflow from
+# TX1's exact immutable digest. Komodo must therefore never auto-deploy or
+# auto-update this Stack behind that workflow's back. `auto_pull` remains enabled
+# as part of the reviewed declarative Stack contract; by itself it does not enable
+# polling, webhook deployment, or automatic workload updates.
 #
 # GitHub remains the source authority. Gitee is the domestic source transport for TX
-# workers so production deployment does not depend on slow cross-border GitHub clone.
+# workers so the Komodo view can still resolve the reviewed stack definition.
 [[stack]]
 name = "wotbtools-frontend-shadow"
-description = "K7B TX2 shadow Frontend; no public traffic until K7C"
+description = "K7C TX2 frontend replica; runtime image is owned by Frontend Replica workflow"
 tags = []
 template = false
 deploy = false

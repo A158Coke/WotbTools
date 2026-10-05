@@ -4,10 +4,12 @@
 	email {$CADDY_ACME_EMAIL}
 }
 
-# TX-local readiness surface. K6B resolves the same reviewed logical upstreams
-# used by the public routes, so readiness keeps proving the active placement
-# without public HTTP redirects or ACME certificates; Caddy itself is the production public
-# ingress and owns 80/443 by default (see docker-compose.yml).
+# TX-local readiness surface. K7C keeps both reviewed frontend instances behind
+# the same public gateway while Keycloak remains on its reviewed placement.
+# Steady-state frontend traffic is weighted 20% to TX1 and 80% to TX2; both peers
+# are continuously health-checked and release parity is enforced separately.
+# Caddy itself is the production public ingress and owns 80/443 by default
+# (see docker-compose.yml).
 http://caddy {
 	handle /.well-known/assetlinks.json {
 		root * /srv
@@ -19,7 +21,11 @@ http://caddy {
 	}
 
 	handle_path /_wotb/frontend/* {
-		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {$CADDY_FRONTEND_PEER} {
+			lb_policy weighted_round_robin 2 8
+			health_uri /version.json
+			health_interval 10s
+			health_timeout 3s
 			header_up Host wotbtools.com
 		}
 	}
@@ -74,7 +80,11 @@ wotbtools.com {
 		}
 	}
 	handle {
-		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM} {$CADDY_FRONTEND_PEER} {
+			lb_policy weighted_round_robin 2 8
+			health_uri /version.json
+			health_interval 10s
+			health_timeout 3s
 			header_up Host {host}
 		}
 	}
@@ -147,7 +157,7 @@ auth.wotbtools.com {
 // 否则 App 侧 AuthResponseGuard 收不到响应、交易永远 pending。
 (function () {
   var search = location.search || '';
-  if (!search) return;                       // 没有登录结果可转发：按钮保持原始形状
+  if (!search) return;
   var link = document.getElementById('return-app');
   link.href = 'com.wotbtools.app:/oauth2redirect' + search;
   document.getElementById('return-app-hint').hidden = false;

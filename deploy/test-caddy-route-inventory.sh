@@ -1,19 +1,5 @@
 #!/usr/bin/env bash
 # Fixtures for the TX Caddy public-site inventory guard.
-#
-# The guard lives in `deploy/tx/validate-caddy-config.sh` and runs in two places:
-# PR CI (`ci-caddy.yml`) and production staging (`deploy/tx/deploy.sh`, through
-# `deploy/tx/validate-caddy-config.sh`). Every rejected case must fail *before*
-# the runtime validation is reached - that ordering is asserted through the stub
-# log below, not assumed.
-#
-# Docker is stubbed so that ordering is observable, but the stub **delegates** the
-# invocation to the real docker binary: the guard's final assertions run against
-# the JSON Caddy actually adapts the staged file to. A stub that answered with a
-# canned or empty document would either hide a real adapted-shape regression or
-# reject a valid configuration for the wrong reason (which is exactly what an
-# empty adaptation did before). Docker is therefore required here, as it already
-# is for the other TX runtime fixtures and for the production caller.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,9 +11,6 @@ real_docker="$(command -v docker || true)"
   echo 'docker is required: the adapted-config assertions are verified against the real Caddy image.' >&2
   exit 1
 }
-# The Caddyfile takes its ACME account address from the environment; production and
-# the PR fixture both set it. Keep the same default so the adaptation under test is
-# decided by the staged Caddyfile, not by a missing variable.
 : "${CADDY_ACME_EMAIL:=ci@example.invalid}"
 export CADDY_ACME_EMAIL
 
@@ -40,8 +23,6 @@ exec "$real_docker" "\$@"
 STUB
 chmod +x "$work/bin/docker"
 
-# staged <name> -> a disposable staged TX directory with the real compose files
-# and the mounted domain-association asset, mirroring the production staging tree.
 staged() {
   local dir="$work/$1"
   mkdir -p "$dir/assets/auth/.well-known"
@@ -50,7 +31,6 @@ staged() {
   printf '%s\n' "$dir"
 }
 
-# caddyfile <name> -> staged dir with a copy of the repository Caddyfile
 caddyfile() {
   local dir
   dir="$(staged "$1")"
@@ -63,19 +43,13 @@ guard() {
   rm -f "$stub_log"
   PATH="$work/bin:$PATH" STUB_DOCKER_LOG="$stub_log" \
     CADDY_FRONTEND_UPSTREAM="${CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}" \
+    CADDY_FRONTEND_PEER="${CADDY_FRONTEND_PEER:-wotb-frontend:80}" \
     CADDY_KEYCLOAK_UPSTREAM="${CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}" \
     bash "$ROOT/deploy/tx/validate-caddy-config.sh" "$dir" >"$work/out.log" 2>&1 || rc=$?
   release_compose_network "$dir"
   return "$rc"
 }
 
-# The guard runs the real Compose project (`-p deploy`) for its adapt/validate step, and Compose
-# allocates a Docker network from the daemon's default address pool. Leaving those behind would
-# slowly consume that pool inside one CI job - enough for a later fixture that needs an explicit
-# subnet (`deploy/test-nginx-grafana-recreate.sh` creates 172.29.0.0/16) to fail with
-# "Pool overlaps with other one on this address space". Every guard invocation therefore releases
-# what it created. Cleanup uses the real CLI directly, so it never appears in the stub log that the
-# rejected cases assert on.
 release_compose_network() {
   local dir="$1"
   [ -n "$real_docker" ] || return 0
@@ -112,16 +86,8 @@ rejects() {
   }
 }
 
-# The repository Caddyfile itself must satisfy the inventory, including the
-# Komodo public ingress added for K2.
 accepts 'repository Caddyfile' "$(caddyfile repository)"
 
-# K6B-2E: the K6B placement contract is only real while the Caddyfile takes its two
-# private upstreams from the environment. Caddy substitutes `{$VAR}` when it loads the
-# bind-mounted Caddyfile, so the running container's environment is the active routing
-# value; a literal upstream would let the runtime gate read a correct
-# CADDY_FRONTEND_UPSTREAM while Caddy actually proxies somewhere else, which is exactly
-# the false green the active-endpoint contract exists to refuse.
 repository_caddyfile="$ROOT/deploy/tx/Caddyfile"
 grep -Fq 'reverse_proxy {$CADDY_FRONTEND_UPSTREAM}' "$repository_caddyfile" \
   || { echo 'the Caddyfile must substitute {$CADDY_FRONTEND_UPSTREAM} instead of a literal frontend upstream' >&2; exit 1; }
@@ -133,8 +99,8 @@ if grep -Eq 'reverse_proxy +(wotb-frontend|keycloak)(:|$)|reverse_proxy +10\.20\
 fi
 
 wg_upstreams="$(caddyfile wg-upstreams)"
-CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081 CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080 \
-  accepts 'reviewed TX1 WireGuard upstreams' "$wg_upstreams"
+CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081 CADDY_FRONTEND_PEER=10.20.0.3:8081 CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080 \
+  accepts 'reviewed TX1/TX2 WireGuard upstreams' "$wg_upstreams"
 
 unsafe_upstream="$(caddyfile unsafe-upstream)"
 if CADDY_FRONTEND_UPSTREAM=frontend.example.invalid:8081 guard "$unsafe_upstream"; then
@@ -144,7 +110,6 @@ fi
 [ ! -s "$stub_log" ] || { echo 'runtime validation ran despite an unsafe Caddy endpoint' >&2; exit 1; }
 grep -q 'CADDY_FRONTEND_UPSTREAM must be' "$work/out.log"
 
-# --- komodo.wotbtools.com is mandatory and must target the WireGuard address ---
 missing="$(caddyfile komodo-missing)"
 awk '/^komodo\.wotbtools\.com \{/ { skip = 1 }
      skip && /^\}/ { skip = 0; next }
@@ -161,7 +126,6 @@ sed -i 's|^\(\t*\)reverse_proxy 10\.20\.0\.2:9120$|\1reverse_proxy 10.20.0.2:912
   "$public_yecao/Caddyfile"
 rejects 'Yecao public address in the Caddyfile' "$public_yecao" 'Yecao public address'
 
-# --- the pre-existing routes must survive ------------------------------------
 monitor_drift="$(caddyfile monitor-drift)"
 sed -i 's|reverse_proxy 10\.20\.0\.2:3000|reverse_proxy 10.20.0.2:3001|' "$monitor_drift/Caddyfile"
 rejects 'monitor upstream drift' "$monitor_drift" 'monitor.wotbtools.com must reverse_proxy 10.20.0.2:3000'
@@ -174,10 +138,6 @@ readiness_missing="$(caddyfile readiness-missing)"
 sed -i 's|handle /_wotb/ready|handle /_wotb/health|' "$readiness_missing/Caddyfile"
 rejects 'TX-local readiness surface removed' "$readiness_missing" '/_wotb/ready readiness surface is missing'
 
-# --- the Android App Link callback must exist, answer, and stay reachable -----
-# A browser that returns to the HTTPS redirect URI without the app installed must
-# land on the WotBTools-owned page instead of Keycloak's catch-all 404. Every case
-# below is decided by the inventory guard, before the runtime validation runs.
 callback_missing="$(caddyfile android-callback-missing)"
 awk '/^\thandle \/android\/oauth\/callback \{/ { skip = 1 }
      skip && /^\t\}/ { skip = 0; next }
@@ -187,18 +147,11 @@ rejects 'android callback route removed' "$callback_missing" \
   'auth.wotbtools.com must declare handle /android/oauth/callback'
 
 callback_proxied="$(caddyfile android-callback-proxied)"
-# The route keeps a respond (so only the "answer from Caddy" rule can reject it)
-# but also proxies the same path. The injected upstream uses the reviewed logical
-# placeholder, not a hard-coded host: otherwise the fixture would be rejected by
-# the auth.wotbtools.com catch-all rule first and stop testing the callback rule
-# it exists for.
 awk '/^\thandle \/android\/oauth\/callback \{/ { print; print "\t\treverse_proxy {$CADDY_KEYCLOAK_UPSTREAM}"; next }
      { print }' "$ROOT/deploy/tx/Caddyfile" > "$callback_proxied/Caddyfile"
 rejects 'android callback handed back to Keycloak' "$callback_proxied" \
   'must answer from Caddy, never reverse_proxy an upstream'
 
-# The route is only an answer while it is the most specific match: once it no
-# longer exists on that host, the guard must fail on it.
 callback_removed_entirely="$(caddyfile android-callback-gone)"
 awk '/^\thandle \/android\/oauth\/callback \{/ { skip = 1 }
      skip && /^\t\}$/ { skip = 0; next }
@@ -212,7 +165,6 @@ printf '\n%sunreviewed.example.com {\n%sreverse_proxy example.invalid:1234\n%s}\
   '' "$(printf '\t')" '' >> "$unreviewed/Caddyfile"
 rejects 'unreviewed upstream added' "$unreviewed" 'unreviewed Caddy upstream'
 
-# Adapted invariants protect both real ordering and the exact-origin boundary.
 for mutation in wildcard missing-preflight missing-exposed-header reversed-gateway; do
   cors_dir="$(caddyfile "android-cors-$mutation")"
   if [ "$mutation" = wildcard ]; then
@@ -228,7 +180,6 @@ path = pathlib.Path(sys.argv[1]); source = path.read_text()
 start = source.index("\thandle_path /agent-assets/* {")
 end = source.index("\thandle {", start)
 gateway = source[start:end]
-# Move the gateway after the following catch-all, retaining every directive.
 catch_end = source.index("\n\t}\n", end) + len("\n\t}\n")
 source = source[:start] + source[end:catch_end] + gateway + source[catch_end:]
 path.write_text(source)
@@ -238,16 +189,16 @@ PY_REVERSE
   grep -q 'adapted Android CORS' "$work/out.log" || { cat "$work/out.log" >&2; exit 1; }
 done
 
-# Real Caddy HTTP routing: fixture upstreams return distinguishable responses,
-# proving preflight, gateway selection, path stripping and exposed map metadata.
 python3 - "$ROOT" "$work" <<'PY_HTTP'
 import http.client, json, os, pathlib, subprocess, sys, time
 root, work = map(pathlib.Path, sys.argv[1:])
 image = "caddy:2.10.2-alpine"
-# 逻辑上游必须与生产 compose 的默认值一致地传进来：Caddyfile 用 {$CADDY_*_UPSTREAM} 占位符，
-# 空占位符会让 adapt 产出**没有 upstreams** 的 reverse_proxy 节点（isolate() 因此拿不到 dial）。
 env_args = []
-for name, default in (("CADDY_FRONTEND_UPSTREAM", "wotb-frontend:80"), ("CADDY_KEYCLOAK_UPSTREAM", "keycloak:8080")):
+for name, default in (
+    ("CADDY_FRONTEND_UPSTREAM", "wotb-frontend:80"),
+    ("CADDY_FRONTEND_PEER", "wotb-frontend:80"),
+    ("CADDY_KEYCLOAK_UPSTREAM", "keycloak:8080"),
+):
     env_args += ["-e", f"{name}={os.environ.get(name) or default}"]
 config = json.loads(subprocess.check_output(["docker", "run", "--rm", "-e", "CADDY_ACME_EMAIL=ci@example.invalid", *env_args, "-v", f"{root}/deploy/tx/Caddyfile:/etc/caddy/Caddyfile:ro", image, "caddy", "adapt", "--config", "/etc/caddy/Caddyfile"], stderr=subprocess.DEVNULL))
 server = config["apps"]["http"]["servers"]["srv0"]
@@ -260,13 +211,24 @@ def isolate(node):
         if node.get("handler") == "reverse_proxy":
             asset = node["upstreams"] == [{"dial": "wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com:443"}]
             node["upstreams"] = [{"dial": "127.0.0.1:8081" if asset else "127.0.0.1:8082"}]
-            node.pop("transport", None)  # Fixture upstreams speak plain HTTP.
+            node.pop("transport", None)
+            node.pop("selection_policy", None)
+            # This fixture validates HTTP/CORS routing, not production active-health
+            # semantics. Rewriting the upstreams to in-process fixture listeners
+            # while retaining the production health checker can transiently mark
+            # the fixture upstream unavailable and return 503 before the local
+            # fixture listener is considered healthy.
+            node.pop("health_checks", None)
         for value in node.values(): isolate(value)
     elif isinstance(node, list):
         for value in node: isolate(value)
 isolate(server)
 asset = {"listen": [":8081"], "routes": [{"handle": [{"handler": "static_response", "status_code": 200, "body": "asset:{http.request.uri}", "headers": {"X-Map-Meta": ["fixture-map-metadata"]}}]}]}
-web = {"listen": [":8082"], "routes": [{"match": [{"path": ["/index.json"]}], "handle": [{"handler": "static_response", "status_code": 200, "body": "web:{http.request.uri}"}]}, {"handle": [{"handler": "static_response", "status_code": 502}]}]}
+web = {"listen": [":8082"], "routes": [
+    {"match": [{"path": ["/version.json"]}], "handle": [{"handler": "static_response", "status_code": 200, "body": "{\"fixture\":true}"}]},
+    {"match": [{"path": ["/index.json"]}], "handle": [{"handler": "static_response", "status_code": 200, "body": "web:{http.request.uri}"}]},
+    {"handle": [{"handler": "static_response", "status_code": 502}]}
+]}
 config = {"admin": {"disabled": True}, "apps": {"http": {"servers": {"cors": server, "asset-fixture": asset, "web-fixture": web}}}}
 path = work / "cors-runtime.json"; path.write_text(json.dumps(config))
 container = subprocess.check_output(["docker", "run", "-d", "--rm", "-p", "127.0.0.1::8080", "-v", f"{path}:/config.json:ro", image, "caddy", "run", "--config", "/config.json"], text=True).strip()

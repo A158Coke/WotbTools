@@ -48,6 +48,7 @@ ai_service:
   - 'common/map-semantics/**'
 frontend:
   - '.github/workflows/frontend.yml'
+  - '.github/workflows/frontend-replica.yml'
   - '.dockerignore'
   - 'docker/Dockerfile.frontend'
   - 'frontend/**'
@@ -68,6 +69,8 @@ frontend:
   - 'deploy/check-production-freshness.sh'
   - 'deploy/tx/build-frontend-from-gitee.sh'
   - 'deploy/tx/frontend.compose.yml'
+  - 'deploy/tx/frontend-shadow.compose.yml'
+  - 'deploy/tx/k7c-sync-runtime-content.sh'
   - 'deploy/tx/deploy.sh'
   - 'deploy/tx/with-deploy-lock.sh'
   - 'deploy/tx/common.compose.yml'
@@ -113,6 +116,7 @@ observability:
 deployment:
   - '.github/workflows/ai-service.yml'
   - '.github/workflows/tx-runtime-check.yml'
+  - '.github/workflows/frontend-replica.yml'
   - 'docker/Dockerfile.ai-service'
   - '.github/workflows/ci-deployment.yml'
   - '.github/workflows/ci-gate.yml'

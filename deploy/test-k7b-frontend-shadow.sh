@@ -9,15 +9,23 @@ resource="$ROOT/infra/komodo/resources/frontend-shadow.toml"
 [ -f "$template" ] || { echo "missing frontend nginx template" >&2; exit 1; }
 [ -f "$resource" ] || { echo "missing K7B shadow Komodo resource" >&2; exit 1; }
 
-json="$(docker compose -f "$compose" config --format json)"
-COMPOSE_JSON="$json" python3 - "$template" <<'PY'
+# The K7C production replica deliberately requires the workflow to supply the
+# exact immutable TX1 image reference. Keep the fixture aligned with that runtime
+# contract instead of relying on the retired source-controlled shadow image pin.
+test_image_ref="ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+if env -u TX_FRONTEND_IMAGE_REF docker compose -f "$compose" config --format json >/dev/null 2>&1; then
+  echo "frontend shadow compose accepted a missing TX_FRONTEND_IMAGE_REF" >&2
+  exit 1
+fi
+json="$(TX_FRONTEND_IMAGE_REF="$test_image_ref" docker compose -f "$compose" config --format json)"
+COMPOSE_JSON="$json" TEST_IMAGE_REF="$test_image_ref" python3 - "$template" <<'PY'
 import json, os, pathlib, sys
 
 data = json.loads(os.environ["COMPOSE_JSON"])
 assert data.get("name") == "wotbtools-frontend-shadow", data.get("name")
 assert set(data.get("services", {})) == {"frontend"}, sorted(data.get("services", {}))
 service = data["services"]["frontend"]
-assert service["image"] == "ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend:sha-fe53250d06b5"
+assert service["image"] == os.environ["TEST_IMAGE_REF"], service["image"]
 assert service["environment"]["BACKEND_UPSTREAM"] == "http://10.20.0.1:8087"
 assert service["environment"]["AI_UPSTREAM"] == "http://10.20.0.2:8089"
 assert service["environment"]["NGINX_ENVSUBST_FILTER"] == "^(BACKEND_UPSTREAM|AI_UPSTREAM)$$", service["environment"]

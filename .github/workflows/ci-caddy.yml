@@ -21,10 +21,13 @@ jobs:
       # inventory guard (every reviewed host, its exact upstream, and no Yecao
       # public address) followed by `caddy validate` through the real compose
       # service definition. PR CI and production therefore validate the identical
-      # thing, including the Komodo public ingress.
+      # thing, including the Komodo public ingress and the K7C frontend pool.
       - name: Validate the public site inventory and the Caddy configuration
         env:
           CADDY_ACME_EMAIL: ci@example.invalid
+          CADDY_FRONTEND_UPSTREAM: 10.20.0.3:8081
+          CADDY_FRONTEND_PEER: 10.20.0.1:8081
+          CADDY_KEYCLOAK_UPSTREAM: 10.20.0.1:8080
         run: |
           set -euo pipefail
           bash scripts/ci/run-with-network-retry.sh "Pull Caddy image" docker pull caddy:2.10.2-alpine
