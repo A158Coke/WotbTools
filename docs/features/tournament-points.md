@@ -8,7 +8,7 @@
 - `?view=tournament-points-config`：管理员配置赛事和每轮积分规则。
 - `?view=tournament-points-admin`：管理员上传、核对、暂存、发布和修正成绩。
 
-管理页面及业务/图片识别接口要求 `wotbtools-admin`。所有管理员共享同一份当天草稿；公开接口不返回草稿、未发布军团、小组截图或识别材料。
+管理页面及业务/图片识别接口要求独立的 `tournament-admin` realm role。`wotbtools-admin` 在 Keycloak 中作为 composite super-admin 显式继承 `tournament-admin`，应用层不以 `wotbtools-admin` 作为赛事权限旁路。所有管理员共享同一份当天草稿；公开接口不返回草稿、未发布军团、小组截图或识别材料。
 
 ## 赛事和积分规则
 

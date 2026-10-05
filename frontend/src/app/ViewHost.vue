@@ -16,7 +16,7 @@ const armorNeedsLogin = computed(() => activeView.value === 'agent-armor' && !au
 const tournamentAdmin = computed(() => ['tournament-points-config', 'tournament-points-admin'].includes(activeView.value))
 const tournamentNeedsLogin = computed(() => tournamentAdmin.value && !authenticated.value)
 const tournamentDenied = computed(() => tournamentAdmin.value && authenticated.value
-  && !tokenParsed.value?.realm_access?.roles?.includes('wotbtools-admin'))
+  && !tokenParsed.value?.realm_access?.roles?.includes('tournament-admin'))
 const armorLoginDestination = computed(() => ({ path: route.path, query: { ...route.query }, hash: route.hash }))
 const currentView = computed(() => VIEW_COMPONENTS[activeView.value] || VIEW_COMPONENTS.replay)
 const initialCapability = computed(() => replayInitialCapability(activeView.value))
