@@ -235,3 +235,27 @@ describe('车体横滚（hull_roll）接线守卫', () => {
     expect(src).not.toMatch(/\+rollAt\(v, T\)/)
   })
 })
+
+describe('炮线渲染守卫（阵营语义色直出）', () => {
+  it('炮线与全弹道轨迹线都跳过 ACES 色调映射（toneMapped: false）', () => {
+    // 渲染器全局 ACESFilmic + exposure 1.15 会压缩降饱和——UI 语义色必须直出字面值，
+    // 否则深色阵营色被二次压暗（2026-10-05 实测"亮度限制"根因）。
+    // 注释在 src 里已被剥离：按材质实参断言（两处：飞行段 + 全弹道轨迹线）
+    expect(src).toMatch(/new THREE\.MeshBasicMaterial\(\{ color, toneMapped: false \}\)/)
+    expect(src).toMatch(/opacity: TRAJ_OPACITY, depthWrite: false,\s*toneMapped: false,/)
+  })
+
+  it('轨迹线透明度低于 0.5 会发灰：基准必须 ≥ 0.5（当前 0.6）', () => {
+    const m = src.match(/const TRAJ_OPACITY = ([0-9.]+);/)
+    expect(m).toBeTruthy()
+    expect(Number(m[1])).toBeGreaterThanOrEqual(0.5)
+  })
+
+  it('炮线粗细：飞行段 ≥ 轨迹线（层级不变），且都不低于加粗后的下限', () => {
+    const tr = Number(src.match(/const TRACER_RADIUS = ([0-9.]+);/)?.[1])
+    const tj = Number(src.match(/const TRAJ_RADIUS = ([0-9.]+);/)?.[1])
+    expect(tr).toBeGreaterThanOrEqual(0.36)
+    expect(tj).toBeGreaterThanOrEqual(0.18)
+    expect(tr).toBeGreaterThan(tj)
+  })
+})

@@ -1772,7 +1772,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // ---------- 弹道 ----------
   const TRACER_LEN = 9;
   // 全弹道轨迹线按 replay clock 保留；impact 单独使用 wall-clock transient（见 updateImpacts）。
-  const TRAJ_OPACITY = 0.35;   // 与上游 Agent 同值（细且半透明；淡出阶段在其上再乘）
+  // 透明度（2026-10-05 提高可读性：原 0.35 与背景混合后明显发灰；淡出在其上再乘）
+  const TRAJ_OPACITY = 0.6;
   // 粗细（2026-10-05 加粗 ~64%：原 0.22/0.11 在 4K/远视角下几乎不可见，用户实测反馈）：
   // 飞行段与全弹道轨迹线同比例加粗，保持「飞行段更粗」的层级不变。
   const TRACER_RADIUS = 0.36;   // 飞行段粗细
@@ -1812,9 +1813,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 炮线唯一颜色规则 = 射手阵营（绿/红/白）；命中/跳弹/击毁不改炮线颜色——
     // 结果由弹着点 impact 编码（原实现按结果上色，与上游 Agent 不一致）
     const color = shotTeamColor(s);
+    // toneMapped: false —— 渲染器全局 ACES 胶片色调映射（toneMappingExposure 1.15）会把
+    // 颜色压缩降饱和，深色阵营色被进一步压暗（"亮度限制"的来源）。炮线是 UI 语义色，
+    // 与地表/场景材质同策略：直出字面色（见 ground/scenery 的 toneMapped: false）。
     const mesh = fxTake('tracer', () => new THREE.Mesh(
       new THREE.BoxGeometry(TRACER_RADIUS, TRACER_RADIUS, TRACER_LEN),
-      new THREE.MeshBasicMaterial({ color })));
+      new THREE.MeshBasicMaterial({ color, toneMapped: false })));
     mesh.material.color.setHex(color);
     mesh.visible = true;
     scene.add(mesh);
@@ -1830,6 +1834,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       new THREE.BoxGeometry(TRAJ_RADIUS, TRAJ_RADIUS, 1),
       new THREE.MeshBasicMaterial({
         color: shotTeamColor(s), transparent: true, opacity: TRAJ_OPACITY, depthWrite: false,
+        toneMapped: false,   // 同上：全弹道轨迹线同样直出字面色
       })));
     traj.material.color.setHex(shotTeamColor(s));
     traj.material.opacity = TRAJ_OPACITY;
