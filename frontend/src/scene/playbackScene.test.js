@@ -794,6 +794,39 @@ describe('scene vehicle selection intent', () => {
     container.querySelector('canvas').dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))
     expect(onVehicleSelect).toHaveBeenCalledTimes(1)
   })
+
+  it('空处单击上报 eid=null（宿主据此隐藏详情窗）；拖拽相机不算点击', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const onVehicleSelect = vi.fn()
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'empty.wotbreplay') })
+    vi.spyOn(THREE.Raycaster.prototype, 'intersectObjects').mockReturnValue([])
+    const canvas = container.querySelector('canvas')
+    canvas.setPointerCapture = vi.fn()
+    canvas.releasePointerCapture = vi.fn()
+    // 空处原地单击（位移 0）→ eid=null 上报一次
+    canvas.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 40, clientY: 50 }))
+    expect(onVehicleSelect).not.toHaveBeenCalled()   // down 不报（等待判定单击/拖拽）
+    canvas.dispatchEvent(new MouseEvent('pointerup', { button: 0, clientX: 40, clientY: 50 }))
+    expect(onVehicleSelect).toHaveBeenCalledOnce()
+    expect(onVehicleSelect.mock.calls[0][0]).toBeNull()
+    onVehicleSelect.mockClear()
+    // 空处拖拽（轨道旋转）→ 位移超阈值，不报
+    canvas.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 40, clientY: 50 }))
+    canvas.dispatchEvent(new MouseEvent('pointerup', { button: 0, clientX: 90, clientY: 70 }))
+    expect(onVehicleSelect).not.toHaveBeenCalled()
+    // 命中坦克后紧随的 pointerup 不产生空处上报
+    const object = new THREE.Object3D()
+    object.userData.eid = 11
+    vi.spyOn(THREE.Raycaster.prototype, 'intersectObjects').mockReturnValue([{ object }])
+    canvas.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 40, clientY: 50 }))
+    canvas.dispatchEvent(new MouseEvent('pointerup', { button: 0, clientX: 40, clientY: 50 }))
+    expect(onVehicleSelect).toHaveBeenCalledOnce()
+    expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
+  })
 })
 
 

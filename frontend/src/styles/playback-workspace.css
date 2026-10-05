@@ -121,12 +121,15 @@
 }
 .pb-root.playback-workspace > .hud > .pb-hud { inline-size: auto; }
 
-/* 传输控件 = 底部居中悬浮。 */
+/* 传输控件 = 底部居中悬浮（两行：传输 + 直接陈列的镜头/GLB 行）。 */
 .pb-root.playback-workspace:not(.portrait-flow) > .controls {
   position: absolute;
   inset-block-end: var(--space-2);
   inset-inline: 0;
   z-index: var(--pb-z-hud);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   inline-size: auto;
   max-inline-size: min(100% - var(--space-4), 720px);
   margin-inline: auto;

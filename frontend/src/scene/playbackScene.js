@@ -272,8 +272,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       sizeObserver = new ResizeObserver(onResize);
       sizeObserver.observe(container);
     }
-    // 点选意图上报宿主；相机跟随由显式控件设置
+    // 点选意图上报宿主；相机跟随由显式控件设置。
+    // pointerup 用于「空处单击」判定（拖拽相机 ≠ 点击其它地方，见 onScenePointerUp）。
     renderer.domElement.addEventListener('pointerdown', onScenePointerDown);
+    renderer.domElement.addEventListener('pointerup', onScenePointerUp);
   }
   function onResize() {
     if (!renderer) return;
@@ -285,6 +287,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     renderer.setSize(w, h);
     invalidate();            // 视口变化：下一帧必须重绘
   }
+  // 空处按下起点：pointerup 位移 ≤ 阈值才算「单击空处」（轨道旋转/平移的拖拽起点也在空处，
+  // 拖拽不属于「点击其它地方」，不得把详情窗关掉）。
+  const SCENE_CLICK_SLOP_PX = 4;
+  let emptyDownAt = null;
   function onScenePointerDown(e) {
     if (e.button !== 0) return;
     const r = container.getBoundingClientRect();
@@ -294,8 +300,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (hits.length) {
       let o = hits[0].object;
       while (o && !o.userData.eid) o = o.parent;
+      emptyDownAt = null;
       if (o) onVehicleSelect?.(o.userData.eid, e);
+    } else {
+      emptyDownAt = { x: e.clientX, y: e.clientY };
     }
+  }
+  function onScenePointerUp(e) {
+    if (e.button !== 0 || !emptyDownAt) return;
+    const moved = Math.hypot(e.clientX - emptyDownAt.x, e.clientY - emptyDownAt.y);
+    emptyDownAt = null;
+    // eid = null：宿主语义「选中被清空/点击其它地方」→ 隐藏详情窗（保留选中高亮由宿主决定）
+    if (moved <= SCENE_CLICK_SLOP_PX) onVehicleSelect?.(null, e);
   }
 
   // ---------- 地图边界带 ----------
@@ -2857,6 +2873,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (DEBUG) {
         delete window.__scene; delete window.__camera; delete window.__controls; delete window.__setFollow; delete window.__renderer;
         delete window.__pbV; delete window.__gdbg;
+      }
+      if (renderer) {
+        try { renderer.domElement.removeEventListener('pointerup', onScenePointerUp); } catch (_) {}
       }
       if (controls) { try { controls.dispose(); } catch (_) {} }
       if (renderer) {

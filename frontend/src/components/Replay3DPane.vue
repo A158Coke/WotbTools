@@ -99,6 +99,20 @@ const selectedEid = ref(null)
 const detailsOpen = ref(false)
 /** 浮窗落位偏好：点左车道 → 落右侧，点右车道 → 落左侧，点场景里的车 → 与它相对的一侧。 */
 const detailsSide = ref('right')
+/**
+ * 名册行点击 = **跟随该玩家坦克**（2026-10-05 需求）：不再打开详情窗。
+ * 选中高亮照旧（selectedEid），相机跟随由场景内核 setFollow 独占（它同时切 follow 档）。
+ */
+function followFromRoster(eid) {
+  selectedEid.value = eid
+  displayOpen.value = false
+  sceneApi?.setFollow(eid)
+}
+/** 场景里点中坦克 = 打开共享详情窗（保留原逻辑）；点空处（eid=null）= 隐藏详情窗。 */
+function handleSceneSelect(eid, event = null) {
+  if (eid == null) { closeDetails(); return }
+  selectVehicle(eid, event)
+}
 function selectVehicle(eid, event = null) {
   selectedEid.value = eid
   detailsOpen.value = true
@@ -401,7 +415,7 @@ function ensureScene() {
   //   · `!props.active` —— 未激活的能力不得建场景（不需要激活就初始化会在切走时白跑渲染）；
   //   · `labelOverlay.value` —— 3D 名牌改屏幕空间 DOM 锚点后，场景需要覆盖层句柄。
   if (sceneApi || !props.active || !shouldHaveScene()) return false
-  sceneApi = initPlayback(stage.value, store, labelOverlay.value, { onVehicleSelect: selectVehicle })
+  sceneApi = initPlayback(stage.value, store, labelOverlay.value, { onVehicleSelect: handleSceneSelect })
   sceneApi?.setPaused?.(!props.active)
   pushLabelPrefs();   // 新场景默认吃共享偏好（含"隐藏全部 UI"的当前状态）
   return true
@@ -630,10 +644,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
            uiPrefs.showRoster。行的渲染与 2D 共用同一个 `PlaybackRoster`。 -->
       <div v-if="store.hasData && showRoster" class="roster-surface" data-testid="roster-surface">
         <div class="team-lane side-left" data-testid="replay3d-lane-left">
-          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="selectVehicle" />
+          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
         </div>
         <div class="team-lane side-right" data-testid="replay3d-lane-right">
-          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.right" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="selectVehicle" />
+          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.right" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
         </div>
       </div>
 
@@ -666,21 +680,28 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           @scrub-end="store.seeking = false; transport.scrubEnd()"
         >
         </PlaybackTransport>
+        <!-- 高频查看动作直接陈列（2026-10-05 需求：从 Display 菜单移出）：镜头挡位 + GLB 车模 -->
+        <div class="tool-row" data-testid="replay3d-toolrow">
+          <span class="dim">{{ t('agentReplay.camera') }}</span>
+          <SegmentedControl
+            class="camera-control"
+            data-testid="replay3d-camera"
+            :model-value="store.cam"
+            :options="CAMERAS"
+            :aria-label="t('agentReplay.camera')"
+            @update:model-value="chooseCamera($event)"
+          />
+          <label class="toggle" :title="store.glbAllowed ? '' : t('agentReplay.glb_gate_hint')">
+            <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
+          </label>
+        </div>
       </div>
 
       <PlaybackDisplaySurface :open="displayOpen && !uiHidden" :portrait="portraitFlow" :anchor="displayAnchor" :host="rootEl" @close="displayOpen = false">
         <!-- 查看 / 显示开关都在这里（同一份 store.cam / uiPrefs / labelPrefs / hpPrefs / store.glbOn，
              没有第二套状态）：高频动作之外的设置不该永久占着战场高度。
              名册没有单独的「打开名册」入口：它的唯一开关是下面的 disp-roster 呈现偏好。 -->
-          <p class="dp-title">{{ t('agentReplay.camera') }}</p>
-          <SegmentedControl
-            class="dp-camera"
-            :model-value="store.cam"
-            :options="CAMERAS"
-            :aria-label="t('agentReplay.camera')"
-            @update:model-value="chooseCamera($event)"
-          />
-        <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
+          <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-killfeed" :checked="uiPrefs.showKillfeed" @change="uiPrefs.showKillfeed = $event.target.checked"> {{ t('agentReplay.display_killfeed') }}</label>
@@ -690,10 +711,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <label class="toggle"><input type="checkbox" data-testid="disp-tank" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ t('recon.map.playback.show_tank_name') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-hp" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ t('recon.map.playback.show_hp') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-reload" :checked="labelPrefs.showReload" @change="labelPrefs.showReload = $event.target.checked"> {{ t('agentReplay.display_reload') }}</label>
-        <p class="dp-title">{{ t('agentReplay.display_scene') }}</p>
-        <label class="toggle" :title="store.glbAllowed ? '' : t('agentReplay.glb_gate_hint')">
-          <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
-        </label>
         <!-- 画质在紧凑档是只读徽标（档位在播放前定型，运行中不可改），宽档同样只在工具条展示 -->
         <p class="q-badge dp-quality" :title="t('agentReplay.q_title')">{{ qualityBadge }}</p>
         <button
@@ -933,7 +950,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 }
 
 
-.phone-form .dp-close, .phone-form .dp-camera { inline-size: 100%; }
+.phone-form .dp-close { inline-size: 100%; }
+/* 直接陈列的查看动作行（镜头挡位 + GLB）：窄屏整行换行 */
+.tool-row { display: flex; align-items: center; justify-content: center; gap: var(--space-2); flex-wrap: wrap; }
+.tool-row .dim { font: var(--type-caption); color: var(--color-text-secondary); }
+.phone-form .tool-row { gap: var(--space-1); }
 
 /**
  * 手机竖屏：纵向流（与 2D 同一个契约）。
