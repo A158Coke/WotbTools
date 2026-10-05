@@ -568,10 +568,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <p v-else-if="blockedReason" class="pb-note" data-testid="replay3d-blocked">{{ blockedReason }}</p>
     <p v-else-if="!file" class="pb-note" data-testid="replay3d-empty">{{ $t('agentReplay.no_file') }}</p>
     <!-- 两种呈现（与 2D 同一个契约）：
-           `roster-side`  = 三段式 `[Team1] [Stage] [Team2]`，传输控件在 Stage 之下；
+           `roster-side`  = 全幅场景 + 名册左上/右上悬浮 + HUD 顶中 + 传输底部居中；
                             宽档、平板、手机横屏、手机全屏横屏都是这一条；
            `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
-         名册关闭时两者都没有车道，横屏 Stage 铺满中心，竖屏仍为正方形。 -->
+         名册关闭时两者都没有车道，横屏场景铺满整个根，竖屏仍为正方形。 -->
     <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow }" data-testid="replay3d-root">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
@@ -767,20 +767,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
  * 手机横屏（740×360、844×390）与全屏横屏下，正常 7v7 的紧凑行不需要车道滚动条。
  */
 .pb-root.roster-side .roster-surface {
-  /* 宽档下这条表壳**不参与布局**：两条车道必须直接落在根网格的第 1 / 第 3 列里。
-     让表壳留在流里，它就成了网格的唯一内容项、被放进第 1 列，两条车道只能在 240px 里
-     上下叠着排（实测名册下半截溢到传输控件上）。`display: contents` 才是它的层级语义。 */
+  /* 车道悬浮面板的层级语义：表壳不占布局，车道由 workspace.css 的 absolute 规则定位。 */
   display: contents;
-}
-.pb-root.roster-side .team-lane {
-  position: static;
-  inset: auto;
-  width: auto;
-  min-height: 0;
-  /* 车道填满网格行（= 根高度）。正常 7v7 的紧凑行放得下；只有病态数据（远超 7v7）才会
-     在车道内出现滚动——那是例外数据的安全兜底，不是常规呈现。 */
-  align-self: stretch;
-  overflow-y: auto;
 }
 
 .pb-root {
@@ -802,8 +790,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
  *
  * 3D 横屏占满中心可用宽高，竖屏保持正方形；相机比例随画布更新。
  *
- *   · `.pb-root` 是三列网格：`[Team1] [Stage] [Team2]`；
- *   · 侧槽宽度受 `--pb-lane-w` 控制，名册关闭时整列不存在（Stage 铺满中心列）；
+ *   · `.pb-root` 全幅场景 + 悬浮面板（名册左上/右上、HUD 顶中、控件底部居中）；
+ *   · 名册面板宽度受 `--pb-roster-min` / clamp 控制，名册关闭时场景独占全幅；
  *   · `.pb-stage` 里的 `.stage-square` 在横屏铺满中心可用宽高；竖屏保持正方形；
  *     canvas（.scene）与名牌覆盖层共用这个盒子，因此两者同原点、同尺寸。
  *
@@ -820,7 +808,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   position: relative;
   inline-size: 100%;
   block-size: 100%;
+  /* 悬浮布局：stage 直接铺满根（workspace.css 的 absolute inset:0）。 */
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
 }
+.stage-square > .scene { flex: 1; }
 .stage-square > .scene { position: absolute; inset: 0; }
 .pb-stage { container-type: size; }
 

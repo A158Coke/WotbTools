@@ -22,7 +22,7 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
-import { buildDestructibleIndex, foldDestructibleStates, fallRotation } from './destructibles.js'
+import { buildDestructibleIndex, foldDestructibleStates, fallRotation, fallTipVector, TREE_FALL_DURATION_S } from './destructibles.js'
 import { impactKind } from './impactKind.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
@@ -935,7 +935,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
               st.deadMeshes = findMeshes(px, py, true).map((e) => e.mesh);
             }
           }
-          destruct = { states, ptr: 0, lastT: -1 };
+          destruct = { states, ptr: 0, lastT: -1, animating: false };
           if (DEBUG) window.__destructStage = `ready states=${destruct.states.length}`;
           if (DEBUG) window.__destructDebug = () => ({
             events: (DATA.destructible_events || []).length,
@@ -2217,20 +2217,37 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 可破坏地形状态推进（回放时钟；seek 后退 = 全量重算，前进 = 游标泵）。
   // 树倒角度每帧从 (T − clock) 重算（幂等，seek 安全）；碎裂换模只在状态翻转时
   // 触碰 visible。st.pivot 的倒向旋转 = fall ∘ placement（世界轴后乘，见加载段）。
+  // 可破坏状态推进（回放时钟；seek 后退 = 全量重算，前进 = 游标泵）。
+  // 性能：只在有**在飞倒树动画**时逐帧更新四元数（dirty 标记），已终态的树跳过；
+  // 碎裂换模只在状态翻转时触碰 visible（幂等，seek 安全）。
   function updateDestructibles(T) {
     if (!destruct) return;
     if (T < destruct.lastT) destruct.ptr = 0;   // seek 后退：全部回到未激活
     destruct.lastT = T;
     const states = destruct.states;
     while (destruct.ptr < states.length && states[destruct.ptr].clock <= T) destruct.ptr++;
+    destruct.animating = false;
     for (let i = 0; i < states.length; i++) {
       const st = states[i];
       const active = i < destruct.ptr;
       if (st.prop === 3) {
         if (!st.pivot) continue;
-        const r = active ? fallRotation(st.fallDir, T - st.clock) : null;
-        if (r) st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r.axis[0], r.axis[1], r.axis[2]), r.angle);
-        else st.pivot.quaternion.identity();
+        if (!active) {
+          if (st.pivot.quaternion.x || st.pivot.quaternion.y || st.pivot.quaternion.z) {
+            st.pivot.quaternion.identity();
+          }
+          continue;
+        }
+        // 只在动画窗口内逐帧更新；终态后写一次不再碰（省去 700+ 次 setFromAxisAngle）
+        const elapsed = T - st.clock;
+        if (elapsed < TREE_FALL_DURATION_S) {
+          destruct.animating = true;
+          const r = fallRotation(st.fallDir, elapsed);
+          if (r) st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r.axis[0], r.axis[1], r.axis[2]), r.angle);
+        } else if (!st.settled) {
+          st.settled = true;
+          st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r_axis(st.fallDir, 0), r_axis(st.fallDir, 1), r_axis(st.fallDir, 2)), Math.PI / 2);
+        }
       } else {
         if (active === !!st.applied) continue;
         st.applied = active;
@@ -2240,6 +2257,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
   }
   const _tmpFallAxis = new THREE.Vector3();
+  function r_axis(dir8, idx) { const [dx, dy] = fallTipVector(dir8); return [-dy, dx, 0][idx]; }
 
   function applyPose(v) {
     const dead = deathAt(v, T);
@@ -2334,6 +2352,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const busy = PLAYING
       || cameraMoved
       || frameDirty
+      || (destruct && destruct.animating)
       || tracers.length > 0 || impacts.length > 0 || floatDmgs.length > 0 || burstFx.length > 0
       || ghostByEid.size > 0 || flashByEid.size > 0;
     if (!busy) return;
