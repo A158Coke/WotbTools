@@ -85,6 +85,7 @@ keycloak:
   - 'java/settings-docker.xml'
   - 'keycloak-qq-provider/**'
   - 'keycloak-wargaming-provider/**'
+  - 'keycloak-session-provider/**'
   - 'infra/tofu/keycloak/**'
   - 'deploy/test-keycloak-runtime.sh'
   - 'deploy/test-keycloak-tofu.sh'
