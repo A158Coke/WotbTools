@@ -1,0 +1,44 @@
+// @vitest-environment happy-dom
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { occlusionCells } from './playbackScene.js'
+
+describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', () => {
+  it('同一格内的短线段 → 单格；跨格 → 首尾格都在集合里', () => {
+    expect([...occlusionCells(2, 2, 6, 6, 16)]).toEqual(['0,0'])
+    const c = [...occlusionCells(5, 5, 40, 5, 16)]
+    expect(c).toContain('0,0')   // 起点格
+    expect(c).toContain('2,0')   // 终点格（40/16 = 2）
+    expect(c.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('负坐标与轴向线段：只占一行/一列格（不撒满平面）', () => {
+    const c = [...occlusionCells(-20, -20, -20, 20, 16)]
+    expect(c.every((k) => k.endsWith(',-2') || k.endsWith(',-1') || k.endsWith(',1') || k.endsWith(',0'))).toBe(true)
+    expect(new Set(c.map((k) => k.split(',')[0])).size).toBe(1)   // x 恒为 -2
+  })
+
+  it('采样步长 ≤ 半格：长线段不漏格（相邻格键在 x 或 y 上连续）', () => {
+    const c = [...occlusionCells(0, 0, 160, 0, 16)]
+    expect(c.length).toBeGreaterThanOrEqual(11)        // 0..10 格
+    expect(c).toContain('10,0')
+  })
+})
+
+describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检测）', () => {
+  const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
+  it('源码护栏：不再对 mapScenery 全量 intersectObject，改用候选列表 intersectObjects', () => {
+    expect(src).not.toMatch(/intersectObject\(mapScenery, true\)/)
+    expect(src).toMatch(/raycaster\.intersectObjects\(cands, false\)/)
+    expect(src).toMatch(/OCCL_MAX_CANDIDATES/)
+    // 候选表在场景加载时构建、换场时失效
+    expect(src).toMatch(/occlGrid = occGrid;/)
+    expect(src).toMatch(/occlGrid = null;/)
+  })
+  it('炮线弹着特效所需的 from/to 字段仍在（折线改造曾漏掉 → ricochet 分支抛异常）', () => {
+    expect(src).toMatch(/from: new THREE\.Vector3\(-s\.from\[0\], s\.from\[1\], s\.from\[2\]\)/)
+    expect(src).toMatch(/to: impactPos\.clone\(\), impactPos/)
+    expect(src).toMatch(/const dir = tr\.to\.clone\(\)\.sub\(tr\.from\)\.normalize\(\)/)
+  })
+})

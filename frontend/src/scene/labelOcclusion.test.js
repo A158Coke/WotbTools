@@ -38,12 +38,15 @@ describe('标签软遮挡（PR #411 Blocker 3）', () => {
     expect(src).toMatch(/function terrainBlocksAim/)
     expect(src).toMatch(/sampleHeight\(x, z\) > y \+ 0\.5/)
     expect(src).toMatch(/function sceneryBlocksAim/)
-    expect(src).toMatch(/raycaster\.intersectObject\(mapScenery, true\)/)
+    // 2026-10-05：整场景递归 raycast 是"打起来后间歇卡死"的根因（单次可达数十~数百 ms，
+    // 场景 GLB 3000+ 节点）→ 改为只对**线段经过的 16m 候选格**内的网格检测（见
+    // playbackScene.occlusion.test.js：禁止回退成全量检测）
+    expect(src).toMatch(/raycaster\.intersectObjects\(cands, false\)/)
   })
 
   it('只把地形与静态场景当 blocker（不把其他车辆算遮挡）', () => {
     // 遮挡检测只查 mapScenery；不得在遮挡路径上遍历车辆（V）
-    expect(src).toMatch(/if \(!mapScenery \|\| !raycaster\) return false;/)
+    expect(src).toMatch(/if \(!mapScenery \|\| !raycaster \|\| !occlGrid\) return false;/)
     const occl = src.slice(src.indexOf('function terrainBlocksAim'),
                            src.indexOf('function updateLabelOcclusion'))
     expect(occl).not.toMatch(/V\.find|for \(const v of V\)|V\[/)
