@@ -1773,8 +1773,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const TRACER_LEN = 9;
   // 全弹道轨迹线按 replay clock 保留；impact 单独使用 wall-clock transient（见 updateImpacts）。
   const TRAJ_OPACITY = 0.35;   // 与上游 Agent 同值（细且半透明；淡出阶段在其上再乘）
-  const TRACER_RADIUS = 0.22;   // 飞行段粗细
-  const TRAJ_RADIUS = 0.11;     // 轨迹线粗细
+  // 粗细（2026-10-05 加粗 ~64%：原 0.22/0.11 在 4K/远视角下几乎不可见，用户实测反馈）：
+  // 飞行段与全弹道轨迹线同比例加粗，保持「飞行段更粗」的层级不变。
+  const TRACER_RADIUS = 0.36;   // 飞行段粗细
+  const TRAJ_RADIUS = 0.18;     // 轨迹线粗细
   // 战斗反馈显示时长倍率（**只作用于 3D 场景**）：炮线（全弹道轨迹线）、命中特效、
   // 掉血飘字、HP 条幽灵/受击闪、击毁爆散统一乘这个系数——回放里这些反馈需要更长的可读
   // 时间，否则 1x 下弹道/数字一闪即逝。乘在下面 transient 段的 2D SSOT 常量之上，
