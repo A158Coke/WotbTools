@@ -32,8 +32,7 @@ export const PRIMARY_NAV = Object.freeze([
 ])
 
 /**
- * 侧边栏管理组（平板 / 桌面）。`role`：'admin' = wotbtools-admin；'hofAdmin' = HoF-admin 或全站管理员；
- * 'tournamentAdmin' = tournament-admin（wotbtools-admin 由 Keycloak composite 继承）。
+ * 侧边栏管理组（平板 / 桌面）。role 对应 useAuth 的各域管理权限；全站管理员具备所有管理入口。
  * 手机没有侧边栏，这些入口留在"更多"页的管理分组里。
  */
 export const ADMIN_NAV = Object.freeze([

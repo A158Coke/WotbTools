@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.time.Instant;
 
@@ -31,6 +32,9 @@ public class TournamentDay {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "published_groups", nullable = true, columnDefinition = "jsonb")
     public List<TournamentSnapshot.Group> publishedGroups;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "published_historical_points", nullable = true, columnDefinition = "jsonb")
+    public Map<String, Integer> publishedHistoricalPoints;
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "cleared_clans", nullable = false, columnDefinition = "jsonb")
     public Set<String> clearedClans;
