@@ -79,7 +79,7 @@ class TournamentGroupRecognizerTest {
     void rejectsExpiredWrongHashWrongCallerIssuerAudienceAndInvalidClaimsBeforeProvider() {
         final Instant now = Instant.now();
         final List<Consumer<JWTClaimsSet.Builder>> alterations = List.of(
-                claims -> claims.issueTime(Date.from(now.minusSeconds(120))).expirationTime(Date.from(now.minusSeconds(1))),
+                claims -> claims.issueTime(Date.from(now.minusSeconds(400))).expirationTime(Date.from(now.minusSeconds(100))),
                 claims -> claims.claim("image_hash", "0".repeat(64)),
                 claims -> claims.subject("other-admin"),
                 claims -> claims.issuer("other-issuer"),
@@ -87,12 +87,41 @@ class TournamentGroupRecognizerTest {
                 claims -> claims.audience((String) null),
                 claims -> claims.issueTime(null),
                 claims -> claims.expirationTime(null),
-                claims -> claims.issueTime(Date.from(now.plusSeconds(30))),
+                claims -> claims.issueTime(Date.from(now.plusSeconds(60))),
                 claims -> claims.expirationTime(Date.from(now.plusSeconds(400))),
                 claims -> claims.claim("event_id", "1"),
                 claims -> claims.claim("round_number", 6),
                 claims -> claims.claim("day_number", 4),
                 claims -> claims.claim("rules_version", 0));
+        for (final Consumer<JWTClaimsSet.Builder> alteration : alterations) {
+            assertEquals("INVALID_RECOGNITION_PERMIT", assertThrows(ResponseStatusException.class,
+                    () -> recognize(png, permit(png, alteration))).getReason());
+        }
+        verify(gateway, never()).chat(any());
+    }
+
+    @Test
+    void acceptsBoundedIssuerAndVerifierClockSkew() {
+        final Instant now = Instant.now();
+        assertTrue(recognize(png, permit(png, claims -> claims
+                .issueTime(Date.from(now.plusSeconds(20)))
+                .expirationTime(Date.from(now.plusSeconds(320))))).complete());
+        assertTrue(recognize(png, permit(png, claims -> claims
+                .issueTime(Date.from(now.minusSeconds(320)))
+                .expirationTime(Date.from(now.minusSeconds(20))))).complete());
+        verify(gateway, times(2)).chat(any());
+    }
+
+    @Test
+    void clockLeewayDoesNotRelaxLifetimeOrAcceptLargerSkew() {
+        final Instant now = Instant.now();
+        final List<Consumer<JWTClaimsSet.Builder>> alterations = List.of(
+                claims -> claims.issueTime(Date.from(now.plusSeconds(60)))
+                        .expirationTime(Date.from(now.plusSeconds(360))),
+                claims -> claims.issueTime(Date.from(now.minusSeconds(360)))
+                        .expirationTime(Date.from(now.minusSeconds(60))),
+                claims -> claims.issueTime(Date.from(now.plusSeconds(20)))
+                        .expirationTime(Date.from(now.plusSeconds(321))));
         for (final Consumer<JWTClaimsSet.Builder> alteration : alterations) {
             assertEquals("INVALID_RECOGNITION_PERMIT", assertThrows(ResponseStatusException.class,
                     () -> recognize(png, permit(png, alteration))).getReason());

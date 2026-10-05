@@ -41,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class TournamentGroupRecognizer {
     public static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    private static final Duration PERMIT_CLOCK_SKEW = Duration.ofSeconds(30);
     private static final byte[] PNG_MAGIC = {(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
 
     private final AiChatGateway gateway;
@@ -68,7 +69,7 @@ public class TournamentGroupRecognizer {
         if (keyBytes.length >= 32) {
             this.permitDecoder = NimbusJwtDecoder.withSecretKey(new SecretKeySpec(keyBytes, "HmacSHA256"))
                     .macAlgorithm(MacAlgorithm.HS256).build();
-            this.permitDecoder.setJwtValidator(new JwtTimestampValidator(Duration.ZERO));
+            this.permitDecoder.setJwtValidator(new JwtTimestampValidator(PERMIT_CLOCK_SKEW));
         } else {
             this.permitDecoder = null;
         }
@@ -110,7 +111,10 @@ public class TournamentGroupRecognizer {
             if (!"wotbtools-tournament".equals(jwt.getClaimAsString("iss"))
                     || jwt.getAudience() == null || !jwt.getAudience().contains("tournament-recognition")
                     || !callerId.equals(jwt.getSubject()) || jwt.getIssuedAt() == null || jwt.getExpiresAt() == null
-                    || jwt.getIssuedAt().isAfter(now) || !jwt.getExpiresAt().isAfter(now)
+                    // TX issues permits and Yecao verifies them; bound clock drift independently
+                    // from the encoded lifetime, which remains limited to five minutes.
+                    || jwt.getIssuedAt().isAfter(now.plus(PERMIT_CLOCK_SKEW))
+                    || !jwt.getExpiresAt().plus(PERMIT_CLOCK_SKEW).isAfter(now)
                     || !jwt.getExpiresAt().isAfter(jwt.getIssuedAt())
                     || Duration.between(jwt.getIssuedAt(), jwt.getExpiresAt()).compareTo(Duration.ofMinutes(5)) > 0
                     || !positiveClaim(jwt, "event_id", Long.MAX_VALUE)
