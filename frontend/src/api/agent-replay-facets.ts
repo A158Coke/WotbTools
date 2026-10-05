@@ -309,6 +309,12 @@ export interface AgentPlaybackFacet {
   reloads?: AgentReloadEvent[]
   /** v0.3.9：method 35 当前生效完整装填时长（仅本方） */
   reload_effective?: AgentReloadEffectiveEvent[]
+  /** 可破坏地形（上游 2026-10-05 起 additive；旧产物缺失 = 特性禁用） */
+  destructible_areas?: { eid: number; x: number; z: number }[]
+  destructible_events?: {
+    clock: number; area_eid: number; prop: number; slot: number
+    fall_dir: number; body_len: number; args: number[]
+  }[]
 }
 
 // ---------- AI 事件数据：AiReviewFacet（v1；上游 v0.3.5 起含原始 HP 与 method8 证据） ----------
@@ -613,6 +619,14 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   // 目标存在性必须是布尔（跳空键按"无已证实目标"解读，与 assaultObjectivePresent 同义）
   if (pb.assault_objective_present !== undefined && typeof pb.assault_objective_present !== 'boolean') {
     throw new Error('agent facets: playback.assault_objective_present 必须是布尔')
+  }
+  // 可破坏地形（additive）：在场时校验为对象/事件数组，字段形状由消费端
+  // scene/destructibles.js 容错（寻址失败逐事件跳过，不 fail 整场回放）
+  if (pb.destructible_areas !== undefined) {
+    assertArray(pb.destructible_areas, 'playback.destructible_areas')
+  }
+  if (pb.destructible_events !== undefined) {
+    assertArray(pb.destructible_events, 'playback.destructible_events')
   }
   return value as unknown as AgentPlaybackFacet
 }

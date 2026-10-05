@@ -22,6 +22,7 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
+import { buildDestructibleIndex, foldDestructibleStates, fallRotation } from './destructibles.js'
 import { impactKind } from './impactKind.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
@@ -103,6 +104,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let groundLayers = null;
   let terrainMesh = null, heightField = null, heightMeta = null;  // 3D 地形
   let mapScenery = null;                              // 静态场景 GLB（建筑等）
+  // 可破坏地形（契约 additive：destructible_areas/events + map/destructibles.json）。
+  // scenery = { states, appliedPtr, lastT, meshIdx }；Pivot 挂在 gltf.scene 内随
+  // mapScenery 一起 dispose（会话生命周期同场景 GLB，无独立 teardown）。
+  let destruct = null;
   let groundMesh = null, gridHelper = null;           // buildWorld 的占位地面/网格（会话拥有）
   let destroyed = false;
   let kfId = 0;
@@ -545,6 +550,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
     if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
     if (mapScenery) { scene.remove(mapScenery); mapScenery = null; }
+    destruct = null;
     mapTexture = null; mapMetaInfo = null; heightField = null; heightMeta = null;
     groundLayers = null;
     // 地面加载方式由画质档决定（低=小地图底图、中/高=分层地表），3D 地形有高度场即开启
@@ -725,6 +731,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 与坦克 GLB 同一帧变换，纯旋转无镜像，绕序天然正确。
     // 中/低档跳过场景 GLB（单图 11–67MB 下载 + 大块显存，是画质档最大的分流项）
     if (Q.scenery) try {
+      // 可破坏物清单（与场景 GLB 并行拉取；缺失/低档静默禁用该特性）
+      const destructDocPromise = mapStaticUrl('destructibles', undefined, resolvedKey)
+        ? assetProvider.json(mapStaticUrl('destructibles', undefined, resolvedKey)).catch(() => null)
+        : Promise.resolve(null);
       const sceneryUrl = mapStaticUrl('scenery', undefined, resolvedKey);
       if (!sceneryUrl) { /* 未配置资产面/未命中索引：跳过场景 GLB（无服务端回退） */ }
       else {
@@ -863,6 +873,62 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           if (!o.isMesh) return;
           if (/sky/i.test(o.name || '')) o.visible = false;
         });
+
+        // ---- 可破坏地形：mesh 空间索引 + 损毁态网格初始隐藏 ----
+        // 网格位置 = gltf.scene 局部系（z 上）= destructibles.json 的 pos（游戏场景系，
+        // 直接对应回放 x/z）。2m 桶 + 3×3 邻域查询；D_ 前缀 = 损毁态替换网格。
+        const meshGrid = new Map();
+        const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
+        gltf.scene.traverse((o) => {
+          if (!o.isMesh || !o.name) return;
+          if (o.name.startsWith('D_')) { o.visible = false; }
+          let wx = 0, wy = 0, n = o;
+          // 展平到 gltf.scene：本导出器为扁平结构（节点直挂根），累积父链防御嵌套
+          while (n && n !== gltf.scene) { wx += n.position.x; wy += n.position.y; n = n.parent; }
+          const k = gridKey(wx, wy);
+          (meshGrid.get(k) || meshGrid.set(k, []).get(k)).push({ mesh: o, x: wx, y: wy });
+        });
+        const findMeshes = (px, py, wantDestroyed, r = 1.5) => {
+          const out = [];
+          const gx = Math.round(px / 2), gy = Math.round(py / 2);
+          for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+            for (const e of meshGrid.get(`${gx + dx},${gy + dy}`) || []) {
+              const destroyedMesh = (e.mesh.name || '').startsWith('D_');
+              if (destroyedMesh === wantDestroyed && Math.hypot(e.x - px, e.y - py) <= r) out.push(e);
+            }
+          }
+          return out;
+        };
+        const destructDoc = await destructDocPromise;
+        if (!stale() && destructDoc && Array.isArray(DATA.destructible_events)) {
+          const areasByEid = new Map((DATA.destructible_areas || []).map((a) => [a.eid, a]));
+          const index = buildDestructibleIndex(destructDoc);
+          const states = foldDestructibleStates(DATA.destructible_events, areasByEid, index);
+          // 预挂树倒 pivot（挂 gltf.scene 内，局部 z 上；树顶运动学见 destructibles.js）。
+          // mesh 自身保留 placement 旋转/贴地 z；倒伏 = pivot 上的世界轴旋转（后乘），
+          // pivot.z 取首网格根部高度，其余网格按各自 z 差挂入。
+          const worldZ = (m) => { let z = m.position.z, n = m.parent; while (n && n !== gltf.scene) { z += n.position.z; n = n.parent; } return z; };
+          for (const st of states) {
+            const [px, py] = st.inst.pos;
+            if (st.prop === 3) {
+              const hits = findMeshes(px, py, false);
+              if (!hits.length) continue;
+              const pivot = new THREE.Group();
+              pivot.position.set(px, py, worldZ(hits[0].mesh));
+              for (const h of hits) {
+                const wz = worldZ(h.mesh);
+                h.mesh.position.set(h.x - px, h.y - py, wz - pivot.position.z);
+                pivot.add(h.mesh);
+              }
+              gltf.scene.add(pivot);
+              st.pivot = pivot;
+            } else {
+              st.intactMeshes = findMeshes(px, py, false).map((e) => e.mesh);
+              st.deadMeshes = findMeshes(px, py, true).map((e) => e.mesh);
+            }
+          }
+          destruct = { states, ptr: 0, lastT: -1 };
+        }
       }
       }
     } catch (e) { console.warn('场景模型加载失败（忽略）:', e); }
@@ -2132,6 +2198,33 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const tmpDir = new THREE.Vector3();  // 进入跟随：相机方向临时量
   const FOLLOW_SNAP_DIST = 26;         // 进入跟随：相机沿当前方向收拢到此距离（米；坦克约 7m 长）
   const FOLLOW_MIN_HEIGHT = 9;         // 进入跟随：相机至少高于坦克此高度（米，保证俯角不贴地）
+  // 可破坏地形状态推进（回放时钟；seek 后退 = 全量重算，前进 = 游标泵）。
+  // 树倒角度每帧从 (T − clock) 重算（幂等，seek 安全）；碎裂换模只在状态翻转时
+  // 触碰 visible。st.pivot 的倒向旋转 = fall ∘ placement（世界轴后乘，见加载段）。
+  function updateDestructibles(T) {
+    if (!destruct) return;
+    if (T < destruct.lastT) destruct.ptr = 0;   // seek 后退：全部回到未激活
+    destruct.lastT = T;
+    const states = destruct.states;
+    while (destruct.ptr < states.length && states[destruct.ptr].clock <= T) destruct.ptr++;
+    for (let i = 0; i < states.length; i++) {
+      const st = states[i];
+      const active = i < destruct.ptr;
+      if (st.prop === 3) {
+        if (!st.pivot) continue;
+        const r = active ? fallRotation(st.fallDir, T - st.clock) : null;
+        if (r) st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r.axis[0], r.axis[1], r.axis[2]), r.angle);
+        else st.pivot.quaternion.identity();
+      } else {
+        if (active === !!st.applied) continue;
+        st.applied = active;
+        for (const m of st.intactMeshes || []) m.visible = !active;
+        for (const m of st.deadMeshes || []) m.visible = active;
+      }
+    }
+  }
+  const _tmpFallAxis = new THREE.Vector3();
+
   function applyPose(v) {
     const dead = deathAt(v, T);
     // 死亡后模型不消失：coverage 在阵亡处截止，但残骸应留在最后已知位置
@@ -2255,6 +2348,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       spawnBurst(burstEvents[burstPtr++].eid);
     }
     for (const v of V) applyPose(v);
+    updateDestructibles(T);
     updateScore();
     // HUD → store
     // 顶栏：争霸实时点数——**每 tick 确定性重算**（无采样也写 null）：从争霸场切到普通场时
