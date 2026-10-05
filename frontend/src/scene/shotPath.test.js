@@ -26,6 +26,20 @@ describe('shotPath：折线弹道求值（跳弹/穿透续段）', () => {
     expect(legSecsOf({ from: [0, 0, 0], to: [1, 0, 0], via: [[0.5, 0, 0]], leg_secs: [0, 0.2] }, 0.42)).toEqual([0.42])
   })
 
+  it('via 存在但 leg_secs 缺失/非法时整体回退 from→to，禁止 fallback 末端瞬移', () => {
+    const shot = { from: [0, 0, 0], via: [[10, 10, 0], [20, 10, 0]], to: [30, 0, 0] }
+    const pts = pathPointsOf(shot)
+    expect(pts).toEqual([[0, 0, 0], [30, 0, 0]])
+    const legs = legSecsOf(shot, 0.3)
+    const ends = legEndTimes(legs, 1)
+    expect(pointAt(pts, ends, 1.15, 1)).toEqual([15, 0, 0])
+    expect(pointAt(pts, ends, 1.3, 1)).toEqual([30, 0, 0])
+
+    const malformed = { ...shot, leg_secs: [0, 0.1, 0.1] }
+    expect(pathPointsOf(malformed)).toEqual([[0, 0, 0], [30, 0, 0]])
+    expect(legSecsOf(malformed, 0.3)).toEqual([0.3])
+  })
+
   it('头部按时间落在当前段：段内匀速、拐点处位置连续', () => {
     const pts = pathPointsOf(ricochet)
     const ends = legEndTimes(ricochet.leg_secs, 71.219)
