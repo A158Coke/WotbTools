@@ -1,8 +1,8 @@
 locals {
   realm_roles = {
-    "wotbtools-admin" = "WoTBTools admin"
-    "wotbtools-user"  = "WoTBTools user"
-    "HoF-admin"       = "Hall of Fame administrator"
+    "wotbtools-user"   = "WoTBTools user"
+    "HoF-admin"        = "Hall of Fame administrator"
+    "tournament-admin" = "Tournament administrator"
   }
 }
 
@@ -16,6 +16,28 @@ resource "keycloak_role" "realm" {
   realm_id    = keycloak_realm.wotbtools.id
   name        = each.key
   description = each.value
+}
+
+# Super-admin is an IAM-level composite. Domain services authorize against
+# their own least-privilege roles; assigning wotbtools-admin grants the complete
+# application role set through Keycloak instead of duplicating OR checks in
+# application code.
+resource "keycloak_role" "wotbtools_admin" {
+  realm_id    = keycloak_realm.wotbtools.id
+  name        = "wotbtools-admin"
+  description = "WoTBTools admin"
+  composite_roles = [
+    keycloak_role.realm["wotbtools-user"].id,
+    keycloak_role.realm["HoF-admin"].id,
+    keycloak_role.realm["tournament-admin"].id,
+  ]
+}
+
+# Preserve the existing production role identity while moving its Terraform
+# address out of the shared for_each collection so it can own composites.
+moved {
+  from = keycloak_role.realm["wotbtools-admin"]
+  to   = keycloak_role.wotbtools_admin
 }
 
 resource "keycloak_default_roles" "wotbtools" {
