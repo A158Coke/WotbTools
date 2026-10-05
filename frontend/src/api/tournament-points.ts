@@ -103,6 +103,7 @@ export async function recognizeTournamentImage(id: number, round: number, day: n
   const imageBody = new FormData()
   imageBody.append('image', file)
   imageBody.append('permit', permit.permit)
+  // Multipart AI calls reuse the shared Bearer boundary without setting a JSON content type.
   const result = await json('/api/ai/tournament-groups/recognize', 'TournamentRecognitionResult', true, { method: 'POST', body: imageBody, signal })
   if (result.imageHash !== permit.imageHash) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
   return { result, evidenceId: permit.evidenceId }
