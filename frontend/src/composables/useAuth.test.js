@@ -621,7 +621,7 @@ describe('useAuth', () => {
     expect(auth.isAuthenticated()).toBe(false)
   })
 
-  it('ensureToken() 刷新失败时退回未登录并返回 false（调用方依赖这个 false）', async () => {
+  it('ensureToken() Web 瞬时刷新失败保留身份、隐藏 token，并允许后续 refresh 恢复', async () => {
     kcScenario.initResult = true
     kcScenario.tokenParsed = USER_CLAIMS
     const auth = useAuth()
@@ -633,9 +633,16 @@ describe('useAuth', () => {
     await expect(auth.ensureToken(30)).resolves.toBe(false)
 
     expect(kcUpdateToken).toHaveBeenCalledWith(30)
-    expect(auth.authenticated.value).toBe(false)
-    expect(auth.tokenParsed.value).toBe(null)
-    expect(auth.authInitState.value).toBe('unauthenticated')
+    expect(auth.authenticated.value).toBe(true)
+    expect(auth.tokenParsed.value).toEqual(USER_CLAIMS)
+    expect(auth.authInitState.value).toBe('authenticated')
+    expect(auth.token()).toBe('')
+
+    kcInstances.at(-1).token = 'kc-access-token-recovered'
+    kcUpdateToken.mockResolvedValueOnce(true)
+    await expect(auth.ensureToken(30)).resolves.toBe(true)
+    expect(auth.authenticated.value).toBe(true)
+    expect(auth.token()).toBe('kc-access-token-recovered')
   })
 
   it('ensureToken() Native 离线 refresh-failed 保留 session但返回 false', async () => {
