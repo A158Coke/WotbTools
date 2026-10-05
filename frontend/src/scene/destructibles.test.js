@@ -34,7 +34,6 @@ describe('resolveDestructibleEvent', () => {
     expect(hit?.id).toBe(1)
   })
   it('贴边锚点经 ±1 邻域兜底命中', () => {
-    // 锚点 x=-99.9 → floor=-1，但物体在 -2 格：邻域必须救回
     const areas2 = new Map([[12, { eid: 12, x: -99.9, z: -205 }]])
     const hit = resolveDestructibleEvent({ area_eid: 12, slot: 17 }, areas2, idx)
     expect(hit?.id).toBe(1)
@@ -58,7 +57,6 @@ describe('fallTipVector / fallRotation（倒向运动学）', () => {
     expect(Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI).toBeCloseTo(164.5, 0)
   })
   it('tip=(1,0) 时旋转轴=(0,1,0)（右手法则把 +z 转向 +x）', () => {
-    // dir8 使 tip=(1,0)：tip=(-sin a, -cos a)=(1,0) → a=270° → dir8=192
     const r = fallRotation(192, fallDurationS(8), 8)
     expect(r.axis[0]).toBeCloseTo(0)
     expect(r.axis[1]).toBeCloseTo(1)
@@ -73,10 +71,10 @@ describe('fallTipVector / fallRotation（倒向运动学）', () => {
     const mid = fallRotation(0, T / 2, L)
     const end = fallRotation(0, T, L)
     const past = fallRotation(0, T * 3, L)
-    expect(q.angle).toBeCloseTo(Math.PI / 8, 6)          // 线性：1/4 时长 → 1/4 角
+    expect(q.angle).toBeCloseTo(Math.PI / 8, 6)
     expect(mid.angle).toBeCloseTo(Math.PI / 4, 6)
     expect(end.angle).toBeCloseTo(Math.PI / 2)
-    expect(past.angle).toBeCloseTo(Math.PI / 2)          // 超出后钳位，不回弹
+    expect(past.angle).toBeCloseTo(Math.PI / 2)
   })
   it('停止角可小于 90°（触地限制）：传入 stopRad 后终态即该角', () => {
     const L = 8
@@ -87,47 +85,40 @@ describe('fallTipVector / fallRotation（倒向运动学）', () => {
     expect(mid.angle).toBeCloseTo(stop / 2, 6)
     expect(end.angle).toBeCloseTo(stop, 6)
     expect(fallRotation(0, T, L, stop).stopRad).toBeCloseTo(stop, 9)
-    // 非法/缺失停止角 → 回退 90°
     expect(fallRotation(0, T, L, NaN).angle).toBeCloseTo(Math.PI / 2, 6)
-    expect(fallRotation(0, T, L, 3).angle).toBeCloseTo(Math.PI / 2, 6)   // > π/2 钳位
+    expect(fallRotation(0, T, L, 3).angle).toBeCloseTo(Math.PI / 2, 6)
   })
 })
 
 describe('fallStopAngle（停止角 = 树干触地角；随位置与倒向变化）', () => {
-  // base 原点、树高 10m；tip 方向由 dir8 决定（dir8=0 → tip = (0,-1)）
   const base = { x: 0, y: 0, z: 0 }
   it('平坦地面 → 90°（完全倒平）', () => {
     expect(fallStopAngle(0, base, 10, () => 0)).toBeCloseTo(Math.PI / 2, 9)
   })
   it('朝上坡倒（地面沿倒向升高）→ 停得更早；坡度越大停得越早（θ ≈ atan(1/k)）', () => {
-    // tip = (0,-1)：地面随 −y 升高，斜率 k（触地条件 h·cosθ = k·h·sinθ → tanθ = 1/k）
     const slope = (k) => (lx, ly) => Math.max(0, -ly * k)
     const gentle = fallStopAngle(0, base, 10, slope(0.2))
     const steep = fallStopAngle(0, base, 10, slope(1.0))
-    expect(gentle).toBeCloseTo(Math.atan(1 / 0.2), 1)      // ≈ 78.7°
-    expect(steep).toBeCloseTo(Math.atan(1 / 1.0), 1)       // ≈ 45°
+    expect(gentle).toBeCloseTo(Math.atan(1 / 0.2), 1)
+    expect(steep).toBeCloseTo(Math.atan(1 / 1.0), 1)
     expect(steep).toBeLessThan(gentle)
     expect(gentle).toBeLessThan(Math.PI / 2)
-    // 陡坡（θ<下限）被下限兜底
     expect(fallStopAngle(0, base, 10, slope(5))).toBeCloseTo(TREE_FALL_MIN_STOP_RAD, 6)
   })
   it('前方有坎（台阶）→ 撞击点更低的高度即停；下坡 → 仍到 90°', () => {
-    const step = () => 3                      // 前方整体高 3m 的台地
+    const step = () => 3
     const s = fallStopAngle(0, base, 10, step)
     expect(s).toBeLessThan(Math.PI / 2)
-    // 树干在 3m 高处触地 → 触地点在 h ≈ 3 附近：h·cosθ ≈ 3 且 h ≤ 10 → θ ≥ atan(√(100−9)/3)…
-    // 直接核对触地条件：取该角时存在采样点落在台地上
     const c = Math.cos(s), sn = Math.sin(s)
     const hits = Array.from({ length: 10 }, (_, i) => ((i + 1) * 10) / 10)
       .some((h) => h * c <= 3 && h * sn <= 10)
     expect(hits).toBe(true)
-    const downhill = () => -5                  // 地面整体下降
+    const downhill = () => -5
     expect(fallStopAngle(0, base, 10, downhill)).toBeCloseTo(Math.PI / 2, 9)
   })
   it('地面采样缺失 / 非有限值 → 按平坦地面 90°；倒向不同 → 触地角不同', () => {
     expect(fallStopAngle(0, base, 10, null)).toBeCloseTo(Math.PI / 2, 9)
     expect(fallStopAngle(0, base, 10, () => NaN)).toBeCloseTo(Math.PI / 2, 9)
-    // 仅 −y 方向有高台：dir8=0（tip=(0,-1)）撞上，dir8=128（tip=(0,1)）反向不倒向台地
     const hill = (lx, ly) => (ly < -1 ? 6 : 0)
     const intoHill = fallStopAngle(0, base, 10, hill)
     const awayHill = fallStopAngle(128, base, 10, hill)
@@ -173,14 +164,38 @@ describe('foldDestructibleStates', () => {
     const idx = buildDestructibleIndex(doc)
     const areas = new Map([[11, { eid: 11, x: -150.2, z: -254.5 }], [12, { eid: 12, x: -160, z: -240 }]])
     const states = foldDestructibleStates([
-      { clock: 20, area_eid: 11, slot: 17, prop: 1, fall_dir: 5 },   // tent 第二次（resync）
-      { clock: 12.68, area_eid: 11, slot: 17, prop: 1, fall_dir: 5 }, // tent 首次
-      { clock: 24.88, area_eid: 12, slot: 99, prop: 3, fall_dir: 1 }, // 无 lka → 剔除
+      { clock: 20, area_eid: 11, slot: 17, prop: 1, fall_dir: 5 },
+      { clock: 12.68, area_eid: 11, slot: 17, prop: 1, fall_dir: 5 },
+      { clock: 24.88, area_eid: 12, slot: 99, prop: 3, fall_dir: 1 },
     ], areas, idx)
     expect(states).toHaveLength(1)
     expect(states[0].clock).toBe(12.68)
     expect(states[0].inst.id).toBe(1)
   })
+
+  it('树的 settled 缓存随 pivot 实际角度自校验：倒带 identity / 动画中间态会重新变 false', () => {
+    const idx = buildDestructibleIndex(doc)
+    const areas = new Map([[21, { eid: 21, x: -184.4, z: -116.1 }]])
+    const [state] = foldDestructibleStates([
+      { clock: 10, area_eid: 21, slot: 1, prop: 3, fall_dir: 0 },
+    ], areas, idx)
+    expect(state).toBeTruthy()
+    state.stopRad = Math.PI / 2
+    state.pivot = { quaternion: { w: Math.cos(Math.PI / 4) } }
+    state.settled = true
+    expect(state.settled).toBe(true)
+
+    // seek 到事件前：场景会 quaternion.identity()；缓存必须自动失效
+    state.pivot.quaternion.w = 1
+    expect(state.settled).toBe(false)
+
+    // seek 回动画中间：仍不能误判终态；到 stopRad 后才再次视为 settled
+    state.pivot.quaternion.w = Math.cos(Math.PI / 8)
+    expect(state.settled).toBe(false)
+    state.pivot.quaternion.w = Math.cos(Math.PI / 4)
+    expect(state.settled).toBe(true)
+  })
+
   it('空事件流 / 空 areas → 空数组', () => {
     expect(foldDestructibleStates(null, new Map(), buildDestructibleIndex(doc))).toEqual([])
   })
