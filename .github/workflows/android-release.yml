@@ -494,6 +494,28 @@ jobs:
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           script: chmod 644 /opt/wotb-tx/android-release/${{ steps.artifact.outputs.apkName }}
 
+      - name: Upload APK to TX2 public frontend runtime
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: release-staging/${{ steps.artifact.outputs.apkName }}
+          target: /opt/wotb-tx2/runtime-content/android-release
+          strip_components: 1
+
+      - name: Ensure APK readable by TX2 nginx
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          script: chmod 644 /opt/wotb-tx2/runtime-content/android-release/${{ steps.artifact.outputs.apkName }}
+
       - name: Verify production APK (HTTP 200 + non-empty + SHA matches)
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
@@ -503,15 +525,36 @@ jobs:
           EXPECTED_SHA="${{ steps.artifact.outputs.sha256 }}"
           URL="https://wotbtools.com/download/android/$APK_NAME"
           TMP_APK="$RUNNER_TEMP/prod.apk"
-          SIZE="$(curl -fsSL -o "$TMP_APK" -w '%{size_download}' "$URL")"
-          test -s "$TMP_APK" || { echo "::error::Downloaded APK is empty" >&2; exit 1; }
-          [ "$SIZE" -gt 0 ] || { echo "::error::APK Content-Length is not > 0" >&2; exit 1; }
-          PROD_SHA="$(sha256sum "$TMP_APK" | awk '{print $1}')"
-          if [ "$PROD_SHA" != "$EXPECTED_SHA" ]; then
-            echo "::error::Production APK SHA-256 mismatch: expected $EXPECTED_SHA, got $PROD_SHA" >&2
-            exit 1
-          fi
-          echo "Production APK verified: HTTP 200, $SIZE bytes, SHA-256 $PROD_SHA"
+          ATTEMPTS=5
+          for attempt in $(seq 1 "$ATTEMPTS"); do
+            rm -f "$TMP_APK"
+            VERIFY_URL="$URL?verify=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}-$(date +%s%N)"
+            RESULT="$(curl -sS -L --connect-timeout 5 --max-time 60 \
+              -H 'Cache-Control: no-cache' \
+              -o "$TMP_APK" -w '%{http_code} %{size_download}' "$VERIFY_URL" || true)"
+            read -r HTTP_CODE SIZE <<< "$RESULT"
+            HTTP_CODE="${HTTP_CODE:-000}"
+            SIZE="${SIZE:-0}"
+
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "Production APK verify attempt $attempt/$ATTEMPTS: HTTP $HTTP_CODE."
+            elif [ ! -s "$TMP_APK" ] || [ "$SIZE" = "0" ]; then
+              echo "Production APK verify attempt $attempt/$ATTEMPTS: empty response (size=$SIZE)."
+            else
+              PROD_SHA="$(sha256sum "$TMP_APK" | awk '{print $1}')"
+              if [ "$PROD_SHA" = "$EXPECTED_SHA" ]; then
+                echo "Production APK verified on attempt $attempt/$ATTEMPTS: HTTP 200, $SIZE bytes, SHA-256 $PROD_SHA"
+                exit 0
+              fi
+              echo "Production APK verify attempt $attempt/$ATTEMPTS: SHA-256 mismatch (expected $EXPECTED_SHA, got $PROD_SHA)."
+            fi
+
+            if [ "$attempt" -lt "$ATTEMPTS" ]; then
+              sleep 5
+            fi
+          done
+          echo "::error::Production APK verification failed after $ATTEMPTS attempts; expected SHA-256 $EXPECTED_SHA." >&2
+          exit 1
 
       - name: Ensure release tag (idempotent)
         if: github.ref_type != 'tag' && steps.preflight.outputs.releaseAction == 'publish'
@@ -589,6 +632,28 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           script: chmod 644 /opt/wotb-tx/android-release/${{ steps.staging.outputs.stagingName }}
+
+      - name: Upload staging evidence to TX2 public frontend runtime
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: release-staging/${{ steps.staging.outputs.stagingName }}
+          target: /opt/wotb-tx2/runtime-content/android-release
+          strip_components: 1
+
+      - name: Ensure staging evidence readable by TX2 nginx
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          script: chmod 644 /opt/wotb-tx2/runtime-content/android-release/${{ steps.staging.outputs.stagingName }}
 
       - name: Verify production staging evidence (HTTP 200 + content)
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -1016,7 +1081,7 @@ jobs:
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "release-staging/version.json"
           cat "release-staging/version.json"
 
-      - name: Upload version.json to TX (LAST)
+      - name: Mirror release manifest to TX1 rollback runtime
         if: steps.pubpreflight.outputs.publishAction == 'publish'
         uses: appleboy/scp-action@v1
         with:
@@ -1026,6 +1091,18 @@ jobs:
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           source: release-staging/version.json
           target: /opt/wotb-tx/android-release
+          strip_components: 1
+
+      - name: Upload version.json to TX (LAST)
+        if: steps.pubpreflight.outputs.publishAction == 'publish'
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: release-staging/version.json
+          target: /opt/wotb-tx2/runtime-content/android-release
           strip_components: 1
 
       - name: Verify production version.json matches the staged artifact
