@@ -4,6 +4,14 @@
 
 ## 发布与边界
 
+积分赛截图识别同样由本服务承载：`POST /api/ai/tournament-groups/recognize` 仅允许管理员，
+先验证 Business API 针对图片签发的短期许可，再通过已有 provider gateway 识别军团与名次。
+沿用 `AI_API_KEY` / `AI_BASE_URL`，`TOURNAMENT_RECOGNITION_MODEL` 默认 `deepseek-flash`；
+`TOURNAMENT_RECOGNITION_SIGNING_KEY` 是 Business/AI 共享的内部随机签名 Secret，须至少 32 字节。
+本服务仍无数据库或 Business Backend 网络依赖，积分计算、草稿和发布由 Business API 持有。
+缺少签名配置只关闭积分识别，既有 AI 复盘不受影响。运行时由各 owner workflow 注入同一 Secret；
+上传/并发限制与管理员操作见 [`积分赛功能契约`](../features/tournament-points.md)。
+
 - `.github/workflows/ai-service.yml` 在自身输入变化的 `main` push 上构建 GHCR 的 `sha-<commit>`，确认当前 main 后发布 `latest`，再用 `deploy/deploy.sh` 的 `ai-service` 选择器部署。镜像内保留 `BUILD_COMMIT`。
 - `deploy/docker-compose.prod.yml` 仅将容器 `8080` 映射到 Yecao WireGuard 地址 `10.20.0.2:8089`。不添加公网映射，也不代理到 Business Backend；TX 侧唯一的反向代理是 `deploy/tx/nginx/frontend.conf.template` 里更具体的 `location ^~ /api/ai/`，upstream 为 `${AI_UPSTREAM}`（`TX_AI_UPSTREAM`，默认 `http://10.20.0.2:8089`，在 `deploy/tx/deploy.sh` fail-closed），不重写 path，`proxy_read/send_timeout 1120s`。资源上限为 1.5 CPU、1536 MiB；并发和队列默认各 2，后续用负载数据调节。
 - Yecao 运行时注入 `AI_API_KEY`；`AI_BASE_URL`、`AI_MODEL`、`KEYCLOAK_ISSUER_URI` 等非秘密项经 GitHub Variables/Compose 默认值配置。不得把 JWT、prompt、completion 或密钥写入仓库及日志。AI 服务不持有 PostgreSQL、RabbitMQ、MinIO 或 replay job 凭据。

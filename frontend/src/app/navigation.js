@@ -11,7 +11,7 @@ export const ALLOWED_VIEWS = Object.freeze([
   'home', 'replay', 'hof', 'more', 'hof-admin',
   'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots',
-  'rating-docs',
+  'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
   'android', 'sponsor',
 ])
 
@@ -38,6 +38,8 @@ export const PRIMARY_NAV = Object.freeze([
 export const ADMIN_NAV = Object.freeze([
   Object.freeze({ id: 'admin-users', view: 'admin-users', labelKey: 'admin.title', role: 'admin' }),
   Object.freeze({ id: 'hof-admin', view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', role: 'hofAdmin' }),
+  Object.freeze({ id: 'tournament-points-config', view: 'tournament-points-config', labelKey: 'tournament.configTitle', role: 'admin' }),
+  Object.freeze({ id: 'tournament-points-admin', view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', role: 'admin' }),
 ])
 
 // 视图 → 所属栏目。个人中心属于账户入口；管理视图各自是侧边栏的一项；
@@ -54,6 +56,8 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'agent-armor': 'tankopedia',
   'admin-users': 'admin-users',
   'hof-admin': 'hof-admin',
+  'tournament-points-config': 'tournament-points-config',
+  'tournament-points-admin': 'tournament-points-admin',
   profile: 'account',
 })
 

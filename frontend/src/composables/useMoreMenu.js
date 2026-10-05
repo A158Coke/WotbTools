@@ -1,6 +1,6 @@
 import { computed, getCurrentInstance } from 'vue'
 import {
-  Box, Cpu, Crosshair, Download, FileText, Heart, History, Mail, ShieldCheck, Users,
+  Box, Cpu, Crosshair, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings, Trophy,
 } from 'lucide-vue-next'
 import { useAuth } from './useAuth.js'
 import { useUiProfile } from './useUiProfile.js'
@@ -43,12 +43,15 @@ export function useMoreMenu() {
   const replayToolLinks = [
     { view: 'agent-replay', labelKey: 'agentNav.replay', icon: Box },
     { view: 'agent-shots', labelKey: 'agentNav.shots', icon: Crosshair },
+    { view: 'tournament-points', labelKey: 'tournament.title', icon: Trophy },
   ]
 
   /** 管理入口：平板 / 桌面在侧边栏管理组，手机在"更多"页。 */
   const adminLinks = computed(() => [
     isAdmin.value && { view: 'admin-users', labelKey: 'admin.title', icon: Users },
     isHofAdmin.value && { view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', icon: ShieldCheck },
+    isAdmin.value && { view: 'tournament-points-config', labelKey: 'tournament.configTitle', icon: Settings },
+    isAdmin.value && { view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', icon: ListOrdered },
   ].filter(Boolean))
 
   /** 关于与支持：低频入口，两种形态都放在"更多"里。 */

@@ -165,6 +165,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `mark3`：Tier X 单车最速三环人工审核排行榜（PENDING/CURRENT/REJECTED/CANCELLED/DELETED，无 SUPERSEDED）。
 - `user`：Profile、WoTB 账号（含「用回放验证」）。
 - `admin`：用户和后台管理。
+- `tournament`：按年份/区服/季赛配置积分规则，截图排名的共享草稿、正式榜单、修正与审计；见 [`features/tournament-points.md`](features/tournament-points.md)。独立 AI Service 识别图片，Business API 按规则精确算分并持久化。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。
 
 ### 客户端 Replay Engine（上游 Agent）
