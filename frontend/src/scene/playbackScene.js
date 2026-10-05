@@ -851,16 +851,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           // 精度不足，与 512² 地形逐像素比较会在大面积上帧间交替 → 闪。该面是无厚度
           // 水平面（双面同深度、不自我遮挡）且为全场唯一透明物 → 让其正常写深度最稳。
           if (isWaterName(o.name)) {
+            // 游戏水面 = 动态着色器（波纹/法线动画），GLB 导出器解析不了 → 无贴图、
+            // fallback 成暖沙色不透明面。用半透明蓝色替换（视觉近似游戏海面）。
             const ms = Array.isArray(o.material) ? o.material : [o.material];
-            for (const mm of ms) {
-              if (!mm || !mm.transparent) continue;
-              mm.depthWrite = true;
-              mm.side = THREE.DoubleSide;
-              mm.depthTest = true;
-              mm.needsUpdate = true;
+            const needsWaterMat = ms.every((mm) => !mm || !mm.map);
+            if (needsWaterMat) {
+              o.material = cachedSceneryMat('WATER', () => new THREE.MeshLambertMaterial({
+                color: 0x3a6a8a,             // 海蓝
+                transparent: true,
+                opacity: 0.72,
+                side: THREE.DoubleSide,
+                depthWrite: true,            // 大面积平面写深度防闪烁（见上方注释）
+              }));
+            } else {
+              for (const mm of ms) {
+                if (!mm || !mm.transparent) continue;
+                mm.depthWrite = true;
+                mm.side = THREE.DoubleSide;
+                mm.depthTest = true;
+                mm.needsUpdate = true;
+              }
             }
-            // 不设 renderOrder：交给 THREE 在透明队列内按摄像机距离排序
-            //（此前设 -1 让水面最先绘制，与其余半透明层遮挡关系错乱，接近时抖）
           }
           if (isCard) {
             // 包围球按锚点计算，角点向外超出——扩 2m 防视锥剔除边缘闪没
