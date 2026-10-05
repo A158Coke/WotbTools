@@ -71,6 +71,17 @@ export const QUALITY_PRESETS = {
   high: { label: '高', antialias: true,  maxDpr: 2,   scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true },
 }
 
+/**
+ * 飞行段时长（秒）= **真实飞行时长**（`shots[].flight_secs` = |终点−炮口|/弹速）。
+ * 只做 1 帧下限：防退化数据（0/负数/非有限）造成零时长与除零；**不做"最小显示时长"**
+ * —— 曾用 0.22s 下限"保证可见性"，实测 68% 的射击真飞行时长 <0.22s（J39 样本 155 发：
+ * 中位 0.16s、p10 0.04s，弹速 560~1658 m/s），那些炮弹被拖慢最多 11×，与客户端不一致。
+ */
+export function tracerSpanSecs(flightSecs) {
+  const oneFrame = 1 / 60
+  return Number.isFinite(flightSecs) && flightSecs > oneFrame ? flightSecs : oneFrame
+}
+
 export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect } = {}) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
@@ -1877,8 +1888,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     mesh.material.color.setHex(color);
     mesh.visible = true;
     scene.add(mesh);
-    // WoTB 弹速高、交战近，直飞常 <0.3s——最小显示 0.22s 保证可见性
-    const t1 = s.t_fire + Math.max(0.22, s.flight_secs);
+    // 飞行段时长 = **真实飞行时长** |终点−炮口|/弹速（客户端示踪线同为直线推进，
+    // 速度即此值）。此处曾设 0.22s 最小时长"保证可见性"——但实测 68% 的射击真飞行
+    // 时长 <0.22s（J39 样本 155 发：中位 0.16s、p10 0.04s；弹速 560~1658 m/s），
+    // 那些炮弹因此被显著拖慢（最慢 11×），与客户端不一致（用户实测反馈"飞行速度慢"）。
+    // 现只保留 1 帧下限，防退化数据（flight_secs=0/负数）造成零时长除零。
+    const t1 = s.t_fire + tracerSpanSecs(s.flight_secs);
     tracers.push({ mesh, from, to, t0: s.t_fire, t1, shot: s, color });
     // 全弹道轨迹线（队伍色：友军蓝/敌军红，与飞行段的命中结果色区分）：
     // 开火即显整条弹道；消失节奏与弹着点特效同步——基准 t1+2.2s 移除、最后 1.2s 淡出，

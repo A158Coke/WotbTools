@@ -251,6 +251,23 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(Number(m[1])).toBeGreaterThanOrEqual(0.5)
   })
 
+  it('飞行段时长 = 真实飞行时长（不得再有"最小显示时长"拖慢炮弹）', async () => {
+    const { tracerSpanSecs } = await import('./playbackScene.js')
+    // 真实弹道时长原样返回（WoTB 弹速极高：多数射击飞行 <0.22s，钳到 0.22 就是慢放）
+    expect(tracerSpanSecs(0.44)).toBeCloseTo(0.44, 12)
+    expect(tracerSpanSecs(0.16)).toBeCloseTo(0.16, 12)
+    expect(tracerSpanSecs(0.02)).toBeCloseTo(0.02, 12)
+    // 只有 1 帧下限兜底退化数据（0 / 负数 / 非有限），且不再有 0.22s 这类"可见性下限"
+    const oneFrame = 1 / 60
+    expect(tracerSpanSecs(0)).toBeCloseTo(oneFrame, 12)
+    expect(tracerSpanSecs(-1)).toBeCloseTo(oneFrame, 12)
+    expect(tracerSpanSecs(NaN)).toBeCloseTo(oneFrame, 12)
+    expect(tracerSpanSecs(Number.POSITIVE_INFINITY)).toBeCloseTo(oneFrame, 12)
+    // 源码护栏：调用点必须走纯函数，且不存在 0.22 之类的最小显示钳位
+    expect(src).toMatch(/const t1 = s\.t_fire \+ tracerSpanSecs\(s\.flight_secs\);/)
+    expect(src).not.toMatch(/Math\.max\(0\.22, s\.flight_secs\)/)
+  })
+
   it('炮线粗细：飞行段 ≥ 轨迹线（层级不变），且都不低于加粗后的下限', () => {
     const tr = Number(src.match(/const TRACER_RADIUS = ([0-9.]+);/)?.[1])
     const tj = Number(src.match(/const TRAJ_RADIUS = ([0-9.]+);/)?.[1])
