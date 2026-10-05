@@ -123,6 +123,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let paused = false;
   // 诊断强引用仅在显式 debug 下创建（生产不挂 window.__scene 等长生命周期引用）
   const DEBUG = (() => { try { return new URLSearchParams(location.search).has('debug'); } catch (e) { return false; } })();
+  // 对数深度逃生开关（?logdepth=0 关闭）：log depth 全局生效——每片元写 gl_FragDepth、
+  // 禁 early-z，理论上有全场景片元开销。真机（尤其 Android）若出现可感性能回归，
+  // URL 立即回滚不必等发版；同一开关即性能验收的 A/B 对照（同回放/同画质/同机位）。
+  const LOGDEPTH = (() => { try { return new URLSearchParams(location.search).get('logdepth') !== '0'; } catch (e) { return true; } })();
 
   // ---------- 画质分档 ----------
   // 解析优先级：URL ?q= > localStorage > 设备默认；三档都开 3D 地形（仅分段数降档）。
@@ -236,7 +240,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // SPA 壳内渲染：视口尺寸取容器（main 区域），而非整窗（顶部导航占 67px）
     camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.5, 4000);
     camera.position.set(0, 180, 220);
-    renderer = new THREE.WebGLRenderer({ antialias: Q.antialias });
+    // 对数深度：客户端（贴地 TPS）可视地面恒在 ~200m 内，线性深度足够；回放查看器
+    // 允许 600–1000m 俯瞰——该距离线性 24bit 深度分辨率 4–12cm，与贴地装饰（铁轨
+    // 路基/冰面等场景薄板，按游戏精确高程导出）同重建地形间 ±3–30cm 的交叠带同
+    // 量级 → 远景俯视成片 z-fighting（碎色块、转动闪烁；拉近即消失）。对数深度把
+    // 远距离分辨率提至亚毫米，交叠带恢复确定性深度序。两个自定义 ShaderMaterial
+    // 需手动挂 logdepthbuf 代码块（内建材质自动注入）；?logdepth=0 可关闭（A/B 与
+    // 真机回滚，见 LOGDEPTH 注释）。
+    renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, logarithmicDepthBuffer: LOGDEPTH });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(devicePixelRatio, Q.maxDpr));
     if (DEBUG) window.__renderer = renderer;   // 诊断钩子（renderer 创建后才可引用；仅 ?debug）
@@ -488,14 +499,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       vertexShader: `
         attribute vec4 _corner;
         attribute vec4 color;
+        // <common> 必须先于 logdepthbuf_vertex（isPerspectiveMatrix 定义在 common 里）
+        #include <common>
         varying vec2 vUv;
         varying float vOcc;
+        #include <logdepthbuf_pars_vertex>
         void main() {
           vec4 wp = modelMatrix * vec4(position, 1.0);
           vec3 vp = (viewMatrix * wp).xyz;
           float ws = length(vec3(modelMatrix[0][0], modelMatrix[1][0], modelMatrix[2][0]));
           vp += _corner.xyz * ws;
           gl_Position = projectionMatrix * vec4(vp, 1.0);
+          #include <logdepthbuf_vertex>
           vUv = uv;
           vOcc = color.r;
         }`,
@@ -511,7 +526,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         uniform float uAlphaCut;
         varying vec2 vUv;
         varying float vOcc;
+        #include <logdepthbuf_pars_fragment>
         void main() {
+          #include <logdepthbuf_fragment>
           vec4 c = texture2D(map, vUv);
           if (c.a < uAlphaCut) discard;
           float occ = min(vOcc / max(uOccMean, 0.001), 1.25);
@@ -909,11 +926,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
                                             L.hb_softness[2], L.hb_softness[3]) },
       },
       vertexShader: `
+        // <common> 必须先于 logdepthbuf_vertex：后者调用的 isPerspectiveMatrix 定义
+        // 在 common 里，漏 include 会让整个材质 GLSL 编译失败（地形/叶卡整片消失）
+        #include <common>
         varying vec2 vXZ;
+        #include <logdepthbuf_pars_vertex>
         void main() {
           vec4 wp = modelMatrix * vec4(position, 1.0);
           vXZ = wp.xz;
           gl_Position = projectionMatrix * viewMatrix * wp;
+          #include <logdepthbuf_vertex>
         }`,
       fragmentShader: `
         uniform sampler2D uCM;
@@ -936,8 +958,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         uniform vec4 uHbOffset;
         uniform vec4 uHbSoft;
         varying vec2 vXZ;
+        #include <logdepthbuf_pars_fragment>
 
         void main() {
+          #include <logdepthbuf_fragment>
           vec2 tc = vec2(0.5 - (vXZ.x - uCenter.x) / uSize,
                          0.5 - (vXZ.y - uCenter.y) / uSize);
           vec3 colorAlbedo = texture2D(uCM, tc).rgb;
