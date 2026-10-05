@@ -151,7 +151,7 @@
   position: absolute;
   inset-block-start: var(--space-1);
   z-index: var(--pb-z-hud);
-  inline-size: var(--pb-overlay-lane-w, clamp(11rem, 16vw, 15rem));
+  inline-size: var(--pb-overlay-lane-w);
   max-block-size: calc(100% - 4rem);
   overflow-y: auto;
   overflow-x: hidden;

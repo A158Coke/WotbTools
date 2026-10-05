@@ -204,14 +204,14 @@ function listRows(rowCount) {
   flex: none;
   inline-size: 52px;
   block-size: 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-full);
   background: var(--color-playback-label-track);
   overflow: hidden;
 }
 .pb-roster-hpfill {
   display: block;
   block-size: 100%;
-  border-radius: 3px;
+  border-radius: var(--radius-full);
   background: var(--roster-team-color);
 }
 /* unknown / destroyed 没有可画的填充：fill 节点根本不渲染（见模板的 v-if），
