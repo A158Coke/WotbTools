@@ -34,14 +34,17 @@ import static com.wotb.web.config.ApiPaths.HOF_MARK3_SUBMISSIONS_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_REPLAY_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_UPLOAD;
+import static com.wotb.web.config.ApiPaths.TOURNAMENTS_ADMIN_PATTERN;
 import static com.wotb.web.config.ApiPaths.USERS_PATTERN;
 
 /**
  * 安全配置: Keycloak JWT 认证 + 角色授权。
  * 权限层级:
- *   wotbtools-admin → 全部管理员接口（super admin）
- *   已登录用户        → 玩家接口
- *   匿名用户          → 公开接口
+ *   wotbtools-admin   → Keycloak composite super-admin（继承各领域管理员角色）
+ *   tournament-admin → 积分赛管理接口
+ *   HoF-admin        → 名人堂管理接口
+ *   已登录用户         → 玩家接口
+ *   匿名用户           → 公开接口
  */
 @Configuration
 @EnableWebSecurity
@@ -70,42 +73,37 @@ public class SecurityConfig {
                 // --- 公开接口 ---
                 .requestMatchers(HEALTH).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.TOURNAMENTS, ApiPaths.TOURNAMENT_STANDINGS).permitAll()
-                // 名人堂查询公开；上传/下载需登录（必须置于 HOF_PATTERN permitAll 之前）
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
-                // 百场：排行榜公开；提交/取消需登录（必须置于 HOF_PATTERN permitAll 之前）
                 .requestMatchers(HOF_HUNDRED_SUBMISSIONS_PATTERN).authenticated()
-                // 三环：排行榜公开；人工提交/取消需登录（必须置于 HOF_PATTERN permitAll 之前）
                 .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_PATTERN).permitAll()
 
-                // --- 管理员用户管理 (仅 wotbtools-admin) ---
+                // --- 管理员用户管理（仅 super-admin） ---
                 .requestMatchers(ADMIN_USERS_PATTERN)
                     .hasRole("wotbtools-admin")
 
-                // --- 名人堂管理（HoF-admin 或 wotbtools-admin；必须置于 ADMIN_PATTERN 之前） ---
+                // --- 名人堂管理 ---
                 .requestMatchers(HOF_ADMIN_PATTERN)
-                    .hasAnyRole("HoF-admin", "wotbtools-admin")
+                    .hasRole("HoF-admin")
+
+                // --- 积分赛管理 ---
+                .requestMatchers(TOURNAMENTS_ADMIN_PATTERN)
+                    .hasRole("tournament-admin")
 
                 // --- 其他管理员接口仅超级管理员 ---
                 .requestMatchers(ADMIN_PATTERN)
                     .hasRole("wotbtools-admin")
 
-                // --- 需登录接口 (wotbtools-admin 也是已登录用户，自动通过) ---
+                // --- 需登录接口 ---
                 .requestMatchers(USERS_PATTERN)
                     .authenticated()
 
-                // --- 未显式声明的 API 默认拒绝；静态资源放行 ---
                 .requestMatchers(API_PATTERN).denyAll()
                 .anyRequest().permitAll()
             );
         return http.build();
     }
 
-    /**
-     * 自定义 JWT 角色提取：正确处理 Keycloak 嵌套 claim。
-     * JWT 结构: { "realm_access": { "roles": ["wotbtools-admin"] } }
-     * Spring 默认 getClaim("realm_access.roles") 不做嵌套遍历，必须手动解。
-     */
     private static Converter<Jwt, AbstractAuthenticationToken> jwtAuthenticationConverter() {
         final JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(jwt -> {
