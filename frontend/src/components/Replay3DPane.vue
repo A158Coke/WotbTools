@@ -258,7 +258,9 @@ const detailPlayback = computed(() => store.hasData ? store.playbackSession?.can
  * 播放条、顶栏计时与 Details 只读引擎发布的原点：同一时刻在 2D / 3D 显示同一个时间。
  */
 const battleTimeLabel = computed(() => formatPlaybackClock(store.time - store.startTime))
-const detailTime = computed(() => Math.max(0, store.time - store.startTime))
+// Details 查的是 canonical track：canonical 在时必须按它自己的 clock.startRaw 换算（canonical 数据就按这个原点索引）；
+// 引擎接管 canonical clock 后与 store.startTime 是同一个值，canonical 之前才用引擎发布的原点。
+const detailTime = computed(() => Math.max(0, store.time - (detailPlayback.value?.clock?.startRaw ?? store.startTime)))
 watch(() => detailPlayback.value?.clock ?? null, (clock) => sceneApi?.setBattleClock?.(clock))
 const selectedTrack = computed(() => detailPlayback.value?.dataset?.vehicles.find(track =>
   selectedRow.value?.accountId != null && track.accountId === selectedRow.value.accountId) || null)
