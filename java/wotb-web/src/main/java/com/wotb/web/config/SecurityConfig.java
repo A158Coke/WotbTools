@@ -70,7 +70,6 @@ public class SecurityConfig {
                 .authenticationEntryPoint(authenticationEntryPoint)
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests(auth -> auth
-                // --- 公开接口 ---
                 .requestMatchers(HEALTH).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.TOURNAMENTS, ApiPaths.TOURNAMENT_STANDINGS).permitAll()
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
@@ -78,23 +77,18 @@ public class SecurityConfig {
                 .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_PATTERN).permitAll()
 
-                // --- 管理员用户管理（仅 super-admin） ---
                 .requestMatchers(ADMIN_USERS_PATTERN)
                     .hasRole("wotbtools-admin")
 
-                // --- 名人堂管理 ---
                 .requestMatchers(HOF_ADMIN_PATTERN)
-                    .hasRole("HoF-admin")
+                    .hasAnyRole("HoF-admin", "wotbtools-admin")
 
-                // --- 积分赛管理 ---
                 .requestMatchers(TOURNAMENTS_ADMIN_PATTERN)
                     .hasRole("tournament-admin")
 
-                // --- 其他管理员接口仅超级管理员 ---
                 .requestMatchers(ADMIN_PATTERN)
                     .hasRole("wotbtools-admin")
 
-                // --- 需登录接口 ---
                 .requestMatchers(USERS_PATTERN)
                     .authenticated()
 
