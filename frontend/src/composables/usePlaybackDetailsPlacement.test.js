@@ -241,3 +241,53 @@ describe('short workspace panel capacity', () => {
     wrapper.unmount()
   })
 })
+
+// 初始落位不压中心栏（HUD / Stage / 传输控件同一列）：侧边名册比浮窗窄时收窄浮窗，而不是伸进中心栏。
+describe('initial placement keeps the center column clear', () => {
+  it('1280 宽桌面全屏：侧边只有 318，340 宽浮窗收窄到侧边可用宽度，不盖顶栏右端', async () => {
+    // 中心栏 = 传输控件所在列 x 322..958；面板天然 340 宽
+    const { wrapper, api } = harness({ host: rect(0, 0, 1280, 720), panel: rect(0, 0, 340, 600), bounds: rect(322, 670, 636, 50) })
+    await nextTick()
+    api.placeInitial({ x: 100, y: 0 }) // 点左侧 → 落右侧
+    // 右侧可用 = 1280 - 16 - (958 + 8) = 298
+    expect(api.maxPanelWidth.value).toBe(298)
+    expect(api.pos.value.left).toBe(966)
+    expect(api.pos.value.left).toBeGreaterThanOrEqual(958 + 8)
+
+    api.placeInitial({ x: 900, y: 0 }) // 点右侧 → 落左侧：可用 = (322 - 8) - 16 = 298
+    expect(api.maxPanelWidth.value).toBe(298)
+    expect(api.pos.value.left).toBe(16)
+    expect(api.pos.value.left + api.maxPanelWidth.value).toBeLessThanOrEqual(322 - 8)
+    wrapper.unmount()
+  })
+
+  it('侧边够宽时只给上限：浮窗保持自身宽度与原来的落位', async () => {
+    const { wrapper, api } = harness({ host: rect(0, 0, 1600, 900), panel: rect(0, 0, 340, 600), bounds: rect(400, 850, 800, 50) })
+    await nextTick()
+    api.placeInitial({ x: 100, y: 0 })
+    // 右侧可用 = 1600 - 16 - (1200 + 8) = 376 ≥ 340：left 仍是 1600 - 340 - 16
+    expect(api.maxPanelWidth.value).toBe(376)
+    expect(api.pos.value.left).toBe(1244)
+    wrapper.unmount()
+  })
+
+  it('名册关闭（中心栏铺满）或侧边不足下限时不收窄；关闭浮窗后上限一并清掉', async () => {
+    const { wrapper, api, state } = harness({ host: rect(0, 0, 1200, 700), panel: rect(0, 0, 320, 400), bounds: rect(0, 640, 1200, 60) })
+    await nextTick()
+    api.placeInitial({ x: 100, y: 0 })
+    expect(api.maxPanelWidth.value).toBe(null) // 中心栏铺满：没有侧边
+    expect(api.pos.value.left).toBe(864)
+
+    state.bounds = rect(250, 640, 800, 60) // 右侧只剩 1200 - 16 - 1058 = 126 < 240
+    api.placeInitial({ x: 100, y: 0 })
+    expect(api.maxPanelWidth.value).toBe(null)
+
+    state.bounds = rect(300, 640, 600, 60) // 右侧 1200 - 16 - 908 = 276 → 收窄
+    api.placeInitial({ x: 100, y: 0 })
+    expect(api.maxPanelWidth.value).toBe(276)
+    api.active.value = false
+    await nextTick()
+    expect(api.maxPanelWidth.value).toBe(null)
+    wrapper.unmount()
+  })
+})

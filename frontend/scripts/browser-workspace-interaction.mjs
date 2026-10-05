@@ -2222,6 +2222,8 @@ const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-844x390-landscape-recorder-team2', width: 844, height: 390, touch: true, layout: 'lanes', recorder: 2 },
   { name: 'ws2d-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, layout: 'lanes', fullscreen: true },
   { name: 'ws2d-1024x768-tablet', width: 1024, height: 768, touch: false, layout: 'lanes' },
+  // 1280 宽桌面：侧边车道（≈320）比详情浮窗（340）窄——初始落位必须收窄浮窗，而不是伸进中心栏盖住 HUD
+  { name: 'ws2d-1280x720-desktop', width: 1280, height: 720, touch: false, layout: 'lanes' },
   { name: 'ws2d-1600x900-desktop', width: 1600, height: 900, touch: false, layout: 'lanes' },
   { name: 'ws2d-1792x922-fullscreen-desktop', width: 1792, height: 922, touch: false, layout: 'lanes', fullscreen: true },
 ]
@@ -2566,6 +2568,12 @@ async function runWorkspace2DScenario(env, scenario) {
   check(failures, s.detailsParentIsMain, 'floating details must be a child of the battlefield workspace (.pb-main)')
   check(failures, !!s.left && !!s.right, 'details must not hide either lane')
   check(failures, s.details && s.details.l >= s.map.l - 1, 'clicking a left-lane row should place details away from the left lane')
+  // 初始落位不压中心栏（HUD / Stage / 传输控件同一列）：侧边放得下（≥ 240px）时，浮窗整个落在那一列之外
+  const column = s.transport && s.transport.w > 0 ? s.transport : s.map
+  if (s.main.r - 16 - (column.r + 8) >= 240) {
+    check(failures, s.details && s.details.l >= column.r + 7.5 && (!s.hud || s.details.l >= s.hud.r - 0.5),
+      `initial details must keep the HUD / Stage column clear: details=${JSON.stringify(s.details)} column=${JSON.stringify(column)} hud=${JSON.stringify(s.hud)}`)
+  }
 
   // ---- 拖到 Team 1 / Stage / Team 2 三个区域 ----
   // 右 → 中 → 左：最后停在 Team 1 之上，Team 2 车道保持可点（用户的真实流程：开着详情连点 Team 2）。
@@ -2627,9 +2635,49 @@ async function runWorkspace2DScenario(env, scenario) {
   // ---- Display 面开合：始终可从 gear 到达，且不把用户丢到首屏之外 ----
   await checkDisplaySurface(page, failures, scenario.layout, scenario)
 
+  // ---- 标注：真实鼠标从车辆上起笔拖一条箭头——只画线，不选中车辆、不出现浏览器选区 ----
+  if (!scenario.touch) await checkAnnotationDrag(page, failures)
+
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   result()
+}
+
+/**
+ * 标注模式下的鼠标拖动：车辆层整体不接指针（hitbox / 名牌 tooltip 不能把父层的 none 顶掉），
+ * 地图上按下拖动也不能变成浏览器的文本 / 图片选择（车辆标记被选中成蓝色色块）。
+ */
+async function checkAnnotationDrag(page, failures) {
+  if (await page.evaluate(`!!document.querySelector('[data-test="pb-sb-close"]')`)) {
+    await clickElement(page, '[data-test="pb-sb-close"]')
+    await delay(200)
+  }
+  await clickElement(page, '[data-test="pb-secondary-entry"]')
+  await delay(200)
+  await clickElement(page, '[data-test="pb-panel-annotation"]')
+  await delay(200)
+  await clickElement(page, '[data-test="pb-annot-arrow"]')
+  await delay(150)
+  const from = await page.evaluate(`(() => {
+    const map = document.querySelector('[data-test="pb-map"]').getBoundingClientRect()
+    const inside = (r) => r.left > map.left + 4 && r.right < map.right - 4 && r.top > map.top + 4 && r.bottom < map.bottom - 4
+    const marker = [...document.querySelectorAll('[data-test^="pb-marker-"]')].map((m) => m.getBoundingClientRect()).find(inside)
+    return marker ? { x: marker.left + marker.width / 2, y: marker.top + marker.height / 2, map: { l: map.left, t: map.top, r: map.right, b: map.bottom } } : null
+  })()`)
+  check(failures, !!from, 'annotation drag: no vehicle marker inside the Stage to start a stroke on')
+  if (!from) return
+  const to = { x: Math.min(from.map.r - 8, Math.max(from.map.l + 8, from.x + 60)), y: Math.min(from.map.b - 8, Math.max(from.map.t + 8, from.y + 40)) }
+  await dragPointer(page, from, to)
+  const after = await page.evaluate(`(() => ({
+    details: document.querySelectorAll('[data-test="pb-info"]').length,
+    arrows: document.querySelectorAll('[data-test="pb-annotations"] line').length,
+    selection: String(getSelection()).length > 0 || (getSelection().rangeCount > 0 && !getSelection().isCollapsed),
+  }))()`)
+  check(failures, after.arrows >= 1, `annotation drag starting on a vehicle must draw an arrow: ${JSON.stringify(after)}`)
+  check(failures, after.details === 0, `annotation drag must not select the vehicle under the pointer: ${JSON.stringify(after)}`)
+  check(failures, !after.selection, `annotation drag must not create a browser selection: ${JSON.stringify(after)}`)
+  await clickElement(page, '[data-test="pb-annot-close"]')
+  await delay(150)
 }
 
 async function captureMobileReview(page, scenario, state = 'battlefield') {
