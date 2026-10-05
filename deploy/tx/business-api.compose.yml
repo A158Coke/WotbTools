@@ -33,6 +33,9 @@ services:
       KEYCLOAK_ADMIN_REALM: wotbtools
       KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?KEYCLOAK_ADMIN_CLIENT_SECRET is required}
+      # Tournament-only permits; this is not an AI provider credential. The same
+      # runtime secret is passed to ai-service, which verifies the image permit.
+      TOURNAMENT_RECOGNITION_SIGNING_KEY: ${TOURNAMENT_RECOGNITION_SIGNING_KEY:-}
       # AI provider configuration deliberately does not exist here: AI Review runs
       # in the standalone stateless Yecao ai-service (deploy/docker-compose.prod.yml),
       # and TX only routes /api/ai/** to its WireGuard endpoint.

@@ -3,6 +3,985 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "TournamentEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "year",
+        "region",
+        "season",
+        "roundCount",
+        "daysPerRound",
+        "dayLabels",
+        "configLocked"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "version": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "year": {
+          "type": "integer",
+          "minimum": 2000,
+          "maximum": 2100
+        },
+        "region": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
+        },
+        "season": {
+          "type": "string",
+          "enum": [
+            "SPRING",
+            "SUMMER",
+            "AUTUMN",
+            "WINTER",
+            "FIRE_CUP"
+          ]
+        },
+        "roundCount": {
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 5
+        },
+        "daysPerRound": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 3
+        },
+        "dayLabels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "configLocked": {
+          "type": "boolean"
+        }
+      }
+    },
+    "TournamentCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "year",
+        "region",
+        "season",
+        "roundCount",
+        "daysPerRound",
+        "dayLabels"
+      ],
+      "properties": {
+        "year": {
+          "type": "integer",
+          "minimum": 2000,
+          "maximum": 2100
+        },
+        "region": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
+        },
+        "season": {
+          "type": "string",
+          "enum": [
+            "SPRING",
+            "SUMMER",
+            "AUTUMN",
+            "WINTER",
+            "FIRE_CUP"
+          ]
+        },
+        "roundCount": {
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 5
+        },
+        "daysPerRound": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 3
+        },
+        "dayLabels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "TournamentUpdateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion",
+        "year",
+        "region",
+        "season",
+        "roundCount",
+        "daysPerRound",
+        "dayLabels"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "year": {
+          "type": "integer",
+          "minimum": 2000,
+          "maximum": 2100
+        },
+        "region": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
+        },
+        "season": {
+          "type": "string",
+          "enum": [
+            "SPRING",
+            "SUMMER",
+            "AUTUMN",
+            "WINTER",
+            "FIRE_CUP"
+          ]
+        },
+        "roundCount": {
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 5
+        },
+        "daysPerRound": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 3
+        },
+        "dayLabels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "TournamentRankPoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rank",
+        "points"
+      ],
+      "properties": {
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "TournamentRuleDay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dayNumber",
+        "points"
+      ],
+      "properties": {
+        "dayNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TournamentRankPoints"
+          }
+        }
+      }
+    },
+    "TournamentRoundRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roundNumber",
+        "rulesVersion",
+        "complete",
+        "locked",
+        "days"
+      ],
+      "properties": {
+        "roundNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "rulesVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "days": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TournamentRuleDay"
+          }
+        }
+      }
+    },
+    "TournamentConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "rounds",
+        "clans"
+      ],
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/TournamentEvent"
+        },
+        "rounds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TournamentRoundRule"
+          }
+        },
+        "clans": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "TournamentRuleRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedEventVersion",
+        "expectedRulesVersion",
+        "days"
+      ],
+      "properties": {
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedRulesVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "days": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TournamentRuleDay"
+          }
+        }
+      }
+    },
+    "TournamentTeam": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clanTag",
+        "rank"
+      ],
+      "properties": {
+        "clanTag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        }
+      }
+    },
+    "TournamentGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groupNumber",
+        "evidenceId",
+        "imageHash",
+        "teams"
+      ],
+      "properties": {
+        "groupNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "evidenceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "imageHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "teams": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/TournamentTeam"
+          }
+        }
+      }
+    },
+    "TournamentIncomingGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groupNumber",
+        "evidenceId",
+        "imageHash",
+        "teams",
+        "duplicateAction",
+        "complete"
+      ],
+      "properties": {
+        "groupNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "evidenceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "imageHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "teams": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/TournamentTeam"
+          }
+        },
+        "duplicateAction": {
+          "type": "string",
+          "enum": [
+            "ERROR",
+            "REPLACE",
+            "SKIP"
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "TournamentVersions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedEventVersion",
+        "expectedDayVersion"
+      ],
+      "properties": {
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDayVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        }
+      }
+    },
+    "TournamentExpectedGroupsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedEventVersion",
+        "expectedDayVersion",
+        "expectedGroupCount"
+      ],
+      "properties": {
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDayVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedGroupCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      }
+    },
+    "TournamentDraftRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedEventVersion",
+        "expectedDayVersion",
+        "expectedRulesVersion",
+        "groups",
+        "confirmedNewClans"
+      ],
+      "properties": {
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDayVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedRulesVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/TournamentIncomingGroup"
+          }
+        },
+        "confirmedNewClans": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "TournamentFinalizeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedEventVersion",
+        "expectedDayVersion",
+        "expectedRulesVersion",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDayVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedRulesVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "TournamentCorrectionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedEventVersion",
+        "expectedDayVersion",
+        "expectedGroupCount",
+        "reason"
+      ],
+      "properties": {
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDayVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedGroupCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "TournamentClearRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedEventVersion",
+        "roundNumber",
+        "dayNumber",
+        "clanTag",
+        "reason",
+        "restore"
+      ],
+      "properties": {
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "roundNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "dayNumber": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "clanTag": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "restore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "TournamentDeleteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion",
+        "confirm"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "confirm": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "TournamentDayPoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dayNumber",
+        "points"
+      ],
+      "properties": {
+        "dayNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "points": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64",
+          "minimum": 0
+        }
+      }
+    },
+    "TournamentRoundPoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roundNumber",
+        "totalPoints",
+        "days"
+      ],
+      "properties": {
+        "roundNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "totalPoints": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "days": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TournamentDayPoints"
+          }
+        }
+      }
+    },
+    "TournamentStandingRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rank",
+        "clanTag",
+        "totalPoints",
+        "rounds"
+      ],
+      "properties": {
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "clanTag": {
+          "type": "string"
+        },
+        "totalPoints": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "rounds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TournamentRoundPoints"
+          }
+        }
+      }
+    },
+    "TournamentStandingDay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roundNumber",
+        "dayNumber",
+        "label",
+        "published"
+      ],
+      "properties": {
+        "roundNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "dayNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "label": {
+          "type": "string"
+        },
+        "published": {
+          "type": "boolean"
+        }
+      }
+    },
+    "TournamentStandings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "days",
+        "rows"
+      ],
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/TournamentEvent"
+        },
+        "days": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TournamentStandingDay"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TournamentStandingRow"
+          }
+        }
+      }
+    },
+    "TournamentDayView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventId",
+        "roundNumber",
+        "dayNumber",
+        "eventVersion",
+        "rulesVersion",
+        "version",
+        "status",
+        "expectedGroupCount",
+        "groups",
+        "published",
+        "standings"
+      ],
+      "properties": {
+        "eventId": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "roundNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "dayNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "eventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "rulesVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "version": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "EMPTY",
+            "DRAFT",
+            "FINALIZED",
+            "CORRECTION"
+          ]
+        },
+        "expectedGroupCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TournamentGroup"
+          }
+        },
+        "published": {
+          "type": "boolean"
+        },
+        "standings": {
+          "$ref": "#/$defs/TournamentStandings"
+        }
+      }
+    },
+    "TournamentRecognitionPermit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "permit",
+        "expiresAt",
+        "evidenceId",
+        "imageHash"
+      ],
+      "properties": {
+        "permit": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidenceId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "imageHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "TournamentRecognizedTeam": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clanTag",
+        "rank",
+        "rankText"
+      ],
+      "properties": {
+        "clanTag": {
+          "type": "string"
+        },
+        "rank": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rankText": {
+          "type": "string"
+        }
+      }
+    },
+    "TournamentRecognitionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groupNumber",
+        "teams",
+        "complete",
+        "issues",
+        "imageHash"
+      ],
+      "properties": {
+        "groupNumber": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TournamentRecognizedTeam"
+          }
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "imageHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "TournamentAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "action",
+        "actor",
+        "reason",
+        "roundNumber",
+        "dayNumber",
+        "createdAt",
+        "before",
+        "after"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "action": {
+          "type": "string"
+        },
+        "actor": {
+          "type": "string"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roundNumber": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "dayNumber": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "before": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "after": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
     "HundredCreateResult": {
       "type": "object",
       "additionalProperties": false,
@@ -2893,6 +3872,27 @@ export default {
     "ApiErrorCode": {
       "type": "string",
       "enum": [
+        "TOURNAMENT_VERSION_CONFLICT",
+        "TOURNAMENT_LOCKED",
+        "TOURNAMENT_RULES_INCOMPLETE",
+        "TOURNAMENT_GROUP_CONFLICT",
+        "TOURNAMENT_DUPLICATE_GROUP",
+        "TOURNAMENT_NEW_CLAN_CONFIRMATION_REQUIRED",
+        "TOURNAMENT_GROUP_COUNT_MISMATCH",
+        "TOURNAMENT_RECOGNITION_UNAVAILABLE",
+        "TOURNAMENT_ALREADY_EXISTS",
+        "TOURNAMENT_EVIDENCE_INVALID",
+        "TOURNAMENT_STORAGE_FULL",
+        "TOURNAMENT_STORAGE_ERROR",
+        "INVALID_RECOGNITION_REQUEST",
+        "INVALID_RECOGNITION_PERMIT",
+        "TOURNAMENT_RECOGNITION_NOT_CONFIGURED",
+        "TOURNAMENT_RECOGNITION_BUSY",
+        "TOURNAMENT_RECOGNITION_RATE_LIMITED",
+        "INVALID_TOURNAMENT_IMAGE",
+        "INVALID_TOURNAMENT_IMAGE_DIMENSIONS",
+        "TOURNAMENT_IMAGE_TOO_LARGE",
+        "UNSUPPORTED_TOURNAMENT_IMAGE",
         "AUTH_UNAUTHENTICATED",
         "AUTH_FORBIDDEN",
         "INVALID_ARGUMENT",

@@ -17,6 +17,9 @@ const emit = defineEmits(['update:files', 'preview', 'remove-request'])
 const props = defineProps({
   files: Array,
   loading: Boolean,
+  disabled: Boolean,
+  /** Shared picker supports screenshots without changing the default replay preflight. */
+  purpose: { type: String, default: 'replay', validator: v => ['replay', 'image'].includes(v) },
   confirmRemove: Boolean,
   showPreview: { type: Boolean, default: true },
   /** 解析完成后压缩上传区域：隐藏大卡/预览主按钮，只保留细条批次摘要 + 添加/清空。 */
@@ -30,6 +33,7 @@ const listOpen = ref(false)
 const confirmingClear = ref(false)
 /** preflight 拒绝结果（{offending, tooMany, totalTooLarge}；非空时 selection 保持不变）。 */
 const validation = ref(null)
+const imageError = ref(false)
 const { t } = useI18n()
 const maxReplayFiles = MAX_REPLAY_FILES
 const maxReplayTotal = formatReplaySize(MAX_REPLAY_TOTAL_BYTES)
@@ -61,7 +65,19 @@ watch(() => props.files, () => {
  * 保留之前合法 selection，一次展示所有 offending。
  */
 function addFiles(list) {
+  if (props.loading || props.disabled) return
   const picked = Array.from(list || [])
+  if (props.purpose === 'image') {
+    if (picked.some(file => !['image/png', 'image/jpeg'].includes(file.type) || file.size > 10 * 1024 * 1024 || file.size === 0)) {
+      imageError.value = true
+      return
+    }
+    imageError.value = false
+    const byKey = new Map(props.files.map(file => [fileKey(file), file]))
+    picked.forEach(file => byKey.set(fileKey(file), file))
+    emit('update:files', [...byKey.values()])
+    return
+  }
   const replays = picked.filter(f => isReplayFileName(f?.name))
   if (replays.length === 0) {
     validation.value = { noReplay: true, offending: [], tooMany: false, totalTooLarge: false, singleOnly: false }
@@ -124,6 +140,24 @@ function onDrop(e) {
            @dragover.prevent="dragging = true"
            @dragleave.prevent="dragging = false"
            @drop.prevent="onDrop">
+    <template v-if="purpose === 'image'">
+      <Banner v-if="imageError" tone="danger">{{ $t('tournament.imageInvalid') }}</Banner>
+      <input ref="filesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple accept="image/png,image/jpeg" :disabled="disabled || loading" data-testid="tournament-image-input" @change="onPick" />
+      <div class="filebar">
+        <p class="dropzone-hint">{{ $t('tournament.imageHint') }}</p>
+        <div class="fb-actions">
+          <AppButton :disabled="disabled || loading" @click="openPicker(filesInput)"><CloudUpload :size="18" aria-hidden="true" />{{ $t('tournament.selectImages') }}</AppButton>
+          <AppButton variant="ghost" :disabled="disabled || loading || !files.length" @click="clearFiles">{{ $t('upload.clear') }}</AppButton>
+        </div>
+        <div v-if="files.length" class="fb-list">
+          <span v-for="file in files" :key="fileKey(file)" class="chip">
+            <span class="chip-name">{{ displayName(file) }}</span>
+            <button class="chipx" type="button" :disabled="disabled || loading" :aria-label="$t('upload.remove_title')" @click="removeFile(file)"><X :size="16" aria-hidden="true" /></button>
+          </span>
+        </div>
+      </div>
+    </template>
+    <template v-else>
     <Banner v-if="validation" tone="danger" data-testid="upload-validation-error">
       <p v-if="validation.noReplay">{{ $t('upload.reject_no_replay') }}</p>
       <p v-if="validation.singleOnly">{{ $t('upload.single_only') }}</p>
@@ -205,6 +239,7 @@ function onDrop(e) {
         <AppButton variant="ghost" size="sm" data-testid="compact-clear-cancel" @click="confirmingClear = false">{{ $t('upload.cancel') }}</AppButton>
       </div>
     </div>
+    </template>
   </section>
 </template>
 
