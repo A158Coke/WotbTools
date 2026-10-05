@@ -1676,8 +1676,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const tr = -rel;                       // 镜像系节点旋转角 = −rel
     const gr = gunPitchAt(v, T);           // glb 系 Rx(θ)：θ>0 = 前向(+Y)抬向 +Z = 仰角
     if (p.itr) {
+      // Euler 序 'ZYX'：yaw (Z) 最外层 → pitch/roll 补偿在炮塔局部系内执行。
+      // 'XYZ' 会把 pitch 放在全局系，炮塔转开 90° 时 pitch 变成侧倾。
       _glbEuler.set(-THREE.MathUtils.degToRad(p.itr.pitch || 0), -THREE.MathUtils.degToRad(p.itr.roll || 0),
-                    tr - THREE.MathUtils.degToRad(p.itr.yaw || 0), 'XYZ');
+                    tr - THREE.MathUtils.degToRad(p.itr.yaw || 0), 'ZYX');
       _mRot.makeRotationFromEuler(_glbEuler);
     } else {
       _mRot.makeRotationZ(tr);
