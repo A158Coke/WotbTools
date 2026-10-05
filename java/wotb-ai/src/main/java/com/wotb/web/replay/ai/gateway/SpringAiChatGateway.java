@@ -702,7 +702,7 @@ public class SpringAiChatGateway implements AiChatGateway {
         return new Prompt(
                 List.of(
                         new SystemMessage(request.systemPrompt()),
-                        new UserMessage(request.userPrompt())),
+                        UserMessage.builder().text(request.userPrompt()).media(request.media()).build()),
                 options.build());
     }
 

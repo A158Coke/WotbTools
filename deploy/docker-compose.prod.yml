@@ -16,6 +16,8 @@ services:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
       AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}
+      TOURNAMENT_RECOGNITION_MODEL: ${TOURNAMENT_RECOGNITION_MODEL:-deepseek-flash}
+      TOURNAMENT_RECOGNITION_SIGNING_KEY: ${TOURNAMENT_RECOGNITION_SIGNING_KEY:-}
       OTEL_SERVICE_NAME: ai-service
       KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-https://auth.wotbtools.com/realms/wotbtools}
       AI_REVIEW_WORKER_MAX_CONCURRENT: ${AI_REVIEW_WORKER_MAX_CONCURRENT:-2}

@@ -20,6 +20,8 @@
     --space-10: 40px;
     --space-12: 48px;
     --gutter: 16px;
+    /* Minimum readable form field before wrapping a fluid toolbar. */
+    --form-field-min: 160px;
 
     /* 应用外壳（§9）：顶栏 / 底部 Tab 栏高度。所有吸顶偏移都读 --header-h */
     --header-h: 48px;
