@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildDestructibleIndex, resolveDestructibleEvent, fallTipVector, fallRotation,
-  foldDestructibleStates, TREE_FALL_DURATION_S,
+  buildDestructibleIndex, resolveDestructibleEvent, fallTipVector, fallRotation, fallDurationS,
+  foldDestructibleStates, TREE_FALL_MIN_S, TREE_FALL_MAX_S, TREE_FALL_DEFAULT_HEIGHT_M,
 } from './destructibles.js'
 
 const doc = {
@@ -58,19 +58,58 @@ describe('fallTipVector / fallRotation（倒向运动学）', () => {
   })
   it('tip=(1,0) 时旋转轴=(0,1,0)（右手法则把 +z 转向 +x）', () => {
     // dir8 使 tip=(1,0)：tip=(-sin a, -cos a)=(1,0) → a=270° → dir8=192
-    const r = fallRotation(192, TREE_FALL_DURATION_S)
+    const r = fallRotation(192, fallDurationS(8), 8)
     expect(r.axis[0]).toBeCloseTo(0)
     expect(r.axis[1]).toBeCloseTo(1)
     expect(r.axis[2]).toBeCloseTo(0)
     expect(r.angle).toBeCloseTo(Math.PI / 2)
   })
-  it('elapsed<0 → null；中段 smoothstep 单调且 ≤ 终态', () => {
-    expect(fallRotation(0, -0.1)).toBeNull()
-    const mid = fallRotation(0, TREE_FALL_DURATION_S / 2)
-    const end = fallRotation(0, TREE_FALL_DURATION_S * 3)
+  it('elapsed<0 → null；单调递增；时长处 = 90°（落地硬停）', () => {
+    const L = 8
+    const T = fallDurationS(L)
+    expect(fallRotation(0, -0.1, L)).toBeNull()
+    const mid = fallRotation(0, T / 2, L)
+    const end = fallRotation(0, T, L)
+    const past = fallRotation(0, T * 3, L)
     expect(mid.angle).toBeGreaterThan(0)
     expect(mid.angle).toBeLessThan(end.angle)
     expect(end.angle).toBeCloseTo(Math.PI / 2)
+    expect(past.angle).toBeCloseTo(Math.PI / 2)   // 超出后钳位，不回弹
+  })
+})
+
+describe('fallDurationS（倒伏时长 ∝ √(L/g)，客户端逐类型物理的近似）', () => {
+  it('随树高单调增：15m 冷杉 ≈ 1.8s、3m 灌木 ≈ 0.8s、1m 草丛 ≈ 0.5s', () => {
+    const tall = fallDurationS(15)
+    const bush = fallDurationS(3)
+    const grass = fallDurationS(1)
+    expect(tall).toBeGreaterThan(bush)
+    expect(bush).toBeGreaterThan(grass)
+    expect(tall).toBeCloseTo(1.51 * Math.sqrt(15 / 9.81), 2)
+    expect(bush).toBeCloseTo(1.51 * Math.sqrt(3 / 9.81), 2)
+    expect(grass).toBeCloseTo(0.48, 1)
+  })
+  it('钳位 [min,max]，缺省/非法高度退化为中型树', () => {
+    expect(fallDurationS(1000)).toBe(TREE_FALL_MAX_S)
+    expect(fallDurationS(0.01)).toBe(TREE_FALL_MIN_S)
+    for (const bad of [undefined, null, 0, -5, NaN, Infinity]) {
+      expect(fallDurationS(bad)).toBe(fallDurationS(TREE_FALL_DEFAULT_HEIGHT_M))
+    }
+  })
+  it('角速度单调加速（重力矩 ∝ sinθ）：半程位移 < 线性半程（前慢后快、落地最快）', () => {
+    const T = fallDurationS(10)
+    const half = fallRotation(0, T / 2, 10).angle
+    expect(half).toBeLessThan(Math.PI / 4)
+    // 相邻等步长的位移增量递增（加速）
+    const step = T / 8
+    let prev = 0
+    const deltas = []
+    for (let i = 1; i <= 8; i++) {
+      const a = fallRotation(0, i * step, 10).angle
+      deltas.push(a - prev)
+      prev = a
+    }
+    for (let i = 1; i < deltas.length; i++) expect(deltas[i]).toBeGreaterThan(deltas[i - 1])
   })
 })
 
