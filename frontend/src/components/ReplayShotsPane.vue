@@ -19,6 +19,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import {
   parseAgentShotsFromBytes, parseAgentPlaybackFromBytes, enrichShotsFromRoster, isShotHit,
 } from '../api/agent-replay-facets.js'
+import { resolveMountedConfig } from '../scene/reloadBar.js'
+import { assetProvider } from '../scene/assetProvider.js'
 import { formatPlaybackClock } from '../utils/playbackClock.js'
 import { storeShotsForViewer, fetchLocalShotTankData } from '../scene/agentData.js'
 import Scene3DStatus from './Scene3DStatus.vue'
@@ -139,6 +141,46 @@ function applyRosterNames(parsedShots, vehicles) {
   }
 }
 
+/**
+ * 实际搭载配置下标注入（shooter/target_config_idx）。WASM 产物没有这两个字段
+ * （服务器路径由解析面按 comp blob 证据链注入；客户端无解析面）——多炮坦克各炮
+ * GLB 节点组、炮口原点、弹表都不同，缺省会让装甲查看器按顶级配置摆射手炮管/
+ * 炮口、选目标变体、选弹表（&scfg=）。此处用回放 facet 自带的逐车证据
+ * （comp locals → 发射弹种 → 初始血量，resolveMountedConfig）联表 tank 数据派生；
+ * 坦克数据缺失时不注入，消费端回退顶级（与服务器「全无 → 顶级」语义一致）。
+ */
+async function annotateMountedConfigs(parsedShots, playback) {
+  const vehicles = playback?.vehicles || []
+  const byEid = new Map(vehicles.map((v) => [v.eid, v]))
+  const tankIds = new Set()
+  for (const s of parsedShots) {
+    if (s.shooter_tank_id) tankIds.add(s.shooter_tank_id)
+    if (s.target_tank_id) tankIds.add(s.target_tank_id)
+  }
+  if (!tankIds.size) return
+  const configsByTank = new Map()
+  await Promise.all([...tankIds].map(async (tid) => {
+    try {
+      const data = await assetProvider.json(`/tank/${tid}.json`)
+      if (Array.isArray(data?.configs) && data.configs.length) configsByTank.set(tid, data)
+    } catch { /* 数据缺失：该车不注入 */ }
+  }))
+  if (!configsByTank.size) return
+  const idxOf = (vehicle, tid) => {
+    const data = configsByTank.get(tid)
+    if (!data || !vehicle) return null
+    const cfg = resolveMountedConfig(vehicle, data)
+    const idx = cfg ? data.configs.indexOf(cfg) : -1
+    return idx >= 0 ? idx : null
+  }
+  for (const s of parsedShots) {
+    const shooterIdx = idxOf(byEid.get(s.shooter_eid), s.shooter_tank_id)
+    if (shooterIdx != null) s.shooter_config_idx = shooterIdx
+    const targetIdx = s.target_eid != null ? idxOf(byEid.get(s.target_eid), s.target_tank_id) : null
+    if (targetIdx != null) s.target_config_idx = targetIdx
+  }
+}
+
 async function decode(file) {
   const seq = ++parseSeq
   parsing.value = true
@@ -179,6 +221,7 @@ async function decode(file) {
       try {
         enrichShotsFromRoster(parsedShots, playback.vehicles)
         applyRosterNames(parsedShots, playback.vehicles)
+        await annotateMountedConfigs(parsedShots, playback)
       } catch (e) {
         console.warn('roster enrichment skipped:', e)
       }
