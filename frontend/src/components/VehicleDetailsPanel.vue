@@ -34,6 +34,8 @@ const props = defineProps({
   /** 浮窗初始落位偏好：点左侧名册 → 'right'，点右侧名册 → 'left'，点场景里的车 → 屏幕上
       与它相对的一侧。只在用户还没亲手拖过时生效。 */
   initialSide: { type: String, default: 'right' },
+  /** 初始纵向落位（透传 placement）：'top' 默认（2D）；3D 传 'bottom' 贴底避免盖名册。 */
+  initialVertical: { type: String, default: 'top' },
   /** 当前选中对象的身份（accountId / eid）。同一次打开内换车时据此重新落位（未拖过时）。 */
   selectionKey: { type: null, default: null },
 })
@@ -58,6 +60,7 @@ const { pos, maxPanelHeight, maxPanelWidth, onPointerDown, onSelectionChange } =
   boundsEl: dragBounds,
   panelEl,
   initialSide: computed(() => props.initialSide),
+  initialVertical: computed(() => props.initialVertical),
 })
 watch([() => props.selectionKey, () => props.initialSide], onSelectionChange)
 const floatingStyle = computed(() => (floating.value && pos.value

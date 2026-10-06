@@ -12,7 +12,7 @@
  */
 import { loadAgentWasmModule } from '../api/agent-replay-facets.js'
 
-export interface PlaybackParseRequest { id: number; bytes: ArrayBuffer }
+export interface PlaybackParseRequest { id: number; bytes: ArrayBuffer; limitsJson?: string }
 export type PlaybackParseResponse =
   | { id: number; json: string; error?: undefined }
   | { id: number; json?: undefined; error: string }
@@ -21,13 +21,13 @@ const post = (message: PlaybackParseResponse) =>
   (self as DedicatedWorkerGlobalScope).postMessage(message)
 
 self.onmessage = async (event: MessageEvent<PlaybackParseRequest>) => {
-  const { id, bytes } = event.data
+  const { id, bytes, limitsJson } = event.data
   try {
     const mod = await loadAgentWasmModule()
     if (typeof mod.parsePlayback !== 'function') {
       throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
     }
-    post({ id, json: mod.parsePlayback(new Uint8Array(bytes)) })
+    post({ id, json: mod.parsePlayback(new Uint8Array(bytes), undefined, limitsJson || undefined) })
   } catch (error) {
     post({ id, error: error instanceof Error ? error.message : String(error) })
   }
