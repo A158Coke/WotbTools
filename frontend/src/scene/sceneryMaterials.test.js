@@ -173,8 +173,9 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     expect(publish, '装填中提高发布频率').toMatch(/labelsReloadActive \? LABEL_INTERVAL_RELOAD_MS : LABEL_INTERVAL_IDLE_MS/)
     expect(src, '装填中 33ms').toMatch(/const LABEL_INTERVAL_RELOAD_MS = 33;/)
     expect(src, '空闲 100ms（原值）').toMatch(/const LABEL_INTERVAL_IDLE_MS = 100;/)
-    // 求值本身只依赖 T（纯状态在时刻）：走共享 resolver，不再自带累加计时器
-    expect(publish).toMatch(/reload: destroyed \? null : reloadStateAt\(v\.def\.eid, T, v\.reloadSize\)/)
+    // 求值本身只依赖 T（纯状态在时刻）：走共享 resolver，不再自带累加计时器；
+    // 弹容 N 由 resolver 从 facet 车辆的 burst_size 取默认（调用点不再传 v.reloadSize）
+    expect(publish).toMatch(/reload: destroyed \? null : reloadStateAt\(v\.def\.eid, T\)/)
   })
 
   it('HUD 降频：store.time/seekFrac 不再每帧写，seek 时强制补一次', () => {

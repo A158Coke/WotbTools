@@ -52,7 +52,7 @@ import {
   victimFeedbackAllowedV2,
 } from '../utils/battlePlaybackV2'
 import { projectVehicleState } from '../utils/playbackVehicleState'
-import { createReloadStateResolver, groupByVehicle, resolveMagazineSize } from '../scene/reloadBar.js'
+import { createReloadStateResolver, magazineSizeForVehicle } from '../scene/reloadBar.js'
 import { assetProvider } from '../scene/assetProvider.js'
 import { computeVehicleMarkerSize } from '../utils/vehicleMarkerSizing'
 import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
@@ -165,29 +165,36 @@ const reloadVehiclesByAccount = computed(() => {
   }
   return byAccount
 })
-const reloadMagazineSizes = ref(new Map())
-let reloadAssetToken = 0
+
+// 弹容 N 的配置联表源（tank_id → tank/{id}.json）：实际搭载配置三级证据链
+// （comp locals → 发射弹种 → 初始血量，见 reloadBar.resolveMountedConfig）消费；
+// 异步就绪后整体替换触发响应式重算。竞态令牌：快速切换战局时过期完成不得覆盖。
+const tankConfigs = ref(new Map())
+let tankConfigsToken = 0
 watch(() => props.reloadTelemetry, async (telemetry) => {
-  const token = ++reloadAssetToken
-  reloadMagazineSizes.value = new Map()
+  const token = ++tankConfigsToken
+  tankConfigs.value = new Map()
   if (!telemetry || !assetProvider.configured()) return
-  const events = groupByVehicle(telemetry.reloads)
-  const tankIds = new Set(telemetry.vehicles.filter((v) => v.team === telemetry.friendlyTeam && v.tank_id > 0).map((v) => v.tank_id))
-  const configs = new Map(await Promise.all([...tankIds].map(async (tankId) => {
-    try { return [tankId, await assetProvider.json(`/tank/${tankId}.json`)] }
-    catch { return [tankId, null] }
-  })))
-  if (token !== reloadAssetToken) return
-  reloadMagazineSizes.value = new Map(telemetry.vehicles.map((v) => [v.eid,
-    resolveMagazineSize(configs.get(v.tank_id), events.get(v.eid) || []),
-  ]))
+  const ids = new Set(telemetry.vehicles
+    .filter((v) => v.team === telemetry.friendlyTeam && v.tank_id > 0)
+    .map((v) => v.tank_id))
+  const entries = await Promise.all([...ids].map(async (tid) => {
+    try { return [tid, await assetProvider.json(`/tank/${tid}.json`)] }
+    catch { return [tid, null] }
+  }))
+  if (token !== tankConfigsToken) return
+  tankConfigs.value = new Map(entries)
 }, { immediate: true })
 
 function vehicleReloadAt(accountId, time) {
   const telemetry = props.reloadTelemetry
   const vehicle = reloadVehiclesByAccount.value.get(accountId)
   if (!telemetry || !vehicle) return null
-  return reloadStateAt.value(vehicle.eid, time + telemetry.timeOrigin, reloadMagazineSizes.value.get(vehicle.eid))
+  // 弹容 N 随实际搭载主炮走——多炮坦克各炮弹容不同，禁止跨配置取最大 /
+  // 剩余弹数+1 推断（上游 docs/wotbtools-cross-reference.md §六 裁决）；
+  // configs 未就绪时回退 facet burst_size → 单发，就绪后本组件响应式重算。
+  const size = magazineSizeForVehicle(vehicle, tankConfigs.value.get(vehicle.tank_id))
+  return reloadStateAt.value(vehicle.eid, time + telemetry.timeOrigin, size)
 }
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => pbOverview.value.friendlyTeam)
@@ -1362,7 +1369,6 @@ function onKeydown(e) {
 onBeforeUnmount(() => {
   playbackLifecycleActive = false
   paletteRequestToken += 1
-  reloadAssetToken += 1
   if (rafId != null) cancelAnimationFrame(rafId)
   if (pauseRafId != null) cancelAnimationFrame(pauseRafId)
   if (mapResizeObserver) {

@@ -20,7 +20,7 @@ import {
   type AgentPlaybackFacet,
   type AgentShotsOutcome,
 } from '../../api/agent-replay-facets.js'
-import { groupByVehicle, inferMagazineSize, shellStatesAt, usablePhases, type ShellState } from '../../scene/reloadBar.js'
+import { groupByVehicle, magazineSizeOfVehicle, shellStatesAt, usablePhases, type ShellState } from '../../scene/reloadBar.js'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 const PIN_JSON = join(REPO, 'deploy/agent/source.json')
@@ -154,7 +154,7 @@ export interface ReloadTelemetrySmoke {
   authorReloadEvents: number
   /** 作者车可用于逐发状态机的条目数（有正时长的 f2=3/4/6/7） */
   authorUsablePhases: number
-  /** 相位 + 计数推断出的弹夹容量（无证据 → 1，不猜） */
+  /** 弹容 N = facet 车辆 `burst_size`（实际搭载配置；旧产物缺省 → 1，不猜） */
   magazineSize: number
   /** 采样时刻的逐发状态（无遥测 → `null`，调用方据此不画装填条） */
   samples: Array<{ t: number; states: ShellState[] | null }>
@@ -180,7 +180,9 @@ export function reloadTelemetryFor(playback: AgentPlaybackFacet): ReloadTelemetr
 
   const authorEid = playback.meta.author_eid
   const events = byEid.get(authorEid) ?? []
-  const magazineSize = inferMagazineSize(events)
+  // 弹容 N = facet 车辆的 burst_size（实际搭载配置；旧 pin 产物缺省 → 1，与生产 resolver 同款）
+  const authorVehicle = (playback.vehicles ?? []).find((v) => v.eid === authorEid)
+  const magazineSize = magazineSizeOfVehicle(authorVehicle)
   const authorFires = fires.get(authorEid) ?? []
   const samples = usablePhases(events).map((event) => {
     const t = event.clock + Number(event.duration_s) / 2
