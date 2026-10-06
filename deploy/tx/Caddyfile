@@ -71,6 +71,15 @@ wotbtools.com {
 		+Vary Origin
 	}
 	respond @androidPreflight "" 204
+	# 2026-10-06: APK downloads offloaded to Tsinghua Cloud dir-share; TX1's 5Mbps
+	# public pipe was saturated by 15MB apk downloads. Only *.apk is redirected —
+	# version.json and *.staging.json stay origin-served (the deploy preflight
+	# compares TX1/TX2 frontend content directly). The share link is owned together
+	# with the android-release workflow step; changing it requires both sides.
+	@apkDownload {
+		path_regexp apkFile ^/download/android/[^/]+\.apk$
+	}
+	redir @apkDownload https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/{http.request.uri.path.file}&dl=1 302
 	# Existing reviewed COS plane; fixed upstream cannot proxy arbitrary URLs.
 	handle_path /agent-assets/* {
 		reverse_proxy https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com {
