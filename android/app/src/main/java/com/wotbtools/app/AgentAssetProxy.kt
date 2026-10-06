@@ -153,32 +153,30 @@ object AgentAssetProxy {
         fun response(): WebResourceResponse = WebResourceResponse(contentType, null, body.inputStream())
     }
 
-    companion object {
-        /** 纯函数（纯 JVM 单测覆盖）：路径 → 定长缓存键。 */
-        fun cacheKey(path: String): String =
-            MessageDigest.getInstance("SHA-256")
-                .digest(path.toByteArray(Charsets.UTF_8))
-                .joinToString("") { "%02x".format(it) }
+    /** 纯函数（纯 JVM 单测覆盖）：路径 → 定长缓存键。 */
+    fun cacheKey(path: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(path.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
 
-        /** 纯函数：COS Content-Type（可能带 charset 参数/大小写随意）归一化为 MIME。 */
-        fun normalizeContentType(raw: String?): String =
-            raw?.substringBefore(';')?.trim()?.lowercase()
-                ?.takeIf { it.isNotEmpty() } ?: DEFAULT_CONTENT_TYPE
+    /** 纯函数：COS Content-Type（可能带 charset 参数/大小写随意）归一化为 MIME。 */
+    fun normalizeContentType(raw: String?): String =
+        raw?.substringBefore(';')?.trim()?.lowercase()
+            ?.takeIf { it.isNotEmpty() } ?: DEFAULT_CONTENT_TYPE
 
-        /**
-         * 纯函数：entries = (body 文件名, 字节数, lastModified)；按 lastModified 升序淘汰
-         * 直到总量 ≤ maxBytes，返回应删除的 body 文件名列表。
-         */
-        fun trimSelection(entries: List<Triple<String, Long, Long>>, maxBytes: Long): List<String> {
-            var total = entries.sumOf { it.second }
-            if (total <= maxBytes) return emptyList()
-            val drop = mutableListOf<String>()
-            for ((name, size, _) in entries.sortedBy { it.third }) {
-                if (total <= maxBytes) break
-                drop.add(name)
-                total -= size
-            }
-            return drop
+    /**
+     * 纯函数：entries = (body 文件名, 字节数, lastModified)；按 lastModified 升序淘汰
+     * 直到总量 ≤ maxBytes，返回应删除的 body 文件名列表。
+     */
+    fun trimSelection(entries: List<Triple<String, Long, Long>>, maxBytes: Long): List<String> {
+        var total = entries.sumOf { it.second }
+        if (total <= maxBytes) return emptyList()
+        val drop = mutableListOf<String>()
+        for ((name, size, _) in entries.sortedBy { it.third }) {
+            if (total <= maxBytes) break
+            drop.add(name)
+            total -= size
         }
+        return drop
     }
 }
