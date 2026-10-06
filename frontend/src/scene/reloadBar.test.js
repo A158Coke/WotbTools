@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   PHASE_AMMO_COUNT, PHASE_DRUM_SHELL, PHASE_DURATION_CHANGE, PHASE_MAG_INTERVAL, PHASE_START, fillOf, groupByVehicle,
-  hasReloadTelemetry, hasPerShellReloads, inferMagazineSize, isTimedAmmoPhase, magazineSizeFromTank, reloadViewAt,
-  createReloadStateResolver, reloadVisualKey, resolveMagazineSize, shellStatesAt, usablePhases,
+  hasReloadTelemetry, hasPerShellReloads, isTimedAmmoPhase, magazineSizeForVehicle, magazineSizeOfVehicle,
+  reloadViewAt, resolveMountedConfig,
+  createReloadStateResolver, reloadVisualKey, shellStatesAt, usablePhases,
 } from './reloadBar.js'
 
 // 相位条目（facet `reloads` 的形状）：{ clock, eid, phase, duration_s, count }
@@ -53,19 +54,29 @@ describe('shared Playback reloadStateAt resolver', () => {
     expect(createReloadStateResolver({ ...telemetry(), friendlyTeam: null })(7, 12)).toBeNull()
   })
 
-  it('evidence-based magazines preserve count, interval, per-shell and static config capacity', () => {
+  it('resolver 默认弹容 = facet burst_size；显式 size 仍可覆盖', () => {
     const raw = telemetry({
+      vehicles: [{ eid: 7, team: 1, burst_size: 3 }, { eid: 8, team: 2 }, { eid: 9, team: 1 }],
+    })
+    const at = createReloadStateResolver(raw)
+    expect(at(7, 20)).toEqual(Array.from({ length: 3 }, () => ({ state: 'full', progress: 1 })))
+    expect(at(7, 20, 2)).toHaveLength(2)
+  })
+
+  it('evidence-based magazines preserve count, interval, per-shell and facet capacity', () => {
+    const raw = telemetry({
+      vehicles: [{ eid: 7, team: 1, burst_size: 4 }, { eid: 8, team: 2 }, { eid: 9, team: 1 }],
       reloads: [gap(10, 7, 2, 2), drum(12, 7, 6, 2)],
       reload_effective: [],
       shots: [{ shooter_eid: 7, t_fire: 10 }],
     })
     const at = createReloadStateResolver(raw)
+    // 默认 N = facet burst_size（4，实际搭载配置）：f4 快照 2 + f2=6 补槽 B 在第 3 格
     expect(at(7, 15)).toEqual([
-      { state: 'full', progress: 1 }, { state: 'full', progress: 1 }, { state: 'loading', progress: 0.5 },
+      { state: 'full', progress: 1 }, { state: 'full', progress: 1 },
+      { state: 'loading', progress: 0.5 }, { state: 'locked', progress: 0 },
     ])
-    expect(at(7, 18)).toHaveLength(3)
-    const size = resolveMagazineSize({ configs: [{ burst_size: 4 }] }, raw.reloads)
-    expect(at(7, 18, size)).toHaveLength(4)
+    expect(at(7, 18)).toHaveLength(4)
     expect(at(7, 15)).toEqual(createReloadStateResolver(raw)(7, 15))
   })
 
@@ -93,7 +104,7 @@ describe('reloadBar · 相位语义与筛选', () => {
     expect(isTimedAmmoPhase(chg(1, 7, 5))).toBe(false)
   })
 
-  it('分组按 eid（保留全量条目：未闭环相位码上的 f4 也要用于 N 推断）', () => {
+  it('分组按 eid（保留全量条目：未闭环相位码上的 f4 也要用于在膛发数重锚）', () => {
     const m = groupByVehicle([clip(1, 7, 12.4), gap(2, 9, 3), drum(3, 11, 6),
       { clock: 4, eid: 11, phase: 1, duration_s: null, count: 5 }])
     expect([...m.keys()].sort((a, b) => a - b)).toEqual([7, 9, 11])
@@ -129,57 +140,96 @@ describe('reloadBar · 重绘视觉签名', () => {
   })
 })
 
-describe('reloadBar · 弹夹容量推断（f4=开火后剩余发数 → N = 最大剩余 + 1）', () => {
-  it('单发车（只有整夹相位、无计数）→ 1', () => {
-    expect(inferMagazineSize([clip(1, 7, 12.4), clip(30, 7, 12.4)])).toBe(1)
-    expect(inferMagazineSize([])).toBe(1)
+describe('reloadBar · 弹容 N = facet 实际搭载配置 burst_size（2026-10-06 裁决）', () => {
+  it('N = 车辆 facet 的 burst_size 原值（0/缺失 = 单发，不猜）', () => {
+    expect(magazineSizeOfVehicle({ burst_size: 3 })).toBe(3)
+    expect(magazineSizeOfVehicle({ burst_size: 0 })).toBe(1)
+    expect(magazineSizeOfVehicle({ burst_size: 1 })).toBe(1)
+    expect(magazineSizeOfVehicle({})).toBe(1)
+    expect(magazineSizeOfVehicle(null)).toBe(1)
   })
 
-  it('3 发弹鼓（真实序列：tank 4481，f4 = 2/1，无整夹相位）→ N=3', () => {
-    // tournament-14-14-example eid 12558556：客户端 burst_size=3 / burst_interval=2.727 / burst_reloads=[14,10,7]
-    const ev = [gap(39.97, 7, 2.63, 2), drum(42.56, 7, 6.56, 2), gap(42.86, 7, 2.63, 1),
-      drum(45.47, 7, 9.38, 1), drum(54.85, 7, 6.56, 2)]
-    expect(inferMagazineSize(ev)).toBe(3)
+  it('多炮坦克：弹容随实际搭载炮走——跨配置取最大/剩余弹数+1 都是被禁的错误口径', () => {
+    // T69（14625）：4 发/3 发双弹夹炮。装 3 发炮 → facet burst_size=3，
+    // 旧口径会给出「全配置最大 4」或「f4 剩余+1 推断」，均错格
+    expect(magazineSizeOfVehicle({ burst_size: 3, config_idx: 1 })).toBe(3)
+    // AC Wedge（13169）：单发炮搭载 → burst_size=0，不得按未搭载的 6 发弹夹顶配画格
+    expect(magazineSizeOfVehicle({ burst_size: 0, config_idx: 0 })).toBe(1)
   })
 
-  it('2 发弹夹（tank 11073，f4=1）→ N=2', () => {
-    expect(inferMagazineSize([gap(99.72, 7, 2.5, 1), clip(103.72, 7, 15.63), gap(123.92, 7, 2.5, 1)])).toBe(2)
+  it('越界脏值夹到上限', () => {
+    expect(magazineSizeOfVehicle({ burst_size: 999 })).toBe(10)
+  })
+})
+
+describe('reloadBar · 客户端证据链解析实际搭载配置（resolveMountedConfig）', () => {
+  // T69（14625）形状：两门弹夹炮 4 发/3 发（turret 同、gun_local 不同）
+  const T69_CONFIGS = [
+    { turret_local: 4, gun_local: 10, burst_size: 4, hull_hp: 11500, turret_health: 100, shell_global_ids: [101, 102, 103] },
+    { turret_local: 4, gun_local: 20, burst_size: 3, hull_hp: 11500, turret_health: 200, shell_global_ids: [201, 202] },
+  ]
+  const T69 = { configs: T69_CONFIGS }
+
+  it('证据 0：comp locals 确定性对号（turret_local + gun_local）', () => {
+    expect(resolveMountedConfig({ turret_local: 4, gun_local: 20 }, T69)).toBe(T69_CONFIGS[1])
+    expect(resolveMountedConfig({ turret_local: 4, gun_local: 10 }, T69)).toBe(T69_CONFIGS[0])
+    // 局部 id 无命中 → 落后续证据
+    expect(resolveMountedConfig({ turret_local: 9, gun_local: 9 }, T69)).toBe(T69_CONFIGS[1]) // hp 区分
   })
 
-  it('4 发弹夹（tank 19025，f4 = 3/2/1）→ N=4', () => {
-    expect(inferMagazineSize([gap(84.1, 7, 2, 3), gap(86.6, 7, 2, 2), gap(91.0, 7, 2, 1), clip(94.19, 7, 16.93)])).toBe(4)
+  it('证据 1：发射弹种 ⊆ 配置弹表（shell_global_ids）', () => {
+    expect(resolveMountedConfig({ shell_ids: [201] }, T69)).toBe(T69_CONFIGS[1])
+    expect(resolveMountedConfig({ shell_ids: [101, 103] }, T69)).toBe(T69_CONFIGS[0])
+    // 空弹表（数据不全）不以此排除：两配置都过 → 多匹配取最后一档
   })
 
-  it('f4 出现在未闭环相位码上时也要用（实测 f2=1 也带剩余发数）：tank 19825 → N=6', () => {
-    const ev = [
-      { clock: 33.62, eid: 7, phase: 1, duration_s: null, count: 5 },
-      { clock: 33.81, eid: 7, phase: 1, duration_s: null, count: 4 },
-      gap(34.16, 7, 3, 3),
-      { clock: 39.33, eid: 7, phase: 1, duration_s: null, count: 2 },
-      { clock: 39.52, eid: 7, phase: 1, duration_s: null, count: 1 },
-      clip(39.85, 7, 12.73),
-    ]
-    expect(inferMagazineSize(ev)).toBe(6)
+  it('证据 2：max_hp vs 车体+炮塔 health（×1.125 改进耐久，±2）', () => {
+    // config1 base = 11700（boosted 13162.5→13163）；config0 base = 11600
+    expect(resolveMountedConfig({ max_hp: 11700 }, T69)).toBe(T69_CONFIGS[1])
+    expect(resolveMountedConfig({ max_hp: 11601 }, T69)).toBe(T69_CONFIGS[0])
+    expect(resolveMountedConfig({ max_hp: 13163 }, T69)).toBe(T69_CONFIGS[1])   // 改进耐久档
   })
 
-  it('f2=5 的 f4=1 是"就绪标志"，不参与容量推断（单发车不被推成 2 发）', () => {
-    const ev = [clip(10, 7, 12.4), { clock: 22, eid: 7, phase: 5, duration_s: null, count: 1 }]
-    expect(inferMagazineSize(ev)).toBe(1)
+  it('多匹配取最后一档（顶级偏好）；全无证据 → 顶级（与上游 resolve_config_index 同语义）', () => {
+    expect(resolveMountedConfig({ shell_ids: [], max_hp: 0 }, T69)).toBe(T69_CONFIGS[1])
   })
 
-  it('无 f4 时回退到"整夹之间最长连续逐发相位串 + 1"', () => {
-    const ev = [clip(10, 7, 3), gap(11, 7, 3), gap(12, 7, 3), clip(40, 7, 3), gap(41, 7, 3)]
-    expect(inferMagazineSize(ev)).toBe(3)
+  it('configs ≤ 1：无歧义直接返回该唯一配置；无数据 → null', () => {
+    expect(resolveMountedConfig({}, { configs: [{ burst_size: 0 }] })).toEqual({ burst_size: 0 })
+    expect(resolveMountedConfig({}, {})).toBeNull()
   })
 
-  it('既无 f4 也无整夹相位 → 1（不拿间隔串猜：单发车也可能连发 f2=7）', () => {
-    const ev = [gap(10, 7, 2.63), gap(20, 7, 2.63), gap(30, 7, 2.63)]
-    expect(inferMagazineSize(ev)).toBe(1)
+  it('magazineSizeForVehicle：证据链命中配置的 burst_size；回退 facet burst_size；再回退 1', () => {
+    expect(magazineSizeForVehicle({ turret_local: 4, gun_local: 20 }, T69)).toBe(3)
+    expect(magazineSizeForVehicle({ turret_local: 4, gun_local: 10 }, T69)).toBe(4)
+    // 无证据可联表 → facet burst_size（服务器路径产物）
+    expect(magazineSizeForVehicle({ burst_size: 2 }, null)).toBe(2)
+    // 都没有 → 1（不猜）
+    expect(magazineSizeForVehicle({}, null)).toBe(1)
   })
 
-  it('f4 明显越界（脏数据）→ 退回启发式，不产生荒唐容量', () => {
-    expect(inferMagazineSize([gap(10, 7, 2.5, 99), clip(20, 7, 12)])).toBe(2)
-    expect(inferMagazineSize([gap(10, 7, 2.5, -1), clip(20, 7, 12)])).toBe(2)
+  it('resolver 经 mountedConfigs 联表：证据链修正多炮坦克的默认弹容', () => {
+    const vehicle = { eid: 7, team: 1, tank_id: 14625, turret_local: 4, gun_local: 20, burst_size: 4 }
+    const mounted = new Map([[14625, T69]])
+    const at = createReloadStateResolver({
+      friendlyTeam: 1,
+      vehicles: [vehicle],
+      reloads: [clip(10, 7, 8)],
+      reload_effective: [],
+      shots: [],
+      mountedConfigs: mounted,
+    })
+    // facet burst_size=4（服务器未钉定时的顶级缺省），证据链修正为实际搭载的 3 发
+    expect(at(7, 20)).toHaveLength(3)
+    // 无 mountedConfigs：回退 facet burst_size=4
+    const atNoConfigs = createReloadStateResolver({
+      friendlyTeam: 1,
+      vehicles: [vehicle],
+      reloads: [clip(10, 7, 8)],
+      reload_effective: [],
+      shots: [],
+    })
+    expect(atNoConfigs(7, 20)).toHaveLength(4)
   })
 })
 
@@ -220,31 +270,6 @@ describe('reloadBar · 空槽两态：弹鼓 locked(.69) vs 弹夹 used(.25)', (
     // 开火打断 f2=6 → 不结算：空闲分割，空槽 = locked(.69)
     expect(states(shellStatesAt(ev, [9, 12], 16, 3))).toEqual(['full', 'locked', 'locked'])
   })
-})
-
-describe('reloadBar · 由客户端坦克数据取容量（静态权威）', () => {
-  it('弹夹参数挂在 burst 那个 config 上 → 取 configs 里最大 burst_size', () => {
-    // 实测 tank 19825：configs[0] 非弹夹(burst_size 0) / configs[1] burst_size=6
-    expect(magazineSizeFromTank({ configs: [{ burst_size: 0 }, { burst_size: 6, burst_interval: 3 }] })).toBe(6)
-    // 实测 tank 23329：configs[1] burst_size=3
-    expect(magazineSizeFromTank({ configs: [{ burst_size: 0 }, { burst_size: 3 }, { burst_size: 0 }] })).toBe(3)
-  })
-  it('单发（全部 config burst_size 为 0 / 缺字段）→ 1；越界脏值夹到上限', () => {
-    expect(magazineSizeFromTank({ configs: [{ burst_size: 0 }] })).toBe(1)
-    expect(magazineSizeFromTank({})).toBe(1)
-    expect(magazineSizeFromTank(null)).toBe(1)
-    expect(magazineSizeFromTank({ configs: [{ burst_size: 999 }] })).toBe(10)
-  })
-})
-
-describe('reloadBar · N 的合成（客户端静态为主，相位推断取大）', () => {
-  it('客户端静态值优先：4 发弹夹从未打空夹，相位推断=1 时仍用 4', () => {
-    expect(resolveMagazineSize({ configs: [{ burst_size: 4 }] }, [clip(10, 7, 12)])).toBe(4)
-  })
-  it('相位推断更大时取相位（回放真值可纠正静态配置歧义）', () => {
-    expect(resolveMagazineSize({ configs: [{ burst_size: 0 }] }, [gap(1, 7, 2.5, 2), drum(2, 7, 6, 2)])).toBe(3)
-  })
-  it('两边都没有 → 1', () => { expect(resolveMagazineSize({}, [])).toBe(1) })
 })
 
 describe('reloadBar · 方法 35（权威有效装填时长）驱动进度', () => {
@@ -351,7 +376,6 @@ describe('reloadBar · 逐发状态（对齐客户端 Full / Active / Inactive�
   it('弹鼓（N=3）：打一发 A|B|C → f2=6 补空槽 A|A|B → 满 A|A|A', () => {
     // 真实序列（tank 4481）：开火 39.86（f4=2）→ f2=7 2.63s → f2=6 6.56s（补第 3 槽）
     const ev = [gap(39.97, 7, 2.63, 2), drum(42.56, 7, 6.56, 2)]
-    expect(inferMagazineSize(ev)).toBe(3)
     // f2=7 推弹期间 → A|B|C（与弹夹同形；弹鼓的空槽档是 locked(.69)）
     expect(states(shellStatesAt(ev, [39.86], 41.0, 3))).toEqual(['full', 'loading', 'locked'])
     // f2=6（42.56~49.12）补空槽：B 在第 3 格 → A|A|B

@@ -230,6 +230,31 @@ WotBTools
 - 与 `frontend/src/api/agent-replay-facets.ts` 的 `via?: [number,number,number][]` /
   `leg_secs?: number[]` 逐字对应；渲染侧实现在 `frontend/src/scene/shotPath.js`。
 
+## 4h. 实际搭载配置与弹容（`vehicles[].config_idx` / `vehicles[].burst_size`，PlaybackData additive；上游 2026-10-06，pin 待随下一 Release 更新）
+
+- `config_idx?: number` —— 该车**实际搭载配置**在坦克数据 `configs[]` 数组中的下标
+  （comp blob → 弹种 → 血量证据链 = 上游 `resolve_config_index`，与 shots 的
+  `shooter_config_idx` 同域）。缺省 = configs 唯一或证据链未命中 → 消费端回退顶级配置。
+- `burst_size?: number` —— 该配置的弹夹容量**原值**（`configs[config_idx].burst_size`，
+  **0 = 单发**；configs 唯一时即便 `config_idx` 缺省也给出）。
+- **它是装填条弹容 N 的唯一权威取值**（上游裁决 2026-10-06，详见上游
+  `docs/wotbtools-cross-reference.md` §六「弹容 N 裁决」）：多炮坦克各炮弹容不同
+  （实测上游资产包 735 台中 52 台跨配置不一致——T69 4/3、AC Wedge 0/6、Medium I 0/15 等），
+  **禁止跨配置取最大**、**禁止用相位流剩余弹数 +1（f4）推断 N**。f4 快照继续用于
+  **在膛发数**重锚（语义不变），只是不再参与 N。
+- **客户端（WASM 本地解析）路径**：浏览器产物无解析面注入，`config_idx`/`burst_size` 缺省。
+  `vehicles[]` 另行透传 comp blob 模块局部 id（`turret_local` / `gun_local`，纯回放证据），
+  消费方经 `reloadBar.resolveMountedConfig` 用资产面 `tank/{id}.json` 联表 `configs[]`，
+  按**同一三级证据链**（comp locals → 发射弹种 `shell_ids` → 初始血量 `max_hp`，
+  多匹配取最后一档 = 顶级）钉定实际搭载配置并取其 `burst_size`；该链与上游
+  `resolve_config_index` 同语义（两侧均有测试锁定）。联表数据未就绪时回退 facet
+  `burst_size` → 单发（1）。
+- 消费端契约：`burst_size` 缺省（旧产物 / 坦克数据缺失 / 证据矛盾）→ 按单发（1），不猜；
+  `≤1` 读作单发；脏值由消费方夹到渲染上限（`reloadBar.js` 的 `MAX_PLAUSIBLE_MAG`）。
+  2D / 3D 共用的 `createReloadStateResolver()` 已改为默认从 facet 车辆取 N——
+  旧的「2D 异步拉坦克数据 / 3D 相位推断+异步覆盖」两段式维护已移除。
+- 与 `frontend/src/api/agent-replay-facets.ts` 的 `config_idx?` / `burst_size?` 逐字对应。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——
