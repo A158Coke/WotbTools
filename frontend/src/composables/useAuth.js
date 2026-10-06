@@ -457,6 +457,14 @@ const isAdmin = computed(() => hasRole('wotbtools-admin'))
 /** 名人堂审核权限：`HoF-admin` 或全站管理员。 */
 const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)
 
+/** Real token claims are the shared tournament boundary; local visibility shortcuts never authorize it. */
+export function tournamentAdminAllowed(auth = useAuth()) {
+  const roles = auth.tokenParsed.value?.realm_access?.roles
+  return auth.authenticated.value && Array.isArray(roles)
+    && roles.includes('tournament-admin')
+}
+const isTournamentAdmin = computed(() => tournamentAdminAllowed({ authenticated, tokenParsed }))
+
 /**
  * 展示名（顶栏账户入口 / 个人中心）：Keycloak `display-name-mapper` 映射的 `displayName`
  * （WG 官方昵称 / QQ 昵称）。`preferred_username` 是内部登录名（形如 `wg_eu_572253806`），
@@ -490,19 +498,16 @@ async function ensureToken(minValidity = 30) {
   }
   if (currentTransaction?.provider !== provider) return false
   if (!refreshed) {
-    // 离线 / 连接未知时的刷新失败是**瞬时**失败（Phase 9.3）：绝不能销毁有效缓存身份
-    // ——本地功能继续用缓存会话，恢复在线后由下一次 ensureToken 自然收敛。
-    // 只有**明确离线**才保留缓存身份（unknown ≠ offline：连接未知时按老行为收敛为未登录，
-    // 避免把「后端拒绝刷新」误当网络问题而长期挂着失效会话）。
-    if (offlineKnown()) {
-      console.warn(`[auth] refresh_failed_offline generation=${authGeneration} session=retained`)
-      return false
-    }
-    // Native may retain an offline session while denying a usable API token.
+    // Refresh failure is not equivalent to logout. In particular keycloak-js does not expose
+    // a stable error contract that lets us safely distinguish a transient transport/KC failure
+    // from terminal refresh rejection. Both providers therefore fail closed for API access
+    // (token() exposes no usable token) while retaining the cached identity/session owner.
+    // Android re-reads Native state; Web keeps the current projection and retries refresh on
+    // the next authenticated request. A reload/check-sso or explicit logout remains authoritative.
     if (provider.name === 'android') applyProviderState(provider)
-    else {
-      projectSession({ isAuthenticated: false, parsedToken: null })
-    }
+    console.warn(
+      `[auth] refresh_failed generation=${authGeneration} platform=${provider.name} session=retained`,
+    )
     return false
   }
   // 刷新后 claims 可能变化（角色 / displayName）：重新投影 provider 的当前 claims
@@ -528,6 +533,7 @@ export function useAuth() {
     hasRole,
     isAdmin,
     isHofAdmin,
+    isTournamentAdmin,
     token,
     ensureToken,
     initialized,

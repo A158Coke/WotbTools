@@ -32,4 +32,8 @@ public class TournamentEvent {
     public List<String> dayLabels;
     @Column(name = "version", nullable = false)
     public long version;
+    @Column(name = "historical_import_key", nullable = true, length = 64)
+    public String historicalImportKey;
+    @Column(name = "historical_import_hash", nullable = true, length = 64)
+    public String historicalImportHash;
 }

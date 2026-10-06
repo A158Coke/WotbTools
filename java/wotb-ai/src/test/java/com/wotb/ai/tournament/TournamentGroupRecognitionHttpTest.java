@@ -78,6 +78,18 @@ class TournamentGroupRecognitionHttpTest {
     }
 
     @Test
+    void compositeAdminCanRecognizeButHofRoleCannot() throws Exception {
+        mvc.perform(multipart(ENDPOINT).file(TournamentGroupRecognizerTest.file(image))
+                        .param("permit", TournamentGroupRecognizerTest.permit(image, claims -> { }))
+                        .with(jwt().jwt(token -> token.subject(TournamentGroupRecognizerTest.ADMIN_ID))
+                                .authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"), new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.complete").value(true));
+        mvc.perform(multipart(ENDPOINT).file(TournamentGroupRecognizerTest.file(image)).param("permit", "ignored")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void administratorCannotBypassBusinessPermissionWithAnotherImage() throws Exception {
         mvc.perform(multipart(ENDPOINT).file(TournamentGroupRecognizerTest.file(image))
                         .param("permit", TournamentGroupRecognizerTest.permit(image,

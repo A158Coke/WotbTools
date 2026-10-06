@@ -118,13 +118,22 @@ describe('browserAuthProvider', () => {
     expect(provider.tokenParsed).toEqual({ displayName: 'refreshed' })
   })
 
-  it('ensureToken 刷新失败向上抛，由 useAuth 落到未登录', async () => {
+  it('ensureToken 瞬时刷新失败时保留 session、隐藏旧 token，并允许下一次重试恢复', async () => {
     const provider = createBrowserAuthProvider()
     await provider.init({ mode: 'normal' })
     lastAdapter().authenticated = true
+    lastAdapter().token = 'old-access-token'
     kcUpdateToken.mockRejectedValueOnce(new Error('refresh failed'))
 
-    await expect(provider.ensureToken(30)).rejects.toThrow('refresh failed')
+    await expect(provider.ensureToken(30)).resolves.toBe(false)
+    expect(provider.authenticated).toBe(true)
+    expect(provider.token()).toBe('')
+
+    lastAdapter().token = 'fresh-access-token'
+    kcUpdateToken.mockResolvedValueOnce(true)
+    await expect(provider.ensureToken(30)).resolves.toBe(true)
+    expect(provider.authenticated).toBe(true)
+    expect(provider.token()).toBe('fresh-access-token')
   })
 
   it('onAuthChanged 是 no-op（浏览器没有 Native 推送，也不设任何全局）', async () => {

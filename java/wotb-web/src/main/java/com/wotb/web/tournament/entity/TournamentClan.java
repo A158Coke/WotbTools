@@ -10,6 +10,8 @@ import jakarta.persistence.Table;
 @Entity
 @Table(name = "tournament_clan")
 public class TournamentClan {
+    @Column(name = "historical_published", nullable = false)
+    public boolean historicalPublished;
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     public Long id;
     @Column(name = "event_id", nullable = false)

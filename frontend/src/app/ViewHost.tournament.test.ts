@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import ViewHost from './ViewHost.vue'
+import { tournamentAdminAllowed } from '../composables/useAuth.js'
 const state = vi.hoisted(() => ({ route: null as any, auth: null as any }))
 vi.mock('vue-router', () => ({ useRoute: () => state.route }))
-vi.mock('../composables/useAuth.js', () => ({ useAuth: () => state.auth }))
+vi.mock('../composables/useAuth.js', async importOriginal => ({
+  ...await importOriginal<typeof import('../composables/useAuth.js')>(), useAuth: () => state.auth,
+}))
 vi.mock('./viewRegistry.js', () => ({
   VIEW_COMPONENTS: { 'tournament-points': { template: '<div data-testid="public-board" />' },
     'tournament-points-admin': { template: '<div data-testid="admin-editor" />' },
@@ -15,6 +18,7 @@ vi.mock('./viewRegistry.js', () => ({
 beforeEach(() => {
   state.route = reactive({ path: '/', query: { view: 'tournament-points', admin: '1' }, hash: '' })
   state.auth = { authenticated: ref(false), tokenParsed: ref(null), isAdmin: ref(true) }
+  state.auth.isTournamentAdmin = computed(() => tournamentAdminAllowed(state.auth))
 })
 function host() { return mount(ViewHost, { global: { mocks: { $t: (key: string) => key }, stubs: { ReplayCapabilityAuthGate: { template: '<div data-testid="login-gate" />' } } } }) }
 describe('tournament deep-link page gates', () => {
@@ -25,18 +29,24 @@ describe('tournament deep-link page gates', () => {
     expect(wrapper.find('[data-testid="login-gate"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="admin-editor"], [data-testid="admin-config"]').exists()).toBe(false)
   })
-  it('denies unrelated and bare super-admin roles; mounts only with tournament-admin', async () => {
+  it('denies HoF-only roles and admits actual tournament or site roles, then removes access on role loss', async () => {
     state.route.query.view = 'tournament-points-admin'
     state.auth.authenticated.value = true
     state.auth.tokenParsed.value = { realm_access: { roles: ['HoF-admin'] } }
     const wrapper = host()
     expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('tournament.adminRequired')
+    state.auth.tokenParsed.value.realm_access.roles = ['tournament-admin']
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(true)
     state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin']
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(false)
     state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin', 'tournament-admin']
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(true)
+    state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-user']
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(false)
   })
 })

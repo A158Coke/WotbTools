@@ -6,7 +6,7 @@ import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 
 vi.mock('../composables/useAuth.js', () => ({
-  useAuth: () => ({ isAdmin: { value: false }, isHofAdmin: { value: false } }),
+  useAuth: () => ({ isAdmin: { value: false }, isHofAdmin: { value: false }, isTournamentAdmin: { value: false } }),
 }))
 
 function mountPanel(navigate = vi.fn()) {

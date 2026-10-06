@@ -229,6 +229,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/tournaments/{eventId}/historical-import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * previewTournamentHistoricalImport
+         * @description Requires tournament-admin (inherited by the Keycloak super-admin composite). Imports direct historical scores only into an event without draft or published results.
+         */
+        post: operations["previewTournamentHistoricalImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/tournaments/{eventId}/historical-import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * getTournamentHistoricalState
+         * @description Historical capability and committed import state are separate from the deployed day response. Previous backends return 404; clients then keep ordinary administration available and disable historical import.
+         */
+        get: operations["getTournamentHistoricalState"];
+        put?: never;
+        /**
+         * importTournamentHistorical
+         * @description Requires tournament-admin (inherited by the Keycloak super-admin composite). Imports direct historical scores only into an event without draft or published results.
+         */
+        post: operations["importTournamentHistorical"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/tournaments/{eventId}/audit": {
         parameters: {
             query?: never;
@@ -803,6 +847,48 @@ export interface components {
             groups: components["schemas"]["TournamentGroup"][];
             published: boolean;
             standings: components["schemas"]["TournamentStandings"];
+        };
+        TournamentHistoricalState: {
+            /** Format: int64 */
+            eventVersion: number;
+            /** @description A historical import was committed, including roster-only imports with all-null cells. */
+            imported: boolean;
+            /** @description The backend one-time import gate currently accepts this event. */
+            canImport: boolean;
+            /** @description The selected published day still uses historical direct scores. */
+            historical: boolean;
+        };
+        TournamentHistoricalRow: {
+            clanTag: string;
+            /** @description Round-major then day-major matrix, with exactly roundCount times daysPerRound cells. Null is no participation; zero is an explicit score. */
+            points: (number | null)[];
+            /** Format: int64 */
+            sourceTotal: number;
+        };
+        TournamentHistoricalPreviewRequest: {
+            /** Format: int64 */
+            expectedEventVersion: number;
+            sourceName: string;
+            sourceSha256: string;
+            rows: components["schemas"]["TournamentHistoricalRow"][];
+        };
+        TournamentHistoricalImportRequest: {
+            /** Format: int64 */
+            expectedEventVersion: number;
+            sourceName: string;
+            sourceSha256: string;
+            rows: components["schemas"]["TournamentHistoricalRow"][];
+            confirm: boolean;
+            idempotencyKey: string;
+        };
+        TournamentHistoricalPreview: {
+            standings: components["schemas"]["TournamentStandings"];
+            sourceRowCount: number;
+            clanCount: number;
+            /** @description Missing cells after merging distinct source rows for the same clan. */
+            missingCellCount: number;
+            /** Format: int64 */
+            eventVersion: number;
         };
         TournamentRecognitionPermit: {
             permit: string;
@@ -2595,6 +2681,209 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TournamentStandings"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    previewTournamentHistoricalImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TournamentHistoricalPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Tournament result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentHistoricalPreview"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getTournamentHistoricalState: {
+        parameters: {
+            query: {
+                roundNumber: number;
+                dayNumber: number;
+            };
+            header?: never;
+            path: {
+                eventId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Historical import state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentHistoricalState"];
+                };
+            };
+            /** @description Invalid dimensions */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Event not found, or a previous backend without historical import support */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    importTournamentHistorical: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TournamentHistoricalImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Tournament result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentHistoricalPreview"];
                 };
             };
             /** @description Invalid input */
