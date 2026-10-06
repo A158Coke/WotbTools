@@ -52,7 +52,7 @@ vi.mock('three', async (importOriginal) => {
   return { ...actual, WebGLRenderer: StubWebGLRenderer }
 })
 
-import { initPlayback } from './playbackScene.js'
+import { initPlayback, QUALITY_PRESETS } from './playbackScene.js'
 
 /** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
  *  t_start 用非 0 值：`startTime` 只在 startPlayback 尾部写入，可作为「过期续体是否
@@ -658,7 +658,8 @@ describe('playbackScene 资产发布顺序', () => {
   })
 
   it('迟到 scenery GLB 不入 B 场景，且释放局部资源与隔离进度', async () => {
-    window.history.replaceState(null, '', '/?debug&q=mid')
+    // 场景 GLB 是高清/极致档行为（2026-10-07 四档重分档后均衡档不再拉场景）
+    window.history.replaceState(null, '', '/?debug&q=high')
     prepareAssets(['scenery'])
     const gltfA = new THREE.Group()
     const geometryA = new THREE.BoxGeometry()
@@ -1038,3 +1039,22 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
   })
 })
 
+describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
+  // 档位阶梯 = 相邻档各跨一个真实成本断崖（见 QUALITY_PRESETS 注释）。这里锁定
+  // 表形状而非数值细节：键序即 UI 档位顺序、成本阶梯单调、内容开关按档位语义分布。
+  it('四档键序固定，成本阶梯单调，内容开关按档位分布', () => {
+    const keys = Object.keys(QUALITY_PRESETS)
+    expect(keys).toEqual(['low', 'mid', 'high', 'ultra'])
+    for (const k of ['maxDpr', 'terrainSeg', 'anisotropy']) {
+      const ladder = keys.map((t) => QUALITY_PRESETS[t][k])
+      expect(ladder).toEqual([...ladder].sort((a, b) => a - b))
+    }
+    for (const t of keys) {
+      expect(QUALITY_PRESETS[t].allowGlb).toBe(t !== 'low')            // 低档盒代理
+      expect(QUALITY_PRESETS[t].scenery).toBe(t === 'high' || t === 'ultra')      // 场景下载税=高清起
+      expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra') // 分层地表=高清起
+      expect(QUALITY_PRESETS[t].miniMap).toBe(t === 'low')             // 小地图底图=仅低档
+      expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')           // MSAA=均衡起
+    }
+  })
+})
