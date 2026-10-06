@@ -23,6 +23,15 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(key.slice(0, 900)).toMatch(/m\.map \? m\.map\.uuid : ''/)
   })
 
+  it('disposeObject3D 经 collectMaterialTextures 回收纹理（含 ShaderMaterial uniforms）', () => {
+    // 回归：ST| 静态 ShaderMaterial 的纹理在 uniforms.map.value，直接属性枚举
+    // 触发零次 dispose → 切图累积 GPU 显存
+    expect(src).toMatch(/import \{ collectMaterialTextures \} from '\.\/materialDispose\.js'/)
+    const at = src.indexOf('function disposeObject3D')
+    expect(at).toBeGreaterThan(-1)
+    expect(src.slice(at, at + 900)).toMatch(/collectMaterialTextures\(m, texs\)/)
+  })
+
   it('材质缓存随会话释放（勿复用已 dispose 实例）', () => {
     // 必须在 teardownSession 里清空——mapScenery 在同一段被 dispose，缓存留着就会
     // 复用已释放的材质实例

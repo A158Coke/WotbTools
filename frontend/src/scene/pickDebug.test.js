@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import {
-  nameChainOf, nearestDestructibleState, stateVisualLabel, formatPickReport,
+  nameChainOf, nearestDestructibleState, nearestInstance, chainVisible,
+  stateVisualLabel, formatPickReport,
 } from './pickDebug.js'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 const chainObj = (names) => {
   // names 自顶向下 → 返回最底端节点（parent 链向上）
@@ -91,5 +97,68 @@ describe('formatPickReport', () => {
       clock: 0, kind: 'scenery', node: 'x.sc2', inst: { id: 9, kind: 'switcher', name: 'x.sc2' },
     })
     expect(text).toContain('serverId=无(不在lka)')
+  })
+})
+
+// 源码守卫：调试拾取必须独立于空处/车辆选中语义接入两条路径（评审 P2：
+// 车辆命中时 emptyDownAt=null，只挂空处路径会使车辆点击零报告）
+const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  .replace(/\/\/[^\n]*/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+
+describe('拾取接线（源码级守卫）', () => {
+  it('onScenePointerDown 无条件记录 pickDownAt（含车辆命中路径）', () => {
+    const at = sceneSrc.indexOf('function onScenePointerDown')
+    expect(at).toBeGreaterThan(-1)
+    expect(sceneSrc.slice(at, at + 500)).toMatch(/if \(PICK_DEBUG\) pickDownAt = \{ x: e\.clientX, y: e\.clientY \}/)
+  })
+  it('onScenePointerUp 先处理调试拾取再走选中语义', () => {
+    const at = sceneSrc.indexOf('function onScenePointerUp')
+    expect(at).toBeGreaterThan(-1)
+    const body = sceneSrc.slice(at, at + 700)
+    expect(body).toMatch(/movedPick <= SCENE_CLICK_SLOP_PX\) reportPick\(e\)/)
+    const reportAt = body.indexOf('reportPick(e)')
+    const clearAt = body.indexOf("onVehicleSelect?.(null, e)")
+    expect(reportAt).toBeGreaterThan(-1)
+    expect(clearAt).toBeGreaterThan(-1)
+    expect(reportAt).toBeLessThan(clearAt)
+  })
+  it('拾取实例来自全量清单 destructPickList（非事件状态表）', () => {
+    expect(sceneSrc).toMatch(/nearestInstance\(destructPickList/)
+  })
+})
+
+const node = (visible, parent = null) => ({ visible, parent })
+
+describe('chainVisible', () => {
+  it('全链可见 = true；自身或任一祖先隐藏 = false', () => {
+    const root = node(true)
+    const mid = node(true, root)
+    const leaf = node(true, mid)
+    expect(chainVisible(leaf, root)).toBe(true)
+    mid.visible = false
+    expect(chainVisible(leaf, root)).toBe(false)   // 隐藏父节点情形
+    leaf.visible = false
+    expect(chainVisible(leaf, root)).toBe(false)   // 自身隐藏（D_ 损毁网格）
+  })
+  it('visible 未定义（undefined）视为可见', () => {
+    expect(chainVisible({ parent: null })).toBe(true)
+  })
+})
+
+describe('nearestInstance', () => {
+  const insts = [
+    { id: 1, pos: [10, 10, 0], serverId: { cell: [0, 0], slot: 1 } },
+    { id: 2, pos: [12, 10, 0], serverId: { cell: [0, 0], slot: 2 } },
+    { id: 3, pos: [100, 100, 0] },                       // 无 serverId 也可拾取
+  ]
+  it('半径内取最近实例——「清单有实例、事件数组为空」仍可命中', () => {
+    expect(nearestInstance(insts, 11, 10, 3)?.id).toBe(2)
+    expect(nearestInstance(insts, 100, 100, 3)?.id).toBe(3)
+  })
+  it('半径外 / 空清单 / 非数组 → null（非可破坏物）', () => {
+    expect(nearestInstance(insts, 50, 50, 3)).toBeNull()
+    expect(nearestInstance([], 0, 0, 3)).toBeNull()
+    expect(nearestInstance(null, 0, 0, 3)).toBeNull()
   })
 })
