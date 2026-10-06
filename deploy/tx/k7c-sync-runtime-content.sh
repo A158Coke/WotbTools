@@ -17,7 +17,15 @@ stage="$(mktemp -d "${RUNTIME_ROOT}.incoming.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/sponsor" "$stage/android-release"
 
-fetch(){ curl -fsS --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" "$SOURCE_BASE$1" -o "$2"; }
+# 大文件容错：跟随 302（APK 云盘直链卸载，见下方 APK 段）+ 瞬态失败重试（TX1↔TX2
+# 隧道存在 ~10% 丢包窗口，单次 120s 拉满 15MB APK 会偶发超时——frontend replica
+# 部署 2026-10-06 即因此失败）。--retry 对 timeout(28) 亦生效，每轮独立 max-time。
+fetch(){
+  local url="$1"
+  case "$url" in http://*|https://*) ;; *) url="$SOURCE_BASE$url";; esac
+  curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
+    --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" "$url" -o "$2"
+}
 
 fetch /sponsor-config.json "$stage/sponsor-config.json" || fail "cannot fetch sponsor-config.json"
 python3 - "$stage/sponsor-config.json" <<'PY' > "$stage/sponsor.paths"
@@ -39,7 +47,7 @@ PY
 while IFS= read -r name; do [ -z "$name" ] || fetch "/sponsor-assets/$name" "$stage/sponsor/$name" || fail "cannot fetch sponsor asset: $name"; done < "$stage/sponsor.paths"
 
 fetch /download/android/version.json "$stage/android-release/version.json" || fail "cannot fetch Android version.json"
-apk_path="$(python3 - "$stage/android-release/version.json" <<'PY'
+apk_loc="$(python3 - "$stage/android-release/version.json" <<'PY'
 import json, sys, urllib.parse
 x=json.load(open(sys.argv[1]))
 u=x.get('apkUrl') or x.get('url') or ''
@@ -48,11 +56,20 @@ prefix='/download/android/'
 if not p.startswith(prefix): raise SystemExit(f'unsafe or missing apkUrl: {u!r}')
 name=p[len(prefix):]
 if not name or '/' in name or not name.endswith('.apk'): raise SystemExit(f'unsafe apk name: {name!r}')
-print(prefix+name)
+host=(urllib.parse.urlparse(u).hostname or '') if '://' in u else ''
+if '://' in u and host != 'wotbtools.com': raise SystemExit(f'untrusted apkUrl host: {u!r}')
+print(u + '\t' + prefix + name)
 PY
 )"
+apk_url="${apk_loc%%$'\t'*}"
+apk_path="${apk_loc##*$'\t'}"
 apk_name="${apk_path##*/}"
-fetch "$apk_path" "$stage/android-release/$apk_name" || fail "cannot fetch current APK: $apk_name"
+# APK 大文件（~15MB）走公网域名拉取：Caddy 对 .apk 302 → 清华云盘直链（APK 下载
+# 卸载，绕开 TX1 公网 5Mbps 与 TX1↔TX2 隧道丢包窗口）；云盘/网关不可用时回退内网
+# SOURCE_BASE（隧道直拉，慢但可用）。两条路径同等受下方 sha256 校验约束。
+fetch "$apk_url" "$stage/android-release/$apk_name" \
+  || fetch "$apk_path" "$stage/android-release/$apk_name" \
+  || fail "cannot fetch current APK: $apk_name"
 
 python3 - "$stage/android-release/version.json" "$stage/android-release/$apk_name" <<'PY'
 import hashlib,json,sys
