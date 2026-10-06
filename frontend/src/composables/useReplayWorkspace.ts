@@ -133,9 +133,12 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
       const task = (async () => {
         const playback = await playbackSession.loadScene(file)
         if (!current()) throw new DOMException('Canonical projection withdrawn', 'AbortError')
-        const { parseLocalPlayback } = await import('../replay-local/playback/index.js')
+        // 线程外投影（Worker 优先）：整条 canonical（3 次 Rust 解析 + 整场 JS 投影）在主线程
+        // 跑会停顿数百 ms~数秒——用户实测的"播放正常一小段后卡住"。见 canonicalRuntime.ts。
+        const { parseLocalPlaybackOffThread } = await import('../replay-local/canonicalRuntime.js')
         if (!current()) throw new DOMException('Canonical projection withdrawn', 'AbortError')
-        const canonical = await parseLocalPlayback(file, { playback })
+        // 场景侧已解析的 playback facet 直接传入 Worker：同一回放不二次 parsePlayback
+        const canonical = await parseLocalPlaybackOffThread(await file.arrayBuffer(), playback)
         if (!current()) throw new DOMException('Canonical projection withdrawn', 'AbortError')
         entry.state.canonical = canonical
         entry.state.canonicalError = null

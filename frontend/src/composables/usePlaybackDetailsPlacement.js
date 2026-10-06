@@ -34,6 +34,9 @@ export function usePlaybackDetailsPlacement({
   panelEl,
   boundsEl = null,
   initialSide = null,
+  /** 初始纵向落位：'top'（默认，2D 顶部两侧）| 'bottom'（3D：贴底左下/右下——
+   *  悬浮名册占住顶部两角，浮窗从顶部开出来会盖住名册）。 */
+  initialVertical = 'top',
 }) {
   /** 已应用的位置；null = 还没定位（首帧交给 CSS 的默认角落）。 */
   const pos = ref(null)
@@ -127,8 +130,11 @@ export function usePlaybackDetailsPlacement({
     const left = side === 'right'
       ? hostRect.width - width - gutter
       : gutter + padStart
-    const top = EDGE_MARGIN * 2
+    // 超界候选值让 clampToBounds 收敛到允许的最低位置（maxTop = 底界 − 面板高）——
+    // 3D 悬浮名册在顶部两角，浮窗必须从底部开；'top' 保持原行为（2D 不变）。
+    const top = unref(initialVertical) === 'bottom' ? Number.MAX_SAFE_INTEGER : EDGE_MARGIN * 2
     const next = clampToBounds(left, top, width)
+    // 贴底候选可能因面板高于可用高度退化为贴顶（clampToBounds 的 maxTop 下限），此时仍可用。
     if (next) {
       // 初始位置是「已应用的位置」但不是「用户位置」：之后的选择仍然可以重算它。
       apply(next)

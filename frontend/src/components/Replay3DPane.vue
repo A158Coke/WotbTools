@@ -99,6 +99,20 @@ const selectedEid = ref(null)
 const detailsOpen = ref(false)
 /** 浮窗落位偏好：点左车道 → 落右侧，点右车道 → 落左侧，点场景里的车 → 与它相对的一侧。 */
 const detailsSide = ref('right')
+/**
+ * 名册行点击 = **跟随该玩家坦克**（2026-10-05 需求）：不再打开详情窗。
+ * 选中高亮照旧（selectedEid），相机跟随由场景内核 setFollow 独占（它同时切 follow 档）。
+ */
+function followFromRoster(eid) {
+  selectedEid.value = eid
+  displayOpen.value = false
+  sceneApi?.setFollow(eid)
+}
+/** 场景里点中坦克 = 打开共享详情窗（保留原逻辑）；点空处（eid=null）= 隐藏详情窗。 */
+function handleSceneSelect(eid, event = null) {
+  if (eid == null) { closeDetails(); return }
+  selectVehicle(eid, event)
+}
 function selectVehicle(eid, event = null) {
   selectedEid.value = eid
   detailsOpen.value = true
@@ -401,7 +415,7 @@ function ensureScene() {
   //   · `!props.active` —— 未激活的能力不得建场景（不需要激活就初始化会在切走时白跑渲染）；
   //   · `labelOverlay.value` —— 3D 名牌改屏幕空间 DOM 锚点后，场景需要覆盖层句柄。
   if (sceneApi || !props.active || !shouldHaveScene()) return false
-  sceneApi = initPlayback(stage.value, store, labelOverlay.value, { onVehicleSelect: selectVehicle })
+  sceneApi = initPlayback(stage.value, store, labelOverlay.value, { onVehicleSelect: handleSceneSelect })
   sceneApi?.setPaused?.(!props.active)
   pushLabelPrefs();   // 新场景默认吃共享偏好（含"隐藏全部 UI"的当前状态）
   return true
@@ -568,10 +582,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     <p v-else-if="blockedReason" class="pb-note" data-testid="replay3d-blocked">{{ blockedReason }}</p>
     <p v-else-if="!file" class="pb-note" data-testid="replay3d-empty">{{ $t('agentReplay.no_file') }}</p>
     <!-- 两种呈现（与 2D 同一个契约）：
-           `roster-side`  = 三段式 `[Team1] [Stage] [Team2]`，传输控件在 Stage 之下；
+           `roster-side`  = 全幅场景 + 名册左上/右上悬浮 + HUD 顶中 + 传输底部居中；
                             宽档、平板、手机横屏、手机全屏横屏都是这一条；
            `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
-         名册关闭时两者都没有车道，横屏 Stage 铺满中心，竖屏仍为正方形。 -->
+         名册关闭时两者都没有车道，横屏场景铺满整个根，竖屏仍为正方形。 -->
     <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow }" data-testid="replay3d-root">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
@@ -620,7 +634,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         :sel-cur-stats="selCurStats" :selected-track="selectedTrack" :sel-damage-log="selDamageLog"
         :current-time="detailTime" :format-clock="formatPlaybackClock"
         :drag-host="rootEl" :drag-bounds="controlsEl"
-        :initial-side="detailsSide" :selection-key="selectedEid"
+        :initial-side="detailsSide" :initial-vertical="'bottom'" :selection-key="selectedEid"
         @close="closeDetails"
       />
 
@@ -630,10 +644,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
            uiPrefs.showRoster。行的渲染与 2D 共用同一个 `PlaybackRoster`。 -->
       <div v-if="store.hasData && showRoster" class="roster-surface" data-testid="roster-surface">
         <div class="team-lane side-left" data-testid="replay3d-lane-left">
-          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="selectVehicle" />
+          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
         </div>
         <div class="team-lane side-right" data-testid="replay3d-lane-right">
-          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.right" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="selectVehicle" />
+          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.right" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
         </div>
       </div>
 
@@ -666,21 +680,28 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           @scrub-end="store.seeking = false; transport.scrubEnd()"
         >
         </PlaybackTransport>
+        <!-- 高频查看动作直接陈列（2026-10-05 需求：从 Display 菜单移出）：镜头挡位 + GLB 车模 -->
+        <div class="tool-row" data-testid="replay3d-toolrow">
+          <span class="dim">{{ t('agentReplay.camera') }}</span>
+          <SegmentedControl
+            class="camera-control"
+            data-testid="replay3d-camera"
+            :model-value="store.cam"
+            :options="CAMERAS"
+            :aria-label="t('agentReplay.camera')"
+            @update:model-value="chooseCamera($event)"
+          />
+          <label class="toggle" :title="store.glbAllowed ? '' : t('agentReplay.glb_gate_hint')">
+            <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
+          </label>
+        </div>
       </div>
 
       <PlaybackDisplaySurface :open="displayOpen && !uiHidden" :portrait="portraitFlow" :anchor="displayAnchor" :host="rootEl" @close="displayOpen = false">
         <!-- 查看 / 显示开关都在这里（同一份 store.cam / uiPrefs / labelPrefs / hpPrefs / store.glbOn，
              没有第二套状态）：高频动作之外的设置不该永久占着战场高度。
              名册没有单独的「打开名册」入口：它的唯一开关是下面的 disp-roster 呈现偏好。 -->
-          <p class="dp-title">{{ t('agentReplay.camera') }}</p>
-          <SegmentedControl
-            class="dp-camera"
-            :model-value="store.cam"
-            :options="CAMERAS"
-            :aria-label="t('agentReplay.camera')"
-            @update:model-value="chooseCamera($event)"
-          />
-        <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
+          <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-killfeed" :checked="uiPrefs.showKillfeed" @change="uiPrefs.showKillfeed = $event.target.checked"> {{ t('agentReplay.display_killfeed') }}</label>
@@ -690,10 +711,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <label class="toggle"><input type="checkbox" data-testid="disp-tank" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ t('recon.map.playback.show_tank_name') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-hp" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ t('recon.map.playback.show_hp') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-reload" :checked="labelPrefs.showReload" @change="labelPrefs.showReload = $event.target.checked"> {{ t('agentReplay.display_reload') }}</label>
-        <p class="dp-title">{{ t('agentReplay.display_scene') }}</p>
-        <label class="toggle" :title="store.glbAllowed ? '' : t('agentReplay.glb_gate_hint')">
-          <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
-        </label>
         <!-- 画质在紧凑档是只读徽标（档位在播放前定型，运行中不可改），宽档同样只在工具条展示 -->
         <p class="q-badge dp-quality" :title="t('agentReplay.q_title')">{{ qualityBadge }}</p>
         <button
@@ -767,20 +784,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
  * 手机横屏（740×360、844×390）与全屏横屏下，正常 7v7 的紧凑行不需要车道滚动条。
  */
 .pb-root.roster-side .roster-surface {
-  /* 宽档下这条表壳**不参与布局**：两条车道必须直接落在根网格的第 1 / 第 3 列里。
-     让表壳留在流里，它就成了网格的唯一内容项、被放进第 1 列，两条车道只能在 240px 里
-     上下叠着排（实测名册下半截溢到传输控件上）。`display: contents` 才是它的层级语义。 */
+  /* 车道悬浮面板的层级语义：表壳不占布局，车道由 workspace.css 的 absolute 规则定位。 */
   display: contents;
-}
-.pb-root.roster-side .team-lane {
-  position: static;
-  inset: auto;
-  width: auto;
-  min-height: 0;
-  /* 车道填满网格行（= 根高度）。正常 7v7 的紧凑行放得下；只有病态数据（远超 7v7）才会
-     在车道内出现滚动——那是例外数据的安全兜底，不是常规呈现。 */
-  align-self: stretch;
-  overflow-y: auto;
 }
 
 .pb-root {
@@ -802,8 +807,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
  *
  * 3D 横屏占满中心可用宽高，竖屏保持正方形；相机比例随画布更新。
  *
- *   · `.pb-root` 是三列网格：`[Team1] [Stage] [Team2]`；
- *   · 侧槽宽度受 `--pb-lane-w` 控制，名册关闭时整列不存在（Stage 铺满中心列）；
+ *   · `.pb-root` 全幅场景 + 悬浮面板（名册左上/右上、HUD 顶中、控件底部居中）；
+ *   · 名册面板宽度受 `--pb-roster-min` / clamp 控制，名册关闭时场景独占全幅；
  *   · `.pb-stage` 里的 `.stage-square` 在横屏铺满中心可用宽高；竖屏保持正方形；
  *     canvas（.scene）与名牌覆盖层共用这个盒子，因此两者同原点、同尺寸。
  *
@@ -820,7 +825,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   position: relative;
   inline-size: 100%;
   block-size: 100%;
+  /* 悬浮布局：stage 直接铺满根（workspace.css 的 absolute inset:0）。 */
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
 }
+.stage-square > .scene { flex: 1; }
 .stage-square > .scene { position: absolute; inset: 0; }
 .pb-stage { container-type: size; }
 
@@ -940,7 +950,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 }
 
 
-.phone-form .dp-close, .phone-form .dp-camera { inline-size: 100%; }
+.phone-form .dp-close { inline-size: 100%; }
+/* 直接陈列的查看动作行（镜头挡位 + GLB）：窄屏整行换行 */
+.tool-row { display: flex; align-items: center; justify-content: center; gap: var(--space-2); flex-wrap: wrap; }
+.tool-row .dim { font: var(--type-caption); color: var(--color-text-secondary); }
+.phone-form .tool-row { gap: var(--space-1); }
 
 /**
  * 手机竖屏：纵向流（与 2D 同一个契约）。
