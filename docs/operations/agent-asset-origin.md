@@ -25,7 +25,7 @@ assetBase()  ← 解析出的 asset origin
 
 基础设施选择只出现在本文件与部署配置里，不出现在应用契约中。
 
-## 当前状态（2026-09-30 实测）
+## 当前状态（2026-10-06 更新）
 
 | 项 | 值 |
 |---|---|
@@ -33,6 +33,7 @@ assetBase()  ← 解析出的 asset origin
 | 资产包位置 | **桶根目录**（`/index.json`、`/glb/...`、`/map/...`、`/tank/...`、`/data/...`） |
 | 包完整性 | 抽查 14 条关键路径全部 `200`（GLB / 碰撞 / tank JSON / 封面 / tanks.pb / models.pb / 底图 / 小地图 / 地形 bin / terrain.json / 场景 GLB / 地表分层 / 卷积贴图） |
 | CORS | 已配置：`https://wotbtools.com` 与 `https://www.wotbtools.com` 均回 `Access-Control-Allow-Origin`，`GET,HEAD`，Max-Age 600 |
+| Android | 资产基址 = 本机路径 `/agent-assets`（`ANDROID_ASSET_BASE`），由 `AgentAssetProxy`（`shouldInterceptRequest`）以原生 HttpURLConnection 直连本 origin 并做 ETag 磁盘缓存——**不依赖桶 CORS**（原生代码无 CORS），也不经生产网关 `/agent-assets` 反代（TX1 出口带宽不再被资产包占用；反代仅服务未升级的旧版本 APK）。Web 端 CSP 的 `connect-src`/`img-src` 因此无需任何放宽 |
 | 桶列举 | `/` 返回 `403`（仅列举被拒，属预期；对象读正常） |
 | 本地开发 | **未覆盖** `http://localhost:*`——本地 dev 直连该 origin 时 GLB/JSON 的 `fetch` 会被 CORS 拦截（见下"本地开发"） |
 | 变量状态 | `ASSET_BASE_URL` Repository Variable **已设置**（Frontend 运行的 "Validate production asset origin" 步骤通过即证明，见 §接线） |
@@ -140,14 +141,18 @@ coscmd upload -r release/asset_pack/ /
 
 要求：
 
-- **读权限**：桶需允许匿名读。前端按 HTTP GET 直取，无签名。
-- **CORS（必需）**：`assetProvider.bytes()` / `.json()` 走 `fetch()`，跨域需要 CORS
+- **读权限**：桶需允许匿名读。前端按 HTTP GET 直取，无签名；Android 原生代理
+  （`AgentAssetProxy`）同样是匿名 GET，不涉及签名。
+- **CORS（Web 端必需）**：`assetProvider.bytes()` / `.json()` 走 `fetch()`，跨域需要 CORS
   响应头。当前规则允许 `wotbtools.com` 与 `www.wotbtools.com` + `GET`/`HEAD`。
   封面图经 `<img>` 加载不需要 CORS，但 GLB / tank JSON / terrain 都走 `fetch`——
   "只配了图片可用"是常见误判：封面能出、模型和地形全挂。
   把站点换到新域名/新端口时，**必须同步加 CORS 规则**。
+  Android 不受此约束：请求经 `AgentAssetProxy` 在原生层发起（CORS 是浏览器机制），
+  因此桶白名单**不需要**也不应放行 `appassets.androidplatform.net`。
 - **缓存**：文件名不含内容哈希。用较短 `Cache-Control` TTL，或换包时切换路径前缀
-  （如 `/v3/`），否则用户会长时间命中旧包。
+  （如 `/v3/`），否则用户会长时间命中旧包。Android 侧由 `AgentAssetProxy` 的
+  ETag 条件请求 + 本机缓存自管，不依赖对象缓存元数据。
 
 ### 本地开发
 

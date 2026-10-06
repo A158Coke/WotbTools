@@ -135,8 +135,9 @@
 - admin 视图的本机旁路参数 `?admin=1` 来自**未提交**的补丁
   （`frontend/src/composables/useAuth.js`，把 `wotbtools-admin` / `HoF-admin` 视为已持有）：
   **永不提交**，也不要"顺手清理"工作区里的这个 `M`；提交其它工作时只 stage 目标文件。
-  真正管理功能只认角色，任何 URL 参数都不得放行。Replay 五能力公开可见，3D / shots / AI 和
-  armor 仅要求登录，不依赖 admin；`viewFromRoute` 不再承担 Agent capability 的 admin 闸门。
+  真正管理功能只认角色，任何 URL 参数都不得放行。Replay 五能力公开可见，3D / shots / AI
+  仅要求登录；装甲查看器（含 Tankopedia 入口卡）匿名可用，不依赖 admin；`viewFromRoute`
+  不再承担 Agent capability 的 admin 闸门。
 - 需要真实 realm 角色的功能（`/api/admin/**`、`/api/ai/**`）本地旁路绕不过，边界见 runbook §5。
 
 ## 禁止

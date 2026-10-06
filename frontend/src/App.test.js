@@ -187,20 +187,17 @@ describe('App routing', () => {
       }
     })
 
-    it('anonymous armor deep link stays at a login gate with every scene parameter', async () => {
+    it('anonymous armor deep link mounts the viewer directly with every scene parameter', async () => {
       const path = '/?view=agent-armor&tank=13825&shooter=19969&config=1&scfg=0&shell=0&shot=2&world=1&heatmap=1&az=45&h=6&d=12#scene'
       const { wrapper, router } = await mountApp(path)
-      const sceneQuery = { ...router.currentRoute.value.query }
-      expect(wrapper.find('[data-test="view-agent-armor"]').exists()).toBe(false)
-      expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(true)
-      await wrapper.get('[data-testid="capability-login"]').trigger('click')
-      expect(authState.login).toHaveBeenCalledWith({ path: '/', query: sceneQuery, hash: '#scene' })
-      expect(router.currentRoute.value.query).toEqual(sceneQuery)
-      setAuthState('authenticated', true)
-      await settle()
       expect(wrapper.find('[data-test="view-agent-armor"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
-      expect(router.currentRoute.value.query).toEqual(sceneQuery)
+      expect(authState.login).not.toHaveBeenCalled()
+      // 场景参数原样保留：查看器读的就是 URL 里这一份
+      expect(router.currentRoute.value.query).toEqual({
+        view: 'agent-armor', tank: '13825', shooter: '19969', config: '1', scfg: '0',
+        shell: '0', shot: '2', world: '1', heatmap: '1', az: '45', h: '6', d: '12',
+      })
     })
 
     it('lets a non-admin deep-link the public 坦克百科', async () => {
