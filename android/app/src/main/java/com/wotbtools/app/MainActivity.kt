@@ -288,6 +288,14 @@ class MainActivity : Activity() {
                 }
                 if (request.url.toString() != ReplayIntentHandler.STREAM_URL) {
                     if (!isLocalAppUrl(request.url.toString())) return null
+                    // 3D 资产（/agent-assets/*）由 Native 直连对象存储并做 ETag 磁盘缓存，
+                    // 不经生产网关反代（AgentAssetProxy 类注释有完整背景与约束）。
+                    val assetPath = request.url.encodedPath
+                    if (request.method == "GET" && assetPath != null &&
+                        assetPath.startsWith(AgentAssetProxy.LOCAL_PATH_PREFIX)
+                    ) {
+                        return AgentAssetProxy.intercept(applicationContext, assetPath)
+                    }
                     // Local URLs never escape to DNS/network when a bundled file is missing.
                     val bundled = assetLoader.shouldInterceptRequest(request.url)
                     // History navigation is owned by Vue Router; main-frame routes use the same index.
