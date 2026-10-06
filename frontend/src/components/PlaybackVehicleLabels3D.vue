@@ -27,8 +27,13 @@ function bind(eid, el) {
   else elements.delete(eid)
 }
 function setAnchor(eid, anchor) {
-  anchors.set(eid, anchor)
-  paint(elements.get(eid), anchor)
+  // 契约：**同步拷贝**进自有 per-eid 存储，不持有调用方对象引用——场景内核逐帧逐车
+  // 复用同一个 scratch 对象喂所有 eid（60Hz ×14 个对象的分配热路径），若这里存引用，
+  // 全部 eid 会共享最后一辆车的坐标。
+  let cur = anchors.get(eid)
+  if (!cur) { cur = { x: 0, y: 0, visible: false, occluded: false }; anchors.set(eid, cur) }
+  cur.x = anchor.x; cur.y = anchor.y; cur.visible = anchor.visible; cur.occluded = anchor.occluded
+  paint(elements.get(eid), cur)
 }
 function setLabels(rows) { labels.value = rows }
 function clear() { labels.value = []; anchors.clear(); elements.clear() }
