@@ -25,7 +25,9 @@ describe('Android local resource / remote service boundary', () => {
     // A missing bridge in a packaged runtime must never select WebView Keycloak.
     expect(isAndroidApp()).toBe(true)
     expect(ANDROID_APP_ORIGIN).toBe('https://appassets.androidplatform.net')
-    expect(ANDROID_ASSET_BASE).toBe(`${PRODUCTION_API_ORIGIN}/agent-assets`)
+    // 3D 资产是本机路径（same-origin），由 Native AgentAssetProxy 直连对象存储——
+    // 一旦这里变成远程 origin，WebView fetch 会被桶 CORS 拦截（白名单不含本 origin）。
+    expect(ANDROID_ASSET_BASE).toBe('/agent-assets')
   })
   it('rejects AI, HoF, Profile, Admin Users and previously resolved 3D assets before dispatch when offline', async () => {
     vi.stubEnv('MODE', 'android')
