@@ -32,7 +32,12 @@ describe('shotPath：折线弹道求值（跳弹/穿透续段）', () => {
     expect(pts).toEqual([[0, 0, 0], [30, 0, 0]])
     const legs = legSecsOf(shot, 0.3)
     const ends = legEndTimes(legs, 1)
-    expect(pointAt(pts, ends, 1.15, 1)).toEqual([15, 0, 0])
+    // 段内中点是 lerp 计算值：1.15-1 的 FP 减法误差 (~1e-14) 会进 f，按分量容差断言
+    const mid = pointAt(pts, ends, 1.15, 1)
+    expect(mid[0]).toBeCloseTo(15, 6)
+    expect(mid[1]).toBeCloseTo(0, 6)
+    expect(mid[2]).toBeCloseTo(0, 6)
+    // 终点走 t >= legEnds 末端的恒等返回，精确相等
     expect(pointAt(pts, ends, 1.3, 1)).toEqual([30, 0, 0])
 
     const malformed = { ...shot, leg_secs: [0, 0.1, 0.1] }
