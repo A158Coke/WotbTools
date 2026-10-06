@@ -46,10 +46,13 @@ jobs:
           deploy/test-nginx-real-ip.sh
           deploy/test-caddy-route-inventory.sh
           deploy/check-latest-main.sh deploy/test-check-latest-main.sh deploy/test-tx-deploy-lock.sh
+          deploy/test-workflow-bash-blocks.sh
           infra/tofu/postgres-business/validate-plan.sh infra/tofu/postgres-business/test-validate-plan.sh
           deploy/test-business-postgres-runtime.sh
           scripts/ci/test-postgres-business-tofu-contract.sh
           scripts/ci/test-tofu-workflow-contract.sh
+      - name: Workflow inline bash run blocks syntax gate
+        run: bash deploy/test-workflow-bash-blocks.sh .github/workflows
       - name: Caddy staged configuration validation
         env:
           TX_RUNTIME_ROOT: /tmp/tx-runtime
