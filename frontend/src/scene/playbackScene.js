@@ -67,12 +67,21 @@ async function mapLimit(items, limit, fn) {
   return out
 }
 
-// 三档渲染预设（面板与场景共用；桌面默认高，Tauri/移动 WebView 默认低）。
+// 四档渲染预设（面板与场景共用；桌面默认高清，Tauri/移动 WebView 默认均衡）。
 // 抗锯齿/DPR/场景资源在渲染器与场景首次创建时一次性定型，加载后改档需整页刷新。
+// 档位阶梯 = 相邻档各跨一个真实成本断崖：
+//   流畅→均衡：车辆盒代理 → 真 GLB（最大的视觉跃迁，手机终于有真车模）；
+//   均衡→高清：场景 GLB + 分层地表（最大的下载/显存跃迁；P1 实例化后高清档
+//              draw call 已可控，均衡档跳过它把 11–67MB 下载留给 Wi-Fi/桌面）；
+//   高清→极致：纯填充率税（DPR 2 + 地形 512），服务 4K/Retina 台式机。
+// 均衡档 MSAA 开 + DPR 1.25：几何边缘上低 DPR + MSAA 优于高 DPR 无 AA。
+// 2026-10-07 重分档（原三档）：旧「中」 paying 场景 GLB 却无 AA/分层，帧成本≈旧高
+// 而观感更差；旧值语义漂移随发版说明，localStorage 旧键名全部兼容无需迁移。
 export const QUALITY_PRESETS = {
-  low:  { label: '低', antialias: false, maxDpr: 1,   scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false },
-  mid:  { label: '中', antialias: false, maxDpr: 1.5, scenery: true,  groundLayers: false, miniMap: false, anisotropy: 4, terrainSeg: 256, allowGlb: true },
-  high: { label: '高', antialias: true,  maxDpr: 2,   scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true },
+  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false },
+  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true },
+  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true },
+  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true },
 }
 
 /**
@@ -206,7 +215,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const LOGDEPTH = (() => { try { return new URLSearchParams(location.search).get('logdepth') !== '0'; } catch (e) { return true; } })();
 
   // ---------- 画质分档 ----------
-  // 解析优先级：URL ?q= > localStorage > 设备默认；三档都开 3D 地形（仅分段数降档）。
+  // 解析优先级：URL ?q= > localStorage > 设备默认；四档都开 3D 地形（仅分段数降档）。
   // （预设表用模块级 QUALITY_PRESETS，与面板共享）
   function resolveQuality() {
     const usp = new URLSearchParams(location.search);
@@ -214,7 +223,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!QUALITY_PRESETS[q]) { try { q = localStorage.getItem('pb_quality') || ''; } catch (e) {} }
     if (!QUALITY_PRESETS[q]) {
       const mobile = !!window.__TAURI__ || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
-      q = mobile ? 'low' : 'high';
+      // 移动/Tauri 默认**均衡**（真车模 + 无场景 GLB 下载税）；4K/Retina 想吃满
+      // 填充率的显式选极致，桌面默认不背 DPR 2 的税。
+      q = mobile ? 'mid' : 'high';
     }
     try { localStorage.setItem('pb_quality', q); } catch (e) {}
     return q;
@@ -1011,8 +1022,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 静态场景模型（建筑/桥/岩石，tools/export_map_glb.py 预生成；缺失静默跳过）。
     // GLB 为游戏系（z 上、+y 北），qFrame = Ry(π)·Rx(-π/2)（YXZ 序）转到回放场景系——
     // 与坦克 GLB 同一帧变换，纯旋转无镜像，绕序天然正确。
-    // 低档跳过场景 GLB（单图 11–67MB 下载 + 大块显存，是画质档最大的分流项）；中档加载
-    // 场景但地面走烘焙底图（无分层地表），分层合成是高档专属
+    // 低/中档跳过场景 GLB（单图 11–67MB 下载 + 大块显存，是画质档最大的分流项；
+    // 均衡档定位 = 真车模 + 无场景下载税）；高档加载场景且地面走分层地表合成，
+    // 均衡档地面走高清烘焙底图（无分层）
     if (Q.scenery) try {
       // 可破坏物清单（与场景 GLB 并行拉取；缺失/低档静默禁用该特性）
       // mapStaticUrl 返回完整 URL——assetProvider.json() 会再拼一次 base（逻辑路径专用），

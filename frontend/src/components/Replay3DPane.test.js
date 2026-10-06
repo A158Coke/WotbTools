@@ -84,7 +84,7 @@ vi.mock('../scene/playbackScene.js', () => {
     playback.apis.push(api)
     return api
   })
-  return { initPlayback: playback.init, QUALITY_PRESETS: { low: { label: 'Low' }, mid: { label: 'Mid' }, high: { label: 'High' } } }
+  return { initPlayback: playback.init, QUALITY_PRESETS: { low: { label: 'Low' }, mid: { label: 'Mid' }, high: { label: 'High' }, ultra: { label: 'Ultra' } } }
 })
 vi.mock('../scene/assetProvider.js', () => ({ assetProvider: { configured: () => true } }))
 /**
@@ -1660,7 +1660,7 @@ describe('Replay3DPane 待开播画质闸门', () => {
     expect(pending.text()).toContain('battle.wotbreplay')
     expect(pending.text()).toContain('agentReplay.start')
     const quality = pending.get('[data-testid="replay3d-quality"]')
-    expect(quality.findAll('button').map(b => b.attributes('data-value'))).toEqual(['low', 'mid', 'high'])
+    expect(quality.findAll('button').map(b => b.attributes('data-value'))).toEqual(['low', 'mid', 'high', 'ultra'])
 
     // 档位选择直接交内核（画质定型在渲染器创建之前）
     await quality.get('button[data-value="low"]').trigger('click')
@@ -1681,7 +1681,7 @@ describe('Replay3DPane 待开播画质闸门', () => {
     // 预设 label 是上游固定中文（低/中/高）；界面必须取三语 key，
     // 否则 en / ru 界面会混入中文（用户实测反馈）
     expect(quality.findAll('button').map(b => b.text()))
-      .toEqual(['agentReplay.q_low', 'agentReplay.q_mid', 'agentReplay.q_high'])
+      .toEqual(['agentReplay.q_low', 'agentReplay.q_mid', 'agentReplay.q_high', 'agentReplay.q_ultra'])
     expect(quality.text()).not.toContain('Low')
     // 相机档位同理（就绪态直接陈列在控制条；2026-10-05 从 Display 面板移出）
     playback.api.store.hasData = true
