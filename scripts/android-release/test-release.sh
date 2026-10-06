@@ -492,7 +492,10 @@ assert "android_contract.py bundle" in publish_runs, "publish must validate the 
 assert "--evidence" in publish_runs and "--output" in stage_runs, "stage and publish must share evidence validation"
 assert "guard_local_first_cutover" in publish_runs and "guard_local_first_cutover" in stage_runs
 assert "android_contract.py cors" in publish_runs and "/api/users/profile" in publish_runs
-assert "$ASSETS/index.json" in publish_runs
+# 资产源是本机路径 /agent-assets + Native AgentAssetProxy 直连对象存储（原生无 CORS），
+# readiness 探测对象是对象存储匿名可读性，而不是网关 exact-origin CORS。
+assert "$COS_BASE/index.json" in publish_runs
+assert "$ASSETS/index.json" not in publish_runs
 assert "https://wotbtools.com/version.json" not in publish_runs
 assert "FE_COMMIT" not in publish_runs and "frontend-version.json" not in publish_runs
 
