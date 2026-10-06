@@ -51,10 +51,15 @@ export function legEndTimes(legSecs, t0) {
  * `t ≤ 首段起点` → 首点；`t ≥ 末段终点` → 末点。
  */
 export function pointAt(points, legEnds, t, t0) {
+  return pointAtInto(points, legEnds, t, t0, [])
+}
+
+/** pointAt 的零分配变体：结果写入 `out`（[x,y,z]）并返回它。每帧每弹的热路径用这个。 */
+export function pointAtInto(points, legEnds, t, t0, out) {
   const n = legEnds.length
-  if (n === 0) return points[0]
-  if (t <= t0) return points[0]
-  if (t >= legEnds[n - 1]) return points[points.length - 1]
+  if (n === 0) return copy3(points[0], out)
+  if (t <= t0) return copy3(points[0], out)
+  if (t >= legEnds[n - 1]) return copy3(points[points.length - 1], out)
   let k = 0
   while (k < n - 1 && t > legEnds[k]) k++
   const segStart = k === 0 ? t0 : legEnds[k - 1]
@@ -62,7 +67,15 @@ export function pointAt(points, legEnds, t, t0) {
   const f = span > 0 ? (t - segStart) / span : 0
   const a = points[k]
   const b = points[k + 1]
-  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]
+  out[0] = a[0] + (b[0] - a[0]) * f
+  out[1] = a[1] + (b[1] - a[1]) * f
+  out[2] = a[2] + (b[2] - a[2]) * f
+  return out
+}
+
+function copy3(p, out) {
+  out[0] = p[0]; out[1] = p[1]; out[2] = p[2]
+  return out
 }
 
 /** 各段长度（米）+ 累计弧长：`[l0, l0+l1, …]`（长度 = 段数） */
@@ -84,8 +97,13 @@ export function legArcEnds(points) {
  * （跳弹拐角时尾巴跟着折线弯）。
  */
 export function pointAtArc(points, arcEnds, s) {
-  if (arcEnds.length === 0 || !(s > 0)) return points[0]
-  if (s >= arcEnds[arcEnds.length - 1]) return points[points.length - 1]
+  return pointAtArcInto(points, arcEnds, s, [])
+}
+
+/** pointAtArc 的零分配变体：结果写入 `out`（[x,y,z]）并返回它。每帧每弹的热路径用这个。 */
+export function pointAtArcInto(points, arcEnds, s, out) {
+  if (arcEnds.length === 0 || !(s > 0)) return copy3(points[0], out)
+  if (s >= arcEnds[arcEnds.length - 1]) return copy3(points[points.length - 1], out)
   let k = 0
   while (k < arcEnds.length - 1 && s > arcEnds[k]) k++
   const segStart = k === 0 ? 0 : arcEnds[k - 1]
@@ -93,7 +111,10 @@ export function pointAtArc(points, arcEnds, s) {
   const f = span > 0 ? (s - segStart) / span : 0
   const a = points[k]
   const b = points[k + 1]
-  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]
+  out[0] = a[0] + (b[0] - a[0]) * f
+  out[1] = a[1] + (b[1] - a[1]) * f
+  out[2] = a[2] + (b[2] - a[2]) * f
+  return out
 }
 
 /**
