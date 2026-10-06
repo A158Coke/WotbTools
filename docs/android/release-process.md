@@ -97,12 +97,11 @@ Android Vue 已在 APK 内，发布不依赖生产 Web `/version.json`
 3. APK 资产源是**本机路径** `/agent-assets`（bundle identity 钉死，见 `android_contract.py`），
    由 Native `AgentAssetProxy` 直连对象存储——原生代码不受 CORS 约束，因此本项探测的是
    **对象存储匿名可读性**：`https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com/index.json`
-   GET 成功且返回 JSON object。CORS/Expose-Headers 对 Android 资产链路不再适用；
-   Gateway `/agent-assets` 反代仅服务未升级的旧版本 APK（见 docs/operations/agent-asset-origin.md）。
-   ⚠️ 待办：`android-release.yml` 的 publish readiness 步骤（"Verify production API and asset
-   exact-origin CORS readiness"）仍从 staging.json 的 `assetOrigin` 拼网关 URL 探测 CORS——
-   本变更落地后该步骤需改为探测上述 COS 匿名可读性，否则 publish 会被 fail-closed 拦截。
-   该文件属 workflow，需与 CI 侧的调整协调落地，本 PR 刻意不触碰。
+   GET 成功且返回 JSON object（readiness 步骤里的 `COS_BASE` 与 `AgentAssetProxy.kt` 的
+   `COS_BASE` 一致，换 origin 两处同步，见 docs/operations/agent-asset-origin.md）。
+   CORS/Expose-Headers 对 Android 资产链路不再适用；Gateway `/agent-assets` 反代仅服务
+   未升级的旧版本 APK（历史背景：旧 APK 的 WebView fetch 走该反代并依赖网关 CORS，
+   这也是旧版第 3 条探测网关 exact-origin CORS 的原因）。
 4. `ANDROID_MIN_SUPPORTED_VERSION_CODE >= 2000001` 且不超过 latestVersionCode。
    Bridge 已是 v2 也不能绕过这条门槛：PR A 2.0.0 仍依赖远程 Web frontend。
    后续 patch 可保持 2000001 floor，不要求每次 patch 强制全部客户端更新。
