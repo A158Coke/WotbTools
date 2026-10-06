@@ -193,7 +193,7 @@ digest = lambda data: hashlib.sha256(data).hexdigest()
 manifest = {
     "schemaVersion": 2, "target": "android", "buildCommit": source,
     "runtimeOrigin": contract["origin"], "apiOrigin": "https://wotbtools.com",
-    "assetOrigin": "https://wotbtools.com/agent-assets", "entry": "index.html",
+    "assetOrigin": "/agent-assets", "entry": "index.html",
     "agentWasm": {"commit": pin["ref"], "release": pin["artifact"]["release"]},
     "nativeRuntime": {"supportedBridgeVersions": [contract["bridgeVersion"]], "nativeAuthCapability": "native-auth",
                       "nativeAuthMethods": gates.auth_surface(contract)[0], "authChangedGlobal": contract["events"]["authChanged"]["global"]},
@@ -239,13 +239,24 @@ legacy = copy.deepcopy(evidence); legacy["schemaVersion"] = 1
 evidence_path.write_text(json.dumps(legacy), encoding="utf-8")
 reject(lambda: gates.command_bundle(args))
 evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
-for field in ("runtimeOrigin", "buildCommit", "agentWasm", "nativeRuntime", "fileCount", "totalBytes", "files", "entrySha256"):
+for field in ("runtimeOrigin", "buildCommit", "agentWasm", "nativeRuntime", "fileCount", "totalBytes", "files", "entrySha256", "assetOrigin"):
     broken = copy.deepcopy(manifest)
     broken[field] = [] if field == "files" else None
     write_apk(broken)
     reject(lambda: gates.apk_bundle_identity(str(apk), contract, pin, source, version))
 write_apk(manifest, {**contents, "index.html": b"tampered index"})
 reject(lambda: gates.apk_bundle_identity(str(apk), contract, pin, source, version))
+# assetOrigin 是已审查 origin 白名单：legacy 网关取值（≤2.1.6 已 staged 候选的合法身份）
+# 必须放行——main 前进不得作废已 staged 的候选；白名单之外的 origin 一律拒绝。
+legacy_origin = copy.deepcopy(manifest)
+legacy_origin["assetOrigin"] = "https://wotbtools.com/agent-assets"
+write_apk(legacy_origin)
+gates.apk_bundle_identity(str(apk), contract, pin, source, version)
+unreviewed_origin = copy.deepcopy(manifest)
+unreviewed_origin["assetOrigin"] = "https://evil.example.com/assets"
+write_apk(unreviewed_origin)
+reject(lambda: gates.apk_bundle_identity(str(apk), contract, pin, source, version))
+write_apk(manifest)
 reject(lambda: gates.validate_apk_version("package: name='com.wotbtools.app' versionCode='2000000' versionName='2.0.0'", version))
 # Exact-origin preflight, authenticated route and asset readiness; no wildcard or credentials.
 headers = {"access-control-allow-origin": contract["origin"], "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
@@ -492,7 +503,10 @@ assert "android_contract.py bundle" in publish_runs, "publish must validate the 
 assert "--evidence" in publish_runs and "--output" in stage_runs, "stage and publish must share evidence validation"
 assert "guard_local_first_cutover" in publish_runs and "guard_local_first_cutover" in stage_runs
 assert "android_contract.py cors" in publish_runs and "/api/users/profile" in publish_runs
-assert "$ASSETS/index.json" in publish_runs
+# 资产源是本机路径 /agent-assets + Native AgentAssetProxy 直连对象存储（原生无 CORS），
+# readiness 探测对象是对象存储匿名可读性，而不是网关 exact-origin CORS。
+assert "$COS_BASE/index.json" in publish_runs
+assert "$ASSETS/index.json" not in publish_runs
 assert "https://wotbtools.com/version.json" not in publish_runs
 assert "FE_COMMIT" not in publish_runs and "frontend-version.json" not in publish_runs
 

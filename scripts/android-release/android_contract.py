@@ -299,6 +299,15 @@ def command_gate(args: argparse.Namespace) -> None:
     print(json.dumps(result, sort_keys=True))
 
 
+# 已审查的 Android 资产 origin（docs/operations/agent-asset-origin.md）。资产源历经
+# 两代配置，publish 旧 staged 候选时必须按其 staged 时的取值放行——main 前进不得作废
+# 已 staged 的候选；不在此白名单内的 origin 一律拒绝。
+REVIEWED_ASSET_ORIGINS = (
+    "/agent-assets",  # native-proxy：AgentAssetProxy 原生直连对象存储（2.1.7+）
+    "https://wotbtools.com/agent-assets",  # legacy-gateway：生产网关反代（≤ 2.1.6 已 staged 候选）
+)
+
+
 def apk_bundle_identity(apk_path: str, contract: dict, pin: dict, source: str, version: str) -> dict:
     """Prove the bundle from APK bytes, rather than trusting a workspace manifest."""
     if not re.fullmatch(r"[0-9a-f]{40}", source):
@@ -312,7 +321,9 @@ def apk_bundle_identity(apk_path: str, contract: dict, pin: dict, source: str, v
         expected = {
             "schemaVersion": 2, "target": "android", "buildCommit": source,
             "runtimeOrigin": contract["origin"], "apiOrigin": "https://wotbtools.com",
-            "assetOrigin": "https://wotbtools.com/agent-assets", "entry": "index.html",
+            # assetOrigin 单独校验（见 REVIEWED_ASSET_ORIGINS）：历经两代已审查配置，
+            # publish 旧候选时必须按其 staged 时的配置放行。
+            "entry": "index.html",
             "agentWasm": {"commit": pin["ref"], "release": pin["artifact"]["release"]},
         }
         if contract["origin"] != "https://appassets.androidplatform.net":
@@ -320,6 +331,8 @@ def apk_bundle_identity(apk_path: str, contract: dict, pin: dict, source: str, v
         for key, value in expected.items():
             if manifest.get(key) != value:
                 fail(f"APK bundle identity mismatch: {key}")
+        if manifest.get("assetOrigin") not in REVIEWED_ASSET_ORIGINS:
+            fail("APK bundle identity mismatch: assetOrigin")
         runtime = manifest.get("nativeRuntime", {})
         if not isinstance(runtime, dict):
             fail("APK bundle must declare its native runtime")

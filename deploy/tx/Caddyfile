@@ -2,6 +2,14 @@
 	# The address is supplied only at TX runtime; no account material belongs in
 	# this repository or in the Compose file.
 	email {$CADDY_ACME_EMAIL}
+	# HTTP/3 必须保持关闭：TX 安全组没有放行 UDP 443，QUIC 握手包被静默丢弃。
+	# 若广告 Alt-Svc h3（Caddy 对 TLS 站点默认开启），Chromium 系浏览器会缓存该
+	# 声明（ma=3d），之后每次访问先走 QUIC、等握手失败才回退 TCP，用户侧表现为
+	# 网页永远加载中；而带宽受限的公网管道（TX1 5Mbps）也拿不到 h3 的收益。
+	# 重新启用的前提是安全组先放行 UDP 443 并实测 QUIC 握手成功。
+	servers {
+		protocols h1 h2
+	}
 }
 
 # TX-local readiness surface. K7C keeps both reviewed frontend instances behind

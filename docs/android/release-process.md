@@ -124,10 +124,14 @@ Android Vue 已在 APK 内，发布不依赖生产 Web `/version.json`
 2. `/api/users/profile` 真实 OPTIONS：Origin 为 appassets，Authorization 等请求头允许，
    GET/POST/PUT/PATCH/DELETE/OPTIONS 允许；ACAO 必须精确等于 appassets，不能是 wildcard，
    不启用 credentialed CORS。无 Bearer 的同一路由 GET 必须返回 401 且携带正确 CORS，证明 backend 可达。
-3. APK 声明的 `https://wotbtools.com/agent-assets/index.json` GET 成功，返回 JSON object，
-   并允许精确 appassets origin。受信任响应必须 expose Content-Disposition、X-Request-ID 和 X-Map-Meta，
-   使 3D 地图元数据可由本地 WebView 读取。Gateway 在 Web catch-all 前固定转发已审计资产源，
-   剥离 `/agent-assets` 前缀；不使用 arbitrary URL proxy。
+3. APK 资产源是**本机路径** `/agent-assets`（bundle identity 钉死，见 `android_contract.py`），
+   由 Native `AgentAssetProxy` 直连对象存储——原生代码不受 CORS 约束，因此本项探测的是
+   **对象存储匿名可读性**：`https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com/index.json`
+   GET 成功且返回 JSON object（readiness 步骤里的 `COS_BASE` 与 `AgentAssetProxy.kt` 的
+   `COS_BASE` 一致，换 origin 两处同步，见 docs/operations/agent-asset-origin.md）。
+   CORS/Expose-Headers 对 Android 资产链路不再适用；Gateway `/agent-assets` 反代仅服务
+   未升级的旧版本 APK（历史背景：旧 APK 的 WebView fetch 走该反代并依赖网关 CORS，
+   这也是旧版第 3 条探测网关 exact-origin CORS 的原因）。
 4. `ANDROID_MIN_SUPPORTED_VERSION_CODE >= 2000001` 且不超过 latestVersionCode。
    Bridge 已是 v2 也不能绕过这条门槛：PR A 2.0.0 仍依赖远程 Web frontend。
    后续 patch 可保持 2000001 floor，不要求每次 patch 强制全部客户端更新。
