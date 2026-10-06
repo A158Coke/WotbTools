@@ -37,12 +37,24 @@ TX1/TX2 之后，还会以 `TSINGHUA_CLOUD_TOKEN` 把同一 APK 传进清华云�
 `https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/<apkName>&dl=1`，
 分享链接无过期、不随版本变化，新增版本只需把文件放进目录即可生效。
 
+**Origin 与分发副本是两个身份，判定源必须分开：**
+
+- Origin identity：TX1/TX2 上的 immutable APK 本体。stage 的 absent/equal/conflict 分类
+  用 **SSH 直查两台 origin**（远端 `sha256sum`），conflict 仍然 fail-closed。绝不用公网 URL
+  做该判定——`*.apk` 已被 302 到网盘，副本损坏时公网 URL 会把 rerun 误判成 conflict
+  直接失败，而能修复副本的清华覆盖上传又被同一失败挡在后面，不可自愈。SSH 探测协议还
+  区分「远端显式回答文件不存在」与「探测本身失败」，后者直接失败本步骤，绝不降级成 absent
+  （否则 scp 会覆盖一个 SHA 不符的 origin 文件，销毁 immutable 冲突证据）。
+- Distribution replica：清华云盘。不参与 immutable 判定；stage 每次执行都会 `reuse=1`
+  覆盖上传 + 「分享直链下载回来 SHA-256 与 staged APK 一致」校验，因此副本缺失/损坏在
+  任意重跑中都会被无条件修复（「重跑安全」指的就是这一层）。
+- 公网 URL（wotbtools.com → 302 → 网盘）只做最终端到端复核，从不作为状态判定源。
+
 - URL 契约不变：`version.json` 的 `apkUrl` 仍是 `https://wotbtools.com/download/android/<apk>`，
   客户端跟着 302 走；`/download/android/version.json` 与 `*.staging.json` **不在**重定向范围内，
   仍由 TX1/TX2 前端源站服务（deploy 预检的运行时内容一致性比对不受影响）。
 - fail-closed：该云盘部署「上传成功也返回 HTTP 400」是已知怪癖，workflow 不以响应码判定成败，
-  以「分享直链下载回来 SHA-256 与 staged APK 一致」为唯一门禁；随后的 production APK 校验
-  顺着 302 对公网 URL 做全链路复核。
+  以「分享直链下载回来 SHA-256 与 staged APK 一致」为唯一门禁。
 - 若更换网盘目录或分享链接，必须同步修改 TX1 Caddyfile 的 redir 目标与 workflow 步骤里的
   `REPO_ID` / 分享 token，两边一一对应。
 
