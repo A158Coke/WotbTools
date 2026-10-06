@@ -18,7 +18,7 @@
 1. WoT-Blitz-Agent 仓**根目录**：`node scripts/serve_asset_pack.mjs 8123`（脚本按 cwd 解析 `release/asset_pack`，起错目录会静默 404）。
 2. 本仓 `frontend/.env.local`（gitignored）写 `VITE_ASSET_BASE_URL=http://127.0.0.1:8123`；改后**必须重启 dev server**（env 在 transform 时内联）。
 3. 依赖上游引擎的调试先 `bash scripts/fetch-agent-wasm.sh`（`deploy/agent/source.json` pin 变更后必须重跑）。
-4. `npm run dev` → `http://localhost:5173/`；3D / shots / armor / AI 用普通账号登录。
+4. `npm run dev` → `http://localhost:5173/`；3D / shots / AI 用普通账号登录；装甲查看器匿名可用（Tankopedia 入口卡对全员开放）。
 
 仅真正管理功能的 `?admin=1` 参数来自**未提交**的本机旁路（`useAuth.js`，见 runbook §4 与附录 A）：
 不要提交它，也不要"顺手清理"工作区里的这个 `M`。管理功能仍只认角色；URL 参数不得作为产品权限来源。Replay 五能力不依赖 admin，匿名门禁由能力层负责。
