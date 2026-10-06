@@ -34,6 +34,8 @@ vi.mock('./components/SponsorPage.vue', () => ({ __esModule: true, default: { te
 vi.mock('./components/ProfilePage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-profile" />' } }))
 vi.mock('./components/HistoryPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-history" />' } }))
 vi.mock('./components/TechnicalEvolutionPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-technical-evolution" />' } }))
+vi.mock('./components/TournamentPointsConfigPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-tournament-config" />' } }))
+vi.mock('./components/TournamentPointsAdminPage.vue', () => ({ __esModule: true, default: { template: '<div data-test="view-tournament-admin" />' } }))
 // Agent 3D 回放 / 射击分析收敛进回放工作台的能力，
 // 装甲查看器与坦克百科仍是独立视图；用轻量替身断言可见性边界即可。
 // `__esModule: true` 必需——viewRegistry 经 defineAsyncComponent 动态 import，
@@ -51,6 +53,7 @@ const authState = vi.hoisted(() => ({
   authenticatedRef: null,
   authInitState: null,
   isAdminRef: null,
+  isTournamentAdminRef: null,
   initPromise: Promise.resolve(false),
   displayName: '',
   login: vi.fn(),
@@ -61,6 +64,7 @@ authState.authenticatedRef = ref(false)
 authState.authInitState = ref('unauthenticated')
 // 管理角色仅控制真正管理入口，默认普通用户。
 authState.isAdminRef = ref(false)
+authState.isTournamentAdminRef = ref(false)
 vi.mock('./composables/useAuth.js', () => ({
   useAuth: () => ({
     initPromise: authState.initPromise,
@@ -72,6 +76,7 @@ vi.mock('./composables/useAuth.js', () => ({
     hasRole: authState.hasRole,
     isAdmin: authState.isAdminRef,
     isHofAdmin: authState.isAdminRef,
+    isTournamentAdmin: computed(() => authState.isAdminRef.value || authState.isTournamentAdminRef.value),
   }),
 }))
 
@@ -593,6 +598,27 @@ describe('App shell navigation, 更多 and account', () => {
     expect(wrapper.get('[data-testid="nav-admin-users"]').attributes('aria-current')).toBeUndefined()
     expect(wrapper.find('[data-testid="nav-hof-admin"]').exists()).toBe(true)
     authState.isAdminRef.value = false
+  })
+
+  it('shows only tournament management for a tournament-only administrator', async () => {
+    authState.isTournamentAdminRef.value = true
+    try {
+      const { wrapper } = await mountApp('/?view=replay')
+      expect(wrapper.find('[data-testid="nav-tournament-points-config"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="nav-tournament-points-admin"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="nav-admin-users"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="nav-hof-admin"]').exists()).toBe(false)
+    } finally { authState.isTournamentAdminRef.value = false }
+  })
+
+  it.each([['tournament-points-config', 'view-tournament-config'], ['tournament-points-admin', 'view-tournament-admin']])('admits a tournament-only administrator at the %s page gate', async (view, testId) => {
+    authState.isTournamentAdminRef.value = true
+    setAuthState('authenticated', true)
+    try {
+      const { wrapper } = await mountApp('/?view=' + view)
+      expect(wrapper.find(`[data-test="${testId}"]`).exists()).toBe(true)
+      expect(wrapper.text()).not.toContain('tournament.adminRequired')
+    } finally { authState.isTournamentAdminRef.value = false }
   })
 
   it('opens the project history view from 更多', async () => {

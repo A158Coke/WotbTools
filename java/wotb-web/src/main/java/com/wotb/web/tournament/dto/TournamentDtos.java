@@ -165,6 +165,33 @@ public final class TournamentDtos {
             boolean published,
             Standings standings
     ) { }
+    public record HistoricalState(long eventVersion, boolean imported, boolean canImport, boolean historical) { }
+    public record HistoricalRow(
+            @JsonProperty(required = true) String clanTag,
+            @JsonProperty(required = true) @JsonDeserialize(contentUsing = IntegerInput.class) List<Integer> points,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long sourceTotal
+    ) { }
+    public record HistoricalPreviewRequest(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) String sourceName,
+            @JsonProperty(required = true) String sourceSha256,
+            @JsonProperty(required = true) List<HistoricalRow> rows
+    ) { }
+    public record HistoricalImportRequest(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) String sourceName,
+            @JsonProperty(required = true) String sourceSha256,
+            @JsonProperty(required = true) List<HistoricalRow> rows,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm,
+            @JsonProperty(required = true) String idempotencyKey
+    ) { }
+    public record HistoricalPreview(
+            Standings standings,
+            int sourceRowCount,
+            int clanCount,
+            int missingCellCount,
+            long eventVersion
+    ) { }
     public record RecognitionPermit(
             String permit,
             Instant expiresAt,

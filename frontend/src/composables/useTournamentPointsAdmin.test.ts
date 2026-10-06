@@ -20,6 +20,7 @@ function fixture() {
   const transport = {
     listTournamentEvents: vi.fn(async (..._args: any[]) => [event]), getTournamentConfig: vi.fn(async (..._args: any[]) => structuredClone(cfg)), getTournamentDay: vi.fn(async (_id: number, round: number, day: number, ..._args: any[]) => ({ ...structuredClone(state), roundNumber: round, dayNumber: day })),
     getTournamentAudit: vi.fn(async (..._args: any[]) => []), previewTournamentDay: vi.fn(async (..._args: any[]) => structuredClone(state)), saveTournamentDraft: vi.fn(async (..._args: any[]) => structuredClone(state)),
+    getTournamentHistoricalState: vi.fn(async (..._args: any[]) => ({ eventVersion: 1, imported: false, canImport: false, historical: false })),
     finalizeTournamentDay: vi.fn(async (..._args: any[]) => ({ ...structuredClone(state), status: 'FINALIZED', published: true, version: 2, eventVersion: 2 })),
     setTournamentExpectedGroups: vi.fn(async (..._args: any[]) => structuredClone(state)), startTournamentCorrection: vi.fn(async (..._args: any[]) => ({ ...structuredClone(state), status: 'CORRECTION', groups: [], published: true })),
     discardTournamentDraft: vi.fn(async (..._args: any[]) => structuredClone(state)), clearTournamentPoints: vi.fn(async (..._args: any[]) => state.standings),
@@ -68,11 +69,14 @@ describe('tournament rules and identities', () => {
     expect(tournamentAdminAllowed(f.auth as any)).toBe(true)
     f.auth.tokenParsed.value.realm_access.roles = ['HoF-admin']
     expect(tournamentAdminAllowed({ ...f.auth, isAdmin: ref(true) } as any)).toBe(false)
+    f.auth.tokenParsed.value.realm_access.roles = ['tournament-admin']
+    expect(tournamentAdminAllowed(f.auth as any)).toBe(true)
     f.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin']
     expect(tournamentAdminAllowed(f.auth as any)).toBe(false)
-    f.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin', 'wotbtools-user', 'HoF-admin', 'tournament-admin']
+    f.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin', 'tournament-admin']
     expect(tournamentAdminAllowed(f.auth as any)).toBe(true)
     f.auth.authenticated.value = false
+    f.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin']
     expect(tournamentAdminAllowed(f.auth as any)).toBe(false)
   })
   it('requires fifth-place rules and reupload for an incomplete or multi-group image', () => {
@@ -82,6 +86,101 @@ describe('tournament rules and identities', () => {
     expect(tournamentGroupReviewError(review, f.cfg, 1, 1)).toBe('fifthMissing')
     review.result!.issues = ['MULTIPLE_GROUPS']
     expect(tournamentGroupReviewError(review, f.cfg, 1, 1)).toBe('imageIncomplete')
+  })
+})
+
+describe('historical import owner', () => {
+  function setup() {
+    const f = fixture()
+    f.state.status = 'EMPTY'
+    f.state.groups = []
+    f.transport.getTournamentHistoricalState.mockResolvedValue({ eventVersion: 1, imported: false, canImport: true, historical: false })
+    f.cfg.event.configLocked = false
+    f.auth.tokenParsed.value.realm_access.roles = ['tournament-admin']
+    const preview = { standings: f.state.standings, sourceRowCount: 1, clanCount: 1, missingCellCount: 9, eventVersion: 1 }
+    const transport = { ...f.transport, previewTournamentHistoricalImport: vi.fn(async (..._args: any[]) => preview),
+      importTournamentHistorical: vi.fn(async (..._args: any[]) => preview) }
+    const scope = effectScope()
+    const owner = scope.run(() => useTournamentPointsAdmin({ api: transport, auth: f.auth } as any))!
+    const file = new File([JSON.stringify({ year: 2026, region: 'CN', season: 'SUMMER', roundCount: 5, daysPerRound: 2,
+      sourceName: '2026 summer top 32', sourceSha256: 'a'.repeat(64), rows: [{ clanTag: '-TOP-', points: [100, ...Array(9).fill(null)], sourceTotal: 100 }] })], 'history.json')
+    return { ...f, transport, scope, owner, file, preview }
+  }
+  it('previews historical scores without requiring ranked-group configuration and preserves retry identity', async () => {
+    const f = setup()
+    f.cfg.rounds.forEach(rule => { rule.complete = false; rule.days = [] })
+    f.owner.eventId.value = 7
+    await settle()
+    await f.owner.previewHistorical(f.file)
+    expect(f.owner.historicalPreview.value?.missingCellCount).toBe(9)
+    expect(f.owner.historicalRequest.value?.rows[0].points[1]).toBeNull()
+    f.transport.importTournamentHistorical.mockRejectedValueOnce(new Error('uncertain network response'))
+    await f.owner.publishHistorical()
+    const firstKey = f.transport.importTournamentHistorical.mock.calls[0][1].idempotencyKey
+    expect(f.owner.historicalPreview.value).not.toBeNull()
+    await f.owner.publishHistorical()
+    expect(f.transport.importTournamentHistorical.mock.calls[1][1].idempotencyKey).toBe(firstKey)
+    expect(f.owner.notice.value).toBe('historicalImported')
+    f.scope.stop()
+  })
+  it('drops a slow file read after administrator permission is lost', async () => {
+    const f = setup()
+    f.owner.eventId.value = 7
+    await settle()
+    let complete!: (text: string) => void
+    const slow = { name: 'history.json', size: 20, text: () => new Promise<string>(resolve => { complete = resolve }) } as File
+    const pending = f.owner.previewHistorical(slow)
+    f.auth.tokenParsed.value.realm_access.roles = []
+    await settle()
+    complete(await f.file.text())
+    await pending
+    expect(f.transport.previewTournamentHistoricalImport).not.toHaveBeenCalled()
+    expect(f.owner.historicalRequest.value).toBeNull()
+    expect(f.owner.historicalPreview.value).toBeNull()
+    f.scope.stop()
+  })
+  it('refuses wrong-event files and published targets without creating an import request', async () => {
+    const f = setup()
+    f.owner.eventId.value = 7
+    await settle()
+    const wrong = JSON.parse(await f.file.text())
+    wrong.year = 2025
+    await f.owner.previewHistorical(new File([JSON.stringify(wrong)], 'wrong.json'))
+    expect(f.owner.historicalFileIssue.value).toBe('historicalEventMismatch')
+    expect(f.transport.previewTournamentHistoricalImport).not.toHaveBeenCalled()
+    f.owner.dayState.value!.standings.days.push({ roundNumber: 2, dayNumber: 1, label: 'Day 1', published: true })
+    await f.owner.previewHistorical(f.file)
+    expect(f.transport.previewTournamentHistoricalImport).not.toHaveBeenCalled()
+    f.scope.stop()
+  })
+  it('disables one-time import after a committed all-null roster while its days remain empty', async () => {
+    const f = setup()
+    f.owner.eventId.value = 7
+    await settle()
+    expect(f.owner.canImportHistorical.value).toBe(true)
+    f.cfg.clans = ['缺席']
+    f.cfg.event.configLocked = true
+    f.transport.getTournamentHistoricalState.mockResolvedValue({ eventVersion: 2, imported: true, canImport: false, historical: false })
+    await f.owner.loadSelection()
+    expect(f.owner.dayState.value?.status).toBe('EMPTY')
+    expect(f.owner.dayState.value?.standings.days.some(day => day.published)).toBe(false)
+    expect(f.owner.canImportHistorical.value).toBe(false)
+    await f.owner.previewHistorical(f.file)
+    expect(f.transport.previewTournamentHistoricalImport).not.toHaveBeenCalled()
+    f.scope.stop()
+  })
+  it('keeps ordinary administration working when the previous backend has no historical endpoint', async () => {
+    const f = fixture()
+    f.transport.getTournamentHistoricalState.mockResolvedValue(null as any)
+    const scope = effectScope()
+    const owner = scope.run(() => useTournamentPointsAdmin({ api: f.transport, auth: f.auth } as any))!
+    owner.eventId.value = 7
+    await settle()
+    expect(owner.error.value).toBeNull()
+    expect(owner.dayState.value?.groups).toHaveLength(1)
+    expect(owner.canUpload.value).toBe(true)
+    expect(owner.canImportHistorical.value).toBe(false)
+    scope.stop()
   })
 })
 describe('shared tournament draft owner', () => {

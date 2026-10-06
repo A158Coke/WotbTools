@@ -5,7 +5,7 @@
       "configTitle": "积分规则配置",
       "adminTitle": "积分赛统计",
       "loginRequired": "登录管理员账号后配置和统计积分。",
-      "adminRequired": "此页面需要网站管理员权限。",
+      "adminRequired": "需要联赛管理员权限。",
       "year": "年份",
       "region": "区服",
       "season": "季赛",
@@ -134,8 +134,27 @@
         "CORRECTION_STARTED": "开始整天修正",
         "CORRECTION_PUBLISHED": "发布整天修正",
         "POINTS_CLEARED": "清除军团积分",
-        "POINTS_RESTORED": "恢复军团积分"
-      }
+        "POINTS_RESTORED": "恢复军团积分",
+        "HISTORICAL_IMPORTED": "导入历史成绩"
+      },
+      "export": "导出",
+      "exportExcel": "导出 Excel",
+      "exportPdf": "打印 / 另存为 PDF",
+      "exporting": "正在导出…",
+      "exportFinalized": "正式积分排行榜",
+      "exportFailed": "导出失败，请重试；打印时请允许打开新窗口。",
+      "exportPdfBrowser": "请在系统浏览器打开本页，使用打印并另存为 PDF。",
+      "historicalImport": "导入历史榜单",
+      "historicalHint": "仅用于没有草稿或正式成绩的赛事。选择含赛事信息、军团和逐日积分的 JSON 文件，先预览核对，再正式公开。未参赛格保持空白。",
+      "historicalFile": "历史积分 JSON（最大 2 MiB）",
+      "historicalSummary": "来源 {rows} 行，合并为 {clans} 支军团，保留 {blanks} 个空格。",
+      "historicalPublish": "正式导入并公开",
+      "historicalConfirm": "确认将预览中的全部逐日成绩正式公开？导入后对应日期锁定，后续修改须使用修正入口。不能覆盖已有成绩。",
+      "historicalSource": "该日来自历史积分表，没有小组名次和小组截图。修正为小组统计前，先补全本轮积分规则。",
+      "historicalInvalid": "文件格式无效。请检查军团、逐日积分、总分和来源信息；分数须为整数，未参赛格填 null。",
+      "historicalEventMismatch": "文件的年份、区服、季赛或轮数、天数与当前赛事不匹配。",
+      "historicalTooLarge": "历史积分文件不能超过 2 MiB。",
+      "historicalImported": "历史积分已正式导入并公开。"
     },
     "featureOffline": {
       "tournamentPoints": "积分赛榜单和统计需要网络连接。"
@@ -170,7 +189,7 @@
       "configTitle": "Tournament point rules",
       "adminTitle": "Tournament scoring",
       "loginRequired": "Sign in with an administrator account to configure and score tournaments.",
-      "adminRequired": "Website administrator access is required.",
+      "adminRequired": "Tournament administrator permission is required.",
       "year": "Year",
       "region": "Region",
       "season": "Season",
@@ -299,8 +318,27 @@
         "CORRECTION_STARTED": "Full-day correction started",
         "CORRECTION_PUBLISHED": "Correction published",
         "POINTS_CLEARED": "Clan points cleared",
-        "POINTS_RESTORED": "Clan points restored"
-      }
+        "POINTS_RESTORED": "Clan points restored",
+        "HISTORICAL_IMPORTED": "Historical scores imported"
+      },
+      "export": "Export",
+      "exportExcel": "Export Excel",
+      "exportPdf": "Print / Save as PDF",
+      "exporting": "Exporting…",
+      "exportFinalized": "Finalized tournament standings",
+      "exportFailed": "Export failed. Retry; allow the print window to open.",
+      "exportPdfBrowser": "Open this page in your system browser to print or save as PDF.",
+      "historicalImport": "Import historical standings",
+      "historicalHint": "Only available for events without drafts or published results. Choose a JSON file containing the event, clans and daily scores. Review the preview before publication. Missed days remain blank.",
+      "historicalFile": "Historical scores JSON (up to 2 MiB)",
+      "historicalSummary": "{rows} source rows, {clans} merged clans, {blanks} blank cells retained.",
+      "historicalPublish": "Import and publish",
+      "historicalConfirm": "Publish every daily score in this preview? Published days will be locked and require the correction workflow for changes. Existing scores cannot be overwritten.",
+      "historicalSource": "This day comes from historical scores without group ranks or group screenshots. Complete this round’s rules before replacing it with group results.",
+      "historicalInvalid": "Invalid file. Check clans, daily scores, totals and source information. Scores must be integers; use null for missed days.",
+      "historicalEventMismatch": "The file’s year, region, season, round count or day count does not match this event.",
+      "historicalTooLarge": "The historical scores file must not exceed 2 MiB.",
+      "historicalImported": "Historical scores have been imported and published."
     },
     "featureOffline": {
       "tournamentPoints": "Tournament standings and scoring require an internet connection."
@@ -335,7 +373,7 @@
       "configTitle": "Правила начисления очков",
       "adminTitle": "Подсчёт очков турнира",
       "loginRequired": "Войдите как администратор для настройки и подсчёта очков.",
-      "adminRequired": "Требуются права администратора сайта.",
+      "adminRequired": "Требуются права администратора турниров.",
       "year": "Год",
       "region": "Регион",
       "season": "Сезон",
@@ -464,8 +502,27 @@
         "CORRECTION_STARTED": "Начато исправление дня",
         "CORRECTION_PUBLISHED": "Исправление опубликовано",
         "POINTS_CLEARED": "Очки клана очищены",
-        "POINTS_RESTORED": "Очки клана восстановлены"
-      }
+        "POINTS_RESTORED": "Очки клана восстановлены",
+        "HISTORICAL_IMPORTED": "Исторические очки импортированы"
+      },
+      "export": "Экспорт",
+      "exportExcel": "Экспорт Excel",
+      "exportPdf": "Печать / Сохранить PDF",
+      "exporting": "Экспорт…",
+      "exportFinalized": "Подтверждённая таблица очков",
+      "exportFailed": "Не удалось экспортировать. Повторите попытку и разрешите открыть окно печати.",
+      "exportPdfBrowser": "Откройте эту страницу в системном браузере для печати или сохранения PDF.",
+      "historicalImport": "Импорт исторической таблицы",
+      "historicalHint": "Доступно только для турниров без черновиков и опубликованных результатов. Выберите JSON с турниром, кланами и очками по дням. Проверьте предварительную таблицу перед публикацией. Пропущенные дни остаются пустыми.",
+      "historicalFile": "JSON исторических очков (до 2 МиБ)",
+      "historicalSummary": "Строк источника: {rows}; кланов после объединения: {clans}; пустых ячеек: {blanks}.",
+      "historicalPublish": "Импортировать и опубликовать",
+      "historicalConfirm": "Опубликовать все очки по дням из этой таблицы? Опубликованные дни будут заблокированы. Для изменений потребуется исправление. Существующие результаты не перезаписываются.",
+      "historicalSource": "Для этого дня импортированы исторические очки без мест и снимков групп. Перед заменой результатами групп заполните правила раунда.",
+      "historicalInvalid": "Некорректный файл. Проверьте кланы, очки по дням, суммы и источник. Очки должны быть целыми числами; для пропущенных дней используйте null.",
+      "historicalEventMismatch": "Год, регион, сезон, количество раундов или дней в файле не соответствуют выбранному турниру.",
+      "historicalTooLarge": "Файл исторических очков не должен превышать 2 МиБ.",
+      "historicalImported": "Исторические очки импортированы и опубликованы."
     },
     "featureOffline": {
       "tournamentPoints": "Таблица и подсчёт очков требуют подключения к сети."
