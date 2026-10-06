@@ -19,6 +19,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import {
   parseAgentShotsFromBytes, parseAgentPlaybackFromBytes, enrichShotsFromRoster, isShotHit,
 } from '../api/agent-replay-facets.js'
+import { resolveMountedConfig } from '../scene/reloadBar.js'
+import { assetProvider } from '../scene/assetProvider.js'
 import { formatPlaybackClock } from '../utils/playbackClock.js'
 import { storeShotsForViewer, fetchLocalShotTankData } from '../scene/agentData.js'
 import Scene3DStatus from './Scene3DStatus.vue'
@@ -139,6 +141,46 @@ function applyRosterNames(parsedShots, vehicles) {
   }
 }
 
+/**
+ * 实际搭载配置下标注入（shooter/target_config_idx）。WASM 产物没有这两个字段
+ * （服务器路径由解析面按 comp blob 证据链注入；客户端无解析面）——多炮坦克各炮
+ * GLB 节点组、炮口原点、弹表都不同，缺省会让装甲查看器按顶级配置摆射手炮管/
+ * 炮口、选目标变体、选弹表（&scfg=）。此处用回放 facet 自带的逐车证据
+ * （comp locals → 发射弹种 → 初始血量，resolveMountedConfig）联表 tank 数据派生；
+ * 坦克数据缺失时不注入，消费端回退顶级（与服务器「全无 → 顶级」语义一致）。
+ */
+async function annotateMountedConfigs(parsedShots, playback) {
+  const vehicles = playback?.vehicles || []
+  const byEid = new Map(vehicles.map((v) => [v.eid, v]))
+  const tankIds = new Set()
+  for (const s of parsedShots) {
+    if (s.shooter_tank_id) tankIds.add(s.shooter_tank_id)
+    if (s.target_tank_id) tankIds.add(s.target_tank_id)
+  }
+  if (!tankIds.size) return
+  const configsByTank = new Map()
+  await Promise.all([...tankIds].map(async (tid) => {
+    try {
+      const data = await assetProvider.json(`/tank/${tid}.json`)
+      if (Array.isArray(data?.configs) && data.configs.length) configsByTank.set(tid, data)
+    } catch { /* 数据缺失：该车不注入 */ }
+  }))
+  if (!configsByTank.size) return
+  const idxOf = (vehicle, tid) => {
+    const data = configsByTank.get(tid)
+    if (!data || !vehicle) return null
+    const cfg = resolveMountedConfig(vehicle, data)
+    const idx = cfg ? data.configs.indexOf(cfg) : -1
+    return idx >= 0 ? idx : null
+  }
+  for (const s of parsedShots) {
+    const shooterIdx = idxOf(byEid.get(s.shooter_eid), s.shooter_tank_id)
+    if (shooterIdx != null) s.shooter_config_idx = shooterIdx
+    const targetIdx = s.target_eid != null ? idxOf(byEid.get(s.target_eid), s.target_tank_id) : null
+    if (targetIdx != null) s.target_config_idx = targetIdx
+  }
+}
+
 async function decode(file) {
   const seq = ++parseSeq
   parsing.value = true
@@ -189,8 +231,17 @@ async function decode(file) {
       }
     }
     if (seq !== parseSeq) return
+    // 先发布本地解析结果（P1 评审）：搭载配置注解是**可选增强**，其资产请求无超时
+    // 语义——await 它会让已完成的本地解析被远端资产的响应速度卡住。异步补做：
+    // 闭包持有本文件的 parsedShots，就地注入；文件切换后旧数组不再被 shots.value
+    // 引用，迟到注入无副作用（shooter_config_idx 消费点也有未注解回退链）。
     shots.value = parsedShots
     shooter.value = 'all'
+    if (playback) {
+      annotateMountedConfigs(parsedShots, playback).catch((e) => {
+        console.warn('mounted-config annotation skipped:', e)
+      })
+    }
   } catch (e) {
     if (seq !== parseSeq) return
     shots.value = []
@@ -484,6 +535,14 @@ async function resolveShellIdx(s) {
   try {
     const data = await fetchLocalShotTankData(s.shooter_tank_id)
     const cfgs = data.configs || []
+    // 优先在实际搭载配置（annotateMountedConfigs 注入的 shooter_config_idx）内匹配：
+    // 同一弹种存在于多门炮的弹表时，全配置倒序扫描可能命中未搭载炮的配置——
+    // scfg 与弹下标必须与射手实际配置同源，否则查看器按 A 配置装配射手却加载 B 弹表
+    console.log('[dbg-rsi]', JSON.stringify({ sci: s.shooter_config_idx, sid: s.shell_id, stid: s.shooter_tank_id, ncfg: cfgs.length, cfgs }))
+    const pinned = Number.isInteger(s.shooter_config_idx) && cfgs[s.shooter_config_idx]
+      ? (cfgs[s.shooter_config_idx].shell_global_ids || []).indexOf(s.shell_id)
+      : -1
+    if (pinned >= 0) return { cfg: s.shooter_config_idx, idx: pinned }
     for (let ci = cfgs.length - 1; ci >= 0; ci--) {
       const idx = (cfgs[ci].shell_global_ids || []).indexOf(s.shell_id)
       if (idx >= 0) return { cfg: ci, idx }
@@ -500,6 +559,14 @@ async function openInViewer(s) {
   const shooterTank = s.shooter_tank_id || 0
   const tank = s.target_tank_id || shooterTank || 0
   if (!tank) return
+  // **点击时刻的射击快照**贯穿交接与导航（评审 P2）：storeShotsForViewer 在调用时
+  // 同步序列化（点击时版本），而 resolveShellIdx 的 await 期间后台配置注解可能就地
+  // 修改 live 对象——继续读 live 会得到「交接 JSON 按点击时配置装配模型/炮口、URL
+  // scfg 按注解后配置选弹表」的错位组合。快照后两处消费同一版本；未注解字段在
+  // resolveShellIdx / tankViewer 内各自走既有回退，语义一致。
+  // s 是 reactive proxy（selectedShot 派生），structuredClone 不可克隆 → JSON 往返
+  // （shot facet 全为可 JSON 值，与 storeShotsForViewer 的序列化口径一致）。
+  s = JSON.parse(JSON.stringify(s))
   storeShotsForViewer(shots.value)
   const hit = await resolveShellIdx(s)
   if (!requireFeature(Feature.PLAYBACK_3D)) return

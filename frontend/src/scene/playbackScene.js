@@ -28,7 +28,7 @@ import { pathPointsOf, legSecsOf, legEndTimes, pointAt, legArcEnds, arcAtTime, p
 import { impactKind } from './impactKind.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
-import { createReloadStateResolver, inferMagazineSize, resolveMagazineSize } from './reloadBar.js'
+import { createReloadStateResolver, resolveMountedConfig } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
 import { perspectiveScore, teamHpTotals } from './teamHpTotals.js'
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
@@ -1626,6 +1626,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // HTML label contents are isolated in the child overlay, capped at 10 Hz.
   // Anchors use camera projection at render FPS without mutating Vue state.
   let reloadStateAt = () => null;
+  // 会话级 mounted-configs（tank_id → tank/{id}.json）：弹容 N 的实际搭载配置联表源
+  //（reloadBar.resolveMountedConfig 消费；startPlayback 重建，teardown 清空）
+  let tankDataByTankId = new Map();
   let labelsWrittenMs = -Infinity;
   let labelsTime = null;
   // 上一轮快照里是否有正在装填（loading）的可见车：装填条是名牌唯一连续变化的元素
@@ -1655,7 +1658,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         eid: v.def.eid, playerName: v.def.nickname || '', tankName: v.def.tank_name || '',
         friendly, destroyed, lastKnown: false,
         hp: { current, pct, state: destroyed ? 'DESTROYED' : 'CURRENT' },
-        reload: destroyed ? null : reloadStateAt(v.def.eid, T, v.reloadSize),
+        reload: destroyed ? null : reloadStateAt(v.def.eid, T),
         hpGhost: ghost ? { prevPct: (ghost.fromFrac + ghost.lossFrac) * 100, nextPct: ghost.fromFrac * 100 } : null,
         hpFlash: flashByEid.has(v.def.eid),
       };
@@ -1889,8 +1892,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             const inst = loaded.template.clone();
             inst.scale.setScalar(1);
             v.glb = inst;
-            v.glbParts = collectGlbParts(inst, loaded.sd,
-              { turret_index: v.def.turret_index ?? null, gun_index: v.def.gun_index ?? null });
+            // 炮塔/主炮变体（dense 节点索引）按**实际搭载配置**选：facet 的 turret_index/
+            // gun_index 只有服务器路径产出；WASM 客户端产物用同一三级证据链
+            // （comp locals → 发射弹种 → 初始血量，resolveMountedConfig）联表 tank 数据
+            // 派生——多炮坦克各炮 GLB 节点组不同（实测同队两台 B-C 25t 分别 100/105mm），
+            // 不钉定会整场显示顶级炮。sd 拉取失败 → 回退 facet 字段 → 顶级。
+            const mounted = loaded.sd ? resolveMountedConfig(v.def, loaded.sd) : null;
+            v.glbParts = collectGlbParts(inst, loaded.sd, mounted
+              ? { turret_index: mounted.turret_index, gun_index: mounted.gun_index }
+              : { turret_index: v.def.turret_index ?? null, gun_index: v.def.gun_index ?? null });
             v.glb.visible = v.group.visible;
             scene.add(v.glb);
           }
@@ -2400,8 +2410,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * 停播 / 换相机（跟随目标）强制补写。resolver 每次返回新的 reload 数组，若逐帧投影，
    * 名册会每帧重绘。
    *
-   * `reload` 复用**场景自己的** reload resolver（`reloadStateAt`，与车辆名牌同一份
-   * `v.reloadSize` / `reloadEvents` 事实源），不在名册里另起一套解释——2D 名册走的是
+   * `reload` 复用**场景自己的** reload resolver（`reloadStateAt`，与车辆名牌同一事实源），
+   * 不在名册里另起一套解释——弹容 N 由 resolver 从回放 facet 车辆的 `burst_size`
+   * （实际搭载配置，解析面钉定）取默认；2D 名册走的是
    * `createReloadStateResolver(reloadTelemetry)`，两边是同一个 resolver 家族、同一套弹夹语义。
    */
   function updateRoster() {
@@ -2416,7 +2427,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         dead: p.dead,
         followed: FOLLOW_EID === v.def.eid,
         // 阵亡不展示 reload（与名牌同一判据：destroyed 时不显示次级瞬时状态）
-        reload: p.dead ? null : reloadStateAt(v.def.eid, T, v.reloadSize),
+        reload: p.dead ? null : reloadStateAt(v.def.eid, T),
       });
     }
   }
@@ -2914,6 +2925,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     labelOverlay?.clear();
     labelsTime = null; labelsWrittenMs = -Infinity;
     reloadStateAt = () => null;
+    tankDataByTankId = new Map();
     for (const o of [mapPlane, terrainMesh, mapScenery, groundMesh, gridHelper]) {
       if (o) { scene.remove(o); disposeObject3D(o); }
     }
@@ -3051,17 +3063,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!current()) return false;   // 地图资产期间被取代：后面全是 DATA 派生的会话状态
     buildVehicles();
     buildRoster();
-    reloadStateAt = createReloadStateResolver({ ...DATA, friendlyTeam: DATA.meta.friendly_team });
-    for (const v of V) {
-      v.reloadEvents = (DATA.reloads || []).filter((e) => e.eid === v.def.eid);
-      v.reloadSize = inferMagazineSize(v.reloadEvents);
-      if (!(v.def.tank_id > 0)) continue;
-      assetProvider.json(`/tank/${v.def.tank_id}.json`).then((tank) => {
-        if (!current()) return;
-        v.reloadSize = resolveMagazineSize(tank, v.reloadEvents);
-        labelsTime = null;
-        invalidate();
-      }).catch(() => {});
+    // 会话级 mounted-configs 缓存（tank_id → tank/{id}.json）：先建 Map 再建 resolver——
+    // resolver 闭包持有同一引用，异步填充后自动生效
+    tankDataByTankId = new Map();
+    reloadStateAt = createReloadStateResolver({ ...DATA, friendlyTeam: DATA.meta.friendly_team, mountedConfigs: tankDataByTankId });
+    // 弹容 N：resolver 按「实际搭载配置」取默认（comp locals → 发射弹种 → 初始血量 三级
+    // 证据链联表资产面 tank/{id}.json；见 reloadBar.resolveMountedConfig）。多炮坦克各炮
+    // 弹容不同，禁止跨配置取最大 / 剩余弹数+1 推断（上游 §六 裁决）。configs 就绪后写入
+    // 共享 Map 即生效，这里只需触发一次重绘。
+    {
+      const mySession = sessionGen;
+      const tankIds = new Set(DATA.vehicles
+        .filter((v) => v.team === DATA.meta.friendly_team && v.tank_id > 0)
+        .map((v) => v.tank_id));
+      for (const tid of tankIds) {
+        assetProvider.json(`/tank/${tid}.json`).then((t) => {
+          if (mySession !== sessionGen || !t || tankDataByTankId.get(tid)) return;
+          tankDataByTankId.set(tid, t);
+          labelsTime = null;
+          invalidate();
+        }).catch(() => {});
+      }
     }
     buildTransientSources();   // 战斗反馈事件源（伤害/击毁）
     buildBases();   // 基地贴地标记（争霸 A–D / 单基地）

@@ -81,7 +81,11 @@ export async function parseLocalPlayback(
   const reloadTelemetry: PlaybackReloadTelemetry | null = dataset && clock ? {
     timeOrigin: clock.startRaw,
     friendlyTeam: dataset.friendlyTeam,
-    vehicles: playback.vehicles.map(({ eid, account_id, team, tank_id }) => ({ eid, account_id, team, tank_id })),
+    // config_idx / burst_size / turret_local / gun_local 透传：弹容 N 的证据链输入
+    // 随实际搭载配置走（contracts/agent §4h；客户端证据链见 reloadBar.resolveMountedConfig）
+    vehicles: playback.vehicles.map(({
+      eid, account_id, team, tank_id, shell_ids, max_hp, config_idx, burst_size, turret_local, gun_local,
+    }) => ({ eid, account_id, team, tank_id, shell_ids, max_hp, config_idx, burst_size, turret_local, gun_local })),
     reloads: playback.reloads,
     reload_effective: playback.reload_effective,
     shots: playback.shots,
