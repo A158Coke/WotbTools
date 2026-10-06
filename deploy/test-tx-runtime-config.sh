@@ -361,8 +361,12 @@ grep -Fq 'proxy_pass ${BACKEND_UPSTREAM}/api/;' "$TEMPLATE" \
   || { echo 'FAIL: the generic /api/ route must stay on the TX business runtime' >&2; exit 1; }
 
 # Agent WASM is served from a commit-addressed directory (/wasm/<40-hex commit>/);
-# the directory name IS the content identity, so immutable long caching is correct
-# (a new Agent gets a new URL and a plain refresh picks it up). The regex must stay
+# the directory name IS the content identity, so immutable long caching of successful
+# responses is correct (a new Agent gets a new URL and a plain refresh picks it up).
+# The header must NOT use `always`: nginx would then attach immutable to the 404 that
+# `try_files` produces during version skew / deploy windows, and browsers would cache
+# that 404 for a year (2026-10-06 incident: affected users permanently stuck on a
+# spinner). The regex must stay
 # pinned to the 40-hex commit segment: a bare `/wasm/` location would freeze
 # whatever else lands in that directory. The regex contains `{}` and must stay quoted,
 # otherwise nginx ends the location header at `{` (emerg: unknown directive "40}/").
@@ -371,14 +375,35 @@ awk '/^    location ~ "\^\/wasm\/\[0-9a-f\]\{40\}\/" \{/{inside=1} inside{print}
   "$TEMPLATE" > "$WASM_ROUTE"
 grep -Fq 'location ~ "^/wasm/[0-9a-f]{40}/" {' "$WASM_ROUTE" \
   || { echo 'FAIL: the staged TX template has no commit-addressed (quoted) /wasm/<40-hex>/ route' >&2; exit 1; }
-grep -Fq 'add_header Cache-Control "public, max-age=31536000, immutable" always;' "$WASM_ROUTE" \
-  || { echo 'FAIL: the /wasm/<commit>/ route must be immutable-cacheable' >&2; exit 1; }
+grep -Fq 'add_header Cache-Control "public, max-age=31536000, immutable";' "$WASM_ROUTE" \
+  || { echo 'FAIL: the /wasm/<commit>/ route must be immutable-cacheable for successful responses' >&2; exit 1; }
+if grep -Fq 'add_header Cache-Control "public, max-age=31536000, immutable" always;' "$WASM_ROUTE"; then
+  echo 'FAIL: the /wasm/<commit>/ immutable header must not use always — a transient 404 would then be cached for a year (2026-10-06 incident)' >&2
+  exit 1
+fi
 grep -Fq 'try_files $uri =404;' "$WASM_ROUTE" \
   || { echo 'FAIL: the /wasm/<commit>/ route must not fall back to the SPA index' >&2; exit 1; }
 if grep -Eq '^    location /wasm/ \{' "$TEMPLATE"; then
   echo 'FAIL: a bare /wasm/ location would freeze non-versioned files; keep it commit-addressed' >&2
   exit 1
 fi
+
+# Same no-`always` contract for the hash-named /assets/ route: immutable is correct
+# for 200s, but a 404 during version skew (index and asset served by different peers)
+# must never be cached — same 2026-10-06 incident, JS/CSS flavor.
+ASSETS_ROUTE="$WORK/assets-route.conf"
+awk '/^    location \/assets\/ \{/{inside=1} inside{print} inside&&/^    \}$/{exit}' \
+  "$TEMPLATE" > "$ASSETS_ROUTE"
+grep -Fq 'location /assets/ {' "$ASSETS_ROUTE" \
+  || { echo 'FAIL: the staged TX template has no /assets/ location' >&2; exit 1; }
+grep -Fq 'add_header Cache-Control "public, max-age=31536000, immutable";' "$ASSETS_ROUTE" \
+  || { echo 'FAIL: the /assets/ route must be immutable-cacheable for successful responses' >&2; exit 1; }
+if grep -Fq 'add_header Cache-Control "public, max-age=31536000, immutable" always;' "$ASSETS_ROUTE"; then
+  echo 'FAIL: the /assets/ immutable header must not use always — a transient 404 would then be cached for a year (2026-10-06 incident)' >&2
+  exit 1
+fi
+grep -Fq 'try_files $uri =404;' "$ASSETS_ROUTE" \
+  || { echo 'FAIL: the /assets/ route must not fall back to the SPA index' >&2; exit 1; }
 
 # Fail closed: a wrong AI upstream (the TX business runtime, a public host, another
 # port) or a staged template that drops / rewrites the AI route must stop the deploy
