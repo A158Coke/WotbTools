@@ -2,7 +2,7 @@ name: Release / Android
 # 两阶段发布协议（见 docs/android/release-process.md）：
 #
 #   stage   —— main 合并后自动跑（也可 workflow_dispatch 重跑/恢复）：contract → 构建/签名 →
-#              证书校验 → immutable APK 上传 → 线上 APK 可访问 + SHA 核验 → tag →
+#              证书校验 → immutable APK 上传（TX1/TX2 + 清华网盘公网下载直链）→ 线上 APK 可访问 + SHA 核验 → tag →
 #              写并上传 **staging evidence**。**绝不**写 production version.json。
 #   publish —— 真机 A14 验证通过后由 workflow_dispatch(mode=publish, version=X) 手工续跑：
 #              候选身份由**显式版本 X**决定（X 的 immutable tag target = staged 源码），
@@ -445,35 +445,80 @@ jobs:
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "apkName=$APK_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Classify production APK (idempotent upload)
+      # Origin 身份的权威源是 TX1/TX2 上的 immutable APK 本体。**绝不能**用
+      # https://wotbtools.com/download/android/<apk> 来做这个判定：Caddy 已把 *.apk
+      # 302 到清华云盘分发副本（见 docs/android/release-process.md「APK 公网下载卸载」），
+      # 副本损坏时公网 URL 会把 rerun 误判成 apk_conflict 直接失败，而真正能修复副本的
+      # 清华覆盖上传又被同一个失败挡在后面——不可自愈。所以这里走 SSH 直查两台 origin。
+      # 探测协议区分「文件不存在」（远端显式回答 __ABSENT__）与「探测失败」（ssh 非零 /
+      # 输出异常 → 本步骤失败）：绝不把探测失败当成 absent，否则 scp 会覆盖一个
+      # SHA 不符的 origin 文件、销毁 immutable 冲突证据。
+      - name: Classify origin APK on TX1/TX2 (SSH; public URL is the drive replica)
         if: steps.preflight.outputs.releaseAction == 'publish'
         id: apkcheck
         shell: bash
+        env:
+          TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+          TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+          TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+          TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+          TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
         run: |
           set -euo pipefail
           . scripts/android-release/check-release-guards.sh
           APK_NAME="${{ steps.artifact.outputs.apkName }}"
           BUILD_SHA="${{ steps.artifact.outputs.sha256 }}"
-          URL="https://wotbtools.com/download/android/$APK_NAME"
-          TMP_PROD="$RUNNER_TEMP/prod-apk-check.apk"
-          PROD_SHA=""
-          if curl -fsSL -o "$TMP_PROD" "$URL" 2>/dev/null; then
-            test -s "$TMP_PROD" || { echo "::error::Production APK exists but is empty" >&2; exit 1; }
-            PROD_SHA="$(sha256sum "$TMP_PROD" | awk '{print $1}')"
-          fi
-          classify_prod_apk "$PROD_SHA" "$BUILD_SHA"
-          case "$APK_STATE" in
-            apk_absent) echo "Production APK absent; will upload." ;;
-            apk_equal) echo "Production APK already matches build SHA-256; resuming (no upload)." ;;
-            apk_conflict)
-              echo "::error::Production APK already exists with a different SHA-256; immutable release conflict." >&2
+
+          origin_sha() {
+            local label="$1" host="$2" user="$3" port="$4" key="$5" dir="$6"
+            local keyfile="$RUNNER_TEMP/${label}-origin-key.pem"
+            printf '%s\n' "$key" > "$keyfile"
+            chmod 600 "$keyfile"
+            local out rc=0
+            out="$(ssh -i "$keyfile" -p "$port" -o IdentitiesOnly=yes -o BatchMode=yes \
+              -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+              "$user@$host" "if [ -f '$dir/$APK_NAME' ]; then sha256sum '$dir/$APK_NAME' | awk '{print \$1}'; else echo __ABSENT__; fi")" || rc=$?
+            rm -f "$keyfile"
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::$label origin probe ssh failed (rc=$rc); refusing to classify as absent/SHA." >&2
               exit 1
-              ;;
-          esac
-          echo "apkState=$APK_STATE" >> "$GITHUB_OUTPUT"
+            fi
+            out="$(printf '%s' "$out" | tail -n 1 | tr -d '[:space:]')"
+            if [ "$out" = "__ABSENT__" ]; then
+              echo ""
+            elif [ "${#out}" -eq 64 ] && printf '%s' "$out" | grep -Eq '^[0-9a-f]+$'; then
+              echo "$out"
+            else
+              echo "::error::$label origin probe returned unexpected output: ${out:-<empty>}" >&2
+              exit 1
+            fi
+          }
+
+          TX1_SHA="$(origin_sha tx1 "$TX1_SSH_HOST" "$TX1_SSH_USER" "$TX1_SSH_PORT" "$TX1_SSH_KEY" /opt/wotb-tx/android-release)"
+          classify_prod_apk "$TX1_SHA" "$BUILD_SHA"
+          TX1_STATE="$APK_STATE"
+          if [ "$TX1_STATE" = "apk_conflict" ]; then
+            echo "::error::TX1 origin APK immutable conflict: sha=$TX1_SHA expected=$BUILD_SHA" >&2
+            exit 1
+          fi
+
+          TX2_SHA="$(origin_sha tx2 "$TX2_SSH_HOST" "$TX2_SSH_USER" "$TX2_SSH_PORT" "$TX2_SSH_KEY" /opt/wotb-tx2/runtime-content/android-release)"
+          classify_prod_apk "$TX2_SHA" "$BUILD_SHA"
+          TX2_STATE="$APK_STATE"
+          if [ "$TX2_STATE" = "apk_conflict" ]; then
+            echo "::error::TX2 origin APK immutable conflict: sha=$TX2_SHA expected=$BUILD_SHA" >&2
+            exit 1
+          fi
+
+          echo "TX1 origin: $TX1_STATE; TX2 origin: $TX2_STATE"
+          echo "tx1State=$TX1_STATE" >> "$GITHUB_OUTPUT"
+          echo "tx2State=$TX2_STATE" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK to TX (bind-mount 目录)
-        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx1State == 'apk_absent'
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
@@ -485,7 +530,7 @@ jobs:
           strip_components: 1
 
       - name: Ensure APK readable by nginx
-        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx1State == 'apk_absent'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.TX_VPS_HOST }}
@@ -495,7 +540,7 @@ jobs:
           script: chmod 644 /opt/wotb-tx/android-release/${{ steps.artifact.outputs.apkName }}
 
       - name: Upload APK to TX2 public frontend runtime
-        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx2State == 'apk_absent'
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
@@ -507,7 +552,7 @@ jobs:
           strip_components: 1
 
       - name: Ensure APK readable by TX2 nginx
-        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx2State == 'apk_absent'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.TX2_VPS_HOST }}
@@ -515,6 +560,64 @@ jobs:
           port: ${{ secrets.TX2_VPS_PORT }}
           key: ${{ secrets.TX2_VPS_SSH_KEY }}
           script: chmod 644 /opt/wotb-tx2/runtime-content/android-release/${{ steps.artifact.outputs.apkName }}
+
+      # 公网下载卸载 + 分发副本自愈：TX1 出口公网带宽只有 5Mbps 且被 15MB APK 下载打满，
+      # TX1 Caddy 已把 /download/android/*.apk 302 到清华云盘目录分享直链
+      # （/download/android/version.json 与 *.staging.json 不在重定向范围内，仍是源站服务）。
+      # 网盘只是**分发副本**，不参与 origin 的 immutable conflict 判定（那是上一步 SSH
+      # 直查 TX1/TX2 的职责）；因此本步骤在 absent（全新发布）与 equal（重跑/副本损坏）
+      # 两种 origin 状态下都执行：replace=1 覆盖同名文件本身就是修复动作，随后的
+      # "Verify production APK" 顺着 302 对公网 URL 做全链路 SHA 校验兜底。
+      - name: Upload APK to Tsinghua Cloud (public download offload)
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        shell: bash
+        env:
+          TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
+        run: |
+          set -euo pipefail
+          APK_NAME="${{ steps.artifact.outputs.apkName }}"
+          APK_FILE="release-staging/$APK_NAME"
+          EXPECTED_SHA="${{ steps.artifact.outputs.sha256 }}"
+          # 网盘约定（与 TX1 Caddyfile 的 redir 目标一一对应，改这边必须同步改 Caddy）：
+          # 仓库 = 个人资料库，目录 = /wotbtools-android/，
+          # 分享 = https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/（可下载、无密码、不过期）。
+          REPO_ID="a757b2fa-9bc9-42f9-bc90-d6a2c0a94ed0"
+          PARENT_DIR="/wotbtools-android"
+          SHARE_DIRECT="https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/$APK_NAME&dl=1"
+
+          # Seafile upload-link 返回 **JSON 编码的 URL 字符串**（Response(url)）：
+          # 命令替换会保留响应中的双引号，必须解析后取裸 URL 再交给 curl
+          ULINK_RAW="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+            "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/upload-link/?p=$PARENT_DIR&reuse=1")"
+          ULINK="$(printf '%s' "$ULINK_RAW" | jq -r '.')"
+          case "$ULINK" in
+            https://*) ;;
+            *) echo "::error::upload-link response is not a JSON URL string: $ULINK_RAW" >&2; exit 1;;
+          esac
+
+          # replace=1 = 覆盖同名文件（reuse=1 只是幂等令牌，**不是**覆盖开关——缺
+          # replace 时同名上传会被改名 `filename (1).apk`，固定下载路径拿不到新副本，
+          # 损坏副本无法自愈，评审 P2）。已知怪癖：这套清华云盘部署「上传成功也返回
+          # HTTP 400 Parent dir doesn't exist」——响应码不可作为成败依据；唯一权威
+          # 判定 = 从分享直链下载回来 SHA-256 一致（下方 5 次重试全败即 workflow
+          # 失败，fail-visible）。curl 层错误打诊断后同样交由下载校验裁决。
+          upload_rc=0
+          curl -sS -o "$RUNNER_TEMP/thu-upload-resp.txt" -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+            -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$APK_FILE" "$ULINK" || upload_rc=$?
+          echo "upload curl rc=$upload_rc; resp=$(head -c 200 "$RUNNER_TEMP/thu-upload-resp.txt" 2>/dev/null || echo '<none>')"
+
+          for attempt in 1 2 3 4 5; do
+            sleep 3
+            if curl -fsSL --connect-timeout 5 --max-time 120 \
+                -o "$RUNNER_TEMP/thu-offload.apk" "$SHARE_DIRECT" 2>/dev/null \
+                && [ "$(sha256sum "$RUNNER_TEMP/thu-offload.apk" | awk '{print $1}')" = "$EXPECTED_SHA" ]; then
+              echo "Tsinghua Cloud offload verified: $APK_NAME sha256=$EXPECTED_SHA"
+              exit 0
+            fi
+            echo "Tsinghua Cloud offload verify attempt $attempt/5 failed; retrying."
+          done
+          echo "::error::Tsinghua Cloud offload verification failed after 5 attempts; public /download/android/*.apk redirects would hit a missing drive object." >&2
+          exit 1
 
       - name: Verify production APK (HTTP 200 + non-empty + SHA matches)
         if: steps.preflight.outputs.releaseAction == 'publish'
