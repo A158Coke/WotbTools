@@ -1014,4 +1014,27 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     expect(followed).toEqual([])
     stop()
   })
+
+  it('炮弹在飞的帧不抛错且时间推进（折线推进 + 弧长回退尾巴）', async () => {
+    const frames = manualFrames()
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const { store, api } = createScene()
+    source.loadPlaybackData.mockResolvedValue(rosterData([
+      vehicle({ eid: 1, team: 1, max_hp: 1000, hp: [[42, 1000]] }),
+      vehicle({ eid: 2, team: 2, max_hp: 1000, hp: [[42, 1000]] }),
+    ], {
+      shots: [{ t_fire: 42.2, eid: 1, from: [10, 0, 10], to: [60, 0, 30], flight_secs: 1 }],
+    }))
+    await api.loadData({ kind: 'local', file: new File(['x'], 'tracer.wotbreplay') })
+    expect(store.playing).toBe(true)
+
+    const frame = (ms) => { now += ms; frames.at(-1)() }
+    // T 42 → ≈42.8：跨过 t_fire=42.2，每帧都走折线推进 + 弧长尾巴窗口（t1≈43.2 未到，
+    // 不混入弹着特效路径）
+    for (let i = 0; i < 8; i++) frame(100)
+    expect(store.time).toBeGreaterThan(42.5)
+    expect(store.time).toBeLessThan(43.2)
+  })
 })
+

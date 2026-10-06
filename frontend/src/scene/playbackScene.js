@@ -2160,7 +2160,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       pointAtArcInto(tr.points, tr.arcEnds, sHead - TRACER_LEN, _tpB);
       tr.mesh.position.copy(_tpA).add(_tpB).multiplyScalar(0.5);
       tr.mesh.lookAt(_tpA);
-      tr.mesh.scale.z = Math.max(0.001, Math.hypot(head.x - _tpB.x, head.y - _tpB.y, head.z - _tpB.z) / TRACER_LEN);
+      tr.mesh.scale.z = Math.max(0.001, Math.hypot(_tpA.x - _tpB.x, _tpA.y - _tpB.y, _tpA.z - _tpB.z) / TRACER_LEN);
       // 完成判定 = **时间到终点**（折线改造曾误留旧变量 `f >= 1`——f 已不存在，
       // 每帧 ReferenceError 中断整个 tick：不渲染、位姿/HUD 全停，且该炮线永远走不到
       // 移除分支 → 持续抛到暂停为止。这就是此前"播放中卡死、暂停即止"的根因。）
