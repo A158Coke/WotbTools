@@ -110,6 +110,23 @@ export function hpPresentationFor(health, destroyed = false) {
  *
  * 只写字段、不读第二个状态机：同一输入必须得到逐字段相同的结果（seek 确定性）。
  */
+/**
+ * reload 引用稳定性：呈现层（名册）只消费各弹位的 `state` 相位序列——resolver 产物里的
+ * `progress` 是连续量、每次投影必不同，若按整组内容比较或直接写代理，双名册会以 10Hz
+ * 恒定全量重渲染（PlaybackRoster.decorate 裸展开把 reload 登记为依赖），逐字段变更守卫
+ * 全部被架空。相位序列不变时复用旧数组引用，代理写入自然同值短路；相位跳变（开火 /
+ * 装满 / 阵亡清空）仍会通知。值语义不变（seek 确定性不受影响）；若未来要在名册重新
+ * 渲染 progress，应显式按需重投影，而不是依赖行上两次相位跳变之间的旧值。
+ */
+function sameShellStates(a, b) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]?.state !== b[i]?.state) return false;
+  }
+  return true;
+}
+
 export function applyRosterRuntime(row, { hp, maxHp, dead, followed, health = null, reload = null } = {}) {
   if (!row) return row
   if (hp !== undefined && row.hp !== hp) row.hp = hp
@@ -117,8 +134,7 @@ export function applyRosterRuntime(row, { hp, maxHp, dead, followed, health = nu
   if (dead !== undefined && row.dead !== dead) row.dead = dead
   if (followed !== undefined && row.followed !== followed) row.followed = followed
   if (health !== undefined && row.health !== health) row.health = health
-  // reload 用引用比较：resolver 每次返回新数组，逐字段比较得不偿失，且引用变即需重绘。
-  if (reload !== undefined && row.reload !== reload) row.reload = reload
+  if (reload !== undefined && !sameShellStates(row.reload, reload)) row.reload = reload
   return row
 }
 
