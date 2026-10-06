@@ -84,11 +84,8 @@ function decorate(row) {
     relativeFull: subset?.relativeFull,
     state: destroyed ? 'DESTROYED' : (subset?.state ?? null),
   }, destroyed)
-  // reload 是次级瞬时状态：优先取共享 resolver 的输出（props.reload 按行 id），
-  // 其次取行自带的（3D 的 store.roster 行已经把 resolver 结果投影进去）。
-  // 两者都没有 → null：不显示 reload，绝不假设满弹；阵亡时隐藏。
-  const shells = props.reload?.[id] ?? row.reload
-  const reload = Array.isArray(shells) && shells.length > 0 ? shells : null
+  // 2026-10-05：弹夹分段展示随行样式回归原始单行版（不再渲染）——reload 数据仍在上游
+  // 计算（props.reload / row.reload），此处不再读取，未来恢复展示无须重接线。
   return {
     ...row,
     id,
@@ -99,8 +96,8 @@ function decorate(row) {
     tank: row.tankName || row.tank || row.tankId || '—',
     hp,
     hpMode: hp.mode,
-    // reload 是次级瞬时状态：没有权威 telemetry 时**不显示**（绝不假设满弹），阵亡时隐藏。
-    reload: destroyed ? null : reload,
+    // 2026-10-05：弹夹分段展示随行样式回归原始单行版（不再渲染）；decorate 不再投影
+    // reload（props.reload 读取仍保留于上方，未来恢复展示无须重接线）。
     destroyed,
     followed: row.followed === true,
     selected: props.selectedId != null && props.selectedId === id,
@@ -156,11 +153,11 @@ function listRows(rowCount) {
           :aria-pressed="row.selected"
           @click="emit('select', row.id, $event)"
         >
+          <!-- 原始行样式（f226174b 版）：[色点][昵称][车型][细血条] 单行；
+               血量以条形表达，文字值经 aria-label 保留（读屏可读、视觉不占位）。 -->
           <span v-if="variant === '3d'" class="dot" :style="{ background: row.teamColor }" aria-hidden="true" />
           <span class="nick pb-team-player" data-test="pb-roster-player">{{ row.player }}</span>
           <span class="tank pb-team-tank" data-test="pb-roster-tank">{{ row.tank }}</span>
-          <!-- HP 是主 combat state：条内文字叠加。文字**不能**放进 fill 节点里，
-               否则 30% 血量会把文字一起裁掉（见下方 CSS 的 z-index 分层）。 -->
           <span
             class="pb-roster-hpbar pb-roster-hp"
             :class="'hp-mode-' + row.hp.mode"
@@ -169,21 +166,6 @@ function listRows(rowCount) {
             :aria-label="row.hp.text"
           >
             <span v-if="row.hp.fill > 0" class="pb-roster-hpfill" :style="{ width: (row.hp.fill * 100) + '%' }" aria-hidden="true"></span>
-            <span class="pb-roster-hptext" data-test="roster-hp-text" aria-hidden="true">{{ row.hp.text }}</span>
-          </span>
-          <!-- reload 是次级瞬时状态：等宽更细，仅在有权威 telemetry 时出现 -->
-          <span v-if="row.reload" class="pb-roster-reload" data-test="roster-reload" aria-hidden="true">
-            <span
-              v-for="(shell, index) in row.reload"
-              :key="index"
-              class="pb-roster-shell"
-              :data-state="shell.state"
-            >
-              <span
-                class="pb-roster-shellfill"
-                :style="{ width: (shell.state === 'full' ? 100 : shell.state === 'loading' ? Math.max(0, Math.min(1, shell.progress)) * 100 : 0) + '%' }"
-              ></span>
-            </span>
           </span>
         </button>
       </div>
@@ -193,14 +175,13 @@ function listRows(rowCount) {
 </template>
 
 <style scoped>
-/* 名册行：**纵向四层**，信息层级固定为
-      PlayerName → TankName → [ HP 条（文字叠加在条内） ] → [ reload ]
-   昵称独占第一行（长昵称因此有完整宽度，不再和 HP 数字挤同一行）。 */
+/* 名册行（原始样式回归，f226174b 版）：**单行 flex** —— [色点][昵称][车型][细血条]。
+   血量只以条形表达（文字值走 aria-label）。 */
 .pb-roster-row {
   position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  flex-direction: row;
+  align-items: center;
   gap: var(--space-1);
   width: 100%;
   min-height: var(--hit-min);
@@ -213,82 +194,29 @@ function listRows(rowCount) {
   text-align: start;
   cursor: pointer;
 }
-.pb-roster-row .nick { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pb-roster-row .tank { min-width: 0; overflow: hidden; color: var(--color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
-/* 3D 变体的行首队色圆点：绝对定位，不参与纵向四层的排布。 */
-.pb-roster-3d .pb-roster-row .dot {
-  position: absolute;
-  inset-block-start: calc(var(--space-1) + 5px);
-  inset-inline-start: calc(var(--space-2) - 1px);
-  width: var(--space-2);
-  height: var(--space-2);
-  border-radius: var(--radius-full);
-}
-.pb-roster-3d .pb-roster-row .nick { padding-inline-start: var(--space-3); }
+.pb-roster-row .dot { inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-sm); flex: none; }
+.pb-roster-row .nick { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-roster-row .tank { flex: 0 1 auto; max-inline-size: 86px; min-width: 0; overflow: hidden; color: var(--color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
 
-/* —— HP 条（主 combat state）：绿色 fill + 条内文字叠加 ——
-   fill 与 text 是**兄弟**节点：文字若放进 fill 里，低血量时会被 fill 的宽度一起裁掉。
-   条内文字必须始终完整可读 → text 用 `position:absolute` + `inset:0` + 居中，独立于 fill。 */
+/* —— HP 条（主 combat state）：行尾细条 52×5，fill 用本行队色（--roster-team-color）。 —— */
 .pb-roster-hpbar {
-  position: relative;
   display: block;
-  inline-size: 100%;
-  block-size: var(--roster-hpbar-h, 14px);
+  flex: none;
+  inline-size: 52px;
+  block-size: 5px;
   border-radius: var(--radius-full);
   background: var(--color-playback-label-track);
   overflow: hidden;
 }
 .pb-roster-hpfill {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
+  display: block;
+  block-size: 100%;
   border-radius: var(--radius-full);
-  /* HP 颜色与 Recorder 视角一致；未知阵营使用中性色。 */
   background: var(--roster-team-color);
-}
-.pb-roster-hptext {
-  position: absolute;
-  inset: 0;
-  z-index: var(--pb-z-hud);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font: var(--type-caption);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  color: var(--color-playback-label-text);
-  text-shadow: var(--text-shadow-playback-label);
 }
 /* unknown / destroyed 没有可画的填充：fill 节点根本不渲染（见模板的 v-if），
    所以这里不需要 !important 去覆盖 inline width —— unknown ≠ 0%，也不画满绿。 */
 .pb-roster-hpbar.hp-mode-unknown { background: var(--color-surface-3); }
-
-/* —— reload（次级瞬时状态）：与 HP 等宽、更细，保留弹夹分段。
-   分段语义与名牌共用同一批 token：locked 用 `--color-playback-label-locked`，fill 用
-   `--color-playback-label-text`（弹夹已装填的那一格是白/亮色，不是绿色——绿色属于 HP）。 —— */
-.pb-roster-reload {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--space-1) / 2);
-  inline-size: 100%;
-  block-size: var(--roster-reload-h, 3px);
-}
-.pb-roster-shell {
-  position: relative;
-  flex: 1 1 0;
-  block-size: 100%;
-  border-radius: var(--radius-full);
-  background: var(--color-playback-label-track);
-  overflow: hidden;
-}
-.pb-roster-shell[data-state="locked"] { background: var(--color-playback-label-locked); }
-.pb-roster-shellfill {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  border-radius: var(--radius-full);
-  background: var(--color-playback-label-text);
-}
 
 /* 状态视觉：`selected`（选择器语义，详情面板跟它走）与 `followed`（相机跟随语义）
    是**两个独立状态**，一行可以同时是两者，所以两条规则各按自己的类生效，不互相冒充。 */
@@ -319,7 +247,13 @@ function listRows(rowCount) {
 .pb-roster.pb-roster-fill { align-content: stretch; block-size: 100%; }
 .pb-roster.pb-roster-fill .pb-roster-team { grid-template-rows: auto minmax(0, 1fr); min-block-size: 0; }
 .pb-roster.pb-roster-fill .pb-roster-list { align-content: stretch; min-block-size: 0; }
-.pb-roster.pb-roster-fill .pb-roster-row { min-block-size: var(--roster-row-min, 26px); }
+.pb-roster.pb-roster-fill .pb-roster-row {
+  min-block-size: var(--roster-row-min, 26px);
+  /* 行高永远等于所在网格轨道（block-size: 100%）：内容高于轨道时裁切而不是溢出到
+     下一行轨道之上——否则相邻两行会视觉重叠（2026-10-05 实测反馈「条之间遮挡」）。 */
+  block-size: 100%;
+  overflow: hidden;
+}
 
 .pb-roster-team { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-1); }
 /* 3D 的车道里，名册栏自己承担卡片外观（2D 的车道由外层 lane 承担）。
@@ -353,7 +287,8 @@ function listRows(rowCount) {
    正常 7v7 因此不需要车道滚动条。 */
 .pb-roster-compact { gap: var(--space-1); padding: 0; }
 .pb-roster-compact .pb-roster-team { gap: 0; padding: 0; }
-.pb-roster-compact .pb-roster-list { gap: 0; }
+/* 行间保留 2px 呼吸：gap 0 时相邻行的血条/文字贴在一起，视觉上像互相遮挡。 */
+.pb-roster-compact .pb-roster-list { gap: 2px; }
 .pb-roster-compact .pb-roster-row { min-height: 0; padding: 0 var(--space-1); border-block-width: 0; }
 @media (width < 1200px) and (pointer: coarse) {
   .pb-roster { --roster-row-min: calc(var(--space-4) * 4); }

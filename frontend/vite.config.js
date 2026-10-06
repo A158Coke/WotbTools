@@ -317,6 +317,10 @@ export default defineConfig(({ command, mode }) => {
         } : {}),
       }
     },
+    // Worker 产物用 **ES module** 格式：两个 worker（parse.worker / canonical.worker）都以
+    // `new Worker(url, { type: 'module' })` 构造，且 canonical worker 的依赖图含代码分割
+    // （动态 import），Rollup 的默认 iife 会直接构建失败。
+    worker: { format: 'es' },
     publicDir: '../common/assets',
     build: {
       outDir,

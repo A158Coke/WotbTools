@@ -150,6 +150,14 @@ async function start(wrapper) {
   await flush()
 }
 
+/** 打开共享详情：**场景点选**路径（名单点击已改为「跟随」，不再开详情）。
+ *  取最近一次 initPlayback 注入的 onVehicleSelect（生产契约同款入口）。 */
+async function openDetailsViaScene(eid) {
+  const onVehicleSelect = playback.init.mock.calls.at(-1)[3].onVehicleSelect
+  onVehicleSelect(eid)
+  await flush()
+}
+
 function mountPane(props = {}) {
   const states = new WeakMap()
   const getState = file => {
@@ -216,8 +224,7 @@ describe('Replay3DPane', () => {
     store.startTime = 0
     store.roster = { team1: [{ eid: 7, accountId: 1001, tankId: 1, team: 1, nick: 'Scene name', tank: 'Scene tank', hp: 999, maxHp: 999 }], team2: [], unknown: [] }
     await flush()
-    await wrapper.get('.team-lane .pl').trigger('click')
-    await flush()
+    await openDetailsViaScene(7)
     const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
     expect(details.props('selectedTrack').accountId).toBe(1001)
     expect(details.props('currentTime')).toBe(12)
@@ -256,7 +263,7 @@ describe('Replay3DPane', () => {
     playback.api.store.time = 10
     playback.api.store.roster = { team1: [{ eid: 77, accountId: 1001, team: 1, nick: 'New battle', tank: 'Maus' }], team2: [], unknown: [] }
     await flush()
-    await wrapper.get('.team-lane .pl').trigger('click')
+    await openDetailsViaScene(77)
     const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
     expect(details.props('selectedTrack').playerName).toBe('New battle')
     finishOld({ dataset: makeBattlePlaybackDataset(), clock: { startRaw: 42 }, reloadTelemetry: null })
@@ -278,7 +285,7 @@ describe('Replay3DPane', () => {
     store.time = 54
     store.roster = { team1: [{ eid: 7, accountId: 1001, team: 1, nick: 'Scene player', tank: 'Maus', hp: 100, maxHp: 1500 }], team2: [], unknown: [] }
     await flush()
-    await wrapper.get('.team-lane .pl').trigger('click')
+    await openDetailsViaScene(7)
     const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
     expect(details.props('selectedState').vehicle.playerName).toBe('Scene player')
     expect(details.props('health')).toEqual({ currentHp: 100, maxHp: 1500 })
@@ -314,7 +321,7 @@ describe('Replay3DPane', () => {
     playback.api.store.playbackSession = shared
     playback.api.store.roster = { team1: [{ eid: 7, accountId: 1001, team: 1, nick: 'A', tank: 'Maus' }], team2: [], unknown: [] }
     await flush()
-    await wrapper.get('.team-lane .pl').trigger('click')
+    await openDetailsViaScene(7)
     const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
     expect(details.props('selectedTrack')).toBeNull()
     await wrapper.setProps({ active: false })
@@ -332,7 +339,7 @@ describe('Replay3DPane', () => {
     await start(wrapper)
     playback.api.store.roster = { team1: [{ eid: 7, accountId: 1001, team: 1, nick: 'A', tank: 'Maus', hp: 100, maxHp: 100 }], team2: [], unknown: [] }
     await flush()
-    await wrapper.get('.team-lane .pl').trigger('click')
+    await openDetailsViaScene(7)
     const details = wrapper.getComponent({ name: 'VehicleDetailsPanel' })
     expect(details.props('selCurStats')).toBeNull()
     expect(details.props('selectedTrack')).toBeNull()
@@ -579,7 +586,7 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
-  it('名册每行显示 HP 数值与百分比（血条不是唯一信息），随 store 投影变化，阵亡 = 0 / 0%', async () => {
+  it('名册行 HP 走 aria-label（行样式回归原始单行版），随 store 投影变化，阵亡 = 0 / max', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     const { store } = playback.api
@@ -593,7 +600,7 @@ describe('Replay3DPane', () => {
       unknown: [],
     }
     await nextTick()
-    const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp-text"]`).map(n => n.text())
+    const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp"]`).map(n => n.attributes('aria-label'))
     // exact 呈现：条内只写 `current / max`，不再重复百分比后缀
     expect(nums('.team1')).toEqual(['1950 / 1950', '824 / 1950'])
     // 阵亡行读作 `0 / max`（有量程时信息更完整），不保留“最后一个非零 HP”
@@ -806,9 +813,10 @@ describe('Replay3DPane', () => {
       compactStore.hasData = true
       compactStore.roster = roster
       await nextTick()
+      // 镜头挡位**直接陈列**在控制条（2026-10-05：从 Gear 面板移出）
+      expect(compactPane.find('[data-testid="replay3d-camera"]').exists()).toBe(true)
       await compactPane.get('[data-testid="display-toggle"]').trigger('click')
-      // Both forms disclose camera and presentation preferences from Gear.
-      expect(compactPane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(true)
+      expect(compactPane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(false)
       // 名册没有临时面入口：唯一开关是 disp-roster 呈现偏好
       expect(compactPane.find('[data-testid="disp-roster"]').exists()).toBe(true)
       compactPane.unmount()
@@ -820,8 +828,8 @@ describe('Replay3DPane', () => {
       wideStore.roster = roster
       await nextTick()
       await widePane.get('[data-testid="display-toggle"]').trigger('click')
-      // Wide form uses the same secondary camera surface.
-      expect(widePane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(true)
+      // Wide form 同为直接陈列（两档同一入口）
+      expect(widePane.find('[data-testid="replay3d-camera"]').exists()).toBe(true)
       expect(widePane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(false)
       expect(widePane.find('[data-testid="roster-toggle"]').exists()).toBe(false)
       widePane.unmount()
@@ -854,20 +862,17 @@ describe('Replay3DPane', () => {
       layout.compact = false
     })
 
-    it('紧凑档：相机模式在面板里切换，走同一个 setCam（不新建移动端相机状态）', async () => {
+    it('紧凑档：相机模式在控制条直接切换，走同一个 setCam（不新建移动端相机状态）', async () => {
       mockWebGL('webgl2')
       layout.compact = true
       const wrapper = mountPane()
-      await start(wrapper)
-      const { store } = playback.api
-      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+      const store = playback.api.store
+      store.hasData = true
+      store.roster = roster
       await nextTick()
-      const options = wrapper.get('[data-testid="display-panel"] .dp-camera').findAll('button')
-      expect(options.length).toBeGreaterThan(1)
-      await options[1].trigger('click')
-      expect(playback.api.setCam).toHaveBeenCalled()
-      // 场景仍是同一个实例（切相机 ≠ 重建）
-      expect(store.speed).toBe(1)
+      // 折叠状态也可切换（不依赖 Display 面板）
+      await wrapper.get('[data-testid="replay3d-camera"] [data-value="top"]').trigger('click')
+      expect(playback.api.setCam).toHaveBeenLastCalledWith('top')
       wrapper.unmount()
       layout.compact = false
     })
@@ -1092,7 +1097,7 @@ describe('Replay3DPane', () => {
       expect(src).not.toMatch(/\.roster-surface\.transient|rosterTransient|rosterConstrained/)
     })
 
-    it('点一行只选中并显示共享详情，相机跟随保持独立', async () => {
+    it('点一行 = 跟随该玩家坦克 + 高亮，不再打开详情窗（2026-10-05 需求）', async () => {
       mockWebGL('webgl2')
       const wrapper = mountPane()
       const api = playback.api
@@ -1101,20 +1106,18 @@ describe('Replay3DPane', () => {
       await nextTick()
       const rows = wrapper.findAll('.team-lane .pl')
       expect(rows.length).toBe(3)
-      // 详情面初始不存在
-      expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
       await rows[0].trigger('click')
-      // 跟随（相机动作）
-      expect(api.setFollow).not.toHaveBeenCalled()
-      expect(api.setCam).not.toHaveBeenCalled()
-      // 选中（行状态）
+      // 跟随（相机动作）：setFollow 独占，由内核同时切 follow 档
+      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
+      // 选中（行状态高亮）
       expect(rows[0].classes()).toContain('selected')
-      // 详情面出现且内容对应该行
-      const details = wrapper.get('[data-testid="replay3d-details"]')
-      expect(details.get('[data-test="pb-sb-tank"]').text()).toBe('Kranvagn')
-      expect(details.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
-      expect(details.get('[data-test="pb-sb-hp"]').text()).toContain('1800')
-      expect(details.find('[data-test="pb-sb-dealt"]').exists()).toBe(false)
+      // 详情窗**不**打开（原绑定已删除）
+      expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
+      // 再点另一行（Enemy, eid=21）：跟随目标切换（重新查询行——上一行点击触发了重渲染）
+      const enemyRow = wrapper.findAll('.team-lane .pl').find((r) => r.text().includes('Enemy'))
+      await enemyRow.trigger('click')
+      expect(api.setFollow).toHaveBeenLastCalledWith(21)
+      expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
       wrapper.unmount()
     })
 
@@ -1130,20 +1133,25 @@ describe('Replay3DPane', () => {
       await nextTick()
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       expect(api.setFollow).not.toHaveBeenCalled()
-      await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+      // 镜头挡位直接陈列在控制条（2026-10-05：从 Display 面板移出），不经菜单
+      expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
       for (const mode of ['top', 'free']) {
-        await wrapper.get(`[data-testid="display-panel"] [data-value="${mode}"]`).trigger('click')
+        await wrapper.get(`[data-testid="replay3d-camera"] [data-value="${mode}"]`).trigger('click')
         expect(api.setCam).toHaveBeenLastCalledWith(mode)
         api.store.cam = mode
         await nextTick()
         expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       }
-      await wrapper.get('[data-testid="display-panel"] [data-value="follow"]').trigger('click')
+      await wrapper.get('[data-testid="replay3d-camera"] [data-value="follow"]').trigger('click')
       expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
       onVehicleSelect(21)
       await nextTick()
       expect(api.setFollow).toHaveBeenCalledTimes(1)
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
+      // 点场景空处（eid=null）→ 详情窗隐藏（2026-10-05 需求）
+      onVehicleSelect(null)
+      await nextTick()
+      expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
       wrapper.unmount()
     })
 
@@ -1190,7 +1198,7 @@ describe('Replay3DPane', () => {
       const row = wrapper.get('[data-testid="replay3d-lane-left"] .pl')
       expect(wrapper.get('[data-testid="replay3d-lane-left"] [data-test="pb-shell-roster"]').classes()).toContain('pb-roster-compact')
       expect(row.get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
-      expect(row.get('[data-test="roster-hp-text"]').text()).toBe('1800 / 1950')
+      expect(row.get('[data-test="roster-hp"]').attributes('aria-label')).toBe('1800 / 1950')
       // 传输控件照常存在（名册与控件不互斥）
       expect(wrapper.find('.controls').exists()).toBe(true)
       wrapper.unmount()
@@ -1215,12 +1223,12 @@ describe('Replay3DPane', () => {
       const rows = wrapper.findAll('.team-lane .pl')
       expect(rows).toHaveLength(3)
       expect(rows[0].get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
-      expect(rows[0].get('[data-test="roster-hp-text"]').text()).toBe('1800 / 1950')
+      expect(rows[0].get('[data-test="roster-hp"]').attributes('aria-label')).toBe('1800 / 1950')
       // 竖屏名册不是紧凑密度（纵向空间够用），也不做纵向铺满
       expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-compact')
       expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-fill')
-      // 详情是同一个共享组件的 inline 呈现
-      await rows[0].trigger('click')
+      // 详情是同一个共享组件的 inline 呈现（经**场景点选**打开；名册点击=跟随）
+      await openDetailsViaScene(roster.team1[0].eid)
       const details = wrapper.get('[data-testid="replay3d-details"]')
       expect(details.attributes('data-presentation')).toBe('inline')
       expect(details.find('[data-test="pb-sb-drag"]').exists()).toBe(false)
@@ -1265,25 +1273,24 @@ describe('Replay3DPane', () => {
       api.store.time = 30
       await nextTick()
       const rowOf = (nick) => wrapper.findAll('.team-lane .pl').find((r) => r.text().includes(nick))
-      await rowOf('Alpha').trigger('click')
+      await openDetailsViaScene(11)
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       await wrapper.get('[data-test="pb-sb-close"]').trigger('click')
       expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
-      expect(rowOf('Alpha').classes()).toContain('selected')
       expect(api.setFollow).not.toHaveBeenCalled()
       expect(api.setCam).not.toHaveBeenCalled()
       expect(api.store.time).toBe(30)
       // 名册与详情互不影响：两条车道一直都在
       expect(wrapper.find('[data-testid="replay3d-lane-right"]').exists()).toBe(true)
-      await rowOf('Alpha').trigger('click')
+      await openDetailsViaScene(11)
       expect(wrapper.findAll('[data-testid="replay3d-details"]')).toHaveLength(1)
-      // 点 Team 2：同一个窗换内容，Team 2 车道仍在
-      await rowOf('Enemy').trigger('click')
+      // 场景点另一台（Team 2）：同一个窗换内容，Team 2 车道仍在
+      await openDetailsViaScene(21)
       expect(wrapper.findAll('[data-testid="replay3d-details"]')).toHaveLength(1)
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
       expect(wrapper.find('[data-testid="replay3d-lane-right"]').exists()).toBe(true)
-      expect(rowOf('Enemy').classes()).toContain('selected')
       expect(rowOf('Enemy').classes()).toContain('followed')
+      // 场景点选不改名册高亮（selected 只由名册点击设置）
       expect(rowOf('Alpha').classes()).not.toContain('selected')
       wrapper.unmount()
     })
@@ -1314,8 +1321,7 @@ describe('Replay3DPane', () => {
       api.store.hasData = true
       api.store.roster = roster
       await nextTick()
-      const rows = wrapper.findAll('.team-lane .pl')
-      await rows[1].trigger('click')   // Bravo（dead）
+      await openDetailsViaScene(roster.team1[1].eid)   // Bravo（dead，eid=12）
       expect(wrapper.get('[data-test="pb-sb-state"]').text()).toBe('recon.map.playback.state_destroyed')
       await wrapper.get('[data-test="pb-sb-close"]').trigger('click')
       expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
@@ -1677,11 +1683,10 @@ describe('Replay3DPane 待开播画质闸门', () => {
     expect(quality.findAll('button').map(b => b.text()))
       .toEqual(['agentReplay.q_low', 'agentReplay.q_mid', 'agentReplay.q_high'])
     expect(quality.text()).not.toContain('Low')
-    // 相机档位同理（在就绪态里：工具栏只在 HUD 有数据时渲染）
+    // 相机档位同理（就绪态直接陈列在控制条；2026-10-05 从 Display 面板移出）
     playback.api.store.hasData = true
     await nextTick()
-    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
-    const cams = wrapper.get('[data-testid="display-panel"] [role="radiogroup"]')
+    const cams = wrapper.get('[data-testid="replay3d-camera"]')
     expect(cams.findAll('button').map(b => b.attributes('data-value'))).toEqual(['free', 'top', 'follow'])
     expect(cams.text()).toContain('agentReplay.cam_free')
     wrapper.unmount()

@@ -17,6 +17,7 @@
 // 单一实现）：3D 路径此前只做 JSON.parse，错版 WASM 可静默载入 v1 数据（缺
 // supremacy_bases/points），版本门禁形同虚设。
 import { loadAgentWasmModule, validateAgentPlayback } from '../api/agent-replay-facets.js'
+import { buildPitchLimits } from './pitchLimits.js'
 
 /**
  * 本地通道（唯一通道）：File/Blob → 浏览器文件接口 → WASM parsePlayback →
@@ -202,7 +203,22 @@ export async function loadFromLocalFile(fileObject, signal) {
     playbackJsonCache.delete(cacheKey); playbackJsonCache.set(cacheKey, cachedJson);   // LRU 触碰
     return enrichPlayback(validateAgentPlayback(JSON.parse(cachedJson)))
   }
-  const json = await parsePlaybackJsonOffThread(bytes, signal)
+  let json = await parsePlaybackJsonOffThread(bytes, signal)
+  // 俯仰锚定两阶段：首遍拿到名册（nickname + tank_id）→ 从 tank/{id}.json 构建
+  // GunPitchRange 表 → 带锚定重解析（第二遍 ~95ms）。缺省空表时 gun_pitch 走
+  // hull_pitch 兜底——坡上炮管俯仰远超极限的根因。tank 数据全部缺失时跳过重解析。
+  try {
+    const first = JSON.parse(json)
+    const limits = await buildPitchLimits(first.vehicles)
+    if (Object.keys(limits).length) {
+      const limitsJson = JSON.stringify(limits)
+      json = await parsePlaybackJsonOffThread(bytes, signal, limitsJson)
+    }
+  } catch (err) {
+    // 会话取消必须原样上抛（调用方按 AbortError 判定归属）——不得吞成"保持首遍结果"。
+    // 其余失败（锚定构建/重解析异常）：保持首遍结果（gun_pitch 兜底仍可用）。
+    if (err?.name === 'AbortError') throw err
+  }
   if (cacheKey !== null) {
     playbackJsonCache.set(cacheKey, json)
     if (playbackJsonCache.size > PLAYBACK_JSON_CACHE_MAX) {
@@ -213,7 +229,7 @@ export async function loadFromLocalFile(fileObject, signal) {
   // 在此抛出，而不是把缺字段的 v1 数据交给渲染层）
   return enrichPlayback(validateAgentPlayback(JSON.parse(json)))
 }
-async function parsePlaybackJsonOffThread(bytes, signal) {
+async function parsePlaybackJsonOffThread(bytes, signal, limitsJson) {
   if (signal?.aborted) throw playbackParseAbortError()
   const worker = parseWorkerInstance();
   if (worker) {
@@ -237,7 +253,7 @@ async function parsePlaybackJsonOffThread(bytes, signal) {
         };
         signal?.addEventListener('abort', pending.onAbort, { once: true });
         // 不转移所有权：失败回退时主线程仍需这份字节（结构化克隆 1–2MB 成本可忽略）
-        worker.postMessage({ id, bytes: playbackParsePayload(bytes) });
+        worker.postMessage({ id, bytes: playbackParsePayload(bytes), limitsJson });
       });
     } catch (err) {
       if (!parseWorker) {
@@ -254,7 +270,7 @@ async function parsePlaybackJsonOffThread(bytes, signal) {
   if (typeof mod.parsePlayback !== 'function') {
     throw new Error('agent wasm: parsePlayback 缺失（产物版本早于契约 v2）')
   }
-  return mod.parsePlayback(bytes);
+  return mod.parsePlayback(bytes, undefined, limitsJson || undefined);
 }
 
 /** 展示名富化（本地通道与缓存命中路径共用） */
@@ -347,6 +363,8 @@ export function mapStaticUrl(kind, layer, mapKey) {
     case 'terrain': return f('terrain.u16.bin')
     case 'terrain-meta': return f('terrain.json')
     case 'scenery': return f('scenery.glb')
+    // 可破坏物清单（逆向总集 §5.4 的 (cell,slot) 联表；缺失时 3D 侧静默禁用该特性）
+    case 'destructibles': return f('destructibles.json')
     case 'groundmeta': return f('ground.layers.json')
     case 'groundtex': return f(`ground/${layer}.webp`)
   }

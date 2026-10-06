@@ -56,7 +56,9 @@ describe('useReplayWorkspace', () => {
     await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
     expect(parser.raw).toHaveBeenCalledTimes(1)
     expect(parser.project).toHaveBeenCalledTimes(1)
-    expect(parser.project).toHaveBeenCalledWith(file, { playback: raw })
+    // 规范投影现在经 canonicalRuntime 线程外入口（Worker 优先）：测试环境无 Worker →
+    // 回退主线程解析，入参是**原始字节**（Worker 需要能独立解析，故不再复用 scene 结果）
+    expect(parser.project.mock.calls[0][0]).toBeInstanceOf(Uint8Array)
     finish({ dataset: { vehicles: [] }, clock: { startRaw: 42 }, reloadTelemetry: null })
     expect(await canonical).toBe(state.canonical)
     expect(state.canonicalState).toBe('ready')
