@@ -1137,7 +1137,7 @@ jobs:
           echo "::error::wotbtools-android is not a usable Keycloak client (client missing or its redirect URI is not registered). Refusing to publish version.json: the mandatory update must not point clients at an auth path that is not live." >&2
           exit 1
 
-      - name: Verify production API and asset exact-origin CORS readiness
+      - name: Verify production API CORS and asset storage readiness
         if: steps.pubpreflight.outputs.publishAction == 'publish'
         shell: bash
         run: |
@@ -1145,7 +1145,6 @@ jobs:
           STAGING="$RUNNER_TEMP/staging.json"
           ORIGIN="$(jq -r '.runtimeOrigin' "$STAGING")"
           API="$(jq -r '.apiOrigin' "$STAGING")"
-          ASSETS="$(jq -r '.assetOrigin' "$STAGING")"
           # Stable authenticated profile route; OPTIONS never needs a token.
           STATUS="$(curl -sS --connect-timeout 5 --max-time 20 -o /dev/null \
             -D "$RUNNER_TEMP/api-preflight.headers" -w '%{http_code}' -X OPTIONS \
@@ -1161,11 +1160,18 @@ jobs:
             -D "$RUNNER_TEMP/api-read.headers" -w '%{http_code}' -H "Origin: $ORIGIN" "$API/api/users/profile")"
           python3 scripts/android-release/android_contract.py cors \
             --headers "$RUNNER_TEMP/api-read.headers" --status "$STATUS" --expected-status 401 --origin "$ORIGIN"
-          # The reviewed fixed-upstream gateway is a real Android 3D dependency.
+          # Android 3D 资产由 Native AgentAssetProxy 直连对象存储（原生代码不受 CORS
+          # 约束；staging.json 的 assetOrigin 是本机路径 /agent-assets，不可拼 URL）。
+          # 探测对象因此是对象存储的匿名可读性：/index.json 必须 200 且为 JSON object。
+          # origin 字面量与 android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt
+          # 的 COS_BASE 一致，换 origin 时必须两处同步（见 docs/operations/agent-asset-origin.md）。
+          COS_BASE="https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
           STATUS="$(curl -sS --connect-timeout 5 --max-time 20 -o "$RUNNER_TEMP/asset-index.json" \
-            -D "$RUNNER_TEMP/asset.headers" -w '%{http_code}' -H "Origin: $ORIGIN" "$ASSETS/index.json")"
-          python3 scripts/android-release/android_contract.py cors \
-            --headers "$RUNNER_TEMP/asset.headers" --status "$STATUS" --origin "$ORIGIN"
+            -w '%{http_code}' "$COS_BASE/index.json")"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::object storage asset origin is not anonymously readable (HTTP $STATUS): the native asset proxy cannot feed 3D assets." >&2
+            exit 1
+          fi
           jq -e 'type == "object"' "$RUNNER_TEMP/asset-index.json" >/dev/null
 
       - name: Write version.json (commit point, LAST)
