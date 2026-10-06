@@ -221,7 +221,6 @@ async function decode(file) {
       try {
         enrichShotsFromRoster(parsedShots, playback.vehicles)
         applyRosterNames(parsedShots, playback.vehicles)
-        await annotateMountedConfigs(parsedShots, playback)
       } catch (e) {
         console.warn('roster enrichment skipped:', e)
       }
@@ -232,8 +231,17 @@ async function decode(file) {
       }
     }
     if (seq !== parseSeq) return
+    // 先发布本地解析结果（P1 评审）：搭载配置注解是**可选增强**，其资产请求无超时
+    // 语义——await 它会让已完成的本地解析被远端资产的响应速度卡住。异步补做：
+    // 闭包持有本文件的 parsedShots，就地注入；文件切换后旧数组不再被 shots.value
+    // 引用，迟到注入无副作用（shooter_config_idx 消费点也有未注解回退链）。
     shots.value = parsedShots
     shooter.value = 'all'
+    if (playback) {
+      annotateMountedConfigs(parsedShots, playback).catch((e) => {
+        console.warn('mounted-config annotation skipped:', e)
+      })
+    }
   } catch (e) {
     if (seq !== parseSeq) return
     shots.value = []
@@ -527,6 +535,13 @@ async function resolveShellIdx(s) {
   try {
     const data = await fetchLocalShotTankData(s.shooter_tank_id)
     const cfgs = data.configs || []
+    // 优先在实际搭载配置（annotateMountedConfigs 注入的 shooter_config_idx）内匹配：
+    // 同一弹种存在于多门炮的弹表时，全配置倒序扫描可能命中未搭载炮的配置——
+    // scfg 与弹下标必须与射手实际配置同源，否则查看器按 A 配置装配射手却加载 B 弹表
+    const pinned = Number.isInteger(s.shooter_config_idx) && cfgs[s.shooter_config_idx]
+      ? (cfgs[s.shooter_config_idx].shell_global_ids || []).indexOf(s.shell_id)
+      : -1
+    if (pinned >= 0) return { cfg: s.shooter_config_idx, idx: pinned }
     for (let ci = cfgs.length - 1; ci >= 0; ci--) {
       const idx = (cfgs[ci].shell_global_ids || []).indexOf(s.shell_id)
       if (idx >= 0) return { cfg: ci, idx }

@@ -34,11 +34,19 @@ vi.mock('../api/agent-replay-facets.js', async (importOriginal) => {
   }
 })
 
+vi.mock('../scene/assetProvider.js', () => ({
+  assetProvider: {
+    configured: () => false,
+    json: vi.fn(async () => { throw new Error('asset source unconfigured') }),
+    bytes: async () => { throw new Error('asset source unconfigured') },
+  },
+}))
+
 vi.mock('../scene/agentData.js', () => ({
   tankImageUrl: (id) => `img:${id}`,
   storeShotsForViewer: vi.fn(),
   fetchTankData: vi.fn(async () => ({ configs: [] })),
-  fetchLocalShotTankData: async () => ({ configs: [] }),
+  fetchLocalShotTankData: vi.fn(async () => ({ configs: [] })),
 }))
 
 /** happy-dom 没有 ResizeObserver：记录回调以便按容器宽度驱动 Master–Detail 分档 */
@@ -52,7 +60,8 @@ class ResizeObserverStub {
 globalThis.ResizeObserver = ResizeObserverStub
 
 import ReplayShotsPane from './ReplayShotsPane.vue'
-import { fetchTankData, storeShotsForViewer } from '../scene/agentData.js'
+import { assetProvider } from '../scene/assetProvider.js'
+import { fetchLocalShotTankData, fetchTankData, storeShotsForViewer } from '../scene/agentData.js'
 
 function mkFile(name = 'cn.wotbreplay') {
   return new File([new Uint8Array([1, 2, 3, 4])], name)
@@ -71,6 +80,7 @@ async function mountPane(props = {}) {
   if (shouldDecode) {
     await vi.waitFor(() => {
       if (!wrapper.text().includes('agentShots.no_shots') && wrapper.findAll('.shot-row').length === 0) {
+        console.log('[dbg-full]', JSON.stringify(wrapper.text().slice(0, 300)))
         throw new Error('still parsing')
       }
     }, { timeout: 3000 })
@@ -656,4 +666,29 @@ it('bundled shooting inputs preserve config identity and all global shells witho
     await expect(fetchLocalShotTankData('not-a-tank')).rejects.toThrow('Local shooting inputs unavailable')
     expect(noNetwork).not.toHaveBeenCalled()
   } finally { vi.unstubAllGlobals() }
+})
+
+describe('ReplayShotsPane 搭载配置注解（评审 P1 回归）', () => {
+  it('远端资产请求挂起不得阻塞本地列表发布（WASM 解析完成即出结果）', async () => {
+    // annotateMountedConfigs 的资产请求保持挂起（模拟资产服务卡住）：
+    // buildPitchLimits 走 agentData 层不受影响，decode 的前置步骤全部正常完成
+    assetProvider.json.mockImplementationOnce(() => new Promise(() => {}))
+    parseAgentPlaybackFromBytes.mockResolvedValue({
+      vehicles: [{ eid: 7, nickname: 'A', team: 1, tank_id: 3649, is_author: true, shell_ids: [5914], max_hp: 100 }],
+    })
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [{
+        index: 1, time_s: 5, damage: 100, target_name: '林肝美', is_kill: false,
+        shooter_eid: 7, target_eid: 101, hit_flags: 0, game_hit_result: 255, shell_id: 5914,
+      }],
+      author_path: 'ok',
+      author_eid: 7,
+      others: { ...baseOthers, total_launches: 1 },
+    })
+    const wrapper = await mountPane()
+    // 配置注解仍挂起，但本地射击列表必须已发布（有行 = 不被远端资产卡在解析中）
+    expect(wrapper.find('[data-testid="shots-no-shots"]').exists()).toBe(false)
+    expect(wrapper.findAll('.shot-row')).toHaveLength(1)
+    wrapper.unmount()
+  })
 })
