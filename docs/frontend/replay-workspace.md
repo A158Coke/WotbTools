@@ -82,7 +82,7 @@ Replay Workspace contains five publicly discoverable capabilities. Anonymous use
 
 `ReplayCapabilityAuthGate.vue` 复用 `EmptyState` 与登录按钮：匿名状态不挂载 `Replay3DPane` / `ReplayShotsPane`，不启动解析、场景或远端资产加载；登录分别以 `agent-replay` / `agent-shots` 为返回目的地。登出卸载受限 pane，但不清空 Workspace 的 replay selection/session。AI 保留自己的 projection/error lifecycle，匿名不构建投影，登录返回 `ai-review`。
 
-装甲查看器 `agent-armor` 保持独立页面。普通登录用户可从 shots 选择命中弹并打开复现场景；匿名深链由 `ViewHost` 显示登录门禁，不加载装甲页面。登录返回保留当前完整 scene query（`tank/shooter/config/scfg/shell/shot/world/heatmap/az/h/d/…`）。登录门禁不会主动清空 selection；浏览器 OIDC 整页跳转仍受既有 session 持久化能力限制，不新增 replay 字节持久化。
+装甲查看器 `agent-armor` 保持独立页面，且**匿名可用**：登录用户可从 shots 选择命中弹并打开复现场景；普通用户从 Tankopedia 详情入口卡（对全员开放）进入；匿名深链由 `ViewHost` 直接挂载装甲页面，不做登录拦截。场景 query（`tank/shooter/config/scfg/shell/shot/world/heatmap/az/h/d/…`）原样保留。登录门禁不会主动清空 selection；浏览器 OIDC 整页跳转仍受既有 session 持久化能力限制，不新增 replay 字节持久化。
 
 ## Local-first capability boundary
 
@@ -101,7 +101,7 @@ Android 与 Web 共用工作台、Router 和唯一 `useReplaySession`。外部 r
 
 断网不清空 replay、Result、Rating、native cached session 或本地检视。3D 断网销毁当前场景以作废在途 asset session（沿用场景 generation，不创建另一套 cancellation）；selection 仍属于工作台。用户停留在阻断的 3D 时，重连只恢复 controller 与待开播面板一次；沿用 main 的画质先选、明确 Start 后才解析/拉资产，后台重连不新建场景。AI 流沿用既有 AbortController 取消，断网取消不再发送 cancel HTTP；重连只恢复能力，不提交复盘。HoF 只在 availability 从不可用恢复可用时加载当前榜单一次，业务错误仍由明确重试处理。
 
-`common/shot-tank-data.json` 从 reviewed Agent asset plane 的 `data/tank_cache.json` 与 `tank/{id}.json` 提取 config 原始顺序、`pitch_limits`、`shell_global_ids`；不包含名称/GLB/纹理或第二份 tankopedia。更新：`python common/python/update_shot_tank_data.py --asset-base <reviewed HTTPS asset origin>`。缺 source entry 更新失败，不覆盖现有快照；缓存与全部 tank 原始输入有 SHA-256 provenance。当前 735 车型的 2075 global shell IDs 全部由同包弹表覆盖。未知车型如实保留 pitch 降级，不联网补齐。装甲查看器跳转属于联网 3D 动作，单独门控。
+`common/shot-tank-data.json` 从 reviewed Agent asset plane 的 `data/tank_cache.json` 与 `tank/{id}.json` 提取 config 原始顺序、`pitch_limits`、`shell_global_ids`；不包含名称/GLB/纹理或第二份 tankopedia。更新：`python common/python/update_shot_tank_data.py --asset-base <reviewed HTTPS asset origin>`。缺 source entry 更新失败，不覆盖现有快照；缓存与全部 tank 原始输入有 SHA-256 provenance。当前 735 车型的 2075 global shell IDs 全部由同包弹表覆盖。未知车型如实保留 pitch 降级，不联网补齐。装甲查看器跳转属于联网 3D 动作，由装甲页面自身承载（匿名可用，无需登录）。
 
 `npm run test:browser-interaction` 包含真实 WASM offline scenario：冷启动/重启、fixture 手动导入/Result/Rating/2D/射击、AI/HoF/3D/Profile 深链、重连/断网与 local state 保持，并在网络边界记录和拒绝业务 HTTP（应为零）。这是自动运行门禁；3D 画面和 Android provider 真机验证仍由人工完成。
 
