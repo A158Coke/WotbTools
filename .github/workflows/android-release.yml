@@ -2,7 +2,7 @@ name: Release / Android
 # 两阶段发布协议（见 docs/android/release-process.md）：
 #
 #   stage   —— main 合并后自动跑（也可 workflow_dispatch 重跑/恢复）：contract → 构建/签名 →
-#              证书校验 → immutable APK 上传 → 线上 APK 可访问 + SHA 核验 → tag →
+#              证书校验 → immutable APK 上传（TX1/TX2 + 清华网盘公网下载直链）→ 线上 APK 可访问 + SHA 核验 → tag →
 #              写并上传 **staging evidence**。**绝不**写 production version.json。
 #   publish —— 真机 A14 验证通过后由 workflow_dispatch(mode=publish, version=X) 手工续跑：
 #              候选身份由**显式版本 X**决定（X 的 immutable tag target = staged 源码），
@@ -515,6 +515,49 @@ jobs:
           port: ${{ secrets.TX2_VPS_PORT }}
           key: ${{ secrets.TX2_VPS_SSH_KEY }}
           script: chmod 644 /opt/wotb-tx2/runtime-content/android-release/${{ steps.artifact.outputs.apkName }}
+
+      # 公网下载卸载：TX1 出口公网带宽只有 5Mbps 且被 15MB APK 下载打满，TX1 Caddy 已把
+      # /download/android/*.apk 302 到清华云盘目录分享直链（/download/android/version.json
+      # 与 *.staging.json 不在重定向范围内，仍是源站服务）。本步骤把同一个 immutable APK
+      # 传进网盘目录（reuse=1 幂等覆盖），随后的 "Verify production APK" 会顺着 302 对
+      # 公网 URL 做全链路 SHA 校验，因此这里只负责「上传 + 网盘侧直链自证」。
+      - name: Upload APK to Tsinghua Cloud (public download offload)
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
+        shell: bash
+        env:
+          TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
+        run: |
+          set -euo pipefail
+          APK_NAME="${{ steps.artifact.outputs.apkName }}"
+          APK_FILE="release-staging/$APK_NAME"
+          EXPECTED_SHA="${{ steps.artifact.outputs.sha256 }}"
+          # 网盘约定（与 TX1 Caddyfile 的 redir 目标一一对应，改这边必须同步改 Caddy）：
+          # 仓库 = 个人资料库，目录 = /wotbtools-android/，
+          # 分享 = https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/（可下载、无密码、不过期）。
+          REPO_ID="a757b2fa-9bc9-42f9-bc90-d6a2c0a94ed0"
+          PARENT_DIR="/wotbtools-android"
+          SHARE_DIRECT="https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/$APK_NAME&dl=1"
+
+          ULINK="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+            "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/upload-link/?p=$PARENT_DIR&reuse=1")"
+
+          # 已知怪癖：这套清华云盘部署「上传成功也返回 HTTP 400 Parent dir doesn't exist」，
+          # 响应码不可作为成败依据；唯一权威判定 = 从分享直链下载回来 SHA-256 一致。
+          curl -sS -o /dev/null -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+            -F "parent_dir=$PARENT_DIR" -F "file=@$APK_FILE" "$ULINK" || true
+
+          for attempt in 1 2 3 4 5; do
+            sleep 3
+            if curl -fsSL --connect-timeout 5 --max-time 120 \
+                -o "$RUNNER_TEMP/thu-offload.apk" "$SHARE_DIRECT" 2>/dev/null \
+                && [ "$(sha256sum "$RUNNER_TEMP/thu-offload.apk" | awk '{print $1}')" = "$EXPECTED_SHA" ]; then
+              echo "Tsinghua Cloud offload verified: $APK_NAME sha256=$EXPECTED_SHA"
+              exit 0
+            fi
+            echo "Tsinghua Cloud offload verify attempt $attempt/5 failed; retrying."
+          done
+          echo "::error::Tsinghua Cloud offload verification failed after 5 attempts; public /download/android/*.apk redirects would hit a missing drive object." >&2
+          exit 1
 
       - name: Verify production APK (HTTP 200 + non-empty + SHA matches)
         if: steps.preflight.outputs.releaseAction == 'publish'
