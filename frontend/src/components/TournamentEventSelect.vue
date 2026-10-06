@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick } from 'vue'
 import type { TournamentEvent } from '../api/tournament-points.js'
+import { TOURNAMENT_REGIONS, TOURNAMENT_SEASONS } from '../api/tournament-points.js'
 const props = defineProps<{ events: TournamentEvent[]; modelValue: number | null; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: number | null] }>()
 const year = ref('')
 const region = ref('')
 const season = ref('')
 const years = computed(() => [...new Set(props.events.map(event => event.year))].sort((a, b) => b - a))
-const regions = computed(() => [...new Set(props.events.filter(event => event.year === Number(year.value)).map(event => event.region))])
-const seasons = computed(() => [...new Set(props.events.filter(event => event.year === Number(year.value) && event.region === region.value).map(event => event.season))])
+const regions = computed(() => TOURNAMENT_REGIONS.filter(value => props.events.some(event => event.year === Number(year.value) && event.region === value)))
+const seasons = computed(() => TOURNAMENT_SEASONS.filter(value => props.events.some(event => event.year === Number(year.value) && event.region === region.value && event.season === value)))
 let preservePartialSelection = false
 function syncModel(value: number | null) {
   const selected = props.events.find(event => event.id === value)

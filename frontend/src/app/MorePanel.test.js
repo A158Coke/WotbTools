@@ -54,6 +54,7 @@ describe('MorePanel', () => {
     const { wrapper, navigate } = mountPanel()
     await wrapper.setProps({ open: true })
     await wrapper.get('[data-testid="more-link-contact"]').trigger('click')
+    expect(wrapper.find('#more-panel-tools').exists()).toBe(false)
     expect(navigate).toHaveBeenCalledWith('contact')
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
