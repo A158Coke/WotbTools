@@ -28,6 +28,24 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 Tag 不得 repoint；已有 APK SHA 不同则拒绝覆盖。已有 staging evidence 必须与本次实际 APK
 身份逐字段匹配，重跑保留其原始 `stagedAt`，不能用新身份覆盖旧证据。
 
+### APK 公网下载卸载（清华云盘直链）
+
+TX1 出口公网带宽有限且会被 15MB 的 APK 下载打满，stage 阶段在把 immutable APK 传到
+TX1/TX2 之后，还会以 `TSINGHUA_CLOUD_TOKEN` 把同一 APK 传进清华云盘
+`个人资料库 /wotbtools-android/` 目录（`reuse=1` 幂等覆盖）。TX1 Caddy 把
+`/download/android/*.apk` 302 到该目录的分享直链
+`https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/<apkName>&dl=1`，
+分享链接无过期、不随版本变化，新增版本只需把文件放进目录即可生效。
+
+- URL 契约不变：`version.json` 的 `apkUrl` 仍是 `https://wotbtools.com/download/android/<apk>`，
+  客户端跟着 302 走；`/download/android/version.json` 与 `*.staging.json` **不在**重定向范围内，
+  仍由 TX1/TX2 前端源站服务（deploy 预检的运行时内容一致性比对不受影响）。
+- fail-closed：该云盘部署「上传成功也返回 HTTP 400」是已知怪癖，workflow 不以响应码判定成败，
+  以「分享直链下载回来 SHA-256 与 staged APK 一致」为唯一门禁；随后的 production APK 校验
+  顺着 302 对公网 URL 做全链路复核。
+- 若更换网盘目录或分享链接，必须同步修改 TX1 Caddyfile 的 redir 目标与 workflow 步骤里的
+  `REPO_ID` / 分享 token，两边一一对应。
+
 ### publish 的候选身份：显式版本，不是当前 main
 
 ```text
