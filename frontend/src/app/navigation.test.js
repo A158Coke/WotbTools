@@ -8,6 +8,7 @@ import {
   ADMIN_NAV,
   primaryNavItems,
   primarySection,
+  sectionTitleKey,
   viewFromRoute,
 } from './navigation.js'
 
@@ -41,8 +42,15 @@ describe('primary navigation', () => {
   })
 
   it('only offers Home on the production home host', () => {
-    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'more'])
-    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'more'])
+    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'tournament-points', 'more'])
+    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'more'])
+  })
+
+  it('resolves the public league deep link to its own selected section and title', () => {
+    const view = viewFromRoute({ path: '/', query: { view: 'tournament-points' } })
+    expect(view).toBe('tournament-points')
+    expect(primarySection(view)).toBe('tournament-points')
+    expect(sectionTitleKey(view)).toBe('tournament.title')
   })
 
   it('points every primary and admin item at a registered view', () => {
