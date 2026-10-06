@@ -138,6 +138,34 @@ export function fallRotation(fallDir8, elapsedS, heightM, stopRad = Math.PI / 2)
 }
 
 /**
+ * 场景每帧的树状态推进决策（纯决策，无 THREE 依赖；单测锁定倒带序列）。
+ * 返回：
+ *  - `{ axis, angle, animating: true }`  → 倒伏动画帧：场景写该旋转并标「在飞」；
+ *  - `{ axis, angle, animating: false }` → 终态帧（触地硬停）：写停止角并置 `settled`；
+ *  - `null`                              → 无动作（未激活 / 未到事件 / 已终态）。
+ *
+ * `st.settled` 是「终态只写一次」的每帧缓存：**时间轴回退时必须由调用方显式清零**
+ * （playbackScene 的 rewind 分支），否则 seek 回事件前再重播越过终点时终态分支被
+ * 跳过，触地旋转不会重写（树直立或停在中间角）。`makeTreeStateRewindSafe` 的
+ * getter（pivot 未达停止角 ⇒ 视为未终态）是第二道防线；两道机制独立，谁先兜住都行。
+ */
+export function treeFrame(st, active, T) {
+  if (!active) return null
+  const elapsed = T - st.clock
+  if (!(elapsed >= 0)) return null
+  const r = fallRotation(st.fallDir, elapsed, st.heightM, st.stopRad)
+  if (r && elapsed < r.durationS) {
+    return { axis: r.axis, angle: r.angle, animating: true }
+  }
+  if (!st.settled) {
+    st.settled = true
+    const [dx, dy] = fallTipVector(st.fallDir)
+    return { axis: [-dy, dx, 0], angle: r ? r.stopRad : Math.PI / 2, animating: false }
+  }
+  return null
+}
+
+/**
  * 给树状态的 `settled` 缓存加上几何自校验：场景层为了省每帧 quaternion 写入，会在
  * 首次到达终态后设 `st.settled = true`。但 seek 倒带会把 pivot 恢复 identity；若缓存仍
  * 永久为 true，再次越过终点就不会重写终态。这里让 getter 以 pivot 当前旋转是否真的已

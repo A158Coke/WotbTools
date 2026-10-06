@@ -22,7 +22,7 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
-import { buildDestructibleIndex, foldDestructibleStates, fallRotation, fallTipVector, fallStopAngle } from './destructibles.js'
+import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAt, legArcEnds, arcAtTime, pointAtArc } from './shotPath.js'
 import { impactKind } from './impactKind.js'
@@ -92,6 +92,25 @@ export function occlusionCells(ax, ay, bx, by, cell = 16) {
   for (let i = 0; i <= steps; i++) {
     const k = i / steps;
     out.add(`${Math.floor((ax + dx * k) / cell)},${Math.floor((ay + dy * k) / cell)}`);
+  }
+  return out;
+}
+
+/** 遮挡物足印覆盖的**全部**格子（AABB 全枚举；纯函数，单测锁定；occGrid 登记专用）。
+ *  与 occlusionCells（线段 DDA 遍历，检测时选候选格）是两个概念，不可互用：登记若走
+ *  线段遍历（从包围盒角到角），只有对角线经过的格子入表，大建筑/大网格的非对角线
+ *  覆盖格子全部缺失——穿那些格子的相机→标签射线在候选表里查不到该遮挡物，标签
+ *  隔楼可见（false-visible）。每轴格数钳制 64（16m 格 × 64 ≈ 1km，远超静态建筑
+ *  尺度；防病态大包围球把登记表撑爆）。 */
+export function occlusionFootprintCells(minX, minY, maxX, maxY, cell = 16) {
+  let gx0 = Math.floor(minX / cell), gx1 = Math.floor(maxX / cell);
+  let gy0 = Math.floor(minY / cell), gy1 = Math.floor(maxY / cell);
+  const MAX_SPAN = 64;
+  if (gx1 - gx0 >= MAX_SPAN) { const c = Math.floor((gx0 + gx1) / 2); gx0 = c - (MAX_SPAN >> 1); gx1 = gx0 + MAX_SPAN - 1; }
+  if (gy1 - gy0 >= MAX_SPAN) { const c = Math.floor((gy0 + gy1) / 2); gy0 = c - (MAX_SPAN >> 1); gy1 = gy0 + MAX_SPAN - 1; }
+  const out = [];
+  for (let gx = gx0; gx <= gx1; gx++) {
+    for (let gy = gy0; gy <= gy1; gy++) out.push(`${gx},${gy}`);
   }
   return out;
 }
@@ -982,7 +1001,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           if (o.visible && !/sky/i.test(o.name)) {
             if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
             const r = o.geometry.boundingSphere ? o.geometry.boundingSphere.radius : 0;
-            const c = occlusionCells(wx - r, wy - r, wx + r, wy + r, OCCL_CELL);
+            // 登记 = 足印 AABB 全枚举（occlusionFootprintCells）。不能用 occlusionCells
+            // （线段遍历）登记：那只会把包围盒对角线经过的格子入表，大建筑非对角线
+            // 覆盖格子缺失 → 穿那些格子的射线漏判遮挡（标签隔楼可见）。
+            const c = occlusionFootprintCells(wx - r, wy - r, wx + r, wy + r, OCCL_CELL);
             for (const key of c) {
               const list = occGrid.get(key);
               if (list) { if (!list.includes(o)) list.push(o); }
@@ -2413,9 +2435,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 碎裂换模只在状态翻转时触碰 visible（幂等，seek 安全）。
   function updateDestructibles(T) {
     if (!destruct) return;
-    if (T < destruct.lastT) destruct.ptr = 0;   // seek 后退：全部回到未激活
-    destruct.lastT = T;
     const states = destruct.states;
+    if (T < destruct.lastT) {
+      destruct.ptr = 0;   // seek 后退：全部回到未激活
+      // 树终态缓存随回退**显式失效**：settled=true 的树若不清，重播再次越过倒伏终点时
+      // 终态分支被跳过，触地旋转不会重写（树直立或停在中间角）。（destructibles.js 的
+      // settled getter「pivot 未达停止角 ⇒ 视为未终态」是第二道防线，两道机制独立。）
+      for (const st of states) if (st.prop === 3) st.settled = false;
+    }
+    destruct.lastT = T;
     while (destruct.ptr < states.length && states[destruct.ptr].clock <= T) destruct.ptr++;
     destruct.animating = false;
     for (let i = 0; i < states.length; i++) {
@@ -2429,17 +2457,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           }
           continue;
         }
-        // 只在动画窗口内逐帧更新；终态后写一次不再碰（省去 700+ 次 setFromAxisAngle）
-        const elapsed = T - st.clock;
-        const stop = st.stopRad ?? Math.PI / 2;
-        const r = fallRotation(st.fallDir, elapsed, st.heightM, stop);
-        if (r && elapsed < r.durationS) {
-          destruct.animating = true;
-          st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r.axis[0], r.axis[1], r.axis[2]), r.angle);
-        } else if (!st.settled) {
-          // 触地硬停：终态 = 停止角（触地角，见 fallStopAngle），写一次
-          st.settled = true;
-          st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(r_axis(st.fallDir, 0), r_axis(st.fallDir, 1), r_axis(st.fallDir, 2)), stop);
+        // 只在动画窗口内逐帧更新；终态后写一次不再碰（省去 700+ 次 setFromAxisAngle）。
+        // 推进决策在 destructibles.treeFrame（纯函数，单测锁定倒带序列），此处只写四元数。
+        const f = treeFrame(st, true, T);
+        if (f) {
+          if (f.animating) destruct.animating = true;
+          st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(f.axis[0], f.axis[1], f.axis[2]), f.angle);
         }
       } else {
         if (active === !!st.applied) continue;
@@ -2452,7 +2475,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const _tmpFallAxis = new THREE.Vector3();
   // 炮线折线求值 scratch（每帧多车并发，避免逐帧分配）
   const _tpA = new THREE.Vector3(), _tpB = new THREE.Vector3();
-  function r_axis(dir8, idx) { const [dx, dy] = fallTipVector(dir8); return [-dy, dx, 0][idx]; }
 
   function applyPose(v) {
     const dead = deathAt(v, T);
@@ -3145,6 +3167,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (DEBUG) {
         delete window.__scene; delete window.__camera; delete window.__controls; delete window.__setFollow; delete window.__renderer;
         delete window.__pbV; delete window.__gdbg;
+      }
+      // ?perf 看门狗随实例销毁停表并摘除调试句柄：实例没了帧循环自然停，但心跳
+      // setInterval 不清会永久空转，window.__pbPerf 会指向已销毁实例的旧数据。
+      if (PERF) {
+        if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; }
+        delete window.__pbPerf;
       }
       if (renderer) {
         try { renderer.domElement.removeEventListener('pointerup', onScenePointerUp); } catch (_) {}
