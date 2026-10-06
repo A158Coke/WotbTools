@@ -1053,7 +1053,7 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
       expect(QUALITY_PRESETS[t].allowGlb).toBe(t !== 'low')            // 低档盒代理
       expect(QUALITY_PRESETS[t].scenery).toBe(t === 'high' || t === 'ultra')      // 场景下载税=高清起
       expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra') // 分层地表=高清起
-      expect(QUALITY_PRESETS[t].miniMap).toBe(t === 'low' || t === 'mid')  // 小地图底图=低/中档（中档需屋顶足迹，见预设表注释）
+      expect(QUALITY_PRESETS[t].miniMap).toBe(t === 'low')             // 小地图底图=仅低档（均衡档起用俯视烘焙底图）
       expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')           // MSAA=均衡起
     }
   })
