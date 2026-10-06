@@ -167,7 +167,12 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
   it('装填条求值：关标签或 T 未变时跳过（暂停/关标签不再每车每帧全量求值）', () => {
     const publish = src.slice(src.indexOf('function publishLabels'), src.indexOf('function setLabelPrefs'))
     expect(publish, '关标签时必须整段早退').toMatch(/if \(!DATA \|\| !labelOverlay \|\| !store\.labelsOn\) return;/)
-    expect(publish, 'T 未变 / 未到节流窗口时不得重复求值').toMatch(/if \(!force && \(T === labelsTime \|\| now - labelsWrittenMs < 100\)\) return;/)
+    // 动态节流（2026-10-05）：装填中 33ms（~30Hz，进度平滑）/ 空闲 100ms。
+    expect(publish, 'T 未变 / 未到节流窗口时不得重复求值')
+      .toMatch(/if \(!force && \(T === labelsTime \|\| now - labelsWrittenMs < interval\)\) return;/)
+    expect(publish, '装填中提高发布频率').toMatch(/labelsReloadActive \? LABEL_INTERVAL_RELOAD_MS : LABEL_INTERVAL_IDLE_MS/)
+    expect(src, '装填中 33ms').toMatch(/const LABEL_INTERVAL_RELOAD_MS = 33;/)
+    expect(src, '空闲 100ms（原值）').toMatch(/const LABEL_INTERVAL_IDLE_MS = 100;/)
     // 求值本身只依赖 T（纯状态在时刻）：走共享 resolver，不再自带累加计时器
     expect(publish).toMatch(/reload: destroyed \? null : reloadStateAt\(v\.def\.eid, T, v\.reloadSize\)/)
   })
@@ -194,7 +199,7 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
   })
 
   it('GLB 位姿零分配：poseFromYPR 支持 out 参数，poseGlb 用模块级 scratch', () => {
-    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, T\), arrAt\(v\.def\.hull_pitch, T\), -rollAt\(v, T\), _glbQuat\)/)
+    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, T\), hullPitchAt\(v, T\), -rollAt\(v, T\), _glbQuat\)/)
     const glb = src.slice(src.indexOf('function poseGlb'), src.indexOf('async function applyGlbToggle'))
     expect(glb).not.toMatch(/new THREE\.Matrix4\(\)/)     // 每帧不再新建矩阵
     expect(glb).not.toMatch(/new THREE\.Euler\(\)/)
@@ -219,7 +224,7 @@ describe('车体横滚（hull_roll）接线守卫', () => {
   })
 
   it('两条位姿路径都带 roll，且符号为负（镜像约定：绕前向轴取负，与 -yaw 同理）', () => {
-    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, T\), arrAt\(v\.def\.hull_pitch, T\), -rollAt\(v, T\), _glbQuat\)/)
+    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, T\), hullPitchAt\(v, T\), -rollAt\(v, T\), _glbQuat\)/)
     expect(src).toMatch(/v\.group\.rotation\.z = -rollAt\(v, T\);/)
   })
 
@@ -228,5 +233,70 @@ describe('车体横滚（hull_roll）接线守卫', () => {
     expect(src).toMatch(/-yawAt\(v, T\)/)
     expect(src).toMatch(/-rollAt\(v, T\)/)
     expect(src).not.toMatch(/\+rollAt\(v, T\)/)
+  })
+})
+
+describe('炮线渲染守卫（阵营语义色直出）', () => {
+  it('炮线与全弹道轨迹线都跳过 ACES 色调映射（toneMapped: false）', () => {
+    // 渲染器全局 ACESFilmic + exposure 1.15 会压缩降饱和——UI 语义色必须直出字面值，
+    // 否则深色阵营色被二次压暗（2026-10-05 实测"亮度限制"根因）。
+    // 注释在 src 里已被剥离：按材质实参断言（两处：飞行段 + 全弹道轨迹线）
+    expect(src).toMatch(/new THREE\.MeshBasicMaterial\(\{ color, toneMapped: false \}\)/)
+    expect(src).toMatch(/opacity: TRAJ_OPACITY, depthWrite: false,\s*toneMapped: false,/)
+  })
+
+  it('轨迹线透明度低于 0.5 会发灰：基准必须 ≥ 0.5（当前 0.6）', () => {
+    const m = src.match(/const TRAJ_OPACITY = ([0-9.]+);/)
+    expect(m).toBeTruthy()
+    expect(Number(m[1])).toBeGreaterThanOrEqual(0.5)
+  })
+
+  it('飞行段时长 = 真实飞行时长（不得再有"最小显示时长"拖慢炮弹）', async () => {
+    const { tracerSpanSecs } = await import('./playbackScene.js')
+    // 真实弹道时长原样返回（WoTB 弹速极高：多数射击飞行 <0.22s，钳到 0.22 就是慢放）
+    expect(tracerSpanSecs(0.44)).toBeCloseTo(0.44, 12)
+    expect(tracerSpanSecs(0.16)).toBeCloseTo(0.16, 12)
+    expect(tracerSpanSecs(0.02)).toBeCloseTo(0.02, 12)
+    // 只有 1 帧下限兜底退化数据（0 / 负数 / 非有限），且不再有 0.22s 这类"可见性下限"
+    const oneFrame = 1 / 60
+    expect(tracerSpanSecs(0)).toBeCloseTo(oneFrame, 12)
+    expect(tracerSpanSecs(-1)).toBeCloseTo(oneFrame, 12)
+    expect(tracerSpanSecs(NaN)).toBeCloseTo(oneFrame, 12)
+    expect(tracerSpanSecs(Number.POSITIVE_INFINITY)).toBeCloseTo(oneFrame, 12)
+    // 源码护栏：飞行时长必须由纯函数/折线段时长给出，且不存在 0.22 之类的最小显示钳位
+    // （折线弹道：`legEnds` 由 `legSecsOf(s, tracerSpanSecs(...))` 累计 → t1 = 末段结束时刻）
+    expect(src).toMatch(/const legSecs = legSecsOf\(s, tracerSpanSecs\(s\.flight_secs\)\);/)
+    expect(src).toMatch(/const t1 = legEnds\[legEnds\.length - 1\];/)
+    expect(src).not.toMatch(/Math\.max\(0\.22, s\.flight_secs\)/)
+  })
+
+  it('着色器预热：场景就绪时 compile 一次（首次开火才编译＝开局/接火卡顿）', () => {
+    expect(src).toMatch(/function prewarmShaders\(\)/)
+    expect(src).toMatch(/renderer\.compile\(scene, camera\);/)
+    expect(src).toMatch(/renderer\.compile\(labelScene, camera\);/)
+    // 会话启动路径必须调用（GLB 恢复之后、开播之前）
+    expect(src).toMatch(/if \(glbOn\) applyGlbToggle\(true\);[\s\S]{0,60}prewarmShaders\(\);/)
+  })
+
+  it('性能探针带主线程停顿看门狗（抓帧循环之外的长任务）', () => {
+    expect(src).toMatch(/setInterval\(\(\) => \{/)
+    expect(src).toMatch(/PERF_HEARTBEAT_MS = 50/)
+    expect(src).toMatch(/main-thread stalls/)
+  })
+
+  it('性能探针：`?perf` 才挂载、只读记录（不改渲染行为）', () => {
+    expect(src).toMatch(/new URLSearchParams\(window\.location\.search\)\.has\('perf'\)/)
+    expect(src).toMatch(/window\.__pbPerf = \{/)
+    // 分阶段计时包住「状态更新」与「提交渲染」两段
+    expect(src).toMatch(/const perfT1 = PERF \? performance\.now\(\) : 0;/)
+    expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, performance\.now\(\) - perfT1\);/)
+  })
+
+  it('炮线粗细：飞行段 ≥ 轨迹线（层级不变），且都不低于加粗后的下限', () => {
+    const tr = Number(src.match(/const TRACER_RADIUS = ([0-9.]+);/)?.[1])
+    const tj = Number(src.match(/const TRAJ_RADIUS = ([0-9.]+);/)?.[1])
+    expect(tr).toBeGreaterThanOrEqual(0.36)
+    expect(tj).toBeGreaterThanOrEqual(0.18)
+    expect(tr).toBeGreaterThan(tj)
   })
 })

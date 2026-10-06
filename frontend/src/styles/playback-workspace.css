@@ -30,8 +30,7 @@
 }
 /* 宽档三列 2 / 6 / 2：中心列 = 两条 2fr 车道之外的全部剩余空间。2D `.pb-main` 与 3D
    `.pb-root` 共用同一条声明，两者不可能再各自漂移。 */
-.battle-playback.playback-workspace.pb-roster-lanes .pb-main,
-.pb-root.playback-workspace.roster-side:not(.portrait-flow) {
+.battle-playback.playback-workspace.pb-roster-lanes .pb-main {
   grid-template-columns:
     minmax(var(--pb-roster-min), 2fr)
     minmax(0, 6fr)
@@ -90,56 +89,94 @@
   padding: var(--space-1);
 }
 .battle-playback.playback-workspace.pb-roster-lanes .pb-main > .pb-hud { grid-column: 2; }
+/* 3D 回放 = 全幅战场 + 悬浮 UI（游戏同款视觉）：
+   场景铺满根、名册左上/右上、HUD 顶中、传输控件底部居中——全部 absolute overlay。 */
 .pb-root.playback-workspace:not(.portrait-flow) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  /* A trailing flexible row absorbs spare height without stretching the central stack. */
-  grid-template-rows: auto minmax(0, var(--pb-stage-h, 1fr)) auto minmax(0, 1fr);
-  align-content: start;
-  gap: var(--space-1);
-  row-gap: 0;
+  display: block;
+  position: relative;
   block-size: var(--pb-workspace-h, var(--pb-workspace-fallback-h));
   height: var(--pb-workspace-h, var(--pb-workspace-fallback-h));
-  padding: var(--space-1);
+  padding: 0;
+  overflow: hidden;
 }
 /* 3D 根网格的三列 2/6/2 已在共享选择器里与 2D `.pb-main` 一起声明；这里只补各单元归属。 */
 .pb-root.playback-workspace:not(.portrait-flow) > .pb-stage {
-  position: relative;
-  inset: auto;
-  grid-column: 1;
-  grid-row: 2;
+  position: absolute;
+  inset: 0;
+  z-index: var(--pb-z-canvas);
   padding: 0;
-  align-self: stretch;
-  margin-block: var(--space-1);
-}
-.pb-root.playback-workspace.roster-side:not(.portrait-flow) > .pb-stage { grid-column: 2; }
-.pb-root.playback-workspace:not(.portrait-flow) > .hud,
-.pb-root.playback-workspace:not(.portrait-flow) > .controls {
-  position: relative;
-  inset: auto;
-  grid-column: 1;
-  inline-size: 100%;
-  width: 100%;
-  transform: none;
   margin: 0;
 }
-.pb-root.playback-workspace:not(.portrait-flow) > .hud { grid-row: 1; }
-.pb-root.playback-workspace > .hud > .pb-hud { inline-size: 100%; }
-.pb-root.playback-workspace:not(.portrait-flow) > .controls { grid-row: 3; padding: 0; }
-.pb-root.playback-workspace.roster-side:not(.portrait-flow) > .hud,
-.pb-root.playback-workspace.roster-side:not(.portrait-flow) > .controls { grid-column: 2; }
-.pb-root.playback-workspace.roster-side .team-lane.side-left,
-.pb-root.playback-workspace.roster-side .team-lane.side-right {
-  grid-row: 1 / -1;
-  /* 车道跨全部三行，于是它的内容高度会反过来参与第 1 / 第 3 条 `auto` 行的尺寸计算：
-     名册内容一旦高于 workspace，`auto` 行就把 HUD / 传输控件顶出视口（实测 740×360 上
-     `.pb-main` 的行变成 123/108/155、总高 394 > 256，传输控件被推到底部之外）。
-     `overflow: hidden` 让车道的自动最小尺寸归零——内容改由车道自己滚动，不再撑大网格。 */
-  overflow: hidden;
+/* HUD = 顶中悬浮（名册左右让出中间车道）。
+   名单在时按「两侧车道 + 间隙」收口——HUD 与名册面板**不得重叠**（窄窗口下
+   60% 宽会横跨到车道上方，实测 700px workspace：HUD 420px 与左车道重叠 40px）。 */
+.pb-root.playback-workspace:not(.portrait-flow) > .hud {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  z-index: var(--pb-z-hud);
+  inline-size: auto;
+  max-inline-size: min(60%, 480px);
+  margin: 0;
+  pointer-events: none;
+}
+.pb-root.playback-workspace.roster-side:not(.portrait-flow) > .hud {
+  max-inline-size: min(60%, max(14rem, calc(100% - 2 * var(--pb-overlay-lane-w) - var(--space-4))));
+}
+.pb-root.playback-workspace > .hud > .pb-hud { inline-size: auto; }
+
+/* 传输控件 = 底部居中悬浮（两行：传输 + 直接陈列的镜头/GLB 行）。 */
+.pb-root.playback-workspace:not(.portrait-flow) > .controls {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline: 0;
+  z-index: var(--pb-z-hud);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  inline-size: auto;
+  max-inline-size: min(100% - var(--space-4), 720px);
+  margin-inline: auto;
+  padding: var(--space-1) var(--space-2);
+}
+/* 手机横屏（.phone-form）适度缩小浮层组件：传输条收窄到 min(100% - 2×lane - 16px,
+   560px)——740×360 上全宽时间轴会横向贯穿屏幕、盖住左右名册下排行的点击区（实测
+   elementFromPoint 命中 INPUT.pb-range），给两侧车道让出底角。 */
+.pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form > .controls {
+  max-inline-size: min(100% - 2 * var(--pb-overlay-lane-w) - var(--space-4), 560px);
+}
+.pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form { --pb-overlay-lane-w: clamp(10rem, 15vw, 13rem); }
+.pb-root.playback-workspace.roster-side:not(.portrait-flow).phone-form > .hud {
+  max-inline-size: min(52%, max(12rem, calc(100% - 2 * var(--pb-overlay-lane-w) - var(--space-4))));
+}
+
+/* 名册车道 = 左上/右上角悬浮面板（游戏同款：己方在左、敌方在右）。
+   宽度按行内容需求定：行固定开销 = 内边距 32 + 间隙 12 + 色点 8 + 血条 52 = 104px，
+   昵称 + 车型再需 ~90px——9rem(144px) 会横向撑破（行被裁切 + 出现横向滚动条）。
+   取 clamp(11rem, 16vw, 15rem)：窄屏 176px 起、宽屏到原始 240px（f226174b 版宽）。
+   宽度收进 `--pb-overlay-lane-w`（同一根作用域）：顶中 HUD 按它收口，两者不会互相压住。
+   手机横屏（.phone-form）适度缩小浮层：lane 10rem 起 / HUD 收口相应收窄——740×360 上
+   顶中 HUD（含时间与比分）此前盖住名册下排行的点击区（740 tap diagnostic 实测
+   hitAtRow=SPAN.pb-time），缩组件后两者互不侵入。 */
+.pb-root.playback-workspace.roster-side:not(.portrait-flow) { --pb-overlay-lane-w: clamp(11rem, 16vw, 15rem); }
+.pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane.side-left,
+.pb-root.playback-workspace.roster-side:not(.portrait-flow) .team-lane.side-right {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  z-index: var(--pb-z-hud);
+  inline-size: var(--pb-overlay-lane-w);
+  max-block-size: calc(100% - 4rem);
+  overflow-y: auto;
+  overflow-x: hidden;
   min-block-size: 0;
 }
-.pb-root.playback-workspace.roster-side .side-left { grid-column: 1; }
-.pb-root.playback-workspace.roster-side .side-right { grid-column: 3; }
+.pb-root.playback-workspace.roster-side:not(.portrait-flow) .side-left {
+  inset-inline-start: var(--space-1);
+}
+.pb-root.playback-workspace.roster-side:not(.portrait-flow) .side-right {
+  inset-inline-end: var(--space-1);
+}
 
 .battle-playback.playback-workspace .pb-map-stage > .pb-map {
   --pb-square-side: min(100%, var(--pb-square-avail-h, var(--pb-workspace-fallback-h)));
@@ -166,8 +203,7 @@
 
 /* Desktop roster lanes share approximately 25 / 50 / 25 of the available width. */
 @media (width >= 1200px) {
-  .battle-playback.playback-workspace.pb-roster-lanes .pb-main,
-  .pb-root.playback-workspace.roster-side:not(.portrait-flow) {
+  .battle-playback.playback-workspace.pb-roster-lanes .pb-main {
     grid-template-columns:
       minmax(var(--pb-roster-min), 1fr)
       minmax(0, 2fr)

@@ -105,7 +105,6 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
     </div>
     <div v-if="props.showSummary" class="pb-hud-grid" data-test="pb-hp-bars">
     <div class="pb-hud-team pb-hud-friendly pb-hud-column-friendly pb-hp-row" data-test="pb-hud-friendly">
-      <span class="pb-hud-label" data-test="pb-hud-points-label-friendly">{{ $t('recon.map.playback.hud_friendly_hp') }}</span>
       <span class="pb-hud-value pb-hp-value" data-test="pb-hp-value-friendly">{{ hpText(props.friendlyHp) }}</span>
       <span class="pb-hud-track pb-hp-track" aria-hidden="true">
         <span class="pb-hud-fill pb-hp-fill pb-hud-fill-friendly" :class="{ 'pb-hud-partial': props.friendlyHp?.state === 'PARTIAL' }" :style="{ width: barFill(props.friendlyHp, 'known') }" data-test="pb-hp-fill-friendly"></span>
@@ -116,7 +115,6 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 
     <div v-if="hasPoints()" class="pb-hud-center pb-hud-column-center" data-test="pb-hud-center">
       <div class="pb-hud-points" data-test="pb-hud-points">
-        <span class="pb-hud-label" data-test="pb-hud-points-label">{{ $t(props.scoreLabelKey) }}</span>
         <strong data-test="pb-hud-score">
           <span v-if="props.friendlyPoints != null" data-test="pb-points-friendly">{{ compactNumber(props.friendlyPoints) }}</span>
           <span v-if="props.friendlyPoints != null && props.enemyPoints != null"> : </span>
@@ -126,7 +124,6 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 
     </div>
     <div class="pb-hud-team pb-hud-enemy pb-hud-column-enemy pb-hp-row" data-test="pb-hud-enemy">
-      <span class="pb-hud-label" data-test="pb-hud-points-label-enemy">{{ $t('recon.map.playback.hud_enemy_hp') }}</span>
       <span class="pb-hud-value pb-hp-value" data-test="pb-hp-value-enemy">{{ hpText(props.enemyHp) }}</span>
       <span class="pb-hud-track pb-hp-track" aria-hidden="true">
         <span class="pb-hud-fill pb-hp-fill pb-hud-fill-enemy" :class="{ 'pb-hud-partial': props.enemyHp?.state === 'PARTIAL' }" :style="{ width: barFill(props.enemyHp, 'known') }" data-test="pb-hp-fill-enemy"></span>
@@ -158,12 +155,9 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 .pb-hud-column-center { grid-column: 2; }
 .pb-hud-points { display: grid; justify-items: center; }
 .pb-hud-column-enemy { grid-column: 3; }
-.pb-hud-team { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-1); min-width: 0; }
-.pb-hud-enemy { text-align: right; grid-template-columns: auto minmax(0, 1fr); }
-.pb-hud-label { grid-column: 1; grid-row: 1; color: var(--color-text-secondary); font: var(--type-caption); }
-.pb-hud-enemy .pb-hud-label { grid-column: 2; }
-.pb-hud-value { grid-row: 1; grid-column: 2; white-space: nowrap; font: var(--type-caption); font-weight: 700; font-variant-numeric: tabular-nums; }
-.pb-hud-enemy .pb-hud-value { grid-column: 1; }
+/* 队伍血量：数值居中在血条上方（无标签文字）。 */
+.pb-hud-team { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: var(--space-1); min-width: 0; }
+.pb-hud-value { grid-row: 1; grid-column: 1; justify-self: center; white-space: nowrap; font: var(--type-caption); font-weight: 700; font-variant-numeric: tabular-nums; }
 .pb-hud-track { position: relative; grid-column: 1 / -1; grid-row: 2; display: flex; min-width: 0; height: var(--space-1); overflow: hidden; border-radius: var(--radius-full); background: var(--color-surface-3); }
 .pb-hud-fill { height: 100%; transition: width var(--duration-base) var(--ease-standard); }
 .pb-hud-fill-friendly { background: var(--color-team-ally); }
@@ -176,27 +170,13 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 .pb-hud-center strong { font: var(--type-caption); font-weight: 700; white-space: nowrap; }
 @media (width >= 1200px) {
   .pb-hud { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
-  .pb-hud-meta, .pb-hud-label, .pb-hud-value, .pb-hud-center strong { font: var(--type-h3); }
+  .pb-hud-meta, .pb-hud-value, .pb-hud-center strong { font: var(--type-h3); }
   .pb-hud-value, .pb-hud-center strong { font-weight: 700; }
   .pb-hud-track { height: var(--space-2); }
 }
 @media (width < 768px) {
   .pb-hud-grid { gap: var(--space-1); }
-  .pb-hud-team .pb-hud-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
   .pb-hud-value { white-space: normal; overflow-wrap: anywhere; }
-  .pb-hud-team { grid-template-columns: minmax(0, 1fr); }
-  .pb-hud-friendly .pb-hud-value { grid-column: 1; }
-  .pb-hud-enemy .pb-hud-label, .pb-hud-enemy .pb-hud-value { grid-column: 1; }
-  .pb-hud-enemy .pb-hud-value { grid-row: 1; }
   .pb-hud-enemy .pb-hud-track { grid-column: 1; grid-row: 2; }
 }
 @media (prefers-reduced-motion: reduce) {
