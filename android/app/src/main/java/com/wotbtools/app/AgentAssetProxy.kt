@@ -67,8 +67,19 @@ object AgentAssetProxy {
         try {
             when (conn.responseCode) {
                 HttpURLConnection.HTTP_NOT_MODIFIED -> {
-                    if (entry != null) return entry.response()
-                    // 304 但本地缺失（缓存被系统清理等）：无条件重取一次。
+                    // 304：回放缓存。但等待上游响应期间，条目可能已被 trimCache 或系统
+                    // cacheDir 回收删除（getCacheDir 契约允许随时清理）——此时 entry 仍
+                    // 非 null 但打开文件会抛 IOException；不能把这种情况当上游失败返回
+                    // 502，必须落入无条件重取。unlink 后仍在读取的流不受 POSIX 语义影
+                    // 响，竞态窗口只在 open 之前，由这里的 try 覆盖。
+                    val cached = entry?.takeIf { it.body.isFile }
+                    if (cached != null) {
+                        try {
+                            return cached.response()
+                        } catch (_: IOException) {
+                            // 缓存文件在等待期间消失：无条件重取一次。
+                        }
+                    }
                     return fetchAndServe(context, path, conditional = false)
                 }
                 HttpURLConnection.HTTP_OK -> {
@@ -84,7 +95,7 @@ object AgentAssetProxy {
     }
 
     private fun open(path: String, etag: String?): HttpURLConnection =
-        (URL(COS_BASE + path).openConnection() as HttpURLConnection).apply {
+        (URL(COS_BASE + upstreamPath(path)).openConnection() as HttpURLConnection).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
@@ -158,6 +169,17 @@ object AgentAssetProxy {
         MessageDigest.getInstance("SHA-256")
             .digest(path.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
+
+    /**
+     * 纯函数（纯 JVM 单测覆盖）：本机路由路径 → 对象存储 key。资产包在**桶根目录**
+     * （/index.json、/glb/...），而 WebView 请求带本机路由前缀 /agent-assets——拼上游
+     * URL 前必须剥掉前缀并保证根路径斜杠，否则冷缓存请求会 404。
+     * 缓存键（[cacheKey]）仍使用完整本机路径，两者语义不同、不得混用。
+     */
+    fun upstreamPath(path: String): String {
+        val stripped = path.removePrefix(LOCAL_PATH_PREFIX)
+        return if (stripped.startsWith("/")) stripped else "/$stripped"
+    }
 
     /** 纯函数：COS Content-Type（可能带 charset 参数/大小写随意）归一化为 MIME。 */
     fun normalizeContentType(raw: String?): String =
