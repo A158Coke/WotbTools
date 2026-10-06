@@ -1,4 +1,4 @@
-import { PRODUCTION_API_ORIGIN } from './src/platform/runtime.js'
+import { ANDROID_ASSET_BASE, PRODUCTION_API_ORIGIN } from './src/platform/runtime.js'
 import { createHash } from 'node:crypto'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -170,15 +170,17 @@ export function nativeRuntimeIdentity() {
   }
 }
 
-/** Hash existing bootstrap scripts; Android has one reviewed network origin. */
+/** Hash existing bootstrap scripts; Android has reviewed network origins:
+ *  the production gateway (API + version manifest) and the object-storage asset
+ *  origin (see docs/operations/agent-asset-origin.md). */
 export function androidCsp(html) {
   const hashes = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
     .filter(match => match[1].trim())
     .map(match => `'sha256-${createHash('sha256').update(match[1]).digest('base64')}'`)
   return [
     "default-src 'none'", `script-src 'self' 'wasm-unsafe-eval' ${hashes.join(' ')}`,
-    "style-src 'self' 'unsafe-inline'", `img-src 'self' data: blob: ${PRODUCTION_API_ORIGIN}`,
-    `connect-src 'self' ${PRODUCTION_API_ORIGIN}`, "font-src 'self' data:",
+    "style-src 'self' 'unsafe-inline'", `img-src 'self' data: blob: ${PRODUCTION_API_ORIGIN} ${ANDROID_ASSET_BASE}`,
+    `connect-src 'self' ${PRODUCTION_API_ORIGIN} ${ANDROID_ASSET_BASE}`, "font-src 'self' data:",
     "worker-src 'self' blob:", "media-src 'self' blob:", "object-src 'none'",
     "base-uri 'self'", "form-action 'none'",
   ].join('; ')

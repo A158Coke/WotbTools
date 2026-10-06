@@ -26,7 +26,8 @@ describe('APK root URL graph', () => {
   it('allows only bundled scripts and reviewed production connections', () => {
     const policy = androidCsp('<script>localStorage.getItem("profile")</script>')
     expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval' 'sha256-")
-    expect(policy).toContain("connect-src 'self' https://wotbtools.com")
+    expect(policy).toContain("connect-src 'self' https://wotbtools.com https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com")
+    expect(policy).toContain("img-src 'self' data: blob: https://wotbtools.com https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com")
     expect(policy).not.toContain('http:'); expect(policy).not.toContain('*')
   })
 })

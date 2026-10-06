@@ -25,7 +25,9 @@ describe('Android local resource / remote service boundary', () => {
     // A missing bridge in a packaged runtime must never select WebView Keycloak.
     expect(isAndroidApp()).toBe(true)
     expect(ANDROID_APP_ORIGIN).toBe('https://appassets.androidplatform.net')
-    expect(ANDROID_ASSET_BASE).toBe(`${PRODUCTION_API_ORIGIN}/agent-assets`)
+    // Android 3D 资产与 Web 构建默认同源直连对象存储（不经过生产网关反代，见
+    // docs/operations/agent-asset-origin.md）；换 origin 必须同步桶 CORS 与 androidCsp。
+    expect(ANDROID_ASSET_BASE).toBe('https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com')
   })
   it('rejects AI, HoF, Profile, Admin Users and previously resolved 3D assets before dispatch when offline', async () => {
     vi.stubEnv('MODE', 'android')

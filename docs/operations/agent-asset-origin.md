@@ -25,7 +25,7 @@ assetBase()  ← 解析出的 asset origin
 
 基础设施选择只出现在本文件与部署配置里，不出现在应用契约中。
 
-## 当前状态（2026-09-30 实测）
+## 当前状态（2026-10-06 更新）
 
 | 项 | 值 |
 |---|---|
@@ -33,6 +33,8 @@ assetBase()  ← 解析出的 asset origin
 | 资产包位置 | **桶根目录**（`/index.json`、`/glb/...`、`/map/...`、`/tank/...`、`/data/...`） |
 | 包完整性 | 抽查 14 条关键路径全部 `200`（GLB / 碰撞 / tank JSON / 封面 / tanks.pb / models.pb / 底图 / 小地图 / 地形 bin / terrain.json / 场景 GLB / 地表分层 / 卷积贴图） |
 | CORS | 已配置：`https://wotbtools.com` 与 `https://www.wotbtools.com` 均回 `Access-Control-Allow-Origin`，`GET,HEAD`，Max-Age 600 |
+| Android 直连 | `ANDROID_ASSET_BASE`（`frontend/src/platform/runtime.js`）已指向同一 origin——Android 3D 资产不再经生产网关 `/agent-assets` 反代。**前置：桶 CORS 必须放行 `https://appassets.androidplatform.net`**（见下），该规则就位之前不得发布包含此改动的 APK |
+| 反代面 | TX1 `/agent-assets/*` 反代保留，作为旧版本 APK（未含直连改动）的兼容路径；确认全量迁移后可下线 |
 | 桶列举 | `/` 返回 `403`（仅列举被拒，属预期；对象读正常） |
 | 本地开发 | **未覆盖** `http://localhost:*`——本地 dev 直连该 origin 时 GLB/JSON 的 `fetch` 会被 CORS 拦截（见下"本地开发"） |
 | 变量状态 | `ASSET_BASE_URL` Repository Variable **已设置**（Frontend 运行的 "Validate production asset origin" 步骤通过即证明，见 §接线） |
@@ -142,7 +144,8 @@ coscmd upload -r release/asset_pack/ /
 
 - **读权限**：桶需允许匿名读。前端按 HTTP GET 直取，无签名。
 - **CORS（必需）**：`assetProvider.bytes()` / `.json()` 走 `fetch()`，跨域需要 CORS
-  响应头。当前规则允许 `wotbtools.com` 与 `www.wotbtools.com` + `GET`/`HEAD`。
+  响应头。当前规则允许 `wotbtools.com`、`www.wotbtools.com` 与
+  `https://appassets.androidplatform.net`（Android WebView 直连，见"当前状态"）+ `GET`/`HEAD`。
   封面图经 `<img>` 加载不需要 CORS，但 GLB / tank JSON / terrain 都走 `fetch`——
   "只配了图片可用"是常见误判：封面能出、模型和地形全挂。
   把站点换到新域名/新端口时，**必须同步加 CORS 规则**。
