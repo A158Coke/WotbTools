@@ -16,7 +16,6 @@ import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Box, RotateCcw, Search, SearchX, TriangleAlert } from 'lucide-vue-next'
 import { fetchTankEncyclopedia, fetchTankData, tankImageUrl } from '../scene/agentData.js'
 import { TYPE_CLS, normType, shellLabel, isPremiumShell, fmt, fmtNum } from '../scene/tankMeta.js'
-import { useAuth } from '../composables/useAuth.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useIncrementalList } from '../composables/useIncrementalList.js'
 import {
@@ -34,7 +33,6 @@ const SEARCH_DEBOUNCE_MS = 250
 const TYPE_SLUG = { lightTank: 'light', mediumTank: 'medium', heavyTank: 'heavy', 'AT-SPG': 'td' }
 
 const { t, te } = useI18n()
-const { isAdmin } = useAuth()
 const { isCompact } = useBreakpoint()
 const route = useRoute()
 const router = useRouter()
@@ -258,8 +256,8 @@ onMounted(() => {
           </div>
         </header>
 
-        <!-- 装甲查看器入口：装甲数值 / 热力 / 等效判定以查看器为准（唯一装甲事实源） -->
-        <section v-if="isAdmin" class="tp-card-section" data-testid="tank-open3d-card">
+        <!-- 装甲查看器入口：装甲数值 / 热力 / 等效判定以查看器为准（唯一装甲事实源）；查看器匿名可用，入口对全员开放 -->
+        <section class="tp-card-section" data-testid="tank-open3d-card">
           <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
           <label v-if="cfgs.length > 1" class="tp-field tp-field-inline">
             <span class="tp-field-label">{{ t('agentTanks.select_config') }}</span>

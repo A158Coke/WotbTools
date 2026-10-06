@@ -450,7 +450,7 @@ function hasRole(role) {
 }
 
 /**
- * `wotbtools-admin` 用于管理入口与现有 Tankopedia 入口策略；Replay capabilities 不依赖角色。
+ * `wotbtools-admin` 只用于管理入口；Replay capabilities 与装甲查看器（含 Tankopedia 入口卡）不依赖角色。
  */
 const isAdmin = computed(() => hasRole('wotbtools-admin'))
 

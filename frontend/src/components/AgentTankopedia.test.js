@@ -12,12 +12,6 @@ const data = vi.hoisted(() => ({
 }))
 vi.mock('../scene/agentData.js', () => data)
 
-const auth = vi.hoisted(() => ({ admin: false }))
-vi.mock('../composables/useAuth.js', async () => {
-  const { computed } = await import('vue')
-  return { useAuth: () => ({ isAdmin: computed(() => auth.admin) }) }
-})
-
 const layout = vi.hoisted(() => ({ compact: false }))
 vi.mock('../composables/useBreakpoint.js', async () => {
   const { computed } = await import('vue')
@@ -59,7 +53,6 @@ async function mountAt(query = {}) {
 
 describe('AgentTankopedia', () => {
   beforeEach(() => {
-    auth.admin = false
     layout.compact = false
     data.fetchTankEncyclopedia.mockReset().mockResolvedValue(makeCache())
     data.fetchTankData.mockReset().mockResolvedValue({
@@ -134,8 +127,7 @@ describe('AgentTankopedia', () => {
     expect(wrapper.find('[data-testid="tank-skeleton"]').attributes('aria-busy')).toBe('true')
   })
 
-  it('点击卡片 push 详情，返回保留筛选；配置写进 ?config=，管理员入口携带配置', async () => {
-    auth.admin = true
+  it('点击卡片 push 详情，返回保留筛选；配置写进 ?config=，入口携带配置', async () => {
     const { wrapper, router } = await mountAt({ nation: 'ussr', q: 'is7' })
     const push = vi.spyOn(router, 'push')
     await wrapper.find('[data-testid="tank-card"]').trigger('click')
@@ -157,9 +149,9 @@ describe('AgentTankopedia', () => {
     expect(router.currentRoute.value.query).toEqual({ view: 'agent-armor', tank: '999', config: '0' })
   })
 
-  it('非管理员看不到装甲查看器入口；返回列表保留筛选', async () => {
+  it('装甲查看器入口对全员可见（匿名 / 非管理员也不缺席）；返回列表保留筛选', async () => {
     const { wrapper, router } = await mountAt({ nation: 'ussr', tank: '999' })
-    expect(wrapper.find('[data-testid="tank-open3d-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="tank-open3d-card"]').exists()).toBe(true)
     await wrapper.find('[data-testid="tank-back"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ view: 'agent-tankopedia', nation: 'ussr' })
@@ -170,7 +162,6 @@ describe('AgentTankopedia', () => {
     router.back()
     await flushPromises()
     expect(router.currentRoute.value.query.tank).toBeUndefined()
-    expect(wrapper.find('[data-testid="tank-open3d-card"]').exists()).toBe(false)
   })
 
   it('详情加载失败显示错误态与重试', async () => {
