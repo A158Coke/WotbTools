@@ -23,6 +23,7 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
@@ -602,9 +603,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         varying float vOcc;
         #include <logdepthbuf_pars_vertex>
         void main() {
-          vec4 wp = modelMatrix * vec4(position, 1.0);
+          // 实例化合批：USE_INSTANCING 下 instanceMatrix 由 WebGLProgram 自动声明
+          //（ShaderMaterial 同样生效），叶卡批次与 Lambert 批次走同一套实例矩阵。
+          // 角点扩张的世界尺度取 model×instance 合成矩阵首列模长（原为纯 model）。
+          #ifdef USE_INSTANCING
+          mat4 im = modelMatrix * instanceMatrix;
+          #else
+          mat4 im = modelMatrix;
+          #endif
+          vec4 wp = im * vec4(position, 1.0);
           vec3 vp = (viewMatrix * wp).xyz;
-          float ws = length(vec3(modelMatrix[0][0], modelMatrix[1][0], modelMatrix[2][0]));
+          float ws = length(vec3(im[0][0], im[1][0], im[2][0]));
           vp += _corner.xyz * ws;
           gl_Position = projectionMatrix * vec4(vp, 1.0);
           #include <logdepthbuf_vertex>
@@ -978,48 +987,65 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           if (/sky/i.test(o.name || '')) o.visible = false;
         });
 
-        // ---- 可破坏地形：mesh 空间索引 + 损毁态网格初始隐藏 ----
-        // 网格位置 = gltf.scene 局部系（z 上）= destructibles.json 的 pos（游戏场景系，
-        // 直接对应回放 x/z）。D_ 前缀 = 损毁态替换网格。
+        // ---- 实例化合批（场景侧减负主刀）----
+        // 导出器把每个实例导成独立节点，但**节点级共享 mesh/几何**（实测 malinovka
+        // 3096 节点 / 142 唯一几何，~21× 复用）。GLTFLoader 逐节点建 Mesh → 每帧
+        // draw call ≈ 节点数、场景图双遍历（updateMatrixWorld + projectObject）同量级，
+        // 是中/高档场景侧最大的 CPU 开销。按 (geometry, material) 合并为 InstancedMesh：
+        // 几何**零拷贝**复用，draw call 与场景图规模一起降到批次数。
+        // 天空与水体不参与：天空本就隐藏；水面是全场唯一真透明物，保持独立节点让
+        // three 按相机距离做透明排序（合批会把整批退化成一个排序单位）。
+        gltf.scene.updateMatrixWorld(true);
+        const entries = collectInstanceEntries(gltf.scene).filter((e) =>
+          !/sky/i.test(e.name) && !isWaterName(e.name));
+        // 可破坏匹配索引（旧 meshGrid 语义）：展平位置 → entry，2cm 半径邻域查找
+        const meshGrid = new Map();
+        const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
+        for (const e of entries) {
+          const k = gridKey(e.x, e.y);
+          (meshGrid.get(k) || meshGrid.set(k, []).get(k)).push(e);
+        }
+        const batches = groupInstanceBatches(entries);
+        for (const b of batches) b.items.forEach((e, i) => { e.batch = b; e.idx = i; });
+        for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh); }
+        // 原节点摘除：几何/材质已由批次持有（GPU 只上传批次侧），原 Mesh 不再进渲染图
+        for (const e of entries) e.node.removeFromParent();
+        // D_ 损毁态实例初始隐藏：实例化后没有逐实例 visible，用「远处 + 微缩」矩阵
+        // （精确零矩阵是奇异矩阵，raycast 求逆走 NaN 路径，见 writeHiddenInstance）。
+        for (const e of entries) {
+          if (e.name && e.name.startsWith('D_')) { writeHiddenInstance(e.batch.mesh, e.idx); e.hidden = true; }
+        }
+        // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记粒度 = 批次。射线候选走
+        // InstancedMesh 逐实例球测（成本 ≈ 候选实例数 × 球测，配合 far 钳制与 4ms 预算
+        // 化轮转可控）。足印仍按**合法实例**逐一枚举（occlusionFootprintCells 语义不变；
+        // hidden 实例在 y=-1e6，不得参与，否则足印撑爆全图）。无名字的 mesh 与旧行为
+        // 一致：可渲染但既不匹配可破坏物、也不当遮挡候选。
         // 匹配半径 **2cm**（导出器把同一实例的全部批次放在同一坐标上：实测 99.8% 实例
         // 的完好网格在 1cm 内、成对 D_ 网格在 5mm 内）——早期用 1.5m 半径会把**邻近实例**
         // 的网格一起卷进来（malinovka 579 棵树里 22 棵会拖走邻居几何：一棵树倒，旁边草丛
         // 跟着转）。半径收紧后邻居不再误配；无对应网格 = 该物体不在 GLB（不渲染）。
         const MESH_MATCH_R = 0.02;
-        const meshGrid = new Map();
-        const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
-        // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记**可见**静态网格——按包围球
-        // 半径铺进它覆盖到的所有格子（大建筑跨多格），避免"整个场景 raycast"的卡死。
         const occGrid = new Map();
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh || !o.name) return;
-          if (o.name.startsWith('D_')) { o.visible = false; }
-          let wx = 0, wy = 0, n = o;
-          // 展平到 gltf.scene：本导出器为扁平结构（节点直挂根），累积父链防御嵌套
-          while (n && n !== gltf.scene) { wx += n.position.x; wy += n.position.y; n = n.parent; }
-          const k = gridKey(wx, wy);
-          (meshGrid.get(k) || meshGrid.set(k, []).get(k)).push({ mesh: o, x: wx, y: wy });
-          if (o.visible && !/sky/i.test(o.name)) {
-            if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
-            const r = o.geometry.boundingSphere ? o.geometry.boundingSphere.radius : 0;
-            // 登记 = 足印 AABB 全枚举（occlusionFootprintCells）。不能用 occlusionCells
-            // （线段遍历）登记：那只会把包围盒对角线经过的格子入表，大建筑非对角线
-            // 覆盖格子缺失 → 穿那些格子的射线漏判遮挡（标签隔楼可见）。
-            const c = occlusionFootprintCells(wx - r, wy - r, wx + r, wy + r, OCCL_CELL);
+        for (const b of batches) {
+          if (!b.geometry.boundingSphere) b.geometry.computeBoundingSphere();
+          const r = b.geometry.boundingSphere ? b.geometry.boundingSphere.radius : 0;
+          for (const e of b.items) {
+            if (e.hidden || !e.name) continue;
+            const c = occlusionFootprintCells(e.x - r, e.y - r, e.x + r, e.y + r, OCCL_CELL);
             for (const key of c) {
               const list = occGrid.get(key);
-              if (list) { if (!list.includes(o)) list.push(o); }
-              else occGrid.set(key, [o]);
+              if (list) { if (!list.includes(b.mesh)) list.push(b.mesh); }
+              else occGrid.set(key, [b.mesh]);
             }
           }
-        });
+        }
         occlGrid = occGrid;   // 遮挡检测的候选表（旧会话的由 teardown 置 null）
         const findMeshes = (px, py, wantDestroyed, r = MESH_MATCH_R) => {
           const out = [];
           const gx = Math.round(px / 2), gy = Math.round(py / 2);
           for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
             for (const e of meshGrid.get(`${gx + dx},${gy + dy}`) || []) {
-              const destroyedMesh = (e.mesh.name || '').startsWith('D_');
+              const destroyedMesh = e.name.startsWith('D_');
               if (destroyedMesh === wantDestroyed && Math.hypot(e.x - px, e.y - py) <= r) out.push(e);
             }
           }
@@ -1033,44 +1059,42 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           const areasByEid = new Map((DATA.destructible_areas || []).map((a) => [a.eid, a]));
           const index = buildDestructibleIndex(destructDoc);
           const states = foldDestructibleStates(DATA.destructible_events, areasByEid, index);
-          // 预挂树倒 pivot（挂 gltf.scene 内，局部 z 上；树顶运动学见 destructibles.js）。
-          // mesh 自身保留 placement 旋转/贴地 z；倒伏 = pivot 上的世界轴旋转（后乘），
-          // pivot.z 取首网格根部高度，其余网格按各自 z 差挂入。
-          const worldZ = (m) => { let z = m.position.z, n = m.parent; while (n && n !== gltf.scene) { z += n.position.z; n = n.parent; } return z; };
+          // 可破坏物**槽位化**：不再重挂 pivot——状态持 { mesh, idx, base } 槽位。
+          // 树倒 = T(p)·R·T(−p)·base 逐实例矩阵（与旧 pivot 装配逐值等价，等价性由
+          // sceneryInstancing.test.js 随机位姿锁定）；建筑换模 = 完好/损毁槽位在 base
+          // 与隐藏矩阵之间翻转。pivot 原点/树高/停止角公式与旧实现逐项一致。
+          const slotOf = (e) => ({ mesh: e.batch.mesh, idx: e.idx, base: e.matrix });
           for (const st of states) {
             const [px, py] = st.inst.pos;
             if (st.prop === 3) {
               const hits = findMeshes(px, py, false);
               if (!hits.length) continue;
-              const pivot = new THREE.Group();
-              pivot.position.set(px, py, worldZ(hits[0].mesh));
+              const pivotZ = hits[0].z;
               // 树高 = 各网格几何在 pivot 局部系（z 上）的上界 + 网格自身 z 偏移（= 0，
               // 同实例批次同锚点）——倒伏时长 T ∝ √(L/g) 用它（见 destructibles.js）。
               let heightM = 0;
               for (const h of hits) {
-                const wz = worldZ(h.mesh);
-                h.mesh.position.set(h.x - px, h.y - py, wz - pivot.position.z);
-                pivot.add(h.mesh);
-                const geo = h.mesh.geometry;
+                const geo = h.geometry;
                 if (!geo) continue;
                 if (!geo.boundingBox) geo.computeBoundingBox();
                 const bb = geo.boundingBox;
-                if (bb) heightM = Math.max(heightM, (bb.max.z ?? 0) + h.mesh.position.z);
+                if (bb) heightM = Math.max(heightM, (bb.max.z ?? 0) + (h.z - pivotZ));
               }
-              gltf.scene.add(pivot);
-              st.pivot = pivot;
+              st.slots = hits.map(slotOf);
               st.heightM = heightM;
+              st.pivotPos = { x: px, y: py, z: pivotZ };
+              st.fallQuat = { w: 1 };   // settled 自校验读的倒伏旋转（destructibles.js）
+              st.upright = true;
               // 停止角 = 树干沿倒向**触地**的角度（客户端"停在地形上"，因而随位置/倒向变化）。
               // 高度场在**世界系**（见 rebuildGround 注释：世界 x = −场景局部 x），而 pivot 在
               // gltf.scene 局部系（z 上）→ 采样用 (lx, ly) → (世界 −lx, 世界 lz=ly)。
               // 无高度场（2D 资源平面）→ sampleHeight 恒 0，此时按平坦地面（90°）。
               st.stopRad = heightField
-                ? fallStopAngle(st.fallDir, { x: px, y: py, z: pivot.position.z }, heightM,
-                    (lx, ly) => sampleHeight(-lx, ly))
+                ? fallStopAngle(st.fallDir, st.pivotPos, heightM, (lx, ly) => sampleHeight(-lx, ly))
                 : Math.PI / 2;
             } else {
-              st.intactMeshes = findMeshes(px, py, false).map((e) => e.mesh);
-              st.deadMeshes = findMeshes(px, py, true).map((e) => e.mesh);
+              st.intactSlots = findMeshes(px, py, false).map(slotOf);
+              st.deadSlots = findMeshes(px, py, true).map(slotOf);
             }
           }
           destruct = { states, ptr: 0, lastT: -1, animating: false };
@@ -1078,19 +1102,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           if (DEBUG) window.__destructDebug = () => ({
             events: (DATA.destructible_events || []).length,
             states: destruct.states.length,
-            pivots: destruct.states.filter((st) => st.pivot).length,
-            swaps: destruct.states.filter((st) => st.intactMeshes).length,
+            trees: destruct.states.filter((st) => st.slots).length,
+            swaps: destruct.states.filter((st) => st.intactSlots).length,
             ptr: destruct.ptr,
           });
         }
         // ---- 静态子树矩阵冻结 ----
-        // 场景 GLB 的加载/贴地/可破坏 pivot 组装至此全部定型：先 bake 一遍世界矩阵，再关
-        // 全树 matrixAutoUpdate。three 的 updateMatrix() 对 matrixAutoUpdate=true 的节点是
-        // **无条件**重 compose（不看脏标记）——3000+ 节点 ×60fps 的纯 CPU 开销，冻结后
-        // 每帧渲染遍历只剩子树访问。运行期仍会动的节点自证活性：
-        //   - 树倒 pivot：updateDestructibles 写四元数时手动 updateMatrix + 置
-        //     matrixWorldNeedsUpdate（父链已冻结不重算，靠脏标记把旋转传播进树冠子树）；
-        //   - 建筑/岩石损毁只有 visible 翻转，不触碰变换。
+        // 场景 GLB 至此全部定型（合批 + 可破坏槽位装配完成）：先 bake 一遍世界矩阵，再关
+        // 全树 matrixAutoUpdate（three 对 autoUpdate 节点每帧**无条件**重 compose）。批次
+        // 自身变换恒为单位阵；运行期唯一的变换写入是实例矩阵（树倒/换模翻转），它不走
+        // 节点 matrix 路径、不受冻结影响（instanceMatrix.needsUpdate 局部上传）。
         mapScenery.updateMatrixWorld(true);
         gltf.scene.traverse((o) => { o.matrixAutoUpdate = false; });
         mapScenery.matrixAutoUpdate = false;   // 根组旋转已 bake，永不再变；保持 true 会让
@@ -2458,61 +2479,73 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const tmpDir = new THREE.Vector3();  // 进入跟随：相机方向临时量
   const FOLLOW_SNAP_DIST = 26;         // 进入跟随：相机沿当前方向收拢到此距离（米；坦克约 7m 长）
   const FOLLOW_MIN_HEIGHT = 9;         // 进入跟随：相机至少高于坦克此高度（米，保证俯角不贴地）
-  // 可破坏地形状态推进（回放时钟；seek 后退 = 全量重算，前进 = 游标泵）。
-  // 树倒角度每帧从 (T − clock) 重算（幂等，seek 安全）；碎裂换模只在状态翻转时
-  // 触碰 visible。st.pivot 的倒向旋转 = fall ∘ placement（世界轴后乘，见加载段）。
   // 可破坏状态推进（回放时钟；seek 后退 = 全量重算，前进 = 游标泵）。
-  // 性能：只在有**在飞倒树动画**时逐帧更新四元数（dirty 标记），已终态的树跳过；
-  // 碎裂换模只在状态翻转时触碰 visible（幂等，seek 安全）。
+  // 实例化后不再有 pivot 节点：树倒写**逐实例矩阵**（T(p)·R·T(−p)·base，与旧 pivot
+  // 装配逐值等价，见 sceneryInstancing.js），建筑换模在 base / 隐藏矩阵之间翻转实例
+  // 矩阵。树只在自己倒伏窗口内写矩阵、终态后写一次不再碰（省去 700+ 次 compose）；
+  // 实例矩阵上传按帧合并（同帧多树只触发一次所在批次的 needsUpdate）。
   function updateDestructibles(T) {
     if (!destruct) return;
     const states = destruct.states;
     if (T < destruct.lastT) {
       destruct.ptr = 0;   // seek 后退：全部回到未激活
-      // 树终态缓存随回退**显式失效**：settled=true 的树若不清，重播再次越过倒伏终点时
-      // 终态分支被跳过，触地旋转不会重写（树直立或停在中间角）。（destructibles.js 的
-      // settled getter「pivot 未达停止角 ⇒ 视为未终态」是第二道防线，两道机制独立。）
-      for (const st of states) if (st.prop === 3) st.settled = false;
+      // 树终态缓存随回退**显式失效**（含 fallQuat 复位——destructibles.js 的 settled
+      // 自校验 getter 以它为准，是第二道防线，两道机制独立，谁先兜住都行）。
+      for (const st of states) if (st.prop === 3) { st.settled = false; st.upright = true; }
     }
     destruct.lastT = T;
     while (destruct.ptr < states.length && states[destruct.ptr].clock <= T) destruct.ptr++;
     destruct.animating = false;
+    let dirty = null;   // 本帧被写过的批次 → 一次性 needsUpdate（Set 去重多树同批次）
+    const mark = (mesh) => { (dirty || (dirty = new Set())).add(mesh); };
     for (let i = 0; i < states.length; i++) {
       const st = states[i];
       const active = i < destruct.ptr;
       if (st.prop === 3) {
-        if (!st.pivot) continue;
+        if (!st.slots) continue;
         if (!active) {
-          if (st.pivot.quaternion.x || st.pivot.quaternion.y || st.pivot.quaternion.z) {
-            st.pivot.quaternion.identity();
-            refreshFrozenPivot(st.pivot);
+          // 倒带复位：恢复 base（直立）。upright 标记免每帧重写（旧实现查四元数非零）。
+          if (!st.upright) {
+            for (const s of st.slots) { s.mesh.setMatrixAt(s.idx, s.base); mark(s.mesh); }
+            st.fallQuat.w = 1;
+            st.upright = true;
           }
           continue;
         }
-        // 只在动画窗口内逐帧更新；终态后写一次不再碰（省去 700+ 次 setFromAxisAngle）。
-        // 推进决策在 destructibles.treeFrame（纯函数，单测锁定倒带序列），此处只写四元数。
+        // 推进决策在 destructibles.treeFrame（纯函数，单测锁定倒带序列），此处只写
+        // 实例矩阵与 fallQuat（settled 自校验的第二道防线用）。
         const f = treeFrame(st, true, T);
         if (f) {
           if (f.animating) destruct.animating = true;
-          st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(f.axis[0], f.axis[1], f.axis[2]), f.angle);
-          refreshFrozenPivot(st.pivot);
+          _tmpFallAxis.set(f.axis[0], f.axis[1], f.axis[2]);
+          for (const s of st.slots) {
+            fallMatrix(s.base, st.pivotPos.x, st.pivotPos.y, st.pivotPos.z, _tmpFallAxis, f.angle, _tmpInstM);
+            s.mesh.setMatrixAt(s.idx, _tmpInstM);
+            mark(s.mesh);
+          }
+          _tmpFallQ.setFromAxisAngle(_tmpFallAxis, f.angle);
+          st.fallQuat.w = _tmpFallQ.w;
+          st.upright = false;
         }
       } else {
         if (active === !!st.applied) continue;
         st.applied = active;
-        for (const m of st.intactMeshes || []) m.visible = !active;
-        for (const m of st.deadMeshes || []) m.visible = active;
+        // 完好态：存活期显示、摧毁后隐藏；损毁态相反（旧 visible 翻转 → 实例矩阵翻转）。
+        for (const s of st.intactSlots || []) {
+          if (active) writeHiddenInstance(s.mesh, s.idx); else s.mesh.setMatrixAt(s.idx, s.base);
+          mark(s.mesh);
+        }
+        for (const s of st.deadSlots || []) {
+          if (!active) writeHiddenInstance(s.mesh, s.idx); else s.mesh.setMatrixAt(s.idx, s.base);
+          mark(s.mesh);
+        }
       }
     }
-  }
-  // 冻结子树（加载后 matrixAutoUpdate=false，见场景加载段）里的树倒 pivot 旋转型写法：
-  // 手动 recompose 局部矩阵 + 标记世界脏，让渲染遍历把这次旋转传播进树冠子树。
-  // 父链已不再逐帧重算，漏掉这两行 = 树倒动画整体不可见（世界矩阵停在加载时的直立态）。
-  function refreshFrozenPivot(pivot) {
-    pivot.updateMatrix();
-    pivot.matrixWorldNeedsUpdate = true;
+    if (dirty) for (const mesh of dirty) mesh.instanceMatrix.needsUpdate = true;
   }
   const _tmpFallAxis = new THREE.Vector3();
+  const _tmpInstM = new THREE.Matrix4();
+  const _tmpFallQ = new THREE.Quaternion();
   // 炮线折线求值 scratch（每帧多车并发，避免逐帧分配）
   const _tpA = new THREE.Vector3(), _tpB = new THREE.Vector3();
 
@@ -2904,6 +2937,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function disposeObject3D(root) {
     const geos = new Set(), mats = new Set(), texs = new Set();
     root.traverse((o) => {
+      // InstancedMesh 的 instanceMatrix 是实例专属的 InstancedBufferAttribute，
+      // 不随 geometry.dispose 释放，必须走 InstancedMesh.dispose 自己清理
+      if (o.isInstancedMesh) o.dispose();
       if (o.geometry) geos.add(o.geometry);
       const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
       for (const m of ms) {
