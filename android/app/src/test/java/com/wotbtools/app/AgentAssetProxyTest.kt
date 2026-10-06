@@ -21,6 +21,22 @@ class AgentAssetProxyTest {
     }
 
     @Test
+    fun upstreamPathStripsLocalPrefixAndKeepsRootSlash() {
+        // 资产包在桶根目录：本机路由前缀 /agent-assets 必须剥掉，且保留根路径斜杠——
+        // 否则冷缓存请求会打到 COS 的 /agent-assets/... 而 404
+        assertEquals("/index.json", AgentAssetProxy.upstreamPath("/agent-assets/index.json"))
+        assertEquals("/glb/1/model.glb", AgentAssetProxy.upstreamPath("/agent-assets/glb/1/model.glb"))
+        assertEquals("/", AgentAssetProxy.upstreamPath("/agent-assets/"))
+        // 缓存键仍用完整本机路径（与上游 key 语义不同，不得混用）：
+        // 前缀剥离只影响上游 URL，不影响缓存身份
+        assertNotEquals(
+            AgentAssetProxy.upstreamPath("/agent-assets/index.json"),
+            AgentAssetProxy.cacheKey("/agent-assets/index.json")
+        )
+    }
+
+
+    @Test
     fun contentTypeDropsCharsetParamsAndFallsBackToOctetStream() {
         assertEquals("application/json", AgentAssetProxy.normalizeContentType("application/json; charset=utf-8"))
         assertEquals("binary/octet-stream", AgentAssetProxy.normalizeContentType("Binary/Octet-Stream"))

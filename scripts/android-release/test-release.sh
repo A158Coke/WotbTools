@@ -239,13 +239,24 @@ legacy = copy.deepcopy(evidence); legacy["schemaVersion"] = 1
 evidence_path.write_text(json.dumps(legacy), encoding="utf-8")
 reject(lambda: gates.command_bundle(args))
 evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
-for field in ("runtimeOrigin", "buildCommit", "agentWasm", "nativeRuntime", "fileCount", "totalBytes", "files", "entrySha256"):
+for field in ("runtimeOrigin", "buildCommit", "agentWasm", "nativeRuntime", "fileCount", "totalBytes", "files", "entrySha256", "assetOrigin"):
     broken = copy.deepcopy(manifest)
     broken[field] = [] if field == "files" else None
     write_apk(broken)
     reject(lambda: gates.apk_bundle_identity(str(apk), contract, pin, source, version))
 write_apk(manifest, {**contents, "index.html": b"tampered index"})
 reject(lambda: gates.apk_bundle_identity(str(apk), contract, pin, source, version))
+# assetOrigin 是已审查 origin 白名单：legacy 网关取值（≤2.1.6 已 staged 候选的合法身份）
+# 必须放行——main 前进不得作废已 staged 的候选；白名单之外的 origin 一律拒绝。
+legacy_origin = copy.deepcopy(manifest)
+legacy_origin["assetOrigin"] = "https://wotbtools.com/agent-assets"
+write_apk(legacy_origin)
+gates.apk_bundle_identity(str(apk), contract, pin, source, version)
+unreviewed_origin = copy.deepcopy(manifest)
+unreviewed_origin["assetOrigin"] = "https://evil.example.com/assets"
+write_apk(unreviewed_origin)
+reject(lambda: gates.apk_bundle_identity(str(apk), contract, pin, source, version))
+write_apk(manifest)
 reject(lambda: gates.validate_apk_version("package: name='com.wotbtools.app' versionCode='2000000' versionName='2.0.0'", version))
 # Exact-origin preflight, authenticated route and asset readiness; no wildcard or credentials.
 headers = {"access-control-allow-origin": contract["origin"], "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
