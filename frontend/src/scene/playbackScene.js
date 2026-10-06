@@ -23,7 +23,8 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
-import { nameChainOf, nearestDestructibleState, stateVisualLabel, formatPickReport } from './pickDebug.js'
+import { nameChainOf, nearestInstance, chainVisible, stateVisualLabel, formatPickReport } from './pickDebug.js'
+import { collectMaterialTextures } from './materialDispose.js'
 import { pruneForeignVariants } from './variantFilter.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAt, legArcEnds, arcAtTime, pointAtArc } from './shotPath.js'
@@ -165,6 +166,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // scenery = { states, appliedPtr, lastT, meshIdx }；Pivot 挂在 gltf.scene 内随
   // mapScenery 一起 dispose（会话生命周期同场景 GLB，无独立 teardown）。
   let destruct = null;
+  let destructPickList = null;   // 拾取用全量实例清单（destructibles.json instances，与事件无关）
   let groundMesh = null, gridHelper = null;           // buildWorld 的占位地面/网格（会话拥有）
   let destroyed = false;
   let kfId = 0;
@@ -385,6 +387,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let emptyDownAt = null;
   function onScenePointerDown(e) {
     if (e.button !== 0) return;
+    if (PICK_DEBUG) pickDownAt = { x: e.clientX, y: e.clientY };   // 调试拾取独立记录（车辆命中路径也出报告）
     const r = container.getBoundingClientRect();
     const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(nd, camera);
@@ -399,19 +402,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
   }
   function onScenePointerUp(e) {
-    if (e.button !== 0 || !emptyDownAt) return;
+    if (e.button !== 0) return;
+    // 调试拾取：按下/抬起与拖拽判定独立于选中语义——车辆命中路径（emptyDownAt=null）
+    // 同样出报告，且不会被前方车辆挡掉场景物体的调试报告
+    if (pickDownAt) {
+      const movedPick = Math.hypot(e.clientX - pickDownAt.x, e.clientY - pickDownAt.y);
+      pickDownAt = null;
+      if (movedPick <= SCENE_CLICK_SLOP_PX) reportPick(e);
+    }
+    if (!emptyDownAt) return;
     const moved = Math.hypot(e.clientX - emptyDownAt.x, e.clientY - emptyDownAt.y);
     emptyDownAt = null;
     // eid = null：宿主语义「选中被清空/点击其它地方」→ 隐藏详情窗（保留选中高亮由宿主决定）
-    if (moved <= SCENE_CLICK_SLOP_PX) {
-      if (PICK_DEBUG) reportPick(e);   // 调试拾取；不改既有清选语义
-      onVehicleSelect?.(null, e);
-    }
+    if (moved <= SCENE_CLICK_SLOP_PX) onVehicleSelect?.(null, e);
   }
 
   // ---------- 点击拾取调试（PICK_DEBUG；纯函数在 pickDebug.js） ----------
   let pickMarker = null;
   let pickPanel = null;
+  let pickDownAt = null;
   function reportPick(e) {
     try {
       const r = container.getBoundingClientRect();
@@ -419,12 +428,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       raycaster.setFromCamera(nd, camera);
       const roots = [mapScenery, terrainMesh, groundMesh, ...V.map((v) => v.group)].filter(Boolean);
       const hits = roots.length ? raycaster.intersectObjects(roots, true) : [];
-      const rep = buildPickReport(hits[0] || null);
+      // Raycaster 不过滤 visible：隐藏 D_ 损毁网格/sky/隐藏父节点下的车辆会被
+      // 命中——按整条祖先链可见性取最近可见命中，否则报告指向画面里没有的模型
+      const hit = hits.find((h) => chainVisible(h.object)) || null;
+      const rep = buildPickReport(hit);
       const text = formatPickReport(rep);
       console.log(text);
       try { window.__pbPick = rep; window.__pbPickText = text; } catch (_) {}
       showPickPanel(text);
-      if (hits[0]) movePickMarker(hits[0].point);
+      if (hit) movePickMarker(hit.point);
     } catch (err) {
       console.warn('[scene-pick] failed:', err);
     }
@@ -452,16 +464,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const chain = nameChainOf(hit.object, mapScenery || null);
     const mat = hit.object.material;
     const matName = Array.isArray(mat) ? mat.map((m) => m?.name || '?').join('|') : (mat?.name || '');
-    // 实例归属：先精确（命中网格 ∈ 状态的 pivot/换模网格组），再位置兜底（3m）
-    let st = null;
-    const states = destruct?.states || [];
-    for (const s of states) {
-      if (s.pivot && (s.pivot === hit.object || s.pivot.children.includes(hit.object))) { st = s; break; }
-      if ((s.intactMeshes || []).includes(hit.object) || (s.deadMeshes || []).includes(hit.object)) { st = s; break; }
-    }
-    if (!st && scenePt) {
-      st = nearestDestructibleState(states, scenePt[0], scenePt[1], 3) || null;
-    }
+    // 实例归属 = 完整清单（destructibles.json instances 全集，与事件无关——
+    // 整场没被撞过的树也在清单里）；动画状态是可选叠加，按实例身份关联
+    const inst = scenePt ? nearestInstance(destructPickList, scenePt[0], scenePt[1], 3) : null;
+    const st = inst ? (destruct?.states || []).find((x) => x.inst === inst) || null : null;
     return {
       clock: T,
       kind: 'scenery',
@@ -470,7 +476,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       world: hit.point.toArray(),
       scene: scenePt || undefined,
       material: matName || undefined,
-      inst: st?.inst || null,
+      inst: inst || null,
+      serverIdKnown: !!(inst && inst.serverId),
       vis: st ? stateVisualLabel(st) : null,
     };
   }
@@ -813,6 +820,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
     if (mapScenery) { scene.remove(mapScenery); mapScenery = null; }
     destruct = null;
+    destructPickList = null;
     mapTexture = null; mapMetaInfo = null; heightField = null; heightMeta = null;
     occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
     groundLayers = null;
@@ -1188,6 +1196,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           return out;
         };
         const destructDoc = await destructDocPromise;
+        destructPickList = (destructDoc && Array.isArray(destructDoc.instances)) ? destructDoc.instances : null;
         if (DEBUG) window.__destructStage = destructDoc
           ? (Array.isArray(DATA.destructible_events) ? `events-${DATA.destructible_events.length}` : 'no-events-old-wasm')
           : 'doc-missing';
@@ -3031,10 +3040,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
       for (const m of ms) {
         mats.add(m);
-        for (const k in m) {
-          const val = m[k];
-          if (val && val.isTexture) texs.add(val);
-        }
+        collectMaterialTextures(m, texs);   // 直接属性 + uniforms（ShaderMaterial 纹理在 uniforms.value）
       }
     });
     for (const t of texs) t.dispose();
