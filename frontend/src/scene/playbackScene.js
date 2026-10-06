@@ -24,6 +24,7 @@ import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
+import { createDynRes } from './dynRes.js'
 import { nameChainOf, nearestDestructibleState, stateVisualLabel, formatPickReport } from './pickDebug.js'
 import { pruneForeignVariants } from './variantFilter.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
@@ -356,7 +357,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 数十~数百 ms，落在"战斗第一次开火/命中"的那一帧就是用户实测的"打起来就卡"。
     // 场景就绪后立即编译在用材质（含地面分层着色器/FX 池），成本挪到加载阶段（那时本来在等资产）。
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(devicePixelRatio, Q.maxDpr));
+    const baseDpr = Math.min(devicePixelRatio, Q.maxDpr);
+    renderer.setPixelRatio(baseDpr);
+    // 动态分辨率（?dynres=1 显式开启，A/B 与回滚同 ?logdepth 惯例）：持续超预算
+    // 降 pixel ratio、有余量升回档位上限。档位 DPR 无下调空间（baseDpr ≤ 1）时
+    // 跳过装配——降无可降。
+    dynResCtl = DYNRES && baseDpr > 1
+      ? createDynRes({ ceilDpr: baseDpr })
+      : null;
     if (DEBUG) window.__renderer = renderer;   // 诊断钩子（renderer 创建后才可引用；仅 ?debug）
     if (DEBUG) window.__camera = camera;       // 诊断钩子：跟随相机定位（创建后引用）
     // three r165+ 恒为物理光照单位（Lambert 除以 π），旧强度会让建筑/车模暗到发黑；
@@ -2850,6 +2858,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       renderer.render(labelScene, camera);
       renderer.autoClear = true;
     }
+    if (dynResCtl) {
+      // 只喂实际渲染帧（空闲帧不是 GPU 负载样本）；调整即重设画布尺寸并强制下一帧重绘
+      const nd = dynResCtl.frame(dt * 1000);
+      if (nd != null) {
+        renderer.setPixelRatio(nd);
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        invalidate();
+      }
+    }
     if (PERF) perfFrame(perfT1 - perfT0, performance.now() - perfT1);
   }
 
@@ -2860,6 +2877,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 炮线/轨迹盒/命中特效/飘字/爆散/可见车辆）。
   const PERF = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('perf');
+  const DYNRES = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).has('dynres');
+  let dynResCtl = null;
   const PERF_RING = 240;              // ≈4s 窗口（60fps）
   let perfRing = [], perfRingN = 0, perfLast = 0, perfSlow = [];
   function perfFrame(updateMs, renderMs) {
@@ -2870,6 +2890,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 实例化 / 冻结）的收益直接体现在这个数上，没有它优化前后无法量化对比。
     const calls = renderer ? renderer.info.render.calls : 0;
     perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, t: T, calls,
+      dpr: renderer ? Math.round(renderer.getPixelRatio() * 100) / 100 : 0,
       tracers: tracers.length, traj: trajLines.length, impacts: impacts.length,
       dmg: floatDmgs.length, burst: burstFx.length,
       veh: V.filter((v) => v.group.visible).length };
@@ -2897,6 +2918,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       `update ms med=${f(q('updateMs', 0.5))} p90=${f(q('updateMs', 0.9))}`,
       `render ms med=${f(q('renderMs', 0.5))} p90=${f(q('renderMs', 0.9))}`,
       `draw calls med=${f(q('calls', 0.5))} p90=${f(q('calls', 0.9))} max=${f(q('calls', 0.99))}`,
+      `pixel ratio med=${f(q('dpr', 0.5))} min=${f(q('dpr', 0.05))}`,
       `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} dmg=${last.dmg} burst=${last.burst}`,
       'slowest frames (dt ms / update / render / T):',
       ...perfSlow.map((r) => `  ${f(r.dt)} / ${f(r.updateMs)} / ${f(r.renderMs)} @T=${r.t.toFixed(1)}`),

@@ -81,3 +81,13 @@ describe('playbackScene 场景 GLB 实例化合批接线', () => {
     expect(body).toMatch(/if \(dirty\) for \(const mesh of dirty\) mesh\.instanceMatrix\.needsUpdate = true;/)
   })
 })
+
+describe('playbackScene 动态分辨率接线（?dynres）', () => {
+  it('装配有空间判定（DPR 无下调空间则跳过）、只喂实际渲染帧、调整即重设尺寸', () => {
+    expect(src).toMatch(/dynResCtl = DYNRES && baseDpr > 1/)
+    expect(src).toMatch(/createDynRes\(\{ ceilDpr: baseDpr \}\)/)
+    expect(src).toMatch(/const nd = dynResCtl\.frame\(dt \* 1000\);/)
+    expect(src).toMatch(/renderer\.setPixelRatio\(nd\);/)
+    expect(src).toMatch(/renderer\.setSize\(container\.clientWidth, container\.clientHeight\);/)
+  })
+})
