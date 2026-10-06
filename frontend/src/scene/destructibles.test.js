@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildDestructibleIndex, resolveDestructibleEvent, fallTipVector, fallRotation, fallDurationS,
-  fallStopAngle, foldDestructibleStates, TREE_FALL_MIN_S, TREE_FALL_MAX_S,
+  fallStopAngle, foldDestructibleStates, treeFrame, TREE_FALL_MIN_S, TREE_FALL_MAX_S,
   TREE_FALL_DEFAULT_HEIGHT_M, TREE_FALL_MIN_STOP_RAD,
 } from './destructibles.js'
 
@@ -198,5 +198,65 @@ describe('foldDestructibleStates', () => {
 
   it('空事件流 / 空 areas → 空数组', () => {
     expect(foldDestructibleStates(null, new Map(), buildDestructibleIndex(doc))).toEqual([])
+  })
+})
+
+describe('treeFrame（场景每帧树推进决策；锁定倒带序列）', () => {
+  const mkState = () => ({ clock: 10, prop: 3, fallDir: 0, heightM: 15, stopRad: 1.2, settled: false })
+
+  it('未激活 / 事件前 → null；动画帧 = 恒定角速度旋转并标 animating', () => {
+    const st = mkState()
+    expect(treeFrame(st, false, 50)).toBeNull()
+    expect(treeFrame(st, true, 5)).toBeNull()          // active 但 elapsed < 0：不写终态
+    const dur = fallDurationS(15)
+    const mid = treeFrame(st, true, 10 + dur * 0.5)
+    expect(mid.animating).toBe(true)
+    expect(mid.angle).toBeCloseTo(0.6, 9)              // stop·u，恒定角速度
+    expect(mid.axis).toEqual(fallRotation(0, dur, 15, 1.2).axis)
+  })
+
+  it('终态帧：精确停止角 + settled 置位；此后再越过终点 → null（缓存跳过）', () => {
+    const st = mkState()
+    const dur = fallDurationS(15)
+    const fin = treeFrame(st, true, 10 + dur + 1)
+    expect(fin.animating).toBe(false)
+    expect(fin.angle).toBe(1.2)                        // 停止角精确写入
+    expect(st.settled).toBe(true)
+    expect(treeFrame(st, true, 10 + dur + 2)).toBeNull()
+  })
+
+  it('倒带序列（评审 P0 回归）：终态 → 事件前 → 动画中 → 终态，最终旋转必须重写', () => {
+    const st = mkState()
+    const dur = fallDurationS(15)
+    // ① 播过倒伏终点：终态落盘
+    const t1 = treeFrame(st, true, 10 + dur + 1)
+    expect(t1.angle).toBe(1.2)
+    expect(st.settled).toBe(true)
+    // ② seek 回事件前：场景 rewind 分支清 settled + pivot 归 identity（未激活 → null）
+    st.settled = false
+    expect(treeFrame(st, false, 5)).toBeNull()
+    // ③ 重播：动画中帧正常推进
+    const mid = treeFrame(st, true, 10 + dur * 0.5)
+    expect(mid.animating).toBe(true)
+    expect(mid.angle).toBeLessThan(1.2)
+    // ④ 再次越过终点：终态旋转**再次精确写入**（settled 未重置时这里会是 null）
+    const t2 = treeFrame(st, true, 10 + dur + 1)
+    expect(t2.animating).toBe(false)
+    expect(t2.angle).toBe(1.2)
+    expect(t2.axis).toEqual(t1.axis)
+  })
+
+  it('fold 产出的树状态：rewind 显式清零走 setter，getter 同步；终态重写不受 pivot 缺失影响', () => {
+    const idx = buildDestructibleIndex(doc)
+    const areas = new Map([[21, { eid: 21, x: -184.4, z: -116.1 }]])
+    const [state] = foldDestructibleStates([
+      { clock: 10, area_eid: 21, slot: 1, prop: 3, fall_dir: 0 },
+    ], areas, idx)
+    state.stopRad = 1.2
+    state.settled = true
+    expect(state.settled).toBe(true)     // pivot 缺失 → getter 回落存储值
+    state.settled = false                // 场景 rewind 分支的显式清零（走 setter）
+    expect(state.settled).toBe(false)
+    expect(treeFrame(state, true, 10 + fallDurationS(15) + 1).angle).toBe(1.2)
   })
 })
