@@ -312,7 +312,10 @@ def apk_bundle_identity(apk_path: str, contract: dict, pin: dict, source: str, v
         expected = {
             "schemaVersion": 2, "target": "android", "buildCommit": source,
             "runtimeOrigin": contract["origin"], "apiOrigin": "https://wotbtools.com",
-            "assetOrigin": "https://wotbtools.com/agent-assets", "entry": "index.html",
+            # /agent-assets 是本机路径：资产由 AgentAssetProxy 在 shouldInterceptRequest
+            # 里原生直连对象存储（docs/operations/agent-asset-origin.md）。原生代码不受
+            # CORS 约束，因此这里不允许也不需要回退到生产网关反代。
+            "assetOrigin": "/agent-assets", "entry": "index.html",
             "agentWasm": {"commit": pin["ref"], "release": pin["artifact"]["release"]},
         }
         if contract["origin"] != "https://appassets.androidplatform.net":

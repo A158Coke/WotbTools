@@ -193,7 +193,7 @@ digest = lambda data: hashlib.sha256(data).hexdigest()
 manifest = {
     "schemaVersion": 2, "target": "android", "buildCommit": source,
     "runtimeOrigin": contract["origin"], "apiOrigin": "https://wotbtools.com",
-    "assetOrigin": "https://wotbtools.com/agent-assets", "entry": "index.html",
+    "assetOrigin": "/agent-assets", "entry": "index.html",
     "agentWasm": {"commit": pin["ref"], "release": pin["artifact"]["release"]},
     "nativeRuntime": {"supportedBridgeVersions": [contract["bridgeVersion"]], "nativeAuthCapability": "native-auth",
                       "nativeAuthMethods": gates.auth_surface(contract)[0], "authChangedGlobal": contract["events"]["authChanged"]["global"]},
