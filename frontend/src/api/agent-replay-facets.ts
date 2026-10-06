@@ -166,6 +166,27 @@ export interface AgentVehicleTrack {
   shell_ids: number[]
   turret_index: number | null
   gun_index: number | null
+  /**
+   * 实际搭载配置在坦克数据 `configs[]` 数组中的下标（与 shots 的 `shooter_config_idx`
+   * 同域；上游 2026-10-06 起产出，**additive**：旧产物缺省）。缺省 = configs 唯一或
+   * 证据链未命中 → 消费端回退顶级配置。
+   */
+  config_idx?: number | null
+  /**
+   * 实际搭载主炮的弹夹容量（`configs[config_idx].burst_size` 原值，**0 = 单发**；
+   * 上游 2026-10-06 起产出，**additive**：旧产物缺省）。装填条弹容 N 的唯一权威取值——
+   * 多炮坦克各炮弹容不同，禁止跨配置取最大 / 用剩余弹数+1 推断（上游
+   * docs/wotbtools-cross-reference.md §六「弹容 N 裁决」）。缺省 → 消费端按单发（1），不猜。
+   */
+  burst_size?: number | null
+  /**
+   * comp blob（ARENA_INFO subtype 1）透传的炮塔/主炮模块局部 id（module_id>>8；
+   * 上游 2026-10-06 起产出，**additive**）。**纯回放证据**：客户端（WASM）路径用它
+   * 联表 `configs[].turret_local`/`gun_local` 钉定实际搭载配置
+   * （`reloadBar.resolveMountedConfig` 证据 0）。缺省 = 该场无 comp 广播。
+   */
+  turret_local?: number | null
+  gun_local?: number | null
   coverage: number[]
   /**
    * 位姿关键帧折线（渲染位姿的精确表示；缺省 = 旧产物 → 消费端回退 10Hz 网格插值）。

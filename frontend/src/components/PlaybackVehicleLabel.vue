@@ -117,8 +117,17 @@ const classes = computed(() => ({
 .pb-hp-ghost { opacity: .55; animation: label-ghost var(--duration-slow) linear forwards; }
 .pb-hp-flash .pb-hp-fill { filter: brightness(1.5); }
 .pb-hp-no-transition .pb-hp-fill { transition: none; }
-/* reload 是次级状态：等宽、更细。弹夹分段保持，每段仍按 state 区分 full / loading / locked / empty。 */
-.reload-bar { display: flex; width: var(--pb-label-hp-bar-width); height: var(--pb-label-reload-bar-height); gap: calc(var(--space-1) / 2); }
+/* reload 是次级状态：等宽、更细。弹夹分段保持，每段仍按 state 区分 full / loading / locked / empty。
+   外描边 = token `--pb-label-reload-outline`（半透明黑）勾出整条轮廓——白填充/亮空槽在
+   雪地等亮背景上会糊进背景，黑边在明暗背景都能把白色状态条衬出来（分段间隙露出的是
+   页面背景）。box-shadow 不占布局、跟随圆角，随 3D 标签 transform 缩放保持同一比例。 */
+.reload-bar {
+  display: flex;
+  width: var(--pb-label-hp-bar-width);
+  height: var(--pb-label-reload-bar-height);
+  gap: calc(var(--space-1) / 2);
+  box-shadow: var(--pb-label-reload-outline);
+}
 .reload-shell { flex: 1; background: var(--color-playback-label-track); }
 .reload-shell[data-state="locked"] { background: var(--color-playback-label-locked); }
 .reload-fill { display: block; height: 100%; background: var(--color-playback-label-text); }

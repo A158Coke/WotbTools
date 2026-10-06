@@ -20,7 +20,8 @@
  *   **弹夹（只有整夹相位）的空槽 = used（.25，要等整夹重装）**。
  * 逐发美术：`UI/Screens/Battle/Shell.yaml` 的 `Shell`（20×32 竖版）= `PumpDrum.psd` 三帧
  *   （Inactive/Active/Full），装填进度用 `ProgressClip{orientation: BottomUp}`（自下而上）。
- * 容量与时长（客户端坦克数据 `configs[0]`，本机 `release/asset_pack/tank/{id}.json`）：
+ * 容量与时长（客户端语义来源 `configs[]`，本机 `release/asset_pack/tank/{id}.json`；
+ * 回放侧由解析面按**实际搭载配置**钉定后放在 facet 车辆字段上）：
  *   `burst_size` = 弹夹容量 N（0 = 单发）；**`burst_interval` = 夹内"射击间隔"**；
  *   **`burst_reloads[]` = 弹鼓逐槽位的装填时长**（为空 = 该炮整夹一次性装填，即弹夹）。
  *
@@ -43,8 +44,10 @@
  *         「开火−1、f2=6 完成+1（未被开火作废）、f2=3 完成=N」逐条一致——一律作为快照
  *         覆盖开火推导（开火事件采集有延迟会漂移）；仅 f2=5 的 f4=1 是"就绪标志"，排除。
  *
- * N 推断：优先用 `f4`（观测最大剩余 + 1 = N；与客户端 `burst_size` 逐车吻合）；
- *   无 `f4` 时回退"整夹之间的最长连续逐发相位串 + 1"；再不行按 1（单发，不猜）。
+ * N 权威：**回放 facet 车辆上的 `burst_size`**（解析面按实际搭载配置给出，0 = 单发）。
+ *   多炮坦克各炮弹容不同（实测资产包 52 台跨配置不一致），禁止跨配置取最大、
+ *   禁止用剩余弹数 +1（f4）推断 N（2026-10-06 裁决，上游 docs/wotbtools-cross-reference.md §六）。
+ *   f4 快照继续作为"在膛发数"的权威重锚（语义不变），只是不再参与 N。
  *
  * 绘制规则（对客户端实测序列拟合）：满弹/空闲 → 分割 N 格（A=可用，C=打掉的）；
  *   f2=7 推弹期间 → 分割且 B 在"正推上膛"那格；f2=6 补槽期间 → B 在空槽那格；
@@ -92,30 +95,78 @@ export function hasPerShellReloads(events) {
 }
 
 /**
- * 由客户端坦克数据取弹夹容量（静态权威）：`configs[].burst_size` 取最大
- * （弹夹参数挂在 burst 那个 config 上——实测 tank 19825 的 `configs[1].burst_size=6`、
- * tank 23329 的 `configs[1].burst_size=3`；`configs[0]` 是非弹夹配置，其值为 0）。
- * 无该字段/为 0 → 1（单发）。
+ * 弹容 N（装填条分格数）的权威取值：回放 facet 车辆上的 `burst_size`——解析面按
+ * 实际搭载配置（comp blob → 弹种 → 血量证据链 → `configs[config_idx]`）直接给出该车
+ * 实际搭载主炮的弹夹容量（原值，**0 = 单发**）。
+ *
+ * **禁止跨配置取最大 / 禁止用相位流剩余弹数+1 推断**（2026-10-06 裁决）：
+ * 多炮坦克各炮弹容不同（实测资产包 735 台中 52 台跨配置不一致——T69 4/3、
+ * AC Wedge 0/6、Medium I 0/15 等），两者都会把未搭载炮的弹容钉到条上。
+ * 无该字段 / ≤1 → 1（单发，不猜）；脏值夹到上限 [`MAX_PLAUSIBLE_MAG`]。
  */
-export function magazineSizeFromTank(tankJson) {
-  const cfgs = (tankJson && tankJson.configs) || [];
-  let best = 1;
-  for (const c of cfgs) {
-    const b = Number(c && c.burst_size);
-    if (Number.isFinite(b) && b > best) best = b;
-  }
-  return Math.min(MAX_PLAUSIBLE_MAG, Math.round(best));
+export function magazineSizeOfVehicle(vehicle) {
+  const b = Number(vehicle && vehicle.burst_size);
+  return Number.isFinite(b) && b > 1 ? Math.min(MAX_PLAUSIBLE_MAG, Math.round(b)) : 1;
 }
 
 /**
- * 合成弹夹容量：**客户端静态值为主**（`configs[].burst_size` == 客户端 XML `<clip><count>`，
- * 已对 30 台车验证一致），再取回放相位推断的较大者（相位是回放真值，可纠正"用了非弹夹配置"
- * 之类的静态歧义）。两者都拿不到 → 1（不猜）。
+ * 实际搭载配置解析（**客户端路径**；与上游 `resolve_config_index` 三级证据链同语义，
+ * 服务器路径的权威字段是 facet `config_idx`/`burst_size`——本函数只在无解析面注入的
+ * WASM 客户端产物上工作，用回放自带的逐车证据 + 资产面坦克数据联表）：
+ *
+ * - 证据 0：comp locals（facet `turret_local`/`gun_local`，ARENA_INFO 确定性对号
+ *   `configs[].turret_local`/`gun_local`）；
+ * - 证据 1：发射弹种 ⊆ 配置弹表（`shell_global_ids`；facet `shell_ids`）；
+ * - 证据 2：`max_hp` vs 车体 hp + 炮塔 health（改进耐久 ×1.125，±2 容差）。
+ *
+ * 依次回退（both → 弹种 → 血量），多匹配取**最后一档**（顶级偏好）；全无 → `null`。
+ * configs ≤ 1 时无歧义，直接返回该唯一配置。
+ *
+ * @param {{turret_local?: number|null, gun_local?: number|null, shell_ids?: number[], max_hp?: number}} vehicle
+ * @param {{configs?: Array}} tankJson 资产面 `tank/{id}.json`
+ * @returns {object|null} 命中的配置项
  */
-export function resolveMagazineSize(tankJson, events) {
-  const tankN = magazineSizeFromTank(tankJson);
-  const phaseN = inferMagazineSize(events || []);
-  return Math.max(tankN, phaseN);
+export function resolveMountedConfig(vehicle, tankJson) {
+  const cfgs = (tankJson && tankJson.configs) || [];
+  if (!cfgs.length) return null;
+  if (cfgs.length === 1) return cfgs[0];
+  if (!vehicle) return null;
+  const tl = vehicle.turret_local, gl = vehicle.gun_local;
+  if (tl != null && gl != null) {
+    const exact = cfgs.filter((c) => c && c.turret_local === tl && c.gun_local === gl);
+    if (exact.length) return exact[exact.length - 1];
+  }
+  const fired = new Set((vehicle.shell_ids || []).filter((x) => Number.isFinite(x) && x > 0));
+  const gunOk = cfgs.map((c) => {
+    if (!fired.size) return true;
+    const ids = (c && c.shell_global_ids) || [];
+    if (!ids.length) return true;             // 弹表缺失（数据不全）→ 不以此排除
+    return [...fired].every((id) => ids.includes(id));
+  });
+  const hp = Number(vehicle.max_hp);
+  const hpOk = cfgs.map((c) => {
+    if (!Number.isFinite(hp) || hp <= 0) return true;
+    const base = Number(c && c.hull_hp) + Number(c && c.turret_health);
+    if (!Number.isFinite(base) || base <= 0) return true;
+    const boosted = Math.round(base * 1.125);
+    return Math.abs(hp - base) <= 2 || Math.abs(hp - boosted) <= 2;
+  });
+  const both = cfgs.map((_, i) => i).filter((i) => gunOk[i] && hpOk[i]);
+  let cands = both.length ? both : cfgs.map((_, i) => i).filter((i) => gunOk[i]);
+  if (!cands.length) cands = cfgs.map((_, i) => i).filter((i) => hpOk[i]);
+  if (!cands.length) return null;
+  return cfgs[cands[cands.length - 1]];
+}
+
+/**
+ * 弹容 N 的客户端联表取值：优先 `resolveMountedConfig` 命中配置的 `burst_size`；
+ * 未命中时回退 facet `burst_size`（服务器路径产物 / 唯一配置）；都没有 → 1（不猜）。
+ */
+export function magazineSizeForVehicle(vehicle, tankJson) {
+  const cfg = resolveMountedConfig(vehicle, tankJson);
+  const b = Number(cfg && cfg.burst_size);
+  if (Number.isFinite(b) && b > 1) return Math.min(MAX_PLAUSIBLE_MAG, Math.round(b));
+  return magazineSizeOfVehicle(vehicle);
 }
 
 /** 相位条目是否参与时间归并（带正时长；f2=7 也参与——它会打断/接续装填节奏） */
@@ -151,7 +202,7 @@ export function usablePhases(reloads) {
 
 /** 按 eid 分组：Map<eid, 该车全部相位条目（含未闭环码）>
  *  保留全量是有意的：`f4`（剩余发数）也出现在未闭环相位码上（实测 f2=1），
- *  N 推断需要它；显示用的可用相位由 shellStatesAt 内部再筛。 */
+ *  在膛发数的权威重锚需要它；显示用的可用相位由 shellStatesAt 内部再筛。 */
 export function groupByVehicle(reloads) {
   const m = new Map();
   for (const e of reloads || []) {
@@ -169,12 +220,16 @@ export function groupByVehicle(reloads) {
  * The index owns no advancing clock: repeated, paused and out-of-order queries are identical.
  * Relation is a separate gate from physical team colour. Unknown/enemy vehicles stay unknown
  * even if malformed input carries reload events for them; shots alone never imply reload.
- * Optional size is the same authoritative tank-config override used by both presentations.
+ * Magazine size defaults to the mounted-gun config resolved from the vehicle facet's own
+ * evidence (comp locals → shell_ids → max_hp) against `mountedConfigs` (Map tank_id →
+ * tank/{id}.json, filled asynchronously by the caller — the shared Map is read live);
+ * falls back to the facet's `burst_size`, then 1 (single shot).
  */
 export function createReloadStateResolver(telemetry) {
   const eventsByEid = groupByVehicle(telemetry?.reloads);
   const durationsByEid = groupByVehicle(telemetry?.reload_effective);
   const vehiclesByEid = new Map((telemetry?.vehicles || []).map((v) => [v.eid, v]));
+  const mountedConfigs = telemetry?.mountedConfigs || null;
   const friendlyTeam = telemetry?.friendlyTeam ?? telemetry?.meta?.friendly_team;
   const firesByEid = new Map();
   for (const shot of telemetry?.shots || []) {
@@ -192,37 +247,10 @@ export function createReloadStateResolver(telemetry) {
     const vehicle = vehiclesByEid.get(vehicleId);
     if ((friendlyTeam !== 1 && friendlyTeam !== 2) || vehicle?.team !== friendlyTeam || !Number.isFinite(time)) return null;
     const events = eventsByEid.get(vehicleId) || [];
+    const defaultSize = magazineSizeForVehicle(vehicle, mountedConfigs ? mountedConfigs.get(vehicle.tank_id) : null);
     return shellStatesAt(events, firesByEid.get(vehicleId) || [], time,
-      size ?? inferMagazineSize(events), durationsByEid.get(vehicleId) || []);
+      size ?? defaultSize, durationsByEid.get(vehicleId) || []);
   };
-}
-
-/** 推导弹夹容量 N（单发车 = 1） */
-export function inferMagazineSize(events) {
-  const list = events || [];
-  // 首选 f4：**该次开火后剩余发数**——f4 与相位码无关（实测 f2=1/3/6/7 都带"剩余"），
-  // 故扫描所有条目；只有 f2=5（就绪/取消）的 f4=1 是"就绪标志"，必须排除。
-  // 相位条目只在开火/装填时产生，故剩余数取不到满夹那一次 → 观测最大值即 N−1。
-  let maxRemain = -1;
-  for (const e of list) {
-    if (!e || e.phase === PHASE_READY) continue;
-    const c = e.count;
-    if (c == null || !Number.isFinite(c) || c < 0) continue;
-    if (c > maxRemain) maxRemain = c;
-  }
-  if (maxRemain >= 0 && maxRemain + 1 <= MAX_PLAUSIBLE_MAG) return maxRemain + 1;
-  // 回退：整夹之间的最长连续"逐发相位"串 + 1（无整夹相位 → 不猜，按单发）
-  if (!list.some((e) => e.phase === PHASE_START)) return 1;
-  let run = 0, maxRun = 0;
-  for (const e of list) {
-    if (e.phase === PHASE_MAG_INTERVAL || e.phase === PHASE_DRUM_SHELL) {
-      run += 1;
-      if (run > maxRun) maxRun = run;
-    } else if (e.phase === PHASE_START) {
-      run = 0;   // 整夹装填补位把「本夹内的逐发串」清零
-    }
-  }
-  return Math.min(MAX_PLAUSIBLE_MAG, maxRun + 1);
 }
 
 /**

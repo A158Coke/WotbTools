@@ -34,11 +34,19 @@ vi.mock('../api/agent-replay-facets.js', async (importOriginal) => {
   }
 })
 
+vi.mock('../scene/assetProvider.js', () => ({
+  assetProvider: {
+    configured: () => false,
+    json: vi.fn(async () => { throw new Error('asset source unconfigured') }),
+    bytes: async () => { throw new Error('asset source unconfigured') },
+  },
+}))
+
 vi.mock('../scene/agentData.js', () => ({
   tankImageUrl: (id) => `img:${id}`,
   storeShotsForViewer: vi.fn(),
   fetchTankData: vi.fn(async () => ({ configs: [] })),
-  fetchLocalShotTankData: async () => ({ configs: [] }),
+  fetchLocalShotTankData: vi.fn(async () => ({ configs: [] })),
 }))
 
 /** happy-dom 没有 ResizeObserver：记录回调以便按容器宽度驱动 Master–Detail 分档 */
@@ -52,7 +60,8 @@ class ResizeObserverStub {
 globalThis.ResizeObserver = ResizeObserverStub
 
 import ReplayShotsPane from './ReplayShotsPane.vue'
-import { fetchTankData, storeShotsForViewer } from '../scene/agentData.js'
+import { assetProvider } from '../scene/assetProvider.js'
+import { fetchLocalShotTankData, fetchTankData, storeShotsForViewer } from '../scene/agentData.js'
 
 function mkFile(name = 'cn.wotbreplay') {
   return new File([new Uint8Array([1, 2, 3, 4])], name)
@@ -120,7 +129,14 @@ describe('ReplayShotsPane unmount authorization boundary', () => {
     expect(parseAgentShotsFromBytes).not.toHaveBeenCalled()
   })
 })
-afterEach(() => { document.body.innerHTML = '' })
+afterEach(() => {
+  // 用例内 mockImplementation（挂起的资产请求/弹表查询）不得泄漏到后续用例
+  fetchLocalShotTankData.mockReset()
+  fetchLocalShotTankData.mockImplementation(async () => ({ configs: [] }))
+  assetProvider.json.mockReset()
+  assetProvider.json.mockImplementation(async () => { throw new Error('asset source unconfigured') })
+  document.body.innerHTML = ''
+})
 
 describe('ReplayShotsPane author_path fail-visible（评审 blocker 回归）', () => {
   it('author_path=error 且 shots=[] → 警示可见并与空态并存（不得只显示 no_shots）', async () => {
@@ -656,4 +672,81 @@ it('bundled shooting inputs preserve config identity and all global shells witho
     await expect(fetchLocalShotTankData('not-a-tank')).rejects.toThrow('Local shooting inputs unavailable')
     expect(noNetwork).not.toHaveBeenCalled()
   } finally { vi.unstubAllGlobals() }
+})
+
+describe('ReplayShotsPane 搭载配置注解（评审 P2 回归：交接快照与 scfg 同一版本）', () => {
+  it('await 弹表查询期间注解完成 → 交接 JSON 与 URL scfg 不得错位（点击时快照贯穿）', async () => {
+    // 两门炮共享弹种 5914（配置 0 与顶级配置 2 都有）：评审复现形状
+    const CONFIGS = [
+      { shell_global_ids: [5914, 111], pitch_limits: { max: 8, min: -10 } },
+      { shell_global_ids: [222], pitch_limits: { max: 8, min: -10 } },
+      { shell_global_ids: [5914, 333], pitch_limits: { max: 8, min: -10 } },
+    ]
+    let tankDataCalls = 0
+    let releaseShell
+    fetchLocalShotTankData.mockImplementation(async (tid) => {
+      tankDataCalls++
+      if (tankDataCalls === 2) return new Promise((r) => { releaseShell = r })   // resolveShellIdx 的弹表查询挂起
+      return { configs: CONFIGS }
+    })
+    parseAgentPlaybackFromBytes.mockResolvedValue({
+      vehicles: [{ eid: 7, nickname: 'A', team: 1, tank_id: 3649, is_author: true, shell_ids: [5914], max_hp: 100 }],
+    })
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [{ index: 1, time_s: 5, damage: 100, target_name: 'B', is_kill: false,
+        shooter_eid: 7, target_eid: 101, hit_flags: 0, game_hit_result: 255, shell_id: 5914 }],
+      author_path: 'ok',
+      author_eid: 7,
+      others: { ...baseOthers, total_launches: 1 },
+    })
+    const navigate = vi.fn()
+    const wrapper = await mountPane({ navigate })
+
+    // 选中行 → 详情面板 → 点击「打开查看器」：openInViewer 同步段完成交接序列化，
+    // resolveShellIdx 的弹表查询挂起
+    await wrapper.get('[data-testid="shot-row-1"]').trigger('click')
+    await wrapper.get('[data-testid="shot-open-viewer"]').trigger('click')
+    expect(releaseShell).toBeTruthy()
+
+    // 挂起期间后台配置注解完成：就地修改 live 对象（storeShotsForViewer 收到的
+    // 引用即 shots.value 的元素）
+    const liveShots = storeShotsForViewer.mock.calls.at(-1)[0]
+    liveShots.find((x) => x.index === 1).shooter_config_idx = 0
+    releaseShell({ configs: CONFIGS })
+    await flushPromises()
+
+    expect(navigate).toHaveBeenCalledTimes(1)
+    console.log('[dbg] tankDataCalls=', tankDataCalls, 'navigate=', JSON.stringify(navigate.mock.calls[0][0].query), 'liveIdx=', liveShots.find((x) => x.index === 1)?.shooter_config_idx, 'sci=', liveShots.find((x) => x.index === 1)?.shooter_tank_id)
+    const q = navigate.mock.calls[0][0].query
+    // 点击时快照无注解 → 弹表匹配走全配置回退 = 顶级配置 2，与交接 JSON（同样无
+    // 配置字段 → 查看器顶级装配）一致；旧行为读 live 对象会给出错位的 scfg=0
+    expect(q.scfg).toBe('2')
+    expect(liveShots.find((x) => x.index === 1).shooter_config_idx).toBe(0)
+    wrapper.unmount()
+  })
+})
+
+describe('ReplayShotsPane 搭载配置注解（评审 P1 回归）', () => {
+  it('远端资产请求挂起不得阻塞本地列表发布（WASM 解析完成即出结果）', async () => {
+    // annotateMountedConfigs 的资产请求保持挂起（模拟资产服务卡住）：
+    // buildPitchLimits 走 agentData 层不受影响，decode 的前置步骤全部正常完成
+    assetProvider.json.mockImplementationOnce(() => new Promise(() => {}))
+    parseAgentPlaybackFromBytes.mockResolvedValue({
+      vehicles: [{ eid: 7, nickname: 'A', team: 1, tank_id: 3649, is_author: true, shell_ids: [5914], max_hp: 100 }],
+    })
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [{
+        index: 1, time_s: 5, damage: 100, target_name: '林肝美', is_kill: false,
+        shooter_eid: 7, target_eid: 101, hit_flags: 0, game_hit_result: 255, shell_id: 5914,
+      }],
+      author_path: 'ok',
+      author_eid: 7,
+      others: { ...baseOthers, total_launches: 1 },
+    })
+    const wrapper = await mountPane()
+    // 配置注解仍挂起，但本地射击列表必须已发布（有行 = 不被远端资产卡在解析中）
+    expect(wrapper.find('[data-testid="shots-no-shots"]').exists()).toBe(false)
+    expect(wrapper.findAll('.shot-row')).toHaveLength(1)
+    wrapper.unmount()
+  })
 })
