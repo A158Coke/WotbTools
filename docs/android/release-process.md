@@ -32,7 +32,7 @@ Tag 不得 repoint；已有 APK SHA 不同则拒绝覆盖。已有 staging evide
 
 TX1 出口公网带宽有限且会被 15MB 的 APK 下载打满，stage 阶段在把 immutable APK 传到
 TX1/TX2 之后，还会以 `TSINGHUA_CLOUD_TOKEN` 把同一 APK 传进清华云盘
-`个人资料库 /wotbtools-android/` 目录（`reuse=1` 幂等覆盖）。TX1 Caddy 把
+`个人资料库 /wotbtools-android/` 目录（`replace=1` 覆盖同名文件；`reuse=1` 只是幂等令牌，**不是**覆盖开关——缺 `replace` 时同名上传会被改名 `filename (1).apk`，固定下载路径拿不到新副本）。TX1 Caddy 把
 `/download/android/*.apk` 302 到该目录的分享直链
 `https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/<apkName>&dl=1`，
 分享链接无过期、不随版本变化，新增版本只需把文件放进目录即可生效。
@@ -45,7 +45,7 @@ TX1/TX2 之后，还会以 `TSINGHUA_CLOUD_TOKEN` 把同一 APK 传进清华云�
   直接失败，而能修复副本的清华覆盖上传又被同一失败挡在后面，不可自愈。SSH 探测协议还
   区分「远端显式回答文件不存在」与「探测本身失败」，后者直接失败本步骤，绝不降级成 absent
   （否则 scp 会覆盖一个 SHA 不符的 origin 文件，销毁 immutable 冲突证据）。
-- Distribution replica：清华云盘。不参与 immutable 判定；stage 每次执行都会 `reuse=1`
+- Distribution replica：清华云盘。不参与 immutable 判定；stage 每次执行都会 `replace=1` 覆盖同名文件（`reuse=1` 幂等令牌）
   覆盖上传 + 「分享直链下载回来 SHA-256 与 staged APK 一致」校验，因此副本缺失/损坏在
   任意重跑中都会被无条件修复（「重跑安全」指的就是这一层）。
 - 公网 URL（wotbtools.com → 302 → 网盘）只做最终端到端复核，从不作为状态判定源。

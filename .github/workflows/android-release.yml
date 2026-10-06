@@ -477,11 +477,15 @@ jobs:
             local keyfile="$RUNNER_TEMP/${label}-origin-key.pem"
             printf '%s\n' "$key" > "$keyfile"
             chmod 600 "$keyfile"
-            local out
+            local out rc=0
             out="$(ssh -i "$keyfile" -p "$port" -o IdentitiesOnly=yes -o BatchMode=yes \
               -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-              "$user@$host" "if [ -f '$dir/$APK_NAME' ]; then sha256sum '$dir/$APK_NAME' | awk '{print \$1}'; else echo __ABSENT__; fi")"
+              "$user@$host" "if [ -f '$dir/$APK_NAME' ]; then sha256sum '$dir/$APK_NAME' | awk '{print \$1}'; else echo __ABSENT__; fi") || rc=$?
             rm -f "$keyfile"
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::$label origin probe ssh failed (rc=$rc); refusing to classify as absent/SHA." >&2
+              exit 1
+            fi
             out="$(printf '%s' "$out" | tail -n 1 | tr -d '[:space:]')"
             if [ "$out" = "__ABSENT__" ]; then
               echo ""
@@ -562,7 +566,7 @@ jobs:
       # （/download/android/version.json 与 *.staging.json 不在重定向范围内，仍是源站服务）。
       # 网盘只是**分发副本**，不参与 origin 的 immutable conflict 判定（那是上一步 SSH
       # 直查 TX1/TX2 的职责）；因此本步骤在 absent（全新发布）与 equal（重跑/副本损坏）
-      # 两种 origin 状态下都执行：reuse=1 幂等覆盖本身就是修复动作，随后的
+      # 两种 origin 状态下都执行：replace=1 覆盖同名文件本身就是修复动作，随后的
       # "Verify production APK" 顺着 302 对公网 URL 做全链路 SHA 校验兜底。
       - name: Upload APK to Tsinghua Cloud (public download offload)
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -581,13 +585,26 @@ jobs:
           PARENT_DIR="/wotbtools-android"
           SHARE_DIRECT="https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/$APK_NAME&dl=1"
 
-          ULINK="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+          # Seafile upload-link 返回 **JSON 编码的 URL 字符串**（Response(url)）：
+          # 命令替换会保留响应中的双引号，必须解析后取裸 URL 再交给 curl
+          ULINK_RAW="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
             "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/upload-link/?p=$PARENT_DIR&reuse=1")"
+          ULINK="$(printf '%s' "$ULINK_RAW" | jq -r '.')"
+          case "$ULINK" in
+            https://*) ;;
+            *) echo "::error::upload-link response is not a JSON URL string: $ULINK_RAW" >&2; exit 1;;
+          esac
 
-          # 已知怪癖：这套清华云盘部署「上传成功也返回 HTTP 400 Parent dir doesn't exist」，
-          # 响应码不可作为成败依据；唯一权威判定 = 从分享直链下载回来 SHA-256 一致。
-          curl -sS -o /dev/null -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
-            -F "parent_dir=$PARENT_DIR" -F "file=@$APK_FILE" "$ULINK" || true
+          # replace=1 = 覆盖同名文件（reuse=1 只是幂等令牌，**不是**覆盖开关——缺
+          # replace 时同名上传会被改名 `filename (1).apk`，固定下载路径拿不到新副本，
+          # 损坏副本无法自愈，评审 P2）。已知怪癖：这套清华云盘部署「上传成功也返回
+          # HTTP 400 Parent dir doesn't exist」——响应码不可作为成败依据；唯一权威
+          # 判定 = 从分享直链下载回来 SHA-256 一致（下方 5 次重试全败即 workflow
+          # 失败，fail-visible）。curl 层错误打诊断后同样交由下载校验裁决。
+          upload_rc=0
+          curl -sS -o "$RUNNER_TEMP/thu-upload-resp.txt" -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+            -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$APK_FILE" "$ULINK" || upload_rc=$?
+          echo "upload curl rc=$upload_rc; resp=$(head -c 200 "$RUNNER_TEMP/thu-upload-resp.txt" 2>/dev/null || echo '<none>')"
 
           for attempt in 1 2 3 4 5; do
             sleep 3
