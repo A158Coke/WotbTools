@@ -784,7 +784,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         varying float vOcc;
         #include <logdepthbuf_pars_vertex>
         void main() {
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          // 实例化合批（perf 分支）：ST| 静态几何按 (geometry, material) 合并为
+          // InstancedMesh——手写 shader 必须显式乘 instanceMatrix（WebGLProgram 在
+          // USE_INSTANCING 下自动声明该 attribute，ShaderMaterial 同样生效），否则
+          // 整批实例全部叠画在场景原点（= 树干集体消失）。非实例化路径（上游/无合批
+          // 的检出）走 #else，行为逐字节不变。
+          #ifdef USE_INSTANCING
+          mat4 im = modelViewMatrix * instanceMatrix;
+          #else
+          mat4 im = modelViewMatrix;
+          #endif
+          gl_Position = projectionMatrix * im * vec4(position, 1.0);
           #include <logdepthbuf_vertex>
           vUv = uv;
           vOcc = ${hasVC ? 'color.r' : '1.0'};
