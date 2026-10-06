@@ -59,11 +59,22 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/if \(m\.alphaTest > 0\) nm\.alphaTest = m\.alphaTest;/)
   })
 
-  it('ST| 按不透明度分流（伪透明不透明化），toneMapped 关闭', () => {
+  it('ST| 静态几何走伽马直通 ShaderMaterial（与叶卡同方程，防同树双色）', () => {
+    // 回归：MeshBasicMaterial 的 sRGB 解码→编码往返把 SH 实际压成 SH^(1/2.2)，
+    // 与 billboard 叶（直通）差约 28% → 同树固定叶/billboard 叶双色（erlenberg 实测）
     const st = src.slice(src.indexOf("if ((m.name || '').startsWith('ST|'))"))
-    expect(st.slice(0, 800)).toMatch(/transparent: !opaqueEnough,/)
-    expect(st.slice(0, 800)).toMatch(/bm\.alphaTest = opaqueEnough \? 0\.33 : 0\.05;/)
-    expect(st.slice(0, 800)).toMatch(/bm\.toneMapped = false;/)
+    expect(st.slice(0, 400)).toMatch(/return makeSpeedtreeStaticMaterial\(m, opaqueEnough\);/)
+    const fn = src.slice(src.indexOf('function makeSpeedtreeStaticMaterial'),
+                         src.indexOf('async function loadMapImage'))
+    // 客户端同式：albedo × vOcc × SH(L0)，伽马直采直写（无 tone mapping/输出重编码）
+    expect(fn).toMatch(/gl_FragColor = vec4\(c\.rgb \* \(vOcc \* uSH\), c\.a\);/)
+    expect(fn).toMatch(/uAlphaCut: \{ value: opaqueEnough \? 0\.33 : 0\.05 \}/)
+    expect(fn).toMatch(/transparent: !opaqueEnough,/)
+    expect(fn).toMatch(/depthWrite: opaqueEnough,/)
+    // vOcc 仅取 COLOR_0.r（灰度遮挡）；无 COLOR_0 的正则树干 = 1
+    expect(fn).toMatch(/vOcc = \$\{hasVC \? 'color\.r' : '1\.0'\};/)
+    // SH 染色逐通道来自 baseColorFactor（karelia 彩色环境/√π 灰均按字面）
+    expect(fn).toMatch(/new THREE\.Vector3\(c0\.r, c0\.g, c0\.b\)/)
   })
 
   it('退化几何守卫 + ?degrade=N 覆盖（撕裂批次不渲染/不占 draw call）', () => {
