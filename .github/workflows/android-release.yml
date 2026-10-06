@@ -480,7 +480,7 @@ jobs:
             local out rc=0
             out="$(ssh -i "$keyfile" -p "$port" -o IdentitiesOnly=yes -o BatchMode=yes \
               -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-              "$user@$host" "if [ -f '$dir/$APK_NAME' ]; then sha256sum '$dir/$APK_NAME' | awk '{print \$1}'; else echo __ABSENT__; fi") || rc=$?
+              "$user@$host" "if [ -f '$dir/$APK_NAME' ]; then sha256sum '$dir/$APK_NAME' | awk '{print \$1}'; else echo __ABSENT__; fi")" || rc=$?
             rm -f "$keyfile"
             if [ "$rc" -ne 0 ]; then
               echo "::error::$label origin probe ssh failed (rc=$rc); refusing to classify as absent/SHA." >&2
