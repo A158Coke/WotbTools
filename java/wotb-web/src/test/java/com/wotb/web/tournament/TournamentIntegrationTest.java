@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -28,7 +29,9 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -75,7 +78,7 @@ class TournamentIntegrationTest {
         service.expectedGroups(id,1,1,new TournamentDtos.ExpectedGroupsRequest(1,0,1));
     }
     @Test void migrationAndHibernateValidateActualJsonbMappingsAndUniqueEventIdentity() {
-        assertEquals("29",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
+        assertEquals("30",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
         assertEquals("array",jdbc.queryForObject("select jsonb_typeof(days) from tournament_rule where event_id=? and round_number=1",String.class,id));
         assertEquals(5,service.config(id).rounds().size());
         final ApiException error=assertThrows(ApiException.class,()->service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","FIRE_CUP",5,2,List.of("Day 1","Day 2"))));
@@ -282,6 +285,96 @@ class TournamentIntegrationTest {
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("update tournament_day set published_historical_points='[]'::jsonb where event_id=?",eventId));
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->jdbc.update("update tournament_event set historical_import_hash=null where id=?",eventId));
         assertEquals(100,service.publicStandings(eventId).rows().getFirst().totalPoints());
+    }
+    @Test void summerSeedPublishesOnlyApprovedTop32AndPreservesFourOmissions() throws Exception {
+        applySummerSeed();
+        final long eventId=summerEventId();
+        final TournamentDtos.Standings board=service.publicStandings(eventId);
+        assertEquals(32,board.rows().size()); assertEquals(10,board.days().size());
+        assertTrue(board.days().stream().allMatch(TournamentDtos.StandingDay::published));
+        assertEquals(4,board.rows().stream().flatMap(row->row.rounds().stream()).flatMap(round->round.days().stream()).filter(day->day.points()==null).count());
+        assertEquals(36780,summerRow(board,"KSR").totalPoints()); assertEquals(1,summerRow(board,"CHRD").rank());
+        assertEquals(4,summerRow(board,"25时").rank()); assertEquals(32660,summerRow(board,"非比啾比").totalPoints());
+        assertEquals(27913,summerRow(board,"送葬者*").totalPoints()); assertEquals(32,summerRow(board,"送葬者*").rank());
+        assertNull(summerRow(board,"ROSA").rounds().getFirst().days().getLast().points());
+        assertNull(summerRow(board,"PHNX").rounds().get(1).days().getLast().points());
+        assertNull(summerRow(board,"UCR").rounds().getLast().days().getLast().points());
+        assertNull(summerRow(board,"送葬者*").rounds().getFirst().days().getLast().points());
+        assertEquals(List.of("小组赛","决赛圈"),board.event().dayLabels());
+        assertEquals(5,service.config(eventId).rounds().size()); assertTrue(service.config(eventId).rounds().stream().noneMatch(TournamentDtos.RoundRule::complete));
+        assertTrue(service.historicalState(eventId,1,1).imported()); assertFalse(service.historicalState(eventId,1,1).canImport());
+        assertEquals(32,jdbc.queryForObject("select count(*) from tournament_clan where event_id=? and historical_published",Integer.class,eventId));
+        assertEquals("flyway:V30",service.auditList(eventId).getLast().actor());
+        assertTrue(service.publicStandings(id).rows().isEmpty());
+    }
+    @Test void summerSeedRerunAndApiRetryPreserveSubsequentCorrections() throws Exception {
+        applySummerSeed();
+        final long eventId=summerEventId();
+        service.clearPoints("admin",eventId,new TournamentDtos.ClearRequest(service.config(eventId).event().version(),1,1,"KSR","review",false));
+        final TournamentDtos.Standings before=service.publicStandings(eventId);
+        final int auditCount=service.auditList(eventId).size();
+        applySummerSeed();
+        assertEquals(before,service.publicStandings(eventId)); assertEquals(auditCount,service.auditList(eventId).size());
+        final var imported=audits.findByEventIdOrderByIdDesc(eventId).stream().filter(audit->audit.action.equals("HISTORICAL_IMPORTED")).findFirst().orElseThrow();
+        final List<TournamentDtos.HistoricalRow> source=((List<?>)imported.afterState.get("rows")).stream().map(value->{
+            final Map<?,?> row=(Map<?,?>)value;
+            final List<Integer> points=((List<?>)row.get("points")).stream().map(point->point==null?null:((Number)point).intValue()).toList();
+            return new TournamentDtos.HistoricalRow((String)row.get("clanTag"),points,((Number)row.get("sourceTotal")).longValue());
+        }).toList();
+        final TournamentDtos.HistoricalPreview retry=service.importHistorical("admin",eventId,new TournamentDtos.HistoricalImportRequest(before.event().version(),
+                (String)imported.afterState.get("sourceName"),(String)imported.afterState.get("sourceSha256"),source,true,"flyway-v30:2026-cn-summer-top32"));
+        assertEquals(before,retry.standings()); assertEquals(auditCount,service.auditList(eventId).size());
+    }
+    @Test void summerSeedPreservesExistingEmptyEventConfiguration() throws Exception {
+        final long eventId=service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","SUMMER",5,2,List.of("Day 1","Day 2"))).event().id();
+        service.saveRules("admin",eventId,1,new TournamentDtos.RuleRequest(0,0,ruleDays(777)));
+        final var before=service.config(eventId).rounds().getFirst();
+        applySummerSeed();
+        assertEquals(eventId,summerEventId()); assertEquals(List.of("Day 1","Day 2"),service.config(eventId).event().dayLabels());
+        assertEquals(before.days(),service.config(eventId).rounds().getFirst().days());
+        assertEquals(36780,summerRow(service.publicStandings(eventId),"KSR").totalPoints());
+        assertEquals(1,service.auditList(eventId).stream().filter(audit->audit.action().equals("CREATE")).count());
+    }
+    @Test void summerSeedRejectsExistingSharedDraftWithoutPartialWrites() throws Exception {
+        final long eventId=historicalEvent();
+        service.saveRules("admin",eventId,1,new TournamentDtos.RuleRequest(0,0,ruleDays(100)));
+        service.expectedGroups(eventId,1,1,new TournamentDtos.ExpectedGroupsRequest(1,0,1));
+        save(eventId,1,1,List.of(group(eventId,1,1,1,0,"A","B","C")),List.of("A","B","C"));
+        final TournamentDtos.DayView before=service.day(eventId,1,1);
+        final int auditCount=service.auditList(eventId).size();
+        assertThrows(org.springframework.dao.DataAccessException.class,this::applySummerSeed);
+        assertEquals(before,service.day(eventId,1,1)); assertEquals(auditCount,service.auditList(eventId).size());
+        assertFalse(service.historicalState(eventId,1,1).imported()); assertEquals(3,service.config(eventId).clans().size());
+    }
+    @Test void summerSeedRejectsExistingPublishedBatchAndDifferentDimensions() throws Exception {
+        final long eventId=historicalEvent();
+        service.importHistorical("admin",eventId,historicalRequest(eventId,List.of(historicalRow("A",100)),"other-import"));
+        final TournamentDtos.Standings before=service.publicStandings(eventId);
+        assertThrows(org.springframework.dao.DataAccessException.class,this::applySummerSeed);
+        assertEquals(before,service.publicStandings(eventId));
+        service.deleteEvent(eventId,new TournamentDtos.DeleteRequest(before.event().version(),true));
+        final long incompatible=service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","SUMMER",4,2,List.of("Day 1","Day 2"))).event().id();
+        assertThrows(org.springframework.dao.DataAccessException.class,this::applySummerSeed);
+        assertEquals(4,service.config(incompatible).event().roundCount()); assertTrue(service.config(incompatible).clans().isEmpty());
+    }
+    @Test void summerSeedRollsBackAllRowsWhenAuditInsertFails() {
+        final long clanCount=clans.count(), dayCount=days.count(), eventCount=events.count(), auditCount=audits.count();
+        jdbc.execute("alter table tournament_audit add constraint test_reject_summer_seed check (actor <> 'flyway:V30') not valid");
+        try {
+            assertThrows(org.springframework.dao.DataAccessException.class,this::applySummerSeed);
+            assertFalse(events.existsByYearAndRegionAndSeason(2026,"CN","SUMMER"));
+            assertEquals(clanCount,clans.count()); assertEquals(dayCount,days.count());
+            assertEquals(eventCount,events.count()); assertEquals(auditCount,audits.count());
+        } finally { jdbc.execute("alter table tournament_audit drop constraint test_reject_summer_seed"); }
+    }
+    private void applySummerSeed() throws Exception {
+        jdbc.execute(new ClassPathResource("db/migration/V30__import_2026_cn_summer_top32.sql").getContentAsString(StandardCharsets.UTF_8));
+    }
+    private long summerEventId() {
+        return events.findAllByOrderByYearDescIdDesc().stream().filter(event->event.year==2026&&event.region.equals("CN")&&event.season.equals("SUMMER")).findFirst().orElseThrow().id;
+    }
+    private TournamentDtos.StandingRow summerRow(final TournamentDtos.Standings board,final String tag) {
+        return board.rows().stream().filter(row->row.clanTag().equals(tag)).findFirst().orElseThrow();
     }
     private long historicalEvent() { return service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","SUMMER",5,2,List.of("小组赛","决赛圈"))).event().id(); }
     private TournamentDtos.HistoricalImportRequest historicalRequest(final long eventId, final List<TournamentDtos.HistoricalRow> source, final String key) {
