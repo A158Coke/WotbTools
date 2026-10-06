@@ -67,9 +67,27 @@ apk_name="${apk_path##*/}"
 # APK 大文件（~15MB）走公网域名拉取：Caddy 对 .apk 302 → 清华云盘直链（APK 下载
 # 卸载，绕开 TX1 公网 5Mbps 与 TX1↔TX2 隧道丢包窗口）；云盘/网关不可用时回退内网
 # SOURCE_BASE（隧道直拉，慢但可用）。两条路径同等受下方 sha256 校验约束。
-fetch "$apk_url" "$stage/android-release/$apk_name" \
-  || fetch "$apk_path" "$stage/android-release/$apk_name" \
-  || fail "cannot fetch current APK: $apk_name"
+# 预期 SHA 先行解析：每个候选源的成功条件 = **下载 + SHA 验证**（评审 P2——
+# 仅凭 curl 退出码回退时，云盘返回 200 的损坏/非 APK 副本会让内网 origin 永不被
+# 尝试，最终死于后置校验，即使 authoritative 源完整可用）
+expected_sha="$(python3 - "$stage/android-release/version.json" <<'PY'
+import json,sys
+m=json.load(open(sys.argv[1]))
+print(m.get('sha256') or m.get('apkSha256') or m.get('apkSha256Hex') or '')
+PY
+)"
+fetch_verified(){
+  local url="$1" dest="$2"
+  fetch "$url" "$dest" || return 1
+  if [ -n "$expected_sha" ]; then
+    local actual
+    actual="$(sha256sum "$dest" | awk '{print $1}')"
+    [ "$actual" = "$expected_sha" ] || { echo "K7C runtime sync: sha256 mismatch from $url (got $actual, want $expected_sha)" >&2; return 1; }
+  fi
+}
+fetch_verified "$apk_url" "$stage/android-release/$apk_name" \
+  || fetch_verified "$apk_path" "$stage/android-release/$apk_name" \
+  || fail "cannot fetch current APK with matching sha256: $apk_name"
 
 python3 - "$stage/android-release/version.json" "$stage/android-release/$apk_name" <<'PY'
 import hashlib,json,sys
