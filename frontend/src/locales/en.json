@@ -1450,7 +1450,7 @@
     "q_high": "High",
     "q_ultra": "Ultra",
     "q_title": "Pick quality before loading: this page's selector, or URL ?q=low|mid|high|ultra",
-    "q_desc": "Low = minimap ground (box models) · Mid = minimap ground (building footprints) + real models + AA · High = layered ground + buildings · Ultra = max fill rate (DPR 2, 512 terrain)",
+    "q_desc": "Low = minimap ground (box models) · Mid = baked overhead view (buildings & trees) + real models + AA · High = layered ground + buildings · Ultra = max fill rate (DPR 2, 512 terrain)",
     "team1": "Team 1",
     "team2": "Team 2",
     "teamUnknown": "Unknown team",
