@@ -464,7 +464,7 @@ Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深
 
 ## i18n / DTO 约定
 
-积分赛应用只检查 `tournament-admin`，全站 `wotbtools-admin` 由 Keycloak 复合角色继承此权限，前端入口、业务管理 API 和独立 AI 识别共用此权限边界；该专属角色不授予其它管理权限，也不是默认角色。历史积分通过管理员预览/正式导入接口进入同一累计与审计链，V29 区分历史分数与名次小组的互斥来源，公开读取使用一致的事务快照。公开榜单支持当前赛事的客户端 Excel 导出与原生打印另存 PDF，三语列标签与页面同源；此功能不改变回放 Excel 的中文表头契约。见 [积分赛功能契约](features/tournament-points.md)。
+积分赛应用只检查 `tournament-admin`，全站 `wotbtools-admin` 由 Keycloak 复合角色继承此权限，前端入口、业务管理 API 和独立 AI 识别共用此权限边界；该专属角色不授予其它管理权限，也不是默认角色。历史积分通过管理员预览/正式导入接口进入同一累计与审计链，V29 区分历史分数与名次小组的互斥来源，公开读取使用一致的事务快照。V30 在后端启动时一次性导入已核对的 2026 国服夏季赛最终榜前 32 支军团，保留未参赛空值、记录审计并拒绝覆盖已有成绩；由现有 Flyway/后端部署流程执行。公开榜单支持当前赛事的客户端 Excel 导出与原生打印另存 PDF，三语列标签与页面同源；此功能不改变回放 Excel 的中文表头契约。见 [积分赛功能契约](features/tournament-points.md)。
 
 API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲染三语；Excel 继续使用中文表头。新增任何 `code/error/warningCode` 必须同步三语 `api_codes/api_errors`。
 
