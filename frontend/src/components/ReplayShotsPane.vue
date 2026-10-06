@@ -538,6 +538,7 @@ async function resolveShellIdx(s) {
     // 优先在实际搭载配置（annotateMountedConfigs 注入的 shooter_config_idx）内匹配：
     // 同一弹种存在于多门炮的弹表时，全配置倒序扫描可能命中未搭载炮的配置——
     // scfg 与弹下标必须与射手实际配置同源，否则查看器按 A 配置装配射手却加载 B 弹表
+    console.log('[dbg-rsi]', JSON.stringify({ sci: s.shooter_config_idx, sid: s.shell_id, stid: s.shooter_tank_id, ncfg: cfgs.length, cfgs }))
     const pinned = Number.isInteger(s.shooter_config_idx) && cfgs[s.shooter_config_idx]
       ? (cfgs[s.shooter_config_idx].shell_global_ids || []).indexOf(s.shell_id)
       : -1
@@ -558,6 +559,14 @@ async function openInViewer(s) {
   const shooterTank = s.shooter_tank_id || 0
   const tank = s.target_tank_id || shooterTank || 0
   if (!tank) return
+  // **点击时刻的射击快照**贯穿交接与导航（评审 P2）：storeShotsForViewer 在调用时
+  // 同步序列化（点击时版本），而 resolveShellIdx 的 await 期间后台配置注解可能就地
+  // 修改 live 对象——继续读 live 会得到「交接 JSON 按点击时配置装配模型/炮口、URL
+  // scfg 按注解后配置选弹表」的错位组合。快照后两处消费同一版本；未注解字段在
+  // resolveShellIdx / tankViewer 内各自走既有回退，语义一致。
+  // s 是 reactive proxy（selectedShot 派生），structuredClone 不可克隆 → JSON 往返
+  // （shot facet 全为可 JSON 值，与 storeShotsForViewer 的序列化口径一致）。
+  s = JSON.parse(JSON.stringify(s))
   storeShotsForViewer(shots.value)
   const hit = await resolveShellIdx(s)
   if (!requireFeature(Feature.PLAYBACK_3D)) return
