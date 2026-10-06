@@ -41,7 +41,11 @@ server {
     }
 
     location /assets/ {
-        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        # 不加 always：add_header 默认只作用于 2xx/3xx。哈希文件名依赖「index 与
+        # 资产来自同一 build」，双实例版本偏差或部署窗口期会出现瞬时 404；404 一旦
+        # 继承 immutable 就会被浏览器缓存一年，用户侧应用永远启动不了（2026-10-06
+        # 线上事故）。404 不携带本头，浏览器稍后重试即可自愈。
+        add_header Cache-Control "public, max-age=31536000, immutable";
         try_files $uri =404;
     }
 
@@ -53,7 +57,9 @@ server {
     # 正则含 `{}`：必须加引号，否则 nginx 在 `{` 处提前结束 location 头
     #（`nginx: [emerg] unknown directive "40}/"`）。
     location ~ "^/wasm/[0-9a-f]{40}/" {
-        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        # 同 /assets/：不加 always，404（如双实例偏差下 loader 拉 peer 上不存在的
+        # commit 目录）不得被缓存一年。
+        add_header Cache-Control "public, max-age=31536000, immutable";
         try_files $uri =404;
     }
 
