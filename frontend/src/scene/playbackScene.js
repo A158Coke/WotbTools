@@ -75,11 +75,15 @@ async function mapLimit(items, limit, fn) {
 //              draw call 已可控，均衡档跳过它把 11–67MB 下载留给 Wi-Fi/桌面）；
 //   高清→极致：纯填充率税（DPR 2 + 地形 512），服务 4K/Retina 台式机。
 // 均衡档 MSAA 开 + DPR 1.25：几何边缘上低 DPR + MSAA 优于高 DPR 无 AA。
+// 均衡档地面 = **客户端小地图图**（512²，带建筑屋顶足迹——2026-10-07 用户需求：
+// 无 3D 建筑的档位也要在对应位置看到屋顶结构；顺带省掉 8.4MB 的 4096² 烘焙底图，
+// 均衡档成为零大图下载档）。「更高清的带屋顶底图」需导出器把屋顶足迹烘进大图，
+// 属资产管线后续项。
 // 2026-10-07 重分档（原三档）：旧「中」 paying 场景 GLB 却无 AA/分层，帧成本≈旧高
 // 而观感更差；旧值语义漂移随发版说明，localStorage 旧键名全部兼容无需迁移。
 export const QUALITY_PRESETS = {
   low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false },
-  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true },
+  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: true,  anisotropy: 2, terrainSeg: 256, allowGlb: true },
   high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true },
   ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true },
 }
