@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import {
-  nameChainOf, nearestDestructibleState, stateVisualLabel, formatPickReport,
+  nameChainOf, nearestDestructibleState, nearestInstance, chainVisible,
+  buildMeshOwnerMap, stateVisualLabel, formatPickReport,
 } from './pickDebug.js'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 const chainObj = (names) => {
   // names 自顶向下 → 返回最底端节点（parent 链向上）
@@ -91,5 +97,112 @@ describe('formatPickReport', () => {
       clock: 0, kind: 'scenery', node: 'x.sc2', inst: { id: 9, kind: 'switcher', name: 'x.sc2' },
     })
     expect(text).toContain('serverId=无(不在lka)')
+  })
+})
+
+// 源码守卫：调试拾取必须独立于空处/车辆选中语义接入两条路径（评审 P2：
+// 车辆命中时 emptyDownAt=null，只挂空处路径会使车辆点击零报告）
+const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  .replace(/\/\/[^\n]*/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+
+describe('buildMeshOwnerMap', () => {
+  // 评审复现场景：6m 倒树的树梢命中点 (6,0) 离邻树 id=8 的根部更近——
+  // 精确归属必须按「命中网格属于哪棵树」胜过距离查询
+  const inst7 = { id: 7, pos: [0, 0, 0], serverId: { cell: [0, 0], slot: 7 } }
+  const inst8 = { id: 8, pos: [6, 0, 0], serverId: { cell: [0, 0], slot: 8 } }
+  const m7trunk = { name: 'trunk7' }
+  const m7top = { name: 'top7' }     // 树梢网格（锚点仍在树 7 根部 2cm 内）
+  const m8 = { name: 'trunk8' }
+  const findMeshes = (px, py, wantDestroyed) => {
+    if (wantDestroyed) return []
+    if (Math.hypot(px - 0, py - 0) < 1) return [{ mesh: m7trunk, x: 0, y: 0 }, { mesh: m7top, x: 0, y: 0 }]
+    if (Math.hypot(px - 6, py - 0) < 1) return [{ mesh: m8, x: 6, y: 0 }]
+    return []
+  }
+
+  it('树梢网格归属到自己的树（id=7），而非距离更近的邻树（id=8）', () => {
+    const map = buildMeshOwnerMap([inst7, inst8], findMeshes)
+    expect(map.get(m7top)).toBe(inst7)
+    expect(map.get(m7trunk)).toBe(inst7)
+    expect(map.get(m8)).toBe(inst8)
+    expect(map.size).toBe(3)
+  })
+  it('无 pos 实例跳过；非数组安全', () => {
+    const map = buildMeshOwnerMap([{ id: 9 }, inst7], findMeshes)
+    expect(map.get(m7top)).toBe(inst7)
+    expect(buildMeshOwnerMap(null, findMeshes).size).toBe(0)
+  })
+})
+
+describe('拾取接线（源码级守卫）', () => {
+  it('onScenePointerDown 无条件记录 pickDownAt（含车辆命中路径）', () => {
+    const at = sceneSrc.indexOf('function onScenePointerDown')
+    expect(at).toBeGreaterThan(-1)
+    expect(sceneSrc.slice(at, at + 500)).toMatch(/if \(PICK_DEBUG\) pickDownAt = \{ x: e\.clientX, y: e\.clientY \}/)
+  })
+  it('onScenePointerUp 先处理调试拾取再走选中语义', () => {
+    const at = sceneSrc.indexOf('function onScenePointerUp')
+    expect(at).toBeGreaterThan(-1)
+    const body = sceneSrc.slice(at, at + 700)
+    expect(body).toMatch(/movedPick <= SCENE_CLICK_SLOP_PX\) reportPick\(e\)/)
+    const reportAt = body.indexOf('reportPick(e)')
+    const clearAt = body.indexOf("onVehicleSelect?.(null, e)")
+    expect(reportAt).toBeGreaterThan(-1)
+    expect(clearAt).toBeGreaterThan(-1)
+    expect(reportAt).toBeLessThan(clearAt)
+  })
+  it('拾取实例：meshOwner 精确归属优先，距离仅兜底', () => {
+    const at = sceneSrc.indexOf('const inst =')
+    expect(at).toBeGreaterThan(-1)
+    const order = sceneSrc.slice(at, at + 400)
+    expect(order).toMatch(/meshOwner && meshOwner\.get\(hit\.object\)/)
+    const meshOwnerAt = order.indexOf('meshOwner.get(hit.object)')
+    const fallbackAt = order.indexOf('nearestInstance(destructPickList')
+    expect(meshOwnerAt).toBeGreaterThan(-1)
+    expect(fallbackAt).toBeGreaterThan(meshOwnerAt)
+  })
+  it('destructibles await 之后先核会话（stale）再发布清单', () => {
+    const awaitAt = sceneSrc.indexOf('const destructDoc = await destructDocPromise')
+    const staleAt = sceneSrc.indexOf('if (stale()) return;', awaitAt)
+    const publishAt = sceneSrc.indexOf('destructPickList = destructDoc.instances')
+    expect(awaitAt).toBeGreaterThan(-1)
+    expect(staleAt).toBeGreaterThan(awaitAt)
+    expect(publishAt).toBeGreaterThan(staleAt)
+  })
+})
+
+const node = (visible, parent = null) => ({ visible, parent })
+
+describe('chainVisible', () => {
+  it('全链可见 = true；自身或任一祖先隐藏 = false', () => {
+    const root = node(true)
+    const mid = node(true, root)
+    const leaf = node(true, mid)
+    expect(chainVisible(leaf, root)).toBe(true)
+    mid.visible = false
+    expect(chainVisible(leaf, root)).toBe(false)   // 隐藏父节点情形
+    leaf.visible = false
+    expect(chainVisible(leaf, root)).toBe(false)   // 自身隐藏（D_ 损毁网格）
+  })
+  it('visible 未定义（undefined）视为可见', () => {
+    expect(chainVisible({ parent: null })).toBe(true)
+  })
+})
+
+describe('nearestInstance', () => {
+  const insts = [
+    { id: 1, pos: [10, 10, 0], serverId: { cell: [0, 0], slot: 1 } },
+    { id: 2, pos: [12, 10, 0], serverId: { cell: [0, 0], slot: 2 } },
+    { id: 3, pos: [100, 100, 0] },                       // 无 serverId 也可拾取
+  ]
+  it('半径内取最近实例——「清单有实例、事件数组为空」仍可命中', () => {
+    expect(nearestInstance(insts, 11, 10, 3)?.id).toBe(2)
+    expect(nearestInstance(insts, 100, 100, 3)?.id).toBe(3)
+  })
+  it('半径外 / 空清单 / 非数组 → null（非可破坏物）', () => {
+    expect(nearestInstance(insts, 50, 50, 3)).toBeNull()
+    expect(nearestInstance([], 0, 0, 3)).toBeNull()
+    expect(nearestInstance(null, 0, 0, 3)).toBeNull()
   })
 })
