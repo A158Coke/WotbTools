@@ -3447,6 +3447,13 @@ export default {
             "$ref": "#/$defs/DamageLoss"
           }
         },
+        "damageDealtSamples": {
+          "description": "Optional recorded cumulative damage broadcasts. Absent in older datasets and on players without this evidence; never populated from final settlement totals.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DamageDealtSample"
+          }
+        },
         "consumableTransitions": {
           "type": "array",
           "items": {
@@ -3458,6 +3465,24 @@ export default {
           "items": {
             "$ref": "#/$defs/ModuleCrewTransition"
           }
+        }
+      }
+    },
+    "DamageDealtSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeSec",
+        "total"
+      ],
+      "properties": {
+        "timeSec": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },

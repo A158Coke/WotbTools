@@ -4,6 +4,7 @@ import type {
   ConsumableTransition,
   BattleEvent,
   DamageLoss,
+  DamageDealtSample,
   HealthAtResult,
   LifeAtResult,
   LifeTransition,
@@ -219,10 +220,10 @@ function aggregateHealth(teamTracks, t) {
   }
 }
 
-/** Canonical combat statistics; all damage numbers come from backend DamageLoss facts. */
+/** Recorded totals are authoritative where available; victim attribution still supplies received damage. */
 export function cumulativeStatsAtV2(
   events: readonly BattleEvent[] | null | undefined,
-  selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'> | null | undefined,
+  selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses' | 'damageDealtSamples'> | null | undefined,
   t: number,
   tracks: readonly Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'>[] | null | undefined = [],
 ) {
@@ -231,7 +232,13 @@ export function cumulativeStatsAtV2(
   const received = (selectedTrack.damageLosses || [])
     .filter(loss => loss && loss.toSec <= t + 1e-6)
     .reduce((sum, loss) => sum + (Number.isFinite(loss.hpLoss) ? loss.hpLoss : 0), 0)
-  const dealt = (tracks || [])
+  const latestTotal = (selectedTrack.damageDealtSamples || [])
+    .filter(sample => sample && Number.isFinite(sample.timeSec) && sample.timeSec >= 0 && sample.timeSec <= t + 1e-6
+      && Number.isSafeInteger(sample.total) && sample.total >= 0)
+    .reduce<DamageDealtSample | null>((latest, sample) => !latest || sample.timeSec > latest.timeSec
+      || (sample.timeSec === latest.timeSec && sample.total > latest.total) ? sample : latest, null)
+  // A cumulative broadcast already includes the attributed hits. Never add the two sources.
+  const dealt = latestTotal?.total ?? (tracks || [])
     .flatMap(track => track?.damageLosses || [])
     .filter(loss => loss && loss.toSec <= t + 1e-6
       && loss.attackerReliable === true && loss.attackerAccountId === accountId)

@@ -3237,12 +3237,23 @@ components:
         damageLosses:
           type: array
           items: { $ref: '#/components/schemas/DamageLoss' }
+        damageDealtSamples:
+          description: Optional recorded cumulative damage broadcasts. Absent in older datasets and on players without this evidence; never populated from final settlement totals.
+          type: array
+          items: { $ref: '#/components/schemas/DamageDealtSample' }
         consumableTransitions:
           type: array
           items: { $ref: '#/components/schemas/ConsumableTransition' }
         moduleCrewTransitions:
           type: array
           items: { $ref: '#/components/schemas/ModuleCrewTransition' }
+    DamageDealtSample:
+      type: object
+      additionalProperties: false
+      required: [timeSec, total]
+      properties:
+        timeSec: { type: number, minimum: 0 }
+        total: { type: integer, minimum: 0 }
     VehicleBattleLoadout:
       type: object
       additionalProperties: false

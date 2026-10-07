@@ -212,6 +212,7 @@ describe('Replay3DPane', () => {
       samples: [{ timeSec: 0, x: 0, y: 0 }, { timeSec: 5, x: 5, y: 0 }] }]
     track.healthTransitions.push({ timeSec: 10, currentHp: 1400, displayCapacityHp: 1500, knowledge: 'CURRENT' })
     track.damageLosses = [{ fromSec: 9, toSec: 10, hpLoss: 100, attackerAccountId: 2001, attackerReliable: true }]
+    track.damageDealtSamples = [{ timeSec: 10, total: 900 }, { timeSec: 30, total: 2000 }]
     track.loadout = { consumables: ['repairkit', null, null], provisions: ['food', null, null], equipmentIds: ['rammer'], consumableWireCodes: [] }
     track.consumableTransitions = [{ timeSec: 8, consumableSlot: 0, state: 'COOLDOWN', logicalItemId: 'repairkit' }]
     dataset.events.push({ type: 'KILL', timeSec: 12, accountId: 1001, targetAccountId: 2001 })
@@ -231,7 +232,7 @@ describe('Replay3DPane', () => {
     await vi.waitFor(() => expect(details.props('selectedPortraitUrl')).toBe('/portrait.png'))
     expect(details.props('selLastKnownSec')).toBe(5)
     expect(details.props('health')).toEqual({ currentHp: 1400, maxHp: 1500 })
-    expect(details.props('selCurStats')).toEqual({ dealt: 400, received: 100, kills: 1 })
+    expect(details.props('selCurStats')).toEqual({ dealt: 900, received: 100, kills: 1 })
     expect(details.props('selDamageLog')).toHaveLength(2)
     for (const group of ['equipment', 'provisions', 'consumables']) expect(details.find(`[data-test="v2-inspector-${group}"]`).exists()).toBe(true)
     expect(details.find('.v2-chip-state').exists()).toBe(true)
@@ -244,7 +245,7 @@ describe('Replay3DPane', () => {
     expect(details.props('selDamageLog')).toEqual([])
     store.time = 54
     await nextTick()
-    expect(details.props('selCurStats').dealt).toBe(400)
+    expect(details.props('selCurStats').dealt).toBe(900)
     wrapper.unmount()
   })
 
