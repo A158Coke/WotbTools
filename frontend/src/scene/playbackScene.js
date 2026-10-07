@@ -2775,11 +2775,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       renderer.autoClear = true;
     }
     if (dynResCtl) {
-      // 只喂实际渲染帧（空闲帧不是 GPU 负载样本）；调整即重设画布尺寸并强制下一帧重绘
+      // 只喂实际渲染帧（空闲帧不是 GPU 负载样本）；调整即重设画布尺寸并强制下一帧重绘。
+      // 顺序关键（评审反馈的黑闪）：setPixelRatio 内部以 updateStyle=true 调 setSize——
+      // 先改 drawing buffer 再改 CSS 尺寸的一瞬间，旧 CSS 尺寸对应新 buffer 会被浏览器
+      // 拉伸呈现（呈现未完成帧 → 黑闪一帧）。先 setSize(updateStyle=false) 固定 CSS、
+      // 再 setPixelRatio（同 buffer 尺寸），最后手动补 CSS——三步之间呈现 buffer 尺寸
+      // 连续变化且 CSS 恒等于容器，无错配帧。
       const nd = dynResCtl.frame(dt * 1000);
       if (nd != null) {
+        const w = container.clientWidth, h = container.clientHeight;
+        renderer.setSize(w, h, false);
         renderer.setPixelRatio(nd);
-        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.domElement.style.width = w + 'px';
+        renderer.domElement.style.height = h + 'px';
         invalidate();
       }
     }
