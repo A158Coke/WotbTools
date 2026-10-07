@@ -166,10 +166,12 @@ export function treeFrame(st, active, T) {
 }
 
 /**
- * 给树状态的 `settled` 缓存加上几何自校验：场景层为了省每帧 quaternion 写入，会在
- * 首次到达终态后设 `st.settled = true`。但 seek 倒带会把 pivot 恢复 identity；若缓存仍
- * 永久为 true，再次越过终点就不会重写终态。这里让 getter 以 pivot 当前旋转是否真的已
- * 达 stopRad 为准，因此 identity / 动画中间态会自然返回 false，下一次终态可重新落盘。
+ * 给树状态的 `settled` 缓存加上几何自校验：场景层为了省每帧写入，会在首次到达终态后
+ * 设 `st.settled = true`。但 seek 倒带会把树恢复直立；若缓存仍永久为 true，再次越过
+ * 终点就不会重写终态。这里让 getter 以**当前倒伏旋转**是否真的已达 stopRad 为准，
+ * 因此直立 / 动画中间态会自然返回 false，下一次终态可重新落盘。
+ * 旋转读 `fallQuat`（实例化场景侧随每次倒伏写入同步维护的裸 {w} 四元数），
+ * 兼容旧 `pivot.quaternion`（pivot 装配时代的场景侧与既有测试）。
  * 保持模块无 THREE 依赖，只读取 Quaternion 的标量字段。
  */
 function makeTreeStateRewindSafe(state) {
@@ -179,7 +181,7 @@ function makeTreeStateRewindSafe(state) {
     configurable: true,
     get() {
       if (!settled) return false
-      const q = state.pivot?.quaternion
+      const q = state.fallQuat ?? state.pivot?.quaternion
       if (!q || !Number.isFinite(q.w)) return settled
       const stop = Number.isFinite(state.stopRad) ? state.stopRad : Math.PI / 2
       const w = Math.min(1, Math.max(0, Math.abs(q.w)))

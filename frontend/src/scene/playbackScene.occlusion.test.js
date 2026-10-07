@@ -89,7 +89,7 @@ describe('occlusionFootprintCells（occGrid 登记：足印 AABB 全枚举）', 
 describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
   const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
   it('occGrid 登记必须用足印全枚举，不得用线段遍历', () => {
-    expect(src).toMatch(/occlusionFootprintCells\(wx - r, wy - r, wx \+ r, wy \+ r, OCCL_CELL\)/)
+    expect(src).toMatch(/occlusionFootprintCells\(e\.x - r, e\.y - r, e\.x \+ r, e\.y \+ r, OCCL_CELL\)/)
     expect(src).not.toMatch(/occlusionCells\(wx - r/)
   })
   it('时间轴回退必须显式清树终态 settled（否则重播不重写触地旋转）', () => {

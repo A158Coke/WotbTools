@@ -86,6 +86,8 @@ function decorate(row) {
   }, destroyed)
   // 2026-10-05：弹夹分段展示随行样式回归原始单行版（不再渲染）——reload 数据仍在上游
   // 计算（props.reload / row.reload），此处不再读取，未来恢复展示无须重接线。
+  // （reload 的 10Hz 引用抖动由写入端 rosterState.applyRosterRuntime 按相位序列去重，
+  // 这里保持裸展开即可——相位不变时引用稳定，不会撕开本 computed 重算。）
   return {
     ...row,
     id,

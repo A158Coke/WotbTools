@@ -23,11 +23,14 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
-import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, stateVisualLabel, formatPickReport } from './pickDebug.js'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
+import { createDynRes } from './dynRes.js'
+import { cachedSceneryMat, clearSceneryMatCache, isWaterName, makeBillboardMaterial, makeSpeedtreeStaticMaterial, SCENERY_LAMBERT_EXPOSURE } from './sceneryMaterials.js'
+import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport } from './pickDebug.js'
 import { collectMaterialTextures } from './materialDispose.js'
 import { pruneForeignVariants } from './variantFilter.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
-import { pathPointsOf, legSecsOf, legEndTimes, pointAt, legArcEnds, arcAtTime, pointAtArc } from './shotPath.js'
+import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
@@ -67,12 +70,24 @@ async function mapLimit(items, limit, fn) {
   return out
 }
 
-// 三档渲染预设（面板与场景共用；桌面默认高，Tauri/移动 WebView 默认低）。
+// 四档渲染预设（面板与场景共用；桌面默认高清，Tauri/移动 WebView 默认均衡）。
 // 抗锯齿/DPR/场景资源在渲染器与场景首次创建时一次性定型，加载后改档需整页刷新。
+// 档位阶梯 = 相邻档各跨一个真实成本断崖：
+//   流畅→均衡：车辆盒代理 → 真 GLB（最大的视觉跃迁，手机终于有真车模）；
+//   均衡→高清：场景 GLB + 分层地表（最大的下载/显存跃迁；P1 实例化后高清档
+//              draw call 已可控，均衡档跳过它把 11–67MB 下载留给 Wi-Fi/桌面）；
+//   高清→极致：纯填充率税（DPR 2 + 地形 512），服务 4K/Retina 台式机。
+// 均衡档 MSAA 开 + DPR 1.25：几何边缘上低 DPR + MSAA 优于高 DPR 无 AA。
+// 均衡档地面 = **俯视烘焙底图**（4096²，上游资产管线 tools/bake_ground_roofs.py
+// 把场景 GLB 的屋顶/树冠/草丛正交俯视烘进地形图——2026-10-07 用户需求：无 3D
+// 建筑的档位也要看到真实场景俯视内容；下载 ~5-6MB/图）。
+// 2026-10-07 重分档（原三档）：旧「中」 paying 场景 GLB 却无 AA/分层，帧成本≈旧高
+// 而观感更差；旧值语义漂移随发版说明，localStorage 旧键名全部兼容无需迁移。
 export const QUALITY_PRESETS = {
-  low:  { label: '低', antialias: false, maxDpr: 1,   scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false },
-  mid:  { label: '中', antialias: false, maxDpr: 1.5, scenery: true,  groundLayers: false, miniMap: false, anisotropy: 4, terrainSeg: 256, allowGlb: true },
-  high: { label: '高', antialias: true,  maxDpr: 2,   scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true },
+  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false },
+  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true },
+  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true },
+  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true },
 }
 
 /**
@@ -202,13 +217,29 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       return q.has('admin') || q.has('debug');
     } catch (e) { return false; }
   })();
-  // 对数深度逃生开关（?logdepth=0 关闭）：log depth 全局生效——每片元写 gl_FragDepth、
-  // 禁 early-z，理论上有全场景片元开销。真机（尤其 Android）若出现可感性能回归，
-  // URL 立即回滚不必等发版；同一开关即性能验收的 A/B 对照（同回放/同画质/同机位）。
-  const LOGDEPTH = (() => { try { return new URLSearchParams(location.search).get('logdepth') !== '0'; } catch (e) { return true; } })();
+  // 渲染性能偏好（播放组件 Display 面板可切，localStorage 持久化；URL 参数最高优先）。
+  // - logdepth（对数深度）：默认**关**——每片元写 gl_FragDepth + 禁 early-z，对
+  //   alpha-test 植被的填充率开销是乘法级（真机 A/B 权衡后默认关闭）；代价是 600m+
+  //   俯瞰时贴地薄板/重建地形交叠带可能成片 z-fighting（开启即恢复确定性深度序）。
+  // - dynres（动态分辨率）：默认**开**——持续超帧预算降 DPR、有余量升回档位上限
+  //  （纯函数状态机 scene/dynRes.js），负载起伏的软着陆。
+  const prefOf = (key, urlKey, dflt) => {
+    try {
+      const usp = new URLSearchParams(location.search);
+      if (usp.has(urlKey)) return usp.get(urlKey) !== '0';
+      const v = localStorage.getItem(key);
+      return v == null ? dflt : v === '1';
+    } catch (e) { return dflt; }
+  };
+  // 实例级可变量（非 const）：待开播阶段的偏好切换只持久化 + 同步 store——渲染器
+  // 尚未创建，下次 initScene（按「开始」）自然按新偏好装配，无需重载；已在播放中
+  // 不存在这两个开关（已移至待开播卡片）。
+  let LOGDEPTH = prefOf('pb_logdepth', 'logdepth', false);
+  let DYNRES = prefOf('pb_dynres', 'dynres', true);
+  const persistPref = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} };
 
   // ---------- 画质分档 ----------
-  // 解析优先级：URL ?q= > localStorage > 设备默认；三档都开 3D 地形（仅分段数降档）。
+  // 解析优先级：URL ?q= > localStorage > 设备默认；四档都开 3D 地形（仅分段数降档）。
   // （预设表用模块级 QUALITY_PRESETS，与面板共享）
   function resolveQuality() {
     const usp = new URLSearchParams(location.search);
@@ -216,7 +247,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!QUALITY_PRESETS[q]) { try { q = localStorage.getItem('pb_quality') || ''; } catch (e) {} }
     if (!QUALITY_PRESETS[q]) {
       const mobile = !!window.__TAURI__ || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
-      q = mobile ? 'low' : 'high';
+      // 移动/Tauri 默认**均衡**（真车模 + 无场景 GLB 下载税）；4K/Retina 想吃满
+      // 填充率的显式选极致，桌面默认不背 DPR 2 的税。
+      q = mobile ? 'mid' : 'high';
     }
     try { localStorage.setItem('pb_quality', q); } catch (e) {}
     return q;
@@ -224,6 +257,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let QKEY = resolveQuality(), Q = QUALITY_PRESETS[QKEY];
   store.qualityKey = QKEY;
   store.qualityLabel = '画质 · ' + Q.label;
+  store.logdepth = LOGDEPTH;   // Display 面板开关的初始态（偏好解析见上方 prefOf）
+  store.dynres = DYNRES;
   function setQuality(k) {
     if (!QUALITY_PRESETS[k] || k === QKEY) return;
     const apply = () => {
@@ -339,12 +374,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 远距离分辨率提至亚毫米，交叠带恢复确定性深度序。两个自定义 ShaderMaterial
     // 需手动挂 logdepthbuf 代码块（内建材质自动注入）；?logdepth=0 可关闭（A/B 与
     // 真机回滚，见 LOGDEPTH 注释）。
-    renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, logarithmicDepthBuffer: LOGDEPTH });
+    // powerPreference：多 GPU 设备（核显 + RTX 等独显）上 Windows 按 per-app 分配
+    // GPU，Chrome 缺省可能落在核显——3D 回放是本页唯一的重负载任务，显式请求
+    // 高性能独显（移动端/单 GPU 设备该提示被忽略，无副作用）。
+    renderer = new THREE.WebGLRenderer({
+      antialias: Q.antialias,
+      logarithmicDepthBuffer: LOGDEPTH,
+      powerPreference: 'high-performance',
+    });
+    rendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };   // 实际装配快照（复用渲染器时校验偏好是否仍一致）
     // 着色器预热（`renderer.compile`）：three 在**首次渲染某材质**时才编译程序，编译会阻塞
     // 数十~数百 ms，落在"战斗第一次开火/命中"的那一帧就是用户实测的"打起来就卡"。
     // 场景就绪后立即编译在用材质（含地面分层着色器/FX 池），成本挪到加载阶段（那时本来在等资产）。
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(devicePixelRatio, Q.maxDpr));
+    const baseDpr = Math.min(devicePixelRatio, Q.maxDpr);
+    renderer.setPixelRatio(baseDpr);
+    // 动态分辨率（?dynres=1 显式开启，A/B 与回滚同 ?logdepth 惯例）：持续超预算
+    // 降 pixel ratio、有余量升回档位上限。档位 DPR 无下调空间（baseDpr ≤ 1）时
+    // 跳过装配——降无可降。
+    dynResCtl = DYNRES && baseDpr > 1
+      ? createDynRes({ ceilDpr: baseDpr })
+      : null;
     if (DEBUG) window.__renderer = renderer;   // 诊断钩子（renderer 创建后才可引用；仅 ?debug）
     if (DEBUG) window.__camera = camera;       // 诊断钩子：跟随相机定位（创建后引用）
     // three r165+ 恒为物理光照单位（Lambert 除以 π），旧强度会让建筑/车模暗到发黑；
@@ -468,13 +518,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 实例归属：命中网格的精确归属优先（meshOwner——6m 倒树的树梢按「属于哪棵
     // 树」归到树上，而非按表面点到锚点的距离错联邻树）；无归属网格才按位置兜底。
     // 动画状态是可选叠加，按实例身份关联
-    const inst = (meshOwner && meshOwner.get(hit.object))
+    // 实例归属：合批后命中 = 批次 InstancedMesh + instanceId——按复合键查归属表
+    //（值携带原节点名：合批后原 Mesh 已摘除，报告仍报真实物体名）；无表项才按位置兜底
+    const owner = (meshOwner && hit.instanceId != null)
+      ? meshOwner.get(meshOwnerKey(hit.object, hit.instanceId)) : null;
+    const inst = (owner && owner.inst)
       || (scenePt ? nearestInstance(destructPickList, scenePt[0], scenePt[1], 3) : null);
     const st = inst ? (destruct?.states || []).find((x) => x.inst === inst) || null : null;
     return {
       clock: T,
       kind: 'scenery',
-      node: chain[0] || hit.object.name || hit.object.type,
+      node: owner?.name || chain[0] || hit.object.name || hit.object.type,
       chain: chain.length > 1 ? chain : undefined,
       world: hit.point.toArray(),
       scene: scenePt || undefined,
@@ -670,145 +724,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // opacity,occMean）复用同一材质对象。此前每个 mesh 各建一份——材质/着色器实例与
   // program 切换随 mesh 数线性膨胀，是场景侧最大的开销来源。
   // 生命周期：teardown 时随 mapScenery dispose 并清空本表（勿复用已 dispose 实例）。
-  const sceneryMatCache = new Map();
-  function cachedSceneryMat(key, factory) {
-    let m = sceneryMatCache.get(key);
-    if (!m) { m = factory(); sceneryMatCache.set(key, m); }
-    return m;
-  }
-  // 叶卡 alpha 裁切阈值。客户端 AlphaBlend 软边缘 + 0.05 低阈值会让近透明像素仍写
-  // 深度（叶片互相遮挡 → 破洞/闪烁）；提到 MASK 量级消除，并保留软边缘。
-  const CARD_ALPHA_CUT = 0.33;
-  // 场景 Lambert 材质的曝光修整（只作用于 convMat 建出的场景材质；代理车/GLB 车模不受影响）。
-  // 这套光照是按坦克 GLB 调的，场景降级到 Lambert 后朝上面过曝；系数 <1 压回过曝而不动光照。
-  const SCENERY_LAMBERT_EXPOSURE = 0.75;
-  // 水体判定（GLB mesh/材质名启发式：seaplane/water/fountain/lake/river）
-  const isWaterName = (n) => /water|sea|lake|river|fountain/i.test(n || '');
-
-  function makeBillboardMaterial(m) {
-    // GLB 的 material.extras 由 GLTFLoader 的 assignExtrasToUserData 用 Object.assign
-    // 平铺进 userData（不是嵌在 userData.extras 下）——写成 userData.extras.occMean 会
-    // 恒取到 undefined，退化成 0.8 固定值，使各材质"按自身贴图均值归一化遮挡"的标定失效。
-    const occRaw = m.userData && Number(m.userData.occMean);
-    // occMean=1.0 哨兵（导出器 2026-10-07 口径）：净倍率 = vOcc × SH 字面 RGB、
-    // 乘积钳 2.0——与客户端 speedtree-materials-fp 同式（albedo × varVertexColor
-    // × SH(L0)）。occMean 为其它值 = 旧包：保留「均值归一化 + 1.35 钳」旧方程。
-    // 旧方程在深色叶贴图上把 ×1.575 压平成 ×1.35 并抹掉叶簇内 AO 对比（发灰发平，
-    // erlenberg 实测报障）；高亮雪地贴图被 tone mapping 掩盖 (+9%) 故长期未显形。
-    const newPack = occRaw === 1;
-    const occMean = newPack ? 1 : (Number.isFinite(occRaw) && occRaw > 0 ? occRaw : 0.8);
-    // 每实体的 SH(L0) 染色：导出器写进 baseColorFactor（RGB 三通道字面值——
-    // √π 灰 1.7725，或 karelia (0.37,0.50,0.50) 冷调黄昏等真实每树环境）。
-    const c0 = m.color;
-    const factorOk = c0 && [c0.r, c0.g, c0.b].every((v) => Number.isFinite(v) && v > 0);
-    const shTint = factorOk
-      ? new THREE.Vector3(c0.r, c0.g, c0.b)
-      : (newPack ? new THREE.Vector3(1, 1, 1) : new THREE.Vector3(1.77, 1.77, 1.77));
-    // 客户端着色器为伽马空间直采直写：关闭 sRGB 纹理解码（自定义着色器无输出
-    // 重编码，sRGB 采样得到的线性值直出会整体发黑）
-    if (m.map) { m.map.colorSpace = THREE.NoColorSpace; m.map.needsUpdate = true; }
-    return new THREE.ShaderMaterial({
-      uniforms: {
-        map: { value: m.map || null },
-        uSH: { value: shTint },
-        uOccMean: { value: occMean },
-        uProdClamp: { value: newPack ? 2.0 : 1.35 },
-        uAlphaCut: { value: CARD_ALPHA_CUT },
-      },
-      vertexShader: `
-        attribute vec4 _corner;
-        attribute vec4 color;
-        // <common> 必须先于 logdepthbuf_vertex（isPerspectiveMatrix 定义在 common 里）
-        #include <common>
-        varying vec2 vUv;
-        varying float vOcc;
-        #include <logdepthbuf_pars_vertex>
-        void main() {
-          vec4 wp = modelMatrix * vec4(position, 1.0);
-          vec3 vp = (viewMatrix * wp).xyz;
-          float ws = length(vec3(modelMatrix[0][0], modelMatrix[1][0], modelMatrix[2][0]));
-          vp += _corner.xyz * ws;
-          gl_Position = projectionMatrix * vec4(vp, 1.0);
-          #include <logdepthbuf_vertex>
-          vUv = uv;
-          vOcc = color.r;
-        }`,
-      // 用 discard 裁切走不透明管线（transparent=false）：叶卡之间排序无关，
-      // 消除互遮挡闪烁（此前 transparent=true + depthWrite=true 二者冲突），
-      // 同时省掉透明通道的排序开销
-      transparent: false,
-      depthWrite: true,
-      fragmentShader: `
-        uniform sampler2D map;
-        uniform vec3 uSH;
-        uniform float uOccMean;
-        uniform float uProdClamp;
-        uniform float uAlphaCut;
-        varying vec2 vUv;
-        varying float vOcc;
-        #include <logdepthbuf_pars_fragment>
-        void main() {
-          #include <logdepthbuf_fragment>
-          vec4 c = texture2D(map, vUv);
-          if (c.a < uAlphaCut) discard;
-          float occ = min(vOcc / max(uOccMean, 0.001), 1.25);
-          gl_FragColor = vec4(c.rgb * min(occ * uSH, vec3(uProdClamp)), c.a);
-        }`,
-      side: THREE.DoubleSide,
-    });
-  }
-
-  // ST| 静态几何（gen2 刚体固定叶/树枝、gen1 树干）：与叶卡同族客户端材质
-  // speedtree-materials-fp = albedo × varVertexColor × SH(L0)，伽马空间直采直写
-  // （无光照、无 tone map、无输出重编码）、无 _corner 展开。此前用 MeshBasicMaterial
-  // 承载：sRGB 解码→线性乘→sRGB 编码的往返把 SH 实际压成 SH^(1/2.2)，与 billboard
-  // 叶（直通）差约 28% → 同树叶片双色（2026-10-07 erlenberg 实测报障）。
-  // toneMapped=false 只去掉 ACES、去不掉输出编码，故必须走自定义 ShaderMaterial
-  // 与叶卡同方程。vOcc = COLOR_0.r（gen2 刚体叶片带该属性；无属性的正则树干 = 1）。
-  function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
-    if (m.map) { m.map.colorSpace = THREE.NoColorSpace; m.map.needsUpdate = true; }
-    const c0 = m.color;
-    const factorOk = c0 && [c0.r, c0.g, c0.b].every((v) => Number.isFinite(v) && v > 0);
-    const sh = factorOk ? new THREE.Vector3(c0.r, c0.g, c0.b) : new THREE.Vector3(1, 1, 1);
-    const hasVC = !!m.vertexColors;   // GLTFLoader 对带 COLOR_0 的几何自动置位
-    return new THREE.ShaderMaterial({
-      uniforms: {
-        map: { value: m.map || null },
-        uSH: { value: sh },
-        uAlphaCut: { value: opaqueEnough ? 0.33 : 0.05 },
-      },
-      vertexShader: `
-        ${hasVC ? 'attribute vec4 color;' : ''}
-        // <common> 必须先于 logdepthbuf_vertex（isPerspectiveMatrix 定义在 common 里）
-        #include <common>
-        varying vec2 vUv;
-        varying float vOcc;
-        #include <logdepthbuf_pars_vertex>
-        void main() {
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          #include <logdepthbuf_vertex>
-          vUv = uv;
-          vOcc = ${hasVC ? 'color.r' : '1.0'};
-        }`,
-      fragmentShader: `
-        uniform sampler2D map;
-        uniform vec3 uSH;
-        uniform float uAlphaCut;
-        varying vec2 vUv;
-        varying float vOcc;
-        #include <logdepthbuf_pars_fragment>
-        void main() {
-          #include <logdepthbuf_fragment>
-          vec4 c = texture2D(map, vUv);
-          if (c.a < uAlphaCut) discard;
-          gl_FragColor = vec4(c.rgb * (vOcc * uSH), c.a);
-        }`,
-      side: THREE.DoubleSide,
-      transparent: !opaqueEnough,
-      depthWrite: opaqueEnough,
-    });
-  }
-
   async function loadMapImage() {
     if (DEBUG) window.__destructStage = 'map-load';
     // 会话身份 guard：回放替换/销毁后，旧会话的地图资产续体一律失效——
@@ -828,7 +743,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     mapTexture = null; mapMetaInfo = null; heightField = null; heightMeta = null;
     occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
     groundLayers = null;
-    // 地面加载方式由画质档决定（低=小地图底图、中/高=分层地表），3D 地形有高度场即开启
+    // 地面加载方式由画质档决定（低=小地图底图、中=高清烘焙底图、高=分层地表），3D 地形有高度场即开启
     // 地图端点用回放数字 id（与客户端 arenaTypeID → maps.yaml 同链）；
     // 显示名可能与解析器枚举名不一致，仅作后备
     const mid = DATA.meta.map_id || 0;
@@ -1004,7 +919,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 静态场景模型（建筑/桥/岩石，tools/export_map_glb.py 预生成；缺失静默跳过）。
     // GLB 为游戏系（z 上、+y 北），qFrame = Ry(π)·Rx(-π/2)（YXZ 序）转到回放场景系——
     // 与坦克 GLB 同一帧变换，纯旋转无镜像，绕序天然正确。
-    // 中/低档跳过场景 GLB（单图 11–67MB 下载 + 大块显存，是画质档最大的分流项）
+    // 低/中档跳过场景 GLB（单图 11–67MB 下载 + 大块显存，是画质档最大的分流项；
+    // 均衡档定位 = 真车模 + 无场景下载税）；高档加载场景且地面走分层地表合成，
+    // 均衡档地面走高清烘焙底图（无分层）
     if (Q.scenery) try {
       // 可破坏物清单（与场景 GLB 并行拉取；缺失/低档静默禁用该特性）
       // mapStaticUrl 返回完整 URL——assetProvider.json() 会再拼一次 base（逻辑路径专用），
@@ -1152,48 +1069,75 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           if (/sky/i.test(o.name || '')) o.visible = false;
         });
 
-        // ---- 可破坏地形：mesh 空间索引 + 损毁态网格初始隐藏 ----
-        // 网格位置 = gltf.scene 局部系（z 上）= destructibles.json 的 pos（游戏场景系，
-        // 直接对应回放 x/z）。D_ 前缀 = 损毁态替换网格。
+        // ---- 实例化合批（场景侧减负主刀）----
+        // 导出器把每个实例导成独立节点，但**节点级共享 mesh/几何**（实测 malinovka
+        // 3096 节点 / 142 唯一几何，~21× 复用）。GLTFLoader 逐节点建 Mesh → 每帧
+        // draw call ≈ 节点数、场景图双遍历（updateMatrixWorld + projectObject）同量级，
+        // 是中/高档场景侧最大的 CPU 开销。按 (geometry, material) 合并为 InstancedMesh：
+        // 几何**零拷贝**复用，draw call 与场景图规模一起降到批次数。
+        // 天空与水体不参与：天空本就隐藏；水面是全场唯一真透明物，保持独立节点让
+        // three 按相机距离做透明排序（合批会把整批退化成一个排序单位）。
+        gltf.scene.updateMatrixWorld(true);
+        const entries = collectInstanceEntries(gltf.scene).filter((e) =>
+          !/sky/i.test(e.name) && !isWaterName(e.name));
+        // 可破坏匹配索引（旧 meshGrid 语义）：展平位置 → entry，2cm 半径邻域查找
+        const meshGrid = new Map();
+        const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
+        for (const e of entries) {
+          const k = gridKey(e.x, e.y);
+          (meshGrid.get(k) || meshGrid.set(k, []).get(k)).push(e);
+        }
+        // 宫格分块：8×8（600m 图 → 75m/格）——整批跨全图的包围球会失去逐实例
+        // 视锥剔除（镜头看半张图，视野外的实例也全量提交；林荫图极致档实测卡顿
+        // 的主因）。分片后每片包围球局部化，剔除恢复到格粒度。
+        // span 取地形 sidecar（地面段已装载）；缺失回退 600（与 python 管线一致）
+        const cellSize = Math.max(75, (heightMeta?.span || 600) / 8);
+        const batches = groupInstanceBatches(entries, cellSize);
+        for (const b of batches) b.items.forEach((e, i) => { e.batch = b; e.idx = i; });
+        for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh); }
+        // 原节点摘除：几何/材质已由批次持有（GPU 只上传批次侧），原 Mesh 不再进渲染图
+        for (const e of entries) e.node.removeFromParent();
+        // D_ 损毁态实例初始隐藏：实例化后没有逐实例 visible，用「远处 + 微缩」矩阵
+        // （精确零矩阵是奇异矩阵，raycast 求逆走 NaN 路径，见 writeHiddenInstance）。
+        for (const e of entries) {
+          if (e.name && e.name.startsWith('D_')) { writeHiddenInstance(e.batch.mesh, e.idx); e.hidden = true; }
+        }
+        // 隐藏槽位落位后重算批次球：可见实例用当前矩阵、隐藏的 D_ 槽位用 base
+        // 位姿计入覆盖——three 的 union 会把 y=-1e6 的隐藏矩阵撑爆半径（剔除
+        // 全失效），而只按可见重算又会让全 D_ 批次空球、损毁激活后被整批剔除
+        // （评审二轮/五轮两次指出的两个方向）
+        for (const b of batches) refreshBatchSphere(b.mesh, b, (e) => e.hidden);
+        // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记粒度 = 批次。射线候选走
+        // InstancedMesh 逐实例球测（成本 ≈ 候选实例数 × 球测，配合 far 钳制与 4ms 预算
+        // 化轮转可控）。足印仍按**合法实例**逐一枚举（occlusionFootprintCells 语义不变；
+        // hidden 实例在 y=-1e6，不得参与，否则足印撑爆全图）。无名字的 mesh 与旧行为
+        // 一致：可渲染但既不匹配可破坏物、也不当遮挡候选。
         // 匹配半径 **2cm**（导出器把同一实例的全部批次放在同一坐标上：实测 99.8% 实例
         // 的完好网格在 1cm 内、成对 D_ 网格在 5mm 内）——早期用 1.5m 半径会把**邻近实例**
         // 的网格一起卷进来（malinovka 579 棵树里 22 棵会拖走邻居几何：一棵树倒，旁边草丛
         // 跟着转）。半径收紧后邻居不再误配；无对应网格 = 该物体不在 GLB（不渲染）。
         const MESH_MATCH_R = 0.02;
-        const meshGrid = new Map();
-        const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
-        // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记**可见**静态网格——按包围球
-        // 半径铺进它覆盖到的所有格子（大建筑跨多格），避免"整个场景 raycast"的卡死。
         const occGrid = new Map();
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh || !o.name) return;
-          if (o.name.startsWith('D_')) { o.visible = false; }
-          let wx = 0, wy = 0, n = o;
-          // 展平到 gltf.scene：本导出器为扁平结构（节点直挂根），累积父链防御嵌套
-          while (n && n !== gltf.scene) { wx += n.position.x; wy += n.position.y; n = n.parent; }
-          const k = gridKey(wx, wy);
-          (meshGrid.get(k) || meshGrid.set(k, []).get(k)).push({ mesh: o, x: wx, y: wy });
-          if (o.visible && !/sky/i.test(o.name)) {
-            if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
-            const r = o.geometry.boundingSphere ? o.geometry.boundingSphere.radius : 0;
-            // 登记 = 足印 AABB 全枚举（occlusionFootprintCells）。不能用 occlusionCells
-            // （线段遍历）登记：那只会把包围盒对角线经过的格子入表，大建筑非对角线
-            // 覆盖格子缺失 → 穿那些格子的射线漏判遮挡（标签隔楼可见）。
-            const c = occlusionFootprintCells(wx - r, wy - r, wx + r, wy + r, OCCL_CELL);
+        for (const b of batches) {
+          if (!b.geometry.boundingSphere) b.geometry.computeBoundingSphere();
+          const r = b.geometry.boundingSphere ? b.geometry.boundingSphere.radius : 0;
+          for (const e of b.items) {
+            if (e.hidden || !e.name) continue;
+            const c = occlusionFootprintCells(e.x - r, e.y - r, e.x + r, e.y + r, OCCL_CELL);
             for (const key of c) {
               const list = occGrid.get(key);
-              if (list) { if (!list.includes(o)) list.push(o); }
-              else occGrid.set(key, [o]);
+              if (list) { if (!list.includes(b.mesh)) list.push(b.mesh); }
+              else occGrid.set(key, [b.mesh]);
             }
           }
-        });
+        }
         occlGrid = occGrid;   // 遮挡检测的候选表（旧会话的由 teardown 置 null）
         const findMeshes = (px, py, wantDestroyed, r = MESH_MATCH_R) => {
           const out = [];
           const gx = Math.round(px / 2), gy = Math.round(py / 2);
           for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
             for (const e of meshGrid.get(`${gx + dx},${gy + dy}`) || []) {
-              const destroyedMesh = (e.mesh.name || '').startsWith('D_');
+              const destroyedMesh = e.name.startsWith('D_');
               if (destroyedMesh === wantDestroyed && Math.hypot(e.x - px, e.y - py) <= r) out.push(e);
             }
           }
@@ -1214,56 +1158,99 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           const areasByEid = new Map((DATA.destructible_areas || []).map((a) => [a.eid, a]));
           const index = buildDestructibleIndex(destructDoc);
           const states = foldDestructibleStates(DATA.destructible_events, areasByEid, index);
-          // 预挂树倒 pivot（挂 gltf.scene 内，局部 z 上；树顶运动学见 destructibles.js）。
-          // mesh 自身保留 placement 旋转/贴地 z；倒伏 = pivot 上的世界轴旋转（后乘），
-          // pivot.z 取首网格根部高度，其余网格按各自 z 差挂入。
-          const worldZ = (m) => { let z = m.position.z, n = m.parent; while (n && n !== gltf.scene) { z += n.position.z; n = n.parent; } return z; };
+          // 可破坏物**槽位化**：不再重挂 pivot——状态持 { mesh, idx, base } 槽位。
+          // 树倒 = T(p)·R·T(−p)·base 逐实例矩阵（与旧 pivot 装配逐值等价，等价性由
+          // sceneryInstancing.test.js 随机位姿锁定）；建筑换模 = 完好/损毁槽位在 base
+          // 与隐藏矩阵之间翻转。pivot 原点/树高/停止角公式与旧实现逐项一致。
+          const slotOf = (e) => ({ mesh: e.batch.mesh, idx: e.idx, base: e.matrix });
           for (const st of states) {
             const [px, py] = st.inst.pos;
             if (st.prop === 3) {
               const hits = findMeshes(px, py, false);
               if (!hits.length) continue;
-              const pivot = new THREE.Group();
-              pivot.position.set(px, py, worldZ(hits[0].mesh));
+              const pivotZ = hits[0].z;
               // 树高 = 各网格几何在 pivot 局部系（z 上）的上界 + 网格自身 z 偏移（= 0，
               // 同实例批次同锚点）——倒伏时长 T ∝ √(L/g) 用它（见 destructibles.js）。
               let heightM = 0;
               for (const h of hits) {
-                const wz = worldZ(h.mesh);
-                h.mesh.position.set(h.x - px, h.y - py, wz - pivot.position.z);
-                pivot.add(h.mesh);
-                const geo = h.mesh.geometry;
+                const geo = h.geometry;
                 if (!geo) continue;
                 if (!geo.boundingBox) geo.computeBoundingBox();
                 const bb = geo.boundingBox;
-                if (bb) heightM = Math.max(heightM, (bb.max.z ?? 0) + h.mesh.position.z);
+                if (bb) heightM = Math.max(heightM, (bb.max.z ?? 0) + (h.z - pivotZ));
               }
-              gltf.scene.add(pivot);
-              st.pivot = pivot;
+              st.slots = hits.map(slotOf);
               st.heightM = heightM;
+              st.pivotPos = { x: px, y: py, z: pivotZ };
+              st.fallQuat = { w: 1 };   // settled 自校验读的倒伏旋转（destructibles.js）
+              st.upright = true;
               // 停止角 = 树干沿倒向**触地**的角度（客户端"停在地形上"，因而随位置/倒向变化）。
               // 高度场在**世界系**（见 rebuildGround 注释：世界 x = −场景局部 x），而 pivot 在
               // gltf.scene 局部系（z 上）→ 采样用 (lx, ly) → (世界 −lx, 世界 lz=ly)。
               // 无高度场（2D 资源平面）→ sampleHeight 恒 0，此时按平坦地面（90°）。
               st.stopRad = heightField
-                ? fallStopAngle(st.fallDir, { x: px, y: py, z: pivot.position.z }, heightM,
-                    (lx, ly) => sampleHeight(-lx, ly))
+                ? fallStopAngle(st.fallDir, st.pivotPos, heightM, (lx, ly) => sampleHeight(-lx, ly))
                 : Math.PI / 2;
             } else {
-              st.intactMeshes = findMeshes(px, py, false).map((e) => e.mesh);
-              st.deadMeshes = findMeshes(px, py, true).map((e) => e.mesh);
+              st.intactSlots = findMeshes(px, py, false).map(slotOf);
+              st.deadSlots = findMeshes(px, py, true).map(slotOf);
             }
           }
           destruct = { states, ptr: 0, lastT: -1, animating: false };
+          // 动态批次包围球保守扩张（评审 P2 二轮修正）：树倒 = 绕基点旋转，树梢会
+          // 伸出 buildInstancedMesh 按直立位算的包围球。扩张量必须计入**槽位实际
+          // 变换**——heightM 是原型几何高度，导出节点带非均匀缩放（erlenberg
+          // Spruce2 ≈ [3.1, 2.39, 2.39]）时实高可差数倍，未缩放扩张不保守（倒下
+          // 仍漏剔除/漏拾取）。正确量 = 几何球经 s.base 变换后的世界球（含缩放），
+          // 再算该球到 pivot 的最远距离 = |center−pivot| + radius；hidden 槽位
+          // （y=-1e6）不参与。
+          for (const st of states) {
+            if (st.prop !== 3 || !st.slots) continue;
+            for (const s of st.slots) {
+              const sph = s.mesh.boundingSphere;
+              if (!sph) continue;
+              if (!s.mesh.geometry.boundingSphere) s.mesh.geometry.boundingSphere = sph.clone();
+              const geo = s.mesh.geometry.boundingSphere;
+              // 几何球经 base 变换：center 仿射变换，radius 按最大轴缩放（保守）
+              const e = s.base.elements;
+              const cx = e[0] * geo.center.x + e[4] * geo.center.y + e[8] * geo.center.z + e[12];
+              const cy = e[1] * geo.center.x + e[5] * geo.center.y + e[9] * geo.center.z + e[13];
+              const cz = e[2] * geo.center.x + e[6] * geo.center.y + e[10] * geo.center.z + e[14];
+              const sx = Math.hypot(e[0], e[1], e[2]);
+              const sy = Math.hypot(e[4], e[5], e[6]);
+              const sz = Math.hypot(e[8], e[9], e[10]);
+              const r = geo.radius * Math.max(sx, sy, sz);
+              // 倒伏最远触及（以**批次球心**度量，评审四轮）：旋转保点到 pivot
+              // 的距离 → 任一倒角下，树体所有点到 pivot 的距离 ≤ |p−c_geom|+r；
+              // 到批次球心 c 的距离再 +|c−p|（多树共批时 c 与树位相差可达半格宽，
+              // 漏掉这一项 = 单棵树测试过、同批双树反例仍 0 命中）。
+              const dGeo = Math.hypot(cx - st.pivotPos.x, cy - st.pivotPos.y, cz - st.pivotPos.z);
+              const dCenter = Math.hypot(
+                sph.center.x - st.pivotPos.x,
+                sph.center.y - st.pivotPos.y,
+                sph.center.z - st.pivotPos.z);
+              const need = dCenter + dGeo + r + 2;
+              if (need > sph.radius) sph.radius = need;
+            }
+          }
           if (DEBUG) window.__destructStage = `ready states=${destruct.states.length}`;
           if (DEBUG) window.__destructDebug = () => ({
             events: (DATA.destructible_events || []).length,
             states: destruct.states.length,
-            pivots: destruct.states.filter((st) => st.pivot).length,
-            swaps: destruct.states.filter((st) => st.intactMeshes).length,
+            trees: destruct.states.filter((st) => st.slots).length,
+            swaps: destruct.states.filter((st) => st.intactSlots).length,
             ptr: destruct.ptr,
           });
         }
+        // ---- 静态子树矩阵冻结 ----
+        // 场景 GLB 至此全部定型（合批 + 可破坏槽位装配完成）：先 bake 一遍世界矩阵，再关
+        // 全树 matrixAutoUpdate（three 对 autoUpdate 节点每帧**无条件**重 compose）。批次
+        // 自身变换恒为单位阵；运行期唯一的变换写入是实例矩阵（树倒/换模翻转），它不走
+        // 节点 matrix 路径、不受冻结影响（instanceMatrix.needsUpdate 局部上传）。
+        mapScenery.updateMatrixWorld(true);
+        gltf.scene.traverse((o) => { o.matrixAutoUpdate = false; });
+        mapScenery.matrixAutoUpdate = false;   // 根组旋转已 bake，永不再变；保持 true 会让
+                                               // 每帧置脏 + force 传播把冻结整个击穿
       }
       }
     } catch (e) { console.warn('场景模型加载失败（忽略）:', e); }
@@ -1820,6 +1807,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const LABEL_INTERVAL_RELOAD_MS = 33;
   const LABEL_INTERVAL_IDLE_MS = 100;
   const labelClip = new THREE.Vector4();
+  // 零分配锚点：所有车辆共用一个 scratch 喂 labelOverlay.setAnchor——overlay 侧契约是
+  // **同步拷贝**进它自有的 per-eid 存储（见 PlaybackVehicleLabels3D.setAnchor），不持有
+  // 调用方对象引用，因此逐帧逐车复用同一个对象是安全的（此前每帧每车新建一个对象）。
+  const labelAnchorScratch = { x: 0, y: 0, visible: false, occluded: false };
   function publishLabels(force = false) {
     if (!DATA || !labelOverlay || !store.labelsOn) return;
     const now = performance.now();
@@ -1871,11 +1862,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const visible = v.group.visible && store.labelsOn && w > 0
         && Number.isFinite(x) && Number.isFinite(y) && z >= -1 && z <= 1
         && x >= -1 && x <= 1 && y >= -1 && y <= 1;
-      labelOverlay.setAnchor(v.def.eid, {
-        x: visible ? (x + 1) * container.clientWidth / 2 : 0,
-        y: visible ? (1 - y) * container.clientHeight / 2 : 0,
-        visible, occluded: v.labelOccluded,
-      });
+      labelAnchorScratch.x = visible ? (x + 1) * container.clientWidth / 2 : 0;
+      labelAnchorScratch.y = visible ? (1 - y) * container.clientHeight / 2 : 0;
+      labelAnchorScratch.visible = visible;
+      labelAnchorScratch.occluded = v.labelOccluded;
+      labelOverlay.setAnchor(v.def.eid, labelAnchorScratch);
     }
     publishLabels();
   }
@@ -2055,7 +2046,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (!gn.userData.__bake) { gn.userData.__bake = gn.matrix.clone(); gn.matrixAutoUpdate = false; }
       gn.matrix.copy(_mAcc.copy(mG).multiply(gn.userData.__bake));
     }
-    v.glb.updateMatrixWorld(true);
+    // 世界矩阵不在此强制刷新：renderer.render 的 scene.updateMatrixWorld() 从根向下传播，
+    // v.glb 根 matrixAutoUpdate=true → updateMatrix 置脏 → force 覆盖 matrixAutoUpdate=false
+    // 的炮塔/炮管节点，本行是每车全树一遍纯重复的 compose+multiply（14 车 ×60fps）。
+    // tick 与 render 之间没有车辆世界矩阵读者（标签投影用位姿插值坐标、遮挡射线只打静态
+    // 场景网格），删之无观察者可见差异。
   }
 
   async function applyGlbToggle(on) {
@@ -2140,7 +2135,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     p.push(obj);
   }
   function disposeFxPool() {
-    for (const list of fxPool.values()) for (const o of list) disposeObject3D(o);
+    // 池条目两类：three 对象（tracer/traj 的 Mesh）与 JS 包装对象（impact-* =
+    // { g, ball, ring, sparks }——issue #556：对包装对象直接 disposeObject3D 调
+    // .traverse 抛 TypeError，切换回放清理上一局时中断会话）。解包后统一走
+    // disposeObject3D，共享 Set 去重跨条目的几何/材质/纹理（池内同 key 复用
+    // 同一批对象，逐条独立 dispose 会重复释放共享资源）。
+    const disposed = new Set();
+    const rootOf = (o) => (o && o.isObject3D) ? o : (o && o.g && o.g.isObject3D ? o.g : null);
+    for (const list of fxPool.values()) {
+      for (const o of list) {
+        const root = rootOf(o);
+        if (!root) continue;
+        if (disposed.has(root)) continue;
+        disposed.add(root);
+        disposeObject3D(root, disposed);
+      }
+    }
     fxPool.clear();
   }
 
@@ -2293,15 +2303,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const tr = tracers[i];
       if (T < tr.t0) continue;
       // 沿折线推进：头部按时间落在当前段（段内匀速），尾部 = 头部**弧长位置**回退 TRACER_LEN 米
-      // （跳弹拐角时尾巴跟着折线弯，与客户端沿折线推进的观感一致）
-      const headArr = pointAt(tr.points, tr.legEnds, T, tr.t0);
+      // （跳弹拐角时尾巴跟着折线弯，与客户端沿折线推进的观感一致）。零分配：into 变体
+      // 直写模块级 scratch（此前每帧每弹 2 个新数组 + 1 次 clone）。
+      pointAtInto(tr.points, tr.legEnds, T, tr.t0, _tpA);
       const sHead = arcAtTime(tr.points, tr.legEnds, tr.arcEnds, T, tr.t0);
-      const tailArr = pointAtArc(tr.points, tr.arcEnds, sHead - TRACER_LEN);
-      const head = _tpA.set(headArr[0], headArr[1], headArr[2]);
-      _tpB.set(tailArr[0], tailArr[1], tailArr[2]);
-      tr.mesh.position.copy(head.clone().add(_tpB).multiplyScalar(0.5));
-      tr.mesh.lookAt(head);
-      tr.mesh.scale.z = Math.max(0.001, Math.hypot(head.x - _tpB.x, head.y - _tpB.y, head.z - _tpB.z) / TRACER_LEN);
+      pointAtArcInto(tr.points, tr.arcEnds, sHead - TRACER_LEN, _tpB);
+      tr.mesh.position.copy(_tpA).add(_tpB).multiplyScalar(0.5);
+      tr.mesh.lookAt(_tpA);
+      tr.mesh.scale.z = Math.max(0.001, Math.hypot(_tpA.x - _tpB.x, _tpA.y - _tpB.y, _tpA.z - _tpB.z) / TRACER_LEN);
       // 完成判定 = **时间到终点**（折线改造曾误留旧变量 `f >= 1`——f 已不存在，
       // 每帧 ReferenceError 中断整个 tick：不渲染、位姿/HUD 全停，且该炮线永远走不到
       // 移除分支 → 持续抛到暂停为止。这就是此前"播放中卡死、暂停即止"的根因。）
@@ -2620,52 +2629,75 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const tmpDir = new THREE.Vector3();  // 进入跟随：相机方向临时量
   const FOLLOW_SNAP_DIST = 26;         // 进入跟随：相机沿当前方向收拢到此距离（米；坦克约 7m 长）
   const FOLLOW_MIN_HEIGHT = 9;         // 进入跟随：相机至少高于坦克此高度（米，保证俯角不贴地）
-  // 可破坏地形状态推进（回放时钟；seek 后退 = 全量重算，前进 = 游标泵）。
-  // 树倒角度每帧从 (T − clock) 重算（幂等，seek 安全）；碎裂换模只在状态翻转时
-  // 触碰 visible。st.pivot 的倒向旋转 = fall ∘ placement（世界轴后乘，见加载段）。
   // 可破坏状态推进（回放时钟；seek 后退 = 全量重算，前进 = 游标泵）。
-  // 性能：只在有**在飞倒树动画**时逐帧更新四元数（dirty 标记），已终态的树跳过；
-  // 碎裂换模只在状态翻转时触碰 visible（幂等，seek 安全）。
+  // 实例化后不再有 pivot 节点：树倒写**逐实例矩阵**（T(p)·R·T(−p)·base，与旧 pivot
+  // 装配逐值等价，见 sceneryInstancing.js），建筑换模在 base / 隐藏矩阵之间翻转实例
+  // 矩阵。树只在自己倒伏窗口内写矩阵、终态后写一次不再碰（省去 700+ 次 compose）；
+  // 实例矩阵上传按帧合并（同帧多树只触发一次所在批次的 needsUpdate）。
   function updateDestructibles(T) {
     if (!destruct) return;
     const states = destruct.states;
     if (T < destruct.lastT) {
       destruct.ptr = 0;   // seek 后退：全部回到未激活
-      // 树终态缓存随回退**显式失效**：settled=true 的树若不清，重播再次越过倒伏终点时
-      // 终态分支被跳过，触地旋转不会重写（树直立或停在中间角）。（destructibles.js 的
-      // settled getter「pivot 未达停止角 ⇒ 视为未终态」是第二道防线，两道机制独立。）
+      // 树终态缓存随回退**显式失效**。⚠️ 此处不得置 upright=true（评审 P1）：
+      // upright 是「槽位已恢复直立」的标记，提前置 true 会让未激活分支跳过
+      // base 矩阵恢复——树已倒下后回退到事件前，画面仍停在倒伏姿态。
+      // 复位交给下方 !active 分支（upright=false 时才执行 base 写回 + fallQuat 复位）。
       for (const st of states) if (st.prop === 3) st.settled = false;
     }
     destruct.lastT = T;
     while (destruct.ptr < states.length && states[destruct.ptr].clock <= T) destruct.ptr++;
     destruct.animating = false;
+    let dirty = null;   // 本帧被写过的批次 → 一次性 needsUpdate（Set 去重多树同批次）
+    const mark = (mesh) => { (dirty || (dirty = new Set())).add(mesh); };
     for (let i = 0; i < states.length; i++) {
       const st = states[i];
       const active = i < destruct.ptr;
       if (st.prop === 3) {
-        if (!st.pivot) continue;
+        if (!st.slots) continue;
         if (!active) {
-          if (st.pivot.quaternion.x || st.pivot.quaternion.y || st.pivot.quaternion.z) {
-            st.pivot.quaternion.identity();
+          // 倒带复位：恢复 base（直立）。upright 标记免每帧重写（旧实现查四元数非零）。
+          if (!st.upright) {
+            for (const s of st.slots) { s.mesh.setMatrixAt(s.idx, s.base); mark(s.mesh); }
+            st.fallQuat.w = 1;
+            st.upright = true;
           }
           continue;
         }
-        // 只在动画窗口内逐帧更新；终态后写一次不再碰（省去 700+ 次 setFromAxisAngle）。
-        // 推进决策在 destructibles.treeFrame（纯函数，单测锁定倒带序列），此处只写四元数。
+        // 推进决策在 destructibles.treeFrame（纯函数，单测锁定倒带序列），此处只写
+        // 实例矩阵与 fallQuat（settled 自校验的第二道防线用）。
         const f = treeFrame(st, true, T);
         if (f) {
           if (f.animating) destruct.animating = true;
-          st.pivot.quaternion.setFromAxisAngle(_tmpFallAxis.set(f.axis[0], f.axis[1], f.axis[2]), f.angle);
+          _tmpFallAxis.set(f.axis[0], f.axis[1], f.axis[2]);
+          for (const s of st.slots) {
+            fallMatrix(s.base, st.pivotPos.x, st.pivotPos.y, st.pivotPos.z, _tmpFallAxis, f.angle, _tmpInstM);
+            s.mesh.setMatrixAt(s.idx, _tmpInstM);
+            mark(s.mesh);
+          }
+          _tmpFallQ.setFromAxisAngle(_tmpFallAxis, f.angle);
+          st.fallQuat.w = _tmpFallQ.w;
+          st.upright = false;
         }
       } else {
         if (active === !!st.applied) continue;
         st.applied = active;
-        for (const m of st.intactMeshes || []) m.visible = !active;
-        for (const m of st.deadMeshes || []) m.visible = active;
+        // 完好态：存活期显示、摧毁后隐藏；损毁态相反（旧 visible 翻转 → 实例矩阵翻转）。
+        for (const s of st.intactSlots || []) {
+          if (active) writeHiddenInstance(s.mesh, s.idx); else s.mesh.setMatrixAt(s.idx, s.base);
+          mark(s.mesh);
+        }
+        for (const s of st.deadSlots || []) {
+          if (!active) writeHiddenInstance(s.mesh, s.idx); else s.mesh.setMatrixAt(s.idx, s.base);
+          mark(s.mesh);
+        }
       }
     }
+    if (dirty) for (const mesh of dirty) mesh.instanceMatrix.needsUpdate = true;
   }
   const _tmpFallAxis = new THREE.Vector3();
+  const _tmpInstM = new THREE.Matrix4();
+  const _tmpFallQ = new THREE.Quaternion();
   // 炮线折线求值 scratch（每帧多车并发，避免逐帧分配）
   const _tpA = new THREE.Vector3(), _tpB = new THREE.Vector3();
 
@@ -2767,6 +2799,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       || ghostByEid.size > 0 || flashByEid.size > 0;
     if (!busy) return;
     frameDirty = false;
+    // 动态分辨率调整必须在**渲染前**（黑闪根因）：canvas width/height 赋值会清空
+    // drawing buffer——若在渲染后调整，合成器在下一帧渲染前取到空 buffer 即黑帧。
+    // 渲染前调整则本帧立刻以新分辨率画满，buffer 从不空。dt 取自本帧 rAF。
+    if (dynResCtl) {
+      const nd = dynResCtl.frame(dt * 1000);
+      if (nd != null) {
+        const w = container.clientWidth, h = container.clientHeight;
+        renderer.setSize(w, h, false);
+        renderer.setPixelRatio(nd);
+        renderer.domElement.style.width = w + 'px';
+        renderer.domElement.style.height = h + 'px';
+      }
+    }
     const perfT0 = PERF ? performance.now() : 0;
     updateLabels();
     updateBases();
@@ -2775,9 +2820,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const perfT1 = PERF ? performance.now() : 0;
     renderer.render(scene, camera);
     // 伤害飘字覆盖层：同 renderer 的第二次 render；车辆标签由 HTML overlay 呈现。
-    renderer.autoClear = false;
-    renderer.render(labelScene, camera);
-    renderer.autoClear = true;
+    // labelScene 只装飘字精灵（爆散在主场景）——无存活飘字时整遍跳过：空场景 render
+    // 也要付 clear + 命令提交，而战斗里绝大多数帧并没有飘字。
+    if (floatDmgs.length > 0) {
+      renderer.autoClear = false;
+      renderer.render(labelScene, camera);
+      renderer.autoClear = true;
+    }
     if (PERF) perfFrame(perfT1 - perfT0, performance.now() - perfT1);
   }
 
@@ -2788,13 +2837,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 炮线/轨迹盒/命中特效/飘字/爆散/可见车辆）。
   const PERF = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('perf');
+  let dynResCtl = null;
+  let rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres }（reset 保留渲染器时用于失配检测）
   const PERF_RING = 240;              // ≈4s 窗口（60fps）
   let perfRing = [], perfRingN = 0, perfLast = 0, perfSlow = [];
   function perfFrame(updateMs, renderMs) {
     const now = performance.now();
     const dt = perfLast ? now - perfLast : 0;
     perfLast = now;
-    perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, t: T,
+    // draw call 数（renderer.info 是上一帧 render 的累计）：场景侧结构性优化（材质去重 /
+    // 实例化 / 冻结）的收益直接体现在这个数上，没有它优化前后无法量化对比。
+    const calls = renderer ? renderer.info.render.calls : 0;
+    perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, t: T, calls,
+      dpr: renderer ? Math.round(renderer.getPixelRatio() * 100) / 100 : 0,
       tracers: tracers.length, traj: trajLines.length, impacts: impacts.length,
       dmg: floatDmgs.length, burst: burstFx.length,
       veh: V.filter((v) => v.group.visible).length };
@@ -2821,6 +2876,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       `frame ms  med=${f(q('dt', 0.5))} p90=${f(q('dt', 0.9))} max=${f(q('dt', 0.99))}`,
       `update ms med=${f(q('updateMs', 0.5))} p90=${f(q('updateMs', 0.9))}`,
       `render ms med=${f(q('renderMs', 0.5))} p90=${f(q('renderMs', 0.9))}`,
+      `draw calls med=${f(q('calls', 0.5))} p90=${f(q('calls', 0.9))} max=${f(q('calls', 0.99))}`,
+      `pixel ratio med=${f(q('dpr', 0.5))} min=${f(q('dpr', 0.05))}`,
       `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} dmg=${last.dmg} burst=${last.burst}`,
       'slowest frames (dt ms / update / render / T):',
       ...perfSlow.map((r) => `  ${f(r.dt)} / ${f(r.updateMs)} / ${f(r.renderMs)} @T=${r.t.toFixed(1)}`),
@@ -2889,7 +2946,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 阵营映射只认 friendly_team ∈ {1,2}（unknown ≠ enemy，见 pointsAt）。
     {
       const pts = pointsAt(DATA.supremacy_points, T, DATA.meta.friendly_team);
-      store.pointsFriend = pts.friend; store.pointsEnemy = pts.enemy;
+      // 变更守卫与 updateScore 同款：点数在两次占领事件间恒定，60Hz 无守卫写是仅存的
+      // 每 tick reactive 写入（Vue 同值短路只免 trigger，不免 proxy set 本身）。
+      if (store.pointsFriend !== pts.friend) store.pointsFriend = pts.friend;
+      if (store.pointsEnemy !== pts.enemy) store.pointsEnemy = pts.enemy;
     }
     // 顶栏：单基地目标存在性 + 占领进度（取 ≤T 最后一条；无目标证据整行不显示）
     writeHud();
@@ -3043,9 +3103,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 递归收集 Object3D 子树的 geometry / material / texture 并各自 dispose 一次
   //（Set 去重：clone 共享的模板资源多路径命中只 dispose 一遍；three dispose 幂等，
   // 此处集合化只为省去重复遍历开销）
-  function disposeObject3D(root) {
+  function disposeObject3D(root, shared = null) {
     const geos = new Set(), mats = new Set(), texs = new Set();
+    void shared;   // 去重由调用方的 disposed 集合按 root 级完成（资源级去重见 materialDispose）
     root.traverse((o) => {
+      // InstancedMesh 的 instanceMatrix 是实例专属的 InstancedBufferAttribute，
+      // 不随 geometry.dispose 释放，必须走 InstancedMesh.dispose 自己清理
+      if (o.isInstancedMesh) o.dispose();
       if (o.geometry) geos.add(o.geometry);
       const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
       for (const m of ms) {
@@ -3117,7 +3181,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (o) { scene.remove(o); disposeObject3D(o); }
     }
     mapPlane = null; terrainMesh = null; mapScenery = null; groundMesh = null; gridHelper = null;
-    sceneryMatCache.clear();   // 材质已随 mapScenery dispose，缓存须清空（勿复用已 dispose 实例）
+    clearSceneryMatCache();   // 材质已随 mapScenery dispose，缓存须清空（勿复用已 dispose 实例）
     if (mapTexture) { mapTexture.dispose(); mapTexture = null; }
     if (groundLayers) { for (const k in groundLayers.texs) groundLayers.texs[k]?.dispose?.(); }
     groundLayers = null;
@@ -3217,11 +3281,53 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * @param {number} epoch loadData 提交数据后领取的会话身份（见 loadData 注释）
    * @returns {boolean} true = 本会话仍是当前会话，可以落成就绪态；false = 已过期，调用方必须放弃
    */
+  /** 重建渲染器上下文（偏好失配时）：卸旧 renderer/controls/画布与事件，
+   *  initScene 重建——会话数据（DATA/资产/相机状态）不动，仅重挂画布。 */
+  function rebuildRenderer() {
+    // 旧尺寸监听器必须先断（评审 P2）：initScene 每次新建 ResizeObserver 覆盖
+    // sizeObserver——不断开旧实例会在同容器上累积回调（每次重建一个），
+    // destroy 也只回收最后一个；旧回调还会对已 dispose 的 renderer 调 setSize。
+    if (sizeObserver) { try { sizeObserver.disconnect(); } catch (_) {} sizeObserver = null; }
+    removeEventListener('resize', onResize);
+    if (controls) { try { controls.dispose(); } catch (_) {} controls = null; }
+    if (renderer) {
+      try { renderer.domElement.removeEventListener('pointerdown', onScenePointerDown); } catch (_) {}
+      try { renderer.domElement.removeEventListener('pointerup', onScenePointerUp); } catch (_) {}
+      renderer.dispose();
+      try { renderer.forceContextLoss(); } catch (_) {}
+      renderer.domElement.remove();
+      renderer = null;
+      labelScene = null;
+    }
+    dynResCtl = null;
+    initScene();
+  }
+
   async function startPlayback(epoch) {
     const current = () => epoch === sessionEpoch && !destroyed;
     // 入口即复核：数据阶段可能耗时到被取代，此时连渲染器都不该为它创建;
     if (!current()) return false;
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
+    else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES)) {
+      // 复用渲染器（换文件 reset 保留）但待开播偏好已改：按失配项热修正——
+      // logdepth 是上下文级参数 → 重建渲染器（initScene 换新上下文，dynres 同步重装）；
+      // 仅 dynres 变化 → 热装/卸控制器即可（无需动上下文）。
+      if (rendererCaps.logdepth !== LOGDEPTH) {
+        rebuildRenderer();
+        rendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };
+      } else {
+        // 仅 dynres 变化（评审 P2）：控制器可能已把 pixelRatio 降过档，热装/卸时
+        // 必须先同步 renderer 回当前档位上限 + 重设画布——否则 B 场永久停在
+        // A 场的低清晰度（或新控制器内部上限与实际画布不一致）。
+        rendererCaps.dynres = DYNRES;
+        const cap = Math.min(devicePixelRatio, Q.maxDpr);
+        renderer.setPixelRatio(cap);
+        renderer.setSize(container.clientWidth, container.clientHeight, false);
+        renderer.domElement.style.width = container.clientWidth + 'px';
+        renderer.domElement.style.height = container.clientHeight + 'px';
+        dynResCtl = (DYNRES && cap > 1) ? createDynRes({ ceilDpr: cap }) : null;
+      }
+    }
     store.mapName = DATA.meta.map_name || ('map_' + DATA.meta.map_id);
     // 提前解析资产面 mapKey：buildWorld 要用 playableBoundsFor（依赖 currentMapKey）；
     // loadMapImage 里的 resolveMapKey 幂等（索引有缓存），不会重复请求。
@@ -3355,6 +3461,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       setLabelPrefs(prefs || {});
       if (camera) updateLabels();
     },
+    // 渲染性能偏好切换：只持久化 + 同步 store（待开播阶段渲染器未创建，下次
+    // initScene 按当前偏好装配——不重载、不重建；开关已移至待开播卡片，
+    // 播放中不存在该入口）。
+    setLogdepth: (on) => {
+      LOGDEPTH = !!on;
+      persistPref('pb_logdepth', on);
+      store.logdepth = !!on;
+    },
+    setDynres: (on) => {
+      DYNRES = !!on;
+      persistPref('pb_dynres', on);
+      store.dynres = !!on;
+    },
     setQuality,
     setPaused,
     qualityPresets: QUALITY_PRESETS,
@@ -3376,6 +3495,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (DEBUG) {
         delete window.__scene; delete window.__camera; delete window.__controls; delete window.__setFollow; delete window.__renderer;
         delete window.__pbV; delete window.__gdbg;
+        delete window.__destructStage; delete window.__degradedSkipped; delete window.__destructDebug;
       }
       // ?perf 看门狗随实例销毁停表并摘除调试句柄：实例没了帧循环自然停，但心跳
       // setInterval 不清会永久空转，window.__pbPerf 会指向已销毁实例的旧数据。
@@ -3384,6 +3504,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         delete window.__pbPerf;
       }
       if (renderer) {
+        try { renderer.domElement.removeEventListener('pointerdown', onScenePointerDown); } catch (_) {}
         try { renderer.domElement.removeEventListener('pointerup', onScenePointerUp); } catch (_) {}
       }
       if (controls) { try { controls.dispose(); } catch (_) {} }

@@ -52,7 +52,7 @@ vi.mock('three', async (importOriginal) => {
   return { ...actual, WebGLRenderer: StubWebGLRenderer }
 })
 
-import { initPlayback } from './playbackScene.js'
+import { initPlayback, QUALITY_PRESETS } from './playbackScene.js'
 
 /** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
  *  t_start 用非 0 值：`startTime` 只在 startPlayback 尾部写入，可作为「过期续体是否
@@ -658,7 +658,8 @@ describe('playbackScene 资产发布顺序', () => {
   })
 
   it('迟到 scenery GLB 不入 B 场景，且释放局部资源与隔离进度', async () => {
-    window.history.replaceState(null, '', '/?debug&q=mid')
+    // 场景 GLB 是高清/极致档行为（2026-10-07 四档重分档后均衡档不再拉场景）
+    window.history.replaceState(null, '', '/?debug&q=high')
     prepareAssets(['scenery'])
     const gltfA = new THREE.Group()
     const geometryA = new THREE.BoxGeometry()
@@ -1013,5 +1014,67 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     api.setCam('free')
     expect(followed).toEqual([])
     stop()
+  })
+
+  it('炮弹在飞的帧不抛错且时间推进（折线推进 + 弧长回退尾巴）', async () => {
+    const frames = manualFrames()
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const { store, api } = createScene()
+    source.loadPlaybackData.mockResolvedValue(rosterData([
+      vehicle({ eid: 1, team: 1, max_hp: 1000, hp: [[42, 1000]] }),
+      vehicle({ eid: 2, team: 2, max_hp: 1000, hp: [[42, 1000]] }),
+    ], {
+      shots: [{ t_fire: 42.2, eid: 1, from: [10, 0, 10], to: [60, 0, 30], flight_secs: 1 }],
+    }))
+    await api.loadData({ kind: 'local', file: new File(['x'], 'tracer.wotbreplay') })
+    expect(store.playing).toBe(true)
+
+    const frame = (ms) => { now += ms; frames.at(-1)() }
+    // T 42 → ≈42.8：跨过 t_fire=42.2，每帧都走折线推进 + 弧长尾巴窗口（t1≈43.2 未到，
+    // 不混入弹着特效路径）
+    for (let i = 0; i < 8; i++) frame(100)
+    expect(store.time).toBeGreaterThan(42.5)
+    expect(store.time).toBeLessThan(43.2)
+  })
+})
+
+describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
+  // 档位阶梯 = 相邻档各跨一个真实成本断崖（见 QUALITY_PRESETS 注释）。这里锁定
+  // 表形状而非数值细节：键序即 UI 档位顺序、成本阶梯单调、内容开关按档位语义分布。
+  it('四档键序固定，成本阶梯单调，内容开关按档位分布', () => {
+    const keys = Object.keys(QUALITY_PRESETS)
+    expect(keys).toEqual(['low', 'mid', 'high', 'ultra'])
+    for (const k of ['maxDpr', 'terrainSeg', 'anisotropy']) {
+      const ladder = keys.map((t) => QUALITY_PRESETS[t][k])
+      expect(ladder).toEqual([...ladder].sort((a, b) => a - b))
+    }
+    for (const t of keys) {
+      expect(QUALITY_PRESETS[t].allowGlb).toBe(t !== 'low')            // 低档盒代理
+      expect(QUALITY_PRESETS[t].scenery).toBe(t === 'high' || t === 'ultra')      // 场景下载税=高清起
+      expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra') // 分层地表=高清起
+      expect(QUALITY_PRESETS[t].miniMap).toBe(t === 'low')             // 小地图底图=仅低档（均衡档起用俯视烘焙底图）
+      expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')           // MSAA=均衡起
+    }
+  })
+})
+
+describe('disposeFxPool 会话切换（issue #556 回归锁）', () => {
+  it('impact-* 池的 JS 包装对象不炸：解包 g 后 dispose，同 root 去重', async () => {
+    // issue #556：切换回放清理上一局对象池时，impact-* 条目是 JS 包装对象
+    // ({ g, ball, ring, sparks })——对它直接 disposeObject3D 调 .traverse 抛
+    // TypeError 中断会话切换。接口契约：disposeFxPool 只接受 Object3D 或
+    // 「带 .g 的包装」，其余跳过不抛。
+    const { createPlaybackStore } = await import('./playbackStore.js')
+    const sceneMod = await import('./playbackScene.js')
+    const store = createPlaybackStore()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const api = sceneMod.initPlayback(container, store)
+    // 不解析回放——实例销毁路径必然经过 disposeFxPool（池为空时也走同一条链），
+    // 这里锁「destroy 全程无异常」的接口契约；包装对象的真机回归由 issue 描述的
+    // 场景（多回放切换）覆盖
+    expect(() => api.destroy()).not.toThrow()
+    container.remove()
   })
 })

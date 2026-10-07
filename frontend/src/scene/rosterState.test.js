@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
+import { effect, reactive } from 'vue'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { hpAtSeries, hpPercentText, hpPresentationFor, projectRoster, ROSTER_GROUPS, buildRosterRows, rosterLanesFor } from './rosterState.js'
+import { applyRosterRuntime, hpAtSeries, hpPercentText, hpPresentationFor, projectRoster, ROSTER_GROUPS, buildRosterRows, rosterLanesFor } from './rosterState.js'
 
 const vehicle = (eid, team, opts = {}) => ({
   def: {
@@ -136,6 +137,41 @@ describe('rosterState · 投影接线守卫', () => {
 
   it('teardown 清空名册与 eid → 行 索引（会话切换不留旧行）', () => {
     expect(src).toMatch(/rosterRowsByEid\.clear\(\)/)
+  })
+})
+
+/**
+ * reload 投影的响应式契约：resolver 产物 10Hz 引用恒变（progress 连续），而呈现层只消费
+ * 各弹位的 `state` 相位序列——applyRosterRuntime 按相位序列去重引用，相位不变时不写代理，
+ * 双名册才不会被 10Hz 全量重渲染；相位跳变（开火/装满/阵亡清空）仍必须对 Vue 可见。
+ */
+describe('rosterState · applyRosterRuntime reload 引用稳定性', () => {
+  it('相位序列不变 → 不通知；相位跳变 / 阵亡清空 → 必须通知', () => {
+    const row = reactive({ eid: 1, hp: 1000, maxHp: 2000, dead: false, followed: false })
+    let runs = 0
+    effect(() => { void row.hp; void row.dead; void row.reload; runs++ })
+    expect(runs).toBe(1)
+
+    // resolver 每次新建数组，但相位序列相同：引用不得变化（progress 连续变化不算跳变）
+    applyRosterRuntime(row, { reload: [{ state: 'loading', progress: 0.5 }] })
+    expect(runs).toBe(2)
+    const stable = row.reload
+    applyRosterRuntime(row, { reload: [{ state: 'loading', progress: 0.9 }] })
+    expect(runs).toBe(2)
+    expect(row.reload).toBe(stable)
+
+    // 相位跳变（装填 → 满弹）必须通知
+    applyRosterRuntime(row, { reload: [{ state: 'full', progress: 1 }] })
+    expect(runs).toBe(3)
+    // 阵亡清空（数组 → null）必须通知
+    applyRosterRuntime(row, { reload: null })
+    expect(runs).toBe(4)
+    expect(row.reload).toBeNull()
+
+    // 对照组：展示字段变化照常通知——去重没有把 hp 一起静默
+    applyRosterRuntime(row, { hp: 500 })
+    expect(runs).toBe(5)
+    expect(row.hp).toBe(500)
   })
 })
 

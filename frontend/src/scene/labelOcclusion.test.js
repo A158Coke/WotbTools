@@ -21,7 +21,7 @@ describe('标签软遮挡（PR #411 Blocker 3）', () => {
     expect(src).not.toMatch(/opacity: 0\.72/)
     // 场景只发布标记，不再自带透明度常量
     expect(src).toMatch(/v\.labelOccluded = blocked;/)
-    expect(src).toMatch(/visible, occluded: v\.labelOccluded,/)
+    expect(src).toMatch(/labelAnchorScratch\.occluded = v\.labelOccluded;/)
     expect(src).not.toMatch(/const LABEL_(BLOCKED_)?OPACITY = /)
   })
 
@@ -61,7 +61,7 @@ describe('标签软遮挡（PR #411 Blocker 3）', () => {
   it('updateLabels 每帧推进遮挡，并把结果作为 anchor 的 occluded 发布出去', () => {
     const update = src.slice(src.indexOf('function updateLabels'), src.indexOf('function buildVehicles'))
     expect(update).toMatch(/updateLabelOcclusion\(\);/)
-    expect(update).toMatch(/visible, occluded: v\.labelOccluded,/)
+    expect(update).toMatch(/labelAnchorScratch\.occluded = v\.labelOccluded;/)
   })
 
   it('raycast 的 far 在调用后被恢复（不污染其他射线使用点，如点选跟随）', () => {

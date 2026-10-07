@@ -9,6 +9,11 @@ const here = dirname(fileURLToPath(import.meta.url))
 const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
+// 材质实现（billboard/speedtree/缓存/常量/isWaterName）已平移至专用模块（SSOT，
+// bake-ground-overhead 烘焙页共用同一实现），守卫随迁读取新源
+const matSrc = readFileSync(resolve(here, 'sceneryMaterials.js'), 'utf8')
+  .replace(/\/\/[^\n]*/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
 
 // 场景内核依赖 WebGL，无法直接实例化；此仓已有源码级契约测试的先例（labelOcclusion.test.js）。
 // 本文件守卫「场景 GLB 材质管线」，即本轮从上游补齐的渲染实现——它们此前在本仓缺失，
@@ -37,22 +42,20 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 复用已释放的材质实例
     const at = src.indexOf('function teardownSession')
     expect(at).toBeGreaterThan(-1)
-    expect(src.slice(at, at + 4000)).toMatch(/sceneryMatCache\.clear\(\);/)
+    expect(src.slice(at, at + 4000)).toMatch(/clearSceneryMatCache\(\);/)
   })
 
   it('叶卡走不透明管线：transparent=false + uAlphaCut discard（消除互遮挡闪烁）', () => {
     // 回归：transparent=true + depthWrite=true 二者冲突 → 叶片互相遮挡破洞/闪烁
-    expect(src).toMatch(/const CARD_ALPHA_CUT = 0\.33/)
-    const billboard = src.slice(src.indexOf('function makeBillboardMaterial'),
-                                src.indexOf('async function loadMapImage'))
+    expect(matSrc).toMatch(/const CARD_ALPHA_CUT = 0\.33/)
+    const billboard = matSrc.slice(matSrc.indexOf('function makeBillboardMaterial'))
     expect(billboard).toMatch(/uAlphaCut: \{ value: CARD_ALPHA_CUT \}/)
     expect(billboard).toMatch(/if \(c\.a < uAlphaCut\) discard;/)
     expect(billboard).toMatch(/transparent: false,/)
   })
 
   it('叶卡材质取自身 occMean 与 SH 染色（不硬编码 1.77、不读 extras）', () => {
-    const billboard = src.slice(src.indexOf('function makeBillboardMaterial'),
-                                src.indexOf('async function loadMapImage'))
+    const billboard = matSrc.slice(matSrc.indexOf('function makeBillboardMaterial'))
     expect(billboard).toMatch(/Number\(m\.userData\.occMean\)/)
     expect(billboard).not.toMatch(/userData\.extras/)
     expect(billboard).toMatch(/uSH: \{ value: shTint \}/)
@@ -73,8 +76,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 与 billboard 叶（直通）差约 28% → 同树固定叶/billboard 叶双色（erlenberg 实测）
     const st = src.slice(src.indexOf("if ((m.name || '').startsWith('ST|'))"))
     expect(st.slice(0, 400)).toMatch(/return makeSpeedtreeStaticMaterial\(m, opaqueEnough\);/)
-    const fn = src.slice(src.indexOf('function makeSpeedtreeStaticMaterial'),
-                         src.indexOf('async function loadMapImage'))
+    const fn = matSrc.slice(matSrc.indexOf('function makeSpeedtreeStaticMaterial'))
     // 客户端同式：albedo × vOcc × SH(L0)，伽马直采直写（无 tone mapping/输出重编码）
     expect(fn).toMatch(/gl_FragColor = vec4\(c\.rgb \* \(vOcc \* uSH\), c\.a\);/)
     expect(fn).toMatch(/uAlphaCut: \{ value: opaqueEnough \? 0\.33 : 0\.05 \}/)
@@ -94,7 +96,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   })
 
   it('水体：透明面写深度 + 双面 + 不设 renderOrder', () => {
-    expect(src).toMatch(/const isWaterName = \(n\) => \/water\|sea\|lake\|river\|fountain\/i\.test\(n \|\| ''\);/)
+    expect(matSrc).toMatch(/const isWaterName = \(n\) => \/water\|sea\|lake\|river\|fountain\/i\.test\(n \|\| ''\);/)
     const water = src.slice(src.indexOf('if (isWaterName(o.name))'))
     expect(water.slice(0, 900)).toMatch(/mm\.depthWrite = true;/)
     expect(water.slice(0, 900)).toMatch(/mm\.side = THREE\.DoubleSide;/)
@@ -108,12 +110,15 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 有全局片元开销，?logdepth=0 提供真机回滚与 A/B 性能验收开关。自定义
     // ShaderMaterial 不自动注入 logdepthbuf 代码块，漏挂 = 该材质深度写回线性域，
     // 与其他物体深度语义割裂。
-    expect(src).toMatch(/const LOGDEPTH = \(\(\) => \{ try \{ return new URLSearchParams\(location\.search\)\.get\('logdepth'\) !== '0'; \} catch \(e\) \{ return true; \} \}\)\(\);/)
+    // 2026-10-07：默认改为**关**（真机 A/B 权衡：每片元 gl_FragDepth + 禁 early-z
+    // 对 alpha-test 植被的填充率开销是乘法级）；Display 面板开关 + localStorage
+    // 持久化，URL ?logdepth= 仍最高优先（prefOf 解析）。
+    expect(src).toMatch(/let LOGDEPTH = prefOf\('pb_logdepth', 'logdepth', false\);/)
+    expect(src).toMatch(/let DYNRES = prefOf\('pb_dynres', 'dynres', true\);/)
     expect(src).toMatch(/logarithmicDepthBuffer: LOGDEPTH/)
     // logdepthbuf_vertex 调用 isPerspectiveMatrix（定义在 <common>）：自定义 vertex
     // shader 必须 include <common>，否则 GLSL 编译失败、材质整片不渲染
-    const billboard = src.slice(src.indexOf('function makeBillboardMaterial'),
-                                src.indexOf('async function loadMapImage'))
+    const billboard = matSrc.slice(matSrc.indexOf('function makeBillboardMaterial'))
     expect(billboard).toMatch(/#include <common>/)
     expect(billboard).toMatch(/#include <logdepthbuf_pars_vertex>/)
     expect(billboard).toMatch(/#include <logdepthbuf_vertex>/)
@@ -128,8 +133,22 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   })
 
   it('场景 Lambert 曝光修整只作用于 convMat 建出的材质', () => {
-    expect(src).toMatch(/const SCENERY_LAMBERT_EXPOSURE = 0\.75/)
+    expect(matSrc).toMatch(/const SCENERY_LAMBERT_EXPOSURE = 0\.75/)
     expect(src).toMatch(/\.multiplyScalar\(SCENERY_LAMBERT_EXPOSURE\)/)
+  })
+
+  it('俯视烘焙页消费同一材质模块，且 convMat 键组成与内核逐字一致', () => {
+    // bake-ground-overhead 的俯视烘焙以 3D 档观感为基准——材质实现与键指纹
+    // 若与内核漂移，同一材质在两侧会拆成不同实例/不同观感
+    const bakeSrc = readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8')
+      .replace(/\/\/[^\n]*/g, '')
+    expect(bakeSrc).toMatch(/from '\/src\/scene\/sceneryMaterials\.js'/)
+    expect(bakeSrc).toMatch(/const convMat = \(m, isCard\) => cachedSceneryMat\(/)
+    const bakeKey = bakeSrc.slice(bakeSrc.indexOf('const convMat = (m, isCard) => cachedSceneryMat('))
+    const kernelKey = src.slice(src.indexOf('const convMat = (m, isCard) => cachedSceneryMat('))
+    // 缩进在两处上下文里天然不同（内核闭包 vs 烘焙 load），先折叠空白再比对前缀
+    const fingerprint = (t) => t.replace(/\s+/g, '').slice(0, 500)
+    expect(fingerprint(bakeKey)).toBe(fingerprint(kernelKey))
   })
 
 })
@@ -319,5 +338,31 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(tr).toBeGreaterThanOrEqual(0.36)
     expect(tj).toBeGreaterThanOrEqual(0.18)
     expect(tr).toBeGreaterThan(tj)
+  })
+})
+
+describe('disposeSceneGroup —— 双图资源生命周期（评审 P2）', () => {
+  // 烘焙页 --all 在同一 renderer 里逐图运行：共享 SpeedTree shader 的贴图在
+  // uniforms.map.value，只枚举直接属性会漏（material dispose=1、texture dispose=0，
+  // 显存随图数累积）；模块级材质缓存不清理则下一图拿到已 dispose 的失效实例。
+  it('释放 uniforms 纹理与材质，并清空材质缓存使下一图拿到新实例', async () => {
+    const { vi } = await import('vitest')
+    const { makeBillboardMaterial, disposeSceneGroup, clearSceneryMatCache } = await import('./sceneryMaterials.js')
+    clearSceneryMatCache()
+    const tex = { isTexture: true, dispose: vi.fn() }
+    const gltfMaterial = { name: 'leaf', map: tex, color: { r: 1, g: 1, b: 1 }, alphaTest: 0, transparent: false, opacity: 1, vertexColors: false, userData: {} }
+    const mesh1 = { isMesh: true, geometry: { dispose: vi.fn() }, material: makeBillboardMaterial(gltfMaterial) }
+    const group1 = { traverse: (fn) => fn(mesh1) }
+    const m1 = mesh1.material
+    const spyM = vi.spyOn(m1, 'dispose')
+    const spyT = vi.spyOn(tex, 'dispose')
+    const stats = disposeSceneGroup(group1)
+    expect(stats.materials).toBe(1)
+    expect(spyT).toHaveBeenCalled()
+    expect(spyM).toHaveBeenCalled()
+    // 缓存已清：同输入重建得到新实例（不再复用已 dispose 的材质）
+    const again = makeBillboardMaterial(gltfMaterial)
+    expect(again).not.toBe(m1)
+    clearSceneryMatCache()
   })
 })

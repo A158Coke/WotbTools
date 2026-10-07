@@ -50,4 +50,18 @@ describe('toBattleFacts —— 与 Java ReplayParser 逐字段一致（golden）
     delete dead.life_time_secs
     expect(() => toBattleFacts(broken)).toThrow(/missing settlement lifeTime/)
   })
+
+  it('damage_received null = 无证据（v0.3.16 契约）：聚合归 0，不得 NaN', () => {
+    // 解析确定性收口后，无受击证据的结算方 damage_received = null（≠ 0）。
+    // count() 必须把 null 归 0 进聚合——下游 performance/league-rating 的算术
+    // 才不会 NaN 级联（v0.3.15 旧产物恒为数字，此用例锁前向兼容）。
+    const file = files[0]
+    const input = structuredClone(wasm[file])
+    const first = input.players[0]
+    first.damage_received = null as unknown as number
+    const facts: Battle = toBattleFacts(input)
+    const mine = facts.players.find((p) => p.accountId === first.account_id)!
+    expect(mine.damageReceived).toBe(0)
+    expect(Number.isFinite(mine.damageReceived)).toBe(true)
+  })
 })
