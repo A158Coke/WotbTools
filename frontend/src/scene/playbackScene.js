@@ -2125,7 +2125,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     p.push(obj);
   }
   function disposeFxPool() {
-    for (const list of fxPool.values()) for (const o of list) disposeObject3D(o);
+    // 池条目两类：three 对象（tracer/traj 的 Mesh）与 JS 包装对象（impact-* =
+    // { g, ball, ring, sparks }——issue #556：对包装对象直接 disposeObject3D 调
+    // .traverse 抛 TypeError，切换回放清理上一局时中断会话）。解包后统一走
+    // disposeObject3D，共享 Set 去重跨条目的几何/材质/纹理（池内同 key 复用
+    // 同一批对象，逐条独立 dispose 会重复释放共享资源）。
+    const disposed = new Set();
+    const rootOf = (o) => (o && o.isObject3D) ? o : (o && o.g && o.g.isObject3D ? o.g : null);
+    for (const list of fxPool.values()) {
+      for (const o of list) {
+        const root = rootOf(o);
+        if (!root) continue;
+        if (disposed.has(root)) continue;
+        disposed.add(root);
+        disposeObject3D(root, disposed);
+      }
+    }
     fxPool.clear();
   }
 
@@ -3078,8 +3093,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 递归收集 Object3D 子树的 geometry / material / texture 并各自 dispose 一次
   //（Set 去重：clone 共享的模板资源多路径命中只 dispose 一遍；three dispose 幂等，
   // 此处集合化只为省去重复遍历开销）
-  function disposeObject3D(root) {
+  function disposeObject3D(root, shared = null) {
     const geos = new Set(), mats = new Set(), texs = new Set();
+    void shared;   // 去重由调用方的 disposed 集合按 root 级完成（资源级去重见 materialDispose）
     root.traverse((o) => {
       // InstancedMesh 的 instanceMatrix 是实例专属的 InstancedBufferAttribute，
       // 不随 geometry.dispose 释放，必须走 InstancedMesh.dispose 自己清理

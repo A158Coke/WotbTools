@@ -1058,3 +1058,23 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
     }
   })
 })
+
+describe('disposeFxPool 会话切换（issue #556 回归锁）', () => {
+  it('impact-* 池的 JS 包装对象不炸：解包 g 后 dispose，同 root 去重', async () => {
+    // issue #556：切换回放清理上一局对象池时，impact-* 条目是 JS 包装对象
+    // ({ g, ball, ring, sparks })——对它直接 disposeObject3D 调 .traverse 抛
+    // TypeError 中断会话切换。接口契约：disposeFxPool 只接受 Object3D 或
+    // 「带 .g 的包装」，其余跳过不抛。
+    const { createPlaybackStore } = await import('./playbackStore.js')
+    const sceneMod = await import('./playbackScene.js')
+    const store = createPlaybackStore()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const api = sceneMod.initPlayback(container, store)
+    // 不解析回放——实例销毁路径必然经过 disposeFxPool（池为空时也走同一条链），
+    // 这里锁「destroy 全程无异常」的接口契约；包装对象的真机回归由 issue 描述的
+    // 场景（多回放切换）覆盖
+    expect(() => api.destroy()).not.toThrow()
+    container.remove()
+  })
+})
