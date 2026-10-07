@@ -3274,6 +3274,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   /** 重建渲染器上下文（偏好失配时）：卸旧 renderer/controls/画布与事件，
    *  initScene 重建——会话数据（DATA/资产/相机状态）不动，仅重挂画布。 */
   function rebuildRenderer() {
+    // 旧尺寸监听器必须先断（评审 P2）：initScene 每次新建 ResizeObserver 覆盖
+    // sizeObserver——不断开旧实例会在同容器上累积回调（每次重建一个），
+    // destroy 也只回收最后一个；旧回调还会对已 dispose 的 renderer 调 setSize。
+    if (sizeObserver) { try { sizeObserver.disconnect(); } catch (_) {} sizeObserver = null; }
+    removeEventListener('resize', onResize);
     if (controls) { try { controls.dispose(); } catch (_) {} controls = null; }
     if (renderer) {
       try { renderer.domElement.removeEventListener('pointerdown', onScenePointerDown); } catch (_) {}
@@ -3301,10 +3306,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         rebuildRenderer();
         rendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };
       } else {
+        // 仅 dynres 变化（评审 P2）：控制器可能已把 pixelRatio 降过档，热装/卸时
+        // 必须先同步 renderer 回当前档位上限 + 重设画布——否则 B 场永久停在
+        // A 场的低清晰度（或新控制器内部上限与实际画布不一致）。
         rendererCaps.dynres = DYNRES;
-        dynResCtl = (DYNRES && Math.min(devicePixelRatio, Q.maxDpr) > 1)
-          ? createDynRes({ ceilDpr: Math.min(devicePixelRatio, Q.maxDpr) })
-          : null;
+        const cap = Math.min(devicePixelRatio, Q.maxDpr);
+        renderer.setPixelRatio(cap);
+        renderer.setSize(container.clientWidth, container.clientHeight, false);
+        renderer.domElement.style.width = container.clientWidth + 'px';
+        renderer.domElement.style.height = container.clientHeight + 'px';
+        dynResCtl = (DYNRES && cap > 1) ? createDynRes({ ceilDpr: cap }) : null;
       }
     }
     store.mapName = DATA.meta.map_name || ('map_' + DATA.meta.map_id);

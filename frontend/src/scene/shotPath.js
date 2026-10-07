@@ -54,7 +54,15 @@ export function pointAt(points, legEnds, t, t0) {
   return pointAtInto(points, legEnds, t, t0, [])
 }
 
-/** pointAt 的零分配变体：结果写入 `out`（[x,y,z]）并返回它。每帧每弹的热路径用这个。 */
+/** 写入器：同时支持数组（out[0]=）与 THREE.Vector3（out.set）——调用方两种都传，
+ *  统一契约；仅数组下标会给 Vector3 写出不生效的数字属性（评审实测炮弹停在原点）。 */
+function write3(out, x, y, z) {
+  if (typeof out.set === 'function') out.set(x, y, z)
+  else { out[0] = x; out[1] = y; out[2] = z }
+  return out
+}
+
+/** pointAt 的零分配变体：结果写入 `out`（数组或 Vector3）并返回它。 */
 export function pointAtInto(points, legEnds, t, t0, out) {
   const n = legEnds.length
   if (n === 0) return copy3(points[0], out)
@@ -67,15 +75,14 @@ export function pointAtInto(points, legEnds, t, t0, out) {
   const f = span > 0 ? (t - segStart) / span : 0
   const a = points[k]
   const b = points[k + 1]
-  out[0] = a[0] + (b[0] - a[0]) * f
-  out[1] = a[1] + (b[1] - a[1]) * f
-  out[2] = a[2] + (b[2] - a[2]) * f
-  return out
+  return write3(out,
+    a[0] + (b[0] - a[0]) * f,
+    a[1] + (b[1] - a[1]) * f,
+    a[2] + (b[2] - a[2]) * f)
 }
 
 function copy3(p, out) {
-  out[0] = p[0]; out[1] = p[1]; out[2] = p[2]
-  return out
+  return write3(out, p[0], p[1], p[2])
 }
 
 /** 各段长度（米）+ 累计弧长：`[l0, l0+l1, …]`（长度 = 段数） */
@@ -100,7 +107,7 @@ export function pointAtArc(points, arcEnds, s) {
   return pointAtArcInto(points, arcEnds, s, [])
 }
 
-/** pointAtArc 的零分配变体：结果写入 `out`（[x,y,z]）并返回它。每帧每弹的热路径用这个。 */
+/** pointAtArc 的零分配变体：结果写入 `out`（数组或 Vector3）并返回它。 */
 export function pointAtArcInto(points, arcEnds, s, out) {
   if (arcEnds.length === 0 || !(s > 0)) return copy3(points[0], out)
   if (s >= arcEnds[arcEnds.length - 1]) return copy3(points[points.length - 1], out)
@@ -111,10 +118,10 @@ export function pointAtArcInto(points, arcEnds, s, out) {
   const f = span > 0 ? (s - segStart) / span : 0
   const a = points[k]
   const b = points[k + 1]
-  out[0] = a[0] + (b[0] - a[0]) * f
-  out[1] = a[1] + (b[1] - a[1]) * f
-  out[2] = a[2] + (b[2] - a[2]) * f
-  return out
+  return write3(out,
+    a[0] + (b[0] - a[0]) * f,
+    a[1] + (b[1] - a[1]) * f,
+    a[2] + (b[2] - a[2]) * f)
 }
 
 /**

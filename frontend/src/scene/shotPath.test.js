@@ -91,3 +91,28 @@ describe('shotPath：折线弹道求值（跳弹/穿透续段）', () => {
     expect(arcAtTime([[1, 2, 3]], [], [], 5, 0)).toBe(0)
   })
 })
+
+describe('Into 变体输出契约（评审 P1 回归锁）', () => {
+  it('out 为 THREE.Vector3 时写入 x/y/z（仅数组下标会让炮弹停在原点）', async () => {
+    const THREE = await import('three')
+    const { pointAtInto, pointAtArcInto } = await import('./shotPath.js')
+    // 评审用例形状：from=[10,0,10] → to=[60,0,30]，flight 1s，t−t0 = 0.5
+    const points = [[10, 0, 10], [60, 0, 30]]
+    const legEnds = [1]           // 单段，段末 t0+1
+    const out = new THREE.Vector3()
+    pointAtInto(points, legEnds, 0.5, 0, out)
+    expect(out.x).toBeCloseTo(35, 6)
+    expect(out.z).toBeCloseTo(20, 6)
+    expect(out.x + out.y + out.z).not.toBe(0)   // 绝不是原点
+    // 弧长变体同契约
+    const arcEnds = [Math.hypot(50, 20)]
+    const out2 = new THREE.Vector3()
+    pointAtArcInto(points, arcEnds, arcEnds[0] * 0.25, out2)
+    expect(out2.x).toBeGreaterThan(10)
+    expect(out2.length()).toBeGreaterThan(0)
+    // 数组输出仍然工作（两种契约并存）
+    const arr = [0, 0, 0]
+    pointAtInto(points, legEnds, 0.5, 0, arr)
+    expect(arr[0]).toBeCloseTo(35, 6)
+  })
+})
