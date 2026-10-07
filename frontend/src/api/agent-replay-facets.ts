@@ -64,7 +64,10 @@ export interface AgentResultPlayer {
   result_id?: number
   /** v0.3.2：击杀者账号（`killer_id` 经同场 `result_id` 联表；联不上缺省） */
   killer_account_id?: number
-  damage_received?: number
+  /** v0.3.16：受击伤害——**可 null**（解析确定性收口：无证据 ≠ 0，未知即为 null）。
+   *  消费端 battleFacts.count() 将 null 归 0 进聚合；结算单条展示若需区分
+   *  「未知/0」应读原始字段。旧版（≤v0.3.15）恒为数字。 */
+  damage_received?: number | null
   victory_points_earned?: number | null
   victory_points_seized?: number | null
   hitpoints_left?: number | null
@@ -396,7 +399,9 @@ export type AgentAiEvent =
     type: 'shot'; t: number; shooter_eid: number; target_eid?: number; hit: boolean; ricochet: boolean
     game_hit_result: number; damage: number; is_kill: boolean; is_author: boolean; shell_kind?: string
   }
-  /** method1：hp = 钳 0 的显示值；hp_raw = 原始 u16（v0.3.5，终态哨兵族原样） */
+  /** method1：hp = 钳 0 的显示值；hp_raw = 原始 u16（v0.3.5，终态哨兵族原样）；
+   *  v0.3.16 起 cause 未知/其他 = **255 哨兵**（唯一可判定的规范值，此前未知可能
+   *  落成任意缺省值；前端击杀流不按 cause 分支，新增按原因映射的消费方须处理 255） */
   | { type: 'damage'; t: number; victim_eid: number; hp: number; hp_raw: number; source_eid: number; cause: number }
   | { type: 'kill'; t: number; killer_eid: number; victim_eid: number; cause: number; assister_eid?: number }
   | { type: 'visibility'; t_in: number; eid: number; t_out?: number; hp_raw?: number }
