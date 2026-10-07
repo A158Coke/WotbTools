@@ -245,3 +245,66 @@ describe('同格双树批次球（评审四轮反例）', () => {
     expect(hits.length).toBeGreaterThan(0)
   })
 })
+
+describe('损毁态批次球（评审五轮回归）', () => {
+  it('全隐藏批次：球按 base 位姿非空，激活后视锥与射线均通过', async () => {
+    const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, writeHiddenInstance, refreshBatchSphere }
+      = await import('./sceneryInstancing.js')
+    // 评审复现：只含损毁模型的批次（D_Rubble@x=60），初始全部隐藏——
+    // 球若跳过隐藏槽位 = radius -1 空球，激活后被整批剔除/漏拾取
+    const root = new THREE.Object3D()
+    const shared = geo(2)
+    const m1 = mat()
+    const r = new THREE.Mesh(shared, m1)
+    r.position.set(60, 0, 0)
+    root.add(r)
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    const batch = batches[0]
+    batch.items.forEach((it, i) => { it.batch = batch; it.idx = i })
+    const mesh = buildInstancedMesh(batch)
+    // 初始隐藏（装配段的 D_ 处理）
+    for (const e of batch.items) { writeHiddenInstance(mesh, e.idx); e.hidden = true }
+    refreshBatchSphere(mesh, batch, (e) => e.hidden)
+    expect(mesh.boundingSphere.radius).toBeGreaterThan(0)          // 非空球（base 位姿在覆盖内）
+    // 激活（摧毁事件：deadSlots 写回 base + hidden=false）
+    for (const e of batch.items) { mesh.setMatrixAt(e.idx, e.matrix); e.hidden = false }
+    mesh.instanceMatrix.needsUpdate = true
+    // 真实 Frustum：球非空 → 剔除判定通过（评审：修复前 frustum=false）
+    const cam = new THREE.PerspectiveCamera(55, 1, 0.5, 4000)
+    cam.position.set(60, 50, 60)
+    cam.lookAt(60, 0, 0)
+    cam.updateMatrixWorld(true)
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse))
+    expect(frustum.intersectsSphere(mesh.boundingSphere)).toBe(true)
+    // 真实 Raycaster：命中模型（评审：修复前 0 命中）
+    const ray = new THREE.Raycaster(new THREE.Vector3(60, 50, 0), new THREE.Vector3(0, -1, 0))
+    expect(ray.intersectObject(mesh, false).length).toBeGreaterThan(0)
+  })
+
+  it('混合批次：隐藏槽位的 base 位姿同样在覆盖内（激活前后同一球可用）', async () => {
+    const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, writeHiddenInstance, refreshBatchSphere }
+      = await import('./sceneryInstancing.js')
+    const root = new THREE.Object3D()
+    const shared = geo(2)
+    const m1 = mat()
+    for (const x of [0, 60]) {
+      const t = new THREE.Mesh(shared, m1)
+      t.position.set(x, 0, 0)
+      root.add(t)
+    }
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    const batch = batches[0]
+    batch.items.forEach((it, i) => { it.batch = batch; it.idx = i })
+    const mesh = buildInstancedMesh(batch)
+    const hidden = batch.items.find((e) => e.x === 60)
+    writeHiddenInstance(mesh, hidden.idx)
+    hidden.hidden = true
+    refreshBatchSphere(mesh, batch, (e) => e.hidden)
+    // 隐藏槽位 base 位置 (60,0,0) 必须在球覆盖内（激活后无需重算球）
+    const far = new THREE.Vector3(60, 0, 0).distanceTo(mesh.boundingSphere.center)
+    expect(far).toBeLessThanOrEqual(mesh.boundingSphere.radius)
+  })
+})

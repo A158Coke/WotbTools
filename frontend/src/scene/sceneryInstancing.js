@@ -113,10 +113,15 @@ const _t1 = new THREE.Matrix4()
 const _t2 = new THREE.Matrix4()
 const _r = new THREE.Matrix4()
 
-/** 重算批次包围球 = 仅**可见**实例的几何球经各自实例矩阵的并集。
- *  three 的 InstancedMesh.computeBoundingSphere 会 union 全部实例——D_ 隐藏槽位
- *  的「远处微缩」矩阵（y=-1e6）会把球撑到无效量级（剔除全失效）；本函数按
- *  isHidden 谓词跳过隐藏槽位。hidden 槽位不影响画面，只按可见实例定球正确。 */
+/** 重算批次包围球：逐实例几何球并集。**可见槽位用当前实例矩阵、初始隐藏的
+ *  损毁态（D_）槽位用其 base 位姿**——两者都是合法可渲染位置：
+ *  - three 的 InstancedMesh.computeBoundingSphere 会 union 全部实例，D_ 的
+ *    「远处微缩」隐藏矩阵（y=-1e6）会把球撑到无效量级（剔除全失效）；
+ *  - 但**跳过**隐藏槽位同样错（评审五轮）：只含损毁模型的批次球为空
+ *    （radius=-1），混合批次也不覆盖将来会恢复的合法位置——摧毁事件激活后
+ *    模型虽可见，仍被旧球剔除、射线在球测先被拒。
+ *  修法取评审建议的覆盖式：隐藏槽位按 base 位姿计入覆盖（不纳入 y=-1e6
+ *  隐藏矩阵），显隐翻转无需再维护球。 */
 export function refreshBatchSphere(mesh, batch, isHidden) {
   const sph = new THREE.Sphere()
   sph.makeEmpty()
@@ -124,8 +129,8 @@ export function refreshBatchSphere(mesh, batch, isHidden) {
   const m = new THREE.Matrix4()
   const tmp = new THREE.Sphere()
   batch.items.forEach((it, i) => {
-    if (isHidden && isHidden(it)) return
-    mesh.getMatrixAt(i, m)
+    if (isHidden && isHidden(it)) m.copy(it.matrix)   // 隐藏：base 位姿（合法可恢复位置）
+    else mesh.getMatrixAt(i, m)                       // 可见：当前实例矩阵
     tmp.copy(batch.geometry.boundingSphere).applyMatrix4(m)
     sph.union(tmp)
   })

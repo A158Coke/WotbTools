@@ -1102,8 +1102,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         for (const e of entries) {
           if (e.name && e.name.startsWith('D_')) { writeHiddenInstance(e.batch.mesh, e.idx); e.hidden = true; }
         }
-        // 隐藏槽位落位后按**可见实例**重算批次球（three 的 union 含 y=-1e6 的
-        // 隐藏矩阵会撑爆半径 → 该批剔除全失效，评审二轮已指出）
+        // 隐藏槽位落位后重算批次球：可见实例用当前矩阵、隐藏的 D_ 槽位用 base
+        // 位姿计入覆盖——three 的 union 会把 y=-1e6 的隐藏矩阵撑爆半径（剔除
+        // 全失效），而只按可见重算又会让全 D_ 批次空球、损毁激活后被整批剔除
+        // （评审二轮/五轮两次指出的两个方向）
         for (const b of batches) refreshBatchSphere(b.mesh, b, (e) => e.hidden);
         // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记粒度 = 批次。射线候选走
         // InstancedMesh 逐实例球测（成本 ≈ 候选实例数 × 球测，配合 far 钳制与 4ms 预算
