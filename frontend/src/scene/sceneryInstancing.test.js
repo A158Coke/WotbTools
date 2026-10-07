@@ -158,3 +158,42 @@ describe('sceneryInstancing · 收集与分组', () => {
     expect(m).toEqual(batch.items[1].matrix)
   })
 })
+
+describe('非均匀缩放槽位的包围球保守性（评审二轮）', () => {
+  // 评审复现：erlenberg Spruce2 节点带 ≈[3.105, 2.389, 2.389] 缩放——未缩放扩张
+  // （d + 原型 heightM + 2）不保守，倒伏射线仍 0 命中。锁定：扩张量必须按
+  // base 变换后的实高（含缩放）计算，倒伏扫掠被球覆盖。
+  it('非均匀缩放树倒伏后的最远触及点仍在扩张后的批次球内', async () => {
+    const { fallMatrix } = await import('./sceneryInstancing.js')
+    // 原型树：局部高 6m（树梢在 z=6），节点缩放 [3.105, 2.389, 2.389] → 实高 ≈18.6m
+    const scale = [3.1051428, 2.3885715, 2.3885715]
+    const root = new THREE.Object3D()
+    const shared = geo(6)                       // boundingBox max.z = 6 + 0.5
+    const m1 = mat()
+    const trunk = new THREE.Mesh(shared, m1)
+    trunk.position.set(14, 40, 3)
+    trunk.scale.set(...scale)
+    root.add(trunk)
+    root.updateMatrixWorld(true)
+    const batch = groupInstanceBatches(collectInstanceEntries(root), 75)[0]
+    const mesh = buildInstancedMesh(batch)
+    // base = 实例矩阵（含缩放）；fallQuat 复现评审射线姿态（倒向 -y）
+    const base = batch.items[0].matrix
+    // 场景内核扩张公式（与 playbackScene 装配段同式）
+    const sph = mesh.boundingSphere
+    const g = shared.boundingSphere
+    const e = base.elements
+    const cx = e[0] * g.center.x + e[4] * g.center.y + e[8] * g.center.z + e[12]
+    const cy = e[1] * g.center.x + e[5] * g.center.y + e[9] * g.center.z + e[13]
+    const cz = e[2] * g.center.x + e[6] * g.center.y + e[10] * g.center.z + e[14]
+    const sr = Math.max(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6]), Math.hypot(e[8], e[9], e[10]))
+    const d = Math.hypot(cx - 14, cy - 40, cz - 3)
+    sph.radius = Math.max(sph.radius, d + g.radius * sr + 2)
+    // 倒伏：绕基点旋转 90°（fallMatrix 与内核同式）→ 树梢伸到 ≈ (14, 40−18.6, 3)
+    const out = fallMatrix(base, 14, 40, 3, new THREE.Vector3(0, -1, 0), Math.PI / 2, new THREE.Matrix4())
+    // 树梢 = 几何顶点真实上界（boundingSphere.radius ≈ 3.08 > 手动 boundingBox 的半高）
+    const tip = new THREE.Vector3(0, 0, shared.boundingSphere.radius).applyMatrix4(out)
+    const far = tip.distanceTo(sph.center)
+    expect(far).toBeLessThanOrEqual(sph.radius)   // 评审复现的 0 命中场景不再发生
+  })
+})
