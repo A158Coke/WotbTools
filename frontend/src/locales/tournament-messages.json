@@ -1,7 +1,7 @@
 {
   "zh": {
     "tournament": {
-      "title": "积分赛榜单",
+      "title": "联赛积分榜",
       "configTitle": "积分规则配置",
       "adminTitle": "积分赛统计",
       "loginRequired": "登录管理员账号后配置和统计积分。",
@@ -157,7 +157,7 @@
       "historicalImported": "历史积分已正式导入并公开。"
     },
     "featureOffline": {
-      "tournamentPoints": "积分赛榜单和统计需要网络连接。"
+      "tournamentPoints": "联赛积分榜和统计需要网络连接。"
     },
     "api_errors": {
       "TOURNAMENT_VERSION_CONFLICT": "其他管理员已更新数据，请刷新后继续。",
@@ -185,7 +185,7 @@
   },
   "en": {
     "tournament": {
-      "title": "Tournament standings",
+      "title": "League standings",
       "configTitle": "Tournament point rules",
       "adminTitle": "Tournament scoring",
       "loginRequired": "Sign in with an administrator account to configure and score tournaments.",
@@ -341,7 +341,7 @@
       "historicalImported": "Historical scores have been imported and published."
     },
     "featureOffline": {
-      "tournamentPoints": "Tournament standings and scoring require an internet connection."
+      "tournamentPoints": "League standings and scoring require an internet connection."
     },
     "api_errors": {
       "TOURNAMENT_VERSION_CONFLICT": "Another administrator updated this tournament. Refresh before continuing.",
@@ -369,7 +369,7 @@
   },
   "ru": {
     "tournament": {
-      "title": "Таблица очков турнира",
+      "title": "Таблица лиги",
       "configTitle": "Правила начисления очков",
       "adminTitle": "Подсчёт очков турнира",
       "loginRequired": "Войдите как администратор для настройки и подсчёта очков.",
@@ -525,7 +525,7 @@
       "historicalImported": "Исторические очки импортированы и опубликованы."
     },
     "featureOffline": {
-      "tournamentPoints": "Таблица и подсчёт очков требуют подключения к сети."
+      "tournamentPoints": "Таблица лиги и подсчёт очков требуют подключения к сети."
     },
     "api_errors": {
       "TOURNAMENT_VERSION_CONFLICT": "Другой администратор обновил данные. Обновите страницу.",
