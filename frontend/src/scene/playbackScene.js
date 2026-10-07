@@ -382,6 +382,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       logarithmicDepthBuffer: LOGDEPTH,
       powerPreference: 'high-performance',
     });
+    rendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };   // 实际装配快照（复用渲染器时校验偏好是否仍一致）
     // 着色器预热（`renderer.compile`）：three 在**首次渲染某材质**时才编译程序，编译会阻塞
     // 数十~数百 ms，落在"战斗第一次开火/命中"的那一帧就是用户实测的"打起来就卡"。
     // 场景就绪后立即编译在用材质（含地面分层着色器/FX 池），成本挪到加载阶段（那时本来在等资产）。
@@ -2812,6 +2813,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const PERF = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('perf');
   let dynResCtl = null;
+  let rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres }（reset 保留渲染器时用于失配检测）
   const PERF_RING = 240;              // ≈4s 窗口（60fps）
   let perfRing = [], perfRingN = 0, perfLast = 0, perfSlow = [];
   function perfFrame(updateMs, renderMs) {
@@ -3253,11 +3255,42 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    * @param {number} epoch loadData 提交数据后领取的会话身份（见 loadData 注释）
    * @returns {boolean} true = 本会话仍是当前会话，可以落成就绪态；false = 已过期，调用方必须放弃
    */
+  /** 重建渲染器上下文（偏好失配时）：卸旧 renderer/controls/画布与事件，
+   *  initScene 重建——会话数据（DATA/资产/相机状态）不动，仅重挂画布。 */
+  function rebuildRenderer() {
+    if (controls) { try { controls.dispose(); } catch (_) {} controls = null; }
+    if (renderer) {
+      try { renderer.domElement.removeEventListener('pointerdown', onScenePointerDown); } catch (_) {}
+      try { renderer.domElement.removeEventListener('pointerup', onScenePointerUp); } catch (_) {}
+      renderer.dispose();
+      try { renderer.forceContextLoss(); } catch (_) {}
+      renderer.domElement.remove();
+      renderer = null;
+      labelScene = null;
+    }
+    dynResCtl = null;
+    initScene();
+  }
+
   async function startPlayback(epoch) {
     const current = () => epoch === sessionEpoch && !destroyed;
     // 入口即复核：数据阶段可能耗时到被取代，此时连渲染器都不该为它创建;
     if (!current()) return false;
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
+    else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES)) {
+      // 复用渲染器（换文件 reset 保留）但待开播偏好已改：按失配项热修正——
+      // logdepth 是上下文级参数 → 重建渲染器（initScene 换新上下文，dynres 同步重装）；
+      // 仅 dynres 变化 → 热装/卸控制器即可（无需动上下文）。
+      if (rendererCaps.logdepth !== LOGDEPTH) {
+        rebuildRenderer();
+        rendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };
+      } else {
+        rendererCaps.dynres = DYNRES;
+        dynResCtl = (DYNRES && Math.min(devicePixelRatio, Q.maxDpr) > 1)
+          ? createDynRes({ ceilDpr: Math.min(devicePixelRatio, Q.maxDpr) })
+          : null;
+      }
+    }
     store.mapName = DATA.meta.map_name || ('map_' + DATA.meta.map_id);
     // 提前解析资产面 mapKey：buildWorld 要用 playableBoundsFor（依赖 currentMapKey）；
     // loadMapImage 里的 resolveMapKey 幂等（索引有缓存），不会重复请求。
