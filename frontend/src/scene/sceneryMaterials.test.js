@@ -110,7 +110,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 有全局片元开销，?logdepth=0 提供真机回滚与 A/B 性能验收开关。自定义
     // ShaderMaterial 不自动注入 logdepthbuf 代码块，漏挂 = 该材质深度写回线性域，
     // 与其他物体深度语义割裂。
-    expect(src).toMatch(/const LOGDEPTH = \(\(\) => \{ try \{ return new URLSearchParams\(location\.search\)\.get\('logdepth'\) !== '0'; \} catch \(e\) \{ return true; \} \}\)\(\);/)
+    // 2026-10-07：默认改为**关**（真机 A/B 权衡：每片元 gl_FragDepth + 禁 early-z
+    // 对 alpha-test 植被的填充率开销是乘法级）；Display 面板开关 + localStorage
+    // 持久化，URL ?logdepth= 仍最高优先（prefOf 解析）。
+    expect(src).toMatch(/const LOGDEPTH = prefOf\('pb_logdepth', 'logdepth', false\);/)
+    expect(src).toMatch(/const DYNRES = prefOf\('pb_dynres', 'dynres', true\);/)
     expect(src).toMatch(/logarithmicDepthBuffer: LOGDEPTH/)
     // logdepthbuf_vertex 调用 isPerspectiveMatrix（定义在 <common>）：自定义 vertex
     // shader 必须 include <common>，否则 GLSL 编译失败、材质整片不渲染

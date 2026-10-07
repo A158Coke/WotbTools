@@ -217,10 +217,23 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       return q.has('admin') || q.has('debug');
     } catch (e) { return false; }
   })();
-  // 对数深度逃生开关（?logdepth=0 关闭）：log depth 全局生效——每片元写 gl_FragDepth、
-  // 禁 early-z，理论上有全场景片元开销。真机（尤其 Android）若出现可感性能回归，
-  // URL 立即回滚不必等发版；同一开关即性能验收的 A/B 对照（同回放/同画质/同机位）。
-  const LOGDEPTH = (() => { try { return new URLSearchParams(location.search).get('logdepth') !== '0'; } catch (e) { return true; } })();
+  // 渲染性能偏好（播放组件 Display 面板可切，localStorage 持久化；URL 参数最高优先）。
+  // - logdepth（对数深度）：默认**关**——每片元写 gl_FragDepth + 禁 early-z，对
+  //   alpha-test 植被的填充率开销是乘法级（真机 A/B 权衡后默认关闭）；代价是 600m+
+  //   俯瞰时贴地薄板/重建地形交叠带可能成片 z-fighting（开启即恢复确定性深度序）。
+  // - dynres（动态分辨率）：默认**开**——持续超帧预算降 DPR、有余量升回档位上限
+  //  （纯函数状态机 scene/dynRes.js），负载起伏的软着陆。
+  const prefOf = (key, urlKey, dflt) => {
+    try {
+      const usp = new URLSearchParams(location.search);
+      if (usp.has(urlKey)) return usp.get(urlKey) !== '0';
+      const v = localStorage.getItem(key);
+      return v == null ? dflt : v === '1';
+    } catch (e) { return dflt; }
+  };
+  const LOGDEPTH = prefOf('pb_logdepth', 'logdepth', false);
+  const DYNRES = prefOf('pb_dynres', 'dynres', true);
+  const persistPref = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} };
 
   // ---------- 画质分档 ----------
   // 解析优先级：URL ?q= > localStorage > 设备默认；四档都开 3D 地形（仅分段数降档）。
@@ -241,6 +254,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let QKEY = resolveQuality(), Q = QUALITY_PRESETS[QKEY];
   store.qualityKey = QKEY;
   store.qualityLabel = '画质 · ' + Q.label;
+  store.logdepth = LOGDEPTH;   // Display 面板开关的初始态（偏好解析见上方 prefOf）
+  store.dynres = DYNRES;
   function setQuality(k) {
     if (!QUALITY_PRESETS[k] || k === QKEY) return;
     const apply = () => {
@@ -2775,8 +2790,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 炮线/轨迹盒/命中特效/飘字/爆散/可见车辆）。
   const PERF = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('perf');
-  const DYNRES = typeof window !== 'undefined'
-    && new URLSearchParams(window.location.search).has('dynres');
   let dynResCtl = null;
   const PERF_RING = 240;              // ≈4s 窗口（60fps）
   let perfRing = [], perfRingN = 0, perfLast = 0, perfSlow = [];
@@ -3356,6 +3369,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       store.labelsOn = enabled;
       setLabelPrefs(prefs || {});
       if (camera) updateLabels();
+    },
+    // 渲染性能偏好切换：logdepth 是渲染上下文级参数、dynres 改变渲染器装配——
+    // 两者都按「卸载当前场（保 store/相机偏好）→ 重建渲染器 → 自动重播当前回放」
+    // 落地（比整页重载轻：不丢 UI 状态，会话由 lastFile 机制重载）。
+    setLogdepth: (on) => {
+      if (!!on === LOGDEPTH) return;
+      persistPref('pb_logdepth', on);
+      store.logdepth = !!on;
+      location.reload();
+    },
+    setDynres: (on) => {
+      if (!!on === DYNRES) return;
+      persistPref('pb_dynres', on);
+      store.dynres = !!on;
+      location.reload();
     },
     setQuality,
     setPaused,
