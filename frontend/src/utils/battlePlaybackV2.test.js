@@ -238,6 +238,27 @@ describe('canonical event statistics', () => {
     expect(cumulativeStatsAtV2(events, attacker, 40, [attacker, victim])).toEqual({ dealt: 500, received: 0, kills: 1 })
   })
 
+  it('uses the recorded cumulative total without adding overlapping HP attribution or future totals', () => {
+    const recorder = { ...attacker, damageDealtSamples: [
+      { timeSec: 10, total: 900 }, { timeSec: 20, total: 1200 },
+    ] }
+    expect(cumulativeStatsAtV2(events, recorder, 9, [recorder, victim]).dealt).toBe(0)
+    expect(cumulativeStatsAtV2(events, recorder, 15, [recorder, victim])).toEqual({ dealt: 900, received: 0, kills: 0 })
+    expect(cumulativeStatsAtV2(events, recorder, 40, [recorder, victim])).toEqual({ dealt: 1200, received: 0, kills: 1 })
+    // Seek backwards queries the same evidence timeline rather than retaining the later total.
+    expect(cumulativeStatsAtV2(events, recorder, 15, [recorder, victim]).dealt).toBe(900)
+    expect(cumulativeStatsAtV2(events, victim, 40, [recorder, victim]).received).toBe(1100)
+  })
+
+  it('preserves an observed zero and ignores malformed or future totals', () => {
+    const recorder = { ...attacker, damageDealtSamples: [
+      { timeSec: 12, total: 0 }, { timeSec: 30, total: 9999 },
+      { timeSec: 14, total: -1 }, { timeSec: -1, total: 8888 },
+      { timeSec: NaN, total: 7777 },
+    ] }
+    expect(cumulativeStatsAtV2(events, recorder, 15, [recorder, victim]).dealt).toBe(0)
+  })
+
   it('does not treat LAST_KNOWN as a new received-damage sample', () => {
     const track = {
       accountId: 2,

@@ -2137,6 +2137,16 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     expect(eventPanelText).not.toContain('event_POSITION_STALE')
   })
 
+  it('issue557: 2D Details reads the recorded recorder total without leaking a future broadcast', async () => {
+    stubRaf()
+    const ds = makePlaybackV2()
+    ds.vehicles[0].damageDealtSamples = [{ timeSec: 10, total: 900 }, { timeSec: 30, total: 2000 }]
+    const wrapper = mountPlayback(makeOverview(), 18, ds)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    expect(sidebarValue(wrapper.find('[data-test="pb-info"]'), 'recon.map.playback.damage_recorded')).toBe('900')
+  })
+
   it('B1-1 recorder/team scope：presentation scope 不截断 sidebar 当前统计（authoritative 全量）', async () => {
     stubRaf()
     // recorder scope（arenaBonusType=1 + recorderAccountId=1001）：2001→2002 双方均非 recorder

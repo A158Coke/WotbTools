@@ -161,4 +161,4 @@ geometry and interaction checks establish layout/state invariants, not GPU/mater
 
 场景名册保留 `accountId` / `tankId`；选择动作仍以 3D `eid` 为键，详情按账号匹配 track。查询时间为 `store.time - clock.startRaw`，不能用 render-grid 的 `startTime` 代替 AI-derived origin；rich Details 不以 reload telemetry 是否存在为前提。
 
-共享 `VehicleDetailsPanel` / `V2VehicleInspector` 展示肖像、最后已知位置时间、血量与生命状态、已记录伤害 / 承伤 / 击杀、最近伤害日志、装备 / 物资 / 消耗品及状态。日志标注由两种 renderer 共用 `detailsDamageLogAtV2`，事件时刻未覆盖的攻击者保持来源未知。缺少 canonical 数据、时钟起点或账号匹配时不造 0；仅保留场景已有的基础详情。场景加载代数与肖像 generation guard 防止迟到数据和肖像串场。
+共享 `VehicleDetailsPanel` / `V2VehicleInspector` 展示肖像、最后已知位置时间、血量与生命状态、已记录伤害 / 承伤 / 击杀、最近伤害日志、装备 / 物资 / 消耗品及状态。已记录伤害优先读取该车 `damageDealtSamples` 中当前时刻已出现的累计广播；当前仅录像者 Avatar prop10 有此证据，其 eid 与车辆 eid 不同，归属由录像者账号确定。旧数据或其他玩家仍累计可靠归属的掉血；累计广播不与掉血重复相加，也不回填结算总伤害。日志标注由两种 renderer 共用 `detailsDamageLogAtV2`，事件时刻未覆盖的攻击者保持来源未知；累计广播没有目标身份，不凭总量补造日志。缺少 canonical 数据、时钟起点或账号匹配时不造 0；仅保留场景已有的基础详情。场景加载代数与肖像 generation guard 防止迟到数据和肖像串场。

@@ -507,6 +507,8 @@ export function toBattlePlaybackDataset(
         displayCapacityHp: lossCapacity(facts, entityIds, l.toSec),
         transientAllowed: posSegs.some((s) => s.knowledge === 'OBSERVED' && s.startSec <= l.toSec + EPS && s.endSec >= l.toSec - EPS),
       })),
+      ...(player.account_id === recorderAccountId && facts.recorderDamageDealt.length
+        ? { damageDealtSamples: facts.recorderDamageDealt.map(sample => ({ ...sample })) } : {}),
       consumableTransitions: consumableTransitions(pb, facts, entityIds, clock, loadout),
       moduleCrewTransitions: moduleCrewTransitions(pb, entityIds, clock, recorderAccountId !== null && player.account_id === recorderAccountId),
     })

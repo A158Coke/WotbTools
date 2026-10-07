@@ -288,6 +288,7 @@ canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`heal
 | `visibility.hp_raw`（v0.3.5） | 开段 Type5 物化快照原始 HP（仅战斗车辆，每次重入） | 物化血量采样；战斗车辆类证据（Type5 entityTypeId=2） |
 | `hit_notice`（v0.3.5） | method8 全变体（eid / payload_len / shooter / victim / result / secondary），**不分类** | WotbTools 按旧口径分类：payload < 26 = 短体变体；result=3 = 直击；其余 = 未解码变体（冲突证据） |
 | `health`（v0.3.6） | prop3 原始 u16 | 血量帧与掉血推导的采样源（录像者自身血量常只有这一路） |
+| `damage_tick` | 录像者 Avatar prop10 的 `t / eid / cumulative`（eid 是 Avatar，不是车辆 eid） | 投影为录像者的可选 `damageDealtSamples`；只保留战斗内、非负整数、单一来源的累计广播，同刻保留较大值、下降样本拒绝。当前时刻只查询已出现的广播，不使用结算总量补齐；其他车辆仍使用可靠 HP-loss attribution。 |
 | `poses` / `turrets`（v0.3.7） | 原始 type10 世界位姿（attachmentParent=0）/ prop2 原始 u16，列式 | 位置 / 朝向证据（PlaybackData 网格是渲染滤波输出，不是观测） |
 
 - `AiReviewFacet`（花名册 + 类型化事件流 spawn/shot/damage/kill/visibility/

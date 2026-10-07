@@ -1433,8 +1433,14 @@ export interface components {
             healthTransitions: components["schemas"]["HealthTransition"][];
             lifeTransitions: components["schemas"]["LifeTransition"][];
             damageLosses: components["schemas"]["DamageLoss"][];
+            /** @description Optional recorded cumulative damage broadcasts. Absent in older datasets and on players without this evidence; never populated from final settlement totals. */
+            damageDealtSamples?: components["schemas"]["DamageDealtSample"][];
             consumableTransitions: components["schemas"]["ConsumableTransition"][];
             moduleCrewTransitions: components["schemas"]["ModuleCrewTransition"][];
+        };
+        DamageDealtSample: {
+            timeSec: number;
+            total: number;
         };
         VehicleBattleLoadout: {
             replayVersion: string | null;
