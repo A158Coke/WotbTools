@@ -38,6 +38,9 @@ const SIZE = Number(argOf('size', 4096))
 const BAKE_HTML = `<!doctype html><html><body><script type="module">
 import * as THREE from '/node_modules/three/build/three.module.js'
 import { GLTFLoader } from '/node_modules/three/examples/jsm/loaders/GLTFLoader.js'
+// 材质 SSOT：与 3D 运行时（playbackScene）同一份实现——俯视烘焙的观感基准
+import { cachedSceneryMat, isWaterName, makeBillboardMaterial, makeSpeedtreeStaticMaterial, SCENERY_LAMBERT_EXPOSURE } from '/src/scene/sceneryMaterials.js'
+import { pruneForeignVariants } from '/src/scene/variantFilter.js'
 
 const SIZE = ${SIZE}
 let renderer, scene, camera, group
@@ -78,7 +81,7 @@ function disposeGroup(g) {
   })
 }
 
-async function load(key, span = 600) {
+async function load(key, span = 600, mapId = null) {
   if (group) {                       // --all 批处理：上一张必须卸载，否则场景逐张
     scene.remove(group)              // 累积——后续每张都叠着此前全部地图的几何
     disposeGroup(group)              // （实测第 2 张起 coverPct 恒 100 的根因）
@@ -87,6 +90,8 @@ async function load(key, span = 600) {
   const url = location.origin + '/pack/map/' + encodeURIComponent(key) + '/scenery.glb'
   const bytes = await (await fetch(url)).arrayBuffer()
   const gltf = await new Promise((res, rej) => new GLTFLoader().parse(bytes, '', res, rej))   // arrayBuffer() 已是 ArrayBuffer，别再取 .buffer
+  // 变体裁剪：与 3D 运行时同一实现（mapId 对应激活的 LabelComponent 变体组）
+  pruneForeignVariants(gltf.scene, mapId)
   // 排除规则与 python 管线一致：损毁态变体（D_/State N）、隐形墙、天空球、水面
   //（地形图已含水系配色）、跨变体标记节点（extras.mdVariant——变体图共享底图，
   // 只烘无标记节点，否则重新引入跨变体幻影物体的 bug）
@@ -114,9 +119,60 @@ async function load(key, span = 600) {
   group = new THREE.Group()
   group.rotation.order = 'YXZ'
   group.rotation.set(-Math.PI / 2, Math.PI, 0)
+  // 退化几何剔除（与 3D 运行时同式：撕裂批次不渲染）
+  const degenerate = []
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return
+    const g0 = o.geometry
+    const vc = g0.attributes.position ? g0.attributes.position.count : 0
+    const ic = g0.index ? g0.index.count : vc
+    if (vc > 0 && (ic / 3) / vc > 15) degenerate.push(o)
+  })
+  for (const o of degenerate) o.removeFromParent()
+  // 材质转换：与 3D 运行时同一实现（SSOT 场景材质模块）。键组成必须与
+  // playbackScene 的 convMat 逐字一致——同 key 同材质、跨端观感一致（守卫锁定）。
+  const convMat = (m, isCard) => cachedSceneryMat(
+    [isCard ? 'C' : 'M', m.name || '', m.map ? m.map.uuid : '',
+     m.color ? [m.color.r, m.color.g, m.color.b].map((v) => v.toFixed(4)).join(',') : '',
+     m.alphaMode || '', m.alphaTest ?? 0, !!m.transparent, m.opacity ?? 1,
+     !!m.vertexColors,
+     (m.userData && m.userData.occMean) || ''].join('|'),
+    () => (isCard ? makeBillboardMaterial(m) : (() => {
+      const opaqueEnough = (m.opacity ?? 1) >= 0.99;
+      if ((m.name || '').startsWith('ST|')) { return makeSpeedtreeStaticMaterial(m, opaqueEnough); }
+      const pseudoOpaque = !!m.transparent && (m.opacity ?? 1) >= 0.99;
+      const nm = new THREE.MeshLambertMaterial({
+        map: m.map || null,
+        color: (m.color ? m.color.clone() : new THREE.Color(0xffffff)).multiplyScalar(SCENERY_LAMBERT_EXPOSURE),
+        transparent: !!m.transparent && !pseudoOpaque,
+        opacity: m.opacity ?? 1,
+        side: THREE.DoubleSide,
+      });
+      if (m.alphaTest > 0) nm.alphaTest = m.alphaTest;
+      if (pseudoOpaque) nm.alphaTest = Math.max(nm.alphaTest || 0, 0.33);
+      if (nm.transparent) nm.depthWrite = false;
+      nm.flatShading = true;
+      return nm;
+    })()))
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh || !o.material) return
+    const isCard = !!o.geometry.attributes._corner
+    o.material = Array.isArray(o.material) ? o.material.map((m) => convMat(m, isCard))
+                                           : convMat(o.material, isCard)
+    if (isWaterName(o.name)) {
+      const ms = Array.isArray(o.material) ? o.material : [o.material]
+      for (const mm of ms) {
+        if (!mm || !mm.transparent) continue
+        mm.depthWrite = true
+        mm.side = THREE.DoubleSide
+        mm.depthTest = true
+        mm.needsUpdate = true
+      }
+    }
+  })
   group.add(gltf.scene)
   scene.add(group)
-  return { ok: true }
+  return { ok: true, degenerate: degenerate.length }
 }
 
 // 调试：对象 ID 拾取——每个 mesh 临时换唯一编码色渲染，读像素反查覆盖者
@@ -213,6 +269,18 @@ async function startServer() {
   return { server, origin }
 }
 
+function primaryMapIdOf(key) {
+  const mapIndex = argOf('map-index', 'D:/Class/Rust/Project/map_index.json')
+  try {
+    const idx = JSON.parse(readFileSync(mapIndex, 'utf8'))
+    const arr = Array.isArray(idx) ? idx : idx.maps || Object.values(idx)
+    const hit = arr.find((x) => x.key === key)
+    return hit ? hit.map_id : null
+  } catch {
+    return null
+  }
+}
+
 function spanOf(key) {
   // key → space 用 Agent 仓注册表（包内 index 不带 space）；缺注册表/缺 sidecar
   // 时回退 600（worldBounds ±300 的通用值，与 python 管线同一缺省）
@@ -235,7 +303,7 @@ function spanOf(key) {
 
 async function bakeKey(page, key, outDir, span) {
   const t0 = Date.now()
-  await page.evaluate(`window.__bake.load(${JSON.stringify(key)}, ${span})`)
+  await page.evaluate(`window.__bake.load(${JSON.stringify(key)}, ${span}, ${primaryMapIdOf(key)})`)
   const stats = await page.evaluate(`window.__bake.render(${span})`)
   const total = SIZE * SIZE * 4
   await page.evaluate(`fetch('/pixel-upload', { method: 'POST', body: window.__buf }).then(r => r.text())`)

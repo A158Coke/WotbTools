@@ -30,13 +30,16 @@ describe('playbackScene 手写 shader 的实例化接线', () => {
   // 场景 GLB 合批后，所有自定义 ShaderMaterial 都可能被 InstancedMesh 消费：
   // 手写 vertexShader 直接乘 modelViewMatrix/modelMatrix 而不带 USE_INSTANCING 分支，
   // 整批实例会全部叠画在原点（叶卡、ST| 树干各踩过一次）。锁定：每个手写顶点着色器
-  // 只要用了模型矩阵就必须有实例分支。
+  // 只要用了模型矩阵就必须有实例分支。场景自定义 shader 已平移至 sceneryMaterials.js。
+  const matSrc = readFileSync(resolve(here, 'sceneryMaterials.js'), 'utf8')
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
   it('每个使用模型矩阵的 vertexShader 都必须处理 USE_INSTANCING（单 mesh 地形除外）', () => {
-    const shaders = [...src.matchAll(/vertexShader:\s*`([^`]*)`/g)].map((m) => m[1])
+    const shaders = [...matSrc.matchAll(/vertexShader:\s*`([^`]*)`/g)].map((m) => m[1])
     expect(shaders.length).toBeGreaterThanOrEqual(2)
     // vXZ = 分层地表合成 shader：只挂在单个 terrainMesh 上、永不进合批，豁免；
     // 其余（叶卡 / ST| 静态几何等场景材质）都可能成为 InstancedMesh 的消费方。
-    const usingModelMatrix = shaders.filter((sh) => /\b(modelViewMatrix|modelMatrix)\b/.test(sh) && !/vXZ/.test(sh))
+    const usingModelMatrix = shaders.filter((sh) => /\b(modelViewMatrix|modelMatrix)\b/.test(sh) && !/vXz/.test(sh))
     expect(usingModelMatrix.length).toBeGreaterThanOrEqual(2)
     for (const sh of usingModelMatrix) {
       expect(sh).toMatch(/USE_INSTANCING/)
