@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import {
   nameChainOf, nearestDestructibleState, nearestInstance, chainVisible,
-  buildMeshOwnerMap, stateVisualLabel, formatPickReport,
+  buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport,
 } from './pickDebug.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -55,15 +55,14 @@ describe('nearestDestructibleState', () => {
 })
 
 describe('stateVisualLabel', () => {
-  it('prop=3：pivot 带旋转 = fallen，恒等四元数 = standing', () => {
-    expect(stateVisualLabel({ prop: 3, pivot: { quaternion: { x: 0.1, y: 0, z: 0, w: 0.9 } } }).label).toBe('fallen/falling')
-    expect(stateVisualLabel({ prop: 3, pivot: { quaternion: { x: 0, y: 0, z: 0, w: 1 } } }).label).toBe('standing')
+  it('prop=3：fallQuat 偏离恒等 = fallen，恒等/缺失 = standing（实例化槽位模型）', () => {
+    expect(stateVisualLabel({ prop: 3, fallQuat: { w: 0.9 } }).label).toBe('fallen/falling')
+    expect(stateVisualLabel({ prop: 3, fallQuat: { w: 1 } }).label).toBe('standing')
     expect(stateVisualLabel({ prop: 3 }).label).toBe('standing')
   })
-  it('prop=1/2：损毁态可见且完好态不可见 = destroyed', () => {
-    const vis = (v) => ({ visible: v })
-    expect(stateVisualLabel({ prop: 1, deadMeshes: [vis(true)], intactMeshes: [vis(false)] }).label).toBe('destroyed')
-    expect(stateVisualLabel({ prop: 2, deadMeshes: [vis(false)], intactMeshes: [vis(true)] }).label).toBe('intact')
+  it('prop=1/2：applied = 损毁态已激活（destroyed），未激活 = intact', () => {
+    expect(stateVisualLabel({ prop: 1, applied: true }).label).toBe('destroyed')
+    expect(stateVisualLabel({ prop: 2, applied: false }).label).toBe('intact')
   })
   it('null 状态 → null（非可破坏物）', () => {
     expect(stateVisualLabel(null)).toBeNull()
@@ -108,29 +107,31 @@ const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
 
 describe('buildMeshOwnerMap', () => {
   // 评审复现场景：6m 倒树的树梢命中点 (6,0) 离邻树 id=8 的根部更近——
-  // 精确归属必须按「命中网格属于哪棵树」胜过距离查询
+  // 精确归属必须按「命中网格属于哪棵树」胜过距离查询。
+  // 实例化条目形状：{ batch: {mesh}, idx, name }——归属键 = mesh.uuid#idx
   const inst7 = { id: 7, pos: [0, 0, 0], serverId: { cell: [0, 0], slot: 7 } }
   const inst8 = { id: 8, pos: [6, 0, 0], serverId: { cell: [0, 0], slot: 8 } }
-  const m7trunk = { name: 'trunk7' }
-  const m7top = { name: 'top7' }     // 树梢网格（锚点仍在树 7 根部 2cm 内）
-  const m8 = { name: 'trunk8' }
+  const sharedBatch = { mesh: { uuid: 'batch-shared' } }   // 两实例共用同一批次 mesh
   const findMeshes = (px, py, wantDestroyed) => {
     if (wantDestroyed) return []
-    if (Math.hypot(px - 0, py - 0) < 1) return [{ mesh: m7trunk, x: 0, y: 0 }, { mesh: m7top, x: 0, y: 0 }]
-    if (Math.hypot(px - 6, py - 0) < 1) return [{ mesh: m8, x: 6, y: 0 }]
+    if (Math.hypot(px, py) < 1) return [
+      { batch: sharedBatch, idx: 0, name: 'trunk7', x: 0, y: 0 }]
+    if (Math.hypot(px - 6, py) < 1) return [
+      { batch: sharedBatch, idx: 1, name: 'trunk8', x: 6, y: 0 }]
     return []
   }
 
-  it('树梢网格归属到自己的树（id=7），而非距离更近的邻树（id=8）', () => {
+  it('共享批次按 instanceId 区分归属：树梢命中自己的树（id=7），非距离更近的邻树', () => {
     const map = buildMeshOwnerMap([inst7, inst8], findMeshes)
-    expect(map.get(m7top)).toBe(inst7)
-    expect(map.get(m7trunk)).toBe(inst7)
-    expect(map.get(m8)).toBe(inst8)
-    expect(map.size).toBe(3)
+    expect(map.size).toBe(2)
+    expect(map.get(meshOwnerKey(sharedBatch.mesh, 0)).inst).toBe(inst7)
+    expect(map.get(meshOwnerKey(sharedBatch.mesh, 0)).name).toBe('trunk7')
+    expect(map.get(meshOwnerKey(sharedBatch.mesh, 1)).inst).toBe(inst8)
+    expect(map.get(meshOwnerKey(sharedBatch.mesh, 1)).name).toBe('trunk8')
   })
   it('无 pos 实例跳过；非数组安全', () => {
     const map = buildMeshOwnerMap([{ id: 9 }, inst7], findMeshes)
-    expect(map.get(m7top)).toBe(inst7)
+    expect(map.get(meshOwnerKey(sharedBatch.mesh, 0)).inst).toBe(inst7)
     expect(buildMeshOwnerMap(null, findMeshes).size).toBe(0)
   })
 })
@@ -153,11 +154,12 @@ describe('拾取接线（源码级守卫）', () => {
     expect(reportAt).toBeLessThan(clearAt)
   })
   it('拾取实例：meshOwner 精确归属优先，距离仅兜底', () => {
-    const at = sceneSrc.indexOf('const inst =')
+    const at = sceneSrc.indexOf('const owner = (meshOwner && hit.instanceId != null)')
     expect(at).toBeGreaterThan(-1)
-    const order = sceneSrc.slice(at, at + 400)
-    expect(order).toMatch(/meshOwner && meshOwner\.get\(hit\.object\)/)
-    const meshOwnerAt = order.indexOf('meshOwner.get(hit.object)')
+    const order = sceneSrc.slice(at, at + 500)
+    expect(order).toMatch(/meshOwner && hit\.instanceId != null/)
+    expect(order).toMatch(/meshOwnerKey\(hit\.object, hit\.instanceId\)/)
+    const meshOwnerAt = order.indexOf('meshOwner.get(meshOwnerKey(hit.object, hit.instanceId))')
     const fallbackAt = order.indexOf('nearestInstance(destructPickList')
     expect(meshOwnerAt).toBeGreaterThan(-1)
     expect(fallbackAt).toBeGreaterThan(meshOwnerAt)

@@ -744,6 +744,16 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             data-testid="replay3d-quality"
             @update:model-value="sceneApi.setQuality($event)"
           />
+          <!-- 渲染性能偏好与画质一同定型（同为此处的一次性选择；渲染上下文级
+               参数，切换会重载会话——放在待开播阶段让「开始」总是按所选偏好起播） -->
+          <div class="pre-start-perf">
+            <label class="toggle" :title="t('agentReplay.perf_logdepth_hint')">
+              <input type="checkbox" data-testid="perf-logdepth" :checked="store.logdepth" @change="sceneApi.setLogdepth($event.target.checked)"> {{ t('agentReplay.perf_logdepth') }}
+            </label>
+            <label class="toggle" :title="t('agentReplay.perf_dynres_hint')">
+              <input type="checkbox" data-testid="perf-dynres" :checked="store.dynres" @change="sceneApi.setDynres($event.target.checked)"> {{ t('agentReplay.perf_dynres') }}
+            </label>
+          </div>
           <AppButton variant="primary" data-test="replay3d-start" @click="startReplay">{{ t('agentReplay.start') }}</AppButton>
         </div>
       </div>
@@ -862,6 +872,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   text-align: center;
 }
 .pre-start-card h3 { margin: 0; font: var(--type-h3); }
+/* 性能偏好行：两开关并排（窄卡内自动换行），说明走 title tooltip */
+.pre-start-perf {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2) var(--space-4);
+}
 .pre-start-file { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 
 /* Persistent HUD appearance; row placement belongs to the shared workspace. */

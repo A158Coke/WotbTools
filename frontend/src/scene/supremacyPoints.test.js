@@ -52,14 +52,17 @@ describe('playbackScene 的 HUD 状态接线（防回归）', () => {
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
   const tick = src.slice(src.indexOf('function tick()'), src.indexOf('function tick()') + 4000)
 
-  it('点数每 tick 无条件写入（不再包在"有采样"的 if 里）', () => {
+  it('点数每 tick 无条件重算 + 变更守卫写入（不再包在"有采样"的 if 里）', () => {
     expect(tick).toMatch(/const pts = pointsAt\(DATA\.supremacy_points, T, DATA\.meta\.friendly_team\);/)
-    expect(tick).toMatch(/store\.pointsFriend = pts\.friend; store\.pointsEnemy = pts\.enemy;/)
+    // 写入带同值守卫（这是仅存的 60Hz tick 级 store 写入）；**重算本身必须无条件**——
+    // 从争霸场切回普通场时 supremacy_points 缺失，靠每 tick 重算把 null 推上屏清残值
+    expect(tick).toMatch(/if \(store\.pointsFriend !== pts\.friend\) store\.pointsFriend = pts\.friend;/)
+    expect(tick).toMatch(/if \(store\.pointsEnemy !== pts\.enemy\) store\.pointsEnemy = pts\.enemy;/)
     // 旧写法：整个赋值块被 if (DATA.supremacy_points && ...) 包住
     expect(tick).not.toMatch(/if \(DATA\.supremacy_points && DATA\.supremacy_points\.length\) \{/)
     // 计算与赋值相邻，且所在块不得是 if 分支（裸块 = 无条件执行）
     const block = tick.slice(tick.indexOf('const pts = pointsAt'))
-    expect(block.slice(0, 300)).toMatch(/store\.pointsFriend = pts\.friend; store\.pointsEnemy = pts\.enemy;/)
+    expect(block.slice(0, 400)).toMatch(/if \(store\.pointsFriend !== pts\.friend\) store\.pointsFriend = pts\.friend;/)
     expect(tick).not.toMatch(/if \([^\n]*\)\s*\{\s*const pts = pointsAt/)
   })
 
