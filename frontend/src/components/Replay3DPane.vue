@@ -711,6 +711,15 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <label class="toggle"><input type="checkbox" data-testid="disp-tank" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ t('recon.map.playback.show_tank_name') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-hp" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ t('recon.map.playback.show_hp') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-reload" :checked="labelPrefs.showReload" @change="labelPrefs.showReload = $event.target.checked"> {{ t('agentReplay.display_reload') }}</label>
+        <!-- 渲染性能偏好（SSOT = 场景内核偏好解析 pb_logdepth/pb_dynres；切换即重载
+             会话——logdepth 是渲染上下文参数、dynres 改渲染器装配，两者不能热切） -->
+        <p class="dp-title">{{ t('agentReplay.display_performance') }}</p>
+        <label class="toggle" :title="t('agentReplay.perf_logdepth_hint')">
+          <input type="checkbox" data-testid="perf-logdepth" :checked="store.logdepth" @change="sceneApi.setLogdepth($event.target.checked)"> {{ t('agentReplay.perf_logdepth') }}
+        </label>
+        <label class="toggle" :title="t('agentReplay.perf_dynres_hint')">
+          <input type="checkbox" data-testid="perf-dynres" :checked="store.dynres" @change="sceneApi.setDynres($event.target.checked)"> {{ t('agentReplay.perf_dynres') }}
+        </label>
         <!-- 画质在紧凑档是只读徽标（档位在播放前定型，运行中不可改），宽档同样只在工具条展示 -->
         <p class="q-badge dp-quality" :title="t('agentReplay.q_title')">{{ qualityBadge }}</p>
         <button
