@@ -231,8 +231,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       return v == null ? dflt : v === '1';
     } catch (e) { return dflt; }
   };
-  const LOGDEPTH = prefOf('pb_logdepth', 'logdepth', false);
-  const DYNRES = prefOf('pb_dynres', 'dynres', true);
+  // 实例级可变量（非 const）：待开播阶段的偏好切换只持久化 + 同步 store——渲染器
+  // 尚未创建，下次 initScene（按「开始」）自然按新偏好装配，无需重载；已在播放中
+  // 不存在这两个开关（已移至待开播卡片）。
+  let LOGDEPTH = prefOf('pb_logdepth', 'logdepth', false);
+  let DYNRES = prefOf('pb_dynres', 'dynres', true);
   const persistPref = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} };
 
   // ---------- 画质分档 ----------
@@ -3370,20 +3373,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       setLabelPrefs(prefs || {});
       if (camera) updateLabels();
     },
-    // 渲染性能偏好切换：logdepth 是渲染上下文级参数、dynres 改变渲染器装配——
-    // 两者都按「卸载当前场（保 store/相机偏好）→ 重建渲染器 → 自动重播当前回放」
-    // 落地（比整页重载轻：不丢 UI 状态，会话由 lastFile 机制重载）。
+    // 渲染性能偏好切换：只持久化 + 同步 store（待开播阶段渲染器未创建，下次
+    // initScene 按当前偏好装配——不重载、不重建；开关已移至待开播卡片，
+    // 播放中不存在该入口）。
     setLogdepth: (on) => {
-      if (!!on === LOGDEPTH) return;
+      LOGDEPTH = !!on;
       persistPref('pb_logdepth', on);
       store.logdepth = !!on;
-      location.reload();
     },
     setDynres: (on) => {
-      if (!!on === DYNRES) return;
+      DYNRES = !!on;
       persistPref('pb_dynres', on);
       store.dynres = !!on;
-      location.reload();
     },
     setQuality,
     setPaused,
