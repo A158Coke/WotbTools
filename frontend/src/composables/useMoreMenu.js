@@ -1,6 +1,6 @@
 import { computed, getCurrentInstance } from 'vue'
 import {
-  Box, Cpu, Crosshair, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings, Trophy,
+  Box, Cpu, Crosshair, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings,
 } from 'lucide-vue-next'
 import { useAuth } from './useAuth.js'
 import { useUiProfile } from './useUiProfile.js'
@@ -43,7 +43,6 @@ export function useMoreMenu() {
   const replayToolLinks = [
     { view: 'agent-replay', labelKey: 'agentNav.replay', icon: Box },
     { view: 'agent-shots', labelKey: 'agentNav.shots', icon: Crosshair },
-    { view: 'tournament-points', labelKey: 'tournament.title', icon: Trophy },
   ]
 
   /** 管理入口：平板 / 桌面在侧边栏管理组，手机在"更多"页。 */

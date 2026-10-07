@@ -21,7 +21,7 @@ const emit = defineEmits(['close'])
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const inline = inject(DIALOG_INLINE_KEY, false)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks, replayToolLinks } = useMoreMenu()
+const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks } = useMoreMenu()
 const panel = ref(null)
 
 function close({ restoreFocus = false } = {}) {
@@ -104,16 +104,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
       </div>
     </section>
 
-    <section class="more-panel-section" aria-labelledby="more-panel-tools">
-      <h2 id="more-panel-tools" class="more-panel-title">{{ $t('more.sections.tools') }}</h2>
-      <ul class="more-panel-links">
-        <li v-for="link in replayToolLinks.filter(item => item.view === 'tournament-points')" :key="link.view">
-          <button type="button" class="more-panel-link" :data-testid="`more-link-${link.view}`" @click="go(link.view)">
-            <component :is="link.icon" :size="18" aria-hidden="true" /><span>{{ $t(link.labelKey) }}</span>
-          </button>
-        </li>
-      </ul>
-    </section>
     <section class="more-panel-section" aria-labelledby="more-panel-about">
       <h2 id="more-panel-about" class="more-panel-title">{{ $t('more.sections.about') }}</h2>
       <ul class="more-panel-links">

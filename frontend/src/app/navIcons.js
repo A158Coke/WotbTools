@@ -8,6 +8,7 @@ export const PRIMARY_NAV_ICONS = Object.freeze({
   replay: Clapperboard,
   hof: Trophy,
   tankopedia: BookOpen,
+  'tournament-points': ListOrdered,
   more: Menu,
 })
 

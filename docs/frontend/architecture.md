@@ -15,7 +15,7 @@ App.vue
       └── GlobalErrorDialog.vue
 ```
 
-主导航的唯一数据源是 `app/navigation.js`：`PRIMARY_NAV`（首页 · 回放 · 名人堂 · 坦克百科 · 更多）、`ADMIN_NAV`（按角色显示的管理入口）与 `primarySection(view)`（视图归属哪个栏目）。外壳按 `useBreakpoint()`（`composables/useBreakpoint.js`，断点常量在 `shared/breakpoints.ts`）在两种形态间切换：平板 / 桌面渲染 `AppSidebar`（桌面可折叠，偏好由 `composables/useSidebar.js` 写到 `<html data-sidebar>`，`tokens/scale.css` 据此派生 `--sidebar-w`）；手机渲染 `AppTopBar` 标题栏 + `AppTabBar`。两者都用 `RouterLink` 渲染，并以 `aria-current` 标记当前栏目。账户（登录、个人中心、登出）进入 `?view=profile`（`ProfilePage.vue`，未登录时显示说明卡而不是自动跳转）：平板 / 桌面在侧边栏底部，手机在标题栏右侧。"更多"的内容只有一个来源 `composables/useMoreMenu.js`：平板 / 桌面是侧边栏底部的弹出面板（`app/MorePanel.vue`：显示设置 + 公开积分赛榜单 + 关于与支持；管理入口在侧边栏管理组），手机是 `?view=more` 整页（`components/MorePage.vue`，另含公开的回放工具与按角色显示的管理入口）。
+主导航的唯一数据源是 `app/navigation.js`：`PRIMARY_NAV`（首页 · 回放 · 名人堂 · 坦克百科 · 联赛积分榜 · 更多）、`ADMIN_NAV`（按角色显示的管理入口）与 `primarySection(view)`（视图归属哪个栏目）。外壳按 `useBreakpoint()`（`composables/useBreakpoint.js`，断点常量在 `shared/breakpoints.ts`）在两种形态间切换：平板 / 桌面渲染 `AppSidebar`（桌面可折叠，偏好由 `composables/useSidebar.js` 写到 `<html data-sidebar>`，`tokens/scale.css` 据此派生 `--sidebar-w`）；手机渲染 `AppTopBar` 标题栏 + `AppTabBar`。两者都用 `RouterLink` 渲染，并以 `aria-current` 标记当前栏目。账户（登录、个人中心、登出）进入 `?view=profile`（`ProfilePage.vue`，未登录时显示说明卡而不是自动跳转）：平板 / 桌面在侧边栏底部，手机在标题栏右侧。"更多"的内容只有一个来源 `composables/useMoreMenu.js`：平板 / 桌面是侧边栏底部的弹出面板（`app/MorePanel.vue`：显示设置 + 关于与支持；管理入口在侧边栏管理组），手机是 `?view=more` 整页（`components/MorePage.vue`，另含公开的回放工具与按角色显示的管理入口）。
 
 `router.js` owns browser history, deep-link handling, redirects, and Back/Forward. Product URLs deliberately retain the compatible query contract: `?view=replay`, `?view=ai-review`, `?view=battle-playback`, `?view=agent-replay`, and `?view=agent-shots` all resolve to the same kept-alive Replay Workspace with a different initial capability（data / ai / playback / 3d / shots，见 `viewRegistry.js` 的 `replayInitialCapability`）. Legacy aliases (`leaderboard`, `extended`, `reconstruction`) redirect once to their canonical query values. `/download/android` and `/download/android/` resolve to the Android page; `/sponsor` is a first-class AppShell route that resolves through `ViewHost` to `SponsorPage`.
 
@@ -31,7 +31,7 @@ AI Review is mounted normally: the `?view=ai-review` deep link and workspace tab
 
 Application navigation is defined by the feature-neutral typed `NAVIGATE_VIEW_KEY` in `frontend/src/shared/navigation.ts`. `AppShell` provides the command; app and feature consumers inject the shared contract without importing router internals or an `app/` implementation module. Production code must not introduce magic-string `inject('navigate')` / `provide('navigate')` calls.
 
-积分赛管理入口由 `useAuth.isTournamentAdmin` 所有（真实 token 中的 `tournament-admin`，全站管理员通过 Keycloak 复合角色继承），不复用全站 `isAdmin` 放大专属角色权限。公开积分页持有正式 standings，`utils/tournamentPointsExport.ts` 提供屏幕/Excel/打印文档共享的列投影；管理页的历史导入、预览和幂等提交状态仍归 `useTournamentPointsAdmin` 所有，JSON 文件只在文件边界转为 OpenAPI request，经 `api/tournament-points.ts` 发起请求。
+积分赛管理入口由 `useAuth.isTournamentAdmin` 所有（真实 token 中的 `tournament-admin`，全站管理员通过 Keycloak 复合角色继承），不复用全站 `isAdmin` 放大专属角色权限。公开「联赛积分榜」是主导航栏目，位于坦克百科之后；主导航、页面/浏览器标题与导出标题共用 `tournament.title`，公开入口不再重复放到更多面板/页面中。公开积分页持有正式 standings，`utils/tournamentPointsExport.ts` 提供屏幕/Excel/打印文档共享的列投影；管理页的历史导入、预览和幂等提交状态仍归 `useTournamentPointsAdmin` 所有，JSON 文件只在文件边界转为 OpenAPI request，经 `api/tournament-points.ts` 发起请求。
 
 ## Dependency and state rules
 
