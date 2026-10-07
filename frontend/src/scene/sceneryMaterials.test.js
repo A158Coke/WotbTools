@@ -336,3 +336,29 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(tr).toBeGreaterThan(tj)
   })
 })
+
+describe('disposeSceneGroup —— 双图资源生命周期（评审 P2）', () => {
+  // 烘焙页 --all 在同一 renderer 里逐图运行：共享 SpeedTree shader 的贴图在
+  // uniforms.map.value，只枚举直接属性会漏（material dispose=1、texture dispose=0，
+  // 显存随图数累积）；模块级材质缓存不清理则下一图拿到已 dispose 的失效实例。
+  it('释放 uniforms 纹理与材质，并清空材质缓存使下一图拿到新实例', async () => {
+    const { vi } = await import('vitest')
+    const { makeBillboardMaterial, disposeSceneGroup, clearSceneryMatCache } = await import('./sceneryMaterials.js')
+    clearSceneryMatCache()
+    const tex = { isTexture: true, dispose: vi.fn() }
+    const gltfMaterial = { name: 'leaf', map: tex, color: { r: 1, g: 1, b: 1 }, alphaTest: 0, transparent: false, opacity: 1, vertexColors: false, userData: {} }
+    const mesh1 = { isMesh: true, geometry: { dispose: vi.fn() }, material: makeBillboardMaterial(gltfMaterial) }
+    const group1 = { traverse: (fn) => fn(mesh1) }
+    const m1 = mesh1.material
+    const spyM = vi.spyOn(m1, 'dispose')
+    const spyT = vi.spyOn(tex, 'dispose')
+    const stats = disposeSceneGroup(group1)
+    expect(stats.materials).toBe(1)
+    expect(spyT).toHaveBeenCalled()
+    expect(spyM).toHaveBeenCalled()
+    // 缓存已清：同输入重建得到新实例（不再复用已 dispose 的材质）
+    const again = makeBillboardMaterial(gltfMaterial)
+    expect(again).not.toBe(m1)
+    clearSceneryMatCache()
+  })
+})

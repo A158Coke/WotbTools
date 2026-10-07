@@ -12,7 +12,7 @@ function feed(dyn, dtMs, n) {
 }
 
 describe('dynRes 动态分辨率状态机', () => {
-  const cfg = { ceilDpr: 1.5, floorDpr: 1, step: 0.25, downMs: 22, upMs: 13, windowN: 45, cooldownFrames: 60 }
+  const cfg = { ceilDpr: 1.5, floorDpr: 1, step: 0.25, downMs: 22, upMs: 17, windowN: 45, cooldownFrames: 60 }
 
   it('窗口未满不决策；持续超预算按步长下降，触底钳制', () => {
     const dyn = createDynRes(cfg)
@@ -51,6 +51,16 @@ describe('dynRes 动态分辨率状态机', () => {
     const last = feed(dyn, 17, 500)                                 // 17ms 在 (13, 22) 迟滞带内
     expect(last).toBeNull()
     expect(dyn.dpr()).toBe(1)
+  })
+
+  it('60Hz VSync 帧间隔（16.67ms）下负载消退必须能恢复上限', () => {
+    // 评审复现：调用方喂的是 rAF 帧间隔（被 VSync 钳在 16.7ms），不是渲染耗时——
+    // 恢复阈值 13ms 时降档后永远回不去。60Hz = 1000/60 ≈ 16.67 必须落在恢复带内。
+    const dyn = createDynRes(cfg)
+    feed(dyn, 40, 400)            // 超预算 → 地板
+    expect(dyn.dpr()).toBe(1)
+    feed(dyn, 1000 / 60, 1000)    // 60Hz 帧序列
+    expect(dyn.dpr()).toBe(1.5)   // 恢复到上限
   })
 
   it('ceilDpr ≤ floorDpr 是装配期错误（应跳过装配而不是空转）', () => {

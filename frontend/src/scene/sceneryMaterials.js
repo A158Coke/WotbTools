@@ -25,7 +25,7 @@ export function clearSceneryMatCache() {
 
 // 叶卡 alpha 裁切阈值。客户端 AlphaBlend 软边缘 + 0.05 低阈值会让近透明像素仍写
 // 深度（叶片互相遮挡 → 破洞/闪烁）；提到 MASK 量级消除，并保留软边缘。
-export const CARD_ALPHA_CUT = 0.33;
+const CARD_ALPHA_CUT = 0.33;
 // 场景 Lambert 材质的曝光修整（只作用于 convMat 建出的场景材质；代理车/GLB 车模不受影响）。
 // 这套光照是按坦克 GLB 调的，场景降级到 Lambert 后朝上面过曝；系数 <1 压回过曝而不动光照。
 export const SCENERY_LAMBERT_EXPOSURE = 0.75;
@@ -172,4 +172,32 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
     transparent: !opaqueEnough,
     depthWrite: opaqueEnough,
   });
+}
+
+/** 释放一组场景对象：几何 + 材质（去重）+ 材质**直接属性与 uniforms** 里的纹理。
+ *  供烘焙页在 --all 批处理中逐图卸载——SpeedTree/叶卡的贴图在
+ *  ShaderMaterial.uniforms.map.value，只枚举直接属性会漏掉（评审实测
+ *  material dispose=1、texture dispose=0，显存随图数累积）。顺手清空
+ *  材质实例缓存：缓存若保留已 dispose 的材质，下一张图会拿到失效实例。 */
+export function disposeSceneGroup(g) {
+  const mats = new Set(), texs = new Set()
+  g.traverse((o) => {
+    if (o.geometry) o.geometry.dispose()
+    const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : [])
+    for (const m of ms) {
+      if (!m) continue
+      mats.add(m)
+      for (const k in m) { const v = m[k]; if (v && v.isTexture) texs.add(v) }
+      if (m.uniforms) {
+        for (const k in m.uniforms) {
+          const v = m.uniforms[k] && m.uniforms[k].value
+          if (v && v.isTexture) texs.add(v)
+        }
+      }
+    }
+  })
+  for (const t of texs) t.dispose()
+  for (const m of mats) m.dispose()
+  clearSceneryMatCache()
+  return { materials: mats.size, textures: texs.size }
 }

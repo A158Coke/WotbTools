@@ -89,6 +89,23 @@ describe('sceneryInstancing · 收集与分组', () => {
     return { root, shared, m1, m2 }
   }
 
+  it('cellSize 分片：同 (geometry, material) 按宫格拆多批，包围球局部化', () => {
+    const root = new THREE.Object3D()
+    const shared = geo(2), m1 = mat()
+    for (let i = 0; i < 4; i++) {
+      const a = new THREE.Mesh(shared, m1)
+      a.position.set(i * 200 - 300, 0, 0)   // 跨 ±300m
+      root.add(a)
+    }
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    // 4 实例相距 ≥200m → 每格一片 = 4 片（整批形态是 1 片跨全图）
+    expect(batches).toHaveLength(4)
+    for (const b of batches) expect(b.items).toHaveLength(1)
+    // 不传 cellSize = 单批（兼容形态）
+    expect(groupInstanceBatches(collectInstanceEntries(root))).toHaveLength(1)
+  })
+
   it('收集展平父链变换；分组按 (geometry, material)，共享几何进同批', () => {
     const { root, shared, m1, m2 } = buildTree()
     root.updateMatrixWorld(true)
