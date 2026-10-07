@@ -178,7 +178,9 @@ export function androidCsp(html) {
   return [
     "default-src 'none'", `script-src 'self' 'wasm-unsafe-eval' ${hashes.join(' ')}`,
     "style-src 'self' 'unsafe-inline'", `img-src 'self' data: blob: ${PRODUCTION_API_ORIGIN}`,
-    `connect-src 'self' ${PRODUCTION_API_ORIGIN}`, "font-src 'self' data:",
+    // connect-src 必须含 blob:：GLTFLoader 经 ImageBitmapLoader 用 fetch(blob:) 加载 GLB
+    // **内嵌**贴图（装甲查看器 / 3D 回放的坦克模型）。漏掉它 → CSP 拒绝 → 模型无贴图纯白。
+    `connect-src 'self' blob: ${PRODUCTION_API_ORIGIN}`, "font-src 'self' data:",
     "worker-src 'self' blob:", "media-src 'self' blob:", "object-src 'none'",
     "base-uri 'self'", "form-action 'none'",
   ].join('; ')
