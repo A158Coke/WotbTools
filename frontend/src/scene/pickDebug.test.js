@@ -162,6 +162,14 @@ describe('拾取接线（源码级守卫）', () => {
     expect(meshOwnerAt).toBeGreaterThan(-1)
     expect(fallbackAt).toBeGreaterThan(meshOwnerAt)
   })
+  it('teardownSession 释放 meshOwner/destructPickList/destruct（评审回归：reset 后仍持有引用）', () => {
+    const at = sceneSrc.indexOf('function teardownSession')
+    expect(at).toBeGreaterThan(-1)
+    const body = sceneSrc.slice(at, at + 900)
+    expect(body).toMatch(/destruct = null;/)
+    expect(body).toMatch(/destructPickList = null;/)
+    expect(body).toMatch(/meshOwner = null;/)
+  })
   it('destructibles await 之后先核会话（stale）再发布清单', () => {
     const awaitAt = sceneSrc.indexOf('const destructDoc = await destructDocPromise')
     const staleAt = sceneSrc.indexOf('if (stale()) return;', awaitAt)
