@@ -711,15 +711,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <label class="toggle"><input type="checkbox" data-testid="disp-tank" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ t('recon.map.playback.show_tank_name') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-hp" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ t('recon.map.playback.show_hp') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-reload" :checked="labelPrefs.showReload" @change="labelPrefs.showReload = $event.target.checked"> {{ t('agentReplay.display_reload') }}</label>
-        <!-- 渲染性能偏好（SSOT = 场景内核偏好解析 pb_logdepth/pb_dynres；切换即重载
-             会话——logdepth 是渲染上下文参数、dynres 改渲染器装配，两者不能热切） -->
-        <p class="dp-title">{{ t('agentReplay.display_performance') }}</p>
-        <label class="toggle" :title="t('agentReplay.perf_logdepth_hint')">
-          <input type="checkbox" data-testid="perf-logdepth" :checked="store.logdepth" @change="sceneApi.setLogdepth($event.target.checked)"> {{ t('agentReplay.perf_logdepth') }}
-        </label>
-        <label class="toggle" :title="t('agentReplay.perf_dynres_hint')">
-          <input type="checkbox" data-testid="perf-dynres" :checked="store.dynres" @change="sceneApi.setDynres($event.target.checked)"> {{ t('agentReplay.perf_dynres') }}
-        </label>
         <!-- 画质在紧凑档是只读徽标（档位在播放前定型，运行中不可改），宽档同样只在工具条展示 -->
         <p class="q-badge dp-quality" :title="t('agentReplay.q_title')">{{ qualityBadge }}</p>
         <button
@@ -753,6 +744,16 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             data-testid="replay3d-quality"
             @update:model-value="sceneApi.setQuality($event)"
           />
+          <!-- 渲染性能偏好与画质一同定型（同为此处的一次性选择；渲染上下文级
+               参数，切换会重载会话——放在待开播阶段让「开始」总是按所选偏好起播） -->
+          <div class="pre-start-perf">
+            <label class="toggle" :title="t('agentReplay.perf_logdepth_hint')">
+              <input type="checkbox" data-testid="perf-logdepth" :checked="store.logdepth" @change="sceneApi.setLogdepth($event.target.checked)"> {{ t('agentReplay.perf_logdepth') }}
+            </label>
+            <label class="toggle" :title="t('agentReplay.perf_dynres_hint')">
+              <input type="checkbox" data-testid="perf-dynres" :checked="store.dynres" @change="sceneApi.setDynres($event.target.checked)"> {{ t('agentReplay.perf_dynres') }}
+            </label>
+          </div>
           <AppButton variant="primary" data-test="replay3d-start" @click="startReplay">{{ t('agentReplay.start') }}</AppButton>
         </div>
       </div>
@@ -871,6 +872,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   text-align: center;
 }
 .pre-start-card h3 { margin: 0; font: var(--type-h3); }
+/* 性能偏好行：两开关并排（窄卡内自动换行），说明走 title tooltip */
+.pre-start-perf {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2) var(--space-4);
+}
 .pre-start-file { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 
 /* Persistent HUD appearance; row placement belongs to the shared workspace. */
