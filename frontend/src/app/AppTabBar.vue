@@ -55,6 +55,18 @@ const items = primaryNavItems()
 }
 
 .tab.is-active { color: var(--color-accent-text); }
-.tab-label { font: var(--type-caption); font-weight: 600; }
+.tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font: var(--type-caption);
+  font-weight: 600;
+  /* Reserve the icon, gap and borders before fitting two caption lines. */
+  line-height: min(var(--line-height-caption), calc((var(--tabbar-h) - 28px) / 2));
+  text-align: center;
+}
 .tab:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 </style>

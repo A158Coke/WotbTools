@@ -26,6 +26,17 @@ function picker(initial: number | null = 7) {
 }
 
 describe('controlled tournament event selection', () => {
+  it('lists seasons in the specified calendar order independently of API response order', async () => {
+    const p = picker()
+    p.loadedEvents.value = ['WINTER', 'FIRE_CUP', 'AUTUMN', 'SUMMER', 'SPRING'].map((season, index) => ({
+      ...p.events[0], id: index + 20, season: season as TournamentEvent['season'],
+    }))
+    p.model.value = 20
+    await nextTick()
+    expect(p.wrapper.get('[data-testid="event-season"]').findAll('option').map(option => option.attributes('value')))
+      .toEqual(['', 'SPRING', 'SUMMER', 'AUTUMN', 'FIRE_CUP', 'WINTER'])
+    p.wrapper.unmount()
+  })
   it('clears displayed fields when the owner resets the selected event', async () => {
     const p = picker()
     expect(p.values()).toEqual(['2026', 'CN', 'SUMMER'])
