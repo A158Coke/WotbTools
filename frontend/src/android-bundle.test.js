@@ -26,7 +26,12 @@ describe('APK root URL graph', () => {
   it('allows only bundled scripts and reviewed production connections', () => {
     const policy = androidCsp('<script>localStorage.getItem("profile")</script>')
     expect(policy).toContain("script-src 'self' 'wasm-unsafe-eval' 'sha256-")
-    expect(policy).toContain("connect-src 'self' https://wotbtools.com")
+    expect(policy).toContain("connect-src 'self' blob: https://wotbtools.com")
     expect(policy).not.toContain('http:'); expect(policy).not.toContain('*')
+  })
+  // GLB 内嵌贴图由 GLTFLoader → ImageBitmapLoader 经 fetch(blob:) 读取：connect-src 缺 blob:
+  // 时 3D 模型无贴图（坦克百科装甲查看器 / 3D 回放白模，2026-10-07 定位）。
+  it('keeps blob: allowed for GLB embedded textures', () => {
+    expect(androidCsp('<script></script>')).toContain("connect-src 'self' blob: https://wotbtools.com")
   })
 })
