@@ -48,6 +48,7 @@ describe('MorePage language switcher', () => {
       expect(navigate).toHaveBeenLastCalledWith(view)
     }
     expect(wrapper.find('[data-testid="more-link-admin-users"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="more-link-tournament-points"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
