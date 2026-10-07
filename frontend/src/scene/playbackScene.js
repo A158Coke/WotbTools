@@ -356,7 +356,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 远距离分辨率提至亚毫米，交叠带恢复确定性深度序。两个自定义 ShaderMaterial
     // 需手动挂 logdepthbuf 代码块（内建材质自动注入）；?logdepth=0 可关闭（A/B 与
     // 真机回滚，见 LOGDEPTH 注释）。
-    renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, logarithmicDepthBuffer: LOGDEPTH });
+    // powerPreference：多 GPU 设备（核显 + RTX 等独显）上 Windows 按 per-app 分配
+    // GPU，Chrome 缺省可能落在核显——3D 回放是本页唯一的重负载任务，显式请求
+    // 高性能独显（移动端/单 GPU 设备该提示被忽略，无副作用）。
+    renderer = new THREE.WebGLRenderer({
+      antialias: Q.antialias,
+      logarithmicDepthBuffer: LOGDEPTH,
+      powerPreference: 'high-performance',
+    });
     // 着色器预热（`renderer.compile`）：three 在**首次渲染某材质**时才编译程序，编译会阻塞
     // 数十~数百 ms，落在"战斗第一次开火/命中"的那一帧就是用户实测的"打起来就卡"。
     // 场景就绪后立即编译在用材质（含地面分层着色器/FX 池），成本挪到加载阶段（那时本来在等资产）。
