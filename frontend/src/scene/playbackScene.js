@@ -23,6 +23,9 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
+import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, stateVisualLabel, formatPickReport } from './pickDebug.js'
+import { collectMaterialTextures } from './materialDispose.js'
+import { pruneForeignVariants } from './variantFilter.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAt, legArcEnds, arcAtTime, pointAtArc } from './shotPath.js'
 import { impactKind } from './impactKind.js'
@@ -163,6 +166,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // scenery = { states, appliedPtr, lastT, meshIdx }；Pivot 挂在 gltf.scene 内随
   // mapScenery 一起 dispose（会话生命周期同场景 GLB，无独立 teardown）。
   let destruct = null;
+  let destructPickList = null;   // 拾取用全量实例清单（destructibles.json instances，与事件无关）
+  let meshOwner = null;          // mesh → 实例 精确归属（buildMeshOwnerMap，拾取主路径）
   let groundMesh = null, gridHelper = null;           // buildWorld 的占位地面/网格（会话拥有）
   let destroyed = false;
   let kfId = 0;
@@ -188,6 +193,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let paused = false;
   // 诊断强引用仅在显式 debug 下创建（生产不挂 window.__scene 等长生命周期引用）
   const DEBUG = (() => { try { return new URLSearchParams(location.search).has('debug'); } catch (e) { return false; } })();
+  // 点击拾取调试（pickDebug.js）：dev 构建且 ?admin=1 / ?debug=1 时，单击场景任意物体
+  // 即报告节点名/场景坐标/destructibles 实例（id、serverId cell+slot）。生产构建恒关。
+  const PICK_DEBUG = (() => {
+    if (!import.meta.env.DEV) return false;
+    try {
+      const q = new URLSearchParams(location.search);
+      return q.has('admin') || q.has('debug');
+    } catch (e) { return false; }
+  })();
   // 对数深度逃生开关（?logdepth=0 关闭）：log depth 全局生效——每片元写 gl_FragDepth、
   // 禁 early-z，理论上有全场景片元开销。真机（尤其 Android）若出现可感性能回归，
   // URL 立即回滚不必等发版；同一开关即性能验收的 A/B 对照（同回放/同画质/同机位）。
@@ -374,6 +388,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let emptyDownAt = null;
   function onScenePointerDown(e) {
     if (e.button !== 0) return;
+    if (PICK_DEBUG) pickDownAt = { x: e.clientX, y: e.clientY };   // 调试拾取独立记录（车辆命中路径也出报告）
     const r = container.getBoundingClientRect();
     const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(nd, camera);
@@ -388,11 +403,108 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
   }
   function onScenePointerUp(e) {
-    if (e.button !== 0 || !emptyDownAt) return;
+    if (e.button !== 0) return;
+    // 调试拾取：按下/抬起与拖拽判定独立于选中语义——车辆命中路径（emptyDownAt=null）
+    // 同样出报告，且不会被前方车辆挡掉场景物体的调试报告
+    if (pickDownAt) {
+      const movedPick = Math.hypot(e.clientX - pickDownAt.x, e.clientY - pickDownAt.y);
+      pickDownAt = null;
+      if (movedPick <= SCENE_CLICK_SLOP_PX) reportPick(e);
+    }
+    if (!emptyDownAt) return;
     const moved = Math.hypot(e.clientX - emptyDownAt.x, e.clientY - emptyDownAt.y);
     emptyDownAt = null;
     // eid = null：宿主语义「选中被清空/点击其它地方」→ 隐藏详情窗（保留选中高亮由宿主决定）
     if (moved <= SCENE_CLICK_SLOP_PX) onVehicleSelect?.(null, e);
+  }
+
+  // ---------- 点击拾取调试（PICK_DEBUG；纯函数在 pickDebug.js） ----------
+  let pickMarker = null;
+  let pickPanel = null;
+  let pickDownAt = null;
+  function reportPick(e) {
+    try {
+      const r = container.getBoundingClientRect();
+      const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      raycaster.setFromCamera(nd, camera);
+      const roots = [mapScenery, terrainMesh, groundMesh, ...V.map((v) => v.group)].filter(Boolean);
+      const hits = roots.length ? raycaster.intersectObjects(roots, true) : [];
+      // Raycaster 不过滤 visible：隐藏 D_ 损毁网格/sky/隐藏父节点下的车辆会被
+      // 命中——按整条祖先链可见性取最近可见命中，否则报告指向画面里没有的模型
+      const hit = hits.find((h) => chainVisible(h.object)) || null;
+      const rep = buildPickReport(hit);
+      const text = formatPickReport(rep);
+      console.log(text);
+      try { window.__pbPick = rep; window.__pbPickText = text; } catch (_) {}
+      showPickPanel(text);
+      if (hit) movePickMarker(hit.point);
+    } catch (err) {
+      console.warn('[scene-pick] failed:', err);
+    }
+  }
+  function buildPickReport(hit) {
+    if (!hit) return { clock: T, kind: 'empty', err: 'no hit（天空/空处）' };
+    // 车辆归属：沿父链找 userData.eid（车辆拾取与既有选中逻辑同式）
+    let o = hit.object, eid = 0;
+    while (o) { if (o.userData && o.userData.eid) { eid = o.userData.eid; break; } o = o.parent; }
+    if (eid) {
+      const v = V.find((x) => x.def.eid === eid);
+      return { clock: T, kind: 'vehicle', vehicle: v ? v.def : { eid } };
+    }
+    const onTerrain = (() => {
+      let n = hit.object;
+      while (n) { if (n === terrainMesh || n === groundMesh) return true; n = n.parent; }
+      return false;
+    })();
+    if (onTerrain) return { clock: T, kind: 'terrain', node: hit.object.name || 'terrain' };
+    // 场景网格：世界点击点 → 游戏场景系（= gltf.scene 局部系 = destructibles pos 系）
+    let scenePt = null;
+    if (mapScenery) {
+      try { scenePt = mapScenery.worldToLocal(hit.point.clone()).toArray(); } catch (_) {}
+    }
+    const chain = nameChainOf(hit.object, mapScenery || null);
+    const mat = hit.object.material;
+    const matName = Array.isArray(mat) ? mat.map((m) => m?.name || '?').join('|') : (mat?.name || '');
+    // 实例归属：命中网格的精确归属优先（meshOwner——6m 倒树的树梢按「属于哪棵
+    // 树」归到树上，而非按表面点到锚点的距离错联邻树）；无归属网格才按位置兜底。
+    // 动画状态是可选叠加，按实例身份关联
+    const inst = (meshOwner && meshOwner.get(hit.object))
+      || (scenePt ? nearestInstance(destructPickList, scenePt[0], scenePt[1], 3) : null);
+    const st = inst ? (destruct?.states || []).find((x) => x.inst === inst) || null : null;
+    return {
+      clock: T,
+      kind: 'scenery',
+      node: chain[0] || hit.object.name || hit.object.type,
+      chain: chain.length > 1 ? chain : undefined,
+      world: hit.point.toArray(),
+      scene: scenePt || undefined,
+      material: matName || undefined,
+      inst: inst || null,
+      serverIdKnown: !!(inst && inst.serverId),
+      vis: st ? stateVisualLabel(st) : null,
+    };
+  }
+  function showPickPanel(text) {
+    if (!pickPanel) {
+      pickPanel = document.createElement('pre');
+      pickPanel.style.cssText = 'position:absolute;top:8px;left:8px;z-index:30;max-width:52ch;'
+        + 'padding:8px 10px;margin:0;background:rgba(10,12,16,.86);color:#cfe3ff;'
+        + 'font:11px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;'
+        + 'border:1px solid rgba(120,160,255,.35);border-radius:6px;pointer-events:none;';
+      container.appendChild(pickPanel);
+    }
+    pickPanel.textContent = text;
+  }
+  function movePickMarker(p) {
+    if (!pickMarker) {
+      pickMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.5, 12, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff8a00, depthTest: false, transparent: true, opacity: 0.9 }),
+      );
+      pickMarker.renderOrder = 999;
+    }
+    pickMarker.position.copy(p);
+    scene.add(pickMarker);
   }
 
   // ---------- 地图边界带 ----------
@@ -578,11 +690,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 平铺进 userData（不是嵌在 userData.extras 下）——写成 userData.extras.occMean 会
     // 恒取到 undefined，退化成 0.8 固定值，使各材质"按自身贴图均值归一化遮挡"的标定失效。
     const occRaw = m.userData && Number(m.userData.occMean);
-    const occMean = Number.isFinite(occRaw) && occRaw > 0 ? occRaw : 0.8;
-    // 每实体的 SH(L0) 染色：导出器把它写进 baseColorFactor（松树 1.7725 / 灌木 0.669）。
-    // 客户端是 albedo × 自身 SH(L0)——硬编码 1.77（正好等于松树取值）会让灌木亮 2.65×。
-    const shTintRaw = m.color ? Number(m.color.r) : NaN;
-    const shTint = Number.isFinite(shTintRaw) && shTintRaw > 0 ? shTintRaw : 1.77;
+    // occMean=1.0 哨兵（导出器 2026-10-07 口径）：净倍率 = vOcc × SH 字面 RGB、
+    // 乘积钳 2.0——与客户端 speedtree-materials-fp 同式（albedo × varVertexColor
+    // × SH(L0)）。occMean 为其它值 = 旧包：保留「均值归一化 + 1.35 钳」旧方程。
+    // 旧方程在深色叶贴图上把 ×1.575 压平成 ×1.35 并抹掉叶簇内 AO 对比（发灰发平，
+    // erlenberg 实测报障）；高亮雪地贴图被 tone mapping 掩盖 (+9%) 故长期未显形。
+    const newPack = occRaw === 1;
+    const occMean = newPack ? 1 : (Number.isFinite(occRaw) && occRaw > 0 ? occRaw : 0.8);
+    // 每实体的 SH(L0) 染色：导出器写进 baseColorFactor（RGB 三通道字面值——
+    // √π 灰 1.7725，或 karelia (0.37,0.50,0.50) 冷调黄昏等真实每树环境）。
+    const c0 = m.color;
+    const factorOk = c0 && [c0.r, c0.g, c0.b].every((v) => Number.isFinite(v) && v > 0);
+    const shTint = factorOk
+      ? new THREE.Vector3(c0.r, c0.g, c0.b)
+      : (newPack ? new THREE.Vector3(1, 1, 1) : new THREE.Vector3(1.77, 1.77, 1.77));
     // 客户端着色器为伽马空间直采直写：关闭 sRGB 纹理解码（自定义着色器无输出
     // 重编码，sRGB 采样得到的线性值直出会整体发黑）
     if (m.map) { m.map.colorSpace = THREE.NoColorSpace; m.map.needsUpdate = true; }
@@ -591,6 +712,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         map: { value: m.map || null },
         uSH: { value: shTint },
         uOccMean: { value: occMean },
+        uProdClamp: { value: newPack ? 2.0 : 1.35 },
         uAlphaCut: { value: CARD_ALPHA_CUT },
       },
       vertexShader: `
@@ -618,8 +740,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       depthWrite: true,
       fragmentShader: `
         uniform sampler2D map;
-        uniform float uSH;
+        uniform vec3 uSH;
         uniform float uOccMean;
+        uniform float uProdClamp;
         uniform float uAlphaCut;
         varying vec2 vUv;
         varying float vOcc;
@@ -629,9 +752,60 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           vec4 c = texture2D(map, vUv);
           if (c.a < uAlphaCut) discard;
           float occ = min(vOcc / max(uOccMean, 0.001), 1.25);
-          gl_FragColor = vec4(c.rgb * min(occ * uSH, 1.35), c.a);
+          gl_FragColor = vec4(c.rgb * min(occ * uSH, vec3(uProdClamp)), c.a);
         }`,
       side: THREE.DoubleSide,
+    });
+  }
+
+  // ST| 静态几何（gen2 刚体固定叶/树枝、gen1 树干）：与叶卡同族客户端材质
+  // speedtree-materials-fp = albedo × varVertexColor × SH(L0)，伽马空间直采直写
+  // （无光照、无 tone map、无输出重编码）、无 _corner 展开。此前用 MeshBasicMaterial
+  // 承载：sRGB 解码→线性乘→sRGB 编码的往返把 SH 实际压成 SH^(1/2.2)，与 billboard
+  // 叶（直通）差约 28% → 同树叶片双色（2026-10-07 erlenberg 实测报障）。
+  // toneMapped=false 只去掉 ACES、去不掉输出编码，故必须走自定义 ShaderMaterial
+  // 与叶卡同方程。vOcc = COLOR_0.r（gen2 刚体叶片带该属性；无属性的正则树干 = 1）。
+  function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
+    if (m.map) { m.map.colorSpace = THREE.NoColorSpace; m.map.needsUpdate = true; }
+    const c0 = m.color;
+    const factorOk = c0 && [c0.r, c0.g, c0.b].every((v) => Number.isFinite(v) && v > 0);
+    const sh = factorOk ? new THREE.Vector3(c0.r, c0.g, c0.b) : new THREE.Vector3(1, 1, 1);
+    const hasVC = !!m.vertexColors;   // GLTFLoader 对带 COLOR_0 的几何自动置位
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: m.map || null },
+        uSH: { value: sh },
+        uAlphaCut: { value: opaqueEnough ? 0.33 : 0.05 },
+      },
+      vertexShader: `
+        ${hasVC ? 'attribute vec4 color;' : ''}
+        // <common> 必须先于 logdepthbuf_vertex（isPerspectiveMatrix 定义在 common 里）
+        #include <common>
+        varying vec2 vUv;
+        varying float vOcc;
+        #include <logdepthbuf_pars_vertex>
+        void main() {
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          #include <logdepthbuf_vertex>
+          vUv = uv;
+          vOcc = ${hasVC ? 'color.r' : '1.0'};
+        }`,
+      fragmentShader: `
+        uniform sampler2D map;
+        uniform vec3 uSH;
+        uniform float uAlphaCut;
+        varying vec2 vUv;
+        varying float vOcc;
+        #include <logdepthbuf_pars_fragment>
+        void main() {
+          #include <logdepthbuf_fragment>
+          vec4 c = texture2D(map, vUv);
+          if (c.a < uAlphaCut) discard;
+          gl_FragColor = vec4(c.rgb * (vOcc * uSH), c.a);
+        }`,
+      side: THREE.DoubleSide,
+      transparent: !opaqueEnough,
+      depthWrite: opaqueEnough,
     });
   }
 
@@ -649,6 +823,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; }
     if (mapScenery) { scene.remove(mapScenery); mapScenery = null; }
     destruct = null;
+    destructPickList = null;
+    meshOwner = null;
     mapTexture = null; mapMetaInfo = null; heightField = null; heightMeta = null;
     occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
     groundLayers = null;
@@ -852,6 +1028,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         return;
       }
       if (gltf && gltf.scene) {
+        // 变体裁剪（must 在材质转换/网格索引/遮挡登记之前）：多变体地图
+        // （Dead Rail 等 9 图）的场景 GLB 按 space 共享，组外布景不剔除即成
+        // 幻影物体——游戏一局只激活 LabelComponent 变体组中的一组。映射与
+        // 节点标签由导出器随 GLB extras 下发；无映射（旧包/单变体图）为空操作。
+        const prunedVariants = pruneForeignVariants(gltf.scene, DATA.meta.map_id);
+        if (prunedVariants && DEBUG) window.__prunedVariantNodes = prunedVariants;
         // GLTFLoader 默认 MeshStandardMaterial（PBR）比场景 Lambert 光照吃光得多，
         // 建筑会渲染成近黑——统一降级为 Lambert 并保留贴图/透明/平直着色。
         // 几何含 _CORNER 属性的叶卡走 billboard 材质（见 makeBillboardMaterial）
@@ -864,6 +1046,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           [isCard ? 'C' : 'M', m.name || '', m.map ? m.map.uuid : '',
            m.color ? [m.color.r, m.color.g, m.color.b].map((v) => v.toFixed(4)).join(',') : '',
            m.alphaMode || '', m.alphaTest ?? 0, !!m.transparent, m.opacity ?? 1,
+           !!m.vertexColors,
            (m.userData && m.userData.occMean) || ''].join('|'),
           () => (isCard ? makeBillboardMaterial(m) : (() => {
           // ST|（SpeedTree 树/灌木）：客户端 speedtree-materials-fp = albedo × SH，
@@ -875,17 +1058,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           //   真透明      → 混合 + 不写深度（减少互遮挡）
           const opaqueEnough = (m.opacity ?? 1) >= 0.99;
           if ((m.name || '').startsWith('ST|')) {
-            const bm = new THREE.MeshBasicMaterial({
-              map: m.map || null,
-              color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
-              transparent: !opaqueEnough,
-              opacity: m.opacity ?? 1,
-              side: THREE.DoubleSide,
-              depthWrite: opaqueEnough ? true : false,
-            });
-            bm.alphaTest = opaqueEnough ? 0.33 : 0.05;   // 不透明：按 MASK 量级裁切
-            bm.toneMapped = false;
-            return bm;
+            // 伽马直通（与叶卡同方程，见 makeSpeedtreeStaticMaterial 注释）；
+            // 不透明/混合分流沿用：不透明度≈1 走裁切（排序无关），真透明不写深度
+            return makeSpeedtreeStaticMaterial(m, opaqueEnough);
           }
           // 伪透明（BLEND 但不透明度≈1）一律转不透明 + 裁切，消除透明排序闪烁；
           // 真透明保持混合但不写深度（避免互遮挡抖动）
@@ -1025,10 +1200,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           return out;
         };
         const destructDoc = await destructDocPromise;
+        // 会话守卫先于一切清单/诊断读取：A 的迟到响应不得覆盖 B 已装载的清单
+        //（实测竞态：B 的相同网格点击报告从 id=202 变成 id=101）
+        if (stale()) return;
         if (DEBUG) window.__destructStage = destructDoc
           ? (Array.isArray(DATA.destructible_events) ? `events-${DATA.destructible_events.length}` : 'no-events-old-wasm')
           : 'doc-missing';
-        if (!stale() && destructDoc && Array.isArray(DATA.destructible_events)) {
+        if (destructDoc && Array.isArray(destructDoc.instances)) {
+          destructPickList = destructDoc.instances;   // 守卫内发布（拾取用全量清单）
+          meshOwner = buildMeshOwnerMap(destructPickList, findMeshes);
+        }
+        if (destructDoc && Array.isArray(DATA.destructible_events)) {
           const areasByEid = new Map((DATA.destructible_areas || []).map((a) => [a.eid, a]));
           const index = buildDestructibleIndex(destructDoc);
           const states = foldDestructibleStates(DATA.destructible_events, areasByEid, index);
@@ -2868,10 +3050,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
       for (const m of ms) {
         mats.add(m);
-        for (const k in m) {
-          const val = m[k];
-          if (val && val.isTexture) texs.add(val);
-        }
+        collectMaterialTextures(m, texs);   // 直接属性 + uniforms（ShaderMaterial 纹理在 uniforms.value）
       }
     });
     for (const t of texs) t.dispose();
@@ -2907,6 +3086,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     sessionGen++;
     clearEffects();
     disposeFxPool();   // 特效池（几何/材质/飘字画布贴图）随会话一次性释放
+    // 可破坏物拾取/动画状态随会话释放：meshOwner 持 mesh 引用、destructPickList
+    // 持实例引用、destruct.states 持 pivot/网格组——不置空则 reset 后仍被持有
+    destruct = null;
+    destructPickList = null;
+    meshOwner = null;
+    // 拾取调试残留（标记网格 + 面板 DOM）随会话回收
+    if (pickMarker) { scene.remove(pickMarker); disposeObject3D(pickMarker); pickMarker = null; }
+    if (pickPanel) { pickPanel.remove(); pickPanel = null; }
     if (boundaryGroup) {
       const shared = boundaryGroup.userData.sharedMaterial;
       if (shared) shared.dispose();
