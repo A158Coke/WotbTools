@@ -3053,6 +3053,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     sessionGen++;
     clearEffects();
     disposeFxPool();   // 特效池（几何/材质/飘字画布贴图）随会话一次性释放
+    // 可破坏物拾取/动画状态随会话释放：meshOwner 持 mesh 引用、destructPickList
+    // 持实例引用、destruct.states 持 pivot/网格组——不置空则 reset 后仍被持有
+    destruct = null;
+    destructPickList = null;
+    meshOwner = null;
     // 拾取调试残留（标记网格 + 面板 DOM）随会话回收
     if (pickMarker) { scene.remove(pickMarker); disposeObject3D(pickMarker); pickMarker = null; }
     if (pickPanel) { pickPanel.remove(); pickPanel = null; }
