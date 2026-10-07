@@ -23,7 +23,7 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
-import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
 import { cachedSceneryMat, clearSceneryMatCache, isWaterName, makeBillboardMaterial, makeSpeedtreeStaticMaterial, SCENERY_LAMBERT_EXPOSURE } from './sceneryMaterials.js'
 import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport } from './pickDebug.js'
@@ -1102,6 +1102,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         for (const e of entries) {
           if (e.name && e.name.startsWith('D_')) { writeHiddenInstance(e.batch.mesh, e.idx); e.hidden = true; }
         }
+        // 隐藏槽位落位后按**可见实例**重算批次球（three 的 union 含 y=-1e6 的
+        // 隐藏矩阵会撑爆半径 → 该批剔除全失效，评审二轮已指出）
+        for (const b of batches) refreshBatchSphere(b.mesh, b, (e) => e.hidden);
         // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记粒度 = 批次。射线候选走
         // InstancedMesh 逐实例球测（成本 ≈ 候选实例数 × 球测，配合 far 钳制与 4ms 预算
         // 化轮转可控）。足印仍按**合法实例**逐一枚举（occlusionFootprintCells 语义不变；
@@ -1215,11 +1218,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
               const sy = Math.hypot(e[4], e[5], e[6]);
               const sz = Math.hypot(e[8], e[9], e[10]);
               const r = geo.radius * Math.max(sx, sy, sz);
-              const d = Math.hypot(
-                (cx - st.pivotPos.x),
-                (cy - st.pivotPos.y),
-                (cz - st.pivotPos.z));
-              const need = d + r + 2;   // 倒伏 = 绕 pivot 旋转 → 最远点距离不变，+2m 余量
+              // 倒伏最远触及（以**批次球心**度量，评审四轮）：旋转保点到 pivot
+              // 的距离 → 任一倒角下，树体所有点到 pivot 的距离 ≤ |p−c_geom|+r；
+              // 到批次球心 c 的距离再 +|c−p|（多树共批时 c 与树位相差可达半格宽，
+              // 漏掉这一项 = 单棵树测试过、同批双树反例仍 0 命中）。
+              const dGeo = Math.hypot(cx - st.pivotPos.x, cy - st.pivotPos.y, cz - st.pivotPos.z);
+              const dCenter = Math.hypot(
+                sph.center.x - st.pivotPos.x,
+                sph.center.y - st.pivotPos.y,
+                sph.center.z - st.pivotPos.z);
+              const need = dCenter + dGeo + r + 2;
               if (need > sph.radius) sph.radius = need;
             }
           }

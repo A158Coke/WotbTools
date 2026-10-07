@@ -197,3 +197,51 @@ describe('非均匀缩放槽位的包围球保守性（评审二轮）', () => {
     expect(far).toBeLessThanOrEqual(sph.radius)   // 评审复现的 0 命中场景不再发生
   })
 })
+
+describe('同格双树批次球（评审四轮反例）', () => {
+  it('批次球心到 pivot 的距离计入扩张——右树倒伏后射线可命中', async () => {
+    const { buildInstancedMesh, groupInstanceBatches, collectInstanceEntries, fallMatrix, refreshBatchSphere }
+      = await import('./sceneryInstancing.js')
+    // 评审反例：同一 75m 格内两棵树（x=0 与 x=60）→ 同一批次，球心 ≈ x=30；
+    // 右树（x=60）倒伏后，扩张若只算「几何球心→pivot」会漏 30m 的球心距离。
+    const root = new THREE.Object3D()
+    const shared = geo(6)
+    const m1 = mat()
+    for (const x of [0, 60]) {
+      const t = new THREE.Mesh(shared, m1)
+      t.position.set(x, 0, 0)
+      root.add(t)
+    }
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    expect(batches).toHaveLength(1)            // 同格 = 同批
+    const batch = batches[0]
+    // idx/batch 回填与 playbackScene 装配段同式（groupInstanceBatches 本身不设）
+    for (const b of batches) b.items.forEach((it, i) => { it.batch = b; it.idx = i })
+    const mesh = buildInstancedMesh(batch)
+    refreshBatchSphere(mesh, batch, () => false)
+    const sph = mesh.boundingSphere
+    // 生产扩张公式（playbackScene 装配段同式）：右树 pivot (60,0,0)，绕 z 倒伏
+    const right = batch.items.find((e) => e.x === 60)
+    const e = right.matrix.elements
+    const g = shared.boundingSphere
+    const cx = e[0] * g.center.x + e[4] * g.center.y + e[8] * g.center.z + e[12]
+    const cy = e[1] * g.center.x + e[5] * g.center.y + e[9] * g.center.z + e[13]
+    const cz = e[2] * g.center.x + e[6] * g.center.y + e[10] * g.center.z + e[14]
+    const sr = Math.max(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6]), Math.hypot(e[8], e[9], e[10]))
+    const r = g.radius * sr
+    const dGeo = Math.hypot(cx - 60, cy - 0, cz - 0)
+    const dCenter = Math.hypot(sph.center.x - 60, sph.center.y - 0, sph.center.z - 0)
+    sph.radius = Math.max(sph.radius, dCenter + dGeo + r + 2)
+    // 倒伏右树（绕 z 轴 90°），写入实例矩阵
+    const fallen = fallMatrix(right.matrix, 60, 0, 0, new THREE.Vector3(0, 0, 1), Math.PI / 2, new THREE.Matrix4())
+    mesh.setMatrixAt(right.idx, fallen)
+    mesh.instanceMatrix.needsUpdate = true
+    // 真实 Raycaster：倒伏后躯干（几何真实顶点 (0,2,0) 经倒伏矩阵）垂直下射，
+    // 必须命中——评审同法（倒伏前该体积不在原球内 → mesh 级球测先拒，命中 0）
+    const tip = new THREE.Vector3(0, 2, 0).applyMatrix4(fallen)
+    const ray = new THREE.Raycaster(new THREE.Vector3(tip.x, tip.y + 50, tip.z), new THREE.Vector3(0, -1, 0))
+    const hits = ray.intersectObject(mesh, false)
+    expect(hits.length).toBeGreaterThan(0)
+  })
+})
