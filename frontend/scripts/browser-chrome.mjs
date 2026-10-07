@@ -100,12 +100,12 @@ class CdpClient {
  * `--user-data-dir` 必须显式指定：否则 Chrome 会把命令转发给用户已开着的实例，测试就
  * 跑在真实浏览器会话里（可能带扩展/已登录态），完全不可复现。
  */
-export async function launchChromeForCdp(chrome, { extraArgs = [] } = {}) {
+export async function launchChromeForCdp(chrome, { extraArgs = [], gpu = false } = {}) {
   const userDataDir = mkdtempSync(join(tmpdir(), 'wotb-cdp-'))
   const child = spawn(chrome, [
     '--headless=new',
     '--no-sandbox',
-    '--disable-gpu',
+    ...(gpu ? ['--ignore-gpu-blocklist'] : ['--disable-gpu']),
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-extensions',
