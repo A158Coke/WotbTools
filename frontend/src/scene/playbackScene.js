@@ -1191,20 +1191,34 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             }
           }
           destruct = { states, ptr: 0, lastT: -1, animating: false };
-          // 动态批次包围球保守扩张（评审 P2）：树倒 = 绕基点旋转，树梢会伸出
-          // buildInstancedMesh 按直立位算的包围球——视锥剔除与拾取射线都先过球，
-          // 伸出部分被漏判（实测倒下后射线 0 命中）。扩张量 = 球心到槽位基点距离
-          // + 树高 + 余量；hidden 槽位（y=-1e6）不参与，避免球被撑到无效范围。
+          // 动态批次包围球保守扩张（评审 P2 二轮修正）：树倒 = 绕基点旋转，树梢会
+          // 伸出 buildInstancedMesh 按直立位算的包围球。扩张量必须计入**槽位实际
+          // 变换**——heightM 是原型几何高度，导出节点带非均匀缩放（erlenberg
+          // Spruce2 ≈ [3.1, 2.39, 2.39]）时实高可差数倍，未缩放扩张不保守（倒下
+          // 仍漏剔除/漏拾取）。正确量 = 几何球经 s.base 变换后的世界球（含缩放），
+          // 再算该球到 pivot 的最远距离 = |center−pivot| + radius；hidden 槽位
+          // （y=-1e6）不参与。
           for (const st of states) {
             if (st.prop !== 3 || !st.slots) continue;
             for (const s of st.slots) {
               const sph = s.mesh.boundingSphere;
               if (!sph) continue;
+              if (!s.mesh.geometry.boundingSphere) s.mesh.geometry.boundingSphere = sph.clone();
+              const geo = s.mesh.geometry.boundingSphere;
+              // 几何球经 base 变换：center 仿射变换，radius 按最大轴缩放（保守）
+              const e = s.base.elements;
+              const cx = e[0] * geo.center.x + e[4] * geo.center.y + e[8] * geo.center.z + e[12];
+              const cy = e[1] * geo.center.x + e[5] * geo.center.y + e[9] * geo.center.z + e[13];
+              const cz = e[2] * geo.center.x + e[6] * geo.center.y + e[10] * geo.center.z + e[14];
+              const sx = Math.hypot(e[0], e[1], e[2]);
+              const sy = Math.hypot(e[4], e[5], e[6]);
+              const sz = Math.hypot(e[8], e[9], e[10]);
+              const r = geo.radius * Math.max(sx, sy, sz);
               const d = Math.hypot(
-                st.pivotPos.x - sph.center.x,
-                st.pivotPos.y - sph.center.y,
-                st.pivotPos.z - sph.center.z);
-              const need = d + (st.heightM || 0) + 2;
+                (cx - st.pivotPos.x),
+                (cy - st.pivotPos.y),
+                (cz - st.pivotPos.z));
+              const need = d + r + 2;   // 倒伏 = 绕 pivot 旋转 → 最远点距离不变，+2m 余量
               if (need > sph.radius) sph.radius = need;
             }
           }
