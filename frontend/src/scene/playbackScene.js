@@ -23,7 +23,7 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
-import { nameChainOf, nearestInstance, chainVisible, stateVisualLabel, formatPickReport } from './pickDebug.js'
+import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, stateVisualLabel, formatPickReport } from './pickDebug.js'
 import { collectMaterialTextures } from './materialDispose.js'
 import { pruneForeignVariants } from './variantFilter.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
@@ -167,6 +167,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // mapScenery 一起 dispose（会话生命周期同场景 GLB，无独立 teardown）。
   let destruct = null;
   let destructPickList = null;   // 拾取用全量实例清单（destructibles.json instances，与事件无关）
+  let meshOwner = null;          // mesh → 实例 精确归属（buildMeshOwnerMap，拾取主路径）
   let groundMesh = null, gridHelper = null;           // buildWorld 的占位地面/网格（会话拥有）
   let destroyed = false;
   let kfId = 0;
@@ -464,9 +465,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const chain = nameChainOf(hit.object, mapScenery || null);
     const mat = hit.object.material;
     const matName = Array.isArray(mat) ? mat.map((m) => m?.name || '?').join('|') : (mat?.name || '');
-    // 实例归属 = 完整清单（destructibles.json instances 全集，与事件无关——
-    // 整场没被撞过的树也在清单里）；动画状态是可选叠加，按实例身份关联
-    const inst = scenePt ? nearestInstance(destructPickList, scenePt[0], scenePt[1], 3) : null;
+    // 实例归属：命中网格的精确归属优先（meshOwner——6m 倒树的树梢按「属于哪棵
+    // 树」归到树上，而非按表面点到锚点的距离错联邻树）；无归属网格才按位置兜底。
+    // 动画状态是可选叠加，按实例身份关联
+    const inst = (meshOwner && meshOwner.get(hit.object))
+      || (scenePt ? nearestInstance(destructPickList, scenePt[0], scenePt[1], 3) : null);
     const st = inst ? (destruct?.states || []).find((x) => x.inst === inst) || null : null;
     return {
       clock: T,
@@ -821,6 +824,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (mapScenery) { scene.remove(mapScenery); mapScenery = null; }
     destruct = null;
     destructPickList = null;
+    meshOwner = null;
     mapTexture = null; mapMetaInfo = null; heightField = null; heightMeta = null;
     occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
     groundLayers = null;
@@ -1196,11 +1200,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           return out;
         };
         const destructDoc = await destructDocPromise;
-        destructPickList = (destructDoc && Array.isArray(destructDoc.instances)) ? destructDoc.instances : null;
+        // 会话守卫先于一切清单/诊断读取：A 的迟到响应不得覆盖 B 已装载的清单
+        //（实测竞态：B 的相同网格点击报告从 id=202 变成 id=101）
+        if (stale()) return;
         if (DEBUG) window.__destructStage = destructDoc
           ? (Array.isArray(DATA.destructible_events) ? `events-${DATA.destructible_events.length}` : 'no-events-old-wasm')
           : 'doc-missing';
-        if (!stale() && destructDoc && Array.isArray(DATA.destructible_events)) {
+        if (destructDoc && Array.isArray(destructDoc.instances)) {
+          destructPickList = destructDoc.instances;   // 守卫内发布（拾取用全量清单）
+          meshOwner = buildMeshOwnerMap(destructPickList, findMeshes);
+        }
+        if (destructDoc && Array.isArray(DATA.destructible_events)) {
           const areasByEid = new Map((DATA.destructible_areas || []).map((a) => [a.eid, a]));
           const index = buildDestructibleIndex(destructDoc);
           const states = foldDestructibleStates(DATA.destructible_events, areasByEid, index);

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import {
   nameChainOf, nearestDestructibleState, nearestInstance, chainVisible,
-  stateVisualLabel, formatPickReport,
+  buildMeshOwnerMap, stateVisualLabel, formatPickReport,
 } from './pickDebug.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -106,6 +106,35 @@ const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 
+describe('buildMeshOwnerMap', () => {
+  // 评审复现场景：6m 倒树的树梢命中点 (6,0) 离邻树 id=8 的根部更近——
+  // 精确归属必须按「命中网格属于哪棵树」胜过距离查询
+  const inst7 = { id: 7, pos: [0, 0, 0], serverId: { cell: [0, 0], slot: 7 } }
+  const inst8 = { id: 8, pos: [6, 0, 0], serverId: { cell: [0, 0], slot: 8 } }
+  const m7trunk = { name: 'trunk7' }
+  const m7top = { name: 'top7' }     // 树梢网格（锚点仍在树 7 根部 2cm 内）
+  const m8 = { name: 'trunk8' }
+  const findMeshes = (px, py, wantDestroyed) => {
+    if (wantDestroyed) return []
+    if (Math.hypot(px - 0, py - 0) < 1) return [{ mesh: m7trunk, x: 0, y: 0 }, { mesh: m7top, x: 0, y: 0 }]
+    if (Math.hypot(px - 6, py - 0) < 1) return [{ mesh: m8, x: 6, y: 0 }]
+    return []
+  }
+
+  it('树梢网格归属到自己的树（id=7），而非距离更近的邻树（id=8）', () => {
+    const map = buildMeshOwnerMap([inst7, inst8], findMeshes)
+    expect(map.get(m7top)).toBe(inst7)
+    expect(map.get(m7trunk)).toBe(inst7)
+    expect(map.get(m8)).toBe(inst8)
+    expect(map.size).toBe(3)
+  })
+  it('无 pos 实例跳过；非数组安全', () => {
+    const map = buildMeshOwnerMap([{ id: 9 }, inst7], findMeshes)
+    expect(map.get(m7top)).toBe(inst7)
+    expect(buildMeshOwnerMap(null, findMeshes).size).toBe(0)
+  })
+})
+
 describe('拾取接线（源码级守卫）', () => {
   it('onScenePointerDown 无条件记录 pickDownAt（含车辆命中路径）', () => {
     const at = sceneSrc.indexOf('function onScenePointerDown')
@@ -123,8 +152,23 @@ describe('拾取接线（源码级守卫）', () => {
     expect(clearAt).toBeGreaterThan(-1)
     expect(reportAt).toBeLessThan(clearAt)
   })
-  it('拾取实例来自全量清单 destructPickList（非事件状态表）', () => {
-    expect(sceneSrc).toMatch(/nearestInstance\(destructPickList/)
+  it('拾取实例：meshOwner 精确归属优先，距离仅兜底', () => {
+    const at = sceneSrc.indexOf('const inst =')
+    expect(at).toBeGreaterThan(-1)
+    const order = sceneSrc.slice(at, at + 400)
+    expect(order).toMatch(/meshOwner && meshOwner\.get\(hit\.object\)/)
+    const meshOwnerAt = order.indexOf('meshOwner.get(hit.object)')
+    const fallbackAt = order.indexOf('nearestInstance(destructPickList')
+    expect(meshOwnerAt).toBeGreaterThan(-1)
+    expect(fallbackAt).toBeGreaterThan(meshOwnerAt)
+  })
+  it('destructibles await 之后先核会话（stale）再发布清单', () => {
+    const awaitAt = sceneSrc.indexOf('const destructDoc = await destructDocPromise')
+    const staleAt = sceneSrc.indexOf('if (stale()) return;', awaitAt)
+    const publishAt = sceneSrc.indexOf('destructPickList = destructDoc.instances')
+    expect(awaitAt).toBeGreaterThan(-1)
+    expect(staleAt).toBeGreaterThan(awaitAt)
+    expect(publishAt).toBeGreaterThan(staleAt)
   })
 })
 
