@@ -54,6 +54,23 @@ export function nearestInstance(instances, sx, sy, radiusM = 3) {
 }
 
 /**
+ * 全量实例 × findMeshes → mesh → 实例 精确归属表（拾取主路径）。
+ * 树梢等远离实例锚点的命中点按「命中网格属于哪棵树」归属——距离查询会把
+ * 6m 倒树的树梢错联到旁边更近的邻树（评审实测 id=7→id=8）。
+ * D_ 损毁态网格一并归属（倒下后点击同样能报 id）。
+ */
+export function buildMeshOwnerMap(instances, findMeshes, out = new Map()) {
+  if (!Array.isArray(instances)) return out
+  for (const inst of instances) {
+    const p = inst?.pos
+    if (!p) continue
+    for (const e of findMeshes(p[0], p[1], false)) out.set(e.mesh, inst)
+    for (const e of findMeshes(p[0], p[1], true)) out.set(e.mesh, inst)
+  }
+  return out
+}
+
+/**
  * 点击位置 → 最近的 destructible 状态（st.inst.pos 距离判定）。
  * 装配层应优先做「命中网格 ∈ 该状态的 pivot/intactMeshes/deadMeshes」的精确归属，
  * 本函数只做位置兜底（网格成员查询需要 three 对象图，放装配层）。
