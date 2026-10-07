@@ -75,6 +75,17 @@ function dataset(confidence = 'HIGH') {
   }
 }
 
+it('accepts optional recorded totals while retaining compatibility with datasets without them', () => {
+  const playback = makeBattlePlaybackDataset()
+  expect(validateBattlePlaybackDataset(playback).data).not.toBeNull()
+  playback.vehicles[0].damageDealtSamples = [{ timeSec: 10, total: 900 }]
+  expect(validateBattlePlaybackDataset(playback).data).not.toBeNull()
+  playback.vehicles[0].damageDealtSamples[0].total = -1
+  expect(validateBattlePlaybackDataset(playback).data).toBeNull()
+  playback.vehicles[0].damageDealtSamples[0] = { timeSec: -1, total: 900 }
+  expect(validateBattlePlaybackDataset(playback).data).toBeNull()
+})
+
 describe('HTTP contract runtime validator', () => {
   it('accepts the production-shaped Playback V2 envelope', () => {
     const result = validateBattlePlaybackDataset(dataset())

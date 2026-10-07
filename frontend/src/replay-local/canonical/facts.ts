@@ -3,7 +3,8 @@
  * → WotbTools 自己的语义事实层。2D 回放投影（`playback/toBattlePlaybackDataset`）与 AI 复盘投影
  * （`ai/toClientAiReviewProjection`）都只消费这一层，不直接把 Agent DTO 当领域契约。
  *
- * 每条规则都是已退役 Java canonical 层的逐条移植（出处见各段注释），输入只用上游**已明确提供**
+ * 帧与归因规则沿用已退役 Java canonical 层（出处见各段注释），补充已验证的 Avatar 累计伤害广播。
+ * 输入只用上游**已明确提供**
  * 的事实；上游没给的不猜，交给 `limitations` / `unavailableEvidence` 如实降级：
  *  - 身份：`TeamEntityMapper` / `TeamPerspectiveResolver`（结算花名册是队伍权威）；
  *  - AoI 观测段：`ReplayAoiLifecycle`（[observedFrom, absentFrom) 半开区间）；
@@ -231,6 +232,8 @@ export interface CanonicalReplayFacts {
   healthEvents: HealthEvent[]
   damageNotices: DamageNotice[]
   lossesByVictim: Map<number, CombatLoss[]>
+  /** Avatar prop10 is recorder-only cumulative damage evidence, separate from victim attribution. */
+  recorderDamageDealt: Array<{ timeSec: number; total: number }>
   destroyed: DestroyedFact[]
   /** Java `TeamEntityMapper` limitations（进 2D / AI capability） */
   mappingLimitations: string[]
@@ -394,6 +397,27 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
 
   const inBattle = (t: number) => Number.isFinite(t) && t >= 0 && t <= clock.durationSec + EPS
 
+  // The recorder Avatar has a different eid from the vehicle roster. prop10 broadcasts belong
+  // to that recorder, not to the Avatar eid as a player. Preserve their actual observation clock;
+  // a settlement total must never appear early in playback. Conflicting sources fail closed.
+  const recorderDamageDealt: CanonicalReplayFacts['recorderDamageDealt'] = []
+  if (recorderAccountId !== null && settlement.has(recorderAccountId)) {
+    const ticks = events.filter((e): e is Extract<AgentAiEvent, { type: 'damage_tick' }> =>
+      e.type === 'damage_tick' && Number.isSafeInteger(e.eid) && e.eid > 0
+      && Number.isSafeInteger(e.cumulative) && e.cumulative >= 0 && inBattle(rel(e.t))
+      && (accountOf(e.eid) === null || accountOf(e.eid) === recorderAccountId))
+    if (new Set(ticks.map(e => e.eid)).size === 1) {
+      ticks.sort((a, b) => a.t - b.t)
+      for (const tick of ticks) {
+        const last = recorderDamageDealt.at(-1)
+        if (last && tick.cumulative < last.total) continue
+        const timeSec = rel(tick.t)
+        if (last && Math.abs(timeSec - last.timeSec) <= EPS) last.total = tick.cumulative
+        else recorderDamageDealt.push({ timeSec, total: tick.cumulative })
+      }
+    }
+  }
+
   // ---- 掉血（PlaybackCombatReconstruction.derive）：只用 prop3 可信采样 ----
   const samplesByAccount = new Map<number, Array<{ t: number; hp: number }>>()
   for (const [eid, list] of hpSamples) {
@@ -522,6 +546,7 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
     turrets,
     hpSamples,
     healthEvents,
+    recorderDamageDealt,
     damageNotices,
     lossesByVictim,
     destroyed,
