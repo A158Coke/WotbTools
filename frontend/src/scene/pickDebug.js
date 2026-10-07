@@ -18,6 +18,59 @@ export function nameChainOf(object, stopAt = null) {
 }
 
 /**
+ * 命中对象 → 整条祖先链是否可见（Raycaster 不按 Object3D.visible 过滤：
+ * 隐藏的 D_ 损毁替换网格、sky、隐藏父节点下的车辆都会被 intersect 命中，
+ * 拾取前必须按链上可见性筛选，否则报告指向画面里不存在的模型）。
+ * stopAt 及其祖先不计入（如场景根）。
+ */
+export function chainVisible(object, stopAt = null) {
+  let o = object
+  while (o && o !== stopAt) {
+    if (o.visible === false) return false
+    o = o.parent
+  }
+  return true
+}
+
+/**
+ * 点击位置 → 完整清单里最近的实例（destructibles.json 的 instances 全集，
+ * 与本局是否发生过破坏事件无关——事件状态表只含被撞过的物体）。
+ * 超出 radiusM / 空列表 → null（调用方按「非可破坏物」呈现）。
+ */
+export function nearestInstance(instances, sx, sy, radiusM = 3) {
+  if (!Array.isArray(instances)) return null
+  let best = null
+  let bestD = radiusM
+  for (const inst of instances) {
+    const p = inst?.pos
+    if (!p) continue
+    const d = Math.hypot(p[0] - sx, p[1] - sy)
+    if (d <= bestD) {
+      best = inst
+      bestD = d
+    }
+  }
+  return best
+}
+
+/**
+ * 全量实例 × findMeshes → mesh → 实例 精确归属表（拾取主路径）。
+ * 树梢等远离实例锚点的命中点按「命中网格属于哪棵树」归属——距离查询会把
+ * 6m 倒树的树梢错联到旁边更近的邻树（评审实测 id=7→id=8）。
+ * D_ 损毁态网格一并归属（倒下后点击同样能报 id）。
+ */
+export function buildMeshOwnerMap(instances, findMeshes, out = new Map()) {
+  if (!Array.isArray(instances)) return out
+  for (const inst of instances) {
+    const p = inst?.pos
+    if (!p) continue
+    for (const e of findMeshes(p[0], p[1], false)) out.set(e.mesh, inst)
+    for (const e of findMeshes(p[0], p[1], true)) out.set(e.mesh, inst)
+  }
+  return out
+}
+
+/**
  * 点击位置 → 最近的 destructible 状态（st.inst.pos 距离判定）。
  * 装配层应优先做「命中网格 ∈ 该状态的 pivot/intactMeshes/deadMeshes」的精确归属，
  * 本函数只做位置兜底（网格成员查询需要 three 对象图，放装配层）。
