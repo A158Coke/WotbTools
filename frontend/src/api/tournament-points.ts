@@ -22,7 +22,7 @@ export type TournamentHistoricalPreview = Schemas['TournamentHistoricalPreview']
 export type TournamentHistoricalPreviewRequest = Schemas['TournamentHistoricalPreviewRequest']
 export type TournamentHistoricalState = Schemas['TournamentHistoricalState']
 export const TOURNAMENT_REGIONS: TournamentEvent['region'][] = ['CN', 'ASIA', 'NA', 'EU']
-export const TOURNAMENT_SEASONS: TournamentEvent['season'][] = ['SPRING', 'SUMMER', 'AUTUMN', 'WINTER', 'FIRE_CUP']
+export const TOURNAMENT_SEASONS: TournamentEvent['season'][] = ['SPRING', 'SUMMER', 'AUTUMN', 'FIRE_CUP', 'WINTER']
 
 const base = '/api/admin/tournaments'
 const eventPath = (id: number) => `${base}/${id}`
