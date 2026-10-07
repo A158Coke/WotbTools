@@ -59,13 +59,23 @@ export function nearestInstance(instances, sx, sy, radiusM = 3) {
  * 6m 倒树的树梢错联到旁边更近的邻树（评审实测 id=7→id=8）。
  * D_ 损毁态网格一并归属（倒下后点击同样能报 id）。
  */
+/**
+ * 实例化槽位模型（perf 分支）：场景网格合批为 InstancedMesh，射线命中携带
+ * `hit.object`（批次 mesh）+ `hit.instanceId`（槽位下标）——归属表与查询都用
+ * `mesh.uuid#instanceId` 复合键。值携带 `{ inst, name }`：inst 供状态关联，
+ * name 保留原节点名（合批后原 Mesh 已摘除，报告仍能报出真实物体名）。
+ */
+export function meshOwnerKey(mesh, instanceId) {
+  return `${mesh.uuid}#${instanceId}`
+}
+
 export function buildMeshOwnerMap(instances, findMeshes, out = new Map()) {
   if (!Array.isArray(instances)) return out
   for (const inst of instances) {
     const p = inst?.pos
     if (!p) continue
-    for (const e of findMeshes(p[0], p[1], false)) out.set(e.mesh, inst)
-    for (const e of findMeshes(p[0], p[1], true)) out.set(e.mesh, inst)
+    for (const e of findMeshes(p[0], p[1], false)) out.set(meshOwnerKey(e.batch.mesh, e.idx), { inst, name: e.name })
+    for (const e of findMeshes(p[0], p[1], true)) out.set(meshOwnerKey(e.batch.mesh, e.idx), { inst, name: e.name })
   }
   return out
 }
@@ -101,13 +111,15 @@ export function nearestDestructibleState(states, sx, sy, radiusM = 3) {
 export function stateVisualLabel(st) {
   if (!st) return null
   if (st.prop === 3) {
-    const q = st.pivot?.quaternion
-    const fallen = !!q && !!(q.x || q.y || q.z)
+    // 实例化槽位模型：倒伏状态写 fallQuat（w = cos(倒角/2)）——w≈1 直立/未触发，
+    // 其余 = 倒伏中或已倒；倒带复位后 w 回 1
+    const w = st.fallQuat?.w
+    const fallen = Number.isFinite(w) && Math.abs(1 - w) > 1e-3
     return { prop: 3, label: fallen ? 'fallen/falling' : 'standing' }
   }
-  const deadShown = (st.deadMeshes || []).some((m) => m.visible)
-  const intactShown = (st.intactMeshes || []).some((m) => m.visible)
-  return { prop: st.prop, label: deadShown && !intactShown ? 'destroyed' : 'intact' }
+  // 建筑/switcher：applied = 损毁态已激活（完好槽隐藏、损毁槽显示）
+  const destroyed = st.applied === true
+  return { prop: st.prop, label: destroyed ? 'destroyed' : 'intact' }
 }
 
 const PROP_LABEL = { 0: 'modules', 1: 'fragiles', 2: 'pole', 3: 'tree-fall' }

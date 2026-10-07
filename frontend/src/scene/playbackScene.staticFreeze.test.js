@@ -49,7 +49,7 @@ describe('playbackScene 手写 shader 的实例化接线', () => {
 
 describe('playbackScene 场景 GLB 实例化合批接线', () => {
   it('合批后原节点必须摘除渲染图（漏摘 = 优化失效：原 Mesh 照常画一遍）', () => {
-    const at = src.indexOf('const batches = groupInstanceBatches(entries)')
+    const at = src.indexOf('const batches = groupInstanceBatches(entries, cellSize)')
     expect(at).toBeGreaterThan(0)
     const body = src.slice(at, at + 600)
     expect(body).toMatch(/for \(const b of batches\) \{ b\.mesh = buildInstancedMesh\(b\); gltf\.scene\.add\(b\.mesh\); \}/)
@@ -57,7 +57,7 @@ describe('playbackScene 场景 GLB 实例化合批接线', () => {
   })
 
   it('D_ 损毁态实例必须初始隐藏（writeHiddenInstance），且隐藏实例不进遮挡候选', () => {
-    const at = src.indexOf('const batches = groupInstanceBatches(entries)')
+    const at = src.indexOf('const batches = groupInstanceBatches(entries, cellSize)')
     const body = src.slice(at, src.indexOf('const destructDoc = await destructDocPromise', at))
     expect(body).toMatch(/if \(e\.name && e\.name\.startsWith\('D_'\)\) \{ writeHiddenInstance\(e\.batch\.mesh, e\.idx\); e\.hidden = true; \}/)
     // 遮挡足印登记跳过 hidden / 无名字实例

@@ -14,7 +14,10 @@ export function createDynRes({
   floorDpr = 1,
   step = 0.25,
   downMs = 22,        // ≈45fps 以下视为超预算
-  upMs = 13,          // ≈77fps 以上视为有余量
+  upMs = 17,          // ≈60fps 即视为有余量。必须 > 16.7ms（60Hz VSync 帧间隔）：
+                      // 调用方喂的是 rAF 帧间隔而非渲染耗时——真机上即使渲染只花
+                      // 几毫秒，帧间隔也被 VSync 钳在 16.7ms，恢复阈值低于它 =
+                      // 降档后永远回不去（评审复现：60Hz 下 2000 帧停在 DPR 1）
   windowN = 45,       // 滚动均值窗口（≈0.75s @60fps）
   cooldownFrames = 60,// 一次调整后至少隔多少渲染帧才允许下一次（≈1s @60fps）
 } = {}) {

@@ -93,7 +93,7 @@ describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
     expect(src).not.toMatch(/occlusionCells\(wx - r/)
   })
   it('时间轴回退必须显式清树终态 settled（否则重播不重写触地旋转）', () => {
-    expect(src).toMatch(/if \(T < destruct\.lastT\) \{[\s\S]{0,80}destruct\.ptr = 0;[\s\S]{0,400}st\.prop === 3\) \{ st\.settled = false; st\.upright = true; \}[\s\S]{0,40}\}\s*destruct\.lastT = T;/)
+    expect(src).toMatch(/if \(T < destruct\.lastT\) \{[\s\S]{0,80}destruct\.ptr = 0;[\s\S]{0,400}st\.prop === 3\) st\.settled = false;[\s\S]{0,40}\}\s*destruct\.lastT = T;/)
   })
   it('?perf 看门狗随 destroy 清理（心跳定时器 + 调试句柄）', () => {
     expect(src).toMatch(/if \(PERF\) \{\s*if \(perfBeatTimer\) \{ clearInterval\(perfBeatTimer\); perfBeatTimer = 0; \}\s*delete window\.__pbPerf;/)

@@ -26,7 +26,7 @@ import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFram
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
 import { cachedSceneryMat, clearSceneryMatCache, isWaterName, makeBillboardMaterial, makeSpeedtreeStaticMaterial, SCENERY_LAMBERT_EXPOSURE } from './sceneryMaterials.js'
-import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, stateVisualLabel, formatPickReport } from './pickDebug.js'
+import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport } from './pickDebug.js'
 import { collectMaterialTextures } from './materialDispose.js'
 import { pruneForeignVariants } from './variantFilter.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
@@ -492,13 +492,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 实例归属：命中网格的精确归属优先（meshOwner——6m 倒树的树梢按「属于哪棵
     // 树」归到树上，而非按表面点到锚点的距离错联邻树）；无归属网格才按位置兜底。
     // 动画状态是可选叠加，按实例身份关联
-    const inst = (meshOwner && meshOwner.get(hit.object))
+    // 实例归属：合批后命中 = 批次 InstancedMesh + instanceId——按复合键查归属表
+    //（值携带原节点名：合批后原 Mesh 已摘除，报告仍报真实物体名）；无表项才按位置兜底
+    const owner = (meshOwner && hit.instanceId != null)
+      ? meshOwner.get(meshOwnerKey(hit.object, hit.instanceId)) : null;
+    const inst = (owner && owner.inst)
       || (scenePt ? nearestInstance(destructPickList, scenePt[0], scenePt[1], 3) : null);
     const st = inst ? (destruct?.states || []).find((x) => x.inst === inst) || null : null;
     return {
       clock: T,
       kind: 'scenery',
-      node: chain[0] || hit.object.name || hit.object.type,
+      node: owner?.name || chain[0] || hit.object.name || hit.object.type,
       chain: chain.length > 1 ? chain : undefined,
       world: hit.point.toArray(),
       scene: scenePt || undefined,
@@ -1057,7 +1061,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           const k = gridKey(e.x, e.y);
           (meshGrid.get(k) || meshGrid.set(k, []).get(k)).push(e);
         }
-        const batches = groupInstanceBatches(entries);
+        // 宫格分块：8×8（600m 图 → 75m/格）——整批跨全图的包围球会失去逐实例
+        // 视锥剔除（镜头看半张图，视野外的实例也全量提交；林荫图极致档实测卡顿
+        // 的主因）。分片后每片包围球局部化，剔除恢复到格粒度。
+        // span 取地形 sidecar（地面段已装载）；缺失回退 600（与 python 管线一致）
+        const cellSize = Math.max(75, (heightMeta?.span || 600) / 8);
+        const batches = groupInstanceBatches(entries, cellSize);
         for (const b of batches) b.items.forEach((e, i) => { e.batch = b; e.idx = i; });
         for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh); }
         // 原节点摘除：几何/材质已由批次持有（GPU 只上传批次侧），原 Mesh 不再进渲染图
@@ -1157,6 +1166,23 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             }
           }
           destruct = { states, ptr: 0, lastT: -1, animating: false };
+          // 动态批次包围球保守扩张（评审 P2）：树倒 = 绕基点旋转，树梢会伸出
+          // buildInstancedMesh 按直立位算的包围球——视锥剔除与拾取射线都先过球，
+          // 伸出部分被漏判（实测倒下后射线 0 命中）。扩张量 = 球心到槽位基点距离
+          // + 树高 + 余量；hidden 槽位（y=-1e6）不参与，避免球被撑到无效范围。
+          for (const st of states) {
+            if (st.prop !== 3 || !st.slots) continue;
+            for (const s of st.slots) {
+              const sph = s.mesh.boundingSphere;
+              if (!sph) continue;
+              const d = Math.hypot(
+                st.pivotPos.x - sph.center.x,
+                st.pivotPos.y - sph.center.y,
+                st.pivotPos.z - sph.center.z);
+              const need = d + (st.heightM || 0) + 2;
+              if (need > sph.radius) sph.radius = need;
+            }
+          }
           if (DEBUG) window.__destructStage = `ready states=${destruct.states.length}`;
           if (DEBUG) window.__destructDebug = () => ({
             events: (DATA.destructible_events || []).length,
@@ -2548,9 +2574,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const states = destruct.states;
     if (T < destruct.lastT) {
       destruct.ptr = 0;   // seek 后退：全部回到未激活
-      // 树终态缓存随回退**显式失效**（含 fallQuat 复位——destructibles.js 的 settled
-      // 自校验 getter 以它为准，是第二道防线，两道机制独立，谁先兜住都行）。
-      for (const st of states) if (st.prop === 3) { st.settled = false; st.upright = true; }
+      // 树终态缓存随回退**显式失效**。⚠️ 此处不得置 upright=true（评审 P1）：
+      // upright 是「槽位已恢复直立」的标记，提前置 true 会让未激活分支跳过
+      // base 矩阵恢复——树已倒下后回退到事件前，画面仍停在倒伏姿态。
+      // 复位交给下方 !active 分支（upright=false 时才执行 base 写回 + fallQuat 复位）。
+      for (const st of states) if (st.prop === 3) st.settled = false;
     }
     destruct.lastT = T;
     while (destruct.ptr < states.length && states[destruct.ptr].clock <= T) destruct.ptr++;

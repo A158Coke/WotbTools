@@ -39,7 +39,7 @@ const BAKE_HTML = `<!doctype html><html><body><script type="module">
 import * as THREE from '/node_modules/three/build/three.module.js'
 import { GLTFLoader } from '/node_modules/three/examples/jsm/loaders/GLTFLoader.js'
 // 材质 SSOT：与 3D 运行时（playbackScene）同一份实现——俯视烘焙的观感基准
-import { cachedSceneryMat, isWaterName, makeBillboardMaterial, makeSpeedtreeStaticMaterial, SCENERY_LAMBERT_EXPOSURE } from '/src/scene/sceneryMaterials.js'
+import { cachedSceneryMat, isWaterName, makeBillboardMaterial, makeSpeedtreeStaticMaterial, SCENERY_LAMBERT_EXPOSURE, disposeSceneGroup } from '/src/scene/sceneryMaterials.js'
 import { pruneForeignVariants } from '/src/scene/variantFilter.js'
 
 const SIZE = ${SIZE}
@@ -70,23 +70,12 @@ async function init() {
   return { size: SIZE, webgl2: renderer.capabilities.isWebGL2, gpu: gl.getParameter(gl.RENDERER) }
 }
 
-function disposeGroup(g) {
-  g.traverse((o) => {
-    if (o.geometry) o.geometry.dispose()
-    const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : [])
-    for (const m of mats) {
-      for (const k in m) { const v = m[k]; if (v && v.isTexture) v.dispose() }
-      m.dispose()
-    }
-  })
-}
-
 async function load(key, span = 600, mapId = null) {
   if (group) {                       // --all 批处理：上一张必须卸载，否则场景逐张
     scene.remove(group)              // 累积——后续每张都叠着此前全部地图的几何
-    disposeGroup(group)              // （实测第 2 张起 coverPct 恒 100 的根因）
-    group = null
-  }
+    disposeSceneGroup(group)         // （实测第 2 张起 coverPct 恒 100 的根因）。
+    group = null                     // disposeSceneGroup 同时清 uniforms 纹理与
+  }                                  // 材质缓存——共享 SpeedTree 贴图不回收会随图数累积显存（评审 P2）
   const url = location.origin + '/pack/map/' + encodeURIComponent(key) + '/scenery.glb'
   const bytes = await (await fetch(url)).arrayBuffer()
   const gltf = await new Promise((res, rej) => new GLTFLoader().parse(bytes, '', res, rej))   // arrayBuffer() 已是 ArrayBuffer，别再取 .buffer

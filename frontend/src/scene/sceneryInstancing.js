@@ -43,17 +43,34 @@ export function collectInstanceEntries(root) {
   return out
 }
 
-/** 按 (geometry, material) 分组：[{ geometry, material, items: [entry, …] }]。
- *  顺序稳定（首见序），保证同输入同输出（seek 确定性）。 */
-export function groupInstanceBatches(entries) {
-  const byKey = new Map()
+/** 按 (geometry, material, 宫格) 分组：每片独立 InstancedMesh。
+ *  cellSize 有限时按世界坐标宫格分片——整批一个跨全图的包围球会失去逐实例
+ *  视锥剔除（镜头看半张图，视野外的实例也全量提交，林荫图实测减半的树渲染
+ *  量全靠它）；分片后每片包围球局部化，剔除恢复到格粒度，draw call 总量
+ *  仍 ≈ 片数（远小于实例数）。cellSize = Infinity 关闭分片（单批，兼容旧形态）。 */
+export function groupInstanceBatches(entries, cellSize = Infinity) {
+  const out = []
+  const byGeoMat = new Map()
   for (const e of entries) {
-    const key = `${e.geometry.uuid}|${e.material.uuid}`
-    let b = byKey.get(key)
-    if (!b) { b = { geometry: e.geometry, material: e.material, items: [] }; byKey.set(key, b) }
-    b.items.push(e)
+    const gk = `${e.geometry.uuid}|${e.material.uuid}`
+    let g = byGeoMat.get(gk)
+    if (!g) {
+      g = { geometry: e.geometry, material: e.material, cells: new Map() }
+      byGeoMat.set(gk, g)
+    }
+    const cx = cellSize === Infinity ? 0 : Math.floor(e.x / cellSize)
+    const cy = cellSize === Infinity ? 0 : Math.floor(e.y / cellSize)
+    const ck = `${cx},${cy}`
+    let items = g.cells.get(ck)
+    if (!items) { items = []; g.cells.set(ck, items) }
+    items.push(e)
   }
-  return [...byKey.values()]
+  for (const g of byGeoMat.values()) {
+    for (const items of g.cells.values()) {
+      out.push({ geometry: g.geometry, material: g.material, items })
+    }
+  }
+  return out
 }
 
 /** 由批次构造 InstancedMesh（矩阵在构造时写入；动态改写由调用方 needsUpdate）。
