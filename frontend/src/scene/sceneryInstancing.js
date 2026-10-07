@@ -112,3 +112,24 @@ export function fallMatrix(base, pivotX, pivotY, pivotZ, axis, angle, out) {
 const _t1 = new THREE.Matrix4()
 const _t2 = new THREE.Matrix4()
 const _r = new THREE.Matrix4()
+
+/** 重算批次包围球 = 仅**可见**实例的几何球经各自实例矩阵的并集。
+ *  three 的 InstancedMesh.computeBoundingSphere 会 union 全部实例——D_ 隐藏槽位
+ *  的「远处微缩」矩阵（y=-1e6）会把球撑到无效量级（剔除全失效）；本函数按
+ *  isHidden 谓词跳过隐藏槽位。hidden 槽位不影响画面，只按可见实例定球正确。 */
+export function refreshBatchSphere(mesh, batch, isHidden) {
+  const sph = new THREE.Sphere()
+  sph.makeEmpty()
+  if (!batch.geometry.boundingSphere) batch.geometry.computeBoundingSphere()
+  const m = new THREE.Matrix4()
+  const tmp = new THREE.Sphere()
+  batch.items.forEach((it, i) => {
+    if (isHidden && isHidden(it)) return
+    mesh.getMatrixAt(i, m)
+    tmp.copy(batch.geometry.boundingSphere).applyMatrix4(m)
+    sph.union(tmp)
+  })
+  if (mesh.boundingSphere) mesh.boundingSphere.copy(sph)
+  else mesh.boundingSphere = sph
+  return mesh.boundingSphere
+}
