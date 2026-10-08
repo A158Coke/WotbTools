@@ -326,7 +326,7 @@ workflow = Path(sys.argv[1]).read_text(encoding="utf-8")
 preflight = workflow.index("Preflight classify production state")
 agent_wasm = workflow.index("Fetch pinned Agent WASM for frontend validation")
 frontend = workflow.index("Frontend tests + build validation")
-upload = workflow.index("Upload APK to TX")
+upload = workflow.index("Seed APK to TX from Tsinghua replica")
 ensure_tag = workflow.index("Ensure release tag (idempotent)")
 assert preflight < agent_wasm < frontend < upload < ensure_tag
 preflight_block = workflow[preflight:agent_wasm]
@@ -335,6 +335,50 @@ assert 'if [ "$TAG_STATE" = "tag_conflict" ]; then' in preflight_block
 agent_wasm_block = workflow[agent_wasm:frontend]
 assert "bash scripts/fetch-agent-wasm.sh" in agent_wasm_block, \
     "Android release frontend validation must fetch the pinned Agent WASM first"
+PY
+
+# 发布上传链（2026-10-08 优化后锁死，防回退）：APK 不得再走 scp-action 跨洋直推
+#（drone-scp 的 SFTP 单流实测 12.6–13.8 KB/s → 15MB × 2 台 ≈ 40 分钟，占 stage job 89%）；
+# 两台 origin 必须"从清华副本拉取 + 就地 SHA-256 校验 + 原子落位"，且仍只在 origin
+# absent 时触发（幂等：equal 跳过、清华 replace=1 覆盖自愈）。顺序：classify → 清华 → seed×2。
+python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
+import sys
+import yaml
+
+workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+steps = workflow["jobs"]["stage"]["steps"]
+
+
+def named(fragment):
+    hits = [s for s in steps if fragment in (s.get("name") or "")]
+    assert len(hits) == 1, f"expected exactly one step containing {fragment!r}, got {len(hits)}"
+    return hits[0]
+
+
+for step in steps:
+    if "APK" in (step.get("name") or ""):
+        assert "scp-action" not in (step.get("uses") or ""), \
+            f"APK must not be pushed via scp-action (cross-border SFTP): {step['name']}"
+
+seeds = [named("Seed APK to TX from Tsinghua replica"), named("Seed APK to TX2 from Tsinghua replica")]
+for seed in seeds:
+    assert seed["uses"].startswith("appleboy/ssh-action"), seed["name"]
+    script = seed["with"]["script"]
+    assert "sha256sum -c" in script, f"seed must verify SHA before landing bytes: {seed['name']}"
+    assert 'TMP="$DEST.partial.$$"' in script, \
+        f"seed temp file must be a hidden sibling of DEST: {seed['name']}"
+    assert 'mv -f "$TMP" "$DEST"' in script, \
+        f"seed must land via same-dir rename (atomic for nginx): {seed['name']}"
+    cond = seed.get("if") or ""
+    assert "apk_absent" in cond, f"seed must stay idempotent (origin apk_absent only): {seed['name']}"
+    assert "apkcheck.outputs.tx1State" in cond or "apkcheck.outputs.tx2State" in cond, cond
+
+order = [s.get("name") for s in steps]
+tsinghua = named("Upload APK to Tsinghua Cloud")["name"]
+classify = named("Classify origin APK on TX1/TX2")["name"]
+verify = named("Verify production APK")["name"]
+assert order.index(classify) < order.index(tsinghua) < order.index(seeds[0]["name"]) \
+    < order.index(seeds[1]["name"]) < order.index(verify), order
 PY
 
 # 两阶段发布协议：stage 只做 staging（绝不写 production version.json），publish 只能手工续跑、
