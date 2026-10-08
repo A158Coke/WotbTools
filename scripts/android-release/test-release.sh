@@ -322,8 +322,14 @@ for seed in seeds:
     assert "sha256sum -c" in script, f"seed must verify SHA before landing bytes: {seed['name']}"
     assert 'TMP="$DEST.partial.$$"' in script, \
         f"seed temp file must be a hidden sibling of DEST: {seed['name']}"
-    assert 'mv -f "$TMP" "$DEST"' in script, \
-        f"seed must land via same-dir rename (atomic for nginx): {seed['name']}"
+    # 落位必须原子且 **no-clobber**：classify 的 apk_absent 只是快照，窗口内可能有 manual SSH /
+    # 恢复脚本等第三方写入——`mv -f` 会覆盖 immutable 字节，同目录 `ln` 则原子失败并走冲突判定。
+    assert 'ln "$TMP" "$DEST"' in script, \
+        f"seed must publish via same-dir hard link (atomic no-clobber): {seed['name']}"
+    assert 'mv -f "$TMP" "$DEST"' not in script and 'mv "$TMP" "$DEST"' not in script, \
+        f"seed must never clobber an existing origin file (immutable APK): {seed['name']}"
+    assert 'EXISTING_SHA' in script and 'refusing to overwrite' in script, \
+        f"seed must compare existing bytes and fail closed on a concurrent immutable conflict: {seed['name']}"
     cond = seed.get("if") or ""
     assert "apk_absent" in cond, f"seed must stay idempotent (origin apk_absent only): {seed['name']}"
     assert "apkcheck.outputs.tx1State" in cond or "apkcheck.outputs.tx2State" in cond, cond
