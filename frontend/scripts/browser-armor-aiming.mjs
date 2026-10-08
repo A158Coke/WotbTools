@@ -13,6 +13,10 @@
  * 不存在 SKIP（旧实现的"资产不可达 → exit 0"让这条 gate 在 CI 里恒绿假阳性）。
  * 本地要对真实车辆人工核对时用环境变量覆盖：
  *   AIM_ASSETS=http://127.0.0.1:8123 AIM_TANK=3201 node scripts/browser-armor-aiming.mjs
+ *
+ * 唯一的模式条件例外：**夹具专属场景**（仅间隙甲命中 → 不构成判定）依赖夹具特意构造的
+ * 悬空间隙甲屏幕板，真实资产覆盖下车辆不保证有间隙甲板，扫不到即跳过——跳过是模式条件，
+ * 不是"资产不可达即绿"；夹具模式（CI 默认）找不到屏幕仍然硬失败。
  */
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
@@ -80,6 +84,9 @@ try {
   // 部位采样必须同时满足两条：可视化第一命中名（__raytrace 的报告面）与**产品同一分类器**
   // __aimPart 的结论一致——只按名字采样会在视觉模型/装甲模型命中顺序不一致时取到
   // "看着是炮塔、按下却落进车体/相机分支"的像素，让断言在 CI 上随机翻车。
+  // 每个部位**优先**取「射线触达主装甲板」的像素（短按必出结论，断言最强）；真实资产覆盖下
+  // 某部位可能只有仅触达间隙甲/外部模块的像素（如炮管悬空、其装甲板全归 spaced）——此时退回
+  // 该像素并记 primary:false，由调用方按"不构成判定（面板无结论）"断言（BlitzKit 触发面语义）。
   // need 可裁剪（触屏视口窄，转动后炮管可能出画/被遮挡时只要求用得到的部位）
   const findSpotsExpr = (need) => `(() => {
     const H = window.__armorRicochet;
@@ -87,7 +94,8 @@ try {
     const r = c.getBoundingClientRect();
     const need = ${JSON.stringify(need)};
     const PRIMARY = ${JSON.stringify(PRIMARY_SECTIONS)};
-    const found = { gun: null, turret: null, hull: null };
+    const found = { gun: null, turret: null, hull: null };      // 首选：射线触达主装甲
+    const fallback = { gun: null, turret: null, hull: null };   // 次选：仅间隙甲/外部模块
     const scan = (step) => {
       for (let cy = 20; cy < c.height - 20; cy += step) {
         for (let cx = 20; cx < c.width - 20; cx += step) {
@@ -96,12 +104,14 @@ try {
           if (!hits || !hits.length) continue;
           const n = hits[0].name;
           const cls = H.__aimPart(px, py);
-          // 像素必须能构成判定（射线触达主装甲板）：间隙甲屏幕 / 外部模块像素不触发判定，
-          // 采样到它们会让下面的「短按触发判定」断言假失败。分类取自判定模块（PRIMARY）。
-          if (!hits.some((h) => PRIMARY.includes(h.sec))) continue;
-          if (!found.gun && /^gun_/.test(n) && cls === 'gun') found.gun = { x: px, y: py, name: n, cls };
-          if (!found.turret && /^turret_/.test(n) && cls === 'turret') found.turret = { x: px, y: py, name: n, cls };
-          if (!found.hull && /^hull_/.test(n) && cls === null) found.hull = { x: px, y: py, name: n, cls: 'camera' };
+          const primary = hits.some((h) => PRIMARY.includes(h.sec));
+          const take = (part, rec) => {
+            if (found[part] || fallback[part]) return;
+            (primary ? found : fallback)[part] = rec;
+          };
+          if (/^gun_/.test(n) && cls === 'gun') take('gun', { x: px, y: py, name: n, cls, primary });
+          if (/^turret_/.test(n) && cls === 'turret') take('turret', { x: px, y: py, name: n, cls, primary });
+          if (/^hull_/.test(n) && cls === null) take('hull', { x: px, y: py, name: n, cls: 'camera', primary });
           if (need.every((p) => found[p])) return true;
         }
       }
@@ -109,8 +119,9 @@ try {
     };
     // 先粗后细：步长 8 已足够命中（最细的炮管在屏上也有 ~20px 宽），漏找才回退步长 4。
     // 全画布逐像素双射线（__raytrace + __aimPart）在 CI 的 3fps runner 上要 20s+，粗扫省 4 倍。
+    // 仅当某部位连"首选"像素都没有时才细扫（次选已找到不触发细扫，避免无谓整帧扫描）。
     if (!scan(8)) scan(4);
-    return found;
+    return { gun: found.gun || fallback.gun, turret: found.turret || fallback.turret, hull: found.hull || fallback.hull };
   })()`
   const findSpots = async (need = ['gun', 'turret', 'hull']) => {
     // 采样前等视图静止：damping 让相机在拖动/捏合后继续滑行（慢渲染下数秒），滑行中采到的
@@ -258,7 +269,13 @@ try {
   // 把「只打穿一块屏幕」显示成击穿整车（实车 56TP 炮塔 10mm 屏幕板 plate 12 即此类）。
   // 位置要求：下面的拖动用例会环绕相机、转动炮塔，而屏幕板的可见像素依赖 URL 固定机位——
   // 本场景必须排在它们之前，且只做短按（不改相机/炮塔姿态），因此复用刚采样的 hull 像素。
-  {
+  // 模式：本场景依赖夹具特意构造的悬空间隙甲屏幕板（turret_01_armor_2）。真实资产覆盖
+  // （AIM_ASSETS/AIM_TANK）下车辆不保证有间隙甲板——无板时扫不到像素属预期，跳过（否则
+  // 会让原本可用的覆盖模式误报失败）；夹具模式（CI 默认）找不到屏幕仍硬失败。
+  if (useRealAssets) {
+    console.log('[armor-aiming] 跳过（模式条件）：真实资产覆盖不保证存在间隙甲屏幕板，'
+      + '「仅间隙甲命中」回归由夹具模式（CI 默认，不带 AIM_ASSETS）覆盖')
+  } else {
     const spot = await findScreenOnlyPixel()
     if (!spot) {
       check(false, '未找到「仅间隙甲命中」的像素（夹具屏幕板 turret_01_armor_2 / 机位异常）')
@@ -320,7 +337,9 @@ try {
   }
 
   // —— 短按（无拖动）= 判定：炮塔 / 炮管上短按同样触发（评审 BLOCKER 1 回归）——
-  // 断言口径 = 判定代数计数（#traj-info 面板被渲染循环持续重新显示，display 不可判新判定）
+  // 断言口径 = 判定代数计数（#traj-info 面板被渲染循环持续重新显示，display 不可判新判定）。
+  // 结论面按像素证据分档：射线触达主装甲 → 面板必须出结论；只触达间隙甲/外部模块（primary:false，
+  // 真实资产覆盖下炮管装甲全归 spaced 时会出现）→ 按 BlitzKit 触发面语义必须无结论。
   {
     const s = await rescan('短按前')
     for (const part of ['gun', 'turret', 'hull']) {
@@ -330,8 +349,14 @@ try {
       const n1 = await readJudgments()
       const panel = await shotPanel()
       const angleAfter = await readAim()
-      check(n1 === n0 + 1 && panel.visible === true,
-        `短按·${part} 触发判定（judgments ${n0}→${n1}，面板 "${panel.text.trim().slice(0, 36)}"）`)
+      check(n1 === n0 + 1, `短按·${part} 到达判定路径（judgments ${n0}→${n1}，命中 ${s[part].name}）`)
+      if (s[part].primary === false) {
+        check(panel.visible === false,
+          `短按·${part} 仅触达间隙甲/外部模块：不构成判定，面板无结论（命中 ${s[part].name}）`)
+      } else {
+        check(panel.visible === true,
+          `短按·${part} 触发判定：面板出结论（"${panel.text.trim().slice(0, 36)}"）`)
+      }
       if (part !== 'hull') {
         check(angleAfter.t === angleBefore.t && angleAfter.g === angleBefore.g,
           `短按·${part} 不产生瞄准手势（角度 ${angleBefore.t}/${angleBefore.g} 不变）`)
