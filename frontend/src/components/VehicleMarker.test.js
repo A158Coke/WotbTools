@@ -54,6 +54,34 @@ function mountMarker(marker, selected = false) {
   return mount(VehicleMarker, { props: { marker, selected } })
 }
 
+describe('tank class presentation', () => {
+  it.each(['LT', 'MT', 'HT', 'TD'])('replaces artwork with %s while preserving tank name, facts and selection', async (tankClass) => {
+    const marker = { ...dedicatedMarker, vehicle: { ...dedicatedMarker.vehicle, tankClass }, recorder: true, destroyed: true }
+    const wrapper = mount(VehicleMarker, { props: {
+      marker, selected: true, classIcons: true, showStatus: false, hpVisible: false,
+      hp: { current: 0, pct: 0, state: 'DESTROYED' },
+      label: { showPlayer: false, showTank: true, showReload: false, tankDy: 0 },
+    } })
+    expect(wrapper.findAll('img')).toHaveLength(0)
+    expect(wrapper.get('[data-tank-class]').attributes('data-tank-class')).toBe(tankClass)
+    expect(wrapper.text()).toBe('Maus')
+    expect(wrapper.find('.pb-label-player').exists()).toBe(false)
+    expect(wrapper.find('.pb-hp-hud').exists()).toBe(false)
+    expect(wrapper.find('.pb-recorder-badge').exists()).toBe(false)
+    expect(wrapper.find('.pb-death').exists()).toBe(false)
+    expect(wrapper.find('.pb-selected-mark').exists()).toBe(false)
+    expect(wrapper.classes()).toContain('pb-destroyed')
+    expect(wrapper.get('.pb-class-symbol').classes()).toContain('is-selected')
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('select')).toHaveLength(1)
+    expect(marker.destroyed).toBe(true)
+    await wrapper.setProps({ classIcons: false, showStatus: true })
+    expect(wrapper.find('img').exists()).toBe(true)
+    expect(wrapper.find('.pb-death').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})
+
 describe('generic（非 Tier X / fallback）', () => {
   it('渲染 hull + turret 双层 PNG，共同 pivot 居中旋转（translate(-50%,-50%) rotate）', () => {
     const w = mountMarker(genericMarker)

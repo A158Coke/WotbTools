@@ -38,6 +38,7 @@ import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
+import { PanelLeftClose, PanelLeftOpen, ScanEye } from 'lucide-vue-next'
 
 defineOptions({ name: 'Replay3DPane' })
 
@@ -59,7 +60,7 @@ const online = computed(() => availability(Feature.PLAYBACK_3D))
  * 呈现偏好（标签行 / 战场 UI 分块）的**唯一 owner** 是 usePlaybackPreferences——
  * 与 2D Playback 共用同一份持久化偏好，3D 不再自建第二套 localStorage 状态。
  */
-const { labelPrefs, hpPrefs, uiPrefs } = usePlaybackPreferences()
+const { labelPrefs, hpPrefs, markerPrefs, uiPrefs, declutterActive, toggleDeclutter } = usePlaybackPreferences()
 
 /**
  * 「隐藏全部 UI」：**不写入持久化偏好**（刷新后回到常规界面，不会把用户永久关在空白场景里），
@@ -194,9 +195,11 @@ function pushLabelPrefs() {
     showTankName: labelPrefs.showTankName,
     showHp: hpPrefs.showHp,
     showReload: labelPrefs.showReload,
+    classIcons: markerPrefs.classIcons,
+    showStatus: markerPrefs.showStatus,
   })
 }
-watch([labelPrefs, hpPrefs, uiHidden], pushLabelPrefs, { deep: true })
+watch([labelPrefs, hpPrefs, markerPrefs, uiHidden], pushLabelPrefs, { deep: true })
 
 /** 最近一次加载的文件：失败后"重试"直接重新解析，不必再选一次 */
 let lastFile = null
@@ -265,6 +268,9 @@ const selectedRow = computed(() => {
 
 // Scene and Details consume the same workspace-owned parse result.
 const detailPlayback = computed(() => store.hasData ? store.playbackSession?.canonical : null)
+// Canonical identity may finish after the scene facet. Refresh class symbols
+// even when the replay clock is paused at the same frame.
+watch(detailPlayback, pushLabelPrefs)
 /**
  * 战斗时钟（与 2D 同一口径：0 = 开战）的唯一权威是场景引擎：它持有 [START, END]（发布为 store.startTime /
  * store.duration），seek、自动停止与进度都夹在里面。canonical 就绪 / 失败 / 换会话时把它的 clock 交给引擎
@@ -592,7 +598,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
       <div class="pb-stage" data-testid="replay3d-stage">
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
-          <PlaybackVehicleLabels3D ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :hidden="uiHidden || !store.hasData" />
+          <PlaybackVehicleLabels3D ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" @select="handleSceneSelect" />
         </div>
       </div>
 
@@ -656,6 +662,15 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
       <!-- 隐藏全部 UI：连底部播放控件一起让位（这是「只看战场」的语义）；
            `H` 键或右上角常驻按钮随时恢复。resize 观测对 null 元素是安全的（watch(controlsEl)）。 -->
       <div v-if="store.hasData && !uiHidden" ref="controlsEl" class="controls panel">
+        <div class="pb-quick-actions">
+          <button type="button" class="pb-quick-action" data-test="pb-toggle-roster" :aria-expanded="uiPrefs.showRoster" @click="uiPrefs.showRoster = !uiPrefs.showRoster">
+            <component :is="uiPrefs.showRoster ? PanelLeftClose : PanelLeftOpen" :size="18" aria-hidden="true" />
+            {{ t(uiPrefs.showRoster ? 'recon.map.playback.hide_rosters' : 'recon.map.playback.show_rosters') }}
+          </button>
+          <button type="button" class="pb-quick-action" data-test="pb-declutter" :aria-pressed="declutterActive" :title="t('recon.map.playback.declutter_hint')" @click="toggleDeclutter">
+            <ScanEye :size="18" aria-hidden="true" /> {{ t('recon.map.playback.declutter') }}
+          </button>
+        </div>
         <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
         <PlaybackTransport
           :fullscreen-supported="fullscreenSupported"
@@ -700,13 +715,15 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
       <PlaybackDisplaySurface :open="displayOpen && !uiHidden" :portrait="portraitFlow" :anchor="displayAnchor" :host="rootEl" @close="displayOpen = false">
         <!-- 查看 / 显示开关都在这里（同一份 store.cam / uiPrefs / labelPrefs / hpPrefs / store.glbOn，
              没有第二套状态）：高频动作之外的设置不该永久占着战场高度。
-             名册没有单独的「打开名册」入口：它的唯一开关是下面的 disp-roster 呈现偏好。 -->
+             常驻快捷按钮与这里的名册开关共用 uiPrefs.showRoster。 -->
           <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-killfeed" :checked="uiPrefs.showKillfeed" @change="uiPrefs.showKillfeed = $event.target.checked"> {{ t('agentReplay.display_killfeed') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-base" :checked="uiPrefs.showBaseStatus" @change="uiPrefs.showBaseStatus = $event.target.checked"> {{ t('agentReplay.display_base') }}</label>
         <p class="dp-title">{{ t('agentReplay.display_labels') }}</p>
+        <label class="toggle"><input type="checkbox" data-testid="disp-class-icons" :checked="markerPrefs.classIcons" @change="markerPrefs.classIcons = $event.target.checked"> {{ t('recon.map.playback.class_icons') }}</label>
+        <label class="toggle"><input type="checkbox" data-testid="disp-status" :checked="markerPrefs.showStatus" @change="markerPrefs.showStatus = $event.target.checked"> {{ t('recon.map.playback.show_status') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-player" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ t('recon.map.playback.show_player_name') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-tank" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ t('recon.map.playback.show_tank_name') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-hp" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ t('recon.map.playback.show_hp') }}</label>
@@ -746,14 +763,17 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
           />
           <!-- 渲染性能偏好与画质一同定型（同为此处的一次性选择；渲染上下文级
                参数，切换会重载会话——放在待开播阶段让「开始」总是按所选偏好起播） -->
-          <div class="pre-start-perf">
+          <details class="pre-start-advanced">
+            <summary>{{ t('agentReplay.performance_options') }}</summary>
+            <div class="pre-start-perf">
             <label class="toggle" :title="t('agentReplay.perf_logdepth_hint')">
               <input type="checkbox" data-testid="perf-logdepth" :checked="store.logdepth" @change="sceneApi.setLogdepth($event.target.checked)"> {{ t('agentReplay.perf_logdepth') }}
             </label>
             <label class="toggle" :title="t('agentReplay.perf_dynres_hint')">
               <input type="checkbox" data-testid="perf-dynres" :checked="store.dynres" @change="sceneApi.setDynres($event.target.checked)"> {{ t('agentReplay.perf_dynres') }}
             </label>
-          </div>
+            </div>
+          </details>
           <AppButton variant="primary" data-test="replay3d-start" @click="startReplay">{{ t('agentReplay.start') }}</AppButton>
         </div>
       </div>
@@ -873,8 +893,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 }
 .pre-start-card h3 { margin: 0; font: var(--type-h3); }
 /* 性能偏好行：两开关并排（窄卡内自动换行），说明走 title tooltip */
+.pre-start-advanced { inline-size: 100%; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); text-align: start; }
+.pre-start-advanced summary { min-block-size: var(--control-h-md); display: list-item; align-content: center; color: var(--color-text-secondary); font: var(--type-caption); cursor: pointer; }
+.pre-start-advanced[open] summary { margin-block-end: var(--space-2); }
+.pre-start-advanced summary:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .pre-start-perf {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2) var(--space-4);
+  display: grid; gap: var(--space-2);
 }
 .pre-start-file { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 
@@ -966,7 +990,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
 .phone-form .dp-close { inline-size: 100%; }
 /* 直接陈列的查看动作行（镜头挡位 + GLB）：窄屏整行换行 */
-.tool-row { display: flex; align-items: center; justify-content: center; gap: var(--space-2); flex-wrap: wrap; }
+.tool-row { display: flex; align-items: center; justify-content: center; gap: var(--space-2); flex-wrap: wrap; padding-block-start: var(--space-2); border-block-start: 1px solid var(--color-border-subtle); }
 .tool-row .dim { font: var(--type-caption); color: var(--color-text-secondary); }
 .phone-form .tool-row { gap: var(--space-1); }
 

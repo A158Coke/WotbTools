@@ -1,6 +1,7 @@
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
+import { FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
 /**
  * 装甲查看器（?view=agent-armor）移动端布局的浏览器几何门禁。
@@ -493,10 +494,105 @@ async function runDesktopScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
+/** Real scene + deterministic GLB: verify default camera and the prominent shot controls without inspecting pixels. */
+const SHOT_SCENARIOS = [
+  { name: 'armor-shot-actions-mobile', width: 390, height: 844, touch: true },
+  { name: 'armor-shot-actions-tablet', width: 1024, height: 768, touch: false },
+  { name: 'armor-shot-actions-desktop', width: 1280, height: 800, touch: false },
+]
+async function runShotActionsScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  await page.goto(`${env.origin}/?view=home&ws-auth=1`)
+  await page.evaluate(`(async () => {
+    localStorage.setItem('wotb-lang', 'zh')
+    const { storeShotsForViewer } = await import('/src/scene/agentData.js')
+    storeShotsForViewer([{
+      index: 1, time_s: 12, shooter_eid: 7, target_eid: 8, is_author: true,
+      shooter_tank_id: ${FIXTURE_TANK_ID}, target_tank_id: ${FIXTURE_TANK_ID},
+      shooter_name: 'Shooter', target_name: 'Target', shooter_tank_name: 'Fixture tank', target_tank_name: 'Fixture tank',
+      shell_slot: 0, damage: 100, hit_flags: 16, game_hit_result: 3,
+      shooter_pos: [0, 0, 60], target_pos: [0, 0, 0], shooter_ang: [0, 0, 0], target_ang: [0, 0, 0],
+      ball_a: [0, 1, 60], ball_b: [0, 1, 0], launch_velocity: [0, 0, -1000],
+      tick_samples: [{ dt: 0, pos: [0, 0, 0], yaw: 0, pitch: 0, roll: 0 }],
+      shooter_tick_samples: [{ dt: 0, pos: [0, 0, 60], yaw: 0, pitch: 0, roll: 0 }],
+    }])
+  })()`)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&shot=1&world=1&assets=${encodeURIComponent(env.assets)}`)
+  await page.waitFor(() => !!document.querySelector('#world-view-toggle'), { timeout: 30000, label: 'real shot scene controls' })
+  const state = `(() => ({
+    impact: document.querySelector('#rel-view-toggle')?.getAttribute('aria-pressed'),
+    overview: document.querySelector('#world-view-toggle')?.getAttribute('aria-pressed'),
+    distance: window.__armorRicochet?.aimingState()?.cameraDistance,
+    details: document.querySelector('#debug-toggle')?.getAttribute('aria-pressed'),
+  }))()`
+  const initial = await page.waitForValue(state, value => value.impact === 'true' && Math.abs(value.distance - 15) < .1,
+    { timeout: 15000, label: 'default impact camera is active at 15m' })
+  check(failures, initial.overview === 'false' && initial.details === 'false', 'impact must be selected by default, with analysis details collapsed')
+  const help = await page.evaluate(`(() => {
+    const el = document.querySelector('[data-testid="armor-interaction-help"]')
+    const r = el.getBoundingClientRect(), stage = document.querySelector('.armor-stage').getBoundingClientRect()
+    const header = document.querySelector('[data-testid="armor-shot-header"]').getBoundingClientRect()
+    return { text: el.textContent, belowHeader: r.top >= header.bottom - 1, aboveStage: r.bottom <= stage.top + 1, inside: r.bottom <= innerHeight + 1 && r.left >= 0 && r.right <= innerWidth + 1, height: r.height }
+  })()`)
+  const expectedGestures = scenario.touch ? ['单指拖动', '双指捏合', '双指拖动'] : ['左键拖动', '滚轮', '右键拖动']
+  check(failures, ['操作说明', '旋转视角', '缩放视角', '平移视角', ...expectedGestures].every(text => help.text.includes(text)),
+    `gesture help must describe the current input: ${JSON.stringify(help)}`)
+  check(failures, help.belowHeader && help.aboveStage && help.inside && help.height > 0, `gesture help must sit below the page header and above the canvas without overlap: ${JSON.stringify(help)}`)
+  const analysis = await page.waitForValue(`document.querySelector('#traj-info')?.textContent`, value => value?.includes('车体装甲板'),
+    { timeout: 15000, label: 'localized armor layer in real shot analysis' })
+  check(failures, !/Hull Plate|PENETRATION|BLOCKED/.test(analysis), `analysis must translate part names and results: ${analysis}`)
+  const tapControl = async selector => {
+    const target = await page.evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2
+      const hit = document.elementFromPoint(x, y)
+      return { x, y, width: r.width, height: r.height, hit: hit === el || el.contains(hit), inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight }
+    })()`)
+    check(failures, target.hit && target.inside && target.width >= 44 && target.height >= 44,
+      `${selector} must be visible and reachable at 44px: ${JSON.stringify(target)}`)
+    await page.tap({ x: target.x, y: target.y, touch: scenario.touch })
+  }
+  await tapControl('#rel-view-toggle')
+  await tapControl('#world-view-toggle')
+  const overview = await page.waitForValue(state, value => value.overview === 'true' && value.distance > 20,
+    { label: 'overview camera restored after selecting the already-active impact option' })
+  check(failures, overview.impact === 'false', 'view selection must be mutually exclusive')
+  await tapControl('#rel-view-toggle')
+  await page.waitForValue(state, value => value.impact === 'true' && Math.abs(value.distance - 15) < .1,
+    { label: 'return to impact camera' })
+  await tapControl('#debug-toggle')
+  await page.waitForValue(`document.querySelector('#turret-controls').style.display`, value => value === 'block', { label: 'analysis details expanded' })
+  await tapControl('#debug-toggle')
+  await page.waitForValue(state, value => value.details === 'false', { label: 'analysis details collapsed' })
+  await tapControl('[data-testid="armor-tools"]')
+  for (const selector of ['#shell-select', '#collision-btn', '#penetration-btn']) {
+    const target = await page.evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)}), r = el.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      return { height: r.height, width: r.width, reachable: hit === el || el.contains(hit) }
+    })()`)
+    check(failures, target.reachable && target.width >= 44 && target.height >= 44,
+      `expanded settings must remain reachable above the shot toolbar: ${selector} ${JSON.stringify(target)}`)
+  }
+  await tapControl('#collision-btn')
+  await tapControl('#collision-btn')
+  await tapControl('[data-testid="armor-tools"]')
+  check(failures, await page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'shot toolbar must not create horizontal overflow')
+  check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
+const shotAssets = await startFixtureAssetPack()
 let chromeCdp = null
 
 try {
@@ -510,8 +606,9 @@ try {
       '--enable-unsafe-swiftshader',
     ],
   })
-  const env = { origin, chrome: chromeCdp }
+  const env = { origin, chrome: chromeCdp, assets: shotAssets.origin }
   const runs = [
+    ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },
     ...DESKTOP_SCENARIOS.map((scenario) => ({ scenario, run: () => runDesktopScenario(env, scenario) })),
@@ -551,4 +648,5 @@ try {
 } finally {
   if (chromeCdp) await chromeCdp.close()
   await server.close()
+  await shotAssets.close()
 }

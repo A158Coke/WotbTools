@@ -81,3 +81,25 @@ export const fmtNum = (v, d = 1) => {
   const n = Number(v)
   return Number.isFinite(n) ? String(Number(n.toFixed(d))) : '-'
 }
+
+/** Display names only: keep raw part/result strings intact for penetration layer matching. */
+export function armorPartLabel(name, t) {
+  const raw = typeof name === 'string' ? name : ''
+  const known = { 'Track (Left)': 'track_left', 'Track (Right)': 'track_right', 'Gun Barrel': 'gun_barrel' }
+  if (Object.hasOwn(known, raw)) return t(`armor.parts.${known[raw]}`)
+  const plate = /^(Hull|Turret|Gun|Spaced) Plate (\d+)$/.exec(raw)
+  if (plate) return t(`armor.parts.${plate[1].toLowerCase()}_plate`, { plate: plate[2] })
+  if (/^Gap [\d.]+m$/.test(raw)) return t('armor.parts.gap')
+  return raw
+}
+
+export function armorResultLabel(result, t) {
+  const keys = {
+    PENETRATION: 'penetration', BLOCKED: 'blocked', RICOCHET: 'ricochet', SPLASH: 'splash',
+    ERROR: 'error', MISS: 'miss', 'NO PENETRATION': 'blocked', 'HE BLAST': 'he_blast', HIT: 'hit',
+  }
+  return String(result ?? '').split('→').map(value => {
+    const raw = value.trim()
+    return Object.hasOwn(keys, raw) ? t(`armor.outcomes.${keys[raw]}`) : raw
+  }).join(' → ')
+}

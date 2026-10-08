@@ -11,29 +11,6 @@
   color: #c9c5bb !important;
 }
 
-/* Contact */
-.contact-page {
-  width: min(1280px, calc(100% - var(--showcase-gutter) * 2)) !important;
-  max-width: none !important;
-  padding: 28px 0 64px !important;
-  color: #c9c5bb !important;
-}
-.contact-title { font-size: 1.55rem !important; letter-spacing: -.02em; color: #f2ede3 !important; }
-.contact-subtitle { color: #c3c0b8 !important; }
-.contact-grid { gap: 14px !important; }
-.contact-card {
-  min-height: 190px;
-  padding: 22px !important;
-  border-color: var(--showcase-tactical-border) !important;
-  background: linear-gradient(160deg, rgba(24, 30, 34, .985), rgba(13, 18, 21, .99)) !important;
-  color: #d8d5cd !important;
-  box-shadow: var(--surface-shadow);
-}
-.contact-hint { color: #a4a9a3 !important; }
-.contact-card:hover { transform: translateY(-2px); box-shadow: 0 20px 42px var(--accent-shadow); }
-.contact-icon { filter: saturate(.75); }
-.copy-btn { margin-top: auto !important; }
-
 /* HoF admin and other admin-like pages */
 .hof-admin {
   width: min(1760px, calc(100% - var(--showcase-gutter) * 2)) !important;
@@ -45,10 +22,8 @@
 
 @media (width < 768px) {
   .rating-docs-page,
-.contact-page,
 .hof-admin {
     width: calc(100% - 16px) !important;
     padding: 12px 0 42px !important;
   }
-  .contact-grid { grid-template-columns: 1fr !important; }
 }

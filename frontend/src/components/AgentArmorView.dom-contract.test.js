@@ -51,3 +51,15 @@ describe('armor destroyed scene async ownership', () => {
     }
   })
 })
+
+// The host now reuses this component for adjacent shots: old async work must never own its new DOM.
+describe('armor adjacent-shot teardown ownership', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('guards shot handoff, shooter models and delayed callbacks after scene disposal', () => {
+    expect(kernel).toMatch(/fetchReplayShots\(\)\.then\(d => \{\s*if \(destroyed\) return;/)
+    expect(kernel).toMatch(/const sd = arr\[0\], gltf = arr\[1\];\s*if \(destroyed\) \{ disposeDetachedModel\(gltf\?\.scene\); return null;/)
+    expect(kernel).toContain('if (!destroyed) callback();')
+    expect(kernel).toContain('pendingTimers.forEach(globalThis.clearTimeout)')
+    expect(kernel).toMatch(/function showShotError\(msg\) \{\s*if \(destroyed\) return;/)
+  })
+})

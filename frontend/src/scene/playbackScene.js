@@ -170,6 +170,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let labelScene = null;
   let sizeObserver = null;
   let glbCache = new Map(), glbOn = false;
+  let classIcons = false, showMarkerStatus = true;
+  const classIconsVisible = () => classIcons && store.labelsOn;
   let mapPlane = null;
   let mapTexture = null, mapMetaInfo = null;          // 底图贴图 + 铺设参数
   // 分层地表（客户端 tilemask-fp.sl 实时合成）：{layers: 合成参数, texs: {cm,tile,mask,hmap}}。
@@ -1818,6 +1820,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!force && (T === labelsTime || now - labelsWrittenMs < interval)) return;
     labelsWrittenMs = now;
     labelsTime = T;
+    const canonicalVehicles = store.playbackSession?.canonical?.dataset?.vehicles || [];
+    const classByAccount = new Map(canonicalVehicles.map((vehicle) => [vehicle.accountId, vehicle.tankClass]));
     const rows = V.map((v) => {
       const destroyed = deathAt(v, T);
       const current = hpAt(v, T);
@@ -1829,6 +1833,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const ghost = ghostByEid.get(v.def.eid);
       return {
         eid: v.def.eid, playerName: v.def.nickname || '', tankName: v.def.tank_name || '',
+        tankClass: classByAccount.get(v.def.account_id) || '',
         friendly, destroyed, lastKnown: false,
         hp: { current, pct, state: destroyed ? 'DESTROYED' : 'CURRENT' },
         reload: destroyed ? null : reloadStateAt(v.def.eid, T),
@@ -1851,7 +1856,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     for (const v of V) {
       const d = camera.position.distanceTo(v.group.position);
       v.labelAnchor.copy(v.group.position);
-      v.labelAnchor.y += Math.min(6, Math.max(3.25, d * 0.045));
+      // In symbol mode the icon replaces the hull at its projected position;
+      // ordinary labels keep their headroom above the visible vehicle model.
+      v.labelAnchor.y += classIconsVisible() ? 0.3 : Math.min(6, Math.max(3.25, d * 0.045));
     }
     updateLabelOcclusion();
     for (const v of V) {
@@ -1915,6 +1922,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       v.labelAnchor = new THREE.Vector3();
       scene.add(g);
       V.push(v);
+      setLowPoly(v, true);
     }
   }
 
@@ -2078,7 +2086,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             v.glbParts = collectGlbParts(inst, loaded.sd, mounted
               ? { turret_index: mounted.turret_index, gun_index: mounted.gun_index }
               : { turret_index: v.def.turret_index ?? null, gun_index: v.def.gun_index ?? null });
-            v.glb.visible = v.group.visible;
+            v.glb.visible = v.group.visible && !classIconsVisible();
             scene.add(v.glb);
           }
         }
@@ -2094,8 +2102,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 低模显隐（标签与作者标记环除外；GLB 根在 scene 上不经过 group）
   function setLowPoly(v, show) {
     for (const c of v.group.children) {
-      if (c.userData.keepWithGlb) continue;
-      c.visible = show;
+      c.visible = c.userData.keepWithGlb ? showMarkerStatus : show && !classIconsVisible();
     }
   }
 
@@ -2408,7 +2415,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     tex.needsUpdate = true;
     // 池复用：出生状态归位（透明度/尺寸/可见性由 updateTransients 逐帧驱动）
     sp.material.opacity = 1;
-    sp.visible = true;
+    sp.visible = showMarkerStatus;
     sp.scale.set(DMG_ASPECT, 1, 1);        // 实际尺寸每帧按距离设定（屏上占比恒定，见 updateTransients）
     sp.position.copy(v.group.position); sp.position.y += 3.2;
     labelScene.add(sp);
@@ -2476,6 +2483,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     for (let i = floatDmgs.length - 1; i >= 0; i--) {
       const f = floatDmgs[i];
+      f.sp.visible = showMarkerStatus;
       const k = (now - f.born) / (FLOAT_DMG_MS * FX_SCALE);
       if (k >= 1) {
         labelScene.remove(f.sp);
@@ -2707,7 +2715,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // （posAt 对越界时间钳位到最后采样，即阵亡点），与游戏内残骸留场行为一致
     const vis = visibleAt(v, T) || dead;
     v.group.visible = vis;
-    if (v.glb) v.glb.visible = vis;
+    if (v.glb) v.glb.visible = vis && !classIconsVisible();
     if (!vis) { v.wasDead = false; return; }
     posAt(v, T, tmpV);
     v.group.position.copy(tmpV);
@@ -3454,10 +3462,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
      * - `enabled:false` → 整层名牌隐藏（覆盖层上还有伤害飘字，它是战斗反馈而非名牌，
      *   关名牌时数字仍要可见——updateLabels 每帧也会重算同一条件）；
      * - `showPlayerName / showTankName / showHp / showReload` → 名牌内部的行开关。
+     * - `classIcons` → 使用 HTML 类型图标替换模型，保留事实 root 与拾取。
+     * - `showStatus` → 作者标记环 / 伤害飘字；不改血量、伤害或可见性事实。
      */
     setLabelPrefs: (prefs) => {
       const enabled = !prefs || prefs.enabled !== false;
       store.labelsOn = enabled;
+      classIcons = prefs?.classIcons === true;
+      showMarkerStatus = prefs?.showStatus !== false;
+      // Keep factual visibility and the raycast roots intact. Only artwork is
+      // replaced; projected icon buttons continue selecting the same entity.
+      for (const v of V) {
+        setLowPoly(v, !v.glb);
+        if (v.glb) v.glb.visible = v.group.visible && !classIconsVisible();
+      }
+      for (const effect of floatDmgs) effect.sp.visible = showMarkerStatus;
       setLabelPrefs(prefs || {});
       if (camera) updateLabels();
     },

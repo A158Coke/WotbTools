@@ -58,7 +58,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="doc-page" :class="{ 'has-toc': doc.toc.length > 1 }">
+  <div class="doc-page layout-wide" :class="{ 'has-toc': doc.toc.length > 1 }">
     <details v-if="doc.toc.length > 1" class="doc-toc-compact" data-testid="doc-toc-compact">
       <summary><ListTree :size="16" aria-hidden="true" />{{ $t('doc.toc') }}</summary>
       <!-- 点了某一章就收起目录，让正文回到视野 -->
@@ -87,16 +87,14 @@ onBeforeUnmount(() => {
 <style scoped>
 .doc-page {
   display: grid;
+  max-width: calc(var(--reading-measure) * 4 / 3 + var(--gutter) * 2);
   gap: var(--space-6);
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: var(--space-6) var(--gutter) var(--space-12);
   color: var(--color-text-secondary);
 }
 
-.doc-page.has-toc { grid-template-columns: minmax(0, 1fr) 260px; }
+.doc-page.has-toc { grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); }
 
-.doc-body { min-width: 0; font: var(--type-body); line-height: var(--line-height-prose); }
+.doc-body { min-width: 0; padding: var(--space-6); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); font: var(--type-body); line-height: var(--line-height-prose); overflow-wrap: anywhere; }
 .doc-body :deep(h1),
 .doc-body :deep(h2),
 .doc-body :deep(h3) { color: var(--color-text-primary); scroll-margin-top: calc(var(--header-h) + var(--space-4)); }
@@ -107,6 +105,13 @@ onBeforeUnmount(() => {
 .doc-body :deep(ul),
 .doc-body :deep(ol) { margin: var(--space-2) 0; }
 .doc-body :deep(a) { color: var(--color-accent-text); }
+.doc-body :deep(ul), .doc-body :deep(ol) { padding-inline-start: var(--space-6); }
+.doc-body :deep(blockquote) { margin: var(--space-4) 0; padding: var(--space-2) var(--space-4); border-inline-start: var(--space-1) solid var(--color-border-strong); background: var(--color-surface-2); }
+.doc-body :deep(pre) { max-width: 100%; overflow-x: auto; margin: var(--space-4) 0; padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-2); }
+.doc-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; margin: var(--space-4) 0; border-collapse: collapse; }
+.doc-body :deep(th), .doc-body :deep(td) { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); text-align: start; }
+.doc-body :deep(th) { color: var(--color-text-primary); background: var(--color-surface-2); }
+.doc-body :deep(img) { max-width: 100%; height: auto; }
 .doc-body :deep(code) { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
 .doc-body :deep(hr) { margin: var(--space-6) 0; border: 0; border-top: 1px solid var(--color-border-subtle); }
 
@@ -124,7 +129,8 @@ onBeforeUnmount(() => {
 .doc-toc-list { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
 .doc-toc-list a {
   display: block;
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-2);
+  min-height: var(--control-h-md);
   border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
   font: var(--type-caption);
@@ -180,4 +186,5 @@ onBeforeUnmount(() => {
   }
   .doc-toc-compact .doc-toc-list { max-height: 50dvh; margin-top: var(--space-2); overflow-y: auto; }
 }
+@media (width < 768px) { .doc-body { padding: var(--space-4); } }
 </style>

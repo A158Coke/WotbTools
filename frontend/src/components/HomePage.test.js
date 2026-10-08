@@ -87,7 +87,7 @@ describe('HomePage information architecture — single replay entry point', () =
   it('feature card 01 CTA is Explore Battle Analysis, not Upload Replay', () => {
     const wrapper = mountPage()
     const action = wrapper.find('.feature-primary .feature-action')
-    expect(action.text()).toBe('home.replayParse →')
+    expect(action.text()).toBe('home.replayParse')
     expect(wrapper.find('.feature-primary').attributes('href')).toBe('/?view=replay')
     wrapper.unmount()
   })
@@ -100,14 +100,14 @@ describe('HomePage information architecture — single replay entry point', () =
     wrapper.unmount()
   })
 
-  it('shows Recent Analysis empty state with a contextual upload CTA', () => {
+  it('shows an analysis introduction without claiming a nonexistent recent history', () => {
     const wrapper = mountPage()
-    const panel = wrapper.find('.recent-panel')
+    const panel = wrapper.find('.analysis-panel')
     expect(panel.exists()).toBe(true)
-    expect(panel.find('.recent-title').text()).toBe('home.recentAnalysis')
-    expect(panel.find('.recent-empty-title').text()).toBe('home.recentAnalysisEmptyTitle')
-    expect(panel.find('.recent-empty-desc').text()).toBe('home.recentAnalysisEmptyDesc')
-    const cta = panel.find('.mini-action.primary')
+    expect(panel.find('.analysis-title').text()).toBe('home.analysisTitle')
+    expect(panel.find('.analysis-desc').text()).toBe('home.analysisDesc')
+    expect(wrapper.text()).not.toContain('home.recentAnalysisEmptyTitle')
+    const cta = panel.find('.mini-action')
     expect(cta.text()).toBe('home.uploadReplay')
     expect(cta.attributes('href')).toBe('/?view=replay')
     wrapper.unmount()
