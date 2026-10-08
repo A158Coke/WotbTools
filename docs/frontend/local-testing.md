@@ -76,7 +76,7 @@ npm run dev
 
    | 参数 | 作用 |
    |---|---|
-   | `?admin=1` | dev-only 旁路（已入库）：把 `wotbtools-admin` / `HoF-admin` 视为已持有（仅前端可见性；生产构建忽略） |
+   | `?admin=1` | dev-only 旁路（已入库）：把 `wotbtools-admin` / `HoF-admin` 视为已持有（仅前端可见性；生产构建忽略）。**约定写法**——实际触发条件是 dev 构建下 URL 存在 `admin` 参数，value 当前不参与判定 |
    | `?view=<name>` | 直达视图（如 `agent-armor`、`agent-replay`） |
    | `?assets=<URL>` | 覆盖资产面；**非空值会持久化到 localStorage 并盖住 `.env.local`**；回默认要带一次空 `?assets=` |
    | `?debug` | 场景调试探针（见 §6） |
@@ -87,15 +87,16 @@ npm run dev
 ## 4. 本机 admin 旁路（dev-gated，已入库）
 
 **背景**：本地账号通常没有 `wotbtools-admin` / `HoF-admin` realm 角色，真正管理功能的入口与操作
-会被角色边界挡下。dev 构建下 URL 带 `?admin=1` 即把这两个角色视为已持有——这是
-`frontend/src/composables/useAuth.js` 里**已入库**的 dev-gated 实现（`DEV_ADMIN_ROLES`），不是本机补丁，
-也不是可回退的临时改动。
+会被角色边界挡下。dev 构建下 URL **存在 `admin` query 参数**即把这两个角色视为已持有（约定写法
+`?admin=1`；当前实现只判断参数存在，`?admin=0` / `?admin=` / `?admin` 同样生效，value 不参与判定）
+——这是 `frontend/src/composables/useAuth.js` 里**已入库**的 dev-gated 实现（`DEV_ADMIN_ROLES`），
+不是本机补丁，也不是可回退的临时改动。
 
 管理功能**只认角色**，URL 不得成为权限来源。Agent 深链不再有 admin route gate：匿名保留目标并显示 Login Gate，普通登录用户可用 3D / shots / armor。`?admin=1` 不提供登录态，也不能绕过这些认证门禁；`tournament-admin` 不在覆盖之列（`tournamentAdminAllowed` 只认真实 token claims）。
 
-- 生效条件：`import.meta.env.DEV` 且 URL 显式带参数（模块加载时读取，不持久化，每次都要带）；
-  生产构建该表达式在 build 期折叠为恒 false、参数被整段消除（无产品行为变化）；vitest 环境无
-  query（jsdom 默认 URL）同样 false，既有门禁断言不受影响。
+- 生效条件：`import.meta.env.DEV` 且 URL 存在 `admin` 参数（实现为 `.has('admin')`，value 不参与
+  判定；模块加载时读取，不持久化，每次都要带）；生产构建该表达式在 build 期折叠为恒 false、参数
+  被整段消除（无产品行为变化）；vitest 环境无 query（jsdom 默认 URL）同样 false，既有门禁断言不受影响。
 - 覆盖范围：仅 `hasRole()` 的 `wotbtools-admin` / `HoF-admin` 两个角色——侧边栏 / 更多菜单的管理
   入口因此可见（`isHofAdmin` 含 `isAdmin` 继承）。
 - 只改**前端可见性**：后端仍按真实 token 鉴权，越权调用照样 401/403（见 §5）。
