@@ -49,6 +49,9 @@ const TRACK_R = { c: [1.6, 0, 0.35], s: [0.6, 5.0, 0.7] }
 /** 装甲模型枢轴（= tank JSON model_origins 同值；装甲板按模块局部坐标存放） */
 export const FIXTURE_ORIGINS = { track: [0, 0, 0], turret: [0, -0.2, 1.2] }
 const GUN_ORIGIN = [0, 0, 0.7]   // gun 枢轴 = track + turret + gun_origin
+/** 间隙甲屏幕板（turret 板 2，12mm）：悬在车体右前方之外，视线穿过它之后是空域，
+ *  用来构造「整条射线只碰到间隙甲、没触达主装甲」的点击（BlitzKit 语义下不构成判定）。 */
+const SCREEN = { c: [2.6, 3.2, 1.35], s: [1.6, 0.10, 1.7] }
 
 function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
 
@@ -80,6 +83,7 @@ function armorParts() {
   return [
     { node: 'hull_armor_1', mesh: 'hull_armor_1', geo: local(HULL, FIXTURE_ORIGINS.track), wrap: false },
     { node: 'turret_01_armor_1', mesh: 'turret_01_armor_1', geo: local(TURRET, tPivot), wrap: false },
+    { node: 'turret_01_armor_2', mesh: 'turret_01_armor_2', geo: local(SCREEN, tPivot), wrap: false },
     { node: 'gun_01_armor_1', mesh: 'gun_01_armor_1', geo: local(BARREL, gPivot), wrap: false },
   ]
 }
@@ -179,7 +183,8 @@ export const FIXTURE_TANK_DATA = {
   visual_model_url: `/glb/${FIXTURE_TANK_ID}/visual.glb`,
   armor_model: {
     hull: { plates: { 1: 100 }, spaced: [] },
-    turret: { plates: { 1: 150 }, spaced: [] },
+    // 板 2 = 间隙甲屏幕板（plate 12mm）：与 configs[0].turret_spaced 同步，retag 后归 spaced
+    turret: { plates: { 1: 150, 2: 12 }, spaced: [2] },
     gun: { plates: { 1: 200, gun: 60 }, spaced: [] },
     chassis: { left_track: 30, right_track: 30 },
   },
@@ -194,7 +199,7 @@ export const FIXTURE_TANK_DATA = {
     gun_index: 0,
     gun_thickness: 60,
     gun_origin: GUN_ORIGIN,
-    turret_spaced: [],
+    turret_spaced: [2],
     gun_spaced: [],
     // 俯仰限位（aimFromDrag 无 null 保护：真实配置必带；lower=-max/upper=-min 口径）
     pitch_limits: { min: -8, max: 20, transition: 20 },

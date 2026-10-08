@@ -1,7 +1,7 @@
 // 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测 12 例逐例对齐。
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
-import { calculate, ArmorSection } from './penetration.js'
+import { calculate, isPrimary, ArmorSection } from './penetration.js'
 
 function hit(section, thickness, point, extra = {}) {
   return {
@@ -156,5 +156,25 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(r2.result).toBe('PENETRATION')
     const r3 = calculate(req('heat', 100.0, 100.0, [hit(ArmorSection.HULL, 108.0, [0, 0, 0])], { calibrated_shells: true }))
     expect(r3.result).toBe('BLOCKED')
+  })
+})
+
+// 点击判定的触发面（查看器相机点击路径依赖）：射线未触达 Primary 时，末层就是间隙甲/外部模块
+// 自身 —— 末层规则照样给出 PENETRATION + 全额伤害，所以这种栈必须由查看器拦下
+//（BlitzKit 的 shoot() 也只挂在 Primary 网格上，不由它们触发）。
+describe('isPrimary（Primary = 击穿判定的触发面；spaced/外部模块不是）', () => {
+  it('主装甲三类为 Primary，间隙甲与外部模块不是', () => {
+    expect(isPrimary(ArmorSection.HULL)).toBe(true)
+    expect(isPrimary(ArmorSection.TURRET)).toBe(true)
+    expect(isPrimary(ArmorSection.GUN)).toBe(true)
+    expect(isPrimary(ArmorSection.SPACED)).toBe(false)
+    expect(isPrimary(ArmorSection.CHASSIS)).toBe(false)
+    expect(isPrimary(ArmorSection.GUN_BARREL)).toBe(false)
+  })
+
+  it('spaced-only 栈按末层规则给出 PENETRATION——正是查看器要拦下的形态', () => {
+    const r = calculate(req('ap', 300.0, 100.0, [hit(ArmorSection.SPACED, 10.0, [0, 0, 0])]))
+    expect(r.result).toBe('PENETRATION')
+    expect(r.damage).toBe(400.0)
   })
 })
