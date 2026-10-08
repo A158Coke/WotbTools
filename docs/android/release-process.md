@@ -41,12 +41,17 @@ TX1 出口公网带宽有限且会被 15MB 的 APK 下载打满，stage 阶段�
 上传到清华副本（实测 15MB ≈ 75–108s），随后 TX1/TX2 各自从分享直链**拉取**（实测
 0.70s / 0.81s，≈19–22 MB/s），取代旧的 `appleboy/scp-action` 直推（drone-scp 的 SFTP
 单流，美区 runner → 境内 VPS 实测 12.6–13.8 KB/s，15MB 要 18–21 分钟 × 2 台，占 stage
-job 约 89%）。拉取侧三道边界：
+job 约 89%）。拉取侧四道边界：
 ① 就地 `sha256sum -c` 比对 staged SHA，不符即删临时文件并 fail-closed——绝不把坏字节
 落成 origin（旧 scp 直推上传后不校验 origin 字节，这是顺带补上的缺口）；② 先写
-`*.partial.<pid>` 再同目录 `mv` 原子落位，nginx 永不读到半截文件（旧 scp 中断会留下半截
-文件并被 nginx 服务）；③ 触发条件仍是 origin `apk_absent`（幂等：equal 跳过、清华
-`replace=1` 覆盖自愈）。
+`*.partial.<pid>` 再同目录 **hard link（`ln`）原子 no-clobber 落位**：nginx 永不读到半截
+文件，且目标已被并发写入时 `ln` 原子失败、绝不覆盖（旧 scp 中断会留下半截文件并被
+nginx 服务，且直推是覆盖写）；③ `ln` 失败即比对目标现有 SHA-256——与 staged SHA 相同视为
+「并发进程已放入同一份 immutable 字节」（视为已完成），不同则打印
+`immutable origin conflict … refusing to overwrite` 并 fail-closed；④ 触发条件仍是 origin
+`apk_absent`（幂等：equal 跳过、清华 `replace=1` 覆盖自愈）。
+②③ 一起覆盖了 classify 快照与落位之间窗口内的第三方写入（manual SSH / 恢复脚本等）：
+「classify 发现 absent」不再是覆盖许可，immutability 由落位本身保证。
 
 **Origin 与分发副本是两个身份，判定源必须分开：**
 

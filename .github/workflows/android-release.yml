@@ -526,7 +526,8 @@ jobs:
       # TX1 Caddy 已把 /download/android/*.apk 302 到清华云盘目录分享直链
       # （/download/android/version.json 与 *.staging.json 不在重定向范围内，仍是源站服务）。
       # 清华副本的两种角色：① 公网下载直链目标；② **origin 的冷启动源**（下方 seed 从这里拉）。
-      # 它不是 origin：immutable 冲突判定仍由上一跳 SSH 直查 TX1/TX2 的字节决定，语义不变。
+      # 它不是 origin：immutable 冲突判定仍由上一跳 SSH 直查 TX1/TX2 的字节决定；seed 落位
+      # 本身也是 no-clobber（见下），两层叠加后"不覆盖 immutable APK"在并发窗口内同样成立。
       # 本步骤在 absent（全新发布）与 equal（重跑/副本损坏）两种 origin 状态下都执行：
       # replace=1 覆盖同名文件本身就是修复动作；随后 seed 若拉到坏字节会被就地 SHA 校验拦下
       #（fail-closed），"Verify production APK" 再顺着 302 对公网 URL 做全链路 SHA 兜底。
@@ -586,8 +587,10 @@ jobs:
       # 安全边界（三道）：
       #   ① 拉取后就地 `sha256sum -c`：不符即删临时文件并 fail-closed——绝不把坏字节落成
       #      origin（旧 scp 直推在上传后**不校验** origin 字节，这是顺带补上的缺口）；
-      #   ② 先写 `*.partial.<pid>` 再同目录 `mv`：原子落位，nginx 永不读到半截文件
-      #     （旧 scp 中断会留下半截文件并被 nginx 服务）；
+      #   ② 先写 `*.partial.<pid>` 再同目录 hard-link 落位（`ln`）：原子且 **no-clobber**——
+      #     nginx 永不读到半截文件，且 DEST 已被并发进程写入时 link 失败、绝不覆盖
+      #     immutable 字节（同字节视为"已完成"，异字节 fail-closed；旧 scp 中断会留下
+      #     半截文件并被 nginx 服务，且直推是覆盖写）；
       #   ③ 条件仍是 origin `apk_absent` 才 seed：幂等（equal 跳过；清华 replace=1 覆盖自愈）。
       # 实测拉取 ~0.7–0.8s；日志打印 size/time/speed，供发版后核对链路是否退化。
       - name: Seed APK to TX from Tsinghua replica (pull; SHA-256 verified, atomic)
@@ -612,8 +615,23 @@ jobs:
             curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 300 -o "$TMP" -w "replica pull: %{size_download} bytes in %{time_total}s (%{speed_download} B/s)" "$SHARE_DIRECT"
             echo
             echo "$EXPECT_SHA  $TMP" | sha256sum -c - || { rm -f "$TMP"; echo "replica bytes mismatch; refused to seed origin" >&2; exit 1; }
-            mv -f "$TMP" "$DEST"             # 同目录 rename：原子落位
-            chmod 644 "$DEST"
+            # 原子 no-clobber 落位（同目录 hard link）：DEST 不存在 → 完整文件瞬间出现；
+            # DEST 已被并发写入 → link 原子失败，绝不覆盖 immutable 字节（classify 的
+            # apk_absent 是快照，此窗口内可能有 manual SSH / 恢复脚本等第三方写入）。
+            if ln "$TMP" "$DEST"; then
+              rm -f "$TMP"
+              chmod 644 "$DEST"
+            else
+              EXISTING_SHA="$(sha256sum "$DEST" 2>/dev/null | awk '{print $1}' || true)"
+              rm -f "$TMP"
+              if [ "$EXISTING_SHA" = "$EXPECT_SHA" ]; then
+                echo "origin appeared concurrently but holds the expected immutable bytes: $DEST"
+                chmod 644 "$DEST"
+              else
+                echo "immutable origin conflict at $DEST (existing=${EXISTING_SHA:-<unreadable>} expected=$EXPECT_SHA); refusing to overwrite" >&2
+                exit 1
+              fi
+            fi
             sha256sum "$DEST"
 
       - name: Seed APK to TX2 from Tsinghua replica (pull; SHA-256 verified, atomic)
@@ -638,8 +656,23 @@ jobs:
             curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 300 -o "$TMP" -w "replica pull: %{size_download} bytes in %{time_total}s (%{speed_download} B/s)" "$SHARE_DIRECT"
             echo
             echo "$EXPECT_SHA  $TMP" | sha256sum -c - || { rm -f "$TMP"; echo "replica bytes mismatch; refused to seed origin" >&2; exit 1; }
-            mv -f "$TMP" "$DEST"             # 同目录 rename：原子落位
-            chmod 644 "$DEST"
+            # 原子 no-clobber 落位（同目录 hard link）：DEST 不存在 → 完整文件瞬间出现；
+            # DEST 已被并发写入 → link 原子失败，绝不覆盖 immutable 字节（classify 的
+            # apk_absent 是快照，此窗口内可能有 manual SSH / 恢复脚本等第三方写入）。
+            if ln "$TMP" "$DEST"; then
+              rm -f "$TMP"
+              chmod 644 "$DEST"
+            else
+              EXISTING_SHA="$(sha256sum "$DEST" 2>/dev/null | awk '{print $1}' || true)"
+              rm -f "$TMP"
+              if [ "$EXISTING_SHA" = "$EXPECT_SHA" ]; then
+                echo "origin appeared concurrently but holds the expected immutable bytes: $DEST"
+                chmod 644 "$DEST"
+              else
+                echo "immutable origin conflict at $DEST (existing=${EXISTING_SHA:-<unreadable>} expected=$EXPECT_SHA); refusing to overwrite" >&2
+                exit 1
+              fi
+            fi
             sha256sum "$DEST"
 
       - name: Verify production APK (HTTP 200 + non-empty + SHA matches)
