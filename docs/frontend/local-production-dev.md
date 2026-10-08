@@ -30,9 +30,9 @@
    VITE_ASSET_BASE_URL=http://127.0.0.1:8123
    ```
 
-3. `npm run dev`，打开 `http://localhost:5173/?view=agent-replay&admin=1`
-   （`agent-replay` 等管理视图的可达性由角色决定；本机 `?admin=1` 旁路把 admin 角色视为已持有，
-   见 [`local-testing.md`](./local-testing.md) §4）。
+3. `npm run dev`，打开 `http://localhost:5173/?view=agent-replay`（回放能力只需登录）。
+   真管理入口（`admin-users` / `hof-admin`）按需加 `&admin=1`：管理视图可达性由角色决定，
+   dev 构建下该参数把 admin 角色视为已持有，见 [`local-testing.md`](./local-testing.md) §4。
 
 优先级与坑：`?assets=<URL>` > `localStorage.wotb_asset_base` > `VITE_ASSET_BASE_URL`。
 在 URL 上带过一次非空 `?assets=` 会持久化到 localStorage 并**盖住** `.env.local`；要回到默认，

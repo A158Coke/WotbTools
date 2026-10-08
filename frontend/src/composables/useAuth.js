@@ -430,14 +430,15 @@ function offlineKnown() {
 }
 
 /**
- * ⚠️ [本机测试旁路·提交前请还原] `git checkout -- frontend/src/composables/useAuth.js`
- *
- * 本地账号没有 `wotbtools-admin` / `HoF-admin` realm 角色时，admin 视图会被
- * `viewFromRoute` 收敛回默认视图、导航里也不出现入口。dev 构建下显式带
- * `?admin=1` 即把这两个角色视为已持有：
- *  - 生产构建 `import.meta.env.DEV === false` → 恒为 false，门禁原样生效（无产品行为变化）；
+ * dev-gated 本机旁路（**已入库**的正式实现，说明见 docs/frontend/local-testing.md §4）：
+ * dev 构建且 URL **存在 `admin` query 参数**时把 `wotbtools-admin` / `HoF-admin` 视为已持有
+ * （约定写法 `?admin=1`；当前实现只看参数存在，value 不参与判定）——本地账号通常没有这两个
+ * realm 角色，管理入口（侧边栏 / 更多菜单）因而不可见。
+ *  - 生产构建 `import.meta.env.DEV === false` → 表达式在 build 期折叠为 false，参数整段消除；
+ *  - dev 下也必须显式带上该参数（模块加载时读取，不持久化）；
  *  - vitest 环境无 query（jsdom 默认 URL）→ 同样为 false，角色断言不受影响。
- * 它只改**前端可见性**：后端仍按真实 token 鉴权，越权调用照样 401/403。
+ * 只改**前端可见性**：后端仍按真实 token 鉴权，越权调用照样 401/403；`tournament-admin`
+ * 不在覆盖之列（`tournamentAdminAllowed` 只认真实 token claims）。
  */
 const DEV_ADMIN_ROLES = import.meta.env.DEV
   && typeof window !== 'undefined'
