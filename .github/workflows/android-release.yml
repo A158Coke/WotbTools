@@ -2,7 +2,7 @@ name: Release / Android
 # 两阶段发布协议（见 docs/android/release-process.md）：
 #
 #   stage   —— main 合并后自动跑（也可 workflow_dispatch 重跑/恢复）：contract → 构建/签名 →
-#              证书校验 → immutable APK 上传（TX1/TX2 + 清华网盘公网下载直链）→ 线上 APK 可访问 + SHA 核验 → tag →
+#              证书校验 → 清华副本上传 + immutable APK seed（TX1/TX2 从副本拉取，逐跳 SHA-256）→ 线上 APK 可访问 + SHA 核验 → tag →
 #              写并上传 **staging evidence**。**绝不**写 production version.json。
 #   publish —— 真机 A14 验证通过后由 workflow_dispatch(mode=publish, version=X) 手工续跑：
 #              候选身份由**显式版本 X**决定（X 的 immutable tag target = staged 源码），
@@ -451,7 +451,7 @@ jobs:
       # 副本损坏时公网 URL 会把 rerun 误判成 apk_conflict 直接失败，而真正能修复副本的
       # 清华覆盖上传又被同一个失败挡在后面——不可自愈。所以这里走 SSH 直查两台 origin。
       # 探测协议区分「文件不存在」（远端显式回答 __ABSENT__）与「探测失败」（ssh 非零 /
-      # 输出异常 → 本步骤失败）：绝不把探测失败当成 absent，否则 scp 会覆盖一个
+      # 输出异常 → 本步骤失败）：绝不把探测失败当成 absent，否则 seed 会覆盖一个
       # SHA 不符的 origin 文件、销毁 immutable 冲突证据。
       - name: Classify origin APK on TX1/TX2 (SSH; public URL is the drive replica)
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -517,58 +517,21 @@ jobs:
           echo "tx1State=$TX1_STATE" >> "$GITHUB_OUTPUT"
           echo "tx2State=$TX2_STATE" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APK to TX (bind-mount 目录)
-        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx1State == 'apk_absent'
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: release-staging/${{ steps.artifact.outputs.apkName }}
-          target: /opt/wotb-tx/android-release
-          strip_components: 1
-
-      - name: Ensure APK readable by nginx
-        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx1State == 'apk_absent'
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          script: chmod 644 /opt/wotb-tx/android-release/${{ steps.artifact.outputs.apkName }}
-
-      - name: Upload APK to TX2 public frontend runtime
-        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx2State == 'apk_absent'
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX2_VPS_HOST }}
-          username: ${{ secrets.TX2_VPS_USER }}
-          port: ${{ secrets.TX2_VPS_PORT }}
-          key: ${{ secrets.TX2_VPS_SSH_KEY }}
-          source: release-staging/${{ steps.artifact.outputs.apkName }}
-          target: /opt/wotb-tx2/runtime-content/android-release
-          strip_components: 1
-
-      - name: Ensure APK readable by TX2 nginx
-        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx2State == 'apk_absent'
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.TX2_VPS_HOST }}
-          username: ${{ secrets.TX2_VPS_USER }}
-          port: ${{ secrets.TX2_VPS_PORT }}
-          key: ${{ secrets.TX2_VPS_SSH_KEY }}
-          script: chmod 644 /opt/wotb-tx2/runtime-content/android-release/${{ steps.artifact.outputs.apkName }}
-
-      # 公网下载卸载 + 分发副本自愈：TX1 出口公网带宽只有 5Mbps 且被 15MB APK 下载打满，
+      # —— APK 落地策略（2026-10-08 优化）：跨洋只发生一次，两台 origin 从清华副本**拉取** ——
+      # 旧实现用 appleboy/scp-action 直推两台（drone-scp 的 SFTP 单流）：美区 runner → 境内
+      # VPS 实测 12.6–13.8 KB/s，15MB 要 18–21 分钟 × 2 台，占 stage job 的 89%。同一份字节
+      # 走清华 HTTP 只要 1–2 分钟，而 TX1/TX2 从清华拉取实测 0.70s / 0.81s（21.8 / 18.7 MB/s）。
+      #
+      # 公网下载卸载（副本自愈）：TX1 出口公网带宽只有 5Mbps 且被 15MB APK 下载打满，
       # TX1 Caddy 已把 /download/android/*.apk 302 到清华云盘目录分享直链
       # （/download/android/version.json 与 *.staging.json 不在重定向范围内，仍是源站服务）。
-      # 网盘只是**分发副本**，不参与 origin 的 immutable conflict 判定（那是上一步 SSH
-      # 直查 TX1/TX2 的职责）；因此本步骤在 absent（全新发布）与 equal（重跑/副本损坏）
-      # 两种 origin 状态下都执行：replace=1 覆盖同名文件本身就是修复动作，随后的
-      # "Verify production APK" 顺着 302 对公网 URL 做全链路 SHA 校验兜底。
-      - name: Upload APK to Tsinghua Cloud (public download offload)
+      # 清华副本的两种角色：① 公网下载直链目标；② **origin 的冷启动源**（下方 seed 从这里拉）。
+      # 它不是 origin：immutable 冲突判定仍由上一跳 SSH 直查 TX1/TX2 的字节决定，语义不变。
+      # 本步骤在 absent（全新发布）与 equal（重跑/副本损坏）两种 origin 状态下都执行：
+      # replace=1 覆盖同名文件本身就是修复动作；随后 seed 若拉到坏字节会被就地 SHA 校验拦下
+      #（fail-closed），"Verify production APK" 再顺着 302 对公网 URL 做全链路 SHA 兜底。
+      # **顺序要求**：本步骤必须在两条 seed 之前——它们以本副本为源。
+      - name: Upload APK to Tsinghua Cloud (public download offload + origin seed source)
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         env:
@@ -618,6 +581,66 @@ jobs:
           done
           echo "::error::Tsinghua Cloud offload verification failed after 5 attempts; public /download/android/*.apk redirects would hit a missing drive object." >&2
           exit 1
+
+      # —— 两台 origin 的 seed：从清华副本拉取 + 就地 SHA-256 校验 + 原子落位 ——
+      # 安全边界（三道）：
+      #   ① 拉取后就地 `sha256sum -c`：不符即删临时文件并 fail-closed——绝不把坏字节落成
+      #      origin（旧 scp 直推在上传后**不校验** origin 字节，这是顺带补上的缺口）；
+      #   ② 先写 `*.partial.<pid>` 再同目录 `mv`：原子落位，nginx 永不读到半截文件
+      #     （旧 scp 中断会留下半截文件并被 nginx 服务）；
+      #   ③ 条件仍是 origin `apk_absent` 才 seed：幂等（equal 跳过；清华 replace=1 覆盖自愈）。
+      # 实测拉取 ~0.7–0.8s；日志打印 size/time/speed，供发版后核对链路是否退化。
+      - name: Seed APK to TX from Tsinghua replica (pull; SHA-256 verified, atomic)
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx1State == 'apk_absent'
+        uses: appleboy/ssh-action@v1
+        env:
+          APK_NAME: ${{ steps.artifact.outputs.apkName }}
+          EXPECT_SHA: ${{ steps.artifact.outputs.sha256 }}
+          SHARE_DIRECT: "https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/${{ steps.artifact.outputs.apkName }}&dl=1"
+          DEST_DIR: /opt/wotb-tx/android-release
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          envs: APK_NAME,EXPECT_SHA,SHARE_DIRECT,DEST_DIR
+          script: |
+            set -euo pipefail
+            DEST="$DEST_DIR/$APK_NAME"
+            rm -f "$DEST".partial.*          # 清上次中断留下的半截文件
+            TMP="$DEST.partial.$$"
+            curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 300 -o "$TMP" -w "replica pull: %{size_download} bytes in %{time_total}s (%{speed_download} B/s)" "$SHARE_DIRECT"
+            echo
+            echo "$EXPECT_SHA  $TMP" | sha256sum -c - || { rm -f "$TMP"; echo "replica bytes mismatch; refused to seed origin" >&2; exit 1; }
+            mv -f "$TMP" "$DEST"             # 同目录 rename：原子落位
+            chmod 644 "$DEST"
+            sha256sum "$DEST"
+
+      - name: Seed APK to TX2 from Tsinghua replica (pull; SHA-256 verified, atomic)
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx2State == 'apk_absent'
+        uses: appleboy/ssh-action@v1
+        env:
+          APK_NAME: ${{ steps.artifact.outputs.apkName }}
+          EXPECT_SHA: ${{ steps.artifact.outputs.sha256 }}
+          SHARE_DIRECT: "https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/${{ steps.artifact.outputs.apkName }}&dl=1"
+          DEST_DIR: /opt/wotb-tx2/runtime-content/android-release
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          envs: APK_NAME,EXPECT_SHA,SHARE_DIRECT,DEST_DIR
+          script: |
+            set -euo pipefail
+            DEST="$DEST_DIR/$APK_NAME"
+            rm -f "$DEST".partial.*          # 清上次中断留下的半截文件
+            TMP="$DEST.partial.$$"
+            curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 300 -o "$TMP" -w "replica pull: %{size_download} bytes in %{time_total}s (%{speed_download} B/s)" "$SHARE_DIRECT"
+            echo
+            echo "$EXPECT_SHA  $TMP" | sha256sum -c - || { rm -f "$TMP"; echo "replica bytes mismatch; refused to seed origin" >&2; exit 1; }
+            mv -f "$TMP" "$DEST"             # 同目录 rename：原子落位
+            chmod 644 "$DEST"
+            sha256sum "$DEST"
 
       - name: Verify production APK (HTTP 200 + non-empty + SHA matches)
         if: steps.preflight.outputs.releaseAction == 'publish'
