@@ -32,7 +32,7 @@ npm run dev
 | 回放解析 | **本机** WASM（Worker 优先） | 文件不出本机 |
 | Agent 引擎 | `common/assets/wasm/<ref>/`（gitignored） | `<ref>` = `deploy/agent/source.json` 的 `.ref`；dev 下由 `vite.config.js` 的 `local-dev-public-wasm-as-module` 中间件按 `/wasm/<ref>/…` 伺服 |
 | 地图 / 车模 / 坦克数据 / 封面 | **Agent 仓** `release/asset_pack/`（gitignored，约 2.8GB） | 本机静态服务 8123 提供；前端经 `assetProvider` + `VITE_ASSET_BASE_URL` 取 |
-| admin 视图可见性 | 本机旁路（**未提交**） | `?admin=1`（把 admin 角色视为已持有），见 §4 |
+| admin 视图可见性 | dev-gated 旁路（**已入库**） | `?admin=1`（dev 构建把 admin 角色视为已持有），见 §4 |
 | 后端 API / 登录 | 生产（或本机 8087 后端） | 按真实 Keycloak realm 角色鉴权，旁路绕不过，见 §5 |
 
 ## 2. 一次性准备
@@ -53,7 +53,7 @@ npm run dev
    ```
 
    改后必须**重启 dev server**（`import.meta.env.*` 在 transform 时内联，非运行时读取）。
-5. 仅调试真正管理入口时按 §4 使用可选的本机旁路；回放能力不需要该补丁。
+5. 仅调试真正管理入口时按 §4 带 `?admin=1`；回放能力不需要它。
 
 ## 3. 每次测试的启动
 
@@ -76,7 +76,7 @@ npm run dev
 
    | 参数 | 作用 |
    |---|---|
-   | `?admin=1` | 本机旁路：把 `wotbtools-admin` / `HoF-admin` 视为已持有（仅前端可见性） |
+   | `?admin=1` | dev-only 旁路（已入库）：把 `wotbtools-admin` / `HoF-admin` 视为已持有（仅前端可见性；生产构建忽略） |
    | `?view=<name>` | 直达视图（如 `agent-armor`、`agent-replay`） |
    | `?assets=<URL>` | 覆盖资产面；**非空值会持久化到 localStorage 并盖住 `.env.local`**；回默认要带一次空 `?assets=` |
    | `?debug` | 场景调试探针（见 §6） |
@@ -84,20 +84,21 @@ npm run dev
 4. Keycloak：`http://localhost:5173/*` 必须在生产 client `wotbtools-web` 的 Redirect URIs 里，
    否则登录回跳失败。
 
-## 4. 本机 admin 旁路（一个未提交改动，**永不提交**）
+## 4. 本机 admin 旁路（dev-gated，已入库）
 
 **背景**：本地账号通常没有 `wotbtools-admin` / `HoF-admin` realm 角色，真正管理功能的入口与操作
-会被角色边界挡下——本机用一份**不提交的**补丁把这两个角色视为已持有（URL 带 `?admin=1`），补丁全文见附录 A。
+会被角色边界挡下。dev 构建下 URL 带 `?admin=1` 即把这两个角色视为已持有——这是
+`frontend/src/composables/useAuth.js` 里**已入库**的 dev-gated 实现（`DEV_ADMIN_ROLES`），不是本机补丁，
+也不是可回退的临时改动。
 
-管理功能**只认角色**，URL 不得成为权限来源。Agent 深链不再有 admin route gate：匿名保留目标并显示 Login Gate，普通登录用户可用 3D / shots / armor。`?admin=1` 不提供登录态，也不能绕过这些认证门禁。
+管理功能**只认角色**，URL 不得成为权限来源。Agent 深链不再有 admin route gate：匿名保留目标并显示 Login Gate，普通登录用户可用 3D / shots / armor。`?admin=1` 不提供登录态，也不能绕过这些认证门禁；`tournament-admin` 不在覆盖之列（`tournamentAdminAllowed` 只认真实 token claims）。
 
-- 生效条件：`import.meta.env.DEV` 且 URL 显式带参数；生产构建恒 false（无产品行为变化），
-  vitest 环境同样 false（既有门禁断言不受影响）。
+- 生效条件：`import.meta.env.DEV` 且 URL 显式带参数（模块加载时读取，不持久化，每次都要带）；
+  生产构建该表达式在 build 期折叠为恒 false、参数被整段消除（无产品行为变化）；vitest 环境无
+  query（jsdom 默认 URL）同样 false，既有门禁断言不受影响。
+- 覆盖范围：仅 `hasRole()` 的 `wotbtools-admin` / `HoF-admin` 两个角色——侧边栏 / 更多菜单的管理
+  入口因此可见（`isHofAdmin` 含 `isAdmin` 继承）。
 - 只改**前端可见性**：后端仍按真实 token 鉴权，越权调用照样 401/403（见 §5）。
-- **永远不要提交这份本机补丁**：提交其它工作时只 stage 目标改动；`git status` 里对应的
-  `M` 是预期状态，不要"顺手清理"。误清后用 `git apply <patch>`（附录 A）恢复。
-- 落地到 main 的正路（若要做）：改成 dev-gated 的正式实现，或按实际实现修正文档引用——
-  不要把这份补丁当产品交付。
 
 ## 5. 能力分层：本地能全用什么，什么要真角色
 
@@ -157,47 +158,5 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 
 - **视觉验收归用户**：agent 不驱动浏览器看 3D 画面、不以截图作验收证据；本 runbook 的探针都是
   协议/控制台级。见 [`../../.agents/AGENTS.md`](../../.agents/AGENTS.md) §视觉验证归属。
-- **不提交**：本机旁路（§4）、`common/assets/wasm/`、Agent 仓 `release/asset_pack/`。
+- **不提交**：`common/assets/wasm/`、Agent 仓 `release/asset_pack/`。
 - **生产远端模式**（`dev:production-remote`）只使用明确获准的账号与数据，不上传测试或敏感数据。
-
-## 附录 A：本机 admin 旁路补丁（不提交）
-
-只有 `useAuth.js` 一处：`?admin=1` 把两个 admin 角色视为已持有，仅供管理入口调试。
-`navigation.js` 不参与旁路，也没有 Agent admin route gate；navigation tests 锁定 Agent 深链对所有人解析。
-
-恢复方式（本机保存的副本：`WotbTools-local-dev-bypass-2026-10-03.patch`，仓库外；副本里还带着
-`navigation.js` 那段 hunk，源码已无对应上下文，`git apply` 前先删掉它）：
-
-```bash
-git apply /path/to/WotbTools-local-dev-bypass-2026-10-03.patch
-```
-
-```diff
-diff --git a/frontend/src/composables/useAuth.js b/frontend/src/composables/useAuth.js
-index eadca959..280e257f 100644
---- a/frontend/src/composables/useAuth.js
-+++ b/frontend/src/composables/useAuth.js
-@@ -299,7 +299,22 @@ function isAuthenticated() {
-   return authenticated.value
- }
- 
-+/**
-+ * ⚠️ [本机测试旁路·提交前请还原] `git checkout -- frontend/src/composables/useAuth.js`
-+ *
-+ * 本地账号没有 `wotbtools-admin` / `HoF-admin` realm 角色时，admin 视图会被
-+ * 管理页面的角色边界挡下、导航里也不出现入口。dev 构建下显式带
-+ * `?admin=1` 即把这两个角色视为已持有：
-+ *  - 生产构建 `import.meta.env.DEV === false` → 恒为 false，门禁原样生效（无产品行为变化）；
-+ *  - vitest 环境无 query（jsdom 默认 URL）→ 同样为 false，角色断言不受影响。
-+ * 它只改**前端可见性**：后端仍按真实 token 鉴权，越权调用照样 401/403。
-+ */
-+const DEV_ADMIN_ROLES = import.meta.env.DEV
-+  && typeof window !== 'undefined'
-+  && new URLSearchParams(window.location.search).has('admin')
-+
- function hasRole(role) {
-+  if (DEV_ADMIN_ROLES && (role === 'wotbtools-admin' || role === 'HoF-admin')) return true
-   return Boolean(role) && Array.isArray(tokenParsed.value?.realm_access?.roles)
-     && tokenParsed.value.realm_access.roles.includes(role)
- }
-```
