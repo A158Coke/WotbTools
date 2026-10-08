@@ -421,7 +421,7 @@ assert "assembleRelease" in stage_runs, "stage is the phase that builds and sign
 
 # --- stage: the signed release APK must carry the local-first bundle (PR #467 review) ---
 # 顺序即协议：取回 pinned Agent 产物 → 前端校验/构建 → 构建 Android bundle → assembleRelease
-# → 内容验证 → 才允许上传 / 打 tag / 写 staging evidence。
+# → 内容验证 → 才允许 seed 到两台 origin / 打 tag / 写 staging evidence。
 def step_index(predicate, label):
     for i, name in enumerate(stage_names):
         if predicate(name, i):
@@ -435,11 +435,11 @@ bundle_i = step_index(lambda n, i: "local-first frontend bundle" in n, "build:an
 assemble_i = step_index(
     lambda n, i: "assembleRelease" in (stage["steps"][i].get("run") or ""), "assembleRelease")
 verify_bundle_i = step_index(lambda n, i: "Verify release APK carries" in n, "release APK bundle verification")
-upload_apk_i = step_index(lambda n, i: n.startswith("Upload APK to TX"), "upload APK")
+seed_apk_i = step_index(lambda n, i: n.startswith("Seed APK to TX"), "seed APK")
 tag_i = step_index(lambda n, i: n.startswith("Ensure release tag"), "release tag")
 evidence_i = step_index(lambda n, i: "staging evidence" in n.lower(), "staging evidence")
 assert fetch_wasm_i < frontend_i < bundle_i < assemble_i < verify_bundle_i, stage_names
-assert verify_bundle_i < upload_apk_i < tag_i < evidence_i, stage_names
+assert verify_bundle_i < seed_apk_i < tag_i < evidence_i, stage_names
 bundle_runs = "\n".join(step.get("run") or "" for step in stage["steps"][bundle_i:assemble_i])
 assert "npm --prefix frontend run build:android" in bundle_runs, bundle_runs
 # 不重复 npm ci / 不重复取回 Agent 产物：bundle 步骤只复用前端校验的工作区。
