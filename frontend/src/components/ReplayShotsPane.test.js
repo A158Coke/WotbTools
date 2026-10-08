@@ -45,6 +45,7 @@ vi.mock('../scene/assetProvider.js', () => ({
 vi.mock('../scene/agentData.js', () => ({
   tankImageUrl: (id) => `img:${id}`,
   storeShotsForViewer: vi.fn(),
+  shotViewerQuery: vi.fn(),
   fetchTankData: vi.fn(async () => ({ configs: [] })),
   fetchLocalShotTankData: vi.fn(async () => ({ configs: [] })),
 }))
@@ -61,7 +62,7 @@ globalThis.ResizeObserver = ResizeObserverStub
 
 import ReplayShotsPane from './ReplayShotsPane.vue'
 import { assetProvider } from '../scene/assetProvider.js'
-import { fetchLocalShotTankData, fetchTankData, storeShotsForViewer } from '../scene/agentData.js'
+import { fetchLocalShotTankData, fetchTankData, storeShotsForViewer, shotViewerQuery } from '../scene/agentData.js'
 
 function mkFile(name = 'cn.wotbreplay') {
   return new File([new Uint8Array([1, 2, 3, 4])], name)
@@ -95,6 +96,15 @@ beforeEach(() => {
   parseAgentPlaybackFromBytes.mockReset()
   parseAgentPlaybackFromBytes.mockResolvedValue({ vehicles: [] })
   storeShotsForViewer.mockClear()
+  shotViewerQuery.mockReset()
+  shotViewerQuery.mockImplementation(async (shot) => ({
+    view: 'agent-armor', tank: String(shot.target_tank_id || shot.shooter_tank_id),
+    ...(shot.shooter_tank_id ? { shooter: String(shot.shooter_tank_id) } : {}),
+    shot: String(shot.index),
+    ...(shot.is_author && shot.shell_slot != null ? { shell: String(shot.shell_slot) } : {}),
+    ...(shot.target_config_idx != null ? { config: String(shot.target_config_idx) } : {}),
+    world: '1', heatmap: '1',
+  }))
   fetchTankData.mockClear()
 })
 
@@ -166,7 +176,7 @@ describe('ReplayShotsPane author_path fail-visible（评审 blocker 回归）', 
     wrapper.unmount()
   })
 
-  it('author_path=error 但他人路径有 shots → 警示与列表并存', async () => {
+  it('author_path=error 但他人路径有 shots → 警示与本人空态并存，全员结果可显式查看', async () => {
     parseAgentShotsFromBytes.mockResolvedValue({
       shots: [{
         index: 1, time_s: 5, damage: 100, target_name: '林肝美', is_kill: false,
@@ -179,6 +189,9 @@ describe('ReplayShotsPane author_path fail-visible（评审 blocker 回归）', 
     })
     const wrapper = await mountPane()
     expect(wrapper.find('[data-testid="shots-author-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="shots-no-shots"]').exists()).toBe(true)
+    expect(wrapper.findAll('.shot-row')).toHaveLength(0)
+    await wrapper.get('#shots-shooter-select').setValue('all')
     expect(wrapper.findAll('.shot-row')).toHaveLength(1)
     // 命中在案（target_eid）但结果未知（255）→ "命中·结果未知"，不得伪装成未击穿
     expect(wrapper.text()).toContain('agentShots.res_hit_unknown')
@@ -229,9 +242,9 @@ describe('ReplayShotsPane 数据与筛选', () => {
     const labels = wrapper.findAll('optgroup').map(g => g.attributes('label'))
     expect(labels).toEqual(['agentShots.allies', 'agentShots.enemies', 'agentShots.unknown_side'])
     const options = wrapper.findAll('option').map(o => o.text())
-    expect(options.some(t => t.startsWith('名雅山庄'))).toBe(true)
-    expect(options.some(t => t.startsWith('林肝美'))).toBe(true)
-    expect(options.some(t => t.startsWith('观察者'))).toBe(true)
+    expect(options.some(t => t.includes('名雅山庄'))).toBe(true)
+    expect(options.some(t => t.includes('林肝美'))).toBe(true)
+    expect(options.some(t => t.includes('观察者'))).toBe(true)
     wrapper.unmount()
   })
 
@@ -259,10 +272,12 @@ describe('ReplayShotsPane 数据与筛选', () => {
       author_path: 'ok', author_eid: 100, others: baseOthers,
     })
     const wrapper = await mountPane()
+    expect(wrapper.get('[data-stat="shots"] .stat-value').text()).toBe('1')
+    await wrapper.get('#shots-shooter-select').setValue('all')
     expect(wrapper.get('[data-stat="shots"] .stat-value').text()).toBe('2')
     // 选项值用列表序号，DOM 里不出现内部 id
-    expect(wrapper.findAll('#shots-shooter-select option').map(o => o.attributes('value'))).toEqual(['all', '0', '1'])
-    await wrapper.get('#shots-shooter-select').setValue('0')
+    expect(wrapper.findAll('#shots-shooter-select option').map(o => o.attributes('value'))).toEqual(['own', 'all', 'player-0', 'player-1'])
+    await wrapper.get('#shots-shooter-select').setValue('player-0')
     expect(wrapper.get('[data-stat="shots"] .stat-value').text()).toBe('1')
     expect(wrapper.findAll('.shot-row')).toHaveLength(1)
     wrapper.unmount()
@@ -434,7 +449,7 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
     })
     const wrapper = await mountCompact()
     // 只留射击者 A：可见列表变成 [2, 7, 11]
-    await wrapper.get('#shots-shooter-select').setValue('0')
+    await wrapper.get('#shots-shooter-select').setValue('player-0')
     await flushPromises()
     expect(wrapper.findAll('.shot-row').map(r => r.attributes('data-testid')))
       .toEqual(['shot-row-2', 'shot-row-7', 'shot-row-11'])
@@ -510,12 +525,13 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
       author_path: 'ok', author_eid: 100, others: baseOthers,
     })
     const wrapper = await mountCompact()
-    // 选中属于 B（下拉里第 1 项）的那一发，再把筛选切到 A
+    // 显式查看全员，再选 B；本人默认不混入其他玩家。
+    await wrapper.get('#shots-shooter-select').setValue('all')
     await wrapper.get('[data-testid="shot-row-5"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(true)
 
-    await wrapper.get('#shots-shooter-select').setValue('0')
+    await wrapper.get('#shots-shooter-select').setValue('player-0')
     await flushPromises()
     expect(wrapper.findAll('.shot-row').map(r => r.attributes('data-testid'))).toEqual(['shot-row-2'])
     expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(false)
@@ -560,7 +576,7 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
       author_path: 'ok', author_eid: 100, others: baseOthers,
     })
     const wrapper = await mountPane()
-    expect(wrapper.get('.shot-time').text()).toBe('02:31')
+    expect(wrapper.get('.shot-clock').text()).toBe('02:31')
     await wrapper.get('[data-testid="shot-row-1"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="shot-inspector"]').text()).toContain('02:31')
@@ -674,54 +690,37 @@ it('bundled shooting inputs preserve config identity and all global shells witho
   } finally { vi.unstubAllGlobals() }
 })
 
-describe('ReplayShotsPane 搭载配置注解（评审 P2 回归：交接快照与 scfg 同一版本）', () => {
-  it('await 弹表查询期间注解完成 → 交接 JSON 与 URL scfg 不得错位（点击时快照贯穿）', async () => {
-    // 两门炮共享弹种 5914（配置 0 与顶级配置 2 都有）：评审复现形状
-    const CONFIGS = [
-      { shell_global_ids: [5914, 111], pitch_limits: { max: 8, min: -10 } },
-      { shell_global_ids: [222], pitch_limits: { max: 8, min: -10 } },
-      { shell_global_ids: [5914, 333], pitch_limits: { max: 8, min: -10 } },
-    ]
-    let tankDataCalls = 0
-    let releaseShell
-    fetchLocalShotTankData.mockImplementation(async (tid) => {
-      tankDataCalls++
-      if (tankDataCalls === 2) return new Promise((r) => { releaseShell = r })   // resolveShellIdx 的弹表查询挂起
-      return { configs: CONFIGS }
-    })
-    parseAgentPlaybackFromBytes.mockResolvedValue({
-      vehicles: [{ eid: 7, nickname: 'A', team: 1, tank_id: 3649, is_author: true, shell_ids: [5914], max_hp: 100 }],
-    })
-    parseAgentShotsFromBytes.mockResolvedValue({
-      shots: [{ index: 1, time_s: 5, damage: 100, target_name: 'B', is_kill: false,
-        shooter_eid: 7, target_eid: 101, hit_flags: 0, game_hit_result: 255, shell_id: 5914 }],
-      author_path: 'ok',
-      author_eid: 7,
-      others: { ...baseOthers, total_launches: 1 },
-    })
+describe('ReplayShotsPane viewer snapshot lifecycle', () => {
+  it('click captures one immutable version for handoff and async query resolution', async () => {
+    const live = { index: 1, time_s: 5, shooter_eid: 7, shooter_tank_id: 3649, target_eid: 101, target_tank_id: 1, shell_id: 5914 }
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [live], author_eid: 7, author_path: 'ok' })
+    let finishQuery
+    shotViewerQuery.mockImplementationOnce(() => new Promise((resolve) => { finishQuery = resolve }))
     const navigate = vi.fn()
     const wrapper = await mountPane({ navigate })
-
-    // 选中行 → 详情面板 → 点击「打开查看器」：openInViewer 同步段完成交接序列化，
-    // resolveShellIdx 的弹表查询挂起
     await wrapper.get('[data-testid="shot-row-1"]').trigger('click')
     await wrapper.get('[data-testid="shot-open-viewer"]').trigger('click')
-    expect(releaseShell).toBeTruthy()
-
-    // 挂起期间后台配置注解完成：就地修改 live 对象（storeShotsForViewer 收到的
-    // 引用即 shots.value 的元素）
-    const liveShots = storeShotsForViewer.mock.calls.at(-1)[0]
-    liveShots.find((x) => x.index === 1).shooter_config_idx = 0
-    releaseShell({ configs: CONFIGS })
+    live.shooter_config_idx = 0
+    expect(shotViewerQuery.mock.calls[0][0].shooter_config_idx).toBeUndefined()
+    expect(storeShotsForViewer.mock.calls[0][0][0].shooter_config_idx).toBeUndefined()
+    finishQuery({ view: 'agent-armor', scfg: '2' })
     await flushPromises()
+    expect(navigate).toHaveBeenCalledWith({ query: { view: 'agent-armor', scfg: '2' } })
+    wrapper.unmount()
+  })
 
-    expect(navigate).toHaveBeenCalledTimes(1)
-    console.log('[dbg] tankDataCalls=', tankDataCalls, 'navigate=', JSON.stringify(navigate.mock.calls[0][0].query), 'liveIdx=', liveShots.find((x) => x.index === 1)?.shooter_config_idx, 'sci=', liveShots.find((x) => x.index === 1)?.shooter_tank_id)
-    const q = navigate.mock.calls[0][0].query
-    // 点击时快照无注解 → 弹表匹配走全配置回退 = 顶级配置 2，与交接 JSON（同样无
-    // 配置字段 → 查看器顶级装配）一致；旧行为读 live 对象会给出错位的 scfg=0
-    expect(q.scfg).toBe('2')
-    expect(liveShots.find((x) => x.index === 1).shooter_config_idx).toBe(0)
+  it('changing battle during query resolution cancels stale navigation', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [{ index: 1, shooter_eid: 7, shooter_tank_id: 1, target_eid: 9, target_tank_id: 2 }], author_eid: 7 })
+    let finishQuery
+    shotViewerQuery.mockImplementationOnce(() => new Promise((resolve) => { finishQuery = resolve }))
+    const navigate = vi.fn()
+    const wrapper = await mountPane({ navigate })
+    await wrapper.get('[data-testid="shot-row-1"]').trigger('click')
+    await wrapper.get('[data-testid="shot-open-viewer"]').trigger('click')
+    await wrapper.setProps({ file: null })
+    finishQuery({ view: 'agent-armor' })
+    await flushPromises()
+    expect(navigate).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })
@@ -749,4 +748,133 @@ describe('ReplayShotsPane 搭载配置注解（评审 P1 回归）', () => {
     expect(wrapper.findAll('.shot-row')).toHaveLength(1)
     wrapper.unmount()
   })
+})
+
+
+describe('ReplayShotsPane recorder-first review', () => {
+  const own = { index: 1, time_s: 5, shooter_eid: 7, target_eid: 8, shooter_tank_id: 385, target_tank_id: 6929, damage: 400, hit_flags: 16, quality: { shooter_pos_from_muzzle: true } }
+  const enemy = { index: 2, time_s: 10, shooter_eid: 8, target_eid: 7, shooter_tank_id: 6929, target_tank_id: 385, damage: 500, game_hit_result: 3 }
+  const later = { ...own, index: 3, time_s: 20, damage: 200 }
+
+  it('defaults to recorder identity without depending on is_author flags; all remains explicit', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [{ ...own }, { ...enemy }, { ...later }], author_eid: 7 })
+    const wrapper = await mountPane()
+    const rows = () => wrapper.findAll('.shot-row').map(row => row.attributes('data-testid'))
+    expect(wrapper.get('#shots-shooter-select').element.value).toBe('own')
+    expect(rows()).toEqual(['shot-row-1', 'shot-row-3'])
+    expect(wrapper.get('[data-stat="damage"] .stat-value').text()).toBe('600')
+    await wrapper.get('#shots-shooter-select').setValue('all')
+    expect(rows()).toEqual(['shot-row-1', 'shot-row-2', 'shot-row-3'])
+    await wrapper.setProps({ active: false })
+    await wrapper.setProps({ active: true })
+    expect(wrapper.get('#shots-shooter-select').element.value).toBe('all')
+    expect(rows()).toHaveLength(3)
+    wrapper.unmount()
+  })
+
+  it('zero recorder shots stays empty even when other players have shots', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [{ ...enemy }], author_eid: 7, author_path: 'ok' })
+    const wrapper = await mountPane()
+    expect(wrapper.findAll('.shot-row')).toHaveLength(0)
+    expect(wrapper.get('[data-testid="shots-no-shots"]').text()).toContain('agentShots.no_own_shots')
+    expect(wrapper.get('[data-stat="shots"] .stat-value').text()).toBe('0')
+    await wrapper.get('[data-testid="shots-no-shots"] button').trigger('click')
+    expect(wrapper.findAll('.shot-row')).toHaveLength(1)
+    expect(wrapper.get('#shots-shooter-select').element.value).toBe('all')
+    wrapper.unmount()
+  })
+
+  it('roster identity resolves own shots when author_eid is absent', async () => {
+    parseAgentPlaybackFromBytes.mockResolvedValue({ vehicles: [{ eid: 7, nickname: 'Recorder', tank_id: 385, is_author: true }] })
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [{ ...own }, { ...enemy }] })
+    const wrapper = await mountPane()
+    expect(wrapper.findAll('.shot-row').map(row => row.attributes('data-testid'))).toEqual(['shot-row-1'])
+    wrapper.unmount()
+  })
+
+  it('tank models lead the list and inspector, names travel with only the selected shooter’s shots', async () => {
+    parseAgentPlaybackFromBytes.mockResolvedValue({ vehicles: [
+      { eid: 7, nickname: 'Recorder nickname', tank_id: 385, tank_name: 'Progetto 65', is_author: true },
+      { eid: 8, nickname: 'Opponent nickname', tank_id: 6929, tank_name: 'Maus' },
+    ] })
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [{ ...own }, { ...enemy }, { ...later }, { ...later, index: 4, target_eid: null }], author_eid: 7 })
+    const wrapper = await mountPane({ navigate: vi.fn() })
+    const row = wrapper.get('[data-testid="shot-row-1"]')
+    expect(row.findAll('.shot-name').map(label => label.text())).toEqual(['Progetto 65', 'Maus'])
+    expect(row.findAll('.shot-player').map(label => label.text())).toEqual(['Recorder nickname', 'Opponent nickname'])
+    await row.trigger('click')
+    expect(wrapper.get('.shot-matchup').text()).toContain('Progetto 65')
+    expect(wrapper.get('.shot-detail-quality').element.open).toBe(false)
+    await wrapper.get('[data-testid="shot-open-viewer"]').trigger('click')
+    await flushPromises()
+    const saved = storeShotsForViewer.mock.calls[0][0]
+    expect(saved.map(shot => shot.index)).toEqual([1, 3])
+    expect(saved[0]).toMatchObject({ shooter_tank_name: 'Progetto 65', target_tank_name: 'Maus' })
+    expect(saved[0].shooter_tank_class).toBe('Medium tank')
+    wrapper.unmount()
+  })
+
+  it('uses bundled tank names when roster names are IDs and never exposes a raw unknown tank ID', async () => {
+    parseAgentPlaybackFromBytes.mockResolvedValue({ vehicles: [
+      { eid: 7, nickname: 'Recorder', tank_id: 385, tank_name: '#385', is_author: true },
+      { eid: 8, nickname: 'Opponent', tank_id: 999999, tank_name: '#999999' },
+    ] })
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [{ ...own }], author_eid: 7 })
+    const wrapper = await mountPane()
+    expect(wrapper.get('.shot-row').findAll('.shot-name').map(label => label.text())).toEqual(['Progetto 65', 'agentShots.unknown_tank'])
+    expect(wrapper.get('.shot-row').text()).not.toContain('999999')
+    wrapper.unmount()
+  })
+
+  it('battle switch resets explicit all selection to the new recorder and clears old detail', async () => {
+    parseAgentShotsFromBytes.mockResolvedValueOnce({ shots: [{ ...own }, { ...enemy }], author_eid: 7 })
+    const wrapper = await mountPane()
+    await wrapper.get('#shots-shooter-select').setValue('all')
+    await wrapper.get('[data-testid="shot-row-2"]').trigger('click')
+    parseAgentShotsFromBytes.mockResolvedValueOnce({ shots: [{ ...own }, { ...enemy }], author_eid: 8 })
+    await wrapper.setProps({ file: mkFile('next.wotbreplay') })
+    await vi.waitFor(() => expect(wrapper.findAll('.shot-row').map(row => row.attributes('data-testid'))).toEqual(['shot-row-2']))
+    expect(wrapper.get('#shots-shooter-select').element.value).toBe('own')
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('a stale parser result cannot republish the previous battle after file clearing', async () => {
+    let finishParse
+    parseAgentShotsFromBytes.mockImplementationOnce(() => new Promise((resolve) => { finishParse = resolve }))
+    const wrapper = mount(ReplayShotsPane, { props: { file: mkFile(), active: true }, global: { mocks: { $t: i18n.t } } })
+    await vi.waitFor(() => expect(finishParse).toBeTypeOf('function'))
+    await wrapper.setProps({ file: null })
+    finishParse({ shots: [{ ...own }], author_eid: 7 })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="shots-empty"]').exists()).toBe(true)
+    expect(wrapper.findAll('.shot-row')).toHaveLength(0)
+    wrapper.unmount()
+  })
+})
+
+
+it('compact shot inspector traps Tab focus and returns focus when closed', async () => {
+  parseAgentShotsFromBytes.mockResolvedValue({ shots: [
+    { index: 1, shooter_eid: 7, target_eid: 8, shooter_tank_id: 385, target_tank_id: 6929, quality: { shooter_pos_from_muzzle: true } },
+    { index: 2, shooter_eid: 7, target_eid: 8, shooter_tank_id: 385, target_tank_id: 6929 },
+  ], author_eid: 7 })
+  const wrapper = await mountPane()
+  observers.at(-1).emit(420)
+  await nextTick()
+  await wrapper.get('[data-testid="shot-row-1"]').trigger('click')
+  await flushPromises()
+  const dialog = wrapper.get('[data-testid="shot-inspector"]')
+  expect(dialog.attributes('role')).toBe('dialog')
+  expect(dialog.attributes('aria-modal')).toBe('true')
+  const first = wrapper.get('[data-testid="shot-next"]')
+  const last = wrapper.get('.shot-detail-quality summary')
+  last.element.focus()
+  await last.trigger('keydown', { key: 'Tab' })
+  expect(document.activeElement).toBe(first.element)
+  await first.trigger('keydown', { key: 'Tab', shiftKey: true })
+  expect(document.activeElement).toBe(last.element)
+  await wrapper.get('[data-testid="shot-detail-close"]').trigger('click')
+  expect(document.activeElement).toBe(wrapper.get('[data-testid="shot-row-1"]').element)
+  wrapper.unmount()
 })

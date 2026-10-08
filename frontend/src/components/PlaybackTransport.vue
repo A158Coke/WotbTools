@@ -1,7 +1,7 @@
 <script setup>
 // Shared primary composition: −5 / Play / +5 / current speed / Fullscreen / Display.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { Maximize2, Minimize2, Pause, Play, Settings } from 'lucide-vue-next'
+import { Maximize2, Minimize2, Pause, Play, SlidersHorizontal } from 'lucide-vue-next'
 import PlaybackTimeline from './PlaybackTimeline.vue'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { PLAYBACK_SPEEDS } from '../composables/usePlaybackTransport.js'
@@ -60,6 +60,15 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
 </script>
 
 <template>
+  <PlaybackTimeline
+    :current-time="props.currentTime"
+    :start-time="props.startTime"
+    :duration="props.duration"
+    :disabled="!timelineUsable"
+    @drag-start="emit('scrub-start')"
+    @drag-end="emit('scrub-end')"
+    @seek="emit('seek', $event)"
+  />
   <div class="pb-controls" :class="{ 'phone-form': props.compact }" data-test="pb-controls" @pointerdown.stop @click.stop>
     <button v-if="props.stepSeconds > 0" type="button" class="pb-btn" data-test="pb-back5" :disabled="!timelineUsable" :aria-label="$t('recon.map.playback.back_seconds', { seconds: props.stepSeconds })" @click="emit('step', -props.stepSeconds)">−{{ props.stepSeconds }}</button>
     <button
@@ -100,20 +109,12 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
       <component :is="props.isFullscreen ? Minimize2 : Maximize2" :size="16" aria-hidden="true" />
     </button>
     <button v-if="props.displayEnabled" ref="gearEl" type="button" class="pb-btn pb-secondary-entry" data-test="pb-secondary-entry" data-testid="display-toggle" :aria-expanded="props.displayOpen" aria-haspopup="dialog" :aria-label="$t('recon.map.playback.panel_display')" @click="emit('toggle-display', gearEl)">
-      <Settings :size="16" aria-hidden="true" />
+      <SlidersHorizontal :size="16" aria-hidden="true" />
     </button>
     <span class="pb-time" data-test="pb-time">{{ props.formatClock(elapsed) }} / {{ props.formatClock(total) }}</span>
     <span v-if="!timelineUsable" class="pb-unavailable" data-test="pb-play-unavailable" role="status">{{ $t('recon.map.playback.timeline_unavailable') }}</span>
   </div>
-  <PlaybackTimeline
-    :current-time="props.currentTime"
-    :start-time="props.startTime"
-    :duration="props.duration"
-    :disabled="!timelineUsable"
-    @drag-start="emit('scrub-start')"
-    @drag-end="emit('scrub-end')"
-    @seek="emit('seek', $event)"
-  />
+
 </template>
 
 <style scoped>
@@ -129,7 +130,7 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
   z-index: var(--pb-z-hud);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
   padding: var(--space-1);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
@@ -162,6 +163,10 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
   background: var(--color-accent);
   color: var(--color-on-accent);
 }
+
+.pb-play-btn { min-inline-size: calc(var(--control-h-md) + var(--space-3)); border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); }
+.pb-btn:hover:not(:disabled) { border-color: var(--color-border-strong); }
+.pb-play-btn:hover:not(:disabled) { filter: brightness(1.08); }
 
 .pb-btn:disabled { opacity: .45; cursor: not-allowed; }
 

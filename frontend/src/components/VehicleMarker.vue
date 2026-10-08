@@ -24,6 +24,7 @@
  */
 import { computed } from 'vue'
 import PlaybackVehicleLabel from './PlaybackVehicleLabel.vue'
+import TankClassIcon from './TankClassIcon.vue'
 import {
   markerTurretAssemblyTransform,
   markerTurretImageTransform,
@@ -34,6 +35,8 @@ const props = defineProps({
   marker: { type: Object, required: true },
   /** 是否选中（selectedAccountId === accountId） */
   selected: { type: Boolean, default: false },
+  classIcons: Boolean,
+  showStatus: { type: Boolean, default: true },
   /** PR4 §26–§35：标签显示/碰撞结果（BattlePlayback 计算，本组件只渲染） */
   label: {
     type: Object,
@@ -172,7 +175,9 @@ const selectedMarkStyle = computed(() => {
 const labelsStyle = computed(() => ({
   transform: `translateX(-50%) ${st.value.overlayInverseScale}`,
   // tankDy（screen px）→ layout px（×overlayInv）；碰撞位移只作用于标签块，不影响车体
-  bottom: `calc(100% + ${LABEL_ANCHOR_PX - props.label.tankDy * overlayInv.value}px)`,
+  bottom: props.classIcons
+    ? `calc(50% + (var(--space-5) / 2 + var(--space-1) - ${props.label.tankDy}px) * ${overlayInv.value})`
+    : `calc(100% + ${LABEL_ANCHOR_PX - props.label.tankDy * overlayInv.value}px)`,
 }))
 const recorderBadgeStyle = computed(() => ({
   transform: `translate(-50%, -50%) rotate(45deg) ${st.value.overlayInverseScale}`,
@@ -213,7 +218,11 @@ const stateClasses = computed(() => ({
     <!-- 车型视觉层容器：destroyed/last-known 的 opacity/grayscale/team 光晕精确作用于此处
          （而非整个 button）——pb-death ✕ / pb-selected-mark / pb-recorder-badge / pb-labels
          是 button 直接子元素、在容器外，保持完整强度（parent opacity 无法被子元素抵消）。 -->
-    <div class="pb-graphics" :style="graphicsStyle">
+    <div v-if="classIcons" class="pb-class-symbol" :class="{ 'is-selected': selected }"
+      :style="{ transform: `translate(-50%, -50%) ${st.overlayInverseScale}` }" aria-hidden="true">
+      <TankClassIcon :tank-class="st.vehicle.tankClass" />
+    </div>
+    <div v-else class="pb-graphics" :style="graphicsStyle">
       <!-- dedicated turreted：hull 填满等比 square render box + turret assembly
            （父层绕盒中心 H，子层绕 image-local pivot T-H） -->
       <template v-if="isDedicated && isTurreted">
@@ -277,7 +286,7 @@ const stateClasses = computed(() => ({
          容器外完整强度，不随 .pb-graphics grayscale/opacity 变淡；
          overlayInverseScale 反缩放 → 不随地图 zoom 异常放大，保持屏幕恒定 -->
     <span
-      v-if="st.destroyed"
+      v-if="showStatus && st.destroyed"
       class="pb-death"
       aria-hidden="true"
       :style="{ color: '#ff4d4f', fontSize: '30px', fontWeight: '800', zIndex: 6, transform: `translate(-50%, -50%) ${st.overlayInverseScale}` }"
@@ -287,7 +296,7 @@ const stateClasses = computed(() => ({
          阵亡车切换克制变体（pb-selected-restrained：更小 + 更淡，destroyed > selected，
          仍可辨认被选中） -->
     <span
-      v-if="selected"
+      v-if="showStatus && selected"
       class="pb-selected-mark"
       :class="{ 'pb-selected-restrained': st.destroyed }"
       aria-hidden="true"
@@ -296,7 +305,7 @@ const stateClasses = computed(() => ({
 
     <!-- PR3 §23 Recorder：空心菱形（tank 下方居中、地图 friendly 色、静态） -->
     <span
-      v-if="st.recorder"
+      v-if="showStatus && st.recorder"
       class="pb-recorder-badge"
       aria-hidden="true"
       :style="recorderBadgeStyle"
@@ -325,6 +334,21 @@ const stateClasses = computed(() => ({
   perspective: 96px;
   transform-style: preserve-3d;
 }
+.pb-class-symbol {
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-start: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--color-team-neutral);
+}
+.pb-class-symbol :deep(svg) { inline-size: var(--space-5); block-size: var(--space-5); }
+.pb-class-symbol :deep(path) { stroke: var(--color-canvas); stroke-width: 1; paint-order: stroke; }
+.pb-friendly .pb-class-symbol { color: var(--pb-team-text, var(--color-team-ally)); }
+.pb-enemy .pb-class-symbol { color: var(--pb-enemy-text, var(--color-team-enemy)); }
+.pb-destroyed .pb-class-symbol { color: var(--color-playback-label-destroyed); opacity: .55; }
+.pb-last-known .pb-class-symbol { opacity: .65; }
+.pb-class-symbol.is-selected { outline: 2px solid var(--color-accent); outline-offset: var(--space-1); border-radius: var(--radius-sm); }
 .pb-hull, .pb-turret {
   position: absolute;
   left: 50%;

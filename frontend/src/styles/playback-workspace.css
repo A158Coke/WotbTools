@@ -8,6 +8,40 @@
   --pb-lane-w: var(--pb-roster-min);
 }
 
+/* Direct, always-reachable presentation actions share the existing preference owner. */
+.pb-quick-actions { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
+.pb-map-quick-actions {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-start: var(--space-1);
+  max-inline-size: calc(100% - var(--space-2));
+  z-index: var(--pb-z-hud);
+  pointer-events: none;
+}
+.pb-quick-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-inline-size: var(--hit-min);
+  min-block-size: var(--hit-min);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.pb-quick-action[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent-text); background: var(--color-surface-3); }
+.pb-quick-action:hover { background: var(--color-surface-2); }
+.pb-quick-action:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: var(--space-1); }
+/* Phone landscape uses the available width instead of spending a second row on
+   the same clock already shown in the HUD. Buttons retain their touch targets. */
+.battle-playback.pb-phone-landscape .pb-controls .pb-time { flex-basis: auto; margin-inline: auto; order: 0; }
+
 .battle-playback.playback-workspace:not(:fullscreen),
 .battle-playback.playback-workspace:fullscreen {
   display: flex;

@@ -4,6 +4,10 @@
 
 ## 当前实现
 
+- 回放优先的页面组织：能力切换放在页头操作区；单场能力共用紧凑选局行。数据 / 2D / 3D 支持一次选择多个文件，先分析再选局。完成分析后，2D / 3D / 射击 / AI 可收起文件区，文件选择器仍挂载并保持会话；解析中或出错时自动显示，数据页始终保留文件区。
+- 2D 默认无标注且关闭编辑，播放区提供直接的“标记模式”入口。进入时暂停，退出不自动继续；已完成标注常驻，可手动隐藏，切局或刷新清空。LT / MT / HT / TD、多点路线及编辑沿用现有 annotation owner，不与 3D 同步。具体行为见 [battle-playback.md](../features/battle-playback.md)。
+- 2D / 3D 共用时间轴在上、主要播放按钮在下的传输控件。3D 开始前仍直接选择画质，额外性能选项默认收在原生折叠区；相机与模型查看仍在单独的工具行。此轮不新增 3D 标记系统。
+
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`playback`、`3d`、`shots`、`ai` **五种能力**的统一工作台：选择一次文件，能力之间切换不重新选文件、不重建 session。
 - Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放 · 射击分析 · AI 复盘，五种能力对所有用户可见，`wotbtools-admin` 不改变能力集合；五个能力都在本工作台内，没有"导航去另一个页面"的能力），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
 - 五个能力面板都由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`）：3D / shots 还必须已登录，3D / AI 还要求 capability 可用（连通性）；满足条件后切走只 `v-show` 隐藏：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
@@ -61,7 +65,10 @@
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision` 与 `sourceId`（`r{文件序号}`）作为唯一 identity。
 - 场次选择器（数据模式在 `ReplayPage` 工具栏、四个单场能力在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。五种能力对匿名、普通登录用户与管理员永久可见，`wotbtools-admin` 不改变能力集合；匿名直达 `?view=agent-replay|agent-shots` 保持目标能力，由能力层显示登录门禁。
 - AI 复盘是**正式能力**（普通用户可见，未登录由 AuthGate 引导登录）：联网能力先经 `useFeatureGate` 判定，离线/unknown/degraded/service-unavailable 先给 connectivity 提示，绝不启动登录；在线且未登录沿用 native/browser auth。可用深链挂载 AI 面板（`AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`），受登录门控与客户端投影可用性约束；前端已无维护状态卡（提交 `83884790`，`ai_maintenance` 三语 key 无消费者）。切换 capability 不重新分析数据模式的结果。
-- 射击分析面板按 `docs/frontend/design-language.md` §9 做 Master–Detail（expanded 常驻右栏 / medium 推开式侧栏 / compact 整屏面板），分档由**容器宽度**（`ResizeObserver` + container query）决定而不是视口。装甲场景不在面板内嵌：命中弹的「在装甲查看器里打开」把 `shots` 经既有本地交接通道交出并用注入的 `navigate` 打开 `?view=agent-armor&…`——复用引擎，不复用页面导航模型。
+- 射击分析默认选择录像者（「我的射击」），汇总与列表仅统计当前射击者；「全部玩家」及其他玩家是可选筛选。录像者依次使用 shot facet 的 `author_eid`、playback meta、名册 `is_author`、逐发 `is_author`，不按昵称猜测。自己没有记录时保留诚实空态，并提供查看全部玩家入口。
+- 射击条目与详情突出双方车型及类型符号，昵称作为次要身份信息。车型名优先使用 playback roster，缺失时从已有本地 tankopedia 补全；名字解析不调用远程资产服务。`utils/shotPresentation.js` 是车型呈现与记录结果徽标的共享 owner，不重算伤害或击穿。
+- 射击面板按容器宽度使用 Master–Detail（expanded 常驻详情 / medium 有界双栏 / compact 模态详情）；窄屏详情保留焦点约束与关闭后焦点恢复。命中弹「在装甲查看器里打开」通过既有本地交接通道只保存当前筛选内可检查的命中弹，保留原始索引与时间，随后经注入的 `navigate` 打开装甲页。
+- 装甲页逐发导航复用 `scene/agentData.js` 的 `shotViewerQuery` 和 Router：上一发 / 下一发保持当前命中快照，返回恢复列表。相同页面 query 更新时先销毁旧场景再重建 DOM 契约；迟到的 snapshot、模型加载、计时器和状态回调不能覆盖下一发。页面顶部展示双方车型、记录时间、结果和伤害；模拟参数与记录结果明确分开，技术证据默认折叠。
 - AI/Playback 详细接口与回放管线以以下文档为准，不在本索引重复维护：
   - [`docs/architecture/ai-review.md`](../architecture/ai-review.md)
   - [`docs/features/team-ai-review.md`](../features/team-ai-review.md)

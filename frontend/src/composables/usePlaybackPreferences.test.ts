@@ -17,9 +17,64 @@ describe('usePlaybackPreferences', () => {
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: false, showTankName: true, showReload: true })
     expect({ ...prefs.hpPrefs }).toEqual({ showHp: true })
     expect({ ...prefs.trailPrefs }).toEqual({ showTrail: true })
+    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: false, showStatus: true })
+    expect(prefs.declutterActive.value).toBe(false)
     expect({ ...prefs.uiPrefs }).toEqual({
       showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true,
     })
+  })
+
+  it('declutters both consumers and restores the exact custom settings without changing roster visibility', () => {
+    const prefs = usePlaybackPreferences()
+    const otherRenderer = usePlaybackPreferences()
+    prefs.labelPrefs.showPlayerName = true
+    prefs.labelPrefs.showTankName = false
+    prefs.trailPrefs.showTrail = false
+    prefs.markerPrefs.classIcons = true
+    prefs.uiPrefs.showRoster = false
+    prefs.toggleDeclutter()
+    expect(otherRenderer.declutterActive.value).toBe(true)
+    expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: false, showTankName: true, showReload: false })
+    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, showStatus: false })
+    expect(prefs.hpPrefs.showHp).toBe(false)
+    expect(prefs.trailPrefs.showTrail).toBe(false)
+    expect(prefs.uiPrefs.showRoster).toBe(false)
+    // Roster toggles are independent; they must not discard the restoration snapshot.
+    prefs.uiPrefs.showRoster = true
+    otherRenderer.toggleDeclutter()
+    expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: true, showTankName: false, showReload: true })
+    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, showStatus: true })
+    expect(prefs.hpPrefs.showHp).toBe(true)
+    expect(prefs.trailPrefs.showTrail).toBe(false)
+    expect(prefs.uiPrefs.showRoster).toBe(true)
+  })
+
+  it('manual changes exit the preset and become the next restorable custom view', () => {
+    const prefs = usePlaybackPreferences()
+    prefs.toggleDeclutter()
+    prefs.hpPrefs.showHp = true
+    expect(prefs.declutterActive.value).toBe(false)
+    expect(prefs.markerPrefs.classIcons).toBe(true)
+    expect(prefs.labelPrefs.showReload).toBe(false)
+    prefs.toggleDeclutter()
+    expect(prefs.hpPrefs.showHp).toBe(false)
+    prefs.toggleDeclutter()
+    expect(prefs.hpPrefs.showHp).toBe(true)
+    expect(prefs.labelPrefs.showReload).toBe(false)
+    expect(JSON.parse(localStorage.getItem('wotb.pb.marker-prefs')!)).toEqual({ classIcons: true, showStatus: false })
+  })
+
+  it('refreshing while declutter is active hydrates saved settings instead of stranding a preset', async () => {
+    const prefs = usePlaybackPreferences()
+    prefs.labelPrefs.showPlayerName = true
+    prefs.toggleDeclutter()
+    vi.resetModules()
+    const { usePlaybackPreferences: freshSession } = await import('./usePlaybackPreferences.js')
+    const fresh = freshSession()
+    expect(fresh.declutterActive.value).toBe(false)
+    expect(fresh.labelPrefs.showPlayerName).toBe(true)
+    expect(fresh.hpPrefs.showHp).toBe(true)
+    expect(fresh.markerPrefs.classIcons).toBe(false)
   })
 
   it('shares immediate state and merged persistence between two mounted consumers', async () => {

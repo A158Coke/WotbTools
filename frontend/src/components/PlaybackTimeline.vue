@@ -66,11 +66,11 @@ onBeforeUnmount(endDrag)
 </template>
 
 <style scoped>
-.pb-progress { position: relative; width: 100%; margin: 2px 0; }
+.pb-progress { position: relative; width: 100%; margin: var(--space-1) 0; }
 
 /* §overflow：UA 给 input[type=range] 带 2px margin，和 width:100% 相加就是页面级横向溢出
    （1024 视口上实测 scrollWidth 1026，越界元素正是这个 input）。上下间距已由 .pb-progress
    承担，这里必须归零，宽度契约才和容器完全一致。 */
-.pb-range { display: block; width: 100%; margin: 0; accent-color: var(--color-accent); }
+.pb-range { display: block; width: 100%; min-block-size: var(--hit-min); margin: 0; accent-color: var(--color-accent); }
 .pb-range:disabled { opacity: .45; cursor: not-allowed; }
 </style>

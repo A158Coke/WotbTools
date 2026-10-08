@@ -186,6 +186,7 @@ function listRows(rowCount) {
   align-items: center;
   gap: var(--space-1);
   width: 100%;
+  min-inline-size: 0;
   min-height: var(--hit-min);
   padding: var(--space-1) var(--space-2);
   border: 1px solid transparent;
@@ -233,7 +234,10 @@ function listRows(rowCount) {
    `.team` / `.roster` 是与 3D 场景层共用的类名——行的布局只此一份。 */
 /* 名册容器**不是**独立滚动区（审计 BZ-13：名册里不允许嵌套滚动条）。
    宽度永远跟着承载它的车道 / 纵向流走（车道自己定宽），这里不再写死 240px。 */
-.pb-roster { display: grid; align-content: start; gap: var(--space-3); width: 100%; min-block-size: 0; padding: var(--space-3); }
+.pb-roster { display: grid; grid-template-columns: minmax(0, 1fr); min-inline-size: 0; align-content: start; gap: var(--space-3); width: 100%; min-block-size: 0; padding: var(--space-3); }
+
+/* 每层 grid 都显式允许横向收缩：自动列下限会被连续长昵称/车型的 min-content 撑开，
+   即使行内 flex 子项有 ellipsis，列表仍会比车道宽并挤掉血条。不是靠 overflow:hidden 掩盖。 */
 
 /* 纵向铺满（宽档侧车道 / 竖向流）——
    目标形状：Team header 固定顶部，列表吃满 section 剩余高度，行**纵向均匀分布**。
@@ -257,7 +261,7 @@ function listRows(rowCount) {
   overflow: hidden;
 }
 
-.pb-roster-team { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-1); }
+.pb-roster-team { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); min-width: 0; padding: var(--space-1); }
 /* 3D 的车道里，名册栏自己承担卡片外观（2D 的车道由外层 lane 承担）。
    卡片必须**填满车道高度**：`.team-lane` 是 flex column 且已拉满网格行高，卡片若是
    `flex: 0 1 auto` 就只占内容高（实测 1600×900：车道 890px、卡片只有 242px），
@@ -277,7 +281,7 @@ function listRows(rowCount) {
    否则会出现「框里的框」，而名册栏下方的留白仍然没有归属。 */
 .pb-roster-3d .pb-roster-team { background: none; border: 0; }
 .pb-team-head { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 800; }
-.pb-roster-list { display: grid; gap: var(--space-1); margin: 0; padding: 0; }
+.pb-roster-list { display: grid; grid-template-columns: minmax(0, 1fr); min-inline-size: 0; gap: var(--space-1); margin: 0; padding: 0; }
 .pb-roster-team.pb-roster-team1 .pb-roster-row { border-inline-start: 3px solid var(--roster-team-color); }
 .pb-roster-team.pb-roster-team2 .pb-roster-row { border-inline-start: 3px solid var(--roster-team-color); }
 .pb-roster-team.pb-roster-unknown .pb-roster-row { border-inline-start: 3px solid var(--color-border-subtle); opacity: .8; }

@@ -15,6 +15,7 @@ import { createMapView } from '../utils/mapView'
 import { activeTerrainRelief, projectTerrainPoint, sampleTerrainAttitude, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
+import { PencilRuler, PanelLeftClose, PanelLeftOpen, ScanEye } from 'lucide-vue-next'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
@@ -64,6 +65,7 @@ import {
 } from '../utils/labelLayout'
 import {
   ANNOT_COLORS,
+  ANNOT_TANK_CLASSES,
   ANNOT_FONT_SIZE,
   ANNOT_WIDTH_DEFAULT,
   ANNOT_WIDTH_MAX,
@@ -73,6 +75,8 @@ import {
   canRedo,
   canUndo,
   circleFromCorners,
+  hitTestAnnotation,
+  translateAnnotation,
   commit,
   polylinePoints,
   rectFromCorners,
@@ -275,7 +279,7 @@ const speed = ref(1)
 const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
 
 // Playback presentation preferences have one persistence owner. BattlePlayback only consumes refs.
-const { labelPrefs, hpPrefs, trailPrefs, uiPrefs } = usePlaybackPreferences()
+const { labelPrefs, hpPrefs, trailPrefs, markerPrefs, uiPrefs, declutterActive, toggleDeclutter } = usePlaybackPreferences()
 
 // 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。
 const visibleTrails = computed(() => trailPrefs.showTrail
@@ -571,6 +575,8 @@ const { isPhone: isMobileDevice } = usePlaybackPhoneForm()
 /* §square-stage：正方形 Stage 的两种呈现由**视口朝向**决定，不由宽度决定（见
    composables/usePlaybackPortraitViewport.js）。竖屏是纵向流，横屏与宽档才是三段式。 */
 const { isPortrait: isPhonePortrait } = usePlaybackPortraitViewport()
+const phoneLandscape = computed(() => isMobileDevice.value && !isPhonePortrait.value)
+const compactAnnotation = computed(() => annotationOpen.value && phoneLandscape.value)
 let playbackLifecycleActive = true
 let wideLayoutQuery = null
 function onWideLayoutChange(event) {
@@ -773,7 +779,11 @@ function pinchInfo() {
 function onPointerDown(e) {
   // 鼠标在地图上按下拖动（平移 / 画标注）不能变成浏览器的文本 / 图片选择——否则拖过的车辆标记与
   // 名牌会被选中成一片蓝色色块。只拦鼠标主键：触屏的滚动 / 捏合由 touch-action 决定，click 照常触发。
+  if (e.button != null && e.button !== 0) return
   if (e.pointerType === 'mouse' && e.button === 0) e.preventDefault()
+  // preventDefault keeps the last toolbar button focused. Move keyboard ownership to the
+  // map after a map gesture so Enter/Escape/Delete reach the editor, not that old button.
+  e.currentTarget?.focus?.({ preventScroll: true })
   mapEngaged.value = true
   suppressClick = false
   gestureMoved = false
@@ -786,14 +796,14 @@ function onPointerDown(e) {
   } catch {
     // 某些测试环境不支持指针捕获，忽略
   }
-  // 标注绘制：单指 + 激活工具 → 走绘制，不进入平移
+  // 标注编辑：单指走选择/绘制，双指仍保留地图捏合。
   if (activeTool.value && pointers.size === 1) {
     startDrawing(e)
     return
   }
-  // 绘制中落下第二根手指：先提交当前笔画，再转入双指捏合
+  // 第二根手指转入捏合，取消当前手势，避免落下意外标记/路线点。
   if (drawingPointerId != null && pointers.size === 2) {
-    endDrawing()
+    cancelDrawing()
     drawingPointerId = null
   }
   if (pointers.size === 1) {
@@ -862,7 +872,8 @@ function onPointerUp(e) {
     // 忽略（无捕获或已释放）
   }
   if (drawingPointerId === e.pointerId) {
-    endDrawing()
+    if (e.type === 'pointercancel') cancelDrawing()
+    else endDrawing()
     drawingPointerId = null
     if (pointers.size === 0) {
       panStart = null
@@ -886,7 +897,7 @@ function onPointerUp(e) {
 
 /** 拖动/捏合结束后吞掉随之而来的 click 避免误选车；未拖动的点击正常到达车辆按钮。 */
 function onViewportClick(e) {
-  if (suppressClick) {
+  if (annotationOpen.value || suppressClick) {
     suppressClick = false
     e.stopPropagation()
     e.preventDefault()
@@ -947,7 +958,11 @@ function fitViewIfReady(force = false) {
 }
 
 // ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
-const activeTool = ref(null) // null|pen|eraser|arrow|line|rect|circle|text
+const activeTool = ref(null) // null outside marking mode; select, tank classes, route or legacy drawing tools
+const selectedAnnotationIndex = ref(-1)
+const selectedAnnotation = computed(() => annotations.value[selectedAnnotationIndex.value] || null)
+const routePoints = ref([])
+let moveOriginal = null
 const annotColor = ref(ANNOT_COLORS[0])
 const annotVisible = ref(true)
 const annotWidthSlider = ref(ANNOT_WIDTH_DEFAULT) // 滑块值 = SVG 像素口径（1× 下所见即所得）
@@ -977,8 +992,14 @@ function resetAnnotations() {
   history.value = [[]]
   historyIndex.value = 0
   activeTool.value = null
+  annotationOpen.value = false
+  annotVisible.value = true
+  selectedAnnotationIndex.value = -1
+  routePoints.value = []
+  moveOriginal = null
+  pointers.clear()
   draft.value = null
-  textSession.value = null
+  if (textSession.value) cancelSession(textSession.value)
   drawStart = null
   drawPoints = []
   drawScreen = []
@@ -991,41 +1012,100 @@ function resetAnnotations() {
 // 切换文件（overview 引用变化；MapOverview 未按文件 key 复用）→ 清空标注
 watch(() => props.overview, resetAnnotations)
 
-function toggleTool(tool) {
-  activeTool.value = activeTool.value === tool ? null : tool
+function cancelDrawing() {
+  draft.value = routePoints.value.length ? routeDraft() : null
+  drawStart = null
+  drawPoints = []
+  drawScreen = []
+  moveOriginal = null
+  drawingPointerId = null
 }
-// 打开标注即进入可画状态：默认选中画笔。以前打开后 activeTool 仍是 null，
-// 用户在地图上划一下什么也不会发生，得先自己再点一次画笔。
+function cancelRoute() {
+  routePoints.value = []
+  cancelDrawing()
+}
+function toggleTool(tool) {
+  if (textSession.value) commitSession(textSession.value)
+  cancelRoute()
+  selectedAnnotationIndex.value = -1
+  annotVisible.value = true
+  activeTool.value = tool
+}
 function toggleAnnotation() {
-  annotationOpen.value = !annotationOpen.value
-  activeTool.value = annotationOpen.value ? 'pen' : null
+  if (annotationOpen.value) return closeAnnotation()
+  pause()
+  displayOpen.value = false
+  annotationOpen.value = true
+  activeTool.value = 'select'
 }
 function closeAnnotation() {
+  if (textSession.value) commitSession(textSession.value)
+  cancelRoute()
   annotationOpen.value = false
   activeTool.value = null
+  selectedAnnotationIndex.value = -1
+}
+function replaceAnnotations(next) {
+  const s = commit(history.value, historyIndex.value, next)
+  history.value = s.history
+  historyIndex.value = s.index
 }
 function undoAnnot() {
+  cancelRoute()
+  selectedAnnotationIndex.value = -1
   const s = undo(history.value, historyIndex.value)
   history.value = s.history
   historyIndex.value = s.index
 }
-
 function redoAnnot() {
+  cancelRoute()
+  selectedAnnotationIndex.value = -1
   const s = redo(history.value, historyIndex.value)
   history.value = s.history
   historyIndex.value = s.index
 }
-
 function clearAll() {
-  const s = commit(history.value, historyIndex.value, [])
-  history.value = s.history
-  historyIndex.value = s.index
+  cancelRoute()
+  selectedAnnotationIndex.value = -1
+  if (annotations.value.length) replaceAnnotations([])
 }
-
 function commitDraft(ann) {
-  const s = commit(history.value, historyIndex.value, [...annotations.value, ann])
-  history.value = s.history
-  historyIndex.value = s.index
+  replaceAnnotations([...annotations.value, ann])
+}
+function updateSelected(patch) {
+  if (!selectedAnnotation.value) return
+  const index = selectedAnnotationIndex.value
+  replaceAnnotations(annotations.value.map((ann, i) => i === index ? { ...ann, ...patch } : ann))
+}
+function setAnnotColor(color) {
+  annotColor.value = color
+  if (selectedAnnotation.value) updateSelected({ color })
+  if (routePoints.value.length) draft.value = routeDraft()
+}
+function renameSelected(label) {
+  const value = String(label).trim().slice(0, 60)
+  if (selectedAnnotation.value?.type === 'text') updateSelected({ text: value })
+  else updateSelected({ label: value })
+}
+function deleteSelected() {
+  if (!selectedAnnotation.value) return
+  replaceAnnotations(annotations.value.filter((_, i) => i !== selectedAnnotationIndex.value))
+  selectedAnnotationIndex.value = -1
+}
+function toggleAnnotations() {
+  cancelRoute()
+  selectedAnnotationIndex.value = -1
+  annotVisible.value = !annotVisible.value
+}
+function routeDraft() {
+  return { type: 'route', color: annotColor.value, width: annotWidth.value, points: [...routePoints.value] }
+}
+function finishRoute() {
+  if (routePoints.value.length < 2) return
+  commitDraft(routeDraft())
+  cancelRoute()
+  activeTool.value = 'select'
+  selectedAnnotationIndex.value = annotations.value.length - 1
 }
 
 function draftFromTool(tool, a, b) {
@@ -1059,7 +1139,20 @@ function semanticPoint(e) {
 function startDrawing(e) {
   const p = semanticPoint(e)
   if (!p) return
+  if (!annotVisible.value) return
   drawingPointerId = e.pointerId
+  if (activeTool.value === 'select') {
+    const rect = mapRenderRect()
+    const tolerance = 12 * semPerSvgX.value * mapView.value.W / (rect.width || mapView.value.W) / view.scale
+    selectedAnnotationIndex.value = hitTestAnnotation(annotations.value, p, tolerance)
+    moveOriginal = selectedAnnotation.value
+    drawStart = p
+    return
+  }
+  if (activeTool.value === 'route' || ANNOT_TANK_CLASSES.some(cls => cls.key === activeTool.value)) {
+    drawStart = p
+    return
+  }
   if (activeTool.value === 'text') {
     if (textSession.value) commitSession(textSession.value) // 先提交上一个未完成的文字
     textSession.value = reactive({ point: p, text: '' })
@@ -1080,6 +1173,11 @@ function moveDrawing(e) {
   const p = semanticPoint(e)
   if (!p) return
   const tool = activeTool.value
+  if (tool === 'select' && moveOriginal && drawStart) {
+    if (Math.hypot(p.x - drawStart.x, p.y - drawStart.y) > 1e-9) draft.value = translateAnnotation(moveOriginal, p.x - drawStart.x, p.y - drawStart.y)
+    return
+  }
+  if (tool === 'route' || ANNOT_TANK_CLASSES.some(cls => cls.key === tool)) return
   if (tool === 'pen' || tool === 'eraser') {
     // 屏幕空间抽稀：相邻采样点 ≥ ANNOT_THIN_PX CSS px（不依赖 scale/渲染比例，避免换算误差累积）
     const last = drawScreen[drawScreen.length - 1]
@@ -1105,27 +1203,33 @@ function isDegenerate(ann) {
 function endDrawing() {
   const tool = activeTool.value
   if (!tool) return
-  if (tool === 'pen') {
-    if (drawPoints.length >= 2) {
-      commitDraft({ type: 'pen', color: annotColor.value, width: annotWidth.value, points: drawPoints })
+  if (tool === 'select') {
+    if (draft.value && moveOriginal && selectedAnnotationIndex.value >= 0) {
+      const index = selectedAnnotationIndex.value
+      replaceAnnotations(annotations.value.map((ann, i) => i === index ? draft.value : ann))
     }
+  } else if (tool === 'route') {
+    if (drawStart) {
+      const last = routePoints.value.at(-1)
+      if (!last || Math.hypot(last.x - drawStart.x, last.y - drawStart.y) > 1e-9) routePoints.value.push(drawStart)
+    }
+    cancelDrawing()
+    return
+  } else if (ANNOT_TANK_CLASSES.some(cls => cls.key === tool) && drawStart) {
+    commitDraft({ type: 'unit', tankClass: tool, color: annotColor.value, x: drawStart.x, y: drawStart.y, radius: 16 * semPerSvgX.value, label: '' })
+    selectedAnnotationIndex.value = annotations.value.length - 1
+    activeTool.value = 'select'
+  } else if (tool === 'pen') {
+    if (drawPoints.length >= 2) commitDraft({ type: 'pen', color: annotColor.value, width: annotWidth.value, points: drawPoints })
   } else if (tool === 'eraser') {
     if (drawPoints.length) {
-      const current = annotations.value
-      const next = applyEraser(current, drawPoints, annotWidth.value)
-      if (next !== current) {
-        const s = commit(history.value, historyIndex.value, next)
-        history.value = s.history
-        historyIndex.value = s.index
-      }
+      const next = applyEraser(annotations.value, drawPoints, annotWidth.value)
+      if (next !== annotations.value) replaceAnnotations(next)
     }
   } else if (draft.value && !isDegenerate(draft.value)) {
     commitDraft(draft.value)
   }
-  draft.value = null
-  drawStart = null
-  drawPoints = []
-  drawScreen = []
+  cancelDrawing()
 }
 
 /** 文字提交（幂等：Enter/blur/移除输入框都会触发，committed 防重复）。 */
@@ -1177,11 +1281,15 @@ const renderedAnnotations = computed(() => {
   const invX = 1 / Math.max(1e-9, semPerSvgX.value)
   const invY = 1 / Math.max(1e-9, semPerSvgY.value)
   const list = [...annotations.value]
-  if (draft.value) list.push(draft.value)
-  return list.map(ann => {
-    const out = { ...ann, widthSvg: ann.width * invX }
-    if (ann.type === 'pen') {
+  if (draft.value) {
+    if (moveOriginal && selectedAnnotationIndex.value >= 0) list[selectedAnnotationIndex.value] = draft.value
+    else list.push(draft.value)
+  }
+  return list.map((ann, index) => {
+    const out = { ...ann, selected: annotationOpen.value && index === selectedAnnotationIndex.value, widthSvg: (ann.width || annotWidth.value) * invX }
+    if (ann.type === 'pen' || ann.type === 'route') {
       out.svgPoints = polylinePoints(ann.points, toX, toY)
+
     } else if (ann.type === 'line' || ann.type === 'arrow') {
       out.x1 = toX(ann.x1)
       out.y1 = toY(ann.y1)
@@ -1197,7 +1305,7 @@ const renderedAnnotations = computed(() => {
       out.cx = toX(ann.cx)
       out.cy = toY(ann.cy)
       out.r = ann.r * invX
-    } else if (ann.type === 'text') {
+    } else if (ann.type === 'text' || ann.type === 'unit') {
       out.x = toX(ann.x)
       out.y = toY(ann.y)
     }
@@ -1258,6 +1366,7 @@ function frame(ts) {
 /** 幂等启动：任意时刻最多一个 RAF 循环（重复调用/重复事件不会创建第二个循环）。 */
 function play() {
   if (playing.value || duration.value <= 0) return
+  if (annotationOpen.value) closeAnnotation()
   playing.value = true
   lastFrameTs = null
   // 播放开始：transient 时钟由 playback frame() 驱动——作废可能残留的轻量 pause RAF
@@ -1357,7 +1466,19 @@ const transport = usePlaybackTransport({
 }, { keyboard: false })
 
 function onKeydown(e) {
-  if (!props.active || !lifecycleVisible.value) return
+  if (!props.active || !lifecycleVisible.value || e.isComposing) return
+  if (annotationOpen.value && !isInteractiveTarget(e.target)) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      if (routePoints.value.length || draft.value) cancelRoute()
+      else if (selectedAnnotation.value) selectedAnnotationIndex.value = -1
+      else closeAnnotation()
+      return
+    }
+    if (e.key === 'Enter' && routePoints.value.length) { e.preventDefault(); finishRoute(); return }
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); return }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redoAnnot() : undoAnnot(); return }
+  }
   if ((e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey && !isInteractiveTarget(e.target)) {
     e.preventDefault()
     setUiHidden(!uiHidden.value)
@@ -1537,7 +1658,7 @@ const baseVehicleStates = computed(() => {
 
 const collisionOffsets = ref(new Map())
 watch(
-  [baseVehicleStates, () => currentTime.value, () => view.scale, () => view.tx, () => view.ty, () => mapWidth(), () => mapHeight(), () => selectedAccountId.value],
+  [baseVehicleStates, () => currentTime.value, () => view.scale, () => view.tx, () => view.ty, () => mapWidth(), () => mapHeight(), () => selectedAccountId.value, () => markerPrefs.classIcons],
   ([states]) => {
     const items = states.map((state) => {
       const point = canonicalMarkerScreen(state)
@@ -1545,8 +1666,8 @@ watch(
       // 用渲染方框而不是车体矩形做碰撞：车体贴图按航向在方框内旋转，方框是它在屏幕上的
       // 外接盒。用各向异性的车体矩形会判错——横向行驶的车实际占满方框宽度，矩形却说它很窄，
       // 而且矩形不随航向旋转，两车接近垂直时判定完全失准。
-      const width = state.markerSize.renderBox.width * view.scale
-      const height = state.markerSize.renderBox.height * view.scale
+      const width = markerPrefs.classIcons ? MARKER_CORE_PX : state.markerSize.renderBox.width * view.scale
+      const height = markerPrefs.classIcons ? MARKER_CORE_PX : state.markerSize.renderBox.height * view.scale
       return {
         accountId: state.vehicle.accountId,
         x: point.x,
@@ -1934,9 +2055,10 @@ const labelLayout = computed(() => {
       hpDisplayText: hp ? hpDisplayNumText(hp) : '',
       hpBoxW,
       hpBoxH,
-      selected: selectedAccountId.value === st.vehicle.accountId,
-      destroyed: st.destroyed === true,
-      recorder: st.recorder === true,
+      // Hidden badges have no collision footprint in the compact presentation.
+      selected: markerPrefs.showStatus && selectedAccountId.value === st.vehicle.accountId,
+      destroyed: markerPrefs.showStatus && st.destroyed === true,
+      recorder: markerPrefs.showStatus && st.recorder === true,
     }
   }).filter(Boolean)
   return computeLabelLayout(items, {
@@ -2067,7 +2189,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-test="battle-playback">
 
 
     <div ref="battlefieldWorkspaceEl" class="pb-main" :class="{ 'pb-roster-lanes': rosterLanes }" data-test="pb-main">
@@ -2091,6 +2213,18 @@ const mapStyle = computed(() => ({
         <PlaybackRoster :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
       <div class="pb-map-stage" ref="mapStageEl">
+        <div v-if="!uiHidden" class="pb-quick-actions pb-map-quick-actions">
+          <button v-if="phoneLandscape && !annotationOpen" type="button" class="pb-quick-action pb-annotation-entry" data-test="pb-annotation-entry" :aria-pressed="false" @click="toggleAnnotation">
+            <PencilRuler :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.annot.mode') }}
+          </button>
+          <button type="button" class="pb-quick-action" data-test="pb-toggle-roster" :aria-expanded="uiPrefs.showRoster" @click="uiPrefs.showRoster = !uiPrefs.showRoster">
+            <component :is="uiPrefs.showRoster ? PanelLeftClose : PanelLeftOpen" :size="18" aria-hidden="true" />
+            {{ $t(uiPrefs.showRoster ? 'recon.map.playback.hide_rosters' : 'recon.map.playback.show_rosters') }}
+          </button>
+          <button type="button" class="pb-quick-action" data-test="pb-declutter" :aria-pressed="declutterActive" :title="$t('recon.map.playback.declutter_hint')" @click="toggleDeclutter">
+            <ScanEye :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.declutter') }}
+          </button>
+        </div>
         <BattleMap
           ref="mapComponent"
           :image="image"
@@ -2113,13 +2247,14 @@ const mapStyle = computed(() => ({
           :marker-label="markerLabel"
           :hp-for="hpFor"
           :hp-prefs="{ showHp: !uiHidden && hpPrefs.showHp }"
+          :marker-prefs="{ classIcons: !uiHidden && markerPrefs.classIcons, showStatus: !uiHidden && markerPrefs.showStatus }"
           :translate="t"
           :ghost-for="ghostFor"
           :flash-for="flashFor"
           :hp-no-transition="hpNoTransition"
           :text-session="textSession"
           :text-input-style="textInputStyle"
-          :visible-floats="visibleFloats"
+          :visible-floats="markerPrefs.showStatus ? visibleFloats : []"
           :visible-bursts="visibleBursts"
           :float-team-class="floatTeamClass"
           :touch-pan="mapTouchPan"
@@ -2168,6 +2303,13 @@ const mapStyle = computed(() => ({
 
       <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing">
         <div ref="transportEl" class="pb-transport-slot" data-test="pb-transport-slot">
+        <div v-if="!phoneLandscape" class="pb-replay-mode-bar">
+          <button type="button" class="pb-annotation-entry" :class="{ active: annotationOpen }" data-test="pb-annotation-entry" :aria-pressed="annotationOpen" @click="toggleAnnotation">
+            <PencilRuler :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.annot.mode') }}
+          </button>
+          <span>{{ $t(annotationOpen ? 'recon.map.playback.annot.mode_hint' : 'recon.map.playback.annot.watch_hint') }}</span>
+        </div>
+        <div v-show="!compactAnnotation" data-test="pb-transport-controls">
         <PlaybackControls
           :playing="playing"
           :speed="speed"
@@ -2186,11 +2328,15 @@ const mapStyle = computed(() => ({
           @drag-end="dragEnd"
           @seek="seek"
         />
+        </div>
         <!-- One annotation toolbar in the transport flow in every form. -->
         <div v-if="annotationOpen" class="pb-annotation-surface">
           <AnnotationToolbar
             :open="annotationOpen"
+            :compact="compactAnnotation"
             :active-tool="activeTool"
+            :selected-annotation="selectedAnnotation"
+            :route-point-count="routePoints.length"
             :annot-colors="ANNOT_COLORS"
             :annot-color="annotColor"
             :annot-visible="annotVisible"
@@ -2203,12 +2349,16 @@ const mapStyle = computed(() => ({
             :can-redo="canRedo"
             @close="closeAnnotation"
             @toggle-tool="toggleTool"
-            @set-annot-color="annotColor = $event"
+            @set-annot-color="setAnnotColor"
+            @rename-selected="renameSelected"
+            @delete-selected="deleteSelected"
+            @finish-route="finishRoute"
+            @cancel-route="cancelRoute"
             @update:annot-width="annotWidthSlider = $event"
             @undo="undoAnnot"
             @redo="redoAnnot"
             @clear-annotations="clearAll"
-            @toggle-annotations="annotVisible = !annotVisible"
+            @toggle-annotations="toggleAnnotations"
           />
         </div>
         </div>
@@ -2245,6 +2395,8 @@ const mapStyle = computed(() => ({
         </div>
         <p class="pb-display-heading">{{ $t('agentReplay.display_labels') }}</p>
         <div class="pb-panel-options">
+          <label><input data-test="pb-class-icons" type="checkbox" :checked="markerPrefs.classIcons" @change="markerPrefs.classIcons = $event.target.checked"> {{ $t('recon.map.playback.class_icons') }}</label>
+          <label><input data-test="pb-show-status" type="checkbox" :checked="markerPrefs.showStatus" @change="markerPrefs.showStatus = $event.target.checked"> {{ $t('recon.map.playback.show_status') }}</label>
           <label><input data-test="pb-show-player" type="checkbox" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ $t('recon.map.playback.show_player_name') }}</label>
           <label><input data-test="pb-show-tank" type="checkbox" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ $t('recon.map.playback.show_tank_name') }}</label>
           <label><input data-test="pb-show-hp" type="checkbox" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ $t('recon.map.playback.show_hp') }}</label>
@@ -2252,9 +2404,6 @@ const mapStyle = computed(() => ({
           <label><input data-test="pb-show-reload" type="checkbox" :checked="labelPrefs.showReload" @change="labelPrefs.showReload = $event.target.checked"> {{ $t('agentReplay.display_reload') }}</label>
         </div>
         <div class="pb-panel-tools" data-test="pb-panel-tools">
-          <button type="button" class="pb-tool-row" data-test="pb-panel-annotation" @click="toggleAnnotation(); displayOpen = false">
-            <span aria-hidden="true">✎</span> {{ $t('recon.map.playback.annotation') }}
-          </button>
           <button type="button" class="pb-tool-row" data-test="pb-panel-reset" @click="resetView()">
             <span aria-hidden="true">⟲</span> {{ $t('recon.map.playback.reset_view') }}
           </button>

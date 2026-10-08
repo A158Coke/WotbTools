@@ -1,4 +1,4 @@
-import { effectScope, reactive, watch } from 'vue'
+import { effectScope, reactive, readonly, ref, watch } from 'vue'
 
 export interface PlaybackLabelPreferences {
   showPlayerName: boolean
@@ -13,6 +13,12 @@ export interface PlaybackHpPreferences {
 
 export interface PlaybackTrailPreferences {
   showTrail: boolean
+}
+
+export interface PlaybackMarkerPreferences {
+  classIcons: boolean
+  /** Recorder/death badges and floating damage; battle facts remain unchanged. */
+  showStatus: boolean
 }
 
 /**
@@ -30,6 +36,7 @@ const LABEL_PREFS_KEY = 'wotb.pb.label-prefs'
 const HP_PREFS_KEY = 'wotb.pb.hp-prefs'
 const TRAIL_PREFS_KEY = 'wotb.pb.trail-prefs'
 const UI_PREFS_KEY = 'wotb.pb.ui-prefs'
+const MARKER_PREFS_KEY = 'wotb.pb.marker-prefs'
 
 function readJson<T>(key: string, fallback: T, normalize: (value: unknown) => T): T {
   try {
@@ -95,12 +102,62 @@ function createPlaybackPreferences() {
     },
   ))
 
-  watch(labelPrefs, (value) => persistJson(LABEL_PREFS_KEY, value), { deep: true })
-  watch(hpPrefs, (value) => persistJson(HP_PREFS_KEY, value), { deep: true })
-  watch(trailPrefs, (value) => persistJson(TRAIL_PREFS_KEY, value), { deep: true })
+  const markerPrefs = reactive<PlaybackMarkerPreferences>(readJson(
+    MARKER_PREFS_KEY,
+    { classIcons: false, showStatus: true },
+    (value) => {
+      const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+      return { classIcons: record.classIcons === true, showStatus: record.showStatus !== false }
+    },
+  ))
+
+  const declutterActive = ref(false)
+  const capture = () => ({
+    labels: { ...labelPrefs }, hp: { ...hpPrefs }, trails: { ...trailPrefs }, markers: { ...markerPrefs },
+  })
+  let previous: ReturnType<typeof capture> | null = null
+  let applyingPreset = false
+  function persistPresentation() {
+    // The preset is temporary. Reloading returns to the user's saved settings,
+    // rather than losing the restoration snapshot and leaving an unexplained mix.
+    const value = previous || capture()
+    persistJson(LABEL_PREFS_KEY, value.labels)
+    persistJson(HP_PREFS_KEY, value.hp)
+    persistJson(TRAIL_PREFS_KEY, value.trails)
+    persistJson(MARKER_PREFS_KEY, value.markers)
+  }
+  function toggleDeclutter() {
+    const restore = previous
+    applyingPreset = true
+    if (restore) {
+      Object.assign(labelPrefs, restore.labels)
+      Object.assign(hpPrefs, restore.hp)
+      Object.assign(trailPrefs, restore.trails)
+      Object.assign(markerPrefs, restore.markers)
+      previous = null
+      declutterActive.value = false
+    } else {
+      previous = capture()
+      declutterActive.value = true
+      Object.assign(labelPrefs, { showPlayerName: false, showTankName: true, showReload: false })
+      hpPrefs.showHp = false
+      trailPrefs.showTrail = false
+      Object.assign(markerPrefs, { classIcons: true, showStatus: false })
+    }
+    applyingPreset = false
+    persistPresentation()
+  }
+  watch([labelPrefs, hpPrefs, trailPrefs, markerPrefs], () => {
+    if (applyingPreset) return
+    // An explicit setting change becomes the new custom view; never restore
+    // an older snapshot over a subsequent user edit.
+    previous = null
+    declutterActive.value = false
+    persistPresentation()
+  }, { deep: true, flush: 'sync' })
   watch(uiPrefs, (value) => persistJson(UI_PREFS_KEY, value), { deep: true })
 
-  return { labelPrefs, hpPrefs, trailPrefs, uiPrefs }
+  return { labelPrefs, hpPrefs, trailPrefs, markerPrefs, uiPrefs, declutterActive: readonly(declutterActive), toggleDeclutter }
 }
 
 // Initialize lazily so persisted values hydrate on the first consumer. A detached

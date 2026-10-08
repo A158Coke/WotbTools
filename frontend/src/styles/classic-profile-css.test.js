@@ -1,11 +1,8 @@
 // CSS source contract guard for Classic Profile (frontend/AGENTS.md D1/D2).
 //
-// Classic = 仅「从简」视觉精简(结构性不变,D1)。本文件用 [data-ui-profile="classic"]
-// namespace 关闭 Showcase 的全屏 AI/装饰性背景、readability veil、装饰性 hero surface。
-// 契约(对应
-//   A) 每条规则都必须带 [data-ui-profile="classic"] 前缀,严禁无 namespace 的全局规则泄漏进 Showcase;
-//   B) 不得用 display:none 隐藏任何业务元素(HoF Admin tabs / Replay actions / AI Review / League Rating 等);
-//   D) 必须在 main.js 中于所有 showcase*.css 之后导入。
+// Presentation profiles share DOM and business state. Migrated surfaces use semantic tokens;
+// remaining legacy surfaces retain namespaced Classic bridges until their owner is migrated.
+// This guard covers ownership and source boundaries; actual layout/contrast needs browser QA.
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +12,11 @@ const read = (name) => readFileSync(fileURLToPath(new URL(name, import.meta.url)
 
 const classic = read('./classic-profile.css')
 const mainJs = read('../main.js')
+const playbackFixture = read('../../scripts/browser-fixtures/playback-controls.js')
+const appShell = read('./app-shell.css')
+const workspaces = read('./showcase-workspaces.css')
+const home = read('../components/HomePage.vue')
+const contact = read('../components/ContactPage.vue')
 
 const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '')
 
@@ -46,22 +48,15 @@ describe('Classic Profile CSS contract', () => {
     expect(css).not.toMatch(/display:\s*none/)
   })
 
-  it('必须关闭全屏 AI 背景(backdrop ::after/::before 用 content:none 移除)', () => {
-    const css = stripComments(classic)
-    const rule = css.split(/}/).find((chunk) => /::after|::before/.test(chunk) && chunk.includes('content: none'))
-    expect(rule, 'should contain a backdrop-pseudo rule that removes the AI backdrop').toBeTruthy()
-    expect(rule).toMatch(/data-ui-profile/)
-    expect(rule).toMatch(/layout-data-workspace/)
+  it('工作区不再加载全屏 AI 背景层，两种 Profile 共用纯色页面', () => {
+    expect(stylesheetImports.some(path => /showcase-backgrounds/.test(path))).toBe(false)
+    expect(ruleBody(appShell, 'body {')).toContain('background: var(--color-canvas)')
   })
 
-  it('Classic 去掉首页四张 AI 装饰卡片图并清除装饰渐变(Home)', () => {
-    const css = stripComments(classic)
-    // 去图:.feature-visual img 用 visibility:hidden(保留盒子 -> 不改卡片结构/尺寸/间距)
-    expect(ruleBody(css, '.feature-visual img')).toContain('visibility: hidden')
-    // 清除 .feature-visual::after 装饰渐变
-    expect(ruleBody(css, '.feature-visual::after')).toContain('content: none')
-    // 清除 .showcase-hero::before 装饰渐变
-    expect(ruleBody(css, '.showcase-hero::before')).toContain('content: none')
+  it('首页拥有自己的装饰插槽，Classic 不再覆盖业务卡片', () => {
+    expect(stripComments(classic)).not.toMatch(/\.(feature-visual|feature-card|showcase-hero|record-card)\b/)
+    expect(home).toContain('var(--color-surface-1)')
+    expect(home).toContain('var(--color-text-primary)')
   })
 
   it('在 main.js 中必须最后导入(§43D / §33 顺序契约)', () => {
@@ -70,6 +65,9 @@ describe('Classic Profile CSS contract', () => {
     expect(classicIdx).toBe(stylesheetImports.length - 1)
     const lastShowcase = stylesheetImports.map((p) => p.endsWith('showcase-regressions.css')).indexOf(true)
     expect(classicIdx).toBeGreaterThan(lastShowcase)
+    // The browser gate must exercise the same cascade as production, including deleted sheets.
+    const fixtureSheets = [...playbackFixture.matchAll(/import\s+['"]([^'"]+\.css)['"]/g)].map(m => m[1].replace(/^.*?styles\//, ''))
+    expect(fixtureSheets).toEqual(stylesheetImports.map(path => path.replace(/^.*?styles\//, '')))
   })
 })
 
@@ -104,16 +102,14 @@ describe('Classic Profile — 真浅色主题契约（Theme 计划：Classic=Lig
 
   // 应用外壳（顶栏 / 底部 Tab 栏 / 更多）只用设计语言语义 token，浅色由 tokens/color.css 的
   // [data-theme="light"] 映射提供，不再需要 classic 覆盖规则。
-  it('覆盖核心页面面:tabs/table/form/modal 均带 namespace 且不隐藏业务', () => {
+  it('未迁移 modal 保留 Classic 桥接，已迁移回放表格不建立第二个 owner', () => {
     expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.modal\s*\{/)
-    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.layout-data-workspace\s+:is\(input, select, textarea\)/)
-    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.layout-data-workspace\s+table\s+thead\s+th/)
-    // 不隐藏业务组件(白底白字/低对比风险用 token 覆盖,而非 display:none)
+    expect(css).not.toMatch(/\.layout-data-workspace\s+(?:table|\.tablewrap)/)
     expect(css).not.toMatch(/display:\s*none/)
   })
 })
 
-describe('Classic 深色冲突 selector→declaration 绑定（须带 !important 战胜 Showcase 深色）', () => {
+describe('Classic 迁移边界：语义 owner 与仍需要的 legacy 桥接', () => {
   const css = stripComments(classic)
   const declOf = (frag) => {
     for (const preferHtml of [true, false]) {
@@ -132,27 +128,21 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     for (const sub of subs) expect(body + '', 'selector ' + frag + ' 缺 ' + sub).toContain(sub)
   }
 
-  it('Home：hero 标题/副标题/次级 CTA/Record Card 白底深字且带 !important', () => {
-    has('.showcase-hero h1', ['color: var(--text-heading) !important', 'text-shadow: none !important'])
-    has('.hero-subtitle', ['color: var(--text-sub) !important'])
-    has('.hero-btn.secondary', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
-    has('.record-card', ['background: var(--bg-card) !important', 'color: var(--text-heading) !important'])
-    has('.record-card > span', ['color: var(--text-sub) !important'])
-    has('.mini-action', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
+  it('首页标题与操作不受全局深浅色补丁接管', () => {
+    expect(css).not.toMatch(/\.(hero-copy|hero-btn|mini-action|record-meta)\b/)
   })
 
-  it('Replay 结果区：Ghost 按钮 / Tabs 浅底深字 !important（上传区、视图切换已改用设计语言 token）', () => {
-    has('.filebtn.ghost', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
-    has('.tabs button', ['color: var(--text-sub) !important'])
+  it('通用 Ghost / Tabs 由 app-shell 的语义 token 定义', () => {
+    expect(ruleBody(appShell, '.ghost {')).toContain('color: var(--color-text-primary)')
+    expect(ruleBody(appShell, '.tabs button.active')).toContain('color: var(--color-accent-text)')
+    expect(css).not.toMatch(/\.filebtn|classic"\] \.tabs button/)
   })
 
-  it('回归：Replay .tablewrap 必须 background/border-color/color/box-shadow 全带 !important', () => {
-    has('.layout-data-workspace .tablewrap', [
-      'background: var(--bg-card) !important',
-      'border-color: var(--border) !important',
-      'color: var(--text) !important',
-      'box-shadow: var(--surface-shadow) !important',
-    ])
+  it('Replay 表格与 sticky cells 共用不透明语义表面，不依赖 Classic 补丁', () => {
+    expect(ruleBody(appShell, '.tablewrap')).toContain('background: var(--color-surface-1)')
+    expect(ruleBody(workspaces, '.layout-data-workspace table thead th {')).toContain('background: var(--color-surface-2)')
+    expect(ruleBody(workspaces, '.layout-data-workspace table td:first-child')).toContain('background: var(--color-surface-1)')
+    expect(css).not.toContain('.layout-data-workspace .tablewrap')
   })
 
   it('HoF：Toolbar/Table Header 浅色 !important（上传弹窗已改用 AppDialog token）', () => {
@@ -179,8 +169,10 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('.lb-wrap .pagination button', ['background: var(--bg-card) !important', 'color: var(--text-sub) !important'])
   })
 
-  it('Version/Contact 浅色 !important', () => {
-    has('.contact-card', ['background: var(--bg-card) !important'])
+  it('Contact 组件拥有浅深色语义表面，Classic 不再覆盖', () => {
+    expect(css).not.toContain('.contact-card')
+    expect(contact).toContain('var(--color-surface-1)')
+    expect(contact).toContain('var(--color-text-primary)')
   })
 
   // 用户管理 / 名人堂管理 / 玩家详情抽屉已迁到设计语言语义 token（design-language §13）：
