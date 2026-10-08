@@ -25,6 +25,7 @@ import { FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixtu
 // 判定触发面（Primary = 主装甲板）与产品同源：射线未触达 Primary 的点击不构成判定
 //（BlitzKit 的 shoot() 只挂在 Primary 网格上）。门禁断言依赖这份分类，勿在脚本里另抄一份。
 import { ArmorSection, isPrimary } from '../src/scene/penetration.js'
+import { buildFindSpotsExpr } from './armor-spot-scan.mjs'
 
 const useRealAssets = !!process.env.AIM_ASSETS
 const TANK = process.env.AIM_TANK || (useRealAssets ? '3201' : String(FIXTURE_TANK_ID))
@@ -84,45 +85,10 @@ try {
   // 部位采样必须同时满足两条：可视化第一命中名（__raytrace 的报告面）与**产品同一分类器**
   // __aimPart 的结论一致——只按名字采样会在视觉模型/装甲模型命中顺序不一致时取到
   // "看着是炮塔、按下却落进车体/相机分支"的像素，让断言在 CI 上随机翻车。
-  // 每个部位**优先**取「射线触达主装甲板」的像素（短按必出结论，断言最强）；真实资产覆盖下
-  // 某部位可能只有仅触达间隙甲/外部模块的像素（如炮管悬空、其装甲板全归 spaced）——此时退回
-  // 该像素并记 primary:false，由调用方按"不构成判定（面板无结论）"断言（BlitzKit 触发面语义）。
+  // 选择逻辑（首选主装甲 / 次选仅间隙甲+外部模块 / 首选齐备即早退）见 armor-spot-scan.mjs，
+  // 由 armor-spot-scan.test.mjs 确定性锁定（含"次选先出现不得占位"的回归用例）。
   // need 可裁剪（触屏视口窄，转动后炮管可能出画/被遮挡时只要求用得到的部位）
-  const findSpotsExpr = (need) => `(() => {
-    const H = window.__armorRicochet;
-    const c = document.querySelector('canvas');
-    const r = c.getBoundingClientRect();
-    const need = ${JSON.stringify(need)};
-    const PRIMARY = ${JSON.stringify(PRIMARY_SECTIONS)};
-    const found = { gun: null, turret: null, hull: null };      // 首选：射线触达主装甲
-    const fallback = { gun: null, turret: null, hull: null };   // 次选：仅间隙甲/外部模块
-    const scan = (step) => {
-      for (let cy = 20; cy < c.height - 20; cy += step) {
-        for (let cx = 20; cx < c.width - 20; cx += step) {
-          const px = r.left + cx, py = r.top + cy;
-          const hits = H.__raytrace(px, py);
-          if (!hits || !hits.length) continue;
-          const n = hits[0].name;
-          const cls = H.__aimPart(px, py);
-          const primary = hits.some((h) => PRIMARY.includes(h.sec));
-          const take = (part, rec) => {
-            if (found[part] || fallback[part]) return;
-            (primary ? found : fallback)[part] = rec;
-          };
-          if (/^gun_/.test(n) && cls === 'gun') take('gun', { x: px, y: py, name: n, cls, primary });
-          if (/^turret_/.test(n) && cls === 'turret') take('turret', { x: px, y: py, name: n, cls, primary });
-          if (/^hull_/.test(n) && cls === null) take('hull', { x: px, y: py, name: n, cls: 'camera', primary });
-          if (need.every((p) => found[p])) return true;
-        }
-      }
-      return false;
-    };
-    // 先粗后细：步长 8 已足够命中（最细的炮管在屏上也有 ~20px 宽），漏找才回退步长 4。
-    // 全画布逐像素双射线（__raytrace + __aimPart）在 CI 的 3fps runner 上要 20s+，粗扫省 4 倍。
-    // 仅当某部位连"首选"像素都没有时才细扫（次选已找到不触发细扫，避免无谓整帧扫描）。
-    if (!scan(8)) scan(4);
-    return { gun: found.gun || fallback.gun, turret: found.turret || fallback.turret, hull: found.hull || fallback.hull };
-  })()`
+  const findSpotsExpr = (need) => buildFindSpotsExpr({ need, primarySections: PRIMARY_SECTIONS })
   const findSpots = async (need = ['gun', 'turret', 'hull']) => {
     // 采样前等视图静止：damping 让相机在拖动/捏合后继续滑行（慢渲染下数秒），滑行中采到的
     // 部位像素在按下时可能已滑成别的部位 → 断言随机翻车。阈值 = max(400ms, 3×帧间隔)。
