@@ -18,9 +18,16 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 import { FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
+// 判定触发面（Primary = 主装甲板）与产品同源：射线未触达 Primary 的点击不构成判定
+//（BlitzKit 的 shoot() 只挂在 Primary 网格上）。门禁断言依赖这份分类，勿在脚本里另抄一份。
+import { ArmorSection, isPrimary } from '../src/scene/penetration.js'
 
 const useRealAssets = !!process.env.AIM_ASSETS
 const TANK = process.env.AIM_TANK || (useRealAssets ? '3201' : String(FIXTURE_TANK_ID))
+const PRIMARY_SECTIONS = [ArmorSection.HULL, ArmorSection.TURRET, ArmorSection.GUN]
+if (!PRIMARY_SECTIONS.every(isPrimary) || isPrimary(ArmorSection.SPACED) || isPrimary(ArmorSection.CHASSIS)) {
+  throw new Error('判定模块的 Primary 分类与门禁假设不一致（penetration.js isPrimary）')
+}
 const failures = []
 const check = (ok, msg) => {
   if (ok) console.log(`[armor-aiming] OK: ${msg}`)
@@ -79,6 +86,7 @@ try {
     const c = document.querySelector('canvas');
     const r = c.getBoundingClientRect();
     const need = ${JSON.stringify(need)};
+    const PRIMARY = ${JSON.stringify(PRIMARY_SECTIONS)};
     const found = { gun: null, turret: null, hull: null };
     const scan = (step) => {
       for (let cy = 20; cy < c.height - 20; cy += step) {
@@ -88,6 +96,9 @@ try {
           if (!hits || !hits.length) continue;
           const n = hits[0].name;
           const cls = H.__aimPart(px, py);
+          // 像素必须能构成判定（射线触达主装甲板）：间隙甲屏幕 / 外部模块像素不触发判定，
+          // 采样到它们会让下面的「短按触发判定」断言假失败。分类取自判定模块（PRIMARY）。
+          if (!hits.some((h) => PRIMARY.includes(h.sec))) continue;
           if (!found.gun && /^gun_/.test(n) && cls === 'gun') found.gun = { x: px, y: py, name: n, cls };
           if (!found.turret && /^turret_/.test(n) && cls === 'turret') found.turret = { x: px, y: py, name: n, cls };
           if (!found.hull && /^hull_/.test(n) && cls === null) found.hull = { x: px, y: py, name: n, cls: 'camera' };
@@ -123,6 +134,32 @@ try {
   const shotPanel = () => page.evaluate(`(() => {
     const el = document.getElementById('traj-info');
     return { visible: !!el && el.style.display !== 'none', text: (el && el.textContent || '').slice(0, 60) };
+  })()`)
+
+  /**
+   * 「仅间隙甲命中」像素：射线首命中是间隙甲，且整条射线不含任何主装甲板
+   * （hull/turret/gun）—— BlitzKit 语义下这类点击不构成判定。夹具的屏幕板
+   * turret_01_armor_2（12mm 间隙甲，悬在车外、其后是空域）专门构造该几何。
+   * 同时要求像素没被固定 UI 覆盖（elementFromPoint 落在画布上），否则点击进不了场景。
+   */
+  const findScreenOnlyPixel = async () => page.evaluate(`(() => {
+    const H = window.__armorRicochet;
+    const c = document.querySelector('canvas');
+    const r = c.getBoundingClientRect();
+    const PRIMARY = ${JSON.stringify(PRIMARY_SECTIONS)};
+    for (let cy = Math.round(c.height * 0.18); cy < Math.round(c.height * 0.8); cy += 6) {
+      for (let cx = Math.round(c.width * 0.25); cx < Math.round(c.width * 0.75); cx += 6) {
+        const px = r.left + cx, py = r.top + cy;
+        const hits = H.__raytrace(px, py);
+        if (!hits || !hits.length) continue;
+        if (hits[0].sec !== 'spaced') continue;
+        if (hits.some((h) => PRIMARY.includes(h.sec))) continue;
+        const el = document.elementFromPoint(px, py);
+        if (!el || (el !== c && !c.contains(el))) continue;
+        return { x: px, y: py, name: hits[0].name, layers: hits.length };
+      }
+    }
+    return null;
   })()`)
 
   const mouseDrag = async (from, dx, dy) => {
@@ -214,6 +251,28 @@ try {
     check(j1 === j0, `${label}：双指手势不触发装甲判定（judgments ${j0}→${j1}）`)
     check(stateEnd.aiming === false && stateEnd.controlsEnabled === true,
       `${label}：手势结束后状态干净（aiming=${stateEnd.aiming} controls=${stateEnd.controlsEnabled}）`)
+  }
+
+  // —— 仅间隙甲命中（射线未触达主装甲）= 不构成判定（BlitzKit 触发面语义）——
+  // 回归：只穿间隙甲屏幕的射线若照常判定，「末层被穿透」规则会给出 PENETRATION + 全额伤害，
+  // 把「只打穿一块屏幕」显示成击穿整车（实车 56TP 炮塔 10mm 屏幕板 plate 12 即此类）。
+  // 位置要求：下面的拖动用例会环绕相机、转动炮塔，而屏幕板的可见像素依赖 URL 固定机位——
+  // 本场景必须排在它们之前，且只做短按（不改相机/炮塔姿态），因此复用刚采样的 hull 像素。
+  {
+    const spot = await findScreenOnlyPixel()
+    if (!spot) {
+      check(false, '未找到「仅间隙甲命中」的像素（夹具屏幕板 turret_01_armor_2 / 机位异常）')
+    } else {
+      await mouseTap(spots.hull)   // 前置：先留下一个在屏结论，确保「不显示」不是「本来就没有」
+      const before = await shotPanel()
+      check(before.visible === true, `屏幕场景前置：车体短按留下在屏结论（"${before.text.trim().slice(0, 24)}"）`)
+      const n0 = await readJudgments()
+      await mouseTap(spot)
+      const n1 = await readJudgments()
+      const after = await shotPanel()
+      check(n1 === n0 + 1, `短按·间隙甲屏幕到达判定路径（judgments ${n0}→${n1}，命中 ${spot.name}，${spot.layers} 层）`)
+      check(after.visible === false, `短按·间隙甲屏幕不构成判定：面板不显示结论（DOM 缓存文本 "${after.text.trim().slice(0, 24)}" 不可见，不计）`)
+    }
   }
 
   // —— 交互分支断言 ——
