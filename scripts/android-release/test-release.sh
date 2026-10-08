@@ -273,51 +273,6 @@ reject(lambda: gates.validate_cors(503, headers, contract["origin"], [], []))
 reject(lambda: gates.validate_cors(200, headers, contract["origin"], [], [], 401))
 print("APK bundle evidence and exact-origin readiness: PASS")
 PY
-
-if ! command -v jq >/dev/null 2>&1; then
-  echo "jq is unavailable; production JSON classifier cases are CI-only"
-  exit 0
-fi
-
-. "$GUARDS"
-guard_min_supported 1000000 1000002 || fail "minSupported ok"
-if guard_min_supported 1001000 1000002; then fail "minSupported over-bound should reject"; fi
-
-write_json() { printf '%s' "$2" > "$TMP/$1"; }
-sha='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-source_sha='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-write_json older '{"schemaVersion":1,"latestVersionCode":1000001,"latestVersionName":"1.0.1","minSupportedVersionCode":1000000,"nativeBridgeVersion":1,"apkUrl":"https://wotbtools.com/download/android/wotbtools-android-v1.0.1.apk","sha256":"'$sha'"}'
-classify_prod "$TMP/older" 1000002 1.0.2 wotbtools-android-v1.0.2.apk 1000000 1
-[ "$PROD_STATE" = prod_older ] || fail "prod_older"
-write_json newer '{"schemaVersion":1,"latestVersionCode":1000003,"latestVersionName":"1.0.3","minSupportedVersionCode":1000000,"nativeBridgeVersion":1,"apkUrl":"https://wotbtools.com/download/android/wotbtools-android-v1.0.3.apk","sha256":"'$sha'"}'
-classify_prod "$TMP/newer" 1000002 1.0.2 wotbtools-android-v1.0.2.apk 1000000 1
-[ "$PROD_STATE" = prod_newer ] || fail "prod_newer"
-write_json equal '{"schemaVersion":1,"latestVersionCode":1000002,"latestVersionName":"1.0.2","minSupportedVersionCode":1000000,"nativeBridgeVersion":1,"sourceSha":"'$source_sha'","apkUrl":"https://wotbtools.com/download/android/wotbtools-android-v1.0.2.apk","sha256":"'$sha'"}'
-classify_prod "$TMP/equal" 1000002 1.0.2 wotbtools-android-v1.0.2.apk 1000000 1 "$source_sha"
-[ "$PROD_STATE" = prod_equal_ok ] || fail "prod_equal_ok"
-classify_prod "$TMP/equal" 1000002 1.0.2 wotbtools-android-v1.0.2.apk 1000000 1 wrong-source-sha
-[ "$PROD_STATE" = prod_equal_conflict ] || fail "sourceSha conflict"
-sed 's/"nativeBridgeVersion":1/"nativeBridgeVersion":2/' "$TMP/equal" > "$TMP/bridge-conflict"
-classify_prod "$TMP/bridge-conflict" 1000002 1.0.2 wotbtools-android-v1.0.2.apk 1000000 1
-[ "$PROD_STATE" = prod_equal_conflict ] || fail "bridge conflict"
-
-classify_prod_apk "" 1000002
-[ "$APK_STATE" = apk_absent ] || fail "apk_absent"
-classify_prod_apk abc abc
-[ "$APK_STATE" = apk_equal ] || fail "apk_equal"
-classify_prod_apk abc def
-[ "$APK_STATE" = apk_conflict ] || fail "apk_conflict"
-
-classify_tag "" android-v1.0.2 1000002
-[ "$TAG_STATE" = tag_absent ] || fail "tag_absent"
-classify_tag $'abc\trefs/tags/android-v1.0.2' android-v1.0.2 abc
-[ "$TAG_STATE" = tag_equal ] || fail "tag_equal"
-classify_tag $'abc\trefs/tags/android-v1.0.2\ndef456\trefs/tags/android-v1.0.2^{}' android-v1.0.2 def456
-[ "$TAG_STATE" = tag_equal ] || fail "annotated tag_equal"
-
-classify_tag $'abc\trefs/tags/android-v1.0.2' android-v1.0.2 def456
-[ "$TAG_STATE" = tag_conflict ] || fail "tag_conflict"
-
 python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
 from pathlib import Path
 import sys
@@ -326,7 +281,7 @@ workflow = Path(sys.argv[1]).read_text(encoding="utf-8")
 preflight = workflow.index("Preflight classify production state")
 agent_wasm = workflow.index("Fetch pinned Agent WASM for frontend validation")
 frontend = workflow.index("Frontend tests + build validation")
-upload = workflow.index("Upload APK to TX")
+upload = workflow.index("Seed APK to TX from Tsinghua replica")
 ensure_tag = workflow.index("Ensure release tag (idempotent)")
 assert preflight < agent_wasm < frontend < upload < ensure_tag
 preflight_block = workflow[preflight:agent_wasm]
@@ -335,6 +290,56 @@ assert 'if [ "$TAG_STATE" = "tag_conflict" ]; then' in preflight_block
 agent_wasm_block = workflow[agent_wasm:frontend]
 assert "bash scripts/fetch-agent-wasm.sh" in agent_wasm_block, \
     "Android release frontend validation must fetch the pinned Agent WASM first"
+PY
+
+# 发布上传链（2026-10-08 优化后锁死，防回退）：APK 不得再走 scp-action 跨洋直推
+#（drone-scp 的 SFTP 单流实测 12.6–13.8 KB/s → 15MB × 2 台 ≈ 40 分钟，占 stage job 89%）；
+# 两台 origin 必须"从清华副本拉取 + 就地 SHA-256 校验 + 原子落位"，且仍只在 origin
+# absent 时触发（幂等：equal 跳过、清华 replace=1 覆盖自愈）。顺序：classify → 清华 → seed×2。
+python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
+import sys
+import yaml
+
+workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+steps = workflow["jobs"]["stage"]["steps"]
+
+
+def named(fragment):
+    hits = [s for s in steps if fragment in (s.get("name") or "")]
+    assert len(hits) == 1, f"expected exactly one step containing {fragment!r}, got {len(hits)}"
+    return hits[0]
+
+
+for step in steps:
+    if "APK" in (step.get("name") or ""):
+        assert "scp-action" not in (step.get("uses") or ""), \
+            f"APK must not be pushed via scp-action (cross-border SFTP): {step['name']}"
+
+seeds = [named("Seed APK to TX from Tsinghua replica"), named("Seed APK to TX2 from Tsinghua replica")]
+for seed in seeds:
+    assert seed["uses"].startswith("appleboy/ssh-action"), seed["name"]
+    script = seed["with"]["script"]
+    assert "sha256sum -c" in script, f"seed must verify SHA before landing bytes: {seed['name']}"
+    assert 'TMP="$DEST.partial.$$"' in script, \
+        f"seed temp file must be a hidden sibling of DEST: {seed['name']}"
+    # 落位必须原子且 **no-clobber**：classify 的 apk_absent 只是快照，窗口内可能有 manual SSH /
+    # 恢复脚本等第三方写入——`mv -f` 会覆盖 immutable 字节，同目录 `ln` 则原子失败并走冲突判定。
+    assert 'ln "$TMP" "$DEST"' in script, \
+        f"seed must publish via same-dir hard link (atomic no-clobber): {seed['name']}"
+    assert 'mv -f "$TMP" "$DEST"' not in script and 'mv "$TMP" "$DEST"' not in script, \
+        f"seed must never clobber an existing origin file (immutable APK): {seed['name']}"
+    assert 'EXISTING_SHA' in script and 'refusing to overwrite' in script, \
+        f"seed must compare existing bytes and fail closed on a concurrent immutable conflict: {seed['name']}"
+    cond = seed.get("if") or ""
+    assert "apk_absent" in cond, f"seed must stay idempotent (origin apk_absent only): {seed['name']}"
+    assert "apkcheck.outputs.tx1State" in cond or "apkcheck.outputs.tx2State" in cond, cond
+
+order = [s.get("name") for s in steps]
+tsinghua = named("Upload APK to Tsinghua Cloud")["name"]
+classify = named("Classify origin APK on TX1/TX2")["name"]
+verify = named("Verify production APK")["name"]
+assert order.index(classify) < order.index(tsinghua) < order.index(seeds[0]["name"]) \
+    < order.index(seeds[1]["name"]) < order.index(verify), order
 PY
 
 # 两阶段发布协议：stage 只做 staging（绝不写 production version.json），publish 只能手工续跑、
@@ -377,7 +382,7 @@ assert "assembleRelease" in stage_runs, "stage is the phase that builds and sign
 
 # --- stage: the signed release APK must carry the local-first bundle (PR #467 review) ---
 # 顺序即协议：取回 pinned Agent 产物 → 前端校验/构建 → 构建 Android bundle → assembleRelease
-# → 内容验证 → 才允许上传 / 打 tag / 写 staging evidence。
+# → 内容验证 → 才允许 seed 到两台 origin / 打 tag / 写 staging evidence。
 def step_index(predicate, label):
     for i, name in enumerate(stage_names):
         if predicate(name, i):
@@ -391,11 +396,11 @@ bundle_i = step_index(lambda n, i: "local-first frontend bundle" in n, "build:an
 assemble_i = step_index(
     lambda n, i: "assembleRelease" in (stage["steps"][i].get("run") or ""), "assembleRelease")
 verify_bundle_i = step_index(lambda n, i: "Verify release APK carries" in n, "release APK bundle verification")
-upload_apk_i = step_index(lambda n, i: n.startswith("Upload APK to TX"), "upload APK")
+seed_apk_i = step_index(lambda n, i: n.startswith("Seed APK to TX"), "seed APK")
 tag_i = step_index(lambda n, i: n.startswith("Ensure release tag"), "release tag")
 evidence_i = step_index(lambda n, i: "staging evidence" in n.lower(), "staging evidence")
 assert fetch_wasm_i < frontend_i < bundle_i < assemble_i < verify_bundle_i, stage_names
-assert verify_bundle_i < upload_apk_i < tag_i < evidence_i, stage_names
+assert verify_bundle_i < seed_apk_i < tag_i < evidence_i, stage_names
 bundle_runs = "\n".join(step.get("run") or "" for step in stage["steps"][bundle_i:assemble_i])
 assert "npm --prefix frontend run build:android" in bundle_runs, bundle_runs
 # 不重复 npm ci / 不重复取回 Agent 产物：bundle 步骤只复用前端校验的工作区。
@@ -720,5 +725,49 @@ PY
 
   echo "publish staged-identity shell simulation: PASS (staged versionCode, mismatch fails closed, pre-fix form fails)"
 fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is unavailable; production JSON classifier cases are CI-only"
+  exit 0
+fi
+
+. "$GUARDS"
+guard_min_supported 1000000 1000002 || fail "minSupported ok"
+if guard_min_supported 1001000 1000002; then fail "minSupported over-bound should reject"; fi
+
+write_json() { printf '%s' "$2" > "$TMP/$1"; }
+sha='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+source_sha='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+write_json older '{"schemaVersion":1,"latestVersionCode":1000001,"latestVersionName":"1.0.1","minSupportedVersionCode":1000000,"nativeBridgeVersion":1,"apkUrl":"https://wotbtools.com/download/android/wotbtools-android-v1.0.1.apk","sha256":"'$sha'"}'
+classify_prod "$TMP/older" 1000002 1.0.2 wotbtools-android-v1.0.2.apk 1000000 1
+[ "$PROD_STATE" = prod_older ] || fail "prod_older"
+write_json newer '{"schemaVersion":1,"latestVersionCode":1000003,"latestVersionName":"1.0.3","minSupportedVersionCode":1000000,"nativeBridgeVersion":1,"apkUrl":"https://wotbtools.com/download/android/wotbtools-android-v1.0.3.apk","sha256":"'$sha'"}'
+classify_prod "$TMP/newer" 1000002 1.0.2 wotbtools-android-v1.0.2.apk 1000000 1
+[ "$PROD_STATE" = prod_newer ] || fail "prod_newer"
+write_json equal '{"schemaVersion":1,"latestVersionCode":1000002,"latestVersionName":"1.0.2","minSupportedVersionCode":1000000,"nativeBridgeVersion":1,"sourceSha":"'$source_sha'","apkUrl":"https://wotbtools.com/download/android/wotbtools-android-v1.0.2.apk","sha256":"'$sha'"}'
+classify_prod "$TMP/equal" 1000002 1.0.2 wotbtools-android-v1.0.2.apk 1000000 1 "$source_sha"
+[ "$PROD_STATE" = prod_equal_ok ] || fail "prod_equal_ok"
+classify_prod "$TMP/equal" 1000002 1.0.2 wotbtools-android-v1.0.2.apk 1000000 1 wrong-source-sha
+[ "$PROD_STATE" = prod_equal_conflict ] || fail "sourceSha conflict"
+sed 's/"nativeBridgeVersion":1/"nativeBridgeVersion":2/' "$TMP/equal" > "$TMP/bridge-conflict"
+classify_prod "$TMP/bridge-conflict" 1000002 1.0.2 wotbtools-android-v1.0.2.apk 1000000 1
+[ "$PROD_STATE" = prod_equal_conflict ] || fail "bridge conflict"
+
+classify_prod_apk "" 1000002
+[ "$APK_STATE" = apk_absent ] || fail "apk_absent"
+classify_prod_apk abc abc
+[ "$APK_STATE" = apk_equal ] || fail "apk_equal"
+classify_prod_apk abc def
+[ "$APK_STATE" = apk_conflict ] || fail "apk_conflict"
+
+classify_tag "" android-v1.0.2 1000002
+[ "$TAG_STATE" = tag_absent ] || fail "tag_absent"
+classify_tag $'abc\trefs/tags/android-v1.0.2' android-v1.0.2 abc
+[ "$TAG_STATE" = tag_equal ] || fail "tag_equal"
+classify_tag $'abc\trefs/tags/android-v1.0.2\ndef456\trefs/tags/android-v1.0.2^{}' android-v1.0.2 def456
+[ "$TAG_STATE" = tag_equal ] || fail "annotated tag_equal"
+
+classify_tag $'abc\trefs/tags/android-v1.0.2' android-v1.0.2 def456
+[ "$TAG_STATE" = tag_conflict ] || fail "tag_conflict"
 
 echo "ALL ANDROID RELEASE TESTS PASSED"

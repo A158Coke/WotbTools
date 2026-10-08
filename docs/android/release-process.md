@@ -21,7 +21,7 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 
 | 阶段 | 行为 |
 |---|---|
-| stage | 校验 source/version/contract/cutover → 构建完整 Android bundle → 签名 APK → 核验 APK 内容、签名和 SHA → immutable APK/tag/evidence；不写 production version.json |
+| stage | 校验 source/version/contract/cutover → 构建完整 Android bundle → 签名 APK → 核验 APK 内容、签名和 SHA → 上传清华副本 → **两台 origin 从副本拉取 seed（逐跳 SHA-256）** → immutable APK/tag/evidence；不写 production version.json |
 | publish | `workflow_dispatch(mode=publish, version=X)`：X 的 immutable tag 决定候选 → 核验 tag target 源码、evidence、APK 字节与内嵌 bundle → Keycloak/API/资产就绪探测 → 最后上传 version.json；不重建、不重新签名 APK |
 
 生产版本较旧时继续，相同版本验证元数据和 SHA 后 no-op，较新则拒绝回滚。
@@ -30,12 +30,28 @@ Tag 不得 repoint；已有 APK SHA 不同则拒绝覆盖。已有 staging evide
 
 ### APK 公网下载卸载（清华云盘直链）
 
-TX1 出口公网带宽有限且会被 15MB 的 APK 下载打满，stage 阶段在把 immutable APK 传到
-TX1/TX2 之后，还会以 `TSINGHUA_CLOUD_TOKEN` 把同一 APK 传进清华云盘
+TX1 出口公网带宽有限且会被 15MB 的 APK 下载打满，stage 阶段以 `TSINGHUA_CLOUD_TOKEN`
+把 APK 传进清华云盘
 `个人资料库 /wotbtools-android/` 目录（`replace=1` 覆盖同名文件；`reuse=1` 只是幂等令牌，**不是**覆盖开关——缺 `replace` 时同名上传会被改名 `filename (1).apk`，固定下载路径拿不到新副本）。TX1 Caddy 把
 `/download/android/*.apk` 302 到该目录的分享直链
 `https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/<apkName>&dl=1`，
 分享链接无过期、不随版本变化，新增版本只需把文件放进目录即可生效。
+
+**两台 origin 的 APK 由该副本 seed（2026-10-08 优化）**：跨洋只发生一次——runner 只把 APK
+上传到清华副本（实测 15MB ≈ 75–108s），随后 TX1/TX2 各自从分享直链**拉取**（实测
+0.70s / 0.81s，≈19–22 MB/s），取代旧的 `appleboy/scp-action` 直推（drone-scp 的 SFTP
+单流，美区 runner → 境内 VPS 实测 12.6–13.8 KB/s，15MB 要 18–21 分钟 × 2 台，占 stage
+job 约 89%）。拉取侧四道边界：
+① 就地 `sha256sum -c` 比对 staged SHA，不符即删临时文件并 fail-closed——绝不把坏字节
+落成 origin（旧 scp 直推上传后不校验 origin 字节，这是顺带补上的缺口）；② 先写
+`*.partial.<pid>` 再同目录 **hard link（`ln`）原子 no-clobber 落位**：nginx 永不读到半截
+文件，且目标已被并发写入时 `ln` 原子失败、绝不覆盖（旧 scp 中断会留下半截文件并被
+nginx 服务，且直推是覆盖写）；③ `ln` 失败即比对目标现有 SHA-256——与 staged SHA 相同视为
+「并发进程已放入同一份 immutable 字节」（视为已完成），不同则打印
+`immutable origin conflict … refusing to overwrite` 并 fail-closed；④ 触发条件仍是 origin
+`apk_absent`（幂等：equal 跳过、清华 `replace=1` 覆盖自愈）。
+②③ 一起覆盖了 classify 快照与落位之间窗口内的第三方写入（manual SSH / 恢复脚本等）：
+「classify 发现 absent」不再是覆盖许可，immutability 由落位本身保证。
 
 **Origin 与分发副本是两个身份，判定源必须分开：**
 
@@ -44,10 +60,12 @@ TX1/TX2 之后，还会以 `TSINGHUA_CLOUD_TOKEN` 把同一 APK 传进清华云�
   做该判定——`*.apk` 已被 302 到网盘，副本损坏时公网 URL 会把 rerun 误判成 conflict
   直接失败，而能修复副本的清华覆盖上传又被同一失败挡在后面，不可自愈。SSH 探测协议还
   区分「远端显式回答文件不存在」与「探测本身失败」，后者直接失败本步骤，绝不降级成 absent
-  （否则 scp 会覆盖一个 SHA 不符的 origin 文件，销毁 immutable 冲突证据）。
+  （否则 seed 会覆盖一个 SHA 不符的 origin 文件，销毁 immutable 冲突证据）。
 - Distribution replica：清华云盘。不参与 immutable 判定；stage 每次执行都会 `replace=1` 覆盖同名文件（`reuse=1` 幂等令牌）
   覆盖上传 + 「分享直链下载回来 SHA-256 与 staged APK 一致」校验，因此副本缺失/损坏在
-  任意重跑中都会被无条件修复（「重跑安全」指的就是这一层）。
+  任意重跑中都会被无条件修复（「重跑安全」指的就是这一层）。它同时是 **origin 的冷启动源**
+  （两台 origin 从这里 seed）；副本字节若损坏，seed 步骤的就地 SHA 校验会在写入 origin 前拦下
+  （fail-closed），不会污染 immutable 权威。
 - 公网 URL（wotbtools.com → 302 → 网盘）只做最终端到端复核，从不作为状态判定源。
 
 - URL 契约不变：`version.json` 的 `apkUrl` 仍是 `https://wotbtools.com/download/android/<apk>`，

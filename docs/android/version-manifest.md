@@ -21,7 +21,8 @@
 `nativeBridgeVersion` 来自同一 source 的 `contracts/android-native-bridge.json`；`sourceSha` 是生成 APK
 所 checkout 的精确 commit。workflow 只有在**两阶段**都通过之后才写入 manifest：
 
-1. **stage**（main 合并后自动）：构建/签名/上传 immutable APK、建 tag，并写一份 staging evidence
+1. **stage**（main 合并后自动）：构建/签名 → 上传清华副本 → 两台 origin 从副本拉取 seed
+   （逐跳 SHA-256 校验，见 [release-process.md](release-process.md)）→ 建 tag，并写一份 staging evidence
    `/download/android/wotbtools-android-v<版本>.staging.json`（记录 versionCode/versionName/
    sourceSha/tag/apkUrl/sha256/stagedAt）；**此时 production `version.json` 不变**。
 2. **publish**（真机 A14 验证后手工 `mode=publish, version=<已 staged 版本>`）：以 **staged release
