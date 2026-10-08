@@ -41,8 +41,11 @@ const isExplosive = (shell) => shell === 'he'
 const isExplosiveType = (shell) => shell === 'heat' || shell === 'he'
 // 外部模块（BlitzKit External）：flat 抵消，无角度/转正/跳弹
 const isModule = (section) => section === ArmorSection.CHASSIS || section === ArmorSection.GUN_BARREL
-// 主装甲 Primary（hull/turret/炮盾板）：收集阶段 push 后立即停止
-const isPrimary = (section) => section === ArmorSection.HULL || section === ArmorSection.TURRET || section === ArmorSection.GUN
+// 主装甲 Primary（hull/turret/炮盾板）：收集阶段 push 后立即停止。
+// 同时是【点击判定的触发面】：BlitzKit 的 shoot() 只挂在 Primary 网格的 onClick 上
+// （spaced/外部模块网格挂的是空 handler，只为进入 event.intersections）——射线未触达
+// Primary 时不发起判定。查看器相机点击路径据此过滤，勿在别处复制这份分类（唯一事实源）。
+export const isPrimary = (section) => section === ArmorSection.HULL || section === ArmorSection.TURRET || section === ArmorSection.GUN
 // BlitzKit 外部模块按 variant 去重（"gun" | "track"），而非逐板 ID；spaced/primary 不参与
 function moduleVariant(section) {
   if (section === ArmorSection.CHASSIS) return 'track'
