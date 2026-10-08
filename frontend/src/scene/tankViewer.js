@@ -27,6 +27,8 @@ import {
     RC, RC_GLSL_CONST, RC_GLSL_FUNCS,
     buildPack, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
 } from './armorCollisionPack.js'
+// 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
+import { isPrimary } from './penetration.js'
 
 /**
  * @param {object} [options]
@@ -4212,15 +4214,22 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 if (entry) armorHits.push(entry);
             }
 
-            // BlitzKit 语义（SpacedArmorScene）：整条射线只命中外部模块（炮管/履带）而无任何
-            // 主装甲板（hull/turret/gun/spaced 板）→ 不构成一次击穿判定，不显示结果。
+            // BlitzKit 语义（SpacedArmorScene 的触发面）：判定只由【触达主装甲板】的射线发起——
+            // shoot() 只挂在 Primary 网格的 onClick 上，spaced / 外部模块网格挂的是空 handler
+            // （只为进入 event.intersections，从不触发判定）。所以整条射线没打到 hull/turret/gun
+            // 装甲板（只穿间隙甲屏幕、只碰履带/炮管）→ 不构成一次击穿判定，不显示结果。
+            // 漏了间隙甲这一条会把「末层 = 屏幕」判成击穿整车（56TP 炮塔 10mm 屏幕板 plate 12
+            // 即此类：约四成点击方向只穿过屏幕，无主装甲参与）。
             // 仅作用于相机点击路径；射击复现的弹道弦判定需要外部模块层参与穿深链，保持原样。
             const isCameraClick = !window.__segRay && !(__shotRayOrigin && __shotRayTarget);
-            if (isCameraClick &&
-                armorHits.length > 0 &&
-                armorHits.every(h => h.section === 'gunBarrel' || h.section === 'chassis')) {
+            if (isCameraClick && armorHits.length > 0 && !armorHits.some(h => isPrimary(h.section))) {
                 if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
+                // 不构成判定 = 无结果态（与「点击未命中装甲」同款清理）：清掉上一次的判定
+                // 面板/轨迹，避免旧结论被误读成本次点击的结论
                 document.getElementById('click-info').style.display = 'none';
+                document.getElementById('traj-info').style.display = 'none';
+                trajInfoPos = null;
+                if (trajGroup) { scene.remove(trajGroup); trajGroup = null; }
                 return;
             }
 

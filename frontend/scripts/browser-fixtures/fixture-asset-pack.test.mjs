@@ -51,7 +51,7 @@ describe('夹具 GLB 结构', () => {
         const gltf = await load(FIXTURE_ARMOR_GLB)
         const names = []
         gltf.scene.traverse((n) => { if (n.isMesh) names.push(n.name) })
-        expect(names.sort()).toEqual(['gun_01_armor_1', 'hull_armor_1', 'turret_01_armor_1'])
+        expect(names.sort()).toEqual(['gun_01_armor_1', 'hull_armor_1', 'turret_01_armor_1', 'turret_01_armor_2'])
         for (const name of names) {
             expect(name).toMatch(/(hull|turret|gun)_\w*?_?armor_(\d+)/)   // tagArmorPlates
         }
@@ -117,6 +117,12 @@ describe('夹具 tank JSON / 名册契约', () => {
         expect(am.chassis.left_track).toBeGreaterThan(0)
         expect(am.chassis.right_track).toBeGreaterThan(0)
         expect(am.gun.plates.gun).toBeGreaterThan(0)   // 炮管外部模块厚度
+    })
+    it('间隙甲屏幕板在 spaced 列表内（门禁的「仅屏幕射线」场景依赖该分类）', () => {
+        const am = FIXTURE_TANK_DATA.armor_model
+        expect(am.turret.spaced).toContain(2)                  // retag 的兜底来源
+        expect(FIXTURE_TANK_DATA.configs[0].turret_spaced).toContain(2)   // retag 的首选来源
+        expect(am.turret.plates[2]).toBeGreaterThan(0)
     })
     it('模型 URL 与资产路由同形（/glb/<数字 id>/…；射击复现路径替换依赖数字 id）', () => {
         expect(FIXTURE_TANK_DATA.model_url).toBe(`/glb/${FIXTURE_TANK_ID}/armor.glb`)
