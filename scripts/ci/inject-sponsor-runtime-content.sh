@@ -69,7 +69,7 @@ fi
 [ -f "$source_dir/sponsor-config.json" ] || fail "missing sponsor-config.json in $source_dir"
 
 python3 - "$source_dir" "$stage" <<'PY_SHAPE'
-import json, pathlib, shutil, sys
+import json, pathlib, re, shutil, sys
 
 source = pathlib.Path(sys.argv[1])
 stage = pathlib.Path(sys.argv[2])
@@ -97,7 +97,33 @@ if not isinstance(methods, list) or not methods:
 (stage / "out").mkdir(parents=True, exist_ok=True)
 shutil.copyfile(source / "sponsor-config.json", stage / "out/sponsor-config.json")
 
-prefix = "/sponsor-assets/"
+# 与前端 normalizeSponsorConfig 的 ASSET_PATH **逐字一致**（前端是运行期 SSOT）：
+# 首个字符必须是字母数字，其余只允许 [A-Za-z0-9._-]，且扩展名 ∈ {png, jpg, jpeg, webp}。
+# 因此 `../`、子目录、绝对路径在形状一层就被拒。
+ASSET_PATH = re.compile(r"^/sponsor-assets/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|jpe?g|webp)$", re.IGNORECASE)
+
+
+def image_format(path):
+    """按**内容**判定格式并验证完整性（不做全解码：构建链不引入 Pillow）。
+
+    - PNG：签名 + 末尾必须是 IEND chunk（截断/改名的半截文件在这里被拒）
+    - JPEG：FFD8FF 开头 + FFD9 结尾（同上）
+    - WebP：RIFF....WEBP 且 RIFF 尺寸字段与真实长度一致（截断必然失配）
+    """
+    data = path.read_bytes()
+    if len(data) < 16:
+        return None
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png" if data[-8:-4] == b"IEND" else None
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg" if data.endswith(b"\xff\xd9") else None
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        declared = int.from_bytes(data[4:8], "little")
+        return "webp" if declared == len(data) - 8 else None
+    return None
+
+
+EXTENSION_FORMAT = {"png": "png", "jpg": "jpeg", "jpeg": "jpeg", "webp": "webp"}
 for method in methods:
     if not isinstance(method, dict):
         raise SystemExit("malformed method entry")
@@ -105,14 +131,19 @@ for method in methods:
     image = method.get("image")
     if kind not in allowed:
         raise SystemExit(f"unsupported method type: {kind!r}")
-    if not isinstance(image, str) or not image.startswith(prefix) or not image[len(prefix):] or "/" in image[len(prefix):]:
+    if not isinstance(image, str) or not ASSET_PATH.match(image):
         raise SystemExit(f"unsafe image path: {image!r}")
     origin = source / image.lstrip("/")
     if not origin.is_file():
         raise SystemExit(f"missing sponsor image for method {kind!r}: {image}")
-    head = origin.open("rb").read(4)
-    if not (head.startswith(b"\xff\xd8\xff") or head.startswith(b"\x89PNG") or head.startswith(b"RIFF")):
-        raise SystemExit(f"method {kind!r}: injected bytes are not a recognized image")
+    detected = image_format(origin)
+    declared = EXTENSION_FORMAT[image.rsplit(".", 1)[-1].lower()]
+    if detected is None:
+        raise SystemExit(f"method {kind!r}: {origin.name} is not a complete PNG/JPEG/WebP image")
+    if detected != declared:
+        raise SystemExit(
+            f"method {kind!r}: {origin.name} declares {declared} but its bytes are {detected}"
+        )
     dest = stage / "out" / image.lstrip("/")
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(origin, dest)

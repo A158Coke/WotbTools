@@ -286,6 +286,7 @@ jobs:
           pin="$GITHUB_WORKSPACE/deploy/sponsor/content.json"
           if [ ! -f "$pin" ]; then
             echo "state=absent" >> "$GITHUB_OUTPUT"
+            echo "bundle=" >> "$GITHUB_OUTPUT"
             echo "no sponsor content pin: building the APK without sponsor runtime content"
             exit 0
           fi
@@ -317,7 +318,10 @@ jobs:
             sponsorRuntimeContent=injected) ;;
             *) echo "::error::unexpected sponsor injection result: $state" >&2; exit 1 ;;
           esac
-          echo "state=injected" >> "$GITHUB_OUTPUT"
+          {
+            echo "state=injected"
+            echo "bundle=$bundle"
+          } >> "$GITHUB_OUTPUT"
       - name: Build the local-first frontend bundle into APK assets
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
@@ -463,16 +467,49 @@ jobs:
               exit 1
             }
           done
-          # Sponsor 运行时内容：secrets 注入成功时 APK 必须带着它（离线赞助页要能显示二维码）。
+          # Sponsor 运行时内容：pin 存在时 APK 必须逐文件带上配置**与配置引用的每一张图**，
+          # 且与 pin 住的资产包逐字节一致（不是「至少有一张图」就算过）。
           if [ "${{ steps.sponsor.outputs.state }}" = "injected" ]; then
-            grep -Fxq 'assets/web/sponsor-config.json' "$listing_file" || {
-              echo "::error::release APK 缺少 assets/web/sponsor-config.json（secrets 已注入却没进 bundle）" >&2
-              exit 1
-            }
-            grep -Eq '^assets/web/sponsor-assets/[A-Za-z0-9][A-Za-z0-9._-]*\.(png|jpg|jpeg|webp)$' "$listing_file" || {
-              echo "::error::release APK 缺少 assets/web/sponsor-assets/ 下的收款码图片" >&2
-              exit 1
-            }
+            python3 - "$APK" "$listing_file" "${{ steps.sponsor.outputs.bundle }}" <<'PY'
+          import hashlib, json, sys, tarfile, zipfile
+
+          apk_path, listing_path, bundle_path = sys.argv[1], sys.argv[2], sys.argv[3]
+          listed = set(open(listing_path, encoding="utf-8", errors="replace").read().split())
+
+          with zipfile.ZipFile(apk_path) as apk:
+              entries = set(apk.namelist())
+              if "assets/web/sponsor-config.json" not in listed or "assets/web/sponsor-config.json" not in entries:
+                  raise SystemExit("::error::release APK 缺少 assets/web/sponsor-config.json（pin 存在却没进 bundle）")
+              try:
+                  config = json.loads(apk.read("assets/web/sponsor-config.json").decode("utf-8"))
+              except ValueError as error:
+                  raise SystemExit(f"::error::release APK 内 sponsor-config.json 不是合法 JSON：{error}")
+              methods = config.get("methods") or []
+              if config.get("enabled") is True and not methods:
+                  raise SystemExit("::error::release APK 内 sponsor-config.json 声明 enabled 却没有任何 methods")
+
+              verified = 0
+              with tarfile.open(bundle_path, "r:gz") as bundle:
+                  for method in methods:
+                      image = (method or {}).get("image") or ""
+                      if not image.startswith("/sponsor-assets/"):
+                          raise SystemExit(f"::error::release APK 配置里的图片路径不合法：{image!r}")
+                      entry = "assets/web" + image
+                      if entry not in entries:
+                          raise SystemExit(f"::error::release APK 缺少配置引用的图片：{entry}")
+                      member = bundle.extractfile(image.lstrip("/"))
+                      if member is None:
+                          raise SystemExit(f"::error::pinned 赞助资产包缺少 {image}")
+                      apk_sha = hashlib.sha256(apk.read(entry)).hexdigest()
+                      bundle_sha = hashlib.sha256(member.read()).hexdigest()
+                      if apk_sha != bundle_sha:
+                          raise SystemExit(
+                              f"::error::APK 内 {entry} 与 pin 住的赞助资产包不一致（{apk_sha[:12]} != {bundle_sha[:12]}）"
+                          )
+                      verified += 1
+                      print(f"sponsor asset verified: {entry} sha256={apk_sha[:12]}")
+              print(f"sponsor runtime content verified: {verified} image(s) + sponsor-config.json")
+          PY
           fi
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
           test -x "$AAPT"
