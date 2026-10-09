@@ -2756,7 +2756,7 @@ async function checkPlaybackDeclutter(page, failures, scenario) {
     return {
       mapWidth: map?.width, mapHeight: map?.height, mainWidth: main?.width, stageWidth: stage?.width,
       markers: count('.pb-vehicle'), icons: count('.pb-vehicle .tank-class-icon'),
-      hp: count('.pb-vehicle [data-test="pb-hp-hud"]'), tanks: count('.pb-vehicle [data-test="pb-label-tank"]'),
+      hp: count('.pb-vehicle [data-test="pb-hp-hud"]'), rings: count('.pb-vehicle [data-test="pb-hp-ring"]'), tanks: count('.pb-vehicle [data-test="pb-label-tank"]'),
       players: count('.pb-vehicle [data-test="pb-label-player"]'), reload: count('.pb-vehicle [data-test="pb-reload"]'),
       statuses: count('.pb-vehicle .pb-recorder-badge, .pb-vehicle .pb-death, .pb-vehicle .pb-selected-mark'),
       roster: count('[data-test="pb-roster-row"]'),
@@ -2773,18 +2773,34 @@ async function checkPlaybackDeclutter(page, failures, scenario) {
     await page.installInputTrace()
     await page.tap({ ...center, touch: scenario.touch })
     const trace = await page.inputTrace()
-    check(failures, selector.includes(trace?.click?.test), `${selector} real click missed: ${JSON.stringify(trace?.click)}`)
+    check(failures, selector.includes(trace?.click?.test) || selector.includes(trace?.click?.testId), `${selector} real click missed: ${JSON.stringify(trace?.click)}`)
   }
   const before = await page.evaluate(state)
+  await tap('[data-test="pb-secondary-entry"]')
+  await page.waitFor(() => !!document.querySelector('[data-testid="pb-hp-mode-ring"]'), { label: 'HP mode display controls' })
+  await page.evaluate(`document.querySelector('[data-testid="pb-hp-mode-ring"]').scrollIntoView({ block: 'nearest' })`)
+  await tap('[data-testid="pb-hp-mode-ring"]')
+  const manualRing = await page.waitForValue(state, value => value.rings > 0 && value.hp === 0, { label: 'ring mode selected' })
+  check(failures, manualRing.reload === 0 && !manualRing.overflow, 'ring mode hides reload without overflowing the page')
+  const ringGeometry = await page.evaluate(`(() => {
+    const ring = document.querySelector('.pb-hp-ring'), r = ring.getBoundingClientRect(), m = ring.closest('.pb-vehicle').getBoundingClientRect()
+    return { centered: Math.abs((r.left+r.right-m.left-m.right)/2) < 1 && Math.abs((r.top+r.bottom-m.top-m.bottom)/2) < 1,
+      surrounds: r.width >= m.width + 6, ringWidth: r.width, markerWidth: m.width, reloadDisabled: document.querySelector('[data-test="pb-show-reload"]').disabled }
+  })()`)
+  check(failures, ringGeometry.centered && ringGeometry.surrounds && ringGeometry.reloadDisabled,
+    `HP ring must surround its marker and disable reload: ${JSON.stringify(ringGeometry)}`)
+  await tap('[data-testid="pb-hp-mode-bar"]')
+  await page.waitForValue(state, value => value.rings === before.rings && value.hp === before.hp, { label: 'bar mode restored' })
+  await tap('[data-test="pb-secondary-entry"]')
   await tap('[data-test="pb-declutter"]')
   const clean = await page.waitForValue(state, s => s.active === 'true', { label: 'declutter applied' })
   check(failures, clean.markers > 0 && clean.icons === clean.markers && clean.tanks > 0,
     `declutter must render tank classes and tank names: ${JSON.stringify(clean)}`)
-  check(failures, clean.players === 0 && clean.hp === 0 && clean.reload === 0 && clean.statuses === 0,
-    `declutter must remove player names, bars and status decorations: ${JSON.stringify(clean)}`)
+  check(failures, clean.players === 0 && clean.hp === 0 && clean.rings > 0 && clean.reload === 0 && clean.statuses === 0,
+    `declutter must retain HP rings and remove player names, bars and status decorations: ${JSON.stringify(clean)}`)
   await tap('[data-test="pb-declutter"]')
   const restored = await page.waitForValue(state, s => s.active === 'false', { label: 'declutter restored' })
-  check(failures, ['icons', 'hp', 'players', 'reload', 'statuses'].every(key => before[key] === restored[key]),
+  check(failures, ['icons', 'hp', 'rings', 'players', 'reload', 'statuses'].every(key => before[key] === restored[key]),
     `declutter must restore the previous presentation: before=${JSON.stringify(before)} after=${JSON.stringify(restored)}`)
   await tap('[data-test="pb-toggle-roster"]')
   const hidden = await page.waitForValue(state, s => s.expanded === 'false' && s.roster === 0, { label: 'roster hidden' })
@@ -2807,7 +2823,29 @@ async function checkAnnotationMode(page, failures, scenario) {
   }
   check(failures, await page.evaluate(`!document.querySelector('[data-test="pb-annot-toolbar"]') && document.querySelectorAll('.pb-annot-item').length === 0`), 'replay must start without an editor or seeded marks')
   await clickElement(page, '[data-test="pb-annotation-entry"]')
-  await delay(200)
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-annot-toolbar"]'), { label: 'annotation select controls' })
+  await waitForStableLayout(page)
+  const vehicleTap = await page.evaluate(`(() => {
+    const map = document.querySelector('[data-test="pb-map"]').getBoundingClientRect()
+    const marker = [...document.querySelectorAll('.pb-vehicle:not(.pb-destroyed)')].find(el => {
+      const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2
+      return x > map.left + 4 && x < map.right - 4 && y > map.top + 4 && y < map.bottom - 4 && y > 0 && y < innerHeight
+    })
+    if (!marker) return null
+    const r = marker.getBoundingClientRect()
+    return { x: r.left + r.width/2, y: r.top + r.height/2,
+      tank: marker.querySelector('[data-test="pb-label-tank"]')?.textContent,
+      hp: marker.querySelector('[data-test="pb-hp-num"]')?.textContent }
+  })()`)
+  check(failures, !!vehicleTap, 'select-mode inspection needs a visible vehicle')
+  if (vehicleTap) {
+    await page.tap({ x: vehicleTap.x, y: vehicleTap.y, touch: scenario.touch })
+    await page.waitFor(() => !!document.querySelector('[data-test="pb-info"]'), { label: 'vehicle details in annotation select mode' })
+    const details = await page.evaluate(`({tank:document.querySelector('[data-test="pb-sb-tank"]')?.textContent, hp:document.querySelector('[data-test="pb-sb-hp-current"]')?.textContent})`)
+    check(failures, details.tank === vehicleTap.tank && details.hp === vehicleTap.hp,
+      `map inspection must show this vehicle and current HP: ${JSON.stringify({details, vehicleTap})}`)
+    await clickElement(page, '[data-test="pb-sb-close"]')
+  }
   for (const tool of ['LT', 'MT', 'HT', 'TD', 'route']) {
     check(failures, clicked(await clickElement(page, `[data-test="pb-annot-${tool}"]`)), `annotation ${tool} tool must be reachable`)
   }

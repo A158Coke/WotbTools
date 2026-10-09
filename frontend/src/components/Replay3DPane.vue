@@ -667,7 +667,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             <component :is="uiPrefs.showRoster ? PanelLeftClose : PanelLeftOpen" :size="18" aria-hidden="true" />
             {{ t(uiPrefs.showRoster ? 'recon.map.playback.hide_rosters' : 'recon.map.playback.show_rosters') }}
           </button>
-          <button type="button" class="pb-quick-action" data-test="pb-declutter" :aria-pressed="declutterActive" :title="t('recon.map.playback.declutter_hint')" @click="toggleDeclutter">
+          <button type="button" class="pb-quick-action" data-test="pb-declutter" :aria-pressed="declutterActive" :title="t('recon.map.playback.declutter_hint_3d')" @click="toggleDeclutter('hidden')">
             <ScanEye :size="18" aria-hidden="true" /> {{ t('recon.map.playback.declutter') }}
           </button>
         </div>
