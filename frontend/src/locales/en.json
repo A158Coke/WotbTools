@@ -72,7 +72,12 @@
     "single_only": "Single-file mode: only one replay file is accepted at a time.",
     "reject_size_hint": "Each replay is limited to 20 MB.",
     "reject_count": "At most {max} replays can be selected; currently {current}.",
-    "reject_total": "The current batch is {size}; the maximum allowed is {max}."
+    "reject_total": "The current batch is {size}; the maximum allowed is {max}.",
+    "reading_folder": "Reading folder…",
+    "folder_read_error": "Could not read the folder. Your existing replays are unchanged. Try again or select a smaller folder.",
+    "files_only_hint": "Select multiple replay files at once",
+    "files_only_multi": "Multiple file selection supported",
+    "folder_ambiguous_paths": "Some replays have the same path and cannot be distinguished. Rename them or select them separately. Existing replays are unchanged."
   },
   "action": {
     "preview": "Parse & Preview",

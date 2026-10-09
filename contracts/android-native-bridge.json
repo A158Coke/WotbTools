@@ -23,7 +23,8 @@
     "replay-share",
     "replay-open",
     "app-update",
-    "connectivity"
+    "connectivity",
+    "replay-folder-picker"
   ],
   "methods": {
     "getBridgeVersion": {
@@ -105,6 +106,83 @@
         "enum": ["online", "offline"],
         "notes": "System authority (ConnectivityManager INTERNET + VALIDATED). Reserved future tokens: degraded, service-unavailable. The page must re-read this method after connectivityChanged instead of trusting navigator.onLine."
       }
+    },
+    "pickReplayFolder": {
+      "request": {
+        "fields": {
+          "requestId": { "type": "string", "required": true }
+        }
+      },
+      "response": {
+        "type": "object",
+        "fields": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "selected",
+              "cancelled",
+              "failed"
+            ],
+            "required": true
+          },
+          "selectionId": {
+            "type": "string",
+            "nullable": true,
+            "required": true
+          },
+          "files": {
+            "type": "object[]",
+            "required": true,
+            "fields": {
+              "fileId": {
+                "type": "string",
+                "required": true
+              },
+              "name": {
+                "type": "string",
+                "required": true
+              },
+              "relativePath": {
+                "type": "string",
+                "required": true
+              },
+              "size": {
+                "type": "integer",
+                "nullable": true,
+                "required": true
+              },
+              "lastModified": {
+                "type": "integer",
+                "required": true
+              }
+            }
+          }
+        },
+        "notes": "Optional replay-folder-picker capability. User chooses a directory with ACTION_OPEN_DOCUMENT_TREE. Native enumerates descendants off the UI thread with an infrastructure scan bound, retaining only transient document references. No persisted directory permission, automatic analysis or external pending replay mutation. Cancel/failure use null selectionId and empty files. Frontend filters and validates with the existing replay selection rules before reading."
+      }
+    },
+    "cancelReplayFolderPicker": {
+      "request": {
+        "fields": { "requestId": { "type": "string", "required": true } }
+      },
+      "response": {
+        "type": "boolean",
+        "notes": "Cancel only the in-flight picker/scan belonging to this client requestId. An old caller must never cancel a newer request. Does not release an already completed selection."
+      }
+    },
+    "releaseReplayFolderSelection": {
+      "request": {
+        "fields": {
+          "selectionId": {
+            "type": "string",
+            "required": true
+          }
+        }
+      },
+      "response": {
+        "type": "boolean",
+        "notes": "Compare-and-clear only this transient selection; a stale release must not clear a newer selection."
+      }
     }
   },
   "events": {
@@ -123,6 +201,16 @@
       "url": "https://appassets.androidplatform.net/__native/replay-pending",
       "requiredHeaders": ["X-Wotb-Pending-Id"],
       "failure": "never-fallback-to-network"
+    },
+    "folderReplay": {
+      "method": "GET",
+      "url": "https://appassets.androidplatform.net/__native/replay-folder",
+      "requiredHeaders": [
+        "X-Wotb-Folder-Selection-Id",
+        "X-Wotb-Folder-File-Id"
+      ],
+      "failure": "never-fallback-to-network",
+      "notes": "Native resolves only a file belonging to the exact current transient folder selection. No content URI or arbitrary path accepted from Web; Cache-Control: no-store."
     }
   }
 }

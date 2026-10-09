@@ -7,16 +7,16 @@ import java.util.concurrent.Executors
 
 /**
  * origin-scoped bridge：经 WebView WebMessageListener，仅 appassets + reviewed production compatibility origins 可调。
- * 只暴露：capability/version discovery、pending replay handoff、app update 触发、native auth。
+ * 只暴露：capability/version discovery、pending replay handoff、temporary folder picker、app update、native auth。
  * 禁止 arbitrary file/http/command/intent API（规格 §27）。
  *
- * 消息形状 `{id, method, params}`；只有 `consumePendingReplay` 与 `authGetAccessToken` 使用 params
- * （前者必须携带 `pendingId` 作为 ACK 的 identity，后者可选 `minValiditySeconds`）。
+ * 消息形状 `{id, method, params}`；ACK / folder release 携带 exact identity，认证 token 可带有效期。
  *
  * **回复是异步的**：[handleMessage] 不返回字符串，而是把回复交给 `reply` 回调。replay / update /
- * capability 这些纯本地读仍在**同一个调用栈内**立即回复（延迟与改动前一致）；只有认证方法会离开
+ * capability 这些纯本地读仍在**同一个调用栈内**立即回复（延迟与改动前一致）；认证方法离开
  * WebView 线程（`authGetAccessToken` 可能需要 refresh 网络往返，`authLogin` 可能需要 discovery），
- * 在后台线程完成后回调 `reply`。WebView 线程绝不做网络 I/O。
+ * 在后台线程完成后回调 `reply`。目录选择同样异步：系统 picker → 后台 SAF 扫描 → 回复。
+ * WebView 线程绝不做网络 / document I/O。
  */
 class NativeBridge(private val host: MainActivity) {
 
@@ -44,6 +44,12 @@ class NativeBridge(private val host: MainActivity) {
                 "getPendingReplay" -> reply(envelope(id, host.bridgePendingReplayJson()))
                 "consumePendingReplay" ->
                     reply(envelope(id, host.bridgeConsumePendingReplay(params?.optString("expectedPendingId"))))
+                "pickReplayFolder" ->
+                    host.bridgePickReplayFolder(params?.opt("requestId") as? String) { result -> reply(envelope(id, result)) }
+                "cancelReplayFolderPicker" ->
+                    host.bridgeCancelReplayFolderPicker(params?.opt("requestId") as? String) { result -> reply(envelope(id, result)) }
+                "releaseReplayFolderSelection" ->
+                    reply(envelope(id, host.bridgeReleaseReplayFolderSelection(params?.optString("selectionId"))))
                 "checkForUpdate" -> reply(envelope(id, host.bridgeCheckForUpdate()))
                 "startUpdate" -> {
                     host.bridgeStartUpdate()
