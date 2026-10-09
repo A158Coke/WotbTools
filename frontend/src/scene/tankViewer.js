@@ -61,14 +61,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             showCollision: 'Show Collision',
             hideCollision: 'Hide Collision',
             partName: (name) => name, resultName: (result) => result,
-            prediction: 'Simulation', recordedResult: 'Recorded result', resultAgrees: 'Matches', resultDiffers: 'Differs',
             shotDamage: 'damage',
             shotRicochetSeg: 'ricochet (-25% penetration)',
             shotLoss: 'loss',
             shotNominal: 'nominal',
             shotBlocked: 'blocked',
             heatmap: 'Penetration map', hideHeatmap: 'Hide penetration map',
-            evidence: 'Analysis details', hideEvidence: 'Hide analysis details',
             technicalEvidence: 'Technical evidence', shotView: 'Shot view', relativeView: 'Impact view', worldView: 'Overview',
             selectShooter: 'Choose firing tank', selectTarget: 'Choose target tank',
             allTiers: 'All tiers', allNations: 'All nations', allTypes: 'All types',
@@ -611,12 +609,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             }
             r.querySelector('.dbg-val').textContent = text;
         }
-        // 调试模式开关工厂（原命中/脱靶两分支各建一份几乎相同的 __debugSetVisible + 调试按钮）：
+        // 命中/脱靶共用的开发诊断配置：仅 ?debug=1 开启，不提供用户界面入口。
         // 收纳 World View 面板 + 调试信息窗口 + 全部调试标记；extraRefresh = 分支附加刷新
         // （命中分支传 __updateAnchorMarkers 刷新基准点标记，脱靶分支传 null）。
-        // URL debug=1 的自动开启时序两分支不同，留在各自调用点处理
-        function makeDebugToggle(extraRefresh) {
-            // Keep useful shot-time controls visible; raw protocol / geometry evidence is opt-in.
+        // URL debug=1 的开启时序两分支不同，留在各自调用点处理
+        function setupShotDebug(extraRefresh) {
+            // Group raw protocol and geometry evidence for the explicit developer URL mode.
             const panel = document.getElementById('turret-controls');
             if (panel) {
                 const evidence = document.createElement('details');
@@ -625,7 +623,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 summary.textContent = L.technicalEvidence;
                 evidence.appendChild(summary);
                 for (const row of [...panel.children]) {
-                    if (row.id !== 'world-pen-cmp' && !row.querySelector('#time-scrub')) evidence.appendChild(row);
+                    if (!row.querySelector('#time-scrub')) evidence.appendChild(row);
                 }
                 const coordinates = document.getElementById('debug-info');
                 if (coordinates) evidence.appendChild(coordinates);
@@ -642,24 +640,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 // 面板与移动标注复选框仅在调试模式可交互
                 const st = document.getElementById('turret-controls');
                 if (st) st.style.display = on ? 'block' : 'none';
-                // 调试信息窗口随开关显隐（内容行由各标记更新函数写入）
+                // 开发诊断窗口随模式显隐（内容行由各标记更新函数写入）
                 const di = document.getElementById('debug-info');
                 if (di) di.style.display = on ? 'block' : 'none';
             };
-            const btn = document.createElement('button');
-            btn.id = 'debug-toggle';
-            btn.textContent = L.evidence;
-            btn.type = 'button';
-            btn.className = 'armor-scene-button';
-            btn.setAttribute('aria-pressed', 'false');
-            btn.onclick = function() {
-                window.__debugSetVisible(!window.__debugOn);
-                this.textContent = window.__debugOn ? L.hideEvidence : L.evidence;
-                this.setAttribute('aria-pressed', String(window.__debugOn));
-            };
-            // 挂右下角栈：按钮贴角、操作提示在其上方，不重叠
-            (document.getElementById('corner-br') || document.body).appendChild(btn);
-            return btn;
         }
         // segment 弹种全局 id 解码（type=32 / method0x07 同源编码）：
         // 全局 = (shells.xml 局部 id << 8) | 国家基数字节（nation_id×16+10）
@@ -1998,7 +1982,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     }
                      // world 穿透判定标志每次进入射击复现重置（防上次会话残留）
                      window.__worldPenMode = false;
-                     window.__worldServerInfo = null;
                      // 片元交叉验证上下文（doPenetrationCheck 读取）：世界模式同样提供 segment 解码字段
                      window.__shotCtx = Object.assign({}, window.__shotCtx || {}, {
                          segArmorGroup: s.armor_group || 0,
@@ -2381,11 +2364,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                 (s.quality && s.quality.shell_from_terrain ? ' · <span style="color:var(--blue);">弹种来自 0x1b 地形广播</span>' : '') +
                                 '</div>'; }
                             // 脱靶弹分支同样受调试开关收纳:默认隐藏面板与标注
-                            const dbgBtnM = makeDebugToggle(null);
+                            setupShotDebug(null);
                             // URL debug=1 自动开启（与命中分支同语义）
                             window.__debugSetVisible(QP.get('debug') === '1');
-                            dbgBtnM.textContent = window.__debugOn ? L.hideEvidence : L.evidence;
-                            dbgBtnM.setAttribute('aria-pressed', String(window.__debugOn));
                             return;
                         }
                         if (s.target_name) {
@@ -2910,9 +2891,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         // check 内部把世界系交点/射线经 worldToLocal 换算成模型局部米制，结果与相对模式同源。
                         window.__worldPenMode = true;
                         window.__shotIsHit = true;   // 0 armor hits 时 doPenetrationCheck 走报错分支
-                        window.__worldServerInfo = (function() {
-                            return { cls: shotResultClass(s), result: s.game_hit_result };
-                        })();
                         // 自动初始判定（用户要求锁定）：命中弹 = DecodeShotSegment
                         // P1→P2 射线（准确命中位置与弹向），脱靶弹 = 弹道弦；
                         // 结果锁定，点击不触发判定（onClick 拦截）。
@@ -3109,7 +3087,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                     (s.target_equipment || s.game_hit_result !== undefined ? ' · 目标 ' + eqBadge(s.target_equipment) : '') + '</div>';
                             })() +
                             '<div class="ctrl-row">DMG ' + s.damage + ' · ' + cls2 + ' · ' + (s.target_name || '—') + '</div>' +
-                            '<div class="ctrl-row" id="world-pen-cmp" style="font-size:10px;"></div>' +
                             (function() {
                                 const sp3 = shellIdParts(s.shell_id);
                                 if (!sp3) return '';
@@ -3181,11 +3158,11 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         if (mt2) mt2.onchange = function() {
                             if (window.__moveAnno) window.__moveAnno.visible = this.checked;
                         };
-                        // ===== 调试模式开关（默认关闭）：收纳 World View 面板 + 全部调试标注 =====
+                        // ===== 开发诊断（默认关闭）：收纳 World View 面板 + 全部调试标注 =====
                         // 可见性集中挂 window.__debugSetVisible。
                         const stEl = document.getElementById('turret-controls');
                         if (stEl) stEl.style.display = 'none';
-                        const dbgBtn = makeDebugToggle(function() {
+                        setupShotDebug(function() {
                             // 基准点标注可见性（位置由 __updateAnchorMarkers 维护）
                             if (window.__updateAnchorMarkers) window.__updateAnchorMarkers();
                         });
@@ -3242,11 +3219,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         setImpactView(true);
                         // 初始即按撤回状态隐藏全部标注（须在 debug=1 自动开启之前，否则被覆盖）
                         window.__debugSetVisible(false);
-                        // URL debug=1 自动开启调试标注（与开关按钮同一状态,可再手动关闭）
+                        // URL debug=1 显式开启开发诊断标注
                         if (QP.get('debug') === '1') {
                             window.__debugSetVisible(true);
-                            dbgBtn.textContent = L.hideEvidence;
-                            dbgBtn.setAttribute('aria-pressed', 'true');
                         }
                         // ===== 时间滑块：连续插值双模型位置/姿态（报告 §4.7 渲染层锚点可视化） =====
                         const timeSlider = document.getElementById('time-scrub');
@@ -4319,9 +4294,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                             + 'white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">'
                             + '当前 tick 位姿与弹道弦不相交（命中前采样，坦克未到命中点）— 切换 tick 查看命中判定</div>';
                         trajInfoPos = controls.target.clone();
-                        // 对比面板同步置中性：否则残留上一次判定的"✓ 一致/✗ 不一致"误导
-                        const cmpEl = document.getElementById('world-pen-cmp');
-                        if (cmpEl) cmpEl.innerHTML = '<span style="color:var(--muted);">— 当前位姿弹道弦未命中装甲，无判定</span>';
                     } else {
                         showShotError('服务器判定命中但射线未命中任何装甲板——弹道/模型几何错位');
                     }
@@ -4519,29 +4491,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         let trajInfoPos = null;
         function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt) {
             if (destroyed) return;
-            // world 复现模式：本地内核预测 vs 服务器判定（method38 位图 + game_hit_result）
-            if (window.__worldPenMode && window.__worldServerInfo) {
-                const el = document.getElementById('world-pen-cmp');
-                if (el) {
-                    const srv = window.__worldServerInfo;
-                    // 服务器等价类：跳弹↔RICOCHET；击穿/HE↔PENETRATION；未穿/间隙止↔BLOCKED
-                    const srvEq = srv.cls === 'RICOCHET' ? 'RICOCHET'
-                        : (srv.cls === 'PENETRATION' || srv.cls === 'HE BLAST') ? 'PENETRATION'
-                        : (srv.cls === 'MISS' ? 'MISS' : 'BLOCKED');
-                    // 本地预测等价类：HE 爆炸有伤害内核报 PENETRATION；HE 被装甲挡住报 BLOCKED
-                    const locEq = result === 'RICOCHET' ? 'RICOCHET'
-                        : result === 'PENETRATION' ? 'PENETRATION'
-                        : (result === 'BLOCKED' || result === 'ERROR') ? 'BLOCKED' : 'OTHER';
-                    const agree = srvEq !== 'MISS' && locEq !== 'OTHER' && srvEq === locEq;
-                    const RES_TXT2 = {0:'无结果',1:'未击穿',2:'间隙止',3:'有伤害',4:'跳弹'};
-                    el.innerHTML = '<span style="color:' + (agree ? '#5fbf7a' : '#ff6b6b') + ';">'
-                        + escapeText(agree ? L.resultAgrees : L.resultDiffers) + '</span>'
-                        + ' · ' + escapeText(L.prediction) + ': ' + escapeText(L.resultName(result))
-                        + ' · ' + escapeText(L.recordedResult) + ': ' + escapeText(L.resultName(srv.cls))
-                        + (typeof srv.result === 'number' && srv.result !== 255
-                            ? ' (' + (RES_TXT2[srv.result] || srv.result) + ')' : '');
-                }
-            }
             if (trajGroup) scene.remove(trajGroup);
             trajGroup = new THREE.Group();
 

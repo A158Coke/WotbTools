@@ -112,12 +112,10 @@ function startViewer() {
             hideCollision: t('armor.hide_collision'),
             heatmap: t('armor.heatmap'),
             hideHeatmap: t('armor.hide_heatmap'),
-            evidence: t('armor.evidence'),
             technicalEvidence: t('armor.technical_evidence'),
             allTiers: t('armor.all_tiers'),
             allNations: t('armor.all_nations'),
             allTypes: t('armor.all_types'),
-            hideEvidence: t('armor.hide_evidence'),
             shotView: t('armor.shot_view'),
             relativeView: t('armor.relative_view'),
             worldView: t('armor.world_view'),
@@ -125,10 +123,6 @@ function startViewer() {
             selectTarget: t('armor.select_target'),
             partName: (name) => armorPartLabel(name, t),
             resultName: (result) => armorResultLabel(result, t),
-            prediction: t('armor.prediction'),
-            recordedResult: t('armor.recorded_result'),
-            resultAgrees: t('armor.result_agrees'),
-            resultDiffers: t('armor.result_differs'),
             shotDamage: t('armor.shot_damage'),
             shotRicochetSeg: t('armor.shot_ricochet_seg'),
             shotLoss: t('armor.shot_loss'),
@@ -383,10 +377,9 @@ onBeforeUnmount(() => {
 .armor-view .armor-bottom-controls { display: contents; }
 /* Recorded-shot actions are a persistent, high-contrast toolbar. */
 .armor-view.is-shot #corner-br { display: flex; flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: var(--space-2); max-inline-size: calc(100% - var(--space-10)); padding: var(--space-2); background: var(--color-surface-1); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); box-shadow: var(--elevation-2); z-index: var(--pb-z-hud); }
+.armor-view.is-shot #corner-br:empty { display: none; }
 .armor-view .armor-shot-view-switch { display: flex; flex-wrap: wrap; gap: var(--space-1); padding: var(--space-1); background: var(--color-surface-2); border-radius: var(--radius-md); }
 .armor-view .armor-shot-view-switch .armor-scene-button { flex: 1; min-block-size: var(--space-12); padding: var(--space-2) var(--space-4); font: var(--type-body); font-weight: 600; }
-.armor-view #debug-toggle { min-block-size: var(--space-12); padding: var(--space-2) var(--space-4); border-color: var(--color-accent); color: var(--color-accent-text); font: var(--type-body); font-weight: 600; }
-.armor-view #debug-toggle[aria-pressed="true"] { color: var(--color-on-accent); }
 
 .armor-view #tank-picker { position: absolute; inset: var(--space-5); margin: auto; max-inline-size: var(--layout-wide-max); background: var(--panel); border: 1px solid var(--border-hi); border-radius: var(--radius-lg); z-index: var(--z-dialog); display: none; flex-direction: column; box-shadow: var(--elevation-3); }
 .armor-view #tank-picker.open { display: flex; }
@@ -465,7 +458,6 @@ onBeforeUnmount(() => {
     .armor-view.is-shot .armor-bottom-controls { position: absolute; inset-block-end: var(--space-2); inset-inline: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); pointer-events: none; z-index: var(--pb-z-hud); }
     .armor-view.is-shot .armor-bottom-controls :is(#corner-tr, #corner-br) { position: static; max-inline-size: none; pointer-events: auto; }
     .armor-view.is-shot .armor-shot-view-switch { flex: 1 1 100%; }
-    .armor-view.is-shot #debug-toggle { flex: 1; }
     .armor-view.is-shot #corner-tr { display: none; }
     .armor-view.is-shot .armor-stage.is-tools-open #corner-tr { display: flex; z-index: var(--pb-z-hud); }
     .armor-view.is-shot #debug-info { max-block-size: 20dvh; }
