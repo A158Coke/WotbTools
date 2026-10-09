@@ -239,12 +239,13 @@ const CORS_HEADERS = {
 /**
  * 起一个极小的资产源（127.0.0.1 随机端口，CORS 放行）。路由与真实资产包同形：
  * /data/tank_cache.json、/tank/{id}.json、/glb/{id}/{armor,visual}.glb。
+ * @param {{tankCache?: typeof FIXTURE_TANK_CACHE}} [options] 仅覆盖本实例名册，用于大列表布局回归。
  * @returns {Promise<{server: import('node:http').Server, origin: string, close: () => Promise<void>, requests: string[]}>}
  */
-export async function startFixtureAssetPack() {
+export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE } = {}) {
   const requests = []
   const routes = new Map([
-    ['/data/tank_cache.json', { type: 'application/json', body: Buffer.from(JSON.stringify(FIXTURE_TANK_CACHE)) }],
+    ['/data/tank_cache.json', { type: 'application/json', body: Buffer.from(JSON.stringify(tankCache)) }],
     [`/tank/${FIXTURE_TANK_ID}.json`, { type: 'application/json', body: Buffer.from(JSON.stringify(FIXTURE_TANK_DATA)) }],
     [`/glb/${FIXTURE_TANK_ID}/armor.glb`, { type: 'model/gltf-binary', body: FIXTURE_ARMOR_GLB }],
     [`/glb/${FIXTURE_TANK_ID}/visual.glb`, { type: 'model/gltf-binary', body: FIXTURE_VISUAL_GLB }],

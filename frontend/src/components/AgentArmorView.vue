@@ -395,7 +395,7 @@ onBeforeUnmount(() => {
 .armor-view #tp-header :is(input, select) { min-block-size: 44px; padding: var(--space-2); background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .armor-view #tp-count { color: var(--muted); font: var(--type-caption); }
 .armor-view #tp-close { display: inline-flex; align-items: center; justify-content: center; min-inline-size: 44px; background: transparent; border: none; color: var(--txt); }
-.armor-view #tp-grid { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-3); display: grid; grid-template-columns: repeat(auto-fill, minmax(min(10rem, 100%), 1fr)); gap: var(--space-3); align-content: start; }
+.armor-view #tp-grid { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-3); display: grid; grid-template-columns: repeat(auto-fill, minmax(min(10rem, 100%), 1fr)); grid-auto-rows: max-content; gap: var(--space-3); align-content: start; }
 .armor-view .tank-card { padding: 0; min-inline-size: 0; overflow: hidden; background: var(--color-surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--txt); text-align: start; }
 .armor-view .tank-card:hover, .armor-view .tank-card.sel { border-color: var(--accent); }
 .armor-view .tank-card .tc-img { inline-size: 100%; block-size: 8rem; object-fit: contain; display: block; padding: var(--space-1); }
