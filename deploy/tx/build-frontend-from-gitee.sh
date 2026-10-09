@@ -289,13 +289,19 @@ if fingerprint.get("tag") != release:
     grep -Fq '/wasm/[0-9a-f]{40}/' "$temp/default.conf" \
       || { echo 'frontend image nginx has no commit-addressed /wasm/ cache rule' >&2; exit 1; }
     grep -Fq 'immutable' "$temp/default.conf"
-    # Sponsor 运行时内容：staged 了就必须逐文件一致地出现在镜像里；没 staged 就必须不在
+    # Sponsor 运行时内容：**以 staged 包实际声明的文件集为准**（`enabled: false` 的包只有
+    # sponsor-config.json，没有 sponsor-assets/），镜像里必须逐文件一致；没 staged 就必须不在
     # （防止陈旧注入物跟着复用 tag 混进发布面）。
     if [ -n "$sponsor_expected_dir" ]; then
-      [ -s "$temp/html/sponsor-config.json" ] || { echo 'frontend image is missing sponsor-config.json' >&2; exit 1; }
-      [ -d "$temp/html/sponsor-assets" ] || { echo 'frontend image is missing sponsor-assets/' >&2; exit 1; }
-      (cd "$sponsor_expected_dir" && find sponsor-config.json sponsor-assets -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > "$temp/sponsor.expected"
-      (cd "$temp/html" && find sponsor-config.json sponsor-assets -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > "$temp/sponsor.actual"
+      # find 对不存在的路径返回非零（`enabled: false` 的包没有 sponsor-assets/），必须容错；
+      # 「包里有配置」由下面的非空断言保证，不靠 find 的退出码。
+      sponsor_expected_list="$(cd "$sponsor_expected_dir" && { find sponsor-config.json sponsor-assets -type f 2>/dev/null | LC_ALL=C sort; } || true)"
+      [ -n "$sponsor_expected_list" ] || { echo 'staged sponsor bundle carries no sponsor-config.json' >&2; exit 1; }
+      sponsor_actual_list="$(cd "$temp/html" && { find sponsor-config.json sponsor-assets -type f 2>/dev/null | LC_ALL=C sort; } || true)"
+      [ "$sponsor_expected_list" = "$sponsor_actual_list" ] \
+        || { echo "frontend image sponsor file set differs from the staged bundle (expected: $sponsor_expected_list / actual: $sponsor_actual_list)" >&2; exit 1; }
+      (cd "$sponsor_expected_dir" && printf '%s\n' "$sponsor_expected_list" | xargs sha256sum) > "$temp/sponsor.expected"
+      (cd "$temp/html" && printf '%s\n' "$sponsor_expected_list" | xargs sha256sum) > "$temp/sponsor.actual"
       cmp -s "$temp/sponsor.expected" "$temp/sponsor.actual" \
         || { echo 'frontend image sponsor content does not match the staged bundle' >&2; exit 1; }
     else
