@@ -1,6 +1,7 @@
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
+import { FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
 /**
  * 装甲查看器（?view=agent-armor）移动端布局的浏览器几何门禁。
@@ -17,9 +18,8 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
  *     全部 CSS）在手机 / 平板 / 桌面三档设备指标下的几何与真实触摸接线。
  *
  * 环境前提与三处显式让位（都不影响被测契约）：
- *   1. 门禁不带资产包：坦克数据会加载失败，场景脚本弹出**全屏阻塞**错误遮罩——测量前
- *      先移除状态遮罩（它是环境产物，不是被测对象）。资产包若恰好在跑，页面直接进入
- *      正常态，同样兼容。
+ *   1. 正常态使用与瞄准/加载门禁共用的确定性夹具资产包，等待实际初始化完成再测量。
+ *      资产不可达场景显式使用不可达 origin，测量前移除错误遮罩，只验证外壳与禁用入口。
  *   2. 加载态布局（顶栏单行 / 弹种不截断 / 面板控件 ≥44px）用 `applyLoadedFixture`
  *      注入 worst-case 内容后测量——不依赖资产，避免"退化态下空跑"（评审 BLOCKER 2）。
  *   3. 3D 画面本身不在断言之列（视觉归属用户，见 .agents/AGENTS.md）；这里只断言
@@ -179,7 +179,7 @@ function applyLoadedFixture() {
   return true
 }
 
-/** 资产缺失时场景脚本的阻塞遮罩是环境产物：测量前移除（见文件头「环境前提」）。 */
+/** 资产不可达场景测量外壳前移除遮罩；真实失败状态由加载门禁覆盖。 */
 async function dismissStatusOverlays(page) {
   await page.evaluate(`(() => {
     const nodes = document.querySelectorAll('[data-testid="scene3d-error"], [data-testid="scene3d-loading"]')
@@ -252,17 +252,16 @@ async function runMobileScenario(env, scenario) {
   const label = scenario.name
   // assetless 场景显式把资产源指向不可达端口：无论本机有没有跑资产包，都稳定复现
   // 「资产加载失败」态（CI 环境本来就没有资产源）
-  const assetQuery = scenario.assetless ? '&assets=http://127.0.0.1:1/' : ''
-  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=1${assetQuery}`)
+  const assetQuery = '&assets=' + encodeURIComponent(scenario.assetless ? 'http://127.0.0.1:1/' : env.assets)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}${assetQuery}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
-  // 等内核**做完**（成功或失败）：loading 遮罩消失才算 settled——否则注入的夹具会被
-  // 迟到的真实加载结果覆盖，测量变成"看运气"。
-  await page.waitFor(() => {
-    const loading = document.querySelector('[data-testid="scene3d-loading"]')
-    const error = document.querySelector('[data-testid="scene3d-error"]')
-    return !loading || !!error
-  }, { label: 'scene settled' })
-  await dismissStatusOverlays(page)
+  // 正常场景必须加载成功，不能用后续的布局文案夹具掩盖目标模型加载失败。
+  if (scenario.assetless) {
+    await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { label: 'assetless failure' })
+    await dismissStatusOverlays(page)
+  } else {
+    await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled, { label: 'viewer initialized' })
+  }
   await delay(150)
 
   if (scenario.touch) {
@@ -381,6 +380,13 @@ async function runMobileScenario(env, scenario) {
   const expanded = await page.probe(armorLayoutProbe)
   check(failures, expanded.targetSelect?.visible === true, `${label}: 展开后目标按钮不可见，无法打开选车弹窗`)
   await page.tap({ x: expanded.targetSelect.left + Math.round(expanded.targetSelect.width / 2), y: expanded.targetSelect.top + Math.round(expanded.targetSelect.height / 2), touch: scenario.touch })
+  if (scenario.assetless) {
+    check(failures, await page.evaluate(`document.querySelector('#target-select').disabled && !document.querySelector('#tank-picker.open')`),
+      `${label}: 初始化失败时选车入口应保持禁用且不能打开弹窗`)
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+    return
+  }
   const picker = await page.waitForValue(`!!document.querySelector('#tank-picker.open')`, (value) => value === true, { timeout: 5000, label: 'tank picker opened' })
     .then(() => page.probe(armorLayoutProbe))
     .catch(() => null)
@@ -423,14 +429,14 @@ async function runMobileBackScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  const url = `${env.origin}/?view=agent-armor&ws-auth=1&tank=1`
+  const url = `${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.assets)}`
   await page.goto(url)
   // 模拟「从射击分析 / 坦克百科经路由打开」：history.state.back 存在 → 返回键出现
   await page.evaluate(`history.replaceState({ back: '/', current: location.href, forward: null }, '', location.href)`)
   await env.chrome.client.send('Page.reload', {}, sessionId)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage after reload' })
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-back"]'), { label: 'armor back button' })
-  await dismissStatusOverlays(page)
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled, { label: 'viewer initialized after reload' })
   await delay(150)
 
   const layout = await page.probe(armorLayoutProbe)
@@ -466,10 +472,9 @@ async function runDesktopScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=1`)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.assets)}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
-  await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"], [data-testid="scene3d-loading"], #info-panel'), { label: 'scene settled' })
-  await dismissStatusOverlays(page)
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled, { label: 'viewer initialized' })
   await delay(150)
 
   const label = scenario.name
@@ -497,6 +502,7 @@ async function runDesktopScenario(env, scenario) {
 
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
+const assets = await startFixtureAssetPack()
 let chromeCdp = null
 
 try {
@@ -510,7 +516,7 @@ try {
       '--enable-unsafe-swiftshader',
     ],
   })
-  const env = { origin, chrome: chromeCdp }
+  const env = { origin, chrome: chromeCdp, assets: assets.origin }
   const runs = [
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },
@@ -551,4 +557,5 @@ try {
 } finally {
   if (chromeCdp) await chromeCdp.close()
   await server.close()
+  await assets.close()
 }

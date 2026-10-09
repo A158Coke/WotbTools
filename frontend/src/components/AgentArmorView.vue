@@ -5,6 +5,8 @@
  * 数据面：tank/{id}.json + glb/{id}/*.glb 静态资产（agentData.js，?assets= 基址），
  * 击穿判定 penetration.js 客户端移植；射击复现数据经 sessionStorage 交接（AgentShots）。
  * URL 参数保持上游契约：?tank= &shooter= &config= &shell= &shot= &heatmap=1 &world=1 等。
+ * 普通同车型检视：shell 是当前展示 config 的弹表下标；无效下标回退第一项。
+ * 射击复现：shell 属于射手 scfg 弹表，回放 shell_id 自动匹配优先于 URL 选弹。
  */
 import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -36,7 +38,7 @@ const webgl = detectWebGL()
 const load = ref({ state: 'loading', progress: null, message: '' })
 /** 重建场景 DOM 的计数：整体重试时换 key，让 tankViewer 拿到全新的按 ID 查找的节点 */
 const attempt = ref(0)
-const PHASE_KEY = { 'armor model': 'armor_model', 'tank model': 'tank_model', 'tank data': 'tank_data', 'tank list': 'tank_list' }
+const PHASE_KEY = { 'armor model': 'armor_model', 'tank model': 'tank_model', 'tank data': 'tank_data', 'tank list': 'tank_list', 'shell data': 'shell_data' }
 
 function onLoadState(next) {
     load.value = { state: next.state, progress: next.progress ?? null, message: next.message || '' }
@@ -52,6 +54,7 @@ function startViewer() {
     viewer = initTankViewer({
         labels: {
             loading: t('armor.loading'),
+            shellUnavailable: t('armor.shell_unavailable'),
             loadFailed: (phase, msg) => t('armor.load_failed', { phase, msg }),
             tier: (tier) => `${t('armor.tier')} ${tier}`,
             type: (value) => replayValueLabel(t, te, value),
@@ -128,8 +131,9 @@ onBeforeUnmount(() => {
                     <label class="eq-opt"><input type="checkbox" id="eq-calibrated"> <span class="eq-opt-label">{{ $t('armor.calibrated') }}</span></label>
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
                 </div>
-                <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select">—</button></div>
-                <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select">—</button></div>
+                <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select" disabled>—</button></div>
+                <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select" disabled>—</button></div>
+                <p id="tank-selection-status" role="status">{{ $t('armor.picker_loading') }}</p>
             </div>
         </div>
         <div id="corner-tr">
@@ -323,6 +327,8 @@ onBeforeUnmount(() => {
             text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: all .12s ease;
         }
     .armor-view #tank-selectors .tank-btn:hover { border-color: var(--accent); background: var(--input-bg-hover); }
+    .armor-view #tank-selectors .tank-btn:disabled { color: var(--color-text-tertiary); cursor: wait; }
+    .armor-view #tank-selection-status { margin: var(--space-2) 0 0; color: var(--color-text-secondary); font-size: var(--font-size-caption); }
     .armor-view #shooter-label { color: var(--accent-2); }
     .armor-view #target-label { color: var(--green); }
     .armor-view #tank-picker {
