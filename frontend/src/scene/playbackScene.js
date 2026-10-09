@@ -693,6 +693,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       new THREE.PlaneGeometry(ext * 2 + 100, ext * 2 + 100),
       new THREE.MeshLambertMaterial({ color: 0x202a36 }));
     ground.rotation.x = -Math.PI / 2; ground.position.set(cx, 0, cz);
+    // 占位地面平面**不再显示**：它只是"地图资产尚未加载"时的深色底板，与真实
+    // terrainMesh/mapPlane 同处 y=0，会与水面的透明层叠在一起（透出暗色底，掩盖
+    // 水的 alpha/mask 效果）。对象仍保留并入 scene——bbox 拟合（roots 列表）与拾取
+    // 过滤（terrainMesh || groundMesh）都引用它，且 three.js 的射线检测不看 visible，
+    // 故隐藏不改变任何交互行为。
+    ground.visible = false;
     scene.add(ground);
     groundMesh = ground;
     const grid = new THREE.GridHelper(ext * 2 + 100, Math.floor((ext * 2 + 100) / 50), 0x3a4a5e, 0x273140);

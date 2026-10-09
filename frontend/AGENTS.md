@@ -17,11 +17,11 @@
 
 1. WoT-Blitz-Agent 仓**根目录**：`node scripts/serve_asset_pack.mjs 8123`（脚本按 cwd 解析 `release/asset_pack`，起错目录会静默 404）。
 2. 本仓 `frontend/.env.local`（gitignored）写 `VITE_ASSET_BASE_URL=http://127.0.0.1:8123`；改后**必须重启 dev server**（env 在 transform 时内联）。
-3. 依赖上游引擎的调试先 `bash scripts/fetch-agent-wasm.sh`（`deploy/agent/source.json` pin 变更后必须重跑）。
+3. 依赖上游引擎的调试先 `bash scripts/fetch-agent-wasm.sh`（`deploy/agent/source.json` pin 变更后必须重跑；**换 pin 还须重生成 AI 投影 golden**：`WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 npx vitest run src/replay-local/ai/toClientAiReviewProjection.test.ts`，golden 内嵌 pin provenance，漏跑则 3 个 fixture 红）。
 4. `npm run dev` → `http://localhost:5173/`；3D / shots / AI 用普通账号登录；装甲查看器匿名可用（Tankopedia 入口卡对全员开放）。
 
-仅真正管理功能的 `?admin=1` 参数来自**未提交**的本机旁路（`useAuth.js`，见 runbook §4 与附录 A）：
-不要提交它，也不要"顺手清理"工作区里的这个 `M`。管理功能仍只认角色；URL 参数不得作为产品权限来源。Replay 五能力不依赖 admin，匿名门禁由能力层负责。
+仅真正管理功能需要 `?admin=1`：这是 `useAuth.js` 的 dev-gated 旁路（**已入库**，dev 构建把
+`wotbtools-admin` / `HoF-admin` 视为已持有，见 runbook §4）。管理功能仍只认角色；URL 参数不得作为产品权限来源。Replay 五能力不依赖 admin，匿名门禁由能力层负责。
 
 ## Architecture boundaries
 
@@ -69,6 +69,7 @@
 - 修改 Playback / Replay Workspace **交互**（hit target、pointer-events、capability 切换、认证门禁、播放控件）时保持 `npm run test:browser-interaction` 通过；该 gate 用真实 Chrome + 设备指标（含 coarse pointer）与**原始输入事件**驱动真实应用，并以页面内事件记录证明真实 click 的 target。它不模拟真实硬件、Fullscreen API 或真实捏合手势——这些仍需人工/真机复核。
 - 修改装甲查看器（`AgentArmorView.vue` 样式 / 模板或 `tankViewer.js` 的常驻 UI）时保持 `npm run test:browser-armor-mobile` 通过；该 gate 驱动真实应用断言手机（390/360 触屏、767 断点内侧、资产不可达态）/ 平板 / 桌面三档的 chrome 几何（顶栏 / 底栏 / 参数面板 / 选车弹窗）、44px 触控目标、无横向溢出与真实触摸接线。通用页面外壳在两个浏览器 gate 间共享：`scripts/browser-page.mjs` + `scripts/browser-fixtures/fixture-server.mjs`。
 - 修改装甲查看器**瞄准 / 指针交互**（`tankViewer.js` 的 Pointer Events 接线：按炮管 = yaw+俯仰 / 按炮塔壳 = 只 yaw / 车体 = 相机、短按无拖动 = 装甲判定、pointer capture 清理、`aimFromDrag` 灵敏度与限位）时保持 `npm run test:browser-armor-aiming` 通过；该 gate 用 CDP 原始鼠标 / 触屏输入驱动真实应用。它**自带确定性夹具资产包**（`scripts/browser-fixtures/fixture-asset-pack.mjs`：进程内资产源 + 构造的 hull / turret_01 / gun_01 GLB + tank JSON，装配契约由 `fixture-asset-pack.test.mjs` 锁定），因此无真实资产也真实执行、**不存在 SKIP**（模型加载失败即失败）。本地要对真实车辆人工核对时用 `AIM_ASSETS=<资产源> AIM_TANK=<id>` 覆盖。
+- 修改装甲查看器**初始化 / 弹药 / 单发判定 / 重试 / 销毁生命周期**时保持 `npm run test:browser-armor-shot-readiness` 通过；该 gate 用真实应用和确定性夹具资产包控制异步响应，覆盖慢弹药、初始化期间选车反馈、自动选弹、错误阶段、重试及迟到响应隔离，无需真实资产或 WASM，不做 3D 画面验收。已接入 `ci-frontend.yml` 的浏览器矩阵。
 - 修改架构边界时覆盖受影响的深链、历史导航、认证目的地或共享状态；修改 build/dependency 时运行 `npm run build`。
 - 浏览器门禁里**不要用固定 `delay` 采样手势中间态、也不要刚做完相机手势就立刻采样部位像素**：OrbitControls 的 damping 会在拖动/捏合结束后继续滑行若干帧（CI 无 GPU、帧间隔可达数百 ms，滑行可持续数秒），此时"采样的像素"与"按下时的像素"已不是同一部位（`aimingState().cameraSettledMs` 就是给这件事用的：采样前等它 > `max(400ms, 3×frameIntervalMs)`）；断言中间态一律用 `page.waitForValue('<状态表达式>', 判定, { timeout })` 等状态成立。这也解释了 `browser-armor-aiming` 早期两次 CI 失败（本地快渲染掩盖）。
 - 变更后执行 review-fix；影响界面、构建或文档时再执行 review-with-docs。

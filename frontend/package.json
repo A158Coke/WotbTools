@@ -14,6 +14,7 @@
     "test:browser-interaction": "node scripts/browser-workspace-interaction.mjs",
     "test:browser-armor-mobile": "node scripts/browser-armor-mobile.mjs",
     "test:browser-armor-aiming": "node scripts/browser-armor-aiming.mjs",
+    "test:browser-armor-shot-readiness": "node scripts/browser-armor-shot-readiness.mjs",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
     "build": "vite build",
     "verify:agent-wasm": "node scripts/verify-agent-wasm-dist.mjs --dist dist",

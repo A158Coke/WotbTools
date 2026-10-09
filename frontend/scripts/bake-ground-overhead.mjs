@@ -35,7 +35,11 @@ const has = (name) => args.includes(`--${name}`)
 const PACK = resolve(argOf('pack', 'D:/Class/Rust/Project/release/asset_pack'))
 const SIZE = Number(argOf('size', 4096))
 
-const BAKE_HTML = `<!doctype html><html><body><script type="module">
+const BAKE_HTML = `<!doctype html><html><body><script>
+window.__bakeErr=[];
+addEventListener('error',(e)=>window.__bakeErr.push('error: '+(e.message||e.type||'?')+' @'+String(e.filename||'').split('/').pop()+':'+(e.lineno||0)));
+addEventListener('unhandledrejection',(e)=>window.__bakeErr.push('reject: '+String(e.reason)));
+</script><script type="module">
 import * as THREE from '/node_modules/three/build/three.module.js'
 import { GLTFLoader } from '/node_modules/three/examples/jsm/loaders/GLTFLoader.js'
 // 材质 SSOT：与 3D 运行时（playbackScene）同一份实现——俯视烘焙的观感基准
@@ -318,7 +322,19 @@ const main = async () => {
     const { targetId, sessionId } = await env.openPage()
     const page = new Page(env.client, sessionId)
     await page.evaluate(`location.href = ${JSON.stringify(origin + '/bake')}`)
-    await new Promise((r) => setTimeout(r, 1000))
+    // 轮询直到 __bake 就绪（替掉原先固定 1s 的等待——冷启动/慢机器会假失败）；
+    // 超时则把页面的 error / unhandledrejection 带出来，不再只报"未定义"。
+    let bakeReady = false
+    for (let i = 0; i < 120; i++) {
+      await new Promise((r) => setTimeout(r, 100))
+      try { bakeReady = await page.evaluate('!!window.__bake') } catch { bakeReady = false }
+      if (bakeReady) break
+    }
+    if (!bakeReady) {
+      let errs = '[]'
+      try { errs = await page.evaluate('JSON.stringify(window.__bakeErr || [])') } catch {}
+      throw new Error(`/bake 页面 12s 未就绪（window.__bake 未定义）；页面错误=${errs}`)
+    }
     console.error('page ready:', JSON.stringify(await page.evaluate('window.__bake.init()')))
     const keys = has('all')
       ? readdirSync(join(PACK, 'map')).filter((d) => existsSync(join(PACK, 'map', d, 'scenery.glb')))
