@@ -770,19 +770,11 @@ jobs:
           cat "release-staging/$STAGING_NAME"
           echo "stagingName=$STAGING_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Upload staging evidence to TX
-        if: steps.preflight.outputs.releaseAction == 'publish'
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.TX_VPS_HOST }}
-          username: ${{ secrets.TX_VPS_USER }}
-          port: ${{ secrets.TX_VPS_PORT }}
-          key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: release-staging/${{ steps.staging.outputs.stagingName }}
-          target: /opt/wotb-tx/android-release
-          strip_components: 1
-
-      - name: Ensure staging evidence readable by nginx
+      # 证据落位：先传进各自宿主**不被服务**的中转目录，再在同一把宿主部署锁下原子 rename 进
+      # 服务目录。TX2 的 runtime-content 由 Frontend Replica 在该锁下整树替换（并带走既有证据），
+      # 直接 scp 进服务目录会与它的「扫描 → 换树」交错：文件随旧树进 .previous、公开目录缺文件
+      # 而同步侧仍报 PASS。锁下 rename 让两者互斥，顺带让读取侧永远不会看到半截 JSON。
+      - name: Prepare TX incoming dir for staging evidence
         if: steps.preflight.outputs.releaseAction == 'publish'
         uses: appleboy/ssh-action@v1
         with:
@@ -790,21 +782,37 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          script: chmod 644 /opt/wotb-tx/android-release/${{ steps.staging.outputs.stagingName }}
+          script: mkdir -p /opt/wotb-tx/android-evidence.incoming
 
-      - name: Upload staging evidence to TX2 public frontend runtime
+      - name: Upload staging evidence to TX incoming dir
         if: steps.preflight.outputs.releaseAction == 'publish'
         uses: appleboy/scp-action@v1
         with:
-          host: ${{ secrets.TX2_VPS_HOST }}
-          username: ${{ secrets.TX2_VPS_USER }}
-          port: ${{ secrets.TX2_VPS_PORT }}
-          key: ${{ secrets.TX2_VPS_SSH_KEY }}
-          source: release-staging/${{ steps.staging.outputs.stagingName }}
-          target: /opt/wotb-tx2/runtime-content/android-release
-          strip_components: 1
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: release-staging/${{ steps.staging.outputs.stagingName }},deploy/tx/install-staging-evidence.sh
+          target: /opt/wotb-tx/android-evidence.incoming
+          strip_components: 0
+          overwrite: true
 
-      - name: Ensure staging evidence readable by TX2 nginx
+      - name: Install staging evidence on TX under the host deploy lock
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            bash /opt/wotb-tx/android-evidence.incoming/deploy/tx/install-staging-evidence.sh \
+              --source "/opt/wotb-tx/android-evidence.incoming/release-staging/${{ steps.staging.outputs.stagingName }}" \
+              --dest-dir /opt/wotb-tx/android-release \
+              --lock /opt/wotb-tx/.deploy.lock
+
+      - name: Prepare TX2 incoming dir for staging evidence
         if: steps.preflight.outputs.releaseAction == 'publish'
         uses: appleboy/ssh-action@v1
         with:
@@ -812,7 +820,35 @@ jobs:
           username: ${{ secrets.TX2_VPS_USER }}
           port: ${{ secrets.TX2_VPS_PORT }}
           key: ${{ secrets.TX2_VPS_SSH_KEY }}
-          script: chmod 644 /opt/wotb-tx2/runtime-content/android-release/${{ steps.staging.outputs.stagingName }}
+          script: mkdir -p /opt/wotb-tx2/android-evidence.incoming
+
+      - name: Upload staging evidence to TX2 public frontend runtime incoming dir
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          source: release-staging/${{ steps.staging.outputs.stagingName }},deploy/tx/install-staging-evidence.sh
+          target: /opt/wotb-tx2/android-evidence.incoming
+          strip_components: 0
+          overwrite: true
+
+      - name: Install staging evidence on TX2 under the host deploy lock
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TX2_VPS_HOST }}
+          username: ${{ secrets.TX2_VPS_USER }}
+          port: ${{ secrets.TX2_VPS_PORT }}
+          key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            bash /opt/wotb-tx2/android-evidence.incoming/deploy/tx/install-staging-evidence.sh \
+              --source "/opt/wotb-tx2/android-evidence.incoming/release-staging/${{ steps.staging.outputs.stagingName }}" \
+              --dest-dir /opt/wotb-tx2/runtime-content/android-release \
+              --lock /opt/wotb-tx2/.deploy.lock
 
       - name: Verify production staging evidence (HTTP 200 + content)
         if: steps.preflight.outputs.releaseAction == 'publish'
