@@ -155,6 +155,19 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 - 其余按需：`npm run typecheck`、`npm run build`、`npm run verify:agent-wasm`（build 后核对
   `/wasm/<ref>/` 与 pin 一致）、`npm run lint:css`。
 
+### 单发击穿判定的加载回归
+
+`cd frontend && node scripts/browser-armor-shot-readiness.mjs`：复用浏览器门禁的应用/资产夹具，
+验证弹药延迟时保持加载、不执行零穿深判定；弹药返回后按本发弹种自动完成首次判定；
+离开页面后的迟到响应不覆盖新查看器；弹药数据无效时显示错误，重试可恢复。
+这条门禁负责异步初始化与销毁，独立于瞄准手势和移动端布局门禁，不做 3D 画面验收。
+macOS 可指定 `CHROME_BIN='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'`。
+
+单发检查的执行顺序是：射手弹药就绪 → 目标模型与配置就绪 → 恢复本发姿态和弹道、选弹
+→ 更新世界矩阵 → 击穿判定。网络耗时不会被固定等待时间替代。缺失弹药不应显示为穿深 0
+或模拟结果 `-`；加载失败可重试。此顺序修复不改变穿深公式，也不保证本地模拟与服务器结果
+逐发一致；二者仍受回放数据精度和模拟模型差异影响。
+
 ## 9. 边界（必读）
 
 - **视觉验收归用户**：agent 不驱动浏览器看 3D 画面、不以截图作验收证据；本 runbook 的探针都是

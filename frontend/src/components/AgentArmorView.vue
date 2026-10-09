@@ -52,6 +52,7 @@ function startViewer() {
     viewer = initTankViewer({
         labels: {
             loading: t('armor.loading'),
+            shellUnavailable: t('armor.shell_unavailable'),
             loadFailed: (phase, msg) => t('armor.load_failed', { phase, msg }),
             tier: (tier) => `${t('armor.tier')} ${tier}`,
             type: (value) => replayValueLabel(t, te, value),
