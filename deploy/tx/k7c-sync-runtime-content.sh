@@ -2,7 +2,13 @@
 # Populate TX2 frontend runtime content from the currently authoritative TX1 frontend.
 # Run on TX2 before redeploying the shadow stack. This copies only the current public
 # production surface: sponsor config + referenced sponsor assets, Android version.json
-# + the APK referenced by that manifest. Historical APKs and staging evidence are not copied.
+# + the APK referenced by that manifest. Historical APKs are not copied.
+#
+# `*.staging.json` 是唯一例外，且必须在整树替换前整份带走：android-release 的 stage 会把
+# 「已 stage、未发布」版本的发布身份直接写进这棵树，而 publish 只按公开 URL 校验它——
+# wotbtools.com 由 Caddy 在 TX1/TX2 之间负载，两台中缺一台就可能让 publish 拿到 404
+# 而 fail closed。复制点取 swap 前一刻，使「stage 先写入」与「replica 先换树」两种先后
+# 顺序都安全（见 docs/android/release-process.md §证据的存续）。
 set -Eeuo pipefail
 
 readonly SOURCE_BASE="${K7C_RUNTIME_SOURCE_BASE:-http://10.20.0.1:8081}"
@@ -97,6 +103,15 @@ if expected:
     actual=hashlib.sha256(open(p,'rb').read()).hexdigest()
     if actual.lower()!=str(expected).lower(): raise SystemExit(f'APK sha256 mismatch: expected={expected} actual={actual}')
 PY
+
+# 未发布版本的 staging evidence 只存在于这棵树里，整树替换前原样带走（见文件头）。
+# 只带走能解析的完整 JSON：并发 stage 可能在换树瞬间正在写同名文件，半截证据比没有更糟
+# ——它会让 publish 死在解析上，而不是给出「未 stage」这个已知且可处置的结论。
+for evidence in "$RUNTIME_ROOT"/android-release/*.staging.json; do
+  [ -e "$evidence" ] || continue
+  python3 -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$evidence" 2>/dev/null || continue
+  cp "$evidence" "$stage/android-release/"
+done
 
 sudo mkdir -p "$(dirname "$RUNTIME_ROOT")"
 sudo rm -rf "${RUNTIME_ROOT}.previous"

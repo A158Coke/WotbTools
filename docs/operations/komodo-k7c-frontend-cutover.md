@@ -41,7 +41,7 @@ K7C replicates only the **current public production surface** to TX2 local stora
 - Android `version.json`;
 - the APK actually referenced by that manifest.
 
-Historical APKs and `*.staging.json` evidence are deliberately not copied. TX2 never bind-mounts `/opt/wotb-tx` and never reads the TX1 filesystem directly; it owns a local replicated runtime-content root.
+Historical APKs are deliberately not copied, and the published `version.json` + its APK stay the only replicated *published* surface. The single exception is `*.staging.json` records: the android-release stage writes a **staged-but-unpublished** release identity into this same tree and its publish phase re-reads it through the public URL, which load-balances across TX1/TX2 — so the sync carries any existing record over in the instant before the tree swap (2026-10-09: without that, the record was deleted on TX2 before publish and the public URL became a per-origin coin flip). See [android/release-process.md](../android/release-process.md) §证据的存续. TX2 never bind-mounts `/opt/wotb-tx` and never reads the TX1 filesystem directly; it owns a local replicated runtime-content root.
 
 The production Frontend Replica workflow refreshes this runtime content before TX2 is accepted after a frontend release.
 
