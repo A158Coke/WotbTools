@@ -5,10 +5,10 @@
 // 于是 `var(--x, 深色 fallback)` 的 fallback 恒生效 = 等于写死深色：浅色档（classic profile）
 // 下灰字落在白底上对比度仅 ~2.6:1（"文字发淡"），面板/按钮/边框则是突兀深色块。
 //
-// 3D 回放面板（原 AgentReplay3D）与射击分析面板（原 AgentShots）已在 PR-B 迁到设计语言
-// 语义 token：私有 palette 整体删除，两档主题共用同一份规则。本文件固化四类契约：
+// 3D / 射击回放面板和装甲查看器已迁到设计语言语义 token，两档主题共用同一份规则。
+// 装甲查看器保留的短名仅为全局 token 的别名，供场景脚本的内联样式继承。本文件固化四类契约：
 //   A) 组件不得引用"本仓任何地方都没定义"的 token（含 JS 内联样式）；
-//   B) 仍自建调色板的沉浸页（装甲查看器），每个**颜色** token 必须在 classic 档有成对覆盖；
+//   B) 装甲查看器的本地别名必须引用全局 token，不再自建独立 Classic 调色板；
 //   C) 组件样式块里不得出现裸色（#hex/rgb/rgba/hsl），白名单只放"非主题色"——
 //      即 three.js 视口底这类场景色；
 //   D) tankViewer 的 JS 内联色只允许白名单里的标记/图例色。
@@ -27,11 +27,6 @@ const AGENT_FILES = {
   'AgentTankopedia.vue': '../components/AgentTankopedia.vue',
   'AgentArmorView.vue': '../components/AgentArmorView.vue',
   'tankViewer.js': '../scene/tankViewer.js',
-}
-
-/** 仍自建调色板的沉浸页（回放面板不在其中：它们只用语义 token） */
-const IMMERSIVE = {
-  'AgentArmorView.vue': { file: '../components/AgentArmorView.vue', selector: '.armor-view' },
 }
 
 /**
@@ -124,7 +119,7 @@ describe('Agent 视觉面配色契约', () => {
 
   describe('A) 组件只引用已定义的 token', () => {
     // tankViewer.js 无样式块：它的面板 DOM 渲染在 .armor-view 子树内，
-    // 因此可以合法继承该调色板（其余文件仍只认"仓库定义 + 自身**默认**档定义"）。
+    // 因此可以合法继承这些语义别名（其余文件仍只认"仓库定义 + 自身**默认**档定义"）。
     const armorPalette = new Set(
       Object.keys(declarationsIn(read(AGENT_FILES['AgentArmorView.vue']), '.armor-view') ?? {}),
     )
@@ -150,27 +145,25 @@ describe('Agent 视觉面配色契约', () => {
     }
   })
 
-  describe('B) 沉浸页自建调色板在 classic 档有成对覆盖', () => {
-    for (const [label, { file, selector }] of Object.entries(IMMERSIVE)) {
-      it(`${label} 的每个颜色 token 都有浅色覆盖`, () => {
-        const src = read(file)
-        const dark = declarationsIn(src, selector)
-        expect(dark, `${label} 未解析到 ${selector} 调色板块`).not.toBeNull()
-        const classic = declarationsIn(src, `${CLASSIC_PREFIX} ${selector}`)
-        expect(classic, `${label} 缺少 ${CLASSIC_PREFIX} ${selector} 浅色覆盖块`).not.toBeNull()
-
-        const missing = Object.entries(dark)
-          .filter(([, value]) => looksLikeColor(value))
-          .map(([name]) => name)
-          .filter((name) => !(name in classic))
-        expect(missing, `${label} 的颜色 token 在 classic 档缺覆盖（浅色档会漏配）`).toEqual([])
-      })
-    }
+  describe('B) 装甲查看器继承全局语义 token', () => {
+    it('每个本地别名引用已定义的全局 token，且不含裸色或独立 Classic 覆盖', () => {
+      const src = read(AGENT_FILES['AgentArmorView.vue'])
+      const aliases = declarationsIn(src, '.armor-view')
+      expect(aliases, '未解析到装甲查看器别名块').not.toBeNull()
+      expect(Object.keys(aliases).length, '别名契约不得空跑').toBeGreaterThan(0)
+      for (const [name, value] of Object.entries(aliases)) {
+        expect(value, `${name} 不得自建颜色值或深色 fallback`).not.toMatch(BARE_COLOR)
+        const refs = [...value.matchAll(REFERENCED)].map((m) => m[1])
+        expect(refs.length, `${name} 必须引用全局 token`).toBeGreaterThan(0)
+        expect(refs.filter((token) => !repoDefined.has(token)), `${name} 引用了非全局 token`).toEqual([])
+      }
+      expect(declarationsIn(src, `${CLASSIC_PREFIX} .armor-view`), '主题映射由全局 Profile token 所有').toBeNull()
+    })
   })
 
   describe('C) 组件样式块不留裸色（除白名单的非主题色）', () => {
     const scanned = {
-      ...IMMERSIVE,
+      'AgentArmorView.vue': { file: '../components/AgentArmorView.vue' },
       'Replay3DPane.vue': { file: '../components/Replay3DPane.vue' },
       'ReplayShotsPane.vue': { file: '../components/ReplayShotsPane.vue' },
     }
