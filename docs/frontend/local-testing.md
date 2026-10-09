@@ -151,6 +151,7 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
   §Testing rules 为权威**，新增 gate 随其特性一起落地；改对应代码时保持通过）：
   - `npm run test:browser-layout` —— Playback 布局（PC / tablet / mobile 实际 CSS geometry 与 form isolation）；
   - `npm run test:browser-interaction` —— 交互（hit target、pointer-events、capability 切换、认证门禁、播放控件）。
+  - `npm run test:browser-armor-mobile` —— 装甲页三档布局与触控；选车大名册回归通过真实资产响应覆盖共 121 张卡片（常规视口首批 90 张、后续 31 张），在 Showcase / Classic 检查图片框、车型名和元数据不裁切、首末车型名实际可命中、内部滚动不带动外层页面、真实关闭按钮点击与弹窗关闭状态，并覆盖 4K、筛选和视口扩大时的名册补齐。夹具只验证图片框几何，不证明真实缩略图加载或 3D 视觉效果。
   - `npm run test:browser-armor-aiming` —— 瞄准 / 指针交互；部位取样同时检查几何分类与
     `elementFromPoint` 实际命中 canvas，避免选车按钮等面板遮挡导致手势误入弹窗。
     既有像素扫描单测覆盖按钮 / 弹窗遮挡及空命中，浏览器门禁用临时覆盖控件验证重新取样。

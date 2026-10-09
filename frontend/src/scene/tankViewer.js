@@ -3753,13 +3753,16 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         const CHUNK = 90;
         function loadMoreCards() {
-            if (!renderChunk) return;
+            if (!renderChunk || renderChunk.rendered >= renderChunk.list.length) return;
             const grid = document.getElementById('tp-grid');
-            const end = Math.min(renderChunk.rendered + CHUNK, renderChunk.list.length);
-            for (let i = renderChunk.rendered; i < end; i++) {
-                grid.appendChild(makeCard(renderChunk.list[i], renderChunk.selId));
-            }
-            renderChunk.rendered = end;
+            do {
+                const end = Math.min(renderChunk.rendered + CHUNK, renderChunk.list.length);
+                for (let i = renderChunk.rendered; i < end; i++) {
+                    grid.appendChild(makeCard(renderChunk.list[i], renderChunk.selId));
+                }
+                renderChunk.rendered = end;
+                // A visible grid must overflow or exhaust its roster; a hidden picker still renders one chunk.
+            } while (renderChunk.rendered < renderChunk.list.length && grid.clientHeight > 0 && grid.scrollHeight <= grid.clientHeight);
         }
 
         function updateTankLabels() {
@@ -3777,8 +3780,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             pickerMode = mode;
             document.getElementById('tp-title').textContent =
                 mode === 'shooter' ? L.selectShooter : L.selectTarget;
-            renderGrid();
             document.getElementById('tank-picker').classList.add('open');
+            renderGrid();
             document.getElementById('tp-search').focus();
         }
 
@@ -3922,7 +3925,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     event.preventDefault(); first?.focus();
                 }
             });
-            document.getElementById('tp-grid').addEventListener('click', function() {
+            document.getElementById('tp-grid').addEventListener('scroll', function() {
+                if (!renderChunk || renderChunk.rendered >= renderChunk.list.length) return;
+                // Keep one viewport of cards ahead without rendering the whole roster at once.
+                if (this.scrollTop + this.clientHeight >= this.scrollHeight - this.clientHeight) {
+                    loadMoreCards();
+                }
             });
             document.getElementById('tp-search').addEventListener('input', renderGrid);
             document.getElementById('tp-tier').addEventListener('change', renderGrid);
@@ -3959,6 +3967,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 camera.updateProjectionMatrix();
                 renderer.setSize(view.clientWidth, view.clientHeight);
                 refreshPenetrationResolution();
+                const grid = document.getElementById('tp-grid');
+                if (grid.clientHeight > 0 && grid.scrollHeight <= grid.clientHeight) loadMoreCards();
             };
             onWin('resize', resizeView);
             // The recorded-shot header can wrap without a window resize (locale / error message).
