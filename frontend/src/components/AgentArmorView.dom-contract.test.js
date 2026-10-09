@@ -43,6 +43,7 @@ describe('armor destroyed scene async ownership', () => {
       'const data = await fetchTankData(tid);',
       'const data = await fetchShells(tid);',
       'await populateTankLists(initTargetId, initShooterId);',
+      'await loadShooter(initShooterId);',
       'await loadTarget(initTargetId);',
     ]) {
       const start = kernel.indexOf(step)
@@ -56,8 +57,9 @@ describe('armor destroyed scene async ownership', () => {
 describe('armor adjacent-shot teardown ownership', () => {
   const kernel = read('../scene/tankViewer.js')
   it('guards shot handoff, shooter models and delayed callbacks after scene disposal', () => {
-    expect(kernel).toMatch(/fetchReplayShots\(\)\.then\(d => \{\s*if \(destroyed\) return;/)
-    expect(kernel).toMatch(/const sd = arr\[0\], gltf = arr\[1\];\s*if \(destroyed\) \{ disposeDetachedModel\(gltf\?\.scene\); return null;/)
+    expect(kernel).toMatch(/const shotGen = loadGen;\s*const currentShot = \(\) => !destroyed && shotGen === loadGen;/)
+    expect(kernel).toMatch(/fetchReplayShots\(\)\.then\(d => \{\s*if \(!currentShot\(\)\) return;/)
+    expect(kernel).toMatch(/const sd = arr\[0\], gltf = arr\[1\];\s*if \(!currentShot\(\)\) \{ disposeDetachedModel\(gltf\?\.scene\); return null;/)
     expect(kernel).toContain('if (!destroyed) callback();')
     expect(kernel).toContain('pendingTimers.forEach(globalThis.clearTimeout)')
     expect(kernel).toMatch(/function showShotError\(msg\) \{\s*if \(destroyed\) return;/)
