@@ -134,6 +134,35 @@ stage/publish/debug CI 都复用 `scripts/android-release/android_contract.py bu
 Android Vue 已在 APK 内，发布不依赖生产 Web `/version.json`
 或 Web build commit；Web 与 Android 是独立发布产物。
 
+### 证据的存续：两台 origin 都必须持续可读，且安装与换树互斥
+
+publish 的第一步就是按公开 URL 取证据（`https://wotbtools.com/download/android/<STAGING>`，经 Caddy
+在 TX1/TX2 之间负载），因此证据不是「写一次就结束」的中间产物：
+
+- stage 先把它传进各自宿主**不被服务**的中转目录（`/opt/wotb-tx{,2}/android-evidence.incoming`），
+  再由 `deploy/tx/install-staging-evidence.sh` 在**宿主部署锁**（TX1 `/opt/wotb-tx/.deploy.lock`、
+  TX2 `/opt/wotb-tx2/.deploy.lock`）下同文件系统 rename 进被服务目录。锁下 rename 同时给两侧保证：
+  安装与 Replica 的「扫描 → 整树替换」互斥，且读取侧永远看不到半截 JSON。
+- TX2 那棵树由 Frontend Replica 的 `deploy/tx/k7c-sync-runtime-content.sh` 整树替换，而该调用已在
+  `exec 9>/opt/wotb-tx2/.deploy.lock` + `flock` 内（锁覆盖 sync 的扫描与 swap）。它按设计只复制
+  当前公开面（`version.json` + 该 manifest 指向的 APK），`*.staging.json` 是唯一例外：未发布版本的
+  记录必须整份带走，否则证据在发布前消失，公开 URL 退化成按 origin 掷硬币（2026-10-09 实测：
+  stage 08:57 自校验通过，Replica 08:57 换树删掉 TX2 副本，publish 09:00 抽到 TX2 得到 404 而
+  fail closed）。只把复制点前移到 swap 前一刻**不够**：扫描结束后、换树前落地的写入仍会随旧树进
+  `.previous`，互斥才是那个不变量（评审 P1）。K7C 侧口径见
+  [operations/komodo-k7c-frontend-cutover.md](../operations/komodo-k7c-frontend-cutover.md)。
+- 不变量由 `deploy/test-k7c-runtime-content.sh` 锁定：静态部分断言 Replica 在同一步里先取锁再跑
+  sync、stage 只经安装器在锁下落位、证据绝不直接 scp 进被服务目录；行为部分用真实脚本跑真实流程
+  （换树后未发布证据仍在、历史 APK 不进树、安装器在锁被占住时不可见且不落位、缺锁/缺目录/非证据
+  文件一律 fail closed）。
+- 人工执行 sync 必须自备同一把锁（`WOTB_TX_DEPLOY_LOCK_FILE=/opt/wotb-tx2/.deploy.lock bash
+  deploy/tx/with-deploy-lock.sh …`），否则会重新引入与 stage 安装的交错。
+- 因此 publish 第一步的 404 有两个已知含义：该版本从未 stage，或某台 origin 缺文件。先确认两台
+  的文件是否都在，再按 stage 流程重跑该版本；**不要**在证据缺失时绕过 publish 的身份校验
+  手工写 `version.json`。
+- stage 末尾的「Verify production staging evidence」只对公开 URL 取样一次，命中任一 origin 即通过：
+  它证明「至少一台在服务」，两台的一致性由上面的锁 + 不变量 + 契约测试保证，而不是由那次取样保证。
+
 ## 发布前真实依赖
 
 所有探测只读且有超时，任何失败都阻止写 production version.json：
