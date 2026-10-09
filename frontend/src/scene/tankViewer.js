@@ -1855,6 +1855,16 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         function applyUrlOptionsOnce() {
             if (urlApplied || !tankModel || !armorModel) return;
             urlApplied = true;
+            // 普通检视同车型时，applyConfig 已切到展示配置弹表。两个模型都完成后
+            // 再恢复 URL 下标，避免任一模型回调重建下拉框把选弹重置；手动切配置不重套 URL。
+            // 射击复现的弹表/选弹由射手 scfg 与回放 shell_id 所有，不在此覆盖。
+            if (!QP.get('shot')) {
+                populateShellSelector(shooterShells, parseInt(QP.get('shell'), 10));
+                if (penetrationMode && selectedShell) {
+                    updatePenetrationUniforms(selectedShell);
+                    updateSpacedUniforms(selectedShell);
+                }
+            }
             const num = (k) => { const v = parseFloat(QP.get(k)); return isNaN(v) ? null : v; };
             const yaw = num('yaw'), pitch = num('pitch');
             if (yaw !== null || pitch !== null) {
@@ -3522,7 +3532,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 shooterShells = cfg.shells || [];
                 shooterCaliber = cfg.caliber || shooterCaliber;
                 populateShellSelector(shooterShells);
-                selectedShell = shooterShells.length ? shooterShells[0] : null;
             }
 
             if (penetrationMode && armorModel) rebuildHeatmapScenes();
@@ -3553,7 +3562,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             });
         }
 
-        function populateShellSelector(shells) {
+        function populateShellSelector(shells, requestedIndex = 0) {
             const sel = document.getElementById('shell-select');
             sel.innerHTML = '';
             shells.forEach((s, i) => {
@@ -3562,7 +3571,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 opt.textContent = shellOptionText(s);
                 sel.appendChild(opt);
             });
-            selectedShell = shells.length > 0 ? shells[0] : null;
+            const index = Number.isInteger(requestedIndex) && requestedIndex >= 0 && requestedIndex < shells.length
+                ? requestedIndex : 0;
+            sel.value = String(index);
+            selectedShell = shells[index] || null;
             document.getElementById('shell-selector').style.display = shells.length > 0 ? 'block' : 'none';
         }
 
@@ -3580,7 +3592,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 // 射手实际搭载配置弹表（&scfg= = shooter_config_idx，射击复现表注入）：
                 // 多炮坦克 stock 弹表与发射炮的穿深/弹种清单不同（KV-1 发射 85mm F-30 AP
                 // 120mm，stock ZiS-5 表只有 86/102/20），选择器必须用发射炮的表；
-                // 无 scfg（旧链接）回退顶层 shells（stock 表，仅单配置坦克正确）
+                // 无 scfg 先取顶层 shells；普通同车型检视随后由 applyConfig 接管展示配置弹表。
                 const scfg = parseInt(QP.get('scfg'), 10);
                 const cfgArr = shooterData.configs || [];
                 let shells = null, caliber = null;
@@ -3606,14 +3618,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 shooterShells = shells.map(s => (s && s.caliber == null)
                     ? Object.assign({}, s, { caliber: caliber }) : s);
                 shooterCaliber = caliber;
-                populateShellSelector(shooterShells);
-                // &shell= = 射手配置内弹下标（射击复现表 resolveShellIdx 同域）
-                const si = parseInt(QP.get('shell'), 10);
-                if (!isNaN(si) && si >= 0 && si < shooterShells.length) {
-                    const sel = document.getElementById('shell-select');
-                    if (sel) sel.value = String(si);
-                    selectedShell = shooterShells[si];
-                }
+                // 射击复现的 &shell= 属于射手配置；普通检视在配置完成后重新恢复该下标。
+                populateShellSelector(shooterShells, parseInt(QP.get('shell'), 10));
                 if (!selectedShell || !shellTypeOf(selectedShell)
                     || !Number.isFinite(selectedShell.penetration) || !Number.isFinite(selectedShell.damage)) {
                     selectedShell = null;

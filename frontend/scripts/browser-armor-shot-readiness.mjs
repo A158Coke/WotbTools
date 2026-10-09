@@ -52,11 +52,12 @@ try {
   let response = ammo
   let failShooterSwitch = false
   let failTarget = false
+  let targetResponse = null
   let shooterRequests = 0
-  const release = requestId => send('Fetch.fulfillRequest', {
+  const release = (requestId, payload = response) => send('Fetch.fulfillRequest', {
     requestId, responseCode: 200,
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
-    body: Buffer.from(JSON.stringify(response)).toString('base64'),
+    body: Buffer.from(JSON.stringify(payload)).toString('base64'),
   })
   browser.client.on('Fetch.requestPaused', (event, session) => {
     if (session !== sessionId) return
@@ -67,7 +68,8 @@ try {
       } else if (failShooterSwitch) {
         failShooterSwitch = false
         failedSwitchRequests.push(event.requestId)
-      } else operations.push(send('Fetch.continueRequest', { requestId: event.requestId }))
+      } else if (targetResponse) operations.push(release(event.requestId, targetResponse))
+      else operations.push(send('Fetch.continueRequest', { requestId: event.requestId }))
       return
     }
     shooterRequests++
@@ -108,7 +110,7 @@ try {
   assert.equal(await page.evaluate('window.__armorRicochet?.info().judgments || 0'), 0, 'no judgment with missing ammo')
   assert.equal(await page.evaluate('!!document.querySelector("[data-testid=scene3d-loading]")'), true, 'loading remains visible')
   hold = false
-  await Promise.all(held.splice(0).map(release))
+  await Promise.all(held.splice(0).map(requestId => release(requestId)))
   await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes('PENETRATION'), { timeout: 30000, label: 'automatic penetration after ammo release' })
   assert.equal(await page.evaluate('document.querySelector("#shell-select").value'), '1', 'replay ammo selected before judgment')
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1, 'exactly one initial judgment')
@@ -165,7 +167,7 @@ try {
   await navigate({ view: 'agent-armor', 'ws-auth': '1', tank: String(FIXTURE_TANK_ID), heatmap: '1', assets: assets.origin })
   await page.waitFor(() => window.__armorRicochet?.info().meshCount > 0, { timeout: 30000, label: 'replacement viewer ready' })
   hold = false
-  await Promise.all(held.splice(0).map(release))
+  await Promise.all(held.splice(0).map(requestId => release(requestId)))
   await delay(1000)
   assert.equal(await page.evaluate('document.querySelector("#shell-select").options.length'), 1, 'late ammo cannot overwrite replacement viewer')
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 0, 'late shot cannot calculate in replacement viewer')
@@ -182,9 +184,59 @@ try {
   await page.evaluate('document.querySelector("[data-testid=scene3d-error] button").click()')
   await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes('PENETRATION'), { timeout: 30000, label: 'retry reloads ammo' })
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1)
+  console.log('[shot-readiness] PASS: invalid ammo error and recovery')
+
+  // Plain inspection intentionally uses the displayed gun configuration. Keep
+  // the top-level table distinguishable and omit its normalization/ricochet.
+  const plainAmmo = structuredClone(FIXTURE_TANK_DATA)
+  const topShell = { ...plainAmmo.shells[0] }
+  delete topShell.normalization
+  delete topShell.ricochet
+  plainAmmo.shells = [111, 222].map(penetration => ({ ...topShell, penetration }))
+  const configShell = plainAmmo.configs[0].shells[0]
+  plainAmmo.configs = [
+    { ...plainAmmo.configs[0], label: 'Fixture 200/300', shells: [200, 300].map(penetration => ({ ...configShell, penetration, normalization: 5, ricochet: 85 })), shell_global_ids: [1, 2] },
+    { ...plainAmmo.configs[0], label: 'Fixture 400/500', shells: [400, 500].map(penetration => ({ ...configShell, penetration, normalization: 2, ricochet: 80 })), shell_global_ids: [3, 4] },
+  ]
+  targetResponse = plainAmmo
+  const plainUrl = `${origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&heatmap=1&assets=${encodeURIComponent(assets.origin)}`
+  const assertShellTable = async (value, penetrations) => {
+    const state = await page.evaluate(`({ value: document.querySelector('#shell-select').value, options: Array.from(document.querySelector('#shell-select').options, option => option.textContent) })`)
+    assert.equal(state.value, String(value), 'deep-link shell index belongs to the active shell table')
+    assert.equal(state.options.length, penetrations.length)
+    penetrations.forEach((pen, index) => assert.ok(state.options[index].includes(`${pen}mm`), `shell ${index} uses configuration penetration ${pen}`))
+  }
+  for (const scenario of [
+    { query: '&config=0&shell=1', value: 1, pens: [200, 300], manual: true },
+    { query: '&shell=1', value: 1, pens: [400, 500] },
+    { query: '&config=0&shell=99', value: 0, pens: [200, 300] },
+    { query: '&config=1&shell=-1', value: 0, pens: [400, 500] },
+    { query: '&config=0&shell=invalid', value: 0, pens: [200, 300] },
+  ]) {
+    await page.goto(plainUrl + scenario.query)
+    await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && window.__armorRicochet?.info().meshCount > 0, { timeout: 30000, label: 'plain viewer ready' })
+    await assertShellTable(scenario.value, scenario.pens)
+    if (scenario.manual) {
+      await page.evaluate(`document.querySelector('#config-select').value = '1'; document.querySelector('#config-select').dispatchEvent(new Event('change'))`)
+      await assertShellTable(0, [400, 500])
+    }
+  }
+  console.log('[shot-readiness] PASS: plain configuration ammo, deep-link selection, invalid indices and manual configuration switch')
+
+  // Same tank type still does not make the victim's configuration authoritative
+  // for replay ammunition. scfg=0 and replay shell_id=2 must win over config=1.
+  await page.goto(`${origin}/?view=home&ws-auth=1`)
+  await page.evaluate(`(async () => {
+    const { storeShotsForViewer } = await import('/src/scene/agentData.js');
+    storeShotsForViewer([${JSON.stringify({ ...shot, shooter_tank_id: FIXTURE_TANK_ID })}]);
+  })()`)
+  await page.goto(plainUrl + '&shot=1&scfg=0&config=1&shell=0')
+  await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes('PENETRATION'), { timeout: 30000, label: 'same-tank replay judgment' })
+  await assertShellTable(1, [200, 300])
+  assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1)
+  console.log('[shot-readiness] PASS: same-tank shot replay keeps shooter scfg and replay shell matching')
   assert.deepEqual(page.consoleErrors.filter(message => message.startsWith('uncaught:')), [])
   await Promise.all(operations)
-  console.log('[shot-readiness] PASS: invalid ammo error and recovery')
 } catch (error) {
   if (page) console.error(JSON.stringify({ errors: page.consoleErrors, state: await page.evaluate(`({load:document.querySelector('#loading')?.textContent, status:document.querySelector('.scene-status-overlay')?.textContent, controls:document.querySelector('#turret-controls')?.textContent, info:window.__armorRicochet?.info(), ctx:window.__shotCtx, world:window.__worldTickCtx})`) }))
   throw error
