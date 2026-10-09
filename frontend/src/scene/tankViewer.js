@@ -2103,8 +2103,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         // 硬编码 /glb/ 在 Web 下 404）；/api/tank 不手动拼前缀——viewer_index_html
                         // 已对字面量 '/api/ 加前缀，手动拼会双重前缀 404。
                         const shooterGlbUrl = assetProvider.url(tankData.visual_model_url.replace(/\/glb\/\d+\//, '/glb/' + tid + '/'));
+                        // 目标重试会恢复射手模型；同一射手的车辆 JSON 已随弹药加载，直接复用。
+                        // 射手正在切换或本发属于另一辆车时，仍按本发车型独立获取。
+                        const reuseShooterData = shooterData && selectedShell && !shooterLoading
+                            && String(currentShooterId) === String(tid);
                         return Promise.all([
-                            fetchTankData(tid).catch(() => null),
+                            reuseShooterData ? Promise.resolve(shooterData) : fetchTankData(tid).catch(() => null),
                             new Promise(function(res) {
                                 new GLTFLoader().load(shooterGlbUrl,
                                     function(g) { res(g); }, undefined, function() { res(null); });
@@ -3033,7 +3037,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                     want = (shooterShells || []).findIndex(sh =>
                                         shellTypeOf(sh) === 'he' || (sh && sh.explosion_radius > 0));
                                 }
-                                if (want == null || want < 0 && window.__worldShellId) {
+                                if (want < 0 && window.__worldShellId) {
                                     // 射手配置弹表全局 id：configs[].shell_global_ids（与弹表
                                     // 同源同序）。优先 &scfg=（射手实际搭载配置，下拉表即其
                                     // shells，下标同域）；未命中再全配置扫（顶级偏好）
@@ -3054,7 +3058,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                     }
                                 }
                                 // 槽位兜底仅在完全无 shell_id 时使用
-                                if ((want == null || want < 0) && window.__worldShellId == null) {
+                                if (want < 0 && window.__worldShellId == null) {
                                     want = window.__worldShellSlot;
                                 }
                                 if (want != null && want >= 0 && want < sel.options.length) {
@@ -3744,9 +3748,13 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const s = find(currentShooterId), t = find(currentTargetId);
             document.getElementById('shooter-select').textContent = s ? s.name : '—';
             document.getElementById('target-select').textContent = t ? t.name : '—';
+            document.getElementById('shooter-select').disabled = !initDone;
+            document.getElementById('target-select').disabled = !initDone;
+            document.getElementById('tank-selection-status').hidden = initDone;
         }
 
         function openPicker(mode) {
+            if (!initDone) return;
             pickerMode = mode;
             document.getElementById('tp-title').textContent =
                 (mode === 'shooter' ? 'Shooter' : 'Target') + ' — Select Tank';
@@ -3760,13 +3768,13 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         function selectFromPicker(id) {
             // 首次弹药初始化由 init 独占；防止过期 init continuation 越过新选择。
-            if (!initDone) return;
+            if (!initDone) { closePicker(); return; }
             id = parseInt(id);
             if (pickerMode === 'shooter') {
                 currentShooterId = id;
                 updateTankLabels();
                 loadShooter(id).catch((e) => {
-                    if (currentShooterId === id) reportLoad({ state: 'error', message: loadFailed('tank data', errorMessage(e)) });
+                    if (currentShooterId === id) reportLoad({ state: 'error', message: loadFailed('shell data', errorMessage(e)) });
                 });
             } else {
                 currentTargetId = id;
@@ -3926,10 +3934,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             await populateTankLists(initTargetId, initShooterId);
             if (destroyed) return;
             // 模型回调可立即恢复射击并判定，因此弹药必须先完成，不能靠定时器猜网络耗时。
-            initPhase = 'tank data';
+            initPhase = 'shell data';
             await loadShooter(initShooterId);
             if (destroyed) return;
             initDone = true;
+            updateTankLabels();
+            initPhase = 'tank data';
             await loadTarget(initTargetId);
             if (destroyed) return;
             if (!destroyed) animate();   // await 期间路由已离开则不再启动渲染
@@ -3938,11 +3948,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         /// 宿主页"重试"：恢复缺失弹药并重载当前目标；初始化未完成则由宿主整体重建
         function retry() {
             if (destroyed || !initDone || currentTargetId == null) return false;
+            let phase = 'shell data';
             const ready = selectedShell && !shooterLoading
                 ? Promise.resolve() : loadShooter(currentShooterId);
-            ready.then(() => { if (!destroyed) return loadTarget(currentTargetId); })
+            ready.then(() => { phase = 'tank data'; if (!destroyed) return loadTarget(currentTargetId); })
                 .then(() => { if (!destroyed && !rafId) animate(); })   // 首次加载失败时渲染循环尚未启动
-                .catch((e) => reportLoad({ state: 'error', message: loadFailed('tank data', errorMessage(e)) }));
+                .catch((e) => reportLoad({ state: 'error', message: loadFailed(phase, errorMessage(e)) }));
             return true;
         }
 

@@ -157,9 +157,12 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 
 ### 单发击穿判定的加载回归
 
-`cd frontend && node scripts/browser-armor-shot-readiness.mjs`：复用浏览器门禁的应用/资产夹具，
+`cd frontend && npm run test:browser-armor-shot-readiness`：复用浏览器门禁的应用/资产夹具，
 验证弹药延迟时保持加载、不执行零穿深判定；弹药返回后按本发弹种自动完成首次判定；
-离开页面后的迟到响应不覆盖新查看器；弹药数据无效时显示错误，重试可恢复。
+初始化期间选车入口禁用且显示说明，就绪后恢复；离开页面后的迟到响应不覆盖新查看器；
+弹药数据无效时显示“弹药数据”阶段错误，重试可恢复；目标加载失败的重试复用已就绪弹药，
+恢复同一射手模型时也复用车辆 JSON，避免重复请求。
+这条门禁已加入 `ci-frontend.yml` 的 `browser-gates` 矩阵，随前端 PR 自动执行。
 这条门禁负责异步初始化与销毁，独立于瞄准手势和移动端布局门禁，不做 3D 画面验收。
 macOS 可指定 `CHROME_BIN='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'`。
 
@@ -167,6 +170,10 @@ macOS 可指定 `CHROME_BIN='/Applications/Google Chrome.app/Contents/MacOS/Goog
 → 更新世界矩阵 → 击穿判定。网络耗时不会被固定等待时间替代。缺失弹药不应显示为穿深 0
 或模拟结果 `-`；加载失败可重试。此顺序修复不改变穿深公式，也不保证本地模拟与服务器结果
 逐发一致；二者仍受回放数据精度和模拟模型差异影响。
+
+当前弹药缺失/无效仍采用页面级失败策略，普通装甲查看入口也同样处理，可通过重试恢复；
+暂未提供仅保留模型、禁用弹药相关功能的降级模式。初始化先加载弹药再加载目标模型，
+慢网络下首次模型显示会承担两阶段串行耗时，以保证首次判定只使用就绪数据。
 
 ## 9. 边界（必读）
 
