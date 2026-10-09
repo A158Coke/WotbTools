@@ -69,6 +69,8 @@ async function startFixtureServer() {
   const server = await createServer({
     configFile: resolve(frontendRoot, 'vite.config.js'),
     root: frontendRoot,
+    // Stubbed dependency graphs must not invalidate an already-running developer server.
+    cacheDir: resolve(frontendRoot, 'node_modules/.vite-browser-interaction'),
     logLevel: 'error',
     plugins: [authBoundaryStubPlugin()],
     // Keep the production WASM pin and safe dev artifact middleware from the real Vite config.
@@ -439,6 +441,9 @@ function clickElement(page, selector) {
   return page.evaluate(`(() => {
     const el = document.querySelector(${JSON.stringify(selector)})
     if (!el) return 'missing'
+    if (el.closest('.pb-annot-compact') && !el.matches('.pb-annot-close')) {
+      el.scrollIntoView({ block: 'nearest', inline: 'center' })
+    }
     const panel = el.closest('.display-panel')
     if (panel && panel.scrollHeight > panel.clientHeight + 1) {
       const pr = panel.getBoundingClientRect()
@@ -502,6 +507,8 @@ const AUTH_CAPABILITY_SCENARIOS = [
   { name: 'capability-anonymous-3d-coarse', cap: '3d', view: 'agent-replay', authenticated: false, width: 390, height: 844, touch: true },
   { name: 'capability-anonymous-shots-coarse', cap: 'shots', view: 'agent-shots', authenticated: false, width: 390, height: 844, touch: true },
   { name: 'capability-normal-shots-armor-handoff', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1600, height: 900, touch: false, reconstruct: true },
+  { name: 'capability-normal-shots-armor-handoff-mobile', cap: 'shots', view: 'agent-shots', authenticated: true, width: 390, height: 844, touch: true, reconstruct: true },
+  { name: 'capability-normal-shots-armor-handoff-tablet', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1024, height: 768, touch: false, reconstruct: true },
 ]
 
 async function runAuthCapabilityScenario(env, scenario) {
@@ -553,6 +560,24 @@ async function runAuthCapabilityScenario(env, scenario) {
       await page.waitFor(() => !!document.querySelector('[data-testid="shot-row-1"]'), { label: 'parsed shot row' })
       check(failures, await page.evaluate('window.__wsShotParse.playback === 1 && window.__wsShotParse.shots === 1'),
         'normal authenticated user must execute the shot parsing chain')
+      check(failures, await page.evaluate(`document.querySelector('[data-testid="shots-shooter-select"]')?.value === 'own'
+        && !!document.querySelector('[data-testid="shot-row-3"]') && !document.querySelector('[data-testid="shot-row-2"]')`),
+      'shots must default to the recorder and exclude other players')
+      check(failures, await page.evaluate(`(() => {
+        const row = document.querySelector('[data-testid="shot-row-1"]')
+        return row.textContent.includes('T-34') && row.textContent.includes('Tiger II')
+      })()`), 'shot rows must show both tank names')
+      await page.evaluate(`(() => {
+        const select = document.querySelector('[data-testid="shots-shooter-select"]')
+        select.value = 'all'; select.dispatchEvent(new Event('change', { bubbles: true }))
+      })()`)
+      await page.waitFor(() => !!document.querySelector('[data-testid="shot-row-2"]'), { label: 'explicit all-player filter' })
+      await page.evaluate(`(() => {
+        const select = document.querySelector('[data-testid="shots-shooter-select"]')
+        select.value = 'own'; select.dispatchEvent(new Event('change', { bubbles: true }))
+      })()`)
+      await page.waitFor(() => !document.querySelector('[data-testid="shot-row-2"]'), { label: 'restore recorder filter' })
+      check(failures, await page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'shot list must not overflow the viewport')
     }
     if (scenario.reconstruct) {
       const row = await page.evaluate(clickCenterExpression('[data-testid="shot-row-1"]'))
@@ -576,6 +601,32 @@ async function runAuthCapabilityScenario(env, scenario) {
         `armor scene local shot context lost: ${JSON.stringify(scene.shot)}`)
       check(failures, await page.evaluate('window.__wsAuth.loginCalls.length') === 0,
         'normal user armor handoff must not request another login')
+      check(failures, await page.evaluate(`(() => {
+        const header = document.querySelector('[data-testid="armor-shot-header"]')
+        return header?.textContent.includes('T-34') && header?.textContent.includes('Tiger II')
+          && document.documentElement.scrollWidth <= innerWidth + 1
+      })()`), 'armor shot header must show both tank names without overflow')
+      const nextShot = await page.evaluate(clickCenterExpression('.armor-shot-navigation button:last-child'))
+      check(failures, !!nextShot, 'next recorded shot must be hit-testable')
+      if (nextShot) {
+        await page.tap({ ...nextShot, touch: scenario.touch })
+        await page.waitForValue('window.__wsArmorScene?.shot?.index', value => value === 3,
+          { label: 'next shot stays within recorder snapshot' })
+        check(failures, await page.evaluate(`document.querySelector('.armor-shot-navigation button:last-child')?.disabled === true`),
+          'last recorder shot must disable next navigation')
+      }
+      const previousShot = await page.evaluate(clickCenterExpression('.armor-shot-navigation button:first-child'))
+      if (!previousShot) throw new Error('previous recorded shot must be hit-testable')
+      await page.tap({ ...previousShot, touch: scenario.touch })
+      await page.waitForValue('window.__wsArmorScene?.shot?.index', value => value === 1,
+        { label: 'previous shot navigation' })
+      const backToList = await page.evaluate(clickCenterExpression('.armor-shot-back'))
+      if (!backToList) throw new Error('return to shots must be hit-testable')
+      await page.tap({ ...backToList, touch: scenario.touch })
+      await page.waitFor(() => !!document.querySelector('[data-testid="shot-row-1"]'),
+        { label: 'return preserves the selected replay and its shot list' })
+      check(failures, await page.evaluate(`document.querySelector('[data-testid="shots-shooter-select"]')?.value === 'own'`),
+        'return must preserve recorder scope')
     }
   }
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
@@ -2276,6 +2327,16 @@ function workspace2dProbe() {
       box: box(el),
       ids: rows.map((row) => Number(row.dataset.accountId)),
       scrolls: el.scrollHeight > el.clientHeight + 1,
+      scrollsX: el.scrollWidth > el.clientWidth + 1,
+      rowsFit: rows.every((row) => {
+        const rowBox = row.getBoundingClientRect()
+        const laneBox = el.getBoundingClientRect()
+        const hpBox = row.querySelector('[data-test="roster-hp"]')?.getBoundingClientRect()
+        return rowBox.left >= laneBox.left - 1 && rowBox.right <= laneBox.right + 1
+          && hpBox && hpBox.left >= rowBox.left && hpBox.right <= rowBox.right + 1
+          && ['pb-roster-player', 'pb-roster-tank'].every(test =>
+            row.querySelector(`[data-test="${test}"]`)?.getBoundingClientRect().width > 1)
+      }),
       rowsComplete: rows.every((row) => {
         const bar = row.querySelector('[data-test="roster-hp"]')
         return ['pb-roster-player', 'pb-roster-tank']
@@ -2565,6 +2626,7 @@ async function runWorkspace2DScenario(env, scenario) {
     check(failures, closed.detailsCount === 0, 'details × must close the panel')
     check(failures, JSON.stringify(closed.selectedIds) === '[2002]', `details × must keep the selection: ${JSON.stringify(closed.selectedIds)}`)
     await checkDisplaySurface(page, failures, scenario.layout, scenario)
+    await checkPlaybackDeclutter(page, failures, scenario)
     await env.chrome.client.send('Target.closeTarget', { targetId })
     return result()
   }
@@ -2580,6 +2642,8 @@ async function runWorkspace2DScenario(env, scenario) {
   check(failures, JSON.stringify(g.right.ids) === JSON.stringify(scenario.recorder === 2 ? team1 : team2), `right lane must be Recorder enemy: ${JSON.stringify(g.right.ids)}`)
   check(failures, g.left.box.r <= g.map.l + 1 && g.right.box.l >= g.map.r - 1, 'lanes must flank the square Stage')
   check(failures, !g.left.scrolls && !g.right.scrolls, 'normal 7v7 lanes must not scroll')
+  check(failures, !g.left.scrollsX && !g.right.scrollsX && g.left.rowsFit && g.right.rowsFit,
+    'long player/tank labels must shrink within each lane without horizontal scrolling or clipping the HP bar')
   check(failures, g.left.rowsComplete && g.right.rowsComplete, 'roster rows must show player / tank / HP bar with in-bar text')
   check(failures, g.left.hpBar && g.right.hpBar, 'roster rows must render an HP bar')
   if (g.transport && g.transport.h > 0) {
@@ -2670,12 +2734,132 @@ async function runWorkspace2DScenario(env, scenario) {
   // ---- Display 面开合：始终可从 gear 到达，且不把用户丢到首屏之外 ----
   await checkDisplaySurface(page, failures, scenario.layout, scenario)
 
+  // Opening the editor changes the height budget. Closed-editor geometry does not cover
+  // short landscape fullscreen or the touch palette, so exercise the visible tools too.
+  await checkAnnotationMode(page, failures, scenario)
+  await checkPlaybackDeclutter(page, failures, scenario)
+
   // ---- 标注：真实鼠标从车辆上起笔拖一条箭头——只画线，不选中车辆、不出现浏览器选区 ----
   if (!scenario.touch) await checkAnnotationDrag(page, failures)
 
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   result()
+}
+
+async function checkPlaybackDeclutter(page, failures, scenario) {
+  const state = `(() => {
+    const map = document.querySelector('[data-test="pb-map"]')?.getBoundingClientRect()
+    const main = document.querySelector('[data-test="pb-main"]')?.getBoundingClientRect()
+    const stage = document.querySelector('.pb-map-stage')?.getBoundingClientRect()
+    const count = selector => document.querySelectorAll(selector).length
+    return {
+      mapWidth: map?.width, mapHeight: map?.height, mainWidth: main?.width, stageWidth: stage?.width,
+      markers: count('.pb-vehicle'), icons: count('.pb-vehicle .tank-class-icon'),
+      hp: count('.pb-vehicle [data-test="pb-hp-hud"]'), rings: count('.pb-vehicle [data-test="pb-hp-ring"]'), tanks: count('.pb-vehicle [data-test="pb-label-tank"]'),
+      players: count('.pb-vehicle [data-test="pb-label-player"]'), reload: count('.pb-vehicle [data-test="pb-reload"]'),
+      statuses: count('.pb-vehicle .pb-recorder-badge, .pb-vehicle .pb-death, .pb-vehicle .pb-selected-mark'),
+      roster: count('[data-test="pb-roster-row"]'),
+      active: document.querySelector('[data-test="pb-declutter"]')?.getAttribute('aria-pressed'),
+      expanded: document.querySelector('[data-test="pb-toggle-roster"]')?.getAttribute('aria-expanded'),
+      time: document.querySelector('[data-test="pb-time"]')?.textContent,
+      overflow: document.documentElement.scrollWidth > innerWidth + 1,
+    }
+  })()`
+  const tap = async selector => {
+    const center = await page.evaluate(clickCenterExpression(selector))
+    check(failures, !!center, `${selector} must be visible and hit-testable`)
+    if (!center) return
+    await page.installInputTrace()
+    await page.tap({ ...center, touch: scenario.touch })
+    const trace = await page.inputTrace()
+    check(failures, selector.includes(trace?.click?.test) || selector.includes(trace?.click?.testId), `${selector} real click missed: ${JSON.stringify(trace?.click)}`)
+  }
+  const before = await page.evaluate(state)
+  await tap('[data-test="pb-secondary-entry"]')
+  await page.waitFor(() => !!document.querySelector('[data-testid="pb-hp-mode-ring"]'), { label: 'HP mode display controls' })
+  await page.evaluate(`document.querySelector('[data-testid="pb-hp-mode-ring"]').scrollIntoView({ block: 'nearest' })`)
+  await tap('[data-testid="pb-hp-mode-ring"]')
+  const manualRing = await page.waitForValue(state, value => value.rings > 0 && value.hp === 0, { label: 'ring mode selected' })
+  check(failures, manualRing.reload === 0 && !manualRing.overflow, 'ring mode hides reload without overflowing the page')
+  const ringGeometry = await page.evaluate(`(() => {
+    const ring = document.querySelector('.pb-hp-ring'), r = ring.getBoundingClientRect(), m = ring.closest('.pb-vehicle').getBoundingClientRect()
+    return { centered: Math.abs((r.left+r.right-m.left-m.right)/2) < 1 && Math.abs((r.top+r.bottom-m.top-m.bottom)/2) < 1,
+      surrounds: r.width >= m.width + 6, ringWidth: r.width, markerWidth: m.width, reloadDisabled: document.querySelector('[data-test="pb-show-reload"]').disabled }
+  })()`)
+  check(failures, ringGeometry.centered && ringGeometry.surrounds && ringGeometry.reloadDisabled,
+    `HP ring must surround its marker and disable reload: ${JSON.stringify(ringGeometry)}`)
+  await tap('[data-testid="pb-hp-mode-bar"]')
+  await page.waitForValue(state, value => value.rings === before.rings && value.hp === before.hp, { label: 'bar mode restored' })
+  await tap('[data-test="pb-secondary-entry"]')
+  await tap('[data-test="pb-declutter"]')
+  const clean = await page.waitForValue(state, s => s.active === 'true', { label: 'declutter applied' })
+  check(failures, clean.markers > 0 && clean.icons === clean.markers && clean.tanks > 0,
+    `declutter must render tank classes and tank names: ${JSON.stringify(clean)}`)
+  check(failures, clean.players === 0 && clean.hp === 0 && clean.rings > 0 && clean.reload === 0 && clean.statuses === 0,
+    `declutter must retain HP rings and remove player names, bars and status decorations: ${JSON.stringify(clean)}`)
+  await tap('[data-test="pb-declutter"]')
+  const restored = await page.waitForValue(state, s => s.active === 'false', { label: 'declutter restored' })
+  check(failures, ['icons', 'hp', 'rings', 'players', 'reload', 'statuses'].every(key => before[key] === restored[key]),
+    `declutter must restore the previous presentation: before=${JSON.stringify(before)} after=${JSON.stringify(restored)}`)
+  await tap('[data-test="pb-toggle-roster"]')
+  const hidden = await page.waitForValue(state, s => s.expanded === 'false' && s.roster === 0, { label: 'roster hidden' })
+  check(failures, hidden.mapWidth >= before.mapWidth - 1 && !hidden.overflow, 'hiding teams must preserve or expand the usable map without overflow')
+  // Height-constrained square maps cannot grow further; width-constrained maps must.
+  if (before.stageWidth && before.stageWidth < before.mainWidth - 2) {
+    check(failures, hidden.stageWidth > before.stageWidth + 1, 'collapsing team lanes must return their width to the map stage')
+  }
+  if (before.stageWidth && Math.abs(before.mapWidth - before.stageWidth) <= 2 && hidden.stageWidth > before.stageWidth + 1) {
+    check(failures, hidden.mapWidth > before.mapWidth + 1, 'a width-constrained map must grow when the team lanes collapse')
+  }
+  await tap('[data-test="pb-toggle-roster"]')
+  const shown = await page.waitForValue(state, s => s.expanded === 'true' && s.roster === before.roster, { label: 'roster restored' })
+  check(failures, shown.time === before.time, 'display shortcuts must not change playback time')
+}
+
+async function checkAnnotationMode(page, failures, scenario) {
+  if (await page.evaluate(`!!document.querySelector('[data-test="pb-sb-close"]')`)) {
+    await clickElement(page, '[data-test="pb-sb-close"]')
+  }
+  check(failures, await page.evaluate(`!document.querySelector('[data-test="pb-annot-toolbar"]') && document.querySelectorAll('.pb-annot-item').length === 0`), 'replay must start without an editor or seeded marks')
+  await clickElement(page, '[data-test="pb-annotation-entry"]')
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-annot-toolbar"]'), { label: 'annotation select controls' })
+  await waitForStableLayout(page)
+  const vehicleTap = await page.evaluate(`(() => {
+    const map = document.querySelector('[data-test="pb-map"]').getBoundingClientRect()
+    const marker = [...document.querySelectorAll('.pb-vehicle:not(.pb-destroyed)')].find(el => {
+      const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2
+      return x > map.left + 4 && x < map.right - 4 && y > map.top + 4 && y < map.bottom - 4 && y > 0 && y < innerHeight
+    })
+    if (!marker) return null
+    const r = marker.getBoundingClientRect()
+    return { x: r.left + r.width/2, y: r.top + r.height/2,
+      tank: marker.querySelector('[data-test="pb-label-tank"]')?.textContent,
+      hp: marker.querySelector('[data-test="pb-hp-num"]')?.textContent }
+  })()`)
+  check(failures, !!vehicleTap, 'select-mode inspection needs a visible vehicle')
+  if (vehicleTap) {
+    await page.tap({ x: vehicleTap.x, y: vehicleTap.y, touch: scenario.touch })
+    await page.waitFor(() => !!document.querySelector('[data-test="pb-info"]'), { label: 'vehicle details in annotation select mode' })
+    const details = await page.evaluate(`({tank:document.querySelector('[data-test="pb-sb-tank"]')?.textContent, hp:document.querySelector('[data-test="pb-sb-hp-current"]')?.textContent})`)
+    check(failures, details.tank === vehicleTap.tank && details.hp === vehicleTap.hp,
+      `map inspection must show this vehicle and current HP: ${JSON.stringify({details, vehicleTap})}`)
+    await clickElement(page, '[data-test="pb-sb-close"]')
+  }
+  for (const tool of ['LT', 'MT', 'HT', 'TD', 'route']) {
+    check(failures, clicked(await clickElement(page, `[data-test="pb-annot-${tool}"]`)), `annotation ${tool} tool must be reachable`)
+  }
+  const geometry = await page.evaluate(`(() => {
+    const map = document.querySelector('[data-test="pb-map"]').getBoundingClientRect()
+    const toolbar = document.querySelector('[data-test="pb-annot-toolbar"]').getBoundingClientRect()
+    const close = document.querySelector('[data-test="pb-annot-close"]').getBoundingClientRect()
+    return { mapHeight: map.height, mapBottom: map.bottom, toolbarTop: toolbar.top, closeBottom: close.bottom, viewport: innerHeight, horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1 }
+  })()`)
+  check(failures, geometry.mapHeight >= 96, `marking mode must retain a usable battlefield: ${JSON.stringify(geometry)}`)
+  check(failures, !geometry.horizontalOverflow, `marking tools must not overflow the page horizontally: ${JSON.stringify(geometry)}`)
+  if (scenario.fullscreen) check(failures, geometry.closeBottom <= geometry.viewport + 1, `fullscreen marking exit must not be clipped: ${JSON.stringify(geometry)}`)
+  check(failures, clicked(await clickElement(page, '[data-test="pb-annot-close"]')), 'marking mode must be closable')
+  await delay(150)
 }
 
 /**
@@ -2687,9 +2871,7 @@ async function checkAnnotationDrag(page, failures) {
     await clickElement(page, '[data-test="pb-sb-close"]')
     await delay(200)
   }
-  await clickElement(page, '[data-test="pb-secondary-entry"]')
-  await delay(200)
-  await clickElement(page, '[data-test="pb-panel-annotation"]')
+  await clickElement(page, '[data-test="pb-annotation-entry"]')
   await delay(200)
   await clickElement(page, '[data-test="pb-annot-arrow"]')
   await delay(150)

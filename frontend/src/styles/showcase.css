@@ -50,81 +50,32 @@
   --hard-shadow: 0 26px 72px rgba(0, 0, 0, .46);
 }
 
-html, body, #app { min-height: 100%; }
-body {
-  background:
-    radial-gradient(circle at 15% -5%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 26%),
-    linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px),
-    var(--bg);
-  background-size: auto, 36px 36px, 36px 36px, auto;
-}
-
 .wrap {
-  max-width: var(--showcase-wide-max) !important;
-  width: calc(100% - var(--showcase-gutter) * 2) !important;
+  max-width: var(--layout-wide-max) !important;
+  width: calc(100% - var(--gutter) * 2) !important;
   margin-inline: auto !important;
-}
-.layout-content {
-  width: min(var(--showcase-content-max), calc(100% - var(--showcase-gutter) * 2)) !important;
-  max-width: none !important;
-  padding: 26px 0 64px !important;
 }
 .layout-data-workspace {
   /* 100% 而非 100vw：100vw 含滚动条宽度，有竖向滚动条时会产生横向溢出 */
-  width: min(var(--showcase-page-max), calc(100% - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--layout-workspace-max), calc(100% - var(--gutter) * 2)) !important;
   max-width: none !important;
-  padding: 24px 0 64px !important;
+  padding: var(--space-6) 0 var(--space-12);
 }
 .admin-page {
-  width: min(var(--showcase-page-max), calc(100% - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--layout-workspace-max), calc(100% - var(--gutter) * 2)) !important;
   max-width: none !important;
   margin-inline: auto !important;
-  padding: 26px 0 64px !important;
+  padding: var(--space-6) 0 var(--space-12);
 }
-
-.layout-content > h1,
-.layout-content > h2,
-.layout-data-workspace > h1,
-.layout-data-workspace > h2 { letter-spacing: -.015em; }
-
-.layout-content :is(.card, .panel, .profile-card),
-.layout-data-workspace :is(.card, .panel),
-.modal {
-  border-color: var(--showcase-line) !important;
-  box-shadow: var(--surface-shadow);
-}
-
-.layout-content :is(input, select, textarea),
-.layout-data-workspace :is(input, select, textarea) {
-  border-color: #39444a !important;
-  background: #0f1518 !important;
-  color: #e4e1d9 !important;
-}
-.layout-content :is(input, select, textarea):focus,
-.layout-data-workspace :is(input, select, textarea):focus {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px var(--accent-shadow);
-}
-
-/* Replay parser */
-.layout-data-workspace > :first-child { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)) !important; }
-.tabs button.active {
-  color: var(--accent-dark) !important;
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important;
-}
-.tablewrap, .layout-data-workspace table { scrollbar-color: var(--accent) var(--bg-card2); }
-.layout-data-workspace table thead th { background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important; }
 
 /* Hall of Fame / rankings */
 
 /* Profile: no avatar; identity reads like a tactical account header. */
 .profile-page {
-  width: min(var(--showcase-content-max), calc(100% - var(--showcase-gutter) * 2)) !important;
+  width: min(var(--layout-content-max), calc(100% - var(--gutter) * 2)) !important;
   max-width: none !important;
   margin-inline: auto !important;
-  padding: 26px 0 64px !important;
+  padding: var(--space-6) 0 var(--space-12);
 }
 .profile-page .hero-avatar { display: none !important; }
 .profile-page .profile-main { display: grid; gap: 14px; }
@@ -168,23 +119,21 @@ body {
 
 /* Tactical workspaces */
 
-@media (max-width: 1199px) {
-  :root { --showcase-gutter: 14px; }
+@media (768px <= width < 1200px) {
   .layout-content,
 .layout-data-workspace,
 .admin-page,
-.profile-page { padding-top: 18px !important; }
+.profile-page { padding-top: var(--space-5); }
 }
 
 @media (width < 768px) {
-  :root { --showcase-gutter: 8px; }
 
   .layout-content,
 .layout-data-workspace,
 .admin-page,
 .profile-page {
-    width: calc(100% - 16px) !important;
-    padding: 12px 0 42px !important;
+    width: calc(100% - var(--gutter) * 2);
+    padding: var(--space-4) 0 var(--space-8);
   }
   .profile-page .profile-body { display: block !important; }
   .profile-page .profile-left,

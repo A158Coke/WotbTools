@@ -1,52 +1,4 @@
-/* WotBTools V2 — visual cohesion fixes for high-value showcase pages.
- * These product workspaces intentionally use a stable dark tactical surface even when
- * the user's global/system theme is light. The fullscreen artwork remains visible in
- * gutters while tool surfaces stay readable and visually consistent.
- */
-
-/* ========================= Replay Parser ========================= */
-.layout-data-workspace {
-  color: #e9e7e0;
-}
-
-.layout-data-workspace .filebtn,
-.layout-data-workspace button {
-  border-color: #465159;
-}
-.layout-data-workspace .filebtn:not(.ghost) {
-  border-color: #d98f18 !important;
-  background: linear-gradient(180deg, #f0aa30, #cf8310) !important;
-  color: #140d03 !important;
-}
-.layout-data-workspace .filebtn.ghost,
-.layout-data-workspace button.ghost {
-  background: rgba(17,24,28,.88) !important;
-  color: #d6d3ca !important;
-}
-.layout-data-workspace .filebtn.ghost:hover,
-.layout-data-workspace button.ghost:hover {
-  border-color: #d98f18 !important;
-  color: #f0aa30 !important;
-}
-
-.layout-data-workspace .tablewrap {
-  border-color: #344047 !important;
-  background: rgba(12,18,21,.92) !important;
-  color: #e3e0d8 !important;
-  box-shadow: 0 18px 42px rgba(0,0,0,.28) !important;
-  backdrop-filter: blur(12px);
-}
-.layout-data-workspace .chip {
-  border-color: rgba(217,143,24,.28) !important;
-  background: rgba(217,143,24,.09) !important;
-  color: #d6d2c8 !important;
-}
-.layout-data-workspace table thead th {
-  background: #141c20 !important;
-  color: #b5b2aa !important;
-}
-.layout-data-workspace table tbody tr { background: rgba(13,19,22,.82); }
-.layout-data-workspace table tbody tr:hover { background: rgba(31,43,49,.94) !important; }
+/* Legacy Hall of Fame presentation, pending its component migration. */
 
 /* ========================= Hall of Fame ========================= */
 .lb-wrap {
@@ -215,8 +167,7 @@
 .lb-wrap .lb-upload-msg.err {
   color: #ff8f86 !important;
 }
-.lb-wrap .error,
-.layout-data-workspace .error {
+.lb-wrap .error {
   border: 1px solid rgba(225,87,78,.46) !important;
   border-left: 3px solid rgba(225,87,78,.85) !important;
   border-radius: 7px;
@@ -224,8 +175,7 @@
   color: #ffb6ae !important;
   box-shadow: 0 10px 26px rgba(0,0,0,.18);
 }
-.lb-wrap .warn,
-.layout-data-workspace .warn {
+.lb-wrap .warn {
   border: 1px solid rgba(224,160,45,.42) !important;
   border-radius: 7px;
   background: rgba(90,61,14,.58) !important;

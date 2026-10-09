@@ -82,7 +82,7 @@ try {
   await delay(800)
 
   // —— 找三类部位像素（client 坐标）：炮管 / 炮塔壳 / 车体 ——
-  // 部位采样必须同时满足两条：可视化第一命中名（__raytrace 的报告面）与**产品同一分类器**
+  // 部位采样必须实际命中 canvas，并同时满足可视化第一命中名（__raytrace 的报告面）与**产品同一分类器**
   // __aimPart 的结论一致——只按名字采样会在视觉模型/装甲模型命中顺序不一致时取到
   // "看着是炮塔、按下却落进车体/相机分支"的像素，让断言在 CI 上随机翻车。
   // 选择逻辑（首选主装甲 / 次选仅间隙甲+外部模块 / 首选齐备即早退）见 armor-spot-scan.mjs，
@@ -103,6 +103,28 @@ try {
   check(!!spots.gun && !!spots.turret && !!spots.hull,
     `部位样本像素齐备 gun=${spots.gun?.name} turret=${spots.turret?.name} hull=${spots.hull?.name}`)
   if (!(spots.gun && spots.turret && spots.hull)) throw new Error('fixture geometry has no gun/turret/hull pixels')
+
+  // 遮挡回归：几何射线仍命中炮塔，但 DOM 顶层已是按钮；扫描必须换到可交互的 canvas 像素。
+  // 只在夹具页临时加覆盖控件，不隐藏真实面板、不改变相机/模型，也不向按钮派发手势。
+  const occlusion = await page.evaluate(`(() => {
+    const c = document.querySelector('canvas');
+    const button = document.createElement('button');
+    button.textContent = 'fixture overlay';
+    button.style.cssText = 'position:fixed;left:${spots.turret.x - 8}px;top:${spots.turret.y - 8}px;width:16px;height:16px;padding:0;z-index:2147483647';
+    document.body.append(button);
+    try {
+      const covered = document.elementFromPoint(${spots.turret.x}, ${spots.turret.y}) === button;
+      const next = ${findSpotsExpr(['turret'])};
+      return {
+        covered,
+        canvasHit: !!next.turret && document.elementFromPoint(next.turret.x, next.turret.y) === c,
+        next: next.turret,
+      };
+    } finally { button.remove(); }
+  })()`)
+  check(occlusion.covered && occlusion.canvasHit,
+    `遮挡回归：按钮截获旧炮塔坐标，重新扫描仍命中画布（${JSON.stringify(occlusion)}）`)
+
   const readAim = () => page.evaluate(`(() => ({
     t: document.getElementById('turret-val').textContent,
     g: document.getElementById('gun-val').textContent,

@@ -151,7 +151,12 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
   §Testing rules 为权威**，新增 gate 随其特性一起落地；改对应代码时保持通过）：
   - `npm run test:browser-layout` —— Playback 布局（PC / tablet / mobile 实际 CSS geometry 与 form isolation）；
   - `npm run test:browser-interaction` —— 交互（hit target、pointer-events、capability 切换、认证门禁、播放控件）。
+  - `npm run test:browser-armor-aiming` —— 瞄准 / 指针交互；部位取样同时检查几何分类与
+    `elementFromPoint` 实际命中 canvas，避免选车按钮等面板遮挡导致手势误入弹窗。
+    既有像素扫描单测覆盖按钮 / 弹窗遮挡及空命中，浏览器门禁用临时覆盖控件验证重新取样。
   - agent 运行环境起不了 Chrome 时：明确说明并交给 PR CI（本机起不来 ≠ 改动有问题）。
+- 交互夹具的 Vite 依赖缓存隔离在 `node_modules/.vite-browser-interaction`，避免带 stub 的模块图使正在运行的开发页报 `504 Outdated Optimize Dep`。额外本地 smoke 也应使用独立 `cacheDir`；遇到旧缓存失效，停掉冲突实例并用 `npm run dev -- --force` 重启开发服务。
+- 无 GPU 的隔离 Chrome 夹具显式使用 SwiftShader 软件 WebGL。`browser-chrome.mjs` 的 `--enable-unsafe-swiftshader` 只用于受控本地测试页面，不改产品设置，也不能用来代替真实 3D 视觉验收。缺 WebGL 导致 fixture 无法建场时，先区分运行环境失败与布局断言失败。
 - 其余按需：`npm run typecheck`、`npm run build`、`npm run verify:agent-wasm`（build 后核对
   `/wasm/<ref>/` 与 pin 一致）、`npm run lint:css`。
 

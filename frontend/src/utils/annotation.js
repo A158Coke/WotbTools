@@ -10,6 +10,8 @@
  * - rect:   { type:'rect',   color, width, x, y, w, h }
  * - circle: { type:'circle', color, width, cx, cy, r }
  * - text:   { type:'text',   color, x, y, text }
+ * - unit:   { type:'unit', color, x, y, tankClass:'LT'|'MT'|'HT'|'TD', radius, label }
+ * - route:  { type:'route', color, width, points:[{x,y},...], label }
  */
 
 /** 标注颜色固定色板（含纯黑，供亮色地图与标注对比）。 */
@@ -17,6 +19,9 @@ export const ANNOT_COLORS = [
   '#ff4d4f', '#ffd166', '#ffffff', '#000000',
   '#40c4ff', '#69f0ae', '#ff7eb6', '#ff9f43', '#9c88ff'
 ]
+
+// The palette and actual vehicles share one game-domain symbol definition.
+export { TANK_CLASS_ICONS as ANNOT_TANK_CLASSES } from './tankClassIcon.js'
 
 /** 粗细滑块范围与默认值（SVG 单位，随地图缩放）。 */
 export const ANNOT_WIDTH_MIN = 1
@@ -136,6 +141,12 @@ function pointSegmentDistance(px, py, x1, y1, x2, y2) {
 /** 点到标注几何的最短距离（形状/文字命中判定；pen 不走此路径）。 */
 function distanceToShape(ann, px, py) {
   switch (ann.type) {
+    case 'pen':
+    case 'route':
+      return ann.points.length < 2 ? Infinity : Math.min(...ann.points.slice(1).map((p, i) =>
+        pointSegmentDistance(px, py, ann.points[i].x, ann.points[i].y, p.x, p.y)))
+    case 'unit':
+      return Math.max(0, Math.hypot(px - ann.x, py - ann.y) - ann.radius)
     case 'arrow':
     case 'line':
       return pointSegmentDistance(px, py, ann.x1, ann.y1, ann.x2, ann.y2)
@@ -156,6 +167,23 @@ function distanceToShape(ann, px, py) {
     default:
       return Infinity
   }
+}
+
+/** Select topmost geometry in semantic coordinates; callers supply a screen-sized tolerance. */
+export function hitTestAnnotation(annotations, point, tolerance) {
+  for (let i = annotations.length - 1; i >= 0; i--) {
+    if (distanceToShape(annotations[i], point.x, point.y) <= tolerance) return i
+  }
+  return -1
+}
+
+/** Immutable translation keeps undo snapshots independent, including polyline vertices. */
+export function translateAnnotation(annotation, dx, dy) {
+  if (annotation.points) return { ...annotation, points: annotation.points.map(p => ({ x: p.x + dx, y: p.y + dy })) }
+  const next = { ...annotation }
+  for (const key of ['x', 'cx', 'x1', 'x2']) if (Number.isFinite(next[key])) next[key] += dx
+  for (const key of ['y', 'cy', 'y1', 'y2']) if (Number.isFinite(next[key])) next[key] += dy
+  return next
 }
 
 /**

@@ -39,22 +39,36 @@ const items = primaryNavItems()
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   border-top: 1px solid var(--color-border-subtle);
-  background: color-mix(in oklab, var(--color-canvas) 94%, transparent);
-  backdrop-filter: blur(12px);
+  background: var(--color-surface-1);
 }
 
 .tab {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: var(--space-1);
+  padding-inline: var(--space-1);
   min-width: var(--hit-min);
   color: var(--color-text-tertiary);
   text-decoration: none;
 }
 
-.tab.is-active { color: var(--color-accent-text); }
+.tab::before {
+  content: '';
+  position: absolute;
+  inset-inline: var(--space-3);
+  top: 0;
+  height: var(--space-1);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: transparent;
+}
+.tab.is-active::before { background: var(--color-accent); }
+.tab.is-active {
+  background: color-mix(in oklab, var(--color-accent) 8%, var(--color-surface-1));
+  color: var(--color-accent-text);
+}
 .tab-label {
   max-width: 100%;
   overflow: hidden;
@@ -65,7 +79,7 @@ const items = primaryNavItems()
   font: var(--type-caption);
   font-weight: 600;
   /* Reserve the icon, gap and borders before fitting two caption lines. */
-  line-height: min(var(--line-height-caption), calc((var(--tabbar-h) - 28px) / 2));
+  line-height: min(var(--line-height-caption), calc((var(--tabbar-h) - var(--space-6) - var(--space-1) - 1px) / 2));
   text-align: center;
 }
 .tab:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }

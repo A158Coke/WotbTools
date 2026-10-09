@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, useId } from 'vue'
 import VehicleMarker from './VehicleMarker.vue'
+import { ANNOT_TANK_CLASSES, arrowHeadPoints } from '../utils/annotation.js'
 import { activeTerrainRelief, projectTerrainPoint } from '../utils/terrainReliefProjection.js'
 import { screenOffsetToSvgDelta } from '../utils/mapView.js'
 
@@ -29,6 +30,7 @@ const props = defineProps({
   markerLabel: { type: Function, required: true },
   hpFor: { type: Function, required: true },
   hpPrefs: { type: Object, required: true },
+  markerPrefs: { type: Object, default: () => ({ classIcons: false, showStatus: true }) },
   translate: { type: Function, required: true },
   ghostFor: { type: Function, required: true },
   flashFor: { type: Function, required: true },
@@ -122,6 +124,29 @@ function projectedCirclePoints(annotation) {
   return points.join(' ')
 }
 
+// Project route vertices once per geometry change. Heads are built after projection so relief
+// does not distort the intention arrow; presentation stays derived from the existing owner.
+const annotationPresentation = computed(() => props.renderedAnnotations.map(annotation => {
+  if (annotation.type !== 'route') return annotation
+  const routeSvgPoints = projectSvgPointString(annotation.svgPoints)
+  const routeVertices = routeSvgPoints.trim().split(/\s+/).filter(Boolean).map(pair => {
+    const [x, y] = pair.split(',').map(Number)
+    return { x, y }
+  })
+  const last = routeVertices.at(-1), previous = routeVertices.at(-2)
+  return {
+    ...annotation,
+    routeSvgPoints,
+    routeVertices,
+    routeHead: previous && last ? arrowHeadPoints(previous.x, previous.y, last.x, last.y) : '',
+  }
+}))
+function onTextKeydown(event) {
+  if (event.isComposing || event.keyCode === 229) return
+  if (event.key === 'Enter') { event.preventDefault(); emit('commit-text', props.textSession) }
+  if (event.key === 'Escape') { event.preventDefault(); emit('cancel-text', props.textSession) }
+}
+
 const presentedVehicleStates = computed(() => {
   if (!reliefModel.value) return props.vehicleStates
   return props.vehicleStates.map((state) => {
@@ -203,6 +228,8 @@ function onTwoFingerTouch(event) {
       class="pb-viewport"
       :class="{ 'pb-touch-pan': props.touchPan }"
       data-test="pb-viewport"
+      tabindex="0"
+      :aria-label="$t('recon.map.aria')"
       :data-view-scale="props.viewScale"
       :style="[props.viewportStyle, { aspectRatio: `${props.mapView.W} / ${props.mapView.H}` }]"
       @touchstart="onTwoFingerTouch"
@@ -290,8 +317,19 @@ function onTwoFingerTouch(event) {
           </template>
         </g>
         <g v-if="props.annotVisible" class="pb-annotations" data-test="pb-annotations">
-          <template v-for="(annotation, index) in props.renderedAnnotations" :key="index">
-            <polyline v-if="annotation.type === 'pen'" :points="projectSvgPointString(annotation.svgPoints)" fill="none" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" stroke-linejoin="round" />
+          <g v-for="(annotation, index) in annotationPresentation" :key="index" class="pb-annot-item" :class="{ 'is-selected': annotation.selected }" :data-annotation-type="annotation.type">
+            <g v-if="annotation.type === 'unit'" :transform="`translate(${projectedAnnotationPoint(annotation, 'x', 'y').x}, ${projectedAnnotationPoint(annotation, 'x', 'y').y})`" :data-test="'pb-annot-unit-' + annotation.tankClass">
+              <circle r="22" class="pb-annot-unit-ring" :stroke="annotation.color" stroke-width="2" stroke-dasharray="4 3" />
+              <path :d="ANNOT_TANK_CLASSES.find(tank => tank.key === annotation.tankClass)?.path" transform="translate(-12 -12)" :fill="annotation.color" />
+              <text y="38" text-anchor="middle" class="pb-annot-unit-label" :fill="annotation.color">{{ `${$t('recon.map.playback.annot.planned')} · ${annotation.tankClass}` }}<tspan v-if="annotation.label" x="0" dy="16">{{ annotation.label }}</tspan></text>
+            </g>
+            <g v-else-if="annotation.type === 'route'" data-test="pb-annot-route-shape">
+              <polyline :points="annotation.routeSvgPoints" fill="none" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 5" />
+              <polygon v-if="annotation.routeHead" :points="annotation.routeHead" :fill="annotation.color" />
+              <circle v-for="(point, vertex) in annotation.routeVertices" :key="vertex" :cx="point.x" :cy="point.y" r="4" :fill="annotation.color" />
+              <text v-if="annotation.label && annotation.routeVertices.length" :x="annotation.routeVertices[0].x" :y="annotation.routeVertices[0].y - 12" :fill="annotation.color" class="pb-annot-unit-label">{{ annotation.label }}</text>
+            </g>
+            <polyline v-else-if="annotation.type === 'pen'" :points="projectSvgPointString(annotation.svgPoints)" fill="none" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" stroke-linejoin="round" />
             <line v-else-if="annotation.type === 'line'" :x1="projectedAnnotationPoint(annotation, 'x1', 'y1').x" :y1="projectedAnnotationPoint(annotation, 'x1', 'y1').y" :x2="projectedAnnotationPoint(annotation, 'x2', 'y2').x" :y2="projectedAnnotationPoint(annotation, 'x2', 'y2').y" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" />
             <g v-else-if="annotation.type === 'arrow'"><line :x1="projectedAnnotationPoint(annotation, 'x1', 'y1').x" :y1="projectedAnnotationPoint(annotation, 'x1', 'y1').y" :x2="projectedAnnotationPoint(annotation, 'x2', 'y2').x" :y2="projectedAnnotationPoint(annotation, 'x2', 'y2').y" :stroke="annotation.color" :stroke-width="annotation.widthSvg" stroke-linecap="round" /><polygon :points="projectSvgPointString(annotation.head)" :fill="annotation.color" /></g>
             <template v-else-if="annotation.type === 'rect'">
@@ -303,7 +341,7 @@ function onTwoFingerTouch(event) {
               <circle v-else :cx="annotation.cx" :cy="annotation.cy" :r="annotation.r" :stroke="annotation.color" :stroke-width="annotation.widthSvg" fill="none" />
             </template>
             <text v-else-if="annotation.type === 'text'" :x="projectedAnnotationPoint(annotation, 'x', 'y').x" :y="projectedAnnotationPoint(annotation, 'x', 'y').y" :fill="annotation.color" :font-size="props.annotFontSize" text-anchor="middle" dominant-baseline="middle" class="pb-annot-text">{{ annotation.text }}</text>
-          </template>
+          </g>
         </g>
       </svg>
       <div class="pb-markers" :class="{ 'pb-drawing': !!props.activeTool }" data-test="pb-markers" aria-hidden="false">
@@ -315,6 +353,9 @@ function onTwoFingerTouch(event) {
           :label="props.markerLabel(state.vehicle.accountId)"
           :hp="props.hpFor(state.vehicle)"
           :hp-visible="props.hpPrefs.showHp"
+          :hp-mode="props.hpPrefs.mode || 'bar'"
+          :class-icons="props.markerPrefs.classIcons"
+          :show-status="props.markerPrefs.showStatus"
           :t="props.translate"
           :hp-ghost="props.ghostFor(state.vehicle.accountId)"
           :hp-flash="props.flashFor(state.vehicle.accountId)"
@@ -324,7 +365,7 @@ function onTwoFingerTouch(event) {
       </div>
     </div>
 
-    <input v-if="props.textSession" ref="textInputRef" :value="props.textSession.text" class="pb-text-input" :style="props.textInputStyle" :placeholder="$t('recon.map.playback.annot.text_placeholder')" data-test="pb-text-input" @input="emit('update-text', $event.target.value)" @keydown.enter.prevent="emit('commit-text', props.textSession)" @keydown.esc.prevent="emit('cancel-text', props.textSession)" @blur="emit('commit-text', props.textSession)" />
+    <input v-if="props.textSession" ref="textInputRef" :value="props.textSession.text" class="pb-text-input" :style="props.textInputStyle" :placeholder="$t('recon.map.playback.annot.text_placeholder')" data-test="pb-text-input" @input="emit('update-text', $event.target.value)" @keydown="onTextKeydown" @blur="emit('commit-text', props.textSession)" />
     <div class="pb-feedback-layer" data-test="pb-feedback-layer" aria-hidden="true">
       <span v-for="float in props.visibleFloats" :key="'dmg-' + float.id" class="pb-float-dmg" data-test="pb-float-dmg" :class="props.floatTeamClass(float.friendly)" :style="{ left: float.x + 'px', top: float.y + 'px' }">-{{ float.hpLoss }}</span>
       <span v-for="burst in props.visibleBursts" :key="'burst-' + burst.id" class="pb-burst" data-test="pb-burst" :class="props.floatTeamClass(burst.friendly)" :style="{ left: burst.x + 'px', top: burst.y + 'px' }"></span>
@@ -333,10 +374,15 @@ function onTwoFingerTouch(event) {
 </template>
 
 <style>
+.pb-annot-item.is-selected { filter: drop-shadow(0 0 var(--space-1) var(--color-accent)); }
+.pb-annot-unit-ring { fill: var(--color-surface-1); }
+.pb-annot-unit-label { font: var(--type-caption); font-weight: 700; paint-order: stroke; stroke: var(--color-surface-1); stroke-width: 3; stroke-linejoin: round; }
+
 .pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
 /* user-select: none —— 车辆标记 / 名牌 / 标注文字不可被选中：鼠标拖动平移或画标注、触屏长按都不该出现蓝色选区 */
 .pb-viewport { position: absolute; inset: 0 auto auto 0; width: 100%; transform-origin: 0 0; touch-action: none; aspect-ratio: var(--pb-map-aspect, 1 / 1); user-select: none; }
 .pb-viewport.pb-touch-pan { touch-action: pan-y; }
+.pb-viewport:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .pb-basemap,
 .pb-svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 .pb-basemap { object-fit: fill; border-radius: 4px; user-select: none; pointer-events: none; }

@@ -58,7 +58,7 @@ const classes = computed(() => ({
     </div>
     <!-- combat state block：HP（主要）在上、reload（次级瞬时）在下，两者视觉上属于同一块，
          但与上面的身份两行保持更大的间距。 -->
-    <div class="pb-combat-state">
+    <div v-if="!destroyed && ((showHp && hp) || (showReload && friendly === true && reload?.length))" class="pb-combat-state">
       <div v-if="showHp && hp && !destroyed" class="pb-hp-hud" data-test="pb-hp-hud"
         :class="{ 'pb-hp-lastknown': hp.state === 'LAST_KNOWN', 'pb-hp-flash': hpFlash, 'pb-hp-no-transition': hpNoTransition, 'pb-hp-full-spawn': hp.state === 'RELATIVE_FULL' }"
         :title="hpTitle">

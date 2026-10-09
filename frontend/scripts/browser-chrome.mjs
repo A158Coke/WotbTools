@@ -105,7 +105,9 @@ export async function launchChromeForCdp(chrome, { extraArgs = [], gpu = false }
   const child = spawn(chrome, [
     '--headless=new',
     '--no-sandbox',
-    ...(gpu ? ['--ignore-gpu-blocklist'] : ['--disable-gpu']),
+    // Isolated trusted fixture pages need WebGL even on machines without a GPU.
+    // Chrome no longer enables SwiftShader implicitly after --disable-gpu.
+    ...(gpu ? ['--ignore-gpu-blocklist'] : ['--disable-gpu', '--enable-unsafe-swiftshader']),
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-extensions',

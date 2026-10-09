@@ -10,6 +10,7 @@
  */
 
 import { DEFAULT_VEHICLE_LENGTH_M, vehicleSizes } from '../data/vehicleSizes'
+import { MARKER_CORE_PX } from './labelLayout'
 
 // 下限只保证「还看得见」，点击目标另有 HIT_TARGET_MIN_PX 兜底，所以可以放到接近真实尺寸。
 export const MARKER_SIZE_LIMITS = Object.freeze({
@@ -32,6 +33,17 @@ const READABILITY_SCALE = 1.14
 const FALLBACK_WORLD_SPAN_M = 600
 const HIT_TARGET_EXTRA_PX = 4
 const HIT_TARGET_MIN_PX = Object.freeze({ desktop: 20, mobile: 18 })
+// Matches --space-1: screen-space gap around the artwork, independent of map zoom.
+const HEALTH_RING_PADDING_PX = 4
+
+/** Shared screen-space diameter for the ring renderer and its collision footprint. */
+export function healthRingDiameter(marker, classIcons = false) {
+  const inv = finitePositive(marker?.overlayInverse) || 1
+  const box = marker?.markerSize?.renderBox
+  const artworkSize = classIcons ? MARKER_CORE_PX
+    : Math.max(finitePositive(box?.width) || MARKER_CORE_PX, finitePositive(box?.height) || MARKER_CORE_PX) / inv
+  return artworkSize + HEALTH_RING_PADDING_PX * 2
+}
 
 function finitePositive(value) {
   return Number.isFinite(value) && value > 0 ? value : null
