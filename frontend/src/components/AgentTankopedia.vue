@@ -12,6 +12,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { locationForView } from '../app/navigation'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Box, RotateCcw, Search, SearchX, TriangleAlert } from 'lucide-vue-next'
 import { fetchTankEncyclopedia, fetchTankData, tankImageUrl } from '../scene/agentData.js'
@@ -200,7 +201,15 @@ watch(detailId, id => loadDetail(id))
 
 function open3d() {
   // 审计 3D-09：在当前标签页打开装甲查看器（携带实际搭载配置下标），返回走浏览器历史
-  router.push({ query: { view: 'agent-armor', tank: String(detailId.value), config: String(cfgIdx.value) } })
+  // 走 locationForView：它按"离开坦克百科"删掉列表筛选（nation/q/…），同时保留
+  // 与视图无关的键（`assets` 资产源 override、`lang`、`admin` 等）——此前手写的
+  // `query: { view, tank, config }` 会把 `assets` 一并丢掉，导致进入装甲查看器后
+  // 资产源回落（模型/贴图加载不到）。
+  const dest = locationForView('agent-armor', route)
+  router.push({
+    path: dest.path,
+    query: { ...dest.query, view: 'agent-armor', tank: String(detailId.value), config: String(cfgIdx.value) },
+  })
 }
 
 function hideBrokenImage(event) {
