@@ -360,6 +360,8 @@ Replay/管理宽表必须保持高 information density；允许横向滚动，�
 
 旧 `?view=leaderboard` canonicalize 到 `hof`；旧 `?view=extended` canonicalize 到 `replay`；旧 `?view=reconstruction` canonicalize 到 `battle-playback`。
 
+Web 登录回程先由 `useAuth` / keycloak-js 处理，再动态加载 Router：启动入口仅判断 query / fragment 是否同时存在 `state` 和 `code` / `error`，不自行校验或信任其值。认证落定后才构造 history、转换旧 view，避免重定向丢掉原回调或 Router 留下已消费的认证参数。生产 SDK 仍使用默认 fragment 模式；query 形状检测只是保守等待，不代表新增 query-mode 支持。落定信号也不承诺清理所有畸形或超时 URL。失败 / 12s watchdog 后正常挂载原有失败恢复界面；普通访问与 APK 不等待此 Web 回程路径。旧 view 转换保留 query 上下文与 hash。回归入口为 `frontend/src/main.test.js`、`frontend/src/App.test.js`；职责详见 [`frontend/architecture.md`](frontend/architecture.md)。
+
 ### AI Review / Battle Playback
 
 `ReplayWorkspace` 是回放**五种能力**（数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘）的唯一统一载体：这些能力不再是各自独立页面，深链只是能力入口（`app/viewRegistry.js` 的 `replayInitialCapability` 是唯一映射点）。它通过唯一 `useReplay` 组合并消费 `useReplaySession` 持有的 selection / 分析状态 / 结果，分析生命周期由 `useLocalReplayAnalysis` 持有（Worker 解析 → 批次计算 → 提交结果；选择变化 / 取消即作废在途分析）。能力切换不重新选文件、不重建 session；能力面板首次激活才挂载（`useMountedWhenActive`）并按需异步加载，切走只隐藏（3D 停帧不销毁）。Workspace 的标题、能力切换、批次与当前回放 selector 分别由 `PageHeader`、`ReplayCapabilityTabs`、`FileDrop`、`BattlePicker` 展示（数据结果区的工具栏、系列赛概览与导出菜单在 `ReplayPage` 内）；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。`ReplayPage` 只作为 data 结果 tab 嵌入，渲染结果 / 列系统 / Export / Drawer。
