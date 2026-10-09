@@ -528,11 +528,11 @@ async function runShotActionsScenario(env, scenario) {
     impact: document.querySelector('#rel-view-toggle')?.getAttribute('aria-pressed'),
     overview: document.querySelector('#world-view-toggle')?.getAttribute('aria-pressed'),
     distance: window.__armorRicochet?.aimingState()?.cameraDistance,
-    details: document.querySelector('#debug-toggle')?.getAttribute('aria-pressed'),
+    details: !!document.querySelector('#debug-toggle'),
   }))()`
   const initial = await page.waitForValue(state, value => value.impact === 'true' && Math.abs(value.distance - 15) < .1,
     { timeout: 15000, label: 'default impact camera is active at 15m' })
-  check(failures, initial.overview === 'false' && initial.details === 'false', 'impact must be selected by default, with analysis details collapsed')
+  check(failures, initial.overview === 'false' && initial.details === false, 'impact must be selected by default, without the analysis-details entry')
   const help = await page.evaluate(`(() => {
     const el = document.querySelector('[data-testid="armor-interaction-help"]')
     const r = el.getBoundingClientRect(), stage = document.querySelector('.armor-stage').getBoundingClientRect()
@@ -565,10 +565,8 @@ async function runShotActionsScenario(env, scenario) {
   await tapControl('#rel-view-toggle')
   await page.waitForValue(state, value => value.impact === 'true' && Math.abs(value.distance - 15) < .1,
     { label: 'return to impact camera' })
-  await tapControl('#debug-toggle')
-  await page.waitForValue(`document.querySelector('#turret-controls').style.display`, value => value === 'block', { label: 'analysis details expanded' })
-  await tapControl('#debug-toggle')
-  await page.waitForValue(state, value => value.details === 'false', { label: 'analysis details collapsed' })
+  check(failures, await page.evaluate(`!document.querySelector('#world-pen-cmp') && document.querySelector('#turret-controls').style.display === 'none'`),
+    'legacy agreement comparison is removed and developer diagnostics stay hidden')
   await tapControl('[data-testid="armor-tools"]')
   for (const selector of ['#shell-select', '#collision-btn', '#penetration-btn']) {
     const target = await page.evaluate(`(() => {
