@@ -9,6 +9,8 @@ export interface PlaybackLabelPreferences {
 
 export interface PlaybackHpPreferences {
   showHp: boolean
+  /** 2D marker presentation. 3D labels keep their existing bar rendering. */
+  mode: 'bar' | 'ring'
 }
 
 export interface PlaybackTrailPreferences {
@@ -86,10 +88,10 @@ function createPlaybackPreferences() {
 
   const hpPrefs = reactive<PlaybackHpPreferences>(readJson(
     HP_PREFS_KEY,
-    { showHp: true },
+    { showHp: true, mode: 'bar' },
     (value) => {
       const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-      return { showHp: record.showHp !== false }
+      return { showHp: record.showHp !== false, mode: record.mode === 'ring' ? 'ring' : 'bar' }
     },
   ))
 
@@ -126,7 +128,7 @@ function createPlaybackPreferences() {
     persistJson(TRAIL_PREFS_KEY, value.trails)
     persistJson(MARKER_PREFS_KEY, value.markers)
   }
-  function toggleDeclutter() {
+  function toggleDeclutter(healthStyle: 'ring' | 'hidden' = 'ring') {
     const restore = previous
     applyingPreset = true
     if (restore) {
@@ -140,7 +142,8 @@ function createPlaybackPreferences() {
       previous = capture()
       declutterActive.value = true
       Object.assign(labelPrefs, { showPlayerName: false, showTankName: true, showReload: false })
-      hpPrefs.showHp = false
+      if (healthStyle === 'hidden') hpPrefs.showHp = false
+      else Object.assign(hpPrefs, { showHp: true, mode: 'ring' })
       trailPrefs.showTrail = false
       Object.assign(markerPrefs, { classIcons: true, showStatus: false })
     }

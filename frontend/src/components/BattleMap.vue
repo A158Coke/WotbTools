@@ -353,6 +353,7 @@ function onTwoFingerTouch(event) {
           :label="props.markerLabel(state.vehicle.accountId)"
           :hp="props.hpFor(state.vehicle)"
           :hp-visible="props.hpPrefs.showHp"
+          :hp-mode="props.hpPrefs.mode || 'bar'"
           :class-icons="props.markerPrefs.classIcons"
           :show-status="props.markerPrefs.showStatus"
           :t="props.translate"

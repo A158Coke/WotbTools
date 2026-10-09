@@ -342,3 +342,24 @@ describe('computeLabelLayout vertical hierarchy (collision geometry == rendered 
     expect(r.selectedBox.y + r.selectedBox.h).toBeLessThan(r.playerBox.y)
   })
 })
+
+
+describe('ring label geometry', () => {
+  it('uses each vehicle ring diameter and avoids phantom combat gaps and overlapping long names', () => {
+    const rings = [
+      item(1, 100, 100, { coreSize: 68, hpRing: true, hpRendered: false, tankName: 'A very long tank name' }),
+      item(2, 160, 80, { coreSize: 28, hpRing: true, hpRendered: false, tankName: 'Another long tank name' }),
+    ]
+    const result = computeLabelLayout(rings, { showTank: true, showPlayer: false, coreSize: 68 })
+    const first = result.get(1), second = result.get(2)
+    expect(first.coreBox.w).toBe(68)
+    expect(second.coreBox.w).toBe(28)
+    expect(first.hpBox).toBeNull()
+    expect(second.hpBox).toBeNull()
+    for (const entry of [first, second]) {
+      expect(entry.tankBox.y + entry.tankBox.h - entry.tankDy).toBe(entry.coreBox.y - LABEL_GAP_PX)
+    }
+    const a = first.tankBox, b = second.tankBox
+    expect(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h).toBe(false)
+  })
+})

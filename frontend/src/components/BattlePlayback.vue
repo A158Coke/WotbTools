@@ -19,6 +19,7 @@ import { PencilRuler, PanelLeftClose, PanelLeftOpen, ScanEye } from 'lucide-vue-
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
+import SegmentedControl from './SegmentedControl.vue'
 import { isPlaybackSpeed, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
@@ -55,7 +56,7 @@ import {
 import { projectVehicleState } from '../utils/playbackVehicleState'
 import { createReloadStateResolver, magazineSizeForVehicle } from '../scene/reloadBar.js'
 import { assetProvider } from '../scene/assetProvider.js'
-import { computeVehicleMarkerSize } from '../utils/vehicleMarkerSizing'
+import { computeVehicleMarkerSize, healthRingDiameter } from '../utils/vehicleMarkerSizing'
 import { advancePlaybackTime, clampPlaybackTime } from '../utils/playbackClock'
 import { baseView } from '../utils/baseStatus.js'
 import {
@@ -280,6 +281,9 @@ const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
 
 // Playback presentation preferences have one persistence owner. BattlePlayback only consumes refs.
 const { labelPrefs, hpPrefs, trailPrefs, markerPrefs, uiPrefs, declutterActive, toggleDeclutter } = usePlaybackPreferences()
+const hpModeOptions = computed(() => ['bar', 'ring'].map(mode => ({
+  value: mode, label: t(`recon.map.playback.hp_mode_${mode}`), testid: `pb-hp-mode-${mode}`,
+})))
 
 // 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。
 const visibleTrails = computed(() => trailPrefs.showTrail
@@ -828,6 +832,7 @@ function onPointerMove(e) {
   if (!pointers.has(e.pointerId)) return
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
   if (drawingPointerId === e.pointerId && activeTool.value) {
+    if (drawingStartScreen && Math.hypot(e.clientX - drawingStartScreen.x, e.clientY - drawingStartScreen.y) > PAN_THRESHOLD_PX) gestureMoved = true
     moveDrawing(e)
     return
   }
@@ -872,6 +877,7 @@ function onPointerUp(e) {
     // 忽略（无捕获或已释放）
   }
   if (drawingPointerId === e.pointerId) {
+    const blockClick = gestureMoved || e.type === 'pointercancel'
     if (e.type === 'pointercancel') cancelDrawing()
     else endDrawing()
     drawingPointerId = null
@@ -879,7 +885,7 @@ function onPointerUp(e) {
       panStart = null
       pinchStart = null
       gestureMoved = false
-      suppressClick = false
+      suppressClick = blockClick
     }
     return
   }
@@ -898,6 +904,11 @@ function onPointerUp(e) {
 /** 拖动/捏合结束后吞掉随之而来的 click 避免误选车；未拖动的点击正常到达车辆按钮。 */
 function onViewportClick(e) {
   if (annotationOpen.value || suppressClick) {
+    // Select mode owns annotation picking first; a stationary tap on unmarked
+    // vehicle space may inspect the replay vehicle. Drawing/dragging never does.
+    if (annotationOpen.value && activeTool.value === 'select' && selectedAnnotationIndex.value < 0 && !suppressClick) {
+      selectAt(null, e.clientX, e.clientY)
+    }
     suppressClick = false
     e.stopPropagation()
     e.preventDefault()
@@ -987,6 +998,7 @@ let drawStart = null // 绘制起点（语义坐标）
 let drawPoints = [] // pen/eraser 已采点（语义坐标）
 let drawScreen = [] // 与 drawPoints 一一对应的屏幕点（CSS px，用于抽稀）
 let drawingPointerId = null
+let drawingStartScreen = null
 
 function resetAnnotations() {
   history.value = [[]]
@@ -1004,6 +1016,7 @@ function resetAnnotations() {
   drawPoints = []
   drawScreen = []
   drawingPointerId = null
+  drawingStartScreen = null
   suppressClick = false
   gestureMoved = false
   panStart = null
@@ -1013,6 +1026,7 @@ function resetAnnotations() {
 watch(() => props.overview, resetAnnotations)
 
 function cancelDrawing() {
+  drawingStartScreen = null
   draft.value = routePoints.value.length ? routeDraft() : null
   drawStart = null
   drawPoints = []
@@ -1141,6 +1155,7 @@ function startDrawing(e) {
   if (!p) return
   if (!annotVisible.value) return
   drawingPointerId = e.pointerId
+  drawingStartScreen = { x: e.clientX, y: e.clientY }
   if (activeTool.value === 'select') {
     const rect = mapRenderRect()
     const tolerance = 12 * semPerSvgX.value * mapView.value.W / (rect.width || mapView.value.W) / view.scale
@@ -1658,7 +1673,7 @@ const baseVehicleStates = computed(() => {
 
 const collisionOffsets = ref(new Map())
 watch(
-  [baseVehicleStates, () => currentTime.value, () => view.scale, () => view.tx, () => view.ty, () => mapWidth(), () => mapHeight(), () => selectedAccountId.value, () => markerPrefs.classIcons],
+  [baseVehicleStates, () => currentTime.value, () => view.scale, () => view.tx, () => view.ty, () => mapWidth(), () => mapHeight(), () => selectedAccountId.value, () => markerPrefs.classIcons, () => hpPrefs.mode, () => hpPrefs.showHp, () => uiHidden.value],
   ([states]) => {
     const items = states.map((state) => {
       const point = canonicalMarkerScreen(state)
@@ -1666,8 +1681,11 @@ watch(
       // 用渲染方框而不是车体矩形做碰撞：车体贴图按航向在方框内旋转，方框是它在屏幕上的
       // 外接盒。用各向异性的车体矩形会判错——横向行驶的车实际占满方框宽度，矩形却说它很窄，
       // 而且矩形不随航向旋转，两车接近垂直时判定完全失准。
-      const width = markerPrefs.classIcons ? MARKER_CORE_PX : state.markerSize.renderBox.width * view.scale
-      const height = markerPrefs.classIcons ? MARKER_CORE_PX : state.markerSize.renderBox.height * view.scale
+      const classIcons = !uiHidden.value && markerPrefs.classIcons
+      const ringSize = !uiHidden.value && hpPrefs.showHp && hpPrefs.mode === 'ring' && !state.destroyed
+        ? healthRingDiameter(state, classIcons) : null
+      const width = ringSize ?? (classIcons ? MARKER_CORE_PX : state.markerSize.renderBox.width * view.scale)
+      const height = ringSize ?? (classIcons ? MARKER_CORE_PX : state.markerSize.renderBox.height * view.scale)
       return {
         accountId: state.vehicle.accountId,
         x: point.x,
@@ -1794,8 +1812,10 @@ function selectAt(accountId, clientX, clientY) {
     const x = projected.xNorm * rect.width + offset.x / view.scale
     const y = projected.yNorm * rect.height + offset.y / view.scale
     const hitTarget = s.hitTargetSize || s.markerSize?.hitTarget
-    const hw = (hitTarget?.width || 20) / 2
-    const hh = (hitTarget?.height || 20) / 2
+    const ringSize = !uiHidden.value && hpPrefs.showHp && hpPrefs.mode === 'ring' && !s.destroyed
+      ? healthRingDiameter(s, markerPrefs.classIcons) / view.scale : 0
+    const hw = Math.max(hitTarget?.width || 20, ringSize) / 2
+    const hh = Math.max(hitTarget?.height || 20, ringSize) / 2
     return Math.abs(cx - x) <= hw && Math.abs(cy - y) <= hh
   }
   let candidates
@@ -1962,6 +1982,12 @@ const selectedTrack = computed(() => {
   return tracks.find(t => t.accountId === accountId) || null
 })
 
+// The summary and full inspector consume the same canonical state at replay time.
+const selectedHealth = computed(() => {
+  const health = healthDisplayAt(selectedTrack.value, currentTime.value)
+  return health ? { currentHp: health.currentHp, maxHp: health.displayCapacityHp, state: health.state } : null
+})
+
 // Details Panel 车型图：仅在选中车辆后按 tankId 懒加载；图片随站点发布，production 不访问 BlitzKit。
 // token 防止快速切换车辆时旧请求覆盖新选择；非 Tier X / 缺图 / chunk 失败均静默降级为无图。
 const selectedPortraitUrl = ref(null)
@@ -2027,7 +2053,8 @@ const labelLayout = computed(() => {
   // Label geometry remains screen-space and only needs a representative core size;
   // the model collision solver above uses each vehicle's real display footprint.
   const coreSize = Math.max(
-    ...vehicleStates.value.map((st) => st.markerSize?.renderBox?.width || 0),
+    ...vehicleStates.value.map((st) => hpPrefs.showHp && hpPrefs.mode === 'ring' && !st.destroyed
+      ? healthRingDiameter(st, markerPrefs.classIcons) : st.markerSize?.renderBox?.width || 0),
     MARKER_CORE_PX,
   )
   // HP HUD 真实渲染尺寸（.pb-hp-hud 屏幕恒定；测试环境无布局 → 回退 null 走 CSS 常量）。
@@ -2049,7 +2076,9 @@ const labelLayout = computed(() => {
       // PR #107 Blocker 4：HP footprint 是否存在 = DOM 是否实际渲染 HUD（showHp 开且
       // health selector 有结果），不是 current 是否为 null——relativeFull（current=null）
       // 与 UNKNOWN 都会渲染 HUD（数字 — + bar），碰撞系统必须为它们建模真实盒。
-      hpRendered: hpPrefs.showHp && hp != null,
+      coreSize: hpPrefs.showHp && hpPrefs.mode === 'ring' && !st.destroyed ? healthRingDiameter(st, markerPrefs.classIcons) : undefined,
+      hpRing: hpPrefs.showHp && hpPrefs.mode === 'ring' && !st.destroyed,
+      hpRendered: !uiHidden.value && hpPrefs.showHp && hpPrefs.mode === 'bar' && !st.destroyed && hp != null,
       // 实际渲染的数字文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）；
       // labelLayout 用它做「覆盖所有状态的保守盒宽」估算（与第一辆车实测宽取 max）
       hpDisplayText: hp ? hpDisplayNumText(hp) : '',
@@ -2101,7 +2130,7 @@ function markerLabel(accountId) {
   return {
     showPlayer: !uiHidden.value && labelPrefs.showPlayerName,
     showTank: !uiHidden.value && labelPrefs.showTankName,
-    showReload: !uiHidden.value && labelPrefs.showReload,
+    showReload: !uiHidden.value && hpPrefs.mode !== 'ring' && labelPrefs.showReload,
     tankDy: l ? l.tankDy : 0,
     blockHidden: l ? l.blockHidden : false,
     hpHidden: l ? l.hpHidden : false,
@@ -2221,7 +2250,7 @@ const mapStyle = computed(() => ({
             <component :is="uiPrefs.showRoster ? PanelLeftClose : PanelLeftOpen" :size="18" aria-hidden="true" />
             {{ $t(uiPrefs.showRoster ? 'recon.map.playback.hide_rosters' : 'recon.map.playback.show_rosters') }}
           </button>
-          <button type="button" class="pb-quick-action" data-test="pb-declutter" :aria-pressed="declutterActive" :title="$t('recon.map.playback.declutter_hint')" @click="toggleDeclutter">
+          <button type="button" class="pb-quick-action" data-test="pb-declutter" :aria-pressed="declutterActive" :title="$t('recon.map.playback.declutter_hint')" @click="toggleDeclutter()">
             <ScanEye :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.declutter') }}
           </button>
         </div>
@@ -2246,7 +2275,7 @@ const mapStyle = computed(() => ({
           :selected-account-id="selectedAccountId"
           :marker-label="markerLabel"
           :hp-for="hpFor"
-          :hp-prefs="{ showHp: !uiHidden && hpPrefs.showHp }"
+          :hp-prefs="{ ...hpPrefs, showHp: !uiHidden && hpPrefs.showHp }"
           :marker-prefs="{ classIcons: !uiHidden && markerPrefs.classIcons, showStatus: !uiHidden && markerPrefs.showStatus }"
           :translate="t"
           :ghost-for="ghostFor"
@@ -2284,6 +2313,7 @@ const mapStyle = computed(() => ({
         :phone-form="false"
         :selected-state="detailsState"
         :selected-portrait-url="selectedPortraitUrl"
+        :health="selectedHealth"
         :sel-last-known-sec="selLastKnownSec"
         :sel-cur-stats="selCurStats"
         :selected-track="selectedTrack"
@@ -2401,8 +2431,11 @@ const mapStyle = computed(() => ({
           <label><input data-test="pb-show-tank" type="checkbox" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ $t('recon.map.playback.show_tank_name') }}</label>
           <label><input data-test="pb-show-hp" type="checkbox" :checked="hpPrefs.showHp" @change="hpPrefs.showHp = $event.target.checked"> {{ $t('recon.map.playback.show_hp') }}</label>
           <label><input data-test="pb-show-trail" type="checkbox" :checked="trailPrefs.showTrail" @change="trailPrefs.showTrail = $event.target.checked"> {{ $t('recon.map.playback.show_trail_2s') }}</label>
-          <label><input data-test="pb-show-reload" type="checkbox" :checked="labelPrefs.showReload" @change="labelPrefs.showReload = $event.target.checked"> {{ $t('agentReplay.display_reload') }}</label>
+          <label><input data-test="pb-show-reload" type="checkbox" :checked="hpPrefs.mode !== 'ring' && labelPrefs.showReload" :disabled="hpPrefs.mode === 'ring'" @change="labelPrefs.showReload = $event.target.checked"> {{ $t('agentReplay.display_reload') }}</label>
         </div>
+        <p class="pb-display-heading">{{ $t('recon.map.playback.hp_mode') }}</p>
+        <SegmentedControl v-model="hpPrefs.mode" :options="hpModeOptions" :aria-label="$t('recon.map.playback.hp_mode')" />
+        <p v-if="hpPrefs.mode === 'ring'" class="pb-display-heading">{{ $t('recon.map.playback.hp_ring_hint') }}</p>
         <div class="pb-panel-tools" data-test="pb-panel-tools">
           <button type="button" class="pb-tool-row" data-test="pb-panel-reset" @click="resetView()">
             <span aria-hidden="true">⟲</span> {{ $t('recon.map.playback.reset_view') }}
@@ -2426,6 +2459,7 @@ const mapStyle = computed(() => ({
           :phone-form="isMobileDevice"
           :selected-state="detailsState"
           :selected-portrait-url="selectedPortraitUrl"
+          :health="selectedHealth"
           :sel-last-known-sec="selLastKnownSec"
           :sel-cur-stats="selCurStats"
           :selected-track="selectedTrack"

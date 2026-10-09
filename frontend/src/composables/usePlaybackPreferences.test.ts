@@ -15,7 +15,7 @@ describe('usePlaybackPreferences', () => {
   it('uses the existing product defaults', () => {
     const prefs = usePlaybackPreferences()
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: false, showTankName: true, showReload: true })
-    expect({ ...prefs.hpPrefs }).toEqual({ showHp: true })
+    expect({ ...prefs.hpPrefs }).toEqual({ showHp: true, mode: 'bar' })
     expect({ ...prefs.trailPrefs }).toEqual({ showTrail: true })
     expect({ ...prefs.markerPrefs }).toEqual({ classIcons: false, showStatus: true })
     expect(prefs.declutterActive.value).toBe(false)
@@ -30,13 +30,15 @@ describe('usePlaybackPreferences', () => {
     prefs.labelPrefs.showPlayerName = true
     prefs.labelPrefs.showTankName = false
     prefs.trailPrefs.showTrail = false
+    prefs.hpPrefs.mode = 'bar'
     prefs.markerPrefs.classIcons = true
     prefs.uiPrefs.showRoster = false
     prefs.toggleDeclutter()
     expect(otherRenderer.declutterActive.value).toBe(true)
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: false, showTankName: true, showReload: false })
     expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, showStatus: false })
-    expect(prefs.hpPrefs.showHp).toBe(false)
+    expect(prefs.hpPrefs.showHp).toBe(true)
+    expect(prefs.hpPrefs.mode).toBe('ring')
     expect(prefs.trailPrefs.showTrail).toBe(false)
     expect(prefs.uiPrefs.showRoster).toBe(false)
     // Roster toggles are independent; they must not discard the restoration snapshot.
@@ -45,21 +47,31 @@ describe('usePlaybackPreferences', () => {
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: true, showTankName: false, showReload: true })
     expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, showStatus: true })
     expect(prefs.hpPrefs.showHp).toBe(true)
+    expect(prefs.hpPrefs.mode).toBe('bar')
     expect(prefs.trailPrefs.showTrail).toBe(false)
     expect(prefs.uiPrefs.showRoster).toBe(true)
+  })
+
+  it('keeps the original 3D declutter health presentation and restores the 2D mode', () => {
+    const prefs = usePlaybackPreferences()
+    prefs.hpPrefs.mode = 'ring'
+    prefs.toggleDeclutter('hidden')
+    expect(prefs.hpPrefs).toEqual({ showHp: false, mode: 'ring' })
+    prefs.toggleDeclutter('hidden')
+    expect(prefs.hpPrefs).toEqual({ showHp: true, mode: 'ring' })
   })
 
   it('manual changes exit the preset and become the next restorable custom view', () => {
     const prefs = usePlaybackPreferences()
     prefs.toggleDeclutter()
-    prefs.hpPrefs.showHp = true
+    prefs.hpPrefs.showHp = false
     expect(prefs.declutterActive.value).toBe(false)
     expect(prefs.markerPrefs.classIcons).toBe(true)
     expect(prefs.labelPrefs.showReload).toBe(false)
     prefs.toggleDeclutter()
-    expect(prefs.hpPrefs.showHp).toBe(false)
-    prefs.toggleDeclutter()
     expect(prefs.hpPrefs.showHp).toBe(true)
+    prefs.toggleDeclutter()
+    expect(prefs.hpPrefs.showHp).toBe(false)
     expect(prefs.labelPrefs.showReload).toBe(false)
     expect(JSON.parse(localStorage.getItem('wotb.pb.marker-prefs')!)).toEqual({ classIcons: true, showStatus: false })
   })
@@ -75,6 +87,20 @@ describe('usePlaybackPreferences', () => {
     expect(fresh.labelPrefs.showPlayerName).toBe(true)
     expect(fresh.hpPrefs.showHp).toBe(true)
     expect(fresh.markerPrefs.classIcons).toBe(false)
+  })
+
+  it('hydrates a ring choice, normalizes legacy/invalid values and preserves reload preference', async () => {
+    localStorage.setItem('wotb.pb.hp-prefs', JSON.stringify({ showHp: false, mode: 'ring' }))
+    const prefs = usePlaybackPreferences()
+    expect(prefs.hpPrefs).toEqual({ showHp: false, mode: 'ring' })
+    expect(prefs.labelPrefs.showReload).toBe(true)
+    prefs.hpPrefs.mode = 'bar'
+    expect(prefs.labelPrefs.showReload).toBe(true)
+    expect(JSON.parse(localStorage.getItem('wotb.pb.hp-prefs')!)).toEqual({ showHp: false, mode: 'bar' })
+    localStorage.setItem('wotb.pb.hp-prefs', JSON.stringify({ showHp: true, mode: 'invalid' }))
+    vi.resetModules()
+    const fresh = (await import('./usePlaybackPreferences.js')).usePlaybackPreferences()
+    expect(fresh.hpPrefs).toEqual({ showHp: true, mode: 'bar' })
   })
 
   it('shares immediate state and merged persistence between two mounted consumers', async () => {
@@ -134,7 +160,7 @@ describe('usePlaybackPreferences', () => {
 
     const prefs = usePlaybackPreferences()
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: true, showTankName: false, showReload: false })
-    expect({ ...prefs.hpPrefs }).toEqual({ showHp: false })
+    expect({ ...prefs.hpPrefs }).toEqual({ showHp: false, mode: 'bar' })
     expect({ ...prefs.trailPrefs }).toEqual({ showTrail: false })
     expect({ ...prefs.uiPrefs }).toEqual({ showTopbar: false, showRoster: true, showKillfeed: false, showBaseStatus: true })
 
@@ -143,7 +169,7 @@ describe('usePlaybackPreferences', () => {
     prefs.uiPrefs.showTopbar = true
     await nextTick()
 
-    expect(JSON.parse(localStorage.getItem('wotb.pb.hp-prefs') || '{}')).toEqual({ showHp: true })
+    expect(JSON.parse(localStorage.getItem('wotb.pb.hp-prefs') || '{}')).toEqual({ showHp: true, mode: 'bar' })
     expect(JSON.parse(localStorage.getItem('wotb.pb.trail-prefs') || '{}')).toEqual({ showTrail: true })
     expect(JSON.parse(localStorage.getItem('wotb.pb.ui-prefs') || '{}').showTopbar).toBe(true)
     expect(JSON.parse(localStorage.getItem('wotb.pb.pane-widths') || '{}')).toEqual({ rail: 240, details: 360 })

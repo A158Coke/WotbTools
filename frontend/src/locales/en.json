@@ -1196,6 +1196,10 @@
           "text_placeholder": "Type annotation…"
         },
         "show_hp": "Show HP",
+        "hp_mode": "HP display mode",
+        "hp_mode_bar": "Bar",
+        "hp_mode_ring": "Ring",
+        "hp_ring_hint": "HP rings surround vehicle markers and hide reload bars.",
         "show_trail_2s": "Show recent 2s trail",
         "vehicle_type": "Vehicle type",
         "state_detected": "Detected",
@@ -1270,7 +1274,8 @@
           "UNKNOWN": "Unknown"
         },
         "declutter": "Clear view",
-        "declutter_hint": "Show tank names and class symbols only. Click again to restore your display settings; editing an option exits this preset.",
+        "declutter_hint": "Show tank names, class symbols and HP rings; hide player names, reload bars and other details. Click again to restore your settings; editing an option exits the preset.",
+        "declutter_hint_3d": "Show tank names and class symbols only. Click again to restore your display settings; editing an option exits this preset.",
         "class_icons": "Replace vehicle models with class icons",
         "show_status": "Vehicle badges and damage numbers",
         "hide_rosters": "Hide teams",

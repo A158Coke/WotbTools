@@ -309,7 +309,7 @@ beforeEach(async () => {
   // reset that owner between tests; restore its logical defaults before each mount.
   const prefs = usePlaybackPreferences()
   Object.assign(prefs.labelPrefs, { showPlayerName: false, showTankName: true, showReload: true })
-  Object.assign(prefs.hpPrefs, { showHp: true })
+  Object.assign(prefs.hpPrefs, { showHp: true, mode: 'bar' })
   Object.assign(prefs.trailPrefs, { showTrail: true })
   Object.assign(prefs.markerPrefs, { classIcons: false, showStatus: true })
   Object.assign(prefs.uiPrefs, { showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true })
@@ -1900,7 +1900,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     // 关闭后隐藏地图 HP 数字/bar/ghost，但 marker 仍在
     expect(wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]').exists()).toBe(false)
     expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
-    expect(JSON.parse(localStorage.getItem('wotb.pb.hp-prefs'))).toEqual({ showHp: false })
+    expect(JSON.parse(localStorage.getItem('wotb.pb.hp-prefs'))).toEqual({ showHp: false, mode: 'bar' })
     // 重新挂载读取持久化
     const w2 = mountPlayback(overview, 12, ds)
     await flushPromises()
@@ -2639,6 +2639,49 @@ describe('Playback secondary convergence', () => {
     await nextTick()
     expect(wrapper.findComponent({ name: 'AnnotationToolbar' }).exists()).toBe(false)
     expect(wrapper.getComponent({ name: 'BattleMap' }).props('activeTool')).toBe(null)
+  })
+
+  it('map selection displays and updates HP from the current replay time', async () => {
+    const ds = makePlaybackV2()
+    ds.vehicles[0].healthTransitions = [
+      { timeSec: 0, currentHp: 1000, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 10, currentHp: 600, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 20, currentHp: 400, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    const wrapper = mountPlayback(makeOverview(), 10, ds)
+    await flushPromises()
+    await wrapper.get('[data-test="pb-marker-1001"]').trigger('click')
+    expect(wrapper.get('[data-test="pb-sb-hp-current"]').text()).toBe('600')
+    expect(wrapper.get('[data-test="pb-sb-hp-max"]').text()).toContain('1000')
+    expect(wrapper.get('[data-test="pb-sb-hp-percentage"]').text()).toContain('60%')
+    await wrapper.setProps({ seekTo: 20 })
+    await flushPromises()
+    expect(wrapper.get('[data-test="pb-sb-hp-current"]').text()).toBe('400')
+  })
+
+  it('switches HP presentation and applies the ring declutter preset without changing playback', async () => {
+    const wrapper = mountPlayback()
+    await flushPromises()
+    const time = wrapper.getComponent({ name: 'PlaybackControls' }).props('currentTime')
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    await wrapper.get('[data-testid="pb-hp-mode-ring"]').trigger('click')
+    const map = wrapper.getComponent({ name: 'BattleMap' })
+    const prefs = usePlaybackPreferences()
+    expect(map.props('hpPrefs').mode).toBe('ring')
+    expect(map.props('markerLabel')(1001).showReload).toBe(false)
+    expect(wrapper.get('[data-test="pb-show-reload"]').element.disabled).toBe(true)
+    expect(prefs.labelPrefs.showReload).toBe(true)
+    expect(wrapper.findAll('[data-test="pb-hp-ring"]').length).toBeGreaterThan(0)
+    await wrapper.get('[data-testid="pb-hp-mode-bar"]').trigger('click')
+    expect(map.props('markerLabel')(1001).showReload).toBe(true)
+    await wrapper.get('[data-test="pb-declutter"]').trigger('click')
+    expect(prefs.hpPrefs).toEqual({ showHp: true, mode: 'ring' })
+    expect(wrapper.findAll('[data-test="pb-hp-ring"]').length).toBeGreaterThan(0)
+    expect(wrapper.find('[data-test="pb-hp-hud"]').exists()).toBe(false)
+    await wrapper.get('[data-test="pb-declutter"]').trigger('click')
+    expect(prefs.hpPrefs.mode).toBe('bar')
+    expect(prefs.labelPrefs.showReload).toBe(true)
+    expect(wrapper.getComponent({ name: 'PlaybackControls' }).props('currentTime')).toBe(time)
   })
 
   it('honors shared HUD/base/killfeed/Reload preferences without changing replay state', async () => {
