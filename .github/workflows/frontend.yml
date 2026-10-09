@@ -185,6 +185,56 @@ jobs:
             echo "file=$target"
           } >> "$GITHUB_OUTPUT"
 
+      # Sponsor 运行时内容（收款码 + 配置）不进 Git 历史：它作为 GitHub Release 资产发布，
+      # 由 deploy/sponsor/content.json 钉住 release/asset/sha256（与 Agent WASM 同一模式）。
+      # 这里下载并校验，随后 stage 到 TX：远端把它落进构建上下文（publicDir），并把内容指纹
+      # 纳入镜像 identity —— 换码必然换 tag/重建，内容未变则照常复用 immutable tag。
+      - name: Download pinned sponsor runtime content
+        id: sponsor
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$GITHUB_WORKSPACE/deploy/sponsor/content.json"
+          if [ ! -f "$pin" ]; then
+            {
+              echo "state=absent"
+              echo "bundle="
+              echo "fingerprint="
+            } >> "$GITHUB_OUTPUT"
+            echo "no sponsor content pin: building without sponsor runtime content"
+            exit 0
+          fi
+          eval "$(python3 - "$pin" <<'PY'
+          import json, shlex, sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          artifact = data.get("artifact") or {}
+          repo = data.get("repo", "")
+          release = artifact.get("release", "")
+          asset = artifact.get("asset", "")
+          sha = artifact.get("sha256", "")
+          if not (repo and release and asset and len(sha) == 64):
+              raise SystemExit("deploy/sponsor/content.json has incomplete artifact metadata")
+          base = repo if repo.startswith("http") else "https://github.com/" + repo
+          values = {
+              "SPONSOR_URL": f"{base}/releases/download/{release}/{asset}",
+              "SPONSOR_ASSET": asset,
+              "SPONSOR_SHA": sha,
+          }
+          for key, value in values.items():
+              print(f"{key}={shlex.quote(value)}")
+          PY
+          )"
+          bundle="$RUNNER_TEMP/$SPONSOR_ASSET"
+          curl --fail --silent --show-error --location --retry 3 "$SPONSOR_URL" -o "$bundle"
+          printf '%s  %s\n' "$SPONSOR_SHA" "$bundle" | sha256sum -c --quiet
+          {
+            echo "state=injected"
+            echo "bundle=$bundle"
+            echo "fingerprint=$SPONSOR_SHA"
+          } >> "$GITHUB_OUTPUT"
+          echo "sponsor runtime content pinned: $SPONSOR_ASSET (${SPONSOR_SHA:0:12})"
+
       - name: Configure TX SSH
         shell: bash
         env:
@@ -212,16 +262,24 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
           AGENT_FILE: ${{ steps.agent.outputs.file }}
           AGENT_ASSET: ${{ steps.agent.outputs.asset }}
+          SPONSOR_BUNDLE: ${{ steps.sponsor.outputs.bundle }}
         run: |
           set -euo pipefail
           remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
           remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
+          remote_sponsor="/tmp/wotbtools-sponsor-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
           scp -i ~/.ssh/tx-frontend-build -P "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
             "$GITHUB_WORKSPACE/deploy/tx/build-frontend-from-gitee.sh" "$TX_USER@$TX_HOST:$remote_script"
           scp -i ~/.ssh/tx-frontend-build -P "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
             "$AGENT_FILE" "$TX_USER@$TX_HOST:$remote_agent"
+          chmod_targets="chmod 700 '$remote_script' && chmod 600 '$remote_agent'"
+          if [ -n "$SPONSOR_BUNDLE" ]; then
+            scp -i ~/.ssh/tx-frontend-build -P "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+              "$SPONSOR_BUNDLE" "$TX_USER@$TX_HOST:$remote_sponsor"
+            chmod_targets="$chmod_targets && chmod 600 '$remote_sponsor'"
+          fi
           ssh -i ~/.ssh/tx-frontend-build -p "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
-            "$TX_USER@$TX_HOST" "chmod 700 '$remote_script' && chmod 600 '$remote_agent'"
+            "$TX_USER@$TX_HOST" "$chmod_targets"
 
       - name: Build and publish immutable frontend image on TX
         id: remote_build
@@ -237,11 +295,21 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           AGENT_ASSET: ${{ steps.agent.outputs.asset }}
+          SPONSOR_STATE: ${{ steps.sponsor.outputs.state }}
+          SPONSOR_FINGERPRINT: ${{ steps.sponsor.outputs.fingerprint }}
         run: |
           set -euo pipefail
           remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
           remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
+          remote_sponsor="/tmp/wotbtools-sponsor-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
           log="$RUNNER_TEMP/tx-frontend-build.log"
+
+          sponsor_bundle="-"
+          sponsor_fingerprint="-"
+          if [ "$SPONSOR_STATE" = "injected" ]; then
+            sponsor_bundle="$remote_sponsor"
+            sponsor_fingerprint="$SPONSOR_FINGERPRINT"
+          fi
 
           ssh \
             -i ~/.ssh/tx-frontend-build \
@@ -251,10 +319,11 @@ jobs:
             -o ServerAliveInterval=10 \
             -o ServerAliveCountMax=6 \
             "$TX_USER@$TX_HOST" \
-            "bash '$remote_script' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE' '$ASSET_BASE_URL' '$remote_agent'" \
+            "bash '$remote_script' build-publish '$SOURCE_SHA' '$TCR_REGISTRY' '$TCR_NAMESPACE' '$ASSET_BASE_URL' '$remote_agent' '$sponsor_bundle' '$sponsor_fingerprint'" \
             | tee "$log"
 
           python3 - "$log" >> "$GITHUB_OUTPUT" <<'PY'
+          import os
           import pathlib
           import sys
 
@@ -268,6 +337,7 @@ jobs:
           required = {
               "source_sha", "image", "digest", "reused",
               "build_commit_verified", "asset_base_url_verified", "wasm_verified",
+              "sponsor_runtime_content",
           }
           missing = required - values.keys()
           if missing:
@@ -275,6 +345,14 @@ jobs:
           for key in ("build_commit_verified", "asset_base_url_verified", "wasm_verified"):
               if values[key] != "true":
                   raise SystemExit(f"remote frontend verification failed: {key}")
+          # 镜像里的 sponsor 状态必须与本次注入结果一致：staged 了却没进镜像（或反之）都是发布故障，
+          # 不能只靠"远端说它验过了"。
+          expected_sponsor = os.environ.get("SPONSOR_STATE", "")
+          if values["sponsor_runtime_content"] != expected_sponsor:
+              raise SystemExit(
+                  "sponsor runtime content mismatch: runner=%r image=%r"
+                  % (expected_sponsor, values["sponsor_runtime_content"])
+              )
 
           for key, value in values.items():
               print(f"{key}={value}")
@@ -294,8 +372,9 @@ jobs:
           set -u
           remote_script="/tmp/wotbtools-frontend-build-${RUN_ID}-${RUN_ATTEMPT}.sh"
           remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
+          remote_sponsor="/tmp/wotbtools-sponsor-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
           ssh -i ~/.ssh/tx-frontend-build -p "$TX_PORT" -o BatchMode=yes -o ConnectTimeout=10 \
-            "$TX_USER@$TX_HOST" "rm -f -- '$remote_script' '$remote_agent'" || \
+            "$TX_USER@$TX_HOST" "rm -f -- '$remote_script' '$remote_agent' '$remote_sponsor'" || \
             echo "WARNING: failed to clean staged TX frontend build inputs"
 
   deploy:

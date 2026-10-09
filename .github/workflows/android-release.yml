@@ -274,6 +274,50 @@ jobs:
       # （build-android-map-assets.mjs 内部会跑 determinism 复核）。
       - name: Install pinned Pillow for the map derivative pipeline
         run: python3 -m pip install --disable-pip-version-check 'Pillow==12.3.0'
+      # Sponsor 运行时内容（收款码 + 配置）不进 Git 历史：它作为 GitHub Release 资产发布，
+      # 由 deploy/sponsor/content.json 钉住 release/asset/sha256。下载校验后注入 publicDir
+      # （common/assets/），Vite 原样拷进 dist-android ⇒ APK 由本机 origin 同源伺服（离线可用）。
+      - name: Download and inject pinned sponsor runtime content
+        id: sponsor
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$GITHUB_WORKSPACE/deploy/sponsor/content.json"
+          if [ ! -f "$pin" ]; then
+            echo "state=absent" >> "$GITHUB_OUTPUT"
+            echo "no sponsor content pin: building the APK without sponsor runtime content"
+            exit 0
+          fi
+          eval "$(python3 - "$pin" <<'PY'
+          import json, shlex, sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          artifact = data.get("artifact") or {}
+          repo = data.get("repo", "")
+          release = artifact.get("release", "")
+          asset = artifact.get("asset", "")
+          sha = artifact.get("sha256", "")
+          if not (repo and release and asset and len(sha) == 64):
+              raise SystemExit("deploy/sponsor/content.json has incomplete artifact metadata")
+          base = repo if repo.startswith("http") else "https://github.com/" + repo
+          values = {
+              "SPONSOR_URL": f"{base}/releases/download/{release}/{asset}",
+              "SPONSOR_ASSET": asset,
+              "SPONSOR_SHA": sha,
+          }
+          for key, value in values.items():
+              print(f"{key}={shlex.quote(value)}")
+          PY
+          )"
+          bundle="$RUNNER_TEMP/$SPONSOR_ASSET"
+          curl --fail --silent --show-error --location --retry 3 "$SPONSOR_URL" -o "$bundle"
+          printf '%s  %s\n' "$SPONSOR_SHA" "$bundle" | sha256sum -c --quiet
+          state="$(SPONSOR_BUNDLE="$bundle" bash "$GITHUB_WORKSPACE/scripts/ci/inject-sponsor-runtime-content.sh")"
+          case "$state" in
+            sponsorRuntimeContent=injected) ;;
+            *) echo "::error::unexpected sponsor injection result: $state" >&2; exit 1 ;;
+          esac
+          echo "state=injected" >> "$GITHUB_OUTPUT"
       - name: Build the local-first frontend bundle into APK assets
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
@@ -419,6 +463,17 @@ jobs:
               exit 1
             }
           done
+          # Sponsor 运行时内容：secrets 注入成功时 APK 必须带着它（离线赞助页要能显示二维码）。
+          if [ "${{ steps.sponsor.outputs.state }}" = "injected" ]; then
+            grep -Fxq 'assets/web/sponsor-config.json' "$listing_file" || {
+              echo "::error::release APK 缺少 assets/web/sponsor-config.json（secrets 已注入却没进 bundle）" >&2
+              exit 1
+            }
+            grep -Eq '^assets/web/sponsor-assets/[A-Za-z0-9][A-Za-z0-9._-]*\.(png|jpg|jpeg|webp)$' "$listing_file" || {
+              echo "::error::release APK 缺少 assets/web/sponsor-assets/ 下的收款码图片" >&2
+              exit 1
+            }
+          fi
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
           test -x "$AAPT"
           "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"

@@ -26,7 +26,7 @@ The initial K7B shadow used immutable build `sha-473495ec07e7`. Before K7C, TX2 
 ## Runtime content boundary
 
 TX1 currently mounts Android release files from `/opt/wotb-tx`. They are optional content surfaces, not part of the Frontend application container. K7B intentionally does **not** copy or mount those TX1 host paths on TX2.
-Android release artifact parity is a mandatory precondition for K7C public cutover. Sponsor QR content is *not* host runtime content: it is published as plain objects on the asset origin (`docs/operations/agent-asset-origin.md`) and reaches both Web and APK through the asset plane, so it needs no TX-side replication.
+Android release artifact parity is a mandatory precondition for K7C public cutover. Sponsor QR content is *not* host runtime content either: it is injected at build time from a pinned Release asset and ships inside the Frontend image / APK (`docs/operations/sponsor-runtime-content.md`), so it needs no TX-side replication and no runtime delivery.
 
 ## Manual apply and deployment
 

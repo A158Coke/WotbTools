@@ -30,7 +30,7 @@
 `deploy/test-keycloak-tofu.sh` 在 disposable PostgreSQL、Keycloak 与 local OpenTofu
 state 中独立验证，不访问 production state。
 
-赞助页（`/sponsor`）的运行时配置与收款码是**资产面上的普通对象**（`/sponsor-config.json` + `/sponsor-assets/*`），由 `assetBase()` 同时下发给 Web 与 APK——Android 经本机 `/agent-assets` 由 Native 代理直连对象存储。仓库与镜像都不包含个人收款二维码（内容由维护者本地持有并单独发布到资产桶）；格式、发布与缓存语义见 `docs/operations/agent-asset-origin.md` §赞助运行时内容。
+赞助页（`/sponsor`）的运行时配置与收款码作为 pin 住的 Release 资产存放，构建期注入并随 Frontend 镜像与 APK bundle 发布（Git 历史里没有明文副本）；轮换与不变量见 `docs/operations/sponsor-runtime-content.md`。
 
 ### CI/CD 与部署所有权
 
