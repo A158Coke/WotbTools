@@ -162,15 +162,10 @@ describe('AgentArmorView WebGL 预检与加载状态', () => {
 
   it('?clean=1：顶栏与参数开关一并让位（场景脚本会隐藏全部常驻面板）', async () => {
     mockWebGL('webgl2')
-    window.history.replaceState({}, '', '/?view=agent-armor&tank=5&clean=1')
-    try {
-      const { default: AgentArmorView } = await import('./AgentArmorView.vue')
-      const wrapper = await mountWithRouter(AgentArmorView, { view: 'agent-armor', tank: '5' })
-      expect(wrapper.find('.armor-view').classes()).toContain('is-clean')
-      expect(wrapper.find('[data-testid="armor-tools"]').exists()).toBe(false)
-    } finally {
-      window.history.replaceState({}, '', '/')
-    }
+    const { default: AgentArmorView } = await import('./AgentArmorView.vue')
+    const wrapper = await mountWithRouter(AgentArmorView, { view: 'agent-armor', tank: '5', clean: '1' })
+    expect(wrapper.find('.armor-view').classes()).toContain('is-clean')
+    expect(wrapper.find('[data-testid="armor-tools"]').exists()).toBe(false)
   })
 })
 

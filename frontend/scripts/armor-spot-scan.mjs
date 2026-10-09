@@ -2,7 +2,8 @@
  * 装甲查看器门禁的「部位像素扫描」表达式构造器（browser-armor-aiming.mjs 用）。
  *
  * 表达式在页面里求值（page.evaluate）：用 __raytrace 找炮管/炮塔壳/车体三处部位的
- * client 坐标像素。每处候选分两档：
+ * client 坐标像素。候选必须通过 elementFromPoint 实际命中 canvas，排除被 UI 遮挡的部位。
+ * 每处候选分两档：
  *   - 首选：射线触达主装甲板（Primary）→ 短按必出结论，断言最强；
  *   - 次选：仅触达间隙甲/外部模块（记 primary:false）→ 按 BlitzKit 触发面语义必须无结论
  *     （真实资产覆盖下炮管装甲可能全归 spaced，此时该部位只有次选）。
@@ -32,6 +33,7 @@ export function buildFindSpotsExpr({ need, primarySections }) {
       for (let cy = 20; cy < c.height - 20; cy += step) {
         for (let cx = 20; cx < c.width - 20; cx += step) {
           const px = r.left + cx, py = r.top + cy;
+          if (document.elementFromPoint(px, py) !== c) continue;
           const hits = H.__raytrace(px, py);
           if (!hits || !hits.length) continue;
           const n = hits[0].name;
