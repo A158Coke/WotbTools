@@ -11,8 +11,13 @@ Android App
    ├── AuthManager → external user-agent → Keycloak → QQ / WG
    └── WebView → https://appassets.androidplatform.net/index.html
         ├── self: APK assets/web (Vue, WASM, 2D assets)
-        └── HTTPS API / remote 3D assets: reviewed production origins
+        ├── self: /agent-assets → AgentAssetProxy → 对象存储（3D 资产、赞助运行时内容）
+        └── HTTPS API / download surface: reviewed production origins
 ```
+
+Sponsor runtime content（`/sponsor-config.json` + `/sponsor-assets/*`）不进 APK bundle，也不由
+生产网关下发：它是资产面对象，Android 经本机 `/agent-assets` 路径由 Native `AgentAssetProxy`
+直连对象存储读取（与 3D 资产同一条通路，`frontend/src/utils/sponsor-config.js` 走 `assetBase()`）。
 
 Android bundling 和生产 Web deploy 是独立发布产物。更改 Android 使用的 bundled Vue 或 Native runtime
 都需要重新构建 APK；生产 Web frontend 不再是 Android 启动或发布的 runtime dependency。

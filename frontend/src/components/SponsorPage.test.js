@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import SponsorPage from './SponsorPage.vue'
 import { messages } from '../locales/messages.js'
+
+const ASSET_ORIGIN = 'https://assets.test'
 
 function mountPage() {
   const i18n = createI18n({ locale: 'zh', fallbackLocale: 'en', messages })
@@ -12,9 +14,14 @@ function mountPage() {
 }
 
 describe('SponsorPage', () => {
+  beforeEach(() => {
+    // 赞助内容源是资产面（assetBase）：给测试一个显式 asset origin，不依赖构建注入。
+    window.history.replaceState({}, '', `/?assets=${ASSET_ORIGIN}`)
+    localStorage.clear()
+  })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('renders runtime-configured Alipay and WeChat methods', async () => {
+  it('renders runtime-configured Alipay and WeChat methods from the asset plane', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -30,9 +37,11 @@ describe('SponsorPage', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(fetchMock).toHaveBeenCalledWith('/sponsor-config.json', { cache: 'no-store' })
+    expect(fetchMock).toHaveBeenCalledWith(`${ASSET_ORIGIN}/sponsor-config.json`, { cache: 'no-store' })
     expect(wrapper.find('[data-testid="sponsor-methods"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="sponsor-methods"]').findAll('img')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="sponsor-methods"]').findAll('img')[0].attributes('src'))
+      .toBe(`${ASSET_ORIGIN}/sponsor-assets/alipay.png`)
     expect(wrapper.text()).toContain('支付宝')
     expect(wrapper.text()).toContain('微信支付')
     wrapper.unmount()
