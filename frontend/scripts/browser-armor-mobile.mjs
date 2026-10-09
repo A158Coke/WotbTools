@@ -1,7 +1,7 @@
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
-import { FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
+import { FIXTURE_TANK_CACHE, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
 /**
  * 装甲查看器（?view=agent-armor）移动端布局的浏览器几何门禁。
@@ -610,11 +610,114 @@ async function runShotActionsScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
+// A real roster response drives makeCard/loadMoreCards; do not synthesize card DOM or change product CSS.
+const PICKER_TANK_CACHE = {
+  ...FIXTURE_TANK_CACHE,
+  ...Object.fromEntries(Array.from({ length: 120 }, (_, index) => {
+    const id = 10000 + index
+    return [id, { ...FIXTURE_TANK_CACHE[FIXTURE_TANK_ID], id, name: `Picker Medium ${String(index).padStart(3, '0')}` }]
+  })),
+}
+const PICKER_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
+  { name: `armor-picker-390x844-${profile}`, width: 390, height: 844, touch: true, profile },
+  { name: `armor-picker-1024x768-${profile}`, width: 1024, height: 768, touch: false, profile },
+  { name: `armor-picker-1440x900-${profile}`, width: 1440, height: 900, touch: false, profile },
+  { name: `armor-picker-3840x2160-${profile}`, width: 3840, height: 2160, deviceScaleFactor: 1, touch: false, profile, fillViewport: true },
+  { name: `armor-picker-resize-${profile}`, width: 1440, height: 900, deviceScaleFactor: 1, touch: false, profile, resize: true },
+])
+function pickerCardsProbe() {
+  const grid = document.querySelector('#tp-grid')
+  const cards = [...grid.querySelectorAll('.tank-card')]
+  const clipped = cards.filter(card => {
+    const outer = card.getBoundingClientRect()
+    const children = [...card.querySelectorAll('.tc-img, .tc-name, .tc-meta')]
+    return children.length !== 3 || children.some(child => {
+      const inner = child.getBoundingClientRect(), style = getComputedStyle(child)
+      return inner.width <= 0 || inner.height <= 0 || style.visibility === 'hidden'
+        || inner.top < outer.top - 1 || inner.bottom > outer.bottom + 1
+    })
+  })
+  const first = cards[0], outer = first?.getBoundingClientRect(), name = first?.querySelector('.tc-name')?.getBoundingClientRect()
+  const hit = name ? document.elementFromPoint(name.left + name.width / 2, name.top + name.height / 2) : null
+  const last = cards.at(-1), lastName = last?.querySelector('.tc-name')?.getBoundingClientRect()
+  const lastHit = lastName ? document.elementFromPoint(lastName.left + lastName.width / 2, lastName.top + lastName.height / 2) : null
+  const rect = grid.getBoundingClientRect()
+  return {
+    count: cards.length, clipped: clipped.length, clippedNames: clipped.slice(0, 3).map(card => card.textContent.trim()),
+    firstHeight: outer?.height, firstNameHit: !!first && !!hit && first.contains(hit),
+    lastNameHit: !!last && !!lastHit && last.contains(lastHit),
+    scrollTop: grid.scrollTop, scrollHeight: grid.scrollHeight, clientHeight: grid.clientHeight,
+    overflowX: grid.scrollWidth > grid.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth + 1,
+    wheel: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) },
+  }
+}
+async function runPickerCardsScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable(); await page.emulate(scenario)
+  await page.goto(`${env.origin}/?view=home&ws-auth=1`)
+  await page.evaluate(`localStorage.setItem('wotb-ui-profile', ${JSON.stringify(scenario.profile)})`)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.pickerAssets)}`)
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && document.querySelector('#target-select')?.disabled === false,
+    { timeout: 30000, label: 'picker fixture initialized' })
+  if (scenario.touch) {
+    const tools = await page.probe(armorLayoutProbe)
+    await page.tap({ ...tools.tools.center, touch: true })
+  }
+  const controls = await page.probe(armorLayoutProbe)
+  await page.tap({ x: controls.targetSelect.left + controls.targetSelect.width / 2, y: controls.targetSelect.top + controls.targetSelect.height / 2, touch: scenario.touch })
+  await page.waitFor(() => !!document.querySelector('#tank-picker.open') && document.querySelectorAll('#tp-grid .tank-card').length >= 90,
+    { timeout: 5000, label: 'first roster chunk' })
+  const initial = await page.probe(pickerCardsProbe)
+  check(failures, await page.evaluate('document.documentElement.dataset.uiProfile') === scenario.profile,
+    `${scenario.name}: requested presentation profile must be active`)
+  check(failures, initial.clipped === 0 && initial.firstNameHit,
+    `${scenario.name}: picker clips image/name/metadata or hides the name hit target: ${JSON.stringify(initial)}`)
+  check(failures, initial.scrollHeight > initial.clientHeight && !initial.overflowX,
+    `${scenario.name}: roster must scroll vertically without horizontal overflow: ${JSON.stringify(initial)}`)
+  check(failures, scenario.fillViewport ? initial.count > 90 : initial.count === 90,
+    `${scenario.name}: fill a large viewport while retaining ordinary chunking: ${JSON.stringify(initial)}`)
+  if (failures.length === 0) {
+    if (scenario.resize) {
+      await page.emulate({ ...scenario, width: 3840, height: 2160, deviceScaleFactor: 1 })
+      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === Object.keys(PICKER_TANK_CACHE).length,
+        { timeout: 5000, label: 'resize refills the visible picker before scrolling' })
+    }
+    const beforeScroll = await page.probe(pickerCardsProbe)
+    await env.chrome.client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...beforeScroll.wheel, deltaX: 0, deltaY: beforeScroll.scrollHeight }, sessionId)
+    await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === Object.keys(PICKER_TANK_CACHE).length,
+      { timeout: 5000, label: 'scroll loads the remaining roster chunk' })
+    if (scenario.fillViewport) {
+      await env.chrome.client.send('Input.insertText', { text: 'Picker' }, sessionId)
+      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === 120,
+        { timeout: 5000, label: 'filter refills the large visible picker' })
+    }
+    const loaded = await page.probe(pickerCardsProbe)
+    await env.chrome.client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...loaded.wheel, deltaX: 0, deltaY: loaded.scrollHeight }, sessionId)
+    await page.waitForValue(`(${pickerCardsProbe.toString()})().lastNameHit`, hit => hit === true,
+      { timeout: 5000, label: 'last roster card can be reached' })
+    const scrolled = await page.probe(pickerCardsProbe)
+    check(failures, scrolled.scrollTop > 0 && scrolled.clipped === 0 && scrolled.lastNameHit && !scrolled.overflowX,
+      `${scenario.name}: appended roster cards must remain whole after real scrolling: ${JSON.stringify(scrolled)}`)
+    const close = (await page.probe(armorLayoutProbe)).pickerClose
+    await page.installInputTrace()
+    await page.tap({ x: close.left + close.width / 2, y: close.top + close.height / 2, touch: scenario.touch })
+    const closed = await page.waitFor(() => !document.querySelector('#tank-picker.open'), { timeout: 5000, label: 'picker closed after raw input' }).then(() => true).catch(() => false)
+    const trace = await page.inputTrace()
+    check(failures, closed && trace.clickCount === 1, `${scenario.name}: picker close requires a real click and closed state: ${JSON.stringify(trace)}`)
+  }
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
 const assets = await startFixtureAssetPack()
+const pickerAssets = await startFixtureAssetPack({ tankCache: PICKER_TANK_CACHE })
 let chromeCdp = null
 
 try {
@@ -628,13 +731,14 @@ try {
       '--enable-unsafe-swiftshader',
     ],
   })
-  const env = { origin, chrome: chromeCdp, assets: assets.origin }
+  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin }
   const runs = [
     ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },
     ...DESKTOP_SCENARIOS.map((scenario) => ({ scenario, run: () => runDesktopScenario(env, scenario) })),
     { scenario: ASSETLESS_SCENARIO, run: () => runMobileScenario(env, ASSETLESS_SCENARIO) },
+    ...PICKER_SCENARIOS.map(scenario => ({ scenario, run: () => runPickerCardsScenario(env, scenario) })),
   ]
   const nameFilter = process.argv.slice(2).find((arg) => !arg.startsWith('-'))
   const selected = nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs
@@ -671,4 +775,5 @@ try {
   if (chromeCdp) await chromeCdp.close()
   await server.close()
   await assets.close()
+  await pickerAssets.close()
 }
