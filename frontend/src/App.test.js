@@ -212,10 +212,11 @@ describe('App routing', () => {
     ['extended', 'replay', 'view-replay'],
     ['reconstruction', 'battle-playback', 'view-replay'],
   ])('canonicalizes legacy %s URL to %s', async (legacy, canonical, testId) => {
-    const { wrapper, router } = await mountApp(`/?view=${legacy}`)
+    const { wrapper, router } = await mountApp(`/?view=${legacy}&lang=ru#details`)
     expect(router.currentRoute.value.query.view).toBe(canonical)
+    expect(router.currentRoute.value.query.lang).toBe('ru')
+    expect(router.currentRoute.value.hash).toBe('#details')
     expect(wrapper.find(`[data-test="${testId}"]`).exists()).toBe(true)
-
   })
 
   it('keeps Replay capability deep links on the shared workspace', async () => {
