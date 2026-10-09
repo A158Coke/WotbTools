@@ -92,6 +92,13 @@ describe('VehicleDetailsPanel', () => {
     wrapper.unmount()
   })
 
+  it('labels stale health as last known rather than a current observation', () => {
+    const wrapper = mountPanel({ health: { currentHp: 500, maxHp: 1000, state: 'LAST_KNOWN' } })
+    expect(wrapper.text()).toContain('recon.map.playback.last_known_hp')
+    expect(wrapper.find('[data-test="pb-sb-hp-current"]').text()).toBe('500')
+    wrapper.unmount()
+  })
+
   it('missing currentHP stays unknown even when maxHP exists; real known zero is preserved', async () => {
     const wrapper = mountPanel({ health: { currentHp: null, maxHp: 1500 } })
     expect(wrapper.find('[data-test="pb-sb-hp-current"]').text()).toBe('—')

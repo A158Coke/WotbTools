@@ -1,6 +1,8 @@
 <script setup>
 import { ref } from 'vue'
 import { Check, Copy, Gamepad2, MessageCircle, MessageSquareText } from 'lucide-vue-next'
+import AppButton from './AppButton.vue'
+import PageHeader from './PageHeader.vue'
 
 // design-language §8：不用 emoji 当图标。Lucide 不收录品牌 logo，用语义相近的通用图标，平台名写在卡片标题里
 const contacts = [
@@ -45,19 +47,18 @@ async function copyText(text) {
 </script>
 
 <template>
-  <div class="contact-page">
-    <h1 class="contact-title">{{ $t('contact.title') }}</h1>
-    <p class="contact-subtitle">{{ $t('contact.subtitle') }}</p>
+  <div class="contact-page layout-content">
+    <PageHeader :title="$t('contact.title')" :description="$t('contact.subtitle')" />
 
     <div class="contact-grid">
       <div v-for="c in contacts" :key="c.key" class="contact-card">
         <component :is="c.icon" class="contact-icon" :size="28" aria-hidden="true" />
         <h2>{{ $t(`contact.${c.key}`) }}</h2>
         <p class="contact-value">{{ c.value }}</p>
-        <button class="copy-btn" @click="copyContact(c)">
+        <AppButton class="copy-btn" :aria-label="`${$t('contact.copy')} ${c.value}`" @click="copyContact(c)">
           <component :is="copiedKey === c.key ? Check : Copy" :size="16" aria-hidden="true" />
           {{ copiedKey === c.key ? $t('contact.copied') : $t('contact.copy') }}
-        </button>
+        </AppButton>
       </div>
     </div>
 
@@ -66,50 +67,22 @@ async function copyText(text) {
 </template>
 
 <style scoped>
-.contact-page { max-width: 1120px; margin: 0 auto; padding: 22px 24px 56px; }
-.contact-title { font-size: 1.3rem; color: var(--text-heading); margin: 8px 0 8px; }
-.contact-subtitle { font-size: .9rem; color: var(--text-muted); margin: 0 0 22px; line-height: 1.6; }
-.contact-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.contact-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
 .contact-card {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
-  padding: 20px;
-  background: var(--showcase-tactical);
-  border: 1px solid var(--showcase-tactical-border);
-  border-radius: 8px;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
 }
-.contact-card:hover { border-color: var(--accent); }
 .contact-icon { color: var(--color-accent-text); }
-.contact-card h2 { font-size: 1rem; color: var(--showcase-tactical-heading); margin: 0; }
-.contact-value {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: .92rem;
-  color: #d8d5cd;
-  background: var(--showcase-tactical-soft-2);
-  border: 1px solid rgba(80, 92, 100, .5);
-  border-radius: 6px;
-  padding: 6px 10px;
-  margin: 0;
-  word-break: break-all;
-}
-.copy-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--control-h-sm);
-  margin-top: 4px;
-  border: 1px solid rgba(80, 92, 100, .55);
-  background: rgba(20, 26, 30, .9);
-  color: var(--showcase-tactical-text);
-  border-radius: 7px;
-  padding: 6px 14px;
-  cursor: pointer;
-  font-size: .82rem;
-  font-family: inherit;
-}
-.copy-btn:hover { background: rgba(30, 38, 43, .9); border-color: var(--accent); color: #f0a42b; }
-.contact-hint { margin-top: 18px; font-size: .78rem; color: var(--showcase-tactical-muted); }
-@media (width < 768px) { .contact-page { padding: 14px 12px 44px; } }
+.contact-card h2 { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
+.contact-value { margin: 0; color: var(--color-text-secondary); font: var(--type-body); font-family: var(--font-family-mono); overflow-wrap: anywhere; }
+.copy-btn { margin-top: var(--space-2); }
+.contact-hint { margin: var(--space-5) 0 0; color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
+@media (width < 768px) { .contact-grid { grid-template-columns: minmax(0, 1fr); } }
 </style>

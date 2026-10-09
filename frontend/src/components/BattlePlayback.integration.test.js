@@ -309,8 +309,9 @@ beforeEach(async () => {
   // reset that owner between tests; restore its logical defaults before each mount.
   const prefs = usePlaybackPreferences()
   Object.assign(prefs.labelPrefs, { showPlayerName: false, showTankName: true, showReload: true })
-  Object.assign(prefs.hpPrefs, { showHp: true })
+  Object.assign(prefs.hpPrefs, { showHp: true, mode: 'bar' })
   Object.assign(prefs.trailPrefs, { showTrail: true })
+  Object.assign(prefs.markerPrefs, { classIcons: false, showStatus: true })
   Object.assign(prefs.uiPrefs, { showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true })
   await nextTick()
   localStorage.clear()
@@ -1477,17 +1478,92 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     await wrapper.get('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
     const time = wrapper.vm.currentTime
     const selected = wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')
-    const prefs = usePlaybackPreferences()
     expect(wrapper.findAll('[data-test="pb-roster-row"]')).toHaveLength(3)
-    prefs.uiPrefs.showRoster = false
+    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
     await flushPromises()
+    expect(wrapper.get('[data-test="pb-toggle-roster"]').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.classes()).not.toContain('pb-roster-lanes')
     expect(wrapper.findAll('[data-test="pb-roster-row"]')).toHaveLength(0)
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
     expect(wrapper.vm.currentTime).toBe(time)
-    prefs.uiPrefs.showRoster = true
+    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
     await flushPromises()
     expect(wrapper.findAll('[data-test="pb-roster-row"]')).toHaveLength(3)
     expect(wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')).toBe(selected)
+  })
+
+  it('one-click declutter changes only presentation and restores custom options around an unchanged paused frame', async () => {
+    stubRaf()
+    const prefs = usePlaybackPreferences()
+    prefs.labelPrefs.showPlayerName = true
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    await wrapper.get('[data-test="pb-marker-1001"]').trigger('click')
+    const map = wrapper.getComponent({ name: 'BattleMap' })
+    const beforeFacts = map.props('vehicleStates').map(state => ({ id: state.vehicle.accountId, hp: map.props('hpFor')(state.vehicle), pos: state.pos, destroyed: state.destroyed }))
+    const time = wrapper.vm.currentTime
+    await wrapper.get('[data-test="pb-declutter"]').trigger('click')
+    expect(wrapper.get('[data-test="pb-declutter"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.findAll('.pb-label-player')).toHaveLength(0)
+    expect(wrapper.findAll('.pb-hp-hud')).toHaveLength(0)
+    expect(wrapper.findAll('.pb-class-symbol')).toHaveLength(map.props('vehicleStates').length)
+    expect(map.props('visibleFloats')).toEqual([])
+    expect(map.props('visibleTrails')).toEqual([])
+    expect(map.props('selectedAccountId')).toBe(1001)
+    expect(map.props('vehicleStates').map(state => ({ id: state.vehicle.accountId, hp: map.props('hpFor')(state.vehicle), pos: state.pos, destroyed: state.destroyed }))).toEqual(beforeFacts)
+    expect(wrapper.vm.currentTime).toBe(time)
+    await wrapper.get('[data-test="pb-declutter"]').trigger('click')
+    expect(wrapper.findAll('.pb-class-symbol')).toHaveLength(0)
+    expect(wrapper.findAll('.pb-label-player').length).toBeGreaterThan(0)
+    expect(prefs.hpPrefs.showHp).toBe(true)
+    expect(wrapper.vm.currentTime).toBe(time)
+  })
+
+  it.each([
+    { phone: true, portrait: false, width: 844, compact: true },
+    { phone: true, portrait: true, width: 390, compact: false },
+    { phone: false, portrait: false, width: 1280, compact: false },
+  ])('uses one compact marking row only for phone landscape ($width px)', async ({ phone, portrait, width, compact }) => {
+    stubRaf()
+    stubFullscreenApi()
+    vi.stubGlobal('innerWidth', width)
+    stubMatchMedia({
+      [PLAYBACK_MOBILE_QUERY]: phone,
+      '(orientation: portrait) and (width < 768px)': portrait,
+      '(min-width: 1200px)': width >= 1200,
+    })
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-annotation-entry"]').exists()).toBe(true)
+    const controls = wrapper.getComponent({ name: 'PlaybackControls' })
+    const controlsInstance = controls.vm.$.uid
+    const timeBefore = controls.props('currentTime')
+    await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
+    const toolbar = wrapper.getComponent({ name: 'AnnotationToolbar' })
+    expect(toolbar.props('compact')).toBe(compact)
+    expect(wrapper.find('[data-test="pb-annotation-entry"]').exists()).toBe(!compact)
+    expect(wrapper.findAll('[data-test="pb-annot-close"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="pb-transport-controls"]').element.style.display === 'none').toBe(compact)
+    expect(controls.props('playing')).toBe(false)
+    await wrapper.get('[data-test="pb-annot-TD"]').trigger('click')
+    const viewport = wrapper.get('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 99, clientX: 100, clientY: 100 })
+    await viewport.trigger('pointerup', { pointerId: 99, clientX: 100, clientY: 100 })
+    expect(wrapper.find('[data-test="pb-annot-unit-TD"]').exists()).toBe(true)
+    if (compact) {
+      setFullscreen(wrapper.element)
+      document.dispatchEvent(new Event('fullscreenchange'))
+      await flushPromises()
+      expect(toolbar.props('compact')).toBe(true)
+    }
+    await wrapper.get('[data-test="pb-annot-close"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-annotation-entry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-annot-toolbar"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="pb-transport-controls"]').element.style.display).not.toBe('none')
+    expect(wrapper.getComponent({ name: 'PlaybackControls' }).vm.$.uid).toBe(controlsInstance)
+    expect(controls.props('playing')).toBe(false)
+    expect(controls.props('currentTime')).toBe(timeBefore)
+    expect(wrapper.find('[data-test="pb-annot-unit-TD"]').exists()).toBe(true)
   })
 
   it('§mobile-fullscreen-contract：手机 fullscreen + landscape（内宽>768）仍保持 mobile mode（bottom-overlay controls、无 rail/details）', async () => {
@@ -1824,7 +1900,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     // 关闭后隐藏地图 HP 数字/bar/ghost，但 marker 仍在
     expect(wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]').exists()).toBe(false)
     expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
-    expect(JSON.parse(localStorage.getItem('wotb.pb.hp-prefs'))).toEqual({ showHp: false })
+    expect(JSON.parse(localStorage.getItem('wotb.pb.hp-prefs'))).toEqual({ showHp: false, mode: 'bar' })
     // 重新挂载读取持久化
     const w2 = mountPlayback(overview, 12, ds)
     await flushPromises()
@@ -2554,15 +2630,58 @@ describe('Playback secondary convergence', () => {
     const wrapper = mountPlayback()
     await flushPromises()
     await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
-    await wrapper.get('[data-test="pb-panel-annotation"]').trigger('click')
+    await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
     expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     expect(wrapper.findAllComponents({ name: 'AnnotationToolbar' })).toHaveLength(1)
     expect(wrapper.get('[data-test="pb-transport-slot"]').find('.pb-annotation-toolbar').exists()).toBe(true)
-    expect(wrapper.getComponent({ name: 'BattleMap' }).props('activeTool')).toBe('pen')
+    expect(wrapper.getComponent({ name: 'BattleMap' }).props('activeTool')).toBe('select')
     await wrapper.getComponent({ name: 'AnnotationToolbar' }).vm.$emit('close')
     await nextTick()
     expect(wrapper.findComponent({ name: 'AnnotationToolbar' }).exists()).toBe(false)
     expect(wrapper.getComponent({ name: 'BattleMap' }).props('activeTool')).toBe(null)
+  })
+
+  it('map selection displays and updates HP from the current replay time', async () => {
+    const ds = makePlaybackV2()
+    ds.vehicles[0].healthTransitions = [
+      { timeSec: 0, currentHp: 1000, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 10, currentHp: 600, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 20, currentHp: 400, knowledge: 'CURRENT', displayCapacityHp: 1000, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    const wrapper = mountPlayback(makeOverview(), 10, ds)
+    await flushPromises()
+    await wrapper.get('[data-test="pb-marker-1001"]').trigger('click')
+    expect(wrapper.get('[data-test="pb-sb-hp-current"]').text()).toBe('600')
+    expect(wrapper.get('[data-test="pb-sb-hp-max"]').text()).toContain('1000')
+    expect(wrapper.get('[data-test="pb-sb-hp-percentage"]').text()).toContain('60%')
+    await wrapper.setProps({ seekTo: 20 })
+    await flushPromises()
+    expect(wrapper.get('[data-test="pb-sb-hp-current"]').text()).toBe('400')
+  })
+
+  it('switches HP presentation and applies the ring declutter preset without changing playback', async () => {
+    const wrapper = mountPlayback()
+    await flushPromises()
+    const time = wrapper.getComponent({ name: 'PlaybackControls' }).props('currentTime')
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    await wrapper.get('[data-testid="pb-hp-mode-ring"]').trigger('click')
+    const map = wrapper.getComponent({ name: 'BattleMap' })
+    const prefs = usePlaybackPreferences()
+    expect(map.props('hpPrefs').mode).toBe('ring')
+    expect(map.props('markerLabel')(1001).showReload).toBe(false)
+    expect(wrapper.get('[data-test="pb-show-reload"]').element.disabled).toBe(true)
+    expect(prefs.labelPrefs.showReload).toBe(true)
+    expect(wrapper.findAll('[data-test="pb-hp-ring"]').length).toBeGreaterThan(0)
+    await wrapper.get('[data-testid="pb-hp-mode-bar"]').trigger('click')
+    expect(map.props('markerLabel')(1001).showReload).toBe(true)
+    await wrapper.get('[data-test="pb-declutter"]').trigger('click')
+    expect(prefs.hpPrefs).toEqual({ showHp: true, mode: 'ring' })
+    expect(wrapper.findAll('[data-test="pb-hp-ring"]').length).toBeGreaterThan(0)
+    expect(wrapper.find('[data-test="pb-hp-hud"]').exists()).toBe(false)
+    await wrapper.get('[data-test="pb-declutter"]').trigger('click')
+    expect(prefs.hpPrefs.mode).toBe('bar')
+    expect(prefs.labelPrefs.showReload).toBe(true)
+    expect(wrapper.getComponent({ name: 'PlaybackControls' }).props('currentTime')).toBe(time)
   })
 
   it('honors shared HUD/base/killfeed/Reload preferences without changing replay state', async () => {

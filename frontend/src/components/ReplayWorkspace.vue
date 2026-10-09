@@ -1,6 +1,7 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ChevronDown, ChevronUp, Files } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { mapLabel } from '../utils/helpers.js'
 import { defineLazyModule, reloadForFreshBundle } from '../utils/lazyModule.js'
@@ -160,6 +161,21 @@ function onBattleSelect(sourceId) {
 
 /** 单场能力的目标文件：单文件直接用；多文件须先选场次（本机解析单场） */
 const targetFile = computed(() => workspace.currentTargetFile.value)
+
+// Only presentation is collapsible; the uploader and selection keep their existing owner.
+const fileControlsOpen = ref(false)
+const sourceId = useId()
+const canCollapseSource = computed(() => !!resp.value && files.value.length > 0 && activeCapability.value !== 'data')
+const sourceCollapsed = computed(() => canCollapseSource.value && !fileControlsOpen.value && !loading.value && !error.value)
+const showBattlePicker = computed(() => {
+  const cap = activeCapability.value
+  if (cap === 'data' || battleOptions.value.length < 2) return false
+  if (cap === 'playback') return !playbackLoadError.value
+  if (cap === '3d') return authenticated.value && threeAvailability.value.available && !threeLoadError.value
+  if (cap === 'shots') return authenticated.value && !shotsLoadError.value
+  return aiAvailability.value.available && !aiLoadError.value
+})
+const battlePickerTestId = computed(() => ({ playback: 'playback', '3d': 'replay3d', shots: 'shots', ai: 'ai' })[activeCapability.value] + '-battle-picker')
 const blockedReason = computed(() =>
   files.value.length > 1 && !targetFile.value ? t('workspace.single_replay_required') : '')
 
@@ -219,20 +235,49 @@ watch(() => props.initialCapability, (val) => {
 
 <template>
   <div class="layout-data-workspace replay-workspace">
-    <PageHeader :title="$t('workspace.title')" />
-    <ReplayCapabilityTabs :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
+    <PageHeader :title="$t('workspace.title')">
+      <template #actions>
+        <ReplayCapabilityTabs :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
+      </template>
+    </PageHeader>
+
+    <div v-if="canCollapseSource || showBattlePicker" class="workspace-sessionbar">
+      <BattlePicker
+        v-if="showBattlePicker"
+        class="single-battle-picker"
+        :options="battleOptions"
+        :model-value="currentBattleId"
+        :aria-label="$t('workspace.battle_picker')"
+        :data-testid="battlePickerTestId"
+        @update:model-value="onBattleSelect"
+      />
+      <span v-else-if="targetFile" class="workspace-current-file" :title="targetFile.name">{{ targetFile.name }}</span>
+      <AppButton
+        v-if="canCollapseSource"
+        variant="ghost" size="sm" class="workspace-files-toggle"
+        data-testid="workspace-files-toggle"
+        :aria-expanded="!sourceCollapsed" :aria-controls="sourceId" :disabled="loading || !!error"
+        @click="fileControlsOpen = sourceCollapsed"
+      >
+        <Files :size="16" aria-hidden="true" />
+        {{ sourceCollapsed ? $t('upload.view_list', { count: files.length }) : $t('upload.hide_list') }}
+        <component :is="sourceCollapsed ? ChevronDown : ChevronUp" :size="16" aria-hidden="true" />
+      </AppButton>
+    </div>
 
     <div class="workspace-source">
-      <FileDrop
-        :files="files"
-        :loading="loading"
-        :confirm-remove="!!resp"
-        :compact="!!resp"
-        :allow-folder="activeCapability === 'data'"
-        @update:files="onFilesUpdate"
-        @preview="onPreview"
-        @remove-request="onFileRemoveRequest"
-      />
+      <div v-show="!sourceCollapsed" :id="sourceId" data-testid="workspace-file-controls">
+        <FileDrop
+          :files="files"
+          :loading="loading"
+          :confirm-remove="!!resp"
+          :compact="!!resp"
+          :allow-folder="['data', 'playback', '3d'].includes(activeCapability)"
+          @update:files="onFilesUpdate"
+          @preview="onPreview"
+          @remove-request="onFileRemoveRequest"
+        />
+      </div>
       <ReplayProcessingPanel
         :analysis="analysis"
         :result="resp"
@@ -263,15 +308,6 @@ watch(() => props.initialCapability, (val) => {
             <AppButton size="sm" variant="ghost" data-testid="ws-playback-load-retry" @click="retryPane(playbackModule)">{{ $t('workspace.pane_retry') }}</AppButton>
           </template>
         </Banner>
-        <BattlePicker
-          v-else-if="battleOptions.length > 1"
-          class="single-battle-picker"
-          :options="battleOptions"
-          :model-value="currentBattleId"
-          :aria-label="$t('workspace.battle_picker')"
-          data-testid="playback-battle-picker"
-          @update:model-value="onBattleSelect"
-        />
         <BattlePlaybackPanel
           v-if="playbackMounted && !playbackLoadError"
           :playback-session="workspace.playbackSession"
@@ -302,15 +338,6 @@ watch(() => props.initialCapability, (val) => {
             <AppButton size="sm" variant="ghost" data-testid="ws-3d-load-retry" @click="retryPane(threeModule)">{{ $t('workspace.pane_retry') }}</AppButton>
           </template>
         </Banner>
-        <BattlePicker
-          v-else-if="authenticated && battleOptions.length > 1"
-          class="single-battle-picker"
-          :options="battleOptions"
-          :model-value="currentBattleId"
-          :aria-label="$t('workspace.battle_picker')"
-          data-testid="replay3d-battle-picker"
-          @update:model-value="onBattleSelect"
-        />
         <Replay3DPane
           v-if="authenticated && threeMounted && !threeLoadError"
           :playback-session="workspace.playbackSession"
@@ -333,15 +360,6 @@ watch(() => props.initialCapability, (val) => {
             <AppButton size="sm" variant="ghost" data-testid="ws-shots-load-retry" @click="retryPane(shotsModule)">{{ $t('workspace.pane_retry') }}</AppButton>
           </template>
         </Banner>
-        <BattlePicker
-          v-else-if="authenticated && battleOptions.length > 1"
-          class="single-battle-picker"
-          :options="battleOptions"
-          :model-value="currentBattleId"
-          :aria-label="$t('workspace.battle_picker')"
-          data-testid="shots-battle-picker"
-          @update:model-value="onBattleSelect"
-        />
         <ReplayShotsPane
           v-if="authenticated && shotsMounted && !shotsLoadError"
           :file="targetFile"
@@ -363,15 +381,6 @@ watch(() => props.initialCapability, (val) => {
             <AppButton size="sm" variant="ghost" data-testid="ws-ai-load-retry" @click="retryPane(aiModule)">{{ $t('workspace.pane_retry') }}</AppButton>
           </template>
         </Banner>
-        <BattlePicker
-          v-else-if="battleOptions.length > 1"
-          class="single-battle-picker"
-          :options="battleOptions"
-          :model-value="currentBattleId"
-          :aria-label="$t('workspace.battle_picker')"
-          data-testid="ai-battle-picker"
-          @update:model-value="onBattleSelect"
-        />
         <AiReviewWorkspacePane
           v-if="aiMounted && !aiLoadError"
           :file="targetFile"
@@ -388,7 +397,13 @@ watch(() => props.initialCapability, (val) => {
 <style scoped>
 .replay-workspace { padding-right: var(--pd-drawer-offset, 0px); }
 .workspace-source { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
-.workspace-status { margin: 0; padding: var(--space-12) var(--space-4); color: var(--color-text-secondary); font: var(--type-body); text-align: center; }
 .capability-pane { margin-top: var(--space-1); }
-.single-battle-picker { margin-bottom: var(--space-3); }
+/* A single compact session row serves every single-battle capability. */
+.workspace-sessionbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); margin-bottom: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
+.single-battle-picker { flex: 1; min-width: 0; }
+.workspace-files-toggle { margin-inline-start: auto; }
+.workspace-current-file { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); font: var(--type-caption); }
+@media (width < 768px) {
+  .single-battle-picker { flex-basis: 100%; }
+}
 </style>

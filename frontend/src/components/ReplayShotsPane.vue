@@ -21,12 +21,14 @@ import {
 } from '../api/agent-replay-facets.js'
 import { resolveMountedConfig } from '../scene/reloadBar.js'
 import { assetProvider } from '../scene/assetProvider.js'
+import { shotResultBadge } from '../utils/shotPresentation.js'
 import { formatPlaybackClock } from '../utils/playbackClock.js'
-import { storeShotsForViewer, fetchLocalShotTankData } from '../scene/agentData.js'
+import { loadTankopedia } from '../replay-local/compute/tankopedia.ts'
+import { storeShotsForViewer, fetchLocalShotTankData, shotViewerQuery } from '../scene/agentData.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import Badge from './Badge.vue'
 import StatStrip from './StatStrip.vue'
-import SegmentedControl from './SegmentedControl.vue'
+import TankClassIcon from './TankClassIcon.vue'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
 
@@ -50,7 +52,9 @@ const parsing = ref(false)
 const err = ref('')
 /** 作者严格路径 fail-visible（契约 v0.1.9）：author_path=error 时警示与空态并存 */
 const authorError = ref('')
-const shooter = ref('all')
+const shooter = ref('own')
+const authorEid = ref(null)
+const recorderTankName = ref('')
 const selectedIndex = ref(null)
 /** 已解析的文件：同一文件不重复解码 */
 let parsedFile = null
@@ -130,14 +134,18 @@ async function buildPitchLimits(vehicles) {
  * （他人宽松路径不带昵称），这里按 eid 联表补齐昵称——姓名不可解析时界面显示
  * 「未知玩家」，绝不落回内部 id（design-language §11）。
  */
-function applyRosterNames(parsedShots, vehicles) {
-  const byEid = new Map()
-  for (const v of vehicles || []) {
-    if (v && typeof v.eid === 'number' && v.nickname) byEid.set(v.eid, v.nickname)
-  }
-  for (const s of parsedShots) {
-    if (!s.shooter_name && byEid.has(s.shooter_eid)) s.shooter_name = byEid.get(s.shooter_eid)
-    if (!s.target_name && s.target_eid != null && byEid.has(s.target_eid)) s.target_name = byEid.get(s.target_eid)
+function applyRosterNames(parsedShots, vehicles, tankopedia) {
+  const byEid = new Map((vehicles || []).map((vehicle) => [vehicle.eid, vehicle]))
+  const usableName = (value) => typeof value === 'string' && value.trim() && !/^#?\d+$/.test(value.trim())
+  for (const shot of parsedShots) {
+    for (const role of ['shooter', 'target']) {
+      const vehicle = byEid.get(shot[`${role}_eid`])
+      if (!shot[`${role}_name`] && vehicle?.nickname) shot[`${role}_name`] = vehicle.nickname
+      const info = tankopedia?.info(shot[`${role}_tank_id`] || vehicle?.tank_id || 0)
+      const name = [vehicle?.tank_name, info?.name, shot[`${role}_tank_name`]].find(usableName)
+      shot[`${role}_tank_name`] = name || ''
+      shot[`${role}_tank_class`] = info?.type || vehicle?.tank_class || vehicle?.tank_type || ''
+    }
   }
 }
 
@@ -187,6 +195,10 @@ async function decode(file) {
   err.value = ''
   authorError.value = ''
   selectedIndex.value = null
+  shooter.value = 'own'
+  authorEid.value = null
+  recorderTankName.value = ''
+  shots.value = []
   try {
     const bytes = new Uint8Array(await file.arrayBuffer())
     if (seq !== parseSeq) return
@@ -220,7 +232,6 @@ async function decode(file) {
     if (playback) {
       try {
         enrichShotsFromRoster(parsedShots, playback.vehicles)
-        applyRosterNames(parsedShots, playback.vehicles)
       } catch (e) {
         console.warn('roster enrichment skipped:', e)
       }
@@ -231,12 +242,19 @@ async function decode(file) {
       }
     }
     if (seq !== parseSeq) return
+    const tankopedia = await loadTankopedia().catch(() => null)
+    if (seq !== parseSeq) return
+    applyRosterNames(parsedShots, playback?.vehicles, tankopedia)
+    authorEid.value = outcome.author_eid > 0 ? outcome.author_eid
+      : playback?.meta?.author_eid > 0 ? playback.meta.author_eid
+        : playback?.vehicles?.find((vehicle) => vehicle.is_author)?.eid ?? null
+    const recorder = playback?.vehicles?.find((vehicle) => vehicle.eid === authorEid.value || vehicle.is_author)
+    recorderTankName.value = recorder?.tank_name || ''
     // 先发布本地解析结果（P1 评审）：搭载配置注解是**可选增强**，其资产请求无超时
     // 语义——await 它会让已完成的本地解析被远端资产的响应速度卡住。异步补做：
     // 闭包持有本文件的 parsedShots，就地注入；文件切换后旧数组不再被 shots.value
     // 引用，迟到注入无副作用（shooter_config_idx 消费点也有未注解回退链）。
     shots.value = parsedShots
-    shooter.value = 'all'
     if (playback) {
       annotateMountedConfigs(parsedShots, playback).catch((e) => {
         console.warn('mounted-config annotation skipped:', e)
@@ -256,6 +274,19 @@ async function decode(file) {
  * 与"之后才激活"，也覆盖激活期间换了目标回放。同一文件不重复解码；切走不解码、保留结果。
  */
 watch([() => props.active, () => props.file, () => props.blockedReason], ([active, file, blocked]) => {
+  // Changing/clearing a battle invalidates in-flight work even while this pane is hidden.
+  if (parsedFile && parsedFile !== file) {
+    parseSeq++
+    parsedFile = null
+    parsing.value = false
+    shots.value = []
+    recorderTankName.value = ''
+    authorEid.value = null
+    selectedIndex.value = null
+    shooter.value = 'own'
+    err.value = ''
+    authorError.value = ''
+  }
   if (!active || !file || blocked) return
   if (parsedFile === file) return
   parsedFile = file
@@ -279,22 +310,7 @@ const shellBadge = (s) => {
 }
 
 /** 命中结果：hit_flags 位图 → 击穿 / HE / 跳弹 / 未穿 / 脱靶；无位图按 game_hit_result 降级 */
-function resultBadge(s) {
-  const f = s.hit_flags || 0
-  if (!f) {
-    if (s.target_eid == null) return { text: t('agentShots.res_miss'), tone: 'neutral' }
-    const r = s.game_hit_result
-    if (r === 3) return { text: t('agentShots.res_pen'), tone: 'success' }
-    if (r === 4) return { text: t('agentShots.res_track'), tone: 'info' }
-    // eid 在案 = 命中已知；r 未知（255/0/缺）只能证明"结果未知"，不得伪装成未击穿
-    if (r == null || r === 255 || r === 0) return { text: t('agentShots.res_hit_unknown'), tone: 'warning' }
-    return { text: t('agentShots.res_nopen'), tone: 'danger' }
-  }
-  if (f & 0x1000) return { text: 'HE', tone: 'warning' }
-  if (f & 0x0010) return { text: t('agentShots.res_pen'), tone: 'success' }
-  if (f & 0x0008) return { text: t('agentShots.res_ric'), tone: 'warning' }
-  return { text: t('agentShots.res_nopen'), tone: 'danger' }
-}
+const resultBadge = (shot) => shotResultBadge(shot, t)
 
 /** 数据质量徽章：降级 / 陈旧项汇总（悬停显示详情）——与上游同一规则 */
 function qualityIssues(s) {
@@ -329,57 +345,61 @@ function playerName(name) {
   return text || t('agentShots.unknown_player')
 }
 
-/**
- * 射击者筛选：显式三态 ally / enemy / unknown——未知阵营绝不并入我方。
- * 选项值用**列表内序号**而不是 eid：DOM 里不出现内部 id（design-language §11），
- * 身份仍然是 eid（`entry.eid`），只用于筛选比较。
- */
+/** Recorder identity comes from the parse outcome/roster, never from shot count. */
+function isOwnShot(shot) {
+  return authorEid.value != null ? shot.shooter_eid === authorEid.value : shot.is_author === true
+}
+function tankName(shot, role) {
+  return shot[`${role}_tank_name`] || t('agentShots.unknown_tank')
+}
+function targetName(shot) {
+  return shot.target_eid == null ? t('agentShots.no_target') : tankName(shot, 'target')
+}
+
+/** Options keep their insertion token when group counts or display metadata change. */
+const shooterOptions = computed(() => {
+  const byKey = new Map()
+  for (const shot of shots.value) {
+    const key = shot.shooter_eid ?? `unknown-${shot.index}`
+    const existing = byKey.get(key)
+    if (existing) { existing.n++; continue }
+    byKey.set(key, {
+      key, value: `player-${byKey.size}`, name: playerName(shot.shooter_name),
+      tankName: tankName(shot, 'shooter'), n: 1, isAuthor: isOwnShot(shot),
+      team: shot.shooter_team,
+    })
+  }
+  return [...byKey.values()]
+})
 const shooterGroups = computed(() => {
   const groups = { allies: [], enemies: [], unknown: [] }
-  const count = {}
-  for (const s of shots.value) {
-    const key = s.shooter_eid ?? `#${s.index}`
-    count[key] = (count[key] || 0) + 1
+  for (const option of shooterOptions.value) {
+    const group = option.team === 'ally' ? 'allies' : option.team === 'enemy' ? 'enemies' : 'unknown'
+    groups[group].push(option)
   }
-  const seen = new Set()
-  for (const s of shots.value) {
-    const key = s.shooter_eid ?? `#${s.index}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    const entry = { key, eid: s.shooter_eid ?? null, name: playerName(s.shooter_name), n: count[key], isAuthor: !!s.is_author }
-    if (s.shooter_team === 'ally') groups.allies.push(entry)
-    else if (s.shooter_team === 'enemy') groups.enemies.push(entry)
-    else groups.unknown.push(entry)
-  }
-  const byCount = (a, b) => b.n - a.n
-  groups.allies.sort((a, b) => (b.isAuthor ? 1 : 0) - (a.isAuthor ? 1 : 0) || byCount(a, b))
-  groups.enemies.sort(byCount)
-  groups.unknown.sort(byCount)
   return groups
 })
-
-/** 三态分组按固定顺序摊平；序号即 DOM 选项值（DOM 里不出现内部 id），筛选时回查 eid。 */
-const shooterOptions = computed(() => [
-  ...shooterGroups.value.allies, ...shooterGroups.value.enemies, ...shooterGroups.value.unknown,
-])
-
-const shooterGroupsIndexed = computed(() => {
-  let offset = 0
-  const withIndex = (list) => list.map((o) => ({ ...o, idx: String(offset++) }))
-  return {
-    allies: withIndex(shooterGroups.value.allies),
-    enemies: withIndex(shooterGroups.value.enemies),
-    unknown: withIndex(shooterGroups.value.unknown),
-  }
-})
-
-const selectedShooter = computed(() =>
-  shooter.value === 'all' ? null : shooterOptions.value[Number(shooter.value)] ?? null)
-
+const selectedShooter = computed(() => shooterOptions.value.find((option) => option.value === shooter.value))
+const ownShots = computed(() => shots.value.filter(isOwnShot))
 const filteredShots = computed(() => {
+  if (shooter.value === 'own') return ownShots.value
+  if (shooter.value === 'all') return shots.value
   const selected = selectedShooter.value
-  if (!selected) return shots.value
-  return shots.value.filter((s) => (s.shooter_eid ?? `#${s.index}`) === selected.key)
+  return selected ? shots.value.filter((shot) => (shot.shooter_eid ?? `unknown-${shot.index}`) === selected.key) : []
+})
+const scopeTitle = computed(() => {
+  if (shooter.value === 'own') return t('agentShots.my_shots')
+  if (shooter.value === 'all') return t('agentShots.all_shooters')
+  return selectedShooter.value?.tankName || t('agentShots.shooter')
+})
+const scopeSubtitle = computed(() => {
+  if (shooter.value === 'own') {
+    const own = shooterOptions.value.find((option) => option.isAuthor)
+    const recordedName = recorderTankName.value.trim()
+    return own ? `${own.tankName} · ${own.name}`
+      : recordedName && !/^#?\d+$/.test(recordedName) ? recordedName : t('agentShots.own_shots_hint')
+  }
+  return selectedShooter.value?.name || t('agentShots.all_shots_hint')
 })
 
 /**
@@ -391,12 +411,9 @@ const shotSummary = computed(() => {
   const total = rows.length
   const hits = rows.filter(isShotHit).length
   const pens = rows.filter((s) => (s.is_author ? s.hit_flags & 0x0010 : s.game_hit_result === 3)).length
-  const rics = rows.filter((s) => (s.is_author ? s.hit_flags & 0x0008 : false)).length
-  const heHits = rows.filter((s) => s.is_author && s.hit_flags & 0x1000).length
-  const kills = rows.filter((s) => s.is_kill).length
   const damage = rows.reduce((sum, s) => sum + (s.damage || 0), 0)
   return {
-    total, hits, pens, rics, heHits, kills, damage,
+    total, hits, pens, damage,
     hitRate: total ? (100 * hits) / total : 0,
     penRate: hits ? (100 * pens) / hits : 0,
   }
@@ -408,9 +425,7 @@ const summaryStats = computed(() => {
     { key: 'shots', label: t('agentShots.stat_shots'), value: String(s.total) },
     { key: 'hit', label: t('agentShots.stat_hit'), value: `${s.hitRate.toFixed(0)}%`, sub: `${s.hits}/${s.total}` },
     { key: 'pen', label: t('agentShots.stat_pen'), value: `${s.penRate.toFixed(0)}%`, sub: `${s.pens}/${s.hits}` },
-    { key: 'damage', label: t('agentShots.stat_dmg'), value: String(s.damage) },
-    { key: 'ric_he', label: t('agentShots.stat_ric_he'), value: `${s.rics} / ${s.heHits}` },
-    { key: 'kills', label: t('agentShots.stat_kills'), value: String(s.kills) },
+    { key: 'damage', label: t('agentShots.recorded_damage'), value: String(s.damage) },
   ]
 })
 
@@ -440,7 +455,7 @@ const detailOpen = computed(() => selectedIndex.value != null)
 const isOverlay = computed(() => layout.value === 'compact')
 
 let observer = null
-let detailPane = null
+const detailPane = ref(null)
 let lastTrigger = null
 
 function applyLayout(width) {
@@ -450,7 +465,7 @@ function applyLayout(width) {
 function selectShot(index, event) {
   selectedIndex.value = index
   lastTrigger = event?.currentTarget ?? null
-  if (isOverlay.value) nextTick(() => detailPane?.focus?.())
+  if (isOverlay.value) nextTick(() => detailPane.value?.focus?.())
 }
 
 function closeDetail() {
@@ -498,6 +513,18 @@ function onDetailKeydown(event) {
     closeDetail()
     return
   }
+  if (event.key === 'Tab' && isOverlay.value) {
+    const controls = [...(detailPane.value?.querySelectorAll('button:not(:disabled), summary, [tabindex="0"]') || [])]
+    const first = controls[0], last = controls.at(-1)
+    if (event.shiftKey && (event.target === first || event.target === detailPane.value)) {
+      event.preventDefault()
+      last?.focus()
+    } else if (!event.shiftKey && event.target === last) {
+      event.preventDefault()
+      first?.focus()
+    }
+    return
+  }
   if (isFormControl(event.target)) return
   if (event.key === 'ArrowLeft' && goToAdjacentShot(-1)) event.preventDefault()
   else if (event.key === 'ArrowRight' && goToAdjacentShot(1)) event.preventDefault()
@@ -530,29 +557,6 @@ function onDetailPointerUp(event) {
  * 在 3D 装甲查看器里复现这一发：装甲查看器属于坦克百科侧（独立页面），
  * 工作台只把发射数据交出去（本地交接通道，无服务端），导航仍走 router。
  */
-async function resolveShellIdx(s) {
-  if (!s.shell_id || !s.shooter_tank_id) return null
-  try {
-    const data = await fetchLocalShotTankData(s.shooter_tank_id)
-    const cfgs = data.configs || []
-    // 优先在实际搭载配置（annotateMountedConfigs 注入的 shooter_config_idx）内匹配：
-    // 同一弹种存在于多门炮的弹表时，全配置倒序扫描可能命中未搭载炮的配置——
-    // scfg 与弹下标必须与射手实际配置同源，否则查看器按 A 配置装配射手却加载 B 弹表
-    console.log('[dbg-rsi]', JSON.stringify({ sci: s.shooter_config_idx, sid: s.shell_id, stid: s.shooter_tank_id, ncfg: cfgs.length, cfgs }))
-    const pinned = Number.isInteger(s.shooter_config_idx) && cfgs[s.shooter_config_idx]
-      ? (cfgs[s.shooter_config_idx].shell_global_ids || []).indexOf(s.shell_id)
-      : -1
-    if (pinned >= 0) return { cfg: s.shooter_config_idx, idx: pinned }
-    for (let ci = cfgs.length - 1; ci >= 0; ci--) {
-      const idx = (cfgs[ci].shell_global_ids || []).indexOf(s.shell_id)
-      if (idx >= 0) return { cfg: ci, idx }
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
 async function openInViewer(s) {
   if (!requireFeature(Feature.PLAYBACK_3D)) return
   if (!rowHas3d(s)) return
@@ -560,31 +564,19 @@ async function openInViewer(s) {
   const tank = s.target_tank_id || shooterTank || 0
   if (!tank) return
   // **点击时刻的射击快照**贯穿交接与导航（评审 P2）：storeShotsForViewer 在调用时
-  // 同步序列化（点击时版本），而 resolveShellIdx 的 await 期间后台配置注解可能就地
+  // 同步序列化（点击时版本），而 shotViewerQuery 的 await 期间后台配置注解可能就地
   // 修改 live 对象——继续读 live 会得到「交接 JSON 按点击时配置装配模型/炮口、URL
   // scfg 按注解后配置选弹表」的错位组合。快照后两处消费同一版本；未注解字段在
-  // resolveShellIdx / tankViewer 内各自走既有回退，语义一致。
+  // shotViewerQuery / tankViewer 内各自走既有回退，语义一致。
   // s 是 reactive proxy（selectedShot 派生），structuredClone 不可克隆 → JSON 往返
   // （shot facet 全为可 JSON 值，与 storeShotsForViewer 的序列化口径一致）。
   s = JSON.parse(JSON.stringify(s))
-  storeShotsForViewer(shots.value)
-  const hit = await resolveShellIdx(s)
-  if (!requireFeature(Feature.PLAYBACK_3D)) return
-  const shellIdx = hit ? hit.idx : (s.is_author && s.shell_slot != null) ? s.shell_slot : null
-  // 组件不碰 history：目的地交给工作台注入的 router owner
-  props.navigate?.({
-    query: {
-      view: 'agent-armor',
-      tank: String(tank),
-      ...(shooterTank ? { shooter: String(shooterTank) } : {}),
-      shot: String(s.index),
-      ...(shellIdx != null ? { shell: String(shellIdx) } : {}),
-      ...(hit && hit.cfg != null ? { scfg: String(hit.cfg) } : {}),
-      ...(s.target_config_idx != null ? { config: String(s.target_config_idx) } : {}),
-      world: '1',
-      heatmap: '1',
-    },
-  })
+  const sequence = parseSeq
+  storeShotsForViewer(JSON.parse(JSON.stringify(filteredShots.value.filter(rowHas3d))))
+  const query = await shotViewerQuery(s)
+  if (sequence !== parseSeq || selectedIndex.value !== s.index || !props.active || !query || !requireFeature(Feature.PLAYBACK_3D)) return
+  // Routing remains owned by the workspace. Both entry and viewer navigation share one config resolver.
+  props.navigate?.({ query })
 }
 
 onMounted(() => {
@@ -623,28 +615,36 @@ onBeforeUnmount(() => {
         <p class="shots-cause">{{ authorError.slice(0, 160) }}</p>
       </Banner>
 
+      <header class="shots-overview">
+        <div class="shots-scope">
+          <h2>{{ scopeTitle }}</h2>
+          <p>{{ scopeSubtitle }}</p>
+        </div>
+        <div class="shots-filter">
+          <label class="shots-filter-label" for="shots-shooter-select">{{ $t('agentShots.shooter') }}</label>
+          <select id="shots-shooter-select" v-model="shooter" class="shots-select" data-testid="shots-shooter-select">
+            <option value="own">{{ $t('agentShots.my_shots') }} ({{ ownShots.length }})</option>
+            <option value="all">{{ $t('agentShots.all_shooters') }} ({{ shots.length }})</option>
+            <template v-for="(options, group) in shooterGroups" :key="group">
+              <optgroup v-if="options.length" :label="$t(`agentShots.${group === 'unknown' ? 'unknown_side' : group}`)">
+                <option v-for="option in options" :key="option.key" :value="option.value">{{ option.tankName }} · {{ option.name }} ({{ option.n }})</option>
+              </optgroup>
+            </template>
+          </select>
+        </div>
+      </header>
       <StatStrip :stats="summaryStats" />
-
-      <div v-if="shooterOptions.length > 1" class="shots-filter">
-        <label class="shots-filter-label" for="shots-shooter-select">{{ $t('agentShots.shooter') }}</label>
-        <select id="shots-shooter-select" v-model="shooter" class="shots-select" data-testid="shots-shooter-select">
-          <option value="all">{{ $t('agentShots.all_shooters') }} ({{ shots.length }})</option>
-          <optgroup v-if="shooterGroupsIndexed.allies.length" :label="$t('agentShots.allies')">
-            <option v-for="o in shooterGroupsIndexed.allies" :key="o.key" :value="o.idx">{{ o.name }} ({{ o.n }})</option>
-          </optgroup>
-          <optgroup v-if="shooterGroupsIndexed.enemies.length" :label="$t('agentShots.enemies')">
-            <option v-for="o in shooterGroupsIndexed.enemies" :key="o.key" :value="o.idx">{{ o.name }} ({{ o.n }})</option>
-          </optgroup>
-          <optgroup v-if="shooterGroupsIndexed.unknown.length" :label="$t('agentShots.unknown_side')">
-            <option v-for="o in shooterGroupsIndexed.unknown" :key="o.key" :value="o.idx">{{ o.name }} ({{ o.n }})</option>
-          </optgroup>
-        </select>
+      <p class="shots-recording-hint">{{ $t('agentShots.recording_hint') }}</p>
+      <div v-if="!filteredShots.length" class="shots-empty-state" data-testid="shots-no-shots">
+        <strong>{{ $t('agentShots.no_shots') }}</strong>
+        <p>{{ $t(shooter === 'own' ? 'agentShots.no_own_shots' : 'agentShots.no_filtered_shots') }}</p>
+        <AppButton v-if="shooter === 'own' && shots.length" @click="shooter = 'all'">{{ $t('agentShots.browse_all_shots') }}</AppButton>
       </div>
-
-      <div v-if="!filteredShots.length" class="shots-note" data-testid="shots-no-shots">{{ $t('agentShots.no_shots') }}</div>
       <div v-else class="shots-split" :class="[`is-${layout}`, { 'has-detail': detailOpen }]">
+        <div class="shot-master">
+          <div class="shot-list-heading"><h3>{{ $t('agentShots.shot_sequence') }}</h3><span>{{ $t('agentShots.shot_count', { count: filteredShots.length }) }}</span></div>
         <ul class="shot-list" :aria-label="$t('agentShots.title')">
-          <li v-for="s in filteredShots" :key="s.index">
+          <li v-for="(s, position) in filteredShots" :key="s.index">
             <button
               type="button"
               class="shot-row"
@@ -653,18 +653,18 @@ onBeforeUnmount(() => {
               :data-testid="`shot-row-${s.index}`"
               @click="selectShot(s.index, $event)"
             >
-              <span class="shot-time">{{ formatPlaybackClock(s.time_s) }}</span>
+              <span class="shot-time"><span class="shot-ordinal">{{ position + 1 }}</span><span class="shot-clock">{{ formatPlaybackClock(s.time_s) }}</span></span>
               <span class="shot-path">
                 <span class="shot-names">
-                  <span class="shot-name">{{ playerName(s.shooter_name) }}</span>
+                  <span class="shot-vehicle"><span class="shot-name"><TankClassIcon :tank-class="s.shooter_tank_class" />{{ tankName(s, 'shooter') }}</span><span class="shot-player">{{ playerName(s.shooter_name) }}</span></span>
                   <span class="shot-arrow" aria-hidden="true">→</span>
-                  <span class="shot-name">{{ s.target_name ? playerName(s.target_name) : '—' }}</span>
+                  <span class="shot-vehicle"><span class="shot-name"><TankClassIcon v-if="s.target_eid != null" :tank-class="s.target_tank_class" />{{ targetName(s) }}</span><span v-if="s.target_eid != null" class="shot-player">{{ playerName(s.target_name) }}</span></span>
                 </span>
                 <span class="shot-meta">
                   <Badge :text="resultBadge(s).text" :tone="resultBadge(s).tone" />
                   <Badge v-if="shellBadge(s).label" :text="shellBadge(s).label" :tone="shellBadge(s).tone" />
                   <span v-if="shellBadge(s).pen" class="shot-dim">{{ shellBadge(s).pen }} mm</span>
-                  <span v-if="s.damage" class="shot-dmg">{{ s.damage }}</span>
+                  <span v-if="s.damage" class="shot-dmg">{{ $t('agentShots.damage_value', { damage: s.damage }) }}</span>
                   <span v-if="s.is_kill" class="shot-kill">{{ $t('agentShots.stat_kills') }}</span>
                   <span v-if="qualityIssues(s).length" class="shot-flag" :title="qualityIssues(s).join('; ')">!</span>
                 </span>
@@ -672,6 +672,7 @@ onBeforeUnmount(() => {
             </button>
           </li>
         </ul>
+        </div>
 
         <aside
           v-if="detailOpen"
@@ -679,13 +680,15 @@ onBeforeUnmount(() => {
           class="shot-detail"
           tabindex="-1"
           data-testid="shot-inspector"
+          :role="isOverlay ? 'dialog' : undefined"
+          :aria-modal="isOverlay ? 'true' : undefined"
           :aria-label="$t('agentShots.inspector_title')"
           @pointerdown="onDetailPointerDown"
           @pointerup="onDetailPointerUp"
           @pointercancel="swipeStart = null"
         >
           <header class="shot-detail-head">
-            <h3 class="shot-detail-title">{{ $t('agentShots.inspector_title') }}</h3>
+            <div><h3 class="shot-detail-title">{{ $t('agentShots.inspector_title') }}</h3><p class="shot-detail-position">{{ $t('agentShots.shot_position', { current: selectedPosition + 1, total: filteredShots.length }) }} · {{ formatPlaybackClock(selectedShot.time_s) }}</p></div>
             <div class="shot-detail-nav">
               <!-- 滑动是快捷方式，按钮是可发现 / 可键盘操作的等价路径（首尾各自 disabled，不循环） -->
               <button
@@ -709,10 +712,19 @@ onBeforeUnmount(() => {
               <AppButton size="sm" data-testid="shot-detail-close" @click="closeDetail">{{ $t('agentShots.close') }}</AppButton>
             </div>
           </header>
+          <div class="shot-matchup">
+            <div><span class="shot-player">{{ $t('agentShots.col_shooter') }}</span><strong><TankClassIcon :tank-class="selectedShot.shooter_tank_class" />{{ tankName(selectedShot, 'shooter') }}</strong><span class="shot-player">{{ playerName(selectedShot.shooter_name) }}</span></div>
+            <span class="shot-arrow" aria-hidden="true">→</span>
+            <div><span class="shot-player">{{ $t('agentShots.col_target') }}</span><strong><TankClassIcon v-if="selectedShot.target_eid != null" :tank-class="selectedShot.target_tank_class" />{{ targetName(selectedShot) }}</strong><span v-if="selectedShot.target_eid != null" class="shot-player">{{ playerName(selectedShot.target_name) }}</span></div>
+          </div>
+          <AppButton
+            v-if="rowHas3d(selectedShot)"
+            variant="primary"
+            data-testid="shot-open-viewer"
+            @click="openInViewer(selectedShot)"
+          >{{ $t('agentShots.open_viewer') }}</AppButton>
           <dl class="shot-detail-grid">
             <div class="shot-detail-row"><dt>{{ $t('agentShots.col_time') }}</dt><dd>{{ formatPlaybackClock(selectedShot.time_s) }}</dd></div>
-            <div class="shot-detail-row"><dt>{{ $t('agentShots.col_shooter') }}</dt><dd>{{ playerName(selectedShot.shooter_name) }}</dd></div>
-            <div class="shot-detail-row"><dt>{{ $t('agentShots.col_target') }}</dt><dd>{{ selectedShot.target_name ? playerName(selectedShot.target_name) : '—' }}</dd></div>
             <div class="shot-detail-row"><dt>{{ $t('agentShots.col_shell') }}</dt><dd>
               <Badge v-if="shellBadge(selectedShot).label" :text="shellBadge(selectedShot).label" :tone="shellBadge(selectedShot).tone" />
               <span v-else class="shot-dim">{{ $t('agentShots.shell_unknown') }}</span>
@@ -731,22 +743,16 @@ onBeforeUnmount(() => {
             </div>
           </dl>
 
-          <div v-if="qualityIssues(selectedShot).length" class="shot-detail-quality">
-            <h4>{{ $t('agentShots.detail_quality') }}</h4>
+          <details v-if="qualityIssues(selectedShot).length" class="shot-detail-quality">
+            <summary>{{ $t('agentShots.detail_quality') }} · {{ qualityIssues(selectedShot).length }}</summary>
             <ul>
               <li v-for="issue in qualityIssues(selectedShot)" :key="issue">{{ issue }}</li>
             </ul>
-          </div>
+          </details>
 
           <p class="shot-detail-hint">{{ $t('agentShots.inspector_hint') }}</p>
-          <AppButton
-            v-if="rowHas3d(selectedShot)"
-            variant="primary"
-            size="sm"
-            data-testid="shot-open-viewer"
-            @click="openInViewer(selectedShot)"
-          >{{ $t('agentShots.open_viewer') }}</AppButton>
         </aside>
+        <div v-else-if="layout === 'expanded'" class="shot-detail-placeholder"><h3>{{ $t('agentShots.select_shot') }}</h3><p>{{ $t('agentShots.select_shot_hint') }}</p></div>
       </div>
     </template>
   </div>
@@ -755,15 +761,31 @@ onBeforeUnmount(() => {
 <style scoped>
 /* 配色一律走语义 token（两档主题同一份规则）；容器查询决定 Master–Detail 分档，
    不按视口——工作台可能被抽屉挤窄。 */
-.shots-pane { container-type: inline-size; display: grid; gap: var(--space-3); }
+.shots-pane { container-type: inline-size; display: grid; gap: var(--space-3); min-width: 0; }
+.shots-overview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.shots-scope { min-width: 0; }
+.shots-scope h2 { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
+.shots-scope p, .shots-recording-hint { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+.shots-recording-hint { margin: 0; }
+.shots-empty-state { display: grid; justify-items: start; gap: var(--space-2); padding: var(--space-6); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); color: var(--color-text-primary); }
+.shots-empty-state p { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
+.shot-master { min-width: 0; }
+.shot-list-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-block-end: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); }
+.shot-list-heading h3 { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
+.shot-detail-placeholder { padding: var(--space-6); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); color: var(--color-text-secondary); }
+.shot-detail-placeholder h3 { margin: 0 0 var(--space-2); font: var(--type-h3); }
+.shot-detail-placeholder p { margin: 0; font: var(--type-body); }
 
 .shots-note { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 .shots-cause { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
 
-.shots-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.shots-filter { display: grid; gap: var(--space-1); min-width: 0; max-width: 100%; }
 .shots-filter-label { color: var(--color-text-secondary); font: var(--type-caption); }
 .shots-select {
   min-height: var(--control-h-md);
+  max-width: 100%;
+  width: 100%;
+  min-width: 0;
   padding: 0 var(--space-2);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
@@ -774,7 +796,7 @@ onBeforeUnmount(() => {
 .shots-select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 .shots-split { position: relative; display: grid; gap: var(--space-4); align-items: start; }
-.shots-split.is-expanded { grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); }
+.shots-split.is-expanded { grid-template-columns: minmax(0, 1fr) minmax(0, var(--shot-detail-width)); }
 
 .shot-list {
   margin: 0;
@@ -792,7 +814,7 @@ onBeforeUnmount(() => {
   gap: var(--space-3);
   width: 100%;
   min-height: var(--row-h);
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-3);
   border: 0;
   border-block-end: 1px solid var(--color-border-subtle);
   background: transparent;
@@ -805,10 +827,13 @@ onBeforeUnmount(() => {
 .shot-row.is-selected { background: var(--color-surface-3); }
 .shot-row:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 
-.shot-time { flex: none; width: 5.5ch; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
-.shot-path { display: grid; gap: 2px; min-width: 0; flex: 1; }
-.shot-names { display: flex; gap: var(--space-1); min-width: 0; }
-.shot-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot-time { display: grid; gap: var(--space-1); flex: none; width: 5.5ch; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.shot-ordinal { color: var(--color-text-tertiary); font: var(--type-caption); }
+.shot-path { display: grid; gap: var(--space-2); min-width: 0; flex: 1; }
+.shot-names { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: var(--space-2); min-width: 0; }
+.shot-vehicle { display: grid; gap: var(--space-1); min-width: 0; }
+.shot-player { color: var(--color-text-secondary); font: var(--type-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot-name { display: flex; align-items: center; gap: var(--space-1); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shot-arrow { flex: none; color: var(--color-text-tertiary); }
 .shot-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .shot-dim { color: var(--color-text-secondary); font: var(--type-caption); }
@@ -818,6 +843,7 @@ onBeforeUnmount(() => {
 
 .shot-detail {
   display: grid;
+  min-width: 0;
   gap: var(--space-3);
   align-content: start;
   padding: var(--space-3) var(--space-4);
@@ -826,8 +852,13 @@ onBeforeUnmount(() => {
   background: var(--color-surface-1);
 }
 .shot-detail:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.shot-detail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.shot-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .shot-detail-title { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
+.shot-detail-position { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
+.shot-matchup { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--space-2); padding: var(--space-3); background: var(--color-surface-2); border-radius: var(--radius-md); }
+.shot-matchup > div { display: grid; gap: var(--space-1); min-width: 0; }
+.shot-matchup strong { display: flex; align-items: center; gap: var(--space-1); color: var(--color-text-primary); font: var(--type-h3); overflow-wrap: anywhere; }
+.shot-matchup strong :deep(svg), .shot-name :deep(svg) { flex: none; }
 .shot-detail-nav { display: flex; align-items: center; gap: var(--space-1); }
 .shot-nav-btn {
   display: inline-flex;
@@ -848,24 +879,16 @@ onBeforeUnmount(() => {
 .shot-detail-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .shot-detail-row dt { color: var(--color-text-secondary); font: var(--type-caption); }
 .shot-detail-row dd { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--color-text-primary); font: var(--type-body); font-variant-numeric: tabular-nums; }
-.shot-detail-quality h4 { margin: 0 0 var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); }
+.shot-detail-quality summary { padding-block: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); cursor: pointer; }
+.shot-detail-quality summary:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .shot-detail-quality ul { margin: 0; padding-inline-start: var(--space-4); color: var(--color-text-secondary); font: var(--type-caption); }
 .shot-detail-hint { margin: 0; color: var(--color-text-tertiary); font: var(--type-caption); }
 
-/* medium：选中后成为推开式侧栏——列表让位（padding）不遮盖内容；
+/* medium：选中后增加详情列——列表让位，内容高度由 grid 自然撑开；
    compact：整屏面板 + 遮罩，关闭后焦点回到触发它的那一行 */
-.shots-split { --shot-detail-w: min(360px, 42cqi); }
+.shots-split { --shot-detail-w: min(var(--shot-detail-width), 42cqi); }
 
-.shots-split.is-medium.has-detail .shot-list { margin-inline-end: calc(var(--shot-detail-w) + var(--space-4)); }
-
-.shots-split.is-medium .shot-detail {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-end: 0;
-  width: var(--shot-detail-w);
-  max-height: 100%;
-  overflow-y: auto;
-}
+.shots-split.is-medium.has-detail { grid-template-columns: minmax(0, 1fr) minmax(0, var(--shot-detail-w)); }
 
 .shots-split.is-compact .shot-detail {
   position: fixed;
@@ -895,6 +918,7 @@ onBeforeUnmount(() => {
 @media (pointer: coarse) {
   .shot-row { min-height: var(--hit-min); }
   .shots-select { min-height: var(--control-h-md); }
+  .shot-detail-quality summary { min-height: var(--hit-min); display: flex; align-items: center; }
   .shot-nav-btn { min-width: var(--hit-min); min-height: var(--hit-min); }
 }
 </style>

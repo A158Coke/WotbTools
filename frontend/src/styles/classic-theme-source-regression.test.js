@@ -34,10 +34,10 @@ function ruleBody(src, selector) {
 
 describe('Classic 主题 residual-dark 回归（语义 token 契约）', () => {
   it('应用壳列面板/列面板头/列列表 不得再写死深色面', () => {
-    expect(ruleBody(app, '\\.colpanel ')).toContain('background: var(--bg-card)')
-    expect(ruleBody(app, '\\.colpanel-head')).toContain('background: var(--bg-card2)')
-    expect(ruleBody(app, '\\.cph-title')).toContain('color: var(--text-heading)')
-    expect(ruleBody(app, '\\.collist li:hover')).toContain('background: var(--bg-list-hover)')
+    expect(ruleBody(app, '\\.colpanel ')).toContain('background: var(--color-surface-1)')
+    expect(ruleBody(app, '\\.colpanel-head')).toContain('background: var(--color-surface-2)')
+    expect(ruleBody(app, '\\.cph-title')).toContain('color: var(--color-text-primary)')
+    expect(ruleBody(app, 'tr:hover td, \\.collist li:hover')).toContain('background: var(--color-surface-2)')
     expect(ruleBody(app, '\\.colpanel ')).not.toContain('rgba(15, 21, 25')
     expect(ruleBody(app, '\\.colpanel-head')).not.toContain('#171e22')
   })

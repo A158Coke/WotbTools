@@ -12,6 +12,7 @@ import { FIXTURE_TANK_ID, FIXTURE_TANK_DATA, startFixtureAssetPack } from './bro
 
 const shooterId = FIXTURE_TANK_ID + 1
 const labels = featureMessages.zh.armor
+const penetrationText = labels.outcomes.penetration
 const shellFailurePrefix = labels.load_failed.replace('{phase}', labels.phase_shell_data).replace('{msg}', '')
 const tankFailurePrefix = labels.load_failed.replace('{phase}', labels.phase_tank_data).replace('{msg}', '')
 const ammo = structuredClone(FIXTURE_TANK_DATA)
@@ -93,8 +94,9 @@ try {
   await waitHeld()
   assert.equal(await page.evaluate(`['#shooter-select', '#target-select'].every(id => document.querySelector(id).disabled)`), true, 'bootstrap disables vehicle selection')
   assert.equal(await page.evaluate(`(() => {
-    const status = document.querySelector('#tank-selection-status');
-    return status.getClientRects().length > 0 && status.textContent === ${JSON.stringify(labels.picker_loading)};
+    // The shot's parameters are collapsed; initialization feedback belongs to the visible scene loading surface.
+    const status = document.querySelector('[data-testid="scene3d-loading"]');
+    return status.getClientRects().length > 0 && status.textContent.includes(${JSON.stringify(labels.loading)});
   })()`), true, 'bootstrap has visible localized feedback')
   for (const id of ['shooter-select', 'target-select']) {
     const point = await page.evaluate(`(() => { const r = document.getElementById('${id}').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`)
@@ -111,7 +113,7 @@ try {
   assert.equal(await page.evaluate('!!document.querySelector("[data-testid=scene3d-loading]")'), true, 'loading remains visible')
   hold = false
   await Promise.all(held.splice(0).map(requestId => release(requestId)))
-  await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes('PENETRATION'), { timeout: 30000, label: 'automatic penetration after ammo release' })
+  await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes(penetrationText), { timeout: 30000, label: 'automatic penetration after ammo release' })
   assert.equal(await page.evaluate('document.querySelector("#shell-select").value'), '1', 'replay ammo selected before judgment')
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1, 'exactly one initial judgment')
   assert.equal(await page.evaluate(`['#shooter-select', '#target-select'].every(id => !document.querySelector(id).disabled) && document.querySelector('#tank-selection-status').hidden`), true, 'ready viewer restores selection and hides the loading hint')
@@ -128,7 +130,7 @@ try {
   await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { label: 'target failure' })
   assert.equal(await page.evaluate(`document.querySelector('[data-testid="scene3d-error"]').textContent.includes(${JSON.stringify(tankFailurePrefix)})`), true, 'target failure has the tank-data phase')
   await page.evaluate('document.querySelector("[data-testid=scene3d-retry]").click()')
-  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('[data-testid="scene3d-loading"]') && document.querySelector('#traj-info')?.textContent.includes('PENETRATION'), { timeout: 30000, label: 'target retry recovers' })
+  await page.waitForValue(`!document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('[data-testid="scene3d-loading"]') && document.querySelector('#traj-info')?.textContent.includes(${JSON.stringify(penetrationText)})`, value => value === true, { timeout: 30000, label: 'target retry recovers' })
   assert.equal(shooterRequests, shooterRequestsBeforeTargetFailure, 'target retry does not reload ready shooter ammo')
   console.log('[shot-readiness] PASS: target-only failure and retry reuse ready ammo')
 
@@ -151,7 +153,7 @@ try {
   await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { label: 'shooter retry failure' })
   assert.equal(await page.evaluate(`document.querySelector('[data-testid="scene3d-error"]').textContent.includes(${JSON.stringify(shellFailurePrefix)})`), true, 'shooter retry failure has the shell-data phase')
   await page.evaluate('document.querySelector("[data-testid=scene3d-retry]").click()')
-  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('[data-testid="scene3d-loading"]') && document.querySelector('#traj-info')?.textContent.includes('PENETRATION'), { timeout: 30000, label: 'retry reloads changed shooter ammo and target' })
+  await page.waitForValue(`!document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('[data-testid="scene3d-loading"]') && document.querySelector('#traj-info')?.textContent.includes(${JSON.stringify(penetrationText)})`, value => value === true, { timeout: 30000, label: 'retry reloads changed shooter ammo and target' })
   assert.equal(await page.evaluate('document.querySelector("#shell-select").options.length'), 1)
   console.log('[shot-readiness] PASS: shooter switch failure and retry')
 
@@ -182,7 +184,7 @@ try {
   // Retry must rebuild initialization, including shooter data, after an ammo failure.
   response = ammo
   await page.evaluate('document.querySelector("[data-testid=scene3d-error] button").click()')
-  await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes('PENETRATION'), { timeout: 30000, label: 'retry reloads ammo' })
+  await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes(penetrationText), { timeout: 30000, label: 'retry reloads ammo' })
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1)
   console.log('[shot-readiness] PASS: invalid ammo error and recovery')
 
@@ -231,7 +233,7 @@ try {
     storeShotsForViewer([${JSON.stringify({ ...shot, shooter_tank_id: FIXTURE_TANK_ID })}]);
   })()`)
   await page.goto(plainUrl + '&shot=1&scfg=0&config=1&shell=0')
-  await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes('PENETRATION'), { timeout: 30000, label: 'same-tank replay judgment' })
+  await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes(penetrationText), { timeout: 30000, label: 'same-tank replay judgment' })
   await assertShellTable(1, [200, 300])
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1)
   console.log('[shot-readiness] PASS: same-tank shot replay keeps shooter scfg and replay shell matching')

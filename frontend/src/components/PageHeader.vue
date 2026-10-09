@@ -20,15 +20,21 @@ defineProps({
 <style scoped>
 .page-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
   flex-wrap: wrap;
-  margin-bottom: var(--space-6);
+  padding-block: var(--space-2) var(--space-5);
+  margin-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
-.page-header-text { min-width: 0; }
+.page-header-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .page-header-title { margin: 0; color: var(--color-text-primary); font: var(--type-h1); }
-.page-header-description { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-body); }
-.page-header-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.page-header-description { max-width: var(--reading-measure); margin: var(--space-2) 0 0; color: var(--color-text-secondary); font: var(--type-body); }
+.page-header-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
+@media (width < 768px) {
+  .page-header { align-items: flex-start; gap: var(--space-3); padding-bottom: var(--space-4); margin-bottom: var(--space-4); }
+  .page-header-actions { max-width: 100%; }
+}
 </style>

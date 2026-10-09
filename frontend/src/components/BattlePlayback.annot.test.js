@@ -2,14 +2,16 @@
 
 // 战局回放地图标注回归测试：工具栏渲染（三语）、画笔绘制/撤回/重做/清空、
 // 橡皮擦点擦、文字标注、overview 切换重置。
-import { describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import zh from '../locales/zh.json'
 import en from '../locales/en.json'
 import ru from '../locales/ru.json'
 import BattlePlayback from './BattlePlayback.vue'
 import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil'
+
+enableAutoUnmount(afterEach)
 
 vi.mock('../data/mapImages', () => ({
   mapImages: {
@@ -50,9 +52,10 @@ function makeOverview() {
   }
 }
 
-function mountAnnot(lang = 'zh') {
+function mountAnnot(lang = 'zh', attachTo) {
   const i18n = createI18n({ locale: lang, fallbackLocale: 'en', messages: { zh, en, ru } })
   return mount(BattlePlayback, {
+    attachTo,
     props: { overview: makeOverview(), seekTo: null, playbackV2: makeBattlePlaybackDataset({ vehicles: [], events: [] }) },
     global: { plugins: [i18n] }
   })
@@ -97,7 +100,7 @@ function svgToCssInverse(sx, sy, view, W, H, rw, rh) {
 /** 在战局回放地图上画一条折线：pen 工具 → down/move/up。 */
 async function drawStroke(wrapper, points) {
   await openAnnotations(wrapper)
-  // 打开标注已自动选中画笔；工具按钮是 toggle，已选中时再点会把它切掉。
+  // 绘图是显式操作；进入标记默认选择工具。
   const pen = wrapper.find('[data-test="pb-annot-pen"]')
   if (!pen.classes().includes('active')) await pen.trigger('click')
   const viewport = wrapper.find('[data-test="pb-viewport"]')
@@ -109,14 +112,14 @@ async function drawStroke(wrapper, points) {
   await flushPromises()
 }
 
-// 注释工具不是 primary transport 的一部分：它挂在 Display 面里（打开即收起 Display）。
+// Marking has a direct entry; drawing is explicit after safe selection mode opens.
 async function openAnnotations(wrapper) {
-  if (!wrapper.find('[data-test="pb-annot-toolbar"]').exists()) {
-    if (!wrapper.find('[data-test="pb-panel-annotation"]').exists()) {
-      await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
-    }
-    await wrapper.get('[data-test="pb-panel-annotation"]').trigger('click')
-  }
+  if (!wrapper.find('[data-test="pb-annot-toolbar"]').exists()) await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
+  await flushPromises()
+}
+async function clickMap(wrapper, x, y, pointerId = 1) {
+  await wrapper.get('[data-test="pb-viewport"]').trigger('pointerdown', { pointerId, clientX: x, clientY: y, pointerType: 'mouse', button: 0 })
+  dispatchPointer('pointerup', { pointerId, clientX: x, clientY: y })
   await flushPromises()
 }
 
@@ -208,7 +211,7 @@ describe('BattlePlayback annotations', () => {
   it('zoom + pan round-trip: stroke and text input land on the pointer', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
-    // 先缩放平移再开标注：打开标注会自动选中画笔，之后的拖拽是画线而不是平移。
+    // 先缩放平移再开标注，随后显式选择画笔。
     setMapLayout(wrapper, 600, 602)
     // 滚轮在 (100,100) 放大 ×1.2 → tx=ty=-20；拖拽 (100,100)→(140,130) 平移 +40/+30
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, clientX: 100, clientY: 100, deltaY: -100 })
@@ -319,23 +322,179 @@ describe('BattlePlayback annotations', () => {
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(false)
   })
 
-  // 打开标注后 activeTool 曾经仍是 null：用户在地图上划一下什么也不会发生，
-  // 得先自己再点一次画笔。打开即应进入可画状态。
-  it('auto-selects the pen when annotations open, so the first stroke draws', async () => {
+  it('starts empty and closed; direct marking entry pauses and selects without drawing or auto-resuming', async () => {
+    const wrapper = mountAnnot()
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-annot-toolbar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-annotation-entry"]').text()).toContain('标记模式')
+    expect(wrapper.findAll('[data-annotation-type]')).toHaveLength(0)
+    await wrapper.get('[data-test="pb-play"]').trigger('click')
+    expect(wrapper.getComponent({ name: 'PlaybackControls' }).props('playing')).toBe(true)
+    await openAnnotations(wrapper)
+    expect(wrapper.find('[data-test="pb-annot-select"]').classes()).toContain('active')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('播放')
+    await clickMap(wrapper, 100, 100)
+    expect(wrapper.findAll('[data-annotation-type]')).toHaveLength(0)
+    await wrapper.get('[data-test="pb-annot-close"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('播放')
+    await openAnnotations(wrapper)
+    await wrapper.get('[data-test="pb-play"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-annot-toolbar"]').exists()).toBe(false)
+    expect(wrapper.getComponent({ name: 'PlaybackControls' }).props('playing')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it.each(['LT', 'MT', 'HT', 'TD'])('places a planned %s marker, edits, moves and undoes without changing replay vehicles', async (tankClass) => {
     const wrapper = mountAnnot()
     await flushPromises()
     setMapLayout(wrapper, 600, 602)
     await openAnnotations(wrapper)
-
-    expect(wrapper.find('[data-test="pb-annot-pen"]').classes()).toContain('active')
-
-    // 不点画笔，直接画
-    const viewport = wrapper.find('[data-test="pb-viewport"]')
-    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 300, clientY: 301 })
+    await wrapper.get(`[data-test="pb-annot-${tankClass}"]`).trigger('click')
+    await clickMap(wrapper, 300, 301)
+    const marker = () => wrapper.get(`[data-test="pb-annot-unit-${tankClass}"]`)
+    expect(marker().text()).toContain(`计划 · ${tankClass}`)
+    expect(marker().attributes('transform')).toBe('translate(383, 384.5)')
+    expect(wrapper.findAll('[data-test="pb-markers"] button')).toHaveLength(0)
+    await wrapper.get('[data-test="pb-annot-name"]').setValue('A 点防守')
+    expect(marker().text()).toContain('A 点防守')
+    await wrapper.findAll('.pb-annot-color')[1].trigger('click')
+    expect(marker().find('path').attributes('fill')).toBe('#ffd166')
+    await wrapper.get('[data-test="pb-viewport"]').trigger('pointerdown', { pointerId: 1, clientX: 300, clientY: 301 })
     dispatchPointer('pointermove', { pointerId: 1, clientX: 360, clientY: 301 })
     dispatchPointer('pointerup', { pointerId: 1, clientX: 360, clientY: 301 })
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(true)
+    expect(Number(marker().attributes('transform').match(/translate\(([^,]+)/)[1])).toBeCloseTo(459.6)
+    await wrapper.get('[data-test="pb-annot-undo"]').trigger('click')
+    expect(marker().attributes('transform')).toBe('translate(383, 384.5)')
+    await clickMap(wrapper, 300, 301)
+    await wrapper.get('[data-test="pb-annot-delete"]').trigger('click')
+    expect(wrapper.find(`[data-test="pb-annot-unit-${tankClass}"]`).exists()).toBe(false)
+    await wrapper.get('[data-test="pb-annot-undo"]').trigger('click')
+    expect(marker().text()).toContain('A 点防守')
+    await wrapper.setProps({ overview: makeOverview() })
+    expect(wrapper.findAll('[data-annotation-type]')).toHaveLength(0)
+    expect(wrapper.find('[data-test="pb-annot-toolbar"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('commits a multipoint route only on Finish and cancels a second route without losing history', async () => {
+    const wrapper = mountAnnot()
+    await flushPromises()
+    setMapLayout(wrapper, 600, 602)
+    await openAnnotations(wrapper)
+    await wrapper.get('[data-test="pb-annot-route"]').trigger('click')
+    await clickMap(wrapper, 100, 100)
+    expect(wrapper.get('[data-test="pb-annot-route-finish"]').attributes('disabled')).toBeDefined()
+    await clickMap(wrapper, 200, 150)
+    await clickMap(wrapper, 300, 100)
+    expect(wrapper.get('[data-test="pb-annot-route-shape"] polyline').attributes('points').split(' ')).toHaveLength(3)
+    expect(wrapper.get('[data-test="pb-annot-undo"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="pb-annot-route-finish"]').trigger('click')
+    expect(wrapper.findAll('[data-test="pb-annot-route-shape"]')).toHaveLength(1)
+    await wrapper.get('[data-test="pb-annot-name"]').setValue('夹击')
+    expect(wrapper.get('[data-test="pb-annot-route-shape"]').text()).toBe('夹击')
+    await wrapper.get('[data-test="pb-annot-route"]').trigger('click')
+    await clickMap(wrapper, 400, 200)
+    await clickMap(wrapper, 400, 300)
+    await wrapper.get('[data-test="pb-annot-route-cancel"]').trigger('click')
+    expect(wrapper.findAll('[data-test="pb-annot-route-shape"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('moves focus from marking tools to the map for Escape, Enter, undo and delete shortcuts', async () => {
+    const wrapper = mountAnnot('zh', document.body)
+    await flushPromises()
+    await openAnnotations(wrapper)
+    const viewport = wrapper.get('[data-test="pb-viewport"]').element
+    async function pickTool(tool) {
+      const button = wrapper.get(`[data-test="pb-annot-${tool}"]`)
+      button.element.focus()
+      await button.trigger('click')
+      expect(document.activeElement).toBe(button.element)
+    }
+    async function keyAtFocus(key, options = {}) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...options })
+      document.activeElement.dispatchEvent(event)
+      await flushPromises()
+      return event.defaultPrevented
+    }
+
+    await pickTool('TD')
+    // Toolbar keys retain native button semantics; the editor must not hijack them.
+    expect(await keyAtFocus('Enter')).toBe(false)
+    expect(await keyAtFocus(' ')).toBe(false)
+    await clickMap(wrapper, 100, 100)
+    expect(document.activeElement).toBe(viewport)
+    expect(wrapper.find('[data-test="pb-annot-unit-TD"]').exists()).toBe(true)
+    const label = wrapper.get('[data-test="pb-annot-name"]')
+    label.element.focus()
+    expect(await keyAtFocus('Delete')).toBe(false)
+    expect(wrapper.find('[data-test="pb-annot-unit-TD"]').exists()).toBe(true)
+
+    await pickTool('route')
+    await clickMap(wrapper, 100, 200)
+    await clickMap(wrapper, 100, 300)
+    expect(document.activeElement).toBe(viewport)
+    expect(await keyAtFocus('Escape')).toBe(true)
+    expect(wrapper.find('[data-test="pb-annot-route-shape"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-annot-unit-TD"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-annot-toolbar"]').exists()).toBe(true)
+
+    await pickTool('route')
+    await clickMap(wrapper, 200, 200)
+    await clickMap(wrapper, 300, 300)
+    expect(document.activeElement).toBe(viewport)
+    expect(await keyAtFocus('Enter')).toBe(true)
+    expect(wrapper.get('[data-test="pb-annot-select"]').classes()).toContain('active')
+    expect(wrapper.find('[data-test="pb-annot-route-shape"]').exists()).toBe(true)
+    expect(await keyAtFocus('z', { metaKey: true })).toBe(true)
+    expect(wrapper.find('[data-test="pb-annot-route-shape"]').exists()).toBe(false)
+    expect(await keyAtFocus('z', { metaKey: true, shiftKey: true })).toBe(true)
+    expect(wrapper.find('[data-test="pb-annot-route-shape"]').exists()).toBe(true)
+
+    await pickTool('select')
+    await clickMap(wrapper, 100, 100)
+    expect(document.activeElement).toBe(viewport)
+    expect(await keyAtFocus('Delete')).toBe(true)
+    expect(wrapper.find('[data-test="pb-annot-unit-TD"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-annot-route-shape"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('second touch and pointer cancellation do not commit accidental markers or route vertices', async () => {
+    const wrapper = mountAnnot()
+    await flushPromises()
+    await openAnnotations(wrapper)
+    await wrapper.get('[data-test="pb-annot-TD"]').trigger('click')
+    const viewport = wrapper.get('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 100, clientY: 100, pointerType: 'touch' })
+    await viewport.trigger('pointerdown', { pointerId: 2, clientX: 200, clientY: 200, pointerType: 'touch' })
+    dispatchPointer('pointerup', { pointerId: 1, clientX: 100, clientY: 100 })
+    dispatchPointer('pointerup', { pointerId: 2, clientX: 200, clientY: 200 })
+    await flushPromises()
+    expect(wrapper.findAll('[data-annotation-type]')).toHaveLength(0)
+    await wrapper.get('[data-test="pb-annot-route"]').trigger('click')
+    await viewport.trigger('pointerdown', { pointerId: 3, clientX: 100, clientY: 100 })
+    dispatchPointer('pointercancel', { pointerId: 3, clientX: 100, clientY: 100 })
+    await flushPromises()
+    expect(wrapper.findAll('[data-annotation-type]')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('IME Enter keeps text editing open', async () => {
+    const wrapper = mountAnnot()
+    await flushPromises()
+    await openAnnotations(wrapper)
+    await wrapper.get('[data-test="pb-annot-text"]').trigger('click')
+    await clickMap(wrapper, 100, 100)
+    const input = wrapper.get('[data-test="pb-text-input"]')
+    await input.setValue('进攻')
+    await input.trigger('keydown', { key: 'Enter', isComposing: true })
+    expect(wrapper.find('[data-test="pb-text-input"]').exists()).toBe(true)
+    expect(wrapper.find('[data-annotation-type="text"]').exists()).toBe(false)
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.find('[data-annotation-type="text"]').text()).toBe('进攻')
+    wrapper.unmount()
   })
 
   // 关闭标注必须同时收起画笔，否则退出后地图上继续画而不是平移。
