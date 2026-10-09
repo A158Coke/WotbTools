@@ -2,6 +2,8 @@
 
 ## Current foundation
 
+`main.js` protects a Web OIDC return before importing the router or rewriting the localhost preview URL. When the query or fragment contains `state` together with `code` or `error`, it awaits the existing `useAuth().initPromise` settlement signal; keycloak-js alone validates and consumes the callback. Only then is `createWebHistory` constructed from the adapter's resulting URL and legacy view aliases canonicalized. Successful fragment callbacks are consumed before the router snapshots history. The provider still uses the SDK's default fragment response mode: recognizing a query-looking URL only delays routing and does not add query-mode support. This presence check never grants authentication. Rejection and the existing 12-second Web watchdog both settle into the existing failed-auth UI; settlement alone does not guarantee every malformed or timed-out URL has been cleaned. Ordinary visits still render while `check-sso` runs; APK startup remains Native-owned and does not wait for this Web callback path. Legacy alias redirects preserve unrelated query values and the hash, including ordinary page anchors.
+
 The application root, [`frontend/src/App.vue`](../../frontend/src/App.vue), only renders Vue Router's outlet. Application concerns live in `frontend/src/app/`:
 
 ```text

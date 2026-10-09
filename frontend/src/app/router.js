@@ -39,7 +39,7 @@ export function createAppRouter(history = createWebHistory()) {
     const view = to.query.view
     const canonical = canonicalView(view)
     if (canonical !== view && LEGACY_VIEW_ALIASES[view]) {
-      return { path: to.path, query: { ...to.query, view: canonical }, replace: true }
+      return { path: to.path, query: { ...to.query, view: canonical }, hash: to.hash, replace: true }
     }
   })
 
