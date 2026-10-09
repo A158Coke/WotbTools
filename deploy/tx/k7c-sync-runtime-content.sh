@@ -4,11 +4,16 @@
 # production surface: sponsor config + referenced sponsor assets, Android version.json
 # + the APK referenced by that manifest. Historical APKs are not copied.
 #
-# `*.staging.json` 是唯一例外，且必须在整树替换前整份带走：android-release 的 stage 会把
-# 「已 stage、未发布」版本的发布身份直接写进这棵树，而 publish 只按公开 URL 校验它——
-# wotbtools.com 由 Caddy 在 TX1/TX2 之间负载，两台中缺一台就可能让 publish 拿到 404
-# 而 fail closed。复制点取 swap 前一刻，使「stage 先写入」与「replica 先换树」两种先后
-# 顺序都安全（见 docs/android/release-process.md §证据的存续）。
+# `*.staging.json` 是唯一例外：android-release 的 stage 会把「已 stage、未发布」版本的发布身份
+# 装进这棵树，而 publish 只按公开 URL 校验它——wotbtools.com 由 Caddy 在 TX1/TX2 之间负载，
+# 两台中缺一台就可能让 publish 拿到 404 而 fail closed。因此整树替换必须整份带走它。
+#
+# **调用方必须已持有宿主部署锁**（Frontend Replica 在 /opt/wotb-tx2/.deploy.lock 下执行本脚本；
+# 人工执行必须自备同一把锁：`WOTB_TX_DEPLOY_LOCK_FILE=/opt/wotb-tx2/.deploy.lock \
+# bash deploy/tx/with-deploy-lock.sh bash k7c-sync-runtime-content.sh`）。stage 侧的证据安装器
+# （deploy/tx/install-staging-evidence.sh）在同一把锁下原子落位，锁让「安装」与「扫描 → 换树」
+# 互斥；只把复制点放在 swap 前一刻并不足够——「扫描结束后、换树前」落地的写入仍会随旧树进
+# .previous（2026-10-09 评审 P1）。见 docs/android/release-process.md §证据的存续。
 set -Eeuo pipefail
 
 readonly SOURCE_BASE="${K7C_RUNTIME_SOURCE_BASE:-http://10.20.0.1:8081}"
@@ -104,9 +109,9 @@ if expected:
     if actual.lower()!=str(expected).lower(): raise SystemExit(f'APK sha256 mismatch: expected={expected} actual={actual}')
 PY
 
-# 未发布版本的 staging evidence 只存在于这棵树里，整树替换前原样带走（见文件头）。
-# 只带走能解析的完整 JSON：并发 stage 可能在换树瞬间正在写同名文件，半截证据比没有更糟
-# ——它会让 publish 死在解析上，而不是给出「未 stage」这个已知且可处置的结论。
+# 未发布版本的 staging evidence 只存在于这棵树里，整树替换前原样带走（见文件头；调用方须已持锁）。
+# 只带走能解析的完整 JSON：锁 + 原子落位已保证「可见即完整」，这条是对历史/外来残留文件的兜底
+# ——半截证据比没有更糟，它会让 publish 死在解析上，而不是给出「未 stage」这个已知且可处置的结论。
 for evidence in "$RUNTIME_ROOT"/android-release/*.staging.json; do
   [ -e "$evidence" ] || continue
   python3 -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$evidence" 2>/dev/null || continue
