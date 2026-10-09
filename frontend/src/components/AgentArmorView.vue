@@ -36,7 +36,7 @@ const webgl = detectWebGL()
 const load = ref({ state: 'loading', progress: null, message: '' })
 /** 重建场景 DOM 的计数：整体重试时换 key，让 tankViewer 拿到全新的按 ID 查找的节点 */
 const attempt = ref(0)
-const PHASE_KEY = { 'armor model': 'armor_model', 'tank model': 'tank_model', 'tank data': 'tank_data', 'tank list': 'tank_list' }
+const PHASE_KEY = { 'armor model': 'armor_model', 'tank model': 'tank_model', 'tank data': 'tank_data', 'tank list': 'tank_list', 'shell data': 'shell_data' }
 
 function onLoadState(next) {
     load.value = { state: next.state, progress: next.progress ?? null, message: next.message || '' }
@@ -129,8 +129,9 @@ onBeforeUnmount(() => {
                     <label class="eq-opt"><input type="checkbox" id="eq-calibrated"> <span class="eq-opt-label">{{ $t('armor.calibrated') }}</span></label>
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
                 </div>
-                <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select">—</button></div>
-                <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select">—</button></div>
+                <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select" disabled>—</button></div>
+                <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select" disabled>—</button></div>
+                <p id="tank-selection-status" role="status">{{ $t('armor.picker_loading') }}</p>
             </div>
         </div>
         <div id="corner-tr">
@@ -324,6 +325,8 @@ onBeforeUnmount(() => {
             text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: all .12s ease;
         }
     .armor-view #tank-selectors .tank-btn:hover { border-color: var(--accent); background: var(--input-bg-hover); }
+    .armor-view #tank-selectors .tank-btn:disabled { color: var(--color-text-tertiary); cursor: wait; }
+    .armor-view #tank-selection-status { margin: var(--space-2) 0 0; color: var(--color-text-secondary); font-size: var(--font-size-caption); }
     .armor-view #shooter-label { color: var(--accent-2); }
     .armor-view #target-label { color: var(--green); }
     .armor-view #tank-picker {

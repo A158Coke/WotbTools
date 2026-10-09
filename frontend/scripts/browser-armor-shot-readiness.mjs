@@ -1,15 +1,19 @@
 /** Single-shot lifecycle gate. Uses real viewer/GLBs/penetration math; only asset
  * responses are delayed/replaced. No screenshots or visual assertions.
  * Separate from the aiming gate: exercises async initialization and route disposal,
- * not pointer gestures. Run: node scripts/browser-armor-shot-readiness.mjs
+ * not pointer gestures. Run: npm run test:browser-armor-shot-readiness
  */
 import assert from 'node:assert/strict'
+import featureMessages from '../src/locales/feature-messages.json' with { type: 'json' }
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 import { FIXTURE_TANK_ID, FIXTURE_TANK_DATA, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
 const shooterId = FIXTURE_TANK_ID + 1
+const labels = featureMessages.zh.armor
+const shellFailurePrefix = labels.load_failed.replace('{phase}', labels.phase_shell_data).replace('{msg}', '')
+const tankFailurePrefix = labels.load_failed.replace('{phase}', labels.phase_tank_data).replace('{msg}', '')
 const ammo = structuredClone(FIXTURE_TANK_DATA)
 ammo.tank_id = shooterId
 // The URL deliberately selects the wrong shell; replay shell_id must win before
@@ -42,10 +46,13 @@ try {
   await page.emulate({ width: 1280, height: 900, touch: false, deviceScaleFactor: 1 })
   const held = []
   const failedSwitchRequests = []
+  const failedTargetRequests = []
   const operations = []
   let hold = true
   let response = ammo
   let failShooterSwitch = false
+  let failTarget = false
+  let shooterRequests = 0
   const release = requestId => send('Fetch.fulfillRequest', {
     requestId, responseCode: 200,
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
@@ -54,18 +61,23 @@ try {
   browser.client.on('Fetch.requestPaused', (event, session) => {
     if (session !== sessionId) return
     if (event.request.url.includes('/tank/' + FIXTURE_TANK_ID + '.json')) {
-      if (failShooterSwitch) {
+      if (failTarget) {
+        failTarget = false
+        failedTargetRequests.push(event.requestId)
+      } else if (failShooterSwitch) {
         failShooterSwitch = false
         failedSwitchRequests.push(event.requestId)
       } else operations.push(send('Fetch.continueRequest', { requestId: event.requestId }))
       return
     }
+    shooterRequests++
     if (hold) held.push(event.requestId)
     else operations.push(release(event.requestId))
   })
   await send('Fetch.enable', { patterns: [shooterId, FIXTURE_TANK_ID].map(id => ({ urlPattern: `*/tank/${id}.json*`, requestStage: 'Request' })) })
   await page.goto(`${origin}/?view=home&ws-auth=1`)
   await page.evaluate(`(async () => {
+    localStorage.setItem('wotb-lang', 'zh');
     const { storeShotsForViewer } = await import('/src/scene/agentData.js');
     storeShotsForViewer([${JSON.stringify(shot)}]);
   })()`)
@@ -77,8 +89,19 @@ try {
     assert.ok(requests.length, 'asset request reached the controlled boundary')
   }
   await waitHeld()
-  // A picker click while bootstrap owns ammo must not launch a competing shooter.
-  await page.evaluate(`document.querySelector('#shooter-select').click(); document.querySelector('#tp-grid .tank-card').click()`)
+  assert.equal(await page.evaluate(`['#shooter-select', '#target-select'].every(id => document.querySelector(id).disabled)`), true, 'bootstrap disables vehicle selection')
+  assert.equal(await page.evaluate(`(() => {
+    const status = document.querySelector('#tank-selection-status');
+    return status.getClientRects().length > 0 && status.textContent === ${JSON.stringify(labels.picker_loading)};
+  })()`), true, 'bootstrap has visible localized feedback')
+  for (const id of ['shooter-select', 'target-select']) {
+    const point = await page.evaluate(`(() => { const r = document.getElementById('${id}').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`)
+    await page.tap({ ...point, touch: false })
+  }
+  assert.equal(await page.evaluate('document.querySelector("#tank-picker").classList.contains("open")'), false, 'disabled selection cannot open the picker')
+  // Synthetic stale inputs must also leave initialization ownership intact.
+  await page.evaluate(`document.querySelector('#shooter-select').dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
+  assert.equal(await page.evaluate('document.querySelector("#tank-picker").classList.contains("open")'), false, 'bootstrap guard also ignores synthetic clicks')
   // Deliberately longer than both old 600/800ms timers. This is an injected slow
   // network interval, not a timing-based assertion about a pointer intermediate state.
   await delay(1800)
@@ -89,7 +112,23 @@ try {
   await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes('PENETRATION'), { timeout: 30000, label: 'automatic penetration after ammo release' })
   assert.equal(await page.evaluate('document.querySelector("#shell-select").value'), '1', 'replay ammo selected before judgment')
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1, 'exactly one initial judgment')
+  assert.equal(await page.evaluate(`['#shooter-select', '#target-select'].every(id => !document.querySelector(id).disabled) && document.querySelector('#tank-selection-status').hidden`), true, 'ready viewer restores selection and hides the loading hint')
   console.log('[shot-readiness] PASS: slow ammo, bootstrap ownership, automatic selection and first judgment')
+
+  // Only target data fails: retry must reuse the already valid shooter ammo.
+  const shooterRequestsBeforeTargetFailure = shooterRequests
+  failTarget = true
+  await page.evaluate(`document.querySelector('#target-select').click(); document.querySelector('#tp-grid .tank-card').click()`)
+  await waitHeld(failedTargetRequests)
+  await Promise.all(failedTargetRequests.splice(0).map(requestId => send('Fetch.fulfillRequest', {
+    requestId, responseCode: 503, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }], body: '',
+  })))
+  await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { label: 'target failure' })
+  assert.equal(await page.evaluate(`document.querySelector('[data-testid="scene3d-error"]').textContent.includes(${JSON.stringify(tankFailurePrefix)})`), true, 'target failure has the tank-data phase')
+  await page.evaluate('document.querySelector("[data-testid=scene3d-retry]").click()')
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('[data-testid="scene3d-loading"]') && document.querySelector('#traj-info')?.textContent.includes('PENETRATION'), { timeout: 30000, label: 'target retry recovers' })
+  assert.equal(shooterRequests, shooterRequestsBeforeTargetFailure, 'target retry does not reload ready shooter ammo')
+  console.log('[shot-readiness] PASS: target-only failure and retry reuse ready ammo')
 
   failShooterSwitch = true
   await page.evaluate(`document.querySelector('#shooter-select').click(); document.querySelector('#tp-grid .tank-card').click()`)
@@ -99,6 +138,16 @@ try {
     requestId, responseCode: 503, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }], body: '',
   })))
   await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { label: 'shooter switch failure' })
+  assert.equal(await page.evaluate(`document.querySelector('[data-testid="scene3d-error"]').textContent.includes(${JSON.stringify(shellFailurePrefix)})`), true, 'shooter failure has the shell-data phase')
+  // The retry error must retain the shell-data phase until ammo is recovered.
+  failShooterSwitch = true
+  await page.evaluate('document.querySelector("[data-testid=scene3d-retry]").click()')
+  await waitHeld(failedSwitchRequests)
+  await Promise.all(failedSwitchRequests.splice(0).map(requestId => send('Fetch.fulfillRequest', {
+    requestId, responseCode: 503, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }], body: '',
+  })))
+  await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { label: 'shooter retry failure' })
+  assert.equal(await page.evaluate(`document.querySelector('[data-testid="scene3d-error"]').textContent.includes(${JSON.stringify(shellFailurePrefix)})`), true, 'shooter retry failure has the shell-data phase')
   await page.evaluate('document.querySelector("[data-testid=scene3d-retry]").click()')
   await page.waitFor(() => !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('[data-testid="scene3d-loading"]') && document.querySelector('#traj-info')?.textContent.includes('PENETRATION'), { timeout: 30000, label: 'retry reloads changed shooter ammo and target' })
   assert.equal(await page.evaluate('document.querySelector("#shell-select").options.length'), 1)
@@ -126,6 +175,7 @@ try {
   delete response.configs[0].shells[0].penetration
   await page.goto(url)
   await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { timeout: 20000, label: 'invalid ammo error state' })
+  assert.equal(await page.evaluate(`document.querySelector('[data-testid="scene3d-error"]').textContent.includes(${JSON.stringify(shellFailurePrefix)})`), true, 'bootstrap failure has the shell-data phase')
   assert.equal(await page.evaluate('window.__armorRicochet?.info().judgments || 0'), 0, 'invalid ammo is not zero penetration')
   // Retry must rebuild initialization, including shooter data, after an ammo failure.
   response = ammo
