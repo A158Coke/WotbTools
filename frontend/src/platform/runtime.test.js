@@ -17,7 +17,9 @@ describe('Android local resource / remote service boundary', () => {
     vi.stubEnv('MODE', 'android')
     expect(resolveApiUrl('/api/ai/reviews')).toBe(`${PRODUCTION_API_ORIGIN}/api/ai/reviews`)
     expect(resolveApiUrl('/download/android/version.json')).toBe(`${PRODUCTION_API_ORIGIN}/download/android/version.json`)
-    for (const path of ['/assets/chunk.js', '/wasm/ref/parser.wasm', '/maps/map.png', '/__native/replay-pending']) expect(resolveApiUrl(path)).toBe(path)
+    // Sponsor runtime content 不进这条白名单：它属于资产面（assetBase → /agent-assets
+    // 本机路径，由 Native 直连对象存储），不经生产网关下发。
+    for (const path of ['/assets/chunk.js', '/wasm/ref/parser.wasm', '/maps/map.png', '/__native/replay-pending', '/sponsor-config.json', '/sponsor-assets/alipay.jpg']) expect(resolveApiUrl(path)).toBe(path)
     const fetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetch)
     await apiFetch('/api/hof', { headers: { Authorization: 'Bearer native-token' }, credentials: 'include' })

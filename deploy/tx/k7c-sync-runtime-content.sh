@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Populate TX2 frontend runtime content from the currently authoritative TX1 frontend.
 # Run on TX2 before redeploying the shadow stack. This copies only the current public
-# production surface: sponsor config + referenced sponsor assets, Android version.json
-# + the APK referenced by that manifest. Historical APKs are not copied.
+# production surface: Android version.json + the APK referenced by that manifest.
+# Historical APKs are not copied. (Sponsor QR content is not host content anymore — it is
+# published to the object-storage asset plane, see docs/operations/agent-asset-origin.md.)
 #
 # `*.staging.json` 是唯一例外：android-release 的 stage 会把「已 stage、未发布」版本的发布身份
 # 装进这棵树，而 publish 只按公开 URL 校验它——wotbtools.com 由 Caddy 在 TX1/TX2 之间负载，
@@ -26,7 +27,7 @@ for cmd in curl python3 install mktemp sha256sum; do command -v "$cmd" >/dev/nul
 
 stage="$(mktemp -d "${RUNTIME_ROOT}.incoming.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
-mkdir -p "$stage/sponsor" "$stage/android-release"
+mkdir -p "$stage/android-release"
 
 # 大文件容错：跟随 302（APK 云盘直链卸载，见下方 APK 段）+ 瞬态失败重试（TX1↔TX2
 # 隧道存在 ~10% 丢包窗口，单次 120s 拉满 15MB APK 会偶发超时——frontend replica
@@ -37,25 +38,6 @@ fetch(){
   curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
     --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" "$url" -o "$2"
 }
-
-fetch /sponsor-config.json "$stage/sponsor-config.json" || fail "cannot fetch sponsor-config.json"
-python3 - "$stage/sponsor-config.json" <<'PY' > "$stage/sponsor.paths"
-import json, pathlib, sys
-p=pathlib.Path(sys.argv[1]); data=json.loads(p.read_text())
-seen=set()
-def walk(x):
-    if isinstance(x, dict):
-        for v in x.values(): walk(v)
-    elif isinstance(x, list):
-        for v in x: walk(v)
-    elif isinstance(x, str) and x.startswith('/sponsor-assets/'):
-        name=x.removeprefix('/sponsor-assets/')
-        if not name or '/' in name or name in ('.','..'): raise SystemExit(f'unsafe sponsor asset: {x}')
-        seen.add(name)
-walk(data)
-for name in sorted(seen): print(name)
-PY
-while IFS= read -r name; do [ -z "$name" ] || fetch "/sponsor-assets/$name" "$stage/sponsor/$name" || fail "cannot fetch sponsor asset: $name"; done < "$stage/sponsor.paths"
 
 fetch /download/android/version.json "$stage/android-release/version.json" || fail "cannot fetch Android version.json"
 apk_loc="$(python3 - "$stage/android-release/version.json" <<'PY'

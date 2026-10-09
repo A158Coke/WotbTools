@@ -17,8 +17,6 @@ services:
       NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$$
     volumes:
       - ./nginx/frontend.conf.template:/etc/nginx/templates/default.conf.template:ro
-      - /opt/wotb-tx2/runtime-content/sponsor-config.json:/usr/share/nginx/html/sponsor-config.json:ro
-      - /opt/wotb-tx2/runtime-content/sponsor:/usr/share/nginx/html/sponsor-assets:ro
       - /opt/wotb-tx2/runtime-content/android-release:/usr/share/nginx/html/download/android:ro
     restart: unless-stopped
     logging:

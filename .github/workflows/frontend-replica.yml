@@ -132,8 +132,8 @@ jobs:
           [ -f "$incoming/nginx/frontend.conf.template" ]
           [ -f "$incoming/k7c-sync-runtime-content.sh" ]
 
-          # Runtime content is part of the frontend surface. Refresh sponsor assets,
-          # Android manifest and the currently published APK before the replica enters service.
+          # Runtime content is part of the frontend surface. Refresh the Android
+          # manifest and the currently published APK before the replica enters service.
           bash "$incoming/k7c-sync-runtime-content.sh"
 
           rm -rf -- /opt/wotb-tx2/frontend-replica.next

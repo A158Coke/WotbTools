@@ -5,10 +5,10 @@
 
 ## 边界：运行时不绑定任何基础设施
 
-Playback / Tank Viewer / Armor Viewer / Agent Data 的资产访问只有一条通路：
+Playback / Tank Viewer / Armor Viewer / Agent Data / Sponsor 的资产访问只有一条通路：
 
 ```
-消费方（playbackScene / tankViewer / armorViewer / agentData / replaySource）
+消费方（playbackScene / tankViewer / armorViewer / agentData / replaySource / sponsor-config）
     |
     v
 assetProvider.bytes|json|url('<logical asset path>')
@@ -160,6 +160,41 @@ CORS 未覆盖 `http://localhost:*`，本地 dev 直连该 origin 时 GLB/JSON �
 
 - 用本地镜像：把包放本地静态目录，`VITE_ASSET_BASE_URL`（或 `?assets=`）指向它；
 - 或给桶加一条 localhost 的 CORS 规则（仅开发便利，注意不要放宽到不可信源）。
+
+## 赞助运行时内容（Sponsor QR）
+
+赞助页的配置与收款码是**资产面对象**，和资产包同桶同 origin，但不属于资产包目录：
+
+| 对象 | 说明 |
+|---|---|
+| `/sponsor-config.json` | 运行时配置（`enabled` + `methods[{type,image}]`）；格式校验的 SSOT 是 `frontend/src/utils/sponsor-config.js` |
+| `/sponsor-assets/<name>.{png,jpg,jpeg,webp}` | 配置里 `image` 字段引用的收款码文件（路径即 `/sponsor-assets/<name>`） |
+
+两端都经 `assetBase()` 读取，**不经过生产网关**：
+
+- **Web**：`assetProvider` 直接用注入的 asset origin（生产 = 本桶）——`fetch` 走桶 CORS（规则覆盖整桶，`https://wotbtools.com` / `www` 均在白名单），`<img>` 不需要 CORS；
+- **Android**：本机路径 `/agent-assets/sponsor-*` → `AgentAssetProxy` 原生直连（原生无 CORS），带 ETag 磁盘缓存；资产生效面不可用（离线）时 `assetProvider` 直接拒绝，赞助页显示「暂未配置」；
+- 加载失败的方式逐个隐藏，全部不可用回落「暂未配置」，绝不显示 broken image；
+- QR 内容**不进仓库、不进镜像、不进 APK bundle**，也不再由 TX 挂载/下发（2026-10-09 前是 `/opt/wotb-tx/config/sponsor*` 只读挂载，已退场）。
+
+### 发布 / 更新
+
+内容由维护者本地持有（例如 `WoT-Blitz-Agent` 仓的 `release/sponsor/`，gitignored），保持
+`sponsor-config.json` + `sponsor-assets/*` 的相对布局后上传到**桶根**：
+
+```bash
+pip install coscmd
+coscmd config -a "$COS_SECRET_ID" -s "$COS_SECRET_KEY" \
+              -b wotbtools-assets-1478073677 -r ap-shanghai
+coscmd upload -r release/sponsor/ /
+# 或复用资产包上传器（会自动为 .json 设 no-cache、其余 max-age=3600）：
+python tools/upload_asset_pack_cos.py --local release/sponsor   # 上游 Agent 仓
+```
+
+缓存语义：配置对象按 `no-cache` 回源校验，**改配置即时生效**；收款码图片按 `max-age=3600`
+缓存——要立刻换图就换文件名并同步改配置里的 `image`（等价于资产包的"换前缀"手法）。
+
+换图后无需发版：Web 刷新即取，APK 下次进入赞助页即取（ETag/回源校验）。
 
 ## 凭据与安全
 

@@ -47,4 +47,4 @@
 - Non-blocking observability：Prometheus、Loki、Alloy、Grafana、datasources、dashboards、metrics 与 log ingestion。
 - `verify-observability.sh` 必须保持 fail-closed；deploy orchestration 负责把失败记录为 degraded，而不是用 `|| true` 改写 verifier 语义。
 - 排障：SSH VPS `ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy" -o IdentitiesOnly=yes root@45.136.14.101 -p 58361`，`docker logs ai-service --tail 100`——Yecao 宿主运行预部署 ai-service 与观测服务，业务后端日志在 TX；也可运行仅 `workflow_dispatch` 的 `.github/workflows/prod-diagnostics.yml` 只读采集同一批日志。
-- secret 一律 GitHub Secrets / Variables → SSH 运行时 env（仓库根 `.env.example` 只列变量名）；TX 不维护本地 secret env 文件，禁止落库或写死。赞助/收款信息不硬编码进页面或仓库（运行时只读挂载）。
+- secret 一律 GitHub Secrets / Variables → SSH 运行时 env（仓库根 `.env.example` 只列变量名）；TX 不维护本地 secret env 文件，禁止落库或写死。赞助/收款信息不硬编码进页面、仓库或镜像：QR 与配置作为对象发布到资产桶（见 `docs/operations/agent-asset-origin.md` §赞助运行时内容），由资产面下发，TX 不挂载也不下发。

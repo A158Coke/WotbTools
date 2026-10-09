@@ -659,7 +659,7 @@ Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurre
 
 生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 调用 TX owner 的 `deploy/tx/business-postgres-backup.sh` 与 `deploy/tx/keycloak-postgres-backup.sh` 备份；两者只访问已运行的 owner service，并在 pg_dump 前核对固定 Compose project、卷标签与实际挂载卷。同一维护队列随后备份 TX/Yecao/Komodo 三个 owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256（`deploy/tofu-local-state-backup.sh tx|yecao|komodo`）。Business PostgreSQL 归档只能用 `deploy/tx/business-postgres-restore.sh` 校验并恢复到经确认的 disposable 数据库；Keycloak PostgreSQL 归档不能传给 Business restore 工具。
 
-Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-config.json` 与 `/opt/wotb-tx/config/sponsor/{alipay,wechat}.png` 只读挂载，Vue 页面从 `/sponsor-config.json` 按 no-store 读取运行时配置。二维码加载失败时页面必须隐藏失败方式；全部方式不可用时回退到“暂未配置”，不得显示 broken image。
+Sponsor QR 不进仓库/镜像：配置与收款码作为**资产面对象**发布（`/sponsor-config.json` + `/sponsor-assets/*`，对象存储桶根），由 `assetBase()` 同时下发给 Web 与 APK——Web 用构建注入的 asset origin，Android 用本机 `/agent-assets` 路径（Native `AgentAssetProxy` 直连同一对象存储，不占生产网关带宽、不需要桶 CORS）。TX 不再挂载也不下发赞助内容。内容格式、发布命令与缓存语义见 `docs/operations/agent-asset-origin.md` §赞助运行时内容。二维码加载失败时页面必须隐藏失败方式；全部方式不可用时回退到“暂未配置”，不得显示 broken image。
 
 ---
 
