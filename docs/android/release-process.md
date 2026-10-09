@@ -134,6 +134,27 @@ stage/publish/debug CI 都复用 `scripts/android-release/android_contract.py bu
 Android Vue 已在 APK 内，发布不依赖生产 Web `/version.json`
 或 Web build commit；Web 与 Android 是独立发布产物。
 
+### 证据的存续：两台 origin 都必须持续可读
+
+publish 的第一步就是按公开 URL 取证据（`https://wotbtools.com/download/android/<STAGING>`，经 Caddy
+在 TX1/TX2 之间负载），因此证据不是「写一次就结束」的中间产物：
+
+- stage 把它直接推到 TX1 `/opt/wotb-tx/android-release/` 与 TX2
+  `/opt/wotb-tx2/runtime-content/android-release/`（后者只读挂载成 TX2 nginx 的 `/download/android`）。
+- TX2 那棵树由 Frontend Replica 的 `deploy/tx/k7c-sync-runtime-content.sh` **整树替换**。它按设计
+  只复制当前公开面（`version.json` + 该 manifest 指向的 APK），`*.staging.json` 是唯一例外：必须在
+  swap 前一刻整份带走。否则「已 stage、未发布」的证据会在发布前消失，公开 URL 退化成按 origin 掷硬币
+  ——2026-10-09 实际发生：stage 08:57 的自校验（单次取样）通过，Replica 08:57 换树删掉 TX2 副本，
+  publish 09:00 抽到 TX2 得到 404 而 fail closed（TX1 仍在，公开 URL 取样 404/200 交替）。
+- 顺序不变量（复制点必须早于 swap，且例外保持窄——树里不累积历史 APK）由
+  `deploy/test-k7c-runtime-content.sh` 锁定；K7C 侧口径见
+  [operations/komodo-k7c-frontend-cutover.md](../operations/komodo-k7c-frontend-cutover.md)。
+- 因此 publish 第一步的 404 有两个已知含义：该版本从未 stage，或某台 origin 缺文件。先按上面第二条
+  确认两台的文件是否都在，再按 stage 流程重跑该版本；**不要**在证据缺失时绕过 publish 的身份校验
+  手工写 `version.json`。
+- stage 末尾的「Verify production staging evidence」只对公开 URL 取样一次，命中任一 origin 即通过：
+  它证明「至少一台在服务」，两台的一致性由上面的不变量与 sync 契约测试保证，而不是由那次取样保证。
+
 ## 发布前真实依赖
 
 所有探测只读且有超时，任何失败都阻止写 production version.json：
