@@ -161,7 +161,7 @@ catch-all 404）：页面带「返回 WotBTools App」按钮——把本页持�
 ### 2D 离线地图派生（Phase 10）
 
 APK 里随包携带 29 张 2D 离线底图（`frontend/src/assets/maps/*.webp`，canonical
-2024×2024、合计约 32.8 MiB，Web 构建继续使用 canonical 原图）。Android 构建在
+AI 增强 WebP q90，1254×1254、合计约 18.3 MiB，Web 构建继续使用 canonical 资源）。Android 构建在
 `frontend/scripts/build-android-bundle.mjs` 内先派生出缩小副本，再让 android 模式的
 Vite 构建把地图 import 重定向到派生物（`vite.config.js` 的 `wotb-android-map-derivatives`
 插件）——**不维护第二份人工源**，也不改任何源码 import：
@@ -170,7 +170,7 @@ Vite 构建把地图 import 重定向到派生物（`vite.config.js` 的 `wotb-a
 src/assets/maps/*.webp（canonical，Web 用）
   --python3 scripts/optimize-android-maps.py（Pillow，等比缩放到最长边 1024、WebP q72、剥元数据）-->
     frontend/dist-android-maps/*.webp（构建产物，gitignored）
-  --Vite 别名-->  APK assets（29 张合计 ≈ 4.2 MiB，原 32.8 MiB）
+  --Vite 别名-->  APK assets（当前 29 张约 7.37 MiB，单张 ≤500 KiB / 全套 ≤10 MiB）
 ```
 
 - 参数与预算单点声明在 `frontend/scripts/lib/mapAssetInvariants.mjs`
