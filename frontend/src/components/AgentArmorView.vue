@@ -5,6 +5,8 @@
  * 数据面：tank/{id}.json + glb/{id}/*.glb 静态资产（agentData.js，?assets= 基址），
  * 击穿判定 penetration.js 客户端移植；射击复现数据经 sessionStorage 交接（AgentShots）。
  * URL 参数保持上游契约：?tank= &shooter= &config= &shell= &shot= &heatmap=1 &world=1 等。
+ * 普通同车型检视：shell 是当前展示 config 的弹表下标；无效下标回退第一项。
+ * 射击复现：shell 属于射手 scfg 弹表，回放 shell_id 自动匹配优先于 URL 选弹。
  */
 import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
