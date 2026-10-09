@@ -170,6 +170,26 @@ installed="$served/wotbtools-android-v2.1.19.staging.json"
   || fail "the installed evidence must keep its exact bytes"
 [ "$(stat -c '%a' "$installed")" = '644' ] || fail "the installed evidence must be world-readable for nginx"
 
+# --- 2b) 目录空窗（评审 P2）：Replica 两次 mv 之间服务目录短暂不存在，安装器必须等锁而不是当场退出 ---
+gap_lock_dir="$work/lock-gap"; gap_served="$work/served-gap"
+mkdir -p "$gap_lock_dir" "$gap_served"; : > "$gap_lock_dir/.deploy.lock"
+printf '{"versionName":"2.1.21","versionCode":2001021}\n' > "$incoming/wotbtools-android-v2.1.21.staging.json"
+flock "$gap_lock_dir/.deploy.lock" -c 'sleep 6' &
+gap_holder=$!
+sleep 0.5
+mv "$gap_served" "$gap_served.previous"   # 换树第一步：整棵树（含被服务目录）被移走
+bash "$installer" --source "$incoming/wotbtools-android-v2.1.21.staging.json" \
+  --dest-dir "$gap_served" --lock "$gap_lock_dir/.deploy.lock" > "$work/gap-install.log" 2>&1 &
+gap_installer=$!
+sleep 1.5
+kill -0 "$gap_installer" 2>/dev/null \
+  || { cat "$work/gap-install.log" >&2; fail "the installer must wait for the lock even while the served tree is swapped away (directory gap)"; }
+mkdir -p "$gap_served"                    # 换树第二步：新树就位
+wait "$gap_installer" || { cat "$work/gap-install.log" >&2; fail "the installer must land the evidence once the swap finishes and the lock is released"; }
+wait "$gap_holder" 2>/dev/null || true
+[ -f "$gap_served/wotbtools-android-v2.1.21.staging.json" ] \
+  || fail "evidence must land in the freshly swapped tree after waiting out the directory gap"
+
 printf '{"versionName":"2.1.20","versionCode":2001020}\n' > "$incoming/wotbtools-android-v2.1.20.staging.json"
 bash "$installer" --source "$incoming/wotbtools-android-v2.1.20.staging.json" --dest-dir "$served" \
   --lock "$work/no-such.lock" >/dev/null 2>&1 \

@@ -42,7 +42,9 @@ case "${source_file##*/}" in
 esac
 [ -f "$lock_file" ] || fail "host deploy lock is missing (owner-provided, never created here): $lock_file"
 [ -w "$lock_file" ] || fail "host deploy lock is not writable by this account: $lock_file"
-[ -d "$dest_dir" ] || fail "served destination directory is missing: $dest_dir"
+# 目标目录**不能**在取锁前判：Replica 的 `mv $root → $root.previous` 与 `mv $stage → $root`
+# 之间整个树（含被服务目录）短暂不存在（2026-10-09 评审 P2），取锁前判会在那个窗口里直接
+# fail 掉，而不是等换树完成。锁与中转文件都在被替换的树之外，所以只有目录检查要后移。
 [ -s "$source_file" ] || fail "incoming evidence is missing or empty: $source_file"
 
 name="${source_file##*/}"
@@ -53,5 +55,7 @@ chmod 0644 "$source_file"
 exec 9>"$lock_file"
 flock -w "$wait_secs" 9 \
   || fail "timed out after ${wait_secs}s waiting for $lock_file (holder diagnostics: .agents/AGENTS.md §TX host lock)"
+# 取到锁 = 换树已收尾（本进程不会撞上 swap 中间态）：此刻目录仍缺才是宿主真的未就绪。
+[ -d "$dest_dir" ] || fail "served destination directory is missing after acquiring the lock: $dest_dir"
 mv -f "$source_file" "$dest"
 echo "staging evidence installed: $dest sha256=$(sha256sum "$dest" | awk '{print $1}')"

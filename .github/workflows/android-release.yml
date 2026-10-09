@@ -805,6 +805,9 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
+          # 内层 flock 等锁上限 15m（EVIDENCE_LOCK_WAIT_SEC 默认 900）> action 默认 10m：
+          # 不放开这里，长部署会以 action 超时报错，而不是给出等锁超时那条明确信息。
+          command_timeout: 20m
           script: |
             set -euo pipefail
             bash /opt/wotb-tx/android-evidence.incoming/deploy/tx/install-staging-evidence.sh \
@@ -843,6 +846,8 @@ jobs:
           username: ${{ secrets.TX2_VPS_USER }}
           port: ${{ secrets.TX2_VPS_PORT }}
           key: ${{ secrets.TX2_VPS_SSH_KEY }}
+          # 与 TX 同理：内层等锁 15m 要短于 action 超时，错误信息才落在等锁那一层。
+          command_timeout: 20m
           script: |
             set -euo pipefail
             bash /opt/wotb-tx2/android-evidence.incoming/deploy/tx/install-staging-evidence.sh \
