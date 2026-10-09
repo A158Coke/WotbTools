@@ -556,8 +556,17 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             });
         }
         function shellTypeOf(sh) {
+            // field9 枚举（权威，来自上游 tank 数据的 type_id：0=AP/1=APCR/2=HEAT/3=HE）优先；
+            // 缺 id 才回退 icon 串词表。词表是手工归纳的显示令牌映射，客户端可自由加变体。
+            const id = sh && sh.type_id;
+            if (typeof id === 'number') {
+                if (id === 0) return 'ap';
+                if (id === 1) return 'apcr';
+                if (id === 2) return 'heat';
+                if (id === 3) return 'he';
+            }
             const t = ((sh && sh.type) || '').toLowerCase();
-            if (t === 'hc' || t === 'hc_premium' || t === 'heat') return 'heat';
+            if (t === 'hc' || t === 'hc_premium' || t === 'heat' || t === 'atgm_heat') return 'heat';
             if (t === 'ap_cr' || t === 'ap_cr_premium' || t === 'apcr') return 'apcr';
             if (t === 'he' || t === 'he_premium') return 'he';
             if (t === 'ap' || t === 'ap_premium') return 'ap';
@@ -4346,7 +4355,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
             // blitzkit shoot() 只用 near 穿深（无距离衰减）；dist 仅用于显示
             const req = {
-                shell_type: shellType,
+                shell_type: shellType, shell_type_id: selectedShell ? (selectedShell.type_id ?? null) : null,
                 penetration: pen,
                 caliber: caliber,
                 damage: dmg,
@@ -4417,7 +4426,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         const ricHasPrimary = ricHits.some(h => h.section === 'hull' || h.section === 'turret' || h.section === 'gun');
                         if (ricHits.length > 0 && ricHasPrimary) {
                             const ricReq = {
-                                shell_type: shellType, penetration: res.ricochet_remaining_pen, caliber: caliber,
+                                shell_type: shellType, shell_type_id: selectedShell ? (selectedShell.type_id ?? null) : null, penetration: res.ricochet_remaining_pen, caliber: caliber,
                                 damage: dmg,
                                 enhanced_armor: eqEnh,
                                 normalization_deg: shellNormDeg,

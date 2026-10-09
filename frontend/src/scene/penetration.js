@@ -26,12 +26,26 @@ export const ArmorSection = Object.freeze({
 })
 
 /** 弹种解析（tanks.pb 原始串：hc 与 hc_premium=HEAT、ap_cr 系=APCR、ap_premium=AP、he_premium=HE） */
-export function parseShellType(s) {
+/**
+ * 弹种解析：**field9 枚举优先**（权威，0=AP/1=APCR/2=HEAT/3=HE），其次 icon 串词表。
+ *
+ * field9 来自上游 tank 数据的 `type_id`（客户端 `<kind>` 语义枚举的翻译，4 值闭集）；
+ * `type`/`shell_type` 是 field7 的 icon 显示令牌，词表是手工归纳的、客户端可自由新增
+ * 变体（`atgm_heat` 就是曾经漏掉的一个）。有 id 就绝不看词表。
+ * 未知串仍兜底 `'he'`——这是最后手段，不是判定依据。
+ */
+export function parseShellType(s, id) {
+  if (typeof id === 'number') {
+    if (id === 0) return 'ap'
+    if (id === 1) return 'apcr'
+    if (id === 2) return 'heat'
+    if (id === 3) return 'he'
+  }
   const t = String(s || '').toLowerCase()
   if (t === 'ap' || t === 'ap_premium') return 'ap'
   if (t === 'apcr' || t === 'ap_cr' || t === 'ap_cr_premium') return 'apcr'
   if (t === 'he' || t === 'he_premium') return 'he'
-  if (t === 'heat' || t === 'hc' || t === 'hc_premium') return 'heat'
+  if (t === 'heat' || t === 'hc' || t === 'hc_premium' || t === 'atgm_heat') return 'heat'
   return 'he'
 }
 
@@ -82,7 +96,7 @@ const DEG = Math.PI / 180
  *   ShotDisplayCard 显示「等效厚度 @ 角度」用。
  */
 export function calculate(req) {
-  const shell = parseShellType(req.shell_type)
+  const shell = parseShellType(req.shell_type, req.shell_type_id)
   const isHe = isExplosive(shell)
   const isHeat = shell === 'heat'
   const caliber = req.caliber

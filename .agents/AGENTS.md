@@ -132,6 +132,12 @@
 （`scripts/fetch-agent-wasm.sh`，`deploy/agent/source.json` pin 变更后必须重跑）、资产服务
 （**Agent 仓根目录** `node scripts/serve_asset_pack.mjs 8123`）、自检探针、故障对照、自动化门禁。
 
+- **换 pin 的完整动作链**：除重跑 fetch 脚本，还须重生成 AI 投影 golden——`common/fixtures/ai-projection/*.json.gz`
+  内嵌 pin provenance（`projection.engine.agentRelease`/`agentCommit`）：
+  `WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 npx vitest run src/replay-local/ai/toClientAiReviewProjection.test.ts`，
+  并校验 `battle`/`projection` 逐字段不变、仅 provenance 更新，随同一 PR 提交。漏跑则该文件 3 个
+  fixture 因 provenance 失配而红、Required Gate 拦下；失败信息只显示 release/commit 不符，先比对
+  两个 release 的 `wotb_replay_wasm_bg.wasm` sha256（可能字节相同）再排查行为回归。
 - admin 视图的 dev-gated 旁路参数 `?admin=1`（**已入库**：`frontend/src/composables/useAuth.js`
   的 `DEV_ADMIN_ROLES`，dev 构建把 `wotbtools-admin` / `HoF-admin` 视为已持有；生产构建忽略，
   见 runbook §4）。真正管理功能只认角色，任何 URL 参数都不得放行。Replay 五能力公开可见，
