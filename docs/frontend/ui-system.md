@@ -33,7 +33,7 @@
 - `index.html` viewport 已带 `viewport-fit=cover`；topbar、底部 sheet、drawer 预留 `env(safe-area-inset-*)`（当前非 edge-to-edge 解析为 0），新增贴顶/贴底固定元素时同步加 inset。
 - 装甲查看器（`AgentArmorView.vue` 的样式 + `scene/tankViewer.js` 的常驻 UI）Mobile 档：顶栏一行（车名 + 等级/类型/国籍 + 「参数」开关），底栏弹种一行 + 视图开关（碰撞 / 热力图）一行——弹种文案是「弹种 穿深mm / 伤害dmg」，下拉不限宽、禁止截断；装备 / 射击方 / 目标 / 配置收进默认收起的参数面板（`.armor-stage.is-tools-open`），炮塔 / 炮管角度条贴顶栏下方；`?clean=1` 时顶栏一并让位。瞄准不再是按钮：左键在炮管上拖 = yaw+俯仰、炮塔壳上拖 = 只 yaw、车体上拖 = 相机轨道，短按（无拖动）= 装甲判定。DOM 契约不变（内核按固定 ID 查找，守卫 `src/components/AgentArmorView.dom-contract.test.js`），几何 / 触控目标 / 真实触摸接线由 `npm run test:browser-armor-mobile` 锁定，瞄准 / 指针交互由 `npm run test:browser-armor-aiming` 锁定（自带确定性夹具资产包，无真实资产也真实执行）。
 - 装甲页的射击模式增加独立车型对照、记录结果与逐发导航栏；参数分组与技术证据渐进展开，手机保持场景空间和 44px 触控。场景监听自身容器尺寸，因此标题换行也会更新画布比例。`AgentArmorView.vue` 已迁出 CSS legacy 名单，使用语义 token 与三档响应式规则。
-- 装甲查看器的选车网格按卡片内容确定行高，图片、车型名、等级/类型/国家信息不能被视口高度压缩裁切；大名册在弹窗内部纵向滚动，保留分批加载。打开、筛选或扩大视口时，名册补至可滚动或列表已全部呈现。`npm run test:browser-armor-mobile` 以真实名册响应覆盖首批 90 张及后续 121 张卡片，在 Showcase / Classic 和手机 / 平板 / 桌面三档（含 4K、筛选与视口扩大）检查内容边界、首末车型名命中区域与无横向溢出。
+- 装甲查看器的选车网格按卡片内容确定行高，图片、车型名、等级/类型/国家信息不能被视口高度压缩裁切；大名册在弹窗内部纵向滚动，滚到边界不带动外层页面，保留分批加载。打开、筛选或扩大视口时，名册补至可滚动或列表已全部呈现。`npm run test:browser-armor-mobile` 以真实名册响应覆盖首批 90 张及后续 121 张卡片，在 Showcase / Classic 和手机 / 平板 / 桌面三档（含 4K、筛选与视口扩大）检查内容边界、首末车型名命中区域与无横向溢出。
 - 视觉回归至少检查对比度、overflow、sticky、hover/focus、loading/empty/error；页面级验收细节见 [`docs/DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md)。
 
 ## Canonical feature references
