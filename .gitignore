@@ -20,6 +20,11 @@ frontend/dist/
 common/assets/map-3d-local/
 # PR #249 早期 prototype 曾输出到这里；保留 ignore，--clean 会删除旧目录。
 frontend/public/map-3d-local/
+# Sponsor 运行时内容（私密收款码）：构建期由 pin 住的 Release 资产注入 publicDir（common/assets/），
+# 由 Vite 原样拷进 dist / dist-android；绝不入库
+# （见 scripts/ci/inject-sponsor-runtime-content.sh；两个发布面 = Frontend 镜像 + APK）
+common/assets/sponsor-config.json
+common/assets/sponsor-assets/
 # BlitzKit 车型参考图本地缓存（脚本生成，不入库）
 frontend/scripts/.vehicle-model-refs/
 **/.m2repo/

@@ -32,7 +32,7 @@ Komodo keeps the TX2 Stack definition as reviewed declarative metadata and runti
 
 ## Runtime-content ownership
 
-The frontend image is not the whole production surface. The current Android public download surface is host-owned runtime content. (Sponsor QR content is not: it is published to the object-storage asset plane and reaches Web and APK through the asset origin — see `docs/operations/agent-asset-origin.md`.)
+The frontend image is not the whole production surface. The current Android public download surface is host-owned runtime content. (Sponsor QR content is not: it is injected at build time from a pinned Release asset and ships inside the Frontend image / APK — see `docs/operations/sponsor-runtime-content.md`.)
 
 K7C replicates only the **current public production surface** to TX2 local storage at `/opt/wotb-tx2/runtime-content`:
 
