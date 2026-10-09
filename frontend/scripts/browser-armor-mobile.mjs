@@ -647,6 +647,7 @@ function pickerCardsProbe() {
     firstHeight: outer?.height, firstNameHit: !!first && !!hit && first.contains(hit),
     lastNameHit: !!last && !!lastHit && last.contains(lastHit),
     scrollTop: grid.scrollTop, scrollHeight: grid.scrollHeight, clientHeight: grid.clientHeight,
+    pageScroll: { x: scrollX, y: scrollY },
     overflowX: grid.scrollWidth > grid.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth + 1,
     wheel: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) },
   }
@@ -703,10 +704,22 @@ async function runPickerCardsScenario(env, scenario) {
       `${scenario.name}: appended roster cards must remain whole after real scrolling: ${JSON.stringify(scrolled)}`)
     const close = (await page.probe(armorLayoutProbe)).pickerClose
     await page.installInputTrace()
+    await page.evaluate(`(() => {
+      window.__pickerCloseClick = null
+      document.addEventListener('click', event => {
+        window.__pickerCloseClick = { trusted: event.isTrusted, button: event.target.closest('button')?.id || null }
+      }, { once: true, capture: true })
+    })()`)
     await page.tap({ x: close.left + close.width / 2, y: close.top + close.height / 2, touch: scenario.touch })
     const closed = await page.waitFor(() => !document.querySelector('#tank-picker.open'), { timeout: 5000, label: 'picker closed after raw input' }).then(() => true).catch(() => false)
     const trace = await page.inputTrace()
-    check(failures, closed && trace.clickCount === 1, `${scenario.name}: picker close requires a real click and closed state: ${JSON.stringify(trace)}`)
+    const closeClick = await page.evaluate('window.__pickerCloseClick')
+    const pageScroll = await page.evaluate('({ x: scrollX, y: scrollY })')
+    check(failures, scrolled.pageScroll.x === initial.pageScroll.x && scrolled.pageScroll.y === initial.pageScroll.y
+      && pageScroll.x === initial.pageScroll.x && pageScroll.y === initial.pageScroll.y,
+      `${scenario.name}: scrolling at the roster boundary must not move the outer page: ${JSON.stringify({ initial: initial.pageScroll, beforeClose: scrolled.pageScroll, afterClose: pageScroll })}`)
+    check(failures, closed && trace.clickCount === 1 && closeClick?.trusted && closeClick.button === 'tp-close',
+      `${scenario.name}: picker close requires a trusted click on the close button and closed state: ${JSON.stringify({ trace, closeClick })}`)
   }
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
