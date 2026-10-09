@@ -363,11 +363,11 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 
 ### 2D Local / 3D Remote 运行时渲染契约
 
-- 2D 底图来自 `frontend/src/assets/maps/*.webp` 的游戏客户端原图，由 `mapImages.js` 静态 import 随站点发布；当前原图 intrinsic raster resolution 为 2024×2024。它只描述文件解码像素，不等于页面的 logical map frame。
+- 2D 底图来自 `frontend/src/assets/maps/*.webp` 的已验收 AI 增强底图（WebP q90），由 `mapImages.js` 静态 import 随站点发布；当前底图 intrinsic raster resolution 为 1254×1254。它只描述文件解码像素，不等于页面的 logical map frame。
 - `mapImages.width/height` 保持既有 logical/render-frame dimensions（约 754–783），由 `createMapView()` 生成 `mapView.W/H`，作为 `coordinateBounds`、terrain projection、SVG `viewBox`、车辆/基地/轨迹/标注及 pointer conversion 的共同坐标空间；不得用图片实际像素替换。
 - Battle Playback 的 2D 底图由 `BattleMap.vue` 的独立 `.pb-basemap` HTML `<img>` 渲染；`.pb-svg` 承载 vector overlays，`.pb-markers` 与两者共享同一个 `.pb-viewport` camera frame。底图和 SVG 按 `mapView.W / mapView.H` 的 frame `fill`，保持既有 overlay 对齐。
 - 运行时 raster capacity 以 `requiredDeviceWidth = renderedCssWidth × view.scale × devicePixelRatio`（height 同理）诊断。`naturalWidth / requiredDeviceWidth` 小于 1 表示源分辨率不足；维持现有 1×→4× camera contract，不用滤镜弥补源图细节。
-- 3D 模型、纹理及地图资产继续经 `frontend/src/scene/assetProvider.js` 读取 remote asset origin（生产 COS），与 2D 本地静态底图分开。此次退役增强地图不改变 3D provider、缓存策略或资产托管。
+- 3D 模型、纹理及地图资产继续经 `frontend/src/scene/assetProvider.js` 读取 remote asset origin（生产 COS），与 2D 本地静态底图分开。2D 底图资源更新不改变 3D provider、缓存策略或资产托管。
 - 3D 回放运行特征（2026-10-03 性能批）：解析在 Worker 内跑（`scene/playbackParse.worker.ts`，
   失败自动回退主线程），同一文件（名+长+mtime+采样指纹）的解析结果缓存最近 3 场；渲染按需刷新
   （暂停且无在飞特效、相机静止时不重绘）；伤害飘字留在主画布**单 WebGL 上下文**
