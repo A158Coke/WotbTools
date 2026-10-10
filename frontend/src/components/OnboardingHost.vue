@@ -28,6 +28,8 @@ const highlight = ref<GuideRect | null>(null)
 const viewport = ref<GuideRect>({ left: 0, top: 0, width: 0, height: 0 })
 const cardPosition = ref({ left: 0, top: 0, width: 0, maxHeight: 0 })
 const compact = ref(false)
+const inspectingShot = ref(false)
+const navigationStyle = computed(() => inspectingShot.value && !compact.value ? { left: `${cardPosition.value.left}px`, right: 'auto' } : undefined)
 const masks = computed(() => guideMasks(cutout.value, viewport.value))
 const missingTarget = computed(() => !target.value && issue.value !== 'loading')
 const needsReplay = computed(() => steps.value.some(step => step.capability))
@@ -47,6 +49,7 @@ const cardPointers = new Set<number>()
 const cardGesture = shallowRef<{ index: number; stage: GuideStage | undefined; issue: string; missing: boolean } | null>(null)
 const renderedIndex = computed(() => cardGesture.value?.index ?? index.value)
 const renderedStage = computed(() => cardGesture.value?.stage ?? currentStage.value)
+const inlineNavigation = computed(() => renderedStage.value?.anchor === 'armor-workspace')
 const renderedIssue = computed(() => cardGesture.value?.issue ?? issue.value)
 const renderedMissing = computed(() => cardGesture.value?.missing ?? missingTarget.value)
 const renderedStages = computed(() => steps.value[renderedIndex.value]?.stages || [])
@@ -114,11 +117,23 @@ function measure() {
   const naturalHeight = card.value ? Math.max(card.value.scrollHeight + card.value.offsetHeight - card.value.clientHeight, measuredCard?.height || 0) : 0
   const navigation = card.value?.querySelector('.onboarding-card-actions')?.getBoundingClientRect()
   const cardViewport = { ...viewport.value }
-  if (navigation && document.fullscreenElement) {
+  if (navigation && !inlineNavigation.value && document.fullscreenElement) {
     cardViewport.top = Math.min(viewport.value.top + viewport.value.height, Math.max(viewport.value.top, navigation.bottom))
     cardViewport.height = viewport.value.top + viewport.value.height - cardViewport.top
-  } else if (navigation) cardViewport.height = Math.max(0, Math.min(viewport.value.height, navigation.top - viewport.value.top))
-  cardPosition.value = guideCardPosition(highlight.value, cardViewport, { width: cardWidth, height: naturalHeight || 220 }, gap, compact.value)
+  } else if (navigation && !inlineNavigation.value) cardViewport.height = Math.max(0, Math.min(viewport.value.height, navigation.top - viewport.value.top))
+  const inspector = interactionTargets.value.find(element => element.dataset.tour === 'shots-inspector')
+  inspectingShot.value = !!inspector
+  if (inspector && (compact.value || inspector.getAttribute('aria-modal') === 'true')) {
+    // The real pane owns the inset; leave its contents scrollable above the compact guide.
+    const height = Math.min(naturalHeight || 220, cardViewport.height / 2)
+    const position = guideCardPosition(null, cardViewport, { width: cardWidth, height }, gap, true)
+    cardPosition.value = { ...position, maxHeight: height }
+    props.onboarding.reserveShotGuideSpace(viewport.value.top + viewport.value.height - position.top + gap)
+  } else {
+    props.onboarding.reserveShotGuideSpace(0)
+    const avoid = inspector ? guideCutout(inspector.getBoundingClientRect(), viewport.value, padding) : highlight.value
+    cardPosition.value = guideCardPosition(avoid, cardViewport, { width: cardWidth, height: naturalHeight || 220 }, gap, compact.value)
+  }
 }
 
 function scheduleMeasure() {
@@ -209,6 +224,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 function detach() {
+  props.onboarding.reserveShotGuideSpace(0)
   cancelAnimationFrame(frame)
   cancelAnimationFrame(releaseFrame)
   frame = 0
@@ -329,7 +345,7 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
           <p v-if="fullscreenExitError || renderedIssue || renderedMissing" class="onboarding-status" role="status">
             {{ $t(fullscreenExitError ? 'onboarding.exitFullscreenFailed' : renderedIssue === 'loading' ? 'onboarding.loading' : renderedIssue === 'unavailable' ? 'onboarding.unavailable' : 'onboarding.missingTarget') }}
           </p>
-          <div class="onboarding-card-actions">
+          <div class="onboarding-card-actions" :class="{ 'is-in-card': inlineNavigation }" :style="navigationStyle">
             <AppButton variant="ghost" :disabled="renderedIndex === 0" data-testid="onboarding-back" @click="changeStep('back')">{{ $t(exitBeforeBack ? 'onboarding.exitFullscreenBack' : 'onboarding.back') }}</AppButton>
             <AppButton v-if="renderedIssue === 'unavailable' || renderedMissing" variant="secondary" data-testid="onboarding-retry" @click="onboarding.retry">{{ $t('onboarding.retry') }}</AppButton>
             <AppButton variant="primary" data-testid="onboarding-next" @click="changeStep('next')">{{ $t(exitBeforeNext ? 'onboarding.exitFullscreenNext' : renderedIndex === steps.length - 1 ? 'onboarding.finish' : 'onboarding.next') }}<ArrowRight :size="16" aria-hidden="true" /></AppButton>
@@ -397,6 +413,7 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
 .onboarding-card .onboarding-status { padding: var(--space-2); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); }
 .onboarding-card-actions { position: fixed; inset-block-end: max(var(--space-3), env(safe-area-inset-bottom)); inset-inline-end: max(var(--space-3), env(safe-area-inset-right)); display: flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: var(--space-2); width: min(var(--onboarding-card-width), calc(100dvw - var(--space-6))); padding: var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); box-shadow: var(--elevation-2); }
 .onboarding-card-actions > * { min-width: 0; flex-shrink: 1; white-space: normal; }
+.onboarding-card-actions.is-in-card { position: static; width: 100%; box-shadow: none; }
 .onboarding-layer.is-fullscreen .onboarding-card-actions { inset-block-end: auto; inset-block-start: calc(max(var(--space-3), env(safe-area-inset-top)) + var(--control-h-md) + var(--space-2)); }
 .onboarding-card .onboarding-card-hint { font: var(--type-caption); }
 .onboarding-intro-icon { display: inline-grid; place-items: center; width: var(--space-12); height: var(--space-12); margin-bottom: var(--space-3); border-radius: var(--radius-lg); background: var(--color-surface-2); color: var(--color-accent-text); }

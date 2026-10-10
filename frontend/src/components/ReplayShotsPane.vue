@@ -51,6 +51,8 @@ const onboarding = inject(ONBOARDING_KEY, null)
 onMounted(() => onboarding?.registerSurface('shots', {
   ready: () => props.active && selectedShot.value != null,
   prepare: () => { closeDetail(); shooter.value = 'own'; return decoding },
+  setGuideInset: pixels => { guideInset.value = Math.max(0, pixels) },
+  cleanup: () => { guideInset.value = 0 },
   failed: () => !!err.value || !!props.blockedReason || (!parsing.value && parsedFile === props.file && !filteredShots.value.some(rowHas3d)),
 }))
 onBeforeUnmount(() => onboarding?.registerSurface('shots', null))
@@ -65,6 +67,7 @@ const shooter = ref('own')
 const authorEid = ref(null)
 const recorderTankName = ref('')
 const selectedIndex = ref(null)
+const guideInset = ref(0)
 /** 已解析的文件：同一文件不重复解码 */
 let parsedFile = null
 /** 在途解析的认领序号：文件切换后迟到的结果一律丢弃 */
@@ -464,8 +467,9 @@ function rowHas3d(s) {
  */
 const paneRoot = ref(null)
 const layout = ref('expanded')
+const guideLayout = computed(() => guideInset.value > 0 ? 'compact' : layout.value)
 const detailOpen = computed(() => selectedIndex.value != null)
-const isOverlay = computed(() => layout.value === 'compact')
+const isOverlay = computed(() => guideLayout.value === 'compact')
 
 let observer = null
 const detailPane = ref(null)
@@ -653,7 +657,7 @@ onBeforeUnmount(() => {
         <p>{{ $t(shooter === 'own' ? 'agentShots.no_own_shots' : 'agentShots.no_filtered_shots') }}</p>
         <AppButton v-if="shooter === 'own' && shots.length" @click="shooter = 'all'">{{ $t('agentShots.browse_all_shots') }}</AppButton>
       </div>
-      <div v-else class="shots-split" :class="[`is-${layout}`, { 'has-detail': detailOpen }]">
+      <div v-else class="shots-split" :class="[`is-${guideLayout}`, { 'has-detail': detailOpen }]">
         <div class="shot-master">
           <div class="shot-list-heading"><h3>{{ $t('agentShots.shot_sequence') }}</h3><span>{{ $t('agentShots.shot_count', { count: filteredShots.length }) }}</span></div>
         <ul class="shot-list" :aria-label="$t('agentShots.title')">
@@ -695,6 +699,7 @@ onBeforeUnmount(() => {
           tabindex="-1"
           data-testid="shot-inspector"
           data-tour="shots-inspector"
+          :style="guideInset > 0 ? { insetBlockEnd: `${guideInset}px` } : undefined"
           :role="isOverlay ? 'dialog' : undefined"
           :aria-modal="isOverlay ? 'true' : undefined"
           :aria-label="$t('agentShots.inspector_title')"

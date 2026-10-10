@@ -19,6 +19,8 @@ export interface OnboardingSurface {
   failed?(): boolean
   prepare?(): Promise<void> | void
   cleanup?(): void
+  /** Reserve viewport space for the guide without covering a real inspector. */
+  setGuideInset?(pixels: number): void
 }
 
 export type OnboardingSurfaceId = 'playback' | 'annotations' | '3d' | 'shots' | 'armor'

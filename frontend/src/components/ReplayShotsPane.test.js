@@ -784,6 +784,12 @@ describe('ReplayShotsPane recorder-first review', () => {
     expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(true)
     const surface = registerSurface.mock.calls[0][1]
     expect(surface.ready()).toBe(true)
+    surface.setGuideInset(240)
+    await nextTick()
+    expect(wrapper.get('[data-testid="shot-inspector"]').element.style.insetBlockEnd).toBe('240px')
+    surface.cleanup()
+    await nextTick()
+    expect(wrapper.get('[data-testid="shot-inspector"]').element.style.insetBlockEnd).toBe('')
     await surface.prepare()
     await nextTick()
     expect(surface.ready()).toBe(false)

@@ -2923,6 +2923,7 @@ const ONBOARDING_SCENARIOS = [...['zh', 'en', 'ru'].flatMap(language => ['showca
   [{ width: 1600, height: 1000, touch: false }, { width: 1024, height: 900, touch: false }, { width: 390, height: 844, touch: true }]
     .map(viewport => ({ ...viewport, language, profile, name: `onboarding-${language}-${profile}-${viewport.width}` })))),
   { name: 'onboarding-fullscreen-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'showcase', fullscreen: true },
+  { name: 'onboarding-narrow-desktop-840', width: 840, height: 900, touch: false, language: 'zh', profile: 'showcase' },
   { name: 'onboarding-fullscreen-transition-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'showcase', fullscreen: true, fullscreenTransition: true }]
 let onboardingServer = null
 async function runOnboardingScenario(env, scenario) {
@@ -3037,11 +3038,17 @@ async function runOnboardingScenario(env, scenario) {
       check(failures, await page.evaluate('document.querySelector("[data-testid=shots-shooter-select]")?.value') === 'own', 'shooting lesson resets the recorder filter')
       await hit('[data-tour="shots-first-shot"]')
       await page.waitFor(() => !!document.querySelector('[data-testid="shot-inspector"]'), { label: 'actual sample shot inspector' })
-      if (scenario.width < 900) {
-        await hit('[data-testid="shot-detail-close"]')
-      }
-      check(failures, await page.evaluate('document.querySelector("[data-testid=onboarding-card]")?.dataset.anchor') === 'shots-first-shot',
-        'core shot selection must not silently become another final node')
+      await page.waitForValue('document.querySelector("[data-testid=onboarding-card]")?.dataset.anchor', value => value === 'shot-open-viewer', { label: 'core shooting details action' })
+      await page.waitForValue(`(() => {
+        const panel=document.querySelector('[data-testid="shot-inspector"]')?.getBoundingClientRect();
+        const card=document.querySelector('[data-testid="onboarding-card"]')?.getBoundingClientRect();
+        const nav=document.querySelector('.onboarding-card-actions')?.getBoundingClientRect();
+        const overlaps=(a,b)=>a&&b&&a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
+        return panel&&card&&nav&&!overlaps(panel,card)&&!overlaps(panel,nav);
+      })()`, value => value === true, { label: 'core guide card and navigation do not cover the shot inspector' })
+      await captureMobileReview(page, scenario, 'onboarding-shot-details')
+      await hit('[data-testid="shot-detail-close"]')
+      await page.waitForValue('document.querySelector("[data-testid=onboarding-card]")?.dataset.anchor', value => value === 'shots-first-shot', { label: 'closing actual inspector returns to the shot list' })
       await hit('[data-testid="onboarding-skip"]')
       check(failures, await page.evaluate('!document.querySelector("[data-testid=onboarding-layer]")'),
         `skip must remove overlay: ${JSON.stringify(await page.evaluate('({click:window.__wsInput.click,primary:window.__wsInput.primary,pointers:window.__wsInput.pointers.slice(-3)})'))}`)

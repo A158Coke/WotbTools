@@ -561,7 +561,7 @@ describe('real lesson lifecycle', () => {
     h.wrapper.unmount()
   })
 
-  it('keeps the final core node on the real shot row after selection, then completes once', async () => {
+  it('restores the core shooting list, advances into details and returns after closing the inspector', async () => {
     const h = harness({ files: true })
     const selected = ref(true), staleFilter = ref(true)
     const prepare = vi.fn(() => { selected.value = false; staleFilter.value = false })
@@ -574,8 +574,12 @@ describe('real lesson lifecycle', () => {
     expect(h.controller.issue.value).toBe('')
     selected.value = true
     await nextTick()
+    expect(h.controller.currentStage.value.anchor).toBe('shot-open-viewer')
+    expect(h.controller.stageIndex.value).toBe(1)
+    expect(h.controller.currentStep.value.stages).toHaveLength(3)
+    selected.value = false
+    await nextTick()
     expect(h.controller.currentStage.value.anchor).toBe('shots-first-shot')
-    expect(h.controller.currentStep.value.stages).toHaveLength(1)
     h.controller.next()
     expect(h.controller.mode.value).toBe('finish')
     expect(cache().anonymous.disposition).toBe('COMPLETED')
