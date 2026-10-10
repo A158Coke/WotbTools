@@ -972,7 +972,7 @@ describe('ReplayWorkspace', () => {
     expect(tab(wrapper, 'ai').attributes('tabindex')).toBe('-1')
     // 视觉 / 键盘行为归 canonical 组件：adapter 不再自带选项样式与状态机
     expect(wrapper.find('.capability-option').exists()).toBe(false)
-    expect(wrapper.get('.segmented').classes()).toContain('is-scrollable')
+    expect(wrapper.get('.segmented').classes()).toContain('is-wrapping')
     wrapper.unmount()
   })
 
