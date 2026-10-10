@@ -23,7 +23,7 @@
 
 示例复用原本机分析与 `useReplayWorkspace.playbackSession`。重复点击已就绪的示例不重新选文件、不重复解析；失败可复用同一文件重试。已有用户文件时使用现有确认框明确替换，取消保持原数据。
 
-清单中的教学 cue 由当前 pin 的真实 WASM 核验。`playbackSeconds` 是 canonical 战斗相对时间；`shotId` 是真实 `shot_id`，不能用归一化后的列表 index 替代。测试核验两者与实际样本一致。
+清单中的教学 cue 已由当前 pin 的 Agent v0.4.3 真实 WASM 核验，`verifiedParserRef` 记录验证时的 parser commit。`playbackSeconds` 是 canonical 战斗相对时间；`shotId` 是真实 `shot_id`，不能用归一化后的列表 index 替代。测试核验两者与实际样本一致。
 
 ## 更新教学
 

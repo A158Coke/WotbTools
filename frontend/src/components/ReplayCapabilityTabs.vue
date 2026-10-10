@@ -2,7 +2,7 @@
 /**
  * 回放工作台的能力切换：**极薄 adapter**，只把能力定义翻译成 `SegmentedControl` 的选项。
  *
- * 视觉与键盘行为（选中态、focus ring、方向键 / Home / End、coarse 点击区域、横向滚动）
+ * 视觉与键盘行为（选中态、focus ring、方向键 / Home / End、coarse 点击区域、自适应换行）
  * 全部由 canonical `SegmentedControl` 拥有——这里不再有第二套选项样式或键盘状态机。
  *
  * 语义：能力切换 = 同一工作台内的模式切换，按 design-language §7 用 SegmentedControl
@@ -39,7 +39,7 @@ const segmentedOptions = computed(() => props.options.map(option => ({
     :model-value="activeCapability"
     :options="segmentedOptions"
     :aria-label="$t('workspace.title')"
-    scrollable
+    wrap
     @update:model-value="emit('select', $event)"
   />
 </template>
