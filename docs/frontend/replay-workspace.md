@@ -89,11 +89,11 @@
 
 ## 能力访问策略
 
-Replay Workspace contains five publicly discoverable capabilities. Anonymous users can use Data and 2D Playback. Authentication is required for 3D Playback, Shot Analysis / Reconstruction, and AI Review. `wotbtools-admin` does not alter Replay Workspace capabilities.
+Replay Workspace contains five publicly discoverable capabilities. Anonymous users can use Data and 2D Playback. Personal replays require authentication for 3D Playback and Shot Analysis / Reconstruction; the verified official demo also permits anonymous access to these two capabilities. AI Review always requires authentication, including for the official demo. `wotbtools-admin` does not alter Replay Workspace capabilities.
 
-`ReplayCapabilityAuthGate.vue` 复用 `EmptyState` 与登录按钮：匿名状态不挂载 `Replay3DPane` / `ReplayShotsPane`，不启动解析、场景或远端资产加载；登录分别以 `agent-replay` / `agent-shots` 为返回目的地。登出卸载受限 pane，但不清空 Workspace 的 replay selection/session。AI 保留自己的 projection/error lifecycle，匿名不构建投影，登录返回 `ai-review`。
+`ReplayCapabilityAuthGate.vue` 复用 `EmptyState` 与登录按钮：匿名使用个人回放时不挂载 `Replay3DPane` / `ReplayShotsPane`，不启动对应解析、场景或远端资产加载；已验证的官方示例可按需挂载这两个 pane，3D 仍受连通性门禁约束。普通选择、追加、清空或 Android 导入会撤销示例资格。登录分别以 `agent-replay` / `agent-shots` 为返回目的地。登出卸载不具备示例资格的受限 pane，但不清空 Workspace 的 replay selection/session。AI 保留自己的 projection/error lifecycle，全部匿名选择均不构建投影，登录返回 `ai-review`。
 
-装甲查看器 `agent-armor` 保持独立页面，且**匿名可用**：登录用户可从 shots 选择命中弹并打开复现场景；普通用户从 Tankopedia 详情入口卡（对全员开放）进入；匿名深链由 `ViewHost` 直接挂载装甲页面，不做登录拦截。场景 query（`tank/shooter/config/scfg/shell/shot/world/heatmap/az/h/d/…`）原样保留。登录门禁不会主动清空 selection；浏览器 OIDC 整页跳转仍受既有 session 持久化能力限制，不新增 replay 字节持久化。
+装甲查看器 `agent-armor` 保持独立页面，且**匿名可用**：登录用户或匿名官方示例用户可从 shots 选择命中弹并打开复现场景；普通用户从 Tankopedia 详情入口卡（对全员开放）进入；匿名深链由 `ViewHost` 直接挂载装甲页面，不做登录拦截。场景 query（`tank/shooter/config/scfg/shell/shot/world/heatmap/az/h/d/…`）原样保留。登录门禁不会主动清空 selection；浏览器 OIDC 整页跳转仍受既有 session 持久化能力限制，不新增 replay 字节持久化。
 
 ## Local-first capability boundary
 
@@ -103,8 +103,8 @@ Replay Workspace contains five publicly discoverable capabilities. Anonymous use
 |---|---|---|
 | `data`：导入、Rust/WASM 解析、Result、deterministic Rating、session state | LOCAL | 文件、结果与选择照常使用，不请求业务 HTTP |
 | `playback`：2D、底图、标记 | LOCAL | 本机解析，底图和标记随 bundle 提供 |
-| `shots`：射击列表、检视、弹种、俯仰锚定 | LOCAL + auth | 本机解析，使用 bundled `shellKinds.json` 与 `common/shot-tank-data.json`；匿名由 `ReplayCapabilityAuthGate.vue` 引导登录 |
-| `3d`：远端场景/GLB | ONLINE_REQUIRED + auth | tab 保留；连通性提示优先于登录门禁，不挂载 remote loader |
+| `shots`：射击列表、检视、弹种、俯仰锚定 | LOCAL +（登录或已验证官方示例） | 本机解析，使用 bundled `shellKinds.json` 与 `common/shot-tank-data.json`；匿名个人回放由 `ReplayCapabilityAuthGate.vue` 引导登录 |
+| `3d`：远端场景/GLB | ONLINE_REQUIRED +（登录或已验证官方示例） | tab 保留；官方示例也受连通性门禁约束；连通性提示优先于登录门禁，不挂载 remote loader |
 | `ai`：AI 复盘 | ONLINE_REQUIRED + auth | connectivity 先于登录与请求；联网恢复不自动提交 |
 | HoF/remote Profile/Admin users | ONLINE_REQUIRED | 入口保留；mount、读写、确认后的动作都经过同一门禁 |
 

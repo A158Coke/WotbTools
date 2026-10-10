@@ -141,7 +141,8 @@
 - admin 视图的 dev-gated 旁路参数 `?admin=1`（**已入库**：`frontend/src/composables/useAuth.js`
   的 `DEV_ADMIN_ROLES`，dev 构建把 `wotbtools-admin` / `HoF-admin` 视为已持有；生产构建忽略，
   见 runbook §4）。真正管理功能只认角色，任何 URL 参数都不得放行。Replay 五能力公开可见，
-  3D / shots / AI 仅要求登录；装甲查看器（含 Tankopedia 入口卡）匿名可用，不依赖 admin；
+  个人回放的 3D / shots 与全部 AI 要求登录；已验证的官方示例额外匿名放行 3D / shots，
+  不放行 AI 或服务端写操作；装甲查看器（含 Tankopedia 入口卡）匿名可用，不依赖 admin；
   `viewFromRoute` 不再承担 Agent capability 的 admin 闸门。
 - 需要真实 realm 角色的功能（`/api/admin/**`、`/api/ai/**`）本地旁路绕不过，边界见 runbook §5。
 
