@@ -116,6 +116,27 @@ export function terrainLodStale(prev, cur, sinceMs, minIntervalMs = 120) {
   return false;
 }
 
+/** 底图贴图 UV（低档 / 分层材质不可用时回退：`ground.webp`、最低档 `mini.webp` 摊在**地形网格**上）。
+ *  契约 = 旧 `PlaneGeometry(size, size) + rotation.set(−π/2, 0, π)` + TextureLoader(flipY=true)
+ *  的逐点等价（并见上游 `tools/composite_overhead.py` 底图侧注释「左列 = +X_scene、顶行 = +Z_scene」）：
+ *    `u = 0.5 − (X − cx)/span`、`v = 0.5 + (Z − cz)/span`
+ *  实测锚定（梯度结构相关，高度图 ↔ ground.webp，4 候选 × 3 张强结构图）：只在本式下命中地面结构
+ *  （erlenberg +0.111 / medvedkovo +0.163 / malinovka +0.097；其余候选 ≤ 0.024 或为负）。
+ *  ⚠️ 别照分层着色器的 `tc`（`v = 0.5 − Z/span`）写：`cm.webp` 与 `ground.webp` 在导出侧本就
+ *  v 互翻（直接互比：同图仅差行翻转）⇒ 两套公式各自只对自己的文件成立。 */
+export function groundMapUv(positions, span, cx = 0, cz = 0) {
+  const s = Number.isFinite(span) && span > 0 ? span : 600;
+  const ocx = Number.isFinite(cx) ? cx : 0;
+  const ocz = Number.isFinite(cz) ? cz : 0;
+  const count = Math.floor(positions.length / 3);
+  const uv = new Float32Array(count * 2);
+  for (let k = 0; k < count; k++) {
+    uv[k * 2] = 0.5 - (positions[k * 3] - ocx) / s;
+    uv[k * 2 + 1] = 0.5 + (positions[k * 3 + 2] - ocz) / s;
+  }
+  return uv;
+}
+
 /** 引擎 `Landscape::morphFunc`（Landscape.cpp:1213）：4(1−x)⁵ − 5(1−x)⁴ + 1（x 夹到 [0,1]）。 */
 export function morphFunc(x) {
   const y = 1 - Math.max(0, Math.min(1, x));

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MAX_QUADS, PATCH_QUADS, SUBDIVISION_METRICS, buildAdaptiveTerrain, morphFunc, subdivisionMetrics,
-  subdivMorphOf, terrainLodState, terrainLodStale,
+  groundMapUv, subdivMorphOf, terrainLodState, terrainLodStale,
 } from './terrainMesh.js'
 
 // 自适应地形网格（客户端 `LandscapeSubdivision` 同构）契约。偏离的后果：要么地形把贴地薄结构
@@ -75,6 +75,29 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     expect(terrainLodStale(st(), st({ d: 90, py: 90 }), 50)).toBe(false)    // 但受 120 ms 节流
     expect(terrainLodStale(st(), st({ d: 110, py: 110 }), 500)).toBe(false) // 拉远仅 10% ⇒ 允许（仍够细）
     expect(terrainLodStale(st(), st({ d: 150, py: 150 }), 500)).toBe(true)  // 拉远 ≥40% ⇒ 可变粗
+  })
+
+  it('groundMapUv：回退/低档底图朝向契约（旧 PlaneGeometry+rotπ 逐点等价；review P1 回归锁）', () => {
+    // 缺 UV 的后果（2026-10-10 review P1）：低档/均衡档与分层材质不可用时地形走
+    // `MeshBasicMaterial({ map: mapTexture })`，自适应网格没有 uv 属性 ⇒ 整张底图退化成
+    // 单 texel 常量。朝向必须是旧 `PlaneGeometry(size,size)+rotation.set(−π/2,0,π)` 的等价式。
+    const s = 600
+    const P = new Float32Array([
+      -s / 2, 0, -s / 2,   // 世界四角 → uv 四角
+      s / 2, 0, -s / 2,
+      -s / 2, 0, s / 2,
+      s / 2, 0, s / 2,
+    ])
+    expect([...groundMapUv(P, s)]).toEqual([1, 0, 0, 0, 1, 1, 0, 1])
+    expect([...groundMapUv(new Float32Array([0, 0, 0]), s)]).toEqual([0.5, 0.5])
+    // 地图中心偏移（backend X-Map-Meta 口径）：按 (X−cx)/(Z−cz) 归一
+    expect([...groundMapUv(new Float32Array([0, 0, 0]), s, -s / 2, 0)]).toEqual([0, 0.5])
+    expect([...groundMapUv(new Float32Array([-s / 2, 0, 0]), s, -s / 2, 0)]).toEqual([0.5, 0.5])
+    // 方向锁：+x ⇒ u 减小（左列 = +X）、+z ⇒ v 增大（顶行 = +Z）；
+    // ⚠️ 与分层着色器 tc 的 v 号**相反**是契约（cm.webp 与 ground.webp 导出侧 v 互翻）
+    const uv = groundMapUv(P, s)
+    expect(uv[0]).toBeGreaterThan(uv[2])          // x 越小 u 越大
+    expect(uv[5]).toBeGreaterThan(uv[1])          // z 越大 v 越大
   })
 
   it('terrainLodState 快照：视距/位置/视轴/FOV/aspect —— 判据读什么，滞回就比什么', () => {

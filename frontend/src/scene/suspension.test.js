@@ -14,7 +14,7 @@ import * as THREE from 'three'
 import {
   applyWheelSpin,
   clampTravel, rateLimitTravel, spinStep, wrapSpin, treadScrollStep, groundDropLocal,
-  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, sideTravel,
+  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, sideTravel,
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
   measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
   SUSP_FALLBACK,
@@ -316,5 +316,18 @@ describe('顶点形变：映射 + 位移方向', () => {
     applyChainToVertices(out, pos, params, [0.25, 0.25], [0, 0], [0, 1, 0])
     expect(out[1]).toBeCloseTo(0.25, 6)
     expect(out[2]).toBeCloseTo(0, 6)
+  })
+})
+
+describe('chainChanged（履带形变 = 链的纯函数；下发判定按下发链比较）', () => {
+  it('链相同 ⇒ false（顶点逐点相同）；任一点不同 / 长度或空值 ⇒ true（fail-safe）', () => {
+    const a = new Float64Array([1, 2, 3, 4])
+    const b = Float64Array.from(a)
+    expect(chainChanged(a, b)).toBe(false)
+    b[2] = 3.0000001
+    expect(chainChanged(a, b)).toBe(true)      // 1e-7 级差异也判"变了"（严格比较，宁多传一次）
+    expect(chainChanged(null, a)).toBe(true)   // 首帧
+    expect(chainChanged(a, null)).toBe(true)
+    expect(chainChanged(a, new Float64Array([1, 2, 3]))).toBe(true)
   })
 })
