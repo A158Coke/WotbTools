@@ -721,6 +721,35 @@ describe('useAuth', () => {
     expect(auth.displayName.value).toBe('')
   })
 
+  it('?admin=1 只放行角色可见性，绝不伪造登录态（authenticated 仍为 false）', async () => {
+    // 回归锚点：曾有一条"本机验收旁路"把 authenticated 也置真（`authenticated ||= ?admin=1`），
+    // 被误扫进分支后撤出（49d4f757）。此用例在 dev 构建（vitest 下 import.meta.env.DEV=true）
+    // 且 URL 带 admin 参数时，断言「角色旁路生效 + 登录态不生效」两条同时成立。
+    window.history.replaceState({}, '', '/?admin=1&view=agent-replay')
+    kcScenario.initResult = false // check-sso 未命中：真实未登录
+    kcScenario.tokenParsed = null
+    kcInit.mockClear()
+    try {
+      vi.resetModules()
+      const fresh = await import('./useAuth.js')
+      const auth = fresh.useAuth()
+      await auth.initPromise
+
+      // 角色可见性旁路照旧（DEV_ADMIN_ROLES）：管理入口可见
+      expect(auth.hasRole('wotbtools-admin')).toBe(true)
+      expect(auth.hasRole('HoF-admin')).toBe(true)
+      expect(auth.isAdmin.value).toBe(true)
+      // 但登录态不得被 URL 参数伪造——3D / shots / AI 的登录门必须照旧拦下
+      expect(auth.authenticated.value).toBe(false)
+      expect(auth.isAuthenticated()).toBe(false)
+      expect(auth.authInitState.value).toBe('unauthenticated')
+      expect(auth.tokenParsed.value).toBeNull()
+    } finally {
+      window.history.replaceState({}, '', '/')
+      vi.resetModules()
+    }
+  })
+
   it('存在"远端登出未收敛"标记时，首屏 init 走 login-recovery（不做 check-sso 静默复登）', async () => {
     // 真实路径是"页面加载后第一次 initAuth"（每个 useAuth 模块实例只发生一次）：
     // 用 resetModules 复现首屏，而不是在同一模块态里再 init 一次。
