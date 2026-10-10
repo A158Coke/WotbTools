@@ -416,6 +416,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/users/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the authenticated user's core onboarding receipt
+         * @description Identity comes solely from the bearer token subject. Profile bootstrap must have succeeded first; this resource never creates a profile. A fresh profile returns 0/NONE.
+         */
+        get: operations["getCurrentUserOnboarding"];
+        /**
+         * Idempotently merge a core onboarding completion or skip receipt
+         * @description The maximum coreEpoch wins; at the same epoch COMPLETED takes precedence over SKIPPED. Older devices cannot overwrite a newer receipt. Only terminal receipts are accepted. Identity comes solely from the bearer token subject; no user identifier is accepted. This resource never creates a profile and does not change profile ensure semantics.
+         */
+        put: operations["saveCurrentUserOnboarding"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/hof/hundred/submissions": {
         parameters: {
             query?: never;
@@ -1093,6 +1117,18 @@ export interface components {
             deleted: number;
             failed: number;
             results: components["schemas"]["BulkDeleteItemResult"][];
+        };
+        OnboardingReceipt: {
+            /** Format: int32 */
+            coreEpoch: number;
+            /** @enum {string} */
+            disposition: "NONE" | "COMPLETED" | "SKIPPED";
+        };
+        SaveOnboardingReceipt: {
+            /** Format: int32 */
+            coreEpoch: number;
+            /** @enum {string} */
+            disposition: "COMPLETED" | "SKIPPED";
         };
         UserProfile: {
             /** Format: int64 */
@@ -3431,6 +3467,113 @@ export interface operations {
                 };
             };
             /** @description Profile bootstrap invariant violated */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getCurrentUserOnboarding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current onboarding receipt */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingReceipt"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Profile not provisioned yet */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    saveCurrentUserOnboarding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveOnboardingReceipt"];
+            };
+        };
+        responses: {
+            /** @description Persisted merged onboarding receipt */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingReceipt"];
+                };
+            };
+            /** @description Invalid onboarding receipt */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Profile not provisioned yet */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unexpected server error */
             500: {
                 headers: {
                     [name: string]: unknown;

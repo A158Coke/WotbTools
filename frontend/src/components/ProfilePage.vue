@@ -434,7 +434,7 @@ async function removeAccount() {
 </script>
 
 <template>
-  <div class="profile-page">
+  <div class="profile-page" data-tour="settings-account">
     <div v-if="phase === 'init'" class="profile-empty">{{ $t('profile.loading') }}</div>
 
     <div v-else-if="phase === 'error'" class="profile-card profile-message">

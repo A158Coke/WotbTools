@@ -1,6 +1,7 @@
 package com.wotb.web.user;
 
 import com.wotb.web.user.dto.UserProfileDto;
+import com.wotb.web.user.dto.OnboardingReceiptDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
 import com.wotb.web.user.service.UserProfileService;
@@ -14,6 +15,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -80,6 +83,9 @@ class UserProfileEnsureIntegrationTest {
     @Autowired
     UserProfileRepository userProfileRepository;
 
+    @Autowired
+    PlatformTransactionManager transactionManager;
+
     @BeforeEach
     void clean() {
         userProfileRepository.deleteAll();
@@ -106,6 +112,60 @@ class UserProfileEnsureIntegrationTest {
         assertEquals("CN", dto.wotbServer());
         assertEquals("MANUAL", dto.wotbAccountSource());
         assertEquals(1, userProfileRepository.count());
+    }
+
+    @Test
+    void concurrentOnboardingReceiptsPersistTheMaximumEpochAndCompletedPrecedence() throws Exception {
+        seedProfile("kc-onboarding", "CN", null, null, "MANUAL", null);
+        final List<OnboardingReceiptDto> inputs = List.of(
+                new OnboardingReceiptDto(3, "SKIPPED"), new OnboardingReceiptDto(2, "COMPLETED"),
+                new OnboardingReceiptDto(3, "COMPLETED"), new OnboardingReceiptDto(1, "SKIPPED"));
+        final CountDownLatch start = new CountDownLatch(1);
+        try (final ExecutorService pool = Executors.newFixedThreadPool(inputs.size())) {
+            final List<Future<OnboardingReceiptDto>> futures = inputs.stream()
+                    .map(input -> pool.submit(() -> {
+                        start.await();
+                        return userProfileService.saveOnboardingReceipt("kc-onboarding", input.coreEpoch(), input.disposition());
+                    })).toList();
+            start.countDown();
+            for (final Future<OnboardingReceiptDto> future : futures) {
+                assertNotNull(future.get(30, TimeUnit.SECONDS));
+            }
+        }
+        assertEquals(new OnboardingReceiptDto(3, "COMPLETED"), userProfileService.readOnboardingReceipt("kc-onboarding"));
+        userProfileService.ensureCurrentProfile("kc-onboarding", "unused", "unused");
+        assertEquals(new OnboardingReceiptDto(3, "COMPLETED"), userProfileService.readOnboardingReceipt("kc-onboarding"));
+    }
+
+    @Test
+    void profileWriteLoadedBeforeOnboardingSaveCannotOverwriteItsReceipt() throws Exception {
+        seedProfile("kc-onboarding", "CN", null, null, "MANUAL", null);
+        final CountDownLatch read = new CountDownLatch(1);
+        final CountDownLatch receiptSaved = new CountDownLatch(1);
+        try (final ExecutorService pool = Executors.newSingleThreadExecutor()) {
+            final Future<?> staleProfileWrite = pool.submit(() -> new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(status -> {
+                        final UserProfile profile = userProfileRepository.findByKeycloakUserId("kc-onboarding").orElseThrow();
+                        read.countDown();
+                        try {
+                            assertTrue(receiptSaved.await(30, TimeUnit.SECONDS));
+                        } catch (final InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException(interrupted);
+                        }
+                        profile.setDisplayName("Updated profile name");
+                        userProfileRepository.save(profile);
+                    }));
+            try {
+                assertTrue(read.await(30, TimeUnit.SECONDS));
+                userProfileService.saveOnboardingReceipt("kc-onboarding", 2, "COMPLETED");
+            } finally {
+                receiptSaved.countDown();
+            }
+            staleProfileWrite.get(30, TimeUnit.SECONDS);
+        }
+        assertEquals(new OnboardingReceiptDto(2, "COMPLETED"), userProfileService.readOnboardingReceipt("kc-onboarding"));
+        assertEquals("Updated profile name", userProfileRepository.findByKeycloakUserId("kc-onboarding").orElseThrow().getDisplayName());
     }
 
     // ── B：已存在 → 幂等 ─────────────────────────────────────────────────

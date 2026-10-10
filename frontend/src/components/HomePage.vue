@@ -1,7 +1,7 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, inject, onMounted, ref } from 'vue'
 import * as api from '../utils/api.js'
-import { ArrowRight } from 'lucide-vue-next'
+import { ArrowRight, Compass } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
 import cardReplayImg from '../assets/showcase/home/card-replay-parser-v1.webp'
 import cardAiReviewImg from '../assets/showcase/home/card-ai-review-v1.webp'
@@ -10,6 +10,9 @@ import cardHofImg from '../assets/showcase/home/card-hall-of-fame-v1.webp'
 import cardSponsorImg from '../assets/showcase/home/card-sponsor-v1.webp'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { RouterLink } from 'vue-router'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
+
+const onboarding = inject(ONBOARDING_KEY, null)
 
 const topRecord = ref(null)
 const topDamageDisplay = computed(() => {
@@ -37,11 +40,13 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <h1>{{ $t('app.title') }}</h1>
         <p class="hero-subtitle">{{ $t('app.subtitle') }}</p>
         <div class="hero-actions">
+          <AppButton v-if="onboarding" class="hero-btn hero-guide" size="lg" data-testid="home-onboarding" aria-describedby="home-onboarding-hint" @click="onboarding.start()"><Compass :size="18" aria-hidden="true" />{{ $t('onboarding.newbie') }}</AppButton>
           <AppButton class="hero-btn primary" variant="primary" size="lg" href="/?view=replay">{{ $t('home.replayParse') }}<ArrowRight :size="16" aria-hidden="true" /></AppButton>
           <AppButton class="hero-btn secondary" size="lg" href="/?view=ai-review">{{ $t('home.aiReview') }}</AppButton>
           <AppButton class="hero-btn secondary" size="lg" href="/?view=battle-playback">{{ $t('home.battlePlayback') }}</AppButton>
           <AppButton v-if="!isAndroidApp()" class="hero-btn secondary" size="lg" href="/download/android">{{ $t('android.nav') }}</AppButton>
         </div>
+        <p v-if="onboarding" id="home-onboarding-hint" class="hero-guide-hint">{{ $t('onboarding.newbieHint') }}</p>
       </div>
       <aside class="record-card">
         <span>{{ $t('home.highestDamageRecord') }}</span>
@@ -111,6 +116,8 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
 .hero-subtitle { margin: var(--space-3) 0 0; color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
 .hero-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-6); }
 .hero-btn { white-space: normal; text-align: center; }
+.hero-guide { border-color: var(--color-accent); color: var(--color-accent-text); }
+.hero-guide-hint { margin: var(--space-2) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .record-card { min-width: 0; padding-inline-start: var(--space-6); border-inline-start: 1px solid var(--color-border-subtle); }
 .record-card > span { display: block; color: var(--color-text-secondary); font: var(--type-caption); }
 .record-card > strong { display: block; margin: var(--space-2) 0; color: var(--color-accent-text); font: var(--type-display); font-variant-numeric: tabular-nums; }

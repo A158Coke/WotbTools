@@ -3,6 +3,8 @@ package com.wotb.web.user.controller;
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.user.dto.UpdateWotbAccountRequest;
 import com.wotb.web.user.dto.UserProfileDto;
+import com.wotb.web.user.dto.OnboardingReceiptDto;
+import com.wotb.web.user.dto.SaveOnboardingReceiptRequest;
 import com.wotb.web.user.dto.VerifyWotbAccountFromReplayRequest;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.util.JwtUtil;
@@ -46,6 +48,16 @@ public class UserProfileController {
     public UserProfileDto ensureProfile() {
         return service.ensureCurrentProfile(JwtUtil.requireUserId(),
                 JwtUtil.currentUsername(), JwtUtil.currentDisplayName());
+    }
+
+    @GetMapping("/onboarding")
+    public OnboardingReceiptDto readOnboardingReceipt() {
+        return service.readOnboardingReceipt(JwtUtil.requireUserId());
+    }
+
+    @PutMapping("/onboarding")
+    public OnboardingReceiptDto saveOnboardingReceipt(@RequestBody final SaveOnboardingReceiptRequest body) {
+        return service.saveOnboardingReceipt(JwtUtil.requireUserId(), body.coreEpoch(), body.disposition());
     }
 
     @PatchMapping("/wotb-account")

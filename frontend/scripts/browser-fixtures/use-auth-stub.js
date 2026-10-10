@@ -12,6 +12,17 @@ import { computed, ref } from 'vue'
  *   ws-login=resolve|reject     -> login() success / provider rejection
  */
 const params = new URLSearchParams(window.location.search)
+// Other interaction scenarios start after onboarding. Only named guide scenarios exercise invitations.
+const onboardingCase = params.get('ws-onboarding')
+if (onboardingCase) {
+  if (sessionStorage.getItem('ws-onboarding-case') !== onboardingCase) {
+    localStorage.removeItem('wotbtools-onboarding')
+    sessionStorage.setItem('ws-onboarding-case', onboardingCase)
+  }
+} else {
+  localStorage.setItem('wotbtools-onboarding', JSON.stringify({ version: 1,
+    receipts: { anonymous: { coreEpoch: Number.MAX_SAFE_INTEGER, disposition: 'SKIPPED' } } }))
+}
 const initialAuthenticated = params.get('ws-auth') !== '0'
 const initialMode = params.get('ws-auth-init')
   || (initialAuthenticated ? 'resolve-authenticated' : 'resolve-unauthenticated')
