@@ -76,15 +76,43 @@ export function subdivisionMetrics(fovYRad, aspect = 16 / 9, tolScale = 1) {
   };
 }
 
-/** 地形 LOD 是否已过期（**单向滞回**）：拉近一律细化（≥5% 即重建），拉远才允许变粗（≥40%），
- *  且两次重建至少隔 `minIntervalMs`（帧预算）。返回 true 表示应重建。
- *  为什么单向：双向滞回（旧实现 25%/25%）会让网格长期停在"更远视距"的**更粗**层级 ⇒ 同一相机位置
- *  我们的单元格可比客户端判据允许的更粗，粗格插值把地形抬到贴地薄结构（铁轨 0.3 m 厚）之上，
- *  且随轨道距离变化"时有时无"（2026-10-10 用户报障）。单向滞回保证**永不比客户端更粗**。 */
-export function terrainLodStale(prevDist, dist, sinceMs, minIntervalMs = 120) {
-  if (!(prevDist > 0)) return true;                 // 首帧
-  const rel = (dist - prevDist) / Math.max(1, prevDist);
+/** 相机 LOD 状态快照——**必须与 `buildAdaptiveTerrain` 的判据输入同源**（相机三维位置、视距、
+ *  视轴、FOV、aspect）：滞回只看视距时，"绕目标水平旋转、视距不变"会让网格永远跳过重建、
+ *  停在旧相机位置的 LOD 分布上（2026-10-10 review P2）。`d` = 相机到 `target` 的视距，
+ *  `u` = 视轴单位向量（target → camera）。 */
+export function terrainLodState(camera, target, aspect) {
+  const px = camera.position.x, py = camera.position.y, pz = camera.position.z;
+  const dx = px - target.x, dy = py - target.y, dz = pz - target.z;
+  const d = Math.hypot(dx, dy, dz);
+  return {
+    d, px, py, pz,
+    ux: d > 1e-9 ? dx / d : 0, uy: d > 1e-9 ? dy / d : 0, uz: d > 1e-9 ? dz / d : 0,
+    fovY: Number.isFinite(camera.fov) ? (camera.fov * Math.PI) / 180 : 0.8,
+    aspect: Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9,
+  };
+}
+
+/** 地形 LOD 是否已过期（返回 true = 应重建）。输入为 `terrainLodState` 快照，判据与
+ *  `buildAdaptiveTerrain` 一致——**凡判据读的输入变了就必须重建**，否则网格可比客户端
+ *  （同一相机位置）允许的层级更粗：
+ *  - 视距（**单向滞回**）：拉近 ≥5% 一律细化；拉远 ≥40% 才允许变粗（双向 25% 的旧实现会让网格
+ *    长期停在更粗层级，粗格插值把地形抬到贴地薄结构之上，且随重建时机时有时无——2026-10-10
+ *    用户"铁轨被盖、转视角又正常"）；
+ *  - **侧向位移**（垂直于视轴的分量 ≥5%·视距）：贴片到相机的距离随之改变 ⇒ 细分判据变。
+ *    水平绕转（轨道旋转）视距恒等，仅凭上面两条会永远跳过；
+ *  - **FOV / aspect**（相对变化 >0.1%）：阈值随水平 FOV 插值、投影系数随 aspect；`onResize`
+ *    只改投影不重建地形，窗口/名册布局变化后同样会残留过期 LOD。
+ *  全部触发共用 `minIntervalMs` 节流（重建 ≈ 一次四叉遍历，帧预算上限 ≈1 次/120 ms）。 */
+export function terrainLodStale(prev, cur, sinceMs, minIntervalMs = 120) {
+  if (!prev || !(prev.d > 0)) return true;                 // 首帧
+  const rel = (cur.d - prev.d) / Math.max(1, prev.d);
   if (rel <= -0.05 || rel >= 0.40) return sinceMs >= minIntervalMs;
+  const dx = cur.px - prev.px, dy = cur.py - prev.py, dz = cur.pz - prev.pz;
+  const along = dx * cur.ux + dy * cur.uy + dz * cur.uz;
+  const lat = Math.hypot(dx - along * cur.ux, dy - along * cur.uy, dz - along * cur.uz);
+  if (lat >= 0.05 * Math.max(1, cur.d)) return sinceMs >= minIntervalMs;
+  if (Math.abs(cur.fovY - prev.fovY) > 1e-3 * Math.max(1e-3, prev.fovY)) return sinceMs >= minIntervalMs;
+  if (Math.abs(cur.aspect - prev.aspect) > 1e-3 * Math.max(1e-3, prev.aspect)) return sinceMs >= minIntervalMs;
   return false;
 }
 
