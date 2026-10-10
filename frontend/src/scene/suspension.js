@@ -3,32 +3,41 @@ import * as THREE from 'three'
 /**
  * 坦克悬挂求解（客户端同构）——纯函数层。
  *
- * 逆向证据与公式出处：上游 `docs/tank-suspension-client-re.md` §六（第二轮反汇编）。
- * 与客户端逐条对应：
+ * 逆向证据与公式出处：上游 `docs/tank-suspension-client-re.md` §6.6–§6.7（第三、四轮
+ * 反汇编，2026-10-11）。链路解算为 **2D**（纵向 + 高度），与客户端逐条对应：
  *   1) 负重轮 = **纯竖直平移**，夹到 `[pz − b, pz + a]`（yaml `wheels` 的 `{flag, a, b}`，
  *      `flag = 1` 参与贴地、`0`（诱导/主动/托带轮）不参与），按 `wheelsReactionSpeed` 限速
- *      逼近（首次可见直接吸附）——`clampTravel` / `rateLimitTravel`。
- *   2) 自转 = 绕轮节点**局部 X 轴** `θ += −Δs_侧 / r`（左右各用自己的纵向位移，差速自动成立）
- *      ——`spinStep`。
- *   3) 履带 = **静止折线（链路）+ 逐轮偏移 → 悬空段垂弧 → 铺地**，顺序与客户端
- *      `Bending → Laying` 一致（本模块 `solveChain` 的第 2/3/4 步）。
- *      垂弧形状 = 客户端 `(t − t²)` 抛物线，幅度用 `upperFactor · span^lengthPower`
- *      （`lengthPower` 是幂次已确定；`upperMin/frontFactor/backFactor` 的逐项落位未定，
- *      本实现按统一幅度近似——上游 §五.4）。
- *   4) 花纹滚动：每米 V 变化 = `chassis.textureScale / chunkLength`（客户端口径，
- *      负值分支在本实现里由调用方取逐车 dV/ds——见 `treadScrollStep`）。
+ *      逼近（首次可见直接吸附）；轮贴地 = 轮底 + 前后 ±45° 三采样取 max
+ *      ——`clampTravel` / `rateLimitTravel` / `wheelGroundMax`。
+ *   2) 自转 = 绕轮节点**局部 X 轴** `θ += −Δs_侧 / r`——`spinStep`。
+ *   3) 相位 = **每侧持久累加器**（§6.7）：`clamp01(phase ± dS·speed·100)`，符号由
+ *      `frontDriveWheel` 与行驶方向定——`trackPhaseStep`。
+ *   4) 段 = 相邻轮挂接点 span 绕环闭合，kind 按包围盒分带
+ *      （0=底带 <10% 线、1=顶带 >60% 线、2/3=纵向中线两侧的前后坡）——`deriveTrackSegments`。
+ *   5) 链路流水线（`solveTrackChain2D`，客户端 Process 每侧次序）：
+ *      轮偏移 → 顶段铺开（弦等距）→ 底带限速贴地（双向，1.2·dt m/帧，5 mm 死区）→
+ *      全段向下抛物线（`(−sign(ux)·uy, −|ux|)·w·(t−t²)`，w = `(upperMin+phase·B_kind)·dist^P`）
+ *      → 顶段包轮 max（`y = max(y, cz+√(r²−dx²)+w_lay)`，
+ *      w_lay = `(bF·dist^lP/count^pP)·maxDrop^prP·f_bend^prP2`）。
+ *   6) 顶点 = **弧长重参数化**：预计算每顶点 `(弧长 s, 法向偏移 d)`，逐帧摆到当前 2D 链的
+ *      s 处 + 法向 d（链节真的沿带滑动）——`vertexArcParams` / `placeVerticesOnChain`。
+ *   7) 花纹滚动 = 整带 UV 相位（客户端 chunkOffset 的视觉等价，速率取网格实测 dV/ds）。
  *
- * 本模块不依赖 three.js：入参是普通数组/标量，便于单测；场景侧只做容器与写入。
+ * 本模块对 three.js 的依赖仅限 `applyWheelSpin` 的枢轴补偿：其余入参是普通数组/标量。
  */
 
 /** 客户端 `wheels` 记录缺省（数据缺失时的兜底；正常路径不用） */
 export const SUSP_FALLBACK = { travelUp: 0.08, travelDown: 0.08, reaction: 1.0 };
 
-/** 垂弧上限：`(t − t²)` 抛物线的形状常数（峰在 t=0.5，值 0.25） */
-export const SAG_SHAPE_PEAK = 0.25;
+/** 贴地死区（m）：客户端 0x3649a48 = 0.005——|Δ| ≤ 该值视为已接地 */
+export const CHASE_DEAD_ZONE = 0.005;
 
-/** 铺地判定余量（m）：链点高出地面不足该值即视为接触，参与"支承点"集合 */
-export const GROUND_CONTACT_EPS = 0.01;
+/** 铺地限速系数：客户端 0x3649a4c = 1.2——每帧最多 `1.2·dt` 米（≈1.2 m/s） */
+export const CHASE_RATE = 1.2;
+
+/** kind 分带阈值（§6.7）：底带 < `miny+0.1·range`（0x3638978）、顶带 > `maxy−0.4·range`（0x363a070） */
+export const BAND_LOW = 0.1;
+export const BAND_HIGH = 0.4;
 
 /** 形变脏阈值（m）：逐顶点重写前的位移闸门（静止帧零上传） */
 export const DEFORM_EPS = 0.003;
@@ -94,15 +103,6 @@ export function treadScrollStep(vOffset, distSide, dvPerM) {
 }
 
 /**
- * 地形"掉高"折算到车体系局部 +z：把世界竖直差除以车体 up 轴的世界 y 分量。
- * 车体倾倒到 |upY| 过小时返回 0（求解停摆而非发散，fail-safe）。
- */
-export function groundDropLocal(terrainH, restWorldY, upWorldY) {
-  if (!(Math.abs(upWorldY) > 0.25)) return 0;
-  return (terrainH - restWorldY) / upWorldY;
-}
-
-/**
  * 链点 → 负重轮 挂接表（客户端 `SuspensionGenerator` 的「点→轮」映射的等价重建）：
  * 按**纵向**距离就近挂接，容差 = `tolFactor × 轮半径`；未被任何轮覆盖的点返回 −1
  * （上支段/悬空段——由垂弧与铺地步骤决定形状）。
@@ -134,116 +134,6 @@ export function attachChainToWheels(chain, wheels, tolFactor = 0.45) {
   return out;
 }
 
-/**
- * 链路解算（客户端顺序：逐轮偏移 → 悬空段垂弧 → 铺地）。
- *
- * @param {Float64Array|number[]} out 输出高度（长度 = 链点数；写入后由调用方转成位移量）
- * @param {Array<[number, number]>} rest 静止链路 `[纵向, 高度]`
- * @param {Int32Array} attach 点→轮（−1 = 无）
- * @param {number[]} wheelDelta 逐轮局部 +z 位移（已夹紧/限速；未参与解算的轮传 0）
- * @param {number[]} groundDrop 逐点"贴地所需局部 z 位移"（≤0 = 地面在下方，不接触）
- * @param {Array<{centerZ:number, longitudinal:number, radius:number}>} wheels 逐轮几何
- * @param {{upper_factor:number, length_power:number}} bend 垂弧系数
- * @returns {{maxAbs:number}} 本次解算的最大绝对位移（脏判据用）
- */
-export function solveChain(out, rest, attach, wheelDelta, groundDrop, wheels, bend) {
-  const n = rest.length;
-  let maxAbs = 0;
-  // 1) 逐轮偏移：挂接点随轮移动（客户端 `chain[i] += wheelInfo.offset`）
-  for (let i = 0; i < n; i++) {
-    const w = attach[i];
-    out[i] = rest[i][1] + (w >= 0 ? wheelDelta[w] || 0 : 0);
-  }
-  // 2) 悬空段垂弧：在**支承点**（挂接点）之间按 `(t − t²)` 抛物线向下垂
-  const sagFactor = bend && Number.isFinite(bend.upper_factor) ? Math.max(0, bend.upper_factor) : 0;
-  const sagPow = bend && Number.isFinite(bend.length_power) ? bend.length_power : 0.5;
-  let i = 0;
-  while (i < n) {
-    if (attach[i] < 0) { i++; continue; }
-    let j = i + 1;
-    while (j < n && attach[j] < 0) j++;
-    if (j < n && j > i + 1) {
-      const span = Math.abs(rest[j][0] - rest[i][0]);
-      const sag = sagFactor * Math.pow(Math.max(span, 1e-3), sagPow);
-      const y0 = out[i], y1 = out[j];
-      for (let k = i + 1; k < j; k++) {
-        const t = (k - i) / (j - i);
-        out[k] = y0 + (y1 - y0) * t - sag * (t - t * t);
-      }
-    }
-    i = j;
-  }
-  // 3) 包轮约束：**经过轮顶**的链点不得切进轮胎圆（客户端 `y = max(y, cy + sqrt(r² − dx²))`）。
-  //    只对静止高度在轮心以上的点生效——底段在轮心**以下**（履带板厚），套用会把它顶到轮顶。
-  for (let k = 0; k < n; k++) {
-    const w = attach[k];
-    if (w < 0) continue;
-    const wh = wheels[w];
-    const r = wh.radius || 0;
-    if (!(r > 1e-4)) continue;
-    const cz = wh.centerZ || 0;
-    if (rest[k][1] <= cz) continue;
-    const dx = rest[k][0] - wh.longitudinal;
-    if (Math.abs(dx) >= r) continue;
-    const top = cz + Math.sqrt(Math.max(0, r * r - dx * dx));
-    if (out[k] < top) out[k] = top;
-  }
-  // 4) 铺地（客户端 Laying）：低于地面的点抬到地面；地面在下方（drop<0）时**不跟**下来
-  for (let k = 0; k < n; k++) {
-    const laid = rest[k][1] + (groundDrop[k] || 0);
-    if (out[k] < laid) out[k] = laid;
-  }
-  for (let k = 0; k < n; k++) {
-    const d = Math.abs(out[k] - rest[k][1]);
-    if (d > maxAbs) maxAbs = d;
-  }
-  return { maxAbs };
-}
-
-/**
- * 顶点 → 链路映射（一次性）：把网格顶点投影到静止链路（(纵向, 高度) 平面），
- * 返回每顶点的 `[段号, 段内 t]`。顶点与链路同处"模型系纵剖面"，故直接用 (y, z)。
- *
- * @param {Float32Array} pos 顶点位置（xyz 交错，模型系）
- * @param {Array<[number, number]>} rest 静止链路
- * @returns {{seg: Int32Array, t: Float32Array}}
- */
-export function vertexChainParams(pos, rest) {
-  const nv = pos.length / 3;
-  const seg = new Int32Array(nv);
-  const t = new Float32Array(nv);
-  for (let v = 0; v < nv; v++) {
-    const vy = pos[v * 3 + 1], vz = pos[v * 3 + 2];
-    let bestI = 0, bestT = 0, bestD = Infinity;
-    for (let i = 0; i + 1 < rest.length; i++) {
-      const ay = rest[i][0], az = rest[i][1];
-      const by = rest[i + 1][0], bz = rest[i + 1][1];
-      const dy = by - ay, dz = bz - az;
-      const len2 = dy * dy + dz * dz;
-      let s = len2 > 1e-9 ? ((vy - ay) * dy + (vz - az) * dz) / len2 : 0;
-      s = s < 0 ? 0 : (s > 1 ? 1 : s);
-      const px = ay + dy * s, pz = az + dz * s;
-      const d = (vy - px) * (vy - px) + (vz - pz) * (vz - pz);
-      if (d < bestD) { bestD = d; bestI = i; bestT = s; }
-    }
-    if (!rest.length) { bestI = 0; bestT = 0; }
-    seg[v] = bestI; t[v] = bestT;
-  }
-  return { seg, t };
-}
-
-/**
- * 把链路位移应用到顶点（只动"高度"分量 = 模型系 +z；客户端链路也只解纵剖面）。
- * `out` 与 `base` 同为顶点数组（xyz 交错）；本函数只写 z 分量。
- *
- * @param {Float32Array} out 目标顶点位置（会被就地写）
- * @param {Float32Array} base 静止顶点位置（模板，只读）
- * @param {{seg:Int32Array, t:Float32Array}} params 顶点 → 链路映射
- * @param {Float64Array|number[]} chainZ 解算后的链路高度
- * @param {number[]} restZ 静止链路高度
- * @param {number[]} [axis] 位移方向（网格局部系里的"模型 +z"；缺省 [0,0,1]）
- * @returns {number} 本帧最大 |位移|（m）
- */
 /** 两条解算链的**逐点最大偏差**（米）。用途：履带**法线**重算闸门——与"上次重算法线时的链"
  *  比较。累计统计量（最大幅度 / 均值）表达不了空间分布：把 0.1 m 的形变从一处挪到另一处时
  *  两者都不变、而法线必须重算（2026-10-10 review 复审 P2）。空 / 长度不符 ⇒ Infinity（fail-safe）。 */
@@ -257,7 +147,7 @@ export function chainDrift(prev, cur) {
   return m;
 }
 
-/** 两条解算链是否等价（逐点严格比较）。顶点输出是链的纯函数（见 `applyChainToVertices`）：
+/** 两条解算链是否等价（逐点严格比较）。顶点输出是链的纯函数（见 `placeVerticesOnChain`）：
  *  链相同 ⇒ 顶点逐点相同、无需重传 GPU。形变"下发判定"用它而不是最大幅度——
  *  幅度相同但分布不同（如把 0.1 的形变从一处挪到另一处）时 max 不变、顶点已变
  *  （2026-10-10 review P2）。空/长度不符视为变化（首帧 fail-safe）。 */
@@ -265,26 +155,6 @@ export function chainChanged(prev, cur) {
   if (!prev || !cur || prev.length !== cur.length) return true;
   for (let i = 0; i < cur.length; i++) if (prev[i] !== cur[i]) return true;
   return false;
-}
-
-export function applyChainToVertices(out, base, params, chainZ, restZ, axis) {
-  const nv = out.length / 3;
-  const { seg, t } = params;
-  const ax = axis ? axis[0] : 0, ay = axis ? axis[1] : 0, az = axis ? axis[2] : 1;
-  let maxAbs = 0;
-  for (let v = 0; v < nv; v++) {
-    const i = seg[v];
-    const tt = t[v];
-    const d0 = chainZ[i] - restZ[i];
-    const d1 = chainZ[i + 1] - restZ[i + 1];
-    const d = d0 + (d1 - d0) * tt;
-    out[v * 3] = base[v * 3] + ax * d;
-    out[v * 3 + 1] = base[v * 3 + 1] + ay * d;
-    out[v * 3 + 2] = base[v * 3 + 2] + az * d;
-    const ad = Math.abs(d);
-    if (ad > maxAbs) maxAbs = ad;
-  }
-  return maxAbs;
 }
 
 /**
@@ -450,4 +320,449 @@ export function chainAverageSegment(chain) {
  */
 export function sideTravel(prevX, prevZ, curX, curZ, fwdX, fwdZ) {
   return (curX - prevX) * fwdX + (curZ - prevZ) * fwdZ;
+}
+
+// ============================================================================
+// 2D 链路解算（客户端同构，§6.6–§6.7）。链点坐标 = (纵向, 高度)，与导出折线同系。
+// ============================================================================
+
+const fin = (v, dflt) => (Number.isFinite(v) ? v : dflt);
+
+/**
+ * 相位步进（§6.7，客户端侧实体累加器直译）：
+ * `phase = clamp01(phase + (frontDrive ? −dS : +dS) · speed · 100)`。
+ *
+ * 客户端：Bending 每帧 `phase ± |v|·dt·speed·100`（100.0 @0x362e054），符号 =
+ * `frontDriveWheel == (v>0) ? −1 : +1`（0x833f2c），clamp [0,1]（0x833f55–833f82），
+ * 写回侧实体（0x7c0570 → [实体+0xac]）；`|v|·dt` 即本侧纵向位移 dS（带符号合并后
+ * 恰为上式）。Laying 在 Bending 之后读到本帧新值。
+ *
+ * @param {number} phase 上一帧相位（[0,1]）
+ * @param {number} dS 本侧带符号纵向位移（m，正 = 向前）
+ * @param {number} speed `track_bending.speed`
+ * @param {boolean} frontDrive `track_bending.front_drive_wheel`
+ */
+export function trackPhaseStep(phase, dS, speed, frontDrive) {
+  const k = fin(speed, 1.0);
+  let p = phase + (frontDrive ? -dS : dS) * k * 100;
+  return p < 0 ? 0 : (p > 1 ? 1 : p);
+}
+
+/**
+ * 段系数（0x82ee40 直译）：`f = (upperMin + phase'·B_kind) · dist^lengthPower`。
+ *
+ * kind 分派（§6.7）：kind1（顶带）→ `upperFactor`（无翻转）；kind2/3（前后坡）→
+ * `frontFactor`/`backFactor`；kind0（底带）与 kind4（铺放节点）→ 系数 1.0。
+ * 相位翻转：`frontDriveWheel == (kind===2)` 时 `phase' = 1 − phase`（0x82eec0）。
+ *
+ * @param {number} kind 段 kind（0–3；铺放节点传 4）
+ * @param {number} phase 当前相位
+ * @param {{upper_min?:number, upper_factor?:number, front_factor?:number,
+ *          back_factor?:number, length_power?:number, front_drive_wheel?:boolean}|null} bend
+ * @param {number} dist 段弦长（m）
+ */
+export function bendFactor(kind, phase, bend, dist) {
+  if (!bend) return 0;                         // fail-closed：无 bend 数据 ⇒ 不垂
+  const upperMin = fin(bend.upper_min, 0);
+  const pw = fin(bend.length_power, 0.5);
+  let ph = phase;
+  let coef = 1;
+  if (kind === 1) {
+    coef = fin(bend.upper_factor, 0);
+  } else {
+    if (!!bend.front_drive_wheel === (kind === 2)) ph = 1 - phase;
+    if (kind === 2) coef = fin(bend.front_factor, 0);
+    else if (kind === 3) coef = fin(bend.back_factor, 0);
+  }
+  return (upperMin + ph * coef) * Math.pow(Math.max(dist, 1e-6), pw);
+}
+
+/**
+ * 铺放权重（0x838380 直译，§6.6）：
+ * `w = (bendingFactor·dist^lengthPower / count^pointCountPower)
+ *      · maxDrop^pressurePower · fBend^primaryPower`。
+ *
+ * `dist` = 段/节点弦长；`count` = 接触数+1；`maxDrop` = 段内离地深度最大值；
+ * `fBend` = `bendFactor(4, …)`（铺放节点 kind=4）。
+ *
+ * @param {number} dist 弦长（m）
+ * @param {number} count 接触数 + 1
+ * @param {number} maxDrop 离地深度（m，≥0）
+ * @param {number} fBend 段系数
+ * @param {{bending_factor?:number, length_power?:number, point_count_power?:number,
+ *          pressure_power?:number, primary_power?:number}|null} laying `track_laying`
+ */
+export function layWeight(dist, count, maxDrop, fBend, laying) {
+  const L = laying || {};
+  const d = Math.max(dist, 1e-6);
+  let w = fin(L.bending_factor, 0) * Math.pow(d, fin(L.length_power, 1));
+  const pP = fin(L.point_count_power, 0);
+  if (pP !== 0) w /= Math.pow(Math.max(count, 1), pP);
+  const prP = fin(L.pressure_power, 0);
+  if (prP !== 0) w *= Math.pow(Math.max(maxDrop, 0), prP);
+  const pr2P = fin(L.primary_power, 0);
+  if (pr2P !== 0) w *= Math.pow(Math.max(fBend, 0), pr2P);
+  return w;
+}
+
+/**
+ * 段生成（0x708770 直译，§6.7）：span = **相邻轮挂接点**（绕环闭合），kind 按链包围盒分带：
+ * 两端 y 均 < `miny+0.1·range` → 0（底带）；均 > `maxy−0.4·range` → 1（顶带）；
+ * 均 x > centerX → 2（+x 坡）；均 x < centerX → 3（−x 坡）；未命中 → 0
+ * （客户端零初始化记录未被覆盖）。判定顺序 0→1→2→3，首中即停。
+ *
+ * @param {Array<[number, number]>} chain 静止链路 `[纵向, 高度]`
+ * @param {Int32Array} attach 点→轮（−1 = 无；含 flag=0 的诱导/主动轮——环上每个轮都锚定）
+ * @returns {Array<{i0:number, i1:number, kind:number}>}
+ */
+export function deriveTrackSegments(chain, attach) {
+  const n = chain.length;
+  const anchors = [];
+  for (let i = 0; i < n; i++) if (attach[i] >= 0) anchors.push(i);
+  if (anchors.length < 2) return [];
+  const segs = [];
+  for (let k = 0; k < anchors.length; k++) {
+    segs.push({ i0: anchors[k], i1: anchors[(k + 1) % anchors.length], kind: 0 });
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const x = chain[i][0], y = chain[i][1];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const cx = (minX + maxX) / 2;
+  const range = maxY - minY;
+  const lowLine = minY + BAND_LOW * range;
+  const highLine = maxY - BAND_HIGH * range;
+  for (const s of segs) {
+    const y0 = chain[s.i0][1], y1 = chain[s.i1][1];
+    if (y0 < lowLine && y1 < lowLine) { s.kind = 0; continue; }
+    if (y0 > highLine && y1 > highLine) { s.kind = 1; continue; }
+    const x0 = chain[s.i0][0], x1 = chain[s.i1][0];
+    if (x0 > cx && x1 > cx) { s.kind = 2; continue; }
+    if (x0 < cx && x1 < cx) { s.kind = 3; continue; }
+    s.kind = 0;
+  }
+  return segs;
+}
+
+/**
+ * 链点弧长工具：累计弧长表（当前 2D 链）+ 按弧长取点与朝下法向。
+ * 法向约定 = 行进方向的左侧旋转 (−dy, dx) 再归到**高度分量 ≤ 0**（与 0x82e7f0 的
+ * 朝下归一一致，见 `bendDisplacement`）——顶点法向偏移 d 的符号随此约定。
+ *
+ * @param {Float64Array} cumArc 累计弧长（长度 = 点数；cumArc[0] = 0）
+ * @param {Float64Array} xs 纵向坐标
+ * @param {Float64Array} ys 高度坐标
+ * @param {number} s 目标弧长（越界夹到两端）
+ * @returns {{x:number, y:number, nx:number, ny:number}} 点坐标与单位法向
+ */
+export function chainPointAtArc(cumArc, xs, ys, s) {
+  const n = xs.length;
+  const total = cumArc[n - 1];
+  let t = s < 0 ? 0 : (s > total ? total : s);
+  // 二分定位段号
+  let lo = 0, hi = n - 1;
+  while (lo + 1 < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cumArc[mid] <= t) lo = mid; else hi = mid;
+  }
+  const segLen = cumArc[lo + 1] - cumArc[lo];
+  const f = segLen > 1e-9 ? (t - cumArc[lo]) / segLen : 0;
+  const dx = xs[lo + 1] - xs[lo], dy = ys[lo + 1] - ys[lo];
+  const len = Math.hypot(dx, dy) || 1;
+  // 朝下法向：先取左侧法向 (−dy,dx)/len，若高度分量为正则取反
+  let nx = -dy / len, ny = dx / len;
+  if (ny > 0) { nx = -nx; ny = -ny; }
+  return { x: xs[lo] + dx * f, y: ys[lo] + dy * f, nx, ny };
+}
+
+/**
+ * 顶段铺开（0x8366e0 直译，竖直+纵向双分量）：kind1 段的内部链点重写为端点弦线的
+ * **等距点**——第 k 个内部点落在弦的 `k/(n+1)` 分数处（客户端：步长 = 弦长/(列表长+1)，
+ * 计数器步进 1.0，x/y 双分量回写）。端点（轮挂接点）不动。
+ *
+ * @param {Float64Array} xs 纵向（就地写）
+ * @param {Float64Array} ys 高度（就地写）
+ * @param {Array<{i0:number, i1:number, kind:number}>} segs 段表
+ */
+export function spreadTopSpans2D(xs, ys, segs) {
+  const n = xs.length;
+  for (const s of segs) {
+    if (s.kind !== 1) continue;
+    const cnt = ((s.i1 - s.i0) + n) % n;       // 环绕跨度（跨环缝段 i1 < i0 也覆盖）
+    if (cnt < 2) continue;
+    const x0 = xs[s.i0], y0 = ys[s.i0];
+    // 等距分母 = 内部点数 + 1 = cnt（客户端：步长 = 弦长/(表长+1)，表长 = 被重写的内部点）
+    const dx = (xs[s.i1] - x0) / cnt;
+    const dy = (ys[s.i1] - y0) / cnt;
+    for (let k = 1; k <= cnt - 1; k++) {
+      const i = (s.i0 + k) % n;
+      xs[i] = x0 + dx * k;
+      ys[i] = y0 + dy * k;
+    }
+  }
+}
+
+/**
+ * 垂弧位移（0x82e7f0 抛物线路径直译，§6.7）：全段内部链点
+ * `Δ = (−sign(ux)·uy, −|ux|) · w · (t − t²)`，其中 `(ux,uy)` = 段弦单位向量（i0→i1）、
+ * `t` = 该点到 i0 的欧氏距离 / 弦长、`w` = `bendFactor(kind, phase, bend, 弦长)`。
+ * 高度分量恒 ≤ 0（向下垂），纵向分量随弦斜率（斜率耦合喂送）。
+ *
+ * @param {Float64Array} xs 纵向（就地写）
+ * @param {Float64Array} ys 高度（就地写）
+ * @param {Array<{i0:number, i1:number, kind:number}>} segs 段表
+ * @param {number} phase 当前相位
+ * @param {{upper_min?:number, upper_factor?:number, front_factor?:number,
+ *          back_factor?:number, length_power?:number, front_drive_wheel?:boolean}|null} bend
+ */
+export function bendPass2D(xs, ys, segs, phase, bend) {
+  const n = xs.length;
+  for (const s of segs) {
+    const cnt = ((s.i1 - s.i0) + n) % n;
+    if (cnt < 2) continue;                     // 相邻挂接点：无内部点
+    const x0 = xs[s.i0], y0 = ys[s.i0];
+    const dx = xs[s.i1] - x0, dy = ys[s.i1] - y0;
+    const len = Math.hypot(dx, dy);
+    if (!(len > 1e-6)) continue;
+    const ux = dx / len, uy = dy / len;
+    const dirX = -Math.sign(ux) * uy;          // 0x82e8fe–82e923 的朝下归一（x 槽）
+    const dirY = -Math.abs(ux);                // （y 槽：恒 ≤ 0）
+    const w = bendFactor(s.kind, phase, bend, len);
+    for (let k = 1; k <= cnt - 1; k++) {
+      const i = (s.i0 + k) % n;
+      const t = Math.hypot(xs[i] - x0, ys[i] - y0) / len;
+      const kk = w * (t - t * t);
+      xs[i] += dirX * kk;
+      ys[i] += dirY * kk;
+    }
+  }
+}
+
+/**
+ * 顶段包轮（0x82e7f0 包轮路径直译）：kind1 段内**挂接点**（attach ≥ 0）
+ * `y = max(y, cz + √(r² − dx²) + wLay)`，`cz` = 轮心当前高度（静止 + 行程），
+ * `dx` = 链点纵向 − 轮纵向；`wLay` = `layWeight(弦长, 段内点数, maxDrop, fBend, laying)`，
+ * `fBend = bendFactor(4, phase, bend, 弦长)`（铺放节点 kind=4）。
+ *
+ * @param {Float64Array} xs 纵向（就地写）
+ * @param {Float64Array} ys 高度（就地写）
+ * @param {Array<{i0:number, i1:number, kind:number}>} segs 段表
+ * @param {Int32Array} attach 点→轮
+ * @param {Array<{longitudinal:number, centerZ:number, radius:number}>} wheelCfg 逐轮几何
+ * @param {Float64Array|number[]} wheelDelta 逐轮当前行程（局部 +z）
+ * @param {number} phase 当前相位
+ * @param {object|null} bend `track_bending`
+ * @param {object|null} laying `track_laying`
+ * @param {Float64Array} [groundY] 逐点地形高度（maxDrop 输入；缺省按 0）
+ */
+export function wrapTopSpans2D(xs, ys, segs, attach, wheelCfg, wheelDelta, phase, bend, laying, groundY) {
+  const n = xs.length;
+  for (const s of segs) {
+    if (s.kind !== 1) continue;
+    const cnt = ((s.i1 - s.i0) + n) % n;
+    if (cnt < 1) continue;
+    const len = Math.hypot(xs[s.i1] - xs[s.i0], ys[s.i1] - ys[s.i0]);
+    let maxDrop = 0;
+    if (groundY) {
+      for (let k = 0; k <= cnt; k++) {
+        const i = (s.i0 + k) % n;
+        const d = Math.abs(groundY[i] - ys[i]);
+        if (d > maxDrop) maxDrop = d;
+      }
+    }
+    const fBend = bendFactor(4, phase, bend, len);
+    const wLay = layWeight(len, cnt + 1, maxDrop, fBend, laying);
+    for (let k = 0; k <= cnt; k++) {
+      const i = (s.i0 + k) % n;
+      const w = attach[i];
+      if (w < 0) continue;
+      const wh = wheelCfg[w];
+      const r = wh.radius || 0;
+      if (!(r > 1e-4)) continue;
+      const ddx = xs[i] - wh.longitudinal;
+      if (Math.abs(ddx) >= r) continue;
+      const cz = (wh.centerZ || 0) + (wheelDelta[w] || 0);
+      const top = cz + Math.sqrt(r * r - ddx * ddx) + wLay;
+      if (ys[i] < top) ys[i] = top;
+    }
+  }
+}
+
+/**
+ * 链 2D 解算编排（客户端 Process 每侧次序）：状态装配 → 底带贴地 → 顶段铺开 →
+ * 全段垂弧 → 顶段包轮。
+ *
+ * **持久状态只有逐点贴地偏移 `chaseY`**（客户端链实体上的解算链等价物，跨帧累积、
+ * 限速 1.2·dt 收敛）；其余每帧从 `静止 + chase` 重算——垂弧/铺开/包轮都是纯函数级
+ * 增量，不跨帧累积（客户端每帧 memcpy 链副本的稳定性等价形）。挂接点（attach ≥ 0）
+ * 不吃 chase——它们绝对跟随轮（静止锚点 + 轮行程），地面接触经由轮解算传入。
+ * 底带掩码按**当前链**包围盒现算（客户端接触树每帧现算参考高度同款）。
+ * seek 时调用方把 `chaseY` 清零——与客户端"跳转后履带重新贴地"的缓动一致。
+ *
+ * @param {Float64Array} outX 纵向输出（就地写）
+ * @param {Float64Array} outY 高度输出（就地写）
+ * @param {Float64Array} restX 静止纵向
+ * @param {Float64Array} restY 静止高度
+ * @param {Int32Array} attach 点→轮
+ * @param {Float64Array|number[]} wheelDelta 逐轮行程
+ * @param {Float64Array} chaseY 持久贴地偏移（就地更新；seek 时由调用方清零）
+ * @param {Array<{i0:number, i1:number, kind:number}>} segs 段表
+ * @param {Float64Array} groundY 逐点地形高度（链坐标系）
+ * @param {number} dt 帧间隔（s）
+ * @param {number} phase 当前相位
+ * @param {object|null} bend `track_bending`
+ * @param {object|null} laying `track_laying`
+ * @param {Array<{longitudinal:number, centerZ:number, radius:number}>} wheelCfg 逐轮几何
+ * @param {Uint8Array} [maskScratch] 复用掩码缓冲（长度 = 链点数；缺省就地分配）
+ */
+export function solveTrackChain2D(outX, outY, restX, restY, attach, wheelDelta, chaseY, segs,
+                                  groundY, dt, phase, bend, laying, wheelCfg, maskScratch) {
+  const n = outY.length;
+  // 1) 状态装配：挂接点绝对跟轮，其余 = 静止 + 持久贴地偏移
+  for (let i = 0; i < n; i++) {
+    outX[i] = restX[i];
+    const w = attach[i];
+    outY[i] = restY[i] + (w >= 0 ? (wheelDelta[w] || 0) : (chaseY[i] || 0));
+  }
+  // 2) 底带贴地（树构建等价）：底带 = 当前链高度包围盒的下 10% 带（§6.7 kind0 阈值）；
+  //    挂接点排除（跟轮）。目标 = 地形 − 静止，限速 1.2·dt、死区 5 mm，写入持久 chaseY。
+  const mask = maskScratch || new Uint8Array(n);
+  let minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const y = outY[i];
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const lowLine = minY + BAND_LOW * (maxY - minY);
+  const clamp = CHASE_RATE * (dt > 0 ? dt : 0);
+  for (let i = 0; i < n; i++) {
+    if (attach[i] >= 0 || outY[i] >= lowLine) { mask[i] = 0; continue; }
+    mask[i] = 1;
+    const target = groundY[i] - restY[i];
+    const d = target - (chaseY[i] || 0);
+    const ad = Math.abs(d);
+    if (ad <= CHASE_DEAD_ZONE) continue;
+    const step = ad > clamp ? clamp : ad;
+    chaseY[i] = (chaseY[i] || 0) + (d > 0 ? step : -step);
+    outY[i] = restY[i] + chaseY[i];
+  }
+  // 3) 顶段铺开（Process 在 Bending 前的直调铺开 + Laying 内铺开合并为一次）
+  spreadTopSpans2D(outX, outY, segs);
+  // 4) 全段垂弧（Bending）
+  bendPass2D(outX, outY, segs, phase, bend);
+  // 5) 顶段包轮（Laying）
+  wrapTopSpans2D(outX, outY, segs, attach, wheelCfg, wheelDelta, phase, bend, laying, groundY);
+}
+
+/**
+ * 顶点弧长参数（一次性，取代旧的 (段,t) 绑死映射）：把网格顶点（**模型根系**）
+ * 投影到静止 2D 链，得 `(弧长 s, 法向偏移 d)`；另存顶点静止 (纵向, 高度) 供逐帧求位移。
+ * 法向偏移 d = (顶点 − 链上最近点) · 朝下法向——符号随 `chainPointAtArc` 的约定。
+ *
+ * @param {Float32Array} rootPos 顶点位置（xyz 交错，模型根系：x 横向 / y 纵向 / z 高度）
+ * @param {Array<[number, number]>} rest 静止链路 `[纵向, 高度]`
+ * @param {Float64Array} cumArcRest 静止链累计弧长
+ * @returns {{s: Float64Array, d: Float64Array, restLong: Float64Array, restH: Float64Array}}
+ */
+export function vertexArcParams(rootPos, rest, cumArcRest) {
+  const nv = rootPos.length / 3;
+  const s = new Float64Array(nv);
+  const d = new Float64Array(nv);
+  const restLong = new Float64Array(nv);
+  const restH = new Float64Array(nv);
+  const n = rest.length;
+  for (let v = 0; v < nv; v++) {
+    const vy = rootPos[v * 3 + 1], vz = rootPos[v * 3 + 2];
+    restLong[v] = vy;
+    restH[v] = vz;
+    let bestI = 0, bestT = 0, bestD2 = Infinity;
+    for (let i = 0; i + 1 < n; i++) {
+      const ay = rest[i][0], az = rest[i][1];
+      const by = rest[i + 1][0], bz = rest[i + 1][1];
+      const dy = by - ay, dz = bz - az;
+      const len2 = dy * dy + dz * dz;
+      let t = len2 > 1e-9 ? ((vy - ay) * dy + (vz - az) * dz) / len2 : 0;
+      t = t < 0 ? 0 : (t > 1 ? 1 : t);
+      const px = ay + dy * t, pz = az + dz * t;
+      const dd = (vy - px) * (vy - px) + (vz - pz) * (vz - pz);
+      if (dd < bestD2) { bestD2 = dd; bestI = i; bestT = t; }
+    }
+    s[v] = cumArcRest[bestI] + bestT * (cumArcRest[bestI + 1] - cumArcRest[bestI]);
+    // 法向偏移：最近段上的有符号距离（法向 = chainPointAtArc 同约定）
+    const dy = rest[bestI + 1][0] - rest[bestI][0];
+    const dz = rest[bestI + 1][1] - rest[bestI][1];
+    const len = Math.hypot(dy, dz) || 1;
+    let nx = -dz / len, ny = dy / len;
+    if (ny > 0) { nx = -nx; ny = -ny; }
+    const px = rest[bestI][0] + dy * bestT;
+    const pz = rest[bestI][1] + dz * bestT;
+    d[v] = (vy - px) * nx + (vz - pz) * ny;
+  }
+  return { s, d, restLong, restH };
+}
+
+/**
+ * 顶点沿带摆放（逐帧，弧长重参数化）：把每顶点摆到当前 2D 链的 `s` 处 + 法向·d。
+ * 顶点横向（模型 x）不动；位移在模型根系算出后经网格逆旋转（`invRot`，收集期算好的
+ * 3×3）转回网格局部系写位置。返回本帧最大 |位移|（m）。
+ *
+ * @param {Float32Array} out 目标顶点位置（就地写，网格局部系 xyz）
+ * @param {Float32Array} base 静止顶点位置（模板，只读，网格局部系）
+ * @param {{s:Float64Array, d:Float64Array, restLong:Float64Array, restH:Float64Array}} arc 顶点弧长参数
+ * @param {Float64Array} cumArcCur 当前链累计弧长
+ * @param {Float64Array} curX 当前链纵向
+ * @param {Float64Array} curY 当前链高度
+ * @param {Float64Array} invRot 网格局部系 ← 模型根系 的旋转（9 元素行主序）
+ * @returns {number} 本帧最大 |位移|（m）
+ */
+export function placeVerticesOnChain(out, base, arc, cumArcCur, curX, curY, invRot) {
+  const nv = out.length / 3;
+  let maxAbs = 0;
+  for (let v = 0; v < nv; v++) {
+    const p = chainPointAtArc(cumArcCur, curX, curY, arc.s[v]);
+    // 模型根系位移（y=纵向, z=高度）
+    const dLong = p.x + p.nx * arc.d[v] - arc.restLong[v];
+    const dH = p.y + p.ny * arc.d[v] - arc.restH[v];
+    // 根系 → 网格局部（只旋转，平移抵消）
+    const dx = invRot[0] * 0 + invRot[1] * dLong + invRot[2] * dH;
+    const dy = invRot[3] * 0 + invRot[4] * dLong + invRot[5] * dH;
+    const dz = invRot[6] * 0 + invRot[7] * dLong + invRot[8] * dH;
+    out[v * 3] = base[v * 3] + dx;
+    out[v * 3 + 1] = base[v * 3 + 1] + dy;
+    out[v * 3 + 2] = base[v * 3 + 2] + dz;
+    const ad = Math.abs(dLong) + Math.abs(dH);
+    if (ad > maxAbs) maxAbs = ad;
+  }
+  return maxAbs;
+}
+
+/**
+ * 轮贴地三采样（客户端 3 射线口径的高度场版）：轮底 + 前后 ±45°（沿滚动方向，
+ * 水平偏移 `r·sin45°`）。45° 射线垂向行程只有 `r·cos45°` ⇒ 轮面在偏移点触地时
+ * `centerZ = h_偏移 + r·cos45°`，等效竖直采样高度 = `h_偏移 − r·(1−cos45°)`
+ * （比竖直采样**更宽松**，只在陡升处——偏移点比轮心下方高出 > 0.29r——才占优，
+ * 即客户端射线抓峭壁前沿的语义；上游 §6.2"两侧样本抬"系笔误方向的速记）。
+ *
+ * @param {(x:number, z:number) => number} sampleHeight 世界 (x,z) → 地形高度
+ * @param {number} cx 轮心世界 x
+ * @param {number} cz 轮心世界 z
+ * @param {number} fwdX 车体前向世界 x（单位）
+ * @param {number} fwdZ 车体前向世界 z（单位）
+ * @param {number} r 轮半径
+ * @returns {number} 三采样的最大等效地面高度
+ */
+export function wheelGroundMax(sampleHeight, cx, cz, fwdX, fwdZ, r) {
+  const h0 = sampleHeight(cx, cz);
+  const off = r * Math.SQRT1_2;                  // sin45°
+  const drop = r * (1 - Math.SQRT1_2);           // (1−cos45°)·r：45° 射线的垂向行程损失
+  const hF = sampleHeight(cx + fwdX * off, cz + fwdZ * off) - drop;
+  const hB = sampleHeight(cx - fwdX * off, cz - fwdZ * off) - drop;
+  let m = h0;
+  if (hF > m) m = hF;
+  if (hB > m) m = hB;
+  return m;
 }
